@@ -2467,7 +2467,9 @@ function renderSetpointsTab(projId) {
               <div style="display:flex;gap:8px;align-items:center">
                 ${
                   !isAvg && !isViewingSnapshot
-                    ? `<button class="btn btn-ghost btn-sm" onclick="spAddZoneRow('${projId}','${activeBldgId}')">+ Add Zone</button>
+                    ? `<button class="btn btn-ghost btn-sm" id="sp-pull-em-btn-${projId}" onclick="spOpenPullFromEMDialog('${projId}','${activeBldgId}')">Pull from Equipment Matrix</button>
+                <button class="btn btn-ghost btn-sm" id="sp-delete-all-btn-${projId}" onclick="spDeleteAllZones('${projId}','${activeBldgId}')" style="color:var(--red);border-color:rgba(244,63,94,.3)">Delete All</button>
+                <button class="btn btn-ghost btn-sm" onclick="spAddZoneRow('${projId}','${activeBldgId}')">+ Add Zone</button>
                 <button class="btn btn-em btn-sm" onclick="spSave('${projId}','${activeBldgId}')">💾 Save</button>
                 <div style="position:relative;display:inline-block">
                   <button class="btn btn-ghost btn-sm" onclick="spShowSaveAsMenu(event,'${projId}','${activeBldgId}')">Save As…</button>
@@ -2539,24 +2541,36 @@ function renderSetpointsTab(projId) {
           ${spRenderBASSnapshot(projId)}`;
 }
 
+// Numeric setpoint fields can also hold the literal string '?' — the "unknown, never
+// invented" marker used by the Equipment Matrix Setpoint & Schedule export (_emSpDisplay).
+// Pulling from Equipment Matrix (spPullFromEquipmentMatrix) writes '?' straight into these
+// fields when no BAS point exists, so these four inputs must be text (a number input silently
+// discards a non-numeric value attribute, which would turn '?' into a blank with no way to
+// tell "unknown" apart from "never filled in").
+function _spParseSpField(raw) {
+  var s = (raw || '').trim();
+  if (s === '?') return '?';
+  var n = parseFloat(s);
+  return isNaN(n) ? null : n;
+}
 function _spZoneRow(projId, bldgId, z, idx) {
   const v = (val) => (val !== undefined && val !== null ? val : '');
   return `<tr style="border-bottom:1px solid var(--border)" data-sp-idx="${idx}">
           <td style="padding:4px 6px"><input class="fi" style="width:100%;font-size:12px" type="text"
             value="${_escHtml(z.name || '')}" placeholder="Zone or system name"
             oninput="spUpdateField('${projId}','${bldgId}',${idx},'name',this.value)"></td>
-          <td style="padding:4px 6px"><input class="fi" style="width:70px;font-size:12px;font-family:var(--mono);text-align:center" type="number" min="50" max="90" step="1"
+          <td style="padding:4px 6px"><input class="fi" style="width:70px;font-size:12px;font-family:var(--mono);text-align:center" type="text" inputmode="decimal"
             value="${v(z.occHeat)}" placeholder="70"
-            oninput="spUpdateField('${projId}','${bldgId}',${idx},'occHeat',parseFloat(this.value)||null)"></td>
-          <td style="padding:4px 6px"><input class="fi" style="width:70px;font-size:12px;font-family:var(--mono);text-align:center" type="number" min="60" max="95" step="1"
+            oninput="spUpdateField('${projId}','${bldgId}',${idx},'occHeat',_spParseSpField(this.value))"></td>
+          <td style="padding:4px 6px"><input class="fi" style="width:70px;font-size:12px;font-family:var(--mono);text-align:center" type="text" inputmode="decimal"
             value="${v(z.occCool)}" placeholder="74"
-            oninput="spUpdateField('${projId}','${bldgId}',${idx},'occCool',parseFloat(this.value)||null)"></td>
-          <td style="padding:4px 6px"><input class="fi" style="width:70px;font-size:12px;font-family:var(--mono);text-align:center" type="number" min="45" max="80" step="1"
+            oninput="spUpdateField('${projId}','${bldgId}',${idx},'occCool',_spParseSpField(this.value))"></td>
+          <td style="padding:4px 6px"><input class="fi" style="width:70px;font-size:12px;font-family:var(--mono);text-align:center" type="text" inputmode="decimal"
             value="${v(z.unoccHeat)}" placeholder="60"
-            oninput="spUpdateField('${projId}','${bldgId}',${idx},'unoccHeat',parseFloat(this.value)||null)"></td>
-          <td style="padding:4px 6px"><input class="fi" style="width:70px;font-size:12px;font-family:var(--mono);text-align:center" type="number" min="70" max="100" step="1"
+            oninput="spUpdateField('${projId}','${bldgId}',${idx},'unoccHeat',_spParseSpField(this.value))"></td>
+          <td style="padding:4px 6px"><input class="fi" style="width:70px;font-size:12px;font-family:var(--mono);text-align:center" type="text" inputmode="decimal"
             value="${v(z.unoccCool)}" placeholder="85"
-            oninput="spUpdateField('${projId}','${bldgId}',${idx},'unoccCool',parseFloat(this.value)||null)"></td>
+            oninput="spUpdateField('${projId}','${bldgId}',${idx},'unoccCool',_spParseSpField(this.value))"></td>
           <td style="padding:4px 6px"><input class="fi" style="width:100%;font-size:12px" type="text"
             value="${_escHtml(z.schedule || '')}" placeholder="e.g. M-F 6:00a-4:30p"
             oninput="spUpdateField('${projId}','${bldgId}',${idx},'schedule',this.value)"></td>
@@ -2629,7 +2643,14 @@ function _spBuildSnapshotPills(projId, activeSnapId, snapshots) {
     ' onclick="spViewSnapshot(\'' +
     projId +
     '\',null)">Current</button>';
-  snapshots.forEach(function (s) {
+  // Version pills default newest first (2026-09-23) — "Current" (the live,
+  // editable state) always stays leftmost; saved snapshots sort by savedAt
+  // descending. Sorts a copy so the underlying array order (and any other
+  // reader of p.setpointSnapshots) is unaffected.
+  var sortedSnapshots = snapshots.slice().sort(function (a, b) {
+    return (b.savedAt || '') > (a.savedAt || '') ? 1 : (b.savedAt || '') < (a.savedAt || '') ? -1 : 0;
+  });
+  sortedSnapshots.forEach(function (s) {
     var isActive = activeSnapId === s.id;
     pills +=
       '<button style="padding:4px 12px;font-size:11px;font-weight:600;border:none;border-radius:20px;cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;gap:6px;' +
@@ -2874,10 +2895,10 @@ function spSave(projId, bldgId) {
       if (!draft[idx]) return;
       const inputs = row.querySelectorAll('input');
       if (inputs[0]) draft[idx].name = inputs[0].value;
-      if (inputs[1]) draft[idx].occHeat = parseFloat(inputs[1].value) || null;
-      if (inputs[2]) draft[idx].occCool = parseFloat(inputs[2].value) || null;
-      if (inputs[3]) draft[idx].unoccHeat = parseFloat(inputs[3].value) || null;
-      if (inputs[4]) draft[idx].unoccCool = parseFloat(inputs[4].value) || null;
+      if (inputs[1]) draft[idx].occHeat = _spParseSpField(inputs[1].value);
+      if (inputs[2]) draft[idx].occCool = _spParseSpField(inputs[2].value);
+      if (inputs[3]) draft[idx].unoccHeat = _spParseSpField(inputs[3].value);
+      if (inputs[4]) draft[idx].unoccCool = _spParseSpField(inputs[4].value);
       if (inputs[5]) draft[idx].schedule = inputs[5].value;
     });
   }
@@ -2890,6 +2911,166 @@ function spSave(projId, bldgId) {
   _spClearDraft(projId, bldgId);
   sset('en_projects', projects);
   showToast('Set points saved ✓ (' + draft.length + ' zone' + (draft.length !== 1 ? 's' : '') + ')');
+  renderSetpointsTab(projId);
+}
+
+/* ── Delete all zones (item 5af, Matt 2026-09-22) ─────────────────────────
+   "Can we have a delete all" — removes every zone row for the selected
+   building's CURRENT (editable) version. Never touches saved snapshots
+   (setpointSnapshots are a separate read-only copy — see spSaveSnapshot). */
+function spDeleteAllZones(projId, bldgId) {
+  const p = projects.find((x) => String(x.id) === String(projId));
+  if (!p) return;
+  const rec = (p.setpoints || []).find((r) => r.buildingId === bldgId);
+  const draft = _spGetDraft(projId, bldgId);
+  const count = (rec && rec.zones && rec.zones.length) || draft.length || 0;
+  if (!count) {
+    showToast('No zones to delete');
+    return;
+  }
+  if (
+    !confirm('Delete all ' + count + ' zone' + (count !== 1 ? 's' : '') + ' for this building? This cannot be undone.')
+  )
+    return;
+  if (rec) rec.zones = [];
+  _spClearDraft(projId, bldgId);
+  window._spDraft[projId + ':' + bldgId] = [];
+  sset('en_projects', projects);
+  showToast('Deleted ' + count + ' zone' + (count !== 1 ? 's' : '') + ' ✓');
+  renderSetpointsTab(projId);
+}
+
+/* ── Pull from Equipment Matrix (item 5af, Matt 2026-09-22) ───────────────
+   "a way for an option for it to just pull from the Equipment Matrix tab
+   data with building selection" — one zone row per Equipment Matrix
+   row (zone/equipment), not per BAS point. Reuses emBuildSetpointExportRows
+   (app/equipment-matrix.js) — the SAME derivation the Setpoint & Schedule
+   .xlsx export uses — so this never re-parses BAS Points itself. Only reads
+   from equipment-matrix.js; never modifies it.
+   Column indices below match EM_SETPOINT_EXPORT_HEADERS (equipment-matrix.js):
+   0 Building Name, 1 location/equipment, 2 Type, 3-6 Existing Occ/Unocc
+   Heat/Cool, 7 Adjustment, 8 has-schedule(Yes/No/'?'), 9-10 start/stop,
+   11 Sat&Sun, 12-19 Proposed (not used here — Set Points tab tracks the
+   EXISTING/current BAS program, not a savings-calc proposal). */
+function _spScheduleFromExportRow(row) {
+  var hasSched = row[8]; // 'Yes' | 'No' | '?'
+  if (hasSched === '?') return '?';
+  if (hasSched === 'No') return 'No occupied schedule found';
+  return 'M-F ' + row[9] + '-' + row[10];
+}
+function _spNumOrUnknown(cell) {
+  if (cell === '?') return '?';
+  var n = parseFloat(cell);
+  return isNaN(n) ? '?' : n;
+}
+
+function spOpenPullFromEMDialog(projId, defaultBldgId) {
+  var existing = document.getElementById('sp-pull-em-modal');
+  if (existing) existing.remove();
+  var bldgs = typeof getUDBldgs === 'function' ? getUDBldgs(projId) : [];
+  var data = typeof emLoadMatrix === 'function' ? emLoadMatrix(projId) : null;
+  var matrixBldgNames = {};
+  ((data && data.rows) || []).forEach(function (r) {
+    if (r.building && typeof _emNormBldgNameForJoin === 'function') {
+      matrixBldgNames[_emNormBldgNameForJoin(r.building)] = true;
+    }
+  });
+  var bldgOpts = bldgs.filter(function (b) {
+    return typeof _emNormBldgNameForJoin === 'function' && matrixBldgNames[_emNormBldgNameForJoin(b.name)];
+  });
+  if (!bldgOpts.length) {
+    showToast(
+      'No Equipment Matrix rows found for any building in this project — import a BAS Points CSV in the Equipment Matrix tab first ⚠',
+    );
+    return;
+  }
+  var optsHtml = bldgOpts
+    .map(function (b) {
+      var sel = b.id === defaultBldgId ? ' selected' : '';
+      return '<option value="' + _escHtml(b.id) + '"' + sel + '>' + _escHtml(b.name || 'Building') + '</option>';
+    })
+    .join('');
+  var html =
+    '<div id="sp-pull-em-modal" class="modal-bg open" onclick="if(event.target===this)document.getElementById(\'sp-pull-em-modal\').remove()">' +
+    '<div class="modal" style="width:400px">' +
+    '<div class="modal-hdr"><div class="modal-title">Pull from Equipment Matrix</div>' +
+    '<button class="modal-x" onclick="document.getElementById(\'sp-pull-em-modal\').remove()">&#10005;</button></div>' +
+    '<div class="modal-body">' +
+    '<div style="font-size:11px;color:var(--text3);margin-bottom:10px">Builds one zone row per Equipment Matrix zone/equipment for the selected building, using its BAS Points. Unknown values show "?" — never invented.</div>' +
+    '<label style="font-size:11px;color:var(--text3);display:block;margin-bottom:4px">Building</label>' +
+    '<select id="sp-pull-em-bldg" style="font-size:12px;padding:5px 8px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;width:100%">' +
+    optsHtml +
+    '</select>' +
+    '</div>' +
+    '<div class="modal-ftr"><button class="btn btn-ghost" onclick="document.getElementById(\'sp-pull-em-modal\').remove()">Cancel</button>' +
+    '<button class="btn btn-em" id="sp-pull-em-go-btn">Pull</button></div>' +
+    '</div></div>';
+  document.body.insertAdjacentHTML('beforeend', html);
+  var goBtn = document.getElementById('sp-pull-em-go-btn');
+  if (goBtn) {
+    goBtn.addEventListener('click', function () {
+      var sel = document.getElementById('sp-pull-em-bldg');
+      var bldgId = sel ? sel.value : defaultBldgId;
+      var modal = document.getElementById('sp-pull-em-modal');
+      if (modal) modal.remove();
+      spPullFromEquipmentMatrix(projId, bldgId);
+    });
+  }
+}
+
+function spPullFromEquipmentMatrix(projId, bldgId) {
+  if (typeof emBuildSetpointExportRows !== 'function') {
+    showToast('Equipment Matrix module not loaded ⚠');
+    return;
+  }
+  var rows = emBuildSetpointExportRows(projId, bldgId, '') || [];
+  if (!rows.length) {
+    showToast('No Equipment Matrix rows found for that building ⚠');
+    return;
+  }
+  var p = projects.find((x) => String(x.id) === String(projId));
+  if (!p) return;
+  if (!p.setpoints) p.setpoints = [];
+  var rec = p.setpoints.find((r) => r.buildingId === bldgId);
+  var existingCount = (rec && rec.zones && rec.zones.length) || 0;
+  if (
+    existingCount &&
+    !confirm(
+      'This building already has ' +
+        existingCount +
+        ' saved zone' +
+        (existingCount !== 1 ? 's' : '') +
+        '. Pulling from Equipment Matrix will replace them with ' +
+        rows.length +
+        ' zone' +
+        (rows.length !== 1 ? 's' : '') +
+        ' from the Equipment Matrix. Continue?',
+    )
+  ) {
+    return;
+  }
+  var zones = rows.map(function (row) {
+    return {
+      name: row[1] || '?',
+      occHeat: _spNumOrUnknown(row[3]),
+      occCool: _spNumOrUnknown(row[4]),
+      unoccHeat: _spNumOrUnknown(row[5]),
+      unoccCool: _spNumOrUnknown(row[6]),
+      schedule: _spScheduleFromExportRow(row),
+    };
+  });
+  if (rec) {
+    rec.zones = zones;
+  } else {
+    p.setpoints.push({ buildingId: bldgId, zones: zones });
+  }
+  _spClearDraft(projId, bldgId);
+  window._spActiveBldg = window._spActiveBldg || {};
+  window._spActiveBldg[projId] = bldgId;
+  sset('en_projects', projects);
+  showToast(
+    'Pulled ' + zones.length + ' zone' + (zones.length !== 1 ? 's' : '') + ' from Equipment Matrix ✓ (Save to keep)',
+  );
   renderSetpointsTab(projId);
 }
 
@@ -3010,6 +3191,22 @@ function spParseCSV(text, projId, bldgId, fileName) {
     })
   ) {
     _spParseMultiBldgSetpoints(lines, headers, splitRow, projId, colBldgDetect, headerIdx);
+    return;
+  }
+
+  // 2026-09-23 (item 5af): Detect a raw BAS Points List export (WebCTRL's 14-column
+  // point-list format — header "Location","Control Program","Name","Value","Type",...,
+  // same format emDetectColMap's 'webctrl' branch reads for the Equipment Matrix import).
+  // This is ONE ROW PER POINT (e.g. "Building Static Pressure", "Suction Pressure Voltage",
+  // "Outside Air CFM"), not one row per zone/equipment — running it through the generic
+  // column mapper below would create one zone row per point instead of per equipment (Matt
+  // 2026-09-22: exactly this happened). Route the user to the Equipment Matrix import + the
+  // "Pull from Equipment Matrix" button instead of guessing zone rows out of point rows.
+  if (headers[0] === 'location' && headers[1] === 'control program') {
+    showToast(
+      'That looks like a raw BAS Points List (one row per point) — import it in the Equipment Matrix tab first, then use "Pull from Equipment Matrix" below ⚠',
+    );
+    spOpenPullFromEMDialog(projId, bldgId);
     return;
   }
 

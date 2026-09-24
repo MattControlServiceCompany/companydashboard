@@ -1742,6 +1742,150 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.23.27',
+    date: '2026-09-23',
+    title: 'District Calendar text spacing and a new bulk PDF-attach option',
+    items: [
+      {
+        type: 'fix',
+        text: 'District Calendar "Import Calendar" no longer breaks up some words with extra spaces (for example "Certified Off Duty" no longer shows as "Certi fi ed O ff Duty"). Event names now read correctly.',
+      },
+      {
+        type: 'feature',
+        text: 'The Utility Data page duplicate-bill bulk action now has an "Attach PDFs Only" option, matching the single-bill option already there. It links the PDF to each matching bill and never changes any other field.',
+      },
+    ],
+  },
+  {
+    v: 'v2026.09.23.26',
+    date: '2026-09-23',
+    title: 'WoodRiver Energy gas bills: more usage detail, fewer false flags',
+    items: [
+      {
+        type: 'fix',
+        text: 'WoodRiver Energy gas bills on the Utility Data page now show the Special Weather Event usage amount (in MMBtu), not just the dollar amount.',
+      },
+      {
+        type: 'fix',
+        text: 'A WoodRiver Energy gas bill that has a correct, billed charge amount no longer shows that charge with no review flag when its own usage number could not be read. The bill is now flagged for a manual check either way, so a missing usage number is never silently hidden next to a charge that looks fully confirmed.',
+      },
+      {
+        type: 'change',
+        text: 'WoodRiver Energy gas bill usage checks now read the small "Fuel" usage column printed next to the main usage column, so the check that compares usage times rate against the billed charge is more accurate.',
+      },
+    ],
+  },
+  {
+    v: 'v2026.09.23.25',
+    date: '2026-09-23',
+    title: 'HVAC Load Estimation and BAS Savings Calc: clearer, more consistent numbers',
+    items: [
+      {
+        type: 'fix',
+        text: 'HVAC Load Estimation setpoint savings (Options A/B/C) now use the same heating baseload method as the rest of the site, so the numbers stay consistent with the HVAC End-Use Estimate and the BAS Savings Calc.',
+      },
+      {
+        type: 'change',
+        text: 'The BAS Savings Calc now shows a plain warning at the cooling calibration field and in the results if the cooling kWh you entered is lower than the outside air cooling alone.',
+      },
+    ],
+  },
+  {
+    v: 'v2026.09.23.24',
+    date: '2026-09-23',
+    title: 'Bills and Set Points now default to newest first',
+    items: [
+      {
+        type: 'change',
+        text: 'The Bills table on the Utility Data tab now lists the newest billing period at the top by default. You can still click the "Norm. Month" column header to switch back to oldest first.',
+      },
+      {
+        type: 'change',
+        text: 'The Version pills on the Set Points tab now list the most recently saved version first, right after "Current."',
+      },
+    ],
+  },
+  {
+    v: 'v2026.09.23.23',
+    date: '2026-09-23',
+    title: 'District Calendar: Import Calendar now reads school calendar PDFs correctly',
+    items: [
+      {
+        type: 'fix',
+        text: 'The District Calendar "Import Calendar" function now reads list-style school calendar PDFs correctly, with each event showing its full name and correct dates.',
+      },
+    ],
+  },
+  {
+    v: 'v2026.09.23.22',
+    date: '2026-09-23',
+    title: 'ASHRAE 36 Audit Report: unoccupied setpoints and schedules on the Setpoint Programming Review page',
+    items: [
+      {
+        type: 'feature',
+        text: 'The Setpoint Programming Review page now shows unoccupied heating and cooling setpoints next to occupied setpoints, with the ASHRAE 36 reference value beside each one.',
+      },
+      {
+        type: 'feature',
+        text: 'The page now shows the existing occupied schedule (Monday through Friday, and Saturday and Sunday) alongside the recommended schedule and setpoints, using the same numbers as the Equipment Matrix Setpoint & Schedule export and the BAS Savings Calc.',
+      },
+      {
+        type: 'fix',
+        text: 'The "DEADBAND" column header no longer breaks in the middle of the word, and "Avg" and "Occ" are spelled out as "Average" and "Occupied" throughout the table.',
+      },
+      {
+        type: 'fix',
+        text: '"Needs Review" is now "Confirm With Engineer" — plain wording that tells you what to do about a setpoint that differs from the ASHRAE 36 default.',
+      },
+    ],
+  },
+  {
+    v: 'v2026.09.23.21',
+    date: '2026-09-23',
+    title: 'Set Points tab: delete all zones, pull zones from the Equipment Matrix, and a fixed point-list import',
+    items: [
+      {
+        type: 'feature',
+        text: 'The Set Points tab now has a "Delete All" button that removes every zone row for the building you are viewing, after you confirm the count. Nothing is deleted without that confirm.',
+      },
+      {
+        type: 'feature',
+        text: 'A new "Pull from Equipment Matrix" button builds one zone row per zone or piece of equipment (not per BAS point) from the Equipment Matrix, using the same numbers as the Equipment Matrix\'s own Setpoint & Schedule export. Pick the building in the small dialog. Any value the Equipment Matrix does not have shows a "?" instead of a guess. If the building already has saved zones, you are asked to confirm before they are replaced.',
+      },
+      {
+        type: 'fix',
+        text: 'Uploading a raw BAS Points List (one row per point, such as "Building Static Pressure" or "Outside Air CFM") to the Set Points tab used to create one zone row per point. The Set Points tab now recognizes that file format and points you to the Equipment Matrix tab and the new "Pull from Equipment Matrix" button instead.',
+      },
+    ],
+  },
+  {
+    v: 'v2026.09.23.20',
+    date: '2026-09-23',
+    title: 'PDF / OCR: new Attach PDFs Only mode links a PDF without changing any billing data',
+    items: [
+      {
+        type: 'feature',
+        text: 'The PDF / OCR page has a new "Attach PDFs Only" action alongside Save All / Overwrite All / Merge All (and Overwrite / Merge on the single-bill duplicate banner). It links the PDF (and its page range, for a consolidated invoice covering several meters) to a billing period only when that period already exists, and it changes nothing else on the record — no field is filled in or overwritten, and no new billing period or meter is created. A billing period that already has a PDF is left alone and reported as "already had a PDF." A summary screen lists which billing periods were attached, which already had a PDF, and which had no matching billing period.',
+      },
+    ],
+  },
+  {
+    v: 'v2026.09.23.19',
+    date: '2026-09-23',
+    title:
+      'BAS Savings Calc and HVAC Load Estimation: gas heating share now computed from bills, not a fixed percentage',
+    items: [
+      {
+        type: 'fix',
+        text: "The BAS Savings Calc's Existing Heating Gas Therms figure and the HVAC Load Estimation page's Space Heating % of Total Gas default now compute the real heating share from a building's own gas bills (the same 3-lowest-month baseload method already used by the HVAC End-Use Estimate card), instead of always applying a fixed 80% (or 15% for all-electric buildings) rule-of-thumb percentage. The field's hint text shows whether the value was computed from bills or is a rule-of-thumb default (used only when a building has under 6 months of gas bill history).",
+      },
+      {
+        type: 'fix',
+        text: 'The BAS Savings Calc’s company-standard unoccupied heating setpoint default (55°F gas/hydronic, 60°F electric, 65°F electric+VRF/heat pump) now reads the same single setpoint default table the Equipment Matrix Setpoint & Schedule Export uses, instead of keeping its own separate copy of the same numbers.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.23.18',
     date: '2026-09-23',
     title:

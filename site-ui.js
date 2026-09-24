@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.23.18'; // Equipment Matrix: classify standalone electric unit heaters by BAS points; BAS Savings Calc/HVAC Load Est heating-type + unoccupied setpoint fixes
+  var CH_VERSION = 'v2026.09.23.27'; // Small-fix bundle: District Calendar PDF text spacing, Attach PDFs Only for the bulk duplicate-bill action, and a source-of-truth gate for the 3-lowest-month baseload formula
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

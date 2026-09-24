@@ -13568,6 +13568,27 @@ function collectASHRAE36Data(projId, reportDate, buildingNames) {
     bldgMap[bName].push(row);
   });
 
+  // ── Setpoint Programming Review: Recommended-schedule/setpoint source data ──
+  // (item 5aj, 2026-09-23) Same lookups emBuildSetpointExportRows (the Setpoint
+  // & Schedule export) and the BAS Savings Calc auto-fill already build from —
+  // reused here, not re-derived, so the Audit Report can never disagree with
+  // either. See equipment-matrix.js: EM_SP_DEFAULTS, _emComputeProposedSchedule,
+  // _emDeriveHeatingType, emGetSetpointExportOptions, _emNormBldgNameForJoin.
+  var _spBldgs = typeof getUDBldgs === 'function' ? getUDBldgs(projId) : [];
+  var _spNameToId = {};
+  var _spHasGasById = {};
+  _spBldgs.forEach(function (bb) {
+    if (typeof _emNormBldgNameForJoin === 'function') _spNameToId[_emNormBldgNameForJoin(bb.name)] = bb.id;
+    _spHasGasById[bb.id] =
+      bb.meters && bb.meters.length
+        ? bb.meters.some(function (m) {
+            return m.commodity === 'Gas';
+          })
+        : undefined;
+  });
+  var _spSavingsData = typeof getProjSavingsData === 'function' ? getProjSavingsData(projId) : null;
+  var _spStore = (_spSavingsData && _spSavingsData.basSetpoint) || {};
+
   // Auditable equipment categories (excludes 'other')
   var AUDITABLE = [
     'ahu',
@@ -13610,6 +13631,38 @@ function collectASHRAE36Data(projId, reportDate, buildingNames) {
 
   Object.keys(bldgMap).forEach(function (bName) {
     var rows = bldgMap[bName];
+
+    // Recommended setpoints/schedule for this building — same source the Setpoint
+    // & Schedule export and BAS Calc auto-fill read (see setup block above).
+    // Report Inputs (a saved BAS Savings Calc option) wins when exactly one
+    // option exists for this building, matching the export dialog's own
+    // single-option auto-select; otherwise the company standard default applies.
+    var _spBId = (typeof _emNormBldgNameForJoin === 'function' && _spNameToId[_emNormBldgNameForJoin(bName)]) || null;
+    var _spHasGas = _spBId ? _spHasGasById[_spBId] : undefined;
+    var _spCfg = _spBId ? _spStore[_spBId] : null;
+    var _spOptLetters =
+      typeof emGetSetpointExportOptions === 'function'
+        ? emGetSetpointExportOptions(projId, _spBId ? [_spBId] : [])
+        : [];
+    var _spOptionLetter = _spOptLetters.length === 1 ? _spOptLetters[0] : null;
+    var _spOpt =
+      _spCfg && _spCfg.options && _spOptionLetter
+        ? _spCfg.options.filter(function (o) {
+            return o && o.letter === _spOptionLetter;
+          })[0]
+        : null;
+    var _recOccHeat =
+      _spOpt && _spOpt.heatSP !== null && _spOpt.heatSP !== undefined
+        ? parseFloat(_spOpt.heatSP)
+        : EM_SP_DEFAULTS.occHeat;
+    var _recOccCool =
+      _spOpt && _spOpt.coolSP !== null && _spOpt.coolSP !== undefined
+        ? parseFloat(_spOpt.coolSP)
+        : EM_SP_DEFAULTS.occCool;
+    var _recSched =
+      typeof _emComputeProposedSchedule === 'function'
+        ? _emComputeProposedSchedule(bName)
+        : { start: '6:00', stop: '17:00' };
 
     // Plan §5: Detect power metering and OA sensor programs BEFORE filtering to
     // auditableRows. These categories are intentionally excluded from AUDITABLE
@@ -13944,6 +13997,18 @@ function collectASHRAE36Data(projId, reportDate, buildingNames) {
         if (_spResult && _spResult.hasAnyNotScheduled) spNotScheduledCount++;
       }
 
+      // Recommended unoccupied setpoints for this zone (item 5aj) — same heating-type
+      // derivation and company-standard default table the Setpoint & Schedule export
+      // uses (see equipment-matrix.js _emDeriveHeatingType / EM_SP_DEFAULTS.unocc).
+      // Occupied heat/cool and the schedule are constant per building (computed above);
+      // only the unoccupied bucket varies zone-to-zone by heating type.
+      var _spPts = typeof emGetNormalizedPoints === 'function' ? emGetNormalizedPoints(row) : {};
+      var _spHeatType =
+        typeof _emDeriveHeatingType === 'function'
+          ? _emDeriveHeatingType(row, _spPts, _spHasGas)
+          : { key: 'hydronic', known: false };
+      var _recUnocc = (typeof EM_SP_DEFAULTS !== 'undefined' && EM_SP_DEFAULTS.unocc[_spHeatType.key]) || null;
+
       equipResults.push({
         id: row.id,
         name: row.equipName || row.name || 'Unknown',
@@ -13953,6 +14018,18 @@ function collectASHRAE36Data(projId, reportDate, buildingNames) {
         compliance: result,
         seqReadiness: _equipSeqReadiness,
         spCompliance: _spResult, // Phase 5 — setpoint value compliance result (null if N/A)
+        // Existing schedule — imported Effective Schedules CSV block for this exact row
+        // (see equipment-matrix.js emAttachEffectiveSchedules); null when never imported.
+        existingSchedule: row.existingSchedule || null,
+        // Recommended (company standard / Report Inputs) setpoints for this zone.
+        recommended: {
+          occHeat: _recOccHeat,
+          occCool: _recOccCool,
+          unoccHeat: _recUnocc ? _recUnocc.heat : null,
+          unoccCool: _recUnocc ? _recUnocc.cool : null,
+          schedStart: _recSched.start,
+          schedStop: _recSched.stop,
+        },
       });
     });
 
@@ -17073,6 +17150,12 @@ function rptPageASHRAE36SetpointReview(n, d) {
       var occCoolEntry = sp.results.find(function (r) {
         return r.checkKey === 'occCool';
       });
+      var unoccHeatEntry = sp.results.find(function (r) {
+        return r.checkKey === 'unoccHeat';
+      });
+      var unoccCoolEntry = sp.results.find(function (r) {
+        return r.checkKey === 'unoccCool';
+      });
       var dbEntry = sp.results.find(function (r) {
         return r.checkKey === 'deadband';
       });
@@ -17090,8 +17173,14 @@ function rptPageASHRAE36SetpointReview(n, d) {
         displayStatus: displayStatus,
         occHeat: occHeatEntry,
         occCool: occCoolEntry,
+        unoccHeat: unoccHeatEntry,
+        unoccCool: unoccCoolEntry,
         deadband: dbEntry,
         co2: co2Entry,
+        // Existing schedule + recommendation — same Equipment Matrix derivation the
+        // Setpoint & Schedule export and BAS Calc auto-fill use (item 5aj).
+        existingSchedule: eq.existingSchedule || null,
+        recommended: eq.recommended || null,
       });
     });
   });
@@ -17129,11 +17218,33 @@ function rptPageASHRAE36SetpointReview(n, d) {
     var zones = bldg.zones;
     var heatVals = [],
       coolVals = [],
+      unoccHeatVals = [],
+      unoccCoolVals = [],
       dbVals = [];
     var heatDefault = null,
-      coolDefault = null;
+      coolDefault = null,
+      unoccHeatDefault = null,
+      unoccCoolDefault = null;
     var deviatorCount = 0;
     var hasAnyData = false;
+
+    // Existing schedule (Monday-Friday) — averaged in minutes-since-midnight across
+    // zones with an imported Effective Schedules block; Saturday & Sunday has no
+    // per-zone time data (source file is a one-day snapshot), so it is Not Scheduled
+    // whenever nothing was imported, or None (unoccupied) when a schedule was.
+    var eschStartMins = [],
+      eschStopMins = [];
+    var eschAnyImported = false;
+
+    // Recommended (company standard / Report Inputs) — occupied setpoints and the
+    // schedule are constant for the whole building; only unoccupied setpoints vary
+    // zone-to-zone by heating type, so those are averaged the same way avgHeat is.
+    var recOccHeat = null,
+      recOccCool = null,
+      recSchedStart = null,
+      recSchedStop = null;
+    var recUnoccHeatVals = [],
+      recUnoccCoolVals = [];
 
     zones.forEach(function (z) {
       if (z.displayStatus === 'NEEDS_REVIEW') deviatorCount++;
@@ -17149,14 +17260,47 @@ function rptPageASHRAE36SetpointReview(n, d) {
         if (coolDefault === null && z.occCool.gl36Default !== null && z.occCool.gl36Default !== undefined)
           coolDefault = z.occCool.gl36Default;
       }
+      if (z.unoccHeat && z.unoccHeat.actualValue !== null && z.unoccHeat.actualValue !== undefined) {
+        unoccHeatVals.push(parseFloat(z.unoccHeat.actualValue));
+        if (unoccHeatDefault === null && z.unoccHeat.gl36Default !== null && z.unoccHeat.gl36Default !== undefined)
+          unoccHeatDefault = z.unoccHeat.gl36Default;
+      }
+      if (z.unoccCool && z.unoccCool.actualValue !== null && z.unoccCool.actualValue !== undefined) {
+        unoccCoolVals.push(parseFloat(z.unoccCool.actualValue));
+        if (unoccCoolDefault === null && z.unoccCool.gl36Default !== null && z.unoccCool.gl36Default !== undefined)
+          unoccCoolDefault = z.unoccCool.gl36Default;
+      }
       if (z.deadband && z.deadband.actualValue !== null && z.deadband.actualValue !== undefined) {
         dbVals.push(parseFloat(z.deadband.actualValue));
+      }
+      if (z.existingSchedule) {
+        eschAnyImported = true;
+        if (z.existingSchedule.startMin !== undefined && z.existingSchedule.stopMin !== undefined) {
+          eschStartMins.push(z.existingSchedule.startMin);
+          eschStopMins.push(z.existingSchedule.stopMin);
+        }
+      }
+      if (z.recommended) {
+        if (recOccHeat === null) recOccHeat = z.recommended.occHeat;
+        if (recOccCool === null) recOccCool = z.recommended.occCool;
+        if (recSchedStart === null) recSchedStart = z.recommended.schedStart;
+        if (recSchedStop === null) recSchedStop = z.recommended.schedStop;
+        if (z.recommended.unoccHeat !== null && z.recommended.unoccHeat !== undefined)
+          recUnoccHeatVals.push(z.recommended.unoccHeat);
+        if (z.recommended.unoccCool !== null && z.recommended.unoccCool !== undefined)
+          recUnoccCoolVals.push(z.recommended.unoccCool);
       }
     });
 
     var avgHeat = _mean(heatVals);
     var avgCool = _mean(coolVals);
+    var avgUnoccHeat = _mean(unoccHeatVals);
+    var avgUnoccCool = _mean(unoccCoolVals);
     var avgDb = _mean(dbVals);
+    var avgEschStart = _mean(eschStartMins);
+    var avgEschStop = _mean(eschStopMins);
+    var avgRecUnoccHeat = _mean(recUnoccHeatVals);
+    var avgRecUnoccCool = _mean(recUnoccCoolVals);
 
     // Building status: NEEDS_REVIEW if any zones deviate; NOT_SCHEDULED if no
     // actual data at all; MATCHES otherwise.
@@ -17183,13 +17327,30 @@ function rptPageASHRAE36SetpointReview(n, d) {
       displayName: rptBuildingDisplayName(bName),
       avgHeat: avgHeat,
       avgCool: avgCool,
+      avgUnoccHeat: avgUnoccHeat,
+      avgUnoccCool: avgUnoccCool,
       avgDb: avgDb,
       heatDefault: heatDefault,
       coolDefault: coolDefault,
+      unoccHeatDefault: unoccHeatDefault,
+      unoccCoolDefault: unoccCoolDefault,
       bStatus: bStatus,
       deviatorCount: deviatorCount,
       totalZones: zones.length,
       deviatorLabel: deviatorLabel,
+      // Existing schedule (Monday-Friday averaged; Saturday & Sunday is never
+      // itemized in the source Effective Schedules export — see comment above).
+      eschImported: eschAnyImported,
+      eschHasTimes: eschStartMins.length > 0,
+      avgEschStart: avgEschStart,
+      avgEschStop: avgEschStop,
+      // Recommended setpoints + schedule.
+      recOccHeat: recOccHeat,
+      recOccCool: recOccCool,
+      avgRecUnoccHeat: avgRecUnoccHeat,
+      avgRecUnoccCool: avgRecUnoccCool,
+      recSchedStart: recSchedStart,
+      recSchedStop: recSchedStop,
     };
   });
 
@@ -17213,8 +17374,30 @@ function rptPageASHRAE36SetpointReview(n, d) {
     if (v === null || v === undefined) return '—';
     return parseFloat(v).toFixed(0) + '°F';
   }
+  // Formats a minutes-since-midnight value (existing schedule, averaged) as a plain
+  // 12-hour clock string — "6:00 AM", "5:30 PM".
+  function _fmtClockMins(mins) {
+    if (mins === null || mins === undefined || isNaN(mins)) return null;
+    mins = Math.round(mins);
+    var hh = Math.floor(mins / 60) % 24,
+      mm = mins % 60;
+    var ap = hh >= 12 ? 'PM' : 'AM';
+    var h12 = hh % 12;
+    if (h12 === 0) h12 = 12;
+    return h12 + (mm ? ':' + (mm < 10 ? '0' + mm : mm) : ':00') + ' ' + ap;
+  }
+  // Formats the company-standard schedule's "H:MM" 24-hour string (see
+  // equipment-matrix.js _emComputeProposedSchedule) as the same 12-hour clock style.
+  function _fmtClockStr(str) {
+    if (!str) return null;
+    var parts = String(str).split(':');
+    var hh = parseInt(parts[0], 10),
+      mm = parseInt(parts[1], 10);
+    if (isNaN(hh) || isNaN(mm)) return null;
+    return _fmtClockMins(hh * 60 + mm);
+  }
 
-  // ── Status badge ─────────────────────────────────────────────────────────
+  // ── Status wording ────────────────────────────────────────────────────────
   // Batch 3 item 4 (design-language pass extended to a flagged spot, per bolding-consistency-
   // audit.md Tier 7): this was the only spot in the ASHRAE-36 report pages using hardcoded hex
   // instead of the report's own CSS variable palette. NOT_SCHEDULED has no neutral/grey token
@@ -17222,9 +17405,12 @@ function rptPageASHRAE36SetpointReview(n, d) {
   // 2026-07-12 fix (items a0c2152/c121b992): the pill border+background treatment below was
   // itself a defect — report-standard rule is plain colored text for inline status, NO border,
   // NO fill. Border/background/padding/radius removed; text-only status labels.
+  // Item 5aj (2026-09-23, Matt): "Needs Review" replaced with plain client wording that names
+  // the action — the deviation is a permitted designer override, not a defect, so the label
+  // tells the reader what to do about it instead of flagging it as a problem.
   function _statusCell(status) {
     if (status === 'NEEDS_REVIEW') {
-      return '<span style="font-size:9px;font-weight:700;color:var(--rpt-orange)">Needs Review</span>';
+      return '<span style="font-size:9px;font-weight:700;color:var(--rpt-orange)">Confirm With Engineer</span>';
     } else if (status === 'NOT_SCHEDULED') {
       return '<span style="font-size:9px;font-weight:700;color:var(--rpt-page-text)">Not Scheduled</span>';
     }
@@ -17234,20 +17420,36 @@ function rptPageASHRAE36SetpointReview(n, d) {
   // ── Table chrome ─────────────────────────────────────────────────────────
   // Destyle pass (fix/65ce578b, 2026-07-27): dropped the filled dark-blue header, matching the
   // Proposal's plain/thin-bordered convention. Styling only.
+  // Item 5aj (2026-09-23): word-wrap:break-word removed from the header style — at narrow
+  // column widths it was splitting single words mid-letter ("DEADBAND" -> "DEADBA/ND").
+  // white-space:normal alone still wraps multi-word headers at their spaces.
   var thStyle =
-    'padding:5px 8px;font-size:10px;font-weight:700;text-transform:uppercase;' +
-    'letter-spacing:0.04em;color:var(--rpt-page-text);text-align:center;' +
-    'white-space:normal;word-wrap:break-word;line-height:1.3;border:1px solid var(--rpt-border)';
+    'padding:5px 4px;font-size:8px;font-weight:700;text-transform:uppercase;' +
+    'letter-spacing:0.02em;color:var(--rpt-page-text);text-align:center;' +
+    'white-space:normal;line-height:1.3;border:1px solid var(--rpt-border)';
   var thStyleC = thStyle + ';text-align:center';
+  var thSub = '<br><span style="font-size:8px;font-weight:400;text-transform:none">';
 
+  // Item 5aj follow-up (headless render found on real Woodland data): the first pass at
+  // these widths let single long words ("UNOCCUPIED", "DEADBAND", "RECOMMENDED") overflow
+  // their <th> sideways into the neighboring header — table-layout:fixed holds the column
+  // width but does not clip overflowing text, so it visually bled into the next cell instead
+  // of wrapping. A second pass forcing word-boundary <br> breaks still didn't leave enough
+  // width for "UNOCCUPIED"/"DEADBAND"/"RECOMMENDED" at 9px/uppercase. Fix: the Recommended
+  // Setpoints and Recommended Schedule columns — the two worst offenders, and the only ones
+  // that repeated the word "Recommended" — are merged into ONE Recommended column (one
+  // instance of the word, four stacked lines of values), freeing enough width for every
+  // remaining single-word header to fit on its own line without a forced break.
   var tableHead =
     '<colgroup>' +
-    '<col style="width:32%">' +
+    '<col style="width:12%">' +
     '<col style="width:11%">' +
-    '<col style="width:11%">' +
+    '<col style="width:14%">' +
+    '<col style="width:14%">' +
+    '<col style="width:12%">' +
+    '<col style="width:12%">' +
     '<col style="width:16%">' +
-    '<col style="width:11%">' +
-    '<col style="width:19%">' +
+    '<col style="width:9%">' +
     '</colgroup>' +
     '<thead><tr>' +
     '<th style="' +
@@ -17255,28 +17457,89 @@ function rptPageASHRAE36SetpointReview(n, d) {
     '">Building</th>' +
     '<th style="' +
     thStyleC +
-    '">Avg Occ Heat</th>' +
+    '">Occupied' +
+    thSub +
+    'Existing average, °F</span></th>' +
     '<th style="' +
     thStyleC +
-    '">Avg Occ Cool</th>' +
+    '">Unoccupied' +
+    thSub +
+    'Existing average, °F</span></th>' +
     '<th style="' +
     thStyleC +
-    '">ASHRAE 36 Default<br><span style="font-size:9px;font-weight:400;text-transform:none">Heat / Cool</span></th>' +
+    '">ASHRAE 36<br>Reference' +
+    thSub +
+    'Occupied / Unoccupied, °F</span></th>' +
     '<th style="' +
     thStyleC +
-    '">Avg Deadband</th>' +
+    '">Deadband' +
+    thSub +
+    'Existing average, °F</span></th>' +
+    '<th style="' +
+    thStyleC +
+    '">Existing<br>Schedule' +
+    thSub +
+    'Mon–Fri, Sat &amp; Sun</span></th>' +
+    '<th style="' +
+    thStyleC +
+    '">Recommended' +
+    thSub +
+    'Setpoints (Occupied / Unoccupied, °F) and Schedule</span></th>' +
     '<th style="' +
     thStyleC +
     '">Status</th>' +
     '</tr></thead>';
 
-  var tdBase = 'padding:4px 8px;font-size:10px;vertical-align:middle;border:1px solid var(--rpt-border)';
+  var tdBase =
+    'padding:4px 6px;font-size:9px;vertical-align:middle;border:1px solid var(--rpt-border);line-height:1.35';
   var tdRight = tdBase + ';text-align:right';
+  var tdCenter = tdBase + ';text-align:center';
 
   // ── Build one HTML row per building ──────────────────────────────────────
   function _buildBldgRowHTML(row) {
     var gl36Heat = _fmtDefaultVal(row.heatDefault);
     var gl36Cool = _fmtDefaultVal(row.coolDefault);
+    var gl36UnoccHeat = _fmtDefaultVal(row.unoccHeatDefault);
+    var gl36UnoccCool = _fmtDefaultVal(row.unoccCoolDefault);
+
+    // Existing schedule cell (Monday-Friday averaged; Saturday & Sunday has no
+    // per-zone time data in the source Effective Schedules export — see the
+    // buildingRows comment above).
+    var eschCell;
+    if (!row.eschImported) {
+      eschCell = 'Not imported';
+    } else if (row.eschHasTimes) {
+      eschCell =
+        'Mon–Fri ' +
+        _fmtClockMins(row.avgEschStart) +
+        '–' +
+        _fmtClockMins(row.avgEschStop) +
+        '<br>Sat &amp; Sun: Unoccupied';
+    } else {
+      eschCell = 'No occupied period found<br>Sat &amp; Sun: Unoccupied';
+    }
+
+    var recSchedStartFmt = _fmtClockStr(row.recSchedStart);
+    var recSchedStopFmt = _fmtClockStr(row.recSchedStop);
+    var recSchedLine =
+      recSchedStartFmt && recSchedStopFmt
+        ? 'Mon–Fri ' + recSchedStartFmt + '–' + recSchedStopFmt + ', Sat &amp; Sun: Unoccupied'
+        : '—';
+
+    // Recommended (item 5aj): setpoints + schedule share one column, per company standard
+    // (see equipment-matrix.js EM_SP_DEFAULTS / _emComputeProposedSchedule).
+    var recCell =
+      'Occupied ' +
+      _fmtDefaultVal(row.recOccHeat) +
+      '/' +
+      _fmtDefaultVal(row.recOccCool) +
+      '<br>Unoccupied ' +
+      _fmtDefaultVal(row.avgRecUnoccHeat) +
+      '/' +
+      _fmtDefaultVal(row.avgRecUnoccCool) +
+      '<br>' +
+      recSchedLine;
+
     return (
       '<tr>' +
       '<td style="' +
@@ -17288,18 +17551,26 @@ function rptPageASHRAE36SetpointReview(n, d) {
       tdRight +
       ';color:var(--rpt-page-text)">' +
       _fmtAvg(row.avgHeat) +
-      '</td>' +
-      '<td style="' +
-      tdRight +
-      ';color:var(--rpt-page-text)">' +
+      ' / ' +
       _fmtAvg(row.avgCool) +
       '</td>' +
       '<td style="' +
       tdRight +
       ';color:var(--rpt-page-text)">' +
-      gl36Heat +
+      _fmtAvg(row.avgUnoccHeat) +
       ' / ' +
+      _fmtAvg(row.avgUnoccCool) +
+      '</td>' +
+      '<td style="' +
+      tdCenter +
+      ';color:var(--rpt-page-text)">' +
+      gl36Heat +
+      '/' +
       gl36Cool +
+      '<br>' +
+      gl36UnoccHeat +
+      '/' +
+      gl36UnoccCool +
       '</td>' +
       '<td style="' +
       tdRight +
@@ -17307,10 +17578,20 @@ function rptPageASHRAE36SetpointReview(n, d) {
       _fmtAvg(row.avgDb) +
       '</td>' +
       '<td style="' +
+      tdCenter +
+      ';color:var(--rpt-page-text)">' +
+      eschCell +
+      '</td>' +
+      '<td style="' +
+      tdCenter +
+      ';color:var(--rpt-page-text)">' +
+      recCell +
+      '</td>' +
+      '<td style="' +
       tdBase +
       '">' +
       _statusCell(row.bStatus) +
-      ' <span style="font-size:9px;color:var(--rpt-page-text)">' +
+      ' <span style="font-size:8px;color:var(--rpt-page-text)">' +
       row.deviatorLabel +
       '</span>' +
       '</td>' +
@@ -17329,7 +17610,7 @@ function rptPageASHRAE36SetpointReview(n, d) {
     return r.bStatus === 'NOT_SCHEDULED';
   }).length;
   var summaryParts = [buildingRows.length + ' building' + (buildingRows.length !== 1 ? 's' : '')];
-  if (needsReviewTotal > 0) summaryParts.push(needsReviewTotal + ' Needs Review');
+  if (needsReviewTotal > 0) summaryParts.push(needsReviewTotal + ' to confirm with engineer');
   if (notScheduledTotal > 0) summaryParts.push(notScheduledTotal + ' Not Scheduled');
   if (matchesTotal > 0) summaryParts.push(matchesTotal + ' match ASHRAE 36 defaults');
 
@@ -17375,10 +17656,10 @@ function rptPageASHRAE36SetpointReview(n, d) {
   // ── Preamble ──────────────────────────────────────────────────────────────
   var preamble =
     '<div style="font-size:11px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:10px">' +
-    'ASHRAE 36 §3.1.1.1 and Table 3.1.1.1 define default occupied and unoccupied temperature setpoints for three zone types. ' +
+    'ASHRAE 36 §3.1.1.1 and Table 3.1.1.1 define default occupied and unoccupied temperature setpoints for three zone types; the Recommended columns are Control Service Company’s company-standard setpoints and schedule. ' +
     'These are starting points. Designer overrides are explicitly permitted and may be intentional for specific spaces. ' +
-    'Items marked Needs Review should be confirmed with the design engineer or facility staff to determine whether the deviation is intentional. ' +
-    'Values shown are building averages across all zone equipment in the building automation system export.' +
+    'Items marked Confirm With Engineer differ from the ASHRAE 36 default — check with the design engineer or facility staff before changing them, since the deviation may be intentional. ' +
+    'Existing values shown are building averages across all zone equipment in the building automation system export; the Existing Schedule column reflects an imported Effective Schedules export when one is available.' +
     '</div>';
 
   // ── Pagination (Issue 6 + Fix B correction 2026-06-18) ───────────────────
@@ -17400,11 +17681,16 @@ function rptPageASHRAE36SetpointReview(n, d) {
   // third line. The row estimate below is the measured MAXIMUM rather than an average: this
   // table's rows are near-uniform, so a max-based estimate costs almost no density and cannot
   // overflow.
-  var SETPOINT_PREAMBLE_H = 127; // measured 107 preamble + the 20px caption block below it
-  var SETPOINT_THEAD_H = 63; // measured
+  // Item 5aj (2026-09-23): table widened from 6 to 9 columns (unoccupied setpoints, existing
+  // and recommended schedule, recommended setpoints) and the preamble grew a clause — every
+  // budget below re-measured (headless print render, Woodland Audit) and raised accordingly;
+  // still deliberately the measured MAXIMUM, never an average, so pagination can only ever
+  // under-fill a page, never overflow one.
+  var SETPOINT_PREAMBLE_H = 148; // measured 128 preamble (4-sentence, wraps to more lines) + 20px caption block
+  var SETPOINT_THEAD_H = 98; // measured — three-line headers (word<br>word<br>subtext)
   var SETPOINT_CONT_HDR_H = 40;
   var SETPOINT_SAFETY_H = 40;
-  var SETPOINT_ROW_H = 70; // measured 49 typical, 69 max (3-line Status cell)
+  var SETPOINT_ROW_H = 96; // measured max — every data cell can wrap to 2 lines now
   // fix/report-remove-running-header-title (2026-08-03, Matt's fix #5): this page now always
   // renders with hideIntHdr:true (no .rpt-int-hdr title bar), so both budgets use the 'flush'
   // variant — reclaims the 60px chrome bar's space for rows.

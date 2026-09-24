@@ -7113,6 +7113,7 @@ function showMultiBuildingReviewPanel() {
     '<button class="btn btn-primary btn-sm" id="mbSaveAllBtn" onclick="confirmMultiBuildingSave(\'save\')" disabled>Save All</button>',
     '<button class="btn btn-ghost btn-sm" id="mbOverwriteAllBtn" onclick="confirmMultiBuildingSave(\'overwrite\')" disabled title="Replace existing records with newly extracted values, including blanks">Overwrite All</button>',
     '<button class="btn btn-ghost btn-sm" id="mbMergeAllBtn" onclick="confirmMultiBuildingSave(\'merge\')" disabled title="Fill only empty fields — keeps existing non-empty values intact">Merge All</button>',
+    '<button class="btn btn-ghost btn-sm" id="mbAttachOnlyBtn" onclick="confirmMultiBuildingSave(\'attach-pdf-only\')" disabled title="Attach the PDF only to already-matching billing periods — never changes any other field, never creates a new bill">Attach PDFs Only</button>',
     '<button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'pdfMultiBldgPanel\').style.display=\'none\'">Cancel</button>',
     '</div>',
     // FIX (fix/bill-review-gate-lifecycle, item 817dd434): gate-tripped rows'
@@ -7480,6 +7481,11 @@ function _mbUpdateSaveAllBtn() {
       baseTitle: 'Replace existing records with newly extracted values, including blanks',
     },
     { id: 'mbMergeAllBtn', baseTitle: 'Fill only empty fields — keeps existing non-empty values intact' },
+    {
+      id: 'mbAttachOnlyBtn',
+      baseTitle:
+        'Attach the PDF only to already-matching billing periods — never changes any other field, never creates a new bill',
+    },
   ];
   const btns = BTN_DEFS.map((d) => ({ el: document.getElementById(d.id), baseTitle: d.baseTitle })).filter((b) => b.el);
   if (!btns.length) return;
@@ -7815,8 +7821,22 @@ async function confirmAutoAssign() {
       _wreSWECharge: bill._wreSWECharge || '',
       _wreTriggerMMbtu: bill._wreTriggerMMbtu || '',
       _wreIndexMMbtu: bill._wreIndexMMbtu || '',
+      // Fix (2026-09-23, WRE invoice-fields fix, item 1): _wreSWEMMbtu was missing
+      // from this whitelist, so even though energy-savings.js now emits it, it
+      // was silently dropped at save time and never reached storage/display.
+      _wreSWEMMbtu: bill._wreSWEMMbtu || '',
       _wreTriggerRate: bill._wreTriggerRate || '',
       _wreIndexRate: bill._wreIndexRate || '',
+      // Fix (2026-09-23, WRE invoice-fields fix, item 2): _manualReview/
+      // _manualReviewLabel/_mmbtuRateMismatch/_mmbtuMissingWithCharge were ALSO
+      // missing from this whitelist — a bill flagged for manual review by the
+      // extractor silently lost that flag at save time via this path, so a
+      // suppressed/missing usage figure could reach storage with no review
+      // indicator at all. Carry them through like every other _-prefixed field.
+      _manualReview: bill._manualReview || undefined,
+      _manualReviewLabel: bill._manualReviewLabel || '',
+      _mmbtuRateMismatch: bill._mmbtuRateMismatch || undefined,
+      _mmbtuMissingWithCharge: bill._mmbtuMissingWithCharge || undefined,
       // Fix [therms-unit-2026-06-22]: canonicalize therms to Therms at save time.
       therms: (() => {
         const t = pf(bill.NaturalGasTherms);
@@ -8248,8 +8268,21 @@ async function _mbSaveOneBill(bi, action) {
     _wreSWECharge: bill._wreSWECharge || '',
     _wreTriggerMMbtu: bill._wreTriggerMMbtu || '',
     _wreIndexMMbtu: bill._wreIndexMMbtu || '',
+    // Fix (2026-09-23, WRE invoice-fields fix, item 1): was missing from this
+    // whitelist — see the matching comment in confirmAutoAssign() above.
+    _wreSWEMMbtu: bill._wreSWEMMbtu || '',
     _wreTriggerRate: bill._wreTriggerRate || '',
     _wreIndexRate: bill._wreIndexRate || '',
+    // Fix (2026-09-23, WRE invoice-fields fix, item 2): was missing from this
+    // whitelist — see the matching comment in confirmAutoAssign() above. This is
+    // the multi-building bulk-save path (_mbSaveOneBill), the actual path a
+    // multi-site WRE invoice (e.g. Spring Hill's 10-site Jan 2026 invoice) goes
+    // through — without this, a bill flagged for manual review upstream lost
+    // that flag here regardless of what energy-savings.js computed.
+    _manualReview: bill._manualReview || undefined,
+    _manualReviewLabel: bill._manualReviewLabel || '',
+    _mmbtuRateMismatch: bill._mmbtuRateMismatch || undefined,
+    _mmbtuMissingWithCharge: bill._mmbtuMissingWithCharge || undefined,
     therms: (function () {
       const t = pf(bill.NaturalGasTherms);
       if (t) return t;
@@ -8347,6 +8380,14 @@ async function _mbSaveOneBill(bi, action) {
   // _autoCreateMeterAndSaveBill primitive (dedup + build/meter creation +
   // "Unmatched Bills" sentinel when no building was chosen). Never drops: if
   // creation can't key a meter (no account/meter number) it holds for review.
+  // Attach PDFs only mode (2026-09-23): this mode never creates a meter or a
+  // billing period — it only attaches a PDF to a period that already exists.
+  // Divert before the 'create' branch so a row auto-routed to "+ New meter"
+  // is reported as unmatched instead of silently creating data.
+  if (action === 'attach-pdf-only' && billMatch.matchType === 'create') {
+    bill._mbAttachStatus = 'unmatched';
+    return { status: 'attach-unmatched', reason: 'no existing billing period to attach to', projId: null };
+  }
   if (billMatch.matchType === 'create') {
     const _cProj = billMatch.projId;
     if (!_cProj) {
@@ -8575,7 +8616,24 @@ async function _mbSaveOneBill(bi, action) {
     return r.start === billRow.start && r.end === billRow.end;
   });
   if (dup) {
-    if (action === 'overwrite') {
+    if (action === 'attach-pdf-only') {
+      // Attach PDFs only mode: touch ONLY the PDF link + page-range fields on
+      // the already-existing period. Every other field on `dup` (including
+      // ones that are currently empty) is left exactly as-is — this is
+      // intentionally narrower than 'merge', which fills any blank field.
+      if (dup.pdfKey) {
+        bill._mbAttachStatus = 'already-had-pdf';
+      } else {
+        if (billRow.pdfPageStart) dup.pdfPageStart = billRow.pdfPageStart;
+        if (billRow.pdfPageEnd) dup.pdfPageEnd = billRow.pdfPageEnd;
+        if (billRow.pdfKey) {
+          dup.pdfKey = billRow.pdfKey;
+          dup.hasPDF = true;
+          if (!dup.pdfBillId) dup.pdfBillId = billRow.pdfBillId;
+        }
+        bill._mbAttachStatus = 'attached';
+      }
+    } else if (action === 'overwrite') {
       // Explicit "Overwrite All" (or a per-row Save forced to overwrite) —
       // replace every field, including blanks, exactly like the tooltip says.
       Object.assign(dup, billRow);
@@ -8590,11 +8648,31 @@ async function _mbSaveOneBill(bi, action) {
         if (dup[k] == null || dup[k] === '') dup[k] = v;
       }
     }
+  } else if (action === 'attach-pdf-only') {
+    // No existing period on this meter to attach to — never create a new
+    // bill in this mode.
+    bill._mbAttachStatus = 'unmatched';
   } else {
     targetMeter.bills.push(billRow);
     targetMeter.bills.sort(function (a, b) {
       return _parseISO(a.start) - _parseISO(b.start);
     });
+  }
+  if (action === 'attach-pdf-only') {
+    const _destAttach =
+      (billMatch.proj ? billMatch.proj.name : '') +
+      ' → ' +
+      (billMatch.bldg ? billMatch.bldg.name : '') +
+      ' → ' +
+      (targetMeter.commodity || targetMeter.account || targetMeter.id || 'meter');
+    bill._mbSaved = true;
+    bill._batchSaved = true;
+    return {
+      status: 'attach-' + bill._mbAttachStatus,
+      attachStatus: bill._mbAttachStatus,
+      destination: _destAttach,
+      projId: billMatch.projId,
+    };
   }
   const destination =
     (billMatch.proj ? billMatch.proj.name : '') +
@@ -8710,10 +8788,25 @@ async function confirmMultiBuildingSave(action) {
   _mbSaveAllInProgress = true;
   let saved = 0;
   let flaggedForReview = 0;
+  // Attach PDFs only mode tracks its own three-way outcome per bill instead
+  // of the saved/held pair above — see _mbSaveOneBill's attach-pdf-only branch.
+  const attachResults = { attached: [], unmatched: [], alreadyHadPdf: [] };
   const touchedPids = new Set(); // rows in this batch can target different projects/buildings
   try {
     for (const _bi of toSave) {
       const result = await _mbSaveOneBill(_bi, action);
+      if (action === 'attach-pdf-only') {
+        const label = _billPeriodLabel(bills[_bi]) + (result.destination ? ' — ' + result.destination : '');
+        if (result.attachStatus === 'attached') {
+          attachResults.attached.push(label);
+          if (result.projId) touchedPids.add(result.projId);
+        } else if (result.attachStatus === 'already-had-pdf') {
+          attachResults.alreadyHadPdf.push(label);
+        } else {
+          attachResults.unmatched.push(label);
+        }
+        continue;
+      }
       if (result.status === 'saved') {
         saved++;
         if (result.projId) touchedPids.add(result.projId);
@@ -8732,17 +8825,21 @@ async function confirmMultiBuildingSave(action) {
     _mbRowState = {};
     _mbSaveState = { pdfStored: false, pdfKey: null, sharedId: null };
     _autoAssignTarget = null;
-    const _verb = action === 'overwrite' ? 'overwritten' : action === 'merge' ? 'merged' : 'saved';
-    showToast(
-      saved +
-        ' bill' +
-        (saved !== 1 ? 's' : '') +
-        ' ' +
-        _verb +
-        (flaggedForReview ? ', ' + flaggedForReview + ' flagged for review (account mismatch)' : '') +
-        (userSkipped ? ', ' + userSkipped + ' skipped by you' : '') +
-        ' ✓',
-    );
+    if (action === 'attach-pdf-only') {
+      _showAttachOnlySummary(attachResults);
+    } else {
+      const _verb = action === 'overwrite' ? 'overwritten' : action === 'merge' ? 'merged' : 'saved';
+      showToast(
+        saved +
+          ' bill' +
+          (saved !== 1 ? 's' : '') +
+          ' ' +
+          _verb +
+          (flaggedForReview ? ', ' + flaggedForReview + ' flagged for review (account mismatch)' : '') +
+          (userSkipped ? ', ' + userSkipped + ' skipped by you' : '') +
+          ' ✓',
+      );
+    }
     if (udSelProjId && udSelBldgId) {
       renderUDDetail();
       renderUDProjList();
@@ -8752,6 +8849,55 @@ async function confirmMultiBuildingSave(action) {
   }
 }
 window.confirmMultiBuildingSave = confirmMultiBuildingSave;
+
+// ── Attach PDFs only — summary modal (2026-09-23) ───────────────────────────
+// Shared by confirmMultiBuildingSave('attach-pdf-only') and
+// _dupBulkAction('attach-pdf-only') — both hand it the same
+// { attached: [label,...], unmatched: [...], alreadyHadPdf: [...] } shape so
+// there is exactly one place that renders the "which bills, which category"
+// summary the Attach PDFs Only mode promises the user.
+function _showAttachOnlySummary(results) {
+  const list = (arr) =>
+    arr.length
+      ? '<ul style="margin:6px 0 0;padding-left:18px;max-height:160px;overflow-y:auto">' +
+        arr
+          .slice(0, 50)
+          .map((s) => '<li style="margin-bottom:2px">' + _escHtml(s) + '</li>')
+          .join('') +
+        (arr.length > 50 ? '<li>+' + (arr.length - 50) + ' more</li>' : '') +
+        '</ul>'
+      : '<div style="color:var(--text2);margin-top:6px">None</div>';
+  let el = document.getElementById('attachOnlySummaryModal');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'attachOnlySummaryModal';
+    el.style.cssText =
+      'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center';
+    document.body.appendChild(el);
+  }
+  el.innerHTML =
+    '<div style="background:var(--s3);border:2px solid var(--accent);border-radius:12px;padding:22px 26px;max-width:560px;width:90%;max-height:80vh;overflow-y:auto;font-size:13px;color:var(--text)">' +
+    '<div style="font-size:16px;font-weight:800;color:var(--accent);margin-bottom:4px">Attach PDFs Only — Summary</div>' +
+    '<div style="color:var(--text2);margin-bottom:14px">The PDF link (and page range) was set on matching billing periods only. No other field was changed.</div>' +
+    '<div style="font-weight:700">Attached (' +
+    results.attached.length +
+    ')</div>' +
+    list(results.attached) +
+    '<div style="font-weight:700;margin-top:14px">Already had a PDF — skipped (' +
+    results.alreadyHadPdf.length +
+    ')</div>' +
+    list(results.alreadyHadPdf) +
+    '<div style="font-weight:700;margin-top:14px">Not matched (' +
+    results.unmatched.length +
+    ')</div>' +
+    list(results.unmatched) +
+    '<div style="margin-top:18px;text-align:right">' +
+    '<button class="btn btn-primary btn-sm" onclick="document.getElementById(\'attachOnlySummaryModal\').style.display=\'none\'">Close</button>' +
+    '</div>' +
+    '</div>';
+  el.style.display = 'flex';
+}
+window._showAttachOnlySummary = _showAttachOnlySummary;
 
 // ── PDF localStorage-fallback sweep (Phase 2a task 2a.8) ────────────────────
 // _ensureBatchPdfStored below falls back to raw localStorage when IndexedDB
@@ -9345,8 +9491,17 @@ function _saveBillToMatchedMeter(extracted, match) {
     _wreSWECharge: extracted._wreSWECharge || '',
     _wreTriggerMMbtu: extracted._wreTriggerMMbtu || '',
     _wreIndexMMbtu: extracted._wreIndexMMbtu || '',
+    // Fix (2026-09-23, WRE invoice-fields fix, item 1): was missing from this
+    // whitelist — see the matching comment in confirmAutoAssign() above.
+    _wreSWEMMbtu: extracted._wreSWEMMbtu || '',
     _wreTriggerRate: extracted._wreTriggerRate || '',
     _wreIndexRate: extracted._wreIndexRate || '',
+    // Fix (2026-09-23, WRE invoice-fields fix, item 2): was missing from this
+    // whitelist — see the matching comment in confirmAutoAssign() above.
+    _manualReview: extracted._manualReview || undefined,
+    _manualReviewLabel: extracted._manualReviewLabel || '',
+    _mmbtuRateMismatch: extracted._mmbtuRateMismatch || undefined,
+    _mmbtuMissingWithCharge: extracted._mmbtuMissingWithCharge || undefined,
     // Fix [therms-unit-2026-06-22]: canonicalize therms to Therms at save time.
     // Wood River (and any future MMBtu extractor) sets NaturalGasMMbtu; Constellation/KGS
     // set NaturalGasTherms (already Therms). CCF × 1.037 = Therms. Priority: Therms > CCF > MMBtu.
@@ -11323,6 +11478,7 @@ function _dupBannerAction(bi, action) {
   if (action === 'compare') openDupModal(flat);
   else if (action === 'overwrite') overwriteDupBill();
   else if (action === 'merge') mergeDupBill();
+  else if (action === 'attach') attachOnlyDupBill();
   else skipDupBill();
 }
 
@@ -12521,8 +12677,22 @@ async function _dupBulkAction(action) {
     selectedPid = inferredPid;
   }
 
-  const verb = action === 'overwrite' ? 'overwritten' : action === 'merge' ? 'merged' : 'skipped';
-  const titleVerb = action === 'overwrite' ? 'Overwriting' : action === 'merge' ? 'Merging' : 'Skipping';
+  const verb =
+    action === 'overwrite'
+      ? 'overwritten'
+      : action === 'merge'
+        ? 'merged'
+        : action === 'attach-pdf-only'
+          ? 'PDF-attached'
+          : 'skipped';
+  const titleVerb =
+    action === 'overwrite'
+      ? 'Overwriting'
+      : action === 'merge'
+        ? 'Merging'
+        : action === 'attach-pdf-only'
+          ? 'Attaching PDFs to'
+          : 'Skipping';
   _bulkProgressShow(titleVerb + ' all bills');
 
   const summaryEntries = [];
@@ -13025,6 +13195,47 @@ async function mergeDupBill() {
   const billWarnings = (window._pdfBillWarnings || [])[i]?.warnings || [];
   if (bills[i]) renderPDFFields(bills[i], billWarnings);
   showToast(ok ? 'Bill merged' : 'Merge failed — try again');
+}
+
+async function attachOnlyDupBill() {
+  // Mirrors mergeDupBill/overwriteDupBill exactly, but drives _applyDupUpdate's
+  // 'attach-pdf-only' branch — PDF link + page range only, nothing else on the
+  // existing record is touched.
+  const billIdx = window._dupModalIdx;
+  const dup = (window._pdfDupMap || {})[billIdx];
+  const bills = window._pdfMultiBills;
+  if (!dup || !bills || !bills[billIdx]) return;
+  if (bills[billIdx]._gateTripped && !bills[billIdx]._gateOverrideConfirmed) {
+    showToast(
+      'Held for review — ' +
+        (bills[billIdx]._gateReasons || []).join(' · ') +
+        '. Verify against the source PDF, then click Attach Only again to confirm.',
+    );
+    bills[billIdx]._gateOverrideConfirmed = true;
+    return;
+  }
+  dup.action = 'attach-pdf-only';
+  closeDupModal();
+  await _ensureBatchPdfStored(bills);
+  let ok = false;
+  try {
+    ok = await _applyDupUpdate(billIdx, bills[billIdx], dup);
+  } catch (e) {
+    ok = false;
+  }
+  if (ok) dup.action = 'processed';
+  const box = document.getElementById('pdfAIBox');
+  if (box) renderMultiBillUI(bills, box);
+  const i = window._pdfMultiIdx || 0;
+  const billWarnings = (window._pdfBillWarnings || [])[i]?.warnings || [];
+  if (bills[i]) renderPDFFields(bills[i], billWarnings);
+  showToast(
+    ok
+      ? dup._attachStatus === 'already-had-pdf'
+        ? 'This bill already had a PDF — left unchanged'
+        : 'PDF attached — no other field changed'
+      : 'Attach failed — try again',
+  );
 }
 
 async function _viewDupPDF(billIdx) {
@@ -16310,7 +16521,19 @@ async function processPDF(file) {
                       // purpose because a printed rate didn't match a printed charge —
                       // unless the retry candidate itself just cleared that flag above
                       // via a validated recovery.
-                      if ((orig.parseError || orig._manualReview) && !orig._mmbtuRateMismatch && _mergedHasSiteData) {
+                      // Fix (2026-09-23, WRE invoice-fields fix, item 2): same guard for
+                      // _mmbtuMissingWithCharge (the Sub-Total line's own MMbtu failed to
+                      // parse while its charge parsed fine) — without this, this same
+                      // block would immediately re-clear the flag right after it's set,
+                      // since a charge-only bill always has _mergedHasSiteData=true
+                      // (GasCharge present) and _mmbtuRateMismatch=false (it's a
+                      // different failure mode from the rate cross-check).
+                      if (
+                        (orig.parseError || orig._manualReview) &&
+                        !orig._mmbtuRateMismatch &&
+                        !orig._mmbtuMissingWithCharge &&
+                        _mergedHasSiteData
+                      ) {
                         orig.parseError = false;
                         orig._manualReview = false;
                         orig._manualReviewLabel = undefined;
@@ -17712,6 +17935,7 @@ function renderMultiBillUI(bills, box) {
     let btns = `<button onclick="savePDFAllBills()" class="btn btn-em btn-sm" style="font-size:10px;padding:3px 12px">Save All ${bills.length} Periods</button>`;
     btns += `<button onclick="_dupBulkAction('overwrite')" class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 10px" title="Replace existing records with newly extracted values, including blanks">Overwrite All</button>`;
     btns += `<button onclick="_dupBulkAction('merge')" class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 10px" title="Fill only empty fields — keeps existing non-empty values intact">Merge All</button>`;
+    btns += `<button onclick="_dupBulkAction('attach-pdf-only')" class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 10px" title="Attach the PDF only to already-matching billing periods — never changes any other field, never creates a new bill">Attach PDFs Only</button>`;
     if (commKeys.length > 1) {
       btns += commKeys
         .map(
@@ -18445,6 +18669,24 @@ async function _applyDupUpdate(billIdx, extracted, dup) {
       }
       _copyPageRange();
       _recalcAggregates();
+    } else if (dup.action === 'attach-pdf-only') {
+      // Attach PDFs only mode: touch ONLY the PDF link + page-range fields.
+      // Every other field on `existing` is left exactly as-is, including
+      // fields that are currently empty (this is narrower than 'merge').
+      if (existing.pdfKey) {
+        dup._attachStatus = 'already-had-pdf';
+      } else {
+        if (extracted._pageStart) existing.pdfPageStart = extracted._pageStart;
+        if (extracted._pageEnd) existing.pdfPageEnd = extracted._pageEnd;
+        if (extracted._pdfSharedKey) {
+          existing.pdfKey = 'en_pdf_shared_' + String(extracted._pdfSharedKey).replace(/^en_pdf_shared_/, '');
+          existing.hasPDF = true;
+          if (!existing.pdfBillId) {
+            existing.pdfBillId = 'pb' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+          }
+        }
+        dup._attachStatus = 'attached';
+      }
     }
     saveUtilityData(dup.projId);
     return true;
@@ -18491,6 +18733,19 @@ async function _applyDupUpdate(billIdx, extracted, dup) {
       }
       if (extracted._pageStart) sb.pdfPageStart = extracted._pageStart;
       if (extracted._pageEnd) sb.pdfPageEnd = extracted._pageEnd;
+    } else if (dup.action === 'attach-pdf-only') {
+      // Attach PDFs only mode — PDF link + page range only, nothing else.
+      if (sb.pdfKey) {
+        dup._attachStatus = 'already-had-pdf';
+      } else {
+        if (extracted._pageStart) sb.pdfPageStart = extracted._pageStart;
+        if (extracted._pageEnd) sb.pdfPageEnd = extracted._pageEnd;
+        if (extracted._pdfSharedKey) {
+          sb.pdfKey = 'en_pdf_shared_' + String(extracted._pdfSharedKey).replace(/^en_pdf_shared_/, '');
+          sb.hasPDF = true;
+        }
+        dup._attachStatus = 'attached';
+      }
     }
     sb.savedAt = new Date().toISOString();
     // Promote from Saved Bills to meter if a match exists
@@ -18511,7 +18766,13 @@ async function _applyDupUpdate(billIdx, extracted, dup) {
     // unambiguous building+commodity fallback as the other two gates. If
     // _saveBillToMatchedMeter can't reconcile it, dest is null and the record
     // simply stays in Saved Bills, same as today.
-    if (meterMatch && (meterMatch.matchType === 'identity' || meterMatch.matchType === 'commodity')) {
+    // Attach PDFs only mode never promotes — _saveBillToMatchedMeter can create
+    // a brand-new billing period on the meter, which this mode must never do.
+    if (
+      dup.action !== 'attach-pdf-only' &&
+      meterMatch &&
+      (meterMatch.matchType === 'identity' || meterMatch.matchType === 'commodity')
+    ) {
       const dest = _saveBillToMatchedMeter(sb, meterMatch);
       if (dest) {
         const removeIdx = pdfBills.indexOf(sb);
@@ -18895,10 +19156,19 @@ function renderPDFFields(parsed, warnings) {
       printedRateField: '_wreIndexRate',
     },
     // Special Weather Event: only present on some invoices (hasSWE flag on the record)
+    // Fix (2026-09-23, WRE invoice-fields fix, item 1): qtyField/unit added so the
+    // SWE volume (already extracted as _wreSWEMMbtu, energy-savings.js) actually
+    // displays — without it, the SWE line only ever showed a dollar figure and the
+    // Trigger+Index MMbtu never reconciled with the printed Sub-Total MMbtu by
+    // exactly the (hidden) SWE volume. Prints negative on real invoices (a credit,
+    // e.g. -56.89) — buildCell/charge-line rendering already handles negative
+    // qtyField values the same way as the Trigger/Index rows above.
     {
       type: 'charge-line',
       label: 'Special Weather Event',
       chargeField: '_wreSWECharge',
+      qtyField: '_wreSWEMMbtu',
+      unit: 'MMbtu',
       rateKey: null,
       hideIfNull: true,
     },
@@ -20036,6 +20306,7 @@ function renderPDFFields(parsed, warnings) {
         <div style="display:flex;gap:4px;flex-shrink:0;margin-left:auto">
           <button onclick="_dupBannerAction(${bi},'overwrite')" style="font-size:10px;padding:3px 8px;border-radius:4px;border:1px solid rgba(239,68,68,.5);background:rgba(239,68,68,.12);color:var(--red);cursor:pointer;font-weight:700">Overwrite</button>
           <button onclick="_dupBannerAction(${bi},'merge')" style="font-size:10px;padding:3px 8px;border-radius:4px;border:1px solid rgba(34,197,94,.5);background:rgba(34,197,94,.12);color:var(--green);cursor:pointer;font-weight:700">Merge</button>
+          <button onclick="_dupBannerAction(${bi},'attach')" title="Attach the PDF only — never changes any other field" style="font-size:10px;padding:3px 8px;border-radius:4px;border:1px solid rgba(96,165,250,.5);background:rgba(96,165,250,.12);color:var(--accent);cursor:pointer;font-weight:700">Attach Only</button>
           <button onclick="_dupBannerAction(${bi},'skip')" style="font-size:10px;padding:3px 8px;border-radius:4px;border:1px solid var(--border2);background:transparent;color:var(--text2);cursor:pointer;font-weight:600">Skip</button>
           <button onclick="_dupBannerAction(${bi},'compare')" style="font-size:10px;padding:3px 8px;border-radius:4px;border:1px solid rgba(245,158,11,.5);background:transparent;color:var(--amber);cursor:pointer;font-weight:600" title="Compare fields side-by-side">Compare</button>
         </div>

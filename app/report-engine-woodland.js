@@ -780,22 +780,24 @@ function wdComputeSetpointOptions(cfg, elecBL, gasBL) {
     thermsByMo[mo] += _wdBillTherms(r.bill);
     haveG[mo] = true;
   });
-  function baseload(arr, have) {
-    var vals = arr
-      .filter(function (v, i) {
-        return have[i];
-      })
-      .sort(function (a, c) {
-        return a - c;
-      });
-    var n = Math.min(3, vals.length);
-    if (!n) return 0;
-    var s = 0;
-    for (var i = 0; i < n; i++) s += vals[i];
-    return s / n;
-  }
-  var eBase = baseload(kwhByMo, haveE),
-    gBase = baseload(thermsByMo, haveG);
+  // Baseload (both electric and gas) is computed ONE way, site-wide: computeHvacEnduse
+  // (computations/hvac-enduse.js — 3-lowest-populated-month average), the same canonical
+  // function _hvlGasHeatShare (app/calculators.js) uses for the HVAC Load Estimation tab and
+  // BAS Savings Calc autofill, and the Energy Graphics HVAC End-Use Estimate card. This used to
+  // be a second, independent 3-lowest-month baseload() here — deleted (2026-09-23). A building
+  // needs >=6 populated calendar months for computeHvacEnduse to trust a baseload (elecValid/
+  // gasValid); below that it returns 0, same as this function returning 0 for "no data".
+  var enduse = computeHvacEnduse(
+    kwhByMo.map(function (v, i) {
+      return haveE[i] ? v : null;
+    }),
+    null,
+    thermsByMo.map(function (v, i) {
+      return haveG[i] ? v : null;
+    }),
+  );
+  var eBase = enduse.elecValid ? enduse.baseloadElec : 0,
+    gBase = enduse.gasValid ? enduse.baseloadGas : 0;
   var cool = [],
     heat = [],
     sumCool = 0,

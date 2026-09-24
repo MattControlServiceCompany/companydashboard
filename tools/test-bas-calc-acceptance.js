@@ -90,9 +90,9 @@ function loadFn(file, fnName) {
 // extract cleanly — none of these constants contain semicolons inside their literals).
 function loadConst(file, name) {
   const src = fs.readFileSync(file, 'utf8');
-  const re = new RegExp('const ' + name + ' =');
+  const re = new RegExp('(?:const|var) ' + name + ' =');
   const m = re.exec(src);
-  if (!m) throw new Error('not found: const ' + name + ' in ' + file);
+  if (!m) throw new Error('not found: const/var ' + name + ' in ' + file);
   let depth = 0,
     j = m.index;
   for (; j < src.length; j++) {
@@ -106,6 +106,7 @@ function loadConst(file, name) {
 
 const CALC = path.join(REPO, 'app', 'calculators.js');
 const WEATHER = path.join(REPO, 'app', 'data', 'bas-weather-bins.js');
+const EM = path.join(REPO, 'app', 'equipment-matrix.js');
 
 // vm.runInContext top-level `const`/`let` bind to the script's lexical environment, not to the
 // sandbox object — only `var` and function declarations attach to it, so top-level constants have
@@ -113,12 +114,14 @@ const WEATHER = path.join(REPO, 'app', 'data', 'bas-weather-bins.js');
 // for the const declarations inside function bodies too (looser scoping only, same behavior).
 const src = [
   fs.readFileSync(WEATHER, 'utf8'),
+  loadConst(EM, 'EM_SP_DEFAULTS'),
   loadConst(CALC, 'BAS_COOL_CURVE'),
   loadConst(CALC, 'BAS_HEAT_CURVE'),
   loadConst(CALC, 'BAS_VRF_COP'),
   loadConst(CALC, 'BAS_TEMP_BINS'),
   loadConst(CALC, 'BAS_MO'),
   loadFn(CALC, '_bcInterp'),
+  loadFn(CALC, '_bcDefaultUnoccHeat'),
   loadConst(CALC, 'BAS_CITIES'),
   loadFn(CALC, '_basCityWeather'),
   loadFn(CALC, '_bcGv'),
@@ -137,12 +140,17 @@ class FakeEl {
     this.tagName = tagName || 'INPUT';
     this.textContent = '';
     this.innerHTML = '';
+    this.style = {};
   }
 }
 const dom = new Map();
 function set(id, value, tagName) {
   dom.set(id, new FakeEl(value, tagName));
 }
+// bc-coolAdjWarn (2026-09-23 fix) — the calibration-card warning banner _bcDoCalc toggles via
+// el('bc-coolAdjWarn').style.display; must exist before _bcDoCalc runs, same as every other
+// guarded `if (el(id))` display element.
+dom.set('bc-coolAdjWarn', new FakeEl('', 'DIV'));
 const fakeDocument = {
   getElementById: (id) => dom.get(id) || null,
 };
@@ -334,6 +342,96 @@ if (r4b) {
   assert(
     heatAdj4b !== heatAdj4,
     'once a real kWh calibration figure is entered for heatSrc 4, heatAdj is computed from the kWh bucket again (unchanged pre-existing behavior)',
+  );
+}
+
+console.log('=== 5. _bcDefaultUnoccHeat reads EM_SP_DEFAULTS — 2026-09-23 single-source fix ===');
+// Regression guard: _bcDefaultUnoccHeat previously kept its own hardcoded copy of 55/60/65,
+// gated on the 4-value heatSrc int, instead of reading the ONE setpoint default table
+// (EM_SP_DEFAULTS.unocc, app/equipment-matrix.js) every other unoccupied-setpoint default
+// (emBuildSetpointExportRows) already reads. Values must still match the documented company
+// standard exactly — this proves the de-duplication didn't change the numbers, only the source.
+{
+  assert(
+    sandbox._bcDefaultUnoccHeat(1) === 55,
+    'heatSrc 1 (Gas/MCF) -> 55, matches EM_SP_DEFAULTS.unocc.hydronic.heat',
+  );
+  assert(
+    sandbox._bcDefaultUnoccHeat(3) === 55,
+    'heatSrc 3 (Gas/Therms) -> 55, matches EM_SP_DEFAULTS.unocc.hydronic.heat',
+  );
+  assert(
+    sandbox._bcDefaultUnoccHeat(2) === 60,
+    'heatSrc 2 (Electric) -> 60, matches EM_SP_DEFAULTS.unocc.electricReheat.heat',
+  );
+  assert(sandbox._bcDefaultUnoccHeat(4) === 65, 'heatSrc 4 (Both) -> 65, matches EM_SP_DEFAULTS.unocc.heatpump.heat');
+  assert(
+    sandbox._bcDefaultUnoccHeat(1) === sandbox.EM_SP_DEFAULTS.unocc.hydronic.heat,
+    '_bcDefaultUnoccHeat(1) reads the SAME table value directly (not a coincidentally-equal duplicate)',
+  );
+  assert(
+    sandbox._bcDefaultUnoccHeat(2) === sandbox.EM_SP_DEFAULTS.unocc.electricReheat.heat,
+    '_bcDefaultUnoccHeat(2) reads the SAME table value directly',
+  );
+  assert(
+    sandbox._bcDefaultUnoccHeat(4) === sandbox.EM_SP_DEFAULTS.unocc.heatpump.heat,
+    '_bcDefaultUnoccHeat(4) reads the SAME table value directly',
+  );
+  // If EM_SP_DEFAULTS.unocc ever changes, _bcDefaultUnoccHeat must move with it automatically —
+  // proven here by mutating the live table and re-checking (not just re-reading a cached copy).
+  const savedHeat = sandbox.EM_SP_DEFAULTS.unocc.hydronic.heat;
+  sandbox.EM_SP_DEFAULTS.unocc.hydronic.heat = 47;
+  assert(
+    sandbox._bcDefaultUnoccHeat(3) === 47,
+    'changing EM_SP_DEFAULTS.unocc live updates _bcDefaultUnoccHeat -> no cached duplicate',
+  );
+  sandbox.EM_SP_DEFAULTS.unocc.hydronic.heat = savedHeat;
+}
+
+console.log('=== 6. coolAdj negative — synthetic reproduction + plain-language warning (2026-09-23) ===');
+// coolAdj = (calCoolKwh - rawExCoolOATotal) / rawExCoolSetbackTotal. Reproduced synthetically by
+// entering a bc-calCoolKwh figure smaller than the bin model's own OA-only (ventilation-driven)
+// cooling total for this scenario — a realistic real-world input mistake (e.g. a partial-year or
+// under-scoped "Existing Cooling kWh from UA" figure), not a wiring/wrong-variable bug.
+{
+  dom.set('bc-heatSrc', new FakeEl('1', 'SELECT')); // back to gas heat, Section 2's scenario
+  dom.set('bc-calHeatGas', new FakeEl(''));
+  dom.set('bc-calHeatKwh', new FakeEl('63166'));
+  dom.set('bc-calCoolKwh', new FakeEl('1')); // deliberately far below rawExCoolOATotal
+  sandbox._bcDoCalc('p1');
+  const r6 = project._bcResults;
+  const coolAdj6 = parseFloat(dom.get('bc-adjCool').textContent);
+  assert(!!r6, '_bcResults populated for the synthetic under-calibrated scenario');
+  assert(
+    coolAdj6 < 0,
+    `coolAdj (${coolAdj6}) reproduced negative with a synthetic calCoolKwh below the OA-only raw total`,
+  );
+  const annCoolSav6 = r6.coolKwhSavings.reduce((a, b) => a + b, 0);
+  console.log(
+    `  reproduced: coolAdj=${coolAdj6.toFixed(4)}, annual Cool Saved=${annCoolSav6.toFixed(1)} kWh ` +
+      `(negative Cool Saved when coolAdj < 0, confirming the reported symptom mechanism)`,
+  );
+  // 2026-09-23 fix (this task): a plain-language warning shows at the calibration input when
+  // coolAdj < 0 — formula unchanged, just makes the negative-factor condition visible.
+  assert(
+    dom.get('bc-coolAdjWarn').style.display === '',
+    'coolAdj < 0 -> bc-coolAdjWarn shown (style.display cleared, not "none")',
+  );
+  // ANALYSIS (not fixed — see docs/dashboardlogic.md / task result write-up): the formula
+  // coolAdj = (target - rawOA) / rawSetback is the correct closed-form solve for "what setback
+  // scale factor makes rawOA + rawSetback*coolAdj equal the user's real calibration figure" — it
+  // is mathematically required to go negative whenever the target is smaller than the OA-only
+  // component alone, because no non-negative scale factor on the setback term can reach a total
+  // below what the OA-only term already contributes by itself. That is an honest, correct
+  // response to an implausible calibration INPUT (a calCoolKwh figure too small for this
+  // building/city/sqft), not a formula or wiring defect — restore the calibration input to a
+  // realistic figure (e.g. Section 2's 142872) and coolAdj is positive again (asserted there).
+  // The formula itself is NOT changed by this fix — only the warning's visibility.
+  dom.set('bc-calCoolKwh', new FakeEl('142872')); // restore Section 2's scenario for a clean exit state
+  sandbox._bcDoCalc('p1');
+  assert(
+    dom.get('bc-coolAdjWarn').style.display === 'none',
+    'restoring a realistic calCoolKwh (coolAdj positive again) -> bc-coolAdjWarn hidden',
   );
 }
 

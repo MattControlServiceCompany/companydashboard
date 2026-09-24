@@ -311,30 +311,61 @@ function _hvlBuildingHasElectricHeat(projId, bldgId) {
   return _hvlBuildingHeatingSignals(projId, bldgId).hasElectric;
 }
 
+// _hvlGasHeatShare — the ONE computation of a building's gas heating share, used by BOTH the
+// HVAC Load Estimation "Rules of Thumb" tab's "Space Heating % of Total Gas" default
+// (_hvlRenderTraditional) and the BAS Savings Calc's Existing Heating Gas Therms autofill
+// (hvacComputeGasThermsForBuilding). Prefers the real, data-driven 3-lowest-month baseload
+// subtraction method (computeHvacEnduse, computations/hvac-enduse.js — the SAME canonical
+// function the Energy Graphics tab's HVAC End-Use Estimate card already uses) computed from this
+// building's own monthly gas (+ propane, gallon-equivalent) bills via _hvlMonthlyBaseline (the
+// same reader every other HVAC Load Est number uses). Falls back to the Rules-of-Thumb
+// industry-standard percentage default (_hvlDefaultGasPct) only when there is not enough real
+// bill history (fewer than 6 populated calendar months) to compute a baseload split — never a
+// second, independent re-implementation of either method (2026-09-23 single-source fix; replaces
+// the fixed 80%/15% default that previously applied unconditionally even with a full year of
+// bills on file).
+function _hvlGasHeatShare(projId, bldgId) {
+  const sig = _hvlBuildingHeatingSignals(projId, bldgId);
+  const fallbackPct = _hvlDefaultGasPct(sig.hasElectric, sig.hasGas);
+  const b = typeof getUDBldg === 'function' ? getUDBldg(projId, bldgId) : null;
+  if (!b) return { pct: fallbackPct, source: 'default', totalGas: 0, heatingTherms: 0 };
+  const { gByMo, pByMo } = _hvlMonthlyBaseline(projId, b);
+  const gasArr = [];
+  let totalGas = 0;
+  for (let mo = 0; mo < 12; mo++) {
+    const hasG = !!gByMo[mo];
+    const hasP = !!pByMo[mo];
+    let v = null;
+    // gal -> therms, same 0.9153 factor hvacLoadCalc uses
+    if (hasG || hasP) v = (hasG ? gByMo[mo].therms || 0 : 0) + (hasP ? (pByMo[mo].gallons || 0) * 0.9153 : 0);
+    gasArr.push(v);
+    if (v != null) totalGas += v;
+  }
+  const enduse = typeof computeHvacEnduse === 'function' ? computeHvacEnduse(null, null, gasArr) : null;
+  if (enduse && enduse.gasValid && totalGas > 0) {
+    return {
+      pct: Math.round(enduse.heatingPct * 1000) / 10,
+      source: 'baseload',
+      totalGas,
+      heatingTherms: enduse.heatingTherms,
+    };
+  }
+  return { pct: fallbackPct, source: 'default', totalGas, heatingTherms: totalGas * (fallbackPct / 100) };
+}
+
 // Existing Heating Gas Therms for the BAS Savings Calc (calHeatGas), computed directly from this
-// building's own gas (plus propane, gallon-equivalent) bills — the SAME bill reader
-// (_hvlMonthlyBaseline) and the SAME Rules-of-Thumb gas-heating-share default
-// (_hvlDefaultGasPct/_hvlBuildingHasElectricHeat) the HVAC Load Estimation tab itself uses to
-// compute p.hvacLoadEst.hvacGasT — so this fills the BAS Savings Calc's calibration field
-// without requiring a user to have opened that tab first (2026-09-23 fix). Returns null when the
-// building has no gas/propane bills at all — never invents a number. A real SAVED HVAC Load
-// Estimation for this project (p.hvacLoadEst + p.hvacLoadSavedAt) is preferred over this fresh
-// estimate by the caller (openBASCalc) — this is only the fallback for a building nobody has
-// reviewed in that tab yet.
+// building's own gas (plus propane, gallon-equivalent) bills via the shared _hvlGasHeatShare
+// (2026-09-23) — so this fills the BAS Savings Calc's calibration field without requiring a user
+// to have opened the HVAC Load Estimation tab first. Returns null when the building has no
+// gas/propane bills at all — never invents a number. A real SAVED HVAC Load Estimation for this
+// project (p.hvacLoadEst + p.hvacLoadSavedAt) is preferred over this fresh estimate by the caller
+// (openBASCalc) — this is only the fallback for a building nobody has reviewed in that tab yet.
 function hvacComputeGasThermsForBuilding(projId, bldgId) {
   const b = typeof getUDBldg === 'function' ? getUDBldg(projId, bldgId) : null;
   if (!b) return null;
-  const { gByMo, pByMo } = _hvlMonthlyBaseline(projId, b);
-  let totalGas = 0;
-  for (let mo = 0; mo < 12; mo++) {
-    totalGas += (gByMo[mo] && gByMo[mo].therms) || 0;
-    // gal -> therms, same 0.9153 factor hvacLoadCalc uses
-    totalGas += ((pByMo[mo] && pByMo[mo].gallons) || 0) * 0.9153;
-  }
-  if (totalGas <= 0) return null;
-  const sig = _hvlBuildingHeatingSignals(projId, bldgId);
-  const hvacGasPct = _hvlDefaultGasPct(sig.hasElectric, sig.hasGas);
-  return { totalGas, hvacGasPct, hvacGasT: totalGas * (hvacGasPct / 100) };
+  const share = _hvlGasHeatShare(projId, bldgId);
+  if (share.totalGas <= 0) return null;
+  return { totalGas: share.totalGas, hvacGasPct: share.pct, hvacGasT: share.heatingTherms, source: share.source };
 }
 
 function _buildBaselineDataHtml(b, projId) {
@@ -590,6 +621,11 @@ function _hvlRenderTraditional(projId, bldgId, method) {
   // when the building has NO gas/hydronic heat evidence at all — a school with a central gas
   // boiler plus a few electric vestibule unit heaters is still gas-dominant for this field.
   const _hvlGasPctIsLow = _hvlElecHeat && !_hvlHeatSig.hasGas;
+  // 2026-09-23: the Space Heating % of Total Gas default now comes from _hvlGasHeatShare — the
+  // SAME single computation the BAS Savings Calc's calHeatGas autofill uses — which prefers the
+  // real 3-lowest-month baseload subtraction method computed from this building's own bills, and
+  // only falls back to the Rules-of-Thumb industry default when there isn't enough bill history.
+  const _hvlGasShare = method === 'thumb' ? _hvlGasHeatShare(projId, bldgId) : null;
 
   if (method === 'thumb') {
     wrap.innerHTML = `<div class="card" style="margin-bottom:16px">
@@ -606,7 +642,7 @@ function _hvlRenderTraditional(projId, bldgId, method) {
                   <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);margin-bottom:10px">⚡ Electric Demand (kW) Breakdown</div>
                   <div class="fg"><label class="fl">HVAC % of Peak kW</label><input class="fi hvl-in" id="hvl-t-kwPct-${projId}" type="number" value="55" min="0" max="100"><div class="fhint">Typical: 40-65% — HVAC is usually the largest demand driver</div></div>
                   <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);margin:14px 0 10px">🔥 Gas (Therms) Breakdown</div>
-                  <div class="fg"><label class="fl">Space Heating % of Total Gas</label><input class="fi hvl-in" id="hvl-t-gasPct-${projId}" type="number" value="${_hvlDefaultGasPct(_hvlElecHeat, _hvlHeatSig.hasGas)}" min="0" max="100"><div class="fhint">${_hvlGasPctIsLow ? "Typical: 0-20% for DHW/kitchen only — this building's heat is electric" : 'Typical: 70-95% for gas-heated buildings — gas HVAC share is mostly space heating'}</div></div>
+                  <div class="fg"><label class="fl">Space Heating % of Total Gas</label><input class="fi hvl-in" id="hvl-t-gasPct-${projId}" type="number" value="${_hvlGasShare.pct}" min="0" max="100"><div class="fhint">${_hvlGasShare.source === 'baseload' ? `✓ computed from gas bills (3-lowest-month baseload method, ${Math.round(_hvlGasShare.totalGas).toLocaleString()} total Therms/yr) — same method as the Energy Graphics HVAC End-Use Estimate` : _hvlGasPctIsLow ? "Rules-of-Thumb default (not enough bill history to compute) — 0-20% typical for DHW/kitchen only, this building's heat is electric" : 'Rules-of-Thumb default (not enough bill history to compute) — 70-95% typical for gas-heated buildings'}</div></div>
                 </div>
               </div>
             </div>
@@ -3847,15 +3883,18 @@ const BAS_VRF_COP = [
 const BAS_TEMP_BINS = BAS_WEATHER_BINS.bins;
 const BAS_MO = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 
-// Company-standard unoccupied heating setpoint default, by BAS Savings Calc heating source
-// (see docs/dashboardlogic.md project_default_setpoint_standards, 2026-09-23): gas/hydronic
-// heat setback 55, electric-resistance setback 60, electric+VRF/heat-pump setback 65. Occupied
-// setpoints (70 heat / 74 cool) and unoccupied cooling (85) are constant across heat sources —
-// only unoccupied heat varies, so this is the only value that needs the heat-source branch.
+// Company-standard unoccupied heating setpoint default, by BAS Savings Calc heating source —
+// reads the ONE setpoint default table (EM_SP_DEFAULTS.unocc, app/equipment-matrix.js; see
+// docs/dashboardlogic.md project_default_setpoint_standards) instead of keeping its own copy of
+// the same 55/60/65 numbers (2026-09-23 single-source fix). Occupied setpoints (70 heat / 74
+// cool) and unoccupied cooling (85) are constant across heat sources — only unoccupied heat
+// varies, so this is the only value that needs the heat-source branch. Falls back to the same
+// literal numbers only if EM_SP_DEFAULTS hasn't loaded (defensive — never happens in the shipped
+// page, equipment-matrix.js always loads alongside calculators.js).
 function _bcDefaultUnoccHeat(heatSrc) {
-  if (heatSrc === 4) return 65; // Both (Electric + Gas) — VRF/heat-pump treatment
-  if (heatSrc === 2) return 60; // Electric
-  return 55; // 1 or 3 — Gas (MCF or Therms)
+  const key = heatSrc === 4 ? 'heatpump' : heatSrc === 2 ? 'electricReheat' : 'hydronic'; // 1/3 = Gas
+  if (typeof EM_SP_DEFAULTS !== 'undefined' && EM_SP_DEFAULTS.unocc[key]) return EM_SP_DEFAULTS.unocc[key].heat;
+  return heatSrc === 4 ? 65 : heatSrc === 2 ? 60 : 55;
 }
 
 function _bcInterp(curve, temp) {
@@ -3955,7 +3994,10 @@ function openBASCalc(projId) {
     if (computedGas && computedGas.hvacGasT)
       autoCalGas = {
         value: Math.round(computedGas.hvacGasT),
-        source: 'gas bills (Rules of Thumb heating share estimate — review in HVAC Load Estimation)',
+        source:
+          computedGas.source === 'baseload'
+            ? 'gas bills (3-lowest-month baseload heating-share method — same as the Energy Graphics HVAC End-Use Estimate)'
+            : 'gas bills (Rules of Thumb heating share estimate, not enough bill history to compute a baseload split — review in HVAC Load Estimation)',
       };
   }
 
@@ -4211,6 +4253,9 @@ function openBASCalc(projId) {
                   <div style="font-size:9px;color:var(--text3);text-transform:uppercase">Heat Adj Factor</div>
                   <div style="font-size:14px;font-weight:700;font-family:var(--mono);color:var(--amber)" id="bc-adjHeat">1.000</div>
                 </div>
+              </div>
+              <div id="bc-coolAdjWarn" style="display:none;margin-top:10px;background:var(--warn-dim);border:1px solid var(--warn);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--warn)">
+                The cooling kWh entered is lower than the outside air cooling alone. Check the cooling kWh.
               </div>
             </div>
           </div>
@@ -4655,6 +4700,12 @@ function _bcDoCalc(projId) {
   }
   if (el('bc-adjCool')) el('bc-adjCool').textContent = coolAdj.toFixed(3);
   if (el('bc-adjHeat')) el('bc-adjHeat').textContent = heatAdj.toFixed(3);
+  // 2026-09-23: coolAdj goes negative when the entered calibration kWh is below the outside-air-
+  // only raw cooling total (rawExCoolOATotal) — the formula is correct (it is the only value that
+  // makes setback*adj + OA equal the entered figure), but a negative factor silently flips
+  // "Cool Saved" negative with no explanation. Plain-language warning only; math unchanged.
+  const coolAdjNegative = calCoolKwh > 0 && coolAdj < 0;
+  if (el('bc-coolAdjWarn')) el('bc-coolAdjWarn').style.display = coolAdjNegative ? '' : 'none';
 
   // Calibrated monthly totals — setback scaled by the factor, OA left raw (see note above)
   const exCoolM = exCoolSetbackM.map((v, m) => v * coolAdj + exCoolOAM[m]);
@@ -4734,7 +4785,10 @@ function _bcDoCalc(projId) {
   // Render results table
   const res = el('bc-results');
   if (!res) return;
-  let html = `<table class="dtbl" style="font-size:11px;border-collapse:collapse;width:100%">
+  let html = coolAdjNegative
+    ? `<div style="margin-bottom:12px;background:var(--warn-dim);border:1px solid var(--warn);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--warn)">The cooling kWh entered is lower than the outside air cooling alone. Check the cooling kWh.</div>`
+    : '';
+  html += `<table class="dtbl" style="font-size:11px;border-collapse:collapse;width:100%">
           <thead><tr>
             <th style="text-align:left;padding:5px 8px;font-size:10px">Month</th>
             <th style="text-align:right;padding:5px 6px;font-size:10px">Exist Cool kWh</th>
@@ -4803,6 +4857,8 @@ function _bcRenderEmpty() {
     const e = document.getElementById(id);
     if (e) e.textContent = '—';
   });
+  const warnEl = document.getElementById('bc-coolAdjWarn');
+  if (warnEl) warnEl.style.display = 'none';
 }
 
 /* ── E. Save ── */

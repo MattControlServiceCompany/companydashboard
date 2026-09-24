@@ -3620,13 +3620,18 @@ const CONDENSED_CATEGORIES = {
   ],
 };
 function _billsTableViewState(mid) {
+  // Default sort: newest first (descending). This is the ONE shared default
+  // for the Bills table — sortAsc is only true when the user has explicitly
+  // chosen ascending (via toggleBillsTableSort). Missing/undefined sortAsc
+  // means no explicit user choice was ever saved, so it falls back to the
+  // newest-first default rather than assuming ascending.
   try {
     const s = DB.get('bills_view_state_' + mid);
     if (s && typeof s === 'object') {
       return {
         mode: s.mode === 'condensed' ? 'condensed' : 'detailed',
         hidden: Array.isArray(s.hidden) ? s.hidden : [],
-        sortAsc: s.sortAsc !== false, // default ascending
+        sortAsc: s.sortAsc === true, // default descending (newest first)
       };
     }
   } catch (e) {}
@@ -3637,11 +3642,11 @@ function _billsTableViewState(mid) {
       return {
         mode: d.mode === 'condensed' ? 'condensed' : 'detailed',
         hidden: Array.isArray(d.hidden) ? d.hidden : [],
-        sortAsc: true,
+        sortAsc: false,
       };
     }
   } catch (e) {}
-  return { mode: 'detailed', hidden: [], sortAsc: true };
+  return { mode: 'detailed', hidden: [], sortAsc: false };
 }
 function toggleBillsTableSort(mid, evt) {
   const state = _billsTableViewState(mid);
@@ -3838,9 +3843,9 @@ function renderBillsPane(pane, m, bills, incl) {
           </div>
         </span>`;
 
-  // ── Sort direction (Update 122) ──
-  // Read from viewState (bills_view_state_<mid>). Default ascending (oldest first).
-  // toggleBillsTableSort() flips and re-renders.
+  // ── Sort direction (Update 122; default flipped 2026-09-23) ──
+  // Read from viewState (bills_view_state_<mid>). Default descending (newest first).
+  // toggleBillsTableSort() flips and re-renders; a saved per-meter choice always wins.
   const viewState = _billsTableViewState(m.id);
   const sortAsc = viewState.sortAsc !== false;
   // bills arrives pre-sorted ascending from renderMeterWorkspace; reverse if descending.
