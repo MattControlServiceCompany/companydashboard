@@ -7161,6 +7161,12 @@ const UTILITY_RULES = [
               triggerMMbtu: null,
               indexMMbtu: null,
               sweMMbtu: null,
+              // Fix (2026-09-23, WRE invoice-fields fix): "Fuel" column volumes,
+              // captured alongside triggerMMbtu/indexMMbtu above (see the Trigger/
+              // Index line parsers) so charge = (Mmbtu+Fuel) x Rate can be checked
+              // using WRE's own printed formula instead of Mmbtu alone.
+              triggerFuelMMbtu: null,
+              indexFuelMMbtu: null,
               triggerRate: null,
               indexRate: null,
             };
@@ -7221,6 +7227,17 @@ const UTILITY_RULES = [
             if (_trigDollarM) _cur.triggerCharge = parseFloat(_wreFixOcrDollar(_trigDollarM[1]).replace(/,/g, ''));
             const _trigMmbtuM = ln.match(/Trigger\s*-?\s*Fixed\s+([\d,]+\.?\d*)/i);
             if (_trigMmbtuM) _cur.triggerMMbtu = parseFloat(_trigMmbtuM[1].replace(/,/g, ''));
+            // Fix (2026-09-23, WRE invoice-fields fix): capture the "Fuel" column too
+            // (the second usage number on the line, e.g. "0.08" in "8.88  0.08
+            // $5.1700  $46.32") — WRE's own printed formula is charge = (Mmbtu+Fuel)
+            // x Rate (verified against the real Jan 2026 invoice pixels: 508.49+4.83
+            // = 513.32 x $5.11 = $2,623.07). Not captured previously, so the rate
+            // cross-check below always compared charge against Mmbtu ALONE, a
+            // systematic ~1-2% under-count. Independent capture (separate regex,
+            // anchored on the Rate column's $/£/S sign) so a missing/garbled Fuel
+            // reading can never affect the already-reliable Mmbtu capture above.
+            const _trigFuelM = ln.match(/Trigger\s*-?\s*Fixed\s+[\d,]+\.?\d*\s+(-?[\d,]+\.?\d*)\s*(?=[$£S])/i);
+            if (_trigFuelM) _cur.triggerFuelMMbtu = parseFloat(_trigFuelM[1].replace(/,/g, ''));
             // Capture printed rate — second-to-last $ value on the line (Rate column)
             // Fix (2026-09-18): same S-for-$ tolerance as the charge capture above.
             const _trigRateMs = ln.match(/[$£S]([\d,]+\.\d{4})/g);
@@ -7261,6 +7278,14 @@ const UTILITY_RULES = [
             // hypothetical.
             const _idxMmbtuM = ln.match(/Index[\s\S]{0,10}?(?:FOM|0M|OM)[)\s]*[A-Za-z]{0,2}[)\s]*([\d,]+\.?\d*)/i);
             if (_idxMmbtuM) _cur.indexMMbtu = parseFloat(_idxMmbtuM[1].replace(/,/g, ''));
+            // Fix (2026-09-23, WRE invoice-fields fix): capture the "Fuel" column
+            // (same reasoning as the Trigger line above) — independent regex anchored
+            // on the Rate column's $/£/S sign so a missing/garbled Fuel reading can't
+            // affect the already-reliable Mmbtu capture above.
+            const _idxFuelM = ln.match(
+              /Index[\s\S]{0,10}?(?:FOM|0M|OM)[)\s]*[A-Za-z]{0,2}[)\s]*[\d,]+\.?\d*\s+(-?[\d,]+\.?\d*)\s*(?=[$£S])/i,
+            );
+            if (_idxFuelM) _cur.indexFuelMMbtu = parseFloat(_idxFuelM[1].replace(/,/g, ''));
             // Capture printed rate — last 4-decimal $ value before the 2-decimal charge
             // Fix (2026-09-18): same S-for-$ tolerance as the charge capture above.
             const _idxRateMs = ln.match(/[$£S]([\d,]+\.\d{4})/g);
@@ -7706,13 +7731,18 @@ const UTILITY_RULES = [
           const deltaDollar = Math.abs(computed - charge);
           return deltaPct > 5 && deltaDollar > 1;
         };
+        // Fix (2026-09-23, WRE invoice-fields fix): include the captured Fuel
+        // column in the computed side of the check — WRE's own printed formula is
+        // charge = (Mmbtu+Fuel) x Rate, not Mmbtu x Rate alone. Falls back to +0
+        // when Fuel wasn't captured (small, ~1-2% column; OCR sometimes drops it),
+        // so this never makes the check MORE likely to flag a site than before.
         const _trigMismatch = _wreRateMismatch(
-          blk.triggerMMbtu,
+          blk.triggerMMbtu != null ? blk.triggerMMbtu + (blk.triggerFuelMMbtu || 0) : blk.triggerMMbtu,
           blk.triggerRate != null ? parseFloat(blk.triggerRate) : null,
           blk.triggerCharge,
         );
         const _idxMismatch = _wreRateMismatch(
-          blk.indexMMbtu,
+          blk.indexMMbtu != null ? blk.indexMMbtu + (blk.indexFuelMMbtu || 0) : blk.indexMMbtu,
           blk.indexRate != null ? parseFloat(blk.indexRate) : null,
           blk.indexCharge,
         );
@@ -7829,9 +7859,12 @@ const UTILITY_RULES = [
               // already-captured dollar figure. Without this, a site with an SWE
               // line always failed this check even when Trigger+Index+SWE exactly
               // reconciled with the printed Sub-Total.
+              // Fix (2026-09-23, WRE invoice-fields fix): include Fuel in the
+              // computed side (charge = (Mmbtu+Fuel) x Rate — same reasoning as
+              // _trigMismatch/_idxMismatch above).
               const _expected =
-                blk.triggerMMbtu * parseFloat(blk.triggerRate) +
-                blk.indexMMbtu * parseFloat(blk.indexRate) +
+                (blk.triggerMMbtu + (blk.triggerFuelMMbtu || 0)) * parseFloat(blk.triggerRate) +
+                (blk.indexMMbtu + (blk.indexFuelMMbtu || 0)) * parseFloat(blk.indexRate) +
                 (blk.sweCharge || 0);
               const _deltaPct = (Math.abs(_expected - _subTotalCharge) / Math.abs(_subTotalCharge)) * 100;
               _subTotalMismatch = _deltaPct > 5 && Math.abs(_expected - _subTotalCharge) > 1;
@@ -7839,14 +7872,29 @@ const UTILITY_RULES = [
               // Exactly one component present (the common case) — use ITS rate
               // directly against blk.mmbtu, the Sub-Total's own captured value,
               // reusing the same tolerance as the general rate-mismatch check.
+              // Fix (2026-09-23, WRE invoice-fields fix): fold that same component's
+              // captured Fuel volume in too (blk.mmbtu here is the Sub-Total's own
+              // Mmbtu-only column, which for a single-component site equals that
+              // component's Mmbtu-only figure — its Fuel volume is still missing
+              // from it, same as the two-component branch above).
               const _singleRate =
                 blk.triggerMMbtu != null && blk.indexMMbtu == null && blk.triggerRate != null
                   ? parseFloat(blk.triggerRate)
                   : blk.indexMMbtu != null && blk.triggerMMbtu == null && blk.indexRate != null
                     ? parseFloat(blk.indexRate)
                     : null;
+              const _singleFuel =
+                blk.triggerMMbtu != null && blk.indexMMbtu == null
+                  ? blk.triggerFuelMMbtu || 0
+                  : blk.indexMMbtu != null && blk.triggerMMbtu == null
+                    ? blk.indexFuelMMbtu || 0
+                    : 0;
               if (_singleRate != null) {
-                _subTotalMismatch = _wreRateMismatch(blk.mmbtu, _singleRate, _subTotalCharge);
+                _subTotalMismatch = _wreRateMismatch(
+                  blk.mmbtu != null ? blk.mmbtu + _singleFuel : blk.mmbtu,
+                  _singleRate,
+                  _subTotalCharge,
+                );
               }
             }
           }
@@ -7893,6 +7941,21 @@ const UTILITY_RULES = [
               '. NaturalGasMMbtu suppressed, flagged for manual review.',
           );
         }
+        // Fix (2026-09-23, WRE invoice-fields fix, item 2): the Sub-Total line's
+        // OWN MMbtu number (blk.mmbtu) can independently fail to capture (OCR miss
+        // on that specific line) even when _mmbtuRateMismatch above is false and
+        // the Sub-Total's own charge (blk.dollar) parsed fine — verified on Inv
+        // 486834/Jan 2026: 9 of 10 sites have a fully-populated, printed-invoice-
+        // matching charge with no _mmbtuRateMismatch trip, yet blk.mmbtu itself is
+        // null, so NaturalGasMMbtu ships blank with NO review flag at all — a
+        // charge that LOOKS fully verified sitting next to a silently-missing
+        // usage figure. Apply the SAME manual-review flag to this case as the
+        // rate-mismatch gate uses, so usage-missing-with-charge-present is always
+        // surfaced to the user one way or another, regardless of which of the two
+        // independent reasons caused it. Charge is left untouched either way — it
+        // is a real, correctly-read billed amount; only the review FLAG is unified.
+        const _mmbtuMissingWithCharge = !_mmbtuRateMismatch && blk.mmbtu == null && blk.dollar != null;
+        const _needsManualReview = _mmbtuRateMismatch || _mmbtuMissingWithCharge;
 
         results.push({
           UtilityCompany: 'Wood River Energy',
@@ -7922,6 +7985,13 @@ const UTILITY_RULES = [
           // Per-component MMBtu quantities (fix 8a271dae — for per-component rate display)
           _wreTriggerMMbtu: blk.triggerMMbtu != null ? String(blk.triggerMMbtu) : null,
           _wreIndexMMbtu: blk.indexMMbtu != null ? String(blk.indexMMbtu) : null,
+          // Fix (2026-09-23, WRE invoice-fields fix, item 1): the SWE volume was
+          // already parsed (blk.sweMMbtu, above) but never shipped in the output
+          // object, so it never had a way to display even though a qtyField/unit
+          // exists in _LAYOUT_WRE for it (bill-analysis.js). Prints negative on a
+          // real invoice (e.g. Jan 2026 Woodland: -56.89) — that sign is real and
+          // intentional (a credit), not stripped here.
+          _wreSWEMMbtu: blk.sweMMbtu != null ? String(blk.sweMMbtu) : null,
           _wreTriggerRate: blk.triggerRate || null,
           _wreIndexRate: blk.indexRate || null,
           _wreHasSWE: hasSWEGlobal,
@@ -7932,13 +8002,23 @@ const UTILITY_RULES = [
           // mechanism rather than inventing a second one; never silently "correct"
           // the number toward what the math implies, only flag it.
           _mmbtuRateMismatch: _mmbtuRateMismatch || undefined,
-          _manualReview: _mmbtuRateMismatch ? true : undefined,
+          // Fix (2026-09-23, WRE invoice-fields fix, item 2): _mmbtuMissingWithCharge
+          // (computed above) folds into the SAME manual-review flag/label mechanism
+          // — see comment above _mmbtuMissingWithCharge for why this is needed in
+          // addition to _mmbtuRateMismatch.
+          _mmbtuMissingWithCharge: _mmbtuMissingWithCharge || undefined,
+          _manualReview: _needsManualReview ? true : undefined,
           _manualReviewLabel: _mmbtuRateMismatch
             ? 'Usage flagged — MMbtu × printed rate does not match the printed charge (site #' +
               (i + 1) +
               (blk.ServiceAddress ? ': ' + blk.ServiceAddress : '') +
               ' — likely a misread digit; verify usage manually)'
-            : undefined,
+            : _mmbtuMissingWithCharge
+              ? 'Usage (MMbtu) could not be read from this invoice for site #' +
+                (i + 1) +
+                (blk.ServiceAddress ? ': ' + blk.ServiceAddress : '') +
+                ' — the charge is billed and correctly extracted; verify usage manually against the source PDF'
+              : undefined,
         });
       }
 

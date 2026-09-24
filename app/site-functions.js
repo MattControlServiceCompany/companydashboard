@@ -1742,6 +1742,40 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.23.27',
+    date: '2026-09-23',
+    title: 'District Calendar text spacing and a new bulk PDF-attach option',
+    items: [
+      {
+        type: 'fix',
+        text: 'District Calendar "Import Calendar" no longer breaks up some words with extra spaces (for example "Certified Off Duty" no longer shows as "Certi fi ed O ff Duty"). Event names now read correctly.',
+      },
+      {
+        type: 'feature',
+        text: 'The Utility Data page duplicate-bill bulk action now has an "Attach PDFs Only" option, matching the single-bill option already there. It links the PDF to each matching bill and never changes any other field.',
+      },
+    ],
+  },
+  {
+    v: 'v2026.09.23.26',
+    date: '2026-09-23',
+    title: 'WoodRiver Energy gas bills: more usage detail, fewer false flags',
+    items: [
+      {
+        type: 'fix',
+        text: 'WoodRiver Energy gas bills on the Utility Data page now show the Special Weather Event usage amount (in MMBtu), not just the dollar amount.',
+      },
+      {
+        type: 'fix',
+        text: 'A WoodRiver Energy gas bill that has a correct, billed charge amount no longer shows that charge with no review flag when its own usage number could not be read. The bill is now flagged for a manual check either way, so a missing usage number is never silently hidden next to a charge that looks fully confirmed.',
+      },
+      {
+        type: 'change',
+        text: 'WoodRiver Energy gas bill usage checks now read the small "Fuel" usage column printed next to the main usage column, so the check that compares usage times rate against the billed charge is more accurate.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.23.25',
     date: '2026-09-23',
     title: 'HVAC Load Estimation and BAS Savings Calc: clearer, more consistent numbers',
