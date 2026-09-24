@@ -1776,7 +1776,7 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
-    v: 'v2026.09.24.12',
+    v: 'v2026.09.24.13',
     date: '2026-09-24',
     title: 'Equipment Matrix: "Show All Point Columns" opens fast, and more labels are spelled out',
     items: [
@@ -1787,6 +1787,17 @@ var RELEASE_NOTES = [
       {
         type: 'fix',
         text: 'On the Equipment Matrix Summary view, the "Zone Htg Setpoint" and "Zone Clg Setpoint" column headers now read "Zone Heating Setpoint" and "Zone Cooling Setpoint". The building detail table\'s "Htg Setpoint", "Clg Setpoint", and "Damper Posn" headers now read "Heating Setpoint", "Cooling Setpoint", and "Damper Position".',
+      },
+    ],
+  },
+  {
+    v: 'v2026.09.24.12',
+    date: '2026-09-24',
+    title: 'Utility Data: the missing-rate warning covers Electric bills too',
+    items: [
+      {
+        type: 'fix',
+        text: 'Confirmed the missing-rate warning added in v2026.09.24.9 covers Electric bills, not only Gas and Propane. Also fixed a code comment that wrongly said Water, Sewer, and Stormwater bills have no rate by design — they do carry their own rate, but savings dollars are not yet computed for those three; that is a separate, unfixed gap, not part of this change.',
       },
     ],
   },

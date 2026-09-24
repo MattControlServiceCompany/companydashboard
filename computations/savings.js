@@ -292,10 +292,16 @@ function getMeterSavings(m, bills, incl, projId, bldgId) {
       const _sGasRate = bfr.length ? bfr.reduce((s, b) => s + (parseFloat(b.totalGasRate) || 0), 0) / bfr.length : 0;
       const thermRate = _sGasRate || (actTherms > 0 && actThermCost > 0 ? actThermCost / actTherms : 0);
       // Gate on m.commodity === 'Gas' specifically — this "else" branch also runs for
-      // Water/Sewer/Stormwater/Steam meters (ALL_COMMODITIES, app/core.js), which never
-      // have a totalGasRate/gasCharge to begin with and always showed $0 here by design
-      // (no per-unit $ rate tracked for those utilities). Flagging every water/sewer bill
-      // as "rate incomplete" would be noise unrelated to a67db8ce's gas/electric scope.
+      // Water/Sewer/Stormwater/Steam meters (ALL_COMMODITIES, app/core.js). This is NOT
+      // "no rate by design": real bills for those commodities DO carry their own rate
+      // (totalWaterRate/waterCharge, totalSewerRate/sewerCharge, totalStormwaterRate) —
+      // checked against the 2026-09-22 backup, 94%+ of Water/Sewer/Stormwater bills across
+      // every Louisburg building have a real rate. This branch simply never reads those
+      // fields (only gasCharge/thermCost/totalGasRate), so thermRate is always 0 for those
+      // three commodities and $ savings for them has never been computed by this engine —
+      // a real, separate gap (no backlog item yet as of 2026-09-24), out of scope for
+      // a67db8ce (gas/electric/propane rate-incompleteness). Gating here on Gas prevents
+      // that pre-existing, always-$0 state from being misreported as "rate incomplete."
       if (m.commodity === 'Gas' && !(thermRate > 0) && (actTherms > 0 || actThermCost > 0)) {
         _rateIncomplete = true;
         _rateReason = 'gas $/therm rate unavailable';
