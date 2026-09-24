@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.23.23',
+    date: '2026-09-23',
+    title: 'District Calendar: Import Calendar now reads school calendar PDFs correctly',
+    items: [
+      {
+        type: 'fix',
+        text: 'The District Calendar "Import Calendar" function now reads list-style school calendar PDFs correctly, with each event showing its full name and correct dates.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.23.22',
     date: '2026-09-23',
     title: 'ASHRAE 36 Audit Report: unoccupied setpoints and schedules on the Setpoint Programming Review page',

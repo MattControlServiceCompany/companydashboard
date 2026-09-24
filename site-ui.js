@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.23.22'; // ASHRAE 36 Audit Report Setpoint Programming Review page: unoccupied setpoints, existing and recommended schedules, and plain wording
+  var CH_VERSION = 'v2026.09.23.23'; // District Calendar Import Calendar now reads list-style school calendar PDFs correctly
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
