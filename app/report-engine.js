@@ -3149,7 +3149,7 @@ function rptPageSavingsPerformance(n, d) {
     '<th class="rpt-n" style="width:12%">Therms</th>' +
     '<th class="rpt-n" style="width:12%">Propane<br>Gal</th>' +
     '<th class="rpt-n" style="width:14%">Cost</th>' +
-    '<th class="rpt-n" style="width:8%">Site EUI</th>' +
+    '<th class="rpt-n" style="width:8%">Site Energy Use Intensity</th>' +
     '<th class="rpt-n" style="width:12%">vs<br>Baseline</th>' +
     '</tr></thead>' +
     '<tbody>' +
@@ -3244,7 +3244,7 @@ function rptPageSavingsPerformance(n, d) {
     '<th class="rpt-n">Therms</th>' +
     '<th class="rpt-n">Propane Gallons</th>' +
     '<th class="rpt-n">Cost</th>' +
-    '<th class="rpt-n">Site EUI</th>' +
+    '<th class="rpt-n">Site Energy Use Intensity</th>' +
     '</tr></thead>' +
     '<tbody>' +
     bldgRows +
@@ -3424,8 +3424,8 @@ function rptPageEUI(n, d) {
     '<th style="font-size:12px">Building</th>' +
     '<th style="font-size:12px">Type</th>' +
     '<th class="rpt-n" style="font-size:12px">Square Feet</th>' +
-    '<th class="rpt-n" style="font-size:12px">Baseline Site EUI</th>' +
-    '<th class="rpt-n" style="font-size:12px">Current Site EUI</th>' +
+    '<th class="rpt-n" style="font-size:12px">Baseline Site Energy Use Intensity</th>' +
+    '<th class="rpt-n" style="font-size:12px">Current Site Energy Use Intensity</th>' +
     '<th class="rpt-n" style="font-size:12px">CBECS</th>' +
     '<th class="rpt-n" style="font-size:12px">vs CBECS %</th>' +
     '<th style="font-size:12px">Percentile</th>' +
@@ -3537,7 +3537,7 @@ function rptPageEUI(n, d) {
     '<table class="rpt-table" contenteditable="true">' +
     '<thead><tr>' +
     '<th>Building</th>' +
-    '<th class="rpt-n">Baseline Site EUI</th>' +
+    '<th class="rpt-n">Baseline Site Energy Use Intensity</th>' +
     '<th class="rpt-n">' +
     curYrLabel +
     ' Site EUI</th>' +
@@ -3783,7 +3783,7 @@ function rptPageAuditEUI(n, d) {
     '<table class="rpt-table rpt-table-wrap" contenteditable="true" style="font-size:10px;width:100%;table-layout:fixed">' +
     '<colgroup><col style="width:6%"><col style="width:44%"><col style="width:20%"><col style="width:30%"></colgroup>' +
     '<thead><tr>' +
-    '<th>#</th><th>Building</th><th class="rpt-n">Square Feet</th><th class="rpt-n">Site EUI (kBtu/ft&sup2;/Year)</th>' +
+    '<th>#</th><th>Building</th><th class="rpt-n">Square Feet</th><th class="rpt-n">Site Energy Use Intensity (kBtu/ft&sup2;/Year)</th>' +
     '</tr></thead>' +
     '<tbody>' +
     rankRows +
@@ -11338,7 +11338,7 @@ const REPORT_SECTIONS = [
   // fix/report-quarterly-restructure (2026-09-09), Part A: these three render together as the
   // closing "Year-to-Date / Overall Performance" section (see generateReportHTML page order) —
   // grouped here so the section picker reflects that.
-  { key: 'euiBenchmarking', label: 'Site EUI Benchmarking', group: 'Year-to-Date' },
+  { key: 'euiBenchmarking', label: 'Site Energy Use Intensity Benchmarking', group: 'Year-to-Date' },
   { key: 'yearToDate', label: 'Year-to-Date Monthly Trend', group: 'Year-to-Date' },
   { key: 'contractProjection', label: 'Contract Projection', group: 'Year-to-Date' },
   { key: 'appendixA', label: 'Appendix A: Normalization & Baseline', group: 'Appendices' },

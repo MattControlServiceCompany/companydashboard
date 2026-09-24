@@ -919,14 +919,14 @@ function egfxRefresh(projId) {
       if (estarScoreSubEl) {
         estarScoreSubEl.style.color = 'var(--text2)';
         estarScoreSubEl.innerHTML =
-          'source EUI ' +
+          'source Energy Use Intensity ' +
           srcEui.toFixed(0) +
           ' kBtu/ft²' +
-          ' <span title="Based on source EUI vs CBECS K-12 data. Official score requires Portfolio Manager." style="cursor:help;color:var(--text3)">&#9432;</span>';
+          ' <span title="Based on source Energy Use Intensity vs CBECS K-12 data. Official score requires Portfolio Manager." style="cursor:help;color:var(--text3)">&#9432;</span>';
       }
     } else {
       estarScoreEl.textContent = '—';
-      if (estarScoreSubEl) estarScoreSubEl.textContent = 'source EUI est.';
+      if (estarScoreSubEl) estarScoreSubEl.textContent = 'source Energy Use Intensity estimate';
     }
   }
 
@@ -1485,7 +1485,7 @@ function egfxRefresh(projId) {
             <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px">📊 Annual Summary by Year</div>
             <div style="overflow-x:auto">
               <table class="dtbl" style="min-width:500px">
-                <thead><tr><th>Year</th><th style="text-align:right">kWh</th><th style="text-align:right">kW</th><th style="text-align:right">Gas Therms</th>${hasPropane ? '<th style="text-align:right">Propane Gal</th>' : ''}<th style="text-align:right">Site EUI kBtu/ft²</th><th style="text-align:right">Baseline Site EUI</th><th style="text-align:right">vs Baseline</th></tr></thead>
+                <thead><tr><th>Year</th><th style="text-align:right">kWh</th><th style="text-align:right">kW</th><th style="text-align:right">Gas Therms</th>${hasPropane ? '<th style="text-align:right">Propane Gal</th>' : ''}<th style="text-align:right">Site Energy Use Intensity kBtu/ft²</th><th style="text-align:right">Baseline Site Energy Use Intensity</th><th style="text-align:right">vs Baseline</th></tr></thead>
                 <tbody>
                   ${yrsToShow
                     .map((y) => {
@@ -1536,7 +1536,7 @@ function egfxRefresh(projId) {
             <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px">🏢 Annual Summary by Building</div>
             <div style="overflow-x:auto">
               <table class="dtbl" style="min-width:600px;border-collapse:collapse">
-                <thead><tr style="background:var(--s1)"><th style="text-align:left;padding:8px 10px">Building</th><th style="padding:8px 6px">Year</th><th style="text-align:right;padding:8px 10px">kWh</th><th style="text-align:right;padding:8px 10px">kW</th><th style="text-align:right;padding:8px 10px">Gas Therms</th>${hasPropane ? '<th style="text-align:right;padding:8px 10px">Propane Gal</th>' : ''}<th style="text-align:right;padding:8px 10px">Cost</th><th style="text-align:right;padding:8px 10px">Site EUI</th></tr></thead>
+                <thead><tr style="background:var(--s1)"><th style="text-align:left;padding:8px 10px">Building</th><th style="padding:8px 6px">Year</th><th style="text-align:right;padding:8px 10px">kWh</th><th style="text-align:right;padding:8px 10px">kW</th><th style="text-align:right;padding:8px 10px">Gas Therms</th>${hasPropane ? '<th style="text-align:right;padding:8px 10px">Propane Gal</th>' : ''}<th style="text-align:right;padding:8px 10px">Cost</th><th style="text-align:right;padding:8px 10px">Site Energy Use Intensity</th></tr></thead>
                 <tbody>
                   ${(() => {
                     let rowIdx = 0;
@@ -1833,7 +1833,7 @@ function egfxRefresh(projId) {
                     <option value="kwh">Electric (kWh)</option>
                     <option value="therms">Gas (Therms)</option>
                     <option value="cost">Total Cost ($)</option>
-                    <option value="eui">Site EUI (kBtu/ft²/Year)</option>
+                    <option value="eui">Site Energy Use Intensity (kBtu/ft²/Year)</option>
                   </select>
                   <select id="egfx-trend-mode-${projId}" onchange="egfxRedrawTrendChart(${projId})" style="font-size:11px;padding:4px 6px;background:var(--s2);color:var(--text);border:1px solid var(--border);border-radius:4px">
                     <option value="perBldg">Per Building</option>
@@ -1873,9 +1873,9 @@ function egfxRefresh(projId) {
                     <th style="text-align:right">Age</th>
                     <th style="text-align:left">ENERGY STAR Property Type</th>
                     <th style="text-align:right">Latest Year</th>
-                    <th style="text-align:right">Median EUI</th>
-                    <th style="text-align:right">Top 25% EUI</th>
-                    <th style="text-align:right">DOE Target EUI</th>
+                    <th style="text-align:right">Median Energy Use Intensity</th>
+                    <th style="text-align:right">Top 25% Energy Use Intensity</th>
+                    <th style="text-align:right">DOE Target Energy Use Intensity</th>
                     <th style="text-align:right">vs Median</th>
                   </tr></thead>
                   <tbody>
@@ -2008,9 +2008,9 @@ function egfxRefresh(projId) {
                     <th style="text-align:left">#</th>
                     <th style="text-align:left">Building</th>
                     <th style="text-align:left">Type</th>
-                    <th style="text-align:right">Sqft</th>
-                    <th style="text-align:right">Baseline Site EUI</th>
-                    <th style="text-align:right">Current Site EUI</th>
+                    <th style="text-align:right">Square Feet</th>
+                    <th style="text-align:right">Baseline Site Energy Use Intensity</th>
+                    <th style="text-align:right">Current Site Energy Use Intensity</th>
                     <th style="text-align:right">CBECS Median</th>
                     <th style="text-align:right">vs CBECS</th>
                     <th style="text-align:center">Percentile</th>

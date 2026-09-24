@@ -192,7 +192,7 @@ console.log('--- 3. chResolveCalcField — real user overrides are never clobber
   // (c) Nothing found at all -> default, flagged.
   const nothingFound = sb.chResolveCalcField(undefined, 0, null, new Set(), 'sqft');
   assert(
-    nothingFound.value === 0 && nothingFound.hint === 'default — not from building data',
+    nothingFound.value === 0 && nothingFound.hint === 'Default value (not from building data)',
     'no autofill + no saved value -> flagged default',
   );
 
@@ -217,7 +217,7 @@ console.log('--- 4. chCalcFieldHintHTML ---');
     'autofill hint renders source text',
   );
   assert(
-    /default — not from building data/.test(sb.chCalcFieldHintHTML('default — not from building data')),
+    /Default value \(not from building data\)/.test(sb.chCalcFieldHintHTML('Default value (not from building data)')),
     'default hint renders',
   );
 }

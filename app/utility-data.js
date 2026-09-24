@@ -2144,7 +2144,7 @@ function _udRenderAllBuildingsBaselineSection(rows, allTotals, includedTotals) {
         <th style="${th}">kW Total</th>
         <th style="${th}">Therms</th>
         <th style="${th}">Total Cost</th>
-        <th style="${th}">EUI (kBtu/sf/Year)</th>
+        <th style="${th}">Energy Use Intensity (kBtu/sf/Year)</th>
         <th style="${thL}">Savings Status</th>
         <th style="${thL}">Baseline Freeze</th>
       </tr></thead>
@@ -2925,12 +2925,12 @@ function renderBldgComparisonPanel(content, bldgs, projName, projId) {
         <table style="border-collapse:collapse;min-width:480px">
           <thead><tr>
             <th style="${thS2.replace('text-align:right', 'text-align:left')}">Building</th>
-            <th style="${thS2}">EUI</th>
-            <th style="${thS2}">$/sqft</th>
+            <th style="${thS2}">Energy Use Intensity</th>
+            <th style="${thS2}">$ per Square Foot</th>
             <th style="${thS2}">Savings</th>
             <th style="${thS2}">Load Factor</th>
             <th style="${thS2}">ENERGY STAR</th>
-            <th style="${thS2}">Dem/sqft</th>
+            <th style="${thS2}">Demand per Square Foot</th>
           </tr></thead>
           <tbody id="bldgCompareRows">${selectorRows}</tbody>
         </table>
@@ -3131,7 +3131,7 @@ function renderUtilityAuditPanel(content, bldgs, projName, projId) {
           <thead><tr style="background:var(--s1)"><th style="${thS};text-align:left">Building</th>
             <th style="${thS}">Sq Ft</th><th style="${thS}">Electric (kWh / $)</th><th style="${thS}">Gas (Therms / $)</th>
             <th style="${thS}">Propane (Gal / $)</th><th style="${thS}">Water/Sewer/Steam/Storm $</th>
-            <th style="${thS}">Total Spend</th><th style="${thS}">Site EUI</th><th style="${thS};text-align:left">Flags</th></tr></thead>
+            <th style="${thS}">Total Spend</th><th style="${thS}">Site Energy Use Intensity</th><th style="${thS};text-align:left">Flags</th></tr></thead>
           <tbody>${rows}${totRow}</tbody>
         </table></div>
         ${footnotes}
@@ -6485,7 +6485,7 @@ function renderNormPane(pane, m, bills, incl) {
       : '';
 
     // ── Table section ──
-    const euiHdr = hasEUI ? '<th>kWh/sqft</th>' : '';
+    const euiHdr = hasEUI ? '<th>kWh per Square Foot</th>' : '';
     const regrHdrs = hasRegr
       ? '<th style="color:var(--violet)" title="Weather-normalized usage — primary output when regression is active">Normalized Baseline</th><th style="color:var(--text3);font-size:10px">Normalized Days</th>'
       : '';

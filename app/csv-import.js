@@ -4607,7 +4607,7 @@ function _renderBldgImportPreview(fname) {
     '<tr>' +
     '<th style="width:32px"><input type="checkbox" id="bldgImportSelectAll" checked onchange="bldgImportToggleAll(this.checked)"></th>' +
     '<th>Building Name</th>' +
-    '<th>SQFT</th>' +
+    '<th>Square Feet</th>' +
     '<th>Address</th>' +
     '<th>ZIP</th>' +
     '</tr>';
