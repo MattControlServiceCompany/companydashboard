@@ -1742,7 +1742,7 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
-    v: 'v2026.09.23.23',
+    v: 'v2026.09.23.24',
     date: '2026-09-23',
     title: 'Bills and Set Points now default to newest first',
     items: [
@@ -1753,6 +1753,17 @@ var RELEASE_NOTES = [
       {
         type: 'change',
         text: 'The Version pills on the Set Points tab now list the most recently saved version first, right after "Current."',
+      },
+    ],
+  },
+  {
+    v: 'v2026.09.23.23',
+    date: '2026-09-23',
+    title: 'District Calendar: Import Calendar now reads school calendar PDFs correctly',
+    items: [
+      {
+        type: 'fix',
+        text: 'The District Calendar "Import Calendar" function now reads list-style school calendar PDFs correctly, with each event showing its full name and correct dates.',
       },
     ],
   },

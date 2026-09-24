@@ -61,6 +61,18 @@ async function dcReadFile(file) {
 }
 
 // ── PDF text extraction via PDF.js ──
+// Month name fragments shared by the column-repair pass below and by
+// dcExtractCalendarEvents' list-style parser.
+const DC_MONTH_RE = 'January|February|March|April|May|June|July|August|September|October|November|December';
+const DC_MONTH_RE_SHORT = 'Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec';
+const DC_MONTH_RE_ALL = DC_MONTH_RE + '|' + DC_MONTH_RE_SHORT;
+// Known footer/trailer section headers that end the dated-event list on a
+// typical district calendar sheet (e.g. "Reporting Periods", "Conference
+// Dates"). Content at or after this marker is never event data, and a date
+// mentioned inside it (e.g. "Conference Dates: October 14 — Evening") must
+// not become a spurious second event or get glued onto a real one.
+const DC_TRAILER_RE = /^(Reporting\s+Periods|Teacher\s+Contract\s+Days|Conference\s+Dates|Total\s+Student\s+Days)\b/i;
+
 async function dcExtractPDFText(arrayBuffer) {
   if (!window.pdfjsLib) {
     await new Promise((res, rej) => {
@@ -74,6 +86,20 @@ async function dcExtractPDFText(arrayBuffer) {
       'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   }
   const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  // Many district calendar PDFs lay out decorative day-number mini-grids
+  // (Su/M/T/W/Th/F/Sa month blocks) beside a text list of dated events. A
+  // naive same-Y-row text join glues those unrelated columns together
+  // ("27 No Classes - Thanksgiving Break 28 29 30 31") and can scramble a
+  // wrapped description that sits beside a vertically-centered date label.
+  // These patterns detect and strip the grid noise, and reassemble each
+  // event's date + full (possibly wrapped) description as one logical row.
+  const dateLikeRe = new RegExp('^(' + DC_MONTH_RE_ALL + ')\\.?\\s+\\d{1,2}\\b', 'i');
+  const gridTitleRe = new RegExp('^(' + DC_MONTH_RE_ALL + ')\\.?\\s+\\d{4}\\b', 'i');
+  const dowHeaderRe = /^(Su|Sun|M|Mo|T|Tu|W|We|Th|F|Fr|Sa)(\s+(Su|Sun|M|Mo|T|Tu|W|We|Th|F|Fr|Sa)){1,6}\s*$/i;
+  const pureGridRe = /^[\d\s.,()–-]+$/;
+  const dashOpenRe = new RegExp('^(' + DC_MONTH_RE_ALL + ')\\.?\\s+\\d{1,2}\\s*[-–]\\s*$', 'i');
+  const contOnlyRe = new RegExp('^(' + DC_MONTH_RE_ALL + ')\\.?\\s+\\d{1,2}\\s*$', 'i');
+
   let fullText = '';
   for (let p = 1; p <= pdf.numPages; p++) {
     const page = await pdf.getPage(p);
@@ -94,21 +120,144 @@ async function dcExtractPDFText(arrayBuffer) {
       line.items.push({ x, str: item.str, w: item.width || 0 });
     });
     lines.sort((a, b) => b.y - a.y);
+
+    // Split each visual line into column segments: a large horizontal gap
+    // (well beyond normal word spacing) marks a new column rather than a
+    // continuation of the same text run, so it must not be padded/glued
+    // onto the same output line.
+    const COL_GAP_SPLIT = 5; // ~20pt in col units (col = x/4)
+    const segments = [];
     lines.forEach((line) => {
       line.items.sort((a, b) => a.x - b.x);
       let out = '';
       let cursor = 0;
       line.items.forEach((it) => {
         const col = Math.round(it.x / 4);
-        if (col > cursor + 1) {
-          out += ' '.repeat(Math.min(col - cursor, 40));
-        } else if (out.length > 0) {
-          out += ' ';
+        if (out.length > 0 && col > cursor + COL_GAP_SPLIT) {
+          segments.push({ y: line.y, text: out });
+          out = '';
         }
-        out += it.str;
+        if (out.length === 0) {
+          out = it.str;
+        } else if (col > cursor + 1) {
+          out += ' '.repeat(Math.min(col - cursor, 40)) + it.str;
+        } else {
+          out += ' ' + it.str;
+        }
         cursor = col + Math.round(it.w / 4);
       });
-      fullText += out + '\n';
+      if (out) segments.push({ y: line.y, text: out });
+    });
+
+    // Drop pure calendar-grid noise: day-of-week headers, bare day-number
+    // rows, and "Month YYYY (N)" mini-grid titles carry no event data.
+    const kept = segments.filter((s) => {
+      const t = s.text.trim();
+      if (!t) return false;
+      if (gridTitleRe.test(t)) return false;
+      if (dowHeaderRe.test(t)) return false;
+      if (pureGridRe.test(t)) return false;
+      return true;
+    });
+
+    // Merge a dangling cross-month date opener ("December 21-") with its
+    // continuation on the next kept line ("January 1") into one segment,
+    // so it reads as a single date anchor below.
+    for (let i = 0; i < kept.length - 1; i++) {
+      const a = kept[i].text.trim();
+      const b = kept[i + 1].text.trim();
+      if (dashOpenRe.test(a) && contOnlyRe.test(b)) {
+        kept[i] = { y: kept[i].y, text: a + ' ' + b };
+        kept.splice(i + 1, 1);
+      }
+    }
+
+    // Find the list's date anchors, then cut it off where the row spacing
+    // suddenly breaks (a footer/trailer section like "Reporting Periods" or
+    // "Conference Dates" sits well below the last evenly-spaced list row,
+    // and can restate a real event's month+day, e.g. "October 14 : Evening,
+    // All Grades" — that must never become a second anchor or attract
+    // nearby trailer text as a bogus event). A text-marker match (when
+    // present and not itself glued to other content) narrows the cut
+    // further as a second signal.
+    const rawAnchors = kept.filter((s) => dateLikeRe.test(s.text.trim()));
+    let goodAnchorCount = rawAnchors.length;
+    if (rawAnchors.length >= 4) {
+      const gapsAll = [];
+      for (let i = 1; i < rawAnchors.length; i++) gapsAll.push(Math.abs(rawAnchors[i - 1].y - rawAnchors[i].y));
+      const sortedGaps = gapsAll.slice().sort((a, b) => a - b);
+      const medianGap = sortedGaps[Math.floor(sortedGaps.length / 2)] || 20;
+      for (let i = 0; i < gapsAll.length; i++) {
+        if (gapsAll[i] > medianGap * 2.5) {
+          goodAnchorCount = i + 1;
+          break;
+        }
+      }
+    }
+    let boundaryY = -Infinity;
+    if (goodAnchorCount < rawAnchors.length) {
+      const lastGoodY = rawAnchors[goodAnchorCount - 1].y;
+      const gapsGood = [];
+      for (let i = 1; i < goodAnchorCount; i++) gapsGood.push(Math.abs(rawAnchors[i - 1].y - rawAnchors[i].y));
+      const rh = gapsGood.length ? gapsGood.slice().sort((a, b) => a - b)[Math.floor(gapsGood.length / 2)] : 20;
+      boundaryY = lastGoodY - rh;
+    }
+    let trailerTextIdx = -1;
+    for (let i = 0; i < kept.length; i++) {
+      const t = kept[i].text.trim();
+      if (DC_TRAILER_RE.test(t) && t.length < 40) {
+        trailerTextIdx = i;
+        break;
+      }
+    }
+    if (trailerTextIdx >= 0) boundaryY = Math.max(boundaryY, kept[trailerTextIdx].y + 1);
+
+    const listKept = isFinite(boundaryY) ? kept.filter((s) => s.y >= boundaryY) : kept;
+    const trailerKept = isFinite(boundaryY) ? kept.filter((s) => s.y < boundaryY) : [];
+
+    // Reassemble rows: each "Month D[-D2]" segment anchors one event row.
+    // Non-date segments are attached to the nearest date anchor by Y
+    // distance (within about half a row height) — this survives a table
+    // where a date label is vertically centered beside a description that
+    // wraps to 2+ lines, which otherwise reorders text out of reading
+    // order, while staying tight enough to reject unrelated content
+    // (like the page title) that merely happens to sit near the first row.
+    const anchors = listKept.filter((s) => dateLikeRe.test(s.text.trim()));
+    if (anchors.length >= 3) {
+      const gaps = [];
+      for (let i = 1; i < anchors.length; i++) gaps.push(Math.abs(anchors[i - 1].y - anchors[i].y));
+      gaps.sort((a, b) => a - b);
+      const rowHeight = gaps.length ? gaps[Math.floor(gaps.length / 2)] : 20;
+      const maxDist = Math.min(Math.max(rowHeight / 2, 8), rowHeight);
+      const rows = anchors.map((a) => ({ anchor: a, extra: [] }));
+      listKept.forEach((s) => {
+        if (anchors.indexOf(s) !== -1) return;
+        let best = -1,
+          bestDist = Infinity;
+        for (let i = 0; i < anchors.length; i++) {
+          const d = Math.abs(s.y - anchors[i].y);
+          if (d < bestDist) {
+            bestDist = d;
+            best = i;
+          }
+        }
+        if (best >= 0 && bestDist <= maxDist) rows[best].extra.push(s);
+      });
+      rows.forEach((row) => {
+        fullText += row.anchor.text + '\n';
+        row.extra
+          .sort((a, b) => b.y - a.y)
+          .forEach((s) => {
+            fullText += s.text + '\n';
+          });
+      });
+    } else {
+      listKept.forEach((s) => {
+        fullText += s.text + '\n';
+      });
+    }
+    trailerKept.forEach((s) => {
+      fullText += s.text + '\n';
     });
     fullText += '\n';
   }
@@ -889,6 +1038,180 @@ function _distCalApproveImport(projId) {
   showToast(added + ' events imported ✓');
 }
 
+// ── Sequential date+description list parser (bug: 2026-09-23 district calendar) ──
+// Scans plain text line by line for a repeating "date line(s), then
+// description line(s)" pattern, e.g.:
+//   August 5-7
+//   New Teachers on Duty
+//   August 10
+//   No Classes -Special Education Teacher Professional
+//   Development
+// A dangling cross-month opener ("December 21-") is completed by the very
+// next "Month D" line ("January 1") if dcExtractPDFText did not already
+// merge them. Grid noise (day-of-week headers, bare day numbers, mini-grid
+// "Month YYYY (N)" titles) and non-dated footer entries ("Various" / "PLC
+// Days") are skipped. Stops at known footer section headers.
+function _dcParseSequentialList(text, monthMap, detectType, yearForMonth, isValidSchoolDate) {
+  const dateOnlyRe = new RegExp(
+    '^(' + DC_MONTH_RE_ALL + ')\\.?\\s+(\\d{1,2})(?:\\s*[-–]\\s*(\\d{1,2}))?\\s*[-–]?\\s*$',
+    'i',
+  );
+  const dashOpenRe = new RegExp('^(' + DC_MONTH_RE_ALL + ')\\.?\\s+(\\d{1,2})\\s*[-–]\\s*$', 'i');
+  const contOnlyRe = new RegExp('^(' + DC_MONTH_RE_ALL + ')\\.?\\s+(\\d{1,2})\\s*$', 'i');
+  const crossMonthRe = new RegExp(
+    '^(' +
+      DC_MONTH_RE_ALL +
+      ')\\.?\\s+(\\d{1,2})\\s*[-–]\\s*(' +
+      DC_MONTH_RE_ALL +
+      ')\\.?\\s+(\\d{1,2})\\s*[-–:]?\\s*(.*)$',
+    'i',
+  );
+  // Description separator can be an explicit dash/colon ("15 – No School")
+  // or just a wide gap of 2+ spaces left over from a merged PDF column
+  // ("November 24-27     No Classes - Thanksgiving Break").
+  const dateInlineRe = new RegExp(
+    '^(' + DC_MONTH_RE_ALL + ')\\.?\\s+(\\d{1,2})(?:\\s*[-–]\\s*(\\d{1,2}))?(?:\\s*[-–:]\\s+|\\s{2,})(\\S.+)$',
+    'i',
+  );
+  const gridTitleRe = new RegExp('^(' + DC_MONTH_RE_ALL + ')\\.?\\s+\\d{4}\\b', 'i');
+  const dowHeaderRe = /^(Su|Sun|M|Mo|T|Tu|W|We|Th|F|Fr|Sa)(\s+(Su|Sun|M|Mo|T|Tu|W|We|Th|F|Fr|Sa)){1,6}\s*$/i;
+  const pureGridRe = /^[\d\s.,()–-]+$/;
+  const stopRe = DC_TRAILER_RE;
+  const skipEntryRe = /^Various$/i;
+
+  const seqEvents = [];
+  const seqSeen = new Set();
+  function emitRange(mo1, d1, yr1, mo2, d2, yr2, rawName) {
+    const name = rawName.replace(/\s+/g, ' ').trim();
+    const type = detectType(name);
+    let cur = new Date(yr1, mo1 - 1, d1);
+    const end = new Date(yr2, mo2 - 1, d2);
+    let guard = 0;
+    while (cur <= end && guard < 400) {
+      const dateStr =
+        cur.getFullYear() +
+        '-' +
+        String(cur.getMonth() + 1).padStart(2, '0') +
+        '-' +
+        String(cur.getDate()).padStart(2, '0');
+      if (isValidSchoolDate(dateStr)) {
+        const key = dateStr + '|' + name;
+        if (!seqSeen.has(key)) {
+          seqSeen.add(key);
+          seqEvents.push({ date: dateStr, name, type });
+        }
+      }
+      cur.setDate(cur.getDate() + 1);
+      guard++;
+    }
+  }
+
+  const seqLines = text.split(/\n/).map((l) => l.trim());
+  let pending = null; // { mo1, d1, yr1, mo2, d2, yr2, awaitingCont }
+  let pendingDesc = [];
+  let skipDesc = false;
+
+  function flushPending() {
+    if (pending) {
+      const name = pendingDesc.join(' ').replace(/\s+/g, ' ').trim();
+      if (name) emitRange(pending.mo1, pending.d1, pending.yr1, pending.mo2, pending.d2, pending.yr2, name);
+    }
+    pending = null;
+    pendingDesc = [];
+  }
+
+  for (const line of seqLines) {
+    if (!line) continue;
+    if (stopRe.test(line)) {
+      flushPending();
+      break;
+    }
+    if (skipEntryRe.test(line)) {
+      flushPending();
+      skipDesc = true;
+      continue;
+    }
+    if (gridTitleRe.test(line) || dowHeaderRe.test(line) || pureGridRe.test(line)) continue;
+
+    const crossM = line.match(crossMonthRe);
+    if (crossM) {
+      flushPending();
+      skipDesc = false;
+      const mo1 = monthMap[crossM[1].toLowerCase()];
+      const d1 = parseInt(crossM[2]);
+      const mo2 = monthMap[crossM[3].toLowerCase()];
+      const d2 = parseInt(crossM[4]);
+      const yr1 = yearForMonth(mo1);
+      const yr2 = yearForMonth(mo2);
+      const inlineDesc = (crossM[5] || '').trim();
+      if (inlineDesc) {
+        emitRange(mo1, d1, yr1, mo2, d2, yr2, inlineDesc);
+      } else {
+        pending = { mo1, d1, yr1, mo2, d2, yr2 };
+        pendingDesc = [];
+      }
+      continue;
+    }
+
+    const inlineM = line.match(dateInlineRe);
+    if (inlineM) {
+      flushPending();
+      skipDesc = false;
+      const mo1 = monthMap[inlineM[1].toLowerCase()];
+      const d1 = parseInt(inlineM[2]);
+      const d2 = inlineM[3] ? parseInt(inlineM[3]) : d1;
+      const yr1 = yearForMonth(mo1);
+      emitRange(mo1, d1, yr1, mo1, d2, yr1, inlineM[4].trim());
+      continue;
+    }
+
+    if (pending && pending.awaitingCont) {
+      const contM = line.match(contOnlyRe);
+      if (contM) {
+        const mo2 = monthMap[contM[1].toLowerCase()];
+        const d2 = parseInt(contM[2]);
+        pending.mo2 = mo2;
+        pending.d2 = d2;
+        pending.yr2 = yearForMonth(mo2);
+        pending.awaitingCont = false;
+        continue;
+      }
+    }
+
+    const dashOpenM = line.match(dashOpenRe);
+    if (dashOpenM) {
+      flushPending();
+      skipDesc = false;
+      const mo1 = monthMap[dashOpenM[1].toLowerCase()];
+      const d1 = parseInt(dashOpenM[2]);
+      const yr1 = yearForMonth(mo1);
+      pending = { mo1, d1, yr1, mo2: mo1, d2: d1, yr2: yr1, awaitingCont: true };
+      pendingDesc = [];
+      continue;
+    }
+
+    const dateM = line.match(dateOnlyRe);
+    if (dateM) {
+      flushPending();
+      skipDesc = false;
+      const mo1 = monthMap[dateM[1].toLowerCase()];
+      const d1 = parseInt(dateM[2]);
+      const d2 = dateM[3] ? parseInt(dateM[3]) : d1;
+      const yr1 = yearForMonth(mo1);
+      pending = { mo1, d1, yr1, mo2: mo1, d2, yr2: yr1 };
+      pendingDesc = [];
+      continue;
+    }
+
+    // Not a date line — description text (or a continuation of it)
+    if (skipDesc) continue; // undated entry (e.g. "Various" / "PLC Days") — drop
+    if (pending) pendingDesc.push(line);
+  }
+  flushPending();
+
+  return seqEvents.sort((a, b) => a.date.localeCompare(b.date));
+}
+
 function dcExtractCalendarEvents(text) {
   const events = [];
   // Bug 079df33b: dedup set keyed on "date|name" so same event text on
@@ -960,6 +1283,17 @@ function dcExtractCalendarEvents(text) {
   function isValidSchoolDate(dateStr) {
     const d = new Date(dateStr + 'T12:00:00');
     return !isNaN(d) && d >= _syEarliest && d <= _syLatest;
+  }
+
+  // ── Strategy 0: sequential "Month D[-D2]" + description list ──
+  // Many district calendars present events as a flat list — a date line
+  // (sometimes a cross-month range split across two lines, e.g. "December
+  // 21-" / "January 1") followed by one or more description lines, repeated
+  // top to bottom — distinct from a day-number grid. Try this first; it
+  // also tolerates a date and its description landing on the same line.
+  {
+    const seqEvents = _dcParseSequentialList(text, monthMap, detectType, yearForMonth, isValidSchoolDate);
+    if (seqEvents.length > 3) return seqEvents;
   }
 
   const monthYearMap = {};

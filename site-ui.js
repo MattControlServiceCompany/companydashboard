@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.23.23'; // Bills table and Set Points Version pills now default to newest-first sort
+  var CH_VERSION = 'v2026.09.23.24'; // Bills table and Set Points Version pills now default to newest-first sort
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
