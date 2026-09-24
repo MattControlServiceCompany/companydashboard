@@ -11,9 +11,13 @@
 //   2. Electric month, real kWh usage, kWh rate unresolvable -> flagged, byYM stays 0.
 //   3. Gas month with a COMPLETE rate -> never flagged, and its $ value is untouched
 //      (proves the fix never changes a number that has complete rate data).
-//   4. Water meter reusing the same code branch as gas, with blank gas-only fields (its
-//      normal, by-design state) -> must NOT be flagged (regression guard for the
-//      Water/Sewer/Stormwater/Steam false-positive found and fixed during this item).
+//   3b. Electric month with a COMPLETE rate -> never flagged, $ value untouched (proves
+//      electric detection was never accidentally commodity-gated alongside the gas fix).
+//   4. Water meter reusing the same code branch as gas, with blank gas-only fields. NOT
+//      "by design" — real Water/Sewer/Stormwater bills carry their own rate fields this
+//      branch never reads (a separate, real, out-of-scope gap) -> must NOT be flagged as
+//      "gas rate unavailable" (regression guard for the false-positive found and fixed
+//      during this item).
 //   5. A month with an explicit costSavOverride and no resolvable rate -> not flagged
 //      (a human already resolved it).
 //   6. Same gas case (1) run through the multi-baseline path (_getMeterSavingsMulti).
@@ -175,7 +179,37 @@ if (typeof getMeterSavings !== 'function') {
   assert(typeof r.byYM['2025-07'] === 'number' && r.byYM['2025-07'] !== 0, 'Case 3: complete-rate $ value present');
 })();
 
-// ─── Case 4: Water meter — same code branch as gas, blank gas-only fields BY DESIGN ────
+// ─── Case 3b: Electric month with a COMPLETE rate — never flagged, real $ value present ─
+// The electric kWh/kW checks are NOT commodity-gated the way the gas/water branch is (they
+// live inside the `if (isElec)` branch, always active for electric meters) — this proves
+// that directly, since a follow-up review raised the question of whether electric detection
+// had been accidentally scoped out along with the Water/Sewer false-positive fix.
+(function () {
+  const m = {
+    id: 'm-elec-2',
+    commodity: 'Electric',
+    baseline: { months: ['2025-01', '2025-02', '2025-03'] },
+    inclusive: true,
+  };
+  const bills = [
+    { start: '2025-01-01', end: '2025-01-31', kwh: 10000, totalKwhRate: 0.11, kwhCost: 1100, demandKW: 30 },
+    { start: '2025-02-01', end: '2025-02-28', kwh: 9500, totalKwhRate: 0.11, kwhCost: 1045, demandKW: 29 },
+    { start: '2025-03-01', end: '2025-03-31', kwh: 10200, totalKwhRate: 0.11, kwhCost: 1122, demandKW: 31 },
+    { start: '2025-05-01', end: '2025-05-31', kwh: 8000, totalKwhRate: 0.11, kwhCost: 880, demandKW: 27 },
+  ];
+  const r = getMeterSavings(m, bills, true, 1, 'b1');
+  assert(!r.incompleteYM['2025-05'], 'Case 3b: a complete-rate electric month is never flagged');
+  assert(
+    typeof r.byYM['2025-05'] === 'number' && r.byYM['2025-05'] !== 0,
+    'Case 3b: complete-rate electric $ value present',
+  );
+})();
+
+// ─── Case 4: Water meter — same code branch as gas. NOT "no rate by design": real Water/
+// Sewer/Stormwater bills DO carry their own rate (totalWaterRate/waterCharge etc, verified
+// against the 2026-09-22 backup) — this branch just never reads those fields, a real,
+// separate, unfixed gap that is out of scope for a67db8ce. Regression guard only: must
+// never be flagged as "gas rate unavailable" (the false positive found and fixed here). ──
 (function () {
   const m = {
     id: 'm-water-1',

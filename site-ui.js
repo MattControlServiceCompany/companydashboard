@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.24.11'; // Fixed Evergy RkVA rate: a detected mismatch now corrects the stored rate from the printed charge instead of keeping the misread value
+  var CH_VERSION = 'v2026.09.24.12'; // Incomplete-rate-flag follow-up: confirmed the warning also covers Electric, corrected a code comment that wrongly called Water/Sewer/Stormwater rate gaps "by design", and added Electric test coverage
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
