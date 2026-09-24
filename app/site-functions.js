@@ -1742,6 +1742,29 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.23.22',
+    date: '2026-09-23',
+    title: 'ASHRAE 36 Audit Report: unoccupied setpoints and schedules on the Setpoint Programming Review page',
+    items: [
+      {
+        type: 'feature',
+        text: 'The Setpoint Programming Review page now shows unoccupied heating and cooling setpoints next to occupied setpoints, with the ASHRAE 36 reference value beside each one.',
+      },
+      {
+        type: 'feature',
+        text: 'The page now shows the existing occupied schedule (Monday through Friday, and Saturday and Sunday) alongside the recommended schedule and setpoints, using the same numbers as the Equipment Matrix Setpoint & Schedule export and the BAS Savings Calc.',
+      },
+      {
+        type: 'fix',
+        text: 'The "DEADBAND" column header no longer breaks in the middle of the word, and "Avg" and "Occ" are spelled out as "Average" and "Occupied" throughout the table.',
+      },
+      {
+        type: 'fix',
+        text: '"Needs Review" is now "Confirm With Engineer" — plain wording that tells you what to do about a setpoint that differs from the ASHRAE 36 default.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.23.21',
     date: '2026-09-23',
     title: 'Set Points tab: delete all zones, pull zones from the Equipment Matrix, and a fixed point-list import',

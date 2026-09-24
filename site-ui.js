@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.23.21'; // Set Points tab: Delete All + Pull from Equipment Matrix, and the point-level BAS Points List import now routes to Equipment Matrix instead of making one zone row per point
+  var CH_VERSION = 'v2026.09.23.22'; // ASHRAE 36 Audit Report Setpoint Programming Review page: unoccupied setpoints, existing and recommended schedules, and plain wording
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
