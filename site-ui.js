@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.23.15'; // BAS Savings Calc heating source and gas calibration fixes; HVAC Load Estimation electric-heat detection from the Equipment Matrix
+  var CH_VERSION = 'v2026.09.23.16'; // Equipment Matrix: removed pagination (all rows scroll, no page cap), added Meters/Lighting/Monitoring classification for rows that fell to "Other"
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

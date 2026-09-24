@@ -1742,6 +1742,29 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.23.16',
+    date: '2026-09-23',
+    title: 'Equipment Matrix: no more page limit; new Meters and Lighting types',
+    items: [
+      {
+        type: 'fix',
+        text: 'The Equipment Matrix now shows every row in one scrolling list. It no longer splits rows across pages, so you do not need to click Next to see the rest of a large building.',
+      },
+      {
+        type: 'feature',
+        text: 'Added a Meters equipment type, with Electric, Gas, and Water as subtypes. Electric, gas, and water meters that used to show as Other or under Power / Gen now show as Meters.',
+      },
+      {
+        type: 'fix',
+        text: 'Lighting rows named with the word "Lights" (for example, parking lot lights or exterior lights) now show as Lighting instead of Other.',
+      },
+      {
+        type: 'fix',
+        text: 'Room-level BAS points that only monitor a space (a temperature sensor and setpoints, with no fan, damper, or valve) now show as Monitoring instead of Other.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.23.15',
     date: '2026-09-23',
     title: 'Energy Department: BAS Savings Calc heating source and gas calibration fixes',
