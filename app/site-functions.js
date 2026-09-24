@@ -1742,6 +1742,67 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.23.16',
+    date: '2026-09-23',
+    title: 'Equipment Matrix: no more page limit; new Meters and Lighting types',
+    items: [
+      {
+        type: 'fix',
+        text: 'The Equipment Matrix now shows every row in one scrolling list. It no longer splits rows across pages, so you do not need to click Next to see the rest of a large building.',
+      },
+      {
+        type: 'feature',
+        text: 'Added a Meters equipment type, with Electric, Gas, and Water as subtypes. Electric, gas, and water meters that used to show as Other or under Power / Gen now show as Meters.',
+      },
+      {
+        type: 'fix',
+        text: 'Lighting rows named with the word "Lights" (for example, parking lot lights or exterior lights) now show as Lighting instead of Other.',
+      },
+      {
+        type: 'fix',
+        text: 'Room-level BAS points that only monitor a space (a temperature sensor and setpoints, with no fan, damper, or valve) now show as Monitoring instead of Other.',
+      },
+    ],
+  },
+  {
+    v: 'v2026.09.23.15',
+    date: '2026-09-23',
+    title: 'Energy Department: BAS Savings Calc heating source and gas calibration fixes',
+    items: [
+      {
+        type: 'fix',
+        text: "The Existing Heating Gas — Therms field in Calibration now fills in from the building's own gas bills as soon as the BAS Savings Calc is opened, without needing to open HVAC Load Estimation first.",
+      },
+      {
+        type: 'fix',
+        text: "HVAC Load Estimation's \"Heating % of HVAC kWh (electric heat only)\" default, and the BAS Savings Calc's Heating Source default, now both read the Equipment Matrix's own heating-type classification for the building (gas, electric, or both) instead of a project field that was almost never set.",
+      },
+      {
+        type: 'fix',
+        text: "The BAS Savings Calc can now calibrate a gas-heat building's Heat Therms Saved estimate against a real utility figure (Existing Heating Gas — Therms/MCF from UA), fixing a case where that estimate had no way to match reality and could come out far too high.",
+      },
+    ],
+  },
+  {
+    v: 'v2026.09.23.14',
+    date: '2026-09-23',
+    title: 'Energy Department: BAS Savings Calc auto-fills Existing/Proposed Conditions and Heating Gas Therms',
+    items: [
+      {
+        type: 'feature',
+        text: 'On the Energy Department page, the BAS Savings Calc now fills in the Existing Conditions and New (Proposed) Conditions setpoints and schedule every time you open it, not only when you click "Use Equipment Matrix Data." Existing setpoints and schedule come from Set Points or the Equipment Matrix when available. Proposed setpoints and schedule always fall back to our standard values (70°F occupied heat / 74°F occupied cool, unoccupied setpoints by heating type, school-hours schedule) when no project-specific numbers exist yet. Every filled-in field is labeled with where the number came from.',
+      },
+      {
+        type: 'feature',
+        text: "The Existing Heating Gas — Therms field in Calibration now fills in from the project's HVAC Load Estimation (the heating share of the project's gas bills) once that tab has been run.",
+      },
+      {
+        type: 'fix',
+        text: "A BAS Savings Calc saved before this update, whose Existing/Proposed Conditions still exactly match the old Excel template's placeholder values, is no longer treated as a real edit that blocks the fields from filling in.",
+      },
+    ],
+  },
+  {
     v: 'v2026.09.23.13',
     date: '2026-09-23',
     title: 'Utility Data Bills table: Facilities kW and Facilities kW Cost now read from one source',
