@@ -1776,13 +1776,24 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
-    v: 'v2026.09.24.10',
+    v: 'v2026.09.24.11',
     date: '2026-09-24',
     title: 'Utility Data: fixed a wrong Evergy RkVA rate on one bill type',
     items: [
       {
         type: 'fix',
         text: 'On some Evergy electric bills, the bill reader could read a wrong RkVA per-unit rate (a single misread digit, such as $0.883 instead of the printed $0.663) even though it already flagged that the rate did not match the printed charge. It now corrects the stored rate to match the printed charge when this happens, so the wrong rate no longer feeds savings calculations.',
+      },
+    ],
+  },
+  {
+    v: 'v2026.09.24.10',
+    date: '2026-09-24',
+    title: 'Project Baseline: the All Buildings freeze status is now correct',
+    items: [
+      {
+        type: 'fix',
+        text: 'On the Project Baseline "All Buildings" table, a building could show "Not Frozen" even after every meter that counts toward its savings numbers had been saved and frozen. The cause: a submeter that is excluded from savings (for example a Water or Sewer meter) and was never meant to be saved on its own was still blocking the Frozen label. The label now looks only at the meters that actually count toward the building\'s numbers, matching the building header\'s own "X of Y meters frozen" count.',
       },
     ],
   },
