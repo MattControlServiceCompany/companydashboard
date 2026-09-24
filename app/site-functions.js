@@ -1742,6 +1742,63 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.23.15',
+    date: '2026-09-23',
+    title: 'Energy Department: BAS Savings Calc heating source and gas calibration fixes',
+    items: [
+      {
+        type: 'fix',
+        text: "The Existing Heating Gas — Therms field in Calibration now fills in from the building's own gas bills as soon as the BAS Savings Calc is opened, without needing to open HVAC Load Estimation first.",
+      },
+      {
+        type: 'fix',
+        text: "HVAC Load Estimation's \"Heating % of HVAC kWh (electric heat only)\" default, and the BAS Savings Calc's Heating Source default, now both read the Equipment Matrix's own heating-type classification for the building (gas, electric, or both) instead of a project field that was almost never set.",
+      },
+      {
+        type: 'fix',
+        text: "The BAS Savings Calc can now calibrate a gas-heat building's Heat Therms Saved estimate against a real utility figure (Existing Heating Gas — Therms/MCF from UA), fixing a case where that estimate had no way to match reality and could come out far too high.",
+      },
+    ],
+  },
+  {
+    v: 'v2026.09.23.14',
+    date: '2026-09-23',
+    title: 'Energy Department: BAS Savings Calc auto-fills Existing/Proposed Conditions and Heating Gas Therms',
+    items: [
+      {
+        type: 'feature',
+        text: 'On the Energy Department page, the BAS Savings Calc now fills in the Existing Conditions and New (Proposed) Conditions setpoints and schedule every time you open it, not only when you click "Use Equipment Matrix Data." Existing setpoints and schedule come from Set Points or the Equipment Matrix when available. Proposed setpoints and schedule always fall back to our standard values (70°F occupied heat / 74°F occupied cool, unoccupied setpoints by heating type, school-hours schedule) when no project-specific numbers exist yet. Every filled-in field is labeled with where the number came from.',
+      },
+      {
+        type: 'feature',
+        text: "The Existing Heating Gas — Therms field in Calibration now fills in from the project's HVAC Load Estimation (the heating share of the project's gas bills) once that tab has been run.",
+      },
+      {
+        type: 'fix',
+        text: "A BAS Savings Calc saved before this update, whose Existing/Proposed Conditions still exactly match the old Excel template's placeholder values, is no longer treated as a real edit that blocks the fields from filling in.",
+      },
+    ],
+  },
+  {
+    v: 'v2026.09.23.13',
+    date: '2026-09-23',
+    title: 'Utility Data Bills table: Facilities kW and Facilities kW Cost now read from one source',
+    items: [
+      {
+        type: 'fix',
+        text: 'On the Utility Data Bills table, Facilities kW Cost was stored under two different field names, and 5 places that display it (Bills table cost rollups, Set Points, the standard report, the Baseline & BAS Savings Report, and the building-level performance summary) each read only one of the two — so a bill saved through the other path showed Facilities kW Cost as blank or $0 and dropped that dollar amount from the total. All 5 now read through one shared lookup, so every surface agrees.',
+      },
+      {
+        type: 'fix',
+        text: 'Fixed a short-history case where the Facilities kW quantity, filled in automatically from a CSV import with fewer than 12 months of bills, could under-report the true 12-month peak demand for the earliest months on the meter (an April-June bill period showed 289.8/289.8/333.0 kW instead of the correct 380.16 kW).',
+      },
+      {
+        type: 'fix',
+        text: 'A one-time correction pass fills in Facilities kW and syncs Facilities kW Cost on any Electric bill already saved before this fix, so existing bills self-correct without needing to be re-imported.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.23.12',
     date: '2026-09-23',
     title: 'Utility Data: gas $/Therm rate fix now covers every bill save path',

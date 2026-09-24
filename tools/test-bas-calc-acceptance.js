@@ -266,5 +266,35 @@ if (r) {
   );
 }
 
+console.log('=== 3. Gas-only heating (heatSrc 1/3) calibration — 2026-09-23 fix ===');
+// Regression guard for the fix: heatSrc 1/3 route their ENTIRE existing heating load into the
+// gas bucket (exHeatGasSetbackM/OAM), never the kWh bucket, so heatAdj must calibrate against
+// bc-calHeatGas (not bc-calHeatKwh, which stays 0 and inert for these heatSrc values) —
+// previously heatAdj stayed permanently 1 (uncalibrated) for any gas-only building no matter
+// what a user entered, because the calibration equation only ever looked at the (always-empty)
+// kWh raw totals for heatSrc 1/3.
+dom.set('bc-heatSrc', new FakeEl('3', 'SELECT')); // Gas (Therms)
+dom.set('bc-calHeatGas', new FakeEl('19274'));
+sandbox._bcDoCalc('p1');
+const r3 = project._bcResults;
+assert(!!r3, '_bcResults populated for heatSrc 3 scenario');
+if (r3) {
+  const heatAdj3 = parseFloat(dom.get('bc-adjHeat').textContent);
+  assert(heatAdj3 !== 1, `heatAdj (${heatAdj3}) is no longer stuck at 1 once bc-calHeatGas is set for heatSrc 3`);
+  assert(heatAdj3 > 0, `heatAdj (${heatAdj3}) is a sane positive scalar`);
+  const annHeatGasSav3 = r3.gasSavings.reduce((a, b) => a + b, 0);
+  assert(r3.annHeatGasSav === annHeatGasSav3, 'annHeatGasSav matches the sum of the monthly gasSavings series');
+  // The calibrated existing total must reproduce the calibration input exactly (same closed-form
+  // identity coolAdj already satisfies) — extract the calibrated existing-heating-gas total from
+  // the rendered TOTAL row (5th numeric column: Exist/New Cool, Cool Saved, Heat kWh Saved, then
+  // Heat Therms Saved is column 5, but the calibrated EXISTING total isn't rendered directly, so
+  // reconstruct it from annHeatGasSav + the New total via the same source: re-run with
+  // bc-calHeatGas cleared to get the uncalibrated (heatAdj=1) baseline for comparison instead).
+  dom.set('bc-calHeatGas', new FakeEl(''));
+  sandbox._bcDoCalc('p1');
+  const uncalHeatAdj = parseFloat(dom.get('bc-adjHeat').textContent);
+  assert(uncalHeatAdj === 1, 'heatAdj reverts to 1 (uncalibrated) when bc-calHeatGas is blank again');
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

@@ -381,7 +381,9 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
           const actDemKW = bfr.length ? Math.max(...bfr.map((b2) => parseFloat(b2.demandKW || 0))) : 0;
           const kwhCostAmt = bfr.reduce((s, b2) => s + parseFloat(b2.kwhCost || 0), 0);
           const kwCostAmt = bfr.reduce((s, b2) => s + parseFloat(b2.kwCost || 0), 0);
-          const facKWCostAmt = bfr.reduce((s, b2) => s + parseFloat(b2.facKWCost || 0), 0);
+          // getBillFacKWCost (computations/rates.js) — the ONE accessor for Facilities kW
+          // Cost (2026-09-23 single-source fix); never read b2.facKWCost/facilitiesCharge directly.
+          const facKWCostAmt = bfr.reduce((s, b2) => s + getBillFacKWCost(b2), 0);
 
           // Always populate monthly map (full year for charts)
           if (!elecMonthly[r.ym])

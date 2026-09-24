@@ -37,9 +37,12 @@ function runBillValidation(meter, bill) {
       dismissNote: prev ? prev.dismissNote : '',
     };
   });
-  // Carry forward any cross-meter flags not managed by _analyzeMeterBills.
-  // Currently: waterSewerParity_warn (managed by _analyzeWaterSewerParity / runBuildingValidation).
-  const CROSS_METER_FLAG_IDS = ['waterSewerParity_warn'];
+  // Carry forward any flags not managed by _analyzeMeterBills's live recompute — these are
+  // written directly to bill._flags elsewhere and must survive a re-validation pass:
+  // waterSewerParity_warn (_analyzeWaterSewerParity / runBuildingValidation) and
+  // facKWMissing_warn (backfillFacilitiesKW / _flagFacKWMissingBills, app/csv-import.js —
+  // 2026-09-23 Facilities kW fix).
+  const CROSS_METER_FLAG_IDS = ['waterSewerParity_warn', 'facKWMissing_warn'];
   const crossMeterFlags = existing.filter((f) => CROSS_METER_FLAG_IDS.includes(f.id));
   bill._flags = [...newFlags, ...crossMeterFlags];
 }

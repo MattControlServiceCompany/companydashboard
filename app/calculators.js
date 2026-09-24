@@ -250,6 +250,72 @@ function _hvlMonthlyBaseline(projId, b) {
   };
 }
 
+// Company-standard "Space Heating % of Total Gas" default for the Rules-of-Thumb method's
+// gasPct input (hvl-t-gasPct) — ONE place, shared by _hvlRenderTraditional's shown default/hint
+// text and hvacComputeGasThermsForBuilding's headless BAS Savings Calc autofill (2026-09-23), so
+// both always agree — no second copy of "15 vs 80" anywhere else.
+function _hvlDefaultGasPct(elecHeat) {
+  return elecHeat ? 15 : 80;
+}
+
+// Whether this building has at least one Equipment Matrix row classified — with a real signal,
+// not the unclassified fallback bucket — as electric heat (electric reheat or heat pump/VRF).
+// Reads the Equipment Matrix's OWN existing per-row classifier (_emDeriveHeatingType, app/
+// equipment-matrix.js) — never a second classifier, never mutates the matrix. Replaces the old
+// p.heatType signal (a free-text project-level field set only via a rarely-used modal, so it is
+// essentially never populated) which is why a building with a real electric-heat unit, like
+// Spring Hill Schools / Woodland Spring Middle, was showing "0% electric heating share" even
+// though Equipment Matrix data for it exists (2026-09-23 fix — see docs/dashboardlogic.md).
+function _hvlBuildingHasElectricHeat(projId, bldgId) {
+  if (
+    !bldgId ||
+    typeof emLoadMatrix !== 'function' ||
+    typeof emGetNormalizedPoints !== 'function' ||
+    typeof _emDeriveHeatingType !== 'function' ||
+    typeof _emNormBldgNameForJoin !== 'function'
+  )
+    return false;
+  const b = typeof getUDBldg === 'function' ? getUDBldg(projId, bldgId) : null;
+  if (!b) return false;
+  const data = emLoadMatrix(projId);
+  const rows = (data && data.rows) || [];
+  if (!rows.length) return false;
+  const wantName = _emNormBldgNameForJoin(b.name);
+  const hasGas = b.meters && b.meters.length ? b.meters.some((m) => m.commodity === 'Gas') : undefined;
+  return rows.some((row) => {
+    if (_emNormBldgNameForJoin(row.building || '') !== wantName) return false;
+    const pts = emGetNormalizedPoints(row) || {};
+    const ht = _emDeriveHeatingType(row, pts, hasGas);
+    return ht.known && (ht.key === 'electricReheat' || ht.key === 'heatpump');
+  });
+}
+
+// Existing Heating Gas Therms for the BAS Savings Calc (calHeatGas), computed directly from this
+// building's own gas (plus propane, gallon-equivalent) bills — the SAME bill reader
+// (_hvlMonthlyBaseline) and the SAME Rules-of-Thumb gas-heating-share default
+// (_hvlDefaultGasPct/_hvlBuildingHasElectricHeat) the HVAC Load Estimation tab itself uses to
+// compute p.hvacLoadEst.hvacGasT — so this fills the BAS Savings Calc's calibration field
+// without requiring a user to have opened that tab first (2026-09-23 fix). Returns null when the
+// building has no gas/propane bills at all — never invents a number. A real SAVED HVAC Load
+// Estimation for this project (p.hvacLoadEst + p.hvacLoadSavedAt) is preferred over this fresh
+// estimate by the caller (openBASCalc) — this is only the fallback for a building nobody has
+// reviewed in that tab yet.
+function hvacComputeGasThermsForBuilding(projId, bldgId) {
+  const b = typeof getUDBldg === 'function' ? getUDBldg(projId, bldgId) : null;
+  if (!b) return null;
+  const { gByMo, pByMo } = _hvlMonthlyBaseline(projId, b);
+  let totalGas = 0;
+  for (let mo = 0; mo < 12; mo++) {
+    totalGas += (gByMo[mo] && gByMo[mo].therms) || 0;
+    // gal -> therms, same 0.9153 factor hvacLoadCalc uses
+    totalGas += ((pByMo[mo] && pByMo[mo].gallons) || 0) * 0.9153;
+  }
+  if (totalGas <= 0) return null;
+  const elecHeat = _hvlBuildingHasElectricHeat(projId, bldgId);
+  const hvacGasPct = _hvlDefaultGasPct(elecHeat);
+  return { totalGas, hvacGasPct, hvacGasT: totalGas * (hvacGasPct / 100) };
+}
+
 function _buildBaselineDataHtml(b, projId) {
   if (!b) return '';
   const sqft = parseInt(b.sqft) || 0;
@@ -491,13 +557,13 @@ function _hvlRenderTraditional(projId, bldgId, method) {
   if (!p) return;
   const b = getUDBldg(projId, bldgId);
   // Electric heat is the exception, not the rule — only treat the building as electric-heated
-  // when heatType explicitly says so; everything else (including unset) defaults to gas heat,
-  // which is the typical case for a school. This drives both the electric-heating-% default
-  // (0 unless electric heat) and the gas-HVAC-% default/hint below (2026-09-22 fix).
-  const _hvlElecHeat = !!(
-    p.heatType &&
-    (p.heatType.includes('Electric') || p.heatType.includes('Heat Pump') || p.heatType.includes('VRF'))
-  );
+  // when the Equipment Matrix actually classifies a zone/equipment row that way; everything else
+  // (including no Equipment Matrix data at all) defaults to gas heat, which is the typical case
+  // for a school. This drives both the electric-heating-% default (0 unless electric heat) and
+  // the gas-HVAC-% default/hint below. 2026-09-23: sourced from the Equipment Matrix's own
+  // heating-type classification (_hvlBuildingHasElectricHeat) instead of p.heatType (a
+  // project-level field that is essentially never set) — see docs/dashboardlogic.md.
+  const _hvlElecHeat = _hvlBuildingHasElectricHeat(projId, bldgId);
 
   if (method === 'thumb') {
     wrap.innerHTML = `<div class="card" style="margin-bottom:16px">
@@ -514,7 +580,7 @@ function _hvlRenderTraditional(projId, bldgId, method) {
                   <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);margin-bottom:10px">⚡ Electric Demand (kW) Breakdown</div>
                   <div class="fg"><label class="fl">HVAC % of Peak kW</label><input class="fi hvl-in" id="hvl-t-kwPct-${projId}" type="number" value="55" min="0" max="100"><div class="fhint">Typical: 40-65% — HVAC is usually the largest demand driver</div></div>
                   <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);margin:14px 0 10px">🔥 Gas (Therms) Breakdown</div>
-                  <div class="fg"><label class="fl">Space Heating % of Total Gas</label><input class="fi hvl-in" id="hvl-t-gasPct-${projId}" type="number" value="${_hvlElecHeat ? '15' : '80'}" min="0" max="100"><div class="fhint">${_hvlElecHeat ? "Typical: 0-20% for DHW/kitchen only — this building's heat is electric" : 'Typical: 70-95% for gas-heated buildings — gas HVAC share is mostly space heating'}</div></div>
+                  <div class="fg"><label class="fl">Space Heating % of Total Gas</label><input class="fi hvl-in" id="hvl-t-gasPct-${projId}" type="number" value="${_hvlDefaultGasPct(_hvlElecHeat)}" min="0" max="100"><div class="fhint">${_hvlElecHeat ? "Typical: 0-20% for DHW/kitchen only — this building's heat is electric" : 'Typical: 70-95% for gas-heated buildings — gas HVAC share is mostly space heating'}</div></div>
                 </div>
               </div>
             </div>
@@ -3836,13 +3902,42 @@ function openBASCalc(projId) {
   // Calibration (Section D) is project-scoped only (hvacLoadEst has no per-building
   // breakout today) — pre-fill when available, documented limitation otherwise.
   let autoCalCool = null,
-    autoCalHeat = null;
+    autoCalHeat = null,
+    autoCalGas = null;
   if (p?.hvacLoadEst) {
     if (p.hvacLoadEst.coolKwhTotal)
       autoCalCool = { value: Math.round(p.hvacLoadEst.coolKwhTotal), source: 'HVAC Load Estimation' };
     if (p.hvacLoadEst.heatKwhTotal)
       autoCalHeat = { value: Math.round(p.hvacLoadEst.heatKwhTotal), source: 'HVAC Load Estimation' };
   }
+  // Existing Heating Gas Therms (2026-09-23 fix): a real SAVED HVAC Load Estimation for this
+  // project (p.hvacLoadEst.hvacGasT + p.hvacLoadSavedAt — a user actually reviewed and clicked
+  // Save on that tab) wins when one exists. Otherwise, compute it fresh directly from THIS
+  // building's own gas/propane bills via hvacComputeGasThermsForBuilding — the SAME bill reader
+  // and the SAME Rules-of-Thumb gas-heating-share default the HVAC Load Estimation tab itself
+  // uses — so calHeatGas fills without requiring a user to open that tab first. Previously this
+  // only ever read the saved snapshot, which stays empty (and calHeatGas empty) for any building
+  // nobody has opened that tab for — the Spring Hill Schools / Woodland Spring Middle failure
+  // mode reported 2026-09-23.
+  if (p?.hvacLoadEst?.hvacGasT && p.hvacLoadSavedAt) {
+    autoCalGas = {
+      value: Math.round(p.hvacLoadEst.hvacGasT),
+      source: 'HVAC Load Estimation (heating share of gas bills)',
+    };
+  } else if (bldgId && typeof hvacComputeGasThermsForBuilding === 'function') {
+    const computedGas = hvacComputeGasThermsForBuilding(projId, bldgId);
+    if (computedGas && computedGas.hvacGasT)
+      autoCalGas = {
+        value: Math.round(computedGas.hvacGasT),
+        source: 'gas bills (Rules of Thumb heating share estimate — review in HVAC Load Estimation)',
+      };
+  }
+
+  // A saved basCalc that exactly matches the old BAS Savings Calc Excel template's 22-value
+  // placeholder set (see chIsLegacyCalcPlaceholderSave) is never a real user edit — treat those
+  // 22 fields as never-saved so autofill/company-standard resolution runs instead of protecting
+  // stale placeholder data as if it were a survey result.
+  const _legacyPlaceholder = typeof chIsLegacyCalcPlaceholderSave === 'function' && chIsLegacyCalcPlaceholderSave(bc);
 
   // Resolve one field via the shared chResolveCalcField (app/calc-autofill.js): a
   // real prior user edit always wins (explicitly touched this session, or a saved
@@ -3850,8 +3945,13 @@ function openBASCalc(projId) {
   // Otherwise autofill wins when available; otherwise the shipped default is used
   // and flagged so the user knows it isn't building data.
   const touched = new Set(bc.__userTouched || []);
-  const _bcResolve = (field, shippedDefault, autoResult) =>
-    chResolveCalcField(bc[field], shippedDefault, autoResult, touched, field);
+  const _bcResolve = (field, shippedDefault, autoResult) => {
+    const savedValue =
+      _legacyPlaceholder && typeof CH_LEGACY_CALC_PLACEHOLDERS === 'object' && field in CH_LEGACY_CALC_PLACEHOLDERS
+        ? undefined
+        : bc[field];
+    return chResolveCalcField(savedValue, shippedDefault, autoResult, touched, field);
+  };
   const _bcHintSpan = chCalcFieldHintHTML;
 
   const rSqft = _bcResolve('sqft', 0, auto?.sqft);
@@ -3865,9 +3965,31 @@ function openBASCalc(projId) {
   const rExCoolUnocc = _bcResolve('exCoolUnocc', 85, auto?.exCoolUnocc);
   const rExHeatOcc = _bcResolve('exHeatOcc', 70, auto?.exHeatOcc);
   const rExHeatUnocc = _bcResolve('exHeatUnocc', _bcDefaultUnoccHeat(parseInt(rHeatSrc.value) || 2), auto?.exHeatUnocc);
+  const rExMfOn = _bcResolve('exMfOn', 0, auto?.exMfOn);
+  const rExMfOff = _bcResolve('exMfOff', 24, auto?.exMfOff);
   const rCalCoolKwh = _bcResolve('calCoolKwh', '', autoCalCool);
   const rCalHeatKwh = _bcResolve('calHeatKwh', '', autoCalHeat);
-  const rCalHeatGas = _bcResolve('calHeatGas', '', null);
+  const rCalHeatGas = _bcResolve('calHeatGas', '', autoCalGas);
+
+  // Proposed Conditions (2026-09-23): chCalcAutofillFields always returns a company-standard
+  // value for these (isDefault:false — see its header comment), so every field below resolves
+  // to real data or a company standard, never the bare "no data" flag Existing Conditions can
+  // show. Weekend schedule (Sat/Sun) is always company-standard unoccupied (0/0) — no per-
+  // building weekend source exists.
+  const rNewHeatOcc = _bcResolve('newHeatOcc', 70, auto?.newHeatOcc);
+  const rNewCoolOcc = _bcResolve('newCoolOcc', 74, auto?.newCoolOcc);
+  const rNewHeatUnocc = _bcResolve(
+    'newHeatUnocc',
+    _bcDefaultUnoccHeat(parseInt(rHeatSrc.value) || 2),
+    auto?.newHeatUnocc,
+  );
+  const rNewCoolUnocc = _bcResolve('newCoolUnocc', 85, auto?.newCoolUnocc);
+  const rNewMfOn = _bcResolve('newMfOn', 6, auto?.newMfOn);
+  const rNewMfOff = _bcResolve('newMfOff', 17, auto?.newMfOff);
+  const rNewSatOn = _bcResolve('newSatOn', 0, auto?.newSatOn);
+  const rNewSatOff = _bcResolve('newSatOff', 0, auto?.newSatOff);
+  const rNewSunOn = _bcResolve('newSunOn', 0, auto?.newSunOn);
+  const rNewSunOff = _bcResolve('newSunOff', 0, auto?.newSunOff);
 
   const sqft = rSqft.value || p?.sqft || 0;
   const cityOpts = BAS_CITIES.map(
@@ -3996,8 +4118,8 @@ function openBASCalc(projId) {
                 </select></div>
                 <div style="font-size:11px;font-weight:600;color:var(--text2);margin:10px 0 6px;text-transform:uppercase;letter-spacing:1px">Schedule (24hr)</div>
                 <div class="f2">
-                  <div class="fg"><label class="fl">M-F On</label><input class="fi bc-inp" id="bc-exMfOn" type="number" min="0" max="24" value="${bc.exMfOn ?? 0}"></div>
-                  <div class="fg"><label class="fl">M-F Off</label><input class="fi bc-inp" id="bc-exMfOff" type="number" min="0" max="24" value="${bc.exMfOff ?? 24}"></div>
+                  <div class="fg"><label class="fl">M-F On</label><input class="fi bc-inp" id="bc-exMfOn" type="number" min="0" max="24" value="${rExMfOn.value}">${_bcHintSpan(rExMfOn.hint)}</div>
+                  <div class="fg"><label class="fl">M-F Off</label><input class="fi bc-inp" id="bc-exMfOff" type="number" min="0" max="24" value="${rExMfOff.value}">${_bcHintSpan(rExMfOff.hint)}</div>
                 </div>
                 <div class="f2">
                   <div class="fg"><label class="fl">Sat On</label><input class="fi bc-inp" id="bc-exSatOn" type="number" min="0" max="24" value="${bc.exSatOn ?? 0}"></div>
@@ -4014,12 +4136,12 @@ function openBASCalc(projId) {
               <div class="card-hdr"><span class="card-title" style="color:var(--em)">New (Proposed) Conditions</span></div>
               <div style="padding:14px">
                 <div class="f2">
-                  <div class="fg"><label class="fl">Cool Occ SP (°F)</label><input class="fi bc-inp" id="bc-newCoolOcc" type="number" value="${bc.newCoolOcc ?? 74}"></div>
-                  <div class="fg"><label class="fl">Cool Unocc SP (°F)</label><input class="fi bc-inp" id="bc-newCoolUnocc" type="number" value="${bc.newCoolUnocc ?? 85}"></div>
+                  <div class="fg"><label class="fl">Cool Occ SP (°F)</label><input class="fi bc-inp" id="bc-newCoolOcc" type="number" value="${rNewCoolOcc.value}">${_bcHintSpan(rNewCoolOcc.hint)}</div>
+                  <div class="fg"><label class="fl">Cool Unocc SP (°F)</label><input class="fi bc-inp" id="bc-newCoolUnocc" type="number" value="${rNewCoolUnocc.value}">${_bcHintSpan(rNewCoolUnocc.hint)}</div>
                 </div>
                 <div class="f2">
-                  <div class="fg"><label class="fl">Heat Occ SP (°F)</label><input class="fi bc-inp" id="bc-newHeatOcc" type="number" value="${bc.newHeatOcc ?? 70}"></div>
-                  <div class="fg"><label class="fl">Heat Unocc SP (°F)</label><input class="fi bc-inp" id="bc-newHeatUnocc" type="number" value="${bc.newHeatUnocc ?? _bcDefaultUnoccHeat(parseInt(rHeatSrc.value) || 2)}"></div>
+                  <div class="fg"><label class="fl">Heat Occ SP (°F)</label><input class="fi bc-inp" id="bc-newHeatOcc" type="number" value="${rNewHeatOcc.value}">${_bcHintSpan(rNewHeatOcc.hint)}</div>
+                  <div class="fg"><label class="fl">Heat Unocc SP (°F)</label><input class="fi bc-inp" id="bc-newHeatUnocc" type="number" value="${rNewHeatUnocc.value}">${_bcHintSpan(rNewHeatUnocc.hint)}</div>
                 </div>
                 <div class="fg"><label class="fl">OA Shut Off When Unoccupied?</label><select class="fs bc-inp" id="bc-newOAShutoff">
                   <option value="no" ${(bc.newOAShutoff || 'yes') === 'no' ? 'selected' : ''}>No</option>
@@ -4027,16 +4149,16 @@ function openBASCalc(projId) {
                 </select></div>
                 <div style="font-size:11px;font-weight:600;color:var(--text2);margin:10px 0 6px;text-transform:uppercase;letter-spacing:1px">Schedule (24hr)</div>
                 <div class="f2">
-                  <div class="fg"><label class="fl">M-F On</label><input class="fi bc-inp" id="bc-newMfOn" type="number" min="0" max="24" value="${bc.newMfOn ?? 5}"></div>
-                  <div class="fg"><label class="fl">M-F Off</label><input class="fi bc-inp" id="bc-newMfOff" type="number" min="0" max="24" value="${bc.newMfOff ?? 21}"></div>
+                  <div class="fg"><label class="fl">M-F On</label><input class="fi bc-inp" id="bc-newMfOn" type="number" min="0" max="24" value="${rNewMfOn.value}">${_bcHintSpan(rNewMfOn.hint)}</div>
+                  <div class="fg"><label class="fl">M-F Off</label><input class="fi bc-inp" id="bc-newMfOff" type="number" min="0" max="24" value="${rNewMfOff.value}">${_bcHintSpan(rNewMfOff.hint)}</div>
                 </div>
                 <div class="f2">
-                  <div class="fg"><label class="fl">Sat On</label><input class="fi bc-inp" id="bc-newSatOn" type="number" min="0" max="24" value="${bc.newSatOn ?? 6}"></div>
-                  <div class="fg"><label class="fl">Sat Off</label><input class="fi bc-inp" id="bc-newSatOff" type="number" min="0" max="24" value="${bc.newSatOff ?? 19}"></div>
+                  <div class="fg"><label class="fl">Sat On</label><input class="fi bc-inp" id="bc-newSatOn" type="number" min="0" max="24" value="${rNewSatOn.value}">${_bcHintSpan(rNewSatOn.hint)}</div>
+                  <div class="fg"><label class="fl">Sat Off</label><input class="fi bc-inp" id="bc-newSatOff" type="number" min="0" max="24" value="${rNewSatOff.value}">${_bcHintSpan(rNewSatOff.hint)}</div>
                 </div>
                 <div class="f2">
-                  <div class="fg"><label class="fl">Sun On</label><input class="fi bc-inp" id="bc-newSunOn" type="number" min="0" max="24" value="${bc.newSunOn ?? 6}"></div>
-                  <div class="fg"><label class="fl">Sun Off</label><input class="fi bc-inp" id="bc-newSunOff" type="number" min="0" max="24" value="${bc.newSunOff ?? 19}"></div>
+                  <div class="fg"><label class="fl">Sun On</label><input class="fi bc-inp" id="bc-newSunOn" type="number" min="0" max="24" value="${rNewSunOn.value}">${_bcHintSpan(rNewSunOn.hint)}</div>
+                  <div class="fg"><label class="fl">Sun Off</label><input class="fi bc-inp" id="bc-newSunOff" type="number" min="0" max="24" value="${rNewSunOff.value}">${_bcHintSpan(rNewSunOff.hint)}</div>
                 </div>
               </div>
             </div>
@@ -4051,8 +4173,8 @@ function openBASCalc(projId) {
                 <div class="fg"><label class="fl">Existing Cooling kWh (from UA)</label><input class="fi bc-inp" id="bc-calCoolKwh" type="number" value="${rCalCoolKwh.value}">${_bcHintSpan(rCalCoolKwh.hint)}</div>
                 <div class="fg"><label class="fl">Existing Heating kWh (from UA)</label><input class="fi bc-inp" id="bc-calHeatKwh" type="number" value="${rCalHeatKwh.value}">${_bcHintSpan(rCalHeatKwh.hint)}</div>
                 ${
-                  parseInt(rHeatSrc.value) === 4
-                    ? `<div class="fg"><label class="fl">Existing Heating Gas — Therms (from UA)</label><input class="fi bc-inp" id="bc-calHeatGas" type="number" value="${rCalHeatGas.value}">${_bcHintSpan(rCalHeatGas.hint)}<div style="font-size:9px;color:var(--text3);margin-top:2px">Splits combined "Both" heating between kWh and gas by share of load (Heating Source 4 only)</div></div>`
+                  parseInt(rHeatSrc.value) === 1 || parseInt(rHeatSrc.value) === 3 || parseInt(rHeatSrc.value) === 4
+                    ? `<div class="fg"><label class="fl">Existing Heating Gas — ${parseInt(rHeatSrc.value) === 1 ? 'MCF' : 'Therms'} (from UA)</label><input class="fi bc-inp" id="bc-calHeatGas" type="number" value="${rCalHeatGas.value}">${_bcHintSpan(rCalHeatGas.hint)}<div style="font-size:9px;color:var(--text3);margin-top:2px">${parseInt(rHeatSrc.value) === 4 ? 'Splits combined "Both" heating between kWh and gas by share of load' : 'Calibrates the existing gas heating estimate to match utility analysis'}</div></div>`
                     : ''
                 }
                 <div style="text-align:center;padding:8px;background:var(--s3);border-radius:7px;border:1px solid var(--border)">
@@ -4467,17 +4589,31 @@ function _bcDoCalc(projId) {
   // reference — Max Load depends on K50, and K50's own formula sums a calculated total
   // that depends on Max Load — Excel's iterative calculation converges it to this exact
   // closed form). Solving it directly here avoids needing iteration.
-  // Heating calibration input ("Existing Heating kWh from UA") is kWh-denominated, so
-  // (as before this change) it only calibrates the kWh heating bucket — gas-fueled heating
-  // (heatSrc 1/3) has no matching calibration input here and heatAdj stays 1 for it.
   const rawExCoolSetbackTotal = exCoolSetbackM.reduce((a, b) => a + b, 0);
   const rawExCoolOATotal = exCoolOAM.reduce((a, b) => a + b, 0);
   const rawExHeatSetbackTotal = exHeatKwhSetbackM.reduce((a, b) => a + b, 0);
   const rawExHeatOATotal = exHeatKwhOAM.reduce((a, b) => a + b, 0);
+  const rawExHeatGasSetbackTotal = exHeatGasSetbackM.reduce((a, b) => a + b, 0);
+  const rawExHeatGasOATotal = exHeatGasOAM.reduce((a, b) => a + b, 0);
   let coolAdj = 1,
     heatAdj = 1;
   if (calCoolKwh > 0 && rawExCoolSetbackTotal > 0) coolAdj = (calCoolKwh - rawExCoolOATotal) / rawExCoolSetbackTotal;
-  if (calHeatKwh > 0 && rawExHeatSetbackTotal > 0) heatAdj = (calHeatKwh - rawExHeatOATotal) / rawExHeatSetbackTotal;
+  // Heating calibration input ("Existing Heating kWh from UA") is kWh-denominated, so it only
+  // calibrates the kWh heating bucket, which is exactly where heatSrc 2 (Electric) and heatSrc 4
+  // (Both — see pctGasHeat above) route their existing heating load.
+  // 2026-09-23 fix: heatSrc 1/3 (pure gas — MCF/Therms) route their ENTIRE existing heating load
+  // into the gas bucket instead (exHeatGasSetbackM/OAM — see the heatSrc branch above); the kWh
+  // bucket stays 0 for them, so rawExHeatSetbackTotal was always 0 and heatAdj stayed
+  // permanently 1 (uncalibrated) no matter what a user entered — the raw, unscaled bin-model
+  // estimate was reported as "Heat Therms Saved" with no ability to match it to a real utility
+  // analysis figure (Existing Heating Gas — Therms/MCF from UA, now shown for heatSrc 1/3 too).
+  // Calibrates directly against that same closed-form equation, against the gas raw totals.
+  if (heatSrc === 1 || heatSrc === 3) {
+    if (calHeatGas > 0 && rawExHeatGasSetbackTotal > 0)
+      heatAdj = (calHeatGas - rawExHeatGasOATotal) / rawExHeatGasSetbackTotal;
+  } else if (calHeatKwh > 0 && rawExHeatSetbackTotal > 0) {
+    heatAdj = (calHeatKwh - rawExHeatOATotal) / rawExHeatSetbackTotal;
+  }
   if (el('bc-adjCool')) el('bc-adjCool').textContent = coolAdj.toFixed(3);
   if (el('bc-adjHeat')) el('bc-adjHeat').textContent = heatAdj.toFixed(3);
 

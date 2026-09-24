@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.23.12'; // Utility Data: gas $/Therm rate fix now covers all 4 bill save paths + a second-pass migration for bills saved between the two fixes
+  var CH_VERSION = 'v2026.09.23.15'; // BAS Savings Calc heating source and gas calibration fixes; HVAC Load Estimation electric-heat detection from the Equipment Matrix
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

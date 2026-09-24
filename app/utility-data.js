@@ -24,6 +24,13 @@ const _openMeterIds = new Set(); // tracks which meter cards are expanded
 let _vcmActive = false; // Value Correction Mode toggle state (Update a3a423eb)
 let _vcmKeyHandler = null; // module-level ref so Cancel/Save can remove it
 
+// Flag ids written directly to bill._flags (not produced by _analyzeMeterBills's live
+// recompute) that must still count/render in the Bills tab, meter pills, and building nav
+// badge: waterSewerParity_warn (_analyzeWaterSewerParity / runBuildingValidation) and
+// facKWMissing_warn (backfillFacilitiesKW / _flagFacKWMissingBills, app/csv-import.js —
+// 2026-09-23 Facilities kW fix; also set by the en_utility_facKW_backfilled_v1 load migration).
+const _PERSISTED_UI_FLAG_IDS = ['waterSewerParity_warn', 'facKWMissing_warn'];
+
 // Phase 0.1 (2026-07-19): pid -> last-written serialized JSON snapshot, used by
 // saveUtilityData() to skip re-writing projects whose data hasn't changed since
 // the last save. Seeded from disk in loadUtilityData() so the very first save
@@ -163,8 +170,10 @@ function loadUtilityData() {
         for (const mt of b.meters || []) {
           for (const bill of mt.bills || []) {
             billsScanned++;
-            // Clear old totalKwRate so it gets recalculated with facKWCost included
-            if (bill.totalKwRate && (parseFloat(bill.facKWCost) || 0) > 0) {
+            // Clear old totalKwRate so it gets recalculated with Facilities kW Cost included.
+            // getBillFacKWCost (computations/rates.js) — the ONE accessor for Facilities kW
+            // Cost (2026-09-23 single-source fix); never read bill.facKWCost/facilitiesCharge directly.
+            if (bill.totalKwRate && getBillFacKWCost(bill) > 0) {
               delete bill.totalKwRate;
             }
             if (ensureBillRates(bill)) ratesFilled++;
@@ -304,6 +313,63 @@ function loadUtilityData() {
       );
     }
     if (billsScannedV2 > 0) DB.set(_gasMMbtuRateFixedKeyV2, '1');
+  }
+  // One-time migration (2026-09-23, Facilities kW single-source fix, cold-review Q3): repair
+  // Electric bills saved before this fix existed — a null/missing facKW and/or a
+  // Facilities kW Cost sitting under only ONE of facilitiesCharge/facKWCost. Same
+  // backfillFacilitiesKW() core the CSV import path uses (app/csv-import.js) — never
+  // invents a number (see that function's fill order) and never overwrites a value that is
+  // already present on either field, so a bill another user already fixed on the shared
+  // Supabase backend is left untouched; saveUtilityData()'s own per-project dirty check
+  // (see its comment above) means a project this pass didn't actually change is never
+  // rewritten, so this migration cannot sync a stale value back up over a good one.
+  // Gate follows the en_utility_gas_mmbtu_rate_fixed_v1 pattern above: only set once bills
+  // were actually scanned (billsScanned > 0), so an empty/pre-data pass (e.g. the very first
+  // load of a fresh profile before Restore/Supabase sync lands) retries next load instead of
+  // permanently masking real data.
+  const _facKWMigratedKey = 'en_utility_facKW_backfilled_v1';
+  if (!DB.get(_facKWMigratedKey)) {
+    let facKWFilled = 0;
+    let facKWCostSynced = 0;
+    let billsScannedFacKW = 0;
+    for (const pid of Object.keys(utilityData)) {
+      const ud = utilityData[pid];
+      for (const b of ud.buildings || []) {
+        for (const mt of b.meters || []) {
+          if (mt.commodity !== 'Electric' || !mt.bills || !mt.bills.length) continue;
+          billsScannedFacKW += mt.bills.length;
+          // (a) facKWCost <-> facilitiesCharge sync — never overwrites a value already present.
+          mt.bills.forEach((bill) => {
+            if (bill.facKWCost == null && bill.facilitiesCharge != null) {
+              bill.facKWCost = bill.facilitiesCharge;
+              facKWCostSynced++;
+            } else if (bill.facilitiesCharge == null && bill.facKWCost != null) {
+              bill.facilitiesCharge = bill.facKWCost;
+              facKWCostSynced++;
+            }
+          });
+          // (b) facKW backfill — same fill order as CSV import (charge/known-rate, then a full
+          // 12-month rolling peak, then leave blank + flag). typeof-guarded: this file loads
+          // before app/csv-import.js in script order, but loadUtilityData() only runs after
+          // every page script has parsed, so backfillFacilitiesKW is always defined by call time.
+          if (typeof backfillFacilitiesKW === 'function') {
+            facKWFilled += backfillFacilitiesKW(mt.bills);
+          }
+          if (typeof _flagFacKWMissingBills === 'function') _flagFacKWMissingBills(mt);
+        }
+      }
+    }
+    if (facKWFilled > 0 || facKWCostSynced > 0) {
+      saveUtilityData(SAVE_ALL_PROJECTS); // one-time migration touches every loaded project
+      console.log(
+        '[Facilities kW backfill v1] Filled facKW on ' +
+          facKWFilled +
+          ' bill(s), synced facKWCost<->facilitiesCharge on ' +
+          facKWCostSynced +
+          ' bill(s)',
+      );
+    }
+    if (billsScannedFacKW > 0) DB.set(_facKWMigratedKey, '1');
   }
   // One-time migration: backfill sewerUsage from matching water bills
   // where sewerUsage was empty/missing because bills were saved before the
@@ -1441,7 +1507,7 @@ function renderUDProjList() {
                   return !_dismissed.has(fId);
                 }).length;
                 const crossMeterCount = Array.isArray(bill._flags)
-                  ? bill._flags.filter((f) => f.id === 'waterSewerParity_warn' && !f.dismissed).length
+                  ? bill._flags.filter((f) => _PERSISTED_UI_FLAG_IDS.includes(f.id) && !f.dismissed).length
                   : 0;
                 return s + liveCount + crossMeterCount;
               }, 0)
@@ -3007,7 +3073,7 @@ function renderUDDetail(targetWrap) {
             return !_dismissed.has(fId);
           }).length;
           const crossMeterCount = Array.isArray(bill._flags)
-            ? bill._flags.filter((f) => f.id === 'waterSewerParity_warn' && !f.dismissed).length
+            ? bill._flags.filter((f) => _PERSISTED_UI_FLAG_IDS.includes(f.id) && !f.dismissed).length
             : 0;
           return sum + liveCount + crossMeterCount;
         }, 0);
@@ -3470,7 +3536,9 @@ const CONDENSED_CATEGORIES = {
       label: 'kW Cost $',
       type: 'currency',
       w: 100,
-      compute: (r) => _pfBills(r.demandCharge) + _pfBills(r.tdcCharge) + _pfBills(r.facilitiesCharge || r.facKWCost),
+      // getBillFacKWCost (computations/rates.js) — the ONE accessor for Facilities kW Cost
+      // (2026-09-23 single-source fix); never read r.facKWCost/r.facilitiesCharge directly.
+      compute: (r) => _pfBills(r.demandCharge) + _pfBills(r.tdcCharge) + getBillFacKWCost(r),
     },
     {
       // Blended kW rate — SSOT getStoredKwRate() (computations/rates.js): stored
@@ -4006,9 +4074,8 @@ function renderBillsPane(pane, m, bills, incl) {
     const _dismissedIds = new Set(
       Array.isArray(row._flags) ? row._flags.filter((f) => f.dismissed).map((f) => f.id) : [],
     );
-    const CROSS_METER_FLAG_IDS = ['waterSewerParity_warn'];
     const _crossMeterFlags = Array.isArray(row._flags)
-      ? row._flags.filter((f) => CROSS_METER_FLAG_IDS.includes(f.id) && !f.dismissed)
+      ? row._flags.filter((f) => _PERSISTED_UI_FLAG_IDS.includes(f.id) && !f.dismissed)
       : [];
     const flags = [
       ...liveFlagsRaw
@@ -6716,7 +6783,9 @@ function renderBaselinePane(pane, m, bills, incl) {
     blBillsForRate.forEach((b) => {
       const ym = normMonth(b.start, b.end, incl, bills);
       if (!ym) return;
-      const kwC = parseFloat(b.kwCost || 0) + parseFloat(b.facKWCost || 0);
+      // getBillFacKWCost (computations/rates.js) — the ONE accessor for Facilities kW Cost
+      // (2026-09-23 single-source fix); never read b.facKWCost/facilitiesCharge directly.
+      const kwC = parseFloat(b.kwCost || 0) + getBillFacKWCost(b);
       const ec = parseFloat(b.totalCost || 0) - kwC;
       energyCostByYm[ym] = (energyCostByYm[ym] || 0) + ec;
     });
@@ -7312,7 +7381,9 @@ function refreshBaselineStats(mid) {
     blBillsR.forEach((b) => {
       const ym = normMonth(b.start, b.end, inclFlag, bills);
       if (!ym) return;
-      const kwC = parseFloat(b.kwCost || 0) + parseFloat(b.facKWCost || 0);
+      // getBillFacKWCost (computations/rates.js) — the ONE accessor for Facilities kW Cost
+      // (2026-09-23 single-source fix); never read b.facKWCost/facilitiesCharge directly.
+      const kwC = parseFloat(b.kwCost || 0) + getBillFacKWCost(b);
       eCostByYm2[ym] = (eCostByYm2[ym] || 0) + parseFloat(b.totalCost || 0) - kwC;
     });
     const costRows = blRows.filter((r) => r.usage > 0 && eCostByYm2[r.ym] > 0);
@@ -10651,7 +10722,9 @@ function renderPerfPane(pane, m, bills, incl) {
       const n = bfr.length;
       const actualKwh = bfr.reduce((s, b) => s + parseFloat(b.kwh || 0), 0);
       const kwCostAmt = bfr.reduce((s, b) => s + parseFloat(b.kwCost || 0), 0);
-      const facKWCostAmt = bfr.reduce((s, b) => s + parseFloat(b.facKWCost || 0), 0);
+      // getBillFacKWCost (computations/rates.js) — the ONE accessor for Facilities kW Cost
+      // (2026-09-23 single-source fix); never read b.facKWCost/facilitiesCharge directly.
+      const facKWCostAmt = bfr.reduce((s, b) => s + getBillFacKWCost(b), 0);
       const kwhCostAmt = bfr.reduce((s, b) => s + parseFloat(b.kwhCost || 0), 0);
       // energyCost mirrors Meter Data "Energy Cost" = totalCost - kwCost
       const totalBillCost = bfr.reduce((s, b) => s + parseFloat(b.totalCost || 0), 0);
