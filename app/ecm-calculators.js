@@ -2392,9 +2392,9 @@ function getProjectRates(projId) {
     billCount: 0,
   };
 
-  // utilityData is the runtime object in core.js / utility-data.js
-  const ud = typeof utilityData !== 'undefined' && utilityData ? utilityData[projId] : null;
-  if (!ud || !ud.buildings) return result;
+  // Scope-filtered buildings for this project (app/utility-data.js accessor).
+  const ud = { buildings: typeof getUDBldgs === 'function' ? getUDBldgs(projId) : null };
+  if (!ud.buildings || !ud.buildings.length) return result;
 
   const now = new Date();
   const cutoff = new Date(now.getFullYear() - 1, now.getMonth(), 1); // 12 months back

@@ -131,8 +131,10 @@ function processBillCsvFile(file) {
 // embedded project view, then a re-render elsewhere reset the active project/building globals
 // before the file was actually read). Returns { b, m } or null.
 function _findMeterAcrossProjects(mid) {
-  for (const pid in utilityData) {
-    const bldgs = (utilityData[pid] && utilityData[pid].buildings) || [];
+  // utilityData is keyed by customerId (Customer/Multi-Project) — one entry per
+  // customer already, so no cross-project dedup is needed here.
+  for (const cid in utilityData) {
+    const bldgs = getCustomerBuildings(cid) || [];
     for (const b of bldgs) {
       const m = (b.meters || []).find((mm) => mm.id === mid);
       if (m) return { b, m };
@@ -1330,13 +1332,48 @@ const BILL_SCHEMA = {
     { key: 'gasCharge', label: 'Gas Charge', type: 'currency', pdfKey: 'GasCharge' },
     { key: 'fuelAdjustment', label: 'Fuel Adjustment', type: 'currency', pdfKey: 'FuelAdjustment' },
     { key: 'totalCost', label: 'Total Current Charges', type: 'currency', pdfKey: 'TotalCurrentCharges' },
-    { key: '_wreTriggerCharge', label: 'WoodRiver Energy Trigger Charge', type: 'currency', pdfKey: '_wreTriggerCharge' },
-    { key: '_wreTriggerMMbtu', label: 'WoodRiver Energy Trigger Usage (MMBtu)', type: 'number', pdfKey: '_wreTriggerMMbtu' },
-    { key: '_wreTriggerRate', label: 'WoodRiver Energy Trigger $/MMBtu Rate', type: 'rate5', pdfKey: '_wreTriggerRate' },
-    { key: '_wreIndexCharge', label: 'WoodRiver Energy Index (First of Month) Charge', type: 'currency', pdfKey: '_wreIndexCharge' },
-    { key: '_wreIndexMMbtu', label: 'WoodRiver Energy Index (First of Month) Usage (MMBtu)', type: 'number', pdfKey: '_wreIndexMMbtu' },
-    { key: '_wreIndexRate', label: 'WoodRiver Energy Index (First of Month) $/MMBtu Rate', type: 'rate5', pdfKey: '_wreIndexRate' },
-    { key: '_wreSWECharge', label: 'WoodRiver Energy Special Weather Event Charge', type: 'currency', pdfKey: '_wreSWECharge' },
+    {
+      key: '_wreTriggerCharge',
+      label: 'WoodRiver Energy Trigger Charge',
+      type: 'currency',
+      pdfKey: '_wreTriggerCharge',
+    },
+    {
+      key: '_wreTriggerMMbtu',
+      label: 'WoodRiver Energy Trigger Usage (MMBtu)',
+      type: 'number',
+      pdfKey: '_wreTriggerMMbtu',
+    },
+    {
+      key: '_wreTriggerRate',
+      label: 'WoodRiver Energy Trigger $/MMBtu Rate',
+      type: 'rate5',
+      pdfKey: '_wreTriggerRate',
+    },
+    {
+      key: '_wreIndexCharge',
+      label: 'WoodRiver Energy Index (First of Month) Charge',
+      type: 'currency',
+      pdfKey: '_wreIndexCharge',
+    },
+    {
+      key: '_wreIndexMMbtu',
+      label: 'WoodRiver Energy Index (First of Month) Usage (MMBtu)',
+      type: 'number',
+      pdfKey: '_wreIndexMMbtu',
+    },
+    {
+      key: '_wreIndexRate',
+      label: 'WoodRiver Energy Index (First of Month) $/MMBtu Rate',
+      type: 'rate5',
+      pdfKey: '_wreIndexRate',
+    },
+    {
+      key: '_wreSWECharge',
+      label: 'WoodRiver Energy Special Weather Event Charge',
+      type: 'currency',
+      pdfKey: '_wreSWECharge',
+    },
     { section: 'Rates' },
     { key: 'totalGasRate', label: 'Total $/Therm Rate', type: 'rate5', pdfKey: 'TotalGasRate' },
   ],
@@ -2521,8 +2558,12 @@ function saveBuilding() {
     }
     showToast('Building updated ✓');
   } else {
-    const proj = getUDProj(udSelProjId);
-    proj.buildings.push({
+    // Write-site fix: create on the CUSTOMER's building list (never a raw project-scoped
+    // push — buildings are shared) and add the new id to the creating project's own
+    // scope.buildingIds so it's visible in this project immediately, without a reload.
+    const _bmProj = projects.find((p) => p.id == udSelProjId);
+    const _bmCustomerId = _bmProj ? _bmProj.customerId || 'cust_' + _bmProj.id : udSelProjId;
+    const _newBldg = {
       id: 'b' + Date.now(),
       name,
       addr: document.getElementById('bm-addr').value,
@@ -2533,7 +2574,14 @@ function saveBuilding() {
       zip: (document.getElementById('bm-zip').value || '').trim(),
       addrAliases: aliases,
       meters: [],
-    });
+    };
+    addUDBldg(_bmCustomerId, _newBldg);
+    if (_bmProj) {
+      _bmProj.scope = _bmProj.scope || { buildingIds: [], meterExcludeIds: [] };
+      if (!Array.isArray(_bmProj.scope.buildingIds)) _bmProj.scope.buildingIds = [];
+      _bmProj.scope.buildingIds.push(_newBldg.id);
+      sset('en_projects', projects);
+    }
     showToast('Building added ✓');
   }
   saveUtilityData();
@@ -2546,9 +2594,18 @@ function saveBuilding() {
   if (ap && document.getElementById('projDetailView')?.style.display !== 'none') renderDetail(ap);
 }
 async function deleteBuilding(bid) {
-  if (!(await confirmAsync('Delete this building and all its meters?'))) return;
-  const proj = getUDProj(udSelProjId);
-  proj.buildings = proj.buildings.filter((b) => b.id !== bid);
+  // Write-site fix: "Delete Building" becomes UNSCOPE — buildings are shared across
+  // every project under the same customer now, so removing it from THIS project's
+  // scope.buildingIds must never delete the building/meters/bills out from under
+  // another project that still has it scoped. A true destructive delete is a
+  // separate, customer-level-only action (not this button).
+  if (
+    !(await confirmAsync(
+      'Remove this building from this project? (The building and its data stay available to any other project under the same customer.)',
+    ))
+  )
+    return;
+  unscopeBuilding(udSelProjId, bid);
   if (udSelBldgId === bid) udSelBldgId = null;
   saveUtilityData();
   renderUDProjList();
@@ -2633,7 +2690,7 @@ function openMeterModal(editId, projId, bldgId) {
       document.getElementById('mm-meter').value = m.meter || '';
       document.getElementById('mm-maddr').value = m.maddr || '';
       _meterInclusive = m.inclusive !== false;
-      document.getElementById('mm-blInclude').checked = m.baselineInclude !== false;
+      document.getElementById('mm-blInclude').checked = !isBaselineExcluded(_pid, m.id);
       _updateMeterUnitDropdowns();
       if (m.billUnit) document.getElementById('mm-billUnit').value = m.billUnit;
       if (m.displayUnit) document.getElementById('mm-displayUnit').value = m.displayUnit;
@@ -2684,6 +2741,9 @@ function _refreshBldgPerfIfVisible() {
 function saveMeter() {
   const editId = document.getElementById('mm-edit-id').value;
   const incl = document.getElementById('mm-inclusive').value === 'true';
+  // The legacy meter-level include flag no longer exists (BLOCKER 1 fix) — the checkbox state is
+  // written to project.scope.meterExcludeIds via setBaselineExcluded below, per-project.
+  const _blChecked = document.getElementById('mm-blInclude').checked;
   const data = {
     commodity: document.getElementById('mm-commodity').value,
     provider: document.getElementById('mm-provider').value,
@@ -2691,7 +2751,6 @@ function saveMeter() {
     meter: document.getElementById('mm-meter').value,
     maddr: document.getElementById('mm-maddr').value,
     inclusive: incl,
-    baselineInclude: document.getElementById('mm-blInclude').checked,
     billUnit: document.getElementById('mm-billUnit').value || '',
     displayUnit: document.getElementById('mm-displayUnit').value || '',
   };
@@ -2708,6 +2767,7 @@ function saveMeter() {
       // and must not overwrite what's already stored.
       if (!data.commodity && m.commodity) data.commodity = m.commodity;
       Object.assign(m, data);
+      setBaselineExcluded(_targetProjId, m.id, !_blChecked);
       const moveToBldgId = document.getElementById('mm-move-bldg')?.value || '';
       if (moveToBldgId && moveToBldgId !== _targetBldgId) {
         const destBldg = getUDBldg(_targetProjId, moveToBldgId);
@@ -2727,6 +2787,7 @@ function saveMeter() {
     const nm = { id: 'm' + Date.now(), bills: [], ...data };
     b.meters.push(nm);
     udActiveMid = nm.id;
+    setBaselineExcluded(_targetProjId, nm.id, !_blChecked);
     const _blCount = _inheritBaselinesForProject(_targetProjId);
     showToast('Meter added to ' + (b.name || 'building') + (_blCount ? ' · baseline inherited ✓' : ' ✓'));
   }
@@ -4611,11 +4672,17 @@ function bldgImportRowCheck(idx, checked) {
 window.bldgImportRowCheck = bldgImportRowCheck;
 
 function importBuildingList() {
-  var proj = getUDProj(udSelProjId);
-  if (!proj) {
+  var _biProj = projects.find(function (p) {
+    return p.id == udSelProjId;
+  });
+  if (!_biProj) {
     showToast('No project selected', 'warn');
     return;
   }
+  // Write-site fix: create on the CUSTOMER's building list, not a raw project-scoped
+  // array — buildings are shared. Each new id is also pushed onto this project's own
+  // scope.buildingIds so the import is visible here immediately.
+  var _biCustomerId = _biProj.customerId || 'cust_' + _biProj.id;
   var selected = _bldgImportRows.filter(function (r) {
     return r._checked && r.name;
   });
@@ -4624,9 +4691,11 @@ function importBuildingList() {
     return;
   }
 
+  _biProj.scope = _biProj.scope || { buildingIds: [], meterExcludeIds: [] };
+  if (!Array.isArray(_biProj.scope.buildingIds)) _biProj.scope.buildingIds = [];
+
   var now = Date.now();
   selected.forEach(function (r, i) {
-    proj.buildings = proj.buildings || [];
     var bldg = {
       id: 'b' + (now + i),
       name: r.name,
@@ -4666,9 +4735,11 @@ function importBuildingList() {
       }
     }
 
-    proj.buildings.push(bldg);
+    addUDBldg(_biCustomerId, bldg);
+    _biProj.scope.buildingIds.push(bldg.id);
   });
 
+  sset('en_projects', projects);
   saveUtilityData();
   renderUDProjList();
   if (typeof renderUDDetail === 'function') renderUDDetail();

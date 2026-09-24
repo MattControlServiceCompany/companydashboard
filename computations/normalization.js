@@ -752,8 +752,12 @@ function getNormRows(m, bills, incl, weatherByYm) {
   // Second pass: compute regression using ALL rows for display purposes,
   // but for baseline months use the FROZEN regression stored at baseline-save time.
   // This prevents post-baseline bills from changing the baseline normalized values.
-  const proj = getUDProj(udSelProjId);
-  const normBasis = proj?.normBasis || 'calendar';
+  // Field relocation (2026-09-24): normBasis lives on the project record, not the
+  // shared customer blob.
+  const _projList =
+    typeof projects !== 'undefined' ? projects : typeof sget === 'function' ? sget('en_projects', []) : [];
+  const _normProj = (_projList || []).find((p) => p.id === udSelProjId);
+  const normBasis = _normProj?.normBasis || 'calendar';
   const reg = computeMeterRegression(rawRows); // full regression for non-baseline months
   const _rawFrozenReg = m.baseline?.reg || null;
   // A frozen regression with null coefficients means the baseline was saved

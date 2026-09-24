@@ -732,7 +732,7 @@ function updateHomeStats() {
   // Bug fix: old code checked m.baselineStart/m.baselineEnd which don't exist;
   // the data model stores m.baseline.months array (multi-baseline: m.baselines)
   const baselineCount = projects.filter((p) => {
-    const projBldgs = (utilityData[p.id] || {}).buildings || [];
+    const projBldgs = getUDBldgs(p.id) || [];
     return projBldgs.some((b) =>
       (b.meters || []).some((m) => m.baseline?.months?.length > 0 || (m.baselines && m.baselines.length > 0)),
     );
@@ -745,10 +745,10 @@ function updateHomeStats() {
   projects
     .filter((p) => p.status === 'active' || p.status === 'in_progress')
     .forEach((p) => {
-      const projBldgs = (utilityData[p.id] || {}).buildings || [];
+      const projBldgs = getUDBldgs(p.id) || [];
       projBldgs.forEach((b) => {
         (b.meters || []).forEach((m) => {
-          if (m.baselineInclude === false) return;
+          if (isBaselineExcluded(p.id, m.id)) return;
           if (!(m.baseline?.months?.length >= 3) && !(m.baselines && m.baselines.length > 0)) return;
           const mbills = (m.bills || []).slice().sort((a, c) => {
             const da = a.start ? new Date(a.start + 'T12:00:00') : 0;
@@ -1809,7 +1809,7 @@ function _updateCompactHdrBaseline(projId) {
   const _blMonthSet = new Set();
   bldgs.forEach((b) =>
     (b.meters || []).forEach((m) => {
-      if (m.baselineInclude === false) return;
+      if (isBaselineExcluded(projId, m.id)) return;
       if (!isCalcCommodity(projId, m.commodity)) return;
       const bl = m.baseline;
       if (bl && bl.months) bl.months.forEach((ym) => _blMonthSet.add(ym));
@@ -1899,7 +1899,7 @@ function initDashboardTab(projId) {
   if (hdrWrap) {
     const totalSqft = bldgs.reduce((s, b) => s + parseInt(b.sqft || 0), 0);
     const _totalMeterCount = bldgs.reduce((s, b) => s + (b.meters || []).length, 0);
-    const _inclMeters = (b) => (b.meters || []).filter((m) => m.baselineInclude !== false);
+    const _inclMeters = (b) => (b.meters || []).filter((m) => !isBaselineExcluded(projId, m.id));
     const _blInclCount = bldgs.reduce((s, b) => s + _inclMeters(b).length, 0);
     const billCount = bldgs.reduce((s, b) => s + (b.meters || []).reduce((s2, m) => s2 + (m.bills || []).length, 0), 0);
     const blMeterCount = bldgs.reduce(
@@ -1952,7 +1952,7 @@ function initDashboardTab(projId) {
       meterExcl = 0,
       meterTotal = meters.length;
     const meterDetails = meters.map((m) => {
-      const incl = m.baselineInclude !== false;
+      const incl = !isBaselineExcluded(projId, m.id);
       const hasBl = m.baseline && m.baseline.months && m.baseline.months.length >= 3;
       if (incl && hasBl) meterIncl++;
       else if (!incl) meterExcl++;
@@ -1969,7 +1969,7 @@ function initDashboardTab(projId) {
       const bldgMoBase = {};
       for (let i = 0; i < 12; i++) bldgMoBase[i] = 0;
       meters.forEach((m) => {
-        if (m.baselineInclude === false) return;
+        if (isBaselineExcluded(projId, m.id)) return;
         if (!isCalcCommodity(projId, m.commodity)) return;
         const bills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
         const incl = m.inclusive !== false;
@@ -2060,7 +2060,7 @@ function initDashboardTab(projId) {
     } else {
       // Actual path: existing raw totalCost comparison
       meters.forEach((m) => {
-        if (m.baselineInclude === false) return;
+        if (isBaselineExcluded(projId, m.id)) return;
         if (!isCalcCommodity(projId, m.commodity)) return;
         const blBills = _dashGetBaselineBills(m);
         if (blBills.length) hasBaseline = true;
@@ -3147,9 +3147,9 @@ function updateProjPerfSetting(projId, field, value) {
   p[field] = value;
   sset('en_projects', projects);
   if (field === 'escalation' || field === 'cscCompensation') {
-    const ud = utilityData[projId];
-    if (ud) {
-      for (const b of ud.buildings || []) {
+    const _pdBldgs = getUDBldgs(projId);
+    if (_pdBldgs) {
+      for (const b of _pdBldgs) {
         const bpKey = 'bldgperf_cfg_' + (b.id || b.name);
         const bspKey = 'bldgsavproj_cfg_' + (b.id || b.name);
         try {
@@ -3194,8 +3194,7 @@ const projUDSelPanel = {}; // 'baseline'|'savproj'|'perf'|'scorecard'|null
 function initProjUDTab(projId) {
   renderProjUDBldgNav(projId);
   // Auto-select first building
-  const proj = utilityData[projId];
-  const bldgs = proj?.buildings || [];
+  const bldgs = getUDBldgs(projId) || [];
   if (bldgs.length && !projUDSelBldg[projId]) {
     projUDSelectBldg(projId, bldgs[0].id);
   } else if (projUDSelBldg[projId]) {
@@ -3214,8 +3213,7 @@ function initProjUDTab(projId) {
 function renderProjUDBldgNav(projId) {
   const nav = document.getElementById('proj-ud-bldg-nav-' + projId);
   if (!nav) return;
-  const proj = utilityData[projId];
-  const bldgs = proj?.buildings || [];
+  const bldgs = getUDBldgs(projId) || [];
   if (!bldgs.length) {
     nav.innerHTML = '<div style="padding:12px 14px;font-size:12px;color:var(--text3)">No buildings yet.</div>';
     return;
@@ -3224,7 +3222,7 @@ function renderProjUDBldgNav(projId) {
     .map((b) => {
       const allMeters = b.meters || [];
       const totalMCount = allMeters.length;
-      const blMeters = allMeters.filter((m) => m.baselineInclude !== false);
+      const blMeters = allMeters.filter((m) => !isBaselineExcluded(projId, m.id));
       const blMCount = blMeters.length;
       const mWithBl = blMeters.filter(
         (m) => m.baseline && Array.isArray(m.baseline.months) && m.baseline.months.length,
@@ -3258,9 +3256,7 @@ function projUDSelectBldg(projId, bldgId) {
   renderProjUDBldgNav(projId);
   // Show header
   const hdr = document.getElementById('proj-ud-detail-hdr-' + projId);
-  const proj = utilityData[projId];
-  if (!proj) return;
-  const b = (proj.buildings || []).find((x) => x.id === bldgId);
+  const b = getUDBldg(projId, bldgId);
   if (!b) return;
   if (hdr) {
     hdr.style.display = 'flex';
@@ -3287,9 +3283,7 @@ function projUDSelectBldg(projId, bldgId) {
 function renderProjUDBody(projId, bldgId) {
   const body = document.getElementById('proj-ud-body-' + projId);
   if (!body) return;
-  const proj = utilityData[projId];
-  if (!proj) return;
-  const b = (proj.buildings || []).find((x) => x.id === bldgId);
+  const b = getUDBldg(projId, bldgId);
   if (!b) {
     body.innerHTML = '<div class="ud-empty"><div class="ud-empty-ico">🏢</div><div>Building not found</div></div>';
     return;
@@ -3534,8 +3528,7 @@ function renderProjSavedBills(projId) {
   const useGrouped = _sbGroupState[projId];
 
   // Build building + meter options for the assign dropdowns
-  const projUD = utilityData[projId];
-  const buildings = projUD?.buildings || [];
+  const buildings = getUDBldgs(projId) || [];
 
   // Helper: build per-bill smart-matched assign controls
   const buildAssignCell = (b) => {
@@ -3584,7 +3577,7 @@ function renderProjSavedBills(projId) {
       .join('');
     return `<div style="display:flex;gap:3px;align-items:center;flex-wrap:nowrap">
       <select class="fi" id="sb-bldg-${b.id}" style="padding:1px 3px;font-size:10px;height:22px"
-        onchange="(function(s){var mo=document.getElementById('sb-meter-${b.id}');if(mo){var pid=${JSON.stringify(projId)};var bid=s.value;var ud=utilityData[pid];var bld=(ud?.buildings||[]).find(function(x){return x.id===bid});mo.innerHTML=(bld?.meters||[]).map(function(m){return '<option value=\"'+m.id+'\">'+(m.provider||m.commodity||'Meter')+(m.account?' · '+m.account:'')+'</option>'}).join('')}})(this)">${bldgOpts}</select>
+        onchange="(function(s){var mo=document.getElementById('sb-meter-${b.id}');if(mo){var pid=${JSON.stringify(projId)};var bid=s.value;var bld=(getUDBldgs(pid)||[]).find(function(x){return x.id===bid});mo.innerHTML=(bld?.meters||[]).map(function(m){return '<option value=\"'+m.id+'\">'+(m.provider||m.commodity||'Meter')+(m.account?' · '+m.account:'')+'</option>'}).join('')}})(this)">${bldgOpts}</select>
       <select class="fi" id="sb-meter-${b.id}" style="padding:1px 3px;font-size:10px;height:22px">${meterOpts}</select>
       <button class="btn btn-em btn-sm" style="font-size:10px;padding:1px 6px" onclick="assignSavedBillFromProj('${b.id}',${JSON.stringify(projId)})">Assign</button>
     </div>`;
@@ -3751,8 +3744,12 @@ async function deleteSavedBillFromProj(billId, projId) {
   // (meter.bills entries link back via pdfBillId === saved bill id). Otherwise an
   // orphaned meter copy is left behind.
   if (sb && sb.projId) {
-    const udProj = getUDProj(sb.projId);
-    (udProj?.buildings || []).forEach((bldg) => {
+    // BLOCKER C fix: resolve via the customer, not the project — the bill's real home is
+    // the shared customer building, which the recorded projId is only a representative
+    // pointer into (see findMeterMatch's customerId comment).
+    const _delProj = (sget('en_projects', []) || []).find((p) => p.id === sb.projId);
+    const _delCustomerId = _delProj ? _delProj.customerId || 'cust_' + _delProj.id : null;
+    ((_delCustomerId ? getCustomerBuildings(_delCustomerId) : []) || []).forEach((bldg) => {
       (bldg.meters || []).forEach((meter) => {
         if (Array.isArray(meter.bills)) {
           meter.bills = meter.bills.filter((r) => r.pdfBillId !== billId);
@@ -3839,8 +3836,10 @@ async function autoAssignAllSavedBills(projId) {
       pdfPageStart: sb.pdfPageStart || '',
       pdfPageEnd: sb.pdfPageEnd || '',
     };
-    const udProj = getUDProj(match.projId);
-    const bldg = (udProj?.buildings || []).find((x) => x.id === match.bldgId);
+    // BLOCKER C fix: write via the customer, not the project — match.projId is only a
+    // representative pointer (findMeterMatch); the building may not be in that specific
+    // project's own scope yet, and getUDBldg(pid,...) would return undefined in that case.
+    const bldg = match.customerId ? getUDBldgByCustomer(match.customerId, match.bldgId) : null;
     const meter = (bldg?.meters || []).find((x) => x.id === match.meterId);
     if (!meter) {
       skipped++;
@@ -3877,12 +3876,7 @@ async function assignSavedBillFromProj(billId, projId) {
     return;
   }
 
-  const proj = utilityData[projId];
-  if (!proj) {
-    showToast('Project not found');
-    return;
-  }
-  const b = (proj.buildings || []).find((x) => x.id === bldgId);
+  const b = getUDBldg(projId, bldgId);
   if (!b) {
     showToast('Building not found');
     return;

@@ -537,6 +537,16 @@ const DB = (() => {
       setItems: (_v, items) => items,
       getId: (item) => item && item.id,
     },
+    // Customer/Multi-Project (2026-09-24): same bare-id-array union-merge pattern as
+    // en_projects/en_tasks. Deterministic customer ids ('cust_' + projectId, see
+    // _selfHealCustomersAndScope in app/utility-data.js) make two independent browsers
+    // migrating the same project converge on byte-identical shared-id rows, so this
+    // merges cleanly with no conflict modal.
+    en_customers: {
+      getItems: (v) => (Array.isArray(v) ? v : null),
+      setItems: (_v, items) => items,
+      getId: (item) => item && item.id,
+    },
     en_tasks: {
       getItems: (v) => (Array.isArray(v) ? v : null),
       setItems: (_v, items) => items,
@@ -644,6 +654,25 @@ const DB = (() => {
       console.warn('[DB] Conflict 409 with no current row — cannot show modal, queued for retry:', key);
       _enqueueWrite(key, payload);
       return;
+    }
+
+    // Customer/Multi-Project (2026-09-24, BLOCKER 3 fix): byte-identical short-circuit.
+    // Deterministic customer ids mean two browsers migrating the same project can write
+    // identical content to the same key (en_customers, en_utility_<customerId>) at nearly
+    // the same time. If the local payload and the server's current value are byte-for-byte
+    // identical, there is nothing to reconcile — silently adopt the server's version and
+    // skip the modal instead of interrupting the user over a non-conflict. General
+    // robustness improvement (helps any accidental double-write, not just this migration).
+    if (!payload.deleted && !current.deleted && current.value !== undefined) {
+      try {
+        if (JSON.stringify(payload.value) === JSON.stringify(current.value)) {
+          _replicaVersions[key] = { version: current.version, hash: current.hash || null };
+          _persistReplicaState();
+          return;
+        }
+      } catch (e) {
+        /* fall through to the normal modal path if either side isn't serializable */
+      }
     }
 
     await _presentConflictModal(key, payload, current);

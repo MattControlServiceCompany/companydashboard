@@ -289,7 +289,7 @@ function renderBuildingScorecardPane(pane, b, projId) {
     peakHours = 0;
 
   (b.meters || []).forEach(function (m) {
-    if (m.baselineInclude === false) return;
+    if (isBaselineExcluded(projId, m.id)) return;
     var bills = (m.bills || []).slice().sort(function (a, c) {
       return (a.start || '').localeCompare(c.start || '');
     });

@@ -1,8 +1,8 @@
 ﻿/* ══════════════════════════════════════════════════════
          UTILITY DATA TOOL
-         Data model:
+         Data model (2026-09-24, Customer/Multi-Project):
          utilityData = {
-           [projId]: {
+           [customerId]: {
              buildings: [
                { id, name, addr, sqft, meters: [
                  { id, commodity, provider, account, meter, maddr, inclusive,
@@ -12,6 +12,17 @@
              ]
            }
          }
+         Buildings/meters/bills are keyed by CUSTOMER (en_customers), not by
+         project. A project (en_projects) has project.customerId (FK) and
+         project.scope = { buildingIds: [...], meterExcludeIds: [...] } —
+         which of the customer's buildings/meters this one project picked.
+         meter.baselineInclude no longer exists — see isBaselineExcluded().
+         ONE ACCESSOR MODULE: every read/write of buildings/meters/bills
+         outside this file MUST go through getUDBldgs/getUDBldg/getUDMeter/
+         getCustomerBuildings/getUDBldgByCustomer/getProjectsForBuilding/
+         addUDBldg/unscopeBuilding/isBaselineExcluded/setBaselineExcluded —
+         never utilityData[...]/getUDProj(...).buildings/raw en_utility_
+         storage directly. Enforced by tools/gate-utility-data-single-accessor.js.
       ══════════════════════════════════════════════════════ */
 
 let utilityData = {};
@@ -75,6 +86,94 @@ if (!window._billsResizeListenerAdded) {
   });
 }
 
+// Customer/Multi-Project (2026-09-24): deterministic, idempotent, self-healing
+// migration. Runs on EVERY load (no one-time flag — same pattern as the commodity
+// heal below at app/utility-data.js:~/loadUtilityData). For each project missing
+// customerId/scope, derives customerId = 'cust_' + project.id (deterministic so two
+// browsers migrating the same project converge on the identical id/name — no
+// duplicate-customer race), creates the en_customers row if missing, copies the old
+// per-project blob (en_utility_<projId>) into the new per-customer key
+// (en_utility_<customerId>) ONLY if that customer blob doesn't already exist, seeds
+// project.scope.buildingIds to EVERY building id in that pre-migration blob (so the
+// scope filter in getUDBldgs() is a no-op for every project that exists today), seeds
+// project.scope.meterExcludeIds from any meter.baselineInclude===false flags found,
+// relocates energyPlan/normBasis/inclMonths onto the project record (they used to
+// piggyback on the per-project blob; under sharing they'd otherwise silently become
+// customer-wide), and deletes the legacy meter.baselineInclude field from the NEW
+// customer blob (not the old, untouched per-project key) since it is fully replaced
+// by project.scope.meterExcludeIds + isBaselineExcluded(). Old per-project keys are
+// left inert, never deleted (rollback safety net) — see design section 3 "Cleanup".
+function _selfHealCustomersAndScope() {
+  const projects = sget('en_projects', []) || [];
+  const customers = sget('en_customers', []) || [];
+  const custById = {};
+  customers.forEach((c) => (custById[c.id] = c));
+  let customersChanged = false;
+  let projectsChanged = false;
+
+  projects.forEach(function (P) {
+    if (P.customerId && P.scope && Array.isArray(P.scope.buildingIds)) return; // already healed
+
+    const customerId = P.customerId || 'cust_' + P.id;
+    if (!custById[customerId]) {
+      const name = P.client || P.name || 'Customer';
+      const c = { id: customerId, name: name };
+      customers.push(c);
+      custById[customerId] = c;
+      customersChanged = true;
+    }
+
+    const oldBlob = sget('en_utility_' + P.id, null);
+    const custBlobKey = 'en_utility_' + customerId;
+    const existingCustBlob = sget(custBlobKey, null);
+    const sourceBlob = oldBlob || existingCustBlob;
+
+    let buildingIds = [];
+    const meterExcludeIds = [];
+    if (sourceBlob && Array.isArray(sourceBlob.buildings)) {
+      buildingIds = sourceBlob.buildings.map((b) => b.id);
+      sourceBlob.buildings.forEach((b) =>
+        (b.meters || []).forEach((m) => {
+          if (m.baselineInclude === false) meterExcludeIds.push(m.id);
+        }),
+      );
+    }
+
+    // Only write the customer blob if it doesn't already exist — never clobber real
+    // shared data another project/user may have already added under this customer.
+    if (oldBlob && !existingCustBlob) {
+      // Deep-copy so deleting baselineInclude below never mutates the old, untouched
+      // en_utility_<projId> key that stays inert as a rollback snapshot.
+      const healedBlob = JSON.parse(JSON.stringify(oldBlob));
+      (healedBlob.buildings || []).forEach((b) =>
+        (b.meters || []).forEach((m) => {
+          delete m.baselineInclude;
+        }),
+      );
+      sset(custBlobKey, healedBlob);
+    }
+
+    P.customerId = customerId;
+    P.scope = P.scope || {};
+    if (!Array.isArray(P.scope.buildingIds)) P.scope.buildingIds = buildingIds;
+    if (!Array.isArray(P.scope.meterExcludeIds)) P.scope.meterExcludeIds = meterExcludeIds;
+    // Field relocation (Revision 5): energyPlan/normBasis/inclMonths move off the shared
+    // blob onto the project record, 1:1 from the pre-migration blob (each project owned
+    // its own blob until now, so this copy is exact — nothing invented, nothing dropped).
+    if (sourceBlob) {
+      if (P.energyPlan === undefined && sourceBlob.energyPlan !== undefined) P.energyPlan = sourceBlob.energyPlan;
+      if (P.normBasis === undefined && sourceBlob.normBasis !== undefined) P.normBasis = sourceBlob.normBasis;
+      if (P.inclMonths === undefined && sourceBlob.inclMonths !== undefined) P.inclMonths = sourceBlob.inclMonths;
+    }
+    // SHOULD FIX 5: project.client stays, auto-synced from the customer name.
+    if (!P.client) P.client = custById[customerId].name;
+    projectsChanged = true;
+  });
+
+  if (customersChanged) sset('en_customers', customers);
+  if (projectsChanged) sset('en_projects', projects);
+}
+
 function loadUtilityData() {
   utilityData = {};
   // One-time migration: if old combined key exists, split into per-project keys then remove it
@@ -88,14 +187,21 @@ function loadUtilityData() {
     } catch (e) {}
     console.log('Migrated en_utilityData to per-project keys');
   }
-  // Load each project from its own key
-  sget('en_projects', []).forEach(function (p) {
-    const d = sget('en_utility_' + p.id, null);
+  // Customer/Multi-Project (2026-09-24): self-heal en_customers + project.customerId/
+  // project.scope BEFORE loading per-customer blobs below — same "no version flag,
+  // self-deactivating" pattern as the commodity heal just below (once a project has
+  // customerId+scope.buildingIds, _selfHealCustomersAndScope() skips it every future load).
+  _selfHealCustomersAndScope();
+
+  // Load each CUSTOMER's blob from its own key (renamed from per-project — buildings/
+  // meters/bills are now shared across every project under the same customer).
+  sget('en_customers', []).forEach(function (c) {
+    const d = sget('en_utility_' + c.id, null);
     if (d) {
-      utilityData[p.id] = d;
+      utilityData[c.id] = d;
       // Seed the dirty-check snapshot from the on-disk value (Phase 0.1) so
-      // the first saveUtilityData() call after load doesn't rewrite every project.
-      _lastSavedSnapshot[p.id] = JSON.stringify(d);
+      // the first saveUtilityData() call after load doesn't rewrite every customer.
+      _lastSavedSnapshot[c.id] = JSON.stringify(d);
     }
   });
   // Heal meters whose commodity got blanked by the mm-commodity dropdown bug
@@ -810,13 +916,18 @@ function saveUtilityData(pid) {
   //   saveUtilityData(pid)             -> only that one project
   //   saveUtilityData([pid1, pid2])    -> only those specific projects
   //   saveUtilityData(SAVE_ALL_PROJECTS) -> every loaded project (migrations only)
-  const targetPids =
+  // Customer/Multi-Project: utilityData is now keyed by customerId, not projId — this
+  // resolves every project-id-shaped argument (the ~100 existing call sites across the
+  // app all still pass a project id, unchanged) to its customer id before touching
+  // utilityData[...]. Already-a-customerId arguments (new code) pass through unchanged
+  // via _resolveCustomerId's fallback.
+  const targetCids =
     pid === SAVE_ALL_PROJECTS
-      ? Object.keys(utilityData)
+      ? Object.keys(utilityData) // already customer ids
       : Array.isArray(pid)
-        ? pid.filter((p) => p != null && utilityData[p])
-        : [pid != null ? pid : udSelProjId].filter((p) => p != null && utilityData[p]);
-  targetPids.forEach(function (pid) {
+        ? pid.map(_resolveCustomerId).filter((c) => c != null && utilityData[c])
+        : [_resolveCustomerId(pid != null ? pid : udSelProjId)].filter((c) => c != null && utilityData[c]);
+  targetCids.forEach(function (pid) {
     // Strip transient, runtime-only computed fields before persisting so a stale cache can never
     // be written to disk again (bcbc84e0). These are rebuilt on next render by getMeterSavings()/
     // getNormRows() — safe to delete from the live in-memory objects.
@@ -1162,21 +1273,124 @@ async function clearAuditLog() {
   showToast('History cleared');
 }
 
+// Customer/Multi-Project accessor module (2026-09-24). These are the ONLY functions
+// allowed to touch utilityData[...] directly outside a one-time migration -- enforced by
+// tools/gate-utility-data-single-accessor.js. `pid` below always means a PROJECT id;
+// `customerId` always means an en_customers id.
+
+// Resolves a project id to its customer id. Also tolerant of already being handed a
+// customer id (no matching project found) -- several call sites (saveUtilityData,
+// getUDProj itself) are reused by both old project-id callers and new customer-id-aware
+// code, so this keeps every existing call site working with zero edits.
+function _resolveCustomerId(pid) {
+  if (pid == null) return pid;
+  const proj = (sget('en_projects', []) || []).find((p) => String(p.id) === String(pid));
+  if (proj) return proj.customerId || 'cust_' + proj.id;
+  return pid; // already a customerId, or an unknown id -- auto-vivify same as before
+}
+
+// Raw, unfiltered customer blob (auto-vivifies). Internal helper -- external callers
+// should use getUDBldgs/getUDBldg/getUDMeter (scope-filtered) or getCustomerBuildings
+// (explicitly unfiltered, customer-keyed) instead of calling this directly.
 function getUDProj(pid) {
-  return (utilityData[pid] || (utilityData[pid] = { buildings: [] }), utilityData[pid]);
+  const cid = _resolveCustomerId(pid);
+  return (utilityData[cid] || (utilityData[cid] = { buildings: [] }), utilityData[cid]);
 }
+
+// THE chokepoint. Returns only the buildings THIS PROJECT has picked
+// (project.scope.buildingIds). Missing/absent scope = "all buildings the customer
+// has" (never zero -- legacy safety net for a record not yet through the self-heal).
+// A present, explicitly empty scope.buildingIds ([]) means a brand-new project the
+// user hasn't checked anything into yet, and correctly returns nothing.
 function getUDBldgs(pid) {
-  return getUDProj(pid).buildings;
+  const proj = (sget('en_projects', []) || []).find((p) => String(p.id) === String(pid));
+  const all = getUDProj(pid).buildings;
+  if (!proj || !proj.scope || !Array.isArray(proj.scope.buildingIds)) return all;
+  const ids = new Set(proj.scope.buildingIds);
+  return all.filter((b) => ids.has(b.id));
 }
+
+// The customer's FULL building list, unfiltered by any one project's scope. The only
+// production entry point for the unfiltered array -- for the picker UI, the Utility
+// Data tab's customer-level management view, and the Equipment Matrix create-buildings
+// bridge. Works before a project has an id (it never needed one).
+function getCustomerBuildings(customerId) {
+  return (utilityData[customerId] || (utilityData[customerId] = { buildings: [] })).buildings;
+}
+
+// Every project under `customerId` that has `bldgId` in its own scope.buildingIds --
+// used by the 6 cross-project functions inside this file (Export modal, Bills-settings,
+// Export-All-CSV) that legitimately need "once per project," and nowhere else.
+function getProjectsForBuilding(customerId, bldgId) {
+  return (sget('en_projects', []) || []).filter(
+    (p) => p.customerId === customerId && ((p.scope && p.scope.buildingIds) || []).includes(bldgId),
+  );
+}
+
+// BLOCKER C fix: walks `projectsList` once per unique CUSTOMER, not once per project.
+// Calls fn(building, representativeProj, customerId) exactly once per real building the
+// customer has, regardless of how many of that customer's projects are in `projectsList`.
+// Replaces the naive `for (const proj of projects) { getUDProj(proj.id).buildings }`
+// pattern (OCR/PDF bill-matching's cross-project candidate scans in bill-analysis.js),
+// which — now that buildings are shared — found the SAME building once per sharing
+// project, confusing near-tie/uniqueness checks and double-counting historical bills.
+// representativeProj is whichever of the customer's projects already has the building in
+// its own scope.buildingIds (so writes/UI attribution land somewhere meaningful); if no
+// project has it scoped yet, falls back to the first project encountered for that
+// customer (the building is a real, valid customer building — just not yet picked by
+// any project — never an error, per BLOCKER A fix point 6 / BLOCKER C fix point 3).
+function forEachCustomerBuilding(projectsList, fn) {
+  const seen = new Set();
+  (projectsList || []).forEach((proj) => {
+    const cid = proj.customerId || 'cust_' + proj.id;
+    if (seen.has(cid)) return;
+    seen.add(cid);
+    getCustomerBuildings(cid).forEach((bldg) => {
+      const owners = getProjectsForBuilding(cid, bldg.id);
+      fn(bldg, owners[0] || proj, cid);
+    });
+  });
+}
+
+// Write a building onto the customer's list (never raw-index utilityData[customerId]
+// at the call site). Used by Add Building / Import Building List / the EM create-
+// buildings bridge -- callers must ALSO push the new id onto the creating project's
+// own scope.buildingIds (see BLOCKER A fix point 3 / Write-site fix), which this
+// function does not do since it doesn't know which project is "creating."
+function addUDBldg(customerId, bldg) {
+  const proj = getUDProj(customerId); // tolerant: customerId already resolves as-is
+  proj.buildings = proj.buildings || [];
+  proj.buildings.push(bldg);
+  return bldg;
+}
+
+// Removes `bldgId` from `pid`'s OWN scope.buildingIds only ("unscope," not delete --
+// the building/meters/bills stay in utilityData[customerId] untouched, so any other
+// project sharing the customer is unaffected). A true destructive delete is a
+// separate, explicitly-named customer-level action gated on zero remaining projects.
+function unscopeBuilding(pid, bldgId) {
+  const projects = sget('en_projects', []) || [];
+  const proj = projects.find((p) => String(p.id) === String(pid));
+  if (!proj || !proj.scope || !Array.isArray(proj.scope.buildingIds)) return;
+  proj.scope.buildingIds = proj.scope.buildingIds.filter((id) => id !== bldgId);
+  sset('en_projects', projects);
+}
+
+function getUDBldgByCustomer(customerId, bldgId) {
+  return getCustomerBuildings(customerId).find((b) => b.id === bldgId);
+}
+
 // Baseline/header-eligible buildings only (9ca94e0c): excludes buildings with no sqft (EUI-chart
-// parity, graphics-setpoints.js:1606) or where every calc-commodity meter is baselineInclude:false.
-// Do NOT repoint getUDBldgs() itself — management/data-entry screens must keep showing ALL buildings
-// including these. Only the project header (core.js:984) consumes this variant.
+// parity, graphics-setpoints.js:1606) or where every calc-commodity meter is excluded via
+// isBaselineExcluded(). Do NOT repoint getUDBldgs() itself -- management/data-entry screens must
+// keep showing ALL in-scope buildings including these. Only the project header (core.js:984)
+// consumes this variant. Inherits the scope.buildingIds filter for free (filters getUDBldgs()'s
+// own output).
 function getBaselineEligibleBldgs(pid) {
   return getUDBldgs(pid).filter((b) => {
     if (!(parseInt(b.sqft || 0) > 0)) return false;
     const calc = (b.meters || []).filter((m) => isCalcCommodity(pid, m.commodity));
-    if (calc.length && calc.every((m) => m.baselineInclude === false)) return false;
+    if (calc.length && calc.every((m) => isBaselineExcluded(pid, m.id))) return false;
     return true;
   });
 }
@@ -1186,6 +1400,27 @@ function getUDBldg(pid, bid) {
 function getUDMeter(pid, bid, mid) {
   const b = getUDBldg(pid, bid);
   return b ? b.meters.find((m) => m.id === mid) : null;
+}
+
+// BLOCKER 1 fix: one helper, zero raw meter.baselineInclude reads left in the codebase
+// (the field itself no longer exists post-migration -- see _selfHealCustomersAndScope).
+// Successor is per-PROJECT, stored in project.scope.meterExcludeIds -- the same meter can
+// be excluded in one project's baseline and included in another's.
+function isBaselineExcluded(pid, meterId) {
+  const proj = (sget('en_projects', []) || []).find((p) => String(p.id) === String(pid));
+  if (!proj || !proj.scope || !Array.isArray(proj.scope.meterExcludeIds)) return false;
+  return proj.scope.meterExcludeIds.includes(meterId);
+}
+function setBaselineExcluded(pid, meterId, excluded) {
+  const projects = sget('en_projects', []) || [];
+  const proj = projects.find((p) => String(p.id) === String(pid));
+  if (!proj) return;
+  proj.scope = proj.scope || { buildingIds: [], meterExcludeIds: [] };
+  if (!Array.isArray(proj.scope.meterExcludeIds)) proj.scope.meterExcludeIds = [];
+  const idx = proj.scope.meterExcludeIds.indexOf(meterId);
+  if (excluded && idx === -1) proj.scope.meterExcludeIds.push(meterId);
+  else if (!excluded && idx !== -1) proj.scope.meterExcludeIds.splice(idx, 1);
+  sset('en_projects', projects);
 }
 
 // importAnnualBenchmarksJSON — merges Talisen FAC-workbook annual benchmark data (yearBuilt +
@@ -1220,7 +1455,7 @@ function importAnnualBenchmarksJSON(pid, jsonData) {
       'importAnnualBenchmarksJSON: no existing project for pid ' + pid + ' — aborting, not auto-creating',
     );
   }
-  const proj = getUDProj(pid);
+  const proj = { buildings: getUDBldgs(pid) };
   if (!jsonData || typeof jsonData !== 'object') return { matched: 0, total: 0, skipped: 0, errors: [] };
   const bldgEntries = jsonData.buildings || {};
   // Build canonicalName -> entry lookup (exact match only, no fuzzy matching at runtime)
@@ -1255,11 +1490,17 @@ function importAnnualBenchmarksJSON(pid, jsonData) {
     }
   });
   if (jsonData.energyPlan && jsonData.energyPlan.text) {
-    proj.energyPlan = {
-      text: jsonData.energyPlan.text,
-      source: jsonData.energyPlan.source || '',
-      lastUpdated: new Date().toISOString(),
-    };
+    // Field relocation (2026-09-24): energyPlan lives on the project record, not the
+    // shared customer blob — it's a per-project setting.
+    const _projRecord = projects.find((p) => p.id === pid);
+    if (_projRecord) {
+      _projRecord.energyPlan = {
+        text: jsonData.energyPlan.text,
+        source: jsonData.energyPlan.source || '',
+        lastUpdated: new Date().toISOString(),
+      };
+      sset('en_projects', projects);
+    }
   }
   saveUtilityData(pid);
   return { matched, total: Object.keys(bldgEntries).length, skipped: errors.length, errors };
@@ -1471,7 +1712,7 @@ function renderUDProjList() {
         bldgs.forEach((b) => {
           const _allMeters = b.meters || [];
           const _totalMCount = _allMeters.length;
-          const _blMeters = _allMeters.filter((m) => m.baselineInclude !== false);
+          const _blMeters = _allMeters.filter((m) => !isBaselineExcluded(p.id, m.id));
           const mCount = _blMeters.length;
           const mWithBl = _blMeters.filter(
             (m) => m.baseline && Array.isArray(m.baseline.months) && m.baseline.months.length,
@@ -1644,7 +1885,7 @@ function aggBaseMoMapForBldgs(bldgs) {
   for (let i = 0; i < 12; i++) moBase[i] = 0;
   bldgs.forEach((b) => {
     (b.meters || []).forEach((m) => {
-      if (m.baselineInclude === false) return;
+      if (isBaselineExcluded(udSelProjId, m.id)) return;
       const bills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
       const incl = m.inclusive !== false;
       const bl = m.baseline;
@@ -1719,7 +1960,7 @@ function _udMeterBaselineForAllBldgs(m, projectMonths) {
     usedProjectMonths,
     hasBills: bills.length > 0,
     hasBaseline: !!(m.baseline && m.baseline.months && m.baseline.months.length >= 3),
-    included: m.baselineInclude !== false,
+    included: !isBaselineExcluded(udSelProjId, m.id),
     trust: getBaselineTrustState(m),
   };
 }
@@ -1930,8 +2171,7 @@ function _udRenderAllBuildingsBaselineSection(rows, allTotals, includedTotals) {
 }
 
 function renderUDProjAggPanel(content) {
-  const proj = utilityData[udSelProjId];
-  const bldgs = proj?.buildings || [];
+  const bldgs = getUDBldgs(udSelProjId) || [];
   const projMeta = projects.find((p) => p.id === udSelProjId);
   const projName = projMeta?.name || 'Project';
   const MN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -1951,7 +2191,7 @@ function renderUDProjAggPanel(content) {
   bldgs.forEach((b) => {
     totalSqft += parseFloat(b.sqft || 0);
     (b.meters || []).forEach((m) => {
-      if (m.baselineInclude === false) return;
+      if (isBaselineExcluded(udSelProjId, m.id)) return;
       const bills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
       allMeters.push({
         m,
@@ -2177,7 +2417,7 @@ function renderUDProjAggPanel(content) {
     let _msrBldgCount = 0;
     bldgs.forEach((b) => {
       const _bMeters = b.meters || [];
-      if (_bMeters.length > 0 && _bMeters.every((m) => m.baselineInclude === false)) return;
+      if (_bMeters.length > 0 && _bMeters.every((m) => isBaselineExcluded(udSelProjId, m.id))) return;
       const msrSav = getBldgMeasureSavingsByMo(udSelProjId, b.id);
       if (msrSav) {
         _msrBldgCount++;
@@ -2475,7 +2715,7 @@ function renderBldgComparisonPanel(content, bldgs, projName, projId) {
   // ── Gather raw metrics per building ──────────────────────────────────────
   const rawMetrics = bldgs.map((b) => {
     const sqft = parseFloat(b.sqft || 0);
-    const meters = (b.meters || []).filter((m) => m.baselineInclude !== false);
+    const meters = (b.meters || []).filter((m) => !isBaselineExcluded(projId, m.id));
 
     // Collect trailing-12-month bills per commodity
     let totalCost = 0,
@@ -3093,10 +3333,9 @@ function renderUDDetail(targetWrap) {
           Stormwater: '#9ca3af',
         };
         const _pTxt = _pTxtMap[m.commodity] || 'var(--text2)';
-        const _exclTag =
-          m.baselineInclude === false
-            ? '<span style="font-size:8px;font-weight:700;color:var(--danger,#ef4444);background:rgba(239,68,68,.15);padding:1px 4px;border-radius:3px;margin-left:2px" title="Excluded from baseline &amp; performance">excl</span>'
-            : '';
+        const _exclTag = isBaselineExcluded(udSelProjId, m.id)
+          ? '<span style="font-size:8px;font-weight:700;color:var(--danger,#ef4444);background:rgba(239,68,68,.15);padding:1px 4px;border-radius:3px;margin-left:2px" title="Excluded from baseline &amp; performance">excl</span>'
+          : '';
         // P0 35105124(a): trust indicator distinguishes THREE states (not the
         // old binary lock/warning) via getBaselineTrustState() so a saved-but-
         // no-weather baseline no longer looks identical to a silently
@@ -3671,21 +3910,18 @@ function openBillsTableSettings(mid) {
   // Resolve meter — search across all projects/buildings since the
   // sticky-header context may not be fully in scope (safer than relying
   // on udSelProjId/udSelBldgId for this popup).
+  // BLOCKER C fix (section 2e): customer-deduplicated walk so a building shared by 2+
+  // projects is scanned once, not once per sharing project.
   let meter = null;
-  for (const p of projects || []) {
-    const ud = utilityData && utilityData[p.id];
-    if (!ud) continue;
-    for (const bl of ud.buildings || []) {
-      for (const mm of bl.meters || []) {
-        if (mm.id === mid) {
-          meter = mm;
-          break;
-        }
+  forEachCustomerBuilding(projects || [], (bl) => {
+    if (meter) return;
+    for (const mm of bl.meters || []) {
+      if (mm.id === mid) {
+        meter = mm;
+        break;
       }
-      if (meter) break;
     }
-    if (meter) break;
-  }
+  });
   if (!meter) return;
   const state = _billsTableViewState(mid);
   // Togglable columns depend on mode.
@@ -4924,7 +5160,7 @@ function openExportModal(hint, targetId) {
     const projs = sget('en_projects', []) || [];
     for (let i = 0; i < projs.length && !preBldgId; i++) {
       const p = projs[i];
-      const bldgs = (utilityData[p.id] && utilityData[p.id].buildings) || [];
+      const bldgs = getUDBldgs(p.id) || [];
       for (let j = 0; j < bldgs.length; j++) {
         if ((bldgs[j].meters || []).find((m) => m.id === targetId)) {
           preProjId = p.id;
@@ -5035,7 +5271,7 @@ function _renderExportScopeTree(preProjId, preBldgId, preMeterId) {
 
   const nodes = [];
   projs.forEach(function (p) {
-    const bldgs = (utilityData[p.id] && utilityData[p.id].buildings) || [];
+    const bldgs = getUDBldgs(p.id) || [];
     const projChecked = !!(preProjId && String(p.id) === String(preProjId));
     const bldgNodes = [];
     bldgs.forEach(function (b) {
@@ -5109,10 +5345,7 @@ function _getExportSelectedBills() {
       return String(x.id) === String(pid);
     });
     if (!p) return;
-    const bldgs = (utilityData[p.id] && utilityData[p.id].buildings) || [];
-    const b = bldgs.find(function (x) {
-      return String(x.id) === String(bid);
-    });
+    const b = getUDBldg(p.id, bid);
     if (!b) return;
     const m = (b.meters || []).find(function (x) {
       return String(x.id) === String(mid);
@@ -5436,8 +5669,8 @@ function exportAllBuildingsCSV() {
   const headers = ['Project', 'Project Type', 'Building Name', 'Address', 'Square Footage', 'Building Type'];
   const bldgRows = [];
   projs.forEach(function (p) {
-    const ud = sget('en_utility_' + p.id, { buildings: [] }) || { buildings: [] };
-    (ud.buildings || []).forEach(function (b) {
+    const bldgs = getUDBldgs(p.id) || [];
+    bldgs.forEach(function (b) {
       if (b._unmatchedSentinel === true) return; // skip Unmatched Bills sentinel bucket
       const addrRaw = b.addr !== undefined && b.addr !== null ? b.addr : b.address;
       const sqft = b.sqft !== undefined && b.sqft !== null ? b.sqft : '';
@@ -5580,7 +5813,6 @@ function _companyHubMeterUuid(id) {
 }
 
 function exportAllMetersCSV() {
-  const projs = sget('en_projects', []) || [];
   const headers = [
     'Project',
     'Building Name',
@@ -5594,32 +5826,38 @@ function exportAllMetersCSV() {
     'Included in Baseline',
   ];
   const meterRows = [];
-  projs.forEach(function (p) {
-    const ud = sget('en_utility_' + p.id, { buildings: [] }) || { buildings: [] };
-    (ud.buildings || []).forEach(function (b) {
+  // BLOCKER C fix point 5: walk CUSTOMERS (getCustomerBuildings), not projects/raw
+  // en_utility_<projId> storage (stale after the customer-blob rename) — then re-expand
+  // to one row per project via getProjectsForBuilding, since a per-project CSV export is
+  // this function's actual job (unlike bill-matching, "once per project" is correct here).
+  (sget('en_customers', []) || []).forEach(function (c) {
+    getCustomerBuildings(c.id).forEach(function (b) {
       if (b._unmatchedSentinel === true) return; // skip Unmatched Bills sentinel bucket
-      (b.meters || []).forEach(function (m) {
-        const active = m.active !== false ? 'Active' : 'Inactive';
-        const inBaseline = m.baselineInclude !== false ? 'Included' : 'Excluded';
-        const description = [b.name || '', m.commodity || '', _titleCaseAddress(m.maddr), active].join(' - ');
-        const utilTypeLabel = m.commodity === 'Gas' ? 'Natural Gas' : m.commodity;
-        meterRows.push({
-          projName: p.name || '',
-          bldgName: b.name || '',
-          utilType: m.commodity || '',
-          provider: m.provider || '',
-          cells: [
-            p.name,
-            b.name,
-            utilTypeLabel,
-            m.provider,
-            description,
-            m.account,
-            m.meter,
-            active,
-            _companyHubMeterUuid(m.id),
-            inBaseline,
-          ],
+      const owningProjs = getProjectsForBuilding(c.id, b.id);
+      owningProjs.forEach(function (p) {
+        (b.meters || []).forEach(function (m) {
+          const active = m.active !== false ? 'Active' : 'Inactive';
+          const inBaseline = isBaselineExcluded(p.id, m.id) ? 'Excluded' : 'Included';
+          const description = [b.name || '', m.commodity || '', _titleCaseAddress(m.maddr), active].join(' - ');
+          const utilTypeLabel = m.commodity === 'Gas' ? 'Natural Gas' : m.commodity;
+          meterRows.push({
+            projName: p.name || '',
+            bldgName: b.name || '',
+            utilType: m.commodity || '',
+            provider: m.provider || '',
+            cells: [
+              p.name,
+              b.name,
+              utilTypeLabel,
+              m.provider,
+              description,
+              m.account,
+              m.meter,
+              active,
+              _companyHubMeterUuid(m.id),
+              inBaseline,
+            ],
+          });
         });
       });
     });
@@ -5703,9 +5941,14 @@ function _getExportFilename(selectedBills) {
 }
 
 function setProjectNormBasis(pid, basis) {
-  const proj = getUDProj(pid);
-  proj.normBasis = basis;
-  saveUtilityData(pid);
+  // Field relocation (2026-09-24): normBasis lives on the project record, not the
+  // shared customer blob — it's a per-project setting, not a customer/building fact.
+  const projects_ = sget('en_projects', []) || [];
+  const proj = projects_.find((p) => p.id === pid);
+  if (proj) {
+    proj.normBasis = basis;
+    sset('en_projects', projects_);
+  }
   renderMeterWorkspace();
 }
 
@@ -9323,7 +9566,7 @@ function renderBldgPerfPane(pane, b) {
   const actualSavingsByCalMo = {};
   const actualSavingsByYM = {}; // keyed by YYYY-MM for quarterly view (avoids cross-year collisions)
   (b.meters || []).forEach((m) => {
-    if (m.baselineInclude === false) return;
+    if (isBaselineExcluded(udSelProjId, m.id)) return;
     if (!(m.baseline?.months?.length >= 3)) return;
     const mbills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
     const mincl = m.inclusive !== false;

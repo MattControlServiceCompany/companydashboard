@@ -599,13 +599,13 @@ const FAN_FRACTION_DEFAULT = 0.12; // CBECS VAV 10–20%; user-editable
    Data source: en_utility_<projId> → { buildings: [{ meters: [{ bills: [] }] }] }
    ─────────────────────────────────────────────────────────────────────────── */
 function _pricingGetProjectAnnualElec(projId) {
-  var utilData = typeof sget === 'function' ? sget('en_utility_' + projId, null) : null;
-  if (!utilData || !utilData.buildings) return { annualKwh: null, hasBillData: false, elecRate: 0.1 };
+  var _peBldgs = typeof getUDBldgs === 'function' ? getUDBldgs(projId) : null;
+  if (!_peBldgs || !_peBldgs.length) return { annualKwh: null, hasBillData: false, elecRate: 0.1 };
 
   var allElecBills = [];
   var totalCost = 0,
     totalKwh = 0;
-  (utilData.buildings || []).forEach(function (b) {
+  _peBldgs.forEach(function (b) {
     (b.meters || []).forEach(function (m) {
       if (m.commodity && m.commodity !== 'Electricity') return;
       (m.bills || []).forEach(function (bill) {
@@ -811,9 +811,9 @@ function _pricingComputeMonthlyService(projId) {
    global PDF-import staging array keyed by bill.projId before a bill is committed to a meter.
    ─────────────────────────────────────────────────────────────────────────── */
 function _pricingProjectHasUtilityBills(projId) {
-  var utilData = typeof sget === 'function' ? sget('en_utility_' + projId, null) : null;
-  if (!utilData || !utilData.buildings) return false;
-  return utilData.buildings.some(function (b) {
+  var _phBldgs = typeof getUDBldgs === 'function' ? getUDBldgs(projId) : null;
+  if (!_phBldgs || !_phBldgs.length) return false;
+  return _phBldgs.some(function (b) {
     return (b.meters || []).some(function (m) {
       return (m.bills || []).length > 0;
     });

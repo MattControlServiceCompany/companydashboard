@@ -21058,11 +21058,17 @@ function emOpenCreateBldgsModal(pid) {
     return;
   }
 
-  // Get existing buildings from utility data for this project
+  // Get existing buildings for this project's CUSTOMER (BLOCKER A/D fix, section 3 point
+  // 3): must see every building the customer already has — not just this project's own
+  // scope — so the modal offers "add existing building" instead of creating a same-named
+  // duplicate under a customer another project already added it to.
   var existingBldgs = [];
-  if (typeof getUDProj === 'function') {
-    var proj = getUDProj(pid);
-    existingBldgs = proj && proj.buildings ? proj.buildings : [];
+  if (typeof getCustomerBuildings === 'function') {
+    var _emProj = (typeof projects !== 'undefined' ? projects : sget('en_projects', [])).find(function (p) {
+      return p.id === pid;
+    });
+    var _emCustomerId = _emProj ? _emProj.customerId || 'cust_' + _emProj.id : null;
+    existingBldgs = _emCustomerId ? getCustomerBuildings(_emCustomerId) || [] : [];
   }
 
   // Build a set of existing names (lower-case) for dedup check
@@ -21274,20 +21280,28 @@ function emExecuteCreateBuildings() {
     return;
   }
 
-  // Get the project's utility data
-  if (typeof getUDProj !== 'function') {
+  // Write-site fix: create on the CUSTOMER's building list (buildings are shared) and
+  // push each new id onto the triggering project's own scope.buildingIds so it's visible
+  // in THIS project immediately (BLOCKER A fix point 3 / Write-site fix).
+  if (typeof getCustomerBuildings !== 'function' || typeof addUDBldg !== 'function') {
     showToast('Cannot access project data');
     return;
   }
-  var proj = getUDProj(pid);
-  if (!proj) return;
-  if (!proj.buildings) proj.buildings = [];
+  var _emcProj = (typeof projects !== 'undefined' ? projects : sget('en_projects', [])).find(function (p) {
+    return p.id === pid;
+  });
+  if (!_emcProj) return;
+  var _emcCustomerId = _emcProj.customerId || 'cust_' + _emcProj.id;
+  var existingBuildings = getCustomerBuildings(_emcCustomerId) || [];
 
   // Dedup within batch (case-insensitive) and against existing buildings
   var existingNamesLower = {};
-  for (var ei = 0; ei < proj.buildings.length; ei++) {
-    existingNamesLower[(proj.buildings[ei].name || '').toLowerCase()] = true;
+  for (var ei = 0; ei < existingBuildings.length; ei++) {
+    existingNamesLower[(existingBuildings[ei].name || '').toLowerCase()] = true;
   }
+
+  _emcProj.scope = _emcProj.scope || { buildingIds: [], meterExcludeIds: [] };
+  if (!Array.isArray(_emcProj.scope.buildingIds)) _emcProj.scope.buildingIds = [];
 
   var created = 0;
   var batchSeen = {};
@@ -21299,7 +21313,7 @@ function emExecuteCreateBuildings() {
       continue;
     }
     batchSeen[bnameLower] = true;
-    proj.buildings.push({
+    var _newBldg = {
       id: 'b' + (Date.now() + ci),
       name: bname,
       addr: '',
@@ -21307,9 +21321,12 @@ function emExecuteCreateBuildings() {
       zip: '',
       addrAliases: [],
       meters: [],
-    });
+    };
+    addUDBldg(_emcCustomerId, _newBldg);
+    _emcProj.scope.buildingIds.push(_newBldg.id);
     created++;
   }
+  sset('en_projects', typeof projects !== 'undefined' ? projects : sget('en_projects', []));
 
   // Persist and refresh — scope to this modal's target project (pid), not
   // whatever project happens to be active in the Utility Data tab.

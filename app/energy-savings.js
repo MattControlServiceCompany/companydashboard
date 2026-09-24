@@ -1667,7 +1667,7 @@ function saveProject() {
   // Propagate project-level escalation to buildings without a custom override
   if (fields.escalation != null) {
     const projId = editId ? parseInt(editId) : projects[projects.length - 1].id;
-    const bldgs = (utilityData[projId] || {}).buildings || [];
+    const bldgs = getUDBldgs(projId) || [];
     bldgs.forEach((b) => {
       const bpKey = 'bldgperf_cfg_' + (b.id || b.name);
       const bspKey = 'bldgsavproj_cfg_' + (b.id || b.name);
@@ -1691,7 +1691,7 @@ function saveProject() {
   // Propagate project-level CSC compensation to buildings without a custom override
   if (fields.cscCompensation != null) {
     const projId = editId ? parseInt(editId) : projects[projects.length - 1].id;
-    const bldgs = (utilityData[projId] || {}).buildings || [];
+    const bldgs = getUDBldgs(projId) || [];
     bldgs.forEach((b) => {
       const bpKey = 'bldgperf_cfg_' + (b.id || b.name);
       const bspKey = 'bldgsavproj_cfg_' + (b.id || b.name);

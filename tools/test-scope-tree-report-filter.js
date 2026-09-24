@@ -169,7 +169,17 @@ function buildCtx() {
       return store.size;
     },
   };
-  sandbox.DB = { get: (k, d) => d, set: () => Promise.resolve(), isReady: () => true };
+  // Customer/Multi-Project: self-heal WRITES en_projects/en_customers (via sset) as well
+  // as reads — a no-op set() silently dropped those writes so a later read never saw
+  // them. Persist through to the same store the localStorage stub reads from.
+  sandbox.DB = {
+    get: (k, d) => d,
+    set: (k, v) => {
+      store.set(k, JSON.stringify(v));
+      return Promise.resolve();
+    },
+    isReady: () => true,
+  };
   const ctx = vm.createContext(sandbox);
   const load = (rel) =>
     new vm.Script(fs.readFileSync(path.join(REPO, rel), 'utf8'), { filename: rel }).runInContext(ctx);
@@ -190,9 +200,16 @@ function buildCtx() {
     'app/report-engine.js',
     'app/equipment-matrix.js',
   ].forEach(load);
+  // Customer/Multi-Project (2026-09-24): buildings/meters/bills now live per-customer
+  // (en_utility_<customerId>) — mirrors loadUtilityData()'s self-heal-then-load sequence
+  // without running its OTHER one-time bill-content migrations (rate fixes, dedupe, etc.),
+  // which are unrelated to this test and could alter the fixture's numbers.
   run(
     ctx,
-    `projects = JSON.parse(localStorage.getItem('en_projects')) || []; projects.forEach(function(p){ var ud = JSON.parse(localStorage.getItem('en_utility_' + p.id) || 'null'); if (ud) utilityData[p.id] = ud; });`,
+    `projects = JSON.parse(localStorage.getItem('en_projects')) || [];
+     _selfHealCustomersAndScope();
+     projects = JSON.parse(localStorage.getItem('en_projects')) || [];
+     (JSON.parse(localStorage.getItem('en_customers')) || []).forEach(function(c){ var ud = JSON.parse(localStorage.getItem('en_utility_' + c.id) || 'null'); if (ud) utilityData[c.id] = ud; });`,
   );
   return ctx;
 }
