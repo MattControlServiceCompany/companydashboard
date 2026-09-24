@@ -1351,7 +1351,7 @@
         }
       }
     </style>
-    <link rel="stylesheet" href="feedback-widget.css?v=1" />
+    <link rel="stylesheet" href="feedback-widget.css?v=2" />
   </head>
   <body>
     <!-- TOPBAR -->
@@ -1581,7 +1581,7 @@
                   <th onclick="sortTable('stage')">Stage â†•</th>
                   <th onclick="sortTable('priority')">Priority â†•</th>
                   <th onclick="sortTable('cscContact')">CSC Contact â†•</th>
-                  <th onclick="sortTable('annualValue')">Est. Value â†•</th>
+                  <th onclick="sortTable('annualValue')">Estimated Value â†•</th>
                   <th onclick="sortTable('nextActionDate')">Next Action â†•</th>
                   <th onclick="sortTable('lastContact')">Last Contact â†•</th>
                 </tr>
@@ -1895,7 +1895,7 @@
               </select>
             </div>
             <div class="fg">
-              <label class="fl">Est. Annual Value ($)</label
+              <label class="fl">Estimated Annual Value ($)</label
               ><input class="fi" id="nl-value" type="number" placeholder="0" />
             </div>
           </div>
@@ -2060,7 +2060,7 @@
         { key: 'contactTitle', label: 'Contact Title' },
         { key: 'buildingType', label: 'Building Type' },
         { key: 'buildingSqft', label: 'Building Sq Ft' },
-        { key: 'annualValue', label: 'Est. Annual Value' },
+        { key: 'annualValue', label: 'Estimated Annual Value' },
         { key: 'cscContact', label: 'CSC Contact' },
         { key: 'cscEngineer', label: 'Engineer' },
         { key: 'stage', label: 'Stage' },
@@ -3040,9 +3040,9 @@
         return (s || '').toString().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       }
     </script>
-    <script src="app/sync-classification.js?v=1"></script>
-    <script src="app/db.js?v=1"></script>
-    <script src="app/sync-ui.js?v=1"></script>
-    <script src="feedback-widget.js?v=1"></script>
+    <script src="app/sync-classification.js?v=2"></script>
+    <script src="app/db.js?v=2"></script>
+    <script src="app/sync-ui.js?v=2"></script>
+    <script src="feedback-widget.js?v=2"></script>
   </body>
 </html>

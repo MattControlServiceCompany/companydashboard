@@ -2879,7 +2879,7 @@ const PROJ_TABS_DEFAULT = [
   { id: 'eq-matrix', label: 'Equipment Matrix', icon: '⚙️' },
   { id: 'bas-trends', label: 'BAS Trends', icon: '📉' },
   { id: 'bas-alarms', label: 'BAS Alarms', icon: '🚨' },
-  { id: 'hvacload', label: 'HVAC Load Est', icon: '🌡️' },
+  { id: 'hvacload', label: 'HVAC Load Estimate', icon: '🌡️' },
   { id: 'savings', label: 'Energy Savings', icon: '💡' },
   { id: 'energygfx', label: 'Energy Graphics', icon: '📈' },
   { id: 'budget', label: 'Budget', icon: '💰' },

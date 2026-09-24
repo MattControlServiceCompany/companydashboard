@@ -1742,7 +1742,7 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
-    v: 'v2026.09.24.1',
+    v: 'v2026.09.24.2',
     date: '2026-09-24',
     title: 'Equipment Matrix: the Raw View and Audit View now open fast, even on large projects',
     items: [
@@ -1753,6 +1753,17 @@ var RELEASE_NOTES = [
       {
         type: 'fix',
         text: 'On the Equipment Matrix page, the Summary View footer row was labeled "Page Average" even though the page controls were removed earlier. It is now labeled "Filtered Average" to match the "Total Average" row next to it.',
+      },
+    ],
+  },
+  {
+    v: 'v2026.09.24.1',
+    date: '2026-09-24',
+    title: 'Plain-English labels on the BAS Savings Calc and other tables',
+    items: [
+      {
+        type: 'change',
+        text: 'The BAS Savings Calc, Set Points, Equipment Matrix, Utility Data, and Energy Savings pages now spell out labels that used to be shortened -- for example "Occupied Cooling Setpoint (°F)" instead of "Cool Occ SP", "Outside Air Shut Off When Unoccupied?" instead of "OA Shut Off", and "Monday–Friday Start/Stop" instead of "M-F On/Off". The Utility Data "Normalized Month" column header and the WoodRiver Energy gas-bill charge labels are fully spelled out too.',
       },
     ],
   },

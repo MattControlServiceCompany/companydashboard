@@ -1833,7 +1833,7 @@ function egfxRefresh(projId) {
                     <option value="kwh">Electric (kWh)</option>
                     <option value="therms">Gas (Therms)</option>
                     <option value="cost">Total Cost ($)</option>
-                    <option value="eui">Site EUI (kBtu/ft²/yr)</option>
+                    <option value="eui">Site EUI (kBtu/ft²/Year)</option>
                   </select>
                   <select id="egfx-trend-mode-${projId}" onchange="egfxRedrawTrendChart(${projId})" style="font-size:11px;padding:4px 6px;background:var(--s2);color:var(--text);border:1px solid var(--border);border-radius:4px">
                     <option value="perBldg">Per Building</option>
@@ -2523,10 +2523,10 @@ function renderSetpointsTab(projId) {
                   <thead>
                     <tr style="border-bottom:1px solid var(--border);text-align:left">
                       <th style="padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);min-width:150px">${isAvg ? 'Building' : 'Zone / System'}</th>
-                      <th style="padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);text-align:center;min-width:80px">Occ Heat °F</th>
-                      <th style="padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);text-align:center;min-width:80px">Occ Cool °F</th>
-                      <th style="padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);text-align:center;min-width:80px">Unocc Heat °F</th>
-                      <th style="padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);text-align:center;min-width:80px">Unocc Cool °F</th>
+                      <th style="padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);text-align:center;min-width:80px">Occupied Heat °F</th>
+                      <th style="padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);text-align:center;min-width:80px">Occupied Cool °F</th>
+                      <th style="padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);text-align:center;min-width:80px">Unoccupied Heat °F</th>
+                      <th style="padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);text-align:center;min-width:80px">Unoccupied Cool °F</th>
                       <th style="padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);min-width:160px">Schedule</th>
                       ${!isAvg && !isViewingSnapshot ? '<th style="padding:6px 4px;width:32px"></th>' : ''}
                     </tr>
@@ -2572,7 +2572,7 @@ function _spZoneRow(projId, bldgId, z, idx) {
             value="${v(z.unoccCool)}" placeholder="85"
             oninput="spUpdateField('${projId}','${bldgId}',${idx},'unoccCool',_spParseSpField(this.value))"></td>
           <td style="padding:4px 6px"><input class="fi" style="width:100%;font-size:12px" type="text"
-            value="${_escHtml(z.schedule || '')}" placeholder="e.g. M-F 6:00a-4:30p"
+            value="${_escHtml(z.schedule || '')}" placeholder="e.g. Monday–Friday 6:00a-4:30p"
             oninput="spUpdateField('${projId}','${bldgId}',${idx},'schedule',this.value)"></td>
           <td style="padding:4px 6px;text-align:center">
             <button class="btn btn-ghost btn-sm" style="padding:2px 6px;color:var(--red);border-color:rgba(244,63,94,.3);font-size:11px"
@@ -3934,11 +3934,11 @@ function _basRenderTable(rows) {
 
   var thead =
     '<tr>' +
-    '<th>Location</th><th class="num">Zone Temp</th><th class="num">Heat SP</th><th class="num">Cool SP</th>' +
-    '<th class="num">Def Heat SP</th><th class="num">Def Cool SP</th><th class="num">SP Adj</th>' +
+    '<th>Location</th><th class="num">Zone Temperature</th><th class="num">Heating Setpoint</th><th class="num">Cooling Setpoint</th>' +
+    '<th class="num">Def Heating Setpoint</th><th class="num">Def Cooling Setpoint</th><th class="num">Setpoint Adj</th>' +
     '<th class="num">Zone CO2</th><th class="num">RA CO2</th><th class="num">Zone Hum</th>' +
-    '<th>Zone State</th><th class="num">Flow SP</th><th class="num">Heat%</th><th class="num">Cool%</th>' +
-    '<th class="num">SAT</th><th>Building</th><th>Control Program</th></tr>';
+    '<th>Zone State</th><th class="num">Flow Setpoint</th><th class="num">Heat%</th><th class="num">Cool%</th>' +
+    '<th class="num">Supply Air Temperature</th><th>Building</th><th>Control Program</th></tr>';
 
   var tbody = '';
   rows.forEach(function (r) {
@@ -4156,9 +4156,9 @@ function _basRenderFaultDetection(projId, rows) {
     '<th>Zone</th>' +
     '<th class="num">Heat %</th>' +
     '<th class="num">Cool %</th>' +
-    '<th class="num">Zone Temp</th>' +
-    '<th class="num">Heat SP</th>' +
-    '<th class="num">Cool SP</th>' +
+    '<th class="num">Zone Temperature</th>' +
+    '<th class="num">Heating Setpoint</th>' +
+    '<th class="num">Cooling Setpoint</th>' +
     '<th>Severity</th>' +
     '</tr>';
 

@@ -1903,7 +1903,7 @@ function _udRenderAllBuildingsBaselineSection(rows, allTotals, includedTotals) {
         <th style="${th}">kW Total</th>
         <th style="${th}">Therms</th>
         <th style="${th}">Total Cost</th>
-        <th style="${th}">EUI (kBtu/sf/yr)</th>
+        <th style="${th}">EUI (kBtu/sf/Year)</th>
         <th style="${thL}">Savings Status</th>
         <th style="${thL}">Baseline Freeze</th>
       </tr></thead>
@@ -3833,7 +3833,7 @@ function renderBillsPane(pane, m, bills, incl) {
   const isGas = m.commodity === 'Gas';
 
   const normInfoTip = `<span style="position:relative;display:inline-block">
-          <button class="norm-info-btn" onclick="toggleNormTip(this)" title="How is Norm. Month calculated?">ℹ️</button>
+          <button class="norm-info-btn" onclick="toggleNormTip(this)" title="How is Normalized Month calculated?">ℹ️</button>
           <div class="norm-info-tooltip" id="normInfoTip-${m.id}">
             <strong>Normalized Month</strong><br>
             Each billing period is assigned to the calendar month that contains the majority of its billing days.
@@ -3864,15 +3864,15 @@ function renderBillsPane(pane, m, bills, incl) {
   // that opens the per-meter table settings modal.
   const COL_BASE = [
     // Fix 3113c062: row-number column — sticky so its 32px width is included
-    // in the cumulative left offset before Norm Month. Narrow, non-resizable.
+    // in the cumulative left offset before Normalized Month. Narrow, non-resizable.
     { h: '#', a: '', w: 32, minW: 32, sticky: true },
     {
       h:
-        `<span style="cursor:pointer;user-select:none" onclick="toggleBillsTableSort('${m.id}',event)" title="${sortTitle}">Norm. Month${sortArrow}</span> ` +
+        `<span style="cursor:pointer;user-select:none" onclick="toggleBillsTableSort('${m.id}',event)" title="${sortTitle}">Normalized Month${sortArrow}</span> ` +
         normInfoTip,
       a: 'lbl',
-      w: 110,
-      minW: 100,
+      w: 150,
+      minW: 140,
       sticky: true,
     },
     // Start/End widths must fit "12/31/2026" (10 chars) at the tabular
@@ -4844,7 +4844,7 @@ function exportRegrCSV(mid) {
   const lines = [
     [
       'Month',
-      'Norm Days',
+      'Normalized Days',
       unit,
       ddLabel,
       unit + '/Day',
@@ -6244,7 +6244,7 @@ function renderNormPane(pane, m, bills, incl) {
     // ── Table section ──
     const euiHdr = hasEUI ? '<th>kWh/sqft</th>' : '';
     const regrHdrs = hasRegr
-      ? '<th style="color:var(--violet)" title="Weather-normalized usage — primary output when regression is active">Normalized Baseline</th><th style="color:var(--text3);font-size:10px">Norm Days</th>'
+      ? '<th style="color:var(--violet)" title="Weather-normalized usage — primary output when regression is active">Normalized Baseline</th><th style="color:var(--text3);font-size:10px">Normalized Days</th>'
       : '';
     const tableSection =
       '<div>' +
@@ -6253,7 +6253,7 @@ function renderNormPane(pane, m, bills, incl) {
       '</div>' +
       '<div style="overflow-x:auto;border:1px solid var(--border);border-radius:8px;max-height:340px;overflow-y:auto">' +
       '<table class="ma-tbl">' +
-      '<thead><tr><th class="lbl">Month</th><th class="num">Days</th><th class="num">HDD</th><th class="num">CDD</th><th class="num">Avg °F</th><th class="num">' +
+      '<thead><tr><th class="lbl">Month</th><th class="num">Days</th><th class="num">HDD</th><th class="num">CDD</th><th class="num">Average °F</th><th class="num">' +
       unit +
       '/' +
       weatherDDLabel +
@@ -6709,7 +6709,7 @@ function wddShowPreview(rows) {
     return;
   }
   tbl.innerHTML =
-    '<thead><tr><th>Month</th><th>HDD</th><th>CDD</th><th>Avg °F</th></tr></thead>' +
+    '<thead><tr><th>Month</th><th>HDD</th><th>CDD</th><th>Average °F</th></tr></thead>' +
     '<tbody>' +
     rows
       .map(
@@ -9008,7 +9008,7 @@ function renderMeterDataPane(pane, m, bills, incl) {
             <!-- Load Factor Trend Chart -->
             <div style="margin-top:18px;background:var(--s3);border:1px solid var(--border);border-radius:9px;padding:16px 18px">
               <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text2);margin-bottom:4px;text-align:center">Monthly Load Factor %</div>
-              <div style="font-size:10px;color:var(--text3);text-align:center;margin-bottom:12px">kWh ÷ (Actual kW × 24 × Norm Days)</div>
+              <div style="font-size:10px;color:var(--text3);text-align:center;margin-bottom:12px">kWh ÷ (Actual kW × 24 × Normalized Days)</div>
               <div style="position:relative;height:260px"><canvas id="mddLoadFactorChart"></canvas></div>
             </div>
 
@@ -9412,7 +9412,7 @@ function renderBldgPerfPane(pane, b) {
             </div>
             <!-- Escalation rate -->
             <div style="display:flex;flex-direction:column;gap:4px">
-              <label style="font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.6px">Utility Escalation %/yr</label>
+              <label style="font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.6px">Utility Escalation %/Year</label>
               <input id="bp-escpct" type="number" value="${defEscPct}" min="0" max="20" step="0.1"
                 style="width:80px;font-family:var(--mono);font-size:13px;color:var(--em);background:var(--s3);border:1px solid var(--border);border-radius:6px;padding:5px 8px;outline:none">
             </div>
@@ -10032,7 +10032,7 @@ function renderBldgSavProjPane(pane, b) {
               </select>
             </div>
             <div style="display:flex;flex-direction:column;gap:4px">
-              <label style="font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.6px">Utility Escalation %/yr</label>
+              <label style="font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.6px">Utility Escalation %/Year</label>
               <input id="bsp-escpct" type="number" value="${defEscPct}" min="0" max="20" step="0.1" oninput="bspRecalc()"
                 style="width:80px;font-family:var(--mono);font-size:13px;color:var(--em);background:var(--s3);border:1px solid var(--border);border-radius:6px;padding:5px 8px;outline:none">
             </div>
@@ -11206,7 +11206,7 @@ function renderPerfPane(pane, m, bills, incl) {
             ? 'var(--warn)'
             : 'var(--danger)';
     const ratchetColor = da.annualRatchet > 100 ? 'var(--warn)' : 'var(--text)';
-    const peakSub = da.peakMo ? 'in ' + da.peakMo.label : 'trailing 12 mo';
+    const peakSub = da.peakMo ? 'in ' + da.peakMo.label : 'trailing 12 months';
 
     const kpiRow =
       '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px">' +

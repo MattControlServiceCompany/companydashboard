@@ -3800,7 +3800,7 @@ function initCostEstimateTab(projId) {
     '<th style="background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;padding:8px 10px;white-space:nowrap;position:sticky;top:0;z-index:11;min-width:140px">Item</th>',
     '<th style="background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;padding:8px 10px;white-space:nowrap;position:sticky;top:0;z-index:11">Type</th>',
     '<th style="background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;padding:8px 10px;white-space:nowrap;position:sticky;top:0;z-index:11">Equipment</th>',
-    '<th style="background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;padding:8px 10px;white-space:nowrap;position:sticky;top:0;z-index:11;text-align:center">Qty</th>',
+    '<th style="background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;padding:8px 10px;white-space:nowrap;position:sticky;top:0;z-index:11;text-align:center">Quantity</th>',
     '<th style="background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;padding:8px 10px;white-space:nowrap;position:sticky;top:0;z-index:11;min-width:150px">SKU</th>',
     '<th style="background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;padding:8px 10px;white-space:nowrap;position:sticky;top:0;z-index:11;text-align:center">Unit Price</th>',
     '<th style="background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;padding:8px 10px;white-space:nowrap;position:sticky;top:0;z-index:11;text-align:right">Line Total</th>',
@@ -4805,7 +4805,7 @@ var PRICING_TBL_COLS = [
   { label: 'Item', noSort: false, noHide: false, numeric: false, minWidth: 120 }, // 2
   { label: 'Type', noSort: false, noHide: false, numeric: false, minWidth: 70 }, // 3
   { label: 'Equipment', noSort: false, noHide: false, numeric: false, minWidth: 120 }, // 4 — widened for "(N blocked, N partial)" suffix (item 5a317ac7)
-  { label: 'Qty', noSort: false, noHide: false, numeric: true, minWidth: 40 }, // 5
+  { label: 'Quantity', noSort: false, noHide: false, numeric: true, minWidth: 40 }, // 5
   { label: 'SKU', noSort: false, noHide: false, numeric: false, minWidth: 100 }, // 6
   { label: 'List', noSort: false, noHide: false, numeric: true, minWidth: 70 }, // 7
   { label: 'Net', noSort: false, noHide: false, numeric: true, minWidth: 70 }, // 8
@@ -6377,7 +6377,7 @@ function _pricingOpenSettingsPopover(projId, btn) {
        separate rates (Hourly Rate + Install Rate) 2026-07-19→2026-07-28; Matt: "we need to be
        using the $173/hr for all labor costs not just EM." */
     '<label style="display:flex;align-items:center;justify-content:space-between;gap:6px;color:var(--text2);margin-bottom:6px" ' +
-    'title="Labor $/hr — applies to programming/sequence Hours (Phase 2) AND physical install Hours (Phase 1)">' +
+    'title="Labor $ per Hour — applies to programming/sequence Hours (Phase 2) AND physical install Hours (Phase 1)">' +
     'Hourly Rate:' +
     '<input type="number" id="pricing-rate-' +
     projId +
@@ -6392,7 +6392,7 @@ function _pricingOpenSettingsPopover(projId, btn) {
   if (tier === 'recommended' || tier === 'both') {
     html +=
       '<label style="display:flex;align-items:center;justify-content:space-between;gap:6px;color:var(--text2);margin-bottom:6px" ' +
-      'title="Fan energy as % of total electricity (CBECS VAV typical range 10–20%); used for duct pressure/supply air temp reset savings estimates">' +
+      'title="Fan energy as % of total electricity (CBECS VAV typical range 10–20%); used for duct pressure/supply air temperature reset savings estimates">' +
       'Fan energy %:' +
       '<input type="number" id="pricing-fanfrac-' +
       projId +
@@ -6702,7 +6702,7 @@ function _pricingBuildToolbarHTML(projId, tier, opts) {
   var tableSettingsBtnHTML =
     '<button class="btn btn-ghost btn-sm" onclick="_pricingOpenSettingsPopover(\'' +
     projId +
-    '\',this)" title="Pricing config + column visibility" style="cursor:pointer">⚙ Table Settings</button>';
+    '\',this)" title="Pricing configuration + column visibility" style="cursor:pointer">⚙ Table Settings</button>';
 
   var legendBtnHTML =
     '<button class="btn btn-ghost btn-sm" onclick="_pricingOpenLegendPopover(\'' +
@@ -6743,7 +6743,7 @@ function _pricingBuildToolbarHTML(projId, tier, opts) {
   var rateBtnHTML =
     '<button class="btn btn-ghost btn-sm" onclick="_pricingOpenRatePopover(\'' +
     projId +
-    '\',this)" title="Labor rate — the $/hr applied to every programming-labor row\'s Hours to compute its Line Total" style="cursor:pointer">' +
+    '\',this)" title="Labor rate — the $ per Hour applied to every programming-labor row\'s Hours to compute its Line Total" style="cursor:pointer">' +
     'Rate: ' +
     _pricingFmt(cfgForRateBtn.hourlyRate || COST_LABOR_RATE_DEFAULT) +
     '/hr' +
@@ -6982,7 +6982,7 @@ function _pricingRenderCondensedTab(projId, el, estimate, tier) {
       ';text-align:left">Item</th>' +
       '<th style="' +
       thBase +
-      ';text-align:right">Qty</th>' +
+      ';text-align:right">Quantity</th>' +
       '<th style="' +
       thBase +
       ';text-align:right">Unit Price</th>' +
@@ -8837,7 +8837,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
             projId +
             "','" +
             _qtyKey +
-            '\')" title="Reset to auto-derived qty"' +
+            '\')" title="Reset to auto-derived quantity"' +
             ' style="font-size:9px;padding:1px 3px;background:var(--s4);color:var(--text2);border:1px solid var(--border);border-radius:3px;cursor:pointer;line-height:1.2">↺</button>'
           : '') +
         '</div>',

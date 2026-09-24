@@ -19148,7 +19148,7 @@ function renderPDFFields(parsed, warnings) {
     },
     {
       type: 'charge-line',
-      label: 'Index (FOM)',
+      label: 'Index (First of Month)',
       chargeField: '_wreIndexCharge',
       qtyField: '_wreIndexMMbtu',
       unit: 'MMbtu',

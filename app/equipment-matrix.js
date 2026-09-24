@@ -424,7 +424,7 @@ var EM_CHECK_COLS_14 = [
 var EM_POINT_MAP = [
   {
     col: 'supplyAirTemp',
-    label: 'Supply Air Temp',
+    label: 'Supply Air Temperature',
     // M1A: added /discharge air temp/i — at AHU level "Discharge Air Temperature" is an HVAC synonym
     // for supply air temperature (discharge = leaving the AHU). This is the KEY AHU synonym test.
     // datLive cats do not include 'ahu', so without this pattern "Discharge Air Temp" is lost when
@@ -453,7 +453,7 @@ var EM_POINT_MAP = [
   },
   {
     col: 'returnAirTemp',
-    label: 'Return Air Temp',
+    label: 'Return Air Temperature',
     // 21eb08f8 Wave 6: added /energy\s+recovery\s+exhaust\s+air\s+temp/i for
     // "Energy Recovery Exhaust Air Temperature" — ERV exhaust air temp ≈ return air equivalent.
     // erv cats already added in Wave 5. JOCO bucket-C matches: 1 name.
@@ -475,7 +475,7 @@ var EM_POINT_MAP = [
   },
   {
     col: 'mixedAirTemp',
-    label: 'Mixed Air Temp',
+    label: 'Mixed Air Temperature',
     // Phase 2A: use /mixed\s+air\s+temp/i to tolerate double-space artifact
     // "Mixed  Air Temperature" from LSSD CSV exports (see taxonomy investigation).
     patterns: [/mixed\s+air\s+temp/i, /mat\b/i],
@@ -580,7 +580,7 @@ var EM_POINT_MAP = [
   },
   {
     col: 'oaDamperPosition',
-    label: 'OA Damper Position',
+    label: 'Outside Air Damper Position',
     // M4: added /outside\s+air\s+damper/i — "Outside Air Damper Position" was missing this
     // variant and falling through to damperPosition. "outdoor air damper" existed; "outside air
     // damper" is a common alternative phrasing in JOCO data.
@@ -624,7 +624,7 @@ var EM_POINT_MAP = [
   },
   {
     col: 'oaAirflow',
-    label: 'OA Airflow (cfm)',
+    label: 'Outside Air Airflow (cfm)',
     // M4: added /outdoor\s+airflow/i and /outside\s+airflow/i so "Outdoor Airflow" and
     // "Outside Airflow" route here instead of falling through to discFlowLive.
     // These must be positioned BEFORE discFlowLive in the array (oaFlowLive is currently before
@@ -650,7 +650,7 @@ var EM_POINT_MAP = [
   },
   {
     col: 'zoneAirTemp',
-    label: 'Zone Air Temp',
+    label: 'Zone Air Temperature',
     // 21eb08f8 Wave 2: /\bzone\s+\d+\s+temp(erature)?\b/i added for numbered-zone variants.
     // JOCO matches (5): Master Zone 1 Temperature ANI, Master Zone 2 Temperature ANI,
     //   Zone 1 Temperature, Zone 2 Temperature, Zone 3 Temperature
@@ -769,7 +769,7 @@ var EM_POINT_MAP = [
   },
   {
     col: 'dischargeAirTemp',
-    label: 'Discharge Air Temp',
+    label: 'Discharge Air Temperature',
     patterns: [/discharge air temp/i, /\bdat\b/i],
     // M1A: added negativePatterns (proactive guard — same structural risk as other temp columns).
     negativePatterns: [
@@ -853,7 +853,7 @@ var EM_POINT_MAP = [
   },
   {
     col: 'hwSupplyTemp',
-    label: 'HW Supply Temp',
+    label: 'HW Supply Temperature',
     // Phase 1: added JOCO naming patterns (heating water supply / boiler supply water temp).
     // 5eb5be06 Phase 1: added per-unit boiler supply/outlet/leaving temp patterns.
     patterns: [
@@ -881,7 +881,7 @@ var EM_POINT_MAP = [
   },
   {
     col: 'hwReturnTemp',
-    label: 'HW Return Temp',
+    label: 'HW Return Temperature',
     // Phase 1: added JOCO naming patterns (heating water return / boiler return water temp).
     // 5eb5be06 Phase 1: added per-unit boiler return/entering/inlet temp patterns.
     patterns: [
@@ -933,7 +933,7 @@ var EM_POINT_MAP = [
   },
   {
     col: 'chwSupplyTemp',
-    label: 'CHW Supply Temp',
+    label: 'CHW Supply Temperature',
     // 5eb5be06 Phase 1: added per-unit chiller evaporator leaving/supply temp patterns.
     patterns: [
       /chw supply temp/i,
@@ -953,7 +953,7 @@ var EM_POINT_MAP = [
   },
   {
     col: 'chwReturnTemp',
-    label: 'CHW Return Temp',
+    label: 'CHW Return Temperature',
     // 5eb5be06 Phase 1: added per-unit chiller evaporator entering/return temp patterns.
     patterns: [
       /chw return temp/i,
@@ -1001,7 +1001,7 @@ var EM_POINT_MAP = [
   },
   {
     col: 'cwSupplyTemp',
-    label: 'CW Supply Temp',
+    label: 'CW Supply Temperature',
     // P2.8 (gap-analysis Phase 2): CT basin leaving water temperature variants added.
     // "Cooling Tower Basin Leaving Water Temperature", "CT Basin Temperature 1/2", "Tower Basin Temperature"
     // are the condenser-loop supply temp measurement at the basin — equivalent to CW supply for CT audit.
@@ -1021,7 +1021,7 @@ var EM_POINT_MAP = [
   },
   {
     col: 'cwReturnTemp',
-    label: 'CW Return Temp',
+    label: 'CW Return Temperature',
     patterns: [/cw return temp/i, /condenser water return/i, /cwrt\b/i],
     types: ['AI'],
     cats: ['ct'],
@@ -1130,7 +1130,7 @@ var EM_POINT_MAP = [
   // not only on cooling towers.
   {
     col: 'oaWetBulb',
-    label: 'OA Wet Bulb',
+    label: 'Outside Air Wet Bulb',
     patterns: [/wet bulb/i, /wb\b/i],
     // M5: added negativePatterns. "HUWB" (High Wet Bulb) appears in smoke/zone alarm point names
     // like "Smoke Zone 3 HUWB" — these are alarm registers, not live OA wet bulb readings.
@@ -1173,7 +1173,7 @@ var EM_POINT_MAP = [
   // Air Source Supply Temp — primary air temperature from VVT air-source unit
   {
     col: 'airSourceSupplyTemp',
-    label: 'Air Source Supply Temp',
+    label: 'Air Source Supply Temperature',
     patterns: [/air source supply\b/i, /primary air.*supply temp/i, /air source duct/i],
     negativePatterns: [/setpoint|set\s?point|request|min|max/i, /\b(heat|cool|hot|chilled|static)\b/i],
     types: ['AI'],
@@ -1182,7 +1182,7 @@ var EM_POINT_MAP = [
   // Heat Source Supply Temp — hot-water / hydronic primary supply temperature at VVT/VAV terminal
   {
     col: 'heatSourceSupplyTemp',
-    label: 'Heat Source Supply Temp',
+    label: 'Heat Source Supply Temperature',
     patterns: [/heat source supply\b/i],
     negativePatterns: [/setpoint|set\s?point|request|static|alarm|mode|status/i],
     types: ['AI', 'ANI'],
@@ -1191,7 +1191,7 @@ var EM_POINT_MAP = [
   // Cool Source Supply Temp — chilled-water primary supply temperature at VVT/VAV terminal
   {
     col: 'coolSourceSupplyTemp',
-    label: 'Cool Source Supply Temp',
+    label: 'Cool Source Supply Temperature',
     patterns: [/cool source supply\b/i],
     negativePatterns: [/setpoint|set\s?point|request|static|alarm|mode|status/i],
     types: ['AI', 'ANI'],
@@ -1288,7 +1288,7 @@ var EM_POINT_MAP = [
   // Placed AFTER oaWetBulbLive (which has /wet bulb/i) so no collision possible.
   {
     col: 'oaRelativeHumidity',
-    label: 'OA Relative Humidity',
+    label: 'Outside Air Relative Humidity',
     patterns: [
       /outside\s+air\s+hum/i,
       /outdoor\s+air\s+hum/i,
@@ -1312,7 +1312,7 @@ var EM_POINT_MAP = [
   // "Current Dew Point". "Return Dewpoint" is AMBIGUOUS (return-air, not OA) — excluded here.
   {
     col: 'oaDewpoint',
-    label: 'OA Dewpoint',
+    label: 'Outside Air Dewpoint',
     patterns: [
       /outside\s+air\s+dew\s?point/i,
       /outdoor\s+air\s+dew\s?point/i,
@@ -1332,7 +1332,7 @@ var EM_POINT_MAP = [
   // allows import-time auto-assignment to show in Raw View "Mapped" column.
   {
     col: 'oaEnthalpy',
-    label: 'OA Enthalpy',
+    label: 'Outside Air Enthalpy',
     patterns: [/outside\s+air\s+enthalpy/i, /outdoor\s+air\s+enthalpy/i, /\boa\s+enthalpy\b/i],
     negativePatterns: [/return|economizer\s+control\s+selection|set\s?point|fault/i],
     types: ['AI'],
@@ -1428,7 +1428,7 @@ var EM_POINT_MAP = [
   // Taxonomy: "Preheat Air Temperature" (JOCO AHU1_extract), "OA Pre-Coil Temperature".
   {
     col: 'preheatAirTemp',
-    label: 'Preheat Air Temp',
+    label: 'Preheat Air Temperature',
     patterns: [/preheat\s+air\s+temp/i, /oa\s+pre.?coil\s+temp/i, /pre.?heat\s+coil\s+leaving/i],
     // M1A: added low/high/warning to existing negativePatterns (blocks warning alarm variants).
     negativePatterns: [/alarm|limit|setpoint|set\s?point|fault|\b(low|high|warning)\b/i],
@@ -1440,7 +1440,7 @@ var EM_POINT_MAP = [
   // Taxonomy: "Cooling Coil Leaving Air Temperature".
   {
     col: 'coolingCoilLeavingTemp',
-    label: 'Cooling Coil Leaving Temp',
+    label: 'Cooling Coil Leaving Temperature',
     patterns: [
       /cooling\s+coil\s+leaving\s+air/i,
       /clg\s+coil\s+lvg/i,
@@ -1456,7 +1456,7 @@ var EM_POINT_MAP = [
   // Taxonomy: "Heating Coil Leaving Air Temperature".
   {
     col: 'heatingCoilLeavingTemp',
-    label: 'Heating Coil Leaving Temp',
+    label: 'Heating Coil Leaving Temperature',
     patterns: [
       /heating\s+coil\s+leaving\s+air/i,
       /htg\s+coil\s+lvg/i,
@@ -1517,7 +1517,7 @@ var EM_POINT_MAP = [
   // "Unoccupied Cooling Set Point ANI/ANO".
   {
     col: 'zoneUnoccCoolSetpoint',
-    label: 'Unocc Cooling Setpoint',
+    label: 'Unoccupied Cooling Setpoint',
     patterns: [/cooling\s+unoccupied\s+set/i, /unoccupied\s+cool.*set/i, /unoccupied\s+cooling/i],
     types: ['SP', 'AV'],
     cats: ['vav', 'fpb', 'ddvav', 'fcu', 'furnace', 'zone'],
@@ -1528,7 +1528,7 @@ var EM_POINT_MAP = [
   // "Unoccupied Heating Set Point ANI/ANO", "Unoccupied HTSP".
   {
     col: 'zoneUnoccHtgSetpoint',
-    label: 'Unocc Heating Setpoint',
+    label: 'Unoccupied Heating Setpoint',
     patterns: [
       /heating\s+unoccupied\s+set/i,
       /unoccupied\s+heat.*set/i,
@@ -1662,7 +1662,7 @@ var EM_POINT_MAP = [
   // in bucket-A via existing patterns — the new pattern is additive, no regression.
   {
     col: 'satCoolSetpoint',
-    label: 'SAT Cooling Setpoint',
+    label: 'Supply Air Temperature Cooling Setpoint',
     // 21eb08f8 Wave 5: added /active\s+supply\s+temp.*set/i for "Active Supply Temperature Setpoint"
     // (Carrier/Lennox RTU effective SAT setpoint — says "Temperature Setpoint" not "Air Setpoint").
     // JOCO matches: "Active Supply Temperature Setpoint" (1 name). negativePattern /heating/i unchanged.
@@ -1682,7 +1682,7 @@ var EM_POINT_MAP = [
   // Taxonomy: "Heating Supply Air Set Point".
   {
     col: 'satHtgSetpoint',
-    label: 'SAT Heating Setpoint',
+    label: 'Supply Air Temperature Heating Setpoint',
     patterns: [/heating\s+supply\s+air\s+set/i],
     negativePatterns: [/cooling/i],
     types: ['SP', 'AV'],
@@ -4978,7 +4978,7 @@ function emGetColDefs(projId) {
   defs.push({ key: 'condition', label: 'Condition', group: 'lifecycle', width: 90 });
 
   // Maintenance
-  defs.push({ key: 'warrantyInfo', label: 'Warranty Info', group: 'maintenance', width: 120 });
+  defs.push({ key: 'warrantyInfo', label: 'Warranty Information', group: 'maintenance', width: 120 });
   defs.push({ key: 'lastServiceDate', label: 'Last Service', group: 'maintenance', width: 100 });
   defs.push({ key: 'serviceProvider', label: 'Service Provider', group: 'maintenance', width: 130 });
 
@@ -7916,7 +7916,7 @@ function emRenderSummaryView(data, filters) {
   html += '<table style="width:100%;border-collapse:collapse;font-size:15px">';
   html += '<thead><tr>';
   html += '<th style="' + thStyleLeft + '">Building</th>';
-  html += '<th style="' + thStyleCenter + '">Zone Air Temp</th>';
+  html += '<th style="' + thStyleCenter + '">Zone Air Temperature</th>';
   html +=
     '<th style="' +
     thStyleCenter +
@@ -8215,12 +8215,12 @@ function emRenderBuildingDetailView(data, filters, buildingName) {
   html += '<th style="' + thStyle + '">Equipment Name</th>';
   html += '<th style="' + thStyle + '">Type</th>';
   html += '<th style="' + thStyle + '">Floor / Area</th>';
-  html += '<th style="' + thCenter + '">Zone Air Temp</th>';
+  html += '<th style="' + thCenter + '">Zone Air Temperature</th>';
   html += '<th style="' + thCenter + '">Htg Setpoint</th>';
   html += '<th style="' + thCenter + '">Clg Setpoint</th>';
   html += '<th style="' + thCenter + '">Status</th>';
   html += '<th style="' + thCenter + '">Damper Posn</th>';
-  html += '<th style="' + thCenter + '">Discharge Air Temp</th>';
+  html += '<th style="' + thCenter + '">Discharge Air Temperature</th>';
   html += '</tr></thead>';
   html += '<tbody>';
 
@@ -11891,7 +11891,7 @@ var EM_NAMED_EXCLUSIONS = [
   },
   {
     key: 'bmsConfig',
-    label: 'BMS Config / Supervisor',
+    label: 'BMS Configuration / Supervisor',
     patterns: [
       /\bnetwork\s+control\b/i, // P1.7 network control objects
       /\bnot\s+under\s+manager\s+control\b/i, // P1.7 manager control
@@ -13065,7 +13065,7 @@ var EM_EQUIP_CONFIG_FLAGS = {
     { key: 'hasHWCoil', label: 'Has HW Coil', default: true },
     // M4 Part C: default true so missing CO2 lowers audit coverage for AHU/VAV
     { key: 'hasCO2', label: 'Has CO2 Sensor', default: true },
-    { key: 'hasOAFlow', label: 'Has OA Flow Meter', default: false },
+    { key: 'hasOAFlow', label: 'Has Outside Air Flow Meter', default: false },
     // Phase 4: differential enthalpy economizer requires return air enthalpy sensor (§5.3.3).
     // default:false — not universal; only set true when this specific economizer type is used.
     { key: 'hasDiffEnthalpyEcon', label: 'Has Differential Enthalpy Economizer', default: false },
@@ -13078,7 +13078,7 @@ var EM_EQUIP_CONFIG_FLAGS = {
     { key: 'hasCHWCoil', label: 'Has CHW Coil', default: true },
     { key: 'hasHWCoil', label: 'Has HW Coil', default: true },
     { key: 'hasCO2', label: 'Has CO2 Sensor', default: true },
-    { key: 'hasOAFlow', label: 'Has OA Flow Meter', default: false },
+    { key: 'hasOAFlow', label: 'Has Outside Air Flow Meter', default: false },
   ],
   vav: [
     { key: 'hasReheat', label: 'Has Reheat Coil', default: true },
@@ -13825,7 +13825,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'oaDampCmd',
-      label: 'OA Damper Position Command',
+      label: 'Outside Air Damper Position Command',
       required: true,
       ashrae36Name: 'Outdoor Air Damper Position Command',
       ashrae36Section: '5.16',
@@ -14149,7 +14149,7 @@ var EM_POINT_CATEGORIES = {
     // A8: Cooling Coil Leaving Air Temperature
     {
       key: 'clgCoilLvgTemp',
-      label: 'Cooling Coil Leaving Air Temp',
+      label: 'Cooling Coil Leaving Air Temperature',
       required: false,
       ashrae36Name: 'Cooling Coil Leaving Air Temperature',
       ashrae36Section: '5.16',
@@ -14159,7 +14159,7 @@ var EM_POINT_CATEGORIES = {
     // A9: Heating Coil Leaving Air Temperature
     {
       key: 'htgCoilLvgTemp',
-      label: 'Heating Coil Leaving Air Temp',
+      label: 'Heating Coil Leaving Air Temperature',
       required: false,
       ashrae36Name: 'Heating Coil Leaving Air Temperature',
       ashrae36Section: '5.16',
@@ -14225,7 +14225,7 @@ var EM_POINT_CATEGORIES = {
     // H7: SAT Cooling Reset Setpoint
     {
       key: 'satCoolSp',
-      label: 'SAT Cooling Setpoint',
+      label: 'Supply Air Temperature Cooling Setpoint',
       required: false,
       ashrae36Name: 'Supply Air Temperature Cooling Setpoint',
       ashrae36Section: '5.16',
@@ -14240,7 +14240,7 @@ var EM_POINT_CATEGORIES = {
     // H8: SAT Heating Reset Setpoint
     {
       key: 'satHtgSp',
-      label: 'SAT Heating Setpoint',
+      label: 'Supply Air Temperature Heating Setpoint',
       required: false,
       ashrae36Name: 'Supply Air Temperature Heating Setpoint',
       ashrae36Section: '5.16',
@@ -15204,7 +15204,7 @@ var EM_POINT_CATEGORIES = {
     // are Bucket-A in ahu context; placing here (vav-only) preserves ahu Bucket-A.
     {
       key: 'vavWeatherStation',
-      label: 'Weather Station / OA Psychrometric Points',
+      label: 'Weather Station / Outside Air Psychrometric Points',
       nonAshrae: true,
       required: false,
       auditRelevant: false,
@@ -17782,7 +17782,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'oaEnable',
-      label: 'OA Lockout Setpoint',
+      label: 'Outside Air Lockout Setpoint',
       required: false,
       ashrae36Name: 'OA Enable Setpoint',
       ashrae36Section: 'Heater',
@@ -18143,7 +18143,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'oaDamp',
-      label: 'OA Damper Position',
+      label: 'Outside Air Damper Position',
       required: false,
       ashrae36Name: 'OA Damper Position',
       ashrae36Section: 'DOAS',
@@ -18251,7 +18251,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'satCoolSp',
-      label: 'SAT Cooling Setpoint',
+      label: 'Supply Air Temperature Cooling Setpoint',
       required: false,
       ashrae36Name: 'Supply Air Temperature Cooling Setpoint',
       ashrae36Section: 'DOAS',
@@ -18260,7 +18260,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'satHtgSp',
-      label: 'SAT Heating Setpoint',
+      label: 'Supply Air Temperature Heating Setpoint',
       required: false,
       ashrae36Name: 'Supply Air Temperature Heating Setpoint',
       ashrae36Section: 'DOAS',
@@ -18359,7 +18359,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'clgCoilLvgTemp',
-      label: 'Cooling Coil Leaving Air Temp',
+      label: 'Cooling Coil Leaving Air Temperature',
       required: false,
       ashrae36Name: 'Cooling Coil Leaving Air Temperature',
       ashrae36Section: 'DOAS',
@@ -18368,7 +18368,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'htgCoilLvgTemp',
-      label: 'Heating Coil Leaving Air Temp',
+      label: 'Heating Coil Leaving Air Temperature',
       required: false,
       ashrae36Name: 'Heating Coil Leaving Air Temperature',
       ashrae36Section: 'DOAS',
@@ -18590,7 +18590,7 @@ var EM_POINT_CATEGORIES = {
     // ── Optional points (required:false — do not count against coverage) ──────
     {
       key: 'oaDamper',
-      label: 'OA Damper Enable',
+      label: 'Outside Air Damper Enable',
       required: false,
       ashrae36Name: 'Outdoor Air Damper',
       ashrae36Section: '5.18',
@@ -19341,7 +19341,7 @@ EM_POINT_CATEGORIES._broadcast = [
   // Catches generic setpoint/configuration objects. ASHRAE setpoints fire first.
   {
     key: 'setpointConfig',
-    label: 'Setpoint / Config',
+    label: 'Setpoint / Configuration',
     nonAshrae: true,
     required: false,
     patterns: [
@@ -19871,7 +19871,7 @@ EM_POINT_CATEGORIES._broadcast = [
   // ── BMS Config / Supervisor (extra) ──────────────────────────────────
   {
     key: 'bmsConfig',
-    label: 'BMS Config / Supervisor',
+    label: 'BMS Configuration / Supervisor',
     nonAshrae: true,
     required: false,
     patterns: [
@@ -20803,7 +20803,7 @@ function emComputeSetpointCompliance(equipRow, configFlags, overrides) {
   if (occCool === null || occHeat === null) {
     dbEntry = {
       checkKey: 'deadband',
-      label: 'Deadband (Occ Cool − Occ Heat)',
+      label: 'Deadband (Occupied Cooling − Occupied Heating)',
       actualValue: null,
       gl36Default: tempLimits.deadbandMin,
       deadbandOtherValue: tempLimits.deadbandRec,
@@ -20826,7 +20826,7 @@ function emComputeSetpointCompliance(equipRow, configFlags, overrides) {
     }
     dbEntry = {
       checkKey: 'deadband',
-      label: 'Deadband (Occ Cool − Occ Heat)',
+      label: 'Deadband (Occupied Cooling − Occupied Heating)',
       actualValue: db,
       gl36Default: tempLimits.deadbandMin,
       deadbandOtherValue: tempLimits.deadbandRec,

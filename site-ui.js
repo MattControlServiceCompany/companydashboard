@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.24.1'; // Equipment Matrix: Raw View and Audit View open in under 2 seconds even at JOCO's 2,721-row scale, and the Summary View footer label no longer says "Page Average"
+  var CH_VERSION = 'v2026.09.24.2'; // Equipment Matrix: Raw View and Audit View open in under 2 seconds even at JOCO's 2,721-row scale, the Summary View footer label no longer says "Page Average", and abbreviated UI labels are spelled out site-wide
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

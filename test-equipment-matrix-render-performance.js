@@ -242,14 +242,21 @@ function buildSyntheticMatrix() {
     // browser's own schedule), so each nudge needs a real pause afterward, not just a fast
     // re-check — a jump-to-bottom "scroll" that outruns the observer's own delivery cadence
     // silently stalls after only a few batches.
-    var scrollDeadline = Date.now() + 30000;
+    var scrollDeadline = Date.now() + 60000;
     var rawAfterScrollRowCount = 0;
     while (Date.now() < scrollDeadline) {
       await page.evaluate(() => {
         var wrap = document.getElementById('em-table-wrap');
-        if (wrap) wrap.scrollTop = wrap.scrollHeight;
+        if (wrap) {
+          // A real user scroll fires 'scroll' + lets the browser's own compositor-thread
+          // intersection check run; nudging scrollTop alone (no dispatched event) is what
+          // was found to stall the IntersectionObserver callback under headless/CI timing —
+          // dispatching an explicit scroll event closes that gap.
+          wrap.scrollTop = wrap.scrollHeight;
+          wrap.dispatchEvent(new Event('scroll'));
+        }
       });
-      await page.waitForTimeout(150);
+      await page.waitForTimeout(300);
       rawAfterScrollRowCount = await page.evaluate(() => document.querySelectorAll('#em-table-wrap tbody tr').length);
       if (rawAfterScrollRowCount >= ROW_COUNT) break;
     }
