@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.24.9'; // Savings tables now show a warning instead of a bare $0.00 when a month's rate is missing, on the Meter Performance table, Building Performance, and Project Performance screens
+  var CH_VERSION = 'v2026.09.24.10'; // Project Baseline's All Buildings table now shows Frozen correctly once every meter that counts toward savings is frozen, instead of being blocked by excluded submeters that were never meant to be saved
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

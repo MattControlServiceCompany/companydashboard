@@ -1776,6 +1776,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.24.10',
+    date: '2026-09-24',
+    title: 'Project Baseline: the All Buildings freeze status is now correct',
+    items: [
+      {
+        type: 'fix',
+        text: 'On the Project Baseline "All Buildings" table, a building could show "Not Frozen" even after every meter that counts toward its savings numbers had been saved and frozen. The cause: a submeter that is excluded from savings (for example a Water or Sewer meter) and was never meant to be saved on its own was still blocking the Frozen label. The label now looks only at the meters that actually count toward the building\'s numbers, matching the building header\'s own "X of Y meters frozen" count.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.24.9',
     date: '2026-09-24',
     title: 'Utility Data: a missing rate now shows a warning, not a false $0.00',
