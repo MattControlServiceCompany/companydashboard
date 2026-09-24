@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.24.7'; // Fixed two bill-reading bugs: Kansas Gas Service minimum-charge gas bills no longer save at 100 times the real cost, and the City of Louisburg bill reader now reads the printed Bill Date instead of the Penalty Date
+  var CH_VERSION = 'v2026.09.24.8'; // BAS Savings Calc: Existing Cooling kWh now fills in from a building's own electric bills, matching the Existing Heating Gas Therms fix; spelled out remaining calibration and results labels
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

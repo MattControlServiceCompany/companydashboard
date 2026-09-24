@@ -1776,6 +1776,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.24.8',
+    date: '2026-09-24',
+    title: 'BAS Savings Calc: Existing Cooling kWh now fills in on its own',
+    items: [
+      {
+        type: 'fix',
+        text: 'On the BAS Savings Calc, the Existing Cooling kWh field showed "0, Default value" for a building nobody had opened HVAC Load Estimate for and saved, even when the building has its own electric bills. It now fills in from the building\'s own electric bills the same way Existing Heating Gas Therms already does, using the same 3-lowest-month method as the HVAC End-Use Estimate.',
+      },
+      {
+        type: 'fix',
+        text: 'Spelled out more short labels on the BAS Savings Calc: "(from UA)" now reads "(from Utility Analysis)", "Cool Adj Factor" and "Heat Adj Factor" now read "Cooling Adjustment Factor" and "Heating Adjustment Factor", the Humidity Setpoint unit now reads "pounds of water per pound of dry air", and the Results table columns now read "Existing Cooling kWh", "New Cooling kWh", "Cooling Saved", "Heating kWh Saved", and "Heating Therms Saved".',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.24.7',
     date: '2026-09-24',
     title: 'Fixed two bill-reading bugs: Kansas Gas Service cost and Louisburg bill date',
