@@ -1742,6 +1742,25 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.23.14',
+    date: '2026-09-23',
+    title: 'Energy Department: BAS Savings Calc auto-fills Existing/Proposed Conditions and Heating Gas Therms',
+    items: [
+      {
+        type: 'feature',
+        text: 'On the Energy Department page, the BAS Savings Calc now fills in the Existing Conditions and New (Proposed) Conditions setpoints and schedule every time you open it, not only when you click "Use Equipment Matrix Data." Existing setpoints and schedule come from Set Points or the Equipment Matrix when available. Proposed setpoints and schedule always fall back to our standard values (70°F occupied heat / 74°F occupied cool, unoccupied setpoints by heating type, school-hours schedule) when no project-specific numbers exist yet. Every filled-in field is labeled with where the number came from.',
+      },
+      {
+        type: 'feature',
+        text: "The Existing Heating Gas — Therms field in Calibration now fills in from the project's HVAC Load Estimation (the heating share of the project's gas bills) once that tab has been run.",
+      },
+      {
+        type: 'fix',
+        text: "A BAS Savings Calc saved before this update, whose Existing/Proposed Conditions still exactly match the old Excel template's placeholder values, is no longer treated as a real edit that blocks the fields from filling in.",
+      },
+    ],
+  },
+  {
     v: 'v2026.09.23.13',
     date: '2026-09-23',
     title: 'Utility Data Bills table: Facilities kW and Facilities kW Cost now read from one source',

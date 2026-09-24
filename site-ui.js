@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.23.13'; // Utility Data: Facilities kW / Facilities kW Cost now read through a single accessor + a one-time backfill migration for bills saved before the fix
+  var CH_VERSION = 'v2026.09.23.14'; // BAS Savings Calc: Existing/Proposed Conditions and Heating Gas Therms auto-populate from the Equipment Matrix, Effective Schedules, and HVAC Load Estimation on open
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
