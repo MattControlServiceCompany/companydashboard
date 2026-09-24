@@ -368,6 +368,31 @@ function hvacComputeGasThermsForBuilding(projId, bldgId) {
   return { totalGas: share.totalGas, hvacGasPct: share.pct, hvacGasT: share.heatingTherms, source: share.source };
 }
 
+// Existing Cooling kWh for the BAS Savings Calc (calCoolKwh), computed directly from this
+// building's own electric bills via computeHvacEnduse (computations/hvac-enduse.js — the SAME
+// 3-lowest-month baseload subtraction method _hvlGasHeatShare already uses for gas, and the SAME
+// function the Energy Graphics HVAC End-Use Estimate card uses) — so this fills the BAS Savings
+// Calc's calibration field without requiring a user to have opened the HVAC Load Estimation tab
+// and clicked Save first (2026-09-24 fix; mirrors hvacComputeGasThermsForBuilding, which already
+// got this same treatment on 2026-09-23 — this field had no fresh-compute fallback at all until
+// now, so it always showed "Default value (not from building data)" for a building nobody had
+// reviewed in that tab yet, even when the building has a full year of its own electric bills, as
+// reported for Spring Hill Schools / Woodland Spring Middle). Returns null when the building has
+// fewer than 6 populated calendar months of electric bill history — never invents a number. A
+// real SAVED HVAC Load Estimation for this project (p.hvacLoadEst + p.hvacLoadSavedAt) is
+// preferred over this fresh estimate by the caller (openBASCalc), same precedence as the gas
+// fallback.
+function hvacComputeElecCoolKwhForBuilding(projId, bldgId) {
+  const b = typeof getUDBldg === 'function' ? getUDBldg(projId, bldgId) : null;
+  if (!b) return null;
+  const { eByMo } = _hvlMonthlyBaseline(projId, b);
+  const kwhArr = [];
+  for (let mo = 0; mo < 12; mo++) kwhArr.push(eByMo[mo] ? eByMo[mo].kwh || 0 : null);
+  const enduse = typeof computeHvacEnduse === 'function' ? computeHvacEnduse(kwhArr, null, null) : null;
+  if (!enduse || !enduse.elecValid || !(enduse.coolingKwh > 0)) return null;
+  return { coolingKwh: enduse.coolingKwh, source: 'baseload' };
+}
+
 function _buildBaselineDataHtml(b, projId) {
   if (!b) return '';
   const sqft = parseInt(b.sqft) || 0;
@@ -3975,6 +4000,23 @@ function openBASCalc(projId) {
     if (p.hvacLoadEst.heatKwhTotal)
       autoCalHeat = { value: Math.round(p.hvacLoadEst.heatKwhTotal), source: 'HVAC Load Estimation' };
   }
+  // Existing Cooling kWh (2026-09-24 fix): same precedence as the calHeatGas fix below — a real
+  // SAVED HVAC Load Estimation for this project wins when one exists (checked above). Otherwise,
+  // compute it fresh directly from THIS building's own electric bills via
+  // hvacComputeElecCoolKwhForBuilding (computeHvacEnduse's 3-lowest-month baseload method — the
+  // SAME function calHeatGas already uses for gas) so calCoolKwh fills without requiring a user to
+  // open the HVAC Load Estimation tab and click Save first. Previously calCoolKwh had NO
+  // fresh-compute fallback at all (unlike calHeatGas, which got one 2026-09-23), so it stayed
+  // "Default value (not from building data)" for any building nobody had saved that tab for — the
+  // Spring Hill Schools / Woodland Spring Middle failure mode reported 2026-09-24.
+  if (!autoCalCool && bldgId && typeof hvacComputeElecCoolKwhForBuilding === 'function') {
+    const computedCool = hvacComputeElecCoolKwhForBuilding(projId, bldgId);
+    if (computedCool && computedCool.coolingKwh)
+      autoCalCool = {
+        value: Math.round(computedCool.coolingKwh),
+        source: 'electric bills (3-lowest-month baseload method — same as the Energy Graphics HVAC End-Use Estimate)',
+      };
+  }
   // Existing Heating Gas Therms (2026-09-23 fix): a real SAVED HVAC Load Estimation for this
   // project (p.hvacLoadEst.hvacGasT + p.hvacLoadSavedAt — a user actually reviewed and clicked
   // Save on that tab) wins when one exists. Otherwise, compute it fresh directly from THIS
@@ -4126,13 +4168,13 @@ function openBASCalc(projId) {
                 <div class="fg"><label class="fl">Cooling Efficiency (kW per Ton)</label><input class="fi bc-inp" id="bc-coolEff" type="number" step="0.01" value="${bc.coolEff || 0.86}"></div>
                 <div class="fg"><label class="fl">Gas Furnace Efficiency (Annual Fuel Utilization Efficiency)</label><input class="fi bc-inp" id="bc-afue" type="number" step="0.01" value="${bc.afue || 0.8}"></div>
                 <div class="fg"><label class="fl">Electric Heating Efficiency (Coefficient of Performance)</label><input class="fi bc-inp" id="bc-elecCOP" type="number" step="0.1" value="${bc.elecCOP || 1.0}"></div>
-                <div class="fg"><label class="fl">Humidity Setpoint (lb/lb)</label><input class="fi bc-inp" id="bc-humRatioSP" type="number" step="0.0001" value="${bc.humRatioSP || 0.0082}"></div>
+                <div class="fg"><label class="fl">Humidity Setpoint (pounds of water per pound of dry air)</label><input class="fi bc-inp" id="bc-humRatioSP" type="number" step="0.0001" value="${bc.humRatioSP || 0.0082}"></div>
                 <div style="text-align:center;padding:6px 10px;background:var(--s3);border-radius:7px;border:1px solid var(--border)">
                   <div style="font-size:9px;color:var(--text3);text-transform:uppercase">Maximum Tons</div>
                   <div style="font-size:14px;font-weight:700;font-family:var(--mono);color:var(--em2)" id="bc-dispTons">—</div>
                 </div>
                 <div style="text-align:center;padding:6px 10px;background:var(--s3);border-radius:7px;border:1px solid var(--border)">
-                  <div style="font-size:9px;color:var(--text3);text-transform:uppercase">Maximum Heating (thousand Btu/h)</div>
+                  <div style="font-size:9px;color:var(--text3);text-transform:uppercase">Maximum Heating (thousand Btu per hour)</div>
                   <div style="font-size:14px;font-weight:700;font-family:var(--mono);color:var(--amber)" id="bc-dispMbtu">—</div>
                 </div>
                 <div style="text-align:center;padding:6px 10px;background:var(--s3);border-radius:7px;border:1px solid var(--border)">
@@ -4238,19 +4280,19 @@ function openBASCalc(projId) {
             <div style="padding:14px">
               <div style="font-size:11px;color:var(--text2);margin-bottom:10px">Enter actual annual energy from utility analysis. Leave blank to skip calibration (factor = 1.0).</div>
               <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;align-items:end">
-                <div class="fg"><label class="fl">Existing Cooling kWh (from UA)</label><input class="fi bc-inp" id="bc-calCoolKwh" type="number" value="${rCalCoolKwh.value}">${_bcHintSpan(rCalCoolKwh.hint)}</div>
-                <div class="fg"><label class="fl">Existing Heating kWh (from UA)</label><input class="fi bc-inp" id="bc-calHeatKwh" type="number" value="${rCalHeatKwh.value}">${_bcHintSpan(rCalHeatKwh.hint)}</div>
+                <div class="fg"><label class="fl">Existing Cooling kWh (from Utility Analysis)</label><input class="fi bc-inp" id="bc-calCoolKwh" type="number" value="${rCalCoolKwh.value}">${_bcHintSpan(rCalCoolKwh.hint)}</div>
+                <div class="fg"><label class="fl">Existing Heating kWh (from Utility Analysis)</label><input class="fi bc-inp" id="bc-calHeatKwh" type="number" value="${rCalHeatKwh.value}">${_bcHintSpan(rCalHeatKwh.hint)}</div>
                 ${
                   parseInt(rHeatSrc.value) === 1 || parseInt(rHeatSrc.value) === 3 || parseInt(rHeatSrc.value) === 4
-                    ? `<div class="fg"><label class="fl">Existing Heating Gas — ${parseInt(rHeatSrc.value) === 1 ? 'MCF' : 'Therms'} (from UA)</label><input class="fi bc-inp" id="bc-calHeatGas" type="number" value="${rCalHeatGas.value}">${_bcHintSpan(rCalHeatGas.hint)}<div style="font-size:9px;color:var(--text3);margin-top:2px">${parseInt(rHeatSrc.value) === 4 ? 'Splits combined "Both" heating between kWh and gas by share of load' : 'Calibrates the existing gas heating estimate to match utility analysis'}</div></div>`
+                    ? `<div class="fg"><label class="fl">Existing Heating Gas — ${parseInt(rHeatSrc.value) === 1 ? 'MCF' : 'Therms'} (from Utility Analysis)</label><input class="fi bc-inp" id="bc-calHeatGas" type="number" value="${rCalHeatGas.value}">${_bcHintSpan(rCalHeatGas.hint)}<div style="font-size:9px;color:var(--text3);margin-top:2px">${parseInt(rHeatSrc.value) === 4 ? 'Splits combined "Both" heating between kWh and gas by share of load' : 'Calibrates the existing gas heating estimate to match utility analysis'}</div></div>`
                     : ''
                 }
                 <div style="text-align:center;padding:8px;background:var(--s3);border-radius:7px;border:1px solid var(--border)">
-                  <div style="font-size:9px;color:var(--text3);text-transform:uppercase">Cool Adj Factor</div>
+                  <div style="font-size:9px;color:var(--text3);text-transform:uppercase">Cooling Adjustment Factor</div>
                   <div style="font-size:14px;font-weight:700;font-family:var(--mono);color:var(--em2)" id="bc-adjCool">1.000</div>
                 </div>
                 <div style="text-align:center;padding:8px;background:var(--s3);border-radius:7px;border:1px solid var(--border)">
-                  <div style="font-size:9px;color:var(--text3);text-transform:uppercase">Heat Adj Factor</div>
+                  <div style="font-size:9px;color:var(--text3);text-transform:uppercase">Heating Adjustment Factor</div>
                   <div style="font-size:14px;font-weight:700;font-family:var(--mono);color:var(--amber)" id="bc-adjHeat">1.000</div>
                 </div>
               </div>
@@ -4265,8 +4307,8 @@ function openBASCalc(projId) {
             <div class="card-hdr"><span class="card-title">E — Peak Demand Hours</span></div>
             <div style="padding:14px">
               <div class="f2" style="max-width:400px">
-                <div class="fg"><label class="fl">Peak Start (24hr)</label><input class="fi bc-inp" id="bc-peakStart" type="number" min="0" max="23" value="${bc.peakStart ?? 16}"></div>
-                <div class="fg"><label class="fl">Peak End (24hr)</label><input class="fi bc-inp" id="bc-peakEnd" type="number" min="1" max="24" value="${bc.peakEnd ?? 18}"></div>
+                <div class="fg"><label class="fl">Peak Start (24-hour)</label><input class="fi bc-inp" id="bc-peakStart" type="number" min="0" max="23" value="${bc.peakStart ?? 16}"></div>
+                <div class="fg"><label class="fl">Peak End (24-hour)</label><input class="fi bc-inp" id="bc-peakEnd" type="number" min="1" max="24" value="${bc.peakEnd ?? 18}"></div>
               </div>
               <label style="display:flex;align-items:center;gap:6px;margin-top:10px;font-size:11px;color:var(--text2)">
                 <input type="checkbox" id="bc-showRebate" ${bc.showRebate ? 'checked' : ''}>
@@ -4791,11 +4833,11 @@ function _bcDoCalc(projId) {
   html += `<table class="dtbl" style="font-size:11px;border-collapse:collapse;width:100%">
           <thead><tr>
             <th style="text-align:left;padding:5px 8px;font-size:10px">Month</th>
-            <th style="text-align:right;padding:5px 6px;font-size:10px">Exist Cool kWh</th>
-            <th style="text-align:right;padding:5px 6px;font-size:10px">New Cool kWh</th>
-            <th style="text-align:right;padding:5px 6px;font-size:10px;color:var(--em2)">Cool Saved</th>
-            <th style="text-align:right;padding:5px 6px;font-size:10px">Heat kWh Saved</th>
-            <th style="text-align:right;padding:5px 6px;font-size:10px">Heat ${gasLabel} Saved</th>
+            <th style="text-align:right;padding:5px 6px;font-size:10px">Existing Cooling kWh</th>
+            <th style="text-align:right;padding:5px 6px;font-size:10px">New Cooling kWh</th>
+            <th style="text-align:right;padding:5px 6px;font-size:10px;color:var(--em2)">Cooling Saved</th>
+            <th style="text-align:right;padding:5px 6px;font-size:10px">Heating kWh Saved</th>
+            <th style="text-align:right;padding:5px 6px;font-size:10px">Heating ${gasLabel} Saved</th>
             <th style="text-align:right;padding:5px 6px;font-size:10px;color:var(--em);font-weight:700">Total kWh</th>
             <th style="text-align:right;padding:5px 6px;font-size:10px;color:var(--amber)">Peak kWh</th>
             <th style="text-align:right;padding:5px 6px;font-size:10px">Non-Peak kWh</th>

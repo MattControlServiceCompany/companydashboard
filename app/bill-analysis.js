@@ -5230,6 +5230,41 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
             continue;
           }
 
+          // ── 100x DECIMAL-DROP ON TotalCurrentCharges ITSELF (backlog ddbc038f) ──
+          // "Total Current Charges" is captured by its OWN independent regex, not
+          // summed from the component fields above, so an OCR decimal-point drop on
+          // THAT printed line alone (e.g. printed "$34.64" OCR'd as "3464") is
+          // invisible to the candidate-field search below, which only ever suspects
+          // one of the SUMMED components. On a minimum-charge bill this produces a
+          // TotalCurrentCharges exactly ~100x the (already correct) component sum.
+          // Detected directly: dividing TotalCurrentCharges by 100 reconciles it
+          // against kgsSum within a 2%-of-sum band (wide enough to also absorb a
+          // compounding single-digit OCR misread on top of the decimal drop; still
+          // far too tight for a coincidental match against a sum built from up to 8
+          // independently-parsed component fields).
+          if (kgsSum > 0) {
+            const _divBy100 = Math.round((total / 100) * 100) / 100;
+            const _tol100 = Math.max(B2_TOLERANCE, kgsSum * 0.02);
+            if (Math.abs(_divBy100 - kgsSum) < _tol100) {
+              const corrected = _divBy100.toFixed(2);
+              b._auto_corrected_TotalCurrentCharges = {
+                original: total,
+                corrected,
+                reason:
+                  'Pass B2 100x decimal-drop: Total Current Charges $' +
+                  total.toFixed(2) +
+                  ' is ~100x the reconciled KGS component sum $' +
+                  kgsSum.toFixed(2) +
+                  ' (CustomerCharge+DeliveryCharge+GSRS+WNA+GasCharge+FranchiseFee+WinterEventCost+DelayedPaymentCharge). Corrected to $' +
+                  corrected +
+                  '.',
+              };
+              b.TotalCurrentCharges = corrected;
+              if (Math.abs(pf(b.TotalAmountDue) - total) < 0.01) b.TotalAmountDue = corrected;
+              continue;
+            }
+          }
+
           // Guard: if ANY field on this bill has a _digit_loss_suspected_* flag, the sum
           // residual may be wholly or partially caused by that under-read field. We cannot
           // safely attribute the residual to a different Pass-B-corrected field without

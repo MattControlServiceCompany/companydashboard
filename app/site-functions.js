@@ -1776,6 +1776,51 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.24.9',
+    date: '2026-09-24',
+    title: 'Utility Data: a missing rate now shows a warning, not a false $0.00',
+    items: [
+      {
+        type: 'fix',
+        text: 'On the Utility Data page, a month with a real bill but no usable rate showed savings of $0.00, with no way to tell it apart from a month that truly had zero savings. The Meter Performance table, the Building Performance screen, and the Project Performance screen now show a clear warning that names the month and the missing rate, and leave that month out of the total instead of counting a false $0.00.',
+      },
+      {
+        type: 'fix',
+        text: 'Printed reports never show this warning text. A month with a missing rate is now left out of the report table and its total, instead of printing a $0.00 that looks like a real zero.',
+      },
+    ],
+  },
+  {
+    v: 'v2026.09.24.8',
+    date: '2026-09-24',
+    title: 'BAS Savings Calc: Existing Cooling kWh now fills in on its own',
+    items: [
+      {
+        type: 'fix',
+        text: 'On the BAS Savings Calc, the Existing Cooling kWh field showed "0, Default value" for a building nobody had opened HVAC Load Estimate for and saved, even when the building has its own electric bills. It now fills in from the building\'s own electric bills the same way Existing Heating Gas Therms already does, using the same 3-lowest-month method as the HVAC End-Use Estimate.',
+      },
+      {
+        type: 'fix',
+        text: 'Spelled out more short labels on the BAS Savings Calc: "(from UA)" now reads "(from Utility Analysis)", "Cool Adj Factor" and "Heat Adj Factor" now read "Cooling Adjustment Factor" and "Heating Adjustment Factor", the Humidity Setpoint unit now reads "pounds of water per pound of dry air", and the Results table columns now read "Existing Cooling kWh", "New Cooling kWh", "Cooling Saved", "Heating kWh Saved", and "Heating Therms Saved".',
+      },
+    ],
+  },
+  {
+    v: 'v2026.09.24.7',
+    date: '2026-09-24',
+    title: 'Fixed two bill-reading bugs: Kansas Gas Service cost and Louisburg bill date',
+    items: [
+      {
+        type: 'fix',
+        text: 'Some Kansas Gas Service gas bills with a small minimum charge saved at 100 times the true cost (for example, $34.64 saved as $3,464.00). The bill reader now checks the total against the other charges on the same bill and fixes this on its own.',
+      },
+      {
+        type: 'fix',
+        text: 'The City of Louisburg bill reader picked up the wrong date as the Bill Date. It now reads the correct printed Bill Date instead of the Penalty Date.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.24.6',
     date: '2026-09-24',
     title: 'Backup now waits for your data to finish loading first',

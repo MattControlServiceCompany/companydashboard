@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.24.6'; // The Backup button now waits for your data to finish loading before it downloads, so a backup taken right after opening the page no longer comes out with the bills and utility data missing
+  var CH_VERSION = 'v2026.09.24.9'; // Savings tables now show a warning instead of a bare $0.00 when a month's rate is missing, on the Meter Performance table, Building Performance, and Project Performance screens
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

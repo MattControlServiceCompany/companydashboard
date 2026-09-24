@@ -9544,7 +9544,16 @@ const UTILITY_RULES = [
         ServiceAddress = '105 S 5TH E';
       }
 
-      // Period row has 5 dates: BillFrom, BillTo, BillFor, BillDate, PenaltyDate
+      // FIX (2026-09-24, backlog 9b6ff356): the period row prints 5 dates in
+      // order [BillingPeriodStart, BillingPeriodEnd, BillDate, PenaltyDate,
+      // DueDate] — confirmed against the printed fixture values in
+      // AI/_context/reference/ocr-harness/fixtures/louisburg-gas-feb2026-hs-raw.txt
+      // ("1/14/2026 2/18/2026 2/23/2026 3/11/2026 3/10/2026" against printed
+      // BillDate 2/23/2026, PenaltyDate 3/11/2026). The prior code (a stale
+      // inline comment above mis-ordered the fields as BillFrom/BillTo/
+      // BillFor/BillDate/PenaltyDate) read dates[3] first, which is the
+      // Penalty Date, not the Bill Date — wrong on 11/11 new-format bills
+      // tested. dates[2] is the correct Bill Date index.
       let BillingPeriodStart = null;
       let BillingPeriodEnd = null;
       let BillDate = null;
@@ -9553,7 +9562,7 @@ const UTILITY_RULES = [
         if (dates.length >= 4) {
           BillingPeriodStart = dates[0];
           BillingPeriodEnd = dates[1];
-          BillDate = dates[3] || dates[2] || null;
+          BillDate = dates[2] || dates[3] || null;
           break;
         }
       }
