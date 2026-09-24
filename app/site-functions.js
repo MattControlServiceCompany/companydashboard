@@ -1742,6 +1742,25 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.24.4',
+    date: '2026-09-24',
+    title: 'More labels spelled out: BAS Savings Calc, project header, and Site Energy Use Intensity columns',
+    items: [
+      {
+        type: 'fix',
+        text: 'The BAS Savings Calc still showed some shortened labels after the last update -- for example "Building SqFt", "Cooling Eff (kW/Ton)", "Gas AFUE", "Electric COP", "Max Tons", "Max MBtu/h", "OA CFM", and "Temp CSV". These now read "Building Square Feet", "Cooling Efficiency (kW per Ton)", "Gas Furnace Efficiency (Annual Fuel Utilization Efficiency)", "Electric Heating Efficiency (Coefficient of Performance)", "Maximum Tons", "Maximum Heating (thousand Btu/h)", "Outside Air Cubic Feet per Minute", and "Temperature CSV". The "default -- not from building data" note under a field now reads "Default value (not from building data)".',
+      },
+      {
+        type: 'fix',
+        text: 'The project header and user menu also had shortened text: "SA#" now reads "Service Agreement Number", "Site EUI" now reads "Site Energy Use Intensity", and the user menu\'s department line now reads "Energy Department" in full.',
+      },
+      {
+        type: 'fix',
+        text: 'The same "Site EUI" and airflow/efficiency abbreviations (CFM, AFUE, COP) are now spelled out everywhere they appear as a column header or field label site-wide, including the ECM calculator, the building-performance dashboard, and report table headers.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.24.3',
     date: '2026-09-24',
     title: 'Equipment Matrix: the type filter now shows every equipment type',

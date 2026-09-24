@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.24.3'; // Equipment Matrix: the type filter now lists every type the classifier can produce, and a misspelled point name in the source data no longer sends 5 JOCO points to Other
+  var CH_VERSION = 'v2026.09.24.4'; // BAS Savings Calc, project header, and user chip now spell out labels site-wide, and the same fix covers the ECM calculator, Site Energy Use Intensity column headers, and a few other pages
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
