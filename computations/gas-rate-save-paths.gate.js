@@ -98,7 +98,7 @@ function buildSandbox() {
   // projects globals this test doesn't stub) — the structural checks above already guarantee
   // every save path calls this exact function with no other logic in between, so evaluating
   // its real source text here is equivalent to driving the save paths themselves.
-  const m = BILL_ANALYSIS_SRC.match(/function _computeGasRate\(bill\) \{[\s\S]*?\n\}\n/);
+  const m = BILL_ANALYSIS_SRC.match(/function _computeGasRate\(bill\) \{[\s\S]*?\r?\n\}\r?\n/);
   assert.ok(m, '_computeGasRate function body not found in app/bill-analysis.js — source shape changed');
   vm.runInContext(m[0], sandbox, { filename: 'bill-analysis.js (_computeGasRate extract)' });
   return sandbox;
@@ -172,7 +172,7 @@ check('_computeGasRate: MMBtu-only rate is NEVER the old (unconverted) $/MMBtu v
 // logic runs for real, not a re-implementation.
 const UTILITY_DATA_SRC = fs.readFileSync(path.join(REPO, 'app/utility-data.js'), 'utf8');
 const V2_BLOCK_MATCH = UTILITY_DATA_SRC.match(
-  /const _gasMMbtuRateFixedKeyV2[\s\S]*?\n {4}if \(billsScannedV2 > 0\) DB\.set\(_gasMMbtuRateFixedKeyV2, '1'\);\n {2}\}\n/,
+  /const _gasMMbtuRateFixedKeyV2[\s\S]*?\r?\n {4}if \(billsScannedV2 > 0\) DB\.set\(_gasMMbtuRateFixedKeyV2, '1'\);\r?\n {2}\}\r?\n/,
 );
 
 check('structural: v2 migration block still present on disk (extraction target unchanged)', () => {
