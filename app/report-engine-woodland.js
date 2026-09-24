@@ -1543,7 +1543,9 @@ function rptPageWoodlandBills(n, d) {
         var kwh = parseFloat(bill.kwh) || 0;
         var kw = parseFloat(bill.billedKW || bill.demandKW) || 0;
         var facKw = parseFloat(bill.facKW) || 0;
-        var facKwCost = parseFloat(bill.facKWCost) || 0;
+        // getBillFacKWCost (computations/rates.js) — the ONE accessor for Facilities kW
+        // Cost (2026-09-23 single-source fix); never read bill.facKWCost/facilitiesCharge directly.
+        var facKwCost = getBillFacKWCost(bill);
         var billedKwCost = parseFloat(bill.kwCost) || 0;
         var energy$ = parseFloat(bill.kwhCost) || 0;
         var demand$ = billedKwCost + facKwCost;
@@ -1819,7 +1821,9 @@ function _wdElecCostReconciliation(bl) {
     var b = r.bill;
     out.energy += parseFloat(b.kwhCost) || 0;
     out.billedKwCost += parseFloat(b.kwCost) || 0;
-    var facKwCost = parseFloat(b.facKWCost) || 0;
+    // getBillFacKWCost (computations/rates.js) — the ONE accessor for Facilities kW Cost
+    // (2026-09-23 single-source fix); never read b.facKWCost/facilitiesCharge directly.
+    var facKwCost = getBillFacKWCost(b);
     out.facKwCost += facKwCost;
     out.otherCharges +=
       (parseFloat(b.customerCharge) || 0) +
@@ -2713,7 +2717,9 @@ async function exportWoodlandReportToXlsx(data) {
       var facKw = parseFloat(b.facKW) || 0;
       var energy$ = parseFloat(b.kwhCost) || 0;
       var billedKwCost$ = parseFloat(b.kwCost) || 0;
-      var facKwCost$ = parseFloat(b.facKWCost) || 0;
+      // getBillFacKWCost (computations/rates.js) — the ONE accessor for Facilities kW Cost
+      // (2026-09-23 single-source fix); never read b.facKWCost/facilitiesCharge directly.
+      var facKwCost$ = getBillFacKWCost(b);
       var cost = parseFloat(b.totalCost) || 0;
       var rn = ws1.rowCount + 1;
       ws1.addRow([

@@ -2083,8 +2083,9 @@ function initDashboardTab(projId) {
         }
         bills.slice(-12).forEach((bill) => {
           if (m.commodity === 'Electric') {
-            curCost +=
-              (parseFloat(bill.kwhCost) || 0) + (parseFloat(bill.kwCost) || 0) + (parseFloat(bill.facKWCost) || 0);
+            // getBillFacKWCost (computations/rates.js) — the ONE accessor for Facilities kW
+            // Cost (2026-09-23 single-source fix); never read bill.facKWCost/facilitiesCharge directly.
+            curCost += (parseFloat(bill.kwhCost) || 0) + (parseFloat(bill.kwCost) || 0) + getBillFacKWCost(bill);
           } else {
             curCost += parseFloat(bill.totalCost) || parseFloat(bill.thermCost) || parseFloat(bill.cost) || 0;
           }
@@ -2103,8 +2104,7 @@ function initDashboardTab(projId) {
         // Tally all bills as fallback when no baseline is set
         (m.bills || []).forEach((bill) => {
           if (m.commodity === 'Electric') {
-            allCost +=
-              (parseFloat(bill.kwhCost) || 0) + (parseFloat(bill.kwCost) || 0) + (parseFloat(bill.facKWCost) || 0);
+            allCost += (parseFloat(bill.kwhCost) || 0) + (parseFloat(bill.kwCost) || 0) + getBillFacKWCost(bill);
           } else {
             allCost += parseFloat(bill.totalCost) || parseFloat(bill.thermCost) || parseFloat(bill.cost) || 0;
           }

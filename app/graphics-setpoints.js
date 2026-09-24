@@ -491,7 +491,9 @@ function egfxRefresh(projId) {
   let bldgHvac = {}; // {bldgId: {name, kwhSum:[12], kwhCount:[12], gasSum:[12], gasCount:[12], kwSum:[12], kwCount:[12]}}
 
   const _pfe = (v) => parseFloat(v) || 0;
-  const _elecCommodityCost = (bill) => _pfe(bill.kwhCost) + _pfe(bill.kwCost) + _pfe(bill.facKWCost);
+  // getBillFacKWCost (computations/rates.js) — the ONE accessor for Facilities kW Cost
+  // (2026-09-23 single-source fix); never read bill.facKWCost/facilitiesCharge directly.
+  const _elecCommodityCost = (bill) => _pfe(bill.kwhCost) + _pfe(bill.kwCost) + getBillFacKWCost(bill);
   const _gasCommodityCost = (bill) => _pfe(bill.totalCost) || _pfe(bill.thermCost) || _pfe(bill.cost) || 0;
   const _propaneCommodityCost = (bill) => _pfe(bill.totalCost) || _pfe(bill.cost) || 0;
 
