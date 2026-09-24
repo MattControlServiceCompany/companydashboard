@@ -173,14 +173,14 @@ function buildMoMap(m, blRows, bills, incl) {
         entries.reduce((s, e) => s + (e.bfr.length ? Math.max(...e.bfr.map((b) => parseFloat(b.facKW || 0))) : 0), 0) /
         cnt;
       const kwCost = entries.reduce((s, e) => s + e.bfr.reduce((ss, b) => ss + parseFloat(b.kwCost || 0), 0), 0) / cnt;
-      const facKWCost =
-        entries.reduce((s, e) => s + e.bfr.reduce((ss, b) => ss + parseFloat(b.facKWCost || 0), 0), 0) / cnt;
+      // getBillFacKWCost (computations/rates.js) — the ONE accessor for Facilities kW Cost;
+      // never read bill.facKWCost/bill.facilitiesCharge directly (2026-09-23 single-source fix).
+      const facKWCost = entries.reduce((s, e) => s + e.bfr.reduce((ss, b) => ss + getBillFacKWCost(b), 0), 0) / cnt;
       const kwhCostSum =
         entries.reduce((s, e) => s + e.bfr.reduce((ss, b) => ss + (parseFloat(b.kwhCost) || 0), 0), 0) / cnt;
       const kwCostSum =
         entries.reduce((s, e) => s + e.bfr.reduce((ss, b) => ss + parseFloat(b.kwCost || 0), 0), 0) / cnt;
-      const facKWCostSum =
-        entries.reduce((s, e) => s + e.bfr.reduce((ss, b) => ss + (parseFloat(b.facKWCost) || 0), 0), 0) / cnt;
+      const facKWCostSum = entries.reduce((s, e) => s + e.bfr.reduce((ss, b) => ss + getBillFacKWCost(b), 0), 0) / cnt;
       const totalCost = entries.reduce((s, e) => s + e.r.cost, 0) / cnt;
       // Whole-bill BILLED total cost (2026-09-22) — same whole-bill-by-end-date convention as
       // `kwh` above, replacing the day-prorated `totalCost` (split-month math) as the ONE cost

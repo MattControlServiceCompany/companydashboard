@@ -386,17 +386,14 @@ function parseBillCsv(text, fname) {
       }
     });
 
-    // Sync facKWCost <-> facilitiesCharge (2026-09-23): BILL_SCHEMA.Electric documents
-    // 'facilitiesCharge' as the modern key with 'facKWCost' as its legacy fallbackKey, but the
-    // majority of the app's cost math (buildMoMap in computations/normalization.js,
-    // report-engine-woodland.js, report-engine.js, lib/perf-table.js, app/graphics-setpoints.js,
-    // app/core.js — grepped 2026-09-23) reads bill.facKWCost directly with no fallback. A CSV
-    // whose Facilities Charge $ column is named exactly "facilitiesCharge" (the schema key —
-    // e.g. the app's own CSV export re-imported) only lands in row.facilitiesCharge via the
-    // schema-exact pass above, leaving row.facKWCost null — every one of those direct readers
-    // then computes Facilities kW Cost as $0 even though the dollar value imported fine under
-    // the other name. Keep both fields in sync so every reader sees the real value regardless
-    // of which field name it happens to check.
+    // Sync facKWCost <-> facilitiesCharge at write time (2026-09-23): BILL_SCHEMA.Electric
+    // documents 'facilitiesCharge' as the modern key with 'facKWCost' as its legacy fallbackKey.
+    // Every reader now goes through the single getBillFacKWCost() accessor (computations/
+    // rates.js), which already resolves facilitiesCharge -> facKWCost — so this sync is a
+    // belt-and-suspenders write-time convenience (keeps both names populated for any code
+    // outside the accessor's reach, e.g. XLSX/Word export field lookups), not a correctness
+    // requirement for the app's own cost math.
+
     if (isElec) {
       if (row.facKWCost == null && row.facilitiesCharge != null) row.facKWCost = row.facilitiesCharge;
       else if (row.facilitiesCharge == null && row.facKWCost != null) row.facilitiesCharge = row.facKWCost;
@@ -613,6 +610,10 @@ function importBillCsvRows() {
       if (addedBill) runBillValidation(m, addedBill);
     });
   }
+  // Must run AFTER runBillValidation (above), which replaces bill._flags wholesale —
+  // converts any bill._facKWMissing marker left by _backfillCsvFacilitiesKW into a
+  // persistent, site-UI-only flag (see _flagFacKWMissingBills below).
+  _flagFacKWMissingBills(m);
   // Run building-level cross-meter validation (water vs sewer parity, etc.)
   // Uses the already-resolved `b` (not a fresh udSelProjId/udSelBldgId lookup) so it stays
   // correct even when the fallback meter search above was needed.
@@ -631,31 +632,118 @@ function importBillCsvRows() {
   );
 }
 
-// Facilities kW (12-month rolling-peak demand ratchet) backfill for CSV-imported Electric
-// bills — see call site in importBillCsvRows for why this exists. Fills bill.facKW, in place,
-// only where it is currently null/blank, with the max of billedKW (or demandKW as a fallback)
-// across this meter's own bills in the trailing 12 months up to and including that bill's own
-// start date — the same "rolling peak, never a sum" definition documented throughout
-// report-engine-woodland.js and app/utility-data.js. This is a floor, not a guess: a real
-// historical peak from before the earliest imported bill can be higher than what this window
-// can see, so an early month may still under-report until an actual bill/PDF supplies the true
-// value — but it is never fabricated and it is always at least the bill's own billed demand.
-function _backfillCsvFacilitiesKW(m) {
-  if (!m || m.commodity !== 'Electric' || !m.bills || !m.bills.length) return;
+// backfillFacilitiesKW(billsForMeter) — shared Facilities kW derivation core for ONE meter's
+// bills. Used by (1) the CSV import path (_backfillCsvFacilitiesKW below) and (2) the
+// en_utility_facKW_backfilled_v1 load migration (app/utility-data.js) — same logic for both
+// so a bill already sitting in storage gets the exact same repair a fresh CSV import would
+// have produced, never a divergent one.
+//
+// Mutates each bill in place. Fill order — never a guess when none of these apply
+// (2026-09-23 cold-review Q2 fix; the old rolling-peak-only version produced 289.8/289.8/333.0
+// for Woodland Spring Middle's Apr-Jun 2025 against a real, bill-stated 380.16 because its
+// 13-row CSV has no prior year of history — see the dashboardlogic entry for the full trace):
+//   1. Real value already on the bill (CSV column or prior PDF extraction) — never overwritten.
+//   2. The bill's own Facilities Charge $ (getBillFacKWCost, computations/rates.js) divided by
+//      a per-kW facilities rate KNOWN from this same meter's OTHER bills that already carry a
+//      real facKW and a real charge (averaged across every such bill on the meter) — a real,
+//      bill-derived rate, never a fabricated constant.
+//   3. The meter's own 12-month rolling-peak billed/demand kW (max, never a sum) — but ONLY
+//      when this meter's bill history actually reaches back a full 12 months before this bill
+//      (the earliest bill on file for this meter starts on/before this bill's date minus one
+//      year). A short history is never extrapolated into a guess.
+//   4. None of the above worked — leave bill.facKW unset and mark bill._facKWMissing = true so
+//      the caller can turn that into a site-UI-only flag (see _flagFacKWMissingBills below) —
+//      never invented, and never surfaced in a client report (reports read the stored field
+//      directly and never render _flags).
+// Returns the count of bills whose facKW was actually filled.
+function backfillFacilitiesKW(billsForMeter) {
+  if (!billsForMeter || !billsForMeter.length) return 0;
   const pf = (v) => parseFloat(v) || 0;
-  const sorted = m.bills.slice().sort((a, b) => _parseISO(a.start) - _parseISO(b.start));
+  const facCost = (b) => (typeof getBillFacKWCost === 'function' ? getBillFacKWCost(b) : 0);
+  const sorted = billsForMeter.slice().sort((a, b) => _parseISO(a.start) - _parseISO(b.start));
+  let filled = 0;
+
+  // Known per-kW facilities rate, averaged from this meter's own bills that already have
+  // both a real facKW and a real facilities charge — mirrors the "neighbor consensus rate"
+  // pattern app/bill-analysis.js already uses for the PDF path (~L4592-4605).
+  const rateSamples = [];
+  sorted.forEach((b) => {
+    const kw = pf(b.facKW);
+    const chg = facCost(b);
+    if (kw > 0 && chg > 0) rateSamples.push(chg / kw);
+  });
+  const knownRate = rateSamples.length ? rateSamples.reduce((s, r) => s + r, 0) / rateSamples.length : 0;
+
   sorted.forEach((bill, i) => {
-    if (pf(bill.facKW) > 0) return; // real value already present (CSV or prior PDF) — never overwrite
+    if (pf(bill.facKW) > 0) {
+      delete bill._facKWMissing; // real value present — clear any stale missing-flag marker
+      return; // never overwrite
+    }
+
+    // 2) Derive from the bill's own charge and the known per-kW facilities rate.
+    const chg = facCost(bill);
+    if (chg > 0 && knownRate > 0) {
+      bill.facKW = Math.round((chg / knownRate) * 100) / 100;
+      delete bill._facKWMissing;
+      filled++;
+      return;
+    }
+
+    // 3) 12-month rolling peak — only when a full prior year of this meter's own bills exists.
     const windowStart = _parseISO(bill.start);
     windowStart.setFullYear(windowStart.getFullYear() - 1);
-    let peak = 0;
-    for (let j = 0; j <= i; j++) {
-      const cand = sorted[j];
-      if (_parseISO(cand.start) < windowStart) continue;
-      peak = Math.max(peak, pf(cand.billedKW) || pf(cand.demandKW));
+    if (_parseISO(sorted[0].start) <= windowStart) {
+      let peak = 0;
+      for (let j = 0; j <= i; j++) {
+        const cand = sorted[j];
+        if (_parseISO(cand.start) < windowStart) continue;
+        peak = Math.max(peak, pf(cand.billedKW) || pf(cand.demandKW));
+      }
+      if (peak > 0) {
+        bill.facKW = peak;
+        delete bill._facKWMissing;
+        filled++;
+        return;
+      }
     }
-    if (peak > 0) bill.facKW = peak;
+
+    // 4) Neither worked — leave blank, flag for the site UI only.
+    bill._facKWMissing = true;
   });
+  return filled;
+}
+
+// _flagFacKWMissingBills(m) — converts any bill._facKWMissing marker left by
+// backfillFacilitiesKW() into a persistent bill._flags entry (id 'facKWMissing_warn') the
+// Bills tab already knows how to render. Site UI only — reports read the stored bill fields
+// directly and never render _flags, so this never reaches a client deliverable. Must run
+// AFTER runBillValidation, which replaces bill._flags wholesale on every validation pass.
+function _flagFacKWMissingBills(m) {
+  if (!m || !m.bills) return;
+  const today = new Date().toISOString().slice(0, 10);
+  m.bills.forEach((bill) => {
+    if (!bill._facKWMissing) return;
+    bill._flags = Array.isArray(bill._flags) ? bill._flags : [];
+    if (!bill._flags.some((f) => f.id === 'facKWMissing_warn')) {
+      bill._flags.push({
+        id: 'facKWMissing_warn',
+        label:
+          'Facilities kW is missing from this bill and could not be derived from a known rate or a full 12-month history — enter it from the source bill.',
+        severity: 'warning',
+        firedAt: today,
+        dismissed: false,
+        dismissNote: '',
+      });
+    }
+    delete bill._facKWMissing;
+  });
+}
+
+// CSV-import entry point: thin wrapper around backfillFacilitiesKW for a single meter — see
+// call site in importBillCsvRows for why this exists.
+function _backfillCsvFacilitiesKW(m) {
+  if (!m || m.commodity !== 'Electric' || !m.bills || !m.bills.length) return;
+  backfillFacilitiesKW(m.bills);
 }
 
 const _CHARGE_QTY_PAIRS = {

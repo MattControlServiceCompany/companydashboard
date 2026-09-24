@@ -21,6 +21,24 @@ var KNOWN_RATES = {
   },
 };
 
+// getBillFacKWCost(bill) — the ONE accessor for a bill's Facilities kW Cost dollar amount.
+// Two field names exist on a bill object for historical reasons: `facilitiesCharge` (the
+// modern BILL_SCHEMA.Electric name) and `facKWCost` (legacy name, still written alongside it
+// by both write paths — the PDF/OCR extractor in app/bill-analysis.js and the CSV importer's
+// sync in app/csv-import.js — so new data always has both populated). A bill saved before that
+// sync existed can still carry only one of the two. This function is the single place that
+// resolves which value wins (facilitiesCharge first, falling back to facKWCost) — every reader
+// (computations/normalization.js buildMoMap, app/core.js, app/graphics-setpoints.js,
+// app/report-engine.js, app/report-engine-woodland.js, lib/perf-table.js, app/utility-data.js)
+// must call this instead of reading bill.facKWCost / bill.facilitiesCharge directly, so a bill
+// missing one of the two names is never silently read as $0 (2026-09-23 cold-review Q1/Q3 fix).
+function getBillFacKWCost(bill) {
+  if (!bill) return 0;
+  var v = bill.facilitiesCharge;
+  if (v === undefined || v === null || v === '') v = bill.facKWCost;
+  return parseFloat(v) || 0;
+}
+
 // New canonical function for rate lookup
 function getStoredRate(bill, type) {
   switch (type) {
@@ -51,9 +69,7 @@ function getStoredRate(bill, type) {
       // fallback so CSV-imported electric bills derive a real $/kW.
       var cost =
         parseFloat(bill.kwCost) ||
-        (parseFloat(bill.demandCharge) || 0) +
-          (parseFloat(bill.facilitiesCharge || bill.facKWCost) || 0) +
-          (parseFloat(bill.tdcCharge) || 0) ||
+        (parseFloat(bill.demandCharge) || 0) + getBillFacKWCost(bill) + (parseFloat(bill.tdcCharge) || 0) ||
         0;
       return usage > 0 && cost > 0 ? cost / usage : 0;
     }
@@ -120,9 +136,9 @@ function getStoredKwRate(bill) {
   if (stored > 0) return stored;
   var billedKW = pf(bill.billedKW) || pf(bill.demandKW) || 0;
   if (billedKW > 0) {
-    var granularCost = pf(bill.demandCharge) + pf(bill.tdcCharge) + pf(bill.facilitiesCharge || bill.facKWCost);
+    var granularCost = pf(bill.demandCharge) + pf(bill.tdcCharge) + getBillFacKWCost(bill);
     if (granularCost > 0) return granularCost / billedKW;
-    var legacyCost = pf(bill.kwCost) + pf(bill.facKWCost);
+    var legacyCost = pf(bill.kwCost) + getBillFacKWCost(bill);
     if (legacyCost > 0) return legacyCost / billedKW;
   }
   return 0;
@@ -149,7 +165,7 @@ function ensureBillRates(bill) {
   // Electric: totalKwRate (includes facKWCost — the full per-kW cost)
   if (!pf(bill.totalKwRate)) {
     var kw = pf(bill.BilledKW) || pf(bill.billedKW) || pf(bill.ActualKW) || pf(bill.demandKW) || pf(bill.FacilitiesKW);
-    var kwCost = pf(bill.kwCost) + pf(bill.facKWCost);
+    var kwCost = pf(bill.kwCost) + getBillFacKWCost(bill);
     if (kw > 0 && kwCost > 0) {
       bill.totalKwRate = (kwCost / kw).toFixed(5);
       changed = true;
