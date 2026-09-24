@@ -7821,8 +7821,22 @@ async function confirmAutoAssign() {
       _wreSWECharge: bill._wreSWECharge || '',
       _wreTriggerMMbtu: bill._wreTriggerMMbtu || '',
       _wreIndexMMbtu: bill._wreIndexMMbtu || '',
+      // Fix (2026-09-23, WRE invoice-fields fix, item 1): _wreSWEMMbtu was missing
+      // from this whitelist, so even though energy-savings.js now emits it, it
+      // was silently dropped at save time and never reached storage/display.
+      _wreSWEMMbtu: bill._wreSWEMMbtu || '',
       _wreTriggerRate: bill._wreTriggerRate || '',
       _wreIndexRate: bill._wreIndexRate || '',
+      // Fix (2026-09-23, WRE invoice-fields fix, item 2): _manualReview/
+      // _manualReviewLabel/_mmbtuRateMismatch/_mmbtuMissingWithCharge were ALSO
+      // missing from this whitelist — a bill flagged for manual review by the
+      // extractor silently lost that flag at save time via this path, so a
+      // suppressed/missing usage figure could reach storage with no review
+      // indicator at all. Carry them through like every other _-prefixed field.
+      _manualReview: bill._manualReview || undefined,
+      _manualReviewLabel: bill._manualReviewLabel || '',
+      _mmbtuRateMismatch: bill._mmbtuRateMismatch || undefined,
+      _mmbtuMissingWithCharge: bill._mmbtuMissingWithCharge || undefined,
       // Fix [therms-unit-2026-06-22]: canonicalize therms to Therms at save time.
       therms: (() => {
         const t = pf(bill.NaturalGasTherms);
@@ -8254,8 +8268,21 @@ async function _mbSaveOneBill(bi, action) {
     _wreSWECharge: bill._wreSWECharge || '',
     _wreTriggerMMbtu: bill._wreTriggerMMbtu || '',
     _wreIndexMMbtu: bill._wreIndexMMbtu || '',
+    // Fix (2026-09-23, WRE invoice-fields fix, item 1): was missing from this
+    // whitelist — see the matching comment in confirmAutoAssign() above.
+    _wreSWEMMbtu: bill._wreSWEMMbtu || '',
     _wreTriggerRate: bill._wreTriggerRate || '',
     _wreIndexRate: bill._wreIndexRate || '',
+    // Fix (2026-09-23, WRE invoice-fields fix, item 2): was missing from this
+    // whitelist — see the matching comment in confirmAutoAssign() above. This is
+    // the multi-building bulk-save path (_mbSaveOneBill), the actual path a
+    // multi-site WRE invoice (e.g. Spring Hill's 10-site Jan 2026 invoice) goes
+    // through — without this, a bill flagged for manual review upstream lost
+    // that flag here regardless of what energy-savings.js computed.
+    _manualReview: bill._manualReview || undefined,
+    _manualReviewLabel: bill._manualReviewLabel || '',
+    _mmbtuRateMismatch: bill._mmbtuRateMismatch || undefined,
+    _mmbtuMissingWithCharge: bill._mmbtuMissingWithCharge || undefined,
     therms: (function () {
       const t = pf(bill.NaturalGasTherms);
       if (t) return t;
@@ -9464,8 +9491,17 @@ function _saveBillToMatchedMeter(extracted, match) {
     _wreSWECharge: extracted._wreSWECharge || '',
     _wreTriggerMMbtu: extracted._wreTriggerMMbtu || '',
     _wreIndexMMbtu: extracted._wreIndexMMbtu || '',
+    // Fix (2026-09-23, WRE invoice-fields fix, item 1): was missing from this
+    // whitelist — see the matching comment in confirmAutoAssign() above.
+    _wreSWEMMbtu: extracted._wreSWEMMbtu || '',
     _wreTriggerRate: extracted._wreTriggerRate || '',
     _wreIndexRate: extracted._wreIndexRate || '',
+    // Fix (2026-09-23, WRE invoice-fields fix, item 2): was missing from this
+    // whitelist — see the matching comment in confirmAutoAssign() above.
+    _manualReview: extracted._manualReview || undefined,
+    _manualReviewLabel: extracted._manualReviewLabel || '',
+    _mmbtuRateMismatch: extracted._mmbtuRateMismatch || undefined,
+    _mmbtuMissingWithCharge: extracted._mmbtuMissingWithCharge || undefined,
     // Fix [therms-unit-2026-06-22]: canonicalize therms to Therms at save time.
     // Wood River (and any future MMBtu extractor) sets NaturalGasMMbtu; Constellation/KGS
     // set NaturalGasTherms (already Therms). CCF × 1.037 = Therms. Priority: Therms > CCF > MMBtu.
@@ -16471,7 +16507,19 @@ async function processPDF(file) {
                       // purpose because a printed rate didn't match a printed charge —
                       // unless the retry candidate itself just cleared that flag above
                       // via a validated recovery.
-                      if ((orig.parseError || orig._manualReview) && !orig._mmbtuRateMismatch && _mergedHasSiteData) {
+                      // Fix (2026-09-23, WRE invoice-fields fix, item 2): same guard for
+                      // _mmbtuMissingWithCharge (the Sub-Total line's own MMbtu failed to
+                      // parse while its charge parsed fine) — without this, this same
+                      // block would immediately re-clear the flag right after it's set,
+                      // since a charge-only bill always has _mergedHasSiteData=true
+                      // (GasCharge present) and _mmbtuRateMismatch=false (it's a
+                      // different failure mode from the rate cross-check).
+                      if (
+                        (orig.parseError || orig._manualReview) &&
+                        !orig._mmbtuRateMismatch &&
+                        !orig._mmbtuMissingWithCharge &&
+                        _mergedHasSiteData
+                      ) {
                         orig.parseError = false;
                         orig._manualReview = false;
                         orig._manualReviewLabel = undefined;
@@ -19093,10 +19141,19 @@ function renderPDFFields(parsed, warnings) {
       printedRateField: '_wreIndexRate',
     },
     // Special Weather Event: only present on some invoices (hasSWE flag on the record)
+    // Fix (2026-09-23, WRE invoice-fields fix, item 1): qtyField/unit added so the
+    // SWE volume (already extracted as _wreSWEMMbtu, energy-savings.js) actually
+    // displays — without it, the SWE line only ever showed a dollar figure and the
+    // Trigger+Index MMbtu never reconciled with the printed Sub-Total MMbtu by
+    // exactly the (hidden) SWE volume. Prints negative on real invoices (a credit,
+    // e.g. -56.89) — buildCell/charge-line rendering already handles negative
+    // qtyField values the same way as the Trigger/Index rows above.
     {
       type: 'charge-line',
       label: 'Special Weather Event',
       chargeField: '_wreSWECharge',
+      qtyField: '_wreSWEMMbtu',
+      unit: 'MMbtu',
       rateKey: null,
       hideIfNull: true,
     },
