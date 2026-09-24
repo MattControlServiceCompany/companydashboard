@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.24.5'; // Projects can now share a Customer -- add multiple projects under the same customer and pick which of its buildings/meters belong to each one; utility data (bills, meters) is shared across projects, and each project's own scope stays separate
+  var CH_VERSION = 'v2026.09.24.6'; // The Backup button now waits for your data to finish loading before it downloads, so a backup taken right after opening the page no longer comes out with the bills and utility data missing
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

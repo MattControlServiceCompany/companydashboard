@@ -1776,6 +1776,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.24.6',
+    date: '2026-09-24',
+    title: 'Backup now waits for your data to finish loading first',
+    items: [
+      {
+        type: 'fix',
+        text: 'If you clicked Backup right after opening the Energy Department page, the downloaded file could come out with the bills and utility data missing, even though nothing was actually lost. Backup now waits for your data to finish loading before it downloads, so the file always has everything you have saved.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.24.5',
     date: '2026-09-24',
     title: 'Projects can now share a customer, with the utility data staying separate from each project',
