@@ -2548,14 +2548,33 @@ function renderUDProjAggPanel(content) {
     const annProjSav = _perfProjSavByMo.reduce((s, v) => s + v, 0);
     const avgSavPct = annBase > 0 ? annProjSav / annBase : 0;
     const actSavByMo = {};
+    // a67db8ce: same rate-incomplete rollup as the Building Performance pane — see the
+    // matching comment in renderBldgPerfPane above for the byYM===0 "false zero" gate.
+    const _ppIncomplete = [];
     allMeters.forEach(({ m, bills, incl, bldg }) => {
       const bl = m.baseline;
       if (!bl || !bl.months || bl.months.length < 3) return;
-      const sav = getMeterSavings(m, bills, incl, udSelProjId, bldg.id).byCalMo;
-      Object.entries(sav).forEach(([mo, v]) => {
+      const _ppSavResult = getMeterSavings(m, bills, incl, udSelProjId, bldg.id);
+      Object.entries(_ppSavResult.byCalMo).forEach(([mo, v]) => {
         actSavByMo[mo] = (actSavByMo[mo] || 0) + v;
       });
+      Object.entries(_ppSavResult.incompleteYM || {}).forEach(([ym, info]) => {
+        if (_ppSavResult.byYM[ym] === 0)
+          _ppIncomplete.push({ bldg: bldg.name || bldg.id, meter: m.name || m.id, ym, reason: info.reason });
+      });
     });
+    const _ppIncompleteHTML = _ppIncomplete.length
+      ? '<div style="margin-bottom:14px;padding:10px 14px;background:rgba(230,126,34,0.12);border:1px solid var(--warn,#e67e22);border-radius:8px;font-size:12px;color:var(--warn,#e67e22)">' +
+        '<strong>⚠ ' +
+        _ppIncomplete.length +
+        ' month' +
+        (_ppIncomplete.length !== 1 ? 's' : '') +
+        ' excluded from savings — rate data incomplete:</strong><ul style="margin:6px 0 0 18px;padding:0">' +
+        _ppIncomplete
+          .map((x) => '<li>' + esc(x.bldg) + ' / ' + esc(x.meter) + ' — ' + esc(x.ym) + ' (' + esc(x.reason) + ')</li>')
+          .join('') +
+        '</ul></div>'
+      : '';
     const hasActual = Object.keys(actSavByMo).length > 0;
     const annActSav = hasActual ? Object.values(actSavByMo).reduce((s, v) => s + v, 0) : null;
     const actPct = annBase > 0 && annActSav != null ? (annActSav / annBase) * 100 : null;
@@ -2581,6 +2600,7 @@ function renderUDProjAggPanel(content) {
     content.innerHTML = `
             <div style="padding:14px 18px;background:var(--s2);border-bottom:1px solid var(--border)">
               <div style="font-size:14px;font-weight:800;font-family:var(--head);color:var(--em);margin-bottom:10px">💡 ${projName} — Performance</div>
+              ${_ppIncompleteHTML}
               <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px">
                 <div style="background:var(--s1);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Annual Baseline</div><div style="font-size:15px;font-weight:800">${$f(annBase)}</div></div>
                 ${hasActual ? `<div style="background:var(--s1);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Current Savings</div><div style="font-size:15px;font-weight:800;color:${annActSav >= 0 ? 'var(--em)' : 'var(--danger)'}">${annActSav < 0 ? '−' : ''}${$f(annActSav)}</div>${actPct != null ? `<div style="font-size:11px;color:var(--text2);margin-top:2px">${actPct < 0 ? '−' : ''}${Math.abs(actPct).toFixed(1)}%</div>` : ''}</div>` : ''}
@@ -9565,6 +9585,13 @@ function renderBldgPerfPane(pane, b) {
   // Sum Total Cost Savings from each meter's Performance tab (same values shown there)
   const actualSavingsByCalMo = {};
   const actualSavingsByYM = {}; // keyed by YYYY-MM for quarterly view (avoids cross-year collisions)
+  // a67db8ce (2026-09-09 savings-integrity investigation): months where a meter's displayed
+  // savings is a false $0 because the rate could not be resolved — collected here so the
+  // Building Performance pane can show one visible warning naming every affected meter/month
+  // instead of the total silently absorbing it. Only surfaced when the meter's own monthly
+  // total really is $0 (byYM[ym] === 0) — a month with a real partial dollar figure from one
+  // working rate is not a false zero and is left alone.
+  const _bpIncomplete = [];
   (b.meters || []).forEach((m) => {
     if (isBaselineExcluded(udSelProjId, m.id)) return;
     if (!(m.baseline?.months?.length >= 3)) return;
@@ -9577,7 +9604,20 @@ function renderBldgPerfPane(pane, b) {
     Object.entries(_mSavResult.byYM).forEach(([ym, v]) => {
       actualSavingsByYM[ym] = (actualSavingsByYM[ym] || 0) + v;
     });
+    Object.entries(_mSavResult.incompleteYM || {}).forEach(([ym, info]) => {
+      if (_mSavResult.byYM[ym] === 0) _bpIncomplete.push({ meter: m.name || m.id, ym, reason: info.reason });
+    });
   });
+  const _bpIncompleteHTML = _bpIncomplete.length
+    ? '<div style="margin-bottom:14px;padding:10px 14px;background:rgba(230,126,34,0.12);border:1px solid var(--warn,#e67e22);border-radius:8px;font-size:12px;color:var(--warn,#e67e22)">' +
+      '<strong>⚠ ' +
+      _bpIncomplete.length +
+      ' month' +
+      (_bpIncomplete.length !== 1 ? 's' : '') +
+      ' excluded from savings — rate data incomplete:</strong><ul style="margin:6px 0 0 18px;padding:0">' +
+      _bpIncomplete.map((x) => '<li>' + esc(x.meter) + ' — ' + esc(x.ym) + ' (' + esc(x.reason) + ')</li>').join('') +
+      '</ul></div>'
+    : '';
   const hasActual = Object.keys(actualSavingsByCalMo).length > 0;
   _bpActualSavingsByCalMo = actualSavingsByCalMo;
   _bpActualSavingsByYM = actualSavingsByYM;
@@ -9621,6 +9661,7 @@ function renderBldgPerfPane(pane, b) {
             <div style="font-size:12px;color:var(--text2);margin-top:3px">Baseline from Meter Data · projected values from Building Savings Projection settings</div>
             ${_bpSourceLabel}
           </div>
+          ${_bpIncompleteHTML}
 
           <!-- Controls -->
           <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:18px;background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:13px 16px">

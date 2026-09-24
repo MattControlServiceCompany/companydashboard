@@ -1776,6 +1776,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.24.9',
+    date: '2026-09-24',
+    title: 'Utility Data: a missing rate now shows a warning, not a false $0.00',
+    items: [
+      {
+        type: 'fix',
+        text: 'On the Utility Data page, a month with a real bill but no usable rate showed savings of $0.00, with no way to tell it apart from a month that truly had zero savings. The Meter Performance table, the Building Performance screen, and the Project Performance screen now show a clear warning that names the month and the missing rate, and leave that month out of the total instead of counting a false $0.00.',
+      },
+      {
+        type: 'fix',
+        text: 'Printed reports never show this warning text. A month with a missing rate is now left out of the report table and its total, instead of printing a $0.00 that looks like a real zero.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.24.8',
     date: '2026-09-24',
     title: 'BAS Savings Calc: Existing Cooling kWh now fills in on its own',
