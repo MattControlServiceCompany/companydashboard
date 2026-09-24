@@ -1742,6 +1742,25 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.23.21',
+    date: '2026-09-23',
+    title: 'Set Points tab: delete all zones, pull zones from the Equipment Matrix, and a fixed point-list import',
+    items: [
+      {
+        type: 'feature',
+        text: 'The Set Points tab now has a "Delete All" button that removes every zone row for the building you are viewing, after you confirm the count. Nothing is deleted without that confirm.',
+      },
+      {
+        type: 'feature',
+        text: 'A new "Pull from Equipment Matrix" button builds one zone row per zone or piece of equipment (not per BAS point) from the Equipment Matrix, using the same numbers as the Equipment Matrix\'s own Setpoint & Schedule export. Pick the building in the small dialog. Any value the Equipment Matrix does not have shows a "?" instead of a guess. If the building already has saved zones, you are asked to confirm before they are replaced.',
+      },
+      {
+        type: 'fix',
+        text: 'Uploading a raw BAS Points List (one row per point, such as "Building Static Pressure" or "Outside Air CFM") to the Set Points tab used to create one zone row per point. The Set Points tab now recognizes that file format and points you to the Equipment Matrix tab and the new "Pull from Equipment Matrix" button instead.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.23.20',
     date: '2026-09-23',
     title: 'PDF / OCR: new Attach PDFs Only mode links a PDF without changing any billing data',

@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.23.20'; // PDF/OCR: added an Attach PDFs Only mode that links a PDF to an already-matching billing period without changing any other field
+  var CH_VERSION = 'v2026.09.23.21'; // Set Points tab: Delete All + Pull from Equipment Matrix, and the point-level BAS Points List import now routes to Equipment Matrix instead of making one zone row per point
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
