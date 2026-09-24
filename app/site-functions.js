@@ -1776,6 +1776,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.24.7',
+    date: '2026-09-24',
+    title: 'Fixed two bill-reading bugs: Kansas Gas Service cost and Louisburg bill date',
+    items: [
+      {
+        type: 'fix',
+        text: 'Some Kansas Gas Service gas bills with a small minimum charge saved at 100 times the true cost (for example, $34.64 saved as $3,464.00). The bill reader now checks the total against the other charges on the same bill and fixes this on its own.',
+      },
+      {
+        type: 'fix',
+        text: 'The City of Louisburg bill reader picked up the wrong date as the Bill Date. It now reads the correct printed Bill Date instead of the Penalty Date.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.24.6',
     date: '2026-09-24',
     title: 'Backup now waits for your data to finish loading first',

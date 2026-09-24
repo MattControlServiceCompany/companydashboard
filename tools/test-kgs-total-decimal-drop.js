@@ -54,6 +54,13 @@ function loadPostExtractionVerify() {
     const src = fs.readFileSync(p, 'utf8');
     vm.runInContext(src, sandbox, { filename: path.basename(p) });
   }
+  // Stub for app/utility-data.js's forEachCustomerBuilding — _postExtractionVerify
+  // calls it as `forEachCustomerBuilding(typeof projects !== 'undefined' ? projects : [], ...)`.
+  // We don't load utility-data.js (pulls in unrelated DB/UI dependencies out of scope
+  // for this KGS-specific test); since `projects` is always undefined here, the real
+  // implementation's `(projectsList || []).forEach(...)` on an empty array would never
+  // invoke the callback either — a no-op stub is behaviorally identical for this test.
+  vm.runInContext('function forEachCustomerBuilding(projectsList, fn) {}', sandbox);
   const fn = vm.runInContext('typeof _postExtractionVerify !== "undefined" ? _postExtractionVerify : null', sandbox);
   if (!fn) throw new Error('_postExtractionVerify not found in ' + billAnalysisPath);
   return fn;

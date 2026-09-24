@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.24.6'; // The Backup button now waits for your data to finish loading before it downloads, so a backup taken right after opening the page no longer comes out with the bills and utility data missing
+  var CH_VERSION = 'v2026.09.24.7'; // Fixed two bill-reading bugs: Kansas Gas Service minimum-charge gas bills no longer save at 100 times the real cost, and the City of Louisburg bill reader now reads the printed Bill Date instead of the Penalty Date
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
