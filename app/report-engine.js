@@ -1,4 +1,4 @@
-// Local fallback — only defined if computations/rates.js hasn't already defined it
+﻿// Local fallback — only defined if computations/rates.js hasn't already defined it
 if (typeof toKBtu === 'undefined') {
   function toKBtu(kwh, therms, gallons) {
     return (parseFloat(kwh) || 0) * 3.412 + (parseFloat(therms) || 0) * 100 + (parseFloat(gallons) || 0) * 91.5;
@@ -10,11 +10,11 @@ if (typeof toKBtu === 'undefined') {
 // Returns '' when eligible, else a short user-facing reason. Used by collectReportData()
 // (the filter) AND the Generate Report picker (default-checked / disabled rows), so the two
 // can never disagree. Matt's #1 rule (2026-09-11): a meter excluded on the Utility Data tab
-// (baselineInclude:false) or whose commodity is off in the project's calc set must NEVER
+// (excluded via the project's own scope.meterExcludeIds) or whose commodity is off in the project's calc set must NEVER
 // render anywhere in the report, regardless of selection.
 // -----------------------------------------------------------------------
 function _rptMeterEligible(projId, m) {
-  if (m.baselineInclude === false) return 'excluded on Utility Data';
+  if (isBaselineExcluded(projId, m.id)) return 'excluded on Utility Data';
   // Permissive fallback: if isCalcCommodity isn't loaded in this context, don't filter on
   // commodity at all rather than throwing.
   if (typeof isCalcCommodity === 'function' && !isCalcCommodity(projId, m.commodity))
@@ -6563,7 +6563,11 @@ function rptPageBuildingSummary(n, d, b) {
   var _rptBldg = getUDBldg(d.project.id, b.id);
   var _rptFilterYMs = d.period.yearMonths || null;
   if (_rptBldg && _rptBldg.meters) {
-    var _rptProj = getUDProj(d.project.id);
+    // Field relocation (2026-09-24): inclMonths lives on the project record, not the
+    // shared customer blob.
+    var _rptProj = (typeof projects !== 'undefined' ? projects : sget('en_projects', [])).find(function (p) {
+      return p.id === d.project.id;
+    });
     var _rptIncl = (_rptProj && _rptProj.inclMonths) || {};
     // Only the meters collectReportData() actually gathered for this building (b.meterIds:
     // eligible + user-selected + baseline >= 3 months) — the raw building's meter list is joined

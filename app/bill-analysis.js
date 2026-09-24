@@ -510,23 +510,22 @@ function detectStatisticalOutliers(extracted, historicalCache, pdfBillsIndex) {
       }
     }
   } else {
-    // Fallback: original project walk (keeps backward compatibility)
-    for (const proj of typeof projects !== 'undefined' ? projects : []) {
-      const udProj = getUDProj(proj.id);
-      for (const bldg of udProj.buildings || []) {
-        for (const m of bldg.meters || []) {
-          const ma = (m.account || '').replace(/[\s\-]/g, '').toLowerCase();
-          if (acct && ma && acct === ma) {
-            const mc = (m.commodity || '').toLowerCase();
-            if (!extComm || !mc || extComm === mc) {
-              for (const b of m.bills || []) {
-                historicalPairs.push({ bill: b, addr: b.ServiceAddress || b.serviceAddress || '' });
-              }
+    // Fallback: original walk, now customer-deduplicated (BLOCKER C fix) so a
+    // building shared by 2+ projects under the same customer is scanned once, not
+    // once per sharing project (which would double-push the same historical bill).
+    forEachCustomerBuilding(typeof projects !== 'undefined' ? projects : [], (bldg) => {
+      for (const m of bldg.meters || []) {
+        const ma = (m.account || '').replace(/[\s\-]/g, '').toLowerCase();
+        if (acct && ma && acct === ma) {
+          const mc = (m.commodity || '').toLowerCase();
+          if (!extComm || !mc || extComm === mc) {
+            for (const b of m.bills || []) {
+              historicalPairs.push({ bill: b, addr: b.ServiceAddress || b.serviceAddress || '' });
             }
           }
         }
       }
-    }
+    });
   }
 
   const candidates = (pdfBillsIndex && pdfBillsIndex[acct]) || (!pdfBillsIndex ? sget('en_pdf_bills', []) || [] : []);
@@ -2785,16 +2784,16 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
       const hist = [];
       if (!acct) return hist;
       const acctClean = acct.replace(/[\s\-]/g, '').toLowerCase();
-      for (const proj of typeof projects !== 'undefined' ? projects : []) {
-        const udProj = getUDProj(proj.id);
-        for (const bldg of udProj.buildings || []) {
-          for (const m of bldg.meters || []) {
-            if ((m.account || '').replace(/[\s\-]/g, '').toLowerCase() === acctClean) {
-              for (const b of m.bills || []) hist.push(b);
-            }
+      // BLOCKER C fix: customer-deduplicated walk (see forEachCustomerBuilding) so a
+      // building shared by 2+ projects isn't scanned — and its bills double-counted —
+      // once per sharing project.
+      forEachCustomerBuilding(typeof projects !== 'undefined' ? projects : [], (bldg) => {
+        for (const m of bldg.meters || []) {
+          if ((m.account || '').replace(/[\s\-]/g, '').toLowerCase() === acctClean) {
+            for (const b of m.bills || []) hist.push(b);
           }
         }
-      }
+      });
       return hist;
     }
 
@@ -2824,17 +2823,15 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
     // Replaces per-bill O(n) walk with a single O(stored) pass + O(1) lookups.
     const _historicalCache = {};
     (function _buildHistoricalCache() {
-      for (const proj of typeof projects !== 'undefined' ? projects : []) {
-        const udProj = getUDProj(proj.id);
-        for (const bldg of udProj.buildings || []) {
-          for (const m of bldg.meters || []) {
-            const acct = (m.account || '').replace(/[\s\-]/g, '').toLowerCase();
-            if (!acct) continue;
-            if (!_historicalCache[acct]) _historicalCache[acct] = [];
-            for (const b of m.bills || []) _historicalCache[acct].push(b);
-          }
+      // BLOCKER C fix: customer-deduplicated walk — see getHistorical() above.
+      forEachCustomerBuilding(typeof projects !== 'undefined' ? projects : [], (bldg) => {
+        for (const m of bldg.meters || []) {
+          const acct = (m.account || '').replace(/[\s\-]/g, '').toLowerCase();
+          if (!acct) continue;
+          if (!_historicalCache[acct]) _historicalCache[acct] = [];
+          for (const b of m.bills || []) _historicalCache[acct].push(b);
         }
-      }
+      });
     })();
 
     const YIELD_EVERY = 10; // yield to event loop every N bills so cancel events and UI updates can process
@@ -6583,8 +6580,7 @@ function _wreBuildingTagMatch(extracted) {
   const scopedProjects = [scopedProj];
   const buildings = [];
   for (const proj of scopedProjects) {
-    const udProj = getUDProj(proj.id);
-    for (const bldg of udProj.buildings || []) buildings.push({ proj, bldg });
+    for (const bldg of getUDBldgs(proj.id) || []) buildings.push({ proj, bldg });
   }
   const bldgHit = _wreResolveBuilding(split.tag, split.streetPart, buildings);
   if (!bldgHit) return null;
@@ -6644,9 +6640,13 @@ function findMeterMatch(extracted) {
   // best) so that, after the search, we can both pick the top scorer AND
   // detect a cross-building near-tie (Fix 2, second bullet) before deciding.
   const addrCandidates = [];
-  for (const proj of projects) {
-    const udProj = getUDProj(proj.id);
-    for (const bldg of udProj.buildings || []) {
+  // BLOCKER C fix: customer-deduplicated walk (see forEachCustomerBuilding) so a
+  // building shared by 2+ projects is scanned once, not once per sharing project —
+  // otherwise the same real meter would generate a duplicate identityCandidates/
+  // addrCandidates entry per sharing project, corrupting the near-tie/ambiguity logic
+  // this loop's candidate collection exists to protect.
+  forEachCustomerBuilding(projects, (bldg, proj) => {
+    {
       for (const m of bldg.meters || []) {
         const mAcct = (m.account || '').replace(/[\s\-]/g, '').toLowerCase();
         const mMeter = (m.meter || '').replace(/[\s\-]/g, '').toLowerCase();
@@ -6737,7 +6737,7 @@ function findMeterMatch(extracted) {
               billComm &&
               (cm.commodity || '').toLowerCase() === billComm,
           );
-          if (contradicting) continue;
+          if (contradicting) return;
         }
         const bldgAddrNorm = _normalizeAddr(bldg.addr);
         const aliases = (bldg.addrAliases || []).map(_normalizeAddr).filter(Boolean);
@@ -6801,7 +6801,7 @@ function findMeterMatch(extracted) {
         }
       }
     }
-  }
+  });
   // Fix D resolution: a lone identity candidate is returned exactly as
   // before this fix (no address check ever applied to it — this is what
   // keeps a meter's own short/hand-entered/OCR-garbled maddr from vetoing
@@ -6918,19 +6918,19 @@ function findMeterMatch(extracted) {
   let commodityMatch = null;
   if (!bestMatch && !addrMatch && billComm && billAddr && billAddr.length >= 5) {
     const matchingBuildings = [];
-    for (const proj of projects) {
-      const udProj = getUDProj(proj.id);
-      for (const bldg of udProj.buildings || []) {
-        const bldgAddrNorm = _normalizeAddr(bldg.addr);
-        const aliases = (bldg.addrAliases || []).map(_normalizeAddr).filter(Boolean);
-        const exactHit = (bldgAddrNorm && bldgAddrNorm === billAddr) || aliases.some((a) => a === billAddr);
-        const structuralHit =
-          _streetIdentityMatch(extracted.ServiceAddress, bldg.addr) ||
-          (bldg.addrAliases || []).some((rawAlias) => _streetIdentityMatch(extracted.ServiceAddress, rawAlias));
-        if (!(exactHit || structuralHit)) continue; // exact full-address hit, or exact street number+name -- nothing fuzzy
-        matchingBuildings.push({ proj, bldg });
-      }
-    }
+    // BLOCKER C fix: customer-deduplicated walk (see forEachCustomerBuilding) so a
+    // building shared by 2+ projects doesn't produce 2+ "matchingBuildings" entries
+    // for the same real building, breaking the "exactly one building matched" check.
+    forEachCustomerBuilding(projects, (bldg, proj) => {
+      const bldgAddrNorm = _normalizeAddr(bldg.addr);
+      const aliases = (bldg.addrAliases || []).map(_normalizeAddr).filter(Boolean);
+      const exactHit = (bldgAddrNorm && bldgAddrNorm === billAddr) || aliases.some((a) => a === billAddr);
+      const structuralHit =
+        _streetIdentityMatch(extracted.ServiceAddress, bldg.addr) ||
+        (bldg.addrAliases || []).some((rawAlias) => _streetIdentityMatch(extracted.ServiceAddress, rawAlias));
+      if (!(exactHit || structuralHit)) return; // exact full-address hit, or exact street number+name -- nothing fuzzy
+      matchingBuildings.push({ proj, bldg });
+    });
     if (matchingBuildings.length === 1) {
       const { proj, bldg } = matchingBuildings[0];
       const sameCommMeters = (bldg.meters || []).filter((m) => (m.commodity || '').toLowerCase() === billComm);
@@ -6956,7 +6956,18 @@ function findMeterMatch(extracted) {
   // Fix (fix/wre-building-name-match, 2026-09-15): tag+building-name fallback,
   // tried only when every match above found nothing. See _wreBuildingTagMatch
   // above for the full design/gating rationale.
-  return bestMatch || addrMatch || commodityMatch || _wreBuildingTagMatch(extracted);
+  const _result = bestMatch || addrMatch || commodityMatch || _wreBuildingTagMatch(extracted);
+  // BLOCKER C fix: a match resolves the real (customer-shared) building/meter, not one
+  // specific project — `projId` above is only a representative project (whichever of the
+  // customer's projects happens to already have the building scoped, or the first one
+  // encountered if none does yet). Callers that need to know "is this match valid for
+  // the project I have selected" must compare customerId, not projId (see
+  // _saveSinglePDFBill's proj-scoped identity check) — a match is equally valid for
+  // every project sharing that customer, since the building/meter itself is shared.
+  if (_result && _result.proj && !_result.customerId) {
+    _result.customerId = _result.proj.customerId || 'cust_' + _result.proj.id;
+  }
+  return _result;
 }
 // Save a new address alias to a building (called after fuzzy match).
 // Adds aliasString to bldg.addrAliases if not already present, then persists.
@@ -9011,7 +9022,7 @@ async function _sweepPdfLsFallback() {
 // it to point at the canonical key instead.
 //
 // PDF references live in two homes (docs/dashboardlogic.md "Data Storage"):
-//   1. utilityData[pid].buildings[].meters[].bills[]  (via getUDProj — mirrors
+//   1. the customer's buildings[].meters[].bills[] (via getUDBldgs — mirrors
 //      _findMeterBillById's walk)
 //   2. sget('en_pdf_bills', [])                        (flat extraction list)
 //
@@ -9076,27 +9087,26 @@ async function _pdfCompactWalkAndRemap(oldKeyToCanonical) {
     return null;
   }
 
-  // 1. Every project's meter-tree bills.
-  for (const proj of projects || []) {
-    const udProj = getUDProj(proj.id);
+  // 1. Every customer's meter-tree bills (BLOCKER C fix: customer-deduplicated walk —
+  // see forEachCustomerBuilding — so a building shared by 2+ projects isn't scanned,
+  // and its bills' pdfKey resolution reported, once per sharing project).
+  forEachCustomerBuilding(projects || [], (b, proj) => {
     let projDirty = false;
-    for (const b of udProj.buildings || []) {
-      for (const m of b.meters || []) {
-        for (const r of m.bills || []) {
-          if (!isPdfClaiming(r)) continue;
-          const label = (proj.name || proj.id) + ' / ' + (b.name || b.id) + ' / ' + (m.account || m.id);
-          const result = resolve(r);
-          if (!result) {
-            alreadyBroken.push({ id: r.id || null, label });
-            continue;
-          }
-          touched.push({ ref: r, canonical: result.canonical, changed: result.changed, label });
-          if (result.changed) projDirty = true;
+    for (const m of b.meters || []) {
+      for (const r of m.bills || []) {
+        if (!isPdfClaiming(r)) continue;
+        const label = (proj.name || proj.id) + ' / ' + (b.name || b.id) + ' / ' + (m.account || m.id);
+        const result = resolve(r);
+        if (!result) {
+          alreadyBroken.push({ id: r.id || null, label });
+          continue;
         }
+        touched.push({ ref: r, canonical: result.canonical, changed: result.changed, label });
+        if (result.changed) projDirty = true;
       }
     }
     if (projDirty) dirtyProjIds.add(proj.id);
-  }
+  });
 
   // 2. Flat en_pdf_bills list.
   const flatBills = (await sget('en_pdf_bills', [])) || [];
@@ -9179,9 +9189,8 @@ async function _pdfBillsSelfHealMissingKeys() {
       if (p) candidates.push({ id: b.id, pdfKey: b.pdfKey, prefix: p });
     }
   }
-  for (const pid of Object.keys(utilityData || {})) {
-    const ud = utilityData[pid];
-    for (const bldg of ud.buildings || []) {
+  for (const c of sget('en_customers', []) || []) {
+    for (const bldg of getCustomerBuildings(c.id) || []) {
       for (const mt of bldg.meters || []) {
         for (const bill of mt.bills || []) {
           if (bill && bill.pdfKey) {
@@ -9640,8 +9649,11 @@ function _saveBillToMatchedMeter(extracted, match) {
   // a stale snapshot if projects were mutated between findMeterMatch and now.
   const liveProj = projects.find((p) => p.id === match.projId);
   if (!liveProj) return null;
-  const udProj = getUDProj(liveProj.id);
-  const liveBldg = (udProj.buildings || []).find((b) => b.id === match.bldgId);
+  // BLOCKER C fix: write via the customer, not the project — a building the matcher
+  // resolved may not be in THIS project's own scope.buildingIds yet (e.g. no project has
+  // picked it), and a bill match is still correct/valid; getUDBldg(pid,...) would return
+  // undefined in that case since it's scope-filtered. getUDBldgByCustomer is not.
+  const liveBldg = getUDBldgByCustomer(liveProj.customerId, match.bldgId);
   if (!liveBldg) return null;
   const liveMeter = (liveBldg.meters || []).find((m) => m.id === match.meterId);
   if (!liveMeter) return null;
@@ -12352,37 +12364,37 @@ async function _checkDuplicates(bills, statusCb) {
   // service addresses on its saved bills) — the sibling set _sameSiteAddress
   // uses to refuse an ambiguous address-only match (review round 3).
   const projMeterAddrs = Object.create(null); // { projId -> [{ meter, addrs: [] }] }
-  for (const p of projects) {
-    const ud = utilityData[p.id];
-    if (!ud) continue;
-    for (const b of ud.buildings || []) {
-      for (const m of b.meters || []) {
-        const _addrSet = new Set();
-        if (m.maddr) _addrSet.add(m.maddr);
-        for (const bill of m.bills || []) if (bill && bill.serviceAddress) _addrSet.add(bill.serviceAddress);
-        if (!projMeterAddrs[p.id]) projMeterAddrs[p.id] = [];
-        projMeterAddrs[p.id].push({ meter: m, comm: (m.commodity || '').toLowerCase(), addrs: [..._addrSet] });
-        const acctKey = normAcct(m.account || '');
-        for (const bill of m.bills || []) {
-          const entry = {
-            bill,
-            projId: p.id,
-            projName: p.name,
-            bldgName: b.name,
-            meterLabel: m.commodity + ' · Acct ' + (m.account || '—') + ' · Meter ' + (m.meter || '—'),
-            meter: m,
-            hasPDF: !!bill.hasPDF,
-            pdfKey: bill.pdfKey || null,
-          };
-          assignedBills.push(entry);
-          if (acctKey) {
-            if (!assignedByAcct[acctKey]) assignedByAcct[acctKey] = [];
-            assignedByAcct[acctKey].push(entry);
-          }
+  // BLOCKER C fix: customer-deduplicated walk (see forEachCustomerBuilding) so a
+  // building shared by 2+ projects contributes its bills to the duplicate-detection
+  // index ONCE, not once per sharing project (which would report the same physical
+  // bill as two separate "already assigned" candidates under two different projIds).
+  forEachCustomerBuilding(projects, (b, p) => {
+    for (const m of b.meters || []) {
+      const _addrSet = new Set();
+      if (m.maddr) _addrSet.add(m.maddr);
+      for (const bill of m.bills || []) if (bill && bill.serviceAddress) _addrSet.add(bill.serviceAddress);
+      if (!projMeterAddrs[p.id]) projMeterAddrs[p.id] = [];
+      projMeterAddrs[p.id].push({ meter: m, comm: (m.commodity || '').toLowerCase(), addrs: [..._addrSet] });
+      const acctKey = normAcct(m.account || '');
+      for (const bill of m.bills || []) {
+        const entry = {
+          bill,
+          projId: p.id,
+          projName: p.name,
+          bldgName: b.name,
+          meterLabel: m.commodity + ' · Acct ' + (m.account || '—') + ' · Meter ' + (m.meter || '—'),
+          meter: m,
+          hasPDF: !!bill.hasPDF,
+          pdfKey: bill.pdfKey || null,
+        };
+        assignedBills.push(entry);
+        if (acctKey) {
+          if (!assignedByAcct[acctKey]) assignedByAcct[acctKey] = [];
+          assignedByAcct[acctKey].push(entry);
         }
       }
     }
-  }
+  });
   // Normalize helper
   const norm = (v) => (v || '').replace(/[\s\-]/g, '').toLowerCase();
   // Fuzzy period match: treat two bills as the same billing cycle only when BOTH
@@ -20697,8 +20709,7 @@ async function deleteAllSavedBills(projId) {
 function _findMeterBillById(id) {
   if (!id) return null;
   for (const proj of projects || []) {
-    const udProj = getUDProj(proj.id);
-    for (const b of udProj.buildings || []) {
+    for (const b of getUDBldgs(proj.id) || []) {
       for (const m of b.meters || []) {
         for (const r of m.bills || []) {
           if (r.id === id || r.pdfBillId === id) return { row: r, projId: proj.id };
@@ -20955,8 +20966,7 @@ function populateAssignBuildings() {
     populateAssignMeters();
     return;
   }
-  const udProj = getUDProj(pid);
-  const bldgs = udProj.buildings || [];
+  const bldgs = getUDBldgs(pid) || [];
   bldgSel.innerHTML =
     '<option value="">— Select Building —</option>' +
     bldgs.map((b) => `<option value="${b.id}">${b.name}</option>`).join('');
@@ -20970,8 +20980,7 @@ function populateAssignMeters() {
     meterSel.innerHTML = '<option value="">— Select building first —</option>';
     return;
   }
-  const udProj = getUDProj(pid);
-  const bldg = (udProj.buildings || []).find((b) => b.id === bid);
+  const bldg = getUDBldg(pid, bid);
   const meters = (bldg?.meters || []).filter((m) => !_assignBillCommodity || m.commodity === _assignBillCommodity);
   if (!meters.length) {
     const commLabel = _assignBillCommodity || '';
@@ -20998,8 +21007,7 @@ function confirmAssignBill() {
   if (!bill) return;
   const proj = projects.find((p) => p.id === pid);
   if (!proj) return;
-  const udProj = getUDProj(pid);
-  const bldg = (udProj.buildings || []).find((b) => b.id === bid);
+  const bldg = getUDBldg(pid, bid);
   if (!bldg) return;
   const meter = (bldg.meters || []).find((m) => m.id === mid);
   if (!meter) return;
@@ -21227,7 +21235,7 @@ function mam_populateBuildings() {
     mam_populateMeters();
     return;
   }
-  const bldgs = getUDProj(parseInt(pid)).buildings || [];
+  const bldgs = getUDBldgs(parseInt(pid)) || [];
   bldgSel.innerHTML =
     '<option value="">— Select Building —</option>' +
     bldgs.map((b) => `<option value="${b.id}">${b.name}</option>`).join('');
@@ -21486,8 +21494,11 @@ function _autoCreateMeterAndSaveBill(extracted, projId, billRow, preferBldgId) {
   const meterNum = extracted.MeterNumber || '';
   if (!acctNum && !meterNum) return null;
 
-  const udProj = getUDProj(projId);
-  udProj.buildings = udProj.buildings || [];
+  // BLOCKER C fix: the "Unmatched Bills" sentinel building is per-CUSTOMER, not
+  // per-project (point 4) — needs the triggering project's customerId.
+  const _acmProj = (typeof projects !== 'undefined' ? projects : sget('en_projects', [])).find((p) => p.id === projId);
+  const _acmCustomerId = _acmProj ? _acmProj.customerId || 'cust_' + _acmProj.id : null;
+  const projBldgs = getUDBldgs(projId) || [];
 
   // Step 1: Duplicate guard — check if a meter with this account already exists
   // on any building in the project (handles re-uploads where findMeterMatch missed
@@ -21495,7 +21506,7 @@ function _autoCreateMeterAndSaveBill(extracted, projId, billRow, preferBldgId) {
   const billComm = (extracted.Commodity || '').toLowerCase();
   const acctClean = acctNum.replace(/[\s\-]/g, '').toLowerCase();
   const meterClean = meterNum.replace(/[\s\-]/g, '').toLowerCase();
-  for (const b of udProj.buildings) {
+  for (const b of projBldgs) {
     for (const m of b.meters || []) {
       const ma = (m.account || '').replace(/[\s\-]/g, '').toLowerCase();
       const mm = (m.meter || '').replace(/[\s\-]/g, '').toLowerCase();
@@ -21535,7 +21546,7 @@ function _autoCreateMeterAndSaveBill(extracted, projId, billRow, preferBldgId) {
   let targetBldg = null;
   if (preferBldgId) {
     targetBldg =
-      udProj.buildings.find(function (b) {
+      projBldgs.find(function (b) {
         return String(b.id) === String(preferBldgId);
       }) || null;
   }
@@ -21543,7 +21554,7 @@ function _autoCreateMeterAndSaveBill(extracted, projId, billRow, preferBldgId) {
   if (!targetBldg && svcAddr) {
     let bestScore = 0;
     let bestBldg = null;
-    for (const b of udProj.buildings) {
+    for (const b of projBldgs) {
       const score = _addressSimilarity(svcAddr, b.addr || '');
       if (score > bestScore) {
         bestScore = score;
@@ -21573,8 +21584,11 @@ function _autoCreateMeterAndSaveBill(extracted, projId, billRow, preferBldgId) {
   }
 
   if (!targetBldg) {
-    // Find or create a single "Unmatched Bills" sentinel building for this project
-    targetBldg = udProj.buildings.find((b) => b._unmatchedSentinel === true);
+    // BLOCKER C fix point 4: "Unmatched Bills" sentinel is per-CUSTOMER, not
+    // per-project — found/created via getCustomerBuildings, same as every other
+    // customer-wide surface (picker, management view).
+    const custBldgs = _acmCustomerId ? getCustomerBuildings(_acmCustomerId) : projBldgs;
+    targetBldg = custBldgs.find((b) => b._unmatchedSentinel === true);
     if (!targetBldg) {
       targetBldg = {
         id: 'b' + Date.now(),
@@ -21586,7 +21600,19 @@ function _autoCreateMeterAndSaveBill(extracted, projId, billRow, preferBldgId) {
         meters: [],
         _unmatchedSentinel: true,
       };
-      udProj.buildings.push(targetBldg);
+      if (_acmCustomerId) addUDBldg(_acmCustomerId, targetBldg);
+      else projBldgs.push(targetBldg);
+    }
+    // Make the sentinel (new or existing) visible in THIS project's scope right
+    // away — it was created/found while processing an upload through this
+    // project's flow, so it must show up here without a reload (Write-site fix).
+    if (_acmProj) {
+      _acmProj.scope = _acmProj.scope || { buildingIds: [], meterExcludeIds: [] };
+      if (!Array.isArray(_acmProj.scope.buildingIds)) _acmProj.scope.buildingIds = [];
+      if (!_acmProj.scope.buildingIds.includes(targetBldg.id)) {
+        _acmProj.scope.buildingIds.push(targetBldg.id);
+        sset('en_projects', typeof projects !== 'undefined' ? projects : sget('en_projects', []));
+      }
     }
   }
 
@@ -21633,7 +21659,8 @@ function _autoCreateMeterAndSaveBill(extracted, projId, billRow, preferBldgId) {
     meter: meterNum,
     maddr: svcAddr,
     inclusive: false,
-    baselineInclude: true,
+    // The legacy meter-level include flag no longer exists (BLOCKER 1 fix) — default-included is the
+    // no-entry state in project.scope.meterExcludeIds; no entry needed here.
     billUnit: '',
     displayUnit: '',
     bills: [],
@@ -21891,7 +21918,6 @@ async function _saveSinglePDFBill(extracted, projId) {
   let _landedDest = ''; // "Project → Building → meter" label of where the bill actually landed
   try {
     if (proj) {
-      const udProj = getUDProj(proj.id);
       const billComm = (extracted.Commodity || '').toLowerCase();
       // First try: match by account or meter number (most precise).
       // Fix 3 (item 63e43cab, ballfields-match-gates 2026-08-31): this used to be
@@ -21917,7 +21943,12 @@ async function _saveSinglePDFBill(extracted, projId) {
       let targetBldg = null;
       if (acctClean || meterClean) {
         const _fm = findMeterMatch(extracted);
-        if (_fm && _fm.matchType === 'identity' && _fm.projId === proj.id && _fm.meter && _fm.bldg) {
+        // BLOCKER C fix: compare customerId, not projId — the match's building/meter is
+        // customer-shared, so it's valid for the selected project whenever it's the SAME
+        // customer, not only when it happens to equal findMeterMatch's representative
+        // project id (see findMeterMatch's final-return comment).
+        const _fmCustomerId = proj.customerId || 'cust_' + proj.id;
+        if (_fm && _fm.matchType === 'identity' && _fm.customerId === _fmCustomerId && _fm.meter && _fm.bldg) {
           targetMeter = _fm.meter;
           targetBldg = _fm.bldg;
           const mComm = (targetMeter.commodity || '').toLowerCase();
@@ -22148,8 +22179,7 @@ function pdfUpdateBldgMeterOpts() {
   bldgSel.innerHTML = '<option value="">Auto-detect building</option>';
   meterSel.innerHTML = '<option value="">Auto-detect meter</option>';
   if (!projId) return;
-  const ud = getUDProj(projId);
-  (ud.buildings || []).forEach((b) => {
+  (getUDBldgs(projId) || []).forEach((b) => {
     bldgSel.innerHTML += '<option value="' + b.id + '">' + (b.name || b.id) + '</option>';
   });
 }
@@ -22200,8 +22230,7 @@ function pdfBannerUpdateBldgOpts() {
   bldgSel.innerHTML = '<option value="">— Building —</option>';
   meterSel.innerHTML = '<option value="">— Meter —</option>';
   if (!projId) return;
-  const ud = getUDProj(projId);
-  (ud.buildings || []).forEach((b) => {
+  (getUDBldgs(projId) || []).forEach((b) => {
     bldgSel.innerHTML += '<option value="' + b.id + '">' + (b.name || b.id) + '</option>';
   });
   if (_autoAssignTarget && _autoAssignTarget.projId === projId && _autoAssignTarget.bldgId) {

@@ -166,7 +166,7 @@ function _pvRenderBldgPerf(b, projId) {
   if (annBase === 0) return '';
   var actualSavByCalMo = {};
   (b.meters || []).forEach(function (m) {
-    if (m.baselineInclude === false) return;
+    if (isBaselineExcluded(projId, m.id)) return;
     if (!(m.baseline && m.baseline.months && m.baseline.months.length >= 3)) return;
     var mbills = (m.bills || []).slice().sort(function (a, c) {
       return _parseISO(a.start) - _parseISO(c.start);
@@ -301,7 +301,7 @@ function _pvRenderProjPerf(bldgs, projId) {
   var actSavByMo = {};
   bldgs.forEach(function (b) {
     (b.meters || []).forEach(function (m) {
-      if (m.baselineInclude === false) return;
+      if (isBaselineExcluded(projId, m.id)) return;
       var bl = m.baseline;
       if (!bl || !bl.months || bl.months.length < 3) return;
       var bills = (m.bills || []).slice().sort(function (a, c) {
@@ -420,7 +420,7 @@ function egfxRenderPerfVerify(projId) {
       return _commOrder.indexOf(a.commodity) - _commOrder.indexOf(b.commodity);
     });
     sortedMeters.forEach(function (m) {
-      if (m.baselineInclude === false) return;
+      if (isBaselineExcluded(projId, m.id)) return;
       if (!isCalcCommodity(projId, m.commodity)) return;
       var bl = m.baseline;
       if (!bl || !bl.months || bl.months.length < 3) return;
@@ -511,7 +511,7 @@ function egfxRefresh(projId) {
         kwCount: new Array(12).fill(0),
       };
     (b.meters || []).forEach((m) => {
-      if (m.baselineInclude === false) return;
+      if (isBaselineExcluded(projId, m.id)) return;
       if (!isCalcCommodity(projId, m.commodity)) return;
       const isElec = m.commodity === 'Electric';
       const isGas = m.commodity === 'Gas';
@@ -652,7 +652,7 @@ function egfxRefresh(projId) {
       wByYm[r.ym] = r;
     });
     (b.meters || []).forEach((m) => {
-      if (m.commodity !== 'Propane' || m.baselineInclude === false) return;
+      if (m.commodity !== 'Propane' || isBaselineExcluded(projId, m.id)) return;
       if (!isCalcCommodity(projId, m.commodity)) return;
       const bills = (m.bills || []).filter((b) => b.start);
       if (!bills.length) return;
@@ -720,7 +720,7 @@ function egfxRefresh(projId) {
   const _kwNormByYm = {}; // project-level: YYYY-MM -> sum of CDD-regression-predicted kW across meters
   bldgs.forEach((b) => {
     (b.meters || []).forEach((m) => {
-      if (m.baselineInclude === false) return;
+      if (isBaselineExcluded(projId, m.id)) return;
       if (!isCalcCommodity(projId, m.commodity)) return;
       const bl = m.baseline;
       if (!bl || !bl.months || bl.months.length < 3) return;
@@ -941,7 +941,7 @@ function egfxRefresh(projId) {
   const egfxCostSavedByCommodity = { Electric: 0, Gas: 0, Propane: 0 };
   bldgs.forEach((b) => {
     (b.meters || []).forEach((m) => {
-      if (m.baselineInclude === false) return;
+      if (isBaselineExcluded(projId, m.id)) return;
       if (!isCalcCommodity(projId, m.commodity)) return;
       const bl = m.baseline;
       if (!bl || !bl.months || bl.months.length < 3) return;
@@ -986,7 +986,7 @@ function egfxRefresh(projId) {
     let _egfxHasSrc = false;
     bldgs.forEach((b) => {
       const _bMeters = b.meters || [];
-      if (_bMeters.length > 0 && _bMeters.every((m) => m.baselineInclude === false)) return;
+      if (_bMeters.length > 0 && _bMeters.every((m) => isBaselineExcluded(projId, m.id))) return;
       const msrSav = getBldgMeasureSavingsByMo(projId, b.id);
       if (msrSav) {
         _egfxHasSrc = true;
@@ -1442,7 +1442,7 @@ function egfxRefresh(projId) {
   if (hasPropane) {
     bldgs.forEach((b) => {
       (b.meters || []).forEach((m) => {
-        if (m.commodity !== 'Propane' || m.baselineInclude === false) return;
+        if (m.commodity !== 'Propane' || isBaselineExcluded(projId, m.id)) return;
         const bl = m.baseline;
         if (!bl || !bl.months || bl.months.length < 3) return;
         const mBills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
@@ -1899,8 +1899,13 @@ function egfxRefresh(projId) {
               </div>
             </div>`;
     })()}${(() => {
-      // Energy Plan — read-only text panel from utilityData[pid].energyPlan (Talisen source)
-      const plan = (utilityData[projId] || {}).energyPlan;
+      // Energy Plan — read-only text panel. Field relocation (2026-09-24): energyPlan now
+      // lives on the project record (project.energyPlan), not the shared customer blob —
+      // it's a per-project setting, not a customer/building fact (Talisen source).
+      const _egProj = (typeof projects !== 'undefined' ? projects : sget('en_projects', [])).find(
+        (p) => p.id === projId,
+      );
+      const plan = _egProj ? _egProj.energyPlan : null;
       if (!plan || !plan.text) return '';
       return `<div class="card" style="background:var(--s1);padding:14px;margin-top:12px;border-left:3px solid var(--teal)">
               <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:4px">📋 Energy Management Plan</div>

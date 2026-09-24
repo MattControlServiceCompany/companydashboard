@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.24.4'; // BAS Savings Calc, project header, and user chip now spell out labels site-wide, and the same fix covers the ECM calculator, Site Energy Use Intensity column headers, and a few other pages
+  var CH_VERSION = 'v2026.09.24.6'; // The Backup button now waits for your data to finish loading before it downloads, so a backup taken right after opening the page no longer comes out with the bills and utility data missing
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

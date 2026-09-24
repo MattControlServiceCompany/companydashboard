@@ -1085,7 +1085,41 @@ async function compactPdfStorageUI() {
   console.log('[compactPdfStorageUI] result:', result);
 }
 
+// The sidebar Backup button renders (and is clickable) before DB.warmCache()
+// resolves — .content is hidden behind .app-ready, but the sidebar is not.
+// Clicking Backup during that window used to hit the DB.isReady() === false
+// branch below and silently write a backup with an empty IndexedDB section:
+// zero bills, empty utility data, no error, no warning (2026-09-21 report).
+// Wait for the 'dbReady' (success) or 'dbLoadFailed' (fallback) event db.js
+// fires at the end of warmCache() before reading DB.getAll(), with a safety
+// timeout so a stuck warm-up never hangs the Backup button forever.
+function _waitForDBReadyForBackup(timeoutMs) {
+  return new Promise(function (resolve) {
+    if (typeof DB === 'undefined' || DB.isReady()) {
+      resolve();
+      return;
+    }
+    var done = false;
+    function onReady() {
+      if (done) return;
+      done = true;
+      window.removeEventListener('dbReady', onReady);
+      window.removeEventListener('dbLoadFailed', onReady);
+      resolve();
+    }
+    window.addEventListener('dbReady', onReady);
+    window.addEventListener('dbLoadFailed', onReady);
+    setTimeout(onReady, timeoutMs || 15000);
+  });
+}
+
 async function siteBackup() {
+  // Data isn't loaded into memory yet — wait rather than silently exporting
+  // an empty backup (see _waitForDBReadyForBackup above).
+  if (typeof DB !== 'undefined' && !DB.isReady() && typeof showToast === 'function') {
+    showToast('Waiting for data to finish loading before backing up...');
+  }
+  await _waitForDBReadyForBackup();
   // Get all DB data (IndexedDB-backed)
   var dbData = typeof DB !== 'undefined' && DB.isReady() ? DB.getAll() : {};
   // Also grab any remaining localStorage keys (preferences, settings)
@@ -1741,6 +1775,36 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  {
+    v: 'v2026.09.24.6',
+    date: '2026-09-24',
+    title: 'Backup now waits for your data to finish loading first',
+    items: [
+      {
+        type: 'fix',
+        text: 'If you clicked Backup right after opening the Energy Department page, the downloaded file could come out with the bills and utility data missing, even though nothing was actually lost. Backup now waits for your data to finish loading before it downloads, so the file always has everything you have saved.',
+      },
+    ],
+  },
+  {
+    v: 'v2026.09.24.5',
+    date: '2026-09-24',
+    title: 'Projects can now share a customer, with the utility data staying separate from each project',
+    items: [
+      {
+        type: 'feature',
+        text: 'A project now belongs to a Customer. You can add more than one project under the same customer -- for example a second project for one school inside a district -- and pick which of that customer\'s buildings and meters belong to each project. The "Client" box on the project form is now a Customer list: pick an existing customer or type a new name to create one.',
+      },
+      {
+        type: 'feature',
+        text: 'Buildings, meters, and bills are now shared across every project under the same customer, instead of copied. Add or edit a bill in one project and it shows up right away in any other project that has picked the same building -- the utility data and each project stay separate on purpose.',
+      },
+      {
+        type: 'fix',
+        text: 'Every existing project was set up automatically with its own matching customer, keeping the exact same buildings, meters, and bills it already had. Numbers did not change for any current project.',
+      },
+    ],
+  },
   {
     v: 'v2026.09.24.4',
     date: '2026-09-24',

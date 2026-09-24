@@ -53,9 +53,9 @@ function publishClientPortal(projId) {
   let totalPropaneSaved = 0;
 
   try {
-    const udProj = getUDProj(String(projId));
-    if (udProj && udProj.buildings) {
-      udProj.buildings.forEach((b) => {
+    const _peBldgs = getUDBldgs(String(projId));
+    if (_peBldgs) {
+      _peBldgs.forEach((b) => {
         (b.meters || []).forEach((m) => {
           const bills = (m.bills || []).slice().sort((a, c) => {
             const da = a.start ? new Date(a.start).getTime() : 0;

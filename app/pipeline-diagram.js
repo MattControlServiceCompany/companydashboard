@@ -365,7 +365,6 @@ function _pdNodeDetail(nodeId, m, bills, incl) {
       // Pull savings from energy-savings data if available
       let savHTML = '';
       try {
-        const proj = getUDProj ? getUDProj(udSelProjId) : null;
         const rows = _getRows();
         const bl = m.baseline;
         if (!bl || !bl.months || !bl.months.length) {
