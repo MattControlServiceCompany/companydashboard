@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.24.1'; // Spell out abbreviated UI labels site-wide (BAS Savings Calc, Equipment Matrix, Set Points, utility tables, reports)
+  var CH_VERSION = 'v2026.09.24.3'; // Equipment Matrix: the type filter now lists every type the classifier can produce, and a misspelled point name in the source data no longer sends 5 JOCO points to Other
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

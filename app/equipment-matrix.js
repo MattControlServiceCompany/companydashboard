@@ -98,6 +98,10 @@ var EM_EQUIP_TYPES = {
   'vfd integration': 'controls',
   // Environmental / weather programs
   'environmental index': 'sensor',
+  // 2026-09-24: JOCO's own BAS source data spells this "Enviromental Index" (missing the
+  // second "n") on 5 real points — alias of the entry above so the typo in the user's data
+  // matches too, instead of falling to 'other'. Never edit the user's data; fix the match.
+  'enviromental index': 'sensor',
   'outside air conditions': 'sensor',
   'outiside air conditions': 'sensor',
   'weather station': 'sensor',
@@ -168,7 +172,7 @@ var EM_CATEGORY_LABELS = {
   // M4: New non-HVAC categories to eliminate generic 'other'
   elevator: 'Elevator',
   monitoring: 'Monitoring',
-  security: 'Security / Access',
+  security: 'Security',
   // Utility submeters (Electric/Gas/Water) — own category, NOT scored for ASHRAE 36 compliance.
   // emFormatEquipTypeLabel composes "Meters (Electric)" etc. when subtype is set.
   meter: 'Meters',
@@ -177,13 +181,56 @@ var EM_CATEGORY_LABELS = {
   mau: 'Makeup Air Unit',
   erv: 'Energy Recovery Unit',
   // 28b0c439: VRF outdoor units — own category, NOT scored for ASHRAE 36 compliance
-  vrf: 'VRF Outdoor Unit',
+  vrf: 'Variable Refrigerant Flow',
   // Standalone A/C units (telecom/elevator/data room) — NOT scored for ASHRAE 36 compliance
-  ac: 'A/C',
+  ac: 'Air Conditioning',
   // 3d6d7244 Phase 5: life-safety/shutdown relay equipment (e.g. "Fireman's AHU Shutdown") —
   // own visible category per Matt's 2026-07-03 confirmation, NOT scored for ASHRAE 36 compliance
-  lifesafety: 'Life-Safety / Controls',
+  lifesafety: 'Life Safety',
 };
+
+/* ── EM_TYPE_FILTER_ORDER ──────────────────────────────────────────────────
+   2026-09-24: Curated display order for the "Equipment Type" filter dropdown
+   (emRenderToolbar). Lists ONLY the ordering of keys — every key must exist
+   in EM_CATEGORY_LABELS, which stays the single source of truth for the
+   label TEXT and for the full set of types the classifier can produce. Any
+   category present in EM_CATEGORY_LABELS but missing from this order array
+   still gets appended (see the fallback loop in emRenderToolbar) so the
+   dropdown can never again silently drop a type the classifier emits — the
+   bug this list fixes (elevator/security/lifesafety/vrf/ac were never in
+   the dropdown's old hand-kept option list). */
+var EM_TYPE_FILTER_ORDER = [
+  'rtu',
+  'ahu',
+  'doas',
+  'mau',
+  'erv',
+  'vav',
+  'fpb',
+  'ddvav',
+  'zone',
+  'furnace',
+  'fcu',
+  'heater',
+  'ef',
+  'vrf',
+  'ac',
+  'hwp',
+  'chwp',
+  'ct',
+  'lighting',
+  'meter',
+  'fire',
+  'power',
+  'plumbing',
+  'controls',
+  'sensor',
+  'elevator',
+  'security',
+  'lifesafety',
+  'monitoring',
+  'other',
+];
 
 /* ── emFormatEquipTypeLabel ──────────────────────────────────────────────────
    9018b1c6: Returns the human-readable Equipment Type label for a row object.
@@ -3574,7 +3621,16 @@ function emLoadMatrix(projId) {
   // Back-compat shim (M2): the identity column key was renamed from 'equipType' to 'category'.
   // Pre-M2 stored rows that have equipType but no category will show '--' in the Equipment Type
   // column without this shim.  Patch at load time so no migration is needed.
-  if (_emData && _emData.rows) {
+  // Performance (2026-09-23, fix/em-render-performance): this entire block (back-compat shim +
+  // Pass 0/A/B/C self-heal + hwp stale-row shim) is idempotent in-memory mutation against data
+  // that only changes via emSaveMatrix — see _emSelfHealDone's declaration. Skip it once it has
+  // already run for this projId's current data; emSaveMatrix clears the flag so the very next
+  // load after a real write reruns it exactly once. Measured: at JOCO's 2,721-row scale this
+  // self-heal pass (emClassifyEquipType/emVerifyTypeByPoints, run up to 3x per row) previously
+  // re-ran on EVERY view switch and filter change (every one of them calls emLoadMatrix), not
+  // just on data change — this cache makes emLoadMatrix itself go from ~80-200ms to <1ms on the
+  // 2nd+ call for the same unchanged data.
+  if (_emData && _emData.rows && !_emSelfHealDone[projId]) {
     for (var _bci = 0; _bci < _emData.rows.length; _bci++) {
       var _bcrow = _emData.rows[_bci];
       if (_bcrow && (!_bcrow.category || _bcrow.category === '') && _bcrow.equipType) {
@@ -3734,6 +3790,7 @@ function emLoadMatrix(projId) {
         continue;
       }
     }
+    _emSelfHealDone[projId] = true;
   }
   // space-type-classifier-2026-07-29: rebuild the row-lookup cache for this project from
   // the (possibly just self-healed) row set, so it can never go stale — same lifetime as
@@ -3761,6 +3818,10 @@ function emSaveMatrix(projId, data) {
   // Invalidate the dynPoint frequency cache — data rows have changed.
   _emDynPointFreqCache = null;
   _emDynPointFreqCacheKey = null;
+  // Performance (2026-09-23): force emLoadMatrix's self-heal pass to rerun exactly once on the
+  // next load for this project — see _emSelfHealDone's declaration for why a save (not object
+  // identity) is the correct invalidation signal.
+  delete _emSelfHealDone[projId];
   // sset() returns a Promise that resolves on IDB tx.oncomplete (real commit).
   // Callers that need write durability (e.g. emHandleImport) should await this.
   return sset('en_eqmatrix_' + projId, data);
@@ -3880,6 +3941,19 @@ var _emSeqUnchecked = new Set(); // rowIds explicitly excluded from the current 
 var _emSeqLastKey = ''; // building+'|'+category, used to detect a scope change and reset _emSeqUnchecked
 var _emSeqListenersAttached = false;
 var _emZoomLevel = 100; // zoom percentage, 50–150
+// Performance (2026-09-23, fix/em-render-performance): emLoadMatrix's self-heal pass (Pass
+// 0/A/B/C name+point-evidence reclassification + the hwp stale-row shim) runs
+// emClassifyEquipType/emVerifyTypeByPoints across every row with points — at JOCO's 2,721-row
+// scale this ran on EVERY view switch and filter change (every one of those call sites calls
+// emLoadMatrix fresh), not just when data changed. sget()/DB.get() returns the SAME in-memory
+// object reference on every call until the next emSaveMatrix() write, so re-running identical
+// classification against an identical object is pure waste once already healed. Keyed per-projId
+// (not a single WeakSet on the data object) because emSaveMatrix is frequently called with the
+// SAME object reference it loaded (in-place row mutation + save-back is the dominant caller
+// pattern) — object identity alone can't be trusted to signal "changed". emSaveMatrix explicitly
+// clears the entry for the saved projId, forcing exactly one full self-heal on the next load
+// after any real data change (import, edit, add/delete row, merge).
+var _emSelfHealDone = {}; // projId -> true once self-heal has run against the current in-memory data
 var _emComplianceCache = {}; // Performance: module-level compliance result cache, keyed by row.id
 // space-type-classifier-2026-07-29: projId -> {rowId: row} lookup, rebuilt on every
 // emLoadMatrix call (see emLoadMatrix's return path) so emLoadEquipConfigFlags — which
@@ -3903,6 +3977,12 @@ var _emDynPointFreqCacheKey = null;
 // Render-generation counter — incremented on every emRenderTable call so async
 // chunked render batches can detect a stale render and self-cancel.
 var _emRenderGen = 0;
+// Performance (2026-09-23, fix/em-render-performance): the IntersectionObserver driving Raw
+// View's lazy row-append virtualization (see emRenderTable's large-table branch). Module-level
+// so each new render disconnects whatever observer the PREVIOUS render left running — otherwise
+// switching views/filters mid-scroll would leave a stale observer appending rows into a torn-down
+// table.
+var _emRowAppendObserver = null;
 function emDebouncedSearch() {
   clearTimeout(_emSearchTimer);
   _emSearchTimer = setTimeout(emApplyFilters, 200);
@@ -3968,31 +4048,64 @@ function emInjectMatrixCSS() {
     '.em-table-wrap::-webkit-scrollbar { height: 14px; width: 14px; }',
     '.em-table-wrap::-webkit-scrollbar-thumb { background: var(--s4); border-radius: 7px; border: 3px solid var(--s2); }',
     '.em-table-wrap::-webkit-scrollbar-track { background: var(--s1); }',
-    // All cells get right + bottom borders for a full grid
-    '.em-table-wrap td, .em-table-wrap th { border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); }',
-    // Frozen column base styles — left: values are set dynamically by emUpdateStickyOffsets()
-    '.em-table-wrap td.em-frozen, .em-table-wrap th.em-frozen { position: sticky; background: var(--s2); z-index: 10; }',
-    // Frozen header corners need higher z-index so they sit above both sticky header and sticky column
-    '.em-table-wrap thead th.em-frozen { z-index: 12; }',
+    // All cells get right + bottom borders for a full grid, and middle vertical alignment —
+    // moved here from a per-cell inline style (see the .em-mono/.em-cell-empty/.em-cell-edited
+    // classes below and their 2026-09-23 comment) so every data cell no longer repeats this
+    // same three-declaration string in its own inline style attribute.
+    '.em-table-wrap td, .em-table-wrap th { border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); vertical-align: middle; }',
+    // Performance (2026-09-23, fix/em-render-performance): Raw/Audit View data-cell modifier
+    // classes. A CPU profile of a 3,000-row synthetic render (real JOCO scale) found that ~88%
+    // of the ~50-100s render time was native browser "(program)" work — NOT any JS function —
+    // traced to insertAdjacentHTML/innerHTML parsing hundreds of thousands of <td> elements that
+    // each carried a fully-spelled-out inline style="..." attribute (border-bottom, border-right,
+    // vertical-align, repeated identically on nearly every one of ~435,000 cells at that scale).
+    // Parsing a unique inline style string per element is measurably far more expensive for the
+    // browser than matching a small, finite set of shared class names against pre-parsed CSS
+    // rules. These 3 classes replace the per-cell inline style string entirely (build path in
+    // _buildOneRowHtml/emRenderAuditCell now emits class="em-mono em-cell-empty" etc., only for
+    // whichever modifiers actually apply — most cells get zero extra classes beyond the base
+    // td rule above).
+    '.em-mono { font-family: Consolas, monospace; font-size: 10px; }',
+    '.em-cell-empty { color: var(--text3); }',
+    '.em-cell-edited { background: #fffde7; border-left: 3px solid var(--em); }',
+    // Frozen-column sticky rules (per-column left: values, keyed by column position) are
+    // injected into a SEPARATE #em-sticky-col-style tag by emUpdateStickyOffsets() — see that
+    // function's comment (2026-09-23, fix/em-render-performance) for why: a JS loop that
+    // classList.add()'d + inline-styled thousands of individual row cells was measured as the
+    // single largest cost in the Equipment Matrix's render time at JOCO's 2,721-row scale.
     // Non-frozen headers stay at z-index 11 (above body, horizontally scrollable)
     '.em-table-wrap thead th { position: sticky; top: 0; background: var(--s2); z-index: 11; }',
     // Handle-div resize pattern — th must be relative so the handle can position absolutely
     '.em-table-wrap th { position: relative; }',
     '.em-col-resize-handle { position:absolute; right:0; top:0; width:6px; height:100%; cursor:col-resize; z-index:1; }',
     '.em-col-resize-handle:hover, .em-col-resize-handle.dragging { background: var(--accent); opacity:0.4; }',
-    // Footer frozen cells keep the table-body background, not the header background
-    '.em-table-wrap tfoot td.em-frozen { background: var(--s1) !important; }',
   ].join('\n');
   document.head.appendChild(style);
 }
 
 /**
- * emUpdateStickyOffsets — Computes and sets inline left: positions on the 3 frozen columns.
+ * emUpdateStickyOffsets — Freezes the leading 3 (or 4, in edit mode) columns in place via a
+ * single injected <style> rule set, keyed by column position (nth-child), instead of looping
+ * over every row and mutating each cell's class/inline style individually.
  * Called after every table render and after column resize. Handles edit mode (extra delete col).
  *
  * In normal mode: columns 0, 1, 2 (Building, Floor, Equipment) are frozen.
  * In edit mode: column 0 is the delete button; columns 1, 2, 3 (Building, Floor, Equipment) are frozen.
  * We freeze whichever columns those are (always 3 data columns + delete button if present).
+ *
+ * Performance (2026-09-23, fix/em-render-performance): the previous implementation looped over
+ * EVERY row (thead + tbody + tfoot — thousands of rows at JOCO's 2,721-row scale) and called
+ * classList.add('em-frozen') + set .style.left on each of the leading 3-4 cells per row. That is
+ * thousands of individual position:sticky elements each mutated in a tight synchronous JS loop —
+ * measured (via function-level timing instrumentation against a 3,000-row synthetic fixture) at
+ * several SECONDS per call, the single largest component of the ~80-100s pre-fix Raw View render
+ * time — well ahead of the actual classification/formatting work. A row/column position never
+ * needs a DIFFERENT left: offset than its neighbors in the same column, so this is pure declarative
+ * CSS: one nth-child rule per frozen column index (only 3-4 total, not one per row) achieves the
+ * identical visual result — thead/tbody/tfoot rows all emit exactly one <td>/<th> per column with
+ * no colspan merging in the frozen region (verified against buildAvgFooterRow, buildAuditFooterRow,
+ * _buildOneRowHtml, and the Raw/Audit header builders), so a positional selector lines up correctly
+ * with the pixel offsets read from the header row.
  */
 function emUpdateStickyOffsets() {
   var wrap = document.getElementById('em-table-wrap');
@@ -4011,39 +4124,48 @@ function emUpdateStickyOffsets() {
   // Number of frozen columns: always 3 data columns. In edit mode, also freeze the delete col.
   var frozenCount = hasDelCol ? 4 : 3;
 
-  // Collect all rows (thead + tbody + tfoot)
-  var allRows = [];
-  var theadRows = table.querySelectorAll('thead tr');
-  var tbodyRows = table.querySelectorAll('tbody tr');
-  var tfootRows = table.querySelectorAll('tfoot tr');
-  for (var i = 0; i < theadRows.length; i++) allRows.push(theadRows[i]);
-  for (var j = 0; j < tbodyRows.length; j++) allRows.push(tbodyRows[j]);
-  for (var k = 0; k < tfootRows.length; k++) allRows.push(tfootRows[k]);
-
-  if (allRows.length === 0) return;
-
-  // Read actual cell widths from first row to compute cumulative offsets
-  var firstRow = allRows[0];
+  // Read actual cell widths from the HEADER row only (a handful of reads, not one per data row)
+  // to compute cumulative left: offsets.
+  var refRow = table.querySelector('thead tr') || table.querySelector('tbody tr') || table.querySelector('tfoot tr');
+  if (!refRow) return;
   var offsets = [0]; // offsets[n] = left position for column n
   for (var c = 0; c < frozenCount - 1; c++) {
-    var cell = firstRow.cells[c];
+    var cell = refRow.cells[c];
     if (!cell) break;
     offsets.push(offsets[c] + cell.offsetWidth);
   }
 
-  // Apply frozen class and left: style to every row
-  for (var r = 0; r < allRows.length; r++) {
-    var row = allRows[r];
-    var isHeadRow = row.parentNode && row.parentNode.nodeName === 'THEAD';
-    for (var col = 0; col < frozenCount; col++) {
-      var td = row.cells[col];
-      if (!td) continue;
-      td.classList.add('em-frozen');
-      td.style.left = (offsets[col] || 0) + 'px';
-      // Ensure top:0 on header frozen cells
-      if (isHeadRow) td.style.top = '0px';
-    }
+  var styleEl = document.getElementById('em-sticky-col-style');
+  if (!styleEl) {
+    styleEl = document.createElement('style');
+    styleEl.id = 'em-sticky-col-style';
+    document.head.appendChild(styleEl);
   }
+  var css = '';
+  for (var col = 0; col < frozenCount; col++) {
+    var left = offsets[col] || 0;
+    var n = col + 1; // nth-child is 1-based
+    // Header corner cells: higher z-index (12) so they sit above both the sticky top header
+    // row (z-index 11) and the sticky body/footer columns (z-index 10) at their intersection.
+    css +=
+      '#em-table-wrap table thead tr > *:nth-child(' +
+      n +
+      ') { position:sticky; left:' +
+      left +
+      'px; background:var(--s2); z-index:12; }' +
+      '#em-table-wrap table tbody tr > *:nth-child(' +
+      n +
+      ') { position:sticky; left:' +
+      left +
+      'px; background:var(--s2); z-index:10; }' +
+      // Footer frozen cells keep the table-body background, not the header background.
+      '#em-table-wrap table tfoot tr > *:nth-child(' +
+      n +
+      ') { position:sticky; left:' +
+      left +
+      'px; background:var(--s1) !important; z-index:10; }';
+  }
+  styleEl.textContent = css;
 }
 
 function emRenderMatrix(container, data, pid) {
@@ -4254,7 +4376,22 @@ function emCalcSummaryStats(rows) {
   var _hvacNewTypes = { doas: 0, fcu: 0, heater: 0, ef: 0, furnace: 0, zone: 0, mau: 0, erv: 0 };
   // 2026-09-23: 'meter'/'monitoring' added so the Raw View "Equipment Breakdown" pills
   // (emUpdateStatsPillsForRaw) can show Meters/Monitoring counts.
-  var _nonHvacTypes = { fire: 0, power: 0, plumbing: 0, controls: 0, sensor: 0, meter: 0, monitoring: 0 };
+  // 2026-09-24: 'elevator'/'security'/'lifesafety'/'vrf'/'ac' added — these were classifier
+  // output categories that never had a Raw View breakdown pill (or a dropdown option).
+  var _nonHvacTypes = {
+    fire: 0,
+    power: 0,
+    plumbing: 0,
+    controls: 0,
+    sensor: 0,
+    meter: 0,
+    monitoring: 0,
+    elevator: 0,
+    security: 0,
+    lifesafety: 0,
+    vrf: 0,
+    ac: 0,
+  };
   // 9018b1c6: subtype counts (additive; ahu base count still accumulates all ahu-category rows)
   var _subtypeCounts = { 'sz-rtu': 0, 'vav-rtu': 0, 'mtz-rtu': 0, 'sz-ahu': 0, 'vav-ahu': 0, 'mtz-ahu': 0 };
   for (var i = 0; i < rows.length; i++) {
@@ -4309,6 +4446,11 @@ function emCalcSummaryStats(rows) {
     sensor: _nonHvacTypes.sensor,
     meter: _nonHvacTypes.meter,
     monitoring: _nonHvacTypes.monitoring,
+    elevator: _nonHvacTypes.elevator,
+    security: _nonHvacTypes.security,
+    lifesafety: _nonHvacTypes.lifesafety,
+    vrf: _nonHvacTypes.vrf,
+    ac: _nonHvacTypes.ac,
     subtypes: _subtypeCounts,
   };
 }
@@ -4555,39 +4697,38 @@ function emRenderToolbar(data, pid, projBadge) {
     bldgOpts +=
       '<option value="' + buildings[i].replace(/"/g, '&quot;') + '">' + buildings[i] + ' (' + bCount + ')</option>';
   }
-  var typeOpts =
-    '<option value="">All Types</option>' +
-    '<option value="rtu">RTU</option>' +
-    '<option value="sz-rtu">  SZ-RTU</option>' +
-    '<option value="vav-rtu">  VAV-RTU</option>' +
-    '<option value="mtz-rtu">  MTZ-RTU</option>' +
-    '<option value="ahu">AHU</option>' +
-    '<option value="sz-ahu">  SZ-AHU</option>' +
-    '<option value="vav-ahu">  VAV-AHU</option>' +
-    '<option value="mtz-ahu">  MTZ-AHU</option>' +
-    '<option value="doas">DOAS / ERV</option>' +
-    '<option value="mau">Makeup Air Unit</option>' +
-    '<option value="erv">Energy Recovery Unit</option>' +
-    '<option value="vav">VAV</option>' +
-    '<option value="fpb">FPB</option>' +
-    '<option value="ddvav">DD-VAV</option>' +
-    '<option value="zone">VVT Zone</option>' +
-    '<option value="furnace">Furnace / VVT</option>' +
-    '<option value="fcu">Fan Coil / VRF</option>' +
-    '<option value="heater">Unit Heater</option>' +
-    '<option value="ef">Exhaust Fan</option>' +
-    '<option value="hwp">HW Plant</option>' +
-    '<option value="chwp">CHW Plant</option>' +
-    '<option value="ct">Cooling Tower</option>' +
-    '<option value="lighting">Lighting</option>' +
-    '<option value="meter">Meters</option>' +
-    '<option value="fire">Fire / Smoke</option>' +
-    '<option value="power">Power / Gen</option>' +
-    '<option value="plumbing">Plumbing</option>' +
-    '<option value="controls">Controls / VFD</option>' +
-    '<option value="sensor">Sensor / Weather</option>' +
-    '<option value="monitoring">Monitoring</option>' +
-    '<option value="other">Other</option>';
+  // 2026-09-24: dropdown options are DERIVED from EM_CATEGORY_LABELS (the classifier's full
+  // output list), ordered by EM_TYPE_FILTER_ORDER — not a second hand-kept option list. This
+  // closes the gap where elevator/security/lifesafety/vrf/ac were classifier outputs that had
+  // never been added to this dropdown. The RTU/AHU subtype rows (sz-/vav-/mtz-) are inserted
+  // right after their parent category — they are row.subtype composites, not categories in
+  // EM_CATEGORY_LABELS, so they stay explicit here (see emFilterRows for their match logic).
+  var typeOpts = '<option value="">All Types</option>';
+  var _emTypeSeen = {};
+  for (var _ti = 0; _ti < EM_TYPE_FILTER_ORDER.length; _ti++) {
+    var _tKey = EM_TYPE_FILTER_ORDER[_ti];
+    if (!EM_CATEGORY_LABELS.hasOwnProperty(_tKey) || _emTypeSeen[_tKey]) continue;
+    _emTypeSeen[_tKey] = true;
+    typeOpts += '<option value="' + _tKey + '">' + EM_CATEGORY_LABELS[_tKey] + '</option>';
+    if (_tKey === 'rtu') {
+      typeOpts +=
+        '<option value="sz-rtu">  SZ-RTU</option>' +
+        '<option value="vav-rtu">  VAV-RTU</option>' +
+        '<option value="mtz-rtu">  MTZ-RTU</option>';
+    } else if (_tKey === 'ahu') {
+      typeOpts +=
+        '<option value="sz-ahu">  SZ-AHU</option>' +
+        '<option value="vav-ahu">  VAV-AHU</option>' +
+        '<option value="mtz-ahu">  MTZ-AHU</option>';
+    }
+  }
+  // Future-proofing: any classifier category not yet in the curated order still appears here,
+  // so a newly added classifier output can never again be silently missing from the dropdown.
+  for (var _ck in EM_CATEGORY_LABELS) {
+    if (EM_CATEGORY_LABELS.hasOwnProperty(_ck) && !_emTypeSeen[_ck]) {
+      typeOpts += '<option value="' + _ck + '">' + EM_CATEGORY_LABELS[_ck] + '</option>';
+    }
+  }
   var colToggleStyle =
     'display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--text2);cursor:pointer;padding:2px 6px;border-radius:3px;border:1px solid var(--border);background:var(--s2);user-select:none';
   var colToggles =
@@ -5417,6 +5558,8 @@ function emUpdateStatsPillsForRaw(rows, totalBASPoints) {
     (stats.fcu ? emStatPillCompact('Fan Coil', stats.fcu) : '') +
     (stats.heater ? emStatPillCompact('Heater', stats.heater) : '') +
     (stats.ef ? emStatPillCompact('Exh Fan', stats.ef) : '') +
+    (stats.vrf ? emStatPillCompact(EM_CATEGORY_LABELS.vrf, stats.vrf) : '') +
+    (stats.ac ? emStatPillCompact(EM_CATEGORY_LABELS.ac, stats.ac) : '') +
     emStatPillCompact('Plants', stats.plants) +
     (stats.lighting ? emStatPillCompact('Lighting', stats.lighting) : '') +
     (stats.meter ? emStatPillCompact('Meters', stats.meter) : '') +
@@ -5425,6 +5568,9 @@ function emUpdateStatsPillsForRaw(rows, totalBASPoints) {
     (stats.plumbing ? emStatPillCompact('Plumbing', stats.plumbing) : '') +
     (stats.controls ? emStatPillCompact('Controls', stats.controls) : '') +
     (stats.sensor ? emStatPillCompact('Sensors', stats.sensor) : '') +
+    (stats.elevator ? emStatPillCompact(EM_CATEGORY_LABELS.elevator, stats.elevator) : '') +
+    (stats.security ? emStatPillCompact(EM_CATEGORY_LABELS.security, stats.security) : '') +
+    (stats.lifesafety ? emStatPillCompact(EM_CATEGORY_LABELS.lifesafety, stats.lifesafety) : '') +
     (stats.monitoring ? emStatPillCompact('Monitoring', stats.monitoring) : '') +
     (stats.other ? emStatPillCompact('Other', stats.other) : '') +
     emStatPillCompact('Has Data', stats.live) +
@@ -6565,6 +6711,12 @@ function _emAttachNavDelegatedListeners() {
 
 function emRenderTable(data, filters) {
   _emAttachNavDelegatedListeners();
+  // Performance (2026-09-23, fix/em-render-performance): increment the render-generation
+  // counter here, BEFORE routing to any view — both emRenderTable's own Raw View lazy-append
+  // loop AND emRenderAuditTable's lazy-append loop check this so switching views mid-lazy-load
+  // reliably cancels the stale one's IntersectionObserver instead of appending rows into a
+  // table that's since been torn down and replaced.
+  _emRenderGen++;
   // Route to audit renderer when in audit view mode
   if (_emViewMode === 'audit') {
     emRenderAuditTable(data, filters);
@@ -6786,9 +6938,9 @@ function emRenderTable(data, filters) {
   var _projectedCells = pageRows.length * defs.length;
   var _useChunked = _projectedCells > 5000;
 
-  // Increment render generation so any in-flight async render from a previous call
-  // can self-cancel when it wakes up and sees a stale generation number.
-  _emRenderGen++;
+  // Render-generation snapshot so any in-flight async render from a previous call can
+  // self-cancel when it wakes up and sees a stale generation number (incremented once at the
+  // top of emRenderTable, before routing — see that comment).
   var _thisGen = _emRenderGen;
 
   // Helper: build HTML string for one table row (closes over outer-scope state).
@@ -6833,30 +6985,31 @@ function emRenderTable(data, filters) {
       var rawVal = emGetCellValByDef(row, def, edits);
       var isEmpty = rawVal === null || rawVal === undefined || rawVal === '';
       var displayVal = emFormatCell(rawVal, def, row); // 9018b1c6: pass row for subtype label
-      var cellStyle =
-        'border-bottom:1px solid var(--border);border-right:1px solid var(--border);vertical-align:middle;' +
-        (def.isLive ? 'font-family:Consolas,monospace;font-size:10px;' : '') +
-        (def.isDynPoint ? 'font-family:Consolas,monospace;font-size:10px;' : '') +
-        (isEmpty ? 'color:var(--text3);' : '') +
-        (isEdited ? 'background:#fffde7;border-left:3px solid var(--em);' : '');
+      // Performance (2026-09-23, fix/em-render-performance): class list instead of a fully
+      // spelled-out inline style string — see the .em-mono/.em-cell-empty/.em-cell-edited
+      // comment in emInjectMatrixCSS for why. Border/vertical-align now come from the shared
+      // `.em-table-wrap td` rule, not repeated here.
+      var cellClass =
+        (def.isLive || def.isDynPoint ? ' em-mono' : '') +
+        (isEmpty ? ' em-cell-empty' : '') +
+        (isEdited ? ' em-cell-edited' : '');
+      var cellClassAttr = cellClass ? ' class="' + cellClass.slice(1) + '"' : '';
       if (_emEditMode) {
         cells +=
-          '<td contenteditable="true" ' +
-          'onblur="emHandleCellEdit(\'' +
+          '<td contenteditable="true"' +
+          cellClassAttr +
+          ' onblur="emHandleCellEdit(\'' +
           rowId.replace(/'/g, "\\'") +
           "','" +
           def.key.replace(/'/g, "\\'") +
-          '\',this.textContent)" ' +
-          'style="' +
-          cellStyle +
-          '">' +
+          '\',this.textContent)">' +
           displayVal +
           '</td>';
       } else {
-        cells += '<td style="' + cellStyle + '">' + displayVal + '</td>';
+        cells += '<td' + cellClassAttr + '>' + displayVal + '</td>';
       }
     }
-    var rowHtml = '<tr>' + cells + '</tr>';
+    var rowHtml = '<tr style="content-visibility:auto;contain-intrinsic-size:auto 32px">' + cells + '</tr>';
     // M4 Part 2: inline "All Points" drawer row (inserted right after equipment row)
     if (isDrawerOpen) {
       rowHtml += '<tr><td colspan="' + _emTotalColCount + '" style="padding:0;border-bottom:2px solid var(--accent)">';
@@ -6912,7 +7065,7 @@ function emRenderTable(data, filters) {
   // Write header skeleton immediately — the thead is cheap and makes the table
   // "appear" to the user right away, even before body rows are rendered.
   wrap.innerHTML =
-    '<table style="border-collapse:separate;border-spacing:0;table-layout:auto">' +
+    '<table style="border-collapse:separate;border-spacing:0;table-layout:fixed">' +
     '<thead><tr>' +
     theadCells +
     '</tr></thead>' +
@@ -6940,75 +7093,80 @@ function emRenderTable(data, filters) {
     tbody.innerHTML = tbodyRows;
     _finalizeTable(tbody, wrap);
   } else {
-    // ── Large table: chunked async render ───────────────────────────────────
-    // Show a loading indicator row immediately so the user sees feedback.
-    var loadTr = document.createElement('tr');
-    loadTr.setAttribute('data-em-loading', '1');
-    loadTr.innerHTML =
-      '<td colspan="' +
-      _emTotalColCount +
-      '" style="padding:24px 32px;text-align:center;font-size:13px;color:var(--text2);background:var(--s1)">' +
-      '<span style="display:inline-block;margin-right:8px;animation:em-spin 1s linear infinite;' +
-      'border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;width:16px;height:16px;vertical-align:middle"></span>' +
-      'Loading ' +
-      pageRows.length +
-      ' rows × ' +
-      defs.length +
-      ' columns…' +
-      '</td>';
-    tbody.appendChild(loadTr);
+    // ── Large table: lazy row-append virtualization ─────────────────────────
+    // Performance (2026-09-23, fix/em-render-performance): a CPU profile of a 3,000-row
+    // synthetic render (JOCO real scale) found that even AFTER removing per-row inline styles
+    // and per-row sticky-offset mutation (see the .em-mono/emUpdateStickyOffsets comments
+    // above), constructing ALL ~2,700-3,000 rows' worth of <td> elements up front is still
+    // fundamentally proportional to total cell count (~24s for 435,000 cells at this scale) —
+    // native DOM-node construction cost, not JS. The old implementation "chunked" the render
+    // (20 rows per setTimeout tick) but still built and inserted EVERY row before returning
+    // control, so the total DOM-construction cost was unchanged, just spread across ticks.
+    // The fix: build only an initial batch (enough to fill the viewport + a comfortable
+    // overscan buffer) so the view "opens" fast, add the Total Average footer immediately
+    // (it's computed from `filtered`, the full row set — independent of what's actually in the
+    // DOM, so it's correct from the very first batch), then lazily append more batches as the
+    // user scrolls near the bottom of what's currently rendered, via a sentinel row + a single
+    // IntersectionObserver (not a scroll listener — avoids polling/throttling code entirely).
+    // Every row the user scrolls to still becomes a REAL, permanent DOM node (never removed/
+    // recycled), so browser find (Ctrl+F) keeps working exactly as before for anything already
+    // scrolled through; sticky header, the Total row, and column widths are all established
+    // before the second batch ever runs, so they stay correct throughout.
+    var BATCH_SIZE = 150; // comfortably covers any viewport/zoom level plus overscan
+    var renderIndex = 0;
 
-    // Inject a tiny keyframes rule for the spinner (idempotent check)
-    if (!document.getElementById('em-spin-style')) {
-      var spinStyle = document.createElement('style');
-      spinStyle.id = 'em-spin-style';
-      spinStyle.textContent = '@keyframes em-spin{to{transform:rotate(360deg)}}';
-      document.head.appendChild(spinStyle);
+    if (_emRowAppendObserver) {
+      _emRowAppendObserver.disconnect();
+      _emRowAppendObserver = null;
     }
 
-    // Chunk size: aim for ~50 ms per batch. With many dyn cols a single row can be
-    // expensive, so keep chunks small. 20 rows per chunk is a safe default.
-    var CHUNK_SIZE = 20;
-    var chunkStart = 0;
-
-    function renderNextChunk() {
+    function appendNextBatch() {
       // Stale-render guard: if a new emRenderTable() was called since we started,
       // this async chain is obsolete — bail out silently.
       if (_emRenderGen !== _thisGen) return;
 
-      // Re-acquire tbody in case innerHTML= was re-issued by another call
       var liveWrap = document.getElementById('em-table-wrap');
       if (!liveWrap) return;
       var liveTbody = liveWrap.querySelector('#em-tbody-live');
       if (!liveTbody) return;
 
-      var chunkEnd = Math.min(chunkStart + CHUNK_SIZE, pageRows.length);
-      var chunkHtml = '';
-      for (var ci2 = chunkStart; ci2 < chunkEnd; ci2++) {
-        chunkHtml += _buildOneRowHtml(pageRows[ci2]);
+      var batchEnd = Math.min(renderIndex + BATCH_SIZE, pageRows.length);
+      var batchHtml = '';
+      for (var bi = renderIndex; bi < batchEnd; bi++) {
+        batchHtml += _buildOneRowHtml(pageRows[bi]);
       }
 
-      // Remove the loading row before inserting the first real chunk
-      if (chunkStart === 0) {
-        var lr = liveTbody.querySelector('tr[data-em-loading]');
-        if (lr) liveTbody.removeChild(lr);
-      }
+      // Remove the previous sentinel (if any) before inserting — the new batch lands where
+      // the sentinel used to be, and a fresh sentinel goes after the newly-appended rows.
+      var oldSentinel = liveTbody.querySelector('tr[data-em-sentinel]');
+      if (oldSentinel) liveTbody.removeChild(oldSentinel);
 
-      // Append chunk via insertAdjacentHTML for efficiency
-      liveTbody.insertAdjacentHTML('beforeend', chunkHtml);
-      chunkStart = chunkEnd;
+      liveTbody.insertAdjacentHTML('beforeend', batchHtml);
+      renderIndex = batchEnd;
 
-      if (chunkStart < pageRows.length) {
-        // Yield to the browser so it can paint and handle input events, then continue
-        setTimeout(renderNextChunk, 0);
-      } else {
-        // All rows rendered — finalize
-        _finalizeTable(liveTbody, liveWrap);
+      if (renderIndex < pageRows.length) {
+        var sentinelTr = document.createElement('tr');
+        sentinelTr.setAttribute('data-em-sentinel', '1');
+        sentinelTr.innerHTML =
+          '<td colspan="' + _emTotalColCount + '" style="padding:0;height:1px;border:none;line-height:0"></td>';
+        liveTbody.appendChild(sentinelTr);
+        _emRowAppendObserver = new IntersectionObserver(
+          function (entries) {
+            if (entries[0] && entries[0].isIntersecting) appendNextBatch();
+          },
+          { root: liveWrap, rootMargin: '800px 0px 800px 0px' },
+        );
+        _emRowAppendObserver.observe(sentinelTr);
       }
     }
 
-    // Kick off the first chunk after a tick so the loading indicator paints first
-    setTimeout(renderNextChunk, 0);
+    // First batch renders synchronously — this IS the "table opens" moment the 2-second
+    // target measures, so it must not be deferred behind a setTimeout tick.
+    appendNextBatch();
+    // Footer (Total Average), sticky offsets, and the column-resize handler only depend on
+    // the header row + the full `filtered` array — both already exist after the first batch,
+    // so finalize immediately rather than waiting for every row to be scrolled into view.
+    _finalizeTable(tbody, wrap);
   }
 }
 
@@ -7920,14 +8078,18 @@ function emRenderSummaryView(data, filters) {
 
   html += '</tbody>';
 
-  // ── tfoot: Page Average + Total Average ──
+  // ── tfoot: Filtered Average + Total Average ──
+  // 2026-09-23: renamed from "Page Average" — Summary View has never had pages (no Prev/Next
+  // control ever existed here, per the fix/em-all-equipment-types investigation); the row
+  // reflects the current equipment-type filter's building rollup vs. the unfiltered
+  // "Total Average" (all buildings, all types) row directly below it.
   var pageAgg = aggregateZoneStats(zoneStats); // filtered buildings
   var totalAgg = aggregateZoneStats(totalZoneStats); // all rows
   var tfootRowStyle = 'background:var(--s1);border-top:2px solid var(--border);min-height:44px;font-size:13px;';
   var tfootTdBase = 'padding:10px 16px;vertical-align:middle;border-top:2px solid var(--border);';
   var tfootTdCenter = tfootTdBase + 'text-align:center;';
 
-  // Page Average row
+  // Filtered Average row
   var pageVsCell =
     '<span style="color:#c0392b">' +
     pageAgg.hot +
@@ -7943,7 +8105,7 @@ function emRenderSummaryView(data, filters) {
   html +=
     '<td style="' +
     tfootTdBase +
-    'font-style:italic;color:var(--text2)">Page Average (' +
+    'font-style:italic;color:var(--text2)">Filtered Average (' +
     bldgNames.length +
     ' buildings)</td>';
   html += '<td style="' + tfootTdCenter + '">' + fmtAvg(pageAgg.zoneTemp, '°F') + '</td>';
@@ -8434,11 +8596,8 @@ function emRenderAuditTable(data, filters) {
       '</th>';
   }
 
-  // ── Build tbody ──
-  var tbodyRows = '';
-  for (var ri = 0; ri < pageRows.length; ri++) {
-    var row = pageRows[ri];
-
+  // ── Build one row's HTML (closes over the pre-computed caches above) ──
+  function _buildOneAuditRowHtml(row) {
     var compliance = complianceCache[row.id] || { coveredPoints: [], missingPoints: [], naPoints: [], coveragePct: 0 };
     // Build a quick lookup: catKey -> match result
     var coveredMap = {};
@@ -8462,20 +8621,7 @@ function emRenderAuditTable(data, filters) {
       var def = defs[di];
       cells += emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, seqReadiness, rowBehaviorSummary);
     }
-    tbodyRows += '<tr>' + cells + '</tr>';
-  }
-
-  if (filtered.length === 0) {
-    var emptyMsg =
-      rows.length === 0 ? 'No equipment data — click Import CSVs to begin' : 'No rows match the current filters.';
-    // When there is no data at all, defs only has 7 fixed columns (no equipment-type ASHRAE columns).
-    // Use those 7 columns — the empty-state row spans them all and the table still fills full width.
-    tbodyRows =
-      '<tr><td colspan="' +
-      defs.length +
-      '" style="padding:48px 32px;text-align:center;font-size:14px;color:var(--text2)">' +
-      emptyMsg +
-      '</td></tr>';
+    return '<tr>' + cells + '</tr>';
   }
 
   // Pagination bar removed (2026-09-23) — all rows render in the scrollable wrap.
@@ -8488,17 +8634,98 @@ function emRenderAuditTable(data, filters) {
   var allTotals = emComputeAuditFooterTotals(filtered, defs);
   var tfootHtml = '<tfoot>' + buildAuditFooterRow(allTotals, defs, 'Total', true) + '</tfoot>';
 
+  // Write header skeleton immediately, same lazy row-append pattern as Raw View (see
+  // emRenderTable's large-table branch comment, 2026-09-23, fix/em-render-performance) — an
+  // Audit-View CPU profile after the Raw View fix still showed ~4-5s for 3,000 rows (down from
+  // ~23-28s pre-fix via the self-heal cache alone), still over the 2s target, for the same
+  // root cause: constructing thousands of <td> elements up front is proportional to cell count
+  // regardless of view. table-layout:fixed also applied here (column widths are already
+  // explicit on every <th>, same as Raw View).
+  var _thisGen = _emRenderGen;
   wrap.innerHTML =
-    '<table style="border-collapse:separate;border-spacing:0;table-layout:auto">' +
+    '<table style="border-collapse:separate;border-spacing:0;table-layout:fixed">' +
     '<thead><tr>' +
     theadCells +
     '</tr></thead>' +
-    '<tbody>' +
-    tbodyRows +
-    '</tbody>' +
-    tfootHtml +
+    '<tbody id="em-tbody-live"></tbody>' +
     '</table>';
+  var tbody = wrap.querySelector('#em-tbody-live');
 
+  if (filtered.length === 0) {
+    var emptyMsg =
+      rows.length === 0 ? 'No equipment data — click Import CSVs to begin' : 'No rows match the current filters.';
+    // When there is no data at all, defs only has 7 fixed columns (no equipment-type ASHRAE columns).
+    // Use those 7 columns — the empty-state row spans them all and the table still fills full width.
+    tbody.innerHTML =
+      '<tr><td colspan="' +
+      defs.length +
+      '" style="padding:48px 32px;text-align:center;font-size:14px;color:var(--text2)">' +
+      emptyMsg +
+      '</td></tr>';
+    var emptyTfootProxy = document.createElement('table');
+    emptyTfootProxy.innerHTML = tfootHtml;
+    var emptyParsedTfoot = emptyTfootProxy.querySelector('tfoot');
+    if (emptyParsedTfoot) wrap.querySelector('table').appendChild(emptyParsedTfoot);
+    emUpdateStickyOffsets();
+    emAttachColResizeHandler(wrap);
+    return;
+  }
+
+  if (_emRowAppendObserver) {
+    _emRowAppendObserver.disconnect();
+    _emRowAppendObserver = null;
+  }
+
+  var AUDIT_BATCH_SIZE = 150;
+  var auditRenderIndex = 0;
+
+  function appendNextAuditBatch() {
+    if (_emRenderGen !== _thisGen) return;
+    var liveWrap = document.getElementById('em-table-wrap');
+    if (!liveWrap) return;
+    var liveTbody = liveWrap.querySelector('#em-tbody-live');
+    if (!liveTbody) return;
+
+    var batchEnd = Math.min(auditRenderIndex + AUDIT_BATCH_SIZE, pageRows.length);
+    var batchHtml = '';
+    for (var bi = auditRenderIndex; bi < batchEnd; bi++) {
+      batchHtml += _buildOneAuditRowHtml(pageRows[bi]);
+    }
+
+    var oldSentinel = liveTbody.querySelector('tr[data-em-sentinel]');
+    if (oldSentinel) liveTbody.removeChild(oldSentinel);
+
+    liveTbody.insertAdjacentHTML('beforeend', batchHtml);
+    auditRenderIndex = batchEnd;
+
+    if (auditRenderIndex < pageRows.length) {
+      var sentinelTr = document.createElement('tr');
+      sentinelTr.setAttribute('data-em-sentinel', '1');
+      sentinelTr.innerHTML =
+        '<td colspan="' + defs.length + '" style="padding:0;height:1px;border:none;line-height:0"></td>';
+      liveTbody.appendChild(sentinelTr);
+      _emRowAppendObserver = new IntersectionObserver(
+        function (entries) {
+          if (entries[0] && entries[0].isIntersecting) appendNextAuditBatch();
+        },
+        { root: liveWrap, rootMargin: '800px 0px 800px 0px' },
+      );
+      _emRowAppendObserver.observe(sentinelTr);
+    }
+  }
+
+  // First batch renders synchronously — this is the "view opens" moment the 2-second target
+  // measures. The footer (Total row), sticky offsets, and resize handler only depend on the
+  // header row + the full `filtered`/`allTotals` — both already computed — so they're added
+  // immediately rather than waiting for every row to be scrolled into view.
+  appendNextAuditBatch();
+  var table = wrap.querySelector('table');
+  if (table) {
+    var tfootProxy = document.createElement('table');
+    tfootProxy.innerHTML = tfootHtml;
+    var parsedTfoot = tfootProxy.querySelector('tfoot');
+    if (parsedTfoot) table.appendChild(parsedTfoot);
+  }
   emUpdateStickyOffsets();
   emAttachColResizeHandler(wrap);
 }
