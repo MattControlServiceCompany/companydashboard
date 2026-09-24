@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.24.4'; // BAS Savings Calc, project header, and user chip now spell out labels site-wide, and the same fix covers the ECM calculator, Site Energy Use Intensity column headers, and a few other pages
+  var CH_VERSION = 'v2026.09.24.5'; // Projects can now share a Customer -- add multiple projects under the same customer and pick which of its buildings/meters belong to each one; utility data (bills, meters) is shared across projects, and each project's own scope stays separate
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

@@ -1,4 +1,4 @@
-// tools/test-project-baseline-all-buildings.js — "All Buildings" Project Baseline panel gate.
+﻿// tools/test-project-baseline-all-buildings.js — "All Buildings" Project Baseline panel gate.
 // Run: node tools/test-project-baseline-all-buildings.js
 //
 // Loads the REAL functions (computations/normalization.js buildMoMap/getNormRows/
@@ -65,6 +65,9 @@ function loadFn(file, fnName) {
 }
 
 const sandbox = { console };
+// meterB is the fixture's "excluded from savings, still shown" meter (see below) — mirrors
+// its old baselineInclude:false marker under the new per-project isBaselineExcluded model.
+sandbox.__TEST_EXCLUDED_METER_IDS = new Set(['mB']);
 vm.createContext(sandbox);
 
 const stubs = [
@@ -72,6 +75,11 @@ const stubs = [
   'var udSelProjId = null;',
   'function getUDProj(){ return {}; }',
   'function isCalcCommodity(){ return true; }',
+  // meter.baselineInclude no longer exists (Customer/Multi-Project, BLOCKER 1 fix) —
+  // _udMeterBaselineForAllBldgs now calls isBaselineExcluded(pid, meterId) instead.
+  // Stub reads the same per-meter exclusion set the fixture below used to encode via
+  // baselineInclude:false, so the test's "excluded but still shown" scenario is unchanged.
+  'function isBaselineExcluded(pid, meterId){ return __TEST_EXCLUDED_METER_IDS.has(meterId); }',
 ].join('\n');
 
 const udSrc = fs.readFileSync(REPO + '/app/utility-data.js', 'utf8');
@@ -164,7 +172,6 @@ const meterA = {
   name: 'Main Electric',
   commodity: 'Electric',
   inclusive: true,
-  baselineInclude: true,
   bills: monthlyBills(5000, 100, 550, BL_MONTHS),
   baseline: { months: BL_MONTHS.slice() },
 };
@@ -173,7 +180,7 @@ const meterB = {
   name: 'Main Electric',
   commodity: 'Electric',
   inclusive: true,
-  baselineInclude: false, // excluded from SAVINGS only — must still appear in All Buildings
+  // excluded from SAVINGS only (see __TEST_EXCLUDED_METER_IDS above) — must still appear in All Buildings
   bills: monthlyBills(3000, 60, 330, BL_MONTHS),
   baseline: { months: BL_MONTHS.slice() },
 };
@@ -182,7 +189,6 @@ const meterC = {
   name: 'Main Electric',
   commodity: 'Electric',
   inclusive: true,
-  baselineInclude: true,
   bills: [],
   baseline: null,
 };

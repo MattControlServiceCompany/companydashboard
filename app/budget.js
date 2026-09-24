@@ -94,12 +94,11 @@ function getBudgetForMonth(budgetLine, yearMonth) {
 // Returns actual $ for a commodity + optional buildingId for a given YYYY-MM
 // Uses bill.end date to assign month (consistent with rest of app)
 function getActualForMonth(projId, commodity, buildingId, yearMonth) {
-  const ud = utilityData[projId];
-  if (!ud) return null;
+  const bldgs = getUDBldgs(projId) || [];
+  if (!bldgs.length) return null;
   const commodityMatch = commodity === 'all' ? null : commodity.charAt(0).toUpperCase() + commodity.slice(1);
   let total = 0;
   let hasBill = false;
-  const bldgs = ud.buildings || [];
   for (const b of bldgs) {
     if (buildingId && b.id !== buildingId) continue;
     for (const m of b.meters || []) {

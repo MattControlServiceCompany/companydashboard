@@ -1,4 +1,4 @@
-// ===== Roster-driven auto-create missing meters (c8880ce7, 2026-09-13) =====
+﻿// ===== Roster-driven auto-create missing meters (c8880ce7, 2026-09-13) =====
 //
 // Matt's intent: "I do not want to have to create the meters, I want the
 // site to create them." This module reads the existing OneDrive meter/
@@ -16,7 +16,7 @@
 //   - Never silently creates a meter or silently assigns a bill — every
 //     write happens only after the user reviews the plan in the modal and
 //     clicks the final confirm button.
-//   - New meters always default baselineInclude:false (never auto-included
+//   - New meters always default to excluded from baseline (never auto-included
 //     in baseline/savings calcs).
 //   - Never guesses an ambiguous identity (the KGS meter-number-match/
 //     different-account case) — that is surfaced as a duplicate needing an
@@ -340,8 +340,7 @@ function _macRunResolve() {
   if (!st || !st.rosterRows) return;
   const projId = st.projId;
   const proj = (typeof projects !== 'undefined' ? projects : []).find((p) => p.id === projId);
-  const udProj = getUDProj(projId);
-  const buildings = udProj.buildings || [];
+  const buildings = getUDBldgs(projId) || [];
   const allBills = sget('en_pdf_bills', []) || [];
   // Scope to this project's customer (v1 gate, plan §4.2 point 1 — Baker-
   // specific trigger is acceptable for v1; here derived from the project
@@ -490,17 +489,17 @@ async function confirmMeterAutoCreate() {
         meter: w.meterNumber || '',
         maddr: w.maddr || '',
         inclusive: true,
-        // Deliberate deviation from _autoCreateMeterAndSaveBill's live
-        // baselineInclude:true default — plan §4.1(e)/§5: per the 2026-09-10
-        // standing rule, a newly created meter must never be counted
-        // automatically; the user opts it into the baseline afterward.
-        baselineInclude: false,
         billUnit: '',
         displayUnit: '',
         bills: [],
       };
       w.building.meters = w.building.meters || [];
       w.building.meters.push(meter);
+      // Deliberate deviation from _autoCreateMeterAndSaveBill's live default — plan
+      // §4.1(e)/§5: per the 2026-09-10 standing rule, a newly created meter must never
+      // be counted automatically; the user opts it into the baseline afterward.
+      // The legacy meter-level include flag no longer exists (BLOCKER 1 fix) — stored per-project instead.
+      setBaselineExcluded(projId, meter.id, true);
       createdCount++;
     });
 
@@ -515,13 +514,15 @@ async function confirmMeterAutoCreate() {
           meter: d.meterNumber || '',
           maddr: '',
           inclusive: true,
-          baselineInclude: false,
           billUnit: '',
           displayUnit: '',
           bills: [],
         };
         d.building.meters = d.building.meters || [];
         d.building.meters.push(meter);
+        // The legacy meter-level include flag no longer exists (BLOCKER 1 fix) — same default-excluded
+        // rule as the willCreate branch above, stored per-project.
+        setBaselineExcluded(projId, meter.id, true);
         createdCount++;
       } else {
         // Merge: additive-only accountAliases entry on the existing meter, the

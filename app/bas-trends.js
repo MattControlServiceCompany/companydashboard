@@ -2035,8 +2035,7 @@ function btUpdateBuildingList() {
   }
   if (!proj) return;
 
-  var utilData = sget('en_utility_' + projId, { buildings: [] });
-  var buildings = (utilData && utilData.buildings) || proj.buildings || [];
+  var buildings = getUDBldgs(projId) || proj.buildings || [];
   if (buildings.length === 0) {
     // Fallback: allow free-text building
     sel.innerHTML = '<option value="_manual">Enter manually below...</option>';
@@ -3133,9 +3132,8 @@ function btGatherFaultRows(bldg, projId) {
  */
 function btGetBlendedRate(projId, bldgId) {
   try {
-    var utilData = sget('en_utility_' + projId, null);
-    if (!utilData) return null;
-    var bldgs = utilData.buildings || [];
+    var bldgs = getUDBldgs(projId) || [];
+    if (!bldgs.length) return null;
     var bldg = null;
     for (var i = 0; i < bldgs.length; i++) {
       if (bldgs[i].id === bldgId || bldgs[i].name === bldgId) {
@@ -5123,16 +5121,7 @@ function btPhase4RenderTab(tabId) {
  * @returns {Array}
  */
 function btGetBillsForBldg(projId, bldgId) {
-  var utilData = sget('en_utility_' + projId, null);
-  if (!utilData) return [];
-  var bldgs = utilData.buildings || [];
-  var bldg = null;
-  for (var i = 0; i < bldgs.length; i++) {
-    if (bldgs[i].id === bldgId) {
-      bldg = bldgs[i];
-      break;
-    }
-  }
+  var bldg = getUDBldg(projId, bldgId);
   if (!bldg) return [];
 
   var out = [];

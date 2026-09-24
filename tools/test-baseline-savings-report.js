@@ -199,7 +199,14 @@ function buildCtx(extraKeys) {
       }
       return d;
     },
-    set: () => Promise.resolve(),
+    // Customer/Multi-Project: self-heal now WRITES (en_projects/en_customers, via sset)
+    // as well as reads — a no-op stub silently dropped those writes, so a later read
+    // (even the localStorage fallback this stub's own get() relies on) never saw them.
+    // Persist through to the same store the localStorage stub reads from.
+    set: (k, v) => {
+      store.set(k, JSON.stringify(v));
+      return Promise.resolve();
+    },
     isReady: () => true,
   };
   const ctx = vm.createContext(sandbox);
@@ -227,9 +234,19 @@ function buildCtx(extraKeys) {
     { filename: 'instrument' },
   ).runInContext(ctx);
   ['app/equipment-matrix.js', 'app/report-engine-woodland.js'].forEach(load);
+  // Customer/Multi-Project (2026-09-24): buildings/meters/bills now live per-customer
+  // (en_utility_<customerId>), not per-project — mirrors loadUtilityData()'s own
+  // self-heal-then-load sequence (self-heal seeds customerId/scope on every project
+  // missing it, deterministically, then each customer's blob is loaded by its own key)
+  // WITHOUT running loadUtilityData()'s other one-time bill-content migrations (rate
+  // fixes, dedupe, sewer backfill, etc.), which are unrelated to this test and could
+  // alter the synthetic fixture's numbers.
   run(
     ctx,
-    `projects = JSON.parse(localStorage.getItem('en_projects')) || []; projects.forEach(function(p){ var ud = JSON.parse(localStorage.getItem('en_utility_' + p.id) || 'null'); if (ud) utilityData[p.id] = ud; });`,
+    `projects = JSON.parse(localStorage.getItem('en_projects')) || [];
+     _selfHealCustomersAndScope();
+     projects = JSON.parse(localStorage.getItem('en_projects')) || [];
+     (JSON.parse(localStorage.getItem('en_customers')) || []).forEach(function(c){ var ud = JSON.parse(localStorage.getItem('en_utility_' + c.id) || 'null'); if (ud) utilityData[c.id] = ud; });`,
   );
   return ctx;
 }

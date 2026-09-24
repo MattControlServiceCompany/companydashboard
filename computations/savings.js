@@ -132,7 +132,13 @@ function getMeterSavings(m, bills, incl, projId, bldgId) {
   const blByCalMo = {};
   const blDemKWByCalMo = {};
   Object.entries(_moMap).forEach(([mo, v]) => {
-    blByCalMo[mo] = isElec ? v.kwhPredicted : m.commodity === 'Gas' ? v.thermsPredicted : isPropane ? v.gallons : v.kgal;
+    blByCalMo[mo] = isElec
+      ? v.kwhPredicted
+      : m.commodity === 'Gas'
+        ? v.thermsPredicted
+        : isPropane
+          ? v.gallons
+          : v.kgal;
     if (isElec) blDemKWByCalMo[mo] = v.billedKW || v.demandKW || 0;
   });
   const hasBlCalMap = Object.keys(blByCalMo).length > 0;
@@ -407,7 +413,13 @@ function _getMeterSavingsMulti(m, bills, incl, projId, bldgId) {
         m.baseline = _origBaseline;
         const _moMap = isElec ? eMo : m.commodity === 'Gas' ? gMo : isPropane ? pMo : wMo;
         Object.entries(_moMap).forEach(([mo, v]) => {
-          blByCalMo[mo] = isElec ? v.kwhPredicted : m.commodity === 'Gas' ? v.thermsPredicted : isPropane ? v.gallons : v.kgal;
+          blByCalMo[mo] = isElec
+            ? v.kwhPredicted
+            : m.commodity === 'Gas'
+              ? v.thermsPredicted
+              : isPropane
+                ? v.gallons
+                : v.kgal;
           if (isElec) blDemKWByCalMo[mo] = v.billedKW || v.demandKW || 0;
         });
       }
@@ -557,7 +569,11 @@ function _getMeterSavingsMulti(m, bills, incl, projId, bldgId) {
    Rollup: sum meter savings for a building (by year-month)
 ───────────────────────────────────────────────────────────── */
 function getBuildingSavingsByYM(bldg, projId) {
-  const proj = getUDProj(projId);
+  // Field relocation (2026-09-24): inclMonths lives on the project record, not the
+  // shared customer blob.
+  const _gbProjList =
+    typeof projects !== 'undefined' ? projects : typeof sget === 'function' ? sget('en_projects', []) : [];
+  const proj = (_gbProjList || []).find((p) => p.id === projId);
   if (!proj || !bldg || !bldg.meters) return {};
   const incl = proj.inclMonths || {};
   const result = {};
@@ -576,10 +592,10 @@ function getBuildingSavingsByYM(bldg, projId) {
    Rollup: sum building savings for a project (by year-month)
 ───────────────────────────────────────────────────────────── */
 function getProjectSavingsByYM(projId) {
-  const proj = getUDProj(projId);
-  if (!proj || !proj.buildings) return {};
+  const bldgs = typeof getUDBldgs === 'function' ? getUDBldgs(projId) : null;
+  if (!bldgs) return {};
   const result = {};
-  proj.buildings.forEach((b) => {
+  bldgs.forEach((b) => {
     const bSav = getBuildingSavingsByYM(b, projId);
     Object.entries(bSav).forEach(([ym, v]) => {
       result[ym] = (result[ym] || 0) + v;
