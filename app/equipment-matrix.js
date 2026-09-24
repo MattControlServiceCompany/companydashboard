@@ -7112,7 +7112,23 @@ function emRenderTable(data, filters) {
     // recycled), so browser find (Ctrl+F) keeps working exactly as before for anything already
     // scrolled through; sticky header, the Total row, and column widths are all established
     // before the second batch ever runs, so they stay correct throughout.
-    var BATCH_SIZE = 150; // comfortably covers any viewport/zoom level plus overscan
+    //
+    // Performance (2026-09-24, fix/em-show-all-columns): a fixed 150-row batch assumed column
+    // count stayed roughly constant (~145 cols at JOCO scale by default). "Show All Point
+    // Columns" breaks that assumption — JOCO has 8,259 unique raw BAS point names, so
+    // defs.length can jump ~57x. A fixed row batch means the CELL count in that first
+    // synchronous batch scales with columns too: 150 rows x 8,259 cols = ~1.24M cells, and
+    // measurement showed that froze the click handler for ~33s (see 2026-09-24 E2E review,
+    // issue "Show All Point Columns"). Same root cause the comment above already diagnosed
+    // (DOM-node construction cost is proportional to total cell count) — the row-only fix above
+    // just didn't yet account for the column axis. Fix: size the batch to a fixed CELL budget
+    // instead of a fixed ROW count, so the first paint stays fast regardless of how many point
+    // columns are shown. Every column still renders for every row that lands in the DOM — this
+    // does not hide or page any column — it only shrinks how many ROWS land in the very first
+    // paint; the existing IntersectionObserver sentinel below still appends the rest (still all
+    // columns) as the user scrolls, exactly as before.
+    var CELL_BUDGET = 30000;
+    var BATCH_SIZE = Math.max(5, Math.min(150, Math.floor(CELL_BUDGET / Math.max(1, defs.length))));
     var renderIndex = 0;
 
     if (_emRowAppendObserver) {
@@ -7991,11 +8007,11 @@ function emRenderSummaryView(data, filters) {
   html +=
     '<th style="' +
     thStyleCenter +
-    '" title="Setpoints require a WebCTRL point-list export, not the enriched matrix snapshot.">Zone Htg Setpoint</th>';
+    '" title="Setpoints require a WebCTRL point-list export, not the enriched matrix snapshot.">Zone Heating Setpoint</th>';
   html +=
     '<th style="' +
     thStyleCenter +
-    '" title="Setpoints require a WebCTRL point-list export, not the enriched matrix snapshot.">Zone Clg Setpoint</th>';
+    '" title="Setpoints require a WebCTRL point-list export, not the enriched matrix snapshot.">Zone Cooling Setpoint</th>';
   html += '<th style="' + thStyleCenter + '">Zones vs Setpoints</th>';
   html += '<th style="' + thStyleCenter + '">CO2 (ppm)</th>';
   html += '<th style="' + thStyleCenter + '">Humidity (%)</th>';
@@ -8287,10 +8303,10 @@ function emRenderBuildingDetailView(data, filters, buildingName) {
   html += '<th style="' + thStyle + '">Type</th>';
   html += '<th style="' + thStyle + '">Floor / Area</th>';
   html += '<th style="' + thCenter + '">Zone Air Temperature</th>';
-  html += '<th style="' + thCenter + '">Htg Setpoint</th>';
-  html += '<th style="' + thCenter + '">Clg Setpoint</th>';
+  html += '<th style="' + thCenter + '">Heating Setpoint</th>';
+  html += '<th style="' + thCenter + '">Cooling Setpoint</th>';
   html += '<th style="' + thCenter + '">Status</th>';
-  html += '<th style="' + thCenter + '">Damper Posn</th>';
+  html += '<th style="' + thCenter + '">Damper Position</th>';
   html += '<th style="' + thCenter + '">Discharge Air Temperature</th>';
   html += '</tr></thead>';
   html += '<tbody>';

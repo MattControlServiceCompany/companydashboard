@@ -1776,6 +1776,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.24.11',
+    date: '2026-09-24',
+    title: 'Equipment Matrix: "Show All Point Columns" opens fast, and more labels are spelled out',
+    items: [
+      {
+        type: 'fix',
+        text: 'On the Equipment Matrix Raw View, clicking "Show All Point Columns" on a large building portfolio (JOCO\'s 2,721 equipment rows and 8,259 point columns) froze the page for about half a minute. It now opens in about 1 second. Every point column still shows and is reachable — the fix loads rows in smaller waves as you scroll, the same way the page already did for the row count.',
+      },
+      {
+        type: 'fix',
+        text: 'On the Equipment Matrix Summary view, the "Zone Htg Setpoint" and "Zone Clg Setpoint" column headers now read "Zone Heating Setpoint" and "Zone Cooling Setpoint". The building detail table\'s "Htg Setpoint", "Clg Setpoint", and "Damper Posn" headers now read "Heating Setpoint", "Cooling Setpoint", and "Damper Position".',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.24.10',
     date: '2026-09-24',
     title: 'Project Baseline: the All Buildings freeze status is now correct',

@@ -78,6 +78,12 @@ const BANNED_WORDS = [
   'MBtu', // -> "thousand Btu" (bare MBtu/MBH; MMBtu stays allowed — see ALLOWED_KEPT_UNITS)
   'CFM', // -> "Cubic Feet per Minute"
   'EUI', // -> "Energy Use Intensity"
+  // 2026-09-24 (fix/em-show-all-columns, task 5aj) — the E2E review caught "Zone Htg Setpoint" /
+  // "Zone Clg Setpoint" column headers in the Equipment Matrix Summary view: shortened plain
+  // English words (Heating/Cooling), not BAS/controls domain vocabulary — same category as
+  // Occ/Unocc above, so they get the same whole-word ban site-wide.
+  'Htg', // -> "Heating"
+  'Clg', // -> "Cooling"
 ];
 
 // A bare-symbol form `\b` can't bound ("#" isn't a word character) — checked by substring,
@@ -172,17 +178,74 @@ const ALLOWED_ALL_CAPS = new Set([
   'COST',
   'FUEL',
   'WATER',
+  // 2026-09-24 (fix/em-show-all-columns, task 5aj) — app/equipment-matrix.js's column headers
+  // come from EM_POINT_MAP (~1,500-entry point-name-pattern dictionary, lines 471-1996) and
+  // several later per-equipment-type point-pattern arrays (VVT/FCU/chiller-plant/BMS/VFD
+  // sub-object definitions). Every entry below was read in source context (not guessed) and is
+  // a real BAS/controls-industry mnemonic — the same category already allowed for AHU/RTU/VAV/
+  // CFM/OAT/RA/SA/MTR above, just this file's much larger vocabulary. The curated BANNED_WORDS
+  // list (including the new Htg/Clg entries) still runs against every one of these strings, so
+  // a genuine plain-English shortcut can never hide inside this list:
+  'HW', // Hot Water
+  'CHW', // Chilled Water
+  'CW', // Condenser Water
+  'RH', // Relative Humidity
+  'CT', // Cooling Tower
+  'CFM', // Cubic Feet per Minute (curated-list exception already covers BANNED_WORDS; this
+  // covers the separate all-caps safety net)
+  'VFD', // Variable Frequency Drive
+  'HP', // Horsepower ("HP/Tons" physical-attribute column)
+  'IP', // Internet Protocol ("IP Address" controls column, same category as already-allowed URL/JSON)
+  'EF', // Exhaust Fan
+  'SF', // Supply Fan
+  'BMS', // Building Management System (same category as the already-allowed EMS)
+  'DI', // Digital Input (BACnet object type)
+  'BTU', // British Thermal Unit — physical meter/device naming ("BTU Meter"), base unit of the
+  // already-allowed MMBtu family
+  'MJ', // MegaJoule
+  'ATS', // Automatic Transfer Switch
+  'RMS', // Root Mean Square
+  'ABC', // "Phase ABC" — three-phase electrical notation (phases A, B, C)
+  'DP', // Differential Pressure
+  'ANI', // Analog Input (BACnet object type)
+  'ANO', // Analog Output (BACnet object type)
+  'MCS', // Master Control System (chiller-plant point-dictionary label)
+  'BV', // Binary Value (BACnet object type)
+  'AV', // Analog Value (BACnet object type)
+  'VVT', // Variable Volume Terminal
+  'ET', // Elapsed Time ("ET Hours" runtime-hours point)
+  'VOC', // Volatile Organic Compound (zone air-quality sensor)
+  'UV', // Ultraviolet (UV radiometer/lamp point)
+  'TCP', // Transmission Control Protocol (network diagnostics point)
+  'RX', // Receive (network diagnostics point)
+  'TX', // Transmit (network diagnostics point)
+  'RAM', // Random Access Memory (controller diagnostics point)
+  'COMM', // Communication
+  'PC', // Personal Computer (BMS network node point)
+  'DOAS', // Dedicated Outdoor Air System
+  'DX', // Direct Expansion (refrigeration)
+  'RPM', // Revolutions Per Minute
+  'DD', // Dual Duct ("DD-VAV" equipment subtype)
+  'FCU', // Fan Coil Unit
+  'VRF', // Variable Refrigerant Flow
+  'PID', // Proportional-Integral-Derivative (control-loop object)
+  'HOA', // Hand-Off-Auto (control switch)
+  'UPS', // Uninterruptible Power Supply
+  'CO', // Carbon Monoxide (zone air-quality sensor)
+  'SZ', // Single Zone ("SZ-RTU"/"SZ-AHU" equipment subtype)
+  'MTZ', // Multi-Zone ("MTZ-RTU"/"MTZ-AHU" equipment subtype)
 ]);
 const ALL_CAPS_RE = /\b[A-Z]{2,5}\b/g;
 
 // Files whose UI labels are established domain vocabulary (BAS/HVAC equipment nomenclature,
 // utility-bill tariff/rider codes, financial/business terms) rather than shortened English
-// words — same rationale as the BAS point-dictionary exclusion above. app/equipment-matrix.js
-// is also concurrently owned by another agent's work this session, so it is excluded from this
-// specific all-caps safety net to avoid an unrelated, unverified rewrite; the curated
-// BANNED_WORDS list above still applies to every file, including these.
+// words — same rationale as the BAS point-dictionary exclusion above. The curated BANNED_WORDS
+// list above still applies to every file, including these. app/equipment-matrix.js is NOT in
+// this list (2026-09-24, fix/em-show-all-columns, task 5aj) — its BAS-mnemonic vocabulary is
+// instead individually vetted into ALLOWED_ALL_CAPS above, so this file's toolbar/legend/Summary-
+// view UI chrome stays covered by the all-caps safety net (this is what caught nothing missing
+// Htg/Clg — those were caught by the whole-word ban instead, since "Htg"/"Clg" aren't all-caps).
 const ALL_CAPS_EXCLUDED_FILES = new Set([
-  path.join('app', 'equipment-matrix.js'),
   path.join('app', 'bas-trends.js'),
   path.join('app', 'bas-alarms.js'),
   path.join('app', 'ecm-calculators.js'),
