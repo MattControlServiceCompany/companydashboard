@@ -2965,8 +2965,14 @@ async function exportWoodlandReportToXlsx(data) {
 
   // ---- Sheet 3: Baseline Summary (mirror of the site's Building Baseline Data table) ----
   // Facilities kW (E) and Facilities kW Cost (F) are their own columns (item 5a, 2026-09-23) —
-  // purely informational (eM already carries them per month from buildMoMap); they do NOT feed
-  // the kW Cost (G) or Total Cost (N) formulas below, so there is no double-count.
+  // purely informational (eM already carries them per month from buildMoMap). Facilities kW
+  // Cost DOES fold into the kW Cost (G) column below (kwCostM = eM.kwCost + facKwCostM,
+  // intentional — same convention as the shared HTML table's "kW Cost" column, report-engine.js
+  // rptBuildBaselineDataTable) — this is not a double-count because Total Cost (N) derives
+  // independently from the whole-bill totalCost field, never by re-summing G. The reconciliation
+  // footnote on Page 3 (_wdElecCostReconciliation) breaks Billed vs. Facilities kW Cost back
+  // apart for readers who need the split (cold review Finding 3, 2026-09-23 — this comment
+  // previously said the opposite and was corrected to match the code).
   var ws3 = wb.addWorksheet('Page 3 - Summary');
   ws3.columns = [
     { width: 12 }, // Month — now "Jan 2024" (widened 2026-09-22, was 10)

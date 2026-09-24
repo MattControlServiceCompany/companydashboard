@@ -109,8 +109,12 @@ var EM_EQUIP_TYPES = {
   'domestic water': 'plumbing',
   // Power monitoring
   generator: 'power',
-  'electric meter': 'power',
-  'power meter': 'power',
+  // Utility submeters — own 'meter' category (2026-09-23), subtype electric/gas/water set by
+  // emClassifyMeterSubtype. Was 'power' before; moved out so Electric/Gas/Water meters share one
+  // visible type instead of electric meters hiding under generic "Power / Gen" (Matt, 2026-09-23:
+  // "we can't have a category for Electric/Gas/Water under a Meters type?").
+  'electric meter': 'meter',
+  'power meter': 'meter',
   ups: 'power',
   upsm: 'power', // review.md required change 3: "UPSM Monitoring" (2 real Courthouse rows)
   upsp: 'power', // review.md required change 3: "UPSP Monitoring" (2 real Courthouse rows)
@@ -165,6 +169,9 @@ var EM_CATEGORY_LABELS = {
   elevator: 'Elevator',
   monitoring: 'Monitoring',
   security: 'Security / Access',
+  // Utility submeters (Electric/Gas/Water) — own category, NOT scored for ASHRAE 36 compliance.
+  // emFormatEquipTypeLabel composes "Meters (Electric)" etc. when subtype is set.
+  meter: 'Meters',
   other: 'Other',
   // 9018b1c6: MAU and ERV get their own categories (user-confirmed)
   mau: 'Makeup Air Unit',
@@ -182,10 +189,17 @@ var EM_CATEGORY_LABELS = {
    9018b1c6: Returns the human-readable Equipment Type label for a row object.
    For 'ahu' rows with a subtype, composes a "SZ-RTU" / "VAV-AHU" etc. label
    by combining the subtype prefix with the unit type token from the equip name.
+   2026-09-23: For 'meter' rows with a subtype, composes "Meters (Electric)" /
+   "Meters (Gas)" / "Meters (Water)".
    For all other categories, falls through to EM_CATEGORY_LABELS.               */
 function emFormatEquipTypeLabel(row) {
   if (!row) return '--';
   var cat = row.category || '';
+  if (cat === 'meter' && row.subtype) {
+    var meterSubtypeLabel =
+      row.subtype === 'electric' ? 'Electric' : row.subtype === 'gas' ? 'Gas' : row.subtype === 'water' ? 'Water' : '';
+    return meterSubtypeLabel ? 'Meters (' + meterSubtypeLabel + ')' : EM_CATEGORY_LABELS[cat] || cat.toUpperCase();
+  }
   if ((cat !== 'ahu' && cat !== 'rtu') || !row.subtype) {
     return EM_CATEGORY_LABELS[cat] || (cat ? cat.toUpperCase() : '--');
   }
@@ -297,7 +311,6 @@ function emSetSequenceView() {
    Sets _emDrillBuilding to the building name and re-renders.             */
 function emDrillBuilding(pid, buildingName) {
   _emDrillBuilding = buildingName;
-  _emCurrentPage = 0;
   var data = emLoadMatrix(pid);
   if (!data) return; // DB not ready yet — user will re-click after load
   emRenderTable(data, _emFilters);
@@ -307,7 +320,6 @@ function emDrillBuilding(pid, buildingName) {
    Exits per-building detail view and returns to the summary table.       */
 function emExitDrillBuilding(pid) {
   _emDrillBuilding = null;
-  _emCurrentPage = 0;
   var data = emLoadMatrix(pid);
   if (!data) return; // DB not ready yet — user will re-click after load
   emRenderTable(data, _emFilters);
@@ -2618,8 +2630,55 @@ function emClassifyEquipType(equipTypeStr) {
   if (/^gymnasium$/i.test(key)) return 'monitoring';
   if (/^commons\s|^commons\/|^kitchen\s/i.test(key)) return 'monitoring';
 
+  // Utility submeters (Electric / Gas / Water) — 2026-09-23, own 'meter' category. Placed
+  // LAST (after every more specific match above) so a process/plant submeter that already
+  // has its own home keeps winning: domestic/irrigation water meter -> plumbing (dict 'domestic
+  // water', /irrigation/), cooling-tower makeup water meter -> ct (dict 'cooling tower'), boiler
+  // gas meter -> hwp (/\bboiler\b/), chilled-water BTU meter -> chwp (/chilled.?water/), any BTU
+  // meter -> plumbing (/btu meter/) — none of those reach these lines. Only a bare building
+  // utility meter name (e.g. "Woodland Gas Meter", "Woodland Water Meter", "KW Meter - MSC")
+  // falls through to here. Subtype (electric/gas/water) is set by emClassifyMeterSubtype via
+  // emVerifyTypeByPoints, not here — this function only returns the category string.
+  if (/\bgas\s+meter\b/i.test(key)) return 'meter';
+  if (/\bwater\s+meter\b/i.test(key)) return 'meter';
+  if (/\bkwh?\s+meter\b/i.test(key)) return 'meter'; // "KW Meter - MSC"
+
+  // Lighting fixtures by generic keyword — 2026-09-23. Placed last so it only catches names
+  // with no other equipment signal above (a real "Lighting Zone"/"Lighting Control" panel is
+  // already caught earlier by the dict). Matches "Area C & D Emergency Lights", "Monument Sign
+  // Lights", "Southwest Parking Lot Lights", etc. — plain fixture names that say "Lights", not
+  // "Lighting" (the only word the dict/regexes above recognized before this fix). Matt,
+  // 2026-09-23: "Like we can't have a category for... a lights type?"
+  if (/\blights?\b/i.test(key)) return 'lighting';
+
   // All unrecognized types (including weather stations, etc.) are kept as 'other'
   return 'other';
+}
+
+/* ── emClassifyMeterSubtype ──────────────────────────────────────────────────
+   2026-09-23: Determines the Electric / Gas / Water subtype for a 'meter' category
+   row. Name-based first (e.g. "Woodland Gas Meter" -> gas, "Eaton Power Meter" ->
+   electric), point-signature fallback for ambiguous names ("KW Demand Level" /
+   "kWh" -> electric; "Heat Content" / "Energy Constant" / "Conversion Constant" are
+   gas-metering-specific BACnet points, not present on electric or water meters ->
+   gas). Returns '' when neither source is conclusive (never guesses at water — a
+   bare "Meter Input"/"Demand" signature with no name hint could be any utility).
+   Shared by the fresh-import point-verification pass (emVerifyTypeByPoints, which
+   has group.equipName) and the live self-heal pass (emLoadMatrix Pass B, which
+   passes the stored row's equipType/equipName through the same field) so both
+   paths agree — see emVerifyTypeByPoints' 'meter' branch and emLoadMatrix's
+   _ptGroupAll construction.                                                   */
+function emClassifyMeterSubtype(nameStr, points) {
+  var name = (nameStr || '').toLowerCase();
+  if (/\belectric(?:al)?\b|\bkwh?\b|\bpower\s+meter\b/.test(name)) return 'electric';
+  if (/\bgas\b/.test(name)) return 'gas';
+  if (/\bwater\b/.test(name)) return 'water';
+  var ptStr = Object.keys(points || {})
+    .join('\n')
+    .toLowerCase();
+  if (/kw\s*demand|kwh|kilowatt/.test(ptStr)) return 'electric';
+  if (/heat content|energy constant|conversion constant/.test(ptStr)) return 'gas';
+  return '';
 }
 
 /* ── emVerifyTypeByPoints ────────────────────────────────────────────────────
@@ -2632,6 +2691,18 @@ function emClassifyEquipType(equipTypeStr) {
 function emVerifyTypeByPoints(group) {
   var provisional = group.category || 'other';
   var ptKeys = Object.keys(group.pointValues || {});
+  // 2026-09-23: 'meter' subtype is name-driven first (emClassifyMeterSubtype), so it must run
+  // even when a row has zero points yet (e.g. a manually added row before any BAS data is
+  // attached) — check this BEFORE the empty-points early return below, which would otherwise
+  // make the meter-subtype branch further down unreachable for that case.
+  if (provisional === 'meter') {
+    return {
+      category: 'meter',
+      subtype: emClassifyMeterSubtype(group.equipName, group.pointValues),
+      rule: 'meter-subtype',
+      confidence: 'strong',
+    };
+  }
   if (ptKeys.length === 0) return { category: provisional, subtype: '' };
 
   // Build a single lowercased space-joined string for quick regex scanning
@@ -2934,6 +3005,30 @@ function emVerifyTypeByPoints(group) {
     ) {
       return { category: provisional, subtype: 'sz', rule: '15', confidence: 'strong' };
     }
+  }
+
+  // Rule 16 — Room temperature monitoring: zone temp and/or zone setpoints present, but no
+  // airflow, no supply fan, no terminal fan, no VFD, no DX signal, and no heating/cooling
+  // valve — i.e. a zone-temp sensor/setpoint program only, never an actual HVAC terminal box
+  // or fan coil. Only fires when the name pass found nothing (provisional === 'other'): a room
+  // with this exact point signature ("Setpoint / Cooling Occupied Setpoint" etc. + "Zone Temp"
+  // + "Zone Sensor Communications Alarm", no "Flow Control"/"Air Flow"/"Damper Position") is a
+  // monitored space, not equipment — e.g. Spring Hill Woodland MS "B136 Office/Storage", "B138
+  // Electrical", "A135/C135/D118 Telecomm" (2026-09-23, Matt: "look at their points"). Point-
+  // signature driven — never a hardcoded room-name list. Reuses the existing 'monitoring'
+  // category (already used for Kitchen Cooler/Freezer, temp/leak/pressure monitors — see dict
+  // + M4 regexes above) rather than adding a new one, per KISS/DRY.
+  if (
+    provisional === 'other' &&
+    (hasZoneTemp || hasPoint(/zone.?cool.*setpoint|zone.?htg.*setpoint/)) &&
+    !hasAirFlow &&
+    !hasSupplyFan &&
+    !hasTermFan &&
+    !hasVfdSignal &&
+    !hasDxSignal &&
+    !hasPoint(/heating valve|cooling valve|chw valve|chilled water valve|reheat valve|hw valve/)
+  ) {
+    return { category: 'monitoring', subtype: '', rule: '16', confidence: 'strong' };
   }
 
   // No signature match — keep provisional name-pass classification
@@ -3274,7 +3369,10 @@ function emExtractEquipmentGroups(rows, colMap) {
         provisionalCat === 'erv' ||
         provisionalCat === 'ef' ||
         provisionalCat === 'ac' ||
-        provisionalCat === 'elevator';
+        provisionalCat === 'elevator' ||
+        // 2026-09-23: 'meter' needs the point pass to set subtype (electric/gas/water) even
+        // though the name pass already got the category right — see emClassifyMeterSubtype.
+        provisionalCat === 'meter';
       if (needsVerify) {
         // 9018b1c6: emVerifyTypeByPoints now returns { category, subtype }
         var refined = emVerifyTypeByPoints(grp);
@@ -3366,7 +3464,9 @@ function emExtractEquipmentGroups(rows, colMap) {
       provisionalCat === 'erv' ||
       provisionalCat === 'ef' ||
       provisionalCat === 'ac' ||
-      provisionalCat === 'elevator';
+      provisionalCat === 'elevator' ||
+      // 2026-09-23: same 'meter' widening as the WebCTRL branch above — see comment there.
+      provisionalCat === 'meter';
     if (needsVerify) {
       // 9018b1c6: emVerifyTypeByPoints now returns { category, subtype }
       var refined = emVerifyTypeByPoints(grp);
@@ -3538,8 +3638,16 @@ function emLoadMatrix(projId) {
       // standing doctrine that conflicts get surfaced, never silently resolved.
       // emVerifyTypeByPoints expects group.pointValues (object keyed by point name).
       // Stored rows carry row.points; expose it as group.pointValues for the function.
+      // 2026-09-23: also pass equipName (via equipType, same field the row stores the name in)
+      // so the 'meter' branch (emClassifyMeterSubtype) can read the name on already-imported
+      // rows, not just fresh imports — otherwise stored 'meter' rows would only ever get a
+      // subtype from the points-only fallback.
       if (_bcrow && _bcrow.category && _bcrow.points && Object.keys(_bcrow.points).length > 0) {
-        var _ptGroupAll = { category: _bcrow.category, pointValues: _bcrow.points };
+        var _ptGroupAll = {
+          category: _bcrow.category,
+          pointValues: _bcrow.points,
+          equipName: _bcrow.equipType || _bcrow.equipName,
+        };
         var _ptResultAll = emVerifyTypeByPoints(_ptGroupAll); // returns { category, subtype, rule, confidence }
         if (_ptResultAll.category && _ptResultAll.category !== 'other' && _ptResultAll.category !== _bcrow.category) {
           if (_ptResultAll.confidence === 'weak') {
@@ -3764,9 +3872,6 @@ var _emSortDir = 1;
 var _emFilters = { building: '', type: '', search: '' };
 var _emDrillBuilding = null; // null = summary table; string = per-building detail view
 var _emHiddenGroups = {};
-var EM_PAGE_SIZE = 100;
-var _emCurrentPage = 0;
-var _emPageSize = 100;
 var _emShowAllDynCols = false; // when false, limit dynamic point columns to top 20 by frequency
 var EM_DYN_COL_LIMIT = 20; // max dynamic point columns shown by default
 var _emViewMode = 'audit'; // 'audit' = ASHRAE 36 compliance columns; 'raw' = raw point columns; 'summary' = aggregated card view; 'sequence' = Sequence of Operations generator (SOO Phase 3, item 3f1415af)
@@ -3983,8 +4088,6 @@ function emRenderMatrix(container, data, pid) {
   _emSortDir = 1;
   _emHiddenGroups = { asset: true }; // asset columns (Serial#, Model#, Manufacturer, Size/Capacity) hidden by default
   _emEditMode = false;
-  _emCurrentPage = 0;
-  _emPageSize = EM_PAGE_SIZE;
   _emShowAllDynCols = false;
   _emViewMode = 'audit';
   _emOpenDrawers = new Set();
@@ -4149,7 +4252,9 @@ function emCalcSummaryStats(rows) {
     live = 0;
   // M3: new type buckets for stats bar
   var _hvacNewTypes = { doas: 0, fcu: 0, heater: 0, ef: 0, furnace: 0, zone: 0, mau: 0, erv: 0 };
-  var _nonHvacTypes = { fire: 0, power: 0, plumbing: 0, controls: 0, sensor: 0 };
+  // 2026-09-23: 'meter'/'monitoring' added so the Raw View "Equipment Breakdown" pills
+  // (emUpdateStatsPillsForRaw) can show Meters/Monitoring counts.
+  var _nonHvacTypes = { fire: 0, power: 0, plumbing: 0, controls: 0, sensor: 0, meter: 0, monitoring: 0 };
   // 9018b1c6: subtype counts (additive; ahu base count still accumulates all ahu-category rows)
   var _subtypeCounts = { 'sz-rtu': 0, 'vav-rtu': 0, 'mtz-rtu': 0, 'sz-ahu': 0, 'vav-ahu': 0, 'mtz-ahu': 0 };
   for (var i = 0; i < rows.length; i++) {
@@ -4202,6 +4307,8 @@ function emCalcSummaryStats(rows) {
     plumbing: _nonHvacTypes.plumbing,
     controls: _nonHvacTypes.controls,
     sensor: _nonHvacTypes.sensor,
+    meter: _nonHvacTypes.meter,
+    monitoring: _nonHvacTypes.monitoring,
     subtypes: _subtypeCounts,
   };
 }
@@ -4378,8 +4485,8 @@ function emShowEffectiveSchedulesResult(result) {
    population the currently active view mode actually displays on screen:
      - Audit View / Summary View: phantom BAS sub-component rows (VFD
        Integration, Supply/Return Duct — see emIsPhantomRow) are excluded, to
-       agree with the stats bar, pagination footer, and table which all
-       already exclude phantoms via emRenderAuditTable's filtered set.
+       agree with the stats bar and table, which already exclude phantoms via
+       emRenderAuditTable's filtered set.
      - Raw View: every imported row counts, including phantoms, because
        emRenderTable's raw branch shows the raw unfiltered row set (no
        emIsPhantomRow filtering — see emRenderTable / emFilterRows).
@@ -4473,11 +4580,13 @@ function emRenderToolbar(data, pid, projBadge) {
     '<option value="chwp">CHW Plant</option>' +
     '<option value="ct">Cooling Tower</option>' +
     '<option value="lighting">Lighting</option>' +
+    '<option value="meter">Meters</option>' +
     '<option value="fire">Fire / Smoke</option>' +
     '<option value="power">Power / Gen</option>' +
     '<option value="plumbing">Plumbing</option>' +
     '<option value="controls">Controls / VFD</option>' +
     '<option value="sensor">Sensor / Weather</option>' +
+    '<option value="monitoring">Monitoring</option>' +
     '<option value="other">Other</option>';
   var colToggleStyle =
     'display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--text2);cursor:pointer;padding:2px 6px;border-radius:3px;border:1px solid var(--border);background:var(--s2);user-select:none';
@@ -5310,11 +5419,13 @@ function emUpdateStatsPillsForRaw(rows, totalBASPoints) {
     (stats.ef ? emStatPillCompact('Exh Fan', stats.ef) : '') +
     emStatPillCompact('Plants', stats.plants) +
     (stats.lighting ? emStatPillCompact('Lighting', stats.lighting) : '') +
+    (stats.meter ? emStatPillCompact('Meters', stats.meter) : '') +
     (stats.fire ? emStatPillCompact('Fire', stats.fire) : '') +
     (stats.power ? emStatPillCompact('Power', stats.power) : '') +
     (stats.plumbing ? emStatPillCompact('Plumbing', stats.plumbing) : '') +
     (stats.controls ? emStatPillCompact('Controls', stats.controls) : '') +
     (stats.sensor ? emStatPillCompact('Sensors', stats.sensor) : '') +
+    (stats.monitoring ? emStatPillCompact('Monitoring', stats.monitoring) : '') +
     (stats.other ? emStatPillCompact('Other', stats.other) : '') +
     emStatPillCompact('Has Data', stats.live) +
     (totalBASPoints ? emStatPillCompact('BAS Points', totalBASPoints.toLocaleString()) : '');
@@ -6296,7 +6407,8 @@ function emComputeAuditFooterTotals(rows, defs) {
    totalsMap: output of emComputeAuditFooterTotals.
    defs: column defs array.
    label: text for the first (sticky) cell.
-   isBold: true → bold style (Total), false → italic style (Page Total).     */
+   isBold: true → bold style (Total), false → italic style. Pagination removed
+   (2026-09-23) — only the single "Total" row (isBold=true) is used now.    */
 function buildAuditFooterRow(totalsMap, defs, label, isBold) {
   var tdBase = 'padding:8px 12px;vertical-align:middle;border-top:2px solid var(--border);background:var(--s1);';
   var html = '<tr style="background:var(--s1);">';
@@ -6406,51 +6518,37 @@ var _emNavListenersAttached = false;
 
 /* ── _emAttachNavDelegatedListeners ───────────────────────────────────────
    fix/em-event-attr-delegation (2026-07-29). Same defect 3a2067e fixed in
-   the compliance-detail panel, found in the other 12 event-attribute call
-   sites in this file: the pagination bar (Prev/Next/rows-per-page, used by
-   emRenderTable, emRenderAuditTable and emRenderBuildingDetailView) and the
-   Summary view's building drill-down link (emRenderSummaryView) built
-   onclick="fn(...)"/onchange="fn(...)" attributes from
-   JSON.stringify(pid)/JSON.stringify(bldg) interpolated into a double-
-   quoted HTML attribute. JSON.stringify() ALWAYS wraps strings in literal
-   double quotes, so the emitted attribute (e.g.
-   onclick="emNextPage("proj1")") terminated at the FIRST embedded quote per
-   the HTML5 tokenizer for EVERY pid/building value -- not just ones with
-   special characters -- leaving the syntactically invalid handler fragment
-   "emNextPage(", which fails to compile and resolves to a permanently null
-   handler. Confirmed by real-click reproduction: Next/Prev/Back did
-   nothing and getAttribute('onclick') read back truncated at the embedded
-   quote.
+   the compliance-detail panel: the Summary view's building drill-down link
+   (emRenderSummaryView) and the drill-down view's Back button built
+   onclick="fn(...)" attributes from JSON.stringify(pid)/JSON.stringify(bldg)
+   interpolated into a double-quoted HTML attribute. JSON.stringify() ALWAYS
+   wraps strings in literal double quotes, so the emitted attribute
+   terminated at the FIRST embedded quote per the HTML5 tokenizer for EVERY
+   pid/building value -- not just ones with special characters -- leaving a
+   syntactically invalid handler fragment that fails to compile and resolves
+   to a permanently null handler.
 
-   Fixed the same way as 3a2067e: every pagination control and the building
-   drill-down link now carries emHtmlEsc()'d data-* attributes (correct HTML-
-   attribute escaping, not JS-string-in-HTML-attribute encoding) instead of
-   attribute-embedded JS, plus a single delegated listener attached once to
-   `document` (guarded by _emNavListenersAttached) that reads
-   event.target.closest(...) + .dataset and calls the same real functions
-   the old onclick/onchange attributes called. Delegation is required
-   because emRenderTable/emRenderAuditTable/emRenderSummaryView/
-   emRenderBuildingDetailView all throw away and rebuild '#em-table-wrap'
-   (and the sibling '.em-pagination' bar) on every render, so per-node
-   listeners would need re-attaching every render anyway -- a document-level
-   delegate survives rebuilds for free and only needs to attach once per
-   page load.                                                              */
+   Fixed the same way as 3a2067e: the drill-down/back links carry
+   emHtmlEsc()'d data-* attributes (correct HTML-attribute escaping, not
+   JS-string-in-HTML-attribute encoding) instead of attribute-embedded JS,
+   plus a single delegated listener attached once to `document` (guarded by
+   _emNavListenersAttached) that reads event.target.closest(...) + .dataset
+   and calls the same real functions the old onclick attributes called.
+   Delegation is required because emRenderTable/emRenderAuditTable/
+   emRenderSummaryView/emRenderBuildingDetailView all throw away and rebuild
+   '#em-table-wrap' on every render, so per-node listeners would need
+   re-attaching every render anyway -- a document-level delegate survives
+   rebuilds for free and only needs to attach once per page load.
+
+   Pagination removed (2026-09-23) — the Prev/Next/rows-per-page handlers
+   that used to live here (emPrevPage/emNextPage/emSetPageSize) are gone;
+   only the drill-down/exit-drill delegation remains.                     */
 function _emAttachNavDelegatedListeners() {
   if (_emNavListenersAttached) return;
   if (typeof document === 'undefined' || !document.addEventListener) return;
   _emNavListenersAttached = true;
 
   document.addEventListener('click', function (e) {
-    var prevEl = e.target && e.target.closest ? e.target.closest('[data-em-prev-page]') : null;
-    if (prevEl) {
-      emPrevPage(prevEl.dataset.pid);
-      return;
-    }
-    var nextEl = e.target && e.target.closest ? e.target.closest('[data-em-next-page]') : null;
-    if (nextEl) {
-      emNextPage(nextEl.dataset.pid);
-      return;
-    }
     var exitEl = e.target && e.target.closest ? e.target.closest('[data-em-exit-drill]') : null;
     if (exitEl) {
       emExitDrillBuilding(exitEl.dataset.pid);
@@ -6461,13 +6559,6 @@ function _emAttachNavDelegatedListeners() {
       e.preventDefault();
       emDrillBuilding(drillEl.dataset.pid, drillEl.dataset.building);
       return;
-    }
-  });
-
-  document.addEventListener('change', function (e) {
-    var sizeEl = e.target && e.target.closest ? e.target.closest('[data-em-page-size]') : null;
-    if (sizeEl) {
-      emSetPageSize(sizeEl.dataset.pid, sizeEl.value);
     }
   });
 }
@@ -6631,15 +6722,9 @@ function emRenderTable(data, filters) {
     countEl.textContent = ptsText;
   }
 
-  // ── Pagination ──
-  var pageSize = _emPageSize;
-  var useAll = pageSize === 0;
-  var totalPages = useAll ? 1 : Math.ceil(filtered.length / pageSize);
-  if (totalPages < 1) totalPages = 1;
-  _emCurrentPage = Math.max(0, Math.min(_emCurrentPage, totalPages - 1));
-  var pageStart = useAll ? 0 : _emCurrentPage * pageSize;
-  var pageEnd = useAll ? filtered.length : Math.min(pageStart + pageSize, filtered.length);
-  var pageRows = filtered.slice(pageStart, pageEnd);
+  // Pagination removed (2026-09-23) — all filtered rows render into the single
+  // scrollable #em-table-wrap (sticky header already in place via emInjectMatrixCSS).
+  var pageRows = filtered;
 
   var theadCells = '';
   // M4 Part 2: expand-toggle column (leftmost, always visible in raw view)
@@ -6690,53 +6775,7 @@ function emRenderTable(data, filters) {
   // = expand col (1) + edit col (0 or 1) + defs.length
   var _emTotalColCount = 1 + (_emEditMode ? 1 : 0) + defs.length;
 
-  // ── Pagination bar ──
-  var pid = window._emActivePid || '';
-  var safePidAttr = emHtmlEsc(pid);
-  var pageSizeOptions = [50, 100, 250, 0];
-  var pageSizeLabels = { 50: '50', 100: '100', 250: '250', 0: 'All' };
-  // fix/em-event-attr-delegation: data-* attrs + delegated listener (see
-  // _emAttachNavDelegatedListeners) instead of JSON.stringify()-into-onchange.
-  var sizeSelectHtml =
-    '<select data-em-page-size="1" data-pid="' +
-    safePidAttr +
-    '" style="font-size:11px;padding:2px 6px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:24px">';
-  for (var si = 0; si < pageSizeOptions.length; si++) {
-    var opt = pageSizeOptions[si];
-    var lbl = pageSizeLabels[opt];
-    var isCurrent = _emPageSize === opt;
-    sizeSelectHtml += '<option value="' + opt + '"' + (isCurrent ? ' selected' : '') + '>' + lbl + '</option>';
-  }
-  sizeSelectHtml += '</select>';
-
-  var prevDisabled = _emCurrentPage <= 0 || useAll;
-  var nextDisabled = _emCurrentPage >= totalPages - 1 || useAll;
-  var pageLabel = useAll
-    ? 'All ' + filtered.length + ' rows'
-    : totalPages === 1
-      ? 'All rows visible (' + filtered.length + ' rows)'
-      : 'Page ' + (_emCurrentPage + 1) + ' of ' + totalPages + ' (' + filtered.length + ' total rows)';
-
-  // fix/em-event-attr-delegation: data-* attrs + delegated listener (see
-  // _emAttachNavDelegatedListeners) instead of JSON.stringify()-into-onclick.
-  var paginationHtml =
-    '<div class="em-pagination" style="display:flex;align-items:center;gap:10px;padding:8px 16px;border-top:1px solid var(--border);background:var(--s1);flex-shrink:0;font-size:11px;color:var(--text2)">' +
-    '<button data-em-prev-page="1" data-pid="' +
-    safePidAttr +
-    '" ' +
-    (prevDisabled ? 'disabled style="opacity:0.4;cursor:not-allowed;' : 'style="cursor:pointer;') +
-    'font-size:11px;padding:3px 10px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:24px">Prev</button>' +
-    '<span style="flex:1;text-align:center">' +
-    pageLabel +
-    '</span>' +
-    '<button data-em-next-page="1" data-pid="' +
-    safePidAttr +
-    '" ' +
-    (nextDisabled ? 'disabled style="opacity:0.4;cursor:not-allowed;' : 'style="cursor:pointer;') +
-    'font-size:11px;padding:3px 10px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:24px">Next</button>' +
-    '<span style="color:var(--text3)">Rows per page:</span>' +
-    sizeSelectHtml +
-    '</div>';
+  // Pagination bar removed (2026-09-23) — see note above.
 
   // Update stats bar for raw view
   emUpdateStatsPillsForRaw(rows, data.totalBASPoints);
@@ -6848,14 +6887,11 @@ function emRenderTable(data, filters) {
       tbody.appendChild(emptyTr);
     }
 
-    // Footer average rows (dyn-point cols skipped inside emComputeFooterAvg)
-    var pageAvg = emComputeFooterAvg(pageRows, defs);
+    // Footer total row (dyn-point cols skipped inside emComputeFooterAvg).
+    // Pagination removed (2026-09-23) — pageRows === filtered, so only one
+    // "Total Average" row is shown (the former "Page Average" row was a duplicate).
     var totalAvg = emComputeFooterAvg(filtered, defs);
-    var tfootHtml =
-      '<tfoot>' +
-      buildAvgFooterRow(pageAvg, defs, 'Page Average', false, !!_emEditMode) +
-      buildAvgFooterRow(totalAvg, defs, 'Total Average', true, !!_emEditMode) +
-      '</tfoot>';
+    var tfootHtml = '<tfoot>' + buildAvgFooterRow(totalAvg, defs, 'Total Average', true, !!_emEditMode) + '</tfoot>';
     var existingTfoot = wrapEl.querySelector('tfoot');
     if (existingTfoot) existingTfoot.parentNode.removeChild(existingTfoot);
     var table = wrapEl.querySelector('table');
@@ -6866,15 +6902,6 @@ function emRenderTable(data, filters) {
       tfootProxy.innerHTML = tfootHtml;
       var parsedTfoot = tfootProxy.querySelector('tfoot');
       if (parsedTfoot) table.appendChild(parsedTfoot);
-    }
-
-    // Inject pagination bar after the scroll container
-    var existingPag = wrapEl.parentNode ? wrapEl.parentNode.querySelector('.em-pagination') : null;
-    if (existingPag) existingPag.parentNode.removeChild(existingPag);
-    var pagDiv = document.createElement('div');
-    pagDiv.innerHTML = paginationHtml;
-    if (wrapEl.parentNode) {
-      wrapEl.parentNode.insertBefore(pagDiv.firstChild, wrapEl.nextSibling);
     }
 
     // Sticky offsets + resize handlers now that all columns are in the DOM
@@ -7386,13 +7413,6 @@ function emRenderSequenceView(data, filters) {
   var wrap = document.getElementById('em-table-wrap');
   if (!wrap) return;
 
-  // Remove any pagination bar left over from Audit/Raw view
-  var tableWrap = document.getElementById('em-table-wrap');
-  if (tableWrap && tableWrap.parentNode) {
-    var existingPag = tableWrap.parentNode.querySelector('.em-pagination');
-    if (existingPag) existingPag.parentNode.removeChild(existingPag);
-  }
-
   var rows = (data.rows || []).filter(function (r) {
     return !emIsPhantomRow(r);
   });
@@ -7602,13 +7622,6 @@ function emRenderSummaryView(data, filters) {
   filtered = filtered.filter(function (row) {
     return !emIsPhantomRow(row);
   });
-
-  // Remove any existing pagination bar (used by table views)
-  var tableWrap = document.getElementById('em-table-wrap');
-  if (tableWrap && tableWrap.parentNode) {
-    var existingPag = tableWrap.parentNode.querySelector('.em-pagination');
-    if (existingPag) existingPag.parentNode.removeChild(existingPag);
-  }
 
   // Update row count pill
   var countEl = document.getElementById('em-row-count');
@@ -8012,7 +8025,8 @@ function emRenderSummaryView(data, filters) {
    Renders a per-building detail view when the user clicks a building name in
    the Summary table. Shows all VAV/FPB/DD-VAV rows for that building with
    zone air temp, setpoints, and status color coding. Includes a Back button,
-   a stats bar, a detail table, footer avg rows, and pagination.           */
+   a stats bar, a detail table, and a Total Average footer row. All rows
+   render in one scroll (pagination removed 2026-09-23).                  */
 function emRenderBuildingDetailView(data, filters, buildingName) {
   _emAttachNavDelegatedListeners();
   var wrap = document.getElementById('em-table-wrap');
@@ -8047,15 +8061,8 @@ function emRenderBuildingDetailView(data, filters, buildingName) {
     return false;
   });
 
-  // Pagination
-  var pageSize = _emPageSize;
-  var useAll = pageSize === 0;
-  var totalPages = useAll ? 1 : Math.ceil(bldgRows.length / pageSize);
-  if (totalPages < 1) totalPages = 1;
-  _emCurrentPage = Math.max(0, Math.min(_emCurrentPage, totalPages - 1));
-  var pageStart = useAll ? 0 : _emCurrentPage * pageSize;
-  var pageEnd = useAll ? bldgRows.length : Math.min(pageStart + pageSize, bldgRows.length);
-  var pageRows = bldgRows.slice(pageStart, pageEnd);
+  // Pagination removed (2026-09-23) — all rows render into the scrollable wrap.
+  var pageRows = bldgRows;
 
   // Compute stats for the whole building (all bldgRows, not just page)
   var statAll = emComputeBuildingZoneStats(bldgRows);
@@ -8223,27 +8230,7 @@ function emRenderBuildingDetailView(data, filters, buildingName) {
 
   html += '</tbody>';
 
-  // ── tfoot: Page Average + Total Average ──
-  var pageStatMap = emComputeBuildingZoneStats(pageRows);
-  var pageAgg = {
-    zoneTemp: { sum: 0, count: 0, avg: NaN },
-    htgSp: { sum: 0, count: 0, avg: NaN },
-    coolSp: { sum: 0, count: 0, avg: NaN },
-  };
-  var pgKeys = Object.keys(pageStatMap);
-  for (var pki = 0; pki < pgKeys.length; pki++) {
-    var pgs = pageStatMap[pgKeys[pki]];
-    pageAgg.zoneTemp.sum += pgs.zoneTemp.sum;
-    pageAgg.zoneTemp.count += pgs.zoneTemp.count;
-    pageAgg.htgSp.sum += pgs.htgSp.sum;
-    pageAgg.htgSp.count += pgs.htgSp.count;
-    pageAgg.coolSp.sum += pgs.coolSp.sum;
-    pageAgg.coolSp.count += pgs.coolSp.count;
-  }
-  pageAgg.zoneTemp.avg = pageAgg.zoneTemp.count > 0 ? pageAgg.zoneTemp.sum / pageAgg.zoneTemp.count : NaN;
-  pageAgg.htgSp.avg = pageAgg.htgSp.count > 0 ? pageAgg.htgSp.sum / pageAgg.htgSp.count : NaN;
-  pageAgg.coolSp.avg = pageAgg.coolSp.count > 0 ? pageAgg.coolSp.sum / pageAgg.coolSp.count : NaN;
-
+  // ── tfoot: Total Average ── (Page Average removed 2026-09-23 — pageRows === bldgRows now)
   function fmtFootAvg(statObj) {
     if (!statObj || statObj.count === 0 || isNaN(statObj.avg)) return '<span style="color:var(--text3)">&#8212;</span>';
     return (Math.round(statObj.avg * 10) / 10).toFixed(1) + '°F';
@@ -8254,13 +8241,6 @@ function emRenderBuildingDetailView(data, filters, buildingName) {
   var ftdCenter = ftdBase + 'text-align:center;font-weight:600;';
 
   html += '<tfoot>';
-  html += '<tr>';
-  html += '<td colspan="3" style="' + ftdBase + 'font-style:italic;color:var(--text2)">Page Average</td>';
-  html += '<td style="' + ftdCenter + '">' + fmtFootAvg(pageAgg.zoneTemp) + '</td>';
-  html += '<td style="' + ftdCenter + '">' + fmtFootAvg(pageAgg.htgSp) + '</td>';
-  html += '<td style="' + ftdCenter + '">' + fmtFootAvg(pageAgg.coolSp) + '</td>';
-  html += '<td colspan="3" style="' + ftdBase + '"></td>';
-  html += '</tr>';
   html += '<tr>';
   html +=
     '<td colspan="3" style="' +
@@ -8277,51 +8257,7 @@ function emRenderBuildingDetailView(data, filters, buildingName) {
 
   html += '</table>';
 
-  // ── Pagination bar ──
-  if (!useAll && totalPages > 1) {
-    var prevDisabled = _emCurrentPage <= 0;
-    var nextDisabled = _emCurrentPage >= totalPages - 1;
-    var pageLabel = 'Page ' + (_emCurrentPage + 1) + ' of ' + totalPages + ' (' + bldgRows.length + ' total zones)';
-    var pageSizeOptions = [50, 100, 250, 0];
-    var pageSizeLabels = { 50: '50', 100: '100', 250: '250', 0: 'All' };
-    // fix/em-event-attr-delegation: data-* attrs + delegated listener (see
-    // _emAttachNavDelegatedListeners) instead of JSON.stringify()-into-onchange/onclick.
-    var sizeSelectHtml =
-      '<select data-em-page-size="1" data-pid="' +
-      emHtmlEsc(pid) +
-      '" style="font-size:11px;padding:2px 6px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:24px">';
-    for (var si = 0; si < pageSizeOptions.length; si++) {
-      var opt = pageSizeOptions[si];
-      sizeSelectHtml +=
-        '<option value="' +
-        opt +
-        '"' +
-        (_emPageSize === opt ? ' selected' : '') +
-        '>' +
-        pageSizeLabels[opt] +
-        '</option>';
-    }
-    sizeSelectHtml += '</select>';
-
-    html +=
-      '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;font-size:11px;color:var(--text2);margin-top:8px">' +
-      '<button data-em-prev-page="1" data-pid="' +
-      emHtmlEsc(pid) +
-      '" ' +
-      (prevDisabled ? 'disabled style="opacity:0.4;cursor:not-allowed;' : 'style="cursor:pointer;') +
-      'font-size:11px;padding:3px 10px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:24px">Prev</button>' +
-      '<span style="flex:1;text-align:center">' +
-      pageLabel +
-      '</span>' +
-      '<button data-em-next-page="1" data-pid="' +
-      emHtmlEsc(pid) +
-      '" ' +
-      (nextDisabled ? 'disabled style="opacity:0.4;cursor:not-allowed;' : 'style="cursor:pointer;') +
-      'font-size:11px;padding:3px 10px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:24px">Next</button>' +
-      '<span style="color:var(--text3)">Rows per page:</span>' +
-      sizeSelectHtml +
-      '</div>';
-  }
+  // Pagination bar removed (2026-09-23) — all rows render in the scrollable wrap.
 
   html += '</div>'; // end outer padding div
   wrap.innerHTML = html;
@@ -8331,7 +8267,8 @@ function emRenderBuildingDetailView(data, filters, buildingName) {
    Renders the equipment table in ASHRAE 36 Audit View mode.
    Uses emGetAuditColDefs() to generate compliance columns, and calls
    emComputeCompliance() per row to determine cell indicators.
-   Pagination, sorting, and sticky frozen columns all work the same as raw view.
+   Sorting and sticky frozen columns work the same as raw view. All rows render
+   in one scroll (pagination removed 2026-09-23).
    Edit mode is suppressed in audit view (compliance cells are computed, not edited). */
 function emRenderAuditTable(data, filters) {
   _emAttachNavDelegatedListeners();
@@ -8429,16 +8366,8 @@ function emRenderAuditTable(data, filters) {
     countEl.textContent = ptsText;
   }
 
-  var visibleRows = filtered;
-
-  var pageSize = _emPageSize;
-  var useAll = pageSize === 0;
-  var totalPages = useAll ? 1 : Math.ceil(visibleRows.length / pageSize);
-  if (totalPages < 1) totalPages = 1;
-  _emCurrentPage = Math.max(0, Math.min(_emCurrentPage, totalPages - 1));
-  var pageStart = useAll ? 0 : _emCurrentPage * pageSize;
-  var pageEnd = useAll ? visibleRows.length : Math.min(pageStart + pageSize, visibleRows.length);
-  var pageRows = visibleRows.slice(pageStart, pageEnd);
+  // Pagination removed (2026-09-23) — all filtered rows render into the scrollable wrap.
+  var pageRows = filtered;
 
   // ── Pre-compute compliance and sequence readiness for each page row ──
   var complianceCache = {};
@@ -8549,63 +8478,15 @@ function emRenderAuditTable(data, filters) {
       '</td></tr>';
   }
 
-  // ── Pagination bar ──
-  var pid = window._emActivePid || '';
-  var safePidAttr = emHtmlEsc(pid);
-  var pageSizeOptions = [50, 100, 250, 0];
-  var pageSizeLabels = { 50: '50', 100: '100', 250: '250', 0: 'All' };
-  // fix/em-event-attr-delegation: data-* attrs + delegated listener (see
-  // _emAttachNavDelegatedListeners) instead of JSON.stringify()-into-onchange/onclick.
-  var sizeSelectHtml =
-    '<select data-em-page-size="1" data-pid="' +
-    safePidAttr +
-    '" ' +
-    'style="font-size:11px;padding:2px 6px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:24px">';
-  for (var si = 0; si < pageSizeOptions.length; si++) {
-    var opt = pageSizeOptions[si];
-    var isCurrent = _emPageSize === opt;
-    sizeSelectHtml +=
-      '<option value="' + opt + '"' + (isCurrent ? ' selected' : '') + '>' + pageSizeLabels[opt] + '</option>';
-  }
-  sizeSelectHtml += '</select>';
-
-  var prevDisabled = _emCurrentPage <= 0 || useAll;
-  var nextDisabled = _emCurrentPage >= totalPages - 1 || useAll;
-  var pageLabel = useAll
-    ? 'All ' + filtered.length + ' rows'
-    : totalPages === 1
-      ? 'All rows visible (' + filtered.length + ' rows)'
-      : 'Page ' + (_emCurrentPage + 1) + ' of ' + totalPages + ' (' + filtered.length + ' total rows)';
-
-  var paginationHtml =
-    '<div class="em-pagination" style="display:flex;align-items:center;gap:10px;padding:8px 16px;border-top:1px solid var(--border);background:var(--s1);flex-shrink:0;font-size:11px;color:var(--text2)">' +
-    '<button data-em-prev-page="1" data-pid="' +
-    safePidAttr +
-    '" ' +
-    (prevDisabled ? 'disabled style="opacity:0.4;cursor:not-allowed;' : 'style="cursor:pointer;') +
-    'font-size:11px;padding:3px 10px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:24px">Prev</button>' +
-    '<span style="flex:1;text-align:center">' +
-    pageLabel +
-    '</span>' +
-    '<button data-em-next-page="1" data-pid="' +
-    safePidAttr +
-    '" ' +
-    (nextDisabled ? 'disabled style="opacity:0.4;cursor:not-allowed;' : 'style="cursor:pointer;') +
-    'font-size:11px;padding:3px 10px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;height:24px">Next</button>' +
-    '<span style="color:var(--text3)">Rows per page:</span>' +
-    sizeSelectHtml +
-    '</div>';
+  // Pagination bar removed (2026-09-23) — all rows render in the scrollable wrap.
 
   // Update stats bar for audit view (pass filtered, not raw rows, so pills match visible rows)
   emUpdateStatsPillsForAudit(filtered);
 
-  var pageTotals = emComputeAuditFooterTotals(pageRows, defs);
+  // Page Total row removed (2026-09-23) — pageRows === filtered now, so it was a duplicate
+  // of the Total row. Total row kept.
   var allTotals = emComputeAuditFooterTotals(filtered, defs);
-  var tfootHtml =
-    '<tfoot>' +
-    buildAuditFooterRow(pageTotals, defs, 'Page Total', false) +
-    buildAuditFooterRow(allTotals, defs, 'Total', true) +
-    '</tfoot>';
+  var tfootHtml = '<tfoot>' + buildAuditFooterRow(allTotals, defs, 'Total', true) + '</tfoot>';
 
   wrap.innerHTML =
     '<table style="border-collapse:separate;border-spacing:0;table-layout:auto">' +
@@ -8617,16 +8498,6 @@ function emRenderAuditTable(data, filters) {
     '</tbody>' +
     tfootHtml +
     '</table>';
-
-  // Inject pagination bar
-  var tableWrap = document.getElementById('em-table-wrap');
-  if (tableWrap && tableWrap.parentNode) {
-    var existingPag = tableWrap.parentNode.querySelector('.em-pagination');
-    if (existingPag) existingPag.parentNode.removeChild(existingPag);
-    var pagDiv = document.createElement('div');
-    pagDiv.innerHTML = paginationHtml;
-    tableWrap.parentNode.insertBefore(pagDiv.firstChild, tableWrap.nextSibling);
-  }
 
   emUpdateStickyOffsets();
   emAttachColResizeHandler(wrap);
@@ -9852,50 +9723,8 @@ function emAttachColResizeHandler(wrap) {
   document.addEventListener('mouseup', wrap._emDocUpHandler);
 }
 
-function emPrevPage(pid) {
-  if (_emCurrentPage > 0) {
-    _emCurrentPage--;
-    var _wrap = document.getElementById('em-table-wrap');
-    if (_wrap) {
-      _wrap.scrollTop = 0;
-      _wrap.scrollLeft = 0;
-    }
-    var data = emLoadMatrix(pid);
-    emRenderTable(data, _emFilters);
-  }
-}
-
-function emNextPage(pid) {
-  var data = emLoadMatrix(pid);
-  var rows = data ? data.rows || [] : [];
-  var filtered = emFilterRows(rows, _emFilters);
-  var totalPages = _emPageSize === 0 ? 1 : Math.ceil(filtered.length / _emPageSize);
-  if (totalPages < 1) totalPages = 1;
-  if (_emCurrentPage >= totalPages - 1) return;
-  _emCurrentPage++;
-  var _wrap = document.getElementById('em-table-wrap');
-  if (_wrap) {
-    _wrap.scrollTop = 0;
-    _wrap.scrollLeft = 0;
-  }
-  emRenderTable(data, _emFilters);
-}
-
-function emSetPageSize(pid, val) {
-  _emPageSize = parseInt(val, 10);
-  if (isNaN(_emPageSize)) _emPageSize = EM_PAGE_SIZE;
-  _emCurrentPage = 0;
-  var data = emLoadMatrix(pid);
-  var rows = data ? data.rows || [] : [];
-  var filtered = emFilterRows(rows, _emFilters);
-  emRenderTable(data, _emFilters);
-  if (_emPageSize === 0) {
-    showToast('Showing all ' + filtered.length + ' rows');
-  } else {
-    var showing = Math.min(_emPageSize, filtered.length);
-    showToast('Showing rows 1–' + showing + ' of ' + filtered.length);
-  }
-}
+// emPrevPage / emNextPage / emSetPageSize removed (2026-09-23) — pagination
+// removed from the Equipment Matrix; all rows render in the scrollable wrap.
 
 function emDeleteRow(rowId, label) {
   if (!confirm('Delete this equipment row?\n(' + label + ')')) return;
@@ -10115,7 +9944,6 @@ function emApplyFilters() {
     type: type ? type.value : '',
     search: search ? search.value : '',
   };
-  _emCurrentPage = 0;
   var data = emLoadMatrix(window._emActivePid);
   emRenderTable(data, _emFilters);
 }
@@ -10125,7 +9953,6 @@ function emToggleColGroup(group, visible) {
   // Reset column defs cache so index-based sort stays consistent
   _EM_COL_DEFS = null;
   _emSortCol = null;
-  _emCurrentPage = 0;
   var data = emLoadMatrix(window._emActivePid);
   emRenderTable(data, _emFilters);
 }
@@ -10133,7 +9960,6 @@ function emToggleColGroup(group, visible) {
 function emToggleAllDynCols() {
   _emShowAllDynCols = !_emShowAllDynCols;
   _emSortCol = null;
-  _emCurrentPage = 0;
   var btn = document.getElementById('em-dyn-col-toggle');
   if (btn) {
     btn.textContent = _emShowAllDynCols ? 'Limit to Top ' + EM_DYN_COL_LIMIT : 'Show All Point Columns';
@@ -10265,7 +10091,8 @@ var EM_SP_DEFAULTS = {
   unocc: {
     hydronic: { heat: 55, cool: 85 }, // gas-fired or hydronic hot water heat
     electricReheat: { heat: 60, cool: 85 },
-    heatpump: { heat: 65, cool: 85 }, // electric heat, VRF, or heat pump
+    electric: { heat: 65, cool: 85 }, // 2026-09-23: standalone electric-resistance unit heater
+    heatpump: { heat: 65, cool: 85 }, // VRF or heat pump — same setback as plain electric heat
   },
 };
 
@@ -10344,6 +10171,23 @@ function _emDeriveHeatingType(row, pts, hasGas) {
     if (ak.indexOf('auto_') !== 0) continue;
     if (/electric.*heat|resistance.*heat/i.test(ak)) return { key: 'electricReheat', known: true };
     if (/gas.*heat|burner/i.test(ak)) return { key: 'hydronic', known: true };
+  }
+  // 2026-09-23: a standalone 'heater' row (unit/tube/infrared/radiant heater — never a VAV/AHU
+  // reheat or heating coil) whose own BAS points report an Amps/Amperage reading is a direct
+  // electrical-current signal that the HEATING ELEMENT ITSELF is electric — a gas-fired unit
+  // heater instead reports a gas valve/burner/pilot point (caught by the burner check just
+  // above), never an Amps reading tied to the unit heater. Restricted to cat==='heater' so an
+  // unrelated fan/motor Amps point on an RTU/AHU/EF row is never mistaken for heating evidence.
+  // Distinct bucket from electricReheat (a VAV-terminal reheat coil is a different heat
+  // delivery path than a standalone cabinet/vestibule unit heater) — grouped with heatpump for
+  // the unoccupied-setpoint default (EM_SP_DEFAULTS.unocc), per company standard.
+  if (cat === 'heater') {
+    for (var hai = 0; hai < autoKeys.length; hai++) {
+      var hak = autoKeys[hai];
+      if (hak.indexOf('auto_') !== 0) continue;
+      if (/heater.*amp|amp.*heater|^auto_(unit|tube|infrared|radiant|cabinet)?heaterAmp/i.test(hak))
+        return { key: 'electric', known: true };
+    }
   }
   // No zone-level signal found. An all-electric building (no Gas meter in Utility Data) cannot
   // have gas/hydronic reheat, so fall back to the electric-reheat bucket instead of the blind

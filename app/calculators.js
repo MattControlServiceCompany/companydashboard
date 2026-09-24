@@ -250,6 +250,124 @@ function _hvlMonthlyBaseline(projId, b) {
   };
 }
 
+// Company-standard "Space Heating % of Total Gas" default for the Rules-of-Thumb method's
+// gasPct input (hvl-t-gasPct) — ONE place, shared by _hvlRenderTraditional's shown default/hint
+// text and hvacComputeGasThermsForBuilding's headless BAS Savings Calc autofill (2026-09-23), so
+// both always agree — no second copy of "15 vs 80" anywhere else.
+// 2026-09-23 (heating-type classifier fix): gasHeat added as a second signal. A building with
+// BOTH known gas/hydronic heat (e.g. a central gas boiler + VAV hot-water reheat) AND a small
+// amount of known electric heat (e.g. a few standalone electric vestibule unit heaters) is still
+// gas-dominant for its overall gas bill allocation — a handful of electric unit heaters does not
+// mean the building's gas usage is mostly domestic hot water/kitchen. The 15% "electric building"
+// preset only applies when electric heat is present and NO gas/hydronic heat evidence exists at
+// all (a genuinely all-electric building).
+function _hvlDefaultGasPct(elecHeat, gasHeat) {
+  return elecHeat && !gasHeat ? 15 : 80;
+}
+
+// Scans a building's Equipment Matrix rows ONCE through the Equipment Matrix's own per-row
+// heating-type classifier (_emDeriveHeatingType, app/equipment-matrix.js — read-only, never a
+// second classifier, never mutates the matrix) and returns which heating-fuel signals are
+// present: { hasElectric, hasGas }. Only rows with a real classification signal (known: true)
+// count as evidence; the unclassified fallback bucket never counts. Both
+// _hvlBuildingHasElectricHeat and _hvlDefaultGasPct's gas-dominance check read from this ONE scan
+// — never two separate re-implementations of the same row loop (2026-09-23).
+function _hvlBuildingHeatingSignals(projId, bldgId) {
+  const out = { hasElectric: false, hasGas: false };
+  if (
+    !bldgId ||
+    typeof emLoadMatrix !== 'function' ||
+    typeof emGetNormalizedPoints !== 'function' ||
+    typeof _emDeriveHeatingType !== 'function' ||
+    typeof _emNormBldgNameForJoin !== 'function'
+  )
+    return out;
+  const b = typeof getUDBldg === 'function' ? getUDBldg(projId, bldgId) : null;
+  if (!b) return out;
+  const data = emLoadMatrix(projId);
+  const rows = (data && data.rows) || [];
+  if (!rows.length) return out;
+  const wantName = _emNormBldgNameForJoin(b.name);
+  const hasGasMeter = b.meters && b.meters.length ? b.meters.some((m) => m.commodity === 'Gas') : undefined;
+  rows.forEach((row) => {
+    if (_emNormBldgNameForJoin(row.building || '') !== wantName) return;
+    const pts = emGetNormalizedPoints(row) || {};
+    const ht = _emDeriveHeatingType(row, pts, hasGasMeter);
+    if (!ht.known) return;
+    if (ht.key === 'electricReheat' || ht.key === 'heatpump' || ht.key === 'electric') out.hasElectric = true;
+    if (ht.key === 'hydronic') out.hasGas = true;
+  });
+  return out;
+}
+
+// Whether this building has at least one Equipment Matrix row classified — with a real signal,
+// not the unclassified fallback bucket — as electric heat (electric reheat, standalone electric
+// unit heater, or heat pump/VRF). Replaces the old p.heatType signal (a free-text project-level
+// field set only via a rarely-used modal, so it is essentially never populated) which is why a
+// building with a real electric-heat unit, like Spring Hill Schools / Woodland Spring Middle, was
+// showing "0% electric heating share" even though Equipment Matrix data for it exists (2026-09-23
+// fix — see docs/dashboardlogic.md).
+function _hvlBuildingHasElectricHeat(projId, bldgId) {
+  return _hvlBuildingHeatingSignals(projId, bldgId).hasElectric;
+}
+
+// _hvlGasHeatShare — the ONE computation of a building's gas heating share, used by BOTH the
+// HVAC Load Estimation "Rules of Thumb" tab's "Space Heating % of Total Gas" default
+// (_hvlRenderTraditional) and the BAS Savings Calc's Existing Heating Gas Therms autofill
+// (hvacComputeGasThermsForBuilding). Prefers the real, data-driven 3-lowest-month baseload
+// subtraction method (computeHvacEnduse, computations/hvac-enduse.js — the SAME canonical
+// function the Energy Graphics tab's HVAC End-Use Estimate card already uses) computed from this
+// building's own monthly gas (+ propane, gallon-equivalent) bills via _hvlMonthlyBaseline (the
+// same reader every other HVAC Load Est number uses). Falls back to the Rules-of-Thumb
+// industry-standard percentage default (_hvlDefaultGasPct) only when there is not enough real
+// bill history (fewer than 6 populated calendar months) to compute a baseload split — never a
+// second, independent re-implementation of either method (2026-09-23 single-source fix; replaces
+// the fixed 80%/15% default that previously applied unconditionally even with a full year of
+// bills on file).
+function _hvlGasHeatShare(projId, bldgId) {
+  const sig = _hvlBuildingHeatingSignals(projId, bldgId);
+  const fallbackPct = _hvlDefaultGasPct(sig.hasElectric, sig.hasGas);
+  const b = typeof getUDBldg === 'function' ? getUDBldg(projId, bldgId) : null;
+  if (!b) return { pct: fallbackPct, source: 'default', totalGas: 0, heatingTherms: 0 };
+  const { gByMo, pByMo } = _hvlMonthlyBaseline(projId, b);
+  const gasArr = [];
+  let totalGas = 0;
+  for (let mo = 0; mo < 12; mo++) {
+    const hasG = !!gByMo[mo];
+    const hasP = !!pByMo[mo];
+    let v = null;
+    // gal -> therms, same 0.9153 factor hvacLoadCalc uses
+    if (hasG || hasP) v = (hasG ? gByMo[mo].therms || 0 : 0) + (hasP ? (pByMo[mo].gallons || 0) * 0.9153 : 0);
+    gasArr.push(v);
+    if (v != null) totalGas += v;
+  }
+  const enduse = typeof computeHvacEnduse === 'function' ? computeHvacEnduse(null, null, gasArr) : null;
+  if (enduse && enduse.gasValid && totalGas > 0) {
+    return {
+      pct: Math.round(enduse.heatingPct * 1000) / 10,
+      source: 'baseload',
+      totalGas,
+      heatingTherms: enduse.heatingTherms,
+    };
+  }
+  return { pct: fallbackPct, source: 'default', totalGas, heatingTherms: totalGas * (fallbackPct / 100) };
+}
+
+// Existing Heating Gas Therms for the BAS Savings Calc (calHeatGas), computed directly from this
+// building's own gas (plus propane, gallon-equivalent) bills via the shared _hvlGasHeatShare
+// (2026-09-23) — so this fills the BAS Savings Calc's calibration field without requiring a user
+// to have opened the HVAC Load Estimation tab first. Returns null when the building has no
+// gas/propane bills at all — never invents a number. A real SAVED HVAC Load Estimation for this
+// project (p.hvacLoadEst + p.hvacLoadSavedAt) is preferred over this fresh estimate by the caller
+// (openBASCalc) — this is only the fallback for a building nobody has reviewed in that tab yet.
+function hvacComputeGasThermsForBuilding(projId, bldgId) {
+  const b = typeof getUDBldg === 'function' ? getUDBldg(projId, bldgId) : null;
+  if (!b) return null;
+  const share = _hvlGasHeatShare(projId, bldgId);
+  if (share.totalGas <= 0) return null;
+  return { totalGas: share.totalGas, hvacGasPct: share.pct, hvacGasT: share.heatingTherms, source: share.source };
+}
+
 function _buildBaselineDataHtml(b, projId) {
   if (!b) return '';
   const sqft = parseInt(b.sqft) || 0;
@@ -491,13 +609,23 @@ function _hvlRenderTraditional(projId, bldgId, method) {
   if (!p) return;
   const b = getUDBldg(projId, bldgId);
   // Electric heat is the exception, not the rule — only treat the building as electric-heated
-  // when heatType explicitly says so; everything else (including unset) defaults to gas heat,
-  // which is the typical case for a school. This drives both the electric-heating-% default
-  // (0 unless electric heat) and the gas-HVAC-% default/hint below (2026-09-22 fix).
-  const _hvlElecHeat = !!(
-    p.heatType &&
-    (p.heatType.includes('Electric') || p.heatType.includes('Heat Pump') || p.heatType.includes('VRF'))
-  );
+  // when the Equipment Matrix actually classifies a zone/equipment row that way; everything else
+  // (including no Equipment Matrix data at all) defaults to gas heat, which is the typical case
+  // for a school. This drives both the electric-heating-% default (0 unless electric heat) and
+  // the gas-HVAC-% default/hint below. 2026-09-23: sourced from the Equipment Matrix's own
+  // heating-type classification (_hvlBuildingHasElectricHeat) instead of p.heatType (a
+  // project-level field that is essentially never set) — see docs/dashboardlogic.md.
+  const _hvlHeatSig = _hvlBuildingHeatingSignals(projId, bldgId);
+  const _hvlElecHeat = _hvlHeatSig.hasElectric;
+  // 2026-09-23: the "Space Heating % of Total Gas" preset only drops to 15% (DHW/kitchen-only)
+  // when the building has NO gas/hydronic heat evidence at all — a school with a central gas
+  // boiler plus a few electric vestibule unit heaters is still gas-dominant for this field.
+  const _hvlGasPctIsLow = _hvlElecHeat && !_hvlHeatSig.hasGas;
+  // 2026-09-23: the Space Heating % of Total Gas default now comes from _hvlGasHeatShare — the
+  // SAME single computation the BAS Savings Calc's calHeatGas autofill uses — which prefers the
+  // real 3-lowest-month baseload subtraction method computed from this building's own bills, and
+  // only falls back to the Rules-of-Thumb industry default when there isn't enough bill history.
+  const _hvlGasShare = method === 'thumb' ? _hvlGasHeatShare(projId, bldgId) : null;
 
   if (method === 'thumb') {
     wrap.innerHTML = `<div class="card" style="margin-bottom:16px">
@@ -514,7 +642,7 @@ function _hvlRenderTraditional(projId, bldgId, method) {
                   <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);margin-bottom:10px">⚡ Electric Demand (kW) Breakdown</div>
                   <div class="fg"><label class="fl">HVAC % of Peak kW</label><input class="fi hvl-in" id="hvl-t-kwPct-${projId}" type="number" value="55" min="0" max="100"><div class="fhint">Typical: 40-65% — HVAC is usually the largest demand driver</div></div>
                   <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);margin:14px 0 10px">🔥 Gas (Therms) Breakdown</div>
-                  <div class="fg"><label class="fl">Space Heating % of Total Gas</label><input class="fi hvl-in" id="hvl-t-gasPct-${projId}" type="number" value="${_hvlElecHeat ? '15' : '80'}" min="0" max="100"><div class="fhint">${_hvlElecHeat ? "Typical: 0-20% for DHW/kitchen only — this building's heat is electric" : 'Typical: 70-95% for gas-heated buildings — gas HVAC share is mostly space heating'}</div></div>
+                  <div class="fg"><label class="fl">Space Heating % of Total Gas</label><input class="fi hvl-in" id="hvl-t-gasPct-${projId}" type="number" value="${_hvlGasShare.pct}" min="0" max="100"><div class="fhint">${_hvlGasShare.source === 'baseload' ? `✓ computed from gas bills (3-lowest-month baseload method, ${Math.round(_hvlGasShare.totalGas).toLocaleString()} total Therms/yr) — same method as the Energy Graphics HVAC End-Use Estimate` : _hvlGasPctIsLow ? "Rules-of-Thumb default (not enough bill history to compute) — 0-20% typical for DHW/kitchen only, this building's heat is electric" : 'Rules-of-Thumb default (not enough bill history to compute) — 70-95% typical for gas-heated buildings'}</div></div>
                 </div>
               </div>
             </div>
@@ -3755,15 +3883,18 @@ const BAS_VRF_COP = [
 const BAS_TEMP_BINS = BAS_WEATHER_BINS.bins;
 const BAS_MO = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 
-// Company-standard unoccupied heating setpoint default, by BAS Savings Calc heating source
-// (see docs/dashboardlogic.md project_default_setpoint_standards, 2026-09-23): gas/hydronic
-// heat setback 55, electric-resistance setback 60, electric+VRF/heat-pump setback 65. Occupied
-// setpoints (70 heat / 74 cool) and unoccupied cooling (85) are constant across heat sources —
-// only unoccupied heat varies, so this is the only value that needs the heat-source branch.
+// Company-standard unoccupied heating setpoint default, by BAS Savings Calc heating source —
+// reads the ONE setpoint default table (EM_SP_DEFAULTS.unocc, app/equipment-matrix.js; see
+// docs/dashboardlogic.md project_default_setpoint_standards) instead of keeping its own copy of
+// the same 55/60/65 numbers (2026-09-23 single-source fix). Occupied setpoints (70 heat / 74
+// cool) and unoccupied cooling (85) are constant across heat sources — only unoccupied heat
+// varies, so this is the only value that needs the heat-source branch. Falls back to the same
+// literal numbers only if EM_SP_DEFAULTS hasn't loaded (defensive — never happens in the shipped
+// page, equipment-matrix.js always loads alongside calculators.js).
 function _bcDefaultUnoccHeat(heatSrc) {
-  if (heatSrc === 4) return 65; // Both (Electric + Gas) — VRF/heat-pump treatment
-  if (heatSrc === 2) return 60; // Electric
-  return 55; // 1 or 3 — Gas (MCF or Therms)
+  const key = heatSrc === 4 ? 'heatpump' : heatSrc === 2 ? 'electricReheat' : 'hydronic'; // 1/3 = Gas
+  if (typeof EM_SP_DEFAULTS !== 'undefined' && EM_SP_DEFAULTS.unocc[key]) return EM_SP_DEFAULTS.unocc[key].heat;
+  return heatSrc === 4 ? 65 : heatSrc === 2 ? 60 : 55;
 }
 
 function _bcInterp(curve, temp) {
@@ -3843,15 +3974,30 @@ function openBASCalc(projId) {
       autoCalCool = { value: Math.round(p.hvacLoadEst.coolKwhTotal), source: 'HVAC Load Estimation' };
     if (p.hvacLoadEst.heatKwhTotal)
       autoCalHeat = { value: Math.round(p.hvacLoadEst.heatKwhTotal), source: 'HVAC Load Estimation' };
-    // Existing Heating Gas Therms (2026-09-23): hvacGasT is the project's total gas usage
-    // (from its own uploaded gas bills — see the Baseline Data / HVAC Load Estimation reader
-    // above) times the heating share of that gas (hvacGasPct, whatever % of gas load was
-    // attributed to HVAC heating on the HVAC Load Est tab). This is the SAME number the HVAC
-    // Load Est "Gas Therms/yr" HVAC total already shows — never a second computation.
-    if (p.hvacLoadEst.hvacGasT)
+  }
+  // Existing Heating Gas Therms (2026-09-23 fix): a real SAVED HVAC Load Estimation for this
+  // project (p.hvacLoadEst.hvacGasT + p.hvacLoadSavedAt — a user actually reviewed and clicked
+  // Save on that tab) wins when one exists. Otherwise, compute it fresh directly from THIS
+  // building's own gas/propane bills via hvacComputeGasThermsForBuilding — the SAME bill reader
+  // and the SAME Rules-of-Thumb gas-heating-share default the HVAC Load Estimation tab itself
+  // uses — so calHeatGas fills without requiring a user to open that tab first. Previously this
+  // only ever read the saved snapshot, which stays empty (and calHeatGas empty) for any building
+  // nobody has opened that tab for — the Spring Hill Schools / Woodland Spring Middle failure
+  // mode reported 2026-09-23.
+  if (p?.hvacLoadEst?.hvacGasT && p.hvacLoadSavedAt) {
+    autoCalGas = {
+      value: Math.round(p.hvacLoadEst.hvacGasT),
+      source: 'HVAC Load Estimation (heating share of gas bills)',
+    };
+  } else if (bldgId && typeof hvacComputeGasThermsForBuilding === 'function') {
+    const computedGas = hvacComputeGasThermsForBuilding(projId, bldgId);
+    if (computedGas && computedGas.hvacGasT)
       autoCalGas = {
-        value: Math.round(p.hvacLoadEst.hvacGasT),
-        source: 'HVAC Load Estimation (heating share of gas bills)',
+        value: Math.round(computedGas.hvacGasT),
+        source:
+          computedGas.source === 'baseload'
+            ? 'gas bills (3-lowest-month baseload heating-share method — same as the Energy Graphics HVAC End-Use Estimate)'
+            : 'gas bills (Rules of Thumb heating share estimate, not enough bill history to compute a baseload split — review in HVAC Load Estimation)',
       };
   }
 
@@ -4095,8 +4241,8 @@ function openBASCalc(projId) {
                 <div class="fg"><label class="fl">Existing Cooling kWh (from UA)</label><input class="fi bc-inp" id="bc-calCoolKwh" type="number" value="${rCalCoolKwh.value}">${_bcHintSpan(rCalCoolKwh.hint)}</div>
                 <div class="fg"><label class="fl">Existing Heating kWh (from UA)</label><input class="fi bc-inp" id="bc-calHeatKwh" type="number" value="${rCalHeatKwh.value}">${_bcHintSpan(rCalHeatKwh.hint)}</div>
                 ${
-                  parseInt(rHeatSrc.value) === 4
-                    ? `<div class="fg"><label class="fl">Existing Heating Gas — Therms (from UA)</label><input class="fi bc-inp" id="bc-calHeatGas" type="number" value="${rCalHeatGas.value}">${_bcHintSpan(rCalHeatGas.hint)}<div style="font-size:9px;color:var(--text3);margin-top:2px">Splits combined "Both" heating between kWh and gas by share of load (Heating Source 4 only)</div></div>`
+                  parseInt(rHeatSrc.value) === 1 || parseInt(rHeatSrc.value) === 3 || parseInt(rHeatSrc.value) === 4
+                    ? `<div class="fg"><label class="fl">Existing Heating Gas — ${parseInt(rHeatSrc.value) === 1 ? 'MCF' : 'Therms'} (from UA)</label><input class="fi bc-inp" id="bc-calHeatGas" type="number" value="${rCalHeatGas.value}">${_bcHintSpan(rCalHeatGas.hint)}<div style="font-size:9px;color:var(--text3);margin-top:2px">${parseInt(rHeatSrc.value) === 4 ? 'Splits combined "Both" heating between kWh and gas by share of load' : 'Calibrates the existing gas heating estimate to match utility analysis'}</div></div>`
                     : ''
                 }
                 <div style="text-align:center;padding:8px;background:var(--s3);border-radius:7px;border:1px solid var(--border)">
@@ -4511,17 +4657,44 @@ function _bcDoCalc(projId) {
   // reference — Max Load depends on K50, and K50's own formula sums a calculated total
   // that depends on Max Load — Excel's iterative calculation converges it to this exact
   // closed form). Solving it directly here avoids needing iteration.
-  // Heating calibration input ("Existing Heating kWh from UA") is kWh-denominated, so
-  // (as before this change) it only calibrates the kWh heating bucket — gas-fueled heating
-  // (heatSrc 1/3) has no matching calibration input here and heatAdj stays 1 for it.
   const rawExCoolSetbackTotal = exCoolSetbackM.reduce((a, b) => a + b, 0);
   const rawExCoolOATotal = exCoolOAM.reduce((a, b) => a + b, 0);
   const rawExHeatSetbackTotal = exHeatKwhSetbackM.reduce((a, b) => a + b, 0);
   const rawExHeatOATotal = exHeatKwhOAM.reduce((a, b) => a + b, 0);
+  const rawExHeatGasSetbackTotal = exHeatGasSetbackM.reduce((a, b) => a + b, 0);
+  const rawExHeatGasOATotal = exHeatGasOAM.reduce((a, b) => a + b, 0);
   let coolAdj = 1,
     heatAdj = 1;
   if (calCoolKwh > 0 && rawExCoolSetbackTotal > 0) coolAdj = (calCoolKwh - rawExCoolOATotal) / rawExCoolSetbackTotal;
-  if (calHeatKwh > 0 && rawExHeatSetbackTotal > 0) heatAdj = (calHeatKwh - rawExHeatOATotal) / rawExHeatSetbackTotal;
+  // Heating calibration input ("Existing Heating kWh from UA") is kWh-denominated, so it only
+  // calibrates the kWh heating bucket, which is exactly where heatSrc 2 (Electric) and heatSrc 4
+  // (Both — see pctGasHeat above) route their existing heating load.
+  // 2026-09-23 fix: heatSrc 1/3 (pure gas — MCF/Therms) route their ENTIRE existing heating load
+  // into the gas bucket instead (exHeatGasSetbackM/OAM — see the heatSrc branch above); the kWh
+  // bucket stays 0 for them, so rawExHeatSetbackTotal was always 0 and heatAdj stayed
+  // permanently 1 (uncalibrated) no matter what a user entered — the raw, unscaled bin-model
+  // estimate was reported as "Heat Therms Saved" with no ability to match it to a real utility
+  // analysis figure (Existing Heating Gas — Therms/MCF from UA, now shown for heatSrc 1/3 too).
+  // Calibrates directly against that same closed-form equation, against the gas raw totals.
+  // 2026-09-23 (heating-type classifier fix): heatSrc 4 ("Both") can also route effectively ALL
+  // of a building's existing heat into the gas bucket via pctGasHeat above (e.g. a gas-boiler
+  // school with a few known electric unit heaters — mostly gas, heatSrc correctly resolves to 4,
+  // but calHeatKwh is never entered/auto-filled because there is no meaningful kWh heating load
+  // to calibrate). Without this branch, heatAdj fell through to the calHeatKwh check, which is
+  // never satisfied (rawExHeatSetbackTotal stays 0 when pctGasHeat routed the raw load to gas
+  // instead), so heatAdj stayed permanently 1 (uncalibrated) — the same "Heat Therms Saved"
+  // symptom the heatSrc 1/3 fix above already solved, now also possible for heatSrc 4 once a
+  // building has any real electric-heat evidence. Only activates when the kWh bucket is actually
+  // empty (rawExHeatSetbackTotal <= 0) — a true mixed-load building (both buckets populated)
+  // still falls through to the existing kWh-only calibration below, unchanged.
+  if (heatSrc === 1 || heatSrc === 3) {
+    if (calHeatGas > 0 && rawExHeatGasSetbackTotal > 0)
+      heatAdj = (calHeatGas - rawExHeatGasOATotal) / rawExHeatGasSetbackTotal;
+  } else if (heatSrc === 4 && rawExHeatSetbackTotal <= 0 && rawExHeatGasSetbackTotal > 0) {
+    if (calHeatGas > 0) heatAdj = (calHeatGas - rawExHeatGasOATotal) / rawExHeatGasSetbackTotal;
+  } else if (calHeatKwh > 0 && rawExHeatSetbackTotal > 0) {
+    heatAdj = (calHeatKwh - rawExHeatOATotal) / rawExHeatSetbackTotal;
+  }
   if (el('bc-adjCool')) el('bc-adjCool').textContent = coolAdj.toFixed(3);
   if (el('bc-adjHeat')) el('bc-adjHeat').textContent = heatAdj.toFixed(3);
 

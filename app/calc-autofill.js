@@ -88,7 +88,47 @@ function chCalcAutofillFields(projId, bldgId) {
     const meters = bldg.meters || [];
     hasGas = meters.length ? meters.some((m) => m.commodity === 'Gas') : undefined;
     const hasElec = meters.some((m) => m.commodity === 'Electric');
-    if (hasGas && hasElec) {
+
+    // Heating Source (2026-09-23): primarily sourced from the Equipment Matrix's own per-row
+    // heating-type classifier (_emDeriveHeatingType, app/equipment-matrix.js — read-only, never
+    // a second classifier), gas (hydronic) vs electric (electric reheat / heat pump / VRF) vs
+    // both, for this building — matching the BAS Savings Calc's own heatSrc options (1 Gas-MCF /
+    // 2 Electric / 3 Gas-Therms / 4 Both). Only rows with a real classification signal (known:
+    // true) count; the unclassified fallback bucket is never treated as evidence. Falls back to
+    // the building's own meter presence (pre-existing behavior) only when the Equipment Matrix
+    // has no classifiable rows for this building at all.
+    let emGas = false,
+      emElec = false,
+      emKnown = false;
+    if (
+      typeof emLoadMatrix === 'function' &&
+      typeof emGetNormalizedPoints === 'function' &&
+      typeof _emDeriveHeatingType === 'function' &&
+      typeof _emNormBldgNameForJoin === 'function'
+    ) {
+      const data = emLoadMatrix(projId);
+      const rows = (data && data.rows) || [];
+      const wantName = _emNormBldgNameForJoin(bldg.name);
+      rows.forEach((row) => {
+        if (_emNormBldgNameForJoin(row.building || '') !== wantName) return;
+        const pts = emGetNormalizedPoints(row) || {};
+        const ht = _emDeriveHeatingType(row, pts, hasGas);
+        if (!ht.known) return;
+        emKnown = true;
+        if (ht.key === 'hydronic') emGas = true;
+        else if (ht.key === 'electricReheat' || ht.key === 'heatpump' || ht.key === 'electric') emElec = true;
+      });
+    }
+
+    if (emKnown) {
+      if (emGas && emElec) {
+        out.heatSrc = { value: 4, source: 'Equipment Matrix (gas + electric heating types)', isDefault: false };
+      } else if (emGas) {
+        out.heatSrc = { value: 3, source: 'Equipment Matrix (gas heating type)', isDefault: false };
+      } else {
+        out.heatSrc = { value: 2, source: 'Equipment Matrix (electric heating type)', isDefault: false };
+      }
+    } else if (hasGas && hasElec) {
       out.heatSrc = { value: 4, source: 'building meters (gas + electric)', isDefault: false };
     } else if (hasGas) {
       out.heatSrc = { value: 3, source: 'building meters (gas)', isDefault: false };

@@ -1128,6 +1128,128 @@ console.log('\n--- 12. Forbidden jargon tokens; distinct energy-only vs. blended
   }
 }
 
+// ─── 13. 2026-09-23 kWh overflow fix: Annual kWh column widens for 7/8-digit buildings, and
+// ONLY for them (SYNTHETIC fixtures — this is the layout fix's own regression gate; the fix
+// itself, and why a fixed static weight can't work, is documented in app/report-engine.js's
+// rptBuildBaselineDataTable, the _BL_COL_WEIGHT/_blKwhNeedPx block). This can't assert real
+// pixel overflow (no browser/layout engine in this vm sandbox — that was verified separately,
+// headless, against Woodland/Louisburg HS/synthetic 7- and 8-digit fixtures, see
+// 2026-09-23-report-kwh-overflow/2026-09-23-result.md), but it DOES prove the dynamic-width
+// code path actually fires (and by how much) from the table's own rendered colgroup HTML, so a
+// future revert/regression of the fix fails loudly here instead of silently.
+console.log('\n--- 13. Annual kWh column width grows only for 7+ digit annual totals ---');
+{
+  function colWidthPx(html, colIndex) {
+    const m = [...html.matchAll(/<col style="width:(\d+)px">/g)];
+    return m[colIndex] ? parseInt(m[colIndex][1], 10) : null;
+  }
+  // Section 8's already-captured Page 3 table: 6-digit annual kWh (695,000 — sums KWH above),
+  // kwh is column index 3 (Month, HDD, CDD, kWh, ...). Baseline case: weight untouched.
+  const html6 = ctx8.__blTableCalls[ctx8.__blTableCalls.length - 1].html;
+  const kwhPx6 = colWidthPx(html6, 3);
+  assert(kwhPx6 != null, '6-digit fixture: kwh column width found in colgroup');
+
+  // A second, independent SYNTHETIC building/project — same shape as section 8's, scaled up to
+  // a 7-digit annual kWh (own local KWH/KW/THERMS arrays; does not touch section 8's).
+  const KWH7 = [110000, 105000, 110000, 120000, 135000, 150000, 165000, 175000, 160000, 135000, 120000, 110000];
+  const KW7 = [500, 500, 520, 560, 620, 700, 760, 800, 760, 660, 560, 500];
+  const THERMS7 = THERMS.slice();
+  function mkBills7() {
+    const e = [],
+      g = [];
+    for (let i = 0; i < 12; i++) {
+      const ym = '2025-' + String(i + 1).padStart(2, '0');
+      const last = new Date(2025, i + 1, 0).getDate();
+      e.push({
+        id: 'se7' + i,
+        start: ym + '-01',
+        end: ym + '-' + last,
+        kwh: KWH7[i],
+        billedKW: KW7[i],
+        demandKW: KW7[i],
+        kwhCost: KWH7[i] * 0.05,
+        kwCost: KW7[i] * 8,
+        totalCost: KWH7[i] * 0.05 + KW7[i] * 8,
+        numberOfDays: last,
+      });
+      g.push({
+        id: 'sg7' + i,
+        start: ym + '-01',
+        end: ym + '-' + last,
+        therms: THERMS7[i],
+        totalCost: THERMS7[i] * 0.45,
+        numberOfDays: last,
+      });
+    }
+    return { e, g };
+  }
+  const SID7 = 990000006,
+    SBID7 = 'bsynth7d1';
+  const { e: e7, g: g7 } = mkBills7();
+  const proj7 = {
+    id: SID7,
+    name: 'Synthetic 7Digit Gate District',
+    client: 'Synthetic Client',
+    buildings: [],
+    savingsData: { measures: [], blRates: {}, basSetpoint: { [SBID7]: JSON.parse(JSON.stringify(SCFG)) } },
+  };
+  const ud7 = {
+    buildings: [
+      {
+        id: SBID7,
+        name: 'Synthetic 7Digit Gate Building',
+        addr: '1 Test St',
+        sqft: 100000,
+        zip: '',
+        meters: [
+          {
+            id: 'sm-e7',
+            commodity: 'Electric',
+            account: 'TEST-E7',
+            inclusive: true,
+            baselineInclude: true,
+            billUnit: 'kWh',
+            baseline: { months: MONTHS.slice() },
+            bills: e7,
+          },
+          {
+            id: 'sm-g7',
+            commodity: 'Gas',
+            account: 'TEST-G7',
+            inclusive: true,
+            baselineInclude: true,
+            billUnit: 'Therms',
+            baseline: { months: MONTHS.slice() },
+            bills: g7,
+          },
+        ],
+      },
+    ],
+  };
+  const ctx13 = buildCtx({ en_projects: projects.concat([proj7]), ['en_utility_' + SID7]: ud7 });
+  run(ctx13, 'udSelProjId = ' + SID7 + '; udSelBldgId = ' + JSON.stringify(SBID7) + ';');
+  ctx13.__cfg = SCFG;
+  run(ctx13, 'wdApplySetpointOptions(' + SID7 + ',' + JSON.stringify(SBID7) + ', JSON.parse(JSON.stringify(__cfg)))');
+  const d13 = run(ctx13, 'collectWoodlandReportData(' + SID7 + ',' + JSON.stringify(SBID7) + ')');
+  const kwh7Sum = KWH7.reduce((a, b) => a + b, 0);
+  assert(String(kwh7Sum).length === 7, 'fixture sanity: annual kWh is 7 digits (' + kwh7Sum + ')');
+  ctx13.__d = d13;
+  run(ctx13, 'generateWoodlandReportHTML(__d)');
+  const html7 = ctx13.__blTableCalls[ctx13.__blTableCalls.length - 1].html;
+  const kwhPx7 = colWidthPx(html7, 3);
+  assert(kwhPx7 != null, '7-digit fixture: kwh column width found in colgroup');
+  assert(
+    html7.includes(kwh7Sum.toLocaleString()),
+    '7-digit fixture: Annual row shows the correct total (' + kwh7Sum.toLocaleString() + ')',
+  );
+  if (kwhPx6 != null && kwhPx7 != null) {
+    assert(
+      kwhPx7 > kwhPx6,
+      'kwh column widens for a 7-digit annual total (6-digit: ' + kwhPx6 + 'px, 7-digit: ' + kwhPx7 + 'px)',
+    );
+  }
+}
+
 console.log(`\n=== Results: ${passed} passed, ${failed} failed ===`);
 if (failures.length) {
   console.log('\nFailures:');

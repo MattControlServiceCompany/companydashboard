@@ -1742,6 +1742,99 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.23.19',
+    date: '2026-09-23',
+    title:
+      'BAS Savings Calc and HVAC Load Estimation: gas heating share now computed from bills, not a fixed percentage',
+    items: [
+      {
+        type: 'fix',
+        text: "The BAS Savings Calc's Existing Heating Gas Therms figure and the HVAC Load Estimation page's Space Heating % of Total Gas default now compute the real heating share from a building's own gas bills (the same 3-lowest-month baseload method already used by the HVAC End-Use Estimate card), instead of always applying a fixed 80% (or 15% for all-electric buildings) rule-of-thumb percentage. The field's hint text shows whether the value was computed from bills or is a rule-of-thumb default (used only when a building has under 6 months of gas bill history).",
+      },
+      {
+        type: 'fix',
+        text: 'The BAS Savings Calc’s company-standard unoccupied heating setpoint default (55°F gas/hydronic, 60°F electric, 65°F electric+VRF/heat pump) now reads the same single setpoint default table the Equipment Matrix Setpoint & Schedule Export uses, instead of keeping its own separate copy of the same numbers.',
+      },
+    ],
+  },
+  {
+    v: 'v2026.09.23.18',
+    date: '2026-09-23',
+    title:
+      'Equipment Matrix, HVAC Load Estimation, and BAS Savings Calc: electric unit heaters now count as electric heat',
+    items: [
+      {
+        type: 'fix',
+        text: "The Equipment Matrix now reads a standalone electric unit heater's own BAS points (an Amps or Amperage reading) to classify it as electric heat. Before this fix, unit heaters had no heating-type rule at all, so a building with a real electric unit heater could still show 0% electric heating on the HVAC Load Estimation page.",
+      },
+      {
+        type: 'fix',
+        text: "On the HVAC Load Estimation page's Rules of Thumb method, a building with a central gas boiler plus a few electric unit heaters now keeps its gas-dominant Existing Heating Gas Therms estimate. Only a building with electric heat and no gas or hot-water heat at all switches to the lower, DHW/kitchen-only gas estimate.",
+      },
+      {
+        type: 'fix',
+        text: 'On the BAS Savings Calc, a mixed gas-and-electric building whose heating load is almost entirely gas no longer shows an unrealistic, uncalibrated Heat Therms Saved number — the calibration now matches the gas figure when there is no meaningful electric heating load to calibrate against.',
+      },
+      {
+        type: 'feature',
+        text: 'Added a company-standard unoccupied setpoint default (65°F heat / 85°F cool) for standalone electric heat, matching the existing default for VRF and heat pump equipment.',
+      },
+    ],
+  },
+  {
+    v: 'v2026.09.23.17',
+    date: '2026-09-23',
+    title: 'Baseline & BAS Savings Report: fixed Annual kWh column overflow for large buildings',
+    items: [
+      {
+        type: 'fix',
+        text: "On the Baseline & BAS Savings Report's Building Baseline Data table, a building with a 7-digit or 8-digit annual kWh total (1,000,000 or more) had its Annual kWh number run past its column and overlap the next column. The column now sizes itself to the actual annual total, so it stays inside its own column at any size.",
+      },
+    ],
+  },
+  {
+    v: 'v2026.09.23.16',
+    date: '2026-09-23',
+    title: 'Equipment Matrix: no more page limit; new Meters and Lighting types',
+    items: [
+      {
+        type: 'fix',
+        text: 'The Equipment Matrix now shows every row in one scrolling list. It no longer splits rows across pages, so you do not need to click Next to see the rest of a large building.',
+      },
+      {
+        type: 'feature',
+        text: 'Added a Meters equipment type, with Electric, Gas, and Water as subtypes. Electric, gas, and water meters that used to show as Other or under Power / Gen now show as Meters.',
+      },
+      {
+        type: 'fix',
+        text: 'Lighting rows named with the word "Lights" (for example, parking lot lights or exterior lights) now show as Lighting instead of Other.',
+      },
+      {
+        type: 'fix',
+        text: 'Room-level BAS points that only monitor a space (a temperature sensor and setpoints, with no fan, damper, or valve) now show as Monitoring instead of Other.',
+      },
+    ],
+  },
+  {
+    v: 'v2026.09.23.15',
+    date: '2026-09-23',
+    title: 'Energy Department: BAS Savings Calc heating source and gas calibration fixes',
+    items: [
+      {
+        type: 'fix',
+        text: "The Existing Heating Gas — Therms field in Calibration now fills in from the building's own gas bills as soon as the BAS Savings Calc is opened, without needing to open HVAC Load Estimation first.",
+      },
+      {
+        type: 'fix',
+        text: "HVAC Load Estimation's \"Heating % of HVAC kWh (electric heat only)\" default, and the BAS Savings Calc's Heating Source default, now both read the Equipment Matrix's own heating-type classification for the building (gas, electric, or both) instead of a project field that was almost never set.",
+      },
+      {
+        type: 'fix',
+        text: "The BAS Savings Calc can now calibrate a gas-heat building's Heat Therms Saved estimate against a real utility figure (Existing Heating Gas — Therms/MCF from UA), fixing a case where that estimate had no way to match reality and could come out far too high.",
+      },
+    ],
+  },
+  {
     v: 'v2026.09.23.14',
     date: '2026-09-23',
     title: 'Energy Department: BAS Savings Calc auto-fills Existing/Proposed Conditions and Heating Gas Therms',

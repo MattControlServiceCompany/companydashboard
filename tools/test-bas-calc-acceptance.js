@@ -90,9 +90,9 @@ function loadFn(file, fnName) {
 // extract cleanly — none of these constants contain semicolons inside their literals).
 function loadConst(file, name) {
   const src = fs.readFileSync(file, 'utf8');
-  const re = new RegExp('const ' + name + ' =');
+  const re = new RegExp('(?:const|var) ' + name + ' =');
   const m = re.exec(src);
-  if (!m) throw new Error('not found: const ' + name + ' in ' + file);
+  if (!m) throw new Error('not found: const/var ' + name + ' in ' + file);
   let depth = 0,
     j = m.index;
   for (; j < src.length; j++) {
@@ -106,6 +106,7 @@ function loadConst(file, name) {
 
 const CALC = path.join(REPO, 'app', 'calculators.js');
 const WEATHER = path.join(REPO, 'app', 'data', 'bas-weather-bins.js');
+const EM = path.join(REPO, 'app', 'equipment-matrix.js');
 
 // vm.runInContext top-level `const`/`let` bind to the script's lexical environment, not to the
 // sandbox object — only `var` and function declarations attach to it, so top-level constants have
@@ -113,12 +114,14 @@ const WEATHER = path.join(REPO, 'app', 'data', 'bas-weather-bins.js');
 // for the const declarations inside function bodies too (looser scoping only, same behavior).
 const src = [
   fs.readFileSync(WEATHER, 'utf8'),
+  loadConst(EM, 'EM_SP_DEFAULTS'),
   loadConst(CALC, 'BAS_COOL_CURVE'),
   loadConst(CALC, 'BAS_HEAT_CURVE'),
   loadConst(CALC, 'BAS_VRF_COP'),
   loadConst(CALC, 'BAS_TEMP_BINS'),
   loadConst(CALC, 'BAS_MO'),
   loadFn(CALC, '_bcInterp'),
+  loadFn(CALC, '_bcDefaultUnoccHeat'),
   loadConst(CALC, 'BAS_CITIES'),
   loadFn(CALC, '_basCityWeather'),
   loadFn(CALC, '_bcGv'),
@@ -264,6 +267,158 @@ if (r) {
   console.log(
     `  annual gas heat savings:site ${r.annHeatGasSav.toFixed(2)} | Excel Existing!J-New!J 159.73744644000001`,
   );
+}
+
+console.log('=== 3. Gas-only heating (heatSrc 1/3) calibration — 2026-09-23 fix ===');
+// Regression guard for the fix: heatSrc 1/3 route their ENTIRE existing heating load into the
+// gas bucket (exHeatGasSetbackM/OAM), never the kWh bucket, so heatAdj must calibrate against
+// bc-calHeatGas (not bc-calHeatKwh, which stays 0 and inert for these heatSrc values) —
+// previously heatAdj stayed permanently 1 (uncalibrated) for any gas-only building no matter
+// what a user entered, because the calibration equation only ever looked at the (always-empty)
+// kWh raw totals for heatSrc 1/3.
+dom.set('bc-heatSrc', new FakeEl('3', 'SELECT')); // Gas (Therms)
+dom.set('bc-calHeatGas', new FakeEl('19274'));
+sandbox._bcDoCalc('p1');
+const r3 = project._bcResults;
+assert(!!r3, '_bcResults populated for heatSrc 3 scenario');
+if (r3) {
+  const heatAdj3 = parseFloat(dom.get('bc-adjHeat').textContent);
+  assert(heatAdj3 !== 1, `heatAdj (${heatAdj3}) is no longer stuck at 1 once bc-calHeatGas is set for heatSrc 3`);
+  assert(heatAdj3 > 0, `heatAdj (${heatAdj3}) is a sane positive scalar`);
+  const annHeatGasSav3 = r3.gasSavings.reduce((a, b) => a + b, 0);
+  assert(r3.annHeatGasSav === annHeatGasSav3, 'annHeatGasSav matches the sum of the monthly gasSavings series');
+  // The calibrated existing total must reproduce the calibration input exactly (same closed-form
+  // identity coolAdj already satisfies) — extract the calibrated existing-heating-gas total from
+  // the rendered TOTAL row (5th numeric column: Exist/New Cool, Cool Saved, Heat kWh Saved, then
+  // Heat Therms Saved is column 5, but the calibrated EXISTING total isn't rendered directly, so
+  // reconstruct it from annHeatGasSav + the New total via the same source: re-run with
+  // bc-calHeatGas cleared to get the uncalibrated (heatAdj=1) baseline for comparison instead).
+  dom.set('bc-calHeatGas', new FakeEl(''));
+  sandbox._bcDoCalc('p1');
+  const uncalHeatAdj = parseFloat(dom.get('bc-adjHeat').textContent);
+  assert(uncalHeatAdj === 1, 'heatAdj reverts to 1 (uncalibrated) when bc-calHeatGas is blank again');
+}
+
+console.log('=== 4. Mixed heatSrc 4 ("Both"), gas-dominant split — 2026-09-23 heating-type classifier fix ===');
+// Regression guard for a building the Equipment Matrix classifies as mixed (a central gas
+// boiler/hydronic plant PLUS a few known electric unit heaters — Woodland Spring Middle's real
+// 2026-09-23 pattern): heatSrc correctly resolves to 4, and with no kWh calibration figure
+// entered (no meaningful electric heating load to calibrate — the building's heat is almost
+// entirely gas), pctGasHeat routes ~100% of the raw existing-heat load into the GAS bucket, not
+// the kWh bucket. Before this fix, heatAdj's heatSrc-4 branch only ever checked the (now-empty)
+// kWh raw total, so it stayed permanently 1 (uncalibrated) — the same "Heat Therms Saved" bug the
+// heatSrc 1/3 fix above already solved, reappearing via a different path once a mostly-gas
+// building has ANY known electric-heat evidence at all.
+dom.set('bc-heatSrc', new FakeEl('4', 'SELECT')); // Both (Electric + Gas)
+dom.set('bc-calHeatGas', new FakeEl('19274')); // matches Woodland's real annual-gas x 80% figure
+dom.set('bc-calHeatKwh', new FakeEl('')); // no meaningful kWh heating load — never entered
+sandbox._bcDoCalc('p1');
+const r4 = project._bcResults;
+assert(!!r4, '_bcResults populated for heatSrc 4 gas-dominant scenario');
+let heatAdj4 = 1;
+if (r4) {
+  heatAdj4 = parseFloat(dom.get('bc-adjHeat').textContent);
+  assert(heatAdj4 !== 1, `heatAdj (${heatAdj4}) is no longer stuck at 1 for heatSrc 4 once the kWh bucket is empty`);
+  assert(heatAdj4 > 0, `heatAdj (${heatAdj4}) is a sane positive scalar`);
+  const annHeatGasSav4 = r4.gasSavings.reduce((a, b) => a + b, 0);
+  assert(
+    annHeatGasSav4 < 24093,
+    `annual "Heat Therms Saved" (${annHeatGasSav4.toFixed(1)}) stays under Woodland's real 24,093 Therms/yr total gas usage (plausible, not an impossible raw-bin-model estimate)`,
+  );
+}
+// A TRUE mixed-load building (both the gas AND kWh raw buckets actually populated, i.e. a real
+// electric-heating calibration figure IS entered) must still fall through to the pre-existing
+// kWh-only calibration untouched — this narrow fix only activates when the kWh bucket is empty.
+dom.set('bc-calHeatKwh', new FakeEl('20000'));
+sandbox._bcDoCalc('p1');
+const r4b = project._bcResults;
+if (r4b) {
+  const heatAdj4b = parseFloat(dom.get('bc-adjHeat').textContent);
+  assert(
+    heatAdj4b !== heatAdj4,
+    'once a real kWh calibration figure is entered for heatSrc 4, heatAdj is computed from the kWh bucket again (unchanged pre-existing behavior)',
+  );
+}
+
+console.log('=== 5. _bcDefaultUnoccHeat reads EM_SP_DEFAULTS — 2026-09-23 single-source fix ===');
+// Regression guard: _bcDefaultUnoccHeat previously kept its own hardcoded copy of 55/60/65,
+// gated on the 4-value heatSrc int, instead of reading the ONE setpoint default table
+// (EM_SP_DEFAULTS.unocc, app/equipment-matrix.js) every other unoccupied-setpoint default
+// (emBuildSetpointExportRows) already reads. Values must still match the documented company
+// standard exactly — this proves the de-duplication didn't change the numbers, only the source.
+{
+  assert(
+    sandbox._bcDefaultUnoccHeat(1) === 55,
+    'heatSrc 1 (Gas/MCF) -> 55, matches EM_SP_DEFAULTS.unocc.hydronic.heat',
+  );
+  assert(
+    sandbox._bcDefaultUnoccHeat(3) === 55,
+    'heatSrc 3 (Gas/Therms) -> 55, matches EM_SP_DEFAULTS.unocc.hydronic.heat',
+  );
+  assert(
+    sandbox._bcDefaultUnoccHeat(2) === 60,
+    'heatSrc 2 (Electric) -> 60, matches EM_SP_DEFAULTS.unocc.electricReheat.heat',
+  );
+  assert(sandbox._bcDefaultUnoccHeat(4) === 65, 'heatSrc 4 (Both) -> 65, matches EM_SP_DEFAULTS.unocc.heatpump.heat');
+  assert(
+    sandbox._bcDefaultUnoccHeat(1) === sandbox.EM_SP_DEFAULTS.unocc.hydronic.heat,
+    '_bcDefaultUnoccHeat(1) reads the SAME table value directly (not a coincidentally-equal duplicate)',
+  );
+  assert(
+    sandbox._bcDefaultUnoccHeat(2) === sandbox.EM_SP_DEFAULTS.unocc.electricReheat.heat,
+    '_bcDefaultUnoccHeat(2) reads the SAME table value directly',
+  );
+  assert(
+    sandbox._bcDefaultUnoccHeat(4) === sandbox.EM_SP_DEFAULTS.unocc.heatpump.heat,
+    '_bcDefaultUnoccHeat(4) reads the SAME table value directly',
+  );
+  // If EM_SP_DEFAULTS.unocc ever changes, _bcDefaultUnoccHeat must move with it automatically —
+  // proven here by mutating the live table and re-checking (not just re-reading a cached copy).
+  const savedHeat = sandbox.EM_SP_DEFAULTS.unocc.hydronic.heat;
+  sandbox.EM_SP_DEFAULTS.unocc.hydronic.heat = 47;
+  assert(
+    sandbox._bcDefaultUnoccHeat(3) === 47,
+    'changing EM_SP_DEFAULTS.unocc live updates _bcDefaultUnoccHeat -> no cached duplicate',
+  );
+  sandbox.EM_SP_DEFAULTS.unocc.hydronic.heat = savedHeat;
+}
+
+console.log('=== 6. coolAdj negative — synthetic reproduction + analysis (open bug, not fixed) ===');
+// coolAdj = (calCoolKwh - rawExCoolOATotal) / rawExCoolSetbackTotal. Reproduced synthetically by
+// entering a bc-calCoolKwh figure smaller than the bin model's own OA-only (ventilation-driven)
+// cooling total for this scenario — a realistic real-world input mistake (e.g. a partial-year or
+// under-scoped "Existing Cooling kWh from UA" figure), not a wiring/wrong-variable bug.
+{
+  dom.set('bc-heatSrc', new FakeEl('1', 'SELECT')); // back to gas heat, Section 2's scenario
+  dom.set('bc-calHeatGas', new FakeEl(''));
+  dom.set('bc-calHeatKwh', new FakeEl('63166'));
+  dom.set('bc-calCoolKwh', new FakeEl('1')); // deliberately far below rawExCoolOATotal
+  sandbox._bcDoCalc('p1');
+  const r6 = project._bcResults;
+  const coolAdj6 = parseFloat(dom.get('bc-adjCool').textContent);
+  assert(!!r6, '_bcResults populated for the synthetic under-calibrated scenario');
+  assert(
+    coolAdj6 < 0,
+    `coolAdj (${coolAdj6}) reproduced negative with a synthetic calCoolKwh below the OA-only raw total`,
+  );
+  const annCoolSav6 = r6.coolKwhSavings.reduce((a, b) => a + b, 0);
+  console.log(
+    `  reproduced: coolAdj=${coolAdj6.toFixed(4)}, annual Cool Saved=${annCoolSav6.toFixed(1)} kWh ` +
+      `(negative Cool Saved when coolAdj < 0, confirming the reported symptom mechanism)`,
+  );
+  // ANALYSIS (not fixed — see docs/dashboardlogic.md / task result write-up): the formula
+  // coolAdj = (target - rawOA) / rawSetback is the correct closed-form solve for "what setback
+  // scale factor makes rawOA + rawSetback*coolAdj equal the user's real calibration figure" — it
+  // is mathematically required to go negative whenever the target is smaller than the OA-only
+  // component alone, because no non-negative scale factor on the setback term can reach a total
+  // below what the OA-only term already contributes by itself. That is an honest, correct
+  // response to an implausible calibration INPUT (a calCoolKwh figure too small for this
+  // building/city/sqft), not a formula or wiring defect — restore the calibration input to a
+  // realistic figure (e.g. Section 2's 142872) and coolAdj is positive again (asserted there).
+  // Not fixed here: no formula bug was found or reproduced; the pre-existing gap is the UI never
+  // warning when a calibration figure implies a negative adjustment — a distinct, smaller
+  // follow-up (add an on-screen warning), already logged for the backlog by the prior session.
+  dom.set('bc-calCoolKwh', new FakeEl('142872')); // restore Section 2's scenario for a clean exit state
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

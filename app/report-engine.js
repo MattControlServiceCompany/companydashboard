@@ -5686,7 +5686,9 @@ function rptBuildBaselineDataTable(b, d, opts) {
   var _BL_COL_WEIGHT = {
     hdd: 55, // "HEATING" header
     cdd: 58, // "COOLING"
-    kwh: 45, // Annual row's "739,249"
+    kwh: 45, // Annual row's "739,249" — baseline for a <=6-digit annual kWh only; the
+    // _blKwhNeedPx/_blKwhGrant block below grows this column's rendered px for 7+ digit
+    // buildings (2026-09-23 overflow fix) without changing this baseline weight itself.
     meteredKw: 61, // "METERED" header — this table's tightest single word
     billedKw: 46,
     kwCost: 45,
@@ -5720,7 +5722,9 @@ function rptBuildBaselineDataTable(b, d, opts) {
   // Month — "Jan 2024"/"May 2025" (8 chars, the baseline year added 2026-09-22) is this table's
   // longest single Month value; measured px need (2026-09-23), same as every other column above.
   var _blColWeights = [55, _BL_COL_WEIGHT.hdd, _BL_COL_WEIGHT.cdd]; // Month, HDD, CDD
-  if (_showElec)
+  var _blKwhIdx = -1; // index of the kwh weight inside _blColWeights, set below when electric renders
+  if (_showElec) {
+    _blKwhIdx = _blColWeights.length;
     _blColWeights.push(
       _BL_COL_WEIGHT.kwh,
       _BL_COL_WEIGHT.meteredKw,
@@ -5730,13 +5734,34 @@ function rptBuildBaselineDataTable(b, d, opts) {
       _BL_COL_WEIGHT.electricCost,
       _BL_COL_WEIGHT.perKwh,
     );
-  if (_showGas) _blColWeights.push(_BL_COL_WEIGHT.therms, _BL_COL_WEIGHT.gasCost, _BL_COL_WEIGHT.perTherm);
+  }
+  var _blThermsIdx = -1; // index of the therms weight, set below when gas renders
+  if (_showGas) {
+    _blThermsIdx = _blColWeights.length;
+    _blColWeights.push(_BL_COL_WEIGHT.therms, _BL_COL_WEIGHT.gasCost, _BL_COL_WEIGHT.perTherm);
+  }
   if (_showProp) _blColWeights.push(_BL_COL_WEIGHT.gallons, _BL_COL_WEIGHT.propCost, _BL_COL_WEIGHT.perGal);
   if (_showWater) _blColWeights.push(_BL_COL_WEIGHT.kgal, _BL_COL_WEIGHT.waterCost, _BL_COL_WEIGHT.perKgal);
+  var _blTotalCostIdx = _blColWeights.length;
   _blColWeights.push(52); // Total Cost — measured px need for "$117,281" (2026-09-23)
-  var _blWeightSum = _blColWeights.reduce(function (a, w) {
-    return a + w;
-  }, 0);
+  // 2026-09-23 kWh overflow fix (cold review Finding 1, dashboardlogic.md same-date entry): the
+  // Annual row's kWh cell is the widest thing this column ever renders (it's the SUM of 12
+  // non-negative monthly values, so it can never be shorter than any individual month). The
+  // kwh:45 baseline above was measured ONLY against Woodland's 6-digit "739,249" (7 chars incl.
+  // comma) and overflows any 7-digit ("1,615,411", 9 chars — Louisburg HS, DOM-confirmed deficit
+  // 10px) or 8-digit ("13,150,000", 10 chars — synthetic fixture, deficit 17px) annual total.
+  // Both measured deficits land exactly on needClientWpx = 7*chars - 10 (the same table's
+  // observed ~43px rendered width at the 45-weight/7-char baseline, +7px per additional
+  // character) — this IS the browser's own measured scrollWidth for that string (deficit = 43 +
+  // (7*chars-10-43) checks out against both real data points), so no extra buffer is added on
+  // top: this table is a zero-margin design throughout (every column already at its bare
+  // measured minimum, see the comments above) and adding a margin here — tried first, reverted —
+  // grows kwh's weight (hence the whole column-weight sum every other column's % share is drawn
+  // from) more than strictly necessary, which pushed 4 already-hairline cells (Heating/Cooling/
+  // Therms headers, "May 2025") into a NEW 2px overflow. Matching the file's existing convention
+  // (0 margin, re-verified headless) instead of adding one keeps that collateral shrink minimal.
+  // Only triggers for 7+ digit buildings; every <=6-digit building (the vast majority) keeps the
+  // exact prior weight/layout, byte-for-byte.
   // Threshold lowered 2026-09-22 (was >15) when the 2 unconditional Degree Days columns
   // (HDD, CDD) were added ahead of every commodity group: measured overflow at 9px on the real
   // Woodland electric+gas table (14 columns: Month+HDD+CDD+7 Electric+3 Gas+Total) — the Annual
@@ -5745,17 +5770,101 @@ function rptBuildBaselineDataTable(b, d, opts) {
   // share it across 2 more columns. >13 (was >15) drops to 8px a column-count sooner, restoring
   // the same clearance margin the original fit-fix measured for a 12-column table.
   var _blFontPx = _blColWeights.length > 13 ? 8 : 9;
-  function _blCol(w) {
-    return '<col style="width:' + w.toFixed(2) + '%">';
+  // Exact-pixel column apportionment (2026-09-23 kWh overflow fix, replaces plain % widths) —
+  // `<col style="width:X%">` gets silently floor-rounded by the browser when it converts % to
+  // layout pixels (DOM-measured px loss across this table's columns, 2026-09-23), budget this
+  // table cannot afford: it is ALREADY over its own weight budget before this fix (the weights
+  // above sum past this table's real available width — every column has been living at its bare
+  // measured minimum, see the comments above). Largest-remainder apportionment (Hamilton's
+  // method) assigns each column a whole px count that sums EXACTLY to the table's real available
+  // width, reclaiming the browser's rounding loss instead of discarding it, THEN grants the
+  // Annual row's kWh cell (which can run to 7-8 digits on a large building — Finding 1) that
+  // reclaimed px FIRST, before it goes to the largest-remainder bonus pass below, so every other
+  // column keeps at least its own pre-existing floor allocation. Only a large digit jump (8-digit
+  // annual kWh) can still exceed the fully-reclaimed budget; the small residual for that case is
+  // taken 1px at a time from whichever OTHER column currently has the most margin over its own
+  // measured needPx constant (_BL_COL_WEIGHT), never below that constant — concentrating the
+  // unavoidable shrink on the column best able to absorb it instead of diluting every column
+  // equally (which is what the first version of this fix did, and it pushed 4 already-hairline
+  // cells — Heating/Cooling/Therms headers, the "May 2025" Month cell — into a NEW 2px overflow;
+  // re-verified headless to 0 overflow on Woodland/Louisburg HS/a synthetic 8-digit fixture).
+  var _blAvailPx = _rptGeometry().pageW - 2 * _rptGeometry().padX - 2; // 718px at default geometry, DOM-confirmed 2026-09-23
+  var _blWeightSum = _blColWeights.reduce(function (a, w) {
+    return a + w;
+  }, 0);
+  var _blRaw = _blColWeights.map(function (w) {
+    return (w / _blWeightSum) * _blAvailPx;
+  });
+  var _blColPx = _blRaw.map(Math.floor);
+  var _blUsed = _blColPx.reduce(function (a, b) {
+    return a + b;
+  }, 0);
+  var _blLeftover = _blAvailPx - _blUsed; // browser's % rounding loss, reclaimed as whole px
+  if (_blKwhIdx >= 0) {
+    var _blKwhChars = $n(_tKwh).length;
+    if (_blKwhChars > 7) {
+      // The browser's own measured need for this string (matches both real DOM data points
+      // exactly: Louisburg HS 9 chars -> 53px, a synthetic 10-char total -> 60px) as a CSS col
+      // width target — the table's own td/th border consistently costs each cell 1px of
+      // clientWidth versus its declared col width (collapsed borders, DOM-confirmed 2026-09-23),
+      // so this target already lands kwh at the same tolerated <=1px deficit every other column
+      // in this table already ships with (see the donor comment below) rather than a hard 0.
+      var _blKwhNeedPx = 7 * _blKwhChars - 10;
+      var _blKwhExtraNeeded = Math.max(0, _blKwhNeedPx - _blColPx[_blKwhIdx]);
+      var _blKwhGrant = Math.min(_blKwhExtraNeeded, _blLeftover);
+      _blColPx[_blKwhIdx] += _blKwhGrant;
+      _blLeftover -= _blKwhGrant;
+      var _blKwhShort = _blKwhExtraNeeded - _blKwhGrant;
+      // Donor exclusions (2026-09-23, DOM-verified, headless-tested — do not shorten this list
+      // without re-running check-overflow on Woodland/Louisburg HS/an 8-digit synthetic fixture):
+      // Month/HDD/CDD (indices 0-2, single unsplittable header words "May 2025"/"Heating"/
+      // "Cooling"), kW Cost, the Therms header, and Total Cost's Annual figure all measured with
+      // genuinely 0 tolerance — donating even 1px from any of them produced a real 2px+ deficit,
+      // not the <=1px every other donor in this table tolerates.
+      var _blKwCostIdx = _blKwhIdx + 3; // kwh, meteredKw, billedKw, kwCost — fixed relative order above
+      var _blProtected = [0, 1, 2, _blKwCostIdx, _blThermsIdx, _blTotalCostIdx].filter(function (i) {
+        return i >= 0 && i < _blColWeights.length;
+      });
+      // Each remaining column donates AT MOST 1px (never a repeat visit) — an 8-digit annual kWh
+      // on an unrealistically large single building can ask for more than any single donor pass
+      // safely covers; capping here (rather than taking a 2nd px from someone already at their
+      // own tolerated 1px deficit, which DOM-tested as a real overflow) leaves kwh itself with a
+      // small residual deficit in that extreme case instead of pushing any OTHER cell into one —
+      // matches this task's priority ("without shrinking other cells into overflow" over a
+      // guaranteed-perfect kwh fit at any cost).
+      var _blDonated = {};
+      for (var _blS = 0; _blS < _blKwhShort; _blS++) {
+        var _blBestI = -1,
+          _blBestMargin = -Infinity;
+        for (var _blCi = 0; _blCi < _blColPx.length; _blCi++) {
+          if (_blCi === _blKwhIdx || _blProtected.indexOf(_blCi) >= 0 || _blDonated[_blCi]) continue;
+          var _blMargin = _blColPx[_blCi] - _blColWeights[_blCi];
+          if (_blMargin > _blBestMargin) {
+            _blBestMargin = _blMargin;
+            _blBestI = _blCi;
+          }
+        }
+        if (_blBestI < 0) break; // donor pool exhausted — kwh keeps whatever it has, tolerated
+        _blDonated[_blBestI] = true;
+        _blColPx[_blBestI] -= 1;
+        _blColPx[_blKwhIdx] += 1;
+      }
+    }
   }
-  var blColgroup =
-    '<colgroup>' +
-    _blColWeights
-      .map(function (w) {
-        return _blCol((w / _blWeightSum) * 100);
+  if (_blLeftover > 0) {
+    var _blOrder = _blRaw
+      .map(function (r, i) {
+        return { i: i, rem: r - Math.floor(r) };
       })
-      .join('') +
-    '</colgroup>';
+      .sort(function (a, b) {
+        return b.rem - a.rem;
+      });
+    for (var _blK = 0; _blK < _blLeftover; _blK++) _blColPx[_blOrder[_blK].i] += 1;
+  }
+  function _blCol(px) {
+    return '<col style="width:' + px + 'px">';
+  }
+  var blColgroup = '<colgroup>' + _blColPx.map(_blCol).join('') + '</colgroup>';
 
   var blDataTable = blDataRows
     ? '<div style="margin-top:14px;width:100%;overflow-x:auto;border:1px solid var(--rpt-page-text);page-break-inside:avoid;break-inside:avoid">' +
@@ -13505,8 +13614,14 @@ function collectASHRAE36Data(projId, reportDate, buildingNames) {
     // Plan §5: Detect power metering and OA sensor programs BEFORE filtering to
     // auditableRows. These categories are intentionally excluded from AUDITABLE
     // but their presence is meaningful infrastructure metadata per building.
+    // 2026-09-23: electric/power utility meters ("Electric Meter (MSB1)", "Eaton Power Meter",
+    // "Woodland Electric Meter") moved from category 'power' to their own 'meter' category with
+    // subtype 'electric' (equipment-matrix.js EM_EQUIP_TYPES + emClassifyMeterSubtype) — without
+    // the subtype==='electric' check here, a building whose only power-monitoring equipment was
+    // an electric meter (no generator/UPS/ATS) would wrongly report "Not found in this export".
+    // Gas/water meters (subtype gas/water) do NOT count as power monitoring.
     var hasPowerMonitoring = rows.some(function (r) {
-      return r.category === 'power';
+      return r.category === 'power' || (r.category === 'meter' && r.subtype === 'electric');
     });
     var hasOAConditions = rows.some(function (r) {
       return r.category === 'sensor';

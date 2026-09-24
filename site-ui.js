@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.23.14'; // BAS Savings Calc: Existing/Proposed Conditions and Heating Gas Therms auto-populate from the Equipment Matrix, Effective Schedules, and HVAC Load Estimation on open
+  var CH_VERSION = 'v2026.09.23.19'; // Single-source gas heating-share (baseload method) + unoccupied setpoint default fixes for BAS Savings Calc/HVAC Load Est
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
