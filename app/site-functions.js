@@ -1742,6 +1742,59 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.23.22',
+    date: '2026-09-23',
+    title: 'ASHRAE 36 Audit Report: unoccupied setpoints and schedules on the Setpoint Programming Review page',
+    items: [
+      {
+        type: 'feature',
+        text: 'The Setpoint Programming Review page now shows unoccupied heating and cooling setpoints next to occupied setpoints, with the ASHRAE 36 reference value beside each one.',
+      },
+      {
+        type: 'feature',
+        text: 'The page now shows the existing occupied schedule (Monday through Friday, and Saturday and Sunday) alongside the recommended schedule and setpoints, using the same numbers as the Equipment Matrix Setpoint & Schedule export and the BAS Savings Calc.',
+      },
+      {
+        type: 'fix',
+        text: 'The "DEADBAND" column header no longer breaks in the middle of the word, and "Avg" and "Occ" are spelled out as "Average" and "Occupied" throughout the table.',
+      },
+      {
+        type: 'fix',
+        text: '"Needs Review" is now "Confirm With Engineer" — plain wording that tells you what to do about a setpoint that differs from the ASHRAE 36 default.',
+      },
+    ],
+  },
+  {
+    v: 'v2026.09.23.21',
+    date: '2026-09-23',
+    title: 'Set Points tab: delete all zones, pull zones from the Equipment Matrix, and a fixed point-list import',
+    items: [
+      {
+        type: 'feature',
+        text: 'The Set Points tab now has a "Delete All" button that removes every zone row for the building you are viewing, after you confirm the count. Nothing is deleted without that confirm.',
+      },
+      {
+        type: 'feature',
+        text: 'A new "Pull from Equipment Matrix" button builds one zone row per zone or piece of equipment (not per BAS point) from the Equipment Matrix, using the same numbers as the Equipment Matrix\'s own Setpoint & Schedule export. Pick the building in the small dialog. Any value the Equipment Matrix does not have shows a "?" instead of a guess. If the building already has saved zones, you are asked to confirm before they are replaced.',
+      },
+      {
+        type: 'fix',
+        text: 'Uploading a raw BAS Points List (one row per point, such as "Building Static Pressure" or "Outside Air CFM") to the Set Points tab used to create one zone row per point. The Set Points tab now recognizes that file format and points you to the Equipment Matrix tab and the new "Pull from Equipment Matrix" button instead.',
+      },
+    ],
+  },
+  {
+    v: 'v2026.09.23.20',
+    date: '2026-09-23',
+    title: 'PDF / OCR: new Attach PDFs Only mode links a PDF without changing any billing data',
+    items: [
+      {
+        type: 'feature',
+        text: 'The PDF / OCR page has a new "Attach PDFs Only" action alongside Save All / Overwrite All / Merge All (and Overwrite / Merge on the single-bill duplicate banner). It links the PDF (and its page range, for a consolidated invoice covering several meters) to a billing period only when that period already exists, and it changes nothing else on the record — no field is filled in or overwritten, and no new billing period or meter is created. A billing period that already has a PDF is left alone and reported as "already had a PDF." A summary screen lists which billing periods were attached, which already had a PDF, and which had no matching billing period.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.23.19',
     date: '2026-09-23',
     title:

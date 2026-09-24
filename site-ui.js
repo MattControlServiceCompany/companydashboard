@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.23.19'; // Single-source gas heating-share (baseload method) + unoccupied setpoint default fixes for BAS Savings Calc/HVAC Load Est
+  var CH_VERSION = 'v2026.09.23.22'; // ASHRAE 36 Audit Report Setpoint Programming Review page: unoccupied setpoints, existing and recommended schedules, and plain wording
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
