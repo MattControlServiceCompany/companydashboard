@@ -2643,7 +2643,14 @@ function _spBuildSnapshotPills(projId, activeSnapId, snapshots) {
     ' onclick="spViewSnapshot(\'' +
     projId +
     '\',null)">Current</button>';
-  snapshots.forEach(function (s) {
+  // Version pills default newest first (2026-09-23) — "Current" (the live,
+  // editable state) always stays leftmost; saved snapshots sort by savedAt
+  // descending. Sorts a copy so the underlying array order (and any other
+  // reader of p.setpointSnapshots) is unaffected.
+  var sortedSnapshots = snapshots.slice().sort(function (a, b) {
+    return (b.savedAt || '') > (a.savedAt || '') ? 1 : (b.savedAt || '') < (a.savedAt || '') ? -1 : 0;
+  });
+  sortedSnapshots.forEach(function (s) {
     var isActive = activeSnapId === s.id;
     pills +=
       '<button style="padding:4px 12px;font-size:11px;font-weight:600;border:none;border-radius:20px;cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;gap:6px;' +

@@ -1742,6 +1742,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.23.23',
+    date: '2026-09-23',
+    title: 'Bills and Set Points now default to newest first',
+    items: [
+      {
+        type: 'change',
+        text: 'The Bills table on the Utility Data tab now lists the newest billing period at the top by default. You can still click the "Norm. Month" column header to switch back to oldest first.',
+      },
+      {
+        type: 'change',
+        text: 'The Version pills on the Set Points tab now list the most recently saved version first, right after "Current."',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.23.22',
     date: '2026-09-23',
     title: 'ASHRAE 36 Audit Report: unoccupied setpoints and schedules on the Setpoint Programming Review page',
