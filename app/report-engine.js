@@ -13503,8 +13503,14 @@ function collectASHRAE36Data(projId, reportDate, buildingNames) {
     // Plan §5: Detect power metering and OA sensor programs BEFORE filtering to
     // auditableRows. These categories are intentionally excluded from AUDITABLE
     // but their presence is meaningful infrastructure metadata per building.
+    // 2026-09-23: electric/power utility meters ("Electric Meter (MSB1)", "Eaton Power Meter",
+    // "Woodland Electric Meter") moved from category 'power' to their own 'meter' category with
+    // subtype 'electric' (equipment-matrix.js EM_EQUIP_TYPES + emClassifyMeterSubtype) — without
+    // the subtype==='electric' check here, a building whose only power-monitoring equipment was
+    // an electric meter (no generator/UPS/ATS) would wrongly report "Not found in this export".
+    // Gas/water meters (subtype gas/water) do NOT count as power monitoring.
     var hasPowerMonitoring = rows.some(function (r) {
-      return r.category === 'power';
+      return r.category === 'power' || (r.category === 'meter' && r.subtype === 'electric');
     });
     var hasOAConditions = rows.some(function (r) {
       return r.category === 'sensor';
