@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.23.19'; // Single-source gas heating-share (baseload method) + unoccupied setpoint default fixes for BAS Savings Calc/HVAC Load Est
+  var CH_VERSION = 'v2026.09.23.20'; // PDF/OCR: added an Attach PDFs Only mode that links a PDF to an already-matching billing period without changing any other field
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

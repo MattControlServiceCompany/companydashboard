@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.23.20',
+    date: '2026-09-23',
+    title: 'PDF / OCR: new Attach PDFs Only mode links a PDF without changing any billing data',
+    items: [
+      {
+        type: 'feature',
+        text: 'The PDF / OCR page has a new "Attach PDFs Only" action alongside Save All / Overwrite All / Merge All (and Overwrite / Merge on the single-bill duplicate banner). It links the PDF (and its page range, for a consolidated invoice covering several meters) to a billing period only when that period already exists, and it changes nothing else on the record — no field is filled in or overwritten, and no new billing period or meter is created. A billing period that already has a PDF is left alone and reported as "already had a PDF." A summary screen lists which billing periods were attached, which already had a PDF, and which had no matching billing period.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.23.19',
     date: '2026-09-23',
     title:
