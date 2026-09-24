@@ -1742,6 +1742,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.23.25',
+    date: '2026-09-23',
+    title: 'HVAC Load Estimation and BAS Savings Calc: clearer, more consistent numbers',
+    items: [
+      {
+        type: 'fix',
+        text: 'HVAC Load Estimation setpoint savings (Options A/B/C) now use the same heating baseload method as the rest of the site, so the numbers stay consistent with the HVAC End-Use Estimate and the BAS Savings Calc.',
+      },
+      {
+        type: 'change',
+        text: 'The BAS Savings Calc now shows a plain warning at the cooling calibration field and in the results if the cooling kWh you entered is lower than the outside air cooling alone.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.23.24',
     date: '2026-09-23',
     title: 'Bills and Set Points now default to newest first',

@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.23.24'; // Bills table and Set Points Version pills now default to newest-first sort
+  var CH_VERSION = 'v2026.09.23.25'; // HVAC Load Est setpoint savings use one heating baseload method; BAS Savings Calc warns on a too-low cooling calibration number
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

@@ -140,12 +140,17 @@ class FakeEl {
     this.tagName = tagName || 'INPUT';
     this.textContent = '';
     this.innerHTML = '';
+    this.style = {};
   }
 }
 const dom = new Map();
 function set(id, value, tagName) {
   dom.set(id, new FakeEl(value, tagName));
 }
+// bc-coolAdjWarn (2026-09-23 fix) — the calibration-card warning banner _bcDoCalc toggles via
+// el('bc-coolAdjWarn').style.display; must exist before _bcDoCalc runs, same as every other
+// guarded `if (el(id))` display element.
+dom.set('bc-coolAdjWarn', new FakeEl('', 'DIV'));
 const fakeDocument = {
   getElementById: (id) => dom.get(id) || null,
 };
@@ -383,7 +388,7 @@ console.log('=== 5. _bcDefaultUnoccHeat reads EM_SP_DEFAULTS — 2026-09-23 sing
   sandbox.EM_SP_DEFAULTS.unocc.hydronic.heat = savedHeat;
 }
 
-console.log('=== 6. coolAdj negative — synthetic reproduction + analysis (open bug, not fixed) ===');
+console.log('=== 6. coolAdj negative — synthetic reproduction + plain-language warning (2026-09-23) ===');
 // coolAdj = (calCoolKwh - rawExCoolOATotal) / rawExCoolSetbackTotal. Reproduced synthetically by
 // entering a bc-calCoolKwh figure smaller than the bin model's own OA-only (ventilation-driven)
 // cooling total for this scenario — a realistic real-world input mistake (e.g. a partial-year or
@@ -406,6 +411,12 @@ console.log('=== 6. coolAdj negative — synthetic reproduction + analysis (open
     `  reproduced: coolAdj=${coolAdj6.toFixed(4)}, annual Cool Saved=${annCoolSav6.toFixed(1)} kWh ` +
       `(negative Cool Saved when coolAdj < 0, confirming the reported symptom mechanism)`,
   );
+  // 2026-09-23 fix (this task): a plain-language warning shows at the calibration input when
+  // coolAdj < 0 — formula unchanged, just makes the negative-factor condition visible.
+  assert(
+    dom.get('bc-coolAdjWarn').style.display === '',
+    'coolAdj < 0 -> bc-coolAdjWarn shown (style.display cleared, not "none")',
+  );
   // ANALYSIS (not fixed — see docs/dashboardlogic.md / task result write-up): the formula
   // coolAdj = (target - rawOA) / rawSetback is the correct closed-form solve for "what setback
   // scale factor makes rawOA + rawSetback*coolAdj equal the user's real calibration figure" — it
@@ -415,10 +426,13 @@ console.log('=== 6. coolAdj negative — synthetic reproduction + analysis (open
   // response to an implausible calibration INPUT (a calCoolKwh figure too small for this
   // building/city/sqft), not a formula or wiring defect — restore the calibration input to a
   // realistic figure (e.g. Section 2's 142872) and coolAdj is positive again (asserted there).
-  // Not fixed here: no formula bug was found or reproduced; the pre-existing gap is the UI never
-  // warning when a calibration figure implies a negative adjustment — a distinct, smaller
-  // follow-up (add an on-screen warning), already logged for the backlog by the prior session.
+  // The formula itself is NOT changed by this fix — only the warning's visibility.
   dom.set('bc-calCoolKwh', new FakeEl('142872')); // restore Section 2's scenario for a clean exit state
+  sandbox._bcDoCalc('p1');
+  assert(
+    dom.get('bc-coolAdjWarn').style.display === 'none',
+    'restoring a realistic calCoolKwh (coolAdj positive again) -> bc-coolAdjWarn hidden',
+  );
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

@@ -4254,6 +4254,9 @@ function openBASCalc(projId) {
                   <div style="font-size:14px;font-weight:700;font-family:var(--mono);color:var(--amber)" id="bc-adjHeat">1.000</div>
                 </div>
               </div>
+              <div id="bc-coolAdjWarn" style="display:none;margin-top:10px;background:var(--warn-dim);border:1px solid var(--warn);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--warn)">
+                The cooling kWh entered is lower than the outside air cooling alone. Check the cooling kWh.
+              </div>
             </div>
           </div>
 
@@ -4697,6 +4700,12 @@ function _bcDoCalc(projId) {
   }
   if (el('bc-adjCool')) el('bc-adjCool').textContent = coolAdj.toFixed(3);
   if (el('bc-adjHeat')) el('bc-adjHeat').textContent = heatAdj.toFixed(3);
+  // 2026-09-23: coolAdj goes negative when the entered calibration kWh is below the outside-air-
+  // only raw cooling total (rawExCoolOATotal) — the formula is correct (it is the only value that
+  // makes setback*adj + OA equal the entered figure), but a negative factor silently flips
+  // "Cool Saved" negative with no explanation. Plain-language warning only; math unchanged.
+  const coolAdjNegative = calCoolKwh > 0 && coolAdj < 0;
+  if (el('bc-coolAdjWarn')) el('bc-coolAdjWarn').style.display = coolAdjNegative ? '' : 'none';
 
   // Calibrated monthly totals — setback scaled by the factor, OA left raw (see note above)
   const exCoolM = exCoolSetbackM.map((v, m) => v * coolAdj + exCoolOAM[m]);
@@ -4776,7 +4785,10 @@ function _bcDoCalc(projId) {
   // Render results table
   const res = el('bc-results');
   if (!res) return;
-  let html = `<table class="dtbl" style="font-size:11px;border-collapse:collapse;width:100%">
+  let html = coolAdjNegative
+    ? `<div style="margin-bottom:12px;background:var(--warn-dim);border:1px solid var(--warn);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--warn)">The cooling kWh entered is lower than the outside air cooling alone. Check the cooling kWh.</div>`
+    : '';
+  html += `<table class="dtbl" style="font-size:11px;border-collapse:collapse;width:100%">
           <thead><tr>
             <th style="text-align:left;padding:5px 8px;font-size:10px">Month</th>
             <th style="text-align:right;padding:5px 6px;font-size:10px">Exist Cool kWh</th>
@@ -4845,6 +4857,8 @@ function _bcRenderEmpty() {
     const e = document.getElementById(id);
     if (e) e.textContent = '—';
   });
+  const warnEl = document.getElementById('bc-coolAdjWarn');
+  if (warnEl) warnEl.style.display = 'none';
 }
 
 /* ── E. Save ── */
