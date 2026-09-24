@@ -702,9 +702,9 @@ function _hvlRenderTraditional(projId, bldgId, method) {
               <div class="card" style="background:var(--s1);padding:14px;margin-top:12px">
                 <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);margin-bottom:10px">Non-HVAC Loads</div>
                 <div class="g2" style="gap:12px">
-                  <div class="fg"><label class="fl">Lighting Watt/sqft</label><input class="fi hvl-in" id="hvl-n-lightW-${projId}" type="number" step="0.01" value="1.0"><div class="fhint">LED: 0.4-0.8, T8 Fluor: 1.0-1.4</div></div>
+                  <div class="fg"><label class="fl">Lighting Watt per Square Foot</label><input class="fi hvl-in" id="hvl-n-lightW-${projId}" type="number" step="0.01" value="1.0"><div class="fhint">LED: 0.4-0.8, T8 Fluor: 1.0-1.4</div></div>
                   <div class="fg"><label class="fl">Lighting Hours/Year</label><input class="fi hvl-in" id="hvl-n-lightHrs-${projId}" type="number" value="3000"></div>
-                  <div class="fg"><label class="fl">Plug Load Watt/sqft</label><input class="fi hvl-in" id="hvl-n-plugW-${projId}" type="number" step="0.01" value="1.5"><div class="fhint">Office: 1-3, School: 0.5-1.5</div></div>
+                  <div class="fg"><label class="fl">Plug Load Watt per Square Foot</label><input class="fi hvl-in" id="hvl-n-plugW-${projId}" type="number" step="0.01" value="1.5"><div class="fhint">Office: 1-3, School: 0.5-1.5</div></div>
                   <div class="fg"><label class="fl">Plug Load Hours/Year</label><input class="fi hvl-in" id="hvl-n-plugHrs-${projId}" type="number" value="2500"></div>
                 </div>
                 <div class="fg"><label class="fl">Other Base Electric kWh/Year (DHW, kitchen, etc.)</label><input class="fi hvl-in" id="hvl-n-otherKwh-${projId}" type="number" value="0"></div>
@@ -4028,7 +4028,7 @@ function openBASCalc(projId) {
   // Company-standard shipped defaults (occupied 70 heat / 74 cool, unoccupied cool 85, unoccupied
   // heat by heating source — see docs/dashboardlogic.md project_default_setpoint_standards): these
   // are placeholders shown only when no building/Set Points/Equipment Matrix data exists (flagged
-  // by the "default — not from building data" hint), never claimed as real survey data.
+  // by the "Default value (not from building data)" hint), never claimed as real survey data.
   const rExCoolOcc = _bcResolve('exCoolOcc', 74, auto?.exCoolOcc);
   const rExCoolUnocc = _bcResolve('exCoolUnocc', 85, auto?.exCoolUnocc);
   const rExHeatOcc = _bcResolve('exHeatOcc', 70, auto?.exHeatOcc);
@@ -4113,30 +4113,30 @@ function openBASCalc(projId) {
             <div class="card-hdr"><span class="card-title">A — Building &amp; Equipment</span></div>
             <div style="padding:14px">
               <div class="f3">
-                <div class="fg"><label class="fl">Building SqFt</label><input class="fi bc-inp" id="bc-sqft" type="number" value="${sqft}" placeholder="e.g. 50000">${_bcHintSpan(rSqft.hint)}</div>
+                <div class="fg"><label class="fl">Building Square Feet</label><input class="fi bc-inp" id="bc-sqft" type="number" value="${sqft}" placeholder="e.g. 50000">${_bcHintSpan(rSqft.hint)}</div>
                 <div class="fg"><label class="fl">Heating Source</label><select class="fs bc-inp" id="bc-heatSrc">
                   <option value="1" ${rHeatSrc.value == 1 ? 'selected' : ''}>1 — Gas (MCF)</option>
                   <option value="2" ${rHeatSrc.value == 2 ? 'selected' : ''}>2 — Electric (kWh)</option>
                   <option value="3" ${rHeatSrc.value == 3 ? 'selected' : ''}>3 — Gas (Therms)</option>
                   <option value="4" ${rHeatSrc.value == 4 ? 'selected' : ''}>4 — Both (Electric + Gas)</option>
                 </select>${_bcHintSpan(rHeatSrc.hint)}</div>
-                <div class="fg"><label class="fl">% of VRF kWh</label><input class="fi bc-inp" id="bc-vrfPct" type="number" value="${bc.vrfPct || 0}" min="0" max="100" step="1"></div>
+                <div class="fg"><label class="fl">Percent of Variable Refrigerant Flow kWh</label><input class="fi bc-inp" id="bc-vrfPct" type="number" value="${bc.vrfPct || 0}" min="0" max="100" step="1"></div>
               </div>
               <div style="display:grid;grid-template-columns:repeat(3,1fr) repeat(3,auto);gap:10px;margin-top:8px;align-items:end">
-                <div class="fg"><label class="fl">Cooling Eff (kW/Ton)</label><input class="fi bc-inp" id="bc-coolEff" type="number" step="0.01" value="${bc.coolEff || 0.86}"></div>
-                <div class="fg"><label class="fl">Gas AFUE</label><input class="fi bc-inp" id="bc-afue" type="number" step="0.01" value="${bc.afue || 0.8}"></div>
-                <div class="fg"><label class="fl">Electric COP</label><input class="fi bc-inp" id="bc-elecCOP" type="number" step="0.1" value="${bc.elecCOP || 1.0}"></div>
+                <div class="fg"><label class="fl">Cooling Efficiency (kW per Ton)</label><input class="fi bc-inp" id="bc-coolEff" type="number" step="0.01" value="${bc.coolEff || 0.86}"></div>
+                <div class="fg"><label class="fl">Gas Furnace Efficiency (Annual Fuel Utilization Efficiency)</label><input class="fi bc-inp" id="bc-afue" type="number" step="0.01" value="${bc.afue || 0.8}"></div>
+                <div class="fg"><label class="fl">Electric Heating Efficiency (Coefficient of Performance)</label><input class="fi bc-inp" id="bc-elecCOP" type="number" step="0.1" value="${bc.elecCOP || 1.0}"></div>
                 <div class="fg"><label class="fl">Humidity Setpoint (lb/lb)</label><input class="fi bc-inp" id="bc-humRatioSP" type="number" step="0.0001" value="${bc.humRatioSP || 0.0082}"></div>
                 <div style="text-align:center;padding:6px 10px;background:var(--s3);border-radius:7px;border:1px solid var(--border)">
-                  <div style="font-size:9px;color:var(--text3);text-transform:uppercase">Max Tons</div>
+                  <div style="font-size:9px;color:var(--text3);text-transform:uppercase">Maximum Tons</div>
                   <div style="font-size:14px;font-weight:700;font-family:var(--mono);color:var(--em2)" id="bc-dispTons">—</div>
                 </div>
                 <div style="text-align:center;padding:6px 10px;background:var(--s3);border-radius:7px;border:1px solid var(--border)">
-                  <div style="font-size:9px;color:var(--text3);text-transform:uppercase">Max MBtu/h</div>
+                  <div style="font-size:9px;color:var(--text3);text-transform:uppercase">Maximum Heating (thousand Btu/h)</div>
                   <div style="font-size:14px;font-weight:700;font-family:var(--mono);color:var(--amber)" id="bc-dispMbtu">—</div>
                 </div>
                 <div style="text-align:center;padding:6px 10px;background:var(--s3);border-radius:7px;border:1px solid var(--border)">
-                  <div style="font-size:9px;color:var(--text3);text-transform:uppercase">OA CFM</div>
+                  <div style="font-size:9px;color:var(--text3);text-transform:uppercase">Outside Air Cubic Feet per Minute</div>
                   <div style="font-size:14px;font-weight:700;font-family:var(--mono);color:var(--text2)" id="bc-dispCfm">—</div>
                 </div>
               </div>
@@ -4154,7 +4154,7 @@ function openBASCalc(projId) {
             <div style="padding:14px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
               <div style="font-size:12px;color:var(--text2)" id="bc-weatherStatus">${bc.weatherOverride ? 'Weather: uploaded data (' + bc.weatherOverride.rowsParsed + ' rows)' : 'Weather: typical-year data from the BAS Savings Calc template'}</div>
               <label class="btn btn-ghost btn-sm" style="cursor:pointer">
-                🌡️ Temp CSV
+                🌡️ Temperature CSV
                 <input type="file" accept=".csv,.txt" id="bc-weatherUpload" style="display:none" onchange="_bcHandleCSV(this,${projId})">
               </label>
               <label class="btn btn-ghost btn-sm" style="cursor:pointer">

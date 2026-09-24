@@ -8289,7 +8289,7 @@
             <div class="u-av" id="topAv">JS</div>
             <div>
               <div class="u-name" id="topName">Loading...</div>
-              <div class="u-dept">Energy Dept</div>
+              <div class="u-dept">Energy Department</div>
             </div>
           </div>
           <!-- [COMMENTED OUT] Sync to Outlook topbar button
@@ -8674,7 +8674,7 @@
                         <th>Client</th>
                         <th>Type</th>
                         <th>Status</th>
-                        <th title="Project Manager">PM</th>
+                        <th title="Project Manager">Project Manager</th>
                         <th>Contract</th>
                         <th>Start</th>
                         <th>Progress</th>
@@ -9254,7 +9254,7 @@
                   <div style="padding: 15px">
                     <div class="fg">
                       <label class="fl">Project Name</label
-                      ><input class="fi" id="sp-proj" placeholder="e.g. Van Horn HS BAS Upgrade" />
+                      ><input class="fi" id="sp-proj" placeholder="e.g. Van Horn High School BAS Upgrade" />
                     </div>
                     <div class="fg">
                       <label class="fl">Owner / Client</label
@@ -10771,10 +10771,10 @@
                           <th
                             onclick="emsSortTable('saNum')"
                             data-sort-col="saNum"
-                            data-label="SA #"
+                            data-label="Service Agreement Number"
                             title="Service Agreement Number"
                           >
-                            SA # ⇅
+                            Service Agreement Number ⇅
                           </th>
                           <th
                             onclick="emsSortTable('webctrlVersion')"
@@ -10797,7 +10797,11 @@
                           <th onclick="emsSortTable('cscContact')" data-sort-col="cscContact" data-label="CSC Contact">
                             CSC Contact ⇅
                           </th>
-                          <th onclick="emsSortTable('annualValue')" data-sort-col="annualValue" data-label="Estimated Value">
+                          <th
+                            onclick="emsSortTable('annualValue')"
+                            data-sort-col="annualValue"
+                            data-label="Estimated Value"
+                          >
                             Estimated Value ⇅
                           </th>
                           <th
@@ -10968,7 +10972,7 @@
                       <input class="df-input" id="ed-cscEngineer" type="text" placeholder="Engineer name" />
                     </div>
                     <div class="detail-field">
-                      <div class="df-label">SA #</div>
+                      <div class="df-label">Service Agreement Number</div>
                       <input class="df-input" id="ed-saNum" type="text" placeholder="e.g. SA-1234" />
                     </div>
                     <div class="detail-field">
@@ -11694,7 +11698,7 @@
                 { key: 'annualValue', label: 'Estimated Annual Value', builtin: true },
                 { key: 'cscContact', label: 'CSC Contact', builtin: true },
                 { key: 'cscEngineer', label: 'Engineer', builtin: true },
-                { key: 'saNum', label: 'SA #', builtin: true },
+                { key: 'saNum', label: 'Service Agreement Number', builtin: true },
                 { key: 'webctrlVersion', label: 'WebCTRL Version', builtin: true },
                 { key: 'renewalDate', label: 'Renewal Date', builtin: true },
                 { key: 'stage', label: 'Stage', builtin: true },
@@ -11844,7 +11848,7 @@
                 const changes = [];
                 emsLeads.forEach((lead) => {
                   const checks = [
-                    { canon: 'saNum', label: 'SA #', patterns: SA_PATTERNS },
+                    { canon: 'saNum', label: 'Service Agreement Number', patterns: SA_PATTERNS },
                     { canon: 'webctrlVersion', label: 'WebCTRL Version', patterns: WC_PATTERNS },
                     { canon: 'renewalDate', label: 'Renewal Date', patterns: RD_PATTERNS },
                   ];
@@ -13664,7 +13668,7 @@
             <div class="modal-sect">Project Info</div>
             <div class="fg">
               <label class="fl">Project Name *</label
-              ><input class="fi" id="mp-name" placeholder="e.g. Van Horn HS BAS Upgrade" />
+              ><input class="fi" id="mp-name" placeholder="e.g. Van Horn High School BAS Upgrade" />
             </div>
             <div class="fg">
               <label class="fl">Client / Owner *</label

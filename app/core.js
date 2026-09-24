@@ -1383,7 +1383,7 @@ function renderDetail(p) {
             <button class="pd-back" onclick="backToList()" style="margin-bottom:0;margin-right:8px;flex-shrink:0">← Back</button>
             <span class="phc-name">${p.name}</span>
             <span class="phc-sep">|</span>
-            <span>SA# <span class="phc-val">${p.sa || '—'}</span></span>
+            <span>Service Agreement Number <span class="phc-val">${p.sa || '—'}</span></span>
             <span class="phc-sep">|</span>
             <span>Savings <span class="phc-val">${p.savings && projHasContract(p.id) ? '$' + Number(p.savings).toLocaleString() + '/yr' : '—'}</span></span>
             <span class="phc-sep">|</span>
@@ -1391,7 +1391,7 @@ function renderDetail(p) {
             <span class="phc-sep">|</span>
             <span id="phc-baseline-${p.id}">Baseline <span class="phc-val">—</span></span>
             <span class="phc-sep">|</span>
-            <span id="phc-eui-${p.id}">Site EUI <span class="phc-val">—</span></span>
+            <span id="phc-eui-${p.id}">Site Energy Use Intensity <span class="phc-val">—</span></span>
             <span class="phc-sep">|</span>
             <span>Tasks <span class="phc-val" style="${openTasks > 0 ? 'color:var(--warn)' : ''}">${openTasks}</span></span>
             <span class="phc-sep">|</span>
@@ -1564,19 +1564,19 @@ function renderDetail(p) {
                 <div style="padding:16px">
                   <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:16px">
                     <div class="card" style="background:var(--s1);padding:14px;text-align:center">
-                      <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Baseline Site EUI</div>
+                      <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Baseline Site Energy Use Intensity</div>
                       <div id="egfx-blEui-${p.id}" style="font-size:28px;font-weight:800;font-family:var(--mono);color:var(--accent);margin:6px 0">—</div>
                       <div style="font-size:11px;color:var(--text2)">kBtu/ft²</div>
                     </div>
                     <div class="card" style="background:var(--s1);padding:14px;text-align:center">
-                      <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Rolling 12-Mo Site EUI</div>
+                      <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Rolling 12-Month Site Energy Use Intensity</div>
                       <div id="egfx-curEui-${p.id}" style="font-size:28px;font-weight:800;font-family:var(--mono);color:var(--em);margin:6px 0">—</div>
                       <div id="egfx-curEuiSub-${p.id}" style="font-size:11px;color:var(--text2)">kBtu/ft²</div>
                     </div>
                     <div class="card" style="background:var(--s1);padding:14px;text-align:center">
                       <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Est. ENERGY STAR Score</div>
                       <div id="egfx-estarScore-${p.id}" style="font-size:28px;font-weight:800;font-family:var(--mono);color:var(--text3);margin:6px 0">—</div>
-                      <div id="egfx-estarScoreSub-${p.id}" style="font-size:11px;color:var(--text3)">source EUI est.</div>
+                      <div id="egfx-estarScoreSub-${p.id}" style="font-size:11px;color:var(--text3)">source Energy Use Intensity estimate</div>
                     </div>
                     <div class="card" style="background:var(--s1);padding:14px;text-align:center">
                       <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Projected Savings</div>
@@ -1853,7 +1853,7 @@ function _updateCompactHdrBaseline(projId) {
   if (blEl)
     blEl.innerHTML =
       label + ' <span class="phc-val">' + (useCost > 0 ? '$' + Math.round(useCost).toLocaleString() : '—') + '</span>';
-  if (euiEl) euiEl.innerHTML = 'Site EUI <span class="phc-val">' + eui + '</span>';
+  if (euiEl) euiEl.innerHTML = 'Site Energy Use Intensity <span class="phc-val">' + eui + '</span>';
   // Auto-update progress
   const _p = projects.find((x) => x.id === projId);
   if (_p) {
@@ -2366,7 +2366,7 @@ function initDashboardTab(projId) {
                 };
                 const _blLabel = bldgRows.some((r) => r.blLabel === 'Baseline') ? 'Baseline' : 'Total Cost';
                 return `<table class="dtbl" style="width:100%;font-size:12px">
-                <thead><tr><th style="width:30px">#</th>${_thSort('name', 'Building', 'left')}<th style="text-align:right;cursor:pointer;user-select:none;white-space:nowrap${_srt.col === 'sqft' ? ';color:var(--em)' : ''}" onclick="if(!window._bpSort)window._bpSort={};if(!window._bpSort['${projId}'])window._bpSort['${projId}']={col:'sqft',asc:false};var s=window._bpSort['${projId}'];if(s.col==='sqft'){s.asc=!s.asc;}else{s.col='sqft';s.asc=true;}initDashboardTab(${projId})" title="Sort by Sq Ft">Sq Ft${_srt.col === 'sqft' ? (_srt.asc ? ' ↑' : ' ↓') : ' ↕'}</th><th style="text-align:center">Baseline</th><th style="text-align:right">Baseline Period</th>${_thSort('blCost', _blLabel + ' $/yr', 'right')}${_thSort('blEUI', 'Baseline Site EUI', 'right')}${_thSort('curCost', 'Current Cost', 'right')}${_thSort('curEUI', 'Current Site EUI', 'right')}${_thSort('sav', 'Savings $', 'right')}${_thSort('savPct', '%', 'right')}<th style="text-align:center">Status</th></tr></thead>
+                <thead><tr><th style="width:30px">#</th>${_thSort('name', 'Building', 'left')}<th style="text-align:right;cursor:pointer;user-select:none;white-space:nowrap${_srt.col === 'sqft' ? ';color:var(--em)' : ''}" onclick="if(!window._bpSort)window._bpSort={};if(!window._bpSort['${projId}'])window._bpSort['${projId}']={col:'sqft',asc:false};var s=window._bpSort['${projId}'];if(s.col==='sqft'){s.asc=!s.asc;}else{s.col='sqft';s.asc=true;}initDashboardTab(${projId})" title="Sort by Sq Ft">Sq Ft${_srt.col === 'sqft' ? (_srt.asc ? ' ↑' : ' ↓') : ' ↕'}</th><th style="text-align:center">Baseline</th><th style="text-align:right">Baseline Period</th>${_thSort('blCost', _blLabel + ' $/yr', 'right')}${_thSort('blEUI', 'Baseline Site Energy Use Intensity', 'right')}${_thSort('curCost', 'Current Cost', 'right')}${_thSort('curEUI', 'Current Site Energy Use Intensity', 'right')}${_thSort('sav', 'Savings $', 'right')}${_thSort('savPct', '%', 'right')}<th style="text-align:center">Status</th></tr></thead>
                 <tbody>${sortedRows
                   .map((r, _ri) => {
                     const blIcon = r.meterIncl > 0 ? (r.meterExcl > 0 ? '◐' : '●') : '○';

@@ -301,7 +301,7 @@ function chIsLegacyCalcPlaceholderSave(bc) {
    even from before this feature existed). Otherwise autofill wins when available;
    otherwise the shipped default is used and flagged so the user knows it isn't real
    building data. hint is null for a real user value, 'from <source>' for an
-   autofilled value, or 'default — not from building data' otherwise. */
+   autofilled value, or 'Default value (not from building data)' otherwise. */
 function chResolveCalcField(savedValue, shippedDefault, autoResult, touchedFields, field) {
   // Duck-typed, not `instanceof Set` — a Set built in a different vm/realm than this
   // function runs in (e.g. the Node test harness) fails instanceof but still has .has().
@@ -317,11 +317,11 @@ function chResolveCalcField(savedValue, shippedDefault, autoResult, touchedField
   if (autoResult && !autoResult.isDefault) {
     return { value: autoResult.value, hint: 'from ' + autoResult.source };
   }
-  return { value: hasSaved ? savedValue : shippedDefault, hint: 'default — not from building data' };
+  return { value: hasSaved ? savedValue : shippedDefault, hint: 'Default value (not from building data)' };
 }
 
 /* chCalcFieldHintHTML(hint) -> small marker shown under a calc input: green "✓ from
-   <source>" for autofilled fields, dim "default — not from building data" otherwise.
+   <source>" for autofilled fields, dim "Default value (not from building data)" otherwise.
    Empty string (no marker) when hint is null (a real user value). */
 function chCalcFieldHintHTML(hint) {
   if (!hint) return '';

@@ -1,4 +1,5 @@
-// tools/test-no-ui-abbreviations.js — UI label spell-out gate (2026-09-23, task 5ai).
+// tools/test-no-ui-abbreviations.js — UI label spell-out gate (2026-09-23, task 5ai;
+// extended 2026-09-24, task 5ai follow-up).
 // Run: node tools/test-no-ui-abbreviations.js
 //
 // Matt: "Why are we abbreviating words?" — the BAS Savings Calc screen (and other tables/
@@ -7,6 +8,14 @@
 // "NORM. MONTH" / "FOM". This gate scans the UI LABEL surfaces the app actually renders —
 // not the whole file — for a banned whole-word abbreviation list, and fails with file:line
 // on any hit so an abbreviated label can never ship again.
+//
+// 2026-09-24 follow-up: the first pass missed labels rendered in plain uppercase-styled
+// <div>s and a bare "SA#"/"SA #" symbol (no letter boundary for \b), and Matt asked for a
+// second line of defense: any NEW all-caps 2-5 letter token in a scanned label string that
+// isn't on the explicit allow list below also fails the gate, so a fresh abbreviation can't
+// ship without a deliberate decision to allow-list it. "Building SqFt", "Cooling Eff
+// (kW/Ton)", "Gas AFUE", "Electric COP", "Max Tons"/"Max MBtu/h"/"OA CFM", "Temp CSV", "SA#",
+// "Site EUI", and the "Energy Dept" user chip were all spelled out for this follow-up.
 //
 // Scope (deliberately narrow — this is what a person actually reads on screen):
 //   1. Text inside label-bearing HTML tags found in *.html and app/*.js template literals:
@@ -58,12 +67,144 @@ const BANNED_WORDS = [
   'Pct',
   'Amt',
   'Dept',
+  // 2026-09-24 follow-up (task 5ai follow-up) — spelled out across the BAS Savings Calc form,
+  // the project header, and the ECM calculator (same words, same fix):
+  'SqFt', // -> "Square Feet" (matches "SqFt"/"sqft" concatenated; the established two-word
+  // "Sq Ft" table-header abbreviation elsewhere is a separate, larger, pre-existing convention
+  // Matt did not flag and is intentionally left alone here).
+  'Eff', // -> "Efficiency"
+  'AFUE', // -> "Annual Fuel Utilization Efficiency"
+  'COP', // -> "Coefficient of Performance"
+  'MBtu', // -> "thousand Btu" (bare MBtu/MBH; MMBtu stays allowed — see ALLOWED_KEPT_UNITS)
+  'CFM', // -> "Cubic Feet per Minute"
+  'EUI', // -> "Energy Use Intensity"
+];
+
+// A bare-symbol form `\b` can't bound ("#" isn't a word character) — checked by substring,
+// case-insensitively, against the same extracted label text as the whole-word list above.
+const BANNED_SUBSTRINGS = [
+  { word: 'SA#', needle: 'sa#' }, // -> "Service Agreement Number"
 ];
 
 const BANNED_RES = BANNED_WORDS.map((w) => ({
   word: w,
   re: new RegExp('\\b' + w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i'),
 }));
+
+// app/equipment-matrix.js renders "CFM" dozens of times as the real, established unit name
+// for airflow points (Ventilation CFM, Return Fan CFM, ...) — genuine BAS-equipment
+// vocabulary, not a shortened English word (same rationale as the BAS point-name dictionary
+// exclusion above), and the file is concurrently owned by another agent's work this session.
+// Every OTHER file still bans "CFM" — the BAS Savings Calc and ECM calculator labels this
+// task fixed stay protected.
+const BANNED_WORD_FILE_EXCEPTIONS = new Map([['CFM', new Set([path.join('app', 'equipment-matrix.js')])]]);
+
+// ─── All-caps token safety net (2026-09-24 follow-up) ───────────────────────────────────────
+// Beyond the curated whole-word list above, any all-caps run of 2-5 letters in a scanned label
+// string fails the gate unless it's on this allow list. This is a second line of defense, not
+// a replacement for the curated list: it stops a BRAND NEW abbreviation from shipping without
+// a deliberate choice to allow-list it, while not forcing an unrelated, unverified rewrite of
+// the site's existing technical/billing vocabulary in one pass.
+//
+// Two kinds of entries:
+//   1. Real proper names, file formats, units, and postal/state codes — never "abbreviations"
+//      in Matt's sense (STE calls these out separately from shortened English words).
+//   2. Whole English words that happen to render in ALL CAPS for table-header/button styling
+//      (e.g. "TOTAL COST $") — the regex can't tell a styled whole word from a shortened one,
+//      so these are named explicitly rather than guessed at.
+// Building-automation/equipment mnemonics (AHU, VAV, CHW, CFM, BTU, VFD, etc.), utility-bill
+// tariff rider codes (ECA, EER, PTS, TDC, ...), and other deep domain vocabulary are NOT
+// blanket-exempted here — see ALL_CAPS_EXCLUDED_FILES below for why those files are skipped
+// by this specific check instead (same rationale as the BAS point-dictionary exclusion above:
+// real domain terminology, not a shortened English word, and app/equipment-matrix.js is
+// concurrently owned by another agent's work this session).
+const ALLOWED_ALL_CAPS = new Set([
+  // Already-allowed units (see ALLOWED_KEPT_UNITS), plus their literal ALL-CAPS table-header
+  // spelling:
+  'HVAC',
+  'PDF',
+  'CSV',
+  'KW',
+  // Proper names / orgs / standards (not abbreviations of an English word):
+  'BAS',
+  'ASHRAE',
+  'JOCO',
+  'CSC',
+  'CBECS',
+  'DOE',
+  'MLK',
+  'NEMA',
+  'SOO',
+  'STAR', // "ENERGY STAR"
+  'AI',
+  'EMS', // "Energy Management System" — the ems-leads.html page's own product/feature name
+  'OCR', // "Optical Character Recognition" — the app's own "PDF / OCR" nav feature name
+  // File/data formats and universal tech terms:
+  'JSON',
+  'XLSX',
+  'URL',
+  // US state/postal codes:
+  'MO',
+  'TX',
+  'ZIP',
+  // Established units/qualifiers used alongside already-allowed units:
+  'DC', // "kW DC" — direct current, paired with the allowed "kW" unit
+  'CCF',
+  'CDD',
+  'HDD',
+  // Building-automation equipment mnemonics used in a handful of free-text placeholder
+  // examples/labels outside the excluded technical files below — real equipment-class names,
+  // not shortened English words (same category as the already-allowed HVAC):
+  'AHU',
+  'RTU',
+  'VAV',
+  'OAT',
+  'RA',
+  // Example ID/tag-format placeholders (illustrate a real value's format, not label prose):
+  'SA',
+  'MTR',
+  // Whole English words rendered in ALL CAPS for header/button styling — not abbreviations:
+  'ALL',
+  'AND',
+  'NOT',
+  'NO',
+  'TOTAL',
+  'COST',
+  'FUEL',
+  'WATER',
+]);
+const ALL_CAPS_RE = /\b[A-Z]{2,5}\b/g;
+
+// Files whose UI labels are established domain vocabulary (BAS/HVAC equipment nomenclature,
+// utility-bill tariff/rider codes, financial/business terms) rather than shortened English
+// words — same rationale as the BAS point-dictionary exclusion above. app/equipment-matrix.js
+// is also concurrently owned by another agent's work this session, so it is excluded from this
+// specific all-caps safety net to avoid an unrelated, unverified rewrite; the curated
+// BANNED_WORDS list above still applies to every file, including these.
+const ALL_CAPS_EXCLUDED_FILES = new Set([
+  path.join('app', 'equipment-matrix.js'),
+  path.join('app', 'bas-trends.js'),
+  path.join('app', 'bas-alarms.js'),
+  path.join('app', 'ecm-calculators.js'),
+  path.join('app', 'bill-analysis.js'),
+  path.join('app', 'csv-import.js'),
+  path.join('app', 'pricing-estimator.js'),
+  path.join('app', 'budget.js'),
+  path.join('app', 'district-calendar.js'),
+  path.join('app', 'soo-generator.js'),
+  path.join('app', 'pipeline-diagram.js'),
+  path.join('app', 'utility-data.js'),
+  path.join('app', 'report-engine.js'),
+  path.join('app', 'report-engine-woodland.js'),
+  // Hosts several distinct sub-calculators beyond the BAS Savings Calc this task targeted:
+  // the HVAC Load Estimate calc (EFLH, MBH, DHW, MCF, UA — real HVAC-engineering terms) and
+  // the solar Net Metering rate-breakdown tables (ECA, EER, PTS, TDC — literal utility tariff
+  // rider codes taken from the client's real bill; guessing at their expansion risks putting
+  // a wrong name on a live financial calculator). The BAS Savings Calc labels Matt flagged are
+  // already spelled out and stay protected everywhere by the curated BANNED_WORDS list above,
+  // which still runs against this file.
+  path.join('app', 'calculators.js'),
+]);
 
 const JS_FILES = fs
   .readdirSync(path.join(REPO, 'app'))
@@ -170,9 +311,31 @@ function scanSource(src, filePath) {
     if (EXACT_TEXT_EXCEPTIONS.has(rawText)) continue;
     const text = stripInterpolation(rawText);
     for (const { word, re } of BANNED_RES) {
+      const exceptFiles = BANNED_WORD_FILE_EXCEPTIONS.get(word);
+      if (exceptFiles && exceptFiles.has(filePath)) continue;
       re.lastIndex = 0;
       if (re.test(text)) {
         hits.push({ file: filePath, line: lineOf(src, index), word, text: text.slice(0, 140) });
+      }
+    }
+    for (const { word, needle } of BANNED_SUBSTRINGS) {
+      if (text.toLowerCase().includes(needle)) {
+        hits.push({ file: filePath, line: lineOf(src, index), word, text: text.slice(0, 140) });
+      }
+    }
+    if (!ALL_CAPS_EXCLUDED_FILES.has(filePath)) {
+      ALL_CAPS_RE.lastIndex = 0;
+      let m;
+      while ((m = ALL_CAPS_RE.exec(text))) {
+        const token = m[0];
+        if (!ALLOWED_ALL_CAPS.has(token)) {
+          hits.push({
+            file: filePath,
+            line: lineOf(src, index),
+            word: 'ALL-CAPS:' + token,
+            text: text.slice(0, 140),
+          });
+        }
       }
     }
   }

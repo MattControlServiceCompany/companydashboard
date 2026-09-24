@@ -17,7 +17,7 @@ const ECM_TEMPLATES = {
     inputs: [
       {
         id: 'unit_cfm',
-        label: 'Unit Supply Air CFM',
+        label: 'Unit Supply Air (Cubic Feet per Minute)',
         help: 'CFM — Cubic Feet per Minute. The total volume of air the unit delivers.',
         unit: 'CFM',
         type: 'number',
@@ -27,7 +27,7 @@ const ECM_TEMPLATES = {
       },
       {
         id: 'design_oa_cfm',
-        label: 'Design Minimum Outside Air CFM',
+        label: 'Design Minimum Outside Air (Cubic Feet per Minute)',
         help: 'OA — Outside Air. CFM — Cubic Feet per Minute. The minimum fresh outdoor air the unit should bring in per code.',
         unit: 'CFM',
         type: 'number',
@@ -96,7 +96,7 @@ const ECM_TEMPLATES = {
       },
       {
         id: 'boiler_afue',
-        label: 'Boiler AFUE',
+        label: 'Boiler Efficiency (Annual Fuel Utilization Efficiency)',
         help: 'AFUE — Annual Fuel Utilization Efficiency. How much of the fuel burned becomes useful heat. Older boilers: 70–80%. Modern high-efficiency: 85–95%.',
         unit: '%',
         type: 'number',
@@ -106,7 +106,7 @@ const ECM_TEMPLATES = {
       },
       {
         id: 'chiller_cop',
-        label: 'Chiller / DX COP',
+        label: 'Chiller / DX Coefficient of Performance',
         help: 'COP — Coefficient of Performance. How efficiently the chiller converts electricity into cooling. Higher = more efficient. DX — Direct Expansion (refrigerant-based cooling). Typical range: 3–5.',
         unit: '',
         type: 'number',
@@ -129,7 +129,7 @@ const ECM_TEMPLATES = {
     outputs: [
       {
         id: 'excess_cfm',
-        label: 'Excess Outside Air CFM Eliminated',
+        label: 'Excess Outside Air (Cubic Feet per Minute) Eliminated',
         unit: 'CFM',
         formula: 'excess_cfm = Design OA CFM (during unoccupied hours, when damper should be closed)',
       },
@@ -653,7 +653,7 @@ const ECM_TEMPLATES = {
     inputs: [
       {
         id: 'oa_cfm',
-        label: 'Outdoor Air CFM',
+        label: 'Outdoor Air (Cubic Feet per Minute)',
         help: 'OA — Outside Air. CFM — Cubic Feet per Minute. The volume of fresh outdoor air brought into the building.',
         unit: 'CFM',
         type: 'number',
@@ -744,7 +744,7 @@ const ECM_TEMPLATES = {
       },
       {
         id: 'afue',
-        label: 'Heating Efficiency (AFUE or COP)',
+        label: 'Heating Efficiency (Annual Fuel Utilization Efficiency or Coefficient of Performance)',
         help: 'AFUE — Annual Fuel Utilization Efficiency (for gas systems, e.g. 0.80 = 80%). COP — Coefficient of Performance (for heat pumps, e.g. 3.0). Enter the appropriate value for your heating system.',
         unit: '',
         type: 'number',
@@ -1586,7 +1586,7 @@ const ECM_TEMPLATES = {
     inputs: [
       {
         id: 'oa_cfm_design',
-        label: 'Design Outside Air CFM (full occupancy)',
+        label: 'Design Outside Air (Cubic Feet per Minute, full occupancy)',
         unit: 'CFM',
         type: 'number',
         default: 2290,
@@ -1632,7 +1632,7 @@ const ECM_TEMPLATES = {
       },
       {
         id: 'boiler_afue',
-        label: 'Boiler AFUE',
+        label: 'Boiler Efficiency (Annual Fuel Utilization Efficiency)',
         help: 'AFUE — Annual Fuel Utilization Efficiency. How much of the fuel burned becomes useful heat. Older boilers: 70–80%. Modern high-efficiency: 85–95%.',
         unit: '%',
         type: 'number',
@@ -1662,7 +1662,7 @@ const ECM_TEMPLATES = {
       },
       {
         id: 'chiller_cop',
-        label: 'Cooling System COP',
+        label: 'Cooling System Coefficient of Performance',
         help: 'COP — Coefficient of Performance. How efficiently the cooling system converts electricity into cooling. Higher = more efficient. Typical range: 3–5.',
         unit: 'COP',
         type: 'number',
@@ -1688,7 +1688,7 @@ const ECM_TEMPLATES = {
         unit: '%',
         formula: 'per_person_frac × (1 − avg_occ_frac)  — only per-person component varies with CO2',
       },
-      { id: 'cfm_saved', label: 'Average CFM Reduced', unit: 'CFM', formula: 'oa_cfm_design × oa_reduction_frac' },
+      { id: 'cfm_saved', label: 'Average Cubic Feet per Minute Reduced', unit: 'CFM', formula: 'oa_cfm_design × oa_reduction_frac' },
       {
         id: 'therms_saved',
         label: 'Heating Therms Saved',
@@ -1747,7 +1747,7 @@ const ECM_TEMPLATES = {
     inputs: [
       {
         id: 'system_cfm',
-        label: 'Total System CFM',
+        label: 'Total System (Cubic Feet per Minute)',
         unit: 'CFM',
         type: 'number',
         default: 20000,
@@ -1794,7 +1794,7 @@ const ECM_TEMPLATES = {
       },
       {
         id: 'boiler_afue',
-        label: 'Boiler AFUE (gas reheat only)',
+        label: 'Boiler Efficiency (Annual Fuel Utilization Efficiency, gas reheat only)',
         help: 'AFUE — Annual Fuel Utilization Efficiency. How much of the fuel burned becomes useful heat. Older boilers: 70–80%. Modern high-efficiency: 85–95%.',
         unit: '%',
         type: 'number',
@@ -1804,7 +1804,7 @@ const ECM_TEMPLATES = {
       },
       {
         id: 'cooling_cop',
-        label: 'Cooling System COP',
+        label: 'Cooling System Coefficient of Performance',
         help: 'COP — Coefficient of Performance. How efficiently the cooling system converts electricity into cooling. Higher = more efficient. Typical range: 3–5.',
         unit: 'COP',
         type: 'number',
@@ -1834,7 +1834,7 @@ const ECM_TEMPLATES = {
       },
       {
         id: 'fan_kw_design',
-        label: 'Fan Motor kW at Design CFM',
+        label: 'Fan Motor kW at Design (Cubic Feet per Minute)',
         unit: 'kW',
         type: 'number',
         default: 15,
@@ -1951,7 +1951,7 @@ const ECM_TEMPLATES = {
       },
       {
         id: 'eff_old',
-        label: 'Existing Boiler AFUE',
+        label: 'Existing Boiler Efficiency (Annual Fuel Utilization Efficiency)',
         help: 'AFUE — Annual Fuel Utilization Efficiency. The percentage of fuel burned that becomes useful heat. Typical old boilers: 70–80%.',
         unit: '%',
         type: 'number',
@@ -1961,7 +1961,7 @@ const ECM_TEMPLATES = {
       },
       {
         id: 'eff_new',
-        label: 'New Boiler AFUE',
+        label: 'New Boiler Efficiency (Annual Fuel Utilization Efficiency)',
         help: 'AFUE — Annual Fuel Utilization Efficiency. Modern condensing boilers typically achieve 90–97% AFUE.',
         unit: '%',
         type: 'number',
@@ -2118,7 +2118,7 @@ const ECM_TEMPLATES = {
         ],
         default: 'gas',
       },
-      { id: 'cooling_cop', label: 'Cooling System COP', unit: 'COP', type: 'number', default: 3.5, min: 1, max: 8 },
+      { id: 'cooling_cop', label: 'Cooling System Coefficient of Performance', unit: 'COP', type: 'number', default: 3.5, min: 1, max: 8 },
       { id: 'gas_rate', label: 'Gas Rate', unit: '$/therm', type: 'number', default: 0.8, min: 0.1, max: 5.0 },
       { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: 0.085, min: 0.01, max: 1.0 },
       { id: 'install_cost', label: 'Install Cost', unit: '$', type: 'number', default: 25000, min: 0, max: 5000000 },
