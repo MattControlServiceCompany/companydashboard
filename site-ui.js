@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.23.16'; // Equipment Matrix: removed pagination (all rows scroll, no page cap), added Meters/Lighting/Monitoring classification for rows that fell to "Other"
+  var CH_VERSION = 'v2026.09.23.17'; // Baseline & BAS Savings Report: fixed Annual kWh column overflow for 7/8-digit buildings
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

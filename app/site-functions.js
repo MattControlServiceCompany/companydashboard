@@ -1742,6 +1742,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.23.17',
+    date: '2026-09-23',
+    title: 'Baseline & BAS Savings Report: fixed Annual kWh column overflow for large buildings',
+    items: [
+      {
+        type: 'fix',
+        text: "On the Baseline & BAS Savings Report's Building Baseline Data table, a building with a 7-digit or 8-digit annual kWh total (1,000,000 or more) had its Annual kWh number run past its column and overlap the next column. The column now sizes itself to the actual annual total, so it stays inside its own column at any size.",
+      },
+    ],
+  },
+  {
     v: 'v2026.09.23.16',
     date: '2026-09-23',
     title: 'Equipment Matrix: no more page limit; new Meters and Lighting types',

@@ -81,6 +81,12 @@ const stubs = [
   'var udSelProjId = null;',
   'function getUDProj(){ return {}; }',
   'function isCalcCommodity(){ return true; }',
+  // 2026-09-23 (kWh overflow fix): rptBuildBaselineDataTable's column-width apportionment now
+  // calls _rptGeometry() for the table's real available px. This sandbox never defines
+  // `document`, so the real function (app/report-engine.js) always takes its
+  // `typeof document === 'undefined'` branch and returns RPT_GEOMETRY_DEFAULTS verbatim — this
+  // stub is that same no-document return value, not a reimplementation of the DOM-reading path.
+  'function _rptGeometry(){ return { pageW: 816, pageH: 1056, padX: 48, hdrH: 60, heroHdrH: 196, smallHdrH: 195, ftrH: 72, bodyPadTop: 12, bodyPadBottom: 8, flushTop: 60 }; }',
 ].join('\n');
 
 const fns = [
