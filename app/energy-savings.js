@@ -1466,6 +1466,165 @@ async function deleteProj(id) {
 }
 
 /* ── PROJECTS: MODAL ── */
+// Customer/Multi-Project picker (2026-09-24). BLOCKER D fix: the Customer dropdown
+// resolves/creates the customer IMMEDIATELY on interaction, not deferred to Save — a
+// brand-new project has no id until saveProject() runs, but getCustomerBuildings()
+// only ever needs customerId, never a project id.
+let _mpSelectedCustomerId = null;
+let _mpBuildingsChecklistState = { buildingIds: [], meterExcludeIds: [] };
+
+function refreshCustomerDropdown(selectedId) {
+  const sel = document.getElementById('mp-customer');
+  if (!sel) return;
+  const customers = sget('en_customers', []) || [];
+  sel.innerHTML =
+    '<option value="">— Select or create a customer —</option>' +
+    customers
+      .map(
+        (c) =>
+          '<option value="' +
+          c.id +
+          '"' +
+          (c.id === selectedId ? ' selected' : '') +
+          '>' +
+          _escHtmlEs(c.name) +
+          '</option>',
+      )
+      .join('') +
+    '<option value="__new__">+ New customer…</option>';
+}
+// Tiny local HTML-escape (mirrors the app-wide _escHtml pattern) so a customer name with
+// HTML-significant characters never breaks the dropdown's innerHTML build.
+function _escHtmlEs(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function onCustomerDropdownChange() {
+  const sel = document.getElementById('mp-customer');
+  const newInput = document.getElementById('mp-customer-new');
+  if (!sel) return;
+  if (sel.value === '__new__') {
+    if (newInput) {
+      newInput.style.display = '';
+      newInput.value = '';
+      newInput.focus();
+    }
+    _mpSelectedCustomerId = null;
+    _mpBuildingsChecklistState = { buildingIds: [], meterExcludeIds: [] };
+    renderMpBuildingsChecklist();
+    return;
+  }
+  if (newInput) newInput.style.display = 'none';
+  _mpSelectedCustomerId = sel.value || null;
+  _mpBuildingsChecklistState = { buildingIds: [], meterExcludeIds: [] };
+  renderMpBuildingsChecklist();
+}
+
+function onNewCustomerNameInput() {
+  const newInput = document.getElementById('mp-customer-new');
+  const name = (newInput?.value || '').trim();
+  if (!name) {
+    _mpSelectedCustomerId = null;
+    renderMpBuildingsChecklist();
+    return;
+  }
+  // BLOCKER D fix: create the en_customers row immediately (not deferred to Save), same
+  // Date.now()-based, collision-tolerant convention en_projects already uses for new
+  // records — never the migration's deterministic 'cust_'+P.id derivation, which needs a
+  // source project id that doesn't exist yet for a brand-new customer typed here.
+  if (!_mpSelectedCustomerId || !_mpSelectedCustomerId.startsWith('cust_new_')) {
+    const customers = sget('en_customers', []) || [];
+    _mpSelectedCustomerId = 'cust_new_' + Date.now();
+    customers.push({ id: _mpSelectedCustomerId, name });
+    sset('en_customers', customers);
+  } else {
+    const customers = sget('en_customers', []) || [];
+    const c = customers.find((x) => x.id === _mpSelectedCustomerId);
+    if (c) {
+      c.name = name;
+      sset('en_customers', customers);
+    }
+  }
+  renderMpBuildingsChecklist();
+}
+
+function renderMpBuildingsChecklist() {
+  const section = document.getElementById('mp-buildings-section');
+  const box = document.getElementById('mp-buildings-checklist');
+  if (!box || !section) return;
+  if (!_mpSelectedCustomerId) {
+    section.style.display = 'none';
+    box.innerHTML = '';
+    return;
+  }
+  section.style.display = '';
+  // The picker always shows the customer's FULL building list, unfiltered by any one
+  // project's scope (BLOCKER A fix point 3 / BLOCKER D fix) — works even for a brand-new
+  // customer (correctly empty) since it never needs a project id.
+  const bldgs = (typeof getCustomerBuildings === 'function' ? getCustomerBuildings(_mpSelectedCustomerId) : []) || [];
+  if (!bldgs.length) {
+    box.innerHTML = '<div style="color:var(--text3);padding:4px 0">No buildings yet for this customer.</div>';
+    return;
+  }
+  const checkedBldgs = new Set(_mpBuildingsChecklistState.buildingIds || []);
+  const excludedMeters = new Set(_mpBuildingsChecklistState.meterExcludeIds || []);
+  box.innerHTML = bldgs
+    .map((b) => {
+      const bChecked = checkedBldgs.has(b.id);
+      const meters = b.meters || [];
+      const meterRows = meters
+        .map((m) => {
+          const mExcluded = excludedMeters.has(m.id);
+          return (
+            '<label style="display:flex;align-items:center;gap:6px;padding:2px 0 2px 20px;font-size:11px;color:var(--text2)">' +
+            '<input type="checkbox" class="mp-bldg-meter-cb" data-bldg="' +
+            b.id +
+            '" data-meter="' +
+            m.id +
+            '"' +
+            (mExcluded ? '' : ' checked') +
+            ' onchange="_mpChecklistChanged()">' +
+            _escHtmlEs((m.commodity || 'Meter') + (m.account ? ' · ' + m.account : '')) +
+            ' <span style="color:var(--text3)">(baseline included when checked)</span></label>'
+          );
+        })
+        .join('');
+      return (
+        '<div style="margin-bottom:4px">' +
+        '<label style="display:flex;align-items:center;gap:6px;font-weight:600">' +
+        '<input type="checkbox" class="mp-bldg-cb" data-bldg="' +
+        b.id +
+        '"' +
+        (bChecked ? ' checked' : '') +
+        ' onchange="_mpChecklistChanged()">' +
+        _escHtmlEs(b.name || 'Building') +
+        '</label>' +
+        (bChecked ? meterRows : '') +
+        '</div>'
+      );
+    })
+    .join('');
+}
+
+// Reads the checklist DOM back into _mpBuildingsChecklistState on every change, and
+// re-renders so a newly-checked building reveals its meter sub-checkboxes.
+function _mpChecklistChanged() {
+  const box = document.getElementById('mp-buildings-checklist');
+  if (!box) return;
+  const buildingIds = Array.from(box.querySelectorAll('.mp-bldg-cb:checked')).map((cb) => cb.getAttribute('data-bldg'));
+  // meterExcludeIds = every meter checkbox that is UNCHECKED — the successor to the
+  // retired per-meter include flag; unchecked means excluded from this project's baseline.
+  const meterExcludeIds = Array.from(box.querySelectorAll('.mp-bldg-meter-cb:not(:checked)')).map((cb) =>
+    cb.getAttribute('data-meter'),
+  );
+  _mpBuildingsChecklistState = { buildingIds, meterExcludeIds };
+  renderMpBuildingsChecklist();
+}
+
 function openProjModal() {
   document.getElementById('projModalTitle').textContent = '+ New Energy Project';
   document.getElementById('mp-edit-id').value = '';
@@ -1496,6 +1655,17 @@ function openProjModal() {
   document.getElementById('mp-progress').value = '0';
   _modalContacts = [];
   renderModalContacts();
+  // Customer/Multi-Project: new project starts with no customer picked and an empty
+  // (correctly empty, not an error) buildings checklist — see BLOCKER A fix point 6.
+  _mpSelectedCustomerId = null;
+  _mpBuildingsChecklistState = { buildingIds: [], meterExcludeIds: [] };
+  refreshCustomerDropdown(null);
+  const newInput = document.getElementById('mp-customer-new');
+  if (newInput) {
+    newInput.style.display = 'none';
+    newInput.value = '';
+  }
+  renderMpBuildingsChecklist();
   document.getElementById('projModal').classList.add('open');
 }
 function editProj(id) {
@@ -1527,6 +1697,21 @@ function editProj(id) {
     const e = document.getElementById('mp-' + k);
     if (e) e.value = v || '';
   });
+  // Customer/Multi-Project: existing project always has a customerId (self-heal seeds it
+  // for every pre-existing project). Pre-check the buildings/meters this project already
+  // has scoped.
+  _mpSelectedCustomerId = p.customerId || null;
+  const newInput = document.getElementById('mp-customer-new');
+  if (newInput) {
+    newInput.style.display = 'none';
+    newInput.value = '';
+  }
+  refreshCustomerDropdown(_mpSelectedCustomerId);
+  _mpBuildingsChecklistState = {
+    buildingIds: (p.scope && p.scope.buildingIds) || [],
+    meterExcludeIds: (p.scope && p.scope.meterExcludeIds) || [],
+  };
+  renderMpBuildingsChecklist();
   if (typeof initQuillEditor === 'function') {
     if (!window._mpNotesQuill) {
       window._mpNotesQuill = initQuillEditor('mp-notes-editor', p.notes || '');
@@ -1603,12 +1788,29 @@ function saveProject() {
     showToast('Enter a project name');
     return;
   }
+  // Customer/Multi-Project: a customer must be picked or created before Save — the
+  // dropdown/new-name flow (onCustomerDropdownChange/onNewCustomerNameInput) already
+  // resolves _mpSelectedCustomerId immediately on interaction (BLOCKER D fix), so this
+  // is just the final guard against saving with nothing picked.
+  if (!_mpSelectedCustomerId) {
+    showToast('Select or create a Customer');
+    return;
+  }
+  const customers = sget('en_customers', []) || [];
+  const _mpCustomer = customers.find((c) => c.id === _mpSelectedCustomerId);
   const editId = document.getElementById('mp-edit-id').value;
   // Set legacy fields from first contact for backwards compat
   const fc = _modalContacts[0];
   const fields = {
     name,
-    client: document.getElementById('mp-client').value,
+    customerId: _mpSelectedCustomerId,
+    // SHOULD FIX 5: client is an auto-synced denormalized cache of the customer's name —
+    // never hand-typed, written here whenever customerId is set (the one write site).
+    client: (_mpCustomer && _mpCustomer.name) || '',
+    scope: {
+      buildingIds: (_mpBuildingsChecklistState.buildingIds || []).slice(),
+      meterExcludeIds: (_mpBuildingsChecklistState.meterExcludeIds || []).slice(),
+    },
     addr: document.getElementById('mp-addr').value,
     zip: (document.getElementById('mp-zip')?.value || '').trim(),
     type: document.getElementById('mp-type').value,

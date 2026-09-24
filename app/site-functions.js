@@ -1742,6 +1742,25 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.24.5',
+    date: '2026-09-24',
+    title: 'Projects can now share a customer, with the utility data staying separate from each project',
+    items: [
+      {
+        type: 'feature',
+        text: 'A project now belongs to a Customer. You can add more than one project under the same customer -- for example a second project for one school inside a district -- and pick which of that customer\'s buildings and meters belong to each project. The "Client" box on the project form is now a Customer list: pick an existing customer or type a new name to create one.',
+      },
+      {
+        type: 'feature',
+        text: 'Buildings, meters, and bills are now shared across every project under the same customer, instead of copied. Add or edit a bill in one project and it shows up right away in any other project that has picked the same building -- the utility data and each project stay separate on purpose.',
+      },
+      {
+        type: 'fix',
+        text: 'Every existing project was set up automatically with its own matching customer, keeping the exact same buildings, meters, and bills it already had. Numbers did not change for any current project.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.24.4',
     date: '2026-09-24',
     title: 'More labels spelled out: BAS Savings Calc, project header, and Site Energy Use Intensity columns',

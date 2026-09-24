@@ -314,9 +314,14 @@ assert(
   strip(forced) === strip(full) && !forced.buildings.some((b) => b.meterIds.includes('mA3')),
   'baselineInclude:false meter (mA3) never enters even when its id is passed',
 );
+// meter.baselineInclude no longer exists (Customer/Multi-Project, BLOCKER 1 fix) —
+// _rptMeterEligible now looks up exclusion via isBaselineExcluded(projId, m.id) against
+// project.scope.meterExcludeIds. mA3 is the fixture's excluded meter (see meter('mA3', ...,
+// { baselineInclude: false }) above) — the self-heal migration already converted that into
+// PROJ's scope.meterExcludeIds, so passing its real id exercises the same "excluded" case.
 assert(
-  run(ctx, '_rptMeterEligible(' + PROJ + ", {baselineInclude:false, commodity:'Electric'})") ===
-    'excluded on Utility Data' && run(ctx, '_rptMeterEligible(' + PROJ + ", {commodity:'Electric'})") === '',
+  run(ctx, '_rptMeterEligible(' + PROJ + ", {id:'mA3', commodity:'Electric'})") === 'excluded on Utility Data' &&
+    run(ctx, '_rptMeterEligible(' + PROJ + ", {id:'mA1', commodity:'Electric'})") === '',
   '_rptMeterEligible: excluded -> reason string, eligible -> empty',
 );
 
