@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.23.12'; // Utility Data: gas $/Therm rate fix now covers all 4 bill save paths + a second-pass migration for bills saved between the two fixes
+  var CH_VERSION = 'v2026.09.23.13'; // Utility Data: Facilities kW / Facilities kW Cost now read through a single accessor + a one-time backfill migration for bills saved before the fix
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

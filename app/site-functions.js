@@ -1742,6 +1742,25 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.23.13',
+    date: '2026-09-23',
+    title: 'Utility Data Bills table: Facilities kW and Facilities kW Cost now read from one source',
+    items: [
+      {
+        type: 'fix',
+        text: 'On the Utility Data Bills table, Facilities kW Cost was stored under two different field names, and 5 places that display it (Bills table cost rollups, Set Points, the standard report, the Baseline & BAS Savings Report, and the building-level performance summary) each read only one of the two — so a bill saved through the other path showed Facilities kW Cost as blank or $0 and dropped that dollar amount from the total. All 5 now read through one shared lookup, so every surface agrees.',
+      },
+      {
+        type: 'fix',
+        text: 'Fixed a short-history case where the Facilities kW quantity, filled in automatically from a CSV import with fewer than 12 months of bills, could under-report the true 12-month peak demand for the earliest months on the meter (an April-June bill period showed 289.8/289.8/333.0 kW instead of the correct 380.16 kW).',
+      },
+      {
+        type: 'fix',
+        text: 'A one-time correction pass fills in Facilities kW and syncs Facilities kW Cost on any Electric bill already saved before this fix, so existing bills self-correct without needing to be re-imported.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.23.12',
     date: '2026-09-23',
     title: 'Utility Data: gas $/Therm rate fix now covers every bill save path',
