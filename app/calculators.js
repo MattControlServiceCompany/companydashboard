@@ -3734,16 +3734,18 @@ const BAS_HEAT_CURVE = [
   [42.5, 0.37],
   [47.5, 0.3],
 ];
+// Excel Savings Calculator!M3:M13 cached values (2026-09-22 parity audit finding #3 — the
+// site's prior curve kept COP flat at 0.8 through 32.5F, ramping 15F later than the workbook).
 const BAS_VRF_COP = [
   [-2.5, 0.8],
   [2.5, 0.8],
   [7.5, 0.8],
   [12.5, 0.8],
   [17.5, 0.8],
-  [22.5, 0.8],
-  [27.5, 0.8],
-  [32.5, 0.8],
-  [37.5, 1.34],
+  [22.5, 1.34],
+  [27.5, 1.88],
+  [32.5, 2.42],
+  [37.5, 2.96],
   [42.5, 3.5],
   [47.5, 3.5],
 ];
@@ -3752,6 +3754,17 @@ const BAS_VRF_COP = [
 // reached above 82.5F and silently dropped hot-climate hours (Phoenix, Brownsville, Dallas).
 const BAS_TEMP_BINS = BAS_WEATHER_BINS.bins;
 const BAS_MO = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+
+// Company-standard unoccupied heating setpoint default, by BAS Savings Calc heating source
+// (see docs/dashboardlogic.md project_default_setpoint_standards, 2026-09-23): gas/hydronic
+// heat setback 55, electric-resistance setback 60, electric+VRF/heat-pump setback 65. Occupied
+// setpoints (70 heat / 74 cool) and unoccupied cooling (85) are constant across heat sources —
+// only unoccupied heat varies, so this is the only value that needs the heat-source branch.
+function _bcDefaultUnoccHeat(heatSrc) {
+  if (heatSrc === 4) return 65; // Both (Electric + Gas) — VRF/heat-pump treatment
+  if (heatSrc === 2) return 60; // Electric
+  return 55; // 1 or 3 — Gas (MCF or Therms)
+}
 
 function _bcInterp(curve, temp) {
   if (temp <= curve[0][0]) return curve[0][1];
@@ -3844,12 +3857,17 @@ function openBASCalc(projId) {
   const rSqft = _bcResolve('sqft', 0, auto?.sqft);
   const rHeatSrc = _bcResolve('heatSrc', 2, auto?.heatSrc);
   const rCity = _bcResolve('city', 4, autoCity);
-  const rExCoolOcc = _bcResolve('exCoolOcc', 55, auto?.exCoolOcc);
-  const rExCoolUnocc = _bcResolve('exCoolUnocc', 70, auto?.exCoolUnocc);
+  // Company-standard shipped defaults (occupied 70 heat / 74 cool, unoccupied cool 85, unoccupied
+  // heat by heating source — see docs/dashboardlogic.md project_default_setpoint_standards): these
+  // are placeholders shown only when no building/Set Points/Equipment Matrix data exists (flagged
+  // by the "default — not from building data" hint), never claimed as real survey data.
+  const rExCoolOcc = _bcResolve('exCoolOcc', 74, auto?.exCoolOcc);
+  const rExCoolUnocc = _bcResolve('exCoolUnocc', 85, auto?.exCoolUnocc);
   const rExHeatOcc = _bcResolve('exHeatOcc', 70, auto?.exHeatOcc);
-  const rExHeatUnocc = _bcResolve('exHeatUnocc', 60, auto?.exHeatUnocc);
+  const rExHeatUnocc = _bcResolve('exHeatUnocc', _bcDefaultUnoccHeat(parseInt(rHeatSrc.value) || 2), auto?.exHeatUnocc);
   const rCalCoolKwh = _bcResolve('calCoolKwh', '', autoCalCool);
   const rCalHeatKwh = _bcResolve('calHeatKwh', '', autoCalHeat);
+  const rCalHeatGas = _bcResolve('calHeatGas', '', null);
 
   const sqft = rSqft.value || p?.sqft || 0;
   const cityOpts = BAS_CITIES.map(
@@ -3871,6 +3889,7 @@ function openBASCalc(projId) {
             <h2 style="font-size:18px;font-weight:700;margin:0">🏢 BAS Savings Calc</h2>
             <div style="flex:1"></div>
             <button class="btn btn-ghost btn-sm" onclick="bcSaveInputs(${projId})">💾 Save</button>
+            <button class="btn btn-ghost btn-sm" id="bc-use-em-btn">📥 Use Equipment Matrix Data</button>
             <button class="btn btn-ghost btn-sm" id="bc-setpoint-export-btn">📤 Setpoint Export</button>
             ${
               hasMsr
@@ -3893,8 +3912,8 @@ function openBASCalc(projId) {
               <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px">Cooling kWh Saved</div>
               <div style="font-size:22px;font-weight:700;font-family:var(--mono);color:var(--em2);margin-top:4px" id="bc-kpi-cool">—</div>
             </div>
-            <div class="card" style="padding:14px;text-align:center;background:var(--s1)">
-              <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px">Evergy Rebate</div>
+            <div class="card" id="bc-rebate-card" style="padding:14px;text-align:center;background:var(--s1);display:${bc.showRebate ? '' : 'none'}">
+              <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:1px">Evergy Rebate (estimate)</div>
               <div style="font-size:22px;font-weight:700;font-family:var(--mono);color:var(--green);margin-top:4px" id="bc-kpi-rebate">—</div>
             </div>
           </div>
@@ -3995,12 +4014,12 @@ function openBASCalc(projId) {
               <div class="card-hdr"><span class="card-title" style="color:var(--em)">New (Proposed) Conditions</span></div>
               <div style="padding:14px">
                 <div class="f2">
-                  <div class="fg"><label class="fl">Cool Occ SP (°F)</label><input class="fi bc-inp" id="bc-newCoolOcc" type="number" value="${bc.newCoolOcc ?? 50}"></div>
+                  <div class="fg"><label class="fl">Cool Occ SP (°F)</label><input class="fi bc-inp" id="bc-newCoolOcc" type="number" value="${bc.newCoolOcc ?? 74}"></div>
                   <div class="fg"><label class="fl">Cool Unocc SP (°F)</label><input class="fi bc-inp" id="bc-newCoolUnocc" type="number" value="${bc.newCoolUnocc ?? 85}"></div>
                 </div>
                 <div class="f2">
-                  <div class="fg"><label class="fl">Heat Occ SP (°F)</label><input class="fi bc-inp" id="bc-newHeatOcc" type="number" value="${bc.newHeatOcc ?? 60}"></div>
-                  <div class="fg"><label class="fl">Heat Unocc SP (°F)</label><input class="fi bc-inp" id="bc-newHeatUnocc" type="number" value="${bc.newHeatUnocc ?? 55}"></div>
+                  <div class="fg"><label class="fl">Heat Occ SP (°F)</label><input class="fi bc-inp" id="bc-newHeatOcc" type="number" value="${bc.newHeatOcc ?? 70}"></div>
+                  <div class="fg"><label class="fl">Heat Unocc SP (°F)</label><input class="fi bc-inp" id="bc-newHeatUnocc" type="number" value="${bc.newHeatUnocc ?? _bcDefaultUnoccHeat(parseInt(rHeatSrc.value) || 2)}"></div>
                 </div>
                 <div class="fg"><label class="fl">OA Shut Off When Unoccupied?</label><select class="fs bc-inp" id="bc-newOAShutoff">
                   <option value="no" ${(bc.newOAShutoff || 'yes') === 'no' ? 'selected' : ''}>No</option>
@@ -4028,9 +4047,14 @@ function openBASCalc(projId) {
             <div class="card-hdr"><span class="card-title">D — Calibration (Match to Utility Analysis)</span></div>
             <div style="padding:14px">
               <div style="font-size:11px;color:var(--text2);margin-bottom:10px">Enter actual annual energy from utility analysis. Leave blank to skip calibration (factor = 1.0).</div>
-              <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;align-items:end">
+              <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;align-items:end">
                 <div class="fg"><label class="fl">Existing Cooling kWh (from UA)</label><input class="fi bc-inp" id="bc-calCoolKwh" type="number" value="${rCalCoolKwh.value}">${_bcHintSpan(rCalCoolKwh.hint)}</div>
                 <div class="fg"><label class="fl">Existing Heating kWh (from UA)</label><input class="fi bc-inp" id="bc-calHeatKwh" type="number" value="${rCalHeatKwh.value}">${_bcHintSpan(rCalHeatKwh.hint)}</div>
+                ${
+                  parseInt(rHeatSrc.value) === 4
+                    ? `<div class="fg"><label class="fl">Existing Heating Gas — Therms (from UA)</label><input class="fi bc-inp" id="bc-calHeatGas" type="number" value="${rCalHeatGas.value}">${_bcHintSpan(rCalHeatGas.hint)}<div style="font-size:9px;color:var(--text3);margin-top:2px">Splits combined "Both" heating between kWh and gas by share of load (Heating Source 4 only)</div></div>`
+                    : ''
+                }
                 <div style="text-align:center;padding:8px;background:var(--s3);border-radius:7px;border:1px solid var(--border)">
                   <div style="font-size:9px;color:var(--text3);text-transform:uppercase">Cool Adj Factor</div>
                   <div style="font-size:14px;font-weight:700;font-family:var(--mono);color:var(--em2)" id="bc-adjCool">1.000</div>
@@ -4051,6 +4075,10 @@ function openBASCalc(projId) {
                 <div class="fg"><label class="fl">Peak Start (24hr)</label><input class="fi bc-inp" id="bc-peakStart" type="number" min="0" max="23" value="${bc.peakStart ?? 16}"></div>
                 <div class="fg"><label class="fl">Peak End (24hr)</label><input class="fi bc-inp" id="bc-peakEnd" type="number" min="1" max="24" value="${bc.peakEnd ?? 18}"></div>
               </div>
+              <label style="display:flex;align-items:center;gap:6px;margin-top:10px;font-size:11px;color:var(--text2)">
+                <input type="checkbox" id="bc-showRebate" ${bc.showRebate ? 'checked' : ''}>
+                Show Evergy Rebate estimate (informational only — not included in savings totals)
+              </label>
             </div>
           </div>
 
@@ -4083,7 +4111,33 @@ function openBASCalc(projId) {
   document.getElementById('bc-setpoint-export-btn')?.addEventListener('click', () => {
     emOpenSetpointExportDialog(projId, _calcTemplateContext.bldgId || null);
   });
+  document.getElementById('bc-use-em-btn')?.addEventListener('click', () => {
+    bcUseEquipmentMatrixData(projId);
+  });
+  document.getElementById('bc-showRebate')?.addEventListener('change', _bcToggleRebateVisibility);
+  // Heating Source changes which fields Section D and the unoccupied-heat default need (the
+  // gas-calibration input only applies to heatSrc 4 "Both") — those are baked into the HTML at
+  // render time, not live-updated by _bcDoCalc (which only rewrites the results panel and KPI
+  // text), so a plain recalc would leave a stale field set showing. Save first so no unsaved
+  // edit in another field is lost, then fully re-render.
+  document.getElementById('bc-heatSrc')?.addEventListener('change', () => {
+    bcSaveInputs(projId);
+    openBASCalc(projId);
+  });
+  _bcToggleRebateVisibility();
   _bcLiveCalc(projId);
+}
+
+// Shows/hides the Evergy rebate KPI card and detail breakdown based on the "Show Evergy
+// Rebate" checkbox (Section E). Off by default (item 5ap) — the rebate estimate is informational
+// only and must never be implied as part of the savings totals shown to a client, so it stays
+// out of sight unless someone deliberately opts in.
+function _bcToggleRebateVisibility() {
+  const show = document.getElementById('bc-showRebate')?.checked;
+  const card = document.getElementById('bc-rebate-card');
+  if (card) card.style.display = show ? '' : 'none';
+  const detail = document.getElementById('bc-rebate-detail');
+  if (detail) detail.style.display = show ? '' : 'none';
 }
 
 function _bcMarkTouched(projId, field) {
@@ -4146,9 +4200,20 @@ function _bcDoCalc(projId) {
 
   const calCoolKwh = _bcGv('bc-calCoolKwh');
   const calHeatKwh = _bcGv('bc-calHeatKwh');
+  const calHeatGas = _bcGv('bc-calHeatGas');
   const peakStart = _bcGv('bc-peakStart');
   const peakEnd = _bcGv('bc-peakEnd');
   const humRatioSP = _bcGv('bc-humRatioSP') || 0.0082;
+
+  // "Both (Electric + Gas)" (heatSrc 4) splits one combined heating load into a kWh share and
+  // a gas share by %GasHeat, matching Excel Savings Calculator!O39 (=IFERROR(K43/K44,0), where
+  // K42 is the existing electric-heating calibration kWh and K43 is the existing gas-heating
+  // calibration input in Therms) — 2026-09-22 parity audit finding #1, previously the site routed
+  // 100% of "Both" heating into kWh and never produced a gas savings number for that heat source.
+  // 0.03413 converts the kWh calibration figure to the same MMBtu-scale basis as the Therms input
+  // before taking the gas share of the combined total; falls back to 0 (all-kWh, today's
+  // behavior) when no gas calibration figure has been entered.
+  const pctGasHeat = heatSrc === 4 && calHeatGas > 0 ? calHeatGas / (calHeatKwh * 0.03413 + calHeatGas) : 0;
 
   const maxTons = sqft / 300;
   const maxMbtu = (sqft * 30) / 1000;
@@ -4332,6 +4397,11 @@ function _bcDoCalc(projId) {
         } else if (heatSrc === 3) {
           exHeatGasSetbackM[m] += exHeatMbtu_h * 0.01;
           exHeatGasOAM[m] += exOAHeatMbtu_h * 0.01;
+        } else if (heatSrc === 4) {
+          exHeatKwhSetbackM[m] += exHeatMbtu_h * 0.293 * (1 - pctGasHeat);
+          exHeatKwhOAM[m] += exOAHeatMbtu_h * 0.293 * (1 - pctGasHeat);
+          exHeatGasSetbackM[m] += exHeatMbtu_h * 0.01 * pctGasHeat;
+          exHeatGasOAM[m] += exOAHeatMbtu_h * 0.01 * pctGasHeat;
         } else {
           exHeatKwhSetbackM[m] += exHeatMbtu_h * 0.293;
           exHeatKwhOAM[m] += exOAHeatMbtu_h * 0.293;
@@ -4369,6 +4439,11 @@ function _bcDoCalc(projId) {
         } else if (heatSrc === 3) {
           newHeatGasSetbackM[m] += newHeatMbtu_h * 0.01;
           newHeatGasOAM[m] += newOAHeatMbtu_h * 0.01;
+        } else if (heatSrc === 4) {
+          newHeatKwhSetbackM[m] += newHeatMbtu_h * 0.293 * (1 - pctGasHeat);
+          newHeatKwhOAM[m] += newOAHeatMbtu_h * 0.293 * (1 - pctGasHeat);
+          newHeatGasSetbackM[m] += newHeatMbtu_h * 0.01 * pctGasHeat;
+          newHeatGasOAM[m] += newOAHeatMbtu_h * 0.01 * pctGasHeat;
         } else {
           newHeatKwhSetbackM[m] += newHeatMbtu_h * 0.293;
           newHeatKwhOAM[m] += newOAHeatMbtu_h * 0.293;
@@ -4450,14 +4525,19 @@ function _bcDoCalc(projId) {
     annNonPeak += cs - pkSav + hs;
   }
 
-  // Evergy rebate
-  const rebatePeak = Math.max(0, annPeak) * 0.1;
-  const rebateNonPeak = Math.max(0, annNonPeak) * 0.04;
+  // Evergy rebate — matches Excel Savings Calculator!V88/V89 (no MAX/IF floor anywhere in that
+  // chain; a negative peak or non-peak savings figure produces a negative rebate line that flows
+  // straight into the total, same as the workbook). The site previously floored each term at 0,
+  // which overstated the total whenever a component was negative (2026-09-22 parity audit finding
+  // #2). Informational only — see _bcToggleRebateVisibility, never folds into m.totalDollar.
+  const rebatePeak = annPeak * 0.1;
+  const rebateNonPeak = annNonPeak * 0.04;
   const totalRebate = rebatePeak + rebateNonPeak;
 
   // Update KPIs
   const fmt = (n) => (n ? Math.round(n).toLocaleString() : '0');
-  const fmtD = (n) => (n ? '$' + Math.round(n).toLocaleString() : '$0');
+  const fmtD = (n) =>
+    n ? (n < 0 ? '-$' + Math.abs(Math.round(n)).toLocaleString() : '$' + Math.round(n).toLocaleString()) : '$0';
   if (el('bc-kpi-kwh')) el('bc-kpi-kwh').textContent = fmt(annTotalKwh) + ' kWh';
   if (el('bc-kpi-gas')) el('bc-kpi-gas').textContent = fmt(annHeatGasSav) + ' ' + gasLabel;
   if (el('bc-kpi-cool')) el('bc-kpi-cool').textContent = fmt(annCoolSav) + ' kWh';
@@ -4517,8 +4597,11 @@ function _bcDoCalc(projId) {
           <td style="text-align:right;padding:6px;font-family:var(--mono);font-size:11px">${fmt(annNonPeak)}</td>
         </tr></tbody></table>`;
 
-  // Evergy rebate summary
-  html += `<div style="margin-top:14px;display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+  // Evergy rebate summary — hidden unless "Show Evergy Rebate estimate" is checked (item 5ap):
+  // informational only, never part of a savings total shown to a client (m.totalDollar in
+  // bcApplyToMeasure/bcAddAsMeasure never includes it).
+  const showRebate = document.getElementById('bc-showRebate')?.checked;
+  html += `<div id="bc-rebate-detail" style="margin-top:14px;display:${showRebate ? 'flex' : 'none'};gap:12px;flex-wrap:wrap;align-items:center">
           <div style="background:var(--s3);border:1px solid var(--border);border-radius:8px;padding:10px 16px">
             <span style="font-size:11px;color:var(--text2)">Peak kWh × $0.10 =</span>
             <span style="font-family:var(--mono);font-weight:700;color:var(--amber);margin-left:6px">${fmtD(rebatePeak)}</span>
@@ -4528,7 +4611,7 @@ function _bcDoCalc(projId) {
             <span style="font-family:var(--mono);font-weight:700;color:var(--text);margin-left:6px">${fmtD(rebateNonPeak)}</span>
           </div>
           <div style="background:var(--em-dim);border:1px solid var(--em);border-radius:8px;padding:10px 16px">
-            <span style="font-size:11px;color:var(--em)">Total Evergy Rebate =</span>
+            <span style="font-size:11px;color:var(--em)">Total Evergy Rebate (estimate) =</span>
             <span style="font-family:var(--mono);font-weight:700;color:var(--em);font-size:16px;margin-left:6px">${fmtD(totalRebate)}</span>
           </div>
         </div>`;
@@ -4584,9 +4667,11 @@ function bcSaveInputs(projId) {
     newSunOff: _bcGv('bc-newSunOff'),
     calCoolKwh: _bcGv('bc-calCoolKwh'),
     calHeatKwh: _bcGv('bc-calHeatKwh'),
+    calHeatGas: _bcGv('bc-calHeatGas'),
     peakStart: _bcGv('bc-peakStart'),
     peakEnd: _bcGv('bc-peakEnd'),
     humRatioSP: _bcGv('bc-humRatioSP') || 0.0082,
+    showRebate: !!document.getElementById('bc-showRebate')?.checked,
     weatherOverride: p.basCalc?.weatherOverride || null,
     humidityOverride: p.basCalc?.humidityOverride || null,
   };
@@ -4667,7 +4752,73 @@ function bcApplyToMeasure(projId) {
   showToast('BAS calc applied to Measure #' + msrNum + ' ✓');
 }
 
-/* ── G. Weather CSV Upload ── */
+/* ── G. Use Equipment Matrix Data ── */
+// Pulls averaged existing/proposed setpoints for the target building's Equipment Matrix rows
+// into Section C (item 5ap) — a deliberate, one-click pull distinct from the automatic Set
+// Points autofill in calc-autofill.js (chCalcAutofillFields): the Equipment Matrix's own
+// zone-level setpoint columns (added in 5aa/5ao) are a separate source a user pulls on demand
+// rather than have silently override a typed edit on every open. Reuses
+// emBuildSetpointExportRows (app/equipment-matrix.js) — same join/normalize/heating-type logic
+// as the Setpoint Export feature, not a second implementation of it.
+function bcUseEquipmentMatrixData(projId) {
+  const bldgId = _calcTemplateContext?.bldgId || null;
+  if (!bldgId) {
+    showToast('Open this calculator from a specific building to use its Equipment Matrix data', 'error');
+    return;
+  }
+  if (typeof emBuildSetpointExportRows !== 'function') {
+    showToast('Equipment Matrix data is not available', 'error');
+    return;
+  }
+  const rows = emBuildSetpointExportRows(projId, bldgId, null);
+  if (!rows.length) {
+    showToast('No Equipment Matrix rows found for this building');
+    return;
+  }
+  const avg = (idx) => {
+    const vals = rows.map((r) => parseFloat(r[idx])).filter((v) => !isNaN(v));
+    return vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null;
+  };
+  // Column indices match EM_SETPOINT_EXPORT_HEADERS / emBuildSetpointExportRows's push order.
+  const fields = {
+    'bc-exHeatOcc': avg(3),
+    'bc-exCoolOcc': avg(4),
+    'bc-exHeatUnocc': avg(5),
+    'bc-exCoolUnocc': avg(6),
+    'bc-newHeatOcc': avg(12),
+    'bc-newCoolOcc': avg(13),
+    'bc-newHeatUnocc': avg(14),
+    'bc-newCoolUnocc': avg(15),
+  };
+  let filled = 0;
+  Object.keys(fields).forEach((id) => {
+    const v = fields[id];
+    if (v === null) return;
+    const inp = document.getElementById(id);
+    if (!inp) return;
+    inp.value = v;
+    filled++;
+    _bcMarkTouched(projId, id.replace(/^bc-/, ''));
+  });
+  if (!filled) {
+    showToast('No numeric setpoint data in the Equipment Matrix for this building');
+    return;
+  }
+  _bcDoCalc(projId);
+  showToast(
+    'Filled ' +
+      filled +
+      ' setpoint field' +
+      (filled === 1 ? '' : 's') +
+      ' from ' +
+      rows.length +
+      ' Equipment Matrix row' +
+      (rows.length === 1 ? '' : 's') +
+      ' ✓',
+  );
+}
+
+/* ── H. Weather CSV Upload ── */
 function _bcHandleCSV(input, projId) {
   const file = input.files[0];
   if (!file) return;

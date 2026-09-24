@@ -7546,6 +7546,42 @@ function _mbUpdateSaveAllBtn() {
 }
 window._mbUpdateSaveAllBtn = _mbUpdateSaveAllBtn;
 
+// Item 2026-09-23 (gas-rate-fix2, cold-review follow-up): single shared $/Therm rate
+// mapper — replaces four previously-diverged copies (confirmAutoAssign, _mbSaveOneBill,
+// _saveBillToMatchedMeter, _saveSinglePDFBill). Three of the four divided charge by raw
+// naturalGasMMbtu (a $/MMBtu value, no x10 conversion) and stored it in totalGasRate,
+// mislabeled as $/Therm — the exact bug the resolveGasUsageTherms fix (computations/rates.js
+// getStoredRate/ensureBillRates) was supposed to eliminate but never reached these call
+// sites, because getStoredRate('gas') trusts an already-stored totalGasRate first
+// (computations/rates.js:61-62) and these paths always populate it at save time.
+// resolveGasUsageTherms() (computations/savings.js) only reads camelCase usage fields
+// (naturalGasTherms/naturalGasMMbtu/naturalGasCCF/therms) — the raw extracted/bill object
+// at these save sites is PascalCase (OCR extractor output: NaturalGasTherms/
+// NaturalGasMMbtu/NaturalGasCCF), so this helper builds the minimal camelCase mirror
+// resolveGasUsageTherms expects, then delegates ALL usage-to-Therms math to it — no
+// duplicate conversion logic here or at any call site.
+function _computeGasRate(bill) {
+  const pf = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
+  const c =
+    pf(bill.GasCharge) ||
+    pf(bill.gasCharge) ||
+    pf(bill.TotalCurrentCharges) ||
+    pf(bill.TotalAmountDue) ||
+    pf(bill.totalCost);
+  const usage =
+    typeof resolveGasUsageTherms === 'function'
+      ? resolveGasUsageTherms({
+          therms: bill.therms,
+          naturalGasTherms: bill.NaturalGasTherms || bill.naturalGasTherms,
+          naturalGasMMbtu: bill.NaturalGasMMbtu || bill.naturalGasMMbtu,
+          naturalGasCCF: bill.NaturalGasCCF || bill.naturalGasCCF,
+          usage: bill.usage,
+        })
+      : 0;
+  return usage > 0 && c > 0 ? (c / usage).toFixed(5) : '';
+}
+window._computeGasRate = _computeGasRate;
+
 // F1 (item 21b4e21f): single shared cost/usage mapper — replaces six previously
 // diverged copies (confirmAutoAssign, confirmMultiBuildingSave,
 // _saveBillToMatchedMeter, confirmAssignBill, confirmManualAssign,
@@ -7834,19 +7870,9 @@ async function confirmAutoAssign() {
       eerRate: bill.EERRate || '',
       ptsRate: bill.PTSRate || '',
       rkvaRate: bill.RkVARate || '',
-      // Non-electric commodity rates — computed from canonical usage + charge at save time.
-      // When the bill stores MMBtu natively (WRE) and has no Therms/CCF data, store
-      // totalGasRate as $/MMBtu so the column header and value are semantically consistent.
-      totalGasRate: (() => {
-        const c = pf(bill.GasCharge) || pf(bill.TotalCurrentCharges) || pf(bill.TotalAmountDue);
-        const therms =
-          pf(bill.NaturalGasTherms) ||
-          (pf(bill.NaturalGasCCF) ? Math.round(pf(bill.NaturalGasCCF) * 1.037 * 100) / 100 : 0);
-        if (therms > 0 && c > 0) return (c / therms).toFixed(5); // $/Therm
-        // MMBtu-only path (WRE): store as $/MMBtu — matches the column label when billUnit='MMBtu'
-        const mmbtu = pf(bill.NaturalGasMMbtu || bill.naturalGasMMbtu);
-        return mmbtu > 0 && c > 0 ? (c / mmbtu).toFixed(5) : '';
-      })(),
+      // Non-electric commodity rates — routed through the single shared _computeGasRate
+      // helper (2026-09-23 gas-rate-fix2), which always returns $/Therm (never $/MMBtu).
+      totalGasRate: _computeGasRate(bill),
       totalWaterRate: (() => {
         const u = pf(bill.WaterUsage);
         const c = pf(bill.WaterCharge) || pf(bill.TotalCurrentCharges) || pf(bill.TotalAmountDue);
@@ -8272,15 +8298,9 @@ async function _mbSaveOneBill(bi, action) {
     eerRate: bill.EERRate || '',
     ptsRate: bill.PTSRate || '',
     rkvaRate: bill.RkVARate || '',
-    totalGasRate: (function () {
-      const c = pf(bill.GasCharge) || pf(bill.TotalCurrentCharges) || pf(bill.TotalAmountDue);
-      const therms =
-        pf(bill.NaturalGasTherms) ||
-        (pf(bill.NaturalGasCCF) ? Math.round(pf(bill.NaturalGasCCF) * 1.037 * 100) / 100 : 0);
-      if (therms > 0 && c > 0) return (c / therms).toFixed(5);
-      const mmbtu = pf(bill.NaturalGasMMbtu || bill.naturalGasMMbtu);
-      return mmbtu > 0 && c > 0 ? (c / mmbtu).toFixed(5) : '';
-    })(),
+    // Non-electric commodity rate — routed through the single shared _computeGasRate
+    // helper (2026-09-23 gas-rate-fix2), which always returns $/Therm (never $/MMBtu).
+    totalGasRate: _computeGasRate(bill),
     totalWaterRate: (function () {
       const u = pf(bill.WaterUsage);
       const c = pf(bill.WaterCharge) || pf(bill.TotalCurrentCharges) || pf(bill.TotalAmountDue);
@@ -9361,19 +9381,9 @@ function _saveBillToMatchedMeter(extracted, match) {
     unitPrice: extracted.UnitPrice || '',
     subtotal: extracted.Subtotal || '',
     tax: extracted.Tax || '',
-    // Non-electric commodity rates — computed from canonical usage + charge at save time.
-    // When the bill stores MMBtu natively (WRE) and has no Therms/CCF, store as $/MMBtu
-    // so the value is semantically consistent with the column label when billUnit='MMBtu'.
-    totalGasRate: (() => {
-      const c = pf(extracted.GasCharge) || pf(extracted.TotalCurrentCharges) || pf(extracted.TotalAmountDue);
-      const therms =
-        pf(extracted.NaturalGasTherms) ||
-        (pf(extracted.NaturalGasCCF) ? Math.round(pf(extracted.NaturalGasCCF) * 1.037 * 100) / 100 : 0);
-      if (therms > 0 && c > 0) return (c / therms).toFixed(5); // $/Therm
-      // MMBtu-only path (WRE): store as $/MMBtu — matches column label when billUnit='MMBtu'
-      const mmbtu = pf(extracted.NaturalGasMMbtu);
-      return mmbtu > 0 && c > 0 ? (c / mmbtu).toFixed(5) : '';
-    })(),
+    // Non-electric commodity rate — routed through the single shared _computeGasRate
+    // helper (2026-09-23 gas-rate-fix2), which always returns $/Therm (never $/MMBtu).
+    totalGasRate: _computeGasRate(extracted),
     totalWaterRate: (() => {
       const u = pf(extracted.WaterUsage);
       const c = pf(extracted.WaterCharge) || pf(extracted.TotalCurrentCharges) || pf(extracted.TotalAmountDue);
@@ -21521,15 +21531,9 @@ async function _saveSinglePDFBill(extracted, projId) {
     unitPrice: extracted.UnitPrice || '',
     subtotal: extracted.Subtotal || '',
     tax: extracted.Tax || '',
-    // Non-electric commodity rates — computed from canonical Therms + charge at save time.
-    totalGasRate: (() => {
-      const t =
-        pf(extracted.NaturalGasTherms) ||
-        (pf(extracted.NaturalGasCCF) ? Math.round(pf(extracted.NaturalGasCCF) * 1.037 * 100) / 100 : 0) ||
-        (pf(extracted.NaturalGasMMbtu) ? Math.round(pf(extracted.NaturalGasMMbtu) * 10 * 100) / 100 : 0);
-      const c = pf(extracted.GasCharge) || pf(extracted.TotalCurrentCharges) || pf(extracted.TotalAmountDue);
-      return t > 0 && c > 0 ? (c / t).toFixed(5) : '';
-    })(),
+    // Non-electric commodity rate — routed through the single shared _computeGasRate
+    // helper (2026-09-23 gas-rate-fix2), which always returns $/Therm (never $/MMBtu).
+    totalGasRate: _computeGasRate(extracted),
     totalWaterRate: (() => {
       const u = pf(extracted.WaterUsage);
       const c = pf(extracted.WaterCharge) || pf(extracted.TotalCurrentCharges) || pf(extracted.TotalAmountDue);
