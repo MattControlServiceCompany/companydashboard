@@ -3836,13 +3836,30 @@ function openBASCalc(projId) {
   // Calibration (Section D) is project-scoped only (hvacLoadEst has no per-building
   // breakout today) — pre-fill when available, documented limitation otherwise.
   let autoCalCool = null,
-    autoCalHeat = null;
+    autoCalHeat = null,
+    autoCalGas = null;
   if (p?.hvacLoadEst) {
     if (p.hvacLoadEst.coolKwhTotal)
       autoCalCool = { value: Math.round(p.hvacLoadEst.coolKwhTotal), source: 'HVAC Load Estimation' };
     if (p.hvacLoadEst.heatKwhTotal)
       autoCalHeat = { value: Math.round(p.hvacLoadEst.heatKwhTotal), source: 'HVAC Load Estimation' };
+    // Existing Heating Gas Therms (2026-09-23): hvacGasT is the project's total gas usage
+    // (from its own uploaded gas bills — see the Baseline Data / HVAC Load Estimation reader
+    // above) times the heating share of that gas (hvacGasPct, whatever % of gas load was
+    // attributed to HVAC heating on the HVAC Load Est tab). This is the SAME number the HVAC
+    // Load Est "Gas Therms/yr" HVAC total already shows — never a second computation.
+    if (p.hvacLoadEst.hvacGasT)
+      autoCalGas = {
+        value: Math.round(p.hvacLoadEst.hvacGasT),
+        source: 'HVAC Load Estimation (heating share of gas bills)',
+      };
   }
+
+  // A saved basCalc that exactly matches the old BAS Savings Calc Excel template's 22-value
+  // placeholder set (see chIsLegacyCalcPlaceholderSave) is never a real user edit — treat those
+  // 22 fields as never-saved so autofill/company-standard resolution runs instead of protecting
+  // stale placeholder data as if it were a survey result.
+  const _legacyPlaceholder = typeof chIsLegacyCalcPlaceholderSave === 'function' && chIsLegacyCalcPlaceholderSave(bc);
 
   // Resolve one field via the shared chResolveCalcField (app/calc-autofill.js): a
   // real prior user edit always wins (explicitly touched this session, or a saved
@@ -3850,8 +3867,13 @@ function openBASCalc(projId) {
   // Otherwise autofill wins when available; otherwise the shipped default is used
   // and flagged so the user knows it isn't building data.
   const touched = new Set(bc.__userTouched || []);
-  const _bcResolve = (field, shippedDefault, autoResult) =>
-    chResolveCalcField(bc[field], shippedDefault, autoResult, touched, field);
+  const _bcResolve = (field, shippedDefault, autoResult) => {
+    const savedValue =
+      _legacyPlaceholder && typeof CH_LEGACY_CALC_PLACEHOLDERS === 'object' && field in CH_LEGACY_CALC_PLACEHOLDERS
+        ? undefined
+        : bc[field];
+    return chResolveCalcField(savedValue, shippedDefault, autoResult, touched, field);
+  };
   const _bcHintSpan = chCalcFieldHintHTML;
 
   const rSqft = _bcResolve('sqft', 0, auto?.sqft);
@@ -3865,9 +3887,31 @@ function openBASCalc(projId) {
   const rExCoolUnocc = _bcResolve('exCoolUnocc', 85, auto?.exCoolUnocc);
   const rExHeatOcc = _bcResolve('exHeatOcc', 70, auto?.exHeatOcc);
   const rExHeatUnocc = _bcResolve('exHeatUnocc', _bcDefaultUnoccHeat(parseInt(rHeatSrc.value) || 2), auto?.exHeatUnocc);
+  const rExMfOn = _bcResolve('exMfOn', 0, auto?.exMfOn);
+  const rExMfOff = _bcResolve('exMfOff', 24, auto?.exMfOff);
   const rCalCoolKwh = _bcResolve('calCoolKwh', '', autoCalCool);
   const rCalHeatKwh = _bcResolve('calHeatKwh', '', autoCalHeat);
-  const rCalHeatGas = _bcResolve('calHeatGas', '', null);
+  const rCalHeatGas = _bcResolve('calHeatGas', '', autoCalGas);
+
+  // Proposed Conditions (2026-09-23): chCalcAutofillFields always returns a company-standard
+  // value for these (isDefault:false — see its header comment), so every field below resolves
+  // to real data or a company standard, never the bare "no data" flag Existing Conditions can
+  // show. Weekend schedule (Sat/Sun) is always company-standard unoccupied (0/0) — no per-
+  // building weekend source exists.
+  const rNewHeatOcc = _bcResolve('newHeatOcc', 70, auto?.newHeatOcc);
+  const rNewCoolOcc = _bcResolve('newCoolOcc', 74, auto?.newCoolOcc);
+  const rNewHeatUnocc = _bcResolve(
+    'newHeatUnocc',
+    _bcDefaultUnoccHeat(parseInt(rHeatSrc.value) || 2),
+    auto?.newHeatUnocc,
+  );
+  const rNewCoolUnocc = _bcResolve('newCoolUnocc', 85, auto?.newCoolUnocc);
+  const rNewMfOn = _bcResolve('newMfOn', 6, auto?.newMfOn);
+  const rNewMfOff = _bcResolve('newMfOff', 17, auto?.newMfOff);
+  const rNewSatOn = _bcResolve('newSatOn', 0, auto?.newSatOn);
+  const rNewSatOff = _bcResolve('newSatOff', 0, auto?.newSatOff);
+  const rNewSunOn = _bcResolve('newSunOn', 0, auto?.newSunOn);
+  const rNewSunOff = _bcResolve('newSunOff', 0, auto?.newSunOff);
 
   const sqft = rSqft.value || p?.sqft || 0;
   const cityOpts = BAS_CITIES.map(
@@ -3996,8 +4040,8 @@ function openBASCalc(projId) {
                 </select></div>
                 <div style="font-size:11px;font-weight:600;color:var(--text2);margin:10px 0 6px;text-transform:uppercase;letter-spacing:1px">Schedule (24hr)</div>
                 <div class="f2">
-                  <div class="fg"><label class="fl">M-F On</label><input class="fi bc-inp" id="bc-exMfOn" type="number" min="0" max="24" value="${bc.exMfOn ?? 0}"></div>
-                  <div class="fg"><label class="fl">M-F Off</label><input class="fi bc-inp" id="bc-exMfOff" type="number" min="0" max="24" value="${bc.exMfOff ?? 24}"></div>
+                  <div class="fg"><label class="fl">M-F On</label><input class="fi bc-inp" id="bc-exMfOn" type="number" min="0" max="24" value="${rExMfOn.value}">${_bcHintSpan(rExMfOn.hint)}</div>
+                  <div class="fg"><label class="fl">M-F Off</label><input class="fi bc-inp" id="bc-exMfOff" type="number" min="0" max="24" value="${rExMfOff.value}">${_bcHintSpan(rExMfOff.hint)}</div>
                 </div>
                 <div class="f2">
                   <div class="fg"><label class="fl">Sat On</label><input class="fi bc-inp" id="bc-exSatOn" type="number" min="0" max="24" value="${bc.exSatOn ?? 0}"></div>
@@ -4014,12 +4058,12 @@ function openBASCalc(projId) {
               <div class="card-hdr"><span class="card-title" style="color:var(--em)">New (Proposed) Conditions</span></div>
               <div style="padding:14px">
                 <div class="f2">
-                  <div class="fg"><label class="fl">Cool Occ SP (°F)</label><input class="fi bc-inp" id="bc-newCoolOcc" type="number" value="${bc.newCoolOcc ?? 74}"></div>
-                  <div class="fg"><label class="fl">Cool Unocc SP (°F)</label><input class="fi bc-inp" id="bc-newCoolUnocc" type="number" value="${bc.newCoolUnocc ?? 85}"></div>
+                  <div class="fg"><label class="fl">Cool Occ SP (°F)</label><input class="fi bc-inp" id="bc-newCoolOcc" type="number" value="${rNewCoolOcc.value}">${_bcHintSpan(rNewCoolOcc.hint)}</div>
+                  <div class="fg"><label class="fl">Cool Unocc SP (°F)</label><input class="fi bc-inp" id="bc-newCoolUnocc" type="number" value="${rNewCoolUnocc.value}">${_bcHintSpan(rNewCoolUnocc.hint)}</div>
                 </div>
                 <div class="f2">
-                  <div class="fg"><label class="fl">Heat Occ SP (°F)</label><input class="fi bc-inp" id="bc-newHeatOcc" type="number" value="${bc.newHeatOcc ?? 70}"></div>
-                  <div class="fg"><label class="fl">Heat Unocc SP (°F)</label><input class="fi bc-inp" id="bc-newHeatUnocc" type="number" value="${bc.newHeatUnocc ?? _bcDefaultUnoccHeat(parseInt(rHeatSrc.value) || 2)}"></div>
+                  <div class="fg"><label class="fl">Heat Occ SP (°F)</label><input class="fi bc-inp" id="bc-newHeatOcc" type="number" value="${rNewHeatOcc.value}">${_bcHintSpan(rNewHeatOcc.hint)}</div>
+                  <div class="fg"><label class="fl">Heat Unocc SP (°F)</label><input class="fi bc-inp" id="bc-newHeatUnocc" type="number" value="${rNewHeatUnocc.value}">${_bcHintSpan(rNewHeatUnocc.hint)}</div>
                 </div>
                 <div class="fg"><label class="fl">OA Shut Off When Unoccupied?</label><select class="fs bc-inp" id="bc-newOAShutoff">
                   <option value="no" ${(bc.newOAShutoff || 'yes') === 'no' ? 'selected' : ''}>No</option>
@@ -4027,16 +4071,16 @@ function openBASCalc(projId) {
                 </select></div>
                 <div style="font-size:11px;font-weight:600;color:var(--text2);margin:10px 0 6px;text-transform:uppercase;letter-spacing:1px">Schedule (24hr)</div>
                 <div class="f2">
-                  <div class="fg"><label class="fl">M-F On</label><input class="fi bc-inp" id="bc-newMfOn" type="number" min="0" max="24" value="${bc.newMfOn ?? 5}"></div>
-                  <div class="fg"><label class="fl">M-F Off</label><input class="fi bc-inp" id="bc-newMfOff" type="number" min="0" max="24" value="${bc.newMfOff ?? 21}"></div>
+                  <div class="fg"><label class="fl">M-F On</label><input class="fi bc-inp" id="bc-newMfOn" type="number" min="0" max="24" value="${rNewMfOn.value}">${_bcHintSpan(rNewMfOn.hint)}</div>
+                  <div class="fg"><label class="fl">M-F Off</label><input class="fi bc-inp" id="bc-newMfOff" type="number" min="0" max="24" value="${rNewMfOff.value}">${_bcHintSpan(rNewMfOff.hint)}</div>
                 </div>
                 <div class="f2">
-                  <div class="fg"><label class="fl">Sat On</label><input class="fi bc-inp" id="bc-newSatOn" type="number" min="0" max="24" value="${bc.newSatOn ?? 6}"></div>
-                  <div class="fg"><label class="fl">Sat Off</label><input class="fi bc-inp" id="bc-newSatOff" type="number" min="0" max="24" value="${bc.newSatOff ?? 19}"></div>
+                  <div class="fg"><label class="fl">Sat On</label><input class="fi bc-inp" id="bc-newSatOn" type="number" min="0" max="24" value="${rNewSatOn.value}">${_bcHintSpan(rNewSatOn.hint)}</div>
+                  <div class="fg"><label class="fl">Sat Off</label><input class="fi bc-inp" id="bc-newSatOff" type="number" min="0" max="24" value="${rNewSatOff.value}">${_bcHintSpan(rNewSatOff.hint)}</div>
                 </div>
                 <div class="f2">
-                  <div class="fg"><label class="fl">Sun On</label><input class="fi bc-inp" id="bc-newSunOn" type="number" min="0" max="24" value="${bc.newSunOn ?? 6}"></div>
-                  <div class="fg"><label class="fl">Sun Off</label><input class="fi bc-inp" id="bc-newSunOff" type="number" min="0" max="24" value="${bc.newSunOff ?? 19}"></div>
+                  <div class="fg"><label class="fl">Sun On</label><input class="fi bc-inp" id="bc-newSunOn" type="number" min="0" max="24" value="${rNewSunOn.value}">${_bcHintSpan(rNewSunOn.hint)}</div>
+                  <div class="fg"><label class="fl">Sun Off</label><input class="fi bc-inp" id="bc-newSunOff" type="number" min="0" max="24" value="${rNewSunOff.value}">${_bcHintSpan(rNewSunOff.hint)}</div>
                 </div>
               </div>
             </div>
