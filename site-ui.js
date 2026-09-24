@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.24.2'; // Equipment Matrix: Raw View and Audit View open in under 2 seconds even at JOCO's 2,721-row scale, the Summary View footer label no longer says "Page Average", and abbreviated UI labels are spelled out site-wide
+  var CH_VERSION = 'v2026.09.24.3'; // Equipment Matrix: the type filter now lists every type the classifier can produce, and a misspelled point name in the source data no longer sends 5 JOCO points to Other
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

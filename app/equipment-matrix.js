@@ -98,6 +98,10 @@ var EM_EQUIP_TYPES = {
   'vfd integration': 'controls',
   // Environmental / weather programs
   'environmental index': 'sensor',
+  // 2026-09-24: JOCO's own BAS source data spells this "Enviromental Index" (missing the
+  // second "n") on 5 real points — alias of the entry above so the typo in the user's data
+  // matches too, instead of falling to 'other'. Never edit the user's data; fix the match.
+  'enviromental index': 'sensor',
   'outside air conditions': 'sensor',
   'outiside air conditions': 'sensor',
   'weather station': 'sensor',
@@ -168,7 +172,7 @@ var EM_CATEGORY_LABELS = {
   // M4: New non-HVAC categories to eliminate generic 'other'
   elevator: 'Elevator',
   monitoring: 'Monitoring',
-  security: 'Security / Access',
+  security: 'Security',
   // Utility submeters (Electric/Gas/Water) — own category, NOT scored for ASHRAE 36 compliance.
   // emFormatEquipTypeLabel composes "Meters (Electric)" etc. when subtype is set.
   meter: 'Meters',
@@ -177,13 +181,56 @@ var EM_CATEGORY_LABELS = {
   mau: 'Makeup Air Unit',
   erv: 'Energy Recovery Unit',
   // 28b0c439: VRF outdoor units — own category, NOT scored for ASHRAE 36 compliance
-  vrf: 'VRF Outdoor Unit',
+  vrf: 'Variable Refrigerant Flow',
   // Standalone A/C units (telecom/elevator/data room) — NOT scored for ASHRAE 36 compliance
-  ac: 'A/C',
+  ac: 'Air Conditioning',
   // 3d6d7244 Phase 5: life-safety/shutdown relay equipment (e.g. "Fireman's AHU Shutdown") —
   // own visible category per Matt's 2026-07-03 confirmation, NOT scored for ASHRAE 36 compliance
-  lifesafety: 'Life-Safety / Controls',
+  lifesafety: 'Life Safety',
 };
+
+/* ── EM_TYPE_FILTER_ORDER ──────────────────────────────────────────────────
+   2026-09-24: Curated display order for the "Equipment Type" filter dropdown
+   (emRenderToolbar). Lists ONLY the ordering of keys — every key must exist
+   in EM_CATEGORY_LABELS, which stays the single source of truth for the
+   label TEXT and for the full set of types the classifier can produce. Any
+   category present in EM_CATEGORY_LABELS but missing from this order array
+   still gets appended (see the fallback loop in emRenderToolbar) so the
+   dropdown can never again silently drop a type the classifier emits — the
+   bug this list fixes (elevator/security/lifesafety/vrf/ac were never in
+   the dropdown's old hand-kept option list). */
+var EM_TYPE_FILTER_ORDER = [
+  'rtu',
+  'ahu',
+  'doas',
+  'mau',
+  'erv',
+  'vav',
+  'fpb',
+  'ddvav',
+  'zone',
+  'furnace',
+  'fcu',
+  'heater',
+  'ef',
+  'vrf',
+  'ac',
+  'hwp',
+  'chwp',
+  'ct',
+  'lighting',
+  'meter',
+  'fire',
+  'power',
+  'plumbing',
+  'controls',
+  'sensor',
+  'elevator',
+  'security',
+  'lifesafety',
+  'monitoring',
+  'other',
+];
 
 /* ── emFormatEquipTypeLabel ──────────────────────────────────────────────────
    9018b1c6: Returns the human-readable Equipment Type label for a row object.
@@ -4329,7 +4376,22 @@ function emCalcSummaryStats(rows) {
   var _hvacNewTypes = { doas: 0, fcu: 0, heater: 0, ef: 0, furnace: 0, zone: 0, mau: 0, erv: 0 };
   // 2026-09-23: 'meter'/'monitoring' added so the Raw View "Equipment Breakdown" pills
   // (emUpdateStatsPillsForRaw) can show Meters/Monitoring counts.
-  var _nonHvacTypes = { fire: 0, power: 0, plumbing: 0, controls: 0, sensor: 0, meter: 0, monitoring: 0 };
+  // 2026-09-24: 'elevator'/'security'/'lifesafety'/'vrf'/'ac' added — these were classifier
+  // output categories that never had a Raw View breakdown pill (or a dropdown option).
+  var _nonHvacTypes = {
+    fire: 0,
+    power: 0,
+    plumbing: 0,
+    controls: 0,
+    sensor: 0,
+    meter: 0,
+    monitoring: 0,
+    elevator: 0,
+    security: 0,
+    lifesafety: 0,
+    vrf: 0,
+    ac: 0,
+  };
   // 9018b1c6: subtype counts (additive; ahu base count still accumulates all ahu-category rows)
   var _subtypeCounts = { 'sz-rtu': 0, 'vav-rtu': 0, 'mtz-rtu': 0, 'sz-ahu': 0, 'vav-ahu': 0, 'mtz-ahu': 0 };
   for (var i = 0; i < rows.length; i++) {
@@ -4384,6 +4446,11 @@ function emCalcSummaryStats(rows) {
     sensor: _nonHvacTypes.sensor,
     meter: _nonHvacTypes.meter,
     monitoring: _nonHvacTypes.monitoring,
+    elevator: _nonHvacTypes.elevator,
+    security: _nonHvacTypes.security,
+    lifesafety: _nonHvacTypes.lifesafety,
+    vrf: _nonHvacTypes.vrf,
+    ac: _nonHvacTypes.ac,
     subtypes: _subtypeCounts,
   };
 }
@@ -4630,39 +4697,38 @@ function emRenderToolbar(data, pid, projBadge) {
     bldgOpts +=
       '<option value="' + buildings[i].replace(/"/g, '&quot;') + '">' + buildings[i] + ' (' + bCount + ')</option>';
   }
-  var typeOpts =
-    '<option value="">All Types</option>' +
-    '<option value="rtu">RTU</option>' +
-    '<option value="sz-rtu">  SZ-RTU</option>' +
-    '<option value="vav-rtu">  VAV-RTU</option>' +
-    '<option value="mtz-rtu">  MTZ-RTU</option>' +
-    '<option value="ahu">AHU</option>' +
-    '<option value="sz-ahu">  SZ-AHU</option>' +
-    '<option value="vav-ahu">  VAV-AHU</option>' +
-    '<option value="mtz-ahu">  MTZ-AHU</option>' +
-    '<option value="doas">DOAS / ERV</option>' +
-    '<option value="mau">Makeup Air Unit</option>' +
-    '<option value="erv">Energy Recovery Unit</option>' +
-    '<option value="vav">VAV</option>' +
-    '<option value="fpb">FPB</option>' +
-    '<option value="ddvav">DD-VAV</option>' +
-    '<option value="zone">VVT Zone</option>' +
-    '<option value="furnace">Furnace / VVT</option>' +
-    '<option value="fcu">Fan Coil / VRF</option>' +
-    '<option value="heater">Unit Heater</option>' +
-    '<option value="ef">Exhaust Fan</option>' +
-    '<option value="hwp">HW Plant</option>' +
-    '<option value="chwp">CHW Plant</option>' +
-    '<option value="ct">Cooling Tower</option>' +
-    '<option value="lighting">Lighting</option>' +
-    '<option value="meter">Meters</option>' +
-    '<option value="fire">Fire / Smoke</option>' +
-    '<option value="power">Power / Gen</option>' +
-    '<option value="plumbing">Plumbing</option>' +
-    '<option value="controls">Controls / VFD</option>' +
-    '<option value="sensor">Sensor / Weather</option>' +
-    '<option value="monitoring">Monitoring</option>' +
-    '<option value="other">Other</option>';
+  // 2026-09-24: dropdown options are DERIVED from EM_CATEGORY_LABELS (the classifier's full
+  // output list), ordered by EM_TYPE_FILTER_ORDER — not a second hand-kept option list. This
+  // closes the gap where elevator/security/lifesafety/vrf/ac were classifier outputs that had
+  // never been added to this dropdown. The RTU/AHU subtype rows (sz-/vav-/mtz-) are inserted
+  // right after their parent category — they are row.subtype composites, not categories in
+  // EM_CATEGORY_LABELS, so they stay explicit here (see emFilterRows for their match logic).
+  var typeOpts = '<option value="">All Types</option>';
+  var _emTypeSeen = {};
+  for (var _ti = 0; _ti < EM_TYPE_FILTER_ORDER.length; _ti++) {
+    var _tKey = EM_TYPE_FILTER_ORDER[_ti];
+    if (!EM_CATEGORY_LABELS.hasOwnProperty(_tKey) || _emTypeSeen[_tKey]) continue;
+    _emTypeSeen[_tKey] = true;
+    typeOpts += '<option value="' + _tKey + '">' + EM_CATEGORY_LABELS[_tKey] + '</option>';
+    if (_tKey === 'rtu') {
+      typeOpts +=
+        '<option value="sz-rtu">  SZ-RTU</option>' +
+        '<option value="vav-rtu">  VAV-RTU</option>' +
+        '<option value="mtz-rtu">  MTZ-RTU</option>';
+    } else if (_tKey === 'ahu') {
+      typeOpts +=
+        '<option value="sz-ahu">  SZ-AHU</option>' +
+        '<option value="vav-ahu">  VAV-AHU</option>' +
+        '<option value="mtz-ahu">  MTZ-AHU</option>';
+    }
+  }
+  // Future-proofing: any classifier category not yet in the curated order still appears here,
+  // so a newly added classifier output can never again be silently missing from the dropdown.
+  for (var _ck in EM_CATEGORY_LABELS) {
+    if (EM_CATEGORY_LABELS.hasOwnProperty(_ck) && !_emTypeSeen[_ck]) {
+      typeOpts += '<option value="' + _ck + '">' + EM_CATEGORY_LABELS[_ck] + '</option>';
+    }
+  }
   var colToggleStyle =
     'display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--text2);cursor:pointer;padding:2px 6px;border-radius:3px;border:1px solid var(--border);background:var(--s2);user-select:none';
   var colToggles =
@@ -5492,6 +5558,8 @@ function emUpdateStatsPillsForRaw(rows, totalBASPoints) {
     (stats.fcu ? emStatPillCompact('Fan Coil', stats.fcu) : '') +
     (stats.heater ? emStatPillCompact('Heater', stats.heater) : '') +
     (stats.ef ? emStatPillCompact('Exh Fan', stats.ef) : '') +
+    (stats.vrf ? emStatPillCompact(EM_CATEGORY_LABELS.vrf, stats.vrf) : '') +
+    (stats.ac ? emStatPillCompact(EM_CATEGORY_LABELS.ac, stats.ac) : '') +
     emStatPillCompact('Plants', stats.plants) +
     (stats.lighting ? emStatPillCompact('Lighting', stats.lighting) : '') +
     (stats.meter ? emStatPillCompact('Meters', stats.meter) : '') +
@@ -5500,6 +5568,9 @@ function emUpdateStatsPillsForRaw(rows, totalBASPoints) {
     (stats.plumbing ? emStatPillCompact('Plumbing', stats.plumbing) : '') +
     (stats.controls ? emStatPillCompact('Controls', stats.controls) : '') +
     (stats.sensor ? emStatPillCompact('Sensors', stats.sensor) : '') +
+    (stats.elevator ? emStatPillCompact(EM_CATEGORY_LABELS.elevator, stats.elevator) : '') +
+    (stats.security ? emStatPillCompact(EM_CATEGORY_LABELS.security, stats.security) : '') +
+    (stats.lifesafety ? emStatPillCompact(EM_CATEGORY_LABELS.lifesafety, stats.lifesafety) : '') +
     (stats.monitoring ? emStatPillCompact('Monitoring', stats.monitoring) : '') +
     (stats.other ? emStatPillCompact('Other', stats.other) : '') +
     emStatPillCompact('Has Data', stats.live) +

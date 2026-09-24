@@ -1742,6 +1742,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.24.3',
+    date: '2026-09-24',
+    title: 'Equipment Matrix: the type filter now shows every equipment type',
+    items: [
+      {
+        type: 'fix',
+        text: 'On the Equipment Matrix page, the "All Types" filter list was missing five equipment types: Elevator, Security, Life Safety, Variable Refrigerant Flow, and Air Conditioning. The list now shows every type the equipment classifier can produce, so these five can be selected and counted like every other type.',
+      },
+      {
+        type: 'fix',
+        text: 'On the Equipment Matrix page, five JOCO points named "Enviromental Index" (a misspelling in the source BAS data) were sorted into the Other category instead of Sensor / Weather, because the point name did not match the correct spelling. The match now accepts this misspelling, so these five points sort correctly. No source data was changed.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.24.2',
     date: '2026-09-24',
     title: 'Equipment Matrix: the Raw View and Audit View now open fast, even on large projects',

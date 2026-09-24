@@ -223,6 +223,46 @@ assertEqual(
   'verify: FCU fixture (zone temp + heating valve) -> fcu (Rule 10, unaffected)',
 );
 
+// ── 2026-09-24: misspelled "Enviromental Index" (JOCO's real BAS source data — missing the
+// second "n") must classify the same as the correctly-spelled "Environmental Index", not fall
+// to 'other'. Synthetic fixture mirrors the JOCO Control-Program naming shape. ──────────────
+assertEqual(
+  sb.emClassifyEquipType('Enviromental Index'),
+  'sensor',
+  'name: Enviromental Index (typo, JOCO source data) -> sensor, matches Environmental Index',
+);
+assertEqual(
+  sb.emClassifyEquipType('Environmental Index'),
+  'sensor',
+  'name: Environmental Index (correct spelling) -> sensor (unchanged)',
+);
+const envTypoParsed = sb.emParseControlProgram('Enviromental Index - Synth ADC');
+assertEqual(envTypoParsed.equipName, 'Enviromental Index', 'parse: Enviromental Index - Synth ADC -> JOCO-style split');
+
+// ── 2026-09-24: dropdown-list-matches-classifier — every category the classifier can produce
+// (EM_CATEGORY_LABELS) must have an entry in the "All Types" filter dropdown (EM_TYPE_FILTER_
+// ORDER), and vice versa. Regression guard for the bug where elevator/security/lifesafety/vrf/
+// ac were classifier outputs never added to the dropdown's old hand-kept option list. ────────
+const labelKeys = Object.keys(sb.EM_CATEGORY_LABELS).sort();
+const orderKeys = sb.EM_TYPE_FILTER_ORDER.slice().sort();
+assertEqual(
+  JSON.stringify(labelKeys),
+  JSON.stringify(orderKeys),
+  'dropdown: EM_TYPE_FILTER_ORDER contains exactly the keys of EM_CATEGORY_LABELS (no classifier type missing, no stale extra)',
+);
+['elevator', 'security', 'lifesafety', 'vrf', 'ac'].forEach(function (k) {
+  assertEqual(
+    sb.EM_TYPE_FILTER_ORDER.indexOf(k) !== -1,
+    true,
+    'dropdown: ' + k + ' is present in EM_TYPE_FILTER_ORDER',
+  );
+});
+assertEqual(sb.EM_CATEGORY_LABELS.elevator, 'Elevator', 'label: elevator -> "Elevator"');
+assertEqual(sb.EM_CATEGORY_LABELS.security, 'Security', 'label: security -> "Security"');
+assertEqual(sb.EM_CATEGORY_LABELS.lifesafety, 'Life Safety', 'label: lifesafety -> "Life Safety"');
+assertEqual(sb.EM_CATEGORY_LABELS.vrf, 'Variable Refrigerant Flow', 'label: vrf -> "Variable Refrigerant Flow"');
+assertEqual(sb.EM_CATEGORY_LABELS.ac, 'Air Conditioning', 'label: ac -> "Air Conditioning"');
+
 // ── Summary ──
 console.log('');
 console.log(pass + ' passed, ' + fail + ' failed');
