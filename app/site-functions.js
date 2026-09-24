@@ -1742,6 +1742,25 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.23.15',
+    date: '2026-09-23',
+    title: 'Energy Department: BAS Savings Calc heating source and gas calibration fixes',
+    items: [
+      {
+        type: 'fix',
+        text: "The Existing Heating Gas — Therms field in Calibration now fills in from the building's own gas bills as soon as the BAS Savings Calc is opened, without needing to open HVAC Load Estimation first.",
+      },
+      {
+        type: 'fix',
+        text: "HVAC Load Estimation's \"Heating % of HVAC kWh (electric heat only)\" default, and the BAS Savings Calc's Heating Source default, now both read the Equipment Matrix's own heating-type classification for the building (gas, electric, or both) instead of a project field that was almost never set.",
+      },
+      {
+        type: 'fix',
+        text: "The BAS Savings Calc can now calibrate a gas-heat building's Heat Therms Saved estimate against a real utility figure (Existing Heating Gas — Therms/MCF from UA), fixing a case where that estimate had no way to match reality and could come out far too high.",
+      },
+    ],
+  },
+  {
     v: 'v2026.09.23.14',
     date: '2026-09-23',
     title: 'Energy Department: BAS Savings Calc auto-fills Existing/Proposed Conditions and Heating Gas Therms',
