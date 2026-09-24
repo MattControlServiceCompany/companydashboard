@@ -1776,7 +1776,7 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
-    v: 'v2026.09.24.11',
+    v: 'v2026.09.24.12',
     date: '2026-09-24',
     title: 'Equipment Matrix: "Show All Point Columns" opens fast, and more labels are spelled out',
     items: [
@@ -1787,6 +1787,17 @@ var RELEASE_NOTES = [
       {
         type: 'fix',
         text: 'On the Equipment Matrix Summary view, the "Zone Htg Setpoint" and "Zone Clg Setpoint" column headers now read "Zone Heating Setpoint" and "Zone Cooling Setpoint". The building detail table\'s "Htg Setpoint", "Clg Setpoint", and "Damper Posn" headers now read "Heating Setpoint", "Cooling Setpoint", and "Damper Position".',
+      },
+    ],
+  },
+  {
+    v: 'v2026.09.24.11',
+    date: '2026-09-24',
+    title: 'Utility Data: fixed a wrong Evergy RkVA rate on one bill type',
+    items: [
+      {
+        type: 'fix',
+        text: 'On some Evergy electric bills, the bill reader could read a wrong RkVA per-unit rate (a single misread digit, such as $0.883 instead of the printed $0.663) even though it already flagged that the rate did not match the printed charge. It now corrects the stored rate to match the printed charge when this happens, so the wrong rate no longer feeds savings calculations.',
       },
     ],
   },
