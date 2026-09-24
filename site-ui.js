@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.23.17'; // Baseline & BAS Savings Report: fixed Annual kWh column overflow for 7/8-digit buildings
+  var CH_VERSION = 'v2026.09.23.18'; // Equipment Matrix: classify standalone electric unit heaters by BAS points; BAS Savings Calc/HVAC Load Est heating-type + unoccupied setpoint fixes
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

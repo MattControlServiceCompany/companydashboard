@@ -116,7 +116,7 @@ function chCalcAutofillFields(projId, bldgId) {
         if (!ht.known) return;
         emKnown = true;
         if (ht.key === 'hydronic') emGas = true;
-        else if (ht.key === 'electricReheat' || ht.key === 'heatpump') emElec = true;
+        else if (ht.key === 'electricReheat' || ht.key === 'heatpump' || ht.key === 'electric') emElec = true;
       });
     }
 

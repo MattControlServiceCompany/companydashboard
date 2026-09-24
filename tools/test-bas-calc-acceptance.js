@@ -296,5 +296,46 @@ if (r3) {
   assert(uncalHeatAdj === 1, 'heatAdj reverts to 1 (uncalibrated) when bc-calHeatGas is blank again');
 }
 
+console.log('=== 4. Mixed heatSrc 4 ("Both"), gas-dominant split — 2026-09-23 heating-type classifier fix ===');
+// Regression guard for a building the Equipment Matrix classifies as mixed (a central gas
+// boiler/hydronic plant PLUS a few known electric unit heaters — Woodland Spring Middle's real
+// 2026-09-23 pattern): heatSrc correctly resolves to 4, and with no kWh calibration figure
+// entered (no meaningful electric heating load to calibrate — the building's heat is almost
+// entirely gas), pctGasHeat routes ~100% of the raw existing-heat load into the GAS bucket, not
+// the kWh bucket. Before this fix, heatAdj's heatSrc-4 branch only ever checked the (now-empty)
+// kWh raw total, so it stayed permanently 1 (uncalibrated) — the same "Heat Therms Saved" bug the
+// heatSrc 1/3 fix above already solved, reappearing via a different path once a mostly-gas
+// building has ANY known electric-heat evidence at all.
+dom.set('bc-heatSrc', new FakeEl('4', 'SELECT')); // Both (Electric + Gas)
+dom.set('bc-calHeatGas', new FakeEl('19274')); // matches Woodland's real annual-gas x 80% figure
+dom.set('bc-calHeatKwh', new FakeEl('')); // no meaningful kWh heating load — never entered
+sandbox._bcDoCalc('p1');
+const r4 = project._bcResults;
+assert(!!r4, '_bcResults populated for heatSrc 4 gas-dominant scenario');
+let heatAdj4 = 1;
+if (r4) {
+  heatAdj4 = parseFloat(dom.get('bc-adjHeat').textContent);
+  assert(heatAdj4 !== 1, `heatAdj (${heatAdj4}) is no longer stuck at 1 for heatSrc 4 once the kWh bucket is empty`);
+  assert(heatAdj4 > 0, `heatAdj (${heatAdj4}) is a sane positive scalar`);
+  const annHeatGasSav4 = r4.gasSavings.reduce((a, b) => a + b, 0);
+  assert(
+    annHeatGasSav4 < 24093,
+    `annual "Heat Therms Saved" (${annHeatGasSav4.toFixed(1)}) stays under Woodland's real 24,093 Therms/yr total gas usage (plausible, not an impossible raw-bin-model estimate)`,
+  );
+}
+// A TRUE mixed-load building (both the gas AND kWh raw buckets actually populated, i.e. a real
+// electric-heating calibration figure IS entered) must still fall through to the pre-existing
+// kWh-only calibration untouched — this narrow fix only activates when the kWh bucket is empty.
+dom.set('bc-calHeatKwh', new FakeEl('20000'));
+sandbox._bcDoCalc('p1');
+const r4b = project._bcResults;
+if (r4b) {
+  const heatAdj4b = parseFloat(dom.get('bc-adjHeat').textContent);
+  assert(
+    heatAdj4b !== heatAdj4,
+    'once a real kWh calibration figure is entered for heatSrc 4, heatAdj is computed from the kWh bucket again (unchanged pre-existing behavior)',
+  );
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

@@ -63,6 +63,7 @@ const CALC = path.join(REPO, 'app', 'calculators.js');
 const src = [
   loadFn(CALC, '_hvlMonthlyBaseline'),
   loadFn(CALC, '_hvlDefaultGasPct'),
+  loadFn(CALC, '_hvlBuildingHeatingSignals'),
   loadFn(CALC, '_hvlBuildingHasElectricHeat'),
   loadFn(CALC, 'hvacComputeGasThermsForBuilding'),
 ].join('\n\n');
@@ -121,8 +122,13 @@ function makeSandbox(opts) {
 console.log('--- 1. _hvlDefaultGasPct ---');
 {
   const sb = makeSandbox({ gasMonthly: { therms: 100 } });
-  assert(sb._hvlDefaultGasPct(true) === 15, 'electric-heat building -> 15% gas heating share default');
+  assert(sb._hvlDefaultGasPct(true) === 15, 'electric-heat building, gasHeat omitted -> 15% (back-compat 1-arg call)');
   assert(sb._hvlDefaultGasPct(false) === 80, 'gas-heat building -> 80% gas heating share default');
+  // 2026-09-23 fix: a building with BOTH known gas/hydronic heat AND known electric heat (e.g. a
+  // central gas boiler + a few standalone electric vestibule unit heaters) stays gas-dominant —
+  // a small amount of electric heat does not mean the building's gas bill is mostly DHW/kitchen.
+  assert(sb._hvlDefaultGasPct(true, true) === 80, 'electric heat present but gas/hydronic ALSO present -> stays 80%');
+  assert(sb._hvlDefaultGasPct(true, false) === 15, 'electric heat present, NO gas/hydronic evidence at all -> 15%');
 }
 
 console.log('--- 2. _hvlBuildingHasElectricHeat — sourced from Equipment Matrix, never p.heatType ---');
@@ -188,19 +194,31 @@ console.log('--- 3. hvacComputeGasThermsForBuilding — headless BAS Savings Cal
   assert(r.hvacGasPct === 80, 'gas-heat building uses the 80% default (matches _hvlDefaultGasPct(false))');
   assert(near(r.hvacGasT, 960, 0.01), `hvacGasT = totalGas * gasPct/100: got ${r && r.hvacGasT}, want 960`);
 
-  // Electric-heat building (a known electricReheat EM row exists): same total gas bills, but the
-  // 15% default applies instead — proves the SAME shared default
-  // (_hvlDefaultGasPct/_hvlBuildingHasElectricHeat) the HVAC Load Estimation tab's own UI uses.
+  // Mixed building (Woodland Spring Middle's real pattern, 2026-09-23 fix): a central gas
+  // boiler/hydronic reheat system (known hydronic rows) PLUS a few standalone electric unit
+  // heaters (known electric rows) — stays gas-dominant (80%), since the school's gas bill is
+  // still overwhelmingly space heating, not a few small vestibule heaters' worth of DHW/kitchen.
   sb = makeSandbox({
     gasMonthly: { therms: 100 },
     emHeatTypeRows: [
       { building: 'Synthetic Elementary', key: 'hydronic', known: true },
-      { building: 'Synthetic Elementary', key: 'electricReheat', known: true },
+      { building: 'Synthetic Elementary', key: 'electric', known: true },
     ],
   });
   r = sb.hvacComputeGasThermsForBuilding(1, 'b1');
-  assert(r.hvacGasPct === 15, 'electric-heat building uses the 15% default');
-  assert(near(r.hvacGasT, 180, 0.01), `hvacGasT for electric-heat building: got ${r && r.hvacGasT}, want 180`);
+  assert(r.hvacGasPct === 80, 'mixed gas+electric building stays at the 80% gas-dominant default');
+  assert(near(r.hvacGasT, 960, 0.01), `hvacGasT for mixed building: got ${r && r.hvacGasT}, want 960`);
+
+  // Genuinely all-electric building (known electric/electricReheat/heatpump rows, ZERO known
+  // hydronic rows) — the 15% DHW/kitchen-only default applies, proving the SAME shared default
+  // (_hvlDefaultGasPct/_hvlBuildingHeatingSignals) the HVAC Load Estimation tab's own UI uses.
+  sb = makeSandbox({
+    gasMonthly: { therms: 100 },
+    emHeatTypeRows: [{ building: 'Synthetic Elementary', key: 'electricReheat', known: true }],
+  });
+  r = sb.hvacComputeGasThermsForBuilding(1, 'b1');
+  assert(r.hvacGasPct === 15, 'all-electric building (no known hydronic rows) uses the 15% default');
+  assert(near(r.hvacGasT, 180, 0.01), `hvacGasT for all-electric building: got ${r && r.hvacGasT}, want 180`);
 
   // No gas bills at all -> null, never invents a number.
   sb = makeSandbox({});

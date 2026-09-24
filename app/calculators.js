@@ -254,19 +254,26 @@ function _hvlMonthlyBaseline(projId, b) {
 // gasPct input (hvl-t-gasPct) — ONE place, shared by _hvlRenderTraditional's shown default/hint
 // text and hvacComputeGasThermsForBuilding's headless BAS Savings Calc autofill (2026-09-23), so
 // both always agree — no second copy of "15 vs 80" anywhere else.
-function _hvlDefaultGasPct(elecHeat) {
-  return elecHeat ? 15 : 80;
+// 2026-09-23 (heating-type classifier fix): gasHeat added as a second signal. A building with
+// BOTH known gas/hydronic heat (e.g. a central gas boiler + VAV hot-water reheat) AND a small
+// amount of known electric heat (e.g. a few standalone electric vestibule unit heaters) is still
+// gas-dominant for its overall gas bill allocation — a handful of electric unit heaters does not
+// mean the building's gas usage is mostly domestic hot water/kitchen. The 15% "electric building"
+// preset only applies when electric heat is present and NO gas/hydronic heat evidence exists at
+// all (a genuinely all-electric building).
+function _hvlDefaultGasPct(elecHeat, gasHeat) {
+  return elecHeat && !gasHeat ? 15 : 80;
 }
 
-// Whether this building has at least one Equipment Matrix row classified — with a real signal,
-// not the unclassified fallback bucket — as electric heat (electric reheat or heat pump/VRF).
-// Reads the Equipment Matrix's OWN existing per-row classifier (_emDeriveHeatingType, app/
-// equipment-matrix.js) — never a second classifier, never mutates the matrix. Replaces the old
-// p.heatType signal (a free-text project-level field set only via a rarely-used modal, so it is
-// essentially never populated) which is why a building with a real electric-heat unit, like
-// Spring Hill Schools / Woodland Spring Middle, was showing "0% electric heating share" even
-// though Equipment Matrix data for it exists (2026-09-23 fix — see docs/dashboardlogic.md).
-function _hvlBuildingHasElectricHeat(projId, bldgId) {
+// Scans a building's Equipment Matrix rows ONCE through the Equipment Matrix's own per-row
+// heating-type classifier (_emDeriveHeatingType, app/equipment-matrix.js — read-only, never a
+// second classifier, never mutates the matrix) and returns which heating-fuel signals are
+// present: { hasElectric, hasGas }. Only rows with a real classification signal (known: true)
+// count as evidence; the unclassified fallback bucket never counts. Both
+// _hvlBuildingHasElectricHeat and _hvlDefaultGasPct's gas-dominance check read from this ONE scan
+// — never two separate re-implementations of the same row loop (2026-09-23).
+function _hvlBuildingHeatingSignals(projId, bldgId) {
+  const out = { hasElectric: false, hasGas: false };
   if (
     !bldgId ||
     typeof emLoadMatrix !== 'function' ||
@@ -274,20 +281,34 @@ function _hvlBuildingHasElectricHeat(projId, bldgId) {
     typeof _emDeriveHeatingType !== 'function' ||
     typeof _emNormBldgNameForJoin !== 'function'
   )
-    return false;
+    return out;
   const b = typeof getUDBldg === 'function' ? getUDBldg(projId, bldgId) : null;
-  if (!b) return false;
+  if (!b) return out;
   const data = emLoadMatrix(projId);
   const rows = (data && data.rows) || [];
-  if (!rows.length) return false;
+  if (!rows.length) return out;
   const wantName = _emNormBldgNameForJoin(b.name);
-  const hasGas = b.meters && b.meters.length ? b.meters.some((m) => m.commodity === 'Gas') : undefined;
-  return rows.some((row) => {
-    if (_emNormBldgNameForJoin(row.building || '') !== wantName) return false;
+  const hasGasMeter = b.meters && b.meters.length ? b.meters.some((m) => m.commodity === 'Gas') : undefined;
+  rows.forEach((row) => {
+    if (_emNormBldgNameForJoin(row.building || '') !== wantName) return;
     const pts = emGetNormalizedPoints(row) || {};
-    const ht = _emDeriveHeatingType(row, pts, hasGas);
-    return ht.known && (ht.key === 'electricReheat' || ht.key === 'heatpump');
+    const ht = _emDeriveHeatingType(row, pts, hasGasMeter);
+    if (!ht.known) return;
+    if (ht.key === 'electricReheat' || ht.key === 'heatpump' || ht.key === 'electric') out.hasElectric = true;
+    if (ht.key === 'hydronic') out.hasGas = true;
   });
+  return out;
+}
+
+// Whether this building has at least one Equipment Matrix row classified — with a real signal,
+// not the unclassified fallback bucket — as electric heat (electric reheat, standalone electric
+// unit heater, or heat pump/VRF). Replaces the old p.heatType signal (a free-text project-level
+// field set only via a rarely-used modal, so it is essentially never populated) which is why a
+// building with a real electric-heat unit, like Spring Hill Schools / Woodland Spring Middle, was
+// showing "0% electric heating share" even though Equipment Matrix data for it exists (2026-09-23
+// fix — see docs/dashboardlogic.md).
+function _hvlBuildingHasElectricHeat(projId, bldgId) {
+  return _hvlBuildingHeatingSignals(projId, bldgId).hasElectric;
 }
 
 // Existing Heating Gas Therms for the BAS Savings Calc (calHeatGas), computed directly from this
@@ -311,8 +332,8 @@ function hvacComputeGasThermsForBuilding(projId, bldgId) {
     totalGas += ((pByMo[mo] && pByMo[mo].gallons) || 0) * 0.9153;
   }
   if (totalGas <= 0) return null;
-  const elecHeat = _hvlBuildingHasElectricHeat(projId, bldgId);
-  const hvacGasPct = _hvlDefaultGasPct(elecHeat);
+  const sig = _hvlBuildingHeatingSignals(projId, bldgId);
+  const hvacGasPct = _hvlDefaultGasPct(sig.hasElectric, sig.hasGas);
   return { totalGas, hvacGasPct, hvacGasT: totalGas * (hvacGasPct / 100) };
 }
 
@@ -563,7 +584,12 @@ function _hvlRenderTraditional(projId, bldgId, method) {
   // the gas-HVAC-% default/hint below. 2026-09-23: sourced from the Equipment Matrix's own
   // heating-type classification (_hvlBuildingHasElectricHeat) instead of p.heatType (a
   // project-level field that is essentially never set) — see docs/dashboardlogic.md.
-  const _hvlElecHeat = _hvlBuildingHasElectricHeat(projId, bldgId);
+  const _hvlHeatSig = _hvlBuildingHeatingSignals(projId, bldgId);
+  const _hvlElecHeat = _hvlHeatSig.hasElectric;
+  // 2026-09-23: the "Space Heating % of Total Gas" preset only drops to 15% (DHW/kitchen-only)
+  // when the building has NO gas/hydronic heat evidence at all — a school with a central gas
+  // boiler plus a few electric vestibule unit heaters is still gas-dominant for this field.
+  const _hvlGasPctIsLow = _hvlElecHeat && !_hvlHeatSig.hasGas;
 
   if (method === 'thumb') {
     wrap.innerHTML = `<div class="card" style="margin-bottom:16px">
@@ -580,7 +606,7 @@ function _hvlRenderTraditional(projId, bldgId, method) {
                   <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);margin-bottom:10px">⚡ Electric Demand (kW) Breakdown</div>
                   <div class="fg"><label class="fl">HVAC % of Peak kW</label><input class="fi hvl-in" id="hvl-t-kwPct-${projId}" type="number" value="55" min="0" max="100"><div class="fhint">Typical: 40-65% — HVAC is usually the largest demand driver</div></div>
                   <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);margin:14px 0 10px">🔥 Gas (Therms) Breakdown</div>
-                  <div class="fg"><label class="fl">Space Heating % of Total Gas</label><input class="fi hvl-in" id="hvl-t-gasPct-${projId}" type="number" value="${_hvlDefaultGasPct(_hvlElecHeat)}" min="0" max="100"><div class="fhint">${_hvlElecHeat ? "Typical: 0-20% for DHW/kitchen only — this building's heat is electric" : 'Typical: 70-95% for gas-heated buildings — gas HVAC share is mostly space heating'}</div></div>
+                  <div class="fg"><label class="fl">Space Heating % of Total Gas</label><input class="fi hvl-in" id="hvl-t-gasPct-${projId}" type="number" value="${_hvlDefaultGasPct(_hvlElecHeat, _hvlHeatSig.hasGas)}" min="0" max="100"><div class="fhint">${_hvlGasPctIsLow ? "Typical: 0-20% for DHW/kitchen only — this building's heat is electric" : 'Typical: 70-95% for gas-heated buildings — gas HVAC share is mostly space heating'}</div></div>
                 </div>
               </div>
             </div>
@@ -4608,9 +4634,22 @@ function _bcDoCalc(projId) {
   // estimate was reported as "Heat Therms Saved" with no ability to match it to a real utility
   // analysis figure (Existing Heating Gas — Therms/MCF from UA, now shown for heatSrc 1/3 too).
   // Calibrates directly against that same closed-form equation, against the gas raw totals.
+  // 2026-09-23 (heating-type classifier fix): heatSrc 4 ("Both") can also route effectively ALL
+  // of a building's existing heat into the gas bucket via pctGasHeat above (e.g. a gas-boiler
+  // school with a few known electric unit heaters — mostly gas, heatSrc correctly resolves to 4,
+  // but calHeatKwh is never entered/auto-filled because there is no meaningful kWh heating load
+  // to calibrate). Without this branch, heatAdj fell through to the calHeatKwh check, which is
+  // never satisfied (rawExHeatSetbackTotal stays 0 when pctGasHeat routed the raw load to gas
+  // instead), so heatAdj stayed permanently 1 (uncalibrated) — the same "Heat Therms Saved"
+  // symptom the heatSrc 1/3 fix above already solved, now also possible for heatSrc 4 once a
+  // building has any real electric-heat evidence. Only activates when the kWh bucket is actually
+  // empty (rawExHeatSetbackTotal <= 0) — a true mixed-load building (both buckets populated)
+  // still falls through to the existing kWh-only calibration below, unchanged.
   if (heatSrc === 1 || heatSrc === 3) {
     if (calHeatGas > 0 && rawExHeatGasSetbackTotal > 0)
       heatAdj = (calHeatGas - rawExHeatGasOATotal) / rawExHeatGasSetbackTotal;
+  } else if (heatSrc === 4 && rawExHeatSetbackTotal <= 0 && rawExHeatGasSetbackTotal > 0) {
+    if (calHeatGas > 0) heatAdj = (calHeatGas - rawExHeatGasOATotal) / rawExHeatGasSetbackTotal;
   } else if (calHeatKwh > 0 && rawExHeatSetbackTotal > 0) {
     heatAdj = (calHeatKwh - rawExHeatOATotal) / rawExHeatSetbackTotal;
   }

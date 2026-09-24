@@ -10091,7 +10091,8 @@ var EM_SP_DEFAULTS = {
   unocc: {
     hydronic: { heat: 55, cool: 85 }, // gas-fired or hydronic hot water heat
     electricReheat: { heat: 60, cool: 85 },
-    heatpump: { heat: 65, cool: 85 }, // electric heat, VRF, or heat pump
+    electric: { heat: 65, cool: 85 }, // 2026-09-23: standalone electric-resistance unit heater
+    heatpump: { heat: 65, cool: 85 }, // VRF or heat pump — same setback as plain electric heat
   },
 };
 
@@ -10170,6 +10171,23 @@ function _emDeriveHeatingType(row, pts, hasGas) {
     if (ak.indexOf('auto_') !== 0) continue;
     if (/electric.*heat|resistance.*heat/i.test(ak)) return { key: 'electricReheat', known: true };
     if (/gas.*heat|burner/i.test(ak)) return { key: 'hydronic', known: true };
+  }
+  // 2026-09-23: a standalone 'heater' row (unit/tube/infrared/radiant heater — never a VAV/AHU
+  // reheat or heating coil) whose own BAS points report an Amps/Amperage reading is a direct
+  // electrical-current signal that the HEATING ELEMENT ITSELF is electric — a gas-fired unit
+  // heater instead reports a gas valve/burner/pilot point (caught by the burner check just
+  // above), never an Amps reading tied to the unit heater. Restricted to cat==='heater' so an
+  // unrelated fan/motor Amps point on an RTU/AHU/EF row is never mistaken for heating evidence.
+  // Distinct bucket from electricReheat (a VAV-terminal reheat coil is a different heat
+  // delivery path than a standalone cabinet/vestibule unit heater) — grouped with heatpump for
+  // the unoccupied-setpoint default (EM_SP_DEFAULTS.unocc), per company standard.
+  if (cat === 'heater') {
+    for (var hai = 0; hai < autoKeys.length; hai++) {
+      var hak = autoKeys[hai];
+      if (hak.indexOf('auto_') !== 0) continue;
+      if (/heater.*amp|amp.*heater|^auto_(unit|tube|infrared|radiant|cabinet)?heaterAmp/i.test(hak))
+        return { key: 'electric', known: true };
+    }
   }
   // No zone-level signal found. An all-electric building (no Gas meter in Utility Data) cannot
   // have gas/hydronic reheat, so fall back to the electric-reheat bucket instead of the blind

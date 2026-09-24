@@ -1742,6 +1742,30 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.23.18',
+    date: '2026-09-23',
+    title:
+      'Equipment Matrix, HVAC Load Estimation, and BAS Savings Calc: electric unit heaters now count as electric heat',
+    items: [
+      {
+        type: 'fix',
+        text: "The Equipment Matrix now reads a standalone electric unit heater's own BAS points (an Amps or Amperage reading) to classify it as electric heat. Before this fix, unit heaters had no heating-type rule at all, so a building with a real electric unit heater could still show 0% electric heating on the HVAC Load Estimation page.",
+      },
+      {
+        type: 'fix',
+        text: "On the HVAC Load Estimation page's Rules of Thumb method, a building with a central gas boiler plus a few electric unit heaters now keeps its gas-dominant Existing Heating Gas Therms estimate. Only a building with electric heat and no gas or hot-water heat at all switches to the lower, DHW/kitchen-only gas estimate.",
+      },
+      {
+        type: 'fix',
+        text: 'On the BAS Savings Calc, a mixed gas-and-electric building whose heating load is almost entirely gas no longer shows an unrealistic, uncalibrated Heat Therms Saved number — the calibration now matches the gas figure when there is no meaningful electric heating load to calibrate against.',
+      },
+      {
+        type: 'feature',
+        text: 'Added a company-standard unoccupied setpoint default (65°F heat / 85°F cool) for standalone electric heat, matching the existing default for VRF and heat pump equipment.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.23.17',
     date: '2026-09-23',
     title: 'Baseline & BAS Savings Report: fixed Annual kWh column overflow for large buildings',
