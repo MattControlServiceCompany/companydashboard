@@ -1972,8 +1972,23 @@ function _udBuildingSavingsStatus(meterDetails) {
   return { included: true, reason: null };
 }
 
+// P0 35105124 fast-follow (2026-09-24): only meters actually counted in
+// savings (d.included, per isBaselineExcluded()) gate this badge — mirrors
+// the building-header "X of Y meters frozen" badge's own rule (line ~3230
+// above: "Y is meters that actually have bill data -- the only ones
+// baselines apply to"). Before this fix, ANY meter with a baseline.months
+// array counted here, including meters excluded from savings (Water/Sewer/
+// Stormwater submeters, stray zero-usage duplicate meters) that were never
+// explicitly saved and never will be, since they don't drive any displayed
+// number. One such excluded meter permanently pinned the whole building at
+// "Auto-inherited — not frozen" even after every meter that actually feeds
+// the Project Baseline $ totals was explicitly saved and frozen -- this is
+// the repro Matt reported: Louisburg's High School and Middle School showed
+// "Not Frozen" here while their Electric/Gas meters were already frozen
+// (confirmed both by the per-meter chips on this same panel and by the
+// building-header badge, which already excluded these meters correctly).
 function _udBuildingFreezeState(meterDetails) {
-  const withBaseline = meterDetails.filter((d) => d.hasBaseline);
+  const withBaseline = meterDetails.filter((d) => d.hasBaseline && d.included);
   if (!withBaseline.length) return 'No baseline';
   return withBaseline.every((d) => d.trust === 'frozen') ? 'Frozen' : 'Auto-inherited — not frozen';
 }
