@@ -1085,7 +1085,41 @@ async function compactPdfStorageUI() {
   console.log('[compactPdfStorageUI] result:', result);
 }
 
+// The sidebar Backup button renders (and is clickable) before DB.warmCache()
+// resolves — .content is hidden behind .app-ready, but the sidebar is not.
+// Clicking Backup during that window used to hit the DB.isReady() === false
+// branch below and silently write a backup with an empty IndexedDB section:
+// zero bills, empty utility data, no error, no warning (2026-09-21 report).
+// Wait for the 'dbReady' (success) or 'dbLoadFailed' (fallback) event db.js
+// fires at the end of warmCache() before reading DB.getAll(), with a safety
+// timeout so a stuck warm-up never hangs the Backup button forever.
+function _waitForDBReadyForBackup(timeoutMs) {
+  return new Promise(function (resolve) {
+    if (typeof DB === 'undefined' || DB.isReady()) {
+      resolve();
+      return;
+    }
+    var done = false;
+    function onReady() {
+      if (done) return;
+      done = true;
+      window.removeEventListener('dbReady', onReady);
+      window.removeEventListener('dbLoadFailed', onReady);
+      resolve();
+    }
+    window.addEventListener('dbReady', onReady);
+    window.addEventListener('dbLoadFailed', onReady);
+    setTimeout(onReady, timeoutMs || 15000);
+  });
+}
+
 async function siteBackup() {
+  // Data isn't loaded into memory yet — wait rather than silently exporting
+  // an empty backup (see _waitForDBReadyForBackup above).
+  if (typeof DB !== 'undefined' && !DB.isReady() && typeof showToast === 'function') {
+    showToast('Waiting for data to finish loading before backing up...');
+  }
+  await _waitForDBReadyForBackup();
   // Get all DB data (IndexedDB-backed)
   var dbData = typeof DB !== 'undefined' && DB.isReady() ? DB.getAll() : {};
   // Also grab any remaining localStorage keys (preferences, settings)
