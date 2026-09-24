@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.23.18'; // Equipment Matrix: classify standalone electric unit heaters by BAS points; BAS Savings Calc/HVAC Load Est heating-type + unoccupied setpoint fixes
+  var CH_VERSION = 'v2026.09.23.19'; // Single-source gas heating-share (baseload method) + unoccupied setpoint default fixes for BAS Savings Calc/HVAC Load Est
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

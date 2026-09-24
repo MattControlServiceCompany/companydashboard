@@ -1742,6 +1742,22 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.23.19',
+    date: '2026-09-23',
+    title:
+      'BAS Savings Calc and HVAC Load Estimation: gas heating share now computed from bills, not a fixed percentage',
+    items: [
+      {
+        type: 'fix',
+        text: "The BAS Savings Calc's Existing Heating Gas Therms figure and the HVAC Load Estimation page's Space Heating % of Total Gas default now compute the real heating share from a building's own gas bills (the same 3-lowest-month baseload method already used by the HVAC End-Use Estimate card), instead of always applying a fixed 80% (or 15% for all-electric buildings) rule-of-thumb percentage. The field's hint text shows whether the value was computed from bills or is a rule-of-thumb default (used only when a building has under 6 months of gas bill history).",
+      },
+      {
+        type: 'fix',
+        text: 'The BAS Savings Calc’s company-standard unoccupied heating setpoint default (55°F gas/hydronic, 60°F electric, 65°F electric+VRF/heat pump) now reads the same single setpoint default table the Equipment Matrix Setpoint & Schedule Export uses, instead of keeping its own separate copy of the same numbers.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.23.18',
     date: '2026-09-23',
     title:
