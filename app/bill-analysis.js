@@ -12677,8 +12677,22 @@ async function _dupBulkAction(action) {
     selectedPid = inferredPid;
   }
 
-  const verb = action === 'overwrite' ? 'overwritten' : action === 'merge' ? 'merged' : 'skipped';
-  const titleVerb = action === 'overwrite' ? 'Overwriting' : action === 'merge' ? 'Merging' : 'Skipping';
+  const verb =
+    action === 'overwrite'
+      ? 'overwritten'
+      : action === 'merge'
+        ? 'merged'
+        : action === 'attach-pdf-only'
+          ? 'PDF-attached'
+          : 'skipped';
+  const titleVerb =
+    action === 'overwrite'
+      ? 'Overwriting'
+      : action === 'merge'
+        ? 'Merging'
+        : action === 'attach-pdf-only'
+          ? 'Attaching PDFs to'
+          : 'Skipping';
   _bulkProgressShow(titleVerb + ' all bills');
 
   const summaryEntries = [];
@@ -17921,6 +17935,7 @@ function renderMultiBillUI(bills, box) {
     let btns = `<button onclick="savePDFAllBills()" class="btn btn-em btn-sm" style="font-size:10px;padding:3px 12px">Save All ${bills.length} Periods</button>`;
     btns += `<button onclick="_dupBulkAction('overwrite')" class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 10px" title="Replace existing records with newly extracted values, including blanks">Overwrite All</button>`;
     btns += `<button onclick="_dupBulkAction('merge')" class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 10px" title="Fill only empty fields — keeps existing non-empty values intact">Merge All</button>`;
+    btns += `<button onclick="_dupBulkAction('attach-pdf-only')" class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 10px" title="Attach the PDF only to already-matching billing periods — never changes any other field, never creates a new bill">Attach PDFs Only</button>`;
     if (commKeys.length > 1) {
       btns += commKeys
         .map(

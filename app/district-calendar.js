@@ -117,7 +117,8 @@ async function dcExtractPDFText(arrayBuffer) {
         line = { y, items: [] };
         lines.push(line);
       }
-      line.items.push({ x, str: item.str, w: item.width || 0 });
+      const fontSize = Math.hypot(item.transform[0], item.transform[1]) || Math.abs(item.transform[3]) || 10;
+      line.items.push({ x, str: item.str, w: item.width || 0, fontSize });
     });
     lines.sort((a, b) => b.y - a.y);
 
@@ -131,20 +132,35 @@ async function dcExtractPDFText(arrayBuffer) {
       line.items.sort((a, b) => a.x - b.x);
       let out = '';
       let cursor = 0;
+      let cursorEndPt = null; // precise right edge (x + width) of the previous item, in PDF points
+      let prevFontSize = 0;
       line.items.forEach((it) => {
         const col = Math.round(it.x / 4);
         if (out.length > 0 && col > cursor + COL_GAP_SPLIT) {
           segments.push({ y: line.y, text: out });
           out = '';
+          cursorEndPt = null;
         }
         if (out.length === 0) {
           out = it.str;
         } else if (col > cursor + 1) {
           out += ' '.repeat(Math.min(col - cursor, 40)) + it.str;
         } else {
-          out += ' ' + it.str;
+          // Items land at (near) the same rounded column, with no real
+          // horizontal gap between them. Real PDF.js text extraction
+          // commonly splits ligature glyphs (fi, ffi, fl...) into
+          // separate text items flush against each other — a naive
+          // "always insert one space" rule here turns "Certified Off
+          // Duty" into "Certi fi ed O ff Duty". Only insert a space
+          // when the precise gap is a real word gap (at least a small
+          // fraction of the font size); otherwise glue with no space.
+          const gapPt = cursorEndPt === null ? 0 : it.x - cursorEndPt;
+          const fontSize = it.fontSize || prevFontSize || 10;
+          out += gapPt >= fontSize * 0.15 ? ' ' + it.str : it.str;
         }
         cursor = col + Math.round(it.w / 4);
+        cursorEndPt = it.x + it.w;
+        prevFontSize = it.fontSize || prevFontSize;
       });
       if (out) segments.push({ y: line.y, text: out });
     });

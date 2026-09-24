@@ -63,7 +63,7 @@ function loadModule(scriptPath) {
 // the old parser. Coordinates are pdf.js-style (y increases upward).
 function buildItems() {
   const items = [];
-  const push = (str, x, y, w) => items.push({ str, x, y, w });
+  const push = (str, x, y, w, fs) => items.push({ str, x, y, w, fs });
 
   // Decorative left/right day-of-week headers + a numeric grid row at a Y
   // that coincides with a real event row — this is exactly the shape that
@@ -135,6 +135,25 @@ function buildItems() {
   push('May 28', 185, y, 40);
   push('Last Day for Students', 258, y, 100);
 
+  // Ligature-split case (2026-09-23 fix): real PDF.js extraction splits
+  // ligature glyphs (fi, ffi, fl, ...) into separate text items flush
+  // against each other (zero horizontal gap) at a realistic 12pt font
+  // size. The old "always insert one space between same-column items"
+  // join rule turned "Certified Off Duty" into "Certi fi ed O ff Duty".
+  // 'Certi' + 'fi' + 'ed' (zero gap) must join with no space as
+  // "Certified"; likewise 'O' + 'ff' as "Off". The ~3pt gaps between
+  // the words "Certified", "Off", and "Duty" are well above the
+  // 0.15 x fontSize (=1.8pt) threshold and must still each get exactly
+  // one real space.
+  y -= 16;
+  push('June 4', 185, y, 40, 12);
+  push('Certi', 258, y, 30, 12);
+  push('fi', 288, y, 12, 12);
+  push('ed', 300, y, 12, 12);
+  push('O', 315, y, 6, 12);
+  push('ff', 321, y, 12, 12);
+  push('Duty', 336, y, 24, 12);
+
   // Footer that restates one real event's month+day — must not create a
   // second/bogus event or absorb the real one's description.
   y -= 40;
@@ -156,7 +175,10 @@ function run() {
         numPages: 1,
         getPage: async () => ({
           getTextContent: async () => ({
-            items: items.map((it) => ({ str: it.str, transform: [1, 0, 0, 1, it.x, it.y], width: it.w })),
+            items: items.map((it) => {
+              const s = it.fs || 1;
+              return { str: it.str, transform: [s, 0, 0, s, it.x, it.y], width: it.w };
+            }),
           }),
         }),
       }),
@@ -193,6 +215,7 @@ const EXPECTED = [
   { date: '2026-12-31', name: 'No Classes - Winter Break' },
   { date: '2027-01-01', name: 'No Classes - Winter Break' },
   { date: '2027-05-28', name: 'Last Day for Students' },
+  { date: '2027-06-04', name: 'Certified Off Duty' },
 ];
 
 run()

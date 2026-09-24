@@ -1742,6 +1742,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.23.27',
+    date: '2026-09-23',
+    title: 'District Calendar text spacing and a new bulk PDF-attach option',
+    items: [
+      {
+        type: 'fix',
+        text: 'District Calendar "Import Calendar" no longer breaks up some words with extra spaces (for example "Certified Off Duty" no longer shows as "Certi fi ed O ff Duty"). Event names now read correctly.',
+      },
+      {
+        type: 'feature',
+        text: 'The Utility Data page duplicate-bill bulk action now has an "Attach PDFs Only" option, matching the single-bill option already there. It links the PDF to each matching bill and never changes any other field.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.23.26',
     date: '2026-09-23',
     title: 'WoodRiver Energy gas bills: more usage detail, fewer false flags',
