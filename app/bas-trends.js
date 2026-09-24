@@ -224,34 +224,34 @@ var BT_POINT_PATTERNS = {
 /* ── POINT TYPE HUMAN LABELS ───────────────────────────────────────────────── */
 
 var BT_POINT_LABELS = {
-  oat: 'Outside Air Temp',
+  oat: 'Outside Air Temperature',
   oawetbulb: 'Outside Air Wet Bulb',
-  sat: 'Supply Air Temp',
-  satsp: 'Supply Air Temp Setpoint',
-  rat: 'Return Air Temp',
-  mat: 'Mixed Air Temp',
-  oadamper: 'OA Damper %',
+  sat: 'Supply Air Temperature',
+  satsp: 'Supply Air Temperature Setpoint',
+  rat: 'Return Air Temperature',
+  mat: 'Mixed Air Temperature',
+  oadamper: 'Outside Air Damper %',
   coolvalve: 'Cooling Valve %',
   heatvalve: 'Heating Valve %',
   fanstatus: 'Fan Status',
   fanspeed: 'Fan Speed / VFD %',
   staticp: 'Duct Static Pressure',
-  staticpsp: 'Duct Static SP',
-  zonetemp: 'Zone Temp',
+  staticpsp: 'Duct Static Setpoint',
+  zonetemp: 'Zone Temperature',
   zonesp_cool: 'Cooling Setpoint',
   zonesp_heat: 'Heating Setpoint',
   occupied: 'Occupied Signal',
-  hwstemp: 'HW Supply Temp',
-  hwrtemp: 'HW Return Temp',
+  hwstemp: 'HW Supply Temperature',
+  hwrtemp: 'HW Return Temperature',
   kwh: 'kWh / Power',
   co2: 'CO2 (ppm)',
   humidity: 'Relative Humidity %',
   override: 'Manual Override',
 
   // 2026-07-09 (backlog 7687ce58) — labels for the vocabulary-gap categories added above
-  econtemp: 'Economizer Control Temp',
+  econtemp: 'Economizer Control Temperature',
   econsp: 'Economizer Setpoint',
-  preheattemp: 'Preheat Air Temp',
+  preheattemp: 'Preheat Air Temperature',
   reliefexhauststatus: 'Relief/Exhaust Fan Status',
   clgstage: 'Cooling Stage',
   htgstage: 'Heating Stage',
@@ -259,8 +259,8 @@ var BT_POINT_LABELS = {
   zoneairflow: 'Zone Airflow (CFM)',
   zonedamper: 'Zone/VAV Damper Position',
   compstatus: 'Compressor Status',
-  chwstemp: 'CHW Supply Temp',
-  chwrtemp: 'CHW Return Temp',
+  chwstemp: 'CHW Supply Temperature',
+  chwrtemp: 'CHW Return Temperature',
   bldgpressure: 'Building Pressure',
 };
 
@@ -3307,8 +3307,8 @@ function btBuildFaultTableHTML(rows, projId) {
     { key: 'equip', label: 'Equipment' },
     { key: 'type', label: 'Fault Type' },
     { key: 'hours', label: 'Hours' },
-    { key: 'estKwh', label: 'Est. kWh' },
-    { key: 'estCost', label: 'Est. $' },
+    { key: 'estKwh', label: 'Estimated kWh' },
+    { key: 'estCost', label: 'Estimated $' },
     { key: 'status', label: 'Status' },
   ];
 
@@ -3853,7 +3853,7 @@ function btRenderTimeline() {
       desc: 'White (0%) to red (100%)',
     },
     {
-      label: 'OA Damper %',
+      label: 'Outside Air Damper %',
       key: 'oadamper',
       min: 0,
       max: 100,
@@ -3862,7 +3862,7 @@ function btRenderTimeline() {
       desc: 'White (0%) to green (100%)',
     },
     {
-      label: 'Supply Air Temp',
+      label: 'Supply Air Temperature',
       key: 'sat',
       min: 50,
       max: 80,
@@ -3871,7 +3871,7 @@ function btRenderTimeline() {
       desc: 'Blue (50 F) to red (80 F)',
     },
     {
-      label: 'Zone Temp',
+      label: 'Zone Temperature',
       key: 'zonetemp',
       min: 65,
       max: 80,
@@ -4006,8 +4006,8 @@ function btTimelineLegend() {
     { label: 'Cooling high', color: 'rgb(30,100,255)' },
     { label: 'Heating high', color: 'rgb(220,38,38)' },
     { label: 'Damper open', color: 'rgb(34,197,94)' },
-    { label: 'Warm temp', color: 'rgb(255,74,74)' },
-    { label: 'Cool temp', color: 'rgb(74,158,255)' },
+    { label: 'Warm Temperature', color: 'rgb(255,74,74)' },
+    { label: 'Cool Temperature', color: 'rgb(74,158,255)' },
     { label: 'Fault', color: '#f59e0b' },
   ];
   return items
@@ -4092,8 +4092,8 @@ var BT_MONTH_COLORS = [
 // OAT chart metric selector options
 var BT_OAT_METRICS = [
   { key: 'fanRuntime', label: 'Fan Runtime (hrs/day)', unit: 'hrs' },
-  { key: 'coolAvg', label: 'Cooling Valve Avg %', unit: '%' },
-  { key: 'heatAvg', label: 'Heating Valve Avg %', unit: '%' },
+  { key: 'coolAvg', label: 'Cooling Valve Average %', unit: '%' },
+  { key: 'heatAvg', label: 'Heating Valve Average %', unit: '%' },
   { key: 'faultTotal', label: 'Total Fault Hours', unit: 'hrs' },
 ];
 
@@ -4872,7 +4872,7 @@ function btEstimateSavings(projId, bldgId, opts) {
     var satDollars = satCoolingKwh * elecRate + reheatThermsSaved * gasRate;
     estimates.push({
       type: 'satReset',
-      label: 'SAT Reset (Supply Air Temperature)',
+      label: 'Supply Air Temperature Reset',
       annualKwh: Math.round(satCoolingKwh),
       annualTherms: Math.round(reheatThermsSaved),
       annualDollars: Math.round(satDollars),
@@ -5021,7 +5021,7 @@ function btRenderSavingsPanel(projId, bldgId) {
     '<tr style="border-bottom:2px solid var(--border)">' +
     '<th style="padding:4px 8px;text-align:left;font-weight:600;color:var(--text2);font-size:10px;text-transform:uppercase">Sequence</th>' +
     '<th style="padding:4px 8px;text-align:left;font-weight:600;color:var(--text2);font-size:10px;text-transform:uppercase">Annual Energy</th>' +
-    '<th style="padding:4px 8px;text-align:right;font-weight:600;color:var(--text2);font-size:10px;text-transform:uppercase">Est. Savings</th>' +
+    '<th style="padding:4px 8px;text-align:right;font-weight:600;color:var(--text2);font-size:10px;text-transform:uppercase">Estimated Savings</th>' +
     '<th style="padding:4px 8px;text-align:left;font-weight:600;color:var(--text2);font-size:10px;text-transform:uppercase">Basis</th>' +
     '</tr>' +
     '</thead>' +

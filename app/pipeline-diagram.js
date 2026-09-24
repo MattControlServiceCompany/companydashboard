@@ -92,11 +92,11 @@ const PD_NODES = [
 const PD_EDGES = [
   { from: 'bills', to: 'norm', label: 'billing periods' },
   { from: 'weather', to: 'norm', label: 'HDD/CDD by month' },
-  { from: 'norm', to: 'regression', label: 'norm rows' },
+  { from: 'norm', to: 'regression', label: 'normalized rows' },
   { from: 'regression', to: 'baseline', label: 'slope + intercept' },
   { from: 'baseline', to: 'savings', label: 'baseline monthly values' },
   { from: 'norm', to: 'savings', label: 'actual monthly values' },
-  { from: 'norm', to: 'anomaly', label: 'norm rows' },
+  { from: 'norm', to: 'anomaly', label: 'normalized rows' },
   { from: 'regression', to: 'anomaly', label: 'predicted baseline' },
   { from: 'savings', to: 'charts', label: 'monthly savings $' },
   { from: 'baseline', to: 'charts', label: 'baseline trend' },

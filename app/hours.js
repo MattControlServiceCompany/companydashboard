@@ -426,7 +426,7 @@ function _renderHoursTab(projId, data) {
       <div class="card">
         <div class="card-hdr">
           <span class="card-title">Log Hours — By Week</span>
-          <span style="font-size:11px;color:var(--text3)" title="Log a lump-sum total for a full Mon–Sun week. Hours are attributed to the week's Monday.">Mon–Sun week total</span>
+          <span style="font-size:11px;color:var(--text3)" title="Log a lump-sum total for a full Monday–Sunday week. Hours are attributed to the week's Monday.">Monday–Sunday week total</span>
         </div>
         <div style="padding:14px 16px">
           <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">

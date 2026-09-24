@@ -3783,7 +3783,7 @@ function rptPageAuditEUI(n, d) {
     '<table class="rpt-table rpt-table-wrap" contenteditable="true" style="font-size:10px;width:100%;table-layout:fixed">' +
     '<colgroup><col style="width:6%"><col style="width:44%"><col style="width:20%"><col style="width:30%"></colgroup>' +
     '<thead><tr>' +
-    '<th>#</th><th>Building</th><th class="rpt-n">Square Feet</th><th class="rpt-n">Site EUI (kBtu/ft&sup2;/yr)</th>' +
+    '<th>#</th><th>Building</th><th class="rpt-n">Square Feet</th><th class="rpt-n">Site EUI (kBtu/ft&sup2;/Year)</th>' +
     '</tr></thead>' +
     '<tbody>' +
     rankRows +
@@ -5049,10 +5049,10 @@ function rptPageSetPoints(n, d) {
     '<thead><tr>' +
     '<th>Building</th>' +
     (allAvgMode ? '' : '<th>Zone / System</th>') +
-    '<th class="rpt-n">Occ Heat</th>' +
-    '<th class="rpt-n">Occ Cool</th>' +
-    (hasUnoccHeat ? '<th class="rpt-n">Unocc Heat</th>' : '') +
-    (hasUnoccCool ? '<th class="rpt-n">Unocc Cool</th>' : '') +
+    '<th class="rpt-n">Occupied Heat</th>' +
+    '<th class="rpt-n">Occupied Cool</th>' +
+    (hasUnoccHeat ? '<th class="rpt-n">Unoccupied Heat</th>' : '') +
+    (hasUnoccCool ? '<th class="rpt-n">Unoccupied Cool</th>' : '') +
     (hasSchedule ? '<th>Schedule</th>' : '') +
     '</tr></thead>';
 
@@ -21345,7 +21345,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
         '">Item</th>' +
         '<th style="' +
         itThRight +
-        '">Total Qty</th>' +
+        '">Total Quantity</th>' +
         (_isNoDollarCol ? '' : '<th style="' + itThRight + '">Price</th>') +
         '</tr></thead>';
 

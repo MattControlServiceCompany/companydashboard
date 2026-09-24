@@ -27,7 +27,7 @@ const ECM_TEMPLATES = {
       },
       {
         id: 'design_oa_cfm',
-        label: 'Design Minimum OA CFM',
+        label: 'Design Minimum Outside Air CFM',
         help: 'OA — Outside Air. CFM — Cubic Feet per Minute. The minimum fresh outdoor air the unit should bring in per code.',
         unit: 'CFM',
         type: 'number',
@@ -41,7 +41,7 @@ const ECM_TEMPLATES = {
         unit: '',
         type: 'select',
         options: [
-          { value: 'stuck_open', label: 'Stuck Fully Open (100% OA)' },
+          { value: 'stuck_open', label: 'Stuck Fully Open (100% Outside Air)' },
           { value: 'partial', label: 'Stuck Partially Open — enter actual fraction below' },
           { value: 'leakage', label: 'Low-Leakage Upgrade (10% → 1% leakage)' },
         ],
@@ -49,7 +49,7 @@ const ECM_TEMPLATES = {
       },
       {
         id: 'actual_oa_fraction',
-        label: 'Actual OA Fraction (partial only)',
+        label: 'Actual Outside Air Fraction (partial only)',
         unit: '%',
         type: 'number',
         default: 50,
@@ -76,7 +76,7 @@ const ECM_TEMPLATES = {
       },
       {
         id: 'avg_delta_t_heating',
-        label: 'Avg ΔT Heating Season (Indoor–Outdoor)',
+        label: 'Average ΔT Heating Season (Indoor–Outdoor)',
         help: 'ΔT — Delta-T, the temperature difference between indoors and outdoors. Higher ΔT means more energy is wasted heating excess outdoor air.',
         unit: '°F',
         type: 'number',
@@ -86,7 +86,7 @@ const ECM_TEMPLATES = {
       },
       {
         id: 'avg_delta_t_cooling',
-        label: 'Avg ΔT Cooling Season (Outdoor–Indoor)',
+        label: 'Average ΔT Cooling Season (Outdoor–Indoor)',
         help: 'ΔT — Delta-T, the temperature difference between outdoors and indoors. Higher ΔT means more energy is wasted cooling excess outdoor air.',
         unit: '°F',
         type: 'number',
@@ -129,7 +129,7 @@ const ECM_TEMPLATES = {
     outputs: [
       {
         id: 'excess_cfm',
-        label: 'Excess OA CFM Eliminated',
+        label: 'Excess Outside Air CFM Eliminated',
         unit: 'CFM',
         formula: 'excess_cfm = Design OA CFM (during unoccupied hours, when damper should be closed)',
       },
@@ -672,7 +672,7 @@ const ECM_TEMPLATES = {
       },
       {
         id: 'design_winter_temp',
-        label: 'Design Winter Outdoor Temp',
+        label: 'Design Winter Outdoor Temperature',
         unit: '°F',
         type: 'number',
         default: 10,
@@ -681,7 +681,7 @@ const ECM_TEMPLATES = {
       },
       {
         id: 'summer_oa_enthalpy',
-        label: 'Summer OA Enthalpy',
+        label: 'Summer Outside Air Enthalpy',
         unit: 'BTU/lb',
         type: 'number',
         default: 38.5,
@@ -1404,7 +1404,7 @@ const ECM_TEMPLATES = {
       { id: 'motor_eff', label: 'Motor Efficiency', unit: '%', type: 'number', default: 91, min: 70, max: 97 },
       {
         id: 'avg_speed_ratio',
-        label: 'Avg Speed Ratio After VFD',
+        label: 'Average Speed Ratio After VFD',
         unit: '0–1',
         type: 'number',
         default: 0.7,
@@ -1586,7 +1586,7 @@ const ECM_TEMPLATES = {
     inputs: [
       {
         id: 'oa_cfm_design',
-        label: 'Design OA CFM (full occupancy)',
+        label: 'Design Outside Air CFM (full occupancy)',
         unit: 'CFM',
         type: 'number',
         default: 2290,
@@ -1595,7 +1595,7 @@ const ECM_TEMPLATES = {
       },
       {
         id: 'per_person_frac',
-        label: 'Per-Person OA Fraction of Total OA',
+        label: 'Per-Person Outside Air Fraction of Total Outside Air',
         unit: '0–1',
         type: 'number',
         default: 0.76,
@@ -1604,7 +1604,7 @@ const ECM_TEMPLATES = {
       },
       {
         id: 'avg_occ_frac',
-        label: 'Avg Occupancy During Occupied Hours',
+        label: 'Average Occupancy During Occupied Hours',
         unit: '0–1',
         type: 'number',
         default: 0.65,
@@ -1622,7 +1622,7 @@ const ECM_TEMPLATES = {
       },
       {
         id: 'avg_dt_heat',
-        label: 'Avg Heating ΔT (indoor − outdoor)',
+        label: 'Average Heating ΔT (indoor − outdoor)',
         help: 'ΔT — Delta-T, the temperature difference between indoors and outdoors during heating season.',
         unit: '°F',
         type: 'number',
@@ -1652,7 +1652,7 @@ const ECM_TEMPLATES = {
       },
       {
         id: 'avg_dt_cool',
-        label: 'Avg Cooling ΔT (outdoor − indoor)',
+        label: 'Average Cooling ΔT (outdoor − indoor)',
         help: 'ΔT — Delta-T, the temperature difference between outdoors and indoors during cooling season.',
         unit: '°F',
         type: 'number',
@@ -1684,11 +1684,11 @@ const ECM_TEMPLATES = {
     outputs: [
       {
         id: 'oa_reduction_pct',
-        label: 'Avg OA Reduction',
+        label: 'Average Outside Air Reduction',
         unit: '%',
         formula: 'per_person_frac × (1 − avg_occ_frac)  — only per-person component varies with CO2',
       },
-      { id: 'cfm_saved', label: 'Avg CFM Reduced', unit: 'CFM', formula: 'oa_cfm_design × oa_reduction_frac' },
+      { id: 'cfm_saved', label: 'Average CFM Reduced', unit: 'CFM', formula: 'oa_cfm_design × oa_reduction_frac' },
       {
         id: 'therms_saved',
         label: 'Heating Therms Saved',
@@ -1765,7 +1765,7 @@ const ECM_TEMPLATES = {
       },
       {
         id: 'avg_dt_reheat',
-        label: 'Avg Reheat Reduction from SAT Reset',
+        label: 'Average Reheat Reduction from Supply Air Temperature Reset',
         unit: '°F',
         type: 'number',
         default: 8,
@@ -1875,7 +1875,7 @@ const ECM_TEMPLATES = {
       },
       {
         id: 'cool_kwh_saved',
-        label: 'Cooling kWh Saved (SAT reset)',
+        label: 'Cooling kWh Saved (Supply Air Temperature Reset)',
         unit: 'kWh/yr',
         formula:
           '1.08 × system_cfm × avg_dT × season_hours × 0.30 / (COP × 3,412)  — 30% of airflow benefits from SAT reset',
@@ -2037,11 +2037,11 @@ const ECM_TEMPLATES = {
       },
       {
         id: 'existing_therms',
-        label: 'Existing Therms/yr',
+        label: 'Existing Therms/Year',
         unit: 'therms/yr',
         formula: 'annual_heating_MMBtu × 10 / eff_old',
       },
-      { id: 'new_therms', label: 'New Therms/yr', unit: 'therms/yr', formula: 'annual_heating_MMBtu × 10 / eff_new' },
+      { id: 'new_therms', label: 'New Therms/Year', unit: 'therms/yr', formula: 'annual_heating_MMBtu × 10 / eff_new' },
       {
         id: 'pct_savings',
         label: 'Efficiency Improvement',
@@ -2050,7 +2050,7 @@ const ECM_TEMPLATES = {
       },
       {
         id: 'therms_saved',
-        label: 'Total Therms Saved/yr',
+        label: 'Total Therms Saved/Year',
         unit: 'therms/yr',
         formula: '(existing − new) × (1 + standby_factor)  — cast iron: +10%, standard: +3%',
       },
@@ -2253,7 +2253,7 @@ const ECM_TEMPLATES = {
       },
       {
         id: 'avg_speed_ratio',
-        label: 'Avg Operating Speed Ratio',
+        label: 'Average Operating Speed Ratio',
         unit: '0–1',
         type: 'number',
         default: 0.75,

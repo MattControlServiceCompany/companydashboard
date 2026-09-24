@@ -275,7 +275,7 @@ var WD_CFG_FIELDS = [
   { key: 'occCoolSharePct', label: 'Occupied-hours share of cooling (%)', step: 1, min: 0, max: 100 },
   { key: 'zonesTotal', label: 'Zones with room setpoints (count)', step: 1, min: 1 },
   { key: 'zonesActive', label: 'Zones with a heating/cooling actuator (count)', step: 1, min: 1 },
-  { key: 'unoccNetTherms', label: 'Unoccupied setback savings (net Therms/yr)', step: 1, min: 0 },
+  { key: 'unoccNetTherms', label: 'Unoccupied setback savings (net Therms/Year)', step: 1, min: 0 },
   { key: 'demandFloorKw', label: 'Utility minimum billed demand (kW, 0 if none)', step: 1, min: 0 },
   { key: 'clientSharePct', label: 'Client share of savings (%)', step: 1, min: 0, max: 100 },
 ];
