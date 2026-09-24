@@ -54,6 +54,20 @@ function makeSandbox(projectsArr, opts) {
   if (opts.emRows !== undefined) sandbox.emBuildSetpointExportRows = () => opts.emRows;
   if (opts.proposedSchedule !== undefined) sandbox._emComputeProposedSchedule = () => opts.proposedSchedule;
   if (opts.emSpDefaults !== undefined) sandbox.EM_SP_DEFAULTS = opts.emSpDefaults;
+  // Heating-type classification hooks (item 3, 2026-09-23) — duck-typed stand-ins for
+  // equipment-matrix.js's own emLoadMatrix/emGetNormalizedPoints/_emDeriveHeatingType/
+  // _emNormBldgNameForJoin, isolating calc-autofill.js's own heatSrc-resolution logic (what
+  // changed) from the real classifier (that file's own domain, already covered elsewhere).
+  // opts.emHeatTypeRows: [{building, key:'hydronic'|'electricReheat'|'heatpump', known}]
+  if (opts.emHeatTypeRows !== undefined) {
+    sandbox.emLoadMatrix = () => ({ rows: opts.emHeatTypeRows.map((r, i) => ({ building: r.building, _i: i })) });
+    sandbox.emGetNormalizedPoints = () => ({});
+    sandbox._emDeriveHeatingType = (row) => {
+      const r = opts.emHeatTypeRows[row._i];
+      return { key: r.key, known: r.known };
+    };
+    sandbox._emNormBldgNameForJoin = (name) => (name || '').toLowerCase().trim();
+  }
   vm.createContext(sandbox);
   vm.runInContext(src, sandbox, { filename: 'calc-autofill.js' });
   // Top-level `const`/`let` in a vm-executed script are lexical bindings, not properties of the
@@ -386,6 +400,92 @@ console.log(
     touchedResolved.value === 70 && touchedResolved.hint === null,
     'a field touched this session is still protected even under legacy-placeholder forgiveness',
   );
+}
+
+console.log('--- 10. Heating Source (heatSrc) — Equipment Matrix heating-type sourcing (item 3, 2026-09-23) ---');
+{
+  const bldgId = 'bSynth10';
+  const projId = 10;
+  const mkProj = () => [
+    {
+      id: projId,
+      __buildings: [
+        {
+          id: bldgId,
+          name: 'Synthetic Middle School',
+          sqft: 90000,
+          meters: [{ commodity: 'Electric' }, { commodity: 'Gas' }],
+        },
+      ],
+    },
+  ];
+
+  // All classified rows are gas (hydronic), none electric -> heatSrc 3, EM-sourced.
+  {
+    const sb = makeSandbox(mkProj(), {
+      emHeatTypeRows: [
+        { building: 'Synthetic Middle School', key: 'hydronic', known: true },
+        { building: 'Synthetic Middle School', key: 'hydronic', known: true },
+      ],
+    });
+    const auto = sb.chCalcAutofillFields(projId, bldgId);
+    assert(
+      auto.heatSrc.value === 3 && /Equipment Matrix \(gas heating type\)/.test(auto.heatSrc.source),
+      'all-gas EM rows -> heatSrc 3, Equipment Matrix sourced',
+    );
+  }
+
+  // A mix of gas and electric-classified rows -> heatSrc 4 (Both), EM-sourced.
+  {
+    const sb = makeSandbox(mkProj(), {
+      emHeatTypeRows: [
+        { building: 'Synthetic Middle School', key: 'hydronic', known: true },
+        { building: 'Synthetic Middle School', key: 'electricReheat', known: true },
+      ],
+    });
+    const auto = sb.chCalcAutofillFields(projId, bldgId);
+    assert(
+      auto.heatSrc.value === 4 && /Equipment Matrix \(gas \+ electric heating types\)/.test(auto.heatSrc.source),
+      'mixed gas+electric EM rows -> heatSrc 4 (Both), Equipment Matrix sourced',
+    );
+  }
+
+  // Only a heat-pump/VRF-classified row -> heatSrc 2 (Electric), EM-sourced.
+  {
+    const sb = makeSandbox(mkProj(), {
+      emHeatTypeRows: [{ building: 'Synthetic Middle School', key: 'heatpump', known: true }],
+    });
+    const auto = sb.chCalcAutofillFields(projId, bldgId);
+    assert(
+      auto.heatSrc.value === 2 && /Equipment Matrix \(electric heating type\)/.test(auto.heatSrc.source),
+      'heat-pump-only EM row -> heatSrc 2 (Electric), Equipment Matrix sourced',
+    );
+  }
+
+  // Every row unclassified (known:false, the unclassified-fallback bucket) -> never counted as
+  // real evidence; falls back to the pre-existing meter-presence heuristic instead of inventing
+  // an electric-heat signal from the fallback bucket.
+  {
+    const sb = makeSandbox(mkProj(), {
+      emHeatTypeRows: [{ building: 'Synthetic Middle School', key: 'electricReheat', known: false }],
+    });
+    const auto = sb.chCalcAutofillFields(projId, bldgId);
+    assert(
+      auto.heatSrc.value === 4 && /building meters/.test(auto.heatSrc.source),
+      'unclassified (known:false) EM rows never count -> falls back to meter presence (gas+electric -> 4)',
+    );
+  }
+
+  // No Equipment Matrix classification hooks available at all (equipment-matrix.js not loaded on
+  // this page) -> same pre-existing meter-presence fallback, never throws.
+  {
+    const sb = makeSandbox(mkProj());
+    const auto = sb.chCalcAutofillFields(projId, bldgId);
+    assert(
+      auto.heatSrc.value === 4 && /building meters/.test(auto.heatSrc.source),
+      'no EM hooks at all -> meter-presence fallback, no throw',
+    );
+  }
 }
 
 // ─── Informational: real backup cross-check (Spring Hill Schools / Woodland Spring Middle) ───
