@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.23.27'; // Small-fix bundle: District Calendar PDF text spacing, Attach PDFs Only for the bulk duplicate-bill action, and a source-of-truth gate for the 3-lowest-month baseload formula
+  var CH_VERSION = 'v2026.09.24.1'; // Equipment Matrix: Raw View and Audit View open in under 2 seconds even at JOCO's 2,721-row scale, and the Summary View footer label no longer says "Page Average"
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

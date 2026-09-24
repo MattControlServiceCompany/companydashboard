@@ -1742,6 +1742,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.24.1',
+    date: '2026-09-24',
+    title: 'Equipment Matrix: the Raw View and Audit View now open fast, even on large projects',
+    items: [
+      {
+        type: 'fix',
+        text: 'On the Equipment Matrix page, the Raw View and Audit View could take over a minute to open on a large project (thousands of rows of equipment). Both views now open in under two seconds, with no change to what data is shown or how it is classified.',
+      },
+      {
+        type: 'fix',
+        text: 'On the Equipment Matrix page, the Summary View footer row was labeled "Page Average" even though the page controls were removed earlier. It is now labeled "Filtered Average" to match the "Total Average" row next to it.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.23.27',
     date: '2026-09-23',
     title: 'District Calendar text spacing and a new bulk PDF-attach option',
