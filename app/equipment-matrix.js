@@ -2851,11 +2851,51 @@ function emVerifyTypeByPoints(group) {
   // (Matt's ask) looks like: point evidence, not the name string, drives the category. Requires
   // the SAME zero-HVAC-signal gate as Rule 0 so a real AHU/RTU with an incidental "load" point
   // is never pulled in.
-  var hasLightingPanelSignal = hasPoint(
-    /lighting\s*(group|zone)|\bload\s*\d*\s*(cmd|command|status)\b|\bocc(?:upancy)?\s*sensor\b.*status|lighting.*(occupied|vacant)/,
+  // fix/em-classifier-lighting-leak (2026-09-25): bare lighting relay command pair — "Lighting
+  // On"/"Lighting Off"/"Lights On"/"Lights Off" with no "group"/"zone"/"load N"/occupancy-sensor
+  // wording. Real JOCO Monitcello Library exterior/area lighting panels (Flag Pole, Patio,
+  // Collection North Center, Closed Sign North, etc. — 18 rows) expose exactly this pair (plus
+  // Network Offline/Network Point Read Error/Schedule/Demand Level and shared OA weather points)
+  // and nothing else, so the original regex below never fired and they fell through to 'other'.
+  // hasBareLightingOnOff is additionally required to have NO damper/valve signal (on top of the
+  // outer zero-zoneTemp/supplyFan/airFlow/VFD gate shared with the rest of Rule 0b) before it can
+  // contribute — the lighting signal must dominate the whole point set, not just be present, so a
+  // real HVAC unit with one incidental "Lights" point is never pulled in.
+  var hasBareLightingOnOff = hasPoint(/\blight(?:ing)?s?\s*(on|off)\b/);
+  var hasDamperOrValveSignal = hasPoint(
+    /damper position|zone damper|heating valve|cooling valve|chw valve|hw valve|chilled water valve|hot water valve/,
   );
+  var hasLightingPanelSignal =
+    hasPoint(
+      /lighting\s*(group|zone)|\bload\s*\d*\s*(cmd|command|status)\b|\bocc(?:upancy)?\s*sensor\b.*status|lighting.*(occupied|vacant)/,
+    ) ||
+    (hasBareLightingOnOff && !hasDamperOrValveSignal);
   if (!hasZoneTemp && !hasSupplyFan && !hasAirFlow && !hasVfdSignal && hasLightingPanelSignal) {
     return { category: 'lighting', subtype: '', rule: '0b', confidence: 'strong' };
+  }
+
+  // fix/em-classifier-lighting-leak (2026-09-25) — Rule 0c: leak/water-detection sensor named
+  // with no name-based hint. Mirrors the existing NAME-based rule (~line 2670,
+  // /mechanical room.*water|mechanical room.*sump/i) that requires "water"/"sump" IN THE
+  // EQUIPMENT NAME before returning 'monitoring'. Some leak-detection equipment (e.g. real JOCO
+  // "Mechanical Room | WS-11") carries the signal only in its POINT names ("Leak Detection
+  // Sensor", "Water Detected in Mechanical Room"), not the equipment name, so that name rule
+  // never fires and it falls through to 'other'. Reuses the SAME 'monitoring' category as the
+  // name rule — no new category invented. Gated on provisional === 'other' so it only ever
+  // reclassifies equipment the name pass could not place at all.
+  if (provisional === 'other' && hasPoint(/leak\s+detect|water\s+detect(ed)?/)) {
+    return { category: 'monitoring', subtype: '', rule: 'leak-detect-signature', confidence: 'strong' };
+  }
+
+  // fix/em-classifier-lighting-leak (2026-09-25) — Rule 0d: glycol feeder. A glycol feed system
+  // (points: "Glycol Feeder 1/2 Low Level", "Alarm") is active water-treatment/feed equipment —
+  // the same class as "Water Softener"/"Reverse Osmosis" (both name-classified 'plumbing' above,
+  // line ~2550-2551) — not a passive sensor like the 'monitoring' category (leak/temp/pressure
+  // detectors with no fluid-treatment function). No name-based rule matches "glycol feeder" and
+  // no point-signature rule existed for it either, so it fell through to 'other'. Gated on
+  // provisional === 'other', same as Rule 0c.
+  if (provisional === 'other' && hasPoint(/glycol\s+feeder/)) {
+    return { category: 'plumbing', subtype: '', rule: 'glycol-feeder-signature', confidence: 'strong' };
   }
 
   // 1. Fire/smoke: tiny point set with smoke zone BNI (not an HVAC unit)
