@@ -4077,6 +4077,22 @@ function openBASCalc(projId) {
   const rExHeatUnocc = _bcResolve('exHeatUnocc', _bcDefaultUnoccHeat(parseInt(rHeatSrc.value) || 2), auto?.exHeatUnocc);
   const rExMfOn = _bcResolve('exMfOn', 0, auto?.exMfOn);
   const rExMfOff = _bcResolve('exMfOff', 24, auto?.exMfOff);
+  // Existing Saturday/Sunday occupied window (2026-09-24 fix): shipped default is now 0-0 (no
+  // occupied hours — building closed) instead of the old 0-24 (occupied all day, no setback),
+  // which is the exact "same as occupied, no setback, 24 hours" pattern that is not the company
+  // standard and inflates the existing load. chCalcAutofillFields resolves a real value (also
+  // 0-0, but sourced and not flagged as default) whenever an Effective Schedules import exists
+  // for this building; a building with no import at all still shows the shipped default, now
+  // correctly flagged "Default value (not from building data)" via the hint span below (it
+  // previously had no hint at all).
+  const rExSatOn = _bcResolve('exSatOn', 0, auto?.exSatOn);
+  const rExSatOff = _bcResolve('exSatOff', 0, auto?.exSatOff);
+  const rExSunOn = _bcResolve('exSunOn', 0, auto?.exSunOn);
+  const rExSunOff = _bcResolve('exSunOff', 0, auto?.exSunOff);
+  // Outside Air Shut Off When Unoccupied — no Equipment Matrix or import field records this
+  // today, so auto is always isDefault:true; this only adds the missing "Default value (not
+  // from building data)" label the field never showed before.
+  const rExOAShutoff = _bcResolve('exOAShutoff', 'no', auto?.exOAShutoff);
   const rCalCoolKwh = _bcResolve('calCoolKwh', '', autoCalCool);
   const rCalHeatKwh = _bcResolve('calHeatKwh', '', autoCalHeat);
   const rCalHeatGas = _bcResolve('calHeatGas', '', autoCalGas);
@@ -4223,21 +4239,21 @@ function openBASCalc(projId) {
                   <div class="fg"><label class="fl">Unoccupied Heating Setpoint (°F)</label><input class="fi bc-inp" id="bc-exHeatUnocc" type="number" value="${rExHeatUnocc.value}">${_bcHintSpan(rExHeatUnocc.hint)}</div>
                 </div>
                 <div class="fg"><label class="fl">Outside Air Shut Off When Unoccupied?</label><select class="fs bc-inp" id="bc-exOAShutoff">
-                  <option value="no" ${(bc.exOAShutoff || 'no') === 'no' ? 'selected' : ''}>No</option>
-                  <option value="yes" ${bc.exOAShutoff === 'yes' ? 'selected' : ''}>Yes</option>
-                </select></div>
+                  <option value="no" ${(rExOAShutoff.value || 'no') === 'no' ? 'selected' : ''}>No</option>
+                  <option value="yes" ${rExOAShutoff.value === 'yes' ? 'selected' : ''}>Yes</option>
+                </select>${_bcHintSpan(rExOAShutoff.hint)}</div>
                 <div style="font-size:11px;font-weight:600;color:var(--text2);margin:10px 0 6px;text-transform:uppercase;letter-spacing:1px">Schedule (24-Hour)</div>
                 <div class="f2">
                   <div class="fg"><label class="fl">Monday–Friday Start</label><input class="fi bc-inp" id="bc-exMfOn" type="number" min="0" max="24" value="${rExMfOn.value}">${_bcHintSpan(rExMfOn.hint)}</div>
                   <div class="fg"><label class="fl">Monday–Friday Stop</label><input class="fi bc-inp" id="bc-exMfOff" type="number" min="0" max="24" value="${rExMfOff.value}">${_bcHintSpan(rExMfOff.hint)}</div>
                 </div>
                 <div class="f2">
-                  <div class="fg"><label class="fl">Saturday Start</label><input class="fi bc-inp" id="bc-exSatOn" type="number" min="0" max="24" value="${bc.exSatOn ?? 0}"></div>
-                  <div class="fg"><label class="fl">Saturday Stop</label><input class="fi bc-inp" id="bc-exSatOff" type="number" min="0" max="24" value="${bc.exSatOff ?? 24}"></div>
+                  <div class="fg"><label class="fl">Saturday Start</label><input class="fi bc-inp" id="bc-exSatOn" type="number" min="0" max="24" value="${rExSatOn.value}">${_bcHintSpan(rExSatOn.hint)}</div>
+                  <div class="fg"><label class="fl">Saturday Stop</label><input class="fi bc-inp" id="bc-exSatOff" type="number" min="0" max="24" value="${rExSatOff.value}">${_bcHintSpan(rExSatOff.hint)}</div>
                 </div>
                 <div class="f2">
-                  <div class="fg"><label class="fl">Sunday Start</label><input class="fi bc-inp" id="bc-exSunOn" type="number" min="0" max="24" value="${bc.exSunOn ?? 0}"></div>
-                  <div class="fg"><label class="fl">Sunday Stop</label><input class="fi bc-inp" id="bc-exSunOff" type="number" min="0" max="24" value="${bc.exSunOff ?? 24}"></div>
+                  <div class="fg"><label class="fl">Sunday Start</label><input class="fi bc-inp" id="bc-exSunOn" type="number" min="0" max="24" value="${rExSunOn.value}">${_bcHintSpan(rExSunOn.hint)}</div>
+                  <div class="fg"><label class="fl">Sunday Stop</label><input class="fi bc-inp" id="bc-exSunOff" type="number" min="0" max="24" value="${rExSunOff.value}">${_bcHintSpan(rExSunOff.hint)}</div>
                 </div>
               </div>
             </div>

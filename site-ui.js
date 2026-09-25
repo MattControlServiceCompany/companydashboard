@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.24.14'; // Bill Analysis: clicking "Save Anyway" on a bill whose total was held for review no longer saves a corrupted demand or energy cost; and a bill can no longer be saved to a meter that no longer exists
+  var CH_VERSION = 'v2026.09.24.15'; // BAS Savings Calc: the Existing Conditions Saturday/Sunday schedule and the Outside Air Shut Off setting now show "Default value (not from building data)" when no source exists, instead of silently showing 24-hour occupied with no label; when a building has an imported Effective Schedules file, weekends now correctly read as not scheduled (0 occupied hours) instead of the old always-occupied 24-hour fallback
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
