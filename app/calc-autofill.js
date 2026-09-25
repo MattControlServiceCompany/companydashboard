@@ -31,6 +31,9 @@
      newCoolOcc:  {value, source, isDefault},  // present (no "no data" state, unlike Existing).
      newHeatUnocc:{value, source, isDefault},
      newCoolUnocc:{value, source, isDefault},
+     newOAShutoff:{value, source, isDefault},  // Shutting off outside air when unoccupied is
+                                                // itself the company-standard recommendation —
+                                                // always 'yes', always company standard.
      newMfOn:     {value, source, isDefault},  // Proposed occupied schedule: school hours +-1.5h
      newMfOff:    {value, source, isDefault},  // staff buffer, general fallback 6:00 AM-5:00 PM.
      newSatOn:    {value, source, isDefault},  // Weekends always unoccupied (company standard).
@@ -42,7 +45,9 @@
    field — callers should show the shipped default and flag it, not treat it as
    real building data. The Proposed (new*) fields are the one exception: they
    always have a company-standard fallback, so isDefault is always false for them
-   (source is 'company standard' or 'Equipment Matrix' — see chResolveCalcField's
+   (source is always 'company standard' — even when the Equipment Matrix's per-zone
+   heating-type classification picks which bucket applies, the bucket VALUES are
+   company standards, not measured building data; see chResolveCalcField's
    caller in calculators.js, which never shows the generic "no data" hint for a
    field that isn't actually missing). Pure lookup, never mutates anything — safe
    to call on every render. */
@@ -72,6 +77,7 @@ function chCalcAutofillFields(projId, bldgId) {
     newSatOff: { value: 0, source: 'company standard', isDefault: false },
     newSunOn: { value: 0, source: 'company standard', isDefault: false },
     newSunOff: { value: 0, source: 'company standard', isDefault: false },
+    newOAShutoff: { value: 'yes', source: 'company standard', isDefault: false },
   };
 
   // Proposed occupied schedule (school hours +-1.5h staff buffer, general fallback 6:00 AM -
@@ -245,13 +251,15 @@ function chCalcAutofillFields(projId, bldgId) {
       }
 
       // Proposed Unoccupied setpoints — the Equipment Matrix's own per-zone heating-type
-      // classification (_emDeriveHeatingType), already resolved to a company-standard bucket by
-      // emBuildSetpointExportRows itself; this just averages that same output across the
-      // building's rows, the same way the "Use Equipment Matrix Data" button does.
+      // classification (_emDeriveHeatingType) is used to pick a bucket, but the bucket VALUES
+      // themselves are the company-standard unoccupied setpoints (EM_SP_DEFAULTS — same table as
+      // the "no Equipment Matrix rows" fallback below), not a measured Equipment Matrix data
+      // point. Sourced as 'company standard' so the UI never claims building data for a number
+      // that is really a standards lookup (2026-09-25 fix — was mislabeled 'Equipment Matrix').
       const unoccHeatV = avgCol(14);
       const unoccCoolV = avgCol(15);
-      if (unoccHeatV != null) out.newHeatUnocc = { value: unoccHeatV, source: 'Equipment Matrix', isDefault: false };
-      if (unoccCoolV != null) out.newCoolUnocc = { value: unoccCoolV, source: 'Equipment Matrix', isDefault: false };
+      if (unoccHeatV != null) out.newHeatUnocc = { value: unoccHeatV, source: 'company standard', isDefault: false };
+      if (unoccCoolV != null) out.newCoolUnocc = { value: unoccCoolV, source: 'company standard', isDefault: false };
     }
   }
 

@@ -297,13 +297,17 @@ console.log('--- 6. Equipment Matrix fallback — Existing + Proposed Unoccupied
     auto.exMfOff.value === 16,
     'exMfOff parsed+averaged+rounded from EM Effective Schedules columns (16:00,15:30->15.75->16)',
   );
+  // 2026-09-25 fix: the bucket VALUES are company-standard unoccupied setpoints (Equipment
+  // Matrix only picks which bucket applies via heating-type classification) — sourced as
+  // 'company standard', not 'Equipment Matrix', so the UI never claims building data for a
+  // standards lookup (2026-09-25 cold review, check 3 / item 3).
   assert(
-    auto.newHeatUnocc.value === 60 && auto.newHeatUnocc.source === 'Equipment Matrix',
-    'newHeatUnocc averaged from EM col 14 (62,58->60)',
+    auto.newHeatUnocc.value === 60 && auto.newHeatUnocc.source === 'company standard',
+    'newHeatUnocc averaged from EM col 14 (62,58->60), sourced as company standard',
   );
   assert(
-    auto.newCoolUnocc.value === 84 && auto.newCoolUnocc.source === 'Equipment Matrix',
-    'newCoolUnocc averaged from EM col 15 (84,84->84)',
+    auto.newCoolUnocc.value === 84 && auto.newCoolUnocc.source === 'company standard',
+    'newCoolUnocc averaged from EM col 15 (84,84->84), sourced as company standard',
   );
 
   // A real Set Points record still wins over the Equipment Matrix fallback for the same building.

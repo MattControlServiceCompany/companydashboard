@@ -4116,6 +4116,7 @@ function openBASCalc(projId) {
   const rNewSatOff = _bcResolve('newSatOff', 0, auto?.newSatOff);
   const rNewSunOn = _bcResolve('newSunOn', 0, auto?.newSunOn);
   const rNewSunOff = _bcResolve('newSunOff', 0, auto?.newSunOff);
+  const rNewOAShutoff = _bcResolve('newOAShutoff', 'yes', auto?.newOAShutoff);
 
   const sqft = rSqft.value || p?.sqft || 0;
   const cityOpts = BAS_CITIES.map(
@@ -4134,7 +4135,7 @@ function openBASCalc(projId) {
         <div style="padding:20px;overflow-y:auto;flex:1" id="bc-main-wrap">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap">
             <button class="btn btn-ghost btn-sm" onclick="openCalcTemplates(${projId},'${_calcTemplateContext.returnTo}')">← Templates</button>
-            <h2 style="font-size:18px;font-weight:700;margin:0">🏢 BAS Savings Calc</h2>
+            <h2 style="font-size:18px;font-weight:700;margin:0">🏢 Building Automation System Savings Calc</h2>
             <div style="flex:1"></div>
             <button class="btn btn-ghost btn-sm" onclick="bcSaveInputs(${projId})">💾 Save</button>
             <button class="btn btn-ghost btn-sm" id="bc-use-em-btn">📥 Use Equipment Matrix Data</button>
@@ -4173,7 +4174,7 @@ function openBASCalc(projId) {
               <div class="f3">
                 <div class="fg"><label class="fl">Building Square Feet</label><input class="fi bc-inp" id="bc-sqft" type="number" value="${sqft}" placeholder="e.g. 50000">${_bcHintSpan(rSqft.hint)}</div>
                 <div class="fg"><label class="fl">Heating Source</label><select class="fs bc-inp" id="bc-heatSrc">
-                  <option value="1" ${rHeatSrc.value == 1 ? 'selected' : ''}>1 — Gas (MCF)</option>
+                  <option value="1" ${rHeatSrc.value == 1 ? 'selected' : ''}>1 — Gas (Thousand Cubic Feet)</option>
                   <option value="2" ${rHeatSrc.value == 2 ? 'selected' : ''}>2 — Electric (kWh)</option>
                   <option value="3" ${rHeatSrc.value == 3 ? 'selected' : ''}>3 — Gas (Therms)</option>
                   <option value="4" ${rHeatSrc.value == 4 ? 'selected' : ''}>4 — Both (Electric + Gas)</option>
@@ -4190,7 +4191,7 @@ function openBASCalc(projId) {
                   <div style="font-size:14px;font-weight:700;font-family:var(--mono);color:var(--em2)" id="bc-dispTons">—</div>
                 </div>
                 <div style="text-align:center;padding:6px 10px;background:var(--s3);border-radius:7px;border:1px solid var(--border)">
-                  <div style="font-size:9px;color:var(--text3);text-transform:uppercase">Maximum Heating (thousand Btu per hour)</div>
+                  <div style="font-size:9px;color:var(--text3);text-transform:uppercase">Maximum Heating (thousand British Thermal Units per hour)</div>
                   <div style="font-size:14px;font-weight:700;font-family:var(--mono);color:var(--amber)" id="bc-dispMbtu">—</div>
                 </div>
                 <div style="text-align:center;padding:6px 10px;background:var(--s3);border-radius:7px;border:1px solid var(--border)">
@@ -4210,7 +4211,7 @@ function openBASCalc(projId) {
             </div>
             <div style="padding:0 14px 4px">${_bcHintSpan(rCity.hint)}</div>
             <div style="padding:14px;display:flex;align-items:center;gap:16px;flex-wrap:wrap">
-              <div style="font-size:12px;color:var(--text2)" id="bc-weatherStatus">${bc.weatherOverride ? 'Weather: uploaded data (' + bc.weatherOverride.rowsParsed + ' rows)' : 'Weather: typical-year data from the BAS Savings Calc template'}</div>
+              <div style="font-size:12px;color:var(--text2)" id="bc-weatherStatus">${bc.weatherOverride ? 'Weather: uploaded data (' + bc.weatherOverride.rowsParsed + ' rows)' : 'Weather: typical-year data from the Building Automation System Savings Calc template'}</div>
               <label class="btn btn-ghost btn-sm" style="cursor:pointer">
                 🌡️ Temperature CSV
                 <input type="file" accept=".csv,.txt" id="bc-weatherUpload" style="display:none" onchange="_bcHandleCSV(this,${projId})">
@@ -4270,9 +4271,9 @@ function openBASCalc(projId) {
                   <div class="fg"><label class="fl">Unoccupied Heating Setpoint (°F)</label><input class="fi bc-inp" id="bc-newHeatUnocc" type="number" value="${rNewHeatUnocc.value}">${_bcHintSpan(rNewHeatUnocc.hint)}</div>
                 </div>
                 <div class="fg"><label class="fl">Outside Air Shut Off When Unoccupied?</label><select class="fs bc-inp" id="bc-newOAShutoff">
-                  <option value="no" ${(bc.newOAShutoff || 'yes') === 'no' ? 'selected' : ''}>No</option>
-                  <option value="yes" ${(bc.newOAShutoff || 'yes') === 'yes' ? 'selected' : ''}>Yes</option>
-                </select></div>
+                  <option value="no" ${(rNewOAShutoff.value || 'yes') === 'no' ? 'selected' : ''}>No</option>
+                  <option value="yes" ${(rNewOAShutoff.value || 'yes') === 'yes' ? 'selected' : ''}>Yes</option>
+                </select>${_bcHintSpan(rNewOAShutoff.hint)}</div>
                 <div style="font-size:11px;font-weight:600;color:var(--text2);margin:10px 0 6px;text-transform:uppercase;letter-spacing:1px">Schedule (24-Hour)</div>
                 <div class="f2">
                   <div class="fg"><label class="fl">Monday–Friday Start</label><input class="fi bc-inp" id="bc-newMfOn" type="number" min="0" max="24" value="${rNewMfOn.value}">${_bcHintSpan(rNewMfOn.hint)}</div>
@@ -4300,7 +4301,7 @@ function openBASCalc(projId) {
                 <div class="fg"><label class="fl">Existing Heating kWh (from Utility Analysis)</label><input class="fi bc-inp" id="bc-calHeatKwh" type="number" value="${rCalHeatKwh.value}">${_bcHintSpan(rCalHeatKwh.hint)}</div>
                 ${
                   parseInt(rHeatSrc.value) === 1 || parseInt(rHeatSrc.value) === 3 || parseInt(rHeatSrc.value) === 4
-                    ? `<div class="fg"><label class="fl">Existing Heating Gas — ${parseInt(rHeatSrc.value) === 1 ? 'MCF' : 'Therms'} (from Utility Analysis)</label><input class="fi bc-inp" id="bc-calHeatGas" type="number" value="${rCalHeatGas.value}">${_bcHintSpan(rCalHeatGas.hint)}<div style="font-size:9px;color:var(--text3);margin-top:2px">${parseInt(rHeatSrc.value) === 4 ? 'Splits combined "Both" heating between kWh and gas by share of load' : 'Calibrates the existing gas heating estimate to match utility analysis'}</div></div>`
+                    ? `<div class="fg"><label class="fl">Existing Heating Gas — ${parseInt(rHeatSrc.value) === 1 ? 'Thousand Cubic Feet' : 'Therms'} (from Utility Analysis)</label><input class="fi bc-inp" id="bc-calHeatGas" type="number" value="${rCalHeatGas.value}">${_bcHintSpan(rCalHeatGas.hint)}<div style="font-size:9px;color:var(--text3);margin-top:2px">${parseInt(rHeatSrc.value) === 4 ? 'Splits combined "Both" heating between kWh and gas by share of load' : 'Calibrates the existing gas heating estimate to match utility analysis'}</div></div>`
                     : ''
                 }
                 <div style="text-align:center;padding:8px;background:var(--s3);border-radius:7px;border:1px solid var(--border)">
@@ -4484,7 +4485,9 @@ function _bcDoCalc(projId) {
     el('bc-weatherStatus').textContent = p.basCalc?.weatherOverride
       ? 'Weather: uploaded data (' + p.basCalc.weatherOverride.rowsParsed + ' rows)'
       : weather
-        ? 'Weather: typical-year data from the BAS Savings Calc template (' + weather.cityName + ')'
+        ? 'Weather: typical-year data from the Building Automation System Savings Calc template (' +
+          weather.cityName +
+          ')'
         : 'Weather: no data available for this location — select a different city or upload a temperature CSV';
   }
   if (!weather) {
@@ -4748,13 +4751,23 @@ function _bcDoCalc(projId) {
   // building has any real electric-heat evidence. Only activates when the kWh bucket is actually
   // empty (rawExHeatSetbackTotal <= 0) — a true mixed-load building (both buckets populated)
   // still falls through to the existing kWh-only calibration below, unchanged.
+  // 2026-09-25 fix (heating outside-air double count): the combine step below now nets the
+  // outside-air load against the calibrated setback load instead of adding them — Existing/New
+  // heating = MAX(setback*heatAdj - OA, 0) + OA, matching the Excel template's own netting
+  // (Existing!D168: =MAX(setback_load - OA_load/12, 0), 2026-09-22-bas-calc-excel-parity dump
+  // line 152 — "prevents double counting"). That combine formula is algebraically
+  // MAX(setback*heatAdj, OA), so the calibration equation "entered UA figure = model total" no
+  // longer has an OA subtraction term (heatAdj = entered / rawSetbackTotal, not
+  // (entered - rawOATotal) / rawSetbackTotal like the old straight-sum formula) — re-derived
+  // closed form, valid whenever the entered figure is at least the raw OA total (the normal
+  // case); if it is below the OA floor, the MAX clamp itself (not this factor) determines the
+  // result, same as the existing coolAdjNegative warning pattern for cooling.
   if (heatSrc === 1 || heatSrc === 3) {
-    if (calHeatGas > 0 && rawExHeatGasSetbackTotal > 0)
-      heatAdj = (calHeatGas - rawExHeatGasOATotal) / rawExHeatGasSetbackTotal;
+    if (calHeatGas > 0 && rawExHeatGasSetbackTotal > 0) heatAdj = calHeatGas / rawExHeatGasSetbackTotal;
   } else if (heatSrc === 4 && rawExHeatSetbackTotal <= 0 && rawExHeatGasSetbackTotal > 0) {
-    if (calHeatGas > 0) heatAdj = (calHeatGas - rawExHeatGasOATotal) / rawExHeatGasSetbackTotal;
+    if (calHeatGas > 0) heatAdj = calHeatGas / rawExHeatGasSetbackTotal;
   } else if (calHeatKwh > 0 && rawExHeatSetbackTotal > 0) {
-    heatAdj = (calHeatKwh - rawExHeatOATotal) / rawExHeatSetbackTotal;
+    heatAdj = calHeatKwh / rawExHeatSetbackTotal;
   }
   if (el('bc-adjCool')) el('bc-adjCool').textContent = coolAdj.toFixed(3);
   if (el('bc-adjHeat')) el('bc-adjHeat').textContent = heatAdj.toFixed(3);
@@ -4765,13 +4778,21 @@ function _bcDoCalc(projId) {
   const coolAdjNegative = calCoolKwh > 0 && coolAdj < 0;
   if (el('bc-coolAdjWarn')) el('bc-coolAdjWarn').style.display = coolAdjNegative ? '' : 'none';
 
-  // Calibrated monthly totals — setback scaled by the factor, OA left raw (see note above)
+  // Calibrated monthly totals — Cooling: setback scaled by the factor, OA added straight (see
+  // note above; cooling has no Excel netting/clamp — confirmed Excel-equivalent by the
+  // 2026-09-22 parity audit, "do not 'fix' the cooling calibration" — cooling is intentionally
+  // unchanged by this fix).
   const exCoolM = exCoolSetbackM.map((v, m) => v * coolAdj + exCoolOAM[m]);
   const newCoolM = newCoolSetbackM.map((v, m) => v * coolAdj + newCoolOAM[m]);
-  const exHeatKwhM = exHeatKwhSetbackM.map((v, m) => v * heatAdj + exHeatKwhOAM[m]);
-  const newHeatKwhM = newHeatKwhSetbackM.map((v, m) => v * heatAdj + newHeatKwhOAM[m]);
-  const exHeatGasM = exHeatGasSetbackM.map((v, m) => v * heatAdj + exHeatGasOAM[m]);
-  const newHeatGasM = newHeatGasSetbackM.map((v, m) => v * heatAdj + newHeatGasOAM[m]);
+  // Heating: net the outside-air load against the calibrated setback load and clamp at 0, then
+  // add OA back — MAX(setback*heatAdj - OA, 0) + OA, matching Excel!D168's
+  // MAX(setback - OA/12, 0) netting (2026-09-25 fix — was a straight, double-counting sum before
+  // this). Applied for both Existing and New, both the kWh-denominated and gas-denominated
+  // heating buckets (every heatSrc routes into one or both of those two bucket pairs above).
+  const exHeatKwhM = exHeatKwhSetbackM.map((v, m) => Math.max(v * heatAdj - exHeatKwhOAM[m], 0) + exHeatKwhOAM[m]);
+  const newHeatKwhM = newHeatKwhSetbackM.map((v, m) => Math.max(v * heatAdj - newHeatKwhOAM[m], 0) + newHeatKwhOAM[m]);
+  const exHeatGasM = exHeatGasSetbackM.map((v, m) => Math.max(v * heatAdj - exHeatGasOAM[m], 0) + exHeatGasOAM[m]);
+  const newHeatGasM = newHeatGasSetbackM.map((v, m) => Math.max(v * heatAdj - newHeatGasOAM[m], 0) + newHeatGasOAM[m]);
   const exPeakCoolM = exPeakCoolSetbackM.map((v, m) => v * coolAdj + exPeakCoolOAM[m]);
   const newPeakCoolM = newPeakCoolSetbackM.map((v, m) => v * coolAdj + newPeakCoolOAM[m]);
 
@@ -4788,7 +4809,7 @@ function _bcDoCalc(projId) {
     annTotalKwh = 0,
     annPeak = 0,
     annNonPeak = 0;
-  const gasLabel = heatSrc === 1 ? 'MCF' : heatSrc === 3 ? 'Therms' : 'Therms';
+  const gasLabel = heatSrc === 1 ? 'Thousand Cubic Feet' : heatSrc === 3 ? 'Therms' : 'Therms';
 
   for (let m = 0; m < 12; m++) {
     const cs = exCoolM[m] - newCoolM[m];
