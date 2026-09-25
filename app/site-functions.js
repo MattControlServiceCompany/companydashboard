@@ -1776,6 +1776,14 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.24.19',
+    date: '2026-09-24',
+    title: 'Quarterly Report: spelled out the Control Service Company Compensation heading, matched the Total Portfolio Savings Percent to the building row for a zero-bill period, and replaced a false On Track status with a plain No Service Agreement on file label for un-contracted buildings',
+    items: [
+      { type: 'fix', text: 'Quarterly Report: spelled out the Control Service Company Compensation heading, matched the Total Portfolio Savings Percent to the building row for a zero-bill period, and replaced a false On Track status with a plain No Service Agreement on file label for un-contracted buildings' },
+    ],
+  },
+  {
     v: 'v2026.09.24.18',
     date: '2026-09-24',
     title: 'WoodRiver Energy gas bills: Fuel MMBtu amount and the printed rate',
