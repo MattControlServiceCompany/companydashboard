@@ -281,6 +281,104 @@ var _emUploadTargetPid = null;
 // Stores custom widths set by the user dragging column borders: { colIndex: widthPx }
 var _emColWidths = {};
 
+/* ── DETAIL PANEL RESIZE STATE (item em-panel-resize-2026-09-25) ──────────────
+   The right-side equipment detail panel (#em-compliance-detail-panel, shared by
+   emShowComplianceDetail AND emShowAutoKeyDetail — same id/shell, see their
+   header comments) is fixed-width, which clips long point values/category
+   labels (Matt, 2026-09-25 screenshot: "70618…", "Primary Air Sour…"). This
+   adds a drag handle on the panel's LEFT edge so the user can widen it.
+   Width is remembered per browser in localStorage (not DB — this is a local
+   viewing preference, not app data that should sync/replicate across devices). */
+var EM_DETAIL_PANEL_MIN_WIDTH = 380; // current fixed width — never shrink below this
+var EM_DETAIL_PANEL_WIDTH_KEY = 'ch_em_detail_panel_width';
+var _emPanelResizing = null; // { startX, startW, handle } while dragging
+var _emPanelResizeListenersAttached = false;
+
+function emDetailPanelMaxWidth() {
+  var vw = (typeof window !== 'undefined' && window.innerWidth) || 1200;
+  return Math.round(vw * 0.8);
+}
+
+function emLoadDetailPanelWidth() {
+  try {
+    var raw = window.localStorage.getItem(EM_DETAIL_PANEL_WIDTH_KEY);
+    var w = raw ? parseInt(raw, 10) : NaN;
+    if (!isNaN(w)) return Math.max(EM_DETAIL_PANEL_MIN_WIDTH, Math.min(w, emDetailPanelMaxWidth()));
+  } catch (e) {
+    // localStorage unavailable (private mode, disabled, etc.) — fall back to default width
+  }
+  return EM_DETAIL_PANEL_MIN_WIDTH;
+}
+
+function emSaveDetailPanelWidth(w) {
+  try {
+    window.localStorage.setItem(EM_DETAIL_PANEL_WIDTH_KEY, String(w));
+  } catch (e) {
+    // no persistence available — width still applies for this session via the DOM
+  }
+}
+
+/* Delegated so it survives the panel being torn down + rebuilt on every open/
+   re-render (same reasoning as _emAttachPanelDelegatedListeners above — the
+   handle div is destroyed and recreated each time emShowComplianceDetail or
+   emShowAutoKeyDetail runs, so per-node listeners would need re-attaching
+   every render anyway). Wired once per page load. */
+function _emAttachPanelResizeListeners() {
+  if (_emPanelResizeListenersAttached) return;
+  if (typeof document === 'undefined' || !document.addEventListener) return;
+  _emPanelResizeListenersAttached = true;
+
+  document.addEventListener('mousedown', function (e) {
+    var h = e.target.closest ? e.target.closest('.em-panel-resize-handle') : null;
+    if (!h) return;
+    var panel = document.getElementById('em-compliance-detail-panel');
+    if (!panel) return;
+    e.preventDefault();
+    h.classList.add('dragging');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    _emPanelResizing = { startX: e.clientX, startW: panel.offsetWidth, handle: h };
+  });
+
+  document.addEventListener('mousemove', function (e) {
+    if (!_emPanelResizing) return;
+    var panel = document.getElementById('em-compliance-detail-panel');
+    if (!panel) return;
+    // Panel is anchored right:0 — dragging the left-edge handle further left
+    // (mouse clientX decreases) must widen the panel.
+    var newW = _emPanelResizing.startW + (_emPanelResizing.startX - e.clientX);
+    newW = Math.max(EM_DETAIL_PANEL_MIN_WIDTH, Math.min(newW, emDetailPanelMaxWidth()));
+    panel.style.width = newW + 'px';
+  });
+
+  document.addEventListener('mouseup', function () {
+    if (!_emPanelResizing) return;
+    var panel = document.getElementById('em-compliance-detail-panel');
+    if (panel) emSaveDetailPanelWidth(panel.offsetWidth);
+    _emPanelResizing.handle.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    _emPanelResizing = null;
+  });
+}
+
+/* Shared panel-shell pieces used by BOTH emShowComplianceDetail and
+   emShowAutoKeyDetail so the resize behavior lives in exactly one place
+   (DRY — see the panelId comment in each function for why they share a
+   single #em-compliance-detail-panel element/id already). */
+function emDetailPanelStyleAttr() {
+  return (
+    'position:fixed;top:0;right:0;width:' +
+    emLoadDetailPanelWidth() +
+    'px;height:100vh;background:var(--bg);' +
+    'border-left:2px solid var(--border);box-shadow:-4px 0 16px rgba(0,0,0,0.18);z-index:9999;' +
+    'display:flex;flex-direction:column;overflow:hidden'
+  );
+}
+function emDetailPanelResizeHandleHtml() {
+  return '<div class="em-panel-resize-handle" title="Drag to resize"></div>';
+}
+
 function emGetActiveProjId() {
   return window._activeProjId || window._emActivePid || null;
 }
@@ -4091,6 +4189,10 @@ function emInjectMatrixCSS() {
     '.em-table-wrap th { position: relative; }',
     '.em-col-resize-handle { position:absolute; right:0; top:0; width:6px; height:100%; cursor:col-resize; z-index:1; }',
     '.em-col-resize-handle:hover, .em-col-resize-handle.dragging { background: var(--accent); opacity:0.4; }',
+    // Equipment detail side panel (#em-compliance-detail-panel) left-edge resize handle
+    // (item em-panel-resize-2026-09-25). Sits just inside the panel's left border.
+    '.em-panel-resize-handle { position:absolute; left:0; top:0; bottom:0; width:6px; cursor:col-resize; z-index:var(--z-chrome,10); background:transparent; }',
+    '.em-panel-resize-handle:hover, .em-panel-resize-handle.dragging { background: var(--accent); opacity:0.4; }',
   ].join('\n');
   document.head.appendChild(style);
 }
@@ -5785,7 +5887,13 @@ function emBuildAllPointsTableHtml(row) {
         '">' +
         emHtmlEsc(_arKey) +
         '</td>' +
-        '<td style="padding:2px 10px;border-bottom:1px solid var(--border);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text2)">' +
+        // em-panel-resize-2026-09-25: the Value cell clips long values ("706182" cut to "70618…")
+        // — add a title so the full value (with its exact text/units) is available on hover,
+        // matching the Point Name cell's existing title above and the ASHRAE Category badge's
+        // existing title (built into _arBadge). Skip the title for the empty-state placeholder.
+        '<td style="padding:2px 10px;border-bottom:1px solid var(--border);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text2)"' +
+        (_arVal === '' ? '' : ' title="' + emHtmlEsc(String(_arVal)) + '"') +
+        '>' +
         _arValDisplay +
         '</td>' +
         '<td style="padding:2px 0 2px 10px;border-bottom:1px solid var(--border);overflow:hidden">' +
@@ -9738,9 +9846,10 @@ function emShowComplianceDetail(rowId) {
   var panelHtml =
     '<div id="' +
     panelId +
-    '" style="position:fixed;top:0;right:0;width:380px;height:100vh;background:var(--bg);' +
-    'border-left:2px solid var(--border);box-shadow:-4px 0 16px rgba(0,0,0,0.18);z-index:9999;' +
-    'display:flex;flex-direction:column;overflow:hidden">' +
+    '" style="' +
+    emDetailPanelStyleAttr() +
+    '">' +
+    emDetailPanelResizeHandleHtml() +
     '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;' +
     'border-bottom:1px solid var(--border);background:var(--s1);flex-shrink:0">' +
     '<div>' +
@@ -9776,6 +9885,7 @@ function emShowComplianceDetail(rowId) {
   var container = document.createElement('div');
   container.innerHTML = panelHtml;
   document.body.appendChild(container.firstChild);
+  _emAttachPanelResizeListeners();
 }
 
 /* ── emToggleAllPointsInDetail (561fe067) ────────────────────────────────────
@@ -9863,9 +9973,10 @@ function emShowAutoKeyDetail(rowId) {
   var panelHtml =
     '<div id="' +
     panelId +
-    '" style="position:fixed;top:0;right:0;width:380px;height:100vh;background:var(--bg);' +
-    'border-left:2px solid var(--border);box-shadow:-4px 0 16px rgba(0,0,0,0.18);z-index:9999;' +
-    'display:flex;flex-direction:column;overflow:hidden">' +
+    '" style="' +
+    emDetailPanelStyleAttr() +
+    '">' +
+    emDetailPanelResizeHandleHtml() +
     '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;' +
     'border-bottom:1px solid var(--border);background:var(--s1);flex-shrink:0">' +
     '<div>' +
@@ -9885,6 +9996,7 @@ function emShowAutoKeyDetail(rowId) {
   var container = document.createElement('div');
   container.innerHTML = panelHtml;
   document.body.appendChild(container.firstChild);
+  _emAttachPanelResizeListeners();
 }
 
 /* ── emSaveEquipConfigFlagFromPanel ──────────────────────────────────────────
