@@ -1776,6 +1776,14 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.25.15',
+    date: '2026-09-25',
+    title: 'Utility Data and the Quarterly report now spell out abbreviated labels in full, the Utility Data page no longer clips content on phones, and the ASHRAE 36 cover-scope test moved into the tools folder.',
+    items: [
+      { type: 'fix', text: 'Utility Data and the Quarterly report now spell out abbreviated labels in full, the Utility Data page no longer clips content on phones, and the ASHRAE 36 cover-scope test moved into the tools folder.' },
+    ],
+  },
+  {
     v: 'v2026.09.25.14',
     date: '2026-09-25',
     title: 'Utility Data - meter Bills - Estimate missing period rows no longer count as flagged, and the gap-day count and the estimate row\'s day count now always agree.',
