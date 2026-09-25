@@ -1792,9 +1792,14 @@ function commodityPill(c) {
   return `<span class="ud-meter-pill ${map[c] || 'ud-meter-elec'}">${c || '—'}</span>`;
 }
 function meterLabel(m) {
-  const acct = m.account ? m.account : '—';
-  const mtr = m.meter ? m.meter : '—';
-  return `${m.commodity} · Account ${acct} · Meter ${mtr}`;
+  // Fix (2026-09-25, bill-panel-followup, case 3): a meter missing its
+  // account/meter number used to print the placeholder dash anyway
+  // ("Account — · Meter —"), which reads as a filled-in-but-blank value.
+  // Omit the empty parts instead of showing them with a placeholder.
+  const parts = [m.commodity];
+  if (m.account) parts.push('Account ' + m.account);
+  if (m.meter) parts.push('Meter ' + m.meter);
+  return parts.join(' · ');
 }
 // Normalize date strings to ISO YYYY-MM-DD.
 // KGS bills give dates as MM-DD-YY (e.g. "01-19-26" = Jan 19 2026).

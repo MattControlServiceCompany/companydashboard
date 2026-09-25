@@ -101,6 +101,28 @@ function _bcrBillLabel(projName, bldgName, meterLbl, bill) {
     (bill && bill.id ? bill.id : '?')
   );
 }
+// Fix (2026-09-25, bill-panel-followup, case 1): a scan can propose a value
+// derived from dividing two re-extracted numbers (e.g. RkVA Rate = charge /
+// quantity), which produces floating-point noise the printed bill never had
+// ("0.6629554655870445" instead of "0.663"). Show every value at the bill's
+// own printed precision instead: money fields always to the cent; other
+// numeric fields matched to however many decimals the CURRENT (already-
+// printed) value has. Non-numeric values (dates, account numbers with no
+// decimal point) pass through unchanged.
+function _bcrFormatDisplayValue(field, value, currentValue) {
+  if (value == null || value === '') return value;
+  const str = String(value).trim();
+  if (!/^-?[\d,]*\.?\d+$/.test(str)) return value; // not a plain number — leave dates etc. alone
+  const num = parseFloat(str.replace(/,/g, ''));
+  if (isNaN(num)) return value;
+  if (/charge|amount|due|cost|total/i.test(field || '')) return num.toFixed(2);
+  const curStr = currentValue != null ? String(currentValue).trim() : '';
+  const curDecimals = /^-?[\d,]*\.?\d+$/.test(curStr) ? (curStr.split('.')[1] || '').length : null;
+  const valDecimals = (str.split('.')[1] || '').length;
+  if (curDecimals != null && valDecimals > curDecimals) return num.toFixed(curDecimals);
+  if (curDecimals == null && valDecimals > 4) return num.toFixed(3); // no printed value to match — fall back to 3dp
+  return value;
+}
 function _bcrMedian(nums) {
   const arr = nums.filter((n) => typeof n === 'number' && !isNaN(n)).sort((a, b) => a - b);
   if (!arr.length) return null;
@@ -220,7 +242,7 @@ async function _bcrScanKGSUnmatched(h) {
         currentValue: b.TotalCurrentCharges,
         correctedValue: out.TotalCurrentCharges,
         reason:
-          "The printed total was 100 times the sum of this bill's own charges (an OCR decimal drop). Corrected using the bill's own charges.",
+          "The printed total was 100 times the sum of this bill's own charges (the scanner likely dropped two decimal places). Corrected using the bill's own charges.",
       });
     }
     if (b.TotalAmountDue != null && String(out.TotalAmountDue) !== String(b.TotalAmountDue)) {
@@ -509,7 +531,7 @@ async function _bcrScanKGSMeterBills(h) {
         currentValue: bill.totalCost,
         correctedValue: out.TotalCurrentCharges,
         reason:
-          "The printed total was 100 times the sum of this bill's own charges (an OCR decimal drop), re-read from the bill's own stored PDF and checked against this meter's own bill history.",
+          "The printed total was 100 times the sum of this bill's own charges (the scanner likely dropped two decimal places), re-read from the bill's own stored PDF and checked against this meter's own bill history.",
       });
     }
   }
@@ -763,7 +785,7 @@ async function _bcrScanLouisburgAccountOCR(h) {
         reason:
           'Every other bill on this meter shows account number ' +
           modeRaw +
-          ". This one bill's account number differs by a single digit — a likely OCR misread on this bill's own PDF.",
+          ". This one bill's account number differs by a single digit — the scanner likely misread one digit on this bill's own PDF.",
       });
     }
   }
@@ -934,6 +956,16 @@ async function _bcrScanEvergyRkva(h) {
       });
       continue;
     }
+    // Fix (2026-09-25, bill-panel-followup, case 1): newRate comes straight out
+    // of a charge/quantity division on re-extracted OCR text, so it carries
+    // floating-point noise the printed bill never had (e.g.
+    // "0.6629554655870445"). Round the value we actually PROPOSE AND STORE
+    // to the same 3-decimal precision this scan already uses everywhere else
+    // to compare RkVA rates (see modeEntry above) — storing the raw float
+    // would both show as an ugly number and make this bill look like a
+    // fresh mismatch against its own meter history the next time this scan
+    // runs.
+    const roundedRate = Math.round(parseFloat(newRate) * 1000) / 1000;
     h.onRow({
       _rowId: 'evg:' + bill.id + ':rkvaRate',
       store: 'meter',
@@ -950,9 +982,9 @@ async function _bcrScanEvergyRkva(h) {
       period,
       pdfKey: bill.pdfKey || null,
       currentValue: bill.rkvaRate,
-      correctedValue: newRate,
+      correctedValue: roundedRate,
       reason:
-        "This bill's printed demand charge rate did not reconcile with its own printed charge and quantity (an OCR digit misread). Corrected using the bill's own charge and quantity.",
+        "This bill's printed demand charge rate did not match its own printed charge and quantity (the scanner likely misread one digit). Corrected using the bill's own charge and quantity.",
     });
   }
 }
@@ -1308,10 +1340,10 @@ function _bcrRenderGroups() {
         _bcrEsc(row.field) +
         '</td>' +
         '<td>' +
-        _bcrEsc(row.currentValue) +
+        _bcrEsc(_bcrFormatDisplayValue(row.field, row.currentValue, row.currentValue)) +
         '</td>' +
         '<td><b>' +
-        _bcrEsc(row.correctedValue) +
+        _bcrEsc(_bcrFormatDisplayValue(row.field, row.correctedValue, row.currentValue)) +
         '</b></td>' +
         '<td class="bcr-reason">' +
         _bcrEsc(row.reason) +

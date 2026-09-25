@@ -58,7 +58,20 @@ function _looksLikeAddress(s) {
 // perfectly formed date pattern.
 function _stripAddressTrailingJunk(raw) {
   if (!raw) return null;
-  const tokens = raw.split(/\s+/).filter(Boolean);
+  // Fix (2026-09-25, bill-panel-followup, case 6): WoodRiver Energy's
+  // per-site ServiceAddress is a short building label, a bare dash, then the
+  // real street address (e.g. "BofE - 101 E South St", "High Schl - 19701 S
+  // Ridgeview"). The house-number-first logic below assumes token 0 IS the
+  // house number, so on this format it kept only the label ("BofE") and then
+  // broke on the real house number as if it were trailing garbage — every
+  // WoodRiver site ended up with an unrecognizable one-word "address",
+  // which fails _looksLikeAddress and shows as "(needs review)" on every
+  // site tab even though the bill's own fields are all present. Strip a
+  // "label - " prefix first so the rest of this function runs on the real
+  // address.
+  const dashSplit = raw.split(/\s+[-–—]\s+/);
+  const body = dashSplit.length === 2 && /^\d/.test(dashSplit[1]) ? dashSplit[1] : raw;
+  const tokens = body.split(/\s+/).filter(Boolean);
   if (tokens.length === 0) return null;
   const kept = [tokens[0]];
   for (let i = 1; i < tokens.length; i++) {

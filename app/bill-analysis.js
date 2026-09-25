@@ -17917,7 +17917,21 @@ function renderMultiBillUI(bills, box) {
           : typeof _looksLikeAddress === 'function'
             ? _looksLikeAddress(_cleanAddr)
             : true;
-      if (!_plausible) return isUnassigned ? _fallbackLabel : acct + ' (needs review)';
+      // Fix (2026-09-25, bill-panel-followup, case 6): this used to append
+      // "(needs review)" purely from the address heuristic above, with no
+      // regard for whether the bill's own data is actually incomplete —
+      // disagreeing with the "All expected fields present" banner
+      // (renderPDFFields' own error/warn count) whenever the heuristic
+      // false-flagged a fine bill. Reuse that SAME warning-level check here
+      // (one shared check, not two) so the tab never says "needs review" for
+      // a bill the field check calls clean.
+      if (!_plausible) {
+        if (isUnassigned) return _fallbackLabel;
+        const _bwIdx = bills.indexOf(b);
+        const _bw = (warnings[_bwIdx] && warnings[_bwIdx].warnings) || [];
+        const _fieldsClean = !_bw.some((w) => w.level === 'error' || w.level === 'warn');
+        return _fieldsClean ? acct : acct + ' (needs review)';
+      }
       const addr = _cleanAddr;
       const afterComma = addr.includes(',') ? addr.split(',').slice(1).join(',').trim() : addr;
       return (
@@ -18952,6 +18966,11 @@ function renderPDFFields(parsed, warnings) {
     Commodity: 'Commodity',
     UtilityCompany: 'Utility Company',
     CustomerName: 'Customer Name',
+    // Fix (2026-09-25, bill-panel-followup, case 4): no LABELS entry meant
+    // this fell back to LABELS[k]||k and printed the raw field name
+    // ("CUSTOMERNUMBER") — same class of bug as the Fix (2026-09-24) note
+    // below on the WRE MMBtu fields.
+    CustomerNumber: 'Customer Number',
     AccountNumber: 'Account Number',
     ServiceAddress: 'Service Address',
     RateSchedule: 'Rate Schedule',
@@ -19004,7 +19023,7 @@ function renderPDFFields(parsed, warnings) {
     PTSRate: 'PTS Rate',
     NaturalGasTherms: 'Natural Gas Therms',
     NaturalGasCCF: 'Natural Gas (CCF)',
-    NaturalGasMMbtu: 'Natural Gas (MMbtu)',
+    NaturalGasMMbtu: 'Natural Gas (MMBtu)', // Fix (2026-09-25, bill-panel-followup, case 5): MMbtu -> MMBtu
     ProductionMonth: 'Production Month',
     McfBilled: 'Usage (Mcf)',
     GasCharge: 'Gas Charge',
@@ -19314,7 +19333,7 @@ function renderPDFFields(parsed, warnings) {
       // invoice, which both print Mmbtu and Fuel as separate columns and never sum
       // them together).
       fuelField: '_wreTriggerFuelMMbtu',
-      unit: 'MMbtu',
+      unit: 'MMBtu', // Fix (2026-09-25, bill-panel-followup, case 5): MMbtu -> MMBtu
       rateKey: null,
       printedRateField: '_wreTriggerRate',
       printedIsAuthoritative: true,
@@ -19329,7 +19348,7 @@ function renderPDFFields(parsed, warnings) {
       chargeField: '_wreIndexCharge',
       qtyField: '_wreIndexMMbtu',
       fuelField: '_wreIndexFuelMMbtu',
-      unit: 'MMbtu',
+      unit: 'MMBtu', // Fix (2026-09-25, bill-panel-followup, case 5): MMbtu -> MMBtu
       rateKey: null,
       printedRateField: '_wreIndexRate',
       printedIsAuthoritative: true,
@@ -19348,7 +19367,7 @@ function renderPDFFields(parsed, warnings) {
       label: 'Special Weather Event',
       chargeField: '_wreSWECharge',
       qtyField: '_wreSWEMMbtu',
-      unit: 'MMbtu',
+      unit: 'MMBtu', // Fix (2026-09-25, bill-panel-followup, case 5): MMbtu -> MMBtu
       rateKey: null,
       hideIfNull: true,
     },
@@ -20911,8 +20930,11 @@ async function viewSavedPDF(id, pageStart, pageEnd, pdfKey) {
     }
   }
   if (!b64) {
+    // Fix (2026-09-25, bill-panel-followup, case 7): the toast used to name
+    // internal storage mechanisms and a raw storage key — keep that detail
+    // in the console only; the user-facing message stays in plain words.
     console.warn('[viewSavedPDF] no PDF found for', { id, pageStart, pageEnd, pdfKey });
-    showToast('PDF file not found — tried IndexedDB + localStorage for key ' + (pdfKey || '?'));
+    showToast('No PDF is stored for this bill.');
     return;
   }
 
