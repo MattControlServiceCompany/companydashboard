@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.25.12'; // BAS Calc: the Effective Schedules Import window no longer stays open when you switch to another tab or open BAS Calc. Projects: the New Energy Project form can now copy field values from another project you pick, with the field labeled Project to copy from. Equipment Matrix: the equipment points panel can be dragged wider to show long values, and it stays at that width after you reload the page.
+  var CH_VERSION = 'v2026.09.25.13'; // Cost Estimate: added an Audit Estimate section with hours and cost for a Building Automation System Audit or a Full Facility Audit, computed from the Equipment Matrix, plus buttons to generate a client-facing Audit Proposal document. Equipment Matrix: fixed equipment type detection so exterior lighting relays, a leak sensor, and a glycol feed system show their real equipment type instead of Other. Bill PDF import: WoodRiver Energy site tabs now show (needs review) whenever a bill has a real missing field, no matter which label the tab shows.
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
