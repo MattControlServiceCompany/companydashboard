@@ -1776,6 +1776,14 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.25.14',
+    date: '2026-09-25',
+    title: 'Utility Data - meter Bills - Estimate missing period rows no longer count as flagged, and the gap-day count and the estimate row\'s day count now always agree.',
+    items: [
+      { type: 'fix', text: 'Utility Data - meter Bills - Estimate missing period rows no longer count as flagged, and the gap-day count and the estimate row\'s day count now always agree.' },
+    ],
+  },
+  {
     v: 'v2026.09.25.13',
     date: '2026-09-25',
     title: 'Cost Estimate: added an Audit Estimate section with hours and cost for a Building Automation System Audit or a Full Facility Audit, computed from the Equipment Matrix, plus buttons to generate a client-facing Audit Proposal document. Equipment Matrix: fixed equipment type detection so exterior lighting relays, a leak sensor, and a glycol feed system show their real equipment type instead of Other. Bill PDF import: WoodRiver Energy site tabs now show (needs review) whenever a bill has a real missing field, no matter which label the tab shows.',
