@@ -886,6 +886,9 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
         amount: parseFloat(bill.totalCost) || parseFloat(bill.cost) || 0,
         billDate: bill.billDate || bill.end || '',
         pdfKey: bill.pdfKey || null,
+        // Gap-fill estimate rows (feat/shh-june-gap-estimate, 2026-09-25): pass through so
+        // rptPageAppendixBills can label the row "Estimated" instead of showing it as a real bill.
+        estimated: !!bill.estimated,
       });
     });
   });
@@ -9205,8 +9208,14 @@ function rptPageAppendixBills(n, d, appLetter) {
         // whose .gallons field is already sourced from bill.gallonsDelivered upstream — NOT a raw
         // utility bill object. bill.gallonsDelivered does not exist on this shape (empirically
         // verified: reading it produced 0 for a known-good Circle Grove propane bill).
+        // Gap-fill estimate rows (feat/shh-june-gap-estimate, 2026-09-25): never shown as a
+        // real bill in a client-facing report — tint the row and label the kWh cell instead
+        // of a real amount/date, since there is no real cost or bill date for this period.
+        var _estRow = !!bill.estimated;
         var rowHTML =
-          '<tr>' +
+          '<tr' +
+          (_estRow ? ' style="background:rgba(245,158,11,.12)"' : '') +
+          '>' +
           '<td contenteditable="true">' +
           bill.building +
           '</td>' +
@@ -9218,6 +9227,7 @@ function rptPageAppendixBills(n, d, appLetter) {
           '</td>' +
           '<td class="rpt-n" contenteditable="true">' +
           (_kwh ? Math.round(_kwh).toLocaleString() : '—') +
+          (_estRow ? ' (Est.)' : '') +
           '</td>' +
           '<td class="rpt-n" contenteditable="true">' +
           (_kw ? Math.round(_kw).toLocaleString() : '—') +
@@ -9232,7 +9242,7 @@ function rptPageAppendixBills(n, d, appLetter) {
           (bill.amount ? $c(bill.amount) : '—') +
           '</td>' +
           '<td contenteditable="true">' +
-          _fmtBillDate(bill.billDate || bill.start) +
+          (_estRow ? 'Estimated — no bill on file' : _fmtBillDate(bill.billDate || bill.start)) +
           '</td>' +
           '</tr>';
         // estH: one table row (~22px, conservative for 10px-font table rows with padding) + a
