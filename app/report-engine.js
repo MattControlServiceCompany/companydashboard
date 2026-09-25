@@ -584,6 +584,15 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
     // fall through to 'on_track' (or any target-comparison status). This overrides the
     // target-comparison result unconditionally once there is no in-period data to compare.
     if (!bldgHasBillsInPeriod) bldgStatus = 'no_data';
+    // 2026-09-24 (fix/report-followup, problem 3): a project with no Service Agreement on file
+    // (p.sa === '') is a project computeCscSplit/getMeterSavings deliberately never books
+    // dollar savings for (computations/savings.js "SA-gate fix," 2026-09-15) -- bldgSavings
+    // stays $0 by design, NOT a bug. But bldgSavingsPct then also stays stuck at 0, which
+    // clears the on_track threshold whenever targetPct is likewise 0 (unconfigured), so this
+    // building was reading as "On Track" -- a performance claim with no computed basis. Distinct
+    // from 'no_data': this building DOES have bills, so 'no_data' ("No bills for this period")
+    // would be false here. Never change the underlying $0 -- only the misleading status claim.
+    else if (!p.sa) bldgStatus = 'no_contract';
 
     // Accumulate project totals
     totKwhBl += elec.kwhBl;
@@ -2284,9 +2293,12 @@ function rptPageCover(n, d) {
   // savingsPct=0 by fallback (see collectReportData), so without this filter an empty-period
   // report could crown a no-data building "top performer at 0.0% savings" — the same false
   // no-data-reads-as-performance-data class of bug as the Building Performance status fix.
+  // 2026-09-24 (fix/report-followup, problem 3): 'no_contract' buildings have the same
+  // stuck-at-0 savingsPct for a different reason (no Service Agreement on file, so no dollar
+  // savings are ever computed) — excluded here for the same reason.
   const sorted = d.buildings
     .filter(function (b) {
-      return b.hasBillsInPeriod !== false;
+      return b.hasBillsInPeriod !== false && b.status !== 'no_contract';
     })
     .slice()
     .sort(function (a, b) {
@@ -2463,6 +2475,8 @@ function rptPageCover(n, d) {
       // Problem 3 (2026-09-24, fix/report-headers-and-empty-period): 'no_data' (zero bills for
       // this period) is its own status, never folded into the below_target/red styling — a
       // missing bill is not the same fact as a building that is billed and underperforming.
+      // 'no_contract' (2026-09-24, fix/report-followup, problem 3): same neutral treatment for
+      // a building with bills but no Service Agreement on file (no dollar savings computed).
       const cardClass = b.status === 'on_track' ? 'rpt-ok' : b.status === 'near_target' ? 'rpt-warn' : '';
       const statusIcon =
         b.status === 'on_track'
@@ -2471,14 +2485,16 @@ function rptPageCover(n, d) {
             ? '&#9658; Near Target'
             : b.status === 'no_data'
               ? 'No Bills This Period'
-              : '&#9658; Below Target';
+              : b.status === 'no_contract'
+                ? 'No Service Agreement'
+                : '&#9658; Below Target';
       const cardStyle = b.status === 'below_target' ? 'border-color:var(--rpt-red-light);' : '';
       const valColor =
         b.status === 'on_track'
           ? 'var(--rpt-green-dark)'
           : b.status === 'near_target'
             ? 'var(--rpt-orange)'
-            : b.status === 'no_data'
+            : b.status === 'no_data' || b.status === 'no_contract'
               ? 'var(--rpt-page-text)'
               : 'var(--rpt-red)';
       const labelColor =
@@ -2486,7 +2502,7 @@ function rptPageCover(n, d) {
           ? 'var(--rpt-green)'
           : b.status === 'near_target'
             ? 'var(--rpt-orange)'
-            : b.status === 'no_data'
+            : b.status === 'no_data' || b.status === 'no_contract'
               ? 'var(--rpt-page-text)'
               : 'var(--rpt-red)';
       return (
@@ -2501,7 +2517,7 @@ function rptPageCover(n, d) {
         '<div class="rpt-sc-val" style="color:' +
         valColor +
         '" contenteditable="true">' +
-        (b.status === 'no_data' ? '—' : $p(b.savingsPct)) +
+        (b.status === 'no_data' || b.status === 'no_contract' ? '—' : $p(b.savingsPct)) +
         '</div>' +
         '<div class="rpt-sc-label" style="color:' +
         labelColor +
@@ -2753,14 +2769,16 @@ function rptPageFinancial(n, d) {
       // Problem 3 (2026-09-24, fix/report-headers-and-empty-period): 'no_data' renders its own
       // plain, non-judgmental label -- never the on_track/near_target/below_target red-amber-
       // green triangle language, which asserts a performance result this row has no bills to
-      // support.
-      const saveClass = b.status === 'no_data' ? '' : b.savings >= 0 ? 'rpt-g' : 'rpt-r';
+      // support. 'no_contract' (2026-09-24, fix/report-followup, problem 3) gets the same
+      // neutral treatment -- this building has bills, but no Service Agreement on file, so no
+      // dollar savings are ever computed for it (by design; see computations/savings.js).
+      const saveClass = b.status === 'no_data' || b.status === 'no_contract' ? '' : b.savings >= 0 ? 'rpt-g' : 'rpt-r';
       const statusIcon =
         b.status === 'on_track'
           ? '&#9650;'
           : b.status === 'near_target'
             ? '&#9658;'
-            : b.status === 'no_data'
+            : b.status === 'no_data' || b.status === 'no_contract'
               ? ''
               : '&#9660;';
       const statusClass =
@@ -2768,7 +2786,7 @@ function rptPageFinancial(n, d) {
           ? 'rpt-g'
           : b.status === 'near_target'
             ? 'rpt-o'
-            : b.status === 'no_data'
+            : b.status === 'no_data' || b.status === 'no_contract'
               ? ''
               : 'rpt-r';
       const bldgProjSav = qTarget > 0 ? qTarget * (b.blCost / totBlCostForPct) : 0;
@@ -2798,7 +2816,7 @@ function rptPageFinancial(n, d) {
         '<td class="rpt-n ' +
         saveClass +
         '" contenteditable="true">' +
-        (b.status === 'no_data' ? '—' : $p(b.savingsPct)) +
+        (b.status === 'no_data' || b.status === 'no_contract' ? '—' : $p(b.savingsPct)) +
         '</td>' +
         '<td class="' +
         statusClass +
@@ -2811,7 +2829,9 @@ function rptPageFinancial(n, d) {
             ? 'Near Target'
             : b.status === 'no_data'
               ? 'No bills for this period'
-              : 'Below Target') +
+              : b.status === 'no_contract'
+                ? 'No Service Agreement on file'
+                : 'Below Target') +
         '</td>' +
         '</tr>'
       );
@@ -2820,6 +2840,15 @@ function rptPageFinancial(n, d) {
 
   const totSaveClass = d.totals.savings >= 0 ? 'rpt-g' : 'rpt-r';
   const totProjCost = d.totals.blCost - qTarget;
+  // 2026-09-24 (fix/report-followup, problem 2): Total Portfolio must never claim a computed
+  // Savings Percent when no building behind it has one -- a building row with 'no_data' or
+  // 'no_contract' status already shows '-' here (above); the total row summed the same $0/$0
+  // and rendered a literal 0.0%, a real-looking number the per-building rows explicitly refuse
+  // to show. Show '-' at the total level too unless at least one building actually has a
+  // computed savings comparison behind it.
+  const anyRealSavings = d.buildings.some(function (b) {
+    return b.status !== 'no_data' && b.status !== 'no_contract';
+  });
   const bTotRow =
     '<tr class="rpt-tot">' +
     '<td contenteditable="true">Total Portfolio</td>' +
@@ -2843,7 +2872,7 @@ function rptPageFinancial(n, d) {
     '<td class="rpt-n ' +
     totSaveClass +
     '" contenteditable="true">' +
-    $p(d.totals.savingsPct) +
+    (anyRealSavings ? $p(d.totals.savingsPct) : '—') +
     '</td>' +
     '<td></td>' +
     '</tr>';
@@ -3012,7 +3041,7 @@ function rptPageFinancial(n, d) {
     bldgTable +
     '<h2>Quarterly Savings vs Baseline</h2>' +
     qtrTable +
-    '<h2>CSC Compensation</h2>' +
+    '<h2>Control Service Company Compensation</h2>' +
     cscTable +
     '';
   // fix/report-quarterly-restructure (2026-09-09), Part B item 1: the "Monthly Cost Breakdown"
@@ -4111,13 +4140,15 @@ function rptPageObservations(n, d) {
   const bldgSectionItems = (d.buildings || []).map(function (b) {
     // Problem 3 (2026-09-24, fix/report-headers-and-empty-period): 'no_data' gets its own
     // neutral color/arrow/label -- it must never read as red/"Below Target," which asserts an
-    // underperformance this building has no bills to support.
+    // underperformance this building has no bills to support. 'no_contract' (2026-09-24,
+    // fix/report-followup, problem 3) gets the same neutral treatment -- this building has
+    // bills, but no Service Agreement on file, so no dollar savings are ever computed for it.
     const statusColor =
       b.status === 'on_track'
         ? 'var(--rpt-green)'
         : b.status === 'near_target'
           ? 'var(--rpt-orange)'
-          : b.status === 'no_data'
+          : b.status === 'no_data' || b.status === 'no_contract'
             ? 'var(--rpt-page-text)'
             : 'var(--rpt-red)';
     const arrow =
@@ -4125,7 +4156,7 @@ function rptPageObservations(n, d) {
         ? '&#9650;'
         : b.status === 'near_target'
           ? '&#9658;'
-          : b.status === 'no_data'
+          : b.status === 'no_data' || b.status === 'no_contract'
             ? '&#9679;'
             : '&#9660;';
     const statusLabel =
@@ -4135,7 +4166,9 @@ function rptPageObservations(n, d) {
           ? 'Approaching Target'
           : b.status === 'no_data'
             ? 'No Bills for This Period'
-            : 'Below Target';
+            : b.status === 'no_contract'
+              ? 'No Service Agreement on File'
+              : 'Below Target';
 
     // Determine the strongest commodity by savings
     const comSavings = [
@@ -4174,6 +4207,17 @@ function rptPageObservations(n, d) {
       subtitle = 'No Bills for This Period';
       narrative = b.name + ' has no utility bills on file for ' + (d.period ? d.period.label : 'this period') + '.';
       rec = 'Confirm bills for this period have been entered on the Utility Data tab.';
+    } else if (b.status === 'no_contract') {
+      // 2026-09-24 (fix/report-followup, problem 3): plain statement of fact only -- this
+      // building has bills for the period, but the project has no Service Agreement on file,
+      // so contracted dollar savings are never computed for it. No performance judgment.
+      subtitle = 'No Service Agreement on File';
+      narrative =
+        b.name +
+        ' has utility bills on file for ' +
+        (d.period ? d.period.label : 'this period') +
+        ', but this project has no Service Agreement on file, so contracted savings are not calculated for this building.';
+      rec = 'Confirm the Service Agreement number on the project record if this building is under contract.';
     } else if (b.status === 'on_track') {
       subtitle = 'On Track';
       narrative =
