@@ -1776,6 +1776,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.24.15',
+    date: '2026-09-24',
+    title: 'BAS Savings Calc: Existing Conditions schedule now shows where each value comes from',
+    items: [
+      {
+        type: 'fix',
+        text: 'On the BAS Savings Calc, the Existing Conditions Saturday, Sunday, and "Outside Air Shut Off When Unoccupied" fields used to show no label at all, even when they were not real building data. They now show "Default value (not from building data)" when no source exists, the same way the other Existing Conditions fields already did.',
+      },
+      {
+        type: 'fix',
+        text: 'When a building has an imported Effective Schedules file, the Existing Conditions Saturday and Sunday hours now read as not scheduled (0 occupied hours), matching what that file actually says, instead of always showing 24 hours occupied with no setback.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.24.14',
     date: '2026-09-24',
     title: 'Bill Analysis: two bill-save fixes',

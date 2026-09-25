@@ -336,6 +336,57 @@ console.log('--- 6. Equipment Matrix fallback — Existing + Proposed Unoccupied
   );
 }
 
+console.log('--- 6b. Existing Saturday/Sunday schedule + Outside Air Shut Off (2026-09-24 fix) ---');
+{
+  // A row where the Effective Schedules import matched (real Mon-Fri times, col 11 'None' per
+  // emBuildSetpointExportRows) resolves the weekend window to 0-0 (not scheduled = unoccupied),
+  // sourced — not the old 0-24 "occupied all day, no setback" fallback, and not flagged as a
+  // shipped default. This is the reported Spring Hill Schools / Woodland Spring Middle symptom:
+  // the existing schedule showing Saturday/Sunday 0-24 with "Default value (not from building
+  // data)" for a building that DOES have an Effective Schedules import.
+  const rowsMatched = [mkEmRow({ 9: '7:00', 10: '16:00', 11: 'None' })];
+  const sbMatched = makeSandbox([{ id: 1, __buildings: [{ id: 'bWknd', meters: [] }] }], {
+    emRows: rowsMatched,
+    proposedSchedule: { start: '6:00', stop: '17:00' },
+  });
+  const autoMatched = sbMatched.chCalcAutofillFields(1, 'bWknd');
+  assert(
+    autoMatched.exSatOn.value === 0 &&
+      autoMatched.exSatOff.value === 0 &&
+      autoMatched.exSatOn.isDefault === false &&
+      /Effective Schedules import/.test(autoMatched.exSatOn.source),
+    'exSatOn/exSatOff resolve to 0-0 (unoccupied), sourced from the Effective Schedules import, not flagged default',
+  );
+  assert(
+    autoMatched.exSunOn.value === 0 &&
+      autoMatched.exSunOff.value === 0 &&
+      autoMatched.exSunOn.isDefault === false &&
+      /Effective Schedules import/.test(autoMatched.exSunOn.source),
+    'exSunOn/exSunOff resolve to 0-0 (unoccupied), sourced from the Effective Schedules import, not flagged default',
+  );
+
+  // A building with NO Equipment Matrix import at all never invents a weekend schedule — stays
+  // flagged default (the shipped-default rendering layer is responsible for showing 0-0 there,
+  // not this function claiming it came from building data).
+  const sbNoImport = makeSandbox([{ id: 1, __buildings: [{ id: 'bNoImport', meters: [] }] }], {
+    emRows: [mkEmRow({})],
+    proposedSchedule: { start: '6:00', stop: '17:00' },
+  });
+  const autoNoImport = sbNoImport.chCalcAutofillFields(1, 'bNoImport');
+  assert(
+    autoNoImport.exSatOn.isDefault && autoNoImport.exSunOn.isDefault,
+    'no Effective Schedules import at all -> exSatOn/exSunOn stay flagged default, never invented',
+  );
+
+  // Outside Air Shut Off When Unoccupied has no Equipment Matrix or import source anywhere in
+  // the codebase — always isDefault:true, even for a building with a full Effective Schedules
+  // import, so the site always shows "Default value (not from building data)" for it.
+  assert(
+    autoMatched.exOAShutoff.isDefault === true,
+    'exOAShutoff has no building-data source -> always flagged default, even with EM/schedule data present',
+  );
+}
+
 console.log('--- 7. _chParseClockHM ---');
 {
   const sb = makeSandbox([{ id: 1, __buildings: [] }]);

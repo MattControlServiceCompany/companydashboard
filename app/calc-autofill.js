@@ -17,6 +17,16 @@
      exHeatUnocc: {value, source, isDefault},
      exMfOn:      {value, source, isDefault},  // Existing occupied schedule (Mon-Fri), imported
      exMfOff:     {value, source, isDefault},  // Effective Schedule only — never invented.
+     exSatOn:     {value, source, isDefault},  // Existing Saturday/Sunday occupied window. The
+     exSatOff:    {value, source, isDefault},  // imported Effective Schedules file is a one-day
+     exSunOn:     {value, source, isDefault},  // (weekday) snapshot with no weekend record, so
+     exSunOff:    {value, source, isDefault},  // when a building HAS an import, weekends resolve
+                                                // to zero occupied hours (not scheduled = closed)
+                                                // — a real conclusion from that building's own
+                                                // import, not an invented number. isDefault only
+                                                // when the building has no import at all.
+     exOAShutoff: {value, source, isDefault},  // No Equipment Matrix or import field records this
+                                                // — always isDefault:true (no source exists yet).
      newHeatOcc:  {value, source, isDefault},  // Proposed Conditions — company standard, always
      newCoolOcc:  {value, source, isDefault},  // present (no "no data" state, unlike Existing).
      newHeatUnocc:{value, source, isDefault},
@@ -47,6 +57,11 @@ function chCalcAutofillFields(projId, bldgId) {
     exHeatUnocc: mkDefault(),
     exMfOn: mkDefault(),
     exMfOff: mkDefault(),
+    exSatOn: mkDefault(),
+    exSatOff: mkDefault(),
+    exSunOn: mkDefault(),
+    exSunOff: mkDefault(),
+    exOAShutoff: mkDefault(),
     newHeatOcc: { value: 70, source: 'company standard', isDefault: false },
     newCoolOcc: { value: 74, source: 'company standard', isDefault: false },
     newHeatUnocc: { value: null, source: 'company standard', isDefault: false },
@@ -207,6 +222,26 @@ function chCalcAutofillFields(projId, bldgId) {
           source: 'Equipment Matrix (Effective Schedules import)',
           isDefault: false,
         };
+      }
+
+      // Existing Saturday/Sunday occupied window — column 11 ("Existing Occupied Sat & Sun")
+      // only carries a real value ('None', per emBuildSetpointExportRows) once an Effective
+      // Schedules CSV has been imported and matched onto these rows; the import itself is a
+      // weekday-only snapshot with no weekend record, so a matched row's own conclusion is
+      // "not scheduled" — zero occupied hours on Saturday/Sunday, not the 24-hour every-day
+      // default. That is a real fact about the imported schedule, not an invented number, so
+      // it is sourced (isDefault:false) rather than shown as a shipped default. A building with
+      // no import at all leaves these at isDefault:true (mkDefault) — no schedule is invented.
+      if (rows.some((r) => r[11] && r[11] !== '?')) {
+        const wknd = {
+          value: 0,
+          source: 'Equipment Matrix (Effective Schedules import — not scheduled, treated as unoccupied)',
+          isDefault: false,
+        };
+        out.exSatOn = wknd;
+        out.exSatOff = wknd;
+        out.exSunOn = wknd;
+        out.exSunOff = wknd;
       }
 
       // Proposed Unoccupied setpoints — the Equipment Matrix's own per-zone heating-type
