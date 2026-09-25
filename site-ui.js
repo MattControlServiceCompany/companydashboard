@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.25.6'; // ASHRAE 36 Audit Report: the cover's Sequences to Program and Sensors to Install totals now scale to the buildings you select in the report modal, instead of always showing the full portfolio.
+  var CH_VERSION = 'v2026.09.25.7'; // Quarterly/Annual Savings Report PDF export now produces selectable, searchable text instead of a flat image
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
