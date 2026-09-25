@@ -17920,9 +17920,23 @@ function renderMultiBillUI(bills, box) {
       const _fallbackLabel = isUnassigned ? 'Unassigned (needs review)' : acct;
       const b = bills.find((x) => (x.AccountNumber || '_unknown') === acct);
       if (!b) return _fallbackLabel;
+      // FIX(2026-09-25, wre-needs-review-all-branches): compute the field-warning
+      // check ONCE here, right after `b` resolves, and apply it to every label this
+      // function can return below — not just the address-implausible branch. Before
+      // this fix, a bill with a plausible-looking address (or no AccountNumber at
+      // all) that still had real missing critical/important fields showed a clean
+      // label with no "(needs review)" tag, because the plausible-address and
+      // isUnassigned branches never looked at `warnings` at all (see
+      // 2026-09-25-wre-needs-review findings.md, Mid Sch So case). `_tagReview`
+      // no-ops when the label already ends in "(needs review)" (isUnassigned's
+      // fallback already says so) to avoid doubling the suffix.
+      const _bwIdx = bills.indexOf(b);
+      const _bw = (warnings[_bwIdx] && warnings[_bwIdx].warnings) || [];
+      const _fieldsClean = !_bw.some((w) => w.level === 'error' || w.level === 'warn');
+      const _tagReview = (lbl) => (_fieldsClean || /\(needs review\)$/.test(lbl) ? lbl : lbl + ' (needs review)');
       const match = typeof findMeterMatch === 'function' ? findMeterMatch(b) : null;
-      if (match && match.bldg && match.bldg.name) return match.bldg.name;
-      if (!b.ServiceAddress) return _fallbackLabel;
+      if (match && match.bldg && match.bldg.name) return _tagReview(match.bldg.name);
+      if (!b.ServiceAddress) return _tagReview(_fallbackLabel);
       // FIX(2026-07-02, item 219e6828): don't render raw OCR garbage as a
       // building-tab label. Extractors that key an identity fallback off a
       // printed "ADDRESS:" stub can capture pure noise ("= == =="), boilerplate
@@ -17955,18 +17969,18 @@ function renderMultiBillUI(bills, box) {
       // false-flagged a fine bill. Reuse that SAME warning-level check here
       // (one shared check, not two) so the tab never says "needs review" for
       // a bill the field check calls clean.
+      // FIX(2026-09-25, wre-needs-review-all-branches): `_tagReview` (defined
+      // above, right after `b` resolves) now carries this same check into the
+      // isUnassigned and plausible-address branches too — see comment there.
       if (!_plausible) {
-        if (isUnassigned) return _fallbackLabel;
-        const _bwIdx = bills.indexOf(b);
-        const _bw = (warnings[_bwIdx] && warnings[_bwIdx].warnings) || [];
-        const _fieldsClean = !_bw.some((w) => w.level === 'error' || w.level === 'warn');
-        return _fieldsClean ? acct : acct + ' (needs review)';
+        if (isUnassigned) return _tagReview(_fallbackLabel);
+        return _tagReview(acct);
       }
       const addr = _cleanAddr;
       const afterComma = addr.includes(',') ? addr.split(',').slice(1).join(',').trim() : addr;
-      return (
+      return _tagReview(
         afterComma.replace(/\b(LOUISBURG|KANSAS CITY|OLATHE|LENEXA|OVERLAND PARK|SHAWNEE|KS|MO)\b/gi, '').trim() ||
-        _fallbackLabel
+          _fallbackLabel,
       );
     };
     const _hasMultiCommsAcross = new Set(bills.map((b) => b.Commodity || 'Electric')).size > 1;
