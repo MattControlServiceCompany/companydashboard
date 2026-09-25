@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.25.2'; // BAS Savings Calc: fix heating outside-air double count to match Excel, spell out remaining labels, and label Proposed unoccupied setpoints from company standards
+  var CH_VERSION = 'v2026.09.25.3'; // Review Bill Corrections now groups results by meter, shows a live progress bar and summary while it scans, and fixes a false-positive on Kansas Gas Service bills.
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
