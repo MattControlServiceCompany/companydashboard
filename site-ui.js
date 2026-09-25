@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.24.13'; // The Equipment Matrix's "Show All Point Columns" button on Raw View now opens in under 2 seconds even on JOCO's 8,259 point columns, instead of freezing the page for half a minute; the Equipment Matrix Summary view's "Zone Htg Setpoint"/"Zone Clg Setpoint" and "Htg Setpoint"/"Clg Setpoint"/"Damper Posn" column headers now read "Zone Heating Setpoint"/"Zone Cooling Setpoint"/"Heating Setpoint"/"Cooling Setpoint"/"Damper Position"
+  var CH_VERSION = 'v2026.09.24.16'; // Equipment Matrix: short labels like "AHU / RTU", "DOAS", "VFD Present", and "BAS Points" now read as full words ("Air Handling Unit / Rooftop Unit", "Dedicated Outdoor Air System", "Variable Frequency Drive Present", "Building Automation System Points") in the breakdown tiles, column headers, and the Equipment Type column. Values you imported from your own files are shown exactly as you entered them, unchanged.
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

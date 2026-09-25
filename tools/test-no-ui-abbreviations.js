@@ -97,13 +97,11 @@ const BANNED_RES = BANNED_WORDS.map((w) => ({
   re: new RegExp('\\b' + w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i'),
 }));
 
-// app/equipment-matrix.js renders "CFM" dozens of times as the real, established unit name
-// for airflow points (Ventilation CFM, Return Fan CFM, ...) — genuine BAS-equipment
-// vocabulary, not a shortened English word (same rationale as the BAS point-name dictionary
-// exclusion above), and the file is concurrently owned by another agent's work this session.
-// Every OTHER file still bans "CFM" — the BAS Savings Calc and ECM calculator labels this
-// task fixed stay protected.
-const BANNED_WORD_FILE_EXCEPTIONS = new Map([['CFM', new Set([path.join('app', 'equipment-matrix.js')])]]);
+// 2026-09-24 follow-up (task 5ai second follow-up): the CFM exception for app/equipment-matrix.js
+// was removed — that file's "Ventilation CFM"/"Return Fan CFM"/etc. column labels are spelled out
+// ("Ventilation Airflow", "Return Fan Airflow", ...) like every other file's CFM labels. No file
+// exceptions remain; the whole-word ban applies everywhere.
+const BANNED_WORD_FILE_EXCEPTIONS = new Map();
 
 // ─── All-caps token safety net (2026-09-24 follow-up) ───────────────────────────────────────
 // Beyond the curated whole-word list above, any all-caps run of 2-5 letters in a scanned label
@@ -118,12 +116,20 @@ const BANNED_WORD_FILE_EXCEPTIONS = new Map([['CFM', new Set([path.join('app', '
 //   2. Whole English words that happen to render in ALL CAPS for table-header/button styling
 //      (e.g. "TOTAL COST $") — the regex can't tell a styled whole word from a shortened one,
 //      so these are named explicitly rather than guessed at.
-// Building-automation/equipment mnemonics (AHU, VAV, CHW, CFM, BTU, VFD, etc.), utility-bill
-// tariff rider codes (ECA, EER, PTS, TDC, ...), and other deep domain vocabulary are NOT
-// blanket-exempted here — see ALL_CAPS_EXCLUDED_FILES below for why those files are skipped
-// by this specific check instead (same rationale as the BAS point-dictionary exclusion above:
-// real domain terminology, not a shortened English word, and app/equipment-matrix.js is
-// concurrently owned by another agent's work this session).
+// Building-automation/equipment mnemonics (AHU, VAV, CHW, CFM, BTU, VFD, etc.) and utility-bill
+// tariff rider codes (ECA, EER, PTS, TDC, ...) are NOT blanket-exempted here — see
+// ALL_CAPS_EXCLUDED_FILES below for why those OTHER files are skipped by this specific check
+// instead. app/equipment-matrix.js is deliberately NOT in that exclusion list: 2026-09-24
+// follow-up (task 5ai second follow-up) removed the ~44-entry equipment-matrix.js-specific BAS-
+// mnemonic allow-list (HW/CHW/CW/RH/CT/CFM/VFD/HP/IP/EF/SF/BMS/DI/BTU/MJ/ATS/RMS/ABC/DP/ANI/ANO/
+// MCS/BV/AV/VVT/ET/VOC/UV/TCP/RX/TX/RAM/COMM/PC/DOAS/DX/RPM/DD/FCU/VRF/PID/HOA/UPS/CO/SZ/MTZ,
+// added by fix/em-show-all-columns task 5aj) that let those column headers, breakdown tiles, and
+// point-category labels ship abbreviated. Every one of those labels is now spelled out in full
+// English words in the file itself (e.g. "AHU / RTU" -> "Air Handling Unit / Rooftop Unit",
+// "BAS Points" -> "Building Automation System Points") — the labels were fixed at the source,
+// not exempted from the gate. AHU/RTU/VAV/OAT/RA/SA/MTR stay allowed (see the older, smaller
+// block above) for the handful of OTHER files that still use them in free-text placeholder
+// examples; that block predates task 5aj and was not part of what this follow-up removed.
 const ALLOWED_ALL_CAPS = new Set([
   // Already-allowed units (see ALLOWED_KEPT_UNITS), plus their literal ALL-CAPS table-header
   // spelling:
@@ -178,62 +184,6 @@ const ALLOWED_ALL_CAPS = new Set([
   'COST',
   'FUEL',
   'WATER',
-  // 2026-09-24 (fix/em-show-all-columns, task 5aj) — app/equipment-matrix.js's column headers
-  // come from EM_POINT_MAP (~1,500-entry point-name-pattern dictionary, lines 471-1996) and
-  // several later per-equipment-type point-pattern arrays (VVT/FCU/chiller-plant/BMS/VFD
-  // sub-object definitions). Every entry below was read in source context (not guessed) and is
-  // a real BAS/controls-industry mnemonic — the same category already allowed for AHU/RTU/VAV/
-  // CFM/OAT/RA/SA/MTR above, just this file's much larger vocabulary. The curated BANNED_WORDS
-  // list (including the new Htg/Clg entries) still runs against every one of these strings, so
-  // a genuine plain-English shortcut can never hide inside this list:
-  'HW', // Hot Water
-  'CHW', // Chilled Water
-  'CW', // Condenser Water
-  'RH', // Relative Humidity
-  'CT', // Cooling Tower
-  'CFM', // Cubic Feet per Minute (curated-list exception already covers BANNED_WORDS; this
-  // covers the separate all-caps safety net)
-  'VFD', // Variable Frequency Drive
-  'HP', // Horsepower ("HP/Tons" physical-attribute column)
-  'IP', // Internet Protocol ("IP Address" controls column, same category as already-allowed URL/JSON)
-  'EF', // Exhaust Fan
-  'SF', // Supply Fan
-  'BMS', // Building Management System (same category as the already-allowed EMS)
-  'DI', // Digital Input (BACnet object type)
-  'BTU', // British Thermal Unit — physical meter/device naming ("BTU Meter"), base unit of the
-  // already-allowed MMBtu family
-  'MJ', // MegaJoule
-  'ATS', // Automatic Transfer Switch
-  'RMS', // Root Mean Square
-  'ABC', // "Phase ABC" — three-phase electrical notation (phases A, B, C)
-  'DP', // Differential Pressure
-  'ANI', // Analog Input (BACnet object type)
-  'ANO', // Analog Output (BACnet object type)
-  'MCS', // Master Control System (chiller-plant point-dictionary label)
-  'BV', // Binary Value (BACnet object type)
-  'AV', // Analog Value (BACnet object type)
-  'VVT', // Variable Volume Terminal
-  'ET', // Elapsed Time ("ET Hours" runtime-hours point)
-  'VOC', // Volatile Organic Compound (zone air-quality sensor)
-  'UV', // Ultraviolet (UV radiometer/lamp point)
-  'TCP', // Transmission Control Protocol (network diagnostics point)
-  'RX', // Receive (network diagnostics point)
-  'TX', // Transmit (network diagnostics point)
-  'RAM', // Random Access Memory (controller diagnostics point)
-  'COMM', // Communication
-  'PC', // Personal Computer (BMS network node point)
-  'DOAS', // Dedicated Outdoor Air System
-  'DX', // Direct Expansion (refrigeration)
-  'RPM', // Revolutions Per Minute
-  'DD', // Dual Duct ("DD-VAV" equipment subtype)
-  'FCU', // Fan Coil Unit
-  'VRF', // Variable Refrigerant Flow
-  'PID', // Proportional-Integral-Derivative (control-loop object)
-  'HOA', // Hand-Off-Auto (control switch)
-  'UPS', // Uninterruptible Power Supply
-  'CO', // Carbon Monoxide (zone air-quality sensor)
-  'SZ', // Single Zone ("SZ-RTU"/"SZ-AHU" equipment subtype)
-  'MTZ', // Multi-Zone ("MTZ-RTU"/"MTZ-AHU" equipment subtype)
 ]);
 const ALL_CAPS_RE = /\b[A-Z]{2,5}\b/g;
 
@@ -241,10 +191,11 @@ const ALL_CAPS_RE = /\b[A-Z]{2,5}\b/g;
 // utility-bill tariff/rider codes, financial/business terms) rather than shortened English
 // words — same rationale as the BAS point-dictionary exclusion above. The curated BANNED_WORDS
 // list above still applies to every file, including these. app/equipment-matrix.js is NOT in
-// this list (2026-09-24, fix/em-show-all-columns, task 5aj) — its BAS-mnemonic vocabulary is
-// instead individually vetted into ALLOWED_ALL_CAPS above, so this file's toolbar/legend/Summary-
-// view UI chrome stays covered by the all-caps safety net (this is what caught nothing missing
-// Htg/Clg — those were caught by the whole-word ban instead, since "Htg"/"Clg" aren't all-caps).
+// this list, and (2026-09-24 follow-up, task 5ai second follow-up) is no longer given any
+// equipment-matrix.js-specific allowance either — its stat-pill tiles, column headers, dropdown
+// options, and point-category labels were rewritten to full English words (see the removed
+// ALLOWED_ALL_CAPS block, above) instead of being exempted, so this file's UI chrome stays fully
+// covered by both the whole-word ban and the all-caps safety net like any other file.
 const ALL_CAPS_EXCLUDED_FILES = new Set([
   path.join('app', 'bas-trends.js'),
   path.join('app', 'bas-alarms.js'),

@@ -1776,6 +1776,51 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.24.16',
+    date: '2026-09-24',
+    title: 'Equipment Matrix: short labels now read as full words',
+    items: [
+      {
+        type: 'fix',
+        text: 'On the Equipment Matrix, short labels the app writes itself now read as full words: the breakdown tiles ("AHU / RTU", "DOAS", "MAU", "ERV", "VAV / FPB") now say "Air Handling Unit / Rooftop Unit", "Dedicated Outdoor Air System", "Makeup Air Unit", "Energy Recovery Ventilator", and "Variable Air Volume / Fan Powered Box". Column headers like "SAT Reset Sequence" and "VFD Present" now say "Supply Air Temperature Reset Sequence" and "Variable Frequency Drive Present". "BAS Points" and "BAS Data" now say "Building Automation System Points" and "Building Automation System data". The Equipment Type column also spells out subtypes such as "SZ-RTU" as "Single Zone Rooftop Unit".',
+      },
+      {
+        type: 'fix',
+        text: 'Values you imported from your own files (point names, equipment names, equipment type text) are never changed — only labels the app writes itself were spelled out.',
+      },
+    ],
+  },
+  {
+    v: 'v2026.09.24.15',
+    date: '2026-09-24',
+    title: 'BAS Savings Calc: Existing Conditions schedule now shows where each value comes from',
+    items: [
+      {
+        type: 'fix',
+        text: 'On the BAS Savings Calc, the Existing Conditions Saturday, Sunday, and "Outside Air Shut Off When Unoccupied" fields used to show no label at all, even when they were not real building data. They now show "Default value (not from building data)" when no source exists, the same way the other Existing Conditions fields already did.',
+      },
+      {
+        type: 'fix',
+        text: 'When a building has an imported Effective Schedules file, the Existing Conditions Saturday and Sunday hours now read as not scheduled (0 occupied hours), matching what that file actually says, instead of always showing 24 hours occupied with no setback.',
+      },
+    ],
+  },
+  {
+    v: 'v2026.09.24.14',
+    date: '2026-09-24',
+    title: 'Bill Analysis: two bill-save fixes',
+    items: [
+      {
+        type: 'fix',
+        text: 'When a bill\'s total was held for review (the total on the printed bill did not match the sum of its charges) and you clicked "Save Anyway", the demand cost or energy cost saved with the bill could still carry the bad number that caused the hold, even though the total itself was correct. Saving now uses the reviewed total, not the bad number.',
+      },
+      {
+        type: 'fix',
+        text: 'A bill could be saved to a meter that no longer existed. Saving now checks that the meter is still there first; if it is not, the bill is held for you to match by hand, the same way an unmatched bill already works.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.24.13',
     date: '2026-09-24',
     title: 'Equipment Matrix: "Show All Point Columns" opens fast, and more labels are spelled out',

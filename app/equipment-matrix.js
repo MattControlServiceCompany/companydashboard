@@ -147,27 +147,27 @@ var EM_EQUIP_TYPES = {
    Maps internal category keys (from emClassifyEquipType) to human-readable labels
    shown in the "Equipment Type" column. Used by emFormatCell for isCategory defs. */
 var EM_CATEGORY_LABELS = {
-  ahu: 'AHU',
-  rtu: 'RTU',
-  vav: 'VAV',
-  fpb: 'FPB',
-  ddvav: 'DD-VAV',
-  hwp: 'HW Plant',
-  chwp: 'CHW Plant',
+  ahu: 'Air Handling Unit',
+  rtu: 'Rooftop Unit',
+  vav: 'Variable Air Volume',
+  fpb: 'Fan Powered Box',
+  ddvav: 'Dual Duct Variable Air Volume',
+  hwp: 'Hot Water Plant',
+  chwp: 'Chilled Water Plant',
   ct: 'Cooling Tower',
   // M3: New specific types — replace generic 'other' for HVAC
-  fcu: 'Fan Coil / VRF',
+  fcu: 'Fan Coil / Variable Refrigerant Flow',
   heater: 'Unit Heater',
   ef: 'Exhaust Fan',
-  doas: 'DOAS / ERV',
-  furnace: 'Furnace / VVT',
-  zone: 'VVT Zone',
+  doas: 'Dedicated Outdoor Air System / Energy Recovery Ventilator',
+  furnace: 'Furnace / Variable Volume Terminal',
+  zone: 'Variable Volume Terminal Zone',
   // M3: Non-HVAC specific categories
   lighting: 'Lighting',
   fire: 'Fire / Smoke',
-  power: 'Power / Gen',
+  power: 'Power / Generator',
   plumbing: 'Plumbing',
-  controls: 'Controls / VFD',
+  controls: 'Controls / Variable Frequency Drive',
   sensor: 'Sensor / Weather',
   // M4: New non-HVAC categories to eliminate generic 'other'
   elevator: 'Elevator',
@@ -250,11 +250,23 @@ function emFormatEquipTypeLabel(row) {
   if ((cat !== 'ahu' && cat !== 'rtu') || !row.subtype) {
     return EM_CATEGORY_LABELS[cat] || (cat ? cat.toUpperCase() : '--');
   }
-  // ahu/rtu + subtype: compose "SZ-RTU", "VAV-AHU", "MTZ-RTU", etc.
+  // ahu/rtu + subtype: compose "Single Zone Rooftop Unit", "Variable Air Volume Air Handling Unit", etc.
   var baseName = row.equipName || '';
-  var baseType = cat === 'rtu' || /\brtu\b/i.test(baseName) ? 'RTU' : /\bahu\b/i.test(baseName) ? 'AHU' : 'AHU';
-  var subtypePrefix = row.subtype === 'sz' ? 'SZ' : row.subtype === 'vav' ? 'VAV' : row.subtype === 'mtz' ? 'MTZ' : '';
-  return subtypePrefix ? subtypePrefix + '-' + baseType : EM_CATEGORY_LABELS[cat] || cat.toUpperCase();
+  var baseType =
+    cat === 'rtu' || /\brtu\b/i.test(baseName)
+      ? 'Rooftop Unit'
+      : /\bahu\b/i.test(baseName)
+        ? 'Air Handling Unit'
+        : 'Air Handling Unit';
+  var subtypePrefix =
+    row.subtype === 'sz'
+      ? 'Single Zone'
+      : row.subtype === 'vav'
+        ? 'Variable Air Volume'
+        : row.subtype === 'mtz'
+          ? 'Multi-Zone'
+          : '';
+  return subtypePrefix ? subtypePrefix + ' ' + baseType : EM_CATEGORY_LABELS[cat] || cat.toUpperCase();
 }
 
 /* ── EDIT MODE FLAG ── */
@@ -439,28 +451,28 @@ function emSyncViewModeControls() {
 
 var EM_CHECK_COLS_11 = [
   'Duct Static Pressure Sensor',
-  'Supply Air Temp Sensor',
-  'Return Air Temp Sensor',
-  'Outdoor Air Temp Sensor',
-  'VFD Present',
-  'SAT Reset Sequence',
-  'DSP Reset Sequence',
-  'HW Temp Reset',
-  'CHW Temp Reset',
+  'Supply Air Temperature Sensor',
+  'Return Air Temperature Sensor',
+  'Outdoor Air Temperature Sensor',
+  'Variable Frequency Drive Present',
+  'Supply Air Temperature Reset Sequence',
+  'Duct Static Pressure Reset Sequence',
+  'Hot Water Temperature Reset',
+  'Chilled Water Temperature Reset',
   'Optimum Start/Stop',
   'Lead/Lag Pump',
 ];
 
 var EM_CHECK_COLS_14 = [
   'Duct Static Pressure Sensor',
-  'Supply Air Temp Sensor',
-  'Return Air Temp Sensor',
-  'Outdoor Air Temp Sensor',
-  'VFD Present',
-  'SAT Reset Sequence',
-  'DSP Reset Sequence',
-  'HW Temp Reset',
-  'CHW Temp Reset',
+  'Supply Air Temperature Sensor',
+  'Return Air Temperature Sensor',
+  'Outdoor Air Temperature Sensor',
+  'Variable Frequency Drive Present',
+  'Supply Air Temperature Reset Sequence',
+  'Duct Static Pressure Reset Sequence',
+  'Hot Water Temperature Reset',
+  'Chilled Water Temperature Reset',
   'Optimum Start/Stop',
   'Lead/Lag Pump',
   'CO2 Sensor',
@@ -544,7 +556,7 @@ var EM_POINT_MAP = [
   },
   {
     col: 'outdoorAirTemp',
-    label: 'OAT (Live)',
+    label: 'Outdoor Air Temperature (Live)',
     // FIX 4d: Added dry bulb patterns to match CSV 'Outside Air Dry Bulb'
     // Phase 1: Added /outside air temperature/i and /outside\s+air\s+temp\b/i for JOCO naming ("Outside Air Temperature").
     patterns: [
@@ -671,7 +683,7 @@ var EM_POINT_MAP = [
   },
   {
     col: 'oaAirflow',
-    label: 'Outside Air Airflow (cfm)',
+    label: 'Outside Air Airflow',
     // M4: added /outdoor\s+airflow/i and /outside\s+airflow/i so "Outdoor Airflow" and
     // "Outside Airflow" route here instead of falling through to discFlowLive.
     // These must be positioned BEFORE discFlowLive in the array (oaFlowLive is currently before
@@ -900,7 +912,7 @@ var EM_POINT_MAP = [
   },
   {
     col: 'hwSupplyTemp',
-    label: 'HW Supply Temperature',
+    label: 'Hot Water Supply Temperature',
     // Phase 1: added JOCO naming patterns (heating water supply / boiler supply water temp).
     // 5eb5be06 Phase 1: added per-unit boiler supply/outlet/leaving temp patterns.
     patterns: [
@@ -928,7 +940,7 @@ var EM_POINT_MAP = [
   },
   {
     col: 'hwReturnTemp',
-    label: 'HW Return Temperature',
+    label: 'Hot Water Return Temperature',
     // Phase 1: added JOCO naming patterns (heating water return / boiler return water temp).
     // 5eb5be06 Phase 1: added per-unit boiler return/entering/inlet temp patterns.
     patterns: [
@@ -957,7 +969,7 @@ var EM_POINT_MAP = [
   },
   {
     col: 'hwDiffPressure',
-    label: 'HW Diff Pressure',
+    label: 'Hot Water Differential Pressure',
     // Phase 1: added JOCO naming patterns for heating water differential pressure.
     patterns: [
       /hw diff pressure/i,
@@ -973,14 +985,14 @@ var EM_POINT_MAP = [
   },
   {
     col: 'hwSupplySetpoint',
-    label: 'HW Supply Setpoint',
+    label: 'Hot Water Supply Setpoint',
     patterns: [/hw supply setpoint/i, /hw setpoint/i],
     types: ['SP'],
     cats: ['hwp'],
   },
   {
     col: 'chwSupplyTemp',
-    label: 'CHW Supply Temperature',
+    label: 'Chilled Water Supply Temperature',
     // 5eb5be06 Phase 1: added per-unit chiller evaporator leaving/supply temp patterns.
     patterns: [
       /chw supply temp/i,
@@ -1000,7 +1012,7 @@ var EM_POINT_MAP = [
   },
   {
     col: 'chwReturnTemp',
-    label: 'CHW Return Temperature',
+    label: 'Chilled Water Return Temperature',
     // 5eb5be06 Phase 1: added per-unit chiller evaporator entering/return temp patterns.
     patterns: [
       /chw return temp/i,
@@ -1017,14 +1029,14 @@ var EM_POINT_MAP = [
   },
   {
     col: 'chwSupplySetpoint',
-    label: 'CHW Supply Setpoint',
+    label: 'Chilled Water Supply Setpoint',
     patterns: [/chw supply setpoint/i, /chw setpoint/i],
     types: ['SP'],
     cats: ['chwp'],
   },
   {
     col: 'chwDiffPressure',
-    label: 'CHW Diff Pressure',
+    label: 'Chilled Water Differential Pressure',
     // Phase 1: added JOCO naming pattern for chilled water differential pressure.
     // 5eb5be06 Phase 1: added loop DP and per-pump DP patterns.
     patterns: [
@@ -1041,14 +1053,14 @@ var EM_POINT_MAP = [
   },
   {
     col: 'chwFlow',
-    label: 'CHW Flow',
+    label: 'Chilled Water Flow',
     patterns: [/chw flow/i, /chilled water flow/i],
     types: ['AI'],
     cats: ['chwp'],
   },
   {
     col: 'cwSupplyTemp',
-    label: 'CW Supply Temperature',
+    label: 'Condenser Water Supply Temperature',
     // P2.8 (gap-analysis Phase 2): CT basin leaving water temperature variants added.
     // "Cooling Tower Basin Leaving Water Temperature", "CT Basin Temperature 1/2", "Tower Basin Temperature"
     // are the condenser-loop supply temp measurement at the basin — equivalent to CW supply for CT audit.
@@ -1068,7 +1080,7 @@ var EM_POINT_MAP = [
   },
   {
     col: 'cwReturnTemp',
-    label: 'CW Return Temperature',
+    label: 'Condenser Water Return Temperature',
     patterns: [/cw return temp/i, /condenser water return/i, /cwrt\b/i],
     types: ['AI'],
     cats: ['ct'],
@@ -1143,7 +1155,7 @@ var EM_POINT_MAP = [
   // negativePatterns block "Zone Hum (sph)" (setpoint variant) via set\s?point guard.
   {
     col: 'zoneRelativeHumidity',
-    label: 'Zone RH %',
+    label: 'Zone Relative Humidity %',
     labelAliases: ['Zone Hum (zone_humidity)', 'Zone Hum (zhum)', 'Zone Humidity', 'Zone Hum'],
     patterns: [
       /zone\s*r\.?h/i,
@@ -1169,7 +1181,7 @@ var EM_POINT_MAP = [
       /\b(exhaust|supply\s+air|high|low|alarm|call\s+for|controlling|selection|ano\b)\b/i,
     ],
     types: ['AI'],
-    // 425c0cb3: added 'furnace' — furnace.zoneHumidity catDef aliases cover 'Zone RH %' label
+    // 425c0cb3: added 'furnace' — furnace.zoneHumidity catDef aliases cover 'Zone Relative Humidity %' label
     cats: ['ahu', 'vav', 'fpb', 'ddvav', 'fcu', 'zone', 'furnace'],
   },
   // Phase 2C: expanded cats from ['ct'] to ['ct', 'ahu', 'dhu'] — "Outside Air Wet Bulb" and
@@ -1189,7 +1201,7 @@ var EM_POINT_MAP = [
   },
   {
     col: 'ctFanSpeed',
-    label: 'CT Fan Speed',
+    label: 'Cooling Tower Fan Speed',
     // M3: added CT-N and Tower-N positive patterns so "CT-1 Fan VFD Speed" and "Tower 1 Fan Speed"
     // route here (previously went to sfSpeedLive because ctFanSpeedLive missed the "CT-N" prefix format).
     // 5eb5be06 Phase 1: added per-unit cooling tower fan speed pattern.
@@ -1606,7 +1618,7 @@ var EM_POINT_MAP = [
   // Taxonomy: "Ventilation CFM".
   {
     col: 'ventilationCFM',
-    label: 'Ventilation CFM',
+    label: 'Ventilation Airflow',
     patterns: [/ventilation\s+cfm/i],
     negativePatterns: [/set\s?point/i],
     types: ['AI', 'AV'],
@@ -1617,7 +1629,7 @@ var EM_POINT_MAP = [
   // Taxonomy: "Ventilation CFM Set Point", "Ventilation CFM Setpoint".
   {
     col: 'ventilationCFMSetpoint',
-    label: 'Ventilation CFM Setpoint',
+    label: 'Ventilation Airflow Setpoint',
     // 21eb08f8 Wave 6: added /(minimum\s+)?outside\s+air\s+cfm\s+set\s*point/i for
     // "Outside Air CFM Setpoint", "AHU-3 Outside Air CFM Setpoint",
     // "AHU Manager - Minimum Outside Air CFM Set Point",
@@ -1635,7 +1647,7 @@ var EM_POINT_MAP = [
   // Return Air CFM — total return air volume (duct measurement, not fan speed-derived)
   {
     col: 'returnAirCFM',
-    label: 'Return Air CFM',
+    label: 'Return Air Airflow',
     patterns: [/return\s+air\s+(?:total\s+)?cfm/i],
     negativePatterns: [/set\s?point|alarm|\(calculated\)/i],
     types: ['AI', 'BAI', 'BAV'],
@@ -1646,7 +1658,7 @@ var EM_POINT_MAP = [
   // Taxonomy: "Return Fan CFM".
   {
     col: 'returnFanCFM',
-    label: 'Return Fan CFM',
+    label: 'Return Fan Airflow',
     patterns: [/return\s+fan\s+cfm/i],
     negativePatterns: [/set\s?point/i],
     types: ['AI', 'AV'],
@@ -1657,7 +1669,7 @@ var EM_POINT_MAP = [
   // Taxonomy: "Supply Fan Total CFM", "Supply Fan 1 CFM", "Supply Fan 2 CFM".
   {
     col: 'supplyFanCFM',
-    label: 'Supply Fan CFM',
+    label: 'Supply Fan Airflow',
     patterns: [/supply\s+fan\s+(?:total\s+)?cfm/i, /supply\s+fan\s+\d+\s+cfm/i],
     negativePatterns: [/set\s?point/i, /\(calculated\)/i, /\(vav\s+total\)/i],
     types: ['AI', 'AV'],
@@ -1778,7 +1790,7 @@ var EM_POINT_MAP = [
   // added /rf speed/i and /return fan drive.*speed/i patterns per plan spec.
   {
     col: 'returnFanSpeed',
-    label: 'Return Fan VFD Speed',
+    label: 'Return Fan Variable Frequency Drive Speed',
     patterns: [
       /return\s+fan\s+vfd\s+speed/i,
       /return\s+fan\s+drive\s+output\s+speed/i,
@@ -4231,13 +4243,13 @@ function emRenderMatrix(container, data, pid) {
     '<div id="em-stats-bar" style="display:flex;gap:16px;flex-wrap:wrap;padding:12px 20px;border-bottom:1px solid var(--border);background:var(--s1);flex-shrink:0">' +
     emStatPill('Buildings', stats.buildings) +
     emStatPill('Equipment', stats.total) +
-    emStatPill('AHU / RTU', stats.ahu) +
-    emStatPill('VAV / FPB', stats.vav) +
+    emStatPill('Air Handling Unit / Rooftop Unit', stats.ahu) +
+    emStatPill('Variable Air Volume / Fan Powered Box', stats.vav) +
     emStatPill('Plants', stats.plants) +
     (stats.lighting ? emStatPill('Lighting', stats.lighting) : '') +
     (stats.other ? emStatPill('Other', stats.other) : '') +
     emStatPill('Has Data', stats.live) +
-    (data.totalBASPoints ? emStatPill('BAS Points', data.totalBASPoints.toLocaleString()) : '') +
+    (data.totalBASPoints ? emStatPill('Building Automation System Points', data.totalBASPoints.toLocaleString()) : '') +
     '</div>';
 
   var projBadge = projName
@@ -4712,14 +4724,14 @@ function emRenderToolbar(data, pid, projBadge) {
     typeOpts += '<option value="' + _tKey + '">' + EM_CATEGORY_LABELS[_tKey] + '</option>';
     if (_tKey === 'rtu') {
       typeOpts +=
-        '<option value="sz-rtu">  SZ-RTU</option>' +
-        '<option value="vav-rtu">  VAV-RTU</option>' +
-        '<option value="mtz-rtu">  MTZ-RTU</option>';
+        '<option value="sz-rtu">  Single Zone Rooftop Unit</option>' +
+        '<option value="vav-rtu">  Variable Air Volume Rooftop Unit</option>' +
+        '<option value="mtz-rtu">  Multi-Zone Rooftop Unit</option>';
     } else if (_tKey === 'ahu') {
       typeOpts +=
-        '<option value="sz-ahu">  SZ-AHU</option>' +
-        '<option value="vav-ahu">  VAV-AHU</option>' +
-        '<option value="mtz-ahu">  MTZ-AHU</option>';
+        '<option value="sz-ahu">  Single Zone Air Handling Unit</option>' +
+        '<option value="vav-ahu">  Variable Air Volume Air Handling Unit</option>' +
+        '<option value="mtz-ahu">  Multi-Zone Air Handling Unit</option>';
     }
   }
   // Future-proofing: any classifier category not yet in the curated order still appears here,
@@ -4765,14 +4777,14 @@ function emRenderToolbar(data, pid, projBadge) {
     // Audit-view legend bar — color-only cells; legend explains each color
     '<span id="em-audit-col-info" style="display:inline-flex;align-items:center;gap:6px;font-size:10px;color:var(--text3)">' +
     '<span style="font-size:10px;color:var(--text3);margin-right:2px">Legend:</span>' +
-    '<span title="Green = point matched in BAS data (automatic name match). Shows snapshot value when available." style="padding:1px 10px;border-radius:3px;background:rgba(39,174,96,0.15);color:#27ae60;font-weight:600">&nbsp;</span>' +
+    '<span title="Green = point matched in Building Automation System data (automatic name match). Shows snapshot value when available." style="padding:1px 10px;border-radius:3px;background:rgba(39,174,96,0.15);color:#27ae60;font-weight:600">&nbsp;</span>' +
     '<span style="font-size:10px;color:var(--text3)">Matched</span>' +
     '<span title="Amber = point likely present but name is non-standard (lower-confidence match). Hover cell for point name." style="padding:1px 10px;border-radius:3px;background:rgba(230,126,34,0.15);color:#e67e22;font-weight:600">&nbsp;</span>' +
     '<span style="font-size:10px;color:var(--text3)">Likely match</span>' +
-    '<span title="Red = required ASHRAE 36 point not found in BAS data." style="padding:1px 10px;border-radius:3px;background:rgba(192,57,43,0.15);color:#c0392b;font-weight:600">&nbsp;</span>' +
+    '<span title="Red = required ASHRAE 36 point not found in Building Automation System data." style="padding:1px 10px;border-radius:3px;background:rgba(192,57,43,0.15);color:#c0392b;font-weight:600">&nbsp;</span>' +
     '<span style="font-size:10px;color:var(--text3)">Not found</span>' +
     '<span title="Not applicable to this equipment type" style="padding:1px 6px;border-radius:3px;background:rgba(128,128,128,0.08);color:var(--text3)">N/A</span>' +
-    '<span title="Optional point — not present in BAS data" style="padding:1px 6px;border-radius:3px;background:rgba(128,128,128,0.05);color:var(--text3)">--</span>' +
+    '<span title="Optional point — not present in Building Automation System data" style="padding:1px 6px;border-radius:3px;background:rgba(128,128,128,0.05);color:var(--text3)">--</span>' +
     '</span>' +
     '</div>';
   return (
@@ -5035,7 +5047,7 @@ function emGetColDefs(projId) {
   defs.push({ key: 'voltage', label: 'Voltage', group: 'physical', width: 80 });
   defs.push({ key: 'phase', label: 'Phase', group: 'physical', width: 70 });
   defs.push({ key: 'amps', label: 'Amps', group: 'physical', width: 70 });
-  defs.push({ key: 'hpTons', label: 'HP/Tons', group: 'physical', width: 80 });
+  defs.push({ key: 'hpTons', label: 'Horsepower/Tons', group: 'physical', width: 80 });
 
   // Lifecycle
   defs.push({ key: 'installDate', label: 'Install Date', group: 'lifecycle', width: 100 });
@@ -5057,7 +5069,7 @@ function emGetColDefs(projId) {
   // Controls/BAS
   defs.push({ key: 'controllerType', label: 'Controller Type', group: 'controls', width: 120 });
   defs.push({ key: 'bacnetAddr', label: 'BACnet Addr', group: 'controls', width: 110 });
-  defs.push({ key: 'ipAddr', label: 'IP Address', group: 'controls', width: 110 });
+  defs.push({ key: 'ipAddr', label: 'Internet Protocol Address', group: 'controls', width: 110 });
 
   defs.push({ key: 'notes', label: 'Notes', group: 'id', width: 200 });
 
@@ -5147,7 +5159,7 @@ function emGetAuditColDefs(filteredRows) {
       width: 90,
       isAuditCoverage: true,
       title:
-        'Percentage of required ASHRAE 36 BAS points present for this equipment. Click a cell for details. N/A = no requirements for this type.',
+        'Percentage of required ASHRAE 36 Building Automation System points present for this equipment. Click a cell for details. N/A = no requirements for this type.',
     },
     {
       key: '_seqPct',
@@ -5164,16 +5176,17 @@ function emGetAuditColDefs(filteredRows) {
       group: 'audit',
       width: 100,
       isAuditBasPts: true,
-      title: 'Number of BAS points mapped to ASHRAE 36 categories for this equipment (Phase D-1)',
+      title:
+        'Number of Building Automation System points mapped to ASHRAE 36 categories for this equipment (Phase D-1)',
     },
     {
       key: '_autoOther',
-      label: 'Other BAS Points',
+      label: 'Other Building Automation System Points',
       group: 'audit',
       width: 110,
       isAuditOther: true,
       title:
-        'BAS points present in this equipment that are not mapped to ASHRAE 36 categories. Click count to view list.',
+        'Building Automation System points present in this equipment that are not mapped to ASHRAE 36 categories. Click count to view list.',
     },
   ];
 
@@ -5410,7 +5423,7 @@ function emGetAuditColDefs(filteredRows) {
     width: 90,
     isAuditBehavior: true,
     title:
-      'BAS trend behavioral verification — whether the ASHRAE 36 sequences are actually running correctly based on measured trend data. ' +
+      'Building Automation System trend behavioral verification — whether the ASHRAE 36 sequences are actually running correctly based on measured trend data. ' +
       'PASS = all checks passed, WARN = warnings, FAIL = checks failed, No Data = no trend data uploaded. ' +
       'Upload trend CSVs via the BAS Trends view to populate this column.',
   });
@@ -5511,7 +5524,7 @@ function emUpdateStatsPillsForAudit(rows) {
     ';line-height:1">' +
     avgCov +
     '%</div>' +
-    '<div style="font-size:10px;color:var(--text3);margin-top:2px;text-transform:uppercase;letter-spacing:0.04em">Pt Coverage</div>' +
+    '<div style="font-size:10px;color:var(--text3);margin-top:2px;text-transform:uppercase;letter-spacing:0.04em">Point Coverage</div>' +
     '</div>';
   var seqPct = audit.seqReadinessPct;
   var seqColor = seqPct >= 75 ? '#27ae60' : seqPct >= 50 ? '#e67e22' : '#c0392b';
@@ -5523,7 +5536,7 @@ function emUpdateStatsPillsForAudit(rows) {
         ';line-height:1">' +
         seqPct +
         '%</div>' +
-        '<div style="font-size:10px;color:var(--text3);margin-top:2px;text-transform:uppercase;letter-spacing:0.04em">Seq Ready</div>' +
+        '<div style="font-size:10px;color:var(--text3);margin-top:2px;text-transform:uppercase;letter-spacing:0.04em">Sequence Ready</div>' +
         '</div>'
       : '';
   bar.innerHTML =
@@ -5531,7 +5544,7 @@ function emUpdateStatsPillsForAudit(rows) {
     emStatPill('Equipment', base.total) +
     covPill +
     seqPill +
-    emStatPill('BAS Points', audit.totalBASPoints.toLocaleString());
+    emStatPill('Building Automation System Points', audit.totalBASPoints.toLocaleString());
 }
 
 /* ── emUpdateStatsPillsForRaw ───────────────────────────────────────────────
@@ -5549,15 +5562,15 @@ function emUpdateStatsPillsForRaw(rows, totalBASPoints) {
   var pillsHtml =
     emStatPillCompact('Buildings', stats.buildings) +
     emStatPillCompact('Equipment', stats.total) +
-    emStatPillCompact('AHU / RTU', stats.ahu) +
-    (stats.doas ? emStatPillCompact('DOAS', stats.doas) : '') +
-    (stats.mau ? emStatPillCompact('MAU', stats.mau) : '') +
-    (stats.erv ? emStatPillCompact('ERV', stats.erv) : '') +
-    emStatPillCompact('VAV / FPB', stats.vav) +
+    emStatPillCompact('Air Handling Unit / Rooftop Unit', stats.ahu) +
+    (stats.doas ? emStatPillCompact('Dedicated Outdoor Air System', stats.doas) : '') +
+    (stats.mau ? emStatPillCompact('Makeup Air Unit', stats.mau) : '') +
+    (stats.erv ? emStatPillCompact('Energy Recovery Ventilator', stats.erv) : '') +
+    emStatPillCompact('Variable Air Volume / Fan Powered Box', stats.vav) +
     (stats.furnace ? emStatPillCompact('Furnace', stats.furnace) : '') +
     (stats.fcu ? emStatPillCompact('Fan Coil', stats.fcu) : '') +
     (stats.heater ? emStatPillCompact('Heater', stats.heater) : '') +
-    (stats.ef ? emStatPillCompact('Exh Fan', stats.ef) : '') +
+    (stats.ef ? emStatPillCompact('Exhaust Fan', stats.ef) : '') +
     (stats.vrf ? emStatPillCompact(EM_CATEGORY_LABELS.vrf, stats.vrf) : '') +
     (stats.ac ? emStatPillCompact(EM_CATEGORY_LABELS.ac, stats.ac) : '') +
     emStatPillCompact('Plants', stats.plants) +
@@ -5574,7 +5587,7 @@ function emUpdateStatsPillsForRaw(rows, totalBASPoints) {
     (stats.monitoring ? emStatPillCompact('Monitoring', stats.monitoring) : '') +
     (stats.other ? emStatPillCompact('Other', stats.other) : '') +
     emStatPillCompact('Has Data', stats.live) +
-    (totalBASPoints ? emStatPillCompact('BAS Points', totalBASPoints.toLocaleString()) : '');
+    (totalBASPoints ? emStatPillCompact('Building Automation System Points', totalBASPoints.toLocaleString()) : '');
 
   var collapsed = emGetRawStatsCollapsed();
   bar.style.display = 'block';
@@ -5627,7 +5640,7 @@ function emUpdateStatsPillsForSummary(rows, totalBASPoints) {
     ';line-height:1">' +
     avgCov +
     '%</div>' +
-    '<div style="font-size:10px;color:var(--text3);margin-top:2px;text-transform:uppercase;letter-spacing:0.04em">Pt Coverage</div>' +
+    '<div style="font-size:10px;color:var(--text3);margin-top:2px;text-transform:uppercase;letter-spacing:0.04em">Point Coverage</div>' +
     '</div>';
   var seqPct = audit.seqReadinessPct;
   var seqColor = seqPct >= 75 ? '#27ae60' : seqPct >= 50 ? '#e67e22' : '#c0392b';
@@ -5639,7 +5652,7 @@ function emUpdateStatsPillsForSummary(rows, totalBASPoints) {
         ';line-height:1">' +
         seqPct +
         '%</div>' +
-        '<div style="font-size:10px;color:var(--text3);margin-top:2px;text-transform:uppercase;letter-spacing:0.04em">Seq Ready</div>' +
+        '<div style="font-size:10px;color:var(--text3);margin-top:2px;text-transform:uppercase;letter-spacing:0.04em">Sequence Ready</div>' +
         '</div>'
       : '';
   bar.innerHTML =
@@ -5647,7 +5660,7 @@ function emUpdateStatsPillsForSummary(rows, totalBASPoints) {
     emStatPill('Equipment', base.total) +
     covPill +
     seqPill +
-    (totalBASPoints ? emStatPill('BAS Points', totalBASPoints.toLocaleString()) : '');
+    (totalBASPoints ? emStatPill('Building Automation System Points', totalBASPoints.toLocaleString()) : '');
 }
 
 /* ── emBuildAllPointsTableHtml (561fe067) ────────────────────────────────────
@@ -5692,7 +5705,7 @@ function emBuildAllPointsTableHtml(row) {
         return a.toLowerCase() < b.toLowerCase() ? -1 : a.toLowerCase() > b.toLowerCase() ? 1 : 0;
       });
     html +=
-      '<div style="font-weight:600;color:var(--text2);margin-bottom:4px">All BAS Points (' +
+      '<div style="font-weight:600;color:var(--text2);margin-bottom:4px">All Building Automation System Points (' +
       _apKeys.length +
       ' captured)</div>' +
       '<div style="font-size:10px;color:var(--text3);margin-bottom:6px">' +
@@ -6869,8 +6882,8 @@ function emRenderTable(data, filters) {
     for (var i = 0; i < filtered.length; i++) filteredPts += Object.keys(filtered[i].points || {}).length;
     var ptsText =
       filtered.length < rows.length
-        ? filteredPts.toLocaleString() + ' of ' + totalPts.toLocaleString() + ' BAS Points'
-        : totalPts.toLocaleString() + ' Total BAS Points';
+        ? filteredPts.toLocaleString() + ' of ' + totalPts.toLocaleString() + ' Building Automation System Points'
+        : totalPts.toLocaleString() + ' Total Building Automation System Points';
     countEl.textContent = ptsText;
   }
 
@@ -7806,8 +7819,8 @@ function emRenderSummaryView(data, filters) {
   if (countEl) {
     countEl.textContent =
       filtered.length < rows.length
-        ? filteredPts.toLocaleString() + ' of ' + totalPts.toLocaleString() + ' BAS Points'
-        : totalPts.toLocaleString() + ' Total BAS Points';
+        ? filteredPts.toLocaleString() + ' of ' + totalPts.toLocaleString() + ' Building Automation System Points'
+        : totalPts.toLocaleString() + ' Total Building Automation System Points';
   }
 
   // Fix 485802f4: refresh the header stat-pill bar for Summary view. Previously
@@ -8018,7 +8031,7 @@ function emRenderSummaryView(data, filters) {
   html +=
     '<th style="' +
     thStyleCenter +
-    '" title="BAS points present in this building that are not mapped to ASHRAE 36 categories. Counted from all equipment rows, all types.">Other Points</th>';
+    '" title="Building Automation System points present in this building that are not mapped to ASHRAE 36 categories. Counted from all equipment rows, all types.">Other Points</th>';
   html += '</tr></thead>';
   html += '<tbody>';
 
@@ -8894,7 +8907,7 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
       '\')" ' +
       'title="' +
       ashraeCount +
-      ' ASHRAE 36 points. Click to view all BAS points (ASHRAE 36 + Other) together.">' +
+      ' ASHRAE 36 points. Click to view all Building Automation System points (ASHRAE 36 + Other) together.">' +
       ashraeCount +
       '</td>'
     );
@@ -8923,7 +8936,7 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
       '\')" ' +
       'title="' +
       otherCount +
-      ' BAS points not mapped to ASHRAE 36. Click to view list.">' +
+      ' Building Automation System points not mapped to ASHRAE 36. Click to view list.">' +
       '<span style="display:inline-block;background:var(--s2);color:var(--text2);border:1px solid var(--border);' +
       'border-radius:10px;padding:1px 8px;font-size:11px;font-weight:600;cursor:pointer">' +
       otherCount +
@@ -9827,7 +9840,7 @@ function emShowAutoKeyDetail(rowId) {
   var listHtml =
     '<div style="margin-bottom:16px">' +
     '<div style="font-weight:600;font-size:12px;color:var(--text2);text-transform:uppercase;' +
-    'letter-spacing:0.05em;margin-bottom:8px">All BAS Points</div>' +
+    'letter-spacing:0.05em;margin-bottom:8px">All Building Automation System Points</div>' +
     '<div style="font-size:11px;color:var(--text3);margin-bottom:10px">' +
     '<strong>' +
     _ashraeCt +
@@ -9835,7 +9848,7 @@ function emShowAutoKeyDetail(rowId) {
     (_ashraeCt === 1 ? '' : 's') +
     ' (counted toward coverage) shown next to <strong>' +
     _otherCt +
-    '</strong> Other BAS point' +
+    '</strong> Other Building Automation System point' +
     (_otherCt === 1 ? '' : 's') +
     ' (found on the equipment, not scored).' +
     '</div>' +
@@ -9859,7 +9872,7 @@ function emShowAutoKeyDetail(rowId) {
     '<div style="font-weight:700;font-size:13px;color:var(--text)">' +
     emHtmlEsc(equipName) +
     '</div>' +
-    '<div style="font-size:11px;color:var(--text3)">ASHRAE 36 Points &amp; Other BAS Points</div>' +
+    '<div style="font-size:11px;color:var(--text3)">ASHRAE 36 Points &amp; Other Building Automation System Points</div>' +
     '</div>' +
     '<button onclick="emCloseComplianceDetail()" style="background:none;border:none;font-size:18px;' +
     'cursor:pointer;color:var(--text2);padding:4px;line-height:1" title="Close">&times;</button>' +
@@ -10572,7 +10585,7 @@ function emAttachEffectiveSchedules(pid, csvText, fileName) {
       matchedCount: 0,
       totalCount: 0,
       unmatched: [],
-      error: 'No Equipment Matrix rows for this project yet — import a BAS Points CSV first.',
+      error: 'No Equipment Matrix rows for this project yet — import a Building Automation System Points CSV first.',
     };
   }
   var rows = data.rows;
@@ -10881,7 +10894,7 @@ function emOpenSetpointExportDialog(pid, lockedBldgId) {
     '<div class="modal-hdr"><div class="modal-title">Export Setpoints &amp; Schedules</div>' +
     '<button class="modal-x" onclick="document.getElementById(\'em-sp-export-modal\').remove()">&#10005;</button></div>' +
     '<div class="modal-body">' +
-    '<div style="font-size:11px;color:var(--text3);margin-bottom:10px">Existing columns come from each equipment\'s BAS Points in the Equipment Matrix; unknown values show "?". Proposed columns use the BAS Savings Calc option below when it has a saved value, otherwise the company standard default.</div>' +
+    '<div style="font-size:11px;color:var(--text3);margin-bottom:10px">Existing columns come from each equipment\'s Building Automation System Points in the Equipment Matrix; unknown values show "?". Proposed columns use the BAS Savings Calc option below when it has a saved value, otherwise the company standard default.</div>' +
     '<div id="em-sp-export-note" style="font-size:11px;color:var(--text3);margin-bottom:10px"></div>' +
     (lockedBldgUnresolvedName
       ? '<div style="font-size:11px;color:#b45309;background:rgba(217,119,6,0.1);border:1px solid rgba(217,119,6,0.3);border-radius:4px;padding:6px 8px;margin-bottom:10px">"' +
@@ -11330,7 +11343,7 @@ function emHandleImport(pid) {
         '<div style="margin-top:6px;border-top:1px solid var(--border);padding-top:6px">' +
         'Buildings: ' +
         importBldgCount +
-        (showPoints ? ' &nbsp;|&nbsp; BAS Points: ' + totalRawRows.toLocaleString() : '') +
+        (showPoints ? ' &nbsp;|&nbsp; Building Automation System Points: ' + totalRawRows.toLocaleString() : '') +
         ' &nbsp;|&nbsp; Floor field non-blank: ' +
         withFloor.toLocaleString() +
         ' of ' +
@@ -11862,7 +11875,7 @@ var EM_NAMED_EXCLUSIONS = [
   // pre-action/fireman's-panel bare sweeps remain below as the residual catch-all.
   {
     key: 'efSfSpeedCommand',
-    label: 'EF/SF Speed Command',
+    label: 'Exhaust Fan/Supply Fan Speed Command',
     patterns: [/^(EF|SF)-?\d+\s+Speed\s+Command(\s*-\s*ANI)?\b/i], // EF-1 Speed Command - ANI
     nonAshrae: true,
     required: false,
@@ -11978,7 +11991,7 @@ var EM_NAMED_EXCLUSIONS = [
   },
   {
     key: 'bmsConfig',
-    label: 'BMS Configuration / Supervisor',
+    label: 'Building Management System Configuration / Supervisor',
     patterns: [
       /\bnetwork\s+control\b/i, // P1.7 network control objects
       /\bnot\s+under\s+manager\s+control\b/i, // P1.7 manager control
@@ -11990,7 +12003,7 @@ var EM_NAMED_EXCLUSIONS = [
   // schedule and occupied/occupancy override bare sweeps remain below as the residual.
   {
     key: 'crestronOccDi',
-    label: 'Crestron Zone Occupancy DI',
+    label: 'Crestron Zone Occupancy Digital Input',
     patterns: [/^z_DI_Occ\b|^z_DI_Override\b|^z_DI_ZUM\b/i], // Crestron zone occupancy DI points
     nonAshrae: true,
     required: false,
@@ -12123,14 +12136,14 @@ var EM_NAMED_EXCLUSIONS = [
   },
   {
     key: 'btuCalcMeter',
-    label: 'BTU Calc/Meter',
+    label: 'British Thermal Unit Calc/Meter',
     patterns: [/^BTU\s+(Calc|Meter)\b/i],
     nonAshrae: true,
     required: false,
   },
   {
     key: 'mwhMjToBtu',
-    label: 'MWh / MJ to BTU',
+    label: 'MWh / Megajoule to British Thermal Unit',
     patterns: [/^MWh$|^MJ\s+to\s+BTU$/i],
     nonAshrae: true,
     required: false,
@@ -12169,7 +12182,7 @@ var EM_NAMED_EXCLUSIONS = [
   // phase-ABC/kw-kwh-kvar bare sweeps remain below as the residual catch-all.
   {
     key: 'atsTransferSwitch',
-    label: 'ATS Transfer Switch',
+    label: 'Automatic Transfer Switch',
     patterns: [/^ATS[\s-]/i], // Wave 5 ATS transfer switch
     nonAshrae: true,
     required: false,
@@ -12190,7 +12203,7 @@ var EM_NAMED_EXCLUSIONS = [
   // vendor-drive, VFD-prefix, and bare "inverter" sweeps remain below as the residual.
   {
     key: 'avgRmsFreqCurrent',
-    label: 'Average RMS Frequency/Current',
+    label: 'Average Root Mean Square Frequency/Current',
     patterns: [/\bAverage\s+(AC\s+)?RMS\s+(Frequency|Current)\b/i], // Average AC RMS Frequency
     nonAshrae: true,
     required: false,
@@ -12218,7 +12231,7 @@ var EM_NAMED_EXCLUSIONS = [
   },
   {
     key: 'dcBusAbnormal',
-    label: 'DC Bus Abnormal',
+    label: 'Direct Current Bus Abnormal',
     patterns: [/^DC\s+Bus\s+Abnormal\b/i], // DC Bus Abnormal (drive fault)
     nonAshrae: true,
     required: false,
@@ -12232,7 +12245,7 @@ var EM_NAMED_EXCLUSIONS = [
   },
   {
     key: 'vfdSubObject',
-    label: 'VFD / Drive Sub-Object',
+    label: 'Variable Frequency Drive / Drive Sub-Object',
     patterns: [
       /^drive\s+(current|dc\s+bus|kwh|mwh|output|power|runtime|speed\s+ref(erence)?|temperature|torque|ready|run|fault|hand|in\s+hand|valid|system)/i,
       /\b(ABB|Armstrong|Danfoss)\s+drive\s+(warning|hoa|in\s+hand)/i,
@@ -12312,7 +12325,7 @@ var EM_NAMED_EXCLUSIONS = [
   },
   {
     key: 'chwPumpVfdSignal',
-    label: 'Chilled Water Pump VFD Signal/Position/Available',
+    label: 'Chilled Water Pump Variable Frequency Drive Signal/Position/Available',
     patterns: [/^Chilled\s+Water\s+Pump\s+\d+\s+(VFD\s+Signal|Position\s+AV|Available)\b/i],
     nonAshrae: true,
     required: false,
@@ -12389,7 +12402,7 @@ var EM_NAMED_EXCLUSIONS = [
   },
   {
     key: 'phaseDpAni',
-    label: 'Phase ABC DP ANI',
+    label: 'Three-Phase Differential Pressure (Analog Input)',
     patterns: [/^Ph\s+[ABC]\s+DP\s+ANI\b/i],
     nonAshrae: true,
     required: false,
@@ -12407,7 +12420,7 @@ var EM_NAMED_EXCLUSIONS = [
   },
   {
     key: 'commFailedBtuMeter',
-    label: 'Communication Failed to BTU Meter',
+    label: 'Communication Failed to British Thermal Unit Meter',
     patterns: [/^Communication\s+Failed\s+to\s+BTU\s+Meter\b/i],
     nonAshrae: true,
     required: false,
@@ -12421,7 +12434,7 @@ var EM_NAMED_EXCLUSIONS = [
   },
   {
     key: 'chillerPlant',
-    label: 'Chiller Plant / MCS',
+    label: 'Chiller Plant / Master Control System',
     patterns: [
       /^_MCS\s/i, // Wave 1 _MCS
       /^_BAS\s/i, // Wave 1 _BAS
@@ -12552,7 +12565,7 @@ var EM_NAMED_EXCLUSIONS = [
   },
   {
     key: 'heatCoolRequestBv',
-    label: 'Heat/Cool Request BV',
+    label: 'Heat/Cool Request Binary Value',
     patterns: [/^(Heat|Cool)\s+Request(\s+BV)?\b/i], // Heat Request BV, Cool Request BV
     nonAshrae: true,
     required: false,
@@ -12598,7 +12611,7 @@ var EM_NAMED_EXCLUSIONS = [
   },
   {
     key: 'vvtCoordination',
-    label: 'VVT Zone Coordination',
+    label: 'Variable Volume Terminal Zone Coordination',
     patterns: [
       /^active\s+zones?\s*#/i, // P1.3
       /^max\s+zones?\s*#/i,
@@ -12623,7 +12636,7 @@ var EM_NAMED_EXCLUSIONS = [
   // louver bare sweep remains below as the residual catch-all.
   {
     key: 'flameBv',
-    label: 'Flame BV',
+    label: 'Flame Binary Value',
     patterns: [/^Flame\s+BV\b/i], // Flame BV (boolean valve signal)
     nonAshrae: true,
     required: false,
@@ -12644,7 +12657,7 @@ var EM_NAMED_EXCLUSIONS = [
   },
   {
     key: 'stateAvDescription',
-    label: 'State AV / Description',
+    label: 'State Analog Value / Description',
     patterns: [/^State\s+(AV|Description\s+MSV)\b/i], // State AV, State Description MSV
     nonAshrae: true,
     required: false,
@@ -12673,7 +12686,7 @@ var EM_NAMED_EXCLUSIONS = [
   },
   {
     key: 'etHours',
-    label: 'ET Hours',
+    label: 'Elapsed Time Hours',
     patterns: [/^ETHours\s+AV\b/i],
     nonAshrae: true,
     required: false,
@@ -12701,7 +12714,7 @@ var EM_NAMED_EXCLUSIONS = [
   },
   {
     key: 'heatSourceOnBv',
-    label: 'Heat Source On BV',
+    label: 'Heat Source On Binary Value',
     patterns: [/^Heat\s+Source\s+On\s+BV\b/i],
     nonAshrae: true,
     required: false,
@@ -12789,14 +12802,14 @@ var EM_NAMED_EXCLUSIONS = [
   },
   {
     key: 'noSensor',
-    label: 'NO Sensor',
+    label: 'Nitric Oxide Sensor',
     patterns: [/^NO\s+Sensor\b/i], // Nitric Oxide sensor
     nonAshrae: true,
     required: false,
   },
   {
     key: 'zoneVoc',
-    label: 'Zone VOC',
+    label: 'Zone Volatile Organic Compound',
     patterns: [/^Zone\s+VOC\b/i],
     nonAshrae: true,
     required: false,
@@ -12831,7 +12844,7 @@ var EM_NAMED_EXCLUSIONS = [
   },
   {
     key: 'uvRadiometerLevel',
-    label: 'UV Radiometer Level',
+    label: 'Ultraviolet Radiometer Level',
     patterns: [/^Low\s+UV\s+Radiometer\s+Level\b/i],
     nonAshrae: true,
     required: false,
@@ -12855,14 +12868,14 @@ var EM_NAMED_EXCLUSIONS = [
   // comm-failure, Cresnet/Crestron bare sweeps remain below as the residual catch-all.
   {
     key: 'tcpByteCount',
-    label: 'TCP RX/TX Byte/Packet Count',
+    label: 'Transmission Control Protocol Receive/Transmit Byte/Packet Count',
     patterns: [/^TCP\s+(RX|TX|Total)\s+(Byte|Packet)\s+Count\b/i],
     nonAshrae: true,
     required: false,
   },
   {
     key: 'totalFreeRam',
-    label: 'Total/Free RAM',
+    label: 'Total/Free Random Access Memory',
     patterns: [/^Total\s+RAM\s+ANI$|^Free\s+RAM\s+ANI$/i],
     nonAshrae: true,
     required: false,
@@ -12890,14 +12903,14 @@ var EM_NAMED_EXCLUSIONS = [
   },
   {
     key: 'commOutsidePc',
-    label: 'COMM / Outside PC',
+    label: 'Communication / Outside Personal Computer',
     patterns: [/^COMM?\s*\/\s*Outside\s+PC\b/i],
     nonAshrae: true,
     required: false,
   },
   {
     key: 'bmsCommTimeout',
-    label: 'BMS Communications Timeout',
+    label: 'Building Management System Communications Timeout',
     patterns: [/^BMS\s+Communications\s+Timeout\b/i],
     nonAshrae: true,
     required: false,
@@ -13025,14 +13038,14 @@ var EM_NAMED_EXCLUSIONS = [
   },
   {
     key: 'systemControlAno',
-    label: 'System Control ANO',
+    label: 'System Control Analog Output',
     patterns: [/^System\s+Control\s+ANO\b/i], // specific form; not bare "System Control"
     nonAshrae: true,
     required: false,
   },
   {
     key: 'operatingDoasUnits',
-    label: 'Operating DOAS Units',
+    label: 'Operating Dedicated Outdoor Air System Units',
     patterns: [/^Operating\s+DOAS\s+Units\b/i],
     nonAshrae: true,
     required: false,
@@ -13046,7 +13059,7 @@ var EM_NAMED_EXCLUSIONS = [
   },
   {
     key: 'dxDayRotation',
-    label: 'DX Day Rotation',
+    label: 'Direct Expansion Day Rotation',
     patterns: [/^DX\s+Day\s+Rotation\b/i],
     nonAshrae: true,
     required: false,
@@ -13088,7 +13101,7 @@ var EM_NAMED_EXCLUSIONS = [
   },
   {
     key: 'ahuControl',
-    label: 'AHU Control',
+    label: 'Air Handling Unit Control',
     patterns: [/^Ahu\s+Control\b/i], // Phase 2 — AHU HVAC mode cluster
     nonAshrae: true,
     required: false,
@@ -13148,8 +13161,8 @@ var EM_EQUIP_CONFIG_FLAGS = {
     { key: 'hasReturnFan', label: 'Has Return Fan', default: false },
     { key: 'hasReliefFan', label: 'Has Relief Fan', default: false },
     { key: 'hasEconomizer', label: 'Has Economizer', default: true },
-    { key: 'hasCHWCoil', label: 'Has CHW Coil', default: true },
-    { key: 'hasHWCoil', label: 'Has HW Coil', default: true },
+    { key: 'hasCHWCoil', label: 'Has Chilled Water Coil', default: true },
+    { key: 'hasHWCoil', label: 'Has Hot Water Coil', default: true },
     // M4 Part C: default true so missing CO2 lowers audit coverage for AHU/VAV
     { key: 'hasCO2', label: 'Has CO2 Sensor', default: true },
     { key: 'hasOAFlow', label: 'Has Outside Air Flow Meter', default: false },
@@ -13162,8 +13175,8 @@ var EM_EQUIP_CONFIG_FLAGS = {
     { key: 'hasReturnFan', label: 'Has Return Fan', default: false },
     { key: 'hasReliefFan', label: 'Has Relief Fan', default: false },
     { key: 'hasEconomizer', label: 'Has Economizer', default: true },
-    { key: 'hasCHWCoil', label: 'Has CHW Coil', default: true },
-    { key: 'hasHWCoil', label: 'Has HW Coil', default: true },
+    { key: 'hasCHWCoil', label: 'Has Chilled Water Coil', default: true },
+    { key: 'hasHWCoil', label: 'Has Hot Water Coil', default: true },
     { key: 'hasCO2', label: 'Has CO2 Sensor', default: true },
     { key: 'hasOAFlow', label: 'Has Outside Air Flow Meter', default: false },
   ],
@@ -13303,19 +13316,19 @@ var EM_EQUIP_CONFIG_FLAGS = {
     },
   ],
   hwp: [
-    { key: 'hasSecPump', label: 'Has Secondary HW Pump', default: true },
-    { key: 'hasFlowMeter', label: 'Has HW Flow Meter', default: false },
+    { key: 'hasSecPump', label: 'Has Secondary Hot Water Pump', default: true },
+    { key: 'hasFlowMeter', label: 'Has Hot Water Flow Meter', default: false },
     { key: 'hasIsoValves', label: 'Has Isolation Valves', default: true },
   ],
   chwp: [
-    { key: 'hasSecPump', label: 'Has Secondary CHW Pump', default: true },
-    { key: 'hasFlowMeter', label: 'Has CHW Flow Meter', default: false },
+    { key: 'hasSecPump', label: 'Has Secondary Chilled Water Pump', default: true },
+    { key: 'hasFlowMeter', label: 'Has Chilled Water Flow Meter', default: false },
     { key: 'hasIsoValves', label: 'Has Isolation Valves', default: true },
     { key: 'hasPrimary', label: 'Has Primary Pump', default: true },
   ],
   ct: [
-    { key: 'hasVFD', label: 'Has VFD Fan', default: true },
-    { key: 'hasCWIsoValve', label: 'Has CW Isolation Valve', default: true },
+    { key: 'hasVFD', label: 'Has Variable Frequency Drive Fan', default: true },
+    { key: 'hasCWIsoValve', label: 'Has Condenser Water Isolation Valve', default: true },
     { key: 'hasMakeupValve', label: 'Has Makeup Water Valve', default: true },
   ],
   // Phase 2 (setpoint-value-compliance): zone + fcu categories added so zoneType/occupancyCat
@@ -13383,7 +13396,7 @@ var EM_EQUIP_CONFIG_FLAGS = {
   // coverage. Set false on heat-only furnaces or cool-only units.
   // oaDamper has required:false and no configFlag — it is always-optional, never penalizes coverage.
   furnace: [
-    { key: 'hasDXCooling', label: 'Has DX Cooling', default: true },
+    { key: 'hasDXCooling', label: 'Has Direct Expansion Cooling', default: true },
     { key: 'hasGasHeat', label: 'Has Gas Heat Stage', default: true },
   ],
 };
@@ -14348,7 +14361,7 @@ var EM_POINT_CATEGORIES = {
     // F4: Ventilation CFM
     {
       key: 'ventCfm',
-      label: 'Ventilation CFM',
+      label: 'Ventilation Airflow',
       required: false,
       ashrae36Name: 'Ventilation Airflow',
       ashrae36Section: '5.16',
@@ -14358,7 +14371,7 @@ var EM_POINT_CATEGORIES = {
     // F5: Ventilation CFM Setpoint
     {
       key: 'ventCfmSp',
-      label: 'Ventilation CFM Setpoint',
+      label: 'Ventilation Airflow Setpoint',
       required: false,
       ashrae36Name: 'Ventilation Airflow Setpoint',
       ashrae36Section: '5.16',
@@ -14368,7 +14381,7 @@ var EM_POINT_CATEGORIES = {
     // F6: Return Fan CFM
     {
       key: 'rfCfm',
-      label: 'Return Fan CFM',
+      label: 'Return Fan Airflow',
       required: false,
       ashrae36Name: 'Return Fan Airflow',
       ashrae36Section: '5.16',
@@ -14379,7 +14392,7 @@ var EM_POINT_CATEGORIES = {
     // F7: Supply Fan CFM
     {
       key: 'sfCfm',
-      label: 'Supply Fan CFM',
+      label: 'Supply Fan Airflow',
       required: false,
       ashrae36Name: 'Supply Fan Airflow',
       ashrae36Section: '5.16',
@@ -14411,7 +14424,7 @@ var EM_POINT_CATEGORIES = {
     // J2: Return Fan VFD Speed
     {
       key: 'rfSpeed',
-      label: 'Return Fan VFD Speed',
+      label: 'Return Fan Variable Frequency Drive Speed',
       required: false,
       ashrae36Name: 'Return Fan Speed',
       ashrae36Section: '5.16',
@@ -14572,7 +14585,7 @@ var EM_POINT_CATEGORIES = {
       //   furnace.zoneHumidity (Bucket-A) in furnace context. This ahu-only entry fires ONLY
       //   in ahu context → fcu/furnace Bucket-A is preserved.
       key: 'ahuZoneHumidity',
-      label: 'Zone Humidity Monitor (AHU)',
+      label: 'Zone Humidity Monitor (Air Handling Unit)',
       nonAshrae: true,
       required: false,
       auditRelevant: false,
@@ -14587,7 +14600,7 @@ var EM_POINT_CATEGORIES = {
       // "Air Flow N", "Outside Air CFM" etc. are Bucket-A (discFlow) in vav context
       //   and hvacSubObject in ahu context → must be ahu-only.
       key: 'ahuAirflow',
-      label: 'AHU Airflow / CFM Monitor',
+      label: 'Air Handling Unit Airflow Monitor',
       nonAshrae: true,
       required: false,
       auditRelevant: false,
@@ -14608,7 +14621,7 @@ var EM_POINT_CATEGORIES = {
       //   CANNOT be in a global named exclusion. This ahu-only entry fires in ahu
       //   context; vav/other contexts still hit their ASHRAE categories.
       key: 'ahuSourceMode',
-      label: 'AHU Source Mode / VVT Signal',
+      label: 'Air Handling Unit Source Mode / Variable Volume Terminal Signal',
       nonAshrae: true,
       required: false,
       auditRelevant: false,
@@ -14623,7 +14636,7 @@ var EM_POINT_CATEGORIES = {
     // All placed here (ahu-only) because many of these names are Bucket-A in vav context.
     {
       key: 'ahuFanDP',
-      label: 'AHU Fan Differential Pressure (Monitor)',
+      label: 'Air Handling Unit Fan Differential Pressure (Monitor)',
       nonAshrae: true,
       required: false,
       auditRelevant: false,
@@ -14637,7 +14650,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'ahuVFDMonitor',
-      label: 'AHU Relief / Exhaust Fan VFD & RPM Monitor',
+      label: 'Air Handling Unit Relief / Exhaust Fan Variable Frequency Drive & Revolutions Per Minute Monitor',
       nonAshrae: true,
       required: false,
       auditRelevant: false,
@@ -14659,7 +14672,7 @@ var EM_POINT_CATEGORIES = {
       // Aliases-only: Tier 2 fires in ahu-specific context, Tier 2 is SKIPPED in neutral path,
       // so ef.fanStatus/fanSpeed remain Bucket-A in neutral classification.
       key: 'ahuExhaustFan',
-      label: 'AHU Exhaust Fan Speed / Status',
+      label: 'Air Handling Unit Exhaust Fan Speed / Status',
       nonAshrae: true,
       required: false,
       auditRelevant: false,
@@ -14668,7 +14681,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'ahuERV',
-      label: 'AHU Energy Recovery Wheel (Monitor)',
+      label: 'Air Handling Unit Energy Recovery Wheel (Monitor)',
       nonAshrae: true,
       required: false,
       auditRelevant: false,
@@ -14681,7 +14694,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'ahuHumidifyMonitor',
-      label: 'AHU Humidification Monitor',
+      label: 'Air Handling Unit Humidification Monitor',
       nonAshrae: true,
       required: false,
       auditRelevant: false,
@@ -14693,7 +14706,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'ahuFloorOcc',
-      label: 'AHU Floor Occupancy Signal',
+      label: 'Air Handling Unit Floor Occupancy Signal',
       nonAshrae: true,
       required: false,
       auditRelevant: false,
@@ -14704,7 +14717,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'ahuCondensate',
-      label: 'AHU Condensate Detection',
+      label: 'Air Handling Unit Condensate Detection',
       nonAshrae: true,
       required: false,
       auditRelevant: false,
@@ -14715,7 +14728,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'ahuStairPress',
-      label: 'AHU Stair Pressurization',
+      label: 'Air Handling Unit Stair Pressurization',
       nonAshrae: true,
       required: false,
       auditRelevant: false,
@@ -14727,7 +14740,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'ahuDamperCtrl',
-      label: 'AHU Damper Controls (Non-ASHRAE)',
+      label: 'Air Handling Unit Damper Controls (Non-ASHRAE)',
       nonAshrae: true,
       required: false,
       auditRelevant: false,
@@ -14745,7 +14758,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'ahuDXRefrig',
-      label: 'AHU DX Refrigeration Points',
+      label: 'Air Handling Unit Direct Expansion Refrigeration Points',
       nonAshrae: true,
       required: false,
       auditRelevant: false,
@@ -14762,7 +14775,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'ahuAirTempAlarm',
-      label: 'AHU Air Temperature Alarms',
+      label: 'Air Handling Unit Air Temperature Alarms',
       nonAshrae: true,
       required: false,
       auditRelevant: false,
@@ -14774,7 +14787,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'ahuDiagnostics',
-      label: 'AHU Diagnostics and Control Flags',
+      label: 'Air Handling Unit Diagnostics and Control Flags',
       nonAshrae: true,
       required: false,
       auditRelevant: false,
@@ -14795,7 +14808,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'ahuGasHeat',
-      label: 'AHU Gas Heating Control',
+      label: 'Air Handling Unit Gas Heating Control',
       nonAshrae: true,
       required: false,
       auditRelevant: false,
@@ -14807,7 +14820,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'ahuMgrControl',
-      label: 'AHU Manager Run / Relay Control',
+      label: 'Air Handling Unit Manager Run / Relay Control',
       nonAshrae: true,
       required: false,
       auditRelevant: false,
@@ -15000,9 +15013,9 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'fanStatus',
-      label: 'AHU Supply Fan Status',
+      label: 'Air Handling Unit Supply Fan Status',
       required: true,
-      ashrae36Name: 'AHU Supply Fan Status',
+      ashrae36Name: 'Air Handling Unit Supply Fan Status',
       ashrae36Section: '5.6',
       patterns: [
         /ahu fan.?status/i,
@@ -15105,9 +15118,9 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'ahuSAT',
-      label: 'AHU Supply Air Temperature',
+      label: 'Air Handling Unit Supply Air Temperature',
       required: false,
-      ashrae36Name: 'AHU Supply Air Temperature',
+      ashrae36Name: 'Air Handling Unit Supply Air Temperature',
       ashrae36Section: '5.6',
       patterns: [
         /ahu.?sat/i,
@@ -15306,7 +15319,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'vavScheduling',
-      label: 'VAV Zone Scheduling / Occupancy Flags',
+      label: 'Variable Air Volume Zone Scheduling / Occupancy Flags',
       nonAshrae: true,
       required: false,
       auditRelevant: false,
@@ -15345,7 +15358,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'vvtCoolRequest',
-      label: 'VVT Zone Cool Request',
+      label: 'Variable Volume Terminal Zone Cool Request',
       nonAshrae: true,
       required: false,
       auditRelevant: false,
@@ -15354,7 +15367,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'vvtHtgRequest',
-      label: 'VVT Zone Heat Request',
+      label: 'Variable Volume Terminal Zone Heat Request',
       nonAshrae: true,
       required: false,
       auditRelevant: false,
@@ -15363,7 +15376,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'vvtSfAmpsMonitor',
-      label: 'Supply Fan Amperage Monitor (VVT Zone)',
+      label: 'Supply Fan Amperage Monitor (Variable Volume Terminal Zone)',
       nonAshrae: true,
       required: false,
       auditRelevant: false,
@@ -15494,9 +15507,9 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'fanStatus',
-      label: 'AHU Supply Fan Status',
+      label: 'Air Handling Unit Supply Fan Status',
       required: true,
-      ashrae36Name: 'AHU Supply Fan Status',
+      ashrae36Name: 'Air Handling Unit Supply Fan Status',
       ashrae36Section: '5.7',
       patterns: [/ahu fan.?status/i, /supply fan.?status/i, /fan status/i, /air source status/i],
       aliases: ['fan status', 'ahu fan status', 'supply fan status', 'ahu fan run', 'air source status'],
@@ -15707,7 +15720,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'vvtCoolRequest',
-      label: 'VVT Zone Cool Request',
+      label: 'Variable Volume Terminal Zone Cool Request',
       nonAshrae: true,
       required: false,
       auditRelevant: false,
@@ -15716,7 +15729,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'vvtHtgRequest',
-      label: 'VVT Zone Heat Request',
+      label: 'Variable Volume Terminal Zone Heat Request',
       nonAshrae: true,
       required: false,
       auditRelevant: false,
@@ -15725,7 +15738,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'vvtSfAmpsMonitor',
-      label: 'Supply Fan Amperage Monitor (VVT Zone)',
+      label: 'Supply Fan Amperage Monitor (Variable Volume Terminal Zone)',
       nonAshrae: true,
       required: false,
       auditRelevant: false,
@@ -15801,9 +15814,9 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'fanStatus',
-      label: 'AHU Supply Fan Status',
+      label: 'Air Handling Unit Supply Fan Status',
       required: true,
-      ashrae36Name: 'AHU Supply Fan Status',
+      ashrae36Name: 'Air Handling Unit Supply Fan Status',
       ashrae36Section: '5.13',
       patterns: [/ahu fan.?status/i, /supply fan.?status/i, /fan status/i, /air source status/i],
       aliases: ['fan status', 'ahu fan status', 'supply fan status', 'air source status'],
@@ -15979,7 +15992,7 @@ var EM_POINT_CATEGORIES = {
     // ── Third-pass rescue: DDVAV-specific non-ASHRAE points ──────────────────
     {
       key: 'ddvavDeckTemp',
-      label: 'DD-VAV Air Source Deck Temperatures',
+      label: 'Dual Duct Variable Air Volume Air Source Deck Temperatures',
       nonAshrae: true,
       required: false,
       auditRelevant: false,
@@ -15990,7 +16003,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'ddvavDamperPos',
-      label: 'DD-VAV Zone Damper Position',
+      label: 'Dual Duct Variable Air Volume Zone Damper Position',
       nonAshrae: true,
       required: false,
       auditRelevant: false,
@@ -16021,7 +16034,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'vvtCoolRequest',
-      label: 'VVT Zone Cool Request',
+      label: 'Variable Volume Terminal Zone Cool Request',
       nonAshrae: true,
       required: false,
       auditRelevant: false,
@@ -16030,7 +16043,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'vvtHtgRequest',
-      label: 'VVT Zone Heat Request',
+      label: 'Variable Volume Terminal Zone Heat Request',
       nonAshrae: true,
       required: false,
       auditRelevant: false,
@@ -16039,7 +16052,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'vvtSfAmpsMonitor',
-      label: 'Supply Fan Amperage Monitor (VVT Zone)',
+      label: 'Supply Fan Amperage Monitor (Variable Volume Terminal Zone)',
       nonAshrae: true,
       required: false,
       auditRelevant: false,
@@ -16299,7 +16312,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'hwPumpStatus',
-      label: 'Primary HW Pump Status',
+      label: 'Primary Hot Water Pump Status',
       required: true,
       ashrae36Name: 'Primary Hot Water Pump Status',
       ashrae36Section: '5.21',
@@ -16340,9 +16353,9 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'hwIsoValve',
-      label: 'HW Isolation Valve Status',
+      label: 'Hot Water Isolation Valve Status',
       required: false,
-      ashrae36Name: 'HW Isolation Valve Status',
+      ashrae36Name: 'Hot Water Isolation Valve Status',
       ashrae36Section: '5.21',
       configFlag: 'hasIsoValves',
       patterns: [
@@ -16392,9 +16405,9 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'hwSetpoint',
-      label: 'Boiler HW Supply Temperature Setpoint',
+      label: 'Boiler Hot Water Supply Temperature Setpoint',
       required: true,
-      ashrae36Name: 'Boiler HW Supply Temperature Setpoint',
+      ashrae36Name: 'Boiler Hot Water Supply Temperature Setpoint',
       ashrae36Section: '5.21',
       patterns: [
         /boiler.?lwt.?setpoint/i,
@@ -16429,9 +16442,9 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'hwPumpEnable',
-      label: 'Primary HW Pump Enable Command',
+      label: 'Primary Hot Water Pump Enable Command',
       required: true,
-      ashrae36Name: 'Primary HW Pump Enable Command',
+      ashrae36Name: 'Primary Hot Water Pump Enable Command',
       ashrae36Section: '5.21',
       patterns: [
         /primary.?hw.?pump.?enable/i,
@@ -16459,9 +16472,9 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'hwPumpSpeed',
-      label: 'Primary HW Pump Speed Command',
+      label: 'Primary Hot Water Pump Speed Command',
       required: true,
-      ashrae36Name: 'Primary HW Pump Speed Command',
+      ashrae36Name: 'Primary Hot Water Pump Speed Command',
       ashrae36Section: '5.21',
       patterns: [
         /primary.?hw.?pump.?vfd/i,
@@ -16493,7 +16506,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'secHWPumpStatus',
-      label: 'Secondary HW Pump Status',
+      label: 'Secondary Hot Water Pump Status',
       required: false,
       ashrae36Name: 'Secondary Hot Water Pump Status',
       ashrae36Section: '5.21',
@@ -16519,9 +16532,9 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'hwIsoValveCmd',
-      label: 'HW Isolation Valve Command',
+      label: 'Hot Water Isolation Valve Command',
       required: false,
-      ashrae36Name: 'HW Isolation Valve Command',
+      ashrae36Name: 'Hot Water Isolation Valve Command',
       ashrae36Section: '5.21',
       configFlag: 'hasIsoValves',
       patterns: [
@@ -16617,7 +16630,7 @@ var EM_POINT_CATEGORIES = {
   chwp: [
     {
       key: 'chwst',
-      label: 'CHW Supply Temperature',
+      label: 'Chilled Water Supply Temperature',
       required: true,
       ashrae36Name: 'Chilled Water Supply Temperature',
       ashrae36Section: '5.20',
@@ -16660,7 +16673,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'chwrt',
-      label: 'CHW Return Temperature',
+      label: 'Chilled Water Return Temperature',
       required: true,
       ashrae36Name: 'Chilled Water Return Temperature',
       ashrae36Section: '5.20',
@@ -16693,7 +16706,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'chwdp',
-      label: 'CHW Differential Pressure',
+      label: 'Chilled Water Differential Pressure',
       required: true,
       ashrae36Name: 'Chilled Water Differential Pressure',
       ashrae36Section: '5.20',
@@ -16732,7 +16745,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'chillerEvapDP',
-      label: 'Chiller Evaporator DP',
+      label: 'Chiller Evaporator Differential Pressure',
       required: false,
       ashrae36Name: 'Chiller Evaporator Differential Pressure',
       ashrae36Section: '5.20',
@@ -16849,7 +16862,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'pchwpStatus',
-      label: 'Primary CHW Pump Status',
+      label: 'Primary Chilled Water Pump Status',
       required: true,
       ashrae36Name: 'Primary Chilled Water Pump Status',
       ashrae36Section: '5.20',
@@ -16887,7 +16900,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'schwpStatus',
-      label: 'Secondary CHW Pump Status',
+      label: 'Secondary Chilled Water Pump Status',
       required: false,
       ashrae36Name: 'Secondary Chilled Water Pump Status',
       ashrae36Section: '5.20',
@@ -16907,7 +16920,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'schwpSpeed',
-      label: 'Secondary CHW Pump Speed',
+      label: 'Secondary Chilled Water Pump Speed',
       required: false,
       ashrae36Name: 'Secondary Chilled Water Pump Speed',
       ashrae36Section: '5.20',
@@ -16940,7 +16953,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'chwIsoValveStatus',
-      label: 'CHW Isolation Valve Status',
+      label: 'Chilled Water Isolation Valve Status',
       required: false,
       ashrae36Name: 'Chiller CHW Isolation Valve Status',
       ashrae36Section: '5.20',
@@ -16986,7 +16999,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'chwSetpoint',
-      label: 'CHW Supply Temperature Setpoint',
+      label: 'Chilled Water Supply Temperature Setpoint',
       required: true,
       ashrae36Name: 'Chiller CHW Supply Temperature Setpoint',
       ashrae36Section: '5.20',
@@ -17022,9 +17035,9 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'pchwpEnable',
-      label: 'Primary CHW Pump Enable Command',
+      label: 'Primary Chilled Water Pump Enable Command',
       required: true,
-      ashrae36Name: 'Primary CHW Pump Enable Command',
+      ashrae36Name: 'Primary Chilled Water Pump Enable Command',
       ashrae36Section: '5.20',
       configFlag: 'hasPrimary',
       patterns: [
@@ -17055,9 +17068,9 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'schwpEnable',
-      label: 'Secondary CHW Pump Enable Command',
+      label: 'Secondary Chilled Water Pump Enable Command',
       required: false,
-      ashrae36Name: 'Secondary CHW Pump Enable Command',
+      ashrae36Name: 'Secondary Chilled Water Pump Enable Command',
       ashrae36Section: '5.20',
       configFlag: 'hasSecPump',
       patterns: [/schwp.?enable/i, /secondary.?chw.?pump.?enable/i, /chwp.?\w*b.?enable/i],
@@ -17072,9 +17085,9 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'chwIsoValveCmd',
-      label: 'CHW Isolation Valve Command',
+      label: 'Chilled Water Isolation Valve Command',
       required: false,
-      ashrae36Name: 'CHW Isolation Valve Command',
+      ashrae36Name: 'Chilled Water Isolation Valve Command',
       ashrae36Section: '5.20',
       configFlag: 'hasIsoValves',
       patterns: [
@@ -17372,7 +17385,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'cwIsoValveStatus',
-      label: 'CW Isolation Valve Status',
+      label: 'Condenser Water Isolation Valve Status',
       required: false,
       ashrae36Name: 'Condenser Water Isolation Valve Status',
       ashrae36Section: '5.21',
@@ -17397,7 +17410,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'ctFanEnable',
-      label: 'CT Fan Enable Command',
+      label: 'Cooling Tower Fan Enable Command',
       required: true,
       ashrae36Name: 'Cooling Tower Fan Enable Command',
       ashrae36Section: '5.21',
@@ -17426,7 +17439,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'ctFanSpeed',
-      label: 'CT Fan Speed Command',
+      label: 'Cooling Tower Fan Speed Command',
       required: false,
       ashrae36Name: 'Cooling Tower Fan Speed Command',
       ashrae36Section: '5.21',
@@ -17447,7 +17460,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'cwPumpEnable',
-      label: 'CW Pump Enable Command',
+      label: 'Condenser Water Pump Enable Command',
       required: true,
       ashrae36Name: 'Condenser Water Pump Enable Command',
       ashrae36Section: '5.21',
@@ -17476,7 +17489,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'cwIsoValveCmd',
-      label: 'CW Isolation Valve Command',
+      label: 'Condenser Water Isolation Valve Command',
       required: false,
       ashrae36Name: 'Condenser Water Isolation Valve Command',
       ashrae36Section: '5.21',
@@ -17603,7 +17616,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'chwValve',
-      label: 'CHW / Cooling Valve',
+      label: 'Chilled Water / Cooling Valve',
       required: false,
       ashrae36Name: 'Cooling Valve Position',
       ashrae36Section: 'FCU',
@@ -17612,7 +17625,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'hwValve',
-      label: 'HW / Heating Valve',
+      label: 'Hot Water / Heating Valve',
       required: false,
       ashrae36Name: 'Heating Valve Position',
       ashrae36Section: 'FCU',
@@ -17731,7 +17744,7 @@ var EM_POINT_CATEGORIES = {
       // GUARD: "Return Air Temperature" (bare) and "Return Temperature" are rat (Bucket-A) in ahu.
       //   This fcu-only entry fires only in fcu context; ahu context still hits ahu.rat.
       key: 'fcuReturnTemp',
-      label: 'FCU Return Air Temperature (Monitor)',
+      label: 'Fan Coil Unit Return Air Temperature (Monitor)',
       nonAshrae: true,
       required: false,
       auditRelevant: false,
@@ -17745,7 +17758,7 @@ var EM_POINT_CATEGORIES = {
       // Supply Fan Amps on FCU rows. GUARD: sfAmps (Bucket-A) in ahu context.
       // FCU-only so ahu.sfAmps is not stolen.
       key: 'fcuElectrical',
-      label: 'FCU Electrical Monitoring',
+      label: 'Fan Coil Unit Electrical Monitoring',
       nonAshrae: true,
       required: false,
       auditRelevant: false,
@@ -17757,7 +17770,7 @@ var EM_POINT_CATEGORIES = {
     // ── Third-pass rescue: FCU-specific non-ASHRAE points ────────────────────
     {
       key: 'fcuElectricMonitor',
-      label: 'FCU Electric Power / Current Monitor',
+      label: 'Fan Coil Unit Electric Power / Current Monitor',
       nonAshrae: true,
       required: false,
       auditRelevant: false,
@@ -17769,7 +17782,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'fcuGasHeat',
-      label: 'FCU Gas Heating Stages',
+      label: 'Fan Coil Unit Gas Heating Stages',
       nonAshrae: true,
       required: false,
       auditRelevant: false,
@@ -17782,7 +17795,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'fcuEquipment',
-      label: 'FCU Equipment / Control Points',
+      label: 'Fan Coil Unit Equipment / Control Points',
       nonAshrae: true,
       required: false,
       auditRelevant: false,
@@ -17804,7 +17817,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'fcuAlarmDiag',
-      label: 'FCU Alarm / Diagnostic Points',
+      label: 'Fan Coil Unit Alarm / Diagnostic Points',
       nonAshrae: true,
       required: false,
       auditRelevant: false,
@@ -18030,7 +18043,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'fanSpeed',
-      label: 'VFD / Fan Speed',
+      label: 'Variable Frequency Drive / Fan Speed',
       required: false,
       ashrae36Name: 'Fan Speed Command',
       ashrae36Section: 'EF',
@@ -18365,7 +18378,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'ventCfm',
-      label: 'Ventilation CFM',
+      label: 'Ventilation Airflow',
       required: false,
       ashrae36Name: 'Ventilation Airflow',
       ashrae36Section: 'DOAS',
@@ -18374,7 +18387,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'ventCfmSp',
-      label: 'Ventilation CFM Setpoint',
+      label: 'Ventilation Airflow Setpoint',
       required: false,
       ashrae36Name: 'Ventilation Airflow Setpoint',
       ashrae36Section: 'DOAS',
@@ -18383,7 +18396,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'rfCfm',
-      label: 'Return Fan CFM',
+      label: 'Return Fan Airflow',
       required: false,
       ashrae36Name: 'Return Fan Airflow',
       ashrae36Section: 'DOAS',
@@ -18392,7 +18405,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'sfCfm',
-      label: 'Supply Fan CFM',
+      label: 'Supply Fan Airflow',
       required: false,
       ashrae36Name: 'Supply Fan Airflow',
       ashrae36Section: 'DOAS',
@@ -18419,7 +18432,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'rfSpeed',
-      label: 'Return Fan VFD Speed',
+      label: 'Return Fan Variable Frequency Drive Speed',
       required: false,
       ashrae36Name: 'Return Fan Speed',
       ashrae36Section: 'DOAS',
@@ -18647,7 +18660,7 @@ var EM_POINT_CATEGORIES = {
     // ── Stage points — required when configFlag is true (default:true for F-2/F-4) ──
     {
       key: 'clgStage',
-      label: 'DX Cooling Stage 1',
+      label: 'Direct Expansion Cooling Stage 1',
       required: true,
       ashrae36Name: 'Cooling Stage 1',
       ashrae36Section: '5.18',
@@ -18705,15 +18718,15 @@ var EM_POINT_CATEGORIES = {
       ashrae36Name: 'Zone Relative Humidity',
       ashrae36Section: '5.18',
       // Monitoring only — not a G36 required point; required:false so missing does not penalize.
-      // maps to zoneRelativeHumidity col (label 'Zone RH %')
+      // maps to zoneRelativeHumidity col (label 'Zone Relative Humidity %')
       patterns: [/zone\s*r\.?h/i, /zone\s*humid/i, /space\s*r\.?h/i, /room\s*r\.?h/i],
       aliases: ['zone rh %', 'zone relative humidity', 'zone humidity', 'zone rh', 'zone hum'],
     },
     {
       key: 'vvtMode',
-      label: 'VVT Mode',
+      label: 'Variable Volume Terminal Mode',
       required: false,
-      ashrae36Name: 'VVT Mode',
+      ashrae36Name: 'Variable Volume Terminal Mode',
       ashrae36Section: '5.18',
       // VVT air-source only; absent on F-2/F-4 single-zone packaged units.
       // Kept here so VVT-style furnaces don't lose an existing scored point.
@@ -18857,9 +18870,9 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'airSourceVVT',
-      label: 'Air Source VVT Mode',
+      label: 'Air Source Variable Volume Terminal Mode',
       required: false,
-      ashrae36Name: 'Air Source VVT Mode',
+      ashrae36Name: 'Air Source Variable Volume Terminal Mode',
       ashrae36Section: 'VVT Zone',
       patterns: [/air source vvt/i, /asvvt/i],
       aliases: ['air source vvt', 'asvvt', 'air source vvt msv', 'air source vvt ani'],
@@ -18967,7 +18980,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'vvtCoolRequest',
-      label: 'VVT Zone Cool Request',
+      label: 'Variable Volume Terminal Zone Cool Request',
       nonAshrae: true,
       required: false,
       auditRelevant: false,
@@ -18976,7 +18989,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'vvtHtgRequest',
-      label: 'VVT Zone Heat Request',
+      label: 'Variable Volume Terminal Zone Heat Request',
       nonAshrae: true,
       required: false,
       auditRelevant: false,
@@ -18985,7 +18998,7 @@ var EM_POINT_CATEGORIES = {
     },
     {
       key: 'vvtSfAmpsMonitor',
-      label: 'Supply Fan Amperage Monitor (VVT Zone)',
+      label: 'Supply Fan Amperage Monitor (Variable Volume Terminal Zone)',
       nonAshrae: true,
       required: false,
       auditRelevant: false,
@@ -19322,7 +19335,7 @@ EM_POINT_CATEGORIES.sensor = [
 EM_POINT_CATEGORIES.vrf = [
   {
     key: 'vrfSystem',
-    label: 'VRF System',
+    label: 'Variable Refrigerant Flow System',
     nonAshrae: true,
     required: false,
     patterns: [
@@ -19485,7 +19498,7 @@ EM_POINT_CATEGORIES._broadcast = [
   // fire first, so the PID broadcast only catches non-ASHRAE PID objects.
   {
     key: 'pidControl',
-    label: 'PID Control Object',
+    label: 'Proportional-Integral-Derivative Control Object',
     nonAshrae: true,
     required: false,
     patterns: [/\bpid\b/i, /\bp\.i\.d\b/i, /\bproportional.integral/i],
@@ -19523,7 +19536,7 @@ EM_POINT_CATEGORIES._broadcast = [
   // ── HOA / Manual Control Switch ───────────────────────────────────────
   {
     key: 'hoaControl',
-    label: 'HOA / Manual Control Switch',
+    label: 'Hand-Off-Auto / Manual Control Switch',
     nonAshrae: true,
     required: false,
     patterns: [
@@ -19543,7 +19556,7 @@ EM_POINT_CATEGORIES._broadcast = [
   // ── DX / Staging Output ───────────────────────────────────────────────
   {
     key: 'dxStaging',
-    label: 'DX / Staging Output',
+    label: 'Direct Expansion / Staging Output',
     nonAshrae: true,
     required: false,
     patterns: [
@@ -19562,7 +19575,7 @@ EM_POINT_CATEGORIES._broadcast = [
   // ── UPS / Battery / Bypass ────────────────────────────────────────────
   {
     key: 'upsSystem',
-    label: 'UPS / Battery / Bypass',
+    label: 'Uninterruptible Power Supply / Battery / Bypass',
     nonAshrae: true,
     required: false,
     patterns: [
@@ -19650,7 +19663,7 @@ EM_POINT_CATEGORIES._broadcast = [
   // These patterns catch additional VVT coordination point names.
   {
     key: 'vvtCoordination',
-    label: 'VVT Zone Coordination',
+    label: 'Variable Volume Terminal Zone Coordination',
     nonAshrae: true,
     required: false,
     patterns: [
@@ -19694,7 +19707,7 @@ EM_POINT_CATEGORIES._broadcast = [
   // These patterns catch additional chiller plant sub-objects.
   {
     key: 'chillerPlant',
-    label: 'Chiller Plant / MCS',
+    label: 'Chiller Plant / Master Control System',
     nonAshrae: true,
     required: false,
     patterns: [
@@ -19822,7 +19835,7 @@ EM_POINT_CATEGORIES._broadcast = [
   // These catch mid-string VFD monitoring sub-objects.
   {
     key: 'vfdSubObject',
-    label: 'VFD / Drive Sub-Object',
+    label: 'Variable Frequency Drive / Drive Sub-Object',
     nonAshrae: true,
     required: false,
     patterns: [
@@ -19958,7 +19971,7 @@ EM_POINT_CATEGORIES._broadcast = [
   // ── BMS Config / Supervisor (extra) ──────────────────────────────────
   {
     key: 'bmsConfig',
-    label: 'BMS Configuration / Supervisor',
+    label: 'Building Management System Configuration / Supervisor',
     nonAshrae: true,
     required: false,
     patterns: [
@@ -20003,7 +20016,7 @@ EM_POINT_CATEGORIES._broadcast = [
   // ── VRF/DX Refrigerant Sub-Object (NEW — Phase 1 vrfSubObject cluster, ~50 names) ──────
   {
     key: 'vrfSubObject',
-    label: 'VRF/DX Refrigerant Sub-Object',
+    label: 'Variable Refrigerant Flow/Direct Expansion Refrigerant Sub-Object',
     nonAshrae: true,
     required: false,
     patterns: [
@@ -20044,7 +20057,7 @@ EM_POINT_CATEGORIES._broadcast = [
   // ── VAV Fintube Heater Points (NEW — Phase 2 fintubeHeater cluster, ~5 names) ───────────
   {
     key: 'fintubeHeater',
-    label: 'VAV Fintube Heater Points',
+    label: 'Variable Air Volume Fintube Heater Points',
     nonAshrae: true,
     required: false,
     patterns: [/\bFintube\b/i], // Fintube Valve Percentage, Fintube OA Reset
@@ -20933,7 +20946,7 @@ function emComputeSetpointCompliance(equipRow, configFlags, overrides) {
   if (co2Setpoint === null && !hasCO2Flag) {
     results.push({
       checkKey: 'co2',
-      label: 'CO₂ Setpoint',
+      label: 'CO2 Setpoint',
       actualValue: null,
       gl36Default: co2Default,
       deadbandOtherValue: null,
@@ -20945,7 +20958,7 @@ function emComputeSetpointCompliance(equipRow, configFlags, overrides) {
     // hasCO2 flag is true but no exported value
     results.push({
       checkKey: 'co2',
-      label: 'CO₂ Setpoint',
+      label: 'CO2 Setpoint',
       actualValue: null,
       gl36Default: co2Default,
       deadbandOtherValue: null,
@@ -20954,7 +20967,7 @@ function emComputeSetpointCompliance(equipRow, configFlags, overrides) {
       intentionalFlag: spOvr['co2'] === true,
     });
   } else {
-    results.push(_makeResult('co2', 'CO₂ Setpoint', co2Setpoint, co2Default, 50));
+    results.push(_makeResult('co2', 'CO2 Setpoint', co2Setpoint, co2Default, 50));
   }
 
   // ── 11. Derive summary flags ─────────────────────────────────────────────
@@ -22497,8 +22510,8 @@ function emOpenManageMappings(pid) {
     '<div style="flex:1">' +
     '<div style="font-size:14px;font-weight:700;color:var(--text)">Manage Point Mappings</div>' +
     '<div style="font-size:11px;color:var(--text3);margin-top:4px" ' +
-    'title="Map unrecognized BAS points to ASHRAE 36 categories. Hover any point name or count for details.">' +
-    'Map unrecognized BAS points to ASHRAE 36 categories. Hover any point for details.' +
+    'title="Map unrecognized Building Automation System points to ASHRAE 36 categories. Hover any point name or count for details.">' +
+    'Map unrecognized Building Automation System points to ASHRAE 36 categories. Hover any point for details.' +
     '</div>' +
     '<div id="em-mm-summary" style="font-size:11px;color:var(--text3);margin-top:2px">Loading…</div>' +
     '</div>' +
