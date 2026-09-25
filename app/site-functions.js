@@ -1776,6 +1776,14 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.25.10',
+    date: '2026-09-25',
+    title: 'Utility Data / Review Bill Corrections now checks the whole open project in one pass, keeps its place if you close the window and come back, and shows PDF corrections together with unusual-looking numbers that need a second look.',
+    items: [
+      { type: 'feature', text: 'Utility Data / Review Bill Corrections now checks the whole open project in one pass, keeps its place if you close the window and come back, and shows PDF corrections together with unusual-looking numbers that need a second look.' },
+    ],
+  },
+  {
     v: 'v2026.09.25.9',
     date: '2026-09-25',
     title: 'Utility Data: click Estimate missing period on a real bill gap (e.g. Spring Hill High Electric) to fill it with a usage-only estimate from the surrounding bills.',
