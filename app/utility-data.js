@@ -4665,13 +4665,22 @@ function renderBillsPane(pane, m, bills, incl) {
   // Sticky header (frozen) — billing count + controls
   const stickyHdrInner =
     '<div class="bills-sticky-left">' +
-    '<div class="bills-sticky-title">' +
+    '<div class="bills-sticky-title" title="' +
+    bills.length +
+    ' Billing Period' +
+    (bills.length !== 1 ? 's' : '') +
+    (bills.length ? ' · ' + getDateRange(bills) : '') +
+    '">' +
     bills.length +
     ' Billing Period' +
     (bills.length !== 1 ? 's' : '') +
     (bills.length ? ' · ' + getDateRange(bills) : '') +
     ' </div>' +
-    '<div class="bills-sticky-sub">Account: ' +
+    '<div class="bills-sticky-sub" title="Account: ' +
+    (m.account || '—') +
+    ' · Meter: ' +
+    (_bfMeterNo || '—') +
+    '">Account: ' +
     (m.account || '—') +
     ' · Meter: ' +
     (_bfMeterNo || '—') +

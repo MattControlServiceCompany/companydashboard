@@ -220,10 +220,22 @@ const ALL_CAPS_EXCLUDED_FILES = new Set([
   path.join('app', 'calculators.js'),
 ]);
 
+// 2026-09-25 follow-up (task 5b): scope was app/*.js + repo-root *.html only -- it missed
+// lib/perf-table.js's live "Norm Days" Meter Performance table header (task 5b item 1) simply
+// because lib/ was never read at all, not because the word was allow-listed. lib/perf-table.js
+// is shared, canonical UI-rendering code (its own header comment says so: "Used by:
+// renderPerfPane (Meter Performance tab) and report generation") -- the same class of file as
+// app/*.js for this gate's purposes. Added by name, not the whole lib/ directory: lib/
+// otherwise holds non-label code (csv-parser, date-helpers, unit-conversion, quill rich-text)
+// and lib/shared-charts.js, whose existing "Site EUI" chart-series labels are the SAME
+// site-wide "Site EUI" convention the project header spells out in full elsewhere -- a
+// separate, much larger pre-existing-content question this task's two named misses do not ask
+// this gate to re-litigate.
 const JS_FILES = fs
   .readdirSync(path.join(REPO, 'app'))
   .filter((f) => f.endsWith('.js'))
-  .map((f) => path.join('app', f));
+  .map((f) => path.join('app', f))
+  .concat([path.join('lib', 'perf-table.js')]);
 
 const HTML_FILES = fs.readdirSync(REPO).filter((f) => f.endsWith('.html'));
 
@@ -259,6 +271,118 @@ function findAll(re, src, groupIdx) {
     out.push({ text: m[groupIdx], index: m.index });
     if (m[0].length === 0) re.lastIndex++;
   }
+  return out;
+}
+
+// 2026-09-25 follow-up (task 5b): PROP_RE/PROP_RE_DQ above only match a `text:` value that is
+// ONE bare string literal. report-engine.js's findings.push({ text: esStar.length + ' ... in
+// the top EUI quartile ... ' + esStar.map(...).join(', ') + '.' }) builds its text by
+// concatenating several string literals with real JS in between -- PROP_RE never matched it
+// (the value after `text:` isn't a quote), so a bare "EUI" shipped in real rendered report
+// prose unnoticed (task 5b item 2). This scans forward from `text:` to the matching top-level
+// comma or closing brace/paren/bracket (tracking nesting depth, and treating characters inside
+// a string literal as inert so a comma or brace INSIDE a string can't end the span early), then
+// joins every quoted string literal's contents found in that span with spaces and checks the
+// same banned-word/all-caps rules against it — same as any other extracted label text. A plain
+// single-literal value (already caught by PROP_RE) also matches here; the caller's de-dupe
+// means that's harmless, not a second bug.
+//
+// Deliberately `text:` only, not `label:`/`header:` too: those two also appear on legitimate,
+// already-reviewed multi-part page-title concatenations elsewhere (e.g. report-engine.js's
+// `label: 'Page ' + n + ' — Site EUI Benchmarking'`) that are a separate, much larger
+// pre-existing-content question this task's one named miss does not ask this gate to
+// re-litigate. Bails out (matches nothing for that key) the moment it sees a template-literal
+// backtick — this scanner cannot safely track `${...}` interpolation depth mixed with quote
+// characters inside HTML markup, and every concatenated `text:` finding string this codebase
+// actually builds today uses plain '...' + '...' concatenation, never a template literal.
+// (?<!-): a CSS custom property named exactly `--text:` (e.g. energy-department.html's own
+// `--text: #dde6f5;` color token) would otherwise word-match "text" too -- real CSS variable
+// declarations, not a JS object's `text:` property, and scanning forward from one walks into
+// whatever unrelated code/CSS follows a plain `;`-terminated line (no comma/brace to stop it).
+const CONCAT_PROP_KEY_RE = /(?<!-)\btext\s*:\s*/g;
+const CONCAT_PROP_MAX_SPAN = 2000; // safety cap against a runaway scan on malformed input
+function findConcatPropTexts(src) {
+  const out = [];
+  CONCAT_PROP_KEY_RE.lastIndex = 0;
+  let km;
+  while ((km = CONCAT_PROP_KEY_RE.exec(src))) {
+    const startIdx = km.index;
+    let i = CONCAT_PROP_KEY_RE.lastIndex;
+    const end = Math.min(src.length, i + CONCAT_PROP_MAX_SPAN);
+    let depth = 0;
+    let inStr = null;
+    const parts = [];
+    let buf = '';
+    let bailed = false;
+    for (; i < end; i++) {
+      const c = src[i];
+      if (inStr) {
+        if (c === '\\') {
+          i++;
+          continue;
+        }
+        if (c === inStr) {
+          parts.push(buf);
+          buf = '';
+          inStr = null;
+          continue;
+        }
+        buf += c;
+        continue;
+      }
+      if (c === '`') {
+        bailed = true;
+        break;
+      }
+      if (c === "'" || c === '"') {
+        inStr = c;
+        continue;
+      }
+      if (c === '(' || c === '[' || c === '{') {
+        depth++;
+        continue;
+      }
+      if (c === ')' || c === ']' || c === '}') {
+        if (depth === 0) break;
+        depth--;
+        continue;
+      }
+      if (c === ',' && depth === 0) break;
+    }
+    if (!bailed && parts.length) out.push({ text: parts.join(' '), index: startIdx });
+  }
+  return out;
+}
+
+// 2026-09-25 follow-up (task 5b): lib/perf-table.js builds its table-header strings as plain
+// variable assignments, not a tag literal or a label:/text: object property -- e.g.
+// `var H_NDAYS = rpt ? 'Days' : 'Norm Days';` -- so even with lib/perf-table.js now in scope,
+// none of the extraction patterns above ever saw "Norm Days" (task 5b item 1). Scoped to this
+// codebase's own `H_<NAME>` naming convention for header-string constants (used throughout
+// lib/perf-table.js for its Meter Performance table headers) rather than a blanket "any
+// variable assignment" scan, so it can't sweep up unrelated code elsewhere.
+//
+// Only the `rpt ? 'reportMode' : 'tabMode'` ternary's ELSE (tab/live-UI) branch is checked, not
+// its report-mode THEN branch: this exact file documents the report-mode ternary branch (BL/
+// Act/Bld, etc.) as "a deliberate, documented width tradeoff, out of scope for the 2026-09-24
+// header-overflow fix ... to unwind without a full column-width re-tuning pass" -- a different,
+// larger, already-decided-against piece of work this task's one named miss (the LIVE tab-mode
+// "Norm Days" header) does not ask this gate to re-litigate. A plain (non-ternary) `H_X = '...'`
+// assignment is still checked in full.
+const HEADER_VAR_TERNARY_RE =
+  /\bH_[A-Z_]+\s*=\s*\w+\s*\?\s*(?:'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")\s*:\s*('(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")\s*;/g;
+const HEADER_VAR_PLAIN_RE = /\bH_[A-Z_]+\s*=\s*('(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")\s*;/g;
+function findHeaderVarTexts(src) {
+  const out = [];
+  [HEADER_VAR_TERNARY_RE, HEADER_VAR_PLAIN_RE].forEach((re) => {
+    re.lastIndex = 0;
+    let m;
+    while ((m = re.exec(src))) {
+      const lit = m[1];
+      const inner = lit.slice(1, -1);
+      out.push({ text: inner, index: m.index });
+    }
+  });
   return out;
 }
 
@@ -316,6 +440,8 @@ function scanSource(src, filePath) {
   findAll(H_PROP_RE, src, 1).forEach((x) => found.push(x));
   findAll(TOAST_RE, src, 1).forEach((x) => found.push(x));
   findAll(TOAST_RE_DQ, src, 1).forEach((x) => found.push(x));
+  findConcatPropTexts(src).forEach((x) => found.push(x));
+  findHeaderVarTexts(src).forEach((x) => found.push(x));
 
   const rnRange = findReleaseNotesRange(src);
 

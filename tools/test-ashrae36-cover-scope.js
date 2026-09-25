@@ -44,7 +44,7 @@
 // not present -- this test needs real JOCO equipment-matrix data, which lives only in that
 // local file (never committed).
 //
-// Run: node test-ashrae36-cover-scope.js [worktree path]
+// Run (from the repo root): node tools/test-ashrae36-cover-scope.js [worktree path]
 'use strict';
 
 const path = require('path');
@@ -58,7 +58,9 @@ if (!fs.existsSync(DEFAULT_BACKUP)) {
   process.exit(0);
 }
 
-const WORKTREE = process.argv[2] || __dirname;
+// Moved from the repo root into tools/ (task 5b follow-up) -- the worktree root is one
+// directory up from this file now, not __dirname itself.
+const WORKTREE = process.argv[2] || path.join(__dirname, '..');
 // Scratch run dir (backup copy + console log) lives OUTSIDE the git worktree/repo -- never in a
 // tracked directory -- since it holds a copy of real project data.
 const RUN_DIR =

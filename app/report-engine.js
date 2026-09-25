@@ -2366,7 +2366,7 @@ function rptPageCover(n, d) {
         esStar.length +
         ' building' +
         (esStar.length > 1 ? 's are' : ' is') +
-        ' in the top EUI quartile for their building type — <strong>ENERGY STAR eligible</strong>: ' +
+        ' in the top Energy Use Intensity quartile for their building type — <strong>ENERGY STAR eligible</strong>: ' +
         esStar
           .map(function (b) {
             return b.name;

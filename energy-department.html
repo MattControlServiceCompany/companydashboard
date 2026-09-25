@@ -6358,7 +6358,14 @@
         flex-direction: column;
         gap: 2px;
         min-width: 0;
+        max-width: 100%;
       }
+      /* Task 5b follow-up: at narrow widths this title/subtitle had no overflow
+         handling at all — white-space:nowrap with no text-overflow, so text was cut
+         off mid-character with no ellipsis and no scrollbar (nothing to tell the user
+         more text existed). Truncate with an ellipsis instead, same convention already
+         used for building names in the nav column (.ud-nav-bldg-name) elsewhere in
+         this same Utility Data view. */
       .bills-sticky-title {
         font-size: 11px;
         font-weight: 700;
@@ -6366,10 +6373,17 @@
         letter-spacing: 0.6px;
         color: var(--text2);
         white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 100%;
       }
       .bills-sticky-sub {
         font-size: 11px;
         color: var(--text3);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 100%;
       }
       /* Update 91: hide header wrapper scrollbar. The inline style on the
          #billsTheadWrap element switches from overflow-x:hidden to
@@ -7021,6 +7035,20 @@
         gap: 6px;
         flex: 1;
         min-width: 0;
+        /* Task 5b follow-up: at phone width (390px reference) the buildings nav column
+           leaves this row only ~94-130px, narrower than a single meter pill's own
+           content (commodity name + provider + bill count + badges). .ud-layout's
+           overflow:hidden (needed elsewhere to clip to its rounded corners) then cut
+           the STORMWATER/WATER/SEWER pills off the right edge with no way to reach
+           them. Give this row its own horizontal scroll, the same fallback already
+           used for .ma-tabs/.pd-tabs/.bills-thead-wrap in this same file when their
+           content can't be abbreviated or wrapped any further. */
+        max-width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+      .ma-meter-pills .ma-meter-pill {
+        flex-shrink: 0;
       }
       .ma-meter-pill {
         display: flex;
