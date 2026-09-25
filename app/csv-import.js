@@ -1687,13 +1687,19 @@ function _billFormatValue(val, entry) {
   }
   if (entry.type === 'number') {
     if (!hasVal) return isMissing ? '—' : val;
-    // Update 94: match renderPDFFields' FOURDP_FIELDS set exactly —
+    // Update 94: same field set as renderPDFFields' FOURDP_FIELDS —
     // every kW/kWh quantity, meter read, read-difference, and meter
-    // multiplier renders with 4 decimal places per Evergy Billing
-    // Details rules. Without explicit min/maxFractionDigits, the
-    // default `.toLocaleString()` caps at 3 digits AND strips trailing
-    // zeros, so 54,656.8791 showed as "54,656.879" while 100 showed as
-    // "100" — same place-value intent, inconsistent rendered width.
+    // multiplier. Without explicit min/maxFractionDigits, the default
+    // `.toLocaleString()` caps at 3 digits AND strips trailing zeros, so
+    // 54,656.8791 showed as "54,656.879" while 100 showed as "100" —
+    // same place-value intent, inconsistent rendered width.
+    // 2026-09-25 (Utility Data Bills table precision fix): this used to force
+    // minimumFractionDigits:4 as well, which padded every value out to 4
+    // decimals even when the bill itself prints fewer (275.94 rendered as
+    // "275.9400"). maximumFractionDigits:4 alone still caps rounding at the
+    // same 4 decimal places as before — never truncates a real digit the
+    // source data carries — while minimumFractionDigits:0 lets trailing
+    // zeros trim down to the bill's own printed precision.
     const FOURDP_PDF_KEYS = new Set([
       'FacilitiesKW',
       'BilledKW',
@@ -1717,7 +1723,7 @@ function _billFormatValue(val, entry) {
     ) {
       // Bug #18: Read Difference must always display positive (current - previous read)
       const dispVal = /difference/i.test(entry.key) ? Math.abs(+val) : +val;
-      return dispVal.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+      return dispVal.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 4 });
     }
     // Default numeric fields (e.g. numberOfDays) — integer display.
     return (+val).toLocaleString('en-US');

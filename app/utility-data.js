@@ -420,30 +420,36 @@ function loadUtilityData() {
     }
     if (billsScannedV2 > 0) DB.set(_gasMMbtuRateFixedKeyV2, '1');
   }
-  // One-time migration (2026-09-23, Facilities kW single-source fix, cold-review Q3): repair
-  // Electric bills saved before this fix existed — a null/missing facKW and/or a
-  // Facilities kW Cost sitting under only ONE of facilitiesCharge/facKWCost. Same
-  // backfillFacilitiesKW() core the CSV import path uses (app/csv-import.js) — never
-  // invents a number (see that function's fill order) and never overwrites a value that is
-  // already present on either field, so a bill another user already fixed on the shared
-  // Supabase backend is left untouched; saveUtilityData()'s own per-project dirty check
-  // (see its comment above) means a project this pass didn't actually change is never
-  // rewritten, so this migration cannot sync a stale value back up over a good one.
-  // Gate follows the en_utility_gas_mmbtu_rate_fixed_v1 pattern above: only set once bills
-  // were actually scanned (billsScanned > 0), so an empty/pre-data pass (e.g. the very first
-  // load of a fresh profile before Restore/Supabase sync lands) retries next load instead of
-  // permanently masking real data.
-  const _facKWMigratedKey = 'en_utility_facKW_backfilled_v1';
-  if (!DB.get(_facKWMigratedKey)) {
+  // Facilities kW backfill + facKWCost sync (2026-09-23, Facilities kW single-source fix,
+  // cold-review Q3; re-armed 2026-09-25 — see below): repair Electric bills whose facKW is
+  // null/missing and/or whose Facilities kW Cost sits under only ONE of
+  // facilitiesCharge/facKWCost. Same backfillFacilitiesKW() core the CSV import path uses
+  // (app/csv-import.js) — never invents a number (see that function's fill order) and never
+  // overwrites a value that is already present on either field, so a bill another user
+  // already fixed on the shared Supabase backend is left untouched; saveUtilityData()'s own
+  // per-project dirty check (see its comment above) means a project this pass didn't
+  // actually change is never rewritten, so this migration cannot sync a stale value back up
+  // over a good one.
+  // 2026-09-25: removed the former one-shot `en_utility_facKW_backfilled_v1` DB gate. That
+  // gate permanently marked this migration "done" the first time any Electric bills existed,
+  // regardless of whether every bill actually got filled. When the fill algorithm below was
+  // corrected (charge/known-rate first, 12-month rolling peak second — replacing an
+  // old rolling-peak-only pass that could not fill a bill until its meter had a full trailing
+  // year of history), any browser whose gate had already latched under the old algorithm
+  // never got to run the corrected one (Woodland Spring Middle: 12 of 13 bills stuck blank
+  // — see 2026-09-25-facilities-kw-rearm/2026-09-25-dashboardlogic-entry.md). Because
+  // backfillFacilitiesKW() never overwrites a real value (see its own "never overwrite"
+  // check) and saveUtilityData() only writes a project whose serialized content actually
+  // changed, running this pass unconditionally on every load is exactly as safe as the old
+  // gated version and self-heals if the algorithm is ever corrected again.
+  {
     let facKWFilled = 0;
     let facKWCostSynced = 0;
-    let billsScannedFacKW = 0;
     for (const pid of Object.keys(utilityData)) {
       const ud = utilityData[pid];
       for (const b of ud.buildings || []) {
         for (const mt of b.meters || []) {
           if (mt.commodity !== 'Electric' || !mt.bills || !mt.bills.length) continue;
-          billsScannedFacKW += mt.bills.length;
           // (a) facKWCost <-> facilitiesCharge sync — never overwrites a value already present.
           mt.bills.forEach((bill) => {
             if (bill.facKWCost == null && bill.facilitiesCharge != null) {
@@ -466,16 +472,15 @@ function loadUtilityData() {
       }
     }
     if (facKWFilled > 0 || facKWCostSynced > 0) {
-      saveUtilityData(SAVE_ALL_PROJECTS); // one-time migration touches every loaded project
+      saveUtilityData(SAVE_ALL_PROJECTS); // touches every loaded project; dirty-checked per project
       console.log(
-        '[Facilities kW backfill v1] Filled facKW on ' +
+        '[Facilities kW backfill] Filled facKW on ' +
           facKWFilled +
           ' bill(s), synced facKWCost<->facilitiesCharge on ' +
           facKWCostSynced +
           ' bill(s)',
       );
     }
-    if (billsScannedFacKW > 0) DB.set(_facKWMigratedKey, '1');
   }
   // One-time migration: backfill sewerUsage from matching water bills
   // where sewerUsage was empty/missing because bills were saved before the
