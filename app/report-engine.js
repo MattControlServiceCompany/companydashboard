@@ -9534,6 +9534,18 @@ async function exportReportToPDF() {
     return;
   }
 
+  // fix/quarterly-text-pdf (2026-09-25): the Quarterly/Annual report preview (report-preview.js
+  // generateReportPreview()/_showPreview()) renders into #reportPreviewContainer/#rptPreviewPages,
+  // NOT the legacy #reportOverlay/#reportPages this function was originally built against — it
+  // used to have its own separate html2canvas+jsPDF export (downloadReportPDF(), removed) that
+  // produced an image-only, non-selectable-text PDF (bug filed 2026-09-25 E2E). Both containers
+  // render the exact same rptPage()-produced `.rpt-page` markup, so the only thing that differs
+  // is which root to query — pick it by which container is actually open (the two are mutually
+  // exclusive; whichever one isn't in use stays `display:none` and is never touched here).
+  const v2Container = document.getElementById('reportPreviewContainer');
+  const isV2Preview = !!(v2Container && v2Container.style.display !== 'none');
+  const pagesRoot = isV2Preview ? '#rptPreviewPages' : '#reportPages';
+
   // SOO Generator Phase 3 (item 3f1415af): a Sequence of Operations preview renders inside
   // `.soo-doc-page` (soo-generator.js's own plain master-format shell), never `.rpt-page` — this
   // selector previously always matched `.rpt-page` only, so Print/Export-to-PDF silently found
@@ -9541,7 +9553,7 @@ async function exportReportToPDF() {
   // window.print() was ever called. Same print-to-PDF mechanism either way, just the right
   // selector for what's actually in the live DOM.
   const pageSelector = data._soo ? '.soo-doc-page' : '.rpt-page';
-  const pages = document.querySelectorAll('#reportPages ' + pageSelector);
+  const pages = document.querySelectorAll(pagesRoot + ' ' + pageSelector);
   if (!pages.length) {
     showToast('No report pages to export');
     return;
@@ -9551,7 +9563,7 @@ async function exportReportToPDF() {
   // (fix/proposal-tier-option-chooser, 2026-07-19). Nothing in the printed output is
   // interactive — so whichever tier(s) the user had collapsed in the live preview must still
   // render fully expanded. State is restored below so the interactive preview is unaffected.
-  const tierDetailPanels = document.querySelectorAll('#reportPages [id^="rpt-tier-detail-"]');
+  const tierDetailPanels = document.querySelectorAll(pagesRoot + ' [id^="rpt-tier-detail-"]');
   const tierDetailPriorDisplay = [];
   tierDetailPanels.forEach((panel) => {
     tierDetailPriorDisplay.push(panel.style.display);

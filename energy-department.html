@@ -3084,6 +3084,17 @@
       block Word from applying any child element's margin-left indentation). Word export shares
       this canonical block instead of a hand-authored second copy — do not fork these two rules,
       keep them here and let exportReportToWord() keep reading them from this one place.
+
+      2026-09-25 (fix/quarterly-text-pdf): the live Quarterly/Annual report preview (report-
+      preview.js's v2 config-based UI, #reportPreviewContainer/#rptPreviewPages) never actually
+      went through this stylesheet or exportReportToPDF() — it had its own separate "Download
+      PDF" button wired to downloadReportPDF() (html2canvas + jsPDF, removed), which produced the
+      same zero-real-text raster PDF this whole fix was written to eliminate (PyMuPDF get_text()
+      returned '' on every page, 2026-09-25 E2E). That button now calls exportReportToPDF() too;
+      the rules below were extended with #reportPreviewContainer/#rptPreviewPages/.rpt-preview-
+      page equivalents of the #reportOverlay/#reportPages/.rpt-page rules so both containers print
+      the same way. #reportPages via history-reload (showReportOverlay(), report-engine.js
+      reopenReport()/reexportReport()) is unaffected — still the legacy path.
     -->
     <style id="report-print-overrides">
       @media print {
@@ -3103,12 +3114,20 @@
            print dialog — without this, the report's color scheme (rpt-table-th-bg, etc.)
            would silently disappear from the PDF even though the layout/text is unaffected. */
         #reportOverlay,
-        #reportOverlay * {
+        #reportOverlay *,
+        #reportPreviewContainer,
+        #reportPreviewContainer * {
           -webkit-print-color-adjust: exact !important;
           print-color-adjust: exact !important;
         }
-        /* Hide the entire app shell — only the open report overlay should ever print. */
-        body > *:not(#reportOverlay) {
+        /* Hide the entire app shell — only the open report overlay/preview should ever print.
+           fix/quarterly-text-pdf (2026-09-25): the Quarterly/Annual report's "Download PDF"
+           now shares this same window.print() path via exportReportToPDF() (previously it had
+           its own separate html2canvas+jsPDF export producing an image-only, non-text PDF), and
+           that report renders into #reportPreviewContainer, not #reportOverlay — exempt it here
+           too. The two containers are mutually exclusive (only one is ever open at a time; the
+           closed one keeps its own `display:none` inline style, untouched by this rule). */
+        body > *:not(#reportOverlay):not(#reportPreviewContainer) {
           display: none !important;
         }
         #reportOverlay {
@@ -3118,17 +3137,78 @@
           background: #fff !important;
           z-index: auto !important;
         }
+        /* #reportPreviewContainer's own display is left alone (unlike #reportOverlay above) —
+           report-preview.js already sets it to '' (open) / 'none' (closed) via JS, and forcing
+           `display` here with !important would override that inline `display:none` and print an
+           empty page even when this container is the CLOSED one. Only its layout-mode/chrome
+           needs resetting for print, same as .report-toolbar/.report-pages below. */
+        #reportPreviewContainer {
+          position: static !important;
+          inset: auto !important;
+          background: #fff !important;
+          z-index: auto !important;
+          /* Inline style carries `overflow: hidden` (viewport-clip, needed on screen so the
+             toolbar stays fixed while pages scroll beneath it) — same class of bug the html/body
+             override above exists for, and just as fatal: without this every page past the first
+             screen's worth of height is silently clipped out of the printed/PDF output. Measured
+             2026-09-25: without this line, a 48-page Quarterly report rendered as a single PDF
+             page (page.pdf() print-media capture, verify-quarterly-pdf.js). */
+          overflow: visible !important;
+          height: auto !important;
+        }
+        /* The unnamed flex row wrapping #rptPreviewSidebar + #rptPreviewPages carries its own
+           fixed `height: calc(100vh - 44px)` inline style — same viewport-height clipping as
+           #reportPreviewContainer above, one level down. No id/class exists on this div, so it's
+           addressed structurally: #rptPreviewToolbar and #rptTextInspector are the only OTHER
+           direct children of the container (both excluded — #rptTextInspector must stay hidden;
+           :not(#a):not(#b) as a structural selector carries TWO ids' worth of specificity, which
+           previously beat the single-id `#rptTextInspector{display:none!important}` rule below
+           and forced that hover-tooltip div to render as an extra, near-empty 49th physical page
+           — measured 2026-09-25, verify-quarterly-pdf.js). */
+        #reportPreviewContainer > div:not(#rptPreviewToolbar):not(#rptTextInspector) {
+          display: block !important;
+          height: auto !important;
+          overflow: visible !important;
+        }
         /* Dark-UI toolbar (Close/Save/Export buttons) and the on-screen "PAGE X OF Y" labels
-           above each page are preview-only chrome — never part of the printed report design. */
+           above each page are preview-only chrome — never part of the printed report design.
+           #rptPreviewToolbar/#rptPreviewSidebar/#rptTextInspector are the v2 preview's equivalent
+           chrome (toolbar, section-jump sidebar, hover text inspector). */
         .report-toolbar,
-        .rpt-pl {
+        .rpt-pl,
+        #rptPreviewToolbar,
+        #rptPreviewSidebar,
+        #rptTextInspector {
           display: none !important;
         }
-        .report-pages {
+        .report-pages,
+        #rptPreviewPages {
           display: block !important;
           overflow: visible !important;
           padding: 0 !important;
           gap: 0 !important;
+        }
+        /* .rpt-preview-page is the v2 preview's per-page wrapper (report-preview.js
+           _showPreview()) around each .rpt-page — a section the user toggled off in the
+           sidebar already carries inline `display:none` on this wrapper, which print respects
+           natively (no extra rule needed to exclude hidden sections from the PDF). */
+        .rpt-preview-page {
+          display: block !important;
+          box-shadow: none !important;
+          margin: 0 !important;
+          padding: 0 !important;
+        }
+        /* The generic `.rpt-page:last-child{break-after:auto}` rule two blocks down (unchanged,
+           still correct for #reportPages, where every .rpt-page is a direct sibling and :last-
+           child correctly matches only the true final one) misfires here: in the v2 preview each
+           .rpt-page is wrapped alone in its own .rpt-preview-page, so EVERY .rpt-page is its own
+           parent's only/last child and matches that selector too — silently cancelling forced
+           pagination for all 48 pages of a real Quarterly report (measured 2026-09-25, same bug
+           as the overflow fix above). Higher-specificity + !important override restores
+           break-after:page for every page except the one that's genuinely last in the DOM. */
+        .rpt-preview-page:not(:last-child) .rpt-page {
+          break-after: page !important;
+          page-break-after: always !important;
         }
         @page {
           size: 8.5in 11in;
@@ -15230,7 +15310,7 @@
           >
             Inspect Text
           </button>
-          <button class="btn btn-em btn-sm" onclick="downloadReportPDF()">Download PDF</button>
+          <button class="btn btn-em btn-sm" onclick="exportReportToPDF()">Download PDF</button>
         </div>
       </div>
       <div style="display: flex; height: calc(100vh - 44px)">
