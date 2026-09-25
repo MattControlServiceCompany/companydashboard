@@ -1638,9 +1638,259 @@ function _mpChecklistChanged() {
   renderMpBuildingsChecklist();
 }
 
+// Fill From Another Project (2026-09-25): lets the user copy values from an existing
+// project into the New/Edit Project modal before Save. Every fill is optional -- a
+// checkbox per field, checked by default, unchecked by the user to skip that one field.
+// Nothing here writes to `projects`/storage; it only sets the modal's own form inputs
+// (the same inputs saveProject() reads), so Save Project remains the one and only write.
+// Covers every visible modal field except Project Name (per request). Excludes the
+// hidden legacy inputs (sqft/coolType/coolEff/coolEffUnit/heatType/heatEff/heatEffUnit/
+// contact/phone/email) -- those moved to the Building level and are not shown in this
+// modal at all, so there is nothing on screen for the user to consent to filling.
+const MP_AUTOFILL_FIELDS = [
+  { key: 'customer', label: 'Customer', kind: 'customer' },
+  { key: 'buildings', label: 'Buildings and Meters', kind: 'buildings' },
+  { key: 'addr', label: 'Building Address', elId: 'mp-addr', kind: 'text' },
+  { key: 'zip', label: 'Default Weather ZIP', elId: 'mp-zip', kind: 'text' },
+  { key: 'type', label: 'Project Type', elId: 'mp-type', kind: 'select' },
+  { key: 'status', label: 'Status', elId: 'mp-status', kind: 'select' },
+  { key: 'phase', label: 'Phase', elId: 'mp-phase', kind: 'select' },
+  { key: 'pm', label: 'Project Manager', elId: 'mp-pm', kind: 'text' },
+  { key: 'tech', label: 'Field Technician', elId: 'mp-tech', kind: 'text' },
+  { key: 'sa', label: 'Service Agreement Number', elId: 'mp-sa', kind: 'text' },
+  { key: 'contract', label: 'Contract Value $', elId: 'mp-contract', kind: 'number', zeroIsEmpty: true },
+  {
+    key: 'savings',
+    label: 'Estimated Savings Per Year $',
+    elId: 'mp-savings',
+    kind: 'number',
+    zeroIsEmpty: true,
+  },
+  {
+    key: 'baselineComparison',
+    label: 'Baseline Comparison',
+    elId: 'mp-baselineComparison',
+    kind: 'select',
+    afterApply: 'updateBaselineDesc',
+  },
+  { key: 'escalation', label: 'Utility Escalation Percent Per Year', elId: 'mp-escalation', kind: 'number' },
+  {
+    key: 'cscCompensation',
+    label: 'CSC Compensation Percent',
+    elId: 'mp-cscCompensation',
+    kind: 'number',
+    zeroIsEmpty: true,
+  },
+  { key: 'start', label: 'Start Date', elId: 'mp-start', kind: 'text' },
+  { key: 'end', label: 'Target End Date', elId: 'mp-end', kind: 'text' },
+  { key: 'progress', label: 'Progress Percent', elId: 'mp-progress', kind: 'number', zeroIsEmpty: true },
+  { key: 'priority', label: 'Priority', elId: 'mp-priority', kind: 'select' },
+  { key: 'notes', label: 'Project Description', elId: 'mp-notes-editor', kind: 'notes' },
+  { key: 'tags', label: 'Tags', elId: 'mp-tags', kind: 'text' },
+];
+
+function _mpAutofillIsEmpty(field, val) {
+  if (val === undefined || val === null) return true;
+  if (typeof val === 'string') return val.trim() === '';
+  if (typeof val === 'number') {
+    if (Number.isNaN(val)) return true;
+    return field.zeroIsEmpty ? val === 0 : false;
+  }
+  return false;
+}
+
+function _mpAutofillBuildingsInfo(srcProj) {
+  if (!srcProj || typeof getUDBldgs !== 'function') return { count: 0, meterCount: 0 };
+  const bldgs = getUDBldgs(srcProj.id) || [];
+  let meterCount = 0;
+  bldgs.forEach((b) => (meterCount += (b.meters || []).length));
+  return { count: bldgs.length, meterCount: meterCount };
+}
+
+function _mpAutofillPreview(field, val) {
+  if (field.key === 'buildings') {
+    return (
+      val.count +
+      ' building' +
+      (val.count === 1 ? '' : 's') +
+      ', ' +
+      val.meterCount +
+      ' meter' +
+      (val.meterCount === 1 ? '' : 's')
+    );
+  }
+  if (field.key === 'notes') {
+    const tmp = document.createElement('div');
+    tmp.innerHTML = val;
+    const text = (tmp.textContent || '').trim();
+    return text.length > 140 ? text.slice(0, 140) + '…' : text;
+  }
+  if (field.kind === 'select') {
+    const selEl = document.getElementById(field.elId);
+    if (selEl) {
+      const match = Array.from(selEl.options).find((o) => o.value === String(val));
+      if (match) return match.textContent;
+    }
+    return String(val);
+  }
+  if (field.key === 'contract' || field.key === 'savings') return '$' + Number(val).toLocaleString();
+  if (field.key === 'cscCompensation' || field.key === 'escalation' || field.key === 'progress') return val + '%';
+  return String(val);
+}
+
+// Populates the "Fill From Another Project" dropdown with every OTHER project (never the
+// project currently open in this modal), and resets any previously-shown field list.
+function _mpAutofillPopulateSourceDropdown(excludeId) {
+  const sel = document.getElementById('mp-autofill-source');
+  if (!sel) return;
+  const list = (projects || [])
+    .filter((p) => String(p.id) !== String(excludeId || ''))
+    .slice()
+    .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  sel.innerHTML =
+    '<option value="">— Select a project to fill from —</option>' +
+    list.map((p) => '<option value="' + p.id + '">' + _escHtmlEs(p.name) + '</option>').join('');
+  sel.value = '';
+  const wrap = document.getElementById('mp-autofill-list');
+  const box = document.getElementById('mp-autofill-fields');
+  if (wrap) wrap.style.display = 'none';
+  if (box) box.innerHTML = '';
+}
+
+// Builds the field checklist for the chosen source project -- one row per field that has
+// a non-empty value there (every field checked by default), skipping Buildings and Meters
+// (with a one-line reason shown instead) unless the source project's customer matches the
+// customer already picked in THIS modal.
+function _mpAutofillSourceChanged() {
+  const sel = document.getElementById('mp-autofill-source');
+  const wrap = document.getElementById('mp-autofill-list');
+  const box = document.getElementById('mp-autofill-fields');
+  if (!sel || !wrap || !box) return;
+  const srcId = sel.value;
+  if (!srcId) {
+    wrap.style.display = 'none';
+    box.innerHTML = '';
+    return;
+  }
+  const srcProj = (projects || []).find((p) => String(p.id) === String(srcId));
+  if (!srcProj) {
+    wrap.style.display = 'none';
+    box.innerHTML = '';
+    return;
+  }
+  const rows = [];
+  let buildingsNote = '';
+  MP_AUTOFILL_FIELDS.forEach((f) => {
+    if (f.key === 'buildings') {
+      const info = _mpAutofillBuildingsInfo(srcProj);
+      if (info.count === 0) return; // source project has nothing to offer here
+      const sameCustomer = !!_mpSelectedCustomerId && srcProj.customerId === _mpSelectedCustomerId;
+      if (!sameCustomer) {
+        buildingsNote = _mpSelectedCustomerId
+          ? 'Buildings and Meters not offered -- this project belongs to a different customer.'
+          : 'Buildings and Meters not offered -- pick a customer for this project first.';
+        return;
+      }
+      rows.push({ field: f, preview: _mpAutofillPreview(f, info) });
+      return;
+    }
+    const val = f.key === 'customer' ? srcProj.client || '' : srcProj[f.key];
+    if (_mpAutofillIsEmpty(f, val)) return;
+    rows.push({ field: f, preview: _mpAutofillPreview(f, val) });
+  });
+  if (!rows.length) {
+    box.innerHTML =
+      '<div style="color:var(--text3);padding:4px 0">' +
+      _escHtmlEs(buildingsNote || 'This project has no values to fill.') +
+      '</div>';
+    wrap.style.display = '';
+    return;
+  }
+  box.innerHTML =
+    (buildingsNote
+      ? '<div style="color:var(--text3);padding:2px 0 8px;font-size:11px">' + _escHtmlEs(buildingsNote) + '</div>'
+      : '') +
+    rows
+      .map(
+        (r) =>
+          '<label style="display:flex;align-items:flex-start;gap:8px;padding:5px 0;border-bottom:1px solid var(--border)">' +
+          '<input type="checkbox" class="mp-autofill-cb" data-key="' +
+          r.field.key +
+          '" checked style="margin-top:2px">' +
+          '<span style="flex:1"><span style="font-weight:600">' +
+          _escHtmlEs(r.field.label) +
+          '</span><span style="display:block;color:var(--text3)">' +
+          _escHtmlEs(r.preview) +
+          '</span></span></label>',
+      )
+      .join('');
+  wrap.style.display = '';
+}
+
+// Copies only the CHECKED fields from the chosen source project into this modal's own
+// form inputs. Nothing is written to storage here -- Save Project (saveProject()) is
+// still the only place that persists anything, and it reads these same input elements.
+// A field the user already typed a value into is overwritten only because its checkbox
+// is checked -- the checkbox IS the user's consent to overwrite.
+function _mpApplyAutofill() {
+  const sel = document.getElementById('mp-autofill-source');
+  const box = document.getElementById('mp-autofill-fields');
+  if (!sel || !box) return;
+  const srcProj = (projects || []).find((p) => String(p.id) === String(sel.value));
+  if (!srcProj) return;
+  const checked = new Set(
+    Array.from(box.querySelectorAll('.mp-autofill-cb:checked')).map((cb) => cb.getAttribute('data-key')),
+  );
+  if (!checked.size) {
+    showToast('No fields selected to fill');
+    return;
+  }
+  let filled = 0;
+  if (checked.has('customer')) {
+    _mpSelectedCustomerId = srcProj.customerId || null;
+    _mpBuildingsChecklistState = { buildingIds: [], meterExcludeIds: [] };
+    refreshCustomerDropdown(_mpSelectedCustomerId);
+    const newInput = document.getElementById('mp-customer-new');
+    if (newInput) {
+      newInput.style.display = 'none';
+      newInput.value = '';
+    }
+    filled++;
+  }
+  if (checked.has('buildings')) {
+    _mpBuildingsChecklistState = {
+      buildingIds: ((srcProj.scope && srcProj.scope.buildingIds) || []).slice(),
+      meterExcludeIds: ((srcProj.scope && srcProj.scope.meterExcludeIds) || []).slice(),
+    };
+  }
+  renderMpBuildingsChecklist();
+  MP_AUTOFILL_FIELDS.forEach((f) => {
+    if (f.key === 'customer' || f.key === 'buildings' || !checked.has(f.key)) return;
+    if (f.key === 'notes') {
+      const val = srcProj.notes || '';
+      if (typeof initQuillEditor === 'function' && window._mpNotesQuill) {
+        window._mpNotesQuill.setContents([]);
+        if (val) window._mpNotesQuill.clipboard.dangerouslyPasteHTML(val);
+      } else {
+        const el = document.getElementById(f.elId);
+        if (el) el.textContent = val;
+      }
+      filled++;
+      return;
+    }
+    const el = document.getElementById(f.elId);
+    if (!el) return;
+    el.value = srcProj[f.key] == null ? '' : srcProj[f.key];
+    if (f.afterApply === 'updateBaselineDesc' && typeof updateBaselineDesc === 'function') updateBaselineDesc();
+    filled++;
+  });
+  showToast(filled + ' field' + (filled === 1 ? '' : 's') + ' filled -- review and click Save Project');
+}
+
 function openProjModal() {
   document.getElementById('projModalTitle').textContent = '+ New Energy Project';
   document.getElementById('mp-edit-id').value = '';
+  _mpAutofillPopulateSourceDropdown(null);
   [
     'mp-name',
     'mp-client',
@@ -1686,6 +1936,7 @@ function editProj(id) {
   if (!p) return;
   document.getElementById('projModalTitle').textContent = '✏️ Edit Project';
   document.getElementById('mp-edit-id').value = id;
+  _mpAutofillPopulateSourceDropdown(id);
   const fv = {
     name: p.name,
     client: p.client,

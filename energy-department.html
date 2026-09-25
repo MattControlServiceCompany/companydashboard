@@ -13754,6 +13754,34 @@
             ><button class="modal-x" onclick="closeProjModal()">✕</button>
           </div>
           <div class="modal-body">
+            <div class="modal-sect">Fill From Another Project</div>
+            <div class="fg">
+              <label class="fl"
+                >Fill From Another Project
+                <span style="font-size: 10px; color: var(--text3)"
+                  >(optional — copies values from a project you pick below; nothing is saved until you click Save
+                  Project)</span
+                ></label
+              ><select class="fs" id="mp-autofill-source" onchange="_mpAutofillSourceChanged()">
+                <option value="">— Select a project to fill from —</option>
+              </select>
+              <div id="mp-autofill-list" style="display: none; margin-top: 10px">
+                <div
+                  id="mp-autofill-fields"
+                  style="
+                    border: 1px solid var(--border);
+                    border-radius: 6px;
+                    padding: 8px;
+                    max-height: 280px;
+                    overflow-y: auto;
+                    font-size: 12px;
+                  "
+                ></div>
+                <button type="button" class="btn btn-em" style="margin-top: 10px" onclick="_mpApplyAutofill()">
+                  Fill Selected
+                </button>
+              </div>
+            </div>
             <div class="modal-sect">Project Info</div>
             <div class="fg">
               <label class="fl">Project Name *</label
