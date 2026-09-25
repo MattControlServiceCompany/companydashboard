@@ -439,28 +439,28 @@ function emSyncViewModeControls() {
 
 var EM_CHECK_COLS_11 = [
   'Duct Static Pressure Sensor',
-  'Supply Air Temp Sensor',
-  'Return Air Temp Sensor',
-  'Outdoor Air Temp Sensor',
-  'VFD Present',
-  'SAT Reset Sequence',
-  'DSP Reset Sequence',
-  'HW Temp Reset',
-  'CHW Temp Reset',
+  'Supply Air Temperature Sensor',
+  'Return Air Temperature Sensor',
+  'Outdoor Air Temperature Sensor',
+  'Variable Frequency Drive Present',
+  'Supply Air Temperature Reset Sequence',
+  'Duct Static Pressure Reset Sequence',
+  'Hot Water Temperature Reset',
+  'Chilled Water Temperature Reset',
   'Optimum Start/Stop',
   'Lead/Lag Pump',
 ];
 
 var EM_CHECK_COLS_14 = [
   'Duct Static Pressure Sensor',
-  'Supply Air Temp Sensor',
-  'Return Air Temp Sensor',
-  'Outdoor Air Temp Sensor',
-  'VFD Present',
-  'SAT Reset Sequence',
-  'DSP Reset Sequence',
-  'HW Temp Reset',
-  'CHW Temp Reset',
+  'Supply Air Temperature Sensor',
+  'Return Air Temperature Sensor',
+  'Outdoor Air Temperature Sensor',
+  'Variable Frequency Drive Present',
+  'Supply Air Temperature Reset Sequence',
+  'Duct Static Pressure Reset Sequence',
+  'Hot Water Temperature Reset',
+  'Chilled Water Temperature Reset',
   'Optimum Start/Stop',
   'Lead/Lag Pump',
   'CO2 Sensor',
@@ -4231,13 +4231,13 @@ function emRenderMatrix(container, data, pid) {
     '<div id="em-stats-bar" style="display:flex;gap:16px;flex-wrap:wrap;padding:12px 20px;border-bottom:1px solid var(--border);background:var(--s1);flex-shrink:0">' +
     emStatPill('Buildings', stats.buildings) +
     emStatPill('Equipment', stats.total) +
-    emStatPill('AHU / RTU', stats.ahu) +
-    emStatPill('VAV / FPB', stats.vav) +
+    emStatPill('Air Handling Unit / Rooftop Unit', stats.ahu) +
+    emStatPill('Variable Air Volume / Fan Powered Box', stats.vav) +
     emStatPill('Plants', stats.plants) +
     (stats.lighting ? emStatPill('Lighting', stats.lighting) : '') +
     (stats.other ? emStatPill('Other', stats.other) : '') +
     emStatPill('Has Data', stats.live) +
-    (data.totalBASPoints ? emStatPill('BAS Points', data.totalBASPoints.toLocaleString()) : '') +
+    (data.totalBASPoints ? emStatPill('Building Automation System Points', data.totalBASPoints.toLocaleString()) : '') +
     '</div>';
 
   var projBadge = projName
@@ -5549,15 +5549,15 @@ function emUpdateStatsPillsForRaw(rows, totalBASPoints) {
   var pillsHtml =
     emStatPillCompact('Buildings', stats.buildings) +
     emStatPillCompact('Equipment', stats.total) +
-    emStatPillCompact('AHU / RTU', stats.ahu) +
-    (stats.doas ? emStatPillCompact('DOAS', stats.doas) : '') +
-    (stats.mau ? emStatPillCompact('MAU', stats.mau) : '') +
-    (stats.erv ? emStatPillCompact('ERV', stats.erv) : '') +
-    emStatPillCompact('VAV / FPB', stats.vav) +
+    emStatPillCompact('Air Handling Unit / Rooftop Unit', stats.ahu) +
+    (stats.doas ? emStatPillCompact('Dedicated Outdoor Air System', stats.doas) : '') +
+    (stats.mau ? emStatPillCompact('Makeup Air Unit', stats.mau) : '') +
+    (stats.erv ? emStatPillCompact('Energy Recovery Ventilator', stats.erv) : '') +
+    emStatPillCompact('Variable Air Volume / Fan Powered Box', stats.vav) +
     (stats.furnace ? emStatPillCompact('Furnace', stats.furnace) : '') +
     (stats.fcu ? emStatPillCompact('Fan Coil', stats.fcu) : '') +
     (stats.heater ? emStatPillCompact('Heater', stats.heater) : '') +
-    (stats.ef ? emStatPillCompact('Exh Fan', stats.ef) : '') +
+    (stats.ef ? emStatPillCompact('Exhaust Fan', stats.ef) : '') +
     (stats.vrf ? emStatPillCompact(EM_CATEGORY_LABELS.vrf, stats.vrf) : '') +
     (stats.ac ? emStatPillCompact(EM_CATEGORY_LABELS.ac, stats.ac) : '') +
     emStatPillCompact('Plants', stats.plants) +
@@ -5574,7 +5574,7 @@ function emUpdateStatsPillsForRaw(rows, totalBASPoints) {
     (stats.monitoring ? emStatPillCompact('Monitoring', stats.monitoring) : '') +
     (stats.other ? emStatPillCompact('Other', stats.other) : '') +
     emStatPillCompact('Has Data', stats.live) +
-    (totalBASPoints ? emStatPillCompact('BAS Points', totalBASPoints.toLocaleString()) : '');
+    (totalBASPoints ? emStatPillCompact('Building Automation System Points', totalBASPoints.toLocaleString()) : '');
 
   var collapsed = emGetRawStatsCollapsed();
   bar.style.display = 'block';
