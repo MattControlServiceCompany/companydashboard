@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.24.13'; // The Equipment Matrix's "Show All Point Columns" button on Raw View now opens in under 2 seconds even on JOCO's 8,259 point columns, instead of freezing the page for half a minute; the Equipment Matrix Summary view's "Zone Htg Setpoint"/"Zone Clg Setpoint" and "Htg Setpoint"/"Clg Setpoint"/"Damper Posn" column headers now read "Zone Heating Setpoint"/"Zone Cooling Setpoint"/"Heating Setpoint"/"Cooling Setpoint"/"Damper Position"
+  var CH_VERSION = 'v2026.09.24.14'; // Bill Analysis: clicking "Save Anyway" on a bill whose total was held for review no longer saves a corrupted demand or energy cost; and a bill can no longer be saved to a meter that no longer exists
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
