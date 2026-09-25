@@ -1,0 +1,103 @@
+name: Nightly Tests
+
+# Runs the repo's tracked test-*.js / test-*.mjs files and the version
+# consistency check every night on GitHub's runners, so the nightly health
+# check costs no Claude usage. On failure it opens (or comments on) a single
+# "Nightly tests failed" issue so the owner gets an email; it never changes code.
+#
+# Not run here: scripts/validate-extraction.js and
+# scripts/verify-report-reconciliation.js, which read files that only exist on
+# the owner's PC.
+
+on:
+  schedule:
+    - cron: '7 7 * * *' # ~2:07 AM CDT / 1:07 AM CST
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  tests:
+    name: Run tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: |
+          npm install --no-audit --no-fund
+          npm install --no-save --no-audit --no-fund playwright
+          npx playwright install --with-deps chromium
+
+      - name: Run checks
+        run: |
+          set +e
+          FAILED=""
+          SUMMARY="summary.md"
+          echo "| Check | Result |" > "$SUMMARY"
+          echo "|---|---|" >> "$SUMMARY"
+
+          run_check() {
+            local name="$1"; shift
+            timeout 180 "$@" > out.txt 2>&1
+            local code=$?
+            # A few tests print every assertion passing but leave a timer
+            # running, so they never exit. Count those as passes.
+            if [ $code -eq 124 ] && grep -qE '^([0-9]+)/\1 assertions passed' out.txt; then
+              code=0
+            fi
+            echo "::group::$name (exit $code)"; cat out.txt; echo "::endgroup::"
+            if [ $code -eq 0 ]; then
+              echo "| \`$name\` | ✅ pass |" >> "$SUMMARY"
+            else
+              echo "| \`$name\` | ❌ fail (exit $code) |" >> "$SUMMARY"
+              FAILED="$FAILED $name"
+              { echo; echo "<details><summary>$name output (last 40 lines)</summary>"; echo; echo '```'; tail -40 out.txt; echo '```'; echo '</details>'; } >> failures.md
+            fi
+          }
+
+          run_check scripts/ci-version-check.js node scripts/ci-version-check.js
+          for f in test-*.js test-*.mjs; do
+            [ -f "$f" ] || continue
+            # Tests that load code from the owner's PC can't run on GitHub.
+            if grep -qiE "require\\(['\"]C:" "$f"; then
+              echo "| \`$f\` | ⏭️ skipped (needs files on the owner's PC) |" >> "$SUMMARY"
+              continue
+            fi
+            run_check "$f" node "$f"
+          done
+
+          cat "$SUMMARY" >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$FAILED" ]; then
+            exit 1
+          fi
+
+      - name: Report failure as an issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          {
+            echo "The nightly test run on $(date -u +%Y-%m-%d) found problems."
+            echo
+            if [ -f summary.md ]; then cat summary.md; else echo "The run failed before the tests started (setup/install step)."; fi
+            [ -f failures.md ] && cat failures.md
+            echo
+            echo "Full log: $RUN_URL"
+          } > body.md
+          EXISTING=$(gh issue list --state open --search 'in:title "Nightly tests failed"' --json number --jq '.[0].number')
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --body-file body.md
+          else
+            gh issue create --title "Nightly tests failed" --body-file body.md
+          fi
