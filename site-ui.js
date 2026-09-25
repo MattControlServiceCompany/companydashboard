@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.25.2'; // BAS Savings Calc: fix heating outside-air double count to match Excel, spell out remaining labels, and label Proposed unoccupied setpoints from company standards
+  var CH_VERSION = 'v2026.09.25.4'; // Estimate the missing Spring Hill High June 2025 electric bill's kWh from the surrounding Evergy bills
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

@@ -12487,7 +12487,7 @@ async function _checkDuplicates(bills, statusCb) {
           projId: p.id,
           projName: p.name,
           bldgName: b.name,
-          meterLabel: m.commodity + ' · Acct ' + (m.account || '—') + ' · Meter ' + (m.meter || '—'),
+          meterLabel: m.commodity + ' · Account ' + (m.account || '—') + ' · Meter ' + (m.meter || '—'),
           meter: m,
           hasPDF: !!bill.hasPDF,
           pdfKey: bill.pdfKey || null,
@@ -22190,7 +22190,7 @@ async function _saveSinglePDFBill(extracted, projId) {
           ((targetBldg && targetBldg.name) || '') +
           ' → ' +
           (targetMeter.commodity || 'meter') +
-          ' · Acct ' +
+          ' · Account ' +
           (targetMeter.account || '—');
       }
       // Second try: single matching commodity meter
@@ -22223,7 +22223,7 @@ async function _saveSinglePDFBill(extracted, projId) {
           if (typeof runBillValidation === 'function') runBillValidation(m, dup || billRow);
           matched = true;
           _landedDest =
-            proj.name + ' → ' + (b.name || '') + ' → ' + (m.commodity || 'meter') + ' · Acct ' + (m.account || '—');
+            proj.name + ' → ' + (b.name || '') + ' → ' + (m.commodity || 'meter') + ' · Account ' + (m.account || '—');
         }
       }
       if (!matched) {
@@ -22246,7 +22246,7 @@ async function _saveSinglePDFBill(extracted, projId) {
               ((created.bldg && (created.bldg.name || created.bldg.addr)) || 'Unmatched Bills') +
               ' → NEW ' +
               ((created.meter && created.meter.commodity) || 'meter') +
-              ' meter · Acct ' +
+              ' meter · Account ' +
               ((created.meter && created.meter.account) || '—');
           }
         }

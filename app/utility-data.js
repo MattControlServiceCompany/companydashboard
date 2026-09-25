@@ -898,6 +898,122 @@ function loadUtilityData() {
       console.warn('[pdfBillsSelfHeal] self-heal pass failed:', e);
     });
   }
+  // Spring Hill High gap-fill estimate (feat/shh-june-gap-estimate, 2026-09-25) —
+  // computed fresh on every load, never persisted. See function doc below.
+  _injectSpringHillHighJuneGapEstimate();
+}
+
+// ── Spring Hill High electric — 5/20/2025-6/19/2025 gap-fill estimate ──
+// Matt's decision 2026-09-25 (AI/_context/temp/2026-09-24-spring-hill-high-gaps/
+// 2026-09-24-findings.md): Evergy account 0101335456 never issued/received a
+// bill for meter m1781636802187 (Spring Hill High electric) covering
+// 5/20/2025-6/19/2025 — confirmed missing from both the client's OneDrive
+// bill archive and every backup, not an extraction/import miss. Accept the
+// gap and estimate its kWh from the two real bills on either side of it
+// instead of waiting on Evergy. kWh ONLY — this never invents a cost or a kW
+// figure for the missing period.
+//
+// Method: gapKwh = (prevKwh + nextKwh) / (prevDays + nextDays) * gapDays —
+// i.e. the combined average daily kWh of the previous and next bills,
+// weighted by each bill's own day count (via the shared calcDays() helper,
+// using this meter's own `inclusive` setting so the synthetic row's "Days"
+// column matches every real row's), times the number of days actually
+// missing.
+//
+// Scoped to this ONE meter + this ONE known adjacency on purpose — NOT a
+// general "any two adjacent bills with a gap between them" rule. A full scan
+// of every meter's bill date coverage in the 2026-09-22 backup turned up
+// ~195 start/end adjacency mismatches across Louisburg, Baker University, and
+// every WoodRiver-billed Spring Hill building. The overwhelming majority are
+// month-boundary artifacts (e.g. a bill ending 3/31 and the next starting
+// 4/1 — one calendar day "gap" that isn't a missing bill at all), and the
+// genuine ones sit in meters/panels other agents own (Louisburg validator
+// work, the WoodRiver/Review Bill Corrections panel). A general rule would
+// silently fabricate estimated bills across all of those — see the deploy
+// result doc (AI/_context/temp/2026-09-25-shh-june-gap-estimate/2026-09-25-
+// result.md) for the full before/after list. This function only ever
+// touches meter m1781636802187.
+//
+// Never a direct data write: the synthetic bill is tagged _synthGapFill:true
+// and estimated:true, is rebuilt fresh (never reused) on every load, and is
+// stripped out of every meter's bills array right before saveUtilityData()
+// serializes to storage (see there) — it can never reach localStorage,
+// IndexedDB, or Supabase.
+//
+// Self-deactivating: only fires while the bill ending SHH_JUNE_GAP_START and
+// the bill starting SHH_JUNE_GAP_END are still directly adjacent with nothing
+// real between them. The moment a real Evergy bill for this period is saved,
+// that adjacency breaks and this permanently becomes a no-op for this meter
+// — the real bill replaces the estimate automatically, with no extra code.
+const SHH_JUNE_GAP_METER_ID = 'm1781636802187';
+const SHH_JUNE_GAP_START = '2025-05-20'; // previous bill's end (Evergy read date)
+const SHH_JUNE_GAP_END = '2025-06-19'; // next bill's start (Evergy read date)
+function _injectSpringHillHighJuneGapEstimate() {
+  for (const pid of Object.keys(utilityData)) {
+    const ud = utilityData[pid];
+    for (const b of ud.buildings || []) {
+      for (const mt of b.meters || []) {
+        if (mt.id !== SHH_JUNE_GAP_METER_ID) continue;
+        // Drop any synthetic copy from a prior load first — never trust a
+        // stale one; it's always rebuilt fresh (or left out) below.
+        const realBills = (mt.bills || []).filter((bl) => !bl._synthGapFill);
+        mt.bills = realBills;
+        const sorted = realBills.slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
+        const prevIdx = sorted.findIndex((bl) => bl.end === SHH_JUNE_GAP_START);
+        const prev = prevIdx !== -1 ? sorted[prevIdx] : null;
+        const next = prev ? sorted[prevIdx + 1] : null;
+        const gapStillOpen = !!(prev && next && next.start === SHH_JUNE_GAP_END);
+        if (!gapStillOpen) continue; // a real bill now covers this period -> nothing to inject
+        const prevKwh = parseFloat(prev.kwh) || 0;
+        const nextKwh = parseFloat(next.kwh) || 0;
+        const incl = mt.inclusive !== false;
+        const prevDays = calcDays(prev.start, prev.end, incl);
+        const nextDays = calcDays(next.start, next.end, incl);
+        const gapDays = calcDays(SHH_JUNE_GAP_START, SHH_JUNE_GAP_END, incl);
+        if (!(prevKwh > 0) || !(nextKwh > 0) || !(prevDays > 0) || !(nextDays > 0) || !(gapDays > 0)) continue;
+        const avgDailyKwh = (prevKwh + nextKwh) / (prevDays + nextDays);
+        const estKwh = Math.round(avgDailyKwh * gapDays * 100) / 100;
+        mt.bills.push({
+          id: 'synth_gapfill_' + SHH_JUNE_GAP_METER_ID,
+          start: SHH_JUNE_GAP_START,
+          end: SHH_JUNE_GAP_END,
+          commodity: 'Electric',
+          kwh: estKwh,
+          _synthGapFill: true,
+          estimated: true,
+          estimatedNote:
+            'No Evergy bill was ever issued or received for ' +
+            SHH_JUNE_GAP_START +
+            ' – ' +
+            SHH_JUNE_GAP_END +
+            ' (Matt, 2026-09-25: accept the gap, estimate kWh from the surrounding bills). Estimated as the ' +
+            'previous bill’s (' +
+            prev.start +
+            '–' +
+            prev.end +
+            ', ' +
+            prevKwh.toLocaleString() +
+            ' kWh / ' +
+            prevDays +
+            ' days) and next bill’s (' +
+            next.start +
+            '–' +
+            next.end +
+            ', ' +
+            nextKwh.toLocaleString() +
+            ' kWh / ' +
+            nextDays +
+            ' days) combined average daily kWh (' +
+            avgDailyKwh.toFixed(2) +
+            '/day) × ' +
+            gapDays +
+            ' gap days = ' +
+            estKwh.toLocaleString() +
+            ' kWh. Cost and kW are not estimated. Add the real Evergy bill for this period to replace this row.',
+        });
+      }
+    }
+  }
 }
 function saveUtilityData(pid) {
   // Write each project to its own localStorage key — but only projects whose
@@ -940,7 +1056,34 @@ function saveUtilityData(pid) {
         delete m._unitSavByCalMo;
       });
     });
+    // Gap-fill estimate bills (feat/shh-june-gap-estimate, 2026-09-25): a
+    // synthetic bill computed at load time by _injectSpringHillHighJuneGapEstimate()
+    // (see loadUtilityData) to stand in for a genuinely missing bill period.
+    // Tagged _synthGapFill:true and must NEVER reach localStorage/IndexedDB/
+    // Supabase — agents never write a computed estimate into live data as if
+    // it were a real bill. Pull it out of every meter's bills array right
+    // before JSON.stringify, then put it back so the live in-memory copy
+    // keeps rendering it for the rest of this session (it's rebuilt fresh
+    // from scratch on every future load regardless).
+    const _synthRemoved = [];
+    (utilityData[pid].buildings || []).forEach(function (b) {
+      (b.meters || []).forEach(function (m) {
+        if (!m.bills || !m.bills.length) return;
+        for (let i = m.bills.length - 1; i >= 0; i--) {
+          if (m.bills[i] && m.bills[i]._synthGapFill) {
+            _synthRemoved.push({ bills: m.bills, idx: i, bill: m.bills[i] });
+            m.bills.splice(i, 1);
+          }
+        }
+      });
+    });
     const _serialized = JSON.stringify(utilityData[pid]);
+    _synthRemoved
+      .slice()
+      .reverse()
+      .forEach(function (r) {
+        r.bills.splice(r.idx, 0, r.bill);
+      });
     // No snapshot entry (new project) OR content changed — write it. Otherwise skip.
     if (_lastSavedSnapshot[pid] === _serialized) return;
     sset('en_utility_' + pid, utilityData[pid]);
@@ -1651,7 +1794,7 @@ function commodityPill(c) {
 function meterLabel(m) {
   const acct = m.account ? m.account : '—';
   const mtr = m.meter ? m.meter : '—';
-  return `${m.commodity} · Acct ${acct} · Meter ${mtr}`;
+  return `${m.commodity} · Account ${acct} · Meter ${mtr}`;
 }
 // Normalize date strings to ISO YYYY-MM-DD.
 // KGS bills give dates as MM-DD-YY (e.g. "01-19-26" = Jan 19 2026).
@@ -4666,7 +4809,7 @@ function renderBillsPane(pane, m, bills, incl) {
     (bills.length !== 1 ? 's' : '') +
     (bills.length ? ' · ' + getDateRange(bills) : '') +
     ' </div>' +
-    '<div class="bills-sticky-sub">Acct: ' +
+    '<div class="bills-sticky-sub">Account: ' +
     (m.account || '—') +
     ' · Meter: ' +
     (_bfMeterNo || '—') +
@@ -6497,7 +6640,7 @@ function renderNormPane(pane, m, bills, incl) {
                   onchange="updateBillWeather('${m.id}','${r.id}','cdd',this.value)"
                   style="width:65px;font-family:var(--mono);font-size:12px;background:var(--s3);border:1px solid var(--border);border-radius:4px;padding:3px 6px;color:var(--text);outline:none"></td>`;
         return `<tr class="${r.isBaseline ? 'baseline-row' : ''}">
-            <td class="lbl">${r.label}</td>
+            <td class="lbl">${r.label}${r.estimated ? ' <span title="This month includes a computed kWh estimate — no real bill was on file for part of it. See the Bills tab for the assumption." style="font-size:9px;font-weight:700;text-transform:uppercase;background:var(--amber-dim,rgba(245,158,11,.15));color:var(--amber,#f59e0b);border:1px solid rgba(245,158,11,.35);border-radius:4px;padding:1px 5px;cursor:help">Est.</span>' : ''}</td>
             <td class="mono">${r.days}</td>
             ${hddCell}${cddCell}
             <td class="mono" style="color:var(--text2)">${fmtTemp(r.avgTemp)}</td>
@@ -7259,6 +7402,9 @@ function renderBaselinePane(pane, m, bills, incl) {
         '<div style="flex:1;min-width:0">' +
         '<div style="font-size:12px;font-weight:600;color:var(--text)">' +
         r.label +
+        (r.estimated
+          ? ' <span title="This month includes a computed kWh estimate — no real bill was on file for part of it. See the Bills tab for the assumption." style="font-size:9px;font-weight:700;text-transform:uppercase;background:var(--amber-dim,rgba(245,158,11,.15));color:var(--amber,#f59e0b);border:1px solid rgba(245,158,11,.35);border-radius:4px;padding:1px 5px;cursor:help">Est.</span>'
+          : '') +
         '</div>' +
         '<div style="font-size:11px;color:var(--text2)">' +
         dispUsage.toLocaleString(undefined, { maximumFractionDigits: 0 }) +
