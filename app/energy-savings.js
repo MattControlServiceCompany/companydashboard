@@ -1787,8 +1787,8 @@ function _mpAutofillSourceChanged() {
       const sameCustomer = !!_mpSelectedCustomerId && srcProj.customerId === _mpSelectedCustomerId;
       if (!sameCustomer) {
         buildingsNote = _mpSelectedCustomerId
-          ? 'Buildings and Meters not offered -- this project belongs to a different customer.'
-          : 'Buildings and Meters not offered -- pick a customer for this project first.';
+          ? 'Buildings and Meters not offered. This project belongs to a different customer.'
+          : 'Buildings and Meters not offered. Pick a customer for this project first.';
         return;
       }
       rows.push({ field: f, preview: _mpAutofillPreview(f, info) });
