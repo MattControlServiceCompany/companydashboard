@@ -8702,6 +8702,15 @@
                 <div class="ud-nav-sect">
                   <div class="ud-nav-sect-hdr">
                     <span class="ud-nav-sect-title">Projects</span>
+                    <button
+                      class="btn btn-ghost btn-sm"
+                      style="font-size: 10px; padding: 3px 6px"
+                      onclick="openBillCorrectionsReviewModal()"
+                      title="Review and apply one-time bill data corrections from the 2026-09-24 extraction fixes"
+                      data-fb="energy.utility.review-corrections-btn"
+                    >
+                      Review Bill Corrections
+                    </button>
                   </div>
                 </div>
                 <div class="ud-nav-body" id="udNavList"></div>
@@ -15370,6 +15379,7 @@
     <script src="app/pipeline-diagram.js?v=13"></script>
     <script src="app/csv-import.js?v=13"></script>
     <script src="app/meter-autocreate.js?v=13"></script>
+    <script src="app/bill-corrections-review.js?v=13"></script>
     <!-- Word Export Rebuild plan Steps 1/3 (app/docx-skeleton.js, app/docx-writer.js) were never
          wired into this page's script list -- exportReportToDocx() (report-engine.js) calls
          _docxTranslatePages()/_docxAssemble() (docx-writer.js) and CSC_DOCX_SKELETON_B64
