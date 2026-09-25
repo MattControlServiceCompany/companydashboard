@@ -1303,9 +1303,8 @@ function _replaceEstimatesWithRealBills() {
   let removed = 0;
   const touchedCids = [];
   for (const cid of Object.keys(utilityData)) {
-    const ud = utilityData[cid];
     let touched = false;
-    for (const b of ud.buildings || []) {
+    for (const b of getCustomerBuildings(cid) || []) {
       for (const mt of b.meters || []) {
         if (!mt.bills || !mt.bills.length) continue;
         const real = mt.bills.filter((bl) => !bl.estimated && bl.start && bl.end);

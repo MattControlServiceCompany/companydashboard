@@ -1883,7 +1883,7 @@ function _bcrRenderFlagged(flagged) {
     '<span class="bcr-group-title">Flagged for review</span>' +
     '<span class="bcr-group-count">' +
     _bcrFlagInstanceTotal(flagged) +
-    ' flagged' +
+    ' flag' +
     (_bcrFlagInstanceTotal(flagged) === 1 ? '' : 's') +
     ' on ' +
     flagged.length +
