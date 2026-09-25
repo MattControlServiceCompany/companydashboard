@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.24.16'; // Equipment Matrix: short labels like "AHU / RTU", "DOAS", "VFD Present", and "BAS Points" now read as full words ("Air Handling Unit / Rooftop Unit", "Dedicated Outdoor Air System", "Variable Frequency Drive Present", "Building Automation System Points") in the breakdown tiles, column headers, and the Equipment Type column. Values you imported from your own files are shown exactly as you entered them, unchanged.
+  var CH_VERSION = 'v2026.09.24.17'; // Quarterly Report: column headers no longer break mid-word or run off the edge of the column, kWh/Square Feet/Gallons/Savings Percent print as full words, and Control Service Company's full name replaces "CSC" in the compensation table. A quarter with no bills now says so ("No bills for this period") instead of showing "On Track," and Generate Report defaults to the latest quarter that has bills and warns first if any building is missing bills for the period you pick.
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

@@ -1776,6 +1776,29 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.24.17',
+    date: '2026-09-24',
+    title: 'Quarterly Report: column headers, full words, and no-bills status fixed',
+    items: [
+      {
+        type: 'fix',
+        text: 'On the Quarterly Report, table column headers no longer break in the middle of a word or run off the edge of the column ("PROJECTED COST", "QUARTER", and "SITE ENERGY USE INTENSITY" all print in full, on their own lines).',
+      },
+      {
+        type: 'fix',
+        text: 'Short labels now read as full words: "Square Feet" instead of "Sq Ft", "kWh" and "Gallons" instead of "KWH" and "Gal", and "Savings Percent" instead of a bare "%". The CSC Compensation table now reads "Control Service Company" instead of "CSC".',
+      },
+      {
+        type: 'fix',
+        text: 'A quarter with no bills for a building now says "No bills for this period" for that building instead of showing "On Track" with every value at $0.',
+      },
+      {
+        type: 'fix',
+        text: 'Generate Report now defaults the Quarterly period to the latest quarter that has bills, instead of always the current calendar quarter, and warns before you generate if any building is missing bills for the quarter you picked.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.24.16',
     date: '2026-09-24',
     title: 'Equipment Matrix: short labels now read as full words',

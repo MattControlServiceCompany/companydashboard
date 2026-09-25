@@ -1112,13 +1112,19 @@ console.log('\n--- 12. Forbidden jargon tokens; distinct energy-only vs. blended
   // never share a label anywhere the shared Building Baseline Data table renders (Page 3).
   const html8Rate = ctx8 && ctx8.__blTableCalls.length ? ctx8.__blTableCalls[ctx8.__blTableCalls.length - 1].html : '';
   assert(html8Rate.length > 0, 'Page 3 Building Baseline Data table was captured for the rate-label check');
-  assert(html8Rate.includes('Energy<br>$/kWh'), 'Page 3 table header reads "Energy $/kWh" (energy-only, distinct)');
+  // 2026-09-24 (fix/report-headers-and-empty-period, task 5b): 'kWh' now renders wrapped in
+  // `_rptUnit()` -- `<span style="text-transform:none">kWh</span>` -- so this table's all-caps
+  // <th> styling prints real-case "kWh" instead of "KWH". Same label, same meaning; the string
+  // match below now tolerates the wrapper instead of requiring the old bare-text form.
+  const KWH_TAG = '(?:<span style="text-transform:none">kWh</span>|kWh)';
+  const energyRateHdrRe = new RegExp('Energy<br>\\$/' + KWH_TAG + '</th>');
+  assert(energyRateHdrRe.test(html8Rate), 'Page 3 table header reads "Energy $/kWh" (energy-only, distinct)');
   assert(
     html8Rate.includes('Blended Electric Rate'),
     'Page 3 stats strip reads "Blended Electric Rate" (energy + demand, distinct)',
   );
   assert(
-    !/(?<!Energy<br>)\$\/kWh<\/th>/.test(html8Rate),
+    !new RegExp('(?<!Energy<br>)\\$/' + KWH_TAG + '</th>').test(html8Rate),
     'no bare "$/kWh" header remains once the Energy $/kWh column is labeled',
   );
   // The two labeled figures must actually differ (energy-only < blended) on real data, not just
@@ -1126,10 +1132,11 @@ console.log('\n--- 12. Forbidden jargon tokens; distinct energy-only vs. blended
   // 8 numeric tds precede the Energy $/kWh cell in the Annual row: Heating, Cooling (Degree
   // Days columns, added 2026-09-22), kWh, Metered kW, Billed kW, kW Cost, Energy Cost,
   // Electric Cost — was {6} before Degree Days existed.
-  const energyOnlyM =
-    /Energy<br>\$\/kWh<\/th>[\s\S]*?<tr class="rpt-tot"><td>Annual<\/td>(?:<td class="rpt-n">[^<]*<\/td>){8}<td class="rpt-n">\$([\d.]+)<\/td>/.exec(
-      html8Rate,
-    );
+  const energyOnlyM = new RegExp(
+    'Energy<br>\\$/' +
+      KWH_TAG +
+      '</th>[\\s\\S]*?<tr class="rpt-tot"><td>Annual</td>(?:<td class="rpt-n">[^<]*</td>){8}<td class="rpt-n">\\$([\\d.]+)</td>',
+  ).exec(html8Rate);
   // Note: the label text itself contains a literal "$" (the "($/kWh)" parenthetical), so the
   // match must skip to the stat's own value cell rather than stopping at the label's own "$".
   const blendedM = /Blended Electric Rate[\s\S]*?bl-stat-val">\$([\d.]+)/.exec(html8Rate);
