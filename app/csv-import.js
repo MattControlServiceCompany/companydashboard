@@ -808,7 +808,16 @@ function renderBillRow(row, m, incl, allBills, cols, rowNum) {
       : '';
   // Actions column is always the last col and is right-sticky.
   const _actionColIdx = (cols || []).length - 1;
-  const actionBtns = `<td class="td-actions sticky-col-right" data-sticky-right="${_actionColIdx}">
+  // Gap-fill estimate rows (feat/shh-june-gap-estimate, 2026-09-25) are
+  // computed at runtime, not a saved bill — no PDF, no edit, no delete.
+  // Editing/deleting one would be editing a number that doesn't live
+  // anywhere; it's just recomputed on next load anyway. Hover shows the
+  // assumption (row.estimatedNote) instead of action buttons.
+  const actionBtns = row.estimated
+    ? `<td class="td-actions sticky-col-right" data-sticky-right="${_actionColIdx}">
+          <span title="${(row.estimatedNote || 'Estimated — no real bill on file for this period').replace(/"/g, '&quot;')}" style="cursor:help;color:var(--text3)">ℹ️</span>
+        </td>`
+    : `<td class="td-actions sticky-col-right" data-sticky-right="${_actionColIdx}">
           ${pdfBtn}<button class="btn-edit" onclick="openBillModal('${m.id}','${row.id}')" title="Edit">✏️</button>
           <button class="btn-del"  onclick="deleteBillRow('${m.id}','${row.id}')" title="Delete">✕</button>
         </td>`;
@@ -851,10 +860,16 @@ function renderBillRow(row, m, incl, allBills, cols, rowNum) {
   const _warnTip = _missingDates
     ? 'Missing start/end dates — delete this row and re-extract'
     : 'This bill has missing or inconsistent data fields';
+  // Gap-fill estimate rows (feat/shh-june-gap-estimate, 2026-09-25): distinct
+  // badge next to the month, no click-to-edit (there is nothing saved to
+  // edit — see actionBtns above), and a dedicated row class for styling.
+  const _estBadge = row.estimated
+    ? ` <span class="ud-bill-est-badge" title="${(row.estimatedNote || 'Estimated kWh — no real bill on file for this period').replace(/"/g, '&quot;')}" style="font-size:9px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;background:var(--amber-dim,rgba(245,158,11,.15));color:var(--amber,#f59e0b);border:1px solid rgba(245,158,11,.35);border-radius:4px;padding:1px 6px;cursor:help">Estimated</span>`
+    : '';
   let html =
-    `<tr style="cursor:pointer" onclick="showBillSplitPanel('${m.id}','${row.id}',event)"${_missingDates ? ' class="ud-bill-missing-dates"' : ''}>` +
+    `<tr ${row.estimated ? 'class="ud-bill-estimated-row"' : `style="cursor:pointer" onclick="showBillSplitPanel('${m.id}','${row.id}',event)"${_missingDates ? ' class="ud-bill-missing-dates"' : ''}`}>` +
     `<td class="sticky-col" data-sticky="0" style="text-align:center;color:var(--text3);font-size:11px;padding:0 4px">${rowNum != null ? rowNum : ''}</td>` +
-    `<td class="norm-mon-cell sticky-col" data-sticky="1">${normMonthLabel(row.start, row.end, incl, allBills || m.bills || [])}${_hasRowWarning || _missingDates ? ` <span title="${_warnTip}" style="color:var(--amber);cursor:help">⚠</span>` : ''}</td>` +
+    `<td class="norm-mon-cell sticky-col" data-sticky="1">${normMonthLabel(row.start, row.end, incl, allBills || m.bills || [])}${_estBadge}${_hasRowWarning || _missingDates ? ` <span title="${_warnTip}" style="color:var(--amber);cursor:help">⚠</span>` : ''}</td>` +
     `<td class="lbl sticky-col" data-sticky="2">${fmtD(row.start)}</td>` +
     `<td class="lbl sticky-col" data-sticky="3">${fmtD(row.end)}</td>` +
     `<td class="td-days">${days}</td>`;

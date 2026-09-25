@@ -645,6 +645,12 @@ function getNormRows(m, bills, incl, weatherByYm) {
             }
             byMonth[ym].wSum = (byMonth[ym].wSum || 0) + frac;
           }
+          // Gap-fill estimate rows (feat/shh-june-gap-estimate, 2026-09-25):
+          // carry row.estimated through so any month with a synthetic,
+          // computed-not-real bill contributing to it is flagged — same
+          // accumulate-across-contributing-bills pattern as hasHdd/hasCdd
+          // above. Consumed below at rawRows build time.
+          if (row.estimated) byMonth[ym].hasEstimatedBill = true;
           byMonth[ym]._ids.push(row.id);
         } else {
           byMonth[ym] = {
@@ -661,6 +667,7 @@ function getNormRows(m, bills, incl, weatherByYm) {
             hasHdd: !weatherByYm && !!hdd,
             hasCdd: !weatherByYm && !!cdd,
             hasTmp: !weatherByYm && !!avgTmp,
+            hasEstimatedBill: !!row.estimated,
             _ids: [row.id],
             maxBillDays: totalDays,
           };
@@ -733,6 +740,14 @@ function getNormRows(m, bills, incl, weatherByYm) {
         // month averages) must skip rows where this is true; the Meter
         // Performance display table does NOT filter on it.
         zeroFill: !!r.zeroFill,
+        // Gap-fill estimate rows (feat/shh-june-gap-estimate, 2026-09-25):
+        // true when a synthetic, computed-not-real bill (see
+        // _injectSpringHillHighJuneGapEstimate, app/utility-data.js)
+        // contributed usage to this calendar month. Display-only flag —
+        // consumed by the Bills/Normalized/Baseline tabs and the Appendix D
+        // report table to label the month "Estimated"; never changes usage
+        // math here.
+        estimated: !!r.hasEstimatedBill,
         usage: r.usage,
         usagePerDay,
         cost: r.cost,
