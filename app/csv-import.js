@@ -808,14 +808,17 @@ function renderBillRow(row, m, incl, allBills, cols, rowNum) {
       : '';
   // Actions column is always the last col and is right-sticky.
   const _actionColIdx = (cols || []).length - 1;
-  // Gap-fill estimate rows (feat/shh-june-gap-estimate, 2026-09-25) are
+  // Estimated rows (feat/estimate-missing-period, 2026-09-25) are
   // computed at runtime, not a saved bill — no PDF, no edit, no delete.
   // Editing/deleting one would be editing a number that doesn't live
   // anywhere; it's just recomputed on next load anyway. Hover shows the
   // assumption (row.estimatedNote) instead of action buttons.
   const actionBtns = row.estimated
-    ? `<td class="td-actions sticky-col-right" data-sticky-right="${_actionColIdx}">
+    ? // feat/estimate-missing-period (2026-09-25): kept the ℹ️ hover explanation, but the user
+      // must still be able to delete an estimate (no edit — there's nothing saved to edit).
+      `<td class="td-actions sticky-col-right" data-sticky-right="${_actionColIdx}">
           <span title="${(row.estimatedNote || 'Estimated — no real bill on file for this period').replace(/"/g, '&quot;')}" style="cursor:help;color:var(--text3)">ℹ️</span>
+          <button class="btn-del"  onclick="deleteBillRow('${m.id}','${row.id}')" title="Delete">✕</button>
         </td>`
     : `<td class="td-actions sticky-col-right" data-sticky-right="${_actionColIdx}">
           ${pdfBtn}<button class="btn-edit" onclick="openBillModal('${m.id}','${row.id}')" title="Edit">✏️</button>
@@ -860,7 +863,7 @@ function renderBillRow(row, m, incl, allBills, cols, rowNum) {
   const _warnTip = _missingDates
     ? 'Missing start/end dates — delete this row and re-extract'
     : 'This bill has missing or inconsistent data fields';
-  // Gap-fill estimate rows (feat/shh-june-gap-estimate, 2026-09-25): distinct
+  // Estimated rows (feat/estimate-missing-period, 2026-09-25): distinct
   // badge next to the month, no click-to-edit (there is nothing saved to
   // edit — see actionBtns above), and a dedicated row class for styling.
   const _estBadge = row.estimated
@@ -1156,6 +1159,176 @@ function toggleChargeDetail(rowId) {
   const el = document.getElementById('charge-detail-' + rowId);
   if (el) el.style.display = el.style.display === 'none' ? '' : 'none';
 }
+// ── Estimate missing period (feat/estimate-missing-period, 2026-09-25) ──
+// General "Estimate missing period" action for any meter's Bills table gap — replaces the
+// one-meter Spring Hill High June-2025 special case that used to live in app/utility-data.js
+// (_injectSpringHillHighJuneGapEstimate, computed-at-load and stripped-before-save). Per Matt's
+// 2026-09-25 decision: accept a genuinely missing bill period and estimate its USAGE from the
+// day-weighted average daily usage of the bill immediately before and immediately after the gap
+// — never cost or demand. The button only ever appears on a real gap (app/utility-data.js's
+// existing detectGap(), computations/normalization.js:103, already excludes 1-3 day month-
+// boundary/read-date artifacts — the same threshold the "Gap in data" warning message uses).
+//
+// Unlike the old special case, this is the USER's action: clicking the button adds a real,
+// saved bill row (estimated:true, estimatedNote holds the method) — it is not recomputed at
+// every load and stripped before save. The user can delete it like any other row. When a real
+// bill is later imported/entered for the same period, _replaceEstimatesWithRealBills() (called
+// from loadUtilityData, below) removes the estimate automatically — general, not a per-meter
+// self-deactivation switch.
+function _estimateUsageField(commodity) {
+  // The BILL_SCHEMA column this app already renders in the Bills table for each commodity's
+  // usage, so a written estimate shows up with zero new columns/rendering. Gas writes to
+  // naturalGasTherms (the schema's primary Gas usage column) — resolveGasUsageTherms's other
+  // fallback fields (therms, naturalGasMMbtu, naturalGasCCF) still resolve it everywhere else
+  // that reads gas usage even if a future edit changes which one is native to this meter.
+  if (commodity === 'Electric') return 'kwh';
+  if (commodity === 'Gas') return 'naturalGasTherms';
+  if (commodity === 'Sewer') return 'sewerUsage';
+  return 'waterUsage'; // Water (Propane is excluded upstream — delivery-based, no gap UI)
+}
+// Same per-commodity usage resolution getNormRows() (computations/normalization.js) already uses
+// for every other calc — reused here (not reimplemented) so an estimate is derived from the exact
+// same number the rest of the app already computes from.
+function _estimateUsageValue(bill, commodity) {
+  if (commodity === 'Electric') return parseFloat(bill.kwh) || 0;
+  if (commodity === 'Gas') return resolveGasUsageTherms(bill);
+  if (commodity === 'Sewer') return parseFloat(bill.sewerUsage) || parseFloat(bill.waterUsage) || 0;
+  return parseFloat(bill.waterUsage) || 0;
+}
+async function estimateMissingPeriod(mid, gapStart, gapEnd) {
+  const ctx = resolveUDMeter(mid);
+  if (!ctx) {
+    showToast('Meter not found — re-select the meter and try again', 'warn');
+    return;
+  }
+  const { m } = ctx;
+  const incl = m.inclusive !== false;
+  const sorted = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
+  const prev = sorted.find((bl) => bl.end === gapStart);
+  const next = sorted.find((bl) => bl.start === gapEnd);
+  if (!prev || !next) {
+    showToast('Could not find the bills on either side of this gap — refresh and try again', 'warn');
+    return;
+  }
+  const prevUsage = _estimateUsageValue(prev, m.commodity);
+  const nextUsage = _estimateUsageValue(next, m.commodity);
+  const prevDays = calcDays(prev.start, prev.end, incl);
+  const nextDays = calcDays(next.start, next.end, incl);
+  const gapDays = calcDays(gapStart, gapEnd, incl);
+  if (!(prevUsage > 0) || !(nextUsage > 0) || !(prevDays > 0) || !(nextDays > 0) || !(gapDays > 0)) {
+    showToast('Cannot estimate — the surrounding bills are missing usage or day data', 'warn');
+    return;
+  }
+  const avgDailyUsage = (prevUsage + nextUsage) / (prevDays + nextDays);
+  const estUsage = Math.round(avgDailyUsage * gapDays * 10000) / 10000;
+  const unit = getMeterDisplayUnit(m);
+  const confirmMsg =
+    'Add an estimated period ' +
+    gapStart +
+    ' – ' +
+    gapEnd +
+    ' (' +
+    estUsage.toLocaleString() +
+    ' ' +
+    unit +
+    ', usage only — no cost or demand)?';
+  if (!(await confirmAsync(confirmMsg))) return;
+  const estimatedNote =
+    'No bill on file for ' +
+    gapStart +
+    ' – ' +
+    gapEnd +
+    '. Estimated from the previous bill’s (' +
+    prev.start +
+    '–' +
+    prev.end +
+    ', ' +
+    prevUsage.toLocaleString() +
+    ' ' +
+    unit +
+    ' / ' +
+    prevDays +
+    ' days) and next bill’s (' +
+    next.start +
+    '–' +
+    next.end +
+    ', ' +
+    nextUsage.toLocaleString() +
+    ' ' +
+    unit +
+    ' / ' +
+    nextDays +
+    ' days) combined average daily usage (' +
+    avgDailyUsage.toFixed(4) +
+    '/day) × ' +
+    gapDays +
+    ' gap days = ' +
+    estUsage.toLocaleString() +
+    ' ' +
+    unit +
+    '. Cost and demand are not estimated. Delete this row if a real bill is added to replace it.';
+  const bill = {
+    id: 'bill_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+    start: gapStart,
+    end: gapEnd,
+    commodity: m.commodity,
+    estimated: true,
+    estimatedNote,
+  };
+  bill[_estimateUsageField(m.commodity)] = estUsage;
+  m.bills.push(bill);
+  saveUtilityData();
+  logUtilityAudit({
+    action: 'add',
+    ..._auditCtxFromIds(udSelProjId, udSelBldgId, mid),
+    period: gapStart + ' to ' + gapEnd,
+    source: 'estimate',
+    note: 'Estimated ' + estUsage.toLocaleString() + ' ' + unit + ' from surrounding bills (day-weighted average)',
+  });
+  showToast('Estimated period added');
+  const isEmbed = window._udActiveWrap && window._udActiveWrap !== document.getElementById('udDetailWrap');
+  renderUDProjList();
+  renderUDDetail(isEmbed ? window._udActiveWrap : undefined);
+}
+window.estimateMissingPeriod = estimateMissingPeriod;
+
+// Replace-on-real-bill (general form of the old per-meter self-deactivation): called from
+// loadUtilityData (app/utility-data.js) on every load. For every meter, if an estimated bill's
+// period is now also covered by a REAL (non-estimated) bill, the estimate is redundant — drop it.
+// "Covered" = a real bill whose own [start,end] fully contains the estimate's [start,end] (the
+// common case: the exact same period gets a real bill later) OR is the exact same period.
+// Deliberately narrow (full containment, not any overlap) so a real bill for a DIFFERENT nearby
+// period never silently deletes an estimate that's still the only data for its own period.
+function _replaceEstimatesWithRealBills() {
+  let removed = 0;
+  const touchedCids = [];
+  for (const cid of Object.keys(utilityData)) {
+    const ud = utilityData[cid];
+    let touched = false;
+    for (const b of ud.buildings || []) {
+      for (const mt of b.meters || []) {
+        if (!mt.bills || !mt.bills.length) continue;
+        const real = mt.bills.filter((bl) => !bl.estimated && bl.start && bl.end);
+        const before = mt.bills.length;
+        mt.bills = mt.bills.filter((bl) => {
+          if (!bl.estimated || !bl.start || !bl.end) return true;
+          const es = _parseISO(bl.start),
+            ee = _parseISO(bl.end);
+          const covered = real.some((r) => _parseISO(r.start) <= es && _parseISO(r.end) >= ee);
+          return !covered;
+        });
+        if (mt.bills.length !== before) {
+          removed += before - mt.bills.length;
+          touched = true;
+        }
+      }
+    }
+    if (touched) touchedCids.push(cid);
+  }
+  if (touchedCids.length) saveUtilityData(touchedCids);
+  return removed;
+}
+
 async function deleteBillRow(mid, rowId) {
   const ctx = resolveUDMeter(mid);
   if (!ctx) {
