@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.25.3'; // Review Bill Corrections now groups results by meter, shows a live progress bar and summary while it scans, and fixes a false-positive on Kansas Gas Service bills.
+  var CH_VERSION = 'v2026.09.25.4'; // Estimate the missing Spring Hill High June 2025 electric bill's kWh from the surrounding Evergy bills
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

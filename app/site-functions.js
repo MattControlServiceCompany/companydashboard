@@ -1776,6 +1776,14 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.25.4',
+    date: '2026-09-25',
+    title: 'Estimate the missing Spring Hill High June 2025 electric bill\'s kWh from the surrounding Evergy bills',
+    items: [
+      { type: 'fix', text: 'Estimate the missing Spring Hill High June 2025 electric bill\'s kWh from the surrounding Evergy bills' },
+    ],
+  },
+  {
     v: 'v2026.09.25.3',
     date: '2026-09-25',
     title: 'Review Bill Corrections now groups results by meter, shows a live progress bar and summary while it scans, and fixes a false-positive on Kansas Gas Service bills.',
