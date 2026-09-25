@@ -23,6 +23,19 @@ function _rptMeterEligible(projId, m) {
 }
 
 // -----------------------------------------------------------------------
+// _rptUnit(s) — 2026-09-24 (fix/report-headers-and-empty-period, task 5b): every .rpt-table th
+// carries a site-wide `text-transform:uppercase` (energy-department.html #report-styles,
+// `.rpt-table th`), which is correct for ordinary words but wrongly forces a unit like "kWh" to
+// print as "KWH" -- a case a reader reads as an unfamiliar abbreviation. Wrapping just the unit
+// token in a span that opts back out of the transform prints "kWh"/"Therms"/"MMBtu" in their
+// real case while the rest of the header (e.g. "Baseline", "Actual") stays in the report's
+// existing all-caps header style -- no site-wide style change, no new visual language.
+// -----------------------------------------------------------------------
+function _rptUnit(s) {
+  return '<span style="text-transform:none">' + s + '</span>';
+}
+
+// -----------------------------------------------------------------------
 // collectReportData(projId, buildingIds, reportDateStr, reportType, selectedPeriod, meterIds)
 //
 // Gathers ALL data needed for report generation into a single structured
@@ -244,6 +257,12 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
     const bType = b.type || p.type || 'Other';
     let cumSavings = 0,
       periodSavings = 0;
+    // 2026-09-24 (fix/report-headers-and-empty-period, task 5b, problem 3): true once ANY
+    // post-baseline bill row for this building falls inside the report's own period
+    // (reportYMs, set from `inPeriod` below). A building with zero bills for the selected
+    // period has every $/usage accumulator stuck at its initial 0 -- that is NOT the same
+    // fact as "billed $0 and hit its savings target," so it must never render as "On Track."
+    let bldgHasBillsInPeriod = false;
     let annBlKBtu = 0,
       annCurKBtu = 0;
     const commoditySet = new Set();
@@ -360,6 +379,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
           hasBlCalMap && blByCalMo[calMo] != null ? blByCalMo[calMo] : r.regrBaseline != null ? r.regrBaseline : blAvg;
         const actUsage = rawUsageByYm[r.ym] != null ? rawUsageByYm[r.ym] : r.usage;
         const inPeriod = reportYMs.includes(r.ym);
+        if (inPeriod) bldgHasBillsInPeriod = true;
 
         const totalCostSav = meterSavByYM[r.ym] || 0;
 
@@ -558,6 +578,21 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
     let bldgStatus = 'on_track';
     if (bldgSavingsPct < targetPct * 0.8) bldgStatus = 'below_target';
     else if (bldgSavingsPct < targetPct) bldgStatus = 'near_target';
+    // Problem 3 (2026-09-24, fix/report-headers-and-empty-period): a building with zero bills
+    // for the report period has bldgSavingsPct stuck at 0 from the `bldgBlCost > 0 ? ... : 0`
+    // fallback above -- that is NOT the same fact as "hit its savings target," so it must never
+    // fall through to 'on_track' (or any target-comparison status). This overrides the
+    // target-comparison result unconditionally once there is no in-period data to compare.
+    if (!bldgHasBillsInPeriod) bldgStatus = 'no_data';
+    // 2026-09-24 (fix/report-followup, problem 3): a project with no Service Agreement on file
+    // (p.sa === '') is a project computeCscSplit/getMeterSavings deliberately never books
+    // dollar savings for (computations/savings.js "SA-gate fix," 2026-09-15) -- bldgSavings
+    // stays $0 by design, NOT a bug. But bldgSavingsPct then also stays stuck at 0, which
+    // clears the on_track threshold whenever targetPct is likewise 0 (unconfigured), so this
+    // building was reading as "On Track" -- a performance claim with no computed basis. Distinct
+    // from 'no_data': this building DOES have bills, so 'no_data' ("No bills for this period")
+    // would be false here. Never change the underlying $0 -- only the misleading status claim.
+    else if (!p.sa) bldgStatus = 'no_contract';
 
     // Accumulate project totals
     totKwhBl += elec.kwhBl;
@@ -596,6 +631,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
       savingsPct: bldgSavingsPct,
       targetPct: targetPct,
       status: bldgStatus,
+      hasBillsInPeriod: bldgHasBillsInPeriod,
       eui: {
         baseline: blEUI,
         current: curEUI,
@@ -1932,13 +1968,26 @@ function generateReportHTML(data, selectedSections) {
  * overflow-wrap was still "break-word" on the Financial Summary table's "Projected Cost"
  * header even with word-break:keep-all inherited from its <tr>, and it kept breaking
  * mid-word ("PROJECTE"/"D"/"COST") until overridden here with !important.
+ *
+ * 2026-09-24 fix (fix/report-headers-and-empty-period, task 5b): the A1 rule above was ONLY
+ * ever scoped to #reportPages (the legacy showReportOverlay overlay) — it was never widened to
+ * #rptPreviewPages, which the 2026-09-10 comment on the D2#16 rule below already identifies as
+ * "the V2 modal's preview container — the ONLY path wired to a live UI button." That scope gap
+ * is the actual root cause of the "PROJECTE/D/COST" and "QUARTE" mid-word breaks a 2026-09-24
+ * E2E pass caught on a real Quarterly Report PDF: Generate Preview renders into
+ * #rptPreviewPages, so the A1 override never applied there and the header text fell through to
+ * #report-styles' un-overridden `.rpt-table-wrap th { overflow-wrap: break-word }`. Widened here
+ * to both containers, matching the D2#16/D2#17 rules a few lines down.
  */
 function _rptInjectUiPassOverrides() {
   if (document.getElementById('rpt-ui-pass-overrides')) return;
   var css =
     /* A1: every report-table header word stays whole — no mid-word breaks. !important beats
-       #report-styles' .rpt-table-wrap th direct rule (overflow-wrap/word-wrap: break-word). */
-    '#reportPages .rpt-table th,#reportPages .rpt-table-wrap th,#reportPages .rpt-table-bl th' +
+       #report-styles' .rpt-table-wrap th direct rule (overflow-wrap/word-wrap: break-word).
+       Scoped to BOTH #reportPages (legacy overlay) and #rptPreviewPages (the V2 modal's
+       preview container — the live Generate Preview / Download PDF path). */
+    '#reportPages .rpt-table th,#reportPages .rpt-table-wrap th,#reportPages .rpt-table-bl th,' +
+    '#rptPreviewPages .rpt-table th,#rptPreviewPages .rpt-table-wrap th,#rptPreviewPages .rpt-table-bl th' +
     '{word-break:keep-all !important;overflow-wrap:normal !important;word-wrap:normal !important;hyphens:none !important}' +
     /* A2: squared-off corners on every report table */
     '#reportPages .rpt-table,#reportPages .rpt-table-bl,#reportPages .rpt-table-wrap,' +
@@ -2239,10 +2288,22 @@ function rptPageCover(n, d) {
 
   // Key findings
   const findings = [];
-  // Top performer
-  const sorted = d.buildings.slice().sort(function (a, b) {
-    return (b.savingsPct ?? 0) - (a.savingsPct ?? 0);
-  });
+  // Top performer — 2026-09-24 (fix/report-headers-and-empty-period, problem 3): only rank
+  // buildings that actually have bills for this period. A building with zero bills sits at
+  // savingsPct=0 by fallback (see collectReportData), so without this filter an empty-period
+  // report could crown a no-data building "top performer at 0.0% savings" — the same false
+  // no-data-reads-as-performance-data class of bug as the Building Performance status fix.
+  // 2026-09-24 (fix/report-followup, problem 3): 'no_contract' buildings have the same
+  // stuck-at-0 savingsPct for a different reason (no Service Agreement on file, so no dollar
+  // savings are ever computed) — excluded here for the same reason.
+  const sorted = d.buildings
+    .filter(function (b) {
+      return b.hasBillsInPeriod !== false && b.status !== 'no_contract';
+    })
+    .slice()
+    .sort(function (a, b) {
+      return (b.savingsPct ?? 0) - (a.savingsPct ?? 0);
+    });
   if (sorted.length) {
     const top = sorted[0];
     findings.push({
@@ -2411,26 +2472,39 @@ function rptPageCover(n, d) {
   const gridBldgs = d.buildings;
   const statusCards = gridBldgs
     .map(function (b) {
+      // Problem 3 (2026-09-24, fix/report-headers-and-empty-period): 'no_data' (zero bills for
+      // this period) is its own status, never folded into the below_target/red styling — a
+      // missing bill is not the same fact as a building that is billed and underperforming.
+      // 'no_contract' (2026-09-24, fix/report-followup, problem 3): same neutral treatment for
+      // a building with bills but no Service Agreement on file (no dollar savings computed).
       const cardClass = b.status === 'on_track' ? 'rpt-ok' : b.status === 'near_target' ? 'rpt-warn' : '';
       const statusIcon =
         b.status === 'on_track'
           ? '&#9650; On Track'
           : b.status === 'near_target'
             ? '&#9658; Near Target'
-            : '&#9658; Below Target';
+            : b.status === 'no_data'
+              ? 'No Bills This Period'
+              : b.status === 'no_contract'
+                ? 'No Service Agreement'
+                : '&#9658; Below Target';
       const cardStyle = b.status === 'below_target' ? 'border-color:var(--rpt-red-light);' : '';
       const valColor =
         b.status === 'on_track'
           ? 'var(--rpt-green-dark)'
           : b.status === 'near_target'
             ? 'var(--rpt-orange)'
-            : 'var(--rpt-red)';
+            : b.status === 'no_data' || b.status === 'no_contract'
+              ? 'var(--rpt-page-text)'
+              : 'var(--rpt-red)';
       const labelColor =
         b.status === 'on_track'
           ? 'var(--rpt-green)'
           : b.status === 'near_target'
             ? 'var(--rpt-orange)'
-            : 'var(--rpt-red)';
+            : b.status === 'no_data' || b.status === 'no_contract'
+              ? 'var(--rpt-page-text)'
+              : 'var(--rpt-red)';
       return (
         '<div class="rpt-status-card ' +
         cardClass +
@@ -2443,7 +2517,7 @@ function rptPageCover(n, d) {
         '<div class="rpt-sc-val" style="color:' +
         valColor +
         '" contenteditable="true">' +
-        $p(b.savingsPct) +
+        (b.status === 'no_data' || b.status === 'no_contract' ? '—' : $p(b.savingsPct)) +
         '</div>' +
         '<div class="rpt-sc-label" style="color:' +
         labelColor +
@@ -2692,9 +2766,29 @@ function rptPageFinancial(n, d) {
   const totBlCostForPct = d.totals.blCost || 1;
   const bRows = d.buildings
     .map(function (b) {
-      const saveClass = b.savings >= 0 ? 'rpt-g' : 'rpt-r';
-      const statusIcon = b.status === 'on_track' ? '&#9650;' : b.status === 'near_target' ? '&#9658;' : '&#9660;';
-      const statusClass = b.status === 'on_track' ? 'rpt-g' : b.status === 'near_target' ? 'rpt-o' : 'rpt-r';
+      // Problem 3 (2026-09-24, fix/report-headers-and-empty-period): 'no_data' renders its own
+      // plain, non-judgmental label -- never the on_track/near_target/below_target red-amber-
+      // green triangle language, which asserts a performance result this row has no bills to
+      // support. 'no_contract' (2026-09-24, fix/report-followup, problem 3) gets the same
+      // neutral treatment -- this building has bills, but no Service Agreement on file, so no
+      // dollar savings are ever computed for it (by design; see computations/savings.js).
+      const saveClass = b.status === 'no_data' || b.status === 'no_contract' ? '' : b.savings >= 0 ? 'rpt-g' : 'rpt-r';
+      const statusIcon =
+        b.status === 'on_track'
+          ? '&#9650;'
+          : b.status === 'near_target'
+            ? '&#9658;'
+            : b.status === 'no_data' || b.status === 'no_contract'
+              ? ''
+              : '&#9660;';
+      const statusClass =
+        b.status === 'on_track'
+          ? 'rpt-g'
+          : b.status === 'near_target'
+            ? 'rpt-o'
+            : b.status === 'no_data' || b.status === 'no_contract'
+              ? ''
+              : 'rpt-r';
       const bldgProjSav = qTarget > 0 ? qTarget * (b.blCost / totBlCostForPct) : 0;
       const bldgProjCost = b.blCost - bldgProjSav;
       return (
@@ -2722,14 +2816,22 @@ function rptPageFinancial(n, d) {
         '<td class="rpt-n ' +
         saveClass +
         '" contenteditable="true">' +
-        $p(b.savingsPct) +
+        (b.status === 'no_data' || b.status === 'no_contract' ? '—' : $p(b.savingsPct)) +
         '</td>' +
         '<td class="' +
         statusClass +
         '" contenteditable="true">' +
         statusIcon +
-        ' ' +
-        (b.status === 'on_track' ? 'On Track' : b.status === 'near_target' ? 'Near Target' : 'Below Target') +
+        (statusIcon ? ' ' : '') +
+        (b.status === 'on_track'
+          ? 'On Track'
+          : b.status === 'near_target'
+            ? 'Near Target'
+            : b.status === 'no_data'
+              ? 'No bills for this period'
+              : b.status === 'no_contract'
+                ? 'No Service Agreement on file'
+                : 'Below Target') +
         '</td>' +
         '</tr>'
       );
@@ -2738,6 +2840,15 @@ function rptPageFinancial(n, d) {
 
   const totSaveClass = d.totals.savings >= 0 ? 'rpt-g' : 'rpt-r';
   const totProjCost = d.totals.blCost - qTarget;
+  // 2026-09-24 (fix/report-followup, problem 2): Total Portfolio must never claim a computed
+  // Savings Percent when no building behind it has one -- a building row with 'no_data' or
+  // 'no_contract' status already shows '-' here (above); the total row summed the same $0/$0
+  // and rendered a literal 0.0%, a real-looking number the per-building rows explicitly refuse
+  // to show. Show '-' at the total level too unless at least one building actually has a
+  // computed savings comparison behind it.
+  const anyRealSavings = d.buildings.some(function (b) {
+    return b.status !== 'no_data' && b.status !== 'no_contract';
+  });
   const bTotRow =
     '<tr class="rpt-tot">' +
     '<td contenteditable="true">Total Portfolio</td>' +
@@ -2761,7 +2872,7 @@ function rptPageFinancial(n, d) {
     '<td class="rpt-n ' +
     totSaveClass +
     '" contenteditable="true">' +
-    $p(d.totals.savingsPct) +
+    (anyRealSavings ? $p(d.totals.savingsPct) : '—') +
     '</td>' +
     '<td></td>' +
     '</tr>';
@@ -2769,15 +2880,15 @@ function rptPageFinancial(n, d) {
   const bldgTable =
     '<table class="rpt-table rpt-table-wrap" contenteditable="false" style="font-size:10px;width:100%;table-layout:fixed">' +
     '<thead><tr style="text-align:center;white-space:normal;word-wrap:normal;word-break:keep-all;overflow-wrap:normal;hyphens:none;line-height:1.2">' +
-    '<th style="width:18%">Building</th>' +
-    '<th class="rpt-n" style="width:10%">Sq Ft</th>' +
-    '<th class="rpt-n" style="width:12%">Baseline<br>Cost</th>' +
-    '<th class="rpt-n" style="width:12%">Projected<br>Cost</th>' +
-    '<th class="rpt-n" style="width:12%">Actual<br>Cost</th>' +
-    '<th class="rpt-n" style="width:13%">' +
+    '<th style="width:17%">Building</th>' +
+    '<th class="rpt-n" style="width:10%">Square<br>Feet</th>' +
+    '<th class="rpt-n" style="width:11%">Baseline<br>Cost</th>' +
+    '<th class="rpt-n" style="width:13%">Projected<br>Cost</th>' +
+    '<th class="rpt-n" style="width:11%">Actual<br>Cost</th>' +
+    '<th class="rpt-n" style="width:12%">' +
     qLabel +
     '<br>Actual Savings</th>' +
-    '<th class="rpt-n" style="width:8%">%</th>' +
+    '<th class="rpt-n" style="width:11%">Savings<br>Percent</th>' +
     '<th style="width:15%">Status</th>' +
     '</tr></thead>' +
     '<tbody>' +
@@ -2813,7 +2924,7 @@ function rptPageFinancial(n, d) {
     '</td>' +
     '</tr>' +
     '<tr>' +
-    '<td contenteditable="true">CSC (' +
+    '<td contenteditable="true">Control Service Company (' +
     d.contract.cscPct +
     '%)</td>' +
     '<td class="rpt-n" contenteditable="true">' +
@@ -2882,7 +2993,6 @@ function rptPageFinancial(n, d) {
   const qtrTable =
     '<table class="rpt-table rpt-table-wrap" contenteditable="false" style="font-size:10px;width:100%;table-layout:fixed">' +
     '<colgroup>' +
-    '<col style="width:8%">' +
     '<col style="width:10%">' +
     '<col style="width:10%">' +
     '<col style="width:10%">' +
@@ -2891,16 +3001,21 @@ function rptPageFinancial(n, d) {
     '<col style="width:10%">' +
     '<col style="width:10%">' +
     '<col style="width:10%">' +
-    '<col style="width:12%">' +
+    '<col style="width:10%">' +
+    '<col style="width:10%">' +
     '</colgroup>' +
     '<thead><tr style="text-align:center;line-height:1.2">' +
     '<th style="white-space:normal;word-wrap:normal;word-break:keep-all;overflow-wrap:normal;hyphens:none">Quarter</th>' +
-    '<th class="rpt-n" style="white-space:normal;word-wrap:normal;word-break:keep-all;overflow-wrap:normal;hyphens:none">Baseline<br>kWh</th>' +
-    '<th class="rpt-n" style="white-space:normal;word-wrap:normal;word-break:keep-all;overflow-wrap:normal;hyphens:none">Actual<br>kWh</th>' +
+    '<th class="rpt-n" style="white-space:normal;word-wrap:normal;word-break:keep-all;overflow-wrap:normal;hyphens:none">Baseline<br>' +
+    _rptUnit('kWh') +
+    '</th>' +
+    '<th class="rpt-n" style="white-space:normal;word-wrap:normal;word-break:keep-all;overflow-wrap:normal;hyphens:none">Actual<br>' +
+    _rptUnit('kWh') +
+    '</th>' +
     '<th class="rpt-n" style="white-space:normal;word-wrap:normal;word-break:keep-all;overflow-wrap:normal;hyphens:none">Baseline<br>Therms</th>' +
     '<th class="rpt-n" style="white-space:normal;word-wrap:normal;word-break:keep-all;overflow-wrap:normal;hyphens:none">Actual<br>Therms</th>' +
-    '<th class="rpt-n" style="white-space:normal;word-wrap:normal;word-break:keep-all;overflow-wrap:normal;hyphens:none">Baseline<br>Gal</th>' +
-    '<th class="rpt-n" style="white-space:normal;word-wrap:normal;word-break:keep-all;overflow-wrap:normal;hyphens:none">Actual<br>Gal</th>' +
+    '<th class="rpt-n" style="white-space:normal;word-wrap:normal;word-break:keep-all;overflow-wrap:normal;hyphens:none">Baseline<br>Gallons</th>' +
+    '<th class="rpt-n" style="white-space:normal;word-wrap:normal;word-break:keep-all;overflow-wrap:normal;hyphens:none">Actual<br>Gallons</th>' +
     '<th class="rpt-n" style="white-space:normal;word-wrap:normal;word-break:keep-all;overflow-wrap:normal;hyphens:none">Baseline<br>Cost</th>' +
     '<th class="rpt-n" style="white-space:normal;word-wrap:normal;word-break:keep-all;overflow-wrap:normal;hyphens:none">Actual<br>Cost</th>' +
     '<th class="rpt-n" style="white-space:normal;word-wrap:normal;word-break:keep-all;overflow-wrap:normal;hyphens:none">' +
@@ -2926,7 +3041,7 @@ function rptPageFinancial(n, d) {
     bldgTable +
     '<h2>Quarterly Savings vs Baseline</h2>' +
     qtrTable +
-    '<h2>CSC Compensation</h2>' +
+    '<h2>Control Service Company Compensation</h2>' +
     cscTable +
     '';
   // fix/report-quarterly-restructure (2026-09-09), Part B item 1: the "Monthly Cost Breakdown"
@@ -3143,13 +3258,15 @@ function rptPageSavingsPerformance(n, d) {
   const annTable =
     '<table class="rpt-table" contenteditable="true" style="width:100%;table-layout:fixed">' +
     '<thead><tr style="text-align:center;white-space:normal;word-wrap:normal;word-break:keep-all;overflow-wrap:normal;hyphens:none;line-height:1.2">' +
-    '<th style="width:12%">Period</th>' +
-    '<th class="rpt-n" style="width:14%">kWh</th>' +
+    '<th style="width:11%">Period</th>' +
+    '<th class="rpt-n" style="width:12%">' +
+    _rptUnit('kWh') +
+    '</th>' +
     '<th class="rpt-n" style="width:10%">Peak kW</th>' +
-    '<th class="rpt-n" style="width:12%">Therms</th>' +
-    '<th class="rpt-n" style="width:12%">Propane<br>Gal</th>' +
-    '<th class="rpt-n" style="width:14%">Cost</th>' +
-    '<th class="rpt-n" style="width:8%">Site Energy Use Intensity</th>' +
+    '<th class="rpt-n" style="width:11%">Therms</th>' +
+    '<th class="rpt-n" style="width:12%">Propane<br>Gallons</th>' +
+    '<th class="rpt-n" style="width:12%">Cost</th>' +
+    '<th class="rpt-n" style="width:20%">Site Energy<br>Use Intensity</th>' +
     '<th class="rpt-n" style="width:12%">vs<br>Baseline</th>' +
     '</tr></thead>' +
     '<tbody>' +
@@ -3239,7 +3356,9 @@ function rptPageSavingsPerformance(n, d) {
     '<thead><tr>' +
     '<th>Building</th>' +
     '<th>Year</th>' +
-    '<th class="rpt-n">kWh</th>' +
+    '<th class="rpt-n">' +
+    _rptUnit('kWh') +
+    '</th>' +
     '<th class="rpt-n">kW</th>' +
     '<th class="rpt-n">Therms</th>' +
     '<th class="rpt-n">Propane Gallons</th>' +
@@ -3365,13 +3484,20 @@ function rptPageEUI(n, d) {
 
   const rankTable =
     '<table class="rpt-table rpt-table-wrap rpt-mp-dense" contenteditable="true" style="font-size:10px;width:100%;table-layout:fixed">' +
+    // 2026-09-24 fix (fix/report-headers-and-empty-period, task 5b, problem 1): headless-
+    // measured overflow on "Current Site Energy Use Intensity" (scrollWidth 69 > clientWidth
+    // 64 at this table's 12px header font) -- its column was 1% narrower than the "Baseline"
+    // column despite both headers sharing the same longest unbreakable word ("Intensity", 9
+    // letters), so there was no reason for the asymmetry. Took the 1% from Building (still well
+    // above its measured "MedAct 1159 Sunflower Firestation-13"-class slack per the comment
+    // below) and gave it to Current Site EUI so both EUI columns match.
     '<colgroup>' +
     '<col style="width:4%">' +
-    '<col style="width:16%">' +
+    '<col style="width:15%">' +
     '<col style="width:9%">' +
     '<col style="width:8%">' +
     '<col style="width:10%">' +
-    '<col style="width:9%">' +
+    '<col style="width:10%">' +
     '<col style="width:7%">' +
     '<col style="width:7%">' +
     '<col style="width:12%">' +
@@ -3677,8 +3803,8 @@ function rptPageAuditSpend(n, d) {
   const table =
     '<table class="rpt-table rpt-table-wrap" contenteditable="false" style="font-size:10px;width:100%;table-layout:fixed">' +
     '<thead><tr style="text-align:center;white-space:normal;word-wrap:normal;word-break:keep-all;overflow-wrap:normal;hyphens:none;line-height:1.2">' +
-    '<th style="width:22%">Building</th>' +
-    '<th class="rpt-n" style="width:10%">Sq Ft</th>' +
+    '<th style="width:20%">Building</th>' +
+    '<th class="rpt-n" style="width:12%">Square<br>Feet</th>' +
     '<th class="rpt-n" style="width:14%">Electric $</th>' +
     '<th class="rpt-n" style="width:14%">Gas $</th>' +
     '<th class="rpt-n" style="width:14%">Propane $</th>' +
@@ -4012,15 +4138,37 @@ function rptPageObservations(n, d) {
 
   // -- Per-building narrative (array — used for pagination below) --
   const bldgSectionItems = (d.buildings || []).map(function (b) {
+    // Problem 3 (2026-09-24, fix/report-headers-and-empty-period): 'no_data' gets its own
+    // neutral color/arrow/label -- it must never read as red/"Below Target," which asserts an
+    // underperformance this building has no bills to support. 'no_contract' (2026-09-24,
+    // fix/report-followup, problem 3) gets the same neutral treatment -- this building has
+    // bills, but no Service Agreement on file, so no dollar savings are ever computed for it.
     const statusColor =
       b.status === 'on_track'
         ? 'var(--rpt-green)'
         : b.status === 'near_target'
           ? 'var(--rpt-orange)'
-          : 'var(--rpt-red)';
-    const arrow = b.status === 'on_track' ? '&#9650;' : b.status === 'near_target' ? '&#9658;' : '&#9660;';
+          : b.status === 'no_data' || b.status === 'no_contract'
+            ? 'var(--rpt-page-text)'
+            : 'var(--rpt-red)';
+    const arrow =
+      b.status === 'on_track'
+        ? '&#9650;'
+        : b.status === 'near_target'
+          ? '&#9658;'
+          : b.status === 'no_data' || b.status === 'no_contract'
+            ? '&#9679;'
+            : '&#9660;';
     const statusLabel =
-      b.status === 'on_track' ? 'On Track' : b.status === 'near_target' ? 'Approaching Target' : 'Below Target';
+      b.status === 'on_track'
+        ? 'On Track'
+        : b.status === 'near_target'
+          ? 'Approaching Target'
+          : b.status === 'no_data'
+            ? 'No Bills for This Period'
+            : b.status === 'no_contract'
+              ? 'No Service Agreement on File'
+              : 'Below Target';
 
     // Determine the strongest commodity by savings
     const comSavings = [
@@ -4052,7 +4200,25 @@ function rptPageObservations(n, d) {
     var blAtCurRate = b.blCost || 0;
     var rawSavPct = blAtCurRate > 0 ? (rawSav / blAtCurRate) * 100 : 0;
 
-    if (b.status === 'on_track') {
+    if (b.status === 'no_data') {
+      // Problem 3 (2026-09-24, fix/report-headers-and-empty-period): plain statement of fact
+      // only -- no performance judgment, no speculative recommendation, and no uncertainty
+      // language ("estimate," "unverified"); it simply states there are no bills to report on.
+      subtitle = 'No Bills for This Period';
+      narrative = b.name + ' has no utility bills on file for ' + (d.period ? d.period.label : 'this period') + '.';
+      rec = 'Confirm bills for this period have been entered on the Utility Data tab.';
+    } else if (b.status === 'no_contract') {
+      // 2026-09-24 (fix/report-followup, problem 3): plain statement of fact only -- this
+      // building has bills for the period, but the project has no Service Agreement on file,
+      // so contracted dollar savings are never computed for it. No performance judgment.
+      subtitle = 'No Service Agreement on File';
+      narrative =
+        b.name +
+        ' has utility bills on file for ' +
+        (d.period ? d.period.label : 'this period') +
+        ', but this project has no Service Agreement on file, so contracted savings are not calculated for this building.';
+      rec = 'Confirm the Service Agreement number on the project record if this building is under contract.';
+    } else if (b.status === 'on_track') {
       subtitle = 'On Track';
       narrative =
         b.name +
@@ -4439,7 +4605,7 @@ function rptPageContractProjection(n, d) {
     '</td>' +
     '</tr>' +
     '<tr>' +
-    '<td>CSC (' +
+    '<td>Control Service Company (' +
     cscPct +
     '%)</td>' +
     qTargets
@@ -4591,7 +4757,7 @@ function rptPageContractProjection(n, d) {
     '<table class="rpt-table">' +
     '<thead><tr>' +
     '<th>Year</th><th>Period</th><th class="rpt-n">Projected</th>' +
-    '<th class="rpt-n">CSC (' +
+    '<th class="rpt-n">Control Service Company (' +
     cscPct +
     '%)</th>' +
     '<th class="rpt-n">Client (' +
@@ -5523,13 +5689,17 @@ function rptBuildBaselineDataTable(b, d, opts) {
   var blHdr = '<th class="rpt-n bl-weather">Heating</th><th class="rpt-n bl-weather">Cooling</th>';
   if (_showElec)
     blHdr +=
-      '<th class="rpt-n bl-elec">kWh</th>' +
+      '<th class="rpt-n bl-elec">' +
+      _rptUnit('kWh') +
+      '</th>' +
       '<th class="rpt-n bl-elec" style="white-space:normal;line-height:1.2">Metered<br>kW</th>' +
       '<th class="rpt-n bl-elec" style="white-space:normal;line-height:1.2">Billed<br>kW</th>' +
       '<th class="rpt-n bl-elec" style="white-space:normal;line-height:1.2">kW<br>Cost</th>' +
       '<th class="rpt-n bl-elec" style="white-space:normal;line-height:1.2">Energy<br>Cost</th>' +
       '<th class="rpt-n bl-elec" style="white-space:normal;line-height:1.2">Electric<br>Cost</th>' +
-      '<th class="rpt-n bl-elec" style="white-space:normal;line-height:1.2">Energy<br>$/kWh</th>';
+      '<th class="rpt-n bl-elec" style="white-space:normal;line-height:1.2">Energy<br>$/' +
+      _rptUnit('kWh') +
+      '</th>';
   if (_showGas)
     blHdr +=
       '<th class="rpt-n bl-gas">Therms</th><th class="rpt-n bl-gas" style="white-space:normal;line-height:1.2">Gas<br>Cost</th><th class="rpt-n bl-gas">$/Therm</th>';
@@ -5600,7 +5770,9 @@ function rptBuildBaselineDataTable(b, d, opts) {
       );
     if (b.sqft > 0 && _tKwh > 0)
       _statItems.push(
-        '<div><div class="bl-stat-label">Electric Use / SF (kWh)</div><div class="bl-stat-val">' +
+        '<div><div class="bl-stat-label">Electric Use / SF (' +
+          _rptUnit('kWh') +
+          ')</div><div class="bl-stat-val">' +
           (_tKwh / b.sqft).toFixed(2) +
           '</div></div>',
       );
@@ -5615,7 +5787,9 @@ function rptBuildBaselineDataTable(b, d, opts) {
         // "Blended" (2026-09-22 fix): this is energy + demand cost divided by kWh — a
         // deliberately different figure from the "Energy $/kWh" column in the table below
         // (energy charges only). The two must never share a label (Calc re-audit).
-        '<div><div class="bl-stat-label">Blended Electric Rate ($/kWh)</div><div class="bl-stat-val">$' +
+        '<div><div class="bl-stat-label">Blended Electric Rate ($/' +
+          _rptUnit('kWh') +
+          ')</div><div class="bl-stat-val">$' +
           (_tElecCost / _tKwh).toFixed(4) +
           '</div></div>',
       );
@@ -6984,11 +7158,11 @@ function rptPageElectric(n, d) {
   var bldgTable =
     '<table class="rpt-table rpt-table-wrap" contenteditable="true" style="font-size:10px;width:100%;table-layout:fixed">' +
     '<colgroup>' +
-    '<col style="width:20%">' +
+    '<col style="width:16%">' +
     '<col style="width:10%">' +
     '<col style="width:10%">' +
     '<col style="width:7%">' +
-    '<col style="width:5%">' +
+    '<col style="width:9%">' +
     '<col style="width:11%">' +
     '<col style="width:9%">' +
     '<col style="width:10%">' +
@@ -6996,8 +7170,12 @@ function rptPageElectric(n, d) {
     '<col style="width:8%">' +
     '</colgroup>' +
     '<thead><tr style="white-space:normal;word-wrap:normal;word-break:keep-all;overflow-wrap:normal;hyphens:none;line-height:1.2">' +
-    '<th>Building</th><th class="rpt-n">Baseline kWh</th><th class="rpt-n">Actual kWh</th>' +
-    '<th class="rpt-n">Saved</th><th class="rpt-n">%</th>' +
+    '<th>Building</th><th class="rpt-n">Baseline ' +
+    _rptUnit('kWh') +
+    '</th><th class="rpt-n">Actual ' +
+    _rptUnit('kWh') +
+    '</th>' +
+    '<th class="rpt-n">Saved</th><th class="rpt-n">Percent<br>Saved</th>' +
     '<th class="rpt-n">Baseline Peak kW</th><th class="rpt-n">Actual kW</th>' +
     '<th class="rpt-n">Baseline Cost</th><th class="rpt-n">Actual Cost</th><th class="rpt-n">$ Saved</th>' +
     '</tr></thead>' +
@@ -7265,7 +7443,7 @@ function rptPageGas(n, d) {
   var bldgTable =
     '<table class="rpt-table" contenteditable="true" style="font-size:10px">' +
     '<thead><tr><th>Building</th><th class="rpt-n">Baseline Therms</th><th class="rpt-n">Actual Therms</th>' +
-    '<th class="rpt-n">Saved</th><th class="rpt-n">%</th>' +
+    '<th class="rpt-n">Saved</th><th class="rpt-n">Percent<br>Saved</th>' +
     '<th class="rpt-n">Baseline Cost</th><th class="rpt-n">Actual Cost</th><th class="rpt-n">$ Saved</th>' +
     '</tr></thead><tbody>' +
     tableRows +
@@ -7536,7 +7714,7 @@ function rptPagePropane(n, d) {
   var bldgTable =
     '<table class="rpt-table" contenteditable="true" style="font-size:10px">' +
     '<thead><tr><th>Building</th><th class="rpt-n">Baseline Gallons</th><th class="rpt-n">Actual Gallons</th>' +
-    '<th class="rpt-n">Saved</th><th class="rpt-n">%</th>' +
+    '<th class="rpt-n">Saved</th><th class="rpt-n">Percent<br>Saved</th>' +
     '<th class="rpt-n">Baseline Cost</th><th class="rpt-n">Actual Cost</th><th class="rpt-n">$ Saved</th>' +
     '</tr></thead><tbody>' +
     tableRows +
@@ -7718,7 +7896,7 @@ function rptPageGasPropane(n, d) {
     return (
       '<table class="rpt-table" contenteditable="true" style="font-size:9px"><thead><tr><th>Building</th><th class="rpt-n">Baseline ' +
       unitLabel +
-      '</th><th class="rpt-n">Actual</th><th class="rpt-n">Saved</th><th class="rpt-n">%</th><th class="rpt-n">Baseline Cost</th><th class="rpt-n">Actual Cost</th><th class="rpt-n">$ Saved</th></tr></thead><tbody>' +
+      '</th><th class="rpt-n">Actual</th><th class="rpt-n">Saved</th><th class="rpt-n">Percent<br>Saved</th><th class="rpt-n">Baseline Cost</th><th class="rpt-n">Actual Cost</th><th class="rpt-n">$ Saved</th></tr></thead><tbody>' +
       rows +
       '</tbody></table>'
     );
@@ -8286,7 +8464,12 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
 
     metersWithCoeffs.forEach(function (md) {
       var rc = md.regrCoeffs;
-      var unit = md.commodity === 'Electric' ? 'kWh' : md.commodity === 'Gas' ? 'Therms' : 'Gal';
+      // 2026-09-24 (fix/report-headers-and-empty-period, task 5b, problem 2): 'Gal' -> 'Gallons'
+      // (full word, matches the fix everywhere else 'Gal' was a bare column-header abbreviation);
+      // kWh/Therms wrapped in _rptUnit() below so they print in their real case even though this
+      // table's <th> is styled all-caps.
+      var unit = md.commodity === 'Electric' ? 'kWh' : md.commodity === 'Gas' ? 'Therms' : 'Gallons';
+      var unitHdr = unit === 'Gallons' ? unit : _rptUnit(unit);
 
       // Regression equation display
       var eqn = 'Usage = ' + rc.intercept.toFixed(4) + ' × Days';
@@ -8351,12 +8534,12 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
         '<th>Month</th><th class="rpt-n">Days</th><th class="rpt-n">HDD</th><th class="rpt-n">CDD</th>' +
         '<th style="width:180px">Calculation</th>' +
         '<th class="rpt-n">Predicted<br>Baseline ' +
-        unit +
+        unitHdr +
         '</th><th class="rpt-n">Actual<br>' +
-        unit +
+        unitHdr +
         '</th>' +
         '<th class="rpt-n">' +
-        unit +
+        unitHdr +
         '<br>Saved</th>' +
         '</tr></thead>';
       // report-pass2 fix (2026-09-10): 'rpt-mp-dense' opts this real multi-page table into the
@@ -8971,7 +9154,9 @@ function rptPageAppendixBills(n, d, appLetter) {
   // same way across however many image tokens land on a page without needing a shared parent.
   var THEAD_HTML =
     '<thead><tr>' +
-    '<th>Building</th><th>Commodity</th><th>Provider</th><th class="rpt-n">kWh</th><th class="rpt-n">kW</th><th class="rpt-n">Therms</th><th class="rpt-n">Gallons</th><th class="rpt-n">Cost</th><th>Bill Date</th>' +
+    '<th>Building</th><th>Commodity</th><th>Provider</th><th class="rpt-n">' +
+    _rptUnit('kWh') +
+    '</th><th class="rpt-n">kW</th><th class="rpt-n">Therms</th><th class="rpt-n">Gallons</th><th class="rpt-n">Cost</th><th>Bill Date</th>' +
     '</tr></thead>';
   var billRowTokens = [];
   if (!periodYMs.length) {
@@ -11355,6 +11540,165 @@ const REPORT_SECTIONS = [
 
 var _rptV2ProjId = null;
 
+// 2026-09-24 (fix/report-headers-and-empty-period, task 5b, problem 3): escapes text this
+// modal inserts into innerHTML from live building names / month labels (never trust building
+// names as pre-safe — they are free-text the user typed on the Utility Data tab).
+function _rptV2Esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+  });
+}
+
+// Returns the 3 YYYY-MM strings for a given calendar quarter.
+function _rptV2QuarterYMs(year, quarter) {
+  var startMo = (quarter - 1) * 3 + 1;
+  return [0, 1, 2].map(function (i) {
+    return year + '-' + String(startMo + i).padStart(2, '0');
+  });
+}
+
+// _rptV2LatestCompleteQuarter — problem 3 (2026-09-24): the Generate Report modal used to
+// always default Year/Quarter to TODAY's calendar quarter, regardless of whether any bill had
+// been entered for it yet — on a project whose most recent bills are months old (the normal
+// case just after a billing lag), that produced an all-$0/all-"On Track" report by default.
+//
+// FIRST attempt (kept in history, replaced here) re-derived "has bills" locally from each
+// meter's raw bill dates via normMonth(), independent of the meter's baseline. That is WRONG:
+// a bill that falls inside a meter's OWN baseline window is baseline data, not a reportable
+// post-baseline actual — collectReportData()'s real per-building status (bldgHasBillsInPeriod,
+// this same file, ~line 380) only counts a month once it is past that meter's blEnd. Verified on
+// the real Spring Hill Schools fixture: the naive version picked Q1 2026 (raw bills exist every
+// month) while the ACTUAL rendered report still showed "No bills for this period" for Woodland
+// Spring Middle, because Jan-Mar 2026 is still inside that meter's baseline window — the exact
+// false-"On Track"-adjacent bug this task fixes, just one step upstream.
+//
+// FIX: call the real collectReportData() with no explicit period and read back the quarter it
+// auto-selects — collectReportData's own no-selection branch (this file, ~line 153) already
+// walks backward from the current quarter using allPostYMs (baseline-aware, the same set
+// bldgHasBillsInPeriod is built from) to find the latest non-current quarter with post-baseline
+// data. Reusing it here means the modal default and the report it actually generates can never
+// disagree about which quarter has data — one source of truth, not two.
+function _rptV2LatestCompleteQuarter(projId, curYear, curQ) {
+  try {
+    var todayStr = new Date().toISOString().slice(0, 10);
+    var data = collectReportData(projId, null, todayStr, 'quarterly', null, null);
+    if (data && data.period && data.period.quarter && data.period.year) {
+      return { year: data.period.year, quarter: data.period.quarter };
+    }
+  } catch (e) {
+    /* fall through to current calendar quarter below */
+  }
+  return { year: curYear, quarter: curQ };
+}
+
+// _rptV2QuarterCoverage — the buildings (within bldgIds) that are missing bills for one or more
+// months of the given quarter, across their report-eligible energy meters. Used to warn before
+// generating (problem 3): a building with no bills for the period must not silently render as
+// "On Track" with every figure at $0.
+function _rptV2QuarterCoverage(projId, bldgs, bldgIds, year, quarter) {
+  var yms = _rptV2QuarterYMs(year, quarter);
+  var MONTH_NAMES = [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ];
+  var out = [];
+  (bldgs || []).forEach(function (b) {
+    if (bldgIds && bldgIds.indexOf(b.id) < 0) return;
+    var meters = (b.meters || []).filter(function (m) {
+      return !_rptMeterEligible(projId, m) && m.baseline && m.baseline.months && m.baseline.months.length >= 3;
+    });
+    if (!meters.length) return;
+    var have = {};
+    meters.forEach(function (m) {
+      // Only a POST-baseline bill month counts as "covered" for this period — a bill inside
+      // the meter's own baseline window is baseline data, not a reportable actual, and must not
+      // hide the warning collectReportData's real bldgHasBillsInPeriod would otherwise show
+      // (same rule, same blEnd cutoff as that function, this file, ~line 380).
+      var blEnd = m.baseline.months.slice().sort().pop();
+      var bills = (m.bills || []).slice().sort(function (a, c) {
+        return _parseISO(a.start) - _parseISO(c.start);
+      });
+      var incl = m.inclusive !== false;
+      bills.forEach(function (bl) {
+        var ym = normMonth(bl.start, bl.end, incl, bills);
+        if (ym && ym > blEnd) have[ym] = true;
+      });
+    });
+    var missing = yms.filter(function (ym) {
+      return !have[ym];
+    });
+    if (missing.length) {
+      out.push({
+        name: b.name || 'Unnamed',
+        allMissing: missing.length === yms.length,
+        missingMonths: missing.map(function (ym) {
+          var parts = ym.split('-');
+          return MONTH_NAMES[parseInt(parts[1], 10) - 1] + ' ' + parts[0];
+        }),
+      });
+    }
+  });
+  return out;
+}
+
+// Live-updates the "no bills for part of this period" warning banner in the Generate Report
+// modal — called on open and whenever Report Type/Year/Quarter changes. Quarterly-only (problem
+// 3 is specifically about the Quarterly Report default and its no-data behavior); Annual/
+// Cumulative/Current/Custom periods are unaffected.
+function _rptV2RefreshCoverageWarning() {
+  var warnEl = document.getElementById('rptV2CoverageWarning');
+  if (!warnEl) return;
+  var typeEl = document.getElementById('rptV2Type');
+  var type = typeEl ? typeEl.value : '';
+  if (type !== 'quarterly' || !_rptV2ProjId) {
+    warnEl.style.display = 'none';
+    warnEl.innerHTML = '';
+    return;
+  }
+  var yearEl = document.getElementById('rptV2Year');
+  var quarterEl = document.getElementById('rptV2Quarter');
+  var year = yearEl ? parseInt(yearEl.value) : null;
+  var quarter = quarterEl ? parseInt(quarterEl.value) : null;
+  if (!year || !quarter) {
+    warnEl.style.display = 'none';
+    return;
+  }
+  var bldgs = getUDBldgs(_rptV2ProjId);
+  var bldgIds = bldgs.map(function (b) {
+    return b.id;
+  });
+  var rows = _rptV2QuarterCoverage(_rptV2ProjId, bldgs, bldgIds, year, quarter);
+  if (!rows.length) {
+    warnEl.style.display = 'none';
+    warnEl.innerHTML = '';
+    return;
+  }
+  var lines = rows
+    .map(function (r) {
+      var detail = r.allMissing
+        ? 'no bills for Q' + quarter + ' ' + year
+        : 'missing ' + r.missingMonths.map(_rptV2Esc).join(', ');
+      return '<div style="margin-top:2px">' + _rptV2Esc(r.name) + ' — ' + detail + '</div>';
+    })
+    .join('');
+  warnEl.style.display = '';
+  warnEl.innerHTML =
+    '<div style="font-size:12px;font-weight:600;color:var(--warn)">Some buildings have no bills for this period</div>' +
+    '<div style="font-size:11px;color:var(--text2);line-height:1.5;margin-top:2px">' +
+    lines +
+    '</div>';
+}
+
 function openReportModalV2(projId) {
   _rptV2ProjId = projId;
   const p = projects.find((x) => x.id === projId);
@@ -11384,6 +11728,10 @@ function openReportModalV2(projId) {
   const now = new Date();
   const curYear = now.getFullYear();
   const curQ = Math.ceil((now.getMonth() + 1) / 3);
+  // Problem 3 (2026-09-24, fix/report-headers-and-empty-period): default to the latest quarter
+  // with COMPLETE bills, not today's calendar quarter (which is normally still being billed and
+  // renders an all-$0 report if picked blind).
+  const _defaultQ = _rptV2LatestCompleteQuarter(projId, curYear, curQ);
 
   let html = '';
 
@@ -11416,20 +11764,25 @@ function openReportModalV2(projId) {
   html += '<div id="rptV2YearWrap" style="margin-bottom:8px">';
   html += '<div style="font-size:12px;color:var(--text2);margin-bottom:4px">Year</div>';
   html +=
-    '<select id="rptV2Year" style="padding:6px 10px;border:1px solid var(--s3);border-radius:6px;background:var(--s1);color:var(--text);font-size:13px">';
+    '<select id="rptV2Year" onchange="_rptV2RefreshCoverageWarning()" style="padding:6px 10px;border:1px solid var(--s3);border-radius:6px;background:var(--s1);color:var(--text);font-size:13px">';
   for (var yr = curYear; yr >= curYear - 5; yr--) {
-    html += '<option value="' + yr + '">' + yr + '</option>';
+    html += '<option value="' + yr + '"' + (yr === _defaultQ.year ? ' selected' : '') + '>' + yr + '</option>';
   }
   html += '</select></div>';
   // Quarter picker
   html += '<div id="rptV2QuarterWrap" style="margin-bottom:8px">';
   html += '<div style="font-size:12px;color:var(--text2);margin-bottom:4px">Quarter</div>';
   html +=
-    '<select id="rptV2Quarter" style="padding:6px 10px;border:1px solid var(--s3);border-radius:6px;background:var(--s1);color:var(--text);font-size:13px">';
+    '<select id="rptV2Quarter" onchange="_rptV2RefreshCoverageWarning()" style="padding:6px 10px;border:1px solid var(--s3);border-radius:6px;background:var(--s1);color:var(--text);font-size:13px">';
   for (var q = 1; q <= 4; q++) {
-    html += '<option value="' + q + '"' + (q === curQ ? ' selected' : '') + '>Q' + q + '</option>';
+    html += '<option value="' + q + '"' + (q === _defaultQ.quarter ? ' selected' : '') + '>Q' + q + '</option>';
   }
   html += '</select></div>';
+  // Problem 3 (2026-09-24): warn BEFORE generating which buildings/months have no bills for the
+  // selected quarter — refreshed by _rptV2RefreshCoverageWarning() on open and on every Year/
+  // Quarter change. Hidden (display:none) when there is nothing to warn about.
+  html +=
+    '<div id="rptV2CoverageWarning" style="display:none;padding:8px 10px;border:1px solid var(--warn);border-radius:6px;background:var(--s1);margin-bottom:8px"></div>';
   // Custom date range
   html += '<div id="rptV2CustomWrap" style="display:none;margin-bottom:8px">';
   html += '<div style="display:flex;gap:12px">';
@@ -11586,6 +11939,7 @@ function _rptV2TypeChanged() {
     quarterWrap.style.display = 'none';
     customWrap.style.display = 'none';
   }
+  if (typeof _rptV2RefreshCoverageWarning === 'function') _rptV2RefreshCoverageWarning();
 }
 
 function _rptV2SelectAll(group, checked) {

@@ -1776,6 +1776,52 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.24.19',
+    date: '2026-09-24',
+    title: 'Quarterly Report: spelled out the Control Service Company Compensation heading, matched the Total Portfolio Savings Percent to the building row for a zero-bill period, and replaced a false On Track status with a plain No Service Agreement on file label for un-contracted buildings',
+    items: [
+      { type: 'fix', text: 'Quarterly Report: spelled out the Control Service Company Compensation heading, matched the Total Portfolio Savings Percent to the building row for a zero-bill period, and replaced a false On Track status with a plain No Service Agreement on file label for un-contracted buildings' },
+    ],
+  },
+  {
+    v: 'v2026.09.24.18',
+    date: '2026-09-24',
+    title: 'WoodRiver Energy gas bills: Fuel MMBtu amount and the printed rate',
+    items: [
+      {
+        type: 'fix',
+        text: 'On WoodRiver Energy gas bills, each Trigger and Index charge line now shows its Fuel MMBtu amount on the bill.',
+      },
+      {
+        type: 'fix',
+        text: 'The Trigger and Index rate now shows the rate printed on the invoice, checked against the Fuel MMBtu amount and the charge. A computed rate shows only when the invoice has no printed rate, and it is labeled "computed". Billed usage stays as printed and does not change.',
+      },
+    ],
+  },
+  {
+    v: 'v2026.09.24.17',
+    date: '2026-09-24',
+    title: 'Quarterly Report: column headers, full words, and no-bills status fixed',
+    items: [
+      {
+        type: 'fix',
+        text: 'On the Quarterly Report, table column headers no longer break in the middle of a word or run off the edge of the column ("PROJECTED COST", "QUARTER", and "SITE ENERGY USE INTENSITY" all print in full, on their own lines).',
+      },
+      {
+        type: 'fix',
+        text: 'Short labels now read as full words: "Square Feet" instead of "Sq Ft", "kWh" and "Gallons" instead of "KWH" and "Gal", and "Savings Percent" instead of a bare "%". The CSC Compensation table now reads "Control Service Company" instead of "CSC".',
+      },
+      {
+        type: 'fix',
+        text: 'A quarter with no bills for a building now says "No bills for this period" for that building instead of showing "On Track" with every value at $0.',
+      },
+      {
+        type: 'fix',
+        text: 'Generate Report now defaults the Quarterly period to the latest quarter that has bills, instead of always the current calendar quarter, and warns before you generate if any building is missing bills for the quarter you picked.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.24.16',
     date: '2026-09-24',
     title: 'Equipment Matrix: short labels now read as full words',

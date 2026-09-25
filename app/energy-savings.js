@@ -8228,6 +8228,16 @@ const UTILITY_RULES = [
           // Per-component MMBtu quantities (fix 8a271dae — for per-component rate display)
           _wreTriggerMMbtu: blk.triggerMMbtu != null ? String(blk.triggerMMbtu) : null,
           _wreIndexMMbtu: blk.indexMMbtu != null ? String(blk.indexMMbtu) : null,
+          // Fix (2026-09-24, WRE Fuel-column display): triggerFuelMMbtu/indexFuelMMbtu
+          // were already captured above (2026-09-23 fix, for the rate cross-check only)
+          // but never shipped in the output object, so the review panel had no field to
+          // show them in. Ship them as their own display fields — usage
+          // (NaturalGasMMbtu/_wreTriggerMMbtu/_wreIndexMMbtu) is left untouched; Fuel is
+          // a separate billed quantity, not part of usage (see the Sub-Total line on the
+          // source invoice: Sub-Total prints Mmbtu and Fuel as two separate columns, and
+          // Total Natural Gas sums the Mmbtu column alone — Fuel is never folded into it).
+          _wreTriggerFuelMMbtu: blk.triggerFuelMMbtu != null ? String(blk.triggerFuelMMbtu) : null,
+          _wreIndexFuelMMbtu: blk.indexFuelMMbtu != null ? String(blk.indexFuelMMbtu) : null,
           // Fix (2026-09-23, WRE invoice-fields fix, item 1): the SWE volume was
           // already parsed (blk.sweMMbtu, above) but never shipped in the output
           // object, so it never had a way to display even though a qtyField/unit

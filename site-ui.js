@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.24.16'; // Equipment Matrix: short labels like "AHU / RTU", "DOAS", "VFD Present", and "BAS Points" now read as full words ("Air Handling Unit / Rooftop Unit", "Dedicated Outdoor Air System", "Variable Frequency Drive Present", "Building Automation System Points") in the breakdown tiles, column headers, and the Equipment Type column. Values you imported from your own files are shown exactly as you entered them, unchanged.
+  var CH_VERSION = 'v2026.09.24.19'; // Quarterly Report: spelled out the Control Service Company Compensation heading, matched the Total Portfolio Savings Percent to the building row for a zero-bill period, and replaced a false On Track status with a plain No Service Agreement on file label for un-contracted buildings
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

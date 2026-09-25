@@ -267,7 +267,10 @@ function extractCscCompTotals(html) {
   let m;
   while ((m = rowRe.exec(html))) {
     const tds = [...m[1].matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map((x) => x[1]);
-    if (tds.length === 4 && /Actual Savings|CSC \(|Client Net \(/.test(tds[0])) {
+    // 2026-09-24 (fix/report-followup): the CSC row label is spelled out as "Control Service
+    // Company (N%)" (no-abbreviations fix, fix/report-headers-and-empty-period) — match that,
+    // not the old bare "CSC (" form.
+    if (tds.length === 4 && /Actual Savings|Control Service Company \(|Client Net \(/.test(tds[0])) {
       const val = (tds[3].match(/\$[\d,]+/) || [])[0];
       if (val) dollars.push({ label: tds[0].replace(/<[^>]+>/g, ''), value: val });
     }
