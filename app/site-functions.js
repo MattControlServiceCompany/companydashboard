@@ -1776,6 +1776,14 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.25.12',
+    date: '2026-09-25',
+    title: 'BAS Calc: the Effective Schedules Import window no longer stays open when you switch to another tab or open BAS Calc. Projects: the New Energy Project form can now copy field values from another project you pick, with the field labeled Project to copy from. Equipment Matrix: the equipment points panel can be dragged wider to show long values, and it stays at that width after you reload the page.',
+    items: [
+      { type: 'fix', text: 'BAS Calc: the Effective Schedules Import window no longer stays open when you switch to another tab or open BAS Calc. Projects: the New Energy Project form can now copy field values from another project you pick, with the field labeled Project to copy from. Equipment Matrix: the equipment points panel can be dragged wider to show long values, and it stays at that width after you reload the page.' },
+    ],
+  },
+  {
     v: 'v2026.09.25.11',
     date: '2026-09-25',
     title: 'Utility Data: the meter Bills table\'s Facilities kW backfill now runs on every load instead of once, so it fills every eligible bill even on a browser that ran an older version. Its kW and kWh columns now show your bill\'s own decimal precision instead of always padding to 4 digits.',

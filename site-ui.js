@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.25.11'; // Utility Data: the meter Bills table's Facilities kW backfill now runs on every load instead of once, so it fills every eligible bill even on a browser that ran an older version. Its kW and kWh columns now show your bill's own decimal precision instead of always padding to 4 digits.
+  var CH_VERSION = 'v2026.09.25.12'; // BAS Calc: the Effective Schedules Import window no longer stays open when you switch to another tab or open BAS Calc. Projects: the New Energy Project form can now copy field values from another project you pick, with the field labeled Project to copy from. Equipment Matrix: the equipment points panel can be dragged wider to show long values, and it stays at that width after you reload the page.
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
