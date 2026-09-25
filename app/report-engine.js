@@ -9584,6 +9584,14 @@ async function exportReportToPDF() {
         : client + ' - ASHRAE 36 Audit Report ' + dateStr;
   } else if (data._soo) {
     filename = client + ' - Sequence of Operations ' + dateStr;
+  } else if (data._auditProposal) {
+    filename =
+      client +
+      ' - ' +
+      (data._auditProposal.type === 'full'
+        ? 'Full Facility Audit Proposal '
+        : 'Building Automation System Audit Proposal ') +
+      dateStr;
   } else if (data._woodland) {
     filename =
       (data.building && data.building.name ? data.building.name : client) +
@@ -22860,3 +22868,206 @@ function generateASHRAE36Preview() {
   _updateOverlayPageNumbers();
 }
 window.generateASHRAE36Preview = generateASHRAE36Preview;
+
+/* ══════════════════════════════════════════════════════════════════════════════════════════
+   AUDIT PROPOSAL (2026-09-25, feat/audit-estimate-proposal)
+   Client-facing proposal for a Building Automation System Audit or a Full Facility Audit.
+   Built the same way as the ASHRAE 36 Proposal above (rptPage(), CSC letterhead, "Page N of M"
+   footer via _injectPageNumbers()) but with a much smaller, dedicated content set — see
+   project_proposals_from_companyhub.md ("generated out of CompanyHub ... CSC letterhead ...
+   NO internal pricing details, NO mentions of other clients") and project_service_proposal_
+   purpose.md. All hours/rate math lives in app/audit-estimate.js (auditEstComputeBreakdown) —
+   this generator only reads its ONE total price; it never renders hours or an hourly rate.
+   ══════════════════════════════════════════════════════════════════════════════════════════ */
+
+// collectAuditProposalData — gathers everything the Audit Proposal needs: the project name,
+// today's date, the ONE full price (from auditEstComputeBreakdown — no pricing math here), and
+// a per-building equipment-count table (real equipment quantities per feedback_equipment_
+// counts_not_buildings.md, not a bare building list) built from the SAME Equipment Matrix rows
+// and the SAME auditable-category filter (AUDIT_EST_CATEGORIES, app/audit-estimate.js) the
+// estimate itself uses, so the proposal's facility table always agrees with the estimate.
+function collectAuditProposalData(projId, auditType) {
+  if (typeof auditEstComputeBreakdown !== 'function') return null;
+  var breakdown = auditEstComputeBreakdown(projId, auditType);
+  if (!breakdown) return null;
+
+  var proj = (typeof projects !== 'undefined' ? projects : []).find(function (x) {
+    return String(x.id) === String(projId);
+  });
+  var projName = proj ? proj.client || proj.name || 'Project' : 'Project';
+  var dateObj = new Date();
+  var dateStr = dateObj.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
+  var matData = typeof emLoadMatrix === 'function' ? emLoadMatrix(projId) : null;
+  var perBuilding = {};
+  if (matData && matData.rows) {
+    matData.rows.forEach(function (r) {
+      if (typeof emIsPhantomRow === 'function' && emIsPhantomRow(r)) return;
+      if (typeof AUDIT_EST_CATEGORIES === 'undefined' || AUDIT_EST_CATEGORIES.indexOf(r.category) === -1) return;
+      var b = r.building || 'Unknown Building';
+      perBuilding[b] = (perBuilding[b] || 0) + 1;
+    });
+  }
+  var buildingRows = Object.keys(perBuilding)
+    .sort()
+    .map(function (b) {
+      return {
+        name: typeof rptBuildingDisplayName === 'function' ? rptBuildingDisplayName(b) : b,
+        equipCount: perBuilding[b],
+      };
+    });
+
+  return {
+    project: { id: projId, client: projName, name: projName },
+    period: { reportDate: dateObj.toISOString().slice(0, 10), label: '' },
+    rawDate: dateStr,
+    auditType: auditType, // 'bas' | 'full'
+    buildingRows: buildingRows,
+    buildingCount: breakdown.buildingCount,
+    totalPrice: breakdown.totalCost,
+  };
+}
+
+var AUDIT_PROPOSAL_COPY = {
+  bas: {
+    title: 'Building Automation System Audit Proposal',
+    heroLabel: 'Building Automation System Audit',
+    covers:
+      'A Building Automation System Audit is an on-site review of the equipment and control programming already installed at each facility. Our team inspects the automation equipment at each building, checks that sensors and control points are reading and reporting correctly, and verifies that control sequences are running as intended.',
+    deliverables: [
+      'A written summary of findings for each facility.',
+      'A list of the automation equipment and control points reviewed at each facility.',
+      'Recommended next steps to correct anything found during the review.',
+    ],
+  },
+  full: {
+    title: 'Full Facility Audit Proposal',
+    heroLabel: 'Full Facility Audit',
+    covers:
+      'A Full Facility Audit combines a Building Automation System Audit with a broader on-site review of each facility. In addition to inspecting the automation equipment and control programming, our team walks through the mechanical systems, the lighting systems, and the building envelope at each facility, and reviews recent utility billing history.',
+    deliverables: [
+      'A written summary of findings for each facility, covering the automation system, mechanical systems, lighting, and the building envelope.',
+      'A list of the automation equipment and control points reviewed at each facility.',
+      'A summary of the utility billing review.',
+      'Recommended next steps to correct anything found during the review.',
+    ],
+  },
+};
+
+// _rptAuditProposalCoverInnerHTML — page 1 body (hero letterhead page): title, project name,
+// date, what the audit covers, and the facility/equipment table.
+function _rptAuditProposalCoverInnerHTML(data) {
+  var copy = AUDIT_PROPOSAL_COPY[data.auditType] || AUDIT_PROPOSAL_COPY.bas;
+  var rowsHTML = data.buildingRows
+    .map(function (b) {
+      return (
+        '<tr><td style="padding:6px 10px;border-bottom:1px solid var(--rpt-border)">' +
+        _rptV2Esc(b.name) +
+        '</td><td style="padding:6px 10px;border-bottom:1px solid var(--rpt-border);text-align:right">' +
+        b.equipCount +
+        '</td></tr>'
+      );
+    })
+    .join('');
+
+  return (
+    '<div style="padding:8px 48px 4px">' +
+    '<div style="font-size:22px;font-weight:700;color:var(--rpt-blue);margin-bottom:2px">' +
+    _rptV2Esc(copy.title) +
+    '</div>' +
+    '<div style="font-size:13px;color:var(--rpt-page-text);margin-bottom:2px">' +
+    _rptV2Esc(data.project.client) +
+    '</div>' +
+    '<div style="font-size:11px;color:var(--rpt-page-text);margin-bottom:16px">' +
+    _rptV2Esc(data.rawDate) +
+    '</div>' +
+    '<div style="font-size:13px;line-height:1.5;color:var(--rpt-page-text);margin-bottom:16px">' +
+    _rptV2Esc(copy.covers) +
+    '</div>' +
+    '<div style="font-size:13px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px">Facilities Covered</div>' +
+    '<table style="width:100%;border-collapse:collapse;font-size:12px;color:var(--rpt-page-text)">' +
+    '<thead><tr>' +
+    '<th style="text-align:left;padding:6px 10px;border-bottom:2px solid var(--rpt-border);color:var(--rpt-blue)">Facility</th>' +
+    '<th style="text-align:right;padding:6px 10px;border-bottom:2px solid var(--rpt-border);color:var(--rpt-blue)">Equipment Reviewed</th>' +
+    '</tr></thead><tbody>' +
+    rowsHTML +
+    '</tbody></table>' +
+    '</div>'
+  );
+}
+
+// _rptAuditProposalDetailInnerHTML — page 2 body: deliverables, schedule (general terms, no
+// dates — no fixed anchors in client-facing pricing docs, per project_service_proposal_
+// purpose.md), ONE full price, and a disclaimer. No hourly rate, no hours, no internal notes,
+// no other client's name anywhere on this page.
+function _rptAuditProposalDetailInnerHTML(data) {
+  var copy = AUDIT_PROPOSAL_COPY[data.auditType] || AUDIT_PROPOSAL_COPY.bas;
+  var delivHTML = copy.deliverables
+    .map(function (d) {
+      return '<li style="margin-bottom:6px">' + _rptV2Esc(d) + '</li>';
+    })
+    .join('');
+
+  return (
+    '<div style="padding:8px 48px 4px">' +
+    '<div style="font-size:16px;font-weight:700;color:var(--rpt-blue);margin-bottom:8px">What This Includes</div>' +
+    '<ul style="font-size:13px;line-height:1.5;color:var(--rpt-page-text);margin:0 0 16px 18px;padding:0">' +
+    delivHTML +
+    '</ul>' +
+    '<div style="font-size:16px;font-weight:700;color:var(--rpt-blue);margin-bottom:8px">Schedule</div>' +
+    '<div style="font-size:13px;line-height:1.5;color:var(--rpt-page-text);margin-bottom:16px">' +
+    'Site visits are scheduled directly with each facility. The written report is delivered once all site visits are complete.' +
+    '</div>' +
+    '<div style="font-size:16px;font-weight:700;color:var(--rpt-blue);margin-bottom:8px">Total Price</div>' +
+    '<div style="font-size:24px;font-weight:700;color:var(--rpt-blue);margin-bottom:16px">' +
+    (typeof _pricingFmt === 'function' ? _pricingFmt(data.totalPrice) : '$' + Math.round(data.totalPrice)) +
+    '</div>' +
+    '<div style="font-size:11px;line-height:1.5;color:var(--rpt-page-text);margin-top:24px;padding-top:10px;border-top:1px solid var(--rpt-border)">' +
+    'This proposal reflects the facilities and equipment on record as of the date above. Control Service Company will confirm the final scope with the facility before work begins.' +
+    '</div>' +
+    '</div>'
+  );
+}
+
+// generateAuditProposalHTML — assembles the 2-page document via rptPage() (same header/
+// footer/letterhead/"Page N of M" engine every other CompanyHub report uses).
+function generateAuditProposalHTML(data) {
+  var copy = AUDIT_PROPOSAL_COPY[data.auditType] || AUDIT_PROPOSAL_COPY.bas;
+  var pages = [];
+  pages.push(
+    rptPage(1, copy.title, _rptAuditProposalCoverInnerHTML(data), {
+      hero: true,
+      data: data,
+      label: 'Page 1 — ' + copy.heroLabel,
+    }),
+  );
+  pages.push(
+    rptPage(2, copy.title, _rptAuditProposalDetailInnerHTML(data), {
+      data: data,
+      label: 'Page 2 — ' + copy.heroLabel,
+    }),
+  );
+  return _injectPageNumbers(pages.join('\n'));
+}
+
+// generateAuditProposalPreview — entry point wired to the "Generate ... Audit Proposal"
+// buttons in the Audit Estimate section (app/audit-estimate.js). Opens the same report
+// overlay every other report type uses (showReportOverlay/_updateOverlayPageNumbers), and
+// tags window._currentReportData._auditProposal so exportReportToPDF()'s filename branch
+// (see the data._auditProposal check added there) and the print pipeline recognize it — no
+// new export mechanism.
+function generateAuditProposalPreview(projId, auditType) {
+  var data = collectAuditProposalData(projId, auditType);
+  if (!data) {
+    showToast('No Equipment Matrix data found. Import a BAS point list on the Equipment tab first.', 'error');
+    return;
+  }
+  var copy = AUDIT_PROPOSAL_COPY[auditType] || AUDIT_PROPOSAL_COPY.bas;
+  var html = generateAuditProposalHTML(data);
+  var reportTitle = data.project.client + ' — ' + copy.title;
+  data._auditProposal = { type: auditType, title: reportTitle };
+  window._currentReportData = data;
+  showReportOverlay(html, reportTitle);
+  _updateOverlayPageNumbers();
+}
+window.generateAuditProposalPreview = generateAuditProposalPreview;
