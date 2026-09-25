@@ -7634,6 +7634,23 @@ function _computeGasRate(bill) {
 }
 window._computeGasRate = _computeGasRate;
 
+// Shared meter-existence guard (item 0bc25b67): a saved Louisburg bill was
+// found filed under a meter no bill of its own identity actually matches —
+// traced to save paths trusting a CAPTURED meter object (from findMeterMatch,
+// or held in _mbRowTargets/_autoAssignTarget since the review panel was
+// rendered) without re-checking, at the moment of write, that the meter is
+// still present in the LIVE project tree by id. A meter can be deleted, or a
+// cached match can simply go stale, between match-time and save-time.
+// Every save path (confirmAutoAssign, _mbSaveOneBill, _saveBillToMatchedMeter)
+// calls this ONE function immediately before it trusts a target meter — never
+// a per-path copy. Returns the LIVE meter object (re-fetched by id from
+// bldg.meters) or null when it no longer exists there.
+function _liveMeterOrNull(bldg, meterId) {
+  if (!bldg || !meterId) return null;
+  return (bldg.meters || []).find((m) => m.id === meterId) || null;
+}
+window._liveMeterOrNull = _liveMeterOrNull;
+
 // F1 (item 21b4e21f): single shared cost/usage mapper — replaces six previously
 // diverged copies (confirmAutoAssign, confirmMultiBuildingSave,
 // _saveBillToMatchedMeter, confirmAssignBill, confirmManualAssign,
@@ -7652,30 +7669,47 @@ function _extractedToBillRowCosts(bill) {
     hasVal(bill.ECACharge) ||
     hasVal(bill.EERCharge) ||
     hasVal(bill.PTSCharge);
-  const kwhCost = (
-    hasEvergyEnergy
-      ? pf(bill.EnergyOnPeakCharge) +
-        pf(bill.EnergyOffPeakCharge) +
-        pf(bill.ECACharge) +
-        pf(bill.EERCharge) +
-        pf(bill.PTSCharge)
-      : pf(bill.ElectricCharge) + pf(bill.FuelAdjustment)
-  ).toFixed(2);
-  const kwCost = (pf(bill.BilledKWCharge) + pf(bill.TDCCharge)).toFixed(2);
+  const kwhCostRaw = hasEvergyEnergy
+    ? pf(bill.EnergyOnPeakCharge) +
+      pf(bill.EnergyOffPeakCharge) +
+      pf(bill.ECACharge) +
+      pf(bill.EERCharge) +
+      pf(bill.PTSCharge)
+    : pf(bill.ElectricCharge) + pf(bill.FuelAdjustment);
+  const kwCostRaw = pf(bill.BilledKWCharge) + pf(bill.TDCCharge);
   // otherCost folds in the RkVA reactive-power charge because it has no dedicated
   // column in the bills table — without it here the value would be silently dropped.
   // MiscellaneousCharge (item f71c0013) is the pre-mid-2025 Evergy front-summary-page
   // Miscellaneous/Adjustments line (sign-preserved) — same rationale as RkVA: no
   // dedicated column, must be folded in here so the $0.10 component-sum-vs-total
   // validation still reconciles once TotalCurrentCharges includes it.
-  const otherCost = (
+  const otherCostRaw =
     pf(bill.CustomerCharge) +
     pf(bill.TaxExemptDelivery) +
     pf(bill.BillOffset) +
     pf(bill.RkVACharge) +
-    pf(bill.MiscellaneousCharge)
-  ).toFixed(2);
-  const taxCost = pf(bill.FranchiseFee).toFixed(2);
+    pf(bill.MiscellaneousCharge);
+  const taxCostRaw = pf(bill.FranchiseFee);
+  // FIX (item a20d0943): GATE C/D (_decideTotalCorrection, _postExtractionVerify)
+  // holds TotalCurrentCharges/TotalAmountDue unchanged whenever the charge
+  // components don't reconcile with the printed total — b._correction_pending_
+  // TotalCurrentCharges (still-pending) / b._charge_exceeds_total (could not
+  // auto-correct) both mean at least one raw component field is the CORRUPTED
+  // value that tripped the gate. The total is protected, but until this fix
+  // this mapper still summed those same untouched, still-corrupted component
+  // fields straight into kwCost/kwhCost/otherCost/taxCost — so clicking "Save
+  // Anyway" (which only confirms the reviewed TOTAL) silently carried the
+  // corrupted component past the gate into the saved billing row. When a bill
+  // is in that state, cap every cost bucket at the trusted total the user
+  // actually reviewed and accepted — a bucket can never exceed it.
+  const _trustedTotal = pf(bill.TotalCurrentCharges);
+  const _hasUnresolvedComponentIssue = !!(bill._correction_pending_TotalCurrentCharges || bill._charge_exceeds_total);
+  const _capToAcceptedTotal = (v) =>
+    _hasUnresolvedComponentIssue && _trustedTotal > 0 && v > _trustedTotal ? _trustedTotal : v;
+  const kwhCost = _capToAcceptedTotal(kwhCostRaw).toFixed(2);
+  const kwCost = _capToAcceptedTotal(kwCostRaw).toFixed(2);
+  const otherCost = _capToAcceptedTotal(otherCostRaw).toFixed(2);
+  const taxCost = _capToAcceptedTotal(taxCostRaw).toFixed(2);
   const totalCost = bill.TotalCurrentCharges || bill.TotalAmountDue || '';
   // Usage quantity superset — one canonical order covering every commodity
   // any of the six prior sites recognized (electric kWh incl. Baldwin's `kWh`
@@ -8090,7 +8124,33 @@ async function confirmAutoAssign() {
         billMatch = { ...billMatch, meter: _newM, meterId: _newM.id };
       }
     }
-    const targetMeter = billMatch.meter;
+    // GUARD (item 0bc25b67): re-verify the target meter is still present in
+    // the LIVE project tree by id, right before trusting it — never write to
+    // a captured/stale meter reference. See _liveMeterOrNull.
+    const targetMeter = _liveMeterOrNull(billMatch.bldg, billMatch.meterId);
+    if (!targetMeter) {
+      console.warn('[confirmAutoAssign] matched meter no longer exists in the live project tree — holding for review', {
+        bi: _bi,
+        bldgId: billMatch.bldgId,
+        meterId: billMatch.meterId,
+      });
+      const _pdfBillsForReviewNoMeter = (await sget('en_pdf_bills', [])) || [];
+      _pdfBillsForReviewNoMeter.push(
+        Object.assign(
+          {
+            id: 'pb' + Date.now() + '_' + saved + '_review',
+            savedAt: new Date().toISOString(),
+            projId: projId || null,
+            projName: (proj && proj.name) || 'General',
+            hasPDF,
+            pdfKey: hasPDF ? pdfKey : null,
+          },
+          bill,
+        ),
+      );
+      await sset('en_pdf_bills', _pdfBillsForReviewNoMeter);
+      continue;
+    }
     // Bug 86d02961: update stored account number when a fuzzy match found a
     // format change (new bill format has longer/different account number).
     if (bill.AccountNumber && targetMeter.account) {
@@ -8622,7 +8682,36 @@ async function _mbSaveOneBill(bi, action) {
     }
   }
 
-  const targetMeter = billMatch.meter;
+  // GUARD (item 0bc25b67): re-verify the target meter is still present in
+  // the LIVE project tree by id, right before trusting it — never write to
+  // a captured/stale meter reference (_mbRowTargets was set when the review
+  // panel rendered, which can be well before this Save click). See
+  // _liveMeterOrNull.
+  const targetMeter = _liveMeterOrNull(billMatch.bldg, billMatch.meterId);
+  if (!targetMeter) {
+    console.warn(
+      '[_mbSaveOneBill] matched meter no longer exists in the live project tree — holding for review instead of writing',
+      { billIdx: bi, bldgId: billMatch.bldgId, meterId: billMatch.meterId },
+    );
+    const _pdfBillsForReviewNoMeter = (await sget('en_pdf_bills', [])) || [];
+    _pdfBillsForReviewNoMeter.push(
+      Object.assign(
+        {
+          id: (bill._pdfBillsRecordId = 'pb' + Date.now() + '_' + bi + '_review'),
+          savedAt: new Date().toISOString(),
+          projId: billMatch.projId || null,
+          projName: (billMatch.proj && billMatch.proj.name) || 'General',
+          hasPDF,
+          pdfKey: hasPDF ? pdfKey : null,
+        },
+        bill,
+      ),
+    );
+    await sset('en_pdf_bills', _pdfBillsForReviewNoMeter);
+    bill._mbHeld = true;
+    bill._mbHeldReason = 'matched meter no longer exists — needs manual review';
+    return { status: 'held', reason: 'matched meter no longer exists', projId: billMatch.projId || null };
+  }
   // PASS 2 (b-46a984a0): a 'commodity' match resolved this meter by
   // building+commodity, not by account — the bill's account number REPLACES
   // the meter's stale/renumbered one, and the prior value is preserved in
@@ -9655,7 +9744,10 @@ function _saveBillToMatchedMeter(extracted, match) {
   // undefined in that case since it's scope-filtered. getUDBldgByCustomer is not.
   const liveBldg = getUDBldgByCustomer(liveProj.customerId, match.bldgId);
   if (!liveBldg) return null;
-  const liveMeter = (liveBldg.meters || []).find((m) => m.id === match.meterId);
+  // GUARD (item 0bc25b67): shared with confirmAutoAssign/_mbSaveOneBill — see
+  // _liveMeterOrNull. This path already re-fetched by id; now routed through
+  // the one shared function so all three save paths can never drift.
+  const liveMeter = _liveMeterOrNull(liveBldg, match.meterId);
   if (!liveMeter) return null;
   // Auto-set billUnit='MMBtu' for WRE meters (issue #16/#19).
   if ((extracted._utilityName || '').toLowerCase().includes('wood river') && !liveMeter.billUnit) {

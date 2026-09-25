@@ -1776,6 +1776,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.24.14',
+    date: '2026-09-24',
+    title: 'Bill Analysis: two bill-save fixes',
+    items: [
+      {
+        type: 'fix',
+        text: 'When a bill\'s total was held for review (the total on the printed bill did not match the sum of its charges) and you clicked "Save Anyway", the demand cost or energy cost saved with the bill could still carry the bad number that caused the hold, even though the total itself was correct. Saving now uses the reviewed total, not the bad number.',
+      },
+      {
+        type: 'fix',
+        text: 'A bill could be saved to a meter that no longer existed. Saving now checks that the meter is still there first; if it is not, the bill is held for you to match by hand, the same way an unmatched bill already works.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.24.13',
     date: '2026-09-24',
     title: 'Equipment Matrix: "Show All Point Columns" opens fast, and more labels are spelled out',
