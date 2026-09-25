@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.24.15'; // BAS Savings Calc: the Existing Conditions Saturday/Sunday schedule and the Outside Air Shut Off setting now show "Default value (not from building data)" when no source exists, instead of silently showing 24-hour occupied with no label; when a building has an imported Effective Schedules file, weekends now correctly read as not scheduled (0 occupied hours) instead of the old always-occupied 24-hour fallback
+  var CH_VERSION = 'v2026.09.24.16'; // Equipment Matrix: short labels like "AHU / RTU", "DOAS", "VFD Present", and "BAS Points" now read as full words ("Air Handling Unit / Rooftop Unit", "Dedicated Outdoor Air System", "Variable Frequency Drive Present", "Building Automation System Points") in the breakdown tiles, column headers, and the Equipment Type column. Values you imported from your own files are shown exactly as you entered them, unchanged.
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
