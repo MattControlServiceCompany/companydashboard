@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.25.10'; // Utility Data / Review Bill Corrections now checks the whole open project in one pass, keeps its place if you close the window and come back, and shows PDF corrections together with unusual-looking numbers that need a second look.
+  var CH_VERSION = 'v2026.09.25.11'; // Utility Data: the meter Bills table's Facilities kW backfill now runs on every load instead of once, so it fills every eligible bill even on a browser that ran an older version. Its kW and kWh columns now show your bill's own decimal precision instead of always padding to 4 digits.
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

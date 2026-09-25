@@ -1776,6 +1776,14 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.25.11',
+    date: '2026-09-25',
+    title: 'Utility Data: the meter Bills table\'s Facilities kW backfill now runs on every load instead of once, so it fills every eligible bill even on a browser that ran an older version. Its kW and kWh columns now show your bill\'s own decimal precision instead of always padding to 4 digits.',
+    items: [
+      { type: 'fix', text: 'Utility Data: the meter Bills table\'s Facilities kW backfill now runs on every load instead of once, so it fills every eligible bill even on a browser that ran an older version. Its kW and kWh columns now show your bill\'s own decimal precision instead of always padding to 4 digits.' },
+    ],
+  },
+  {
     v: 'v2026.09.25.10',
     date: '2026-09-25',
     title: 'Utility Data / Review Bill Corrections now checks the whole open project in one pass, keeps its place if you close the window and come back, and shows PDF corrections together with unusual-looking numbers that need a second look.',
