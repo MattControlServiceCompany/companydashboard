@@ -1,9 +1,10 @@
 /**
  * test-bill-corrections-review.js
  *
- * Standalone regression test for the "Review Bill Corrections" one-time
- * panel (app/bill-corrections-review.js, 2026-09-24). The panel recomputes
- * three already-fixed extraction bugs against saved bills:
+ * Standalone regression test for the "Review Bill Corrections" per-project,
+ * resumable panel (app/bill-corrections-review.js, rebuilt 2026-09-25). The
+ * panel recomputes four already-fixed extraction bugs against saved bills,
+ * plus reuses the Utility Data page's own statistical flag computation:
  *   1. Kansas Gas Service 100x OCR decimal-drop on TotalCurrentCharges
  *      (app/bill-analysis.js _postExtractionVerify).
  *   2. City of Louisburg new-format Bill Date reading the Penalty Date
@@ -11,27 +12,27 @@
  *      City of Louisburg rule, _extractNew).
  *   3. Evergy RkVA rate OCR digit-misread (app/energy-savings.js
  *      _extractEvergy single-part rate cross-check).
+ *   4. City of Louisburg account-number OCR misread.
+ *   5. computeLiveBillFlags (extraction/bill-validation.js) — the same
+ *      statistical-flag computation as the Utility Data building badge.
  *
  * SYNTHETIC fixtures only — no real client data. Loads the REAL functions
- * (app/bill-corrections-review.js, app/energy-savings.js, app/bill-analysis.js,
- * app/utility-data.js, computations/rates.js) via Node's vm module, same as
- * tools/test-kgs-total-decimal-drop.js / tools/test-louisburg-billdate.js /
- * tools/test-rkva-rate-reconciliation.js. core.js/db.js/DOM are NOT loaded —
- * sget/sset/pdfLoad/extractPDFText are minimal in-memory stand-ins (an
- * in-memory store instead of IndexedDB/localStorage, a plain string-decode
- * instead of real PDF.js/Tesseract) so the REAL scanning, matching, and
- * apply-time re-check logic in bill-corrections-review.js runs unmodified
- * against controlled fixtures.
+ * (app/bill-corrections-review.js, extraction/bill-validation.js,
+ * app/energy-savings.js, app/bill-analysis.js, app/utility-data.js,
+ * computations/rates.js) via Node's vm module. core.js/db.js/DOM are NOT
+ * loaded — sget/sset/pdfLoad/extractPDFText are minimal in-memory stand-ins
+ * (an in-memory store instead of IndexedDB, a page-aware plain-text decode
+ * instead of real PDF.js/Tesseract, but one that DOES honor
+ * opts.cachedPages/opts.onPageText the same shape the real extractPDFText
+ * does) so the REAL scanning, caching, matching, and apply-time re-check
+ * logic in bill-corrections-review.js runs unmodified against controlled
+ * fixtures.
  *
- * Cases:
- *   1. Fabricated KGS bill with a 100x decimal-drop total — must be flagged.
- *   2. Fabricated Louisburg new-format bill whose stored billDate is the
- *      Penalty Date — must be flagged, corrected value = printed Bill Date.
- *   3. Fabricated Evergy bill with an OCR-misread RkVA rate (0.883 vs the
- *      meter's dominant 0.663) — must be flagged.
- *   4. Apply-time re-check: a row whose snapshot no longer matches the live
- *      stored value must be skipped with "value changed since review was
- *      opened", never applied.
+ * Each fixture project's scan is run through the REAL per-project entry
+ * points (_bcrGetOrCreateCtl / _bcrRunProjectScan), exactly the functions
+ * openBillCorrectionsReviewModal() calls — never a bypassed "scan
+ * everything" helper — so project scoping is exercised for real, not
+ * asserted after the fact.
  *
  * Usage: node tools/test-bill-corrections-review.js
  */
@@ -52,8 +53,8 @@ function buildSandbox() {
     navigator: { userAgent: 'node' },
     setInterval: () => 0,
     clearInterval: () => {},
-    setTimeout: (fn) => 0,
-    clearTimeout: () => {},
+    setTimeout: (fn, ms) => setTimeout(fn, ms), // real timers — bcr.js's 60s Promise.race relies on this
+    clearTimeout: (id) => clearTimeout(id),
     requestAnimationFrame: () => 0,
     addEventListener: () => {},
     fetch: () => Promise.reject(new Error('fetch not available in test sandbox')),
@@ -63,9 +64,9 @@ function buildSandbox() {
     atob: global.atob,
     btoa: global.btoa,
     Uint8Array,
+    Promise,
+    Date,
   };
-  // Minimal stateful localStorage so sget/sset (if any real code path uses it)
-  // don't crash — not actually exercised since we define our own sget/sset below.
   const lsStore = {};
   sandbox.localStorage = {
     getItem: (k) => (Object.prototype.hasOwnProperty.call(lsStore, k) ? lsStore[k] : null),
@@ -86,32 +87,53 @@ function loadFile(sandbox, relPath) {
 
 function setup() {
   const sandbox = buildSandbox();
-  for (const p of ['computations/rates.js', 'app/energy-savings.js', 'app/bill-analysis.js', 'app/utility-data.js']) {
+  // Same load order as energy-department.html: bill-analysis before
+  // bill-validation (computeLiveBillFlags/dismissBillFlag) before utility-data.
+  for (const p of [
+    'computations/rates.js',
+    'app/energy-savings.js',
+    'app/bill-analysis.js',
+    'extraction/bill-validation.js',
+    'app/utility-data.js',
+  ]) {
     loadFile(sandbox, p);
   }
-  // forEachCustomerBuilding's stub in the KGS-only test elsewhere is a no-op —
-  // here we need the REAL implementation (already loaded from utility-data.js
-  // above) since matching bills to projects/buildings/meters is exactly what
-  // this test exercises.
 
   // ── in-memory data layer stand-ins (replace core.js's IndexedDB-backed sget/sset) ──
-  const store = {};
-  const pdfStore = {};
   vm.runInContext(
     `
     var __store = {};
     var __pdfStore = {};
+    var __pageReadLog = []; // pushed once per page actually decoded (not served from cachedPages)
     let projects = [];
     function sget(k, fb) { return Object.prototype.hasOwnProperty.call(__store, k) ? __store[k] : (fb !== undefined ? fb : null); }
     function sset(k, v) { __store[k] = JSON.parse(JSON.stringify(v)); return Promise.resolve(); }
     async function pdfLoad(id) { return __pdfStore[id] || null; }
     async function pdfStore_(id, b64) { __pdfStore[id] = b64; }
-    async function extractPDFText(ab, cb) {
+    // Page-aware stand-in: "pages" are separated by %%TESTPAGE%% in the fake
+    // stored PDF text. Honors opts.cachedPages (skip a page's own "read") and
+    // opts.onPageText (fired per page, real-shape) so bcr.js's own caching/
+    // resume logic — not real PDF.js/Tesseract — is what's under test.
+    async function extractPDFText(ab, cb, opts) {
+      opts = opts || {};
       const bytes = new Uint8Array(ab);
-      return new TextDecoder('utf-8').decode(bytes);
+      const fullText = new TextDecoder('utf-8').decode(bytes);
+      const pages = fullText.split('%%TESTPAGE%%');
+      const pageCount = pages.length;
+      const cachedPages = opts.cachedPages || {};
+      for (let i = 0; i < pages.length; i++) {
+        if (cachedPages[i] != null) {
+          if (opts.onPageText) opts.onPageText(i, cachedPages[i], pageCount);
+          continue;
+        }
+        __pageReadLog.push(i);
+        if (opts.onPageText) opts.onPageText(i, pages[i], pageCount);
+      }
+      return pages.map((t, i) => '%%PAGE_' + (i + 1) + '%%\\n' + t).join('\\n');
     }
     function showToast() {}
     function renderMeterWorkspace() {}
+    function openBillModal() {}
     var _testAuditLog = [];
     var _origLogUtilityAudit = logUtilityAudit;
     logUtilityAudit = function(entry) { _testAuditLog.push(entry); _origLogUtilityAudit(entry); };
@@ -123,9 +145,7 @@ function setup() {
 }
 
 // Helper: store a synthetic "PDF" — really just base64 of plain text, decoded
-// back to text by the extractPDFText stand-in above (round-trips real UTF-8
-// text exactly; no real PDF.js/Tesseract involved, matching this test's own
-// documented scope).
+// back to text by the extractPDFText stand-in above.
 function storePdfText(sandbox, key, text) {
   const b64 = Buffer.from(text, 'utf8').toString('base64');
   vm.runInContext(`__pdfStore[${JSON.stringify(key)}] = ${JSON.stringify(b64)};`, sandbox);
@@ -140,6 +160,23 @@ function seedProjectsAndUtilityData(sandbox, projectsArr, utilityDataObj) {
   `,
     sandbox,
   );
+}
+
+// Runs the REAL per-project scan entry points for one project id and returns
+// a FRESH controller object populated by the scan (bypasses the cached
+// module-level _bcrControllers map so each call is a clean "cold start" —
+// exactly what a real page reload produces, since persisted sget/sset state
+// is what's expected to carry the resume information, not any in-memory
+// controller object).
+async function runProjectScanCold(sandbox, pid) {
+  const getOrCreateCtl = vm.runInContext('_bcrGetOrCreateCtl', sandbox);
+  const runProjectScan = vm.runInContext('_bcrRunProjectScan', sandbox);
+  // Clear this pid's cached in-memory controller so getOrCreateCtl builds a
+  // fresh one (simulates the module state being wiped by a page reload).
+  vm.runInContext(`delete _bcrControllers[${JSON.stringify(pid)}];`, sandbox);
+  const ctl = getOrCreateCtl(pid);
+  await runProjectScan(ctl);
+  return ctl;
 }
 
 // ── Louisburg synthetic new-format bill page (same structural markers as
@@ -195,6 +232,7 @@ async function main() {
   // ── Case 1: KGS 100x decimal-drop in en_pdf_bills (Unmatched Bills) ──
   const kgsBill = {
     id: 'r_test_kgs_1',
+    projId: 'p_test_kgs1',
     UtilityCompany: 'Kansas Gas Service',
     Commodity: 'Gas',
     commodity: 'gas',
@@ -210,6 +248,7 @@ async function main() {
     TotalAmountDue: '3464.00',
   };
   vm.runInContext(`__store['en_pdf_bills'] = ${JSON.stringify([kgsBill])};`, sandbox);
+  const kgs1Proj = { id: 'p_test_kgs1', customerId: 'cust_test_kgs1', name: 'Test KGS Unmatched Co' };
 
   // ── Case 2: Louisburg penalty-date bug ──
   const louMeter = {
@@ -286,10 +325,7 @@ async function main() {
   const evgProj = { id: 'p_test_evg', customerId: 'cust_test_evg', name: 'Test Louisburg Electric' };
   storePdfText(sandbox, 'pdf_evg_bad', evergyBillText('9999999999', '07/14/2026', '08/13/2026', 17.784, 0.883, 11.79));
 
-  // ── Case 1b: KGS 100x decimal-drop on a normal SAVED meter.bills row (the
-  // "Unmatched Bills" sentinel building shape real Baker University bills use —
-  // mirrors the real saved-row field whitelist: lowercase names, no
-  // DeliveryCharge/GasSystemReliability/etc.) ──
+  // ── Case 1b: KGS 100x decimal-drop on a normal SAVED meter.bills row ──
   const kgsMeter = {
     id: 'm_test_kgs2',
     commodity: 'Gas',
@@ -312,10 +348,6 @@ async function main() {
       },
     ],
   };
-  // 2026-09-25: give this meter TWO OTHER real gas bills so the new
-  // meter-history plausibility guard (case 6 fix) has something to check
-  // the corrected value ($34.64) against — both close to $34.64, so the
-  // real correction still passes the guard.
   kgsMeter.bills.push(
     {
       id: 'r_test_kgs_2_hist1',
@@ -345,10 +377,8 @@ async function main() {
   );
 
   // ── Case 6 fix regression: a KGS bill whose re-extraction UNDER-counts the
-  // component sum (missing DeliveryCharge/etc., the exact failure mode found
-  // in the live 286-vs-2 false-positive investigation) must NOT be proposed
-  // as a correction when the meter's own bill history shows the SAVED total
-  // ($500.00) is the normal amount for this meter, not the mis-summed $5.00. ──
+  // component sum must NOT be proposed when the meter's own bill history
+  // shows the SAVED total is normal for this meter. ──
   const kgsMeterFP = {
     id: 'm_test_kgsfp',
     commodity: 'Gas',
@@ -388,25 +418,12 @@ async function main() {
   const kgsProjFP = { id: 'p_test_kgsfp', customerId: 'cust_test_kgsfp', name: 'Test Baker University FP' };
   storePdfText(sandbox, 'pdf_kgsfp_target', 'MARKER_KGSFP synthetic re-read text');
 
-  // _bcrScanKGSMeterBills re-extracts the bill's stored PDF with the real "Gas
-  // Utility" rule's extractAll(). Building a fully realistic KGS OCR page is out
-  // of scope for this test (that parsing logic is pre-existing, unchanged code) —
-  // instead, stub ONLY extractAll to return a fixed, full extractor-shaped bill
-  // per marker embedded in the fake stored "PDF" text, so two different
-  // candidates in the same test can exercise two different re-extraction
-  // outcomes. The real, unmodified _postExtractionVerify still runs on
-  // whichever object is returned — that is the function the case 6 fix touches,
-  // and it is never stubbed.
   vm.runInContext(
     `
     (function () {
       var kgsRule = UTILITY_RULES.find((r) => r.name === 'Gas Utility (Spire / Kansas Gas Service / Atmos / Laclede / Black Hills)');
       kgsRule.extractAll = function (t) {
         if (t && t.indexOf('MARKER_KGSFP') !== -1) {
-          // Under-counted re-extraction: only CustomerCharge survived (the same
-          // failure mode the live investigation found), so kgsSum ($5.00) looks
-          // like TotalCurrentCharges / 100 even though the real bill ($500.00)
-          // is already correct.
           return [{
             UtilityCompany: 'Kansas Gas Service',
             Commodity: 'Gas',
@@ -454,9 +471,7 @@ async function main() {
     sandbox,
   );
 
-  // ── Case 7: Louisburg account-number OCR misread — one bill on a meter
-  // whose other bills all show the same account number, differing by one
-  // digit (real examples: 1600100 -> 1800100, 236000 -> 238000). ──
+  // ── Case 7: Louisburg account-number OCR misread ──
   const louAcctMeter = {
     id: 'm_test_louacct',
     commodity: 'Electric',
@@ -494,18 +509,62 @@ async function main() {
   const louAcctBldg = { id: 'b_test_louacct', name: 'Test Rockville Elementary', meters: [louAcctMeter] };
   const louAcctProj = { id: 'p_test_louacct', customerId: 'cust_test_louacct', name: 'Test Louisburg USD 416' };
 
-  seedProjectsAndUtilityData(sandbox, [louProj, evgProj, kgsProj2, kgsProjFP, louAcctProj], {
+  // ── Case 8 (new, 2026-09-25): resumed-scan fixture — a 3-"page" synthetic
+  // PDF (real content on page 2) for a fresh Louisburg-date bug, its own
+  // project so cross-project isolation and resume don't interact. ──
+  const louResumeMeter = {
+    id: 'm_test_louresume',
+    commodity: 'Water',
+    provider: 'City of Louisburg',
+    bills: [
+      {
+        id: 'r_test_louresume_1',
+        start: '2026-05-01',
+        end: '2026-06-01',
+        billDate: '6/20/2026', // penalty date — the bug
+        accountNumber: '09-888888-88',
+        commodity: 'Water',
+        totalCost: '45.67',
+        pdfKey: 'pdf_louresume_1',
+      },
+    ],
+  };
+  const louResumeBldg = { id: 'b_test_louresume', name: 'Test Resume Building', meters: [louResumeMeter] };
+  const louResumeProj = { id: 'p_test_louresume', customerId: 'cust_test_louresume', name: 'Test Louisburg Resume Co' };
+  const louResumePage2 = louisburgPage('5/1/2026', '6/1/2026', '6/5/2026', '6/20/2026', '6/19/2026', '09-888888-88');
+  storePdfText(
+    sandbox,
+    'pdf_louresume_1',
+    'FILLER PAGE ONE — no bill data\n%%TESTPAGE%%\n' +
+      louResumePage2 +
+      '\n%%TESTPAGE%%\nFILLER PAGE THREE — no bill data',
+  );
+
+  seedProjectsAndUtilityData(sandbox, [kgs1Proj, louProj, evgProj, kgsProj2, kgsProjFP, louAcctProj, louResumeProj], {
+    cust_test_kgs1: { buildings: [] }, // KGS unmatched bucket has no meter tree — projId on the bill is what scopes it
     cust_test_lou: { buildings: [louBldg] },
     cust_test_evg: { buildings: [evgBldg] },
     cust_test_kgs2: { buildings: [kgsBldg2] },
     cust_test_kgsfp: { buildings: [kgsBldgFP] },
     cust_test_louacct: { buildings: [louAcctBldg] },
+    cust_test_louresume: { buildings: [louResumeBldg] },
   });
 
-  const runAllScans = vm.runInContext('_bcrRunAllScans', sandbox);
-  await runAllScans({ onRow: () => {}, onSkip: () => {}, onRender: () => {} });
-  const rows = vm.runInContext('_bcrRows', sandbox);
-  const skipped = vm.runInContext('_bcrSkipped', sandbox);
+  // ── Run each fixture project's scan through the REAL per-project entry
+  // point, one project at a time — exactly what openBillCorrectionsReviewModal()
+  // does for whichever project is open. Results are merged for the existing
+  // (still-unique) rowId assertions below. ──
+  const allRows = [];
+  const allSkipped = [];
+  const ctlByPid = {};
+  for (const pid of [kgs1Proj.id, louProj.id, evgProj.id, kgsProj2.id, kgsProjFP.id, louAcctProj.id]) {
+    const ctl = await runProjectScanCold(sandbox, pid);
+    ctlByPid[pid] = ctl;
+    allRows.push(...ctl.rows);
+    allSkipped.push(...ctl.skipped);
+  }
+  const rows = allRows;
+  const skipped = allSkipped;
 
   const kgsRow = rows.find((r) => r._rowId === 'kgs:r_test_kgs_1:TotalCurrentCharges');
   if (!kgsRow) {
@@ -563,7 +622,6 @@ async function main() {
       'PASS Case 3: Evergy RkVA bill flagged, corrected ' + evgRow.currentValue + ' -> ' + evgRow.correctedValue,
     );
   }
-  // The two clean Evergy bills must NOT be flagged (no false positives).
   if (rows.find((r) => r._rowId === 'evg:r_test_evg_ok1:rkvaRate' || r._rowId === 'evg:r_test_evg_ok2:rkvaRate')) {
     failures++;
     console.error('FAIL Case 3b: a clean Evergy bill (rate already correct) was wrongly flagged');
@@ -571,8 +629,6 @@ async function main() {
     console.log('PASS Case 3b: clean Evergy bills (rate already correct) left unflagged');
   }
 
-  // ── Case 6 fix regression: an under-counted re-extraction must NOT propose
-  // a correction when it disagrees with the meter's own bill history. ──
   const kgsfpRow = rows.find((r) => r._rowId === 'kgs:r_test_kgsfp_target:totalCost');
   const kgsfpSkip = skipped.find((s) => s.label && s.label.indexOf('r_test_kgsfp_target') !== -1);
   if (kgsfpRow) {
@@ -590,7 +646,6 @@ async function main() {
     console.log('PASS Case 6: false-positive KGS re-extraction suppressed by the meter-history plausibility guard');
   }
 
-  // ── Case 7: Louisburg account-number OCR misread ──
   const louAcctRow = rows.find((r) => r._rowId === 'louacct:r_test_louacct_bad:accountNumber');
   if (!louAcctRow) {
     failures++;
@@ -608,7 +663,6 @@ async function main() {
         louAcctRow.correctedValue,
     );
   }
-  // The two clean-account bills on that meter must NOT be flagged.
   if (
     rows.find(
       (r) =>
@@ -665,7 +719,6 @@ async function main() {
     } else {
       console.log('PASS Case 5: valid row applied through the normal save path and audit-logged');
     }
-    // Second apply of the same (now-stale) row must be a no-op skip.
     const secondResult = await applyRow(kgsRow);
     if (secondResult.ok !== false) {
       failures++;
@@ -675,6 +728,100 @@ async function main() {
       );
     } else {
       console.log('PASS Case 5b: re-applying an already-applied row is a no-op');
+    }
+  }
+
+  // ── Case 9 (new, 2026-09-25): cross-project isolation — running Project A's
+  // scan must never surface Project B's bills. Re-run each fixture project's
+  // scan in isolation (fresh, cold) and confirm only that project's own rows
+  // come back. ──
+  {
+    const louOnly = await runProjectScanCold(sandbox, louProj.id);
+    const leaked =
+      louOnly.rows.find((r) => r.projId !== louProj.id) || louOnly.flagged.find((r) => r.projId !== louProj.id);
+    const hasOwn = louOnly.rows.some((r) => r._rowId === 'lou:r_test_lou_1:billDate');
+    if (leaked) {
+      failures++;
+      console.error(
+        'FAIL Case 9: scanning Test Louisburg District leaked a row from another project: ' + JSON.stringify(leaked),
+      );
+    } else if (!hasOwn) {
+      failures++;
+      console.error('FAIL Case 9: scanning Test Louisburg District did not find its own bill');
+    } else {
+      console.log("PASS Case 9: cross-project isolation — scanning one project never surfaces another project's bills");
+    }
+  }
+
+  // ── Case 10 (new, 2026-09-25): resumed scan does not re-read a cached page.
+  // First cold scan of the 3-page Louisburg-resume PDF reads all 3 pages and
+  // finds the correction; a second cold scan (simulating a reload — fresh
+  // controller, same persisted store) must read ZERO pages (served entirely
+  // from the persisted bcr_pdftext_ cache) and still surface the same row. ──
+  {
+    vm.runInContext('__pageReadLog.length = 0;', sandbox);
+    const firstScan = await runProjectScanCold(sandbox, louResumeProj.id);
+    const firstReadCount = vm.runInContext('__pageReadLog.length', sandbox);
+    const firstRow = firstScan.rows.find((r) => r._rowId === 'lou:r_test_louresume_1:billDate');
+    if (!firstRow) {
+      failures++;
+      console.error(
+        'FAIL Case 10 setup: resume fixture bill was not flagged on the first scan. Skipped: ' +
+          JSON.stringify(firstScan.skipped),
+      );
+    } else if (firstReadCount !== 3) {
+      failures++;
+      console.error('FAIL Case 10 setup: expected the first scan to read all 3 pages, read ' + firstReadCount);
+    } else {
+      console.log('PASS Case 10 setup: first scan read all 3 pages of the resume fixture and found the correction');
+    }
+    vm.runInContext('__pageReadLog.length = 0;', sandbox);
+    const secondScan = await runProjectScanCold(sandbox, louResumeProj.id);
+    const secondReadCount = vm.runInContext('__pageReadLog.length', sandbox);
+    const secondRow = secondScan.rows.find((r) => r._rowId === 'lou:r_test_louresume_1:billDate');
+    if (secondReadCount !== 0) {
+      failures++;
+      console.error(
+        'FAIL Case 10: resumed (second) scan re-read ' +
+          secondReadCount +
+          ' page(s) instead of serving them from cache',
+      );
+    } else if (!secondRow) {
+      failures++;
+      console.error('FAIL Case 10: resumed (second) scan did not reproduce the same correction from cache');
+    } else {
+      console.log(
+        'PASS Case 10: resumed scan served all 3 pages from the persisted cache — zero pages re-read — and reproduced the same correction',
+      );
+    }
+  }
+
+  // ── Case 11 (new, 2026-09-25): dismiss persists across a simulated reopen. ──
+  {
+    const firstScan = await runProjectScanCold(sandbox, evgProj.id);
+    const evgRowToDismiss = firstScan.rows.find((r) => r._rowId === 'evg:r_test_evg_bad:rkvaRate');
+    if (!evgRowToDismiss) {
+      failures++;
+      console.error('FAIL Case 11 setup: Evergy row to dismiss was not found');
+    } else {
+      // Attach this controller object directly (no JSON round-trip needed — vm
+      // contexts share the Node heap, so a Node-side reference to an
+      // in-context object works as an argument to another in-context call).
+      const attachCtl = vm.runInContext(
+        '(function(pid, ctl) { _bcrControllers[pid] = ctl; _bcrOpenProjId = pid; })',
+        sandbox,
+      );
+      attachCtl(evgProj.id, firstScan);
+      const dismissFn = vm.runInContext('_bcrDismissCorrectionRow', sandbox);
+      await dismissFn(evgRowToDismiss._rowId);
+      const reopened = await runProjectScanCold(sandbox, evgProj.id);
+      const stillThere = reopened.rows.find((r) => r._rowId === 'evg:r_test_evg_bad:rkvaRate');
+      if (stillThere) {
+        failures++;
+        console.error('FAIL Case 11: dismissed correction reappeared after a simulated reopen');
+      } else {
+        console.log('PASS Case 11: dismissed correction did not reappear after a simulated reopen — dismiss persisted');
+      }
     }
   }
 

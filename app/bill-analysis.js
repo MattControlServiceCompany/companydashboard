@@ -14550,7 +14550,23 @@ const recognizeWithTimeout = async (w, canvas, params, budgetDeadlineMs) => {
     throw err;
   }
 };
-async function extractPDFText(ab, statusCb) {
+// opts (additive 3rd param, 2026-09-25 Review Bill Corrections rebuild — every existing
+// 2-arg call site keeps working unchanged, opts defaults to {}):
+//   opts.cachedPages   - map of 0-based pageIndex -> already-known page text. That page is
+//                         used as-is; no native-text read or OCR runs for it again.
+//   opts.onPageText(pageIndex, text, pageCount) - fired the instant a page's text is FINAL
+//                         (native text good enough, OCR pass done, or served from
+//                         cachedPages) — before the next page starts — so a caller can
+//                         persist it immediately instead of waiting for the whole PDF.
+async function extractPDFText(ab, statusCb, opts) {
+  opts = opts || {};
+  const _cachedPages = opts.cachedPages || null;
+  const _onPageText = typeof opts.onPageText === 'function' ? opts.onPageText : null;
+  const _getCachedPage = (idx0) => {
+    if (!_cachedPages) return undefined;
+    if (_cachedPages instanceof Map) return _cachedPages.get(idx0);
+    return _cachedPages[idx0];
+  };
   let pdf = null;
   try {
     if (typeof pdfjsLib === 'undefined') return null;
@@ -14600,6 +14616,14 @@ async function extractPDFText(ab, statusCb) {
     const pageTexts = [];
     const ocrNeeded = [];
     for (let i = 1; i <= maxPages; i++) {
+      const _cached = _getCachedPage(i - 1);
+      if (_cached != null) {
+        // Already-known page text (opts.cachedPages) — skip the read entirely.
+        pageTexts.push(_cached);
+        _pageCoverage[i - 1] = 'native-text';
+        if (_onPageText) _onPageText(i - 1, _cached, pdf.numPages);
+        continue;
+      }
       if (statusCb) statusCb('Reading page ' + i + ' of ' + maxPages + '...');
       let pg, c;
       try {
@@ -14646,6 +14670,7 @@ async function extractPDFText(ab, statusCb) {
         _pageCoverage[i - 1] = 'pending-ocr';
       } else {
         _pageCoverage[i - 1] = 'native-text';
+        if (_onPageText) _onPageText(i - 1, pageTxt, pdf.numPages);
       }
     }
 
@@ -16083,7 +16108,12 @@ async function extractPDFText(ab, statusCb) {
             if (window._pdfAbort || _ocrBudgetExceeded) return;
             const idx = _poolCursor++;
             if (idx >= ocrNeeded.length) return;
-            await _processOnePage(ocrNeeded[idx], idx, workerBox);
+            const pgNum = ocrNeeded[idx];
+            await _processOnePage(pgNum, idx, workerBox);
+            // Page text is final now (whatever _processOnePage committed to
+            // pageTexts[pgNum-1], or '' if it returned early on budget/abort) —
+            // fire the per-page callback so a caller can persist it immediately.
+            if (_onPageText) _onPageText(pgNum - 1, pageTexts[pgNum - 1] || '', pdf.numPages);
           }
         };
         await Promise.all(workerBoxes.map(_runPoolSlot));

@@ -60,6 +60,52 @@ function getBillFlagCount(bill) {
 }
 
 /**
+ * Compute the live (non-dismissed) flags for one bill from a fresh
+ * _analyzeMeterBills() result plus that bill's own persisted dismiss/
+ * cross-meter state (bill._flags). This is the ONE shared computation used
+ * by the Utility Data building nav "⚠ N review" badge, the meter pill
+ * count, the per-meter bills-table flag banner, AND the Review Bill
+ * Corrections panel's flagged-for-review list — so every place that shows a
+ * flagged-bill count for the same bill shows the exact same number, by
+ * construction, not by two independent computations that happen to agree
+ * (2026-09-25, Review Bill Corrections rebuild — extracted verbatim from
+ * app/utility-data.js's pre-existing badge/banner logic, no behavior
+ * change).
+ *
+ * @param {object} bill - bill row; reads bill._flags for dismissed IDs and
+ *   cross-meter flags (waterSewerParity_warn, facKWMissing_warn).
+ * @param {Array} liveFlagsRaw - _analyzeMeterBills(sortedBills, meter)[bill.id] || []
+ * @returns {Array<{field, msg, level, _persistFlag}>}
+ */
+function computeLiveBillFlags(bill, liveFlagsRaw) {
+  const _dismissedIds = new Set(
+    Array.isArray(bill && bill._flags) ? bill._flags.filter((f) => f.dismissed).map((f) => f.id) : [],
+  );
+  const _crossMeterFlags = Array.isArray(bill && bill._flags)
+    ? bill._flags.filter((f) => _PERSISTED_UI_FLAG_IDS.includes(f.id) && !f.dismissed)
+    : [];
+  return [
+    ...(liveFlagsRaw || [])
+      .filter((f) => {
+        const fId = (f.field || 'unknown') + '_' + (f.level || 'warn');
+        return !_dismissedIds.has(fId);
+      })
+      .map((f) => ({
+        field: f.field,
+        msg: f.msg,
+        level: f.level,
+        _persistFlag: { id: (f.field || 'unknown') + '_' + (f.level || 'warn') },
+      })),
+    ..._crossMeterFlags.map((f) => ({
+      field: (f.id || '').split('_').slice(0, -1).join('_') || f.id,
+      msg: f.label,
+      level: f.severity === 'error' ? 'error' : 'warn',
+      _persistFlag: f,
+    })),
+  ];
+}
+
+/**
  * Run building-level validation checks that require cross-meter context.
  * Currently runs the water vs sewer parity check across all buildings' meters.
  *
