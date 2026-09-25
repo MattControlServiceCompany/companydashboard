@@ -1776,6 +1776,14 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.25.8',
+    date: '2026-09-25',
+    title: 'Utility Data / Review Bill Corrections and WoodRiver Energy PDF review: proposed values now show at printed precision instead of raw floats, plain-language wording replaces OCR jargon, missing account/meter numbers are omitted instead of showing a placeholder, WoodRiver customer-number and MMBtu labels display correctly, every WoodRiver site tab now agrees with the panel\'s own field check, and the bill-PDF-not-found message is now plain text.',
+    items: [
+      { type: 'fix', text: 'Utility Data / Review Bill Corrections and WoodRiver Energy PDF review: proposed values now show at printed precision instead of raw floats, plain-language wording replaces OCR jargon, missing account/meter numbers are omitted instead of showing a placeholder, WoodRiver customer-number and MMBtu labels display correctly, every WoodRiver site tab now agrees with the panel\'s own field check, and the bill-PDF-not-found message is now plain text.' },
+    ],
+  },
+  {
     v: 'v2026.09.25.7',
     date: '2026-09-25',
     title: 'Quarterly/Annual Savings Report PDF export now produces selectable, searchable text instead of a flat image',
