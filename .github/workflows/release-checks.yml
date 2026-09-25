@@ -83,3 +83,26 @@ jobs:
           echo "Live CH_VERSION never matched repo CH_VERSION ($REPO_VERSION) after $MAX_ATTEMPTS attempts." >&2
           echo "Last observed live value: $LIVE_VERSION" >&2
           exit 1
+
+  # Once the live site is confirmed on this commit, move the `live` tag to it.
+  # A tag (not a committed file) so it never adds commits to main or causes
+  # merge conflicts. Read it from any clone with:
+  #   git fetch -f origin tag live && git tag -n1 live
+  record-live-version:
+    name: Record live version
+    runs-on: ubuntu-latest
+    needs: post-deploy-live-check
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Move the live tag to this commit
+        run: |
+          set -eu
+          VERSION=$(grep -oP "var CH_VERSION\s*=\s*'\K[^']+" site-ui.js)
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -fa live -m "$VERSION (live on GitHub Pages since $(date -u +%Y-%m-%dT%H:%MZ))"
+          git push -f origin refs/tags/live

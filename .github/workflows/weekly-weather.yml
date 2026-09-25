@@ -1,0 +1,67 @@
+name: Weekly Weather Refresh
+
+# Runs scripts/fetch-weather.js once a week on GitHub's runners (no Claude
+# usage). If new months came in, it opens a pull request with only the
+# weather-data/ changes for the owner to review and merge. It never pushes to
+# main.
+#
+# Requires: Settings -> Actions -> General -> Workflow permissions ->
+# "Allow GitHub Actions to create and approve pull requests".
+
+on:
+  schedule:
+    - cron: '13 8 * * 0' # Sundays ~3:13 AM CDT / 2:13 AM CST
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  refresh:
+    name: Refresh weather data
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Fetch weather
+        run: node scripts/fetch-weather.js
+
+      - name: Open pull request if data changed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git diff --quiet -- weather-data; then
+            echo "Weather data already up to date."
+            exit 0
+          fi
+
+          DATE=$(date -u +%Y-%m-%d)
+          BRANCH="weather-refresh-$DATE"
+          ADDED=$(git diff -U0 -- weather-data | grep -oP '^\+\s*"ym":\s*"\K[0-9-]+' | sort -u | paste -sd, -)
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git add weather-data
+          git commit -m "Weather data refresh $DATE"
+          git push --force origin "$BRANCH"
+
+          {
+            echo "Automatic weekly weather refresh from weatherdatadepot.com."
+            echo
+            echo "Months added: ${ADDED:-none (existing months revised)}"
+            echo
+            git diff --stat HEAD~1 -- weather-data
+          } > body.md
+
+          if [ -z "$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number')" ]; then
+            gh pr create --base main --head "$BRANCH" --title "Weather data refresh $DATE" --body-file body.md
+          fi
