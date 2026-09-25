@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.24.19'; // Quarterly Report: spelled out the Control Service Company Compensation heading, matched the Total Portfolio Savings Percent to the building row for a zero-bill period, and replaced a false On Track status with a plain No Service Agreement on file label for un-contracted buildings
+  var CH_VERSION = 'v2026.09.24.20'; // Utility Data: new Review Bill Corrections button re-checks saved bills against the corrected bill-reading rules and lets you apply the corrections you tick.
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
