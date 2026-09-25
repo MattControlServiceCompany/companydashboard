@@ -1651,7 +1651,7 @@ function commodityPill(c) {
 function meterLabel(m) {
   const acct = m.account ? m.account : '—';
   const mtr = m.meter ? m.meter : '—';
-  return `${m.commodity} · Acct ${acct} · Meter ${mtr}`;
+  return `${m.commodity} · Account ${acct} · Meter ${mtr}`;
 }
 // Normalize date strings to ISO YYYY-MM-DD.
 // KGS bills give dates as MM-DD-YY (e.g. "01-19-26" = Jan 19 2026).
@@ -4666,7 +4666,7 @@ function renderBillsPane(pane, m, bills, incl) {
     (bills.length !== 1 ? 's' : '') +
     (bills.length ? ' · ' + getDateRange(bills) : '') +
     ' </div>' +
-    '<div class="bills-sticky-sub">Acct: ' +
+    '<div class="bills-sticky-sub">Account: ' +
     (m.account || '—') +
     ' · Meter: ' +
     (_bfMeterNo || '—') +

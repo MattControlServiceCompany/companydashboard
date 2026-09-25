@@ -367,7 +367,7 @@ assert(
   /data-kind="bldg"/.test(byId.bA) && / checked/.test(byId.bA),
   'building row is kind=bldg and checked (has eligible meters)',
 );
-assert(treeHtml.includes('Electric · Acct A-mA1 · Meter M-mA1'), 'meter label = meterLabel()');
+assert(treeHtml.includes('Electric · Account A-mA1 · Meter M-mA1'), 'meter label = meterLabel()');
 const a36Tree = run(ctx, 'scopeTreeHTML(_a36ScopeNodes(' + PROJ + '))');
 assert(
   (a36Tree.match(/data-kind="bldg"/g) || []).length === 2 &&
