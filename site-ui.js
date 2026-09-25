@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.25.1'; // Rate-unavailable warning now uses one shared check and is hidden for no-contract projects.
+  var CH_VERSION = 'v2026.09.25.2'; // BAS Savings Calc: fix heating outside-air double count to match Excel, spell out remaining labels, and label Proposed unoccupied setpoints from company standards
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

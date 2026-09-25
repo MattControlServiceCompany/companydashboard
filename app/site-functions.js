@@ -1776,6 +1776,14 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.25.2',
+    date: '2026-09-25',
+    title: 'BAS Savings Calc: fix heating outside-air double count to match Excel, spell out remaining labels, and label Proposed unoccupied setpoints from company standards',
+    items: [
+      { type: 'fix', text: 'BAS Savings Calc: fix heating outside-air double count to match Excel, spell out remaining labels, and label Proposed unoccupied setpoints from company standards' },
+    ],
+  },
+  {
     v: 'v2026.09.25.1',
     date: '2026-09-25',
     title: 'Rate-unavailable warning now uses one shared check and is hidden for no-contract projects.',
