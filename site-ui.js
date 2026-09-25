@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.25.4'; // Estimate the missing Spring Hill High June 2025 electric bill's kWh from the surrounding Evergy bills
+  var CH_VERSION = 'v2026.09.25.6'; // ASHRAE 36 Audit Report: the cover's Sequences to Program and Sensors to Install totals now scale to the buildings you select in the report modal, instead of always showing the full portfolio.
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

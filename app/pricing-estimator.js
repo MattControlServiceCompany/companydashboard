@@ -2575,7 +2575,7 @@ function _pricingSelectZoneSensorSku(needCO2, features) {
      note, phase (1=hardware|2=labor)
    }
    ─────────────────────────────────────────────────────────────────────────── */
-/* ── buildCatalogRows(projId) ───────────────────────────────────────────────
+/* ── buildCatalogRows(projId, buildingNames) ────────────────────────────────
    Single row-generation engine (c82cc354 REV 2, Step 1). Produces EVERY
    ASHRAE-36 hardware gap (phase 1) and EVERY applicable sequence-programming
    row (phase 2) for the project — the full catalog. Tiers (Compliance,
@@ -2584,10 +2584,19 @@ function _pricingSelectZoneSensorSku(needCO2, features) {
    tiers via _baseId so all user state (rowToggles, manualPrices,
    laborOverrides, qtyOverrides, noteOverrides) stays keyed consistently.
    Formerly named buildComplianceRows — byte-identical body, renamed only.
+
+   buildingNames (optional): passed straight through to collectASHRAE36Data's own
+   buildingNames filter (fix/ashrae36-cover-scope, 2026-09-25) — the SAME filter that
+   scopes d.buildings/d.portfolio for the Generate Report modal's building selection.
+   Omitted or empty = every building in the project (unchanged default). Every caller
+   that needs the report's selected-building scope (report-engine.js's Audit/Proposal
+   cover, callouts, per-building detail, executive summary) must pass its own scoped
+   building-name list here rather than filtering buildCatalogRows' OUTPUT a second way —
+   see _a36ScopedCatalogRows in report-engine.js, the one place that does this.
    ─────────────────────────────────────────────────────────────────────────── */
-function buildCatalogRows(projId) {
+function buildCatalogRows(projId, buildingNames) {
   if (typeof collectASHRAE36Data !== 'function') return [];
-  var ashData = collectASHRAE36Data(projId);
+  var ashData = collectASHRAE36Data(projId, null, buildingNames);
   if (!ashData || !ashData.buildings) return [];
 
   var catalog = sget('en_pricing_catalog', null);

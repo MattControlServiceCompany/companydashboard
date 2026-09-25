@@ -383,11 +383,14 @@ console.log('--- 6b. Existing Saturday/Sunday schedule + Outside Air Shut Off (2
   );
 
   // Outside Air Shut Off When Unoccupied has no Equipment Matrix or import source anywhere in
-  // the codebase — always isDefault:true, even for a building with a full Effective Schedules
-  // import, so the site always shows "Default value (not from building data)" for it.
+  // the codebase. 2026-09-25 (Matt's decision): "just assume no outside air when unoccupied" —
+  // defaults to 'yes', sourced as an assumption (Matt / company default), isDefault:false so it
+  // shows a 'from <source>' hint naming it as an assumption, never the bare "no data" flag.
   assert(
-    autoMatched.exOAShutoff.isDefault === true,
-    'exOAShutoff has no building-data source -> always flagged default, even with EM/schedule data present',
+    autoMatched.exOAShutoff.value === 'yes' &&
+      autoMatched.exOAShutoff.isDefault === false &&
+      /assumption/i.test(autoMatched.exOAShutoff.source),
+    'exOAShutoff defaults to yes, sourced as an assumption (Matt / company default), not flagged as generic missing data',
   );
 }
 
