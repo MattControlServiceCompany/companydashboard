@@ -312,26 +312,122 @@ async function main() {
       },
     ],
   };
+  // 2026-09-25: give this meter TWO OTHER real gas bills so the new
+  // meter-history plausibility guard (case 6 fix) has something to check
+  // the corrected value ($34.64) against — both close to $34.64, so the
+  // real correction still passes the guard.
+  kgsMeter.bills.push(
+    {
+      id: 'r_test_kgs_2_hist1',
+      start: '2025-11-01',
+      end: '2025-12-01',
+      accountNumber: '510000123 9999999 00',
+      utilityCompany: 'Kansas Gas Service',
+      commodity: 'Gas',
+      totalCost: '33.10',
+    },
+    {
+      id: 'r_test_kgs_2_hist2',
+      start: '2025-12-01',
+      end: '2026-01-01',
+      accountNumber: '510000123 9999999 00',
+      utilityCompany: 'Kansas Gas Service',
+      commodity: 'Gas',
+      totalCost: '36.20',
+    },
+  );
   const kgsBldg2 = { id: 'b_test_kgs2', name: 'Unmatched Bills', meters: [kgsMeter] };
   const kgsProj2 = { id: 'p_test_kgs2', customerId: 'cust_test_kgs2', name: 'Test Baker University' };
   storePdfText(
     sandbox,
     'pdf_kgs_2',
-    'synthetic Kansas Gas Service bill text (content unused — extractAll is stubbed below)',
+    'MARKER_KGS2 synthetic Kansas Gas Service bill text (content unused — extractAll is stubbed below)',
   );
+
+  // ── Case 6 fix regression: a KGS bill whose re-extraction UNDER-counts the
+  // component sum (missing DeliveryCharge/etc., the exact failure mode found
+  // in the live 286-vs-2 false-positive investigation) must NOT be proposed
+  // as a correction when the meter's own bill history shows the SAVED total
+  // ($500.00) is the normal amount for this meter, not the mis-summed $5.00. ──
+  const kgsMeterFP = {
+    id: 'm_test_kgsfp',
+    commodity: 'Gas',
+    provider: 'Kansas Gas Service',
+    bills: [
+      {
+        id: 'r_test_kgsfp_hist1',
+        start: '2025-11-01',
+        end: '2025-12-01',
+        accountNumber: '777000001 1111111 00',
+        utilityCompany: 'Kansas Gas Service',
+        commodity: 'Gas',
+        totalCost: '498.00',
+      },
+      {
+        id: 'r_test_kgsfp_hist2',
+        start: '2025-12-01',
+        end: '2026-01-01',
+        accountNumber: '777000001 1111111 00',
+        utilityCompany: 'Kansas Gas Service',
+        commodity: 'Gas',
+        totalCost: '512.00',
+      },
+      {
+        id: 'r_test_kgsfp_target',
+        start: '2026-01-01',
+        end: '2026-02-01',
+        accountNumber: '777000001 1111111 00',
+        utilityCompany: 'Kansas Gas Service',
+        commodity: 'Gas',
+        totalCost: '500.00', // already correct — matches this meter's normal bill size
+        pdfKey: 'pdf_kgsfp_target',
+      },
+    ],
+  };
+  const kgsBldgFP = { id: 'b_test_kgsfp', name: 'Test False Positive Hall', meters: [kgsMeterFP] };
+  const kgsProjFP = { id: 'p_test_kgsfp', customerId: 'cust_test_kgsfp', name: 'Test Baker University FP' };
+  storePdfText(sandbox, 'pdf_kgsfp_target', 'MARKER_KGSFP synthetic re-read text');
+
   // _bcrScanKGSMeterBills re-extracts the bill's stored PDF with the real "Gas
   // Utility" rule's extractAll(). Building a fully realistic KGS OCR page is out
   // of scope for this test (that parsing logic is pre-existing, unchanged code) —
   // instead, stub ONLY extractAll to return a fixed, full extractor-shaped bill
-  // (every field a real KGS extraction would produce, including the components
-  // that do NOT survive onto a saved meter.bills row). The real, unmodified
-  // _postExtractionVerify still runs on this object — that is the function this
-  // fix touches, and it is never stubbed.
+  // per marker embedded in the fake stored "PDF" text, so two different
+  // candidates in the same test can exercise two different re-extraction
+  // outcomes. The real, unmodified _postExtractionVerify still runs on
+  // whichever object is returned — that is the function the case 6 fix touches,
+  // and it is never stubbed.
   vm.runInContext(
     `
     (function () {
       var kgsRule = UTILITY_RULES.find((r) => r.name === 'Gas Utility (Spire / Kansas Gas Service / Atmos / Laclede / Black Hills)');
-      kgsRule.extractAll = function () {
+      kgsRule.extractAll = function (t) {
+        if (t && t.indexOf('MARKER_KGSFP') !== -1) {
+          // Under-counted re-extraction: only CustomerCharge survived (the same
+          // failure mode the live investigation found), so kgsSum ($5.00) looks
+          // like TotalCurrentCharges / 100 even though the real bill ($500.00)
+          // is already correct.
+          return [{
+            UtilityCompany: 'Kansas Gas Service',
+            Commodity: 'Gas',
+            commodity: 'gas',
+            AccountNumber: '777000001 1111111 00',
+            BillingPeriodStart: '1/1/2026',
+            BillingPeriodEnd: '2/1/2026',
+            McfBilled: '5.000',
+            NaturalGasTherms: '50.00',
+            CustomerCharge: '5.00',
+            DeliveryCharge: null,
+            GasSystemReliability: null,
+            WeatherNormalization: null,
+            GasCharge: null,
+            FranchiseFee: null,
+            WinterEventCost: null,
+            DelayedPaymentCharge: null,
+            TotalCurrentCharges: '500.00',
+            TotalAmountDue: '500.00',
+          }];
+        }
         return [{
           UtilityCompany: 'Kansas Gas Service',
           Commodity: 'Gas',
@@ -358,14 +454,58 @@ async function main() {
     sandbox,
   );
 
-  seedProjectsAndUtilityData(sandbox, [louProj, evgProj, kgsProj2], {
+  // ── Case 7: Louisburg account-number OCR misread — one bill on a meter
+  // whose other bills all show the same account number, differing by one
+  // digit (real examples: 1600100 -> 1800100, 236000 -> 238000). ──
+  const louAcctMeter = {
+    id: 'm_test_louacct',
+    commodity: 'Electric',
+    provider: 'City of Louisburg',
+    bills: [
+      {
+        id: 'r_test_louacct_1',
+        start: '2025-01-16',
+        end: '2025-02-16',
+        accountNumber: '1800100',
+        utilityCompany: 'City of Louisburg',
+        commodity: 'Electric',
+        totalCost: '210.00',
+      },
+      {
+        id: 'r_test_louacct_2',
+        start: '2025-02-16',
+        end: '2025-03-16',
+        accountNumber: '1800100',
+        utilityCompany: 'City of Louisburg',
+        commodity: 'Electric',
+        totalCost: '198.00',
+      },
+      {
+        id: 'r_test_louacct_bad',
+        start: '2025-04-16',
+        end: '2025-05-16',
+        accountNumber: '1600100', // OCR misread of 1800100 — the bug
+        utilityCompany: 'City of Louisburg',
+        commodity: 'Electric',
+        totalCost: '205.00',
+      },
+    ],
+  };
+  const louAcctBldg = { id: 'b_test_louacct', name: 'Test Rockville Elementary', meters: [louAcctMeter] };
+  const louAcctProj = { id: 'p_test_louacct', customerId: 'cust_test_louacct', name: 'Test Louisburg USD 416' };
+
+  seedProjectsAndUtilityData(sandbox, [louProj, evgProj, kgsProj2, kgsProjFP, louAcctProj], {
     cust_test_lou: { buildings: [louBldg] },
     cust_test_evg: { buildings: [evgBldg] },
     cust_test_kgs2: { buildings: [kgsBldg2] },
+    cust_test_kgsfp: { buildings: [kgsBldgFP] },
+    cust_test_louacct: { buildings: [louAcctBldg] },
   });
 
-  const scanAll = vm.runInContext('_bcrScanAll', sandbox);
-  const { rows, skipped } = await scanAll();
+  const runAllScans = vm.runInContext('_bcrRunAllScans', sandbox);
+  await runAllScans({ onRow: () => {}, onSkip: () => {}, onRender: () => {} });
+  const rows = vm.runInContext('_bcrRows', sandbox);
+  const skipped = vm.runInContext('_bcrSkipped', sandbox);
 
   const kgsRow = rows.find((r) => r._rowId === 'kgs:r_test_kgs_1:TotalCurrentCharges');
   if (!kgsRow) {
@@ -429,6 +569,56 @@ async function main() {
     console.error('FAIL Case 3b: a clean Evergy bill (rate already correct) was wrongly flagged');
   } else {
     console.log('PASS Case 3b: clean Evergy bills (rate already correct) left unflagged');
+  }
+
+  // ── Case 6 fix regression: an under-counted re-extraction must NOT propose
+  // a correction when it disagrees with the meter's own bill history. ──
+  const kgsfpRow = rows.find((r) => r._rowId === 'kgs:r_test_kgsfp_target:totalCost');
+  const kgsfpSkip = skipped.find((s) => s.label && s.label.indexOf('r_test_kgsfp_target') !== -1);
+  if (kgsfpRow) {
+    failures++;
+    console.error(
+      "FAIL Case 6: an under-counted re-extraction ($500.00 -> $5.00) was wrongly proposed despite disagreeing with this meter's own $498-$512 bill history",
+    );
+  } else if (!kgsfpSkip || kgsfpSkip.kind !== 'could-not-check' || !/typical bill amount/.test(kgsfpSkip.reason)) {
+    failures++;
+    console.error(
+      'FAIL Case 6: expected the false-positive KGS bill to be skipped with a "typical bill amount" reason, got ' +
+        JSON.stringify(kgsfpSkip),
+    );
+  } else {
+    console.log('PASS Case 6: false-positive KGS re-extraction suppressed by the meter-history plausibility guard');
+  }
+
+  // ── Case 7: Louisburg account-number OCR misread ──
+  const louAcctRow = rows.find((r) => r._rowId === 'louacct:r_test_louacct_bad:accountNumber');
+  if (!louAcctRow) {
+    failures++;
+    console.error('FAIL Case 7: Louisburg account-number OCR misread bill was not flagged');
+  } else if (louAcctRow.correctedValue !== '1800100' || louAcctRow.currentValue !== '1600100') {
+    failures++;
+    console.error(
+      'FAIL Case 7: expected 1600100 -> 1800100, got ' + louAcctRow.currentValue + ' -> ' + louAcctRow.correctedValue,
+    );
+  } else {
+    console.log(
+      'PASS Case 7: Louisburg account-number OCR misread flagged, corrected ' +
+        louAcctRow.currentValue +
+        ' -> ' +
+        louAcctRow.correctedValue,
+    );
+  }
+  // The two clean-account bills on that meter must NOT be flagged.
+  if (
+    rows.find(
+      (r) =>
+        r._rowId === 'louacct:r_test_louacct_1:accountNumber' || r._rowId === 'louacct:r_test_louacct_2:accountNumber',
+    )
+  ) {
+    failures++;
+    console.error('FAIL Case 7b: a clean Louisburg account-number bill was wrongly flagged');
+  } else {
+    console.log('PASS Case 7b: clean Louisburg account-number bills left unflagged');
   }
 
   // ── Case 4: apply-time re-check — stale snapshot must be skipped, never applied ──

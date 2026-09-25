@@ -1776,6 +1776,14 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.25.3',
+    date: '2026-09-25',
+    title: 'Review Bill Corrections now groups results by meter, shows a live progress bar and summary while it scans, and fixes a false-positive on Kansas Gas Service bills.',
+    items: [
+      { type: 'fix', text: 'Review Bill Corrections now groups results by meter, shows a live progress bar and summary while it scans, and fixes a false-positive on Kansas Gas Service bills.' },
+    ],
+  },
+  {
     v: 'v2026.09.25.2',
     date: '2026-09-25',
     title: 'BAS Savings Calc: fix heating outside-air double count to match Excel, spell out remaining labels, and label Proposed unoccupied setpoints from company standards',
