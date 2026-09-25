@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.24.20'; // Utility Data: new Review Bill Corrections button re-checks saved bills against the corrected bill-reading rules and lets you apply the corrections you tick.
+  var CH_VERSION = 'v2026.09.25.1'; // Rate-unavailable warning now uses one shared check and is hidden for no-contract projects.
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

@@ -1776,6 +1776,14 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.25.1',
+    date: '2026-09-25',
+    title: 'Rate-unavailable warning now uses one shared check and is hidden for no-contract projects.',
+    items: [
+      { type: 'fix', text: 'Rate-unavailable warning now uses one shared check and is hidden for no-contract projects.' },
+    ],
+  },
+  {
     v: 'v2026.09.24.20',
     date: '2026-09-24',
     title: 'Utility Data: new Review Bill Corrections button re-checks saved bills against the corrected bill-reading rules and lets you apply the corrections you tick.',
