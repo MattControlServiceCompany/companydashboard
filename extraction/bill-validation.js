@@ -78,6 +78,13 @@ function getBillFlagCount(bill) {
  * @returns {Array<{field, msg, level, _persistFlag}>}
  */
 function computeLiveBillFlags(bill, liveFlagsRaw) {
+  // 2026-09-25 (d5b815dc): a bill added via "Estimate missing period" (estimated:true) is a
+  // synthetic usage-only placeholder, not a real reading — it must never be flagged as
+  // statistically unusual and must never count toward any "N review" count (building badge,
+  // meter pill, bills-table banner, Review Bill Corrections panel). All four read counts via
+  // this one shared function, so returning no flags here — before any dismissed/cross-meter
+  // logic — is the single place that guarantees all of them agree at 0 for an estimated bill.
+  if (bill && bill.estimated) return [];
   const _dismissedIds = new Set(
     Array.isArray(bill && bill._flags) ? bill._flags.filter((f) => f.dismissed).map((f) => f.id) : [],
   );

@@ -880,7 +880,12 @@ function _analyzeMeterBills(bills, m) {
   for (const c of checks) {
     // Use rawFn (null-preserving) for stats so missing readings don't
     // contribute a false 0 to mean/stddev. fn is kept for the z-score path.
-    const rawVals = bills.map(c.rawFn);
+    // 2026-09-25 (d5b815dc, estimated-bill flag fix): a bill with `estimated:true`
+    // (Estimate missing period) is a synthetic, user-supplied number, not a real
+    // reading — it must never shift the peer stats used to judge OTHER bills as
+    // unusual. Null it out here (same treatment as a missing reading; stats()/
+    // medianOf() already ignore null) instead of feeding it into the history.
+    const rawVals = bills.map((bl) => (bl.estimated ? null : c.rawFn(bl)));
     allStats[c.field] = stats(rawVals);
     if (!c.seasonal) continue;
     const byMonth = {};
@@ -928,7 +933,9 @@ function _analyzeMeterBills(bills, m) {
         for (let i = 0; i < bills.length; i++) {
           if (i === idx) continue; // exclude self
           if (normMonths[i] === nm) {
-            const v = c.rawFn(bills[i]);
+            // 2026-09-25 (d5b815dc): same null-out-estimated treatment as rawVals above —
+            // an estimated peer must not shift a real bill's same-month/per-day comparison.
+            const v = bills[i].estimated ? null : c.rawFn(bills[i]);
             sameMonthVals.push(v);
             // Collect per-peer day count for per-day normalization
             const peerDays =
@@ -1102,7 +1109,9 @@ function _analyzeMeterBills(bills, m) {
           // Find the bill whose normalized month matches this bill's normalized month
           // AND whose start year is exactly thisYear - 1.
           const priorYearBill = bills.find((other) => {
-            if (!other.start || !other.end || other.id === b.id) return false;
+            // 2026-09-25 (d5b815dc): exclude estimated bills — an estimate must not be used
+            // as the prior-year comparison point for a real bill's YoY spike check.
+            if (!other.start || !other.end || other.id === b.id || other.estimated) return false;
             const otherYear = _parseISO(other.start).getFullYear();
             if (otherYear !== thisYear - 1) return false;
             return _billNormMonth(other) === thisNormMonth;

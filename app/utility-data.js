@@ -4338,7 +4338,13 @@ function renderBillsPane(pane, m, bills, incl) {
         // direction must match whichever date is actually earlier.
         const gapEarlier = _parseISO(prevEnd) <= _parseISO(curStart) ? prevEnd : curStart;
         const gapLater = _parseISO(prevEnd) <= _parseISO(curStart) ? curStart : prevEnd;
-        const gapDays = Math.round(Math.abs(_parseISO(gapLater) - _parseISO(gapEarlier)) / (1000 * 60 * 60 * 24));
+        // 2026-09-25 (estimate-row day-count fix, d5b815dc): use the site's one shared
+        // day-count function (calcDays, respects the Inclusive/Exclusive "Day calc" toggle)
+        // instead of a raw ms-diff, so this line always matches the "Estimate missing period"
+        // row's day count below (estimateMissingPeriod / csv-import.js already uses calcDays).
+        // The raw diff undercounts by 1 in Inclusive mode (the site's default) since it never
+        // added the +1 for the shared boundary day — calcDays's number is the correct one.
+        const gapDays = calcDays(gapEarlier, gapLater, incl);
         const gapMonths = Math.round(gapDays / 30);
         // Bug #17: If we skipped over empty-date rows to find the valid end date, add a note
         // so the user knows there's a row with missing dates adjacent to this gap.
