@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.24.17'; // Quarterly Report: column headers no longer break mid-word or run off the edge of the column, kWh/Square Feet/Gallons/Savings Percent print as full words, and Control Service Company's full name replaces "CSC" in the compensation table. A quarter with no bills now says so ("No bills for this period") instead of showing "On Track," and Generate Report defaults to the latest quarter that has bills and warns first if any building is missing bills for the period you pick.
+  var CH_VERSION = 'v2026.09.24.18'; // WoodRiver Energy gas bills now show the Fuel MMBtu amount on each Trigger and Index charge line. The bill shows the printed rate when the invoice prints one. A computed rate shows only when the bill has no printed rate, and it says "computed". Billed usage does not change.
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

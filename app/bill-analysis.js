@@ -7905,6 +7905,11 @@ async function confirmAutoAssign() {
       // from this whitelist, so even though energy-savings.js now emits it, it
       // was silently dropped at save time and never reached storage/display.
       _wreSWEMMbtu: bill._wreSWEMMbtu || '',
+      // Fix (2026-09-24, WRE Fuel-column display): same whitelist gap as
+      // _wreSWEMMbtu above — the Fuel column volumes (energy-savings.js) were
+      // being dropped at save time. See the matching comment in energy-savings.js.
+      _wreTriggerFuelMMbtu: bill._wreTriggerFuelMMbtu || '',
+      _wreIndexFuelMMbtu: bill._wreIndexFuelMMbtu || '',
       _wreTriggerRate: bill._wreTriggerRate || '',
       _wreIndexRate: bill._wreIndexRate || '',
       // Fix (2026-09-23, WRE invoice-fields fix, item 2): _manualReview/
@@ -8377,6 +8382,10 @@ async function _mbSaveOneBill(bi, action) {
     // Fix (2026-09-23, WRE invoice-fields fix, item 1): was missing from this
     // whitelist — see the matching comment in confirmAutoAssign() above.
     _wreSWEMMbtu: bill._wreSWEMMbtu || '',
+    // Fix (2026-09-24, WRE Fuel-column display): same whitelist gap as
+    // _wreSWEMMbtu above — see the matching comment in confirmAutoAssign() above.
+    _wreTriggerFuelMMbtu: bill._wreTriggerFuelMMbtu || '',
+    _wreIndexFuelMMbtu: bill._wreIndexFuelMMbtu || '',
     _wreTriggerRate: bill._wreTriggerRate || '',
     _wreIndexRate: bill._wreIndexRate || '',
     // Fix (2026-09-23, WRE invoice-fields fix, item 2): was missing from this
@@ -9627,6 +9636,10 @@ function _saveBillToMatchedMeter(extracted, match) {
     // Fix (2026-09-23, WRE invoice-fields fix, item 1): was missing from this
     // whitelist — see the matching comment in confirmAutoAssign() above.
     _wreSWEMMbtu: extracted._wreSWEMMbtu || '',
+    // Fix (2026-09-24, WRE Fuel-column display): same whitelist gap as
+    // _wreSWEMMbtu above — see the matching comment in confirmAutoAssign() above.
+    _wreTriggerFuelMMbtu: extracted._wreTriggerFuelMMbtu || '',
+    _wreIndexFuelMMbtu: extracted._wreIndexFuelMMbtu || '',
     _wreTriggerRate: extracted._wreTriggerRate || '',
     _wreIndexRate: extracted._wreIndexRate || '',
     // Fix (2026-09-23, WRE invoice-fields fix, item 2): was missing from this
@@ -19045,6 +19058,17 @@ function renderPDFFields(parsed, warnings) {
     // WRE printed rates (source-faithful — from the Rate column of each charge line)
     _wreTriggerRate: 'Trigger Rate ($/MMBtu)',
     _wreIndexRate: 'Index Rate ($/MMBtu)',
+    // Fix (2026-09-24, WRE Fuel-column display): these three MMBtu quantity fields
+    // were rendered via buildCell(row.qtyField) with no LABELS entry, so the key
+    // rendering fell back to LABELS[k]||k and printed the raw field name
+    // ("_WRETRIGGERMMBTU") instead of a readable label — visible in the 2026-09-24
+    // E2E screenshot. Fuel MMBtu is new (this fix); Trigger/Index/SWE MMBtu were
+    // already shipping without a label.
+    _wreTriggerMMbtu: 'Trigger MMBtu',
+    _wreIndexMMbtu: 'Index MMBtu',
+    _wreSWEMMbtu: 'Special Weather Event MMBtu',
+    _wreTriggerFuelMMbtu: 'Trigger Fuel MMBtu',
+    _wreIndexFuelMMbtu: 'Index Fuel MMBtu',
   };
   // Fields that represent dollar charges — prefix with $ in display
   const CHARGE_FIELDS = new Set([
@@ -19281,19 +19305,36 @@ function renderPDFFields(parsed, warnings) {
       label: 'Trigger - Fixed',
       chargeField: '_wreTriggerCharge',
       qtyField: '_wreTriggerMMbtu',
+      // Fix (2026-09-24, WRE Fuel-column display): the invoice's own charge formula
+      // is charge = (Mmbtu + Fuel) x Rate (verified against the printed Apr/May 2025
+      // Board of Education 560189 lines: (4.74+0.08) x $4.7550 = $22.92, matching the
+      // printed charge to the cent). fuelField feeds the rate cross-check's basis
+      // below — usage (qtyField) itself stays billed MMbtu only; Fuel never gets
+      // added into it (see the Sub-Total/Total Natural Gas lines on the source
+      // invoice, which both print Mmbtu and Fuel as separate columns and never sum
+      // them together).
+      fuelField: '_wreTriggerFuelMMbtu',
       unit: 'MMbtu',
       rateKey: null,
       printedRateField: '_wreTriggerRate',
+      printedIsAuthoritative: true,
     },
+    // Fix (2026-09-24, WRE Fuel-column display): Fuel MMBtu shown as its own line,
+    // full-word label, right under the charge row it belongs to — hidden when the
+    // extractor didn't capture a Fuel figure for this site (older/garbled OCR).
+    { type: 'pair', fields: ['_wreTriggerFuelMMbtu'], condition: '_wreTriggerFuelMMbtu' },
     {
       type: 'charge-line',
       label: 'Index (First of Month)',
       chargeField: '_wreIndexCharge',
       qtyField: '_wreIndexMMbtu',
+      fuelField: '_wreIndexFuelMMbtu',
       unit: 'MMbtu',
       rateKey: null,
       printedRateField: '_wreIndexRate',
+      printedIsAuthoritative: true,
     },
+    { type: 'pair', fields: ['_wreIndexFuelMMbtu'], condition: '_wreIndexFuelMMbtu' },
     // Special Weather Event: only present on some invoices (hasSWE flag on the record)
     // Fix (2026-09-23, WRE invoice-fields fix, item 1): qtyField/unit added so the
     // SWE volume (already extracted as _wreSWEMMbtu, energy-savings.js) actually
@@ -19829,7 +19870,16 @@ function renderPDFFields(parsed, warnings) {
           ? buildCell(row.qtyField)
           : `<div class="ef-item" style="opacity:.5"><div class="ef-key">${noRateLabel}</div><input class="ef-input" value="" data-key="_qty_${row.chargeField}" placeholder="—"></div>`;
         const qtyVal = row.qtyField ? parseFloat(parsed[row.qtyField]) || 0 : 0;
-        const computedRate = qtyVal > 0 && chargeVal > 0 ? chargeVal / qtyVal : 0;
+        // Fix (2026-09-24, WRE Fuel-column display): when the row declares a
+        // fuelField (WRE Trigger/Index rows only), fold it into the rate-check
+        // basis — WRE's own printed formula is charge = (Mmbtu + Fuel) x Rate,
+        // not Mmbtu x Rate alone. Usage itself (qtyVal, shown in the qty cell)
+        // is untouched; only the basis used to derive/cross-check the RATE
+        // changes. fuelField is undefined for every other provider (KGS, etc.),
+        // so fuelVal is always 0 there and this is a no-op for them.
+        const fuelVal = row.fuelField ? parseFloat(parsed[row.fuelField]) || 0 : 0;
+        const rateBasis = qtyVal + fuelVal;
+        const computedRate = rateBasis > 0 && chargeVal > 0 ? chargeVal / rateBasis : 0;
         const rateUnit = row.unit || '';
         let rateStr = computedRate > 0 ? '$' + computedRate.toFixed(5) + (rateUnit ? '/' + rateUnit : '') : '';
         // printedRateField cross-check: when the row declares a printed rate field
@@ -19844,9 +19894,25 @@ function renderPDFFields(parsed, warnings) {
             const _mismatch = _relDiff > 0.05;
             const _printedFmt = '$' + _printedRate.toFixed(5) + (rateUnit ? '/' + rateUnit : '');
             const _warnGlyph = _mismatch
-              ? ` <span title="Computed rate ($${computedRate.toFixed(5)}) differs from printed rate ($${_printedRate.toFixed(5)}) by ${(_relDiff * 100).toFixed(1)}%" style="color:#ef4444;font-weight:700;cursor:help">&#9888;</span>`
+              ? ` <span title="Computed rate ($${computedRate.toFixed(5)}) from (${row.fuelField ? 'MMBtu + Fuel MMBtu' : 'qty'}) &times; rate differs from the printed rate ($${_printedRate.toFixed(5)}) by ${(_relDiff * 100).toFixed(1)}%" style="color:#ef4444;font-weight:700;cursor:help">&#9888;</span>`
               : '';
-            rateStr = (rateStr || _printedFmt) + ` (${_printedFmt} printed)${_warnGlyph}`;
+            // Fix (2026-09-24, WRE Fuel-column display): when the row marks the
+            // printed rate as authoritative (WRE Trigger/Index — printedIsAuthoritative),
+            // show the PRINTED rate as the value once the (MMBtu+Fuel) x Rate check
+            // passes — a computed rate is only ever a fallback for these rows, never
+            // primary alongside a valid printed rate. Every other printedRateField
+            // row (KGS, etc.) keeps the prior computed-first / "(printed)" display.
+            rateStr = row.printedIsAuthoritative
+              ? _printedFmt + _warnGlyph
+              : (rateStr || _printedFmt) + ` (${_printedFmt} printed)${_warnGlyph}`;
+          } else if (row.printedIsAuthoritative && _printedRate > 0) {
+            // Printed rate present but the charge/basis can't be cross-checked
+            // (e.g. charge or usage is 0) — still show the printed rate, no warning.
+            rateStr = '$' + _printedRate.toFixed(5) + (rateUnit ? '/' + rateUnit : '');
+          } else if (row.printedIsAuthoritative && computedRate > 0) {
+            // No usable printed rate on this row — fall back to the computed rate,
+            // clearly labeled so it's never mistaken for a printed, verified figure.
+            rateStr = '$' + computedRate.toFixed(5) + (rateUnit ? '/' + rateUnit : '') + ' (computed)';
           }
         }
         const rateHtml = buildRateBox(noRateLabel + ' Rate', rateStr);

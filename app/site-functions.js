@@ -1776,6 +1776,21 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.24.18',
+    date: '2026-09-24',
+    title: 'WoodRiver Energy gas bills: Fuel MMBtu amount and the printed rate',
+    items: [
+      {
+        type: 'fix',
+        text: 'On WoodRiver Energy gas bills, each Trigger and Index charge line now shows its Fuel MMBtu amount on the bill.',
+      },
+      {
+        type: 'fix',
+        text: 'The Trigger and Index rate now shows the rate printed on the invoice, checked against the Fuel MMBtu amount and the charge. A computed rate shows only when the invoice has no printed rate, and it is labeled "computed". Billed usage stays as printed and does not change.',
+      },
+    ],
+  },
+  {
     v: 'v2026.09.24.17',
     date: '2026-09-24',
     title: 'Quarterly Report: column headers, full words, and no-bills status fixed',
