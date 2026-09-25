@@ -14963,6 +14963,35 @@ function _a36SeqRequiredSensorLabels(seq) {
   }
 }
 
+// ─── _a36ScopedCatalogRows ────────────────────────────────────────────────
+/**
+ * The ONE place that calls buildCatalogRows() for ASHRAE 36 report rendering.
+ *
+ * fix/ashrae36-cover-scope (2026-09-25): buildCatalogRows(projId) walks EVERY building in
+ * the project by default — it has no idea a user picked only one building in the Generate
+ * Report modal's scope tree. d.buildings is already scoped to that selection (collectASHRAE36Data
+ * filtered it by buildingNames), so this hands buildCatalogRows the exact same building-name
+ * list, and memoizes the result on d._a36CatalogRowsCache. Every consumer of the priced catalog
+ * (cover stat tiles + finding sentence, executive-summary callout, Control Sequences table,
+ * per-building detail totals, Proposal's Compliance section) calls this instead of calling
+ * buildCatalogRows directly — one shared scoped source, computed once per report render, so the
+ * "Sequences to Program" / "Sensors to Install" figures can never disagree with each other or
+ * with the rest of the cover (which already scales off d.portfolio/d.buildings). Bug this fixes:
+ * those two totals stayed pinned to the full 27-building portfolio value even when the user
+ * selected a single building, because the unscoped `buildCatalogRows(d.project.id)` call ignored
+ * the selection entirely.
+ */
+function _a36ScopedCatalogRows(d) {
+  if (!d._a36CatalogRowsCache) {
+    var _scopeNames = (d.buildings || []).map(function (b) {
+      return b.name;
+    });
+    d._a36CatalogRowsCache =
+      typeof buildCatalogRows === 'function' ? buildCatalogRows(d.project.id, _scopeNames) || [] : [];
+  }
+  return d._a36CatalogRowsCache;
+}
+
 // ─── rptPageASHRAE36Cover ─────────────────────────────────────────────────
 /**
  * Cover page: three gauge rings (overall/sensor/sequence), one-paragraph finding.
@@ -14995,7 +15024,7 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded) {
   var _a36ConsolidatedSensors = p.totalMissingHardwarePoints;
   var _a36ConsolidatedSequences = p.totalNotReadySequences;
   if (typeof buildCatalogRows === 'function') {
-    var _a36CatalogRows = buildCatalogRows(d.project.id) || [];
+    var _a36CatalogRows = _a36ScopedCatalogRows(d);
     var _a36SensorSum = 0;
     var _a36SeqSum = 0;
     _a36CatalogRows.forEach(function (r) {
@@ -15238,11 +15267,8 @@ function rptPageASHRAE36Executive(n, d) {
   // data is simply not listed.
   var callout = '';
   try {
-    if (!d._a36CatalogRowsCache) {
-      d._a36CatalogRowsCache = typeof buildCatalogRows === 'function' ? buildCatalogRows(d.project.id) || [] : [];
-    }
     var _execSeqCounts = {}; // seqKey -> equipment units still needing this sequence programmed
-    (d._a36CatalogRowsCache || []).forEach(function (r) {
+    _a36ScopedCatalogRows(d).forEach(function (r) {
       if (!r || r.phase !== 2 || !r.seqKey) return;
       _execSeqCounts[r.seqKey] = (_execSeqCounts[r.seqKey] || 0) + (r.qty || 0);
     });
@@ -16054,12 +16080,9 @@ function rptPageASHRAE36CostEstimate(n, d) {
     // units the sequence does not apply to, are not counted (absence is not always a deficiency).
     // Cached on `d` the same way _a36BuildingContent caches it: buildCatalogRows walks the whole
     // project on every call.
-    if (!d._a36CatalogRowsCache) {
-      d._a36CatalogRowsCache = typeof buildCatalogRows === 'function' ? buildCatalogRows(d.project.id) || [] : [];
-    }
     var _seqProgramCounts = {}; // seqKey -> equipment units still needing this sequence programmed
     var _seqCatalogTotal = 0; // every phase-2/seqKey row, whether or not its key has a def below
-    (d._a36CatalogRowsCache || []).forEach(function (r) {
+    _a36ScopedCatalogRows(d).forEach(function (r) {
       if (!r || r.phase !== 2 || !r.seqKey) return;
       _seqProgramCounts[r.seqKey] = (_seqProgramCounts[r.seqKey] || 0) + (r.qty || 0);
       _seqCatalogTotal += r.qty || 0;
@@ -16518,10 +16541,7 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
   // deficiency.md) — while only 4 were ever priced. Cached on `d` (memoized once per report
   // render) rather than recomputed here, since buildCatalogRows walks the WHOLE project on every
   // call and this function runs once PER BUILDING (up to 27 times per report).
-  if (!d._a36CatalogRowsCache) {
-    d._a36CatalogRowsCache = typeof buildCatalogRows === 'function' ? buildCatalogRows(d.project.id) || [] : [];
-  }
-  var _a36CatRows = d._a36CatalogRowsCache;
+  var _a36CatRows = _a36ScopedCatalogRows(d);
 
   // Helper: resolve human-readable name for a missing point category key
   function _missingPointName(mp) {
@@ -20281,17 +20301,15 @@ function _rptA36ComplianceScopeInnerHTML(d) {
   var sensorCount = p.totalMissingHardwarePoints || 0;
   var seqCount = p.totalNotReadySequences || 0;
   try {
-    if (!d._a36CatalogRowsCache) {
-      d._a36CatalogRowsCache = typeof buildCatalogRows === 'function' ? buildCatalogRows(d.project.id) || [] : [];
-    }
+    var _a36ScopedRows = _a36ScopedCatalogRows(d);
     var _csSensorSum = 0;
     var _csSeqSum = 0;
-    (d._a36CatalogRowsCache || []).forEach(function (r) {
+    _a36ScopedRows.forEach(function (r) {
       if (!r) return;
       if (r.phase === 1 && !r.ioOnly) _csSensorSum += r.qty || 0;
       else if (r.phase === 2 && r.seqKey) _csSeqSum += r.qty || 0;
     });
-    if ((d._a36CatalogRowsCache || []).length) {
+    if (_a36ScopedRows.length) {
       sensorCount = _csSensorSum;
       seqCount = _csSeqSum;
     }
