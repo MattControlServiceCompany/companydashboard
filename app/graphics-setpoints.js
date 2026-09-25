@@ -2230,8 +2230,9 @@ function egfxRefresh(projId) {
       });
       // Fix 5 (2026-09-10, report export speed): willReadFrequently on the FIRST getContext('2d')
       // call — see the same fix's comment on SharedCharts._ctx2d() in lib/shared-charts.js for why.
-      // This chart (egfx-savChart) is one of the ones report-preview.js downloadReportPDF()
-      // explicitly hides/still touches during PDF export.
+      // This chart (egfx-savChart) lives outside the report preview and is hidden (not walked or
+      // cloned) by the print-to-PDF path — see the shared-charts.js comment for the fix's original
+      // (2026-09-10, since removed by fix/quarterly-text-pdf 2026-09-25) html2canvas rationale.
       _maCharts[savChartId] = new Chart(savChartCv.getContext('2d', { willReadFrequently: true }), {
         type: 'bar',
         data: {

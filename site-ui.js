@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.25.4'; // Estimate the missing Spring Hill High June 2025 electric bill's kWh from the surrounding Evergy bills
+  var CH_VERSION = 'v2026.09.25.7'; // Quarterly/Annual Savings Report PDF export now produces selectable, searchable text instead of a flat image
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [

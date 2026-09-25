@@ -1776,6 +1776,30 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.25.7',
+    date: '2026-09-25',
+    title: 'Quarterly/Annual Savings Report PDF export now produces selectable, searchable text instead of a flat image',
+    items: [
+      { type: 'fix', text: 'Quarterly/Annual Savings Report PDF export now produces selectable, searchable text instead of a flat image' },
+    ],
+  },
+  {
+    v: 'v2026.09.25.6',
+    date: '2026-09-25',
+    title: 'ASHRAE 36 Audit Report: the cover\'s Sequences to Program and Sensors to Install totals now scale to the buildings you select in the report modal, instead of always showing the full portfolio.',
+    items: [
+      { type: 'fix', text: 'ASHRAE 36 Audit Report: the cover\'s Sequences to Program and Sensors to Install totals now scale to the buildings you select in the report modal, instead of always showing the full portfolio.' },
+    ],
+  },
+  {
+    v: 'v2026.09.25.5',
+    date: '2026-09-25',
+    title: 'BAS Savings Calc heating fix: correct Excel oracle cell (heating setback, not the cooling ton-hours table it was mismatched to), remove an incorrect outside-air add-back, and default Existing Outside Air Shut Off to Yes as an assumption when no data exists.',
+    items: [
+      { type: 'fix', text: 'BAS Savings Calc heating fix: correct Excel oracle cell (heating setback, not the cooling ton-hours table it was mismatched to), remove an incorrect outside-air add-back, and default Existing Outside Air Shut Off to Yes as an assumption when no data exists.' },
+    ],
+  },
+  {
     v: 'v2026.09.25.4',
     date: '2026-09-25',
     title: 'Estimate the missing Spring Hill High June 2025 electric bill\'s kWh from the surrounding Evergy bills',

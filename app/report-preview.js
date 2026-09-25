@@ -72,6 +72,10 @@ function generateReportPreview() {
 
   _reportConfig = config;
   _reportData = data;
+  // exportReportToPDF() (app/report-engine.js) reads window._currentReportData for every report
+  // type — set it here too so the shared print-to-PDF path (fix/quarterly-text-pdf, 2026-09-25)
+  // has the same data the legacy generate*Preview() functions already expose.
+  window._currentReportData = data;
 
   // Build selected sections map
   var selectedSections = {};
@@ -487,98 +491,17 @@ function saveReportTemplate() {
   showToast('Template saved: ' + name, 'success');
 }
 
-// PDF export from preview
-async function downloadReportPDF() {
-  var pages = document.querySelectorAll('#rptPreviewPages .rpt-preview-page');
-  var visiblePages = [];
-  for (var i = 0; i < pages.length; i++) {
-    if (pages[i].style.display !== 'none') visiblePages.push(pages[i]);
-  }
-  if (!visiblePages.length) {
-    showToast('No pages to export', 'warning');
-    return;
-  }
-
-  showToast('Generating PDF — this may take a moment...', 'info');
-
-  // Hide all canvases outside the preview pages to prevent tainted-canvas errors.
-  // Cross-origin Chart.js canvases (egfx-euiBench, egfx-savChart, egfx-yoy, etc.)
-  // will taint the output if html2canvas clones them, causing toDataURL() to throw.
-  // We hide them (not display:none — that changes layout) before the export loop and
-  // restore in finally so they come back even if the export fails.
-  var hiddenCanvases = [];
-  var allCanvases = document.querySelectorAll('canvas');
-  allCanvases.forEach(function (c) {
-    if (!c.closest('#rptPreviewPages')) {
-      hiddenCanvases.push({ el: c, prev: c.style.visibility });
-      c.style.visibility = 'hidden';
-    }
-  });
-
-  try {
-    var pdf = new jspdf.jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' });
-    var pageW = 612,
-      pageH = 792;
-    // Rule 1.2: 0.5in (36pt) margins on all four sides — matches exportReportToPDF() in report-engine.js
-    var margin = { top: 36, bottom: 36, left: 36, right: 36 };
-    var contentW = pageW - margin.left - margin.right;
-    var contentH = pageH - margin.top - margin.bottom;
-
-    for (var i = 0; i < visiblePages.length; i++) {
-      var el = visiblePages[i].querySelector('.rpt-page') || visiblePages[i];
-      var canvas = await html2canvas(el, {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: '#ffffff',
-        width: el.scrollWidth,
-        height: el.scrollHeight,
-        ignoreElements: function (element) {
-          return element.tagName === 'CANVAS' && (element.width === 0 || element.height === 0);
-        },
-      });
-      var imgData = canvas.toDataURL('image/jpeg', 0.92);
-      if (i > 0) pdf.addPage();
-      pdf.addImage(imgData, 'JPEG', margin.left, margin.top, contentW, contentH);
-    }
-
-    var config = _reportConfig || {};
-    var typeName = (config.reportType || 'report').charAt(0).toUpperCase() + (config.reportType || 'report').slice(1);
-    var filename =
-      (config.clientName || 'Report') +
-      ' - ' +
-      typeName +
-      ' Energy Management Services Report ' +
-      new Date().toISOString().slice(0, 10).replace(/-/g, '.') +
-      '.pdf';
-    pdf.save(filename);
-
-    // Save to report history
-    _saveReportToHistory(config, filename);
-    showToast('PDF downloaded: ' + filename, 'success');
-  } catch (err) {
-    showToast('PDF export failed: ' + err.message, 'error');
-  } finally {
-    // Always restore hidden canvases, whether export succeeded or failed.
-    hiddenCanvases.forEach(function (h) {
-      h.el.style.visibility = h.prev;
-    });
-  }
-}
-
-function _saveReportToHistory(config, filename) {
-  if (!config || !config.projId) return;
-  var key = 'en_report_history_' + config.projId;
-  var history = sget(key, []) || [];
-  history.unshift({
-    filename: filename,
-    reportType: config.reportType,
-    period: config.periodLabel,
-    generated: new Date().toISOString(),
-    buildings: config.buildingIds,
-  });
-  if (history.length > 20) history = history.slice(0, 20);
-  sset(key, history);
-}
+// fix/quarterly-text-pdf (2026-09-25): downloadReportPDF() (html2canvas + jsPDF raster export,
+// plus its _saveReportToHistory() helper) removed — it produced an image-only PDF with no
+// selectable/searchable text (PyMuPDF get_text() returned '' on every page, 2026-09-25 E2E).
+// The "Download PDF" button now calls exportReportToPDF() (app/report-engine.js) directly, the
+// same native window.print()-based text PDF path used by the ASHRAE 36 / Proposal / Woodland /
+// Agreement reports (fix/report-not-copyable, 2026-07-22) — that function already branches on
+// which preview container is open (#reportPreviewContainer/#rptPreviewPages for this v2 preview
+// vs the legacy #reportOverlay/#reportPages) and already builds the correct Quarterly/Annual
+// filename from data.period.type, so no v2-specific wrapper is needed. _saveReportToHistory()
+// wrote to a write-only localStorage key (en_report_history_<projId>) nothing ever read; dropped
+// rather than carried forward as a compatibility shim.
 
 // ── CROSS-WINDOW REFRESH (Issue 5) ──────────────────────────────────────────
 // Re-generates the report preview using the same config but fresh localStorage data.
@@ -610,6 +533,7 @@ function refreshReportPreview() {
     data.period.label = _reportConfig.periodLabel;
   }
   _reportData = data;
+  window._currentReportData = data;
   var selectedSections = {};
   REPORT_SECTIONS.forEach(function (sec) {
     selectedSections[sec.key] = _reportConfig.sections.indexOf(sec.key) >= 0;
