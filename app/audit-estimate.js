@@ -569,7 +569,7 @@ function auditEstRenderHTML(projId) {
     '<div class="ch-panel" style="margin-top:16px;border-top:2px solid var(--border2);padding-top:14px">' +
     '<div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">' +
     '<div>' +
-    '<div style="font-size:15px;font-weight:700;color:var(--text)">Building Automation System Audit Estimate</div>' +
+    '<div style="font-size:15px;font-weight:700;color:var(--text)">Audit Estimate</div>' +
     '<div style="font-size:12px;color:var(--text3);margin-top:2px">Estimated hours and cost to run a Building Automation System Audit or a Full Facility Audit on this project, computed from the Equipment Matrix.</div>' +
     '</div>' +
     '<button onclick="auditEstToggleAssumptions(\'' +

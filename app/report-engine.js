@@ -23008,8 +23008,14 @@ function _rptAuditProposalDetailInnerHTML(data) {
     })
     .join('');
 
+  // Left/right padding here is 0, not the usual "8px 48px 4px" — this page renders inside
+  // the standard non-hero .rpt-body, which already applies var(--rpt-pad-x) (48px) on both
+  // sides. Page 1 of this same proposal is a hero page (.rpt-hero-body has NO side padding of
+  // its own), so its "8px 48px 4px" wrapper is the ONLY source of its 48px side margin. Adding
+  // another 48px here on top of .rpt-body's 48px doubled this page's left margin to 96px,
+  // visibly wider than page 1's 48px (2026-09-25 fix, proposal page-2-margin mismatch).
   return (
-    '<div style="padding:8px 48px 4px">' +
+    '<div style="padding:8px 0 4px">' +
     '<div style="font-size:16px;font-weight:700;color:var(--rpt-blue);margin-bottom:8px">What This Includes</div>' +
     '<ul style="font-size:13px;line-height:1.5;color:var(--rpt-page-text);margin:0 0 16px 18px;padding:0">' +
     delivHTML +
