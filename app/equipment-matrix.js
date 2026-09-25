@@ -4632,6 +4632,19 @@ function emShowEffectiveSchedulesResult(result) {
     });
 }
 
+// emCloseStrayScheduleResultModal (2026-09-25 fix) — #em-sched-result-backdrop above is appended
+// directly to document.body, outside the Equipment Matrix tab's own DOM subtree, with only two
+// close paths: clicking the dimmed backdrop itself, or the panel's own Close button. Neither
+// navigating tabs (sPTab) nor opening the BAS Savings Calc (openBASCalc) cleared it, so importing
+// an Effective Schedules file and then navigating away — without deliberately closing the result
+// panel first — left it stacked on top of whatever rendered next (reported: BAS Calc). Shared
+// one-line helper (both call sites stay in sync) — same "clear stray overlay" idea as
+// closeQuickStart()/#qsOverlay, applied to this modal's own element id.
+function emCloseStrayScheduleResultModal() {
+  var stray = document.getElementById('em-sched-result-backdrop');
+  if (stray && stray.parentNode) stray.parentNode.removeChild(stray);
+}
+
 /* ── PHASE 4: TOOLBAR & TABLE ── */
 
 /* ── emGetBldgCounts ─────────────────────────────────────────────────────────

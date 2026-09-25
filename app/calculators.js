@@ -3952,6 +3952,10 @@ function _basCityWeather(cityIdx) {
 
 /* ── C. Main UI Render ── */
 function openBASCalc(projId) {
+  // Clear a stray Effective Schedules Import result modal (2026-09-25 fix) — it lives on
+  // document.body (app/equipment-matrix.js emShowEffectiveSchedulesResult) and previously had no
+  // cleanup at any navigation entry point, so it could still be on screen, stacked over this calc.
+  if (typeof emCloseStrayScheduleResultModal === 'function') emCloseStrayScheduleResultModal();
   const p = projects.find((x) => x.id === projId);
   if (!_calcTemplateContext) _calcTemplateContext = { projId, returnTo: 'sv' };
   const wrap =
