@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.25.4'; // Estimate the missing Spring Hill High June 2025 electric bill's kWh from the surrounding Evergy bills
+  var CH_VERSION = 'v2026.09.25.5'; // BAS Savings Calc heating fix: correct Excel oracle cell (heating setback, not the cooling ton-hours table it was mismatched to), remove an incorrect outside-air add-back, and default Existing Outside Air Shut Off to Yes as an assumption when no data exists.
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
