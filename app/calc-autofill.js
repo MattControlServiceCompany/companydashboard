@@ -25,8 +25,14 @@
                                                 // — a real conclusion from that building's own
                                                 // import, not an invented number. isDefault only
                                                 // when the building has no import at all.
-     exOAShutoff: {value, source, isDefault},  // No Equipment Matrix or import field records this
-                                                // — always isDefault:true (no source exists yet).
+     exOAShutoff: {value, source, isDefault},  // No Equipment Matrix or import field measures
+                                                // this. 2026-09-25 (Matt's decision): default to
+                                                // 'yes' (assume no outside air when unoccupied)
+                                                // — an assumption from Matt / company default,
+                                                // not measured data, so isDefault:false with a
+                                                // 'from <source>' hint naming it as such (same
+                                                // pattern as newOAShutoff below), never the bare
+                                                // "no data" flag.
      newHeatOcc:  {value, source, isDefault},  // Proposed Conditions — company standard, always
      newCoolOcc:  {value, source, isDefault},  // present (no "no data" state, unlike Existing).
      newHeatUnocc:{value, source, isDefault},
@@ -66,7 +72,11 @@ function chCalcAutofillFields(projId, bldgId) {
     exSatOff: mkDefault(),
     exSunOn: mkDefault(),
     exSunOff: mkDefault(),
-    exOAShutoff: mkDefault(),
+    // 2026-09-25 (Matt's decision): "just assume no outside air when unoccupied" — no
+    // Equipment Matrix or import field measures this, so this is an assumption (Matt /
+    // company default), not measured data; isDefault:false + a named source so the field
+    // shows a 'from <source>' hint instead of the generic "no data" flag.
+    exOAShutoff: { value: 'yes', source: 'assumption (Matt / company default)', isDefault: false },
     newHeatOcc: { value: 70, source: 'company standard', isDefault: false },
     newCoolOcc: { value: 74, source: 'company standard', isDefault: false },
     newHeatUnocc: { value: null, source: 'company standard', isDefault: false },
