@@ -10141,6 +10141,10 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     extraInfoHTML,
     '</div>',
   ].join('');
+  // Audit Estimate section append lives in the post-hoc initCostEstimateTab wrapper below
+  // (search "feat/audit-estimate-proposal") — it must run regardless of which render branch
+  // this function takes (this full path, OR the earlier `_condensedOn` early return above,
+  // which is the DEFAULT for Compliance/Full Scope tiers and never reaches this line).
 
   // ── 13. Post-render: apply saved widths, attach handlers, update sticky offsets
   setTimeout(function () {
@@ -10150,6 +10154,35 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     _pricingAttachSortHandlers(projId);
   }, 0);
 };
+
+/* ── Audit Estimate append (2026-09-25, feat/audit-estimate-proposal) ───────────────────────
+   initCostEstimateTab() has TWO render branches that each fully replace el.innerHTML and
+   return (the `_condensedOn` early return above — the DEFAULT for Compliance/Full Scope — and
+   the full per-row table path below it). Wrapping the whole function post-definition, the
+   same pattern already used below for _pricingRefreshFooter, runs the Audit Estimate append
+   AFTER either branch finishes, so it renders regardless of which one a given project/tier
+   takes. Appended as an extra flex child of `el` itself (el is already `display:flex;
+   flex-direction:column;flex:1;min-height:0;overflow:hidden` — app/core.js) rather than a
+   child of the inner `.ch-panel` div either branch builds, so this code never has to reach
+   inside either branch's own markup. */
+(function () {
+  var _origInitCostEstimateTab = initCostEstimateTab;
+  initCostEstimateTab = function (projId) {
+    _origInitCostEstimateTab(projId);
+    if (typeof auditEstRenderHTML !== 'function') return;
+    var el = document.getElementById('ptab-cost-estimate-body-' + projId);
+    if (!el) return;
+    var wrapId = 'auditEstWrap-' + projId;
+    var wrap = document.getElementById(wrapId);
+    if (!wrap) {
+      wrap = document.createElement('div');
+      wrap.id = wrapId;
+      wrap.style.cssText = 'flex-shrink:0;max-height:480px;overflow-y:auto';
+      el.appendChild(wrap);
+    }
+    wrap.innerHTML = auditEstRenderHTML(projId);
+  };
+})();
 
 /* ══════════════════════════════════════════════════════════════════════════════
    _pricingComputeSummaryData — per-building / per-tier aggregate data
