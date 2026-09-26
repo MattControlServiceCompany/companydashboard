@@ -2358,7 +2358,7 @@ function renderUDProjAggPanel(content) {
                 <div style="background:var(--s1);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Total Utility $/yr</div><div style="font-size:15px;font-weight:800;color:var(--em)">${$f(annTotal)}</div></div>
                 ${kwhRate ? `<div style="background:var(--s1);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Avg $/kWh</div><div style="font-size:15px;font-weight:800">${$f(kwhRate, 4)}</div></div>` : ''}
                 ${thermRate ? `<div style="background:var(--s1);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Avg $/Therm</div><div style="font-size:15px;font-weight:800">${$f(thermRate, 2)}</div></div>` : ''}
-                ${eui ? `<div style="background:var(--s1);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Site EUI</div><div style="font-size:15px;font-weight:800;color:var(--violet)">${$n(eui, 1)} <span style="font-size:10px;font-weight:400">kBtu/sf/yr</span></div></div>` : ''}
+                ${eui ? `<div style="background:var(--s1);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Site Energy Use Intensity</div><div style="font-size:15px;font-weight:800;color:var(--violet)">${$n(eui, 1)} <span style="font-size:10px;font-weight:400">kBtu/sf/yr</span></div></div>` : ''}
               </div>
             </div>
             <div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;font-size:12px">
@@ -2751,7 +2751,7 @@ function renderBldgComparisonPanel(content, bldgs, projName, projId) {
     'rgba(234,179,8,1)', // yellow
     'rgba(168,85,247,1)', // purple
   ];
-  const AXES = ['EUI', 'Cost/sqft', 'Savings %', 'Load Factor', 'ENERGY STAR', 'Demand/sqft'];
+  const AXES = ['Energy Use Intensity', 'Cost/sqft', 'Savings %', 'Load Factor', 'ENERGY STAR', 'Demand/sqft'];
 
   if (!bldgs.length) {
     content.innerHTML =
@@ -2982,7 +2982,7 @@ function renderBldgComparisonPanel(content, bldgs, projName, projId) {
           <tbody id="bldgCompareRows">${selectorRows}</tbody>
         </table>
         <div style="margin-top:10px;font-size:10px;color:var(--text3);line-height:1.5">
-          EUI: lower is better &nbsp;|&nbsp; $/sqft: lower is better &nbsp;|&nbsp; Savings: higher is better<br>
+          Energy Use Intensity: lower is better &nbsp;|&nbsp; $/sqft: lower is better &nbsp;|&nbsp; Savings: higher is better<br>
           Load Factor: higher is better &nbsp;|&nbsp; ENERGY STAR: higher is better &nbsp;|&nbsp; Dem/sqft: lower is better
         </div>
       </div>
@@ -3034,7 +3034,7 @@ function renderBldgComparisonPanel(content, bldgs, projName, projId) {
                 const axis = AXES[ctx.dataIndex];
                 let actual = '—';
                 switch (axis) {
-                  case 'EUI':
+                  case 'Energy Use Intensity':
                     actual = raw.eui != null ? raw.eui.toFixed(1) + ' kBtu/sf/yr' : '—';
                     break;
                   case 'Cost/sqft':
@@ -3167,11 +3167,11 @@ function renderUtilityAuditPanel(content, bldgs, projName, projId) {
 
   content.innerHTML = `
         <div style="padding:14px 18px;background:var(--s2);border-bottom:1px solid var(--border)">
-          <div style="font-size:14px;font-weight:800;font-family:var(--head);color:var(--em);margin-bottom:10px">🧾 ${projName} — Utility Audit / EUI Report</div>
+          <div style="font-size:14px;font-weight:800;font-family:var(--head);color:var(--em);margin-bottom:10px">🧾 ${projName} — Utility Audit / Energy Use Intensity Report</div>
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px">
             ${data.campus.totalSqft ? `<div style="background:var(--s1);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Campus Sq Ft</div><div style="font-size:15px;font-weight:800">${$n(data.campus.totalSqft)}</div></div>` : ''}
             <div style="background:var(--s1);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Total Annual Spend</div><div style="font-size:15px;font-weight:800;color:var(--em)">${$f(data.campus.totalCost)}</div></div>
-            ${data.campus.campusEUI != null ? `<div style="background:var(--s1);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Campus Blended EUI</div><div style="font-size:15px;font-weight:800;color:var(--violet)">${$n(data.campus.campusEUI, 1)} <span style="font-size:10px;font-weight:400">kBtu/sf/yr</span></div></div>` : ''}
+            ${data.campus.campusEUI != null ? `<div style="background:var(--s1);border:1px solid var(--border);border-radius:7px;padding:8px 11px"><div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Campus Blended Energy Use Intensity</div><div style="font-size:15px;font-weight:800;color:var(--violet)">${$n(data.campus.campusEUI, 1)} <span style="font-size:10px;font-weight:400">kBtu/sf/yr</span></div></div>` : ''}
           </div>
         </div>
         <div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;font-size:12px">
@@ -6085,7 +6085,7 @@ function renderNormPane(pane, m, bills, incl) {
       blPill('$' + totalCost.toLocaleString(undefined, { maximumFractionDigits: 0 }), 'Total Cost', 'var(--em2)') +
       blPill(rows.length + ' mo', 'Data Points') +
       (hasEUI && rolling12EUI != null
-        ? blPill(rolling12EUI.toFixed(1) + ' kBtu/sf/yr', '12-Mo Site EUI', 'var(--warn)')
+        ? blPill(rolling12EUI.toFixed(1) + ' kBtu/sf/yr', '12-Mo Site Energy Use Intensity', 'var(--warn)')
         : '') +
       '</div>';
 
@@ -7144,7 +7144,7 @@ function renderBaselinePane(pane, m, bills, incl) {
       avgHDD != null
         ? { v: avgHDD.toFixed(0) + (isElec ? ' CDD' : ' HDD'), lbl: 'Avg ' + (isElec ? 'CDD' : 'HDD') }
         : null,
-      blEUI != null ? { v: blEUI.toFixed(1) + ' kBtu/sf/yr', lbl: 'Site EUI' } : null,
+      blEUI != null ? { v: blEUI.toFixed(1) + ' kBtu/sf/yr', lbl: 'Site Energy Use Intensity' } : null,
       avgRatePerUnit != null
         ? { v: fmtRate(avgRatePerUnit) + '/' + unit, lbl: 'Blended Rate', color: 'var(--em2)' }
         : null,
@@ -7734,7 +7734,7 @@ function refreshBaselineStats(mid) {
       avgHDD != null
         ? { v: avgHDD.toFixed(0) + (isElec ? ' CDD' : ' HDD'), lbl: 'Avg ' + (isElec ? 'CDD' : 'HDD') }
         : null,
-      blEUI != null ? { v: blEUI.toFixed(1) + ' kBtu/sf/yr', lbl: 'Site EUI' } : null,
+      blEUI != null ? { v: blEUI.toFixed(1) + ' kBtu/sf/yr', lbl: 'Site Energy Use Intensity' } : null,
       avgRatePerUnit != null
         ? { v: fmtRate(avgRatePerUnit) + '/' + unit2, lbl: 'Blended Rate', color: 'var(--em2)' }
         : null,
@@ -11424,8 +11424,10 @@ function renderPerfPane(pane, m, bills, incl) {
     (_qtrSavings.projected !== null && _qtrSavings.monthsWithData < 3
       ? blPill(_savFmtPill(_qtrSavings.projected), 'Projected ' + _qtrSavings.label + ' Savings', 'var(--warn)')
       : '') +
-    (blEUI != null ? blPill(blEUI.toFixed(1) + ' kBtu/sf/yr', 'Baseline Site EUI') : '') +
-    (rolling12EUI != null ? blPill(rolling12EUI.toFixed(1) + ' kBtu/sf/yr', '12-Mo Site EUI', 'var(--warn)') : '') +
+    (blEUI != null ? blPill(blEUI.toFixed(1) + ' kBtu/sf/yr', 'Baseline Site Energy Use Intensity') : '') +
+    (rolling12EUI != null
+      ? blPill(rolling12EUI.toFixed(1) + ' kBtu/sf/yr', '12-Mo Site Energy Use Intensity', 'var(--warn)')
+      : '') +
     '</div>';
 
   // -- Table HTML from shared renderer (rows, sum row, headers all handled by buildMeterPerfTableHTML) --

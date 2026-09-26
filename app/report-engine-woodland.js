@@ -97,14 +97,14 @@ var WD_TEXT = {
       start +
       ' – ' +
       end +
-      '). Monthly electric use, gas use, and demand are the billed values for each month; the annual demand figures (Metered kW, Billed kW) are the total of the 12 monthly values. Electric energy and demand costs are shown separately with their own rates, and the summary includes Site Energy Use Intensity (EUI, in kBtu per square foot per year) for benchmarking.'
+      '). Monthly electric use, gas use, and demand are the billed values for each month; the annual demand figures (Metered kW, Billed kW) are the total of the 12 monthly values. Electric energy and demand costs are shown separately with their own rates, and the summary includes Site Energy Use Intensity (in kBtu per square foot per year) for benchmarking.'
     );
   },
   summaryFootnote: function (sqft) {
     return (
       'Square footage (' +
       _wdN(sqft, 0) +
-      ' SF) is the figure on file for this building. Metered kW is the actual peak demand recorded by the meter each month; Billed kW is the demand the utility charged for that month. Site EUI (kBtu/SF) = annual energy in kBtu (electric kWh × 3.412 + gas Therms × 100) ÷ square feet; Electric Use / SF (kWh) = annual electric kWh ÷ square feet; Utility Cost / SF = annual total utility cost ÷ square feet. The Energy $/kWh figures above are the energy charge only; Blended Electric Rate ($/kWh) combines energy and demand charges into one figure and is higher than the energy-only rate — the two are different measures of electric cost and are not interchangeable.'
+      ' SF) is the figure on file for this building. Metered kW is the actual peak demand recorded by the meter each month; Billed kW is the demand the utility charged for that month. Site Energy Use Intensity (kBtu/SF) = annual energy in kBtu (electric kWh × 3.412 + gas Therms × 100) ÷ square feet; Electric Use / SF (kWh) = annual electric kWh ÷ square feet; Utility Cost / SF = annual total utility cost ÷ square feet. The Energy $/kWh figures above are the energy charge only; Blended Electric Rate ($/kWh) combines energy and demand charges into one figure and is higher than the energy-only rate — the two are different measures of electric cost and are not interchangeable.'
     );
   },
   hvacTitle: 'HVAC Cooling & Heating Load',
@@ -3138,7 +3138,7 @@ async function exportWoodlandReportToXlsx(data) {
     ]);
     ws3.addRow(['Avg Gas Rate ($/Therm)', { formula: 'O' + A }]);
     var euiRow = ws3.addRow([
-      'Site EUI (kBtu/SF)',
+      'Site Energy Use Intensity (kBtu/SF)',
       sqft > 0 ? { formula: '(D' + A + '*3.412+M' + A + '*100)/' + sqft } : null,
     ]);
     styleTotalRow(euiRow);

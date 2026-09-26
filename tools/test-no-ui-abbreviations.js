@@ -226,16 +226,19 @@ const ALL_CAPS_EXCLUDED_FILES = new Set([
 // is shared, canonical UI-rendering code (its own header comment says so: "Used by:
 // renderPerfPane (Meter Performance tab) and report generation") -- the same class of file as
 // app/*.js for this gate's purposes. Added by name, not the whole lib/ directory: lib/
-// otherwise holds non-label code (csv-parser, date-helpers, unit-conversion, quill rich-text)
-// and lib/shared-charts.js, whose existing "Site EUI" chart-series labels are the SAME
-// site-wide "Site EUI" convention the project header spells out in full elsewhere -- a
-// separate, much larger pre-existing-content question this task's two named misses do not ask
-// this gate to re-litigate.
+// otherwise holds non-label code (csv-parser, date-helpers, unit-conversion, quill rich-text).
+//
+// 2026-09-25 follow-up #2 (task: phone-layout-site-eui): lib/shared-charts.js added by name too
+// -- its Chart.js dataset `label:` values ("Current Site EUI", "Baseline Site EUI") were never
+// scanned because the file wasn't in this list at all (a scope gap, not a deliberate allow-list
+// entry). "Site EUI" is NOT an accepted site-wide convention -- every instance sitewide (chart
+// labels, page-title concatenations, report/export text) has been spelled out to "Site Energy
+// Use Intensity" per Matt's no-abbreviations rule, and this gate must fail if it ever comes back.
 const JS_FILES = fs
   .readdirSync(path.join(REPO, 'app'))
   .filter((f) => f.endsWith('.js'))
   .map((f) => path.join('app', f))
-  .concat([path.join('lib', 'perf-table.js')]);
+  .concat([path.join('lib', 'perf-table.js'), path.join('lib', 'shared-charts.js')]);
 
 const HTML_FILES = fs.readdirSync(REPO).filter((f) => f.endsWith('.html'));
 
@@ -287,11 +290,18 @@ function findAll(re, src, groupIdx) {
 // single-literal value (already caught by PROP_RE) also matches here; the caller's de-dupe
 // means that's harmless, not a second bug.
 //
-// Deliberately `text:` only, not `label:`/`header:` too: those two also appear on legitimate,
-// already-reviewed multi-part page-title concatenations elsewhere (e.g. report-engine.js's
-// `label: 'Page ' + n + ' — Site EUI Benchmarking'`) that are a separate, much larger
-// pre-existing-content question this task's one named miss does not ask this gate to
-// re-litigate. Bails out (matches nothing for that key) the moment it sees a template-literal
+// Deliberately `text:` only, not `label:`/`header:` too: those two also appear on OTHER
+// multi-part concatenations sitewide (page titles, stat-pill labels, etc.) unrelated to this
+// task. Tried scanning `label:`/`header:` too (task: phone-layout-site-eui, 2026-09-25 follow-
+// up) and it immediately surfaced several pre-existing, unrelated concatenation false-positives
+// (a scanner-parsing artifact on app/energy-savings.js's water-icon label, and genuine but out-
+// of-scope pre-existing abbreviations in app/utility-data.js's Demand/Baseline stat pills) --
+// fixing those was not part of this task's two named misses, so the scan was narrowed back to
+// `text:` only. The actual miss this task was asked to fix -- report-engine.js's
+// `label: 'Page ' + n + ' — Site EUI Benchmarking'` -- has been fixed at the source (spelled out
+// to "Site Energy Use Intensity"); lib/shared-charts.js was also added to JS_FILES above so its
+// single-literal chart-dataset `label:` values are now covered by the plain PROP_RE scan. Bails
+// out (matches nothing for that key) the moment it sees a template-literal
 // backtick — this scanner cannot safely track `${...}` interpolation depth mixed with quote
 // characters inside HTML markup, and every concatenated `text:` finding string this codebase
 // actually builds today uses plain '...' + '...' concatenation, never a template literal.
@@ -428,6 +438,13 @@ const EXACT_TEXT_EXCEPTIONS = new Set([
   // rendered text is just the numeric year value; "yr" here is the loop variable name, not an
   // abbreviated label.
   "' + yr + '",
+  // lib/shared-charts.js chart-axis title (2026-09-25 follow-up, task: phone-layout-site-eui,
+  // added when this file was added to JS_FILES) -- "yr" here is the established "/yr" (per
+  // year) unit suffix used unchanged in this exact form throughout the app's other report/
+  // chart text (e.g. "kBtu/ft²/yr" in app/report-engine.js), not the "Yr" = "Year" table-header
+  // abbreviation Matt flagged; those other occurrences are never caught by this gate only
+  // because they're built by string concatenation, not a single literal.
+  'kBtu/ft²/yr',
 ]);
 
 function scanSource(src, filePath) {

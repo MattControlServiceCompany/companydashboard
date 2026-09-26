@@ -1806,7 +1806,7 @@ function egfxRefresh(projId) {
       _yoyChartsToDraw.push({ cid: benchCanvasId, _benchRows: benchRows });
       const chartH = Math.max(120, benchRows.length * 40 + 40);
       return `<div class="card" style="background:var(--s1);padding:14px;margin-top:12px">
-              <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:4px">📊 Site EUI Benchmark — Your Buildings vs CBECS National Median</div>
+              <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:4px">📊 Site Energy Use Intensity Benchmark — Your Buildings vs CBECS National Median</div>
               <div style="font-size:10px;color:var(--text3);margin-bottom:8px">kBtu/ft²/yr · rolling 12-month data · buildings without sqft are excluded</div>
               <div style="position:relative;height:${chartH}px"><canvas id="${benchCanvasId}"></canvas></div>
             </div>`;
@@ -1864,7 +1864,7 @@ function egfxRefresh(projId) {
       });
       return `<div class="card" style="background:var(--s1);padding:14px;margin-top:12px;border-left:3px solid var(--teal)">
               <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:4px">🏛️ Property &amp; Age</div>
-              <div style="font-size:10px;color:var(--teal);font-weight:700;margin-bottom:8px">Source: Talisen FAC workbook — separate from the site's live CBECS EUI Benchmark above</div>
+              <div style="font-size:10px;color:var(--teal);font-weight:700;margin-bottom:8px">Source: Talisen FAC workbook — separate from the site's live CBECS Energy Use Intensity Benchmark above</div>
               <div style="overflow-x:auto">
                 <table class="dtbl" style="min-width:760px">
                   <thead><tr>
@@ -2001,7 +2001,7 @@ function egfxRefresh(projId) {
       bRows.sort((a, b) => b.eui - a.eui);
       return `<div class="card" style="background:var(--s1);padding:14px;margin-top:12px">
               <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:4px">🏆 Building Performance Benchmarking</div>
-              <div style="font-size:10px;color:var(--text3);margin-bottom:12px">Ranked by EUI (highest = most opportunity) · rolling 12-month data · CBECS percentiles + EnergyStar score-75 threshold</div>
+              <div style="font-size:10px;color:var(--text3);margin-bottom:12px">Ranked by Site Energy Use Intensity (highest = most opportunity) · rolling 12-month data · CBECS percentiles + EnergyStar score-75 threshold</div>
               <div style="overflow-x:auto">
                 <table class="dtbl" style="min-width:700px">
                   <thead><tr>
@@ -2052,10 +2052,10 @@ function egfxRefresh(projId) {
                 bRows.length > 1
                   ? `<div style="margin-top:12px;font-size:10px;color:var(--text3)">
                 <strong style="color:var(--text2)">Key:</strong>
-                Site EUI = kBtu/ft²/yr (energy at the meter) · CBECS = DOE Commercial Buildings Energy Consumption Survey national median ·
+                Site Energy Use Intensity = kBtu/ft²/yr (energy at the meter) · CBECS = DOE Commercial Buildings Energy Consumption Survey national median ·
                 EnergyStar = Score 75 threshold (minimum for certification) ·
                 Percentile = estimated position in CBECS distribution ·
-                $/ft² = annual energy cost per square foot · Trend = rolling 12-month Site EUI vs baseline Site EUI
+                $/ft² = annual energy cost per square foot · Trend = rolling 12-month Site Energy Use Intensity vs baseline Site Energy Use Intensity
               </div>`
                   : ''
               }
@@ -2322,8 +2322,8 @@ function egfxExport(projId) {
 
   lines.push('KPI,Value');
   const kpis = [
-    [`egfx-blEui-${projId}`, 'Baseline EUI'],
-    [`egfx-curEui-${projId}`, 'Rolling 12-mo EUI'],
+    [`egfx-blEui-${projId}`, 'Baseline Energy Use Intensity'],
+    [`egfx-curEui-${projId}`, 'Rolling 12-mo Energy Use Intensity'],
     [`egfx-estarScore-${projId}`, 'Est. ENERGY STAR Score'],
     [`egfx-projSav-${projId}`, 'Projected Savings'],
     [`egfx-curSav-${projId}`, 'Current Savings'],

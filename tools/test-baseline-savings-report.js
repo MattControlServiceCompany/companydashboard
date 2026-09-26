@@ -451,8 +451,8 @@ if (target) {
       "')",
   );
   assert(
-    html.includes('Building Baseline Data') && html.includes('Site EUI'),
-    'Page 3 carries the site table title and the Site EUI stat',
+    html.includes('Building Baseline Data') && html.includes('Site Energy Use Intensity'),
+    'Page 3 carries the site table title and the Site Energy Use Intensity stat',
   );
   assert(
     html.includes('.rpt-bl-tight th,.rpt-bl-tight td{padding:3px 3px;font-size:8.5px}'),

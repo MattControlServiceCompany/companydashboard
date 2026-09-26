@@ -6218,6 +6218,77 @@
         min-width: 0;
         overflow: hidden;
       }
+      /* Phone layout (task: phone-layout-site-eui, 2026-09-25): below this breakpoint the
+         side-by-side buildings-nav + detail split leaves the detail column only ~90-130px
+         wide (e.g. at 390px: 260px nav + borders/gap = almost nothing left), squeezing every
+         detail-column element -- meter commodity pills, bill header title/sub, action button
+         text all clip or wrap to one word per line. 768px (tablet) has enough room for the
+         normal side-by-side grid (260px nav leaves ~500px+ for detail) and is intentionally
+         left unchanged; only phone widths stack. Reuses the EXISTING nav-collapsed mechanism
+         (.ud-layout.nav-collapsed, toggleUdNav()) rather than adding a second toggle: on
+         desktop it collapses the nav to 0 WIDTH (side-by-side stays side-by-side); at this
+         breakpoint the same class instead collapses it to 0 HEIGHT, so the identical
+         Show/Hide-buildings tab that already exists also works as the phone collapse control
+         -- default (not collapsed) shows a compact, internally-scrollable building list on
+         top with the full-width detail panel below it. */
+      @media (max-width: 640px) {
+        .ud-layout {
+          grid-template-columns: 1fr;
+          grid-template-rows: auto 1fr;
+        }
+        .ud-nav {
+          border-right: none;
+          border-bottom: 1px solid var(--border);
+          /* Compact + independently scrollable (.ud-nav-body already has its own
+             overflow-y:auto) so a long building list can never push the detail panel
+             off-screen below the fold. */
+          max-height: 34vh;
+        }
+        /* Desktop-only horizontal drag-resize handle; there is nothing to drag once the
+           columns stack vertically. */
+        #udNavResizeHandle {
+          display: none;
+        }
+        .ud-layout.nav-collapsed .ud-nav {
+          height: 0;
+          max-height: 0;
+          min-height: 0;
+          width: auto;
+          border-bottom: none;
+        }
+        /* .ud-collapse-tab normally straddles the VERTICAL divider (left:-9px, top:50%,
+           an 18x48px tab) between nav and detail. Stacked, the divider is HORIZONTAL, so
+           move it to straddle the top edge of .ud-detail-col instead and rotate the
+           ▶/◀ glyphs 90° — ▶ becomes "expand downward", ◀ becomes "collapse upward",
+           matching the same open/close meaning toggleUdNav() already sets on the label. */
+        .ud-collapse-tab {
+          top: -9px;
+          left: 50%;
+          bottom: auto;
+          transform: translateX(-50%) rotate(90deg);
+          width: 48px;
+          height: 18px;
+        }
+        .ud-layout.nav-collapsed .ud-collapse-tab {
+          top: 2px;
+          left: 50%;
+        }
+        /* .ma-meter-bar's 2nd child (History/Edit/Clear Bills/delete buttons, fixed-size,
+           flex-shrink:0, no class) never actually wraps to its own line even though the
+           bar has flex-wrap:wrap -- .ma-meter-pills is flex:1 with min-width:0, so the
+           browser satisfies the single line by shrinking pills toward 0 instead of
+           wrapping the fixed-size button group away. Force pills to claim the full row
+           (flex-basis 100%) so the button group can no longer fit beside it and wraps to
+           its own row below; give the button group its own wrap too in case 4 buttons
+           still don't all fit one line at 390px. */
+        .ma-meter-pills {
+          flex: 1 1 100%;
+        }
+        .ma-meter-bar > div:not(.ma-meter-pills) {
+          flex-wrap: wrap;
+          width: 100%;
+        }
+      }
       /* Meter cards */
       .ud-meter-card {
         background: var(--s3);
@@ -8881,7 +8952,7 @@
                       🕸 Building Comparison
                     </button>
                     <button class="btn btn-ghost btn-sm" id="ud-proj-audit-btn" onclick="toggleUDProjPanel('audit')">
-                      🧾 Audit / EUI Report
+                      🧾 Audit / Energy Use Intensity Report
                     </button>
                   </div>
                 </div>
@@ -14218,7 +14289,8 @@
                 <span class="fl" style="margin: 0">Include in Baseline &amp; Performance</span>
               </label>
               <div style="font-size: 11px; color: var(--text2); margin-top: 5px">
-                Uncheck to exclude this meter from building baseline, Site EUI, and performance calculations.
+                Uncheck to exclude this meter from building baseline, Site Energy Use Intensity, and performance
+                calculations.
               </div>
             </div>
             <input type="hidden" id="mm-edit-id" />

@@ -2178,7 +2178,7 @@ function printUtilityAudit(projId) {
       return;
     }
     const html = _injectPageNumbers([rptPageAuditSpend(1, data), rptPageAuditEUI(2, data)].join('\n'));
-    showReportOverlay(html, (p.client || p.name || 'Project') + ' — Utility Audit / EUI Report');
+    showReportOverlay(html, (p.client || p.name || 'Project') + ' — Utility Audit / Energy Use Intensity Report');
   } catch (e) {
     showToast('Error generating utility audit report: ' + e.message, 'error');
     console.error('printUtilityAudit error:', e);
@@ -2633,7 +2633,7 @@ function rptPageCover(n, d) {
     '<div class="rpt-gauge-row">' +
     gaugeSVG(pctOfTarget, 'var(--rpt-green)', 'vs Target', pctOfTarget + '%') +
     gaugeSVG(energyRedPct, 'var(--rpt-blue-btn)', 'Energy Reduced', energyRedPct + '%') +
-    gaugeSVG(Math.max(0, euiImpPct), 'var(--rpt-green-dark)', 'Site EUI Improved', euiImpPct + '%') +
+    gaugeSVG(Math.max(0, euiImpPct), 'var(--rpt-green-dark)', 'Site Energy Use Intensity Improved', euiImpPct + '%') +
     gaugeSVG(contractDonePct, 'var(--rpt-eui-purple)', 'Contract Progress', contractDonePct + '%') +
     '</div>' +
     '</div>' +
@@ -3612,12 +3612,12 @@ function rptPageEUI(n, d) {
 
   const euiChart =
     '<div class="rpt-chart-box">' +
-    '<div class="rpt-chart-title">Current Site EUI by Building</div>' +
+    '<div class="rpt-chart-title">Current Site Energy Use Intensity by Building</div>' +
     '<div style="display:flex;gap:12px;margin-bottom:4px;font-size:9px">' +
     '<span><span style="display:inline-block;width:10px;height:7px;background:var(--rpt-chart-green);border-radius:2px;vertical-align:middle"></span> Below CBECS</span>' +
     '<span><span style="display:inline-block;width:10px;height:7px;background:var(--rpt-chart-orange);border-radius:2px;vertical-align:middle"></span> Above CBECS</span>' +
     '<span><span style="display:inline-block;width:2px;height:10px;background:var(--rpt-red);vertical-align:middle"></span> CBECS Median</span>' +
-    '<span><span style="display:inline-block;width:2px;height:10px;background:var(--rpt-eui-purple);vertical-align:middle"></span> Baseline Site EUI</span>' +
+    '<span><span style="display:inline-block;width:2px;height:10px;background:var(--rpt-eui-purple);vertical-align:middle"></span> Baseline Site Energy Use Intensity</span>' +
     '</div>' +
     euiBars +
     '</div>';
@@ -3669,7 +3669,7 @@ function rptPageEUI(n, d) {
     '<th class="rpt-n">Baseline Site Energy Use Intensity</th>' +
     '<th class="rpt-n">' +
     curYrLabel +
-    ' Site EUI</th>' +
+    ' Site Energy Use Intensity</th>' +
     '<th class="rpt-n">Reduction</th>' +
     '<th>Trend</th>' +
     '</tr></thead>' +
@@ -3694,25 +3694,29 @@ function rptPageEUI(n, d) {
     // Year-to-Date / Overall Performance section instead of the current-quarter body (see
     // generateReportHTML's page order).
     _rptYtdKicker() +
-    '<p contenteditable="true" style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin:0 0 8px">Site Energy Use Intensity (Site EUI) measures total energy consumption at the utility meter per square foot per year in kBtu/ft². Lower EUI values indicate more efficient buildings. Buildings are benchmarked against national CBECS (Commercial Buildings Energy Consumption Survey) median values for their building type. Buildings performing below the CBECS median are more efficient than the national average. The rolling 12-month Site EUI accounts for seasonal variation and provides a stable year-round performance indicator.</p>' +
+    '<p contenteditable="true" style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin:0 0 8px">Site Energy Use Intensity measures total energy consumption at the utility meter per square foot per year in kBtu/ft². Lower Site Energy Use Intensity values indicate more efficient buildings. Buildings are benchmarked against national CBECS (Commercial Buildings Energy Consumption Survey) median values for their building type. Buildings performing below the CBECS median are more efficient than the national average. The rolling 12-month Site Energy Use Intensity accounts for seasonal variation and provides a stable year-round performance indicator.</p>' +
     '<h2>Building Performance Rankings</h2>' +
     rankTable +
     '<div style="font-size:9px;color:var(--rpt-page-text);margin:2px 0 6px;line-height:1.3">' +
-    '<strong>ENERGY STAR Eligible</strong>: current Site EUI in the top quartile (most efficient 25%) of ' +
+    '<strong>ENERGY STAR Eligible</strong>: current Site Energy Use Intensity in the top quartile (most efficient 25%) of ' +
     'the CBECS national benchmark for its building type — the threshold ENERGY STAR certification ' +
     'requires. "Yes" = eligible; "—" = not eligible at this time.' +
     '</div>';
-  const page2Body = '<h2>Site EUI vs CBECS Benchmark</h2>' + euiChart + '<h2>Site EUI Trend</h2>' + trendTable;
+  const page2Body =
+    '<h2>Site Energy Use Intensity vs CBECS Benchmark</h2>' +
+    euiChart +
+    '<h2>Site Energy Use Intensity Trend</h2>' +
+    trendTable;
 
-  const page1 = rptPage(n, 'Site EUI Benchmarking', page1Body, {
+  const page1 = rptPage(n, 'Site Energy Use Intensity Benchmarking', page1Body, {
     data: d,
     letterhead: false,
-    label: 'Page ' + n + ' — Site EUI Benchmarking',
+    label: 'Page ' + n + ' — Site Energy Use Intensity Benchmarking',
   });
-  const page2 = rptPage(n + 1, 'Site EUI Benchmarking (cont.)', page2Body, {
+  const page2 = rptPage(n + 1, 'Site Energy Use Intensity Benchmarking (cont.)', page2Body, {
     data: d,
     letterhead: false,
-    label: 'Page ' + (n + 1) + ' — Site EUI Benchmarking',
+    label: 'Page ' + (n + 1) + ' — Site Energy Use Intensity Benchmarking',
   });
 
   return { html: page1 + page2, pageCount: 2 };
@@ -3933,7 +3937,7 @@ function rptPageAuditEUI(n, d) {
   const campusEUICell = d.campus.campusEUI != null ? d.campus.campusEUI.toFixed(1) : '—';
   const campusBlock =
     '<div class="rpt-chart-box">' +
-    '<div class="rpt-chart-title">Campus Blended Site EUI</div>' +
+    '<div class="rpt-chart-title">Campus Blended Site Energy Use Intensity</div>' +
     '<div style="font-size:22px;font-weight:800;color:var(--rpt-eui-purple)">' +
     campusEUICell +
     ' <span style="font-size:12px;font-weight:400">kBtu/ft&sup2;/yr</span></div>' +
@@ -3943,16 +3947,16 @@ function rptPageAuditEUI(n, d) {
     '</div>';
 
   const bodyHTML =
-    '<p contenteditable="true" style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin:0 0 8px">Site Energy Use Intensity (Site EUI) measures total energy consumption at the utility meter per square foot per year in kBtu/ft&sup2;, computed from Electric, Gas, and Propane usage over the trailing 12 months of billed data. Lower EUI indicates a more efficient building.</p>' +
-    '<h2>Building EUI Ranking</h2>' +
+    '<p contenteditable="true" style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin:0 0 8px">Site Energy Use Intensity measures total energy consumption at the utility meter per square foot per year in kBtu/ft&sup2;, computed from Electric, Gas, and Propane usage over the trailing 12 months of billed data. Lower Site Energy Use Intensity indicates a more efficient building.</p>' +
+    '<h2>Building Energy Use Intensity Ranking</h2>' +
     rankTable +
     unrankedTable +
-    '<h2>Campus Blended EUI</h2>' +
+    '<h2>Campus Blended Energy Use Intensity</h2>' +
     campusBlock;
 
   return rptPage(n, 'Utility Audit — Energy Use Intensity', bodyHTML, {
     data: _auditRptHdrData(d),
-    label: 'Page ' + n + ' — Utility Audit — EUI',
+    label: 'Page ' + n + ' — Utility Audit — Energy Use Intensity',
   });
 }
 
@@ -5805,7 +5809,7 @@ function rptBuildBaselineDataTable(b, d, opts) {
     var _totalKbtu = toKBtu(_tKwh, _tTherms, _tGal);
     if (b.sqft > 0 && _totalKbtu > 0)
       _statItems.push(
-        '<div><div class="bl-stat-label">Site EUI (kBtu/SF)</div><div class="bl-stat-val">' +
+        '<div><div class="bl-stat-label">Site Energy Use Intensity (kBtu/SF)</div><div class="bl-stat-val">' +
           (_totalKbtu / b.sqft).toFixed(2) +
           '</div></div>',
       );
@@ -6280,7 +6284,7 @@ function rptPageBuildingSummary(n, d, b) {
   var euiCurH = Math.max(4, Math.round((euiCur / euiMax) * euiBarMaxH));
 
   leftHTML +=
-    '<div style="font-size:12px;font-weight:600;color:var(--rpt-page-text);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.03em">Site EUI (kBtu/sq ft/yr)</div>' +
+    '<div style="font-size:12px;font-weight:600;color:var(--rpt-page-text);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.03em">Site Energy Use Intensity (kBtu/sq ft/yr)</div>' +
     '<div style="display:flex;gap:16px;align-items:flex-end;margin-bottom:12px">' +
     // Baseline bar
     '<div style="display:flex;flex-direction:column;align-items:center;gap:3px">' +
@@ -6399,7 +6403,7 @@ function rptPageBuildingSummary(n, d, b) {
         .join('');
       var euiYMax = euiMax.toFixed(1);
       leftHTML +=
-        '<div style="font-size:10px;font-weight:600;color:var(--rpt-page-text);margin:8px 0 3px">Monthly Site EUI (kBtu/ft²)</div>' +
+        '<div style="font-size:10px;font-weight:600;color:var(--rpt-page-text);margin:8px 0 3px">Monthly Site Energy Use Intensity (kBtu/ft²)</div>' +
         '<div style="position:relative;padding-left:36px">' +
         '<div style="position:absolute;left:0;top:0;height:' +
         euiChartH +
@@ -6819,7 +6823,7 @@ function rptPageBuildingSummary(n, d, b) {
     '<div style="font-weight:600;color:var(--rpt-page-text);text-transform:uppercase;font-size:9px;letter-spacing:.03em;margin-bottom:3px">Utility &amp; Building Notes</div>' +
     '<div>1. Achieved (%) for each energy type represents the percent of energy units saved for the months included in this report.</div>' +
     '<div>2. Achieved ($) represents the utility cost savings for this time period calculated by subtracting the baseline energy usage from the current energy usage multiplied by the higher of current or baseline utility rates.</div>' +
-    '<div>3. The Baseline Site EUIs are normalized for weather and square footage when applicable. Site EUI measures energy at the utility meter (kBtu/ft²/yr).</div>' +
+    '<div>3. The Baseline Site Energy Use Intensity values are normalized for weather and square footage when applicable. Site Energy Use Intensity measures energy at the utility meter (kBtu/ft²/yr).</div>' +
     '</div>';
 
   // -------------------------------------------------------------------

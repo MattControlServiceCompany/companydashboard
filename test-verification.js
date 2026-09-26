@@ -2365,7 +2365,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { const t = document.querySelector(\'.quarterly-table, table\'); if (!t) return { result: false }; return { result: t.querySelectorAll(\'tbody tr\').length > 0 }; })()',
+            expr: "(() => { const t = document.querySelector('.quarterly-table, table'); if (!t) return { result: false }; return { result: t.querySelectorAll('tbody tr').length > 0 }; })()",
             expect: {
               op: 'truthy',
             },
@@ -2378,7 +2378,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { const cards = Array.from(document.querySelectorAll(\'.metric-card\')); const c = cards.find(c => { const l = c.querySelector(\'.card-label\'); return l && /eui|kbtu/i.test(l.textContent); }); if (!c) return { result: false }; const v = c.querySelector(\'.card-value\'); return { result: v && v.textContent.trim() !== \'--\' }; })()',
+            expr: "(() => { const cards = Array.from(document.querySelectorAll('.metric-card')); const c = cards.find(c => { const l = c.querySelector('.card-label'); return l && /eui|kbtu/i.test(l.textContent); }); if (!c) return { result: false }; const v = c.querySelector('.card-value'); return { result: v && v.textContent.trim() !== '--' }; })()",
             expect: {
               op: 'truthy',
             },
@@ -2391,7 +2391,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { const cards = Array.from(document.querySelectorAll(\'.metric-card\')); const c = cards.find(c => { const l = c.querySelector(\'.card-label\'); return l && /eui|kbtu/i.test(l.textContent); }); if (!c) return { result: false }; const n = parseFloat((c.querySelector(\'.card-value\') || {}).textContent.replace(/[^0-9.]/g, \'\')); return { result: !isNaN(n) && n > 1 && n < 1000, value: n }; })()',
+            expr: "(() => { const cards = Array.from(document.querySelectorAll('.metric-card')); const c = cards.find(c => { const l = c.querySelector('.card-label'); return l && /eui|kbtu/i.test(l.textContent); }); if (!c) return { result: false }; const n = parseFloat((c.querySelector('.card-value') || {}).textContent.replace(/[^0-9.]/g, '')); return { result: !isNaN(n) && n > 1 && n < 1000, value: n }; })()",
             expect: {
               op: 'truthy',
             },
@@ -2404,7 +2404,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { result: true, note: \'Console error tracking requires __tvConsoleErrors hook\' }; })()',
+            expr: "(() => { return { result: true, note: 'Console error tracking requires __tvConsoleErrors hook' }; })()",
             expect: {
               op: 'truthy',
             },
@@ -2417,7 +2417,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { const ts = Array.from(document.querySelectorAll(\'table\')); const t = ts.find(t => /annual/i.test(t.textContent)); return { result: !!t && t.querySelectorAll(\'tbody tr\').length > 0 }; })()',
+            expr: "(() => { const ts = Array.from(document.querySelectorAll('table')); const t = ts.find(t => /annual/i.test(t.textContent)); return { result: !!t && t.querySelectorAll('tbody tr').length > 0 }; })()",
             expect: {
               op: 'truthy',
             },
@@ -2430,7 +2430,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { result: true, note: \'Requires project baselineYear to verify — visual check needed\' }; })()',
+            expr: "(() => { return { result: true, note: 'Requires project baselineYear to verify — visual check needed' }; })()",
             expect: {
               op: 'truthy',
             },
@@ -2443,7 +2443,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { result: document.querySelectorAll(\'canvas\').length > 0, count: document.querySelectorAll(\'canvas\').length }; })()',
+            expr: "(() => { return { result: document.querySelectorAll('canvas').length > 0, count: document.querySelectorAll('canvas').length }; })()",
             expect: {
               op: 'truthy',
             },
@@ -2456,7 +2456,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { result: true, note: \'Page loaded successfully — no crash\' }; })()',
+            expr: "(() => { return { result: true, note: 'Page loaded successfully — no crash' }; })()",
             expect: {
               op: 'truthy',
             },
@@ -2469,7 +2469,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { result: !!document.querySelector(\'#energyGraphicsContainer canvas, canvas\') }; })()',
+            expr: "(() => { return { result: !!document.querySelector('#energyGraphicsContainer canvas, canvas') }; })()",
             expect: {
               op: 'truthy',
             },
@@ -2482,7 +2482,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { const ts = Array.from(document.querySelectorAll(\'table\')); const t = ts.find(t => /savings/i.test(t.textContent)); if (!t) return { result: false }; const cells = Array.from(t.querySelectorAll(\'td\')); return { result: cells.some(c => /[\\d,]+\\.?\\d*/.test(c.textContent.trim())) }; })()',
+            expr: "(() => { const ts = Array.from(document.querySelectorAll('table')); const t = ts.find(t => /savings/i.test(t.textContent)); if (!t) return { result: false }; const cells = Array.from(t.querySelectorAll('td')); return { result: cells.some(c => /[\\d,]+\\.?\\d*/.test(c.textContent.trim())) }; })()",
             expect: {
               op: 'truthy',
             },
@@ -2495,7 +2495,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { result: document.querySelectorAll(\'canvas\').length > 0 }; })()',
+            expr: "(() => { return { result: document.querySelectorAll('canvas').length > 0 }; })()",
             expect: {
               op: 'truthy',
             },
@@ -2534,7 +2534,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { const ts = Array.from(document.querySelectorAll(\'table\')); const t = ts.find(t => /annual/i.test(t.textContent)); if (!t) return { result: false }; return { result: t.querySelectorAll(\'th\').length > 0 && t.querySelectorAll(\'tbody tr\').length > 0 }; })()',
+            expr: "(() => { const ts = Array.from(document.querySelectorAll('table')); const t = ts.find(t => /annual/i.test(t.textContent)); if (!t) return { result: false }; return { result: t.querySelectorAll('th').length > 0 && t.querySelectorAll('tbody tr').length > 0 }; })()",
             expect: {
               op: 'truthy',
             },
@@ -2547,7 +2547,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { const t = document.body.innerHTML.toLowerCase(); return { result: t.includes(\'benchmark\') || t.includes(\'cbecs\') }; })()',
+            expr: "(() => { const t = document.body.innerHTML.toLowerCase(); return { result: t.includes('benchmark') || t.includes('cbecs') }; })()",
             expect: {
               op: 'truthy',
             },
@@ -2560,7 +2560,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { const ts = Array.from(document.querySelectorAll(\'table\')); const t = ts.find(t => /quarter|savings/i.test(t.textContent)); if (!t) return { result: false }; const cells = Array.from(t.querySelectorAll(\'td\')); return { result: cells.filter(c => /^-?[\\d,]+\\.?\\d*$/.test(c.textContent.trim().replace(/[$%()]/g, \'\'))).length > 0 }; })()',
+            expr: "(() => { const ts = Array.from(document.querySelectorAll('table')); const t = ts.find(t => /quarter|savings/i.test(t.textContent)); if (!t) return { result: false }; const cells = Array.from(t.querySelectorAll('td')); return { result: cells.filter(c => /^-?[\\d,]+\\.?\\d*$/.test(c.textContent.trim().replace(/[$%()]/g, ''))).length > 0 }; })()",
             expect: {
               op: 'truthy',
             },
@@ -2573,7 +2573,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { const ths = Array.from(document.querySelectorAll(\'th\')); return { result: ths.some(h => /kwh|therm/i.test(h.textContent)) }; })()',
+            expr: "(() => { const ths = Array.from(document.querySelectorAll('th')); return { result: ths.some(h => /kwh|therm/i.test(h.textContent)) }; })()",
             expect: {
               op: 'truthy',
             },
@@ -2586,7 +2586,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { result: document.querySelectorAll(\'canvas\').length > 0 }; })()',
+            expr: "(() => { return { result: document.querySelectorAll('canvas').length > 0 }; })()",
             expect: {
               op: 'truthy',
             },
@@ -2599,7 +2599,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { const t = document.body.innerText.toLowerCase(); return { result: t.includes(\'baseline\') && t.includes(\'eui\') }; })()',
+            expr: "(() => { const t = document.body.innerText.toLowerCase(); return { result: t.includes('baseline') && (t.includes('eui') || t.includes('energy use intensity')) }; })()",
             expect: {
               op: 'truthy',
             },
@@ -2620,7 +2620,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { result: true, note: \'Requires navigating to quarterly view — use interact depth in runner\' }; })()',
+            expr: "(() => { return { result: true, note: 'Requires navigating to quarterly view — use interact depth in runner' }; })()",
             expect: {
               op: 'truthy',
             },
@@ -2646,7 +2646,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { const tds = Array.from(document.querySelectorAll(\'td\')); return { result: tds.some(c => c.textContent.trim() === \'—\' || c.textContent.trim() === \'--\') }; })()',
+            expr: "(() => { const tds = Array.from(document.querySelectorAll('td')); return { result: tds.some(c => c.textContent.trim() === '—' || c.textContent.trim() === '--') }; })()",
             expect: {
               op: 'truthy',
             },
@@ -2659,7 +2659,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { const t = document.body.innerText.toLowerCase(); return { result: t.includes(\'projected savings\') || t.includes(\'projected spend\') }; })()',
+            expr: "(() => { const t = document.body.innerText.toLowerCase(); return { result: t.includes('projected savings') || t.includes('projected spend') }; })()",
             expect: {
               op: 'truthy',
             },
@@ -2720,7 +2720,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { result: typeof window.showToast === \'function\' }; })()',
+            expr: "(() => { return { result: typeof window.showToast === 'function' }; })()",
             expect: {
               op: 'truthy',
             },
@@ -2746,7 +2746,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { result: true, note: \'Manual override storage checked at interaction time\' }; })()',
+            expr: "(() => { return { result: true, note: 'Manual override storage checked at interaction time' }; })()",
             expect: {
               op: 'truthy',
             },
@@ -2772,7 +2772,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { const ms = window.__tvAllMeters ? window.__tvAllMeters() : []; const em = ms.filter(m => m.commodity === \'Electric\' && (m.bills || []).length > 0); let gaps = 0; for (const m of em) { const s = [...m.bills].sort((a,b) => new Date(a.BillingPeriodStart) - new Date(b.BillingPeriodStart)); for (let i = 1; i < s.length; i++) { if ((new Date(s[i].BillingPeriodStart) - new Date(s[i-1].BillingPeriodEnd)) / 86400000 > 10) gaps++; } } return { result: gaps === 0, gaps }; })()',
+            expr: "(() => { const ms = window.__tvAllMeters ? window.__tvAllMeters() : []; const em = ms.filter(m => m.commodity === 'Electric' && (m.bills || []).length > 0); let gaps = 0; for (const m of em) { const s = [...m.bills].sort((a,b) => new Date(a.BillingPeriodStart) - new Date(b.BillingPeriodStart)); for (let i = 1; i < s.length; i++) { if ((new Date(s[i].BillingPeriodStart) - new Date(s[i-1].BillingPeriodEnd)) / 86400000 > 10) gaps++; } } return { result: gaps === 0, gaps }; })()",
             expect: {
               op: 'truthy',
               path: 'result',
@@ -2786,7 +2786,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { const ms = window.__tvAllMeters ? window.__tvAllMeters() : []; const em = ms.filter(m => m.commodity === \'Electric\' && (m.bills || []).length > 0); let missing = 0; for (const m of em) { for (const b of m.bills) { if (!b.FacilitiesCharge && !b.facilitiesCharge) missing++; } } return { result: missing === 0, missing }; })()',
+            expr: "(() => { const ms = window.__tvAllMeters ? window.__tvAllMeters() : []; const em = ms.filter(m => m.commodity === 'Electric' && (m.bills || []).length > 0); let missing = 0; for (const m of em) { for (const b of m.bills) { if (!b.FacilitiesCharge && !b.facilitiesCharge) missing++; } } return { result: missing === 0, missing }; })()",
             expect: {
               op: 'truthy',
             },
@@ -2812,7 +2812,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { result: true, note: \'Navigation guard active during extraction — verified at interaction time\' }; })()',
+            expr: "(() => { return { result: true, note: 'Navigation guard active during extraction — verified at interaction time' }; })()",
             expect: {
               op: 'truthy',
             },
@@ -2833,7 +2833,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { const ms = window.__tvAllMeters ? window.__tvAllMeters() : []; const gas = ms.filter(m => m.commodity === \'Gas\' && (m.bills || []).length > 0); let gaps = 0; for (const m of gas) { const s = [...m.bills].sort((a,b) => new Date(a.BillingPeriodStart) - new Date(b.BillingPeriodStart)); for (let i = 1; i < s.length; i++) { if ((new Date(s[i].BillingPeriodStart) - new Date(s[i-1].BillingPeriodEnd)) / 86400000 > 10) gaps++; } } return { result: gaps === 0, gaps }; })()',
+            expr: "(() => { const ms = window.__tvAllMeters ? window.__tvAllMeters() : []; const gas = ms.filter(m => m.commodity === 'Gas' && (m.bills || []).length > 0); let gaps = 0; for (const m of gas) { const s = [...m.bills].sort((a,b) => new Date(a.BillingPeriodStart) - new Date(b.BillingPeriodStart)); for (let i = 1; i < s.length; i++) { if ((new Date(s[i].BillingPeriodStart) - new Date(s[i-1].BillingPeriodEnd)) / 86400000 > 10) gaps++; } } return { result: gaps === 0, gaps }; })()",
             expect: {
               op: 'truthy',
             },
@@ -2859,7 +2859,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { const ms = window.__tvAllMeters ? window.__tvAllMeters() : []; const meters = ms.filter(m => [\'Gas\',\'Water\',\'Sewer\'].includes(m.commodity) && (m.bills || []).length > 0); let swaps = 0; for (const m of meters) { for (const b of m.bills) { const s = parseFloat(b.StartRead || 0), e = parseFloat(b.EndRead || 0); if (s && e && s > e) swaps++; } } return { result: swaps === 0, swaps }; })()',
+            expr: "(() => { const ms = window.__tvAllMeters ? window.__tvAllMeters() : []; const meters = ms.filter(m => ['Gas','Water','Sewer'].includes(m.commodity) && (m.bills || []).length > 0); let swaps = 0; for (const m of meters) { for (const b of m.bills) { const s = parseFloat(b.StartRead || 0), e = parseFloat(b.EndRead || 0); if (s && e && s > e) swaps++; } } return { result: swaps === 0, swaps }; })()",
             expect: {
               op: 'truthy',
             },
@@ -2872,7 +2872,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { result: true, note: \'Page visibility verified during extraction interaction\' }; })()',
+            expr: "(() => { return { result: true, note: 'Page visibility verified during extraction interaction' }; })()",
             expect: {
               op: 'truthy',
             },
@@ -2898,7 +2898,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { const ms = window.__tvAllMeters ? window.__tvAllMeters() : []; const mid = ms.filter(m => (m.name || \'\').toLowerCase().includes(\'middle\') || (m._bName || \'\').toLowerCase().includes(\'middle\')); return { result: mid.length > 0 && mid.some(m => (m.bills || []).length > 0), meters: mid.length }; })()',
+            expr: "(() => { const ms = window.__tvAllMeters ? window.__tvAllMeters() : []; const mid = ms.filter(m => (m.name || '').toLowerCase().includes('middle') || (m._bName || '').toLowerCase().includes('middle')); return { result: mid.length > 0 && mid.some(m => (m.bills || []).length > 0), meters: mid.length }; })()",
             expect: {
               op: 'truthy',
             },
@@ -2924,7 +2924,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { result: true, note: \'Duplicate source labels verified during extraction interaction\' }; })()',
+            expr: "(() => { return { result: true, note: 'Duplicate source labels verified during extraction interaction' }; })()",
             expect: {
               op: 'truthy',
             },
@@ -2937,7 +2937,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { result: true, note: \'Red pill tooltip verified during extraction interaction\' }; })()',
+            expr: "(() => { return { result: true, note: 'Red pill tooltip verified during extraction interaction' }; })()",
             expect: {
               op: 'truthy',
             },
@@ -2950,7 +2950,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { result: true, note: \'Duplicate table labels verified during extraction interaction\' }; })()',
+            expr: "(() => { return { result: true, note: 'Duplicate table labels verified during extraction interaction' }; })()",
             expect: {
               op: 'truthy',
             },
@@ -2963,7 +2963,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { result: true, note: \'Duplicate resolution options verified during extraction interaction\' }; })()',
+            expr: "(() => { return { result: true, note: 'Duplicate resolution options verified during extraction interaction' }; })()",
             expect: {
               op: 'truthy',
             },
@@ -2976,7 +2976,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { result: true, note: \'Page numbers verified during extraction interaction\' }; })()',
+            expr: "(() => { return { result: true, note: 'Page numbers verified during extraction interaction' }; })()",
             expect: {
               op: 'truthy',
             },
@@ -2989,7 +2989,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { const ms = window.__tvAllMeters ? window.__tvAllMeters() : []; const gas = ms.filter(m => m.commodity === \'Gas\' && (m.bills || []).length > 0); let missing = 0; for (const m of gas) { for (const b of m.bills) { const u = parseFloat(b.GasUsage || b.Therms || b.therms || 0); if (u === 0) missing++; } } return { result: missing === 0, missing }; })()',
+            expr: "(() => { const ms = window.__tvAllMeters ? window.__tvAllMeters() : []; const gas = ms.filter(m => m.commodity === 'Gas' && (m.bills || []).length > 0); let missing = 0; for (const m of gas) { for (const b of m.bills) { const u = parseFloat(b.GasUsage || b.Therms || b.therms || 0); if (u === 0) missing++; } } return { result: missing === 0, missing }; })()",
             expect: {
               op: 'truthy',
               path: 'result',
@@ -3003,7 +3003,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { const ms = window.__tvAllMeters ? window.__tvAllMeters() : []; const gas = ms.filter(m => m.commodity === \'Gas\' && (m.bills || []).length > 0); let issues = 0; for (const m of gas) { for (const b of m.bills) { const u = parseFloat(b.GasUsage || b.Therms || 0); const c = parseFloat(b.TotalCurrentCharges || 0); if (u === 0 && c > 0) issues++; } } return { result: issues === 0, issueCount: issues }; })()',
+            expr: "(() => { const ms = window.__tvAllMeters ? window.__tvAllMeters() : []; const gas = ms.filter(m => m.commodity === 'Gas' && (m.bills || []).length > 0); let issues = 0; for (const m of gas) { for (const b of m.bills) { const u = parseFloat(b.GasUsage || b.Therms || 0); const c = parseFloat(b.TotalCurrentCharges || 0); if (u === 0 && c > 0) issues++; } } return { result: issues === 0, issueCount: issues }; })()",
             expect: {
               op: 'truthy',
             },
@@ -3024,7 +3024,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { const hs = Array.from(document.querySelectorAll(\'th\')); const ccf = hs.filter(h => /\\bCCF\\b/i.test(h.textContent)); return { result: ccf.length === 0, ccfCount: ccf.length }; })()',
+            expr: "(() => { const hs = Array.from(document.querySelectorAll('th')); const ccf = hs.filter(h => /\\bCCF\\b/i.test(h.textContent)); return { result: ccf.length === 0, ccfCount: ccf.length }; })()",
             expect: {
               op: 'truthy',
             },
@@ -3037,7 +3037,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { const ms = window.__tvAllMeters ? window.__tvAllMeters() : []; const gas = ms.find(m => m.commodity === \'Gas\' && (m.bills || []).length > 0); if (!gas) return { skip: true }; const rates = gas.bills.map(b => String(b.ThermRate || b.gasRate || \'\')).filter(r => r); const hi = rates.filter(r => { const d = r.split(\'.\')[1]; return d && d.length >= 5; }); return { result: hi.length > 0, sample: rates.slice(0, 3) }; })()',
+            expr: "(() => { const ms = window.__tvAllMeters ? window.__tvAllMeters() : []; const gas = ms.find(m => m.commodity === 'Gas' && (m.bills || []).length > 0); if (!gas) return { skip: true }; const rates = gas.bills.map(b => String(b.ThermRate || b.gasRate || '')).filter(r => r); const hi = rates.filter(r => { const d = r.split('.')[1]; return d && d.length >= 5; }); return { result: hi.length > 0, sample: rates.slice(0, 3) }; })()",
             expect: {
               op: 'truthy',
             },
@@ -3050,7 +3050,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { result: true, note: \'Modal fields verified during interact test\' }; })()',
+            expr: "(() => { return { result: true, note: 'Modal fields verified during interact test' }; })()",
             expect: {
               op: 'truthy',
             },
@@ -3063,7 +3063,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { const ms = window.__tvAllMeters ? window.__tvAllMeters() : []; const gas = ms.filter(m => m.commodity === \'Gas\' && (m.bills || []).length > 0); let bad = 0; for (const m of gas) { for (const b of m.bills) { const e = new Date(b.BillingPeriodEnd); if (e.getFullYear() < 2020) bad++; } } return { result: bad === 0, badDates: bad }; })()',
+            expr: "(() => { const ms = window.__tvAllMeters ? window.__tvAllMeters() : []; const gas = ms.filter(m => m.commodity === 'Gas' && (m.bills || []).length > 0); let bad = 0; for (const m of gas) { for (const b of m.bills) { const e = new Date(b.BillingPeriodEnd); if (e.getFullYear() < 2020) bad++; } } return { result: bad === 0, badDates: bad }; })()",
             expect: {
               op: 'truthy',
             },
@@ -3076,7 +3076,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { const hs = Array.from(document.querySelectorAll(\'th\')); const ccf = hs.filter(h => /\\bCCF\\b/i.test(h.textContent)); const thm = hs.filter(h => /\\bTherm\\b/i.test(h.textContent) && !/Rate/i.test(h.textContent)); return { result: !(ccf.length > 0 && thm.length > 0), notBoth: !(ccf.length > 0 && thm.length > 0) }; })()',
+            expr: "(() => { const hs = Array.from(document.querySelectorAll('th')); const ccf = hs.filter(h => /\\bCCF\\b/i.test(h.textContent)); const thm = hs.filter(h => /\\bTherm\\b/i.test(h.textContent) && !/Rate/i.test(h.textContent)); return { result: !(ccf.length > 0 && thm.length > 0), notBoth: !(ccf.length > 0 && thm.length > 0) }; })()",
             expect: {
               op: 'truthy',
             },
@@ -3089,7 +3089,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { const t = document.body.innerText; return { result: !t.includes(\'empty existing\') && !t.includes(\'Empty Existing\') }; })()',
+            expr: "(() => { const t = document.body.innerText; return { result: !t.includes('empty existing') && !t.includes('Empty Existing') }; })()",
             expect: {
               op: 'truthy',
             },
@@ -3110,7 +3110,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { const ms = window.__tvAllMeters ? window.__tvAllMeters() : []; const em = ms.filter(m => m.commodity === \'Electric\' && (m.bills || []).length > 0); const bldgs = new Set(em.map(m => m._bName).filter(Boolean)); const covered = [...bldgs].filter(b => ms.filter(m => m._bName === b).some(m => (m.bills || []).some(bill => parseFloat(bill.ActualKW || 0) > 0))); return { result: covered.length === bldgs.size, buildings: bldgs.size, covered: covered.length }; })()',
+            expr: "(() => { const ms = window.__tvAllMeters ? window.__tvAllMeters() : []; const em = ms.filter(m => m.commodity === 'Electric' && (m.bills || []).length > 0); const bldgs = new Set(em.map(m => m._bName).filter(Boolean)); const covered = [...bldgs].filter(b => ms.filter(m => m._bName === b).some(m => (m.bills || []).some(bill => parseFloat(bill.ActualKW || 0) > 0))); return { result: covered.length === bldgs.size, buildings: bldgs.size, covered: covered.length }; })()",
             expect: {
               op: 'truthy',
             },
@@ -3123,7 +3123,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { result: true, note: \'Total row sum verification requires HVAC tab navigation\' }; })()',
+            expr: "(() => { return { result: true, note: 'Total row sum verification requires HVAC tab navigation' }; })()",
             expect: {
               op: 'truthy',
             },
@@ -3136,7 +3136,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { result: true, note: \'Gap analysis requires HVAC tab navigation\' }; })()',
+            expr: "(() => { return { result: true, note: 'Gap analysis requires HVAC tab navigation' }; })()",
             expect: {
               op: 'truthy',
             },
@@ -3149,7 +3149,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { result: true, note: \'Requires HVAC tab navigation to verify\' }; })()',
+            expr: "(() => { return { result: true, note: 'Requires HVAC tab navigation to verify' }; })()",
             expect: {
               op: 'truthy',
             },
@@ -3162,7 +3162,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { const ms = window.__tvAllMeters ? window.__tvAllMeters() : []; const pm = ms.find(m => m.commodity === \'Propane\' && m.baselineStart && (m.bills || []).length > 0); if (!pm) return { skip: true }; const be = new Date(pm.baselineEnd); const post = (pm.bills || []).filter(b => new Date(b.BillingPeriodStart) > be); if (post.length < 2) return { skip: true }; const usages = post.map(b => parseFloat(b.gallons || b.usage || 0)).filter(v => v > 0); return { result: usages.length > 0 && !usages.every(v => v === usages[0]), count: usages.length }; })()',
+            expr: "(() => { const ms = window.__tvAllMeters ? window.__tvAllMeters() : []; const pm = ms.find(m => m.commodity === 'Propane' && m.baselineStart && (m.bills || []).length > 0); if (!pm) return { skip: true }; const be = new Date(pm.baselineEnd); const post = (pm.bills || []).filter(b => new Date(b.BillingPeriodStart) > be); if (post.length < 2) return { skip: true }; const usages = post.map(b => parseFloat(b.gallons || b.usage || 0)).filter(v => v > 0); return { result: usages.length > 0 && !usages.every(v => v === usages[0]), count: usages.length }; })()",
             expect: {
               op: 'truthy',
             },
@@ -3188,7 +3188,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { const ms = window.__tvAllMeters ? window.__tvAllMeters() : []; const wm = ms.find(m => m.commodity === \'Water\' && (m.bills || []).length > 0); if (!wm) return { skip: true }; const withCharge = (wm.bills || []).filter(b => parseFloat(b.TotalCurrentCharges || 0) > 0); const withUsage = (wm.bills || []).filter(b => parseFloat(b.WaterUsage || b.usage || 0) > 0); return { result: withUsage.length >= withCharge.length, charges: withCharge.length, usages: withUsage.length }; })()',
+            expr: "(() => { const ms = window.__tvAllMeters ? window.__tvAllMeters() : []; const wm = ms.find(m => m.commodity === 'Water' && (m.bills || []).length > 0); if (!wm) return { skip: true }; const withCharge = (wm.bills || []).filter(b => parseFloat(b.TotalCurrentCharges || 0) > 0); const withUsage = (wm.bills || []).filter(b => parseFloat(b.WaterUsage || b.usage || 0) > 0); return { result: withUsage.length >= withCharge.length, charges: withCharge.length, usages: withUsage.length }; })()",
             expect: {
               op: 'truthy',
             },
@@ -3209,7 +3209,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { const ms = window.__tvAllMeters ? window.__tvAllMeters() : []; const em = ms.find(m => m.commodity === \'Electric\' && (m.bills || []).length > 0); if (!em) return { skip: true }; const b = em.bills.find(b => parseFloat(b.kWhConsumed || 0) > 0 && parseFloat(b.TotalCurrentCharges || 0) > 0); if (!b) return { skip: true }; const kwh = parseFloat(b.kWhConsumed); const total = parseFloat(b.TotalCurrentCharges); const energy = parseFloat(b.kwhCost || b.energyCost || 0); return { result: energy > 0 && Math.abs(energy/kwh - total/kwh) > 0.001, energyRate: energy ? (energy/kwh).toFixed(4) : null, totalRate: (total/kwh).toFixed(4) }; })()',
+            expr: "(() => { const ms = window.__tvAllMeters ? window.__tvAllMeters() : []; const em = ms.find(m => m.commodity === 'Electric' && (m.bills || []).length > 0); if (!em) return { skip: true }; const b = em.bills.find(b => parseFloat(b.kWhConsumed || 0) > 0 && parseFloat(b.TotalCurrentCharges || 0) > 0); if (!b) return { skip: true }; const kwh = parseFloat(b.kWhConsumed); const total = parseFloat(b.TotalCurrentCharges); const energy = parseFloat(b.kwhCost || b.energyCost || 0); return { result: energy > 0 && Math.abs(energy/kwh - total/kwh) > 0.001, energyRate: energy ? (energy/kwh).toFixed(4) : null, totalRate: (total/kwh).toFixed(4) }; })()",
             expect: {
               op: 'truthy',
             },
@@ -3222,7 +3222,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { const ps = JSON.parse(localStorage.getItem(\'en_projects\') || \'[]\'); const p = ps[0]; if (!p) return { skip: true }; return { result: true, note: \'Two independent commodity controls verified at settings level\' }; })()',
+            expr: "(() => { const ps = JSON.parse(localStorage.getItem('en_projects') || '[]'); const p = ps[0]; if (!p) return { skip: true }; return { result: true, note: 'Two independent commodity controls verified at settings level' }; })()",
             expect: {
               op: 'truthy',
             },
@@ -3235,7 +3235,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { const sheets = Array.from(document.styleSheets); for (const ss of sheets) { try { const rules = Array.from(ss.cssRules || []); if (rules.some(r => r.cssText && r.cssText.includes(\'tabular-nums\'))) return { result: true }; } catch(e) {} } return { result: false }; })()',
+            expr: "(() => { const sheets = Array.from(document.styleSheets); for (const ss of sheets) { try { const rules = Array.from(ss.cssRules || []); if (rules.some(r => r.cssText && r.cssText.includes('tabular-nums'))) return { result: true }; } catch(e) {} } return { result: false }; })()",
             expect: {
               op: 'truthy',
             },
@@ -3248,7 +3248,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { const ms = window.__tvAllMeters ? window.__tvAllMeters() : []; const hasPropane = ms.some(m => m.commodity === \'Propane\'); if (!hasPropane) return { skip: true }; const t = document.body.textContent; return { result: /propane/i.test(t) }; })()',
+            expr: "(() => { const ms = window.__tvAllMeters ? window.__tvAllMeters() : []; const hasPropane = ms.some(m => m.commodity === 'Propane'); if (!hasPropane) return { skip: true }; const t = document.body.textContent; return { result: /propane/i.test(t) }; })()",
             expect: {
               op: 'truthy',
             },
@@ -3282,7 +3282,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { const hs = Array.from(document.querySelectorAll(\'th\')); const nm = hs.find(h => /norm/i.test(h.textContent)); return { result: !!nm }; })()',
+            expr: "(() => { const hs = Array.from(document.querySelectorAll('th')); const nm = hs.find(h => /norm/i.test(h.textContent)); return { result: !!nm }; })()",
             expect: {
               op: 'truthy',
             },
@@ -3295,7 +3295,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { const sheets = Array.from(document.styleSheets); for (const ss of sheets) { try { const rules = Array.from(ss.cssRules || []); if (rules.some(r => r.selectorText && r.selectorText.includes(\'scrollbar\'))) return { result: true }; } catch(e) {} } return { result: false }; })()',
+            expr: "(() => { const sheets = Array.from(document.styleSheets); for (const ss of sheets) { try { const rules = Array.from(ss.cssRules || []); if (rules.some(r => r.selectorText && r.selectorText.includes('scrollbar'))) return { result: true }; } catch(e) {} } return { result: false }; })()",
             expect: {
               op: 'truthy',
             },
@@ -3308,7 +3308,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { result: true, note: \'Row compactness verified visually\' }; })()',
+            expr: "(() => { return { result: true, note: 'Row compactness verified visually' }; })()",
             expect: {
               op: 'truthy',
             },
@@ -3321,7 +3321,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { result: true, note: \'Panel compactness verified visually\' }; })()',
+            expr: "(() => { return { result: true, note: 'Panel compactness verified visually' }; })()",
             expect: {
               op: 'truthy',
             },
@@ -3334,7 +3334,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { const btns = Array.from(document.querySelectorAll(\'button\')); const pb = btns.find(b => /performance/i.test(b.textContent)); if (!pb) return { skip: true }; return { result: /meter|building|project/i.test(pb.textContent), label: pb.textContent.trim() }; })()',
+            expr: "(() => { const btns = Array.from(document.querySelectorAll('button')); const pb = btns.find(b => /performance/i.test(b.textContent)); if (!pb) return { skip: true }; return { result: /meter|building|project/i.test(pb.textContent), label: pb.textContent.trim() }; })()",
             expect: {
               op: 'truthy',
             },
@@ -3347,7 +3347,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { result: true, note: \'Duplicate source labels verified during extraction\' }; })()',
+            expr: "(() => { return { result: true, note: 'Duplicate source labels verified during extraction' }; })()",
             expect: {
               op: 'truthy',
             },
@@ -3360,7 +3360,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { const btns = Array.from(document.querySelectorAll(\'button\')); const rb = btns.find(b => /quarterly.*report|report.*quarterly|export.*report/i.test(b.textContent)); return { result: !!rb }; })()',
+            expr: "(() => { const btns = Array.from(document.querySelectorAll('button')); const rb = btns.find(b => /quarterly.*report|report.*quarterly|export.*report/i.test(b.textContent)); return { result: !!rb }; })()",
             expect: {
               op: 'truthy',
             },
@@ -3381,7 +3381,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { result: typeof CH_VERSION !== \'undefined\' && CH_VERSION !== \'\', version: typeof CH_VERSION !== \'undefined\' ? CH_VERSION : null }; })()',
+            expr: "(() => { return { result: typeof CH_VERSION !== 'undefined' && CH_VERSION !== '', version: typeof CH_VERSION !== 'undefined' ? CH_VERSION : null }; })()",
             expect: {
               op: 'truthy',
             },
@@ -3407,7 +3407,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { result: true, note: \'Backlog stored in backlog-data.js file, not localStorage\' }; })()',
+            expr: "(() => { return { result: true, note: 'Backlog stored in backlog-data.js file, not localStorage' }; })()",
             expect: {
               op: 'truthy',
             },
@@ -3420,7 +3420,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { result: true, note: \'Session guard verified at architecture level\' }; })()',
+            expr: "(() => { return { result: true, note: 'Session guard verified at architecture level' }; })()",
             expect: {
               op: 'truthy',
             },
@@ -3446,7 +3446,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { result: true, note: \'Backlog data structure verified in backlog-data.js\' }; })()',
+            expr: "(() => { return { result: true, note: 'Backlog data structure verified in backlog-data.js' }; })()",
             expect: {
               op: 'truthy',
             },
@@ -3459,7 +3459,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { result: true, note: \'Sort order verified in backlog.html dashboard\' }; })()',
+            expr: "(() => { return { result: true, note: 'Sort order verified in backlog.html dashboard' }; })()",
             expect: {
               op: 'truthy',
             },
@@ -3472,7 +3472,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { result: true, note: \'Notes field exists in backlog data model\' }; })()',
+            expr: "(() => { return { result: true, note: 'Notes field exists in backlog data model' }; })()",
             expect: {
               op: 'truthy',
             },
@@ -3485,7 +3485,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { result: true, note: \'verifiedAt field planned in backlog data model\' }; })()',
+            expr: "(() => { return { result: true, note: 'verifiedAt field planned in backlog data model' }; })()",
             expect: {
               op: 'truthy',
             },
@@ -3498,7 +3498,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { result: true, note: \'UUID and created visible in backlog.html dashboard\' }; })()',
+            expr: "(() => { return { result: true, note: 'UUID and created visible in backlog.html dashboard' }; })()",
             expect: {
               op: 'truthy',
             },
@@ -3519,7 +3519,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expr: "(() => { return { implemented: false, reason: 'Feature not yet built' }; })()",
             expect: {
               op: 'equals',
               path: 'implemented',
@@ -3534,7 +3534,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expr: "(() => { return { implemented: false, reason: 'Feature not yet built' }; })()",
             expect: {
               op: 'equals',
               path: 'implemented',
@@ -3549,7 +3549,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expr: "(() => { return { implemented: false, reason: 'Feature not yet built' }; })()",
             expect: {
               op: 'equals',
               path: 'implemented',
@@ -3564,7 +3564,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expr: "(() => { return { implemented: false, reason: 'Feature not yet built' }; })()",
             expect: {
               op: 'equals',
               path: 'implemented',
@@ -3579,7 +3579,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expr: "(() => { return { implemented: false, reason: 'Feature not yet built' }; })()",
             expect: {
               op: 'equals',
               path: 'implemented',
@@ -3594,7 +3594,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expr: "(() => { return { implemented: false, reason: 'Feature not yet built' }; })()",
             expect: {
               op: 'equals',
               path: 'implemented',
@@ -3609,7 +3609,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expr: "(() => { return { implemented: false, reason: 'Feature not yet built' }; })()",
             expect: {
               op: 'equals',
               path: 'implemented',
@@ -3624,7 +3624,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expr: "(() => { return { implemented: false, reason: 'Feature not yet built' }; })()",
             expect: {
               op: 'equals',
               path: 'implemented',
@@ -3639,7 +3639,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expr: "(() => { return { implemented: false, reason: 'Feature not yet built' }; })()",
             expect: {
               op: 'equals',
               path: 'implemented',
@@ -3654,7 +3654,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expr: "(() => { return { implemented: false, reason: 'Feature not yet built' }; })()",
             expect: {
               op: 'equals',
               path: 'implemented',
@@ -3669,7 +3669,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expr: "(() => { return { implemented: false, reason: 'Feature not yet built' }; })()",
             expect: {
               op: 'equals',
               path: 'implemented',
@@ -3684,7 +3684,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expr: "(() => { return { implemented: false, reason: 'Feature not yet built' }; })()",
             expect: {
               op: 'equals',
               path: 'implemented',
@@ -3699,7 +3699,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expr: "(() => { return { implemented: false, reason: 'Feature not yet built' }; })()",
             expect: {
               op: 'equals',
               path: 'implemented',
@@ -3714,7 +3714,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expr: "(() => { return { implemented: false, reason: 'Feature not yet built' }; })()",
             expect: {
               op: 'equals',
               path: 'implemented',
@@ -3729,7 +3729,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expr: "(() => { return { implemented: false, reason: 'Feature not yet built' }; })()",
             expect: {
               op: 'equals',
               path: 'implemented',
@@ -3744,7 +3744,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expr: "(() => { return { implemented: false, reason: 'Feature not yet built' }; })()",
             expect: {
               op: 'equals',
               path: 'implemented',
@@ -3759,7 +3759,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expr: "(() => { return { implemented: false, reason: 'Feature not yet built' }; })()",
             expect: {
               op: 'equals',
               path: 'implemented',
@@ -3774,7 +3774,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expr: "(() => { return { implemented: false, reason: 'Feature not yet built' }; })()",
             expect: {
               op: 'equals',
               path: 'implemented',
@@ -3797,7 +3797,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expr: "(() => { return { implemented: false, reason: 'Feature not yet built' }; })()",
             expect: {
               op: 'equals',
               path: 'implemented',
@@ -3812,7 +3812,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expr: "(() => { return { implemented: false, reason: 'Feature not yet built' }; })()",
             expect: {
               op: 'equals',
               path: 'implemented',
@@ -3827,7 +3827,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expr: "(() => { return { implemented: false, reason: 'Feature not yet built' }; })()",
             expect: {
               op: 'equals',
               path: 'implemented',
@@ -3842,7 +3842,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expr: "(() => { return { implemented: false, reason: 'Feature not yet built' }; })()",
             expect: {
               op: 'equals',
               path: 'implemented',
@@ -3857,7 +3857,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expr: "(() => { return { implemented: false, reason: 'Feature not yet built' }; })()",
             expect: {
               op: 'equals',
               path: 'implemented',
@@ -3872,7 +3872,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expr: "(() => { return { implemented: false, reason: 'Feature not yet built' }; })()",
             expect: {
               op: 'equals',
               path: 'implemented',
@@ -3887,7 +3887,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expr: "(() => { return { implemented: false, reason: 'Feature not yet built' }; })()",
             expect: {
               op: 'equals',
               path: 'implemented',
@@ -3902,7 +3902,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expr: "(() => { return { implemented: false, reason: 'Feature not yet built' }; })()",
             expect: {
               op: 'equals',
               path: 'implemented',
@@ -3917,7 +3917,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expr: "(() => { return { implemented: false, reason: 'Feature not yet built' }; })()",
             expect: {
               op: 'equals',
               path: 'implemented',
@@ -3932,7 +3932,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expr: "(() => { return { implemented: false, reason: 'Feature not yet built' }; })()",
             expect: {
               op: 'equals',
               path: 'implemented',
@@ -3947,7 +3947,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expr: "(() => { return { implemented: false, reason: 'Feature not yet built' }; })()",
             expect: {
               op: 'equals',
               path: 'implemented',
@@ -3962,7 +3962,7 @@ const VERIFICATION_TESTS = {
           depth: 'observe',
           check: {
             type: 'evaluate',
-            expr: '(() => { return { implemented: false, reason: \'Feature not yet built\' }; })()',
+            expr: "(() => { return { implemented: false, reason: 'Feature not yet built' }; })()",
             expect: {
               op: 'equals',
               path: 'implemented',

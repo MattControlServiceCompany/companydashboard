@@ -398,7 +398,9 @@ function runSurfaces(label, em, gm, sqft, blMonths) {
     ? [...annualRowM[1].matchAll(/<td class="rpt-n">([^<]*)<\/td>/g)].map((m) => m[1])
     : [];
   const num = (s) => (s ? parseFloat(String(s).replace(/[$,]/g, '')) : null);
-  const euiStatM = /Site EUI \(kBtu\/SF\)<\/div><div class="bl-stat-val">([\d.]+)<\/div>/.exec(reportHTML);
+  const euiStatM = /Site Energy Use Intensity \(kBtu\/SF\)<\/div><div class="bl-stat-val">([\d.]+)<\/div>/.exec(
+    reportHTML,
+  );
   const report = {
     kwh: num(annualCells[2]),
     // Billed kW (5th cell) — the plan's "kW Total = SUM of the 12 monthly billed kW".

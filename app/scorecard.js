@@ -475,7 +475,7 @@ function renderBuildingScorecardPane(pane, b, projId) {
     },
     {
       label: euiVal > 0 ? String(euiVal) : '—',
-      sublabel: 'EUI kBtu/sf',
+      sublabel: 'Energy Use Intensity kBtu/sf',
       pct: euiPct,
       color: euiColor,
     },
