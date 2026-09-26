@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var CH_VERSION = 'v2026.09.25.15'; // Utility Data and the Quarterly report now spell out abbreviated labels in full, the Utility Data page no longer clips content on phones, and the ASHRAE 36 cover-scope test moved into the tools folder.
+  var CH_VERSION = 'v2026.09.25.16'; // Utility Data now stacks the buildings list above the details on phones instead of squeezing them side by side, and the Energy Graphics, Utility Data, ECM Calculator, and Quarterly and Utility Audit reports spell out Site Energy Use Intensity in full.
 
   /* ── COLOR PRESETS ── */
   const COLOR_PRESETS = [
