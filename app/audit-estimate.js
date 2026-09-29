@@ -347,6 +347,27 @@ function _auditEstEsc(s) {
   });
 }
 
+/* ── Client-facing proposal price rounding (2026-09-25) ──────────────────────────────────────
+   The internal breakdown above keeps the exact computed totalCost, in dollars and cents, for
+   internal review — never touched by this. The client-facing Audit Proposal (report-engine.js's
+   _rptAuditProposalDetailInnerHTML) shows one rounded, whole-dollar price instead: client price
+   pages never show cents (per Matt, 2026-09-25). Round UP (ceiling) to the next $100 —
+   $84,377.80 -> $84,400; $96,107.80 -> $96,200. This is the ONE rounding function; both this
+   file's breakdown totals row and report-engine.js's proposal price call it, so they can never
+   disagree. */
+function auditEstRoundProposalPrice(totalCost) {
+  if (totalCost == null || isNaN(totalCost)) return 0;
+  return Math.ceil(Number(totalCost) / 100) * 100;
+}
+window.auditEstRoundProposalPrice = auditEstRoundProposalPrice;
+
+// _auditEstFmtWhole — whole-dollar formatting (no cents), for the rounded proposal price only.
+// The exact-figure breakdown keeps using _auditEstFmt (always 2 decimals) everywhere else.
+function _auditEstFmtWhole(n) {
+  if (n == null || isNaN(n)) return '—';
+  return '$' + Math.round(Number(n)).toLocaleString('en-US');
+}
+
 /* ── UI: breakdown table for one audit type ──────────────────────────────────────────────── */
 function _auditEstBreakdownTableHTML(b, titleText) {
   if (!b) {
@@ -442,6 +463,12 @@ function _auditEstBreakdownTableHTML(b, titleText) {
     b.totalHours.toFixed(1) +
     '</td><td class="ch-tbl-col-type-currency">' +
     _auditEstFmt(b.totalCost) +
+    '</td>' +
+    '</tr>' +
+    '<tr><td>Proposal price (rounded up to the next $100)</td><td>—</td><td>—</td><td>—</td>' +
+    '<td class="ch-tbl-col-type-number">—</td>' +
+    '<td class="ch-tbl-col-type-currency">' +
+    _auditEstFmtWhole(auditEstRoundProposalPrice(b.totalCost)) +
     '</td>' +
     '</tr></tfoot>' +
     '</table></div></div>'
