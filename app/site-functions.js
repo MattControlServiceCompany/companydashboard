@@ -1776,6 +1776,15 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.29.31',
+    date: '2026-09-29',
+    title: 'Bill numbers read the same everywhere',
+    items: [
+      { type: 'fix', text: 'Utility bill amounts with a trailing comma, such as 2.19, or $2.19, now import as 2.19 instead of being dropped.' },
+      { type: 'fix', text: 'Bill imports, Utility Data totals, Energy Graphics setpoints, and the savings extractors now read numbers with one shared routine, so parentheses for negatives and thousands commas give the same value on every page.' },
+    ],
+  },
+  {
     v: 'v2026.09.29.30',
     date: '2026-09-29',
     title: 'BAS Calculator matches the savings workbook',
