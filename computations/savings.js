@@ -257,10 +257,10 @@ function getMeterSavings(m, bills, incl, projId, bldgId, opts) {
       const ym = normMonth(b.start, b.end, incl, bills);
       if (!ym) return;
       const actUsage = isElec
-        ? parseFloat(b.kwh) || parseFloat(b.usage) || 0
+        ? parseBillNumberOrZero(b.kwh) || parseBillNumberOrZero(b.usage)
         : isGas
           ? resolveGasUsageTherms(b)
-          : parseFloat(b.waterUsage || b.sewerUsage || b.usage || 0);
+          : parseBillNumberOrZero(b.waterUsage) || parseBillNumberOrZero(b.sewerUsage) || parseBillNumberOrZero(b.usage);
       rawUsageByYm[ym] = (rawUsageByYm[ym] || 0) + actUsage;
     });
   }
@@ -311,7 +311,7 @@ function getMeterSavings(m, bills, incl, projId, bldgId, opts) {
         ? _kwhRates.reduce((s, rt) => s + rt, 0) / _kwhRates.length
         : 0;
       const kwhCostAmt = bfr.reduce(
-        (s, b) => s + parseFloat(b.kwhCost || 0),
+        (s, b) => s + parseBillNumberOrZero(b.kwhCost),
         0,
       );
       kwhRate =
@@ -323,9 +323,9 @@ function getMeterSavings(m, bills, incl, projId, bldgId, opts) {
           ? _kwNormByYm[r.ym]
           : blDemKWByCalMo[calMo] || 0;
       actBilKW = Math.max(
-        ...bfr.map((b) => parseFloat(b.billedKW || b.demandKW || 0)),
+        ...bfr.map((b) => parseBillNumberOrZero(b.billedKW) || parseBillNumberOrZero(b.demandKW)),
       );
-      actDemKW = Math.max(...bfr.map((b) => parseFloat(b.demandKW || 0)));
+      actDemKW = Math.max(...bfr.map((b) => parseBillNumberOrZero(b.demandKW)));
       // getStoredKwRate() (computations/rates.js) is the ONE $/kW rate: stored totalKwRate,
       // else demand dollars / billed kW (see its header).
       const _kwRates = bfr
@@ -396,10 +396,9 @@ function getMeterSavings(m, bills, incl, projId, bldgId, opts) {
       const actThermCost = bfr.reduce(
         (s, b) =>
           s +
-          (parseFloat(b.gasCharge) ||
-            parseFloat(b.thermCost) ||
-            parseFloat(b.cost) ||
-            0),
+          (parseBillNumberOrZero(b.gasCharge) ||
+            parseBillNumberOrZero(b.thermCost) ||
+            parseBillNumberOrZero(b.cost)),
         0,
       );
       // Blend of the bills in this month: mean of each bill's resolved $/therm (blank bills
@@ -408,7 +407,7 @@ function getMeterSavings(m, bills, incl, projId, bldgId, opts) {
       const _gasRates = bfr
         .map(
           (b) =>
-            parseFloat(b.totalGasRate) || (isGas ? getStoredRate(b, "gas") : 0),
+            parseBillNumberOrZero(b.totalGasRate) || (isGas ? getStoredRate(b, "gas") : 0),
         )
         .filter((rt) => rt > 0);
       const _sGasRate = _gasRates.length

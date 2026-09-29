@@ -48,7 +48,8 @@ function build(projects) {
     'var projects = ' + JSON.stringify(projects) + ';',
     'var udSelProjId = 1;',
     'var _bldg = { id: "b1", meters: [] };',
-    'function sget(k, d){ return d; }',
+    'var __store = {}; function sget(k, d){ return k in __store ? __store[k] : d; }',
+    'function sset(k, v){ __store[k] = v; }',
     'function getWeatherForBuilding(){ return { byYm: null, cache: [] }; }',
     'function getUDBldg(){ return _bldg; }',
     'function _rptUnit(s){ return s; }',
@@ -514,5 +515,203 @@ const sumOf = (o) => Object.values(o).reduce((a, b) => a + b, 0);
   );
 })();
 
+// -- 13. WP-04b: ONE kW fit, ONE kW basis in the report, parseBillNumber in rates.js (source guards) -------------------
+(function () {
+  const ud = rd("app/utility-data.js"),
+    rep = rd("app/report-engine.js"),
+    rates = rd("computations/rates.js");
+  assert(
+    !/ssxy/.test(ud) && !/_kwReg|_blKwReg/.test(ud),
+    "13: utility-data.js has no kW fit of its own",
+  );
+  assert(
+    /computeKwCddRegression\(/.test(ud),
+    "13: utility-data.js calls the keeper computeKwCddRegression",
+  );
+  assert(
+    !/kwCur \+= actDemKW/.test(rep),
+    "13: report kW Actual is not the metered demandKW",
+  );
+  assert(
+    (rep.match(/kwCur \+= actBilKW/g) || []).length === 2,
+    "13: report kW Actual (period and monthly) is billed kW, same as the kW dollars",
+  );
+  assert(!/\bpf\(/.test(rates), "13: rates.js uses parseBillNumber, not pf(");
+})();
+
+// -- 14. WP-04b: meter tables sum to the building total (Meter Performance = getMeterSavings = getBuildingSavingsByYM) ----
+(function () {
+  const sb = build(PROJ);
+  const gas = (id, incl) => {
+    const bills = [];
+    for (let m = 1; m <= 12; m++)
+      bills.push(
+        mb(2024, m, {
+          naturalGasTherms: "100",
+          gasCharge: "100",
+          totalCost: "110",
+        }),
+      );
+    for (let m = 1; m <= 6; m++)
+      bills.push(
+        mb(2025, m, {
+          naturalGasTherms: "60",
+          gasCharge: "60",
+          totalCost: "66",
+        }),
+      );
+    return {
+      id,
+      commodity: "Gas",
+      inclusive: incl,
+      bills,
+      baseline: { months: blMonths(2024) },
+    };
+  };
+  const elec = {
+    id: "e1",
+    commodity: "Electric",
+    inclusive: true,
+    bills: [].concat(
+      Array.from({ length: 12 }, (_, i) =>
+        mb(2024, i + 1, {
+          kwh: "50000",
+          kwhCost: "4000",
+          totalKwhRate: "0.08000",
+          totalCost: "5000",
+        }),
+      ),
+      Array.from({ length: 6 }, (_, i) =>
+        mb(2025, i + 1, {
+          kwh: "40000",
+          kwhCost: "3200",
+          totalKwhRate: "0.08000",
+          totalCost: "4000",
+        }),
+      ),
+    ),
+    baseline: { months: blMonths(2024) },
+  };
+  sb.BL = {
+    id: "b1",
+    name: "B",
+    meters: [gas("g1", true), gas("g2", false), elec],
+  };
+  ev(
+    sb,
+    "_bldg = BL; function getUDBldgs(){ return [BL]; } function isBaselineExcluded(){ return false; }",
+  );
+  const bySum = {};
+  [0, 1, 2].forEach((i) => {
+    const t = ev(
+      sb,
+      "buildMeterPerfTableHTML(BL.meters[" +
+        i +
+        "], BL.meters[" +
+        i +
+        "].bills, BL.meters[" +
+        i +
+        "].inclusive !== false, {mode:'report', projId:1, bldgId:'b1'})",
+    );
+    t.rows.forEach((r) => (bySum[r.ym] = (bySum[r.ym] || 0) + r.savings));
+  });
+  const bld = ev(sb, "getBuildingSavingsByYM(BL, 1)");
+  Object.keys(bySum).forEach((ym) =>
+    assert(
+      near(bySum[ym], bld[ym] || 0, 0.01),
+      "14: " +
+        ym +
+        " meter tables " +
+        bySum[ym].toFixed(2) +
+        " == building " +
+        (bld[ym] || 0).toFixed(2),
+    ),
+  );
+  assert(
+    Object.keys(bySum).length === 6,
+    "14: six months compared, got " + Object.keys(bySum).length,
+  );
+  assert(
+    Math.abs(sumOf(bySum)) > 1,
+    "14: the test building has non-zero savings",
+  );
+})();
+
+// -- 15. WP-04b: a presented (locked) period never changes; the tables still recompute --------------------------------
+(function () {
+  const sb = build(PROJ);
+  const bills = [];
+  for (let m = 1; m <= 12; m++)
+    bills.push(
+      mb(2024, m, {
+        naturalGasTherms: "100",
+        gasCharge: "100",
+        totalCost: "110",
+      }),
+    );
+  for (let m = 1; m <= 6; m++)
+    bills.push(
+      mb(2025, m, { naturalGasTherms: "60", gasCharge: "60", totalCost: "66" }),
+    );
+  sb.BL = {
+    id: "b1",
+    name: "B",
+    meters: [
+      {
+        id: "g1",
+        commodity: "Gas",
+        inclusive: true,
+        bills,
+        baseline: { months: blMonths(2024) },
+      },
+    ],
+  };
+  ev(
+    sb,
+    "_bldg = BL; function getUDBldgs(){ return [BL]; } function isBaselineExcluded(){ return false; }",
+  );
+  const q1 = JSON.stringify(["2025-01", "2025-02", "2025-03"]),
+    q2 = JSON.stringify(["2025-04", "2025-05", "2025-06"]);
+  const tot = (q) =>
+    ev(
+      sb,
+      "totalSavingsWithPresented(1, " +
+        q +
+        ", { b1: getBuildingSavingsByYM(BL, 1) })",
+    ).total;
+  const before2 = tot(q2);
+  const rec = ev(
+    sb,
+    "savePresentedRecord({ projectId: 1, periodStart: '2025-01', periodEnd: '2025-03', presentedAt: '2025-04-05T12:00:00Z', documentName: 'Q1', totalDollars: 111, buildings: { b1: { dollars: 111 } } })",
+  );
+  assert(rec.ok, "15: presented record saved");
+  ev(
+    sb,
+    "BL.meters[0].bills[12].naturalGasTherms = '10'; BL.meters[0].bills[15].naturalGasTherms = '10'; BL.meters[0]._savingsCache = null;",
+  );
+  assert(
+    near(tot(q1), 111, 0.001),
+    "15: presented Q1 stays at the printed 111 after a bill edit, got " +
+      tot(q1),
+  );
+  assert(
+    !near(tot(q2), before2, 0.5),
+    "15: unpresented Q2 moves with the bill edit",
+  );
+  const t = ev(
+    sb,
+    "buildMeterPerfTableHTML(BL.meters[0], BL.meters[0].bills, true, {mode:'report', projId:1, bldgId:'b1'})",
+  );
+  const s = ev(
+    sb,
+    "getMeterSavings(BL.meters[0], BL.meters[0].bills, true, 1, 'b1')",
+  );
+  t.rows.forEach((r) =>
+    assert(
+      near(r.savings, s.byYM[r.ym]),
+      "15: meter table row " + r.ym + " still equals getMeterSavings",
+    ),
+  );
+})();
 console.log('\n=== Results: ' + passed + ' passed, ' + failed + ' failed ===');
 process.exit(failed ? 1 : 0);

@@ -264,7 +264,7 @@ function computeKwCddRegression(blRows, allRows, bills, incl) {
       });
       var kw = bfr.length
         ? bfr.reduce(function (s, b) {
-            return s + (parseFloat(b.billedKW || b.demandKW) || 0);
+            return s + (parseBillNumberOrZero(b.billedKW) || parseBillNumberOrZero(b.demandKW));
           }, 0) / bfr.length
         : 0;
       return { x: r.cdd != null ? r.cdd : 0, y: kw };

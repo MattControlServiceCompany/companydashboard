@@ -7369,7 +7369,6 @@ function renderBaselinePane(pane, m, bills, incl) {
   const isElecBl = m.commodity === 'Electric';
   let kwChartSection = '';
   const kwByYm = {};
-  let _blKwReg = null;
   const _blKwNormByYm = {};
   if (isElecBl && hasBl) {
     blRows.forEach((r) => {
@@ -7379,32 +7378,8 @@ function renderBaselinePane(pane, m, bills, incl) {
       if (demKW > 0 || bilKW > 0) kwByYm[r.ym] = { label: r.label, demKW, bilKW };
     });
 
-    // ── CDD regression for normalized kW baseline line ──
-    _blKwReg = (() => {
-      const pts = blRows
-        .map((r) => {
-          const bfr = bills.filter((b) => normMonth(b.start, b.end, incl, bills) === r.ym);
-          const kw = bfr.length ? bfr.reduce((s, b) => s + (parseFloat(b.demandKW) || 0), 0) / bfr.length : 0;
-          return { x: r.cdd != null ? r.cdd : 0, y: kw };
-        })
-        .filter((p) => p.y > 0);
-      if (pts.length < 3) return null;
-      const n = pts.length;
-      const mx = pts.reduce((s, p) => s + p.x, 0) / n;
-      const my = pts.reduce((s, p) => s + p.y, 0) / n;
-      const ssxx = pts.reduce((s, p) => s + (p.x - mx) ** 2, 0);
-      const ssxy = pts.reduce((s, p) => s + (p.x - mx) * (p.y - my), 0);
-      if (ssxx === 0) return null;
-      const slope = ssxy / ssxx;
-      const intercept = my - slope * mx;
-      return { slope, intercept };
-    })();
-    if (_blKwReg) {
-      blRows.forEach((r) => {
-        const cdd = r.cdd != null ? r.cdd : 0;
-        _blKwNormByYm[r.ym] = Math.max(0, _blKwReg.intercept + _blKwReg.slope * cdd);
-      });
-    }
+    // ── CDD regression for normalized kW baseline line: the ONE kW fit (regression.js) ──
+    Object.assign(_blKwNormByYm, computeKwCddRegression(blRows, blRows, bills, incl));
 
     if (Object.keys(kwByYm).length) {
       kwChartSection =
@@ -7557,7 +7532,7 @@ function renderBaselinePane(pane, m, bills, incl) {
           borderRadius: 3,
         });
       }
-      const _hasBlNormKw = _blKwReg && Object.keys(_blKwNormByYm).length > 0;
+      const _hasBlNormKw = Object.keys(_blKwNormByYm).length > 0;
       if (_hasBlNormKw) {
         const kwEntriesYm = blRows.filter((r) => kwByYm[r.ym]).map((r) => r.ym);
         datasets.push({
@@ -10818,39 +10793,11 @@ function renderPerfPane(pane, m, bills, incl) {
   // using raw baseline kW per calendar month. This normalizes demand
   // for weather so the kW savings reflect efficiency, not temperature.
   // Always fit on actual-weather CDD (_blRowsActual) regardless of weather mode.
-  const _kwReg = (() => {
-    if (!isElec || !hasRegr_p) return null;
-    const pts = _blRowsActual
-      .map((r) => {
-        const bfr = bills.filter((b) => normMonth(b.start, b.end, incl, bills) === r.ym);
-        const kw = bfr.length ? bfr.reduce((s, b) => s + (parseFloat(b.demandKW) || 0), 0) / bfr.length : 0;
-        return { x: r.cdd != null ? r.cdd : 0, y: kw };
-      })
-      .filter((p) => p.y > 0);
-    if (pts.length < 3) return null;
-    const n = pts.length;
-    const mx = pts.reduce((s, p) => s + p.x, 0) / n;
-    const my = pts.reduce((s, p) => s + p.y, 0) / n;
-    const ssxx = pts.reduce((s, p) => s + (p.x - mx) ** 2, 0);
-    const ssxy = pts.reduce((s, p) => s + (p.x - mx) * (p.y - my), 0);
-    if (ssxx === 0) return null;
-    const slope = ssxy / ssxx;
-    const intercept = my - slope * mx;
-    const r2 = (() => {
-      const ssTot = pts.reduce((s, p) => s + (p.y - my) ** 2, 0);
-      const ssRes = pts.reduce((s, p) => s + (p.y - (intercept + slope * p.x)) ** 2, 0);
-      return ssTot > 0 ? Math.max(0, 1 - ssRes / ssTot) : 0;
-    })();
-    return { slope, intercept, r2, n };
-  })();
-  const _kwNormByYm = {};
-  if (_kwReg) {
-    // Use _effectiveRows so kW baseline line reflects normal-weather CDD when mode is active
-    _effectiveRows.forEach((r) => {
-      const cdd = r.cdd != null ? r.cdd : 0;
-      _kwNormByYm[r.ym] = Math.max(0, _kwReg.intercept + _kwReg.slope * cdd);
-    });
-  }
+  // The ONE kW fit (computations/regression.js computeKwCddRegression, billed kW): the same
+  // Expected kW the savings engine and the Meter Performance table use. _effectiveRows so the
+  // line reflects normal-weather CDD when that mode is active.
+  const _kwNormByYm =
+    isElec && hasRegr_p ? computeKwCddRegression(_blRowsActual, _effectiveRows, bills, incl) : {};
 
   // Year filter
   const maxYears = Math.max(1, Math.ceil(truePostRows.length / 12));
@@ -11726,7 +11673,7 @@ function renderPerfPane(pane, m, bills, incl) {
             tension: 0.3,
           });
         }
-        if (_kwReg && Object.keys(_kwNormByYm).length > 0) {
+        if (Object.keys(_kwNormByYm).length > 0) {
           kwDatasets.push({
             label: 'Baseline kW',
             type: 'line',
@@ -11744,7 +11691,7 @@ function renderPerfPane(pane, m, bills, incl) {
             order: 0,
           });
         }
-        const _hasExpKw = _kwReg && Object.keys(_kwNormByYm).length > 0;
+        const _hasExpKw = Object.keys(_kwNormByYm).length > 0;
         _maCharts['perfKwChart'] = new Chart(kwCanvas, {
           type: 'bar',
           data: { labels: kwLabels, datasets: kwDatasets },

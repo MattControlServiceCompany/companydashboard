@@ -391,6 +391,8 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
 
         if (isElec) {
           const actKwh = actUsage;
+          // kW Baseline and kW Actual are both billed kW: the same basis getMeterSavings uses for
+          // the kW dollars (WP-04b). Metered demandKW is shown only in the Meter Performance table.
           // kW Baseline must reconcile with the $ savings shown for this same meter/
           // month — both come from getMeterSavings() (4487ad80). getMeterSavings does
           // not return blExpKW directly, but it DOES return unitsByYM[ym].kw = blExpKW
@@ -402,11 +404,12 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
           // different weather lookup — wddLoadCache(b.zip) above vs. savings.js's own
           // getWeatherForBuilding() call — so a locally-fit regression silently
           // disagreed even with identical formula).
-          const actBilKW = bfr.length ? Math.max(...bfr.map((b2) => parseFloat(b2.billedKW || b2.demandKW || 0))) : 0;
+          const actBilKW = bfr.length
+            ? Math.max(...bfr.map((b2) => parseBillNumberOrZero(b2.billedKW) || parseBillNumberOrZero(b2.demandKW)))
+            : 0;
           const blExpKW = meterUnitsByYM[r.ym] ? meterUnitsByYM[r.ym].kw + actBilKW : blDemKWByCalMo[calMo] || 0;
-          const actDemKW = bfr.length ? Math.max(...bfr.map((b2) => parseFloat(b2.demandKW || 0))) : 0;
-          const kwhCostAmt = bfr.reduce((s, b2) => s + parseFloat(b2.kwhCost || 0), 0);
-          const kwCostAmt = bfr.reduce((s, b2) => s + parseFloat(b2.kwCost || 0), 0);
+          const kwhCostAmt = bfr.reduce((s, b2) => s + parseBillNumberOrZero(b2.kwhCost), 0);
+          const kwCostAmt = bfr.reduce((s, b2) => s + parseBillNumberOrZero(b2.kwCost), 0);
           // getBillFacKWCost (computations/rates.js) — the ONE accessor for Facilities kW
           // Cost (2026-09-23 single-source fix); never read b2.facKWCost/facilitiesCharge directly.
           const facKWCostAmt = bfr.reduce((s, b2) => s + getBillFacKWCost(b2), 0);
@@ -417,7 +420,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
           elecMonthly[r.ym].bl += expUsage;
           elecMonthly[r.ym].cur += actKwh;
           elecMonthly[r.ym].kwBl += blExpKW;
-          elecMonthly[r.ym].kwCur += actDemKW;
+          elecMonthly[r.ym].kwCur += actBilKW;
           elecMonthly[r.ym].blCost += blCostByCalMo[calMo] || 0;
           elecMonthly[r.ym].curCost += kwhCostAmt + kwCostAmt + facKWCostAmt;
           elecMonthly[r.ym].savings += totalCostSav;
@@ -427,7 +430,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
             elec.kwhCur += actKwh;
             elec.kwhSaved += expUsage - actKwh;
             elec.kwBl += blExpKW;
-            elec.kwCur += actDemKW;
+            elec.kwCur += actBilKW;
             elec.costBl += blCostByCalMo[calMo] || 0;
             elec.costCur += kwhCostAmt + kwCostAmt + facKWCostAmt;
             elec.costSaved += totalCostSav;
