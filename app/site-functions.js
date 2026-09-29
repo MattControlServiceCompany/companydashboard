@@ -1776,6 +1776,15 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.28.23',
+    date: '2026-09-28',
+    title: 'BAS Calc: heating savings now match the Excel total.',
+    items: [
+      { type: 'fix', text: 'On the BAS Calc page, heating savings no longer show negative gas therms for a month when the new schedule cuts outside air more. The outside-air heating load is now counted the same way as in the Excel workbook, so the heating total matches Excel.' },
+      { type: 'change', text: 'The BAS Calc heating calibration to your bills is now solved more reliably, so the annual heating savings stay in line with the existing heating use.' },
+    ],
+  },
+  {
     v: 'v2026.09.28.22',
     date: '2026-09-28',
     title: 'Behind-the-scenes checks updated. No change to any page.',
