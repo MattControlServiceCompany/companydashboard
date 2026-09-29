@@ -4441,6 +4441,21 @@ function _bcGv(id) {
   return parseFloat(e.value) || 0;
 }
 
+// Heating calibration factor: solve sum(MAX(setback*adj - OA, 0) + OA) = target for adj.
+// The sum never decreases as adj grows, so bisection converges (Excel goal-seek on K46).
+function _bcCalibrateHeatAdj(setbackM, oaM, target) {
+  const total = (a) => setbackM.reduce((t, v, m) => t + Math.max(v * a - oaM[m], 0) + oaM[m], 0);
+  let lo = 0,
+    hi = 1;
+  for (let i = 0; i < 60 && total(hi) < target; i++) hi *= 2;
+  for (let i = 0; i < 100; i++) {
+    const mid = (lo + hi) / 2;
+    if (total(mid) < target) lo = mid;
+    else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+
 function _bcDoCalc(projId) {
   const p = projects.find((x) => x.id === projId);
   if (!p) return;
@@ -4751,9 +4766,7 @@ function _bcDoCalc(projId) {
   const rawExCoolSetbackTotal = exCoolSetbackM.reduce((a, b) => a + b, 0);
   const rawExCoolOATotal = exCoolOAM.reduce((a, b) => a + b, 0);
   const rawExHeatSetbackTotal = exHeatKwhSetbackM.reduce((a, b) => a + b, 0);
-  const rawExHeatOATotal = exHeatKwhOAM.reduce((a, b) => a + b, 0);
   const rawExHeatGasSetbackTotal = exHeatGasSetbackM.reduce((a, b) => a + b, 0);
-  const rawExHeatGasOATotal = exHeatGasOAM.reduce((a, b) => a + b, 0);
   let coolAdj = 1,
     heatAdj = 1;
   if (calCoolKwh > 0 && rawExCoolSetbackTotal > 0) coolAdj = (calCoolKwh - rawExCoolOATotal) / rawExCoolSetbackTotal;
@@ -4778,33 +4791,18 @@ function _bcDoCalc(projId) {
   // building has any real electric-heat evidence. Only activates when the kWh bucket is actually
   // empty (rawExHeatSetbackTotal <= 0) — a true mixed-load building (both buckets populated)
   // still falls through to the existing kWh-only calibration below, unchanged.
-  // 2026-09-25 fix #2 (heating outside-air double count, corrected): the 2026-09-25 fix #1
-  // (c4a4e49) netted OA against setback but then added OA back — MAX(setback*heatAdj - OA, 0) +
-  // OA, algebraically MAX(setback*heatAdj, OA) — citing Existing!D168. D168 is NOT the heating
-  // formula: Existing!D33's row label is "Potential Occupied Ton Hours Load (cooling setback)"
-  // — D168 is a COOLING ton-hours cell (confirmed A168=102.5, a warm bin; D641, D168's own OA
-  // subtrahend, uses the $E$10=55 cooling-side sensible+latent formula). The real heating
-  // setback cell is Existing!AH34 (row label AH33 "Potential Occupied Mbtu load (heating
-  // setback)"): =MAX(IF($A34>50,0,Temperature!E6*VLOOKUP($A34,$S$7:$X$17,4))-D507,0) — D507 is
-  // the heating-only OA subtrahend (Existing!D506 label "Hourly Heating/Cooling Load",
-  // IF($A<$E$12,...) sensible only). AH34 has NO add-back term of any kind, and none of its
-  // downstream readers (BF34/BG34/BH34 weekday-weighted rollups, AE34 sum) add one back either
-  // — traced the full chain, verified directly against BAS Savings Calc Template.xlsm via
-  // openpyxl (my-knowledge-base/raw/Calcs/BAS Savings Calc Template.xlsm), 2026-09-25. So the
-  // correct combine is a plain net-and-clamp with NO add-back: MAX(setback*heatAdj - OA, 0).
-  // Calibration re-derived for that formula (assuming no month clamps to 0, the normal case):
-  // entered = heatAdj*rawSetbackTotal - rawOATotal => heatAdj = (entered + rawOATotal) /
-  // rawSetbackTotal. (The c4a4e49 form, heatAdj = entered/rawSetbackTotal with no +OA term, was
-  // only valid for its own incorrect combine formula and is wrong for this corrected one.) If a
-  // month's clamp does activate the linear closed form is an approximation, same caveat as the
-  // existing coolAdjNegative warning pattern for cooling.
+  // Heating calibration (2026-09-28 restore of the OA add-back). Excel: Existing!I2 = Z20 + AL12
+  // (net setback + full OA); Savings Calculator!K45 sums that column and K46 is goal-sought so the
+  // existing total equals the billed figure. Per month: MAX(setback*adj - OA, 0) + OA. When a
+  // month clamps, the total is not linear in adj, so adj is solved by bisection on that same
+  // combine (_bcCalibrateHeatAdj), like the goal-seek.
   if (heatSrc === 1 || heatSrc === 3) {
     if (calHeatGas > 0 && rawExHeatGasSetbackTotal > 0)
-      heatAdj = (calHeatGas + rawExHeatGasOATotal) / rawExHeatGasSetbackTotal;
+      heatAdj = _bcCalibrateHeatAdj(exHeatGasSetbackM, exHeatGasOAM, calHeatGas);
   } else if (heatSrc === 4 && rawExHeatSetbackTotal <= 0 && rawExHeatGasSetbackTotal > 0) {
-    if (calHeatGas > 0) heatAdj = (calHeatGas + rawExHeatGasOATotal) / rawExHeatGasSetbackTotal;
+    if (calHeatGas > 0) heatAdj = _bcCalibrateHeatAdj(exHeatGasSetbackM, exHeatGasOAM, calHeatGas);
   } else if (calHeatKwh > 0 && rawExHeatSetbackTotal > 0) {
-    heatAdj = (calHeatKwh + rawExHeatOATotal) / rawExHeatSetbackTotal;
+    heatAdj = _bcCalibrateHeatAdj(exHeatKwhSetbackM, exHeatKwhOAM, calHeatKwh);
   }
   if (el('bc-adjCool')) el('bc-adjCool').textContent = coolAdj.toFixed(3);
   if (el('bc-adjHeat')) el('bc-adjHeat').textContent = heatAdj.toFixed(3);
@@ -4821,15 +4819,12 @@ function _bcDoCalc(projId) {
   // unchanged by this fix).
   const exCoolM = exCoolSetbackM.map((v, m) => v * coolAdj + exCoolOAM[m]);
   const newCoolM = newCoolSetbackM.map((v, m) => v * coolAdj + newCoolOAM[m]);
-  // Heating: net the outside-air load against the calibrated setback load and clamp at 0 — MAX
-  // (setback*heatAdj - OA, 0), matching Excel!AH34's MAX(setback - OA, 0) netting exactly, no
-  // add-back (2026-09-25 fix #2 — see calibration comment above for why D168/+OA was wrong).
-  // Applied for both Existing and New, both the kWh-denominated and gas-denominated heating
-  // buckets (every heatSrc routes into one or both of those two bucket pairs above).
-  const exHeatKwhM = exHeatKwhSetbackM.map((v, m) => Math.max(v * heatAdj - exHeatKwhOAM[m], 0));
-  const newHeatKwhM = newHeatKwhSetbackM.map((v, m) => Math.max(v * heatAdj - newHeatKwhOAM[m], 0));
-  const exHeatGasM = exHeatGasSetbackM.map((v, m) => Math.max(v * heatAdj - exHeatGasOAM[m], 0));
-  const newHeatGasM = newHeatGasSetbackM.map((v, m) => Math.max(v * heatAdj - newHeatGasOAM[m], 0));
+  // Heating: MAX(setback*heatAdj - OA, 0) + OA per month (Excel Existing!I2 = Z20 + AL12: net
+  // setback plus full OA). Both Existing and New, kWh and gas buckets.
+  const exHeatKwhM = exHeatKwhSetbackM.map((v, m) => Math.max(v * heatAdj - exHeatKwhOAM[m], 0) + exHeatKwhOAM[m]);
+  const newHeatKwhM = newHeatKwhSetbackM.map((v, m) => Math.max(v * heatAdj - newHeatKwhOAM[m], 0) + newHeatKwhOAM[m]);
+  const exHeatGasM = exHeatGasSetbackM.map((v, m) => Math.max(v * heatAdj - exHeatGasOAM[m], 0) + exHeatGasOAM[m]);
+  const newHeatGasM = newHeatGasSetbackM.map((v, m) => Math.max(v * heatAdj - newHeatGasOAM[m], 0) + newHeatGasOAM[m]);
   const exPeakCoolM = exPeakCoolSetbackM.map((v, m) => v * coolAdj + exPeakCoolOAM[m]);
   const newPeakCoolM = newPeakCoolSetbackM.map((v, m) => v * coolAdj + newPeakCoolOAM[m]);
 

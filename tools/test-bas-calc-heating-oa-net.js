@@ -1,205 +1,199 @@
-// tools/test-bas-calc-heating-oa-net.js — BAS Savings Calc heating outside-air netting,
-// regression gate. Run: node tools/test-bas-calc-heating-oa-net.js
+// tools/test-bas-calc-heating-oa-net.js - BAS Calc heating: OA add-back + bisection calibration.
+// Run: node tools/test-bas-calc-heating-oa-net.js
 //
-// History: the heating combine in openBASCalc's _bcDoCalc (app/calculators.js) originally added
-// the calibrated setback load and the raw outside-air (ventilation) load straight together
-// (double-counting bug). A 2026-09-25 fix (c4a4e49) changed it to
-// Math.max(setback*heatAdj - OA, 0) + OA (algebraically MAX(setback*heatAdj, OA)), citing
-// Existing!D168 in the BAS Savings Calc Template.xlsm as the Excel oracle.
-//
-// That citation was WRONG. Verified directly against the real workbook
-// (my-knowledge-base/raw/Calcs/BAS Savings Calc Template.xlsm) via openpyxl, 2026-09-25:
-//   - Existing!D33 (row label) = "Potential Occupied Ton Hours Load (cooling setback)" — the
-//     D168 block is COOLING, not heating (confirmed: A168=102.5, a warm bin; D168's own OA
-//     subtrahend D641 uses the $E$10=55 cooling-side sensible+latent formula).
-//   - The real heating table is Existing!AH34 (row label AH33 = "Potential Occupied Mbtu load
-//     (heating setback)"):
-//       AH34 = MAX(IF($A34>50,0,Temperature!E6*VLOOKUP($A34,$S$7:$X$17,4))-D507,0)
-//     D507 (row label D506 = "Hourly Heating/Cooling Load") is the heating-only OA subtrahend:
-//       D507 = IF($A507<$E$12,Temperature!E6*1.08*$E$18*($E$12-$A507)/1000,0)
-//   - AH34 has NO add-back term. Traced every downstream reader (BF34/BG34/BH34 weekday-weighted
-//     rollups via SUMIF, AE34 = SUM(AB34:AD34)) up toward the savings total — none of them add
-//     the OA component back either. The correct combine is a plain net-and-clamp:
-//       heating = MAX(setback*heatAdj - OA, 0)   [no add-back, ever]
-//
-// This gate proves, WITHOUT a browser:
-//   1. Neither the original double-counting straight-sum NOR the c4a4e49 add-back pattern
-//      remains on any of the 4 heating combine lines (Existing/New x kWh-bucket/gas-bucket).
-//   2. The Excel!AH34-matching MAX(setback*heatAdj-OA,0) pattern (no add-back) is present on all
-//      four.
-//   3. heatAdj's calibration closed form was re-derived for the new combine (assuming no month
-//      clamps to 0): entered = heatAdj*rawSetbackTotal - rawOATotal =>
-//      heatAdj = (entered + rawOATotal) / rawSetbackTotal — NOT entered/rawSetbackTotal (that
-//      was only valid for c4a4e49's own, incorrect combine formula).
-//   4. Cooling's combine lines are UNCHANGED (still a straight sum, no clamp) — Excel has no
-//      such clamp for cooling (2026-09-22 parity audit).
-//   5. The netting formula itself, run standalone, reproduces MAX(setback-OA,0) — NOT
-//      MAX(setback,OA) (the wrong, add-back form) and NOT the straight sum.
-//   6. Real, measured Woodland Spring Middle regression figures (2026-09-25, restore-and-navigate
-//      headless run against a COPY of the real backup, both this fix AND the companion Task 2
-//      fix — Existing Outside Air Shut Off default now 'yes' — landed together): Annual kWh
-//      Savings 47,292 kWh, Heating Gas Savings 5,535 Therms, Cooling kWh Saved 47,292 kWh.
+// Oracle: BAS Savings Calc Template workbook, Existing!I2 = Z20 + AL12 (net setback + full OA),
+// and Savings Calculator!K45 (= SUM of that column) is goal-sought to the billed figure (K46).
+// So per month: heating = MAX(setback*adj - OA, 0) + OA, and adj is solved so the existing
+// total equals the entered figure. v2026.09.25.5 dropped the "+ OA"; that gave negative savings
+// when New conditions were strictly lower.
+// Real _bcDoCalc / _bcCalibrateHeatAdj text is loaded into a vm. Synthetic inputs only.
 'use strict';
-
-const fs = require('fs');
-const path = require('path');
-
+const fs = require('fs'),
+  path = require('path'),
+  vm = require('vm');
 const REPO = path.join(__dirname, '..');
 let passed = 0,
   failed = 0;
-function assert(cond, msg) {
-  if (cond) passed++;
+function assert(c, m) {
+  if (c) passed++;
   else {
     failed++;
-    console.log('  FAIL: ' + msg);
+    console.log('  FAIL: ' + m);
   }
 }
-
-const src = fs.readFileSync(path.join(REPO, 'app', 'calculators.js'), 'utf8');
-
-console.log('--- 1/2. Heating combine lines: no straight-sum, no add-back, net-and-clamp only ---');
-{
-  const wrongPatterns = [
-    // original double-counting straight sum
-    /exHeatKwhSetbackM\.map\(\(v, m\) => v \* heatAdj \+ exHeatKwhOAM\[m\]\)/,
-    /newHeatKwhSetbackM\.map\(\(v, m\) => v \* heatAdj \+ newHeatKwhOAM\[m\]\)/,
-    /exHeatGasSetbackM\.map\(\(v, m\) => v \* heatAdj \+ exHeatGasOAM\[m\]\)/,
-    /newHeatGasSetbackM\.map\(\(v, m\) => v \* heatAdj \+ newHeatGasOAM\[m\]\)/,
-    // c4a4e49's incorrect add-back form (MAX(setback-OA,0)+OA === MAX(setback,OA))
-    /Math\.max\(v \* heatAdj - exHeatKwhOAM\[m\], 0\) \+ exHeatKwhOAM\[m\]/,
-    /Math\.max\(v \* heatAdj - newHeatKwhOAM\[m\], 0\) \+ newHeatKwhOAM\[m\]/,
-    /Math\.max\(v \* heatAdj - exHeatGasOAM\[m\], 0\) \+ exHeatGasOAM\[m\]/,
-    /Math\.max\(v \* heatAdj - newHeatGasOAM\[m\], 0\) \+ newHeatGasOAM\[m\]/,
-  ];
-  for (const re of wrongPatterns) {
-    assert(!re.test(src), 'straight-sum / add-back pattern must be gone: ' + re);
+function loadFn(file, fn) {
+  const s = fs.readFileSync(file, 'utf8');
+  const mi = s.indexOf('function ' + fn + '(');
+  if (mi < 0) throw new Error('not found: ' + fn);
+  let d = 0,
+    e = s.indexOf('(', mi);
+  for (; e < s.length; e++) {
+    if (s[e] === '(') d++;
+    else if (s[e] === ')' && --d === 0) break;
   }
+  let dd = 0,
+    j = s.indexOf('{', e);
+  for (; j < s.length; j++) {
+    if (s[j] === '{') dd++;
+    else if (s[j] === '}' && --dd === 0) break;
+  }
+  return s.slice(mi, j + 1);
+}
+function loadConst(file, name) {
+  const s = fs.readFileSync(file, 'utf8');
+  let mi = s.indexOf('const ' + name + ' =');
+  if (mi < 0) mi = s.indexOf('var ' + name + ' =');
+  if (mi < 0) throw new Error('not found: ' + name);
+  let d = 0,
+    j = mi;
+  for (; j < s.length; j++) {
+    const c = s[j];
+    if ('[{('.includes(c)) d++;
+    else if (']})'.includes(c)) d--;
+    else if (c === ';' && !d) break;
+  }
+  return s.slice(mi, j + 1);
+}
+const CALC = path.join(REPO, 'app', 'calculators.js');
+const calcSrc = fs.readFileSync(CALC, 'utf8');
+const hasKeeper = calcSrc.includes('function _bcCalibrateHeatAdj(');
+const src = [
+  fs.readFileSync(path.join(REPO, 'app', 'data', 'bas-weather-bins.js'), 'utf8'),
+  loadConst(path.join(REPO, 'app', 'equipment-matrix.js'), 'EM_SP_DEFAULTS'),
+  loadConst(CALC, 'BAS_COOL_CURVE'),
+  loadConst(CALC, 'BAS_HEAT_CURVE'),
+  loadConst(CALC, 'BAS_VRF_COP'),
+  loadConst(CALC, 'BAS_TEMP_BINS'),
+  loadConst(CALC, 'BAS_MO'),
+  loadFn(CALC, '_bcInterp'),
+  loadFn(CALC, '_bcDefaultUnoccHeat'),
+  loadConst(CALC, 'BAS_CITIES'),
+  loadFn(CALC, '_basCityWeather'),
+  loadFn(CALC, '_bcGv'),
+  hasKeeper ? loadFn(CALC, '_bcCalibrateHeatAdj') : '',
+  loadFn(CALC, '_bcDoCalc'),
+]
+  .join('\n\n')
+  // test-only hook in the vm copy: expose calibrated existing arrays and the factor
+  .replace('p._bcResults = {', 'p._bcDbg={exHeatGasM,exHeatKwhM,heatAdj};p._bcResults = {')
+  .replace(/\bconst\s+/g, 'var ');
 
-  const correctPatterns = [
-    /exHeatKwhSetbackM\.map\(\(v, m\) => Math\.max\(v \* heatAdj - exHeatKwhOAM\[m\], 0\)\)/,
-    /newHeatKwhSetbackM\.map\(\(v, m\) => Math\.max\(v \* heatAdj - newHeatKwhOAM\[m\], 0\)\)/,
-    /exHeatGasSetbackM\.map\(\(v, m\) => Math\.max\(v \* heatAdj - exHeatGasOAM\[m\], 0\)\)/,
-    /newHeatGasSetbackM\.map\(\(v, m\) => Math\.max\(v \* heatAdj - newHeatGasOAM\[m\], 0\)\)/,
-  ];
-  for (const re of correctPatterns) {
-    assert(re.test(src), 'Excel!AH34-matching MAX(setback-OA,0) (no add-back) must be present: ' + re);
+class FE {
+  constructor(v, t) {
+    this.value = v;
+    this.tagName = t || 'INPUT';
+    this.textContent = '';
+    this.innerHTML = '';
+    this.style = {};
   }
 }
+function run(inp) {
+  const dom = new Map();
+  const sel = ['bc-heatSrc', 'bc-exOAShutoff', 'bc-newOAShutoff'];
+  for (const k in inp) dom.set(k, new FE(String(inp[k]), sel.includes(k) ? 'SELECT' : 'INPUT'));
+  ['bc-coolAdjWarn', 'bc-adjCool', 'bc-adjHeat', 'bc-results'].forEach((k) => dom.set(k, new FE('', 'DIV')));
+  const sb = { console, document: { getElementById: (id) => dom.get(id) || null }, window: {} };
+  vm.createContext(sb);
+  vm.runInContext(src, sb);
+  const project = { id: 'p1', basCalc: {} };
+  sb.projects = [project];
+  sb._bcDoCalc('p1');
+  return { r: project._bcResults, dbg: project._bcDbg };
+}
+const sum = (a) => a.reduce((x, y) => x + y, 0);
+// Synthetic gas building (no client data).
+const base = {
+  'bc-sqft': 80000,
+  'bc-heatSrc': 3,
+  'bc-vrfPct': 0,
+  'bc-coolEff': 0.86,
+  'bc-afue': 0.8,
+  'bc-elecCOP': 1,
+  'bc-city': 4,
+  'bc-exCoolOcc': 74,
+  'bc-exCoolUnocc': 85,
+  'bc-exHeatOcc': 70,
+  'bc-exHeatUnocc': 55,
+  'bc-exOAShutoff': 'yes',
+  'bc-exMfOn': 0,
+  'bc-exMfOff': 24,
+  'bc-exSatOn': 0,
+  'bc-exSatOff': 24,
+  'bc-exSunOn': 0,
+  'bc-exSunOff': 24,
+  'bc-newCoolOcc': 74,
+  'bc-newCoolUnocc': 85,
+  'bc-newHeatOcc': 70,
+  'bc-newHeatUnocc': 55,
+  'bc-newOAShutoff': 'yes',
+  'bc-newMfOn': 6,
+  'bc-newMfOff': 18,
+  'bc-newSatOn': 0,
+  'bc-newSatOff': 0,
+  'bc-newSunOn': 0,
+  'bc-newSunOff': 0,
+  'bc-calCoolKwh': 150000,
+  'bc-calHeatKwh': '',
+  'bc-calHeatGas': 15000,
+  'bc-peakStart': 16,
+  'bc-peakEnd': 18,
+  'bc-humRatioSP': 0.0082,
+};
 
-console.log('--- 3. heatAdj calibration: re-derived closed form with +rawOATotal, not the c4a4e49 form ---');
-{
-  assert(
-    !/heatAdj = calHeatGas \/ rawExHeatGasSetbackTotal/.test(src),
-    'c4a4e49 no-OA-term heatAdj form must be gone (gas branch)',
+console.log('--- 1. Source shape: add-back on all 4 lines, one bisection keeper ---');
+for (const n of ['exHeatKwhM', 'newHeatKwhM', 'exHeatGasM', 'newHeatGasM']) {
+  const re = new RegExp(
+    n + ' = \\w+\\.map\\(\\(v, m\\) => Math\\.max\\(v \\* heatAdj - \\w+\\[m\\], 0\\) \\+ \\w+\\[m\\]\\)',
   );
-  assert(
-    !/heatAdj = calHeatKwh \/ rawExHeatSetbackTotal/.test(src),
-    'c4a4e49 no-OA-term heatAdj form must be gone (kWh branch)',
-  );
-  assert(
-    /heatAdj = \(calHeatGas \+ rawExHeatGasOATotal\) \/ rawExHeatGasSetbackTotal/.test(src),
-    're-derived heatAdj (gas branch) must add rawExHeatGasOATotal back into the numerator',
-  );
-  assert(
-    /heatAdj = \(calHeatKwh \+ rawExHeatOATotal\) \/ rawExHeatSetbackTotal/.test(src),
-    're-derived heatAdj (kWh branch) must add rawExHeatOATotal back into the numerator',
-  );
+  assert(re.test(calcSrc), n + ' combine must be MAX(setback*adj-OA,0)+OA');
+}
+assert(!/Math\.max\(v \* heatAdj - \w+\[m\], 0\)\)/.test(calcSrc), 'no-add-back combine must be gone');
+assert(!/heatAdj = \(cal\w+ \+ rawEx\w+OATotal\) \//.test(calcSrc), 'closed-form heatAdj must be gone');
+assert((calcSrc.match(/function _bcCalibrateHeatAdj\(/g) || []).length === 1, 'exactly one _bcCalibrateHeatAdj');
+assert((calcSrc.match(/_bcCalibrateHeatAdj\(/g) || []).length === 4, 'keeper: 1 definition + 3 calls');
+
+console.log('--- 2. New strictly less conditioning: no negative heating savings ---');
+const cases = {
+  'A: existing 24h all days, new 6-18 weekdays': base,
+  'B: existing 24h Mon-Fri only, new 6-17': Object.assign({}, base, {
+    'bc-exSatOff': 0,
+    'bc-exSunOff': 0,
+    'bc-newMfOff': 17,
+  }),
+};
+for (const [name, inp] of Object.entries(cases)) {
+  const { r, dbg } = run(inp);
+  const neg = r.gasSavings.filter((x) => x < -1e-6);
+  assert(neg.length === 0, name + ': negative months: ' + neg.map(Math.round).join(','));
+  assert(r.annHeatGasSav > 0, name + ': annual therms saved positive, got ' + r.annHeatGasSav);
+  const exTot = sum(dbg.exHeatGasM);
+  assert(Math.abs(exTot - 15000) < 1, name + ': existing total ' + exTot + ' must equal entered 15000');
 }
 
-console.log('--- 4. Cooling combine lines: unchanged (still a straight sum, no clamp) ---');
+console.log('--- 3. Clamp month: calibration still hits the target ---');
 {
-  assert(
-    /exCoolSetbackM\.map\(\(v, m\) => v \* coolAdj \+ exCoolOAM\[m\]\)/.test(src),
-    'Existing cooling combine must stay a straight sum (cooling is out of scope for this fix)',
-  );
-  assert(
-    /newCoolSetbackM\.map\(\(v, m\) => v \* coolAdj \+ newCoolOAM\[m\]\)/.test(src),
-    'New cooling combine must stay a straight sum (cooling is out of scope for this fix)',
-  );
-  assert(
-    /exPeakCoolSetbackM\.map\(\(v, m\) => v \* coolAdj \+ exPeakCoolOAM\[m\]\)/.test(src),
-    'Existing peak-cooling combine must stay a straight sum',
-  );
+  const { dbg } = run(Object.assign({}, base, { 'bc-calHeatGas': 14000 }));
+  const exTot = sum(dbg.exHeatGasM);
+  assert(Math.abs(exTot - 14000) < 1, 'existing total ' + exTot + ' must equal entered 14000');
 }
 
-console.log('--- 5. Netting formula vs. Excel!AH34 oracle (MAX(setback-OA,0), no add-back) ---');
-{
-  // Excel oracle, AH34 pattern (verified against BAS Savings Calc Template.xlsm, 2026-09-25):
-  //   AH34 = MAX(IF($A34>50,0,Temperature!E6*VLOOKUP($A34,$S$7:$X$17,4)) - D507, 0)
-  // i.e. MAX(setback - OA, 0). No add-back anywhere downstream (BF34/BG34/BH34, AE34 traced).
-  const excelHeatingNet = (setback, oa) => Math.max(setback - oa, 0);
-  // The two WRONG forms this gate must distinguish from:
-  const oldStraightSum = (setback, oa) => setback + oa; // pre-c4a4e49 double-count
-  const c4a4e49AddBack = (setback, oa) => Math.max(setback - oa, 0) + oa; // === MAX(setback, oa)
+console.log('--- 4. Keeper unit: monotone bisection ---');
+if (hasKeeper) {
+  const sb = { Math };
+  vm.createContext(sb);
+  vm.runInContext(loadFn(CALC, '_bcCalibrateHeatAdj'), sb);
+  const S = [10, 50, 100, 5],
+    OA = [20, 20, 20, 20];
+  const a = sb._bcCalibrateHeatAdj(S, OA, 250);
+  const tot = sum(S.map((v, m) => Math.max(v * a - OA[m], 0) + OA[m]));
+  assert(Math.abs(tot - 250) < 1e-6, 'keeper total ' + tot + ' must equal 250');
+} else assert(false, 'keeper missing');
 
-  const cases = [
-    { setback: 1478.4, oa: 15907.6 }, // OA dominates — all three forms agree here (all floor to
-    // the OA figure alone: correct=0, add-back=15907.6... no, they do NOT all agree; see below)
-    { setback: 5000, oa: 1200 }, // setback dominates, clamp never binds — forms clearly diverge
-    { setback: 100, oa: 100 }, // boundary
-  ];
-  for (const { setback, oa } of cases) {
-    const correct = excelHeatingNet(setback, oa);
-    assert(
-      Math.abs(correct - Math.max(setback - oa, 0)) < 1e-9,
-      `oracle sanity: MAX(setback-OA,0) for setback=${setback}, oa=${oa}`,
-    );
-    assert(
-      Math.abs(correct - oldStraightSum(setback, oa)) > 1e-9 || (setback === 0 && oa === 0),
-      `must differ from the original straight-sum form (setback=${setback}, oa=${oa})`,
-    );
-  }
-  // Whenever setback exceeds OA (clamp never binds), the correct and add-back forms diverge by
-  // exactly the OA amount — the concrete proof that c4a4e49's "+OA" term was extra, unwanted mass.
-  assert(
-    c4a4e49AddBack(5000, 1200) - excelHeatingNet(5000, 1200) === 1200,
-    'c4a4e49 add-back form must overstate the correct netted total by exactly the OA amount when setback>oa',
-  );
-  // Concrete divergence check, spelled out: setback dominates the OA term.
-  assert(
-    excelHeatingNet(5000, 1200) === 3800,
-    'MAX(setback-OA,0) with setback=5000,oa=1200 must be 3800 (net-and-clamp only)',
-  );
-  assert(
-    c4a4e49AddBack(5000, 1200) === 5000,
-    'sanity: the wrong add-back form collapses to MAX(setback,oa)=5000 for the same inputs — proves the two formulas are not equivalent',
-  );
-}
+console.log('--- 5. Existing OA shutoff default stays Yes ---');
+assert(
+  /exOAShutoff: \{ value: 'yes'/.test(fs.readFileSync(path.join(REPO, 'app', 'calc-autofill.js'), 'utf8')),
+  'autofill Existing OA shutoff default is yes',
+);
 
-console.log('--- 6. Real, measured Woodland Spring Middle regression (headless, real backup data) ---');
-{
-  // 2026-09-25: restore-and-navigate.js run against a COPY of the real backup, Spring Hill
-  // Schools > Woodland Spring Middle, both this fix (heating netting, no add-back) and the
-  // companion Task 2 fix (Existing Outside Air Shut Off default -> 'yes') landed together.
-  // Locked-in regression figures — see 2026-09-25-bas-calc-oa-assumption/2026-09-25-result.md
-  // and 2026-09-25-verify-results.json for the full run.
-  const WOODLAND_NEW = { kwhSavings: 47292, heatingGasTherms: 5535, coolingKwh: 47292 };
-  const WOODLAND_OLD_V2026_09_25_2 = { kwhSavings: 81966, heatingGasTherms: 4346, coolingKwh: 81966 };
-
-  assert(
-    WOODLAND_NEW.kwhSavings < WOODLAND_OLD_V2026_09_25_2.kwhSavings,
-    'Woodland Annual kWh Savings must drop once Existing OA Shutoff matches Proposed (Task 2) — no more artificial OA-driven cooling delta',
-  );
-  assert(
-    WOODLAND_NEW.coolingKwh === WOODLAND_NEW.kwhSavings,
-    'Woodland Cooling kWh Saved must equal Annual kWh Savings (pure-gas heat source, no electric-heat kWh component)',
-  );
-  // Sanity vs. billed usage (2026-09-25 task): heating 17,386 Therms, cooling 185,665 kWh.
-  const heatingPctOfBilled = (WOODLAND_NEW.heatingGasTherms / 17386) * 100;
-  const coolingPctOfBilled = (WOODLAND_NEW.coolingKwh / 185665) * 100;
-  assert(
-    heatingPctOfBilled > 0 && heatingPctOfBilled < 100,
-    `Heating Gas Savings as % of billed heating must be a plausible ECM figure, got ${heatingPctOfBilled.toFixed(1)}%`,
-  );
-  assert(
-    coolingPctOfBilled > 0 && coolingPctOfBilled < 100,
-    `Cooling kWh Saved as % of billed cooling must be a plausible ECM figure, got ${coolingPctOfBilled.toFixed(1)}%`,
-  );
-  console.log(
-    `  Woodland — new Heating Gas Savings ${WOODLAND_NEW.heatingGasTherms} Therms (${heatingPctOfBilled.toFixed(1)}% of billed 17,386 Therms); ` +
-      `new Cooling kWh Saved ${WOODLAND_NEW.coolingKwh} kWh (${coolingPctOfBilled.toFixed(1)}% of billed 185,665 kWh)`,
-  );
-}
-
-console.log(`\n${passed} passed, ${failed} failed`);
+console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);
