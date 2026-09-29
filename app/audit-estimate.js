@@ -30,8 +30,7 @@
    assumptions ... for analysis and refinement against actuals over time." No separate
    per-project override store is added — the labor RATE already has a per-project setting
    (app/pricing-estimator.js's _pricingGetConfig().hourlyRate, 'en_pricing_config'); this file
-   reads that existing value first (auditEstGetHourlyRate()) and only falls back to its own
-   company-wide default when pricing config isn't available. That is the "per-project override
+   reads that one existing value (auditEstGetHourlyRate()); it keeps no second rate. That is the "per-project override
    only if trivial" the task asked for — reusing what already exists, not building a second
    override mechanism.
    ────────────────────────────────────────────────────────────────────────────────────────── */
@@ -120,10 +119,9 @@ var AUDIT_EST_HOURS_PER_EQUIP_DEFAULT = {
   ef: 0.5, // estimate — simple equipment
 };
 
-var AUDIT_EST_RATE_DEFAULT = 170; // mirrors COST_LABOR_RATE_DEFAULT (app/pricing-estimator.js); see auditEstGetHourlyRate()
-
+// The labor rate is NOT stored here: auditEstGetHourlyRate() reads the one rate,
+// _pricingGetConfig().hourlyRate (default COST_LABOR_RATE_DEFAULT in app/pricing-estimator.js).
 var AUDIT_EST_DEFAULTS = {
-  hourlyRate: AUDIT_EST_RATE_DEFAULT,
   hoursPerEquip: Object.assign({}, AUDIT_EST_HOURS_PER_EQUIP_DEFAULT),
   hoursPerBuilding: 2, // estimate — site visit + travel time, per building (BAS Audit)
   hoursReport: 4, // estimate — fixed report writing/analysis hours (BAS Audit)
@@ -183,14 +181,9 @@ function auditEstSetConfig(path, newValue) {
 
 // Rate already exists per-project on the Cost Estimate tab (app/pricing-estimator.js's
 // _pricingGetConfig().hourlyRate) — read that first so Audit Estimate never disagrees with
-// Cost Estimate about what CSC charges per hour on this project. Falls back to the Audit
-// Estimate's own company-wide default only when pricing config isn't loaded.
+// Cost Estimate about what CSC charges per hour on this project. One rate, no second default.
 function auditEstGetHourlyRate() {
-  if (typeof _pricingGetConfig === 'function') {
-    var cfg = _pricingGetConfig();
-    if (cfg && cfg.hourlyRate) return cfg.hourlyRate;
-  }
-  return auditEstGetConfig().hourlyRate;
+  return _pricingGetConfig().hourlyRate;
 }
 
 /* ── Equipment Matrix accessors — number of buildings, equipment count by type, points per
@@ -212,10 +205,11 @@ function auditEstGetEquipmentSummary(projId) {
 
   rows.forEach(function (r) {
     var bName = r.building || 'Unknown Building';
-    buildings[bName] = true;
     var cat = r.category || 'other';
     var pts = r.points ? Object.keys(r.points).length : 0;
     if (AUDIT_EST_CATEGORIES.indexOf(cat) !== -1) {
+      // Only a building with an auditable category is priced (same set the proposal lists).
+      buildings[bName] = true;
       if (!byCat[cat])
         byCat[cat] = { category: cat, label: AUDIT_EST_CAT_LABELS[cat] || cat, count: 0, totalPoints: 0 };
       byCat[cat].count++;

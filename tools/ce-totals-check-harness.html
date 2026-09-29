@@ -170,7 +170,7 @@
           else if (tier === 'full-scope') rows = buildFullScopeRows(9001);
           else rows = buildComplianceRows(9001);
           out[tier] = {
-            totals: collectPricingEstimate(9001, tier),
+            totals: _pricingComputeTotals(rows, _pricingGetEstimate(9001)),
             rows: __ceFingerprint(rows),
           };
         });

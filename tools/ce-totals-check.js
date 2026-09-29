@@ -3,7 +3,7 @@
 // Loads app/pricing-estimator.js (real, unmodified) via file:// against the synthetic
 // ASHRAE-36 dummy-data harness at tools/ce-totals-check-harness.html (dummy data copied
 // from the b771dec6 investigation harness — no real project data) and snapshots:
-//   - collectPricingEstimate(9001, tier) totals for 'compliance' | 'recommended' | 'full-scope'
+//   - _pricingComputeTotals(rows, estimate) totals for 'compliance' | 'recommended' | 'full-scope'
 //   - per-row fingerprints {id, building, item, qty, lineTotal, phase} (sorted by id) from
 //     buildComplianceRows / buildRecommendedRows / buildFullScopeRows
 //
@@ -60,7 +60,7 @@ function deepDiff(base, cur, prefix, out) {
     console.log('WROTE BASELINE:', BASELINE_PATH);
     ['compliance', 'recommended', 'full-scope'].forEach(function (tier) {
       var t = snapshot[tier].totals;
-      console.log('  ' + tier + ': grandTotal=' + (t ? t.grandTotal : null) + ' rows=' + snapshot[tier].rows.length);
+      console.log('  ' + tier + ': grand=' + (t ? t.grand : null) + ' rows=' + snapshot[tier].rows.length);
     });
     return;
   }
@@ -78,7 +78,7 @@ function deepDiff(base, cur, prefix, out) {
     console.log('PASS: ce-totals-check — all tiers match baseline (totals + per-row fingerprints).');
     ['compliance', 'recommended', 'full-scope'].forEach(function (tier) {
       var t = snapshot[tier].totals;
-      console.log('  ' + tier + ': grandTotal=' + (t ? t.grandTotal : null) + ' rows=' + snapshot[tier].rows.length);
+      console.log('  ' + tier + ': grand=' + (t ? t.grand : null) + ' rows=' + snapshot[tier].rows.length);
     });
     process.exit(0);
   } else {

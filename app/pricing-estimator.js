@@ -3,7 +3,7 @@
    Storage keys:
      en_pricing_catalog        — global SKU→{list,net,contract,computed_net,category,desc}
      en_pricing_meta           — global {importedAt,filename,skuCount}
-     en_pricing_config         — global {netMultiplier,contractPct,hourlyRate,priceBasis,perSequenceHours,
+     en_pricing_config         — global {netMultiplier,hourlyRate,priceBasis,perSequenceHours,
                                  installHoursByPoint} (Deliverable E, 2026-07-19 — installHoursByPoint
                                  prices the PHYSICAL install hours of hardware gaps; hourlyRate is
                                  the SINGLE $/hr rate for ALL labor — programming AND physical install
@@ -592,8 +592,8 @@ const FAN_FRACTION_DEFAULT = 0.12; // CBECS VAV 10–20%; user-editable
 
 /* ── Get project annual electricity (kWh) from en_utility_<projId> bill data ──
    Returns { annualKwh: number|null, hasBillData: boolean, elecRate: number }.
-   annualKwh: sum of kWh on all electricity meters over the most recent
-   12 months of bill data (or all bills if fewer than 12 are available).
+   annualKwh: sum of kWh on all electric meters over the newest 12 calendar
+   months of bill data (annualized from the months present if fewer than 12).
    elecRate: weighted average $/kWh across all elec bills; fallback 0.10.
    Returns hasBillData=false if the project has no electricity bills.
    Data source: en_utility_<projId> → { buildings: [{ meters: [{ bills: [] }] }] }
@@ -607,11 +607,13 @@ function _pricingGetProjectAnnualElec(projId) {
     totalKwh = 0;
   _peBldgs.forEach(function (b) {
     (b.meters || []).forEach(function (m) {
-      if (m.commodity && m.commodity !== 'Electricity') return;
+      if (m.commodity && m.commodity !== 'Electric') return;
       (m.bills || []).forEach(function (bill) {
         var kwh = parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
         if (kwh > 0) {
-          allElecBills.push({ kwh: kwh, start: bill.start || bill.date || '' });
+          var _dt = bill.end || bill.start || bill.date || '';
+          if (!_dt) return; // an undated bill cannot be placed in a 12-month window
+          allElecBills.push({ kwh: kwh, month: String(_dt).slice(0, 7) });
           totalKwh += kwh;
           totalCost += parseFloat(bill.totalCost) || parseFloat(bill.amount) || 0;
         }
@@ -621,18 +623,21 @@ function _pricingGetProjectAnnualElec(projId) {
 
   if (!allElecBills.length) return { annualKwh: null, hasBillData: false, elecRate: 0.1 };
 
-  // Sort by date descending, take most recent 12 months of bills
-  allElecBills.sort(function (a, b) {
-    return (b.start || '').localeCompare(a.start || '');
+  // Newest 12 calendar months of bill data (all meters), by bill end month. Fewer than 12
+  // months of data: annualize by 12 / months-with-data.
+  var _months = {};
+  allElecBills.forEach(function (b) {
+    _months[b.month] = true;
   });
-  var recentBills = allElecBills.slice(0, 12);
-  var annualKwh = recentBills.reduce(function (s, b) {
-    return s + b.kwh;
+  var _recentMonths = Object.keys(_months).sort().reverse().slice(0, 12);
+  var _inWindow = {};
+  _recentMonths.forEach(function (mo) {
+    _inWindow[mo] = true;
+  });
+  var annualKwh = allElecBills.reduce(function (s, b) {
+    return _inWindow[b.month] ? s + b.kwh : s;
   }, 0);
-  // If fewer than 12 bills, annualize by extrapolating
-  if (recentBills.length < 12 && recentBills.length > 0) {
-    annualKwh = (annualKwh / recentBills.length) * 12;
-  }
+  if (_recentMonths.length < 12) annualKwh = (annualKwh / _recentMonths.length) * 12;
   var elecRate = totalKwh > 0 && totalCost > 0 ? totalCost / totalKwh : 0.1;
   return { annualKwh: Math.round(annualKwh), hasBillData: true, elecRate: elecRate };
 }
@@ -2362,12 +2367,23 @@ function parsePricingCSV(text) {
   return { catalog: catalog, skuCount: skuCount };
 }
 
+/* ── Unit price for one catalog entry under the chosen price basis (the ONE resolver) ──
+   contract = COST_CONTRACT_PCT x List (company standard, spec 1/7); list; net.
+   Returns null when the entry or the needed price is missing → "No price". */
+function _pricingUnitPriceFor(entry, cfg) {
+  if (!entry) return null;
+  var basis = (cfg && cfg.priceBasis) || 'contract';
+  if (basis === 'list') return entry.list != null ? entry.list : null;
+  if (basis === 'net') return entry.net != null ? entry.net : null;
+  if (basis === 'contract') return entry.list != null ? parseFloat((COST_CONTRACT_PCT * entry.list).toFixed(2)) : null;
+  return null;
+}
+
 /* ── Config helpers ── */
 function _pricingGetConfig() {
   var stored = sget('en_pricing_config', null);
   var dflt = {
     netMultiplier: COST_NET_MULTIPLIER_DEFAULT,
-    contractPct: COST_CONTRACT_PCT,
     hourlyRate: COST_LABOR_RATE_DEFAULT,
     priceBasis: 'contract',
     perSequenceHours: Object.assign({}, COST_PER_SEQ_HOURS_DEFAULT),
@@ -2379,13 +2395,18 @@ function _pricingGetConfig() {
     installHoursByPoint: Object.assign({}, INSTALL_HOURS_BY_POINT_DEFAULT), // Deliverable E
   };
   if (!stored) return dflt;
-  // Merge defaults for any missing keys
-  return Object.assign(dflt, stored);
+  // Stored (user-saved) values always win. Keys the user never changed read the live default.
+  // The two hours tables merge per key so a partial stored table never drops a default key.
+  var merged = Object.assign(dflt, stored);
+  merged.perSequenceHours = Object.assign({}, COST_PER_SEQ_HOURS_DEFAULT, stored.perSequenceHours || {});
+  merged.installHoursByPoint = Object.assign({}, INSTALL_HOURS_BY_POINT_DEFAULT, stored.installHoursByPoint || {});
+  return merged;
 }
+// Stores ONLY the fields the user changed (never the merged defaults), so a later change to a
+// code default still reaches every user who never edited that field.
 function _pricingSetConfig(updates) {
-  var cfg = _pricingGetConfig();
-  Object.assign(cfg, updates);
-  sset('en_pricing_config', cfg);
+  var stored = sget('en_pricing_config', null) || {};
+  sset('en_pricing_config', Object.assign(stored, updates));
 }
 
 /* ── Get estimate state (row toggles, manual prices) ── */
@@ -2616,17 +2637,7 @@ function buildCatalogRows(projId, buildingNames) {
   // Helper: get unit price from catalog for a given SKU and basis
   function getUnitPrice(sku) {
     if (!catalog || !sku) return null;
-    var entry = catalog[sku];
-    if (!entry) return null;
-    var basis = cfg.priceBasis || 'contract';
-    if (basis === 'list') return entry.list != null ? entry.list : null;
-    if (basis === 'net') return entry.net != null ? entry.net : null;
-    if (basis === 'contract') {
-      // contract: ALWAYS COST_CONTRACT_PCT × List — no CSV-contract fallback (spec §1/§7)
-      if (entry.list != null) return parseFloat((COST_CONTRACT_PCT * entry.list).toFixed(2));
-      return null; // list=null → no contract price possible → "⚠ No price"
-    }
-    return null;
+    return _pricingUnitPriceFor(catalog[sku], cfg);
   }
 
   // Helper: format equipment label for a group
@@ -2939,7 +2950,7 @@ function buildCatalogRows(projId, buildingNames) {
       var _listPrice = _catEntry && _catEntry.list != null ? _catEntry.list : null;
       var _netPrice = _catEntry && _catEntry.net != null ? _catEntry.net : null;
       var _contractPrice =
-        _catEntry && _catEntry.list != null ? parseFloat((cfg.contractPct * _catEntry.list).toFixed(2)) : null;
+        _pricingUnitPriceFor(_catEntry, { priceBasis: 'contract' });
 
       rows.push({
         id: 'hw_' + bName + '_' + gKey + '_' + rowIdx++,
@@ -3453,10 +3464,13 @@ function _pricingComputeTotals(rows, estimate) {
   // allows labor totals to display even when no catalog is loaded.
   var grandNull = !hasAnyPrice;
 
+  // Round to cents once, here (float sums such as 0.1 + 0.2 must not leak out of the total).
+  var p1 = Math.round(phase1 * 100) / 100;
+  var p2 = Math.round(phase2 * 100) / 100;
   return {
-    phase1: grandNull ? null : phase1,
-    phase2: grandNull ? null : phase2,
-    grand: grandNull ? null : phase1 + phase2,
+    phase1: grandNull ? null : p1,
+    phase2: grandNull ? null : p2,
+    grand: grandNull ? null : Math.round((p1 + p2) * 100) / 100,
     included: included,
     total: total,
     engReviewCount: engReviewCount,
@@ -3527,16 +3541,6 @@ function initCostEstimateTab(projId) {
       '"',
     ' style="width:56px;font-size:11px;padding:2px 6px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px"',
     ' onchange="updatePricingConfig(' + projId + ",'netMultiplier',parseFloat(this.value))\">",
-    '</label>',
-    '<label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px">',
-    'Contract %:',
-    '<input type="number" id="pricing-contract-pct-' +
-      projId +
-      '" min="1" max="100" step="1" value="' +
-      Math.round(cfg.contractPct * 100) +
-      '"',
-    ' style="width:48px;font-size:11px;padding:2px 6px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px"',
-    ' onchange="updatePricingConfig(' + projId + ",'contractPct',parseFloat(this.value)/100)\">",
     '</label>',
     '<label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px">',
     'Hourly Rate:',
@@ -3916,7 +3920,8 @@ function _pricingManualPrice(event, projId, rowId) {
     if (tds.length >= 9) {
       var row = _pricingFindRow(projId, rowId);
       if (row) {
-        var lt = isNaN(val) || val <= 0 ? null : val * row.qty;
+        // same formula as _pricingComputeTotals: manual parts price x qty + install labor
+        var lt = isNaN(val) || val <= 0 ? null : val * row.qty + (row.installLaborTotal || 0);
         tds[8].innerHTML =
           lt !== null ? _pricingFmt(lt) : '<span style="color:var(--warn);font-size:10px">⚠ Enter price</span>';
       }
@@ -3977,9 +3982,6 @@ function _pricingRefreshFooter(projId) {
 
 function updatePricingConfig(projId, key, val) {
   _pricingSetConfig({ [key]: val });
-  if (key === 'netMultiplier' && typeof showToast === 'function') {
-    showToast('Net multiplier updated to ' + val + ' — recomputing prices ✓');
-  }
   initCostEstimateTab(projId);
 }
 
@@ -3991,7 +3993,7 @@ function _pricingUpdateBudget(projId, key, val) {
 
 /* ══════════════════════════════════════════════════════════════════════════════
    PHASE 3 — Three-tier model (Recommended/Compliance/Full Scope), optimizer,
-              COMBO de-dup, tier toggle, collectPricingEstimate (spec §4, §8, §10, §11)
+              COMBO de-dup, tier toggle (spec §4, §8, §10, §11)
    ══════════════════════════════════════════════════════════════════════════════ */
 
 /* ── Optimizer qualifying classes (spec §4) ──────────────────────────────────
@@ -4066,16 +4068,8 @@ function _pricingFindCheapestSku(pointKey, catalog, cfg) {
   var classFilter = OPTIMIZER_CLASS_FILTERS[pointKey];
   if (!classFilter) return null; // no filter defined → cannot optimize
 
-  var basis = cfg.priceBasis || 'contract';
-
   function getPrice(entry) {
-    if (!entry) return null;
-    if (basis === 'list') return entry.list != null ? entry.list : null;
-    if (basis === 'net') return entry.net != null ? entry.net : null;
-    if (basis === 'contract') {
-      return entry.list != null ? parseFloat((COST_CONTRACT_PCT * entry.list).toFixed(2)) : null;
-    }
-    return null;
+    return _pricingUnitPriceFor(entry, cfg);
   }
 
   var bestSku = null;
@@ -4190,7 +4184,7 @@ function buildRecommendedRows(projId) {
           rec.listPrice = _optEntry && _optEntry.list != null ? _optEntry.list : null;
           rec.netPrice = _optEntry && _optEntry.net != null ? _optEntry.net : null;
           rec.contractPrice =
-            _optEntry && _optEntry.list != null ? parseFloat((cfg.contractPct * _optEntry.list).toFixed(2)) : null;
+            _pricingUnitPriceFor(_optEntry, { priceBasis: 'contract' });
         }
       }
     }
@@ -4397,16 +4391,7 @@ function buildOptionalPointRows(projId) {
 
   function getUnitPrice(sku) {
     if (!catalog || !sku) return null;
-    var entry = catalog[sku];
-    if (!entry) return null;
-    var basis = cfg.priceBasis || 'contract';
-    if (basis === 'list') return entry.list != null ? entry.list : null;
-    if (basis === 'net') return entry.net != null ? entry.net : null;
-    if (basis === 'contract') {
-      if (entry.list != null) return parseFloat((COST_CONTRACT_PCT * entry.list).toFixed(2));
-      return null;
-    }
-    return null;
+    return _pricingUnitPriceFor(catalog[sku], cfg);
   }
 
   ashData.buildings.forEach(function (bldgData) {
@@ -4577,7 +4562,7 @@ function buildOptionalPointRows(projId) {
       var _listPrice = _catEntry && _catEntry.list != null ? _catEntry.list : null;
       var _netPrice = _catEntry && _catEntry.net != null ? _catEntry.net : null;
       var _contractPrice =
-        _catEntry && _catEntry.list != null ? parseFloat((cfg.contractPct * _catEntry.list).toFixed(2)) : null;
+        _pricingUnitPriceFor(_catEntry, { priceBasis: 'contract' });
 
       rows.push({
         id: 'opt_' + bName + '_' + gKey + '_' + rowIdx++,
@@ -4662,10 +4647,7 @@ function buildFullScopeRows(projId) {
     var fddLineTotal = null;
     if (catalog && catalog[FDD_SKU]) {
       var fddEntry = catalog[FDD_SKU];
-      var basis = cfg.priceBasis || 'contract';
-      if (basis === 'list') fddUnitPrice = fddEntry.list;
-      else if (basis === 'net') fddUnitPrice = fddEntry.net;
-      else fddUnitPrice = fddEntry.list != null ? parseFloat((COST_CONTRACT_PCT * fddEntry.list).toFixed(2)) : null;
+      fddUnitPrice = _pricingUnitPriceFor(fddEntry, cfg);
       if (fddUnitPrice !== null) fddLineTotal = fddUnitPrice; // qty=1
     }
 
@@ -4798,7 +4780,7 @@ var _pricingBldgFilter = {}; // projId → building name or '' for All
    col 6:  SKU — sortable
    col 7:  List — sortable (numeric) — entry.list from catalog
    col 8:  Net — sortable (numeric) — entry.net (multiplier×list or CSV net)
-   col 9:  Contract (40%) — sortable (numeric) — contractPct×list, always live-computed
+   col 9:  Contract (40%) — sortable (numeric) — COST_CONTRACT_PCT×list, always live-computed
    col 10: Hours — sortable (numeric) — labor hours, phase-2 rows only
    col 11: Rate — sortable (numeric) — cc78ac9e: the $/hr labor rate applied to phase-2 Hours to
            produce Line Total (en_pricing_config.hourlyRate, fallback COST_LABOR_RATE_DEFAULT).
@@ -4978,7 +4960,8 @@ function _pricingApplyQtyOverrides(projId, rows) {
     // installLaborTotal computed against the OLD qty when _pricingComputeTotals's manual-price
     // branch later reads it.
     if (cloned.phase === 1 && !cloned.ioOnly && cloned.installHours != null) {
-      var _qtyOvInstRate = cloned.installLaborRate != null ? cloned.installLaborRate : COST_LABOR_RATE_DEFAULT;
+      var _qtyOvInstRate =
+        cloned.installLaborRate != null ? cloned.installLaborRate : _pricingGetConfig().hourlyRate || COST_LABOR_RATE_DEFAULT;
       cloned.installLaborTotal = parseFloat((cloned.installHours * qty * _qtyOvInstRate).toFixed(2));
       if (cloned.partsUnitPrice != null) {
         cloned.partsLineTotal = parseFloat((cloned.partsUnitPrice * qty).toFixed(2));
@@ -6365,19 +6348,6 @@ function _pricingOpenSettingsPopover(projId, btn) {
     ' onchange="updatePricingConfig(' +
     projId +
     ",'netMultiplier',parseFloat(this.value))\">" +
-    '</label>';
-  html +=
-    '<label style="display:flex;align-items:center;justify-content:space-between;gap:6px;color:var(--text2);margin-bottom:6px">' +
-    'Contract %:' +
-    '<input type="number" id="pricing-contract-pct-' +
-    projId +
-    '" min="1" max="100" step="1" value="' +
-    Math.round(cfg.contractPct * 100) +
-    '"' +
-    ' style="width:44px;font-size:11px;padding:2px 6px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px"' +
-    ' onchange="updatePricingConfig(' +
-    projId +
-    ",'contractPct',parseFloat(this.value)/100)\">" +
     '</label>';
   html +=
     /* Unified labor rate (2026-07-28): single Hourly Rate for ALL labor — programming/sequence
@@ -10224,29 +10194,16 @@ function _pricingComputeSummaryData(projId, estimate) {
     });
   });
 
-  function sumRows(rows) {
-    var hw = rows.filter(function (r) {
-      return r.phase === 1;
-    });
-    var lb = rows.filter(function (r) {
-      return r.phase === 2;
-    });
-    var hwSum = hw.reduce(function (s, r) {
-      return estimate.rowToggles[r._baseId || r.id] !== false ? s + (r.lineTotal || 0) : s;
-    }, 0);
-    var lbSum = lb.reduce(function (s, r) {
-      return estimate.rowToggles[r._baseId || r.id] !== false ? s + (r.lineTotal || 0) : s;
-    }, 0);
-    return { items: rows.length, hw: hwSum, lb: lbSum, total: hwSum + lbSum };
-  }
-
   var buildings = bldgOrder.map(function (bName) {
     var tiers = {};
     tierDefs.forEach(function (t) {
       var bRows = perTier[t.key].filter(function (r) {
         return r.building === bName;
       });
-      tiers[t.key] = sumRows(bRows);
+      var bt = _pricingComputeTotals(bRows, estimate);
+      var hwSum = bt.phase1 || 0;
+      var lbSum = bt.phase2 || 0;
+      tiers[t.key] = { items: bRows.length, hw: hwSum, lb: lbSum, total: hwSum + lbSum };
     });
     return { building: bName, tiers: tiers };
   });
@@ -10395,52 +10352,3 @@ function _pricingComputeSummaryData(projId, estimate) {
   ].join('\n');
   if (document.head) document.head.appendChild(style);
 })();
-
-/* ── Phase 5 — collectPricingEstimate (spec §10) ────────────────────────────
-   Returns {hardwareTotal, laborTotal, grandTotal, basis, skusMissing,
-            engReviewCount, pendingPriceCount} for tier in {'compliance','recommended','full-scope'}.
-   Returns null if no en_pricing_catalog.
-   pendingPriceCount = included rows with no resolvable price (NO-SKU unpriced +
-   SKU not in catalog). I/O-only ($0) rows are NOT counted as pending.
-   grandTotal is the priced subtotal; null only when no catalog or zero priced rows.
-   ─────────────────────────────────────────────────────────────────────────── */
-function collectPricingEstimate(projId, tier) {
-  var catalog = sget('en_pricing_catalog', null);
-  if (!catalog || !Object.keys(catalog).length) return null;
-
-  var activeTier = tier || 'compliance';
-  var rows;
-  if (activeTier === 'recommended') {
-    rows = buildRecommendedRows(projId);
-  } else if (activeTier === 'full-scope') {
-    rows = buildFullScopeRows(projId);
-  } else {
-    rows = buildComplianceRows(projId);
-  }
-
-  if (!rows || !rows.length) return null;
-
-  var estimate = _pricingGetEstimate(projId);
-  var cfg = _pricingGetConfig();
-  var totals = _pricingComputeTotals(rows, estimate);
-
-  var skusMissing = 0;
-  var engReviewCount = 0;
-
-  rows.forEach(function (row) {
-    if (row.engReview) engReviewCount++;
-    if (row.phase === 1 && !row.ioOnly && !row.noSku && row.sku) {
-      if (!catalog[row.sku]) skusMissing++;
-    }
-  });
-
-  return {
-    hardwareTotal: totals.phase1,
-    laborTotal: totals.phase2,
-    grandTotal: totals.grand,
-    basis: cfg.priceBasis || 'contract',
-    skusMissing: skusMissing,
-    engReviewCount: engReviewCount,
-    pendingPriceCount: totals.pendingPriceCount,
-  };
-}
