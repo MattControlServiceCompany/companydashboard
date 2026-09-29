@@ -79,6 +79,7 @@ const _BCR_PDF_TIMEOUT_MS = 60000; // one bill's PDF re-read/OCR gets at most th
 
 let _bcrControllers = {}; // pid -> scan controller (module-level; NEVER wiped by opening the modal)
 let _bcrOpenProjId = null; // which project's controller this modal is currently attached to
+let _bcrLastHtml = null; // last HTML written to the body; skips identical re-renders
 let _bcrRenderInterval = null; // polls the attached controller's state while the modal is open
 let _bcrGroupCollapse = {}; // groupKey -> true when collapsed (UI-only, per browser session)
 let _bcrSkippedCollapsed = true;
@@ -222,17 +223,59 @@ function _bcrPdfTextKey(pdfKey) {
 function _bcrResultKey(billId, scanId, fieldKey) {
   return 'bcr_result_' + billId + '_' + scanId + '__' + fieldKey;
 }
+// Per-bill fingerprint (2026-09-28). Each saved result carries the fingerprint of
+// the bill as it looked when it was checked. On the next scan a bill whose
+// fingerprint changed (edited, corrected, re-verified) is checked again; a bill
+// whose fingerprint matches keeps its saved result, so finished work is never
+// thrown away. The index is rebuilt at the start of every scan.
+let _bcrFpIndex = {};
+function _bcrFingerprint(bill) {
+  const keys = Object.keys(bill || {})
+    .filter((k) => k !== '_flags')
+    .sort();
+  const str = keys.map((k) => k + '=' + JSON.stringify(bill[k])).join('|');
+  let h = 5381;
+  for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) | 0;
+  return String(h >>> 0) + ':' + str.length;
+}
+function _bcrBuildFpIndex(bldgs) {
+  const idx = {};
+  ((typeof sget === 'function' && sget('en_pdf_bills', [])) || []).forEach((b) => {
+    if (b && b.id != null) idx[b.id] = _bcrFingerprint(b);
+  });
+  (bldgs || []).forEach((bldg) =>
+    (bldg.meters || []).forEach((m) =>
+      (m.bills || []).forEach((b) => {
+        if (b && b.id != null) idx[b.id] = _bcrFingerprint(b);
+      }),
+    ),
+  );
+  _bcrFpIndex = idx;
+}
+// Returns the saved result, or null when the bill changed since it was checked
+// (so the caller re-checks it). A result saved before fingerprints existed is
+// kept and stamped with the current fingerprint.
 function _bcrLoadResult(billId, scanId, fieldKey) {
-  return sget(_bcrResultKey(billId, scanId, fieldKey), null);
+  const r = sget(_bcrResultKey(billId, scanId, fieldKey), null);
+  if (!r) return null;
+  const fp = _bcrFpIndex[billId];
+  if (fp === undefined) return r;
+  if (!r.fp) {
+    r.fp = fp;
+    sset(_bcrResultKey(billId, scanId, fieldKey), r);
+    return r;
+  }
+  return r.fp === fp ? r : null;
 }
 function _bcrSaveResult(billId, scanId, fieldKey, result) {
-  return sset(_bcrResultKey(billId, scanId, fieldKey), result);
+  const fp = _bcrFpIndex[billId];
+  return sset(_bcrResultKey(billId, scanId, fieldKey), fp === undefined ? result : Object.assign({}, result, { fp }));
 }
 // Merge a fresh finding into whatever's already stored, WITHOUT clobbering an
 // existing dismissal — a dismissed row must never silently un-dismiss itself
 // just because the scan ran again and found the same thing.
 async function _bcrUpsertResult(billId, scanId, fieldKey, patch) {
-  const existing = _bcrLoadResult(billId, scanId, fieldKey) || {};
+  const existing = sget(_bcrResultKey(billId, scanId, fieldKey), null) || {};
   const merged = Object.assign({ dismissed: false, dismissNote: '' }, existing, patch, {
     dismissed: existing.dismissed || false,
     dismissNote: existing.dismissNote || '',
@@ -1460,6 +1503,7 @@ async function _bcrRunProjectScan(ctl) {
   const proj = _bcrProjectRecord(pid);
   const bldgs = typeof getUDBldgs === 'function' ? getUDBldgs(pid) || [] : [];
   if (!proj) return;
+  _bcrBuildFpIndex(bldgs);
   const phases = [
     _bcrScanKGSUnmatched,
     _bcrScanKGSMeterBills,
@@ -1480,7 +1524,13 @@ async function _bcrRunProjectScan(ctl) {
   ctl.progress.etaLine = '';
 }
 function _bcrStartScanIfNeeded(ctl) {
-  if (ctl.status === 'scanning' || ctl.status === 'done') return;
+  if (ctl.status === 'scanning') return;
+  // A finished scan is re-run on every open (2026-09-28): saved results for
+  // unchanged bills are reused instantly, only changed or new bills are checked.
+  ctl.rows = [];
+  ctl.flagged = [];
+  ctl.skipped = [];
+  ctl.progress = { phaseLabel: 'Starting...', pageLine: '', etaLine: '' };
   ctl.status = 'scanning';
   ctl.startedAt = Date.now();
   ctl.promise = _bcrRunProjectScan(ctl)
@@ -1687,6 +1737,7 @@ async function openBillCorrectionsReviewModal() {
   document.getElementById('bcrFtr').style.display = 'none';
   _bcrGroupCollapse = {};
   _bcrUnchecked = new Set();
+  _bcrLastHtml = null;
   const ctl = _bcrGetOrCreateCtl(udSelProjId);
   _bcrStartScanIfNeeded(ctl);
   _bcrRender();
@@ -2013,6 +2064,13 @@ function _bcrRender() {
         _bcrRenderSkipped(ctl.skipped);
     }
   }
+  // Re-render only on change (2026-09-28): replacing the DOM every 400 ms
+  // swallowed clicks that landed between mousedown and mouseup.
+  if (html === _bcrLastHtml) {
+    ftr.style.display = ctl.rows.length ? 'flex' : 'none';
+    return;
+  }
+  _bcrLastHtml = html;
   body.innerHTML = html;
   ftr.style.display = ctl.rows.length ? 'flex' : 'none';
   if (ctl.rows.length) _bcrUpdateApplyCount();

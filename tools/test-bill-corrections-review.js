@@ -825,6 +825,46 @@ async function main() {
     }
   }
 
+  // ── Case 12 (new, 2026-09-28): a finished scan re-checks only bills that
+  // changed since they were scanned. Unchanged bills keep their saved result
+  // (same checkedAt); an edited bill is re-checked (new checkedAt); a bill
+  // added later is checked too. ──
+  {
+    const keyFor = vm.runInContext('_bcrResultKey', sandbox);
+    const k1 = keyFor('r_test_louresume_1', 'louisburg_date', 'billDate');
+    const k2 = keyFor('r_test_lou_1', 'louisburg_date', 'billDate');
+    const getStore = (k) => vm.runInContext('__store[' + JSON.stringify(k) + ']', sandbox);
+    await runProjectScanCold(sandbox, louResumeProj.id);
+    await runProjectScanCold(sandbox, louProj.id);
+    const a0 = getStore(k1);
+    const b0 = getStore(k2);
+    if (!a0 || !b0 || !a0.fp || !b0.fp) {
+      failures++;
+      console.error('FAIL Case 12 setup: results missing or not fingerprinted: ' + JSON.stringify([a0, b0]));
+    } else {
+      await new Promise((r) => setTimeout(r, 20));
+      // Edit one bill (the resume bill) as a user edit would.
+      vm.runInContext(
+        `utilityData[${JSON.stringify(louResumeProj.customerId)}] && 0;
+         (function(){ const bl = getUDBldgs(${JSON.stringify(louResumeProj.id)}); bl.forEach(b => (b.meters||[]).forEach(m => (m.bills||[]).forEach(x => { if (x.id === 'r_test_louresume_1') x.totalCost = (x.totalCost || 0) + 1; }))); })();`,
+        sandbox,
+      );
+      await runProjectScanCold(sandbox, louResumeProj.id);
+      await runProjectScanCold(sandbox, louProj.id);
+      const a1 = getStore(k1);
+      const b1 = getStore(k2);
+      if (a1.fp === a0.fp || a1.checkedAt === a0.checkedAt) {
+        failures++;
+        console.error('FAIL Case 12: edited bill was NOT re-checked (fp/checkedAt unchanged)');
+      } else if (b1.fp !== b0.fp || b1.checkedAt !== b0.checkedAt) {
+        failures++;
+        console.error('FAIL Case 12: unchanged bill was re-checked (its saved result should have been kept)');
+      } else {
+        console.log('PASS Case 12: edited bill re-checked, unchanged bill kept its saved result');
+      }
+    }
+  }
+
   console.log('');
   if (failures > 0) {
     console.error(failures + ' failure(s)');
