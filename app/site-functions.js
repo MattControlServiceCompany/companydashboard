@@ -1776,6 +1776,16 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.29.34',
+    date: '2026-09-29',
+    title: 'Presented savings: lock the figures shown to the client',
+    items: [
+      { type: 'feature', text: 'Presented savings: you can now lock the savings figures shown to the client for a period, so later data changes do not alter what was presented.' },
+      { type: 'feature', text: 'Presented savings: import Q1 and Q2 figures from a CSV file.' },
+      { type: 'change', text: 'Energy Graphics units, commodity dollars, and the dashboard quarters now read from the locked presented figures.' }
+    ]
+  },
+  {
     v: 'v2026.09.29.33',
     date: '2026-09-29',
     title: 'Attach bill PDFs to billing periods',

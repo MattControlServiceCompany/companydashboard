@@ -85,6 +85,7 @@ const stubs = [
   'function getUDProj(){ return { id: 1, sa: "SA-TEST-001", inclMonths: {} }; }',
   'function getUDBldg(){ return { meters: [] }; }',
   'var udSelProjId = 1;',
+  'function sget(k, d){ return d; }',
 ].join('\n');
 
 const dateFns = [

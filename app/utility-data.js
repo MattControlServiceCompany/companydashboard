@@ -2574,6 +2574,7 @@ function renderUDProjAggPanel(content) {
     const annProjSav = _perfProjSavByMo.reduce((s, v) => s + v, 0);
     const avgSavPct = annBase > 0 ? annProjSav / annBase : 0;
     const actSavByMo = {};
+    const _ppSavByBldgYM = {}; // current savings by building and month, for the annual total keeper
     // a67db8ce: same rate-incomplete rollup as the Building Performance pane — see the
     // matching comment in renderBldgPerfPane above for the byYM===0 "false zero" gate.
     const _ppIncomplete = [];
@@ -2583,6 +2584,10 @@ function renderUDProjAggPanel(content) {
       const _ppSavResult = getMeterSavings(m, bills, incl, udSelProjId, bldg.id);
       Object.entries(_ppSavResult.byCalMo).forEach(([mo, v]) => {
         actSavByMo[mo] = (actSavByMo[mo] || 0) + v;
+      });
+      const _ppB = (_ppSavByBldgYM[bldg.id] = _ppSavByBldgYM[bldg.id] || {});
+      Object.entries(_ppSavResult.byYM).forEach(([ym, v]) => {
+        _ppB[ym] = (_ppB[ym] || 0) + v;
       });
       Object.entries(_ppSavResult.incompleteYM || {}).forEach(([ym, info]) => {
         if (_ppSavResult.byYM[ym] === 0)
@@ -2602,7 +2607,14 @@ function renderUDProjAggPanel(content) {
         '</ul></div>'
       : '';
     const hasActual = Object.keys(actSavByMo).length > 0;
-    const annActSav = hasActual ? Object.values(actSavByMo).reduce((s, v) => s + v, 0) : null;
+    // A period presented to the client uses the presented figure (computations/savings.js).
+    const annActSav = hasActual
+      ? totalSavingsWithPresented(
+          udSelProjId,
+          Array.from(new Set(Object.values(_ppSavByBldgYM).flatMap((o) => Object.keys(o)))).sort(),
+          _ppSavByBldgYM,
+        ).total
+      : null;
     const actPct = annBase > 0 && annActSav != null ? (annActSav / annBase) * 100 : null;
     // Compare actual vs projected for only the months that have actual data (YTD)
     const actMonths = Object.keys(actSavByMo).map(Number);
@@ -2825,16 +2837,17 @@ function renderBldgComparisonPanel(content, bldgs, projName, projId) {
     const costPerSqft = sqft > 0 && totalCost > 0 ? totalCost / sqft : null;
 
     // Savings % — aggregate across all meters with baselines
-    let totalBlCost = 0,
-      totalActSav = 0;
+    let totalBlCost = 0;
+    const _radarSavByYM = {};
     meters.forEach((m) => {
       const bills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
       const incl = m.inclusive !== false;
       const bl = m.baseline || (m.baselines && m.baselines[0]);
       if (!bl || !bl.months || bl.months.length < 3) return;
       const savResult = getMeterSavings(m, bills, incl, projId, b.id);
-      const savVals = Object.values(savResult.byYM || {});
-      totalActSav += savVals.reduce((s, v) => s + v, 0);
+      Object.entries(savResult.byYM || {}).forEach(([ym, v]) => {
+        _radarSavByYM[ym] = (_radarSavByYM[ym] || 0) + v;
+      });
       // Baseline cost: average monthly × 12
       const allRows = bills.length ? getNormRows(m, bills, incl, null) : [];
       const blRows = allRows.filter((r) => bl.months.includes(r.ym));
@@ -2842,6 +2855,10 @@ function renderBldgComparisonPanel(content, bldgs, projName, projId) {
       for (let mo = 0; mo < 12; mo++)
         totalBlCost += (eM[mo]?.totalCost || 0) + (gM[mo]?.cost || 0) + (pM[mo]?.cost || 0) + (wM[mo]?.cost || 0);
     });
+    // A period presented to the client uses the presented figure (computations/savings.js).
+    const totalActSav = totalSavingsWithPresented(projId, Object.keys(_radarSavByYM).sort(), {
+      [b.id]: _radarSavByYM,
+    }).byBldg[b.id];
     const savingsPct = totalBlCost > 0 ? (totalActSav / totalBlCost) * 100 : null;
 
     // Load factor — average of trailing-12 monthly values
@@ -9578,6 +9595,13 @@ function renderMeterDataPane(pane, m, bills, incl) {
 let _bpBaselineByCalMo = null;
 let _bpActualSavingsByCalMo = null;
 let _bpActualSavingsByYM = null; // {YYYY-MM: savings} used for quarterly view to avoid cross-year key collisions
+let _bpBldgId = null;
+// Actual savings for a set of months: a period presented to the client uses the presented figure
+// (totalSavingsWithPresented, computations/savings.js); every other month is the current value.
+function _bpActSavFor(yms) {
+  const byYM = _bpActualSavingsByYM || {};
+  return totalSavingsWithPresented(udSelProjId, yms, { [_bpBldgId]: byYM }).byBldg[_bpBldgId];
+}
 let _bpPostBaselineStartYM = null; // earliest post-baseline YYYY-MM across all meters
 let _bpMsrSavByMo = null; // measure-based monthly savings for Building Performance (null = use savPct fallback)
 let _bspBaselineByCalMo = null;
@@ -9655,6 +9679,7 @@ function renderBldgPerfPane(pane, b) {
   const hasActual = Object.keys(actualSavingsByCalMo).length > 0;
   _bpActualSavingsByCalMo = actualSavingsByCalMo;
   _bpActualSavingsByYM = actualSavingsByYM;
+  _bpBldgId = b.id;
   // Determine the earliest post-baseline YYYY-MM for quarterly Year 1 anchoring
   const _ymKeys = Object.keys(actualSavingsByYM).sort();
   _bpPostBaselineStartYM = _ymKeys.length > 0 ? _ymKeys[0] : null;
@@ -9938,9 +9963,7 @@ function bpRecalc() {
     if (!hasActual) return null;
     if (col.isTotal) {
       // Sum all actual YM savings we have data for
-      return view === 'quarterly'
-        ? Object.values(_bpActualSavingsByYM || {}).reduce((s, v) => s + v, 0)
-        : Object.values(actByMo).reduce((s, v) => s + v, 0);
+      return _bpActSavFor(Object.keys(_bpActualSavingsByYM || {}).sort());
     }
     if (col.yms) {
       // Quarterly view: use YYYY-MM keyed data so Year 2 Q1 != Year 1 Q1
@@ -9948,7 +9971,7 @@ function bpRecalc() {
       const ymsWithData = col.yms.filter((ym) => ym && ym in actByYM2);
       if (ymsWithData.length === 0) return null;
       if (ymsWithData.length < col.yms.length) return null; // partial or future quarter
-      return col.yms.reduce((s, ym) => s + actByYM2[ym], 0);
+      return _bpActSavFor(col.yms);
     }
     if (col.mos) {
       // Fallback for monthly-style quarters (no YM anchor available)
@@ -9976,7 +9999,7 @@ function bpRecalc() {
   }
 
   // Row definitions
-  const annActSav = hasActual ? Object.values(actByMo).reduce((s, v) => s + v, 0) : null;
+  const annActSav = hasActual ? _bpActSavFor(Object.keys(_bpActualSavingsByYM || {}).sort()) : null;
   const annProjSav = _useMeasures ? _msrSavByMo.reduce((s, v) => s + v, 0) : _hasSA ? annBase * savPct : 0;
   const projPct = annBase > 0 ? ((annProjSav / annBase) * 100).toFixed(0) + '%' : null;
   const actPct = hasActual && annBase > 0 ? ((annActSav / annBase) * 100).toFixed(1) + '%' : null;

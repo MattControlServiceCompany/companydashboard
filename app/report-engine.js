@@ -258,11 +258,17 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
     totSavings = 0,
     totCumSavings = 0;
 
+  const perBldgSavByYM = {};
+  const _reportYMsSorted = reportYMs.slice().sort();
   const buildingsData = bldgs.map((b) => {
     const sqft = parseInt(b.sqft || 0);
     const bType = b.type || p.type || 'Other';
-    let cumSavings = 0,
-      periodSavings = 0;
+    let periodSavings = 0;
+    // Current savings by month for this building (all post-baseline months). The period / cumulative
+    // totals are decided by totalSavingsWithPresented() (computations/savings.js): a period already
+    // presented to the client uses the presented figures, every other month is the current value.
+    const bldgSavByYM = {};
+    perBldgSavByYM[b.id] = bldgSavByYM;
     // 2026-09-24 (fix/report-headers-and-empty-period, task 5b, problem 3): true once ANY
     // post-baseline bill row for this building falls inside the report's own period
     // (reportYMs, set from `inPeriod` below). A building with zero bills for the selected
@@ -474,8 +480,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
           }
         }
 
-        cumSavings += totalCostSav;
-        if (inPeriod) periodSavings += totalCostSav;
+        bldgSavByYM[r.ym] = (bldgSavByYM[r.ym] || 0) + totalCostSav;
       });
 
       // Annual EUI accumulation — all-fuel (Electric + Gas + Propane; Water/Sewer/
@@ -575,6 +580,18 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
     const totalBldgCurCost = elec.costCur + gas.costCur + propane.costCur;
     const costPerSqft = sqft > 0 ? totalBldgCurCost / sqft : 0;
 
+    // Presented-to-client lock (WP-04a): printed unit figures, and the building's period dollars.
+    const _presUnits = getPresentedUnits(projId, _reportYMsSorted, b.id);
+    if (_presUnits) {
+      if (_presUnits.kwhSaved != null) elec.kwhSaved = _presUnits.kwhSaved;
+      if (_presUnits.thermsSaved != null) gas.thermsSaved = _presUnits.thermsSaved;
+      if (_presUnits.gallonsSaved != null) propane.galSaved = _presUnits.gallonsSaved;
+      if (_presUnits.elecDollars != null) elec.costSaved = _presUnits.elecDollars;
+      if (_presUnits.gasDollars != null) gas.costSaved = _presUnits.gasDollars;
+      if (_presUnits.propaneDollars != null) propane.costSaved = _presUnits.propaneDollars;
+    }
+    periodSavings = totalSavingsWithPresented(projId, _reportYMsSorted, { [b.id]: bldgSavByYM }).byBldg[b.id];
+
     // Building savings percentage and status
     const bldgSavings = periodSavings;
     const bldgBlCost = totalBldgBlCost;
@@ -614,8 +631,6 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
     totPeakKwCur += elec.kwCur;
     totBlCost += bldgBlCost;
     totCurCost += bldgCurCost;
-    totSavings += bldgSavings;
-    totCumSavings += cumSavings;
 
     return {
       id: b.id,
@@ -651,6 +666,14 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
   });
 
   // --- Project totals ---
+  // Period and cumulative savings totals: current values, except a period already presented to the
+  // client uses the printed figures (computations/savings.js totalSavingsWithPresented).
+  totSavings = totalSavingsWithPresented(projId, _reportYMsSorted, perBldgSavByYM).total;
+  totCumSavings = totalSavingsWithPresented(
+    projId,
+    Array.from(new Set(Object.values(perBldgSavByYM).flatMap((m2) => Object.keys(m2)))).sort(),
+    perBldgSavByYM,
+  ).total;
   const totSavingsPct = totBlCost > 0 ? (totSavings / totBlCost) * 100 : 0;
   // Project EUI: sqft-weighted average of per-building EUIs, via the canonical
   // computeProjectEUI (computations/eui.js) — same rollup used elsewhere in the app.
@@ -2596,6 +2619,8 @@ function rptPageCover(n, d) {
     '<div class="rpt-narrative" contenteditable="true">' +
     narrative +
     '</div>' +
+    // Presented-to-client line (WP-04a): filled by _rptRefreshPresentedUI() when the period is marked.
+    _rptPresentedLineHTML(getPresentedNotice(d.project.id, d.period.yearMonths || [])) +
     // Target vs Actual + progress bar
     '<div class="rpt-vs-box">' +
     '<div class="rpt-vs-side">' +
@@ -4993,7 +5018,9 @@ function rptPageYearToDate(n, d) {
   var periodYear = (d.period && d.period.year) || new Date().getFullYear();
   var _moNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var _moData = {};
+  var _savPerBldg = {}; // current savings by building and month, for totalSavingsWithPresented()
   (d.buildings || []).forEach(function (b) {
+    _savPerBldg[b.id] = {};
     ['electric', 'gas', 'propane'].forEach(function (com) {
       var mo = (b[com] && b[com].monthly) || [];
       mo.forEach(function (m) {
@@ -5005,7 +5032,9 @@ function rptPageYearToDate(n, d) {
         if (!_moData[m.month]) _moData[m.month] = { bl: 0, cur: 0, sav: 0 };
         _moData[m.month].bl += m.blCost || 0;
         _moData[m.month].cur += m.curCost || 0;
-        _moData[m.month].sav += m.savings != null ? m.savings : (m.blCost || 0) - (m.curCost || 0);
+        var _mSav = m.savings != null ? m.savings : (m.blCost || 0) - (m.curCost || 0);
+        _moData[m.month].sav += _mSav;
+        _savPerBldg[b.id][m.month] = (_savPerBldg[b.id][m.month] || 0) + _mSav;
       });
     });
   });
@@ -5037,6 +5066,8 @@ function rptPageYearToDate(n, d) {
   });
   var trendTable;
   if (_sorted.length) {
+    // Total: a period already presented to the client uses the presented figures (WP-04a).
+    _tSav = totalSavingsWithPresented(d.project.id, _sorted, _savPerBldg).total;
     _rows +=
       '<tr class="rpt-tot"><td>Total</td><td class="rpt-n">' +
       _fmtUSD(_tBl, '$0') +
@@ -5048,7 +5079,8 @@ function rptPageYearToDate(n, d) {
     trendTable =
       '<table class="rpt-table" style="font-size:10px"><thead><tr><th>Month</th><th class="rpt-n">Baseline Cost</th><th class="rpt-n">Actual Cost</th><th class="rpt-n">Savings $</th></tr></thead><tbody>' +
       _rows +
-      '</tbody></table>';
+      '</tbody></table>' +
+      _rptPresentedLineHTML(getPresentedNotice(d.project.id, _sorted), '0');
   } else {
     trendTable =
       '<p style="font-size:11px;color:var(--rpt-page-text);font-style:italic">No billed months yet for ' +
@@ -6781,6 +6813,7 @@ function rptPageBuildingSummary(n, d, b) {
       '<div style="margin-top:8px"><div style="font-size:12px;font-weight:600;color:var(--rpt-blue);margin-bottom:3px">Meter Performance — ' +
       ((d && d.period && d.period.label) || '') +
       '</div>' +
+      _rptPresentedLineHTML(getPresentedNotice(d.project.id, _rptFilterYMs || []), '0') +
       meterPerfHTML +
       '</div>';
   }
@@ -11468,6 +11501,7 @@ function rptPageBoardSummary(n, d) {
     '<div style="text-align:center">' +
     chartSVG +
     '</div>' +
+    _rptPresentedLineHTML(getPresentedNotice(d.project.id, periodYMs), '0') +
     '</div>' +
     '</div>';
 

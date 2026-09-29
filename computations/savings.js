@@ -776,3 +776,350 @@ function getBldgMeasureSavingsByMo(projId, bldgId) {
   });
   return monthlySavings;
 }
+/* ─────────────────────────────────────────────────────────────
+   PRESENTED-TO-CLIENT LOCK (WP-04a, 2026-09-29)
+   Rule (Matt): savings figures already presented to the client can not change.
+   The lock stores the figures PRINTED in the presented document, not the site's math at
+   the time of the click (re-running the math later moves printed numbers by a few dollars).
+   One storage key, one record per project + period, written only by the user's confirm:
+     { projectId, periodStart, periodEnd, presentedAt, documentName, totalDollars,
+       buildings: { <bldgId>: { dollars, kwhSaved?, thermsSaved?, gallonsSaved?,
+         elecDollars?, gasDollars?, propaneDollars? } } }  (commodity dollars = the printed split)
+   totalSavingsWithPresented() is the ONE place a period / building / project savings total
+   is decided; every consumer that adds up months calls it. Monthly rows stay recalculated.
+───────────────────────────────────────────────────────────── */
+const PRESENTED_SAVINGS_KEY = "en_presented_savings";
+
+function getPresentedRecords(projId) {
+  return (sget(PRESENTED_SAVINGS_KEY, []) || [])
+    .filter((r) => String(r.projectId) === String(projId))
+    .sort(
+      (a, b) =>
+        a.periodStart.localeCompare(b.periodStart) ||
+        a.presentedAt.localeCompare(b.presentedAt),
+    );
+}
+
+// Every YYYY-MM from a to z inclusive.
+function presentedMonthRange(a, z) {
+  const out = [];
+  let [y, m] = a.split("-").map(Number);
+  const [zy, zm] = z.split("-").map(Number);
+  while (y < zy || (y === zy && m <= zm)) {
+    out.push(y + "-" + String(m).padStart(2, "0"));
+    m++;
+    if (m > 12) {
+      m = 1;
+      y++;
+    }
+  }
+  return out;
+}
+
+function getPresentedRecordFor(projId, yms) {
+  if (!yms || !yms.length) return null;
+  const sorted = yms.slice().sort();
+  const a = sorted[0];
+  const z = sorted[sorted.length - 1];
+  return (
+    getPresentedRecords(projId).find(
+      (r) => r.periodStart === a && r.periodEnd === z,
+    ) || null
+  );
+}
+
+// The records that lock part of `yms`: whole period inside yms, no month claimed twice
+// (earliest period wins an overlap).
+function _presentedApplied(projId, yms) {
+  const inSet = new Set(yms);
+  const claimed = new Set();
+  const applied = [];
+  getPresentedRecords(projId).forEach((rec) => {
+    const rm = presentedMonthRange(rec.periodStart, rec.periodEnd);
+    if (!rm.every((y) => inSet.has(y)) || rm.some((y) => claimed.has(y)))
+      return;
+    rm.forEach((y) => claimed.add(y));
+    applied.push({ rec, months: rm });
+  });
+  return applied;
+}
+
+function _presentedDateLabel(rec) {
+  return new Date(rec.presentedAt).toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+}
+
+function _presentedMonthLabel(ym) {
+  const [y, m] = ym.split("-").map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString("en-US", {
+    month: "long",
+    year: "numeric",
+  });
+}
+
+// Plain-words line for a report period, or '' when nothing in the period was presented.
+function getPresentedNotice(projId, yms) {
+  if (!yms || !yms.length) return "";
+  const tail = " monthly detail is recalculated and may differ slightly.";
+  const exact = getPresentedRecordFor(projId, yms);
+  if (exact)
+    return (
+      "Presented to client on " +
+      _presentedDateLabel(exact) +
+      ". Figures are locked;" +
+      tail
+    );
+  return _presentedApplied(projId, yms)
+    .map(
+      (a) =>
+        "Includes figures presented to client on " +
+        _presentedDateLabel(a.rec) +
+        " for " +
+        _presentedMonthLabel(a.rec.periodStart) +
+        " through " +
+        _presentedMonthLabel(a.rec.periodEnd) +
+        ". Those figures are locked;" +
+        tail,
+    )
+    .join(" ");
+}
+
+// Savings total for the months `yms`, for the buildings in `perBldg` = { <bldgId>: { <ym>: dollars } }
+// (current values, however the caller built them). A presented period inside yms replaces the
+// current months with the printed building figure; the printed portfolio total replaces the sum
+// of the printed building figures when every building of that record is in scope.
+// Returns { total, byBldg: { <bldgId>: dollars }, applied: [record] }.
+function totalSavingsWithPresented(projId, yms, perBldg) {
+  const applied = _presentedApplied(projId, yms);
+  const claimed = new Set();
+  applied.forEach((a) => a.months.forEach((y) => claimed.add(y)));
+  const byBldg = {};
+  let total = 0;
+  Object.keys(perBldg).forEach((b) => {
+    const cur = perBldg[b] || {};
+    let t = 0;
+    yms.forEach((y) => {
+      if (!claimed.has(y)) t += cur[y] || 0;
+    });
+    applied.forEach((a) => {
+      const f = a.rec.buildings[b];
+      t +=
+        f && f.dollars != null
+          ? f.dollars
+          : a.months.reduce((s, y) => s + (cur[y] || 0), 0);
+    });
+    byBldg[b] = t;
+    total += t;
+  });
+  applied.forEach((a) => {
+    const ids = Object.keys(a.rec.buildings);
+    if (a.rec.totalDollars == null || !ids.every((id) => id in perBldg)) return;
+    total +=
+      a.rec.totalDollars -
+      ids.reduce((s, id) => s + (a.rec.buildings[id].dollars || 0), 0);
+  });
+  return { total, byBldg, applied: applied.map((a) => a.rec) };
+}
+
+// Shared engine of the two functions below. perBldgVals = { <bldgId>: { <ym>: { <key>: number } } };
+// fieldOf maps each key to its printed field name on the presented building record.
+function _sumWithPresented(projId, yms, perBldgVals, fieldOf) {
+  const applied = _presentedApplied(projId, yms);
+  const claimed = new Set();
+  applied.forEach((a) => a.months.forEach((y) => claimed.add(y)));
+  const out = {};
+  Object.keys(fieldOf).forEach((k) => (out[k] = 0));
+  Object.keys(perBldgVals).forEach((b) => {
+    const cur = perBldgVals[b] || {};
+    Object.keys(out).forEach((k) => {
+      yms.forEach((y) => {
+        if (!claimed.has(y)) out[k] += (cur[y] && cur[y][k]) || 0;
+      });
+      applied.forEach((a) => {
+        const f = a.rec.buildings[b];
+        out[k] +=
+          f && f[fieldOf[k]] != null
+            ? f[fieldOf[k]]
+            : a.months.reduce((s, y) => s + ((cur[y] && cur[y][k]) || 0), 0);
+      });
+    });
+  });
+  return out;
+}
+
+// Unit totals ({kwh, therms, gallons}) for the months `yms`, for `perBldgUnits` =
+// { <bldgId>: { <ym>: {kwh, therms, gallons} } } (current values). Same rule as the dollar total:
+// a presented period inside yms replaces that building's months with the printed unit figure
+// (a unit the document did not print stays current).
+function totalUnitsWithPresented(projId, yms, perBldgUnits) {
+  return _sumWithPresented(projId, yms, perBldgUnits, {
+    kwh: "kwhSaved",
+    therms: "thermsSaved",
+    gallons: "gallonsSaved",
+  });
+}
+
+// Per-commodity dollar totals ({electric, gas, propane}); same rule, printed split fields.
+function totalCommodityDollarsWithPresented(projId, yms, perBldgComm) {
+  return _sumWithPresented(projId, yms, perBldgComm, {
+    electric: "elecDollars",
+    gas: "gasDollars",
+    propane: "propaneDollars",
+  });
+}
+
+// Printed unit and commodity-dollar figures ({kwhSaved, thermsSaved, gallonsSaved, elecDollars,
+// gasDollars, propaneDollars}) for one building, only when a
+// record covers exactly this period (units cannot be re-cut for a different month set).
+function getPresentedUnits(projId, yms, bldgId) {
+  const rec = getPresentedRecordFor(projId, yms);
+  return (rec && rec.buildings[bldgId]) || null;
+}
+
+// Project total across every building of the project (portal, dashboards). yms defaults to
+// every month any building has savings for.
+function getProjectSavingsTotal(projId, yms) {
+  const bldgs =
+    typeof getUDBldgs === "function" ? getUDBldgs(projId) || [] : [];
+  const perBldg = {};
+  const all = new Set();
+  bldgs.forEach((b) => {
+    perBldg[b.id] = getBuildingSavingsByYM(b, projId);
+    Object.keys(perBldg[b.id]).forEach((y) => all.add(y));
+  });
+  const months = yms || Array.from(all).sort();
+  return totalSavingsWithPresented(projId, months, perBldg);
+}
+
+// Validate and store one presented record. Only the confirm button of the Mark-as-presented
+// form calls this. Returns { ok, reason?, record? }.
+function savePresentedRecord(rec) {
+  if (
+    !rec ||
+    rec.projectId == null ||
+    !/^\d{4}-\d{2}$/.test(rec.periodStart) ||
+    !/^\d{4}-\d{2}$/.test(rec.periodEnd)
+  ) {
+    return { ok: false, reason: "The period is missing." };
+  }
+  if (rec.periodStart > rec.periodEnd)
+    return { ok: false, reason: "The period ends before it starts." };
+  const ids = Object.keys(rec.buildings || {});
+  if (
+    !ids.length ||
+    ids.some((id) => !Number.isFinite(rec.buildings[id].dollars))
+  ) {
+    return {
+      ok: false,
+      reason:
+        "Enter the presented savings in dollars for at least one building.",
+    };
+  }
+  const months = presentedMonthRange(rec.periodStart, rec.periodEnd);
+  const clash = getPresentedRecords(rec.projectId).some((r) =>
+    presentedMonthRange(r.periodStart, r.periodEnd).some((y) =>
+      months.includes(y),
+    ),
+  );
+  if (clash)
+    return {
+      ok: false,
+      reason: "A period that overlaps this one is already marked as presented.",
+    };
+  const clean = {
+    projectId: String(rec.projectId),
+    periodStart: rec.periodStart,
+    periodEnd: rec.periodEnd,
+    presentedAt: rec.presentedAt,
+    documentName: rec.documentName || "",
+    totalDollars: Number.isFinite(rec.totalDollars) ? rec.totalDollars : null,
+    buildings: rec.buildings,
+  };
+  sset(
+    PRESENTED_SAVINGS_KEY,
+    (sget(PRESENTED_SAVINGS_KEY, []) || []).concat([clean]),
+  );
+  return { ok: true, record: clean };
+}
+
+function removePresentedMark(projId, yms) {
+  const rec = getPresentedRecordFor(projId, yms);
+  if (!rec) return false;
+  sset(
+    PRESENTED_SAVINGS_KEY,
+    (sget(PRESENTED_SAVINGS_KEY, []) || []).filter(
+      (r) =>
+        !(
+          String(r.projectId) === String(projId) &&
+          r.periodStart === rec.periodStart &&
+          r.periodEnd === rec.periodEnd
+        ),
+    ),
+  );
+  return true;
+}
+
+// CSV of printed figures: rows "building,figure,value". figure = savings_dollars | kwh_saved |
+// therms_saved | gallons_saved | electric_savings_dollars | gas_savings_dollars | propane_savings_dollars. A building named "Portfolio total" (or "Total") holds the printed
+// portfolio total. `bldgs` = [{id, name}] of the project. Returns
+// { buildings: {<id>: {...}}, totalDollars, unmatched: [names], bad: [lines] }.
+function parsePresentedCsv(text, bldgs) {
+  const FIELD = {
+    savings_dollars: "dollars",
+    kwh_saved: "kwhSaved",
+    therms_saved: "thermsSaved",
+    gallons_saved: "gallonsSaved",
+    electric_savings_dollars: "elecDollars",
+    gas_savings_dollars: "gasDollars",
+    propane_savings_dollars: "propaneDollars",
+  };
+  const out = { buildings: {}, totalDollars: null, unmatched: [], bad: [] };
+  const norm = (s) =>
+    String(s || "")
+      .trim()
+      .toLowerCase();
+  String(text || "")
+    .split(/\r?\n/)
+    .forEach((line) => {
+      if (!line.trim()) return;
+      const cells = [];
+      let cur = '';
+      let inQ = false;
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (ch === '"' && inQ && line[i + 1] === '"') {
+          cur += '"';
+          i++;
+        } else if (ch === '"') inQ = !inQ;
+        else if (ch === ',' && !inQ) {
+          cells.push(cur.trim());
+          cur = '';
+        } else cur += ch;
+      }
+      cells.push(cur.trim());
+      if (cells.length < 3) return void out.bad.push(line);
+      const [name, fig, val] = cells;
+      if (norm(fig) === "figure") return;
+      const field = FIELD[norm(fig)];
+      const num =
+        typeof parseBillNumber === "function"
+          ? parseBillNumber(val)
+          : parseFloat(val);
+      if (!field || !Number.isFinite(num)) return void out.bad.push(line);
+      if (norm(name) === "portfolio total" || norm(name) === "total") {
+        if (field === "dollars") out.totalDollars = num;
+        else out.bad.push(line);
+        return;
+      }
+      const b = (bldgs || []).find((x) => norm(x.name) === norm(name));
+      if (!b) {
+        if (out.unmatched.indexOf(name) < 0) out.unmatched.push(name);
+        return;
+      }
+      (out.buildings[b.id] = out.buildings[b.id] || {})[field] = num;
+    });
+  return out;
+}

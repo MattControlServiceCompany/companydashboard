@@ -53,6 +53,7 @@ function publishClientPortal(projId) {
   let totalPropaneSaved = 0;
 
   try {
+    const _peUnits = {};
     const _peBldgs = getUDBldgs(String(projId));
     if (_peBldgs) {
       _peBldgs.forEach((b) => {
@@ -65,10 +66,13 @@ function publishClientPortal(projId) {
           });
           try {
             const savResult = getMeterSavings(m, bills, p.inclMonths || {}, String(projId), b.id);
-            Object.values(savResult.unitsByYM || {}).forEach((u) => {
-              totalKwhSaved += u.kwh || 0;
-              totalThermsSaved += u.therms || 0;
-              totalPropaneSaved += u.gallons || 0;
+            // Collected per building and month; totalUnitsWithPresented() applies the presented lock.
+            const bu = (_peUnits[b.id] = _peUnits[b.id] || {});
+            Object.entries(savResult.unitsByYM || {}).forEach(([ym, u]) => {
+              const c = (bu[ym] = bu[ym] || { kwh: 0, therms: 0, gallons: 0 });
+              c.kwh += u.kwh || 0;
+              c.therms += u.therms || 0;
+              c.gallons += u.gallons || 0;
             });
           } catch (e2) {
             console.warn('[portal-export] getMeterSavings failed for meter', m.id, e2);
@@ -76,6 +80,13 @@ function publishClientPortal(projId) {
         });
       });
     }
+    const _peAllYMs = Array.from(
+      new Set(Object.values(_peUnits).flatMap((bu) => Object.keys(bu))),
+    ).sort();
+    const _peTot = totalUnitsWithPresented(String(projId), _peAllYMs, _peUnits);
+    totalKwhSaved = _peTot.kwh;
+    totalThermsSaved = _peTot.therms;
+    totalPropaneSaved = _peTot.gallons;
   } catch (e) {
     console.warn('[portal-export] unit accumulation failed:', e);
   }
@@ -159,11 +170,9 @@ function publishClientPortal(projId) {
   // Sum RAW (unrounded) per-month values from savByYM, then round once —
   // never sum already-rounded monthlySavings.savingsDollars (round-before-sum
   // bug: Math.round(a)+Math.round(b) != Math.round(a+b)).
-  const totalSavings = Math.round(
-    Object.entries(savByYM)
-      .filter(([, v]) => v !== 0)
-      .reduce((s, [, v]) => s + v, 0),
-  );
+  // The total comes from getProjectSavingsTotal (computations/savings.js): a period already presented
+  // to the client uses the presented figures; the monthly list above stays recalculated.
+  const totalSavings = Math.round(getProjectSavingsTotal(String(projId)).total);
 
   // ── 7. Build sanitized JSON — explicitly exclude sensitive fields ──
   const annualTarget = Number(p.savings) || 0;
