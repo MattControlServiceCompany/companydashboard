@@ -131,8 +131,9 @@ const ECM_TEMPLATES = {
         id: 'excess_cfm',
         label: 'Excess Outside Air (Cubic Feet per Minute) Eliminated',
         unit: 'CFM',
-        formula:
-          'excess_cfm = Design OA CFM (during unoccupied hours, when damper should be closed). Assumption not yet confirmed by an engineer: for a partly open damper, excess = actual OA minus Design OA CFM.',
+        formula: 'excess_cfm = Design OA CFM (during unoccupied hours, when damper should be closed)',
+        assumption:
+          'Assumption not yet checked by an engineer: for a damper that is partly open, the extra outside air is the actual outside air minus the design outside air.',
       },
       {
         id: 'therms_saved',
@@ -1881,8 +1882,9 @@ const ECM_TEMPLATES = {
         id: 'cool_kwh_saved',
         label: 'Cooling kWh Saved (Supply Air Temperature Reset)',
         unit: 'kWh/yr',
-        formula:
-          '1.08 × system_cfm × avg_dT × season_hours × 0.30 / (COP × 3,412)  — the 0.30 factor is an assumption: 30% of the airflow is taken to benefit from the supply air temperature reset. It is not measured.',
+        formula: '1.08 × system_cfm × avg_dT × season_hours × 0.30 / (COP × 3,412)',
+        assumption:
+          'Assumption, not measured: 30% of the airflow is taken to benefit from the supply air temperature reset (the 0.30 factor).',
       },
       {
         id: 'fan_kwh_saved',
@@ -2043,8 +2045,9 @@ const ECM_TEMPLATES = {
         id: 'existing_therms',
         label: 'Existing Therms/Year',
         unit: 'therms/yr',
-        formula:
-          'annual_heating_MMBtu × 10 / eff_old. Assumption not yet confirmed by an engineer: the boiler capacity entered is treated as the heating load, then divided by efficiency.',
+        formula: 'annual_heating_MMBtu × 10 / eff_old',
+        assumption:
+          'Assumption not yet checked by an engineer: the boiler capacity you enter is used as the heating load, and that load is then divided by the boiler efficiency.',
       },
       { id: 'new_therms', label: 'New Therms/Year', unit: 'therms/yr', formula: 'annual_heating_MMBtu × 10 / eff_new' },
       {
@@ -2973,6 +2976,7 @@ function renderEcmResults(templateId, results, container, projectContext, inputs
         <td class="ecm-result-cell" style="font-weight:${isMajor ? '700' : '400'};color:${isMajor ? 'var(--text)' : 'var(--text2)'}">
           ${out.label}
           ${out.unit ? `<span style="font-size:11px;font-weight:400;color:var(--text3);margin-left:4px">${out.unit}</span>` : ''}
+          ${out.assumption ? `<div style="font-size:11px;font-weight:400;color:var(--text2);margin-top:3px">${out.assumption}</div>` : ''}
         </td>
         <td class="${isMajor ? 'ecm-result-cell--major' : 'ecm-result-cell'}" style="text-align:right;font-weight:${isMajor ? '700' : '400'};color:${isMajor ? 'var(--em)' : 'var(--text)'};font-family:var(--mono)">
           ${display}

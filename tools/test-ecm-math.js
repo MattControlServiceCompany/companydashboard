@@ -59,9 +59,9 @@ const ok = (name, cond, info) => { console.log((cond ? 'PASS ' : 'FAIL ') + name
 // 5. 0.3 VAV factor is labelled in plain words
 { const f = T.vav_reheat;
   const o = f.outputs.find((x) => x.id === 'cool_kwh_saved');
-  ok('VAV 30% factor labelled as assumption', /assum/i.test(o.formula), o.formula); }
+  ok('VAV 30% factor labelled as assumption', /assum/i.test(o.assumption || ''), o.assumption); }
 // 6. E-ECM-2 / E-ECM-4 assumption labels, behaviour unchanged
-{ const a = T.oa_dampers.outputs.find((x) => x.id === 'excess_cfm'); ok('damper assumption label', a && /assum/i.test(a.formula + (a.label || '')), a && a.formula);
-  const b = T.boiler_replacement.outputs.find((x) => x.id === 'existing_therms'); ok('boiler assumption label', b && /assum/i.test(b.formula + (b.label || '')), b && b.formula); }
+{ const a = T.oa_dampers.outputs.find((x) => x.id === 'excess_cfm'); ok('damper assumption label', a && /assum/i.test((a && a.assumption) || ''), a && a.assumption);
+  const b = T.boiler_replacement.outputs.find((x) => x.id === 'existing_therms'); ok('boiler assumption label', b && /assum/i.test((b && b.assumption) || ''), b && b.assumption); }
 console.log(fail ? fail + ' FAILED' : 'ALL PASS');
 process.exit(fail ? 1 : 0);
