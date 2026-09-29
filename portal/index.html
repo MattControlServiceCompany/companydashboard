@@ -419,8 +419,8 @@
         <div class="kpi-label">CO<sub>2</sub> Impact</div>
         <div class="kpi-value neutral">${fmtNum(co2Lbs)} <span style="font-size:16px;color:#8b949e">lbs</span></div>
         <div class="kpi-sub">
-          ${treesEquiv > 0 ? '&#x1F333; ' + fmtNum(treesEquiv) + ' trees equiv.' : ''}
-          ${carsEquiv > 0 ? ' &bull; &#x1F697; ' + fmtNum(carsEquiv) + ' cars off road' : ''}
+          ${treesEquiv > 0 ? '&#x1F333; ' + fmtNum(treesEquiv) + (treesEquiv === 1 ? ' tree equiv.' : ' trees equiv.') : ''}
+          ${carsEquiv > 0 ? ' &bull; &#x1F697; ' + fmtNum(carsEquiv) + (carsEquiv === 1 ? ' car off road' : ' cars off road') : ''}
         </div>
       </div>
     </div>

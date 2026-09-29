@@ -124,5 +124,28 @@ const portalCalls = seen.filter((c) => c.src === 'portal');
 const dollarCalls = seen.filter((c) => c.src === 'dollar');
 check('portal unit loop and dollar path both call getMeterSavings', portalCalls.length > 0 && dollarCalls.length > 0, portalCalls.length + '/' + dollarCalls.length);
 check('every call gets proj.inclMonths', seen.length > 0 && seen.every((c) => c.incl && c.incl.marker === 1), JSON.stringify(seen.map((c) => c.incl)));
+// 5. monthly chart data has every month in the range, $0 months included
+sb = setup(7, ['m2']);
+vm.runInContext(`
+  m1.bills = m1.bills.filter(function(b){ return b.start.indexOf('2025-') !== 0; });
+  [1,2,3].forEach(function(mo){ var d = mo === 2 ? 28 : 31; var k = mo === 2 ? ['10000','1000','800'] : ['8000','800','640'];
+    m1.bills.push({ start: '2025-0'+mo+'-01', end: '2025-0'+mo+'-'+d, kwh: k[0], totalCost: k[1], kwhCost: k[2], totalKwhRate: '0.08', demandKW: '100', billedKW: '100' }); });
+  var crypto = { randomUUID: function(){ return 'tok'; } };
+  function showToast(){}
+  function extractStateFromAddress(){ return 'KS'; }
+  function calculatePollutionCredits(){ return { totalCO2: 0 }; }
+  var EQUIV_PER_MT_CO2E = {};
+  var location = { pathname: '/x.html', origin: 'http://t', protocol: 'file:' };
+  var navigator = {};
+  var Blob = function(parts){ this.text = parts[0]; };
+  var document = { createElement: function(){ return { click: function(){} }; }, body: { appendChild: function(){}, removeChild: function(){} } };
+  var URL = { createObjectURL: function(){ return 'x'; }, revokeObjectURL: function(){} };
+`, sb);
+vm.runInContext(fs.readFileSync(path.join(REPO, 'app/portal-export.js'), 'utf8'), sb);
+let blob5 = null;
+sb.URL.createObjectURL = (b) => { blob5 = b.text; return 'x'; };
+vm.runInContext('publishClientPortal(7)', sb);
+const months5 = JSON.parse(blob5).monthly.map((x) => x.month + ':' + x.savingsDollars);
+check('monthly lists Jan, Feb ($0), Mar', months5.length === 3 && months5[1] === '2025-02:0', months5.join(' '));
 console.log(fails ? 'FAILED ' + fails : 'ALL PASS');
 process.exit(fails ? 1 : 0);

@@ -104,17 +104,26 @@ function publishClientPortal(projId) {
   }
 
   // ── 5. Build monthly savings array ───────────────────────────
-  const monthlySavings = Object.entries(savByYM)
-    .filter(([, v]) => v !== 0)
-    .sort(([a], [b]) => (a < b ? -1 : 1))
-    .map(([ym, savings]) => {
-      const [yr, mo] = ym.split('-');
-      const label = new Date(Number(yr), Number(mo) - 1, 1).toLocaleDateString('en-US', {
-        month: 'short',
-        year: 'numeric',
-      });
-      return { month: ym, label, savingsDollars: Math.round(savings * 100) / 100 };
-    });
+  // Every month from the first to the last month with savings, so a $0 month is drawn as $0
+  // and not skipped.
+  const _nonZeroYM = Object.keys(savByYM)
+    .filter((k) => savByYM[k] !== 0)
+    .sort();
+  const monthlySavings = [];
+  if (_nonZeroYM.length) {
+    let [cy, cm] = _nonZeroYM[0].split('-').map(Number);
+    const [ly, lm] = _nonZeroYM[_nonZeroYM.length - 1].split('-').map(Number);
+    while (cy < ly || (cy === ly && cm <= lm)) {
+      const ym = cy + '-' + String(cm).padStart(2, '0');
+      const label = new Date(cy, cm - 1, 1).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+      monthlySavings.push({ month: ym, label, savingsDollars: Math.round((savByYM[ym] || 0) * 100) / 100 });
+      cm++;
+      if (cm > 12) {
+        cm = 1;
+        cy++;
+      }
+    }
+  }
 
   // ── 6. Compute period label and contract info ────────────────
   const contractYears = p.contractYears || 3;
