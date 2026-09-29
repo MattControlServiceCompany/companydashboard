@@ -1776,6 +1776,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.29.38',
+    date: '2026-09-29',
+    title: 'PDF / OCR: long retries can be cancelled',
+    items: [
+      { type: 'fix', text: 'PDF / OCR: Cancel now stops a long OCR retry right away.' },
+      { type: 'feature', text: 'PDF / OCR: the OCR retry now shows page-by-page progress ("page n of N").' },
+      { type: 'fix', text: 'PDF / OCR: the OCR retry now stops when it reaches its time limit.' },
+      { type: 'fix', text: 'PDF / OCR: a slow Louisburg crop step is skipped after its first timeout, so bills finish faster.' },
+    ],
+  },
+  {
     v: 'v2026.09.29.37',
     date: '2026-09-29',
     title: 'Reports: savings figures match everywhere',
