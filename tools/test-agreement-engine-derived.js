@@ -1,6 +1,6 @@
 // test-agreement-engine-derived.js — WP-23 acceptance test (synthetic data only).
 // Checks: D-11 minimum spend = recurring hours x live hourly rate (no literal); a stored value wins (R2);
-// D-7 CSC % reads project cscCompensation unless the agreement store holds a value (R2);
+// WP-29: CSC % reads the project keeper (agreement store copy is ignored);
 // blank escalation warns and does not build; minimum spend shows cents when present.
 'use strict';
 const fs = require('fs'), path = require('path'), vm = require('vm');
@@ -14,7 +14,7 @@ function makeCtx(opts) {
   const els = {};
   const ctx = {
     console, Math, Number, String, Object, Array, Date, isFinite, parseFloat,
-    projects: [{ id: 1, name: 'Test Client', client: 'Test Client', cscCompensation: opts.projCsc }],
+    projects: [{ id: 1, name: 'Test Client', client: 'Test Client', contractType: 'sharedSavings', cscCompensation: opts.projCsc }],
     sget: (k, d) => (k in store ? store[k] : d),
     sset: (k, v) => { store[k] = v; },
     _pricingGetConfig: () => ({ hourlyRate: opts.rate }),
@@ -33,6 +33,7 @@ function makeCtx(opts) {
   };
   ctx.window = ctx;
   vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(path.join(root, 'computations', 'csc.js'), 'utf8'), ctx);
   vm.runInContext(fs.readFileSync(path.join(root, 'app', 'agreement-engine.js'), 'utf8'), ctx);
   return { ctx, store, toasts, els };
 }
@@ -50,7 +51,7 @@ ok(!/2768/.test(fs.readFileSync(path.join(root, 'app', 'agreement-engine.js'), '
 t = makeCtx({ rate: 170, hours: 16, projCsc: 55, store: { en_agreement_config_1: { minimumSpend: 6250, cscPct: 60 } } });
 d = t.ctx.collectAgreementData(1, 'monthlyAllowance', {});
 ok(d.minimumSpend === 6250, 'stored minimum spend 6250 is kept');
-ok(d.cscPct === 60 && d.clientPct === 40, 'stored cscPct 60 is kept, client = 40 (got ' + d.cscPct + '/' + d.clientPct + ')');
+ok(d.cscPct === 55 && d.clientPct === 45, 'a stored agreement cscPct 60 is ignored (WP-29): project 55 wins (got ' + d.cscPct + '/' + d.clientPct + ')');
 
 // 3. D-7: no stored value -> project cscCompensation.
 t = makeCtx({ rate: 170, hours: 16, projCsc: 55 });

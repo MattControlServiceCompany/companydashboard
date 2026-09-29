@@ -9663,9 +9663,9 @@ function renderBldgPerfPane(pane, b) {
   const storeKey = 'bldgperf_cfg_' + (b.id || b.name);
   const cfg = DB.get(storeKey, {});
   const defCscMode = cfg.cscMode ?? 'pct'; // 'pct' or 'fixed'
-  // Fall back to project-level cscCompensation if building has no custom override
+  // CSC share: read from getProjectContract (Project Settings), shown read-only below
   const projMeta = projects.find((p) => p.id === udSelProjId);
-  const defCscPct = cfg._customCsc ? cfg.cscPct : (projMeta?.cscCompensation ?? cfg.cscPct ?? 0);
+  const defCscPct = getProjectContract(projMeta).cscPct ?? 0;
   const defCscFixed = cfg.cscFixed ?? 500;
   const defYears = cfg.years ?? 3;
   // Fall back to project-level escalation if building has no custom override
@@ -9712,7 +9712,7 @@ function renderBldgPerfPane(pane, b) {
             <!-- CSC % input (shown in pct mode) -->
             <div id="bp-csc-pct-wrap" style="display:${defCscMode === 'pct' ? 'flex' : 'none'};flex-direction:column;gap:4px">
               <label style="font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.6px">CSC Compensation %</label>
-              <input id="bp-cscpct" type="number" value="${defCscPct}" min="0" max="100" step="0.1"
+              <input id="bp-cscpct" type="number" value="${defCscPct}" min="0" max="100" step="0.1" readonly title="Set in Project Settings"
                 style="width:80px;font-family:var(--mono);font-size:13px;color:var(--em);background:var(--s3);border:1px solid var(--border);border-radius:6px;padding:5px 8px;outline:none">
             </div>
             <!-- Fixed $ input (shown in fixed mode) -->
@@ -9790,7 +9790,7 @@ function bpApplyToAllBuildings() {
   const escPct = parseFloat(document.getElementById('bp-escpct')?.value || 0);
   const bldgs = getUDBldgs(udSelProjId);
   if (!bldgs.length) return;
-  const settings = { cscMode, cscPct, cscFixed, years, escPct, _customEsc: true };
+  const settings = { cscMode, cscFixed, years, escPct, _customEsc: true };
   let count = 0;
   bldgs.forEach((b) => {
     const key = 'bldgperf_cfg_' + (b.id || b.name);
@@ -9834,10 +9834,8 @@ function bpRecalc() {
       const _prevCfg = DB.get(storeKey, {});
       const _projM = projects.find((p) => p.id === udSelProjId);
       const _projEsc = _projM?.escalation ?? 3;
-      const _projCsc = _projM?.cscCompensation ?? 0;
       const _saveCfg = Object.assign({}, _prevCfg, {
         cscMode,
-        cscPct: cscPct * 100,
         cscFixed,
         years,
         escPct: escPct * 100,
@@ -9845,7 +9843,6 @@ function bpRecalc() {
       });
       delete _saveCfg.moBase;
       _saveCfg._customEsc = escPct * 100 !== _projEsc ? true : undefined;
-      _saveCfg._customCsc = cscPct * 100 !== _projCsc ? true : undefined;
       DB.set(storeKey, _saveCfg);
     } catch (e) {}
   }
@@ -10286,9 +10283,9 @@ function renderBldgSavProjPane(pane, b) {
   const cfg = DB.get(storeKey, {});
   const defSavingsPct = cfg.savingsPct ?? 11;
   const defClientPct = cfg.clientPct ?? 5;
-  // Fall back to project-level cscCompensation if building has no custom override
+  // CSC share: read from getProjectContract (Project Settings), shown read-only below
   const projMeta2 = projects.find((p) => p.id === udSelProjId);
-  const defCscPct = cfg._customCsc ? cfg.cscPct : (projMeta2?.cscCompensation ?? cfg.cscPct ?? 0);
+  const defCscPct = getProjectContract(projMeta2).cscPct ?? 0;
   const defYears = cfg.years ?? 3;
   // Fall back to project-level escalation if building has no custom override
   const defEscPct = cfg._customEsc ? cfg.escPct : (projMeta2?.escalation ?? cfg.escPct ?? 3);
@@ -10340,7 +10337,7 @@ function renderBldgSavProjPane(pane, b) {
             </div>
             <div style="display:flex;flex-direction:column;gap:4px">
               <label style="font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.6px">CSC Compensation %</label>
-              <input id="bsp-cscpct" type="number" value="${defCscPct}" min="0" max="100" step="0.1" oninput="bspRecalc()"
+              <input id="bsp-cscpct" type="number" value="${defCscPct}" min="0" max="100" step="0.1" readonly title="Set in Project Settings"
                 style="width:80px;font-family:var(--mono);font-size:13px;color:var(--em);background:var(--s3);border:1px solid var(--border);border-radius:6px;padding:5px 8px;outline:none">
             </div>
             <div style="display:flex;flex-direction:column;gap:4px">
@@ -10408,7 +10405,6 @@ function bspRecalc() {
       const _saveBspCfg = {
         savingsPct: savPct * 100,
         clientPct: cliPct * 100,
-        cscPct: cscPct * 100,
         years,
         escPct: escPct * 100,
         view,
@@ -10416,13 +10412,8 @@ function bspRecalc() {
       // Mark custom escalation if value differs from the project default
       const _projM2 = projects.find((p) => p.id === udSelProjId);
       const _projEsc2 = _projM2?.escalation ?? 3;
-      const _projCsc2 = _projM2?.cscCompensation ?? 0;
       if (escPct * 100 !== _projEsc2) {
         _saveBspCfg._customEsc = true;
-      }
-      // Mark custom CSC if value differs from the project default
-      if (cscPct * 100 !== _projCsc2) {
-        _saveBspCfg._customCsc = true;
       }
       DB.set(storeKey, _saveBspCfg);
     } catch (e) {}

@@ -58,9 +58,6 @@ function _agreementGetConfig(projId) {
     escalationConfirmed: false,
     minimumSpend: null, // null = derive (recurring hours x live hourly rate)
     minimumSpendConfirmed: false,
-    // Profit-sharing split: null = read the project's cscCompensation (D-7, the one store). A
-    // cscPct saved here earlier is kept and wins (R2); see _agreementResolveCscPct.
-    cscPct: null,
   };
   if (!stored) return dflt;
   return Object.assign({}, dflt, stored);
@@ -76,13 +73,15 @@ function _agreementDerivedMinimumSpend(projId) {
 function _agreementResolveMinimumSpend(projId, cfg) {
   return cfg.minimumSpend != null ? cfg.minimumSpend : _agreementDerivedMinimumSpend(projId);
 }
-// D-7: the project's cscCompensation is the one store. A cscPct saved in the agreement config wins
-// (R2: user-saved values are never dropped). Project unset (0/blank) falls back to 60, the
-// profit-share split used before this change.
-function _agreementResolveCscPct(proj, cfg) {
-  if (cfg.cscPct != null) return cfg.cscPct;
-  var pc = parseFloat(proj.cscCompensation);
-  return pc > 0 ? pc : 60;
+// WP-29: the CSC share is read from the keeper getProjectContract (Project Settings). The agreement
+// keeps no copy of it. Profit sharing needs a valid share: no share means no document.
+function _agreementCscBlockMessage(projId, templateType) {
+  if (templateType !== 'profitSharing') return null;
+  var proj = (typeof projects !== 'undefined' ? projects : []).find(function (x) {
+    return String(x.id) === String(projId);
+  });
+  if (!proj || getProjectContract(proj).cscPct !== null) return null;
+  return 'Set the contract type to Shared savings and enter the CSC share in Project Settings before you generate the Profit Sharing agreement.';
 }
 function _agreementSetConfig(projId, updates) {
   var cfg = _agreementGetConfig(projId);
@@ -314,8 +313,8 @@ function collectAgreementData(projId, templateType, opts) {
     escalationConfirmed: cfg.escalationConfirmed,
     minimumSpend: _agreementResolveMinimumSpend(projId, cfg),
     minimumSpendConfirmed: cfg.minimumSpendConfirmed,
-    cscPct: _agreementResolveCscPct(proj, cfg),
-    clientPct: 100 - _agreementResolveCscPct(proj, cfg),
+    cscPct: getProjectContract(proj).cscPct,
+    clientPct: getProjectContract(proj).clientPct,
     rawDate: new Date().toISOString().slice(0, 10),
   };
 }
@@ -1062,6 +1061,7 @@ function rptPageAgreementSignatureBlock(n, d) {
 
 // ─── generateAgreementHTML ─────────────────────────────────────────────────────────────────────
 function generateAgreementHTML(projId, templateType, opts) {
+  if (_agreementCscBlockMessage(projId, templateType)) return null;
   var d = collectAgreementData(projId, templateType, opts);
   if (!d) return null;
 
@@ -1168,10 +1168,12 @@ function openAgreementReportModal(projId) {
     ' style="accent-color:var(--em)"><span style="font-size:11px;color:var(--text2)">Client has confirmed this amount</span></label>' +
     '</div>' +
     '<div style="margin-bottom:14px">' +
-    '<div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">Profit-Share Split (Contractor %) — only used by the Profit Sharing template</div>' +
-    '<input type="number" id="agrCscPct" value="' +
-    _agreementResolveCscPct(proj, cfg) +
-    '" style="padding:6px 10px;border:1px solid var(--s3);border-radius:6px;background:var(--s1);color:var(--text);font-size:13px;width:100px">' +
+    '<div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">Profit-Share Split (Contractor %) &mdash; only used by the Profit Sharing template</div>' +
+    '<div id="agrCscPct" style="font-size:13px;color:var(--text)">' +
+    (getProjectContract(proj).cscPct !== null
+      ? getProjectContract(proj).cscPct + '% &mdash; set in Project Settings'
+      : 'Not set. Set the contract type to Shared savings and enter the CSC share in Project Settings.') +
+    '</div>' +
     '</div>';
 
   var bodyEl = modal.querySelector('#agreementReportModalBody');
@@ -1194,7 +1196,6 @@ function generateAgreementPreview() {
   var escConfirmedInput = document.getElementById('agrEscalationConfirmed');
   var minSpendInput = document.getElementById('agrMinimumSpend');
   var minSpendConfirmedInput = document.getElementById('agrMinimumSpendConfirmed');
-  var cscPctInput = document.getElementById('agrCscPct');
 
   var proj = (typeof projects !== 'undefined' ? projects : []).find(function (x) {
     return String(x.id) === String(projId);
@@ -1208,10 +1209,9 @@ function generateAgreementPreview() {
     showToast('Enter the annual escalation rate (a number, 0 or more) before generating the Agreement.', 'error');
     return;
   }
-  var cscRaw = cscPctInput ? String(cscPctInput.value).trim() : '';
-  var cscPct = cscRaw === '' ? NaN : Number(cscRaw);
-  if (!isFinite(cscPct) || cscPct < 0 || cscPct > 100) {
-    showToast('Enter the profit-share split as a number from 0 to 100 before generating the Agreement.', 'error');
+  var cscBlock = _agreementCscBlockMessage(projId, templateType);
+  if (cscBlock) {
+    showToast(cscBlock, 'error');
     return;
   }
   var minRaw = minSpendInput ? String(minSpendInput.value).trim() : '';
@@ -1237,7 +1237,6 @@ function generateAgreementPreview() {
   // Save only what the user changed: a value equal to the derived/project default is stored as
   // null (read live) unless a value was already stored (a stored value is never silently dropped).
   if (stored.minimumSpend == null && minSpend === _agreementDerivedMinimumSpend(projId)) minSpend = null;
-  if (stored.cscPct == null && proj && cscPct === _agreementResolveCscPct(proj, stored)) cscPct = null;
 
   var opts = {
     templateType: templateType,
@@ -1246,7 +1245,6 @@ function generateAgreementPreview() {
     escalationConfirmed: !!(escConfirmedInput && escConfirmedInput.checked),
     minimumSpend: minSpend,
     minimumSpendConfirmed: !!(minSpendConfirmedInput && minSpendConfirmedInput.checked),
-    cscPct: cscPct,
   };
 
   // Persist config (plain settings object — see file header re: what IS/ISN'T persisted here).

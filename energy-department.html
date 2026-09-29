@@ -14041,11 +14041,22 @@
             </div>
             <div class="f2">
               <div class="fg">
+                <label class="fl">Contract Type</label>
+                <select class="fi" id="mp-contractType" onchange="mpContractTypeChanged()">
+                  <option value="">Not set</option>
+                  <option value="sharedSavings">Shared savings (CSC share)</option>
+                  <option value="fixedProject">Fixed project (no shared savings)</option>
+                  <option value="none">No contract</option>
+                </select>
+              </div>
+            </div>
+            <div class="f2">
+              <div class="fg">
                 <label class="fl">Utility Escalation %/yr</label
                 ><input class="fi" id="mp-escalation" type="number" min="0" max="20" step="0.1" placeholder="e.g. 3" />
               </div>
               <div class="fg">
-                <label class="fl">CSC Compensation %</label
+                <label class="fl">CSC Share of Savings % (Shared savings only)</label
                 ><input
                   class="fi"
                   id="mp-cscCompensation"

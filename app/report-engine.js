@@ -51,6 +51,12 @@ function _rptUnit(s) {
 function collectReportData(projId, buildingIds, reportDateStr, reportType, selectedPeriod, meterIds) {
   const p = projects.find((x) => x.id === projId);
   if (!p) return null;
+  // WP-29: a shared-savings project without a CSC share cannot make a client document.
+  const _contract = getProjectContract(p);
+  if (_contract.needsPct) {
+    showToast('Enter the CSC share in Project Settings before you make a report. The contract type is Shared savings.', 'error');
+    return null;
+  }
 
   let bldgs = getUDBldgs(projId);
   if (buildingIds && buildingIds.length) bldgs = bldgs.filter((b) => buildingIds.includes(String(b.id)));
@@ -220,7 +226,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
   // --- Contract info ---
   const contractYears = parseInt(p.contractYears) || 3;
   const escalation = parseFloat(p.escalation) || 0;
-  const cscComp = parseFloat(p.cscCompensation) || 0;
+  const cscComp = _contract.cscPct === null ? 0 : _contract.cscPct;
   const clientPct = 100 - cscComp;
   const contractStart = p.start ? new Date(p.start + 'T00:00:00') : null;
 

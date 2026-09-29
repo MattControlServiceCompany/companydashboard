@@ -1,6 +1,32 @@
 // computations/csc.js — CSC compensation (canonical source)
 // Pure functions with no closure dependencies.
 
+// getProjectContract — THE keeper for a project's contract type and CSC share (WP-29).
+// Types: 'sharedSavings' (profit sharing, CSC gets a % of savings), 'fixedProject' (one-time fixed
+// cost, no CSC share), 'none' (no contract). The one % is Project Settings cscCompensation.
+// A project saved before contract types existed (no type, but a % > 0) is read as sharedSavings;
+// nothing is written back. cscPct is a number only for sharedSavings with a valid % (>0, <=100).
+// needsPct = sharedSavings without a valid % (callers warn and block client documents).
+var CONTRACT_TYPE_LABELS = {
+  sharedSavings: 'Shared savings (CSC share)',
+  fixedProject: 'Fixed project (no shared savings)',
+  none: 'No contract',
+};
+function getProjectContract(p) {
+  p = p || {};
+  var pct = parseFloat(p.cscCompensation);
+  var validPct = isFinite(pct) && pct > 0 && pct <= 100;
+  var type = p.contractType && CONTRACT_TYPE_LABELS[p.contractType] ? p.contractType : null;
+  if (!type && validPct) type = 'sharedSavings';
+  var shared = type === 'sharedSavings';
+  return {
+    type: type,
+    cscPct: shared && validPct ? pct : null,
+    clientPct: shared && validPct ? 100 - pct : null,
+    needsPct: shared && !validPct,
+  };
+}
+
 function computeCscSplit(savings, cscCompensation, mode, fixedAmount, nMonths) {
   mode = mode || 'pct';
   var cscPct = (parseFloat(cscCompensation) || 0) / 100;

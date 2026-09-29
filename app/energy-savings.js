@@ -794,18 +794,16 @@ function _renderSavingsContent(wrap, projId) {
         const bspKey = 'bldgsavproj_cfg_b1776962504464';
         const bpKey = 'bldgperf_cfg_b1776962504464';
         if (!DB.get(bspKey, null)) {
-          DB.set(bspKey, { cscPct: 60, escPct: 3.5, savingsPct: 6.7 });
+          DB.set(bspKey, { escPct: 3.5, savingsPct: 6.7 });
         }
         if (!DB.get(bpKey, null)) {
           DB.set(bpKey, {
             cscMode: 'pct',
-            cscPct: 60,
             cscFixed: 0,
             years: 3,
             escPct: 3.5,
             _customEsc: true,
             view: 'monthly',
-            _customCsc: true,
           });
         }
         sset('en_projects', projects);
@@ -1673,6 +1671,14 @@ const MP_AUTOFILL_FIELDS = [
   { key: 'tags', label: 'Tags', elId: 'mp-tags', kind: 'text' },
 ];
 
+// The CSC share applies to shared savings only. Other contract types turn the field off.
+function mpContractTypeChanged() {
+  const sel = document.getElementById('mp-contractType');
+  const pct = document.getElementById('mp-cscCompensation');
+  if (!sel || !pct) return;
+  pct.disabled = sel.value !== 'sharedSavings';
+}
+
 function _mpAutofillIsEmpty(field, val) {
   if (val === undefined || val === null) return true;
   if (typeof val === 'string') return val.trim() === '';
@@ -1891,6 +1897,7 @@ function openProjModal() {
     'mp-tags',
     'mp-escalation',
     'mp-cscCompensation',
+    'mp-contractType',
   ].forEach((id) => {
     const e = document.getElementById(id);
     if (e) e.value = '';
@@ -1940,12 +1947,14 @@ function editProj(id) {
     tags: p.tags,
     escalation: p.escalation,
     cscCompensation: p.cscCompensation,
+    contractType: getProjectContract(p).type || '',
   };
   Object.entries(fv).forEach(([k, v]) => {
     if (k === 'notes') return; // handled separately via Quill
     const e = document.getElementById('mp-' + k);
     if (e) e.value = v || '';
   });
+  mpContractTypeChanged();
   // Customer/Multi-Project: existing project always has a customerId (self-heal seeds it
   // for every pre-existing project). Pre-check the buildings/meters this project already
   // has scoped.
@@ -2099,6 +2108,7 @@ function saveProject() {
       document.getElementById('mp-escalation').value.trim() === ''
         ? null
         : parseFloat(document.getElementById('mp-escalation').value) || 0,
+    contractType: document.getElementById('mp-contractType').value || undefined,
     cscCompensation: parseFloat(document.getElementById('mp-cscCompensation').value) || 0,
     start: document.getElementById('mp-start').value,
     end: document.getElementById('mp-end').value,
@@ -2142,30 +2152,6 @@ function saveProject() {
         const bspCfg = DB.get(bspKey, {});
         if (!bspCfg._customEsc) {
           bspCfg.escPct = fields.escalation;
-          DB.set(bspKey, bspCfg);
-        }
-      } catch (e) {}
-    });
-  }
-
-  // Propagate project-level CSC compensation to buildings without a custom override
-  if (fields.cscCompensation != null) {
-    const projId = editId ? parseInt(editId) : projects[projects.length - 1].id;
-    const bldgs = getUDBldgs(projId) || [];
-    bldgs.forEach((b) => {
-      const bpKey = 'bldgperf_cfg_' + (b.id || b.name);
-      const bspKey = 'bldgsavproj_cfg_' + (b.id || b.name);
-      try {
-        const bpCfg = DB.get(bpKey, {});
-        if (!bpCfg._customCsc) {
-          bpCfg.cscPct = fields.cscCompensation;
-          DB.set(bpKey, bpCfg);
-        }
-      } catch (e) {}
-      try {
-        const bspCfg = DB.get(bspKey, {});
-        if (!bspCfg._customCsc) {
-          bspCfg.cscPct = fields.cscCompensation;
           DB.set(bspKey, bspCfg);
         }
       } catch (e) {}

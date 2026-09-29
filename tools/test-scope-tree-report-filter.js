@@ -191,6 +191,7 @@ function buildCtx() {
     'computations/normalization.js',
     'computations/savings.js',
     'computations/eui.js',
+    'computations/csc.js',
     'computations/hvac-enduse.js',
     'app/scope-tree.js',
     'app/utility-data.js',
