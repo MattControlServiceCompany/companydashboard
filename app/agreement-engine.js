@@ -1220,6 +1220,12 @@ function generateAgreementPreview() {
     showToast('Enter the minimum monthly spend as a dollar amount, or clear it to use the default.', 'error');
     return;
   }
+  // The Monthly Allowance text prints the minimum spend. With no typed value, no stored value and no
+  // way to derive one (no monthly budget), warn and stop: a client document never prints a placeholder.
+  if (templateType === 'monthlyAllowance' && minSpend === null && _agreementResolveMinimumSpend(projId, stored) === null) {
+    showToast('Enter a monthly budget to compute the minimum monthly spend.', 'error');
+    return;
+  }
   // Save only what the user changed: a value equal to the derived/project default is stored as
   // null (read live) unless a value was already stored (a stored value is never silently dropped).
   if (stored.minimumSpend == null && minSpend === _agreementDerivedMinimumSpend(projId)) minSpend = null;

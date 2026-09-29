@@ -71,5 +71,15 @@ t.ctx.generateAgreementPreview();
 ok(t.toasts.length === 1 && /escalation/i.test(t.toasts[0].m), 'blank escalation shows a warning');
 ok(!t.store.en_agreement_config_1, 'blank escalation saves nothing');
 
+// 6. Minimum spend cannot be derived (no recurring hours) and none stored: warn, do not build.
+t = makeCtx({ rate: 170, hours: NaN, projCsc: 55 });
+t.els.agreementReportModal = { _agrProjId: 1, querySelector: () => null, classList: { remove() {}, add() {} } };
+t.els.agrEscalationRate = { value: '4' };
+t.els.agrMinimumSpend = { value: '' };
+t.els.agrCscPct = { value: '55' };
+t.ctx.generateAgreementPreview();
+ok(t.toasts.length === 1 && /monthly budget/i.test(t.toasts[0].m), 'underivable minimum spend shows the budget warning');
+ok(!t.store.en_agreement_config_1, 'underivable minimum spend saves nothing');
+
 console.log(fails ? '\nFAILED ' + fails : '\nALL PASS');
 process.exit(fails ? 1 : 0);
