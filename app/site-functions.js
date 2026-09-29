@@ -1776,6 +1776,16 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.29.28',
+    date: '2026-09-29',
+    title: 'Agreement builder fixes',
+    items: [
+      { type: 'fix', text: 'Monthly Allowance agreements now work out the minimum monthly spend from the project budget. If there is no budget, the builder asks you to enter one instead of printing a wrong amount.' },
+      { type: 'fix', text: 'Profit Sharing agreements now use the CSC share set on the project instead of a fixed 60 percent.' },
+      { type: 'fix', text: 'Flat Cost and One-Time Cost agreements now ask you to enter the project total instead of printing a placeholder in the agreement.' },
+    ],
+  },
+  {
     v: 'v2026.09.29.27',
     date: '2026-09-29',
     title: 'Dollar amounts show losses with a minus sign',
