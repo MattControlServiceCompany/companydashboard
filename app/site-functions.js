@@ -1776,6 +1776,14 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.28.19',
+    date: '2026-09-28',
+    title: 'Projects: New Energy Project creates a customer only when you save.',
+    items: [
+      { type: 'fix', text: 'On the Projects page, the New Energy Project form now creates a new customer only when you click Save. Typing a customer name and then cancelling no longer leaves a stray customer behind.' },
+    ],
+  },
+  {
     v: 'v2026.09.28.18',
     date: '2026-09-28',
     title: 'Utility Data: Estimate missing period now counts days the same way as your bills.',
