@@ -1776,6 +1776,15 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.29.32',
+    date: '2026-09-29',
+    title: 'Estimate missing period matches the bills around it',
+    items: [
+      { type: 'fix', text: 'On the Utility Data bill table, "Estimate missing period" now keeps the same decimals as the bills around it.' },
+      { type: 'fix', text: 'On the Utility Data bill table, "Estimate missing period" now fills the bill total from the next bill\'s "Previously Billed" amount when the bill prints it.' },
+    ],
+  },
+  {
     v: 'v2026.09.29.31',
     date: '2026-09-29',
     title: 'Bill numbers read the same everywhere',
