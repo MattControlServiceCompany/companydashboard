@@ -1776,6 +1776,15 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.28.18',
+    date: '2026-09-28',
+    title: 'Utility Data: Estimate missing period now counts days the same way as your bills.',
+    items: [
+      { type: 'fix', text: 'On the Utility Data page, Estimate missing period now runs from meter read to meter read and uses the Inclusive or Exclusive day setting you chose, so the day count matches the bills on either side.' },
+      { type: 'fix', text: 'The estimated amount is now rounded to the same number of decimals as the neighbouring bills.' },
+    ],
+  },
+  {
     v: 'v2026.09.28.17',
     date: '2026-09-28',
     title: 'The Audit Proposal total price now rounds up to the next $100.',
