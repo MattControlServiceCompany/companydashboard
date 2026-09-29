@@ -1776,6 +1776,15 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.28.17',
+    date: '2026-09-28',
+    title: 'The Audit Proposal total price now rounds up to the next $100.',
+    items: [
+      { type: 'change', text: 'The Audit Proposal now shows its Total Price rounded up to the next $100, in whole dollars.' },
+      { type: 'feature', text: 'The Audit Estimate breakdown now has a "Proposal price (rounded up to the next $100)" row under the exact total.' },
+    ],
+  },
+  {
     v: 'v2026.09.25.16',
     date: '2026-09-25',
     title: 'Utility Data now stacks the buildings list above the details on phones instead of squeezing them side by side, and the Energy Graphics, Utility Data, ECM Calculator, and Quarterly and Utility Audit reports spell out Site Energy Use Intensity in full.',
