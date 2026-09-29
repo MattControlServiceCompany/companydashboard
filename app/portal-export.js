@@ -63,9 +63,8 @@ function publishClientPortal(projId) {
             const dc = c.start ? new Date(c.start).getTime() : 0;
             return da - dc;
           });
-          const incl = m.inclusive !== false;
           try {
-            const savResult = getMeterSavings(m, bills, incl, String(projId), b.id);
+            const savResult = getMeterSavings(m, bills, p.inclMonths || {}, String(projId), b.id);
             Object.values(savResult.unitsByYM || {}).forEach((u) => {
               totalKwhSaved += u.kwh || 0;
               totalThermsSaved += u.therms || 0;

@@ -96,5 +96,33 @@ check('summary total counts only included meters', snap.summary.totalSavingsDoll
 check('exports annualTargetDollars = project savings target', snap.summary.annualTargetDollars === 100000, String(snap.summary.annualTargetDollars));
 check('progress = savings / target (not contract)', snap.summary.contractProgressPct === Math.round((half / 100000) * 1000) / 10, String(snap.summary.contractProgressPct));
 check('placeholder contact removed', snap.contact === undefined);
+
+// 4. units and dollars pass the SAME month-inclusion input (proj.inclMonths) to getMeterSavings
+sb = setup(7, []);
+vm.runInContext(`
+  projects[0].inclMonths = { marker: 1 };
+  m1.inclusive = false;
+  var _seen = [];
+  var _orig = getMeterSavings;
+  getMeterSavings = function(m, bills, incl, projId, bldgId){ _seen.push({ src: (new Error().stack.indexOf('getBuildingSavingsByYM') >= 0 ? 'dollar' : 'portal'), incl: incl }); return _orig(m, bills, incl, projId, bldgId); };
+  var crypto = { randomUUID: function(){ return 'tok'; } };
+  function showToast(){}
+  function extractStateFromAddress(){ return 'KS'; }
+  function calculatePollutionCredits(){ return { totalCO2: 0 }; }
+  var EQUIV_PER_MT_CO2E = {};
+  var location = { pathname: '/x.html', origin: 'http://t', protocol: 'file:' };
+  var navigator = {};
+  var Blob = function(parts){ this.text = parts[0]; };
+  var document = { createElement: function(){ return { click: function(){} }; }, body: { appendChild: function(){}, removeChild: function(){} } };
+  var URL = { createObjectURL: function(){ return 'x'; }, revokeObjectURL: function(){} };
+`, sb);
+vm.runInContext("sset('en_projects', [projects[0]]);", sb);
+vm.runInContext(fs.readFileSync(path.join(REPO, 'app/portal-export.js'), 'utf8'), sb);
+vm.runInContext('publishClientPortal(7)', sb);
+const seen = JSON.parse(vm.runInContext('JSON.stringify(_seen)', sb));
+const portalCalls = seen.filter((c) => c.src === 'portal');
+const dollarCalls = seen.filter((c) => c.src === 'dollar');
+check('portal unit loop and dollar path both call getMeterSavings', portalCalls.length > 0 && dollarCalls.length > 0, portalCalls.length + '/' + dollarCalls.length);
+check('every call gets proj.inclMonths', seen.length > 0 && seen.every((c) => c.incl && c.incl.marker === 1), JSON.stringify(seen.map((c) => c.incl)));
 console.log(fails ? 'FAILED ' + fails : 'ALL PASS');
 process.exit(fails ? 1 : 0);
