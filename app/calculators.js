@@ -4117,11 +4117,11 @@ function openBASCalc(projId) {
   const rCalCoolKwh = _bcResolve('calCoolKwh', '', autoCalCool);
   const rCalHeatKwh = _bcResolve('calHeatKwh', '', autoCalHeat);
   // Honest label (2026-09-28): the weather regression ran but found no positive heating (HDD) term,
-  // so electric heating cannot be separated from this building's bills — say so instead of the
-  // generic default hint (the default value stays; nothing is invented).
+  // so electric heating cannot be separated from this building's bills — say so in plain words
+  // instead of the generic default hint (the value stays default; nothing is invented).
   if (heatKwhNotSeparable && rCalHeatKwh.hint && rCalHeatKwh.hint.indexOf('Default value') === 0)
     rCalHeatKwh.hint =
-      'Default value — electric heating not separable from bills (electric weather regression has no positive heating term); enter manually or save HVAC Load Estimation';
+      "Not found in the electric bills — this building's electric use does not rise in cold weather. Enter a value, or save an HVAC Load Estimate.";
   const rCalHeatGas = _bcResolve('calHeatGas', '', autoCalGas);
 
   // Proposed Conditions (2026-09-23): chCalcAutofillFields always returns a company-standard
