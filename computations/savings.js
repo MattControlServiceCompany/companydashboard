@@ -783,7 +783,8 @@ function getBldgMeasureSavingsByMo(projId, bldgId) {
    the time of the click (re-running the math later moves printed numbers by a few dollars).
    One storage key, one record per project + period, written only by the user's confirm:
      { projectId, periodStart, periodEnd, presentedAt, documentName, totalDollars,
-       buildings: { <bldgId>: { dollars, kwhSaved?, thermsSaved?, gallonsSaved? } } }
+       buildings: { <bldgId>: { dollars, kwhSaved?, thermsSaved?, gallonsSaved?,
+         elecDollars?, gasDollars?, propaneDollars? } } }  (commodity dollars = the printed split)
    totalSavingsWithPresented() is the ONE place a period / building / project savings total
    is decided; every consumer that adds up months calls it. Monthly rows stay recalculated.
 ───────────────────────────────────────────────────────────── */
@@ -923,7 +924,36 @@ function totalSavingsWithPresented(projId, yms, perBldg) {
   return { total, byBldg, applied: applied.map((a) => a.rec) };
 }
 
-// Printed unit figures ({kwhSaved, thermsSaved, gallonsSaved}) for one building, only when a
+// Unit totals ({kwh, therms, gallons}) for the months `yms`, for `perBldgUnits` =
+// { <bldgId>: { <ym>: {kwh, therms, gallons} } } (current values). Same rule as the dollar total:
+// a presented period inside yms replaces that building's months with the printed unit figure
+// (a unit the document did not print stays current).
+function totalUnitsWithPresented(projId, yms, perBldgUnits) {
+  const applied = _presentedApplied(projId, yms);
+  const claimed = new Set();
+  applied.forEach((a) => a.months.forEach((y) => claimed.add(y)));
+  const out = { kwh: 0, therms: 0, gallons: 0 };
+  const F = { kwh: "kwhSaved", therms: "thermsSaved", gallons: "gallonsSaved" };
+  Object.keys(perBldgUnits).forEach((b) => {
+    const cur = perBldgUnits[b] || {};
+    Object.keys(out).forEach((u) => {
+      yms.forEach((y) => {
+        if (!claimed.has(y)) out[u] += (cur[y] && cur[y][u]) || 0;
+      });
+      applied.forEach((a) => {
+        const f = a.rec.buildings[b];
+        out[u] +=
+          f && f[F[u]] != null
+            ? f[F[u]]
+            : a.months.reduce((s, y) => s + ((cur[y] && cur[y][u]) || 0), 0);
+      });
+    });
+  });
+  return out;
+}
+
+// Printed unit and commodity-dollar figures ({kwhSaved, thermsSaved, gallonsSaved, elecDollars,
+// gasDollars, propaneDollars}) for one building, only when a
 // record covers exactly this period (units cannot be re-cut for a different month set).
 function getPresentedUnits(projId, yms, bldgId) {
   const rec = getPresentedRecordFor(projId, yms);
@@ -1014,7 +1044,7 @@ function removePresentedMark(projId, yms) {
 }
 
 // CSV of printed figures: rows "building,figure,value". figure = savings_dollars | kwh_saved |
-// therms_saved | gallons_saved. A building named "Portfolio total" (or "Total") holds the printed
+// therms_saved | gallons_saved | electric_savings_dollars | gas_savings_dollars | propane_savings_dollars. A building named "Portfolio total" (or "Total") holds the printed
 // portfolio total. `bldgs` = [{id, name}] of the project. Returns
 // { buildings: {<id>: {...}}, totalDollars, unmatched: [names], bad: [lines] }.
 function parsePresentedCsv(text, bldgs) {
@@ -1023,6 +1053,9 @@ function parsePresentedCsv(text, bldgs) {
     kwh_saved: "kwhSaved",
     therms_saved: "thermsSaved",
     gallons_saved: "gallonsSaved",
+    electric_savings_dollars: "elecDollars",
+    gas_savings_dollars: "gasDollars",
+    propane_savings_dollars: "propaneDollars",
   };
   const out = { buildings: {}, totalDollars: null, unmatched: [], bad: [] };
   const norm = (s) =>

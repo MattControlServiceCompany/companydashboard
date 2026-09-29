@@ -377,5 +377,47 @@ assert(
   "second remove returns false",
 );
 
+// ---- WP-04a fix 2: commodity dollars, portal units, per-meter quarters ----
+{
+  const Q = ymList("2025", 1, 3);
+  const csv =
+    "building,figure,value\nSyn One,electric_savings_dollars,111.5\nSyn One,gas_savings_dollars,22.25\n" +
+    "Syn One,propane_savings_dollars,3\nSyn One,savings_dollars,136.75\nSyn One,kwh_saved,5000\n";
+  const pc = sb.parsePresentedCsv(csv, [{ id: "b-syn-1", name: "Syn One" }]);
+  const f = pc.buildings["b-syn-1"] || {};
+  assert(
+    f.elecDollars === 111.5 && f.gasDollars === 22.25 && f.propaneDollars === 3 && pc.bad.length === 0,
+    "CSV reads the printed electric / gas / propane dollars per building",
+  );
+  const units = {
+    "b-syn-1": { "2025-01": { kwh: 10, therms: 4, gallons: 1 }, "2025-02": { kwh: 10, therms: 4, gallons: 1 }, "2025-04": { kwh: 7, therms: 2, gallons: 0 } },
+    "b-syn-2": { "2025-01": { kwh: 3, therms: 1, gallons: 0 } },
+  };
+  const ymsU = ["2025-01", "2025-02", "2025-03", "2025-04"];
+  let u = sb.totalUnitsWithPresented(9001, ymsU, units);
+  assert(u.kwh === 30 && u.therms === 11 && u.gallons === 2, "unmarked: unit total is current math");
+  const r = sb.savePresentedRecord({
+    projectId: 9001, periodStart: "2025-01", periodEnd: "2025-03", presentedAt: "2025-04-05T12:00:00.000Z",
+    documentName: "Synthetic Q1", totalDollars: 500,
+    buildings: { "b-syn-1": { dollars: 400, kwhSaved: 5000, elecDollars: 300 } },
+  });
+  assert(r.ok, "commodity-dollar record saves");
+  assert(sb.getPresentedUnits(9001, Q, "b-syn-1").elecDollars === 300, "keeper returns printed electric dollars for the exact period");
+  u = sb.totalUnitsWithPresented(9001, ymsU, units);
+  assert(
+    u.kwh === 5000 + 3 + 7 && u.therms === 4 + 4 + 1 + 2 && u.gallons === 2,
+    "marked: printed kWh replaces b1 presented months, other units and buildings stay current",
+  );
+  sb.removePresentedMark(9001, Q);
+  assert(sb.getPresentedRecords(9001).length === 0, "test record removed");
+  const rd = (f2) => fs.readFileSync(path.join(REPO, f2), "utf8");
+  const rep = rd("app/report-engine.js");
+  assert(/elec\.costSaved = _presUnits\.elecDollars/.test(rep) && /gas\.costSaved = _presUnits\.gasDollars/.test(rep) && /propane\.costSaved = _presUnits\.propaneDollars/.test(rep),
+    "report engine takes per-commodity dollars from the keeper record");
+  assert(/totalUnitsWithPresented\(/.test(rd("app/portal-export.js")), "portal CO2 units go through the keeper");
+  const core = rd("app/core.js");
+  assert(/meterSavByYMs\.push/.test(core) && /addBldgQuarters = \(projId, bldgId, meterByYMs\)/.test(core), "dashboard quarters pick the newest year per meter");
+}
+
 console.log("RESULT " + passed + " passed, " + failed + " failed");
 process.exit(failed ? 1 : 0);

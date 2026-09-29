@@ -1908,18 +1908,29 @@ function initDashboardTab(projId) {
   const projectedByQtr = [0, 0, 0, 0];
   let projectedAnnual = 0;
   const actualByQtr = [0, 0, 0, 0];
-  // Add one building's savings for the quarters of its newest savings year. Uses the shared keeper so a
-  // period presented to the client shows the presented figure (computations/savings.js).
-  const addBldgQuarters = (projId, bldgId, byYM) => {
-    const nz = Object.keys(byYM)
-      .filter((ym) => byYM[ym] !== 0)
-      .sort();
-    if (!nz.length) return;
-    const yr = nz[nz.length - 1].slice(0, 4);
-    for (let qi = 0; qi < 4; qi++) {
-      const qYMs = [1, 2, 3].map((k) => yr + '-' + String(qi * 3 + k).padStart(2, '0'));
-      actualByQtr[qi] += totalSavingsWithPresented(projId, qYMs, { [bldgId]: byYM }).byBldg[bldgId];
-    }
+  // Add one building's savings by quarter. As before, each METER contributes the quarters of its own
+  // newest savings year (per meter, not per building). Meters are grouped by that year and each group
+  // goes through the shared keeper, so a period presented to the client shows the presented figure
+  // (computations/savings.js totalSavingsWithPresented).
+  const addBldgQuarters = (projId, bldgId, meterByYMs) => {
+    const byYr = {};
+    meterByYMs.forEach((byYM) => {
+      const nz = Object.keys(byYM)
+        .filter((ym) => byYM[ym] !== 0)
+        .sort();
+      if (!nz.length) return;
+      const yr = nz[nz.length - 1].slice(0, 4);
+      const g = (byYr[yr] = byYr[yr] || {});
+      Object.keys(byYM).forEach((ym) => {
+        if (ym.startsWith(yr)) g[ym] = (g[ym] || 0) + byYM[ym];
+      });
+    });
+    Object.keys(byYr).forEach((yr) => {
+      for (let qi = 0; qi < 4; qi++) {
+        const qYMs = [1, 2, 3].map((k) => yr + '-' + String(qi * 3 + k).padStart(2, '0'));
+        actualByQtr[qi] += totalSavingsWithPresented(projId, qYMs, { [bldgId]: byYr[yr] }).byBldg[bldgId];
+      }
+    });
   };
   let latestBillEnd = null;
   let latestSavYM = null; // full 'YYYY-MM' string of last month with savings data
@@ -1943,6 +1954,7 @@ function initDashboardTab(projId) {
     let hasBaseline = false;
     let bldgSav = 0;
     const bldgSavByYM = {}; // current savings by month; totals go through totalSavingsWithPresented()
+    const meterSavByYMs = []; // one byYM per meter, for the per-meter newest-year quarters
     let meterIncl = 0,
       meterExcl = 0,
       meterTotal = meters.length;
@@ -2003,6 +2015,7 @@ function initDashboardTab(projId) {
           bldgMoBase[mo] += (eM[mo]?.totalCost || 0) + (gM[mo]?.cost || 0) + (pM[mo]?.cost || 0);
         // Normalized actual savings per calendar month
         const savResult = getMeterSavings(m, bills, incl, projId, b.id);
+        meterSavByYMs.push(savResult.byYM);
         Object.entries(savResult.byYM).forEach(([ym, v]) => {
           bldgSavByYM[ym] = (bldgSavByYM[ym] || 0) + v;
           if (v !== 0 && (latestSavYM === null || ym > latestSavYM)) latestSavYM = ym;
@@ -2040,7 +2053,7 @@ function initDashboardTab(projId) {
       // presented figures (one keeper, computations/savings.js).
       const _savYMs = Object.keys(bldgSavByYM).sort();
       bldgSav = totalSavingsWithPresented(projId, _savYMs, { [b.id]: bldgSavByYM }).byBldg[b.id];
-      addBldgQuarters(projId, b.id, bldgSavByYM);
+      addBldgQuarters(projId, b.id, meterSavByYMs);
       blCost = Object.values(bldgMoBase).reduce((s, v) => s + v, 0);
       curCost = blCost - bldgSav;
     } else {
@@ -2122,12 +2135,13 @@ function initDashboardTab(projId) {
         }
         const _actIncl = m.inclusive !== false;
         const _actSavResult = getMeterSavings(m, bills, _actIncl, projId, b.id);
+        meterSavByYMs.push(_actSavResult.byYM);
         Object.entries(_actSavResult.byYM).forEach(([ym, v]) => {
           bldgSavByYM[ym] = (bldgSavByYM[ym] || 0) + v;
           if (v !== 0 && (latestSavYM === null || ym > latestSavYM)) latestSavYM = ym;
         });
       });
-      addBldgQuarters(projId, b.id, bldgSavByYM);
+      addBldgQuarters(projId, b.id, meterSavByYMs);
     }
     // Fallback: if no baseline set and actual mode, annualize allCost
     const totalBillCount = meters.reduce((s, m) => s + (m.bills || []).length, 0);

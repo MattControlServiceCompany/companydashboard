@@ -122,6 +122,9 @@ function _rptOpenPresentedForm(ctx) {
         '" style="' +
         inCss +
         '"></td>' +
+        '<td style="' + cellCss + '"><input type="number" step="any" class="pf-elec" style="' + inCss + '"></td>' +
+        '<td style="' + cellCss + '"><input type="number" step="any" class="pf-gas" style="' + inCss + '"></td>' +
+        '<td style="' + cellCss + '"><input type="number" step="any" class="pf-prop" style="' + inCss + '"></td>' +
         '</tr>'
       );
     })
@@ -140,7 +143,7 @@ function _rptOpenPresentedForm(ctx) {
     '" style="' +
     inCss +
     ';text-align:left;margin-top:3px"></label></div>' +
-    '<div style="margin-bottom:10px;font-size:12px;color:var(--text2)">Or fill the table from a CSV file (rows: building, figure, value; figures: savings_dollars, kwh_saved, therms_saved, gallons_saved; a row named Portfolio total holds the total): ' +
+    '<div style="margin-bottom:10px;font-size:12px;color:var(--text2)">Or fill the table from a CSV file (rows: building, figure, value; figures: savings_dollars, kwh_saved, therms_saved, gallons_saved, electric_savings_dollars, gas_savings_dollars, propane_savings_dollars; a row named Portfolio total holds the total): ' +
     '<input id="pfCsv" type="file" accept=".csv,text/csv" onchange="_rptPresentedImportCsv(this)"></div>' +
     '<div id="pfMsg" style="font-size:12px;color:var(--text2);margin-bottom:8px"></div>' +
     '<table style="border-collapse:collapse;width:100%;font-size:12px;color:var(--text)"><thead><tr>' +
@@ -165,6 +168,9 @@ function _rptOpenPresentedForm(ctx) {
     '<th style="' +
     thCss +
     'text-align:right">Gallons saved presented</th>' +
+    '<th style="' + thCss + 'text-align:right">Electric $ presented</th>' +
+    '<th style="' + thCss + 'text-align:right">Gas $ presented</th>' +
+    '<th style="' + thCss + 'text-align:right">Propane $ presented</th>' +
     '</tr></thead><tbody>' +
     rows +
     '</tbody><tfoot><tr style="font-weight:600;background:var(--s1)">' +
@@ -184,7 +190,7 @@ function _rptOpenPresentedForm(ctx) {
     '<td style="' +
     cellCss +
     'text-align:right" id="pfTotalDiff">—</td>' +
-    '<td colspan="3" style="' +
+    '<td colspan="6" style="' +
     cellCss +
     '"></td></tr></tfoot></table>';
   document.getElementById('presentedModalBody').innerHTML = body;
@@ -222,6 +228,9 @@ function _rptPresentedImportCsv(input) {
       if (f.kwhSaved != null) tr.querySelector('.pf-kwh').value = f.kwhSaved;
       if (f.thermsSaved != null) tr.querySelector('.pf-therms').value = f.thermsSaved;
       if (f.gallonsSaved != null) tr.querySelector('.pf-gal').value = f.gallonsSaved;
+      if (f.elecDollars != null) tr.querySelector('.pf-elec').value = f.elecDollars;
+      if (f.gasDollars != null) tr.querySelector('.pf-gas').value = f.gasDollars;
+      if (f.propaneDollars != null) tr.querySelector('.pf-prop').value = f.propaneDollars;
     });
     if (r.totalDollars != null) document.getElementById('pfTotal').value = r.totalDollars;
     _rptPresentedRecalc();
@@ -255,6 +264,12 @@ function _rptConfirmPresentedForm() {
     if (kwh != null) f.kwhSaved = kwh;
     if (therms != null) f.thermsSaved = therms;
     if (gal != null) f.gallonsSaved = gal;
+    var ed = _rptPresentedNum(tr.querySelector('.pf-elec').value);
+    var gd = _rptPresentedNum(tr.querySelector('.pf-gas').value);
+    var pd = _rptPresentedNum(tr.querySelector('.pf-prop').value);
+    if (ed != null) f.elecDollars = ed;
+    if (gd != null) f.gasDollars = gd;
+    if (pd != null) f.propaneDollars = pd;
     buildings[tr.getAttribute('data-bldg')] = f;
   });
   var dateVal = document.getElementById('pfDate').value;

@@ -580,6 +580,9 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
       if (_presUnits.kwhSaved != null) elec.kwhSaved = _presUnits.kwhSaved;
       if (_presUnits.thermsSaved != null) gas.thermsSaved = _presUnits.thermsSaved;
       if (_presUnits.gallonsSaved != null) propane.galSaved = _presUnits.gallonsSaved;
+      if (_presUnits.elecDollars != null) elec.costSaved = _presUnits.elecDollars;
+      if (_presUnits.gasDollars != null) gas.costSaved = _presUnits.gasDollars;
+      if (_presUnits.propaneDollars != null) propane.costSaved = _presUnits.propaneDollars;
     }
     periodSavings = totalSavingsWithPresented(projId, _reportYMsSorted, { [b.id]: bldgSavByYM }).byBldg[b.id];
 
