@@ -2296,9 +2296,47 @@ const _EVG_CHARGE_ORDER = [
   'BillOffset',
   'FranchiseFee',
 ];
+// Evergy OCR repair: a reading whose decimal point was dropped ("475.5360" -> "4755360").
+// Works on the extractor result in place. Values that still show printed decimals are never changed.
+function _evergyRepairDroppedDecimals(result) {
+  // ── OCR DECIMAL RECOVERY: kW fields should be ###.#### (~3 digits + 4 decimals) ──
+  // If OCR dropped the decimal, "475.5360" becomes "4755360.0000" (7-digit integer part).
+  // Fix: if integer part has 5+ digits, reinsert decimal 4 places from the right of the
+  // raw digit string to recover the original ###.#### format.
+  for (const k of ['FacilitiesKW', 'BilledKW', 'ActualKW', 'ActualRKVA', 'TDCkW']) {
+    if (!result[k]) continue;
+    const n = parseBillNumber(result[k]);
+    if (n === null || n <= 10000) continue;
+    // A real reading has printed decimals (12,345.6789 kW). Only a value padded from an integer
+    // ("4755360.0000") lost its decimal point in OCR. Never rewrite a value with decimals.
+    if (/\.\d*[1-9]/.test(String(result[k]))) continue;
+    const raw = String(result[k]).replace(/,/g, '').replace(/\..*/, '');
+    if (raw.length >= 5) {
+      const fixed = parseFloat(raw.slice(0, raw.length - 4) + '.' + raw.slice(raw.length - 4));
+      if (fixed > 0 && fixed < 10000) {
+        result['_ocr_decimal_fix_' + k] = { original: result[k], corrected: fixed.toFixed(4) };
+        result[k] = fixed.toFixed(4);
+      }
+    }
+  }
+  // Same logic for kWh: should be ###,###.#### (~6 digits + 4 decimals).
+  // If integer part has 8+ digits, OCR likely dropped the decimal.
+  if (result.kWhConsumed) {
+    const kwhN = parseBillNumber(result.kWhConsumed);
+    if (kwhN !== null && kwhN > 2000000 && !/\.\d*[1-9]/.test(String(result.kWhConsumed))) {
+      const raw = String(result.kWhConsumed).replace(/,/g, '').replace(/\..*/, '');
+      if (raw.length >= 8) {
+        const fixed = parseFloat(raw.slice(0, raw.length - 4) + '.' + raw.slice(raw.length - 4));
+        if (fixed > 0 && fixed < 2000000) {
+          result['_ocr_decimal_fix_kWhConsumed'] = { original: result.kWhConsumed, corrected: fixed.toFixed(4) };
+          result.kWhConsumed = fixed.toFixed(4);
+        }
+      }
+    }
+  }
+}
 // Evergy per-section extractor
 function _extractEvergy(t, acctOverride, addrOverride) {
-  const _pf = (v) => (v ? parseFloat(String(v).replace(/[$,\s]/g, '')) || 0 : 0);
   // ── OCR digit cleanup: replace 'o'/'O' with '0' in numeric contexts ──
   t = t.replace(/(\d)o/gi, '$10').replace(/o(\d)/gi, '0$1');
 
@@ -2982,18 +3020,17 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     let _looseAttempts = 0;
     while ((_lm = _meterReLoose.exec(_meterT)) !== null && _looseAttempts < 300) {
       _looseAttempts++;
-      const pnL = (s) => parseFloat((s || '').replace(/,/g, '')) || 0;
       const _insertDecimal4L = (s) => {
         if (!s || s.includes('.')) return s;
         const digits = s.replace(/,/g, '');
         if (!/^\d+$/.test(digits) || digits.length < 7 || digits.length > 9) return s;
         return digits.slice(0, -4) + '.' + digits.slice(-4);
       };
-      const endL = pnL(_insertDecimal4L(_lm[1]));
-      const startL = pnL(_insertDecimal4L(_lm[2]));
-      const diffL = pnL(_lm[3]);
-      const multL = pnL(_lm[4]);
-      const kwhL = pnL(_lm[5]);
+      const endL = parseBillNumber(_insertDecimal4L(_lm[1]));
+      const startL = parseBillNumber(_insertDecimal4L(_lm[2]));
+      const diffL = parseBillNumber(_lm[3]);
+      const multL = parseBillNumber(_lm[4]);
+      const kwhL = parseBillNumber(_lm[5]);
       if (endL <= 0 || startL <= 0 || diffL <= 0 || multL <= 0) continue;
       const readsChecksum = Math.abs(endL - startL - diffL) < 0.5;
       const kwhChecksum = kwhL > 0 && Math.abs(diffL * multL - kwhL) < 1;
@@ -3168,10 +3205,9 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     const startCand = _insertDecimal4(row[5]);
     const diffCand = _insertDecimal4Diff(row[6]);
     if (!endCand && !startCand) continue;
-    const pn0 = (s) => parseFloat((s || '').replace(/,/g, '')) || 0;
-    const rawEnd = pn0(row[4]),
-      rawStart = pn0(row[5]),
-      rawDiffCol = pn0(row[6]);
+    const rawEnd = parseBillNumber(row[4]),
+      rawStart = parseBillNumber(row[5]),
+      rawDiffCol = parseBillNumber(row[6]);
     const candEnd = endCand ? parseFloat(endCand) : rawEnd;
     const candStart = startCand ? parseFloat(startCand) : rawStart;
     // When Difference ALSO lost its decimal point via the same OCR mechanism, the RAW
@@ -3226,10 +3262,9 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     const endDigits = (row[4] || '').replace(/,/g, '').split('.')[0];
     const startDigits = (row[5] || '').replace(/,/g, '').split('.')[0];
     if (!endDigits || !startDigits || !/^\d+$/.test(endDigits) || !/^\d+$/.test(startDigits)) continue;
-    const pn0b = (s) => parseFloat((s || '').replace(/,/g, '')) || 0;
-    const rawEnd = pn0b(row[4]),
-      rawStart = pn0b(row[5]),
-      rawDiffCol = pn0b(row[6]);
+    const rawEnd = parseBillNumber(row[4]),
+      rawStart = parseBillNumber(row[5]),
+      rawDiffCol = parseBillNumber(row[6]);
     if (rawEnd <= 0 || rawStart <= 0) continue;
     const rawGap = Math.abs(rawEnd - rawStart - rawDiffCol);
     let candEndStr = null,
@@ -3272,12 +3307,11 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // plausible EndRead/StartRead fix, try correcting Difference toward kWh÷Multiplier instead, then
   // re-run Tier 1 once more with the corrected Difference as the trusted checksum.
   for (const row of _meterRows) {
-    const pn = (s) => parseFloat((s || '').replace(/,/g, '')) || 0;
-    const endR = pn(row._fixedEndRead || row[4]),
-      startR = pn(row._fixedStartRead || row[5]);
-    let diff = pn(row[6]);
-    const mult = pn(row[7]),
-      kwhUsed = pn(row[8]);
+    const endR = parseBillNumber(row._fixedEndRead || row[4]),
+      startR = parseBillNumber(row._fixedStartRead || row[5]);
+    let diff = parseBillNumber(row[6]);
+    const mult = parseBillNumber(row[7]),
+      kwhUsed = parseBillNumber(row[8]);
     if (endR <= 0 || startR <= 0 || diff <= 0 || mult <= 0) continue;
     // Skip OCR correction for rollover rows — when endR < startR and near a boundary,
     // the "wrong" diff sign is expected; do not attempt digit substitution on these.
@@ -3448,20 +3482,19 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   const _meterGroupExcluded = _meterRows.filter((row) => !_meterGroup.includes(row));
   const _meterCombined = (() => {
     if (_meterRows.length <= 1) return null; // single row handled by meterRow directly
-    const pn = (s) => parseFloat((s || '').replace(/,/g, '')) || 0;
     if (_hasSolarLabels) {
       // Solar net metering: identify consumption vs generation by KW Used.
       // The generation meter has KW Used = 0 (no demand charge); consumption meter has KW > 0.
       // Fall back to sorting by kWh descending if all rows have KW=0.
-      const byKw = _meterRows.filter((r) => pn(r[9]) > 0);
-      const byKwZero = _meterRows.filter((r) => pn(r[9]) === 0);
+      const byKw = _meterRows.filter((r) => parseBillNumber(r[9]) > 0);
+      const byKwZero = _meterRows.filter((r) => parseBillNumberOrZero(r[9]) === 0);
       let consumptionRow, generationRow;
       if (byKw.length >= 1 && byKwZero.length >= 1) {
         consumptionRow = byKw[0];
         generationRow = byKwZero[0];
       } else {
         // Fallback: larger kWh = consumption
-        const sorted = [..._meterRows].sort((a, b) => pn(b[8]) - pn(a[8]));
+        const sorted = [..._meterRows].sort((a, b) => parseBillNumber(b[8]) - parseBillNumber(a[8]));
         consumptionRow = sorted[0];
         generationRow = sorted[1];
       }
@@ -3489,12 +3522,12 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       maxRkva = 0,
       hasRkva = false;
     for (const r of _meterGroup) {
-      totalKwh += pn(r[8]);
-      totalDiff += pn(r._fixedDifference || r[6]);
-      maxKw = Math.max(maxKw, pn(r[9]));
+      totalKwh += parseBillNumber(r[8]);
+      totalDiff += parseBillNumber(r._fixedDifference || r[6]);
+      maxKw = Math.max(maxKw, parseBillNumber(r[9]));
       if (r[10] != null && String(r[10]).trim() !== '') {
         hasRkva = true;
-        maxRkva = Math.max(maxRkva, pn(r[10]));
+        maxRkva = Math.max(maxRkva, parseBillNumber(r[10]));
       }
     }
     return {
@@ -3560,8 +3593,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     if (_meterCombined) {
       if (_meterCombined.type === 'meter_change' && _validKwh(_meterCombined.kwh)) return _meterCombined.kwh;
       if (_meterCombined.type === 'solar') {
-        const pn = (s) => parseFloat((s || '').replace(/,/g, '')) || 0;
-        const deliveredKwh = pn(_meterCombined.delivered[8]);
+        const deliveredKwh = parseBillNumber(_meterCombined.delivered[8]);
         if (_validKwh(deliveredKwh)) return deliveredKwh;
       }
     }
@@ -3982,22 +4014,21 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     if (bestVal !== null) {
       // Cross-validate: if extracted total is much LARGER than calculated sum, it's likely
       // a page-1 account summary total, not the detail total. Trust the sum instead.
-      const pf2 = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
       const calcSum =
-        pf2(custChg) +
-        pf2(facChg) +
-        pf2(demChg) +
-        pf2(onPkChg) +
-        pf2(tieredChg) +
-        pf2(offPkChg) +
-        pf2(rkvaChg) +
-        pf2(ecaChg) +
-        pf2(eerChg) +
-        pf2(ptsChg) +
-        pf2(tdcChg) +
-        pf2(taxExempt) +
-        pf2(billOffset) +
-        pf2(franchise);
+        parseBillNumber(custChg) +
+        parseBillNumber(facChg) +
+        parseBillNumber(demChg) +
+        parseBillNumber(onPkChg) +
+        parseBillNumber(tieredChg) +
+        parseBillNumber(offPkChg) +
+        parseBillNumber(rkvaChg) +
+        parseBillNumber(ecaChg) +
+        parseBillNumber(eerChg) +
+        parseBillNumber(ptsChg) +
+        parseBillNumber(tdcChg) +
+        parseBillNumber(taxExempt) +
+        parseBillNumber(billOffset) +
+        parseBillNumber(franchise);
       let chosenTotal = calcSum > 0 && bestVal > calcSum * 1.5 ? calcSum : bestVal;
       // MiscellaneousCharge reconciliation (item f71c0013): the SECTION-BLEED GUARD
       // above correctly rejects the front-summary page's own "Current Charges (details
@@ -4043,22 +4074,21 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     if (_stLastM) return _stLastM[1].replace(/,/g, '');
     // Fallback: sum all extracted charges. This may be incomplete (e.g. CustomerCharge not yet
     // recovered by structural fallback), so _postExtractionVerify will recompute if needed.
-    const pf = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
     const sum =
-      pf(custChg) +
-      pf(facChg) +
-      pf(demChg) +
-      pf(onPkChg) +
-      pf(tieredChg) +
-      pf(offPkChg) +
-      pf(rkvaChg) +
-      pf(ecaChg) +
-      pf(eerChg) +
-      pf(ptsChg) +
-      pf(tdcChg) +
-      pf(taxExempt) +
-      pf(billOffset) +
-      pf(franchise);
+      parseBillNumber(custChg) +
+      parseBillNumber(facChg) +
+      parseBillNumber(demChg) +
+      parseBillNumber(onPkChg) +
+      parseBillNumber(tieredChg) +
+      parseBillNumber(offPkChg) +
+      parseBillNumber(rkvaChg) +
+      parseBillNumber(ecaChg) +
+      parseBillNumber(eerChg) +
+      parseBillNumber(ptsChg) +
+      parseBillNumber(tdcChg) +
+      parseBillNumber(taxExempt) +
+      parseBillNumber(billOffset) +
+      parseBillNumber(franchise);
     return sum > 0 ? sum.toFixed(2) : null;
   })();
 
@@ -4165,8 +4195,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     BilledKW: demKW,
     BilledKWCharge: demChg,
     EnergyOnPeakCharge: (() => {
-      const p = (v) => (v ? parseFloat(v) : 0);
-      const s = p(onPkChg) + p(tieredChg);
+      const s = parseBillNumberOrZero(onPkChg) + parseBillNumberOrZero(tieredChg);
       return s > 0 ? s.toFixed(2) : null;
     })(),
     EnergyOffPeakCharge: offPkChg,
@@ -4494,15 +4523,15 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   result.PTSRate = _rateOrNull('PTSCharge', _wavg('PTSCharge'));
   // Total rates: total charges / total quantity (effective rate)
   const _kwhChargeSum =
-    _pf(result.EnergyOnPeakCharge) +
-    _pf(result.EnergyOffPeakCharge) +
-    _pf(result.ECACharge) +
-    _pf(result.EERCharge) +
-    _pf(result.PTSCharge);
-  const _totalKwh = _pf(result.kWhConsumed);
+    parseBillNumber(result.EnergyOnPeakCharge) +
+    parseBillNumber(result.EnergyOffPeakCharge) +
+    parseBillNumber(result.ECACharge) +
+    parseBillNumber(result.EERCharge) +
+    parseBillNumber(result.PTSCharge);
+  const _totalKwh = parseBillNumber(result.kWhConsumed);
   result.TotalKWhRate = _totalKwh > 0 && _kwhChargeSum > 0 ? _kwhChargeSum / _totalKwh : null;
-  const _kwChargeSum = _pf(result.FacilitiesCharge) + _pf(result.BilledKWCharge) + _pf(result.TDCCharge);
-  const _totalKw = _pf(result.BilledKW) || _pf(result.ActualKW) || _pf(result.FacilitiesKW);
+  const _kwChargeSum = parseBillNumber(result.FacilitiesCharge) + parseBillNumber(result.BilledKWCharge) + parseBillNumber(result.TDCCharge);
+  const _totalKw = parseBillNumber(result.BilledKW) || parseBillNumber(result.ActualKW) || parseBillNumber(result.FacilitiesKW);
   result.TotalKWRate = _totalKw > 0 && _kwChargeSum > 0 ? _kwChargeSum / _totalKw : null;
 
   // Reconcile xChg totals with xRate computed totals: when xRate found
@@ -4526,9 +4555,8 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // value even though BillOffset captured "-$790.51".
   // Guard: do NOT apply mirror rule on parallel-generation bills (SolarCredit present).
   // On those bills the credit is a Parallel Generation Credit, NOT a TaxExemptDelivery mirror.
-  const _pfTE = (v) => (v ? parseFloat(String(v).replace(/[$,\s]/g, '')) || 0 : 0);
-  const _teVal = _pfTE(result.TaxExemptDelivery);
-  const _boVal = _pfTE(result.BillOffset);
+  const _teVal = parseBillNumber(result.TaxExemptDelivery);
+  const _boVal = parseBillNumber(result.BillOffset);
   if (result.SolarCredit) {
     // Parallel-gen bill: suppress mirror derivation entirely
   } else if (_teVal && !_boVal) {
@@ -4698,7 +4726,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     for (const [chargeField, ri] of Object.entries(result._rates)) {
       if (!ri || ri.rate <= 0) continue;
       const qtyField = QTY_MAP[chargeField];
-      const chargeVal = _pf(result[chargeField]);
+      const chargeVal = parseBillNumberOrZero(result[chargeField]);
       const parts = ri.parts || [ri];
 
       // ── PER-PART VALIDATION ──
@@ -4799,7 +4827,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
 
       // For kW charges with a qty field: validate the extracted kW against the parts
       if (qtyField) {
-        const qtyVal = _pf(result[qtyField]);
+        const qtyVal = parseBillNumber(result[qtyField]);
         if (qtyVal > 0) {
           // For split kW charges, all parts use the same kW — don't sum them
           const partKW = parts[0].qty;
@@ -4907,7 +4935,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       };
       const kwhField = KWH_QTY_MAP[chargeField];
       if (kwhField && ri.qty > 0 && ri.unit && ri.unit.toLowerCase().includes('h')) {
-        const existing = _pf(result[kwhField]);
+        const existing = parseBillNumber(result[kwhField]);
         if (existing <= 0) {
           result[kwhField] = ri.qty.toFixed(4);
           result['_rate_filled_' + kwhField] = true;
@@ -4921,7 +4949,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       const tdcRateM = t.match(/TD[CG]\s+(?:Ch[gaq9]|C[HhNnRr][Gg]|Gh[gq9])[\s\S]{0,100}?\$?([\d.]+)\s*per\s+k[Ww]/i);
       if (tdcRateM) {
         const tdcRate = parseFloat(tdcRateM[1]);
-        const tdcCharge = _pf(result.TDCCharge);
+        const tdcCharge = parseBillNumber(result.TDCCharge);
         if (tdcRate > 0 && tdcCharge > 0) {
           const tdcQty = parseFloat((tdcCharge / tdcRate).toFixed(4));
           if (tdcQty > 0 && tdcQty < 5e6) {
@@ -4944,26 +4972,26 @@ function _extractEvergy(t, acctOverride, addrOverride) {
 
   // ── On-Peak recovery from kWh identity: OnPeak + OffPeak ≈ kWhConsumed ──
   if (!result.EnergyOnPeakCharge && result.EnergyOffPeakCharge && result.kWhConsumed && _rates.EnergyOffPeakCharge) {
-    const totalKwh = _pf(result.kWhConsumed);
+    const totalKwh = parseBillNumberOrZero(result.kWhConsumed);
     const offPkKwh = _rates.EnergyOffPeakCharge.qty || 0;
     const onPkKwh = totalKwh - offPkKwh;
     if (onPkKwh > 0) {
       const _coreSum =
-        _pf(result.CustomerCharge) +
-        _pf(result.FacilitiesCharge) +
-        _pf(result.BilledKWCharge) +
-        _pf(result.EnergyOffPeakCharge) +
-        _pf(result.ECACharge) +
-        _pf(result.EERCharge) +
-        _pf(result.PTSCharge) +
-        _pf(result.TDCCharge) +
-        _pf(result.RkVACharge) +
-        _pf(result.TaxExemptDelivery) +
-        _pf(result.BillOffset) +
-        _pf(result.FranchiseFee) +
-        _pf(result.SalesTax) +
-        _pf(result.MiscellaneousCharge);
-      const _coreTotal = _pf(result.TotalCurrentCharges);
+        parseBillNumber(result.CustomerCharge) +
+        parseBillNumber(result.FacilitiesCharge) +
+        parseBillNumber(result.BilledKWCharge) +
+        parseBillNumber(result.EnergyOffPeakCharge) +
+        parseBillNumber(result.ECACharge) +
+        parseBillNumber(result.EERCharge) +
+        parseBillNumber(result.PTSCharge) +
+        parseBillNumber(result.TDCCharge) +
+        parseBillNumber(result.RkVACharge) +
+        parseBillNumber(result.TaxExemptDelivery) +
+        parseBillNumber(result.BillOffset) +
+        parseBillNumber(result.FranchiseFee) +
+        parseBillNumber(result.SalesTax) +
+        parseBillNumber(result.MiscellaneousCharge);
+      const _coreTotal = parseBillNumber(result.TotalCurrentCharges);
       const _onPkCharge = Math.round((_coreTotal - _coreSum) * 100) / 100;
       if (_onPkCharge > 0) {
         result.EnergyOnPeakCharge = _onPkCharge.toFixed(2);
@@ -4989,8 +5017,8 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // Off-Peak kWh recovery from identity: OffPeakKWh = kWhConsumed - OnPeakKWh
   // Run this whenever OffPeakKWh is missing but we have the data to derive it
   if (!result.OffPeakKWh && result.kWhConsumed && _rates.EnergyOnPeakCharge && result.OnPeakKWh) {
-    const totalKwh = _pf(result.kWhConsumed);
-    const onPkKwh = _pf(result.OnPeakKWh);
+    const totalKwh = parseBillNumberOrZero(result.kWhConsumed);
+    const onPkKwh = parseBillNumberOrZero(result.OnPeakKWh);
     const offPkKwh = totalKwh - onPkKwh;
     if (offPkKwh > 0) {
       result.OffPeakKWh = offPkKwh.toFixed(4);
@@ -5011,26 +5039,26 @@ function _extractEvergy(t, acctOverride, addrOverride) {
 
   // Off-Peak charge recovery from sum gap when charge is missing
   if (result.EnergyOnPeakCharge && !result.EnergyOffPeakCharge && result.kWhConsumed && _rates.EnergyOnPeakCharge) {
-    const totalKwh = _pf(result.kWhConsumed);
+    const totalKwh = parseBillNumberOrZero(result.kWhConsumed);
     const onPkKwh = _rates.EnergyOnPeakCharge.qty || 0;
     const offPkKwh = totalKwh - onPkKwh;
     if (offPkKwh > 0) {
       const _coreSum =
-        _pf(result.CustomerCharge) +
-        _pf(result.FacilitiesCharge) +
-        _pf(result.BilledKWCharge) +
-        _pf(result.EnergyOnPeakCharge) +
-        _pf(result.ECACharge) +
-        _pf(result.EERCharge) +
-        _pf(result.PTSCharge) +
-        _pf(result.TDCCharge) +
-        _pf(result.RkVACharge) +
-        _pf(result.TaxExemptDelivery) +
-        _pf(result.BillOffset) +
-        _pf(result.FranchiseFee) +
-        _pf(result.SalesTax) +
-        _pf(result.MiscellaneousCharge);
-      const _coreTotal = _pf(result.TotalCurrentCharges);
+        parseBillNumber(result.CustomerCharge) +
+        parseBillNumber(result.FacilitiesCharge) +
+        parseBillNumber(result.BilledKWCharge) +
+        parseBillNumber(result.EnergyOnPeakCharge) +
+        parseBillNumber(result.ECACharge) +
+        parseBillNumber(result.EERCharge) +
+        parseBillNumber(result.PTSCharge) +
+        parseBillNumber(result.TDCCharge) +
+        parseBillNumber(result.RkVACharge) +
+        parseBillNumber(result.TaxExemptDelivery) +
+        parseBillNumber(result.BillOffset) +
+        parseBillNumber(result.FranchiseFee) +
+        parseBillNumber(result.SalesTax) +
+        parseBillNumber(result.MiscellaneousCharge);
+      const _coreTotal = parseBillNumber(result.TotalCurrentCharges);
       const _offPkCharge = Math.round((_coreTotal - _coreSum) * 100) / 100;
       if (_offPkCharge > 0) {
         result.EnergyOffPeakCharge = _offPkCharge.toFixed(2);
@@ -5055,23 +5083,23 @@ function _extractEvergy(t, acctOverride, addrOverride) {
 
   // Invariant check + auto-correct: OnPeakKWh + OffPeakKWh should equal kWhConsumed
   if (result.OnPeakKWh && result.OffPeakKWh && result.kWhConsumed) {
-    const onPk = _pf(result.OnPeakKWh);
-    const offPk = _pf(result.OffPeakKWh);
-    const total = _pf(result.kWhConsumed);
+    const onPk = parseBillNumberOrZero(result.OnPeakKWh);
+    const offPk = parseBillNumberOrZero(result.OffPeakKWh);
+    const total = parseBillNumberOrZero(result.kWhConsumed);
     const diff = Math.abs(onPk + offPk - total);
     if (diff > 1) {
       let corrected = false;
       const onRi = _rates.EnergyOnPeakCharge;
       const offRi = _rates.EnergyOffPeakCharge;
-      if (onRi && onRi.rate > 0 && _pf(result.EnergyOnPeakCharge) > 0) {
-        const derivedOn = _pf(result.EnergyOnPeakCharge) / onRi.rate;
+      if (onRi && onRi.rate > 0 && parseBillNumber(result.EnergyOnPeakCharge) > 0) {
+        const derivedOn = parseBillNumberOrZero(result.EnergyOnPeakCharge) / onRi.rate;
         if (derivedOn > 0 && Math.abs(derivedOn + offPk - total) < 1) {
           result['_auto_corrected_OnPeakKWh'] = {
             original: result.OnPeakKWh,
             corrected: derivedOn.toFixed(4),
             reason:
               'Derived from charge ($' +
-              _pf(result.EnergyOnPeakCharge).toFixed(2) +
+              parseBillNumberOrZero(result.EnergyOnPeakCharge).toFixed(2) +
               ') / rate ($' +
               onRi.rate.toFixed(5) +
               ') = ' +
@@ -5088,15 +5116,15 @@ function _extractEvergy(t, acctOverride, addrOverride) {
           corrected = true;
         }
       }
-      if (!corrected && offRi && offRi.rate > 0 && _pf(result.EnergyOffPeakCharge) > 0) {
-        const derivedOff = _pf(result.EnergyOffPeakCharge) / offRi.rate;
+      if (!corrected && offRi && offRi.rate > 0 && parseBillNumber(result.EnergyOffPeakCharge) > 0) {
+        const derivedOff = parseBillNumberOrZero(result.EnergyOffPeakCharge) / offRi.rate;
         if (derivedOff > 0 && Math.abs(onPk + derivedOff - total) < 1) {
           result['_auto_corrected_OffPeakKWh'] = {
             original: result.OffPeakKWh,
             corrected: derivedOff.toFixed(4),
             reason:
               'Derived from charge ($' +
-              _pf(result.EnergyOffPeakCharge).toFixed(2) +
+              parseBillNumberOrZero(result.EnergyOffPeakCharge).toFixed(2) +
               ') / rate ($' +
               offRi.rate.toFixed(5) +
               ') = ' +
@@ -5148,10 +5176,10 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     EnergyOffPeakCharge: { qtyField: 'OffPeakKWh', rateKey: 'EnergyOffPeakCharge' },
   };
   Object.entries(CHARGE_TO_QTY).forEach(([chargeField, { qtyField, rateKey }]) => {
-    if (_pf(result[chargeField]) > 0 && !result[qtyField]) {
+    if (parseBillNumber(result[chargeField]) > 0 && !result[qtyField]) {
       const ri = _rates[rateKey];
       if (ri && ri.rate > 0) {
-        const derivedQty = _pf(result[chargeField]) / ri.rate;
+        const derivedQty = parseBillNumberOrZero(result[chargeField]) / ri.rate;
         if (derivedQty > 0 && derivedQty < 1e7) {
           result[qtyField] = derivedQty.toFixed(4);
           result['_auto_derived_' + qtyField] = {
@@ -5193,8 +5221,8 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   };
   Object.entries(RATE_FROM_CHARGE_QTY).forEach(([rateField, { chargeField, qtyField }]) => {
     if (!result[rateField]) {
-      const charge = _pf(result[chargeField]);
-      const qty = _pf(result[qtyField]);
+      const charge = parseBillNumber(result[chargeField]);
+      const qty = parseBillNumber(result[qtyField]);
       if (charge > 0 && qty > 0) {
         const derivedRate = charge / qty;
         // Same sanity ceiling xRate itself uses for kWh rates (~line 2216): Evergy
@@ -5219,26 +5247,26 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // ── CHARGE RECONCILIATION: if sum doesn't match total, try to recover missing charges ──
   const _compSum =
     Math.round(
-      (_pf(result.CustomerCharge) +
-        _pf(result.FacilitiesCharge) +
-        _pf(result.BilledKWCharge) +
-        _pf(result.EnergyOnPeakCharge) +
-        _pf(result.EnergyOffPeakCharge) +
-        _pf(result.ECACharge) +
-        _pf(result.EERCharge) +
-        _pf(result.PTSCharge) +
-        _pf(result.TDCCharge) +
-        _pf(result.RkVACharge) +
-        _pf(result.TaxExemptDelivery) +
-        _pf(result.BillOffset) +
-        _pf(result.FranchiseFee) +
-        _pf(result.SalesTax) +
-        _pf(result.SolarCredit) +
-        _pf(result.RenewableCharge) +
-        _pf(result.MiscellaneousCharge)) *
+      (parseBillNumber(result.CustomerCharge) +
+        parseBillNumber(result.FacilitiesCharge) +
+        parseBillNumber(result.BilledKWCharge) +
+        parseBillNumber(result.EnergyOnPeakCharge) +
+        parseBillNumber(result.EnergyOffPeakCharge) +
+        parseBillNumber(result.ECACharge) +
+        parseBillNumber(result.EERCharge) +
+        parseBillNumber(result.PTSCharge) +
+        parseBillNumber(result.TDCCharge) +
+        parseBillNumber(result.RkVACharge) +
+        parseBillNumber(result.TaxExemptDelivery) +
+        parseBillNumber(result.BillOffset) +
+        parseBillNumber(result.FranchiseFee) +
+        parseBillNumber(result.SalesTax) +
+        parseBillNumber(result.SolarCredit) +
+        parseBillNumber(result.RenewableCharge) +
+        parseBillNumber(result.MiscellaneousCharge)) *
         100,
     ) / 100;
-  const _total = _pf(result.TotalCurrentCharges);
+  const _total = parseBillNumber(result.TotalCurrentCharges);
   if (_total > 0 && Math.abs(_compSum - _total) > 1) {
     // Try to find missing charges by scanning ALL dollar amounts between "Billing Details" and "Subtotal"
     const bdIdx = t.search(/Billing\s+Details/i);
@@ -5262,7 +5290,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       // Find amounts not already captured
       const capturedVals = Object.values(result)
         .filter((v) => v !== null && v !== '')
-        .map((v) => _pf(v))
+        .map((v) => parseBillNumber(v))
         .filter((v) => v > 0);
       const uncaptured = allAmts.filter(
         (a) => !capturedVals.some((c) => Math.abs(c - a.val) < 0.01) && Math.abs(a.val) > 0.5,
@@ -5308,8 +5336,8 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     'SalesTax',
     'MiscellaneousCharge',
   ];
-  const _recompSum = _allChargeFields.reduce((s, f) => s + _pf(result[f]), 0);
-  const _recompTotal = _pf(result.TotalCurrentCharges);
+  const _recompSum = _allChargeFields.reduce((s, f) => s + parseBillNumber(result[f]), 0);
+  const _recompTotal = parseBillNumberOrZero(result.TotalCurrentCharges);
   const _recompGap = _recompTotal - _recompSum;
   if (_recompTotal > 0 && _recompGap > 0.5) {
     const nullCore = _coreChargeFields.filter((f) => result[f] === null || result[f] === undefined);
@@ -5322,7 +5350,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     // above — even if some other line is ever left uncaptured on some other
     // bill, a phantom demand charge still can't be fabricated without a kW
     // quantity to go with it.
-    if (target === 'BilledKWCharge' && !_pf(result.BilledKW)) target = null;
+    if (target === 'BilledKWCharge' && !parseBillNumber(result.BilledKW)) target = null;
     if (target) {
       result[target] = _recompGap.toFixed(2);
       result['_auto_recovered_' + target] = {
@@ -5364,44 +5392,13 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // StartRead/EndRead = ##,###.#### (4 dp), MeterMultiplier = ##.#### (4 dp)
   const _pad4 = (v) => {
     if (!v) return v;
-    const n = parseFloat(String(v).replace(/,/g, ''));
-    return isNaN(n) ? v : n.toFixed(4);
+    const n = parseBillNumber(v);
+    return n === null ? v : n.toFixed(4);
   };
   for (const k of ['FacilitiesKW', 'BilledKW', 'ActualKW', 'ActualRKVA', 'TDCkW']) {
     if (result[k]) result[k] = _pad4(result[k]);
   }
-  // ── OCR DECIMAL RECOVERY: kW fields should be ###.#### (~3 digits + 4 decimals) ──
-  // If OCR dropped the decimal, "475.5360" becomes "4755360.0000" (7-digit integer part).
-  // Fix: if integer part has 5+ digits, reinsert decimal 4 places from the right of the
-  // raw digit string to recover the original ###.#### format.
-  for (const k of ['FacilitiesKW', 'BilledKW', 'ActualKW', 'ActualRKVA', 'TDCkW']) {
-    if (!result[k]) continue;
-    const n = parseFloat(String(result[k]).replace(/,/g, ''));
-    if (isNaN(n) || n <= 10000) continue;
-    const raw = String(result[k]).replace(/,/g, '').replace(/\..*/, '');
-    if (raw.length >= 5) {
-      const fixed = parseFloat(raw.slice(0, raw.length - 4) + '.' + raw.slice(raw.length - 4));
-      if (fixed > 0 && fixed < 10000) {
-        result['_ocr_decimal_fix_' + k] = { original: result[k], corrected: fixed.toFixed(4) };
-        result[k] = fixed.toFixed(4);
-      }
-    }
-  }
-  // Same logic for kWh: should be ###,###.#### (~6 digits + 4 decimals).
-  // If integer part has 8+ digits, OCR likely dropped the decimal.
-  if (result.kWhConsumed) {
-    const kwhN = parseFloat(String(result.kWhConsumed).replace(/,/g, ''));
-    if (!isNaN(kwhN) && kwhN > 2000000) {
-      const raw = String(result.kWhConsumed).replace(/,/g, '').replace(/\..*/, '');
-      if (raw.length >= 8) {
-        const fixed = parseFloat(raw.slice(0, raw.length - 4) + '.' + raw.slice(raw.length - 4));
-        if (fixed > 0 && fixed < 2000000) {
-          result['_ocr_decimal_fix_kWhConsumed'] = { original: result.kWhConsumed, corrected: fixed.toFixed(4) };
-          result.kWhConsumed = fixed.toFixed(4);
-        }
-      }
-    }
-  }
+  _evergyRepairDroppedDecimals(result);
   if (result.StartRead) result.StartRead = _pad4(result.StartRead);
   if (result.EndRead) result.EndRead = _pad4(result.EndRead);
   if (result.ReadDifference) result.ReadDifference = _pad4(result.ReadDifference);
@@ -5494,23 +5491,22 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // ── CROSS-VALIDATION: meter read calc vs kWhConsumed ──
   // For multi-meter (meter change): calculate per-row and sum. For single-meter: one calc.
   const _cvMeterCalc = (() => {
-    const pn = (s) => parseFloat((s || '').replace(/,/g, '')) || 0;
     if (_meterCombined && _meterCombined.type === 'meter_change') {
       // Sum (EndRead - StartRead) × Multiplier for each row
       let total = 0;
       for (const r of _meterRows) {
-        const er = pn(r._fixedEndRead || r[4]),
-          sr = pn(r._fixedStartRead || r[5]),
-          mm = pn(r[7]);
+        const er = parseBillNumber(r._fixedEndRead || r[4]),
+          sr = parseBillNumber(r._fixedStartRead || r[5]),
+          mm = parseBillNumber(r[7]);
         if (er > 0 && sr > 0 && mm > 0) total += parseFloat(((er - sr) * mm).toFixed(4));
       }
       return total > 0 ? total : null;
     }
     // Single meter row
     if (result.EndRead && result.StartRead && result.MeterMultiplier) {
-      const er = pn(result.EndRead),
-        sr = pn(result.StartRead),
-        mm = pn(result.MeterMultiplier);
+      const er = parseBillNumber(result.EndRead),
+        sr = parseBillNumber(result.StartRead),
+        mm = parseBillNumber(result.MeterMultiplier);
       if (er > 0 && sr > 0 && mm > 0) {
         // For rollover bills, use the pre-computed rolloverUsage instead of er - sr
         if (result._meterRollover) {
@@ -5570,15 +5566,16 @@ function _lbg_splitPages(t) {
 // OCR-noise-tolerant cents parser: "1460-87" → 1460.87, "2333" → 23.33.
 function _lbg_cleanCents(raw) {
   if (raw == null) return null;
-  let s = String(raw).replace(/,/g, '');
-  s = s.replace(/^(-?\d+)-(\d{2})$/, '$1.$2');
-  if (/^-?\d+$/.test(s) && s.replace('-', '').length >= 4) {
+  let s = String(raw).trim();
+  s = s.replace(/^(-?[\d,]+)-(\d{2})$/, '$1.$2');
+  // Bare digits with no comma and no point: the cents were printed without the point.
+  // A value with a thousands comma ("1,234") is a real amount and is NOT re-read as cents.
+  if (/^-?\d{4,}$/.test(s)) {
     const neg = s.startsWith('-');
     const abs = neg ? s.slice(1) : s;
     s = (neg ? '-' : '') + abs.slice(0, -2) + '.' + abs.slice(-2);
   }
-  const n = parseFloat(s);
-  return isNaN(n) ? null : n;
+  return parseBillNumber(s);
 }
 const _LBG_GAS_RATES = [{ effectiveDate: '2000-01-01', rate: 0.798062, baseCharge: 23.33 }];
 function _lbg_gasRate(billDate) {
@@ -8798,8 +8795,16 @@ const UTILITY_RULES = [
       // the way Spire/Atmos bills are. A dedicated path is required.
       const isKGS = /kansas\s+gas\s+service/i.test(t) || /Statement\s+Date\s+\d{2}-\d{2}-\d{2}/i.test(t);
       if (isKGS) {
-        // Helper: normalize OCR number artifacts — colon misread as period (e.g. "17:55" → "17.55")
-        const fixNum = (s) => (s ? s.replace(/(\d):(\d)/, '$1.$2') : null);
+        // Helper: normalize OCR number artifacts — colon misread as period (e.g. "17:55" → "17.55").
+        // The number itself is read by parseBillNumber (WP-01): thousands commas are removed, so the
+        // stored text is plain ("4271.50", never "4,271.50"). Printed decimals are kept. An unreadable
+        // value returns null (missing), never 0.
+        const fixNum = (s) => {
+          if (!s) return null;
+          const txt = s.replace(/(\d):(\d)/, '$1.$2').replace(/[.:,]+$/, '');
+          const n = parseBillNumber(txt);
+          return n === null ? null : n.toFixed((txt.split('.')[1] || '').length);
+        };
 
         // === ACCOUNT-ANCHORED REGION ===
         // When OCR linearizes two side-by-side account columns into one text block, all charge lines
@@ -8926,8 +8931,8 @@ const UTILITY_RULES = [
         const CostOfGasPerMcf = meterRowM ? fixNum(meterRowM[10]) : null;
 
         // Therms = Mcf × Multiplier × 10 (KGS reports in Mcf; 1 Mcf ≈ 10 therms)
-        const _multiplier = parseFloat(MeterMultiplier) || 1.0;
-        const _mcf = parseFloat(McfBilled) || 0;
+        const _multiplier = parseBillNumber(MeterMultiplier) || 1.0;
+        const _mcf = parseBillNumber(McfBilled);
         const NaturalGasTherms = _mcf > 0 ? String(Math.round(_mcf * _multiplier * 10 * 100) / 100) : null;
 
         // === BALANCE SECTION ===
@@ -8957,15 +8962,13 @@ const UTILITY_RULES = [
         // Capture the optional "CR" suffix so credit months (e.g. "1.24CR") are stored as
         // negative values. Previously the (CR)? group was non-capturing and the sign was lost.
         const gsrsM = activeT.match(/Gas\s+System\s+Reliability\s+Surcharge\s+\$?([\d,.:]+)(CR)?/i);
-        const GasSystemReliability = gsrsM
-          ? String((parseFloat(fixNum(gsrsM[1]).replace(/,/g, '')) * (gsrsM[2] ? -1 : 1)).toFixed(2))
-          : null;
+        const _gsrsN = gsrsM ? parseBillNumber(fixNum(gsrsM[1])) : null;
+        const GasSystemReliability = _gsrsN === null ? null : String((_gsrsN * (gsrsM[2] ? -1 : 1)).toFixed(2));
 
         // WeatherNormalization can also appear as a credit — capture optional CR and negate.
         const wnaM = activeT.match(/Weather\s+Normalization\s+(?:Adj(?:ustment)?)?\s+\$?([\d,.:]+)(CR)?/i);
-        const WeatherNormalization = wnaM
-          ? String((parseFloat(fixNum(wnaM[1]).replace(/,/g, '')) * (wnaM[2] ? -1 : 1)).toFixed(2))
-          : null;
+        const _wnaN = wnaM ? parseBillNumber(fixNum(wnaM[1])) : null;
+        const WeatherNormalization = _wnaN === null ? null : String((_wnaN * (wnaM[2] ? -1 : 1)).toFixed(2));
 
         const costGasM = activeT.match(/Cost\s+of\s+Gas\s+\$?([\d,.:]+)/i);
         const GasCharge = fixNum(costGasM ? costGasM[1] : null);
@@ -8980,9 +8983,11 @@ const UTILITY_RULES = [
         // for the two-row display in _LAYOUT_KGS.
         const franchiseMs = [...activeT.matchAll(/Franchise\s+Fee\s+\$?_*?([\d,.:]+)/gi)];
         const FranchiseFeeItems = franchiseMs.length > 0 ? franchiseMs.map((m) => fixNum(m[1])) : null;
+        // One unreadable line makes the sum unknown (null), not a smaller sum.
+        const _ffNums = FranchiseFeeItems !== null ? FranchiseFeeItems.map(parseBillNumber) : null;
         const FranchiseFee =
-          FranchiseFeeItems !== null
-            ? String(FranchiseFeeItems.reduce((sum, v) => sum + parseFloat((v || '0').replace(/,/g, '')), 0).toFixed(2))
+          _ffNums !== null && _ffNums.every((n) => n !== null)
+            ? String(_ffNums.reduce((sum, n) => sum + n, 0).toFixed(2))
             : null;
         const FranchiseFee1 = FranchiseFeeItems ? FranchiseFeeItems[0] || null : null;
         const FranchiseFee2 = FranchiseFeeItems ? FranchiseFeeItems[1] || null : null;
@@ -11518,20 +11523,13 @@ const UTILITY_RULES = [
       const _parseCharge = (s) => {
         if (!s) return null;
         s = s.trim();
-        // Trailing minus: "2.04-" → -2.04
-        if (/^[\d,]+\.\d{2}-$/.test(s)) return -parseFloat(s.slice(0, -1).replace(/,/g, ''));
-        // Parens: "(2.04)" → -2.04
-        if (/^\([\d,]+\.\d{2}\)$/.test(s)) return -parseFloat(s.slice(1, -1).replace(/,/g, ''));
-        // Leading minus: "-2.04"
-        if (/^-[\d,]+\.\d{2}$/.test(s)) return parseFloat(s.replace(/,/g, ''));
-        // Plain: "16.99" or ".97"
-        if (/^[\d,]*\.\d{2}$/.test(s)) return parseFloat(s.replace(/,/g, ''));
-        // ".00" style (zero charge shown as "\.00")
-        if (/^\.\d{2}$/.test(s)) return parseFloat(s);
-        // 3-4 decimal OCR noise: "30.271" or "50.6234" → round to 2 decimals.
-        // OCR occasionally adds a trailing digit to the cents field.
-        if (/^[\d,]+\.\d{3,4}$/.test(s)) return Math.round(parseFloat(s.replace(/,/g, '')) * 100) / 100;
-        return null;
+        // Shapes Baldwin prints: "16.99"  ".97"  "2.04-"  "(2.04)"  "-2.04"  and OCR noise with
+        // 3-4 decimals ("30.271" -> rounded to cents). Anything else is not a charge -> null.
+        // The number itself (sign forms, commas) is read by parseBillNumber.
+        if (!/^(?:\([\d,]+\.\d{2}\)|-?[\d,]*\.\d{2}|[\d,]+\.\d{2}-|[\d,]+\.\d{3,4})$/.test(s)) return null;
+        const n = parseBillNumber(s);
+        if (n === null) return null;
+        return /\.\d{3,4}$/.test(s) ? Math.round(n * 100) / 100 : n;
       };
 
       // Extract numeric tokens from a line (meter reads, usage, charge).

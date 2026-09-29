@@ -56,7 +56,8 @@ function parseRosterRows(rows2D) {
     const kgsMeterRaw = String(r[7] || '').trim();
     out.push({
       name,
-      sqft: String(r[1] || '').trim(),
+      // Building size in sq ft as a number ("12,345" -> 12345). null when the cell is blank or not a number.
+      sqft: parseBillNumber(r[1]),
       addr: String(r[2] || '').trim(),
       baldwinSvcAddr: String(r[3] || '').trim(),
       baldwinAcct: String(r[4] || '').trim(),

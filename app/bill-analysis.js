@@ -123,10 +123,9 @@ function validateBillData(extracted, utilityName) {
   }
 
   // Validate charge math: component charges should sum to ~total
-  const pf = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
 
   // Negative total check — no utility bill should ever have a negative total
-  const _totalForSign = pf(extracted.TotalCurrentCharges);
+  const _totalForSign = parseBillNumberOrZero(extracted.TotalCurrentCharges);
   if (_totalForSign < 0) {
     warnings.push({
       level: 'error',
@@ -139,31 +138,31 @@ function validateBillData(extracted, utilityName) {
   }
 
   if (utilityName === 'Evergy') {
-    const total = pf(extracted.TotalCurrentCharges);
+    const total = parseBillNumberOrZero(extracted.TotalCurrentCharges);
     if (total > 0) {
       const compSum =
         Math.round(
-          (pf(extracted.CustomerCharge) +
-            pf(extracted.FacilitiesCharge) +
-            pf(extracted.BilledKWCharge) +
-            pf(extracted.EnergyOnPeakCharge) +
-            pf(extracted.EnergyOffPeakCharge) +
-            pf(extracted.ECACharge) +
-            pf(extracted.EERCharge) +
-            pf(extracted.PTSCharge) +
-            pf(extracted.TDCCharge) +
-            pf(extracted.RkVACharge) +
-            pf(extracted.TaxExemptDelivery) +
-            pf(extracted.BillOffset) +
-            pf(extracted.FranchiseFee) +
-            pf(extracted.SolarCredit) +
-            pf(extracted.RenewableCharge) +
+          (parseBillNumber(extracted.CustomerCharge) +
+            parseBillNumber(extracted.FacilitiesCharge) +
+            parseBillNumber(extracted.BilledKWCharge) +
+            parseBillNumber(extracted.EnergyOnPeakCharge) +
+            parseBillNumber(extracted.EnergyOffPeakCharge) +
+            parseBillNumber(extracted.ECACharge) +
+            parseBillNumber(extracted.EERCharge) +
+            parseBillNumber(extracted.PTSCharge) +
+            parseBillNumber(extracted.TDCCharge) +
+            parseBillNumber(extracted.RkVACharge) +
+            parseBillNumber(extracted.TaxExemptDelivery) +
+            parseBillNumber(extracted.BillOffset) +
+            parseBillNumber(extracted.FranchiseFee) +
+            parseBillNumber(extracted.SolarCredit) +
+            parseBillNumber(extracted.RenewableCharge) +
             // Fix B (ballfields-cluster): SalesTax is extracted (municipal
             // sales-tax lines on Evergy bills) but was missing from this sum,
             // leaving every taxed bill's compSum short by its tax total and
             // false-warning a mismatch. Null/absent on non-taxed bills, so
             // this term is +0 there and does not affect their reconciliation.
-            pf(extracted.SalesTax)) *
+            parseBillNumber(extracted.SalesTax)) *
             100,
         ) / 100;
       const diff = Math.abs(compSum - total);
@@ -184,8 +183,13 @@ function validateBillData(extracted, utilityName) {
     }
     // Zero charge fields that should have values
     for (const f of spec.chargeFields) {
-      if (extracted[f] !== null && extracted[f] !== undefined && extracted[f] !== '' && pf(extracted[f]) === 0) {
-        warnings.push({ level: 'info', field: f, message: 'Value is $0.00 — verify this is correct' });
+      if (extracted[f] !== null && extracted[f] !== undefined && extracted[f] !== '') {
+        const _chargeNum = parseBillNumber(extracted[f]);
+        if (_chargeNum === 0) {
+          warnings.push({ level: 'info', field: f, message: 'Value is $0.00 — verify this is correct' });
+        } else if (_chargeNum === null) {
+          warnings.push({ level: 'info', field: f, message: 'Value could not be read as a number — verify this is correct' });
+        }
       }
     }
   }
@@ -193,19 +197,19 @@ function validateBillData(extracted, utilityName) {
   // Gas charge sum validation
   const _extComm = (extracted.Commodity || '').toLowerCase();
   if (_extComm === 'gas') {
-    const gasTotal = pf(extracted.TotalCurrentCharges);
+    const gasTotal = parseBillNumberOrZero(extracted.TotalCurrentCharges);
     if (gasTotal !== 0) {
       const gasCompSum =
         Math.round(
-          (pf(extracted.CustomerCharge) +
-            pf(extracted.GasCharge) +
-            pf(extracted.FuelAdjustment) +
-            (pf(extracted.DeliveryCharge) || 0) +
-            (pf(extracted.GasSystemReliability) || 0) +
-            (pf(extracted.WeatherNormalization) || 0) +
-            (pf(extracted.WinterEventCost) || 0) +
-            (pf(extracted.FranchiseFee) || 0) +
-            (pf(extracted.DelayedPaymentCharge) || 0)) *
+          (parseBillNumber(extracted.CustomerCharge) +
+            parseBillNumber(extracted.GasCharge) +
+            parseBillNumber(extracted.FuelAdjustment) +
+            (parseBillNumber(extracted.DeliveryCharge) || 0) +
+            (parseBillNumber(extracted.GasSystemReliability) || 0) +
+            (parseBillNumber(extracted.WeatherNormalization) || 0) +
+            (parseBillNumber(extracted.WinterEventCost) || 0) +
+            (parseBillNumber(extracted.FranchiseFee) || 0) +
+            (parseBillNumber(extracted.DelayedPaymentCharge) || 0)) *
             100,
         ) / 100;
       if (gasCompSum > 0) {
@@ -232,8 +236,8 @@ function validateBillData(extracted, utilityName) {
   const _vComm = (extracted.Commodity || '').toLowerCase();
   const _vUtilName = extracted._utilityName || extracted.UtilityCompany || utilityName || '';
   if (_vComm === 'gas') {
-    const _vUsage = pf(extracted.NaturalGasTherms);
-    const _vCharge = pf(extracted.GasCharge);
+    const _vUsage = parseBillNumber(extracted.NaturalGasTherms);
+    const _vCharge = parseBillNumber(extracted.GasCharge);
     if (_vUsage > 0 && _vCharge > 0) {
       const rr = validateImpliedRate('Gas', _vUsage, _vCharge, _vUtilName);
       if (rr && rr.severity) {
@@ -245,8 +249,8 @@ function validateBillData(extracted, utilityName) {
       }
     }
     // Wood River Energy: validate $/MMbtu rate (expected ~$3–$9/MMbtu)
-    const _vMMbtu = pf(extracted.NaturalGasMMbtu);
-    const _vTotal = pf(extracted.TotalCurrentCharges);
+    const _vMMbtu = parseBillNumber(extracted.NaturalGasMMbtu);
+    const _vTotal = parseBillNumber(extracted.TotalCurrentCharges);
     if (_vMMbtu > 0 && _vTotal > 0 && /wood\s*river/i.test(_vUtilName)) {
       const impliedRate = _vTotal / _vMMbtu;
       if (impliedRate < 1.0 || impliedRate > 20.0) {
@@ -259,8 +263,8 @@ function validateBillData(extracted, utilityName) {
       }
     }
   } else if (_vComm === 'propane') {
-    const _vUsage = pf(extracted.PropaneGallons || extracted.Quantity);
-    const _vCharge = pf(extracted.Subtotal || extracted.PropaneCharge);
+    const _vUsage = parseBillNumber(extracted.PropaneGallons || extracted.Quantity);
+    const _vCharge = parseBillNumber(extracted.Subtotal || extracted.PropaneCharge);
     if (_vUsage > 0 && _vCharge > 0) {
       const rr = validateImpliedRate('Propane', _vUsage, _vCharge, _vUtilName);
       if (rr && rr.severity) {
@@ -272,7 +276,7 @@ function validateBillData(extracted, utilityName) {
       }
     }
   } else if (_vComm === 'electric' || _vComm === '') {
-    const _vKwh = pf(extracted.kWhConsumed);
+    const _vKwh = parseBillNumber(extracted.kWhConsumed);
     // Canonical 5-charge sum (rates.js sumElectricEnergyCharges) — shared with
     // getExtractedRate('kwh') and detectStatisticalOutliers below so displayed
     // and checked rates always agree (item 377ea7f0).
@@ -290,7 +294,7 @@ function validateBillData(extracted, utilityName) {
   }
 
   const isPropaneBill = (extracted.Commodity || '').toLowerCase() === 'propane' || (extracted.FuelType || '') !== '';
-  const days = pf(extracted.NumberOfDays);
+  const days = parseBillNumberOrZero(extracted.NumberOfDays);
   if (days > 0 && (days < 10 || days > 90) && !isPropaneBill) {
     warnings.push({
       level: 'warn',
@@ -331,7 +335,7 @@ function validateBillData(extracted, utilityName) {
 
   // Validate kWh is reasonable (non-zero for electric)
   if (utilityName === 'Evergy') {
-    const kwh = pf(extracted.kWhConsumed);
+    const kwh = parseBillNumberOrZero(extracted.kWhConsumed);
     if (kwh > 0 && kwh < 10)
       warnings.push({
         level: 'warn',
@@ -368,17 +372,17 @@ function validateBillData(extracted, utilityName) {
   }
 
   // Gas: usage > 0 should have charge > 0 — attempt recovery from total
-  const gasUsage = pf(extracted.NaturalGasTherms) || pf(extracted.NaturalGasCCF) || pf(extracted.NaturalGasMMbtu);
-  const gasCharge = pf(extracted.GasCharge);
+  const gasUsage = parseBillNumberOrZero(extracted.NaturalGasTherms) || parseBillNumber(extracted.NaturalGasCCF) || parseBillNumber(extracted.NaturalGasMMbtu);
+  const gasCharge = parseBillNumber(extracted.GasCharge);
   if (gasUsage > 0 && gasCharge <= 0) {
-    const total = pf(extracted.TotalCurrentCharges) || pf(extracted.TotalAmountDue);
-    const custCharge = pf(extracted.CustomerCharge);
-    const fuelAdj = pf(extracted.FuelAdjustment);
+    const total = parseBillNumberOrZero(extracted.TotalCurrentCharges) || parseBillNumber(extracted.TotalAmountDue);
+    const custCharge = parseBillNumberOrZero(extracted.CustomerCharge);
+    const fuelAdj = parseBillNumberOrZero(extracted.FuelAdjustment);
     // For KGS bills (identified by the presence of DeliveryCharge or GasSystemReliability),
     // subtract all KGS-specific line items so the recovery doesn't absorb them into GasCharge.
-    // On non-KGS bills those fields are null/undefined so pf() returns 0 — this is safe.
+    // On non-KGS bills those fields are null/undefined so parseBillNumber() returns 0 — this is safe.
     const isKGSGas =
-      pf(extracted.DeliveryCharge) > 0 ||
+      parseBillNumber(extracted.DeliveryCharge) > 0 ||
       (extracted.GasSystemReliability !== null && extracted.GasSystemReliability !== undefined);
     let recovered;
     if (isKGSGas) {
@@ -394,12 +398,12 @@ function validateBillData(extracted, utilityName) {
         total -
         custCharge -
         fuelAdj -
-        pf(extracted.DeliveryCharge) -
-        pf(extracted.GasSystemReliability) -
-        pf(extracted.WeatherNormalization) -
-        pf(extracted.WinterEventCost) -
-        pf(extracted.FranchiseFee) -
-        pf(extracted.DelayedPaymentCharge);
+        parseBillNumber(extracted.DeliveryCharge) -
+        parseBillNumber(extracted.GasSystemReliability) -
+        parseBillNumber(extracted.WeatherNormalization) -
+        parseBillNumber(extracted.WinterEventCost) -
+        parseBillNumber(extracted.FranchiseFee) -
+        parseBillNumber(extracted.DelayedPaymentCharge);
     } else {
       recovered = total - custCharge - fuelAdj;
     }
@@ -444,7 +448,7 @@ function validateBillData(extracted, utilityName) {
     for (const r of _lbgGasRates) {
       if (billISO >= r.effectiveDate) _lbgRate = r.rate;
     }
-    const actualGasCharge = pf(extracted.GasCharge);
+    const actualGasCharge = parseBillNumber(extracted.GasCharge);
     if (actualGasCharge > 0) {
       const expectedCharge = gasUsage * _lbgRate;
       const chargeDiff = Math.abs(actualGasCharge - expectedCharge);
@@ -476,7 +480,6 @@ function validateBillData(extracted, utilityName) {
 function detectStatisticalOutliers(extracted, historicalCache, pdfBillsIndex) {
   const warnings = [];
   if (!extracted || !extracted.AccountNumber) return warnings;
-  const pf = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
   const acct = (extracted.AccountNumber || '').replace(/[\s\-]/g, '').toLowerCase();
 
   const extComm = (extracted.Commodity || '').toLowerCase();
@@ -572,7 +575,7 @@ function detectStatisticalOutliers(extracted, historicalCache, pdfBillsIndex) {
   // Helper: compute mean and stddev for a numeric field across historical bills
   function getStats(bills, fieldOrFn) {
     const vals = bills
-      .map((b) => (typeof fieldOrFn === 'function' ? fieldOrFn(b) : pf(b[fieldOrFn])))
+      .map((b) => (typeof fieldOrFn === 'function' ? fieldOrFn(b) : parseBillNumber(b[fieldOrFn])))
       .filter((v) => v !== null && v !== undefined && !isNaN(v));
     if (vals.length < 3) return null;
     const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
@@ -584,9 +587,9 @@ function detectStatisticalOutliers(extracted, historicalCache, pdfBillsIndex) {
   }
 
   // Check kWh
-  const kwhVal = pf(extracted.kWhConsumed);
+  const kwhVal = parseBillNumberOrZero(extracted.kWhConsumed);
   if (kwhVal > 0) {
-    const kwhStats = getStats(historicalBills, (b) => pf(b.kwh || b.kWhConsumed));
+    const kwhStats = getStats(historicalBills, (b) => parseBillNumber(b.kwh || b.kWhConsumed));
     if (kwhStats) {
       const zScore = kwhStats.stddev > 0 ? Math.abs(kwhVal - kwhStats.mean) / kwhStats.stddev : 0;
       if (zScore > 3) {
@@ -622,9 +625,9 @@ function detectStatisticalOutliers(extracted, historicalCache, pdfBillsIndex) {
   }
 
   // Check total charges
-  const totalVal = pf(extracted.TotalCurrentCharges || extracted.TotalAmountDue);
+  const totalVal = parseBillNumberOrZero(extracted.TotalCurrentCharges || extracted.TotalAmountDue);
   if (totalVal > 0) {
-    const totalStats = getStats(historicalBills, (b) => pf(b.totalCost || b.TotalCurrentCharges || b.TotalAmountDue));
+    const totalStats = getStats(historicalBills, (b) => parseBillNumber(b.totalCost || b.TotalCurrentCharges || b.TotalAmountDue));
     if (totalStats) {
       const zScore = totalStats.stddev > 0 ? Math.abs(totalVal - totalStats.mean) / totalStats.stddev : 0;
       if (zScore > 3) {
@@ -659,9 +662,9 @@ function detectStatisticalOutliers(extracted, historicalCache, pdfBillsIndex) {
   }
 
   // Check demand kW (electric only)
-  const demandVal = pf(extracted.ActualKW || extracted.BilledKW);
+  const demandVal = parseBillNumber(extracted.ActualKW || extracted.BilledKW);
   if (demandVal > 0) {
-    const demStats = getStats(historicalBills, (b) => pf(b.demandKW || b.ActualKW || b.billedKW || b.BilledKW));
+    const demStats = getStats(historicalBills, (b) => parseBillNumber(b.demandKW || b.ActualKW || b.billedKW || b.BilledKW));
     if (demStats) {
       const zScore = demStats.stddev > 0 ? Math.abs(demandVal - demStats.mean) / demStats.stddev : 0;
       if (zScore > 3) {
@@ -685,8 +688,8 @@ function detectStatisticalOutliers(extracted, historicalCache, pdfBillsIndex) {
   const _rateChecks = [];
   const _comm = (extracted.Commodity || '').toLowerCase();
   if (_comm === 'gas') {
-    const gasUsage = pf(extracted.NaturalGasTherms);
-    const gasCharge = pf(extracted.GasCharge);
+    const gasUsage = parseBillNumber(extracted.NaturalGasTherms);
+    const gasCharge = parseBillNumber(extracted.GasCharge);
     if (gasUsage > 0 && gasCharge > 0) {
       const utilName = extracted._utilityName || extracted.UtilityCompany || '';
       _rateChecks.push({
@@ -709,7 +712,7 @@ function detectStatisticalOutliers(extracted, historicalCache, pdfBillsIndex) {
     // only this redundant, wrongly-scaled duplicate is removed. Do not re-add a
     // therm-scaled MMbtu push here.
   } else if (_comm === 'electric' || _comm === '') {
-    const kwhUsage = pf(extracted.kWhConsumed);
+    const kwhUsage = parseBillNumber(extracted.kWhConsumed);
     // Canonical 5-charge sum (rates.js sumElectricEnergyCharges) — was
     // OnPeak+OffPeak only, which dropped ECA+EER+PTS and made the implied
     // rate disagree with the displayed rate, false-flagging valid Evergy
@@ -726,8 +729,8 @@ function detectStatisticalOutliers(extracted, historicalCache, pdfBillsIndex) {
       });
     }
   } else if (_comm === 'propane') {
-    const propUsage = pf(extracted.PropaneGallons || extracted.Quantity);
-    const propCharge = pf(extracted.Subtotal || extracted.PropaneCharge);
+    const propUsage = parseBillNumber(extracted.PropaneGallons || extracted.Quantity);
+    const propCharge = parseBillNumber(extracted.Subtotal || extracted.PropaneCharge);
     if (propUsage > 0 && propCharge > 0) {
       _rateChecks.push({
         field: 'PropaneGallons',
@@ -778,7 +781,6 @@ const _MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', '
 function _analyzeMeterBills(bills, m) {
   const flags = {};
   if (bills.length < 4) return flags;
-  const pf = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
   const isElec = m.commodity === 'Electric';
   const isGas = m.commodity === 'Gas';
 
@@ -799,55 +801,54 @@ function _analyzeMeterBills(bills, m) {
     return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
   }
 
-  // rawFn: null-preserving variant used only for stats() so the null-aware filter
-  // at stats() line can actually exclude missing readings from mean/stddev.
-  // fn remains unchanged (always returns a number) for the z-score path.
-  const _raw = (v) => (v != null && v !== '' ? parseFloat(String(v).replace(/,/g, '')) : null);
+  // rawFn returns null for a missing reading so the null-aware filter at stats()
+  // can exclude it from mean/stddev. fn (z-score path) uses the same parser: a missing
+  // reading is null and the `val <= 0` test skips it.
   const checks = [];
   if (isElec) {
-    checks.push({ field: 'kwh', label: 'kWh', fn: (b) => pf(b.kwh), rawFn: (b) => _raw(b.kwh), seasonal: true });
+    checks.push({ field: 'kwh', label: 'kWh', fn: (b) => parseBillNumber(b.kwh), rawFn: (b) => parseBillNumber(b.kwh), seasonal: true });
     checks.push({
       field: 'totalCost',
       label: 'Total Cost',
-      fn: (b) => pf(b.totalCost),
-      rawFn: (b) => _raw(b.totalCost),
+      fn: (b) => parseBillNumber(b.totalCost),
+      rawFn: (b) => parseBillNumber(b.totalCost),
       seasonal: true,
     });
     checks.push({
       field: 'demandKW',
       label: 'Demand kW',
-      fn: (b) => pf(b.demandKW),
-      rawFn: (b) => _raw(b.demandKW),
+      fn: (b) => parseBillNumber(b.demandKW),
+      rawFn: (b) => parseBillNumber(b.demandKW),
       seasonal: true,
     });
   } else if (isGas) {
     checks.push({
       field: 'therms',
       label: 'Therms',
-      fn: (b) => pf(b.therms),
-      rawFn: (b) => _raw(b.therms),
+      fn: (b) => parseBillNumber(b.therms),
+      rawFn: (b) => parseBillNumber(b.therms),
       seasonal: true,
     });
     checks.push({
       field: 'thermCost',
       label: 'Cost',
-      fn: (b) => pf(b.thermCost || b.totalCost),
-      rawFn: (b) => _raw(b.thermCost != null ? b.thermCost : b.totalCost),
+      fn: (b) => parseBillNumber(b.thermCost || b.totalCost),
+      rawFn: (b) => parseBillNumber(b.thermCost != null ? b.thermCost : b.totalCost),
       seasonal: true,
     });
   } else {
     checks.push({
       field: 'usage',
       label: 'Usage',
-      fn: (b) => pf(b.usage || b.kwh),
-      rawFn: (b) => _raw(b.usage != null ? b.usage : b.kwh),
+      fn: (b) => parseBillNumber(b.usage || b.kwh),
+      rawFn: (b) => parseBillNumber(b.usage != null ? b.usage : b.kwh),
       seasonal: true,
     });
     checks.push({
       field: 'cost',
       label: 'Cost',
-      fn: (b) => pf(b.cost || b.totalCost),
-      rawFn: (b) => _raw(b.cost != null ? b.cost : b.totalCost),
+      fn: (b) => parseBillNumber(b.cost || b.totalCost),
+      rawFn: (b) => parseBillNumber(b.cost != null ? b.cost : b.totalCost),
       seasonal: true,
     });
   }
@@ -1149,20 +1150,20 @@ function _analyzeMeterBills(bills, m) {
       const _rateFn = (() => {
         if (isElec) {
           return (bill) => {
-            const u = pf(bill.kwh);
-            const c = pf(bill.totalCost);
+            const u = parseBillNumber(bill.kwh);
+            const c = parseBillNumber(bill.totalCost);
             return u > 0 && c > 0 ? c / u : 0;
           };
         } else if (isGas) {
           return (bill) => {
-            const u = pf(bill.therms);
-            const c = pf(bill.gasCharge) || pf(bill.thermCost) || pf(bill.totalCost);
+            const u = parseBillNumber(bill.therms);
+            const c = parseBillNumber(bill.gasCharge) || parseBillNumber(bill.thermCost) || parseBillNumber(bill.totalCost);
             return u > 0 && c > 0 ? c / u : 0;
           };
         } else {
           return (bill) => {
-            const u = pf(bill.usage || bill.waterUsage || bill.gallonsDelivered);
-            const c = pf(bill.cost || bill.totalCost);
+            const u = parseBillNumber(bill.usage || bill.waterUsage || bill.gallonsDelivered);
+            const c = parseBillNumber(bill.cost || bill.totalCost);
             return u > 0 && c > 0 ? c / u : 0;
           };
         }
@@ -1217,8 +1218,8 @@ function _analyzeMeterBills(bills, m) {
     // ── Charge-without-usage detection ──
     // Flag rows where a commodity charge exists but the corresponding usage quantity is missing.
     if (isGas) {
-      const _gc = pf(b.gasCharge) + pf(b.fuelAdjustment);
-      const _gu = pf(b.naturalGasTherms) + pf(b.naturalGasCCF) + pf(b.therms);
+      const _gc = parseBillNumberOrZero(b.gasCharge) + parseBillNumber(b.fuelAdjustment);
+      const _gu = parseBillNumberOrZero(b.naturalGasTherms) + parseBillNumber(b.naturalGasCCF) + parseBillNumber(b.therms);
       if (_gc > 0 && _gu === 0) {
         rowFlags.push({
           field: 'therms',
@@ -1227,8 +1228,8 @@ function _analyzeMeterBills(bills, m) {
         });
       }
     } else if (isElec) {
-      const _ec = pf(b.kwhCost) + pf(b.onPeakCost) + pf(b.offPeakCost);
-      const _eu = pf(b.kwh);
+      const _ec = parseBillNumberOrZero(b.kwhCost) + parseBillNumber(b.onPeakCost) + parseBillNumber(b.offPeakCost);
+      const _eu = parseBillNumberOrZero(b.kwh);
       if (_ec > 0 && _eu === 0) {
         rowFlags.push({
           field: 'kwh',
@@ -1239,8 +1240,8 @@ function _analyzeMeterBills(bills, m) {
     }
     const isWater = (m.commodity || '').toLowerCase() === 'water';
     if (isWater) {
-      const _wc = pf(b.waterCharge);
-      const _wu = pf(b.waterUsage);
+      const _wc = parseBillNumberOrZero(b.waterCharge);
+      const _wu = parseBillNumberOrZero(b.waterUsage);
       if (_wc > 0 && _wu === 0) {
         rowFlags.push({
           field: 'waterUsage',
@@ -1287,7 +1288,6 @@ function _analyzeWaterSewerParity(building) {
   if (!waterBills.length || !sewerBills.length) return;
 
   const FLAG_ID = 'waterSewerParity_warn';
-  const pf = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
   const today = new Date().toISOString().slice(0, 10);
 
   // Build an index of sewer bills by normalized month+year key.
@@ -1309,11 +1309,11 @@ function _analyzeWaterSewerParity(building) {
 
   // Helper: compute a flag message for a (water, sewer) bill pair, or null if no flag.
   function _wspFlagMsg(wb, sb) {
-    const wu = pf(wb.waterUsage);
+    const wu = parseBillNumberOrZero(wb.waterUsage);
     // Sewer bills may store usage in sewerUsage or waterUsage depending on provider.
-    const su = pf(sb.sewerUsage) || pf(sb.waterUsage);
-    const wCharge = pf(wb.waterCharge) || pf(wb.totalCost);
-    const sCharge = pf(sb.sewerCharge) || pf(sb.totalCost);
+    const su = parseBillNumberOrZero(sb.sewerUsage) || parseBillNumber(sb.waterUsage);
+    const wCharge = parseBillNumberOrZero(wb.waterCharge) || parseBillNumber(wb.totalCost);
+    const sCharge = parseBillNumberOrZero(sb.sewerCharge) || parseBillNumber(sb.totalCost);
 
     if (wu > 0 && su > 0) {
       const ratio = wu / su;
@@ -1963,9 +1963,9 @@ function _decideQuantityCorrection(fieldName, currentValue, witnesses) {
 // Gathers every witness to kWhConsumed's true value. Called BEFORE the meter-
 // table ReadDifference/EndRead-StartRead cascade below mutates anything, so
 // witness (a)/(b) reflect the bill's ORIGINAL printed figures.
-function _gatherKwhWitnesses(b, pf) {
+function _gatherKwhWitnesses(b) {
   const witnesses = [];
-  const printedKwh = pf(b.kWhConsumed);
+  const printedKwh = parseBillNumber(b.kWhConsumed);
   // (a) printed "kWh Used" meter-table column, as extracted (WEAK alone — no
   // independent self-check — but see (b), which can promote it to STRONG).
   if (printedKwh > 0) witnesses.push({ source: 'printed kWh Used', value: printedKwh, strong: false });
@@ -1976,8 +1976,8 @@ function _gatherKwhWitnesses(b, pf) {
   // Louisburg bill 4: printed ReadDifference (13.1730) × Multiplier (80) =
   // 1053.84 = printed kWh Used — agrees, so BOTH promoted to STRONG, while
   // EndRead(1728.5289)/StartRead(1716.3659) were the actual OCR-garbled reads.
-  const rd = pf(b.ReadDifference);
-  const mult = pf(b.MeterMultiplier);
+  const rd = parseBillNumber(b.ReadDifference);
+  const mult = parseBillNumber(b.MeterMultiplier);
   if (rd > 0 && mult > 0) {
     const v = rd * mult;
     const agreesWithPrinted = printedKwh > 0 && Math.abs(v - printedKwh) / v < 0.002;
@@ -1989,8 +1989,8 @@ function _gatherKwhWitnesses(b, pf) {
   // that silently overwrote a correct kWh Used column in production
   // (Louisburg bill 4: EndRead/StartRead OCR was wrong while the printed
   // ReadDifference column was correct).
-  const endR = pf(b.EndRead);
-  const startR = pf(b.StartRead);
+  const endR = parseBillNumber(b.EndRead);
+  const startR = parseBillNumber(b.StartRead);
   if (endR > 0 && startR > 0 && endR > startR && mult > 0) {
     witnesses.push({ source: 'EndRead−StartRead×Multiplier', value: (endR - startR) * mult, strong: false });
   }
@@ -2001,7 +2001,7 @@ function _gatherKwhWitnesses(b, pf) {
     if (!r || !r.parts || !r.parts.length) continue;
     const qty = r.parts.reduce((a, p) => a + (p.qty || 0), 0);
     if (!(qty > 0)) continue;
-    const strong = r.rate > 0 && _qtySelfVerifies(qty, r.rate, pf(b[key]));
+    const strong = r.rate > 0 && _qtySelfVerifies(qty, r.rate, parseBillNumber(b[key]));
     witnesses.push({ source: key, value: qty, strong });
   }
   // (f) ECA-parts-sum-implied qty — only trust the sum when EVERY part has
@@ -2011,7 +2011,7 @@ function _gatherKwhWitnesses(b, pf) {
   if (ecaR && ecaR.parts && ecaR.parts.length && ecaR.parts.every((p) => p.qty > 0 && p.rate > 0)) {
     const qty = ecaR.parts.reduce((a, p) => a + p.qty, 0);
     const computedTotal = ecaR.parts.reduce((a, p) => a + p.qty * p.rate, 0);
-    const strong = Math.abs(computedTotal - pf(b.ECACharge)) <= _Q_SELFVERIFY_CENTS;
+    const strong = Math.abs(computedTotal - parseBillNumber(b.ECACharge)) <= _Q_SELFVERIFY_CENTS;
     witnesses.push({ source: 'ECACharge', value: qty, strong });
   }
   // (g) OnPeak + OffPeak charge-implied sum — STRONG only if BOTH legs
@@ -2026,8 +2026,8 @@ function _gatherKwhWitnesses(b, pf) {
       // rather than onR.rate * onQty — the latter uses only the FIRST tier's rate
       // against the ALL-tier qty on a changeover bill, which spuriously fails
       // verification even when the quantity is correct. See _chargeSelfVerifies.
-      const onStrong = _chargeSelfVerifies(_chargeComputedTotal(onR), pf(b.EnergyOnPeakCharge));
-      const offStrong = _chargeSelfVerifies(_chargeComputedTotal(offR), pf(b.EnergyOffPeakCharge));
+      const onStrong = _chargeSelfVerifies(_chargeComputedTotal(onR), parseBillNumber(b.EnergyOnPeakCharge));
+      const offStrong = _chargeSelfVerifies(_chargeComputedTotal(offR), parseBillNumber(b.EnergyOffPeakCharge));
       witnesses.push({ source: 'On+Off peak sum', value: onQty + offQty, strong: onStrong && offStrong });
     }
   }
@@ -2045,7 +2045,7 @@ function _gatherKwhWitnesses(b, pf) {
 // split is billed against the charge-basis total, not the meter-table one).
 // Used to refine a low-fidelity kWh-identity-derived On/OffPeakKWh split
 // with the more precise total the bill's own dollar math is keyed to.
-function _chargeBasisTotal(b, pf) {
+function _chargeBasisTotal(b) {
   const candidates = [];
   for (const key of ['ECACharge', 'EERCharge', 'PTSCharge']) {
     const r = b._rates && b._rates[key];
@@ -2053,7 +2053,7 @@ function _chargeBasisTotal(b, pf) {
     if (!r.parts.every((p) => p.qty > 0 && p.rate > 0)) continue;
     const qty = r.parts.reduce((a, p) => a + p.qty, 0);
     const computed = r.parts.reduce((a, p) => a + p.qty * p.rate, 0);
-    if (Math.abs(computed - pf(b[key])) > _Q_SELFVERIFY_CENTS) continue; // must self-verify
+    if (Math.abs(computed - parseBillNumber(b[key])) > _Q_SELFVERIFY_CENTS) continue; // must self-verify
     candidates.push(qty);
   }
   if (!candidates.length) return null;
@@ -2082,20 +2082,20 @@ function _chargeBasisTotal(b, pf) {
 // inconclusive (gated, not applied) — deriving one leg from an unresolved
 // total would compound the uncertainty, so in that case this function may
 // only confirm-or-gate, never mutate.
-function _decideOnOffPeakKWh(b, pf, kwhConsumed, kwhHeld) {
+function _decideOnOffPeakKWh(b, kwhConsumed, kwhHeld) {
   const onR = b._rates && b._rates.EnergyOnPeakCharge;
   const offR = b._rates && b._rates.EnergyOffPeakCharge;
   const onQtyFromRates = onR && onR.parts && onR.parts.length ? onR.parts.reduce((a, p) => a + (p.qty || 0), 0) : 0;
   const offQtyFromRates =
     offR && offR.parts && offR.parts.length ? offR.parts.reduce((a, p) => a + (p.qty || 0), 0) : 0;
-  const onQty = onQtyFromRates > 0 ? onQtyFromRates : pf(b.OnPeakKWh);
-  const offQty = offQtyFromRates > 0 ? offQtyFromRates : pf(b.OffPeakKWh);
+  const onQty = onQtyFromRates > 0 ? onQtyFromRates : parseBillNumber(b.OnPeakKWh);
+  const offQty = offQtyFromRates > 0 ? offQtyFromRates : parseBillNumber(b.OffPeakKWh);
   // See _chargeSelfVerifies/_chargeComputedTotal: compare against the per-part
   // computed total, not .rate * qty (first-tier rate only) — the latter
   // spuriously fails on a genuine multi-tier changeover bill even when
   // onQty/offQty are correct.
-  const onVerified = !!(onR && _chargeSelfVerifies(_chargeComputedTotal(onR), pf(b.EnergyOnPeakCharge)));
-  const offVerified = !!(offR && _chargeSelfVerifies(_chargeComputedTotal(offR), pf(b.EnergyOffPeakCharge)));
+  const onVerified = !!(onR && _chargeSelfVerifies(_chargeComputedTotal(onR), parseBillNumber(b.EnergyOnPeakCharge)));
+  const offVerified = !!(offR && _chargeSelfVerifies(_chargeComputedTotal(offR), parseBillNumber(b.EnergyOffPeakCharge)));
   const result = { onCorrection: null, offCorrection: null, gate: null };
 
   // ── STRUCTURAL GUARD: a synthetic qty:null placeholder means the dollar side
@@ -2131,7 +2131,7 @@ function _decideOnOffPeakKWh(b, pf, kwhConsumed, kwhHeld) {
   // total, not the meter-table figure — re-derive the fallback-recovered leg
   // against the more precise basis instead.
   if (b._auto_recovered_OffPeakKWh || b._auto_recovered_OnPeakKWh) {
-    const basisTotal = _chargeBasisTotal(b, pf);
+    const basisTotal = _chargeBasisTotal(b);
     if (basisTotal && kwhConsumed > 0 && Math.abs(basisTotal - kwhConsumed) > 0.01) {
       if (b._auto_recovered_OffPeakKWh && onQty > 0) {
         const refined = basisTotal - onQty;
@@ -2179,8 +2179,8 @@ function _decideOnOffPeakKWh(b, pf, kwhConsumed, kwhHeld) {
   // kWhConsumed itself is resolved — a self-verified charge-line figure is
   // independent evidence of what the bill actually printed, and always
   // outranks a value an earlier identity-subtraction fabricated.
-  const onFieldCur = pf(b.OnPeakKWh);
-  const offFieldCur = pf(b.OffPeakKWh);
+  const onFieldCur = parseBillNumberOrZero(b.OnPeakKWh);
+  const offFieldCur = parseBillNumberOrZero(b.OffPeakKWh);
   if (onVerified && onFieldCur > 0 && Math.abs(onFieldCur - onQty) > 0.5) {
     result.onCorrection = {
       value: onQty,
@@ -2188,7 +2188,7 @@ function _decideOnOffPeakKWh(b, pf, kwhConsumed, kwhHeld) {
         'OnPeakKWh restored to its self-verified charge-line qty (' +
         onQty.toFixed(4) +
         ', verifies against its own $' +
-        pf(b.EnergyOnPeakCharge).toFixed(2) +
+        parseBillNumberOrZero(b.EnergyOnPeakCharge).toFixed(2) +
         ' charge) — the extracted field (' +
         onFieldCur.toFixed(4) +
         ') had already been overwritten by an earlier identity-subtraction guess',
@@ -2201,7 +2201,7 @@ function _decideOnOffPeakKWh(b, pf, kwhConsumed, kwhHeld) {
         'OffPeakKWh restored to its self-verified charge-line qty (' +
         offQty.toFixed(4) +
         ', verifies against its own $' +
-        pf(b.EnergyOffPeakCharge).toFixed(2) +
+        parseBillNumberOrZero(b.EnergyOffPeakCharge).toFixed(2) +
         ' charge) — the extracted field (' +
         offFieldCur.toFixed(4) +
         ') had already been overwritten by an earlier identity-subtraction guess',
@@ -2255,10 +2255,10 @@ function _decideOnOffPeakKWh(b, pf, kwhConsumed, kwhHeld) {
     // unreliable). Needed here because the shared $0.01 tolerance is
     // inclusive of the exact 1-cent gap this bug produces on the misread
     // leg, which would otherwise make BOTH legs look "verified".
-    const basisTotal = _chargeBasisTotal(b, pf);
+    const basisTotal = _chargeBasisTotal(b);
     if (basisTotal && Math.abs(onQty + offQty - basisTotal) > _BASIS_TIGHT) {
-      const onStrict = onR && Math.abs(_chargeComputedTotal(onR) - pf(b.EnergyOnPeakCharge)) <= _STRICT_LEG_CENTS;
-      const offStrict = offR && Math.abs(_chargeComputedTotal(offR) - pf(b.EnergyOffPeakCharge)) <= _STRICT_LEG_CENTS;
+      const onStrict = onR && Math.abs(_chargeComputedTotal(onR) - parseBillNumber(b.EnergyOnPeakCharge)) <= _STRICT_LEG_CENTS;
+      const offStrict = offR && Math.abs(_chargeComputedTotal(offR) - parseBillNumber(b.EnergyOffPeakCharge)) <= _STRICT_LEG_CENTS;
       const onIsSuspect = !onStrict && offStrict;
       const offIsSuspect = !offStrict && onStrict;
       let applied = false;
@@ -2266,7 +2266,7 @@ function _decideOnOffPeakKWh(b, pf, kwhConsumed, kwhHeld) {
         const suspectR = onIsSuspect ? onR : offR;
         const suspectQty = onIsSuspect ? onQty : offQty;
         const trustedQty = onIsSuspect ? offQty : onQty;
-        const suspectChargeVal = pf(onIsSuspect ? b.EnergyOnPeakCharge : b.EnergyOffPeakCharge);
+        const suspectChargeVal = parseBillNumberOrZero(onIsSuspect ? b.EnergyOnPeakCharge : b.EnergyOffPeakCharge);
         // Only correct a single-part (no seasonal changeover) charge line —
         // with 2+ parts it is ambiguous WHICH part's qty was misread, so
         // reproducing "the leg's own charge" from one blended rate would be
@@ -2382,7 +2382,7 @@ function _decideOnOffPeakKWh(b, pf, kwhConsumed, kwhHeld) {
           ') minus self-verified OnPeakKWh (' +
           onQty.toFixed(4) +
           ', verifies against its own $' +
-          pf(b.EnergyOnPeakCharge).toFixed(2) +
+          parseBillNumberOrZero(b.EnergyOnPeakCharge).toFixed(2) +
           ' charge) = ' +
           derivedOff.toFixed(4),
       };
@@ -2400,7 +2400,7 @@ function _decideOnOffPeakKWh(b, pf, kwhConsumed, kwhHeld) {
           ') minus self-verified OffPeakKWh (' +
           offQty.toFixed(4) +
           ', verifies against its own $' +
-          pf(b.EnergyOffPeakCharge).toFixed(2) +
+          parseBillNumberOrZero(b.EnergyOffPeakCharge).toFixed(2) +
           ' charge) = ' +
           derivedOn.toFixed(4),
       };
@@ -2451,7 +2451,6 @@ function _decideOnOffPeakKWh(b, pf, kwhConsumed, kwhHeld) {
 async function _postExtractionVerify(bills, utilityName, rawText) {
   try {
     if (!bills.length) return { bills, historicalCache: {} };
-    const pf = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
 
     // ── GATE C/D shared decision (18b33d9f round 2, CRITICAL 2) ──────────────
     // Moved up from inside the GENERAL VALIDATION block so BOTH that generic
@@ -2523,7 +2522,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
     //     greater — small/near-zero totals keep the $500 floor as a hard
     //     minimum; large commercial totals get a floor that scales with them.
     const _decideTotalCorrection = (b, origTotalStr, compSum, fieldValuePairs) => {
-      const origTotalNum = pf(origTotalStr);
+      const origTotalNum = parseBillNumber(origTotalStr);
       const pctChange = origTotalNum > 0 ? (Math.abs(compSum - origTotalNum) / origTotalNum) * 100 : 100;
       const dollarChange = Math.abs(compSum - origTotalNum);
       const provenanceOk = _chargeFieldsHaveProvenance(b, fieldValuePairs);
@@ -2918,7 +2917,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           'FacilitiesCharge',
         ];
         for (const field of numericChecks) {
-          const val = pf(b[field]);
+          const val = parseBillNumber(b[field]);
           if (val <= 0) continue;
           const SAVED_MAP = {
             kWhConsumed: 'kwh',
@@ -2934,7 +2933,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           const bComm = (b.Commodity || '').toLowerCase();
           const commHist = bComm ? hist.filter((h) => (h.commodity || '').toLowerCase() === bComm) : hist;
           // Include 0 as valid data; exclude NaN (truly missing). Keep mean<=0 guard for ratio safety.
-          const histVals = commHist.map((h) => parseFloat(h[savedField])).filter((v) => !isNaN(v));
+          const histVals = commHist.map((h) => parseBillNumber(h[savedField])).filter((v) => v !== null);
           if (histVals.length < 3) continue;
           const mean = histVals.reduce((a, c) => a + c, 0) / histVals.length;
           if (mean <= 0) continue;
@@ -3000,8 +2999,8 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
       // 100 based on magnitude alone — large buildings legitimately have
       // charges > $5k and usage > 10k therms.
       if (b.Commodity === 'Gas') {
-        const _gc = pf(b.GasCharge);
-        const _th = pf(b.NaturalGasTherms);
+        const _gc = parseBillNumberOrZero(b.GasCharge);
+        const _th = parseBillNumberOrZero(b.NaturalGasTherms);
         const _utilName = b._utilityName || b.UtilityCompany || '';
         if (_gc > 0 && _th > 0) {
           const origRate = validateImpliedRate('Gas', _th, _gc, _utilName);
@@ -3067,8 +3066,8 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
                 console.log('[PostVerify] Gas therms rate-validated correction: ' + _th + ' → ' + best.th);
               }
               // Recompute total from corrected components
-              const _cust = pf(b.CustomerCharge);
-              const _fa = pf(b.FuelAdjustment);
+              const _cust = parseBillNumber(b.CustomerCharge);
+              const _fa = parseBillNumber(b.FuelAdjustment);
               if (best.gc > 0 && _cust > 0) {
                 const newTotal = best.gc + _cust + _fa;
                 b.TotalCurrentCharges = newTotal.toFixed(2);
@@ -3123,10 +3122,10 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         ];
         // Round to cents to prevent floating-point accumulation errors
         // across 15 addends from producing phantom ±$0.01 mismatches.
-        const _sumCharges = () => Math.round(CHARGE_FIELDS.reduce((s, f) => s + pf(b[f]), 0) * 100) / 100;
+        const _sumCharges = () => Math.round(CHARGE_FIELDS.reduce((s, f) => s + parseBillNumber(b[f]), 0) * 100) / 100;
 
         // 3a. Measure
-        const ocrTotal = pf(b.TotalCurrentCharges);
+        const ocrTotal = parseBillNumberOrZero(b.TotalCurrentCharges);
         let compSum = _sumCharges();
 
         if (!ocrTotal) {
@@ -3148,9 +3147,9 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           // if _rates.TDCCharge is missing but we have both the charge amount and the
           // kW quantity, derive rate = charge / qty and synthesize a _rates entry.
           // This gives Strategy B a computed value to cross-check against.
-          if (b._rates && !b._rates.TDCCharge && pf(b.TDCCharge) > 0 && pf(b.TDCkW) > 0) {
-            const _tdcChg = pf(b.TDCCharge);
-            const _tdcQty = pf(b.TDCkW);
+          if (b._rates && !b._rates.TDCCharge && parseBillNumber(b.TDCCharge) > 0 && parseBillNumber(b.TDCkW) > 0) {
+            const _tdcChg = parseBillNumber(b.TDCCharge);
+            const _tdcQty = parseBillNumber(b.TDCkW);
             const _tdcRate = _tdcChg / _tdcQty;
             // Sanity: Evergy TDC rates are typically $1-$5/kW. Accept $0.10-$50/kW range.
             if (_tdcRate >= 0.1 && _tdcRate <= 50) {
@@ -3177,7 +3176,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           let targetDelta = compSum - ocrTotal;
           if (b._rates && Math.abs(targetDelta) >= 0.02) {
             for (const [field, ri] of Object.entries(b._rates)) {
-              const ocrVal = pf(b[field]);
+              const ocrVal = parseBillNumber(b[field]);
               if (!ocrVal || !ri.computed) continue;
               if (ri.computed > 1e6 || ri.rate > 10000) continue;
               const chargeDelta = ocrVal - ri.computed;
@@ -3256,7 +3255,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
               'RkVACharge',
             ];
             const unverified = RATE_BASED.filter((f) => {
-              const v = pf(b[f]);
+              const v = parseBillNumber(b[f]);
               if (v <= 0) return false;
               if (b._rates && b._rates[f]) return false;
               if (b['_auto_corrected_' + f]) return false;
@@ -3265,7 +3264,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
             });
             if (unverified.length === 1) {
               const f = unverified[0];
-              const origVal = pf(b[f]);
+              const origVal = parseBillNumber(b[f]);
               const residual = ocrTotal - (compSum - origVal);
               if (residual > 0) {
                 b['_auto_corrected_' + f] = {
@@ -3290,7 +3289,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           // truth — a compSum disagreement points to a per-charge bug
           // (wrong sign, missed line item), not a wrong total. Don't let
           // compSum clobber a corroborated ocrTotal.
-          const _subVal = pf(b._subtotal);
+          const _subVal = parseBillNumber(b._subtotal);
           const subtotalCorroborates = _subVal > 0 && Math.abs(_subVal - ocrTotal) < 0.02;
           if (Math.abs(finalDelta) < 0.02) {
             // Reconciled. Keep ocrTotal. No flag needed.
@@ -3314,9 +3313,9 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
               // (compSum === total by the time it ran). Route through the SAME
               // GATE C/D decision as the generic path instead of trusting compSum
               // unconditionally.
-              const nonzeroCharges = CHARGE_FIELDS.filter((f) => pf(b[f]) > 0).map((f) => ({
+              const nonzeroCharges = CHARGE_FIELDS.filter((f) => parseBillNumber(b[f]) > 0).map((f) => ({
                 field: f,
-                value: pf(b[f]),
+                value: parseBillNumber(b[f]),
               }));
               const decision = _decideTotalCorrection(b, b.TotalCurrentCharges, compSum, nonzeroCharges);
               if (decision.hold) {
@@ -3639,9 +3638,9 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         // identity cascade (Step 3 + the later RE-VALIDATE pass) cannot
         // silently overwrite it — see the corroboration functions above
         // _postExtractionVerify for the full witness list and reasoning. ──
-        const kwhWitnesses = _gatherKwhWitnesses(b, pf);
+        const kwhWitnesses = _gatherKwhWitnesses(b);
         if (kwhWitnesses.length) {
-          const curKwh0 = pf(b.kWhConsumed);
+          const curKwh0 = parseBillNumber(b.kWhConsumed);
           const kwhDecision = _decideQuantityCorrection('kWhConsumed', curKwh0, kwhWitnesses);
           b._kwhConsumedLocked = true; // nothing downstream may overwrite kWhConsumed after this
           // FIX (fix/bill-review-gate-lifecycle, item f359edaa): never let a
@@ -3664,7 +3663,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           // On/Off-peak: decided AFTER kWhConsumed is locked, so both use the
           // SAME corroborated total instead of a stale pre-correction value
           // (the exact bug pattern in energy-savings.js:3742-3763).
-          const onoffDecision = _decideOnOffPeakKWh(b, pf, pf(b.kWhConsumed), kwhDecision.hold);
+          const onoffDecision = _decideOnOffPeakKWh(b, parseBillNumber(b.kWhConsumed), kwhDecision.hold);
           // FIX (fix/bill-review-gate-lifecycle, item f359edaa): same "never revert a
           // user correction" guard as kWhConsumed above.
           if (onoffDecision.onCorrection && !b._userCorrected_OnPeakKWh) {
@@ -3700,7 +3699,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         // When BilledKW <= 200, we keep whatever the meter table reading was; the user can
         // see it and correct it manually if it's garbled (ActualKW < 200 is legitimate on
         // low-demand months and shouldn't be nulled).
-        const curKw = pf(b.ActualKW);
+        const curKw = parseBillNumber(b.ActualKW);
         const kwOutOfRange = curKw > 0 && (curKw > 10000 || curKw < 0.1);
         const demandKwMax = getPartsQtyMax('BilledKWCharge');
         if ((!curKw || kwOutOfRange) && demandKwMax && demandKwMax > 200 && demandKwMax < 10000) {
@@ -3715,7 +3714,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           b.ActualKW = demandKwMax.toFixed(4);
         }
         const tdcKwMax = getPartsQtyMax('TDCCharge');
-        const curTdcKw = pf(b.TDCkW);
+        const curTdcKw = parseBillNumber(b.TDCkW);
         const tdcKwParts = b._rates?.TDCCharge?.parts || [];
         const tdcKwMatchesPart = curTdcKw > 0 && tdcKwParts.some((p) => Math.abs(curTdcKw - (p.qty || 0)) < 0.01);
         if (tdcKwMax && curTdcKw > 0 && !tdcKwMatchesPart && Math.abs(curTdcKw - tdcKwMax) / tdcKwMax > 0.05) {
@@ -3732,7 +3731,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         // with different per-period kW values. Only override if the extracted value doesn't
         // match any part's qty — matching means the meter table reading is valid for that period.
         const facKwMax = getPartsQtyMax('FacilitiesCharge');
-        const curFacKw = pf(b.FacilitiesKW);
+        const curFacKw = parseBillNumber(b.FacilitiesKW);
         const facKwParts = b._rates?.FacilitiesCharge?.parts || [];
         const facKwMatchesPart = curFacKw > 0 && facKwParts.some((p) => Math.abs(curFacKw - (p.qty || 0)) < 0.01);
         if (
@@ -3756,7 +3755,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         // Only override if the extracted value doesn't match ANY part's qty —
         // matching any part means the meter table reading is valid for that period.
         const billedKwMax = getPartsQtyMax('BilledKWCharge');
-        const curBilledKw = pf(b.BilledKW);
+        const curBilledKw = parseBillNumber(b.BilledKW);
         const billedKwParts = b._rates?.BilledKWCharge?.parts || [];
         const billedKwMatchesPart =
           curBilledKw > 0 && billedKwParts.some((p) => Math.abs(curBilledKw - (p.qty || 0)) < 0.01);
@@ -3795,9 +3794,9 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         //
         // Respects prior _auto_corrected_ActualKW markers: if an earlier rule (e.g. the
         // 200 kW LGS floor recovery above) already wrote one, we don't overwrite it.
-        const curActual = pf(b.ActualKW);
-        const curBilledFinal = pf(b.BilledKW);
-        const curFacFinal = pf(b.FacilitiesKW);
+        const curActual = parseBillNumberOrZero(b.ActualKW);
+        const curBilledFinal = parseBillNumberOrZero(b.BilledKW);
+        const curFacFinal = parseBillNumberOrZero(b.FacilitiesKW);
         if (curActual > 0 && curBilledFinal > 0 && curActual > curBilledFinal + 0.001) {
           // CHARGE-LINE CONSENSUS FIRST: BilledKW == TDCkW proves the real demand.
           // When two independent charge lines (Demand Chg and TDC Chg) agree on the
@@ -3805,7 +3804,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           // equal them — no floor was applied, so Actual = Billed = TDC by identity.
           // This is stronger evidence than decimal-shift guessing because the charge
           // lines were extracted cleanly even when the meter table was garbled.
-          const curTdcFinal = pf(b.TDCkW);
+          const curTdcFinal = parseBillNumberOrZero(b.TDCkW);
           const billedTdcAgree =
             curBilledFinal > 0 &&
             curTdcFinal > 0 &&
@@ -3911,7 +3910,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
             } else if (b.ServiceAddress && nb.ServiceAddress && b.ServiceAddress !== nb.ServiceAddress) {
               continue;
             }
-            const nm = pf(nb.MeterMultiplier);
+            const nm = parseBillNumberOrZero(nb.MeterMultiplier);
             if (nm > 0 && nm <= 10000) {
               const key = nm.toFixed(4);
               multCounts[key] = (multCounts[key] || 0) + 1;
@@ -3920,7 +3919,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           const sorted = Object.entries(multCounts).sort((a, c) => c[1] - a[1]);
           return sorted.length ? parseFloat(sorted[0][0]) : null;
         };
-        const curMult = pf(b.MeterMultiplier);
+        const curMult = parseBillNumber(b.MeterMultiplier);
         const neighborMult = _getNeighborMult();
         // Self-reconciliation skip: if the bill's own meter-table arithmetic already
         // proves the current multiplier correct (ReadDifference × MeterMultiplier =
@@ -3930,10 +3929,10 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         // (e.g. High School's 160 wrongly overridden by the Ballfields meter's 1.0).
         const _multSelfReconciles =
           curMult > 0 &&
-          pf(b.ReadDifference) > 0 &&
+          parseBillNumber(b.ReadDifference) > 0 &&
           b._kwhConsumedLocked &&
-          pf(b.kWhConsumed) > 0 &&
-          Math.abs(curMult * pf(b.ReadDifference) - pf(b.kWhConsumed)) / pf(b.kWhConsumed) <= _Q_BUCKET_TOL;
+          parseBillNumber(b.kWhConsumed) > 0 &&
+          Math.abs(curMult * parseBillNumber(b.ReadDifference) - parseBillNumber(b.kWhConsumed)) / parseBillNumber(b.kWhConsumed) <= _Q_BUCKET_TOL;
         // Correct an obviously-garbled multiplier (> 10k or way off neighbor consensus)
         if (_multSelfReconciles) {
           // Bill's own arithmetic already reconciles — leave MeterMultiplier alone.
@@ -3956,8 +3955,8 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         // Negative values occur when OCR reverses the subtraction order or the sign is
         // included in the extracted text. Abs() here before any downstream identity checks.
         if (b.ReadDifference) {
-          const _rdRaw = parseFloat(String(b.ReadDifference).replace(/,/g, ''));
-          if (!isNaN(_rdRaw) && _rdRaw < 0) b.ReadDifference = Math.abs(_rdRaw).toFixed(4);
+          const _rdRaw = parseBillNumber(b.ReadDifference);
+          if (_rdRaw !== null && _rdRaw < 0) b.ReadDifference = Math.abs(_rdRaw).toFixed(4);
         }
         // ── DETERMINISTIC VALIDATION CHAIN (Update 139 / #127) ──
         // Meter reads are the most trustworthy OCR values (5-7 digit numbers
@@ -3965,10 +3964,10 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         // frequently misreads a single digit (e.g. 41.8176 vs 41.6176).
         // ALWAYS compute ReadDifference from reads when both are available,
         // then cascade corrections through kWhConsumed → On-Peak kWh.
-        const endR = pf(b.EndRead);
-        const startR = pf(b.StartRead);
-        const multNow = pf(b.MeterMultiplier);
-        const curDiff = pf(b.ReadDifference);
+        const endR = parseBillNumberOrZero(b.EndRead);
+        const startR = parseBillNumberOrZero(b.StartRead);
+        const multNow = parseBillNumberOrZero(b.MeterMultiplier);
+        const curDiff = parseBillNumber(b.ReadDifference);
         // Multi-meter bills (2+ rows, b._meterInfo.type === 'meter_change') have
         // StartRead/EndRead/ReadDifference intentionally left null — none of them
         // represent a single valid physical reading. Reuse the same guard the Step 2
@@ -3989,7 +3988,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         // fallback in testing). What matters is that Step 2 below (gated on
         // b._kwhConsumedLocked) can never let this recompute feed back into
         // overwriting the already-corroborated kWhConsumed.
-        const _lockedKwhForDiff = b._kwhConsumedLocked ? pf(b.kWhConsumed) : 0;
+        const _lockedKwhForDiff = b._kwhConsumedLocked ? parseBillNumber(b.kWhConsumed) : 0;
         const _diffConflictsWithLocked = (diffVal) =>
           _lockedKwhForDiff > 0 &&
           multNow > 0 &&
@@ -4067,7 +4066,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           }
         } else if (!curDiff && !_isMultiMeterKwh0) {
           // No reads available — try kWh / multiplier fallback
-          const kwhNow = pf(b.kWhConsumed);
+          const kwhNow = parseBillNumber(b.kWhConsumed);
           const kwhDerivedDiff = kwhNow > 0 && multNow > 0 ? kwhNow / multNow : null;
           if (kwhDerivedDiff !== null && kwhDerivedDiff > 0 && kwhDerivedDiff < 1000000) {
             b.ReadDifference = kwhDerivedDiff.toFixed(4);
@@ -4079,7 +4078,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           }
         }
         // Sanity: ReadDifference must not exceed EndRead (unless rollover)
-        const newDiff = pf(b.ReadDifference);
+        const newDiff = parseBillNumber(b.ReadDifference);
         if (newDiff > 0 && endR > 0 && startR > 0 && endR >= startR && newDiff > endR) {
           b['_likely_missing_ReadDifference'] = true;
           b.ReadDifference = null;
@@ -4101,7 +4100,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         // valid cross-check against that sum — it's at best one of the N components — so
         // the cascade must not run at all for these bills, not merely be ratio-guarded.
         const _isMultiMeterKwh = !!(b._meterInfo && b._meterInfo.type === 'meter_change' && b._meterInfo.rows >= 2);
-        const cascadeDiff = pf(b.ReadDifference);
+        const cascadeDiff = parseBillNumberOrZero(b.ReadDifference);
         // GATE (2026-07-14 kWh corroboration fix): kWhConsumed was already
         // decided once, with weighted evidence, by the witness corroboration
         // pass above. If it's locked, this cascade becomes diagnostic-only —
@@ -4110,7 +4109,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         // on Louisburg bill 4 (1053.84 → 973.04), because the old 10x-ratio
         // guard only blocks gross corruption, not a plausible-looking 7.7% one.
         if (b._kwhConsumedLocked) {
-          const _lockedKwh2 = pf(b.kWhConsumed);
+          const _lockedKwh2 = parseBillNumberOrZero(b.kWhConsumed);
           if (cascadeDiff > 0 && multNow > 0) {
             const expectedKwh2 = cascadeDiff * multNow;
             if (_lockedKwh2 > 0 && Math.abs(expectedKwh2 - _lockedKwh2) / _lockedKwh2 > _Q_BUCKET_TOL) {
@@ -4161,7 +4160,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           }
         } else if (!_isMultiMeterKwh && cascadeDiff > 0 && multNow > 0) {
           const expectedKwh = cascadeDiff * multNow;
-          const curKwhForChain = pf(b.kWhConsumed);
+          const curKwhForChain = parseBillNumber(b.kWhConsumed);
           const _kwhSane = expectedKwh > 0 && expectedKwh < 2000000;
           const _wouldClobber =
             curKwhForChain > 0 && (expectedKwh / curKwhForChain > 10 || curKwhForChain / expectedKwh > 10);
@@ -4188,15 +4187,15 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         // (together with the RE-VALIDATE pass further down) re-derived a
         // wrong On-Peak/Off-Peak split from a since-superseded kWhConsumed.
         if (!b._onOffPeakLocked) {
-          const chainKwh = pf(b.kWhConsumed);
-          const chainOffPk = pf(b.OffPeakKWh);
-          const chainOnPk = pf(b.OnPeakKWh);
+          const chainKwh = parseBillNumberOrZero(b.kWhConsumed);
+          const chainOffPk = parseBillNumberOrZero(b.OffPeakKWh);
+          const chainOnPk = parseBillNumber(b.OnPeakKWh);
           if (chainKwh > 0 && chainOffPk > 0 && chainOnPk > 0) {
             const expectedOnPk = chainKwh - chainOffPk;
             if (expectedOnPk > 0 && Math.abs(chainOnPk - expectedOnPk) > 0.5) {
               // Cross-check: does On-Peak charge / On-Peak rate agree?
               const onRi = b._rates && b._rates.EnergyOnPeakCharge;
-              const onCharge = pf(b.EnergyOnPeakCharge);
+              const onCharge = parseBillNumber(b.EnergyOnPeakCharge);
               let useExpected = true;
               if (onRi && onRi.rate > 0 && onCharge > 0) {
                 const rateImplied = onCharge / onRi.rate;
@@ -4223,17 +4222,17 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         }
         // Final sanity strip: if ActualKW/BilledKW/FacilitiesKW are still in the insane range, null them
         for (const kwField of ['ActualKW', 'BilledKW', 'FacilitiesKW', 'TDCkW', 'ActualRKVA']) {
-          const v = pf(b[kwField]);
+          const v = parseBillNumber(b[kwField]);
           if (v > 10000) {
             b['_likely_missing_' + kwField] = true;
             b[kwField] = null;
           }
         }
         // kW can never exceed kWh — if it does, the kW value is garbage
-        const _finalKwh = pf(b.kWhConsumed);
+        const _finalKwh = parseBillNumber(b.kWhConsumed);
         if (_finalKwh > 0) {
           for (const kwField of ['ActualKW', 'BilledKW', 'FacilitiesKW', 'TDCkW']) {
-            const v = pf(b[kwField]);
+            const v = parseBillNumber(b[kwField]);
             if (v > 0 && v > _finalKwh) {
               b['_likely_missing_' + kwField] = true;
               b[kwField] = null;
@@ -4243,9 +4242,9 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         // ── FINAL ActualKW consensus: BilledKW == TDCkW → ActualKW must match ──
         // Runs after all other kW corrections. If BilledKW and TDCkW agree
         // (within 0.01) and ActualKW differs by any amount, correct it.
-        const _fAct = pf(b.ActualKW),
-          _fBil = pf(b.BilledKW),
-          _fTdc = pf(b.TDCkW);
+        const _fAct = parseBillNumber(b.ActualKW),
+          _fBil = parseBillNumberOrZero(b.BilledKW),
+          _fTdc = parseBillNumberOrZero(b.TDCkW);
         if (
           _fAct > 0 &&
           _fBil > 0 &&
@@ -4280,7 +4279,6 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
     //         EndRead − StartRead = ReadDifference
     //         ReadDifference × MeterMultiplier = kWhConsumed
     if (bills.length > 1) {
-      const pfR = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
       const sameAcct = (a, b) => {
         const x = (a.AccountNumber || '').replace(/[\s\-]/g, '');
         const y = (b.AccountNumber || '').replace(/[\s\-]/g, '');
@@ -4308,8 +4306,8 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           next = bills[i + 1];
         if (!curr.EndRead || !next.StartRead) continue;
         if (!sameAcct(curr, next)) continue;
-        const endR = pfR(curr.EndRead);
-        const startR = pfR(next.StartRead);
+        const endR = parseBillNumber(curr.EndRead);
+        const startR = parseBillNumber(next.StartRead);
         if (endR > 0 && startR > 0 && Math.abs(endR - startR) > 0.001) {
           // Meter change / odometer rollover: next.StartRead < 10 AND
           // prev.EndRead > 1000 (substantially different magnitudes).
@@ -4392,11 +4390,11 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
       //    ReadDifference can subsequently yield a missing StartRead/EndRead.
       for (const b of bills) {
         for (let pass = 0; pass < 2; pass++) {
-          const sR = pfR(b.StartRead),
-            eR = pfR(b.EndRead),
-            dR = pfR(b.ReadDifference),
-            mM = pfR(b.MeterMultiplier),
-            kC = pfR(b.kWhConsumed);
+          const sR = parseBillNumberOrZero(b.StartRead),
+            eR = parseBillNumberOrZero(b.EndRead),
+            dR = parseBillNumberOrZero(b.ReadDifference),
+            mM = parseBillNumberOrZero(b.MeterMultiplier),
+            kC = parseBillNumberOrZero(b.kWhConsumed);
           // EndRead − StartRead = ReadDifference
           // Guard: don't recreate a value from the same suspect reads that just got
           // its ReadDifference rejected for disagreeing with corroborated kWhConsumed
@@ -4550,9 +4548,9 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         const acct1 = (prev.AccountNumber || '').replace(/[\s\-]/g, '');
         const acct2 = (curr.AccountNumber || '').replace(/[\s\-]/g, '');
         if (acct1 && acct2 && acct1 !== acct2) continue;
-        const prevFac = pf(prev.FacilitiesKW),
-          currFac = pf(curr.FacilitiesKW);
-        const currBilled = pf(curr.BilledKW);
+        const prevFac = parseBillNumber(prev.FacilitiesKW),
+          currFac = parseBillNumber(curr.FacilitiesKW);
+        const currBilled = parseBillNumber(curr.BilledKW);
         if (!prevFac || !currFac || Math.abs(prevFac - currFac) < 0.001) continue;
         // FacilitiesKW changed — is it legitimate?
         if (Math.abs(currFac - currBilled) < 0.001) {
@@ -4563,7 +4561,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           for (let j = Math.max(0, i - 11); j < i; j++) {
             const pAcct = (bills[j].AccountNumber || '').replace(/[\s\-]/g, '');
             if (pAcct && acct2 && pAcct !== acct2) continue;
-            if (pf(bills[j].BilledKW) >= currFac - 0.001) {
+            if (parseBillNumber(bills[j].BilledKW) >= currFac - 0.001) {
               allBelow = false;
               break;
             }
@@ -4600,13 +4598,13 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
             if (neighborRate && Math.abs(neighborRate - facRate) > 0.01) {
               facRate = neighborRate; // neighbor consensus rate is more reliable
             }
-            const newCharge = Math.round(pf(prev.FacilitiesKW) * facRate * 100) / 100;
+            const newCharge = Math.round(parseBillNumber(prev.FacilitiesKW) * facRate * 100) / 100;
             if (newCharge > 0) {
               curr['_auto_corrected_FacilitiesCharge'] = {
                 original: curr.FacilitiesCharge,
                 corrected: newCharge.toFixed(2),
                 rate: facRate,
-                qty: pf(prev.FacilitiesKW),
+                qty: parseBillNumber(prev.FacilitiesKW),
                 unit: 'kW',
                 reason: prev.FacilitiesKW + ' kW × $' + facRate.toFixed(5) + ' = $' + newCharge.toFixed(2),
               };
@@ -4655,8 +4653,8 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
     // FacilitiesKW is a rolling 12-month peak — shouldn't all be identical unless demand never changed.
     // If all bills have the same value, flag for OCR review (likely copied from one good read).
     if (bills.length >= 3) {
-      const custCharges = bills.map((b) => pf(b.CustomerCharge)).filter((v) => v > 0);
-      const facKWs = bills.map((b) => pf(b.FacilitiesKW)).filter((v) => v > 0);
+      const custCharges = bills.map((b) => parseBillNumber(b.CustomerCharge)).filter((v) => v > 0);
+      const facKWs = bills.map((b) => parseBillNumber(b.FacilitiesKW)).filter((v) => v > 0);
       // CustomerCharge: all same is expected (fixed fee) — no action needed
       // FacilitiesKW: if ALL are identical across 3+ bills, that's suspicious
       // (real FacilitiesKW changes when a new peak is set)
@@ -4681,9 +4679,9 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
     // This also undoes any incorrect rolling peak corrections applied earlier.
     for (let i = 0; i < bills.length; i++) {
       const b = bills[i];
-      const actualKW = pf(b.ActualKW);
-      const facKW = pf(b.FacilitiesKW);
-      const billedKW = pf(b.BilledKW);
+      const actualKW = parseBillNumberOrZero(b.ActualKW);
+      const facKW = parseBillNumberOrZero(b.FacilitiesKW);
+      const billedKW = parseBillNumber(b.BilledKW);
       if (actualKW > 0 && facKW > 0 && actualKW > facKW) {
         // New peak set this month
         b.FacilitiesKW = b.ActualKW;
@@ -4701,7 +4699,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
             ')',
         };
         // Forward propagation: update all subsequent bills within 12 months
-        const newPeak = pf(b.FacilitiesKW);
+        const newPeak = parseBillNumberOrZero(b.FacilitiesKW);
         for (let j = i + 1; j < bills.length && j < i + 12; j++) {
           const nb = bills[j];
           // Only propagate within the SAME account, and (when identifiable) the
@@ -4717,12 +4715,12 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           } else if (b.ServiceAddress && nb.ServiceAddress && b.ServiceAddress !== nb.ServiceAddress) {
             continue;
           }
-          const nbFacKW = pf(nb.FacilitiesKW);
+          const nbFacKW = parseBillNumber(nb.FacilitiesKW);
           // Self-consistency skip: if nb's own FacilitiesKW/Charge already reconcile
           // against its own rate, it's not an OCR error — leave it alone (e.g. Circle
           // Grove: 57.872 kW × $2.854 = $165.17, self-consistent).
           const _nbRate = nb._rates?.FacilitiesCharge?.rate || 0;
-          const _nbSelfReconciles = _nbRate > 0 && Math.abs(nbFacKW * _nbRate - pf(nb.FacilitiesCharge)) <= 0.02;
+          const _nbSelfReconciles = _nbRate > 0 && Math.abs(nbFacKW * _nbRate - parseBillNumber(nb.FacilitiesCharge)) <= 0.02;
           // If a subsequent bill's FacilitiesKW is less than the new peak, it's wrong
           if (!_nbSelfReconciles && nbFacKW > 0 && nbFacKW < newPeak) {
             const nbOriginal = nb._auto_corrected_FacilitiesKW?.original || nb.FacilitiesKW;
@@ -4766,7 +4764,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
             }
           }
           // If a subsequent bill sets an even higher peak, stop propagating this one
-          const nbActual = pf(nb.ActualKW);
+          const nbActual = parseBillNumber(nb.ActualKW);
           if (nbActual > newPeak) break;
         }
       }
@@ -4792,7 +4790,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
       for (const key of Object.keys(b)) {
         if (!key.startsWith('_magnitude_flag_')) continue;
         const field = key.replace('_magnitude_flag_', '');
-        const correctedVal = pf(b[field]);
+        const correctedVal = parseBillNumber(b[field]);
         if (correctedVal <= 0) continue;
         const flag = b[key];
         const correctedRatio = correctedVal / flag.mean;
@@ -4880,15 +4878,15 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
     if (utilityName === 'Evergy') {
       for (const b of bills) {
         if (b._onOffPeakLocked) continue;
-        const onPk = pf(b.OnPeakKWh);
-        const offPk = pf(b.OffPeakKWh);
-        const total = pf(b.kWhConsumed);
+        const onPk = parseBillNumber(b.OnPeakKWh);
+        const offPk = parseBillNumberOrZero(b.OffPeakKWh);
+        const total = parseBillNumberOrZero(b.kWhConsumed);
         if (onPk > 0 && offPk > 0 && total > 0 && Math.abs(onPk + offPk - total) > 1) {
           const onRi = b._rates && b._rates.EnergyOnPeakCharge;
           const offRi = b._rates && b._rates.EnergyOffPeakCharge;
           let fixed = false;
-          if (onRi && onRi.rate > 0 && pf(b.EnergyOnPeakCharge) > 0) {
-            const derivedOn = pf(b.EnergyOnPeakCharge) / onRi.rate;
+          if (onRi && onRi.rate > 0 && parseBillNumber(b.EnergyOnPeakCharge) > 0) {
+            const derivedOn = parseBillNumberOrZero(b.EnergyOnPeakCharge) / onRi.rate;
             if (derivedOn > 0 && Math.abs(derivedOn + offPk - total) < 1) {
               b['_auto_corrected_OnPeakKWh'] = {
                 original: b.OnPeakKWh,
@@ -4899,8 +4897,8 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
               fixed = true;
             }
           }
-          if (!fixed && offRi && offRi.rate > 0 && pf(b.EnergyOffPeakCharge) > 0) {
-            const derivedOff = pf(b.EnergyOffPeakCharge) / offRi.rate;
+          if (!fixed && offRi && offRi.rate > 0 && parseBillNumber(b.EnergyOffPeakCharge) > 0) {
+            const derivedOff = parseBillNumberOrZero(b.EnergyOffPeakCharge) / offRi.rate;
             if (derivedOff > 0 && Math.abs(onPk + derivedOff - total) < 1) {
               b['_auto_corrected_OffPeakKWh'] = {
                 original: b.OffPeakKWh,
@@ -4939,11 +4937,11 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
     for (const b of bills) {
       const comm = (b.Commodity || '').toLowerCase();
       if (comm && comm !== 'electric') continue;
-      const _kwhVal = pf(b.kWhConsumed);
+      const _kwhVal = parseBillNumber(b.kWhConsumed);
       if (_kwhVal > 500000) {
-        const _eR = pf(b.EndRead),
-          _sR = pf(b.StartRead),
-          _mM = pf(b.MeterMultiplier);
+        const _eR = parseBillNumber(b.EndRead),
+          _sR = parseBillNumber(b.StartRead),
+          _mM = parseBillNumber(b.MeterMultiplier);
         const _recomputed = _eR > 0 && _sR > 0 && _eR > _sR && _mM > 0 ? (_eR - _sR) * _mM : 0;
         const _crossCheck = b._kwhCrossCheck ? b._kwhCrossCheck.calculated : 0;
         const _recovery =
@@ -4968,9 +4966,9 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           b.kWhConsumed = null;
         }
       }
-      const _kwhNow = pf(b.kWhConsumed);
+      const _kwhNow = parseBillNumber(b.kWhConsumed);
       for (const kwField of ['ActualKW', 'BilledKW', 'FacilitiesKW', 'TDCkW']) {
-        const v = pf(b[kwField]);
+        const v = parseBillNumber(b[kwField]);
         if (v > 10000) {
           b['_likely_missing_' + kwField] = true;
           b[kwField] = null;
@@ -5025,9 +5023,9 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           if (!vStr.includes('.')) continue; // not clean (no decimal)
           const vNum = parseFloat(vStr);
           if (!(vNum > 0)) continue;
-          const total = pf(b.TotalCurrentCharges);
+          const total = parseBillNumber(b.TotalCurrentCharges);
           if (vNum >= total) continue; // not clean (exceeds total)
-          const mcf = pf(b.McfBilled);
+          const mcf = parseBillNumber(b.McfBilled);
           if (!(mcf > 0)) continue;
           rates.push(vNum / mcf);
         }
@@ -5045,14 +5043,14 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
       for (const b of bills) {
         const comm = (b.Commodity || b.commodity || '').toLowerCase();
         if (comm !== 'gas') continue;
-        const mcf = pf(b.McfBilled);
+        const mcf = parseBillNumber(b.McfBilled);
         if (!(mcf > 0)) continue;
         for (const { field, rateField } of PASS_A_FIELDS) {
-          const printedRate = pf(b[rateField]);
+          const printedRate = parseBillNumber(b[rateField]);
           if (!(printedRate > 0)) continue; // no printed rate captured — skip
           const v = b[field];
           if (v == null) continue;
-          const vNum = pf(v);
+          const vNum = parseBillNumberOrZero(v);
           const expected = printedRate * mcf;
           if (!(expected > 0)) continue;
           const relErr = Math.abs(vNum - expected) / expected;
@@ -5093,14 +5091,14 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         for (const b of bills) {
           const comm = (b.Commodity || b.commodity || '').toLowerCase();
           if (comm !== 'gas') continue;
-          const mcf = pf(b.McfBilled);
+          const mcf = parseBillNumber(b.McfBilled);
           if (!(mcf > 0)) continue;
           const v = b[field];
           if (v == null) continue;
           const vStr = String(v).replace(/[$,\s]/g, '');
           const vNum = parseFloat(vStr);
           if (!(vNum > 0)) continue;
-          const total = pf(b.TotalCurrentCharges);
+          const total = parseBillNumber(b.TotalCurrentCharges);
 
           const actualPerMcf = vNum / mcf;
           const ratio = actualPerMcf / medianPerMcf;
@@ -5211,24 +5209,24 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           const comm = (b.Commodity || b.commodity || '').toLowerCase();
           if (comm !== 'gas') continue;
 
-          const total = pf(b.TotalCurrentCharges);
+          const total = parseBillNumberOrZero(b.TotalCurrentCharges);
           if (!(total > 0)) continue; // no reconciliation target — skip
 
-          const mcf = pf(b.McfBilled);
+          const mcf = parseBillNumber(b.McfBilled);
           if (!(mcf > 0)) continue; // no usage — per-Mcf gate cannot run
 
           // Component sum — EXCLUDES PreviousBalance, PaymentsReceived, BalanceForward.
           // TotalCurrentCharges is the correct reconciliation target (not TotalAmountDue).
           const kgsSum =
             Math.round(
-              (pf(b.CustomerCharge) +
-                pf(b.DeliveryCharge) +
-                pf(b.GasSystemReliability) +
-                pf(b.WeatherNormalization) +
-                pf(b.GasCharge) +
-                pf(b.FranchiseFee) +
-                pf(b.WinterEventCost) +
-                pf(b.DelayedPaymentCharge)) *
+              (parseBillNumber(b.CustomerCharge) +
+                parseBillNumber(b.DeliveryCharge) +
+                parseBillNumber(b.GasSystemReliability) +
+                parseBillNumber(b.WeatherNormalization) +
+                parseBillNumber(b.GasCharge) +
+                parseBillNumber(b.FranchiseFee) +
+                parseBillNumber(b.WinterEventCost) +
+                parseBillNumber(b.DelayedPaymentCharge)) *
                 100,
             ) / 100;
 
@@ -5269,7 +5267,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
                   '.',
               };
               b.TotalCurrentCharges = corrected;
-              if (Math.abs(pf(b.TotalAmountDue) - total) < 0.01) b.TotalAmountDue = corrected;
+              if (Math.abs(parseBillNumber(b.TotalAmountDue) - total) < 0.01) b.TotalAmountDue = corrected;
               continue;
             }
           }
@@ -5335,7 +5333,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           // Then gate by: positive, < TotalCurrentCharges, per-Mcf ratio in [DIGIT_LO, DIGIT_HI].
           const validCandidates = [];
           for (const field of candidates) {
-            const correctedByPassB = pf(b[field]);
+            const correctedByPassB = parseBillNumberOrZero(b[field]);
             const sumWithoutF = Math.round((kgsSum - correctedByPassB) * 100) / 100;
             const residualF = Math.round((total - sumWithoutF) * 100) / 100;
 
@@ -5460,7 +5458,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           if (comm !== 'gas') continue;
           const v = b.CustomerCharge;
           if (v == null) continue;
-          const vNum = pf(v);
+          const vNum = parseBillNumberOrZero(v);
           if (!(vNum > 0)) continue;
           const relDev = Math.abs(vNum - custMedian) / custMedian;
           if (relDev > CUST_TOL) {
@@ -5488,10 +5486,10 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
     for (const b of bills) {
       const comm = (b.Commodity || '').toLowerCase();
       if (comm !== 'gas') continue;
-      const therms = pf(b.NaturalGasTherms);
-      const gasChg = pf(b.GasCharge);
-      const custChg = pf(b.CustomerCharge);
-      const fa = pf(b.FuelAdjustment);
+      const therms = parseBillNumber(b.NaturalGasTherms);
+      const gasChg = parseBillNumberOrZero(b.GasCharge);
+      const custChg = parseBillNumber(b.CustomerCharge);
+      const fa = parseBillNumberOrZero(b.FuelAdjustment);
       if (therms > 10000) {
         b['_likely_garbled_NaturalGasTherms'] = {
           original: b.NaturalGasTherms,
@@ -5533,9 +5531,9 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           b.TotalAmountDue = fixedTotal.toFixed(2);
         }
       }
-      let total = pf(b.TotalCurrentCharges);
+      let total = parseBillNumberOrZero(b.TotalCurrentCharges);
       if (total < 0 && gasChg > 0 && custChg > 0) {
-        const fixedTotal = gasChg + custChg + (pf(b.FuelAdjustment) || 0);
+        const fixedTotal = gasChg + custChg + (parseBillNumber(b.FuelAdjustment) || 0);
         b.TotalCurrentCharges = fixedTotal.toFixed(2);
         b.TotalAmountDue = fixedTotal.toFixed(2);
         total = fixedTotal;
@@ -5544,12 +5542,12 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         const expectedTotal =
           gasChg +
           custChg +
-          (pf(b.FuelAdjustment) || 0) +
-          (pf(b.DeliveryCharge) || 0) +
-          (pf(b.GasSystemReliability) || 0) +
-          (pf(b.WeatherNormalization) || 0) +
-          (pf(b.WinterEventCost) || 0) +
-          (pf(b.FranchiseFee) || 0);
+          (parseBillNumber(b.FuelAdjustment) || 0) +
+          (parseBillNumber(b.DeliveryCharge) || 0) +
+          (parseBillNumber(b.GasSystemReliability) || 0) +
+          (parseBillNumber(b.WeatherNormalization) || 0) +
+          (parseBillNumber(b.WinterEventCost) || 0) +
+          (parseBillNumber(b.FranchiseFee) || 0);
         if (Math.abs(expectedTotal - total) > total * 0.15 && Math.abs(expectedTotal - total) > 5) {
           b._warnings = b._warnings || [];
           b._warnings.push({
@@ -5608,14 +5606,14 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
     // Stage 3 total-reconciliation path so the two can't drift (round-2 fix).
 
     for (const b of bills) {
-      const total = pf(b.TotalCurrentCharges);
+      const total = parseBillNumberOrZero(b.TotalCurrentCharges);
       if (total <= 0) continue;
       const comm = (b.Commodity || '').replace(/\s/g, '');
       const chargeFields = COMMODITY_CHARGE_FIELDS[comm] || ALL_CHARGE_FIELDS;
       const compSum =
         Math.round(
           chargeFields.reduce(function (s, f) {
-            return s + pf(b[f]);
+            return s + parseBillNumber(b[f]);
           }, 0) * 100,
         ) / 100;
       // If sum of all components (including negatives like Fuel Adjustment)
@@ -5624,7 +5622,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
       if (Math.abs(compSum - total) < 0.5) continue;
       const violations = [];
       for (const f of chargeFields) {
-        const v = pf(b[f]);
+        const v = parseBillNumber(b[f]);
         if (v > 0 && v > total + 0.1) {
           violations.push({ field: f, value: v });
         }
@@ -5657,7 +5655,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
                 'Component sum ($' +
                 compSum.toFixed(2) +
                 ') exceeds printed total ($' +
-                pf(origTotal).toFixed(2) +
+                parseBillNumberOrZero(origTotal).toFixed(2) +
                 ') by ' +
                 decision.pctChange.toFixed(1) +
                 '% ($' +
@@ -5701,7 +5699,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         const origTotal = b.TotalCurrentCharges;
         const violationText = violations
           .map(function (vi) {
-            return vi.field + ' ($' + vi.value.toFixed(2) + ') exceeded total ($' + pf(origTotal).toFixed(2) + ')';
+            return vi.field + ' ($' + vi.value.toFixed(2) + ') exceeded total ($' + parseBillNumberOrZero(origTotal).toFixed(2) + ')';
           })
           .join('; ');
         // GATE C/D — correction magnitude + provenance (18b33d9f). Rockville:
@@ -5789,21 +5787,21 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
     if (utilityName === 'Evergy') {
       for (const b of bills) {
         const kwhChargeSum =
-          pf(b.EnergyOnPeakCharge) + pf(b.EnergyOffPeakCharge) + pf(b.ECACharge) + pf(b.EERCharge) + pf(b.PTSCharge);
-        const totalKwh = pf(b.kWhConsumed);
+          parseBillNumber(b.EnergyOnPeakCharge) + parseBillNumber(b.EnergyOffPeakCharge) + parseBillNumber(b.ECACharge) + parseBillNumber(b.EERCharge) + parseBillNumber(b.PTSCharge);
+        const totalKwh = parseBillNumber(b.kWhConsumed);
         b.TotalKWhRate = totalKwh > 0 && kwhChargeSum > 0 ? kwhChargeSum / totalKwh : null;
         b._rateCalcTrace = {
-          OnPeak: pf(b.EnergyOnPeakCharge),
-          OffPeak: pf(b.EnergyOffPeakCharge),
-          ECA: pf(b.ECACharge),
-          EER: pf(b.EERCharge),
-          PTS: pf(b.PTSCharge),
+          OnPeak: parseBillNumber(b.EnergyOnPeakCharge),
+          OffPeak: parseBillNumber(b.EnergyOffPeakCharge),
+          ECA: parseBillNumber(b.ECACharge),
+          EER: parseBillNumber(b.EERCharge),
+          PTS: parseBillNumber(b.PTSCharge),
           chargeSum: kwhChargeSum,
           kWh: totalKwh,
           rate: b.TotalKWhRate,
         };
-        const kwChargeSum = pf(b.FacilitiesCharge) + pf(b.BilledKWCharge) + pf(b.TDCCharge);
-        const totalKw = pf(b.BilledKW) || pf(b.ActualKW) || pf(b.FacilitiesKW);
+        const kwChargeSum = parseBillNumber(b.FacilitiesCharge) + parseBillNumber(b.BilledKWCharge) + parseBillNumber(b.TDCCharge);
+        const totalKw = parseBillNumber(b.BilledKW) || parseBillNumber(b.ActualKW) || parseBillNumber(b.FacilitiesKW);
         b.TotalKWRate = totalKw > 0 && kwChargeSum > 0 ? kwChargeSum / totalKw : null;
       }
     }
@@ -7622,13 +7620,12 @@ window._mbUpdateSaveAllBtn = _mbUpdateSaveAllBtn;
 // resolveGasUsageTherms expects, then delegates ALL usage-to-Therms math to it — no
 // duplicate conversion logic here or at any call site.
 function _computeGasRate(bill) {
-  const pf = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
   const c =
-    pf(bill.GasCharge) ||
-    pf(bill.gasCharge) ||
-    pf(bill.TotalCurrentCharges) ||
-    pf(bill.TotalAmountDue) ||
-    pf(bill.totalCost);
+    parseBillNumber(bill.GasCharge) ||
+    parseBillNumber(bill.gasCharge) ||
+    parseBillNumber(bill.TotalCurrentCharges) ||
+    parseBillNumber(bill.TotalAmountDue) ||
+    parseBillNumber(bill.totalCost);
   const usage =
     typeof resolveGasUsageTherms === 'function'
       ? resolveGasUsageTherms({
@@ -7670,7 +7667,6 @@ window._liveMeterOrNull = _liveMeterOrNull;
 // Evergy sum. Usage chain is the superset of all six prior chains, in one
 // canonical order, so no commodity's usage quantity is silently dropped.
 function _extractedToBillRowCosts(bill) {
-  const pf = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
   const hasVal = (v) => v !== undefined && v !== null && v !== '';
   const hasEvergyEnergy =
     hasVal(bill.EnergyOnPeakCharge) ||
@@ -7679,13 +7675,13 @@ function _extractedToBillRowCosts(bill) {
     hasVal(bill.EERCharge) ||
     hasVal(bill.PTSCharge);
   const kwhCostRaw = hasEvergyEnergy
-    ? pf(bill.EnergyOnPeakCharge) +
-      pf(bill.EnergyOffPeakCharge) +
-      pf(bill.ECACharge) +
-      pf(bill.EERCharge) +
-      pf(bill.PTSCharge)
-    : pf(bill.ElectricCharge) + pf(bill.FuelAdjustment);
-  const kwCostRaw = pf(bill.BilledKWCharge) + pf(bill.TDCCharge);
+    ? parseBillNumber(bill.EnergyOnPeakCharge) +
+      parseBillNumber(bill.EnergyOffPeakCharge) +
+      parseBillNumber(bill.ECACharge) +
+      parseBillNumber(bill.EERCharge) +
+      parseBillNumber(bill.PTSCharge)
+    : parseBillNumber(bill.ElectricCharge) + parseBillNumber(bill.FuelAdjustment);
+  const kwCostRaw = parseBillNumberOrZero(bill.BilledKWCharge) + parseBillNumberOrZero(bill.TDCCharge);
   // otherCost folds in the RkVA reactive-power charge because it has no dedicated
   // column in the bills table — without it here the value would be silently dropped.
   // MiscellaneousCharge (item f71c0013) is the pre-mid-2025 Evergy front-summary-page
@@ -7693,12 +7689,12 @@ function _extractedToBillRowCosts(bill) {
   // dedicated column, must be folded in here so the $0.10 component-sum-vs-total
   // validation still reconciles once TotalCurrentCharges includes it.
   const otherCostRaw =
-    pf(bill.CustomerCharge) +
-    pf(bill.TaxExemptDelivery) +
-    pf(bill.BillOffset) +
-    pf(bill.RkVACharge) +
-    pf(bill.MiscellaneousCharge);
-  const taxCostRaw = pf(bill.FranchiseFee);
+    parseBillNumber(bill.CustomerCharge) +
+    parseBillNumber(bill.TaxExemptDelivery) +
+    parseBillNumber(bill.BillOffset) +
+    parseBillNumber(bill.RkVACharge) +
+    parseBillNumber(bill.MiscellaneousCharge);
+  const taxCostRaw = parseBillNumberOrZero(bill.FranchiseFee);
   // FIX (item a20d0943): GATE C/D (_decideTotalCorrection, _postExtractionVerify)
   // holds TotalCurrentCharges/TotalAmountDue unchanged whenever the charge
   // components don't reconcile with the printed total — b._correction_pending_
@@ -7711,7 +7707,7 @@ function _extractedToBillRowCosts(bill) {
   // corrupted component past the gate into the saved billing row. When a bill
   // is in that state, cap every cost bucket at the trusted total the user
   // actually reviewed and accepted — a bucket can never exceed it.
-  const _trustedTotal = pf(bill.TotalCurrentCharges);
+  const _trustedTotal = parseBillNumber(bill.TotalCurrentCharges);
   const _hasUnresolvedComponentIssue = !!(bill._correction_pending_TotalCurrentCharges || bill._charge_exceeds_total);
   const _capToAcceptedTotal = (v) =>
     _hasUnresolvedComponentIssue && _trustedTotal > 0 && v > _trustedTotal ? _trustedTotal : v;
@@ -7791,7 +7787,6 @@ async function confirmAutoAssign() {
     if (billDup && billDup.action === 'skip') {
       continue; // Skip this duplicate
     }
-    const pf = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
     function toISO(d) {
       if (!d) return '';
       if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
@@ -7933,11 +7928,11 @@ async function confirmAutoAssign() {
       _mmbtuMissingWithCharge: bill._mmbtuMissingWithCharge || undefined,
       // Fix [therms-unit-2026-06-22]: canonicalize therms to Therms at save time.
       therms: (() => {
-        const t = pf(bill.NaturalGasTherms);
+        const t = parseBillNumber(bill.NaturalGasTherms);
         if (t) return t; // already Therms — Constellation/KGS
-        const ccf = pf(bill.NaturalGasCCF);
+        const ccf = parseBillNumber(bill.NaturalGasCCF);
         if (ccf) return Math.round(ccf * 1.037 * 100) / 100; // CCF → Therms
-        const mm = pf(bill.NaturalGasMMbtu || bill.naturalGasMMbtu);
+        const mm = parseBillNumber(bill.NaturalGasMMbtu || bill.naturalGasMMbtu);
         if (mm) return Math.round(mm * 10 * 100) / 100; // MMBtu → Therms (×10)
         return '';
       })(),
@@ -7966,13 +7961,13 @@ async function confirmAutoAssign() {
       subtotal: bill.Subtotal || '',
       tax: bill.Tax || '',
       totalKwhRate: (() => {
-        const _kwh = pf(bill.kWhConsumed);
-        const _chg = pf(kwhCost);
+        const _kwh = parseBillNumber(bill.kWhConsumed);
+        const _chg = parseBillNumber(kwhCost);
         return _kwh > 0 && _chg > 0 ? (_chg / _kwh).toFixed(5) : bill.TotalKWhRate || '';
       })(),
       totalKwRate: (() => {
-        const _kw = pf(bill.BilledKW) || pf(bill.ActualKW) || pf(bill.FacilitiesKW);
-        const _chg = pf(kwCost) + pf(bill.FacilitiesCharge);
+        const _kw = parseBillNumber(bill.BilledKW) || parseBillNumber(bill.ActualKW) || parseBillNumber(bill.FacilitiesKW);
+        const _chg = parseBillNumber(kwCost) + parseBillNumber(bill.FacilitiesCharge);
         return _kw > 0 && _chg > 0 ? (_chg / _kw).toFixed(5) : bill.TotalKWRate || '';
       })(),
       facilitiesRate: bill.FacilitiesRate || '',
@@ -7988,24 +7983,24 @@ async function confirmAutoAssign() {
       // helper (2026-09-23 gas-rate-fix2), which always returns $/Therm (never $/MMBtu).
       totalGasRate: _computeGasRate(bill),
       totalWaterRate: (() => {
-        const u = pf(bill.WaterUsage);
-        const c = pf(bill.WaterCharge) || pf(bill.TotalCurrentCharges) || pf(bill.TotalAmountDue);
+        const u = parseBillNumber(bill.WaterUsage);
+        const c = parseBillNumber(bill.WaterCharge) || parseBillNumber(bill.TotalCurrentCharges) || parseBillNumber(bill.TotalAmountDue);
         return u > 0 && c > 0 ? (c / u).toFixed(5) : '';
       })(),
       totalPropaneRate: (() => {
-        const g = pf(bill.GallonsDelivered);
-        const up = pf(bill.UnitPrice);
+        const g = parseBillNumber(bill.GallonsDelivered);
+        const up = parseBillNumberOrZero(bill.UnitPrice);
         if (up > 0) return up.toFixed(5);
-        const c = pf(bill.TotalCurrentCharges) || pf(bill.TotalAmountDue);
+        const c = parseBillNumber(bill.TotalCurrentCharges) || parseBillNumber(bill.TotalAmountDue);
         return g > 0 && c > 0 ? (c / g).toFixed(5) : '';
       })(),
       totalSewerRate: (() => {
-        const u = pf(bill.SewerUsage);
-        const c = pf(bill.SewerCharge);
+        const u = parseBillNumber(bill.SewerUsage);
+        const c = parseBillNumber(bill.SewerCharge);
         return u > 0 && c > 0 ? (c / u).toFixed(5) : '';
       })(),
       totalStormwaterRate: (() => {
-        const c = pf(bill.StormWaterCharge);
+        const c = parseBillNumberOrZero(bill.StormWaterCharge);
         return c > 0 ? c.toFixed(2) : '';
       })(),
     };
@@ -8267,9 +8262,6 @@ async function _mbSaveOneBill(bi, action) {
     return { status: 'unresolved', reason: 'no destination assigned' };
   }
 
-  const pf = function (v) {
-    return v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0;
-  };
   function toISO(d) {
     if (!d) return '';
     if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
@@ -8408,11 +8400,11 @@ async function _mbSaveOneBill(bi, action) {
     _mmbtuRateMismatch: bill._mmbtuRateMismatch || undefined,
     _mmbtuMissingWithCharge: bill._mmbtuMissingWithCharge || undefined,
     therms: (function () {
-      const t = pf(bill.NaturalGasTherms);
+      const t = parseBillNumber(bill.NaturalGasTherms);
       if (t) return t;
-      const ccf = pf(bill.NaturalGasCCF);
+      const ccf = parseBillNumber(bill.NaturalGasCCF);
       if (ccf) return Math.round(ccf * 1.037 * 100) / 100;
-      const mm = pf(bill.NaturalGasMMbtu || bill.naturalGasMMbtu);
+      const mm = parseBillNumber(bill.NaturalGasMMbtu || bill.naturalGasMMbtu);
       if (mm) return Math.round(mm * 10 * 100) / 100;
       return '';
     })(),
@@ -8437,13 +8429,13 @@ async function _mbSaveOneBill(bi, action) {
     subtotal: bill.Subtotal || '',
     tax: bill.Tax || '',
     totalKwhRate: (function () {
-      const _kwh = pf(bill.kWhConsumed);
-      const _chg = pf(kwhCost);
+      const _kwh = parseBillNumber(bill.kWhConsumed);
+      const _chg = parseBillNumber(kwhCost);
       return _kwh > 0 && _chg > 0 ? (_chg / _kwh).toFixed(5) : bill.TotalKWhRate || '';
     })(),
     totalKwRate: (function () {
-      const _kw = pf(bill.BilledKW) || pf(bill.ActualKW) || pf(bill.FacilitiesKW);
-      const _chg = pf(kwCost) + pf(bill.FacilitiesCharge);
+      const _kw = parseBillNumber(bill.BilledKW) || parseBillNumber(bill.ActualKW) || parseBillNumber(bill.FacilitiesKW);
+      const _chg = parseBillNumber(kwCost) + parseBillNumber(bill.FacilitiesCharge);
       return _kw > 0 && _chg > 0 ? (_chg / _kw).toFixed(5) : bill.TotalKWRate || '';
     })(),
     facilitiesRate: bill.FacilitiesRate || '',
@@ -8459,24 +8451,24 @@ async function _mbSaveOneBill(bi, action) {
     // helper (2026-09-23 gas-rate-fix2), which always returns $/Therm (never $/MMBtu).
     totalGasRate: _computeGasRate(bill),
     totalWaterRate: (function () {
-      const u = pf(bill.WaterUsage);
-      const c = pf(bill.WaterCharge) || pf(bill.TotalCurrentCharges) || pf(bill.TotalAmountDue);
+      const u = parseBillNumber(bill.WaterUsage);
+      const c = parseBillNumber(bill.WaterCharge) || parseBillNumber(bill.TotalCurrentCharges) || parseBillNumber(bill.TotalAmountDue);
       return u > 0 && c > 0 ? (c / u).toFixed(5) : '';
     })(),
     totalPropaneRate: (function () {
-      const g = pf(bill.GallonsDelivered);
-      const up = pf(bill.UnitPrice);
+      const g = parseBillNumber(bill.GallonsDelivered);
+      const up = parseBillNumberOrZero(bill.UnitPrice);
       if (up > 0) return up.toFixed(5);
-      const c = pf(bill.TotalCurrentCharges) || pf(bill.TotalAmountDue);
+      const c = parseBillNumber(bill.TotalCurrentCharges) || parseBillNumber(bill.TotalAmountDue);
       return g > 0 && c > 0 ? (c / g).toFixed(5) : '';
     })(),
     totalSewerRate: (function () {
-      const u = pf(bill.SewerUsage);
-      const c = pf(bill.SewerCharge);
+      const u = parseBillNumber(bill.SewerUsage);
+      const c = parseBillNumber(bill.SewerCharge);
       return u > 0 && c > 0 ? (c / u).toFixed(5) : '';
     })(),
     totalStormwaterRate: (function () {
-      const c = pf(bill.StormWaterCharge);
+      const c = parseBillNumberOrZero(bill.StormWaterCharge);
       return c > 0 ? c.toFixed(2) : '';
     })(),
   };
@@ -9529,7 +9521,6 @@ function _saveBillToMatchedMeter(extracted, match) {
       match = { ...match, meter: newMeter, meterId: newMeter.id };
     }
   }
-  const pf = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
   const toISO = (d) => {
     if (!d) return '';
     if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
@@ -9613,13 +9604,13 @@ function _saveBillToMatchedMeter(extracted, match) {
     solarCredit: extracted.SolarCredit || '',
     generationKwh: extracted.GenerationKwh || '',
     totalKwhRate: (() => {
-      const _kwh = pf(extracted.kWhConsumed);
-      const _chg = pf(kwhCost);
+      const _kwh = parseBillNumber(extracted.kWhConsumed);
+      const _chg = parseBillNumber(kwhCost);
       return _kwh > 0 && _chg > 0 ? (_chg / _kwh).toFixed(5) : extracted.TotalKWhRate || '';
     })(),
     totalKwRate: (() => {
-      const _kw = pf(extracted.BilledKW) || pf(extracted.ActualKW) || pf(extracted.FacilitiesKW);
-      const _chg = pf(kwCost) + pf(extracted.FacilitiesCharge);
+      const _kw = parseBillNumber(extracted.BilledKW) || parseBillNumber(extracted.ActualKW) || parseBillNumber(extracted.FacilitiesKW);
+      const _chg = parseBillNumber(kwCost) + parseBillNumber(extracted.FacilitiesCharge);
       return _kw > 0 && _chg > 0 ? (_chg / _kw).toFixed(5) : extracted.TotalKWRate || '';
     })(),
     facilitiesRate: extracted.FacilitiesRate || '',
@@ -9661,11 +9652,11 @@ function _saveBillToMatchedMeter(extracted, match) {
     // Wood River (and any future MMBtu extractor) sets NaturalGasMMbtu; Constellation/KGS
     // set NaturalGasTherms (already Therms). CCF × 1.037 = Therms. Priority: Therms > CCF > MMBtu.
     therms: (() => {
-      const t = pf(extracted.NaturalGasTherms);
+      const t = parseBillNumber(extracted.NaturalGasTherms);
       if (t) return t; // already Therms — Constellation/KGS
-      const ccf = pf(extracted.NaturalGasCCF);
+      const ccf = parseBillNumber(extracted.NaturalGasCCF);
       if (ccf) return Math.round(ccf * 1.037 * 100) / 100; // CCF → Therms
-      const mm = pf(extracted.NaturalGasMMbtu);
+      const mm = parseBillNumber(extracted.NaturalGasMMbtu);
       if (mm) return Math.round(mm * 10 * 100) / 100; // MMBtu → Therms (×10)
       return '';
     })(),
@@ -9695,24 +9686,24 @@ function _saveBillToMatchedMeter(extracted, match) {
     // helper (2026-09-23 gas-rate-fix2), which always returns $/Therm (never $/MMBtu).
     totalGasRate: _computeGasRate(extracted),
     totalWaterRate: (() => {
-      const u = pf(extracted.WaterUsage);
-      const c = pf(extracted.WaterCharge) || pf(extracted.TotalCurrentCharges) || pf(extracted.TotalAmountDue);
+      const u = parseBillNumber(extracted.WaterUsage);
+      const c = parseBillNumber(extracted.WaterCharge) || parseBillNumber(extracted.TotalCurrentCharges) || parseBillNumber(extracted.TotalAmountDue);
       return u > 0 && c > 0 ? (c / u).toFixed(5) : '';
     })(),
     totalPropaneRate: (() => {
-      const g = pf(extracted.GallonsDelivered);
-      const up = pf(extracted.UnitPrice);
+      const g = parseBillNumber(extracted.GallonsDelivered);
+      const up = parseBillNumberOrZero(extracted.UnitPrice);
       if (up > 0) return up.toFixed(5);
-      const c = pf(extracted.TotalCurrentCharges) || pf(extracted.TotalAmountDue);
+      const c = parseBillNumber(extracted.TotalCurrentCharges) || parseBillNumber(extracted.TotalAmountDue);
       return g > 0 && c > 0 ? (c / g).toFixed(5) : '';
     })(),
     totalSewerRate: (() => {
-      const u = pf(extracted.SewerUsage);
-      const c = pf(extracted.SewerCharge);
+      const u = parseBillNumber(extracted.SewerUsage);
+      const c = parseBillNumber(extracted.SewerCharge);
       return u > 0 && c > 0 ? (c / u).toFixed(5) : '';
     })(),
     totalStormwaterRate: (() => {
-      const c = pf(extracted.StormWaterCharge);
+      const c = parseBillNumberOrZero(extracted.StormWaterCharge);
       return c > 0 ? c.toFixed(2) : '';
     })(),
     Meter1_ReadStart: extracted.Meter1_ReadStart || '',
@@ -12448,9 +12439,9 @@ function _buildDiffFields(extracted, existing) {
       }
     }
     // Numeric comparison: treat 445.0560 and 445.056 as equal
-    const newNum = parseFloat(String(newVal).replace(/[$,\s]/g, ''));
-    const exNum = parseFloat(String(existVal).replace(/[$,\s]/g, ''));
-    if (!isNaN(newNum) && !isNaN(exNum) && newNum === exNum) continue;
+    const newNum = parseBillNumber(newVal);
+    const exNum = parseBillNumber(existVal);
+    if (newNum !== null && exNum !== null && newNum === exNum) continue;
     if (normVal(newVal) !== normVal(existVal)) {
       diffs.push({ key, newVal: String(newVal), existVal: String(existVal) });
     }
@@ -16885,7 +16876,6 @@ async function processPDF(file) {
               }
               for (const b of billsWithMismatch) {
                 if (!b._sum_mismatch) continue; // may have been resolved by rate correction
-                const pf = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
                 const CHARGE_CHECK = [
                   'CustomerCharge',
                   'FacilitiesCharge',
@@ -16902,8 +16892,8 @@ async function processPDF(file) {
                   'FranchiseFee',
                   'MiscellaneousCharge',
                 ];
-                const total = pf(b.TotalCurrentCharges);
-                const currentSum = CHARGE_CHECK.reduce((s, f) => s + pf(b[f]), 0);
+                const total = parseBillNumberOrZero(b.TotalCurrentCharges);
+                const currentSum = CHARGE_CHECK.reduce((s, f) => s + parseBillNumber(b[f]), 0);
                 const currentDiff = currentSum - total;
                 // Try re-extracting from each alternate OCR text
                 for (const altText of altTexts) {
@@ -16924,8 +16914,8 @@ async function processPDF(file) {
                       ) || altBills[0];
                     // Check each charge field: if alt has a different value that reduces the mismatch
                     for (const field of CHARGE_CHECK) {
-                      const altVal = pf(altBill[field]);
-                      const curVal = pf(b[field]);
+                      const altVal = parseBillNumberOrZero(altBill[field]);
+                      const curVal = parseBillNumber(b[field]);
                       if (Math.abs(altVal - curVal) < 0.01) continue; // same value
                       // Would swapping this field reduce the total mismatch?
                       const newSum = currentSum - curVal + altVal;
@@ -16938,7 +16928,7 @@ async function processPDF(file) {
                         };
                         b[field] = altVal.toFixed(2);
                         // Recompute and possibly clear mismatch
-                        const reSum = CHARGE_CHECK.reduce((s, f) => s + pf(b[f]), 0);
+                        const reSum = CHARGE_CHECK.reduce((s, f) => s + parseBillNumber(b[f]), 0);
                         const reDiff = Math.abs(reSum - total);
                         if (reDiff <= 1) {
                           delete b._sum_mismatch;
@@ -17067,9 +17057,9 @@ async function processPDF(file) {
                       // reading actually verifies against the bill's own charge
                       // line — never trade a self-consistent value for an
                       // unverified one just because it "looks direct."
-                      const altQty = parseFloat(String(altBill && altBill[pair.kwhField]).replace(/,/g, ''));
-                      const altRate = parseFloat(String(altBill && altBill[pair.rateField]).replace(/,/g, ''));
-                      const ownCharge = parseFloat(String(b[pair.chargeField] || '').replace(/[$,\s]/g, ''));
+                      const altQty = parseBillNumber(altBill && altBill[pair.kwhField]);
+                      const altRate = parseBillNumber(altBill && altBill[pair.rateField]);
+                      const ownCharge = parseBillNumber(b[pair.chargeField]);
                       const altSelfVerifies =
                         altQty > 0 && altRate > 0 && ownCharge > 0 && Math.abs(altQty * altRate - ownCharge) <= 1.0;
                       if (
@@ -17151,8 +17141,6 @@ async function processPDF(file) {
           // there is no reliable signal to pick a winner for them — left untouched
           // rather than guessed.
           if (hasAltPasses && rule.name === 'Evergy') {
-            const pf3 = (v) =>
-              v !== undefined && v !== null && v !== '' ? parseFloat(String(v).replace(/,/g, '')) : NaN;
             const acctKey = (v) => (v || '').replace(/[\s\-]/g, '').toLowerCase();
             const IDENTITY_TOL = 0.02; // OCR hundredths-place rounding slack
             const ALL_METER_FIELDS = ['StartRead', 'EndRead', 'ReadDifference', 'MeterMultiplier', 'kWhConsumed'];
@@ -17177,10 +17165,10 @@ async function processPDF(file) {
                 fields: ['StartRead', 'EndRead', 'ReadDifference'],
                 label: 'EndRead-StartRead=ReadDifference',
                 check: (obj) => {
-                  const sr = pf3(obj.StartRead),
-                    er = pf3(obj.EndRead),
-                    rd = pf3(obj.ReadDifference);
-                  if (isNaN(sr) || isNaN(er) || isNaN(rd)) return false;
+                  const sr = parseBillNumber(obj.StartRead),
+                    er = parseBillNumber(obj.EndRead),
+                    rd = parseBillNumber(obj.ReadDifference);
+                  if (sr === null || er === null || rd === null) return false;
                   return Math.abs(er - sr - rd) <= IDENTITY_TOL;
                 },
               },
@@ -17188,10 +17176,10 @@ async function processPDF(file) {
                 fields: ['ReadDifference', 'MeterMultiplier', 'kWhConsumed'],
                 label: 'ReadDifference*MeterMultiplier=kWhConsumed',
                 check: (obj) => {
-                  const rd = pf3(obj.ReadDifference),
-                    mm = pf3(obj.MeterMultiplier),
-                    kw = pf3(obj.kWhConsumed);
-                  if (isNaN(rd) || isNaN(mm) || isNaN(kw)) return false;
+                  const rd = parseBillNumber(obj.ReadDifference),
+                    mm = parseBillNumber(obj.MeterMultiplier),
+                    kw = parseBillNumber(obj.kWhConsumed);
+                  if (rd === null || mm === null || kw === null) return false;
                   return Math.abs(rd * mm - kw) <= Math.max(1, kw * 0.001);
                 },
               },
@@ -17236,14 +17224,18 @@ async function processPDF(file) {
                 // ambiguous case this fix must never guess on.
                 const refBill = cleanCandidates[0].altBill;
                 const allAgree = cleanCandidates.every((r) =>
-                  group.fields.every((f) => Math.abs(pf3(r.altBill[f]) - pf3(refBill[f])) <= IDENTITY_TOL),
+                  group.fields.every((f) => {
+                    const altV = parseBillNumber(r.altBill[f]);
+                    const refV = parseBillNumber(refBill[f]);
+                    return altV !== null && refV !== null && Math.abs(altV - refV) <= IDENTITY_TOL;
+                  }),
                 );
                 if (!allAgree) continue; // ambiguous — never guess
                 for (const f of group.fields) {
-                  const curVal = pf3(b[f]);
-                  const winVal = pf3(refBill[f]);
-                  if (isNaN(winVal)) continue; // winner doesn't have this field either
-                  if (!isNaN(curVal) && Math.abs(winVal - curVal) <= IDENTITY_TOL) continue; // already matches
+                  const curVal = parseBillNumber(b[f]);
+                  const winVal = parseBillNumber(refBill[f]);
+                  if (winVal === null) continue; // winner doesn't have this field either
+                  if (curVal !== null && Math.abs(winVal - curVal) <= IDENTITY_TOL) continue; // already matches
                   b['_consensus_recovered_' + f] = {
                     original: b[f],
                     corrected: refBill[f],
@@ -17340,9 +17332,9 @@ async function processPDF(file) {
                     // self-verify against the bill's own printed charge amount
                     // (qty × rate ≈ b[chargeField]) — see the self-verify guard
                     // note in the block above (Louisburg acct 2885731561).
-                    const altQtyR = parseFloat(String(altBill && altBill[pair.kwhField]).replace(/,/g, ''));
-                    const altRateR = parseFloat(String(altBill && altBill[pair.rateField]).replace(/,/g, ''));
-                    const ownChargeR = parseFloat(String(b[pair.chargeField] || '').replace(/[$,\s]/g, ''));
+                    const altQtyR = parseBillNumber(altBill && altBill[pair.kwhField]);
+                    const altRateR = parseBillNumber(altBill && altBill[pair.rateField]);
+                    const ownChargeR = parseBillNumber(b[pair.chargeField]);
                     const altSelfVerifiesR =
                       altQtyR > 0 && altRateR > 0 && ownChargeR > 0 && Math.abs(altQtyR * altRateR - ownChargeR) <= 1.0;
                     if (
@@ -17829,7 +17821,6 @@ function renderMultiBillUI(bills, box) {
     const bw = warnings[p.i]?.warnings || [];
     const hasIssues = bw.some((w) => w.level === 'error' || w.level === 'warn');
     const bill = bills[p.i];
-    const _pf2 = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
     const _pillComm =
       bill.Commodity ||
       (bill.kWhConsumed
@@ -17873,8 +17864,8 @@ function renderMultiBillUI(bills, box) {
     const _pillKeys = _pillChargeKeys[_pillComm] || _pillChargeKeys.Electric;
     // Round each component to 2 decimal places before summing to prevent
     // floating-point accumulation across many addends (e.g. 9 KGS line items).
-    const _chargeSum = Math.round(_pillKeys.reduce((s, f) => s + Math.round(_pf2(bill[f]) * 100) / 100, 0) * 100) / 100;
-    const _totalVal = _pf2(bill.TotalCurrentCharges);
+    const _chargeSum = Math.round(_pillKeys.reduce((s, f) => s + Math.round(parseBillNumber(bill[f]) * 100) / 100, 0) * 100) / 100;
+    const _totalVal = parseBillNumber(bill.TotalCurrentCharges);
     // Allow 1¢ per component of accumulated rounding before flagging a mismatch.
     // Flat 0.02 was too tight for multi-line KGS bills where rounding adds up across 9 fields.
     const _pillTol = Math.max(0.02, 0.01 * _pillKeys.length);
@@ -18201,7 +18192,6 @@ function renderMultiBillUI(bills, box) {
   let commTabsHtml = '';
   if (_hasMultiComm) {
     const tabs = _uniqueComms;
-    const _pf3 = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
     const _pillChgKeys2 = {
       Electric: [
         'CustomerCharge',
@@ -18247,8 +18237,8 @@ function renderMultiBillUI(bills, box) {
             const bIdx = bills.indexOf(b);
             const bw = warnings[bIdx]?.warnings || [];
             const hasW = bw.some((w) => w.level === 'error' || w.level === 'warn');
-            const cSum = chgKeys.reduce((s, f) => s + _pf3(b[f]), 0);
-            const tVal = _pf3(b.TotalCurrentCharges);
+            const cSum = chgKeys.reduce((s, f) => s + parseBillNumber(b[f]), 0);
+            const tVal = parseBillNumber(b.TotalCurrentCharges);
             // Use the same scaled tolerance as the pill and detail banner: 1¢ per charge field,
             // minimum 2¢. Flat 0.02 caused false red issue-counts on multi-line KGS gas bills.
             const hasMM = tVal > 0 && cSum > 0 && Math.abs(cSum - tVal) >= Math.max(0.02, 0.01 * chgKeys.length);
@@ -18654,7 +18644,6 @@ async function _applyDupUpdate(billIdx, extracted, dup) {
     const yr = p[2].length === 2 ? '20' + p[2] : p[2];
     return yr + '-' + p[0].padStart(2, '0') + '-' + p[1].padStart(2, '0');
   };
-  const pf = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
 
   if (dup.locationType === 'assigned') {
     // Update existing bill on meter
@@ -18805,35 +18794,35 @@ async function _applyDupUpdate(billIdx, extracted, dup) {
     // explicitly overwrote (action === 'overwrite'), in which case we trust their
     // intent. For merge and field-select we keep the higher value.
     const preserveHigher = (label, newVal, oldRaw) => {
-      const newNum = parseFloat(newVal);
-      const oldNum = parseFloat(String(oldRaw || '').replace(/,/g, '')) || 0;
+      const newNum = parseBillNumber(newVal);
+      const oldNum = parseBillNumberOrZero(oldRaw);
       if (dup.action === 'overwrite') return newVal; // trust explicit intent
-      if (isNaN(newNum)) return oldRaw || '';
+      if (newNum === null) return oldRaw || '';
       // Allow small rounding drift but never a real decrease.
       if (oldNum > newNum + 0.5) return String(oldNum.toFixed(2));
       return newVal;
     };
     const _recalcAggregates = () => {
       const newKwhCost = (
-        pf(existing.onPeakCost) +
-        pf(existing.offPeakCost) +
-        pf(existing.ecaCharge) +
-        pf(existing.eerCharge) +
-        pf(existing.ptsCharge)
+        parseBillNumber(existing.onPeakCost) +
+        parseBillNumber(existing.offPeakCost) +
+        parseBillNumber(existing.ecaCharge) +
+        parseBillNumber(existing.eerCharge) +
+        parseBillNumber(existing.ptsCharge)
       ).toFixed(2);
-      const newKwCost = (pf(existing.demandCharge) + pf(existing.tdcCharge)).toFixed(2);
+      const newKwCost = (parseBillNumber(existing.demandCharge) + parseBillNumber(existing.tdcCharge)).toFixed(2);
       // Tax exempt delivery and bill offset aren't stored in billRow, so they have
       // to come from the new extraction if the user asked to apply it; otherwise
       // customerCharge + rkvaCharge are the otherCost contributors we can still
       // reconstruct from the post-merge row.
       const newOtherCost = (
-        pf(existing.customerCharge) +
-        pf(existing.rkvaCharge) +
-        pf(extracted.TaxExemptDelivery) +
-        pf(extracted.BillOffset) +
-        pf(extracted.MiscellaneousCharge)
+        parseBillNumber(existing.customerCharge) +
+        parseBillNumber(existing.rkvaCharge) +
+        parseBillNumber(extracted.TaxExemptDelivery) +
+        parseBillNumber(extracted.BillOffset) +
+        parseBillNumber(extracted.MiscellaneousCharge)
       ).toFixed(2);
-      const newTaxCost = pf(existing.franchiseFee).toFixed(2);
+      const newTaxCost = parseBillNumberOrZero(existing.franchiseFee).toFixed(2);
       existing.kwhCost = preserveHigher('kwhCost', newKwhCost, existing.kwhCost);
       existing.kwCost = preserveHigher('kwCost', newKwCost, existing.kwCost);
       existing.otherCost = preserveHigher('otherCost', newOtherCost, existing.otherCost);
@@ -19670,7 +19659,6 @@ function renderPDFFields(parsed, warnings) {
   const wIcon = { error: '⛔', warn: '⚠️', info: 'ℹ️' };
 
   // Helper: build a single field cell HTML
-  const _pf = (v) => (v ? parseFloat(String(v).replace(/[$,\s]/g, '')) || 0 : 0);
   // Escape double quotes and newlines so a message can live inside a title="..." attribute.
   const _titleEscape = (s) =>
     String(s || '')
@@ -19777,8 +19765,8 @@ function renderPDFFields(parsed, warnings) {
     if (ID_FIELDS.has(k)) {
       displayVal = String(displayVal);
     } else if (typeof displayVal === 'string' && displayVal !== '') {
-      const num = parseFloat(String(displayVal).replace(/,/g, ''));
-      if (!isNaN(num) && String(displayVal).match(/^-?[\d,.\-]+$/)) {
+      const num = parseBillNumber(displayVal);
+      if (num !== null && String(displayVal).match(/^-?[\d,.\-]+$/)) {
         const isCharge = CHARGE_FIELDS.has(k);
         const isFourDp = FOURDP_FIELDS.has(k);
         // kW/kWh/meter reads: always 4dp. Charges: always 2dp. Other numbers: preserve original.
@@ -19844,7 +19832,7 @@ function renderPDFFields(parsed, warnings) {
     return '$' + r.toFixed(isKwh ? 5 : 3) + '/' + (unit || '');
   };
 
-  const totalVal = _pf(parsed.TotalCurrentCharges);
+  const totalVal = parseBillNumber(parsed.TotalCurrentCharges);
   // Fix 4 (d6f8f3a8): splice extra fields BEFORE the total row instead of appending after.
   // Build a mutable copy of the layout, find the last {type:'total'} entry, and insert
   // any extra-field pair rows immediately before it. This guarantees Total Current Charges
@@ -19867,7 +19855,7 @@ function renderPDFFields(parsed, warnings) {
 
     // ── charge-line-with-kw: charge row with a kW field in the first column ──
     if (row.type === 'charge-line-with-kw') {
-      const chargeVal = _pf(parsed[row.chargeField]);
+      const chargeVal = parseBillNumber(parsed[row.chargeField]);
       runningTotal += chargeVal;
       const rtFmt = runningTotal.toLocaleString('en-US', {
         minimumFractionDigits: 2,
@@ -19882,7 +19870,7 @@ function renderPDFFields(parsed, warnings) {
     if (row.type === 'charge-line') {
       const ri = parsed._rates?.[row.rateKey];
       const parts = ri?.parts || [];
-      const chargeVal = _pf(parsed[row.chargeField]);
+      const chargeVal = parseBillNumber(parsed[row.chargeField]);
       // For tiered energy, hide Off-Peak row and relabel On-Peak parts as Tier 1/2/3
       const isTiered = parsed._energyFormat === 'tiered';
       if (isTiered && row.chargeField === 'EnergyOffPeakCharge') return '';
@@ -19960,7 +19948,7 @@ function renderPDFFields(parsed, warnings) {
         // Guard: skip entirely when printedRateField is absent, null, or NaN.
         if (row.printedRateField) {
           const _printedRaw = parsed[row.printedRateField];
-          const _printedRate = _printedRaw != null ? parseFloat(String(_printedRaw).replace(/[$,\s]/g, '')) : NaN;
+          const _printedRate = parseBillNumber(_printedRaw);
           if (_printedRate > 0 && computedRate > 0) {
             const _relDiff = Math.abs(computedRate - _printedRate) / _printedRate;
             const _mismatch = _relDiff > 0.05;
@@ -20235,12 +20223,12 @@ function renderPDFFields(parsed, warnings) {
   // Round each component to 2 decimal places before summing to prevent floating-point
   // accumulation across many addends (e.g. 9 KGS line items each rounded to the cent).
   const _currentChargeSum =
-    Math.round(_CHARGE_SUM_KEYS_RPF.reduce((s, f) => s + Math.round(_pf(parsed[f]) * 100) / 100, 0) * 100) / 100;
+    Math.round(_CHARGE_SUM_KEYS_RPF.reduce((s, f) => s + Math.round(parseBillNumber(parsed[f]) * 100) / 100, 0) * 100) / 100;
   // Identify which charge fields are blank — the sum mismatch is usually caused by
   // one of these not being extracted, so we surface them in the banner.
   const _missingChargeFields = _CHARGE_SUM_KEYS_RPF.filter((f) => {
-    const v = parsed[f];
-    return v === null || v === undefined || v === '' || _pf(v) === 0;
+    const n = parseBillNumber(parsed[f]);
+    return n === null || n === 0;
   });
   // Bug 2f41298c: remove the _currentChargeSum > 0 guard so the banner fires when
   // charge fields are all blank but TotalCurrentCharges is populated — that IS a
@@ -20276,9 +20264,9 @@ function renderPDFFields(parsed, warnings) {
   // Build per-field math breakdown for the sum mismatch banner so the user
   // can see exactly which values were added and where the gap comes from.
   const _sumMathParts = _CHARGE_SUM_KEYS_RPF
-    .filter((f) => _pf(parsed[f]) !== 0 || !_missingChargeFields.includes(f))
+    .filter((f) => parseBillNumberOrZero(parsed[f]) !== 0 || !_missingChargeFields.includes(f))
     .map((f) => {
-      const v = _pf(parsed[f]);
+      const v = parseBillNumberOrZero(parsed[f]);
       const label = LABELS[f] || f;
       const style = v === 0 ? 'color:#f87171;font-style:italic' : 'color:#fecaca';
       return `<span style="${style}">${label}: $${v.toFixed(2)}</span>`;
@@ -20679,8 +20667,7 @@ function renderPDFFields(parsed, warnings) {
         'MiscellaneousCharge',
       ];
       if (CHARGE_SUM_FIELDS.includes(key)) {
-        const pf2 = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
-        const compSum = CHARGE_SUM_FIELDS.reduce((s, f) => s + pf2(b[f]), 0);
+        const compSum = CHARGE_SUM_FIELDS.reduce((s, f) => s + parseBillNumber(b[f]), 0);
         if (compSum > 0) {
           b.TotalCurrentCharges = compSum.toFixed(2);
           // A corrected component recomputes the total live, so the "Total needs
@@ -21245,7 +21232,6 @@ function confirmAssignBill() {
   const meter = (bldg.meters || []).find((m) => m.id === mid);
   if (!meter) return;
   // Build billing row from bill data (same mapping as savePDFData)
-  const pf = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
   // F1 (21b4e21f): shared cost/usage mapper — see _extractedToBillRowCosts.
   const { kwh, kwCost, kwhCost, otherCost, taxCost, totalCost } = _extractedToBillRowCosts(bill);
   function toISO(d) {
@@ -21315,11 +21301,11 @@ function confirmAssignBill() {
     naturalGasMMbtu: bill.NaturalGasMMbtu || bill.naturalGasMMbtu || '',
     // Fix [therms-unit-2026-06-22]: canonicalize therms to Therms at save time.
     therms: (() => {
-      const t = pf(bill.NaturalGasTherms);
+      const t = parseBillNumber(bill.NaturalGasTherms);
       if (t) return t; // already Therms — Constellation/KGS
-      const ccf = pf(bill.NaturalGasCCF);
+      const ccf = parseBillNumber(bill.NaturalGasCCF);
       if (ccf) return Math.round(ccf * 1.037 * 100) / 100; // CCF → Therms
-      const mm = pf(bill.NaturalGasMMbtu || bill.naturalGasMMbtu);
+      const mm = parseBillNumber(bill.NaturalGasMMbtu || bill.naturalGasMMbtu);
       if (mm) return Math.round(mm * 10 * 100) / 100; // MMBtu → Therms (×10)
       return '';
     })(),
@@ -21363,7 +21349,7 @@ function confirmAssignBill() {
     if (Object.keys(cp).length) billRow._chargeParts = cp;
   }
   // Validation
-  const componentSum = pf(bill.FacilitiesCharge) + pf(kwCost) + pf(kwhCost) + pf(otherCost) + pf(taxCost);
+  const componentSum = parseBillNumberOrZero(bill.FacilitiesCharge) + parseBillNumber(kwCost) + parseBillNumber(kwhCost) + parseBillNumber(otherCost) + parseBillNumber(taxCost);
   const diff = Math.abs(componentSum - totalCost);
   if (totalCost > 0 && diff >= 0.1) {
     const vEl = document.getElementById('abm-validation');
@@ -21570,7 +21556,6 @@ function confirmManualAssign() {
     return;
   }
 
-  const pf = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
   function toISO(d) {
     if (!d) return '';
     if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
@@ -21948,7 +21933,6 @@ async function _saveSinglePDFBill(extracted, projId) {
   };
   pdfBills.push(billRecord);
   await sset('en_pdf_bills', pdfBills);
-  const pf = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
   function toISO(d) {
     if (!d) return '';
     if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
@@ -21978,8 +21962,8 @@ async function _saveSinglePDFBill(extracted, projId) {
     taxCost,
     totalCost: totalCostRaw,
   } = _extractedToBillRowCosts(extracted);
-  const totalCost = pf(totalCostRaw);
-  const componentSum = pf(extracted.FacilitiesCharge) + pf(kwCost) + pf(kwhCost) + pf(otherCost) + pf(taxCost);
+  const totalCost = parseBillNumber(totalCostRaw);
+  const componentSum = parseBillNumber(extracted.FacilitiesCharge) + parseBillNumber(kwCost) + parseBillNumber(kwhCost) + parseBillNumber(otherCost) + parseBillNumber(taxCost);
   const diff = Math.abs(componentSum - totalCost);
   const billRow = {
     id: 'r' + Date.now(),
@@ -22041,13 +22025,13 @@ async function _saveSinglePDFBill(extracted, projId) {
     solarCredit: extracted.SolarCredit || '',
     generationKwh: extracted.GenerationKwh || '',
     totalKwhRate: (() => {
-      const _kwh = pf(extracted.kWhConsumed);
-      const _chg = pf(kwhCost);
+      const _kwh = parseBillNumber(extracted.kWhConsumed);
+      const _chg = parseBillNumber(kwhCost);
       return _kwh > 0 && _chg > 0 ? (_chg / _kwh).toFixed(5) : extracted.TotalKWhRate || '';
     })(),
     totalKwRate: (() => {
-      const _kw = pf(extracted.BilledKW) || pf(extracted.ActualKW) || pf(extracted.FacilitiesKW);
-      const _chg = pf(kwCost) + pf(extracted.FacilitiesCharge);
+      const _kw = parseBillNumber(extracted.BilledKW) || parseBillNumber(extracted.ActualKW) || parseBillNumber(extracted.FacilitiesKW);
+      const _chg = parseBillNumber(kwCost) + parseBillNumber(extracted.FacilitiesCharge);
       return _kw > 0 && _chg > 0 ? (_chg / _kw).toFixed(5) : extracted.TotalKWRate || '';
     })(),
     facilitiesRate: extracted.FacilitiesRate || '',
@@ -22065,11 +22049,11 @@ async function _saveSinglePDFBill(extracted, projId) {
     // Fix [therms-unit-2026-06-22]: canonicalize therms to Therms at save time.
     therms: isGas
       ? (() => {
-          const t = pf(extracted.NaturalGasTherms);
+          const t = parseBillNumber(extracted.NaturalGasTherms);
           if (t) return t; // already Therms — Constellation/KGS
-          const ccf = pf(extracted.NaturalGasCCF);
+          const ccf = parseBillNumber(extracted.NaturalGasCCF);
           if (ccf) return Math.round(ccf * 1.037 * 100) / 100; // CCF → Therms
-          const mm = pf(extracted.NaturalGasMMbtu);
+          const mm = parseBillNumber(extracted.NaturalGasMMbtu);
           if (mm) return Math.round(mm * 10 * 100) / 100; // MMBtu → Therms (×10)
           return '';
         })()
@@ -22101,24 +22085,24 @@ async function _saveSinglePDFBill(extracted, projId) {
     // helper (2026-09-23 gas-rate-fix2), which always returns $/Therm (never $/MMBtu).
     totalGasRate: _computeGasRate(extracted),
     totalWaterRate: (() => {
-      const u = pf(extracted.WaterUsage);
-      const c = pf(extracted.WaterCharge) || pf(extracted.TotalCurrentCharges) || pf(extracted.TotalAmountDue);
+      const u = parseBillNumber(extracted.WaterUsage);
+      const c = parseBillNumber(extracted.WaterCharge) || parseBillNumber(extracted.TotalCurrentCharges) || parseBillNumber(extracted.TotalAmountDue);
       return u > 0 && c > 0 ? (c / u).toFixed(5) : '';
     })(),
     totalPropaneRate: (() => {
-      const g = pf(extracted.GallonsDelivered);
-      const up = pf(extracted.UnitPrice);
+      const g = parseBillNumber(extracted.GallonsDelivered);
+      const up = parseBillNumberOrZero(extracted.UnitPrice);
       if (up > 0) return up.toFixed(5);
-      const c = pf(extracted.TotalCurrentCharges) || pf(extracted.TotalAmountDue);
+      const c = parseBillNumber(extracted.TotalCurrentCharges) || parseBillNumber(extracted.TotalAmountDue);
       return g > 0 && c > 0 ? (c / g).toFixed(5) : '';
     })(),
     totalSewerRate: (() => {
-      const u = pf(extracted.SewerUsage);
-      const c = pf(extracted.SewerCharge);
+      const u = parseBillNumber(extracted.SewerUsage);
+      const c = parseBillNumber(extracted.SewerCharge);
       return u > 0 && c > 0 ? (c / u).toFixed(5) : '';
     })(),
     totalStormwaterRate: (() => {
-      const c = pf(extracted.StormWaterCharge);
+      const c = parseBillNumberOrZero(extracted.StormWaterCharge);
       return c > 0 ? c.toFixed(2) : '';
     })(),
   };

@@ -245,7 +245,7 @@ async function main() {
         EnergyOffPeakCharge: { rate: 0.04769, parts: [{ qty: 802.3379 }] },
       },
     };
-    const w = X.gatherKwhWitnesses(bill4, pf);
+    const w = X.gatherKwhWitnesses(bill4);
     const bySource = Object.fromEntries(w.map((x) => [x.source, x]));
     assertTrue(!!bySource['EERCharge'] && bySource['EERCharge'].strong, 'gatherWitnesses: EER self-verifies');
     assertTrue(!!bySource['PTSCharge'] && bySource['PTSCharge'].strong, 'gatherWitnesses: PTS self-verifies');
@@ -276,7 +276,7 @@ async function main() {
         // EnergyOffPeakCharge intentionally absent — matches the real bug
       },
     };
-    const d = X.decideOnOffPeakKWh(bill2, pf, 2282.5018, false);
+    const d = X.decideOnOffPeakKWh(bill2, 2282.5018, false);
     assertTrue(!!d.offCorrection, 'decideOnOff: bill 2 shape — OffPeak corrected');
     assertEqual(
       d.offCorrection.value,
@@ -297,7 +297,7 @@ async function main() {
         EnergyOffPeakCharge: { rate: 0.04769, parts: [{ qty: 802.3379 }] },
       },
     };
-    const d = X.decideOnOffPeakKWh(bill4, pf, 1053.84, false);
+    const d = X.decideOnOffPeakKWh(bill4, 1053.84, false);
     assertTrue(
       !d.onCorrection && !d.offCorrection && !d.gate,
       'decideOnOff: bill 4 shape — already consistent, no mutation',
@@ -317,7 +317,7 @@ async function main() {
         EnergyOffPeakCharge: { rate: 0.03538, parts: [{ qty: 37381.545 }] },
       },
     };
-    const d = X.decideOnOffPeakKWh(lms30, pf, 70226.4, true); // kwhHeld=true
+    const d = X.decideOnOffPeakKWh(lms30, 70226.4, true); // kwhHeld=true
     assertTrue(
       !!d.onCorrection,
       'decideOnOff: LMS bill 30 shape — self-heals corrupted OnPeak field even when kWhConsumed is held',
@@ -340,7 +340,7 @@ async function main() {
         EnergyOffPeakCharge: { rate: 0.5, parts: [{ qty: 200 }] }, // same
       },
     };
-    const d = X.decideOnOffPeakKWh(ambiguous, pf, 1000, true);
+    const d = X.decideOnOffPeakKWh(ambiguous, 1000, true);
     assertTrue(
       !d.onCorrection && !d.offCorrection && !!d.gate,
       'decideOnOff: neither leg verifies + total held — gate, never guess',
@@ -382,7 +382,7 @@ async function main() {
         EnergyOffPeakCharge: { rate: 0.04, parts: [{ qty: 500, rate: 0.04, computed: 20.0 }] },
       },
     };
-    const d = X.decideOnOffPeakKWh(changeover, pf, 760, false); // kWhConsumed deliberately wrong (should be 750)
+    const d = X.decideOnOffPeakKWh(changeover, 760, false); // kWhConsumed deliberately wrong (should be 750)
     assertTrue(
       !d.onCorrection,
       'decideOnOff: changeover trap — correct multi-tier OnPeak qty must NOT be overwritten by subtraction',

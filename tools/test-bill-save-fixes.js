@@ -37,6 +37,7 @@ const vm = require('vm');
 const path = require('path');
 
 const billAnalysisPath = process.argv[2] || path.join(__dirname, '..', 'app', 'bill-analysis.js');
+const formattingPath = path.join(__dirname, '..', 'lib', 'formatting.js');
 const ratesPath = path.join(__dirname, '..', 'computations', 'rates.js');
 const energySavingsPath = path.join(__dirname, '..', 'app', 'energy-savings.js');
 
@@ -56,7 +57,7 @@ function loadSandbox() {
     fetch: () => Promise.reject(new Error('fetch not available in test sandbox')),
   };
   vm.createContext(sandbox);
-  for (const p of [ratesPath, energySavingsPath, billAnalysisPath]) {
+  for (const p of [formattingPath, ratesPath, energySavingsPath, billAnalysisPath]) {
     const src = fs.readFileSync(p, 'utf8');
     vm.runInContext(src, sandbox, { filename: path.basename(p) });
   }

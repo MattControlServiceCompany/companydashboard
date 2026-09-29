@@ -583,7 +583,6 @@ function loadUtilityData() {
   const _thermsFixKey = 'en_utility_therms_mmbtu_fix_v1';
   if (!DB.get(_thermsFixKey)) {
     const _approxEq = (a, b, tol) => Math.abs(a - b) <= Math.abs(b) * tol;
-    const _pf = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
     const _thermsReport = { wouldFix: [], skipped: [], ambiguous: [] };
     // DRY-RUN PASS: log what WOULD be fixed before mutating anything
     for (const pid of Object.keys(utilityData)) {
@@ -592,11 +591,11 @@ function loadUtilityData() {
         for (const mt of b.meters || []) {
           for (const bill of mt.bills || []) {
             if (bill._thermsUnitFixed) continue; // already corrected
-            const mmbtu = _pf(bill.naturalGasMMbtu);
-            const therms = _pf(bill.therms);
-            const hasTherms = _pf(bill.naturalGasTherms) > 0 || (bill.naturalGasTherms && bill.naturalGasTherms !== '');
-            const hasCCF = _pf(bill.naturalGasCCF) > 0 || (bill.naturalGasCCF && bill.naturalGasCCF !== '');
-            const ccf = _pf(bill.naturalGasCCF);
+            const mmbtu = parseBillNumber(bill.naturalGasMMbtu);
+            const therms = parseBillNumber(bill.therms);
+            const hasTherms = parseBillNumber(bill.naturalGasTherms) > 0 || (bill.naturalGasTherms && bill.naturalGasTherms !== '');
+            const hasCCF = parseBillNumber(bill.naturalGasCCF) > 0 || (bill.naturalGasCCF && bill.naturalGasCCF !== '');
+            const ccf = parseBillNumber(bill.naturalGasCCF);
             // MMBtu path: mmbtu set, therms/ccf empty, stored therms ≈ raw mmbtu (NOT ≈ mmbtu×10)
             const needsMMBtu =
               mmbtu > 0 &&
@@ -676,8 +675,8 @@ function loadUtilityData() {
     let _thermsFixed = 0;
     for (const entry of _thermsReport.wouldFix) {
       const bill = entry.bill;
-      const oldTherms = _pf(bill.therms);
-      const oldThermCost = _pf(bill.thermCost);
+      const oldTherms = parseBillNumber(bill.therms);
+      const oldThermCost = parseBillNumber(bill.thermCost);
       bill.therms = entry.newTherms;
       bill._thermsUnitFixed = true;
       bill._thermsUnitFixedFrom = entry.source;
@@ -3728,7 +3727,6 @@ function renderMeterWorkspace() {
 // Each entry: { label, type, w, compute?, key? }
 //  - compute(row) returns the value to display
 //  - key is an alternative — read row[key] directly (for totalCost)
-const _pfBills = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
 
 /* ─────────────────────────────────────────────────────────────
    _gasUsageDisplay(r, unit) / _effectiveGasBillUnit(m)  (2026-09-22)
@@ -3769,7 +3767,7 @@ function _effectiveGasBillUnit(m) {
   const configured = getMeterBillUnit(m);
   const bills = (m && m.bills) || [];
   if (!bills.length) return configured;
-  const nativeCount = (field) => bills.filter((b) => _pfBills(b[field]) > 0).length;
+  const nativeCount = (field) => bills.filter((b) => parseBillNumber(b[field]) > 0).length;
   const nTherms = Math.max(nativeCount('therms'), nativeCount('naturalGasTherms'));
   const nForConfigured =
     configured === 'MMBtu'
@@ -3782,17 +3780,17 @@ function _effectiveGasBillUnit(m) {
 
 const CONDENSED_CATEGORIES = {
   Electric: [
-    { label: 'Usage (kWh)', type: 'number', w: 110, compute: (r) => _pfBills(r.kwh) },
+    { label: 'Usage (kWh)', type: 'number', w: 110, compute: (r) => parseBillNumber(r.kwh) },
     {
       label: 'kWh Cost $',
       type: 'currency',
       w: 100,
       compute: (r) =>
-        _pfBills(r.onPeakCost) +
-        _pfBills(r.offPeakCost) +
-        _pfBills(r.ecaCharge) +
-        _pfBills(r.eerCharge) +
-        _pfBills(r.ptsCharge),
+        parseBillNumber(r.onPeakCost) +
+        parseBillNumber(r.offPeakCost) +
+        parseBillNumber(r.ecaCharge) +
+        parseBillNumber(r.eerCharge) +
+        parseBillNumber(r.ptsCharge),
     },
     {
       // Blended kWh rate — prefer stored rate from bill, fall back to computation
@@ -3803,25 +3801,25 @@ const CONDENSED_CATEGORIES = {
         const stored = getStoredRate(r, 'kwh');
         if (stored > 0) return stored;
         const cost =
-          _pfBills(r.onPeakCost) +
-          _pfBills(r.offPeakCost) +
-          _pfBills(r.ecaCharge) +
-          _pfBills(r.eerCharge) +
-          _pfBills(r.ptsCharge);
-        const kwh = _pfBills(r.kwh);
+          parseBillNumber(r.onPeakCost) +
+          parseBillNumber(r.offPeakCost) +
+          parseBillNumber(r.ecaCharge) +
+          parseBillNumber(r.eerCharge) +
+          parseBillNumber(r.ptsCharge);
+        const kwh = parseBillNumber(r.kwh);
         return kwh > 0 ? cost / kwh : 0;
       },
     },
-    { label: 'Actual kW', type: 'number', w: 90, compute: (r) => _pfBills(r.demandKW) },
-    { label: 'Billed kW', type: 'number', w: 90, compute: (r) => _pfBills(r.billedKW) },
-    { label: 'Facilities kW', type: 'number', w: 100, compute: (r) => _pfBills(r.facKW) },
+    { label: 'Actual kW', type: 'number', w: 90, compute: (r) => parseBillNumber(r.demandKW) },
+    { label: 'Billed kW', type: 'number', w: 90, compute: (r) => parseBillNumber(r.billedKW) },
+    { label: 'Facilities kW', type: 'number', w: 100, compute: (r) => parseBillNumber(r.facKW) },
     {
       label: 'kW Cost $',
       type: 'currency',
       w: 100,
       // getBillFacKWCost (computations/rates.js) — the ONE accessor for Facilities kW Cost
       // (2026-09-23 single-source fix); never read r.facKWCost/r.facilitiesCharge directly.
-      compute: (r) => _pfBills(r.demandCharge) + _pfBills(r.tdcCharge) + getBillFacKWCost(r),
+      compute: (r) => parseBillNumber(r.demandCharge) + parseBillNumber(r.tdcCharge) + getBillFacKWCost(r),
     },
     {
       // Blended kW rate — SSOT getStoredKwRate() (computations/rates.js): stored
@@ -3838,11 +3836,11 @@ const CONDENSED_CATEGORIES = {
       type: 'currency',
       w: 120,
       compute: (r) =>
-        _pfBills(r.customerCharge) +
-        _pfBills(r.rkvaCharge) +
-        _pfBills(r.taxExemptDelivery) +
-        _pfBills(r.billOffset) +
-        _pfBills(r.franchiseFee),
+        parseBillNumber(r.customerCharge) +
+        parseBillNumber(r.rkvaCharge) +
+        parseBillNumber(r.taxExemptDelivery) +
+        parseBillNumber(r.billOffset) +
+        parseBillNumber(r.franchiseFee),
     },
     { label: 'Total Cost $', type: 'currency', w: 110, key: 'totalCost' },
   ],
@@ -3866,39 +3864,39 @@ const CONDENSED_CATEGORIES = {
       label: 'Gas Cost $',
       type: 'currency',
       w: 100,
-      compute: (r) => _pfBills(r.gasCharge) + _pfBills(r.fuelAdjustment),
+      compute: (r) => parseBillNumber(r.gasCharge) + parseBillNumber(r.fuelAdjustment),
     },
     { label: 'Total Cost $', type: 'currency', w: 110, key: 'totalCost' },
   ],
   Water: [
-    { label: 'Usage (gal)', type: 'number', w: 100, compute: (r) => _pfBills(r.waterUsage) },
+    { label: 'Usage (gal)', type: 'number', w: 100, compute: (r) => parseBillNumber(r.waterUsage) },
     {
       label: 'Water Cost $',
       type: 'currency',
       w: 110,
-      compute: (r) => _pfBills(r.waterCharge) + _pfBills(r.waterProtectionFee),
+      compute: (r) => parseBillNumber(r.waterCharge) + parseBillNumber(r.waterProtectionFee),
     },
     { label: 'Total Cost $', type: 'currency', w: 110, key: 'totalCost' },
   ],
   Sewer: [
-    { label: 'Usage (gal)', type: 'number', w: 100, compute: (r) => _pfBills(r.sewerUsage) },
-    { label: 'Sewer Cost $', type: 'currency', w: 110, compute: (r) => _pfBills(r.sewerCharge) },
+    { label: 'Usage (gal)', type: 'number', w: 100, compute: (r) => parseBillNumber(r.sewerUsage) },
+    { label: 'Sewer Cost $', type: 'currency', w: 110, compute: (r) => parseBillNumber(r.sewerCharge) },
     { label: 'Total Cost $', type: 'currency', w: 110, key: 'totalCost' },
   ],
   Stormwater: [
-    { label: 'Stormwater Cost $', type: 'currency', w: 130, compute: (r) => _pfBills(r.stormWaterCharge) },
+    { label: 'Stormwater Cost $', type: 'currency', w: 130, compute: (r) => parseBillNumber(r.stormWaterCharge) },
     { label: 'Total Cost $', type: 'currency', w: 110, key: 'totalCost' },
   ],
   Propane: [
-    { label: 'Usage (Gal)', type: 'number', w: 100, compute: (r) => _pfBills(r.gallonsDelivered) },
-    { label: 'Unit Price $', type: 'currency', w: 100, compute: (r) => _pfBills(r.unitPrice) },
+    { label: 'Usage (Gal)', type: 'number', w: 100, compute: (r) => parseBillNumber(r.gallonsDelivered) },
+    { label: 'Unit Price $', type: 'currency', w: 100, compute: (r) => parseBillNumber(r.unitPrice) },
     {
       label: 'Subtotal $',
       type: 'currency',
       w: 100,
-      compute: (r) => _pfBills(r.subtotal),
+      compute: (r) => parseBillNumber(r.subtotal),
     },
-    { label: 'Tax $', type: 'currency', w: 90, compute: (r) => _pfBills(r.tax) },
+    { label: 'Tax $', type: 'currency', w: 90, compute: (r) => parseBillNumber(r.tax) },
     { label: 'Total Cost $', type: 'currency', w: 110, key: 'totalCost' },
   ],
 };
@@ -11119,7 +11117,6 @@ function renderPerfPane(pane, m, bills, incl) {
     sortedBills.forEach((b) => {
       const ym = normMonth(b.start, b.end, incl, sortedBills);
       if (!ym) return;
-      const pf = (v) => parseFloat(String(v || 0).replace(/,/g, '')) || 0;
       if (!byYm[ym]) {
         byYm[ym] = {
           demandKW: 0,
@@ -11150,34 +11147,34 @@ function renderPerfPane(pane, m, bills, incl) {
       }
       const e = byYm[ym];
       // kW: take max across bills in same period
-      e.demandKW = Math.max(e.demandKW, pf(b.demandKW));
-      e.billedKW = Math.max(e.billedKW, pf(b.billedKW || b.demandKW));
-      e.facKW = Math.max(e.facKW, pf(b.facKW));
+      e.demandKW = Math.max(e.demandKW, parseBillNumber(b.demandKW));
+      e.billedKW = Math.max(e.billedKW, parseBillNumber(b.billedKW || b.demandKW));
+      e.facKW = Math.max(e.facKW, parseBillNumber(b.facKW));
       // Granular charge fields
-      e.demandCharge += pf(b.demandCharge);
-      e.facilitiesCharge += pf(b.facilitiesCharge || b.facKWCost);
-      e.tdcCharge += pf(b.tdcCharge);
-      e.onPeakCost += pf(b.onPeakCost);
-      e.offPeakCost += pf(b.offPeakCost);
-      e.ecaCharge += pf(b.ecaCharge);
-      e.eerCharge += pf(b.eerCharge);
-      e.ptsCharge += pf(b.ptsCharge);
+      e.demandCharge += parseBillNumber(b.demandCharge);
+      e.facilitiesCharge += parseBillNumber(b.facilitiesCharge || b.facKWCost);
+      e.tdcCharge += parseBillNumber(b.tdcCharge);
+      e.onPeakCost += parseBillNumber(b.onPeakCost);
+      e.offPeakCost += parseBillNumber(b.offPeakCost);
+      e.ecaCharge += parseBillNumber(b.ecaCharge);
+      e.eerCharge += parseBillNumber(b.eerCharge);
+      e.ptsCharge += parseBillNumber(b.ptsCharge);
       // Fallback aggregate fields
-      e.kwCost += pf(b.kwCost);
-      e.facKWCost += pf(b.facKWCost);
-      e.kwhCost += pf(b.kwhCost);
-      e.customerCharge += pf(b.customerCharge);
-      e.rkvaCharge += pf(b.rkvaCharge);
-      e.taxExemptDelivery += pf(b.taxExemptDelivery);
-      e.billOffset += pf(b.billOffset);
-      e.franchiseFee += pf(b.franchiseFee);
-      e.totalCost += pf(b.totalCost);
-      e.kwh += pf(b.kwh);
+      e.kwCost += parseBillNumber(b.kwCost);
+      e.facKWCost += parseBillNumber(b.facKWCost);
+      e.kwhCost += parseBillNumber(b.kwhCost);
+      e.customerCharge += parseBillNumber(b.customerCharge);
+      e.rkvaCharge += parseBillNumber(b.rkvaCharge);
+      e.taxExemptDelivery += parseBillNumber(b.taxExemptDelivery);
+      e.billOffset += parseBillNumber(b.billOffset);
+      e.franchiseFee += parseBillNumber(b.franchiseFee);
+      e.totalCost += parseBillNumber(b.totalCost);
+      e.kwh += parseBillNumber(b.kwh);
       // normDays: take from matching norm row
       const nr = allRows.find((r) => r.ym === ym);
       if (nr) e.normDays = nr.normDays || 30;
       e.count++;
-      if (pf(b.demandCharge) > 0 || pf(b.onPeakCost) > 0 || pf(b.facilitiesCharge) > 0) e.hasGranular = true;
+      if (parseBillNumber(b.demandCharge) > 0 || parseBillNumber(b.onPeakCost) > 0 || parseBillNumber(b.facilitiesCharge) > 0) e.hasGranular = true;
     });
 
     // Sorted ym list — trailing 24 months with data
@@ -11190,7 +11187,6 @@ function renderPerfPane(pane, m, bills, incl) {
     // Per-month computed values
     const months = trailing24.map((ym) => {
       const e = byYm[ym];
-      const pf = (v) => parseFloat(String(v || 0).replace(/,/g, '')) || 0;
 
       // Cost breakdown — prefer granular, fall back to aggregates
       const demandCost = e.hasGranular ? e.demandCharge + e.tdcCharge : e.kwCost;

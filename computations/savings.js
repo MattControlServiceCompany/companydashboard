@@ -36,7 +36,6 @@ function projHasContract(projId) {
    read in this file sees real therms regardless of import path.
 ───────────────────────────────────────────────────────────── */
 function resolveGasUsageTherms(b) {
-  const pf = (v) => parseFloat(String(v == null ? '' : v).replace(/,/g, '')) || 0;
   // 2026-09-22: added naturalGasCCF*1.037 (1 CCF = 1.037 Therms, matching
   // UNIT_TO_BASE.CCF in app/utility-data.js) so a bill with ONLY a CCF
   // reading on file still resolves — same reasoning as the naturalGasMMbtu
@@ -44,11 +43,11 @@ function resolveGasUsageTherms(b) {
   // DISPLAY path (app/utility-data.js _gasUsageDisplay) so every gas usage
   // read in the app — calc and display — shares this one fallback chain.
   return (
-    pf(b.therms) ||
-    pf(b.naturalGasTherms) ||
-    pf(b.naturalGasMMbtu) * 10 ||
-    pf(b.naturalGasCCF) * 1.037 ||
-    pf(b.usage) ||
+    parseBillNumber(b.therms) ||
+    parseBillNumber(b.naturalGasTherms) ||
+    parseBillNumber(b.naturalGasMMbtu) * 10 ||
+    parseBillNumber(b.naturalGasCCF) * 1.037 ||
+    parseBillNumber(b.usage) ||
     0
   );
 }

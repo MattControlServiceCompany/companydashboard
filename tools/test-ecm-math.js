@@ -22,6 +22,7 @@ const sb = {
   resolveGasUsageTherms: () => 0,
 };
 vm.createContext(sb);
+vm.runInContext(fs.readFileSync(path.join(root, 'lib/formatting.js'), 'utf8'), sb);
 vm.runInContext(fs.readFileSync(path.join(root, 'computations/rates.js'), 'utf8'), sb);
 vm.runInContext(src, sb);
 const T = sb.ECM_TEMPLATES;

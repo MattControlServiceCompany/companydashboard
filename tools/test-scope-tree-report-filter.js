@@ -185,6 +185,7 @@ function buildCtx() {
     new vm.Script(fs.readFileSync(path.join(REPO, rel), 'utf8'), { filename: rel }).runInContext(ctx);
   [
     'lib/date-helpers.js',
+    'lib/formatting.js',
     'computations/regression.js',
     'computations/rates.js',
     'computations/normalization.js',

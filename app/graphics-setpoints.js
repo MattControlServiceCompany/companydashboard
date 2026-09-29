@@ -490,12 +490,11 @@ function egfxRefresh(projId) {
   // month AVERAGE, not a multi-year total mislabeled as one month's value.
   let bldgHvac = {}; // {bldgId: {name, kwhSum:[12], kwhCount:[12], gasSum:[12], gasCount:[12], kwSum:[12], kwCount:[12]}}
 
-  const _pfe = (v) => parseFloat(v) || 0;
   // getBillFacKWCost (computations/rates.js) — the ONE accessor for Facilities kW Cost
   // (2026-09-23 single-source fix); never read bill.facKWCost/facilitiesCharge directly.
-  const _elecCommodityCost = (bill) => _pfe(bill.kwhCost) + _pfe(bill.kwCost) + getBillFacKWCost(bill);
-  const _gasCommodityCost = (bill) => _pfe(bill.totalCost) || _pfe(bill.thermCost) || _pfe(bill.cost) || 0;
-  const _propaneCommodityCost = (bill) => _pfe(bill.totalCost) || _pfe(bill.cost) || 0;
+  const _elecCommodityCost = (bill) => parseBillNumber(bill.kwhCost) + parseBillNumber(bill.kwCost) + getBillFacKWCost(bill);
+  const _gasCommodityCost = (bill) => parseBillNumber(bill.totalCost) || parseBillNumber(bill.thermCost) || parseBillNumber(bill.cost) || 0;
+  const _propaneCommodityCost = (bill) => parseBillNumber(bill.totalCost) || parseBillNumber(bill.cost) || 0;
 
   bldgs.forEach((b) => {
     const bName = b.name || 'Unknown';

@@ -36,51 +36,51 @@ function getBillFacKWCost(bill) {
   if (!bill) return 0;
   var v = bill.facilitiesCharge;
   if (v === undefined || v === null || v === '') v = bill.facKWCost;
-  return parseFloat(v) || 0;
+  return parseBillNumber(v) || 0;
 }
 
 // New canonical function for rate lookup
 function getStoredRate(bill, type) {
   switch (type) {
     case 'kwh': {
-      var stored = parseFloat(bill.totalKwhRate);
+      var stored = parseBillNumber(bill.totalKwhRate);
       if (stored > 0) return stored;
-      var usage = parseFloat(bill.kWhConsumed) || parseFloat(bill.totalKwh) || parseFloat(bill.kwh) || 0;
+      var usage = parseBillNumber(bill.kWhConsumed) || parseBillNumber(bill.totalKwh) || parseBillNumber(bill.kwh) || 0;
       // CSV-imported bills (BILL_SCHEMA.Electric, app/csv-import.js) use camelCase
       // onPeakCost/offPeakCost instead of the PDF extractor's kwhCost — fall back to
       // their sum so CSV-imported electric bills derive a real $/kWh (item 2026-09-21
       // rate-calc-and-electric-components.md gap #2).
       var cost =
-        parseFloat(bill.kwhCost) || (parseFloat(bill.onPeakCost) || 0) + (parseFloat(bill.offPeakCost) || 0) || 0;
+        parseBillNumber(bill.kwhCost) || (parseBillNumber(bill.onPeakCost) || 0) + (parseBillNumber(bill.offPeakCost) || 0) || 0;
       return usage > 0 && cost > 0 ? cost / usage : 0;
     }
     case 'kw': {
-      var stored = parseFloat(bill.totalKwRate);
+      var stored = parseBillNumber(bill.totalKwRate);
       if (stored > 0) return stored;
       var usage =
-        parseFloat(bill.BilledKW) ||
-        parseFloat(bill.ActualKW) ||
-        parseFloat(bill.FacilitiesKW) ||
-        parseFloat(bill.billedKW) ||
-        parseFloat(bill.demandKW) ||
+        parseBillNumber(bill.BilledKW) ||
+        parseBillNumber(bill.ActualKW) ||
+        parseBillNumber(bill.FacilitiesKW) ||
+        parseBillNumber(bill.billedKW) ||
+        parseBillNumber(bill.demandKW) ||
         0;
       // CSV-imported bills store demand $ under camelCase demandCharge/facilitiesCharge/
       // facKWCost/tdcCharge instead of the PDF extractor's kwCost — sum those as the
       // fallback so CSV-imported electric bills derive a real $/kW.
       var cost =
-        parseFloat(bill.kwCost) ||
-        (parseFloat(bill.demandCharge) || 0) + getBillFacKWCost(bill) + (parseFloat(bill.tdcCharge) || 0) ||
+        parseBillNumber(bill.kwCost) ||
+        (parseBillNumber(bill.demandCharge) || 0) + getBillFacKWCost(bill) + (parseBillNumber(bill.tdcCharge) || 0) ||
         0;
       return usage > 0 && cost > 0 ? cost / usage : 0;
     }
     case 'gas': {
-      var stored = parseFloat(bill.totalGasRate);
+      var stored = parseBillNumber(bill.totalGasRate);
       if (stored > 0) return stored;
       var cost =
-        parseFloat(bill.GasCharge) ||
-        parseFloat(bill.gasCharge) ||
-        parseFloat(bill.thermCost) ||
-        parseFloat(bill.totalCost) ||
+        parseBillNumber(bill.GasCharge) ||
+        parseBillNumber(bill.gasCharge) ||
+        parseBillNumber(bill.thermCost) ||
+        parseBillNumber(bill.totalCost) ||
         0;
       // 2026-09-23 (item 2026-09-23-gas-rate-fix): route usage through the single canonical
       // resolveGasUsageTherms() (computations/savings.js) instead of a second, duplicate
@@ -93,21 +93,21 @@ function getStoredRate(bill, type) {
       return usage > 0 && cost > 0 ? cost / usage : 0;
     }
     case 'propane': {
-      var stored = parseFloat(bill.totalPropaneRate);
+      var stored = parseBillNumber(bill.totalPropaneRate);
       if (stored > 0) return stored;
-      var cost = parseFloat(bill.totalCost) || parseFloat(bill.TotalAmountDue) || 0;
-      var usage = parseFloat(bill.GallonsDelivered) || 0;
+      var cost = parseBillNumber(bill.totalCost) || parseBillNumber(bill.TotalAmountDue) || 0;
+      var usage = parseBillNumber(bill.GallonsDelivered) || 0;
       return usage > 0 && cost > 0 ? cost / usage : 0;
     }
     case 'water': {
-      var stored = parseFloat(bill.totalWaterRate);
+      var stored = parseBillNumber(bill.totalWaterRate);
       if (stored > 0) return stored;
-      var cost = parseFloat(bill.WaterCharge) || parseFloat(bill.totalCost) || 0;
-      var usage = parseFloat(bill.WaterUsage) || 0;
+      var cost = parseBillNumber(bill.WaterCharge) || parseBillNumber(bill.totalCost) || 0;
+      var usage = parseBillNumber(bill.WaterUsage) || 0;
       return usage > 0 && cost > 0 ? cost / usage : 0;
     }
     case 'sewer': {
-      var stored = parseFloat(bill.totalSewerRate);
+      var stored = parseBillNumber(bill.totalSewerRate);
       if (stored > 0) return stored;
       return 0;
     }
@@ -129,16 +129,13 @@ function getStoredRate(bill, type) {
 // time by ensureBillRates), then the granular charge fields, then the legacy
 // kwCost+facKWCost sum for older-schema bills that only ever populated those two fields.
 function getStoredKwRate(bill) {
-  var pf = function (v) {
-    return parseFloat(v) || 0;
-  };
-  var stored = pf(bill.totalKwRate);
+  var stored = parseBillNumber(bill.totalKwRate);
   if (stored > 0) return stored;
-  var billedKW = pf(bill.billedKW) || pf(bill.demandKW) || 0;
+  var billedKW = parseBillNumber(bill.billedKW) || parseBillNumber(bill.demandKW) || 0;
   if (billedKW > 0) {
-    var granularCost = pf(bill.demandCharge) + pf(bill.tdcCharge) + getBillFacKWCost(bill);
+    var granularCost = parseBillNumber(bill.demandCharge) + parseBillNumber(bill.tdcCharge) + getBillFacKWCost(bill);
     if (granularCost > 0) return granularCost / billedKW;
-    var legacyCost = pf(bill.kwCost) + getBillFacKWCost(bill);
+    var legacyCost = parseBillNumber(bill.kwCost) + getBillFacKWCost(bill);
     if (legacyCost > 0) return legacyCost / billedKW;
   }
   return 0;
@@ -148,14 +145,11 @@ function getStoredKwRate(bill) {
 // Returns true if any field was added/updated, false if bill was already complete.
 function ensureBillRates(bill) {
   var changed = false;
-  var pf = function (v) {
-    return parseFloat(v) || 0;
-  };
 
   // Electric: totalKwhRate
-  if (!pf(bill.totalKwhRate)) {
-    var kwh = pf(bill.kWhConsumed) || pf(bill.totalKwh) || pf(bill.kwh);
-    var kwhCost = pf(bill.kwhCost);
+  if (!parseBillNumber(bill.totalKwhRate)) {
+    var kwh = parseBillNumber(bill.kWhConsumed) || parseBillNumber(bill.totalKwh) || parseBillNumber(bill.kwh);
+    var kwhCost = parseBillNumber(bill.kwhCost);
     if (kwh > 0 && kwhCost > 0) {
       bill.totalKwhRate = (kwhCost / kwh).toFixed(5);
       changed = true;
@@ -163,9 +157,9 @@ function ensureBillRates(bill) {
   }
 
   // Electric: totalKwRate (includes facKWCost — the full per-kW cost)
-  if (!pf(bill.totalKwRate)) {
-    var kw = pf(bill.BilledKW) || pf(bill.billedKW) || pf(bill.ActualKW) || pf(bill.demandKW) || pf(bill.FacilitiesKW);
-    var kwCost = pf(bill.kwCost) + getBillFacKWCost(bill);
+  if (!parseBillNumber(bill.totalKwRate)) {
+    var kw = parseBillNumber(bill.BilledKW) || parseBillNumber(bill.billedKW) || parseBillNumber(bill.ActualKW) || parseBillNumber(bill.demandKW) || parseBillNumber(bill.FacilitiesKW);
+    var kwCost = parseBillNumber(bill.kwCost) + getBillFacKWCost(bill);
     if (kw > 0 && kwCost > 0) {
       bill.totalKwRate = (kwCost / kw).toFixed(5);
       changed = true;
@@ -173,7 +167,7 @@ function ensureBillRates(bill) {
   }
 
   // Gas: totalGasRate (use gasCharge/commodity cost, not total bill cost — bug d4c78f06)
-  if (!pf(bill.totalGasRate)) {
+  if (!parseBillNumber(bill.totalGasRate)) {
     // 2026-09-23 (item 2026-09-23-gas-rate-fix): was a PascalCase-only Therms/CCF check with a
     // separate MMBtu fallback that stored cost/naturalGasMMbtu — a $/MMBtu number — in this same
     // field, mislabeled as $/Therm, for any MMBtu-only meter (e.g. WRE bills, no
@@ -181,7 +175,7 @@ function ensureBillRates(bill) {
     // through resolveGasUsageTherms(bill) — the same canonical Therms-usage resolver
     // computeSeasonalBldgRates uses (computations/savings.js) — so this always writes a real
     // $/Therm value, one usage definition, no duplicate math.
-    var gasChg = pf(bill.GasCharge) || pf(bill.gasCharge) || pf(bill.thermCost);
+    var gasChg = parseBillNumber(bill.GasCharge) || parseBillNumber(bill.gasCharge) || parseBillNumber(bill.thermCost);
     var gasUsage = typeof resolveGasUsageTherms === 'function' ? resolveGasUsageTherms(bill) : 0;
     if (gasUsage > 0 && gasChg > 0) {
       bill.totalGasRate = (gasChg / gasUsage).toFixed(5);
@@ -190,14 +184,14 @@ function ensureBillRates(bill) {
   }
 
   // Propane: totalPropaneRate (prefer unitPrice if available)
-  if (!pf(bill.totalPropaneRate)) {
-    var up = pf(bill.UnitPrice) || pf(bill.unitPrice);
+  if (!parseBillNumber(bill.totalPropaneRate)) {
+    var up = parseBillNumberOrZero(bill.UnitPrice) || parseBillNumber(bill.unitPrice);
     if (up > 0) {
       bill.totalPropaneRate = up.toFixed(5);
       changed = true;
     } else {
-      var gal = pf(bill.GallonsDelivered) || pf(bill.gallonsDelivered);
-      var propCost = pf(bill.totalCost) || pf(bill.TotalAmountDue);
+      var gal = parseBillNumber(bill.GallonsDelivered) || parseBillNumber(bill.gallonsDelivered);
+      var propCost = parseBillNumber(bill.totalCost) || parseBillNumber(bill.TotalAmountDue);
       if (gal > 0 && propCost > 0) {
         bill.totalPropaneRate = (propCost / gal).toFixed(5);
         changed = true;
@@ -206,9 +200,9 @@ function ensureBillRates(bill) {
   }
 
   // Water: totalWaterRate
-  if (!pf(bill.totalWaterRate)) {
-    var wUsage = pf(bill.WaterUsage) || pf(bill.waterUsage);
-    var wChg = pf(bill.WaterCharge) || pf(bill.waterCharge);
+  if (!parseBillNumber(bill.totalWaterRate)) {
+    var wUsage = parseBillNumber(bill.WaterUsage) || parseBillNumber(bill.waterUsage);
+    var wChg = parseBillNumber(bill.WaterCharge) || parseBillNumber(bill.waterCharge);
     if (wUsage > 0 && wChg > 0) {
       bill.totalWaterRate = (wChg / wUsage).toFixed(5);
       changed = true;
@@ -216,9 +210,9 @@ function ensureBillRates(bill) {
   }
 
   // Sewer: totalSewerRate
-  if (!pf(bill.totalSewerRate)) {
-    var sUsage = pf(bill.SewerUsage) || pf(bill.sewerUsage);
-    var sChg = pf(bill.SewerCharge) || pf(bill.sewerCharge);
+  if (!parseBillNumber(bill.totalSewerRate)) {
+    var sUsage = parseBillNumber(bill.SewerUsage) || parseBillNumber(bill.sewerUsage);
+    var sChg = parseBillNumber(bill.SewerCharge) || parseBillNumber(bill.sewerCharge);
     if (sUsage > 0 && sChg > 0) {
       bill.totalSewerRate = (sChg / sUsage).toFixed(5);
       changed = true;
@@ -279,62 +273,56 @@ function toKBtu(kwh, therms, gallons) {
 // three must sum the same fields or a bill's "checked" rate can disagree with
 // its "displayed" rate and false-flag a valid bill (item 377ea7f0).
 function sumElectricEnergyCharges(parsed) {
-  var pf = function (v) {
-    return parseFloat(v) || 0;
-  };
   parsed = parsed || {};
   return (
-    pf(parsed.EnergyOnPeakCharge) +
-    pf(parsed.EnergyOffPeakCharge) +
-    pf(parsed.ECACharge) +
-    pf(parsed.EERCharge) +
-    pf(parsed.PTSCharge)
+    parseBillNumber(parsed.EnergyOnPeakCharge) +
+    parseBillNumber(parsed.EnergyOffPeakCharge) +
+    parseBillNumber(parsed.ECACharge) +
+    parseBillNumber(parsed.EERCharge) +
+    parseBillNumber(parsed.PTSCharge)
   );
 }
 
 function getExtractedRate(parsed, type) {
-  var pf = function (v) {
-    return parseFloat(v) || 0;
-  };
   switch (type) {
     case 'kwh': {
       var cost = sumElectricEnergyCharges(parsed);
-      var usage = pf(parsed.kWhConsumed);
+      var usage = parseBillNumber(parsed.kWhConsumed);
       return usage > 0 && cost > 0 ? cost / usage : 0;
     }
     case 'kw': {
-      var cost = pf(parsed.FacilitiesCharge) + pf(parsed.BilledKWCharge) + pf(parsed.TDCCharge);
-      var usage = pf(parsed.BilledKW) || pf(parsed.ActualKW) || pf(parsed.FacilitiesKW);
+      var cost = parseBillNumber(parsed.FacilitiesCharge) + parseBillNumber(parsed.BilledKWCharge) + parseBillNumber(parsed.TDCCharge);
+      var usage = parseBillNumber(parsed.BilledKW) || parseBillNumber(parsed.ActualKW) || parseBillNumber(parsed.FacilitiesKW);
       return usage > 0 && cost > 0 ? cost / usage : 0;
     }
     case 'gas': {
-      var cost = pf(parsed.GasCharge) || pf(parsed.gasCharge) || pf(parsed.thermCost) || pf(parsed.totalCost) || 0;
-      var usage = pf(parsed.NaturalGasTherms) || 0;
+      var cost = parseBillNumber(parsed.GasCharge) || parseBillNumber(parsed.gasCharge) || parseBillNumber(parsed.thermCost) || parseBillNumber(parsed.totalCost) || 0;
+      var usage = parseBillNumber(parsed.NaturalGasTherms) || 0;
       if (!usage) {
-        var ccf = pf(parsed.NaturalGasCCF) || 0;
+        var ccf = parseBillNumber(parsed.NaturalGasCCF) || 0;
         if (ccf > 0) usage = Math.round(ccf * 1.037 * 100) / 100;
       }
       if (usage > 0 && cost > 0) return cost / usage;
       // MMBtu fallback: WRE meters store usage as naturalGasMMbtu; divide charge by MMBtu
       // so the result is $/MMBtu rather than $/Therm — mirrors getStoredRate('gas') above.
-      var mmbtu = pf(parsed.naturalGasMMbtu) || pf(parsed.NaturalGasMMbtu) || 0;
+      var mmbtu = parseBillNumber(parsed.naturalGasMMbtu) || parseBillNumber(parsed.NaturalGasMMbtu) || 0;
       return mmbtu > 0 && cost > 0 ? cost / mmbtu : 0;
     }
     case 'propane': {
-      var up = pf(parsed.UnitPrice);
+      var up = parseBillNumber(parsed.UnitPrice);
       if (up > 0) return up;
-      var gal = pf(parsed.GallonsDelivered);
-      var cost = pf(parsed.TotalCurrentCharges) || pf(parsed.TotalAmountDue);
+      var gal = parseBillNumber(parsed.GallonsDelivered);
+      var cost = parseBillNumber(parsed.TotalCurrentCharges) || parseBillNumber(parsed.TotalAmountDue);
       return gal > 0 && cost > 0 ? cost / gal : 0;
     }
     case 'water': {
-      var usage = pf(parsed.WaterUsage);
-      var cost = pf(parsed.WaterCharge);
+      var usage = parseBillNumber(parsed.WaterUsage);
+      var cost = parseBillNumber(parsed.WaterCharge);
       return usage > 0 && cost > 0 ? cost / usage : 0;
     }
     case 'sewer': {
-      var usage = pf(parsed.SewerUsage);
-      var cost = pf(parsed.SewerCharge);
+      var usage = parseBillNumber(parsed.SewerUsage);
+      var cost = parseBillNumber(parsed.SewerCharge);
       return usage > 0 && cost > 0 ? cost / usage : 0;
     }
     default:
@@ -790,10 +778,10 @@ function computeSeasonalBldgRates(projId, bldgId) {
     // instead of changed here.
     var gasRows = billRates(gasM, function (bill) {
       var cost =
-        parseFloat(bill.GasCharge) ||
-        parseFloat(bill.gasCharge) ||
-        parseFloat(bill.thermCost) ||
-        parseFloat(bill.totalCost) ||
+        parseBillNumber(bill.GasCharge) ||
+        parseBillNumber(bill.gasCharge) ||
+        parseBillNumber(bill.thermCost) ||
+        parseBillNumber(bill.totalCost) ||
         0;
       var usage = typeof resolveGasUsageTherms === 'function' ? resolveGasUsageTherms(bill) : 0;
       return usage > 0 && cost > 0 ? cost / usage : 0;

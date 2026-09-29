@@ -45,6 +45,7 @@ function buildSandbox() {
   vm.runInContext(glue, sandbox, { filename: 'glue.js' });
   [
     'lib/date-helpers.js',
+    'lib/formatting.js',
     'computations/regression.js',
     'computations/normalization.js',
     'computations/rates.js',

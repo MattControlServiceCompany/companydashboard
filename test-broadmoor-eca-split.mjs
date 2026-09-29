@@ -157,7 +157,7 @@ async function main() {
     bill._rates.EnergyOnPeakCharge.parts[0].computed = parseFloat(bill.EnergyOnPeakCharge);
     bill._rates.EnergyOffPeakCharge.parts[0].computed = parseFloat(bill.EnergyOffPeakCharge);
 
-    const witnesses = X.gatherKwhWitnesses(bill, pf);
+    const witnesses = X.gatherKwhWitnesses(bill);
     const bySource = Object.fromEntries(witnesses.map((w) => [w.source, w]));
     assertTrue(!!bySource['ECACharge'] && bySource['ECACharge'].value === 48976, 'Broadmoor: ECACharge witness sums both sub-lines to 48976');
     assertTrue(!!bySource['EERCharge'] && bySource['EERCharge'].strong, 'Broadmoor: EER witness self-verifies STRONG');

@@ -82,7 +82,7 @@ function loadFile(sandbox, relPath) {
 
 function setup() {
   const { sandbox, bldgBarStub } = buildSandbox();
-  for (const p of ['app/energy-savings.js', 'app/bill-analysis.js']) {
+  for (const p of ['lib/formatting.js', 'app/energy-savings.js', 'app/bill-analysis.js']) {
     loadFile(sandbox, p);
   }
   return { sandbox, bldgBarStub };

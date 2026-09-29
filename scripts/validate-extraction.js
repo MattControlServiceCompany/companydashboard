@@ -335,11 +335,8 @@ function toISO(d) {
 // ---------------------------------------------------------------------------
 // Numeric compare: round to 4 decimals, exact match required after rounding.
 // ---------------------------------------------------------------------------
-function parseNum(v) {
-  if (v === null || v === undefined || v === '') return null;
-  const n = typeof v === 'number' ? v : parseFloat(String(v).replace(/[,$]/g, ''));
-  return isNaN(n) ? null : n;
-}
+// The app and this validator read bill numbers with the same function (lib/formatting.js).
+const { parseBillNumber: parseNum } = require('../lib/formatting.js');
 function round4(n) {
   return Math.round(n * 10000) / 10000;
 }

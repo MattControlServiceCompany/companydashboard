@@ -90,6 +90,7 @@ function setup() {
   // Same load order as energy-department.html: bill-analysis before
   // bill-validation (computeLiveBillFlags/dismissBillFlag) before utility-data.
   for (const p of [
+    'lib/formatting.js',
     'computations/rates.js',
     'app/energy-savings.js',
     'app/bill-analysis.js',

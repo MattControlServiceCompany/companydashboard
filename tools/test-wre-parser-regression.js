@@ -66,6 +66,9 @@ function loadWRE(scriptPath) {
   const src = fs.readFileSync(scriptPath, 'utf8');
   const sandbox = { window: {}, console: { log: () => {}, warn: () => {}, error: () => {} } };
   vm.createContext(sandbox);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'lib', 'formatting.js'), 'utf8'), sandbox, {
+    filename: 'formatting.js',
+  });
   vm.runInContext(src, sandbox, { filename: path.basename(scriptPath) });
   const rules = vm.runInContext('typeof UTILITY_RULES !== "undefined" ? UTILITY_RULES : null', sandbox);
   if (!rules) throw new Error('UTILITY_RULES not found in ' + scriptPath);

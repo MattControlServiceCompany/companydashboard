@@ -2322,14 +2322,9 @@ function parsePricingCSV(text) {
     var netRaw = colNet >= 0 ? cells[colNet] || '' : '';
     var contractRaw = colContract >= 0 ? cells[colContract] || '' : '';
 
-    function parsePrice(s) {
-      var n = parseFloat(String(s).replace(/[$,\s]/g, ''));
-      return isNaN(n) ? null : n;
-    }
-
-    var list = parsePrice(listRaw);
-    var netCSV = parsePrice(netRaw);
-    var contract = parsePrice(contractRaw);
+    var list = parseBillNumber(listRaw);
+    var netCSV = parseBillNumber(netRaw);
+    var contract = parseBillNumber(contractRaw);
 
     if (list === null && netCSV === null && contract === null) continue; // skip non-priced rows
 

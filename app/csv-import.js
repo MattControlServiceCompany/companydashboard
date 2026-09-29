@@ -660,7 +660,6 @@ function importBillCsvRows() {
 // Returns the count of bills whose facKW was actually filled.
 function backfillFacilitiesKW(billsForMeter) {
   if (!billsForMeter || !billsForMeter.length) return 0;
-  const pf = (v) => parseFloat(v) || 0;
   const facCost = (b) => (typeof getBillFacKWCost === 'function' ? getBillFacKWCost(b) : 0);
   const sorted = billsForMeter.slice().sort((a, b) => _parseISO(a.start) - _parseISO(b.start));
   let filled = 0;
@@ -670,14 +669,14 @@ function backfillFacilitiesKW(billsForMeter) {
   // pattern app/bill-analysis.js already uses for the PDF path (~L4592-4605).
   const rateSamples = [];
   sorted.forEach((b) => {
-    const kw = pf(b.facKW);
+    const kw = parseBillNumber(b.facKW);
     const chg = facCost(b);
     if (kw > 0 && chg > 0) rateSamples.push(chg / kw);
   });
   const knownRate = rateSamples.length ? rateSamples.reduce((s, r) => s + r, 0) / rateSamples.length : 0;
 
   sorted.forEach((bill, i) => {
-    if (pf(bill.facKW) > 0) {
+    if (parseBillNumber(bill.facKW) > 0) {
       delete bill._facKWMissing; // real value present — clear any stale missing-flag marker
       return; // never overwrite
     }
@@ -699,7 +698,7 @@ function backfillFacilitiesKW(billsForMeter) {
       for (let j = 0; j <= i; j++) {
         const cand = sorted[j];
         if (_parseISO(cand.start) < windowStart) continue;
-        peak = Math.max(peak, pf(cand.billedKW) || pf(cand.demandKW));
+        peak = Math.max(peak, parseBillNumber(cand.billedKW) || parseBillNumber(cand.demandKW));
       }
       if (peak > 0) {
         bill.facKW = peak;
@@ -758,18 +757,19 @@ const _CHARGE_QTY_PAIRS = {
 function _billFieldWarnings(row, commodity) {
   const warnings = {};
   if (commodity !== 'Electric') return warnings;
-  const _pf = (v) => parseFloat(v) || 0;
   // Check charge-without-qty
   Object.entries(_CHARGE_QTY_PAIRS).forEach(([chargeKey, qtyKey]) => {
-    if (_pf(row[chargeKey]) > 0 && _pf(row[qtyKey]) === 0) {
-      warnings[qtyKey] = 'Charge of $' + _pf(row[chargeKey]).toFixed(2) + ' exists but qty is missing';
+    const _chargeN = parseBillNumber(row[chargeKey]);
+    const _qtyN = parseBillNumber(row[qtyKey]);
+    if (_chargeN > 0 && (_qtyN === null || _qtyN === 0)) {
+      warnings[qtyKey] = 'Charge of $' + _chargeN.toFixed(2) + ' exists but qty is missing';
       warnings[chargeKey] = 'Has charge but no qty — verify extraction';
     }
   });
   // kWh identity check
-  const onPk = _pf(row.onPeakKwh);
-  const offPk = _pf(row.offPeakKwh);
-  const total = _pf(row.kwh);
+  const onPk = parseBillNumber(row.onPeakKwh);
+  const offPk = parseBillNumber(row.offPeakKwh);
+  const total = parseBillNumber(row.kwh);
   if (onPk > 0 && offPk > 0 && total > 0) {
     const diff = Math.abs(onPk + offPk - total);
     if (diff > 1) {
@@ -896,7 +896,11 @@ function renderBillRow(row, m, incl, allBills, cols, rowNum) {
       } else if (c.category.key) {
         const rawKey = row[c.category.key];
         isMissing = rawKey === null || rawKey === undefined || rawKey === '' || rawKey === 'null';
-        val = isMissing ? 0 : _pfBills(rawKey);
+        val = isMissing ? null : parseBillNumber(rawKey);
+        if (val === null) {
+          isMissing = true;
+          val = 0;
+        }
       }
       // Apply unit conversion for usage-quantity condensed columns (Task 3).
       // Match labels like "Total kWh", "CCF", "Therms", "Water Usage" but
@@ -1922,13 +1926,13 @@ function _billStripCurrency(v) {
   return (v == null ? '' : String(v)).replace(/[$,\s]/g, '');
 }
 function _billFmtCurrency(v) {
-  const n = parseFloat(_billStripCurrency(v));
-  if (isNaN(n)) return '';
+  const n = parseBillNumber(v);
+  if (n === null) return v == null ? '' : String(v).trim();
   return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 function _billFmtNumber(v) {
-  const n = parseFloat(_billStripCurrency(v));
-  if (isNaN(n)) return '';
+  const n = parseBillNumber(v);
+  if (n === null) return v == null ? '' : String(v).trim();
   return n.toLocaleString('en-US', { maximumFractionDigits: 4 });
 }
 function _billModalFocus(el) {
@@ -1948,8 +1952,8 @@ function _billRecalcRow(chargeKey) {
     const qtyInp = rowEl.querySelector('.bl-qty-input');
     const chargeInp = rowEl.querySelector('.bl-charge-input');
     const rateInp = rowEl.querySelector('.bl-rate-input');
-    const qty = qtyInp ? parseFloat(_billStripCurrency(qtyInp.value)) || 0 : 0;
-    const charge = chargeInp ? parseFloat(_billStripCurrency(chargeInp.value)) || 0 : 0;
+    const qty = qtyInp ? parseBillNumberOrZero(qtyInp.value) : 0;
+    const charge = chargeInp ? parseBillNumberOrZero(chargeInp.value) : 0;
     if (rateInp) {
       if (qty > 0 && charge !== 0) rateInp.value = '$' + (charge / qty).toFixed(dp) + (unit ? '/' + unit : '');
       else rateInp.value = '';
@@ -1964,7 +1968,7 @@ function _billRecalcRunningTotals() {
   rows.forEach((r) => {
     const ck = r.getAttribute('data-charge-key');
     const chargeInp = r.querySelector('.bl-charge-input');
-    const val = chargeInp ? parseFloat(_billStripCurrency(chargeInp.value)) || 0 : 0;
+    const val = chargeInp ? parseBillNumberOrZero(chargeInp.value) : 0;
     if (ck === 'TotalCurrentCharges') {
       enteredTotal = val;
       return;
@@ -2382,8 +2386,8 @@ function openBillModal(mid, editRowId) {
       function _gasSubtractHint() {
         const existing = document.getElementById('bl-gasCharge-hint');
         if (existing) existing.remove();
-        const gasVal = parseFloat(_billStripCurrency(_blGasInp.value)) || 0;
-        const custVal = _blCustInp ? parseFloat(_billStripCurrency(_blCustInp.value)) || 0 : 0;
+        const gasVal = parseBillNumberOrZero(_blGasInp.value);
+        const custVal = _blCustInp ? parseBillNumberOrZero(_blCustInp.value) : 0;
         // Bug 4f27fc5d: hide hint when Base Charge field already has a value.
         // The hint should only appear when Gas Charge exists AND Base Charge is
         // empty/zero — i.e. suggesting the base charge may be bundled into the gas
@@ -2392,8 +2396,8 @@ function openBillModal(mid, editRowId) {
         if (custVal > 0 || gasVal <= 0) return;
       }
       window._gasApplySubtract = function () {
-        const gasVal = parseFloat(_billStripCurrency(_blGasInp.value)) || 0;
-        const custVal = _blCustInp ? parseFloat(_billStripCurrency(_blCustInp.value)) || 0 : 0;
+        const gasVal = parseBillNumberOrZero(_blGasInp.value);
+        const custVal = _blCustInp ? parseBillNumberOrZero(_blCustInp.value) : 0;
         if (custVal <= 0 || gasVal <= custVal) return;
         const net = gasVal - custVal;
         _blGasInp.value = _billFmtCurrency(net.toFixed(2));
@@ -2416,9 +2420,9 @@ function openBillModal(mid, editRowId) {
     const _diffInp = document.getElementById('bl-readDifference') || document.getElementById('bl-readDiff');
     if (!_prevInp || !_curInp || !_diffInp) return;
     function _autoCalcReadDiff() {
-      const prev = parseFloat(_billStripCurrency(_prevInp.value));
-      const cur = parseFloat(_billStripCurrency(_curInp.value));
-      if (!isNaN(prev) && !isNaN(cur)) {
+      const prev = parseBillNumber(_prevInp.value);
+      const cur = parseBillNumber(_curInp.value);
+      if (prev !== null && cur !== null) {
         let diff = cur - prev;
         // Meter rollover detection (Feature 0de6c188): when cur < prev and prev is
         // near an odometer boundary, compute the wrap-around usage instead of a
@@ -2461,20 +2465,20 @@ function openBillModal(mid, editRowId) {
       const faChargeInp = faRow.querySelector('.bl-charge-input');
       const faRateInp = faRow.querySelector('.bl-rate-input');
       if (!faRateInp) return;
-      const faCharge = faChargeInp ? Math.abs(parseFloat(_billStripCurrency(faChargeInp.value)) || 0) : 0;
+      const faCharge = faChargeInp ? Math.abs(parseBillNumberOrZero(faChargeInp.value)) : 0;
       // Gas usage qty comes from GasCharge row (CCF or Therms)
       const gasRow = document.querySelector('.ef-charge-row[data-charge-key="GasCharge"]');
       const gasUnit = gasRow ? gasRow.getAttribute('data-unit') || 'CCF' : 'CCF';
       const gasQtyInp = gasRow ? gasRow.querySelector('.bl-qty-input') : null;
-      const gasQty = gasQtyInp ? parseFloat(_billStripCurrency(gasQtyInp.value)) || 0 : 0;
+      const gasQty = gasQtyInp ? parseBillNumberOrZero(gasQtyInp.value) : 0;
       if (faCharge > 0 && gasQty > 0) {
         const rate = faCharge / gasQty;
         faRateInp.value = '$' + rate.toFixed(5) + '/' + gasUnit;
       }
       // Re-calc whenever gas qty or fuel adj charge changes
       function _updateFuelAdjRate() {
-        const _faCharge = faChargeInp ? Math.abs(parseFloat(_billStripCurrency(faChargeInp.value)) || 0) : 0;
-        const _gasQty = gasQtyInp ? parseFloat(_billStripCurrency(gasQtyInp.value)) || 0 : 0;
+        const _faCharge = faChargeInp ? Math.abs(parseBillNumberOrZero(faChargeInp.value)) : 0;
+        const _gasQty = gasQtyInp ? parseBillNumberOrZero(gasQtyInp.value) : 0;
         if (_faCharge > 0 && _gasQty > 0) {
           faRateInp.value = '$' + (_faCharge / _gasQty).toFixed(5) + '/' + gasUnit;
         } else {
@@ -2510,7 +2514,7 @@ function billAutoSum() {
     const ck = r.getAttribute('data-charge-key');
     if (ck === 'TotalCurrentCharges') return;
     const chargeInp = r.querySelector('.bl-charge-input');
-    if (chargeInp) sum += parseFloat(_billStripCurrency(chargeInp.value)) || 0;
+    if (chargeInp) sum += parseBillNumberOrZero(chargeInp.value);
   });
   if (sum > 0) {
     const totalInp = document.getElementById('bl-totalCost');
@@ -2541,7 +2545,17 @@ function saveBillRow() {
   const data = {};
   for (const entry of schema) {
     if (entry.section) continue;
-    const v = g('bl-' + entry.key);
+    let v = g('bl-' + entry.key);
+    if (v !== '' && (entry.type === 'number' || entry.type === 'currency')) {
+      // Read the typed text with the one bill-number parser. "12,5" or "abc" is not a number:
+      // refuse to save (never store a different number than the one typed).
+      const n = parseBillNumber(document.getElementById('bl-' + entry.key)?.value);
+      if (n === null) {
+        showToast(entry.label + ' is not a number. Correct it and save again.');
+        return;
+      }
+      if (!/^-?\d*\.?\d+$|^-?\d+\.$/.test(v)) v = String(n);
+    }
     if (v !== '') data[entry.key] = v;
     else if (entry.key === 'start' || entry.key === 'end') data[entry.key] = '';
   }

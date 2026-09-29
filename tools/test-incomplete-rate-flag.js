@@ -97,10 +97,11 @@ const normalizationSrc = fs.readFileSync(REPO + '/computations/normalization.js'
 const regressionSrc = fs.readFileSync(REPO + '/computations/regression.js', 'utf8');
 const ratesSrc = fs.readFileSync(REPO + '/computations/rates.js', 'utf8');
 const dateHelpersSrc = fs.readFileSync(REPO + '/lib/date-helpers.js', 'utf8');
+const formattingSrc = fs.readFileSync(REPO + '/lib/formatting.js', 'utf8');
 const savingsSrc = fs.readFileSync(savingsPath, 'utf8');
 
 vm.runInContext(
-  [stubs, dateFns, dateHelpersSrc, regressionSrc, ratesSrc, normalizationSrc, savingsSrc].join('\n\n'),
+  [stubs, dateFns, dateHelpersSrc, formattingSrc, regressionSrc, ratesSrc, normalizationSrc, savingsSrc].join('\n\n'),
   sandbox,
 );
 

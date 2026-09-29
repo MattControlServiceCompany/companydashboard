@@ -52,6 +52,9 @@ function loadExtractEvergy(scriptPath) {
     console: { log: () => {}, warn: () => {}, error: () => {} },
   };
   vm.createContext(sandbox);
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'lib', 'formatting.js'), 'utf8'), sandbox, {
+    filename: 'formatting.js',
+  });
   vm.runInContext(src, sandbox, { filename: path.basename(scriptPath) });
   const fn = vm.runInContext('typeof _extractEvergy !== "undefined" ? _extractEvergy : null', sandbox);
   if (!fn) throw new Error('_extractEvergy not found in ' + scriptPath);

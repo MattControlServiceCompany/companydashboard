@@ -90,6 +90,7 @@ function buildSandbox() {
   // computations/savings.js defines resolveGasUsageTherms as a bare `function` — load it
   // first so _computeGasRate's `typeof resolveGasUsageTherms === 'function'` guard sees
   // the real implementation, not a no-op.
+  vm.runInContext(fs.readFileSync(path.join(REPO, 'lib/formatting.js'), 'utf8'), sandbox, { filename: 'formatting.js' });
   vm.runInContext(fs.readFileSync(path.join(REPO, 'computations/savings.js'), 'utf8'), sandbox, {
     filename: 'savings.js',
   });
@@ -198,6 +199,7 @@ function runV2Migration(initialUtilityData, dbStore) {
   };
   sandbox.window = sandbox;
   vm.createContext(sandbox);
+  vm.runInContext(fs.readFileSync(path.join(REPO, 'lib/formatting.js'), 'utf8'), sandbox, { filename: 'formatting.js' });
   vm.runInContext(fs.readFileSync(path.join(REPO, 'computations/savings.js'), 'utf8'), sandbox, {
     filename: 'savings.js',
   });

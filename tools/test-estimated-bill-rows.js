@@ -68,6 +68,8 @@ const sandbox = { console, Date, Math, isNaN, parseFloat, Array };
 vm.createContext(sandbox);
 
 const fns = [
+  loadFn(REPO + '/lib/formatting.js', 'parseBillNumber'),
+  loadFn(REPO + '/lib/formatting.js', 'parseBillNumberOrZero'),
   loadFn(REPO + '/app/utility-data.js', '_fixISO'),
   loadFn(REPO + '/app/utility-data.js', '_parseISO'),
   loadFn(REPO + '/app/utility-data.js', 'calcDays'),

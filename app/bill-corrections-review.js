@@ -161,8 +161,8 @@ function _bcrFormatDisplayValue(field, value, currentValue) {
   if (value == null || value === '') return value;
   const str = String(value).trim();
   if (!/^-?[\d,]*\.?\d+$/.test(str)) return value; // not a plain number — leave dates etc. alone
-  const num = parseFloat(str.replace(/,/g, ''));
-  if (isNaN(num)) return value;
+  const num = parseBillNumber(str);
+  if (num === null) return value;
   if (/charge|amount|due|cost|total/i.test(field || '')) return num.toFixed(2);
   const curStr = currentValue != null ? String(currentValue).trim() : '';
   const curDecimals = /^-?[\d,]*\.?\d+$/.test(curStr) ? (curStr.split('.')[1] || '').length : null;
@@ -764,7 +764,7 @@ async function _bcrScanKGSMeterBills(pid, proj, bldgs, ctl) {
         continue;
       }
       // ── Plausibility guard (2026-09-25 fix — see function header) ──
-      const correctedNum = parseFloat(out.TotalCurrentCharges);
+      const correctedNum = parseBillNumber(out.TotalCurrentCharges);
       const history = (meter.bills || [])
         .filter(
           (b2) =>
@@ -773,11 +773,11 @@ async function _bcrScanKGSMeterBills(pid, proj, bldgs, ctl) {
             /kansas gas service/i.test(b2.utilityCompany || '') &&
             b2.totalCost != null &&
             b2.totalCost !== '' &&
-            !isNaN(parseFloat(b2.totalCost)),
+            parseBillNumber(b2.totalCost) !== null,
         )
-        .map((b2) => parseFloat(b2.totalCost));
+        .map((b2) => parseBillNumber(b2.totalCost));
       const med = history.length ? _bcrMedian(history) : null;
-      if (med == null || med <= 0) {
+      if (med == null || med <= 0 || correctedNum === null) {
         ctl.skipped.push({
           label,
           building,
@@ -1023,8 +1023,8 @@ async function _bcrScanLouisburgDate(pid, proj, bldgs, ctl) {
       // Guard: only billDate may change. Period is already required identical
       // by the match above; also require the total charge to be unchanged so
       // a wrong-bill match can never slip through as a same-day discrepancy.
-      const newTotal = m.TotalAmountDue != null ? parseFloat(String(m.TotalAmountDue).replace(/,/g, '')) : null;
-      const oldTotal = bill.totalCost != null && bill.totalCost !== '' ? parseFloat(bill.totalCost) : null;
+      const newTotal = parseBillNumber(m.TotalAmountDue);
+      const oldTotal = parseBillNumber(bill.totalCost);
       if (newTotal != null && oldTotal != null && Math.abs(newTotal - oldTotal) > 0.5) {
         ctl.skipped.push({
           label,

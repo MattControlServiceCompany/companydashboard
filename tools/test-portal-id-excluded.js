@@ -29,7 +29,7 @@ function build(projList) {
   const ud = fs.readFileSync(path.join(REPO, 'app/utility-data.js'), 'utf8');
   const i = ud.indexOf('function isBaselineExcluded');
   vm.runInContext(ud.slice(i, ud.indexOf('function setBaselineExcluded')), sb);
-  ['lib/date-helpers.js', 'computations/regression.js', 'computations/normalization.js', 'computations/rates.js',
+  ['lib/date-helpers.js', 'lib/formatting.js', 'computations/regression.js', 'computations/normalization.js', 'computations/rates.js',
     'computations/savings.js', 'computations/eui.js', 'computations/csc.js']
     .forEach((rel) => vm.runInContext(fs.readFileSync(path.join(REPO, rel), 'utf8'), sb, { filename: rel }));
   return sb;

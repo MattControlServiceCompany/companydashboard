@@ -111,6 +111,7 @@ const fns = [
 ];
 
 const dateHelpersSrc = fs.readFileSync(REPO + '/lib/date-helpers.js', 'utf8');
+const formattingSrc = fs.readFileSync(REPO + '/lib/formatting.js', 'utf8');
 const regressionSrc = fs.readFileSync(REPO + '/computations/regression.js', 'utf8');
 const normalizationSrc = fs.readFileSync(REPO + '/computations/normalization.js', 'utf8');
 const euiSrc = fs.readFileSync(REPO + '/computations/eui.js', 'utf8');
@@ -126,6 +127,8 @@ vm.runInContext(
     fns.join('\n\n') +
     '\n\n' +
     dateHelpersSrc +
+    '\n\n' +
+    formattingSrc +
     '\n\n' +
     regressionSrc +
     '\n\n' +

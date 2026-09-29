@@ -3080,22 +3080,21 @@ function _solarGetBaselineBills(p, meterFilter) {
         }
         if (mi < 0) return;
         moCount[mi]++;
-        const pf = (v) => (v ? parseFloat(String(v).replace(/,/g, '')) || 0 : 0);
-        R.kwh[mi] += pf(bill.kwh) || pf(bill.usage);
-        R.billedKw[mi] = Math.max(R.billedKw[mi], pf(bill.billedKW) || pf(bill.demandKW) || pf(bill.kw));
-        R.facKw[mi] = Math.max(R.facKw[mi], pf(bill.facKW) || pf(bill.facilitiesKW));
-        R.onPeakKwh[mi] += pf(bill.onPeakKwh);
-        R.offPeakKwh[mi] += pf(bill.offPeakKwh);
-        R.totalCost[mi] += pf(bill.totalCost);
+        R.kwh[mi] += parseBillNumber(bill.kwh) || parseBillNumber(bill.usage);
+        R.billedKw[mi] = Math.max(R.billedKw[mi], parseBillNumber(bill.billedKW) || parseBillNumber(bill.demandKW) || parseBillNumber(bill.kw));
+        R.facKw[mi] = Math.max(R.facKw[mi], parseBillNumber(bill.facKW) || parseBillNumber(bill.facilitiesKW));
+        R.onPeakKwh[mi] += parseBillNumber(bill.onPeakKwh);
+        R.offPeakKwh[mi] += parseBillNumber(bill.offPeakKwh);
+        R.totalCost[mi] += parseBillNumber(bill.totalCost);
         if (bill.start) R.startDate[mi] = bill.start;
         if (bill.end) R.endDate[mi] = bill.end;
-        R.ecaCharge[mi] += pf(bill.ecaCharge);
-        R.eerCharge[mi] += pf(bill.eerCharge);
-        R.ptsCharge[mi] += pf(bill.ptsCharge);
-        R.tdcCharge[mi] += pf(bill.tdcCharge);
-        R.franchiseFee[mi] += pf(bill.franchiseFee);
-        R.onPeakCost[mi] += pf(bill.onPeakCost);
-        R.offPeakCost[mi] += pf(bill.offPeakCost);
+        R.ecaCharge[mi] += parseBillNumber(bill.ecaCharge);
+        R.eerCharge[mi] += parseBillNumber(bill.eerCharge);
+        R.ptsCharge[mi] += parseBillNumber(bill.ptsCharge);
+        R.tdcCharge[mi] += parseBillNumber(bill.tdcCharge);
+        R.franchiseFee[mi] += parseBillNumber(bill.franchiseFee);
+        R.onPeakCost[mi] += parseBillNumber(bill.onPeakCost);
+        R.offPeakCost[mi] += parseBillNumber(bill.offPeakCost);
       });
       // Average if multiple baseline years have data for the same calendar month
       for (let i = 0; i < 12; i++) {
