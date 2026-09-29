@@ -57,6 +57,7 @@ function publishClientPortal(projId) {
     if (_peBldgs) {
       _peBldgs.forEach((b) => {
         (b.meters || []).forEach((m) => {
+          if (isBaselineExcluded(projId, m.id)) return;
           const bills = (m.bills || []).slice().sort((a, c) => {
             const da = a.start ? new Date(a.start).getTime() : 0;
             const dc = c.start ? new Date(c.start).getTime() : 0;
@@ -157,6 +158,7 @@ function publishClientPortal(projId) {
   );
 
   // ── 7. Build sanitized JSON — explicitly exclude sensitive fields ──
+  const annualTarget = Number(p.savings) || 0;
   const snapshot = {
     meta: {
       token: p.portalToken,
@@ -169,10 +171,9 @@ function publishClientPortal(projId) {
     },
     summary: {
       totalSavingsDollars: totalSavings,
-      contractProgressPct:
-        p.contract && Number(p.contract) > 0
-          ? Math.min(100, Math.round((totalSavings / Number(p.contract)) * 1000) / 10)
-          : null,
+      // Est. Savings/yr (p.savings) is the project's savings target.
+      annualTargetDollars: annualTarget > 0 ? annualTarget : null,
+      contractProgressPct: annualTarget > 0 ? Math.min(100, Math.round((totalSavings / annualTarget) * 1000) / 10) : null,
       totalKwhSaved: Math.round(totalKwhSaved),
       totalThermsSaved: Math.round(totalThermsSaved),
       co2AvoidedLbs: co2Data.lbsAvoided,
@@ -180,11 +181,6 @@ function publishClientPortal(projId) {
       carsRemovedEquivalent: co2Data.carsRemoved,
     },
     monthly: monthlySavings,
-    contact: {
-      company: 'Control Service Company',
-      name: 'Energy Services',
-      email: 'contact@example.com',
-    },
   };
 
   // ── 8. Trigger browser download of <token>.json ──────────────

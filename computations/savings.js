@@ -713,11 +713,12 @@ function getBuildingSavingsByYM(bldg, projId) {
   // shared customer blob.
   const _gbProjList =
     typeof projects !== 'undefined' ? projects : typeof sget === 'function' ? sget('en_projects', []) : [];
-  const proj = (_gbProjList || []).find((p) => p.id === projId);
+  const proj = (_gbProjList || []).find((p) => String(p.id) === String(projId));
   if (!proj || !bldg || !bldg.meters) return {};
   const incl = proj.inclMonths || {};
   const result = {};
   bldg.meters.forEach((m) => {
+    if (isBaselineExcluded(projId, m.id)) return;
     const bills = (m.bills || []).slice().sort((a, c) => (a.start || '').localeCompare(c.start || ''));
     const mSav = getMeterSavings(m, bills, incl, projId, bldg.id).byYM;
     Object.entries(mSav).forEach(([ym, v]) => {
