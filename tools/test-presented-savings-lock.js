@@ -408,12 +408,16 @@ assert(
     u.kwh === 5000 + 3 + 7 && u.therms === 4 + 4 + 1 + 2 && u.gallons === 2,
     "marked: printed kWh replaces b1 presented months, other units and buildings stay current",
   );
+  const cm = { "b-syn-1": { "2025-01": { electric: 50, gas: 5, propane: 0 }, "2025-04": { electric: 1, gas: 2, propane: 3 } } };
+  const cd = sb.totalCommodityDollarsWithPresented(9001, ymsU, cm);
+  assert(cd.electric === 301 && cd.gas === 7 && cd.propane === 3, "commodity dollars: printed electric replaces presented months, unprinted gas / propane and other months stay current");
   sb.removePresentedMark(9001, Q);
   assert(sb.getPresentedRecords(9001).length === 0, "test record removed");
   const rd = (f2) => fs.readFileSync(path.join(REPO, f2), "utf8");
   const rep = rd("app/report-engine.js");
   assert(/elec\.costSaved = _presUnits\.elecDollars/.test(rep) && /gas\.costSaved = _presUnits\.gasDollars/.test(rep) && /propane\.costSaved = _presUnits\.propaneDollars/.test(rep),
     "report engine takes per-commodity dollars from the keeper record");
+  assert(/totalUnitsWithPresented\(/.test(rd("app/graphics-setpoints.js")) && /egfxUnitsByBldgYm/.test(rd("app/graphics-setpoints.js")), "Energy Graphics unit totals go through the keeper");
   assert(/totalUnitsWithPresented\(/.test(rd("app/portal-export.js")), "portal CO2 units go through the keeper");
   const core = rd("app/core.js");
   assert(/meterSavByYMs\.push/.test(core) && /addBldgQuarters = \(projId, bldgId, meterByYMs\)/.test(core), "dashboard quarters pick the newest year per meter");

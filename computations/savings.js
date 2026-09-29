@@ -924,32 +924,51 @@ function totalSavingsWithPresented(projId, yms, perBldg) {
   return { total, byBldg, applied: applied.map((a) => a.rec) };
 }
 
+// Shared engine of the two functions below. perBldgVals = { <bldgId>: { <ym>: { <key>: number } } };
+// fieldOf maps each key to its printed field name on the presented building record.
+function _sumWithPresented(projId, yms, perBldgVals, fieldOf) {
+  const applied = _presentedApplied(projId, yms);
+  const claimed = new Set();
+  applied.forEach((a) => a.months.forEach((y) => claimed.add(y)));
+  const out = {};
+  Object.keys(fieldOf).forEach((k) => (out[k] = 0));
+  Object.keys(perBldgVals).forEach((b) => {
+    const cur = perBldgVals[b] || {};
+    Object.keys(out).forEach((k) => {
+      yms.forEach((y) => {
+        if (!claimed.has(y)) out[k] += (cur[y] && cur[y][k]) || 0;
+      });
+      applied.forEach((a) => {
+        const f = a.rec.buildings[b];
+        out[k] +=
+          f && f[fieldOf[k]] != null
+            ? f[fieldOf[k]]
+            : a.months.reduce((s, y) => s + ((cur[y] && cur[y][k]) || 0), 0);
+      });
+    });
+  });
+  return out;
+}
+
 // Unit totals ({kwh, therms, gallons}) for the months `yms`, for `perBldgUnits` =
 // { <bldgId>: { <ym>: {kwh, therms, gallons} } } (current values). Same rule as the dollar total:
 // a presented period inside yms replaces that building's months with the printed unit figure
 // (a unit the document did not print stays current).
 function totalUnitsWithPresented(projId, yms, perBldgUnits) {
-  const applied = _presentedApplied(projId, yms);
-  const claimed = new Set();
-  applied.forEach((a) => a.months.forEach((y) => claimed.add(y)));
-  const out = { kwh: 0, therms: 0, gallons: 0 };
-  const F = { kwh: "kwhSaved", therms: "thermsSaved", gallons: "gallonsSaved" };
-  Object.keys(perBldgUnits).forEach((b) => {
-    const cur = perBldgUnits[b] || {};
-    Object.keys(out).forEach((u) => {
-      yms.forEach((y) => {
-        if (!claimed.has(y)) out[u] += (cur[y] && cur[y][u]) || 0;
-      });
-      applied.forEach((a) => {
-        const f = a.rec.buildings[b];
-        out[u] +=
-          f && f[F[u]] != null
-            ? f[F[u]]
-            : a.months.reduce((s, y) => s + ((cur[y] && cur[y][u]) || 0), 0);
-      });
-    });
+  return _sumWithPresented(projId, yms, perBldgUnits, {
+    kwh: "kwhSaved",
+    therms: "thermsSaved",
+    gallons: "gallonsSaved",
   });
-  return out;
+}
+
+// Per-commodity dollar totals ({electric, gas, propane}); same rule, printed split fields.
+function totalCommodityDollarsWithPresented(projId, yms, perBldgComm) {
+  return _sumWithPresented(projId, yms, perBldgComm, {
+    electric: "elecDollars",
+    gas: "gasDollars",
+    propane: "propaneDollars",
+  });
 }
 
 // Printed unit and commodity-dollar figures ({kwhSaved, thermsSaved, gallonsSaved, elecDollars,

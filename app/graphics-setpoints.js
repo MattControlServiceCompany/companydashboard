@@ -965,6 +965,8 @@ function egfxRefresh(projId) {
   const egfxSavByBldgYm = {}; // current savings by building and month, for totalSavingsWithPresented()
   const egfxSavByCommodity = { Electric: 0, Gas: 0, Propane: 0 };
   const egfxUnitsSaved = { kwh: 0, kw: 0, therms: 0, gallons: 0 };
+  const egfxCommByBldgYm = {}; // current-year cost saved by building, month, commodity
+  const egfxUnitsByBldgYm = {}; // current-year units by building and month, for totalUnitsWithPresented()
   const egfxCostSavedByCommodity = { Electric: 0, Gas: 0, Propane: 0 };
   bldgs.forEach((b) => {
     (b.meters || []).forEach((m) => {
@@ -987,16 +989,43 @@ function egfxRefresh(projId) {
       });
       if (egfxCostSavedByCommodity[m.commodity] !== undefined) {
         egfxCostSavedByCommodity[m.commodity] += meterCostSav;
+        // Same figure by building, month and commodity, for totalCommodityDollarsWithPresented().
+        const _cK = m.commodity.toLowerCase();
+        const _bC = (egfxCommByBldgYm[b.id] = egfxCommByBldgYm[b.id] || {});
+        Object.entries(savResult.byYM).forEach(([ym, v]) => {
+          if (!ym.startsWith(curYear)) return;
+          const _c2 = (_bC[ym] = _bC[ym] || { electric: 0, gas: 0, propane: 0 });
+          _c2[_cK] += v;
+        });
       }
       Object.entries(savResult.unitsByYM).forEach(([ym, u]) => {
         if (!ym.startsWith(curYear)) return;
-        egfxUnitsSaved.kwh += u.kwh || 0;
-        egfxUnitsSaved.kw += u.kw || 0;
-        egfxUnitsSaved.therms += u.therms || 0;
-        egfxUnitsSaved.gallons += u.gallons || 0;
+        const _bU = (egfxUnitsByBldgYm[b.id] = egfxUnitsByBldgYm[b.id] || {});
+        const _c = (_bU[ym] = _bU[ym] || { kwh: 0, therms: 0, gallons: 0 });
+        _c.kwh += u.kwh || 0;
+        _c.therms += u.therms || 0;
+        _c.gallons += u.gallons || 0;
+        egfxUnitsSaved.kw += u.kw || 0; // kW is not a printed figure, stays current
       });
     });
   });
+  // Unit totals: a period presented to the client uses the printed unit figures (the keeper).
+  const _egfxU = totalUnitsWithPresented(
+    projId,
+    Array.from(new Set(Object.values(egfxUnitsByBldgYm).flatMap((bu) => Object.keys(bu)))).sort(),
+    egfxUnitsByBldgYm,
+  );
+  egfxUnitsSaved.kwh = _egfxU.kwh;
+  egfxUnitsSaved.therms = _egfxU.therms;
+  egfxUnitsSaved.gallons = _egfxU.gallons;
+  const _egfxC = totalCommodityDollarsWithPresented(
+    projId,
+    Array.from(new Set(Object.values(egfxCommByBldgYm).flatMap((bu) => Object.keys(bu)))).sort(),
+    egfxCommByBldgYm,
+  );
+  egfxCostSavedByCommodity.Electric = _egfxC.electric;
+  egfxCostSavedByCommodity.Gas = _egfxC.gas;
+  egfxCostSavedByCommodity.Propane = _egfxC.propane;
   const hasEgfxSav = Object.keys(egfxSavByYm).some((ym) => ym.startsWith(curYear));
   // A period presented to the client uses the presented figure (computations/savings.js).
   const totalEgfxSav = hasEgfxSav

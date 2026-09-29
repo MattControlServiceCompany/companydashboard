@@ -1908,6 +1908,7 @@ function initDashboardTab(projId) {
   const projectedByQtr = [0, 0, 0, 0];
   let projectedAnnual = 0;
   const actualByQtr = [0, 0, 0, 0];
+  const qtrByYr = {}; // { year: { bldgId: { ym: dollars } } } collected by addBldgQuarters
   // Add one building's savings by quarter. As before, each METER contributes the quarters of its own
   // newest savings year (per meter, not per building). Meters are grouped by that year and each group
   // goes through the shared keeper, so a period presented to the client shows the presented figure
@@ -1926,9 +1927,18 @@ function initDashboardTab(projId) {
       });
     });
     Object.keys(byYr).forEach((yr) => {
+      const g = (qtrByYr[yr] = qtrByYr[yr] || {});
+      const gb = (g[bldgId] = g[bldgId] || {});
+      Object.keys(byYr[yr]).forEach((ym) => (gb[ym] = (gb[ym] || 0) + byYr[yr][ym]));
+    });
+  };
+  // Once every building is collected, the quarters go through the keeper together, so a printed
+  // portfolio total is honoured when the whole record is in scope.
+  const finishQuarters = () => {
+    Object.keys(qtrByYr).forEach((yr) => {
       for (let qi = 0; qi < 4; qi++) {
         const qYMs = [1, 2, 3].map((k) => yr + '-' + String(qi * 3 + k).padStart(2, '0'));
-        actualByQtr[qi] += totalSavingsWithPresented(projId, qYMs, { [bldgId]: byYr[yr] }).byBldg[bldgId];
+        actualByQtr[qi] += totalSavingsWithPresented(projId, qYMs, qtrByYr[yr]).total;
       }
     });
   };
@@ -2238,6 +2248,7 @@ function initDashboardTab(projId) {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     });
+  finishQuarters();
   const curQtrLabel = 'Q' + (curQtr + 1);
   const curQtrActual = actualByQtr[curQtr];
   const curQtrProjected = projectedByQtr[curQtr];
