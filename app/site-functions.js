@@ -1776,6 +1776,16 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.29.37',
+    date: '2026-09-29',
+    title: 'Reports: savings figures match everywhere',
+    items: [
+      { type: 'fix', text: 'Reports: savings on the report, the performance tables and the dashboard now come from one calculation, so the same period shows the same figure everywhere.' },
+      { type: 'fix', text: 'Reports: an updated report of an already-presented period keeps every figure that was printed on the presented report.' },
+      { type: 'change', text: 'Presented periods now open the attached report PDF by default; the updated report is the second choice.' },
+    ],
+  },
+  {
     v: 'v2026.09.29.36',
     date: '2026-09-29',
     title: 'Reports: annual period labels',
