@@ -1776,6 +1776,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.28.25',
+    date: '2026-09-28',
+    title: 'ECM Calculators savings fixes',
+    items: [
+      { type: 'fix', text: 'ECM Calculators: the outside-air and energy-recovery savings now count the heat and cooling the wheel recovers, with the correct energy conversion, so the savings are no longer too low.' },
+      { type: 'fix', text: 'ECM Calculators: Add as Measure now saves the average kW for every month, so the demand savings show in every month of the measure.' },
+      { type: 'change', text: 'ECM Calculators: the electric rate now uses the energy charge only, taken from the newest 12 months of bills.' },
+      { type: 'change', text: 'ECM Calculators: each result now shows its assumptions in plain words under the result.' },
+    ],
+  },
+  {
     v: 'v2026.09.28.24',
     date: '2026-09-28',
     title: 'Client Portal savings fixes',
