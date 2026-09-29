@@ -131,7 +131,8 @@ const ECM_TEMPLATES = {
         id: 'excess_cfm',
         label: 'Excess Outside Air (Cubic Feet per Minute) Eliminated',
         unit: 'CFM',
-        formula: 'excess_cfm = Design OA CFM (during unoccupied hours, when damper should be closed)',
+        formula:
+          'excess_cfm = Design OA CFM (during unoccupied hours, when damper should be closed). Assumption not yet confirmed by an engineer: for a partly open damper, excess = actual OA minus Design OA CFM.',
       },
       {
         id: 'therms_saved',
@@ -366,7 +367,10 @@ const ECM_TEMPLATES = {
       if (inp.heating_type === 'gas') {
         const eff_existing = inp.existing_heat_eff / 100;
         const eff_new = inp.new_heat_eff / 100;
-        heating_therms_saved = inp.existing_heating_therms * (inp.pct_replaced / 100) * (1 - eff_existing / eff_new);
+        heating_therms_saved = Math.max(
+          0,
+          inp.existing_heating_therms * (inp.pct_replaced / 100) * (1 - eff_existing / eff_new),
+        );
       }
 
       const cooling_savings_dollar = Math.max(0, cooling_kwh_saved) * inp.elec_rate;
@@ -800,13 +804,13 @@ const ECM_TEMPLATES = {
         id: 'heating_savings_therms',
         label: 'Annual Heating Gas Savings',
         unit: 'therms/yr',
-        formula: '1.08 × CFM × ΔT_net × heating_hours / (100,000 × AFUE); ΔT_net = ΔT × (1 − ERW_eff)',
+        formula: '1.08 × CFM × ΔT_recovered × heating_hours / (100,000 × AFUE); ΔT_recovered = ΔT × ERW_eff',
       },
       {
         id: 'cooling_savings_kwh',
         label: 'Annual Cooling Electric Savings',
         unit: 'kWh/yr',
-        formula: '4.5 × CFM × Δenthalpy_net × cooling_hours / (EER × 1000/3.412); Δh_net = Δh × (1 − ERW_eff)',
+        formula: '4.5 × CFM × Δenthalpy_recovered × cooling_hours / (EER × 1000); Δh_recovered = Δh × ERW_eff',
       },
       {
         id: 'heating_savings_dollar',
@@ -835,10 +839,11 @@ const ECM_TEMPLATES = {
 
       // ── Heating savings ──
       // Sensible heat formula: Q [BTU/hr] = 1.08 × CFM × ΔT
-      // ERW reduces ΔT by pre-heating OA: effective ΔT = raw ΔT × (1 − ERW_eff)
+      // The wheel RECOVERS erw_winter of the raw OA load. Savings = the recovered part
+      // (efficiency 0 saves nothing; a better wheel saves more).
       const delta_t_raw = Math.max(0, inp.heating_setpoint - inp.design_winter_temp);
-      const delta_t_net = delta_t_raw * (1 - erw_winter);
-      const heat_btu_yr = 1.08 * inp.oa_cfm * delta_t_net * inp.heating_hours;
+      const delta_t_recovered = delta_t_raw * erw_winter;
+      const heat_btu_yr = 1.08 * inp.oa_cfm * delta_t_recovered * inp.heating_hours;
 
       // Convert to therms: BTU / (100,000 BTU/therm × AFUE)
       const heating_savings_therms = heat_btu_yr / (100000 * inp.afue);
@@ -851,14 +856,13 @@ const ECM_TEMPLATES = {
 
       // ── Cooling savings ──
       // Total heat formula: Q [BTU/hr] = 4.5 × CFM × Δenthalpy
-      // ERW reduces enthalpy gap: effective Δh = raw Δh × (1 − ERW_eff)
+      // The wheel recovers erw_summer of the raw enthalpy gap: recovered Δh = raw Δh × ERW_eff
       const delta_h_raw = Math.max(0, inp.summer_oa_enthalpy - inp.target_enthalpy);
-      const delta_h_net = delta_h_raw * (1 - erw_summer);
-      const cool_btu_yr = 4.5 * inp.oa_cfm * delta_h_net * inp.cooling_hours;
+      const delta_h_recovered = delta_h_raw * erw_summer;
+      const cool_btu_yr = 4.5 * inp.oa_cfm * delta_h_recovered * inp.cooling_hours;
 
-      // kW = BTU/hr / (EER × 1000/3.412); 1 kW = 3,412 BTU/hr → kWh = BTU / (EER × 1000/3.412)
-      // Simplified: kWh = BTU_yr / (EER × 293.07)
-      const cooling_savings_kwh = cool_btu_yr / (inp.eer * 293.07);
+      // EER is Btu/h per watt, so kW = Btu/h / (EER × 1000) and kWh = Btu_yr / (EER × 1000)
+      const cooling_savings_kwh = cool_btu_yr / (inp.eer * 1000);
       const cooling_savings_dollar = cooling_savings_kwh * inp.elec_rate;
 
       const total_savings_dollar = heating_savings_dollar + cooling_savings_dollar;
@@ -1878,7 +1882,7 @@ const ECM_TEMPLATES = {
         label: 'Cooling kWh Saved (Supply Air Temperature Reset)',
         unit: 'kWh/yr',
         formula:
-          '1.08 × system_cfm × avg_dT × season_hours × 0.30 / (COP × 3,412)  — 30% of airflow benefits from SAT reset',
+          '1.08 × system_cfm × avg_dT × season_hours × 0.30 / (COP × 3,412)  — the 0.30 factor is an assumption: 30% of the airflow is taken to benefit from the supply air temperature reset. It is not measured.',
       },
       {
         id: 'fan_kwh_saved',
@@ -2039,7 +2043,8 @@ const ECM_TEMPLATES = {
         id: 'existing_therms',
         label: 'Existing Therms/Year',
         unit: 'therms/yr',
-        formula: 'annual_heating_MMBtu × 10 / eff_old',
+        formula:
+          'annual_heating_MMBtu × 10 / eff_old. Assumption not yet confirmed by an engineer: the boiler capacity entered is treated as the heating load, then divided by efficiency.',
       },
       { id: 'new_therms', label: 'New Therms/Year', unit: 'therms/yr', formula: 'annual_heating_MMBtu × 10 / eff_new' },
       {
@@ -2377,7 +2382,7 @@ const ECM_TEMPLATES = {
 /* ─── Project Rate Helper ────────────────────────────── */
 
 /**
- * Compute average energy rates for a project from the last 12 months of bills.
+ * Compute energy-only electric rate, gas rate and demand rate from the 12 months ending at the newest bill.
  * Returns an object with electric_rate, gas_rate, demand_rate, and source labels.
  * Reads from the runtime utilityData object populated by loadUtilityData().
  * @param {string|number} projId
@@ -2388,59 +2393,66 @@ function getProjectRates(projId) {
     electric_rate: null,
     gas_rate: null,
     demand_rate: null,
-    sourceLabel: '',
+    sourceLabel: "",
     billCount: 0,
   };
 
   // Scope-filtered buildings for this project (app/utility-data.js accessor).
-  const ud = { buildings: typeof getUDBldgs === 'function' ? getUDBldgs(projId) : null };
-  if (!ud.buildings || !ud.buildings.length) return result;
+  const buildings =
+    typeof getUDBldgs === "function" ? getUDBldgs(projId) : null;
+  if (!buildings || !buildings.length) return result;
 
-  const now = new Date();
-  const cutoff = new Date(now.getFullYear() - 1, now.getMonth(), 1); // 12 months back
+  const billDate = (bill) =>
+    bill.end ? new Date(bill.end + "T12:00:00") : null;
 
-  let elecCost = 0,
+  // 12-month window ending at the NEWEST bill in the project (not today's date).
+  let newest = null;
+  for (const bldg of buildings) {
+    for (const meter of bldg.meters || []) {
+      for (const bill of meter.bills || []) {
+        const d = billDate(bill);
+        if (d && !isNaN(d) && (!newest || d > newest)) newest = d;
+      }
+    }
+  }
+  if (!newest) return result;
+  const cutoff = new Date(newest.getFullYear(), newest.getMonth() - 11, 1);
+
+  let elecEnergyCost = 0,
     elecKwh = 0,
     elecBills = 0;
   let gasCost = 0,
-    gasTherms = 0,
-    gasBills = 0;
+    gasTherms = 0;
   let demandCharge = 0,
-    demandKw = 0,
-    demandBills = 0;
+    demandKw = 0;
 
-  for (const bldg of ud.buildings) {
+  for (const bldg of buildings) {
     for (const meter of bldg.meters || []) {
-      const commodity = (meter.commodity || '').toLowerCase();
-      const isElec = commodity === 'electric';
-      const isGas = commodity === 'gas' || commodity === 'natural gas';
+      const commodity = (meter.commodity || "").toLowerCase();
+      const isElec = commodity === "electric";
+      const isGas = commodity === "gas" || commodity === "natural gas";
 
       for (const bill of meter.bills || []) {
-        // Only use last 12 months
-        const billEnd = bill.end ? new Date(bill.end + 'T12:00:00') : null;
+        const billEnd = billDate(bill);
         if (!billEnd || billEnd < cutoff) continue;
 
         result.billCount++;
 
         if (isElec) {
-          const cost =
-            (parseFloat(bill.kwhCost) || 0) +
-            (parseFloat(bill.kwCost) || 0) +
-            (parseFloat(bill.otherCost) || 0) +
-            (parseFloat(bill.taxCost) || 0);
+          // Energy-only $/kWh, weighted by kWh. Demand is priced separately below,
+          // so it is not part of this rate.
           const kwh = parseFloat(bill.kwh || bill.kWhConsumed) || 0;
-          if (cost > 0 && kwh > 0) {
-            elecCost += cost;
+          const energyRate = getStoredRate(bill, "kwh");
+          if (kwh > 0 && energyRate > 0) {
+            elecEnergyCost += energyRate * kwh;
             elecKwh += kwh;
             elecBills++;
           }
-          // Demand: from demand charge line items
           const dc = parseFloat(bill.kwCost) || 0; // BilledKWCharge + TDCCharge
           const bkw = parseFloat(bill.billedKW || bill.BilledKW) || 0;
           if (dc > 0 && bkw > 0) {
             demandCharge += dc;
             demandKw += bkw;
-            demandBills++;
           }
         }
 
@@ -2450,13 +2462,18 @@ function getProjectRates(projId) {
           // as a last-resort generic-field fallback for older records that used neither.
           const _gasTotalCost = parseFloat(bill.totalCost) || 0;
           const _gasLineCost =
-            (parseFloat(bill.kwhCost) || 0) + (parseFloat(bill.otherCost) || 0) + (parseFloat(bill.taxCost) || 0);
+            (parseFloat(bill.kwhCost) || 0) +
+            (parseFloat(bill.otherCost) || 0) +
+            (parseFloat(bill.taxCost) || 0);
           const cost = _gasTotalCost > 0 ? _gasTotalCost : _gasLineCost;
-          const therms = resolveGasUsageTherms(bill) || parseFloat(bill.units) || parseFloat(bill.kwh) || 0;
+          const therms =
+            resolveGasUsageTherms(bill) ||
+            parseFloat(bill.units) ||
+            parseFloat(bill.kwh) ||
+            0;
           if (cost > 0 && therms > 0) {
             gasCost += cost;
             gasTherms += therms;
-            gasBills++;
           }
         }
       }
@@ -2464,15 +2481,20 @@ function getProjectRates(projId) {
   }
 
   if (elecKwh > 0) {
-    result.electric_rate = Math.round((elecCost / elecKwh) * 10000) / 10000;
-    result.sourceLabel = elecBills + ' bill' + (elecBills !== 1 ? 's' : '') + ' (12-mo avg)';
+    result.electric_rate =
+      Math.round((elecEnergyCost / elecKwh) * 10000) / 10000;
+    result.sourceLabel =
+      elecBills +
+      " bill" +
+      (elecBills !== 1 ? "s" : "") +
+      " (12 months to newest bill, energy charge only)";
   }
   if (gasTherms > 0) {
     result.gas_rate = Math.round((gasCost / gasTherms) * 10000) / 10000;
   }
-  if (demandKw > 0 && demandBills > 0) {
-    // $/kW/month: total demand charges / (sum of billed kW / months)
-    result.demand_rate = Math.round((demandCharge / demandBills / (demandKw / demandBills)) * 100) / 100;
+  if (demandKw > 0) {
+    // $/kW/month = total demand charges / total billed kW
+    result.demand_rate = Math.round((demandCharge / demandKw) * 100) / 100;
   }
 
   return result;
@@ -2630,7 +2652,7 @@ function ecmResultsToAnnualTotals(templateId, inputs, results) {
 
 /**
  * "Add as Measure" — converts a completed ECM calc's annual totals into a flat
- * monthly measure row (kwh[12]/kw[12]/gas[12], annual/12 distribution — same
+ * monthly measure row (kwh[12]/gas[12] = annual/12, kw[12] = the full average kW every month — same
  * technique as hvacLoadCreateMeasure) and pushes it into the project's savings
  * matrix, so the 15 ECM calcs behave like the BAS/Solar "Add as Measure" flow
  * instead of only writing to the separate project.ecms array.
@@ -2652,9 +2674,11 @@ function ecmAddAsMeasure(projId, bldgId, templateId, inputs, results) {
     return false;
   }
 
-  const kwhMonthly = Array(12).fill(Math.round((kwhAnnual / 12) * 100) / 100);
-  const kwMonthly = Array(12).fill(Math.round((kwAnnual / 12) * 100) / 100);
-  const gasMonthly = Array(12).fill(Math.round((gasAnnual / 12) * 100) / 100);
+  const kwhMonthly = Array(12).fill(kwhAnnual / 12);
+  // kW is a rate, not a yearly total: the matrix prices kw[mo] x demand rate for each of 12 months,
+  // so every month carries the full average kW reduction.
+  const kwMonthly = Array(12).fill(kwAnnual);
+  const gasMonthly = Array(12).fill(gasAnnual / 12);
 
   const sd = typeof getProjSavingsData === 'function' ? getProjSavingsData(projId) : null;
   if (!sd) return false;
