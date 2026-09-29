@@ -20,6 +20,15 @@ var BT_CHUNK_SIZE = 2000; // rows per setTimeout chunk during import
 
 // Fault thresholds
 var BT_SHC_THRESHOLD = 10; // % valve open — both valves > this = SHC
+
+// Estimated electric kW wasted per fault hour (one table for every screen).
+// 20 kW estimated HVAC load per AHU x share of that load wasted while the fault is active.
+var BT_HVAC_KW_PER_AHU = 20;
+var BT_FAULT_KW = {
+  afterHours: BT_HVAC_KW_PER_AHU * 0.4,
+  shc: BT_HVAC_KW_PER_AHU * 0.2,
+  economizer: BT_HVAC_KW_PER_AHU * 0.15,
+};
 var BT_SAT_RANGE_FAIL = 4; // °F — SAT range over 14 days < this = FAIL
 var BT_DSP_RANGE_FAIL = 0.1; // "WC — DSP range over 14 days < this = FAIL
 var BT_SAT_DEV_THRESHOLD = 5; // °F — |SAT - SATSP| > this = setpoint deviation
@@ -285,6 +294,40 @@ function btRound(n, d) {
   if (n == null || isNaN(n)) return null;
   var f = Math.pow(10, d || 0);
   return Math.round(n * f) / f;
+}
+
+/** Estimated kWh wasted by `hrs` hours of fault `key` (0 for faults with no kWh model). */
+function btFaultKwh(key, hrs) {
+  return (hrs || 0) * (BT_FAULT_KW[key] || 0);
+}
+
+/**
+ * Months of data covered by a list of 'YYYY-MM-DD' day keys, using each day's real
+ * month length (31 days of January = 1.0 month, 28 days of February = 1.0 month).
+ */
+function btMonthsCovered(dayKeys) {
+  var m = 0;
+  for (var i = 0; i < dayKeys.length; i++) {
+    var y = parseInt(dayKeys[i].slice(0, 4), 10);
+    var mo = parseInt(dayKeys[i].slice(5, 7), 10);
+    m += 1 / new Date(y, mo, 0).getDate();
+  }
+  return m;
+}
+
+/** Sample interval in hours: median gap between consecutive rows (0.25 h if unusable). */
+function btIntervalHours(rows) {
+  var gaps = [];
+  for (var i = 1; i < rows.length; i++) {
+    var g = (rows[i].ts - rows[i - 1].ts) / 3600000;
+    if (g > 0) gaps.push(g);
+  }
+  if (!gaps.length) return 0.25;
+  gaps.sort(function (a, b) {
+    return a - b;
+  });
+  var med = gaps[Math.floor(gaps.length / 2)];
+  return med <= 2 ? med : 0.25;
 }
 
 /** Format date as YYYY-MM-DD */
@@ -755,11 +798,7 @@ function btComputeDailySummaries(rows, columns, schedule) {
  * Internal helper called by btComputeDailySummaries.
  */
 function btComputeOneDaySummary(dateKey, rows, pointMap, sch) {
-  var intervalHrs = 0.25; // assume 15-minute data; will self-correct below
-  if (rows.length >= 2) {
-    var gap = (rows[1].ts - rows[0].ts) / 3600000;
-    if (gap > 0 && gap <= 2) intervalHrs = gap;
-  }
+  var intervalHrs = btIntervalHours(rows);
 
   // Collect per-point accumulators
   var accum = {}; // pointType -> { all, occ, unocc, vals }
@@ -3029,8 +3068,6 @@ function btSelectHealthMonth(month) {
 function btGatherFaultRows(bldg, projId) {
   // Get blended rate from utility bills if available
   var blendedRate = btGetBlendedRate(projId, _btSelBldg);
-  // Estimated HVAC kW (default 20kW per AHU — used if no measured data)
-  var hvacKW = 20;
 
   var rows = [];
   var equipment = bldg.equipment || {};
@@ -3047,7 +3084,7 @@ function btGatherFaultRows(bldg, projId) {
 
       // After-Hours fault
       if (faults.afterHours && faults.afterHours > 0.1) {
-        var ahKwh = btRound(faults.afterHours * hvacKW * 0.4, 1);
+        var ahKwh = btRound(btFaultKwh('afterHours', faults.afterHours), 1);
         var ahCost = blendedRate ? btRound(ahKwh * blendedRate, 2) : null;
         rows.push({
           date: dateKey,
@@ -3063,7 +3100,7 @@ function btGatherFaultRows(bldg, projId) {
 
       // Simultaneous Heating/Cooling fault
       if (faults.shc && faults.shc > 0.1) {
-        var shcKwh = btRound(faults.shc * hvacKW * 0.2, 1);
+        var shcKwh = btRound(btFaultKwh('shc', faults.shc), 1);
         var shcCost = blendedRate ? btRound(shcKwh * blendedRate, 2) : null;
         rows.push({
           date: dateKey,
@@ -3079,7 +3116,7 @@ function btGatherFaultRows(bldg, projId) {
 
       // Economizer fault
       if (faults.economizer && faults.economizer > 0.1) {
-        var econKwh = btRound(faults.economizer * hvacKW * 0.15, 1);
+        var econKwh = btRound(btFaultKwh('economizer', faults.economizer), 1);
         var econCost = blendedRate ? btRound(econKwh * blendedRate, 2) : null;
         rows.push({
           date: dateKey,
@@ -3127,8 +3164,8 @@ function btGatherFaultRows(bldg, projId) {
 }
 
 /**
- * Get blended electricity rate for a project/building from saved bills.
- * Returns $/kWh or null if no bills available.
+ * Get blended electricity rate for a building from its Electric meters' saved bills.
+ * Returns $/kWh or null when there are no priced electric bills (callers show "rate unavailable").
  */
 function btGetBlendedRate(projId, bldgId) {
   try {
@@ -3142,17 +3179,20 @@ function btGetBlendedRate(projId, bldgId) {
       }
     }
     if (!bldg) bldg = bldgs[0]; // fallback: first building
-    var bills = (bldg && bldg.bills) || [];
+    var meters = (bldg && bldg.meters) || [];
     var totalCost = 0,
       totalKwh = 0;
-    for (var bi = 0; bi < bills.length; bi++) {
-      var b = bills[bi];
-      if (b.commodity !== 'electric' && b.utilityType !== 'electric') continue;
-      var cost = b.totalCost || 0;
-      var kwh = b.kWhConsumed || b.consumption || 0;
-      if (cost > 0 && kwh > 0) {
-        totalCost += cost;
-        totalKwh += kwh;
+    for (var mi = 0; mi < meters.length; mi++) {
+      if (meters[mi].commodity !== 'Electric') continue;
+      var bills = meters[mi].bills || [];
+      for (var bi = 0; bi < bills.length; bi++) {
+        var b = bills[bi];
+        var cost = parseFloat(b.totalCost) || 0;
+        var kwh = parseFloat(b.kwh || b.kWh) || 0;
+        if (cost > 0 && kwh > 0) {
+          totalCost += cost;
+          totalKwh += kwh;
+        }
       }
     }
     return totalKwh > 0 ? btRound(totalCost / totalKwh, 4) : null;
@@ -3395,7 +3435,7 @@ function btBuildFaultLogHTML(bldg, projId) {
     }
   }
   var uniqueDays = Object.keys(allDays).length;
-  var monthsCount = uniqueDays > 0 ? Math.max(1, Math.ceil(uniqueDays / 30)) : 1;
+  var monthsCount = uniqueDays > 0 ? btMonthsCovered(Object.keys(allDays)) : 1;
 
   function hrsPerMonth(h) {
     return btRound(h / monthsCount, 1);
@@ -4788,7 +4828,7 @@ function btMatchBehaviorToRow(behaviorSummary, row) {
  */
 function btEstimateSavings(projId, bldgId, opts) {
   opts = opts || {};
-  var elecRate = opts.elecRate || btGetBlendedRate(projId, bldgId) || 0.1;
+  var elecRate = opts.elecRate || btGetBlendedRate(projId, bldgId); // null = rate unavailable
   var gasRate = opts.gasRate || 0.8;
   var fanHpPerAhu = opts.fanHpPerAhu || 5; // HP — conservative default for medium AHU
   var cfmPerAhu = opts.cfmPerAhu || 10000; // CFM — conservative default
@@ -4852,7 +4892,7 @@ function btEstimateSavings(projId, bldgId, opts) {
 
   // Scale detected fault totals to an annual estimate
   // Data covers totalDays days; scale to 365 days
-  var scaleFactor = totalDays > 14 ? 365 / totalDays : 1;
+  var scaleFactor = totalDays > 0 ? 365 / totalDays : 1;
 
   // ── SAT Reset savings ──
   // Fixed SAT at 55°F vs optimal (55–65°F range), occupied hours only
@@ -4867,13 +4907,13 @@ function btEstimateSavings(projId, bldgId, opts) {
     // Also saves reheat gas: Delta_SAT = 5°F avg, CFM × 1.08 BTU/hr/cfm/°F → therms
     var reheatBtuPerHr = cfmPerAhu * 1.08 * 5; // BTU/hr per AHU
     var reheatThermsSaved = (reheatBtuPerHr * coolingHrsPerYear * satAhuCount) / 100000;
-    var satDollars = satCoolingKwh * elecRate + reheatThermsSaved * gasRate;
+    var satDollars = elecRate ? satCoolingKwh * elecRate + reheatThermsSaved * gasRate : null;
     estimates.push({
       type: 'satReset',
       label: 'Supply Air Temperature Reset',
       annualKwh: Math.round(satCoolingKwh),
       annualTherms: Math.round(reheatThermsSaved),
-      annualDollars: Math.round(satDollars),
+      annualDollars: satDollars === null ? null : Math.round(satDollars),
       detail: satFails + ' of ' + satEquipCount + ' AHUs show fixed SAT setpoint (ASHRAE G36 §5.16.3 not running)',
       basis: '12% of AHU cooling energy + 5°F reheat reduction @ ' + cfmPerAhu.toLocaleString() + ' CFM',
     });
@@ -4892,13 +4932,13 @@ function btEstimateSavings(projId, bldgId, opts) {
     var powerRatio = Math.pow(speedRatio, 3);
     var savingsFraction = 1 - powerRatio;
     var dspKwh = fanKwDsp * fanHrsPerYear * dspAhuCount * savingsFraction;
-    var dspDollars = dspKwh * elecRate;
+    var dspDollars = elecRate ? dspKwh * elecRate : null;
     estimates.push({
       type: 'dspReset',
       label: 'DSP Reset (Duct Static Pressure)',
       annualKwh: Math.round(dspKwh),
       annualTherms: 0,
-      annualDollars: Math.round(dspDollars),
+      annualDollars: dspDollars === null ? null : Math.round(dspDollars),
       detail: dspFails + ' of ' + dspEquipCount + ' AHUs show fixed duct static pressure (G36 §5.16.4 not running)',
       basis: 'Fan affinity laws — 20% SP reduction → ' + Math.round(savingsFraction * 100) + '% fan power savings',
     });
@@ -4911,13 +4951,13 @@ function btEstimateSavings(projId, bldgId, opts) {
     // Estimate HVAC kW per AHU: fan + some conditioning
     var hvacKwPerAhu = ((fanHpPerAhu * 0.746) / 0.91) * 1.2; // fan + 20% for conditioning
     var aftKwh = hvacKwPerAhu * annualAftHrs;
-    var aftDollars = aftKwh * elecRate;
+    var aftDollars = elecRate ? aftKwh * elecRate : null;
     estimates.push({
       type: 'afterHours',
       label: 'After-Hours Operation',
       annualKwh: Math.round(aftKwh),
       annualTherms: 0,
-      annualDollars: Math.round(aftDollars),
+      annualDollars: aftDollars === null ? null : Math.round(aftDollars),
       detail:
         Math.round(annualAftHrs) +
         ' hrs/yr of fan operation outside scheduled occupied hours across ' +
@@ -4937,13 +4977,13 @@ function btEstimateSavings(projId, bldgId, opts) {
     var shcTherms = shcWasteBtu / 100000;
     // Cooling waste overhead (compressor working against heating)
     var shcKwh = (shcWasteBtu * 1.3) / 3412;
-    var shcDollars = shcTherms * gasRate + shcKwh * elecRate;
+    var shcDollars = elecRate ? shcTherms * gasRate + shcKwh * elecRate : null;
     estimates.push({
       type: 'shc',
       label: 'Simultaneous Heating and Cooling (SHC)',
       annualKwh: Math.round(shcKwh),
       annualTherms: Math.round(shcTherms),
-      annualDollars: Math.round(shcDollars),
+      annualDollars: shcDollars === null ? null : Math.round(shcDollars),
       detail:
         Math.round(annualShcHrs) + ' hrs/yr of simultaneous heating + cooling across ' + equipCount + ' equipment',
       basis: '40% of max heating coil capacity wasted during SHC intervals',
@@ -4974,7 +5014,10 @@ function btRenderSavingsPanel(projId, bldgId) {
   }
 
   var totalDollars = 0;
-  for (var i = 0; i < estimates.length; i++) totalDollars += estimates[i].annualDollars;
+  for (var i = 0; i < estimates.length; i++) totalDollars += estimates[i].annualDollars || 0;
+  var rateKnown = estimates.every(function (x) {
+    return x.annualDollars !== null;
+  });
 
   var rows = '';
   for (var j = 0; j < estimates.length; j++) {
@@ -4991,9 +5034,9 @@ function btRenderSavingsPanel(projId, bldgId) {
       energyText +
       '</td>' +
       '<td style="padding:6px 8px;color:var(--text);font-size:11px;font-weight:600;text-align:right">' +
-      '$' +
-      e.annualDollars.toLocaleString() +
-      '/yr' +
+      (e.annualDollars === null
+        ? '<span style="color:var(--text3);font-weight:400">rate unavailable</span>'
+        : '$' + e.annualDollars.toLocaleString() + '/yr') +
       '</td>' +
       '<td style="padding:6px 8px;color:var(--text3);font-size:10px">' +
       '<span title="' +
@@ -5028,12 +5071,14 @@ function btRenderSavingsPanel(projId, bldgId) {
     '</tbody>' +
     '</table>' +
     '<div style="margin-top:10px;padding:8px 10px;background:var(--s3);border-radius:4px;font-size:10px;color:var(--text3)">' +
-    '<strong>Total estimated savings:</strong> $' +
-    totalDollars.toLocaleString() +
-    '/yr &nbsp;|&nbsp; ' +
-    'Based on measured fault data from BAS trends. Rates: $' +
-    (btGetBlendedRate(projId, bldgId) || 0.1).toFixed(3) +
-    '/kWh, $0.80/therm.' +
+    '<strong>Total estimated savings:</strong> ' +
+    (rateKnown ? '$' + totalDollars.toLocaleString() + '/yr' : 'rate unavailable') +
+    ' &nbsp;|&nbsp; ' +
+    'Based on measured fault data from BAS trends. Rates: ' +
+    (btGetBlendedRate(projId, bldgId) !== null
+      ? '$' + btGetBlendedRate(projId, bldgId).toFixed(3) + '/kWh'
+      : 'electric rate unavailable (no priced electric bills)') +
+    ', $0.80/therm.' +
     '</div>' +
     '</div>'
   );
@@ -5198,21 +5243,20 @@ function btGetBillsForBldg(projId, bldgId) {
  * @param {number|null} billUsage   bill kWh consumed (for bill-specific blended rate)
  * @returns {Object|null}
  */
-function btGetBASForBillPeriod(projId, bldgId, billStart, billEnd, billCost, billUsage) {
+function btGetBASForBillPeriod(projId, bldgId, billStart, billEnd, billCost, billUsage, commodity) {
   var basData = btGetData(projId);
   if (!basData) return null;
   var bldgBAS = basData.buildings && basData.buildings[bldgId];
   if (!bldgBAS) return null;
 
-  // Blended rate: prefer bill-specific cost/usage, fall back to portfolio avg
+  // Fault waste is electric kWh, so it is priced at an electric $/kWh. Only an Electric
+  // bill's own cost/usage is a $/kWh; a gas or water bill uses the building's electric rate.
   var blendedRate = null;
-  if (billCost && billUsage && billUsage > 0) {
+  if (commodity === 'Electric' && billCost && billUsage && billUsage > 0) {
     blendedRate = btRound(billCost / billUsage, 5);
   } else {
     blendedRate = btGetBlendedRate(projId, bldgId);
   }
-
-  var HVAC_KW = 20; // default estimated HVAC kW per AHU
 
   var result = {
     days: [],
@@ -5262,19 +5306,22 @@ function btGetBASForBillPeriod(projId, bldgId, billStart, billEnd, billCost, bil
         result.runtimeTotals.fanHours += fanHrs;
       }
 
+      // Occupied hours this day = hours of BAS data inside the occupied schedule (0 if none)
+      var occHrsDay = (day.occupied && day.occupied.scheduledHours) || 0;
+
       // Cooling/heating hours — approximate from occupied-average valve position
       if (day.coolvalve) {
-        var coolHrs = (day.coolvalve.occupiedAvg || 0) > 5 ? day.occupiedHours || 8 : 0;
+        var coolHrs = (day.coolvalve.occupiedAvg || 0) > 5 ? occHrsDay : 0;
         result.equipment[equipId].coolingHours += coolHrs;
         result.runtimeTotals.coolingHours += coolHrs;
       }
       if (day.heatvalve) {
-        var heatHrs = (day.heatvalve.occupiedAvg || 0) > 5 ? day.occupiedHours || 8 : 0;
+        var heatHrs = (day.heatvalve.occupiedAvg || 0) > 5 ? occHrsDay : 0;
         result.equipment[equipId].heatingHours += heatHrs;
         result.runtimeTotals.heatingHours += heatHrs;
       }
 
-      var occHrs = day.occupiedHours || 0;
+      var occHrs = occHrsDay;
       result.equipment[equipId].occupiedHours += occHrs;
       result.runtimeTotals.occupiedHours += occHrs;
 
@@ -5289,10 +5336,9 @@ function btGetBASForBillPeriod(projId, bldgId, billStart, billEnd, billCost, bil
 
       // Per-day waste estimate (energy faults only)
       if (blendedRate) {
-        var ahKwh = (f.afterHours || 0) * HVAC_KW * 0.4;
-        var shcKwh = (f.shc || 0) * HVAC_KW * 0.2;
-        var econKwh = (f.economizer || 0) * HVAC_KW * 0.15;
-        var dayWaste = btRound((ahKwh + shcKwh + econKwh) * blendedRate, 3);
+        var dayKwh =
+          btFaultKwh('afterHours', f.afterHours) + btFaultKwh('shc', f.shc) + btFaultKwh('economizer', f.economizer);
+        var dayWaste = btRound(dayKwh * blendedRate, 3);
         result.equipment[equipId].estWaste += dayWaste;
         result.estWasteDollars += dayWaste;
       }
@@ -5599,7 +5645,7 @@ function btBuildBillAnalysisHTML(projId, bldgId, bills) {
   var usageUnit = selBill ? selBill.usageUnit : '';
 
   // BAS data for this period
-  var period = btGetBASForBillPeriod(projId, bldgId, start, end, totalCost, usage);
+  var period = btGetBASForBillPeriod(projId, bldgId, start, end, totalCost, usage, commodity);
   var noDays = !period || period.dayCount === 0;
 
   // Find prior bill (same commodity, ends before this period starts)
@@ -5620,6 +5666,7 @@ function btBuildBillAnalysisHTML(projId, bldgId, bills) {
       priorBill.end,
       priorBill.totalCost,
       priorBill.usage,
+      commodity,
     );
   }
 
@@ -5634,8 +5681,8 @@ function btBuildBillAnalysisHTML(projId, bldgId, bills) {
       : '—';
   var usageStr = usage > 0 ? usage.toLocaleString('en-US', { maximumFractionDigits: 0 }) + ' ' + usageUnit : '';
   var rateStr = blendedRate
-    ? ' ·  Blended rate: $' + blendedRate.toFixed(5) + '/' + (commodity === 'Electric' ? 'kWh' : 'unit')
-    : '';
+    ? ' ·  Electric rate used for fault cost: $' + blendedRate.toFixed(5) + '/kWh'
+    : ' ·  Electric rate unavailable (no priced electric bills)';
 
   html.push(
     '<div style="margin-bottom:16px;">',
@@ -5796,26 +5843,24 @@ function btBuildRuntimeCard(period, prior) {
 function btBuildFaultCard(period, prior, blendedRate) {
   var ft = period.faultTotals;
   var pft = prior ? prior.faultTotals : null;
-  var HVAC_KW = 20;
-
   var defs = [
     {
       key: 'afterHours',
       label: 'After-Hours Operation',
       tip: 'Fan running outside the scheduled occupied window',
-      kwhFactor: HVAC_KW * 0.4,
+      kwhFactor: BT_FAULT_KW.afterHours,
     },
     {
       key: 'shc',
       label: 'Simultaneous Heat+Cool',
       tip: 'Both heating and cooling valves >10% simultaneously during occupied hours',
-      kwhFactor: HVAC_KW * 0.2,
+      kwhFactor: BT_FAULT_KW.shc,
     },
     {
       key: 'economizer',
       label: 'Economizer Miss',
       tip: 'OA damper <20% when OAT <75°F and cooling load active — free cooling opportunity missed',
-      kwhFactor: HVAC_KW * 0.15,
+      kwhFactor: BT_FAULT_KW.economizer,
     },
     {
       key: 'setpointDeviation',
@@ -5884,7 +5929,7 @@ function btBuildFaultCard(period, prior, blendedRate) {
       estCost !== null
         ? '$' + estCost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
         : estKwh !== null
-          ? '<span style="color:var(--text3);">no rate</span>'
+          ? '<span style="color:var(--text3);">rate unavailable</span>'
           : '—';
 
     rows += [
