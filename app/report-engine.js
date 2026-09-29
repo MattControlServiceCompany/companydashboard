@@ -226,8 +226,8 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
   // --- Contract info ---
   const contractYears = parseInt(p.contractYears) || 3;
   const escalation = parseFloat(p.escalation) || 0;
-  const cscComp = _contract.cscPct === null ? 0 : _contract.cscPct;
-  const clientPct = 100 - cscComp;
+  const cscComp = _contract.cscPct; // null unless shared savings
+  const clientPct = _contract.clientPct;
   const contractStart = p.start ? new Date(p.start + 'T00:00:00') : null;
 
   let contractYearNum = 1;
@@ -1001,6 +1001,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
       annualTarget: annualTarget,
       cscPct: cscComp,
       clientPct: clientPct,
+      hasCsc: cscComp !== null,
       escalation: escalation,
       quarterlyTargets: quarterlyTargets,
       quarterlyActuals: quarterlyActuals,
@@ -2926,8 +2927,9 @@ function rptPageFinancial(n, d) {
     '</table>';
 
   // -- CSC Compensation table --
-  const cscTable =
-    '<table class="rpt-table" contenteditable="false">' +
+  const cscTable = !d.contract.hasCsc
+    ? ''
+    : '<table class="rpt-table" contenteditable="false">' +
     '<thead><tr>' +
     '<th></th>' +
     '<th class="rpt-n">Quarter</th>' +
@@ -3069,7 +3071,7 @@ function rptPageFinancial(n, d) {
     bldgTable +
     '<h2>Quarterly Savings vs Baseline</h2>' +
     qtrTable +
-    '<h2>Control Service Company Compensation</h2>' +
+    (d.contract.hasCsc ? '<h2>Control Service Company Compensation</h2>' : '') +
     cscTable +
     '';
   // fix/report-quarterly-restructure (2026-09-09), Part B item 1: the "Monthly Cost Breakdown"
@@ -4556,6 +4558,7 @@ function rptPageContractProjection(n, d) {
     qTargets.reduce(function (s, v) {
       return s + (v || 0);
     }, 0);
+  const hasCsc = !!contract.hasCsc;
   const cscPct = contract.cscPct || 0;
   const clientPct = contract.clientPct || 0;
   const escalation = contract.escalation || 0;
@@ -4605,7 +4608,8 @@ function rptPageContractProjection(n, d) {
     _fmtUSD(annualSum, '$0') +
     '</strong></td>' +
     '</tr>' +
-    '<tr>' +
+    (hasCsc
+      ?     '<tr>' +
     '<td>Client (' +
     clientPct +
     '%)</td>' +
@@ -4630,7 +4634,8 @@ function rptPageContractProjection(n, d) {
     '<td class="rpt-n">' +
     _fmtUSD((annualSum * cscPct) / 100, '$0') +
     '</td>' +
-    '</tr>';
+    '</tr>'
+      : '');
   const qtTable =
     '<table class="rpt-table">' +
     '<thead><tr>' +
@@ -4746,12 +4751,14 @@ function rptPageContractProjection(n, d) {
         ? _fmtUSD(displayProj, '$0') + '<div style="font-size:8px;color:var(--rpt-page-text)">Annual: ' + _fmtUSD(yearProj, '$0') + '</div>'
         : _fmtUSD(yearProj, '$0')) +
       '</td>' +
-      '<td class="rpt-n">' +
-      _fmtUSD(isCurrentYr && isQuarterly ? displayCsc : yearCsc, '$0') +
-      '</td>' +
-      '<td class="rpt-n">' +
-      _fmtUSD(isCurrentYr && isQuarterly ? displayClient : yearClient, '$0') +
-      '</td>' +
+      (hasCsc
+        ? '<td class="rpt-n">' +
+          _fmtUSD(isCurrentYr && isQuarterly ? displayCsc : yearCsc, '$0') +
+          '</td>' +
+          '<td class="rpt-n">' +
+          _fmtUSD(isCurrentYr && isQuarterly ? displayClient : yearClient, '$0') +
+          '</td>'
+        : '') +
       '</tr>';
   }
   fiveYrRows +=
@@ -4760,23 +4767,17 @@ function rptPageContractProjection(n, d) {
     '<td class="rpt-n">' +
     _fmtUSD(totalProj, '$0') +
     '</td>' +
-    '<td class="rpt-n">' +
-    _fmtUSD(totalCsc, '$0') +
-    '</td>' +
-    '<td class="rpt-n">' +
-    _fmtUSD(totalClient, '$0') +
-    '</td>' +
+    (hasCsc
+      ? '<td class="rpt-n">' + _fmtUSD(totalCsc, '$0') + '</td>' + '<td class="rpt-n">' + _fmtUSD(totalClient, '$0') + '</td>'
+      : '') +
     '</tr>';
   const fiveYrTable =
     '<table class="rpt-table">' +
     '<thead><tr>' +
     '<th>Year</th><th>Period</th><th class="rpt-n">Projected</th>' +
-    '<th class="rpt-n">Control Service Company (' +
-    cscPct +
-    '%)</th>' +
-    '<th class="rpt-n">Client (' +
-    clientPct +
-    '%)</th>' +
+    (hasCsc
+      ? '<th class="rpt-n">Control Service Company (' + cscPct + '%)</th>' + '<th class="rpt-n">Client (' + clientPct + '%)</th>'
+      : '') +
     '</tr></thead>' +
     '<tbody>' +
     fiveYrRows +

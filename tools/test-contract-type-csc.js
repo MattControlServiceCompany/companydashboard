@@ -65,6 +65,26 @@ d = t.ctx.collectAgreementData(1, 'oneTimeCost', {});
 ok(d && d.cscPct === null, 'fixed project agreement data has no CSC % (no default 60)');
 ok(!!t.ctx.generateAgreementHTML(1, 'oneTimeCost', {}), 'one-time cost agreement still builds for a fixed project');
 
+// 2b. hasContract: one gate (projHasContract in savings.js reads the keeper).
+if (typeof gc === 'function') {
+  ok(gc(P({ contractType: 'none', sa: 'SA-1' })).hasContract === false, "'none' + SA number -> no contract");
+  ok(gc(P({ contractType: 'fixedProject', sa: 'SA-1' })).hasContract === true, 'fixed project + SA number -> contract');
+  ok(gc(P({ contractType: 'sharedSavings', cscCompensation: 50 })).hasContract === false, 'no SA number -> no contract');
+  const t2 = makeCtx([P({ contractType: 'none', sa: 'SA-1' }), P({ id: 2, contractType: 'fixedProject', sa: 'SA-2' })]);
+  vm.runInContext(rd('computations/savings.js'), t2.ctx);
+  ok(t2.ctx.projHasContract(1) === false && t2.ctx.projHasContract(2) === true, 'projHasContract follows the keeper');
+}
+
+// 2c. Reports: fixed project / none prints no CSC or Client Net rows (no 0% / 100%).
+{
+  const src = strip(rd('app/report-engine.js'));
+  ok(/hasCsc:\s*cscComp\s*!==\s*null/.test(src), 'report data carries hasCsc from the keeper');
+  ok(!/cscComp\s*=\s*_contract\.cscPct\s*===\s*null\s*\?\s*0/.test(src), 'report data no longer turns a missing share into 0');
+  ok((src.match(/hasCsc/g) || []).length >= 6, 'report CSC tables and rows are gated by hasCsc');
+  const ud = strip(rd('app/utility-data.js'));
+  ok((ud.match(/_showCsc/g) || []).length >= 14, 'Utility Data CSC rows, cards, inputs and chart series are gated by _showCsc');
+}
+
 // 3. Code checks.
 const ae = strip(rd('app/agreement-engine.js'));
 ok(!/\?\s*pc\s*:\s*60/.test(ae) && !/return\s+pc\s*>\s*0\s*\?\s*pc\s*:\s*60/.test(ae), 'agreement engine has no built-in 60 default');

@@ -9691,6 +9691,7 @@ function renderBldgPerfPane(pane, b) {
   // CSC share: read from getProjectContract (Project Settings), shown read-only below
   const projMeta = projects.find((p) => p.id === udSelProjId);
   const defCscPct = getProjectContract(projMeta).cscPct ?? 0;
+  const _showCsc = getProjectContract(projMeta).cscPct !== null; // fixed project / no contract: no CSC rows
   const defCscFixed = cfg.cscFixed ?? 500;
   const defYears = cfg.years ?? 3;
   // Fall back to project-level escalation if building has no custom override
@@ -9725,7 +9726,7 @@ function renderBldgPerfPane(pane, b) {
           <!-- Controls -->
           <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:18px;background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:13px 16px">
             <!-- CSC mode toggle -->
-            <div style="display:flex;flex-direction:column;gap:4px">
+            <div style="display:${_showCsc ? 'flex' : 'none'};flex-direction:column;gap:4px">
               <label style="font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.6px">CSC Compensation Mode</label>
               <div style="display:flex;gap:4px">
                 <button id="bp-mode-pct" onclick="bpSetMode('pct')"
@@ -9735,13 +9736,13 @@ function renderBldgPerfPane(pane, b) {
               </div>
             </div>
             <!-- CSC % input (shown in pct mode) -->
-            <div id="bp-csc-pct-wrap" style="display:${defCscMode === 'pct' ? 'flex' : 'none'};flex-direction:column;gap:4px">
+            <div id="bp-csc-pct-wrap" style="display:${_showCsc && defCscMode === 'pct' ? 'flex' : 'none'};flex-direction:column;gap:4px">
               <label style="font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.6px">CSC Compensation %</label>
               <input id="bp-cscpct" type="number" value="${defCscPct}" min="0" max="100" step="0.1" readonly title="Set in Project Settings"
                 style="width:80px;font-family:var(--mono);font-size:13px;color:var(--em);background:var(--s3);border:1px solid var(--border);border-radius:6px;padding:5px 8px;outline:none">
             </div>
             <!-- Fixed $ input (shown in fixed mode) -->
-            <div id="bp-csc-fixed-wrap" style="display:${defCscMode === 'fixed' ? 'flex' : 'none'};flex-direction:column;gap:4px">
+            <div id="bp-csc-fixed-wrap" style="display:${_showCsc && defCscMode === 'fixed' ? 'flex' : 'none'};flex-direction:column;gap:4px">
               <label style="font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.6px">Fixed Monthly Cost $</label>
               <input id="bp-cscfixed" type="number" value="${defCscFixed}" min="0" step="1"
                 style="width:100px;font-family:var(--mono);font-size:13px;color:var(--em);background:var(--s3);border:1px solid var(--border);border-radius:6px;padding:5px 8px;outline:none">
@@ -9843,6 +9844,7 @@ function bpApplyToAllBuildings() {
 
 function bpRecalc() {
   const cscMode = _bpMode;
+  const _showCsc = getProjectContract(projects.find((p) => p.id === udSelProjId)).cscPct !== null;
   const cscPct = parseFloat(document.getElementById('bp-cscpct')?.value || 0) / 100;
   const cscFixed = parseFloat(document.getElementById('bp-cscfixed')?.value || 0);
   const years = parseInt(document.getElementById('bp-years')?.value || 3);
@@ -10096,7 +10098,7 @@ function bpRecalc() {
         )
       : '') +
     makeActPctRow() +
-    (hasActual
+    (hasActual && _showCsc
       ? makeRow(
           'Client Utility Savings $',
           '#22c55e',
@@ -10104,7 +10106,7 @@ function bpRecalc() {
           cscMode === 'pct' ? (100 - cscPct * 100).toFixed(0) + '%' : null,
         )
       : '') +
-    (hasActual
+    (hasActual && _showCsc
       ? makeRow(
           'CSC Utility Compensation $',
           'var(--em2)',
@@ -10154,6 +10156,7 @@ function bpRecalc() {
               <div style="font-size:18px;font-weight:800;font-family:var(--head);color:${annActSav >= 0 ? 'var(--em)' : 'var(--danger)'}">${annActSav < 0 ? '−' : ''}${$f(annActSav)}</div>
               <div style="font-size:11px;color:var(--text2);margin-top:2px">${actPct || ''} of baseline</div>
             </div>
+            ${_showCsc ? `
             <div style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:12px 14px;cursor:pointer" onclick="showFormula(_fml('CSC Compensation','${cscMode === 'pct' ? 'Current Savings × CSC %' : 'Fixed Monthly × 12'}','${cscMode === 'pct' ? $f(annActSav) + ' × ' + (cscPct * 100).toFixed(1) + '% = ' + $f(annCsc) : '$' + cscFixed.toFixed(2) + '/mo × 12 = ' + $f(annCsc)}','<div style=\\'font-size:11px;color:var(--text2)\\'>Mode: ${cscMode === 'pct' ? 'Percentage of Current Savings' : 'Fixed Monthly Cost'}</div>'),event)">
               <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:4px">CSC Compensation <span style="font-size:9px;color:var(--em)">ℹ️</span></div>
               <div style="font-size:18px;font-weight:800;font-family:var(--head);color:var(--em2)">${$f(annCsc)}</div>
@@ -10161,7 +10164,8 @@ function bpRecalc() {
             <div style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:12px 14px;cursor:pointer" onclick="showFormula(_fml('Client Savings','Current Savings − CSC Compensation','${$f(annActSav)} − ${$f(annCsc)} = ${$f(annCli)}','<div style=\\'font-size:11px;color:var(--text2)\\'>This is what the client keeps after CSC compensation</div>'),event)">
               <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:4px">Client Savings <span style="font-size:9px;color:var(--em)">ℹ️</span></div>
               <div style="font-size:18px;font-weight:800;font-family:var(--head);color:var(--green)">${$f(annCli)}</div>
-            </div>`
+            </div>` : ''}
+`
                 : ''
             }
           </div>
@@ -10229,7 +10233,7 @@ function bpRecalc() {
         backgroundColor: 'rgba(34,197,94,0.75)',
         stack: 's',
       },
-      {
+      ...(!_showCsc ? [] : [{
         label: 'Client Utility Savings $',
         data: JSON.parse(cliVals),
         backgroundColor: 'rgba(20,184,166,0.85)',
@@ -10240,9 +10244,9 @@ function bpRecalc() {
         data: JSON.parse(cscVals),
         backgroundColor: 'rgba(59,130,246,0.85)',
         stack: 's',
-      },
+      }]),
     ];
-    if (showLine)
+    if (showLine && _showCsc)
       datasets.push({
         label: 'CSC Cumulative $',
         data: JSON.parse(cumVals),
@@ -10309,6 +10313,7 @@ function renderBldgSavProjPane(pane, b) {
   // CSC share: read from getProjectContract (Project Settings), shown read-only below
   const projMeta2 = projects.find((p) => p.id === udSelProjId);
   const defCscPct = getProjectContract(projMeta2).cscPct ?? 0;
+  const _showCsc = getProjectContract(projMeta2).cscPct !== null;
   const defYears = cfg.years ?? 3;
   // Fall back to project-level escalation if building has no custom override
   const defEscPct = cfg._customEsc ? cfg.escPct : (projMeta2?.escalation ?? cfg.escPct ?? 3);
@@ -10353,12 +10358,12 @@ function renderBldgSavProjPane(pane, b) {
               <input id="bsp-savpct" type="number" value="${defSavingsPct}" min="0" max="100" step="0.1" oninput="bspRecalc()"
                 style="width:80px;font-family:var(--mono);font-size:13px;color:var(--em);background:var(--s3);border:1px solid var(--border);border-radius:6px;padding:5px 8px;outline:none">
             </div>
-            <div style="display:flex;flex-direction:column;gap:4px">
+            <div style="display:${_showCsc ? 'flex' : 'none'};flex-direction:column;gap:4px">
               <label style="font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.6px">Client Savings %</label>
               <input id="bsp-clipct" type="number" value="${defClientPct}" min="0" max="100" step="0.1" oninput="bspRecalc()"
                 style="width:80px;font-family:var(--mono);font-size:13px;color:var(--em);background:var(--s3);border:1px solid var(--border);border-radius:6px;padding:5px 8px;outline:none">
             </div>
-            <div style="display:flex;flex-direction:column;gap:4px">
+            <div style="display:${_showCsc ? 'flex' : 'none'};flex-direction:column;gap:4px">
               <label style="font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.6px">CSC Compensation %</label>
               <input id="bsp-cscpct" type="number" value="${defCscPct}" min="0" max="100" step="0.1" readonly title="Set in Project Settings"
                 style="width:80px;font-family:var(--mono);font-size:13px;color:var(--em);background:var(--s3);border:1px solid var(--border);border-radius:6px;padding:5px 8px;outline:none">
@@ -10411,6 +10416,7 @@ function bspRecalc() {
   // Guard: skip if DOM inputs don't exist yet (prevents corrupting localStorage with zeros)
   if (!document.getElementById('bsp-savpct')) return;
   const savPct = parseFloat(document.getElementById('bsp-savpct').value ?? 0) / 100;
+  const _showCsc = getProjectContract(projects.find((p) => p.id === udSelProjId)).cscPct !== null;
   const cliPct = parseFloat(document.getElementById('bsp-clipct').value ?? 0) / 100;
   const cscPct = parseFloat(document.getElementById('bsp-cscpct').value ?? 0) / 100;
   const years = parseInt(document.getElementById('bsp-years').value ?? 3);
@@ -10502,7 +10508,7 @@ function bspRecalc() {
     return base * savPct;
   }
 
-  const rows = ['baseline', 'projected', 'savings', 'client', 'csc'].map((key) => {
+  const rows = (_showCsc ? ['baseline', 'projected', 'savings', 'client', 'csc'] : ['baseline', 'projected', 'savings']).map((key) => {
     const vals = cols.map((col) => {
       const base = view === 'monthly' ? (col.isTotal ? annBase : moBase[col.mo]) : colBaseQ(col);
       const projSav = bspGetProjSav(col);
@@ -10596,8 +10602,8 @@ function bspRecalc() {
   const chartCols = cols.filter((c) => !c.isTotal);
   const chartLabels = JSON.stringify(chartCols.map((c) => c.label));
   const projVals = JSON.stringify(chartCols.map((_, i) => rows[1].vals[i]));
-  const cliVals = JSON.stringify(chartCols.map((_, i) => rows[3].vals[i]));
-  const cscVals = JSON.stringify(chartCols.map((_, i) => rows[4].vals[i]));
+  const cliVals = JSON.stringify(chartCols.map((_, i) => _showCsc ? rows[3].vals[i] : 0));
+  const cscVals = JSON.stringify(chartCols.map((_, i) => _showCsc ? rows[4].vals[i] : 0));
   const cumVals = JSON.stringify(cumulativeVals);
   const showLine = view === 'quarterly';
 
@@ -10619,11 +10625,13 @@ function bspRecalc() {
               <div style="font-size:18px;font-weight:800;font-family:var(--head);color:var(--em)">${$f(totalSav)}</div>
               <div style="font-size:11px;color:var(--text2);margin-top:2px">${totalPct} of baseline · ${years} yr${years > 1 ? 's' : ''}</div>
             </div>
+            ${_showCsc ? `
             <div style="background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:12px 14px">
               <div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:4px">CSC Cumulative</div>
               <div style="font-size:18px;font-weight:800;font-family:var(--head);color:var(--em2)">${$f(_hasSA ? annBase * cscPct * years : 0)}</div>
               <div style="font-size:11px;color:var(--text2);margin-top:2px">over ${years} yr${years > 1 ? 's' : ''}</div>
             </div>
+            ` : ''}
           </div>
 
           <!-- Data table -->
@@ -10658,7 +10666,7 @@ function bspRecalc() {
         backgroundColor: 'rgba(34,197,94,0.75)',
         stack: 's',
       },
-      {
+      ...(!_showCsc ? [] : [{
         label: 'Client Projected Utility Savings $',
         data: JSON.parse(cliVals),
         backgroundColor: 'rgba(20,184,166,0.85)',
@@ -10669,9 +10677,9 @@ function bspRecalc() {
         data: JSON.parse(cscVals),
         backgroundColor: 'rgba(59,130,246,0.85)',
         stack: 's',
-      },
+      }]),
     ];
-    if (showLine) {
+    if (showLine && _showCsc) {
       datasets.push({
         label: 'CSC Projected Cumulative Total $',
         data: JSON.parse(cumVals),
