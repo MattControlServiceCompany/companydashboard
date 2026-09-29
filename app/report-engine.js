@@ -2766,6 +2766,14 @@ function rptPageCover(n, d) {
   return { html: page1 + page2, pageCount: 2 };
 }
 
+// One source for the period words on the Financial Summary page: a quarterly report says
+// Quarterly/Quarter, an annual report says Annual/Year.
+function _rptPeriodWords(d) {
+  return d.period.type === 'quarterly'
+    ? { adj: 'Quarterly', unit: 'Quarter', isAnnual: false }
+    : { adj: 'Annual', unit: 'Year', isAnnual: true };
+}
+
 function rptPageFinancial(n, d) {
   const $n = function (v) {
     return Math.round(v).toLocaleString();
@@ -2775,6 +2783,7 @@ function rptPageFinancial(n, d) {
   };
 
   const q = d.period.quarter || 1;
+  const pw = _rptPeriodWords(d);
   const qLabel = d.period.type === 'quarterly' ? 'Q' + q + ' ' + (d.period.year || '') : d.period.year || '';
   // FIX 1 (2026-09-11): Annualized used to be a naive Q-times-4 (annFactor=4 * this
   // quarter's savings) — wildly overstates a quarter running above/below its neighbors.
@@ -2974,8 +2983,10 @@ function rptPageFinancial(n, d) {
     : '<table class="rpt-table" contenteditable="false">' +
     '<thead><tr>' +
     '<th></th>' +
-    '<th class="rpt-n">Quarter</th>' +
-    '<th class="rpt-n">Annualized</th>' +
+    '<th class="rpt-n">' +
+    pw.unit +
+    '</th>' +
+    (pw.isAnnual ? '' : '<th class="rpt-n">Annualized</th>') +
     '<th class="rpt-n">' +
     contractYrs +
     '-Year Total</th>' +
@@ -2988,9 +2999,7 @@ function rptPageFinancial(n, d) {
     '<td class="rpt-n rpt-g" contenteditable="true">' +
     _fmtUSD(d.totals.savings, '$0') +
     '</td>' +
-    '<td class="rpt-n" contenteditable="true">' +
-    _fmtUSD(annSavings, '$0') +
-    '</td>' +
+    (pw.isAnnual ? '' : '<td class="rpt-n" contenteditable="true">' + _fmtUSD(annSavings, '$0') + '</td>') +
     '<td class="rpt-n" contenteditable="true">' +
     _fmtUSD(yrTotalSavings, '$0') +
     '</td>' +
@@ -3002,9 +3011,7 @@ function rptPageFinancial(n, d) {
     '<td class="rpt-n" contenteditable="true">' +
     _fmtUSD(cscAmt, '$0') +
     '</td>' +
-    '<td class="rpt-n" contenteditable="true">' +
-    _fmtUSD(cscAnnAmt, '$0') +
-    '</td>' +
+    (pw.isAnnual ? '' : '<td class="rpt-n" contenteditable="true">' + _fmtUSD(cscAnnAmt, '$0') + '</td>') +
     '<td class="rpt-n" contenteditable="true">' +
     _fmtUSD(yrTotalCsc, '$0') +
     '</td>' +
@@ -3016,9 +3023,7 @@ function rptPageFinancial(n, d) {
     '<td class="rpt-n rpt-g" contenteditable="true">' +
     _fmtUSD(clientAmt, '$0') +
     '</td>' +
-    '<td class="rpt-n" contenteditable="true">' +
-    _fmtUSD(clientAnnAmt, '$0') +
-    '</td>' +
+    (pw.isAnnual ? '' : '<td class="rpt-n" contenteditable="true">' + _fmtUSD(clientAnnAmt, '$0') + '</td>') +
     '<td class="rpt-n" contenteditable="true">' +
     _fmtUSD(yrTotalClient, '$0') +
     '</td>' +
@@ -3077,7 +3082,9 @@ function rptPageFinancial(n, d) {
     '<col style="width:10%">' +
     '</colgroup>' +
     '<thead><tr style="text-align:center;line-height:1.2">' +
-    '<th style="white-space:normal;word-wrap:normal;word-break:keep-all;overflow-wrap:normal;hyphens:none">Quarter</th>' +
+    '<th style="white-space:normal;word-wrap:normal;word-break:keep-all;overflow-wrap:normal;hyphens:none">' +
+    pw.unit +
+    '</th>' +
     '<th class="rpt-n" style="white-space:normal;word-wrap:normal;word-break:keep-all;overflow-wrap:normal;hyphens:none">Baseline<br>' +
     _rptUnit('kWh') +
     '</th>' +
@@ -3111,7 +3118,9 @@ function rptPageFinancial(n, d) {
     '<p contenteditable="true" style="font-size:14px;color:var(--rpt-page-text);line-height:1.6;margin:0 0 8px">This page summarizes the financial performance of each building in the portfolio for the reporting period. Baseline costs represent the expected energy spend based on historical consumption adjusted for weather. Projected costs reflect the target spend based on the contracted savings percentage. Current costs are the actual utility charges during the period. The difference between baseline and current represents verified cost avoidance.</p>' +
     '<h2>Building Performance</h2>' +
     bldgTable +
-    '<h2>Quarterly Savings vs Baseline</h2>' +
+    '<h2>' +
+    pw.adj +
+    ' Savings vs Baseline</h2>' +
     qtrTable +
     (d.contract.hasCsc ? '<h2>Control Service Company Compensation</h2>' : '') +
     cscTable +

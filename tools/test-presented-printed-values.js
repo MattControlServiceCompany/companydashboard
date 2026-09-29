@@ -72,6 +72,7 @@ const files = [
 ];
 const fns = [
   '_rptUnit',
+  '_rptPeriodWords',
   '_rptContractProgressPct',
   'rptPageCover',
   'rptPageFinancial',

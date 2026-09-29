@@ -1776,6 +1776,14 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.29.36',
+    date: '2026-09-29',
+    title: 'Reports: annual period labels',
+    items: [
+      { type: 'fix', text: 'Reports: annual reports now say Annual / Year instead of Quarterly; quarterly reports unchanged.' },
+    ],
+  },
+  {
     v: 'v2026.09.29.35',
     date: '2026-09-29',
     title: 'Project Settings: Contract Type',

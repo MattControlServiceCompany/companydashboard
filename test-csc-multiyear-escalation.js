@@ -264,7 +264,7 @@ const projHTML = runPageFn('rptPageContractProjection', [2, dProj]);
 // Pull the _fmtUSD()-formatted dollar figures straight out of the real rendered HTML — proves the
 // actual displayed table output, not just the return value of an isolated function call.
 function extractCscCompTotals(html) {
-  // "<contractYrs>-Year Total" column is the 4th <td> in each of the 3 CSC Compensation rows.
+  // "<contractYrs>-Year Total" column is the LAST <td> (3rd; an annual report has no Annualized column) in each of the 3 CSC Compensation rows.
   const rowRe = /<tr[^>]*>((?:(?!<\/tr>)[\s\S])*)<\/tr>/g;
   const dollars = [];
   let m;
@@ -273,8 +273,8 @@ function extractCscCompTotals(html) {
     // 2026-09-24 (fix/report-followup): the CSC row label is spelled out as "Control Service
     // Company (N%)" (no-abbreviations fix, fix/report-headers-and-empty-period) — match that,
     // not the old bare "CSC (" form.
-    if (tds.length === 4 && /Actual Savings|Control Service Company \(|Client Net \(/.test(tds[0])) {
-      const val = (tds[3].match(/\$[\d,]+/) || [])[0];
+    if (tds.length === 3 && /Actual Savings|Control Service Company \(|Client Net \(/.test(tds[0])) {
+      const val = (tds[2].match(/\$[\d,]+/) || [])[0];
       if (val) dollars.push({ label: tds[0].replace(/<[^>]+>/g, ''), value: val });
     }
   }
