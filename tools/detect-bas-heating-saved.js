@@ -57,6 +57,7 @@ const src = [
   loadConst(CALC, 'BAS_TEMP_BINS'),
   loadConst(CALC, 'BAS_MO'),
   loadFn(CALC, '_bcInterp'),
+  loadFn(CALC, '_bcUnoccHeatType'),
   loadFn(CALC, '_bcDefaultUnoccHeat'),
   loadConst(CALC, 'BAS_CITIES'),
   loadFn(CALC, '_basCityWeather'),

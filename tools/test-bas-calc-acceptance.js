@@ -121,6 +121,7 @@ const src = [
   loadConst(CALC, 'BAS_TEMP_BINS'),
   loadConst(CALC, 'BAS_MO'),
   loadFn(CALC, '_bcInterp'),
+  loadFn(CALC, '_bcUnoccHeatType'),
   loadFn(CALC, '_bcDefaultUnoccHeat'),
   loadConst(CALC, 'BAS_CITIES'),
   loadFn(CALC, '_basCityWeather'),
@@ -261,6 +262,12 @@ if (r) {
   assert(summerCoolSav > annCoolSav * 0.7, 'cooling savings concentrated in JUN/JUL/AUG (KC climate sanity check)');
 
   // NOT asserted (see module header): full Excel numeric parity. Logged for visibility only.
+  // D-14 (2026-09-28, WP-13): the site now uses the workbook's hour convention (label h+1, an hour
+  // is occupied when on <= label <= off; asserted against workbook New!I2 in
+  // tools/test-bas-calc-measure-kw.js). With it, this scenario moves from new cooling 132,428 /
+  // annual cooling savings 10,443.71 (old h in [on, off) rule) to the values logged below. Full
+  // cooling parity still needs the workbook's step-table load %, per-bin OA net and unoccupied
+  // ratio (audit math-04 E-BAS-3 a-c) - not the hour rule - so it stays diagnostic.
   console.log('  --- diagnostic only, not asserted (known upstream-calibration-scope gap) ---');
   console.log(
     `  existing cooling total: site ${exCoolTotal} | Excel Savings Calculator!K49 142872 (exact by construction on both sides)`,
@@ -365,7 +372,10 @@ console.log('=== 5. _bcDefaultUnoccHeat reads EM_SP_DEFAULTS — 2026-09-23 sing
     sandbox._bcDefaultUnoccHeat(2) === 60,
     'heatSrc 2 (Electric) -> 60, matches EM_SP_DEFAULTS.unocc.electricReheat.heat',
   );
-  assert(sandbox._bcDefaultUnoccHeat(4) === 65, 'heatSrc 4 (Both) -> 65, matches EM_SP_DEFAULTS.unocc.heatpump.heat');
+  assert(
+    sandbox._bcDefaultUnoccHeat(4) === 55,
+    'heatSrc 4 (Both, gas + electric) -> 55, matches EM_SP_DEFAULTS.unocc.hydronic.heat (D-15, 2026-09-28)',
+  );
   assert(
     sandbox._bcDefaultUnoccHeat(1) === sandbox.EM_SP_DEFAULTS.unocc.hydronic.heat,
     '_bcDefaultUnoccHeat(1) reads the SAME table value directly (not a coincidentally-equal duplicate)',
@@ -375,8 +385,8 @@ console.log('=== 5. _bcDefaultUnoccHeat reads EM_SP_DEFAULTS — 2026-09-23 sing
     '_bcDefaultUnoccHeat(2) reads the SAME table value directly',
   );
   assert(
-    sandbox._bcDefaultUnoccHeat(4) === sandbox.EM_SP_DEFAULTS.unocc.heatpump.heat,
-    '_bcDefaultUnoccHeat(4) reads the SAME table value directly',
+    sandbox._bcDefaultUnoccHeat(4) === sandbox.EM_SP_DEFAULTS.unocc.hydronic.heat,
+    '_bcDefaultUnoccHeat(4) reads the SAME table value directly (hydronic row)',
   );
   // If EM_SP_DEFAULTS.unocc ever changes, _bcDefaultUnoccHeat must move with it automatically —
   // proven here by mutating the live table and re-checking (not just re-reading a cached copy).

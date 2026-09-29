@@ -2590,9 +2590,10 @@ function _spZoneRow(projId, bldgId, z, idx) {
 function _spComputeAvgRow(zones, bldg) {
   if (!zones || !zones.length) return null;
   function avg(arr, key) {
-    var vals = arr.map((z) => z[key]).filter((v) => v !== null && v !== undefined && !isNaN(v));
-    if (!vals.length) return null;
-    return Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
+    return avgSetpoint(
+      arr.map((z) => z[key]),
+      0,
+    );
   }
   var schedules = zones.map((z) => (z.schedule || '').trim()).filter((s) => s);
   var sched = '';
@@ -3689,22 +3690,11 @@ function spComputeBASAnalysis(rows) {
   });
 
   function avg(arr, key) {
-    var vals = arr
-      .map(function (r) {
+    return avgSetpoint(
+      arr.map(function (r) {
         return r[key];
-      })
-      .filter(function (v) {
-        return v !== null && v !== undefined;
-      });
-    if (!vals.length) return null;
-    return (
-      Math.round(
-        (vals.reduce(function (a, b) {
-          return a + b;
-        }, 0) /
-          vals.length) *
-          10,
-      ) / 10
+      }),
+      1,
     );
   }
 

@@ -3907,6 +3907,8 @@ const BAS_VRF_COP = [
 // reached above 82.5F and silently dropped hot-climate hours (Phoenix, Brownsville, Dallas).
 const BAS_TEMP_BINS = BAS_WEATHER_BINS.bins;
 const BAS_MO = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+// Days per month of the typical weather year the bin hours describe (no leap day: 8,760 hours).
+const BAS_MO_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
 // Company-standard unoccupied heating setpoint default, by BAS Savings Calc heating source —
 // reads the ONE setpoint default table (EM_SP_DEFAULTS.unocc, app/equipment-matrix.js; see
@@ -3916,10 +3918,24 @@ const BAS_MO = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', '
 // varies, so this is the only value that needs the heat-source branch. Falls back to the same
 // literal numbers only if EM_SP_DEFAULTS hasn't loaded (defensive — never happens in the shipped
 // page, equipment-matrix.js always loads alongside calculators.js).
+// D-15 (2026-09-28): heat source -> the setpoint-standard row. 1/3 = gas, 4 = Both (gas + electric:
+// the gas / hot-water plant sets the standard, so 55, not the heat-pump 65), 2 = electric reheat.
+// (Electric unit heaters, VRF and heat pumps are 65 in the same table; they are chosen per zone from
+// the Equipment Matrix, not from this single building-level heat source.)
+function _bcUnoccHeatType(heatSrc) {
+  return heatSrc === 2
+    ? { key: 'electricReheat', name: 'electric reheat' }
+    : { key: 'hydronic', name: 'gas or hot water heat' };
+}
 function _bcDefaultUnoccHeat(heatSrc) {
-  const key = heatSrc === 4 ? 'heatpump' : heatSrc === 2 ? 'electricReheat' : 'hydronic'; // 1/3 = Gas
-  if (typeof EM_SP_DEFAULTS !== 'undefined' && EM_SP_DEFAULTS.unocc[key]) return EM_SP_DEFAULTS.unocc[key].heat;
-  return heatSrc === 4 ? 65 : heatSrc === 2 ? 60 : 55;
+  return EM_SP_DEFAULTS.unocc[_bcUnoccHeatType(heatSrc).key].heat;
+}
+// Plain-words source label shown under a default-valued field (never claims building data).
+function _bcDefaultUnoccHeatLabel(heatSrc) {
+  return (
+    'Default value: company standard for ' + _bcUnoccHeatType(heatSrc).name + ' (' + _bcDefaultUnoccHeat(heatSrc) +
+    '°F), not from building data'
+  );
 }
 
 function _bcInterp(curve, temp) {
@@ -4114,6 +4130,8 @@ function openBASCalc(projId) {
   // 2026-09-25 (Matt's decision): "just assume no outside air when unoccupied" — default is
   // 'yes', sourced as an assumption (Matt / company default), not measured building data.
   const rExOAShutoff = _bcResolve('exOAShutoff', 'yes', auto?.exOAShutoff);
+  if (rExHeatUnocc.hint && rExHeatUnocc.hint.indexOf('Default value') === 0)
+    rExHeatUnocc.hint = _bcDefaultUnoccHeatLabel(parseInt(rHeatSrc.value) || 2);
   const rCalCoolKwh = _bcResolve('calCoolKwh', '', autoCalCool);
   const rCalHeatKwh = _bcResolve('calHeatKwh', '', autoCalHeat);
   // Honest label (2026-09-28): the weather regression ran but found no positive heating (HDD) term,
@@ -4136,6 +4154,8 @@ function openBASCalc(projId) {
     _bcDefaultUnoccHeat(parseInt(rHeatSrc.value) || 2),
     auto?.newHeatUnocc,
   );
+  if (rNewHeatUnocc.hint && rNewHeatUnocc.hint.indexOf('Default value') === 0)
+    rNewHeatUnocc.hint = _bcDefaultUnoccHeatLabel(parseInt(rHeatSrc.value) || 2);
   const rNewCoolUnocc = _bcResolve('newCoolUnocc', 85, auto?.newCoolUnocc);
   const rNewMfOn = _bcResolve('newMfOn', 6, auto?.newMfOn);
   const rNewMfOff = _bcResolve('newMfOff', 17, auto?.newMfOff);
@@ -4546,9 +4566,15 @@ function _bcDoCalc(projId) {
   }
   const hb = weather.hourlyBins;
 
+  // D-14 hour convention = the BAS Savings Calc workbook (the oracle): its 24 hour columns are
+  // labelled 1..24 (label = h + 1, h = 0..23) and an hour is occupied when on <= label <= off
+  // (both ends inclusive). Weather-bin hour h therefore counts as occupied for on <= h+1 <= off,
+  // i.e. one hour longer per day than the old [on, off) rule. on === off stays "never occupied"
+  // (the 0-0 closed-weekend entry). Wrapped windows (on > off) use the same inclusive labels.
   function isOcc(h, on, off) {
     if (on === off) return false;
-    return on < off ? h >= on && h < off : h >= on || h < off;
+    const label = h + 1;
+    return on < off ? label >= on && label <= off : label >= on || label <= off;
   }
 
   // Setback (scalable) and OA (never scaled) are tracked separately because the Excel
@@ -4888,6 +4914,8 @@ function _bcDoCalc(projId) {
     heatKwhSavings: heatKwhSavM,
     peakKwhSavings: peakKwhSavM,
     nonPeakKwhSavings: nonPeakKwhSavM,
+    peakHours: peakEnd - peakStart,
+    gasUnit: heatSrc === 1 ? 'MCF' : 'Therms',
     annTotalKwh,
     annHeatGasSav,
     totalRebate,
@@ -5022,6 +5050,26 @@ function bcSaveInputs(projId) {
 }
 
 /* ── F. Measure Integration ── */
+// The ONE place BAS results become Energy Savings measure arrays (WP-13).
+//  kW  = AVERAGE kW reduction in the month = peak-window kWh saved / (days in month x peak hours).
+//        (The matrix multiplies each month's kW by the demand rate, so it needs a rate-of-power
+//        figure, not a monthly total.)
+//  gas = therms. Heat source 1 results are thousand cubic feet (MCF): convert with the one unit
+//        table (UNIT_TO_BASE via convertUnit), never a private factor.
+function _bcMeasureArrays(r) {
+  const kw = r.peakKwhSavings
+    ? r.peakKwhSavings.map((pk, mo) => {
+        const hrs = BAS_MO_DAYS[mo] * r.peakHours;
+        return hrs > 0 ? Math.round((pk / hrs) * 10) / 10 : 0;
+      })
+    : Array(12).fill(0);
+  return {
+    kwh: r.kwhSavings.map((k) => Math.round(k)),
+    kw,
+    gas: r.gasSavings.map((g) => Math.round(convertUnit(g, r.gasUnit, 'Therms', 'Gas'))),
+  };
+}
+
 function bcAddAsMeasure(projId) {
   const p = projects.find((x) => x.id === projId);
   if (!p || !p._bcResults) {
@@ -5032,21 +5080,15 @@ function bcAddAsMeasure(projId) {
   const sd = getProjSavingsData(projId);
   const bldgs = typeof getUDBldgs === 'function' ? getUDBldgs(projId) : p.buildings || [];
   const cityName = BAS_CITIES.find((c) => c.id === (p.basCalc?.city || 4))?.name || 'Unknown';
+  const arrays = _bcMeasureArrays(r);
   sd.measures.push({
     id: 'm' + Date.now(),
     selected: true,
     msrNum: sd.measures.length + 1 + '',
     bldgId: _calcTemplateContext?.bldgId || bldgs[0]?.id || '',
     desc: 'BAS HVAC Optimization — ' + cityName + ' — ' + (p.basCalc?.sqft || 0) + ' sf',
-    kwh: r.kwhSavings.map((k) => Math.round(k)),
-    kw: r.peakKwhSavings
-      ? r.peakKwhSavings.map((pk) => {
-          const hrs = (p.basCalc?.peakEnd || 18) - (p.basCalc?.peakStart || 16);
-          return hrs > 0 ? Math.round((pk / hrs) * 10) / 10 : 0;
-        })
-      : Array(12).fill(0),
-    gas: r.gasSavings.map((g) => Math.round(g)),
-    totalDollar: 0,
+    ...arrays,
+    totalDollar: 0, // recalculated live by calcProjSavingsMatrix (includes kW)
     source: 'bas',
   });
   sset('en_projects', projects);
@@ -5067,24 +5109,17 @@ function bcApplyToMeasure(projId) {
     showToast('Measure not found');
     return;
   }
-  m.kwh = r.kwhSavings.map((k) => Math.round(k));
-  m.kw = r.peakKwhSavings
-    ? r.peakKwhSavings.map((pk) => {
-        const hrs = (p.basCalc?.peakEnd || 18) - (p.basCalc?.peakStart || 16);
-        return hrs > 0 ? Math.round((pk / hrs) * 10) / 10 : 0;
-      })
-    : Array(12).fill(0);
-  m.gas = r.gasSavings.map((g) => Math.round(g));
+  Object.assign(m, _bcMeasureArrays(r));
   m.source = 'bas';
   const cityName = BAS_CITIES.find((c) => c.id === (p.basCalc?.city || 4))?.name || 'Unknown';
   if (!m.desc || m.desc.trim() === '') m.desc = 'BAS HVAC Optimization — ' + cityName;
   // Same fallback as solarApplyToMeasure above — see comment there (2026-09-23-rate-source).
   const rates = _svRatesOrCanonical(sd, projId, m.bldgId);
-  const SUMMER_MOS = [5, 6, 7, 8]; // Jun–Sep (0-indexed)
   let total = 0;
   for (let mo = 0; mo < 12; mo++) {
     const isSummer = SUMMER_MOS.includes(mo);
     total += (m.kwh[mo] || 0) * (isSummer ? rates.kwhSummer || 0 : rates.kwhWinter || 0);
+    total += (m.kw[mo] || 0) * (isSummer ? rates.kwSummer || 0 : rates.kwWinter || 0);
     total += (m.gas[mo] || 0) * (rates.thermRate || 0);
   }
   m.totalDollar = total;
@@ -5117,10 +5152,11 @@ function bcUseEquipmentMatrixData(projId) {
     showToast('No Equipment Matrix rows found for this building');
     return;
   }
-  const avg = (idx) => {
-    const vals = rows.map((r) => parseFloat(r[idx])).filter((v) => !isNaN(v));
-    return vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null;
-  };
+  const avg = (idx) =>
+    avgSetpoint(
+      rows.map((r) => r[idx]),
+      0,
+    );
   // Column indices match EM_SETPOINT_EXPORT_HEADERS / emBuildSetpointExportRows's push order.
   const fields = {
     'bc-exHeatOcc': avg(3),
