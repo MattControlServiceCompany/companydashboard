@@ -87,7 +87,7 @@ function loadSandbox() {
   sandbox.globalThis = sandbox;
   sandbox.self = sandbox;
   const ctx = vm.createContext(sandbox);
-  const LOAD_ORDER = ['app/csv-import.js', 'app/report-engine.js'];
+  const LOAD_ORDER = ['app/csv-import.js', 'app/report-engine.js', 'app/report-printed.js'];
   const skipped = [];
   for (const rel of LOAD_ORDER) {
     const full = path.join(REPO, rel);

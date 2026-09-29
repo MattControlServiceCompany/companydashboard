@@ -187,6 +187,8 @@ function rptTogglePresented() {
 }
 
 var _rptPresentedFormCtx = null;
+// Other printed figures read from the CSV (see parsePresentedCsv); stored with the record on confirm.
+var _rptPresentedFormPrinted = {};
 
 function _rptPresentedNum(v) {
   return v === '' || v == null ? null : parseFloat(v);
@@ -200,6 +202,7 @@ function _rptPresentedFmt(v) {
 
 function _rptOpenPresentedForm(ctx) {
   _rptPresentedFormCtx = ctx;
+  _rptPresentedFormPrinted = {};
   var d = ctx.data;
   var today = new Date().toISOString().slice(0, 10);
   var cellCss = 'border:1px solid var(--border);padding:4px 8px;';
@@ -271,7 +274,7 @@ function _rptOpenPresentedForm(ctx) {
     '" style="' +
     inCss +
     ';text-align:left;margin-top:3px"></label></div>' +
-    '<div style="margin-bottom:10px;font-size:12px;color:var(--text2)">Or fill the table from a CSV file (rows: building, figure, value; figures: savings_dollars, kwh_saved, therms_saved, gallons_saved, electric_savings_dollars, gas_savings_dollars, propane_savings_dollars; a row named Portfolio total holds the total): ' +
+    '<div style="margin-bottom:10px;font-size:12px;color:var(--text2)">Or fill the table from a CSV file (rows: building, figure, value; figures: savings_dollars, kwh_saved, therms_saved, gallons_saved, electric_savings_dollars, gas_savings_dollars, propane_savings_dollars; a row named Portfolio total holds the total; a figure named printed:section|commodity|month|column keeps any other printed number for the updated report): ' +
     '<input id="pfCsv" type="file" accept=".csv,text/csv" onchange="_rptPresentedImportCsv(this)"></div>' +
     '<div id="pfMsg" style="font-size:12px;color:var(--text2);margin-bottom:8px"></div>' +
     '<table style="border-collapse:collapse;width:100%;font-size:12px;color:var(--text)"><thead><tr>' +
@@ -349,6 +352,7 @@ function _rptPresentedImportCsv(input) {
   reader.onload = function () {
     var d = _rptPresentedFormCtx.data;
     var r = parsePresentedCsv(String(reader.result), d.buildings);
+    _rptPresentedFormPrinted = r.printed;
     document.querySelectorAll('#presentedModalBody tbody tr').forEach(function (tr) {
       var f = r.buildings[tr.getAttribute('data-bldg')];
       if (!f) return;
@@ -365,6 +369,8 @@ function _rptPresentedImportCsv(input) {
     var notes = [];
     if (r.unmatched.length) notes.push('No building named: ' + r.unmatched.join(', ') + '.');
     if (r.bad.length) notes.push(r.bad.length + ' row(s) could not be read.');
+    var _np = Object.keys(r.printed).length;
+    if (_np) notes.push(_np + ' other printed figure(s) read.');
     document.getElementById('pfMsg').textContent = notes.length
       ? notes.join(' ')
       : 'File read. Check the numbers, then confirm.';
@@ -375,6 +381,7 @@ function _rptPresentedImportCsv(input) {
 function _rptClosePresentedForm() {
   document.getElementById('presentedModal').classList.remove('open');
   _rptPresentedFormCtx = null;
+  _rptPresentedFormPrinted = {};
 }
 
 // The only writer: the confirm button of the form.
@@ -419,6 +426,7 @@ function _rptConfirmPresentedForm() {
     documentName: document.getElementById('pfDocName').value.trim(),
     totalDollars: total == null ? null : total,
     buildings: buildings,
+    printed: _rptPresentedFormPrinted,
   });
   if (!res.ok) {
     document.getElementById('pfMsg').textContent = res.reason;

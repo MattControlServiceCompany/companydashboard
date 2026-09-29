@@ -169,6 +169,7 @@ new vm.Script(
 ).runInContext(ctx);
 
 load('app/report-engine.js');
+load('app/report-printed.js');
 
 // ─── 1. Direct unit check: computeMultiYearCscTotals alone against known-good figures ────
 console.log('--- 1. computeMultiYearCscTotals() direct known-good check ---');

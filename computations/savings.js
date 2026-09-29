@@ -601,6 +601,9 @@ function getBldgMeasureSavingsByMo(projId, bldgId) {
      { projectId, periodStart, periodEnd, presentedAt, documentName, totalDollars,
        buildings: { <bldgId>: { dollars, kwhSaved?, thermsSaved?, gallonsSaved?,
          elecDollars?, gasDollars?, propaneDollars? } } }  (commodity dollars = the printed split)
+     printed?: { "<section>|<row>|<commodity>|<month>|<column>": number | text }  every other figure of
+       the printed document (row = building id, or the printed row label when it is not a building).
+       Read only through getPresentedPrintedMap() / getPresentedPrintedValue().
    totalSavingsWithPresented() is the ONE place a period / building / project savings total
    is decided; every consumer that adds up months calls it. Monthly rows stay recalculated.
 ───────────────────────────────────────────────────────────── */
@@ -795,6 +798,24 @@ function getPresentedUnits(projId, yms, bldgId) {
   return (rec && rec.buildings[bldgId]) || null;
 }
 
+// Every printed figure of the document for exactly this period, or null. Keys are built by
+// presentedPrintedKey(); a period that is not exactly the presented one has no printed figures.
+function getPresentedPrintedMap(projId, yms) {
+  const rec = getPresentedRecordFor(projId, yms);
+  return rec && rec.printed ? rec.printed : null;
+}
+
+function presentedPrintedKey(section, row, commodity, month, column) {
+  return [section, row, commodity || "", month || "", column].join("|");
+}
+
+// One printed figure (number or text), or undefined when the document did not print it.
+function getPresentedPrintedValue(printed, section, row, commodity, month, column) {
+  if (!printed) return undefined;
+  const k = presentedPrintedKey(section, row, commodity, month, column);
+  return Object.prototype.hasOwnProperty.call(printed, k) ? printed[k] : undefined;
+}
+
 // Project total across every building of the project (portal, dashboards). yms defaults to
 // every month any building has savings for.
 function getProjectSavingsTotal(projId, yms) {
@@ -854,6 +875,9 @@ function savePresentedRecord(rec) {
     totalDollars: Number.isFinite(rec.totalDollars) ? rec.totalDollars : null,
     buildings: rec.buildings,
   };
+  if (rec.printed && typeof rec.printed === "object" && Object.keys(rec.printed).length) {
+    clean.printed = rec.printed;
+  }
   if (rec.pdfKey) {
     clean.pdfKey = String(rec.pdfKey);
     clean.pdfName = rec.pdfName || "";
@@ -902,7 +926,9 @@ function removePresentedMark(projId, yms) {
 }
 
 // CSV of printed figures: rows "building,figure,value". figure = savings_dollars | kwh_saved |
-// therms_saved | gallons_saved | electric_savings_dollars | gas_savings_dollars | propane_savings_dollars. A building named "Portfolio total" (or "Total") holds the printed
+// therms_saved | gallons_saved | electric_savings_dollars | gas_savings_dollars | propane_savings_dollars,
+// or printed:<section>|<commodity>|<month>|<column> for any other printed figure (number or text; `printed`
+// in the result; the building column is a building name or the printed row label). A building named "Portfolio total" (or "Total") holds the printed
 // portfolio total. `bldgs` = [{id, name}] of the project. Returns
 // { buildings: {<id>: {...}}, totalDollars, unmatched: [names], bad: [lines] }.
 function parsePresentedCsv(text, bldgs) {
@@ -915,7 +941,7 @@ function parsePresentedCsv(text, bldgs) {
     gas_savings_dollars: "gasDollars",
     propane_savings_dollars: "propaneDollars",
   };
-  const out = { buildings: {}, totalDollars: null, unmatched: [], bad: [] };
+  const out = { buildings: {}, totalDollars: null, printed: {}, unmatched: [], bad: [] };
   const norm = (s) =>
     String(s || "")
       .trim()
@@ -942,6 +968,18 @@ function parsePresentedCsv(text, bldgs) {
       if (cells.length < 3) return void out.bad.push(line);
       const [name, fig, val] = cells;
       if (norm(fig) === "figure") return;
+      if (/^printed:/i.test(fig)) {
+        // printed:<section>|<commodity>|<month>|<column>  (any other figure of the printed document)
+        const parts = fig.replace(/^printed:/i, "").split("|");
+        if (parts.length !== 4) return void out.bad.push(line);
+        const pb = (bldgs || []).find((x) => norm(x.name) === norm(name));
+        const pnum = typeof parseBillNumber === "function" ? parseBillNumber(val) : parseFloat(val);
+        const isNum = /^[-+]?[\d,]*\.?\d+$/.test(String(val).trim());
+        out.printed[
+          presentedPrintedKey(parts[0], pb ? pb.id : name, parts[1], parts[2], parts[3])
+        ] = isNum && Number.isFinite(pnum) ? pnum : val;
+        return;
+      }
       const field = FIELD[norm(fig)];
       const num =
         typeof parseBillNumber === "function"

@@ -228,6 +228,7 @@ function buildCtx(extraKeys) {
     'app/calculators.js',
     'app/energy-savings.js',
     'app/report-engine.js',
+    'app/report-printed.js',
   ].forEach(load);
   new vm.Script(
     `(function(){ var _o = rptBuildBaselineDataTable; rptBuildBaselineDataTable = function(b, d, opts){ var r = _o(b, d, opts); __blTableCalls.push({ name: b && b.name, html: r }); return r; };

@@ -267,7 +267,7 @@ var FLOWS = [
       { from:'energy', to:'ls', label:'Read all project/meter/bill data', detail:'Pulled from localStorage for selected scope.' },
       { from:'ls', to:'energy', label:'Report engine generates HTML pages', detail:'Charts, tables, baseline, EUI, emissions.' },
       { from:'energy', to:'store', label:'Saved to en_report_history', detail:'HTML stored in en_report_{id}.' },
-      { from:'energy', to:'store', label:'Marked presented to en_presented_savings', detail:'Preview button opens a form for the printed figures; totalSavingsWithPresented uses them for period totals.' },
+      { from:'energy', to:'store', label:'Marked presented to en_presented_savings', detail:'Preview button opens a form for the printed figures (CSV import can also carry every other printed figure); totalSavingsWithPresented uses them for period totals; the updated report of a presented period shows all printed figures (app/report-printed.js).' },
       { from:'energy', to:'user', label:'Report overlay displayed', detail:'Print-preview with Export to PDF button.' },
     ]
   },

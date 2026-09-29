@@ -985,7 +985,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
   }
 
   // --- Assemble final object ---
-  return {
+  var _reportData = {
     project: {
       id: p.id,
       name: p.name,
@@ -1049,7 +1049,11 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
     approvedChanges: approvedChangesPeriod,
     approvedChangesYTDCount: approvedChangesYTD.length,
     rawBills,
+    // Every figure printed in the document already presented to the client for exactly this period
+    // (null when none): the updated report shows these instead of the current math.
+    printed: getPresentedPrintedMap(projId, _reportYMsSorted),
   };
+  return rptApplyPrintedToData(_reportData);
 }
 
 // -----------------------------------------------------------------------
@@ -2232,6 +2236,8 @@ window.printUtilityAudit = printUtilityAudit;
  * @returns {number} 0-100 whole-percent elapsed-time contract progress
  */
 function _rptContractProgressPct(d) {
+  var _printedDone = _rptPVn(d, 'cover', 'Portfolio', '', '', 'gauge_contract_progress', null);
+  if (_printedDone !== null) return _printedDone;
   if (!d || !d.contract || !d.contract.start) return 0;
   var start = new Date(d.contract.start + 'T00:00:00');
   var end;
@@ -2269,10 +2275,18 @@ function rptPageCover(n, d) {
 
   const q = d.period.quarter || 1;
   const target = d.contract.quarterlyTargets[q - 1] || d.contract.annualTarget;
-  const pctOfTarget = target > 0 ? Math.round((d.totals.savings / target) * 100) : 0;
+  const pctOfTarget = _rptPVn(
+    d,
+    'cover',
+    'Portfolio',
+    '',
+    '',
+    'pct_of_target',
+    target > 0 ? Math.round((d.totals.savings / target) * 100) : 0,
+  );
   const periodTitle =
     d.period.type === 'quarterly' ? 'Q' + q + ' ' + (d.period.year || '') : (d.period.year || '') + ' Annual';
-  const ahead = d.totals.savings - target;
+  const ahead = _rptPVn(d, 'cover', 'Portfolio', '', '', 'ahead_of_projection', d.totals.savings - target);
   const _periodWord = d.period.type === 'annual' ? 'annual' : 'quarterly';
   const aheadLabel =
     ahead >= 0
@@ -2280,15 +2294,24 @@ function rptPageCover(n, d) {
       : _fmtUSD(Math.abs(ahead), '$0') + ' behind ' + _periodWord + ' projection';
 
   // Building status counts
-  const onTrack = d.buildings.filter(function (b) {
-    return b.status === 'on_track';
-  }).length;
+  const onTrack = _rptPVn(
+    d,
+    'cover',
+    'Portfolio',
+    '',
+    '',
+    'buildings_exceeding',
+    d.buildings.filter(function (b) {
+      return b.status === 'on_track';
+    }).length,
+  );
+  const _nBldgs = _rptPVn(d, 'cover', 'Portfolio', '', '', 'buildings_total', d.buildings.length);
   const exceedLabel =
     pctOfTarget > 105
-      ? onTrack + ' of ' + d.buildings.length + ' buildings exceeding expectations'
+      ? onTrack + ' of ' + _nBldgs + ' buildings exceeding expectations'
       : pctOfTarget >= 90
-        ? onTrack + ' of ' + d.buildings.length + ' buildings on track'
-        : onTrack + ' of ' + d.buildings.length + ' buildings need attention';
+        ? onTrack + ' of ' + _nBldgs + ' buildings on track'
+        : onTrack + ' of ' + _nBldgs + ' buildings need attention';
 
   // Narrative paragraph
   const contractYrLabel = 'Year ' + d.contract.currentYear + ' of ' + d.contract.years;
@@ -2303,7 +2326,7 @@ function rptPageCover(n, d) {
     contractYrLabel +
     ' of the projected savings contract. ' +
     'Across all ' +
-    d.buildings.length +
+    _nBldgs +
     ' buildings, the portfolio is ' +
     perfWord +
     ' the ' +
@@ -2479,16 +2502,31 @@ function rptPageCover(n, d) {
   }
 
   // EUI improvement %
-  const euiImpPct =
+  const euiImpPct = _rptPVn(
+    d,
+    'cover',
+    'Portfolio',
+    '',
+    '',
+    'gauge_eui_improved',
     d.totals.euiBaseline > 0
       ? Math.round(((d.totals.euiBaseline - d.totals.euiCurrent) / d.totals.euiBaseline) * 100)
-      : 0;
+      : 0,
+  );
   // Contract progress % — elapsed-time method, anchored to the report's period end. See
   // _rptContractProgressPct's own comment (2026-09-10, Q2 report fix item 4a): this is now the
   // ONE shared method rptPageBoardSummary also calls, so both pages agree.
   var contractDonePct = _rptContractProgressPct(d);
   // Energy reduction %
-  const energyRedPct = d.totals.kwhBl > 0 ? Math.round(((d.totals.kwhBl - d.totals.kwhCur) / d.totals.kwhBl) * 100) : 0;
+  const energyRedPct = _rptPVn(
+    d,
+    'cover',
+    'Portfolio',
+    '',
+    '',
+    'gauge_energy_reduced',
+    d.totals.kwhBl > 0 ? Math.round(((d.totals.kwhBl - d.totals.kwhCur) / d.totals.kwhBl) * 100) : 0,
+  );
 
   // Building Status column count — an unconstrained flex-wrap let content-width cards land
   // uneven (e.g. 6 buildings wrapping 4+2). Force an even grid instead: up to 6 buildings fit
@@ -2762,14 +2800,15 @@ function rptPageFinancial(n, d) {
     annSavings = d.totals.savings;
   }
   const contractYrs = d.contract.years || 3;
+  annSavings = _rptPVn(d, 'csc table', 'actual', '', '', 'annualized', annSavings);
   var _split = computeCscSplit(d.totals.savings, d.contract.cscPct, 'pct');
-  var cscAmt = _split.csc;
-  var clientAmt = _split.client;
+  var cscAmt = _rptPVn(d, 'csc table', 'csc', '', '', 'quarter', _split.csc);
+  var clientAmt = _rptPVn(d, 'csc table', 'client', '', '', 'quarter', _split.client);
   // CSC/Client split of the corrected Annualized figure (same cscPct/clientPct applied to
   // annSavings, replacing the old cscAmt*annFactor / clientAmt*annFactor naive-x4 math).
   var _annSplit = computeCscSplit(annSavings, d.contract.cscPct, 'pct');
-  var cscAnnAmt = _annSplit.csc;
-  var clientAnnAmt = _annSplit.client;
+  var cscAnnAmt = _rptPVn(d, 'csc table', 'csc', '', '', 'annualized', _annSplit.csc);
+  var clientAnnAmt = _rptPVn(d, 'csc table', 'client', '', '', 'annualized', _annSplit.client);
   // FIX 2 (2026-09-14): 3-Year Total used to be a flat annSavings * contractYrs — no
   // escalation, so it disagreed with the Multi-Year Projection table on the Contract
   // Projection page, which DOES compound the contract's escalation %/yr. Both tables now
@@ -2789,9 +2828,9 @@ function rptPageFinancial(n, d) {
     d.contract.cscPct || 0,
     d.contract.clientPct || 0,
   );
-  const yrTotalSavings = _multiYr.totalSavings;
-  const yrTotalCsc = _multiYr.totalCsc;
-  const yrTotalClient = _multiYr.totalClient;
+  const yrTotalSavings = _rptPVn(d, 'csc table', 'actual', '', '', 'three_year', _multiYr.totalSavings);
+  const yrTotalCsc = _rptPVn(d, 'csc table', 'csc', '', '', 'three_year', _multiYr.totalCsc);
+  const yrTotalClient = _rptPVn(d, 'csc table', 'client', '', '', 'three_year', _multiYr.totalClient);
 
   // -- Building Performance table --
   const qTarget = d.contract.quarterlyTargets[q - 1] || 0;
@@ -2822,7 +2861,7 @@ function rptPageFinancial(n, d) {
               ? ''
               : 'rpt-r';
       const bldgProjSav = qTarget > 0 ? qTarget * (b.blCost / totBlCostForPct) : 0;
-      const bldgProjCost = b.blCost - bldgProjSav;
+      const bldgProjCost = _rptPVn(d, 'building table', b.id, '', '', 'projected_cost', b.blCost - bldgProjSav);
       return (
         '<tr>' +
         '<td contenteditable="true">' +
@@ -2871,7 +2910,7 @@ function rptPageFinancial(n, d) {
     .join('');
 
   const totSaveClass = d.totals.savings >= 0 ? 'rpt-g' : 'rpt-r';
-  const totProjCost = d.totals.blCost - qTarget;
+  const totProjCost = _rptPVn(d, 'building table', 'Total Portfolio', '', '', 'projected_cost', d.totals.blCost - qTarget);
   // 2026-09-24 (fix/report-followup, problem 2): Total Portfolio must never claim a computed
   // Savings Percent when no building behind it has one -- a building row with 'no_data' or
   // 'no_contract' status already shows '-' here (above); the total row summed the same $0/$0
@@ -3131,6 +3170,10 @@ function rptPageSavingsPerformance(n, d) {
         moActual[mo.month] = (moActual[mo.month] || 0) + (mo.curCost || 0);
       });
     });
+    periodYMs.forEach(function (ym) {
+      moProj[ym] = _rptPVn(d, 'monthly cost', 'Portfolio', '', ym, 'baseline_cost', moProj[ym]);
+      moActual[ym] = _rptPVn(d, 'monthly cost', 'Portfolio', '', ym, 'actual_cost', moActual[ym]);
+    });
     const maxVal = Math.max(
       1,
       Math.max.apply(
@@ -3210,10 +3253,24 @@ function rptPageSavingsPerformance(n, d) {
   const _periodSqft = d.project.sqft || 0;
   const _blKBtuPeriod = toKBtu(d.totals.kwhBl, d.totals.thermsBl, d.totals.propaneBl);
   const _curKBtuPeriod = toKBtu(d.totals.kwhCur, d.totals.thermsCur, d.totals.propaneCur);
-  const _blEuiPeriod =
-    typeof computePeriodEUI === 'function' ? computePeriodEUI(_blKBtuPeriod, _periodMonths, _periodSqft) : 0;
-  const _curEuiPeriod =
-    typeof computePeriodEUI === 'function' ? computePeriodEUI(_curKBtuPeriod, _periodMonths, _periodSqft) : 0;
+  const _blEuiPeriod = _rptPVn(
+    d,
+    'usage summary',
+    'baseline',
+    '',
+    '',
+    'site_eui',
+    typeof computePeriodEUI === 'function' ? computePeriodEUI(_blKBtuPeriod, _periodMonths, _periodSqft) : 0,
+  );
+  const _curEuiPeriod = _rptPVn(
+    d,
+    'usage summary',
+    'current',
+    '',
+    '',
+    'site_eui',
+    typeof computePeriodEUI === 'function' ? computePeriodEUI(_curKBtuPeriod, _periodMonths, _periodSqft) : 0,
+  );
 
   const isQtrPeriod = d.period.type === 'quarterly' && d.period.quarter;
   const blYearLabel = isQtrPeriod
@@ -3308,10 +3365,19 @@ function rptPageSavingsPerformance(n, d) {
   const bldgRows = d.buildings
     .map(function (b, bIdx) {
       const bSavPct = b.savingsPct || 0; // dead code: not rendered; fixed for correctness (was dollar-delta)
-      const blEUI = b.eui.baseline > 0 ? b.eui.baseline.toFixed(1) : '—';
-      const curEUI = b.eui.current > 0 ? b.eui.current.toFixed(1) : '—';
-      const euiChange =
-        b.eui.baseline > 0 && b.eui.current > 0 ? ((b.eui.baseline - b.eui.current) / b.eui.baseline) * 100 : 0;
+      const _pBlEui = _rptPVn(d, 'annual summary', b.id, '', 'baseline', 'site_eui', b.eui.baseline);
+      const _pCurEui = _rptPVn(d, 'annual summary', b.id, '', 'current', 'site_eui', b.eui.current);
+      const blEUI = _pBlEui > 0 ? _pBlEui.toFixed(1) : '—';
+      const curEUI = _pCurEui > 0 ? _pCurEui.toFixed(1) : '—';
+      const euiChange = _rptPVn(
+        d,
+        'annual summary',
+        b.id,
+        '',
+        'current',
+        'site_eui_change_pct',
+        _pBlEui > 0 && _pCurEui > 0 ? ((_pBlEui - _pCurEui) / _pBlEui) * 100 : 0,
+      );
       var rowBg = bIdx % 2 === 1 ? 'background:var(--rpt-table-stripe);' : '';
       /* rowspan="2" covers both rows per building (BL + current year);
          update to rowspan="3" if a 3rd row per building is ever added */
@@ -3455,10 +3521,10 @@ function rptPageEUI(n, d) {
       const cbecs = b.eui.cbecs || 0;
       const cur = b.eui.current || 0;
       const bl = b.eui.baseline || 0;
-      const vsCbecs = cbecs > 0 ? ((cur - cbecs) / cbecs) * 100 : 0;
+      const vsCbecs = _rptPVn(d, 'eui rankings', b.id, '', '', 'vs_cbecs_pct', cbecs > 0 ? ((cur - cbecs) / cbecs) * 100 : 0);
       const vsCbecsClass = vsCbecs <= 0 ? 'rpt-g' : 'rpt-r';
       const eStarCell = b.eui.energyStar ? '<span style="color:var(--rpt-green);font-weight:700">Yes</span>' : '—';
-      const cpSqft = b.sqft > 0 ? b.curCost / b.sqft : 0;
+      const cpSqft = _rptPVn(d, 'eui rankings', b.id, '', '', 'cost_per_sqft', b.sqft > 0 ? b.curCost / b.sqft : 0);
       const trendCell =
         cur > 0 && bl > 0
           ? cur < bl
@@ -3470,7 +3536,7 @@ function rptPageEUI(n, d) {
       return (
         '<tr>' +
         '<td contenteditable="true">' +
-        (i + 1) +
+        _rptPVn(d, 'eui rankings', b.id, '', '', 'rank', i + 1) +
         '</td>' +
         '<td contenteditable="true">' +
         (b.name || '—') +
@@ -3652,7 +3718,7 @@ function rptPageEUI(n, d) {
     .map(function (b) {
       const bl = b.eui.baseline || 0;
       const cur = b.eui.current || 0;
-      const reduction = bl > 0 ? ((bl - cur) / bl) * 100 : 0;
+      const reduction = _rptPVn(d, 'eui trend', b.id, '', '', 'reduction_pct', bl > 0 ? ((bl - cur) / bl) * 100 : 0);
       const redClass = reduction >= 0 ? 'rpt-g' : 'rpt-r';
       const trendIcon =
         cur > 0 && bl > 0
@@ -4218,12 +4284,37 @@ function rptPageObservations(n, d) {
       strongWeak = topCom.name + ' is the primary commodity.';
     }
 
-    var rawSav =
-      ((b.electric && b.electric.costSaved) || 0) +
-      ((b.gas && b.gas.costSaved) || 0) +
-      ((b.propane && b.propane.costSaved) || 0);
+    // A presented period: the building's printed savings and percent (the observations page repeats them).
+    var rawSav = _rptPVn(
+      d,
+      'observations',
+      b.id,
+      '',
+      '',
+      'saved',
+      d.printed
+        ? b.savings
+        : ((b.electric && b.electric.costSaved) || 0) +
+            ((b.gas && b.gas.costSaved) || 0) +
+            ((b.propane && b.propane.costSaved) || 0),
+    );
     var blAtCurRate = b.blCost || 0;
-    var rawSavPct = blAtCurRate > 0 ? (rawSav / blAtCurRate) * 100 : 0;
+    var rawSavPct = _rptPVn(
+      d,
+      'observations',
+      b.id,
+      '',
+      '',
+      'pct',
+      d.printed ? b.savingsPct : blAtCurRate > 0 ? (rawSav / blAtCurRate) * 100 : 0,
+    );
+    var _pStrong = _rptPV(d, 'observations', b.id, '', '', 'strongest', null);
+    var _pWeak = _rptPV(d, 'observations', b.id, '', '', 'weakest', null);
+    if (_pStrong) {
+      strongWeak = _pWeak
+        ? _pStrong + ' is the strongest performer. ' + _pWeak + ' is the weakest performer.'
+        : _pStrong + ' is the primary commodity.';
+    }
 
     if (b.status === 'no_data') {
       // Problem 3 (2026-09-24, fix/report-headers-and-empty-period): plain statement of fact
@@ -4314,11 +4405,21 @@ function rptPageObservations(n, d) {
   });
 
   // -- Weather section --
-  const wt = d.weather && d.weather.totals ? d.weather.totals : { hddBl: 0, hddCur: 0, cddBl: 0, cddCur: 0 };
+  const _wt0 = d.weather && d.weather.totals ? d.weather.totals : { hddBl: 0, hddCur: 0, cddBl: 0, cddCur: 0 };
+  const wt = {
+    hddCur: _rptPVn(d, 'weather summary', 'Portfolio', '', '', 'hdd_period', _wt0.hddCur),
+    hddBl: _rptPVn(d, 'weather summary', 'Portfolio', '', '', 'hdd_baseline_avg', _wt0.hddBl),
+    cddCur: _rptPVn(d, 'weather summary', 'Portfolio', '', '', 'cdd_period', _wt0.cddCur),
+    cddBl: _rptPVn(d, 'weather summary', 'Portfolio', '', '', 'cdd_baseline', _wt0.cddBl),
+  };
   const hddDiff = wt.hddCur - wt.hddBl;
   const cddDiff = wt.cddCur - wt.cddBl;
-  const hddPct = wt.hddBl > 0 ? Math.abs((hddDiff / wt.hddBl) * 100).toFixed(0) : 0;
-  const cddPct = wt.cddBl > 0 ? Math.abs((cddDiff / wt.cddBl) * 100).toFixed(0) : 0;
+  const _hddPctP = _rptPVn(d, 'weather summary', 'Portfolio', '', '', 'hdd_pct', null);
+  const _cddPctP = _rptPVn(d, 'weather summary', 'Portfolio', '', '', 'cdd_pct', null);
+  const hddPct =
+    _hddPctP !== null ? Math.abs(_hddPctP) : wt.hddBl > 0 ? Math.abs((hddDiff / wt.hddBl) * 100).toFixed(0) : 0;
+  const cddPct =
+    _cddPctP !== null ? Math.abs(_cddPctP) : wt.cddBl > 0 ? Math.abs((cddDiff / wt.cddBl) * 100).toFixed(0) : 0;
   const hddNote =
     hddDiff > wt.hddBl * 0.1
       ? ' The period was notably colder than the baseline, which likely increased heating loads and reduced apparent savings on a raw-consumption basis.'
@@ -4596,9 +4697,17 @@ function rptPageContractProjection(n, d) {
 
   // -- Quarterly Targets table --
   const qTarget = qTargets[q - 1] || 0;
-  const annualSum = qTargets.reduce(function (s, v) {
-    return s + (v || 0);
-  }, 0);
+  const annualSum = _rptPVn(
+    d,
+    'quarterly targets',
+    'projected',
+    '',
+    '',
+    'annual',
+    qTargets.reduce(function (s, v) {
+      return s + (v || 0);
+    }, 0),
+  );
   const qtRows =
     '<tr>' +
     '<td><strong>Projected Savings</strong></td>' +
@@ -4617,12 +4726,16 @@ function rptPageContractProjection(n, d) {
     clientPct +
     '%)</td>' +
     qTargets
-      .map(function (v) {
-        return '<td class="rpt-n">' + _fmtUSD((v * clientPct) / 100, '$0') + '</td>';
+      .map(function (v, i) {
+        return (
+          '<td class="rpt-n">' +
+          _fmtUSD(_rptPVn(d, 'quarterly targets', 'client', '', '', 'q' + (i + 1), (v * clientPct) / 100), '$0') +
+          '</td>'
+        );
       })
       .join('') +
     '<td class="rpt-n">' +
-    _fmtUSD((annualSum * clientPct) / 100, '$0') +
+    _fmtUSD(_rptPVn(d, 'quarterly targets', 'client', '', '', 'annual', (annualSum * clientPct) / 100), '$0') +
     '</td>' +
     '</tr>' +
     '<tr>' +
@@ -4630,12 +4743,16 @@ function rptPageContractProjection(n, d) {
     cscPct +
     '%)</td>' +
     qTargets
-      .map(function (v) {
-        return '<td class="rpt-n">' + _fmtUSD((v * cscPct) / 100, '$0') + '</td>';
+      .map(function (v, i) {
+        return (
+          '<td class="rpt-n">' +
+          _fmtUSD(_rptPVn(d, 'quarterly targets', 'csc', '', '', 'q' + (i + 1), (v * cscPct) / 100), '$0') +
+          '</td>'
+        );
       })
       .join('') +
     '<td class="rpt-n">' +
-    _fmtUSD((annualSum * cscPct) / 100, '$0') +
+    _fmtUSD(_rptPVn(d, 'quarterly targets', 'csc', '', '', 'annual', (annualSum * cscPct) / 100), '$0') +
     '</td>' +
     '</tr>'
       : '');
@@ -4651,7 +4768,15 @@ function rptPageContractProjection(n, d) {
 
   // -- Target vs Actual comparison box --
   const ahead = actualSavings >= qTarget;
-  const pctOfTarget = qTarget > 0 ? Math.round((actualSavings / qTarget) * 100) : 0;
+  const pctOfTarget = _rptPVn(
+    d,
+    'target vs actual',
+    'Portfolio',
+    '',
+    'Q' + q,
+    'pct',
+    qTarget > 0 ? Math.round((actualSavings / qTarget) * 100) : 0,
+  );
   const vsBox =
     '<div class="rpt-vs-box">' +
     '<div class="rpt-vs-side">' +
@@ -4688,13 +4813,25 @@ function rptPageContractProjection(n, d) {
   let totalActual = 0;
   var isQuarterly = d.period && d.period.type === 'quarterly';
   var _multiYrProj = computeMultiYearCscTotals(annualTarget, escalation, contractYears, cscPct, clientPct);
-  var totalProj = _multiYrProj.totalSavings;
-  var totalCsc = _multiYrProj.totalCsc;
-  var totalClient = _multiYrProj.totalClient;
+  var totalProj = _rptPVn(d, 'three year projection', 'Total', '', '', 'projected', _multiYrProj.totalSavings);
+  var totalCsc = _rptPVn(d, 'three year projection', 'Total', '', '', 'csc', _multiYrProj.totalCsc);
+  var totalClient = _rptPVn(d, 'three year projection', 'Total', '', '', 'client', _multiYrProj.totalClient);
   for (var yr = 1; yr <= contractYears; yr++) {
-    const yearProj = _multiYrProj.years[yr - 1].savings;
-    const yearCsc = _multiYrProj.years[yr - 1].csc;
-    const yearClient = _multiYrProj.years[yr - 1].client;
+    const _yk = 'Year ' + yr;
+    const _curQtr = yr === currentYear && isQuarterly;
+    const yearProj = _rptPVn(
+      d,
+      'three year projection',
+      _yk,
+      '',
+      '',
+      _curQtr ? 'annual_projected_note' : 'projected',
+      _multiYrProj.years[yr - 1].savings,
+    );
+    const yearCsc = _curQtr ? _multiYrProj.years[yr - 1].csc : _rptPVn(d, 'three year projection', _yk, '', '', 'csc', _multiYrProj.years[yr - 1].csc);
+    const yearClient = _curQtr
+      ? _multiYrProj.years[yr - 1].client
+      : _rptPVn(d, 'three year projection', _yk, '', '', 'client', _multiYrProj.years[yr - 1].client);
     const isCurrentYr = yr === currentYear;
     var displayProj = yearProj;
     var displayCsc = yearCsc;
@@ -4728,6 +4865,9 @@ function rptPageContractProjection(n, d) {
       displayCsc = (displayProj * cscPct) / 100;
       displayClient = (displayProj * clientPct) / 100;
       periodNote = ' (thru Q' + q + ')';
+      displayProj = _rptPVn(d, 'three year projection', _yk, '', '', 'projected', displayProj);
+      displayCsc = _rptPVn(d, 'three year projection', _yk, '', '', 'csc', displayCsc);
+      displayClient = _rptPVn(d, 'three year projection', _yk, '', '', 'client', displayClient);
     }
     // Pace: compare actual-to-date against projected-to-date (sum of targets for completed quarters)
     var projToDate =
@@ -6782,6 +6922,8 @@ function rptPageBuildingSummary(n, d, b) {
         filterYMs: _rptFilterYMs,
         projId: d.project.id,
         bldgId: b.id,
+        // A presented period shows the meter table as printed (only when the building has one meter of this commodity).
+        printed: _rptCommCounts[meter.commodity] === 1 ? rptPrintedMeterCells(d, b.id, meter.commodity) : undefined,
       });
       if (result.html) {
         var commLabel =
@@ -8868,10 +9010,13 @@ function rptPageAppendixWeather(n, d, appLetter) {
   // produced "Baseline Period Avg" 5,535 in the table vs. "baseline average of 2,114" in
   // the narrative for the same certified report.
   var _wTotals = (d.weather && d.weather.totals) || { hddBl: 0, hddCur: 0, cddBl: 0, cddCur: 0 };
-  var totHddBl = _wTotals.hddBl || 0,
-    totHddCur = _wTotals.hddCur || 0,
-    totCddBl = _wTotals.cddBl || 0,
-    totCddCur = _wTotals.cddCur || 0;
+  var _wt = function (label, col, fb) {
+    return _rptPVn(d, 'weather table', 'Portfolio', '', label, col, fb);
+  };
+  var totHddBl = _wt('Baseline Period Avg', 'hdd', _wTotals.hddBl || 0),
+    totHddCur = _wt('Reporting Period Total', 'hdd', _wTotals.hddCur || 0),
+    totCddBl = _wt('Baseline Period Avg', 'cdd', _wTotals.cddBl || 0),
+    totCddCur = _wt('Reporting Period Total', 'cdd', _wTotals.cddCur || 0);
   var _wMoNames = [
     'January',
     'February',
@@ -8900,8 +9045,8 @@ function rptPageAppendixWeather(n, d, appLetter) {
     var cddCur = mo.cddCur || 0;
     var ip = mo.inPeriod;
     var rowStyle = ip ? '' : 'color:var(--rpt-page-text);background:var(--rpt-chart-bg)';
-    var hddVal = ip ? hddCur : hddBl;
-    var cddVal = ip ? cddCur : cddBl;
+    var hddVal = _wt(mo.month, 'hdd', ip ? hddCur : hddBl);
+    var cddVal = _wt(mo.month, 'cdd', ip ? cddCur : cddBl);
     var badge = ip
       ? ''
       : ' <span style="font-size:8px;font-weight:700;color:var(--rpt-page-text);background:var(--rpt-progress-bg);border-radius:2px;padding:0 3px">BL</span>';
@@ -8926,8 +9071,8 @@ function rptPageAppendixWeather(n, d, appLetter) {
     tableRows =
       '<tr><td colspan="7" style="color:var(--rpt-page-text);font-style:italic">No weather data for this period. Enter HDD/CDD in project settings.</td></tr>';
   } else {
-    var totHddVar = totHddBl > 0 ? ((totHddCur - totHddBl) / totHddBl) * 100 : 0;
-    var totCddVar = totCddBl > 0 ? ((totCddCur - totCddBl) / totCddBl) * 100 : 0;
+    var totHddVar = _wt('Variance', 'hdd', totHddBl > 0 ? ((totHddCur - totHddBl) / totHddBl) * 100 : 0);
+    var totCddVar = _wt('Variance', 'cdd', totCddBl > 0 ? ((totCddCur - totCddBl) / totCddBl) * 100 : 0);
     tableRows +=
       '<tr class="rpt-tot">' +
       '<td>Baseline Period Avg</td>' +
@@ -8975,8 +9120,8 @@ function rptPageAppendixWeather(n, d, appLetter) {
   // Auto-generate narrative
   var hddNote = '',
     cddNote = '';
-  var totHddVarFinal = totHddBl > 0 ? ((totHddCur - totHddBl) / totHddBl) * 100 : 0;
-  var totCddVarFinal = totCddBl > 0 ? ((totCddCur - totCddBl) / totCddBl) * 100 : 0;
+  var totHddVarFinal = _wt('Variance', 'hdd', totHddBl > 0 ? ((totHddCur - totHddBl) / totHddBl) * 100 : 0);
+  var totCddVarFinal = _wt('Variance', 'cdd', totCddBl > 0 ? ((totCddCur - totCddBl) / totCddBl) * 100 : 0);
   if (Math.abs(totHddVarFinal) > 10) {
     var colder = totHddVarFinal > 0 ? 'colder' : 'warmer';
     hddNote =
@@ -9019,12 +9164,19 @@ function rptPageAppendixWeather(n, d, appLetter) {
     // totCddVarFinal computed above (from d.weather.totals) instead of re-reading
     // d.weather.totals a second time here \u2014 one calculation feeds both the table and this
     // paragraph, so they cannot diverge again.
-    var pHDD = totHddCur ? Math.round(totHddCur).toLocaleString() : '\u2014';
-    var bHDD = totHddBl ? Math.round(totHddBl).toLocaleString() : '\u2014';
-    var hddPctChg = totHddBl > 0 ? Math.round(totHddVarFinal) : 0;
-    var pCDD = totCddCur ? Math.round(totCddCur).toLocaleString() : '\u2014';
-    var bCDD = totCddBl ? Math.round(totCddBl).toLocaleString() : '\u2014';
-    var cddPctChg = totCddBl > 0 ? Math.round(totCddVarFinal) : 0;
+    var _ws = function (col, fb) {
+      return _rptPVn(d, 'weather summary', 'Portfolio', '', '', col, fb);
+    };
+    var _pHddCur = _ws('hdd_period', totHddCur);
+    var _pHddBl = _ws('hdd_baseline_avg', totHddBl);
+    var _pCddCur = _ws('cdd_period', totCddCur);
+    var _pCddBl = _ws('cdd_baseline', totCddBl);
+    var pHDD = _pHddCur ? Math.round(_pHddCur).toLocaleString() : '\u2014';
+    var bHDD = _pHddBl ? Math.round(_pHddBl).toLocaleString() : '\u2014';
+    var hddPctChg = _ws('hdd_pct', totHddBl > 0 ? Math.round(totHddVarFinal) : 0);
+    var pCDD = _pCddCur ? Math.round(_pCddCur).toLocaleString() : '\u2014';
+    var bCDD = _pCddBl ? Math.round(_pCddBl).toLocaleString() : '\u2014';
+    var cddPctChg = _ws('cdd_pct', totCddBl > 0 ? Math.round(totCddVarFinal) : 0);
     hddCddParagraph =
       '<div contenteditable="true" style="margin-top:10px;font-size:11px;color:var(--rpt-page-text);line-height:1.7">' +
       'Heating degree days (HDD) for the period were ' +

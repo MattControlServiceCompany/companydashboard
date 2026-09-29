@@ -200,6 +200,7 @@ function buildCtx() {
     'app/calculators.js',
     'app/energy-savings.js',
     'app/report-engine.js',
+    'app/report-printed.js',
     'app/equipment-matrix.js',
   ].forEach(load);
   // Customer/Multi-Project (2026-09-24): buildings/meters/bills now live per-customer
