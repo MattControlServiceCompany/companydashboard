@@ -1690,6 +1690,25 @@ function calcDays(start, end, inclusive) {
   return inclusive ? diff + 1 : diff;
 }
 
+// The ONE missing-period method (2026-09-28, cold-review High 1). prevEnd and nextStart are
+// both days a bill already covers (the site's Inclusive convention counts a bill's start and
+// end day), so the days with no bill are strictly between them, exclusive of both:
+// 05/20 -> 06/19 gives 05/21..06/18 = 29 days. The Bills-table gap line, the "Estimate
+// missing period" row's dates and the estimate's kWh math all read this one result.
+// The Inclusive/Exclusive toggle does not apply: no day here is shared with a bill.
+function gapMissingPeriod(prevEnd, nextStart) {
+  if (!prevEnd || !nextStart) return null;
+  const dayMs = 1000 * 60 * 60 * 24;
+  const days = Math.round((_parseISO(nextStart) - _parseISO(prevEnd)) / dayMs) - 1;
+  if (!(days > 0)) return null;
+  const iso = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  const first = _parseISO(prevEnd);
+  first.setDate(first.getDate() + 1);
+  const last = _parseISO(nextStart);
+  last.setDate(last.getDate() - 1);
+  return { start: iso(first), end: iso(last), days };
+}
+
 /* ── RENDER LEFT NAV: Projects + Buildings drill-down ── */
 function viewProjectFromUtility() {
   if (!udSelProjId) return;
@@ -4338,13 +4357,9 @@ function renderBillsPane(pane, m, bills, incl) {
         // direction must match whichever date is actually earlier.
         const gapEarlier = _parseISO(prevEnd) <= _parseISO(curStart) ? prevEnd : curStart;
         const gapLater = _parseISO(prevEnd) <= _parseISO(curStart) ? curStart : prevEnd;
-        // 2026-09-25 (estimate-row day-count fix, d5b815dc): use the site's one shared
-        // day-count function (calcDays, respects the Inclusive/Exclusive "Day calc" toggle)
-        // instead of a raw ms-diff, so this line always matches the "Estimate missing period"
-        // row's day count below (estimateMissingPeriod / csv-import.js already uses calcDays).
-        // The raw diff undercounts by 1 in Inclusive mode (the site's default) since it never
-        // added the +1 for the shared boundary day — calcDays's number is the correct one.
-        const gapDays = calcDays(gapEarlier, gapLater, incl);
+        // 2026-09-28 (cold-review High 1): gapMissingPeriod is the one day-count method shared
+        // with the "Estimate missing period" row (estimateMissingPeriod in csv-import.js).
+        const gapDays = gapMissingPeriod(gapEarlier, gapLater).days;
         const gapMonths = Math.round(gapDays / 30);
         // Bug #17: If we skipped over empty-date rows to find the valid end date, add a note
         // so the user knows there's a row with missing dates adjacent to this gap.

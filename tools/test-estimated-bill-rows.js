@@ -13,12 +13,11 @@
 //   1b. An estimated bill's value must not shift another (real) bill's flag — removing the
 //       estimated bill from the bills array passed to _analyzeMeterBills must not change the
 //       flags _analyzeMeterBills computes for the real bills.
-//   2. One day-count method: calcDays (respecting the Inclusive/Exclusive toggle) gives the
-//      same number for the Spring Hill High June-2025 gap (2025-05-20 → 2025-06-19) that the
-//      "Estimate missing period" row shows (31 days, inclusive) — and a source-text sweep
-//      proves both the Bills-table gap line (app/utility-data.js) and estimateMissingPeriod
-//      (app/csv-import.js) call this same calcDays function, so they cannot silently diverge
-//      again.
+//   2. One missing-day method: gapMissingPeriod (days strictly between the last covered day
+//      and the next covered day) gives 29 for the Spring Hill High June-2025 gap (2025-05-20 ->
+//      2025-06-19, missing 05/21..06/18), 1 for a 1-day gap — and a source-text sweep proves the
+//      Bills-table gap line (app/utility-data.js) and estimateMissingPeriod (app/csv-import.js)
+//      both use it, so they cannot silently diverge again.
 'use strict';
 
 const fs = require('fs');
@@ -71,6 +70,7 @@ const fns = [
   loadFn(REPO + '/app/utility-data.js', '_fixISO'),
   loadFn(REPO + '/app/utility-data.js', '_parseISO'),
   loadFn(REPO + '/app/utility-data.js', 'calcDays'),
+  loadFn(REPO + '/app/utility-data.js', 'gapMissingPeriod'),
   loadFn(REPO + '/app/bill-analysis.js', '_billNormMonth'),
   loadFn(REPO + '/app/bill-analysis.js', '_monthToSeason'),
   loadFn(REPO + '/app/bill-analysis.js', '_analyzeMeterBills'),
@@ -153,37 +153,32 @@ console.log("=== 1b. _analyzeMeterBills — an estimated bill must not shift a R
   });
 }
 
-console.log('=== 2. One day-count method — Spring Hill High June-2025 gap (2025-05-20 -> 2025-06-19) ===');
+console.log('=== 2. One missing-day method — gapMissingPeriod (cold-review High 1, 2026-09-28) ===');
 {
-  // Real data (2026-09-25-companyhub-backup-copy.json): Spring Hill High Electric meter,
-  // inclusive=true. Gap between the bill ending 2025-05-20 and the bill starting 2025-06-19.
-  const gapStart = '2025-05-20';
-  const gapEnd = '2025-06-19';
-  const inclusive31 = sandbox.calcDays(gapStart, gapEnd, true);
-  const exclusive30 = sandbox.calcDays(gapStart, gapEnd, false);
-  assert(inclusive31 === 31, 'calcDays inclusive=true -> 31 days (matches the Estimate-missing-period row)');
-  assert(
-    exclusive30 === 30,
-    'calcDays inclusive=false -> 30 days (the OLD gap-line raw-diff number, still correct for Exclusive mode)',
-  );
+  // Missing days = days strictly between the last covered day and the next covered day.
+  const shh = sandbox.gapMissingPeriod('2025-05-20', '2025-06-19'); // Spring Hill High June-2025 gap
+  assert(shh && shh.days === 29, 'SHH 05/20 -> 06/19 = 29 missing days (got ' + (shh && shh.days) + ')');
+  assert(shh && shh.start === '2025-05-21' && shh.end === '2025-06-18', 'SHH estimate period is 05/21..06/18');
+  assert(shh && sandbox.calcDays(shh.start, shh.end, true) === shh.days, 'row period counted inclusive = gap-line count');
+  const one = sandbox.gapMissingPeriod('2025-05-20', '2025-05-22');
+  assert(one && one.days === 1 && one.start === '2025-05-21' && one.end === '2025-05-21', '1-day gap = 1 day, 05/21..05/21');
+  assert(sandbox.gapMissingPeriod('2025-05-20', '2025-05-21') === null, 'adjacent bills: no missing days -> null');
+  const yr = sandbox.gapMissingPeriod('2024-02-27', '2024-03-02'); // leap year, month rollover
+  assert(yr && yr.days === 3 && yr.start === '2024-02-28' && yr.end === '2024-03-01', 'leap-year rollover = 3 days');
+  // Estimate kWh math uses that same day count (synthetic bills; SHH dates).
+  const prevKwh = 300000, prevDays = sandbox.calcDays('2025-04-20', '2025-05-20', true);
+  const nextKwh = 330000, nextDays = sandbox.calcDays('2025-06-19', '2025-07-21', true);
+  const est = Math.round(((prevKwh + nextKwh) / (prevDays + nextDays)) * shh.days * 10000) / 10000;
+  const expect = ((prevKwh + nextKwh) / (prevDays + nextDays)) * 29;
+  assert(Math.abs(est - expect) < 0.0001, 'estimate kWh = avg daily x 29 (got ' + est + ')');
+  console.log('  SHH-style estimate: ' + est.toLocaleString('en-US', { maximumFractionDigits: 4 }) + ' kWh over ' + shh.days + ' days');
 
-  // Regression guard: the gap-line day count in app/utility-data.js and the estimate-row day
-  // count in app/csv-import.js must both go through calcDays (the one shared, toggle-aware
-  // function) — not a private raw ms-diff — so they can never independently drift again.
+  // Source sweep: gap line and estimate row both read gapMissingPeriod; no private day math.
   const udSrc = fs.readFileSync(path.join(REPO, 'app/utility-data.js'), 'utf8');
-  assert(
-    /const gapDays = calcDays\(gapEarlier, gapLater, incl\)/.test(udSrc),
-    'app/utility-data.js gap line computes gapDays via calcDays(gapEarlier, gapLater, incl)',
-  );
-  assert(
-    !/const gapDays = Math\.round\(Math\.abs\(_parseISO\(gapLater\)/.test(udSrc),
-    'app/utility-data.js gap line no longer uses the old raw ms-diff (no toggle, no +1)',
-  );
+  assert(/const gapDays = gapMissingPeriod\(gapEarlier, gapLater\)\.days/.test(udSrc), 'gap line uses gapMissingPeriod');
   const csvSrc = fs.readFileSync(path.join(REPO, 'app/csv-import.js'), 'utf8');
-  assert(
-    /const gapDays = calcDays\(gapStart, gapEnd, incl\)/.test(csvSrc),
-    'app/csv-import.js estimateMissingPeriod computes gapDays via calcDays(gapStart, gapEnd, incl)',
-  );
+  assert(/const gap = gapMissingPeriod\(gapStart, gapEnd\)/.test(csvSrc), 'estimateMissingPeriod uses gapMissingPeriod');
+  assert(!/calcDays\(gapStart, gapEnd/.test(csvSrc), 'estimateMissingPeriod has no calcDays(gapStart, gapEnd)');
 }
 
 console.log('=== Results: ' + passed + ' passed, ' + failed + ' failed ===');
