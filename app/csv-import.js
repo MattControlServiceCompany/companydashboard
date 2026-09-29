@@ -290,8 +290,7 @@ function parseBillCsv(text, fname) {
 
     const g = (i) => {
       if (i < 0 || !cols[i] || cols[i].trim() === '') return null;
-      const n = parseFloat(cols[i].replace(/[$,]/g, ''));
-      return isNaN(n) ? null : n;
+      return parseBillNumber(cols[i]);
     };
     const gs = (i) => (i >= 0 && cols[i] ? cols[i].trim().replace(/"/g, '') : '');
 
@@ -381,8 +380,8 @@ function parseBillCsv(text, fname) {
       const isNumericType =
         entry.type === 'number' || entry.type === 'currency' || entry.type === 'rate5' || entry.type === 'rate3';
       if (isNumericType) {
-        const n = parseFloat(raw.replace(/[$,]/g, ''));
-        if (!isNaN(n)) row[entry.key] = n;
+        const n = parseBillNumber(raw);
+        if (n !== null) row[entry.key] = n;
       } else {
         row[entry.key] = raw.trim().replace(/"/g, '');
       }

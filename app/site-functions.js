@@ -1776,6 +1776,46 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.29.30',
+    date: '2026-09-29',
+    title: 'BAS Calculator matches the savings workbook',
+    items: [
+      { type: 'fix', text: 'BAS Calculator now follows the savings workbook: cooling runs May to October, heating November to April, and outside air is netted hour by hour. Cooling and heating savings now match the workbook.' },
+      { type: 'fix', text: 'BAS Calculator measure rows now show peak kW as a monthly average, and gas volume in MCF converts to therms correctly.' },
+      { type: 'fix', text: 'BAS Calculator now uses 55 degrees for the unoccupied setpoint when the heat source is Both, and all three calculator screens use the same average setpoint.' },
+    ],
+  },
+  {
+    v: 'v2026.09.29.29',
+    date: '2026-09-29',
+    title: 'BAS Trends cost and savings fixes',
+    items: [
+      { type: 'fix', text: 'BAS Trends fault costs now use your electric rate from the project bills. When there are no electric bills, the panel shows rate unavailable instead of using a guessed rate.' },
+      { type: 'fix', text: 'BAS Trends gas savings now use the gas rate from your gas bills instead of a fixed price. The panel says so when no priced gas bills exist.' },
+      { type: 'fix', text: 'BAS Trends occupied hours, yearly scaling for short data windows, and month lengths are now calculated from the real data.' },
+      { type: 'change', text: 'Each BAS Trends savings estimate now states its equipment assumption, for example 4.9 kW per air handler fan, not measured.' },
+    ],
+  },
+  {
+    v: 'v2026.09.29.28',
+    date: '2026-09-29',
+    title: 'Agreement builder fixes',
+    items: [
+      { type: 'fix', text: 'Monthly Allowance agreements now work out the minimum monthly spend from the project budget. If there is no budget, the builder asks you to enter one instead of printing a wrong amount.' },
+      { type: 'fix', text: 'Profit Sharing agreements now use the CSC share set on the project instead of a fixed 60 percent.' },
+      { type: 'fix', text: 'Flat Cost and One-Time Cost agreements now ask you to enter the project total instead of printing a placeholder in the agreement.' },
+    ],
+  },
+  {
+    v: 'v2026.09.29.27',
+    date: '2026-09-29',
+    title: 'Dollar amounts show losses with a minus sign',
+    items: [
+      { type: 'fix', text: 'Quarterly, Annual, Cumulative and Current reports now show a savings loss with a minus sign (for example -$2,059) instead of printing it as a gain.' },
+      { type: 'change', text: 'All report pages and the Budget tab now format dollar amounts the same way, so the same figure reads the same everywhere.' },
+    ],
+  },
+  {
     v: 'v2026.09.28.26',
     date: '2026-09-28',
     title: 'Pricing Estimator and Audit Proposal fixes',

@@ -121,11 +121,12 @@ const src = [
   loadConst(CALC, 'BAS_TEMP_BINS'),
   loadConst(CALC, 'BAS_MO'),
   loadFn(CALC, '_bcInterp'),
+  loadFn(CALC, '_bcUnoccHeatType'),
   loadFn(CALC, '_bcDefaultUnoccHeat'),
   loadConst(CALC, 'BAS_CITIES'),
   loadFn(CALC, '_basCityWeather'),
   loadFn(CALC, '_bcGv'),
-  loadFn(CALC, '_bcCalibrateHeatAdj'),
+  loadFn(CALC, '_bcSolveAdj'),
   loadFn(CALC, '_bcDoCalc'),
 ]
   .join('\n\n')
@@ -182,7 +183,7 @@ set('bc-newCoolOcc', '50'); // B30
 set('bc-newCoolUnocc', '85'); // B31
 set('bc-newHeatOcc', '60'); // B32
 set('bc-newHeatUnocc', '55'); // B33
-set('bc-newOAShutoff', 'no', 'SELECT'); // no New OA-shutoff field in the workbook
+set('bc-newOAShutoff', 'yes', 'SELECT'); // workbook New sheet never adds back unoccupied OA (New!AH17 sums occupied OA only)
 set('bc-newMfOn', '5');
 set('bc-newMfOff', '21'); // B36/B37
 set('bc-newSatOn', '6');
@@ -261,18 +262,62 @@ if (r) {
   assert(summerCoolSav > annCoolSav * 0.7, 'cooling savings concentrated in JUN/JUL/AUG (KC climate sanity check)');
 
   // NOT asserted (see module header): full Excel numeric parity. Logged for visibility only.
-  console.log('  --- diagnostic only, not asserted (known upstream-calibration-scope gap) ---');
+  // WP-13 (2026-09-28): full parity with the workbook (Excel is the oracle). The site now uses the
+  // workbook model: hour columns labelled 1..24 with on <= label <= off (D-14), STEP-table load %,
+  // per-bin-hour net MAX(load - OA/12, 0) with the OA added back, unoccupied OA at the unoccupied
+  // setpoint, unoccupied ratio (K-unocc)/(K-occ), and the fixed season split (cooling May-Oct).
+  // Before: new cooling 132,428 / annual cooling savings 10,443.71 / coolAdj 1.670. Now equal to
+  // the workbook within printed precision.
+  near(exCoolTotal, 142872, 0.5, 'existing cooling total = Savings Calculator!K49');
+  near(newCoolTotal, 131194.1175375327, 0.5, 'new cooling total = workbook Existing/New sheet total');
+  near(coolAdj, 2.60807062241243, 0.0005, 'coolAdj = Savings Calculator!K50');
+  near(annCoolSav, 11677.882462467313, 0.01, 'annual cooling savings = Savings Calculator!N54');
   console.log(
-    `  existing cooling total: site ${exCoolTotal} | Excel Savings Calculator!K49 142872 (exact by construction on both sides)`,
+    `  new cooling total ${newCoolTotal} (workbook 131194.12) | coolAdj ${coolAdj.toFixed(4)} (2.6081) | annual cooling savings ${annCoolSav.toFixed(2)} (11677.88)`,
   );
-  console.log(`  new cooling total:      site ${newCoolTotal} | Excel Existing/New sheet total 131194.1175375327`);
-  console.log(`  coolAdj:                site ${coolAdj.toFixed(4)} | Excel Savings Calculator!K50 2.60807062241243`);
-  console.log(
-    `  annual cooling savings: site ${annCoolSav.toFixed(2)} | Excel Savings Calculator!N54 11677.882462467313`,
-  );
-  console.log(
-    `  annual gas heat savings:site ${r.annHeatGasSav.toFixed(2)} | Excel Existing!J-New!J 159.73744644000001`,
-  );
+}
+
+console.log('=== 2b. Heating parity: workbook default scenario, electric heat (Savings Calculator I10 = 2) ===');
+// Workbook cached values: Existing!I2:I13, Savings Calculator!K45 = 84625.90313814 with K46 = 0.2041267042754717,
+// New!I2 = 9952.58607408, Heating kWh savings N55 = 46803.07180692.
+{
+  const rawSrc = src.replace('p._bcResults = {', 'p._bcDbg = { exHeatKwhM, newHeatKwhM };p._bcResults = {');
+  const sb2 = { console, document: fakeDocument, window: {} };
+  vm.createContext(sb2);
+  vm.runInContext(rawSrc, sb2);
+  dom.set('bc-heatSrc', new FakeEl('2', 'SELECT'));
+  dom.set('bc-calHeatKwh', new FakeEl('84625.90313814'));
+  dom.set('bc-calHeatGas', new FakeEl(''));
+  dom.set('bc-calCoolKwh', new FakeEl('142872'));
+  const p2 = { id: 'p2', basCalc: {} };
+  sb2.projects = [p2];
+  sb2._bcDoCalc('p2');
+  // At the workbook's stored factor the net setback is 0 in every month (Existing!I2 = 0 + AL12),
+  // so the target 84,625.9 is reached by outside air alone: the factor solves to 0.
+  near(parseFloat(dom.get('bc-adjHeat').textContent), 0, 0.0005, 'heating factor at the workbook K45 target (outside air only)');
+  const ex = p2._bcDbg.exHeatKwhM,
+    nw = p2._bcDbg.newHeatKwhM;
+  near(ex[0], 19862.12618208, 0.5, 'Existing!I2 (Jan heating kWh = Z20 + AL12)');
+  near(ex[1], 15853.91898636, 0.5, 'Existing!I3');
+  near(ex[10], 12418.537016340004, 0.5, 'Existing!I12');
+  near(nw[0], 9952.58607408, 0.5, 'New!I2');
+  near(ex.reduce((a, b) => a + b, 0) - nw.reduce((a, b) => a + b, 0), 46803.07180692, 0.05, 'annual heating kWh savings = N55');
+  assert(ex.slice(4, 10).every((v) => v === 0), 'no heating May-Oct (workbook season split)');
+  // Same scenario with a target that needs setback load (factor 0.6). Expected values are an
+  // independent cell-by-cell transcription of the Existing/New heating formulas (AH34/AH269 net,
+  // D507/D744 outside air, S7:X17 step table, Nov-Apr), which reproduces every cached workbook value
+  // above to the decimal.
+  dom.set('bc-calHeatKwh', new FakeEl('184247.27211618004'));
+  sb2._bcDoCalc('p2');
+  near(parseFloat(dom.get('bc-adjHeat').textContent), 0.6, 0.0005, 'heating factor solves to 0.6');
+  const ex6 = p2._bcDbg.exHeatKwhM,
+    nw6 = p2._bcDbg.newHeatKwhM;
+  near(ex6[0], 44957.62547640003, 0.5, 'Existing January heating kWh at factor 0.6');
+  near(nw6.reduce((a, b) => a + b, 0), 105817.13707966883, 0.5, 'New annual heating kWh at factor 0.6');
+  near(nw6[11], 22897.208719776947, 0.5, 'New December heating kWh at factor 0.6');
+  // restore Section 2's scenario for the sections below
+  dom.set('bc-heatSrc', new FakeEl('1', 'SELECT'));
+  dom.set('bc-calHeatKwh', new FakeEl('63166'));
 }
 
 console.log('=== 3. Gas-only heating (heatSrc 1/3) calibration — 2026-09-23 fix ===');
@@ -365,7 +410,10 @@ console.log('=== 5. _bcDefaultUnoccHeat reads EM_SP_DEFAULTS — 2026-09-23 sing
     sandbox._bcDefaultUnoccHeat(2) === 60,
     'heatSrc 2 (Electric) -> 60, matches EM_SP_DEFAULTS.unocc.electricReheat.heat',
   );
-  assert(sandbox._bcDefaultUnoccHeat(4) === 65, 'heatSrc 4 (Both) -> 65, matches EM_SP_DEFAULTS.unocc.heatpump.heat');
+  assert(
+    sandbox._bcDefaultUnoccHeat(4) === 55,
+    'heatSrc 4 (Both, gas + electric) -> 55, matches EM_SP_DEFAULTS.unocc.hydronic.heat (D-15, 2026-09-28)',
+  );
   assert(
     sandbox._bcDefaultUnoccHeat(1) === sandbox.EM_SP_DEFAULTS.unocc.hydronic.heat,
     '_bcDefaultUnoccHeat(1) reads the SAME table value directly (not a coincidentally-equal duplicate)',
@@ -375,8 +423,8 @@ console.log('=== 5. _bcDefaultUnoccHeat reads EM_SP_DEFAULTS — 2026-09-23 sing
     '_bcDefaultUnoccHeat(2) reads the SAME table value directly',
   );
   assert(
-    sandbox._bcDefaultUnoccHeat(4) === sandbox.EM_SP_DEFAULTS.unocc.heatpump.heat,
-    '_bcDefaultUnoccHeat(4) reads the SAME table value directly',
+    sandbox._bcDefaultUnoccHeat(4) === sandbox.EM_SP_DEFAULTS.unocc.hydronic.heat,
+    '_bcDefaultUnoccHeat(4) reads the SAME table value directly (hydronic row)',
   );
   // If EM_SP_DEFAULTS.unocc ever changes, _bcDefaultUnoccHeat must move with it automatically —
   // proven here by mutating the live table and re-checking (not just re-reading a cached copy).
@@ -389,8 +437,8 @@ console.log('=== 5. _bcDefaultUnoccHeat reads EM_SP_DEFAULTS — 2026-09-23 sing
   sandbox.EM_SP_DEFAULTS.unocc.hydronic.heat = savedHeat;
 }
 
-console.log('=== 6. coolAdj negative — synthetic reproduction + plain-language warning (2026-09-23) ===');
-// coolAdj = (calCoolKwh - rawExCoolOATotal) / rawExCoolSetbackTotal. Reproduced synthetically by
+console.log('=== 6. Unreachable cooling target: factor held at 0 + plain-language warning ===');
+// (WP-13: the factor is solved by bisection on the whole model.) Reproduced synthetically by
 // entering a bc-calCoolKwh figure smaller than the bin model's own OA-only (ventilation-driven)
 // cooling total for this scenario — a realistic real-world input mistake (e.g. a partial-year or
 // under-scoped "Existing Cooling kWh from UA" figure), not a wiring/wrong-variable bug.
@@ -404,30 +452,11 @@ console.log('=== 6. coolAdj negative — synthetic reproduction + plain-language
   const coolAdj6 = parseFloat(dom.get('bc-adjCool').textContent);
   assert(!!r6, '_bcResults populated for the synthetic under-calibrated scenario');
   assert(
-    coolAdj6 < 0,
-    `coolAdj (${coolAdj6}) reproduced negative with a synthetic calCoolKwh below the OA-only raw total`,
+    coolAdj6 === 0,
+    `coolAdj (${coolAdj6}) held at 0 when calCoolKwh is below the OA-only cooling total (no non-negative factor reaches it)`,
   );
-  const annCoolSav6 = r6.coolKwhSavings.reduce((a, b) => a + b, 0);
-  console.log(
-    `  reproduced: coolAdj=${coolAdj6.toFixed(4)}, annual Cool Saved=${annCoolSav6.toFixed(1)} kWh ` +
-      `(negative Cool Saved when coolAdj < 0, confirming the reported symptom mechanism)`,
-  );
-  // 2026-09-23 fix (this task): a plain-language warning shows at the calibration input when
-  // coolAdj < 0 — formula unchanged, just makes the negative-factor condition visible.
-  assert(
-    dom.get('bc-coolAdjWarn').style.display === '',
-    'coolAdj < 0 -> bc-coolAdjWarn shown (style.display cleared, not "none")',
-  );
-  // ANALYSIS (not fixed — see docs/dashboardlogic.md / task result write-up): the formula
-  // coolAdj = (target - rawOA) / rawSetback is the correct closed-form solve for "what setback
-  // scale factor makes rawOA + rawSetback*coolAdj equal the user's real calibration figure" — it
-  // is mathematically required to go negative whenever the target is smaller than the OA-only
-  // component alone, because no non-negative scale factor on the setback term can reach a total
-  // below what the OA-only term already contributes by itself. That is an honest, correct
-  // response to an implausible calibration INPUT (a calCoolKwh figure too small for this
-  // building/city/sqft), not a formula or wiring defect — restore the calibration input to a
-  // realistic figure (e.g. Section 2's 142872) and coolAdj is positive again (asserted there).
-  // The formula itself is NOT changed by this fix — only the warning's visibility.
+  // A target at or below the outside-air-only cooling cannot be reached by any non-negative factor
+  // (the workbook goal seek has no solution either). The factor is held at 0 and the warning shows.
   dom.set('bc-calCoolKwh', new FakeEl('142872')); // restore Section 2's scenario for a clean exit state
   sandbox._bcDoCalc('p1');
   assert(

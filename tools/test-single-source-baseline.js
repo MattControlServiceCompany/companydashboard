@@ -93,6 +93,9 @@ const fns = [
   loadFn(REPO + '/app/utility-data.js', '_fixISO'),
   loadFn(REPO + '/app/utility-data.js', '_parseISO'),
   loadFn(REPO + '/app/utility-data.js', 'calcDays'),
+  loadFn(REPO + '/lib/formatting.js', '_fmtUSD'),
+  loadFn(REPO + '/lib/formatting.js', 'parseBillNumber'),
+  loadFn(REPO + '/lib/formatting.js', 'parseBillNumberOrZero'),
   loadFn(REPO + '/app/report-engine.js', '_rptUnit'),
   loadFn(REPO + '/app/report-engine.js', 'rptBuildBaselineDataTable'),
 ];

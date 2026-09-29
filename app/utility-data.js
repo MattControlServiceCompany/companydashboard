@@ -4465,8 +4465,8 @@ function renderBillsPane(pane, m, bills, incl) {
       const mtrId = 'meter-detail-' + row.id;
       const fmtMtr = (v) => {
         if (!v) return '—';
-        const n = parseFloat(String(v).replace(/,/g, ''));
-        return isNaN(n) ? v : n.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+        const n = parseBillNumber(v);
+        return n === null ? v : n.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
       };
       const mtrDetail =
         '<tr id="' +

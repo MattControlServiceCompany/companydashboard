@@ -4540,7 +4540,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   for (const [chargeField, ri] of Object.entries(_rates)) {
     if (!ri || !ri.parts || ri.parts.length < 2) continue;
     const computedTotal = ri.parts.reduce((s, p) => s + (p.ocrCharge != null ? p.ocrCharge : p.computed), 0);
-    const currentVal = result[chargeField] ? parseFloat(String(result[chargeField]).replace(/[$,\s]/g, '')) || 0 : 0;
+    const currentVal = parseBillNumberOrZero(result[chargeField]);
     if (computedTotal > currentVal + 0.01) {
       result[chargeField] = computedTotal.toFixed(2);
     }
@@ -4619,11 +4619,11 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   //    b) BilledKW === TDCkW → the same demand drove both charge lines, so it's the
   //       real reading (the LGS Secondary 200 kW floor would diverge these values).
   if (!result.ActualKW && result.BilledKW) {
-    const bkw = parseFloat(String(result.BilledKW).replace(/,/g, ''));
-    const tkw = result.TDCkW ? parseFloat(String(result.TDCkW).replace(/,/g, '')) : NaN;
-    if (!isNaN(bkw) && bkw > 0) {
+    const bkw = parseBillNumberOrZero(result.BilledKW);
+    const tkw = parseBillNumberOrZero(result.TDCkW);
+    if (bkw > 0) {
       const nonWhole = bkw % 1 !== 0;
-      const matchesTDC = !isNaN(tkw) && tkw > 0 && Math.abs(bkw - tkw) < 0.01;
+      const matchesTDC = tkw > 0 && Math.abs(bkw - tkw) < 0.01;
       if (nonWhole || matchesTDC) result.ActualKW = result.BilledKW;
     }
   }
@@ -5424,8 +5424,8 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     return null;
   };
   if (result.EndRead && result.StartRead) {
-    const _erR = parseFloat(String(result.EndRead).replace(/,/g, ''));
-    const _srR = parseFloat(String(result.StartRead).replace(/,/g, ''));
+    const _erR = parseBillNumberOrZero(result.EndRead);
+    const _srR = parseBillNumberOrZero(result.StartRead);
     if (_erR > 0 && _srR > 0 && _erR < _srR) {
       const rv = _detectRollover(_erR, _srR);
       if (rv) {
@@ -5519,7 +5519,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     return null;
   })();
   if (_cvMeterCalc !== null) {
-    const extractedKwh = parseFloat(String(result.kWhConsumed || '0').replace(/,/g, ''));
+    const extractedKwh = parseBillNumberOrZero(result.kWhConsumed);
     if (extractedKwh > 0 && _cvMeterCalc > 0) {
       const diff = Math.abs(_cvMeterCalc - extractedKwh);
       const tolerance = Math.max(1, extractedKwh * 0.01);
@@ -8342,8 +8342,8 @@ const UTILITY_RULES = [
           // already-clean comma) — parseFloat alone stops at the first non-numeric
           // char, so "1,743.43" would silently become 1. Strip commas first, same
           // as every other dollar-parsing call site in this file.
-          const _subTotalCharge = parseFloat(String(blk.dollar).replace(/,/g, ''));
-          if (!isNaN(_subTotalCharge) && _subTotalCharge !== 0) {
+          const _subTotalCharge = parseBillNumber(blk.dollar);
+          if (_subTotalCharge !== null && _subTotalCharge !== 0) {
             if (
               blk.triggerMMbtu != null &&
               blk.indexMMbtu != null &&
@@ -10457,7 +10457,7 @@ const UTILITY_RULES = [
         // above (see the comment on _currentBillRaw) still holds in every
         // other case, crop-fallback or not.
         if (CurrentBillTotal == null && TotalAmountDue && /Account\s*Balance\s*\$?\s*0\.00/i.test(page)) {
-          CurrentBillTotal = parseFloat(String(TotalAmountDue).replace(/,/g, ''));
+          CurrentBillTotal = parseBillNumber(TotalAmountDue);
           _lbgCropRecoveredFields.push('CurrentBillTotal(viaZeroBalance)');
         }
         // Gas usage decimal-cell recovery (2026-09-14 crop-fallback follow-up):
@@ -11545,9 +11545,9 @@ const UTILITY_RULES = [
             // Detect: 1-4 integer digits, comma, exactly 2 decimal digits, no period.
             // Exclude real thousands like "44,576.64" (has a period) or "1,234,567" (>4 pre-comma).
             if (/^\d{1,4},\d{2}$/.test(v)) return parseFloat(v.replace(',', '.'));
-            return parseFloat(v.replace(/,/g, ''));
+            return parseBillNumber(v);
           })
-          .filter((n) => !isNaN(n));
+          .filter((n) => n !== null);
       };
 
       // Parse a metered charge line that has prev/curr/usage/charge cols.

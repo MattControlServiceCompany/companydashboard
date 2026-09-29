@@ -57,6 +57,17 @@
    caller in calculators.js, which never shows the generic "no data" hint for a
    field that isn't actually missing). Pure lookup, never mutates anything — safe
    to call on every render. */
+// ONE setpoint average for every screen (Set Points tab, BAS Snapshot, BAS Calc autofill,
+// "Use Equipment Matrix Data"): mean of the numeric values, rounded to `dp` decimals, null when
+// no value is a number. Callers choose dp (0 = whole degrees as the BAS Calc input shows it,
+// 1 = the BAS Snapshot tab) — one rule, not four copies (WP-13, audit DUP-4).
+function avgSetpoint(values, dp) {
+  const nums = values.map((v) => parseFloat(v)).filter((v) => !isNaN(v));
+  if (!nums.length) return null;
+  const f = Math.pow(10, dp || 0);
+  return Math.round((nums.reduce((a, b) => a + b, 0) / nums.length) * f) / f;
+}
+
 function chCalcAutofillFields(projId, bldgId) {
   const mkDefault = () => ({ value: null, source: 'default', isDefault: true });
   const out = {
@@ -173,10 +184,11 @@ function chCalcAutofillFields(projId, bldgId) {
   // graphics-setpoints.js reads/writes. See docs/dashboardlogic.md.
   const spRecord = (p.setpoints || []).find((r) => r.buildingId === bldgId);
   if (spRecord?.zones?.length) {
-    const avgOf = (key) => {
-      const vals = spRecord.zones.map((z) => parseFloat(z[key])).filter((v) => !isNaN(v));
-      return vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null;
-    };
+    const avgOf = (key) =>
+      avgSetpoint(
+        spRecord.zones.map((z) => z[key]),
+        0,
+      );
     const occCool = avgOf('occCool'),
       unoccCool = avgOf('unoccCool'),
       occHeat = avgOf('occHeat'),
@@ -197,10 +209,11 @@ function chCalcAutofillFields(projId, bldgId) {
   if (typeof emBuildSetpointExportRows === 'function') {
     const rows = emBuildSetpointExportRows(projId, bldgId, null);
     if (rows && rows.length) {
-      const avgCol = (idx) => {
-        const vals = rows.map((r) => parseFloat(r[idx])).filter((v) => !isNaN(v));
-        return vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null;
-      };
+      const avgCol = (idx) =>
+        avgSetpoint(
+          rows.map((r) => r[idx]),
+          0,
+        );
       // Column indices match EM_SETPOINT_EXPORT_HEADERS / emBuildSetpointExportRows's push order.
       if (out.exHeatOcc.isDefault) {
         const v = avgCol(3);

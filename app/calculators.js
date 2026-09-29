@@ -3861,17 +3861,19 @@ function solarApplyToMeasure(projId) {
       ══════════════════════════════════════════════════════ */
 
 /* ── A. Load Profile Constants ── */
+// Load fraction per 5-degree step row: Savings Calculator!O3:O12 cached values, full precision (the
+// workbook keeps 0.18571428571428567 etc.; rounding to 3 decimals moved annual cooling by 5 kWh).
 const BAS_COOL_CURVE = [
   [55, 0],
   [60, 0],
   [65, 0.05],
-  [70, 0.186],
-  [75, 0.321],
-  [80, 0.457],
-  [85, 0.593],
-  [90, 0.729],
-  [95, 0.864],
-  [100, 1.0],
+  [70, 0.18571428571428567],
+  [75, 0.3214285714285715],
+  [80, 0.4571428571428573],
+  [85, 0.5928571428571431],
+  [90, 0.728571428571429],
+  [95, 0.8642857142857148],
+  [100, 1.0000000000000004],
 ];
 const BAS_HEAT_CURVE = [
   [-2.5, 1.0],
@@ -3906,6 +3908,8 @@ const BAS_VRF_COP = [
 // reached above 82.5F and silently dropped hot-climate hours (Phoenix, Brownsville, Dallas).
 const BAS_TEMP_BINS = BAS_WEATHER_BINS.bins;
 const BAS_MO = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+// Days per month of the typical weather year the bin hours describe (no leap day: 8,760 hours).
+const BAS_MO_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
 // Company-standard unoccupied heating setpoint default, by BAS Savings Calc heating source —
 // reads the ONE setpoint default table (EM_SP_DEFAULTS.unocc, app/equipment-matrix.js; see
@@ -3915,10 +3919,24 @@ const BAS_MO = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', '
 // varies, so this is the only value that needs the heat-source branch. Falls back to the same
 // literal numbers only if EM_SP_DEFAULTS hasn't loaded (defensive — never happens in the shipped
 // page, equipment-matrix.js always loads alongside calculators.js).
+// D-15 (2026-09-28): heat source -> the setpoint-standard row. 1/3 = gas, 4 = Both (gas + electric:
+// the gas / hot-water plant sets the standard, so 55, not the heat-pump 65), 2 = electric reheat.
+// (Electric unit heaters, VRF and heat pumps are 65 in the same table; they are chosen per zone from
+// the Equipment Matrix, not from this single building-level heat source.)
+function _bcUnoccHeatType(heatSrc) {
+  return heatSrc === 2
+    ? { key: 'electricReheat', name: 'electric reheat' }
+    : { key: 'hydronic', name: 'gas or hot water heat' };
+}
 function _bcDefaultUnoccHeat(heatSrc) {
-  const key = heatSrc === 4 ? 'heatpump' : heatSrc === 2 ? 'electricReheat' : 'hydronic'; // 1/3 = Gas
-  if (typeof EM_SP_DEFAULTS !== 'undefined' && EM_SP_DEFAULTS.unocc[key]) return EM_SP_DEFAULTS.unocc[key].heat;
-  return heatSrc === 4 ? 65 : heatSrc === 2 ? 60 : 55;
+  return EM_SP_DEFAULTS.unocc[_bcUnoccHeatType(heatSrc).key].heat;
+}
+// Plain-words source label shown under a default-valued field (never claims building data).
+function _bcDefaultUnoccHeatLabel(heatSrc) {
+  return (
+    'Default value: company standard for ' + _bcUnoccHeatType(heatSrc).name + ' (' + _bcDefaultUnoccHeat(heatSrc) +
+    '°F), not from building data'
+  );
 }
 
 function _bcInterp(curve, temp) {
@@ -4113,6 +4131,8 @@ function openBASCalc(projId) {
   // 2026-09-25 (Matt's decision): "just assume no outside air when unoccupied" — default is
   // 'yes', sourced as an assumption (Matt / company default), not measured building data.
   const rExOAShutoff = _bcResolve('exOAShutoff', 'yes', auto?.exOAShutoff);
+  if (rExHeatUnocc.hint && rExHeatUnocc.hint.indexOf('Default value') === 0)
+    rExHeatUnocc.hint = _bcDefaultUnoccHeatLabel(parseInt(rHeatSrc.value) || 2);
   const rCalCoolKwh = _bcResolve('calCoolKwh', '', autoCalCool);
   const rCalHeatKwh = _bcResolve('calHeatKwh', '', autoCalHeat);
   // Honest label (2026-09-28): the weather regression ran but found no positive heating (HDD) term,
@@ -4135,6 +4155,8 @@ function openBASCalc(projId) {
     _bcDefaultUnoccHeat(parseInt(rHeatSrc.value) || 2),
     auto?.newHeatUnocc,
   );
+  if (rNewHeatUnocc.hint && rNewHeatUnocc.hint.indexOf('Default value') === 0)
+    rNewHeatUnocc.hint = _bcDefaultUnoccHeatLabel(parseInt(rHeatSrc.value) || 2);
   const rNewCoolUnocc = _bcResolve('newCoolUnocc', 85, auto?.newCoolUnocc);
   const rNewMfOn = _bcResolve('newMfOn', 6, auto?.newMfOn);
   const rNewMfOff = _bcResolve('newMfOff', 17, auto?.newMfOff);
@@ -4440,16 +4462,18 @@ function _bcGv(id) {
   return parseFloat(e.value) || 0;
 }
 
-// Heating calibration factor: solve sum(MAX(setback*adj - OA, 0) + OA) = target for adj.
-// The sum never decreases as adj grows, so bisection converges (Excel goal-seek on K46).
-function _bcCalibrateHeatAdj(setbackM, oaM, target) {
-  const total = (a) => setbackM.reduce((t, v, m) => t + Math.max(v * a - oaM[m], 0) + oaM[m], 0);
+// Calibration factor (Excel goal seek on Savings Calculator!K50 cooling / K46 heating): solve
+// totalFn(adj) = target for adj. totalFn never decreases as adj grows, so bisection converges.
+// When even adj = 0 (outside air alone) is at or above the target, no non-negative factor
+// reaches it and 0 is returned.
+function _bcSolveAdj(totalFn, target) {
+  if (totalFn(0) >= target) return 0;
   let lo = 0,
     hi = 1;
-  for (let i = 0; i < 60 && total(hi) < target; i++) hi *= 2;
+  for (let i = 0; i < 60 && totalFn(hi) < target; i++) hi *= 2;
   for (let i = 0; i < 100; i++) {
     const mid = (lo + hi) / 2;
-    if (total(mid) < target) lo = mid;
+    if (totalFn(mid) < target) lo = mid;
     else hi = mid;
   }
   return (lo + hi) / 2;
@@ -4545,287 +4569,280 @@ function _bcDoCalc(projId) {
   }
   const hb = weather.hourlyBins;
 
+  // D-14 hour convention = the BAS Savings Calc workbook (the oracle): its 24 hour columns are
+  // labelled 1..24 (label = h + 1, h = 0..23) and an hour is occupied when on <= label <= off
+  // (both ends inclusive). Weather-bin hour h therefore counts as occupied for on <= h+1 <= off,
+  // i.e. one hour longer per day than the old [on, off) rule. on === off stays "never occupied"
+  // (the 0-0 closed-weekend entry). Wrapped windows (on > off) use the same inclusive labels.
   function isOcc(h, on, off) {
     if (on === off) return false;
-    return on < off ? h >= on && h < off : h >= on || h < off;
+    const label = h + 1;
+    return on < off ? label >= on && label <= off : label >= on || label <= off;
   }
 
-  // Setback (scalable) and OA (never scaled) are tracked separately because the Excel
-  // template's calibration factor (Savings Calculator!K46/K50) scales only the Max
-  // Heating/Cooling Load feeding the setback bin engine — Outside Air sensible + latent
-  // loads use the raw OA CFM directly and are never touched by the calibration factor
-  // (Existing!D507/D579 reference $E$18 CFM directly, not the calibrated $E$5/$E$15 max
-  // load). A single factor scaling the combined setback+OA total (the old approach here)
-  // does not reproduce the Excel outputs whenever OA is a non-trivial share of the total.
-  const exCoolSetbackM = new Array(12).fill(0),
-    exCoolOAM = new Array(12).fill(0);
-  const exHeatKwhSetbackM = new Array(12).fill(0),
-    exHeatKwhOAM = new Array(12).fill(0);
-  const exHeatGasSetbackM = new Array(12).fill(0),
-    exHeatGasOAM = new Array(12).fill(0);
-  const newCoolSetbackM = new Array(12).fill(0),
-    newCoolOAM = new Array(12).fill(0);
-  const newHeatKwhSetbackM = new Array(12).fill(0),
-    newHeatKwhOAM = new Array(12).fill(0);
-  const newHeatGasSetbackM = new Array(12).fill(0),
-    newHeatGasOAM = new Array(12).fill(0);
-  const exPeakCoolSetbackM = new Array(12).fill(0),
-    exPeakCoolOAM = new Array(12).fill(0);
-  const newPeakCoolSetbackM = new Array(12).fill(0),
-    newPeakCoolOAM = new Array(12).fill(0);
+// ── Workbook model (BAS Savings Calc Template.xlsm, Existing and New sheets) — D-14 / E-BAS-3 ──
+// One cell per (month, temperature bin, hour). Each cell carries
+//   b = setback load per unit of calibration factor (ton-hours x kW/ton for cooling, MBtu for heating),
+//   o = outside-air load in the same unit, w = share of the week that hour is in this block
+//       (occupied block: 5/7 + 1/7 + 1/7 by day type; unoccupied block: the rest).
+// Workbook rule per cell: net = MAX(factor * b - o, 0)  (Existing!D106 = MAX(load - D579/12, 0)),
+// then the outside-air load is added back in full (Existing!AJ = eff * OA / 12; heating AK).
+// Unoccupied cells use the OUTSIDE AIR AT THE UNOCCUPIED SETPOINT (D816 / D744), and that
+// unoccupied OA is added back only when outside air is NOT shut off when unoccupied.
+// Season split is fixed in the workbook: cooling is May-Oct only, heating is Nov-Apr only
+// (the other months' cells are hard-coded 0 on the Existing and New sheets).
+// Load percent is a STEP table keyed on the 5-degree row (VLOOKUP approximate match), not
+// interpolated at the bin midpoint. The calibration factor is solved by bisection on the whole
+// model (Excel goal seek on Savings Calculator!K50 / K46).
+const isCoolMo = (m) => m >= 4 && m <= 9;
+const mkList = () => ({
+  cells: [],
+  add: new Array(12).fill(0),
+  addPk: new Array(12).fill(0),
+  load: 0,
+});
+const exCool = mkList(),
+  newCool = mkList(),
+  exHeat = mkList(),
+  newHeat = mkList();
+const coolStepRow = (t) => {
+  let r = -1;
+  for (let i = 0; i < BAS_COOL_CURVE.length; i++)
+    if (BAS_COOL_CURVE[i][0] <= t) r = i;
+  return r;
+};
+const humFor = (m, bi, h) =>
+  humBins && humBins[m] && humBins[m][bi] ? (humBins[m][bi][h] || 0) / 7000 : 0;
+const coolOAMbtu = (binTemp, sp, hum) =>
+  ((binTemp > sp ? 1.08 * oaCfm * (binTemp - sp) : 0) +
+    (hum > humRatioSP ? 4840 * oaCfm * (hum - humRatioSP) : 0)) /
+  1000;
+const heatOAMbtu = (binTemp, sp) =>
+  binTemp < sp ? (1.08 * oaCfm * (sp - binTemp)) / 1000 : 0;
+const pushCell = (list, m, b, o, w, pk) => {
+  if (w <= 0) return;
+  list.cells.push({ m, b, o, w, pk });
+  list.load += b * w;
+};
 
-  for (let m = 0; m < 12; m++) {
-    for (let bi = 0; bi < BAS_TEMP_BINS.length; bi++) {
-      const binTemp = BAS_TEMP_BINS[bi];
-      const coolPct = _bcInterp(BAS_COOL_CURVE, binTemp);
+for (let m = 0; m < 12; m++) {
+  for (let bi = 0; bi < BAS_TEMP_BINS.length; bi++) {
+    const binTemp = BAS_TEMP_BINS[bi];
+
+    // Cooling (May-Oct): load from the step row of this bin; none below the first row (55F).
+    let exOccCoolTons = 0,
+      exUnoccCoolTons = 0,
+      newOccCoolTons = 0,
+      newUnoccCoolTons = 0;
+    if (isCoolMo(m)) {
+      const ri = coolStepRow(binTemp);
+      if (ri >= 0) {
+        const stepT = BAS_COOL_CURVE[ri][0];
+        const full = maxTons * BAS_COOL_CURVE[ri][1];
+        exOccCoolTons = exCoolOcc - 10 >= stepT ? 0 : full;
+        exUnoccCoolTons =
+          exCoolUnocc >= stepT
+            ? 0
+            : stepT - exCoolOcc === 0
+              ? exOccCoolTons
+              : ((stepT - exCoolUnocc) / (stepT - exCoolOcc)) * exOccCoolTons;
+        newOccCoolTons =
+          newCoolOcc - 10 >= stepT
+            ? 0
+            : stepT - exCoolOcc + 10 === 0
+              ? full
+              : (full * (stepT - newCoolOcc + 10)) / (stepT - exCoolOcc + 10);
+        newUnoccCoolTons =
+          newCoolUnocc >= stepT
+            ? 0
+            : stepT - newCoolOcc === 0
+              ? newOccCoolTons
+              : ((stepT - newCoolUnocc) / (stepT - newCoolOcc)) *
+                newOccCoolTons;
+      }
+    }
+
+    // Heating (Nov-Apr): none above 50F (Existing!AH34 IF(A>50,0,...)).
+    let exOccHeatMbtu = 0,
+      exUnoccHeatMbtu = 0,
+      newOccHeatMbtu = 0,
+      newUnoccHeatMbtu = 0;
+    if (!isCoolMo(m) && binTemp <= 50) {
       const heatPct = _bcInterp(BAS_HEAT_CURVE, binTemp);
       const vrfCOP = _bcInterp(BAS_VRF_COP, binTemp);
-
-      // Existing cooling load profile
-      const exOccCoolTons = exCoolOcc - 10 >= binTemp ? 0 : maxTons * coolPct;
-      const exUnoccCoolTons =
-        exCoolUnocc >= binTemp
-          ? 0
-          : exOccCoolTons > 0 && binTemp - exCoolOcc + 10 > 0
-            ? ((binTemp - exCoolUnocc) / (binTemp - exCoolOcc + 10)) * exOccCoolTons
-            : 0;
-
-      // Existing heating load (MBtu/h)
-      let exOccHeatMbtu = 0;
-      if (binTemp + 10 <= exHeatOcc) {
-        if (heatSrc === 2 || heatSrc === 4) {
-          const rawLoad = maxMbtu * heatPct;
-          exOccHeatMbtu =
-            (rawLoad * vrfPct) / Math.max(vrfCOP, 0.1) + (rawLoad * (1 - vrfPct)) / Math.max(elecCOP, 0.1);
-        } else {
-          exOccHeatMbtu = (maxMbtu * heatPct) / Math.max(afue, 0.1);
-        }
-      }
-      const exUnoccHeatMbtu =
+      const toSource = (rawLoad) =>
+        heatSrc === 2 || heatSrc === 4
+          ? (rawLoad * vrfPct) / Math.max(vrfCOP, 0.1) +
+            (rawLoad * (1 - vrfPct)) / Math.max(elecCOP, 0.1)
+          : rawLoad / Math.max(afue, 0.1);
+      if (binTemp + 10 <= exHeatOcc)
+        exOccHeatMbtu = toSource(maxMbtu * heatPct);
+      exUnoccHeatMbtu =
         binTemp >= exHeatUnocc
           ? 0
           : exOccHeatMbtu > 0 && exHeatOcc - binTemp > 0
             ? ((exHeatUnocc - binTemp) / (exHeatOcc - binTemp)) * exOccHeatMbtu
             : 0;
-
-      // New cooling: scale by setpoint ratio
-      let newOccCoolTons = 0;
-      if (!(newCoolOcc - 10 >= binTemp)) {
-        const exDenom = binTemp - exCoolOcc + 10;
-        const newDenom = binTemp - newCoolOcc + 10;
-        newOccCoolTons =
-          exDenom > 0 && exOccCoolTons > 0 ? maxTons * coolPct * (newDenom / exDenom) : maxTons * coolPct;
-        if (newOccCoolTons < 0) newOccCoolTons = 0;
-      }
-      const newUnoccCoolTons =
-        newCoolUnocc >= binTemp
-          ? 0
-          : newOccCoolTons > 0 && binTemp - newCoolOcc + 10 > 0
-            ? ((binTemp - newCoolUnocc) / (binTemp - newCoolOcc + 10)) * newOccCoolTons
-            : 0;
-
-      // New heating: scale by setpoint ratio
-      let newOccHeatMbtu = 0;
       if (binTemp + 10 <= newHeatOcc) {
         const exHeatDenom = exHeatOcc - binTemp;
-        const newHeatDenom = newHeatOcc - binTemp;
-        const scale = exHeatDenom > 0 ? newHeatDenom / exHeatDenom : 1;
-        if (heatSrc === 2 || heatSrc === 4) {
-          const rawLoad = maxMbtu * heatPct * Math.max(scale, 0);
-          newOccHeatMbtu =
-            (rawLoad * vrfPct) / Math.max(vrfCOP, 0.1) + (rawLoad * (1 - vrfPct)) / Math.max(elecCOP, 0.1);
-        } else {
-          newOccHeatMbtu = (maxMbtu * heatPct * Math.max(scale, 0)) / Math.max(afue, 0.1);
-        }
+        const scale =
+          exHeatDenom > 0 ? (newHeatOcc - binTemp) / exHeatDenom : 1;
+        newOccHeatMbtu = toSource(maxMbtu * heatPct * Math.max(scale, 0));
       }
-      const newUnoccHeatMbtu =
+      newUnoccHeatMbtu =
         binTemp >= newHeatUnocc
           ? 0
           : newOccHeatMbtu > 0 && newHeatOcc - binTemp > 0
-            ? ((newHeatUnocc - binTemp) / (newHeatOcc - binTemp)) * newOccHeatMbtu
+            ? ((newHeatUnocc - binTemp) / (newHeatOcc - binTemp)) *
+              newOccHeatMbtu
             : 0;
+    }
 
-      // OA loads (MBtu)
-      const exOACoolMbtu = Math.max(0, binTemp > exCoolOcc ? (1.08 * oaCfm * (binTemp - exCoolOcc)) / 1000 : 0);
-      const exOAHeatMbtu = Math.max(0, binTemp < exHeatOcc ? (1.08 * oaCfm * (exHeatOcc - binTemp)) / 1000 : 0);
-      const newOACoolMbtu = Math.max(0, binTemp > newCoolOcc ? (1.08 * oaCfm * (binTemp - newCoolOcc)) / 1000 : 0);
-      const newOAHeatMbtu = Math.max(0, binTemp < newHeatOcc ? (1.08 * oaCfm * (newHeatOcc - binTemp)) / 1000 : 0);
+    for (let h = 0; h < 24; h++) {
+      const hrs = hb[m][bi][h];
+      if (!hrs) continue;
+      const isPeak = h >= peakStart && h < peakEnd;
 
-      for (let h = 0; h < 24; h++) {
-        const hrs = hb[m][bi][h];
-        if (!hrs) continue;
+      // Weekly weights of this hour: occupied block and unoccupied block, existing and new.
+      const exOccW =
+        (isOcc(h, exMfOn, exMfOff) ? 5 / 7 : 0) +
+        (isOcc(h, exSatOn, exSatOff) ? 1 / 7 : 0) +
+        (isOcc(h, exSunOn, exSunOff) ? 1 / 7 : 0);
+      const exUnoccW = 1 - exOccW;
+      const newOccW =
+        (isOcc(h, newMfOn, newMfOff) ? 5 / 7 : 0) +
+        (isOcc(h, newSatOn, newSatOff) ? 1 / 7 : 0) +
+        (isOcc(h, newSunOn, newSunOff) ? 1 / 7 : 0);
+      const newUnoccW = 1 - newOccW;
 
-        // Existing schedule occupancy weights
-        const exOccMF = isOcc(h, exMfOn, exMfOff) ? 1 : 0;
-        const exOccSat = isOcc(h, exSatOn, exSatOff) ? 1 : 0;
-        const exOccSun = isOcc(h, exSunOn, exSunOff) ? 1 : 0;
-        const exOccW = exOccMF * (5 / 7) + exOccSat * (1 / 7) + exOccSun * (1 / 7);
-        const exUnoccW = 1 - exOccW;
-
-        // Existing cooling: ton-hours → kWh (setback, scalable by calibration factor)
-        const exCoolTH = hrs * (exOccCoolTons * exOccW + exUnoccCoolTons * exUnoccW);
-        const exCoolKwh_h = exCoolTH * coolEff;
-        const exOAShut = exOAShutoff && exUnoccW > 0;
-        // OA sensible + latent (never scaled by the calibration factor — see note above)
-        const exOACoolKwh_h = hrs * (exOACoolMbtu / 12) * coolEff * (exOAShut ? exOccW : 1);
-        let exLatentKwh_h = 0;
-        if (humBins && humBins[m] && humBins[m][bi]) {
-          // Humidity bin data is stored in grains of moisture per lb dry air (matches the
-          // Excel source cell-for-cell); divide by 7000 for lb/lb before comparing to the
-          // lb/lb setpoint and applying the 4840 Btu/hr-per-CFM-per-lb/lb latent constant —
-          // same formula as Existing!D579 in the Excel template.
-          const humRatioLbLb = (humBins[m][bi][h] || 0) / 7000;
-          if (humRatioLbLb > humRatioSP) {
-            const latentMbtu = (4840 * oaCfm * (humRatioLbLb - humRatioSP)) / 1000;
-            exLatentKwh_h = hrs * (latentMbtu / 12) * coolEff * (exOAShut ? exOccW : 1);
-          }
-        }
-        exCoolSetbackM[m] += exCoolKwh_h;
-        exCoolOAM[m] += exOACoolKwh_h + exLatentKwh_h;
-
-        // Existing heating — setback vs OA kept separate for the same calibration-scope reason
-        const exHeatMbtu_h = hrs * (exOccHeatMbtu * exOccW + exUnoccHeatMbtu * exUnoccW);
-        const exOAHeatMbtu_h = hrs * exOAHeatMbtu * (exOAShut ? exOccW : 1);
-        if (heatSrc === 1) {
-          exHeatGasSetbackM[m] += exHeatMbtu_h * 0.001;
-          exHeatGasOAM[m] += exOAHeatMbtu_h * 0.001;
-        } else if (heatSrc === 3) {
-          exHeatGasSetbackM[m] += exHeatMbtu_h * 0.01;
-          exHeatGasOAM[m] += exOAHeatMbtu_h * 0.01;
-        } else if (heatSrc === 4) {
-          exHeatKwhSetbackM[m] += exHeatMbtu_h * 0.293 * (1 - pctGasHeat);
-          exHeatKwhOAM[m] += exOAHeatMbtu_h * 0.293 * (1 - pctGasHeat);
-          exHeatGasSetbackM[m] += exHeatMbtu_h * 0.01 * pctGasHeat;
-          exHeatGasOAM[m] += exOAHeatMbtu_h * 0.01 * pctGasHeat;
-        } else {
-          exHeatKwhSetbackM[m] += exHeatMbtu_h * 0.293;
-          exHeatKwhOAM[m] += exOAHeatMbtu_h * 0.293;
-        }
-
-        // New schedule occupancy weights
-        const newOccMF = isOcc(h, newMfOn, newMfOff) ? 1 : 0;
-        const newOccSat = isOcc(h, newSatOn, newSatOff) ? 1 : 0;
-        const newOccSun = isOcc(h, newSunOn, newSunOff) ? 1 : 0;
-        const newOccW = newOccMF * (5 / 7) + newOccSat * (1 / 7) + newOccSun * (1 / 7);
-        const newUnoccW = 1 - newOccW;
-
-        // New cooling
-        const newCoolTH = hrs * (newOccCoolTons * newOccW + newUnoccCoolTons * newUnoccW);
-        const newCoolKwh_h = newCoolTH * coolEff;
-        const newOAShut = newOAShutoff && newUnoccW > 0;
-        const newOACoolKwh_h = hrs * (newOACoolMbtu / 12) * coolEff * (newOAShut ? newOccW : 1);
-        let newLatentKwh_h = 0;
-        if (humBins && humBins[m] && humBins[m][bi]) {
-          const humRatioLbLb = (humBins[m][bi][h] || 0) / 7000;
-          if (humRatioLbLb > humRatioSP) {
-            const latentMbtu = (4840 * oaCfm * (humRatioLbLb - humRatioSP)) / 1000;
-            newLatentKwh_h = hrs * (latentMbtu / 12) * coolEff * (newOAShut ? newOccW : 1);
-          }
-        }
-        newCoolSetbackM[m] += newCoolKwh_h;
-        newCoolOAM[m] += newOACoolKwh_h + newLatentKwh_h;
-
-        // New heating
-        const newHeatMbtu_h = hrs * (newOccHeatMbtu * newOccW + newUnoccHeatMbtu * newUnoccW);
-        const newOAHeatMbtu_h = hrs * newOAHeatMbtu * (newOAShut ? newOccW : 1);
-        if (heatSrc === 1) {
-          newHeatGasSetbackM[m] += newHeatMbtu_h * 0.001;
-          newHeatGasOAM[m] += newOAHeatMbtu_h * 0.001;
-        } else if (heatSrc === 3) {
-          newHeatGasSetbackM[m] += newHeatMbtu_h * 0.01;
-          newHeatGasOAM[m] += newOAHeatMbtu_h * 0.01;
-        } else if (heatSrc === 4) {
-          newHeatKwhSetbackM[m] += newHeatMbtu_h * 0.293 * (1 - pctGasHeat);
-          newHeatKwhOAM[m] += newOAHeatMbtu_h * 0.293 * (1 - pctGasHeat);
-          newHeatGasSetbackM[m] += newHeatMbtu_h * 0.01 * pctGasHeat;
-          newHeatGasOAM[m] += newOAHeatMbtu_h * 0.01 * pctGasHeat;
-        } else {
-          newHeatKwhSetbackM[m] += newHeatMbtu_h * 0.293;
-          newHeatKwhOAM[m] += newOAHeatMbtu_h * 0.293;
-        }
-
-        // Peak tracking
-        const isPeak = h >= peakStart && h < peakEnd;
-        if (isPeak) {
-          exPeakCoolSetbackM[m] += exCoolKwh_h;
-          exPeakCoolOAM[m] += exOACoolKwh_h + exLatentKwh_h;
-          newPeakCoolSetbackM[m] += newCoolKwh_h;
-          newPeakCoolOAM[m] += newOACoolKwh_h + newLatentKwh_h;
-        }
+      if (isCoolMo(m)) {
+        const hum = humFor(m, bi, h);
+        const k = coolEff / 12; // MBtu of outside air -> ton-hours -> kWh
+        const exOAo = coolOAMbtu(binTemp, exCoolOcc, hum) * hrs;
+        const exOAu = coolOAMbtu(binTemp, exCoolUnocc, hum) * hrs;
+        pushCell(
+          exCool,
+          m,
+          hrs * exOccCoolTons * coolEff,
+          exOAo * k,
+          exOccW,
+          isPeak,
+        );
+        pushCell(
+          exCool,
+          m,
+          hrs * exUnoccCoolTons * coolEff,
+          exOAu * k,
+          exUnoccW,
+          isPeak,
+        );
+        const exAdd =
+          (exOccW * exOAo + (exOAShutoff ? 0 : exUnoccW * exOAu)) * k;
+        exCool.add[m] += exAdd;
+        if (isPeak) exCool.addPk[m] += exAdd;
+        const newOAo = coolOAMbtu(binTemp, newCoolOcc, hum) * hrs;
+        const newOAu = coolOAMbtu(binTemp, newCoolUnocc, hum) * hrs;
+        pushCell(
+          newCool,
+          m,
+          hrs * newOccCoolTons * coolEff,
+          newOAo * k,
+          newOccW,
+          isPeak,
+        );
+        pushCell(
+          newCool,
+          m,
+          hrs * newUnoccCoolTons * coolEff,
+          newOAu * k,
+          newUnoccW,
+          isPeak,
+        );
+        const newAdd =
+          (newOccW * newOAo + (newOAShutoff ? 0 : newUnoccW * newOAu)) * k;
+        newCool.add[m] += newAdd;
+        if (isPeak) newCool.addPk[m] += newAdd;
+      } else {
+        const exOAo = heatOAMbtu(binTemp, exHeatOcc) * hrs;
+        const exOAu = heatOAMbtu(binTemp, exHeatUnocc) * hrs;
+        pushCell(exHeat, m, hrs * exOccHeatMbtu, exOAo, exOccW, false);
+        pushCell(exHeat, m, hrs * exUnoccHeatMbtu, exOAu, exUnoccW, false);
+        exHeat.add[m] += exOccW * exOAo + (exOAShutoff ? 0 : exUnoccW * exOAu);
+        const newOAo = heatOAMbtu(binTemp, newHeatOcc) * hrs;
+        const newOAu = heatOAMbtu(binTemp, newHeatUnocc) * hrs;
+        pushCell(newHeat, m, hrs * newOccHeatMbtu, newOAo, newOccW, false);
+        pushCell(newHeat, m, hrs * newUnoccHeatMbtu, newOAu, newUnoccW, false);
+        newHeat.add[m] +=
+          newOccW * newOAo + (newOAShutoff ? 0 : newUnoccW * newOAu);
       }
     }
   }
+}
 
-  // Calibration factor solves: actual (UA) total = setback_raw * adj + OA_raw, i.e.
-  // adj = (actual - OA_raw) / setback_raw. Excel's Savings Calculator!K50/K46 are the
-  // converged solution of the same equation (the workbook expresses it as a circular
-  // reference — Max Load depends on K50, and K50's own formula sums a calculated total
-  // that depends on Max Load — Excel's iterative calculation converges it to this exact
-  // closed form). Solving it directly here avoids needing iteration.
-  const rawExCoolSetbackTotal = exCoolSetbackM.reduce((a, b) => a + b, 0);
-  const rawExCoolOATotal = exCoolOAM.reduce((a, b) => a + b, 0);
-  const rawExHeatSetbackTotal = exHeatKwhSetbackM.reduce((a, b) => a + b, 0);
-  const rawExHeatGasSetbackTotal = exHeatGasSetbackM.reduce((a, b) => a + b, 0);
-  let coolAdj = 1,
-    heatAdj = 1;
-  if (calCoolKwh > 0 && rawExCoolSetbackTotal > 0) coolAdj = (calCoolKwh - rawExCoolOATotal) / rawExCoolSetbackTotal;
-  // Heating calibration input ("Existing Heating kWh from UA") is kWh-denominated, so it only
-  // calibrates the kWh heating bucket, which is exactly where heatSrc 2 (Electric) and heatSrc 4
-  // (Both — see pctGasHeat above) route their existing heating load.
-  // 2026-09-23 fix: heatSrc 1/3 (pure gas — MCF/Therms) route their ENTIRE existing heating load
-  // into the gas bucket instead (exHeatGasSetbackM/OAM — see the heatSrc branch above); the kWh
-  // bucket stays 0 for them, so rawExHeatSetbackTotal was always 0 and heatAdj stayed
-  // permanently 1 (uncalibrated) no matter what a user entered — the raw, unscaled bin-model
-  // estimate was reported as "Heat Therms Saved" with no ability to match it to a real utility
-  // analysis figure (Existing Heating Gas — Therms/MCF from UA, now shown for heatSrc 1/3 too).
-  // Calibrates directly against that same closed-form equation, against the gas raw totals.
-  // 2026-09-23 (heating-type classifier fix): heatSrc 4 ("Both") can also route effectively ALL
-  // of a building's existing heat into the gas bucket via pctGasHeat above (e.g. a gas-boiler
-  // school with a few known electric unit heaters — mostly gas, heatSrc correctly resolves to 4,
-  // but calHeatKwh is never entered/auto-filled because there is no meaningful kWh heating load
-  // to calibrate). Without this branch, heatAdj fell through to the calHeatKwh check, which is
-  // never satisfied (rawExHeatSetbackTotal stays 0 when pctGasHeat routed the raw load to gas
-  // instead), so heatAdj stayed permanently 1 (uncalibrated) — the same "Heat Therms Saved"
-  // symptom the heatSrc 1/3 fix above already solved, now also possible for heatSrc 4 once a
-  // building has any real electric-heat evidence. Only activates when the kWh bucket is actually
-  // empty (rawExHeatSetbackTotal <= 0) — a true mixed-load building (both buckets populated)
-  // still falls through to the existing kWh-only calibration below, unchanged.
-  // Heating calibration (2026-09-28 restore of the OA add-back). Excel: Existing!I2 = Z20 + AL12
-  // (net setback + full OA); Savings Calculator!K45 sums that column and K46 is goal-sought so the
-  // existing total equals the billed figure. Per month: MAX(setback*adj - OA, 0) + OA. When a
-  // month clamps, the total is not linear in adj, so adj is solved by bisection on that same
-  // combine (_bcCalibrateHeatAdj), like the goal-seek.
-  if (heatSrc === 1 || heatSrc === 3) {
-    if (calHeatGas > 0 && rawExHeatGasSetbackTotal > 0)
-      heatAdj = _bcCalibrateHeatAdj(exHeatGasSetbackM, exHeatGasOAM, calHeatGas);
-  } else if (heatSrc === 4 && rawExHeatSetbackTotal <= 0 && rawExHeatGasSetbackTotal > 0) {
-    if (calHeatGas > 0) heatAdj = _bcCalibrateHeatAdj(exHeatGasSetbackM, exHeatGasOAM, calHeatGas);
-  } else if (calHeatKwh > 0 && rawExHeatSetbackTotal > 0) {
-    heatAdj = _bcCalibrateHeatAdj(exHeatKwhSetbackM, exHeatKwhOAM, calHeatKwh);
-  }
-  if (el('bc-adjCool')) el('bc-adjCool').textContent = coolAdj.toFixed(3);
-  if (el('bc-adjHeat')) el('bc-adjHeat').textContent = heatAdj.toFixed(3);
-  // 2026-09-23: coolAdj goes negative when the entered calibration kWh is below the outside-air-
-  // only raw cooling total (rawExCoolOATotal) — the formula is correct (it is the only value that
-  // makes setback*adj + OA equal the entered figure), but a negative factor silently flips
-  // "Cool Saved" negative with no explanation. Plain-language warning only; math unchanged.
-  const coolAdjNegative = calCoolKwh > 0 && coolAdj < 0;
-  if (el('bc-coolAdjWarn')) el('bc-coolAdjWarn').style.display = coolAdjNegative ? '' : 'none';
+// Monthly totals of one list at calibration factor `adj`, times unit factor `k`
+// (kWh: 0.293 per MBtu; MCF: 0.001; therms: 0.01). peakOnly keeps only peak-window hours.
+const monthly = (list, adj, k, peakOnly) => {
+  const r = new Array(12).fill(0);
+  for (const c of list.cells)
+    if (!peakOnly || c.pk) r[c.m] += c.w * Math.max(adj * c.b - c.o, 0);
+  const add = peakOnly ? list.addPk : list.add;
+  return r.map((v, m) => k * (v + add[m]));
+};
+const sum12 = (a) => a.reduce((x, y) => x + y, 0);
 
-  // Calibrated monthly totals — Cooling: setback scaled by the factor, OA added straight (see
-  // note above; cooling has no Excel netting/clamp — confirmed Excel-equivalent by the
-  // 2026-09-22 parity audit, "do not 'fix' the cooling calibration" — cooling is intentionally
-  // unchanged by this fix).
-  const exCoolM = exCoolSetbackM.map((v, m) => v * coolAdj + exCoolOAM[m]);
-  const newCoolM = newCoolSetbackM.map((v, m) => v * coolAdj + newCoolOAM[m]);
-  // Heating: MAX(setback*heatAdj - OA, 0) + OA per month (Excel Existing!I2 = Z20 + AL12: net
-  // setback plus full OA). Both Existing and New, kWh and gas buckets.
-  const exHeatKwhM = exHeatKwhSetbackM.map((v, m) => Math.max(v * heatAdj - exHeatKwhOAM[m], 0) + exHeatKwhOAM[m]);
-  const newHeatKwhM = newHeatKwhSetbackM.map((v, m) => Math.max(v * heatAdj - newHeatKwhOAM[m], 0) + newHeatKwhOAM[m]);
-  const exHeatGasM = exHeatGasSetbackM.map((v, m) => Math.max(v * heatAdj - exHeatGasOAM[m], 0) + exHeatGasOAM[m]);
-  const newHeatGasM = newHeatGasSetbackM.map((v, m) => Math.max(v * heatAdj - newHeatGasOAM[m], 0) + newHeatGasOAM[m]);
-  const exPeakCoolM = exPeakCoolSetbackM.map((v, m) => v * coolAdj + exPeakCoolOAM[m]);
-  const newPeakCoolM = newPeakCoolSetbackM.map((v, m) => v * coolAdj + newPeakCoolOAM[m]);
+// Heating unit factors by heat source: kWh bucket and gas bucket (Both splits by gas share).
+const heatKwhK =
+  heatSrc === 2 ? 0.293 : heatSrc === 4 ? 0.293 * (1 - pctGasHeat) : 0;
+const heatGasK =
+  heatSrc === 1
+    ? 0.001
+    : heatSrc === 3
+      ? 0.01
+      : heatSrc === 4
+        ? 0.01 * pctGasHeat
+        : 0;
+
+// Calibration: solve the existing total = the entered utility-analysis figure.
+let coolAdj = 1,
+  heatAdj = 1,
+  coolUnreachable = false;
+if (calCoolKwh > 0 && exCool.load > 0) {
+  coolUnreachable = sum12(monthly(exCool, 0, 1)) >= calCoolKwh;
+  coolAdj = _bcSolveAdj((a) => sum12(monthly(exCool, a, 1)), calCoolKwh);
+}
+// heatSrc 1/3 (gas): the whole heating load is in the gas bucket. heatSrc 4 with an empty kWh
+// bucket (all gas) calibrates on gas. Otherwise the kWh bucket calibrates on the kWh figure.
+if (heatSrc === 1 || heatSrc === 3) {
+  if (calHeatGas > 0 && exHeat.load > 0)
+    heatAdj = _bcSolveAdj(
+      (a) => sum12(monthly(exHeat, a, heatGasK)),
+      calHeatGas,
+    );
+} else if (heatSrc === 4 && heatKwhK <= 0 && exHeat.load > 0) {
+  if (calHeatGas > 0)
+    heatAdj = _bcSolveAdj(
+      (a) => sum12(monthly(exHeat, a, heatGasK)),
+      calHeatGas,
+    );
+} else if (calHeatKwh > 0 && heatKwhK > 0 && exHeat.load > 0) {
+  heatAdj = _bcSolveAdj((a) => sum12(monthly(exHeat, a, heatKwhK)), calHeatKwh);
+}
+if (el("bc-adjCool")) el("bc-adjCool").textContent = coolAdj.toFixed(3);
+if (el("bc-adjHeat")) el("bc-adjHeat").textContent = heatAdj.toFixed(3);
+// The entered cooling kWh is at or below the outside-air cooling alone: no non-negative factor
+// can reach it (factor is held at 0). Plain-language warning only.
+const coolAdjNegative = coolUnreachable;
+if (el("bc-coolAdjWarn"))
+  el("bc-coolAdjWarn").style.display = coolAdjNegative ? "" : "none";
+
+const exCoolM = monthly(exCool, coolAdj, 1);
+const newCoolM = monthly(newCool, coolAdj, 1);
+const exHeatKwhM = monthly(exHeat, heatAdj, heatKwhK);
+const newHeatKwhM = monthly(newHeat, heatAdj, heatKwhK);
+const exHeatGasM = monthly(exHeat, heatAdj, heatGasK);
+const newHeatGasM = monthly(newHeat, heatAdj, heatGasK);
+const exPeakCoolM = monthly(exCool, coolAdj, 1, true);
+const newPeakCoolM = monthly(newCool, coolAdj, 1, true);
 
   // Compute savings with calibration
   const coolSavM = [],
@@ -4887,6 +4904,8 @@ function _bcDoCalc(projId) {
     heatKwhSavings: heatKwhSavM,
     peakKwhSavings: peakKwhSavM,
     nonPeakKwhSavings: nonPeakKwhSavM,
+    peakHours: peakEnd - peakStart,
+    gasUnit: heatSrc === 1 ? 'MCF' : 'Therms',
     annTotalKwh,
     annHeatGasSav,
     totalRebate,
@@ -5021,6 +5040,26 @@ function bcSaveInputs(projId) {
 }
 
 /* ── F. Measure Integration ── */
+// The ONE place BAS results become Energy Savings measure arrays (WP-13).
+//  kW  = AVERAGE kW reduction in the month = peak-window kWh saved / (days in month x peak hours).
+//        (The matrix multiplies each month's kW by the demand rate, so it needs a rate-of-power
+//        figure, not a monthly total.)
+//  gas = therms. Heat source 1 results are thousand cubic feet (MCF): convert with the one unit
+//        table (UNIT_TO_BASE via convertUnit), never a private factor.
+function _bcMeasureArrays(r) {
+  const kw = r.peakKwhSavings
+    ? r.peakKwhSavings.map((pk, mo) => {
+        const hrs = BAS_MO_DAYS[mo] * r.peakHours;
+        return hrs > 0 ? Math.round((pk / hrs) * 10) / 10 : 0;
+      })
+    : Array(12).fill(0);
+  return {
+    kwh: r.kwhSavings.map((k) => Math.round(k)),
+    kw,
+    gas: r.gasSavings.map((g) => Math.round(convertUnit(g, r.gasUnit, 'Therms', 'Gas'))),
+  };
+}
+
 function bcAddAsMeasure(projId) {
   const p = projects.find((x) => x.id === projId);
   if (!p || !p._bcResults) {
@@ -5031,21 +5070,15 @@ function bcAddAsMeasure(projId) {
   const sd = getProjSavingsData(projId);
   const bldgs = typeof getUDBldgs === 'function' ? getUDBldgs(projId) : p.buildings || [];
   const cityName = BAS_CITIES.find((c) => c.id === (p.basCalc?.city || 4))?.name || 'Unknown';
+  const arrays = _bcMeasureArrays(r);
   sd.measures.push({
     id: 'm' + Date.now(),
     selected: true,
     msrNum: sd.measures.length + 1 + '',
     bldgId: _calcTemplateContext?.bldgId || bldgs[0]?.id || '',
     desc: 'BAS HVAC Optimization — ' + cityName + ' — ' + (p.basCalc?.sqft || 0) + ' sf',
-    kwh: r.kwhSavings.map((k) => Math.round(k)),
-    kw: r.peakKwhSavings
-      ? r.peakKwhSavings.map((pk) => {
-          const hrs = (p.basCalc?.peakEnd || 18) - (p.basCalc?.peakStart || 16);
-          return hrs > 0 ? Math.round((pk / hrs) * 10) / 10 : 0;
-        })
-      : Array(12).fill(0),
-    gas: r.gasSavings.map((g) => Math.round(g)),
-    totalDollar: 0,
+    ...arrays,
+    totalDollar: 0, // recalculated live by calcProjSavingsMatrix (includes kW)
     source: 'bas',
   });
   sset('en_projects', projects);
@@ -5066,24 +5099,17 @@ function bcApplyToMeasure(projId) {
     showToast('Measure not found');
     return;
   }
-  m.kwh = r.kwhSavings.map((k) => Math.round(k));
-  m.kw = r.peakKwhSavings
-    ? r.peakKwhSavings.map((pk) => {
-        const hrs = (p.basCalc?.peakEnd || 18) - (p.basCalc?.peakStart || 16);
-        return hrs > 0 ? Math.round((pk / hrs) * 10) / 10 : 0;
-      })
-    : Array(12).fill(0);
-  m.gas = r.gasSavings.map((g) => Math.round(g));
+  Object.assign(m, _bcMeasureArrays(r));
   m.source = 'bas';
   const cityName = BAS_CITIES.find((c) => c.id === (p.basCalc?.city || 4))?.name || 'Unknown';
   if (!m.desc || m.desc.trim() === '') m.desc = 'BAS HVAC Optimization — ' + cityName;
   // Same fallback as solarApplyToMeasure above — see comment there (2026-09-23-rate-source).
   const rates = _svRatesOrCanonical(sd, projId, m.bldgId);
-  const SUMMER_MOS = [5, 6, 7, 8]; // Jun–Sep (0-indexed)
   let total = 0;
   for (let mo = 0; mo < 12; mo++) {
     const isSummer = SUMMER_MOS.includes(mo);
     total += (m.kwh[mo] || 0) * (isSummer ? rates.kwhSummer || 0 : rates.kwhWinter || 0);
+    total += (m.kw[mo] || 0) * (isSummer ? rates.kwSummer || 0 : rates.kwWinter || 0);
     total += (m.gas[mo] || 0) * (rates.thermRate || 0);
   }
   m.totalDollar = total;
@@ -5116,10 +5142,11 @@ function bcUseEquipmentMatrixData(projId) {
     showToast('No Equipment Matrix rows found for this building');
     return;
   }
-  const avg = (idx) => {
-    const vals = rows.map((r) => parseFloat(r[idx])).filter((v) => !isNaN(v));
-    return vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : null;
-  };
+  const avg = (idx) =>
+    avgSetpoint(
+      rows.map((r) => r[idx]),
+      0,
+    );
   // Column indices match EM_SETPOINT_EXPORT_HEADERS / emBuildSetpointExportRows's push order.
   const fields = {
     'bc-exHeatOcc': avg(3),

@@ -2227,9 +2227,6 @@ function _rptContractProgressPct(d) {
 
 // -- Stub page template functions (replaced by Tasks 6–17) --
 function rptPageCover(n, d) {
-  const $c = function (v) {
-    return (v < 0 ? '-$' : '$') + Math.abs(Math.round(v)).toLocaleString();
-  };
   const $p = function (v) {
     return v.toFixed(1) + '%';
   };
@@ -2246,8 +2243,8 @@ function rptPageCover(n, d) {
   const _periodWord = d.period.type === 'annual' ? 'annual' : 'quarterly';
   const aheadLabel =
     ahead >= 0
-      ? $c(ahead) + ' ahead of ' + _periodWord + ' projection'
-      : $c(Math.abs(ahead)) + ' behind ' + _periodWord + ' projection';
+      ? _fmtUSD(ahead, '$0') + ' ahead of ' + _periodWord + ' projection'
+      : _fmtUSD(Math.abs(ahead), '$0') + ' behind ' + _periodWord + ' projection';
 
   // Building status counts
   const onTrack = d.buildings.filter(function (b) {
@@ -2279,10 +2276,10 @@ function rptPageCover(n, d) {
     ' the ' +
     _periodWord +
     ' savings target of <strong>' +
-    $c(target) +
+    _fmtUSD(target, '$0') +
     '</strong>, ' +
     'having achieved <strong>' +
-    $c(d.totals.savings) +
+    _fmtUSD(d.totals.savings, '$0') +
     '</strong> in verified cost avoidance ' +
     '(' +
     $p(d.totals.savingsPct) +
@@ -2317,7 +2314,7 @@ function rptPageCover(n, d) {
         '</strong> is the top performer at ' +
         $p(top.savingsPct) +
         ' savings this period (' +
-        $c(top.savings) +
+        _fmtUSD(top.savings, '$0') +
         ').',
     });
   }
@@ -2382,7 +2379,7 @@ function rptPageCover(n, d) {
         'Contract is ' +
         contractYrLabel +
         ' with a cumulative annual target of <strong>' +
-        $c(d.contract.annualTarget) +
+        _fmtUSD(d.contract.annualTarget, '$0') +
         '</strong>.',
     });
   }
@@ -2570,7 +2567,7 @@ function rptPageCover(n, d) {
     '</div>' +
     '<div class="rpt-big-number">' +
     '<div class="rpt-bn-amount" contenteditable="true">' +
-    $c(d.totals.savings) +
+    _fmtUSD(d.totals.savings, '$0') +
     '</div>' +
     '<div class="rpt-bn-label" contenteditable="true">' +
     periodTitle +
@@ -2599,7 +2596,7 @@ function rptPageCover(n, d) {
     '<div class="rpt-vs-val" style="color:' +
     (d.totals.savings >= target ? 'var(--rpt-green-dark)' : 'var(--rpt-orange)') +
     '" contenteditable="true">' +
-    $c(d.totals.savings) +
+    _fmtUSD(d.totals.savings, '$0') +
     '</div>' +
     '<div class="rpt-vs-lbl">Actual Q' +
     q +
@@ -2608,7 +2605,7 @@ function rptPageCover(n, d) {
     '<div class="rpt-vs-mid">vs</div>' +
     '<div class="rpt-vs-side">' +
     '<div class="rpt-vs-val" style="color:var(--rpt-blue)" contenteditable="true">' +
-    $c(target) +
+    _fmtUSD(target, '$0') +
     '</div>' +
     '<div class="rpt-vs-lbl">Q' +
     q +
@@ -2697,9 +2694,6 @@ function rptPageCover(n, d) {
 }
 
 function rptPageFinancial(n, d) {
-  const $c = function (v) {
-    return '$' + Math.abs(Math.round(v)).toLocaleString();
-  };
   const $n = function (v) {
     return Math.round(v).toLocaleString();
   };
@@ -2803,18 +2797,18 @@ function rptPageFinancial(n, d) {
         $n(b.sqft) +
         '</td>' +
         '<td class="rpt-n" contenteditable="true">' +
-        $c(b.blCost) +
+        _fmtUSD(b.blCost, '$0') +
         '</td>' +
         '<td class="rpt-n" contenteditable="true">' +
-        $c(bldgProjCost) +
+        _fmtUSD(bldgProjCost, '$0') +
         '</td>' +
         '<td class="rpt-n" contenteditable="true">' +
-        $c(b.curCost) +
+        _fmtUSD(b.curCost, '$0') +
         '</td>' +
         '<td class="rpt-n ' +
         saveClass +
         '" contenteditable="true">' +
-        $c(b.savings) +
+        _fmtUSD(b.savings, '$0') +
         '</td>' +
         '<td class="rpt-n ' +
         saveClass +
@@ -2859,18 +2853,18 @@ function rptPageFinancial(n, d) {
     $n(d.project.sqft) +
     '</td>' +
     '<td class="rpt-n" contenteditable="true">' +
-    $c(d.totals.blCost) +
+    _fmtUSD(d.totals.blCost, '$0') +
     '</td>' +
     '<td class="rpt-n" contenteditable="true">' +
-    $c(totProjCost) +
+    _fmtUSD(totProjCost, '$0') +
     '</td>' +
     '<td class="rpt-n" contenteditable="true">' +
-    $c(d.totals.curCost) +
+    _fmtUSD(d.totals.curCost, '$0') +
     '</td>' +
     '<td class="rpt-n ' +
     totSaveClass +
     '" contenteditable="true">' +
-    $c(d.totals.savings) +
+    _fmtUSD(d.totals.savings, '$0') +
     '</td>' +
     '<td class="rpt-n ' +
     totSaveClass +
@@ -2917,13 +2911,13 @@ function rptPageFinancial(n, d) {
     qLabel +
     ' Actual Savings</td>' +
     '<td class="rpt-n rpt-g" contenteditable="true">' +
-    $c(d.totals.savings) +
+    _fmtUSD(d.totals.savings, '$0') +
     '</td>' +
     '<td class="rpt-n" contenteditable="true">' +
-    $c(annSavings) +
+    _fmtUSD(annSavings, '$0') +
     '</td>' +
     '<td class="rpt-n" contenteditable="true">' +
-    $c(yrTotalSavings) +
+    _fmtUSD(yrTotalSavings, '$0') +
     '</td>' +
     '</tr>' +
     '<tr>' +
@@ -2931,13 +2925,13 @@ function rptPageFinancial(n, d) {
     d.contract.cscPct +
     '%)</td>' +
     '<td class="rpt-n" contenteditable="true">' +
-    $c(cscAmt) +
+    _fmtUSD(cscAmt, '$0') +
     '</td>' +
     '<td class="rpt-n" contenteditable="true">' +
-    $c(cscAnnAmt) +
+    _fmtUSD(cscAnnAmt, '$0') +
     '</td>' +
     '<td class="rpt-n" contenteditable="true">' +
-    $c(yrTotalCsc) +
+    _fmtUSD(yrTotalCsc, '$0') +
     '</td>' +
     '</tr>' +
     '<tr class="rpt-tot">' +
@@ -2945,13 +2939,13 @@ function rptPageFinancial(n, d) {
     d.contract.clientPct +
     '%)</td>' +
     '<td class="rpt-n rpt-g" contenteditable="true">' +
-    $c(clientAmt) +
+    _fmtUSD(clientAmt, '$0') +
     '</td>' +
     '<td class="rpt-n" contenteditable="true">' +
-    $c(clientAnnAmt) +
+    _fmtUSD(clientAnnAmt, '$0') +
     '</td>' +
     '<td class="rpt-n" contenteditable="true">' +
-    $c(yrTotalClient) +
+    _fmtUSD(yrTotalClient, '$0') +
     '</td>' +
     '</tr>' +
     '</tbody>' +
@@ -2984,13 +2978,13 @@ function rptPageFinancial(n, d) {
     $n(d.totals.propaneCur) +
     '</td>' +
     '<td class="rpt-n" contenteditable="true">' +
-    $c(qBlCost) +
+    _fmtUSD(qBlCost, '$0') +
     '</td>' +
     '<td class="rpt-n" contenteditable="true">' +
-    $c(qCurCost) +
+    _fmtUSD(qCurCost, '$0') +
     '</td>' +
     '<td class="rpt-n rpt-g" contenteditable="true">' +
-    $c(d.totals.savings) +
+    _fmtUSD(d.totals.savings, '$0') +
     '</td>' +
     '</tr>';
   const qtrTable =
@@ -3064,9 +3058,6 @@ function rptPageFinancial(n, d) {
   });
 }
 function rptPageSavingsPerformance(n, d) {
-  const $c = function (v) {
-    return '$' + Math.abs(Math.round(v || 0)).toLocaleString();
-  };
   const $n = function (v) {
     return Math.round(v || 0).toLocaleString();
   };
@@ -3130,7 +3121,7 @@ function rptPageSavingsPerformance(n, d) {
           projPct +
           '%;height:7px;background:var(--rpt-chart-orange);border-radius:2px;min-width:1px"></div>' +
           '<span style="font-size:8px;color:var(--rpt-page-text)">' +
-          $c(moProj[ym]) +
+          _fmtUSD(moProj[ym], '$0') +
           '</span>' +
           '</div>' +
           '<div style="display:flex;gap:2px;align-items:center;margin-top:1px">' +
@@ -3138,7 +3129,7 @@ function rptPageSavingsPerformance(n, d) {
           actPct +
           '%;height:7px;background:var(--rpt-chart-green);border-radius:2px;min-width:1px"></div>' +
           '<span style="font-size:8px;color:var(--rpt-page-text)">' +
-          $c(moActual[ym]) +
+          _fmtUSD(moActual[ym], '$0') +
           '</span>' +
           '</div>' +
           '</div>' +
@@ -3212,7 +3203,7 @@ function rptPageSavingsPerformance(n, d) {
     $n(d.totals.propaneBl) +
     '</td>' +
     '<td class="rpt-n" contenteditable="true">' +
-    $c(d.totals.blCost) +
+    _fmtUSD(d.totals.blCost, '$0') +
     '</td>' +
     '<td class="rpt-n" contenteditable="true">' +
     (_blEuiPeriod > 0 ? _blEuiPeriod.toFixed(1) : '—') +
@@ -3244,7 +3235,7 @@ function rptPageSavingsPerformance(n, d) {
     $n(d.totals.propaneCur) +
     '</td>' +
     '<td class="rpt-n" contenteditable="true">' +
-    $c(d.totals.curCost) +
+    _fmtUSD(d.totals.curCost, '$0') +
     '</td>' +
     '<td class="rpt-n" contenteditable="true">' +
     (_curEuiPeriod > 0 ? _curEuiPeriod.toFixed(1) : '—') +
@@ -3313,7 +3304,7 @@ function rptPageSavingsPerformance(n, d) {
         $n(b.propane.galBl) +
         '</td>' +
         '<td class="rpt-n" contenteditable="true">' +
-        $c(b.blCost) +
+        _fmtUSD(b.blCost, '$0') +
         '</td>' +
         '<td class="rpt-n" contenteditable="true">' +
         blEUI +
@@ -3339,7 +3330,7 @@ function rptPageSavingsPerformance(n, d) {
         $n(b.propane.galCur) +
         '</td>' +
         '<td class="rpt-n" contenteditable="true">' +
-        $c(b.curCost) +
+        _fmtUSD(b.curCost, '$0') +
         '</td>' +
         '<td class="rpt-n ' +
         (euiChange >= 0 ? 'rpt-g' : 'rpt-r') +
@@ -3407,9 +3398,6 @@ function rptPageSavingsPerformance(n, d) {
   return { html: page1 + page2, pageCount: 2 };
 }
 function rptPageEUI(n, d) {
-  const $c = function (v) {
-    return '$' + Math.abs(Math.round(v || 0)).toLocaleString();
-  };
   const $n = function (v) {
     return Math.round(v || 0).toLocaleString();
   };
@@ -3749,9 +3737,6 @@ function _auditRptHdrData(d) {
  * @param {object} d - collectUtilityAuditData() result
  */
 function rptPageAuditSpend(n, d) {
-  const $c = function (v) {
-    return '$' + Math.abs(Math.round(v || 0)).toLocaleString();
-  };
   const $n = function (v) {
     return Math.round(v || 0).toLocaleString();
   };
@@ -3773,19 +3758,19 @@ function rptPageAuditSpend(n, d) {
         (b.hasSqft ? $n(b.sqft) : '—') +
         '</td>' +
         '<td class="rpt-n" contenteditable="true">' +
-        (noMeter ? '—' : $c(b.commodities.Electric.cost)) +
+        (noMeter ? '—' : _fmtUSD(b.commodities.Electric.cost, '$0')) +
         '</td>' +
         '<td class="rpt-n" contenteditable="true">' +
-        (noMeter ? '—' : $c(b.commodities.Gas.cost)) +
+        (noMeter ? '—' : _fmtUSD(b.commodities.Gas.cost, '$0')) +
         '</td>' +
         '<td class="rpt-n" contenteditable="true">' +
-        (noMeter ? '—' : $c(b.commodities.Propane.cost)) +
+        (noMeter ? '—' : _fmtUSD(b.commodities.Propane.cost, '$0')) +
         '</td>' +
         '<td class="rpt-n" contenteditable="true">' +
-        (noMeter ? '—' : $c(wsss)) +
+        (noMeter ? '—' : _fmtUSD(wsss, '$0')) +
         '</td>' +
         '<td class="rpt-n" contenteditable="true">' +
-        (noMeter ? '—' : $c(b.totalCost)) +
+        (noMeter ? '—' : _fmtUSD(b.totalCost, '$0')) +
         '</td>' +
         '</tr>'
       );
@@ -3803,7 +3788,7 @@ function rptPageAuditSpend(n, d) {
     '<td class="rpt-n" contenteditable="true"></td>' +
     '<td class="rpt-n" contenteditable="true"></td>' +
     '<td class="rpt-n" contenteditable="true">' +
-    $c(d.campus.totalCost) +
+    _fmtUSD(d.campus.totalCost, '$0') +
     '</td>' +
     '</tr>';
 
@@ -4097,9 +4082,6 @@ function rptPageEnvironmentalImpact(n, d) {
   });
 }
 function rptPageObservations(n, d) {
-  const $c = function (v) {
-    return '$' + Math.abs(Math.round(v || 0)).toLocaleString();
-  };
   const $p = function (v) {
     return (v || 0).toFixed(1) + '%';
   };
@@ -4129,7 +4111,7 @@ function rptPageObservations(n, d) {
     ', ' +
     clientName +
     ' achieved ' +
-    $c(totalSav) +
+    _fmtUSD(totalSav, '$0') +
     ' in verified energy cost savings, representing ' +
     pctOfTarget +
     '% of the period target — ' +
@@ -4232,11 +4214,11 @@ function rptPageObservations(n, d) {
         ' is performing at ' +
         $p(rawSavPct) +
         ' savings (' +
-        $c(rawSav) +
+        _fmtUSD(rawSav, '$0') +
         ' saved) against a baseline cost of ' +
-        $c(b.blCost) +
+        _fmtUSD(b.blCost, '$0') +
         ', with current costs at ' +
-        $c(b.curCost) +
+        _fmtUSD(b.curCost, '$0') +
         '. ' +
         strongWeak;
       rec = 'Continue current operating strategy. Monitor for seasonal load shifts entering the next quarter.';
@@ -4247,11 +4229,11 @@ function rptPageObservations(n, d) {
         ' is tracking at ' +
         $p(rawSavPct) +
         ' savings (' +
-        $c(rawSav) +
+        _fmtUSD(rawSav, '$0') +
         ' saved) against a baseline cost of ' +
-        $c(b.blCost) +
+        _fmtUSD(b.blCost, '$0') +
         ', with current costs at ' +
-        $c(b.curCost) +
+        _fmtUSD(b.curCost, '$0') +
         '. ' +
         strongWeak;
       rec =
@@ -4263,11 +4245,11 @@ function rptPageObservations(n, d) {
         ' is currently below the performance target at ' +
         $p(rawSavPct) +
         ' savings (' +
-        $c(rawSav) +
+        _fmtUSD(rawSav, '$0') +
         ' saved) against a baseline cost of ' +
-        $c(b.blCost) +
+        _fmtUSD(b.blCost, '$0') +
         ', with current costs at ' +
-        $c(b.curCost) +
+        _fmtUSD(b.curCost, '$0') +
         '. ' +
         strongWeak;
       rec =
@@ -4434,9 +4416,6 @@ function rptPageObservations(n, d) {
 function rptPageApprovedChanges(n, d) {
   const changes = (d && d.approvedChanges) || [];
 
-  const $c = function (v) {
-    return '$' + Math.abs(Math.round(v || 0)).toLocaleString();
-  };
   const $n = function (v) {
     return Math.round(v || 0).toLocaleString();
   };
@@ -4535,9 +4514,6 @@ function rptPageApprovedChanges(n, d) {
   });
 }
 function rptPageContractProjection(n, d) {
-  const $c = function (v) {
-    return '$' + Math.abs(Math.round(v || 0)).toLocaleString();
-  };
   const $n = function (v) {
     return Math.round(v || 0).toLocaleString();
   };
@@ -4591,11 +4567,11 @@ function rptPageContractProjection(n, d) {
     '<td><strong>Projected Savings</strong></td>' +
     qTargets
       .map(function (v) {
-        return '<td class="rpt-n">' + $c(v) + '</td>';
+        return '<td class="rpt-n">' + _fmtUSD(v, '$0') + '</td>';
       })
       .join('') +
     '<td class="rpt-n"><strong>' +
-    $c(annualSum) +
+    _fmtUSD(annualSum, '$0') +
     '</strong></td>' +
     '</tr>' +
     '<tr>' +
@@ -4604,11 +4580,11 @@ function rptPageContractProjection(n, d) {
     '%)</td>' +
     qTargets
       .map(function (v) {
-        return '<td class="rpt-n">' + $c((v * clientPct) / 100) + '</td>';
+        return '<td class="rpt-n">' + _fmtUSD((v * clientPct) / 100, '$0') + '</td>';
       })
       .join('') +
     '<td class="rpt-n">' +
-    $c((annualSum * clientPct) / 100) +
+    _fmtUSD((annualSum * clientPct) / 100, '$0') +
     '</td>' +
     '</tr>' +
     '<tr>' +
@@ -4617,11 +4593,11 @@ function rptPageContractProjection(n, d) {
     '%)</td>' +
     qTargets
       .map(function (v) {
-        return '<td class="rpt-n">' + $c((v * cscPct) / 100) + '</td>';
+        return '<td class="rpt-n">' + _fmtUSD((v * cscPct) / 100, '$0') + '</td>';
       })
       .join('') +
     '<td class="rpt-n">' +
-    $c((annualSum * cscPct) / 100) +
+    _fmtUSD((annualSum * cscPct) / 100, '$0') +
     '</td>' +
     '</tr>';
   const qtTable =
@@ -4643,7 +4619,7 @@ function rptPageContractProjection(n, d) {
     '<div class="rpt-vs-val" style="color:' +
     (ahead ? 'var(--rpt-green-dark)' : 'var(--rpt-red)') +
     '">' +
-    $c(actualSavings) +
+    _fmtUSD(actualSavings, '$0') +
     '</div>' +
     '<div class="rpt-vs-lbl">Actual Q' +
     q +
@@ -4654,7 +4630,7 @@ function rptPageContractProjection(n, d) {
     '</div>' +
     '<div class="rpt-vs-side">' +
     '<div class="rpt-vs-val" style="color:var(--rpt-page-text)">' +
-    $c(qTarget) +
+    _fmtUSD(qTarget, '$0') +
     '</div>' +
     '<div class="rpt-vs-lbl">Q' +
     q +
@@ -4736,14 +4712,14 @@ function rptPageContractProjection(n, d) {
       '</td>' +
       '<td class="rpt-n">' +
       (isCurrentYr && isQuarterly
-        ? $c(displayProj) + '<div style="font-size:8px;color:var(--rpt-page-text)">Annual: ' + $c(yearProj) + '</div>'
-        : $c(yearProj)) +
+        ? _fmtUSD(displayProj, '$0') + '<div style="font-size:8px;color:var(--rpt-page-text)">Annual: ' + _fmtUSD(yearProj, '$0') + '</div>'
+        : _fmtUSD(yearProj, '$0')) +
       '</td>' +
       '<td class="rpt-n">' +
-      $c(isCurrentYr && isQuarterly ? displayCsc : yearCsc) +
+      _fmtUSD(isCurrentYr && isQuarterly ? displayCsc : yearCsc, '$0') +
       '</td>' +
       '<td class="rpt-n">' +
-      $c(isCurrentYr && isQuarterly ? displayClient : yearClient) +
+      _fmtUSD(isCurrentYr && isQuarterly ? displayClient : yearClient, '$0') +
       '</td>' +
       '</tr>';
   }
@@ -4751,13 +4727,13 @@ function rptPageContractProjection(n, d) {
     '<tr class="rpt-tot">' +
     '<td colspan="2">Total</td>' +
     '<td class="rpt-n">' +
-    $c(totalProj) +
+    _fmtUSD(totalProj, '$0') +
     '</td>' +
     '<td class="rpt-n">' +
-    $c(totalCsc) +
+    _fmtUSD(totalCsc, '$0') +
     '</td>' +
     '<td class="rpt-n">' +
-    $c(totalClient) +
+    _fmtUSD(totalClient, '$0') +
     '</td>' +
     '</tr>';
   const fiveYrTable =
@@ -4875,7 +4851,7 @@ function rptPageContractProjection(n, d) {
       '" y="' +
       (y1 - 4).toFixed(1) +
       '" font-size="7" fill="var(--rpt-chart-green-dk)" font-weight="bold">' +
-      $c(actCumSavings) +
+      _fmtUSD(actCumSavings, '$0') +
       '</text>';
   }
 
@@ -5007,9 +4983,6 @@ function rptPageContractProjection(n, d) {
  * closing Year-to-Date / Overall Performance section (see generateReportHTML's page order).
  */
 function rptPageYearToDate(n, d) {
-  const $c = function (v) {
-    return '$' + Math.abs(Math.round(v || 0)).toLocaleString();
-  };
 
   var periodYear = (d.period && d.period.year) || new Date().getFullYear();
   var _moNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -5049,22 +5022,22 @@ function rptPageYearToDate(n, d) {
       ' ' +
       ym.split('-')[0] +
       '</td><td class="rpt-n">' +
-      $c(bl) +
+      _fmtUSD(bl, '$0') +
       '</td><td class="rpt-n">' +
-      $c(cur) +
+      _fmtUSD(cur, '$0') +
       '</td><td class="rpt-n">' +
-      $c(sav) +
+      _fmtUSD(sav, '$0') +
       '</td></tr>';
   });
   var trendTable;
   if (_sorted.length) {
     _rows +=
       '<tr class="rpt-tot"><td>Total</td><td class="rpt-n">' +
-      $c(_tBl) +
+      _fmtUSD(_tBl, '$0') +
       '</td><td class="rpt-n">' +
-      $c(_tCur) +
+      _fmtUSD(_tCur, '$0') +
       '</td><td class="rpt-n">' +
-      $c(_tSav) +
+      _fmtUSD(_tSav, '$0') +
       '</td></tr>';
     trendTable =
       '<table class="rpt-table" style="font-size:10px"><thead><tr><th>Month</th><th class="rpt-n">Baseline Cost</th><th class="rpt-n">Actual Cost</th><th class="rpt-n">Savings $</th></tr></thead><tbody>' +
@@ -5122,9 +5095,6 @@ function rptPageYearToDate(n, d) {
  * @returns {{html: string, pageCount: number}}
  */
 function rptPageSetPoints(n, d) {
-  const $c = function (v) {
-    return '$' + Math.abs(Math.round(v || 0)).toLocaleString();
-  };
   const $n = function (v) {
     return Math.round(v || 0).toLocaleString();
   };
@@ -5411,17 +5381,13 @@ function rptPageSetPoints(n, d) {
 // Returns the table HTML string, or '' when the building has no baseline month data.
 // -----------------------------------------------------------------------
 function rptBuildBaselineDataTable(b, d, opts) {
-  const $c = function (v) {
-    var val = Math.round(v || 0);
-    return (val < 0 ? '-' : '') + '$' + Math.abs(val).toLocaleString();
-  };
   const $n = function (v) {
     return Math.round(v || 0).toLocaleString();
   };
   // One-decimal number WITH thousands separators (2026-09-22 fix) — the Annual row's summed
   // kW figures (_tKw, _tBkw) can run into the thousands for a multi-meter building, but
   // plain .toFixed(1) never inserts a comma ("3309.8"), unlike every other cell in this
-  // table (which routes through $n/$c, both toLocaleString-based). Monthly per-row kW cells
+  // table (which routes through $n/_fmtUSD, both toLocaleString-based). Monthly per-row kW cells
   // stay on .toFixed(1) — a single month's demand/billed kW never reaches four digits.
   const $n1 = function (v) {
     return (v || 0).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -5575,13 +5541,13 @@ function rptBuildBaselineDataTable(b, d, opts) {
         (bKw ? bKw.toFixed(1) : '—') +
         '</td>' +
         '<td class="rpt-n">' +
-        (kwCostTotal ? $c(kwCostTotal) : '—') +
+        (kwCostTotal ? _fmtUSD(kwCostTotal, '$0') : '—') +
         '</td>' +
         '<td class="rpt-n">' +
-        (enCost ? $c(enCost) : '—') +
+        (enCost ? _fmtUSD(enCost, '$0') : '—') +
         '</td>' +
         '<td class="rpt-n">' +
-        (elecCost ? $c(elecCost) : '—') +
+        (elecCost ? _fmtUSD(elecCost, '$0') : '—') +
         '</td>' +
         '<td class="rpt-n">' +
         (costPerKwh ? '$' + costPerKwh.toFixed(4) : '—') +
@@ -5592,7 +5558,7 @@ function rptBuildBaselineDataTable(b, d, opts) {
         '<td class="rpt-n">' +
         (therms ? $n(therms) : '—') +
         '</td><td class="rpt-n">' +
-        (gasCost ? $c(gasCost) : '—') +
+        (gasCost ? _fmtUSD(gasCost, '$0') : '—') +
         '</td><td class="rpt-n">' +
         (gM.rate > 0 ? '$' + gM.rate.toFixed(4) : therms > 0 ? '$' + (gasCost / therms).toFixed(4) : '—') +
         '</td>';
@@ -5601,7 +5567,7 @@ function rptBuildBaselineDataTable(b, d, opts) {
         '<td class="rpt-n">' +
         (gal ? $n(gal) : '—') +
         '</td><td class="rpt-n">' +
-        (propCost ? $c(propCost) : '—') +
+        (propCost ? _fmtUSD(propCost, '$0') : '—') +
         '</td><td class="rpt-n">' +
         (gal > 0 ? '$' + (propCost / gal).toFixed(4) : '—') +
         '</td>';
@@ -5610,11 +5576,11 @@ function rptBuildBaselineDataTable(b, d, opts) {
         '<td class="rpt-n">' +
         (water ? water.toFixed(1) : '—') +
         '</td><td class="rpt-n">' +
-        (waterCost ? $c(waterCost) : '—') +
+        (waterCost ? _fmtUSD(waterCost, '$0') : '—') +
         '</td><td class="rpt-n">' +
         (water > 0 ? '$' + (waterCost / water).toFixed(2) : '—') +
         '</td>';
-    blDataRows += '<td class="rpt-n">' + (totalCost ? $c(totalCost) : '—') + '</td></tr>';
+    blDataRows += '<td class="rpt-n">' + (totalCost ? _fmtUSD(totalCost, '$0') : '—') + '</td></tr>';
   }
   if (blDataRows) {
     blDataRows +=
@@ -5638,11 +5604,11 @@ function rptBuildBaselineDataTable(b, d, opts) {
         '</td><td class="rpt-n">' +
         (_tBkw ? $n1(_tBkw) : '—') +
         '</td><td class="rpt-n">' +
-        $c(_tKwCost) +
+        _fmtUSD(_tKwCost, '$0') +
         '</td><td class="rpt-n">' +
-        $c(_tEnCost) +
+        _fmtUSD(_tEnCost, '$0') +
         '</td><td class="rpt-n">' +
-        $c(_tElecCost) +
+        _fmtUSD(_tElecCost, '$0') +
         '</td><td class="rpt-n">' +
         (_avgCpk ? '$' + _avgCpk.toFixed(4) : '—') +
         '</td>';
@@ -5652,7 +5618,7 @@ function rptBuildBaselineDataTable(b, d, opts) {
         '<td class="rpt-n">' +
         $n(_tTherms) +
         '</td><td class="rpt-n">' +
-        $c(_tGasCost) +
+        _fmtUSD(_tGasCost, '$0') +
         '</td><td class="rpt-n">' +
         (_tTherms > 0 ? '$' + (_tGasCost / _tTherms).toFixed(4) : '—') +
         '</td>';
@@ -5661,7 +5627,7 @@ function rptBuildBaselineDataTable(b, d, opts) {
         '<td class="rpt-n">' +
         $n(_tGal) +
         '</td><td class="rpt-n">' +
-        $c(_tPropCost) +
+        _fmtUSD(_tPropCost, '$0') +
         '</td><td class="rpt-n">' +
         (_tGal > 0 ? '$' + (_tPropCost / _tGal).toFixed(4) : '—') +
         '</td>';
@@ -5670,11 +5636,11 @@ function rptBuildBaselineDataTable(b, d, opts) {
         '<td class="rpt-n">' +
         _tWater.toFixed(1) +
         '</td><td class="rpt-n">' +
-        $c(_tWaterCost) +
+        _fmtUSD(_tWaterCost, '$0') +
         '</td><td class="rpt-n">' +
         (_tWater > 0 ? '$' + (_tWaterCost / _tWater).toFixed(2) : '—') +
         '</td>';
-    blDataRows += '<td class="rpt-n">' + $c(_tTotalCost) + '</td></tr>';
+    blDataRows += '<td class="rpt-n">' + _fmtUSD(_tTotalCost, '$0') + '</td></tr>';
   }
   // Column group header row (commodity-colored)
   var blGrpHdr = '<th rowspan="2" style="white-space:nowrap">Month</th>';
@@ -5719,7 +5685,7 @@ function rptBuildBaselineDataTable(b, d, opts) {
 
   // Statistics summary — light bordered grid for print-ready report
   // D2#18/#19 fix (2026-09-09): clearer label wording, and Utility Cost/SF now formatted
-  // $#.## (2 decimals) — it was $c(Math.round(...)), which rounded a small per-sqft dollar
+  // $#.## (2 decimals) — it was _fmtUSD(Math.round(...), '$0'), which rounded a small per-sqft dollar
   // value (typically $1-6) down to a whole dollar and lost almost all its precision.
   var blStats = '';
   var blCoverageNote = '';
@@ -5815,7 +5781,7 @@ function rptBuildBaselineDataTable(b, d, opts) {
       );
     _statItems.push(
       '<div><div class="bl-stat-label">Total Annual Utility Cost</div><div class="bl-stat-val">' +
-        $c(_tTotalCost) +
+        _fmtUSD(_tTotalCost, '$0') +
         '</div></div>',
     );
     blStats = '<div class="rpt-bl-stats">' + _statItems.join('') + '</div>' + blCoverageNote;
@@ -6091,10 +6057,6 @@ function rptBuildBaselineDataTable(b, d, opts) {
 }
 
 function rptPageBuildingSummary(n, d, b) {
-  const $c = function (v) {
-    var val = Math.round(v || 0);
-    return (val < 0 ? '-' : '') + '$' + Math.abs(val).toLocaleString();
-  };
   const $n = function (v) {
     return Math.round(v || 0).toLocaleString();
   };
@@ -6550,7 +6512,7 @@ function rptPageBuildingSummary(n, d, b) {
       '<td class="rpt-n" contenteditable="true" style="color:' +
       _pctColor(elCostSaved) +
       ';font-weight:600">' +
-      $c(elCostSaved) +
+      _fmtUSD(elCostSaved, '$0') +
       '</td>' +
       '</tr>';
     var elDemSavPct = b.electric.kwBl > 0 ? ((b.electric.kwBl - b.electric.kwCur) / b.electric.kwBl) * 100 : 0;
@@ -6590,7 +6552,7 @@ function rptPageBuildingSummary(n, d, b) {
       '<td class="rpt-n" contenteditable="true" style="color:' +
       _pctColor(elDemCostSaved) +
       ';font-weight:600">' +
-      $c(elDemCostSaved) +
+      _fmtUSD(elDemCostSaved, '$0') +
       '</td>' +
       '</tr>';
   }
@@ -6614,7 +6576,7 @@ function rptPageBuildingSummary(n, d, b) {
       '<td class="rpt-n" contenteditable="true" style="color:' +
       _pctColor(gasCostSaved) +
       ';font-weight:600">' +
-      $c(gasCostSaved) +
+      _fmtUSD(gasCostSaved, '$0') +
       '</td>' +
       '</tr>';
   }
@@ -6638,7 +6600,7 @@ function rptPageBuildingSummary(n, d, b) {
       '<td class="rpt-n" contenteditable="true" style="color:' +
       _pctColor(propCostSaved) +
       ';font-weight:600">' +
-      $c(propCostSaved) +
+      _fmtUSD(propCostSaved, '$0') +
       '</td>' +
       '</tr>';
   }
@@ -6860,10 +6822,6 @@ function rptPageBuildingSummary(n, d, b) {
   return { html: result, summaryPageCount: 1, meterPerfHTML: meterPerfHTML || '' };
 }
 function rptPageElectric(n, d) {
-  var $c = function (v) {
-    var val = Math.round(v || 0);
-    return (val < 0 ? '-' : '') + '$' + Math.abs(val).toLocaleString();
-  };
   var $n = function (v) {
     return Math.round(v || 0).toLocaleString();
   };
@@ -7105,15 +7063,15 @@ function rptPageElectric(n, d) {
       $n(curKw) +
       '</td>' +
       '<td class="rpt-n" contenteditable="true">' +
-      $c(blCost) +
+      _fmtUSD(blCost, '$0') +
       '</td>' +
       '<td class="rpt-n" contenteditable="true">' +
-      $c(curCost) +
+      _fmtUSD(curCost, '$0') +
       '</td>' +
       '<td class="rpt-n" contenteditable="true" style="color:' +
       _sc(savCost) +
       ';font-weight:600">' +
-      $c(savCost) +
+      _fmtUSD(savCost, '$0') +
       '</td>' +
       '</tr>';
   });
@@ -7149,15 +7107,15 @@ function rptPageElectric(n, d) {
       $n(totCurKw) +
       '</td>' +
       '<td class="rpt-n">' +
-      $c(totBlCost) +
+      _fmtUSD(totBlCost, '$0') +
       '</td>' +
       '<td class="rpt-n">' +
-      $c(totCurCost) +
+      _fmtUSD(totCurCost, '$0') +
       '</td>' +
       '<td class="rpt-n" style="color:' +
       _sc(totSavCost) +
       ';font-weight:700">' +
-      $c(totSavCost) +
+      _fmtUSD(totSavCost, '$0') +
       '</td>' +
       '</tr>';
   }
@@ -7211,10 +7169,6 @@ function rptPageElectric(n, d) {
   });
 }
 function rptPageGas(n, d) {
-  var $c = function (v) {
-    var val = Math.round(v || 0);
-    return (val < 0 ? '-' : '') + '$' + Math.abs(val).toLocaleString();
-  };
   var $n = function (v) {
     return Math.round(v || 0).toLocaleString();
   };
@@ -7398,15 +7352,15 @@ function rptPageGas(n, d) {
       $p(savPct) +
       '</td>' +
       '<td class="rpt-n" contenteditable="true">' +
-      $c(blCost) +
+      _fmtUSD(blCost, '$0') +
       '</td>' +
       '<td class="rpt-n" contenteditable="true">' +
-      $c(curCost) +
+      _fmtUSD(curCost, '$0') +
       '</td>' +
       '<td class="rpt-n" contenteditable="true" style="color:' +
       _sc(savCost) +
       ';font-weight:600">' +
-      $c(savCost) +
+      _fmtUSD(savCost, '$0') +
       '</td>' +
       '</tr>';
   });
@@ -7434,15 +7388,15 @@ function rptPageGas(n, d) {
       $p(tSavPct) +
       '</td>' +
       '<td class="rpt-n">' +
-      $c(totBlCost) +
+      _fmtUSD(totBlCost, '$0') +
       '</td>' +
       '<td class="rpt-n">' +
-      $c(totCurCost) +
+      _fmtUSD(totCurCost, '$0') +
       '</td>' +
       '<td class="rpt-n" style="color:' +
       _sc(totSavCost) +
       ';font-weight:700">' +
-      $c(totSavCost) +
+      _fmtUSD(totSavCost, '$0') +
       '</td>' +
       '</tr>';
   }
@@ -7476,10 +7430,6 @@ function rptPageGas(n, d) {
 }
 
 function rptPagePropane(n, d) {
-  var $c = function (v) {
-    var val = Math.round(v || 0);
-    return (val < 0 ? '-' : '') + '$' + Math.abs(val).toLocaleString();
-  };
   var $n = function (v) {
     return Math.round(v || 0).toLocaleString();
   };
@@ -7669,15 +7619,15 @@ function rptPagePropane(n, d) {
       $p(savPct) +
       '</td>' +
       '<td class="rpt-n" contenteditable="true">' +
-      $c(blCost) +
+      _fmtUSD(blCost, '$0') +
       '</td>' +
       '<td class="rpt-n" contenteditable="true">' +
-      $c(curCost) +
+      _fmtUSD(curCost, '$0') +
       '</td>' +
       '<td class="rpt-n" contenteditable="true" style="color:' +
       _sc(savCost) +
       ';font-weight:600">' +
-      $c(savCost) +
+      _fmtUSD(savCost, '$0') +
       '</td>' +
       '</tr>';
   });
@@ -7705,15 +7655,15 @@ function rptPagePropane(n, d) {
       $p(tSavPct) +
       '</td>' +
       '<td class="rpt-n">' +
-      $c(totBlCost) +
+      _fmtUSD(totBlCost, '$0') +
       '</td>' +
       '<td class="rpt-n">' +
-      $c(totCurCost) +
+      _fmtUSD(totCurCost, '$0') +
       '</td>' +
       '<td class="rpt-n" style="color:' +
       _sc(totSavCost) +
       ';font-weight:700">' +
-      $c(totSavCost) +
+      _fmtUSD(totSavCost, '$0') +
       '</td>' +
       '</tr>';
   }
@@ -7758,10 +7708,6 @@ function rptPagePropane(n, d) {
 }
 
 function rptPageGasPropane(n, d) {
-  var $c = function (v) {
-    var val = Math.round(v || 0);
-    return (val < 0 ? '-' : '') + '$' + Math.abs(val).toLocaleString();
-  };
   var $n = function (v) {
     return Math.round(v || 0).toLocaleString();
   };
@@ -7866,13 +7812,13 @@ function rptPageGasPropane(n, d) {
         '">' +
         $p(savPct) +
         '</td><td class="rpt-n" contenteditable="true">' +
-        $c(blC) +
+        _fmtUSD(blC, '$0') +
         '</td><td class="rpt-n" contenteditable="true">' +
-        $c(curC) +
+        _fmtUSD(curC, '$0') +
         '</td><td class="rpt-n" contenteditable="true" style="color:' +
         _sc(savC) +
         ';font-weight:600">' +
-        $c(savC) +
+        _fmtUSD(savC, '$0') +
         '</td></tr>';
     });
     if (rows) {
@@ -7891,13 +7837,13 @@ function rptPageGasPropane(n, d) {
         '">' +
         $p(tPct) +
         '</td><td class="rpt-n">' +
-        $c(totBlC) +
+        _fmtUSD(totBlC, '$0') +
         '</td><td class="rpt-n">' +
-        $c(totCurC) +
+        _fmtUSD(totCurC, '$0') +
         '</td><td class="rpt-n" style="color:' +
         _sc(totSavC) +
         ';font-weight:700">' +
-        $c(totSavC) +
+        _fmtUSD(totSavC, '$0') +
         '</td></tr>';
     }
     return (
@@ -8000,9 +7946,6 @@ function rptPageGasPropane(n, d) {
 
 function rptPageAppendixNormalization(n, d, appLetter) {
   appLetter = appLetter || 'A';
-  var $c = function (v) {
-    return '$' + Math.abs(Math.round(v || 0)).toLocaleString();
-  };
   var $n = function (v) {
     return Math.round(v || 0).toLocaleString();
   };
@@ -8088,7 +8031,7 @@ function rptPageAppendixNormalization(n, d, appLetter) {
           unitLabel +
           '</td>' +
           '<td class="rpt-n" contenteditable="true">' +
-          $c(md.costPerYear) +
+          _fmtUSD(md.costPerYear, '$0') +
           '</td>' +
           '</tr>'
         );
@@ -8330,9 +8273,6 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
   appMap = appMap || {};
   var $n = function (v) {
     return Math.round(v || 0).toLocaleString();
-  };
-  var $c = function (v) {
-    return '$' + Math.abs(Math.round(v || 0)).toLocaleString();
   };
   var MO_FULL = [
     'January',
@@ -9106,9 +9046,6 @@ function rptPageAppendixWeather(n, d, appLetter) {
 
 function rptPageAppendixBills(n, d, appLetter) {
   appLetter = appLetter || 'D';
-  var $c = function (v) {
-    return '$' + Math.abs(Math.round(v || 0)).toLocaleString();
-  };
 
   var periodYMs = (d.period && d.period.yearMonths) || [];
   var monthNames = [
@@ -9243,7 +9180,7 @@ function rptPageAppendixBills(n, d, appLetter) {
           (_gal ? Math.round(_gal).toLocaleString() : '—') +
           '</td>' +
           '<td class="rpt-n" contenteditable="true">' +
-          (bill.amount ? $c(bill.amount) : '—') +
+          (bill.amount ? _fmtUSD(bill.amount, '$0') : '—') +
           '</td>' +
           '<td contenteditable="true">' +
           (_estRow ? 'Estimated — no bill on file' : _fmtBillDate(bill.billDate || bill.start)) +
@@ -11340,9 +11277,6 @@ function boardSummaryBarChartSVG(monthData) {
  * @param {object} d - Report data from collectReportData()
  */
 function rptPageBoardSummary(n, d) {
-  var $c = function (v) {
-    return (v < 0 ? '-$' : '$') + Math.abs(Math.round(v || 0)).toLocaleString();
-  };
   var $n = function (v) {
     return Math.round(Math.abs(v || 0)).toLocaleString();
   };
@@ -11495,12 +11429,12 @@ function rptPageBoardSummary(n, d) {
     '<div style="font-size:36px;font-weight:800;color:' +
     savingsColor +
     ';font-family:monospace;line-height:1.1">' +
-    $c(totalSavings) +
+    _fmtUSD(totalSavings, '$0') +
     '</div>' +
     '<div style="font-size:10px;color:var(--rpt-page-text);margin-top:4px">vs ' +
     periodTargetWord +
     ' target of <strong>' +
-    $c(periodTarget) +
+    _fmtUSD(periodTarget, '$0') +
     '</strong></div>' +
     '</div>' +
     '</div>' +
@@ -18205,10 +18139,6 @@ function _rptA36CoverPricingStrip(d) {
   }
   if (!tt) return '';
 
-  function _fmtUSD(v) {
-    if (v === null || v === undefined || isNaN(v)) return null;
-    return '$' + Math.round(v).toLocaleString('en-US');
-  }
 
   // 2026-07-22 redesign (no-boxes-in-reports standard): tiers stacked vertically as plain
   // heading + paragraph, not side-by-side cards. Same 3 tiers / keys / order as
@@ -18368,10 +18298,6 @@ function _rptA36AssessmentFindingsData(d) {
       var estimateState = _pricingGetEstimate(d.project.id);
       var summaryData = _pricingComputeSummaryData(d.project.id, estimateState);
       var tt = summaryData && summaryData.tierTotals ? summaryData.tierTotals : null;
-      function _fmtUSD(v) {
-        if (v === null || v === undefined || isNaN(v)) return null;
-        return '$' + Math.round(v).toLocaleString('en-US');
-      }
       if (tt && tt.compliance && tt.compliance.grand != null && !isNaN(tt.compliance.grand)) {
         out.complianceGrand = Number(tt.compliance.grand);
         out.complianceFmt = _fmtUSD(out.complianceGrand);
@@ -21176,10 +21102,6 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
 
   // Final client-facing dollar total only. null (no priced rows / no catalog) => caller shows a
   // client-safe fallback string instead of "$null"/"$NaN".
-  function _fmtUSD(v) {
-    if (v === null || v === undefined || isNaN(v)) return null;
-    return '$' + Math.round(v).toLocaleString('en-US');
-  }
 
   // Pull the priced tier totals the interactive Cost Estimate tab shows for this project. Reads
   // whatever estimate state is saved at en_pricing_estimate_{projId} (row toggles, manual prices,

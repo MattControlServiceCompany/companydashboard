@@ -114,6 +114,9 @@ const TABLE = [
   ['12abc', null],
   ['--5', null],
   ['(12.00)-', null],
+  ['(45.20)', -45.2],
+  ['2.19,', 2.19],
+  ['$2.19,', 2.19],
   [NaN, null],
   [Infinity, null],
   [{}, null],
@@ -329,6 +332,32 @@ if (fmtNum && fmtCur) {
   check('_billFmtNumber("1,234.5") = "1,234.5"', fmtNum('1,234.5') === '1,234.5', fmtNum('1,234.5'));
   check('_billFmtCurrency("(12.00)") = "$-12.00"', fmtCur('(12.00)') === '$-12.00', fmtCur('(12.00)'));
   check('_billFmtCurrency("") = ""', fmtCur('') === '');
+}
+
+// CSV bill import reads "(45.20)" as -45.20 and "2.19," as 2.19 (parseBillCsv, csv-import.js)
+if (get(sc, 'parseBillCsv')) {
+  vm.runInContext(
+    "var __rows = null; resolveUDMeter = function () { return { b: { meters: [] }, m: { commodity: 'Electric', id: 'm1' } }; };" +
+      "showBillCsvPreview = function (rows) { __rows = rows; }; _syncEmbedUDContext = function () {};" +
+      "var _parseISO = function (d) { return new Date(d + 'T00:00:00'); }; var _fixISO = function (d) { return d; };",
+    sc
+  );
+  try {
+    vm.runInContext(
+      "parseBillCsv('start,end,kwh,total_cost\\n2025-01-01,2025-01-31,\"1,000\",(45.20)\\n2025-02-01,2025-02-28,900,\"2.19,\"', 't.csv')",
+      sc
+    );
+    const rows = vm.runInContext('__rows', sc) || [];
+    const byStart = {};
+    rows.forEach((r) => (byStart[r.start] = r));
+    const r1 = byStart['2025-01-01'];
+    const r2 = byStart['2025-02-01'];
+    check('CSV import: "(45.20)" total reads -45.20', r1 && r1.totalCost === -45.2, r1 && r1.totalCost);
+    check('CSV import: "1,000" kWh reads 1000', r1 && r1.kwh === 1000, r1 && r1.kwh);
+    check('CSV import: "2.19," total reads 2.19', r2 && r2.totalCost === 2.19, r2 && r2.totalCost);
+  } catch (err) {
+    check('CSV import parse case runs', false, String(err && err.message));
+  }
 }
 
 console.log('TOTAL: ' + passed + ' passed, ' + failed + ' failed');

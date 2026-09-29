@@ -3599,8 +3599,8 @@ function renderProjSavedBills(projId) {
   // Helper: format total cost
   const fmtTotal = (v) => {
     if (!v) return '—';
-    const n = parseFloat(String(v).replace(/,/g, ''));
-    return isNaN(n) ? '—' : '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const n = parseBillNumber(v);
+    return n === null ? '—' : '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   };
 
   let contentHtml = '';
