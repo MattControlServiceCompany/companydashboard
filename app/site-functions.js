@@ -1776,6 +1776,15 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.28.20',
+    date: '2026-09-28',
+    title: 'Utility Data: Review Bill Corrections re-checks only changed bills.',
+    items: [
+      { type: 'fix', text: 'On the Utility Data page, Review Bill Corrections now re-checks only the bills you changed or added after a scan has finished, and keeps the results for the other bills.' },
+      { type: 'fix', text: 'The Review Bill Corrections window no longer redraws every fraction of a second, so your clicks are no longer lost.' },
+    ],
+  },
+  {
     v: 'v2026.09.28.19',
     date: '2026-09-28',
     title: 'Projects: New Energy Project creates a customer only when you save.',
