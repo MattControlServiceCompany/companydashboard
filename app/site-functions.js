@@ -1776,6 +1776,16 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.29.30',
+    date: '2026-09-29',
+    title: 'BAS Calculator matches the savings workbook',
+    items: [
+      { type: 'fix', text: 'BAS Calculator now follows the savings workbook: cooling runs May to October, heating November to April, and outside air is netted hour by hour. Cooling and heating savings now match the workbook.' },
+      { type: 'fix', text: 'BAS Calculator measure rows now show peak kW as a monthly average, and gas volume in MCF converts to therms correctly.' },
+      { type: 'fix', text: 'BAS Calculator now uses 55 degrees for the unoccupied setpoint when the heat source is Both, and all three calculator screens use the same average setpoint.' },
+    ],
+  },
+  {
     v: 'v2026.09.29.29',
     date: '2026-09-29',
     title: 'BAS Trends cost and savings fixes',
