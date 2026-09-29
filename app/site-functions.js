@@ -1776,6 +1776,15 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.28.21',
+    date: '2026-09-28',
+    title: 'BAS Calc: Existing Heating kWh is filled from your electric bills.',
+    items: [
+      { type: 'feature', text: 'On the BAS Calc page, Existing Heating kWh is now filled in from the heating share found in the electric bills, when the bills show one.' },
+      { type: 'change', text: 'When the bills do not show a heating share, the field now has a plain-words label saying the value was not found, so you can enter it yourself.' },
+    ],
+  },
+  {
     v: 'v2026.09.28.20',
     date: '2026-09-28',
     title: 'Utility Data: Review Bill Corrections re-checks only changed bills.',
