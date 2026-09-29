@@ -1484,6 +1484,7 @@ async function deleteProj(id) {
 // brand-new project has no id until saveProject() runs, but getCustomerBuildings()
 // only ever needs customerId, never a project id.
 let _mpSelectedCustomerId = null;
+let _mpPendingCustomerName = ''; // typed "+ New customer" name, not yet saved
 let _mpBuildingsChecklistState = { buildingIds: [], meterExcludeIds: [] };
 
 function refreshCustomerDropdown(selectedId) {
@@ -1527,41 +1528,24 @@ function onCustomerDropdownChange() {
       newInput.focus();
     }
     _mpSelectedCustomerId = null;
+    _mpPendingCustomerName = '';
     _mpBuildingsChecklistState = { buildingIds: [], meterExcludeIds: [] };
     renderMpBuildingsChecklist();
     return;
   }
   if (newInput) newInput.style.display = 'none';
+  _mpPendingCustomerName = '';
   _mpSelectedCustomerId = sel.value || null;
   _mpBuildingsChecklistState = { buildingIds: [], meterExcludeIds: [] };
   renderMpBuildingsChecklist();
 }
 
 function onNewCustomerNameInput() {
+  // The typed name is held in dialog state only. The en_customers row is created in
+  // saveProject (Save/Create), never per keystroke, so Cancel leaves nothing behind.
   const newInput = document.getElementById('mp-customer-new');
-  const name = (newInput?.value || '').trim();
-  if (!name) {
-    _mpSelectedCustomerId = null;
-    renderMpBuildingsChecklist();
-    return;
-  }
-  // BLOCKER D fix: create the en_customers row immediately (not deferred to Save), same
-  // Date.now()-based, collision-tolerant convention en_projects already uses for new
-  // records — never the migration's deterministic 'cust_'+P.id derivation, which needs a
-  // source project id that doesn't exist yet for a brand-new customer typed here.
-  if (!_mpSelectedCustomerId || !_mpSelectedCustomerId.startsWith('cust_new_')) {
-    const customers = sget('en_customers', []) || [];
-    _mpSelectedCustomerId = 'cust_new_' + Date.now();
-    customers.push({ id: _mpSelectedCustomerId, name });
-    sset('en_customers', customers);
-  } else {
-    const customers = sget('en_customers', []) || [];
-    const c = customers.find((x) => x.id === _mpSelectedCustomerId);
-    if (c) {
-      c.name = name;
-      sset('en_customers', customers);
-    }
-  }
+  _mpPendingCustomerName = (newInput?.value || '').trim();
+  _mpSelectedCustomerId = null;
   renderMpBuildingsChecklist();
 }
 
@@ -1921,6 +1905,7 @@ function openProjModal() {
   // Customer/Multi-Project: new project starts with no customer picked and an empty
   // (correctly empty, not an error) buildings checklist — see BLOCKER A fix point 6.
   _mpSelectedCustomerId = null;
+  _mpPendingCustomerName = '';
   _mpBuildingsChecklistState = { buildingIds: [], meterExcludeIds: [] };
   refreshCustomerDropdown(null);
   const newInput = document.getElementById('mp-customer-new');
@@ -2044,6 +2029,7 @@ function confirmAsync(msg) {
 }
 
 function closeProjModal() {
+  _mpPendingCustomerName = '';
   document.getElementById('projModal').classList.remove('open');
 }
 function saveProject() {
@@ -2052,22 +2038,34 @@ function saveProject() {
     showToast('Enter a project name');
     return;
   }
-  // Customer/Multi-Project: a customer must be picked or created before Save — the
-  // dropdown/new-name flow (onCustomerDropdownChange/onNewCustomerNameInput) already
-  // resolves _mpSelectedCustomerId immediately on interaction (BLOCKER D fix), so this
-  // is just the final guard against saving with nothing picked.
-  if (!_mpSelectedCustomerId) {
+  // Customer/Multi-Project: a customer must be picked, or a new name typed, before Save.
+  // A typed new name becomes an en_customers row only below, once Save is certain.
+  if (!_mpSelectedCustomerId && !_mpPendingCustomerName) {
     showToast('Select or create a Customer');
     return;
   }
   const customers = sget('en_customers', []) || [];
-  const _mpCustomer = customers.find((c) => c.id === _mpSelectedCustomerId);
   const editId = document.getElementById('mp-edit-id').value;
+  if (!editId && projects.some((p) => p.name === name)) {
+    showToast(name + ' already exists');
+    return;
+  }
+  let _custId = _mpSelectedCustomerId;
+  if (!_custId) {
+    const same = customers.find((c) => (c.name || '').trim().toLowerCase() === _mpPendingCustomerName.toLowerCase());
+    if (same) _custId = same.id;
+    else {
+      _custId = 'cust_new_' + Date.now();
+      customers.push({ id: _custId, name: _mpPendingCustomerName });
+      sset('en_customers', customers);
+    }
+  }
+  const _mpCustomer = customers.find((c) => c.id === _custId);
   // Set legacy fields from first contact for backwards compat
   const fc = _modalContacts[0];
   const fields = {
     name,
-    customerId: _mpSelectedCustomerId,
+    customerId: _custId,
     // SHOULD FIX 5: client is an auto-synced denormalized cache of the customer's name —
     // never hand-typed, written here whenever customerId is set (the one write site).
     client: (_mpCustomer && _mpCustomer.name) || '',
@@ -2121,10 +2119,6 @@ function saveProject() {
     const p = projects.find((p) => p.id == editId);
     if (p && document.getElementById('projDetailView').style.display !== 'none') renderDetail(p);
   } else {
-    if (projects.some((p) => p.name === name && p.id !== editId)) {
-      showToast(name + ' already exists');
-      return;
-    }
     projects.push({ id: Date.now(), ...fields });
     showToast(name + ' created ✓');
   }
