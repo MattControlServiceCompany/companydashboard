@@ -217,7 +217,7 @@ console.log('=== 3. Estimate precision + cost (synthetic; Matt 2026-09-29) ===')
   const csv = REPO + '/app/csv-import.js';
   const okAll = [
     tryLoad(csv, '_storedDecimals'),
-    tryLoad(csv, '_billKwhDecimals'),
+    tryLoad(csv, '_usageColDecimals'),
     tryLoad(csv, '_estimateUsageField'),
     tryLoad(csv, '_estimateUsageValue'),
     tryLoad(csv, '_computeMissingPeriodEstimate'),
@@ -225,15 +225,23 @@ console.log('=== 3. Estimate precision + cost (synthetic; Matt 2026-09-29) ===')
     tryLoad(REPO + '/app/energy-savings.js', 'parseEvergyPreviouslyBilled'),
   ].every(Boolean);
   if (okAll) {
-    // Neighbours are stored as 4-dp TEXT, like extracted bills.
+    // Extractor pads to 4 dp ("1000.1000"); the bill itself prints 2 dp (another real row has 2).
     const prev = { start: '2031-01-01', end: '2031-01-31', kwh: '1000.1000' };
     const next = { start: '2031-03-02', end: '2031-04-01', kwh: '2000.3000', previouslyBilled: '1234.50' };
-    const est = sandbox._computeMissingPeriodEstimate(prev, next, 'Electric', false, '2031-01-31', '2031-03-02');
+    const other = { start: '2031-04-01', end: '2031-05-01', kwh: '3000.5500' };
+    const real = [prev, next, other];
+    assert(sandbox._storedDecimals('1000.1000') === 1, 'padding zeros do not count: "1000.1000" -> 1 dp');
+    assert(sandbox._storedDecimals('112252.4400') === 2, '"112252.4400" -> 2 dp');
+    assert(sandbox._storedDecimals('12') === 0 && sandbox._storedDecimals('12.50') === 1, 'integer 0 dp, 12.50 is 1 dp');
+    assert(sandbox._usageColDecimals(real, 'kwh') === 2, 'column decimals = max meaningful among real rows (2)');
+    assert(
+      sandbox._usageColDecimals([...real, { kwh: '9.12345678', estimated: true }], 'kwh') === 2,
+      'estimated rows never set the column precision',
+    );
+    const est = sandbox._computeMissingPeriodEstimate(prev, next, 'Electric', false, '2031-01-31', '2031-03-02', real);
     assert(!est.error, 'estimate computed (no error)');
-    assert(typeof est.estUsage === 'string', 'estimate is stored as text like extracted bills');
-    assert(est.estUsage === '1500.2000', 'estimate keeps the neighbours 4 decimals (got ' + est.estUsage + ')');
-    assert(sandbox._storedDecimals('1000.1000') === 4, 'precision read from stored text keeps trailing zeros');
-    assert(sandbox._storedDecimals('12') === 0 && sandbox._storedDecimals('12.5') === 1, 'integer 0 dp, 12.5 is 1 dp');
+    assert(typeof est.estUsage === 'string', 'estimate is stored as text');
+    assert(est.estUsage === '1500.20', 'estimate rounded to the column precision, 2 dp (got ' + est.estUsage + ')');
     assert(est.estCost === '1234.50', 'cost = next bill Previously Billed (got ' + est.estCost + ')');
     const noCost = sandbox._computeMissingPeriodEstimate(
       prev,
@@ -242,28 +250,21 @@ console.log('=== 3. Estimate precision + cost (synthetic; Matt 2026-09-29) ===')
       false,
       '2031-01-31',
       '2031-03-02',
+      real,
     );
     assert(noCost.estCost === null, 'no Previously Billed on next bill -> cost stays null (never invented)');
-    // 2-dp neighbours -> 2-dp estimate, and a .5 result keeps its trailing zero.
-    const two = sandbox._computeMissingPeriodEstimate(
-      { start: '2031-01-01', end: '2031-01-31', kwh: '1000.10' },
-      { start: '2031-03-02', end: '2031-04-01', kwh: '2000.30' },
-      'Electric',
-      false,
-      '2031-01-31',
-      '2031-03-02',
-    );
-    assert(two.estUsage === '1500.20', '2-dp neighbours -> "1500.20" (trailing zero kept), got ' + two.estUsage);
 
-    // Display: every kWh row in one table shows the same decimals.
-    const bills = [prev, { kwh: est.estUsage }, next];
-    const dp = sandbox._billKwhDecimals(bills);
-    assert(dp === 4, 'table kWh decimals = most any stored value carries (4), got ' + dp);
-    const shown = bills.map((b) => sandbox._billFormatValue(b.kwh, { type: 'number', key: 'kwh', pdfKey: 'kWhConsumed' }, dp));
+    // Display: every row of the kWh column shows exactly the column decimals (fixed).
+    const bills = [prev, { kwh: est.estUsage, estimated: true }, next, other];
+    const colDp = (key) => (/kwh/i.test(key) ? sandbox._usageColDecimals(bills, key) : null);
+    const entry = { type: 'number', key: 'kwh', pdfKey: 'kWhConsumed' };
+    const shown = bills.map((b) => sandbox._billFormatValue(b.kwh, entry, colDp));
     assert(
-      shown.every((t) => t.split('.')[1].length === 4),
-      'every kWh row shows 4 decimals: ' + shown.join(' | '),
+      shown.every((t) => t.split('.')[1].length === 2),
+      'every kWh row shows exactly 2 decimals: ' + shown.join(' | '),
     );
+    assert(shown[1] === '1,500.20', 'estimate shows 1,500.20 (got ' + shown[1] + ')');
+    assert(sandbox._billFormatValue('12.5', { type: 'number', key: 'kwh' }, () => 2) === '12.50', '12.5 shows as 12.50');
 
     // Extractor: Evergy page-1 "Previously Billed" line.
     const pb = sandbox.parseEvergyPreviouslyBilled;

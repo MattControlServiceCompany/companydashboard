@@ -876,7 +876,7 @@ function renderBillRow(row, m, incl, allBills, cols, rowNum) {
     `<td class="lbl sticky-col" data-sticky="3">${fmtD(row.end)}</td>` +
     `<td class="td-days">${days}</td>`;
   // Every kWh cell in this table shows the same number of decimals (Matt 2026-09-29).
-  const kwhDp = _billKwhDecimals(allBills || m.bills);
+  const colDp = (key) => (/kwh/i.test(key || '') ? _usageColDecimals(allBills || m.bills, key) : null);
   for (let i = 5; i < cols.length - 1; i++) {
     const c = cols[i];
     // Condensed-view column (Update 90): render via category.compute
@@ -932,8 +932,9 @@ function renderBillRow(row, m, incl, allBills, cols, rowNum) {
       } else if (c.category.type === 'number') {
         // Show '—' only when missing; render 0 as a formatted number ("0.00")
         const isQty = /kwh|kw\b|rkva|gallon|ccf|therm|usage/i.test(c.category.label);
-        const dpMin = c.category.key === 'kwh' ? kwhDp : isQty ? 2 : 0;
-        const dpMax = c.category.key === 'kwh' ? kwhDp : 4;
+        const catDp = colDp(c.category.key);
+        const dpMin = catDp != null ? catDp : isQty ? 2 : 0;
+        const dpMax = catDp != null ? catDp : 4;
         formatted = isMissing
           ? '—'
           : val.toLocaleString('en-US', {
@@ -987,7 +988,7 @@ function renderBillRow(row, m, incl, allBills, cols, rowNum) {
     ) {
       raw = convertBillValue(parseFloat(raw), m);
     }
-    const formatted = _billFormatValue(raw, c.entry, kwhDp);
+    const formatted = _billFormatValue(raw, c.entry, colDp);
     const cls = c.entry.key === 'totalCost' ? 'td-total' : c.a || '';
     const rightCls = c.rightSticky ? ' sticky-col-right' : '';
     const rightAttr = c.rightSticky ? ' data-sticky-right="' + i + '"' : '';
@@ -1205,31 +1206,31 @@ function _estimateUsageValue(bill, commodity) {
   if (commodity === 'Sewer') return parseFloat(bill.sewerUsage) || parseFloat(bill.waterUsage) || 0;
   return parseFloat(bill.waterUsage) || 0;
 }
-// Decimal places of a value as STORED (text as saved, trailing zeros kept: "112252.4400" -> 4).
-// The ONE place precision is read; never String(+v), which drops the zeros.
+// MEANINGFUL decimals of a stored number: trailing zeros are extractor padding ("112252.4400" is
+// a 2-dp value), so they do not count. The ONE place precision is read.
 function _storedDecimals(v) {
   const s = String(v == null ? '' : v).trim();
   const i = s.indexOf('.');
-  return i < 0 ? 0 : s.length - i - 1;
+  return i < 0 ? 0 : s.slice(i + 1).replace(/0+$/, '').length;
 }
-// Decimals every kWh cell in a meter's Bills table shows: the most any stored kWh value carries
-// (capped at 4, the extractor's precision). One number per table so all rows line up.
-function _billKwhDecimals(bills) {
+// Decimals a usage column shows for one meter: the most meaningful decimals among its REAL
+// (non-estimated) rows in that column, capped at 4. Every row of the column displays exactly
+// this many (fixed), and an estimate is rounded to it.
+function _usageColDecimals(bills, key) {
   let dp = 0;
   (bills || []).forEach((bl) => {
-    if (bl && parseFloat(bl.kwh) > 0) dp = Math.max(dp, _storedDecimals(bl.kwh));
+    if (bl && !bl.estimated && parseFloat(bl[key]) > 0) dp = Math.max(dp, _storedDecimals(bl[key]));
   });
   return Math.min(dp, 4);
 }
-function _fmtStoredQty(v) {
-  const dp = _storedDecimals(v);
+function _fmtQty(v, dp) {
   return (+v).toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp });
 }
 // Pure estimate for a gap between two bills. Returns { error } or the estimate:
-//   estUsage  usage as TEXT with the same decimals as the neighbour bills store
+//   estUsage  usage as TEXT rounded to the meter column's decimals (_usageColDecimals)
 //   estCost   the gap bill's total as text ("x.xx") from the NEXT bill's "Previously Billed",
 //             or null when the next bill has none (cost is never invented)
-function _computeMissingPeriodEstimate(prev, next, commodity, incl, gapStart, gapEnd) {
+function _computeMissingPeriodEstimate(prev, next, commodity, incl, gapStart, gapEnd, bills) {
   const field = _estimateUsageField(commodity);
   const prevUsage = _estimateUsageValue(prev, commodity);
   const nextUsage = _estimateUsageValue(next, commodity);
@@ -1240,12 +1241,11 @@ function _computeMissingPeriodEstimate(prev, next, commodity, incl, gapStart, ga
     return { error: 'Cannot estimate — the surrounding bills are missing usage or day data' };
   }
   const avgDailyUsage = (prevUsage + nextUsage) / (prevDays + nextDays);
-  const stored = (bl, usage) => (bl[field] != null && bl[field] !== '' ? bl[field] : usage);
-  const estDp = Math.max(_storedDecimals(stored(prev, prevUsage)), _storedDecimals(stored(next, nextUsage)));
+  const estDp = _usageColDecimals(bills, field);
   const estUsage = (avgDailyUsage * gapDays).toFixed(estDp);
   const billed = parseBillNumber(next.previouslyBilled);
   const estCost = billed > 0 ? billed.toFixed(2) : null;
-  return { field, prevUsage, nextUsage, prevDays, nextDays, gapDays, avgDailyUsage, estUsage, estCost };
+  return { field, prevUsage, nextUsage, prevDays, nextDays, gapDays, avgDailyUsage, estUsage, estDp, estCost };
 }
 async function estimateMissingPeriod(mid, gapStart, gapEnd) {
   const ctx = resolveUDMeter(mid);
@@ -1262,21 +1262,21 @@ async function estimateMissingPeriod(mid, gapStart, gapEnd) {
     showToast('Could not find the bills on either side of this gap — refresh and try again', 'warn');
     return;
   }
-  const est = _computeMissingPeriodEstimate(prev, next, m.commodity, incl, gapStart, gapEnd);
+  const est = _computeMissingPeriodEstimate(prev, next, m.commodity, incl, gapStart, gapEnd, m.bills);
   if (est.error) {
     showToast(est.error, 'warn');
     return;
   }
-  const { prevUsage, nextUsage, prevDays, nextDays, gapDays, avgDailyUsage, estUsage, estCost } = est;
+  const { prevUsage, nextUsage, prevDays, nextDays, gapDays, avgDailyUsage, estUsage, estDp, estCost } = est;
   const unit = getMeterDisplayUnit(m);
-  const costMoney = estCost == null ? null : '$' + _fmtStoredQty(estCost);
+  const costMoney = estCost == null ? null : '$' + _fmtQty(estCost, 2);
   const confirmMsg =
     'Add an estimated period ' +
     gapStart +
     ' – ' +
     gapEnd +
     ' (' +
-    _fmtStoredQty(estUsage) +
+    _fmtQty(estUsage, estDp) +
     ' ' +
     unit +
     (costMoney
@@ -1297,7 +1297,7 @@ async function estimateMissingPeriod(mid, gapStart, gapEnd) {
     '–' +
     prev.end +
     ', ' +
-    _fmtStoredQty(prevUsage) +
+    _fmtQty(prevUsage, estDp) +
     ' ' +
     unit +
     ' / ' +
@@ -1307,7 +1307,7 @@ async function estimateMissingPeriod(mid, gapStart, gapEnd) {
     '–' +
     next.end +
     ', ' +
-    _fmtStoredQty(nextUsage) +
+    _fmtQty(nextUsage, estDp) +
     ' ' +
     unit +
     ' / ' +
@@ -1317,7 +1317,7 @@ async function estimateMissingPeriod(mid, gapStart, gapEnd) {
     '/day) × ' +
     gapDays +
     ' gap days = ' +
-    _fmtStoredQty(estUsage) +
+    _fmtQty(estUsage, estDp) +
     ' ' +
     unit +
     '. ' +
@@ -1342,7 +1342,7 @@ async function estimateMissingPeriod(mid, gapStart, gapEnd) {
     source: 'estimate',
     note:
       'Estimated ' +
-      _fmtStoredQty(estUsage) +
+      _fmtQty(estUsage, estDp) +
       ' ' +
       unit +
       ' from surrounding bills (day-weighted average)' +
@@ -1741,7 +1741,7 @@ function _billReadValue(row, entry) {
 }
 // Helper: format a value for table display based on the schema entry.
 // IMPORTANT: 0 is valid data. Only null/undefined/''/'null' mean "no data" (show —).
-function _billFormatValue(val, entry, kwhDp) {
+function _billFormatValue(val, entry, colDp) {
   const isMissing = val === undefined || val === null || val === '' || val === 'null';
   const hasVal = !isMissing && !isNaN(val);
   if (entry.type === 'currency') {
@@ -1786,8 +1786,9 @@ function _billFormatValue(val, entry, kwhDp) {
     ) {
       // Bug #18: Read Difference must always display positive (current - previous read)
       const dispVal = /difference/i.test(entry.key) ? Math.abs(+val) : +val;
-      if (entry.key === 'kwh' && kwhDp != null)
-        return dispVal.toLocaleString('en-US', { minimumFractionDigits: kwhDp, maximumFractionDigits: kwhDp });
+      const fixedDp = colDp ? colDp(entry.key) : null;
+      if (fixedDp != null)
+        return dispVal.toLocaleString('en-US', { minimumFractionDigits: fixedDp, maximumFractionDigits: fixedDp });
       return dispVal.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 4 });
     }
     // Default numeric fields (e.g. numberOfDays) — integer display.
