@@ -98,6 +98,7 @@ const code = [
   loadVar('BT_HVAC_KW_PER_AHU'),
   loadVar('BT_FAULT_KW'),
   loadFn('btFaultKwh'),
+  loadFn('btAssumeText'),
   loadFn('btGetBlendedRate'),
   loadFn('btGetBASForBillPeriod'),
   loadFn('btEstimateSavings'),
@@ -120,13 +121,13 @@ const has = (n) => typeof ctx[n] === 'function';
 
 // E-BT-3: rate reads meters[].bills and 'Electric'
 assert(
-  has('btGetBlendedRate') && ctx.btGetBlendedRate('P', 'B1') === 0.12,
+  has('btGetBlendedRate') && ctx.btGetBlendedRate('P', 'B1', 'Electric') === 0.12,
   'blended rate reads meters[].bills Electric = 0.12, got ' +
-    (has('btGetBlendedRate') && ctx.btGetBlendedRate('P', 'B1')),
+    (has('btGetBlendedRate') && ctx.btGetBlendedRate('P', 'B1', 'Electric')),
 );
 activeBldgs = gasOnly;
 assert(
-  has('btGetBlendedRate') && ctx.btGetBlendedRate('P', 'B1') === null,
+  has('btGetBlendedRate') && ctx.btGetBlendedRate('P', 'B1', 'Electric') === null,
   'no electric bills -> null (no 0.10 fallback)',
 );
 activeBldgs = bldgs;
@@ -201,6 +202,34 @@ const rows = [0, 1, 16, 31, 46, 61, 76].map((m) => ({ ts: t0 + m * 60000 })); //
 assert(
   has('btIntervalHours') && Math.abs(ctx.btIntervalHours(rows) - 0.25) < 1e-9,
   'interval from median gap = 0.25 h, got ' + (has('btIntervalHours') && ctx.btIntervalHours(rows)),
+);
+
+// Follow-up 1: gas rate from the gas meters' bills through the same helper; no $0.80 default
+assert(has('btGetBlendedRate') && ctx.btGetBlendedRate('P', 'B1', 'Gas') === 6, 'gas rate = 600 / 100 therms = 6');
+assert(
+  !SRC.slice(SRC.indexOf('function btEstimateSavings('), SRC.indexOf('function btRenderSavingsPanel(')).includes(
+    '0.8;',
+  ),
+  'no 0.8 $/therm literal in btEstimateSavings',
+);
+const elecOnly = [{ id: 'B1', meters: [bldgs[0].meters[0]] }];
+activeBldgs = elecOnly;
+const est3 = has('btEstimateSavings') ? ctx.btEstimateSavings('P', 'B1') : [];
+const shc3 = est3.find((e) => e.type === 'shc');
+const ah3 = est3.find((e) => e.type === 'afterHours');
+assert(
+  shc3 && shc3.annualDollars === null,
+  'no gas bills -> SHC dollars null (rate unavailable), got ' + (shc3 && shc3.annualDollars),
+);
+assert(ah3 && ah3.annualDollars > 0, 'after-hours (electric only) still priced');
+activeBldgs = bldgs;
+const shc4 = (has('btEstimateSavings') ? ctx.btEstimateSavings('P', 'B1') : []).find((e) => e.type === 'shc');
+assert(shc4 && shc4.annualDollars > 0, 'with gas bills SHC is priced');
+
+// Follow-up 2: the 4.9 kW fan model is shown as a labeled assumption
+assert(
+  ah2 && ah2.assumption === 'Assumes 4.9 kW per air handler fan — not measured.',
+  'after-hours assumption label, got ' + (ah2 && ah2.assumption),
 );
 
 console.log('\ntest-bas-trends-math: ' + passed + ' passed, ' + failed + ' failed');

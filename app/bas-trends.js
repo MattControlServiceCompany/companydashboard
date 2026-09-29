@@ -296,6 +296,14 @@ function btRound(n, d) {
   return Math.round(n * f) / f;
 }
 
+/** Plain-words label for the equipment sizes the savings estimates assume (never measured). */
+function btAssumeText(kwPerFan, cfm) {
+  var parts = [];
+  if (kwPerFan) parts.push(btRound(kwPerFan, 1) + ' kW per air handler fan');
+  if (cfm) parts.push(cfm.toLocaleString('en-US') + ' CFM per air handler');
+  return 'Assumes ' + parts.join(' and ') + ' \u2014 not measured.';
+}
+
 /** Estimated kWh wasted by `hrs` hours of fault `key` (0 for faults with no kWh model). */
 function btFaultKwh(key, hrs) {
   return (hrs || 0) * (BT_FAULT_KW[key] || 0);
@@ -3067,7 +3075,7 @@ function btSelectHealthMonth(month) {
  */
 function btGatherFaultRows(bldg, projId) {
   // Get blended rate from utility bills if available
-  var blendedRate = btGetBlendedRate(projId, _btSelBldg);
+  var blendedRate = btGetBlendedRate(projId, _btSelBldg, 'Electric');
 
   var rows = [];
   var equipment = bldg.equipment || {};
@@ -3164,10 +3172,11 @@ function btGatherFaultRows(bldg, projId) {
 }
 
 /**
- * Get blended electricity rate for a building from its Electric meters' saved bills.
- * Returns $/kWh or null when there are no priced electric bills (callers show "rate unavailable").
+ * Get the blended rate for a building from the saved bills of its meters of one commodity
+ * ('Electric' = $/kWh, 'Gas' = $/therm). Returns null when there are no priced bills of
+ * that commodity (callers show "rate unavailable").
  */
-function btGetBlendedRate(projId, bldgId) {
+function btGetBlendedRate(projId, bldgId, commodity) {
   try {
     var bldgs = getUDBldgs(projId) || [];
     if (!bldgs.length) return null;
@@ -3183,12 +3192,12 @@ function btGetBlendedRate(projId, bldgId) {
     var totalCost = 0,
       totalKwh = 0;
     for (var mi = 0; mi < meters.length; mi++) {
-      if (meters[mi].commodity !== 'Electric') continue;
+      if (meters[mi].commodity !== commodity) continue;
       var bills = meters[mi].bills || [];
       for (var bi = 0; bi < bills.length; bi++) {
         var b = bills[bi];
         var cost = parseFloat(b.totalCost) || 0;
-        var kwh = parseFloat(b.kwh || b.kWh) || 0;
+        var kwh = parseFloat(commodity === 'Gas' ? b.therms : b.kwh || b.kWh) || 0;
         if (cost > 0 && kwh > 0) {
           totalCost += cost;
           totalKwh += kwh;
@@ -4828,8 +4837,8 @@ function btMatchBehaviorToRow(behaviorSummary, row) {
  */
 function btEstimateSavings(projId, bldgId, opts) {
   opts = opts || {};
-  var elecRate = opts.elecRate || btGetBlendedRate(projId, bldgId); // null = rate unavailable
-  var gasRate = opts.gasRate || 0.8;
+  var elecRate = opts.elecRate || btGetBlendedRate(projId, bldgId, 'Electric'); // null = rate unavailable
+  var gasRate = opts.gasRate || btGetBlendedRate(projId, bldgId, 'Gas'); // null = rate unavailable
   var fanHpPerAhu = opts.fanHpPerAhu || 5; // HP — conservative default for medium AHU
   var cfmPerAhu = opts.cfmPerAhu || 10000; // CFM — conservative default
 
@@ -4907,7 +4916,7 @@ function btEstimateSavings(projId, bldgId, opts) {
     // Also saves reheat gas: Delta_SAT = 5°F avg, CFM × 1.08 BTU/hr/cfm/°F → therms
     var reheatBtuPerHr = cfmPerAhu * 1.08 * 5; // BTU/hr per AHU
     var reheatThermsSaved = (reheatBtuPerHr * coolingHrsPerYear * satAhuCount) / 100000;
-    var satDollars = elecRate ? satCoolingKwh * elecRate + reheatThermsSaved * gasRate : null;
+    var satDollars = elecRate && gasRate ? satCoolingKwh * elecRate + reheatThermsSaved * gasRate : null;
     estimates.push({
       type: 'satReset',
       label: 'Supply Air Temperature Reset',
@@ -4916,6 +4925,7 @@ function btEstimateSavings(projId, bldgId, opts) {
       annualDollars: satDollars === null ? null : Math.round(satDollars),
       detail: satFails + ' of ' + satEquipCount + ' AHUs show fixed SAT setpoint (ASHRAE G36 §5.16.3 not running)',
       basis: '12% of AHU cooling energy + 5°F reheat reduction @ ' + cfmPerAhu.toLocaleString() + ' CFM',
+      assumption: btAssumeText(fanKw, cfmPerAhu),
     });
   }
 
@@ -4941,6 +4951,7 @@ function btEstimateSavings(projId, bldgId, opts) {
       annualDollars: dspDollars === null ? null : Math.round(dspDollars),
       detail: dspFails + ' of ' + dspEquipCount + ' AHUs show fixed duct static pressure (G36 §5.16.4 not running)',
       basis: 'Fan affinity laws — 20% SP reduction → ' + Math.round(savingsFraction * 100) + '% fan power savings',
+      assumption: btAssumeText(fanKwDsp),
     });
   }
 
@@ -4964,6 +4975,7 @@ function btEstimateSavings(projId, bldgId, opts) {
         equipCount +
         ' equipment',
       basis: 'Measured after-hours runtime × estimated HVAC kW (' + btRound(hvacKwPerAhu, 1) + ' kW/AHU)',
+      assumption: btAssumeText(hvacKwPerAhu),
     });
   }
 
@@ -4977,7 +4989,7 @@ function btEstimateSavings(projId, bldgId, opts) {
     var shcTherms = shcWasteBtu / 100000;
     // Cooling waste overhead (compressor working against heating)
     var shcKwh = (shcWasteBtu * 1.3) / 3412;
-    var shcDollars = elecRate ? shcTherms * gasRate + shcKwh * elecRate : null;
+    var shcDollars = elecRate && gasRate ? shcTherms * gasRate + shcKwh * elecRate : null;
     estimates.push({
       type: 'shc',
       label: 'Simultaneous Heating and Cooling (SHC)',
@@ -4987,6 +4999,7 @@ function btEstimateSavings(projId, bldgId, opts) {
       detail:
         Math.round(annualShcHrs) + ' hrs/yr of simultaneous heating + cooling across ' + equipCount + ' equipment',
       basis: '40% of max heating coil capacity wasted during SHC intervals',
+      assumption: btAssumeText(null, cfmPerAhu),
     });
   }
 
@@ -5029,6 +5042,9 @@ function btRenderSavingsPanel(projId, bldgId) {
       '<tr style="border-bottom:1px solid var(--border)">' +
       '<td style="padding:6px 8px;color:var(--text);font-size:11px">' +
       btEscapeHtml(e.label) +
+      '<div style="font-size:10px;color:var(--text3);font-weight:400">' +
+      btEscapeHtml(e.assumption) +
+      '</div>' +
       '</td>' +
       '<td style="padding:6px 8px;color:var(--text2);font-size:11px;font-family:Consolas,monospace">' +
       energyText +
@@ -5075,10 +5091,14 @@ function btRenderSavingsPanel(projId, bldgId) {
     (rateKnown ? '$' + totalDollars.toLocaleString() + '/yr' : 'rate unavailable') +
     ' &nbsp;|&nbsp; ' +
     'Based on measured fault data from BAS trends. Rates: ' +
-    (btGetBlendedRate(projId, bldgId) !== null
-      ? '$' + btGetBlendedRate(projId, bldgId).toFixed(3) + '/kWh'
+    (btGetBlendedRate(projId, bldgId, 'Electric') !== null
+      ? '$' + btGetBlendedRate(projId, bldgId, 'Electric').toFixed(3) + '/kWh'
       : 'electric rate unavailable (no priced electric bills)') +
-    ', $0.80/therm.' +
+    ', ' +
+    (btGetBlendedRate(projId, bldgId, 'Gas') !== null
+      ? '$' + btGetBlendedRate(projId, bldgId, 'Gas').toFixed(3) + '/therm'
+      : 'gas rate unavailable (no priced gas bills)') +
+    '.' +
     '</div>' +
     '</div>'
   );
@@ -5255,7 +5275,7 @@ function btGetBASForBillPeriod(projId, bldgId, billStart, billEnd, billCost, bil
   if (commodity === 'Electric' && billCost && billUsage && billUsage > 0) {
     blendedRate = btRound(billCost / billUsage, 5);
   } else {
-    blendedRate = btGetBlendedRate(projId, bldgId);
+    blendedRate = btGetBlendedRate(projId, bldgId, 'Electric');
   }
 
   var result = {
