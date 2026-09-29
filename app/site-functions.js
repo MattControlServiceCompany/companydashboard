@@ -1776,6 +1776,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.29.29',
+    date: '2026-09-29',
+    title: 'BAS Trends cost and savings fixes',
+    items: [
+      { type: 'fix', text: 'BAS Trends fault costs now use your electric rate from the project bills. When there are no electric bills, the panel shows rate unavailable instead of using a guessed rate.' },
+      { type: 'fix', text: 'BAS Trends gas savings now use the gas rate from your gas bills instead of a fixed price. The panel says so when no priced gas bills exist.' },
+      { type: 'fix', text: 'BAS Trends occupied hours, yearly scaling for short data windows, and month lengths are now calculated from the real data.' },
+      { type: 'change', text: 'Each BAS Trends savings estimate now states its equipment assumption, for example 4.9 kW per air handler fan, not measured.' },
+    ],
+  },
+  {
     v: 'v2026.09.29.28',
     date: '2026-09-29',
     title: 'Agreement builder fixes',
