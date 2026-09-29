@@ -1776,6 +1776,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.28.24',
+    date: '2026-09-28',
+    title: 'Client Portal savings fixes',
+    items: [
+      { type: 'fix', text: 'Client Portal now finds your savings when the project has a numeric id, so the portal no longer shows empty savings for those projects.' },
+      { type: 'fix', text: 'Client Portal leaves out meters you excluded from the baseline, so the savings totals match the project.' },
+      { type: 'change', text: 'Client Portal progress now compares savings with the project savings target. If no target is set, it shows "No savings target set".' },
+      { type: 'fix', text: 'Client Portal keeps months with $0 savings in the chart and the export. The energy units now cover the same months as the dollars.' },
+    ],
+  },
+  {
     v: 'v2026.09.28.23',
     date: '2026-09-28',
     title: 'BAS Calc: heating savings now match the Excel total.',
