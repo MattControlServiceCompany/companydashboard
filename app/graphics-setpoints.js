@@ -760,7 +760,7 @@ function egfxRefresh(projId) {
       const isGas = m.commodity === 'Gas';
       const isPropane = m.commodity === 'Propane';
 
-      // kW CDD regression: normalize kW using the same pattern as perf-table.js
+      // kW CDD regression: normalize kW with the one kW CDD regression (computations/regression.js)
       // computeKwCddRegression returns {ym: predictedKW} for all months, or {} if insufficient data
       let _mKwNorm = {};
       if (isElec && typeof computeKwCddRegression === 'function') {

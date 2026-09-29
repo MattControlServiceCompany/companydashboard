@@ -774,7 +774,7 @@ function _hvlRenderReverse(projId, bldgId) {
       actualKwh[mo] = kwh;
       actualKw[mo] = kw;
       avgKwhRate[mo] = getStoredRate(bill, 'kwh');
-      avgKwRate[mo] = getStoredRate(bill, 'kw');
+      avgKwRate[mo] = getStoredKwRate(bill);
     });
   }
   if (gasM) {

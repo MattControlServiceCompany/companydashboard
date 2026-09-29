@@ -1,8 +1,6 @@
 // computations/savings.js — Unified savings computation (canonical source)
 // Depends on: normalization.js (getNormRows, buildMoMap, normMonth), regression.js (computeKwCddRegression),
-//             rates.js (getStoredRate), and getWeatherForBuilding() (still in energy-department.html)
-// Phase 1 multi-baseline: getMeterSavings() checks for m.baselines and routes to
-//             _getMeterSavingsMulti() when present. Falls back to legacy path when absent.
+//             rates.js (getStoredRate, getStoredKwRate), and getWeatherForBuilding() (still in energy-department.html)
 
 // SAVINGS_CALC_VERSION — bump this any time the savings math in this file changes.
 // It is folded into the _savingsCache fingerprint (_blFp) below so a code deploy
@@ -10,7 +8,7 @@
 // clear or an unrelated data edit to bust it. CH_VERSION (site-ui.js) is not
 // reachable here (scoped inside an IIFE, not exposed on window), so this file
 // carries its own version marker.
-const SAVINGS_CALC_VERSION = '2026.09.24.815';
+const SAVINGS_CALC_VERSION = '2026.09.28.wp04';
 
 /* ─────────────────────────────────────────────────────────────
    projHasContract(projId)
@@ -56,21 +54,19 @@ function resolveGasUsageTherms(b) {
    checkRateIncomplete(opts)
    a67db8ce (2026-09-09) — single source of truth for "is this row's rate
    incomplete" per commodity component. Previously reimplemented independently
-   in getMeterSavings(), _getMeterSavingsMulti(), and lib/perf-table.js's
-   buildMeterPerfTableHTML() (2026-09-25 DRY fix, cold-review check 4). Every
-   caller still resolves its own rate/usage/cost values first — this function
-   only decides whether that already-resolved state counts as "rate
-   incomplete," not the $ math itself (perf-table independently derives its
-   own per-row rates and must keep doing so).
+   in getMeterSavings() and lib/perf-table.js's
+   buildMeterPerfTableHTML(). Since WP-04 the perf table renders getMeterSavings
+   rows, so getMeterSavings is the only caller. It resolves its own
+   rate/usage/cost values first — this function only decides whether that
+   already-resolved state counts as "rate incomplete," not the $ math itself.
 
    opts (each sub-object optional — omit a component the caller doesn't have):
      kwh:  { enabled, rate, actUsage }   — electric $/kWh component
      kw:   { enabled, rate, actual }     — electric $/kW component
      unit: { enabled, rate, actUsage, actCost, reason } — gas/propane $/unit
            component; `reason` is the caller-supplied message string, since
-           it differs slightly by call site (fixed 'propane $/gallon rate
-           unavailable' / 'gas $/therm rate unavailable' vs. perf-table's
-           dynamically-built string).
+           it differs by commodity ('propane $/gallon rate unavailable' /
+           'gas $/therm rate unavailable').
 
    Returns { incomplete: bool, reason: string }.
 ───────────────────────────────────────────────────────────── */
@@ -101,43 +97,58 @@ function checkRateIncomplete(opts) {
 }
 
 /* ─────────────────────────────────────────────────────────────
-   getMeterSavings(m, bills, incl)
-   Unified savings function — single pass, populates both byYM
-   and byCalMo, applies costSavOverrides to BOTH formats.
+   getMeterSavings(m, bills, incl, projId, bldgId, opts)
+   THE savings function. Every dollar of "savings" on every page and report comes from this
+   one function: the dashboards, the reports, the portal, AND the Meter Performance table
+   (lib/perf-table.js renders the `rows` returned here and does no money math of its own).
 
    Returns:
    {
      byYM:         {YYYY-MM: totalCostSav},
      byCalMo:      {0-11: totalCostSav},
      unitsByYM:    {YYYY-MM: {kwh, kw, therms, gallons}},
-     unitsByCalMo: {0-11: {kwh, kw, therms, gallons}}
+     unitsByCalMo: {0-11: {kwh, kw, therms, gallons}},
+     incompleteYM: {YYYY-MM: {commodity, reason}},
+     rows:         [one detail row per post-baseline month, oldest first - see `rowsOut` below]
    }
+   A project with no Service Agreement gets `rows` with every dollar set to 0 and empty
+   byYM/byCalMo/unitsByYM/unitsByCalMo/incompleteYM (usage columns still show).
+
+   opts.effectiveRows: rows to predict with instead of the actual-weather rows (the Meter
+   Performance "normal weather" view). The baseline fit still uses actual weather. A call with
+   effectiveRows is not cached.
 ───────────────────────────────────────────────────────────── */
-function getMeterSavings(m, bills, incl, projId, bldgId) {
-  const empty = { byYM: {}, byCalMo: {}, unitsByYM: {}, unitsByCalMo: {}, incompleteYM: {} };
+function getMeterSavings(m, bills, incl, projId, bldgId, opts) {
+  opts = opts || {};
+  const empty = {
+    byYM: {},
+    byCalMo: {},
+    unitsByYM: {},
+    unitsByCalMo: {},
+    incompleteYM: {},
+    rows: [],
+  };
 
   // 2026-09-15 (SA-gate fix): savings only compute for a CONTRACTED project. The contract
-  // signal is the project record's `sa` field (Service Agreement #) — a project with no SA
+  // signal is the project record's `sa` field (Service Agreement #) - a project with no SA
   // (Spring Hill, JOCO, Baker: sa="") must show ZERO savings everywhere, not a phantom
   // number from a bill that happens to look complete. String(x.id) === String(projId) is
-  // required because app/portal-export.js:67 passes projId as a String while projects[].id
-  // are numbers — a strict === here would silently fail that caller.
-  const _proj = typeof projects !== 'undefined' ? projects.find((x) => String(x.id) === String(projId)) : null;
-  if (!_proj || !_proj.sa) return empty;
-
-  // Phase 1 multi-baseline dispatch: if the meter has a baselines array, route to
-  // the multi-baseline path. Falls back to legacy single-baseline logic below.
-  if (m.baselines && m.baselines.length > 0) {
-    return _getMeterSavingsMulti(m, bills, incl, projId, bldgId);
-  }
+  // required because app/portal-export.js passes projId as a String while projects[].id
+  // are numbers - a strict === here would silently fail that caller.
+  const _proj =
+    typeof projects !== "undefined"
+      ? projects.find((x) => String(x.id) === String(projId))
+      : null;
+  const hasContract = !!(_proj && _proj.sa);
 
   const bl = m.baseline;
   if (!bl || !bl.months || bl.months.length < 3) return empty;
 
-  // Cache: return stored result if bills AND baseline (reg/months/overrides) haven't changed.
-  // Versioned 'v2|' key: fingerprints the full baseline (reg included — freeze now invalidates),
-  // superseding the old _ovrHash-only key. The 'v2|' prefix is also the purge mechanism for every
-  // pre-existing persisted v1 cache (see saveUtilityData() strip-on-save + bcbc84e0).
+  // Cache: return stored result if the inputs have not changed. The key holds everything the
+  // result depends on that is not in the bills: project, contract flag, day-count basis,
+  // inclusive setting, and the full baseline (reg included - freeze invalidates).
+  // SAVINGS_CALC_VERSION and the 'v3|' prefix purge any older cache (see saveUtilityData()
+  // strip-on-save + bcbc84e0).
   const _blFp = JSON.stringify({
     ver: SAVINGS_CALC_VERSION,
     reg: bl.reg || null,
@@ -146,27 +157,51 @@ function getMeterSavings(m, bills, incl, projId, bldgId) {
     costSavOverrides: bl.costSavOverrides || null,
   });
   const cacheKey =
-    'v2|' + bills.length + '_' + (bills[0]?.start || '') + '_' + (bills[bills.length - 1]?.end || '') + '|' + _blFp;
-  if (m._savingsCache && m._savingsCacheKey === cacheKey) return m._savingsCache;
+    "v3|p:" +
+    projId +
+    "|sa:" +
+    (hasContract ? 1 : 0) +
+    "|nb:" +
+    ((_proj && _proj.normBasis) || "calendar") +
+    "|i:" +
+    JSON.stringify(incl == null ? null : incl) +
+    "|" +
+    bills.length +
+    "_" +
+    (bills[0]?.start || "") +
+    "_" +
+    (bills[bills.length - 1]?.end || "") +
+    "|" +
+    _blFp;
+  if (!opts.effectiveRows && m._savingsCache && m._savingsCacheKey === cacheKey)
+    return m._savingsCache;
 
   const byYM = {};
   const byCalMo = {};
   const unitsByYM = {};
   const unitsByCalMo = {};
   // a67db8ce (2026-09-09 savings-integrity investigation): months where the rate could not
-  // be resolved (blank stored rate and no cost fallback) — flagged here instead of being
+  // be resolved (blank stored rate and no cost fallback) - flagged here instead of being
   // silently written as $0.00, which is indistinguishable on screen from a real break-even
-  // month. Populated per-row below; consumed by the renderers named in the item (meter/
-  // building/project views, lib/perf-table.js Meter Performance table + report).
+  // month. Consumed by the renderers (meter/building/project views, lib/perf-table.js).
   const incompleteYM = {};
+  const rowsOut = [];
 
-  const isElec = m.commodity === 'Electric';
-  const isPropane = m.commodity === 'Propane';
+  const isElec = m.commodity === "Electric";
+  const isGas = m.commodity === "Gas";
+  const isPropane = m.commodity === "Propane";
   const { byYm: weatherByYm } = getWeatherForBuilding(projId, bldgId);
-  const allRows = bills.length ? getNormRows(m, bills, incl, weatherByYm) : [];
+  const _actualRows = bills.length
+    ? getNormRows(m, bills, incl, weatherByYm)
+    : [];
+  const allRows = opts.effectiveRows || _actualRows;
   const blRows = allRows.filter((r) => bl.months.includes(r.ym));
+  // The regression is always FIT on actual weather; only the predictions use effectiveRows.
+  const blRowsActual = opts.effectiveRows
+    ? _actualRows.filter((r) => bl.months.includes(r.ym))
+    : blRows;
   const blEnd = bl.months.slice().sort().pop();
-  // 2026-09-15 (phantom-savings fix): exclude incompleteCycle rows — a genuinely short/stub
+  // 2026-09-15 (phantom-savings fix): exclude incompleteCycle rows - a genuinely short/stub
   // bill that hasn't completed a real billing cycle yet must not book savings (Spring Hill:
   // baseline-only project with only a partial artifact bill after baseline end -> $0
   // savings everywhere, not a phantom number). incompleteCycle does NOT exclude complete
@@ -174,20 +209,26 @@ function getMeterSavings(m, bills, incl, projId, bldgId) {
   // so those keep booking real savings. See computations/normalization.js getNormRows().
   const postRows = allRows.filter((r) => r.ym > blEnd && !r.incompleteCycle);
   if (!postRows.length) {
-    const result = empty;
-    m._savingsCache = result;
-    m._savingsCacheKey = cacheKey;
-    return result;
+    if (!opts.effectiveRows) {
+      m._savingsCache = empty;
+      m._savingsCacheKey = cacheKey;
+    }
+    return empty;
   }
 
-  const { elecByMo: eMo, gasByMo: gMo, propaneByMo: pMo, waterByMo: wMo } = buildMoMap(m, blRows, bills, incl);
-  const _moMap = isElec ? eMo : m.commodity === 'Gas' ? gMo : isPropane ? pMo : wMo;
+  const {
+    elecByMo: eMo,
+    gasByMo: gMo,
+    propaneByMo: pMo,
+    waterByMo: wMo,
+  } = buildMoMap(m, blRows, bills, incl);
+  const _moMap = isElec ? eMo : isGas ? gMo : isPropane ? pMo : wMo;
   const blByCalMo = {};
   const blDemKWByCalMo = {};
   Object.entries(_moMap).forEach(([mo, v]) => {
     blByCalMo[mo] = isElec
       ? v.kwhPredicted
-      : m.commodity === 'Gas'
+      : isGas
         ? v.thermsPredicted
         : isPropane
           ? v.gallons
@@ -196,75 +237,60 @@ function getMeterSavings(m, bills, incl, projId, bldgId) {
   });
   const hasBlCalMap = Object.keys(blByCalMo).length > 0;
   const hasRegrP = allRows.some((r) => r.regrBaseline != null);
-  const blAvg = blRows.length ? blRows.reduce((s, r) => s + r.usage, 0) / blRows.length : 0;
+  const blAvg = blRows.length
+    ? blRows.reduce((s, r) => s + r.usage, 0) / blRows.length
+    : 0;
 
-  // kW weather normalization via CDD regression (matches renderPerfPane)
-  const _kwNormByYm = {};
-  if (isElec && hasRegrP) {
-    const pts = blRows
-      .map((r) => {
-        const bfr = bills.filter((b) => normMonth(b.start, b.end, incl, bills) === r.ym);
-        const kw = bfr.length ? bfr.reduce((s, b) => s + (parseFloat(b.demandKW) || 0), 0) / bfr.length : 0;
-        return { x: r.cdd != null ? r.cdd : 0, y: kw };
-      })
-      .filter((p) => p.y > 0);
-    if (pts.length >= 3) {
-      const n = pts.length;
-      const mx = pts.reduce((s, p) => s + p.x, 0) / n;
-      const my = pts.reduce((s, p) => s + p.y, 0) / n;
-      const ssxx = pts.reduce((s, p) => s + (p.x - mx) ** 2, 0);
-      const ssxy = pts.reduce((s, p) => s + (p.x - mx) * (p.y - my), 0);
-      if (ssxx > 0) {
-        const slope = ssxy / ssxx;
-        const intercept = my - slope * mx;
-        allRows.forEach((r) => {
-          const cdd = r.cdd != null ? r.cdd : 0;
-          _kwNormByYm[r.ym] = Math.max(0, intercept + slope * cdd);
-        });
-      }
-    }
-  }
+  // kW weather normalization: the one kW CDD regression (computations/regression.js).
+  const _kwNormByYm =
+    isElec && hasRegrP
+      ? computeKwCddRegression(blRowsActual, allRows, bills, incl)
+      : {};
 
   const rawUsageByYm = {};
-  if (!isElec) {
-    if (isPropane) {
-      allRows.forEach((r) => {
-        rawUsageByYm[r.ym] = r.usage;
-      });
-    } else {
-      bills.forEach((b) => {
-        const ym = normMonth(b.start, b.end, incl, bills);
-        if (!ym) return;
-        const actUsage =
-          m.commodity === 'Gas' ? resolveGasUsageTherms(b) : parseFloat(b.waterUsage || b.sewerUsage || b.usage || 0);
-        rawUsageByYm[ym] = (rawUsageByYm[ym] || 0) + actUsage;
-      });
-    }
-  }
-  if (isElec) {
+  if (isPropane) {
+    allRows.forEach((r) => {
+      rawUsageByYm[r.ym] = r.usage;
+    });
+  } else {
     bills.forEach((b) => {
       const ym = normMonth(b.start, b.end, incl, bills);
       if (!ym) return;
-      rawUsageByYm[ym] = (rawUsageByYm[ym] || 0) + (parseFloat(b.kwh) || parseFloat(b.usage) || 0);
+      const actUsage = isElec
+        ? parseFloat(b.kwh) || parseFloat(b.usage) || 0
+        : isGas
+          ? resolveGasUsageTherms(b)
+          : parseFloat(b.waterUsage || b.sewerUsage || b.usage || 0);
+      rawUsageByYm[ym] = (rawUsageByYm[ym] || 0) + actUsage;
     });
   }
 
-  // 2026-09-11 (FIX 3, propane zeroFill savings booking): carry-forward propane rate —
-  // updated to the most recent real galRate seen as postRows (sorted ascending by ym) are
-  // walked, so a zeroFill month (no delivery yet) can book real savings using the last
-  // known delivered rate instead of galRate=0 forcing totalCostSav to 0. Matches the
-  // identical carry-forward this same fix adds to lib/perf-table.js (display) and the
-  // _getMeterSavingsMulti propane branch below.
+  // 2026-09-11 (FIX 3, propane zeroFill savings booking): carry-forward propane rate -
+  // updated to the most recent real all-in $/gal seen as postRows (sorted ascending by ym)
+  // are walked, so a zeroFill month (no delivery yet) can book real savings using the last
+  // known delivered rate instead of galRate=0 forcing totalCostSav to 0.
   let _lastGalRate = 0;
   postRows.forEach((r) => {
-    const calMo = parseInt(r.ym.split('-')[1]) - 1;
-    const bfr = isPropane ? [] : bills.filter((b) => normMonth(b.start, b.end, incl, bills) === r.ym);
+    const calMo = parseInt(r.ym.split("-")[1]) - 1;
+    const bfr = isPropane
+      ? []
+      : bills.filter((b) => normMonth(b.start, b.end, incl, bills) === r.ym);
     if (!isPropane && !bfr.length) return;
 
     let totalCostSav = 0;
-    let unitSav = { kwh: 0, kw: 0, therms: 0, gallons: 0 };
+    const unitSav = { kwh: 0, kw: 0, therms: 0, gallons: 0 };
     let _rateIncomplete = false;
-    let _rateReason = '';
+    let _rateReason = "";
+    // Row detail for the Meter Performance table.
+    let kwhRate = 0,
+      kwhCostSav = 0,
+      unitRate = 0,
+      unitCostSav = 0,
+      blExpKW = 0,
+      actDemKW = 0,
+      actBilKW = 0,
+      moKwRate = 0,
+      kwCostSav = 0;
 
     const expUsage =
       hasBlCalMap && blByCalMo[calMo] != null
@@ -276,29 +302,56 @@ function getMeterSavings(m, bills, incl, projId, bldgId) {
 
     if (isElec) {
       const actKwh = actUsage;
-      const n = bfr.length || 1;
-      const _sKwhRate = bfr.reduce((s, b) => s + (parseFloat(b.totalKwhRate) || 0), 0) / n;
-      const kwhCostAmt = bfr.reduce((s, b) => s + parseFloat(b.kwhCost || 0), 0);
-      const kwhRate = _sKwhRate || (actKwh > 0 && kwhCostAmt > 0 ? kwhCostAmt / actKwh : 0);
+      // Blend of the bills in this month: mean of each bill's resolved $/kWh. A bill with no
+      // resolvable rate is left out of the mean, never counted as 0 (math-02 M1).
+      const _kwhRates = bfr
+        .map((b) => getStoredRate(b, "kwh"))
+        .filter((rt) => rt > 0);
+      const _sKwhRate = _kwhRates.length
+        ? _kwhRates.reduce((s, rt) => s + rt, 0) / _kwhRates.length
+        : 0;
+      const kwhCostAmt = bfr.reduce(
+        (s, b) => s + parseFloat(b.kwhCost || 0),
+        0,
+      );
+      kwhRate =
+        _sKwhRate || (actKwh > 0 && kwhCostAmt > 0 ? kwhCostAmt / actKwh : 0);
       const kwhSaved = expUsage - actKwh;
-      const kwhCostSav = kwhRate > 0 ? kwhSaved * kwhRate : 0;
-      const blExpKW = _kwNormByYm[r.ym] != null ? _kwNormByYm[r.ym] : blDemKWByCalMo[calMo] || 0;
-      const actBilKW = bfr.length ? Math.max(...bfr.map((b) => parseFloat(b.billedKW || b.demandKW || 0))) : 0;
-      const actDemKW = bfr.length ? Math.max(...bfr.map((b) => parseFloat(b.demandKW || 0))) : 0;
-      // Bug (2026-09-10, Circle Grove 2026-05): the $/kW rate was derived purely from
-      // bill.kwCost+bill.facKWCost, which are blank on newer-schema bills that store the
-      // same dollars under demandCharge/tdcCharge/facilitiesCharge instead — silently
-      // zeroing the kW savings term even though the bill's own totalKwRate (and the Bills
-      // table) had a real rate. getStoredKwRate() (computations/rates.js) is the SSOT:
-      // stored totalKwRate -> granular charge fields -> legacy kwCost+facKWCost.
-      const _kwRates = bfr.map((b) => getStoredKwRate(b)).filter((rt) => rt > 0);
-      let moKwRate = _kwRates.length ? _kwRates.reduce((s, rt) => s + rt, 0) / _kwRates.length : 0;
+      kwhCostSav = kwhRate > 0 ? kwhSaved * kwhRate : 0;
+      blExpKW =
+        _kwNormByYm[r.ym] != null
+          ? _kwNormByYm[r.ym]
+          : blDemKWByCalMo[calMo] || 0;
+      actBilKW = Math.max(
+        ...bfr.map((b) => parseFloat(b.billedKW || b.demandKW || 0)),
+      );
+      actDemKW = Math.max(...bfr.map((b) => parseFloat(b.demandKW || 0)));
+      // getStoredKwRate() (computations/rates.js) is the ONE $/kW rate: stored totalKwRate,
+      // else demand dollars / billed kW (see its header).
+      const _kwRates = bfr
+        .map((b) => getStoredKwRate(b))
+        .filter((rt) => rt > 0);
+      moKwRate = _kwRates.length
+        ? _kwRates.reduce((s, rt) => s + rt, 0) / _kwRates.length
+        : 0;
       // Missing-rate cascade (steps 2-5, computations/rates.js resolveMeterRate): only when
       // the own-bill rate above is genuinely absent AND there is real billed kW that month
-      // (a savings-feeding month) — see _context/plans/2026-09-10-missing-rate-resolution-cascade.md.
-      if (!(moKwRate > 0) && actBilKW > 0 && typeof resolveMeterRate === 'function') {
-        const _allMeters = typeof getUDBldg === 'function' ? (getUDBldg(projId, bldgId) || {}).meters || [] : [];
-        const _resolved = resolveMeterRate(projId, m, r.ym, { bills, incl, allMeters: _allMeters, component: 'kw' });
+      // (a savings-feeding month) - see _context/plans/2026-09-10-missing-rate-resolution-cascade.md.
+      if (
+        !(moKwRate > 0) &&
+        actBilKW > 0 &&
+        typeof resolveMeterRate === "function"
+      ) {
+        const _allMeters =
+          typeof getUDBldg === "function"
+            ? (getUDBldg(projId, bldgId) || {}).meters || []
+            : [];
+        const _resolved = resolveMeterRate(projId, m, r.ym, {
+          bills,
+          incl,
+          allMeters: _allMeters,
+          component: "kw",
+        });
         if (_resolved && _resolved.rate > 0) moKwRate = _resolved.rate;
       }
       const _chk = checkRateIncomplete({
@@ -308,15 +361,16 @@ function getMeterSavings(m, bills, incl, projId, bldgId) {
       _rateIncomplete = _chk.incomplete;
       _rateReason = _chk.reason;
       const kwSaved = blExpKW - actBilKW;
-      const kwCostSav = blExpKW > 0 && moKwRate > 0 ? kwSaved * moKwRate : 0;
+      kwCostSav = blExpKW > 0 && moKwRate > 0 ? kwSaved * moKwRate : 0;
       totalCostSav = kwhCostSav + kwCostSav;
       unitSav.kwh = kwhSaved;
       unitSav.kw = kwSaved;
     } else if (isPropane) {
       const actGallons = actUsage;
       const actCost = r.cost;
-      const _sPropRate = bfr.length ? parseFloat(bfr[0].totalPropaneRate) || 0 : 0;
-      let galRate = _sPropRate || (actGallons > 0 && actCost > 0 ? actCost / actGallons : 0);
+      // D-9: propane $/gal is the ALL-IN rate (whole delivered cost / gallons), not the
+      // bill's printed unit price - same whole-bill rule as gas.
+      let galRate = actGallons > 0 && actCost > 0 ? actCost / actGallons : 0;
       if (galRate > 0) {
         _lastGalRate = galRate;
       } else if (r.zeroFill && _lastGalRate > 0) {
@@ -328,72 +382,112 @@ function getMeterSavings(m, bills, incl, projId, bldgId) {
           rate: galRate,
           actUsage: actGallons,
           actCost: actCost,
-          reason: 'propane $/gallon rate unavailable',
+          reason: "propane $/gallon rate unavailable",
         },
       });
       _rateIncomplete = _chk.incomplete;
       _rateReason = _chk.reason;
+      unitRate = galRate;
       totalCostSav = galRate > 0 ? (expUsage - actGallons) * galRate : 0;
+      unitCostSav = totalCostSav;
       unitSav.gallons = galRate > 0 ? expUsage - actGallons : 0;
     } else {
       const actTherms = actUsage;
       const actThermCost = bfr.reduce(
-        (s, b) => s + (parseFloat(b.gasCharge) || parseFloat(b.thermCost) || parseFloat(b.cost) || 0),
+        (s, b) =>
+          s +
+          (parseFloat(b.gasCharge) ||
+            parseFloat(b.thermCost) ||
+            parseFloat(b.cost) ||
+            0),
         0,
       );
-      const _sGasRate = bfr.length ? bfr.reduce((s, b) => s + (parseFloat(b.totalGasRate) || 0), 0) / bfr.length : 0;
-      const thermRate = _sGasRate || (actTherms > 0 && actThermCost > 0 ? actThermCost / actTherms : 0);
-      // Gate on m.commodity === 'Gas' specifically — this "else" branch also runs for
-      // Water/Sewer/Stormwater/Steam meters (ALL_COMMODITIES, app/core.js). This is NOT
-      // "no rate by design": real bills for those commodities DO carry their own rate
-      // (totalWaterRate/waterCharge, totalSewerRate/sewerCharge, totalStormwaterRate) —
-      // checked against the 2026-09-22 backup, 94%+ of Water/Sewer/Stormwater bills across
-      // every Louisburg building have a real rate. This branch simply never reads those
-      // fields (only gasCharge/thermCost/totalGasRate), so thermRate is always 0 for those
-      // three commodities and $ savings for them has never been computed by this engine —
-      // a real, separate gap (no backlog item yet as of 2026-09-24), out of scope for
+      // Blend of the bills in this month: mean of each bill's resolved $/therm (blank bills
+      // left out, not counted as 0 - math-02 M1). Only a Gas meter derives a rate from the
+      // bill's gas fields; this branch also runs for Water/Sewer/Stormwater/Steam meters.
+      const _gasRates = bfr
+        .map(
+          (b) =>
+            parseFloat(b.totalGasRate) || (isGas ? getStoredRate(b, "gas") : 0),
+        )
+        .filter((rt) => rt > 0);
+      const _sGasRate = _gasRates.length
+        ? _gasRates.reduce((s, rt) => s + rt, 0) / _gasRates.length
+        : 0;
+      const thermRate =
+        _sGasRate ||
+        (actTherms > 0 && actThermCost > 0 ? actThermCost / actTherms : 0);
+      // Gate on Gas specifically - this "else" branch also runs for Water/Sewer/Stormwater/
+      // Steam meters (ALL_COMMODITIES, app/core.js). This is NOT "no rate by design": real
+      // bills for those commodities DO carry their own rate (totalWaterRate/waterCharge,
+      // totalSewerRate/sewerCharge, totalStormwaterRate) - checked against the 2026-09-22
+      // backup, 94%+ of Water/Sewer/Stormwater bills across every Louisburg building have a
+      // real rate. This branch simply never reads those fields, so $ savings for them has
+      // never been computed by this engine - a real, separate gap, out of scope for
       // a67db8ce (gas/electric/propane rate-incompleteness). Gating here on Gas prevents
       // that pre-existing, always-$0 state from being misreported as "rate incomplete."
       const _chk = checkRateIncomplete({
         unit: {
-          enabled: m.commodity === 'Gas',
+          enabled: isGas,
           rate: thermRate,
           actUsage: actTherms,
           actCost: actThermCost,
-          reason: 'gas $/therm rate unavailable',
+          reason: "gas $/therm rate unavailable",
         },
       });
       _rateIncomplete = _chk.incomplete;
       _rateReason = _chk.reason;
+      unitRate = thermRate;
       totalCostSav = thermRate > 0 ? (expUsage - actTherms) * thermRate : 0;
+      unitCostSav = totalCostSav;
       unitSav.therms = thermRate > 0 ? expUsage - actTherms : 0;
     }
 
     // Apply costSavOverrides if present (per year-month)
     const _costOvr = m.baseline?.costSavOverrides?.[r.ym];
     const finalCostSav = _costOvr != null ? _costOvr : totalCostSav;
-
     // a67db8ce: flag this month as rate-incomplete unless a human has already resolved it
-    // with an explicit costSavOverride. Never applies to a month with a complete rate —
+    // with an explicit costSavOverride. Never applies to a month with a complete rate -
     // this only fires when the $0.00 above was manufactured by a missing rate.
-    if (_rateIncomplete && _costOvr == null) {
+    const flagIncomplete = _rateIncomplete && _costOvr == null;
+
+    rowsOut.push({
+      ym: r.ym,
+      normDays: r.normDays,
+      expUsage: expUsage,
+      actUsage: actUsage,
+      kwhRate: kwhRate,
+      kwhCostSav: hasContract ? kwhCostSav : 0,
+      unitRate: unitRate,
+      unitCostSav: hasContract ? unitCostSav : 0,
+      blExpKW: blExpKW,
+      demKW: actDemKW,
+      bilKW: actBilKW,
+      kwRate: moKwRate,
+      kwCostSav: hasContract ? kwCostSav : 0,
+      savings: hasContract ? finalCostSav : 0,
+      pinned: hasContract && _costOvr != null,
+      rateIncomplete: hasContract && flagIncomplete,
+      rateReason: hasContract && flagIncomplete ? _rateReason : "",
+    });
+    // No Service Agreement: rows above show usage with $0; nothing books into the rollups.
+    if (!hasContract) return;
+
+    if (flagIncomplete)
       incompleteYM[r.ym] = { commodity: m.commodity, reason: _rateReason };
-    }
 
-    // Populate byYM
     byYM[r.ym] = (byYM[r.ym] || 0) + finalCostSav;
-
-    // Populate byCalMo (same override applied — THIS IS THE BUG FIX)
     byCalMo[calMo] = (byCalMo[calMo] || 0) + finalCostSav;
 
-    // Populate unit savings
-    if (!unitsByYM[r.ym]) unitsByYM[r.ym] = { kwh: 0, kw: 0, therms: 0, gallons: 0 };
+    if (!unitsByYM[r.ym])
+      unitsByYM[r.ym] = { kwh: 0, kw: 0, therms: 0, gallons: 0 };
     unitsByYM[r.ym].kwh += unitSav.kwh;
     unitsByYM[r.ym].kw += unitSav.kw;
     unitsByYM[r.ym].therms += unitSav.therms;
     unitsByYM[r.ym].gallons += unitSav.gallons;
 
-    if (!unitsByCalMo[calMo]) unitsByCalMo[calMo] = { kwh: 0, kw: 0, therms: 0, gallons: 0 };
+    if (!unitsByCalMo[calMo])
+      unitsByCalMo[calMo] = { kwh: 0, kw: 0, therms: 0, gallons: 0 };
     unitsByCalMo[calMo].kwh += unitSav.kwh;
     unitsByCalMo[calMo].kw += unitSav.kw;
     unitsByCalMo[calMo].therms += unitSav.therms;
@@ -401,305 +495,28 @@ function getMeterSavings(m, bills, incl, projId, bldgId) {
   });
 
   // Inject overrides for months that have no postRow (e.g. propane with no delivery that month)
-  const _allOverrides = bl.costSavOverrides || {};
-  Object.entries(_allOverrides).forEach(([ym, val]) => {
-    if (val == null || ym <= blEnd || byYM[ym] != null) return;
-    const calMo = parseInt(ym.split('-')[1]) - 1;
-    byYM[ym] = val;
-    byCalMo[calMo] = (byCalMo[calMo] || 0) + val;
-  });
-
-  // Also set legacy m._unitSavByCalMo for any remaining references
-  m._unitSavByCalMo = unitsByCalMo;
-
-  const result = { byYM, byCalMo, unitsByYM, unitsByCalMo, incompleteYM };
-  m._savingsCache = result;
-  m._savingsCacheKey = cacheKey;
-  // Legacy: also set m._savingsByYM for any direct references
-  m._savingsByYM = byYM;
-  return result;
-}
-
-/* ─────────────────────────────────────────────────────────────
-   _getMeterSavingsMulti(m, bills, incl, projId, bldgId)
-   Phase 1 multi-baseline savings path.
-   Called automatically by getMeterSavings() when m.baselines exists.
-
-   For each baseline in m.baselines:
-     - Finds post-baseline rows that fall inside that baseline's savingsWindow
-     - Uses THAT baseline's frozen regression (bl.reg) to compute expected usage
-     - Applies that baseline's costSavOverrides
-   Results are merged into the same byYM/byCalMo/unitsByYM/unitsByCalMo
-   structure that the legacy path returns, so all callers remain unaffected.
-
-   Backward compat: meters with only m.baseline and no m.baselines still
-   use the legacy path above.
-───────────────────────────────────────────────────────────── */
-function _getMeterSavingsMulti(m, bills, incl, projId, bldgId) {
-  const empty = { byYM: {}, byCalMo: {}, unitsByYM: {}, unitsByCalMo: {}, incompleteYM: {} };
-
-  // Require at least one baseline with a valid savings window and regression
-  const validBaselines = (m.baselines || []).filter(
-    (bl) => bl.months && bl.months.length >= 3 && bl.savingsWindow && bl.savingsWindow.start,
-  );
-  if (!validBaselines.length) return empty;
-
-  const byYM = {};
-  const byCalMo = {};
-  const unitsByYM = {};
-  const unitsByCalMo = {};
-  // a67db8ce — see legacy getMeterSavings() above for the full rationale.
-  const incompleteYM = {};
-
-  const isElec = m.commodity === 'Electric';
-  const isPropane = m.commodity === 'Propane';
-  const { byYm: weatherByYm } = getWeatherForBuilding(projId, bldgId);
-  const allRows = bills.length ? getNormRows(m, bills, incl, weatherByYm) : [];
-
-  // Build raw actual usage lookup once (shared across all baselines)
-  const rawUsageByYm = {};
-  if (isPropane) {
-    allRows.forEach((r) => {
-      rawUsageByYm[r.ym] = r.usage;
-    });
-  } else if (isElec) {
-    bills.forEach((b) => {
-      const ym = normMonth(b.start, b.end, incl, bills);
-      if (!ym) return;
-      rawUsageByYm[ym] = (rawUsageByYm[ym] || 0) + (parseFloat(b.kwh) || parseFloat(b.usage) || 0);
-    });
-  } else {
-    bills.forEach((b) => {
-      const ym = normMonth(b.start, b.end, incl, bills);
-      if (!ym) return;
-      const actUsage =
-        m.commodity === 'Gas' ? resolveGasUsageTherms(b) : parseFloat(b.waterUsage || b.sewerUsage || b.usage || 0);
-      rawUsageByYm[ym] = (rawUsageByYm[ym] || 0) + actUsage;
-    });
-  }
-
-  // Process each baseline independently
-  validBaselines.forEach((bl) => {
-    const blEnd = bl.end || bl.months.slice().sort().pop();
-    const winStart = bl.savingsWindow.start;
-    const winEnd = bl.savingsWindow.end || null;
-
-    // Rows that fall inside this baseline's savings window. Excludes incompleteCycle rows
-    // for the same reason as the legacy path above (2026-09-15 phantom-savings fix) — a
-    // stub bill must not book savings, but a complete water/sewer irregular-cycle bill
-    // still does.
-    const postRows = allRows.filter((r) => r.ym >= winStart && (!winEnd || r.ym <= winEnd) && !r.incompleteCycle);
-    if (!postRows.length) return;
-
-    // Build the calendar-month baseline usage map for this baseline.
-    // Prefer frozen normalizedMonths if captured; fall back to live computation
-    // from blRows (same as legacy path).
-    const blByCalMo = {};
-    const blDemKWByCalMo = {};
-
-    if (bl.normalizedMonths) {
-      // Use the frozen snapshot
-      Object.entries(bl.normalizedMonths).forEach(([ym, v]) => {
-        const calMo = parseInt(ym.split('-')[1]) - 1;
-        // normalizedMonths values may be plain numbers or objects; handle both
-        const usage = typeof v === 'object' ? v.usage || v.regrBaseline || 0 : v;
-        blByCalMo[calMo] = usage;
-      });
-    } else {
-      // Recompute from blRows using the frozen regression (same as legacy buildMoMap path)
-      const blRows = allRows.filter((r) => bl.months.includes(r.ym));
-      if (blRows.length) {
-        // Temporarily swap m.baseline so buildMoMap/getNormRows use this baseline's reg
-        const _origBaseline = m.baseline;
-        m.baseline = bl;
-        const { elecByMo: eMo, gasByMo: gMo, propaneByMo: pMo, waterByMo: wMo } = buildMoMap(m, blRows, bills, incl);
-        m.baseline = _origBaseline;
-        const _moMap = isElec ? eMo : m.commodity === 'Gas' ? gMo : isPropane ? pMo : wMo;
-        Object.entries(_moMap).forEach(([mo, v]) => {
-          blByCalMo[mo] = isElec
-            ? v.kwhPredicted
-            : m.commodity === 'Gas'
-              ? v.thermsPredicted
-              : isPropane
-                ? v.gallons
-                : v.kgal;
-          if (isElec) blDemKWByCalMo[mo] = v.billedKW || v.demandKW || 0;
-        });
-      }
-    }
-
-    const hasBlCalMap = Object.keys(blByCalMo).length > 0;
-    const blRows = allRows.filter((r) => bl.months.includes(r.ym));
-    const hasRegrP = allRows.some((r) => r.regrBaseline != null);
-    const blAvg = blRows.length ? blRows.reduce((s, r) => s + r.usage, 0) / blRows.length : 0;
-
-    // kW demand normalization using THIS baseline's regression
-    const _kwNormByYm = {};
-    if (isElec && hasRegrP && blRows.length >= 3) {
-      const pts = blRows
-        .map((r) => {
-          const bfr = bills.filter((b) => normMonth(b.start, b.end, incl, bills) === r.ym);
-          const kw = bfr.length ? bfr.reduce((s, b) => s + (parseFloat(b.demandKW) || 0), 0) / bfr.length : 0;
-          return { x: r.cdd != null ? r.cdd : 0, y: kw };
-        })
-        .filter((p) => p.y > 0);
-      if (pts.length >= 3) {
-        const n = pts.length;
-        const mx = pts.reduce((s, p) => s + p.x, 0) / n;
-        const my = pts.reduce((s, p) => s + p.y, 0) / n;
-        const ssxx = pts.reduce((s, p) => s + (p.x - mx) ** 2, 0);
-        const ssxy = pts.reduce((s, p) => s + (p.x - mx) * (p.y - my), 0);
-        if (ssxx > 0) {
-          const slope = ssxy / ssxx;
-          const intercept = my - slope * mx;
-          postRows.forEach((r) => {
-            const cdd = r.cdd != null ? r.cdd : 0;
-            _kwNormByYm[r.ym] = Math.max(0, intercept + slope * cdd);
-          });
-        }
-      }
-    }
-
-    // 2026-09-11 (FIX 3, propane zeroFill savings booking): same carry-forward as the legacy
-    // path above — see that comment. Reset per baseline (this loop is inside
-    // validBaselines.forEach), since postRows here are scoped to this baseline's own window.
-    let _lastGalRate = 0;
-    postRows.forEach((r) => {
-      const calMo = parseInt(r.ym.split('-')[1]) - 1;
-      const bfr = isPropane ? [] : bills.filter((b) => normMonth(b.start, b.end, incl, bills) === r.ym);
-      if (!isPropane && !bfr.length) return;
-
-      let totalCostSav = 0;
-      let unitSav = { kwh: 0, kw: 0, therms: 0, gallons: 0 };
-      let _rateIncomplete = false;
-      let _rateReason = '';
-
-      const expUsage =
-        hasBlCalMap && blByCalMo[calMo] != null
-          ? blByCalMo[calMo]
-          : hasRegrP && r.regrBaseline != null
-            ? r.regrBaseline
-            : blAvg;
-      const actUsage = rawUsageByYm[r.ym] != null ? rawUsageByYm[r.ym] : r.usage;
-
-      if (isElec) {
-        const actKwh = actUsage;
-        const n = bfr.length || 1;
-        const _sKwhRate = bfr.reduce((s, b) => s + (parseFloat(b.totalKwhRate) || 0), 0) / n;
-        const kwhCostAmt = bfr.reduce((s, b) => s + parseFloat(b.kwhCost || 0), 0);
-        const kwhRate = _sKwhRate || (actKwh > 0 && kwhCostAmt > 0 ? kwhCostAmt / actKwh : 0);
-        const kwhSaved = expUsage - actKwh;
-        const kwhCostSav = kwhRate > 0 ? kwhSaved * kwhRate : 0;
-        const blExpKW = _kwNormByYm[r.ym] != null ? _kwNormByYm[r.ym] : blDemKWByCalMo[calMo] || 0;
-        const actBilKW = bfr.length ? Math.max(...bfr.map((b) => parseFloat(b.billedKW || b.demandKW || 0))) : 0;
-        // Bug (2026-09-10, Circle Grove 2026-05): see legacy-path fix above — getStoredKwRate()
-        // is the SSOT own-bill $/kW rate; cascade fills the genuinely-missing case.
-        const _kwRates = bfr.map((b) => getStoredKwRate(b)).filter((rt) => rt > 0);
-        let moKwRate = _kwRates.length ? _kwRates.reduce((s, rt) => s + rt, 0) / _kwRates.length : 0;
-        if (!(moKwRate > 0) && actBilKW > 0 && typeof resolveMeterRate === 'function') {
-          const _allMeters = typeof getUDBldg === 'function' ? (getUDBldg(projId, bldgId) || {}).meters || [] : [];
-          const _resolved = resolveMeterRate(projId, m, r.ym, { bills, incl, allMeters: _allMeters, component: 'kw' });
-          if (_resolved && _resolved.rate > 0) moKwRate = _resolved.rate;
-        }
-        const _chk = checkRateIncomplete({
-          kwh: { enabled: true, rate: kwhRate, actUsage: actKwh },
-          kw: { enabled: blExpKW > 0, rate: moKwRate, actual: actBilKW },
-        });
-        _rateIncomplete = _chk.incomplete;
-        _rateReason = _chk.reason;
-        const kwSaved = blExpKW - actBilKW;
-        const kwCostSav = blExpKW > 0 && moKwRate > 0 ? kwSaved * moKwRate : 0;
-        totalCostSav = kwhCostSav + kwCostSav;
-        unitSav.kwh = kwhSaved;
-        unitSav.kw = kwSaved;
-      } else if (isPropane) {
-        const actGallons = actUsage;
-        const actCost = r.cost;
-        const _sPropRate = bfr.length ? parseFloat(bfr[0].totalPropaneRate) || 0 : 0;
-        let galRate = _sPropRate || (actGallons > 0 && actCost > 0 ? actCost / actGallons : 0);
-        if (galRate > 0) {
-          _lastGalRate = galRate;
-        } else if (r.zeroFill && _lastGalRate > 0) {
-          galRate = _lastGalRate;
-        }
-        const _chk = checkRateIncomplete({
-          unit: {
-            enabled: !r.zeroFill,
-            rate: galRate,
-            actUsage: actGallons,
-            actCost: actCost,
-            reason: 'propane $/gallon rate unavailable',
-          },
-        });
-        _rateIncomplete = _chk.incomplete;
-        _rateReason = _chk.reason;
-        totalCostSav = galRate > 0 ? (expUsage - actGallons) * galRate : 0;
-        unitSav.gallons = galRate > 0 ? expUsage - actGallons : 0;
-      } else {
-        const actTherms = actUsage;
-        const actThermCost = bfr.reduce(
-          (s, b) => s + (parseFloat(b.gasCharge) || parseFloat(b.thermCost) || parseFloat(b.cost) || 0),
-          0,
-        );
-        const _sGasRate = bfr.length ? bfr.reduce((s, b) => s + (parseFloat(b.totalGasRate) || 0), 0) / bfr.length : 0;
-        const thermRate = _sGasRate || (actTherms > 0 && actThermCost > 0 ? actThermCost / actTherms : 0);
-        // See legacy path above — gate on Gas specifically, not Water/Sewer/Stormwater/Steam.
-        const _chk = checkRateIncomplete({
-          unit: {
-            enabled: m.commodity === 'Gas',
-            rate: thermRate,
-            actUsage: actTherms,
-            actCost: actThermCost,
-            reason: 'gas $/therm rate unavailable',
-          },
-        });
-        _rateIncomplete = _chk.incomplete;
-        _rateReason = _chk.reason;
-        totalCostSav = thermRate > 0 ? (expUsage - actTherms) * thermRate : 0;
-        unitSav.therms = thermRate > 0 ? expUsage - actTherms : 0;
-      }
-
-      // Apply this baseline's costSavOverrides
-      const _costOvr = bl.costSavOverrides && bl.costSavOverrides[r.ym] != null ? bl.costSavOverrides[r.ym] : null;
-      const finalCostSav = _costOvr != null ? _costOvr : totalCostSav;
-
-      // a67db8ce: same flag as the legacy path — see rationale above.
-      if (_rateIncomplete && _costOvr == null) {
-        incompleteYM[r.ym] = { commodity: m.commodity, reason: _rateReason };
-      }
-
-      byYM[r.ym] = (byYM[r.ym] || 0) + finalCostSav;
-      byCalMo[calMo] = (byCalMo[calMo] || 0) + finalCostSav;
-
-      if (!unitsByYM[r.ym]) unitsByYM[r.ym] = { kwh: 0, kw: 0, therms: 0, gallons: 0 };
-      unitsByYM[r.ym].kwh += unitSav.kwh;
-      unitsByYM[r.ym].kw += unitSav.kw;
-      unitsByYM[r.ym].therms += unitSav.therms;
-      unitsByYM[r.ym].gallons += unitSav.gallons;
-
-      if (!unitsByCalMo[calMo]) unitsByCalMo[calMo] = { kwh: 0, kw: 0, therms: 0, gallons: 0 };
-      unitsByCalMo[calMo].kwh += unitSav.kwh;
-      unitsByCalMo[calMo].kw += unitSav.kw;
-      unitsByCalMo[calMo].therms += unitSav.therms;
-      unitsByCalMo[calMo].gallons += unitSav.gallons;
-    });
-
-    // Inject costSavOverrides for months that have no postRow in this baseline's window
+  if (hasContract) {
     const _allOverrides = bl.costSavOverrides || {};
     Object.entries(_allOverrides).forEach(([ym, val]) => {
-      if (val == null) return;
-      if (ym < winStart || (winEnd && ym > winEnd)) return;
-      if (byYM[ym] != null) return;
-      const calMo = parseInt(ym.split('-')[1]) - 1;
+      if (val == null || ym <= blEnd || byYM[ym] != null) return;
+      const calMo = parseInt(ym.split("-")[1]) - 1;
       byYM[ym] = val;
       byCalMo[calMo] = (byCalMo[calMo] || 0) + val;
     });
-  });
+  }
 
-  m._unitSavByCalMo = unitsByCalMo;
-  const result = { byYM, byCalMo, unitsByYM, unitsByCalMo, incompleteYM };
-  m._savingsCache = result;
-  m._savingsByYM = byYM;
+  const result = {
+    byYM,
+    byCalMo,
+    unitsByYM,
+    unitsByCalMo,
+    incompleteYM,
+    rows: rowsOut,
+  };
+  if (!opts.effectiveRows) {
+    m._savingsCache = result;
+    m._savingsCacheKey = cacheKey;
+  }
   return result;
 }
 

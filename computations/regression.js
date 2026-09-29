@@ -244,15 +244,17 @@ function regressionBaseline(row, reg, commodity, normBasis) {
   return baseline != null ? Math.max(0, baseline) : null;
 }
 
-// ── Consolidated kW CDD regression ────────────────────────────────────────────
-// Was duplicated in the old savings functions; now unified in getMeterSavings.
-// Fits a simple linear regression of demand kW ~ CDD from baseline rows,
-// then predicts kW for all months.
-// blRows: baseline normalized rows (must have .ym and .cdd)
-// allRows: all normalized rows (must have .ym and .cdd)
+// ── The one kW CDD regression ────────────────────────────────────────────────
+// Fits a simple linear regression of BILLED kW ~ CDD from the baseline rows, then predicts
+// kW for every row. It fits on billed kW (billedKW, else demandKW) because savings compare the
+// prediction to billed kW - a metered-kW fit against a billed-kW actual books false kW
+// savings when billing has a minimum or ratchet (WP-04, math-02 H3). Savings, the Meter
+// Performance table and Energy Graphics all call this function; there is no other copy.
+// blRows: baseline rows used for the fit (must have .ym and .cdd)
+// allRows: rows to predict for (must have .ym and .cdd)
 // bills: the meter's bills array
 // incl: the inclusion setting for normMonth
-// Returns: {ym: predictedKW} for all months in allRows, or empty object if insufficient data
+// Returns: {ym: predictedKW} for all months in allRows, or {} if there are fewer than 3 usable points.
 function computeKwCddRegression(blRows, allRows, bills, incl) {
   var result = {};
   var pts = blRows
@@ -262,7 +264,7 @@ function computeKwCddRegression(blRows, allRows, bills, incl) {
       });
       var kw = bfr.length
         ? bfr.reduce(function (s, b) {
-            return s + (parseFloat(b.demandKW) || 0);
+            return s + (parseFloat(b.billedKW || b.demandKW) || 0);
           }, 0) / bfr.length
         : 0;
       return { x: r.cdd != null ? r.cdd : 0, y: kw };

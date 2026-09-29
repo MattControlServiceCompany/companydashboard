@@ -54,25 +54,6 @@ function getStoredRate(bill, type) {
         parseBillNumber(bill.kwhCost) || (parseBillNumber(bill.onPeakCost) || 0) + (parseBillNumber(bill.offPeakCost) || 0) || 0;
       return usage > 0 && cost > 0 ? cost / usage : 0;
     }
-    case 'kw': {
-      var stored = parseBillNumber(bill.totalKwRate);
-      if (stored > 0) return stored;
-      var usage =
-        parseBillNumber(bill.BilledKW) ||
-        parseBillNumber(bill.ActualKW) ||
-        parseBillNumber(bill.FacilitiesKW) ||
-        parseBillNumber(bill.billedKW) ||
-        parseBillNumber(bill.demandKW) ||
-        0;
-      // CSV-imported bills store demand $ under camelCase demandCharge/facilitiesCharge/
-      // facKWCost/tdcCharge instead of the PDF extractor's kwCost — sum those as the
-      // fallback so CSV-imported electric bills derive a real $/kW.
-      var cost =
-        parseBillNumber(bill.kwCost) ||
-        (parseBillNumber(bill.demandCharge) || 0) + getBillFacKWCost(bill) + (parseBillNumber(bill.tdcCharge) || 0) ||
-        0;
-      return usage > 0 && cost > 0 ? cost / usage : 0;
-    }
     case 'gas': {
       var stored = parseBillNumber(bill.totalGasRate);
       if (stored > 0) return stored;
@@ -116,29 +97,22 @@ function getStoredRate(bill, type) {
   }
 }
 
-// getStoredKwRate(bill) — canonical $/kW (demand) rate for ONE bill.
-// SSOT for the Bills table, Meter Performance, and the savings engine (all three must
-// return the same number for the same bill — see missing-rate-cascade.md step 1).
-// Bug (2026-09-10, Circle Grove 2026-05): savings.js and perf-table.js both derived
-// $/kW purely from (bill.kwCost + bill.facKWCost) / billedKW. Newer-schema bills store
-// the same dollars under granular fields (demandCharge, tdcCharge, facilitiesCharge)
-// instead — kwCost/facKWCost are blank on those bills — so the blind sum silently
-// produced 0 even though the bill's own totalKwRate (and the Bills table, which already
-// reads demandCharge+tdcCharge+facilitiesCharge — app/utility-data.js ~2842-2846) had a
-// real rate. Precedence: stored totalKwRate first (cheapest, already validated at save
-// time by ensureBillRates), then the granular charge fields, then the legacy
-// kwCost+facKWCost sum for older-schema bills that only ever populated those two fields.
+// getStoredKwRate(bill) - the ONE $/kW (demand) rate for a bill.
+// SSOT for the Bills table, Meter Performance, the savings engine, ensureBillRates and the
+// missing-rate cascade. Precedence: stored totalKwRate, then demand dollars / billed kW.
+// Demand dollars = (demandCharge + tdcCharge, or the legacy kwCost when those are blank)
+// plus the Facilities kW cost (getBillFacKWCost). Older bills that hold only kwCost and
+// facKWCost therefore give the same rate as newer bills that hold the same dollars under
+// demandCharge and facilitiesCharge (WP-04, math-02 H12/D6).
 function getStoredKwRate(bill) {
   var stored = parseBillNumber(bill.totalKwRate);
   if (stored > 0) return stored;
-  var billedKW = parseBillNumber(bill.billedKW) || parseBillNumber(bill.demandKW) || 0;
-  if (billedKW > 0) {
-    var granularCost = parseBillNumber(bill.demandCharge) + parseBillNumber(bill.tdcCharge) + getBillFacKWCost(bill);
-    if (granularCost > 0) return granularCost / billedKW;
-    var legacyCost = parseBillNumber(bill.kwCost) + getBillFacKWCost(bill);
-    if (legacyCost > 0) return legacyCost / billedKW;
-  }
-  return 0;
+  var billedKW =
+    parseBillNumber(bill.billedKW) || parseBillNumber(bill.demandKW) || parseBillNumber(bill.BilledKW) || parseBillNumber(bill.ActualKW) || parseBillNumber(bill.FacilitiesKW) || 0;
+  if (!(billedKW > 0)) return 0;
+  var demandCost = parseBillNumber(bill.demandCharge) + parseBillNumber(bill.tdcCharge) || parseBillNumber(bill.kwCost);
+  var cost = demandCost + getBillFacKWCost(bill);
+  return cost > 0 ? cost / billedKW : 0;
 }
 
 // Populate missing derived rate fields on a bill from its usage + cost data.
@@ -156,12 +130,11 @@ function ensureBillRates(bill) {
     }
   }
 
-  // Electric: totalKwRate (includes facKWCost — the full per-kW cost)
+  // Electric: totalKwRate (the full per-kW cost, from the one keeper getStoredKwRate)
   if (!parseBillNumber(bill.totalKwRate)) {
-    var kw = parseBillNumber(bill.BilledKW) || parseBillNumber(bill.billedKW) || parseBillNumber(bill.ActualKW) || parseBillNumber(bill.demandKW) || parseBillNumber(bill.FacilitiesKW);
-    var kwCost = parseBillNumber(bill.kwCost) + getBillFacKWCost(bill);
-    if (kw > 0 && kwCost > 0) {
-      bill.totalKwRate = (kwCost / kw).toFixed(5);
+    var kwRate = getStoredKwRate(bill);
+    if (kwRate > 0) {
+      bill.totalKwRate = kwRate.toFixed(5);
       changed = true;
     }
   }
@@ -690,25 +663,28 @@ function computeSeasonalBldgRates(projId, bldgId) {
   var b = typeof getUDBldg === 'function' ? getUDBldg(projId, bldgId) : null;
   if (!b) return empty;
   var meters = b.meters || [];
-  var elecM = meters.find(function (m) {
+  // Every meter of a commodity feeds that commodity's rate (WP-04, math-02 M14), not only the first.
+  var elecMeters = meters.filter(function (m) {
     return m.commodity === 'Electric';
   });
-  var gasM = meters.find(function (m) {
+  var gasMeters = meters.filter(function (m) {
     return m.commodity === 'Gas';
   });
-  var propaneM = meters.find(function (m) {
+  var propaneMeters = meters.filter(function (m) {
     return m.commodity === 'Propane';
   });
 
   // One bill -> { ym, season, rate } for every bill with a positive rate from `rateFn`.
-  function billRates(meter, rateFn) {
+  function billRates(meterList, rateFn) {
     var out = [];
-    (meter.bills || []).forEach(function (bill) {
-      var rate = rateFn(bill);
-      if (!(rate > 0)) return;
-      var ym = typeof normMonth === 'function' ? normMonth(bill.start, bill.end, {}, meter.bills) : null;
-      var season = ym ? _evergyMetroSeason(ym) : 'winter';
-      out.push({ ym: ym, season: season, rate: rate });
+    meterList.forEach(function (meter) {
+      (meter.bills || []).forEach(function (bill) {
+        var rate = rateFn(bill);
+        if (!(rate > 0)) return;
+        var ym = typeof normMonth === 'function' ? normMonth(bill.start, bill.end, {}, meter.bills) : null;
+        var season = ym ? _evergyMetroSeason(ym) : 'winter';
+        out.push({ ym: ym, season: season, rate: rate });
+      });
     });
     return out;
   }
@@ -743,11 +719,11 @@ function computeSeasonalBldgRates(projId, bldgId) {
   var out = empty;
   out.months = { kwhSummer: [], kwhWinter: [], kwSummer: [], kwWinter: [], gas: [], propane: [] };
 
-  if (elecM) {
-    var kwhRows = billRates(elecM, function (bill) {
+  if (elecMeters.length) {
+    var kwhRows = billRates(elecMeters, function (bill) {
       return getStoredRate(bill, 'kwh');
     });
-    var kwRows = billRates(elecM, getStoredKwRate);
+    var kwRows = billRates(elecMeters, getStoredKwRate);
     var kwhSplit = seasonSplit(kwhRows);
     var kwSplit = seasonSplit(kwRows);
     out.kwhSummer = Math.round(mean(kwhSplit.summer) * 10000) / 10000;
@@ -760,7 +736,7 @@ function computeSeasonalBldgRates(projId, bldgId) {
     out.months.kwWinter = yms(kwSplit.winter);
   }
 
-  if (gasM) {
+  if (gasMeters.length) {
     // Gas rate per bill: cost / resolveGasUsageTherms(bill) — deliberately NOT
     // bill.totalGasRate (ensureBillRates's one-time-migration field). ensureBillRates has the
     // same PascalCase-only usage gap resolveGasUsageTherms's own header comment documents for
@@ -776,7 +752,7 @@ function computeSeasonalBldgRates(projId, bldgId) {
     // avoids trusting that stale/wrong-unit stored value; ensureBillRates itself is a separate,
     // already-shipped one-time migration outside this item's scope — logged to the backlog
     // instead of changed here.
-    var gasRows = billRates(gasM, function (bill) {
+    var gasRows = billRates(gasMeters, function (bill) {
       var cost =
         parseBillNumber(bill.GasCharge) ||
         parseBillNumber(bill.gasCharge) ||
@@ -793,8 +769,8 @@ function computeSeasonalBldgRates(projId, bldgId) {
     out.months.gas = yms(gasRows);
   }
 
-  if (propaneM) {
-    var propaneRows = billRates(propaneM, function (bill) {
+  if (propaneMeters.length) {
+    var propaneRows = billRates(propaneMeters, function (bill) {
       return getStoredRate(bill, 'propane');
     });
     out.gallonRate = Math.round(mean(propaneRows) * 1000) / 1000;

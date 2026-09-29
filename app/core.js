@@ -730,11 +730,11 @@ function updateHomeStats() {
   }).length;
   // Count projects with at least one meter that has a baseline period set
   // Bug fix: old code checked m.baselineStart/m.baselineEnd which don't exist;
-  // the data model stores m.baseline.months array (multi-baseline: m.baselines)
+  // the data model stores m.baseline.months array
   const baselineCount = projects.filter((p) => {
     const projBldgs = getUDBldgs(p.id) || [];
     return projBldgs.some((b) =>
-      (b.meters || []).some((m) => m.baseline?.months?.length > 0 || (m.baselines && m.baselines.length > 0)),
+      (b.meters || []).some((m) => m.baseline?.months?.length > 0),
     );
   }).length;
   document.getElementById('h-base').textContent = baselineCount;

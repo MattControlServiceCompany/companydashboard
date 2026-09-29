@@ -20,7 +20,6 @@
 //      during this item).
 //   5. A month with an explicit costSavOverride and no resolvable rate -> not flagged
 //      (a human already resolved it).
-//   6. Same gas case (1) run through the multi-baseline path (_getMeterSavingsMulti).
 //
 // Pass "node tools/test-incomplete-rate-flag.js /path/to/old-savings.js" to run the SAME
 // assertions against a different computations/savings.js (e.g. `git show origin/main:...`
@@ -249,30 +248,6 @@ if (typeof getMeterSavings !== 'function') {
   const r = getMeterSavings(m, bills, true, 1, 'b1');
   assert(!r.incompleteYM['2025-07'], 'Case 5: an overridden month is never flagged');
   assert(r.byYM['2025-07'] === 275, 'Case 5: overridden $ value is used, untouched');
-})();
-
-// ─── Case 6: same as Case 1, but through the multi-baseline path ───────────────────────
-(function () {
-  const m = {
-    id: 'm-gas-multi-1',
-    commodity: 'Gas',
-    baselines: [
-      {
-        months: ['2025-01', '2025-02', '2025-03'],
-        savingsWindow: { start: '2025-04' },
-      },
-    ],
-    inclusive: true,
-  };
-  const bills = [
-    { start: '2025-01-01', end: '2025-01-31', therms: 500, totalGasRate: 0.9, gasCharge: 450 },
-    { start: '2025-02-01', end: '2025-02-28', therms: 480, totalGasRate: 0.9, gasCharge: 432 },
-    { start: '2025-03-01', end: '2025-03-31', therms: 510, totalGasRate: 0.9, gasCharge: 459 },
-    { start: '2025-07-01', end: '2025-07-31', therms: '', totalGasRate: '', gasCharge: 1097 },
-  ];
-  const r = getMeterSavings(m, bills, true, 1, 'b1');
-  assert(r.byYM['2025-07'] === 0, 'Case 6 (multi-baseline): byYM stays $0.00');
-  assert(!!r.incompleteYM['2025-07'], 'Case 6 (multi-baseline): 2025-07 is flagged in incompleteYM');
 })();
 
 console.log(`\n=== Results: ${passed} passed, ${failed} failed ===`);

@@ -2842,7 +2842,7 @@ function renderBldgComparisonPanel(content, bldgs, projName, projId) {
     meters.forEach((m) => {
       const bills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
       const incl = m.inclusive !== false;
-      const bl = m.baseline || (m.baselines && m.baselines[0]);
+      const bl = m.baseline;
       if (!bl || !bl.months || bl.months.length < 3) return;
       const savResult = getMeterSavings(m, bills, incl, projId, b.id);
       Object.entries(savResult.byYM || {}).forEach(([ym, v]) => {

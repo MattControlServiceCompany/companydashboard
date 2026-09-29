@@ -1724,7 +1724,7 @@ function _billReadValue(row, entry) {
     if (rate > 0) return rate.toFixed(5);
   }
   if (entry.key === 'totalKwRate') {
-    const rate = getStoredRate(row, 'kw');
+    const rate = getStoredKwRate(row);
     if (rate > 0) return rate.toFixed(5);
   }
   if (entry.key === 'totalGasRate') {
