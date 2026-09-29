@@ -24,6 +24,9 @@ function makeCtx(opts) {
     rptPage: (n, title, body) => '<div class="rpt-page">' + body + '</div>',
     _rptContentBudget: () => 1000,
     _injectPageNumbers: (h) => h,
+    _pricingGetBudget: () => ({ amount: 6250 }),
+    _pricingGetEstimate: () => ({}),
+    _pricingComputeSummaryData: () => ({ tierTotals: { recommended: { grand: opts.lump == null ? null : opts.lump } } }),
     showReportOverlay: () => {},
     _updateOverlayPageNumbers: () => {},
     window: {},
@@ -80,6 +83,21 @@ t.els.agrCscPct = { value: '55' };
 t.ctx.generateAgreementPreview();
 ok(t.toasts.length === 1 && /monthly budget/i.test(t.toasts[0].m), 'underivable minimum spend shows the budget warning');
 ok(!t.store.en_agreement_config_1, 'underivable minimum spend saves nothing');
+
+// 7. EPC / one-time with no project total: warn, do not build. With a total: no placeholder text.
+for (const tpl of ['epcFlatCost', 'oneTimeCost']) {
+  t = makeCtx({ rate: 170, hours: 16, projCsc: 55, lump: null });
+  t.els.agreementReportModal = { _agrProjId: 1, querySelector: (q) => (q === '.agrTemplateRadio:checked' ? { value: tpl } : null), classList: { remove() {}, add() {} } };
+  t.els.agrEscalationRate = { value: '4' };
+  t.els.agrMinimumSpend = { value: '' };
+  t.els.agrCscPct = { value: '55' };
+  t.ctx.generateAgreementPreview();
+  ok(t.toasts.length === 1 && /project total/i.test(t.toasts[0].m), tpl + ' with no total shows the project-total warning');
+  ok(!t.store.en_agreement_config_1, tpl + ' with no total saves nothing');
+  t = makeCtx({ rate: 170, hours: 16, projCsc: 55, lump: 48000 });
+  const h = t.ctx.generateAgreementHTML(1, tpl, {}).html.replace(/<[^>]+>/g, ' ');
+  ok(!/\[[^\]]{3,}\]/.test(h), tpl + ' with a total has no [placeholder] text');
+}
 
 console.log(fails ? '\nFAILED ' + fails : '\nALL PASS');
 process.exit(fails ? 1 : 0);

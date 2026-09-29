@@ -1226,6 +1226,14 @@ function generateAgreementPreview() {
     showToast('Enter a monthly budget to compute the minimum monthly spend.', 'error');
     return;
   }
+  // EPC Flat Cost and One-Time Cost print the project total. No total: warn and stop.
+  if (templateType === 'epcFlatCost' || templateType === 'oneTimeCost') {
+    var totalData = collectAgreementData(projId, templateType, {});
+    if (!totalData || totalData.lumpTotal == null) {
+      showToast('Enter the project total to build this agreement.', 'error');
+      return;
+    }
+  }
   // Save only what the user changed: a value equal to the derived/project default is stored as
   // null (read live) unless a value was already stored (a stored value is never silently dropped).
   if (stored.minimumSpend == null && minSpend === _agreementDerivedMinimumSpend(projId)) minSpend = null;
