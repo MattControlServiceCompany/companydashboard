@@ -1776,6 +1776,15 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.29.27',
+    date: '2026-09-29',
+    title: 'Dollar amounts show losses with a minus sign',
+    items: [
+      { type: 'fix', text: 'Quarterly, Annual, Cumulative and Current reports now show a savings loss with a minus sign (for example -$2,059) instead of printing it as a gain.' },
+      { type: 'change', text: 'All report pages and the Budget tab now format dollar amounts the same way, so the same figure reads the same everywhere.' },
+    ],
+  },
+  {
     v: 'v2026.09.28.26',
     date: '2026-09-28',
     title: 'Pricing Estimator and Audit Proposal fixes',
