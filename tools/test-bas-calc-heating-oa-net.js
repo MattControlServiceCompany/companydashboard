@@ -6,7 +6,7 @@
 // So per month: heating = MAX(setback*adj - OA, 0) + OA, and adj is solved so the existing
 // total equals the entered figure. v2026.09.25.5 dropped the "+ OA"; that gave negative savings
 // when New conditions were strictly lower.
-// Real _bcDoCalc / _bcCalibrateHeatAdj text is loaded into a vm. Synthetic inputs only.
+// Real _bcDoCalc / _bcSolveAdj text is loaded into a vm. Synthetic inputs only.
 'use strict';
 const fs = require('fs'),
   path = require('path'),
@@ -56,7 +56,7 @@ function loadConst(file, name) {
 }
 const CALC = path.join(REPO, 'app', 'calculators.js');
 const calcSrc = fs.readFileSync(CALC, 'utf8');
-const hasKeeper = calcSrc.includes('function _bcCalibrateHeatAdj(');
+const hasKeeper = calcSrc.includes('function _bcSolveAdj(');
 const src = [
   fs.readFileSync(path.join(REPO, 'app', 'data', 'bas-weather-bins.js'), 'utf8'),
   loadConst(path.join(REPO, 'app', 'equipment-matrix.js'), 'EM_SP_DEFAULTS'),
@@ -66,11 +66,12 @@ const src = [
   loadConst(CALC, 'BAS_TEMP_BINS'),
   loadConst(CALC, 'BAS_MO'),
   loadFn(CALC, '_bcInterp'),
+  loadFn(CALC, '_bcUnoccHeatType'),
   loadFn(CALC, '_bcDefaultUnoccHeat'),
   loadConst(CALC, 'BAS_CITIES'),
   loadFn(CALC, '_basCityWeather'),
   loadFn(CALC, '_bcGv'),
-  hasKeeper ? loadFn(CALC, '_bcCalibrateHeatAdj') : '',
+  hasKeeper ? loadFn(CALC, '_bcSolveAdj') : '',
   loadFn(CALC, '_bcDoCalc'),
 ]
   .join('\n\n')
@@ -140,17 +141,15 @@ const base = {
   'bc-humRatioSP': 0.0082,
 };
 
-console.log('--- 1. Source shape: add-back on all 4 lines, one bisection keeper ---');
-for (const n of ['exHeatKwhM', 'newHeatKwhM', 'exHeatGasM', 'newHeatGasM']) {
-  const re = new RegExp(
-    n + ' = \\w+\\.map\\(\\(v, m\\) => Math\\.max\\(v \\* heatAdj - \\w+\\[m\\], 0\\) \\+ \\w+\\[m\\]\\)',
-  );
-  assert(re.test(calcSrc), n + ' combine must be MAX(setback*adj-OA,0)+OA');
-}
-assert(!/Math\.max\(v \* heatAdj - \w+\[m\], 0\)\)/.test(calcSrc), 'no-add-back combine must be gone');
+console.log('--- 1. Source shape: per-cell net + add-back (WP-13 workbook model), one bisection keeper ---');
+// Workbook: net = MAX(load - OA, 0) per temperature-bin hour (Existing!AH34, D106), OA added back
+// in full (Existing!I2 = Z20 + AL12). One keeper `monthly` builds every line from the same cells.
+assert(/Math\.max\(adj \* c\.b - c\.o, 0\)/.test(calcSrc), 'per-cell net MAX(adj*b - o, 0) present');
+assert((calcSrc.match(/Math\.max\(adj \* c\.b - c\.o, 0\)/g) || []).length === 1, 'exactly one net rule');
+assert(/k \* \(v \+ add\[m\]\)/.test(calcSrc), 'OA add-back applied in the one monthly() keeper');
 assert(!/heatAdj = \(cal\w+ \+ rawEx\w+OATotal\) \//.test(calcSrc), 'closed-form heatAdj must be gone');
-assert((calcSrc.match(/function _bcCalibrateHeatAdj\(/g) || []).length === 1, 'exactly one _bcCalibrateHeatAdj');
-assert((calcSrc.match(/_bcCalibrateHeatAdj\(/g) || []).length === 4, 'keeper: 1 definition + 3 calls');
+assert((calcSrc.match(/function _bcSolveAdj\(/g) || []).length === 1, 'exactly one _bcSolveAdj');
+assert((calcSrc.match(/_bcSolveAdj\(/g) || []).length === 5, 'keeper: 1 definition + 4 calls (cool, gas, gas-only Both, kWh)');
 
 console.log('--- 2. New strictly less conditioning: no negative heating savings ---');
 const cases = {
@@ -181,11 +180,12 @@ console.log('--- 4. Keeper unit: monotone bisection ---');
 if (hasKeeper) {
   const sb = { Math };
   vm.createContext(sb);
-  vm.runInContext(loadFn(CALC, '_bcCalibrateHeatAdj'), sb);
+  vm.runInContext(loadFn(CALC, '_bcSolveAdj'), sb);
   const S = [10, 50, 100, 5],
     OA = [20, 20, 20, 20];
-  const a = sb._bcCalibrateHeatAdj(S, OA, 250);
-  const tot = sum(S.map((v, m) => Math.max(v * a - OA[m], 0) + OA[m]));
+  const totalFn = (x) => sum(S.map((v, m) => Math.max(v * x - OA[m], 0) + OA[m]));
+  const a = sb._bcSolveAdj(totalFn, 250);
+  const tot = totalFn(a);
   assert(Math.abs(tot - 250) < 1e-6, 'keeper total ' + tot + ' must equal 250');
 } else assert(false, 'keeper missing');
 
