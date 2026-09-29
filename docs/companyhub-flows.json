@@ -356,7 +356,7 @@
       {"key": "en_bill_audit_log", "type": "array", "description": "Bill edit history"},
       {"key": "en_weather_<zip>", "type": "object", "description": "Weather data by ZIP code"},
       {"key": "en_report_history", "type": "array", "description": "Generated report metadata"},
-      {"key": "en_presented_savings", "type": "array", "description": "Savings figures marked as presented to the client (one record per project + period); getMeterSavings returns these month values"},
+      {"key": "en_presented_savings", "type": "array", "description": "Savings figures printed in a document presented to the client (per building, per period; entered by the user). totalSavingsWithPresented uses them for period, building and project totals"},
       {"key": "en_report_<id>", "type": "string", "description": "Full HTML report content"}
     ],
     "ems": [

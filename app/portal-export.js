@@ -159,11 +159,9 @@ function publishClientPortal(projId) {
   // Sum RAW (unrounded) per-month values from savByYM, then round once —
   // never sum already-rounded monthlySavings.savingsDollars (round-before-sum
   // bug: Math.round(a)+Math.round(b) != Math.round(a+b)).
-  const totalSavings = Math.round(
-    Object.entries(savByYM)
-      .filter(([, v]) => v !== 0)
-      .reduce((s, [, v]) => s + v, 0),
-  );
+  // The total comes from getProjectSavingsTotal (computations/savings.js): a period already presented
+  // to the client uses the presented figures; the monthly list above stays recalculated.
+  const totalSavings = Math.round(getProjectSavingsTotal(String(projId)).total);
 
   // ── 7. Build sanitized JSON — explicitly exclude sensitive fields ──
   const annualTarget = Number(p.savings) || 0;

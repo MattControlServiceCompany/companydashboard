@@ -101,158 +101,6 @@ function checkRateIncomplete(opts) {
 }
 
 /* ─────────────────────────────────────────────────────────────
-   PRESENTED-TO-CLIENT LOCK (WP-04a, 2026-09-29)
-   Rule (Matt): savings already presented to the client can not change.
-   One storage key holds one record per marked project + period:
-     { projectId, periodStart, periodEnd, presentedAt, totalDollars,
-       months: { <meterId>: { <YYYY-MM>: { dollars, kwhSaved, kwSaved, thermsSaved,
-                                           gallonsSaved, rate: {kwh, kw, unit} } } } }
-   getMeterSavings() below returns these stored month values for every consumer. Only the two
-   user actions (markSavingsPresented / removePresentedMark) write the key.
-───────────────────────────────────────────────────────────── */
-const PRESENTED_SAVINGS_KEY = 'en_presented_savings';
-
-function getPresentedRecords() {
-  return sget(PRESENTED_SAVINGS_KEY, []) || [];
-}
-
-// { 'YYYY-MM': monthRecord } for one meter; the earliest presented record wins an overlapping month.
-function getPresentedMonths(projId, meterId) {
-  const out = {};
-  getPresentedRecords().forEach((rec) => {
-    if (String(rec.projectId) !== String(projId)) return;
-    const mm = rec.months && rec.months[meterId];
-    if (!mm) return;
-    Object.keys(mm).forEach((ym) => {
-      if (!out[ym]) out[ym] = mm[ym];
-    });
-  });
-  return out;
-}
-
-function getPresentedMonth(projId, meterId, ym) {
-  return getPresentedMonths(projId, meterId)[ym] || null;
-}
-
-function _presentedFind(projId, yms) {
-  const a = yms[0];
-  const z = yms[yms.length - 1];
-  return (
-    getPresentedRecords().find(
-      (r) => String(r.projectId) === String(projId) && r.periodStart === a && r.periodEnd === z,
-    ) || null
-  );
-}
-
-function getPresentedRecord(projId, yms) {
-  return yms && yms.length ? _presentedFind(projId, yms) : null;
-}
-
-// Plain-words line for a report period, or '' when the period is not marked.
-function getPresentedNotice(projId, yms) {
-  const rec = getPresentedRecord(projId, yms);
-  if (!rec) return '';
-  const d = new Date(rec.presentedAt);
-  const label = d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
-  return 'Presented to client on ' + label + '. Figures are locked.';
-}
-
-// Snapshot the CURRENT (unlocked) savings of every project meter for the months in `yms`
-// (sorted YYYY-MM list) and store it. Returns the record, or null when the period is already
-// marked or holds no savings.
-function markSavingsPresented(projId, yms) {
-  if (!yms || !yms.length || _presentedFind(projId, yms)) return null;
-  const proj = (typeof projects !== 'undefined' ? projects : []).find((p) => String(p.id) === String(projId));
-  const bldgs = typeof getUDBldgs === 'function' ? getUDBldgs(projId) || [] : [];
-  const incl = (proj && proj.inclMonths) || {};
-  const months = {};
-  let total = 0;
-  bldgs.forEach((b) => {
-    (b.meters || []).forEach((m) => {
-      if (isBaselineExcluded(projId, m.id)) return;
-      const bills = (m.bills || []).slice().sort((a, c) => (a.start || '').localeCompare(c.start || ''));
-      const res = computeMeterSavings(m, bills, incl, projId, b.id);
-      yms.forEach((ym) => {
-        if (res.byYM[ym] == null) return;
-        const u = res.unitsByYM[ym] || {};
-        (months[m.id] = months[m.id] || {})[ym] = {
-          dollars: res.byYM[ym],
-          kwhSaved: u.kwh || 0,
-          kwSaved: u.kw || 0,
-          thermsSaved: u.therms || 0,
-          gallonsSaved: u.gallons || 0,
-          rate: (res.ratesByYM && res.ratesByYM[ym]) || {},
-        };
-        total += res.byYM[ym];
-      });
-    });
-  });
-  if (!Object.keys(months).length) return null;
-  const rec = {
-    projectId: String(projId),
-    periodStart: yms[0],
-    periodEnd: yms[yms.length - 1],
-    presentedAt: new Date().toISOString(),
-    totalDollars: total,
-    months,
-  };
-  sset(PRESENTED_SAVINGS_KEY, getPresentedRecords().concat([rec]));
-  return rec;
-}
-
-function removePresentedMark(projId, yms) {
-  const rec = yms && yms.length ? _presentedFind(projId, yms) : null;
-  if (!rec) return false;
-  sset(
-    PRESENTED_SAVINGS_KEY,
-    getPresentedRecords().filter(
-      (r) => !(String(r.projectId) === String(projId) && r.periodStart === rec.periodStart && r.periodEnd === rec.periodEnd),
-    ),
-  );
-  return true;
-}
-
-// Overlay the stored month values onto a computed result. Returns a NEW object when the meter has
-// presented months (the cached computed result is never mutated); otherwise the result unchanged.
-function applyPresentedMonths(res, m, projId) {
-  const pres = getPresentedMonths(projId, m.id);
-  const yms = Object.keys(pres);
-  if (!yms.length) return res;
-  const zero = () => ({ kwh: 0, kw: 0, therms: 0, gallons: 0 });
-  const out = {
-    byYM: Object.assign({}, res.byYM),
-    byCalMo: Object.assign({}, res.byCalMo),
-    unitsByYM: {},
-    unitsByCalMo: {},
-    incompleteYM: Object.assign({}, res.incompleteYM),
-    ratesByYM: Object.assign({}, res.ratesByYM),
-  };
-  Object.keys(res.unitsByYM).forEach((k) => {
-    out.unitsByYM[k] = Object.assign({}, res.unitsByYM[k]);
-  });
-  Object.keys(res.unitsByCalMo).forEach((k) => {
-    out.unitsByCalMo[k] = Object.assign({}, res.unitsByCalMo[k]);
-  });
-  yms.forEach((ym) => {
-    const p = pres[ym];
-    const calMo = parseInt(ym.split('-')[1]) - 1;
-    const oldU = out.unitsByYM[ym] || zero();
-    const newU = { kwh: p.kwhSaved, kw: p.kwSaved, therms: p.thermsSaved, gallons: p.gallonsSaved };
-    out.byCalMo[calMo] = (out.byCalMo[calMo] || 0) + p.dollars - (out.byYM[ym] || 0);
-    out.byYM[ym] = p.dollars;
-    const cm = out.unitsByCalMo[calMo] || zero();
-    ['kwh', 'kw', 'therms', 'gallons'].forEach((f) => {
-      cm[f] += newU[f] - oldU[f];
-    });
-    out.unitsByCalMo[calMo] = cm;
-    out.unitsByYM[ym] = newU;
-    out.ratesByYM[ym] = p.rate || {};
-    delete out.incompleteYM[ym];
-  });
-  return out;
-}
-
-/* ─────────────────────────────────────────────────────────────
    getMeterSavings(m, bills, incl)
    Unified savings function — single pass, populates both byYM
    and byCalMo, applies costSavOverrides to BOTH formats.
@@ -266,12 +114,7 @@ function applyPresentedMonths(res, m, projId) {
    }
 ───────────────────────────────────────────────────────────── */
 function getMeterSavings(m, bills, incl, projId, bldgId) {
-  return applyPresentedMonths(computeMeterSavings(m, bills, incl, projId, bldgId), m, projId);
-}
-
-// The savings math itself (unlocked). Only getMeterSavings() and markSavingsPresented() call it.
-function computeMeterSavings(m, bills, incl, projId, bldgId) {
-  const empty = { byYM: {}, byCalMo: {}, unitsByYM: {}, unitsByCalMo: {}, incompleteYM: {}, ratesByYM: {} };
+  const empty = { byYM: {}, byCalMo: {}, unitsByYM: {}, unitsByCalMo: {}, incompleteYM: {} };
 
   // 2026-09-15 (SA-gate fix): savings only compute for a CONTRACTED project. The contract
   // signal is the project record's `sa` field (Service Agreement #) — a project with no SA
@@ -316,8 +159,6 @@ function computeMeterSavings(m, bills, incl, projId, bldgId) {
   // month. Populated per-row below; consumed by the renderers named in the item (meter/
   // building/project views, lib/perf-table.js Meter Performance table + report).
   const incompleteYM = {};
-  // Rate used per month ({kwh, kw, unit}) — recorded so a "presented to client" snapshot can keep it.
-  const ratesByYM = {};
 
   const isElec = m.commodity === 'Electric';
   const isPropane = m.commodity === 'Propane';
@@ -424,7 +265,6 @@ function computeMeterSavings(m, bills, incl, projId, bldgId) {
     let unitSav = { kwh: 0, kw: 0, therms: 0, gallons: 0 };
     let _rateIncomplete = false;
     let _rateReason = '';
-    let _rateUsed = {};
 
     const expUsage =
       hasBlCalMap && blByCalMo[calMo] != null
@@ -472,7 +312,6 @@ function computeMeterSavings(m, bills, incl, projId, bldgId) {
       totalCostSav = kwhCostSav + kwCostSav;
       unitSav.kwh = kwhSaved;
       unitSav.kw = kwSaved;
-      _rateUsed = { kwh: kwhRate, kw: moKwRate };
     } else if (isPropane) {
       const actGallons = actUsage;
       const actCost = r.cost;
@@ -496,7 +335,6 @@ function computeMeterSavings(m, bills, incl, projId, bldgId) {
       _rateReason = _chk.reason;
       totalCostSav = galRate > 0 ? (expUsage - actGallons) * galRate : 0;
       unitSav.gallons = galRate > 0 ? expUsage - actGallons : 0;
-      _rateUsed = { unit: galRate };
     } else {
       const actTherms = actUsage;
       const actThermCost = bfr.reduce(
@@ -529,7 +367,6 @@ function computeMeterSavings(m, bills, incl, projId, bldgId) {
       _rateReason = _chk.reason;
       totalCostSav = thermRate > 0 ? (expUsage - actTherms) * thermRate : 0;
       unitSav.therms = thermRate > 0 ? expUsage - actTherms : 0;
-      _rateUsed = { unit: thermRate };
     }
 
     // Apply costSavOverrides if present (per year-month)
@@ -545,7 +382,6 @@ function computeMeterSavings(m, bills, incl, projId, bldgId) {
 
     // Populate byYM
     byYM[r.ym] = (byYM[r.ym] || 0) + finalCostSav;
-    ratesByYM[r.ym] = _rateUsed;
 
     // Populate byCalMo (same override applied — THIS IS THE BUG FIX)
     byCalMo[calMo] = (byCalMo[calMo] || 0) + finalCostSav;
@@ -576,7 +412,7 @@ function computeMeterSavings(m, bills, incl, projId, bldgId) {
   // Also set legacy m._unitSavByCalMo for any remaining references
   m._unitSavByCalMo = unitsByCalMo;
 
-  const result = { byYM, byCalMo, unitsByYM, unitsByCalMo, incompleteYM, ratesByYM };
+  const result = { byYM, byCalMo, unitsByYM, unitsByCalMo, incompleteYM };
   m._savingsCache = result;
   m._savingsCacheKey = cacheKey;
   // Legacy: also set m._savingsByYM for any direct references
@@ -939,4 +775,299 @@ function getBldgMeasureSavingsByMo(projId, bldgId) {
     }
   });
   return monthlySavings;
+}
+/* ─────────────────────────────────────────────────────────────
+   PRESENTED-TO-CLIENT LOCK (WP-04a, 2026-09-29)
+   Rule (Matt): savings figures already presented to the client can not change.
+   The lock stores the figures PRINTED in the presented document, not the site's math at
+   the time of the click (re-running the math later moves printed numbers by a few dollars).
+   One storage key, one record per project + period, written only by the user's confirm:
+     { projectId, periodStart, periodEnd, presentedAt, documentName, totalDollars,
+       buildings: { <bldgId>: { dollars, kwhSaved?, thermsSaved?, gallonsSaved? } } }
+   totalSavingsWithPresented() is the ONE place a period / building / project savings total
+   is decided; every consumer that adds up months calls it. Monthly rows stay recalculated.
+───────────────────────────────────────────────────────────── */
+const PRESENTED_SAVINGS_KEY = "en_presented_savings";
+
+function getPresentedRecords(projId) {
+  return (sget(PRESENTED_SAVINGS_KEY, []) || [])
+    .filter((r) => String(r.projectId) === String(projId))
+    .sort(
+      (a, b) =>
+        a.periodStart.localeCompare(b.periodStart) ||
+        a.presentedAt.localeCompare(b.presentedAt),
+    );
+}
+
+// Every YYYY-MM from a to z inclusive.
+function presentedMonthRange(a, z) {
+  const out = [];
+  let [y, m] = a.split("-").map(Number);
+  const [zy, zm] = z.split("-").map(Number);
+  while (y < zy || (y === zy && m <= zm)) {
+    out.push(y + "-" + String(m).padStart(2, "0"));
+    m++;
+    if (m > 12) {
+      m = 1;
+      y++;
+    }
+  }
+  return out;
+}
+
+function getPresentedRecordFor(projId, yms) {
+  if (!yms || !yms.length) return null;
+  const sorted = yms.slice().sort();
+  const a = sorted[0];
+  const z = sorted[sorted.length - 1];
+  return (
+    getPresentedRecords(projId).find(
+      (r) => r.periodStart === a && r.periodEnd === z,
+    ) || null
+  );
+}
+
+// The records that lock part of `yms`: whole period inside yms, no month claimed twice
+// (earliest period wins an overlap).
+function _presentedApplied(projId, yms) {
+  const inSet = new Set(yms);
+  const claimed = new Set();
+  const applied = [];
+  getPresentedRecords(projId).forEach((rec) => {
+    const rm = presentedMonthRange(rec.periodStart, rec.periodEnd);
+    if (!rm.every((y) => inSet.has(y)) || rm.some((y) => claimed.has(y)))
+      return;
+    rm.forEach((y) => claimed.add(y));
+    applied.push({ rec, months: rm });
+  });
+  return applied;
+}
+
+function _presentedDateLabel(rec) {
+  return new Date(rec.presentedAt).toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+}
+
+function _presentedMonthLabel(ym) {
+  const [y, m] = ym.split("-").map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString("en-US", {
+    month: "long",
+    year: "numeric",
+  });
+}
+
+// Plain-words line for a report period, or '' when nothing in the period was presented.
+function getPresentedNotice(projId, yms) {
+  if (!yms || !yms.length) return "";
+  const tail = " monthly detail is recalculated and may differ slightly.";
+  const exact = getPresentedRecordFor(projId, yms);
+  if (exact)
+    return (
+      "Presented to client on " +
+      _presentedDateLabel(exact) +
+      ". Figures are locked;" +
+      tail
+    );
+  return _presentedApplied(projId, yms)
+    .map(
+      (a) =>
+        "Includes figures presented to client on " +
+        _presentedDateLabel(a.rec) +
+        " for " +
+        _presentedMonthLabel(a.rec.periodStart) +
+        " through " +
+        _presentedMonthLabel(a.rec.periodEnd) +
+        ". Those figures are locked;" +
+        tail,
+    )
+    .join(" ");
+}
+
+// Savings total for the months `yms`, for the buildings in `perBldg` = { <bldgId>: { <ym>: dollars } }
+// (current values, however the caller built them). A presented period inside yms replaces the
+// current months with the printed building figure; the printed portfolio total replaces the sum
+// of the printed building figures when every building of that record is in scope.
+// Returns { total, byBldg: { <bldgId>: dollars }, applied: [record] }.
+function totalSavingsWithPresented(projId, yms, perBldg) {
+  const applied = _presentedApplied(projId, yms);
+  const claimed = new Set();
+  applied.forEach((a) => a.months.forEach((y) => claimed.add(y)));
+  const byBldg = {};
+  let total = 0;
+  Object.keys(perBldg).forEach((b) => {
+    const cur = perBldg[b] || {};
+    let t = 0;
+    yms.forEach((y) => {
+      if (!claimed.has(y)) t += cur[y] || 0;
+    });
+    applied.forEach((a) => {
+      const f = a.rec.buildings[b];
+      t +=
+        f && f.dollars != null
+          ? f.dollars
+          : a.months.reduce((s, y) => s + (cur[y] || 0), 0);
+    });
+    byBldg[b] = t;
+    total += t;
+  });
+  applied.forEach((a) => {
+    const ids = Object.keys(a.rec.buildings);
+    if (a.rec.totalDollars == null || !ids.every((id) => id in perBldg)) return;
+    total +=
+      a.rec.totalDollars -
+      ids.reduce((s, id) => s + (a.rec.buildings[id].dollars || 0), 0);
+  });
+  return { total, byBldg, applied: applied.map((a) => a.rec) };
+}
+
+// Printed unit figures ({kwhSaved, thermsSaved, gallonsSaved}) for one building, only when a
+// record covers exactly this period (units cannot be re-cut for a different month set).
+function getPresentedUnits(projId, yms, bldgId) {
+  const rec = getPresentedRecordFor(projId, yms);
+  return (rec && rec.buildings[bldgId]) || null;
+}
+
+// Project total across every building of the project (portal, dashboards). yms defaults to
+// every month any building has savings for.
+function getProjectSavingsTotal(projId, yms) {
+  const bldgs =
+    typeof getUDBldgs === "function" ? getUDBldgs(projId) || [] : [];
+  const perBldg = {};
+  const all = new Set();
+  bldgs.forEach((b) => {
+    perBldg[b.id] = getBuildingSavingsByYM(b, projId);
+    Object.keys(perBldg[b.id]).forEach((y) => all.add(y));
+  });
+  const months = yms || Array.from(all).sort();
+  return totalSavingsWithPresented(projId, months, perBldg);
+}
+
+// Validate and store one presented record. Only the confirm button of the Mark-as-presented
+// form calls this. Returns { ok, reason?, record? }.
+function savePresentedRecord(rec) {
+  if (
+    !rec ||
+    rec.projectId == null ||
+    !/^\d{4}-\d{2}$/.test(rec.periodStart) ||
+    !/^\d{4}-\d{2}$/.test(rec.periodEnd)
+  ) {
+    return { ok: false, reason: "The period is missing." };
+  }
+  if (rec.periodStart > rec.periodEnd)
+    return { ok: false, reason: "The period ends before it starts." };
+  const ids = Object.keys(rec.buildings || {});
+  if (
+    !ids.length ||
+    ids.some((id) => !Number.isFinite(rec.buildings[id].dollars))
+  ) {
+    return {
+      ok: false,
+      reason:
+        "Enter the presented savings in dollars for at least one building.",
+    };
+  }
+  const months = presentedMonthRange(rec.periodStart, rec.periodEnd);
+  const clash = getPresentedRecords(rec.projectId).some((r) =>
+    presentedMonthRange(r.periodStart, r.periodEnd).some((y) =>
+      months.includes(y),
+    ),
+  );
+  if (clash)
+    return {
+      ok: false,
+      reason: "A period that overlaps this one is already marked as presented.",
+    };
+  const clean = {
+    projectId: String(rec.projectId),
+    periodStart: rec.periodStart,
+    periodEnd: rec.periodEnd,
+    presentedAt: rec.presentedAt,
+    documentName: rec.documentName || "",
+    totalDollars: Number.isFinite(rec.totalDollars) ? rec.totalDollars : null,
+    buildings: rec.buildings,
+  };
+  sset(
+    PRESENTED_SAVINGS_KEY,
+    (sget(PRESENTED_SAVINGS_KEY, []) || []).concat([clean]),
+  );
+  return { ok: true, record: clean };
+}
+
+function removePresentedMark(projId, yms) {
+  const rec = getPresentedRecordFor(projId, yms);
+  if (!rec) return false;
+  sset(
+    PRESENTED_SAVINGS_KEY,
+    (sget(PRESENTED_SAVINGS_KEY, []) || []).filter(
+      (r) =>
+        !(
+          String(r.projectId) === String(projId) &&
+          r.periodStart === rec.periodStart &&
+          r.periodEnd === rec.periodEnd
+        ),
+    ),
+  );
+  return true;
+}
+
+// CSV of printed figures: rows "building,figure,value". figure = savings_dollars | kwh_saved |
+// therms_saved | gallons_saved. A building named "Portfolio total" (or "Total") holds the printed
+// portfolio total. `bldgs` = [{id, name}] of the project. Returns
+// { buildings: {<id>: {...}}, totalDollars, unmatched: [names], bad: [lines] }.
+function parsePresentedCsv(text, bldgs) {
+  const FIELD = {
+    savings_dollars: "dollars",
+    kwh_saved: "kwhSaved",
+    therms_saved: "thermsSaved",
+    gallons_saved: "gallonsSaved",
+  };
+  const out = { buildings: {}, totalDollars: null, unmatched: [], bad: [] };
+  const norm = (s) =>
+    String(s || "")
+      .trim()
+      .toLowerCase();
+  String(text || "")
+    .split(/\r?\n/)
+    .forEach((line) => {
+      if (!line.trim()) return;
+      const cells = [];
+      let cur = '';
+      let inQ = false;
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (ch === '"' && inQ && line[i + 1] === '"') {
+          cur += '"';
+          i++;
+        } else if (ch === '"') inQ = !inQ;
+        else if (ch === ',' && !inQ) {
+          cells.push(cur.trim());
+          cur = '';
+        } else cur += ch;
+      }
+      cells.push(cur.trim());
+      if (cells.length < 3) return void out.bad.push(line);
+      const [name, fig, val] = cells;
+      if (norm(fig) === "figure") return;
+      const field = FIELD[norm(fig)];
+      const num =
+        typeof parseBillNumber === "function"
+          ? parseBillNumber(val)
+          : parseFloat(val);
+      if (!field || !Number.isFinite(num)) return void out.bad.push(line);
+      if (norm(name) === "portfolio total" || norm(name) === "total") {
+        if (field === "dollars") out.totalDollars = num;
+        else out.bad.push(line);
+        return;
+      }
+      const b = (bldgs || []).find((x) => norm(x.name) === norm(name));
+      if (!b) {
+        if (out.unmatched.indexOf(name) < 0) out.unmatched.push(name);
+        return;
+      }
+      (out.buildings[b.id] = out.buildings[b.id] || {})[field] = num;
+    });
+  return out;
 }

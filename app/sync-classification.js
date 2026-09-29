@@ -63,7 +63,7 @@ const SyncClassification = (() => {
     {
       pattern: 'en_presented_savings',
       prefix: false,
-      note: 'computations/savings.js: savings figures marked as presented to the client (one record per project + period); shared by both users',
+      note: 'computations/savings.js: savings figures printed in a document presented to the client (one record per project + period, entered in app/presented-savings.js); shared by both users',
     },
     { pattern: 'en_agreement_', prefix: true, note: 'agreement-engine.js: config_<pid>, overrides_<pid>' },
     { pattern: 'en_tasks', prefix: false, note: 'core.js: 3 write sites, csv-import.js: 1' },

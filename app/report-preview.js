@@ -510,12 +510,17 @@ function saveReportTemplate() {
 // the storage event fires because the popup window saved changes to en_projects.
 function refreshReportPreview() {
   if (!_reportConfig) return;
+  // Same period arguments generateReportPreview() used, so a refresh keeps the quarter / year on screen
+  // (before this, a refresh fell back to the newest quarter and swapped the report to another period).
+  var _rType = _reportConfig.reportType;
   var data = collectReportData(
     _reportConfig.projId,
     _reportConfig.buildingIds,
-    null,
-    _reportConfig.reportType,
-    null,
+    _rType === 'quarterly' || _rType === 'annual' ? new Date().toISOString().slice(0, 10) : null,
+    _rType,
+    _rType === 'quarterly' && _reportConfig.quarter && _reportConfig.year
+      ? { quarter: _reportConfig.quarter, year: _reportConfig.year }
+      : null,
     _reportConfig.meterIds,
   );
   if (!data) {

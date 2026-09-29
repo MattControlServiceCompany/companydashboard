@@ -1,9 +1,10 @@
 // tools/test-presented-savings-lock.js — acceptance test for the "presented to client" savings lock (WP-04a).
 // Run: node tools/test-presented-savings-lock.js
-// SYNTHETIC data only. Rule (Matt, 2026-09-29): quarterly savings already presented to the client
-// can not change. Asserts: after marking a period, changing a bill or the savings math does not
-// change that period's numbers in the keeper (getMeterSavings), the rollups, the Meter Performance
-// table and the report notice; unmarked months still recompute; removing the mark restores recompute.
+// SYNTHETIC data only. Rule (Matt, 2026-09-29): savings figures already presented to the client can not
+// change. The lock stores the figures PRINTED in the presented document (entered by the user), not the
+// site's math. Asserts: after the user's confirm, changing a bill or the savings math does not change the
+// presented period's building / portfolio totals (totalSavingsWithPresented, project rollup, annual sums,
+// notice); monthly rows still recompute; unmarked periods recompute; removing the mark restores recompute.
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -48,45 +49,60 @@ function bill(ym, therms, rate) {
     gasCharge: therms * rate,
   };
 }
-const bills = ymList('2024', 1, 12)
-  .map((ym) => bill(ym, 1000, 1.0))
-  .concat(ymList('2025', 1, 6).map((ym) => bill(ym, 800, 1.0)));
-const meter = { id: 'm-syn-1', commodity: 'Gas', bills, baseline: { months: ymList('2024', 1, 12) } };
-const bldg = { id: 'b-syn-1', name: 'Synthetic Hall', meters: [meter] };
-sb.utilityData[9001] = { buildings: [bldg] };
+function mkMeter(id, blTherms, actTherms) {
+  const b = ymList("2024", 1, 12)
+    .map((ym) => bill(ym, blTherms, 1.0))
+    .concat(ymList("2025", 1, 6).map((ym) => bill(ym, actTherms, 1.0)));
+  return {
+    id,
+    commodity: "Gas",
+    bills: b,
+    baseline: { months: ymList("2024", 1, 12) },
+  };
+}
+const meter1 = mkMeter("m-syn-1", 1000, 800); // saves 200 therms x $1.00 = $200 / month
+const meter2 = mkMeter("m-syn-2", 500, 400); // saves $100 / month
+const bldg1 = { id: "b-syn-1", name: "Synthetic Hall", meters: [meter1] };
+const bldg2 = { id: "b-syn-2", name: 'Test "Annex", East', meters: [meter2] };
+sb.utilityData[9001] = { buildings: [bldg1, bldg2] };
 
 vm.runInContext(
   [
-    'function getUDProj(pid){return utilityData[pid]||(utilityData[pid]={buildings:[]});}',
-    'function getUDBldgs(pid){return getUDProj(pid).buildings;}',
-    'function getUDBldg(pid,bid){return getUDBldgs(pid).find(function(b){return b.id===bid;});}',
-    'var DB={get:function(k,d){return sget(k,d===undefined?null:d);}};',
-    'function isBaselineExcluded(){return false;}',
-    'function getWeatherForBuilding(){return {byYm:{}};}',
-    'function isCalcCommodity(){return true;}',
-    'var udSelProjId=9001, udSelBldgId=null;',
-    'function projHasContract(pid){return true;}',
-  ].join('\n'),
+    "function getUDProj(pid){return utilityData[pid]||(utilityData[pid]={buildings:[]});}",
+    "function getUDBldgs(pid){return getUDProj(pid).buildings;}",
+    "function getUDBldg(pid,bid){return getUDBldgs(pid).find(function(b){return b.id===bid;});}",
+    "var DB={get:function(k,d){return sget(k,d===undefined?null:d);}};",
+    "function isBaselineExcluded(){return false;}",
+    "function getWeatherForBuilding(){return {byYm:{}};}",
+    "function isCalcCommodity(){return true;}",
+    "function projHasContract(pid){return true;}",
+    "var udSelProjId=9001, udSelBldgId=null;",
+  ].join("\n"),
   sb,
 );
 function readSrc(rel) {
-  return fs.readFileSync(path.join(REPO, rel), 'utf8');
+  return fs.readFileSync(path.join(REPO, rel), "utf8");
 }
 function loadFn(rel, name) {
   const src = readSrc(rel);
-  const m = new RegExp('function ' + name + '\\s*\\(').exec(src);
-  if (!m) throw new Error('fn not found ' + name);
-  const i = src.indexOf('{', src.indexOf(')', m.index));
+  const m = new RegExp("function " + name + "\\s*\\(").exec(src);
+  if (!m) throw new Error("fn not found " + name);
+  const i = src.indexOf("{", src.indexOf(")", m.index));
   let d = 0,
     j = i;
   for (; j < src.length; j++) {
-    if (src[j] === '{') d++;
-    else if (src[j] === '}' && --d === 0) break;
+    if (src[j] === "{") d++;
+    else if (src[j] === "}" && --d === 0) break;
   }
   return src.slice(m.index, j + 1);
 }
-vm.runInContext(['_fixISO', '_parseISO', 'calcDays'].map((n) => loadFn('app/utility-data.js', n)).join('\n'), sb);
-const html = readSrc('energy-department.html');
+vm.runInContext(
+  ["_fixISO", "_parseISO", "calcDays"]
+    .map((n) => loadFn("app/utility-data.js", n))
+    .join("\n"),
+  sb,
+);
+const html = readSrc("energy-department.html");
 const libs = [];
 const re = /<script\s+src="((?:lib|computations)\/[^"?]+\.js)/g;
 let mm;
@@ -95,99 +111,237 @@ libs.forEach((rel) => {
   try {
     vm.runInContext(readSrc(rel), sb, { filename: rel });
   } catch (e) {
-    console.log('WARN load ' + rel + ': ' + e.message);
+    console.log("WARN load " + rel + ": " + e.message);
   }
 });
-const SUMMER = /const SUMMER_MOS = \[[^\]]*\];/.exec(readSrc('app/energy-savings.js'));
-if (SUMMER) vm.runInContext(SUMMER[0].replace('const ', 'var '), sb);
+const SUMMER = /const SUMMER_MOS = \[[^\]]*\];/.exec(
+  readSrc("app/energy-savings.js"),
+);
+if (SUMMER) vm.runInContext(SUMMER[0].replace("const ", "var "), sb);
 
-function sortedBills() {
-  return meter.bills.slice().sort((a, c) => a.start.localeCompare(c.start));
-}
-function sav() {
-  meter._savingsCache = null;
-  meter._savingsCacheKey = null;
-  return sb.getMeterSavings(meter, sortedBills(), {}, 9001, bldg.id);
-}
-function billOf(start) {
+const allMeters = [meter1, meter2];
+function billOf(meter, start) {
   return meter.bills.find((x) => x.start === start);
 }
-const Q = ymList('2025', 1, 3);
-const before = sav();
-assert(
-  Q.every((ym) => near(before.byYM[ym], 200)),
-  'setup: each Q1 month saves 200 therms x $1.00 = $200 (got ' + JSON.stringify(before.byYM) + ')',
-);
-assert(near(before.byYM['2025-04'], 200), 'setup: April also saves $200');
+function perBldg() {
+  allMeters.forEach((m) => {
+    m._savingsCache = null;
+    m._savingsCacheKey = null;
+  });
+  return {
+    "b-syn-1": sb.getBuildingSavingsByYM(bldg1, 9001),
+    "b-syn-2": sb.getBuildingSavingsByYM(bldg2, 9001),
+  };
+}
+const Q1 = ymList("2025", 1, 3);
+const Q2 = ymList("2025", 4, 6);
+const H1 = ymList("2025", 1, 6);
 
-assert(typeof sb.markSavingsPresented === 'function', 'markSavingsPresented exists');
-assert(typeof sb.removePresentedMark === 'function', 'removePresentedMark exists');
-assert(typeof sb.getPresentedNotice === 'function', 'getPresentedNotice exists');
-if (typeof sb.markSavingsPresented !== 'function') {
-  console.log('RESULT ' + passed + ' passed, ' + failed + ' failed');
+const cur0 = perBldg();
+assert(
+  Q1.every(
+    (y) => near(cur0["b-syn-1"][y], 200) && near(cur0["b-syn-2"][y], 100),
+  ),
+  "setup: b1 saves $200 and b2 saves $100 every month",
+);
+assert(
+  typeof sb.totalSavingsWithPresented === "function",
+  "totalSavingsWithPresented exists",
+);
+assert(
+  typeof sb.savePresentedRecord === "function",
+  "savePresentedRecord exists",
+);
+assert(
+  typeof sb.removePresentedMark === "function",
+  "removePresentedMark exists",
+);
+assert(
+  typeof sb.getPresentedNotice === "function",
+  "getPresentedNotice exists",
+);
+assert(typeof sb.parsePresentedCsv === "function", "parsePresentedCsv exists");
+if (typeof sb.savePresentedRecord !== "function") {
+  console.log("RESULT " + passed + " passed, " + failed + " failed");
   process.exit(1);
 }
 
-assert(sb.getPresentedNotice(9001, Q) === '', 'no notice before marking');
-const rec = sb.markSavingsPresented(9001, Q);
+// Nothing marked: sums are the current months.
+let t = sb.totalSavingsWithPresented(9001, Q1, cur0);
 assert(
-  rec && rec.projectId === '9001' && rec.periodStart === '2025-01' && rec.periodEnd === '2025-03',
-  'record has project and period',
+  near(t.total, 900) && near(t.byBldg["b-syn-1"], 600),
+  "unmarked: Q1 total is the current $900",
 );
-assert(rec && near(rec.totalDollars, 600), 'record total is $600');
-const r2 = rec && rec.months[meter.id] && rec.months[meter.id]['2025-02'];
+assert(sb.getPresentedNotice(9001, Q1) === "", "no notice before marking");
+
+// The user confirms figures as PRINTED in the document (they differ from the site math on purpose).
+const rec = {
+  projectId: 9001,
+  periodStart: "2025-01",
+  periodEnd: "2025-03",
+  presentedAt: "2026-05-11T12:00:00.000Z",
+  documentName: "Synthetic Q1 report",
+  totalDollars: 901,
+  buildings: {
+    "b-syn-1": { dollars: 601, kwhSaved: 1234 },
+    "b-syn-2": { dollars: 299, thermsSaved: 555 },
+  },
+};
 assert(
-  r2 && near(r2.dollars, 200) && near(r2.thermsSaved, 200) && near(r2.rate.unit, 1),
-  'record holds per-meter per-month therms, $ and rate',
+  sb.savePresentedRecord(Object.assign({}, rec, { buildings: {} })).ok ===
+    false,
+  "rejects a record with no building figures",
 );
-assert(!!rec && !!rec.presentedAt, 'record has presentedAt');
 assert(
-  /^Presented to client on .+\. Figures are locked\.$/.test(sb.getPresentedNotice(9001, Q)),
-  'notice text after marking: ' + sb.getPresentedNotice(9001, Q),
+  sb.savePresentedRecord(Object.assign({}, rec, { periodStart: "2025-04" }))
+    .ok === false,
+  "rejects a period that ends before it starts",
 );
-assert(sb.getPresentedNotice(9001, ymList('2025', 4, 6)) === '', 'no notice for an unmarked quarter');
-
-// Change a bill (Feb usage up) and the math (rate on Mar, override on Jan); change April (unmarked).
-billOf('2025-02-01').therms = 1500;
-billOf('2025-02-01').usage = 1500;
-billOf('2025-03-01').totalGasRate = 2.5;
-meter.baseline.costSavOverrides = { '2025-01': 12345 };
-billOf('2025-04-01').therms = 500;
-billOf('2025-04-01').usage = 500;
-const after = sav();
-Q.forEach((ym) =>
-  assert(near(after.byYM[ym], 200), 'presented ' + ym + ' unchanged at $200 (got ' + after.byYM[ym] + ')'),
-);
-assert(after.unitsByYM['2025-02'] && near(after.unitsByYM['2025-02'].therms, 200), 'presented Feb therms unchanged');
-assert(near(after.byYM['2025-04'], 500), 'unmarked April recomputes to $500 (got ' + after.byYM['2025-04'] + ')');
-assert(near(after.byCalMo[0], 200) && near(after.byCalMo[3], 500), 'byCalMo follows the same locked values');
-const roll = sb.getProjectSavingsByYM(9001);
-assert(near(roll['2025-02'], 200) && near(roll['2025-04'], 500), 'project rollup uses locked + recomputed months');
-assert(near(before.byYM['2025-01'], 200), 'earlier result object not mutated');
-
-// Meter Performance table rows.
-if (typeof sb.buildMeterPerfTableHTML === 'function') {
-  const pt = sb.buildMeterPerfTableHTML(meter, sortedBills(), {}, { projId: 9001, bldgId: bldg.id, mode: 'report' });
-  const byYm = {};
-  (pt.rows || []).forEach((r) => {
-    byYm[r.ym] = r;
-  });
-  assert(
-    Q.every((ym) => byYm[ym] && near(byYm[ym].savings, 200)),
-    'perf table presented months show locked $ (' + JSON.stringify(Q.map((y) => byYm[y] && byYm[y].savings)) + ')',
-  );
-  assert(byYm['2025-04'] && near(byYm['2025-04'].savings, 500), 'perf table unmarked April recomputes');
-} else assert(false, 'buildMeterPerfTableHTML loaded');
-
-// Remove the mark: everything recomputes; notice gone.
-assert(sb.removePresentedMark(9001, Q) === true, 'removePresentedMark returns true');
-const restored = sav();
+const saved = sb.savePresentedRecord(rec);
 assert(
-  near(restored.byYM['2025-01'], 12345) && near(restored.byYM['2025-03'], 200 * 2.5),
-  'after remove, Jan/Mar recompute (Jan ' + restored.byYM['2025-01'] + ', Mar ' + restored.byYM['2025-03'] + ')',
+  saved.ok === true && saved.record.projectId === "9001",
+  "savePresentedRecord stores the record",
 );
-assert(sb.getPresentedNotice(9001, Q) === '', 'no notice after remove');
-assert(sb.removePresentedMark(9001, Q) === false, 'second remove returns false');
+assert(
+  sb.savePresentedRecord(
+    Object.assign({}, rec, { periodStart: "2025-03", periodEnd: "2025-05" }),
+  ).ok === false,
+  "rejects an overlapping period",
+);
 
-console.log('RESULT ' + passed + ' passed, ' + failed + ' failed');
+t = sb.totalSavingsWithPresented(9001, Q1, cur0);
+assert(
+  near(t.byBldg["b-syn-1"], 601) && near(t.byBldg["b-syn-2"], 299),
+  "Q1 building figures are the printed ones",
+);
+assert(near(t.total, 901), "Q1 portfolio total is the printed $901 (not 900)");
+const st = sb.totalSavingsWithPresented(9001, Q1, {
+  "b-syn-1": cur0["b-syn-1"],
+});
+assert(
+  near(st.total, 601),
+  "a report of one building uses that building figure, not the portfolio total",
+);
+t = sb.totalSavingsWithPresented(9001, ["2025-01", "2025-02"], cur0);
+assert(
+  near(t.total, 600),
+  "a period that does not contain the whole presented period is current math ($600)",
+);
+t = sb.totalSavingsWithPresented(9001, H1, cur0);
+assert(
+  near(t.total, 901 + 900),
+  "Jan-Jun: presented Q1 ($901) + current Q2 ($900)",
+);
+t = sb.getProjectSavingsTotal(9001);
+assert(
+  near(t.total, 901 + 900),
+  "project total for every month uses the presented Q1 (portal, dashboards)",
+);
+assert(
+  sb.getPresentedUnits(9001, Q1, "b-syn-1").kwhSaved === 1234,
+  "printed unit figure returned for the exact period",
+);
+assert(
+  sb.getPresentedUnits(9001, H1, "b-syn-1") === null,
+  "no printed unit figure for a different period",
+);
+assert(
+  sb.getPresentedNotice(9001, Q1) ===
+    "Presented to client on May 11, 2026. Figures are locked; monthly detail is recalculated and may differ slightly.",
+  "notice text for the exact period: " + sb.getPresentedNotice(9001, Q1),
+);
+assert(
+  /^Includes figures presented to client on May 11, 2026 for January 2025 through March 2025\./.test(
+    sb.getPresentedNotice(9001, H1),
+  ),
+  "notice text for a longer period: " + sb.getPresentedNotice(9001, H1),
+);
+assert(
+  sb.getPresentedNotice(9001, Q2) === "",
+  "no notice for an unmarked quarter",
+);
+
+// Change a bill, the rate (math input) and add an override; edit Q2 as well.
+billOf(meter1, "2025-02-01").therms = 1500;
+billOf(meter1, "2025-02-01").usage = 1500;
+billOf(meter1, "2025-03-01").totalGasRate = 2.5;
+meter1.baseline.costSavOverrides = { "2025-01": 12345 };
+billOf(meter2, "2025-04-01").therms = 100;
+billOf(meter2, "2025-04-01").usage = 100;
+const cur1 = perBldg();
+assert(
+  near(cur1["b-syn-1"]["2025-01"], 12345),
+  "monthly rows still recompute after the edits (Jan override shows)",
+);
+t = sb.totalSavingsWithPresented(9001, Q1, cur1);
+assert(
+  near(t.byBldg["b-syn-1"], 601) &&
+    near(t.byBldg["b-syn-2"], 299) &&
+    near(t.total, 901),
+  "Q1 printed figures unchanged after bill and math edits",
+);
+t = sb.totalSavingsWithPresented(9001, H1, cur1);
+assert(
+  near(t.byBldg["b-syn-2"], 299 + 400 + 100 + 100),
+  "unmarked Q2 recomputes (b2 April now $400)",
+);
+t = sb.getProjectSavingsTotal(9001);
+assert(
+  Math.abs(t.total - 901) > 1000 && t.applied.length === 1,
+  "project total: Q1 locked, other months follow the edits",
+);
+
+// CSV of printed figures.
+const csv =
+  "building,figure,value\n" +
+  'Synthetic Hall,savings_dollars,"$4,338"\n' +
+  '"Test ""Annex"", East",savings_dollars,725\n' +
+  "Synthetic Hall,kwh_saved,-21794\n" +
+  "Portfolio total,savings_dollars,9056\n" +
+  "No Such Hall,savings_dollars,5\n" +
+  "bad line\n";
+const pc = sb.parsePresentedCsv(csv, [bldg1, bldg2]);
+assert(
+  pc.buildings["b-syn-1"].dollars === 4338 &&
+    pc.buildings["b-syn-1"].kwhSaved === -21794,
+  "csv: dollars with $ and comma, and kWh",
+);
+assert(
+  pc.buildings["b-syn-2"] && pc.buildings["b-syn-2"].dollars === 725,
+  "csv: quoted building name with quotes and a comma",
+);
+assert(
+  pc.totalDollars === 9056 &&
+    pc.unmatched.join("|") === "No Such Hall" &&
+    pc.bad.length === 1,
+  "csv: total, unmatched name and unreadable row reported",
+);
+
+// Remove the mark: totals recompute.
+assert(
+  sb.removePresentedMark(9001, Q1) === true,
+  "removePresentedMark returns true",
+);
+t = sb.totalSavingsWithPresented(9001, Q1, cur1);
+assert(
+  near(t.byBldg["b-syn-2"], 300),
+  "after remove: b2 Q1 is current math again ($300)",
+);
+assert(
+  near(
+    t.total,
+    cur1["b-syn-1"]["2025-01"] +
+      cur1["b-syn-1"]["2025-02"] +
+      cur1["b-syn-1"]["2025-03"] +
+      300,
+  ),
+  "after remove: total is current math",
+);
+assert(sb.getPresentedNotice(9001, Q1) === "", "no notice after remove");
+assert(
+  sb.removePresentedMark(9001, Q1) === false,
+  "second remove returns false",
+);
+
+console.log("RESULT " + passed + " passed, " + failed + " failed");
 process.exit(failed ? 1 : 0);

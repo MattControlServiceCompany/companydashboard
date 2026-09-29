@@ -15270,6 +15270,22 @@
     <!-- ---------------------------------------------------
          NEW REPORT GENERATION MODAL (v2) — launched from Energy Graphics
     --------------------------------------------------- -->
+    <!-- Mark as presented to client: entry form for the figures printed in the presented document
+         (app/presented-savings.js). Populated dynamically. -->
+    <div class="modal-bg" id="presentedModal" style="z-index: 300">
+      <div class="modal" style="width: 900px; max-width: 95vw; max-height: 85vh; display: flex; flex-direction: column">
+        <div class="modal-hdr">
+          <span class="modal-title">Mark as presented to client</span>
+          <button class="modal-x" onclick="_rptClosePresentedForm()">✕</button>
+        </div>
+        <div class="modal-body" id="presentedModalBody"></div>
+        <div class="modal-ftr">
+          <button class="btn btn-ghost" onclick="_rptClosePresentedForm()">Cancel</button>
+          <button class="btn btn-em" onclick="_rptConfirmPresentedForm()">Lock these figures</button>
+        </div>
+      </div>
+    </div>
+
     <div class="modal-bg" id="reportGenModal" onclick="if (event.target === this) this.classList.remove('open');">
       <div class="modal" style="width: 540px; max-height: 85vh; overflow-y: auto">
         <div class="modal-hdr">
@@ -15610,6 +15626,7 @@
     <script src="app/report-engine.js?v=33"></script>
     <script src="app/report-engine-woodland.js?v=33"></script>
     <script src="app/report-preview.js?v=33"></script>
+    <script src="app/presented-savings.js?v=33"></script>
     <script src="app/data/bas-weather-bins.js?v=33"></script>
     <script src="app/calc-autofill.js?v=33"></script>
     <script src="app/calculators.js?v=33"></script>
