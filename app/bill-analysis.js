@@ -14934,6 +14934,9 @@ async function extractPDFText(ab, statusCb, opts) {
           OCR_PER_PAGE_ALLOWANCE_MS * Math.max(1, ocrNeeded.length),
         );
         let _ocrBudgetExceeded = false;
+        // After the first decode timeout in this run, the Louisburg crop fallback
+        // (a ~19x render per page) is skipped for the remaining pages.
+        let _lbgCropDecodeTimedOut = false;
         // Hoisted above the loop (was previously declared right before its one use at
         // the bottom of the per-page block) so GATE A can stamp _pageCoverage at every
         // exit point of a page's OCR processing, not just the normal end-of-iteration one.
@@ -15956,7 +15959,7 @@ async function extractPDFText(ab, statusCb, opts) {
           // that file's merge block). This never fires on a bill that already
           // reads cleanly — _lbgNeedsCropFallback requires a missing
           // Current-Bill/Total-Amount-Due total or a missing Water line.
-          if (_lbgNeedsCropFallback(bestText)) {
+          if (!_lbgCropDecodeTimedOut && _lbgNeedsCropFallback(bestText)) {
             try {
               if (statusCb) statusCb('OCR page ' + pgNum + '/' + maxPages + ' — Louisburg targeted-crop fallback...');
               // FIX (2026-09-14, verified against the real scan Scan_20260908114811.pdf
@@ -16071,6 +16074,7 @@ async function extractPDFText(ab, statusCb, opts) {
               // Fallback failing must never break normal extraction — page
               // proceeds with whatever bestText already held.
               console.warn('[Louisburg targeted-crop fallback] page ' + pgNum + ' failed:', _lbgCropErr);
+              if (/decode timed out/.test((_lbgCropErr && _lbgCropErr.message) || '')) _lbgCropDecodeTimedOut = true;
             }
           }
           _releasePageRenderCache(); // b35c9b09 Step 2: drain this page's cache — normal end-of-page path
@@ -16392,6 +16396,7 @@ async function processPDF(file) {
     // ── UTILITY BILLS: 100% local rule-based extraction ──
     if (pdfType === 'utility') {
       const statusMsg = (msg) => {
+        if (window._pdfAbort) return; // cancelled: a still-running job must not repaint the panel or top-bar pill
         box.innerHTML =
           '<div class="ai-thinking"><div class="tdots"><span></span><span></span><span></span></div> ' + msg + '</div>';
         globalTaskUpdate('📄 ' + msg);
@@ -16514,15 +16519,19 @@ async function processPDF(file) {
             let retryWorker;
             try {
               // Dictionary params must go in createWorker's 4th arg (init-only)
-              retryWorker = await Tesseract.createWorker(
-                'eng',
-                1,
-                {
-                  logger: (m) => {
-                    if (m.status === 'loading tesseract core') statusMsg('Loading OCR engine for retry...');
+              retryWorker = await _withTimeout(
+                Tesseract.createWorker(
+                  'eng',
+                  1,
+                  {
+                    logger: (m) => {
+                      if (m.status === 'loading tesseract core') statusMsg('Loading OCR engine for retry...');
+                    },
                   },
-                },
-                { load_system_dawg: '0', load_freq_dawg: '0' },
+                  { load_system_dawg: '0', load_freq_dawg: '0' },
+                ),
+                OCR_TIMEOUT_MS,
+                'retry createWorker',
               );
               await retryWorker.setParameters({ preserve_interword_spaces: '1', user_defined_dpi: '300' });
             } catch (e) {
@@ -16531,12 +16540,16 @@ async function processPDF(file) {
             if (retryWorker) {
               let pdf2 = null;
               try {
-                pdf2 = await pdfjsLib.getDocument({
-                  data: freshBytes(),
-                  useWorkerFetch: false,
-                  isEvalSupported: false,
-                  useSystemFonts: true,
-                }).promise;
+                pdf2 = await _withTimeout(
+                  pdfjsLib.getDocument({
+                    data: freshBytes(),
+                    useWorkerFetch: false,
+                    isEvalSupported: false,
+                    useSystemFonts: true,
+                  }).promise,
+                  PDFJS_AWAIT_TIMEOUT_MS,
+                  'retry getDocument',
+                );
                 const maxPg = Math.min(pdf2.numPages, 200);
                 // Rebuild pageTexts from the fullText returned by extractPDFText
                 // so the retry loop can reuse non-retried pages without pulling
@@ -16732,21 +16745,28 @@ async function processPDF(file) {
                   }
                   return true;
                 };
-                for (const scale of RETRY_SCALES) {
-                  if (bestMissing === 0) break;
+                // Retry progress text: "page n of N" advances once per retried page.
+                const _retryStatus = (scale, n) =>
                   statusMsg(
                     'OCR retry at ' +
                       scale +
-                      'x scale — ' +
+                      'x scale — page ' +
+                      n +
+                      ' of ' +
                       retryPages.size +
-                      ' page' +
-                      (retryPages.size !== 1 ? 's' : '') +
                       ' (' +
                       bestMissing +
                       ' missing field' +
                       (bestMissing > 1 ? 's' : '') +
                       ')...',
                   );
+                for (const scale of RETRY_SCALES) {
+                  if (bestMissing === 0) break;
+                  // Cancel and the shared OCR time budget both end the scale loop.
+                  if (window._pdfAbort) break;
+                  if (performance.now() - _ocrStartTime > OCR_TOTAL_BUDGET_MS) break;
+                  let _retryPageNo = 0;
+                  _retryStatus(scale, 1);
                   const retryTexts = [];
                   // Fix (fix/wre-retry-gate-widen, 2026-09-21): a second OCR candidate
                   // per retried page — the same hi-scale render, Otsu-binarized
@@ -16764,6 +16784,15 @@ async function processPDF(file) {
                       retryTextsBin.push(pageTexts[i - 1] || '');
                       continue;
                     }
+                    if (window._pdfAbort) break;
+                    _retryPageNo++;
+                    _retryStatus(scale, _retryPageNo);
+                    if (performance.now() - _ocrStartTime > OCR_TOTAL_BUDGET_MS) {
+                      // Budget spent: keep the existing text for this page, skip the render.
+                      retryTexts.push(pageTexts[i - 1] || '');
+                      retryTextsBin.push(pageTexts[i - 1] || '');
+                      continue;
+                    }
                     let pg, canvas;
                     try {
                       pg = await _withTimeout(pdf2.getPage(i), PDFJS_AWAIT_TIMEOUT_MS, 'getPage(' + i + ')');
@@ -16775,6 +16804,7 @@ async function processPDF(file) {
                       // (90s), same reasoning as the primary-pass call site above.
                       canvas = await _withTimeout(_renderPageHQ(pg, scale), RENDER_HQ_TIMEOUT_MS, 'render(' + i + ')');
                     } catch (renderErr) {
+                      if (window._pdfAbort) break;
                       // Treat a getPage/render timeout the same as "this page needs OCR
                       // retry but failed" — don't let it abort the whole retry batch.
                       retryTexts.push('');
@@ -16794,6 +16824,13 @@ async function processPDF(file) {
                       retryTexts.push(retryResult.data.text);
                     } catch (e) {
                       if (e._replacementWorker) retryWorker = e._replacementWorker;
+                      if (window._pdfAbort || (e && e._aborted)) {
+                        canvas.width = 0;
+                        canvas.height = 0;
+                        canvas = null;
+                        if (pg.cleanup) pg.cleanup();
+                        break;
+                      }
                       retryTexts.push('');
                     }
                     // Otsu-binarize candidate: reuse the same hi-scale canvas, OCR the
@@ -16821,7 +16858,9 @@ async function processPDF(file) {
                     canvas.height = 0;
                     canvas = null;
                     if (pg.cleanup) pg.cleanup();
+                    if (window._pdfAbort) break;
                   }
+                  if (window._pdfAbort) break; // cancelled: discard the partial scale, accept nothing
                   const retryFull = retryTexts.map((rt, ri) => '%%PAGE_' + (ri + 1) + '%%\n' + rt).join('\n');
                   const retryFullBin = retryTextsBin.map((rt, ri) => '%%PAGE_' + (ri + 1) + '%%\n' + rt).join('\n');
                   _tryAcceptRetryCandidate(retryFull);
@@ -16847,6 +16886,10 @@ async function processPDF(file) {
             }
           }
 
+          if (window._pdfAbort) {
+            globalTaskDone();
+            return;
+          } // cancelled during the OCR retry: stop before verification/merge
           // ── POST-EXTRACTION VERIFICATION: use historical data + logic to fix issues ──
           // Bug b5951068: append parse-error rows (flagged above) so they're never lost.
           let finalBills = validBills.length > 0 ? validBills.concat(_singleDroppedBills || []) : bills;
