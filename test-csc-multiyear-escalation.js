@@ -223,6 +223,7 @@ function buildSyntheticD() {
       escalation: ESCALATION_PCT,
       years: CONTRACT_YEARS,
       cscPct: CSC_PCT,
+      hasCsc: true,
       clientPct: CLIENT_PCT,
       currentYear: 1,
       quarterlyTargets: [ANNUAL_TARGET / 4, ANNUAL_TARGET / 4, ANNUAL_TARGET / 4, ANNUAL_TARGET / 4],

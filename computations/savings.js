@@ -21,7 +21,7 @@ const SAVINGS_CALC_VERSION = '2026.09.28.wp04';
 ───────────────────────────────────────────────────────────── */
 function projHasContract(projId) {
   const p = (typeof projects !== 'undefined' ? projects : []).find((x) => String(x.id) === String(projId));
-  return !!(p && p.sa);
+  return !!p && getProjectContract(p).hasContract; // keeper: computations/csc.js
 }
 
 /* ─────────────────────────────────────────────────────────────

@@ -220,6 +220,7 @@ function buildCtx(extraKeys) {
     'computations/normalization.js',
     'computations/savings.js',
     'computations/eui.js',
+    'computations/csc.js',
     'computations/hvac-enduse.js',
     'app/utility-data.js',
     'app/core.js',

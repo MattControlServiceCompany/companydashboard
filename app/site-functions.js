@@ -1776,6 +1776,14 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.29.35',
+    date: '2026-09-29',
+    title: 'Project Settings: Contract Type',
+    items: [
+      { type: 'feature', text: 'Project Settings: new Contract Type (Shared savings / Fixed project / No contract). CSC share rows show only for shared-savings projects.' },
+    ],
+  },
+  {
     v: 'v2026.09.29.34',
     date: '2026-09-29',
     title: 'Presented savings: lock the figures shown to the client',

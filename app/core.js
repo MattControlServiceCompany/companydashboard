@@ -1703,8 +1703,15 @@ function renderDetail(p) {
                   </div>
                   <div style="display:flex;flex-direction:column;gap:12px">
                     <label style="display:flex;flex-direction:column;gap:4px">
-                      <span style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.5px">CSC Compensation %</span>
-                      <input class="fi" type="number" min="0" max="100" step="0.1" value="${p.cscCompensation || 0}" onchange="updateProjPerfSetting(${p.id},'cscCompensation',parseFloat(this.value)||0)" style="width:120px;font-family:var(--mono)">
+                      <span style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.5px">Contract Type</span>
+                      <select class="fi" id="ps-contractType-${p.id}" onchange="updateProjPerfSetting(${p.id},'contractType',this.value||undefined);renderDetail(projects.find((x)=>x.id===${p.id}))" style="width:100%;font-family:var(--mono)">
+                        ${[['', 'Not set'], ['sharedSavings', 'Shared savings (CSC share)'], ['fixedProject', 'Fixed project (no shared savings)'], ['none', 'No contract']].map((o) => `<option value="${o[0]}"${(getProjectContract(p).type || '') === o[0] ? ' selected' : ''}>${o[1]}</option>`).join('')}
+                      </select>
+                    </label>
+                    <label style="display:flex;flex-direction:column;gap:4px">
+                      <span style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.5px">CSC Share of Savings % (Shared savings only)</span>
+                      <input class="fi" type="number" min="0" max="100" step="0.1" value="${p.cscCompensation || 0}"${getProjectContract(p).type === 'sharedSavings' ? '' : ' disabled'} onchange="updateProjPerfSetting(${p.id},'cscCompensation',parseFloat(this.value)||0)" style="width:120px;font-family:var(--mono)">
+                      ${getProjectContract(p).needsPct ? '<span style="font-size:11px;color:var(--text2)">Enter the CSC share. Reports and agreements stay blocked until you do.</span>' : ''}
                     </label>
                     <label style="display:flex;flex-direction:column;gap:4px">
                       <span style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.5px">Contract Years</span>
@@ -3151,7 +3158,7 @@ function updateProjPerfSetting(projId, field, value) {
   if (!p) return;
   p[field] = value;
   sset('en_projects', projects);
-  if (field === 'escalation' || field === 'cscCompensation') {
+  if (field === 'escalation') {
     const _pdBldgs = getUDBldgs(projId);
     if (_pdBldgs) {
       for (const b of _pdBldgs) {
@@ -3163,19 +3170,11 @@ function updateProjPerfSetting(projId, field, value) {
             bpCfg.escPct = value;
             localStorage.setItem(bpKey, JSON.stringify(bpCfg));
           }
-          if (!bpCfg._customCsc && field === 'cscCompensation') {
-            bpCfg.cscPct = value;
-            localStorage.setItem(bpKey, JSON.stringify(bpCfg));
-          }
         } catch (e) {}
         try {
           const bspCfg = JSON.parse(localStorage.getItem(bspKey) || '{}');
           if (!bspCfg._customEsc && field === 'escalation') {
             bspCfg.escPct = value;
-            localStorage.setItem(bspKey, JSON.stringify(bspCfg));
-          }
-          if (!bspCfg._customCsc && field === 'cscCompensation') {
-            bspCfg.cscPct = value;
             localStorage.setItem(bspKey, JSON.stringify(bspCfg));
           }
         } catch (e) {}
@@ -3185,7 +3184,9 @@ function updateProjPerfSetting(projId, field, value) {
   showToast(
     field === 'cscCompensation'
       ? 'CSC Compensation'
-      : field === 'escalation'
+      : field === 'contractType'
+        ? 'Contract Type'
+        : field === 'escalation'
         ? 'Utility Escalation'
         : 'Contract Years' + ' updated ✓',
   );
