@@ -1776,6 +1776,14 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.28.22',
+    date: '2026-09-28',
+    title: 'Behind-the-scenes checks updated. No change to any page.',
+    items: [
+      { type: 'change', text: 'Internal accuracy checks for Energy Savings and the Woodland report now run cleanly. Nothing changes on screen. Your numbers stay the same.' },
+    ],
+  },
+  {
     v: 'v2026.09.28.21',
     date: '2026-09-28',
     title: 'BAS Calc: Existing Heating kWh is filled from your electric bills.',
