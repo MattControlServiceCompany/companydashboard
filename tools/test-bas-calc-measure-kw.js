@@ -96,7 +96,7 @@ const src = [
   loadConst(CALC, 'BAS_CITIES'),
   loadFn(CALC, '_basCityWeather'),
   loadFn(CALC, '_bcGv'),
-  loadFn(CALC, '_bcCalibrateHeatAdj'),
+  loadFn(CALC, '_bcSolveAdj'),
   loadFn(CALC, '_bcDoCalc'),
   loadFn(CALC, '_bcMeasureArrays'),
   loadFn(CALC, 'bcAddAsMeasure'),
@@ -233,7 +233,7 @@ const inp = {
 for (const k in inp) set(k, inp[k]);
 set('bc-heatSrc', '1', 'SELECT');
 set('bc-exOAShutoff', 'no', 'SELECT');
-set('bc-newOAShutoff', 'no', 'SELECT');
+set('bc-newOAShutoff', 'yes', 'SELECT'); // workbook New sheet adds back occupied OA only
 ['bc-adjCool', 'bc-adjHeat', 'bc-results'].forEach((k) => set(k, ''));
 sb._bcDoCalc('p1');
 const r = project._bcResults;
@@ -243,14 +243,15 @@ const cells = [...totalRow.matchAll(/>([\d,]+)</g)].map((x) => parseFloat(x[1].r
 console.log(
   `  new cooling total ${cells[1]} (workbook 131,194); annual cooling savings ${annCool.toFixed(2)} (workbook 11,677.88); coolAdj ${dom.get('bc-adjCool').textContent} (workbook 2.608)`,
 );
-// NOT asserted: full workbook cooling parity (new cooling 131,194; savings 11,678; coolAdj 2.608).
-// The workbook also uses step-table load percentages, a per-bin net of outside-air load and a
-// different unoccupied ratio (audit math-04 E-BAS-3 a-c); those are separate model changes, not the
-// hour convention. Before D-14 (hour rule h in [on, off)) the site gave new cooling 132,428, annual
-// cooling savings 10,443.71; the numbers above are with the workbook hour rule.
+// Workbook parity (S-13): with the workbook model (hour rule, step tables, per-bin net of outside
+// air, unoccupied ratio, season split; audit E-BAS-3 a-d) the KC default case equals the workbook.
+// Before: new cooling 132,428, annual cooling savings 10,443.71, coolAdj 1.670.
+near(cells[1], 131194.1175375327, 0.5, 'new cooling total equals workbook');
+near(annCool, 11677.882462467313, 0.01, 'annual cooling savings equals workbook Savings Calculator!N54');
+near(parseFloat(dom.get('bc-adjCool').textContent), 2.60807062241243, 0.0005, 'coolAdj equals workbook K50');
 // ASSERTED: the hour convention itself, against workbook New!I2 (Jan outside-air heating kWh
 // 9,952.6, occupied hours only: OA shut off when unoccupied, New heat setpoint 60).
-const rawSrc = src.replace('p._bcResults = {', 'p._bcRaw = { newHeatKwhOAM };p._bcResults = {');
+const rawSrc = src.replace('p._bcResults = {', 'p._bcRaw = { newHeatKwhM };p._bcResults = {');
 const sb2 = { console, document: sb.document, window: {} };
 vm.createContext(sb2);
 vm.runInContext(rawSrc, sb2);
@@ -259,8 +260,29 @@ set('bc-newOAShutoff', 'yes', 'SELECT');
 const p2 = { id: 'p2', basCalc: {} };
 sb2.projects = [p2];
 sb2._bcDoCalc('p2');
-near(p2._bcRaw.newHeatKwhOAM[0], 9952.6, 0.1, 'New January outside-air heating kWh equals workbook New!I2 (hour label h+1, [on, off] inclusive)');
+near(p2._bcRaw.newHeatKwhM[0], 9952.58607408, 0.1, 'New January heating kWh equals workbook New!I2 (hour label h+1, [on, off] inclusive)');
 assert(r.peakHours === 2 && r.gasUnit === 'MCF', 'results carry peakHours and gasUnit');
+
+console.log('=== 5c. negative peak reduction is explained by the inputs, not a bug ===');
+// Workbook default case: Existing cooling setpoint 55 (occupied all day) vs New occupied cooling
+// setpoint 50 and New schedule 5-21 that still covers the 16-18 peak window: New cools MORE in the
+// peak window, so the peak kWh "saved" (and the average kW reduction) is negative. That is what the
+// inputs say. With New occupied setpoint = Existing, or New schedule ending before the peak window,
+// the peak reduction is not negative.
+{
+  const julPeak = (over) => {
+    for (const k in over) set(k, String(over[k]));
+    sb._bcDoCalc('p1');
+    return project._bcResults.peakKwhSavings.slice();
+  };
+  set('bc-heatSrc', '2', 'SELECT');
+  const workbookCase = julPeak({});
+  assert(workbookCase[6] < 0, 'workbook default (New occupied cooling 50 < Existing 55): July peak reduction is negative');
+  const sameSetpoint = julPeak({ 'bc-newCoolOcc': '55', 'bc-newCoolUnocc': '70' });
+  assert(sameSetpoint.every((v) => v > -1e-6), 'New = Existing setpoints, shorter schedule: no month has a negative peak reduction');
+  const endsBeforePeak = julPeak({ 'bc-newCoolOcc': '50', 'bc-newCoolUnocc': '85', 'bc-newMfOn': '5', 'bc-newMfOff': '15' });
+  assert(endsBeforePeak[6] > 0, 'New weekday schedule ends before the peak window: July peak reduction is positive');
+}
 
 console.log('=== 6. avgSetpoint ===');
 near(sb.avgSetpoint([70, 71, 71], 0), 71, 0, 'dp 0');

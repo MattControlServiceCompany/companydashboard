@@ -62,7 +62,7 @@ const src = [
   loadConst(CALC, 'BAS_CITIES'),
   loadFn(CALC, '_basCityWeather'),
   loadFn(CALC, '_bcGv'),
-  loadFn(CALC, '_bcCalibrateHeatAdj'),
+  loadFn(CALC, '_bcSolveAdj'),
   loadFn(CALC, '_bcDoCalc'),
 ]
   .join('\n\n')
