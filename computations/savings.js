@@ -854,11 +854,34 @@ function savePresentedRecord(rec) {
     totalDollars: Number.isFinite(rec.totalDollars) ? rec.totalDollars : null,
     buildings: rec.buildings,
   };
+  if (rec.pdfKey) {
+    clean.pdfKey = String(rec.pdfKey);
+    clean.pdfName = rec.pdfName || "";
+  }
   sset(
     PRESENTED_SAVINGS_KEY,
     (sget(PRESENTED_SAVINGS_KEY, []) || []).concat([clean]),
   );
   return { ok: true, record: clean };
+}
+
+// Attach (or replace) the PDF of the report given to the client. pdfKey is a blob key in the
+// PDF store (en_pdf_shared_<hash16>). Only a user action calls this. Returns true when a
+// record for the period exists.
+function setPresentedPdf(projId, yms, pdfKey, pdfName) {
+  const rec = getPresentedRecordFor(projId, yms);
+  if (!rec) return false;
+  sset(
+    PRESENTED_SAVINGS_KEY,
+    (sget(PRESENTED_SAVINGS_KEY, []) || []).map((r) =>
+      String(r.projectId) === String(projId) &&
+      r.periodStart === rec.periodStart &&
+      r.periodEnd === rec.periodEnd
+        ? Object.assign({}, r, { pdfKey: String(pdfKey), pdfName: pdfName || "" })
+        : r,
+    ),
+  );
+  return true;
 }
 
 function removePresentedMark(projId, yms) {

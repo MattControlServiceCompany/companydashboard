@@ -8,7 +8,7 @@ var _reportConfig = null;
 var _reportData = null;
 var _rptInspectActive = false;
 
-function generateReportPreview() {
+function generateReportPreview(opts) {
   // Clear any pages from a prior report before generating a new one.
   // This prevents DOM accumulation when the user generates multiple reports
   // in the same session (prior reports were stacking, producing inflated page counts).
@@ -68,6 +68,19 @@ function generateReportPreview() {
   if (reportType === 'cumulative' || reportType === 'current' || reportType === 'custom') {
     data.period = data.period || {};
     data.period.label = config.periodLabel;
+  }
+
+  // A period already presented to the client opens the presented report by default (Matt 2026-09-29);
+  // "Generate updated report" comes back here with { updated: true }.
+  if (!(opts && opts.updated) && data.project && data.period && typeof _rptPresentedChooser === 'function') {
+    var _pyms = (data.period.yearMonths || []).slice().sort();
+    if (
+      _pyms.length &&
+      _rptPresentedChooser(data.project.id, _pyms, data.period.label, function () {
+        generateReportPreview({ updated: true });
+      })
+    )
+      return;
   }
 
   _reportConfig = config;

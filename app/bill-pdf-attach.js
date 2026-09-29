@@ -8,7 +8,9 @@
 
 // Core (no DOM): store the file once, then tag every chosen bill.
 // Returns { key, stored, count } or null when the file could not be stored.
-async function bpaAttachFile({ b64, bills, pageStart, pageEnd, deps }) {
+// Store one PDF blob once, under en_pdf_shared_<sha256 first 16>. Returns { key, stored } or null.
+// Also used by the presented-report PDF (app/presented-savings.js): one store path for both.
+async function bpaStoreBlob(b64, deps) {
   const hex = await deps.hash(b64);
   const key = 'en_pdf_shared_' + hex.slice(0, 16);
   let stored = false;
@@ -16,6 +18,13 @@ async function bpaAttachFile({ b64, bills, pageStart, pageEnd, deps }) {
     if (!(await deps.store(key, b64))) return null;
     stored = true;
   }
+  return { key, stored };
+}
+
+async function bpaAttachFile({ b64, bills, pageStart, pageEnd, deps }) {
+  const blob = await bpaStoreBlob(b64, deps);
+  if (!blob) return null;
+  const { key, stored } = blob;
   bills.forEach((b) => {
     b.pdfKey = key;
     b.hasPDF = true;
@@ -34,7 +43,7 @@ function bpaFindConflicts(bills, key) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { bpaAttachFile, bpaFindConflicts };
+  module.exports = { bpaAttachFile, bpaFindConflicts, bpaStoreBlob };
 }
 
 /* ── UI (browser only) ── */

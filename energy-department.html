@@ -15297,6 +15297,21 @@
       </div>
     </div>
 
+    <!-- Period already presented to the client: open the report the client got, or build an updated one
+         (app/presented-savings.js). Populated dynamically. -->
+    <div class="modal-bg" id="presentedChoiceModal" style="z-index: 1100">
+      <div class="modal" style="width: 520px; max-width: 95vw">
+        <div class="modal-hdr">
+          <span class="modal-title">This report was presented to the client</span>
+          <button class="modal-x" onclick="_rptClosePresentedChoice()">✕</button>
+        </div>
+        <div class="modal-body" id="presentedChoiceBody"></div>
+        <div class="modal-ftr">
+          <button class="btn btn-ghost" onclick="_rptClosePresentedChoice()">Cancel</button>
+        </div>
+      </div>
+    </div>
+
     <div class="modal-bg" id="reportGenModal" onclick="if (event.target === this) this.classList.remove('open');">
       <div class="modal" style="width: 540px; max-height: 85vh; overflow-y: auto">
         <div class="modal-hdr">
@@ -15471,6 +15486,14 @@
             onclick="rptTogglePresented()"
           >
             Mark as presented to client
+          </button>
+          <button
+            id="rptPresentedPdfBtn"
+            class="btn btn-ghost btn-sm"
+            style="display: none"
+            onclick="rptAttachPresentedPdf()"
+          >
+            Attach presented report PDF
           </button>
           <button class="btn btn-em btn-sm" onclick="exportReportToPDF()">Download PDF</button>
         </div>

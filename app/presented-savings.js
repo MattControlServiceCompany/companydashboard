@@ -35,6 +35,134 @@ function _rptRefreshPresentedUI() {
     btn.style.display = ctx ? '' : 'none';
     btn.textContent = marked ? 'Remove presented mark' : 'Mark as presented to client';
   }
+  var pbtn = document.getElementById('rptPresentedPdfBtn');
+  if (pbtn) {
+    var rec = ctx && getPresentedRecordFor(ctx.projId, ctx.yms);
+    pbtn.style.display = rec ? '' : 'none';
+    pbtn.textContent = rec && rec.pdfKey ? 'Replace presented report PDF' : 'Attach presented report PDF';
+  }
+}
+
+// ── Presented report PDF (Matt 2026-09-29) ─────────────────────────────────────
+// The PDF the client actually received is stored once in the bill PDF store (bpaStoreBlob, same
+// en_pdf_shared_<hash16> key as attached bill PDFs) and its key is kept on the presented record.
+// Only these user actions attach or replace it.
+function _rptPresentedFileToB64(file) {
+  return new Promise(function (resolve, reject) {
+    var r = new FileReader();
+    r.onload = function () {
+      resolve(String(r.result).replace(/^data:[^,]*,/, ''));
+    };
+    r.onerror = function () {
+      reject(r.error);
+    };
+    r.readAsDataURL(file);
+  });
+}
+
+async function _rptPresentedAttachFile(projId, yms, file) {
+  var rec = getPresentedRecordFor(projId, yms);
+  if (!rec) return false;
+  var b64 = await _rptPresentedFileToB64(file);
+  if (atob(b64.slice(0, 8)).slice(0, 4) !== '%PDF') {
+    showToast('That file is not a PDF.', 'warn');
+    return false;
+  }
+  var blob = await bpaStoreBlob(b64, { hash: _bpaSha256Hex, load: pdfLoad, store: pdfStore });
+  if (!blob) {
+    showToast('Could not store the PDF. Nothing was changed.', 'warn');
+    return false;
+  }
+  setPresentedPdf(projId, yms, blob.key, file.name);
+  return true;
+}
+
+function rptAttachPresentedPdf() {
+  var ctx = _rptPresentedCtx();
+  var rec = ctx && getPresentedRecordFor(ctx.projId, ctx.yms);
+  if (!rec) return;
+  if (
+    rec.pdfKey &&
+    !confirm('A presented report PDF is already attached (' + (rec.pdfName || 'file') + '). Replace it with a new file?')
+  )
+    return;
+  var inp = document.createElement('input');
+  inp.type = 'file';
+  inp.accept = 'application/pdf,.pdf';
+  inp.id = 'rptPresentedPdfInput';
+  inp.style.display = 'none';
+  document.body.appendChild(inp);
+  inp.onchange = async function () {
+    var f = inp.files && inp.files[0];
+    inp.remove();
+    if (!f) return;
+    if (await _rptPresentedAttachFile(ctx.projId, ctx.yms, f)) {
+      showToast('Presented report PDF attached');
+      _rptRefreshPresentedUI();
+    }
+  };
+  inp.click();
+}
+
+// Open the stored PDF exactly as attached (the file's own bytes, in the browser's PDF viewer).
+async function rptOpenPresentedPdf(projId, yms) {
+  var rec = getPresentedRecordFor(projId, yms);
+  var b64 = rec && rec.pdfKey ? await pdfLoad(rec.pdfKey) : null;
+  if (!b64) {
+    showToast('The presented report PDF could not be found.', 'warn');
+    return;
+  }
+  var bin = atob(b64);
+  var bytes = new Uint8Array(bin.length);
+  for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  var url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+  window._rptLastPresentedPdfUrl = url;
+  window.open(url, '_blank');
+}
+
+// Gate for a report whose period was presented. Default is the presented report; the updated
+// report (current layout, locked figures) is the second choice. Returns true when the chooser
+// took over (the caller stops).
+function _rptPresentedChooser(projId, yms, label, onUpdated) {
+  var rec = getPresentedRecordFor(projId, yms);
+  if (!rec) return false;
+  window._rptPresentedChoiceCb = onUpdated;
+  window._rptPresentedChoiceKey = { projId: projId, yms: yms.slice() };
+  var on = new Date(rec.presentedAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  var body =
+    '<div style="font-size:13px;color:var(--text);margin-bottom:12px">' +
+    _rptV2Esc(label || 'This period') +
+    ' was presented to the client on ' +
+    _rptV2Esc(on) +
+    '.</div>';
+  if (rec.pdfKey) {
+    body +=
+      '<button id="pcOpenBtn" class="btn btn-em" style="width:100%;margin-bottom:8px" onclick="_rptPresentedChoiceOpen()">Presented report' +
+      (rec.pdfName ? ' (' + _rptV2Esc(rec.pdfName) + ')' : '') +
+      '</button>';
+  } else {
+    body +=
+      '<div id="pcNoPdf" style="font-size:12px;color:var(--text2);margin-bottom:10px">No presented report PDF is attached for this period. Generate the updated report and use "Attach presented report PDF" in its toolbar to add the file.</div>';
+  }
+  body +=
+    '<button id="pcUpdatedBtn" class="btn btn-ghost" style="width:100%" onclick="_rptPresentedChoiceUpdated()">Generate updated report</button>' +
+    '<div style="font-size:11px;color:var(--text2);margin-top:8px">The updated report uses the current layout. Every figure that was presented to the client keeps its presented value.</div>';
+  document.getElementById('presentedChoiceBody').innerHTML = body;
+  document.getElementById('presentedChoiceModal').classList.add('open');
+  return true;
+}
+function _rptClosePresentedChoice() {
+  document.getElementById('presentedChoiceModal').classList.remove('open');
+}
+function _rptPresentedChoiceOpen() {
+  var k = window._rptPresentedChoiceKey;
+  _rptClosePresentedChoice();
+  rptOpenPresentedPdf(k.projId, k.yms);
+}
+function _rptPresentedChoiceUpdated() {
+  var cb = window._rptPresentedChoiceCb;
+  _rptClosePresentedChoice();
+  if (cb) cb();
 }
 
 function rptTogglePresented() {
