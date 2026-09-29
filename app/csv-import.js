@@ -1214,12 +1214,7 @@ async function estimateMissingPeriod(mid, gapStart, gapEnd) {
   const nextUsage = _estimateUsageValue(next, m.commodity);
   const prevDays = calcDays(prev.start, prev.end, incl);
   const nextDays = calcDays(next.start, next.end, incl);
-  const gap = gapMissingPeriod(gapStart, gapEnd); // gapStart/gapEnd = prev bill end / next bill start
-  if (!gap) {
-    showToast('No missing days between these bills', 'warn');
-    return;
-  }
-  const gapDays = gap.days;
+  const gapDays = calcDays(gapStart, gapEnd, incl);
   if (!(prevUsage > 0) || !(nextUsage > 0) || !(prevDays > 0) || !(nextDays > 0) || !(gapDays > 0)) {
     showToast('Cannot estimate — the surrounding bills are missing usage or day data', 'warn');
     return;
@@ -1229,9 +1224,9 @@ async function estimateMissingPeriod(mid, gapStart, gapEnd) {
   const unit = getMeterDisplayUnit(m);
   const confirmMsg =
     'Add an estimated period ' +
-    gap.start +
+    gapStart +
     ' – ' +
-    gap.end +
+    gapEnd +
     ' (' +
     estUsage.toLocaleString() +
     ' ' +
@@ -1240,9 +1235,9 @@ async function estimateMissingPeriod(mid, gapStart, gapEnd) {
   if (!(await confirmAsync(confirmMsg))) return;
   const estimatedNote =
     'No bill on file for ' +
-    gap.start +
+    gapStart +
     ' – ' +
-    gap.end +
+    gapEnd +
     '. Estimated from the previous bill’s (' +
     prev.start +
     '–' +
@@ -1274,8 +1269,8 @@ async function estimateMissingPeriod(mid, gapStart, gapEnd) {
     '. Cost and demand are not estimated. Delete this row if a real bill is added to replace it.';
   const bill = {
     id: 'bill_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
-    start: gap.start,
-    end: gap.end,
+    start: gapStart,
+    end: gapEnd,
     commodity: m.commodity,
     estimated: true,
     estimatedNote,
@@ -1286,7 +1281,7 @@ async function estimateMissingPeriod(mid, gapStart, gapEnd) {
   logUtilityAudit({
     action: 'add',
     ..._auditCtxFromIds(udSelProjId, udSelBldgId, mid),
-    period: gap.start + ' to ' + gap.end,
+    period: gapStart + ' to ' + gapEnd,
     source: 'estimate',
     note: 'Estimated ' + estUsage.toLocaleString() + ' ' + unit + ' from surrounding bills (day-weighted average)',
   });
