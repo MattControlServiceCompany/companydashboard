@@ -4692,6 +4692,9 @@ function renderBillsPane(pane, m, bills, incl) {
     '<button class="btn btn-ghost btn-sm" onclick="openPDFImportFromBills(\'' +
     m.id +
     '\')">📄 Import via PDF</button>' +
+    '<button class="btn btn-ghost btn-sm" title="Attach PDF files to billing periods you already have. Nothing is read from the PDF." onclick="openAttachBillPdfs(\'' +
+    m.id +
+    '\')">📎 Attach bill PDFs</button>' +
     '<div class="ud-incl-toggle">' +
     '<span style="font-size:11px;color:var(--text2)">Day calc:</span>' +
     '<button class="ud-incl-btn' +
