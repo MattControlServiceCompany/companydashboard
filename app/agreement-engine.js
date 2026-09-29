@@ -46,8 +46,9 @@ function _agreementGetConfig(projId) {
   var dflt = {
     templateType: 'monthlyAllowance',
     effectiveDate: null, // null = use today at generation time
-    // Defaults per Matt's direction (2026-07-27): 4% escalation, $2,768/mo minimum spend
-    // (16 hrs x $173/hr). Both start UNCONFIRMED until the client explicitly accepts them. The
+    // Defaults per Matt's direction (2026-07-27): 4% escalation. Minimum monthly spend is NOT a
+    // stored default: it is derived at read time = recurring hours x live hourly rate (D-11), see
+    // _agreementResolveMinimumSpend. A value the user saved always wins. Both start UNCONFIRMED until the client explicitly accepts them. The
     // *Confirmed flags used to gate an inline "pending confirmation" annotation in the generated
     // contract text; that annotation was removed 2026-08-02 (defect register D-01/D-02) because it
     // shipped to the client in orange with internal wording. The flags are now internal state only
@@ -55,14 +56,33 @@ function _agreementGetConfig(projId) {
     // amount") and #2 ("Escalation in renewal terms.") in the base spec.
     escalationRate: 4,
     escalationConfirmed: false,
-    minimumSpend: 2768,
+    minimumSpend: null, // null = derive (recurring hours x live hourly rate)
     minimumSpendConfirmed: false,
-    // Profit-sharing split (Louisburg's real deal: Contractor 60% of verified savings).
-    cscPct: 60,
-    clientPct: 40,
+    // Profit-sharing split: null = read the project's cscCompensation (D-7, the one store). A
+    // cscPct saved here earlier is kept and wins (R2); see _agreementResolveCscPct.
+    cscPct: null,
   };
   if (!stored) return dflt;
   return Object.assign({}, dflt, stored);
+}
+// D-11: minimum monthly spend = recurring hours per month x the live hourly rate. Both come from
+// the pricing estimator (one source each). null when either is unavailable.
+function _agreementDerivedMinimumSpend(projId) {
+  var lb = typeof _pricingComputeMonthlyLaborBreakdown === 'function' ? _pricingComputeMonthlyLaborBreakdown(projId) : null;
+  var pcfg = typeof _pricingGetConfig === 'function' ? _pricingGetConfig() : null;
+  if (!lb || !pcfg || !isFinite(lb.recurringPoolHours) || !isFinite(pcfg.hourlyRate)) return null;
+  return Math.round(lb.recurringPoolHours * pcfg.hourlyRate * 100) / 100;
+}
+function _agreementResolveMinimumSpend(projId, cfg) {
+  return cfg.minimumSpend != null ? cfg.minimumSpend : _agreementDerivedMinimumSpend(projId);
+}
+// D-7: the project's cscCompensation is the one store. A cscPct saved in the agreement config wins
+// (R2: user-saved values are never dropped). Project unset (0/blank) falls back to 60, the
+// profit-share split used before this change.
+function _agreementResolveCscPct(proj, cfg) {
+  if (cfg.cscPct != null) return cfg.cscPct;
+  var pc = parseFloat(proj.cscCompensation);
+  return pc > 0 ? pc : 60;
 }
 function _agreementSetConfig(projId, updates) {
   var cfg = _agreementGetConfig(projId);
@@ -292,10 +312,10 @@ function collectAgreementData(projId, templateType, opts) {
     lumpTotal: lumpTotal,
     escalationRate: cfg.escalationRate,
     escalationConfirmed: cfg.escalationConfirmed,
-    minimumSpend: cfg.minimumSpend,
+    minimumSpend: _agreementResolveMinimumSpend(projId, cfg),
     minimumSpendConfirmed: cfg.minimumSpendConfirmed,
-    cscPct: cfg.cscPct,
-    clientPct: cfg.clientPct,
+    cscPct: _agreementResolveCscPct(proj, cfg),
+    clientPct: 100 - _agreementResolveCscPct(proj, cfg),
     rawDate: new Date().toISOString().slice(0, 10),
   };
 }
@@ -484,7 +504,13 @@ var _agreementCommercialRenderers = {
         : '[monthly allowance amount not yet configured]';
     var rateStr = d.hourlyRate != null ? _agreementSpellDollars(d.hourlyRate) : '[hourly rate not yet configured]';
     var minSpendStr =
-      d.minimumSpend != null ? '$' + Number(d.minimumSpend).toLocaleString('en-US') : '[not configured]';
+      d.minimumSpend != null
+        ? '$' +
+          Number(d.minimumSpend).toLocaleString('en-US', {
+            minimumFractionDigits: d.minimumSpend % 1 ? 2 : 0,
+            maximumFractionDigits: 2,
+          })
+        : '[not configured]';
 
     var servicesBullets =
       '<li style="' +
@@ -1086,6 +1112,13 @@ function openAgreementReportModal(projId) {
 
   var cfg = _agreementGetConfig(projId);
   var esc = _agreementEsc;
+  var proj = (typeof projects !== 'undefined' ? projects : []).find(function (x) {
+    return String(x.id) === String(projId);
+  });
+  if (!proj) {
+    showToast('No project data found for this project.', 'error');
+    return;
+  }
 
   function radioRow(type) {
     return (
@@ -1125,9 +1158,9 @@ function openAgreementReportModal(projId) {
     ' style="accent-color:var(--em)"><span style="font-size:11px;color:var(--text2)">Client has confirmed this rate</span></label>' +
     '</div>' +
     '<div style="margin-bottom:14px">' +
-    '<div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">Minimum Monthly Spend ($)</div>' +
+    '<div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">Minimum Monthly Spend ($) &mdash; default is recurring hours &times; the hourly rate in Pricing settings</div>' +
     '<input type="number" id="agrMinimumSpend" value="' +
-    cfg.minimumSpend +
+    (_agreementResolveMinimumSpend(projId, cfg) != null ? _agreementResolveMinimumSpend(projId, cfg) : '') +
     '" style="padding:6px 10px;border:1px solid var(--s3);border-radius:6px;background:var(--s1);color:var(--text);font-size:13px;width:120px">' +
     '<label style="display:flex;align-items:center;gap:6px;margin-top:6px">' +
     '<input type="checkbox" id="agrMinimumSpendConfirmed" ' +
@@ -1137,7 +1170,7 @@ function openAgreementReportModal(projId) {
     '<div style="margin-bottom:14px">' +
     '<div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">Profit-Share Split (Contractor %) — only used by the Profit Sharing template</div>' +
     '<input type="number" id="agrCscPct" value="' +
-    cfg.cscPct +
+    _agreementResolveCscPct(proj, cfg) +
     '" style="padding:6px 10px;border:1px solid var(--s3);border-radius:6px;background:var(--s1);color:var(--text);font-size:13px;width:100px">' +
     '</div>';
 
@@ -1163,18 +1196,43 @@ function generateAgreementPreview() {
   var minSpendConfirmedInput = document.getElementById('agrMinimumSpendConfirmed');
   var cscPctInput = document.getElementById('agrCscPct');
 
-  var cscPct = cscPctInput ? Number(cscPctInput.value) : 60;
-  if (!isFinite(cscPct) || cscPct < 0 || cscPct > 100) cscPct = 60;
+  var proj = (typeof projects !== 'undefined' ? projects : []).find(function (x) {
+    return String(x.id) === String(projId);
+  });
+  var stored = _agreementGetConfig(projId);
+
+  // Blank or invalid escalation: warn and stop. It used to save 0 and print "0%" in the contract.
+  var escRaw = escRateInput ? String(escRateInput.value).trim() : '';
+  var escRate = escRaw === '' ? NaN : Number(escRaw);
+  if (!isFinite(escRate) || escRate < 0) {
+    showToast('Enter the annual escalation rate (a number, 0 or more) before generating the Agreement.', 'error');
+    return;
+  }
+  var cscRaw = cscPctInput ? String(cscPctInput.value).trim() : '';
+  var cscPct = cscRaw === '' ? NaN : Number(cscRaw);
+  if (!isFinite(cscPct) || cscPct < 0 || cscPct > 100) {
+    showToast('Enter the profit-share split as a number from 0 to 100 before generating the Agreement.', 'error');
+    return;
+  }
+  var minRaw = minSpendInput ? String(minSpendInput.value).trim() : '';
+  var minSpend = minRaw === '' ? null : Number(minRaw);
+  if (minSpend !== null && (!isFinite(minSpend) || minSpend < 0)) {
+    showToast('Enter the minimum monthly spend as a dollar amount, or clear it to use the default.', 'error');
+    return;
+  }
+  // Save only what the user changed: a value equal to the derived/project default is stored as
+  // null (read live) unless a value was already stored (a stored value is never silently dropped).
+  if (stored.minimumSpend == null && minSpend === _agreementDerivedMinimumSpend(projId)) minSpend = null;
+  if (stored.cscPct == null && proj && cscPct === _agreementResolveCscPct(proj, stored)) cscPct = null;
 
   var opts = {
     templateType: templateType,
     effectiveDate: effDateInput && effDateInput.value ? effDateInput.value : null,
-    escalationRate: escRateInput ? Number(escRateInput.value) : 4,
+    escalationRate: escRate,
     escalationConfirmed: !!(escConfirmedInput && escConfirmedInput.checked),
-    minimumSpend: minSpendInput ? Number(minSpendInput.value) : 2768,
+    minimumSpend: minSpend,
     minimumSpendConfirmed: !!(minSpendConfirmedInput && minSpendConfirmedInput.checked),
     cscPct: cscPct,
-    clientPct: 100 - cscPct,
   };
 
   // Persist config (plain settings object — see file header re: what IS/ISN'T persisted here).
