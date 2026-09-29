@@ -58,7 +58,7 @@ if (!fs.existsSync(path.join(REPO, 'computations', 'csc.js'))) {
 const EXPECTED_TOTAL = 183550;
 const EXPECTED_CSC = 110130; // 60%
 const EXPECTED_CLIENT = 73420; // 40%
-const TOL = 1; // $1 tolerance — $c() in report-engine.js itself rounds to the nearest dollar
+const TOL = 1; // $1 tolerance — _fmtUSD() in lib/formatting.js itself rounds to the nearest dollar
 
 // ─── Synthetic (non-real) contract inputs engineered to reproduce the known-good totals ──
 // Louisburg's real contract terms are not reproduced here (no client PII in a committed
@@ -144,6 +144,7 @@ function load(rel) {
   const code = fs.readFileSync(path.join(REPO, rel), 'utf8');
   new vm.Script(code, { filename: rel }).runInContext(ctx);
 }
+load('lib/formatting.js');
 load('computations/csc.js');
 
 // ─── Instrument computeMultiYearCscTotals BEFORE report-engine.js loads, so every call
@@ -258,7 +259,7 @@ const dProj = buildSyntheticD();
 const finHTML = runPageFn('rptPageFinancial', [1, dFin]);
 const projHTML = runPageFn('rptPageContractProjection', [2, dProj]);
 
-// Pull the $c()-formatted dollar figures straight out of the real rendered HTML — proves the
+// Pull the _fmtUSD()-formatted dollar figures straight out of the real rendered HTML — proves the
 // actual displayed table output, not just the return value of an isolated function call.
 function extractCscCompTotals(html) {
   // "<contractYrs>-Year Total" column is the 4th <td> in each of the 3 CSC Compensation rows.

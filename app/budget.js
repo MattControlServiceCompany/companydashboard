@@ -355,7 +355,6 @@ function _renderVarianceSection(projId, line, bd, bldgs) {
   const bldgName = line.buildingId
     ? (bldgs.find((b) => b.id === line.buildingId) || {}).name || line.buildingId
     : 'All Buildings';
-  const $f = (n) => '$' + Math.round(Math.abs(n)).toLocaleString();
   const $pct = (n) => (n >= 0 ? '+' : '') + n.toFixed(1) + '%';
 
   // Variance color
@@ -377,10 +376,10 @@ function _renderVarianceSection(projId, line, bd, bldgs) {
   // Projection text
   let projText = '';
   if (projection !== null && monthsElapsed > 0) {
-    const projOverUnder = projection >= 0 ? 'OVER budget by ' + $f(projection) : 'UNDER budget by ' + $f(projection);
+    const projOverUnder = projection >= 0 ? 'OVER budget by ' + _fmtUSD(Math.abs(projection), '$0') : 'UNDER budget by ' + _fmtUSD(Math.abs(projection), '$0');
     projText = `<div style="margin-top:12px;padding:10px 14px;background:var(--s2);border-radius:6px;font-size:12px;color:var(--text2)">
       <strong style="color:${projection >= 0 ? 'var(--danger)' : 'var(--green)'}">Projection:</strong>
-      At the current YTD pace (${ytdVariance >= 0 ? '+' : ''}${$f(ytdVariance)} through ${monthsElapsed} month${monthsElapsed !== 1 ? 's' : ''}),
+      At the current YTD pace (${ytdVariance >= 0 ? '+' : ''}${_fmtUSD(ytdVariance, '$0')} through ${monthsElapsed} month${monthsElapsed !== 1 ? 's' : ''}),
       you are on track to end ${_fyLabel(line.year)} approximately
       <strong style="color:${projection >= 0 ? 'var(--danger)' : 'var(--green)'}">${projOverUnder}</strong>.
       <span style="color:var(--text3);font-size:11px;margin-left:4px" title="Straight-line projection: (YTD variance ÷ months elapsed) × 12. Does not account for seasonality.">(?)</span>
@@ -396,30 +395,30 @@ function _renderVarianceSection(projId, line, bd, bldgs) {
       const actCell =
         r.actual === null
           ? `<td style="text-align:right;color:var(--text3);font-style:italic">${r.isPast ? '(no bill)' : '—'}</td>`
-          : `<td style="text-align:right;font-family:var(--mono)">${$f(r.actual)}</td>`;
+          : `<td style="text-align:right;font-family:var(--mono)">${_fmtUSD(r.actual, '$0')}</td>`;
       const varCell =
         r.variance === null
           ? `<td style="text-align:right;color:var(--text3)">—</td>`
           : `<td style="text-align:right;font-family:var(--mono);font-weight:600;color:${varColor(r.variance, r.variancePct)}">
-          ${r.variance > 0 ? '+' : ''}${$f(r.variance)}
+          ${r.variance > 0 ? '+' : ''}${_fmtUSD(r.variance, '$0')}
           <span style="font-size:10px">${$pct(r.variancePct || 0)}</span>
          </td>`;
       const ytdActCell =
         r.ytdActual === null
           ? `<td style="text-align:right;color:var(--text3)">—</td>`
-          : `<td class="bgt-cell-sm" style="text-align:right;font-family:var(--mono)">${$f(r.ytdActual)}</td>`;
+          : `<td class="bgt-cell-sm" style="text-align:right;font-family:var(--mono)">${_fmtUSD(r.ytdActual, '$0')}</td>`;
       const ytdVarCell =
         r.ytdVariance === null
           ? `<td style="text-align:right;color:var(--text3)">—</td>`
           : `<td class="bgt-cell-sm" style="text-align:right;font-family:var(--mono);color:${varColor(r.ytdVariance, r.ytdBudget > 0 ? (r.ytdVariance / r.ytdBudget) * 100 : 0)}">
-          ${r.ytdVariance > 0 ? '+' : ''}${$f(r.ytdVariance)}
+          ${r.ytdVariance > 0 ? '+' : ''}${_fmtUSD(r.ytdVariance, '$0')}
          </td>`;
       return `<tr style="${!r.isPast ? 'opacity:.45' : ''}">
       <td style="font-weight:600;white-space:nowrap">${mo}</td>
-      <td style="text-align:right;font-family:var(--mono)">${$f(r.budget)}</td>
+      <td style="text-align:right;font-family:var(--mono)">${_fmtUSD(r.budget, '$0')}</td>
       ${actCell}
       ${varCell}
-      <td class="bgt-cell-sm" style="text-align:right;font-family:var(--mono);color:var(--text2)">${$f(r.ytdBudget || 0)}</td>
+      <td class="bgt-cell-sm" style="text-align:right;font-family:var(--mono);color:var(--text2)">${_fmtUSD(r.ytdBudget || 0, '$0')}</td>
       ${ytdActCell}
       ${ytdVarCell}
     </tr>`;
@@ -451,19 +450,19 @@ function _renderVarianceSection(projId, line, bd, bldgs) {
       <div style="display:flex;gap:16px;padding:12px 16px;border-bottom:1px solid var(--border);flex-wrap:wrap">
         <div>
           <div style="font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);margin-bottom:2px">YTD Budget</div>
-          <div style="font-size:16px;font-weight:700;font-family:var(--mono)">${$f(ytdBudget)}</div>
+          <div style="font-size:16px;font-weight:700;font-family:var(--mono)">${_fmtUSD(ytdBudget, '$0')}</div>
         </div>
         <div>
           <div style="font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);margin-bottom:2px">YTD Actual</div>
-          <div style="font-size:16px;font-weight:700;font-family:var(--mono)">${$f(ytdActual)}</div>
+          <div style="font-size:16px;font-weight:700;font-family:var(--mono)">${_fmtUSD(ytdActual, '$0')}</div>
         </div>
         <div>
           <div style="font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);margin-bottom:2px">YTD Variance</div>
-          <div style="font-size:16px;font-weight:700;font-family:var(--mono);color:${ytdVarColor}">${ytdVariance >= 0 ? '+' : ''}${$f(ytdVariance)}</div>
+          <div style="font-size:16px;font-weight:700;font-family:var(--mono);color:${ytdVarColor}">${ytdVariance >= 0 ? '+' : ''}${_fmtUSD(ytdVariance, '$0')}</div>
         </div>
         <div>
           <div style="font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);margin-bottom:2px">Annual Budget</div>
-          <div style="font-size:16px;font-weight:700;font-family:var(--mono)">${$f(annualBudget)}</div>
+          <div style="font-size:16px;font-weight:700;font-family:var(--mono)">${_fmtUSD(annualBudget, '$0')}</div>
         </div>
       </div>`
           : ''
@@ -486,8 +485,8 @@ function _renderVarianceSection(projId, line, bd, bldgs) {
           <tfoot>
             <tr style="font-weight:700;border-top:2px solid var(--border)">
               <td>Annual</td>
-              <td style="text-align:right;font-family:var(--mono)">${$f(annualBudget)}</td>
-              <td style="text-align:right;font-family:var(--mono)">${monthsElapsed > 0 ? $f(ytdActual) + '*' : '—'}</td>
+              <td style="text-align:right;font-family:var(--mono)">${_fmtUSD(annualBudget, '$0')}</td>
+              <td style="text-align:right;font-family:var(--mono)">${monthsElapsed > 0 ? _fmtUSD(ytdActual, '$0') + '*' : '—'}</td>
               <td colspan="4" style="font-size:11px;color:var(--text3);text-align:right">* YTD through ${monthsElapsed} month${monthsElapsed !== 1 ? 's' : ''}</td>
             </tr>
           </tfoot>
@@ -656,7 +655,6 @@ function renderBudgetKPICard(projId) {
     cardBorder = 'rgba(239,68,68,0.25)';
   }
 
-  const $f = (n) => '$' + Math.round(Math.abs(n)).toLocaleString();
   const fyLabel = _fyLabel(year);
   const progressBar = Math.round(progressPct);
   const progressColor = ytdVarPct <= 0 ? 'var(--green)' : ytdVarPct <= 5 ? 'var(--amber)' : 'var(--danger)';
@@ -669,13 +667,13 @@ function renderBudgetKPICard(projId) {
     <div style="flex:1;min-width:220px;background:${cardBg};border:1px solid ${cardBorder};border-radius:8px;padding:16px;cursor:pointer" onclick="_budgetNavToTab(${projId})">
       <div style="font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:${statusColor};font-weight:600;margin-bottom:6px">Utility Budget — ${fyLabel}</div>
       <div style="font-size:13px;font-family:var(--mono);margin-bottom:8px">
-        ${$f(totalYTDActual)} <span style="color:var(--text3);font-size:11px">/ ${$f(totalYTDBudget)} YTD</span>
+        ${_fmtUSD(totalYTDActual, '$0')} <span style="color:var(--text3);font-size:11px">/ ${_fmtUSD(totalYTDBudget, '$0')} YTD</span>
       </div>
       <div style="background:var(--s3);border-radius:4px;height:6px;margin-bottom:8px;overflow:hidden">
         <div style="background:${progressColor};height:100%;width:${progressBar}%;border-radius:4px;transition:width .3s"></div>
       </div>
       <div style="font-size:11px;color:var(--text2)">${remaining} month${remaining !== 1 ? 's' : ''} remaining</div>
-      <div style="font-size:12px;font-weight:600;color:${statusColor};margin-top:4px">${statusText} ${ytdVariance <= 0 ? '' : '(' + $f(ytdVariance) + ' over)'}</div>
+      <div style="font-size:12px;font-weight:600;color:${statusColor};margin-top:4px">${statusText} ${ytdVariance <= 0 ? '' : '(' + _fmtUSD(ytdVariance, '$0') + ' over)'}</div>
     </div>
   `;
 }
