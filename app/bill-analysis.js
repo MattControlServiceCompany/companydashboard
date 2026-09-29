@@ -9730,6 +9730,7 @@ function _saveBillToMatchedMeter(extracted, match) {
     gasSystemReliability: extracted.GasSystemReliability || null,
     winterEventCost: extracted.WinterEventCost || null,
     previousBalance: extracted.PreviousBalance || null,
+    previouslyBilled: extracted.PreviouslyBilled || null,
     paymentsReceived: extracted.PaymentsReceived || null,
     statementDate: toISO(extracted.StatementDate) || null,
   };
@@ -18736,6 +18737,7 @@ async function _applyDupUpdate(billIdx, extracted, dup) {
       GasSystemReliability: 'gasSystemReliability',
       WinterEventCost: 'winterEventCost',
       PreviousBalance: 'previousBalance',
+      PreviouslyBilled: 'previouslyBilled',
       PaymentsReceived: 'paymentsReceived',
       StatementDate: 'statementDate',
     };
@@ -19075,6 +19077,7 @@ function renderPDFFields(parsed, warnings) {
     WeatherNormalization: 'Weather Normalization',
     WinterEventCost: 'Winter Event Securitized Cost',
     PreviousBalance: 'Previous Balance',
+    PreviouslyBilled: 'Previously Billed (last bill total)',
     PaymentsReceived: 'Payments Received',
     StatementDate: 'Statement Date',
     MeterReadPrevious: 'Meter Read (Previous)',
@@ -19163,6 +19166,7 @@ function renderPDFFields(parsed, warnings) {
     'WeatherNormalization',
     'WinterEventCost',
     'PreviousBalance',
+    'PreviouslyBilled',
     'PaymentsReceived',
     'FranchiseFee1',
     'FranchiseFee2',
@@ -19289,6 +19293,7 @@ function renderPDFFields(parsed, warnings) {
     { type: 'charge-line', label: 'Bill Offset', chargeField: 'BillOffset', rateKey: null },
     { type: 'charge-line', label: 'Franchise Fee', chargeField: 'FranchiseFee', rateKey: null },
     { type: 'total', fields: ['TotalCurrentCharges'], chargeKey: 'TotalCurrentCharges' },
+    { type: 'pair', fields: ['PreviouslyBilled'] },
   ];
   const _LAYOUT_GAS = [
     { section: 'Account Info' },
@@ -21333,6 +21338,7 @@ function confirmAssignBill() {
     deliveryCharge: bill.DeliveryCharge || null,
     gasSystemReliability: bill.GasSystemReliability || null,
     winterEventCost: bill.WinterEventCost || null,
+    previouslyBilled: bill.PreviouslyBilled || null,
   };
   if (bill._rates) {
     const cp = {};

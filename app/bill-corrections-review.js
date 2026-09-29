@@ -8,6 +8,7 @@
      - City of Louisburg: the saved account number has a single OCR-misread
        digit, found by comparing it against the same meter's other bills.
      - Evergy: a single-digit OCR misread on the printed RkVA rate.
+     - Evergy: the "Previously Billed" amount on a bill that follows a missing period.
      - Every bill the Utility Data page's own statistical check
        (_analyzeMeterBills, the same computation behind the "⚠ N review"
        building badge and the "N billing period(s) flagged" banner) currently
@@ -1420,6 +1421,125 @@ async function _bcrScanEvergyRkva(pid, proj, bldgs, ctl) {
 }
 
 /* ══════════════════════════════════════════════════════
+   SCAN 4b — Evergy "Previously Billed" for bills that follow a gap (2026-09-29).
+   "Estimate missing period" fills the missing bill's total cost from the NEXT
+   bill's "Previously Billed" amount. Bills saved before the extractor read that
+   line have no value. This scan re-reads ONLY the stored PDF of an Evergy bill
+   that starts after a gap and has no value yet, and proposes the amount. Same
+   rules as every scan here: cached pages are reused, nothing is written until
+   Matt clicks Apply, and no page is ever re-scanned that is already cached.
+   ══════════════════════════════════════════════════════ */
+async function _bcrScanEvergyPreviouslyBilled(pid, proj, bldgs, ctl) {
+  const rule = (typeof UTILITY_RULES !== 'undefined' ? UTILITY_RULES : []).find((r) => r.name === 'Evergy');
+  if (!rule) return;
+  const scanId = 'evergy_prev_billed';
+  const fieldKey = 'previouslyBilled';
+  const fieldLabel = 'Previously Billed (last bill total)';
+  const candidates = [];
+  bldgs.forEach((bldg) => {
+    (bldg.meters || []).forEach((meter) => {
+      if (meter.commodity !== 'Electric') return;
+      const sorted = (meter.bills || [])
+        .filter((b) => b && b.start && b.end && !b.estimated)
+        .sort((a, b) => _parseISO(a.start) - _parseISO(b.start));
+      for (let i = 1; i < sorted.length; i++) {
+        const bill = sorted[i];
+        if (!detectGap(sorted[i - 1].end, bill.start)) continue;
+        if (bill.previouslyBilled != null && bill.previouslyBilled !== '') continue;
+        if (!/evergy/i.test((bill.utilityCompany || '') + ' ' + (meter.provider || '') + ' ' + (meter.utilityCompany || '')))
+          continue;
+        candidates.push({ bill, meter, bldg });
+      }
+    });
+  });
+  for (let i = 0; i < candidates.length; i++) {
+    const { bill, meter, bldg } = candidates[i];
+    const building = bldg.name || bldg.addr || '';
+    const meterLbl = meterLabel(meter);
+    const period = _bcrPeriodLabel(bill.start, bill.end);
+    const label = _bcrBillLabel(proj.name, building, meterLbl, bill);
+    const skip = (reason, kind) =>
+      ctl.skipped.push({ label, building, meter: meterLbl, utility: 'Evergy', period, field: fieldLabel, reason, kind });
+    const makeRow = (proposed, reason) => ({
+      _rowId: 'evg:' + bill.id + ':' + fieldKey,
+      store: 'meter',
+      scanId,
+      fieldKey,
+      projId: pid,
+      bldgId: bldg.id,
+      meterId: meter.id,
+      billId: bill.id,
+      field: fieldLabel,
+      utility: 'Evergy',
+      projName: proj.name || '',
+      bldgName: building,
+      meterLabel: meterLbl,
+      period,
+      pdfKey: bill.pdfKey || null,
+      currentValue: null,
+      correctedValue: proposed,
+      reason,
+    });
+    const cached = _bcrLoadResult(bill.id, scanId, fieldKey);
+    if (cached && cached.status === 'correction') {
+      if (!cached.dismissed) ctl.rows.push(makeRow(cached.proposedValue, cached.reason));
+      continue;
+    }
+    if (cached && cached.status === 'ok') {
+      skip(cached.reason || 'no change needed', 'no-change');
+      continue;
+    }
+    if (!bill.pdfKey) {
+      skip('no stored PDF for this bill, so it cannot be re-checked', 'could-not-check');
+      continue;
+    }
+    ctl.progress.phaseLabel =
+      'Evergy — reading "Previously Billed" on bills that follow a missing period (' + (i + 1) + ' of ' + candidates.length + ')';
+    const billLabel = _bcrPlainBillLabel(building, 'electric');
+    const { timedOut, text, extracted } = await _bcrReadAndExtract(bill.pdfKey, ctl, billLabel, rule);
+    if (timedOut) {
+      skip('the check timed out — the pages it did finish reading are saved and will be skipped next time', 'could-not-check');
+      continue;
+    }
+    if (!text || extracted == null) {
+      skip('the stored PDF could not be read', 'could-not-check');
+      continue;
+    }
+    const acct = (bill.accountNumber || '').replace(/\s+/g, '');
+    const matches = extracted.filter(
+      (x) =>
+        x &&
+        acct &&
+        (x.AccountNumber || '').replace(/\s+/g, '') === acct &&
+        _bcrToISO(x.BillingPeriodStart) === bill.start &&
+        _bcrToISO(x.BillingPeriodEnd) === bill.end,
+    );
+    if (matches.length !== 1) {
+      skip('could not find this exact bill again in its stored PDF (account or period did not match)', 'could-not-check');
+      continue;
+    }
+    const found = matches[0].PreviouslyBilled;
+    if (found == null) {
+      const reason = 'this bill does not print a Previously Billed amount';
+      await _bcrUpsertResult(bill.id, scanId, fieldKey, { status: 'ok', reason, checkedAt: new Date().toISOString() });
+      skip(reason, 'no-change');
+      continue;
+    }
+    const reason =
+      'The bill after a missing period prints the previous bill’s total as "Previously Billed". Saving it lets "Estimate missing period" fill the missing bill’s cost with the actual amount.';
+    const saved = await _bcrUpsertResult(bill.id, scanId, fieldKey, {
+      status: 'correction',
+      currentValue: null,
+      proposedValue: found,
+      reason,
+      checkedAt: new Date().toISOString(),
+    });
+    if (saved.dismissed) continue;
+    ctl.rows.push(makeRow(found, reason));
+  }
+}
+
+/* ══════════════════════════════════════════════════════
    SCAN 5 — statistical "flagged for review" bills (2026-09-25, new). Reuses
    the EXACT SAME _analyzeMeterBills + computeLiveBillFlags computation the
    Utility Data building badge ("⚠ N review") and bills-table banner already
@@ -1510,6 +1630,7 @@ async function _bcrRunProjectScan(ctl) {
     _bcrScanLouisburgDate,
     _bcrScanLouisburgAccountOCR,
     _bcrScanEvergyRkva,
+    _bcrScanEvergyPreviouslyBilled,
     _bcrScanStatisticalFlags,
   ];
   for (const phase of phases) {
@@ -1579,8 +1700,9 @@ async function _bcrApplyRow(row) {
   const bill = (meter.bills || []).find((b) => b.id === row.billId);
   if (!bill) return { ok: false, reason: 'bill no longer exists' };
   const liveVal = bill[row.fieldKey];
-  if (String(liveVal) !== String(row.currentValue))
-    return { ok: false, reason: 'value changed since review was opened' };
+  // null / undefined / '' all mean "no value yet" (a saved bill may lack the key entirely).
+  const _same = (a, b) => (a == null || a === '' ? '' : String(a)) === (b == null || b === '' ? '' : String(b));
+  if (!_same(liveVal, row.currentValue)) return { ok: false, reason: 'value changed since review was opened' };
   bill[row.fieldKey] = row.correctedValue;
   if (!bill._userCorrected) bill._userCorrected = {};
   bill._userCorrected[row.fieldKey] = {
