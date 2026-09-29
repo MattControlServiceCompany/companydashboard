@@ -2335,6 +2335,14 @@ function _evergyRepairDroppedDecimals(result) {
     }
   }
 }
+// Evergy page-1 Account Summary prints "Previously Billed......... $X" = the TOTAL of the bill
+// before this one (paid on this bill's Payment Received line). Returns "16674.53" style text, or
+// null when absent. "Estimate missing period" reads it from the bill AFTER a gap as the gap
+// period's actual total (Matt 2026-09-29).
+function parseEvergyPreviouslyBilled(t) {
+  const m = String(t || '').match(/Previously\s+Billed[.\s\u00b7\u2026]*\$?\s*([\d,]+\.\d{2})\b/i);
+  return m ? m[1].replace(/,/g, '') : null;
+}
 // Evergy per-section extractor
 function _extractEvergy(t, acctOverride, addrOverride) {
   // ── OCR digit cleanup: replace 'o'/'O' with '0' in numeric contexts ──
@@ -4212,6 +4220,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     SalesTax: salesTax,
     MiscellaneousCharge: miscCharge,
     TotalCurrentCharges: totalDue,
+    PreviouslyBilled: parseEvergyPreviouslyBilled(t),
     MeterNumber: null,
     _subtotal: subtotalAmount,
   };

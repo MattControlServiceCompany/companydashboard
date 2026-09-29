@@ -875,6 +875,8 @@ function renderBillRow(row, m, incl, allBills, cols, rowNum) {
     `<td class="lbl sticky-col" data-sticky="2">${fmtD(row.start)}</td>` +
     `<td class="lbl sticky-col" data-sticky="3">${fmtD(row.end)}</td>` +
     `<td class="td-days">${days}</td>`;
+  // Every kWh cell in this table shows the same number of decimals (Matt 2026-09-29).
+  const kwhDp = _billKwhDecimals(allBills || m.bills);
   for (let i = 5; i < cols.length - 1; i++) {
     const c = cols[i];
     // Condensed-view column (Update 90): render via category.compute
@@ -930,11 +932,13 @@ function renderBillRow(row, m, incl, allBills, cols, rowNum) {
       } else if (c.category.type === 'number') {
         // Show '—' only when missing; render 0 as a formatted number ("0.00")
         const isQty = /kwh|kw\b|rkva|gallon|ccf|therm|usage/i.test(c.category.label);
+        const dpMin = c.category.key === 'kwh' ? kwhDp : isQty ? 2 : 0;
+        const dpMax = c.category.key === 'kwh' ? kwhDp : 4;
         formatted = isMissing
           ? '—'
           : val.toLocaleString('en-US', {
-              minimumFractionDigits: isQty ? 2 : 0,
-              maximumFractionDigits: 4,
+              minimumFractionDigits: dpMin,
+              maximumFractionDigits: dpMax,
             });
       } else {
         formatted = val || '—';
@@ -983,7 +987,7 @@ function renderBillRow(row, m, incl, allBills, cols, rowNum) {
     ) {
       raw = convertBillValue(parseFloat(raw), m);
     }
-    const formatted = _billFormatValue(raw, c.entry);
+    const formatted = _billFormatValue(raw, c.entry, kwhDp);
     const cls = c.entry.key === 'totalCost' ? 'td-total' : c.a || '';
     const rightCls = c.rightSticky ? ' sticky-col-right' : '';
     const rightAttr = c.rightSticky ? ' data-sticky-right="' + i + '"' : '';
@@ -1167,8 +1171,11 @@ function toggleChargeDetail(rowId) {
 // one-meter Spring Hill High June-2025 special case that used to live in app/utility-data.js
 // (_injectSpringHillHighJuneGapEstimate, computed-at-load and stripped-before-save). Per Matt's
 // 2026-09-25 decision: accept a genuinely missing bill period and estimate its USAGE from the
-// day-weighted average daily usage of the bill immediately before and immediately after the gap
-// — never cost or demand. The button only ever appears on a real gap (app/utility-data.js's
+// day-weighted average daily usage of the bill immediately before and immediately after the gap.
+// Cost (Matt, 2026-09-29, supersedes the 2026-09-25 "no cost" rule): the bill AFTER the gap prints
+// "Previously Billed $X" = the gap bill's actual total. When the next bill carries that value
+// (bill.previouslyBilled) the row's totalCost is set to it, labeled as actual; when absent cost
+// stays blank — never invented. Demand is never estimated. The button only ever appears on a real gap (app/utility-data.js's
 // existing detectGap(), computations/normalization.js:103, already excludes 1-3 day month-
 // boundary/read-date artifacts — the same threshold the "Gap in data" warning message uses).
 //
@@ -1198,6 +1205,48 @@ function _estimateUsageValue(bill, commodity) {
   if (commodity === 'Sewer') return parseFloat(bill.sewerUsage) || parseFloat(bill.waterUsage) || 0;
   return parseFloat(bill.waterUsage) || 0;
 }
+// Decimal places of a value as STORED (text as saved, trailing zeros kept: "112252.4400" -> 4).
+// The ONE place precision is read; never String(+v), which drops the zeros.
+function _storedDecimals(v) {
+  const s = String(v == null ? '' : v).trim();
+  const i = s.indexOf('.');
+  return i < 0 ? 0 : s.length - i - 1;
+}
+// Decimals every kWh cell in a meter's Bills table shows: the most any stored kWh value carries
+// (capped at 4, the extractor's precision). One number per table so all rows line up.
+function _billKwhDecimals(bills) {
+  let dp = 0;
+  (bills || []).forEach((bl) => {
+    if (bl && parseFloat(bl.kwh) > 0) dp = Math.max(dp, _storedDecimals(bl.kwh));
+  });
+  return Math.min(dp, 4);
+}
+function _fmtStoredQty(v) {
+  const dp = _storedDecimals(v);
+  return (+v).toLocaleString('en-US', { minimumFractionDigits: dp, maximumFractionDigits: dp });
+}
+// Pure estimate for a gap between two bills. Returns { error } or the estimate:
+//   estUsage  usage as TEXT with the same decimals as the neighbour bills store
+//   estCost   the gap bill's total as text ("x.xx") from the NEXT bill's "Previously Billed",
+//             or null when the next bill has none (cost is never invented)
+function _computeMissingPeriodEstimate(prev, next, commodity, incl, gapStart, gapEnd) {
+  const field = _estimateUsageField(commodity);
+  const prevUsage = _estimateUsageValue(prev, commodity);
+  const nextUsage = _estimateUsageValue(next, commodity);
+  const prevDays = calcDays(prev.start, prev.end, incl);
+  const nextDays = calcDays(next.start, next.end, incl);
+  const gapDays = calcDays(gapStart, gapEnd, incl);
+  if (!(prevUsage > 0) || !(nextUsage > 0) || !(prevDays > 0) || !(nextDays > 0) || !(gapDays > 0)) {
+    return { error: 'Cannot estimate — the surrounding bills are missing usage or day data' };
+  }
+  const avgDailyUsage = (prevUsage + nextUsage) / (prevDays + nextDays);
+  const stored = (bl, usage) => (bl[field] != null && bl[field] !== '' ? bl[field] : usage);
+  const estDp = Math.max(_storedDecimals(stored(prev, prevUsage)), _storedDecimals(stored(next, nextUsage)));
+  const estUsage = (avgDailyUsage * gapDays).toFixed(estDp);
+  const billed = parseBillNumber(next.previouslyBilled);
+  const estCost = billed > 0 ? billed.toFixed(2) : null;
+  return { field, prevUsage, nextUsage, prevDays, nextDays, gapDays, avgDailyUsage, estUsage, estCost };
+}
 async function estimateMissingPeriod(mid, gapStart, gapEnd) {
   const ctx = resolveUDMeter(mid);
   if (!ctx) {
@@ -1213,44 +1262,42 @@ async function estimateMissingPeriod(mid, gapStart, gapEnd) {
     showToast('Could not find the bills on either side of this gap — refresh and try again', 'warn');
     return;
   }
-  const prevUsage = _estimateUsageValue(prev, m.commodity);
-  const nextUsage = _estimateUsageValue(next, m.commodity);
-  const prevDays = calcDays(prev.start, prev.end, incl);
-  const nextDays = calcDays(next.start, next.end, incl);
-  const gapDays = calcDays(gapStart, gapEnd, incl);
-  if (!(prevUsage > 0) || !(nextUsage > 0) || !(prevDays > 0) || !(nextDays > 0) || !(gapDays > 0)) {
-    showToast('Cannot estimate — the surrounding bills are missing usage or day data', 'warn');
+  const est = _computeMissingPeriodEstimate(prev, next, m.commodity, incl, gapStart, gapEnd);
+  if (est.error) {
+    showToast(est.error, 'warn');
     return;
   }
-  const avgDailyUsage = (prevUsage + nextUsage) / (prevDays + nextDays);
-  // An estimate never prints more decimals than its source bills: use the larger decimal count
-  // of the two neighbour values as they print (trailing zeros dropped), derived from the data.
-  const _decimals = (v) => ((String(+v).split('.')[1]) || '').length;
-  const estDp = Math.max(_decimals(prevUsage), _decimals(nextUsage));
-  const estUsage = +(avgDailyUsage * gapDays).toFixed(estDp);
+  const { prevUsage, nextUsage, prevDays, nextDays, gapDays, avgDailyUsage, estUsage, estCost } = est;
   const unit = getMeterDisplayUnit(m);
+  const costMoney = estCost == null ? null : '$' + _fmtStoredQty(estCost);
   const confirmMsg =
     'Add an estimated period ' +
     gapStart +
     ' – ' +
     gapEnd +
     ' (' +
-    estUsage.toLocaleString() +
+    _fmtStoredQty(estUsage) +
     ' ' +
     unit +
-    ', usage only — no cost or demand)?';
+    (costMoney
+      ? ', total ' + costMoney + ' from the next bill: Previously Billed'
+      : ', usage only — the next bill shows no Previously Billed amount, so cost stays blank') +
+    ')?';
   if (!(await confirmAsync(confirmMsg))) return;
+  const costNote = costMoney
+    ? 'Total cost ' + costMoney + ' is the actual amount, taken from the next bill: Previously Billed (not estimated).'
+    : 'Cost is blank: the next bill shows no Previously Billed amount.';
   const estimatedNote =
     'No bill on file for ' +
     gapStart +
     ' – ' +
     gapEnd +
-    '. Estimated from the previous bill’s (' +
+    '. Usage estimated from the previous bill’s (' +
     prev.start +
     '–' +
     prev.end +
     ', ' +
-    prevUsage.toLocaleString() +
+    _fmtStoredQty(prevUsage) +
     ' ' +
     unit +
     ' / ' +
@@ -1260,7 +1307,7 @@ async function estimateMissingPeriod(mid, gapStart, gapEnd) {
     '–' +
     next.end +
     ', ' +
-    nextUsage.toLocaleString() +
+    _fmtStoredQty(nextUsage) +
     ' ' +
     unit +
     ' / ' +
@@ -1270,10 +1317,12 @@ async function estimateMissingPeriod(mid, gapStart, gapEnd) {
     '/day) × ' +
     gapDays +
     ' gap days = ' +
-    estUsage.toLocaleString() +
+    _fmtStoredQty(estUsage) +
     ' ' +
     unit +
-    '. Cost and demand are not estimated. Delete this row if a real bill is added to replace it.';
+    '. ' +
+    costNote +
+    ' Demand is not estimated. Delete this row if a real bill is added to replace it.';
   const bill = {
     id: 'bill_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
     start: gapStart,
@@ -1282,7 +1331,8 @@ async function estimateMissingPeriod(mid, gapStart, gapEnd) {
     estimated: true,
     estimatedNote,
   };
-  bill[_estimateUsageField(m.commodity)] = estUsage;
+  bill[est.field] = estUsage;
+  if (estCost != null) bill.totalCost = estCost;
   m.bills.push(bill);
   saveUtilityData();
   logUtilityAudit({
@@ -1290,7 +1340,13 @@ async function estimateMissingPeriod(mid, gapStart, gapEnd) {
     ..._auditCtxFromIds(udSelProjId, udSelBldgId, mid),
     period: gapStart + ' to ' + gapEnd,
     source: 'estimate',
-    note: 'Estimated ' + estUsage.toLocaleString() + ' ' + unit + ' from surrounding bills (day-weighted average)',
+    note:
+      'Estimated ' +
+      _fmtStoredQty(estUsage) +
+      ' ' +
+      unit +
+      ' from surrounding bills (day-weighted average)' +
+      (costMoney ? '; total ' + costMoney + ' from next bill: Previously Billed' : '; cost blank'),
   });
   showToast('Estimated period added');
   const isEmbed = window._udActiveWrap && window._udActiveWrap !== document.getElementById('udDetailWrap');
@@ -1685,7 +1741,7 @@ function _billReadValue(row, entry) {
 }
 // Helper: format a value for table display based on the schema entry.
 // IMPORTANT: 0 is valid data. Only null/undefined/''/'null' mean "no data" (show —).
-function _billFormatValue(val, entry) {
+function _billFormatValue(val, entry, kwhDp) {
   const isMissing = val === undefined || val === null || val === '' || val === 'null';
   const hasVal = !isMissing && !isNaN(val);
   if (entry.type === 'currency') {
@@ -1730,6 +1786,8 @@ function _billFormatValue(val, entry) {
     ) {
       // Bug #18: Read Difference must always display positive (current - previous read)
       const dispVal = /difference/i.test(entry.key) ? Math.abs(+val) : +val;
+      if (entry.key === 'kwh' && kwhDp != null)
+        return dispVal.toLocaleString('en-US', { minimumFractionDigits: kwhDp, maximumFractionDigits: kwhDp });
       return dispVal.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 4 });
     }
     // Default numeric fields (e.g. numberOfDays) — integer display.

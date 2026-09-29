@@ -4354,8 +4354,9 @@ function renderBillsPane(pane, m, bills, incl) {
         // any meter's real gap (detectGap already excludes 1-3 day month-boundary/read-date
         // artifacts — same threshold the "Gap in data" message above already uses) gets a button
         // that estimates the missing period's usage from the day-weighted average daily usage of
-        // the bill right before and right after the gap. Usage only, per Matt's 2026-09-25
-        // decision — cost/demand are never estimated. See estimateMissingPeriod() in csv-import.js.
+        // the bill right before and right after the gap. Usage estimated, per Matt's 2026-09-25
+        // decision, extended 2026-09-29: total cost is filled ONLY from the next bill's actual
+        // "Previously Billed" value (never estimated); demand is never estimated. See estimateMissingPeriod().
         // Deliberately NOT class="btn-edit" — `.ud-bill-tbl .btn-edit` (this row lives inside the
         // Bills table) fixes that class to a 24x24 icon-only square for the ✏️/✕ row buttons,
         // which clipped this button's text down to a sliver. Inline styles instead, sized for
