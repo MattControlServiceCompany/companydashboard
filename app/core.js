@@ -745,27 +745,8 @@ function updateHomeStats() {
   projects
     .filter((p) => p.status === 'active' || p.status === 'in_progress')
     .forEach((p) => {
-      const projBldgs = getUDBldgs(p.id) || [];
-      projBldgs.forEach((b) => {
-        (b.meters || []).forEach((m) => {
-          if (isBaselineExcluded(p.id, m.id)) return;
-          if (!(m.baseline?.months?.length >= 3) && !(m.baselines && m.baselines.length > 0)) return;
-          const mbills = (m.bills || []).slice().sort((a, c) => {
-            const da = a.start ? new Date(a.start + 'T12:00:00') : 0;
-            const dc = c.start ? new Date(c.start + 'T12:00:00') : 0;
-            return da - dc;
-          });
-          const mincl = m.inclusive !== false;
-          try {
-            const savResult = getMeterSavings(m, mbills, mincl, p.id, b.id);
-            Object.values(savResult.byCalMo).forEach((v) => {
-              totalSav += v || 0;
-            });
-          } catch (e) {
-            /* skip meters that fail savings computation */
-          }
-        });
-      });
+      // One keeper: a period already presented to the client uses the presented figures.
+      totalSav += getProjectSavingsTotal(p.id).total;
     });
   document.getElementById('h-sav').textContent = '$' + Math.round(totalSav).toLocaleString();
 }
@@ -1927,6 +1908,19 @@ function initDashboardTab(projId) {
   const projectedByQtr = [0, 0, 0, 0];
   let projectedAnnual = 0;
   const actualByQtr = [0, 0, 0, 0];
+  // Add one building's savings for the quarters of its newest savings year. Uses the shared keeper so a
+  // period presented to the client shows the presented figure (computations/savings.js).
+  const addBldgQuarters = (projId, bldgId, byYM) => {
+    const nz = Object.keys(byYM)
+      .filter((ym) => byYM[ym] !== 0)
+      .sort();
+    if (!nz.length) return;
+    const yr = nz[nz.length - 1].slice(0, 4);
+    for (let qi = 0; qi < 4; qi++) {
+      const qYMs = [1, 2, 3].map((k) => yr + '-' + String(qi * 3 + k).padStart(2, '0'));
+      actualByQtr[qi] += totalSavingsWithPresented(projId, qYMs, { [bldgId]: byYM }).byBldg[bldgId];
+    }
+  };
   let latestBillEnd = null;
   let latestSavYM = null; // full 'YYYY-MM' string of last month with savings data
   const curQtr = Math.floor(new Date().getMonth() / 3);
@@ -1948,6 +1942,7 @@ function initDashboardTab(projId) {
       allPropane = 0;
     let hasBaseline = false;
     let bldgSav = 0;
+    const bldgSavByYM = {}; // current savings by month; totals go through totalSavingsWithPresented()
     let meterIncl = 0,
       meterExcl = 0,
       meterTotal = meters.length;
@@ -2008,24 +2003,10 @@ function initDashboardTab(projId) {
           bldgMoBase[mo] += (eM[mo]?.totalCost || 0) + (gM[mo]?.cost || 0) + (pM[mo]?.cost || 0);
         // Normalized actual savings per calendar month
         const savResult = getMeterSavings(m, bills, incl, projId, b.id);
-        const savCalMo = savResult.byCalMo;
-        Object.entries(savCalMo).forEach(([mo, v]) => {
-          bldgSav += v;
-        });
         Object.entries(savResult.byYM).forEach(([ym, v]) => {
+          bldgSavByYM[ym] = (bldgSavByYM[ym] || 0) + v;
           if (v !== 0 && (latestSavYM === null || ym > latestSavYM)) latestSavYM = ym;
         });
-        const _savYMKeys = Object.keys(savResult.byYM).filter((ym) => savResult.byYM[ym] !== 0);
-        const _reportYear = _savYMKeys.length ? _savYMKeys.slice().sort().pop().slice(0, 4) : null;
-        if (_reportYear) {
-          Object.entries(savResult.byYM).forEach(([ym, v]) => {
-            if (ym.startsWith(_reportYear)) {
-              const moIdx = parseInt(ym.split('-')[1]) - 1;
-              const qi = Math.floor(moIdx / 3);
-              actualByQtr[qi] += v;
-            }
-          });
-        }
         // Usage for EUI
         const _blEndYM = bl.months.slice().sort().pop();
         const _curBills = bills.filter((bill) => {
@@ -2055,6 +2036,11 @@ function initDashboardTab(projId) {
           });
         }
       });
+      // Building total and the newest year's quarters: a period presented to the client uses the
+      // presented figures (one keeper, computations/savings.js).
+      const _savYMs = Object.keys(bldgSavByYM).sort();
+      bldgSav = totalSavingsWithPresented(projId, _savYMs, { [b.id]: bldgSavByYM }).byBldg[b.id];
+      addBldgQuarters(projId, b.id, bldgSavByYM);
       blCost = Object.values(bldgMoBase).reduce((s, v) => s + v, 0);
       curCost = blCost - bldgSav;
     } else {
@@ -2136,21 +2122,12 @@ function initDashboardTab(projId) {
         }
         const _actIncl = m.inclusive !== false;
         const _actSavResult = getMeterSavings(m, bills, _actIncl, projId, b.id);
-        const _actSavYMKeys = Object.keys(_actSavResult.byYM).filter((ym) => _actSavResult.byYM[ym] !== 0);
-        const _actReportYear = _actSavYMKeys.length ? _actSavYMKeys.slice().sort().pop().slice(0, 4) : null;
-        if (_actReportYear) {
-          Object.entries(_actSavResult.byYM).forEach(([ym, v]) => {
-            if (ym.startsWith(_actReportYear)) {
-              const moIdx = parseInt(ym.split('-')[1]) - 1;
-              const qi = Math.floor(moIdx / 3);
-              actualByQtr[qi] += v;
-            }
-          });
-        }
         Object.entries(_actSavResult.byYM).forEach(([ym, v]) => {
+          bldgSavByYM[ym] = (bldgSavByYM[ym] || 0) + v;
           if (v !== 0 && (latestSavYM === null || ym > latestSavYM)) latestSavYM = ym;
         });
       });
+      addBldgQuarters(projId, b.id, bldgSavByYM);
     }
     // Fallback: if no baseline set and actual mode, annualize allCost
     const totalBillCount = meters.reduce((s, m) => s + (m.bills || []).length, 0);

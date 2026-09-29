@@ -340,15 +340,14 @@ function renderBuildingScorecardPane(pane, b, projId) {
   });
 
   // ── Annual savings = sum of all post-baseline months ──
-  var annualSavings = Object.values(savByYM).reduce(function (s, v) {
-    return s + v;
-  }, 0);
-  // Use last 12 months if we have more than 12
-  if (last12YM.length === 12) {
-    annualSavings = sparkVals.reduce(function (s, v) {
-      return s + v;
-    }, 0);
-  }
+  // A period presented to the client uses the presented figure (computations/savings.js).
+  // (last 12 months when there are 12 or more). A period presented to the client uses the presented
+  // figure (one keeper, computations/savings.js).
+  var annualSavings = totalSavingsWithPresented(projId, last12YM.length === 12 ? last12YM : ymKeys, (function () {
+    var o = {};
+    o[b.id] = savByYM;
+    return o;
+  })()).byBldg[b.id];
 
   // ── EUI (site kBtu/sqft/yr, rolling last 12) ──
   var euiVal = 0;

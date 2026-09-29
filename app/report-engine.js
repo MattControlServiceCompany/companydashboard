@@ -11492,6 +11492,7 @@ function rptPageBoardSummary(n, d) {
     '<div style="text-align:center">' +
     chartSVG +
     '</div>' +
+    _rptPresentedLineHTML(getPresentedNotice(d.project.id, periodYMs), '0') +
     '</div>' +
     '</div>';
 

@@ -24,7 +24,7 @@ function near(a, b) {
 }
 
 const store = {};
-const sb = { console, projects: [{ id: 9001, sa: 'SA-TEST', inclMonths: {} }], utilityData: {} };
+const sb = { console, projects: [{ id: 9001, sa: 'SA-TEST', inclMonths: {}, status: 'active' }], utilityData: {} };
 sb.window = sb;
 sb.sget = (k, d) => (store[k] !== undefined ? JSON.parse(JSON.stringify(store[k])) : d);
 sb.sset = (k, v) => {
@@ -316,6 +316,40 @@ assert(
     pc.bad.length === 1,
   "csv: total, unmatched name and unreadable row reported",
 );
+
+// Header savings total (app/core.js updateHomeStats) goes through the keeper. The mark was removed above
+// in the earlier section, so save it again for this check.
+const shown = {};
+sb.document = { getElementById: (id) => ({ set textContent(v) { shown[id] = v; } }) };
+sb.equipment = [];
+sb.tasks = [];
+sb.NOW = new Date();
+vm.runInContext(loadFn('app/core.js', 'updateHomeStats'), sb);
+sb.updateHomeStats();
+const rawAll = Object.values(cur1).reduce((a, m) => a + Object.values(m).reduce((x, v) => x + v, 0), 0);
+assert(
+  shown['h-sav'] === '$' + Math.round(sb.getProjectSavingsTotal(9001).total).toLocaleString(),
+  'header total equals the keeper project total (Q1 presented)',
+);
+assert(shown['h-sav'] !== '$' + Math.round(rawAll).toLocaleString(), 'header total is not the raw month sum while Q1 is presented');
+
+// No page keeps its own month-summing for a savings total: each consumer routes through the keeper.
+const CONSUMERS = {
+  'app/core.js': [/getProjectSavingsTotal\(/, /Object\.values\(savResult\.byCalMo\)/],
+  'app/scorecard.js': [/totalSavingsWithPresented\(/, /Object\.values\(savByYM\)\.reduce/],
+  'app/utility-data.js': [/totalSavingsWithPresented\(/, /Object\.values\(actSavByMo\)\.reduce/, /savVals\.reduce/, /Object\.values\(actByMo\)\.reduce/],
+  'app/graphics-setpoints.js': [/totalSavingsWithPresented\(/, /\.reduce\(\(s, \[, v\]\) => s \+ v, 0\)\s*:\s*0;/],
+  'app/report-engine.js': [/totalSavingsWithPresented\(/, /periodSavings \+= totalCostSav/],
+  'app/portal-export.js': [/getProjectSavingsTotal\(/],
+};
+Object.keys(CONSUMERS).forEach((f) => {
+  const src = readSrc(f);
+  const [must, ...mustNot] = CONSUMERS[f];
+  assert(must.test(src), f + ' calls the keeper');
+  mustNot.forEach((re) => assert(!re.test(src), f + ' no longer sums months itself: ' + re));
+});
+assert(/getProjectSavingsTotal\(/.test(readSrc('app/core.js')) && /addBldgQuarters/.test(readSrc('app/core.js')), 'core.js dashboard quarters use the keeper helper');
+assert(/getPresentedNotice\(d\.project\.id, periodYMs\)/.test(readSrc('app/report-engine.js')), 'Board Summary shows the presented notice');
 
 // Remove the mark: totals recompute.
 assert(
