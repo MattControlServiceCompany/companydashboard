@@ -1776,6 +1776,14 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.29.33',
+    date: '2026-09-29',
+    title: 'Attach bill PDFs to billing periods',
+    items: [
+      { type: 'feature', text: 'On the Utility Data bill table, the new "Attach bill PDFs" button lets you attach PDF files to billing periods you already have. For each file, choose the period and the meters (for example all gas meters). Nothing is read from the PDF and no bill numbers change.' },
+    ],
+  },
+  {
     v: 'v2026.09.29.32',
     date: '2026-09-29',
     title: 'Estimate missing period matches the bills around it',
