@@ -244,6 +244,12 @@ function eq(actual, expected) {
 
 let totalFail = 0;
 let totalPass = 0;
+const missingFixtures = Object.keys(EXPECTED).filter((f) => !fs.existsSync(path.join(FIXTURE_DIR, f)));
+if (missingFixtures.length) {
+  console.log('SKIP: real-bill fixture(s) missing (gitignored): ' + missingFixtures.join(', '));
+  process.exit(0);
+}
+
 const wre = loadWRE(jsPath);
 console.log('Loaded WRE parser from: ' + jsPath + '\n');
 
