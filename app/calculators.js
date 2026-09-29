@@ -4004,6 +4004,23 @@ function openBASCalc(projId) {
     if (p.hvacLoadEst.heatKwhTotal)
       autoCalHeat = { value: Math.round(p.hvacLoadEst.heatKwhTotal), source: 'HVAC Load Estimation' };
   }
+  // Existing Heating kWh (2026-09-28 fix): no fresh-compute fallback existed, so calHeatKwh stayed
+  // "Default value" (0) for any building nobody saved HVAC Load Estimation for, even with electric
+  // heat. Reuse the Baseline + BAS Savings report's own electric weather-regression heating split
+  // (wdComputeHvacSplitForBuilding -> _wdComputeHvacSplit: sum of HDD coefficient x HDD over the
+  // baseline months) - no second regression. Null (stays default, unfilled) when the regression
+  // has no positive HDD term, so no number is invented.
+  let heatKwhNotSeparable = false;
+  if (!autoCalHeat && bldgId && typeof wdComputeHvacSplitForBuilding === 'function') {
+    const wdSplit = wdComputeHvacSplitForBuilding(projId, bldgId);
+    if (wdSplit && !(wdSplit.heatKwh > 0)) heatKwhNotSeparable = true;
+    if (wdSplit && wdSplit.heatKwh > 0)
+      autoCalHeat = {
+        value: Math.round(wdSplit.heatKwh),
+        source:
+          'electric bills + weather regression (HDD term, kWh — same as the Baseline + BAS Savings report "Heating Energy - Elec")',
+      };
+  }
   // Existing Cooling kWh (2026-09-24 fix): same precedence as the calHeatGas fix below — a real
   // SAVED HVAC Load Estimation for this project wins when one exists (checked above). Otherwise,
   // compute it fresh directly from THIS building's own electric bills via
@@ -4099,6 +4116,12 @@ function openBASCalc(projId) {
   const rExOAShutoff = _bcResolve('exOAShutoff', 'yes', auto?.exOAShutoff);
   const rCalCoolKwh = _bcResolve('calCoolKwh', '', autoCalCool);
   const rCalHeatKwh = _bcResolve('calHeatKwh', '', autoCalHeat);
+  // Honest label (2026-09-28): the weather regression ran but found no positive heating (HDD) term,
+  // so electric heating cannot be separated from this building's bills — say so instead of the
+  // generic default hint (the default value stays; nothing is invented).
+  if (heatKwhNotSeparable && rCalHeatKwh.hint && rCalHeatKwh.hint.indexOf('Default value') === 0)
+    rCalHeatKwh.hint =
+      'Default value — electric heating not separable from bills (electric weather regression has no positive heating term); enter manually or save HVAC Load Estimation';
   const rCalHeatGas = _bcResolve('calHeatGas', '', autoCalGas);
 
   // Proposed Conditions (2026-09-23): chCalcAutofillFields always returns a company-standard

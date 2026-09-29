@@ -1268,6 +1268,31 @@ function wdInputsGenerate() {
 }
 window.wdInputsGenerate = wdInputsGenerate;
 
+// Weather (HDD/CDD) by 'YYYY-MM', looked up by the building's own zip.
+function _wdWxByYm(b) {
+  var wxByYm = {};
+  if (b && b.zip && typeof wddLoadCache === 'function') {
+    (wddLoadCache(b.zip) || []).forEach(function (r) {
+      wxByYm[r.ym] = r;
+    });
+  }
+  return wxByYm;
+}
+
+// wdComputeHvacSplitForBuilding(projId, buildingId) — the report's Page 4 HVAC split
+// (_wdComputeHvacSplit: electric-regression HDD/CDD heating/cooling split) for one building,
+// WITHOUT building the whole report. Same baselines + same weather as collectWoodlandReportData,
+// so the BAS Savings Calc's Existing Heating kWh equals the report's "Heating Energy - Elec (kWh)".
+// Returns null when the building is missing. hvac.heatKwh is null when the electric regression
+// has no positive HDD term (no electric heating separable) or no baseline exists.
+function wdComputeHvacSplitForBuilding(projId, buildingId) {
+  var b = typeof getUDBldg === 'function' ? getUDBldg(projId, buildingId) : null;
+  if (!b) return null;
+  var bls = _wdBldgBaselines(b);
+  return _wdComputeHvacSplit(bls.elecBL, bls.gasBL, _wdWxByYm(b));
+}
+window.wdComputeHvacSplitForBuilding = wdComputeHvacSplitForBuilding;
+
 // -----------------------------------------------------------------------
 // collectWoodlandReportData(projId, buildingId)
 // -----------------------------------------------------------------------
@@ -1286,12 +1311,7 @@ function collectWoodlandReportData(projId, buildingId) {
     gasBL = bls.gasBL;
 
   // Weather (HDD/CDD) by 'YYYY-MM', looked up by the building's own zip.
-  var wxByYm = {};
-  if (b.zip && typeof wddLoadCache === 'function') {
-    (wddLoadCache(b.zip) || []).forEach(function (r) {
-      wxByYm[r.ym] = r;
-    });
-  }
+  var wxByYm = _wdWxByYm(b);
 
   // ---- Savings inputs + option measures (see WD_CFG_FIELDS / wdApplySetpointOptions) ----
   var cfg = _wdGetCfg(p, b.id);
