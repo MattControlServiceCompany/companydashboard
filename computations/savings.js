@@ -101,6 +101,158 @@ function checkRateIncomplete(opts) {
 }
 
 /* ─────────────────────────────────────────────────────────────
+   PRESENTED-TO-CLIENT LOCK (WP-04a, 2026-09-29)
+   Rule (Matt): savings already presented to the client can not change.
+   One storage key holds one record per marked project + period:
+     { projectId, periodStart, periodEnd, presentedAt, totalDollars,
+       months: { <meterId>: { <YYYY-MM>: { dollars, kwhSaved, kwSaved, thermsSaved,
+                                           gallonsSaved, rate: {kwh, kw, unit} } } } }
+   getMeterSavings() below returns these stored month values for every consumer. Only the two
+   user actions (markSavingsPresented / removePresentedMark) write the key.
+───────────────────────────────────────────────────────────── */
+const PRESENTED_SAVINGS_KEY = 'en_presented_savings';
+
+function getPresentedRecords() {
+  return sget(PRESENTED_SAVINGS_KEY, []) || [];
+}
+
+// { 'YYYY-MM': monthRecord } for one meter; the earliest presented record wins an overlapping month.
+function getPresentedMonths(projId, meterId) {
+  const out = {};
+  getPresentedRecords().forEach((rec) => {
+    if (String(rec.projectId) !== String(projId)) return;
+    const mm = rec.months && rec.months[meterId];
+    if (!mm) return;
+    Object.keys(mm).forEach((ym) => {
+      if (!out[ym]) out[ym] = mm[ym];
+    });
+  });
+  return out;
+}
+
+function getPresentedMonth(projId, meterId, ym) {
+  return getPresentedMonths(projId, meterId)[ym] || null;
+}
+
+function _presentedFind(projId, yms) {
+  const a = yms[0];
+  const z = yms[yms.length - 1];
+  return (
+    getPresentedRecords().find(
+      (r) => String(r.projectId) === String(projId) && r.periodStart === a && r.periodEnd === z,
+    ) || null
+  );
+}
+
+function getPresentedRecord(projId, yms) {
+  return yms && yms.length ? _presentedFind(projId, yms) : null;
+}
+
+// Plain-words line for a report period, or '' when the period is not marked.
+function getPresentedNotice(projId, yms) {
+  const rec = getPresentedRecord(projId, yms);
+  if (!rec) return '';
+  const d = new Date(rec.presentedAt);
+  const label = d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  return 'Presented to client on ' + label + '. Figures are locked.';
+}
+
+// Snapshot the CURRENT (unlocked) savings of every project meter for the months in `yms`
+// (sorted YYYY-MM list) and store it. Returns the record, or null when the period is already
+// marked or holds no savings.
+function markSavingsPresented(projId, yms) {
+  if (!yms || !yms.length || _presentedFind(projId, yms)) return null;
+  const proj = (typeof projects !== 'undefined' ? projects : []).find((p) => String(p.id) === String(projId));
+  const bldgs = typeof getUDBldgs === 'function' ? getUDBldgs(projId) || [] : [];
+  const incl = (proj && proj.inclMonths) || {};
+  const months = {};
+  let total = 0;
+  bldgs.forEach((b) => {
+    (b.meters || []).forEach((m) => {
+      if (isBaselineExcluded(projId, m.id)) return;
+      const bills = (m.bills || []).slice().sort((a, c) => (a.start || '').localeCompare(c.start || ''));
+      const res = computeMeterSavings(m, bills, incl, projId, b.id);
+      yms.forEach((ym) => {
+        if (res.byYM[ym] == null) return;
+        const u = res.unitsByYM[ym] || {};
+        (months[m.id] = months[m.id] || {})[ym] = {
+          dollars: res.byYM[ym],
+          kwhSaved: u.kwh || 0,
+          kwSaved: u.kw || 0,
+          thermsSaved: u.therms || 0,
+          gallonsSaved: u.gallons || 0,
+          rate: (res.ratesByYM && res.ratesByYM[ym]) || {},
+        };
+        total += res.byYM[ym];
+      });
+    });
+  });
+  if (!Object.keys(months).length) return null;
+  const rec = {
+    projectId: String(projId),
+    periodStart: yms[0],
+    periodEnd: yms[yms.length - 1],
+    presentedAt: new Date().toISOString(),
+    totalDollars: total,
+    months,
+  };
+  sset(PRESENTED_SAVINGS_KEY, getPresentedRecords().concat([rec]));
+  return rec;
+}
+
+function removePresentedMark(projId, yms) {
+  const rec = yms && yms.length ? _presentedFind(projId, yms) : null;
+  if (!rec) return false;
+  sset(
+    PRESENTED_SAVINGS_KEY,
+    getPresentedRecords().filter(
+      (r) => !(String(r.projectId) === String(projId) && r.periodStart === rec.periodStart && r.periodEnd === rec.periodEnd),
+    ),
+  );
+  return true;
+}
+
+// Overlay the stored month values onto a computed result. Returns a NEW object when the meter has
+// presented months (the cached computed result is never mutated); otherwise the result unchanged.
+function applyPresentedMonths(res, m, projId) {
+  const pres = getPresentedMonths(projId, m.id);
+  const yms = Object.keys(pres);
+  if (!yms.length) return res;
+  const zero = () => ({ kwh: 0, kw: 0, therms: 0, gallons: 0 });
+  const out = {
+    byYM: Object.assign({}, res.byYM),
+    byCalMo: Object.assign({}, res.byCalMo),
+    unitsByYM: {},
+    unitsByCalMo: {},
+    incompleteYM: Object.assign({}, res.incompleteYM),
+    ratesByYM: Object.assign({}, res.ratesByYM),
+  };
+  Object.keys(res.unitsByYM).forEach((k) => {
+    out.unitsByYM[k] = Object.assign({}, res.unitsByYM[k]);
+  });
+  Object.keys(res.unitsByCalMo).forEach((k) => {
+    out.unitsByCalMo[k] = Object.assign({}, res.unitsByCalMo[k]);
+  });
+  yms.forEach((ym) => {
+    const p = pres[ym];
+    const calMo = parseInt(ym.split('-')[1]) - 1;
+    const oldU = out.unitsByYM[ym] || zero();
+    const newU = { kwh: p.kwhSaved, kw: p.kwSaved, therms: p.thermsSaved, gallons: p.gallonsSaved };
+    out.byCalMo[calMo] = (out.byCalMo[calMo] || 0) + p.dollars - (out.byYM[ym] || 0);
+    out.byYM[ym] = p.dollars;
+    const cm = out.unitsByCalMo[calMo] || zero();
+    ['kwh', 'kw', 'therms', 'gallons'].forEach((f) => {
+      cm[f] += newU[f] - oldU[f];
+    });
+    out.unitsByCalMo[calMo] = cm;
+    out.unitsByYM[ym] = newU;
+    out.ratesByYM[ym] = p.rate || {};
+    delete out.incompleteYM[ym];
+  });
+  return out;
+}
+
+/* ─────────────────────────────────────────────────────────────
    getMeterSavings(m, bills, incl)
    Unified savings function — single pass, populates both byYM
    and byCalMo, applies costSavOverrides to BOTH formats.
@@ -114,7 +266,12 @@ function checkRateIncomplete(opts) {
    }
 ───────────────────────────────────────────────────────────── */
 function getMeterSavings(m, bills, incl, projId, bldgId) {
-  const empty = { byYM: {}, byCalMo: {}, unitsByYM: {}, unitsByCalMo: {}, incompleteYM: {} };
+  return applyPresentedMonths(computeMeterSavings(m, bills, incl, projId, bldgId), m, projId);
+}
+
+// The savings math itself (unlocked). Only getMeterSavings() and markSavingsPresented() call it.
+function computeMeterSavings(m, bills, incl, projId, bldgId) {
+  const empty = { byYM: {}, byCalMo: {}, unitsByYM: {}, unitsByCalMo: {}, incompleteYM: {}, ratesByYM: {} };
 
   // 2026-09-15 (SA-gate fix): savings only compute for a CONTRACTED project. The contract
   // signal is the project record's `sa` field (Service Agreement #) — a project with no SA
@@ -159,6 +316,8 @@ function getMeterSavings(m, bills, incl, projId, bldgId) {
   // month. Populated per-row below; consumed by the renderers named in the item (meter/
   // building/project views, lib/perf-table.js Meter Performance table + report).
   const incompleteYM = {};
+  // Rate used per month ({kwh, kw, unit}) — recorded so a "presented to client" snapshot can keep it.
+  const ratesByYM = {};
 
   const isElec = m.commodity === 'Electric';
   const isPropane = m.commodity === 'Propane';
@@ -265,6 +424,7 @@ function getMeterSavings(m, bills, incl, projId, bldgId) {
     let unitSav = { kwh: 0, kw: 0, therms: 0, gallons: 0 };
     let _rateIncomplete = false;
     let _rateReason = '';
+    let _rateUsed = {};
 
     const expUsage =
       hasBlCalMap && blByCalMo[calMo] != null
@@ -312,6 +472,7 @@ function getMeterSavings(m, bills, incl, projId, bldgId) {
       totalCostSav = kwhCostSav + kwCostSav;
       unitSav.kwh = kwhSaved;
       unitSav.kw = kwSaved;
+      _rateUsed = { kwh: kwhRate, kw: moKwRate };
     } else if (isPropane) {
       const actGallons = actUsage;
       const actCost = r.cost;
@@ -335,6 +496,7 @@ function getMeterSavings(m, bills, incl, projId, bldgId) {
       _rateReason = _chk.reason;
       totalCostSav = galRate > 0 ? (expUsage - actGallons) * galRate : 0;
       unitSav.gallons = galRate > 0 ? expUsage - actGallons : 0;
+      _rateUsed = { unit: galRate };
     } else {
       const actTherms = actUsage;
       const actThermCost = bfr.reduce(
@@ -367,6 +529,7 @@ function getMeterSavings(m, bills, incl, projId, bldgId) {
       _rateReason = _chk.reason;
       totalCostSav = thermRate > 0 ? (expUsage - actTherms) * thermRate : 0;
       unitSav.therms = thermRate > 0 ? expUsage - actTherms : 0;
+      _rateUsed = { unit: thermRate };
     }
 
     // Apply costSavOverrides if present (per year-month)
@@ -382,6 +545,7 @@ function getMeterSavings(m, bills, incl, projId, bldgId) {
 
     // Populate byYM
     byYM[r.ym] = (byYM[r.ym] || 0) + finalCostSav;
+    ratesByYM[r.ym] = _rateUsed;
 
     // Populate byCalMo (same override applied — THIS IS THE BUG FIX)
     byCalMo[calMo] = (byCalMo[calMo] || 0) + finalCostSav;
@@ -412,7 +576,7 @@ function getMeterSavings(m, bills, incl, projId, bldgId) {
   // Also set legacy m._unitSavByCalMo for any remaining references
   m._unitSavByCalMo = unitsByCalMo;
 
-  const result = { byYM, byCalMo, unitsByYM, unitsByCalMo, incompleteYM };
+  const result = { byYM, byCalMo, unitsByYM, unitsByCalMo, incompleteYM, ratesByYM };
   m._savingsCache = result;
   m._savingsCacheKey = cacheKey;
   // Legacy: also set m._savingsByYM for any direct references

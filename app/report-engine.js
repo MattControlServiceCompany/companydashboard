@@ -2031,6 +2031,58 @@ function _rptInjectUiPassOverrides() {
 /**
  * showReportOverlay — displays the report preview overlay with generated HTML.
  */
+// Presented-to-client (WP-04a). The stored figures live in computations/savings.js; this is the
+// report-side line and the toolbar button that marks / unmarks the period being previewed.
+function _rptPresentedLineHTML(notice) {
+  return (
+    '<div class="rpt-presented-line" style="' +
+    (notice ? '' : 'display:none;') +
+    'margin:6px 0;padding:0 14px;font-size:11px;font-weight:600;color:var(--rpt-green-dark)">' +
+    _rptV2Esc(notice) +
+    '</div>'
+  );
+}
+
+function _rptPresentedCtx() {
+  var d = window._currentReportData;
+  if (!d || d._soo || d._ashrae || !d.period || !d.project || d.project.id == null) return null;
+  var yms = (d.period.yearMonths || []).slice().sort();
+  return yms.length ? { projId: d.project.id, yms: yms } : null;
+}
+
+function _rptRefreshPresentedUI() {
+  var ctx = _rptPresentedCtx();
+  var btn = document.getElementById('rptPresentedBtn');
+  var notice = ctx ? getPresentedNotice(ctx.projId, ctx.yms) : '';
+  if (btn) {
+    btn.style.display = ctx ? '' : 'none';
+    btn.textContent = notice ? 'Remove presented mark' : 'Mark as presented to client';
+  }
+  document.querySelectorAll('#rptPreviewPages .rpt-presented-line').forEach(function (el) {
+    el.textContent = notice;
+    el.style.display = notice ? '' : 'none';
+  });
+}
+
+function rptTogglePresented() {
+  var ctx = _rptPresentedCtx();
+  if (!ctx) return;
+  var label = window._currentReportData.period.label || 'this period';
+  if (getPresentedNotice(ctx.projId, ctx.yms)) {
+    if (!confirm('Remove the presented mark for ' + label + '? Its savings figures will change again when bills or settings change.')) return;
+    removePresentedMark(ctx.projId, ctx.yms);
+    showToast('Presented mark removed');
+  } else {
+    if (!confirm('Mark ' + label + ' as presented to the client? Its savings figures will be locked and will not change when bills or settings change.')) return;
+    if (!markSavingsPresented(ctx.projId, ctx.yms)) {
+      showToast('No savings figures to lock for this period', 'error');
+      return;
+    }
+    showToast('Marked as presented to client');
+  }
+  _rptRefreshPresentedUI();
+}
+
 function showReportOverlay(html, title) {
   _rptInjectUiPassOverrides();
   var pagesEl = document.getElementById('reportPages');
@@ -2590,6 +2642,8 @@ function rptPageCover(n, d) {
     '<div class="rpt-narrative" contenteditable="true">' +
     narrative +
     '</div>' +
+    // Presented-to-client line (WP-04a): filled by _rptRefreshPresentedUI() when the period is marked.
+    _rptPresentedLineHTML(getPresentedNotice(d.project.id, d.period.yearMonths || [])) +
     // Target vs Actual + progress bar
     '<div class="rpt-vs-box">' +
     '<div class="rpt-vs-side">' +

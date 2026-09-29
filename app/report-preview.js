@@ -151,6 +151,7 @@ function _showPreview(config, pagesHTML) {
 
   // Populate page number footers now that pages are in the DOM
   _updatePageNumbers();
+  _rptRefreshPresentedUI();
 }
 
 function _rebuildSidebar() {

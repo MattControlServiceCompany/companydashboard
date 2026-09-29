@@ -220,6 +220,7 @@
     en_tasks: 'the tasks list',
     en_dc_events: 'the district calendar',
     en_pdf_bills: 'the saved bill list',
+    en_presented_savings: 'the presented-to-client savings marks',
     en_meetingTemplates: 'the meeting templates',
   };
   var FRIENDLY_KEY_PREFIXES = [
