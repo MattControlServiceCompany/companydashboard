@@ -1220,7 +1220,11 @@ async function estimateMissingPeriod(mid, gapStart, gapEnd) {
     return;
   }
   const avgDailyUsage = (prevUsage + nextUsage) / (prevDays + nextDays);
-  const estUsage = Math.round(avgDailyUsage * gapDays * 10000) / 10000;
+  // An estimate never prints more decimals than its source bills: use the larger decimal count
+  // of the two neighbour values as they print (trailing zeros dropped), derived from the data.
+  const _decimals = (v) => ((String(+v).split('.')[1]) || '').length;
+  const estDp = Math.max(_decimals(prevUsage), _decimals(nextUsage));
+  const estUsage = +(avgDailyUsage * gapDays).toFixed(estDp);
   const unit = getMeterDisplayUnit(m);
   const confirmMsg =
     'Add an estimated period ' +

@@ -181,6 +181,12 @@ console.log('=== 2. One day-count method — Spring Hill High June-2025 gap (202
     const nd = sandbox.calcDays('2025-06-19', '2025-07-21', incl);
     assert(gd === (incl ? 31 : 30) && pd === (incl ? 30 : 29) && nd === (incl ? 33 : 32), 'SHH days ' + (incl ? 'Inclusive' : 'Exclusive') + ': gap ' + gd + ', prev ' + pd + ', next ' + nd);
   });
+  // Estimate precision = max decimals of the two neighbour values (data-derived).
+  const csvSrc0 = fs.readFileSync(path.join(REPO, 'app/csv-import.js'), 'utf8');
+  assert(/_decimals\(prevUsage\), _decimals\(nextUsage\)/.test(csvSrc0) && /toFixed\(estDp\)/.test(csvSrc0), 'estimate rounds to neighbour precision');
+  const dec = (v) => ((String(+v).split('.')[1]) || '').length;
+  const r = (a, b, days) => +(((a + b) / (29 + 32)) * days).toFixed(Math.max(dec(a), dec(b)));
+  assert(r(112252.44, 138771.06, 30) === 123454.18, 'Exclusive SHH estimate rounds to 2 dp = 123454.18');
   // Regression guard: the gap-line day count in app/utility-data.js and the estimate-row day
   // count in app/csv-import.js must both go through calcDays (the one shared, toggle-aware
   // function) — not a private raw ms-diff — so they can never independently drift again.
