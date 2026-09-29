@@ -1776,6 +1776,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.28.26',
+    date: '2026-09-28',
+    title: 'Pricing Estimator and Audit Proposal fixes',
+    items: [
+      { type: 'fix', text: 'Pricing Estimator now finds your electric usage, so the electric figures no longer come up empty.' },
+      { type: 'fix', text: 'Pricing Estimator keeps your saved settings. Only the fields you change are saved, so the other settings follow the defaults.' },
+      { type: 'fix', text: 'Pricing Estimator and Audit Proposal now use one unit price and one totals calculation, so the same item shows the same price everywhere.' },
+      { type: 'fix', text: 'Audit Proposal now prices only the buildings that have auditable equipment.' },
+    ],
+  },
+  {
     v: 'v2026.09.28.25',
     date: '2026-09-28',
     title: 'ECM Calculators savings fixes',
