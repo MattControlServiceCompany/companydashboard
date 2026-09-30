@@ -117,7 +117,10 @@ if (typeof resolve === 'function') {
     near(resolve({ NaturalGasCCF: '1,000', ThermFactor: '1.0421' }), 1042.1),
     resolve({ NaturalGasCCF: '1,000', ThermFactor: '1.0421' }),
   );
-  check('meter multiplier 1 captured as ThermFactor is ignored', near(resolve({ naturalGasCCF: 1000, thermFactor: '1' }), 1037));
+  check(
+    'meter multiplier 1 captured as ThermFactor is ignored',
+    near(resolve({ naturalGasCCF: 1000, thermFactor: '1' }), 1037),
+  );
   check(
     'junk ThermFactor falls back to the constant',
     near(resolve({ naturalGasCCF: 1000, thermFactor: 'n/a' }), 1037),
@@ -125,6 +128,11 @@ if (typeof resolve === 'function') {
   check('MMBtu 100 -> 1000 therms', resolve({ naturalGasMMbtu: 100 }) === 1000, resolve({ naturalGasMMbtu: 100 }));
   check('extractor field name NaturalGasMMbtu 100 -> 1000', resolve({ NaturalGasMMbtu: '100' }) === 1000);
   check('CCF is used before MMBtu', near(resolve({ naturalGasCCF: 1000, naturalGasMMbtu: 5 }), 1037));
+  check(
+    'Mcf 100 -> 1000 therms (1 Mcf = 10 therms, same as the KGS extractor; not 100)',
+    near(resolve({ naturalGasMCF: 100 }), 1000) && resolve({ naturalGasMCF: 100 }) > 100,
+    resolve({ naturalGasMCF: 100 }),
+  );
   check('empty bill -> 0', resolve({}) === 0);
 }
 
@@ -188,6 +196,13 @@ check('export header naturalGasTherms 1000 -> therms 1000', +r.naturalGasTherms 
 r = parse('start_date,end_date,therms,therm_cost\n' + D + '1000,500');
 check('therms header unchanged: 1000 therms, cost 500', +r.naturalGasTherms === 1000 && +r.gasCharge === 500, r);
 
+r = parse('start_date,end_date,mcf,therm_cost\n' + D + '100,500');
+check(
+  'mcf header -> naturalGasMCF 100, therms via resolver (not 100)',
+  +r.naturalGasMCF === 100 && r.naturalGasTherms == null && near(+r.therms, 1000),
+  r,
+);
+
 r = parse('start_date,end_date,mmbtu,therm_cost\n' + D + '100,500');
 check('mmbtu header -> naturalGasMMbtu 100, therms 1000', +r.naturalGasMMbtu === 100 && near(+r.therms, 1000), r);
 
@@ -221,6 +236,13 @@ for (const dir of SRC) {
     });
   }
 }
+// extractor and migration conversions go through convertUnit, not a private x10
+const esSrc = fs.readFileSync(path.join(REPO, 'app/energy-savings.js'), 'utf8');
+check(
+  'extractor has no private Mcf/MMBtu x10',
+  !/(_mcf \* _multiplier \* 10|mmBtuVal \* 10|parseFloat\(mcfMatch\) \* 10)/.test(esSrc),
+);
+check('ThermFactor pattern no longer matches "multiplier"', !esSrc.includes('btu\\s*factor|multiplier'));
 check('no 1.037 literal outside UNIT_TO_BASE', offenders.length === 0, offenders);
 
 console.log('TOTAL: ' + passed + ' passed, ' + failed + ' failed');

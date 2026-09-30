@@ -603,7 +603,7 @@ function loadUtilityData() {
               !hasCCF &&
               therms > 0 &&
               _approxEq(therms, mmbtu, 0.005) &&
-              !_approxEq(therms, mmbtu * 10, 0.005);
+              !_approxEq(therms, convertUnit(mmbtu, 'MMBtu', 'Therms', 'Gas'), 0.005);
             // CCF path: ccf set, therms field empty, stored therms ≈ raw ccf (NOT ≈ ccf x factor)
             const needsCCF =
               ccf > 0 &&
@@ -619,7 +619,7 @@ function loadUtilityData() {
                 billEnd: bill.end,
                 source: 'MMBtu',
                 oldTherms: therms,
-                newTherms: Math.round(mmbtu * 10 * 100) / 100,
+                newTherms: Math.round(convertUnit(mmbtu, 'MMBtu', 'Therms', 'Gas') * 100) / 100,
                 bill,
               });
             } else if (needsCCF) {

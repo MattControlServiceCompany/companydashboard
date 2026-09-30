@@ -7177,7 +7177,7 @@ const UTILITY_RULES = [
         const mmBtuVal = parseFloat(_mmBtuRaw.replace(/,/g, ''));
         if (!isNaN(mmBtuVal) && mmBtuVal > 0) {
           // Round to 2 decimal places to avoid floating-point noise.
-          NaturalGasTherms = String(Math.round(mmBtuVal * 10 * 100) / 100);
+          NaturalGasTherms = String(Math.round(convertUnit(mmBtuVal, 'MMBtu', 'Therms', 'Gas') * 100) / 100);
         }
       }
 
@@ -8925,10 +8925,12 @@ const UTILITY_RULES = [
         const WNAPerMcf = meterRowM ? fixNum(meterRowM[9]) : null;
         const CostOfGasPerMcf = meterRowM ? fixNum(meterRowM[10]) : null;
 
-        // Therms = Mcf × Multiplier × 10 (KGS reports in Mcf; 1 Mcf ≈ 10 therms)
+        // Therms = Mcf × Multiplier × 10. KGS states 1 Mcf = 1 Dth = 10 therms, so this uses UNIT_TO_BASE.DTh,
+        // not UNIT_TO_BASE.MCF (10.37). DECISION FOR MATT: which Mcf factor is right (2026-09-30 review).
         const _multiplier = parseBillNumber(MeterMultiplier) || 1.0;
         const _mcf = parseBillNumber(McfBilled);
-        const NaturalGasTherms = _mcf > 0 ? String(Math.round(_mcf * _multiplier * 10 * 100) / 100) : null;
+        const NaturalGasTherms =
+          _mcf > 0 ? String(Math.round(convertUnit(_mcf * _multiplier, 'DTh', 'Therms') * 100) / 100) : null;
 
         // === BALANCE SECTION ===
         // All dollar-amount patterns use [\\d,.:] to capture values whether OCR renders decimal as
@@ -9070,7 +9072,7 @@ const UTILITY_RULES = [
       const _currReadM = t.match(/(?:current|present|new)\s*(?:meter\s*)?read(?:ing)?[\s:]*([0-9,]+)/i);
       const _readDiffM = t.match(/(?:difference|usage|consumption|used)[\s:]*([0-9,]+)(?:\s*(?:ccf|therms?|mcf))?/i);
       // Therms conversion factor
-      const _thermFactorM = t.match(/(?:therm\s*factor|conversion\s*factor|btu\s*factor|multiplier)[\s:]*([0-9.]+)/i);
+      const _thermFactorM = t.match(/(?:therm\s*factor|conversion\s*factor|btu\s*factor)[\s:]*([0-9.]+)/i);
       return {
         UtilityCompany: company,
         Commodity: 'Gas',
@@ -9126,11 +9128,11 @@ const UTILITY_RULES = [
             t.match(/([0-9,]+\.?\d*)\s*therms?/i)?.[1]?.replace(/,/g, '') ||
             null;
           if (thermMatch) return thermMatch;
-          // KGS uses Mcf (not therms). 1 Mcf = 10 therms.
+          // KGS uses Mcf (not therms). 1 Mcf = 1 Dth = 10 therms, converted with UNIT_TO_BASE.DTh (see the Mcf note above).
           // Patterns: "Current  29  1.100  0.038" (meter row) or "Mcf Billed: 1.100"
           const mcfMatch =
             t.match(/Current\s+\d+\s+([\d.]+)\s+[\d.]/)?.[1] || t.match(/Mcf\s+Billed[\s:]*(\d+\.?\d*)/i)?.[1] || null;
-          if (mcfMatch) return String(parseFloat(mcfMatch) * 10);
+          if (mcfMatch) return String(convertUnit(parseFloat(mcfMatch), 'DTh', 'Therms'));
           return null;
         })(),
         NaturalGasCCF: t.match(/([0-9,]+\.?\d*)\s*(?:ccf|hundred\s*cubic\s*feet)/i)?.[1]?.replace(/,/g, '') || null,

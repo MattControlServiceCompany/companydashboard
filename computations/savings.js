@@ -39,10 +39,13 @@ function projHasContract(projId) {
      - CCF x the factor the bill printed (thermFactor / ThermFactor);
        no printed factor -> UNIT_TO_BASE.CCF.factor (app/utility-data.js,
        the one constant). A printed factor outside 1.0-1.2 (exclusive) is not a therm
-       factor (the extractor pattern also matches a meter "multiplier",
-       which is 1 on most meters), so it is ignored.
+       factor is ignored. This is a plausibility guard (typical natural-gas
+       factors are 1.02-1.06), not a value taken from a bill.
      - MMBtu x the MMBtu->Therms factor in UNIT_TO_BASE_BY_COMMODITY
        (1 MMBtu = 10 Therms).
+   - Mcf x 10 via UNIT_TO_BASE.DTh (naturalGasMCF, CSV import only): the same
+     1 Mcf = 1 Dth = 10 therms the KGS extractor uses. UNIT_TO_BASE.MCF (10.37)
+     is not used here; which Mcf factor is right is a decision for Matt.
    Accepts saved-bill names (naturalGasCCF) and extractor names
    (NaturalGasCCF). Converted values are rounded to 6 decimals, which
    removes float noise and changes no printed figure.
@@ -57,6 +60,8 @@ function resolveGasUsageTherms(b) {
     const factor = printed > 1 && printed < 1.2 ? printed : UNIT_TO_BASE.CCF.factor;
     return Math.round(ccf * factor * 1e6) / 1e6;
   }
+  const mcf = num('naturalGasMCF');
+  if (mcf) return Math.round(convertUnit(mcf, 'DTh', 'Therms', 'Gas') * 1e6) / 1e6;
   const mmbtu = num('naturalGasMMbtu');
   if (mmbtu) return Math.round(convertUnit(mmbtu, 'MMBtu', 'Therms', 'Gas') * 1e6) / 1e6;
   return num('usage') || 0;

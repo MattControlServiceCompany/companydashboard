@@ -317,6 +317,8 @@ function parseBillCsv(text, fname) {
       // Store the value in the unit the header names (source unit kept). Therms is the default.
       if (/ccf/.test(thermsHdrText)) {
         row.naturalGasCCF = gThermVal;
+      } else if (/mcf/.test(thermsHdrText)) {
+        row.naturalGasMCF = gThermVal;
       } else if (/mmbtu/.test(thermsHdrText)) {
         row.naturalGasMMbtu = gThermVal;
       } else {
@@ -409,6 +411,7 @@ function parseBillCsv(text, fname) {
       const _rt = resolveGasUsageTherms({
         naturalGasTherms: row.naturalGasTherms,
         naturalGasCCF: row.naturalGasCCF,
+        naturalGasMCF: row.naturalGasMCF,
         naturalGasMMbtu: row.naturalGasMMbtu,
         thermFactor: row.thermFactor,
       });

@@ -142,6 +142,11 @@ loadInto(sb, [
   'app/energy-savings.js',
   'app/bill-analysis.js',
 ]);
+// The KGS extractor converts Mcf with the one unit table (UNIT_TO_BASE + convertUnit in app/utility-data.js).
+{
+  const ud = fs.readFileSync(path.join(REPO, 'app/utility-data.js'), 'utf8');
+  vm.runInContext(ud.slice(ud.indexOf('const UNIT_TO_BASE = {'), ud.indexOf('function getMeterBillUnit')), sb);
+}
 const rules = get(sb, 'UTILITY_RULES');
 const kgs = rules.find((r) => /Gas Utility|Kansas Gas/i.test(r.name));
 check('KGS rule found', !!kgs);
