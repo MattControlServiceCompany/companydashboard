@@ -16107,7 +16107,7 @@ function rptPageASHRAE36Executive(n, d) {
       '<div style="' +
       _rowBoxStyle +
       ';justify-content:flex-end">' +
-      (b.seqPct !== null ? b.seqPct + '%' : 'N/A') +
+      (b.seqPct !== null ? b.seqPct + '%' : 'None apply') +
       '</div></td>' +
       '<td style="padding:5px 8px;border:1px solid var(--rpt-border)">' +
       '<div style="' +
@@ -16911,7 +16911,7 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
         '<circle cx="35" cy="35" r="26.6" fill="none" stroke="var(--rpt-rule)" stroke-width="6.3"/>' +
         // Grey text on a client deliverable is banned (same rule already applied to the
         // "Not found in this export" text below) — full black, matching --rpt-page-text.
-        '<text x="35" y="39" text-anchor="middle" font-size="13" font-weight="700" fill="var(--rpt-page-text)" font-family="Arial,sans-serif">N/A</text>' +
+        '<text x="35" y="39" text-anchor="middle" font-size="13" font-weight="700" fill="var(--rpt-page-text)" font-family="Arial,sans-serif">None</text>' +
         '<text x="35" y="68.95" text-anchor="middle" font-size="8.05" fill="var(--rpt-page-text)" font-family="Arial,sans-serif">Sequences</text>' +
         '</svg>') +
     '</div>' +
@@ -17039,7 +17039,7 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
     ';text-align:center">Units</th>' +
     '<th style="' +
     thStyle +
-    ';text-align:center">Sensors to Install</th>' +
+    ';text-align:center">Devices to Install</th>' +
     '<th style="' +
     thStyle +
     ';text-align:center">Sequences to Program</th>' +
@@ -17198,13 +17198,13 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
       pairs.sort(function (a, b2) {
         return b2.count - a.count;
       });
-      var top = pairs.slice(0, 3);
-      var rest = pairs.length - top.length;
-      var parts = top.map(function (p) {
-        return p.count + ' - ' + p.label;
-      });
-      if (rest > 0) parts.push('+' + rest + ' more');
-      return parts.join(', ');
+      // 2026-09-30: plain list, one item per line, "Name (count)" -- the old "N: n - Name" form
+      // repeated the count and read as a code. Every item is listed (none hidden behind "+N more").
+      return pairs
+        .map(function (p) {
+          return p.label + ' (' + p.count + ')';
+        })
+        .join('<br>');
     }
 
     var sensorsBreakdown = _topBreakdown(mpFreq, sensorsSum);
@@ -17217,10 +17217,10 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
     var sensorsCell =
       sensorsSum === 0
         ? rawSensorsSum === 0
-          ? '0: Complete'
-          : '0: No Priced Hardware'
+          ? 'None needed'
+          : 'None'
         : sensorsBreakdown
-          ? sensorsSum + ': ' + sensorsBreakdown
+          ? sensorsBreakdown
           : String(sensorsSum);
     // Display-label rename (item ed465b3c, 2026-07-09): "Ready" -> "Fully Covered" -> (rename
     // #2, Matt's decision, supersedes v647) "Fully Compliant".
@@ -17232,11 +17232,11 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
     // touch seqsSum or the assessed-category branches below (byte-identical for real gaps and
     // genuine passes).
     var seqsCell = !hasApplicableSeq
-      ? 'No Applicable Sequences'
+      ? 'No ASHRAE 36 sequence applies'
       : seqsSum === 0
-        ? '0: Fully Compliant'
+        ? 'None needed'
         : seqsBreakdown
-          ? seqsSum + ': ' + seqsBreakdown
+          ? seqsBreakdown
           : String(seqsSum);
 
     // 2026-07-10 fix: near-black --rpt-border, same reasoning as _pushEquipRow's rowBorder above.
@@ -17318,17 +17318,15 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
     return r.building === b.name && r.phase === 1 && !r.ioOnly && r.category === 'building';
   });
   if (_bldgWideRows.length) {
-    var _bwSum = 0;
     var _bwFreq = {};
     _bldgWideRows.forEach(function (r) {
-      _bwSum += r.qty || 0;
       _bwFreq[r.item] = (_bwFreq[r.item] || 0) + (r.qty || 0);
     });
     var _bwBreakdown = Object.keys(_bwFreq)
       .map(function (k) {
-        return _bwFreq[k] + ' - ' + k;
+        return k + ' (' + _bwFreq[k] + ')';
       })
-      .join(', ');
+      .join('<br>');
     var _bwTdBase = 'padding:5px 8px;font-size:10px;vertical-align:middle;border:1px solid var(--rpt-border)';
     tokens.push({
       type: 'row',
@@ -17345,13 +17343,11 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
         '<td style="' +
         _bwTdBase +
         ';color:var(--rpt-page-text);font-weight:400">' +
-        _bwSum +
-        ': ' +
         _bwBreakdown +
         '</td>' +
         '<td style="' +
         _bwTdBase +
-        ';color:var(--rpt-page-text);font-weight:400">No Applicable Sequences</td>' +
+        ';color:var(--rpt-page-text);font-weight:400">No ASHRAE 36 sequence applies</td>' +
         '</tr>',
     });
   }
@@ -17381,7 +17377,7 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
     _a36DisplayName(b) +
     ':</strong> install ' +
     rptCount(totalSensorsNeeded) +
-    ' sensor' +
+    ' device' +
     (totalSensorsNeeded !== 1 ? 's' : '') +
     ', program ' +
     rptCount(totalSeqsNotReady) +
@@ -17410,27 +17406,28 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
     '<div style="font-size:' +
     RPT_SECTION_HEAD_PX +
     'px;font-weight:700;' +
-    'color:var(--rpt-blue);margin-bottom:6px">Building Infrastructure (Building Automation System Export)</div>' +
-    '<div style="display:flex;gap:16px">' +
+    'color:var(--rpt-blue);margin-bottom:6px">Building Infrastructure</div>' +
+    // 2026-09-30: one item per line (stacked), not two side-by-side columns.
+    '<div style="display:flex;flex-direction:column;gap:4px">' +
     '<div style="font-size:10px;color:var(--rpt-page-text)">' +
     '<span style="font-weight:600">Dedicated building automation system power monitoring:</span> ' +
     (b.hasPowerMonitoring
       ? '<span style="color:var(--rpt-page-text)">Installed</span>'
-      : '<span style="color:var(--rpt-page-text)">Not found in this export</span>') +
+      : '<span style="color:var(--rpt-page-text)">None in the reviewed points</span>') +
     '</div>' +
     '<div style="font-size:10px;color:var(--rpt-page-text)">' +
     '<span style="font-weight:600">Dedicated outdoor-air sensor program:</span> ' +
     (b.hasOAConditions
       ? '<span style="color:var(--rpt-page-text)">Installed</span>'
-      : '<span style="color:var(--rpt-page-text)">Not found in this export</span>') +
+      : '<span style="color:var(--rpt-page-text)">None in the reviewed points</span>') +
     '</div>' +
     '</div>' +
     '</div>';
 
   var intro =
     '<div style="font-size:11px;color:var(--rpt-page-text);margin-bottom:10px;line-height:1.6">' +
-    'The table below summarizes each equipment type: the number of units audited, sensors that must be added, ' +
-    'and sequences that cannot run until those sensors are installed.' +
+    'The table below summarizes each equipment type: the number of units audited, devices that must be added, ' +
+    'and sequences that cannot run until those devices are installed.' +
     '</div>';
 
   return {
@@ -17522,7 +17519,32 @@ function rptPageASHRAE36Building(n, d, building, showBuildingInfra) {
   // Chunk tokens into pages using the shared pixel-height paginator.
   // Replaces the old row-count loop (ROWS_PER_PAGE_FIRST/CONT) which caused overflow
   // when rows contained multi-line sensor/sequence lists.
-  var chunks = _rptPaginateTokens(tokens, ROWS_BUDGET_FIRST, ROWS_BUDGET_CONT);
+  // 2026-09-30 (fix/report-table-fit-one-page): measured fit. Row heights, table head, the gauge +
+  // intro block, the continuation heading and the tail (Total row + optional infrastructure block)
+  // are read back from a hidden render instead of the constants above (kept as the no-DOM
+  // fallback). The tail is reserved on the LAST page only, by _rptPaginateWithTail.
+  var _bTableOpen = '<table style="width:100%;border-collapse:collapse;margin-bottom:14px;table-layout:fixed">';
+  var _bTheadM = _rptMeasureTableTokens(_bTableOpen + tableHead, tokens);
+  var _bTailBudget = 0;
+  if (_bTheadM !== null) {
+    var _bChromeM = _rptMeasureHtmlH(gauges + intro);
+    var _bContM = _rptMeasureHtmlH(
+      '<div style="font-size:' +
+        RPT_SECTION_HEAD_PX +
+        'px;font-weight:600;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid">' +
+        _a36DisplayName(b) +
+        ' (2 of 3)</div>',
+    );
+    var _bTailM = _rptMeasureHtmlH(_bTableOpen + summaryRowHtml + '</table>' + (showBuildingInfra ? infraCallout : ''));
+    if (_bChromeM !== null && _bContM !== null && _bTailM !== null) {
+      ROWS_BUDGET_FIRST = _rptContentBudget('flush') - _bChromeM - _bTheadM - 8;
+      ROWS_BUDGET_CONT = _rptContentBudget('flush') - _bContM - _bTheadM - 8;
+      _bTailBudget = _bTailM;
+    }
+  }
+  var chunks = _bTailBudget
+    ? _rptPaginateWithTail(tokens, ROWS_BUDGET_FIRST, ROWS_BUDGET_CONT, _bTailBudget)
+    : _rptPaginateTokens(tokens, ROWS_BUDGET_FIRST, ROWS_BUDGET_CONT);
 
   // Build one rptPage() string per chunk
   var numChunks = chunks.length;
@@ -17662,7 +17684,16 @@ function _a36BuildingBlockToken(d, building, showBuildingInfra) {
     (showBuildingInfra ? BLOCK_INFRA_CALLOUT_H : 0) +
     BLOCK_SEPARATOR_H;
 
-  return { type: 'block', estH: estH, html: blockHTML, name: _a36DisplayName(c.b) };
+  // 2026-09-30 (fix/report-table-fit-one-page): the block's TRUE height, read back from a hidden
+  // render at the report's own type context, replaces the constant model above when a DOM exists.
+  var _blockMeasured = _rptMeasureHtmlH(blockHTML);
+  return {
+    type: 'block',
+    estH: _blockMeasured !== null ? _blockMeasured : estH,
+    measured: _blockMeasured !== null,
+    html: blockHTML,
+    name: _a36DisplayName(c.b),
+  };
 }
 
 // ─── rptPageASHRAE36Recommendations ──────────────────────────────────────
@@ -22362,7 +22393,7 @@ function rptPageASHRAE36PointInventory(n, d) {
   // ── Narrative ─────────────────────────────────────────────────────────────
   var narrative =
     '<div style="font-size:10px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:12px">' +
-    'This inventory covers every building automation system data object exported for this project. ' +
+    'This inventory covers every building automation system data object for this project. ' +
     'Of the ' +
     inv.totalAll.toLocaleString() +
     ' total points captured, ' +
@@ -22370,8 +22401,7 @@ function rptPageASHRAE36PointInventory(n, d) {
     ' map directly to ASHRAE 36 sensor and actuator categories and are evaluated in the compliance scoring above. ' +
     'The remaining ' +
     inv.totalOther.toLocaleString() +
-    ' points are present in the building automation system export but do not correspond to a defined ASHRAE 36 category. These may include vendor-specific status objects, ' +
-    'integration relay programs, setpoint offsets, or equipment not addressed by ASHRAE 36. ' +
+    ' points are in the building automation system but do not correspond to a defined ASHRAE 36 category. ' +
     'All points are accounted for; none are discarded.' +
     '</div>';
 
@@ -22510,7 +22540,26 @@ function rptPageASHRAE36PointInventory(n, d) {
   });
   tokens.push({ type: 'row', estH: INV_ROW_PAD_H + 2 * _invLineH, html: totalsRowHTML });
 
-  var chunks = _rptPaginateTokens(tokens, ROWS_BUDGET_FIRST, ROWS_BUDGET_CONT);
+  // 2026-09-30 (fix/report-table-fit-one-page): measured fit, same as the readiness and setpoint
+  // tables. Row heights, table head, first-page chrome, continuation heading and the footnote are
+  // read back from a hidden render, so a page is filled to its measured limit and never past it;
+  // the constants above stay as the no-DOM fallback.
+  var _invTheadM = _rptMeasureTableTokens(tableHead, tokens);
+  if (_invTheadM !== null) {
+    var _invChromeM = _rptMeasureHtmlH(summaryBlock + narrative);
+    var _invContM = _rptMeasureHtmlH(
+      '<div style="font-size:' +
+        RPT_SECTION_HEAD_PX +
+        'px;font-weight:600;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid">Point Inventory Completeness (2 of 3)</div>',
+    );
+    var _invFootM = _rptMeasureHtmlH(footnote);
+    if (_invChromeM !== null && _invContM !== null && _invFootM !== null) {
+      ROWS_BUDGET_FIRST = _rptContentBudget('flush') - _invChromeM - _invTheadM - 8;
+      ROWS_BUDGET_CONT = _rptContentBudget('flush') - _invContM - _invTheadM - 8;
+      INV_FOOTNOTE_H = _invFootM;
+    }
+  }
+  var chunks = _rptPaginateWithTail(tokens, ROWS_BUDGET_FIRST, ROWS_BUDGET_CONT, INV_FOOTNOTE_H);
   var numChunks = chunks.length;
   var resultPages = [];
 
@@ -22631,7 +22680,10 @@ function generateASHRAE36AuditHTML(data, selectedSections) {
     // fix/report-remove-running-header-title (2026-08-03, Matt's fix #5): this page now always
     // renders with hideIntHdr:true, so the budget uses the 'flush' variant — reclaims the
     // 60px chrome bar's space for rows.
-    var BUILDING_PAGE_BUDGET = _rptContentBudget('flush') - AUDIT_BUILDING_BASE_ADJUSTMENT; // px — interior page body (~895px) minus safety margin
+    // 2026-09-30 (fix/report-table-fit-one-page): blocks are now measured, so the cap is the real
+    // content height minus an 8px sub-pixel margin; the 154px allowance stays for the no-DOM fallback.
+    var _blocksMeasured = typeof document !== 'undefined' && !!document.body;
+    var BUILDING_PAGE_BUDGET = _rptContentBudget('flush') - (_blocksMeasured ? 8 : AUDIT_BUILDING_BASE_ADJUSTMENT); // px — interior page body
     var _bldgFakeData = { project: { client: data.project.name }, period: { label: '', reportDate: data.rawDate } };
     var _pendingBlocks = [];
 
