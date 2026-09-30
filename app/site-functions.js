@@ -1776,6 +1776,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.30.43',
+    date: '2026-09-30',
+    title: 'Service Proposal and quarterly reports: prices now add up exactly',
+    items: [
+      { type: 'fix', text: 'Service Proposal and quarterly reports: every itemized line now multiplies exactly (quantity times price equals the line amount).' },
+      { type: 'change', text: 'Service Proposal: tier totals round up to the next $100, and the parts add up to the total.' },
+      { type: 'change', text: 'Service Proposal: an annual allowance now shows as a monthly amount.' },
+      { type: 'fix', text: 'Quarterly reports: the Contract Projection total equals the sum of its rows on new reports. Reports you already presented keep their printed values.' }
+    ]
+  },
+  {
     v: 'v2026.09.30.42',
     date: '2026-09-30',
     title: 'PDF / OCR: bill extraction keeps running in the background',
