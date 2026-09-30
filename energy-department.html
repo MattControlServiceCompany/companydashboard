@@ -3261,6 +3261,12 @@
           height: auto !important;
           padding: 12px var(--rpt-pad-x) var(--rpt-ftr-h) !important;
         }
+        /* 2026-09-30: flush pages (no title bar) start content at --rpt-hdr-h + 12px on screen (see
+           .rpt-body.rpt-body-flush above and _rptContentBudget('flush')); print started them at 12px,
+           60px higher than every pagination budget assumes, so PDF pages ended 60px short of full. */
+        .rpt-body.rpt-body-flush {
+          padding-top: calc(var(--rpt-hdr-h) + 12px) !important;
+        }
         .rpt-page.rpt-cover > .csc-header-img {
           position: static !important;
           height: auto !important;

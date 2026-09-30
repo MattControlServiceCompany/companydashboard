@@ -150,12 +150,12 @@ const REGISTRY = [
     id: 'cover-sensors-partition',
     doc: 'Audit cover',
     checkType: 'a',
-    site: 'report-engine.js rptPageASHRAE36Cover ~13047-13070 (Sensors to Install stat card)',
+    site: 'report-engine.js rptPageASHRAE36Cover ~13047-13070 (Devices to Install stat card)',
     predicate: 'Sigma over U where phase===1 && !ioOnly, grouped by building, summed',
     run(b) {
       const expected = b.uSensorTotal;
       const sumParts = b.buildingTotals.reduce((s, r) => s + r.sensors, 0);
-      const rendered = b.coverStats['Sensors to Install'];
+      const rendered = b.coverStats['Devices to Install'];
       const pass = rendered === expected && sumParts === expected;
       return { pass, expected, actual: { rendered, sumOfPerBuildingParts: sumParts } };
     },
@@ -181,7 +181,7 @@ const REGISTRY = [
     site: 'report-engine.js rptPageASHRAE36Cover ~13047 (_a36ConsolidatedSensors)',
     predicate: 'rendered figure must equal the buildCatalogRows-derived count, not p.totalMissingHardwarePoints',
     run(b) {
-      const rendered = b.coverStats['Sensors to Install'];
+      const rendered = b.coverStats['Devices to Install'];
       const pass = rendered === b.uSensorTotal && rendered !== b.rawSensors;
       return {
         pass,

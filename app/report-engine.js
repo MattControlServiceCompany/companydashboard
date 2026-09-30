@@ -1498,8 +1498,8 @@ function _rptMeasureHtmlH(html) {
   });
 }
 
-// Sets tok.estH on every token to its measured <tr> height + 2px; returns the measured <thead>
-// height + 2 (0 when the table has none), or null when measurement was unavailable (tokens then
+// Sets tok.estH on every token to its measured <tr> height rounded up; returns the measured <thead>
+// height rounded up (0 when the table has none), or null when measurement was unavailable (tokens then
 // keep their constant estH). tableOpenHtml = '<table ...>' + colgroup + '<thead>...</thead>'.
 function _rptMeasureTableTokens(tableOpenHtml, tokens) {
   if (!tokens.length) return null;
@@ -1516,9 +1516,9 @@ function _rptMeasureTableTokens(tableOpenHtml, tokens) {
       var rows = wrap.querySelectorAll('tbody tr');
       if (rows.length !== tokens.length) return null;
       var hs = [];
-      for (var i = 0; i < rows.length; i++) hs.push(Math.ceil(rows[i].getBoundingClientRect().height) + 2);
+      for (var i = 0; i < rows.length; i++) hs.push(Math.ceil(rows[i].getBoundingClientRect().height));
       var th = wrap.querySelector('thead');
-      return { rows: hs, thead: th ? Math.ceil(th.getBoundingClientRect().height) + 2 : 0 };
+      return { rows: hs, thead: th ? Math.ceil(th.getBoundingClientRect().height) : 0 };
     },
   );
   if (!res) return null;
@@ -15454,7 +15454,7 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded) {
     '<div style="font-size:20px;font-weight:700;color:var(--rpt-blue)">' +
     rptCount(_a36ConsolidatedSensors) +
     '</div>' +
-    '<div style="font-size:10px;color:var(--rpt-page-text)">Sensors to Install</div>' +
+    '<div style="font-size:10px;color:var(--rpt-page-text)">Devices to Install</div>' +
     '</div>' +
     '</div>' +
     '</div>';
@@ -18306,7 +18306,7 @@ function rptPageASHRAE36SetpointReview(n, d) {
   var SETPOINT_THEAD_H = 98; // measured — three-line headers (word<br>word<br>subtext)
   var SETPOINT_CONT_HDR_H = 40;
   var SETPOINT_SAFETY_H = 40; // no-DOM fallback only; measured heights use SETPOINT_MEASURED_SAFETY_H
-  var SETPOINT_MEASURED_SAFETY_H = 8;
+  var SETPOINT_MEASURED_SAFETY_H = 4; // rows and head are already rounded up to whole pixels
   var SETPOINT_ROW_H = 96; // measured max — every data cell can wrap to 2 lines now
   // fix/report-remove-running-header-title (2026-08-03, Matt's fix #5): this page now always
   // renders with hideIntHdr:true (no .rpt-int-hdr title bar), so both budgets use the 'flush'

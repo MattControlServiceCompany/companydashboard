@@ -1,6 +1,6 @@
 // test-ashrae36-cover-scope.js — regression guard for fix/ashrae36-cover-scope (2026-09-25).
 //
-// Bug: the ASHRAE 36 Audit Report cover's "Sequences to Program" / "Sensors to Install" stat
+// Bug: the ASHRAE 36 Audit Report cover's "Sequences to Program" / "Devices to Install" stat
 // tiles (and the matching sentence in the cover's one-paragraph finding) stayed pinned to the
 // FULL-PORTFOLIO figure even when the user selected only one building in the Generate Report
 // modal's scope tree — every other cover stat (Buildings Assessed, Heating and Cooling Systems
@@ -123,7 +123,7 @@ async function runScope(h, projId, selectOnlyNames) {
       totalEquip: d ? d.portfolio.totalEquip : null,
       buildings: d ? d.buildings.map((b) => b.name) : [],
       coverSequences: stats['Sequences to Program'],
-      coverSensors: stats['Sensors to Install'],
+      coverSensors: stats['Devices to Install'],
     };
   });
 }
@@ -171,7 +171,7 @@ async function runScope(h, projId, selectOnlyNames) {
   const full = await runScope(h, projId, null);
   console.log('  ' + JSON.stringify(full));
   assertEq(full.coverSequences, EXPECTED_FULL_SEQUENCES, 'full-selection cover Sequences to Program unchanged');
-  assertEq(full.coverSensors, EXPECTED_FULL_SENSORS, 'full-selection cover Sensors to Install unchanged');
+  assertEq(full.coverSensors, EXPECTED_FULL_SENSORS, 'full-selection cover Devices to Install unchanged');
 
   console.log('\n-- One-building selection (' + ONE_BUILDING_NAME + ') --');
   const one = await runScope(h, projId, [ONE_BUILDING_NAME]);
@@ -182,7 +182,7 @@ async function runScope(h, projId, selectOnlyNames) {
     expected.sequences,
     'one-building cover Sequences to Program equals sum over that building',
   );
-  assertEq(one.coverSensors, expected.sensors, 'one-building cover Sensors to Install equals sum over that building');
+  assertEq(one.coverSensors, expected.sensors, 'one-building cover Devices to Install equals sum over that building');
   // Regression guard: the pre-fix defect showed the exact full-portfolio number here.
   if (one.coverSequences === EXPECTED_FULL_SEQUENCES || one.coverSensors === EXPECTED_FULL_SENSORS) {
     failed++;
