@@ -1776,6 +1776,14 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.30.50',
+    date: '2026-09-30',
+    title: 'Projects open faster',
+    items: [
+      { type: 'change', text: 'Projects: opening a project with many bills is much faster (Louisburg opens in under a second instead of about six seconds). No numbers change.' }
+    ]
+  },
+  {
     v: 'v2026.09.30.49',
     date: '2026-09-30',
     title: 'Duplicate-meter check no longer changes meters',
