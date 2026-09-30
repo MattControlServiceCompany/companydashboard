@@ -783,6 +783,8 @@ function _analyzeMeterBills(bills, m) {
   if (bills.length < 4) return flags;
   const isElec = m.commodity === 'Electric';
   const isGas = m.commodity === 'Gas';
+  // The meter's Inclusive/Exclusive toggle — every day count in this function goes through calcDays.
+  const incl = m.inclusive !== false;
 
   function stats(vals) {
     // Include 0 as valid data; only exclude null/undefined/NaN (missing readings)
@@ -858,11 +860,11 @@ function _analyzeMeterBills(bills, m) {
     seasonal: false,
     fn: (b) => {
       if (!b.start || !b.end) return 0;
-      return Math.round((_parseISO(b.end) - _parseISO(b.start)) / 86400000) + 1;
+      return calcDays(b.start, b.end, incl);
     },
     rawFn: (b) => {
       if (!b.start || !b.end) return null;
-      return Math.round((_parseISO(b.end) - _parseISO(b.start)) / 86400000) + 1;
+      return calcDays(b.start, b.end, incl);
     },
   });
 
@@ -939,10 +941,7 @@ function _analyzeMeterBills(bills, m) {
             const v = bills[i].estimated ? null : c.rawFn(bills[i]);
             sameMonthVals.push(v);
             // Collect per-peer day count for per-day normalization
-            const peerDays =
-              bills[i].start && bills[i].end
-                ? Math.round((_parseISO(bills[i].end) - _parseISO(bills[i].start)) / 86400000) + 1
-                : null;
+            const peerDays = bills[i].start && bills[i].end ? calcDays(bills[i].start, bills[i].end, incl) : null;
             sameMonthPeers.push({ val: v, days: peerDays });
           }
         }
@@ -980,8 +979,7 @@ function _analyzeMeterBills(bills, m) {
       const hiBand = isDaysField ? 2.0 : 5.0;
 
       // Determine the this-bill's day count for per-day normalization.
-      const thisDays =
-        !isDaysField && b.start && b.end ? Math.round((_parseISO(b.end) - _parseISO(b.start)) / 86400000) + 1 : null;
+      const thisDays = !isDaysField && b.start && b.end ? calcDays(b.start, b.end, incl) : null;
 
       // Compute the median peer value.
       // Same-month path: compute from the raw sameMonthVals list directly.
@@ -2544,14 +2542,9 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
     // Calculate NumberOfDays from billing period dates when not extracted
     for (const b of bills) {
       if (!b.NumberOfDays && b.BillingPeriodStart && b.BillingPeriodEnd) {
-        const _ps = String(b.BillingPeriodStart).split('/');
-        const _pe = String(b.BillingPeriodEnd).split('/');
-        if (_ps.length === 3 && _pe.length === 3) {
-          const _ds = new Date(+(_ps[2].length === 2 ? '20' + _ps[2] : _ps[2]), +_ps[0] - 1, +_ps[1]);
-          const _de = new Date(+(_pe[2].length === 2 ? '20' + _pe[2] : _pe[2]), +_pe[0] - 1, +_pe[1]);
-          const _diff = Math.round((_de - _ds) / 86400000);
-          if (_diff > 0 && _diff < 120) b.NumberOfDays = String(_diff);
-        }
+        // Printed NumberOfDays is read-to-read (exclusive), so the computed fallback is too.
+        const _diff = calcDays(b.BillingPeriodStart, b.BillingPeriodEnd, false);
+        if (_diff > 0 && _diff < 120) b.NumberOfDays = String(_diff);
       }
     }
 

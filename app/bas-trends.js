@@ -6177,9 +6177,7 @@ function _btFmtDate(ds) {
  */
 function _btDaysBetween(start, end) {
   if (!start || !end) return 0;
-  var s = new Date(start + 'T00:00:00');
-  var e = new Date(end + 'T00:00:00');
-  return Math.round((e - s) / 86400000) + 1;
+  return calcDays(start, end, true); // both dates count
 }
 
 /* ── PHASE 4 DISPATCH PATCH ──────────────────────────────────────────────────

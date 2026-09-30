@@ -2774,7 +2774,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
                 if (totalDays > 0) {
                   const startD = new Date(parseInt(drM[3]), parseInt(drM[1]) - 1, parseInt(drM[2]));
                   const endD = new Date(parseInt(drM[6]), parseInt(drM[4]) - 1, parseInt(drM[5]));
-                  const rangeDays = Math.round((endD - startD) / 86400000) + 1; // inclusive
+                  const rangeDays = calcDays(startD, endD, true); // both ends count
                   if (rangeDays > 0 && rangeDays <= totalDays + 1) {
                     prorationRatio = rangeDays / totalDays;
                     prorationNum = rangeDays;
@@ -2830,9 +2830,8 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   let numDays = null;
   if (bpMatch) {
     try {
-      const s = new Date(bpMatch[1]),
-        e = new Date(bpMatch[2]);
-      numDays = String(Math.round((e - s) / (1000 * 60 * 60 * 24)));
+      const _nd = calcDays(bpMatch[1], bpMatch[2], false); // read-to-read, like the printed Days
+      if (_nd !== '' && !isNaN(_nd)) numDays = String(_nd);
     } catch (ex) {}
   }
 
@@ -6612,10 +6611,10 @@ const UTILITY_RULES = [
         if (winner && winner.start && winner.end) {
           r.BillingPeriodStart = winner.start;
           r.BillingPeriodEnd = winner.end;
-          const ds = _parseMDY(winner.start);
-          const de = _parseMDY(winner.end);
-          if (ds && de) {
-            r.NumberOfDays = String(Math.round((de - ds) / 86400000));
+          // Printed NumberOfDays is read-to-read (exclusive).
+          const _nd = calcDays(winner.start, winner.end, false);
+          if (_nd !== '' && !isNaN(_nd)) {
+            r.NumberOfDays = String(_nd);
           }
         }
         return r;
@@ -9220,14 +9219,8 @@ const UTILITY_RULES = [
           b._periodFromNeighbor = true;
         }
         if (!b.NumberOfDays && b.BillingPeriodStart && b.BillingPeriodEnd) {
-          const _ps = b.BillingPeriodStart.split('/');
-          const _pe = b.BillingPeriodEnd.split('/');
-          if (_ps.length === 3 && _pe.length === 3) {
-            const _ds = new Date(+(_ps[2].length === 2 ? '20' + _ps[2] : _ps[2]), +_ps[0] - 1, +_ps[1]);
-            const _de = new Date(+(_pe[2].length === 2 ? '20' + _pe[2] : _pe[2]), +_pe[0] - 1, +_pe[1]);
-            const _diff = Math.round((_de - _ds) / 86400000);
-            if (_diff > 0 && _diff < 120) b.NumberOfDays = String(_diff);
-          }
+          const _diff = calcDays(b.BillingPeriodStart, b.BillingPeriodEnd, false); // read-to-read
+          if (_diff > 0 && _diff < 120) b.NumberOfDays = String(_diff);
         }
       }
       // ── Align billing periods across commodities from the same account ──
@@ -9349,7 +9342,7 @@ const UTILITY_RULES = [
             nextStart: nextStart ? _fmtDt(nextStart) : null,
           };
           // Calculate NumberOfDays
-          const dayDiff = Math.round((_parseDt(bills[i].BillingPeriodEnd) - inferStart) / 86400000);
+          const dayDiff = calcDays(inferStart, bills[i].BillingPeriodEnd, false);
           if (dayDiff > 0 && dayDiff < 120) bills[i].NumberOfDays = String(dayDiff);
         } else if (nextStart) {
           // No prior bill, but have a next bill — estimate backwards
@@ -9362,7 +9355,7 @@ const UTILITY_RULES = [
             reason: 'Sequential date inference (backward) from next bill',
             nextStart: _fmtDt(nextStart),
           };
-          const dayDiff = Math.round((inferEnd - inferStart) / 86400000);
+          const dayDiff = calcDays(inferStart, inferEnd, false);
           if (dayDiff > 0 && dayDiff < 120) bills[i].NumberOfDays = String(dayDiff);
         }
       }

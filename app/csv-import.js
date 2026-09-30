@@ -547,7 +547,7 @@ function showBillCsvPreview(rows, m, fname, warnings) {
 
   const tbody = rows
     .map((r) => {
-      const days = Math.round((_parseISO(r.end) - _parseISO(r.start)) / 864e5) + 1;
+      const days = calcDays(r.start, r.end, m.inclusive !== false); // same toggle as the Bills table
       let cells = '';
       const _d = (v) => (v != null ? v : '—');
       const _dc = (v) => (v != null ? '$' + (+v).toLocaleString() : '—');
