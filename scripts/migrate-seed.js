@@ -674,8 +674,11 @@ function remapPdfReferences(data, scan) {
     // literal key in this export (some records carry a stale/unrelated
     // pdfKey from a different code path -- confirmed in the real corpus --
     // so this must be a real lookup, not an assumption).
+    // Some records store the bare id ("1788474945230") without the
+    // en_pdf_shared_ prefix; the blob is always stored under the prefixed key.
     if (record.pdfKey) {
-      const h = scan.blobKeyToHash.get(record.pdfKey);
+      const bare = String(record.pdfKey).replace(/^en_pdf_shared_/, '');
+      const h = scan.blobKeyToHash.get('en_pdf_shared_' + bare) || scan.blobKeyToHash.get(record.pdfKey);
       if (h) return h;
     }
     return null;
