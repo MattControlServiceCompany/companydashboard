@@ -1776,6 +1776,17 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.30.53',
+    date: '2026-09-30',
+    title: 'Cost Estimate audit hours now sample equipment',
+    items: [
+      { type: 'change', text: "Cost Estimate: the audit labor tables now sample equipment. The hours cover one unit from each group of units that have the same Equipment Matrix points, plus a small follow-up allowance. The review time and the follow-up percentage can be changed." },
+      { type: 'change', text: "Cost Estimate: the Building Automation System Audit is a remote review with no site visit." },
+      { type: 'change', text: "Proposals: the proposal now shows the equipment sampled for review." },
+      { type: 'fix', text: "Cost Estimate: parts that need no new hardware now show '—' instead of $0." }
+    ]
+  },
+  {
     v: 'v2026.09.30.52',
     date: '2026-09-30',
     title: 'ASHRAE 36 Audit Report tables fit the page',
