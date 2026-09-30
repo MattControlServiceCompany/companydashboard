@@ -4707,14 +4707,9 @@ function rptPageApprovedChanges(n, d) {
     '</table>';
 
   // -- Net Impact narrative box --
-  const narrativeBox =
-    '<div class="rpt-narrative" contenteditable="true">' +
-    '<strong>Positive impacts:</strong> [describe schedule/setpoint optimizations and estimated savings]<br>' +
-    '<strong>Negative impacts:</strong> [describe any changes that increased energy use]<br>' +
-    '<strong>Net Q' +
-    ((d && d.period && d.period.quarter) || '?') +
-    ' effect:</strong> [net impact summary]' +
-    '</div>';
+  // 2026-09-30: the box carried bracketed "[describe ...]" fill-in prompts that printed in the client
+  // report. There is no source for that text, so the box is omitted instead of printing a prompt.
+  const narrativeBox = '';
 
   // -- Upcoming Scheduled Changes table (3 empty rows) --
   let upcomingRows = '';
@@ -4742,8 +4737,7 @@ function rptPageApprovedChanges(n, d) {
     '<p style="font-size:12px;color:var(--rpt-page-text);margin:0 0 8px">Schedule and setpoint changes implemented this quarter — sourced from meeting minutes</p>' +
     '<h2 contenteditable="true">Changes Implemented</h2>' +
     changesTable +
-    '<h2 contenteditable="true">Net Impact Analysis</h2>' +
-    narrativeBox +
+    (narrativeBox ? '<h2 contenteditable="true">Net Impact Analysis</h2>' + narrativeBox : '') +
     '<h2 contenteditable="true">Upcoming Scheduled Changes</h2>' +
     upcomingTable +
     '<p style="font-size:11px;color:var(--rpt-page-text);margin-top:10px">Monthly reviews: 2nd Monday of each month. Onsite tech: up to 8 labor hours/quarter per contract.</p>' +
@@ -13672,7 +13666,7 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
     short: 'Zone setpoint differs from ASHRAE 36 §3.1.1.1 default',
     impact: 'Zero-hardware quick win',
     plain:
-      'One or more zone setpoints differ from ASHRAE 36 defaults. Overrides are permitted — confirm these are intentional; corrections are a no-cost software change.',
+      'One or more zone setpoints differ from ASHRAE 36 defaults. Resetting them to the company-standard setpoints is a no-cost software change.',
   },
   spDeadbandTooNarrow: {
     short: 'Heating/cooling deadband below ASHRAE 36 §3.1.1.1 minimum (1°F)',
@@ -13687,10 +13681,10 @@ var ASHRAE36_GAP_DESCRIPTIONS = {
       'Zone carbon dioxide setpoint differs from the ASHRAE 36 default; an incorrect value causes over-ventilation or under-ventilation. Correction is software-only.',
   },
   spNotScheduled: {
-    short: 'Setpoint value not found in export — schedule status unknown',
+    short: 'No setpoint programmed',
     impact: 'Data completeness',
     plain:
-      'The building automation system export did not include a numeric value for this setpoint; the programmed value requires a direct building automation system lookup to verify.',
+      'No numeric value is programmed for this setpoint. Program the ASHRAE 36 default.',
   },
 };
 
@@ -17868,9 +17862,7 @@ function rptPageASHRAE36SetpointReview(n, d) {
   if (bldgOrder.length === 0) {
     var emptyBody =
       '<div class="rpt-a36-callout" style="font-size:14px;color:var(--rpt-page-text);line-height:1.6">' +
-      'No zone setpoint values were found in the equipment export for this project. ' +
-      'Setpoint data is present when zones trend their occupied heating and cooling setpoints. ' +
-      'Import an updated equipment matrix export to enable this analysis.' +
+      'This project has no zone-level equipment with occupied heating and cooling setpoints to review under ASHRAE 36 §3.1.1.1.' +
       '</div>';
     return [
       rptPage(n, 'ASHRAE 36 Audit Report: Setpoint Programming Review', emptyBody, {
@@ -17994,9 +17986,9 @@ function rptPageASHRAE36SetpointReview(n, d) {
 
     var deviatorLabel;
     if (deviatorCount > 0) {
-      deviatorLabel = deviatorCount + ' of ' + zones.length + ' zone' + (zones.length !== 1 ? 's' : '') + ' deviate';
+      deviatorLabel = deviatorCount + ' of ' + zones.length + ' zone' + (zones.length !== 1 ? 's' : '') + ' differ from ASHRAE 36 defaults';
     } else if (!hasAnyData) {
-      deviatorLabel = zones.length + ' zone' + (zones.length !== 1 ? 's' : '') + ': no setpoint data';
+      deviatorLabel = zones.length + ' zone' + (zones.length !== 1 ? 's' : '') + ': no setpoint programmed';
     } else {
       deviatorLabel = zones.length + ' zone' + (zones.length !== 1 ? 's' : '') + ' match';
     }
@@ -18089,7 +18081,7 @@ function rptPageASHRAE36SetpointReview(n, d) {
   // tells the reader what to do about it instead of flagging it as a problem.
   function _statusCell(status) {
     if (status === 'NEEDS_REVIEW') {
-      return '<span style="font-size:9px;font-weight:700;color:var(--rpt-orange)">Confirm With Engineer</span>';
+      return '<span style="font-size:9px;font-weight:700;color:var(--rpt-orange)">Reprogram to Standard</span>';
     } else if (status === 'NOT_SCHEDULED') {
       return '<span style="font-size:9px;font-weight:700;color:var(--rpt-page-text)">Not Scheduled</span>';
     }
@@ -18118,173 +18110,79 @@ function rptPageASHRAE36SetpointReview(n, d) {
       recSchedLine
     );
   }
-  // 2026-09-30 (fix/report-table-fit-one-page): when the Recommended value is IDENTICAL in every
-  // row it is stated ONCE above the table (same words) and its column is dropped, freeing the
-  // width for the Status column and shortening every row. Different values keep the column.
-  var _recCells = buildingRows.map(_recCellFor);
-  var recIsUniform = _recCells.length > 0 && _recCells.every(function (c) {
-    return c === _recCells[0];
-  });
-
-  // ── Table chrome ─────────────────────────────────────────────────────────
-  // Destyle pass (fix/65ce578b, 2026-07-27): dropped the filled dark-blue header, matching the
-  // Proposal's plain/thin-bordered convention. Styling only.
-  // Item 5aj (2026-09-23): word-wrap:break-word removed from the header style — at narrow
-  // column widths it was splitting single words mid-letter ("DEADBAND" -> "DEADBA/ND").
-  // white-space:normal alone still wraps multi-word headers at their spaces.
+  // 2026-09-30 (fix/report-table-fit-one-page): column model. A column whose cell is IDENTICAL in
+  // every row (ASHRAE 36 Reference, Existing Schedule, Recommended) is stated ONCE above the table
+  // (same words) and dropped, freeing its width for the columns that differ and shortening every row.
+  // A schedule column with no schedule data in any row is dropped without a note.
   var thStyle =
     'padding:5px 4px;font-size:8px;font-weight:700;text-transform:uppercase;' +
     'letter-spacing:0.02em;color:var(--rpt-page-text);text-align:center;' +
     'white-space:normal;line-height:1.3;border:1px solid var(--rpt-border)';
-  var thStyleC = thStyle + ';text-align:center';
   var thSub = '<br><span style="font-size:8px;font-weight:400;text-transform:none">';
-
-  // Item 5aj follow-up (headless render found on real Woodland data): the first pass at
-  // these widths let single long words ("UNOCCUPIED", "DEADBAND", "RECOMMENDED") overflow
-  // their <th> sideways into the neighboring header — table-layout:fixed holds the column
-  // width but does not clip overflowing text, so it visually bled into the next cell instead
-  // of wrapping. A second pass forcing word-boundary <br> breaks still didn't leave enough
-  // width for "UNOCCUPIED"/"DEADBAND"/"RECOMMENDED" at 9px/uppercase. Fix: the Recommended
-  // Setpoints and Recommended Schedule columns — the two worst offenders, and the only ones
-  // that repeated the word "Recommended" — are merged into ONE Recommended column (one
-  // instance of the word, four stacked lines of values), freeing enough width for every
-  // remaining single-word header to fit on its own line without a forced break.
-  // Column widths sum to 100 either way. Uniform Recommended -> that column is dropped (stated once
-  // above the table) and its width goes to Status ("Confirm With Engineer" was wrapping one word
-  // per line at 9%) and the schedule columns.
-  var _spCols = recIsUniform ? [14, 12, 14, 13, 12, 15, 20] : [11, 11, 14, 13, 12, 12, 16, 11];
-  var tableHead =
-    '<colgroup>' +
-    _spCols
-      .map(function (w) {
-        return '<col style="width:' + w + '%">';
-      })
-      .join('') +
-    '</colgroup>' +
-    '<thead><tr>' +
-    '<th style="' +
-    thStyle +
-    '">Building</th>' +
-    '<th style="' +
-    thStyleC +
-    '">Occupied' +
-    thSub +
-    'Existing average, °F</span></th>' +
-    '<th style="' +
-    thStyleC +
-    '">Unoccupied' +
-    thSub +
-    'Existing average, °F</span></th>' +
-    '<th style="' +
-    thStyleC +
-    '">ASHRAE 36<br>Reference' +
-    thSub +
-    'Occupied / Unoccupied, °F</span></th>' +
-    '<th style="' +
-    thStyleC +
-    '">Deadband' +
-    thSub +
-    'Existing average, °F</span></th>' +
-    '<th style="' +
-    thStyleC +
-    '">Existing<br>Schedule' +
-    thSub +
-    'Mon–Fri, Sat &amp; Sun</span></th>' +
-    (recIsUniform
-      ? ''
-      : '<th style="' +
-        thStyleC +
-        '">Recommended' +
-        thSub +
-        'Setpoints (Occupied / Unoccupied, °F) and Schedule</span></th>') +
-    '<th style="' +
-    thStyleC +
-    '">Status</th>' +
-    '</tr></thead>';
-
   var tdBase =
     'padding:4px 6px;font-size:9px;vertical-align:middle;border:1px solid var(--rpt-border);line-height:1.35';
-  var tdRight = tdBase + ';text-align:right';
-  var tdCenter = tdBase + ';text-align:center';
+  var tdRight = tdBase + ';text-align:right;color:var(--rpt-page-text)';
+  var tdCenter = tdBase + ';text-align:center;color:var(--rpt-page-text)';
 
-  // ── Build one HTML row per building ──────────────────────────────────────
-  function _buildBldgRowHTML(row) {
-    var gl36Heat = _fmtDefaultVal(row.heatDefault);
-    var gl36Cool = _fmtDefaultVal(row.coolDefault);
-    var gl36UnoccHeat = _fmtDefaultVal(row.unoccHeatDefault);
-    var gl36UnoccCool = _fmtDefaultVal(row.unoccCoolDefault);
-
-    // Existing schedule cell (Monday-Friday averaged; Saturday & Sunday has no
-    // per-zone time data in the source Effective Schedules export — see the
-    // buildingRows comment above).
-    var eschCell;
-    if (!row.eschImported) {
-      eschCell = 'Not imported';
-    } else if (row.eschHasTimes) {
-      eschCell =
+  function _eschCellFor(row) {
+    if (!row.eschImported) return 'Not part of this review';
+    if (row.eschHasTimes)
+      return (
         'Mon–Fri ' +
         _fmtClockMins(row.avgEschStart) +
         '–' +
         _fmtClockMins(row.avgEschStop) +
-        '<br>Sat &amp; Sun: Unoccupied';
-    } else {
-      eschCell = 'No occupied period found<br>Sat &amp; Sun: Unoccupied';
+        '<br>Sat &amp; Sun: Unoccupied'
+      );
+    return 'No occupied period scheduled<br>Sat &amp; Sun: Unoccupied';
+  }
+  function _refCellFor(row) {
+    return (
+      _fmtDefaultVal(row.heatDefault) +
+      '/' +
+      _fmtDefaultVal(row.coolDefault) +
+      '<br>' +
+      _fmtDefaultVal(row.unoccHeatDefault) +
+      '/' +
+      _fmtDefaultVal(row.unoccCoolDefault)
+    );
+  }
+  var _spColDefs = [
+    { w: 14, th: 'Building', td: tdBase, cell: function (r) { return '<span style="font-weight:600;color:var(--rpt-page-text)">' + _a36DisplayName(r) + '</span>'; } },
+    { w: 12, th: 'Occupied' + thSub + 'Existing average, °F</span>', td: tdRight, cell: function (r) { return _fmtAvg(r.avgHeat) + ' / ' + _fmtAvg(r.avgCool); } },
+    { w: 12, th: 'Unoccupied' + thSub + 'Existing average, °F</span>', td: tdRight, cell: function (r) { return _fmtAvg(r.avgUnoccHeat) + ' / ' + _fmtAvg(r.avgUnoccCool); } },
+    { w: 13, th: 'ASHRAE 36<br>Reference' + thSub + 'Occupied / Unoccupied, °F</span>', td: tdCenter, cell: _refCellFor, uniformNote: function (h) { var p = h.split('<br>'); return '<strong>ASHRAE 36 reference for every building:</strong> Occupied ' + p[0] + '; Unoccupied ' + p[1]; } },
+    { w: 11, th: 'Deadband' + thSub + 'Existing average, °F</span>', td: tdRight, cell: function (r) { return _fmtAvg(r.avgDb); } },
+    { w: 15, th: 'Existing<br>Schedule' + thSub + 'Mon–Fri, Sat &amp; Sun</span>', td: tdCenter, cell: _eschCellFor, uniformNote: function (h) { return h === 'Not part of this review' ? '' : '<strong>Existing schedule for every building:</strong> ' + h.replace(/<br>/g, '; '); }, dropIf: function (h) { return h === 'Not part of this review'; } },
+    { w: 16, th: 'Recommended' + thSub + 'Setpoints (Occupied / Unoccupied, °F) and Schedule</span>', td: tdCenter, cell: _recCellFor, uniformNote: function (h) { return '<strong>Recommended for every building</strong> (setpoints and schedule): ' + h.replace(/<br>/g, '; '); } },
+    { w: 20, th: 'Status', td: tdBase, keep: true, cell: function (r) { return _statusCell(r.bStatus) + ' <span style="font-size:8px;color:var(--rpt-page-text)">' + r.deviatorLabel + '</span>'; } },
+  ];
+  var _uniformNotes = [];
+  var _spCols = _spColDefs.filter(function (c, ci) {
+    if (ci === 0 || c.keep) return true;
+    var cells = buildingRows.map(c.cell);
+    var same = cells.length > 0 && cells.every(function (h) { return h === cells[0]; });
+    if (c.dropIf && same && c.dropIf(cells[0])) return false;
+    if (c.uniformNote && same && cells.length > 1) {
+      var note = c.uniformNote(cells[0]);
+      if (note) _uniformNotes.push(note);
+      return false;
     }
+    return true;
+  });
+  var _wSum = _spCols.reduce(function (a, c) { return a + c.w; }, 0);
+  var tableHead =
+    '<colgroup>' +
+    _spCols.map(function (c) { return '<col style="width:' + (Math.round((c.w / _wSum) * 1000) / 10) + '%">'; }).join('') +
+    '</colgroup>' +
+    '<thead><tr>' +
+    _spCols.map(function (c) { return '<th style="' + thStyle + '">' + c.th + '</th>'; }).join('') +
+    '</tr></thead>';
 
-
+  function _buildBldgRowHTML(row) {
     return (
       '<tr>' +
-      '<td style="' +
-      tdBase +
-      ';font-weight:600;color:var(--rpt-page-text)">' +
-      _a36DisplayName(row) +
-      '</td>' +
-      '<td style="' +
-      tdRight +
-      ';color:var(--rpt-page-text)">' +
-      _fmtAvg(row.avgHeat) +
-      ' / ' +
-      _fmtAvg(row.avgCool) +
-      '</td>' +
-      '<td style="' +
-      tdRight +
-      ';color:var(--rpt-page-text)">' +
-      _fmtAvg(row.avgUnoccHeat) +
-      ' / ' +
-      _fmtAvg(row.avgUnoccCool) +
-      '</td>' +
-      '<td style="' +
-      tdCenter +
-      ';color:var(--rpt-page-text)">' +
-      gl36Heat +
-      '/' +
-      gl36Cool +
-      '<br>' +
-      gl36UnoccHeat +
-      '/' +
-      gl36UnoccCool +
-      '</td>' +
-      '<td style="' +
-      tdRight +
-      ';color:var(--rpt-page-text)">' +
-      _fmtAvg(row.avgDb) +
-      '</td>' +
-      '<td style="' +
-      tdCenter +
-      ';color:var(--rpt-page-text)">' +
-      eschCell +
-      '</td>' +
-      (recIsUniform
-        ? ''
-        : '<td style="' + tdCenter + ';color:var(--rpt-page-text)">' + _recCellFor(row) + '</td>') +
-      '<td style="' +
-      tdBase +
-      '">' +
-      _statusCell(row.bStatus) +
-      ' <span style="font-size:8px;color:var(--rpt-page-text)">' +
-      row.deviatorLabel +
-      '</span>' +
-      '</td>' +
+      _spCols.map(function (c) { return '<td style="' + c.td + '">' + c.cell(row) + '</td>'; }).join('') +
       '</tr>'
     );
   }
@@ -18300,7 +18198,7 @@ function rptPageASHRAE36SetpointReview(n, d) {
     return r.bStatus === 'NOT_SCHEDULED';
   }).length;
   var summaryParts = [buildingRows.length + ' building' + (buildingRows.length !== 1 ? 's' : '')];
-  if (needsReviewTotal > 0) summaryParts.push(needsReviewTotal + ' to confirm with engineer');
+  if (needsReviewTotal > 0) summaryParts.push(needsReviewTotal + ' to reprogram to standard');
   if (notScheduledTotal > 0) summaryParts.push(notScheduledTotal + ' Not Scheduled');
   if (matchesTotal > 0) summaryParts.push(matchesTotal + ' match ASHRAE 36 defaults');
 
@@ -18317,11 +18215,9 @@ function rptPageASHRAE36SetpointReview(n, d) {
       // documented as "NO background. NO border-left. NO border. Just spacing." (see its CSS
       // comment); this inline border-top violated that rule.
       '<div class="rpt-a36-callout" style="margin-top:10px">' +
-      '<div style="font-size:10px;font-weight:700;color:var(--rpt-blue);margin-bottom:3px">Carbon Dioxide Setpoint Data Not Found in Export</div>' +
+      '<div style="font-size:10px;font-weight:700;color:var(--rpt-blue);margin-bottom:3px">Carbon Dioxide Setpoints</div>' +
       '<div style="font-size:10px;color:var(--rpt-page-text);line-height:1.6">' +
-      'Carbon dioxide setpoints for occupancy-based ventilation (ASHRAE 36 §3.1.1.3 / Table 3.1.1.3) were not present in the equipment matrix export for this project. ' +
-      'Carbon dioxide setpoint values are programmed set-points in the building automation system controller, separate from the live carbon dioxide sensor readings shown in the equipment matrix. ' +
-      'A direct building automation system lookup or updated export with carbon dioxide setpoint points is needed to complete this check.' +
+      'No carbon dioxide setpoints are programmed for occupancy-based ventilation. Control Service Company recommends adding them per ASHRAE 36 Table 3.1.1.3.' +
       '</div>' +
       '</div>';
   }
@@ -18346,10 +18242,9 @@ function rptPageASHRAE36SetpointReview(n, d) {
   // ── Preamble ──────────────────────────────────────────────────────────────
   var preamble =
     '<div style="font-size:11px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:10px">' +
-    'ASHRAE 36 §3.1.1.1 and Table 3.1.1.1 define default occupied and unoccupied temperature setpoints for three zone types; the Recommended columns are Control Service Company’s company-standard setpoints and schedule. ' +
-    'These are starting points. Designer overrides are explicitly permitted and may be intentional for specific spaces. ' +
-    'Items marked Confirm With Engineer differ from the ASHRAE 36 default — check with the design engineer or facility staff before changing them, since the deviation may be intentional. ' +
-    'Existing values shown are building averages across all zone equipment in the building automation system export; the Existing Schedule column reflects an imported Effective Schedules export when one is available.' +
+    'ASHRAE 36 §3.1.1.1 and Table 3.1.1.1 define default occupied and unoccupied temperature setpoints for three zone types; Control Service Company’s recommended setpoints and schedule are its company standard. ' +
+    'Buildings marked Reprogram to Standard have zones that operate outside the ASHRAE 36 default setpoints. Control Service Company recommends resetting them to the company-standard setpoints and schedule. ' +
+    'Existing values shown are building averages across all zone equipment in the building automation system.' +
     '</div>';
 
   // ── Pagination (Issue 6 + Fix B correction 2026-06-18) ───────────────────
@@ -18379,7 +18274,8 @@ function rptPageASHRAE36SetpointReview(n, d) {
   var SETPOINT_PREAMBLE_H = 148; // measured 128 preamble (4-sentence, wraps to more lines) + 20px caption block
   var SETPOINT_THEAD_H = 98; // measured — three-line headers (word<br>word<br>subtext)
   var SETPOINT_CONT_HDR_H = 40;
-  var SETPOINT_SAFETY_H = 40;
+  var SETPOINT_SAFETY_H = 40; // no-DOM fallback only; measured heights use SETPOINT_MEASURED_SAFETY_H
+  var SETPOINT_MEASURED_SAFETY_H = 8;
   var SETPOINT_ROW_H = 96; // measured max — every data cell can wrap to 2 lines now
   // fix/report-remove-running-header-title (2026-08-03, Matt's fix #5): this page now always
   // renders with hideIntHdr:true (no .rpt-int-hdr title bar), so both budgets use the 'flush'
@@ -18391,10 +18287,9 @@ function rptPageASHRAE36SetpointReview(n, d) {
 
   // 2026-09-30 (fix/report-table-fit-one-page): a Recommended value shared by every row is stated
   // once, above the table, with the same words the dropped column carried.
-  var recNote = recIsUniform
+  var recNote = _uniformNotes.length
     ? '<div style="font-size:11px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:8px">' +
-      '<strong>Recommended for every building</strong> (setpoints and schedule): ' +
-      _recCells[0].replace(/<br>/g, '; ') +
+      _uniformNotes.join('<br>') +
       '</div>'
     : '';
 
@@ -18415,8 +18310,8 @@ function rptPageASHRAE36SetpointReview(n, d) {
   var _contHdrH = _contHdrM !== null ? _contHdrM : SETPOINT_CONT_HDR_H;
   var _tailM = _rptMeasureHtmlH(co2Note + exclusionNote);
   var _tailH = _tailM !== null ? _tailM : (co2Note ? 110 : 0) + (exclusionNote ? 110 : 0);
-  var _spBudgetFirst = _rptContentBudget('flush') - _firstChromeH - _theadH - SETPOINT_SAFETY_H;
-  var _spBudgetCont = _rptContentBudget('flush') - _contHdrH - _theadH - SETPOINT_SAFETY_H;
+  var _spBudgetFirst = _rptContentBudget('flush') - _firstChromeH - _theadH - (_theadM ? SETPOINT_MEASURED_SAFETY_H : SETPOINT_SAFETY_H);
+  var _spBudgetCont = _rptContentBudget('flush') - _contHdrH - _theadH - (_theadM ? SETPOINT_MEASURED_SAFETY_H : SETPOINT_SAFETY_H);
 
   var chunks = _rptPaginateWithTail(tokens, _spBudgetFirst, _spBudgetCont, _tailH);
   var numChunks = chunks.length;
