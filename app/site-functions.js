@@ -1776,6 +1776,15 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.30.41',
+    date: '2026-09-30',
+    title: 'One HVAC split for the Woodland report, BAS Calc and setpoint options',
+    items: [
+      { type: 'change', text: 'The Woodland report page 4, the BAS Calc and the setpoint options now use one HVAC split (the lowest 3 months are the baseload), so they show the same cooling and gas-heating numbers.' },
+      { type: 'change', text: 'Electric heating that this method cannot separate now says so, and asks you for a value or a saved HVAC Load Estimate.' }
+    ]
+  },
+  {
     v: 'v2026.09.30.40',
     date: '2026-09-30',
     title: 'Bill import and CSV import: gas units convert the same way everywhere',
