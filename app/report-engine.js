@@ -18306,7 +18306,7 @@ function rptPageASHRAE36SetpointReview(n, d) {
   var SETPOINT_THEAD_H = 98; // measured — three-line headers (word<br>word<br>subtext)
   var SETPOINT_CONT_HDR_H = 40;
   var SETPOINT_SAFETY_H = 40; // no-DOM fallback only; measured heights use SETPOINT_MEASURED_SAFETY_H
-  var SETPOINT_MEASURED_SAFETY_H = 4; // rows and head are already rounded up to whole pixels
+  var SETPOINT_MEASURED_SAFETY_H = 8; // the table's own 14px bottom margin must also clear the print padding (936px line)
   var SETPOINT_ROW_H = 96; // measured max — every data cell can wrap to 2 lines now
   // fix/report-remove-running-header-title (2026-08-03, Matt's fix #5): this page now always
   // renders with hideIntHdr:true (no .rpt-int-hdr title bar), so both budgets use the 'flush'
