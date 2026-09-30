@@ -402,6 +402,12 @@ function _wdDaysInMonth(ym) {
   if (!y || !m) return 30;
   return new Date(y, m, 0).getDate();
 }
+// Billing days printed on the bill. A blank or zero field is MISSING: null, never the calendar days
+// of the month (WP-08). Callers print "-" and leave it out of the Total row.
+function _wdBillDays(bill) {
+  var n = parseFloat(bill && bill.numberOfDays);
+  return n > 0 ? n : null;
+}
 function _wdAssignedYm(bill) {
   var d = bill.end || bill.start || '';
   return (d + '').slice(0, 7);
@@ -1532,13 +1538,17 @@ function rptPageWoodlandBills(n, d) {
           { sum: 0, dec: 2, fmt: 'c' }, // cost
           { sum: 0, fmt: 'text', text: '' }, // effective $/Therm (annual effective, filled below)
         ];
+    var daysRowCount = 0; // rows that have a printed Billing Days value (blank rows are not in the Total)
     bl.rows.forEach(function (r) {
       var bill = r.bill;
       var moIdx = parseInt(r.ym.split('-')[1], 10) - 1;
       var moLabel = WOODLAND_MO_ABBR[moIdx] + ' ' + r.ym.split('-')[0];
-      var days = parseFloat(bill.numberOfDays) || _wdDaysInMonth(r.ym);
+      var days = _wdBillDays(bill);
       var cost = parseFloat(bill.totalCost) || 0;
-      sums[0].sum += days;
+      if (days != null) {
+        sums[0].sum += days;
+        daysRowCount++;
+      }
       if (isElec) {
         var kwh = parseFloat(bill.kwh) || 0;
         var kw = parseFloat(bill.billedKW || bill.demandKW) || 0;
@@ -1560,7 +1570,7 @@ function rptPageWoodlandBills(n, d) {
           '<tr><td>' +
           moLabel +
           '</td><td class="rpt-n">' +
-          days +
+          (days != null ? days : '-') +
           '</td><td class="rpt-n">' +
           _wdN(kwh) +
           '</td><td class="rpt-n">' +
@@ -1587,7 +1597,7 @@ function rptPageWoodlandBills(n, d) {
           '<tr><td>' +
           moLabel +
           '</td><td class="rpt-n">' +
-          days +
+          (days != null ? days : '-') +
           '</td><td class="rpt-n">' +
           _wdN(therms, 1) +
           '</td><td class="rpt-n">' +
@@ -1627,6 +1637,8 @@ function rptPageWoodlandBills(n, d) {
       sums[3].text = sums[1].sum > 0 ? '$' + (sums[2].sum / sums[1].sum).toFixed(4) : '—';
       sums[3].avgText = sums[3].text;
     }
+    // Average Billing Days = mean over the rows that have days (Total / daysRowCount), not / 12.
+    sums[0].avgSum = daysRowCount ? (sums[0].sum * (bl.rows.length || 1)) / daysRowCount : 0;
     var totAvg = _rptTotalAvgRow(sums, 'TOTAL (Annual)', bl.rows.length || 1);
     return (
       '<table class="rpt-table rpt-table-compact rpt-mp-dense"><thead>' +
@@ -2718,7 +2730,7 @@ async function exportWoodlandReportToXlsx(data) {
       var rn = ws1.rowCount + 1;
       ws1.addRow([
         r.ym,
-        parseFloat(b.numberOfDays) || _wdDaysInMonth(r.ym),
+        _wdBillDays(b),
         kwh,
         kw,
         facKw,
@@ -2833,7 +2845,7 @@ async function exportWoodlandReportToXlsx(data) {
       var rn2 = ws1.rowCount + 1;
       ws1.addRow([
         r.ym,
-        parseFloat(b.numberOfDays) || _wdDaysInMonth(r.ym),
+        _wdBillDays(b),
         therms,
         null,
         cost,
