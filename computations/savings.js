@@ -32,22 +32,34 @@ function projHasContract(projId) {
    report-engine-woodland.js already uses (naturalGasTherms, then
    naturalGasMMbtu×10; 1 MMBtu = 10 Therms) so every gas usage
    read in this file sees real therms regardless of import path.
+
+   WP-02 (2026-09-30): THE one gas unit resolver. Every save path, CSV
+   import, rate reader and display reads gas usage through it. Order:
+   therms, then CCF, then MMBtu, then generic usage.
+     - CCF x the factor the bill printed (thermFactor / ThermFactor);
+       no printed factor -> UNIT_TO_BASE.CCF.factor (app/utility-data.js,
+       the one constant). A printed factor outside 1.0-1.2 (exclusive) is not a therm
+       factor (the extractor pattern also matches a meter "multiplier",
+       which is 1 on most meters), so it is ignored.
+     - MMBtu x the MMBtu->Therms factor in UNIT_TO_BASE_BY_COMMODITY
+       (1 MMBtu = 10 Therms).
+   Accepts saved-bill names (naturalGasCCF) and extractor names
+   (NaturalGasCCF). Converted values are rounded to 6 decimals, which
+   removes float noise and changes no printed figure.
 ───────────────────────────────────────────────────────────── */
 function resolveGasUsageTherms(b) {
-  // 2026-09-22: added naturalGasCCF*1.037 (1 CCF = 1.037 Therms, matching
-  // UNIT_TO_BASE.CCF in app/utility-data.js) so a bill with ONLY a CCF
-  // reading on file still resolves — same reasoning as the naturalGasMMbtu
-  // branch below. This function is also now called by the Bills table
-  // DISPLAY path (app/utility-data.js _gasUsageDisplay) so every gas usage
-  // read in the app — calc and display — shares this one fallback chain.
-  return (
-    parseBillNumber(b.therms) ||
-    parseBillNumber(b.naturalGasTherms) ||
-    parseBillNumber(b.naturalGasMMbtu) * 10 ||
-    parseBillNumber(b.naturalGasCCF) * 1.037 ||
-    parseBillNumber(b.usage) ||
-    0
-  );
+  const num = (k) => parseBillNumber(b[k]) || parseBillNumber(b[k.charAt(0).toUpperCase() + k.slice(1)]);
+  const therms = num('therms') || num('naturalGasTherms');
+  if (therms) return therms;
+  const ccf = num('naturalGasCCF');
+  if (ccf) {
+    const printed = num('thermFactor');
+    const factor = printed > 1 && printed < 1.2 ? printed : UNIT_TO_BASE.CCF.factor;
+    return Math.round(ccf * factor * 1e6) / 1e6;
+  }
+  const mmbtu = num('naturalGasMMbtu');
+  if (mmbtu) return Math.round(convertUnit(mmbtu, 'MMBtu', 'Therms', 'Gas') * 1e6) / 1e6;
+  return num('usage') || 0;
 }
 
 /* ─────────────────────────────────────────────────────────────

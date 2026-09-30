@@ -49,9 +49,8 @@ function egfxRedrawTrendChart(projId) {
 
   const METRIC_MAP = {
     kwh: { unit: 'kWh', get: (y) => (y.elecKwh != null ? y.elecKwh : null) },
-    // Gas rows in the source workbook are CCF; the importer's convention (per the CSV import
-    // pipeline) is CCF × 1.037 = therms — apply the same conversion here for display.
-    therms: { unit: 'therms', get: (y) => (y.gasCcf != null ? y.gasCcf * 1.037 : null) },
+    // Gas rows in the source workbook are CCF; convert with the one unit table (UNIT_TO_BASE).
+    therms: { unit: 'therms', get: (y) => (y.gasCcf != null ? convertUnit(y.gasCcf, 'CCF', 'Therms', 'Gas') : null) },
     cost: {
       unit: '$',
       get: (y) => (y.elecCost != null || y.gasCost != null ? (y.elecCost || 0) + (y.gasCost || 0) : null),

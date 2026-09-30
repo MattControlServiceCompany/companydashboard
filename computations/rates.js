@@ -270,11 +270,11 @@ function getExtractedRate(parsed, type) {
     }
     case 'gas': {
       var cost = parseBillNumber(parsed.GasCharge) || parseBillNumber(parsed.gasCharge) || parseBillNumber(parsed.thermCost) || parseBillNumber(parsed.totalCost) || 0;
-      var usage = parseBillNumber(parsed.NaturalGasTherms) || 0;
-      if (!usage) {
-        var ccf = parseBillNumber(parsed.NaturalGasCCF) || 0;
-        if (ccf > 0) usage = Math.round(ccf * 1.037 * 100) / 100;
-      }
+      var usage = resolveGasUsageTherms({
+        NaturalGasTherms: parsed.NaturalGasTherms,
+        NaturalGasCCF: parsed.NaturalGasCCF,
+        ThermFactor: parsed.ThermFactor,
+      });
       if (usage > 0 && cost > 0) return cost / usage;
       // MMBtu fallback: WRE meters store usage as naturalGasMMbtu; divide charge by MMBtu
       // so the result is $/MMBtu rather than $/Therm — mirrors getStoredRate('gas') above.

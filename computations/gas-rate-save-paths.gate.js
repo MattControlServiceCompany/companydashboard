@@ -82,6 +82,16 @@ check('structural: exactly one _computeGasRate implementation (no duplicate help
   assert.strictEqual(defs.length, 1, 'expected exactly 1 _computeGasRate definition, found ' + defs.length);
 });
 
+// resolveGasUsageTherms reads the one unit table (UNIT_TO_BASE + convertUnit) in app/utility-data.js.
+// Extract just that block from the real file (loading all of utility-data.js needs the full page).
+function loadUnitTable(sandbox) {
+  const src = fs.readFileSync(path.join(REPO, 'app/utility-data.js'), 'utf8');
+  const start = src.indexOf('const UNIT_TO_BASE = {');
+  const end = src.indexOf('function getMeterBillUnit');
+  assert.ok(start > 0 && end > start, 'UNIT_TO_BASE block not found in app/utility-data.js');
+  vm.runInContext(src.slice(start, end), sandbox, { filename: 'utility-data.js (unit table extract)' });
+}
+
 // ── 2. FUNCTIONAL: drive the REAL _computeGasRate() every save path calls ──
 function buildSandbox() {
   const sandbox = { console };
@@ -94,6 +104,7 @@ function buildSandbox() {
   vm.runInContext(fs.readFileSync(path.join(REPO, 'computations/savings.js'), 'utf8'), sandbox, {
     filename: 'savings.js',
   });
+  loadUnitTable(sandbox);
   // Extract JUST the _computeGasRate function body from the real on-disk file (rather than
   // loading all 22k lines of bill-analysis.js, which requires document/pdfStore/showToast/
   // projects globals this test doesn't stub) — the structural checks above already guarantee
@@ -203,6 +214,7 @@ function runV2Migration(initialUtilityData, dbStore) {
   vm.runInContext(fs.readFileSync(path.join(REPO, 'computations/savings.js'), 'utf8'), sandbox, {
     filename: 'savings.js',
   });
+  loadUnitTable(sandbox);
   vm.runInContext(V2_BLOCK_MATCH[0], sandbox, { filename: 'utility-data.js (v2 migration extract)' });
   return sandbox;
 }

@@ -56,6 +56,13 @@ function buildSandbox() {
   ].forEach((rel) => {
     vm.runInContext(fs.readFileSync(path.join(REPO, rel), 'utf8'), sandbox, { filename: rel });
   });
+  // resolveGasUsageTherms reads the one unit table (UNIT_TO_BASE + convertUnit) in app/utility-data.js.
+  // Extract just that block from the real file (loading all of utility-data.js needs the full page).
+  const udSrc = fs.readFileSync(path.join(REPO, 'app/utility-data.js'), 'utf8');
+  const unitStart = udSrc.indexOf('const UNIT_TO_BASE = {');
+  const unitEnd = udSrc.indexOf('function getMeterBillUnit');
+  assert.ok(unitStart > 0 && unitEnd > unitStart, 'UNIT_TO_BASE block not found in app/utility-data.js');
+  vm.runInContext(udSrc.slice(unitStart, unitEnd), sandbox, { filename: 'utility-data.js (unit table extract)' });
   return sandbox;
 }
 

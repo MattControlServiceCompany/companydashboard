@@ -574,7 +574,7 @@ function loadUtilityData() {
     DB.set(_sewerUsageMigratedKey, '1');
   }
   // One-time migration: fix Wood River (MMBtu) gas bills where therms was stored
-  // as raw MMBtu instead of Therms (×10). CCF bills also converted (×1.037).
+  // as raw MMBtu instead of Therms (×10). CCF bills also converted (UNIT_TO_BASE.CCF).
   // Fix [therms-unit-2026-06-22] — root cause: bill-analysis.js save path applied no
   // unit conversion when falling through to NaturalGasMMbtu. Constellation/KGS bills
   // (which set NaturalGasTherms) are excluded by the predicate and left untouched.
@@ -604,13 +604,13 @@ function loadUtilityData() {
               therms > 0 &&
               _approxEq(therms, mmbtu, 0.005) &&
               !_approxEq(therms, mmbtu * 10, 0.005);
-            // CCF path: ccf set, therms field empty, stored therms ≈ raw ccf (NOT ≈ ccf×1.037)
+            // CCF path: ccf set, therms field empty, stored therms ≈ raw ccf (NOT ≈ ccf x factor)
             const needsCCF =
               ccf > 0 &&
               !hasTherms &&
               therms > 0 &&
               _approxEq(therms, ccf, 0.005) &&
-              !_approxEq(therms, ccf * 1.037, 0.005);
+              !_approxEq(therms, ccf * UNIT_TO_BASE.CCF.factor, 0.005);
             if (needsMMBtu) {
               _thermsReport.wouldFix.push({
                 pid,
@@ -630,7 +630,7 @@ function loadUtilityData() {
                 billEnd: bill.end,
                 source: 'CCF',
                 oldTherms: therms,
-                newTherms: Math.round(ccf * 1.037 * 100) / 100,
+                newTherms: Math.round(ccf * UNIT_TO_BASE.CCF.factor * 100) / 100,
                 bill,
               });
             } else if (mmbtu > 0 && !hasTherms && !hasCCF && therms > 0) {
@@ -3777,7 +3777,7 @@ function _gasUsageDisplay(r, unit) {
   const thermsBasis = typeof resolveGasUsageTherms === 'function' ? resolveGasUsageTherms(r || {}) : 0;
   if (!thermsBasis) return 0;
   if (unit === 'MMBtu') return thermsBasis / 10;
-  if (unit === 'CCF') return thermsBasis / 1.037;
+  if (unit === 'CCF') return convertUnit(thermsBasis, 'Therms', 'CCF', 'Gas');
   return thermsBasis; // Therms
 }
 function _effectiveGasBillUnit(m) {

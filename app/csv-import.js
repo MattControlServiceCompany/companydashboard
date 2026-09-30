@@ -195,7 +195,7 @@ function parseBillCsv(text, fname) {
         .split(',')
         .map((h) => h.trim())
     : null;
-  const ci = (names) => {
+  const ci = (names, skip) => {
     if (!hdr) return -1;
     // Exact match first (b4b257cd): try every candidate name for an EXACT
     // header-cell match before falling back to substring. Needed now that
@@ -209,8 +209,10 @@ function parseBillCsv(text, fname) {
       const i = hdr.indexOf(n);
       if (i >= 0) return i;
     }
+    // skip (optional RegExp): headers to ignore in the substring pass, so a usage lookup
+    // never lands on a cost column ("ccf_used,therm_cost": 'therm' must not pick 'therm_cost').
     for (const n of names) {
-      const i = hdr.findIndex((h) => h.includes(n));
+      const i = hdr.findIndex((h) => h.includes(n) && !(skip && skip.test(h)));
       if (i >= 0) return i;
     }
     return -1;
@@ -246,7 +248,7 @@ function parseBillCsv(text, fname) {
     : isElec
       ? 9
       : 3;
-  const iTherms = hdr ? ci(['therms', 'therm', 'gas', 'ccf', 'mcf']) : 2;
+  const iTherms = hdr ? ci(['therms', 'therm', 'gas', 'ccf', 'mmbtu', 'mcf'], /cost|charge|\$|rate|amount|total/) : 2;
   // camelCase alias: 'thermcost' matches export header 'thermCost'
   const iThCost = hdr ? ci(['therm_cost', 'therm cost', 'gas cost', 'gas$', 'thermcost']) : 3;
   const iUsage = hdr ? ci(['usage', 'consumption', 'hcf', 'kgal', 'mlb']) : 2;
@@ -312,8 +314,11 @@ function parseBillCsv(text, fname) {
       // schema keys: naturalGasTherms/naturalGasCCF, gasCharge, totalCost (BILL_SCHEMA.Gas).
       const gThermVal = g(iTherms);
       const thermsHdrText = hdr && iTherms >= 0 ? hdr[iTherms] : '';
-      if (/\bccf\b/.test(thermsHdrText)) {
+      // Store the value in the unit the header names (source unit kept). Therms is the default.
+      if (/ccf/.test(thermsHdrText)) {
         row.naturalGasCCF = gThermVal;
+      } else if (/mmbtu/.test(thermsHdrText)) {
+        row.naturalGasMMbtu = gThermVal;
       } else {
         row.naturalGasTherms = gThermVal;
       }
@@ -330,12 +335,7 @@ function parseBillCsv(text, fname) {
       // charge/usage fallback silently returns 0 for CSV-imported bills. That's a pre-existing
       // gap in a shared file outside this fix's scope (app/csv-import.js only) — compute the
       // rate here instead so the Gas Rates section shows a real value rather than blank.
-      const gThermsForRate =
-        row.naturalGasTherms != null
-          ? row.naturalGasTherms
-          : row.naturalGasCCF != null
-            ? row.naturalGasCCF * 1.037
-            : null;
+      const gThermsForRate = resolveGasUsageTherms(row);
       if (gThermsForRate > 0 && row.gasCharge > 0) {
         row.totalGasRate = Math.round((row.gasCharge / gThermsForRate) * 100000) / 100000;
       }
@@ -403,15 +403,16 @@ function parseBillCsv(text, fname) {
     // Sync gas usage to canonical therms (Fix [therms-unit-2026-06-22] in saveBillRow(),
     // mirrored here) so CSV-imported gas bills populate row.therms — the field
     // computations/savings.js reads for measure-savings — not just naturalGasTherms/CCF.
-    // Priority: Therms (×1) > CCF (×1.037) > MMBtu (×10).
+    // The one resolver (computations/savings.js resolveGasUsageTherms) does the unit math.
     if (isGas) {
-      if (row.naturalGasTherms != null && row.naturalGasTherms !== '') {
-        row.therms = row.naturalGasTherms;
-      } else if (row.naturalGasCCF != null && row.naturalGasCCF !== '') {
-        row.therms = Math.round(parseFloat(row.naturalGasCCF) * 1.037 * 100) / 100;
-      } else if (row.naturalGasMMbtu != null && row.naturalGasMMbtu !== '') {
-        row.therms = Math.round(parseFloat(row.naturalGasMMbtu) * 10 * 100) / 100;
-      }
+      // Native gas fields only: a passthrough `therms` cell must not outrank the unit column.
+      const _rt = resolveGasUsageTherms({
+        naturalGasTherms: row.naturalGasTherms,
+        naturalGasCCF: row.naturalGasCCF,
+        naturalGasMMbtu: row.naturalGasMMbtu,
+        thermFactor: row.thermFactor,
+      });
+      if (_rt) row.therms = _rt;
     }
 
     parsed.push(row);
@@ -515,7 +516,7 @@ function showBillCsvPreview(rows, m, fname, warnings) {
       if (isElec)
         cells = `<td>${r.kwh != null ? (+r.kwh).toLocaleString() : '—'}</td><td>${_d(r.demandKW)}</td><td>${_d(r.facKW)}</td><td>${_dc(r.demandCharge)}</td><td>${_dc(r.facKWCost)}</td><td>${_dc2(r.totalCost)}</td>`;
       else if (isGas) {
-        const thermsVal = r.naturalGasTherms != null ? r.naturalGasTherms : r.naturalGasCCF;
+        const thermsVal = resolveGasUsageTherms(r) || null;
         cells =
           '<td>' + (thermsVal != null ? (+thermsVal).toLocaleString() : '—') + '</td><td>' + _dc(r.gasCharge) + '</td>';
       } else {
@@ -2636,14 +2637,15 @@ function saveBillRow() {
     if (v !== '') data[k] = v;
   }
   // Bug #133 / Fix [therms-unit-2026-06-22]: sync gas usage to canonical therms (Therms).
-  // Priority: Therms (×1) > CCF (×1.037) > MMBtu (×10). Constellation/KGS set naturalGasTherms;
-  // Wood River sets naturalGasMMbtu. All paths must land in therms as Therms.
-  if (data.naturalGasTherms != null && data.naturalGasTherms !== '') {
-    data.therms = data.naturalGasTherms; // already Therms
-  } else if (data.naturalGasCCF != null && data.naturalGasCCF !== '') {
-    data.therms = String(Math.round(parseFloat(data.naturalGasCCF) * 1.037 * 100) / 100); // CCF → Therms
-  } else if (data.naturalGasMMbtu != null && data.naturalGasMMbtu !== '') {
-    data.therms = String(Math.round(parseFloat(data.naturalGasMMbtu) * 10 * 100) / 100); // MMBtu → Therms (×10)
+  // The one resolver (resolveGasUsageTherms) does the unit math: Therms, then CCF, then MMBtu.
+  {
+    const _rt = resolveGasUsageTherms({
+      naturalGasTherms: data.naturalGasTherms,
+      naturalGasCCF: data.naturalGasCCF,
+      naturalGasMMbtu: data.naturalGasMMbtu,
+      thermFactor: data.thermFactor,
+    });
+    if (_rt) data.therms = String(_rt);
   }
   const start = data.start;
   const end = data.end;
