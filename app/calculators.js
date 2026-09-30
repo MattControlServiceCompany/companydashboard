@@ -2962,7 +2962,7 @@ function _scComputeDays() {
       e = document.querySelector(`.sc-bl-endDate[data-mi="${i}"]`)?.value,
       c = document.querySelector(`.sc-bl-days[data-mi="${i}"]`);
     if (s && e && c) {
-      const d = Math.round((new Date(e) - new Date(s)) / 864e5);
+      const d = calcDays(s, e, false);
       c.textContent = d > 0 ? d : '—';
     } else if (c) c.textContent = '—';
   }
@@ -3362,20 +3362,25 @@ function _scDoCalc(projId) {
 
   // Proration helper
   function prorate(i) {
-    const days = bSD[i] && bED[i] ? Math.round((new Date(bED[i]) - new Date(bSD[i])) / 864e5) : 30;
+    const days = bSD[i] && bED[i] ? calcDays(bSD[i], bED[i], false) : 30;
     const d = days > 0 ? days : 30;
-    const yr = bSD[i] ? new Date(bSD[i]).getFullYear() : new Date().getFullYear();
+    // _parseISO = local calendar date (new Date('YYYY-MM-DD') is UTC midnight and shifts the month/year west of UTC)
+    const _localMidnight = (iso) => {
+      const t = _parseISO(iso);
+      return new Date(t.getFullYear(), t.getMonth(), t.getDate());
+    };
+    const yr = bSD[i] ? _localMidnight(bSD[i]).getFullYear() : new Date().getFullYear();
     const sD = parseDS(sumChg, yr),
       wD = parseDS(winChg, yr);
-    const st = bSD[i] ? new Date(bSD[i]) : new Date(yr, i, 1),
-      en = bED[i] ? new Date(bED[i]) : new Date(yr, i + 1, 0);
+    const st = bSD[i] ? _localMidnight(bSD[i]) : new Date(yr, i, 1),
+      en = bED[i] ? _localMidnight(bED[i]) : new Date(yr, i + 1, 0);
     let sumD = 0,
       winD = 0;
     if (st < sD && en >= sD) {
-      winD = Math.round((sD - st) / 864e5);
+      winD = calcDays(st, sD, false);
       sumD = d - winD;
     } else if (st < wD && en >= wD) {
-      sumD = Math.round((wD - st) / 864e5);
+      sumD = calcDays(st, wD, false);
       winD = d - sumD;
     } else if (st >= sD && st < wD) {
       sumD = d;
@@ -3384,7 +3389,7 @@ function _scDoCalc(projId) {
     }
     const sR = d > 0 ? sumD / d : 0,
       wR = d > 0 ? winD / d : 0;
-    const smD = bSD[i] ? Math.min(d, Math.round((new Date(yr, st.getMonth() + 1, 0) - st) / 864e5)) : d;
+    const smD = bSD[i] ? Math.min(d, calcDays(st, new Date(yr, st.getMonth() + 1, 0), false)) : d;
     const emD = d - smD;
     const sKwh = +(bKwh[i] * (smD / d)).toFixed(4),
       eKwh = +(bKwh[i] * (emD / d)).toFixed(4);
