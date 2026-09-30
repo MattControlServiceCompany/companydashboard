@@ -1455,6 +1455,102 @@ function _rptPaginateTokensBalanced(tokens, cap) {
   return chunks;
 }
 
+/**
+ * _rptMeasureHtmlH / _rptMeasureTableTokens — real-DOM height measurement for report pagination
+ * (fix/report-table-fit-one-page, 2026-09-30). A row-height CONSTANT is a model; when it under-counts
+ * (Setpoint Programming Review rows ran under the footer wave) the paginator packs too many rows and
+ * the last one prints into the footer. These helpers render the fragment once into a hidden
+ * off-screen container at the report page's own type context (720px content width, the same
+ * _rptApplyMinFontFloor pass the visible report gets, incl. the .rpt-mp-dense lower floor) and read
+ * back the TRUE heights. Both return null when no DOM is available so callers keep their constant.
+ */
+function _rptMeasureWithDom(html, readFn) {
+  try {
+    if (typeof document === 'undefined' || !document.body) return null;
+    var wrap = document.createElement('div');
+    wrap.style.cssText =
+      'position:absolute;left:-9999px;top:0;width:720px;visibility:hidden;' +
+      'font-family:var(--rpt-font);font-size:14px;line-height:1.5';
+    wrap.innerHTML = html;
+    // Append BEFORE the font-floor pass: getComputedStyle is empty on a detached tree.
+    document.body.appendChild(wrap);
+    var out;
+    try {
+      if (typeof _rptApplyMinFontFloor === 'function') _rptApplyMinFontFloor(wrap);
+      out = readFn(wrap);
+    } finally {
+      document.body.removeChild(wrap);
+    }
+    return out;
+  } catch (e) {
+    return null;
+  }
+}
+
+// Height (px, rounded up) of an arbitrary fragment incl. its own margins, or null.
+function _rptMeasureHtmlH(html) {
+  return _rptMeasureWithDom('<div>' + html + '</div>', function (wrap) {
+    var el = wrap.firstChild;
+    var cs = getComputedStyle(el);
+    var last = el.lastElementChild;
+    var lcs = last ? getComputedStyle(last) : null;
+    return Math.ceil(el.getBoundingClientRect().height + (lcs ? parseFloat(lcs.marginBottom) || 0 : 0));
+  });
+}
+
+// Sets tok.estH on every token to its measured <tr> height + 2px; returns the measured <thead>
+// height + 2 (0 when the table has none), or null when measurement was unavailable (tokens then
+// keep their constant estH). tableOpenHtml = '<table ...>' + colgroup + '<thead>...</thead>'.
+function _rptMeasureTableTokens(tableOpenHtml, tokens) {
+  if (!tokens.length) return null;
+  var res = _rptMeasureWithDom(
+    tableOpenHtml +
+      '<tbody>' +
+      tokens
+        .map(function (t) {
+          return t.html;
+        })
+        .join('') +
+      '</tbody></table>',
+    function (wrap) {
+      var rows = wrap.querySelectorAll('tbody tr');
+      if (rows.length !== tokens.length) return null;
+      var hs = [];
+      for (var i = 0; i < rows.length; i++) hs.push(Math.ceil(rows[i].getBoundingClientRect().height) + 2);
+      var th = wrap.querySelector('thead');
+      return { rows: hs, thead: th ? Math.ceil(th.getBoundingClientRect().height) + 2 : 0 };
+    },
+  );
+  if (!res) return null;
+  for (var i = 0; i < tokens.length; i++) tokens[i].estH = res.rows[i];
+  return res.thead;
+}
+
+/**
+ * _rptPaginateWithTail — _rptPaginateTokens for a table whose LAST page also carries a trailing
+ * block (notes/legend) of tailH px. Paginates with the full budgets, then, if the last page plus the
+ * tail would overflow, moves trailing rows (never the only row) onto a new final page so the tail
+ * always fits above the footer.
+ */
+function _rptPaginateWithTail(tokens, firstBudget, contBudget, tailH) {
+  var chunks = _rptPaginateTokens(tokens, firstBudget, contBudget);
+  if (!tailH || !chunks.length) return chunks;
+  var last = chunks[chunks.length - 1];
+  var budget = chunks.length === 1 ? firstBudget : contBudget;
+  var used = last.reduce(function (sum, t) {
+    return sum + (t.estH || 20);
+  }, 0);
+  if (used + tailH <= budget) return chunks;
+  var moved = [];
+  while (last.length > 1 && used + tailH > budget) {
+    var t = last.pop();
+    used -= t.estH || 20;
+    moved.unshift(t);
+  }
+  if (moved.length) chunks.push(moved);
+  return chunks;
+}
+
 // Footer page-number chrome, shared by rptPage()'s hero and interior branches.
 //
 // THE FORMAT IS "Page N of M". Matt, 2026-08-03: "I wanted 'Page N of M'." That instruction is
@@ -15019,7 +15115,7 @@ function _a36GaugeSVG(pct, color, label, size, suppressBottomLabel) {
 // sensors that need installing and sequences that cannot run until they are both matter to
 // a reader judging a building's readiness; showing only one was an incomplete picture).
 // Renders "High Readiness · 3/3 sensors" style label when counts are provided.
-function _a36StatusChip(status, inPlace, required, seqNA, seqMatched, seqRequired) {
+function _a36StatusChip(status, inPlace, required, seqNA, seqMatched, seqRequired, compact) {
   // `color` is computed for the caller's colored status bar (data-viz, kept — see the
   // `.rpt-a36-*` executive-summary/building rows that render `color` alongside this chip's
   // word). Batch 3 item 3c ("make chip WORD black") was already satisfied at this line —
@@ -15074,7 +15170,10 @@ function _a36StatusChip(status, inPlace, required, seqNA, seqMatched, seqRequire
   var detailLines = [sensorDetail, seqDetail].filter(function (x) {
     return x;
   });
-  var label = detailLines.length > 0 ? word + '<br>' + detailLines.join('<br>') : word;
+  // compact (2026-09-30, fix/report-table-fit-one-page): both counts share ONE line under the
+  // word (same text, same order) so the row is 2 lines tall instead of 3.
+  var label =
+    detailLines.length > 0 ? word + '<br>' + detailLines.join(compact ? ' &middot; ' : '<br>') : word;
   return '<span style="font-size:10px;color:var(--rpt-page-text);line-height:1.35">' + label + '</span>';
 }
 
@@ -15785,13 +15884,16 @@ function rptPageASHRAE36Executive(n, d) {
   //   Status    20%  inner 127.8  vs ~119   -> +9
   // Do not narrow Equipment/Sensor/Sequence again without re-running the overlap census: their
   // header words are unbreakable and there is no smaller legal type to fall back to.
+  // 2026-09-30 (fix/report-table-fit-one-page): Status widened 20 -> 34% so the sensor and
+  // sequence counts share one line (row = 2 lines, not 3); the numeric columns give up the slack.
+  // Header words stay inside their cells at the dense 12px header floor (checked by overflow scan).
   var colWidths = {
-    building: 25,
-    equipment: 14,
-    sensor: 13.5,
-    sequence: 13.5,
-    score: 14,
-    status: 20,
+    building: 18,
+    equipment: 12,
+    sensor: 11.5,
+    sequence: 11.5,
+    score: 13,
+    status: 34,
   };
   var colgroup =
     '<colgroup>' +
@@ -16030,6 +16132,7 @@ function rptPageASHRAE36Executive(n, d) {
         b.seqPct === null,
         b.totalSeqMatched,
         b.totalSeqRequired,
+        true,
       ) +
       '</div></td>' +
       '</tr>'
@@ -16051,7 +16154,7 @@ function rptPageASHRAE36Executive(n, d) {
   // RPT_MIN_TEXT_PX (13.34px). Headless print-media measurement (getBoundingClientRect on every
   // real rendered row, all 27 JOCO buildings): max 59.6px. Gated on RPT_MP_DENSE_ACTIVE so
   // RPT_MULTIPAGE_TABLE_FONT_REDUCTION_PT=0 falls back to the original EXEC_ROW_EST_H exactly.
-  var EXEC_ROW_EST_H_DENSE = RPT_MP_DENSE_ACTIVE ? 60 : EXEC_ROW_EST_H; // DOM-measured max 59.6px at the dense floor; +1
+  var EXEC_ROW_EST_H_DENSE = RPT_MP_DENSE_ACTIVE ? 46 : EXEC_ROW_EST_H; // DOM-measured max 59.6px at the dense floor; +1
   var allBuildings = d.buildings;
   var tokens = allBuildings.map(function (b) {
     return { type: 'row', estH: EXEC_ROW_EST_H_DENSE, html: _buildRowHTML(b) };
@@ -16064,6 +16167,9 @@ function rptPageASHRAE36Executive(n, d) {
       html: '<tr><td colspan="6" style="padding:8px;font-size:11px;color:var(--rpt-page-text)">No buildings in portfolio.</td></tr>',
     });
   }
+  // 2026-09-30 (fix/report-table-fit-one-page): budget with the rows' TRUE rendered heights
+  // (falls back to the constants above when there is no DOM).
+  _rptMeasureTableTokens(tableOpenHead, tokens);
 
   // Legend renders ONCE, after the LAST chunk only (Matt's fix #2, 2026-08-03): repeating the
   // "Score and Readiness Bands" methodology block (tableFootnote) after every one of the (now up
@@ -16114,7 +16220,14 @@ function rptPageASHRAE36Executive(n, d) {
   // paragraph chrome to share the page with), so the table's first chunk opens with a full page
   // of buildings instead.
   var MIN_FIRST_CHUNK_ROWS = 4;
-  var _pushTableToNextPage = chunks.length > 1 && chunks[0].length < MIN_FIRST_CHUNK_ROWS;
+  // 2026-09-30 (fix/report-table-fit-one-page, Matt: "we should default to trying [to fit it on
+  // 1 page] first"): also push the table to its own page whenever the WHOLE table (plus the
+  // legend) fits on one page-sized budget. It splits only when it truly cannot fit.
+  var _wholeTableEstH = tokens.reduce(function (sum, tok) {
+    return sum + (tok.estH || 20);
+  }, 0);
+  var _pushTableToNextPage =
+    chunks.length > 1 && (chunks[0].length < MIN_FIRST_CHUNK_ROWS || _wholeTableEstH <= ROWS_BUDGET_CONT);
   if (_pushTableToNextPage) {
     chunks = _rptPaginateTokens(tokens, ROWS_BUDGET_CONT_NOFOOT, ROWS_BUDGET_CONT_NOFOOT);
     _refitLastChunkForFootnote(chunks, ROWS_BUDGET_CONT, ROWS_BUDGET_CONT);
@@ -17983,6 +18096,36 @@ function rptPageASHRAE36SetpointReview(n, d) {
     return '<span style="font-size:9px;font-weight:700;color:var(--rpt-green)">Matches</span>';
   }
 
+  // Recommended (item 5aj): setpoints + schedule share one column, per company standard
+  // (see equipment-matrix.js EM_SP_DEFAULTS / _emComputeProposedSchedule).
+  function _recCellFor(row) {
+    var recSchedStartFmt = _fmtClockStr(row.recSchedStart);
+    var recSchedStopFmt = _fmtClockStr(row.recSchedStop);
+    var recSchedLine =
+      recSchedStartFmt && recSchedStopFmt
+        ? 'Mon–Fri ' + recSchedStartFmt + '–' + recSchedStopFmt + ', Sat &amp; Sun: Unoccupied'
+        : '—';
+    return (
+      'Occupied ' +
+      _fmtDefaultVal(row.recOccHeat) +
+      '/' +
+      _fmtDefaultVal(row.recOccCool) +
+      '<br>Unoccupied ' +
+      _fmtDefaultVal(row.avgRecUnoccHeat) +
+      '/' +
+      _fmtDefaultVal(row.avgRecUnoccCool) +
+      '<br>' +
+      recSchedLine
+    );
+  }
+  // 2026-09-30 (fix/report-table-fit-one-page): when the Recommended value is IDENTICAL in every
+  // row it is stated ONCE above the table (same words) and its column is dropped, freeing the
+  // width for the Status column and shortening every row. Different values keep the column.
+  var _recCells = buildingRows.map(_recCellFor);
+  var recIsUniform = _recCells.length > 0 && _recCells.every(function (c) {
+    return c === _recCells[0];
+  });
+
   // ── Table chrome ─────────────────────────────────────────────────────────
   // Destyle pass (fix/65ce578b, 2026-07-27): dropped the filled dark-blue header, matching the
   // Proposal's plain/thin-bordered convention. Styling only.
@@ -18006,16 +18149,17 @@ function rptPageASHRAE36SetpointReview(n, d) {
   // that repeated the word "Recommended" — are merged into ONE Recommended column (one
   // instance of the word, four stacked lines of values), freeing enough width for every
   // remaining single-word header to fit on its own line without a forced break.
+  // Column widths sum to 100 either way. Uniform Recommended -> that column is dropped (stated once
+  // above the table) and its width goes to Status ("Confirm With Engineer" was wrapping one word
+  // per line at 9%) and the schedule columns.
+  var _spCols = recIsUniform ? [14, 12, 14, 13, 12, 15, 20] : [11, 11, 14, 13, 12, 12, 16, 11];
   var tableHead =
     '<colgroup>' +
-    '<col style="width:12%">' +
-    '<col style="width:11%">' +
-    '<col style="width:14%">' +
-    '<col style="width:14%">' +
-    '<col style="width:12%">' +
-    '<col style="width:12%">' +
-    '<col style="width:16%">' +
-    '<col style="width:9%">' +
+    _spCols
+      .map(function (w) {
+        return '<col style="width:' + w + '%">';
+      })
+      .join('') +
     '</colgroup>' +
     '<thead><tr>' +
     '<th style="' +
@@ -18046,11 +18190,13 @@ function rptPageASHRAE36SetpointReview(n, d) {
     '">Existing<br>Schedule' +
     thSub +
     'Mon–Fri, Sat &amp; Sun</span></th>' +
-    '<th style="' +
-    thStyleC +
-    '">Recommended' +
-    thSub +
-    'Setpoints (Occupied / Unoccupied, °F) and Schedule</span></th>' +
+    (recIsUniform
+      ? ''
+      : '<th style="' +
+        thStyleC +
+        '">Recommended' +
+        thSub +
+        'Setpoints (Occupied / Unoccupied, °F) and Schedule</span></th>') +
     '<th style="' +
     thStyleC +
     '">Status</th>' +
@@ -18085,26 +18231,6 @@ function rptPageASHRAE36SetpointReview(n, d) {
       eschCell = 'No occupied period found<br>Sat &amp; Sun: Unoccupied';
     }
 
-    var recSchedStartFmt = _fmtClockStr(row.recSchedStart);
-    var recSchedStopFmt = _fmtClockStr(row.recSchedStop);
-    var recSchedLine =
-      recSchedStartFmt && recSchedStopFmt
-        ? 'Mon–Fri ' + recSchedStartFmt + '–' + recSchedStopFmt + ', Sat &amp; Sun: Unoccupied'
-        : '—';
-
-    // Recommended (item 5aj): setpoints + schedule share one column, per company standard
-    // (see equipment-matrix.js EM_SP_DEFAULTS / _emComputeProposedSchedule).
-    var recCell =
-      'Occupied ' +
-      _fmtDefaultVal(row.recOccHeat) +
-      '/' +
-      _fmtDefaultVal(row.recOccCool) +
-      '<br>Unoccupied ' +
-      _fmtDefaultVal(row.avgRecUnoccHeat) +
-      '/' +
-      _fmtDefaultVal(row.avgRecUnoccCool) +
-      '<br>' +
-      recSchedLine;
 
     return (
       '<tr>' +
@@ -18148,11 +18274,9 @@ function rptPageASHRAE36SetpointReview(n, d) {
       ';color:var(--rpt-page-text)">' +
       eschCell +
       '</td>' +
-      '<td style="' +
-      tdCenter +
-      ';color:var(--rpt-page-text)">' +
-      recCell +
-      '</td>' +
+      (recIsUniform
+        ? ''
+        : '<td style="' + tdCenter + ';color:var(--rpt-page-text)">' + _recCellFor(row) + '</td>') +
       '<td style="' +
       tdBase +
       '">' +
@@ -18260,14 +18384,41 @@ function rptPageASHRAE36SetpointReview(n, d) {
   // fix/report-remove-running-header-title (2026-08-03, Matt's fix #5): this page now always
   // renders with hideIntHdr:true (no .rpt-int-hdr title bar), so both budgets use the 'flush'
   // variant — reclaims the 60px chrome bar's space for rows.
-  var ROWS_BUDGET_FIRST = _rptContentBudget('flush') - SETPOINT_PREAMBLE_H - SETPOINT_THEAD_H - SETPOINT_SAFETY_H;
-  var ROWS_BUDGET_CONT = _rptContentBudget('flush') - SETPOINT_CONT_HDR_H - SETPOINT_THEAD_H - SETPOINT_SAFETY_H;
 
   var tokens = buildingRows.map(function (row) {
     return { type: 'row', estH: SETPOINT_ROW_H, html: _buildBldgRowHTML(row) };
   });
 
-  var chunks = _rptPaginateTokens(tokens, ROWS_BUDGET_FIRST, ROWS_BUDGET_CONT);
+  // 2026-09-30 (fix/report-table-fit-one-page): a Recommended value shared by every row is stated
+  // once, above the table, with the same words the dropped column carried.
+  var recNote = recIsUniform
+    ? '<div style="font-size:11px;color:var(--rpt-page-text);line-height:1.6;margin-bottom:8px">' +
+      '<strong>Recommended for every building</strong> (setpoints and schedule): ' +
+      _recCells[0].replace(/<br>/g, '; ') +
+      '</div>'
+    : '';
+
+  // Measured budgets (same reason as the readiness table): row heights, table head, first-page
+  // chrome, continuation heading and the trailing notes are all read back from a hidden render
+  // instead of trusted constants, so no row can run under the footer. Constants stay as the
+  // no-DOM fallback.
+  var _tableOpen = '<table style="width:100%;border-collapse:collapse;margin-bottom:14px;table-layout:fixed">' + tableHead;
+  var _theadM = _rptMeasureTableTokens(_tableOpen, tokens);
+  var _theadH = _theadM ? _theadM : SETPOINT_THEAD_H;
+  var _firstChromeM = _rptMeasureHtmlH(preamble + totalsCallout + recNote);
+  var _firstChromeH = _firstChromeM !== null ? _firstChromeM : SETPOINT_PREAMBLE_H;
+  var _contHdrM = _rptMeasureHtmlH(
+    '<div style="font-size:' +
+      RPT_SECTION_HEAD_PX +
+      'px;font-weight:600;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid">Setpoint Programming Review (2 of 3)</div>',
+  );
+  var _contHdrH = _contHdrM !== null ? _contHdrM : SETPOINT_CONT_HDR_H;
+  var _tailM = _rptMeasureHtmlH(co2Note + exclusionNote);
+  var _tailH = _tailM !== null ? _tailM : (co2Note ? 110 : 0) + (exclusionNote ? 110 : 0);
+  var _spBudgetFirst = _rptContentBudget('flush') - _firstChromeH - _theadH - SETPOINT_SAFETY_H;
+  var _spBudgetCont = _rptContentBudget('flush') - _contHdrH - _theadH - SETPOINT_SAFETY_H;
+
+  var chunks = _rptPaginateWithTail(tokens, _spBudgetFirst, _spBudgetCont, _tailH);
   var numChunks = chunks.length;
   var resultPages = [];
 
@@ -18288,7 +18439,8 @@ function rptPageASHRAE36SetpointReview(n, d) {
     var pageN = n + chunkIndex;
     var bodyHTML;
     if (chunkIndex === 0) {
-      bodyHTML = preamble + totalsCallout + table + (chunkIndex === numChunks - 1 ? co2Note + exclusionNote : '');
+      bodyHTML =
+        preamble + totalsCallout + recNote + table + (chunkIndex === numChunks - 1 ? co2Note + exclusionNote : '');
     } else {
       var contHdr =
         // D-12 (2026-08-03): continuation heading -> 13pt section tier, same as the "(1 of N)"
