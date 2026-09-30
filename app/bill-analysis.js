@@ -14148,6 +14148,21 @@ function _lanczosKernel(x, a) {
 // byte-for-byte UNCHANGED — only the yield points were added, so output
 // pixels are identical to before.
 const LANCZOS_YIELD_ROWS = 24;
+// _yieldToEventLoop: the ONE yield used by the OCR path. Uses a MessageChannel
+// message, not setTimeout(0): a hidden/minimized tab clamps timers to >= 1 s (so
+// ~1000 Lanczos yields took ~17 min) but does not delay message events.
+let _yieldChannel = null;
+const _yieldWaiters = [];
+function _yieldToEventLoop() {
+  if (!_yieldChannel) {
+    _yieldChannel = new MessageChannel();
+    _yieldChannel.port1.onmessage = () => _yieldWaiters.shift()();
+  }
+  return new Promise((resolve) => {
+    _yieldWaiters.push(resolve);
+    _yieldChannel.port2.postMessage(0);
+  });
+}
 async function _lanczosResize(srcCanvas, dstW, dstH, a) {
   a = a || 3;
   const srcW = srcCanvas.width,
@@ -14203,7 +14218,7 @@ async function _lanczosResize(srcCanvas, dstW, dstH, a) {
     // can't starve the main thread (Cancel button, progress UI) for its full
     // duration. Does not touch the math below.
     if (oy > 0 && oy % LANCZOS_YIELD_ROWS === 0) {
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await _yieldToEventLoop();
     }
     const rowBase = oy * srcW * 4;
     const tRowBase = oy * dstW * 4;
@@ -14240,7 +14255,7 @@ async function _lanczosResize(srcCanvas, dstW, dstH, a) {
   for (let oy = 0; oy < dstH; oy++) {
     // ocr-lanczos-yield: same yield convention as the horizontal pass above.
     if (oy > 0 && oy % LANCZOS_YIELD_ROWS === 0) {
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await _yieldToEventLoop();
     }
     const srcY = (oy + 0.5) / scaleY - 0.5;
     const top = Math.floor(srcY - a * filterScaleY);
@@ -14313,7 +14328,10 @@ async function _renderPageHQ(pg, targetScale, _timing) {
   // own explicit PDFJS_AWAIT_TIMEOUT_MS (30s) budget here — see the resize
   // budget note below for why decode and resize can no longer share one
   // timeout at the call sites.
-  await _withTimeout(pg.render({ canvasContext: rawCtx, viewport: vpHi }).promise, PDFJS_AWAIT_TIMEOUT_MS, 'decode');
+  // intent 'print': pdf.js 3.11 schedules 'display' render steps with requestAnimationFrame,
+  // which never fires in a hidden tab. 'print' uses a microtask instead. Same pixels on a
+  // synthetic PDF (tools/test-ocr-hidden-tab.js).
+  await _withTimeout(pg.render({ canvasContext: rawCtx, viewport: vpHi, intent: 'print' }).promise, PDFJS_AWAIT_TIMEOUT_MS, 'decode');
   if (_timing) _timing.decodeMs = Math.round(performance.now() - _decodeT0);
   const targetVp = pg.getViewport({ scale: targetScale });
   const dstW = Math.max(1, Math.round(targetVp.width));
