@@ -1776,6 +1776,14 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.30.42',
+    date: '2026-09-30',
+    title: 'PDF / OCR: bill extraction keeps running in the background',
+    items: [
+      { type: 'fix', text: 'PDF / OCR page: bill extraction no longer stalls or times out when the CompanyHub tab is in the background, minimized or covered by other windows.' }
+    ]
+  },
+  {
     v: 'v2026.09.30.41',
     date: '2026-09-30',
     title: 'One HVAC split for the Woodland report, BAS Calc and setpoint options',
