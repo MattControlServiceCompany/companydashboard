@@ -1776,6 +1776,16 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.30.40',
+    date: '2026-09-30',
+    title: 'Bill import and CSV import: gas units convert the same way everywhere',
+    items: [
+      { type: 'fix', text: 'Bill import and CSV import now convert gas units (CCF, MMBtu, Mcf) to therms one way everywhere, so the same gas usage gives the same therms on every page.' },
+      { type: 'fix', text: 'CSV import: a gas column labelled Mcf is now converted to therms instead of being read as therms.' },
+      { type: 'fix', text: 'Bill import: a meter multiplier is no longer read as a therm factor.' }
+    ]
+  },
+  {
     v: 'v2026.09.29.39',
     date: '2026-09-29',
     title: 'PDF / OCR: held bills and dashed account numbers',
