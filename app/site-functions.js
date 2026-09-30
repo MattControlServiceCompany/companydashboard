@@ -1776,6 +1776,14 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.30.44',
+    date: '2026-09-30',
+    title: 'Internal test tools updated',
+    items: [
+      { type: 'change', text: 'Internal test tools updated; no change to the site.' }
+    ]
+  },
+  {
     v: 'v2026.09.30.43',
     date: '2026-09-30',
     title: 'Service Proposal and quarterly reports: prices now add up exactly',
