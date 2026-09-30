@@ -18017,7 +18017,7 @@ function rptPageASHRAE36SetpointReview(n, d) {
 
     var deviatorLabel;
     if (deviatorCount > 0) {
-      deviatorLabel = deviatorCount + ' of ' + zones.length + ' zone' + (zones.length !== 1 ? 's' : '') + ' differ from ASHRAE 36 defaults';
+      deviatorLabel = deviatorCount + ' of ' + zones.length + ' zone' + (zones.length !== 1 ? 's' : '') + (deviatorCount !== 1 ? ' differ' : ' differs') + ' from ASHRAE 36 defaults';
     } else if (!hasAnyData) {
       deviatorLabel = zones.length + ' zone' + (zones.length !== 1 ? 's' : '') + ': no setpoint programmed';
     } else {
