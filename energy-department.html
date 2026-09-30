@@ -4688,6 +4688,9 @@
           height: auto !important;
           max-height: 50vh;
         }
+        #pdfDockCol {
+          display: none !important;
+        }
       }
       /* -- SIDEBAR PROJECT FOLDERS -- */
       .s-proj-header {
@@ -9283,6 +9286,26 @@
                 >
                   <div class="ai-label" style="margin: 0">📄 Extraction Output</div>
                   <div style="display: flex; align-items: center; gap: 7px">
+                    <label
+                      id="pdfSbsWrap"
+                      style="
+                        display: none;
+                        align-items: center;
+                        gap: 4px;
+                        font-size: 11px;
+                        color: var(--text);
+                        cursor: pointer;
+                      "
+                      title="Show the PDF next to the values (screens 1400 pixels wide or more)"
+                    >
+                      <input
+                        type="checkbox"
+                        id="pdfSbsToggle"
+                        onchange="setPdfSideBySide(this.checked)"
+                        style="margin: 0; cursor: pointer"
+                      />
+                      Side by side
+                    </label>
                     <button
                       id="pdfViewBtn"
                       style="
@@ -9300,7 +9323,7 @@
                         event.stopPropagation();
                         viewCurrentExtractionPDF(event);
                       "
-                      title="View the source PDF page for the currently selected bill"
+                      title="View the source PDF. It opens at the page of the selected billing period"
                     >
                       📄 View PDF
                     </button>
@@ -9380,6 +9403,54 @@
                     border-top: 1px solid var(--s3);
                   "
                 ></div>
+              </div>
+              <!-- DOCKED PDF VIEWER: sits beside the values and billing periods (no backdrop).
+                   Shown only while the right column is visible and the screen is 1400px+ wide. -->
+              <div
+                id="pdfDockCol"
+                style="
+                  display: none;
+                  flex: 0 0 40%;
+                  min-width: 320px;
+                  min-height: 0;
+                  position: relative;
+                  flex-direction: column;
+                  background: var(--s2);
+                  border: 1px solid var(--border2);
+                  border-radius: 8px;
+                  overflow: hidden;
+                "
+                data-fb="energy.pdf.dock"
+              >
+                <div
+                  id="pdfDockResize"
+                  title="Drag to change the width"
+                  style="position: absolute; left: 0; top: 0; bottom: 0; width: 6px; cursor: col-resize; z-index: var(--z-sticky, 2)"
+                ></div>
+                <div
+                  style="
+                    flex-shrink: 0;
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    padding: 6px 10px;
+                    background: var(--s1);
+                    border-bottom: 1px solid var(--border2);
+                  "
+                >
+                  <span id="pdfDockStatus" style="flex: 1; min-width: 0; font-size: 12px; font-weight: 600; color: var(--text)">PDF</span>
+                  <button
+                    class="btn btn-ghost btn-sm"
+                    style="font-size: 11px; padding: 3px 10px; flex-shrink: 0"
+                    onclick="openPdfDockInTab()"
+                  >
+                    Open in new tab
+                  </button>
+                  <button class="btn btn-ghost btn-sm" style="font-size: 11px; padding: 3px 8px; flex-shrink: 0" onclick="closePdfDock()" title="Close the PDF">
+                    &#10005;
+                  </button>
+                </div>
+                <div id="pdfDockBody" style="flex: 1; min-height: 0"></div>
               </div>
             </div>
           </div>

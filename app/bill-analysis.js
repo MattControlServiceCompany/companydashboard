@@ -10036,6 +10036,7 @@ function clearPDFOCR() {
   }
   const viewBtn = document.getElementById('pdfViewBtn');
   if (viewBtn) viewBtn.style.display = 'none';
+  closePdfDock();
   // Fix (2026-09-15, extraction-review-sweep): Clear reset everything EXCEPT
   // the multi-building review panel (showMultiBuildingReviewPanel), which
   // stayed display:block with the PREVIOUS extraction's rows/content still
@@ -13531,102 +13532,222 @@ function savePDFDebug(isManualSave) {
   setTimeout(() => URL.revokeObjectURL(blobUrl), 3000);
   showToast('Debug file saved to Downloads');
 }
-// Fix 3 (2026-09-15, extraction-review-sweep): "View PDF" button on the
-// extraction review screen. The source PDF is already retained on the page
-// (module-scope `pdfB64` for a single-file extraction; per-file
-// `window._pdfQueue.results[i].pdfB64` for batch/queue mode) but there was
-// previously no way to see it while reviewing extracted fields. Reuses the
-// existing `_showPdfModal` viewer (bill-analysis.js) and an EQUIVALENT
-// page-range resolution to `togglePDFRawText()` just below (bill._pageIndex /
-// _pageStart / _pageEnd against the currently active bill in
-// window._pdfMultiBills[window._pdfMultiIdx]) — equivalent-in-effect, not
-// identical: togglePDFRawText() additionally clamps its pageIdx against
-// validSections.length and handles the Evergy non-page-marker text-split
-// case, neither of which applies here (PDFLib already clamps start/end
-// against the PDF's own total page count below). That global pair is set
-// identically by both the single-file path and renderQueueResults(), so one
-// implementation covers both review modes without branching on which mode
-// is active.
+// ── PDF viewer for the extraction review screen ──────────────────────────
+// The whole original PDF is opened (one blob URL per file) at the page of the
+// selected billing period (#page=N). Wide screens (1400px+) with "Side by side"
+// on dock the viewer beside the values (#pdfDockCol, no backdrop); otherwise
+// the same whole-file URL opens in the modal viewer (_showPdfModal).
+// viewSavedPDF (Saved Bills, csv-import) has its own page-range logic and is
+// not changed.
+const PDF_DOCK_MIN_SCREEN_W = 1400;
+const PDF_DOCK_LS_ON = 'ch_pdf_side_by_side';
+const PDF_DOCK_LS_W = 'ch_pdf_dock_width';
+let _pdfDock = { open: false, b64: null, url: null, total: null, page: null, token: 0, shownKey: null };
+
+function _pdfDockLsGet(key) {
+  try {
+    return localStorage.getItem(key);
+  } catch (e) {
+    return null;
+  }
+}
+function _pdfDockLsSet(key, val) {
+  try {
+    localStorage.setItem(key, val);
+  } catch (e) {}
+}
+function _pdfSideBySideOn() {
+  return _pdfDockLsGet(PDF_DOCK_LS_ON) !== '0';
+}
+function _pdfScreenWideEnough() {
+  return window.innerWidth >= PDF_DOCK_MIN_SCREEN_W;
+}
+// Source PDF: queue/batch mode keeps pdfB64 on the active queue result;
+// single-file mode uses the module-scope pdfB64.
+function _pdfCurrentB64() {
+  let b64 = pdfB64;
+  const q = window._pdfQueue;
+  if (q && q.results && q._activeFileIdx != null) {
+    const activeResult = q.results[q._activeFileIdx];
+    if (activeResult && activeResult.pdfB64) b64 = activeResult.pdfB64;
+  }
+  return b64 || null;
+}
+// 1-based first page of the selected billing period, or null when unknown.
+function _pdfSelectedBillPage() {
+  const bill = (window._pdfMultiBills || [])[window._pdfMultiIdx || 0] || null;
+  if (!bill) return null;
+  const raw = bill._pageStart != null && bill._pageEnd != null ? bill._pageStart : bill._pageIndex;
+  const n = parseInt(raw, 10);
+  return n >= 1 ? n : null;
+}
+function _pdfBlobFromB64(b64) {
+  const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+  return { bytes, url: URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' })) };
+}
+async function _pdfPageCount(bytes) {
+  try {
+    if (!window.PDFLib) return null;
+    const doc = await window.PDFLib.PDFDocument.load(bytes, { ignoreEncryption: true });
+    return doc.getPageCount();
+  } catch (e) {
+    return null;
+  }
+}
+function _pdfViewerStatus(page, total) {
+  if (!page) return 'Whole PDF' + (total ? ' (' + total + ' pages)' : '') + '. No page is stored for this bill.';
+  if (total && page > total) return 'Whole PDF (' + total + ' pages). The stored page ' + page + ' is not in the file.';
+  return 'Page ' + page + (total ? ' of ' + total : '') + '. The whole PDF is open. Scroll to see other pages.';
+}
+
 async function viewCurrentExtractionPDF(event) {
   if (event && event.stopPropagation) event.stopPropagation();
   try {
-    // Resolve the source PDF: queue/batch mode keeps its own per-file pdfB64
-    // on the active queue result; single-file mode uses the module-scope
-    // `pdfB64` set when the file was dropped/selected.
-    let b64 = pdfB64;
-    const q = window._pdfQueue;
-    if (q && q.results && q._activeFileIdx != null) {
-      const activeResult = q.results[q._activeFileIdx];
-      if (activeResult && activeResult.pdfB64) b64 = activeResult.pdfB64;
-    }
+    const b64 = _pdfCurrentB64();
     if (!b64) {
       showToast('No PDF available for this extraction');
       return;
     }
-
-    // Resolve the active bill's page range — equivalent field/precedence to
-    // togglePDFRawText()'s _pageStart/_pageEnd/_pageIndex handling above
-    // (not identical; see the function-level comment above).
-    const bills = window._pdfMultiBills || [];
-    const idx = window._pdfMultiIdx || 0;
-    const currentBill = bills[idx] || null;
-    let pageStart = null;
-    let pageEnd = null;
-    if (currentBill) {
-      if (currentBill._pageStart != null && currentBill._pageEnd != null) {
-        pageStart = currentBill._pageStart;
-        pageEnd = currentBill._pageEnd;
-      } else if (currentBill._pageIndex != null) {
-        pageStart = currentBill._pageIndex;
-        pageEnd = currentBill._pageIndex;
+    if (_pdfSideBySideOn() && _pdfScreenWideEnough()) {
+      if (_pdfDock.open) closePdfDock();
+      else {
+        _pdfDock.open = true;
+        await _refreshPdfDock();
       }
+      return;
     }
-
-    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-    let outBytes = bytes;
-    let statusMsg = 'Opening full PDF (no page range for this bill)';
-    if (pageStart != null && pageEnd != null && window.PDFLib) {
-      try {
-        const srcDoc = await window.PDFLib.PDFDocument.load(bytes, { ignoreEncryption: true });
-        const total = srcDoc.getPageCount();
-        let start = Math.max(1, parseInt(pageStart, 10) || 1);
-        let end = Math.min(total, parseInt(pageEnd, 10) || total);
-        if (start > end) {
-          const t = start;
-          start = end;
-          end = t;
-        }
-        if (start <= total) {
-          const idxs = [];
-          for (let p = start; p <= end; p++) {
-            const pidx = p - 1;
-            if (pidx >= 0 && pidx < total) idxs.push(pidx);
-          }
-          if (idxs.length) {
-            const outDoc = await window.PDFLib.PDFDocument.create();
-            const copied = await outDoc.copyPages(srcDoc, idxs);
-            copied.forEach((pg) => outDoc.addPage(pg));
-            outBytes = await outDoc.save();
-            statusMsg = 'Showing page' + (start === end ? ' ' + start : 's ' + start + '–' + end) + ' of ' + total;
-          } else {
-            statusMsg = 'Stored page range is outside the PDF (' + total + ' pages). Showing full PDF.';
-          }
-        } else {
-          statusMsg = 'Stored page range is outside the PDF (' + total + ' pages). Showing full PDF.';
-        }
-      } catch (sliceErr) {
-        console.error('[viewCurrentExtractionPDF] pdf-lib slice failed, showing full PDF:', sliceErr);
-        statusMsg = 'Slice failed (' + (sliceErr.message || 'pdf-lib error') + ') — showing full PDF';
-      }
-    }
-    const blob = new Blob([outBytes], { type: 'application/pdf' });
-    const url = URL.createObjectURL(blob);
-    _showPdfModal(url, statusMsg);
+    const { bytes, url } = _pdfBlobFromB64(b64);
+    const page = _pdfSelectedBillPage();
+    const total = await _pdfPageCount(bytes);
+    _showPdfModal(page ? url + '#page=' + page : url, _pdfViewerStatus(page, total));
   } catch (e) {
     console.error('[viewCurrentExtractionPDF] failed:', e);
     showToast('Could not open PDF: ' + e.message);
   }
 }
+
+function _pdfDockRevoke() {
+  if (_pdfDock.url) {
+    try {
+      URL.revokeObjectURL(_pdfDock.url);
+    } catch (e) {}
+  }
+  _pdfDock.url = null;
+  _pdfDock.b64 = null;
+  _pdfDock.total = null;
+  _pdfDock.page = null;
+  _pdfDock.shownKey = null;
+  const body = document.getElementById('pdfDockBody');
+  if (body) body.innerHTML = '';
+}
+function closePdfDock() {
+  _pdfDock.open = false;
+  _pdfDock.token++;
+  _pdfDockRevoke();
+  _syncPdfDockVisibility();
+}
+// The dock follows #pdfRightCol: hidden with it (batch mode), and hidden on narrow screens.
+function _syncPdfDockVisibility() {
+  const dock = document.getElementById('pdfDockCol');
+  if (!dock) return;
+  const rc = document.getElementById('pdfRightCol');
+  const show = _pdfDock.open && _pdfScreenWideEnough() && !!rc && rc.style.display !== 'none';
+  dock.style.display = show ? 'flex' : 'none';
+  if (show) _clampPdfDockWidth();
+  const btn = document.getElementById('pdfViewBtn');
+  if (btn) btn.style.background = _pdfDock.open ? 'var(--s4)' : 'transparent';
+  const wrap = document.getElementById('pdfSbsWrap');
+  if (wrap && btn) wrap.style.display = btn.style.display === 'none' ? 'none' : 'flex';
+}
+function _clampPdfDockWidth() {
+  const dock = document.getElementById('pdfDockCol');
+  const body = document.getElementById('pdfBody');
+  if (!dock || !body) return;
+  const saved = parseInt(_pdfDockLsGet(PDF_DOCK_LS_W), 10);
+  const max = Math.max(320, body.clientWidth - 340 - 300 - 32);
+  const w = Math.min(max, Math.max(320, saved > 0 ? saved : Math.round(body.clientWidth * 0.4)));
+  dock.style.flex = '0 0 ' + w + 'px';
+}
+// Rebuild the blob only when the file changes; move to the page when the period changes.
+async function _refreshPdfDock() {
+  if (!_pdfDock.open) return;
+  const token = ++_pdfDock.token;
+  const b64 = _pdfCurrentB64();
+  if (!b64) {
+    closePdfDock();
+    return;
+  }
+  _syncPdfDockVisibility();
+  if (b64 !== _pdfDock.b64) {
+    _pdfDockRevoke();
+    const built = _pdfBlobFromB64(b64);
+    _pdfDock.b64 = b64;
+    _pdfDock.url = built.url;
+    _pdfDock.total = await _pdfPageCount(built.bytes);
+    if (token !== _pdfDock.token) return; // a newer refresh or a close took over
+  }
+  const page = _pdfSelectedBillPage();
+  const key = _pdfDock.url + '|' + page;
+  const status = document.getElementById('pdfDockStatus');
+  if (status) status.textContent = _pdfViewerStatus(page, _pdfDock.total);
+  if (key === _pdfDock.shownKey) return;
+  _pdfDock.shownKey = key;
+  _pdfDock.page = page;
+  const body = document.getElementById('pdfDockBody');
+  if (!body) return;
+  // A new iframe per page move: it always jumps to the page, whichever PDF viewer the browser uses.
+  const fr = document.createElement('iframe');
+  fr.title = 'PDF viewer';
+  fr.style.cssText = 'width:100%;height:100%;border:0;display:block';
+  fr.src = page ? _pdfDock.url + '#page=' + page : _pdfDock.url;
+  body.innerHTML = '';
+  body.appendChild(fr);
+}
+function openPdfDockInTab() {
+  if (!_pdfDock.url) return;
+  window.open(_pdfDock.page ? _pdfDock.url + '#page=' + _pdfDock.page : _pdfDock.url, '_blank');
+}
+function setPdfSideBySide(on) {
+  _pdfDockLsSet(PDF_DOCK_LS_ON, on ? '1' : '0');
+  if (!on) {
+    closePdfDock();
+    return;
+  }
+  if (_pdfScreenWideEnough() && _pdfCurrentB64()) {
+    _pdfDock.open = true;
+    _refreshPdfDock();
+  }
+}
+function _initPdfDock() {
+  const tog = document.getElementById('pdfSbsToggle');
+  const rc = document.getElementById('pdfRightCol');
+  const btn = document.getElementById('pdfViewBtn');
+  const handle = document.getElementById('pdfDockResize');
+  if (!tog || !rc || !btn || !handle) return;
+  tog.checked = _pdfSideBySideOn();
+  const mo = new MutationObserver(_syncPdfDockVisibility);
+  mo.observe(rc, { attributes: true, attributeFilter: ['style'] });
+  mo.observe(btn, { attributes: true, attributeFilter: ['style'] });
+  window.addEventListener('resize', _syncPdfDockVisibility);
+  handle.addEventListener('pointerdown', (ev) => {
+    handle.setPointerCapture(ev.pointerId);
+    const dock = document.getElementById('pdfDockCol');
+    const startX = ev.clientX;
+    const startW = dock.getBoundingClientRect().width;
+    const move = (e) => {
+      _pdfDockLsSet(PDF_DOCK_LS_W, String(Math.round(startW + (startX - e.clientX))));
+      _clampPdfDockWidth();
+    };
+    const up = () => {
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', up);
+    };
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', up);
+  });
+}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _initPdfDock);
+else _initPdfDock();
 function togglePDFRawText() {
   const box = document.getElementById('pdfAIBox');
   const btn = document.getElementById('pdfDebugBtn');
@@ -17640,6 +17761,7 @@ async function processPDF(file) {
   reader.readAsDataURL(file);
 }
 function renderMultiBillUI(bills, box) {
+  _refreshPdfDock(); // docked PDF follows the selected period / active file
   const idx = window._pdfMultiIdx || 0;
   const b = bills[idx];
   const warnings = window._pdfBillWarnings || [];
