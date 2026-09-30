@@ -66,6 +66,15 @@ function makeIdb(initial) {
   return idb;
 }
 
+// Same canonical JSON + SHA-256 as kv-sync.js, so hash compares mean something.
+const sortDeep = (v) =>
+  Array.isArray(v)
+    ? v.map(sortDeep)
+    : v && typeof v === 'object'
+      ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, sortDeep(v[k])]))
+      : v;
+const hashOf = (v) => require('crypto').createHash('sha256').update(JSON.stringify(sortDeep(v))).digest('hex');
+
 // Fake kv-sync server.
 function makeServer(seed) {
   const rows = new Map();
@@ -87,7 +96,7 @@ function makeServer(seed) {
         Array.from(rows, ([key, r]) => ({
           key,
           version: r.version,
-          hash: 'srvhash-' + key + '-' + r.version,
+          hash: r.deleted ? null : hashOf(r.value),
           deleted: r.deleted,
         })),
       );
@@ -109,7 +118,7 @@ function makeServer(seed) {
         return res(409, { error: 'conflict', current: cur });
       const version = cur ? cur.version + 1 : 1;
       rows.set(b.key, { value: b.deleted ? null : b.value, version, deleted: !!b.deleted });
-      return res(200, { version, hash: 'h-' + b.key + '-' + version });
+      return res(200, { version, hash: b.deleted ? null : hashOf(b.value) });
     }
     return res(405, {});
   };
@@ -124,10 +133,12 @@ function fakeSession() {
   return o;
 }
 
-async function boot({ host, signedIn, storedMode, server, idbSeed, lsSeed }) {
+async function boot({ host, signedIn, storedMode, server, idbSeed, lsSeed, reuse }) {
   const listeners = {};
-  const ls = new Map(Object.entries(lsSeed || {}));
+  const ls = reuse ? reuse.ls : new Map(Object.entries(lsSeed || {}));
+  const toasts = [];
   if (storedMode) ls.set('ch_backend_mode', storedMode);
+  ls.delete('ch_sb_session');
   if (signedIn) {
     ls.set(
       'ch_sb_session',
@@ -143,9 +154,10 @@ async function boot({ host, signedIn, storedMode, server, idbSeed, lsSeed }) {
       return ls.size;
     },
   };
-  const idb = makeIdb(idbSeed);
+  const idb = reuse ? reuse.idb : makeIdb(idbSeed);
   const ctx = {
-    console: { log() {}, warn: process.env.DBG ? console.warn : () => {}, error() {}, info() {} },
+    console: { log() {}, warn: process.env.DBG ? console.warn : () => {}, error: console.error, info() {} },
+    process,
     location: { hostname: host },
     localStorage,
     indexedDB: idb,
@@ -159,6 +171,7 @@ async function boot({ host, signedIn, storedMode, server, idbSeed, lsSeed }) {
       }
     },
     navigator: {},
+    showToast: (m) => toasts.push(m),
     setTimeout,
     clearTimeout,
     setInterval: () => 0,
@@ -185,7 +198,7 @@ async function boot({ host, signedIn, storedMode, server, idbSeed, lsSeed }) {
   vm.runInContext(SRC.cls, ctx);
   vm.runInContext(SRC.db, ctx);
   await ctx.window.DB.warmCache();
-  return { ctx, DB: ctx.window.DB, idb, ls };
+  return { ctx, DB: ctx.window.DB, idb, ls, toasts };
 }
 
 const results = [];
@@ -310,6 +323,67 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
       arch.some((e) => e.key === 'en_budget_a' && same(e.losingValue, { n: 'STALE-LOCAL' })),
       'archive=' + arch.length,
     );
+  });
+
+  // Review fix 2: any non-production host is off even with a stored 'on'/'shadow'.
+  for (const host of ['example.github.io', 'localhost', 'deploy-preview-3--chub-test.netlify.app', 'chub-test.example.com']) {
+    await scenario('2b', async () => {
+      for (const mode of ['on', 'shadow']) {
+        const srv = makeServer(SEED());
+        const { ctx, DB } = await boot({ host, signedIn: true, storedMode: mode, server: srv });
+        DB.set('en_budget_local', 1);
+        await tick(20);
+        check('2b ' + host + ' stored ' + mode + ': off, 0 network calls', ctx.window.CH_AUTH.backendMode() === 'off' && srv.calls.length === 0, srv.calls.join('|'));
+      }
+    });
+  }
+
+  // Review fix 1 + 5: sign in, sync, signed-out edit, other device bumps, sign in again.
+  await scenario('8', async () => {
+    const srv = makeServer(SEED());
+    const b1 = await boot({ host: NETLIFY, signedIn: true, server: srv });
+    const b2 = await boot({ host: NETLIFY, signedIn: false, server: srv, reuse: b1 });
+    b2.DB.set('en_budget_a', { n: 'SIGNED-OUT-EDIT' });
+    await tick(30);
+    srv.rows.set('en_budget_a', { value: { n: 'OTHER-DEVICE' }, version: 9, deleted: false });
+    const putsBefore = srv.puts.length;
+    const b3 = await boot({ host: NETLIFY, signedIn: true, server: srv, reuse: b1 });
+    await tick(2200);
+    const arch = b3.DB.get('en_conflict_archive', []);
+    check('8 signed-out edit + other-device bump: edit archived', arch.some((e) => e.key === 'en_budget_a' && same(e.losingValue, { n: 'SIGNED-OUT-EDIT' })), 'archive=' + JSON.stringify(arch.map((e) => e.key)));
+    check('8 ...server value applied, 0 PUTs', same(b3.DB.get('en_budget_a'), { n: 'OTHER-DEVICE' }) && srv.puts.length === putsBefore, '');
+    check('8 ...toast points to the archive', b3.toasts.some((t) => /conflict archive/.test(t)), JSON.stringify(b3.toasts));
+  });
+
+  // Unchanged local + newer server = plain pull, no archive noise.
+  await scenario('8b', async () => {
+    const srv = makeServer(SEED());
+    const b1 = await boot({ host: NETLIFY, signedIn: true, server: srv });
+    srv.rows.set('en_budget_a', { value: { n: 'NEWER' }, version: 9, deleted: false });
+    const b2 = await boot({ host: NETLIFY, signedIn: true, server: srv, reuse: b1 });
+    check('8b unchanged local + newer server: pulled, nothing archived', same(b2.DB.get('en_budget_a'), { n: 'NEWER' }) && b2.DB.get('en_conflict_archive', []).length === 0, JSON.stringify(b2.DB.get('en_budget_a')) + JSON.stringify(b2.DB.get('en_conflict_archive', [])).slice(0, 300));
+  });
+
+  // Review fix 3: merge-function key merges in the drift branch.
+  await scenario('9', async () => {
+    const srv = makeServer({ en_customers: [{ id: 'c1', name: 'One' }] });
+    const b = await boot({ host: NETLIFY, signedIn: true, server: srv, idbSeed: { en_customers: [{ id: 'c2', name: 'Two' }] } });
+    await tick(40);
+    const ids = (b.DB.get('en_customers') || []).map((c) => c.id).sort().join(',');
+    const srvIds = srv.rows.get('en_customers').value.map((c) => c.id).sort().join(',');
+    check('9 en_customers drift: merged locally', ids === 'c1,c2', ids);
+    check('9 en_customers drift: one based PUT of the merged list, nothing archived', srv.puts.length === 1 && srvIds === 'c1,c2' && b.DB.get('en_conflict_archive', []).length === 0, srv.puts.length + ' PUTs, server=' + srvIds);
+  });
+
+  // Review fix 4: archive cap keeps the newest, warns about the dropped.
+  await scenario('10', async () => {
+    const srv = makeServer(SEED());
+    const old = Array.from({ length: 200 }, (_, i) => ({ key: 'old' + i, archivedAt: 'x' }));
+    const b = await boot({ host: NETLIFY, signedIn: true, server: srv, idbSeed: { en_budget_a: { n: 'STALE' }, en_conflict_archive: old } });
+    await tick(2200);
+    const arch = b.DB.get('en_conflict_archive', []);
+    check('10 archive capped at 200, newest entry kept', arch.length === 200 && arch.some((e) => e.key === 'en_budget_a') && arch[0].key === 'old1', 'len=' + arch.length);
+    check('10 archive: warning about dropped entries', b.toasts.some((t) => /oldest entries were removed/.test(t)), JSON.stringify(b.toasts));
   });
 
   let fail = 0;

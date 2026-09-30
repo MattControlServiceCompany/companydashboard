@@ -431,18 +431,55 @@ const DB = (() => {
 
   // --- Conflict archive (data-safety invariant, applies to every auto-adopt
   // in both directions: server-wins-over-local and local-wins-over-server). --
+  const CONFLICT_ARCHIVE_CAP = 200; // keep the newest N entries; the oldest are dropped with a visible warning
+  let _archiveBatch = null; // while hydrating: entries are collected and written ONCE
   function _appendConflictArchive(entry) {
+    const full = Object.assign({ archivedAt: new Date().toISOString() }, entry);
+    if (_archiveBatch) {
+      _archiveBatch.push(full);
+      return;
+    }
+    _writeConflictArchive([full]);
+  }
+  function _writeConflictArchive(entries) {
+    if (!entries.length) return;
     try {
       if (typeof sget !== 'function' || typeof sset !== 'function') {
-        console.warn('[DB] Cannot archive conflict — sget/sset (core.js) not loaded:', entry.key);
+        console.warn('[DB] Cannot archive conflict — sget/sset (core.js) not loaded:', entries[0].key);
         return;
       }
-      const archive = sget('en_conflict_archive', []);
-      archive.push(Object.assign({ archivedAt: new Date().toISOString() }, entry));
+      let archive = sget('en_conflict_archive', []).concat(entries);
+      let dropped = 0;
+      if (archive.length > CONFLICT_ARCHIVE_CAP) {
+        dropped = archive.length - CONFLICT_ARCHIVE_CAP;
+        archive = archive.slice(dropped); // newest entries always survive
+      }
       sset('en_conflict_archive', archive);
+      if (dropped) _showLater('The conflict archive was full: the ' + dropped + ' oldest entries were removed.', 'warning');
     } catch (e) {
       console.warn('[DB] Failed to append to conflict archive:', e);
     }
+  }
+  function _flushConflictArchive() {
+    const batch = _archiveBatch;
+    _archiveBatch = null;
+    if (batch && batch.length) {
+      _writeConflictArchive(batch);
+      const lost = batch.filter((e) => e.losingSide === 'local').length;
+      if (lost) {
+        _showLater(
+          lost +
+            ' of your local edits were replaced by newer saved data. Nothing was lost: open Sync status, then the conflict archive.',
+          'warning',
+        );
+      }
+    }
+  }
+  // showToast lives in core.js, loaded after db.js, so wait for it.
+  function _showLater(msg, kind) {
+    setTimeout(function () {
+      if (typeof showToast === 'function') showToast(msg, kind || 'info', 10000);
+    }, 2000);
   }
 
   // --- Core PUT sender — every write/delete/queue-replay/hydration-drift-
@@ -909,6 +946,71 @@ const DB = (() => {
   }
 
   async function _hydrate() {
+    _archiveBatch = [];
+    try {
+      await _hydrateInner();
+    } finally {
+      _flushConflictArchive();
+    }
+  }
+
+  // Local is never overwritten unless it is unchanged since the last sync or
+  // is archived first. A pure-additive list key (UNION_KEY_CONFIG) is merged.
+  async function _reconcileIncoming(localKey, row, mHash) {
+    const localValue = _cache[localKey];
+    const base = _replicaVersions[localKey];
+    const stamp = { version: row.version, hash: mHash || null };
+    if (row.deleted) stamp.deleted = true;
+    let merged = null;
+    if (localValue !== undefined) {
+      let localHash = null;
+      try {
+        localHash = await _sha256Hex(_canonicalJSON(localValue));
+      } catch (e) {
+        localHash = null;
+      }
+      if (!row.deleted && localHash !== null && localHash === mHash) {
+        _replicaVersions[localKey] = stamp; // same content: adopt the version only
+        return;
+      }
+      const unedited = localHash !== null && base && base.hash && base.hash === localHash;
+      if (!unedited) {
+        if (!row.deleted) merged = _computeDisjointUnion(localKey, localValue, row.value);
+        if (merged === null) {
+          _appendConflictArchive({
+            key: localKey,
+            reason: 'hydration-server-wins',
+            losingSide: 'local',
+            losingValue: localValue,
+            losingVersion: base && typeof base.version === 'number' ? base.version : null,
+            losingHash: localHash,
+            winningSide: 'server',
+          });
+        }
+      }
+    }
+    if (merged !== null) {
+      await _rawSet(localKey, merged);
+      _replicaVersions[localKey] = stamp;
+      let putResult;
+      try {
+        putResult = await _sendKvPut(localKey, { value: merged });
+      } catch (e) {
+        putResult = { status: 'network-error' };
+      }
+      if (putResult.status === 'conflict') {
+        await _handleConflict(localKey, { value: merged }, putResult.body, _backendMode());
+      } else if (putResult.status === 'network-error' || putResult.status === 'error') {
+        _enqueueWrite(localKey, { value: merged });
+      }
+      return;
+    }
+    if (row.deleted) await _rawDelete(localKey);
+    else await _rawSet(localKey, row.value);
+    _replicaVersions[localKey] = stamp;
+  }
+
+  async function _hydrateInner() {
     const mode = _backendMode();
     if (mode !== 'on') return; // shadow/off: hydration is OFF per plan §8
 
@@ -972,8 +1074,7 @@ const DB = (() => {
     // NEVER "absent from manifest -> delete" (that would delete a brand-new
     // un-synced local key; we only ever act on an EXPLICIT manifest entry).
     for (const { m, localKey } of tombstoneKeys) {
-      await _rawDelete(localKey);
-      _replicaVersions[localKey] = { version: m.version, hash: m.hash || null, deleted: true };
+      await _reconcileIncoming(localKey, { deleted: true, version: m.version }, m.hash);
     }
 
     // Routine fetch + apply (hash-compare-before-overwrite rule: this branch
@@ -990,47 +1091,15 @@ const DB = (() => {
       for (const row of rows) {
         const localKey = routineFetchLocalKey[row.key] || row.key;
         if (_syncQueue.some((e) => e.key === localKey)) continue; // race guard, re-check
-        if (row.deleted) {
-          await _rawDelete(localKey);
-        } else {
-          await _rawSet(localKey, row.value);
-        }
         const manifestEntry = manifest.find((m) => m.key === row.key);
-        _replicaVersions[localKey] = { version: row.version, hash: manifestEntry ? manifestEntry.hash : null };
+        await _reconcileIncoming(localKey, row, manifestEntry ? manifestEntry.hash : null);
       }
     }
 
     // Hash-compare conflict check (integration #3 / R15 hydration-drift drill).
     for (const { m, localKey } of conflictCheckKeys) {
-      const localValue = _cache[localKey];
-      let localHash;
-      try {
-        localHash = await _sha256Hex(_canonicalJSON(localValue));
-      } catch (e) {
-        console.warn('[DB] Hydration: local hash compute failed for', localKey, e);
-        continue;
-      }
-      if (localHash === m.hash) {
-        // Same content, different provenance — adopt the version, no data change.
-        _replicaVersions[localKey] = { version: m.version, hash: m.hash };
-        continue;
-      }
-      // Genuine drift: no version map entry for this key, and local differs
-      // from the server. The server wins. Local is never pushed wholesale
-      // without a version map. The local value is kept in the conflict archive.
-      console.warn(
-        '[DB] Hydration drift detected — server wins, archiving local value:',
-        localKey,
-      );
-      _appendConflictArchive({
-        key: localKey,
-        reason: 'hydration-drift-server-wins',
-        losingSide: 'local',
-        losingValue: localValue,
-        losingVersion: null,
-        losingHash: localHash,
-        winningSide: 'server',
-      });
+      // No version map entry and a local value exists: server wins (or a pure
+      // union merge); the local value is archived first. Never a wholesale push.
       let rows = [];
       try {
         rows = await _batchGet([m.key]);
@@ -1038,11 +1107,7 @@ const DB = (() => {
         console.warn('[DB] Hydration: drift fetch failed, leaving key untouched:', localKey, e);
         continue;
       }
-      if (rows[0]) {
-        if (rows[0].deleted) await _rawDelete(localKey);
-        else await _rawSet(localKey, rows[0].value);
-        _replicaVersions[localKey] = { version: rows[0].version, hash: m.hash };
-      }
+      if (rows[0]) await _reconcileIncoming(localKey, rows[0], m.hash);
     }
 
     _persistReplicaState();

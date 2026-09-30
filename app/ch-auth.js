@@ -57,14 +57,16 @@
 
   // THE single backend-mode reader (db.js, sync-ui.js, core.js, site-functions.js
   // all call CH_AUTH.backendMode()). Returns 'off' | 'shadow' | 'on'.
-  //  - Netlify host (*.netlify.app): default 'on' when signed in. Signed out
-  //    is always 'off' (nothing is queued or pushed; the sign-in prompt shows).
-  //    'shadow' is unsafe there (it auto-adopts and overwrites the server), so
-  //    a stored/legacy 'shadow' is read as 'on'. A stored 'off' still wins.
-  //  - Every other host (github.io, file://, localhost): stored value, else
-  //    'off'. /.netlify/functions does not exist there.
+  //  - Only the PRODUCTION Netlify host syncs: *.netlify.app and not a deploy
+  //    preview or branch deploy (those contain '--'). Signed in = 'on'. Signed
+  //    out = 'off' (nothing is pushed; the sign-in prompt shows). A stored 'off'
+  //    wins. 'shadow' overwrites the server, so stored/legacy 'shadow' reads 'on'.
+  //  - EVERY other host (github.io, localhost, file://, previews, custom
+  //    domains): always 'off', whatever is stored. /.netlify/functions does not
+  //    exist there, so there must be zero sync calls.
   function _isNetlifyHost() {
-    return typeof location !== 'undefined' && /\.netlify\.app$/i.test(location.hostname || '');
+    var h = typeof location !== 'undefined' ? location.hostname || '' : '';
+    return /\.netlify\.app$/i.test(h) && h.indexOf('--') === -1;
   }
   function backendMode() {
     if (typeof localStorage === 'undefined') return 'off';
@@ -76,7 +78,7 @@
       return 'off';
     }
     var stored = v === 'off' || v === 'shadow' || v === 'on' ? v : legacy === 'true' ? 'shadow' : null;
-    if (!_isNetlifyHost()) return stored || 'off';
+    if (!_isNetlifyHost()) return 'off';
     if (_signedOut) return 'off';
     if (stored === 'off') return 'off';
     return 'on';
