@@ -535,13 +535,13 @@ function showBillCsvPreview(rows, m, fname, warnings) {
   document.getElementById('billCsvRowCount').textContent =
     rows.length + ' period' + (rows.length !== 1 ? 's' : '') + ' found';
 
-  let thead = '<tr><th>Start</th><th>End</th><th>Days</th>';
+  let thead = '<tr><th>Start</th><th>End</th><th>Days</th><th>Action</th>';
   if (isElec)
     thead +=
       '<th>kWh</th><th>Actual kW</th><th>Facilities kW</th><th>Actual kW Cost</th><th>Facilities kW Cost</th><th>Total $</th>';
   else if (isGas) thead += '<th>Therms</th><th>Cost $</th>';
   else thead += '<th>Usage</th><th>Cost $</th>';
-  thead += '<th>Action</th></tr>';
+  thead += '</tr>';
   const _storedStarts = new Set((m.bills || []).map((b) => b.start));
   let _nUpdate = 0;
 
@@ -582,7 +582,7 @@ function showBillCsvPreview(rows, m, fname, warnings) {
       if (isUpdate) _nUpdate++;
       const nErase = (r._erase || []).length;
       const action = isUpdate
-        ? 'Update: blank cells - existing value will be kept' + (nErase ? '; ' + nErase + ' erased (ERASE)' : '')
+        ? 'Update' + (nErase ? ', ' + nErase + ' erased' : ', blanks kept')
         : 'New';
       return (
         '<tr><td>' +
@@ -591,11 +591,11 @@ function showBillCsvPreview(rows, m, fname, warnings) {
         fmtDate(r.end) +
         '</td><td>' +
         days +
+        '</td><td>' +
+        action +
         '</td>' +
         cells +
-        '<td>' +
-        action +
-        '</td></tr>'
+        '</tr>'
       );
     })
     .join('');
@@ -606,11 +606,21 @@ function showBillCsvPreview(rows, m, fname, warnings) {
     rows.length +
     ' period' +
     (rows.length !== 1 ? 's' : '') +
-    (_nUpdate
-      ? '. ' +
-        _nUpdate +
-        ' match a stored bill: a blank cell means the existing value will be kept. To erase a stored value, type ERASE in that cell.'
-      : '');
+    '';
+  let noteEl = document.getElementById('billCsvKeepNote');
+  if (!noteEl) {
+    noteEl = document.createElement('div');
+    noteEl.id = 'billCsvKeepNote';
+    noteEl.style.cssText = 'margin-top:8px;font-size:12px;color:var(--text)';
+    const tbl = document.getElementById('billCsvPreviewTable');
+    tbl.parentElement.insertAdjacentElement('afterend', noteEl);
+  }
+  noteEl.textContent = _nUpdate
+    ? _nUpdate +
+      ' period' +
+      (_nUpdate !== 1 ? 's match' : ' matches') +
+      ' a stored bill. A blank cell means the existing value will be kept. To erase a stored value, type ERASE in that cell.'
+    : '';
   document.getElementById('billCsvPreviewWrap').style.display = '';
 
   const warnEl = document.getElementById('billCsvWarnings');
