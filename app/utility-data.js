@@ -174,8 +174,76 @@ function _selfHealCustomersAndScope() {
   if (projectsChanged) sset('en_projects', projects);
 }
 
+// ── duplicate check begin ──────────────────────────────────────────────
+// Read-only duplicate check. Runs ONLY from saveUtilityData, and ONLY for
+// meters whose bill count grew since the last seed/save (a PDF/OCR save, CSV
+// import, manual add). It never runs on load, and never merges, deletes or
+// saves anything. It reports with one console.info line.
+//  Duplicate BILL (same meter): same period start+end AND same total AND same
+//    usage, or the same source PDF (pdfKey) AND page. Matching dates alone is
+//    not a duplicate; two different bills can share a period.
+//  Duplicate METER (same building): same non-blank meter number + commodity,
+//    or same account + same service address + same rate. Account + commodity
+//    alone is never enough. Blank values never match each other.
+let _meterBillCounts = null; // null until seeded at end of load: saves during load never run the check
+const _dupNorm = (s) => (s == null ? '' : String(s)).replace(/[\s\-]/g, '').toLowerCase();
+function _seedMeterBillCounts(data) {
+  _meterBillCounts = {};
+  for (const cid of Object.keys(data || {}))
+    for (const b of (data[cid] && data[cid].buildings) || [])
+      for (const m of b.meters || []) _meterBillCounts[m.id] = (m.bills || []).length;
+}
+function _meterRate(m) {
+  const bills = m.bills || [];
+  for (let i = bills.length - 1; i >= 0; i--) if (_dupNorm(bills[i].rateSchedule)) return _dupNorm(bills[i].rateSchedule);
+  return '';
+}
+function _sameMeterIdentity(a, b) {
+  if (_dupNorm(a.meter) && _dupNorm(a.meter) === _dupNorm(b.meter) && _dupNorm(a.commodity) === _dupNorm(b.commodity))
+    return true;
+  if (_dupNorm(a.meter) && _dupNorm(b.meter)) return false; // both numbers present and different
+  const acct = _dupNorm(a.account),
+    addr = _dupNorm(a.maddr),
+    rate = _meterRate(a);
+  return !!(acct && addr && rate && acct === _dupNorm(b.account) && addr === _dupNorm(b.maddr) && rate === _meterRate(b));
+}
+function _dupBillKeys(bl) {
+  const keys = [];
+  if (bl.pdfKey && bl.pdfPageStart) keys.push('pdf|' + bl.pdfKey + '|' + bl.pdfPageStart);
+  if (bl.start && bl.end && _dupNorm(bl.totalCost) !== '')
+    keys.push(['p', bl.start, bl.end, _dupNorm(bl.totalCost), _dupNorm(bl.kwh), _dupNorm(bl.naturalGasTherms)].join('|'));
+  return keys;
+}
+// Returns report lines for meters whose bill count grew in this customer's data. Updates counts.
+function _collectDuplicateCandidates(cdata) {
+  const lines = [];
+  if (!_meterBillCounts) return lines;
+  for (const bldg of (cdata && cdata.buildings) || []) {
+    const meters = bldg.meters || [];
+    const touched = meters.filter((m) => (m.bills || []).length > (_meterBillCounts[m.id] || 0));
+    for (const m of meters) _meterBillCounts[m.id] = (m.bills || []).length;
+    for (const m of touched) {
+      const seen = {};
+      let dupBills = 0;
+      for (const bl of m.bills || []) {
+        const keys = _dupBillKeys(bl);
+        if (keys.some((k) => seen[k])) dupBills++;
+        keys.forEach((k) => (seen[k] = true));
+      }
+      if (dupBills) lines.push((bldg.name || bldg.id) + ' meter ' + m.id + ': ' + dupBills + ' possible duplicate bill(s)');
+      for (const o of meters) {
+        if (o === m || (touched.includes(o) && meters.indexOf(o) < meters.indexOf(m))) continue;
+        if (_sameMeterIdentity(m, o)) lines.push((bldg.name || bldg.id) + ' meters ' + m.id + ' + ' + o.id + ': possible duplicate meter');
+      }
+    }
+  }
+  return lines;
+}
+// ── duplicate check end ────────────────────────────────────────────────
+
 function loadUtilityData() {
   utilityData = {};
+  _meterBillCounts = null;
   // One-time migration: if old combined key exists, split into per-project keys then remove it
   const combined = sget('en_utilityData', null);
   if (combined && typeof combined === 'object' && Object.keys(combined).length) {
@@ -712,158 +780,8 @@ function loadUtilityData() {
     }
     DB.set(_thermsFixKey, '1');
   }
-  // Guarded, idempotent, self-deactivating dedupe of duplicate meters (item
-  // 1c98be9c, Matt-approved "guarded dedupe now"). Same posture as the
-  // v829 commodity heal above: runs every load, but once a duplicate pair
-  // merges there is nothing left to merge next time, so it self-deactivates
-  // with no version flag. Placed AFTER the commodity heal (so "now-labeled"
-  // commodity is available) and AFTER the 2-digit-year date migration (so
-  // bill periods are already 4-digit ISO before the overlap check below).
-  //
-  // A pair of meters at the SAME building qualifies ONLY if: same
-  // normalized account number, same (now-labeled) commodity, AND their
-  // bill periods are FULLY DISJOINT (no overlapping start/end range) —
-  // exactly the "older full-history meter + newer 1-bill meter filling a
-  // gap" shape confirmed in the real Louisburg snapshot (HS/Rockville
-  // Sewer + Stormwater). HARD GATE: any overlapping period is real
-  // conflicting data, not a clean split — never merge, only flag.
-  {
-    const _normAcct = (a) => (a || '').replace(/[\s\-]/g, '').toLowerCase();
-    const _billRange = (bill) => {
-      const s = bill && bill.start ? _parseISO(bill.start) : null;
-      const e = bill && bill.end ? _parseISO(bill.end) : null;
-      if (!s || !e || isNaN(s) || isNaN(e)) return null; // no usable date -- never blocks, never sorted specially
-      return [s, e];
-    };
-    const _periodsOverlap = (billsA, billsB) => {
-      const rangesA = billsA.map(_billRange).filter(Boolean);
-      const rangesB = billsB.map(_billRange).filter(Boolean);
-      for (const ra of rangesA) {
-        for (const rb of rangesB) {
-          // Strict inequality: utility billing periods are stored end-
-          // inclusive-of-next-start (period N's end date === period N+1's
-          // start date, the shared meter-read day) — that boundary touch is
-          // NOT a real overlap, only two periods that both cover the SAME
-          // interior day are. Confirmed against the real Louisburg snapshot:
-          // "2026-05-15..2026-06-15" then "2026-06-15..2026-07-15" are
-          // adjacent, not overlapping.
-          if (ra[0] < rb[1] && rb[0] < ra[1]) return true;
-        }
-      }
-      return false;
-    };
-    let _meterDedupeMerged = 0;
-    const _meterDedupeFlagged = [];
-    for (const pid of Object.keys(utilityData)) {
-      const ud = utilityData[pid];
-      for (const bldg of ud.buildings || []) {
-        const meters = bldg.meters || [];
-        // Group by normalized account + commodity within this building only.
-        const groups = {};
-        for (const m of meters) {
-          const acct = _normAcct(m.account);
-          const comm = (m.commodity || '').trim().toLowerCase();
-          if (!acct || !comm) continue; // never merge unlabeled/unaccounted meters
-          const key = acct + '|' + comm;
-          (groups[key] = groups[key] || []).push(m);
-        }
-        const toDelete = new Set();
-        for (const key of Object.keys(groups)) {
-          const group = groups[key];
-          if (group.length < 2) continue;
-          if (group.length > 2) {
-            // 3+ same-account/same-commodity meters at one building is
-            // unexpected — never guess which two (if any) pair up.
-            _meterDedupeFlagged.push({
-              pid,
-              building: bldg.name || bldg.id,
-              key,
-              reason: group.length + ' candidates (>2) — not auto-merged',
-              meterIds: group.map((m) => m.id).join(', '),
-            });
-            continue;
-          }
-          const [m1, m2] = group;
-          const bills1 = m1.bills || [];
-          const bills2 = m2.bills || [];
-          if (_periodsOverlap(bills1, bills2)) {
-            _meterDedupeFlagged.push({
-              pid,
-              building: bldg.name || bldg.id,
-              key,
-              reason: 'overlapping bill periods — not merged',
-              meterIds: m1.id + ', ' + m2.id,
-            });
-            continue;
-          }
-          // Larger/older-history meter survives (more bills; ties broken by
-          // earliest bill date). Smaller/newer meter's bills are appended,
-          // re-sorted by date, then the smaller meter is deleted. Survivor's
-          // own id/provider/baselineInclude are never touched.
-          const _earliest = (bills) => {
-            const ranges = bills.map(_billRange).filter(Boolean);
-            return ranges.length ? Math.min(...ranges.map((r) => +r[0])) : Infinity;
-          };
-          let survivor = m1,
-            absorbed = m2;
-          if (
-            bills2.length > bills1.length ||
-            (bills2.length === bills1.length && _earliest(bills2) < _earliest(bills1))
-          ) {
-            survivor = m2;
-            absorbed = m1;
-          }
-          const survivorBills = survivor === m1 ? bills1 : bills2;
-          const absorbedBills = survivor === m1 ? bills2 : bills1;
-          const mergedCount = survivorBills.length + absorbedBills.length;
-          survivor.bills = survivorBills.concat(absorbedBills).sort((a, b) => {
-            const ra = _billRange(a),
-              rb = _billRange(b);
-            if (!ra && !rb) return 0;
-            if (!ra) return -1;
-            if (!rb) return 1;
-            return ra[0] - rb[0];
-          });
-          toDelete.add(absorbed.id);
-          _meterDedupeMerged++;
-          console.log(
-            '[meter dedupe] ' +
-              (bldg.name || bldg.id) +
-              ': merged meter ' +
-              absorbed.id +
-              ' (' +
-              absorbedBills.length +
-              ' bills) into ' +
-              survivor.id +
-              ' (' +
-              survivorBills.length +
-              ' bills) — commodity=' +
-              survivor.commodity +
-              ', account=' +
-              (survivor.account || '') +
-              ', result=' +
-              mergedCount +
-              ' bills',
-          );
-        }
-        if (toDelete.size) {
-          bldg.meters = meters.filter((m) => !toDelete.has(m.id));
-        }
-      }
-    }
-    if (_meterDedupeMerged > 0) {
-      saveUtilityData(SAVE_ALL_PROJECTS); // dedupe touches every loaded project's meters
-      console.log('[meter dedupe] Merged ' + _meterDedupeMerged + ' duplicate meter pair(s). See details above.');
-    }
-    if (_meterDedupeFlagged.length) {
-      console.warn(
-        '[meter dedupe] Flagged ' +
-          _meterDedupeFlagged.length +
-          ' candidate pair(s) NOT merged (overlapping periods or ambiguous group size):',
-      );
-      console.table(_meterDedupeFlagged);
-    }
-  }
+  // Duplicate check does NOT run on load; only seed the bill counts it compares against.
+  _seedMeterBillCounts(utilityData);
   // Auto-inherit baselines: any meter with bills but no baseline gets
   // the majority baseline from same-commodity meters in the same project
   for (const pid of Object.keys(utilityData)) {
@@ -935,7 +853,9 @@ function saveUtilityData(pid) {
       : Array.isArray(pid)
         ? pid.map(_resolveCustomerId).filter((c) => c != null && utilityData[c])
         : [_resolveCustomerId(pid != null ? pid : udSelProjId)].filter((c) => c != null && utilityData[c]);
+  const _dupLines = [];
   targetCids.forEach(function (pid) {
+    _dupLines.push(..._collectDuplicateCandidates(utilityData[pid]));
     // Strip transient, runtime-only computed fields before persisting so a stale cache can never
     // be written to disk again (bcbc84e0). These are rebuilt on next render by getMeterSavings()/
     // getNormRows() — safe to delete from the live in-memory objects.
@@ -954,6 +874,7 @@ function saveUtilityData(pid) {
     sset('en_utility_' + pid, utilityData[pid]);
     _lastSavedSnapshot[pid] = _serialized;
   });
+  if (_dupLines.length) console.info('[duplicate check] ' + _dupLines.join('; ') + ' (nothing merged or deleted)');
   _refreshBldgPerfIfVisible();
 }
 
