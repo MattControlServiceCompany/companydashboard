@@ -311,6 +311,34 @@ function _hvlBuildingHasElectricHeat(projId, bldgId) {
   return _hvlBuildingHeatingSignals(projId, bldgId).hasElectric;
 }
 
+// _hvlEnduseForBuilding — the ONE reader of a building's monthly baseline arrays for the HVAC
+// split (WP-15, 2026-09-30). Every HVAC split reader — BAS Calc cooling kWh and gas heating Therms
+// autofill, the HVAC Load Estimation gas share, the Energy Graphics HVAC End-Use card — calls this
+// and so reads the SAME computeHvacEnduse result (3-lowest-month baseload; Matt 2026-09-20). Months
+// come from _hvlMonthlyBaseline (buildMoMap): kWh, billed kW (the SUM-of-billed-kW basis), and gas
+// Therms plus propane gallons at 0.9153 Therms/gal. A month with no bill stays null (not a real 0).
+// Returns { enduse, totalGas }; null when the building is missing.
+function _hvlEnduseForBuilding(projId, b) {
+  if (!b) return null;
+  const { eByMo, gByMo, pByMo } = _hvlMonthlyBaseline(projId, b);
+  const kwhArr = [],
+    kwArr = [],
+    gasArr = [];
+  let totalGas = 0;
+  for (let mo = 0; mo < 12; mo++) {
+    kwhArr.push(eByMo[mo] ? eByMo[mo].kwh || 0 : null);
+    kwArr.push(eByMo[mo] && eByMo[mo].billedKW != null ? eByMo[mo].billedKW : null);
+    const hasG = !!gByMo[mo];
+    const hasP = !!pByMo[mo];
+    let v = null;
+    // gal -> therms, same 0.9153 factor hvacLoadCalc uses
+    if (hasG || hasP) v = (hasG ? gByMo[mo].therms || 0 : 0) + (hasP ? (pByMo[mo].gallons || 0) * 0.9153 : 0);
+    gasArr.push(v);
+    if (v != null) totalGas += v;
+  }
+  return { enduse: computeHvacEnduse(kwhArr, kwArr, gasArr), totalGas };
+}
+
 // _hvlGasHeatShare — the ONE computation of a building's gas heating share, used by BOTH the
 // HVAC Load Estimation "Rules of Thumb" tab's "Space Heating % of Total Gas" default
 // (_hvlRenderTraditional) and the BAS Savings Calc's Existing Heating Gas Therms autofill
@@ -329,19 +357,7 @@ function _hvlGasHeatShare(projId, bldgId) {
   const fallbackPct = _hvlDefaultGasPct(sig.hasElectric, sig.hasGas);
   const b = typeof getUDBldg === 'function' ? getUDBldg(projId, bldgId) : null;
   if (!b) return { pct: fallbackPct, source: 'default', totalGas: 0, heatingTherms: 0 };
-  const { gByMo, pByMo } = _hvlMonthlyBaseline(projId, b);
-  const gasArr = [];
-  let totalGas = 0;
-  for (let mo = 0; mo < 12; mo++) {
-    const hasG = !!gByMo[mo];
-    const hasP = !!pByMo[mo];
-    let v = null;
-    // gal -> therms, same 0.9153 factor hvacLoadCalc uses
-    if (hasG || hasP) v = (hasG ? gByMo[mo].therms || 0 : 0) + (hasP ? (pByMo[mo].gallons || 0) * 0.9153 : 0);
-    gasArr.push(v);
-    if (v != null) totalGas += v;
-  }
-  const enduse = typeof computeHvacEnduse === 'function' ? computeHvacEnduse(null, null, gasArr) : null;
+  const { enduse, totalGas } = _hvlEnduseForBuilding(projId, b);
   if (enduse && enduse.gasValid && totalGas > 0) {
     return {
       pct: Math.round(enduse.heatingPct * 1000) / 10,
@@ -385,10 +401,7 @@ function hvacComputeGasThermsForBuilding(projId, bldgId) {
 function hvacComputeElecCoolKwhForBuilding(projId, bldgId) {
   const b = typeof getUDBldg === 'function' ? getUDBldg(projId, bldgId) : null;
   if (!b) return null;
-  const { eByMo } = _hvlMonthlyBaseline(projId, b);
-  const kwhArr = [];
-  for (let mo = 0; mo < 12; mo++) kwhArr.push(eByMo[mo] ? eByMo[mo].kwh || 0 : null);
-  const enduse = typeof computeHvacEnduse === 'function' ? computeHvacEnduse(kwhArr, null, null) : null;
+  const { enduse } = _hvlEnduseForBuilding(projId, b);
   if (!enduse || !enduse.elecValid || !(enduse.coolingKwh > 0)) return null;
   return { coolingKwh: enduse.coolingKwh, source: 'baseload' };
 }
@@ -1658,9 +1671,13 @@ function hvacLoadCalc(projId, opts) {
     heatKwhTotal = hvacKwh * heatKwhPct;
     coolKwhTotal = hvacKwh - heatKwhTotal;
   } else {
-    const coolPctOfHvac = 0.65;
-    coolKwhTotal = hvacKwh * coolPctOfHvac;
-    heatKwhTotal = hvacKwh * (1 - coolPctOfHvac);
+    // WP-15: no fixed 0.65/0.35 guess. Nameplate: cooling vs electric-heating share of the entered
+    // equipment kWh (coolKwh / heatKwhElec above). Benchmark has no heating input and electric
+    // heating is not separated by the baseload method, so all electric HVAC kWh stays cooling.
+    const nameplateHvacKwh = coolKwh + heatKwhElec;
+    const coolShareOfHvac = method === 'nameplate' && nameplateHvacKwh > 0 ? coolKwh / nameplateHvacKwh : 1;
+    coolKwhTotal = hvacKwh * coolShareOfHvac;
+    heatKwhTotal = hvacKwh - coolKwhTotal;
   }
 
   const fmt = (n) =>
@@ -4021,23 +4038,10 @@ function openBASCalc(projId) {
     if (p.hvacLoadEst.heatKwhTotal)
       autoCalHeat = { value: Math.round(p.hvacLoadEst.heatKwhTotal), source: 'HVAC Load Estimation' };
   }
-  // Existing Heating kWh (2026-09-28 fix): no fresh-compute fallback existed, so calHeatKwh stayed
-  // "Default value" (0) for any building nobody saved HVAC Load Estimation for, even with electric
-  // heat. Reuse the Baseline + BAS Savings report's own electric weather-regression heating split
-  // (wdComputeHvacSplitForBuilding -> _wdComputeHvacSplit: sum of HDD coefficient x HDD over the
-  // baseline months) - no second regression. Null (stays default, unfilled) when the regression
-  // has no positive HDD term, so no number is invented.
-  let heatKwhNotSeparable = false;
-  if (!autoCalHeat && bldgId && typeof wdComputeHvacSplitForBuilding === 'function') {
-    const wdSplit = wdComputeHvacSplitForBuilding(projId, bldgId);
-    if (wdSplit && !(wdSplit.heatKwh > 0)) heatKwhNotSeparable = true;
-    if (wdSplit && wdSplit.heatKwh > 0)
-      autoCalHeat = {
-        value: Math.round(wdSplit.heatKwh),
-        source:
-          'electric bills + weather regression (HDD term, kWh — same as the Baseline + BAS Savings report "Heating Energy - Elec")',
-      };
-  }
+  // Existing Heating kWh: electric heating is NOT separable by the 3-lowest-month baseload method
+  // (Matt 2026-09-20: no regression HVAC split anywhere), so there is no fresh-compute fill. Only a
+  // real SAVED HVAC Load Estimation (above) or the user's own value fills it; otherwise the field
+  // shows the plain label set below. The v2026.09.28.21 regression fill is deleted.
   // Existing Cooling kWh (2026-09-24 fix): same precedence as the calHeatGas fix below — a real
   // SAVED HVAC Load Estimation for this project wins when one exists (checked above). Otherwise,
   // compute it fresh directly from THIS building's own electric bills via
@@ -4135,12 +4139,8 @@ function openBASCalc(projId) {
     rExHeatUnocc.hint = _bcDefaultUnoccHeatLabel(parseInt(rHeatSrc.value) || 2);
   const rCalCoolKwh = _bcResolve('calCoolKwh', '', autoCalCool);
   const rCalHeatKwh = _bcResolve('calHeatKwh', '', autoCalHeat);
-  // Honest label (2026-09-28): the weather regression ran but found no positive heating (HDD) term,
-  // so electric heating cannot be separated from this building's bills — say so in plain words
-  // instead of the generic default hint (the value stays default; nothing is invented).
-  if (heatKwhNotSeparable && rCalHeatKwh.hint && rCalHeatKwh.hint.indexOf('Default value') === 0)
-    rCalHeatKwh.hint =
-      "Not found in the electric bills — this building's electric use does not rise in cold weather. Enter a value, or save an HVAC Load Estimate.";
+  if (rCalHeatKwh.hint && rCalHeatKwh.hint.indexOf('Default value') === 0)
+    rCalHeatKwh.hint = 'Electric heating is not separated by the baseload method. Enter a value, or save an HVAC Load Estimate.';
   const rCalHeatGas = _bcResolve('calHeatGas', '', autoCalGas);
 
   // Proposed Conditions (2026-09-23): chCalcAutofillFields always returns a company-standard

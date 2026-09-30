@@ -22,6 +22,12 @@
 //      compute "the lowest 3/Three/N" (e.g. a differently-shaped manual
 //      min-3 loop hiding behind its own name).
 //
+//   4. (WP-15, 2026-09-30) A REGRESSION HVAC split: a regression HDD/CDD slope multiplied by degree
+//      days inside a heating/cooling kWh computation (heatKwh / coolKwh nearby), or a fixed
+//      cooling/heating share of electric HVAC (coolPctOfHvac = 0.65). Matt's settled rule
+//      (2026-09-20): the HVAC split is the 3-lowest-month baseload only, never a regression.
+//      Regression slopes used for weather normalisation / savings (no heatKwh/coolKwh nearby) are fine.
+//
 // Run:  node tools/gate-single-baseload-source.js
 // Exits nonzero (and prints every offending file:line) on any hit.
 'use strict';
@@ -57,6 +63,13 @@ const SORT_WINDOW = 260; // chars scanned after each ".sort(" for the comparator
 // occurrence in a file is reported, not just the first).
 const LOWEST_HELPER_NAME =
   /\b(?:function\s+\w*[Ll]owest(?:3|Three|N)?\w*\s*\(|(?:const|let|var)\s+\w*[Ll]owest(?:3|Three|N)?\w*\s*=)/g;
+
+// Signature 4 (regression HVAC split).
+const SLOPE_TIMES_DEGREE_DAYS = /slope(?:HDD|CDD)\w*\s*\*\s*[\w.()]*(?:hdd|cdd)|(?:hdd|cdd)\w*\s*\*\s*[\w.()]*slope(?:HDD|CDD)/gi;
+const HVAC_KWH_NEARBY = /\b(?:heat|cool)Kwh(?:Total)?\b/;
+const FIXED_HVAC_SPLIT = /\bcoolPctOfHvac\s*=\s*0?\.\d+/g;
+const REGRESSION_SPLIT_FN = /\bwdComputeHvacSplitForBuilding\b/g;
+const NEARBY_CHARS = 400;
 
 function walk(dir, out) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -117,6 +130,21 @@ function scanFile(content) {
     hits.push({ line: lineAt(lineStarts, m.index), reason: 'locally-defined "lowest N" helper: ' + m[0].trim() });
   }
 
+  let r;
+  SLOPE_TIMES_DEGREE_DAYS.lastIndex = 0;
+  while ((r = SLOPE_TIMES_DEGREE_DAYS.exec(content))) {
+    const near = content.slice(Math.max(0, r.index - NEARBY_CHARS), r.index + NEARBY_CHARS);
+    if (HVAC_KWH_NEARBY.test(near)) {
+      hits.push({ line: lineAt(lineStarts, r.index), reason: 'regression HVAC split: slope x degree days inside a heating/cooling kWh computation' });
+    }
+  }
+  for (const re of [FIXED_HVAC_SPLIT, REGRESSION_SPLIT_FN]) {
+    re.lastIndex = 0;
+    while ((r = re.exec(content))) {
+      hits.push({ line: lineAt(lineStarts, r.index), reason: 'regression / fixed-share HVAC split: ' + r[0] });
+    }
+  }
+
   return hits;
 }
 
@@ -130,13 +158,13 @@ function main() {
     if (rel === CANONICAL_FILE || rel === SELF) continue;
     if (isExemptTestFile(rel)) continue;
     const content = fs.readFileSync(abs, 'utf8');
-    if (!content.includes('.sort(') && !/[Ll]owest/.test(content)) continue; // fast skip
+    if (!content.includes('.sort(') && !/[Ll]owest|slope(?:HDD|CDD)|coolPctOfHvac|wdComputeHvacSplitForBuilding/.test(content)) continue; // fast skip
     const hits = scanFile(content);
     for (const h of hits) violations.push({ file: rel, line: h.line, reason: h.reason });
   }
 
   if (violations.length) {
-    console.error('FAIL — 3-lowest-month baseload re-implementation found outside ' + CANONICAL_FILE + ':');
+    console.error('FAIL — 3-lowest-month baseload re-implementation or regression HVAC split found outside ' + CANONICAL_FILE + ':');
     for (const v of violations) {
       console.error('  ' + v.file + ':' + v.line + ' — ' + v.reason);
     }

@@ -109,9 +109,10 @@ var WD_TEXT = {
   },
   hvacTitle: 'HVAC Cooling & Heating Load',
   hvacIntro:
-    "The building's heating and cooling loads, derived from a full year of billing and local weather. Cooling is carried by the electric service and rises with warmer weather; heating is carried by natural gas, with an electric heating contribution shown separately where present. Heating and cooling are compared on one common energy scale (kBtu: Therms × 100, kWh × 3.412) so their relative shares of the building's HVAC load can be seen side by side.",
+    "The building's heating and cooling loads, derived from a full year of billing by the baseload method. The baseload is the average of the three lowest months. Electric use above it is cooling; gas use above the gas baseload is heating. Heating and cooling are compared on one common energy scale (kBtu: Therms × 100, kWh × 3.412) so their relative shares of the building's HVAC load can be seen side by side.",
+  hvacElecHeatNote: 'Electric heating is not separated by the baseload method.',
   hvacNoSplit:
-    "Cooling load could not be separated from this building's overall electric use based on a full year of billing and weather data, so no cooling / heating split is shown below. The annual totals above are this building's billed baseline values.",
+    "Cooling load could not be separated from this building's overall electric use by the baseload method (it needs at least six months of billing), so no cooling / heating split is shown below. The annual totals above are this building's billed baseline values.",
   zoneFallback:
     'Zone-level setpoint data is not available for this building; the setpoints below are building-wide targets.',
   zonesListed: function (nZones, plural) {
@@ -228,32 +229,33 @@ var WD_TEXT = {
     'To proceed, choose Option A, Option B, or Option C above, or contact CSC to request changes to the setpoints or the shared-savings split shown in this report. Once an option is chosen, CSC schedules the BAS setpoint change and confirms the effective date with the client. After the change is made, savings are checked against the building’s ongoing monthly utility billing.',
   hvacShares: function (h) {
     return (
-      'HVAC load shares are all on one kBtu basis (Therms × 100, kWh × 3.412), each divided by ' +
-      (h.heatKwh != null ? 'gas + electric-heating + cooling' : 'gas + cooling') +
-      ' energy: gas heating ' +
-      _wdN(h.gasTherms, 1) +
-      ' Therms × 100 = ' +
-      _wdN(h.gasTherms * 100) +
-      ' kBtu' +
-      (h.heatKwh != null
-        ? '; electric heating ' + _wdN(h.heatKwh) + ' kWh × 3.412 = ' + _wdN(h.heatKwh * 3.412) + ' kBtu'
+      'Cooling kWh = billed kWh above the electric baseload (' +
+      _wdN(h.baseloadElec) +
+      ' kWh per month, the average of the three lowest months). ' +
+      (h.baseloadGas != null
+        ? 'Gas heating Therms = billed Therms above the gas baseload (' +
+          _wdN(h.baseloadGas, 1) +
+          ' Therms per month, the average of the three lowest months). '
         : '') +
-      '; cooling ' +
+      'HVAC load shares are on one kBtu basis (Therms × 100, kWh × 3.412), each divided by gas heating + cooling energy: gas heating ' +
+      _wdN(h.gasHeatTherms, 1) +
+      ' Therms × 100 = ' +
+      _wdN(h.gasHeatTherms * 100) +
+      ' kBtu; cooling ' +
       _wdN(h.coolKwh) +
       ' kWh × 3.412 = ' +
       _wdN(h.coolKwh * 3.412) +
       ' kBtu — gas heating share ' +
       h.heatPct.toFixed(1) +
-      '%' +
-      (h.heatKwhPct != null ? ', electric heating share ' + h.heatKwhPct.toFixed(1) + '%' : '') +
-      ', cooling share ' +
+      '%, cooling share ' +
       h.coolSharePct.toFixed(1) +
       '%. Non-cooling kWh = billed kWh − cooling kWh (lighting, plug loads, fans, and other year-round use). ' +
       'Cooling Share of Electric Use (' +
       h.coolPct.toFixed(1) +
       '%) divides cooling kWh by all billed electric kWh; Cooling Share of HVAC Load (' +
       h.coolSharePct.toFixed(1) +
-      '%) divides the same cooling kWh by total HVAC load on the kBtu basis above. The two answer different questions — one electric-only, one whole-building HVAC — and are not directly comparable.'
+      '%) divides the same cooling kWh by total HVAC load on the kBtu basis above. The two answer different questions — one electric-only, one whole-building HVAC — and are not directly comparable. ' +
+      WD_TEXT.hvacElecHeatNote
     );
   },
 };
@@ -521,110 +523,110 @@ function _rptTotalAvgRow(cols, labelText, nMonths) {
 }
 
 // -----------------------------------------------------------------------
-// _wdComputeHvacSplit — Page 4 inputs from the building's OWN baseline data.
-// coolKwh = sum over the 12 baseline months of (electric regression CDD coefficient x that
-// month's CDD), using the SAME 4-decimal coefficient and whole-number CDD Page 2 prints, so a
-// reader reproduces every monthly figure from the printed pages. Heating share is on a common
-// kBtu basis: gasKbtu / (gasKbtu + coolKwh x 3.412). Fallback (documented): a regression with
-// no positive CDD term => coolKwh null; the page states cooling is not separable, no numbers
-// are invented.
+// _wdBaselineHvac(elecBL, gasBL) — the ONE Woodland reader of a building's baseline months for the
+// HVAC split. Page 4 (_wdComputeHvacSplit) and the setpoint options (wdComputeSetpointOptions) both
+// call it, so they can never disagree. The split is the 3-lowest-month baseload method
+// (computeHvacEnduse, computations/hvac-enduse.js; Matt 2026-09-20) — the same function the BAS Calc
+// autofill, the HVAC Load Estimate and the Energy Graphics card use. No regression split anywhere.
 // -----------------------------------------------------------------------
-function _wdComputeHvacSplit(elecBL, gasBL, wxByYm) {
+function _wdBaselineHvac(elecBL, gasBL) {
+  var kwhByMo = Array(12).fill(0),
+    kwByMo = Array(12).fill(0),
+    thermsByMo = Array(12).fill(0),
+    haveE = Array(12).fill(false),
+    haveG = Array(12).fill(false);
+  (elecBL ? elecBL.rows : []).forEach(function (r) {
+    var mo = parseInt(r.ym.split('-')[1], 10) - 1;
+    kwhByMo[mo] += parseFloat(r.bill.kwh) || 0;
+    kwByMo[mo] = Math.max(kwByMo[mo], parseFloat(r.bill.billedKW || r.bill.demandKW) || 0);
+    haveE[mo] = true;
+  });
+  (gasBL ? gasBL.rows : []).forEach(function (r) {
+    var mo = parseInt(r.ym.split('-')[1], 10) - 1;
+    thermsByMo[mo] += _wdBillTherms(r.bill);
+    haveG[mo] = true;
+  });
+  // A baseload needs >=6 populated calendar months (computeHvacEnduse elecValid/gasValid); below
+  // that the baseload is 0 and no split is claimed.
+  var enduse = computeHvacEnduse(
+    kwhByMo.map(function (v, i) {
+      return haveE[i] ? v : null;
+    }),
+    null,
+    thermsByMo.map(function (v, i) {
+      return haveG[i] ? v : null;
+    }),
+  );
+  return {
+    kwhByMo: kwhByMo,
+    kwByMo: kwByMo,
+    thermsByMo: thermsByMo,
+    haveE: haveE,
+    haveG: haveG,
+    enduse: enduse,
+    eBase: enduse.elecValid ? enduse.baseloadElec : 0,
+    gBase: enduse.gasValid ? enduse.baseloadGas : 0,
+  };
+}
+
+// -----------------------------------------------------------------------
+// _wdComputeHvacSplit — Page 4 inputs from the building's OWN baseline data, by the baseload
+// method: cooling kWh = sum of (billed kWh − electric baseload) over the months above it; gas
+// heating Therms = sum of (billed Therms − gas baseload). Heating share is on a common kBtu basis:
+// gasHeatKbtu / (gasHeatKbtu + coolKwh x 3.412). Electric heating is NOT separated by this method
+// (heatKwh stays null; the page says so) — it is never filled from a regression.
+// coolKwh is null when fewer than 6 electric months exist: no numbers are invented.
+// -----------------------------------------------------------------------
+function _wdComputeHvacSplit(elecBL, gasBL) {
   var out = {
     elecKwh: 0,
     gasTherms: 0,
-    slopeCDD: null,
+    baseloadElec: null,
+    baseloadGas: null,
     coolKwh: null,
     coolPct: null,
+    gasHeatTherms: null,
     heatPct: null,
     coolSharePct: null,
-    // Electric heating (2026-09-22, Matt): heating is not only gas. When the electric
-    // baseline's dual-OLS regression has a positive HDD term (electric heat/reheat/fan
-    // energy), heatKwh = sum(round4(slopeHDD) x round0(HDD)) over the baseline months —
-    // independent of whether the cooling/CDD term is present. heatKwhPct is its share of
-    // total HVAC load on the same kBtu basis as heatPct/coolSharePct below.
-    slopeHDD: null,
     heatKwh: null,
     heatKwhPct: null,
     months: [],
   };
-  var gasByYm = {};
-  if (gasBL)
-    gasBL.rows.forEach(function (r) {
-      gasByYm[r.ym] = (gasByYm[r.ym] || 0) + _wdBillTherms(r.bill);
-      out.gasTherms += _wdBillTherms(r.bill);
-    });
-  if (!elecBL) return out;
-  var kwhByYm = {};
-  elecBL.rows.forEach(function (r) {
-    var k = parseFloat(r.bill.kwh) || 0;
-    kwhByYm[r.ym] = (kwhByYm[r.ym] || 0) + k;
-    out.elecKwh += k;
+  var bh = _wdBaselineHvac(elecBL, gasBL);
+  bh.haveE.forEach(function (has, i) {
+    if (has) out.elecKwh += bh.kwhByMo[i];
+    if (bh.haveG[i]) out.gasTherms += bh.thermsByMo[i];
   });
-  var rc = elecBL.regrCoeffs;
-
-  // Electric heating share — computed first, independent of the cooling/CDD branch below,
-  // so it still renders even on a building whose regression has no usable CDD term.
-  var heatKwh = null;
-  if (rc && rc.type === 'dual' && rc.slopeHDD != null && rc.slopeHDD > 0) {
-    var slopeHDD4 = _wdRoundHalfUp(rc.slopeHDD, 4);
-    var heat = 0;
-    elecBL.months.forEach(function (ym) {
-      var wxh = (wxByYm && wxByYm[ym]) || { hdd: 0 };
-      var hddR = _wdRoundHalfUp(wxh.hdd || 0, 0);
-      heat += _wdRoundHalfUp(slopeHDD4 * hddR, 0);
-    });
-    out.slopeHDD = slopeHDD4;
-    out.heatKwh = heat;
-    heatKwh = heat;
-  }
-
-  var slope = null;
-  if (rc && rc.type === 'dual' && rc.slopeCDD != null) slope = rc.slopeCDD;
-  else if (rc && rc.type === 'cdd' && rc.slope != null) slope = rc.slope;
-  var slope4 = slope != null ? _wdRoundHalfUp(slope, 4) : null;
-  if (slope4 == null || slope4 <= 0) {
-    // No usable cooling term — still report the electric-heating share (on gas+elec-heat basis)
-    // if we found one above, since it doesn't depend on cooling being separable.
-    if (heatKwh != null) {
-      var gasKbtuNoCool = out.gasTherms * 100;
-      var heatKbtuNoCool = heatKwh * 3.412;
-      out.heatKwhPct =
-        gasKbtuNoCool + heatKbtuNoCool > 0
-          ? _wdRoundHalfUp((heatKbtuNoCool / (gasKbtuNoCool + heatKbtuNoCool)) * 100, 1)
-          : null;
-    }
-    return out;
-  }
-  out.slopeCDD = slope4;
-  var cool = 0;
-  elecBL.months.forEach(function (ym) {
-    var wx = (wxByYm && wxByYm[ym]) || { cdd: 0 };
-    var cddR = _wdRoundHalfUp(wx.cdd || 0, 0);
-    var c = _wdRoundHalfUp(slope4 * cddR, 0);
-    var actual = _wdRoundHalfUp(kwhByYm[ym] || 0, 0);
+  if (!bh.enduse.elecValid) return out;
+  var cool = 0,
+    gasHeat = 0;
+  for (var mo = 0; mo < 12; mo++) {
+    if (!bh.haveE[mo] && !bh.haveG[mo]) continue;
+    var actual = bh.haveE[mo] ? bh.kwhByMo[mo] : 0;
+    var c = bh.haveE[mo] ? Math.max(0, actual - bh.eBase) : 0;
+    var therms = bh.haveG[mo] ? bh.thermsByMo[mo] : 0;
+    var gh = bh.haveG[mo] && bh.enduse.gasValid ? Math.max(0, therms - bh.gBase) : 0;
     cool += c;
+    gasHeat += gh;
     out.months.push({
-      ym: ym,
-      cdd: cddR,
-      coolKwh: c,
-      actualKwh: actual,
-      otherKwh: Math.max(0, actual - c),
-      therms: _wdRoundHalfUp(gasByYm[ym] || 0, 1),
+      mo: mo,
+      coolKwh: _wdRoundHalfUp(c, 0),
+      actualKwh: _wdRoundHalfUp(actual, 0),
+      otherKwh: _wdRoundHalfUp(actual - c, 0),
+      therms: _wdRoundHalfUp(therms, 1),
+      gasHeatTherms: _wdRoundHalfUp(gh, 1),
     });
-  });
+  }
+  out.baseloadElec = bh.eBase;
+  out.baseloadGas = bh.enduse.gasValid ? bh.gBase : null;
   out.coolKwh = cool;
+  out.gasHeatTherms = gasHeat;
   out.coolPct = out.elecKwh > 0 ? _wdRoundHalfUp((cool / out.elecKwh) * 100, 1) : null;
-  // Total HVAC load on one kBtu basis: gas heating + electric heating (when present) + cooling.
-  // heatPct/coolSharePct/heatKwhPct all share this same denominator so the three shown shares
-  // sum to 100% of HVAC load — never invented, always the printed Therms/kWh x their kBtu factor.
-  var gasKbtu = out.gasTherms * 100;
+  var gasKbtu = gasHeat * 100;
   var coolKbtu = cool * 3.412;
-  var heatKbtu = (heatKwh || 0) * 3.412;
-  var totalHvacKbtu = gasKbtu + coolKbtu + heatKbtu;
+  var totalHvacKbtu = gasKbtu + coolKbtu;
   out.heatPct = totalHvacKbtu > 0 ? _wdRoundHalfUp((gasKbtu / totalHvacKbtu) * 100, 1) : null;
   out.coolSharePct = totalHvacKbtu > 0 ? _wdRoundHalfUp((coolKbtu / totalHvacKbtu) * 100, 1) : null;
-  out.heatKwhPct = heatKwh != null && totalHvacKbtu > 0 ? _wdRoundHalfUp((heatKbtu / totalHvacKbtu) * 100, 1) : null;
   return out;
 }
 
@@ -764,40 +766,16 @@ function _wdFullYear(bl) {
 // summed (collectWoodlandReportData).
 // -----------------------------------------------------------------------
 function wdComputeSetpointOptions(cfg, elecBL, gasBL) {
-  var kwhByMo = Array(12).fill(0),
-    kwByMo = Array(12).fill(0),
-    thermsByMo = Array(12).fill(0),
-    haveE = Array(12).fill(false),
-    haveG = Array(12).fill(false);
-  (elecBL ? elecBL.rows : []).forEach(function (r) {
-    var mo = parseInt(r.ym.split('-')[1], 10) - 1;
-    kwhByMo[mo] += parseFloat(r.bill.kwh) || 0;
-    kwByMo[mo] = Math.max(kwByMo[mo], parseFloat(r.bill.billedKW || r.bill.demandKW) || 0);
-    haveE[mo] = true;
-  });
-  (gasBL ? gasBL.rows : []).forEach(function (r) {
-    var mo = parseInt(r.ym.split('-')[1], 10) - 1;
-    thermsByMo[mo] += _wdBillTherms(r.bill);
-    haveG[mo] = true;
-  });
-  // Baseload (both electric and gas) is computed ONE way, site-wide: computeHvacEnduse
-  // (computations/hvac-enduse.js — 3-lowest-populated-month average), the same canonical
-  // function _hvlGasHeatShare (app/calculators.js) uses for the HVAC Load Estimation tab and
-  // BAS Savings Calc autofill, and the Energy Graphics HVAC End-Use Estimate card. This used to
-  // be a second, independent 3-lowest-month baseload() here — deleted (2026-09-23). A building
-  // needs >=6 populated calendar months for computeHvacEnduse to trust a baseload (elecValid/
-  // gasValid); below that it returns 0, same as this function returning 0 for "no data".
-  var enduse = computeHvacEnduse(
-    kwhByMo.map(function (v, i) {
-      return haveE[i] ? v : null;
-    }),
-    null,
-    thermsByMo.map(function (v, i) {
-      return haveG[i] ? v : null;
-    }),
-  );
-  var eBase = enduse.elecValid ? enduse.baseloadElec : 0,
-    gBase = enduse.gasValid ? enduse.baseloadGas : 0;
+  // The baseload split is read ONE way, site-wide: _wdBaselineHvac -> computeHvacEnduse (same
+  // numbers as Page 4, the BAS Calc autofill and the HVAC Load Estimate).
+  var bh = _wdBaselineHvac(elecBL, gasBL);
+  var kwhByMo = bh.kwhByMo,
+    kwByMo = bh.kwByMo,
+    thermsByMo = bh.thermsByMo,
+    haveE = bh.haveE,
+    haveG = bh.haveG;
+  var eBase = bh.eBase,
+    gBase = bh.gBase;
   var cool = [],
     heat = [],
     sumCool = 0,
@@ -1279,20 +1257,6 @@ function _wdWxByYm(b) {
   return wxByYm;
 }
 
-// wdComputeHvacSplitForBuilding(projId, buildingId) — the report's Page 4 HVAC split
-// (_wdComputeHvacSplit: electric-regression HDD/CDD heating/cooling split) for one building,
-// WITHOUT building the whole report. Same baselines + same weather as collectWoodlandReportData,
-// so the BAS Savings Calc's Existing Heating kWh equals the report's "Heating Energy - Elec (kWh)".
-// Returns null when the building is missing. hvac.heatKwh is null when the electric regression
-// has no positive HDD term (no electric heating separable) or no baseline exists.
-function wdComputeHvacSplitForBuilding(projId, buildingId) {
-  var b = typeof getUDBldg === 'function' ? getUDBldg(projId, buildingId) : null;
-  if (!b) return null;
-  var bls = _wdBldgBaselines(b);
-  return _wdComputeHvacSplit(bls.elecBL, bls.gasBL, _wdWxByYm(b));
-}
-window.wdComputeHvacSplitForBuilding = wdComputeHvacSplitForBuilding;
-
 // -----------------------------------------------------------------------
 // collectWoodlandReportData(projId, buildingId)
 // -----------------------------------------------------------------------
@@ -1411,7 +1375,7 @@ function collectWoodlandReportData(projId, buildingId) {
   };
 
   // ---- Page 4 / Page 5 inputs ----
-  var hvac = _wdComputeHvacSplit(elecBL, gasBL, wxByYm);
+  var hvac = _wdComputeHvacSplit(elecBL, gasBL);
   var zones = _wdLoadZoneSetpoints(projId, b.name);
 
   // Every page's header (.rpt-info, via rptPage()) reads data.project.client — the building
@@ -1925,7 +1889,8 @@ function rptPageWoodlandSummary(n, d) {
 // PAGE 4 — HVAC Cooling and Heating Load
 // Same presentation as the site's HVAC Load Estimation tab: a results strip (annual totals +
 // HVAC shares) over a monthly breakdown table. Numbers come from d.hvac (_wdComputeHvacSplit):
-// cooling kWh = Page 2's CDD coefficient x monthly CDD; heating share on a common kBtu basis.
+// baseload method (3 lowest months); heating share on a common kBtu basis. Electric heating is
+// not separated by this method and the page says so.
 // =========================================================================
 function rptPageWoodlandHVAC(n, d) {
   var h = d.hvac || {};
@@ -1938,15 +1903,9 @@ function rptPageWoodlandHVAC(n, d) {
     stat('Annual Electric Use (kWh)', _wdN(h.elecKwh || 0)),
     stat('Annual Gas Use (Therms)', _wdN(h.gasTherms || 0, 1)),
   ];
-  // Heating Therms (gas) — always shown when there's any gas baseline, independent of cooling.
-  if (h.gasTherms > 0) stats.push(stat('Heating Energy — Gas (Therms)', _wdN(h.gasTherms, 1)));
-  // Heating kWh (electric) — shown only when the electric baseline's regression has a positive
-  // HDD term (2026-09-22, Matt: heating is not only gas).
-  if (h.heatKwh != null) {
-    stats.push(stat('Heating Energy — Elec (kWh)', _wdN(h.heatKwh)));
-    if (h.heatKwhPct != null) stats.push(stat('Elec Heating Share of HVAC', h.heatKwhPct.toFixed(1) + '%'));
-  }
+  if (h.gasHeatTherms != null) stats.push(stat('Heating Energy — Gas (Therms)', _wdN(h.gasHeatTherms, 1)));
   if (h.coolKwh != null) {
+    stats.push(stat('Heating Energy — Elec (kWh)', 'Not separated'));
     stats.push(stat('Cooling Energy (kWh)', _wdN(h.coolKwh)));
     stats.push(stat('Cooling Share of Electric Use', h.coolPct.toFixed(1) + '%'));
     stats.push(stat('Heating (Gas) Share of HVAC Load', h.heatPct.toFixed(1) + '%'));
@@ -1966,42 +1925,41 @@ function rptPageWoodlandHVAC(n, d) {
   }
 
   var sums = [
-    { sum: 0, dec: 0 }, // CDD
+    { sum: 0, dec: 0 }, // billed kWh
     { sum: 0, dec: 0 }, // cooling kWh
-    { sum: 0, dec: 0 }, // actual kWh
     { sum: 0, dec: 0 }, // non-cooling kWh
     { sum: 0, dec: 1 }, // therms
+    { sum: 0, dec: 1 }, // gas heating therms
   ];
   var rows = '';
   h.months.forEach(function (m) {
-    var moIdx = parseInt(m.ym.split('-')[1], 10) - 1;
-    sums[0].sum += m.cdd;
+    sums[0].sum += m.actualKwh;
     sums[1].sum += m.coolKwh;
-    sums[2].sum += m.actualKwh;
-    sums[3].sum += m.otherKwh;
-    sums[4].sum += m.therms;
+    sums[2].sum += m.otherKwh;
+    sums[3].sum += m.therms;
+    sums[4].sum += m.gasHeatTherms;
     rows +=
       '<tr><td>' +
-      WOODLAND_MO_ABBR[moIdx] +
-      ' ' +
-      m.ym.split('-')[0] +
-      '</td><td class="rpt-n">' +
-      _wdN(m.cdd) +
-      '</td><td class="rpt-n">' +
-      _wdN(m.coolKwh) +
+      WOODLAND_MO_ABBR[m.mo] +
       '</td><td class="rpt-n">' +
       _wdN(m.actualKwh) +
+      '</td><td class="rpt-n">' +
+      _wdN(m.coolKwh) +
       '</td><td class="rpt-n">' +
       _wdN(m.otherKwh) +
       '</td><td class="rpt-n">' +
       _wdN(m.therms, 1) +
+      '</td><td class="rpt-n">' +
+      _wdN(m.gasHeatTherms, 1) +
       '</td></tr>';
   });
   body +=
     '<h2>Monthly Cooling / Heating Breakdown</h2>' +
-    '<table class="rpt-table rpt-table-compact rpt-mp-dense"><thead><tr><th style="width:16%">Month</th><th class="rpt-n" style="width:12%">Cooling Degree Days</th><th class="rpt-n" style="width:18%">Cooling kWh (' +
-    h.slopeCDD.toFixed(4) +
-    ' × CDD)</th><th class="rpt-n" style="width:18%">Billed kWh</th><th class="rpt-n" style="width:18%">Non-cooling kWh</th><th class="rpt-n" style="width:18%">Gas Therms</th></tr></thead><tbody>' +
+    '<table class="rpt-table rpt-table-compact rpt-mp-dense"><thead><tr><th style="width:16%">Month</th><th class="rpt-n" style="width:16%">Billed kWh</th><th class="rpt-n" style="width:20%">Cooling kWh (above ' +
+    _wdN(h.baseloadElec) +
+    ' baseload)</th><th class="rpt-n" style="width:16%">Non-cooling kWh</th><th class="rpt-n" style="width:16%">Gas Therms</th><th class="rpt-n" style="width:16%">Gas Heating Therms' +
+    (h.baseloadGas != null ? ' (above ' + _wdN(h.baseloadGas, 1) + ' baseload)' : '') +
+    '</th></tr></thead><tbody>' +
     rows +
     _rptTotalAvgRow(sums, 'TOTAL (Annual)', h.months.length || 1) +
     '</tbody></table>' +
@@ -3201,20 +3159,22 @@ async function exportWoodlandReportToXlsx(data) {
   var elecKwhRow = ws4.addRow(['Annual electric use (kWh)', hv.elecKwh || 0]);
   var gasThermsRow = ws4.addRow(['Annual gas use (Therms)', hv.gasTherms || 0]);
   if (hv.coolKwh != null) {
-    ws4.addRow(['Cooling energy per cooling degree day (kWh/CDD)', hv.slopeCDD]);
+    ws4.addRow(['Electric baseload (kWh per month, average of 3 lowest months)', hv.baseloadElec]);
+    if (hv.baseloadGas != null) ws4.addRow(['Gas baseload (Therms per month, average of 3 lowest months)', hv.baseloadGas]);
+    ws4.addRow([WD_TEXT.hvacElecHeatNote]);
     ws4.addRow([]);
     var hRowH = ws4.addRow([
       'Month',
-      'Cooling Degree Days',
-      'Cooling kWh (coef x CDD)',
       'Billed kWh',
+      'Cooling kWh (above baseload)',
       'Non-cooling kWh',
       'Gas Therms',
+      'Gas Heating Therms (above baseload)',
     ]);
     styleHeaderRow(hRowH);
     var firstH = ws4.rowCount + 1;
     hv.months.forEach(function (m) {
-      ws4.addRow([m.ym, m.cdd, m.coolKwh, m.actualKwh, m.otherKwh, m.therms]);
+      ws4.addRow([WOODLAND_MO_ABBR[m.mo], m.actualKwh, m.coolKwh, m.otherKwh, m.therms, m.gasHeatTherms]);
     });
     var lastH = ws4.rowCount;
     var totH = ws4.addRow([
@@ -3242,9 +3202,9 @@ async function exportWoodlandReportToXlsx(data) {
     ]);
     ws4.getCell('B' + coolPctRow.number).numFmt = '0.0%';
     var heatPctRow = ws4.addRow([
-      'Heating share of HVAC load',
+      'Gas heating share of HVAC load',
       {
-        formula: '(B' + gasThermsRow.number + '*100)/((B' + gasThermsRow.number + '*100)+(C' + totH.number + '*3.412))',
+        formula: '(F' + totH.number + '*100)/((F' + totH.number + '*100)+(C' + totH.number + '*3.412))',
       },
     ]);
     ws4.getCell('B' + heatPctRow.number).numFmt = '0.0%';

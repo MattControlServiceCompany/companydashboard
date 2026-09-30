@@ -506,15 +506,8 @@ function egfxRefresh(projId) {
   let yearData = {}; // {year: {kwh:[12], kw:[12], gas:[12], cost:[12]}}
   let blYears = new Set();
   let bldgYearData = {}; // {bldgName: {year: {kwh:[12], kw:[12], gas:[12], cost:[12]}}}
-  // Per-building baseline monthly arrays for the HVAC End-Use Estimate (weather-independent
-  // 3-lowest-month baseload subtraction method — mirrors the Excel "HVAC End-Use Estimate" sheet).
-  // Indexed Jan(0)..Dec(11), keyed by building id. Do NOT reuse getBaseloadTrend()/m._reg here —
-  // that is the CDD/HDD regression method and will not match the Excel numbers.
-  // IMPORTANT: baselines can span 12-36 months (app/utility-data.js:6679), so multiple bills can
-  // land in the same calendar-month bucket across baseline years. kwhSum/kwhCount, gasSum/gasCount,
-  // and kwSum/kwCount track sum+count per bucket so computeHvacEnduse() gets a true per-calendar-
-  // month AVERAGE, not a multi-year total mislabeled as one month's value.
-  let bldgHvac = {}; // {bldgId: {name, kwhSum:[12], kwhCount:[12], gasSum:[12], gasCount:[12], kwSum:[12], kwCount:[12]}}
+  // The HVAC End-Use Estimate cards read _hvlEnduseForBuilding (app/calculators.js) — the one
+  // per-building monthly reader for the 3-lowest-month baseload split (WP-15). No private sums here.
 
   // getBillFacKWCost (computations/rates.js) — the ONE accessor for Facilities kW Cost
   // (2026-09-23 single-source fix); never read bill.facKWCost/facilitiesCharge directly.
@@ -525,16 +518,6 @@ function egfxRefresh(projId) {
   bldgs.forEach((b) => {
     const bName = b.name || 'Unknown';
     if (!bldgYearData[bName]) bldgYearData[bName] = {};
-    if (!bldgHvac[b.id])
-      bldgHvac[b.id] = {
-        name: bName,
-        kwhSum: new Array(12).fill(0),
-        kwhCount: new Array(12).fill(0),
-        gasSum: new Array(12).fill(0),
-        gasCount: new Array(12).fill(0),
-        kwSum: new Array(12).fill(0),
-        kwCount: new Array(12).fill(0),
-      };
     (b.meters || []).forEach((m) => {
       if (isBaselineExcluded(projId, m.id)) return;
       if (!isCalcCommodity(projId, m.commodity)) return;
@@ -574,25 +557,14 @@ function egfxRefresh(projId) {
 
         if (isBaseline) {
           // Baseline data
-          const bh = bldgHvac[b.id];
           if (isElec) {
             const _kwhVal = parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
             blKwh[mi] += _kwhVal;
             blCost[mi] += _elecCommodityCost(bill);
-            // Sum + count per calendar-month bucket (not a raw += into a "monthly" slot) so a
-            // baseline spanning multiple years averages correctly instead of summing N years
-            // of usage into what computeHvacEnduse() treats as a single month's value.
-            bh.kwhSum[mi] += _kwhVal;
-            bh.kwhCount[mi]++;
-            const _dKw = parseFloat(bill.demandKW) || 0;
-            bh.kwSum[mi] += _dKw;
-            bh.kwCount[mi]++;
           }
           if (isGas) {
             const _gasVal = resolveGasUsageTherms(bill);
             blGas[mi] += _gasVal;
-            bh.gasSum[mi] += _gasVal;
-            bh.gasCount[mi]++;
           }
           if (isGas) blCost[mi] += _gasCommodityCost(bill);
           if (isPropane) {
@@ -1442,20 +1414,14 @@ function egfxRefresh(projId) {
   // HVAC End-Use Estimate — one card per building, weather-independent 3-lowest-month
   // baseload subtraction method (matches the Excel "HVAC End-Use Estimate" deliverable).
   function _hvacEnduseCardsHtml() {
-    if (typeof computeHvacEnduse !== 'function') return '';
-    const bldgIds = Object.keys(bldgHvac);
-    if (!bldgIds.length) return '';
-    const cards = bldgIds
-      .map((bId) => {
-        const bh = bldgHvac[bId];
-        // Average sum/count per calendar-month bucket. A month with zero bills stays `null`
-        // ("no data") so computeHvacEnduse() excludes it entirely rather than treating a
-        // missing month as a real 0 usage month (which would wrongly make it eligible to be
-        // one of the "3 lowest" baseload months).
-        const kwhArr = bh.kwhSum.map((s, i) => (bh.kwhCount[i] ? s / bh.kwhCount[i] : null));
-        const kwArr = bh.kwSum.map((s, i) => (bh.kwCount[i] ? s / bh.kwCount[i] : null));
-        const gasArr = bh.gasSum.map((s, i) => (bh.gasCount[i] ? s / bh.gasCount[i] : null));
-        const r = computeHvacEnduse(kwhArr, kwArr, gasArr);
+    if (typeof computeHvacEnduse !== 'function' || typeof _hvlEnduseForBuilding !== 'function') return '';
+    if (!bldgs.length) return '';
+    const cards = bldgs
+      .map((b) => {
+        const eu = _hvlEnduseForBuilding(projId, b);
+        if (!eu) return '';
+        const bh = { name: b.name || 'Unknown' };
+        const r = eu.enduse;
         if (!r.elecValid && !r.gasValid) return '';
         const pct1 = (v) => (v * 100).toFixed(1) + '%';
         const rows = [];
