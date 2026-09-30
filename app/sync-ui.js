@@ -44,6 +44,9 @@
       '#ch-sync-banner-stack>div{text-align:center;font-size:13px;padding:6px 12px;display:none;}' +
       '#ch-sync-banner{background:var(--accent,#2563eb);color:#fff;}' +
       '#ch-sync-offline-banner{background:var(--warn,#b45309);color:#fff;}' +
+      '#ch-sync-archive-full-banner{background:var(--warn,#b45309);color:#fff;}' +
+      '#ch-sync-archive-full-banner button{margin-left:8px;border-radius:4px;padding:2px 10px;font-size:12px;' +
+      'font-family:inherit;cursor:pointer;border:1px solid #fff;background:transparent;color:#fff;}' +
       // --- Phase 2b: conflict modal + archive viewer -------------------------
       '#ch-archive-link{position:fixed;bottom:52px;right:16px;z-index:9998;' +
       'background:var(--s3,#333);color:var(--text,#fff);border:1px solid var(--border,#555);' +
@@ -137,7 +140,7 @@
     if (!el) {
       el = document.createElement('div');
       el.id = id;
-      if (id === 'ch-sync-banner' || id === 'ch-sync-offline-banner') {
+      if (id === 'ch-sync-banner' || id === 'ch-sync-offline-banner' || id === 'ch-sync-archive-full-banner') {
         ensureStack().appendChild(el);
       } else {
         document.body.appendChild(el);
@@ -174,6 +177,37 @@
     el.style.display = show ? 'block' : 'none';
   }
 
+  // The conflict archive is never trimmed by the app. Past its size cap this
+  // notice stays until the user exports the archive and confirms the clear.
+  function renderArchiveFullBanner() {
+    if (!window.DB || typeof window.DB.isConflictArchiveFull !== 'function' || !window.DB.isConflictArchiveFull()) return;
+    ensureStyles();
+    var el = ensureEl('ch-sync-archive-full-banner');
+    var n = window.DB.getConflictArchive().length;
+    el.textContent = 'The conflict history is large (' + n + ' entries) and holds copies of replaced edits. Save it to a file.';
+    var btn = document.createElement('button');
+    btn.textContent = 'Export conflict history';
+    btn.onclick = function () {
+      var entries = window.DB.getConflictArchive();
+      var count = entries.length;
+      var blob = new Blob([JSON.stringify(entries, null, 2)], { type: 'application/json' });
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = new Date().toISOString().slice(0, 10) + '-conflict-history.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      if (window.confirm('Did the file save? Choose OK to remove these ' + count + ' entries from the browser.')) {
+        window.DB.clearConflictArchive(count);
+        el.style.display = 'none';
+        renderArchiveLink();
+      }
+    };
+    el.appendChild(btn);
+    el.style.display = 'block';
+  }
+  window.addEventListener('conflictArchiveFull', renderArchiveFullBanner);
+
   window.addEventListener('syncQueueChanged', function (e) {
     var depth =
       e.detail && typeof e.detail.depth === 'number'
@@ -205,6 +239,7 @@
       renderPill(window.DB.getQueueDepth());
     }
     renderArchiveLink();
+    renderArchiveFullBanner();
   });
 
   // =========================================================================

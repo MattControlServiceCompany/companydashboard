@@ -431,49 +431,48 @@ const DB = (() => {
 
   // --- Conflict archive (data-safety invariant, applies to every auto-adopt
   // in both directions: server-wins-over-local and local-wins-over-server). --
-  const CONFLICT_ARCHIVE_CAP = 200; // keep the newest N entries; the oldest are dropped with a visible warning
-  let _archiveBatch = null; // while hydrating: entries are collected and written ONCE
+  // The archive is NEVER trimmed by the app: it may hold the only copy of a
+  // user's edit. Past the cap it keeps growing and raises a persistent notice
+  // (app/sync-ui.js) with an Export button; entries are removed only after the
+  // user exports and confirms (clearConflictArchive).
+  const CONFLICT_ARCHIVE_CAP_ENTRIES = 200;
+  const CONFLICT_ARCHIVE_CAP_BYTES = 5 * 1024 * 1024;
+  let _archivedLocalThisRun = 0; // hydration entries whose local side lost (drives the toast)
+  // Written IMMEDIATELY (before the caller overwrites the local value): the
+  // IDB put is issued first, and same-store transactions commit in order.
   function _appendConflictArchive(entry) {
     const full = Object.assign({ archivedAt: new Date().toISOString() }, entry);
-    if (_archiveBatch) {
-      _archiveBatch.push(full);
-      return;
-    }
-    _writeConflictArchive([full]);
-  }
-  function _writeConflictArchive(entries) {
-    if (!entries.length) return;
     try {
       if (typeof sget !== 'function' || typeof sset !== 'function') {
-        console.warn('[DB] Cannot archive conflict — sget/sset (core.js) not loaded:', entries[0].key);
+        console.warn('[DB] Cannot archive conflict — sget/sset (core.js) not loaded:', entry.key);
         return;
       }
-      let archive = sget('en_conflict_archive', []).concat(entries);
-      let dropped = 0;
-      if (archive.length > CONFLICT_ARCHIVE_CAP) {
-        dropped = archive.length - CONFLICT_ARCHIVE_CAP;
-        archive = archive.slice(dropped); // newest entries always survive
-      }
+      const archive = sget('en_conflict_archive', []).concat([full]);
       sset('en_conflict_archive', archive);
-      if (dropped) _showLater('The conflict archive was full: the ' + dropped + ' oldest entries were removed.', 'warning');
+      if (entry.reason === 'hydration-server-wins') _archivedLocalThisRun++;
+      if (isConflictArchiveFull() && typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('conflictArchiveFull', { detail: { count: archive.length } }));
+      }
     } catch (e) {
       console.warn('[DB] Failed to append to conflict archive:', e);
     }
   }
-  function _flushConflictArchive() {
-    const batch = _archiveBatch;
-    _archiveBatch = null;
-    if (batch && batch.length) {
-      _writeConflictArchive(batch);
-      const lost = batch.filter((e) => e.losingSide === 'local').length;
-      if (lost) {
-        _showLater(
-          lost +
-            ' of your local edits were replaced by newer saved data. Nothing was lost: open Sync status, then the conflict archive.',
-          'warning',
-        );
-      }
+  function isConflictArchiveFull() {
+    const v = _cache['en_conflict_archive'];
+    if (!Array.isArray(v)) return false;
+    if (v.length > CONFLICT_ARCHIVE_CAP_ENTRIES) return true;
+    try {
+      return JSON.stringify(v).length > CONFLICT_ARCHIVE_CAP_BYTES;
+    } catch (e) {
+      return false;
     }
+  }
+  // Removes the FIRST `count` entries (the ones the user exported). Call only
+  // after the export file was saved and the user confirmed.
+  function clearConflictArchive(count) {
+    const v = _cache['en_conflict_archive'];
+    if (!Array.isArray(v) || !(count > 0)) return;
+    set('en_conflict_archive', v.slice(count));
   }
   // showToast lives in core.js, loaded after db.js, so wait for it.
   function _showLater(msg, kind) {
@@ -532,7 +531,15 @@ const DB = (() => {
     }
 
     if (res.status === 200) {
-      _replicaVersions[key] = { version: json.version, hash: json.hash || null };
+      let okHash = json.hash || null;
+      if (!okHash && !isTombstone) {
+        try {
+          okHash = await _sha256Hex(_canonicalJSON(payload.value));
+        } catch (e) {
+          okHash = null;
+        }
+      }
+      _replicaVersions[key] = { version: json.version, hash: okHash };
       _persistReplicaState();
       return { status: 'ok', body: json };
     }
@@ -945,13 +952,35 @@ const DB = (() => {
     return res.json();
   }
 
-  async function _hydrate() {
-    _archiveBatch = [];
-    try {
-      await _hydrateInner();
-    } finally {
-      _flushConflictArchive();
+  // Non-reentrant: overlapping callers (warmCache, identity change) share ONE
+  // in-flight run. A caller that arrives mid-run sets a flag, so the run
+  // repeats once more after it ends (the newer identity/state is honoured).
+  let _hydrateInFlight = null;
+  let _hydrateRerun = false;
+  function _hydrate() {
+    if (_hydrateInFlight) {
+      _hydrateRerun = true;
+      return _hydrateInFlight;
     }
+    _archivedLocalThisRun = 0;
+    _hydrateInFlight = (async () => {
+      try {
+        do {
+          _hydrateRerun = false;
+          await _hydrateInner();
+        } while (_hydrateRerun);
+      } finally {
+        _hydrateInFlight = null;
+        if (_archivedLocalThisRun > 0) {
+          _showLater(
+            _archivedLocalThisRun +
+              ' of your local edits were replaced by newer saved data. Nothing was lost: open Sync status, then the conflict archive.',
+            'warning',
+          );
+        }
+      }
+    })();
+    return _hydrateInFlight;
   }
 
   // Local is never overwritten unless it is unchanged since the last sync or
@@ -961,6 +990,14 @@ const DB = (() => {
     const base = _replicaVersions[localKey];
     const stamp = { version: row.version, hash: mHash || null };
     if (row.deleted) stamp.deleted = true;
+    else if (!stamp.hash) {
+      try {
+        stamp.hash = await _sha256Hex(_canonicalJSON(row.value)); // always stamp a hash with the version
+      } catch (e) {
+        stamp.hash = null;
+      }
+    }
+    mHash = stamp.hash;
     let merged = null;
     if (localValue !== undefined) {
       let localHash = null;
@@ -1715,6 +1752,8 @@ const DB = (() => {
     getSyncStatus,
     getQueueDepth,
     getConflictArchive,
+    isConflictArchiveFull,
+    clearConflictArchive,
     setBackendMode,
   };
 })();

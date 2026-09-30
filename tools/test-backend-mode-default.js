@@ -36,13 +36,25 @@ function makeIdb(initial) {
   };
   const store = (tx) => ({
     get: (k) => mkReq(() => data.get(k)),
-    put: (v, k) => (data.set(k, JSON.parse(JSON.stringify(v))), mkReq(() => k)),
-    delete: (k) => (data.delete(k), mkReq(() => undefined)),
+    put: (v, k) => {
+      if (idb.frozen) return mkReq(() => k); // simulated tab close: nothing more is persisted
+      data.set(k, JSON.parse(JSON.stringify(v)));
+      idb.log.push(k);
+      if (idb.afterPut) idb.afterPut(k);
+      return mkReq(() => k);
+    },
+    delete: (k) => {
+      if (idb.frozen) return mkReq(() => undefined);
+      data.delete(k);
+      idb.log.push('DEL:' + k);
+      return mkReq(() => undefined);
+    },
     clear: () => (data.clear(), mkReq(() => undefined)),
     getAll: () => mkReq(() => Array.from(data.values())),
     getAllKeys: () => mkReq(() => Array.from(data.keys())),
   });
   const idb = {
+    log: [],
     data,
     open() {
       const req = {};
@@ -91,12 +103,16 @@ function makeServer(seed) {
     if (!/kv-sync/.test(url)) return res(404, {});
     if (method === 'GET' && srv.unauthorized) return res(401, { error: 'unauthorized' });
     if (method === 'GET' && /manifest=1/.test(url)) {
+      srv.activeManifest = (srv.activeManifest || 0) + 1;
+      srv.maxManifest = Math.max(srv.maxManifest || 0, srv.activeManifest);
+      await tick(15);
+      srv.activeManifest--;
       return res(
         200,
         Array.from(rows, ([key, r]) => ({
           key,
           version: r.version,
-          hash: r.deleted ? null : hashOf(r.value),
+          hash: r.deleted || srv.noHash ? null : hashOf(r.value),
           deleted: r.deleted,
         })),
       );
@@ -118,7 +134,7 @@ function makeServer(seed) {
         return res(409, { error: 'conflict', current: cur });
       const version = cur ? cur.version + 1 : 1;
       rows.set(b.key, { value: b.deleted ? null : b.value, version, deleted: !!b.deleted });
-      return res(200, { version, hash: b.deleted ? null : hashOf(b.value) });
+      return res(200, { version, hash: b.deleted || srv.noHash ? null : hashOf(b.value) });
     }
     return res(405, {});
   };
@@ -133,7 +149,7 @@ function fakeSession() {
   return o;
 }
 
-async function boot({ host, signedIn, storedMode, server, idbSeed, lsSeed, reuse }) {
+async function boot({ host, signedIn, storedMode, server, idbSeed, lsSeed, reuse, onCtx, onIdb, skipWarm }) {
   const listeners = {};
   const ls = reuse ? reuse.ls : new Map(Object.entries(lsSeed || {}));
   const toasts = [];
@@ -197,7 +213,9 @@ async function boot({ host, signedIn, storedMode, server, idbSeed, lsSeed, reuse
   vm.runInContext(SRC.auth, ctx);
   vm.runInContext(SRC.cls, ctx);
   vm.runInContext(SRC.db, ctx);
-  await ctx.window.DB.warmCache();
+  if (onCtx) onCtx(ctx);
+  if (onIdb) onIdb(idb);
+  if (!skipWarm) await ctx.window.DB.warmCache();
   return { ctx, DB: ctx.window.DB, idb, ls, toasts };
 }
 
@@ -375,16 +393,185 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     check('9 en_customers drift: one based PUT of the merged list, nothing archived', srv.puts.length === 1 && srvIds === 'c1,c2' && b.DB.get('en_conflict_archive', []).length === 0, srv.puts.length + ' PUTs, server=' + srvIds);
   });
 
-  // Review fix 4: archive cap keeps the newest, warns about the dropped.
-  await scenario('10', async () => {
-    const srv = makeServer(SEED());
-    const old = Array.from({ length: 200 }, (_, i) => ({ key: 'old' + i, archivedAt: 'x' }));
-    const b = await boot({ host: NETLIFY, signedIn: true, server: srv, idbSeed: { en_budget_a: { n: 'STALE' }, en_conflict_archive: old } });
-    await tick(2200);
-    const arch = b.DB.get('en_conflict_archive', []);
-    check('10 archive capped at 200, newest entry kept', arch.length === 200 && arch.some((e) => e.key === 'en_budget_a') && arch[0].key === 'old1', 'len=' + arch.length);
-    check('10 archive: warning about dropped entries', b.toasts.some((t) => /oldest entries were removed/.test(t)), JSON.stringify(b.toasts));
+// Round 2 D: nothing is ever dropped from the archive; past the cap a notice event fires.
+await scenario("10", async () => {
+  const srv = makeServer(SEED());
+  const old = Array.from({ length: 200 }, (_, i) => ({
+    key: "old" + i,
+    archivedAt: "x",
+  }));
+  let full = 0;
+  const b = await boot({
+    host: NETLIFY,
+    signedIn: true,
+    server: srv,
+    idbSeed: { en_budget_a: { n: "STALE" }, en_conflict_archive: old },
+    onCtx: (c) =>
+      c.window.addEventListener("conflictArchiveFull", () => full++),
   });
+  await tick(20);
+  const arch = b.DB.get("en_conflict_archive", []);
+  check(
+    "10 archive over cap: every entry kept (oldest and newest)",
+    arch.length === 201 &&
+      arch[0].key === "old0" &&
+      arch.some((e) => e.key === "en_budget_a"),
+    "len=" + arch.length,
+  );
+  check(
+    "10 archive over cap: full state reported and notice event fired",
+    b.DB.isConflictArchiveFull() === true && full >= 1,
+    "events=" + full,
+  );
+  b.DB.clearConflictArchive(150);
+  const after = b.DB.get("en_conflict_archive", []);
+  check(
+    "10 clear removes only the exported entries",
+    after.length === 51 && after[0].key === "old150",
+    "len=" + after.length,
+  );
+});
+
+// Round 2 A: the archive entry is written BEFORE the local value is overwritten.
+await scenario("A", async () => {
+  const srv = makeServer(SEED());
+  const stale = {
+    en_budget_a: { n: "STALE-A" },
+    en_budget_b: { n: "STALE-B" },
+    en_budget_c: { n: "STALE-C" },
+  };
+  const b = await boot({
+    host: NETLIFY,
+    signedIn: true,
+    server: srv,
+    idbSeed: stale,
+    onIdb: (idb) => {
+      // simulated tab close right after the first data key is overwritten
+      idb.afterPut = (k) => {
+        if (/^en_budget_[abc]$/.test(k)) idb.frozen = true;
+      };
+    },
+  });
+  const arch = b.idb.data.get("en_conflict_archive") || [];
+  const overwritten = ["en_budget_a", "en_budget_b", "en_budget_c"].filter(
+    (k) => !same(b.idb.data.get(k), stale[k]),
+  );
+  check(
+    "A crash right after the first overwrite: that key is already in the persisted archive",
+    overwritten.length >= 1 &&
+      overwritten.every((k) =>
+        arch.some((e) => e.key === k && same(e.losingValue, stale[k])),
+      ),
+    "overwritten=" + overwritten + " archive=" + arch.length + " log=" + b.idb.log.join(","),
+  );
+});
+await scenario("A2", async () => {
+  const srv = makeServer(SEED());
+  const stale = {
+    en_budget_a: { n: "STALE-A" },
+    en_budget_b: { n: "STALE-B" },
+  };
+  const b = await boot({
+    host: NETLIFY,
+    signedIn: true,
+    server: srv,
+    idbSeed: stale,
+  });
+  const log = b.idb.log;
+  const ok = ["en_budget_a", "en_budget_b"].every((k) => {
+    const w = log.indexOf(k);
+    return (
+      w > -1 &&
+      log.findIndex((x, i) => x === "en_conflict_archive" && i < w) > -1
+    );
+  });
+  check(
+    "A2 an archive put is issued before each overwrite put",
+    ok,
+    log.join(","),
+  );
+});
+
+// Round 2 B: overlapping hydrates share one run; no entries lost, no parallel manifest fetches.
+await scenario("B", async () => {
+  const srv = makeServer(SEED());
+  const stale = {
+    en_budget_a: { n: "S1" },
+    en_budget_b: { n: "S2" },
+    en_budget_c: { n: "S3" },
+  };
+  const b = await boot({
+    host: NETLIFY,
+    signedIn: true,
+    server: srv,
+    idbSeed: stale,
+    skipWarm: true,
+  });
+  await Promise.all([b.DB.warmCache(), b.DB.warmCache()]);
+  await tick(60);
+  const keys = b.DB.get("en_conflict_archive", [])
+    .map((e) => e.key)
+    .sort()
+    .join(",");
+  check(
+    "B overlapping hydrates: all 3 stale values archived once each",
+    keys === "en_budget_a,en_budget_b,en_budget_c",
+    keys,
+  );
+  check(
+    "B overlapping hydrates: never two manifest fetches at once",
+    srv.maxManifest === 1,
+    "max=" + srv.maxManifest,
+  );
+  check(
+    "B overlapping hydrates: 0 PUTs",
+    srv.puts.length === 0,
+    srv.puts.length + "",
+  );
+});
+
+// Round 2 C: a version is always stamped with a hash, even if the server sends none.
+await scenario("C", async () => {
+  const srv = makeServer(SEED());
+  srv.noHash = true;
+  const b1 = await boot({ host: NETLIFY, signedIn: true, server: srv });
+  const st = b1.idb.data.get("ch_replica_state") || {};
+  check(
+    "C every stamped version has a hash (server sent none)",
+    Object.keys(st).length >= 5 &&
+      Object.values(st).every(
+        (v) => typeof v.hash === "string" && v.hash.length === 64,
+      ),
+    JSON.stringify(st).slice(0, 200),
+  );
+  srv.rows.set("en_budget_a", {
+    value: { n: "NEWER" },
+    version: 9,
+    deleted: false,
+  });
+  const b2 = await boot({
+    host: NETLIFY,
+    signedIn: true,
+    server: srv,
+    reuse: b1,
+  });
+  check(
+    "C unchanged local + newer server (no hash from server): pulled, no archive noise",
+    same(b2.DB.get("en_budget_a"), { n: "NEWER" }) &&
+      b2.DB.get("en_conflict_archive", []).length === 0,
+    JSON.stringify(b2.DB.get("en_conflict_archive", [])).slice(0, 200),
+  );
+  b2.DB.set("en_budget_b", [9]);
+  await tick(30);
+  const st2 = b2.idb.data.get("ch_replica_state") || {};
+  check(
+    "C own PUT stamps a hash too",
+    st2.en_budget_b &&
+      typeof st2.en_budget_b.hash === "string" &&
+      st2.en_budget_b.hash.length === 64,
+    JSON.stringify(st2.en_budget_b),
+  );
+});
 
   let fail = 0;
   results.forEach((r) => {
