@@ -1776,6 +1776,16 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.30.45',
+    date: '2026-09-30',
+    title: 'Utility Data: CSV re-import keeps existing values',
+    items: [
+      { type: 'fix', text: 'Utility Data > Import Bills CSV: a re-import no longer blanks values that a row leaves empty.' },
+      { type: 'change', text: 'Utility Data > Import Bills CSV: to erase a stored value, type ERASE in the cell.' },
+      { type: 'change', text: 'Utility Data > Import Bills CSV: the preview shows what each row will do.' }
+    ]
+  },
+  {
     v: 'v2026.09.30.44',
     date: '2026-09-30',
     title: 'Internal test tools updated',
