@@ -1776,6 +1776,16 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.29.39',
+    date: '2026-09-29',
+    title: 'PDF / OCR: held bills and dashed account numbers',
+    items: [
+      { type: 'fix', text: 'PDF / OCR: a held bill no longer freezes the upload. Its total now shows "—".' },
+      { type: 'fix', text: 'PDF / OCR: a failed upload now clears and shows an "Extraction failed" error.' },
+      { type: 'fix', text: 'PDF / OCR: city utility account numbers with two dashes (like NN-NNNNNN-NN) match their meters again.' },
+    ],
+  },
+  {
     v: 'v2026.09.29.38',
     date: '2026-09-29',
     title: 'PDF / OCR: long retries can be cancelled',
