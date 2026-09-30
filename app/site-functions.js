@@ -1776,6 +1776,15 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.30.46',
+    date: '2026-09-30',
+    title: 'PDF / OCR: Louisburg gas charge read from the printed line',
+    items: [
+      { type: 'fix', text: 'PDF / OCR, City of Louisburg bills: the gas charge now comes from the printed GAS line on the bill. It is never replaced by usage times rate.' },
+      { type: 'change', text: 'PDF / OCR, City of Louisburg bills: if the printed GAS line and usage times rate disagree, the bill is held for review.' }
+    ]
+  },
+  {
     v: 'v2026.09.30.45',
     date: '2026-09-30',
     title: 'Utility Data: CSV re-import keeps existing values',
