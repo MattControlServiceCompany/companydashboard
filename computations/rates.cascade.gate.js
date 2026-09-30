@@ -18,6 +18,20 @@ const assert = require('assert');
 
 const REPO = path.join(__dirname, '..');
 
+// Source text of one top-level function from a real app file (brace-matched), so the gate runs the
+// production calcDays instead of a copy.
+function realFunctionSource(file, name) {
+  const src = fs.readFileSync(path.join(REPO, file), 'utf8');
+  const i = src.indexOf('function ' + name + '(');
+  if (i < 0) throw new Error('function ' + name + ' not found in ' + file);
+  let depth = 0;
+  for (let k = src.indexOf('{', i); k < src.length; k++) {
+    if (src[k] === '{') depth++;
+    else if (src[k] === '}' && --depth === 0) return src.slice(i, k + 1);
+  }
+  throw new Error('unbalanced braces in ' + name);
+}
+
 function buildSandbox() {
   const sandbox = { console, utilityData: {}, projects: [], udSelProjId: null, udSelBldgId: null };
   sandbox.window = sandbox;
@@ -31,12 +45,7 @@ function buildSandbox() {
       return d;
     }
     function _parseISO(d) { return new Date(_fixISO(d) + 'T12:00:00'); }
-    function calcDays(start, end, inclusive) {
-      if (!start || !end) return '';
-      const s = _parseISO(start), e = _parseISO(end);
-      const diff = Math.round((e - s) / (1000 * 60 * 60 * 24));
-      return inclusive ? diff + 1 : diff;
-    }
+    ${realFunctionSource('app/utility-data.js', 'calcDays')}
     function getUDProj(pid) { return (utilityData[pid] || (utilityData[pid] = { buildings: [] }), utilityData[pid]); }
     function getUDBldgs(pid) { return getUDProj(pid).buildings; }
     function getUDBldg(pid, bid) { return getUDBldgs(pid).find(function(b){ return b.id === bid; }); }

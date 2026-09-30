@@ -1602,10 +1602,24 @@ function _parseISO(d) {
   return new Date(_fixISO(d) + 'T12:00:00');
 }
 
+// The ONE day-count function (WP-08). Whole days from start to end.
+//   inclusive=true  -> both dates count (end - start + 1)   [the meter "Inclusive" toggle]
+//   inclusive=false -> read-to-read (end - start)           [the meter "Exclusive" toggle; bill extraction]
+// Accepts ISO / MM-DD-YY strings, M/D/YY(YY) strings (extractor dates) and Date objects. All dates
+// are read as LOCAL calendar dates (local noon), so DST and time zone never move the count.
+// Returns '' when a date is missing. Callers pass the toggle; there is no default.
 function calcDays(start, end, inclusive) {
   if (!start || !end) return '';
-  const s = _parseISO(start),
-    e = _parseISO(end);
+  const toISO = (x) => {
+    if (Object.prototype.toString.call(x) === '[object Date]') {
+      if (isNaN(x)) return '';
+      return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0');
+    }
+    const sl = typeof x === 'string' && x.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);
+    return sl ? (sl[3].length === 2 ? '20' + sl[3] : sl[3]) + '-' + sl[1].padStart(2, '0') + '-' + sl[2].padStart(2, '0') : x;
+  };
+  const s = _parseISO(toISO(start)),
+    e = _parseISO(toISO(end));
   const diff = Math.round((e - s) / (1000 * 60 * 60 * 24));
   return inclusive ? diff + 1 : diff;
 }
@@ -4265,8 +4279,8 @@ function renderBillsPane(pane, m, bills, incl) {
       // Overlap and gap are mutually exclusive — if periods overlap, the "days" column
       // may flag as out-of-norm but that doesn't tell the user WHY. Show a specific
       // overlap warning in amber (distinct from the red gap warning) so the issue is clear.
-      if (prevEnd && curStart && (_parseISO(prevEnd) - _parseISO(curStart)) / (1000 * 60 * 60 * 24) > 3) {
-        const overlapDays = Math.round((_parseISO(prevEnd) - _parseISO(curStart)) / (1000 * 60 * 60 * 24));
+      if (prevEnd && curStart && calcDays(curStart, prevEnd, false) > 3) {
+        const overlapDays = calcDays(curStart, prevEnd, false);
         tblBody += `<tr class="ud-bill-overlap-row"><td colspan="${cols.length}"><div class="ud-bill-overlap-msg">⚠ Overlapping billing periods — ${overlapDays} day${overlapDays !== 1 ? 's' : ''} of overlap between ${fmtDate(curStart)} and ${fmtDate(prevEnd)} (check for duplicate or incorrect dates)</div></td></tr>`;
       } else if (detectGap(prevEnd, curStart)) {
         // Bug #14: Always report the gap in chronological order (earlier date → later date)
