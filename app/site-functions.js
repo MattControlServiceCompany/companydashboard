@@ -1776,6 +1776,15 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.30.52',
+    date: '2026-09-30',
+    title: 'ASHRAE 36 Audit Report tables fit the page',
+    items: [
+      { type: 'change', text: "ASHRAE 36 Audit Report: tables fit on one page where they can and never run past the page footer; values that are the same for every building print once above the table; clearer client wording (for example 'Reprogram to Standard'); 'Devices to Install' lists each device on its own line." },
+      { type: 'fix', text: 'Quarterly reports: the unfinished Net Impact Analysis placeholder lines no longer print.' }
+    ]
+  },
+  {
     v: 'v2026.09.30.51',
     date: '2026-09-30',
     title: 'One billing-period day count',
