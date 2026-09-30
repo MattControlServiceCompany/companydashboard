@@ -55,28 +55,31 @@
   var _refreshTimer = null;
   var _refreshInFlight = null; // Promise | null — de-dupes overlapping refresh calls
 
-  // Mirrors app/db.js's _backendMode() EXACTLY (same localStorage key, same
-  // off-semantics: unset/'off'/anything-not-'shadow'-or-'on' => 'off',
-  // legacy 'ch_backend_enabled'==='true' => 'shadow'). Kept in sync manually
-  // — see db.js lines ~49-67. When the flag is off, this module must not
-  // make ANY network call on load (byte-for-byte inert requirement).
-  function _backendMode() {
+  // THE single backend-mode reader (db.js, sync-ui.js, core.js, site-functions.js
+  // all call CH_AUTH.backendMode()). Returns 'off' | 'shadow' | 'on'.
+  //  - Netlify host (*.netlify.app): default 'on' when signed in. Signed out
+  //    is always 'off' (nothing is queued or pushed; the sign-in prompt shows).
+  //    'shadow' is unsafe there (it auto-adopts and overwrites the server), so
+  //    a stored/legacy 'shadow' is read as 'on'. A stored 'off' still wins.
+  //  - Every other host (github.io, file://, localhost): stored value, else
+  //    'off'. /.netlify/functions does not exist there.
+  function _isNetlifyHost() {
+    return typeof location !== 'undefined' && /\.netlify\.app$/i.test(location.hostname || '');
+  }
+  function backendMode() {
     if (typeof localStorage === 'undefined') return 'off';
-    var v;
+    var v, legacy;
     try {
       v = localStorage.getItem('ch_backend_mode');
+      legacy = localStorage.getItem('ch_backend_enabled');
     } catch (e) {
       return 'off';
     }
-    if (v === 'off' || v === 'shadow' || v === 'on') return v;
-    var legacy;
-    try {
-      legacy = localStorage.getItem('ch_backend_enabled');
-    } catch (e) {
-      legacy = null;
-    }
-    if (legacy === 'true') return 'shadow';
-    return 'off';
+    var stored = v === 'off' || v === 'shadow' || v === 'on' ? v : legacy === 'true' ? 'shadow' : null;
+    if (!_isNetlifyHost()) return stored || 'off';
+    if (_signedOut) return 'off';
+    if (stored === 'off') return 'off';
+    return 'on';
   }
 
   function _loadSession() {
@@ -233,7 +236,7 @@
   }
 
   function _startBackgroundRefresh() {
-    if (_backendMode() === 'off') return; // kill switch — no network on load
+    if (backendMode() === 'off') return; // kill switch — no network on load
     if (_refreshTimer) return;
     _refreshIfNeeded();
     _refreshTimer = setInterval(_refreshIfNeeded, REFRESH_INTERVAL_MS);
@@ -291,6 +294,7 @@
     getToken: getToken,
     getTokenInteractive: getTokenInteractive,
     isSignedOut: isSignedOut,
+    backendMode: backendMode,
     getUserId: getUserId,
     signIn: signIn,
     signOut: signOut,

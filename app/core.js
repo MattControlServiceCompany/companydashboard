@@ -109,31 +109,6 @@ const PDF_SINGLE_SHOT_LIMIT_BYTES = 4 * 1024 * 1024;
 const PDF_CHUNK_SIZE = 3 * 1024 * 1024;
 const PDF_QUEUE_DRAIN_INTERVAL_MS = 15000; // mirrors db.js's QUEUE_DRAIN_INTERVAL_MS cadence
 
-// Mirrors app/db.js's private _backendMode() exactly (off|shadow|on, with the
-// legacy boolean ch_backend_enabled='true' => shadow fallback) — duplicated
-// here only because db.js does not expose a mode-read accessor and this task
-// may not touch db.js. When 'off' this is a single localStorage.getItem call
-// — effectively free, matching db.js's own "byte-for-byte behavior unchanged"
-// guarantee for the kill switch.
-function _pdfBackendMode() {
-  if (typeof localStorage === 'undefined') return 'off';
-  let v;
-  try {
-    v = localStorage.getItem('ch_backend_mode');
-  } catch (e) {
-    return 'off';
-  }
-  if (v === 'off' || v === 'shadow' || v === 'on') return v;
-  let legacy;
-  try {
-    legacy = localStorage.getItem('ch_backend_enabled');
-  } catch (e) {
-    legacy = null;
-  }
-  if (legacy === 'true') return 'shadow';
-  return 'off';
-}
-
 // Mirrors app/db.js's private _authHeaders() — same window.CH_AUTH seam
 // (app/ch-auth.js, Supabase Auth), same header shape, so pdf-sync.js's
 // verifyAuth() accepts both Functions' traffic identically. `x-stub-user`
@@ -393,7 +368,7 @@ async function _pdfDrainQueueLocked() {
 async function _pdfDrainQueueOnce() {
   const queue = _pdfQueueLoad();
   if (!queue.length) return;
-  if (_pdfBackendMode() === 'off') return;
+  if (window.CH_AUTH.backendMode() === 'off') return;
   if (typeof navigator !== 'undefined' && navigator.locks && navigator.locks.request) {
     try {
       await navigator.locks.request('ch_pdf_sync_drain', { ifAvailable: true }, async (lock) => {
@@ -440,7 +415,7 @@ async function pdfStore(id, base64) {
   // Local IDB write above is unchanged/first, exactly as today. When mode is
   // 'off' this is a single localStorage.getItem call — effectively free,
   // zero network, matching db.js's replication-tail guarantee for DB.set().
-  const mode = _pdfBackendMode();
+  const mode = window.CH_AUTH.backendMode();
   if (mode === 'on' || mode === 'shadow') {
     try {
       _pdfEnqueue('upload', id);
@@ -470,7 +445,7 @@ async function pdfLoad(id) {
   // Local miss (IDB opened fine, key just isn't there). Phase 2c server
   // fallback — ONLY in full 'on' mode (mirrors db.js: reads/hydration stay
   // local-only in 'off' AND 'shadow'; only 'on' ever reads remotely).
-  if (_pdfBackendMode() !== 'on') return null;
+  if (window.CH_AUTH.backendMode() !== 'on') return null;
   try {
     const base64 = await _pdfDownload(id);
     if (!base64) return null;
@@ -496,7 +471,7 @@ async function pdfDelete(id) {
   }
   // --- Phase 2c: propagate delete to the server (see _pdfDeleteCommit's
   // KNOWN GAP note — pdf-sync.js has no DELETE route on this branch yet). ---
-  const mode = _pdfBackendMode();
+  const mode = window.CH_AUTH.backendMode();
   if (mode === 'on' || mode === 'shadow') {
     try {
       _pdfEnqueue('delete', id);

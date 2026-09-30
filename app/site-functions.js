@@ -1035,7 +1035,7 @@ async function compactPdfStorageUI() {
     'Compact PDF Storage will scan every stored bill PDF (' +
     keyCount +
     ' currently stored), collapse byte-identical duplicates down to one copy each, and permanently delete the redundant copies. Export PDFs (backup) first — this cannot be undone.';
-  if (typeof _pdfBackendMode === 'function' && (_pdfBackendMode() === 'on' || _pdfBackendMode() === 'shadow')) {
+  if ((window.CH_AUTH.backendMode() === 'on' || window.CH_AUTH.backendMode() === 'shadow')) {
     msg +=
       ' Server copies of consolidated PDFs will remain until server-side dedup is added — this only shrinks local storage.';
   }
@@ -1172,7 +1172,7 @@ function processRestoreFile(file) {
   // task 2a.4b — "Default: block it"). Mode 'off'/'shadow' are unaffected.
   var _chBackendModeRestoreGuard = 'off';
   try {
-    _chBackendModeRestoreGuard = localStorage.getItem('ch_backend_mode') || 'off';
+    _chBackendModeRestoreGuard = window.CH_AUTH.backendMode();
   } catch (e) {}
   if (_chBackendModeRestoreGuard === 'on') {
     if (typeof showToast === 'function') {

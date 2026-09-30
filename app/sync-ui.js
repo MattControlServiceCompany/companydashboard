@@ -592,16 +592,7 @@
   var _statusPanelOpen = false;
 
   function _currentBackendMode() {
-    // db.js keeps `_backendMode()` private; this file only ever reads the
-    // same localStorage key it persists via DB.setBackendMode(), per the
-    // "upgrade ch_backend_enabled -> ch_backend_mode = off|shadow|on" rule
-    // in supabase-migration-plan-FINAL-2026-07-19.md §8.
-    try {
-      var v = localStorage.getItem('ch_backend_mode');
-      return v === 'off' || v === 'shadow' || v === 'on' ? v : 'off';
-    } catch (e) {
-      return 'off';
-    }
+    return window.CH_AUTH.backendMode();
   }
 
   function _modeLabel(mode) {

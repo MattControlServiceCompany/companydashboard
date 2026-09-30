@@ -119,28 +119,17 @@ const DB = (() => {
   //          retry once (integration #2).
   // on     = full: hydration at load + manifest polling + write-through.
   function _backendMode() {
-    if (typeof localStorage === 'undefined') return 'off';
-    let v;
-    try {
-      v = localStorage.getItem('ch_backend_mode');
-    } catch (e) {
-      return 'off';
-    }
-    if (v === 'off' || v === 'shadow' || v === 'on') return v;
-    // Backward-compat: a legacy boolean flag left 'true' is treated as shadow.
-    let legacy;
-    try {
-      legacy = localStorage.getItem('ch_backend_enabled');
-    } catch (e) {
-      legacy = null;
-    }
-    if (legacy === 'true') return 'shadow';
-    return 'off';
+    return typeof window !== 'undefined' && window.CH_AUTH ? window.CH_AUTH.backendMode() : 'off';
   }
 
   function setBackendMode(mode) {
     if (['off', 'shadow', 'on'].indexOf(mode) === -1) {
       console.warn('[DB] setBackendMode: invalid mode', mode);
+      return false;
+    }
+    // 'shadow' overwrites the server (auto-adopt + retry); on Netlify it is refused.
+    if (mode === 'shadow' && typeof location !== 'undefined' && /\.netlify\.app$/i.test(location.hostname || '')) {
+      console.warn('[DB] setBackendMode: shadow is refused on Netlify');
       return false;
     }
     try {
@@ -1026,47 +1015,34 @@ const DB = (() => {
         _replicaVersions[localKey] = { version: m.version, hash: m.hash };
         continue;
       }
-      // Genuine drift: local was edited after the export but before hydration
-      // went live. Never silently clobber either side.
+      // Genuine drift: no version map entry for this key, and local differs
+      // from the server. The server wins. Local is never pushed wholesale
+      // without a version map. The local value is kept in the conflict archive.
       console.warn(
-        '[DB] Hydration drift detected — keeping local, archiving server value, re-pushing local:',
+        '[DB] Hydration drift detected — server wins, archiving local value:',
         localKey,
       );
-      let serverValue = null;
-      try {
-        const rows = await _batchGet([m.key]); // m.key = wire key, the real GET key
-        serverValue = rows && rows[0] ? rows[0].value : null;
-      } catch (e) {
-        // best-effort archive only
-      }
       _appendConflictArchive({
         key: localKey,
-        reason: 'hydration-drift-local-wins',
-        losingSide: 'server',
-        losingValue: serverValue,
-        losingVersion: m.version,
-        losingHash: m.hash,
-        winningSide: 'local',
+        reason: 'hydration-drift-server-wins',
+        losingSide: 'local',
+        losingValue: localValue,
+        losingVersion: null,
+        losingHash: localHash,
+        winningSide: 'server',
       });
-      // Auto-keep-local AND immediately CAS-PUT it, so neither copy is ever
-      // silently discarded. Adopt the server's current version as our
-      // baseVersion so the CAS-PUT targets the row we just read.
-      _replicaVersions[localKey] = { version: m.version, hash: m.hash };
-      let putResult;
+      let rows = [];
       try {
-        putResult = await _sendKvPut(localKey, { value: localValue }); // local key — _sendKvPut re-resolves the wire key
+        rows = await _batchGet([m.key]);
       } catch (e) {
-        putResult = { status: 'network-error' };
+        console.warn('[DB] Hydration: drift fetch failed, leaving key untouched:', localKey, e);
+        continue;
       }
-      if (putResult.status === 'conflict') {
-        // Someone changed it again in between — normal conflict handling.
-        await _handleConflict(localKey, { value: localValue }, putResult.body, mode);
-      } else if (putResult.status === 'network-error' || putResult.status === 'error') {
-        _enqueueWrite(localKey, { value: localValue });
+      if (rows[0]) {
+        if (rows[0].deleted) await _rawDelete(localKey);
+        else await _rawSet(localKey, rows[0].value);
+        _replicaVersions[localKey] = { version: rows[0].version, hash: m.hash };
       }
-      // 'ok' -> _sendKvPut already updated _replicaVersions.
-      // 'skipped-no-user' -> per-user key, signed out mid-session; leave as-is
-      // (matches _replicateWrite's inertness guarantee, never queued).
     }
 
     _persistReplicaState();
