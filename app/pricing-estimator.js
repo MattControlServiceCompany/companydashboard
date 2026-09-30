@@ -3095,17 +3095,15 @@ function buildCatalogRows(projId, buildingNames) {
         if (!count || count <= 0) return;
         var hrs = perSeqHours[seqKey] != null ? perSeqHours[seqKey] : 2.0;
         var label = seqLabels[seqKey] || seqKey;
-        // DCV label override per spec §2A note. Plain-language rewrite (no-abbreviations pass,
-        // 2026-07-31): was ' (CO2/DCV Programming)' -- both CO2 and DCV are opaque acronyms to a
-        // non-technical reader. The strip-back-off regex a few lines below MUST match this exact
-        // string.
-        if (seqKey === 'demandCtrl' || seqKey === 'vav_dcv') label += ' (Occupancy Sensor Programming)';
+        // 2026-09-30: the ' (Occupancy Sensor Programming)' suffix is gone. The two ventilation
+        // sequence labels already end in their own qualifier ("(Air Handling Units)" / "(Zone
+        // Terminals)"), so the suffix printed a second parenthesis on the same label.
         var lineHours = count * hrs;
         var lineTotal = parseFloat((lineHours * hourlyRate).toFixed(2));
 
         // FIX 3: Equipment label — show "N of M [type]" or "N [type]" if all applicable
         var applicable = seqApplicable[seqKey] || count;
-        var seqTypeLabel = label.replace(/ \(Occupancy Sensor Programming\)$/, ''); // strip suffix for the label
+        var seqTypeLabel = label;
         var eqLabel2;
         if (count === applicable) {
           eqLabel2 = count + ' ' + seqTypeLabel + (count !== 1 ? 's' : '');
@@ -8489,9 +8487,6 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   if (typeof EM_SEQUENCE_DEFS !== 'undefined') {
     EM_SEQUENCE_DEFS.forEach(function (sd) {
       var _lbl = sd.label;
-      // Plain-language rewrite (no-abbreviations pass, 2026-07-31) -- keep in sync with the
-      // identical suffix/regex pair in buildBaseRows above.
-      if (sd.key === 'demandCtrl' || sd.key === 'vav_dcv') _lbl += ' (Occupancy Sensor Programming)';
       _seqItemLabelByKey[sd.key] = _lbl;
     });
   }
