@@ -73,6 +73,7 @@ const src = [
   loadFn(HVAC_ENDUSE, '_hvacPopulatedCount'),
   loadFn(HVAC_ENDUSE, 'computeHvacEnduse'),
   loadFn(CALC, '_hvlMonthlyBaseline'),
+  loadFn(CALC, '_hvlMeterMoMap'),
   loadFn(CALC, '_hvlEnduseForBuilding'),
   loadFn(CALC, '_hvlDefaultGasPct'),
   loadFn(CALC, '_hvlBuildingHeatingSignals'),

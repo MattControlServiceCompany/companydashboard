@@ -215,6 +215,20 @@ function _hvlSelectBldg(projId, bldgId) {
   initHvacLoadTab(projId);
 }
 
+// _hvlMeterMoMap — one meter's baseline-month map (getNormRows + buildMoMap). Shared by
+// _hvlMonthlyBaseline (first meter, table readers) and _hvlEnduseForBuilding (every included meter).
+function _hvlMeterMoMap(meter, wxByYm) {
+  if (!meter) return {};
+  const bills = (meter.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
+  const incl = meter.inclusive !== false;
+  const allRows = typeof getNormRows === 'function' && bills.length ? getNormRows(meter, bills, incl, wxByYm) : [];
+  const bl = meter.baseline || {};
+  const blMonths = bl.months || [];
+  const blRows = blMonths.length >= 3 ? allRows.filter((r) => blMonths.includes(r.ym)) : allRows.slice(-12);
+  if (!blRows.length) return {};
+  return typeof buildMoMap === 'function' ? buildMoMap(meter, blRows, bills, incl) : {};
+}
+
 // _hvlMonthlyBaseline — single source of truth for a building's per-month baseline data
 // (wraps getNormRows + buildMoMap, the same helpers getMeterBaselineTotals uses). Every HVAC
 // Load Estimation reader (the Baseline Data table and the Load Breakdown Results kW/kWh/Therms
@@ -226,17 +240,7 @@ function _hvlMonthlyBaseline(projId, b) {
   const gasM = meters.find((m) => m.commodity === 'Gas');
   const propaneM = meters.find((m) => m.commodity === 'Propane');
   const _wxByYm = typeof getWeatherForBuilding === 'function' && projId ? getWeatherForBuilding(projId, b.id).byYm : {};
-  function _getNormMoMap(meter) {
-    if (!meter) return {};
-    const bills = (meter.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
-    const incl = meter.inclusive !== false;
-    const allRows = typeof getNormRows === 'function' && bills.length ? getNormRows(meter, bills, incl, _wxByYm) : [];
-    const bl = meter.baseline || {};
-    const blMonths = bl.months || [];
-    const blRows = blMonths.length >= 3 ? allRows.filter((r) => blMonths.includes(r.ym)) : allRows.slice(-12);
-    if (!blRows.length) return {};
-    return typeof buildMoMap === 'function' ? buildMoMap(meter, blRows, bills, incl) : {};
-  }
+  const _getNormMoMap = (meter) => _hvlMeterMoMap(meter, _wxByYm);
   const eMoMap = _getNormMoMap(elecM);
   const gMoMap = _getNormMoMap(gasM);
   const pMoMap = _getNormMoMap(propaneM);
@@ -320,19 +324,31 @@ function _hvlBuildingHasElectricHeat(projId, bldgId) {
 // Returns { enduse, totalGas }; null when the building is missing.
 function _hvlEnduseForBuilding(projId, b) {
   if (!b) return null;
-  const { eByMo, gByMo, pByMo } = _hvlMonthlyBaseline(projId, b);
-  const kwhArr = [],
-    kwArr = [],
-    gasArr = [];
+  // Every INCLUDED meter of a commodity (isBaselineExcluded by m.id), summed per calendar month.
+  const wx = typeof getWeatherForBuilding === 'function' && projId ? getWeatherForBuilding(projId, b.id).byYm : {};
+  const perMo = (commodity, mapKey, field) => {
+    const arr = Array(12).fill(null);
+    (b.meters || []).forEach((m) => {
+      if (m.commodity !== commodity) return;
+      if (typeof isBaselineExcluded === 'function' && isBaselineExcluded(projId, m.id)) return;
+      const map = _hvlMeterMoMap(m, wx)[mapKey] || {};
+      for (let mo = 0; mo < 12; mo++) {
+        if (!map[mo]) continue;
+        arr[mo] = (arr[mo] || 0) + (map[mo][field] || 0);
+      }
+    });
+    return arr;
+  };
+  const kwhArr = perMo('Electric', 'elecByMo', 'kwh');
+  const kwArr = perMo('Electric', 'elecByMo', 'billedKW');
+  const therms = perMo('Gas', 'gasByMo', 'therms');
+  const gallons = perMo('Propane', 'propaneByMo', 'gallons');
+  const gasArr = [];
   let totalGas = 0;
   for (let mo = 0; mo < 12; mo++) {
-    kwhArr.push(eByMo[mo] ? eByMo[mo].kwh || 0 : null);
-    kwArr.push(eByMo[mo] && eByMo[mo].billedKW != null ? eByMo[mo].billedKW : null);
-    const hasG = !!gByMo[mo];
-    const hasP = !!pByMo[mo];
     let v = null;
     // gal -> therms, same 0.9153 factor hvacLoadCalc uses
-    if (hasG || hasP) v = (hasG ? gByMo[mo].therms || 0 : 0) + (hasP ? (pByMo[mo].gallons || 0) * 0.9153 : 0);
+    if (therms[mo] != null || gallons[mo] != null) v = (therms[mo] || 0) + (gallons[mo] || 0) * 0.9153;
     gasArr.push(v);
     if (v != null) totalGas += v;
   }

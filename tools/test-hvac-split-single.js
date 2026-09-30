@@ -113,6 +113,19 @@ const bldg = {
     { commodity: 'Gas', bills: [{}], baseline: { months: yms } },
   ],
 };
+// Multi-meter building: two gas meters + one EXCLUDED gas meter, two electric meters.
+const G1 = [900, 800, 500, 250, 120, 60, 50, 55, 90, 250, 550, 850];
+const G2 = [90, 80, 50, 25, 12, 6, 5, 5, 9, 25, 55, 85];
+const GX = [5000, 5000, 5000, 5000, 5000, 5000, 5000, 5000, 5000, 5000, 5000, 5000];
+const E1 = [30000, 29000, 28000, 31000, 36000, 46000, 55000, 53000, 42000, 32000, 27000, 29000];
+const E2 = [3000, 2900, 2800, 3100, 3600, 4600, 5500, 5300, 4200, 3200, 2700, 2900];
+const mm = (id, commodity, data) => ({ id, commodity, bills: [{}], data, baseline: { months: ['2025-01'] } });
+const bldg2 = {
+  id: 'b2',
+  name: 'Synthetic Multi',
+  meters: [mm('g1', 'Gas', G1), mm('g2', 'Gas', G2), mm('gExcl', 'Gas', GX), mm('e1', 'Electric', E1), mm('e2', 'Electric', E2)],
+};
+
 const src = [
   loadFn(HV, '_hvacLowestNAvg'),
   loadFn(HV, '_hvacPopulatedCount'),
@@ -124,6 +137,7 @@ const src = [
   loadFn(WD, '_wdComputeHvacSplit'),
   loadFn(WD, 'wdComputeSetpointOptions'),
   loadFn(CALC, '_hvlMonthlyBaseline'),
+  loadFn(CALC, '_hvlMeterMoMap', true),
   loadFn(CALC, '_hvlEnduseForBuilding', true),
   loadFn(CALC, '_hvlBuildingHeatingSignals'),
   loadFn(CALC, '_hvlDefaultGasPct'),
@@ -131,14 +145,25 @@ const src = [
   loadFn(CALC, 'hvacComputeGasThermsForBuilding'),
   loadFn(CALC, 'hvacComputeElecCoolKwhForBuilding'),
 ].join('\n\n');
+const EXCLUDED = { gExcl: true };
 const sandbox = {
   console,
+  isBaselineExcluded: (pid, id) => !!EXCLUDED[id],
   SUMMER_MOS: [5, 6, 7, 8],
   resolveGasUsageTherms: (bill) => bill.therms || 0,
-  getUDBldg: () => bldg,
+  getUDBldg: (pid, id) => (id === 'b2' ? bldg2 : bldg),
   getWeatherForBuilding: () => ({ byYm: {} }),
   getNormRows: () => [{ ym: '2025-01' }],
   buildMoMap: (meter) => {
+    if (meter.data) {
+      const e = {},
+        g = {};
+      for (let mo = 0; mo < 12; mo++) {
+        if (meter.commodity === 'Electric') e[mo] = { kwh: meter.data[mo], billedKW: 1 };
+        if (meter.commodity === 'Gas') g[mo] = { therms: meter.data[mo] };
+      }
+      return { elecByMo: e, gasByMo: g };
+    }
     const elecByMo = {},
       gasByMo = {};
     for (let mo = 0; mo < 12; mo++) {
@@ -201,6 +226,37 @@ assert(
   gas && near(gas.hvacGasT, EXP_HEAT, 0.5),
   'BAS Calc gas heating Therms = ' + EXP_HEAT + ', got ' + (gas && gas.hvacGasT),
 );
+
+// ---------------------------------------------------------------------------
+// 3b. Multi-meter building: every INCLUDED meter counts, an excluded meter does not
+// ---------------------------------------------------------------------------
+const sumArr = (a, b) => a.map((v, i) => v + b[i]);
+const expGas = sumArr(G1, G2);
+const expElec = sumArr(E1, E2);
+const expMultiHeat = expGas.reduce((s, v) => s + Math.max(0, v - lowest3Avg(expGas)), 0);
+const expMultiCool = expElec.reduce((s, v) => s + Math.max(0, v - lowest3Avg(expElec)), 0);
+const mgas = sandbox.hvacComputeGasThermsForBuilding('p1', 'b2');
+assert(mgas && near(mgas.hvacGasT, expMultiHeat, 0.5), 'multi-meter gas heating sums included meters (' + expMultiHeat + '), got ' + (mgas && mgas.hvacGasT));
+const mcool = sandbox.hvacComputeElecCoolKwhForBuilding('p1', 'b2');
+assert(mcool && near(mcool.coolingKwh, expMultiCool, 0.5), 'multi-meter cooling kWh sums both electric meters (' + expMultiCool + '), got ' + (mcool && mcool.coolingKwh));
+
+// ---------------------------------------------------------------------------
+// 3c. 24-month baseline: Page 4 and setpoint options average the two years (one 12-month year)
+// ---------------------------------------------------------------------------
+const yms24 = [];
+[2024, 2025].forEach((y) => KWH.forEach((_, i) => yms24.push(y + '-' + String(i + 1).padStart(2, '0'))));
+const elec24 = {
+  months: yms24,
+  rows: yms24.map((ym, i) => ({ ym, bill: { kwh: KWH[i % 12] * (i < 12 ? 0.9 : 1.1), billedKW: 100 } })),
+  regrCoeffs: null,
+};
+const gas24 = { months: yms24, rows: yms24.map((ym, i) => ({ ym, bill: { therms: THERMS[i % 12] * (i < 12 ? 0.9 : 1.1) } })), regrCoeffs: null };
+const h24 = sandbox._wdComputeHvacSplit(elec24, gas24);
+assert(near(h24.coolKwh, EXP_COOL, 1), '24-month Page 4 cooling = one averaged year (' + EXP_COOL + '), got ' + h24.coolKwh);
+assert(near(h24.elecKwh, KWH.reduce((s, v) => s + v, 0), 1), '24-month Page 4 annual kWh is one year, got ' + h24.elecKwh);
+assert(near(h24.gasHeatTherms, EXP_HEAT, 1), '24-month Page 4 gas heating = one averaged year (' + EXP_HEAT + '), got ' + h24.gasHeatTherms);
+const so24 = sandbox.wdComputeSetpointOptions(cfg, elec24, gas24);
+assert(near(so24.baseline.sumCool, EXP_COOL, 1), '24-month setpoint cooling = one averaged year, got ' + so24.baseline.sumCool);
 
 // ---------------------------------------------------------------------------
 // 4. Obsolete regression HVAC paths are gone (static)

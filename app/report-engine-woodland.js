@@ -535,17 +535,31 @@ function _wdBaselineHvac(elecBL, gasBL) {
     thermsByMo = Array(12).fill(0),
     haveE = Array(12).fill(false),
     haveG = Array(12).fill(false);
+  // A baseline can span 12-36 months. Sum bills per year-month, then AVERAGE over the years present
+  // for that calendar month, so the result is one 12-month year (computeHvacEnduse input).
+  var eYm = {},
+    gYm = {};
   (elecBL ? elecBL.rows : []).forEach(function (r) {
     var mo = parseInt(r.ym.split('-')[1], 10) - 1;
-    kwhByMo[mo] += parseFloat(r.bill.kwh) || 0;
+    eYm[mo] = eYm[mo] || {};
+    eYm[mo][r.ym] = (eYm[mo][r.ym] || 0) + (parseFloat(r.bill.kwh) || 0);
     kwByMo[mo] = Math.max(kwByMo[mo], parseFloat(r.bill.billedKW || r.bill.demandKW) || 0);
     haveE[mo] = true;
   });
   (gasBL ? gasBL.rows : []).forEach(function (r) {
     var mo = parseInt(r.ym.split('-')[1], 10) - 1;
-    thermsByMo[mo] += _wdBillTherms(r.bill);
+    gYm[mo] = gYm[mo] || {};
+    gYm[mo][r.ym] = (gYm[mo][r.ym] || 0) + _wdBillTherms(r.bill);
     haveG[mo] = true;
   });
+  function avgYears(map) {
+    var ks = Object.keys(map);
+    return ks.reduce(function (s, k) { return s + map[k]; }, 0) / ks.length;
+  }
+  for (var m = 0; m < 12; m++) {
+    if (haveE[m]) kwhByMo[m] = avgYears(eYm[m]);
+    if (haveG[m]) thermsByMo[m] = avgYears(gYm[m]);
+  }
   // A baseload needs >=6 populated calendar months (computeHvacEnduse elecValid/gasValid); below
   // that the baseload is 0 and no split is claimed.
   var enduse = computeHvacEnduse(
