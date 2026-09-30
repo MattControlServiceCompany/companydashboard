@@ -1776,6 +1776,14 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.30.48',
+    date: '2026-09-30',
+    title: 'Sync on the Netlify site',
+    items: [
+      { type: 'feature', text: 'Sync: on the Netlify site, signed-in users now sync with the shared database automatically; any local edit replaced by a newer shared copy is kept in the conflict history, with an Export button when it grows large. The GitHub test site never syncs.' }
+    ]
+  },
+  {
     v: 'v2026.09.30.47',
     date: '2026-09-30',
     title: 'PDF / OCR: PDF opens beside the extracted values',
