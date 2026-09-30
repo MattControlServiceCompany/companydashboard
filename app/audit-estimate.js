@@ -123,8 +123,12 @@ var AUDIT_EST_HOURS_PER_EQUIP_DEFAULT = {
 // _pricingGetConfig().hourlyRate (default COST_LABOR_RATE_DEFAULT in app/pricing-estimator.js).
 var AUDIT_EST_DEFAULTS = {
   hoursPerEquip: Object.assign({}, AUDIT_EST_HOURS_PER_EQUIP_DEFAULT),
-  hoursPerBuilding: 2, // estimate — site visit + travel time, per building (BAS Audit)
+  hoursPerBuilding: 2, // estimate — site visit + travel time, per building (Full Facility Audit ONLY)
   hoursReport: 4, // estimate — fixed report writing/analysis hours (BAS Audit)
+  // Sample-based review (2026-09-30): units of one type with the same Equipment Matrix points
+  // form a group; one unit per group is reviewed, plus a follow-up share of the remaining units.
+  matrixReviewHours: 0.5, // estimate — fixed Equipment Matrix review per equipment type
+  followUpPct: 0.1, // estimate — share of the non-sampled units that need a follow-up look
   fullFacility: {
     hoursMechanicalWalkthroughPerBuilding: 2, // estimate — non-BAS mechanical walk-through
     hoursLightingReviewPerBuilding: 1, // estimate
@@ -190,6 +194,19 @@ function auditEstGetHourlyRate() {
    equipment. Reuses emLoadMatrix()/emIsPhantomRow() (app/equipment-matrix.js) — the SAME
    equipment rows the Equipment Matrix tab and the ASHRAE 36 Audit Report read, so counts here
    always agree with what the Equipment Matrix tab shows. */
+// Point-set signature: the sorted mapped column keys the Equipment Matrix shows for this row.
+// emGetNormalizedPoints reads the project's custom aliases through window._emActivePid, so set it
+// to this project for the call and restore it after.
+function auditEstPointSetSignature(row, projId) {
+  var prev = window._emActivePid;
+  window._emActivePid = projId;
+  try {
+    return Object.keys(emGetNormalizedPoints(row)).sort().join('|');
+  } finally {
+    window._emActivePid = prev;
+  }
+}
+
 function auditEstGetEquipmentSummary(projId) {
   if (typeof emLoadMatrix !== 'function') return null;
   var matData = emLoadMatrix(projId);
@@ -211,9 +228,23 @@ function auditEstGetEquipmentSummary(projId) {
       // Only a building with an auditable category is priced (same set the proposal lists).
       buildings[bName] = true;
       if (!byCat[cat])
-        byCat[cat] = { category: cat, label: AUDIT_EST_CAT_LABELS[cat] || cat, count: 0, totalPoints: 0 };
+        byCat[cat] = {
+          category: cat,
+          label: AUDIT_EST_CAT_LABELS[cat] || cat,
+          count: 0,
+          totalPoints: 0,
+          groups: {},
+        };
       byCat[cat].count++;
       byCat[cat].totalPoints += pts;
+      // Point set = the mapped column keys the Equipment Matrix shows for this row
+      // (emGetNormalizedPoints), NOT raw BAS point keys. The first unit of each point set in
+      // matrix order is the sampled unit.
+      var sig = auditEstPointSetSignature(r, projId);
+      if (!byCat[cat].groups[sig]) {
+        byCat[cat].groups[sig] = 0;
+      }
+      byCat[cat].groups[sig]++;
     } else {
       if (!excluded[cat])
         excluded[cat] = {
@@ -230,6 +261,7 @@ function auditEstGetEquipmentSummary(projId) {
   }).map(function (c) {
     var e = byCat[c];
     e.avgPoints = e.count > 0 ? Math.round((e.totalPoints / e.count) * 10) / 10 : 0;
+    e.groupCount = Object.keys(e.groups).length;
     return e;
   });
 
@@ -256,11 +288,19 @@ function auditEstComputeBreakdown(projId, auditType) {
 
   var rows = summary.equipTypes.map(function (e) {
     var hoursEach = cfg.hoursPerEquip[e.category] != null ? cfg.hoursPerEquip[e.category] : 1;
-    var hours = Math.round(e.count * hoursEach * 100) / 100;
+    // Sample model: review one unit per point-set group, plus followUpPct of the rest, plus a
+    // fixed Equipment Matrix review. Never more than reviewing every unit.
+    var fullHours = e.count * hoursEach;
+    var reviewedUnits = e.groupCount + Math.ceil(cfg.followUpPct * (e.count - e.groupCount) - 1e-9);
+    var sampleHours = cfg.matrixReviewHours + reviewedUnits * hoursEach;
+    if (sampleHours >= fullHours) reviewedUnits = e.count;
+    var hours = Math.round(Math.min(fullHours, sampleHours) * 100) / 100;
     return {
       category: e.category,
       label: e.label,
       count: e.count,
+      groupCount: e.groupCount,
+      sampled: reviewedUnits,
       avgPoints: e.avgPoints,
       hoursEach: hoursEach,
       hours: hours,
@@ -271,7 +311,9 @@ function auditEstComputeBreakdown(projId, auditType) {
   var equipHours = rows.reduce(function (s, r) {
     return s + r.hours;
   }, 0);
-  var buildingLineHours = Math.round(summary.buildingCount * cfg.hoursPerBuilding * 100) / 100;
+  // Site visit & travel exists only for the Full Facility Audit; the BAS Audit is a remote review.
+  var buildingLineHours =
+    auditType === 'full' ? Math.round(summary.buildingCount * cfg.hoursPerBuilding * 100) / 100 : 0;
   var reportHours = cfg.hoursReport;
 
   var extras = [];
@@ -367,29 +409,23 @@ function _auditEstBreakdownTableHTML(b, titleText) {
   if (!b) {
     return '<div style="padding:12px;color:var(--text3);font-size:12px">No Equipment Matrix data — import a BAS point list on the Equipment tab first.</div>';
   }
+  var numTd = function (v) {
+    return '<td class="ch-tbl-col-type-number">' + v + '</td>';
+  };
   var rowsHTML = b.rows
     .map(function (r) {
       return (
-        '<tr>' +
-        '<td class="ch-tbl-col-type-label">' +
+        '<tr><td class="ch-tbl-col-type-label">' +
         _auditEstEsc(r.label) +
         '</td>' +
-        '<td class="ch-tbl-col-type-number">' +
-        r.count +
-        '</td>' +
-        '<td class="ch-tbl-col-type-number">' +
-        r.avgPoints +
-        '</td>' +
-        '<td class="ch-tbl-col-type-number">' +
-        r.hoursEach.toFixed(2) +
-        '</td>' +
-        '<td class="ch-tbl-col-type-number">' +
-        r.hours.toFixed(1) +
-        '</td>' +
+        numTd(r.count) +
+        numTd(r.groupCount) +
+        numTd(r.sampled) +
+        numTd(r.hoursEach.toFixed(2)) +
+        numTd(r.hours.toFixed(1)) +
         '<td class="ch-tbl-col-type-currency">' +
         _auditEstFmt(r.cost) +
-        '</td>' +
-        '</tr>'
+        '</td></tr>'
       );
     })
     .join('');
@@ -397,28 +433,38 @@ function _auditEstBreakdownTableHTML(b, titleText) {
   var extraRowsHTML = b.extras
     .map(function (x) {
       return (
-        '<tr>' +
-        '<td class="ch-tbl-col-type-label">' +
+        '<tr><td class="ch-tbl-col-type-label">' +
         _auditEstEsc(x.label) +
         '</td>' +
-        '<td class="ch-tbl-col-type-number">' +
-        b.buildingCount +
-        ' buildings</td>' +
-        '<td class="ch-tbl-col-type-number">—</td>' +
-        '<td class="ch-tbl-col-type-number">—</td>' +
-        '<td class="ch-tbl-col-type-number">' +
-        x.hours.toFixed(1) +
-        '</td>' +
+        numTd(b.buildingCount + ' buildings') +
+        numTd('—') +
+        numTd('—') +
+        numTd('—') +
+        numTd(x.hours.toFixed(1)) +
         '<td class="ch-tbl-col-type-currency">' +
         _auditEstFmt(x.cost) +
-        '</td>' +
-        '</tr>'
+        '</td></tr>'
       );
     })
     .join('');
+  var siteVisitRowHTML =
+    b.auditType === 'full'
+      ? '<tr><td class="ch-tbl-col-type-label">Site Visit &amp; Travel</td>' +
+        numTd(b.buildingCount + ' buildings') +
+        numTd('—') +
+        numTd('—') +
+        numTd('—') +
+        numTd(b.buildingLineHours.toFixed(1)) +
+        '<td class="ch-tbl-col-type-currency">' +
+        _auditEstFmt(b.buildingLineCost) +
+        '</td></tr>'
+      : '';
+  var th = function (label, tip) {
+    return '<th title="' + _auditEstEsc(tip) + '">' + label + '</th>';
+  };
 
   return (
-    '<div style="flex:1;min-width:320px">' +
+    '<div style="flex:1 1 600px;min-width:0">' +
     '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:6px">' +
     _auditEstEsc(titleText) +
     '</div>' +
@@ -427,23 +473,26 @@ function _auditEstBreakdownTableHTML(b, titleText) {
     // ONE scroll region for the whole Audit Estimate section; nesting a second overflow:auto
     // scroll box around just the table rows made the totals row/buttons unreachable by
     // scrolling the outer wrap (caught in headless verification, 2026-09-25).
-    '<div class="ch-tbl-outer">' +
-    '<table class="ch-tbl" style="width:100%">' +
+    '<div class="ch-tbl-outer ae-tbl-outer">' +
+    '<table class="ch-tbl ae-tbl" style="width:100%">' +
     '<thead><tr>' +
-    '<th>Equipment Type</th><th>Count</th><th>Average Points</th><th>Hours Each</th><th>Hours</th><th>Cost</th>' +
+    '<th class="ae-left">Equipment Type</th>' +
+    th('Count', 'Number of units of this type in the Equipment Matrix.') +
+    th('Groups', 'Units of the same type that have the same points form one group. Each group is reviewed once.') +
+    th(
+      'Sampled',
+      'Units reviewed: one from each group, plus a share of the other units for follow-up. Never more than Count.',
+    ) +
+    th('Hours Each', 'Hours to review one unit.') +
+    th('Hours', 'Matrix review time plus the Sampled units times Hours Each. Never more than Count times Hours Each.') +
+    th('Cost', 'Hours times the labor rate.') +
     '</tr></thead>' +
     '<tbody>' +
     rowsHTML +
-    '<tr><td class="ch-tbl-col-type-label">Site Visit &amp; Travel</td><td class="ch-tbl-col-type-number">' +
-    b.buildingCount +
-    ' buildings</td><td class="ch-tbl-col-type-number">—</td><td class="ch-tbl-col-type-number">—</td>' +
-    '<td class="ch-tbl-col-type-number">' +
-    b.buildingLineHours.toFixed(1) +
-    '</td><td class="ch-tbl-col-type-currency">' +
-    _auditEstFmt(b.buildingLineCost) +
-    '</td></tr>' +
+    siteVisitRowHTML +
     extraRowsHTML +
-    '<tr><td class="ch-tbl-col-type-label">Report &amp; Analysis</td><td class="ch-tbl-col-type-number">—</td>' +
+    '<tr><td class="ch-tbl-col-type-label">Report &amp; Analysis</td>' +
+    '<td class="ch-tbl-col-type-number">—</td><td class="ch-tbl-col-type-number">—</td>' +
     '<td class="ch-tbl-col-type-number">—</td><td class="ch-tbl-col-type-number">—</td>' +
     '<td class="ch-tbl-col-type-number">' +
     b.reportHours.toFixed(1) +
@@ -452,14 +501,14 @@ function _auditEstBreakdownTableHTML(b, titleText) {
     '</td></tr>' +
     '</tbody>' +
     '<tfoot><tr>' +
-    '<td>Total</td><td>—</td><td>—</td><td>—</td>' +
+    '<td>Total</td><td>—</td><td>—</td><td>—</td><td>—</td>' +
     '<td class="ch-tbl-col-type-number">' +
     b.totalHours.toFixed(1) +
     '</td><td class="ch-tbl-col-type-currency">' +
     _auditEstFmt(b.totalCost) +
     '</td>' +
     '</tr>' +
-    '<tr><td>Proposal price (rounded up to the next $100)</td><td>—</td><td>—</td><td>—</td>' +
+    '<tr><td>Proposal price (rounded up to the next $100)</td><td>—</td><td>—</td><td>—</td><td>—</td>' +
     '<td class="ch-tbl-col-type-number">—</td>' +
     '<td class="ch-tbl-col-type-currency">' +
     _auditEstFmtWhole(auditEstRoundProposalPrice(b.totalCost)) +
@@ -505,7 +554,7 @@ function _auditEstAssumptionsHTML(projId) {
     '" style="display:none;margin-top:10px;padding:12px;background:var(--s1);border:1px solid var(--border);border-radius:6px">' +
     '<div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:8px">Audit Estimate Assumptions (company-wide — editable, applies to every project)</div>' +
     '<div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:10px">' +
-    '<div><label style="font-size:11px;color:var(--text3)">Hours per building (site visit and travel)</label><br>' +
+    '<div><label style="font-size:11px;color:var(--text3)">Hours per building (site visit and travel, Full Facility Audit only)</label><br>' +
     '<input type="number" step="0.25" min="0" value="' +
     cfg.hoursPerBuilding +
     '" id="auditEstBldgHrs_' +
@@ -513,6 +562,18 @@ function _auditEstAssumptionsHTML(projId) {
     '" style="width:80px;text-align:right;background:var(--s2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 6px" onchange="auditEstSaveField(\'' +
     projId +
     "','hoursPerBuilding', this.value)\"></div>" +
+    '<div><label style="font-size:11px;color:var(--text3)">Matrix review hours (per equipment type)</label><br>' +
+    '<input type="number" step="0.25" min="0" value="' +
+    cfg.matrixReviewHours +
+    '" style="width:80px;text-align:right;background:var(--s2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 6px" onchange="auditEstSaveField(\'' +
+    projId +
+    "','matrixReviewHours', this.value)\"></div>" +
+    '<div><label style="font-size:11px;color:var(--text3)">Follow-up share of the other units (%)</label><br>' +
+    '<input type="number" step="1" min="0" max="100" value="' +
+    Math.round(cfg.followUpPct * 10000) / 100 +
+    '" style="width:80px;text-align:right;background:var(--s2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 6px" onchange="auditEstSaveFollowUp(\'' +
+    projId +
+    "', this.value)\"></div>" +
     '<div><label style="font-size:11px;color:var(--text3)">Report and analysis hours (fixed)</label><br>' +
     '<input type="number" step="0.25" min="0" value="' +
     cfg.hoursReport +
@@ -526,7 +587,7 @@ function _auditEstAssumptionsHTML(projId) {
     _auditEstFmt(rate) +
     '/hour</div></div>' +
     '</div>' +
-    '<div style="font-size:12px;font-weight:700;color:var(--text2);margin:10px 0 6px">Hours per equipment type (one walk-through unit)</div>' +
+    '<div style="font-size:12px;font-weight:700;color:var(--text2);margin:10px 0 6px">Hours per equipment type (one unit reviewed)</div>' +
     '<div class="ch-tbl-outer" style="max-width:480px"><table class="ch-tbl" style="width:100%">' +
     '<thead><tr><th>Equipment Type</th><th>Hours</th><th>Source</th></tr></thead><tbody>' +
     rows +
@@ -571,6 +632,24 @@ function _auditEstAssumptionsHTML(projId) {
   );
 }
 
+/* Table look for the two audit tables (ui-standards.md Tables: outer border, --s1 header, grid
+   lines, totals footer). Scoped to .ae-tbl so it touches no other table. The outer box scrolls
+   sideways only when the window is too narrow for the columns, never the page. */
+var AUDIT_EST_TABLE_CSS =
+  '<style>' +
+  '.ae-tbl-outer{border:1px solid var(--border);border-radius:6px;overflow-x:auto;overflow-y:hidden}' +
+  '.ae-tbl{border-collapse:separate;border-spacing:0;font-size:12px;font-variant-numeric:tabular-nums}' +
+  '.ae-tbl th,.ae-tbl td{padding:5px 6px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);color:var(--text)}.ae-tbl th{white-space:nowrap}.ae-tbl td.ch-tbl-col-type-currency{white-space:nowrap}' +
+  '.ae-tbl th:last-child,.ae-tbl td:last-child{border-right:none}' +
+  '.ae-tbl tbody tr:last-child td{border-bottom:none}' +
+  '.ae-tbl thead th{background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;text-align:right;border-bottom:1px solid var(--border2);cursor:help}' +
+  '.ae-tbl thead th.ae-left{text-align:left;cursor:default}' +
+  '.ae-tbl td.ch-tbl-col-type-label{text-align:left}' +
+  '.ae-tbl td.ch-tbl-col-type-number,.ae-tbl td.ch-tbl-col-type-currency{text-align:right}' +
+  '.ae-tbl tfoot td{background:var(--s1);font-weight:700;border-top:2px solid var(--border2);border-bottom:none}' +
+  '.ae-tbl tbody tr:hover td{background:var(--s4)}' +
+  '</style>';
+
 /* ── Main render entry — called from initCostEstimateTab (app/pricing-estimator.js) ────────── */
 function auditEstRenderHTML(projId) {
   var basB = auditEstComputeBreakdown(projId, 'bas');
@@ -587,6 +666,7 @@ function auditEstRenderHTML(projId) {
       '.</div>';
   }
   return (
+    AUDIT_EST_TABLE_CSS +
     '<div class="ch-panel" style="margin-top:16px;border-top:2px solid var(--border2);padding-top:14px">' +
     '<div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">' +
     '<div>' +
@@ -641,6 +721,17 @@ function auditEstSaveField(projId, path, value) {
     return;
   }
   auditEstSetConfig(path, n);
+  if (typeof initCostEstimateTab === 'function') initCostEstimateTab(projId);
+  if (typeof showToast === 'function') showToast('Assumption updated', 'success');
+}
+
+function auditEstSaveFollowUp(projId, value) {
+  var n = parseFloat(value);
+  if (isNaN(n) || n < 0 || n > 100) {
+    showToast('Enter a percent from 0 to 100', 'error');
+    return;
+  }
+  auditEstSetConfig('followUpPct', n / 100);
   if (typeof initCostEstimateTab === 'function') initCostEstimateTab(projId);
   if (typeof showToast === 'function') showToast('Assumption updated', 'success');
 }
