@@ -66,6 +66,11 @@ const SyncClassification = (() => {
       note: 'computations/savings.js: savings figures printed in a document presented to the client (one record per project + period, entered in app/presented-savings.js); shared by both users',
     },
     { pattern: 'en_agreement_', prefix: true, note: 'agreement-engine.js: config_<pid>, overrides_<pid>' },
+    {
+      pattern: 'en_customers',
+      prefix: false,
+      note: 'utility-data.js/energy-savings.js: customer list shared by both users; app/db.js has a union-merge entry for it (same pattern as en_projects/en_tasks)',
+    },
     { pattern: 'en_tasks', prefix: false, note: 'core.js: 3 write sites, csv-import.js: 1' },
     {
       pattern: 'en_dc_events',
