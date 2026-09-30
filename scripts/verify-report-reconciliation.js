@@ -505,7 +505,7 @@ async function gatherPageData(page, projId) {
       const buildingTotals = [];
       auditContainer.querySelectorAll('[data-section="building"]').forEach((pg) => {
         const txt = pg.textContent || '';
-        const re = /Total for ([^:]+):\s*install\s*([\d,]+)\s*sensors?,\s*program\s*([\d,]+)\s*sequences?/g;
+        const re = /Total for ([^:]+):\s*install\s*([\d,]+)\s*(?:sensors?|devices?),\s*program\s*([\d,]+)\s*sequences?/g;
         let m;
         while ((m = re.exec(txt))) {
           buildingTotals.push({
