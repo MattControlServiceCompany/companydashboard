@@ -4671,6 +4671,26 @@
           grid-template-columns: 1fr;
         }
       }
+      /* PDF dock open: values and billing periods stack in one column beside the PDF, so no column is squeezed at any width. */
+      #pdfBody.pdf-docked {
+        display: grid !important;
+        grid-template-columns: minmax(0, 1fr) var(--pdf-dock-w, 40%);
+        grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+      }
+      #pdfBody.pdf-docked #pdfLeftCol {
+        grid-column: 1;
+        grid-row: 1;
+      }
+      #pdfBody.pdf-docked #pdfRightCol {
+        grid-column: 1;
+        grid-row: 2;
+        min-width: 0 !important;
+      }
+      #pdfBody.pdf-docked #pdfDockCol {
+        grid-column: 2;
+        grid-row: 1 / span 2;
+        min-width: 0;
+      }
       @media (max-width: 900px) {
         #pdfBody {
           flex-direction: column !important;
@@ -9296,7 +9316,7 @@
                         color: var(--text);
                         cursor: pointer;
                       "
-                      title="Show the PDF next to the values (screens 1400 pixels wide or more)"
+                      title="Show the PDF next to the values (screens 1100 pixels wide or more)"
                     >
                       <input
                         type="checkbox"
@@ -9405,7 +9425,7 @@
                 ></div>
               </div>
               <!-- DOCKED PDF VIEWER: sits beside the values and billing periods (no backdrop).
-                   Shown only while the right column is visible and the screen is 1400px+ wide. -->
+                   Shown only while the right column is visible and the screen is 1100px+ wide. -->
               <div
                 id="pdfDockCol"
                 style="

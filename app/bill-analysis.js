@@ -13534,12 +13534,12 @@ function savePDFDebug(isManualSave) {
 }
 // ── PDF viewer for the extraction review screen ──────────────────────────
 // The whole original PDF is opened (one blob URL per file) at the page of the
-// selected billing period (#page=N). Wide screens (1400px+) with "Side by side"
+// selected billing period (#page=N). Wide screens (1100px+) with "Side by side"
 // on dock the viewer beside the values (#pdfDockCol, no backdrop); otherwise
 // the same whole-file URL opens in the modal viewer (_showPdfModal).
 // viewSavedPDF (Saved Bills, csv-import) has its own page-range logic and is
 // not changed.
-const PDF_DOCK_MIN_SCREEN_W = 1400;
+const PDF_DOCK_MIN_SCREEN_W = 1100;
 const PDF_DOCK_LS_ON = 'ch_pdf_side_by_side';
 const PDF_DOCK_LS_W = 'ch_pdf_dock_width';
 let _pdfDock = { open: false, b64: null, url: null, total: null, page: null, token: 0, shownKey: null };
@@ -13653,6 +13653,8 @@ function _syncPdfDockVisibility() {
   const rc = document.getElementById('pdfRightCol');
   const show = _pdfDock.open && _pdfScreenWideEnough() && !!rc && rc.style.display !== 'none';
   dock.style.display = show ? 'flex' : 'none';
+  const pb = document.getElementById('pdfBody');
+  if (pb) pb.classList.toggle('pdf-docked', show);
   if (show) _clampPdfDockWidth();
   const btn = document.getElementById('pdfViewBtn');
   if (btn) btn.style.background = _pdfDock.open ? 'var(--s4)' : 'transparent';
@@ -13664,9 +13666,9 @@ function _clampPdfDockWidth() {
   const body = document.getElementById('pdfBody');
   if (!dock || !body) return;
   const saved = parseInt(_pdfDockLsGet(PDF_DOCK_LS_W), 10);
-  const max = Math.max(320, body.clientWidth - 340 - 300 - 32);
+  const max = Math.max(320, body.clientWidth - 16 - 480);
   const w = Math.min(max, Math.max(320, saved > 0 ? saved : Math.round(body.clientWidth * 0.4)));
-  dock.style.flex = '0 0 ' + w + 'px';
+  body.style.setProperty('--pdf-dock-w', w + 'px');
 }
 // Rebuild the blob only when the file changes; move to the page when the period changes.
 async function _refreshPdfDock() {
