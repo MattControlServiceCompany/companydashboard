@@ -6072,7 +6072,7 @@ function _acctFuzzyMatch(a, b) {
 // None of these real formats ever contain a whitespace-separated token made
 // of letters only (a "word" fragment) — that shape only shows up in
 // garbled OCR text. A single-token value may carry a short (1-3 char)
-// letter prefix (Constellation) or one internal dash (Wood River); a
+// letter prefix (Constellation) or internal dashes (Wood River "60-736484", Louisburg city "NN-NNNNNN-NN"; M-D-Y dates rejected); a
 // multi-token value (KGS) must be pure digit groups throughout.
 function _isPlausibleAccountNumber(raw) {
   const s = String(raw || '').trim();
@@ -6081,7 +6081,7 @@ function _isPlausibleAccountNumber(raw) {
   const digitsOnly = /^[0-9]+$/;
   if (tokens.length > 1) return tokens.every((t) => digitsOnly.test(t));
   const t = tokens[0];
-  return digitsOnly.test(t) || /^[0-9]+-[0-9]+$/.test(t) || /^[A-Za-z]{1,3}-?[0-9]{4,}$/.test(t);
+  return digitsOnly.test(t) || (/^[0-9]+(?:-[0-9]+)+$/.test(t) && !/^[0-9]{1,2}-[0-9]{1,2}-[0-9]{2,4}$/.test(t)) || /^[A-Za-z]{1,3}-?[0-9]{4,}$/.test(t);
 }
 // Fix 2 (ballfields-match-gates, 2026-08-31): _addressSimilarity's normalized-
 // Levenshtein metric divides by the LONGER of the two candidate strings' length,
@@ -16386,7 +16386,7 @@ async function processPDF(file) {
     '<div class="ai-thinking"><div class="tdots"><span></span><span></span><span></span></div> Reading PDF...</div>';
   globalTaskShow('📄 Extracting ' + file.name + '...', 'pdf');
   const reader = new FileReader();
-  reader.onload = async (ev) => {
+  const _processPDFOnload = async (ev) => {
     pdfB64 = ev.target.result.split(',')[1];
     // pdf.js transfers ownership of the ArrayBuffer to its worker and detaches it,
     // so a single buffer cannot be reused across calls. Decode fresh bytes for each
@@ -17621,6 +17621,23 @@ async function processPDF(file) {
       dz.textContent = file.name + ' — could not read';
     }
     globalTaskDone();
+  };
+  // Any throw inside the async body would otherwise be an unhandled rejection:
+  // the pill, the Cancel button and the "reading..." text would never clear.
+  reader.onload = async (ev) => {
+    try {
+      await _processPDFOnload(ev);
+    } catch (err) {
+      console.error('processPDF failed:', err);
+      globalTaskDone();
+      const msg = (err && err.message) || String(err);
+      box.innerHTML =
+        '<div style="padding:14px;font-size:13px;color:var(--red)">&#9888; <strong>Extraction failed after reading the PDF.</strong><br>' +
+        String(msg).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]) +
+        '</div>';
+      dz.textContent = file.name + ' — extraction failed';
+      showToast('Extraction failed: ' + msg);
+    }
   };
   reader.readAsDataURL(file);
 }
@@ -20283,7 +20300,7 @@ function renderPDFFields(parsed, warnings) {
   // mismatch (0 vs $50 for example) and the user must see an explanation for the
   // red pill. Previously, _currentChargeSum === 0 made _currentSumDiff = 0 so
   // hasCurrentSumMismatch was false even though the pill was already red.
-  const _currentSumDiff = totalVal !== 0 ? _currentChargeSum - totalVal : 0;
+  const _currentSumDiff = totalVal != null && totalVal !== 0 ? _currentChargeSum - totalVal : 0;
   // Allow 1¢ per component of accumulated rounding before flagging a mismatch.
   // Flat 0.02 was too tight for multi-line KGS bills where rounding adds up across 9 fields.
   const _detailTol = Math.max(0.02, 0.01 * _CHARGE_SUM_KEYS_RPF.length);
@@ -20323,7 +20340,7 @@ function renderPDFFields(parsed, warnings) {
     ? `<div style="font-size:11px;font-family:var(--mono);margin-top:6px;line-height:1.8;color:#fca5a5">` +
       _sumMathParts.join(`<span style="color:#f87171;padding:0 4px">+</span>`) +
       `<span style="color:#f87171;padding:0 6px">=</span><strong style="color:#ef4444">$${_currentChargeSum.toFixed(2)}</strong>` +
-      `<span style="color:#f87171;padding:0 6px">vs expected</span><strong style="color:#fecaca">$${totalVal.toFixed(2)}</strong>` +
+      `<span style="color:#f87171;padding:0 6px">vs expected</span><strong style="color:#fecaca">${totalVal == null ? '&mdash;' : '$' + totalVal.toFixed(2)}</strong>` +
       `<span style="color:#f87171;padding:0 6px">(off by $${Math.abs(_currentSumDiff).toFixed(2)})</span>` +
       `</div>`
     : '';
