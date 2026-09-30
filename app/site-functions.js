@@ -1776,6 +1776,14 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.30.51',
+    date: '2026-09-30',
+    title: 'One billing-period day count',
+    items: [
+      { type: 'fix', text: "Utility Data and reports: billing-period day counts now use one method everywhere and follow each meter's Inclusive/Exclusive setting (January now counts 31 days, not 32). Woodland reports show '-' where a bill has no day count, and leave it out of the total." }
+    ]
+  },
+  {
     v: 'v2026.09.30.50',
     date: '2026-09-30',
     title: 'Projects open faster',
