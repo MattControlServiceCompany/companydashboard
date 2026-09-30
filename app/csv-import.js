@@ -280,7 +280,7 @@ function parseBillCsv(text, fname) {
 
     if (!startD) {
       warnings.push(
-        'Row ' + (idx + 1 + hasHeader ? idx + 2 : idx + 1) + ': could not parse start date "' + rawStart + '"',
+        'Row ' + (idx + 1 + (hasHeader ? 1 : 0)) + ': could not parse start date "' + rawStart + '"',
       );
       return;
     }
@@ -290,8 +290,12 @@ function parseBillCsv(text, fname) {
 
     const row = { id: 'r' + Date.now() + Math.random(), start: startD, end: effectiveEnd };
 
+    // A typed ERASE cell is the only way a CSV clears a stored value. It reads as _ERASE_MARK here,
+    // and the scan after the commodity branch turns it into null plus a row._erase key. A blank
+    // cell reads as null and never touches the stored value (see importBillCsvRows).
     const g = (i) => {
       if (i < 0 || !cols[i] || cols[i].trim() === '') return null;
+      if (_isEraseCell(cols[i])) return _ERASE_MARK;
       return parseBillNumber(cols[i]);
     };
     const gs = (i) => (i >= 0 && cols[i] ? cols[i].trim().replace(/"/g, '') : '');
@@ -366,6 +370,13 @@ function parseBillCsv(text, fname) {
       row.totalCost = gTotCst2 != null ? gTotCst2 : gCostVal;
     }
 
+    Object.keys(row).forEach((k) => {
+      if (row[k] === _ERASE_MARK) {
+        row[k] = null;
+        (row._erase = row._erase || []).push(k);
+      }
+    });
+
     // Full-schema exact-name pass. Runs AFTER the alias assignments above so
     // it can fill in everything the aliases don't cover (account info, reads,
     // on/off-peak, per-unit rates, demand/facilities/tax/fee charges, etc.)
@@ -378,6 +389,10 @@ function parseBillCsv(text, fname) {
       if (idx < 0) return;
       const raw = cols[idx];
       if (raw === undefined || raw.trim() === '') return; // blank cell — leave unset
+      if (_isEraseCell(raw)) {
+        (row._erase = row._erase || []).push(entry.key);
+        return;
+      }
       if (row[entry.key] !== undefined && row[entry.key] !== null) return; // already set — don't clobber
       const isNumericType =
         entry.type === 'number' || entry.type === 'currency' || entry.type === 'rate5' || entry.type === 'rate3';
@@ -450,6 +465,26 @@ function parseBillCsv(text, fname) {
   showBillCsvPreview(_csvImportRows, m, fname, warnings);
 }
 
+// Typed marker that erases one stored value on re-import. A blank cell keeps the stored value.
+const _ERASE_MARK = ' erase';
+function _isEraseCell(raw) {
+  return String(raw).trim().replace(/"/g, '').toUpperCase() === 'ERASE';
+}
+
+// Copies the CSV row onto the stored bill. Blank cells keep the stored value; only the typed
+// ERASE marker clears a field. The stored bill id is kept.
+function _mergeCsvRowIntoBill(bill, r) {
+  Object.keys(r).forEach((k) => {
+    if (k === 'id' || k === '_erase') return;
+    const v = r[k];
+    if (v === null || v === undefined || v === '') return;
+    bill[k] = v;
+  });
+  (r._erase || []).forEach((k) => {
+    bill[k] = null;
+  });
+}
+
 function splitCsvLine(line) {
   const result = [];
   let cur = '';
@@ -506,7 +541,9 @@ function showBillCsvPreview(rows, m, fname, warnings) {
       '<th>kWh</th><th>Actual kW</th><th>Facilities kW</th><th>Actual kW Cost</th><th>Facilities kW Cost</th><th>Total $</th>';
   else if (isGas) thead += '<th>Therms</th><th>Cost $</th>';
   else thead += '<th>Usage</th><th>Cost $</th>';
-  thead += '</tr>';
+  thead += '<th>Action</th></tr>';
+  const _storedStarts = new Set((m.bills || []).map((b) => b.start));
+  let _nUpdate = 0;
 
   const tbody = rows
     .map((r) => {
@@ -541,15 +578,39 @@ function showBillCsvPreview(rows, m, fname, warnings) {
                 : r.cost;
         cells = '<td>' + (usageVal != null ? usageVal : '—') + '</td><td>' + _dc(costVal) + '</td>';
       }
+      const isUpdate = _storedStarts.has(r.start);
+      if (isUpdate) _nUpdate++;
+      const nErase = (r._erase || []).length;
+      const action = isUpdate
+        ? 'Update: blank cells - existing value will be kept' + (nErase ? '; ' + nErase + ' erased (ERASE)' : '')
+        : 'New';
       return (
-        '<tr><td>' + fmtDate(r.start) + '</td><td>' + fmtDate(r.end) + '</td><td>' + days + '</td>' + cells + '</tr>'
+        '<tr><td>' +
+        fmtDate(r.start) +
+        '</td><td>' +
+        fmtDate(r.end) +
+        '</td><td>' +
+        days +
+        '</td>' +
+        cells +
+        '<td>' +
+        action +
+        '</td></tr>'
       );
     })
     .join('');
 
   document.getElementById('billCsvPreviewTable').innerHTML = '<thead>' + thead + '</thead><tbody>' + tbody + '</tbody>';
   document.getElementById('billCsvPreviewLabel').textContent =
-    'Preview — ' + rows.length + ' period' + (rows.length !== 1 ? 's' : '');
+    'Preview — ' +
+    rows.length +
+    ' period' +
+    (rows.length !== 1 ? 's' : '') +
+    (_nUpdate
+      ? '. ' +
+        _nUpdate +
+        ' match a stored bill: a blank cell means the existing value will be kept. To erase a stored value, type ERASE in that cell.'
+      : '');
   document.getElementById('billCsvPreviewWrap').style.display = '';
 
   const warnEl = document.getElementById('billCsvWarnings');
@@ -586,11 +647,12 @@ function importBillCsvRows() {
     if (existing.has(key)) {
       const idx = m.bills.findIndex((b) => b.start === key);
       if (idx >= 0) {
-        Object.assign(m.bills[idx], r);
+        _mergeCsvRowIntoBill(m.bills[idx], r);
         updated++;
       }
     } else {
-      m.bills.push({ id: 'r' + Date.now() + Math.random(), ...r });
+      const { _erase, ...newBill } = r;
+      m.bills.push({ id: 'r' + Date.now() + Math.random(), ...newBill });
       existing.add(key);
       added++;
     }
