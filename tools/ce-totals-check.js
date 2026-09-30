@@ -18,7 +18,7 @@
 // Baseline file (NOT committed to git — lives outside the repo):
 //   C:\Users\Matt Miller\AI\_context\temp\ce-totals-baseline.json
 
-const { chromium } = require('playwright');
+const { launchBrowser } = require('./launch-browser');
 const fs = require('fs');
 const path = require('path');
 
@@ -39,20 +39,17 @@ function deepDiff(base, cur, prefix, out) {
 }
 
 (async () => {
-  const context = await chromium.launchPersistentContext('C:\\Temp\\edge-ce-totals-check-profile', {
-    channel: 'msedge',
-    headless: true,
-    args: ['--disable-gpu'],
-    viewport: { width: 1920, height: 1080 },
-  });
-
+  const context = await launchBrowser('ce-totals-check');
+  let snapshot;
+  try {
   const page = await context.newPage();
   await page.goto(HARNESS_URL);
   await page.waitForFunction(() => window.__ceReady === true, { timeout: 10000 });
 
-  const snapshot = await page.evaluate(() => window.__ceSnapshot());
-
-  await context.close();
+  snapshot = await page.evaluate(() => window.__ceSnapshot());
+  } finally {
+    await context.close();
+  }
 
   if (WRITE) {
     fs.mkdirSync(path.dirname(BASELINE_PATH), { recursive: true });
