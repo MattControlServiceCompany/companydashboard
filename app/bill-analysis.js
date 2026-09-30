@@ -13534,12 +13534,11 @@ function savePDFDebug(isManualSave) {
 }
 // ── PDF viewer for the extraction review screen ──────────────────────────
 // The whole original PDF is opened (one blob URL per file) at the page of the
-// selected billing period (#page=N). Wide screens (1100px+) with "Side by side"
-// on dock the viewer beside the values (#pdfDockCol, no backdrop); otherwise
+// selected billing period (#page=N). With "Side by side" on, the
+// viewer docks beside the values (wide) or above them (narrow) (#pdfDockCol, no backdrop); when off,
 // the same whole-file URL opens in the modal viewer (_showPdfModal).
 // viewSavedPDF (Saved Bills, csv-import) has its own page-range logic and is
 // not changed.
-const PDF_DOCK_MIN_SCREEN_W = 1100;
 const PDF_DOCK_LS_ON = 'ch_pdf_side_by_side';
 const PDF_DOCK_LS_W = 'ch_pdf_dock_width';
 let _pdfDock = { open: false, b64: null, url: null, total: null, page: null, token: 0, shownKey: null };
@@ -13558,9 +13557,6 @@ function _pdfDockLsSet(key, val) {
 }
 function _pdfSideBySideOn() {
   return _pdfDockLsGet(PDF_DOCK_LS_ON) !== '0';
-}
-function _pdfScreenWideEnough() {
-  return window.innerWidth >= PDF_DOCK_MIN_SCREEN_W;
 }
 // Source PDF: queue/batch mode keeps pdfB64 on the active queue result;
 // single-file mode uses the module-scope pdfB64.
@@ -13608,7 +13604,7 @@ async function viewCurrentExtractionPDF(event) {
       showToast('No PDF available for this extraction');
       return;
     }
-    if (_pdfSideBySideOn() && _pdfScreenWideEnough()) {
+    if (_pdfSideBySideOn()) {
       if (_pdfDock.open) closePdfDock();
       else {
         _pdfDock.open = true;
@@ -13646,12 +13642,12 @@ function closePdfDock() {
   _pdfDockRevoke();
   _syncPdfDockVisibility();
 }
-// The dock follows #pdfRightCol: hidden with it (batch mode), and hidden on narrow screens.
+// The dock follows #pdfRightCol: hidden with it (batch mode).
 function _syncPdfDockVisibility() {
   const dock = document.getElementById('pdfDockCol');
   if (!dock) return;
   const rc = document.getElementById('pdfRightCol');
-  const show = _pdfDock.open && _pdfScreenWideEnough() && !!rc && rc.style.display !== 'none';
+  const show = _pdfDock.open && !!rc && rc.style.display !== 'none';
   dock.style.display = show ? 'flex' : 'none';
   const pb = document.getElementById('pdfBody');
   if (pb) pb.classList.toggle('pdf-docked', show);
@@ -13715,7 +13711,7 @@ function setPdfSideBySide(on) {
     closePdfDock();
     return;
   }
-  if (_pdfScreenWideEnough() && _pdfCurrentB64()) {
+  if (_pdfCurrentB64()) {
     _pdfDock.open = true;
     _refreshPdfDock();
   }

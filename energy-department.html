@@ -4708,8 +4708,31 @@
           height: auto !important;
           max-height: 50vh;
         }
-        #pdfDockCol {
-          display: none !important;
+      }
+      /* PDF dock open on a narrow window: the PDF sits above the values, pinned at the top; values scroll beneath it. */
+      @media (max-width: 1099px) {
+        #pdfBody.pdf-docked {
+          display: flex !important;
+          flex-direction: column;
+          overflow: auto !important;
+        }
+        #pdfBody.pdf-docked #pdfDockCol {
+          order: -1;
+          flex: none !important;
+          height: 40vh;
+          position: sticky !important;
+          top: 0;
+          z-index: var(--z-chrome, 10);
+          margin-bottom: 8px;
+        }
+        #pdfDockResize {
+          display: none;
+        }
+        /* The column headers stop pinning here: the PDF is the pinned item. */
+        #pdfBody.pdf-docked .drop-zone.collapsed,
+        #pdfBody.pdf-docked #extractedFieldsHdr,
+        #pdfBody.pdf-docked #pdfRightCol > div:first-child {
+          position: static !important;
         }
       }
       /* -- SIDEBAR PROJECT FOLDERS -- */
@@ -9316,7 +9339,7 @@
                         color: var(--text);
                         cursor: pointer;
                       "
-                      title="Show the PDF next to the values (screens 1100 pixels wide or more)"
+                      title="Show the PDF next to the values"
                     >
                       <input
                         type="checkbox"
@@ -9425,7 +9448,7 @@
                 ></div>
               </div>
               <!-- DOCKED PDF VIEWER: sits beside the values and billing periods (no backdrop).
-                   Shown only while the right column is visible and the screen is 1100px+ wide. -->
+                   Shown only while the right column is visible. -->
               <div
                 id="pdfDockCol"
                 style="
