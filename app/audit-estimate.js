@@ -195,8 +195,16 @@ function auditEstGetHourlyRate() {
    equipment rows the Equipment Matrix tab and the ASHRAE 36 Audit Report read, so counts here
    always agree with what the Equipment Matrix tab shows. */
 // Point-set signature: the sorted mapped column keys the Equipment Matrix shows for this row.
-function auditEstPointSetSignature(row) {
-  return Object.keys(emGetNormalizedPoints(row)).sort().join('|');
+// emGetNormalizedPoints reads the project's custom aliases through window._emActivePid, so set it
+// to this project for the call and restore it after.
+function auditEstPointSetSignature(row, projId) {
+  var prev = window._emActivePid;
+  window._emActivePid = projId;
+  try {
+    return Object.keys(emGetNormalizedPoints(row)).sort().join('|');
+  } finally {
+    window._emActivePid = prev;
+  }
 }
 
 function auditEstGetEquipmentSummary(projId) {
@@ -211,7 +219,6 @@ function auditEstGetEquipmentSummary(projId) {
   var buildings = {};
   var byCat = {};
   var excluded = {};
-  var sampledByBuilding = {};
 
   rows.forEach(function (r) {
     var bName = r.building || 'Unknown Building';
@@ -232,11 +239,10 @@ function auditEstGetEquipmentSummary(projId) {
       byCat[cat].totalPoints += pts;
       // Point set = the mapped column keys the Equipment Matrix shows for this row
       // (emGetNormalizedPoints), NOT raw BAS point keys. The first unit of each point set in
-      // matrix order is the sampled unit; its building gets the sample credit.
-      var sig = auditEstPointSetSignature(r);
+      // matrix order is the sampled unit.
+      var sig = auditEstPointSetSignature(r, projId);
       if (!byCat[cat].groups[sig]) {
         byCat[cat].groups[sig] = 0;
-        sampledByBuilding[bName] = (sampledByBuilding[bName] || 0) + 1;
       }
       byCat[cat].groups[sig]++;
     } else {
@@ -263,7 +269,6 @@ function auditEstGetEquipmentSummary(projId) {
     buildingCount: Object.keys(buildings).length,
     buildingList: Object.keys(buildings).sort(),
     equipTypes: equipTypes,
-    sampledByBuilding: sampledByBuilding,
     excluded: Object.keys(excluded).map(function (c) {
       return excluded[c];
     }),
@@ -349,7 +354,6 @@ function auditEstComputeBreakdown(projId, auditType) {
     buildingCount: summary.buildingCount,
     buildingList: summary.buildingList,
     excluded: summary.excluded,
-    sampledByBuilding: summary.sampledByBuilding,
     rows: rows,
     buildingLineHours: buildingLineHours,
     buildingLineCost: Math.round(buildingLineHours * rate * 100) / 100,

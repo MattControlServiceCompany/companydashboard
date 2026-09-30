@@ -23167,7 +23167,6 @@ function collectAuditProposalData(projId, auditType) {
       return {
         name: typeof rptBuildingDisplayName === 'function' ? rptBuildingDisplayName(b) : b,
         equipCount: perBuilding[b],
-        sampledCount: (breakdown.sampledByBuilding && breakdown.sampledByBuilding[b]) || 0,
       };
     });
 
@@ -23178,6 +23177,9 @@ function collectAuditProposalData(projId, auditType) {
     auditType: auditType, // 'bas' | 'full'
     buildingRows: buildingRows,
     buildingCount: breakdown.buildingCount,
+    sampleRows: breakdown.rows.map(function (r) {
+      return { label: r.label, count: r.count, sampled: r.sampled };
+    }),
     totalPrice: breakdown.totalCost,
   };
 }
@@ -23222,9 +23224,17 @@ function _rptAuditProposalCoverInnerHTML(data) {
         _rptV2Esc(b.name) +
         '</td><td style="padding:6px 10px;border-bottom:1px solid var(--rpt-border);text-align:right">' +
         b.equipCount +
-        '</td><td style="padding:6px 10px;border-bottom:1px solid var(--rpt-border);text-align:right">' +
-        b.sampledCount +
         '</td></tr>'
+      );
+    })
+    .join('');
+  var td = 'padding:4px 10px;border-bottom:1px solid var(--rpt-border)';
+  var typeRowsHTML = data.sampleRows
+    .map(function (r) {
+      return (
+        '<tr><td style="' + td + '">' + _rptV2Esc(r.label) +
+        '</td><td style="' + td + ';text-align:right">' + r.count +
+        '</td><td style="' + td + ';text-align:right">' + r.sampled + '</td></tr>'
       );
     })
     .join('');
@@ -23243,15 +23253,27 @@ function _rptAuditProposalCoverInnerHTML(data) {
     '<div style="font-size:13px;line-height:1.5;color:var(--rpt-page-text);margin-bottom:16px">' +
     _rptV2Esc(copy.covers) +
     '</div>' +
+    '<div style="display:flex;gap:24px;align-items:flex-start">' +
+    '<div style="flex:1 1 0;min-width:0">' +
     '<div style="font-size:13px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px">Facilities Covered</div>' +
     '<table style="width:100%;border-collapse:collapse;font-size:12px;color:var(--rpt-page-text)">' +
     '<thead><tr>' +
     '<th style="text-align:left;padding:6px 10px;border-bottom:2px solid var(--rpt-border);color:var(--rpt-blue)">Facility</th>' +
     '<th style="text-align:right;padding:6px 10px;border-bottom:2px solid var(--rpt-border);color:var(--rpt-blue)">Equipment</th>' +
-    '<th style="text-align:right;padding:6px 10px;border-bottom:2px solid var(--rpt-border);color:var(--rpt-blue)">Sampled for Review</th>' +
     '</tr></thead><tbody>' +
     rowsHTML +
     '</tbody></table>' +
+    '</div><div style="flex:1 1 0;min-width:0">' +
+    '<div style="font-size:13px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px">Equipment Sampled for Review</div>' +
+    '<table style="width:100%;border-collapse:collapse;font-size:12px;color:var(--rpt-page-text)">' +
+    '<thead><tr>' +
+    '<th style="text-align:left;padding:4px 10px;border-bottom:2px solid var(--rpt-border);color:var(--rpt-blue)">Equipment Type</th>' +
+    '<th style="text-align:right;padding:4px 10px;border-bottom:2px solid var(--rpt-border);color:var(--rpt-blue)">Equipment</th>' +
+    '<th style="text-align:right;padding:4px 10px;border-bottom:2px solid var(--rpt-border);color:var(--rpt-blue)">Sampled</th>' +
+    '</tr></thead><tbody>' +
+    typeRowsHTML +
+    '</tbody></table>' +
+    '</div></div>' +
     '</div>'
   );
 }

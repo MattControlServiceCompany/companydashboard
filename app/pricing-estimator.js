@@ -8867,7 +8867,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     // input moved to its own Hours column below, so Contract never mixes parts price + hours).
     var contractContent = '';
     if (row.ioOnly) {
-      contractContent = '<span style="color:var(--text3);font-size:10px">$0 (no part)</span>';
+      contractContent = '<span style="color:var(--text3)" title="No part needed. Uses existing wiring.">—</span>';
     } else if (row.noSku) {
       contractContent =
         '<input type="number" min="0" step="0.01" value="' +
@@ -9373,7 +9373,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     // from the sequence's hours input, which now lives in its own Hours column below — no more
     // "+" glue text needed since price and hours are independent cells).
     var _hwContractText = hwRow.ioOnly
-      ? '$0 (no part)'
+      ? '—'
       : hwRow.contractPrice != null
         ? _pricingFmt(hwRow.contractPrice)
         : '—';
