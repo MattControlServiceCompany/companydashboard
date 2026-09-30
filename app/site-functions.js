@@ -1776,6 +1776,14 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.30.49',
+    date: '2026-09-30',
+    title: 'Duplicate-meter check no longer changes meters',
+    items: [
+      { type: 'fix', text: 'Utility Data: the duplicate-meter check no longer runs on every page load and never merges or deletes meters by itself. It runs only when new bills are saved, and only flags an exact duplicate bill (same meter, dates, total and usage, or the same PDF page) or a meter with the same meter number, or the same account, address and rate.' }
+    ]
+  },
+  {
     v: 'v2026.09.30.48',
     date: '2026-09-30',
     title: 'Sync on the Netlify site',
