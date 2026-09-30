@@ -83,7 +83,7 @@ if (!plausible) {
 }
 const accept = ['560189', '8000210803', '60-736484', '510000123 2051604 18', 'RG233590', 'BG-96832',
   '07-123456-01', '02-000001-00', '11-222333-44', '1-2-3-4'];
-const reject = ['S601 RTS ToC', 'RAS 122474', 'a PN 1 edo', '', null, 'ToC', '09-15-2026', '9-5-26', '07-123456-AB', '07--123456', '-07-123456', '07-123456-'];
+const reject = ['S601 RTS ToC', 'RAS 122474', 'a PN 1 edo', '', null, 'ToC', '09-15-2026', '9-5-26', '2026-09-15', '2026-9-5', '913-555-0100', '07-123456-AB', '07--123456', '-07-123456', '07-123456-'];
 for (const a of accept) { if (plausible(a)) pass++; else { fail++; console.log('  should ACCEPT: ' + JSON.stringify(a)); } }
 for (const r of reject) { if (!plausible(r)) pass++; else { fail++; console.log('  should REJECT: ' + JSON.stringify(r)); } }
 console.log(pass + '/' + (pass + fail) + ' assertions passed');

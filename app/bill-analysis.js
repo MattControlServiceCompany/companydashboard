@@ -6072,7 +6072,7 @@ function _acctFuzzyMatch(a, b) {
 // None of these real formats ever contain a whitespace-separated token made
 // of letters only (a "word" fragment) — that shape only shows up in
 // garbled OCR text. A single-token value may carry a short (1-3 char)
-// letter prefix (Constellation) or internal dashes (Wood River "60-736484", Louisburg city "NN-NNNNNN-NN"; M-D-Y dates rejected); a
+// letter prefix (Constellation) or internal dashes (Wood River "60-736484", Louisburg city "NN-NNNNNN-NN"; M-D-Y and ISO dates and 3-3-4 phone shapes rejected); a
 // multi-token value (KGS) must be pure digit groups throughout.
 function _isPlausibleAccountNumber(raw) {
   const s = String(raw || '').trim();
@@ -6081,7 +6081,7 @@ function _isPlausibleAccountNumber(raw) {
   const digitsOnly = /^[0-9]+$/;
   if (tokens.length > 1) return tokens.every((t) => digitsOnly.test(t));
   const t = tokens[0];
-  return digitsOnly.test(t) || (/^[0-9]+(?:-[0-9]+)+$/.test(t) && !/^[0-9]{1,2}-[0-9]{1,2}-[0-9]{2,4}$/.test(t)) || /^[A-Za-z]{1,3}-?[0-9]{4,}$/.test(t);
+  return digitsOnly.test(t) || (/^[0-9]+(?:-[0-9]+)+$/.test(t) && !/^[0-9]{1,2}-[0-9]{1,2}-[0-9]{2,4}$/.test(t) && !/^[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}$/.test(t) && !/^[0-9]{3}-[0-9]{3}-[0-9]{4}$/.test(t)) || /^[A-Za-z]{1,3}-?[0-9]{4,}$/.test(t);
 }
 // Fix 2 (ballfields-match-gates, 2026-08-31): _addressSimilarity's normalized-
 // Levenshtein metric divides by the LONGER of the two candidate strings' length,
