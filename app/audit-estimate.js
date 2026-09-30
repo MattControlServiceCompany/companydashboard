@@ -286,7 +286,7 @@ function auditEstComputeBreakdown(projId, auditType) {
     // Sample model: review one unit per point-set group, plus followUpPct of the rest, plus a
     // fixed Equipment Matrix review. Never more than reviewing every unit.
     var fullHours = e.count * hoursEach;
-    var reviewedUnits = e.groupCount + cfg.followUpPct * (e.count - e.groupCount);
+    var reviewedUnits = e.groupCount + Math.ceil(cfg.followUpPct * (e.count - e.groupCount) - 1e-9);
     var sampleHours = cfg.matrixReviewHours + reviewedUnits * hoursEach;
     if (sampleHours >= fullHours) reviewedUnits = e.count;
     var hours = Math.round(Math.min(fullHours, sampleHours) * 100) / 100;
@@ -295,7 +295,7 @@ function auditEstComputeBreakdown(projId, auditType) {
       label: e.label,
       count: e.count,
       groupCount: e.groupCount,
-      sampled: Math.round(reviewedUnits * 10) / 10,
+      sampled: reviewedUnits,
       avgPoints: e.avgPoints,
       hoursEach: hoursEach,
       hours: hours,
