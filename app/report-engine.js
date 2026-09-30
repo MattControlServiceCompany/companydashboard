@@ -4822,9 +4822,14 @@ function rptPageContractProjection(n, d) {
   let totalActual = 0;
   var isQuarterly = d.period && d.period.type === 'quarterly';
   var _multiYrProj = computeMultiYearCscTotals(annualTarget, escalation, contractYears, cscPct, clientPct);
-  var totalProj = _rptPVn(d, 'three year projection', 'Total', '', '', 'projected', _multiYrProj.totalSavings);
-  var totalCsc = _rptPVn(d, 'three year projection', 'Total', '', '', 'csc', _multiYrProj.totalCsc);
-  var totalClient = _rptPVn(d, 'three year projection', 'Total', '', '', 'client', _multiYrProj.totalClient);
+  // WP-21 (math-05 M8): each Total is the SUM of the figures the rows print (the current quarterly
+  // year prints its blend of actual + remaining targets), so the columns foot. Per-year figures
+  // still come from computeMultiYearCscTotals, the one projection source. A presented report's
+  // printed Total wins (_rptPVn), as before. A presented report (d.printed, the WP-04a lock) that
+  // printed no Total keeps the original projection total: its printed numbers are frozen.
+  var sumProj = 0;
+  var sumCsc = 0;
+  var sumClient = 0;
   for (var yr = 1; yr <= contractYears; yr++) {
     const _yk = 'Year ' + yr;
     const _curQtr = yr === currentYear && isQuarterly;
@@ -4887,6 +4892,10 @@ function rptPageContractProjection(n, d) {
         : displayProj;
     const pace = isCurrentYr && projToDate > 0 ? Math.round((actualSavings / projToDate) * 100) : null;
     if (isCurrentYr) totalActual += actualSavings;
+    var rowIsBlend = isCurrentYr && isQuarterly;
+    sumProj += Math.round(rowIsBlend ? displayProj : yearProj);
+    sumCsc += Math.round(rowIsBlend ? displayCsc : yearCsc);
+    sumClient += Math.round(rowIsBlend ? displayClient : yearClient);
     fiveYrRows +=
       '<tr' +
       (isCurrentYr ? ' style="font-weight:600"' : '') +
@@ -4900,7 +4909,10 @@ function rptPageContractProjection(n, d) {
       '</td>' +
       '<td class="rpt-n">' +
       (isCurrentYr && isQuarterly
-        ? _fmtUSD(displayProj, '$0') + '<div style="font-size:8px;color:var(--rpt-page-text)">Annual: ' + _fmtUSD(yearProj, '$0') + '</div>'
+        ? _fmtUSD(displayProj, '$0') +
+          '<div style="font-size:8px;color:var(--rpt-page-text)">Annual: ' +
+          _fmtUSD(yearProj, '$0') +
+          '</div>'
         : _fmtUSD(yearProj, '$0')) +
       '</td>' +
       (hasCsc
@@ -4913,6 +4925,9 @@ function rptPageContractProjection(n, d) {
         : '') +
       '</tr>';
   }
+  var totalProj = _rptPVn(d, 'three year projection', 'Total', '', '', 'projected', d.printed ? _multiYrProj.totalSavings : sumProj);
+  var totalCsc = _rptPVn(d, 'three year projection', 'Total', '', '', 'csc', d.printed ? _multiYrProj.totalCsc : sumCsc);
+  var totalClient = _rptPVn(d, 'three year projection', 'Total', '', '', 'client', d.printed ? _multiYrProj.totalClient : sumClient);
   fiveYrRows +=
     '<tr class="rpt-tot">' +
     '<td colspan="2">Total</td>' +
@@ -18416,15 +18431,15 @@ function _rptA36CoverPricingStrip(d) {
   var svcSentence = '';
   try {
     if (typeof _pricingGetBudget === 'function' && typeof _pricingGetConfig === 'function') {
-      var _svcBudget = _pricingGetBudget(d.project.id);
+      var _svcMonthly = _rptMonthlyAllowance(d.project.id);
       var _svcCfg = _pricingGetConfig();
-      if (_svcBudget && _svcBudget.amount != null && !isNaN(_svcBudget.amount) && Number(_svcBudget.amount) > 0) {
+      if (_svcMonthly) {
         var _svcRate =
           _svcCfg.hourlyRate || (typeof COST_LABOR_RATE_DEFAULT !== 'undefined' ? COST_LABOR_RATE_DEFAULT : 170);
         svcSentence =
           'Ongoing programming refinement and support draws on your existing Monthly Energy ' +
           'Management Service Agreement (' +
-          _fmtUSD(Number(_svcBudget.amount)) +
+          _fmtUSD(_svcMonthly) +
           '/month allowance at $' +
           _svcRate +
           '/hr, not-to-exceed) rather than a separate invoice. ';
@@ -18436,7 +18451,7 @@ function _rptA36CoverPricingStrip(d) {
 
   var rows = tierDefs
     .map(function (t) {
-      var g = tt[t.key] ? _fmtUSD(tt[t.key].grand) : null;
+      var g = tt[t.key] ? _fmtUSD(_rptRoundUp100(tt[t.key].grand)) : null;
       var noCat = tt[t.key] && tt[t.key].noCatalog;
       var amtStr = g ? (noCat ? 'Labor: ' + g : g) : null;
       var headline =
@@ -18504,11 +18519,11 @@ function _rptA36AssessmentFindingsData(d) {
       var summaryData = _pricingComputeSummaryData(d.project.id, estimateState);
       var tt = summaryData && summaryData.tierTotals ? summaryData.tierTotals : null;
       if (tt && tt.compliance && tt.compliance.grand != null && !isNaN(tt.compliance.grand)) {
-        out.complianceGrand = Number(tt.compliance.grand);
+        out.complianceGrand = _rptRoundUp100(tt.compliance.grand);
         out.complianceFmt = _fmtUSD(out.complianceGrand);
       }
       if (tt && tt['full-scope'] && tt['full-scope'].grand != null && !isNaN(tt['full-scope'].grand)) {
-        out.fullScopeGrand = Number(tt['full-scope'].grand);
+        out.fullScopeGrand = _rptRoundUp100(tt['full-scope'].grand);
         out.fullScopeFmt = _fmtUSD(out.fullScopeGrand);
       }
       if (out.complianceGrand != null && out.fullScopeGrand != null) {
@@ -18918,17 +18933,7 @@ function _rptA36RecommendedServicesInnerHTML(d) {
   var BODY = 'font-size:14px;color:var(--rpt-page-text);line-height:1.32';
 
   // ── Recommended Energy Management Services (first heading) ───────────────────
-  var budgetFmt = null;
-  try {
-    if (typeof _pricingGetBudget === 'function') {
-      var _b = _pricingGetBudget(d.project.id);
-      if (_b && _b.amount != null && !isNaN(_b.amount) && Number(_b.amount) > 0) {
-        budgetFmt = '$' + Math.round(Number(_b.amount)).toLocaleString('en-US');
-      }
-    }
-  } catch (e) {
-    budgetFmt = null;
-  }
+  var budgetFmt = _rptMonthlyAllowanceFmt(d.project.id);
 
   var monthlyAllowanceBlock = budgetFmt
     ? '<div style="' +
@@ -20449,17 +20454,7 @@ function _rptA36ComplianceScopeInnerHTML(d) {
   var BODY = 'font-size:14px;color:var(--rpt-page-text);line-height:1.38';
   var UL = 'margin:2px 0 0;padding-left:16px;font-size:14px;color:var(--rpt-page-text);line-height:1.38';
 
-  var budgetFmt = null;
-  try {
-    if (typeof _pricingGetBudget === 'function') {
-      var _b = _pricingGetBudget(d.project.id);
-      if (_b && _b.amount != null && !isNaN(_b.amount) && Number(_b.amount) > 0) {
-        budgetFmt = '$' + Math.round(Number(_b.amount)).toLocaleString('en-US');
-      }
-    }
-  } catch (e) {
-    budgetFmt = null;
-  }
+  var budgetFmt = _rptMonthlyAllowanceFmt(d.project.id);
 
   // Same consolidated counts as the Audit cover (rptPageASHRAE36Cover) — derived, never typed.
   var p = d.portfolio || {};
@@ -20556,17 +20551,7 @@ function _rptA36FullScopeInnerHTML(d) {
   var BODY = 'font-size:14px;color:var(--rpt-page-text);line-height:1.38';
   var UL = 'margin:2px 0 0;padding-left:16px;font-size:14px;color:var(--rpt-page-text);line-height:1.38';
 
-  var budgetFmt = null;
-  try {
-    if (typeof _pricingGetBudget === 'function') {
-      var _b = _pricingGetBudget(d.project.id);
-      if (_b && _b.amount != null && !isNaN(_b.amount) && Number(_b.amount) > 0) {
-        budgetFmt = '$' + Math.round(Number(_b.amount)).toLocaleString('en-US');
-      }
-    }
-  } catch (e) {
-    budgetFmt = null;
-  }
+  var budgetFmt = _rptMonthlyAllowanceFmt(d.project.id);
 
   return (
     '<div style="' +
@@ -20862,15 +20847,99 @@ function _rptA36TierDetailToggleHTML(key) {
 }
 
 /**
+ * _rptMonthlyAllowance - the ONE monthly service allowance every Service Proposal page prints
+ * ("$6,250 per Month"). It normalizes the budget's denomination through
+ * _pricingMonthlyAllowanceAmount (annual 75000 -> 6250); a lump budget or no budget gives null,
+ * so no "per Month" text prints (WP-21, math-05 M2).
+ */
+function _rptMonthlyAllowance(projId) {
+  if (typeof _pricingGetBudget !== 'function' || typeof _pricingMonthlyAllowanceAmount !== 'function') return null;
+  try {
+    return _pricingMonthlyAllowanceAmount(_pricingGetBudget(projId));
+  } catch (e) {
+    return null;
+  }
+}
+function _rptMonthlyAllowanceFmt(projId) {
+  var v = _rptMonthlyAllowance(projId);
+  return v ? _fmtUSD(v) : null;
+}
+
+/**
+ * Proposal price rounding (WP-21, D-12). ONE rule for every dollar figure a Service Proposal page
+ * prints for a tier:
+ *  - a tier total rounds UP to the next $100 (_rptRoundUp100);
+ *  - Hardware and Programming parts are whole multiples of $100 that add up to that total exactly,
+ *    by the largest-remainder method (_rptFootTier) - page 7 and the detail page both call it;
+ *  - a priced line prints "qty x unit = total" with a whole-dollar unit and total = qty x unit
+ *    (_rptItemizedLine), so the multiplication is always true;
+ *  - the difference between a section's printed subtotal and its printed lines is shown as one
+ *    visible "Rounding" line (_rptRoundingDelta) so the section still adds up.
+ */
+function _rptRoundUp100(v) {
+  if (v === null || v === undefined || v === '') return null;
+  var n = Number(v);
+  if (!isFinite(n)) return null;
+  return Math.ceil(Math.round(n * 100) / 100 / 100) * 100;
+}
+
+function _rptFootTier(grand, phase1, phase2) {
+  var totalR = _rptRoundUp100(grand);
+  if (totalR === null) return null;
+  var parts = [(phase1 || 0) / 100, (phase2 || 0) / 100];
+  var floors = parts.map(function (v) {
+    return Math.floor(v + 1e-9);
+  });
+  var owed =
+    totalR / 100 -
+    floors.reduce(function (s, v) {
+      return s + v;
+    }, 0);
+  var ranked = parts
+    .map(function (v, i) {
+      return { i: i, frac: v - floors[i] };
+    })
+    .sort(function (a, b) {
+      return b.frac - a.frac || a.i - b.i;
+    });
+  var out = floors.slice();
+  for (var k = 0; k < owed && k < ranked.length; k++) out[ranked[k].i] += 1;
+  return { totalR: totalR, p1r: out[0] * 100, p2r: out[1] * 100 };
+}
+
+function _rptItemizedLine(qty, lineTotal) {
+  var unit = qty > 1 ? Math.round(lineTotal / qty) : 0;
+  if (qty > 1 && unit >= 1) return { qty: qty, unit: unit, total: qty * unit };
+  return { qty: qty, unit: null, total: Math.round(lineTotal) };
+}
+
+// Text after the item name for one priced line, plus the dollar figure that line prints (for the
+// section's Rounding line).
+function _rptItemizedLineText(qty, lineTotal, fmtUSD) {
+  var ln = _rptItemizedLine(qty, lineTotal);
+  var text =
+    ln.unit !== null
+      ? ': ' + ln.qty + ' \u00d7 ' + fmtUSD(ln.unit) + ' = ' + fmtUSD(ln.total)
+      : ': ' + fmtUSD(ln.total);
+  return { text: text, total: ln.total };
+}
+
+// Printed subtotal minus the sum of the printed line totals; null when the lines already add up.
+function _rptRoundingDelta(subtotalR, printedTotals) {
+  var sum = printedTotals.reduce(function (s, v) {
+    return s + v;
+  }, 0);
+  return subtotalR - sum === 0 ? null : subtotalR - sum;
+}
+
+/**
  * _rptA36TierDetailAggByPhase — groups one tier's priced rows by distinct item name for a given
  * phase (1 = Hardware & Installation, 2 = Programming & Commissioning), summing qty/lineTotal
  * across every building carrying that same item. Mirrors the aggregation
  * rptPageASHRAE36ProposalPricing's own _buildItemizedPages() already uses (same dedupe-by-item,
  * same rowToggles respect) — NO new pricing math, this only reshapes the SAME rows.
- * unitPrice (2026-07-22, Task 1a) is DERIVED here (lineTotal/qty), never a separately tracked
- * field, so qty × unitPrice always foots exactly to lineTotal — added because Matt flagged
- * aggregated lines like "Supply Air Temp x46 $14,449" as reading like a mystery number with no
- * visible unit cost; _rptA36TierDetailPanelHTML below now prints the multiplication explicitly.
+ * The printed unit price and line total come from _rptItemizedLine (whole-dollar unit, total =
+ * qty x unit), never from a separate unitPrice field (WP-21).
  */
 function _rptA36TierDetailAggByPhase(rows, phaseNum, toggles) {
   var included = rows.filter(function (r) {
@@ -20889,9 +20958,7 @@ function _rptA36TierDetailAggByPhase(rows, phaseNum, toggles) {
     byItem[key].lineTotal += r.lineTotal || 0;
   });
   return order.map(function (k) {
-    var it = byItem[k];
-    it.unitPrice = it.qty > 0 ? it.lineTotal / it.qty : null;
-    return it;
+    return byItem[k];
   });
 }
 
@@ -20993,16 +21060,18 @@ function _rptA36TierDetailPanelHTML(key, tt, summaryData, estimateState, wantIte
   // list (so a reader still sees WHAT is included), just never priced individually here.
   var noDollarTier = key === 'recommended';
   var noCat = !noDollarTier && !!(tt && tt[key] && tt[key].noCatalog);
-  var p1 = !noDollarTier && tt && tt[key] ? fmtUSD(tt[key].phase1) : null;
-  var p2 = !noDollarTier && tt && tt[key] ? fmtUSD(tt[key].phase2) : null;
+  var foot = !noDollarTier && tt && tt[key] ? _rptFootTier(tt[key].grand, tt[key].phase1, tt[key].phase2) : null;
+  var p1 = foot ? fmtUSD(foot.p1r) : null;
+  var p2 = foot ? fmtUSD(foot.p2r) : null;
   if (noDollarTier) wantItemized = false;
 
-  function _sectionHTMLCategories(subtotalStr, noCatFlag, agg) {
+  function _sectionHTMLCategories(subtotalStr, subtotalR, noCatFlag, agg) {
     var subtotalHTML = noCatFlag
       ? ' <span style="font-weight:400;color:var(--rpt-page-text)">(CSV needed for pricing)</span>'
       : subtotalStr
         ? ': <span style="font-weight:700">' + subtotalStr + '</span>'
         : '';
+    var printed = [];
     var catLines = agg.categories.map(function (c) {
       var priceStr = '';
       // Same no-bare-$0 rule as every other price cell in this report (fix/65ce578b, 2026-07-27):
@@ -21012,11 +21081,14 @@ function _rptA36TierDetailPanelHTML(key, tt, summaryData, estimateState, wantIte
         priceStr = ': ' + c.qty + ' units, no additional cost';
       } else if (wantItemized && c.lineTotal != null && fmtUSD(c.lineTotal)) {
         priceStr = ': ' + c.qty + ' units, ' + fmtUSD(c.lineTotal);
+        printed.push(Math.round(c.lineTotal));
       } else if (c.qty > 1) {
         priceStr = ' (qty ' + c.qty + ')';
       }
       return '<li>' + _esc(c.label) + priceStr + '</li>';
     });
+    var catDelta = wantItemized && printed.length && subtotalR != null ? _rptRoundingDelta(subtotalR, printed) : null;
+    if (catDelta !== null) catLines.push('<li>Rounding: ' + fmtUSD(catDelta) + '</li>');
     // Single summary line for every existing-controller I/O point (ioOnly, real scope, $0
     // hardware — see buildCatalogRows) instead of enumerating each one separately.
     if (agg.ioOnlyCount > 0) {
@@ -21040,7 +21112,7 @@ function _rptA36TierDetailPanelHTML(key, tt, summaryData, estimateState, wantIte
     );
   }
 
-  function _sectionHTML(title, subtotalStr, noCatFlag, items) {
+  function _sectionHTML(title, subtotalStr, subtotalR, noCatFlag, items) {
     // Grey (#666) removed (report-standard rule: grey text is banned in client documents) —
     // de-emphasis now comes from font-weight/size only, same convention used elsewhere in this
     // report (e.g. the footnote below this table).
@@ -21049,30 +21121,32 @@ function _rptA36TierDetailPanelHTML(key, tt, summaryData, estimateState, wantIte
       : subtotalStr
         ? ': <span style="font-weight:700">' + subtotalStr + '</span>'
         : '';
-    var listHTML = items.length
+    var printedTotals = [];
+    var itemLines = items.map(function (it) {
+      var priceStr = '';
+      // fix/65ce578b (2026-07-27): a real, computed $0 (ioOnly rows -- existing controller
+      // I/O points that need no new hardware, see pricing-estimator.js's ioOnly branch)
+      // was rendering as "N x $0 = $0" / a bare "$0" -- banned per the no-$0-in-client-
+      // output rule. These are real scope the client should still see (Matt: "do not
+      // silently drop scope"), so the row/item stays; only the misleading $0 math is
+      // replaced with a plain-English "no additional cost" label.
+      if (wantItemized && it.lineTotal === 0) {
+        priceStr = it.qty > 1 ? ': ' + it.qty + ' units, no additional cost' : ': no additional cost';
+      } else if (wantItemized && it.lineTotal != null && fmtUSD(it.lineTotal)) {
+        var ln = _rptItemizedLineText(it.qty, it.lineTotal, fmtUSD);
+        priceStr = ln.text;
+        printedTotals.push(ln.total);
+      } else if (it.qty > 1) {
+        priceStr = ' (qty ' + it.qty + ')';
+      }
+      return '<li>' + _esc(it.item || '') + priceStr + '</li>';
+    });
+    var itemDelta =
+      wantItemized && printedTotals.length && subtotalR != null ? _rptRoundingDelta(subtotalR, printedTotals) : null;
+    if (itemDelta !== null) itemLines.push('<li>Rounding: ' + fmtUSD(itemDelta) + '</li>');
+    var listHTML = itemLines.length
       ? '<ul style="margin:2px 0 0;padding-left:14px;font-size:8.5px;color:var(--rpt-page-text);line-height:1.6">' +
-        items
-          .map(function (it) {
-            var priceStr = '';
-            // fix/65ce578b (2026-07-27): a real, computed $0 (ioOnly rows -- existing controller
-            // I/O points that need no new hardware, see pricing-estimator.js's ioOnly branch)
-            // was rendering as "N × $0 = $0" / a bare "$0" -- banned per the no-$0-in-client-
-            // output rule. These are real scope the client should still see (Matt: "do not
-            // silently drop scope"), so the row/item stays; only the misleading $0 math is
-            // replaced with a plain-English "no additional cost" label.
-            if (wantItemized && it.lineTotal === 0) {
-              priceStr = it.qty > 1 ? ': ' + it.qty + ' units, no additional cost' : ': no additional cost';
-            } else if (wantItemized && it.lineTotal != null && fmtUSD(it.lineTotal)) {
-              priceStr =
-                it.qty > 1 && it.unitPrice != null && fmtUSD(it.unitPrice)
-                  ? ': ' + it.qty + ' × ' + fmtUSD(it.unitPrice) + ' = ' + fmtUSD(it.lineTotal)
-                  : ': ' + fmtUSD(it.lineTotal);
-            } else if (it.qty > 1) {
-              priceStr = ' (qty ' + it.qty + ')';
-            }
-            return '<li>' + _esc(it.item || '') + priceStr + '</li>';
-          })
-          .join('') +
+        itemLines.join('') +
         '</ul>'
       : '<div style="font-size:8.5px;color:var(--rpt-page-text);margin-top:2px">No items in this scope.</div>';
     return (
@@ -21102,8 +21176,8 @@ function _rptA36TierDetailPanelHTML(key, tt, summaryData, estimateState, wantIte
     '" style="display:none;margin-top:6px;padding-top:6px;' +
     'border-top:1px solid var(--rpt-rule);text-align:left">' +
     recNote +
-    _sectionHTMLCategories(p1, noCat, hwAgg) +
-    _sectionHTML('Programming', p2, false, lb) +
+    _sectionHTMLCategories(p1, foot ? foot.p1r : null, noCat, hwAgg) +
+    _sectionHTML('Programming', p2, foot ? foot.p2r : null, false, lb) +
     '</div>'
   );
 }
@@ -21331,17 +21405,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
   // as a 1 time cost. This is our monthly ongoing cost"). Same _pricingGetBudget(projId) call the
   // Proposal cover page and svcBlock below already use — no new math, just read earlier so amtRow
   // can use it.
-  var budgetFmt = null;
-  try {
-    if (typeof _pricingGetBudget === 'function') {
-      var _pB = _pricingGetBudget(d.project.id);
-      if (_pB && _pB.amount != null && !isNaN(_pB.amount) && Number(_pB.amount) > 0) {
-        budgetFmt = '$' + Math.round(Number(_pB.amount)).toLocaleString('en-US');
-      }
-    }
-  } catch (e) {
-    budgetFmt = null;
-  }
+  var budgetFmt = _rptMonthlyAllowanceFmt(d.project.id);
 
   // Column order Recommended | Compliance | Full Scope is a readability choice, NOT an assertion
   // that the dollar totals ascend/descend in that order. DRAFT tier descriptions (pending Matt's
@@ -21440,64 +21504,15 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       .join('') +
     '</tr>';
 
-  // _tierPartsRounded — the SINGLE derivation both amtRow (below) and phaseSplitRow (further
-  // below) read from, so the printed Estimated Cost ALWAYS equals the sum of the printed
-  // Hardware/Programming parts (fix/tier-hardware-programming-rounding, 2026-07-30).
-  //
-  // 2026-07-30 CORRECTION (coordinator review): the first version of this function rounded
-  // phase1/phase2 independently and had amtRow display THEIR sum as the total. That fixed the
-  // within-page mismatch but pointed the fix the wrong direction — it moved the displayed Full
-  // Scope total from $1,422,158 up to $1,422,159, which no longer matches tt[key].grand
-  // (1422158.1999999993, truthfully rounds to $1,422,158) or the in-app Cost Estimate tab, which
-  // reads that same unchanged grand. A within-page mismatch traded for a cross-surface one is
-  // worse: the total is the number that appears elsewhere and is authoritative, so it must be
-  // rounded truthfully (Math.round(grand)) and the PARTS must absorb the rounding residual, never
-  // the reverse.
-  //
-  // Implementation: the largest-remainder method (a.k.a. Hamilton's method — the standard
-  // apportionment answer to "N numbers must round to individually-sensible values AND sum to an
-  // already-fixed rounded total"). Floor every part, then hand out the dollars still owed
-  // (totalR - sum of floors) one at a time to the parts with the largest fractional remainder —
-  // the parts closest to rounding UP on their own get the extra dollar first. For Full Scope:
-  // floor(1084721.70)=1084721, floor(337436.50)=337436, sum=1422157, totalR=1422158, 1 dollar
-  // owed; hardware's remainder (.70) beats programming's (.50), so hardware gets it:
-  // 1,084,722 + 337,436 = 1,422,158. Ties broken deterministically by lower part-index (phase1
-  // before phase2) — arbitrary but stable and reproducible, never a coin flip.
-  //
-  // Generic over any number of parts (not special-cased to Hardware/Programming or to Full
-  // Scope's specific values) — extend the `parts` array below and this still produces a valid
-  // allocation. `owed` is provably in [0, parts.length] whenever every part is >= 0 (floor never
-  // exceeds the true value; Math.round never differs from the true sum by more than 0.5) — true
-  // for every real dollar amount this report ever prices; the loop bound below is still clamped
-  // defensively so a pathological negative input can never run past the ranked list.
-  //
-  // Returns null when the tier has nothing priced (grand null), matching the existing "Available
-  // upon request" fallback path unchanged.
+  // _tierPartsRounded - page 7 reads the tier total and the Hardware/Programming parts from
+  // _rptFootTier (D-12: total rounds UP to the next $100, parts foot to it by largest remainder).
+  // The detail pages read the same function, so page 7 and the detail page always agree.
+  // Returns null when the tier has nothing priced (grand null): "Available upon request".
   function _tierPartsRounded(key) {
     var t = tt && tt[key];
     if (!t || t.grand === null || t.grand === undefined || isNaN(t.grand)) return null;
-    var totalR = Math.round(t.grand); // the authoritative total — same number every other surface reads
-    var parts = [t.phase1 || 0, t.phase2 || 0];
-    var floors = parts.map(function (v) {
-      return Math.floor(v);
-    });
-    var owed =
-      totalR -
-      floors.reduce(function (s, v) {
-        return s + v;
-      }, 0);
-    var ranked = parts
-      .map(function (v, i) {
-        return { i: i, frac: v - floors[i] };
-      })
-      .sort(function (a, b) {
-        return b.frac - a.frac || a.i - b.i; // largest fractional remainder first; ties -> lower index wins
-      });
-    var result = floors.slice();
-    for (var k = 0; k < owed && k < ranked.length; k++) {
-      result[ranked[k].i] += 1;
-    }
-    return { p1r: result[0], p2r: result[1], totalR: totalR, noCatalog: !!t.noCatalog };
+    var f = _rptFootTier(t.grand, t.phase1, t.phase2);
+    return { p1r: f.p1r, p2r: f.p2r, totalR: f.totalR, noCatalog: !!t.noCatalog };
   }
 
   var amtStyle =
@@ -21721,10 +21736,10 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
   var svcBlock = '';
   try {
     if (typeof _pricingGetBudget === 'function' && typeof _pricingGetConfig === 'function') {
-      var _svcBudget = _pricingGetBudget(d.project.id);
+      var _svcMonthly = _rptMonthlyAllowance(d.project.id);
       var _svcCfg = _pricingGetConfig();
-      if (_svcBudget && _svcBudget.amount != null && !isNaN(_svcBudget.amount) && Number(_svcBudget.amount) > 0) {
-        var _svcAllowanceStr = _fmtUSD(Number(_svcBudget.amount));
+      if (_svcMonthly) {
+        var _svcAllowanceStr = _fmtUSD(_svcMonthly);
         var _svcRate =
           _svcCfg.hourlyRate || (typeof COST_LABOR_RATE_DEFAULT !== 'undefined' ? COST_LABOR_RATE_DEFAULT : 170);
         // Design-language pass (report-export-fixes, 2026-07-22): dropped the full bordered-
@@ -22012,13 +22027,24 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
     var pages = [];
     var pageN = startN;
 
-    function categoryBulletHTML(c, showPrice) {
+    function roundingBulletHTML(delta) {
+      return (
+        '<div style="font-size:9px;color:var(--rpt-page-text);line-height:1.7;padding-left:14px;position:relative">' +
+        '<span style="position:absolute;left:0">&#8226;</span>' +
+        'Rounding: ' +
+        _fmtUSD(delta) +
+        '</div>'
+      );
+    }
+
+    function categoryBulletHTML(c, showPrice, printed) {
       var priceStr = '';
       // Same no-bare-$0 rule as _sectionHTMLCategories above.
       if (showPrice && wantItemized && c.lineTotal === 0) {
         priceStr = ': ' + c.qty + ' units, no additional cost';
       } else if (showPrice && wantItemized && c.lineTotal != null && _fmtUSD(c.lineTotal)) {
         priceStr = ': ' + c.qty + ' units, ' + _fmtUSD(c.lineTotal);
+        printed.push(Math.round(c.lineTotal));
       } else if (c.qty > 1) {
         priceStr = ' (qty ' + c.qty + ')';
       }
@@ -22042,7 +22068,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       );
     }
 
-    function bulletHTML(it, showPrice) {
+    function bulletHTML(it, showPrice, printed) {
       var priceStr = '';
       // fix/65ce578b (2026-07-27): same $0/no-catalog-price fix as _rptA36TierDetailPanelHTML's
       // _sectionHTML above -- a real, computed $0 (ioOnly rows) must not render as "N × $0 = $0"
@@ -22050,10 +22076,9 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       if (showPrice && wantItemized && it.lineTotal === 0) {
         priceStr = it.qty > 1 ? ': ' + it.qty + ' units, no additional cost' : ': no additional cost';
       } else if (showPrice && wantItemized && it.lineTotal != null && _fmtUSD(it.lineTotal)) {
-        priceStr =
-          it.qty > 1 && it.unitPrice != null && _fmtUSD(it.unitPrice)
-            ? ': ' + it.qty + ' × ' + _fmtUSD(it.unitPrice) + ' = ' + _fmtUSD(it.lineTotal)
-            : ': ' + _fmtUSD(it.lineTotal);
+        var ln = _rptItemizedLineText(it.qty, it.lineTotal, _fmtUSD);
+        priceStr = ln.text;
+        printed.push(ln.total);
       } else if (it.qty > 1) {
         priceStr = ' (qty ' + it.qty + ')';
       }
@@ -22097,24 +22122,16 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       // (_rptA36TierDetailPanelHTML) and the itemized pages above — never print a Hardware/
       // Programming subtotal or a per-item price for this tier.
       var noDollar = c.key === NO_DOLLAR_TIER;
-      // UNRESOLVED DESIGN QUESTION (investigated 2026-08-02, fix/costest-wording-and-rounding --
-      // NOT changed here, see that task's report): this page's Full Scope Programming subtotal
-      // ($337,437, from tt[c.key].phase2 fmtUSD'd raw) disagrees by $1 with page 7's
-      // phaseSplitRow Programming figure ($337,436, from _tierPartsRounded's largest-remainder
-      // allocation -- fix/tier-hardware-programming-rounding, 2026-07-30). Tried pointing p1/p2
-      // here at the SAME _tierPartsRounded(c.key) helper phaseSplitRow reads: that DOES make this
-      // page's header agree with page 7, but this page's own itemized bullet rows below (each an
-      // unrounded qty x unitPrice = lineTotal, never touched by _tierPartsRounded) independently
-      // sum to $337,437 -- so the header would then disagree with its OWN itemized list on the
-      // same page instead of with page 7. Every real dollar in the bullet list is correct; there
-      // is no rounding tweak that makes the header agree with both page 7 AND its own bullets
-      // simultaneously without fudging one bullet's true computed price by $1. Left AS-IS
-      // (self-consistent with its own bullets, disagrees with page 7 by $1) pending a decision on
-      // which of the two $1 disagreements is preferable -- do not silently pick one.
+      // D-12 (WP-21): the Hardware / Programming subtotals come from the same _rptFootTier call
+      // page 7 uses, so the two pages agree. The bullet lines below print whole-dollar qty x unit
+      // = total; a visible "Rounding" line closes the gap to the subtotal.
       var tt_ = !noDollar && tt && tt[c.key] ? tt[c.key] : null;
       var noCat = !!(tt_ && tt_.noCatalog);
-      var p1 = tt_ ? _fmtUSD(tt_.phase1) : null;
-      var p2 = tt_ ? _fmtUSD(tt_.phase2) : null;
+      var foot_ = tt_ ? _rptFootTier(tt_.grand, tt_.phase1, tt_.phase2) : null;
+      var p1 = foot_ ? _fmtUSD(foot_.p1r) : null;
+      var p2 = foot_ ? _fmtUSD(foot_.p2r) : null;
+      var hwPrinted = [];
+      var pgPrinted = [];
 
       var tokens = [];
       if (noDollar) {
@@ -22144,17 +22161,23 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       if (hasHw) {
         tokens.push({ type: 'row', estH: 30, html: sectionTitleHTML('Hardware & Installation', p1, noCat) });
         hwAgg.categories.forEach(function (c2) {
-          tokens.push({ type: 'row', estH: 30, html: categoryBulletHTML(c2, !noDollar) });
+          tokens.push({ type: 'row', estH: 30, html: categoryBulletHTML(c2, !noDollar, hwPrinted) });
         });
         if (hwAgg.ioOnlyCount > 0) {
           tokens.push({ type: 'row', estH: 30, html: ioOnlySummaryHTML(hwAgg) });
         }
+        var hwDelta =
+          wantItemized && !noDollar && hwPrinted.length && foot_ ? _rptRoundingDelta(foot_.p1r, hwPrinted) : null;
+        if (hwDelta !== null) tokens.push({ type: 'row', estH: 30, html: roundingBulletHTML(hwDelta) });
       }
       if (lb.length) {
         tokens.push({ type: 'row', estH: 30, html: sectionTitleHTML('Programming', p2, false) });
         lb.forEach(function (it) {
-          tokens.push({ type: 'row', estH: 30, html: bulletHTML(it, !noDollar) });
+          tokens.push({ type: 'row', estH: 30, html: bulletHTML(it, !noDollar, pgPrinted) });
         });
+        var pgDelta =
+          wantItemized && !noDollar && pgPrinted.length && foot_ ? _rptRoundingDelta(foot_.p2r, pgPrinted) : null;
+        if (pgDelta !== null) tokens.push({ type: 'row', estH: 30, html: roundingBulletHTML(pgDelta) });
       }
 
       // fix/report-content-pagination (2026-07-28): derived from _rptContentBudget() instead of
