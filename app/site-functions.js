@@ -1776,6 +1776,15 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   {
+    v: 'v2026.09.30.47',
+    date: '2026-09-30',
+    title: 'PDF / OCR: PDF opens beside the extracted values',
+    items: [
+      { type: 'feature', text: 'PDF / OCR: the PDF now opens beside the extracted values (Side by side toggle) and shows all pages, opening at the selected billing period page.' },
+      { type: 'change', text: 'PDF / OCR: on narrow windows the PDF pins above the values.' }
+    ]
+  },
+  {
     v: 'v2026.09.30.46',
     date: '2026-09-30',
     title: 'PDF / OCR: Louisburg gas charge read from the printed line',
