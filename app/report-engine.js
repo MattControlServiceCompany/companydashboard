@@ -23167,6 +23167,7 @@ function collectAuditProposalData(projId, auditType) {
       return {
         name: typeof rptBuildingDisplayName === 'function' ? rptBuildingDisplayName(b) : b,
         equipCount: perBuilding[b],
+        sampledCount: (breakdown.sampledByBuilding && breakdown.sampledByBuilding[b]) || 0,
       };
     });
 
@@ -23186,14 +23187,17 @@ var AUDIT_PROPOSAL_COPY = {
     title: 'Building Automation System Audit Proposal',
     heroLabel: 'Building Automation System Audit',
     covers:
-      'A Building Automation System Audit is an on-site review of the equipment and control programming already installed at each facility. Our team inspects the automation equipment at each building, checks that sensors and control points are reading and reporting correctly, and verifies that control sequences are running as intended.',
+      'A Building Automation System Audit is a remote review of the equipment and control programming already installed at each facility. Our team reviews the control points of the automation equipment in the Equipment Matrix, compares equipment of the same type, and checks a sample of each type with screenshots of the control system. Any other equipment that needs a closer look is reviewed after that.',
     deliverables: [
       'A written summary of findings for each facility.',
       'A list of the automation equipment and control points reviewed at each facility.',
       'Recommended next steps to correct anything found during the review.',
     ],
+    schedule: 'The review is done remotely. The written report is delivered once the review is complete.',
   },
   full: {
+    schedule:
+      'Site visits are scheduled directly with each facility. The written report is delivered once all site visits are complete.',
     title: 'Full Facility Audit Proposal',
     heroLabel: 'Full Facility Audit',
     covers:
@@ -23218,6 +23222,8 @@ function _rptAuditProposalCoverInnerHTML(data) {
         _rptV2Esc(b.name) +
         '</td><td style="padding:6px 10px;border-bottom:1px solid var(--rpt-border);text-align:right">' +
         b.equipCount +
+        '</td><td style="padding:6px 10px;border-bottom:1px solid var(--rpt-border);text-align:right">' +
+        b.sampledCount +
         '</td></tr>'
       );
     })
@@ -23241,7 +23247,8 @@ function _rptAuditProposalCoverInnerHTML(data) {
     '<table style="width:100%;border-collapse:collapse;font-size:12px;color:var(--rpt-page-text)">' +
     '<thead><tr>' +
     '<th style="text-align:left;padding:6px 10px;border-bottom:2px solid var(--rpt-border);color:var(--rpt-blue)">Facility</th>' +
-    '<th style="text-align:right;padding:6px 10px;border-bottom:2px solid var(--rpt-border);color:var(--rpt-blue)">Equipment Reviewed</th>' +
+    '<th style="text-align:right;padding:6px 10px;border-bottom:2px solid var(--rpt-border);color:var(--rpt-blue)">Equipment</th>' +
+    '<th style="text-align:right;padding:6px 10px;border-bottom:2px solid var(--rpt-border);color:var(--rpt-blue)">Sampled for Review</th>' +
     '</tr></thead><tbody>' +
     rowsHTML +
     '</tbody></table>' +
@@ -23275,7 +23282,7 @@ function _rptAuditProposalDetailInnerHTML(data) {
     '</ul>' +
     '<div style="font-size:16px;font-weight:700;color:var(--rpt-blue);margin-bottom:8px">Schedule</div>' +
     '<div style="font-size:13px;line-height:1.5;color:var(--rpt-page-text);margin-bottom:16px">' +
-    'Site visits are scheduled directly with each facility. The written report is delivered once all site visits are complete.' +
+    _rptV2Esc(copy.schedule) +
     '</div>' +
     '<div style="font-size:16px;font-weight:700;color:var(--rpt-blue);margin-bottom:8px">Total Price</div>' +
     '<div style="font-size:24px;font-weight:700;color:var(--rpt-blue);margin-bottom:16px">' +

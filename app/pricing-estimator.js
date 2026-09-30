@@ -3577,7 +3577,7 @@ function initCostEstimateTab(projId) {
 
     var unitPriceCell = '';
     if (row.ioOnly) {
-      unitPriceCell = '<span style="color:var(--text3);font-size:10px">$0 (no part)</span>';
+      unitPriceCell = '<span style="color:var(--text3)" title="No part needed. Uses existing wiring.">—</span>';
     } else if (row.phase === 2) {
       // Labor: show hours × rate
       unitPriceCell = row.unitPrice !== null ? _pricingFmt(row.unitPrice) : '—';
@@ -3603,7 +3603,7 @@ function initCostEstimateTab(projId) {
 
     var lineTotalCell = '';
     if (row.ioOnly) {
-      lineTotalCell = '<span style="color:var(--text3);font-size:10px">$0</span>';
+      lineTotalCell = '<span style="color:var(--text3)">—</span>';
     } else if (row.noSku) {
       var mv = parseFloat(estimate.manualPrices[row.id] || 0);
       var lt = isNaN(mv) ? null : mv * row.qty;
@@ -6982,7 +6982,7 @@ function _pricingRenderCondensedTab(projId, el, estimate, tier) {
           '<td style="' +
           tdBase +
           ';text-align:right">' +
-          (it.unitPrice != null ? _pricingFmt(it.unitPrice) : '—') +
+          (it.unitPrice ? _pricingFmt(it.unitPrice) : '—') +
           '</td>' +
           '<td style="' +
           tdBase +
@@ -6992,7 +6992,7 @@ function _pricingRenderCondensedTab(projId, el, estimate, tier) {
           '<td style="' +
           tdBase +
           ';text-align:right;font-weight:700">' +
-          (it.lineTotal != null ? _pricingFmt(it.lineTotal) : '—') +
+          (it.lineTotal ? _pricingFmt(it.lineTotal) : '—') +
           '</td>' +
           '</tr>'
         );
