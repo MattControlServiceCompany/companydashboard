@@ -1775,6 +1775,13 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.01.57', date: '2026-10-01', title: 'Cost Estimate: audit sample picked by matching controls',
+    items: [
+      { type: 'change', text: 'Cost Estimate - Audit Estimate: units to sample are now picked by matching control features from the Equipment Matrix (economizer, fan speed, heating and cooling type, CO2), one per group, instead of a fixed percentage.' },
+      { type: 'feature', text: 'Hours Each per equipment type can be changed per project or saved as the company default.' },
+      { type: 'feature', text: 'The proposal lists the sampled units.' }
+    ]
+  },
   { v: 'v2026.10.01.56', date: '2026-10-01', title: 'Cost Estimate: one-page scrolling and aligned audit tables',
     items: [
       { type: 'fix', text: 'Cost Estimate: the whole tab now scrolls as one page (no more stuck scrolling or empty gap), and the Audit Estimate tables are aligned with the rest of the page and sized to their contents.' }
