@@ -11,9 +11,14 @@ const { chromium } = require('C:/Users/Matt Miller/AI/companydashboard/node_modu
 const fs = require('fs');
 
 const PROFILE = 'C:/Temp/verify-pricing-phases-profile-' + Date.now();
-const PAGE_URL = 'file:///C:/Temp/wt-pricing-phases-3/energy-department.html';
+// The tree this script runs FROM (primary checkout or worktree): scripts/ -> repo root.
+const REPO_ROOT = require('path').resolve(__dirname, '..');
+const PAGE_URL = 'file:///' + REPO_ROOT.replace(/\\/g, '/') + '/energy-department.html';
 const DATA_FILE = 'C:/Users/Matt Miller/Downloads/CompanyHub-localdatafile-20260727.json';
-const SHOT_DIR = 'C:/Users/Matt Miller/OneDrive - Control Service Company/Pictures/Screenshots';
+// Verification artifacts go under _context/temp only (filing standard: dated
+// names, never the OneDrive Screenshots folder).
+const SHOT_DIR = 'C:/Users/Matt Miller/AI/_context/temp/verify-pricing-phases';
+const SHOT_DATE = new Date().toISOString().slice(0, 10);
 
 (async () => {
   const context = await chromium.launchPersistentContext(PROFILE, {
@@ -33,11 +38,16 @@ const SHOT_DIR = 'C:/Users/Matt Miller/OneDrive - Control Service Company/Pictur
   } catch (e) {}
 
   console.log('Seeding from', DATA_FILE);
-  const [fc] = await Promise.all([
-    page.waitForEvent('filechooser'),
-    page.evaluate(() => window.__siteUI.restoreData()),
-  ]);
-  await fc.setFiles(DATA_FILE);
+  // Programmatic restore (no preview dialog): Replace into the empty profile, no safety
+  // copy (fixture data, fresh profile), then the app reloads. Arm the navigation wait first.
+  const navWait = page.waitForNavigation({ waitUntil: 'load' });
+  const seed = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+  const seeded = await page.evaluate(
+    (data) => window.__siteUI.restoreData(data, { mode: 'replace', confirm: true, safetyCopy: false }),
+    seed,
+  );
+  console.log('Seed result:', JSON.stringify(seeded));
+  await navWait;
 
   let ready = false;
   for (let i = 0; i < 30; i++) {
@@ -179,7 +189,7 @@ const SHOT_DIR = 'C:/Users/Matt Miller/OneDrive - Control Service Company/Pictur
   }, projId);
   await page.waitForTimeout(1000);
   fs.mkdirSync(SHOT_DIR, { recursive: true });
-  const propShotPath = SHOT_DIR + '/pricing-phases-service-proposal-2026-07-28.png';
+  const propShotPath = SHOT_DIR + '/' + SHOT_DATE + '-pricing-phases-service-proposal.png';
   await page.screenshot({ path: propShotPath, fullPage: true });
   console.log('Screenshot saved:', propShotPath);
   try {
@@ -200,9 +210,13 @@ const SHOT_DIR = 'C:/Users/Matt Miller/OneDrive - Control Service Company/Pictur
     console.log('openDetail evaluate threw (context likely reloaded mid-call):', e.message);
   }
   await page.waitForTimeout(1500);
+  // The tab exists but has no size when openDetail's reload leaves the detail view closed
+  // (the harness quirk noted above). The click is for the screenshot only: never fatal.
   const tabBtn = await page.$('.pdt[data-tab="cost-estimate"]');
   if (tabBtn) {
-    await tabBtn.click();
+    await tabBtn
+      .click({ timeout: 3000 })
+      .catch((e) => console.log('cost-estimate tab not clickable:', e.message.split('\n')[0]));
     await page.waitForTimeout(800);
   }
   try {
@@ -223,7 +237,7 @@ const SHOT_DIR = 'C:/Users/Matt Miller/OneDrive - Control Service Company/Pictur
   console.log('Contains literal "Grand Total" text on page:', bodyText.includes('Grand Total'));
   console.log('Contains "Sensor Investigation" text on page:', bodyText.includes('Sensor Investigation'));
 
-  const ceShotPath = SHOT_DIR + '/pricing-phases-cost-estimate-2026-07-28.png';
+  const ceShotPath = SHOT_DIR + '/' + SHOT_DATE + '-pricing-phases-cost-estimate.png';
   await page.screenshot({ path: ceShotPath, fullPage: false });
   console.log('Screenshot saved:', ceShotPath);
 
