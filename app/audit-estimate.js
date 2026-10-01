@@ -503,6 +503,27 @@ function auditEstSetWorkbookSetting(projId, field, value) {
   }
 }
 
+// Workbook mode, itemized lines: each item's shown lineTotal becomes its share of the group's
+// workbook subtotal (whole dollars, largest remainder, weighted by the item's hourly lineTotal),
+// so the lines add up to the subtotal exactly. Returns copies; items without a positive
+// lineTotal are unchanged.
+function _auditEstShareLines(items, subtotal) {
+  var shares = _auditEstAllocate(
+    Math.round(subtotal || 0),
+    items.map(function (it) {
+      return it.lineTotal > 0 ? Math.round(it.lineTotal * 100) : 0;
+    }),
+  );
+  return items.map(function (it, i) {
+    var c = {};
+    Object.keys(it).forEach(function (k) {
+      c[k] = it[k];
+    });
+    if (it.lineTotal > 0) c.lineTotal = shares[i];
+    return c;
+  });
+}
+
 /* ── Hours + cost breakdown for one audit type ('bas' | 'full') ──────────────────────────────
    Full Facility Audit = BAS Audit's own equipment/building/report hours, PLUS four flat
    per-building line items (mechanical walk-through, lighting review, envelope review, utility
@@ -1016,7 +1037,7 @@ function auditEstWorkbookPanelHTML(pid, w, taskHead) {
     "','taxRate',this.value/100)\"></label>" +
     '<label><input type="checkbox"' + (w.settings.bond ? ' checked' : '') + ' onchange="auditEstSaveWorkbook(\'' + pid +
     "','bond',this.checked)\"> Bond</label>" +
-    (auditEstOtHasNoEffect(w.tasks) ? '<span class="ae-note">Overtime has no effect: no role used here has an overtime rate.</span>' : '') +
+    (w.settings.ot !== 'Not Applicable' && auditEstOtHasNoEffect(w.tasks) ? '<span class="ae-note">Overtime has no effect: no role used here has an overtime rate.</span>' : '') +
     '</div>';
   var chainRows = w.chain
     .map(function (c) {
@@ -1081,7 +1102,7 @@ function auditEstSaveWorkbookRole(projId, task, role) {
 }
 
 // Segmented "Workbook | Hourly $170" switch, shown in the Estimate type bar (app/pricing-estimator.js).
-function auditEstMethodSwitchHTML(projId) {
+function auditEstMethodSwitchHTML(projId, estType) {
   var cur = auditEstGetWorkbookSettings(projId).method;
   var rate = auditEstGetHourlyRate();
   var btn = function (m, label, tip) {
@@ -1093,7 +1114,13 @@ function auditEstMethodSwitchHTML(projId) {
   return (
     '<span class="ae-seg" role="group" aria-label="Pricing method">' +
     btn('workbook', 'Workbook', 'Price with the CSC cost estimate workbook: labor by role, tools, overhead, profit') +
-    btn('hourly', 'Hourly ' + _auditEstFmtWhole(rate), 'Price as hours times the labor rate, proposal rounded up to the next $100') +
+    btn(
+      'hourly',
+      'Hourly ' + _auditEstFmtWhole(rate),
+      estType === 'retrofit'
+        ? 'Price as hours times the labor rate'
+        : 'Price as hours times the labor rate, proposal rounded up to the next $100',
+    ) +
     '</span>'
   );
 }

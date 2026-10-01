@@ -18529,7 +18529,7 @@ function _rptA36CoverPricingStrip(d) {
 
   var rows = tierDefs
     .map(function (t) {
-      var g = tt[t.key] ? _fmtUSD(_rptRoundUp100(tt[t.key].grand)) : null;
+      var g = tt[t.key] ? _fmtUSD(_rptTierTotal(tt[t.key])) : null;
       var noCat = tt[t.key] && tt[t.key].noCatalog;
       var amtStr = g ? (noCat ? 'Labor: ' + g : g) : null;
       var headline =
@@ -18597,11 +18597,11 @@ function _rptA36AssessmentFindingsData(d) {
       var summaryData = _pricingComputeSummaryData(d.project.id, estimateState);
       var tt = summaryData && summaryData.tierTotals ? summaryData.tierTotals : null;
       if (tt && tt.compliance && tt.compliance.grand != null && !isNaN(tt.compliance.grand)) {
-        out.complianceGrand = _rptRoundUp100(tt.compliance.grand);
+        out.complianceGrand = _rptTierTotal(tt.compliance);
         out.complianceFmt = _fmtUSD(out.complianceGrand);
       }
       if (tt && tt['full-scope'] && tt['full-scope'].grand != null && !isNaN(tt['full-scope'].grand)) {
-        out.fullScopeGrand = _rptRoundUp100(tt['full-scope'].grand);
+        out.fullScopeGrand = _rptTierTotal(tt['full-scope']);
         out.fullScopeFmt = _fmtUSD(out.fullScopeGrand);
       }
       if (out.complianceGrand != null && out.fullScopeGrand != null) {
@@ -20961,7 +20961,19 @@ function _rptRoundUp100(v) {
   return Math.ceil(Math.round(n * 100) / 100 / 100) * 100;
 }
 
-function _rptFootTier(grand, phase1, phase2) {
+// Workbook mode (tier totals carry method 'workbook'): the tier total is already a whole-dollar
+// workbook price and prints as is - no round-up to $100.
+function _rptTierTotal(t) {
+  if (!t) return null;
+  if (t.method === 'workbook') return t.grand === null || t.grand === undefined ? null : Math.round(t.grand);
+  return _rptRoundUp100(t.grand);
+}
+
+function _rptFootTier(grand, phase1, phase2, wb) {
+  if (wb) {
+    if (grand === null || grand === undefined || !isFinite(Number(grand))) return null;
+    return { totalR: Math.round(grand), p1r: Math.round(phase1 || 0), p2r: Math.round(phase2 || 0) };
+  }
   var totalR = _rptRoundUp100(grand);
   if (totalR === null) return null;
   var parts = [(phase1 || 0) / 100, (phase2 || 0) / 100];
@@ -20985,7 +20997,8 @@ function _rptFootTier(grand, phase1, phase2) {
   return { totalR: totalR, p1r: out[0] * 100, p2r: out[1] * 100 };
 }
 
-function _rptItemizedLine(qty, lineTotal) {
+function _rptItemizedLine(qty, lineTotal, wb) {
+  if (wb) return { qty: qty, unit: null, total: Math.round(lineTotal) };
   var unit = qty > 1 ? Math.round(lineTotal / qty) : 0;
   if (qty > 1 && unit >= 1) return { qty: qty, unit: unit, total: qty * unit };
   return { qty: qty, unit: null, total: Math.round(lineTotal) };
@@ -20993,8 +21006,8 @@ function _rptItemizedLine(qty, lineTotal) {
 
 // Text after the item name for one priced line, plus the dollar figure that line prints (for the
 // section's Rounding line).
-function _rptItemizedLineText(qty, lineTotal, fmtUSD) {
-  var ln = _rptItemizedLine(qty, lineTotal);
+function _rptItemizedLineText(qty, lineTotal, fmtUSD, wb) {
+  var ln = _rptItemizedLine(qty, lineTotal, wb);
   var text =
     ln.unit !== null
       ? ': ' + ln.qty + ' \u00d7 ' + fmtUSD(ln.unit) + ' = ' + fmtUSD(ln.total)
@@ -21138,7 +21151,18 @@ function _rptA36TierDetailPanelHTML(key, tt, summaryData, estimateState, wantIte
   // list (so a reader still sees WHAT is included), just never priced individually here.
   var noDollarTier = key === 'recommended';
   var noCat = !noDollarTier && !!(tt && tt[key] && tt[key].noCatalog);
-  var foot = !noDollarTier && tt && tt[key] ? _rptFootTier(tt[key].grand, tt[key].phase1, tt[key].phase2) : null;
+  var wbTier = !!(tt && tt[key] && tt[key].method === 'workbook');
+  var foot =
+    !noDollarTier && tt && tt[key] ? _rptFootTier(tt[key].grand, tt[key].phase1, tt[key].phase2, wbTier) : null;
+  if (wbTier && foot) {
+    // Workbook mode: rows show their share of the workbook subtotal (lines add up exactly).
+    hwAgg = {
+      categories: _auditEstShareLines(hwAgg.categories, foot.p1r),
+      ioOnlyQty: hwAgg.ioOnlyQty,
+      ioOnlyCount: hwAgg.ioOnlyCount,
+    };
+    lb = _auditEstShareLines(lb, foot.p2r);
+  }
   var p1 = foot ? fmtUSD(foot.p1r) : null;
   var p2 = foot ? fmtUSD(foot.p2r) : null;
   if (noDollarTier) wantItemized = false;
@@ -21211,7 +21235,7 @@ function _rptA36TierDetailPanelHTML(key, tt, summaryData, estimateState, wantIte
       if (wantItemized && it.lineTotal === 0) {
         priceStr = it.qty > 1 ? ': ' + it.qty + ' units, no additional cost' : ': no additional cost';
       } else if (wantItemized && it.lineTotal != null && fmtUSD(it.lineTotal)) {
-        var ln = _rptItemizedLineText(it.qty, it.lineTotal, fmtUSD);
+        var ln = _rptItemizedLineText(it.qty, it.lineTotal, fmtUSD, wbTier);
         priceStr = ln.text;
         printedTotals.push(ln.total);
       } else if (it.qty > 1) {
@@ -21589,7 +21613,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
   function _tierPartsRounded(key) {
     var t = tt && tt[key];
     if (!t || t.grand === null || t.grand === undefined || isNaN(t.grand)) return null;
-    var f = _rptFootTier(t.grand, t.phase1, t.phase2);
+    var f = _rptFootTier(t.grand, t.phase1, t.phase2, t.method === 'workbook');
     return { p1r: f.p1r, p2r: f.p2r, totalR: f.totalR, noCatalog: !!t.noCatalog };
   }
 
@@ -21949,6 +21973,13 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
         return byItem[k];
       });
 
+      var wbItem = tt && tt[c.key] && tt[c.key].method === 'workbook' && c.key !== NO_DOLLAR_TIER;
+      if (wbItem) {
+        // Workbook mode: row prices are shares of the tier's workbook Hardware / Programming
+        // subtotals, so the table adds up to the tier total exactly.
+        hwCategoryRows = _auditEstShareLines(hwCategoryRows, Math.round(tt[c.key].phase1 || 0));
+        programmingRows = _auditEstShareLines(programmingRows, Math.round(tt[c.key].phase2 || 0));
+      }
       var agg = hwCategoryRows.concat(programmingRows);
       if (!agg.length) return;
 
@@ -22146,7 +22177,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       );
     }
 
-    function bulletHTML(it, showPrice, printed) {
+    function bulletHTML(it, showPrice, printed, wb) {
       var priceStr = '';
       // fix/65ce578b (2026-07-27): same $0/no-catalog-price fix as _rptA36TierDetailPanelHTML's
       // _sectionHTML above -- a real, computed $0 (ioOnly rows) must not render as "N × $0 = $0"
@@ -22154,7 +22185,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       if (showPrice && wantItemized && it.lineTotal === 0) {
         priceStr = it.qty > 1 ? ': ' + it.qty + ' units, no additional cost' : ': no additional cost';
       } else if (showPrice && wantItemized && it.lineTotal != null && _fmtUSD(it.lineTotal)) {
-        var ln = _rptItemizedLineText(it.qty, it.lineTotal, _fmtUSD);
+        var ln = _rptItemizedLineText(it.qty, it.lineTotal, _fmtUSD, wb);
         priceStr = ln.text;
         printed.push(ln.total);
       } else if (it.qty > 1) {
@@ -22205,7 +22236,16 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       // = total; a visible "Rounding" line closes the gap to the subtotal.
       var tt_ = !noDollar && tt && tt[c.key] ? tt[c.key] : null;
       var noCat = !!(tt_ && tt_.noCatalog);
-      var foot_ = tt_ ? _rptFootTier(tt_.grand, tt_.phase1, tt_.phase2) : null;
+      var wb_ = !!(tt_ && tt_.method === 'workbook');
+      var foot_ = tt_ ? _rptFootTier(tt_.grand, tt_.phase1, tt_.phase2, wb_) : null;
+      if (wb_ && foot_) {
+        hwAgg = {
+          categories: _auditEstShareLines(hwAgg.categories, foot_.p1r),
+          ioOnlyQty: hwAgg.ioOnlyQty,
+          ioOnlyCount: hwAgg.ioOnlyCount,
+        };
+        lb = _auditEstShareLines(lb, foot_.p2r);
+      }
       var p1 = foot_ ? _fmtUSD(foot_.p1r) : null;
       var p2 = foot_ ? _fmtUSD(foot_.p2r) : null;
       var hwPrinted = [];
@@ -22251,7 +22291,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       if (lb.length) {
         tokens.push({ type: 'row', estH: 30, html: sectionTitleHTML('Programming', p2, false) });
         lb.forEach(function (it) {
-          tokens.push({ type: 'row', estH: 30, html: bulletHTML(it, !noDollar, pgPrinted) });
+          tokens.push({ type: 'row', estH: 30, html: bulletHTML(it, !noDollar, pgPrinted, wb_) });
         });
         var pgDelta =
           wantItemized && !noDollar && pgPrinted.length && foot_ ? _rptRoundingDelta(foot_.p2r, pgPrinted) : null;

@@ -3452,6 +3452,22 @@ function _pricingWorkbookTotals(set, agg, base) {
   var split = _auditEstAllocate(total, [agg.p1C, agg.p2C]);
   base.phase1 = split[0];
   base.phase2 = split[1];
+  // Per-row display amounts: each included priced row's share of its phase's workbook total.
+  base.rowShares = {};
+  [
+    [agg.rows1, split[0]],
+    [agg.rows2, split[1]],
+  ].forEach(function (g) {
+    var sh = _auditEstAllocate(
+      g[1],
+      g[0].map(function (r) {
+        return r.c;
+      }),
+    );
+    g[0].forEach(function (r, i) {
+      base.rowShares[r.id] = (base.rowShares[r.id] || 0) + sh[i];
+    });
+  });
   base.grand = total;
   base.method = 'workbook';
   base.workbook = { input: input, summary: calc.summary, tasks: tasks, settings: set, chain: auditEstWorkbookChain(calc) };
@@ -3461,7 +3477,7 @@ function _pricingWorkbookTotals(set, agg, base) {
 /* ── Compute footer totals ── */
 function _pricingComputeTotals(rows, estimate, projId) {
   var wbSet = _pricingWorkbookSettings(projId);
-  var wbAgg = wbSet ? { partsC: 0, hours: {}, p1C: 0, p2C: 0 } : null;
+  var wbAgg = wbSet ? { partsC: 0, hours: {}, p1C: 0, p2C: 0, rows1: [], rows2: [] } : null;
   var phase1 = 0,
     phase2 = 0;
   var included = 0,
@@ -3514,9 +3530,11 @@ function _pricingComputeTotals(rows, estimate, projId) {
         var instC = Math.round((row.installLaborTotal || 0) * 100);
         wbAgg.partsC += Math.round(price * 100) - instC;
         wbAgg.p1C += Math.round(price * 100);
+        wbAgg.rows1.push({ id: toggleKey, c: Math.round(price * 100) });
         wbAdd('install_per_point', (row.installHours || 0) * row.qty);
       } else if (row.phase === 2) {
         wbAgg.p2C += Math.round(price * 100);
+        wbAgg.rows2.push({ id: toggleKey, c: Math.round(price * 100) });
         wbAdd(
           row.isSensorInvestigation ? 'startup_checkout' : 'bas_programming',
           row.hrsPerUnit != null ? row.hrsPerUnit * row.qty : price / (_pricingGetConfig().hourlyRate || COST_LABOR_RATE_DEFAULT),
@@ -4047,6 +4065,21 @@ function _pricingRefreshFooter(projId) {
     '<span style="font-size:11px;color:var(--text3)">' + _rfCaveatLine + '</span>',
     '</div>',
   ].join('');
+
+  // Workbook mode: the settings panel shows the same total, so rebuild it with the footer
+  // (keeps its open/closed state).
+  var wbPanelEl = document.getElementById('pricing-wb-panel-' + projId);
+  var wbSet = wbPanelEl ? _pricingWorkbookSettings(projId) : null;
+  if (wbPanelEl && wbSet) {
+    var wasOpen = wbPanelEl.open;
+    var tmp = document.createElement('div');
+    tmp.innerHTML = _pricingWorkbookPanelHTML(projId, wbSet);
+    var fresh = tmp.firstChild;
+    if (fresh) {
+      if (wasOpen) fresh.open = true;
+      wbPanelEl.parentNode.replaceChild(fresh, wbPanelEl);
+    }
+  }
 }
 
 function updatePricingConfig(projId, key, val) {
@@ -5683,14 +5716,42 @@ function _pricingComputeBudgetFitPlan(projId) {
   var units = _pricingBuildRoiUnits(poolRows);
   var plan = _pricingGreedyPrefix(units, comp.total);
 
-  // Hourly on purpose: _pricingGreedyPrefix above sums hourly line totals, so the before/after
-  // pair has to use the same method.
-  var totals = _pricingComputeTotals(rows, estimate);
+  // Hourly mode: _pricingGreedyPrefix above sums hourly line totals, so the before/after pair
+  // uses the same method. Workbook mode: the workbook total is not a sum of row prices, so after
+  // the greedy pick the real workbook total of the kept rows is checked and the lowest-ranked kept
+  // units are dropped until it is <= the ceiling; before/after are workbook totals (as the footer).
+  var totals = _pricingComputeTotals(rows, estimate, projId);
+  var afterTotal = plan.total;
+  if (totals.method === 'workbook') {
+    var excl = plan.excludeKeys.slice();
+    var kept = plan.keptUnits.slice();
+    var wbAfter = function () {
+      var tg = {};
+      Object.keys(estimate.rowToggles || {}).forEach(function (k) {
+        tg[k] = estimate.rowToggles[k];
+      });
+      excl.forEach(function (k) {
+        tg[k] = false;
+      });
+      var t = _pricingComputeTotals(rows, Object.assign({}, estimate, { rowToggles: tg }), projId);
+      return t.grand === null ? 0 : t.grand;
+    };
+    afterTotal = wbAfter();
+    while (afterTotal > comp.total && kept.length) {
+      var dropped = kept.pop();
+      excl = excl.concat(dropped.toggleKeys);
+      afterTotal = wbAfter();
+    }
+    plan.excludeKeys = excl;
+    plan.keepKeys = kept.reduce(function (acc, u) {
+      return acc.concat(u.toggleKeys);
+    }, []);
+  }
   return {
     ceiling: comp.total,
     ceilingLabel: comp.basisLabel,
     beforeTotal: totals.grand,
-    afterTotal: plan.total,
+    afterTotal: afterTotal,
     keepKeys: plan.keepKeys,
     excludeKeys: plan.excludeKeys,
     excludedCount: plan.excludeKeys.length,
@@ -6148,8 +6209,10 @@ function _pricingBuildColVisibilityHTML(projId) {
 
   var html =
     '<div style="font-weight:700;color:var(--text2);margin-bottom:6px;font-size:10px;text-transform:uppercase;letter-spacing:0.5px">Columns</div>';
+  var _wbOn = !!_pricingWorkbookSettings(projId);
   PRICING_TBL_COLS.forEach(function (col, ci) {
     if (col.noHide) return;
+    if (_wbOn && ci === 11) return; // Rate does not apply to workbook pricing
     var isHidden = hidden.indexOf(ci) !== -1;
     html +=
       '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:2px 0;color:var(--text)">' +
@@ -6508,6 +6571,7 @@ function _pricingUpdateStickyOffsets(projId) {
   if (!tableEl) return;
   var widths = _pricingGetColWidths(projId);
   var hidden = _pricingGetHiddenCols(projId);
+  if (_pricingWorkbookSettings(projId) && hidden.indexOf(11) === -1) hidden = hidden.concat([11]);
   // col 0 = Incl (frozen), col 1 = Building (frozen)
   // col 0 starts at left:0
   var col0w = widths[0] || PRICING_TBL_COLS[0].minWidth;
@@ -7034,6 +7098,13 @@ function _pricingRenderCondensedTab(projId, el, estimate, tier) {
     : baseRows;
 
   var agg = _pricingComputeCondensedRows(filteredRows, estimate);
+  // Workbook mode: line totals are shares of the workbook Hardware / Programming totals (so the
+  // subtotals match the footer figures) and the hourly Unit Price column is not shown.
+  var condWb = _pricingComputeTotals(filteredRows, estimate, projId);
+  var condWbOn = condWb.method === 'workbook';
+  if (condWbOn) {
+    agg = { hw: _auditEstShareLines(agg.hw, condWb.phase1), lb: _auditEstShareLines(agg.lb, condWb.phase2) };
+  }
   var itemCount = agg.hw.length + agg.lb.length;
 
   var toolbarHTML = _pricingBuildToolbarHTML(projId, tier, {
@@ -7069,9 +7140,7 @@ function _pricingRenderCondensedTab(projId, el, estimate, tier) {
       '<th style="' +
       thBase +
       ';text-align:right">Quantity</th>' +
-      '<th style="' +
-      thBase +
-      ';text-align:right">Unit Price</th>' +
+      (condWbOn ? '' : '<th style="' + thBase + ';text-align:right">Unit Price</th>') +
       '<th style="' +
       thBase +
       ';text-align:center" title="Number of buildings this item is needed at">Buildings</th>' +
@@ -7093,11 +7162,13 @@ function _pricingRenderCondensedTab(projId, el, estimate, tier) {
           ';text-align:right">' +
           it.qty +
           '</td>' +
-          '<td style="' +
-          tdBase +
-          ';text-align:right">' +
-          (it.unitPrice ? _pricingFmt(it.unitPrice) : '—') +
-          '</td>' +
+          (condWbOn
+            ? ''
+            : '<td style="' +
+              tdBase +
+              ';text-align:right">' +
+              (it.unitPrice ? _pricingFmt(it.unitPrice) : '—') +
+              '</td>') +
           '<td style="' +
           tdBase +
           ';text-align:center">' +
@@ -7116,7 +7187,7 @@ function _pricingRenderCondensedTab(projId, el, estimate, tier) {
       return s + (it.lineTotal || 0);
     }, 0);
     var foot =
-      '<tr><td colspan="4" style="padding:6px 10px;font-weight:700;background:var(--s1);border-top:2px solid var(--border2)">Subtotal</td>' +
+      '<tr><td colspan="' + (condWbOn ? 3 : 4) + '" style="padding:6px 10px;font-weight:700;background:var(--s1);border-top:2px solid var(--border2)">Subtotal</td>' +
       '<td style="padding:6px 10px;text-align:right;font-weight:700;background:var(--s1);border-top:2px solid var(--border2);font-variant-numeric:tabular-nums">' +
       _pricingFmt(sum) +
       '</td></tr>';
@@ -8557,6 +8628,9 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   }
 
   var hidden = _pricingGetHiddenCols(projId);
+  // Workbook mode prices labor by role: the single hourly Rate column (11) is not shown. Display
+  // only; the saved hidden-column choice is not changed.
+  if (_pricingWorkbookSettings(projId) && hidden.indexOf(11) === -1) hidden = hidden.concat([11]);
   var sortState = _pricingSortState[projId] || { col: null, dir: null };
   var filterBldg = _pricingBldgFilter[projId] || '';
   // Phase 5 (d284e714): fetched once, up-front, so renderRow/renderMergedRow (called below,
@@ -9139,7 +9213,9 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     // hardware rows now show the SAME unified rate (2026-07-28) — both read-only for the same
     // reason. ioOnly rows show the same em-dash placeholder as non-priced rows.
     var rateContent = '<span style="color:var(--text3)">—</span>';
-    if (row.phase === 2 && row.seqKey) {
+    if (totals.rowShares) {
+      rateContent = ''; // workbook mode: the Rate column is hidden, this cell is never shown
+    } else if (row.phase === 2 && row.seqKey) {
       var _rowRate = cfg.hourlyRate || COST_LABOR_RATE_DEFAULT;
       rateContent =
         '<span style="font-size:11px">' +
@@ -9159,6 +9235,12 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     var lineTotalContent = '';
     if (row.ioOnly) {
       lineTotalContent = '<span style="color:var(--text3);font-size:10px">$0</span>';
+    } else if (totals.rowShares) {
+      // Workbook mode: this row's share of its phase's workbook total (rows add up to the footer).
+      lineTotalContent =
+        toggleOn && totals.rowShares[toggleKey] != null
+          ? '<span>' + _pricingFmt(totals.rowShares[toggleKey]) + '</span>'
+          : '<span style="color:var(--text3)">—</span>';
     } else if (row.noSku) {
       var mv = parseFloat(estimate.manualPrices[toggleKey] || 0);
       // Deliverable E: fold install labor in once a real manual parts price has been entered —
@@ -9553,7 +9635,9 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     // renderRow's col 11, sourced from the sequence half of the pair (the merged row's Hours
     // cell edits seqRow.seqKey's hours, so the rate that applies to it is the same one).
     var _rateContent = '<span style="color:var(--text3)">—</span>';
-    if (seqRow.phase === 2 && seqRow.seqKey) {
+    if (totals.rowShares) {
+      _rateContent = ''; // workbook mode: the Rate column is hidden
+    } else if (seqRow.phase === 2 && seqRow.seqKey) {
       var _mergedRowRate = cfg.hourlyRate || COST_LABOR_RATE_DEFAULT;
       _rateContent =
         '<span style="font-size:10px">' +
@@ -9568,8 +9652,14 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     // amount and back (footer total comes from _pricingComputeTotals summing the SAME unmerged
     // per-row lineTotal fields keyed by rowToggles, untouched by this function).
     var _combinedLineTotal = (hwRow.lineTotal || 0) + (seqRow.lineTotal || 0);
+    if (totals.rowShares) {
+      _combinedLineTotal =
+        (totals.rowShares[hwRow._baseId || hwRow.id] || 0) + (totals.rowShares[seqRow._baseId || seqRow.id] || 0);
+    }
     var _lineTotalContent =
-      '<span' + (!combinedOn ? ' style="color:var(--text3)"' : '') + '>' + _pricingFmt(_combinedLineTotal) + '</span>';
+      totals.rowShares && !combinedOn
+        ? '<span style="color:var(--text3)">—</span>'
+        : '<span' + (!combinedOn ? ' style="color:var(--text3)"' : '') + '>' + _pricingFmt(_combinedLineTotal) + '</span>';
     cells.push(_lineTotalContent);
 
     // col 13: Impact — same rule as renderRow (Recommended tier phase-2 only), sourced from the
@@ -10294,7 +10384,7 @@ function _pricingEstimateTypeBarHTML(projId, type) {
       _pricingFmt(_pricingGetConfig().hourlyRate || COST_LABOR_RATE_DEFAULT) +
       '/hr</button>';
   }
-  var switchHTML = typeof auditEstMethodSwitchHTML === 'function' ? auditEstMethodSwitchHTML(projId) : '';
+  var switchHTML = typeof auditEstMethodSwitchHTML === 'function' ? auditEstMethodSwitchHTML(projId, type) : '';
   return (
     (typeof AUDIT_EST_TABLE_CSS === 'string' && type === 'retrofit' ? AUDIT_EST_TABLE_CSS : '') +
     '<div id="estTypeBar-' +
@@ -10342,7 +10432,9 @@ function _pricingWorkbookPanelHTML(projId, wbSet) {
     };
   });
   return (
-    '<details style="flex-shrink:0;padding:6px 14px;background:var(--s1);border-bottom:1px solid var(--border2)">' +
+    '<details id="pricing-wb-panel-' +
+    projId +
+    '" style="flex-shrink:0;padding:6px 14px;background:var(--s1);border-bottom:1px solid var(--border2)">' +
     '<summary style="font-size:11px;color:var(--text2);cursor:pointer">Pricing settings and how this total is built' +
     (totals && totals.grand != null ? ' (' + _auditEstFmtWhole(totals.grand) + ')' : '') +
     '</summary>' +

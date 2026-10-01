@@ -233,4 +233,119 @@ const plain = (x) => JSON.parse(JSON.stringify(x));
   assert.strictEqual(c._pricingComputeTotals([], est, 'p').grand, null);
   ok('no priced rows -> grand null');
 }
+// 3. Proposal output in workbook mode (report-engine.js): no round-up to $100, itemized lines add up
+//    to the workbook subtotals, no "Rounding" line. Hourly keeps the old rule.
+{
+  const REP = read('app/report-engine.js');
+  function fnSrc(src, name) {
+    const m = new RegExp('function ' + name + '[ ]*[(]').exec(src);
+    let d = 0,
+      e = src.indexOf('(', m.index);
+    for (; e < src.length; e++) {
+      if (src[e] === '(') d++;
+      else if (src[e] === ')' && --d === 0) break;
+    }
+    let j = src.indexOf('{', e);
+    d = 0;
+    for (; j < src.length; j++) {
+      if (src[j] === '{') d++;
+      else if (src[j] === '}' && --d === 0) break;
+    }
+    return src.slice(m.index, j + 1);
+  }
+  const rsb = { console, Math, Object, Array, String, Number, JSON, isFinite, isNaN };
+  vm.createContext(rsb);
+  vm.runInContext(
+    [
+      'function _esc(s){ return String(s == null ? "" : s); }',
+      fnSrc(read('app/audit-estimate.js'), '_auditEstAllocate'),
+      fnSrc(read('app/audit-estimate.js'), '_auditEstShareLines'),
+    ]
+      .concat(
+        [
+          '_rptRoundUp100',
+          '_rptTierTotal',
+          '_rptFootTier',
+          '_rptItemizedLine',
+          '_rptItemizedLineText',
+          '_rptRoundingDelta',
+          '_rptA36TierDetailAggByPhase',
+          '_rptA36HardwareCategoryAgg',
+          '_rptA36TierDetailPanelHTML',
+        ].map((f) => fnSrc(REP, f)),
+      )
+      .join('\n'),
+    rsb,
+  );
+  const ev = (e) => vm.runInContext(e, rsb);
+  rsb.__fmt = (v) => '$' + Math.round(v).toLocaleString('en-US');
+  // grand 5489
+  assert.strictEqual(ev("_rptTierTotal({ grand: 5489, method: 'workbook' })"), 5489);
+  assert.strictEqual(ev('_rptTierTotal({ grand: 5489 })'), 5500);
+  assert.deepStrictEqual(plain(ev('_rptFootTier(5489, 4303, 1186, true)')), { totalR: 5489, p1r: 4303, p2r: 1186 });
+  assert.strictEqual(ev('_rptFootTier(5489, 4303, 1186).totalR'), 5500);
+  ok('proposal: workbook grand 5489 prints 5489; Hourly still rounds up to 5500');
+
+  // 3700 hardware / 1020 sequence rows, workbook subtotals 4303 / 1186
+  const rows = [
+    { id: 'h', item: 'Zone Sensor', phase: 1, qty: 4, lineTotal: 3700 },
+    { id: 'q', item: 'Seq A', phase: 2, qty: 2, lineTotal: 600 },
+    { id: 'r', item: 'Seq B', phase: 2, qty: 1, lineTotal: 420 },
+  ];
+  rsb.__tt = { compliance: { grand: 5489, phase1: 4303, phase2: 1186, method: 'workbook' }, recommended: null };
+  rsb.__sd = { perTier: { compliance: rows } };
+  const html = ev("_rptA36TierDetailPanelHTML('compliance', __tt, __sd, {rowToggles:{}}, true, __fmt)");
+  assert.ok(!/Rounding/.test(html), 'no Rounding line in workbook mode');
+  const usd = (t) => Number(t.replace(/[$,]/g, ''));
+  const hwPart = html.slice(0, html.indexOf('>Programming'));
+  const pgPart = html.slice(html.indexOf('>Programming'));
+  const sub = (part) => usd(/font-weight:700">(\$[\d,]+)<\/span>/.exec(part)[1]);
+  const lines = (part) => [...part.matchAll(/<li>[^<]*: (?:\d+ units, )?(\$[\d,]+)<\/li>/g)].map((m) => usd(m[1]));
+  assert.strictEqual(sub(hwPart), 4303);
+  assert.strictEqual(sub(pgPart), 1186);
+  assert.strictEqual(lines(hwPart).reduce((a, b) => a + b, 0), 4303);
+  assert.strictEqual(lines(pgPart).reduce((a, b) => a + b, 0), 1186);
+  assert.strictEqual(lines(pgPart).length, 2);
+  assert.ok(!/\u00d7/.test(html), 'no qty x unit text in workbook mode');
+  ok('proposal: lines add up to the workbook subtotals (4303 / 1186), no Rounding line');
+
+  // Hourly: same rows keep the old output (rounded subtotals and a Rounding line)
+  rsb.__tt = { compliance: { grand: 4720, phase1: 3700, phase2: 1020 }, recommended: null };
+  const hh = ev("_rptA36TierDetailPanelHTML('compliance', __tt, __sd, {rowToggles:{}}, true, __fmt)");
+  assert.ok(/\u00d7/.test(hh), 'Hourly keeps qty x unit lines');
+  ok('proposal: Hourly panel keeps qty x unit lines');
+}
+
+// 4. Budget Fit in workbook mode: after-total <= target and equals the footer total of the kept rows.
+{
+  // Six buildings, each one sensor row paired with one supply-air-reset sequence row (one unit each).
+  const U = [];
+  ['A', 'B', 'C', 'D', 'E', 'F'].forEach((b, i) => {
+    const h = hw('h' + b, 'Bldg ' + b, 1 + (i % 3), 30 + i * 11.5, 1.25, RATE);
+    h._pointKey = 'sat';
+    const q = sq('s' + b, 'Bldg ' + b, 1 + (i % 2), 1.5 + i * 0.5, RATE);
+    q.seqKey = 'ahu_sat_reset';
+    U.push(h, q);
+  });
+  const T = { compliance: U, recommended: U, 'full-scope': U };
+  const store = { en_pricing_catalog: catalog };
+  const c = make(read('app/pricing-estimator.js'), store, T);
+  const full = c._pricingComputeTotals(T.recommended, { rowToggles: {}, manualPrices: {} }, 'p').grand;
+  for (const frac of [0.9, 0.75, 0.5, 0.3]) {
+    const target = Math.round(full * frac);
+    store.en_pricing_budget_p = { mode: 'recurring', amount: target, denomination: 'lump', termMonths: 12 };
+    store.en_pricing_estimate_p = { rowToggles: {}, manualPrices: {}, laborOverrides: {}, tier: 'recommended' };
+    const plan = c._pricingComputeBudgetFitPlan('p');
+    assert.ok(plan, 'plan');
+    assert.ok(plan.afterTotal <= target, 'after ' + plan.afterTotal + ' <= ' + target);
+    const tg = {};
+    plan.excludeKeys.forEach((k) => (tg[k] = false));
+    const footer = c._pricingComputeTotals(T.recommended, { rowToggles: tg, manualPrices: {} }, 'p');
+    assert.strictEqual(plan.afterTotal, footer.grand === null ? 0 : footer.grand, 'after == footer');
+    assert.strictEqual(plan.beforeTotal, full);
+    assert.ok(plan.excludedCount > 0 && plan.excludedCount < plan.totalCount + 1, 'some rows dropped');
+  }
+  ok('budget fit (workbook): after-total <= target and equals the footer total');
+}
+
 console.log('\n' + n + ' checks passed');
