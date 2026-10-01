@@ -1681,13 +1681,15 @@ const DB = (() => {
   // Pushes ONE merged value with the normal CAS write (gzip for big bodies),
   // using the version just read by restoreFetchServer. The local copy is
   // written only after the server accepts it. Never opens the conflict modal.
+  // An existing row is replaced with explicitOverwrite so kv-sync.js keeps
+  // the previous server value in kv_history (server-side undo).
   async function restorePush(key, value, serverRow) {
     const prev = _replicaVersions[key];
     if (serverRow) _replicaVersions[key] = { version: serverRow.version, hash: null };
     else delete _replicaVersions[key];
     let r;
     try {
-      r = await _sendKvPut(key, { value });
+      r = await _sendKvPut(key, serverRow ? { value, explicitOverwrite: true } : { value });
     } catch (e) {
       r = { status: 'network-error' };
     }

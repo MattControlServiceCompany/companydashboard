@@ -370,7 +370,7 @@
       "User mutation → validate → sset(key, data) → fires dataUpdated event",
       "DashboardController listens → refresh() updates stat cards",
       "Backup → serialize all localStorage keys to JSON file",
-      "Restore → parse JSON, write all keys back, reload page"
+      "Restore → parse JSON, read current values (server when sync is on, device when off), plan per key family (app/restore-merge.js policyFor: never / key / records / map / frozen), preview with Add missing only (default) / Merge (fills blanks) / Replace (second confirm, removed count), download a safety copy of every key to be written, push with CAS + explicitOverwrite or write locally, reload. Scripts call __siteUI.restoreData(data, {mode, confirm:true, safetyCopy}) to skip the dialog."
     ]
   }
 }

@@ -1157,18 +1157,18 @@ async function siteBackup() {
 // changed shared/per-user keys are pushed with the normal CAS write
 // (DB.restorePush). Sync off: current = this device, written locally.
 var _RESTORE_LS_ONLY = [
-  "ch_settings",
-  "ch_theme",
-  "ch_user",
-  "ch_activeView",
-  "ch_projTabOrder",
-  "ch_sidebarOrder",
-  "ch_dismissed_tips",
-  "ch_qs_seen",
-  "ch_seen_version",
-  "ch_toast_duration",
-  "ch_last_seen_version",
-  "ch_notifs",
+  'ch_settings',
+  'ch_theme',
+  'ch_user',
+  'ch_activeView',
+  'ch_projTabOrder',
+  'ch_sidebarOrder',
+  'ch_dismissed_tips',
+  'ch_qs_seen',
+  'ch_seen_version',
+  'ch_toast_duration',
+  'ch_last_seen_version',
+  'ch_notifs',
 ];
 function _restoreIsLsKey(k) {
   return _RESTORE_LS_ONLY.some(function (p) {
@@ -1176,9 +1176,9 @@ function _restoreIsLsKey(k) {
   });
 }
 function _downloadJson(filename, obj) {
-  var blob = new Blob([JSON.stringify(obj)], { type: "application/json" });
+  var blob = new Blob([JSON.stringify(obj)], { type: 'application/json' });
   var url = URL.createObjectURL(blob);
-  var a = document.createElement("a");
+  var a = document.createElement('a');
   a.href = url;
   a.download = filename;
   document.body.appendChild(a);
@@ -1190,41 +1190,44 @@ function _downloadJson(filename, obj) {
 }
 function _restoreEsc(s) {
   return String(s).replace(/[&<>"]/g, function (c) {
-    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
   });
 }
 function _restoreStyle() {
-  if (document.getElementById("restoreDlgStyle")) return;
-  var st = document.createElement("style");
-  st.id = "restoreDlgStyle";
+  if (document.getElementById('restoreDlgStyle')) return;
+  var st = document.createElement('style');
+  st.id = 'restoreDlgStyle';
   st.textContent =
-    ".rst-modal{width:640px;max-width:96vw;min-width:0}" +
-    ".rst-modal .modal-body{font-size:13px;color:var(--text)}" +
-    ".rst-note{color:var(--text2);margin:0 0 12px;line-height:1.45}" +
-    ".rst-opt{display:flex;gap:8px;align-items:flex-start;margin:0 0 8px;cursor:pointer;line-height:1.4}" +
-    ".rst-opt input{margin-top:3px}" +
-    ".rst-opt small{display:block;color:var(--text2)}" +
-    ".rst-tbl-outer{border:1px solid var(--border);border-radius:6px;overflow:hidden;margin:12px 0}" +
-    ".rst-tbl{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}" +
-    ".rst-tbl th,.rst-tbl td{padding:7px 10px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums}" +
-    ".rst-tbl th:last-child,.rst-tbl td:last-child{border-right:none}" +
-    ".rst-tbl tbody tr:last-child td{border-bottom:none}" +
-    ".rst-tbl thead th{background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;text-align:center;border-bottom:1px solid var(--border2)}" +
-    ".rst-tbl td.n{text-align:right}" +
-    ".rst-tbl th:first-child,.rst-tbl td:first-child{width:40%;text-align:left}" +
-    ".rst-tbl td.rst-rm{background:var(--amber-dim);color:var(--text);font-weight:700}" +
-    ".rst-rm-note{border-left:3px solid var(--amber);padding-left:8px}" +
-    ".rst-list{margin:6px 0 0;padding-left:18px;color:var(--text2);word-break:break-word}" +
-    ".rst-prog{color:var(--text2);margin:8px 0}";
+    '.rst-modal{width:640px;max-width:96vw;min-width:0}' +
+    '.rst-modal .modal-body{font-size:13px;color:var(--text)}' +
+    '.rst-note{color:var(--text2);margin:0 0 12px;line-height:1.45}' +
+    '.rst-opt{display:flex;gap:8px;align-items:flex-start;margin:0 0 8px;cursor:pointer;line-height:1.4}' +
+    '.rst-opt input{margin-top:3px}' +
+    '.rst-opt small{display:block;color:var(--text2)}' +
+    '.rst-tbl-outer{border:1px solid var(--border);border-radius:6px;overflow:hidden;margin:12px 0}' +
+    '.rst-tbl{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}' +
+    '.rst-tbl th,.rst-tbl td{padding:7px 10px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums}' +
+    '.rst-tbl th:last-child,.rst-tbl td:last-child{border-right:none}' +
+    '.rst-tbl tbody tr:last-child td{border-bottom:none}' +
+    '.rst-tbl thead th{background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;text-align:center;border-bottom:1px solid var(--border2)}' +
+    '.rst-tbl td.n{text-align:right}' +
+    '.rst-tbl th:first-child,.rst-tbl td:first-child{width:40%;text-align:left}' +
+    '.rst-tbl td.rst-rm{background:var(--amber-dim);color:var(--text);font-weight:700}' +
+    '.rst-rm-note{border-left:3px solid var(--amber);padding-left:8px}' +
+    '.rst-list{margin:6px 0 0;padding-left:18px;color:var(--text2);word-break:break-word}' +
+    '.rst-list small{opacity:.8}' +
+    '.rst-det{margin:0 0 12px;color:var(--text)}' +
+    '.rst-det summary{cursor:pointer;color:var(--text2);font-weight:600}' +
+    '.rst-det b{display:block;margin-top:6px}' +
+    '.rst-prog{color:var(--text2);margin:8px 0}';
   document.head.appendChild(st);
 }
 
 // Entry: parse the file, read current values, show the dialog.
 function processRestoreFile(file) {
   if (!file) return;
-  if (!file.name.toLowerCase().endsWith(".json")) {
-    if (typeof showToast === "function")
-      showToast("Please drop a .json backup file");
+  if (!file.name.toLowerCase().endsWith('.json')) {
+    if (typeof showToast === 'function') showToast('Please drop a .json backup file');
     return;
   }
   var fr = new FileReader();
@@ -1233,11 +1236,11 @@ function processRestoreFile(file) {
     try {
       data = JSON.parse(ev.target.result);
     } catch (err) {
-      if (typeof showToast === "function") showToast("Invalid backup file");
+      if (typeof showToast === 'function') showToast('Invalid backup file');
       return;
     }
-    if (!data || typeof data !== "object" || Array.isArray(data)) {
-      if (typeof showToast === "function") showToast("Invalid backup file");
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      if (typeof showToast === 'function') showToast('Invalid backup file');
       return;
     }
     _restoreStart(data);
@@ -1245,59 +1248,207 @@ function processRestoreFile(file) {
   fr.readAsText(file);
 }
 
-async function _restoreStart(backup) {
+// Reads the current values the backup keys compare against. Resolves to a
+// context { backup, syncOn, useDB, scopeOf, getCurrent, server } or throws
+// when the server cannot be read (caller aborts with zero writes).
+async function _restoreContext(backup) {
   var syncOn = false;
   try {
-    syncOn = window.CH_AUTH.backendMode() !== "off";
+    syncOn = window.CH_AUTH.backendMode() !== 'off';
   } catch (e) {}
-  var useDB = typeof DB !== "undefined" && DB.isReady();
+  var useDB = typeof DB !== 'undefined' && DB.isReady();
   var all = useDB ? DB.getAll() : {};
   var keys = Object.keys(backup).filter(function (k) {
     return RestoreMerge.SKIP_KEYS.indexOf(k) === -1;
   });
   function scopeOf(k) {
-    if (!syncOn || _restoreIsLsKey(k)) return "local";
+    if (!syncOn || _restoreIsLsKey(k)) return 'local';
     return DB.restoreScope(k);
   }
   var server = new Map();
   if (syncOn) {
-    if (typeof showToast === "function")
-      showToast("Reading current server data...");
-    try {
-      server = await DB.restoreFetchServer(
-        keys.filter(function (k) {
-          return scopeOf(k) !== "local";
-        }),
-      );
-    } catch (e) {
-      console.warn("[restore] server read failed:", e);
-      if (typeof showToast === "function") {
-        showToast(
-          "Restore stopped: could not read the current server data. Nothing was changed.",
-          "error",
-          8000,
-        );
-      }
-      return;
-    }
+    server = await DB.restoreFetchServer(
+      keys.filter(function (k) {
+        return scopeOf(k) !== 'local';
+      }),
+    );
   }
   function getCurrent(k) {
-    if (scopeOf(k) !== "local")
-      return server.has(k) ? server.get(k).value : undefined;
+    if (scopeOf(k) !== 'local') return server.has(k) ? server.get(k).value : undefined;
     if (!_restoreIsLsKey(k) && all[k] !== undefined) return all[k];
     var raw = localStorage.getItem(k);
     return raw === null ? undefined : raw;
   }
-  _restoreDialog(backup, getCurrent, scopeOf, server, syncOn, useDB);
+  // A key the server holds as a tombstone was deleted on purpose.
+  function isDeleted(k) {
+    return syncOn && scopeOf(k) !== 'local' && server.has(k) && !!server.get(k).deleted;
+  }
+  return {
+    backup: backup,
+    syncOn: syncOn,
+    useDB: useDB,
+    scopeOf: scopeOf,
+    getCurrent: getCurrent,
+    isDeleted: isDeleted,
+    server: server,
+  };
 }
 
-function _restoreDialog(backup, getCurrent, scopeOf, server, syncOn, useDB) {
+// Writes one plan. Before ANY write, a safety copy with the current value of
+// EVERY key that will be written (shared, per-user and local) downloads. If
+// that fails, nothing is written. opts.safetyCopy === false skips the copy:
+// programmatic callers on synthetic data only, the dialog never passes it.
+// Resolves to { sent, failed, localDone }.
+async function _restoreApply(ctx, p, opts, progress) {
+  progress = progress || function () {};
+  var syncOn = ctx.syncOn;
+  var changed = p.items.filter(function (i) {
+    return i.changed;
+  });
+  var sent = 0;
+  var failed = [];
+  var localDone = 0;
+  try {
+    if (changed.length && opts.safetyCopy !== false) {
+      var before = {};
+      changed.forEach(function (it) {
+        var cv = ctx.getCurrent(it.key);
+        if (cv !== undefined) before[it.key] = cv;
+      });
+      var d = new Date();
+      var pad = function (n) {
+        return String(n).padStart(2, '0');
+      };
+      var stamp =
+        d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + '-' + pad(d.getHours()) + pad(d.getMinutes());
+      progress(
+        syncOn ? 'Saving a copy of the current server data...' : 'Saving a copy of the current data on this device...',
+      );
+      try {
+        _downloadJson(
+          (syncOn ? 'CompanyHub-server-before-restore-' : 'CompanyHub-before-restore-') + stamp + '.json',
+          before,
+        );
+      } catch (e) {
+        throw new Error('could not save the safety copy: ' + (e && e.message));
+      }
+      await new Promise(function (r) {
+        setTimeout(r, 400);
+      });
+    }
+    // Owner keys first (customers, projects): a key that depends on a NEW
+    // owner record is not sent when the owner's push failed.
+    var FIRST = ['en_customers', 'en_projects'];
+    var rank = function (i) {
+      var n = FIRST.indexOf(i.key);
+      return n === -1 ? FIRST.length : n;
+    };
+    var pushes = changed
+      .filter(function (i) {
+        return syncOn && ctx.scopeOf(i.key) !== 'local';
+      })
+      .sort(function (a, b) {
+        return rank(a) - rank(b);
+      });
+    var locals = changed.filter(function (i) {
+      return pushes.indexOf(i) === -1;
+    });
+    var failedKeys = {};
+    for (var i = 0; i < pushes.length; i++) {
+      progress(
+        'Sending to server: ' + (i + 1) + ' of ' + pushes.length + ' (' + sent + ' sent, ' + failed.length + ' failed)',
+      );
+      var it = pushes[i];
+      var dep = RestoreMerge.dependsOn(it.key, ctx.backup, ctx.getCurrent);
+      if (dep && failedKeys[dep]) {
+        failedKeys[it.key] = true;
+        failed.push(it.key + ' (not sent: ' + dep + ' failed)');
+        continue;
+      }
+      var r = await DB.restorePush(it.key, it.value, ctx.server.get(it.key) || null);
+      if (r.ok) sent++;
+      else {
+        failedKeys[it.key] = true;
+        failed.push(it.key + ' (' + r.status + ')');
+      }
+    }
+    for (var j = 0; j < locals.length; j++) {
+      progress('Saving on this device: ' + (j + 1) + ' of ' + locals.length);
+      var k = locals[j].key;
+      var v = locals[j].value;
+      if (_restoreIsLsKey(k) || !ctx.useDB) {
+        localStorage.setItem(k, typeof v === 'string' ? v : JSON.stringify(v));
+      } else {
+        await DB.set(k, v);
+      }
+      localDone++;
+    }
+  } catch (err) {
+    console.warn('[restore] failed:', err);
+    failed.push('unexpected error: ' + (err && err.message));
+  }
+  return { sent: sent, failed: failed, localDone: localDone };
+}
+
+async function _restoreStart(backup, opts) {
+  var programmatic = !!(opts && opts.confirm === true);
+  var ctx;
+  try {
+    if (!programmatic && typeof showToast === 'function') {
+      var on = false;
+      try {
+        on = window.CH_AUTH.backendMode() !== 'off';
+      } catch (e) {}
+      if (on) showToast('Reading current server data...');
+    }
+    ctx = await _restoreContext(backup);
+  } catch (e) {
+    console.warn('[restore] server read failed:', e);
+    if (typeof showToast === 'function') {
+      showToast('Restore stopped: could not read the current server data. Nothing was changed.', 'error', 8000);
+    }
+    if (programmatic) throw e;
+    return;
+  }
+  if (!programmatic) {
+    _restoreDialog(ctx);
+    return;
+  }
+  // Programmatic path (scripts): no dialog. The safety-copy decision must be explicit.
+  if (opts.safetyCopy !== true && opts.safetyCopy !== false) {
+    throw new Error('restoreData: opts.safetyCopy must be true or false when confirm is true');
+  }
+  var mode = opts.mode || 'add';
+  if (['add', 'merge', 'replace'].indexOf(mode) === -1) throw new Error('restoreData: unknown mode ' + mode);
+  var p = RestoreMerge.plan(backup, ctx.getCurrent, mode, {
+    isDeleted: ctx.isDeleted,
+    restoreDeleted: opts.restoreDeleted || [],
+  });
+  var res = await _restoreApply(ctx, p, opts, function (m) {
+    console.log('[restore] ' + m);
+  });
+  res.changed = p.items.filter(function (i) {
+    return i.changed;
+  }).length;
+  if (opts.reload !== false) {
+    setTimeout(function () {
+      location.reload();
+    }, 300);
+  }
+  return res;
+}
+
+function _restoreDialog(ctx) {
+  var backup = ctx.backup;
+  var getCurrent = ctx.getCurrent;
+  var scopeOf = ctx.scopeOf;
+  var syncOn = ctx.syncOn;
   _restoreStyle();
-  var old = document.getElementById("restoreDlgBg");
+  var old = document.getElementById('restoreDlgBg');
   if (old) old.remove();
-  var bg = document.createElement("div");
-  bg.id = "restoreDlgBg";
-  bg.className = "modal-bg open";
+  var bg = document.createElement('div');
+  bg.id = 'restoreDlgBg';
+  bg.className = 'modal-bg open';
   bg.innerHTML =
     '<div class="modal rst-modal" role="dialog" aria-label="Restore from backup">' +
     '<div class="modal-hdr"><div class="modal-title">Restore from backup</div>' +
@@ -1305,30 +1456,47 @@ function _restoreDialog(backup, getCurrent, scopeOf, server, syncOn, useDB) {
     '<div class="modal-body" id="rstBody"></div>' +
     '<div class="modal-ftr" id="rstFtr"></div></div>';
   document.body.appendChild(bg);
-  var body = bg.querySelector("#rstBody");
-  var ftr = bg.querySelector("#rstFtr");
-  var mode = "add";
+  var body = bg.querySelector('#rstBody');
+  var ftr = bg.querySelector('#rstFtr');
+  var mode = 'add';
   var busy = false;
   function close() {
     if (!busy) bg.remove();
   }
-  bg.querySelector("#rstX").onclick = close;
+  bg.querySelector('#rstX').onclick = close;
 
+  var restoreDeleted = {}; // tombstoned keys the user ticked
   function currentPlan() {
-    return RestoreMerge.plan(backup, getCurrent, mode);
+    return RestoreMerge.plan(backup, getCurrent, mode, {
+      isDeleted: ctx.isDeleted,
+      restoreDeleted: Object.keys(restoreDeleted).filter(function (k) {
+        return restoreDeleted[k];
+      }),
+    });
   }
-  var where = syncOn ? "the shared server data" : "this device";
+  function namesHtml(names, max) {
+    var shown = names.slice(0, max);
+    var more = names.length - shown.length;
+    return (
+      shown
+        .map(function (n) {
+          return '<li>' + _restoreEsc(n || '(no name)') + '</li>';
+        })
+        .join('') + (more > 0 ? '<li>and ' + more + ' more</li>' : '')
+    );
+  }
+  var where = syncOn ? 'the shared server data' : 'this device';
   function opt(v, title, sub) {
     return (
       '<label class="rst-opt"><input type="radio" name="rstMode" value="' +
       v +
       '"' +
-      (mode === v ? " checked" : "") +
-      "><span><b>" +
+      (mode === v ? ' checked' : '') +
+      '><span><b>' +
       title +
-      "</b><small>" +
+      '</b><small>' +
       sub +
-      "</small></span></label>"
+      '</small></span></label>'
     );
   }
   function removedTotal(p) {
@@ -1343,37 +1511,35 @@ function _restoreDialog(backup, getCurrent, scopeOf, server, syncOn, useDB) {
       return i.changed;
     });
     var localOnly = changedItems.filter(function (i) {
-      return scopeOf(i.key) === "local";
+      return scopeOf(i.key) === 'local';
     }).length;
     var html =
       '<p class="rst-note">' +
       (syncOn
-        ? "Sync is on. Restore compares the backup with the current server data. Both users share the server data."
-        : "Sync is off. Restore compares the backup with the data on this device.") +
-      " Add and Merge never remove anything. Replace removes records that are not in the backup.</p>" +
+        ? 'Sync is on. Restore compares the backup with the current server data. Both users share the server data.'
+        : 'Sync is off. Restore compares the backup with the data on this device.') +
+      ' Add and Merge never remove anything. Replace removes records that are not in the backup. A copy of the current data downloads before anything is written.</p>' +
       opt(
-        "add",
-        "Add missing only (recommended)",
-        "Adds data that is not in " +
+        'add',
+        'Add missing only (recommended)',
+        'Adds data that is not in ' + where + ' yet. Existing values never change. Nothing is removed.',
+      ) +
+      opt(
+        'merge',
+        'Merge (backup fills in blanks)',
+        'Adds missing data. In records with the same ID, empty fields take the backup value. A value that is already filled in never changes. Nothing is removed.',
+      ) +
+      opt(
+        'replace',
+        'Replace',
+        'Backup values replace the current values. This overwrites ' +
           where +
-          " yet. Existing data does not change. Nothing is removed.",
+          ' and removes records that are not in the backup.',
       ) +
-      opt(
-        "merge",
-        "Merge (backup updates matching records)",
-        "Adds missing data. Records with the same ID take the backup version. Other records and fields stay. Nothing is removed.",
-      ) +
-      opt(
-        "replace",
-        "Replace",
-        "Backup values replace the current values. This overwrites " +
-          where +
-          " and removes records that are not in the backup.",
-      ) +
-      '<div class="rst-tbl-outer"><table class="rst-tbl"><thead><tr><th>Data</th><th>Added</th><th>Updated</th><th>Kept</th>' + (mode === "replace" ? "<th>Removed</th>" : "") + '</tr></thead><tbody>';
-    if (!rows.length)
-      html +=
-        '<tr><td colspan="5">The backup has no data to restore.</td></tr>';
+      '<div class="rst-tbl-outer"><table class="rst-tbl"><thead><tr><th>Data</th><th>Added</th><th>Updated</th><th>Kept</th>' +
+      (mode === 'replace' ? '<th>Removed</th>' : '') +
+      '</tr></thead><tbody>';
+    if (!rows.length) html += '<tr><td colspan="5">The backup has no data to restore.</td></tr>';
     rows.forEach(function (r) {
       html +=
         '<tr><td title="' +
@@ -1386,51 +1552,97 @@ function _restoreDialog(backup, getCurrent, scopeOf, server, syncOn, useDB) {
         r.updated +
         '</td><td class="n">' +
         r.kept +
-        "</td>" +
-        (mode === "replace"
-          ? '<td class="n' + (r.removed ? " rst-rm" : "") + '">' + r.removed + "</td>"
-          : "") +
-        "</tr>";
+        '</td>' +
+        (mode === 'replace' ? '<td class="n' + (r.removed ? ' rst-rm' : '') + '">' + r.removed + '</td>' : '') +
+        '</tr>';
     });
-    html += "</tbody></table></div>";
+    html += '</tbody></table></div>';
+    // Added records by name, per family.
+    var named = rows.filter(function (r) {
+      return r.names.filter(Boolean).length;
+    });
+    if (named.length) {
+      html += '<details class="rst-det"><summary>What will be added</summary>';
+      named.forEach(function (r) {
+        html +=
+          '<b>' + _restoreEsc(r.label) + '</b><ul class="rst-list">' + namesHtml(r.names.filter(Boolean), 30) + '</ul>';
+      });
+      html += '</details>';
+    }
     html +=
-      '<p class="rst-note">&quot;Kept&quot; means unchanged. It includes data that already exists and has no ID to match on.' +
-      (p.skipped.length
-        ? " " + p.skipped.length + " internal setting(s) are never restored."
-        : "") +
-      (syncOn && localOnly
-        ? " " + localOnly + " changed item(s) stay on this device only."
-        : "") +
-      "</p>";
+      '<p class="rst-note">&quot;Kept&quot; means unchanged. Counts are records (projects, buildings, meters, bills, rows). Other data counts once per setting.' +
+      (p.backupVersion ? ' Backup made with app version ' + _restoreEsc(p.backupVersion) + '.' : '') +
+      (syncOn && localOnly ? ' ' + localOnly + ' changed item(s) stay on this device only.' : '') +
+      '</p>';
+    p.notes.forEach(function (note) {
+      html += '<p class="rst-note rst-rm-note">' + _restoreEsc(note) + '</p>';
+    });
+    var tombs = p.items.filter(function (i) {
+      return i.tombstoned;
+    });
+    if (tombs.length) {
+      html +=
+        '<p class="rst-note rst-rm-note"><b>' +
+        tombs.length +
+        ' item(s) were deleted on the server on purpose.</b> They stay deleted unless you tick them.</p>';
+      tombs.forEach(function (i) {
+        html +=
+          '<label class="rst-opt"><input type="checkbox" class="rstTomb" data-key="' +
+          _restoreEsc(i.key) +
+          '"' +
+          (restoreDeleted[i.key] ? ' checked' : '') +
+          '><span>Restore ' +
+          _restoreEsc(i.label) +
+          ' <small>' +
+          _restoreEsc(i.key) +
+          '</small></span></label>';
+      });
+    }
+    if (p.skipped.length) {
+      html +=
+        '<details class="rst-det"><summary>' +
+        p.skipped.length +
+        ' item(s) are never restored</summary><ul class="rst-list">' +
+        p.skipped
+          .map(function (s) {
+            return '<li>' + _restoreEsc(s.key) + ' <small>' + _restoreEsc(s.why) + '</small></li>';
+          })
+          .join('') +
+        '</ul></details>';
+    }
     body.innerHTML = html;
+    body.querySelectorAll('.rstTomb').forEach(function (cb) {
+      cb.onchange = function () {
+        restoreDeleted[cb.getAttribute('data-key')] = cb.checked;
+        renderPreview();
+      };
+    });
     var n = changedItems.length;
-    if (mode === "replace" && removedTotal(p)) {
+    if (mode === 'replace' && removedTotal(p)) {
       body.insertAdjacentHTML(
-        "beforeend",
+        'beforeend',
         '<p class="rst-note rst-rm-note"><b>Replace will remove ' +
           removedTotal(p) +
-          " record" +
-          (removedTotal(p) === 1 ? "" : "s") +
-          " that " +
-          (removedTotal(p) === 1 ? "is" : "are") +
-          " not in the backup.</b> A copy of the current data downloads first.</p>",
+          ' record' +
+          (removedTotal(p) === 1 ? '' : 's') +
+          ' that ' +
+          (removedTotal(p) === 1 ? 'is' : 'are') +
+          ' not in the backup.</b> A copy of the current data downloads first.</p>',
       );
     }
     ftr.innerHTML =
       '<button class="btn btn-ghost" id="rstCancel">Cancel</button>' +
       '<button class="btn btn-em" id="rstApply"' +
-      (n ? "" : " disabled") +
-      ">" +
-      (n
-        ? "Restore (" + n + " item" + (n === 1 ? "" : "s") + " change)"
-        : "Nothing to change") +
-      "</button>";
-    ftr.querySelector("#rstCancel").onclick = close;
-    ftr.querySelector("#rstApply").onclick = function () {
-      if (mode === "replace") renderReplaceConfirm();
+      (n ? '' : ' disabled') +
+      '>' +
+      (n ? 'Restore (' + n + ' item' + (n === 1 ? '' : 's') + ' change)' : 'Nothing to change') +
+      '</button>';
+    ftr.querySelector('#rstCancel').onclick = close;
+    ftr.querySelector('#rstApply').onclick = function () {
+      if (mode === 'replace') renderReplaceConfirm();
       else apply(p);
     };
-    body.querySelectorAll("input[name=rstMode]").forEach(function (r) {
+    body.querySelectorAll('input[name=rstMode]').forEach(function (r) {
       r.onchange = function () {
         mode = r.value;
         renderPreview();
@@ -1442,157 +1654,69 @@ function _restoreDialog(backup, getCurrent, scopeOf, server, syncOn, useDB) {
     body.innerHTML =
       '<p class="rst-note"><b>Replace overwrites ' +
       where +
-      ".</b> " +
+      '.</b> ' +
       (syncOn
-        ? "The server data is shared. Both users will see the backup values instead of the current values."
-        : "The backup values replace the matching data on this device.") +
-      " <b>" +
+        ? 'The server data is shared. Both users will see the backup values instead of the current values.'
+        : 'The backup values replace the matching data on this device.') +
+      ' <b>' +
       rm +
-      " record" +
-      (rm === 1 ? "" : "s") +
-      " will be removed</b> because " +
-      (rm === 1 ? "it is" : "they are") +
-      " not in the backup. Keys that are not in the backup stay. A copy of the current data downloads first.</p>";
+      ' record' +
+      (rm === 1 ? '' : 's') +
+      ' will be removed</b> because ' +
+      (rm === 1 ? 'it is' : 'they are') +
+      ' not in the backup. Keys that are not in the backup stay. A copy of the current data downloads first.</p>';
     ftr.innerHTML =
       '<button class="btn btn-ghost" id="rstBack">Go back</button>' +
       '<button class="btn btn-em" id="rstReplaceYes">Yes, overwrite ' +
-      (syncOn ? "shared data for both users" : "this device") +
-      "</button>";
-    ftr.querySelector("#rstBack").onclick = renderPreview;
-    ftr.querySelector("#rstReplaceYes").onclick = function () {
+      (syncOn ? 'shared data for both users' : 'this device') +
+      '</button>';
+    ftr.querySelector('#rstBack').onclick = renderPreview;
+    ftr.querySelector('#rstReplaceYes').onclick = function () {
       apply(currentPlan());
     };
   }
   function progress(msg) {
-    var el = body.querySelector("#rstProg");
+    var el = body.querySelector('#rstProg');
     if (el) el.textContent = msg;
-  }
-  function writeLocal(it) {
-    var k = it.key;
-    var v = it.value;
-    if (_restoreIsLsKey(k) || !useDB) {
-      localStorage.setItem(k, typeof v === "string" ? v : JSON.stringify(v));
-      return Promise.resolve();
-    }
-    return DB.set(k, v);
   }
   async function apply(p) {
     busy = true;
-    var changed = p.items.filter(function (i) {
-      return i.changed;
-    });
     body.innerHTML = '<p class="rst-prog" id="rstProg">Starting...</p>';
-    ftr.innerHTML = "";
-    var sent = 0;
-    var failed = [];
-    var localDone = 0;
-    try {
-      var before = {};
-      changed.forEach(function (it) {
-        if (syncOn && scopeOf(it.key) !== "local") {
-          if (server.has(it.key)) before[it.key] = server.get(it.key).value;
-        } else if (!syncOn) {
-          var cv = getCurrent(it.key);
-          if (cv !== undefined) before[it.key] = cv;
-        }
-      });
-      if (Object.keys(before).length) {
-        var d = new Date();
-        var pad = function (n) {
-          return String(n).padStart(2, "0");
-        };
-        var stamp =
-          d.getFullYear() +
-          pad(d.getMonth() + 1) +
-          pad(d.getDate()) +
-          "-" +
-          pad(d.getHours()) +
-          pad(d.getMinutes());
-        progress(
-          syncOn
-            ? "Saving a copy of the current server data..."
-            : "Saving a copy of the current data on this device...",
-        );
-        try {
-          _downloadJson(
-            (syncOn
-              ? "CompanyHub-server-before-restore-"
-              : "CompanyHub-before-restore-") +
-              stamp +
-              ".json",
-            before,
-          );
-        } catch (e) {
-          throw new Error("could not save the safety copy: " + (e && e.message));
-        }
-        await new Promise(function (r) {
-          setTimeout(r, 400);
-        });
-      }
-      var pushes = changed.filter(function (i) {
-        return syncOn && scopeOf(i.key) !== "local";
-      });
-      var locals = changed.filter(function (i) {
-        return pushes.indexOf(i) === -1;
-      });
-      for (var i = 0; i < pushes.length; i++) {
-        progress(
-          "Sending to server: " +
-            (i + 1) +
-            " of " +
-            pushes.length +
-            " (" +
-            sent +
-            " sent, " +
-            failed.length +
-            " failed)",
-        );
-        var it = pushes[i];
-        var r = await DB.restorePush(
-          it.key,
-          it.value,
-          server.get(it.key) || null,
-        );
-        if (r.ok) sent++;
-        else failed.push(it.key + " (" + r.status + ")");
-      }
-      for (var j = 0; j < locals.length; j++) {
-        progress("Saving on this device: " + (j + 1) + " of " + locals.length);
-        await writeLocal(locals[j]);
-        localDone++;
-      }
-    } catch (err) {
-      console.warn("[restore] failed:", err);
-      failed.push("unexpected error: " + (err && err.message));
-    }
+    ftr.innerHTML = '';
+    var res = await _restoreApply(ctx, p, { safetyCopy: true }, progress);
     busy = false;
     var html =
       '<p class="rst-note"><b>Restore finished.</b> ' +
-      (syncOn
-        ? sent + " sent to the server, " + failed.length + " failed. "
-        : "") +
-      localDone +
-      " saved on this device.</p>";
-    if (failed.length) {
+      (syncOn ? res.sent + ' sent to the server, ' + res.failed.length + ' failed. ' : '') +
+      res.localDone +
+      ' saved on this device.</p>';
+    if (res.failed.length) {
       html +=
         '<p class="rst-note">These items were not sent. The server did not change for them:</p><ul class="rst-list">' +
-        failed
+        res.failed
           .map(function (f) {
-            return "<li>" + _restoreEsc(f) + "</li>";
+            return '<li>' + _restoreEsc(f) + '</li>';
           })
-          .join("") +
-        "</ul>";
+          .join('') +
+        '</ul>';
     }
     body.innerHTML = html;
-    ftr.innerHTML =
-      '<button class="btn btn-em" id="rstDone">Close and reload</button>';
-    ftr.querySelector("#rstDone").onclick = function () {
+    ftr.innerHTML = '<button class="btn btn-em" id="rstDone">Close and reload</button>';
+    ftr.querySelector('#rstDone').onclick = function () {
       location.reload();
     };
   }
   renderPreview();
 }
-function siteRestore() {
+// siteRestore(): opens the file picker and the preview dialog.
+// siteRestore(data, opts): programmatic API for scripts. `data` is the parsed
+// backup object. opts: { mode: 'add'|'merge'|'replace', confirm: true,
+// safetyCopy: true|false (required), reload: false to skip the reload }.
+// Resolves to { sent, failed, localDone, changed }.
+function siteRestore(data, opts) {
+  if (data && typeof data === 'object' && !Array.isArray(data)) {
+    return _restoreStart(data, opts || {});
+  }
   var inp = document.createElement('input');
   inp.type = 'file';
   inp.accept = '.json';
