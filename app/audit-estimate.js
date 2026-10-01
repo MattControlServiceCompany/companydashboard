@@ -394,6 +394,93 @@ function auditEstGetEquipmentSummary(projId) {
   };
 }
 
+/* ── Pricing method + workbook settings (per project) ─────────────────────────────────────────
+   Key en_pricing_workbook_<projId> (en_pricing_ prefix, so it syncs). Fields, all optional:
+   method ('hourly'; absent = 'workbook'), roles { <taskTypeId>: <role code> } (only changed
+   tasks), ot ('Not Applicable' | 'x1.5' | 'x2.0'), state ('Kansas' | 'Missouri'), taxRate
+   (0.0875 = 8.75%), bond (boolean). Absent field = the EstimateWorkbook.DEFAULTS value. */
+var AUDIT_EST_OT_OPTIONS = ['Not Applicable', 'x1.5', 'x2.0'];
+var AUDIT_EST_STATE_OPTIONS = ['Kansas', 'Missouri'];
+function _auditEstWbKey(projId) {
+  return 'en_pricing_workbook_' + projId;
+}
+function _auditEstWbRaw(projId) {
+  var raw = null;
+  try {
+    raw = sget(_auditEstWbKey(projId), null);
+  } catch (e) {
+    raw = null;
+  }
+  return raw && typeof raw === 'object' ? raw : {};
+}
+function auditEstGetWorkbookSettings(projId) {
+  var raw = _auditEstWbRaw(projId);
+  var D = EstimateWorkbook.DEFAULTS;
+  var roles = {};
+  var stored = raw.roles && typeof raw.roles === 'object' ? raw.roles : {};
+  Object.keys(stored).forEach(function (t) {
+    var code = stored[t];
+    if (
+      D.taskRoleMap[t] != null &&
+      D.roles.some(function (r) {
+        return r.code === code;
+      })
+    )
+      roles[t] = code;
+  });
+  var tax = typeof raw.taxRate === 'number' && isFinite(raw.taxRate) && raw.taxRate >= 0 ? raw.taxRate : D.taxRate;
+  return {
+    method: raw.method === 'hourly' ? 'hourly' : 'workbook',
+    roles: roles,
+    ot: AUDIT_EST_OT_OPTIONS.indexOf(raw.ot) !== -1 ? raw.ot : D.ot,
+    state: AUDIT_EST_STATE_OPTIONS.indexOf(raw.state) !== -1 ? raw.state : D.state,
+    taxRate: tax,
+    bond: raw.bond === true,
+  };
+}
+// Stores only what differs from the defaults (method 'workbook' = field absent).
+// field: 'method' | 'ot' | 'state' | 'taxRate' | 'bond' | 'role' (value {task, role}).
+// Returns 'ok' | 'invalid' | 'failed'.
+function auditEstSetWorkbookSetting(projId, field, value) {
+  var o = JSON.parse(JSON.stringify(_auditEstWbRaw(projId)));
+  var D = EstimateWorkbook.DEFAULTS;
+  if (field === 'method') {
+    if (value === 'hourly') o.method = 'hourly';
+    else if (value === 'workbook') delete o.method;
+    else return 'invalid';
+  } else if (field === 'ot' || field === 'state') {
+    var opts = field === 'ot' ? AUDIT_EST_OT_OPTIONS : AUDIT_EST_STATE_OPTIONS;
+    if (opts.indexOf(value) === -1) return 'invalid';
+    if (value === D[field]) delete o[field];
+    else o[field] = value;
+  } else if (field === 'taxRate') {
+    var txt = value == null ? '' : String(value).trim();
+    var n = txt === '' ? D.taxRate : Number(txt);
+    if (!isFinite(n) || n < 0 || n > 1) return 'invalid';
+    if (n === D.taxRate) delete o.taxRate;
+    else o.taxRate = n;
+  } else if (field === 'bond') {
+    if (value) o.bond = true;
+    else delete o.bond;
+  } else if (field === 'role') {
+    var okRole = D.roles.some(function (r) {
+      return r.code === value.role;
+    });
+    if (D.taskRoleMap[value.task] == null || !okRole) return 'invalid';
+    o.roles = o.roles || {};
+    if (value.role === D.taskRoleMap[value.task]) delete o.roles[value.task];
+    else o.roles[value.task] = value.role;
+    if (!Object.keys(o.roles).length) delete o.roles;
+  } else return 'invalid';
+  try {
+    var p = sset(_auditEstWbKey(projId), o);
+    if (p && p.catch) p.catch(function () {});
+    return 'ok';
+  } catch (e) {
+    return 'failed';
+  }
+}
+
 /* ── Hours + cost breakdown for one audit type ('bas' | 'full') ──────────────────────────────
    Full Facility Audit = BAS Audit's own equipment/building/report hours, PLUS four flat
    per-building line items (mechanical walk-through, lighting review, envelope review, utility
@@ -491,6 +578,7 @@ function auditEstComputeBreakdown(projId, auditType) {
       defaultSource: auditEstDefaultSource(e.category),
       overridden: overridden,
       hours: hours,
+      matrixHours: reviewC / 100,
       cost: Math.round(hours * rate * 100) / 100,
     };
   });
@@ -544,11 +632,97 @@ function auditEstComputeBreakdown(projId, auditType) {
 
   var totalHours = Math.round((equipHours + buildingLineHours + reportHours + extrasHours) * 100) / 100;
   var totalCost = Math.round(totalHours * rate * 100) / 100;
+  var wbSet = auditEstGetWorkbookSettings(projId);
+  var isWorkbook = wbSet.method === 'workbook';
+  var wb = null;
+  var siteCost = 0;
+  var reportCost = 0;
 
-  // Cost by building: split totalCost (in cents) by hours so the entries sum to it to the cent.
-  var costC = _auditEstAllocate(Math.round(totalCost * 100), bHrs.concat([projHrs]));
+  if (isWorkbook) {
+    // Hours by task type -> roles (plan 2, editable per project) -> EstimateWorkbook.compute().
+    // No $100 round-up in this mode.
+    var D = EstimateWorkbook.DEFAULTS;
+    var matrixC = rows.reduce(function (s, r) {
+      return s + Math.round(r.matrixHours * 100);
+    }, 0);
+    var tasks = [
+      { id: 'audit_equipment_review', hours: (Math.round(equipHours * 100) - matrixC) / 100 },
+      { id: 'audit_matrix_review', hours: matrixC / 100 },
+      { id: 'audit_report', hours: reportHours },
+    ];
+    if (auditType === 'full') {
+      tasks.push({ id: 'audit_site_visit_travel', hours: buildingLineHours });
+      [
+        'audit_mechanical_review',
+        'audit_lighting_review',
+        'audit_envelope_review',
+        'audit_utility_review',
+      ].forEach(function (id, i) {
+        tasks.push({ id: id, hours: extras[i].hours });
+      });
+    }
+    var roleC = {};
+    tasks.forEach(function (t) {
+      t.role = wbSet.roles[t.id] || D.taskRoleMap[t.id];
+      t.label = D.taskTypes.filter(function (x) {
+        return x.id === t.id;
+      })[0].label;
+      roleC[t.role] = (roleC[t.role] || 0) + Math.round(t.hours * 100);
+    });
+    var roleHours = {};
+    Object.keys(roleC).forEach(function (k) {
+      roleHours[k] = roleC[k] / 100;
+    });
+    var wbInput = { hours: roleHours, ot: wbSet.ot, state: wbSet.state, taxRate: wbSet.taxRate, bond: wbSet.bond };
+    var calc = EstimateWorkbook.compute(wbInput);
+    var sm = calc.summary;
+    var pctOf = function (v) {
+      return Math.round(v * 10000) / 100 + '%';
+    };
+    var chain = [
+      { key: 'labor', label: 'Labor', amount: sm.labor },
+      { key: 'tools', label: 'Tools (' + pctOf(D.pct.smallTools) + ' of labor)', amount: calc.cells['Dash!G32'] },
+      { key: 'rentalTax', label: 'Tool rental tax (paid by CSC)', amount: calc.cells['Dash!G33'] },
+      { key: 'direct', label: 'Direct cost', amount: sm.direct, sub: true },
+      { key: 'overhead', label: 'Overhead (' + pctOf(D.pct.overhead) + ')', amount: sm.overhead },
+      { key: 'profit', label: 'Profit (' + pctOf(D.pct.profit) + ')', amount: sm.profit },
+    ];
+    if (sm.tax) chain.push({ key: 'tax', label: 'Project sales tax (Kansas)', amount: sm.tax });
+    if (sm.bond) chain.push({ key: 'bond', label: 'Bond (' + pctOf(D.pct.bond) + ')', amount: sm.bond });
+    chain.push({ key: 'total', label: 'Total', amount: sm.total, sub: true });
+    wb = { input: wbInput, tasks: tasks, roleHours: roleHours, summary: sm, settings: wbSet, chain: chain };
+    totalCost = sm.total;
+    // Each line's cost is its share of the total (largest remainder, whole dollars), so the
+    // type rows, site items and report add up to the total exactly.
+    var weights = rows.map(function (r) {
+      return Math.round(r.hours * 100);
+    });
+    weights.push(Math.round(buildingLineHours * 100));
+    extras.forEach(function (x) {
+      weights.push(Math.round(x.hours * 100));
+    });
+    weights.push(Math.round(reportHours * 100));
+    var shares = _auditEstAllocate(totalCost, weights);
+    rows.forEach(function (r, i) {
+      r.cost = shares[i];
+    });
+    var k = rows.length;
+    siteCost = shares[k++];
+    extras.forEach(function (x) {
+      x.cost = shares[k++];
+    });
+    reportCost = shares[k];
+  } else {
+    siteCost = Math.round(buildingLineHours * rate * 100) / 100;
+    reportCost = Math.round(reportHours * rate * 100) / 100;
+  }
+
+  // Cost by building: split totalCost by hours so the entries sum to it exactly
+  // (to the cent; whole dollars in workbook mode).
+  var unit = isWorkbook ? 1 : 100;
+  var costC = _auditEstAllocate(Math.round(totalCost * unit), bHrs.concat([projHrs]));
   var byBuilding = bList.map(function (n, i) {
-    return { building: n, equipment: bEquip[i], sampled: bSampled[i], hours: bHrs[i] / 100, cost: costC[i] / 100 };
+    return { building: n, equipment: bEquip[i], sampled: bSampled[i], hours: bHrs[i] / 100, cost: costC[i] / unit };
   });
   byBuilding.push({
     building: 'Project-wide',
@@ -556,20 +730,23 @@ function auditEstComputeBreakdown(projId, auditType) {
     equipment: null,
     sampled: null,
     hours: projHrs / 100,
-    cost: costC[bList.length] / 100,
+    cost: costC[bList.length] / unit,
   });
 
   return {
     auditType: auditType,
+    method: wbSet.method,
+    workbook: wb,
+    proposalPrice: isWorkbook ? totalCost : auditEstRoundProposalPrice(totalCost),
     byBuilding: byBuilding,
     buildingCount: summary.buildingCount,
     buildingList: summary.buildingList,
     excluded: summary.excluded,
     rows: rows,
     buildingLineHours: buildingLineHours,
-    buildingLineCost: Math.round(buildingLineHours * rate * 100) / 100,
+    buildingLineCost: siteCost,
     reportHours: reportHours,
-    reportCost: Math.round(reportHours * rate * 100) / 100,
+    reportCost: reportCost,
     extras: extras,
     totalHours: totalHours,
     totalCost: totalCost,
@@ -614,6 +791,11 @@ window.auditEstRoundProposalPrice = auditEstRoundProposalPrice;
 function _auditEstFmtWhole(n) {
   if (n == null || isNaN(n)) return '—';
   return '$' + Math.round(Number(n)).toLocaleString('en-US');
+}
+
+// Money formatter of a breakdown: whole dollars in workbook mode, dollars and cents in hourly mode.
+function _auditEstMoney(b) {
+  return b && b.method === 'workbook' ? _auditEstFmtWhole : _auditEstFmt;
 }
 
 /* ── UI: expandable "Units to sample" detail under a type row ──────────────────────────────── */
@@ -677,6 +859,8 @@ function _auditEstBreakdownTableHTML(b, titleText) {
   var numTd = function (v) {
     return '<td class="ch-tbl-col-type-number">' + v + '</td>';
   };
+  var money = _auditEstMoney(b);
+  var isWb = b.method === 'workbook';
   var rowsHTML = b.rows
     .map(function (r) {
       return (
@@ -694,7 +878,7 @@ function _auditEstBreakdownTableHTML(b, titleText) {
         ) +
         numTd(r.hours.toFixed(1)) +
         '<td class="ch-tbl-col-type-currency">' +
-        _auditEstFmt(r.cost) +
+        money(r.cost) +
         '</td></tr>' +
         _auditEstUnitsDetailHTML(b.projId, b.auditType, r)
       );
@@ -713,7 +897,7 @@ function _auditEstBreakdownTableHTML(b, titleText) {
         numTd('—') +
         numTd(x.hours.toFixed(1)) +
         '<td class="ch-tbl-col-type-currency">' +
-        _auditEstFmt(x.cost) +
+        money(x.cost) +
         '</td></tr>'
       );
     })
@@ -727,7 +911,7 @@ function _auditEstBreakdownTableHTML(b, titleText) {
         numTd('—') +
         numTd(b.buildingLineHours.toFixed(1)) +
         '<td class="ch-tbl-col-type-currency">' +
-        _auditEstFmt(b.buildingLineCost) +
+        money(b.buildingLineCost) +
         '</td></tr>'
       : '';
   var th = function (label, tip) {
@@ -735,7 +919,7 @@ function _auditEstBreakdownTableHTML(b, titleText) {
   };
 
   return (
-    '<div style="flex:0 1 auto;min-width:0;max-width:100%">' +
+    '<div class="ae-wrap">' +
     '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:6px">' +
     _auditEstEsc(titleText) +
     '</div>' +
@@ -753,7 +937,7 @@ function _auditEstBreakdownTableHTML(b, titleText) {
     th('Sampled', 'Units reviewed: one per group. Never more than Count.') +
     th('Hours Each', 'Hours to review one unit.') +
     th('Hours', 'Matrix review time plus the Sampled units times Hours Each. Never more than Count times Hours Each.') +
-    th('Cost', 'Hours times the labor rate.') +
+    th('Cost', isWb ? 'This line\'s share of the total price, split by hours.' : 'Hours times the labor rate.') +
     '</tr></thead>' +
     '<tbody>' +
     rowsHTML +
@@ -765,27 +949,181 @@ function _auditEstBreakdownTableHTML(b, titleText) {
     '<td class="ch-tbl-col-type-number">' +
     b.reportHours.toFixed(1) +
     '</td><td class="ch-tbl-col-type-currency">' +
-    _auditEstFmt(b.reportCost) +
+    money(b.reportCost) +
     '</td></tr>' +
     '</tbody>' +
     '<tfoot><tr>' +
-    '<td>Total</td><td>—</td><td>—</td><td>—</td><td>—</td>' +
+    '<td>' + (isWb ? 'Total price' : 'Total') + '</td><td>—</td><td>—</td><td>—</td><td>—</td>' +
     '<td class="ch-tbl-col-type-number">' +
     b.totalHours.toFixed(1) +
     '</td><td class="ch-tbl-col-type-currency">' +
-    _auditEstFmt(b.totalCost) +
+    money(b.totalCost) +
     '</td>' +
     '</tr>' +
-    '<tr><td>Proposal price (rounded up to the next $100)</td><td>—</td><td>—</td><td>—</td><td>—</td>' +
-    '<td class="ch-tbl-col-type-number">—</td>' +
-    '<td class="ch-tbl-col-type-currency">' +
-    _auditEstFmtWhole(auditEstRoundProposalPrice(b.totalCost)) +
-    '</td>' +
-    '</tr></tfoot>' +
+    (isWb
+      ? ''
+      : '<tr><td>Proposal price (rounded up to the next $100)</td><td>—</td><td>—</td><td>—</td><td>—</td>' +
+        '<td class="ch-tbl-col-type-number">—</td>' +
+        '<td class="ch-tbl-col-type-currency">' +
+        _auditEstFmtWhole(b.proposalPrice) +
+        '</td>' +
+        '</tr>') +
+    '</tfoot>' +
     '</table></div>' +
+    _auditEstWorkbookPanelHTML(b) +
     _auditEstByBuildingTableHTML(b) +
     '</div>'
   );
+}
+
+/* ── UI: Workbook method panel — "How this total is built" + labor by task type ──────────────
+   Shown only in workbook mode. The chain lines come from EstimateWorkbook.compute() (see
+   auditEstComputeBreakdown); each task type's role is a select saved per project. */
+function _auditEstWorkbookPanelHTML(b) {
+  if (!b || b.method !== 'workbook' || !b.workbook) return '';
+  var w = b.workbook;
+  var D = EstimateWorkbook.DEFAULTS;
+  var pid = b.projId;
+  var selStyle =
+    'font-size:11px;padding:2px 4px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px;max-width:100%';
+  var opt = function (list, cur) {
+    return list
+      .map(function (o) {
+        return '<option' + (o === cur ? ' selected' : '') + '>' + _auditEstEsc(o) + '</option>';
+      })
+      .join('');
+  };
+  var ctl =
+    '<div class="ae-ctl">' +
+    '<label>Overtime <select style="' + selStyle + '" onchange="auditEstSaveWorkbook(\'' + pid + "','ot',this.value)\">" +
+    opt(AUDIT_EST_OT_OPTIONS, w.settings.ot) + '</select></label>' +
+    '<label>Tax state <select style="' + selStyle + '" onchange="auditEstSaveWorkbook(\'' + pid + "','state',this.value)\">" +
+    opt(AUDIT_EST_STATE_OPTIONS, w.settings.state) + '</select></label>' +
+    '<label>Tax rate % <input type="number" min="0" max="100" step="0.001" value="' +
+    Math.round(w.settings.taxRate * 100000) / 1000 +
+    '" style="width:64px;text-align:right;' + selStyle + '" onchange="auditEstSaveWorkbook(\'' + pid +
+    "','taxRate',this.value/100)\"></label>" +
+    '<label><input type="checkbox"' + (w.settings.bond ? ' checked' : '') + ' onchange="auditEstSaveWorkbook(\'' + pid +
+    "','bond',this.checked)\"> Bond</label>" +
+    '</div>';
+  var chainRows = w.chain
+    .map(function (c) {
+      return (
+        '<tr' + (c.sub ? ' class="ae-sub"' : '') + '><td class="ch-tbl-col-type-label">' + _auditEstEsc(c.label) +
+        '</td><td class="ch-tbl-col-type-currency">' + _auditEstFmtWhole(c.amount) + '</td></tr>'
+      );
+    })
+    .join('');
+  var taskRows = w.tasks
+    .map(function (t) {
+      var sel =
+        '<select style="' + selStyle + '" title="Labor role for this task type" onchange="auditEstSaveWorkbookRole(\'' +
+        pid + "','" + t.id + "',this.value)\">" +
+        D.roles
+          .map(function (r) {
+            return '<option value="' + r.code + '"' + (r.code === t.role ? ' selected' : '') + ' title="' + _auditEstEsc(r.name) + '">' + r.code + '</option>';
+          })
+          .join('') +
+        '</select>';
+      return (
+        '<tr><td class="ch-tbl-col-type-label">' + _auditEstEsc(t.label) + '</td><td class="ch-tbl-col-type-number">' +
+        t.hours.toFixed(2) + '</td><td class="ch-tbl-col-type-label">' + sel + '</td></tr>'
+      );
+    })
+    .join('');
+  return (
+    '<div class="ae-wb">' +
+    '<div style="font-size:12px;font-weight:700;color:var(--text);margin:12px 0 4px">How this total is built (workbook)</div>' +
+    ctl +
+    '<div class="ae-wb-grid">' +
+    '<div class="ch-tbl-outer ae-tbl-outer"><table class="ch-tbl ae-tbl ae-chain-tbl">' +
+    '<thead><tr><th class="ae-left">Step</th><th>Amount</th></tr></thead><tbody>' + chainRows + '</tbody></table></div>' +
+    '<div class="ch-tbl-outer ae-tbl-outer"><table class="ch-tbl ae-tbl ae-chain-tbl">' +
+    '<thead><tr><th class="ae-left">Labor by task</th><th>Hours</th><th class="ae-left">Role</th></tr></thead><tbody>' +
+    taskRows + '</tbody></table></div>' +
+    '</div></div>'
+  );
+}
+
+function auditEstSaveWorkbook(projId, field, value) {
+  var res = auditEstSetWorkbookSetting(projId, field, value);
+  if (res === 'invalid') showToast('That value is not valid', 'error');
+  else if (res === 'failed') showToast('Could not save the setting', 'error');
+  if (typeof initCostEstimateTab === 'function') initCostEstimateTab(projId);
+}
+function auditEstSaveWorkbookRole(projId, task, role) {
+  auditEstSaveWorkbook(projId, 'role', { task: task, role: role });
+}
+
+// Segmented "Workbook | Hourly $170" switch, shown in the Estimate type bar (app/pricing-estimator.js).
+function auditEstMethodSwitchHTML(projId) {
+  var cur = auditEstGetWorkbookSettings(projId).method;
+  var rate = auditEstGetHourlyRate();
+  var btn = function (m, label, tip) {
+    return (
+      '<button type="button" class="ae-seg-btn' + (cur === m ? ' on' : '') + '" aria-pressed="' + (cur === m) +
+      '" title="' + _auditEstEsc(tip) + '" onclick="auditEstSetMethod(\'' + projId + "','" + m + "')\">" + label + '</button>'
+    );
+  };
+  return (
+    '<span class="ae-seg" role="group" aria-label="Pricing method">' +
+    btn('workbook', 'Workbook', 'Price with the CSC cost estimate workbook: labor by role, tools, overhead, profit') +
+    btn('hourly', 'Hourly ' + _auditEstFmtWhole(rate), 'Price as hours times the labor rate, proposal rounded up to the next $100') +
+    '</span>'
+  );
+}
+function auditEstSetMethod(projId, method) {
+  if (auditEstSetWorkbookSetting(projId, 'method', method) === 'failed') showToast('Could not save the method', 'error');
+  if (typeof initCostEstimateTab === 'function') initCostEstimateTab(projId);
+}
+
+/* ── Excel export (workbook method) ───────────────────────────────────────────────────────────
+   Writes the breakdown's EstimateWorkbook input into the estimate template with
+   EstimateWorkbookExport (app/estimate-workbook-export.js). ExcelJS is a CDN global; the export
+   throws synchronously when it is missing, so the call is wrapped. */
+function auditEstExportExcel(projId, auditType) {
+  var b = auditEstComputeBreakdown(projId, auditType);
+  if (!b || !b.workbook) {
+    showToast('Switch to the Workbook method to export to Excel', 'error');
+    return;
+  }
+  var typeName = auditType === 'full' ? 'Full Facility Audit' : 'Building Automation System Audit';
+  var proj = (typeof projects !== 'undefined' ? projects : []).find(function (x) {
+    return String(x.id) === String(projId);
+  });
+  var projName = proj ? proj.client || proj.name || 'Project' : 'Project';
+  var d = new Date();
+  var pad = function (n) {
+    return (n < 10 ? '0' : '') + n;
+  };
+  var meta = {
+    customer: projName,
+    project: projName + ' ' + typeName,
+    title: typeName + ' Estimate',
+    date: d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()),
+    preparedBy: 'Control Service Company',
+  };
+  var p;
+  try {
+    p = EstimateWorkbookExport.exportBlob(b.workbook.input, meta);
+  } catch (e) {
+    showToast('Excel export is not available: ' + (e && e.message ? e.message : e), 'error');
+    return;
+  }
+  p.then(function (blob) {
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = EstimateWorkbookExport.fileName(meta);
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () {
+      URL.revokeObjectURL(a.href);
+      a.remove();
+    }, 1000);
+    showToast('Exported ' + a.download, 'success');
+  }).catch(function (e) {
+    showToast('Excel export failed: ' + (e && e.message ? e.message : e), 'error');
+  });
 }
 
 /* ── UI: Cost by Building table (screen only; not in the proposal) ─────────────────────────── */
@@ -807,7 +1145,7 @@ function _auditEstByBuildingTableHTML(b) {
         num(dash(x.sampled)) +
         num(x.hours ? x.hours.toFixed(1) : '—') +
         '<td class="ch-tbl-col-type-currency">' +
-        (x.cost ? _auditEstFmt(x.cost) : '—') +
+        (x.cost ? _auditEstMoney(b)(x.cost) : '—') +
         '</td></tr>'
       );
     })
@@ -836,7 +1174,7 @@ function _auditEstByBuildingTableHTML(b) {
     num(sm) +
     num(b.totalHours.toFixed(1)) +
     '<td class="ch-tbl-col-type-currency">' +
-    _auditEstFmt(b.totalCost) +
+    _auditEstMoney(b)(b.totalCost) +
     '</td></tr></tfoot></table></div>'
   );
 }
@@ -939,10 +1277,13 @@ function _auditEstAssumptionsHTML(projId, auditType) {
     '" style="width:80px;text-align:right;background:var(--s2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 6px" onchange="auditEstSaveField(\'' +
     projId +
     "','hoursReport', this.value)\"></div>" +
-    '<div><label style="font-size:11px;color:var(--text3)">Labor rate ($/hour, from Cost Estimate)</label><br>' +
-    '<div style="font-size:13px;font-weight:700;color:var(--text);padding:3px 0">' +
-    _auditEstFmt(rate) +
-    '/hour</div></div>' +
+    (auditEstGetWorkbookSettings(projId).method === 'workbook'
+      ? '<div><label style="font-size:11px;color:var(--text3)">Labor rate</label><br>' +
+        '<div style="font-size:13px;font-weight:700;color:var(--text);padding:3px 0">By role (workbook)</div></div>'
+      : '<div><label style="font-size:11px;color:var(--text3)">Labor rate ($/hour, from Cost Estimate)</label><br>' +
+        '<div style="font-size:13px;font-weight:700;color:var(--text);padding:3px 0">' +
+        _auditEstFmt(rate) +
+        '/hour</div></div>') +
     '</div>' +
     '<div style="display:flex;align-items:center;gap:12px;margin:10px 0 6px"><div style="font-size:12px;font-weight:700;color:var(--text2)">Hours Each per equipment type (this project; blank = default)</div>' +
     '<button type="button" ' +
@@ -950,7 +1291,7 @@ function _auditEstAssumptionsHTML(projId, auditType) {
     'onclick="auditEstResetAllHours(\'' +
     projId +
     "')\" style=\"font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid var(--border);background:var(--s3);color:var(--text2);cursor:pointer\">Reset all</button></div>" +
-    '<div class="ch-tbl-outer" style="max-width:560px"><table class="ch-tbl" style="width:100%">' +
+    '<div class="ch-tbl-outer ae-assum"><table class="ch-tbl" style="width:100%">' +
     '<thead><tr><th>Equipment Type</th><th>Hours Each</th><th>Default (* = company)</th><th>Actions</th><th>Default source</th></tr></thead><tbody>' +
     rows +
     '</tbody></table></div>' +
@@ -1001,9 +1342,14 @@ function _auditEstAssumptionsHTML(projId, auditType) {
    sideways only when the window is too narrow for the columns, never the page. */
 var AUDIT_EST_TABLE_CSS =
   '<style>' +
-  '.ae-tbl-outer{border:1px solid var(--border);border-radius:6px;overflow-x:auto;overflow-y:hidden;width:fit-content;max-width:100%}' +
+  '.ae-tbl-outer{border:1px solid var(--border);border-radius:6px;overflow:hidden;width:fit-content;max-width:100%}' +
   '.ae-tbl{border-collapse:separate;border-spacing:0;width:auto;font-size:12px;font-variant-numeric:tabular-nums}' +
-  '.ae-tbl th,.ae-tbl td{padding:5px 6px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);color:var(--text)}.ae-tbl th{white-space:nowrap}.ae-tbl td{white-space:nowrap}' +
+  '.ae-tbl th,.ae-tbl td{padding:5px 6px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);color:var(--text)}.ae-tbl td.ch-tbl-col-type-number,.ae-tbl td.ch-tbl-col-type-currency{white-space:nowrap}.ae-tbl td.ch-tbl-col-type-label{overflow-wrap:anywhere}.ae-tbl th{overflow-wrap:normal}' +
+  '.ae-assum{max-width:560px}.ae-assum td{overflow-wrap:anywhere}.ae-wrap{flex:0 1 auto;min-width:0;max-width:100%}.ae-wb-grid{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-start}' +
+  '.ae-ctl{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;font-size:11px;color:var(--text2);margin-bottom:6px}.ae-ctl label{display:flex;align-items:center;gap:4px}' +
+  '.ae-tbl tr.ae-sub td{background:var(--s1);font-weight:700}' +
+  '.ae-seg{display:inline-flex;border:1px solid var(--border);border-radius:4px;overflow:hidden}.ae-seg-btn{font-size:11px;padding:3px 10px;border:none;background:var(--s3);color:var(--text2);cursor:pointer}.ae-seg-btn+.ae-seg-btn{border-left:1px solid var(--border)}.ae-seg-btn.on{background:var(--accent);color:#fff;font-weight:700}' +
+  '@media (max-width:900px){.ae-tbl{font-size:11px}.ae-tbl th,.ae-tbl td{padding:3px 4px}.ae-tbl thead th{font-size:9px;letter-spacing:0}.ae-exp{padding:0 2px 0 0}}' +
   '.ae-tbl th:last-child,.ae-tbl td:last-child{border-right:none}' +
   '.ae-tbl tbody tr:last-child td{border-bottom:none}' +
   '.ae-tbl thead th{background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;text-align:right;border-bottom:1px solid var(--border2);cursor:help}' +
@@ -1058,7 +1404,7 @@ function auditEstRenderHTML(projId, auditType) {
     '</div>' +
     excludedNote +
     (b
-      ? '<div style="margin-top:12px;display:flex;gap:8px">' +
+      ? '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">' +
         '<button onclick="auditEstGenerateProposal(\'' +
         projId +
         "','" +
@@ -1066,6 +1412,17 @@ function auditEstRenderHTML(projId, auditType) {
         '\')" class="rpt-toolbar-btn" style="font-size:12px;padding:6px 12px;border-radius:4px;border:1px solid var(--border);background:var(--accent);color:#fff;cursor:pointer">Generate ' +
         typeName +
         ' Proposal</button>' +
+        '<button onclick="auditEstExportExcel(\'' +
+        projId +
+        "','" +
+        (isFull ? 'full' : 'bas') +
+        '\')" class="rpt-toolbar-btn"' +
+        (b.method === 'workbook' ? '' : ' disabled') +
+        ' title="' +
+        (b.method === 'workbook' ? 'Download this estimate as an Excel file' : 'Switch to the Workbook method to export') +
+        '" style="font-size:12px;padding:6px 12px;border-radius:4px;border:1px solid var(--border);background:var(--s3);color:var(--text);cursor:' +
+        (b.method === 'workbook' ? 'pointer' : 'not-allowed;opacity:.5') +
+        '">Export to Excel</button>' +
         '</div>'
       : '') +
     '</div>'

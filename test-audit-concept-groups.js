@@ -4,7 +4,7 @@ const src = fs.readFileSync(__dirname + '/app/audit-estimate.js', 'utf8');
 function make(rows, cfg) {
   const store = { audit_estimate_config: cfg || null };
   const ctx = {
-    window: {}, console,
+    window: {}, console, EstimateWorkbook: require('./app/estimate-workbook.js'),
     sget: (k, d) => (store[k] != null ? store[k] : d),
     sset: (k, v) => { store[k] = v; },
     emLoadMatrix: () => ({ rows }),
@@ -133,7 +133,7 @@ console.log('PASS hours override tests');
   const ctx = make(rows);
   // make() has its own store; rebuild a context with a shared, inspectable store
   const vm = require('vm');
-  const c2 = { window: {}, console, sget: (k, d) => (store[k] != null ? store[k] : d), sset: (k, v) => { store[k] = JSON.parse(JSON.stringify(v)); },
+  const c2 = { window: {}, console, EstimateWorkbook: require('./app/estimate-workbook.js'), sget: (k, d) => (store[k] != null ? store[k] : d), sset: (k, v) => { store[k] = JSON.parse(JSON.stringify(v)); },
     emLoadMatrix: () => ({ rows }), emIsPhantomRow: () => false, emGetNormalizedPoints: (r) => r.pts, _pricingGetConfig: () => ({ hourlyRate: 100 }) };
   vm.createContext(c2); vm.runInContext(src, c2);
   const vav = () => c2.auditEstComputeBreakdown('p', 'bas').rows[0];

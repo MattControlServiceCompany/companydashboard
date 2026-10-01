@@ -15736,10 +15736,11 @@
       integrity="sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw"
       crossorigin="anonymous"
     ></script>
-    <!-- ExcelJS — used ONLY by exportWoodlandReportToXlsx() (app/report-engine-woodland.js) for
-         cell fill colors, bold totals, and an embedded Page-7 chart PNG (worksheet.addImage()) —
-         capabilities the SheetJS community build above cannot write. SheetJS remains the only
-         xlsx library used everywhere else (import paths, unchanged). -->
+    <!-- ExcelJS — used by exportWoodlandReportToXlsx() (app/report-engine-woodland.js) for
+         cell fill colors, bold totals, and an embedded Page-7 chart PNG (worksheet.addImage()),
+         and by EstimateWorkbookExport (app/estimate-workbook-export.js) to fill the estimate
+         template — capabilities the SheetJS community build above cannot write. SheetJS remains
+         the only xlsx library used everywhere else (import paths, unchanged). -->
     <script
       src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"
       integrity="sha384-Pqp51FUN2/qzfxZxBCtF0stpc9ONI6MYZpVqmo8m20SoaQCzf+arZvACkLkirlPz"
@@ -15821,6 +15822,8 @@
     <script src="app/bas-trends.js?v=58"></script>
     <script src="app/bas-alarms.js?v=58"></script>
     <script src="app/pricing-estimator.js?v=58"></script>
+    <script src="app/estimate-workbook.js?v=58"></script>
+    <script src="app/estimate-workbook-export.js?v=58"></script>
     <script src="app/audit-estimate.js?v=58"></script>
     <script src="app/agreement-engine.js?v=58"></script>
 

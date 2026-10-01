@@ -4,7 +4,7 @@ const src = fs.readFileSync(__dirname + '/app/audit-estimate.js', 'utf8');
 function make(rows, cfgOver, rate, mbuildings) {
   const store = { audit_estimate_config: cfgOver || null };
   const ctx = {
-    window: {}, console,
+    window: {}, console, EstimateWorkbook: require('./app/estimate-workbook.js'),
     sget: (k, d) => (store[k] != null ? store[k] : d),
     sset: (k, v) => { store[k] = v; },
     emLoadMatrix: () => ({ rows, buildings: mbuildings }),

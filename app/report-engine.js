@@ -23189,7 +23189,7 @@ function collectAuditProposalData(projId, auditType) {
           .filter(Boolean),
       };
     }),
-    totalPrice: breakdown.totalCost,
+    totalPrice: breakdown.proposalPrice, // the final client price: workbook total, or hourly rounded up to the next $100
   };
 }
 
@@ -23323,11 +23323,9 @@ function _rptAuditProposalDetailInnerHTML(data) {
     '</div>' +
     '<div style="font-size:16px;font-weight:700;color:var(--rpt-blue);margin-bottom:8px">Total Price</div>' +
     '<div style="font-size:24px;font-weight:700;color:var(--rpt-blue);margin-bottom:16px">' +
-    // Client-facing price: rounded UP to the next $100, no cents (2026-09-25, Matt). The exact
-    // dollars-and-cents figure stays internal-only, on the Audit Estimate breakdown's totals
-    // row. auditEstRoundProposalPrice()/_auditEstFmtWhole() (app/audit-estimate.js) are the
-    // SAME functions that row uses, so the two can never disagree.
-    _auditEstFmtWhole(auditEstRoundProposalPrice(data.totalPrice)) +
+    // Client-facing price, no cents. auditEstComputeBreakdown().proposalPrice is the ONE price:
+    // the workbook total, or (Hourly method) the total rounded UP to the next $100 (2026-09-25).
+    _auditEstFmtWhole(data.totalPrice) +
     '</div>' +
     '<div style="font-size:11px;line-height:1.5;color:var(--rpt-page-text);margin-top:24px;padding-top:10px;border-top:1px solid var(--rpt-border)">' +
     'This proposal reflects the facilities and equipment on record as of the date above. Control Service Company will confirm the final scope with the facility before work begins.' +

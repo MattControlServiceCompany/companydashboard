@@ -10194,9 +10194,10 @@ function _pricingEstimateTypeBarHTML(projId, type) {
     rateBtn =
       '<button class="btn btn-ghost btn-sm" onclick="_pricingOpenRatePopover(\'' +
       projId +
-      '\',this)" title="Labor rate — the $ per hour used by the audit estimate and the retrofit estimate" style="cursor:pointer">Rate: ' +
+      '\',this)" title="Labor rate — the $ per hour used by the Hourly audit method and the retrofit estimate" style="cursor:pointer">Rate: ' +
       _pricingFmt(_pricingGetConfig().hourlyRate || COST_LABOR_RATE_DEFAULT) +
-      '/hr</button>';
+      '/hr</button>' +
+      (typeof auditEstMethodSwitchHTML === 'function' ? auditEstMethodSwitchHTML(projId) : '');
   }
   return (
     '<div id="estTypeBar-' +
