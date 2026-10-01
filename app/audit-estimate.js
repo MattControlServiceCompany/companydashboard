@@ -216,13 +216,19 @@ function auditEstGetEquipmentSummary(projId) {
   if (!rows.length) return null;
 
   var buildings = {};
+  var allBuildings = {};
   var byCat = {};
   var excluded = {};
 
+  // Buildings the matrix lists that have no rows yet still get a line in Cost by Building.
+  (matData.buildings || []).forEach(function (n) {
+    if (typeof n === 'string' && n) allBuildings[n] = true;
+  });
   rows.forEach(function (r) {
     var bName = r.building || 'Unknown Building';
     var cat = r.category || 'other';
     var pts = r.points ? Object.keys(r.points).length : 0;
+    allBuildings[bName] = true; // every project building, also ones with no auditable equipment
     if (AUDIT_EST_CATEGORIES.indexOf(cat) !== -1) {
       // Only a building with an auditable category is priced (same set the proposal lists).
       buildings[bName] = true;
@@ -233,8 +239,10 @@ function auditEstGetEquipmentSummary(projId) {
           count: 0,
           totalPoints: 0,
           groups: {},
+          byBuilding: {},
         };
       byCat[cat].count++;
+      byCat[cat].byBuilding[bName] = (byCat[cat].byBuilding[bName] || 0) + 1;
       byCat[cat].totalPoints += pts;
       // Point set = the mapped column keys the Equipment Matrix shows for this row
       // (emGetNormalizedPoints), NOT raw BAS point keys. The first unit of each point set in
@@ -267,6 +275,7 @@ function auditEstGetEquipmentSummary(projId) {
   return {
     buildingCount: Object.keys(buildings).length,
     buildingList: Object.keys(buildings).sort(),
+    allBuildingList: Object.keys(allBuildings).sort(),
     equipTypes: equipTypes,
     excluded: Object.keys(excluded).map(function (c) {
       return excluded[c];
@@ -279,11 +288,56 @@ function auditEstGetEquipmentSummary(projId) {
    per-building line items (mechanical walk-through, lighting review, envelope review, utility
    bill review) and additional report hours — never a per-equipment multiplier, since none of
    those four activities are counted per piece of BAS equipment. */
+// Largest-remainder split of the whole number `total` across `weights`. Integers sum exactly to
+// `total`; a zero weight always gets 0.
+function _auditEstAllocate(total, weights) {
+  var sum = weights.reduce(function (s, w) {
+    return s + w;
+  }, 0);
+  var out = weights.map(function () {
+    return 0;
+  });
+  if (!(sum > 0) || !total) return out;
+  var rem = [];
+  var given = 0;
+  weights.forEach(function (w, i) {
+    var exact = (total * w) / sum;
+    out[i] = Math.floor(exact + 1e-9);
+    given += out[i];
+    rem.push({ i: i, r: exact - out[i], w: w });
+  });
+  rem
+    .filter(function (x) {
+      return x.w > 0;
+    })
+    .sort(function (a, b) {
+      return b.r - a.r || b.w - a.w || a.i - b.i;
+    })
+    .slice(0, Math.max(0, total - given))
+    .forEach(function (x) {
+      out[x.i]++;
+    });
+  return out;
+}
+
 function auditEstComputeBreakdown(projId, auditType) {
   var summary = auditEstGetEquipmentSummary(projId);
   if (!summary) return null;
   var cfg = auditEstGetConfig();
   var rate = auditEstGetHourlyRate();
+
+  var bList = summary.allBuildingList;
+  // Per-building accumulators (hours in hundredths of an hour so sums are exact).
+  var bEquip = bList.map(function () {
+    return 0;
+  });
+  var bSampled = bEquip.slice();
+  var bHrs = bEquip.slice();
+  var projHrs = 0;
+  // Buildings that carry the Full Facility per-building line items (same set as buildingCount).
+  var bPriced = bList.map(function (n) {
+    return summary.buildingList.indexOf(n) !== -1 ? 1 : 0;
+  });
 
   var rows = summary.equipTypes.map(function (e) {
     var hoursEach = cfg.hoursPerEquip[e.category] != null ? cfg.hoursPerEquip[e.category] : 1;
@@ -295,6 +349,22 @@ function auditEstComputeBreakdown(projId, auditType) {
     var sampleHours = cfg.matrixReviewHours + reviewedUnits * hoursEach;
     if (sampleHours >= fullHours) reviewedUnits = e.count;
     var hours = Math.round(Math.min(fullHours, sampleHours) * 100) / 100;
+    // Per-building split of this type: Sampled by largest remainder on the building counts; the
+    // unit hours (hours minus the fixed matrix review) follow the allocated Sampled; the matrix
+    // review is project-wide. A capped type (every unit reviewed) has no matrix review.
+    var counts = bList.map(function (n) {
+      return e.byBuilding[n] || 0;
+    });
+    var sampAlloc = _auditEstAllocate(reviewedUnits, counts);
+    var hoursC = Math.round(hours * 100);
+    var reviewC = reviewedUnits === e.count ? 0 : Math.min(hoursC, Math.round(cfg.matrixReviewHours * 100));
+    var unitAlloc = _auditEstAllocate(hoursC - reviewC, sampAlloc);
+    projHrs += reviewC;
+    bList.forEach(function (n, i) {
+      bEquip[i] += counts[i];
+      bSampled[i] += sampAlloc[i];
+      bHrs[i] += unitAlloc[i];
+    });
     return {
       category: e.category,
       label: e.label,
@@ -339,6 +409,15 @@ function auditEstComputeBreakdown(projId, auditType) {
     ];
     reportHours = Math.round((reportHours + ff.hoursReportExtra) * 100) / 100;
   }
+  // Full Facility per-building line items go to their own building (equal split in hundredths).
+  var lineItems = extras.slice();
+  if (auditType === 'full') lineItems.push({ hours: buildingLineHours });
+  lineItems.forEach(function (x) {
+    _auditEstAllocate(Math.round(x.hours * 100), bPriced).forEach(function (v, i) {
+      bHrs[i] += v;
+    });
+  });
+  projHrs += Math.round(reportHours * 100);
   extras.forEach(function (x) {
     x.cost = Math.round(x.hours * rate * 100) / 100;
   });
@@ -349,8 +428,23 @@ function auditEstComputeBreakdown(projId, auditType) {
   var totalHours = Math.round((equipHours + buildingLineHours + reportHours + extrasHours) * 100) / 100;
   var totalCost = Math.round(totalHours * rate * 100) / 100;
 
+  // Cost by building: split totalCost (in cents) by hours so the entries sum to it to the cent.
+  var costC = _auditEstAllocate(Math.round(totalCost * 100), bHrs.concat([projHrs]));
+  var byBuilding = bList.map(function (n, i) {
+    return { building: n, equipment: bEquip[i], sampled: bSampled[i], hours: bHrs[i] / 100, cost: costC[i] / 100 };
+  });
+  byBuilding.push({
+    building: 'Project-wide',
+    projectWide: true,
+    equipment: null,
+    sampled: null,
+    hours: projHrs / 100,
+    cost: costC[bList.length] / 100,
+  });
+
   return {
     auditType: auditType,
+    byBuilding: byBuilding,
     buildingCount: summary.buildingCount,
     buildingList: summary.buildingList,
     excluded: summary.excluded,
@@ -479,10 +573,7 @@ function _auditEstBreakdownTableHTML(b, titleText) {
     '<th class="ae-left">Equipment Type</th>' +
     th('Count', 'Number of units of this type in the Equipment Matrix.') +
     th('Groups', 'Units of the same type that have the same points form one group. For information only.') +
-    th(
-      'Sampled',
-      'Units reviewed: about the square root of Count, times the sample factor. Never more than Count.',
-    ) +
+    th('Sampled', 'Units reviewed: about the square root of Count, times the sample factor. Never more than Count.') +
     th('Hours Each', 'Hours to review one unit.') +
     th('Hours', 'Matrix review time plus the Sampled units times Hours Each. Never more than Count times Hours Each.') +
     th('Cost', 'Hours times the labor rate.') +
@@ -514,7 +605,62 @@ function _auditEstBreakdownTableHTML(b, titleText) {
     _auditEstFmtWhole(auditEstRoundProposalPrice(b.totalCost)) +
     '</td>' +
     '</tr></tfoot>' +
-    '</table></div></div>'
+    '</table></div>' +
+    _auditEstByBuildingTableHTML(b) +
+    '</div>'
+  );
+}
+
+/* ── UI: Cost by Building table (screen only; not in the proposal) ─────────────────────────── */
+function _auditEstByBuildingTableHTML(b) {
+  if (!b || !b.byBuilding) return '';
+  var num = function (v) {
+    return '<td class="ch-tbl-col-type-number">' + v + '</td>';
+  };
+  var body = b.byBuilding
+    .map(function (x) {
+      var dash = function (v) {
+        return v ? v : '—';
+      };
+      return (
+        '<tr><td class="ch-tbl-col-type-label">' +
+        _auditEstEsc(x.building) +
+        '</td>' +
+        num(dash(x.equipment)) +
+        num(dash(x.sampled)) +
+        num(x.hours ? x.hours.toFixed(1) : '—') +
+        '<td class="ch-tbl-col-type-currency">' +
+        (x.cost ? _auditEstFmt(x.cost) : '—') +
+        '</td></tr>'
+      );
+    })
+    .join('');
+  var eq = b.byBuilding.reduce(function (s, x) {
+    return s + (x.equipment || 0);
+  }, 0);
+  var sm = b.byBuilding.reduce(function (s, x) {
+    return s + (x.sampled || 0);
+  }, 0);
+  var th = function (l, tip) {
+    return '<th title="' + _auditEstEsc(tip) + '">' + l + '</th>';
+  };
+  return (
+    '<div style="font-size:12px;font-weight:700;color:var(--text);margin:12px 0 4px">Cost by Building</div>' +
+    '<div class="ch-tbl-outer ae-tbl-outer"><table class="ch-tbl ae-tbl ae-bldg-tbl" style="width:100%">' +
+    '<thead><tr><th class="ae-left">Building</th>' +
+    th('Equipment', 'Units of auditable equipment in this building.') +
+    th('Sampled', 'Sampled units of each type, shared across buildings by how many units each has.') +
+    th('Hours', 'Sampled units times Hours Each, plus the site items of this building.') +
+    th('Cost', 'Hours times the labor rate. Project-wide is the matrix review and the report.') +
+    '</tr></thead><tbody>' +
+    body +
+    '</tbody><tfoot><tr><td>Total</td>' +
+    num(eq) +
+    num(sm) +
+    num(b.totalHours.toFixed(1)) +
+    '<td class="ch-tbl-col-type-currency">' +
+    _auditEstFmt(b.totalCost) +
+    '</td></tr></tfoot></table></div>'
   );
 }
 
@@ -573,7 +719,7 @@ function _auditEstAssumptionsHTML(projId) {
     cfg.sampleFactor +
     '" style="width:80px;text-align:right;background:var(--s2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 6px" onchange="auditEstSaveSampleFactor(\'' +
     projId +
-    "', this.value)\"><br>" +
+    '\', this.value)"><br>' +
     '<span style="font-size:10px;color:var(--text3)">Sample about the square root of each equipment count; 1.0 = √count</span></div>' +
     '<div><label style="font-size:11px;color:var(--text3)">Report and analysis hours (fixed)</label><br>' +
     '<input type="number" step="0.25" min="0" value="' +
@@ -649,6 +795,7 @@ var AUDIT_EST_TABLE_CSS =
   '.ae-tbl td.ch-tbl-col-type-number,.ae-tbl td.ch-tbl-col-type-currency{text-align:right}' +
   '.ae-tbl tfoot td{background:var(--s1);font-weight:700;border-top:2px solid var(--border2);border-bottom:none}' +
   '.ae-tbl tbody tr:hover td{background:var(--s4)}' +
+  '.ae-bldg-tbl th,.ae-bldg-tbl td{padding:3px 6px}' +
   '</style>';
 
 /* ── Main render entry — called from initCostEstimateTab (app/pricing-estimator.js) ────────── */
