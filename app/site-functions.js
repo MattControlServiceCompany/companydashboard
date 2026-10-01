@@ -1775,6 +1775,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.01.59', date: '2026-10-01', title: 'Audit Estimate: Workbook pricing switch',
+    items: [
+      { type: 'feature', text: 'Audit Estimate: new "Workbook | Hourly $170" switch. Workbook pricing is now the default. Prices may change on existing estimates. Choose Hourly to keep the old method.' },
+      { type: 'feature', text: 'Audit Estimate: new Export to Excel button downloads the estimate as a workbook.' }
+    ]
+  },
   { v: 'v2026.10.01.58', date: '2026-10-01', title: 'Cost Estimate: Estimate type menu',
     items: [
       { type: 'feature', text: 'Cost Estimate: new Estimate type menu (BAS Audit, Full Facility Audit, Retrofit). Only the selected type is shown. The choice is saved per project. Projects without retrofit pricing open on BAS Audit.' }
