@@ -10152,35 +10152,96 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   }, 0);
 };
 
-/* ── Audit Estimate append (2026-09-25, feat/audit-estimate-proposal) ───────────────────────
-   initCostEstimateTab() has TWO render branches that each fully replace el.innerHTML and
-   return (the `_condensedOn` early return above — the DEFAULT for Compliance/Full Scope — and
-   the full per-row table path below it). Wrapping the whole function post-definition, the
-   same pattern already used below for _pricingRefreshFooter, runs the Audit Estimate append
-   AFTER either branch finishes, so it renders regardless of which one a given project/tier
-   takes. Appended as an extra flex child of `el` itself (el is already `display:flex;
-   flex-direction:column;flex:1;min-height:0;overflow:hidden` — app/core.js) rather than a
-   child of the inner `.ch-panel` div either branch builds, so this code never has to reach
-   inside either branch's own markup. */
+/* ── Estimate type (2026-10-01) ─────────────────────────────────────────────────────────────
+   The Cost Estimate tab shows ONE kind of estimate at a time, chosen by the "Estimate type"
+   select at the top left: 'bas' (BAS Audit), 'full' (Full Facility Audit) or 'retrofit'
+   (Material / Programming / Install pricing tiers). Rendering only: hiding a type never changes
+   any computed total, saved data, or proposal output of another type.
+   Saved per project in en_pricing_est_type_<projId> (en_pricing_ prefix, so it syncs). Nothing
+   is written until the user changes the select. Unset default: 'retrofit' when the project
+   already has saved retrofit pricing state (en_pricing_estimate_<projId>: tier, row toggles,
+   overrides, condensed view; or en_pricing_budget_<projId>), else 'bas'.            */
+var PRICING_EST_TYPES = [
+  { key: 'bas', label: 'BAS Audit' },
+  { key: 'full', label: 'Full Facility Audit' },
+  { key: 'retrofit', label: 'Retrofit (Material / Programming / Install)' },
+];
+function _pricingGetEstimateType(projId) {
+  try {
+    var v = sget('en_pricing_est_type_' + projId, null);
+    if (v === 'bas' || v === 'full' || v === 'retrofit') return v;
+    var hasRetrofit = sget('en_pricing_estimate_' + projId, null) || sget('en_pricing_budget_' + projId, null);
+    return hasRetrofit ? 'retrofit' : 'bas';
+  } catch (e) {
+    return 'bas';
+  }
+}
+function _pricingSetEstimateType(projId, type) {
+  try {
+    var p = sset('en_pricing_est_type_' + projId, type);
+    if (p && p.catch) p.catch(function () {});
+  } catch (e) {
+    /* storage unavailable — choice not saved */
+  }
+  initCostEstimateTab(projId);
+}
+function _pricingEstimateTypeBarHTML(projId, type) {
+  var rateBtn = '';
+  if (type !== 'retrofit') {
+    // Audits use the same labor rate as the retrofit estimate (auditEstGetHourlyRate), so the
+    // rate chip stays visible here; the retrofit-only controls (pricing import, Table Settings,
+    // Legend, Budget, tier, building filter, sort, Hardware & Install) are not rendered.
+    rateBtn =
+      '<button class="btn btn-ghost btn-sm" onclick="_pricingOpenRatePopover(\'' +
+      projId +
+      '\',this)" title="Labor rate — the $ per hour used by the audit estimate and the retrofit estimate" style="cursor:pointer">Rate: ' +
+      _pricingFmt(_pricingGetConfig().hourlyRate || COST_LABOR_RATE_DEFAULT) +
+      '/hr</button>';
+  }
+  return (
+    '<div id="estTypeBar-' +
+    projId +
+    '" style="flex-shrink:0;padding:10px 14px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--s1);border-bottom:1px solid var(--border2)">' +
+    '<label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px">Estimate type:' +
+    '<select id="estTypeSelect-' +
+    projId +
+    '" onchange="_pricingSetEstimateType(\'' +
+    projId +
+    '\',this.value)" style="font-size:11px;padding:2px 6px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px">' +
+    PRICING_EST_TYPES.map(function (t) {
+      return '<option value="' + t.key + '"' + (t.key === type ? ' selected' : '') + '>' + t.label + '</option>';
+    }).join('') +
+    '</select></label>' +
+    rateBtn +
+    '</div>'
+  );
+}
+
+/* ── Estimate type wrapper (replaces the 2026-09-25 Audit Estimate append) ───────────────────
+   Wraps the retrofit initCostEstimateTab above (which has TWO branches that each fully replace
+   el.innerHTML — the condensed early return and the full table). 'retrofit' runs it unchanged
+   and prepends the type bar. 'bas' / 'full' skip it entirely (no retrofit row building) and
+   render the bar plus that one audit section. The tab body is the one scroll region. */
 (function () {
   var _origInitCostEstimateTab = initCostEstimateTab;
   initCostEstimateTab = function (projId) {
-    _origInitCostEstimateTab(projId);
-    if (typeof auditEstRenderHTML !== 'function') return;
     var el = document.getElementById('ptab-cost-estimate-body-' + projId);
     if (!el) return;
-    var wrapId = 'auditEstWrap-' + projId;
-    var wrap = document.getElementById(wrapId);
-    if (!wrap) {
-      wrap = document.createElement('div');
-      wrap.id = wrapId;
-      wrap.style.cssText = 'flex-shrink:0;padding:0 14px 128px';
-      el.appendChild(wrap);
+    var type = _pricingGetEstimateType(projId);
+    if (type === 'retrofit' || typeof auditEstRenderHTML !== 'function') {
+      _origInitCostEstimateTab(projId);
+      type = 'retrofit';
+      el.insertAdjacentHTML('afterbegin', _pricingEstimateTypeBarHTML(projId, type));
+    } else {
+      el.innerHTML =
+        _pricingEstimateTypeBarHTML(projId, type) +
+        '<div id="auditEstWrap-' +
+        projId +
+        '" style="flex-shrink:0;padding:0 14px 128px">' +
+        auditEstRenderHTML(projId, type) +
+        '</div>';
     }
-    // The tab body is the one scroll region: the estimate above keeps its height, the Audit
-    // Estimate shows at natural height under it, and the body scrolls (not the Audit section).
     el.style.overflowY = 'auto';
-    wrap.innerHTML = auditEstRenderHTML(projId);
   };
 })();
 
