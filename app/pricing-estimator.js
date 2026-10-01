@@ -8372,6 +8372,10 @@ function _pricingRecommendedTimelineHTML(projId) {
       '</div>';
   }
 
+  // 2026-10-01 (fix/cost-estimate-layout): the 220px max-height box below is gone — the Cost
+  // Estimate tab body is now the ONE vertical scroller (energy-department.html), so the
+  // timeline flows at natural height instead of being a nested scroll box. The historic note
+  // that follows explains why the bound existed under the old fixed-height panel.
   // Bounded max-height + its own overflow:auto scroll region (same "multi-zone-scroll" pattern
   // ui-standards.md documents for the Top ROI card and _pricingLaborBreakdownHTML immediately
   // above) — without this, an unbounded table stacked as a flex-shrink:0 sibling under the
@@ -8392,7 +8396,7 @@ function _pricingRecommendedTimelineHTML(projId) {
     '<div style="margin:10px 14px 0;flex-shrink:0">' +
     '<div style="font-weight:700;color:var(--text2);margin-bottom:6px;font-size:11px;text-transform:uppercase;' +
     'letter-spacing:0.5px">Recommended Tier — Phased Implementation Timeline</div>' +
-    '<div class="ch-tbl-outer" style="margin:0 0 4px;max-height:220px;display:flex;flex-direction:column">' +
+    '<div class="ch-tbl-outer" style="margin:0 0 4px;display:flex;flex-direction:column">' +
     '<div class="ch-tbl-scroll" style="overflow:auto">' +
     '<table class="ch-tbl" style="border-collapse:separate;border-spacing:0;width:100%">' +
     '<thead><tr>' +
@@ -10170,7 +10174,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     if (!wrap) {
       wrap = document.createElement('div');
       wrap.id = wrapId;
-      wrap.style.cssText = 'flex-shrink:0';
+      wrap.style.cssText = 'flex-shrink:0;padding:0 14px 128px';
       el.appendChild(wrap);
     }
     // The tab body is the one scroll region: the estimate above keeps its height, the Audit
