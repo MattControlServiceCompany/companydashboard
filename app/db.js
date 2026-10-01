@@ -1652,6 +1652,54 @@ const DB = (() => {
     });
   }
 
+  // --- Restore from backup support (app/site-functions.js processRestoreFile) ---
+  // Where a key lives for restore: 'shared' (one server row), 'per-user'
+  // (server row namespaced to the signed-in user) or 'local' (never sent:
+  // local-only keys, or a per-user key with nobody signed in).
+  function restoreScope(key) {
+    if (!_shouldReplicate(key)) return 'local';
+    if (_isPerUserKey(key)) return _myUserId() ? 'per-user' : 'local';
+    return 'shared';
+  }
+  // Reads the CURRENT server rows for `keys` (local keys). Resolves to a Map
+  // localKey -> { value, version, deleted } for keys that exist on the server.
+  // Throws on any failure: the caller must abort with zero writes.
+  async function restoreFetchServer(keys) {
+    const manifest = await _fetchManifestWithTimeout(30000);
+    const onServer = new Set((Array.isArray(manifest) ? manifest : []).map((m) => m.key));
+    const out = new Map();
+    for (const key of keys) {
+      const wire = _wireKey(key);
+      if (wire === null || !onServer.has(wire)) continue;
+      const rows = await _batchGet([wire]);
+      const row = Array.isArray(rows) ? rows.find((r) => r.key === wire) : null;
+      if (!row) throw new Error('server returned no row for an existing key');
+      out.set(key, { value: row.deleted ? undefined : row.value, version: row.version, deleted: !!row.deleted });
+    }
+    return out;
+  }
+  // Pushes ONE merged value with the normal CAS write (gzip for big bodies),
+  // using the version just read by restoreFetchServer. The local copy is
+  // written only after the server accepts it. Never opens the conflict modal.
+  async function restorePush(key, value, serverRow) {
+    const prev = _replicaVersions[key];
+    if (serverRow) _replicaVersions[key] = { version: serverRow.version, hash: null };
+    else delete _replicaVersions[key];
+    let r;
+    try {
+      r = await _sendKvPut(key, { value });
+    } catch (e) {
+      r = { status: 'network-error' };
+    }
+    if (r.status !== 'ok') {
+      if (prev) _replicaVersions[key] = prev;
+      else delete _replicaVersions[key];
+      return { ok: false, status: r.status === 'error' ? 'server error ' + (r.httpStatus || '') : r.status };
+    }
+    await _rawSet(key, value);
+    return { ok: true };
+  }
+
   function getAllKeys() {
     return Object.keys(_cache);
   }
@@ -1755,6 +1803,9 @@ const DB = (() => {
     isConflictArchiveFull,
     clearConflictArchive,
     setBackendMode,
+    restoreScope,
+    restoreFetchServer,
+    restorePush,
   };
 })();
 

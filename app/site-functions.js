@@ -1148,10 +1148,37 @@ async function siteBackup() {
   // backup buttons produce the same file shape (see index.html for the size
   // rationale). Restore only calls JSON.parse(), which is unaffected by
   // formatting.
-  var content = JSON.stringify(data);
-  var blob = new Blob([content], { type: 'application/json' });
+  _downloadJson(filename, data);
+  if (typeof showToast === 'function') showToast('Backup downloaded');
+}
+// Restore from backup. Default mode never overwrites existing data: it only
+// adds what is missing. The merge itself lives in app/restore-merge.js (one
+// implementation for sync on and sync off). Sync on: current = server values,
+// changed shared/per-user keys are pushed with the normal CAS write
+// (DB.restorePush). Sync off: current = this device, written locally.
+var _RESTORE_LS_ONLY = [
+  "ch_settings",
+  "ch_theme",
+  "ch_user",
+  "ch_activeView",
+  "ch_projTabOrder",
+  "ch_sidebarOrder",
+  "ch_dismissed_tips",
+  "ch_qs_seen",
+  "ch_seen_version",
+  "ch_toast_duration",
+  "ch_last_seen_version",
+  "ch_notifs",
+];
+function _restoreIsLsKey(k) {
+  return _RESTORE_LS_ONLY.some(function (p) {
+    return k === p || k.indexOf(p) === 0;
+  });
+}
+function _downloadJson(filename, obj) {
+  var blob = new Blob([JSON.stringify(obj)], { type: "application/json" });
   var url = URL.createObjectURL(blob);
-  var a = document.createElement('a');
+  var a = document.createElement("a");
   a.href = url;
   a.download = filename;
   document.body.appendChild(a);
@@ -1160,81 +1187,366 @@ async function siteBackup() {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   }, 1500);
-  if (typeof showToast === 'function') showToast('Backup downloaded');
 }
+function _restoreEsc(s) {
+  return String(s).replace(/[&<>"]/g, function (c) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+  });
+}
+function _restoreStyle() {
+  if (document.getElementById("restoreDlgStyle")) return;
+  var st = document.createElement("style");
+  st.id = "restoreDlgStyle";
+  st.textContent =
+    ".rst-modal{width:640px;max-width:96vw;min-width:0}" +
+    ".rst-modal .modal-body{font-size:13px;color:var(--text)}" +
+    ".rst-note{color:var(--text2);margin:0 0 12px;line-height:1.45}" +
+    ".rst-opt{display:flex;gap:8px;align-items:flex-start;margin:0 0 8px;cursor:pointer;line-height:1.4}" +
+    ".rst-opt input{margin-top:3px}" +
+    ".rst-opt small{display:block;color:var(--text2)}" +
+    ".rst-tbl-outer{border:1px solid var(--border);border-radius:6px;overflow:hidden;margin:12px 0}" +
+    ".rst-tbl{width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed}" +
+    ".rst-tbl th,.rst-tbl td{padding:7px 10px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums}" +
+    ".rst-tbl th:last-child,.rst-tbl td:last-child{border-right:none}" +
+    ".rst-tbl tbody tr:last-child td{border-bottom:none}" +
+    ".rst-tbl thead th{background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;text-align:center;border-bottom:1px solid var(--border2)}" +
+    ".rst-tbl td.n{text-align:right}" +
+    ".rst-tbl th:first-child,.rst-tbl td:first-child{width:40%;text-align:left}" +
+    ".rst-list{margin:6px 0 0;padding-left:18px;color:var(--text2);word-break:break-word}" +
+    ".rst-prog{color:var(--text2);margin:8px 0}";
+  document.head.appendChild(st);
+}
+
+// Entry: parse the file, read current values, show the dialog.
 function processRestoreFile(file) {
   if (!file) return;
-  // 2a.4b — Restore-from-backup mass-writes every key through DB.set. With
-  // the replication tail live (ch_backend_mode === 'on') that's a 409-storm
-  // or a silent mass-overwrite of the other user's current server data —
-  // never a user's intent when they click "Restore". Default: block it
-  // outright (supabase-migration-plan-FINAL-2026-07-19.md §3 integration #4,
-  // task 2a.4b — "Default: block it"). Mode 'off'/'shadow' are unaffected.
-  var _chBackendModeRestoreGuard = 'off';
-  try {
-    _chBackendModeRestoreGuard = window.CH_AUTH.backendMode();
-  } catch (e) {}
-  if (_chBackendModeRestoreGuard === 'on') {
-    if (typeof showToast === 'function') {
-      showToast(
-        'Restore from backup is disabled while sync is on, to protect the shared server data. Turn sync off in Settings to restore this device only, or contact your admin about the server-side rollback path.',
-        'error',
-        8000,
-      );
-    }
-    return;
-  }
-  if (!file.name.toLowerCase().endsWith('.json')) {
-    if (typeof showToast === 'function') showToast('Please drop a .json backup file');
+  if (!file.name.toLowerCase().endsWith(".json")) {
+    if (typeof showToast === "function")
+      showToast("Please drop a .json backup file");
     return;
   }
   var fr = new FileReader();
   fr.onload = function (ev) {
+    var data;
     try {
-      var data = JSON.parse(ev.target.result);
-      // Keys that must stay in localStorage (read synchronously before DB warms)
-      var lsOnlyKeys = [
-        'ch_settings',
-        'ch_theme',
-        'ch_user',
-        'ch_activeView',
-        'ch_projTabOrder',
-        'ch_sidebarOrder',
-        'ch_dismissed_tips',
-        'ch_qs_seen',
-        'ch_seen_version',
-        'ch_toast_duration',
-        'ch_last_seen_version',
-        'ch_notifs',
-      ];
-      var useDB = typeof DB !== 'undefined' && DB.isReady();
-      Object.keys(data).forEach(function (k) {
-        var isLsKey = lsOnlyKeys.some(function (p) {
-          return k === p || k.indexOf(p) === 0;
-        });
-        if (isLsKey || !useDB) {
-          var v = data[k];
-          localStorage.setItem(k, typeof v === 'string' ? v : JSON.stringify(v));
-        } else {
-          // DB.set expects a parsed value, but backup stores raw JSON strings for complex types
-          var val = data[k];
-          try {
-            val = JSON.parse(val);
-          } catch (e) {
-            /* leave as string */
-          }
-          DB.set(k, val);
-        }
-      });
-      if (typeof showToast === 'function') showToast('Restored — reloading...');
-      setTimeout(function () {
-        location.reload();
-      }, 1200);
+      data = JSON.parse(ev.target.result);
     } catch (err) {
-      if (typeof showToast === 'function') showToast('Invalid backup file');
+      if (typeof showToast === "function") showToast("Invalid backup file");
+      return;
     }
+    if (!data || typeof data !== "object" || Array.isArray(data)) {
+      if (typeof showToast === "function") showToast("Invalid backup file");
+      return;
+    }
+    _restoreStart(data);
   };
   fr.readAsText(file);
+}
+
+async function _restoreStart(backup) {
+  var syncOn = false;
+  try {
+    syncOn = window.CH_AUTH.backendMode() !== "off";
+  } catch (e) {}
+  var useDB = typeof DB !== "undefined" && DB.isReady();
+  var all = useDB ? DB.getAll() : {};
+  var keys = Object.keys(backup).filter(function (k) {
+    return RestoreMerge.SKIP_KEYS.indexOf(k) === -1;
+  });
+  function scopeOf(k) {
+    if (!syncOn || _restoreIsLsKey(k)) return "local";
+    return DB.restoreScope(k);
+  }
+  var server = new Map();
+  if (syncOn) {
+    if (typeof showToast === "function")
+      showToast("Reading current server data...");
+    try {
+      server = await DB.restoreFetchServer(
+        keys.filter(function (k) {
+          return scopeOf(k) !== "local";
+        }),
+      );
+    } catch (e) {
+      console.warn("[restore] server read failed:", e);
+      if (typeof showToast === "function") {
+        showToast(
+          "Restore stopped: could not read the current server data. Nothing was changed.",
+          "error",
+          8000,
+        );
+      }
+      return;
+    }
+  }
+  function getCurrent(k) {
+    if (scopeOf(k) !== "local")
+      return server.has(k) ? server.get(k).value : undefined;
+    if (!_restoreIsLsKey(k) && all[k] !== undefined) return all[k];
+    var raw = localStorage.getItem(k);
+    return raw === null ? undefined : raw;
+  }
+  _restoreDialog(backup, getCurrent, scopeOf, server, syncOn, useDB);
+}
+
+function _restoreDialog(backup, getCurrent, scopeOf, server, syncOn, useDB) {
+  _restoreStyle();
+  var old = document.getElementById("restoreDlgBg");
+  if (old) old.remove();
+  var bg = document.createElement("div");
+  bg.id = "restoreDlgBg";
+  bg.className = "modal-bg open";
+  bg.innerHTML =
+    '<div class="modal rst-modal" role="dialog" aria-label="Restore from backup">' +
+    '<div class="modal-hdr"><div class="modal-title">Restore from backup</div>' +
+    '<button class="modal-x" id="rstX" aria-label="Cancel">&#10005;</button></div>' +
+    '<div class="modal-body" id="rstBody"></div>' +
+    '<div class="modal-ftr" id="rstFtr"></div></div>';
+  document.body.appendChild(bg);
+  var body = bg.querySelector("#rstBody");
+  var ftr = bg.querySelector("#rstFtr");
+  var mode = "add";
+  var busy = false;
+  function close() {
+    if (!busy) bg.remove();
+  }
+  bg.querySelector("#rstX").onclick = close;
+
+  function currentPlan() {
+    return RestoreMerge.plan(backup, getCurrent, mode);
+  }
+  var where = syncOn ? "the shared server data" : "this device";
+  function opt(v, title, sub) {
+    return (
+      '<label class="rst-opt"><input type="radio" name="rstMode" value="' +
+      v +
+      '"' +
+      (mode === v ? " checked" : "") +
+      "><span><b>" +
+      title +
+      "</b><small>" +
+      sub +
+      "</small></span></label>"
+    );
+  }
+  function renderPreview() {
+    var p = currentPlan();
+    var rows = RestoreMerge.summarize(p.items);
+    var changedItems = p.items.filter(function (i) {
+      return i.changed;
+    });
+    var localOnly = changedItems.filter(function (i) {
+      return scopeOf(i.key) === "local";
+    }).length;
+    var html =
+      '<p class="rst-note">' +
+      (syncOn
+        ? "Sync is on. Restore compares the backup with the current server data. Both users share the server data."
+        : "Sync is off. Restore compares the backup with the data on this device.") +
+      " Restore does not delete anything in any mode.</p>" +
+      opt(
+        "add",
+        "Add missing only (recommended)",
+        "Adds data that is not in " +
+          where +
+          " yet. Existing data does not change.",
+      ) +
+      opt(
+        "merge",
+        "Merge (backup updates matching records)",
+        "Adds missing data. Records with the same ID take the backup version. Other data stays.",
+      ) +
+      opt(
+        "replace",
+        "Replace",
+        "Backup values replace the current values. This overwrites " +
+          where +
+          ".",
+      ) +
+      '<div class="rst-tbl-outer"><table class="rst-tbl"><thead><tr><th>Data</th><th>Added</th><th>Updated</th><th>Kept</th></tr></thead><tbody>';
+    if (!rows.length)
+      html +=
+        '<tr><td colspan="4">The backup has no data to restore.</td></tr>';
+    rows.forEach(function (r) {
+      html +=
+        '<tr><td title="' +
+        _restoreEsc(r.label) +
+        '">' +
+        _restoreEsc(r.label) +
+        '</td><td class="n">' +
+        r.added +
+        '</td><td class="n">' +
+        r.updated +
+        '</td><td class="n">' +
+        r.kept +
+        "</td></tr>";
+    });
+    html += "</tbody></table></div>";
+    html +=
+      '<p class="rst-note">&quot;Kept&quot; means unchanged. It includes data that already exists and has no ID to match on.' +
+      (p.skipped.length
+        ? " " + p.skipped.length + " internal setting(s) are never restored."
+        : "") +
+      (syncOn && localOnly
+        ? " " + localOnly + " changed item(s) stay on this device only."
+        : "") +
+      "</p>";
+    body.innerHTML = html;
+    var n = changedItems.length;
+    ftr.innerHTML =
+      '<button class="btn btn-ghost" id="rstCancel">Cancel</button>' +
+      '<button class="btn btn-em" id="rstApply"' +
+      (n ? "" : " disabled") +
+      ">" +
+      (n
+        ? "Restore (" + n + " item" + (n === 1 ? "" : "s") + " change)"
+        : "Nothing to change") +
+      "</button>";
+    ftr.querySelector("#rstCancel").onclick = close;
+    ftr.querySelector("#rstApply").onclick = function () {
+      if (mode === "replace") renderReplaceConfirm();
+      else apply(p);
+    };
+    body.querySelectorAll("input[name=rstMode]").forEach(function (r) {
+      r.onchange = function () {
+        mode = r.value;
+        renderPreview();
+      };
+    });
+  }
+  function renderReplaceConfirm() {
+    body.innerHTML =
+      '<p class="rst-note"><b>Replace overwrites ' +
+      where +
+      ".</b> " +
+      (syncOn
+        ? "The server data is shared. Both users will see the backup values instead of the current values."
+        : "The backup values replace the matching data on this device.") +
+      " Data that is not in the backup stays.</p>";
+    ftr.innerHTML =
+      '<button class="btn btn-ghost" id="rstBack">Go back</button>' +
+      '<button class="btn btn-em" id="rstReplaceYes">Yes, overwrite ' +
+      (syncOn ? "shared data for both users" : "this device") +
+      "</button>";
+    ftr.querySelector("#rstBack").onclick = renderPreview;
+    ftr.querySelector("#rstReplaceYes").onclick = function () {
+      apply(currentPlan());
+    };
+  }
+  function progress(msg) {
+    var el = body.querySelector("#rstProg");
+    if (el) el.textContent = msg;
+  }
+  function writeLocal(it) {
+    var k = it.key;
+    var v = it.value;
+    if (_restoreIsLsKey(k) || !useDB) {
+      localStorage.setItem(k, typeof v === "string" ? v : JSON.stringify(v));
+      return Promise.resolve();
+    }
+    return DB.set(k, v);
+  }
+  async function apply(p) {
+    busy = true;
+    var changed = p.items.filter(function (i) {
+      return i.changed;
+    });
+    body.innerHTML = '<p class="rst-prog" id="rstProg">Starting...</p>';
+    ftr.innerHTML = "";
+    var sent = 0;
+    var failed = [];
+    var localDone = 0;
+    try {
+      if (syncOn) {
+        var before = {};
+        changed.forEach(function (it) {
+          if (scopeOf(it.key) !== "local" && server.has(it.key))
+            before[it.key] = server.get(it.key).value;
+        });
+        if (Object.keys(before).length) {
+          var d = new Date();
+          var pad = function (n) {
+            return String(n).padStart(2, "0");
+          };
+          var stamp =
+            d.getFullYear() +
+            pad(d.getMonth() + 1) +
+            pad(d.getDate()) +
+            "-" +
+            pad(d.getHours()) +
+            pad(d.getMinutes());
+          progress("Saving a copy of the current server data...");
+          _downloadJson(
+            "CompanyHub-server-before-restore-" + stamp + ".json",
+            before,
+          );
+          await new Promise(function (r) {
+            setTimeout(r, 400);
+          });
+        }
+      }
+      var pushes = changed.filter(function (i) {
+        return syncOn && scopeOf(i.key) !== "local";
+      });
+      var locals = changed.filter(function (i) {
+        return pushes.indexOf(i) === -1;
+      });
+      for (var i = 0; i < pushes.length; i++) {
+        progress(
+          "Sending to server: " +
+            (i + 1) +
+            " of " +
+            pushes.length +
+            " (" +
+            sent +
+            " sent, " +
+            failed.length +
+            " failed)",
+        );
+        var it = pushes[i];
+        var r = await DB.restorePush(
+          it.key,
+          it.value,
+          server.get(it.key) || null,
+        );
+        if (r.ok) sent++;
+        else failed.push(it.key + " (" + r.status + ")");
+      }
+      for (var j = 0; j < locals.length; j++) {
+        progress("Saving on this device: " + (j + 1) + " of " + locals.length);
+        await writeLocal(locals[j]);
+        localDone++;
+      }
+    } catch (err) {
+      console.warn("[restore] failed:", err);
+      failed.push("unexpected error: " + (err && err.message));
+    }
+    busy = false;
+    var html =
+      '<p class="rst-note"><b>Restore finished.</b> ' +
+      (syncOn
+        ? sent + " sent to the server, " + failed.length + " failed. "
+        : "") +
+      localDone +
+      " saved on this device.</p>";
+    if (failed.length) {
+      html +=
+        '<p class="rst-note">These items were not sent. The server did not change for them:</p><ul class="rst-list">' +
+        failed
+          .map(function (f) {
+            return "<li>" + _restoreEsc(f) + "</li>";
+          })
+          .join("") +
+        "</ul>";
+    }
+    body.innerHTML = html;
+    ftr.innerHTML =
+      '<button class="btn btn-em" id="rstDone">Close and reload</button>';
+    ftr.querySelector("#rstDone").onclick = function () {
+      location.reload();
+    };
+  }
+  renderPreview();
 }
 function siteRestore() {
   var inp = document.createElement('input');
