@@ -2296,6 +2296,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.01.62', date: '2026-10-01', title: 'Cost Estimate: one amount per building',
+    items: [
+      { type: 'fix', text: 'Cost Estimate: in Workbook mode, each building now shows the same amount on the row table, the timeline and the Summary.' }
+    ]
+  },
   { v: 'v2026.10.01.61', date: '2026-10-01', title: 'Cost Estimate: workbook pricing on proposals and Budget Fit',
     items: [
       { type: 'feature', text: 'Cost Estimate: the "Workbook | Hourly $170" switch is now on the Cost Estimate page. Workbook pricing is the default, so tier totals on existing estimates can change. Choose Hourly $170 to keep the old method.' },
