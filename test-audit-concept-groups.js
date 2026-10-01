@@ -165,3 +165,20 @@ console.log('PASS hours override tests');
   assert.strictEqual(SC.classifyKey('en_pricing_audit_hours_9'), 'synced');
 })();
 console.log('PASS resolution order + sync rule tests');
+
+// "Description" auto_ point must not count as SCR (electric heat) and must not split groups
+rows = [].concat(mk('vav', 3, P('damperPosition', 'auto_description')), mk('vav', 3, P('damperPosition')));
+assert.strictEqual(row(rows, 'vav').groupCount, 1, 'auto_description must not split groups');
+assert.strictEqual(make(mk('vav', 2, P('damperPosition', 'auto_heatingScr'))).auditEstComputeBreakdown('p', 'bas').rows[0].groupCount, 1);
+
+// Corrupt company hoursPerEquip (string, negative, NaN, null) is ignored: totals stay finite and equal the built-in result
+const base = make(mk('vav', 3, P('damperPosition'))).auditEstComputeBreakdown('p', 'bas');
+['x', -2, NaN, null].forEach((bad) => {
+  const t = make(mk('vav', 3, P('damperPosition')), { hoursPerEquip: { vav: bad } }).auditEstComputeBreakdown('p', 'bas');
+  assert.ok(isFinite(t.totalHours) && isFinite(t.totalCost), 'finite for ' + bad);
+  assert.strictEqual(t.totalHours, base.totalHours);
+  assert.strictEqual(t.totalCost, base.totalCost);
+});
+const good = make(mk('vav', 3, P('damperPosition')), { hoursPerEquip: { vav: 3 } }).auditEstComputeBreakdown('p', 'bas');
+assert.ok(good.totalHours !== base.totalHours, 'valid company value still used');
+console.log('corrupt-config + description tests ok');

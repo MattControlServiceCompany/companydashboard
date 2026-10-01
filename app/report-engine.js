@@ -23245,8 +23245,9 @@ function _rptAuditProposalCoverInnerHTML(data) {
         '</td><td style="' + td + ';text-align:right">' + r.count +
         '</td><td style="' + td + ';text-align:right">' + r.sampled + '</td></tr>' +
         (r.units && r.units.length
-          ? '<tr><td colspan="3" style="padding:0 10px 4px;border-bottom:1px solid var(--rpt-border);font-size:10px;line-height:1.3;color:var(--rpt-page-text)">Units: ' +
-            _rptV2Esc(r.units.join(', ')) +
+          ? '<tr><td colspan="3" style="padding:0 10px 2px;border-bottom:1px solid var(--rpt-border);font-size:9px;line-height:1.2;color:var(--rpt-page-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:0">' +
+            _rptV2Esc(r.units.slice(0, 2).join(', ')) +
+            (r.units.length > 2 ? ' +' + (r.units.length - 2) + ' more' : '') +
             '</td></tr>'
           : '')
       );

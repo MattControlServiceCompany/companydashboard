@@ -143,7 +143,13 @@ function auditEstGetConfig() {
   dflt.history = [];
   if (!stored) return dflt;
   var merged = Object.assign({}, dflt, stored);
-  merged.hoursPerEquip = Object.assign({}, dflt.hoursPerEquip, stored.hoursPerEquip || {});
+  // Read-side clamp: a non-number, NaN, Infinity or negative stored value is treated as absent.
+  var okHours = {};
+  Object.keys(stored.hoursPerEquip || {}).forEach(function (k) {
+    var h = stored.hoursPerEquip[k];
+    if (typeof h === 'number' && isFinite(h) && h >= 0) okHours[k] = h;
+  });
+  merged.hoursPerEquip = Object.assign({}, dflt.hoursPerEquip, okHours);
   merged.fullFacility = Object.assign({}, dflt.fullFacility, stored.fullFacility || {});
   merged.history = stored.history || [];
   return merged;
@@ -242,7 +248,7 @@ function auditEstDefaultSource(cat) {
   var v = stored && stored.hoursPerEquip ? stored.hoursPerEquip[cat] : null;
   // auditEstSetConfig() saves the whole merged object, so a stored value equal to the built-in one is not a company choice.
   var b = AUDIT_EST_HOURS_PER_EQUIP_DEFAULT[cat];
-  return typeof v === 'number' && isFinite(v) && v !== b ? 'company' : 'built-in';
+  return typeof v === 'number' && isFinite(v) && v >= 0 && v !== b ? 'company' : 'built-in';
 }
 function auditEstClearHourOverrides(projId) {
   return _auditEstWriteHourOverrides(projId, {}) ? 'ok' : 'failed';
@@ -259,7 +265,7 @@ function auditEstClearHourOverrides(projId) {
 var AUDIT_EST_CONCEPTS = [
   ['Economizer', /econom|^oaDamperPosition$|returnAirDamper|reliefDamper|mixedAirTemp|returnAirEnthalpy|exhaustAirDamper/i],
   ['Fan speed/VFD', /vfd|^supplyFanSpeed$|^returnFanSpeed$|^exhaustFanSpeed$|fanSpeedCommand/i],
-  ['Electric heat', /scr|baseboard|electricHeat|unitHeater/i],
+  ['Electric heat', /(?<!de)scr|baseboard|electricHeat|unitHeater/i],
   ['Hot-water heat', /^heatingValve$|^reheatValve$|heatingCoil|heatSourceSupplyTemp|hotDeck|preheat/i],
   ['DX cooling', /circuit|condensing|compressor|cuStage|cuEnable/i],
   ['Chilled-water cooling', /^coolingValve$|coolingCoil|coolSourceSupplyTemp|chw/i],
