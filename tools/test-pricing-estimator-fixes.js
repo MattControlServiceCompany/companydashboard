@@ -188,16 +188,16 @@ check('Full Facility per-building extras for 2 buildings = 2 x (2+1+1+1) = 10 h'
   const bas = run(ctx, "auditEstComputeBreakdown(1,'bas')");
   const vav = bas.rows.find((r) => r.category === 'vav');
   check('VAV 4 same-point units = 1 group', vav.groupCount === 1, vav.groupCount);
-  // min(4*1.12, 0.5 + (1 + 0.1*3)*1.12) = min(4.48, 2.0) = 2.0 (rounded 2 dp)
-  check('VAV sampled = 1 + ceil(0.3) = 2 units, hours 0.5 + 2*1.12 = 2.74', vav.hours === 2.74 && vav.sampled === 2, vav.hours);
+  // one group -> one sampled unit: min(4*1.12, 0.5 + 1*1.12) = 1.62
+  check('VAV sampled = 1 unit (one group), hours 0.5 + 1.12 = 1.62', vav.hours === 1.62 && vav.sampled === 1, vav.hours);
   const ahu = bas.rows.find((r) => r.category === 'ahu');
-  check('AHU 2 same-point units = 0.5 + 2*2.83 capped at full 5.66', ahu.hours === 5.66, ahu.hours);
+  check('AHU 2 same-feature units = 0.5 + 1*2.83 = 3.33', ahu.hours === 3.33, ahu.hours);
   check('BAS has no site visit hours', bas.buildingLineHours === 0 && bas.buildingLineCost === 0);
   const full = run(ctx, "auditEstComputeBreakdown(1,'full')");
   check('Full keeps site visit = 2 buildings x 2 h', full.buildingLineHours === 4, full.buildingLineHours);
-  rows.push({ building: 'Bldg B', category: 'vav', points: { a: 1, z: 1 } });
+  rows.push({ building: 'Bldg B', category: 'vav', points: { a: 1, zoneCO2: 1 } });
   const vav2 = run(ctx, "auditEstComputeBreakdown(1,'bas')").rows.find((r) => r.category === 'vav');
-  check('different point set = 2 groups', vav2.groupCount === 2, vav2.groupCount);
+  check('different control features (CO2) = 2 groups', vav2.groupCount === 2, vav2.groupCount);
   rows.pop();
   rows.push({ building: 'Bldg A', category: 'hwp', points: { a: 1 } });
   const hwp = run(ctx, "auditEstComputeBreakdown(1,'bas')").rows.find((r) => r.category === 'hwp');

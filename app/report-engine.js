@@ -23178,7 +23178,16 @@ function collectAuditProposalData(projId, auditType) {
     buildingRows: buildingRows,
     buildingCount: breakdown.buildingCount,
     sampleRows: breakdown.rows.map(function (r) {
-      return { label: r.label, count: r.count, sampled: r.sampled };
+      return {
+        label: r.label,
+        count: r.count,
+        sampled: r.sampled,
+        units: (r.groupList || [])
+          .map(function (g) {
+            return g.rep;
+          })
+          .filter(Boolean),
+      };
     }),
     totalPrice: breakdown.totalCost,
   };
@@ -23234,7 +23243,13 @@ function _rptAuditProposalCoverInnerHTML(data) {
       return (
         '<tr><td style="' + td + '">' + _rptV2Esc(r.label) +
         '</td><td style="' + td + ';text-align:right">' + r.count +
-        '</td><td style="' + td + ';text-align:right">' + r.sampled + '</td></tr>'
+        '</td><td style="' + td + ';text-align:right">' + r.sampled + '</td></tr>' +
+        (r.units && r.units.length
+          ? '<tr><td colspan="3" style="padding:0 10px 2px;border-bottom:1px solid var(--rpt-border);font-size:9px;line-height:1.2;color:var(--rpt-page-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:0">' +
+            _rptV2Esc(r.units.slice(0, 2).join(', ')) +
+            (r.units.length > 2 ? ' +' + (r.units.length - 2) + ' more' : '') +
+            '</td></tr>'
+          : '')
       );
     })
     .join('');
