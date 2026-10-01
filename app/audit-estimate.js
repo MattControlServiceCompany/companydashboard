@@ -188,6 +188,56 @@ function auditEstGetHourlyRate() {
   return _pricingGetConfig().hourlyRate;
 }
 
+/* ── Per-project Hours Each overrides ─────────────────────────────────────────────────────────
+   Key en_pricing_audit_hours_<projId> = { <category>: hoursEach }. Starts with 'en_pricing_', so
+   app/sync-classification.js rule { pattern: 'en_pricing_', prefix: true } syncs it with the
+   project's other pricing data. Missing category = the default (company assumptions value).
+   auditEstComputeBreakdown() is the ONLY reader; every table and the proposal use its rows. */
+function _auditEstHoursKey(projId) {
+  return 'en_pricing_audit_hours_' + projId;
+}
+function auditEstGetHourOverrides(projId) {
+  var raw = null;
+  try {
+    raw = sget(_auditEstHoursKey(projId), null);
+  } catch (e) {
+    raw = null;
+  }
+  var out = {};
+  if (raw && typeof raw === 'object') {
+    Object.keys(raw).forEach(function (k) {
+      var n = raw[k];
+      if (typeof n === 'number' && isFinite(n) && n >= 0) out[k] = n;
+    });
+  }
+  return out;
+}
+function _auditEstWriteHourOverrides(projId, obj) {
+  try {
+    var p = sset(_auditEstHoursKey(projId), obj);
+    if (p && p.catch) p.catch(function () {});
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+// value: '' / null = back to default. Returns 'ok' | 'invalid' | 'failed'.
+function auditEstSetHourOverride(projId, cat, value) {
+  var o = auditEstGetHourOverrides(projId);
+  var txt = value == null ? '' : String(value).trim();
+  if (txt === '') {
+    delete o[cat];
+  } else {
+    var n = Number(txt);
+    if (!isFinite(n) || n < 0) return 'invalid';
+    o[cat] = n;
+  }
+  return _auditEstWriteHourOverrides(projId, o) ? 'ok' : 'failed';
+}
+function auditEstClearHourOverrides(projId) {
+  return _auditEstWriteHourOverrides(projId, {}) ? 'ok' : 'failed';
+}
+
 /* ── Equipment Matrix accessors — number of buildings, equipment count by type, points per
    equipment. Reuses emLoadMatrix()/emIsPhantomRow() (app/equipment-matrix.js) — the SAME
    equipment rows the Equipment Matrix tab and the ASHRAE 36 Audit Report read, so counts here
@@ -290,7 +340,7 @@ function auditEstGetEquipmentSummary(projId) {
       // a group in matrix order is its representative: one per group is sampled.
       var g = auditEstPointSetSignature(r, projId, cat);
       if (!byCat[cat].groups[g.sig]) {
-        byCat[cat].groups[g.sig] = { concepts: g.concepts, count: 0, rep: r.name || r.id || '' };
+        byCat[cat].groups[g.sig] = { concepts: g.concepts, count: 0, rep: r.name || r.id || '', repBuilding: bName };
         byCat[cat].groupOrder.push(g.sig);
       }
       byCat[cat].groups[g.sig].count++;
@@ -370,6 +420,7 @@ function auditEstComputeBreakdown(projId, auditType) {
   if (!summary) return null;
   var cfg = auditEstGetConfig();
   var rate = auditEstGetHourlyRate();
+  var hourOverrides = auditEstGetHourOverrides(projId);
 
   var bList = summary.allBuildingList;
   // Per-building accumulators (hours in hundredths of an hour so sums are exact).
@@ -385,7 +436,9 @@ function auditEstComputeBreakdown(projId, auditType) {
   });
 
   var rows = summary.equipTypes.map(function (e) {
-    var hoursEach = cfg.hoursPerEquip[e.category] != null ? cfg.hoursPerEquip[e.category] : 1;
+    var defaultHoursEach = cfg.hoursPerEquip[e.category] != null ? cfg.hoursPerEquip[e.category] : 1;
+    var overridden = hourOverrides[e.category] != null;
+    var hoursEach = overridden ? hourOverrides[e.category] : defaultHoursEach;
     // Sample model: review one unit per group (units with the same control features), plus a
     // fixed Equipment Matrix review. Never more than reviewing every unit.
     var fullHours = e.count * hoursEach;
@@ -418,6 +471,8 @@ function auditEstComputeBreakdown(projId, auditType) {
       sampled: reviewedUnits,
       avgPoints: e.avgPoints,
       hoursEach: hoursEach,
+      defaultHoursEach: defaultHoursEach,
+      overridden: overridden,
       hours: hours,
       cost: Math.round(hours * rate * 100) / 100,
     };
@@ -502,6 +557,7 @@ function auditEstComputeBreakdown(projId, auditType) {
     totalHours: totalHours,
     totalCost: totalCost,
     hourlyRate: rate,
+    projId: projId,
   };
 }
 
@@ -543,6 +599,59 @@ function _auditEstFmtWhole(n) {
   return '$' + Math.round(Number(n)).toLocaleString('en-US');
 }
 
+/* ── UI: expandable "Units to sample" detail under a type row ──────────────────────────────── */
+window._auditEstUnitsOpen = window._auditEstUnitsOpen || {};
+function _auditEstUnitsKey(projId, auditType, cat) {
+  return projId + '|' + auditType + '|' + cat;
+}
+function _auditEstUnitsToggleHTML(projId, auditType, r) {
+  var open = !!window._auditEstUnitsOpen[_auditEstUnitsKey(projId, auditType, r.category)];
+  return (
+    '<button type="button" class="ae-exp" aria-expanded="' +
+    open +
+    '" title="Units to sample" onclick="auditEstToggleUnits(\'' +
+    projId +
+    "','" +
+    auditType +
+    "','" +
+    r.category +
+    "')\">" +
+    (open ? '&#9662;' : '&#9656;') +
+    '</button>'
+  );
+}
+function _auditEstUnitsDetailHTML(projId, auditType, r) {
+  if (!window._auditEstUnitsOpen[_auditEstUnitsKey(projId, auditType, r.category)]) return '';
+  var items = (r.groupList || [])
+    .map(function (g) {
+      var others = g.count - 1;
+      return (
+        '<div class="ae-unit"><b>' +
+        _auditEstEsc(g.rep) +
+        '</b>' +
+        (g.repBuilding ? ' &middot; ' + _auditEstEsc(g.repBuilding) : '') +
+        ' &middot; ' +
+        _auditEstEsc(g.concepts && g.concepts.length ? g.concepts.join(' + ') : 'No listed control features') +
+        ' &middot; ' +
+        (others > 0 ? others + ' similar unit' + (others === 1 ? '' : 's') : 'no similar units') +
+        '</div>'
+      );
+    })
+    .join('');
+  return (
+    '<tr class="ae-detail"><td colspan="7" style="padding:0"><div class="ae-detail-in"><div class="ae-detail-h">Units to sample: ' +
+    _auditEstEsc(r.label) +
+    '</div>' +
+    items +
+    '</div></td></tr>'
+  );
+}
+function auditEstToggleUnits(projId, auditType, cat) {
+  var k = _auditEstUnitsKey(projId, auditType, cat);
+  window._auditEstUnitsOpen[k] = !window._auditEstUnitsOpen[k];
+  if (typeof initCostEstimateTab === 'function') initCostEstimateTab(projId);
+}
+
 /* ── UI: breakdown table for one audit type ──────────────────────────────────────────────── */
 function _auditEstBreakdownTableHTML(b, titleText) {
   if (!b) {
@@ -555,16 +664,22 @@ function _auditEstBreakdownTableHTML(b, titleText) {
     .map(function (r) {
       return (
         '<tr><td class="ch-tbl-col-type-label">' +
+        _auditEstUnitsToggleHTML(b.projId, b.auditType, r) +
         _auditEstEsc(r.label) +
         '</td>' +
         numTd(r.count) +
         numTd(r.groupCount) +
         numTd(r.sampled) +
-        numTd(r.hoursEach.toFixed(2)) +
+        numTd(
+          (r.overridden
+            ? '<span class="ae-ovr" title="Changed from default ' + r.defaultHoursEach.toFixed(2) + '">&bull;</span> '
+            : '') + r.hoursEach.toFixed(2)
+        ) +
         numTd(r.hours.toFixed(1)) +
         '<td class="ch-tbl-col-type-currency">' +
         _auditEstFmt(r.cost) +
-        '</td></tr>'
+        '</td></tr>' +
+        _auditEstUnitsDetailHTML(b.projId, b.auditType, r)
       );
     })
     .join('');
@@ -713,37 +828,55 @@ function _auditEstByBuildingTableHTML(b) {
 function _auditEstAssumptionsHTML(projId) {
   var cfg = auditEstGetConfig();
   var rate = auditEstGetHourlyRate();
-  var rows = AUDIT_EST_CATEGORIES.map(function (cat) {
-    var val = cfg.hoursPerEquip[cat] != null ? cfg.hoursPerEquip[cat] : '';
-    var sourced =
-      AUDIT_EST_HOURS_PER_EQUIP_DEFAULT[cat] != null &&
-      ['vav', 'heater', 'fpb', 'rtu', 'ahu', 'fcu'].indexOf(cat) !== -1;
-    return (
-      '<tr><td class="ch-tbl-col-type-label">' +
-      _auditEstEsc(AUDIT_EST_CAT_LABELS[cat]) +
-      '</td><td class="ch-tbl-col-type-number">' +
-      '<input type="number" step="0.01" min="0" value="' +
-      val +
-      '" id="auditEstHrs_' +
-      projId +
-      '_' +
-      cat +
-      '" style="width:70px;text-align:right;background:var(--s1);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 6px" onchange="auditEstSaveHours(\'' +
-      projId +
-      "','" +
-      cat +
-      '\', this.value)">' +
-      '</td><td class="ch-tbl-col-type-label" style="font-size:11px;color:var(--text3)">' +
-      (sourced ? 'Optimization Strategy Sheet xlsx' : 'Starting estimate') +
-      '</td></tr>'
-    );
-  }).join('');
+  var ovr = auditEstGetHourOverrides(projId);
+  var typeRows = (auditEstComputeBreakdown(projId, 'bas') || { rows: [] }).rows;
+  var rows = typeRows
+    .map(function (r) {
+      var cat = r.category;
+      var has = ovr[cat] != null;
+      var sourced = ['vav', 'heater', 'fpb', 'rtu', 'ahu', 'fcu'].indexOf(cat) !== -1;
+      return (
+        '<tr><td class="ch-tbl-col-type-label">' +
+        _auditEstEsc(r.label) +
+        '</td><td class="ch-tbl-col-type-number">' +
+        '<input type="number" step="0.01" min="0" value="' +
+        (has ? ovr[cat] : '') +
+        '" placeholder="' +
+        r.defaultHoursEach.toFixed(2) +
+        '" title="Blank = default ' +
+        r.defaultHoursEach.toFixed(2) +
+        '" id="auditEstHrs_' +
+        projId +
+        '_' +
+        cat +
+        '" style="width:70px;text-align:right;background:var(--s1);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 6px" onchange="auditEstSaveHours(\'' +
+        projId +
+        "','" +
+        cat +
+        "', this.value)\">" +
+        '</td><td class="ch-tbl-col-type-number">' +
+        r.defaultHoursEach.toFixed(2) +
+        '</td><td class="ch-tbl-col-type-label"><button type="button" ' +
+        (has ? '' : 'disabled ') +
+        'onclick="auditEstSaveHours(\'' +
+        projId +
+        "','" +
+        cat +
+        "', '')\" style=\"font-size:11px;padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:var(--s3);color:var(--text2);cursor:pointer\">Reset</button></td>" +
+        '<td class="ch-tbl-col-type-label" style="font-size:11px;color:var(--text3)">' +
+        (sourced ? 'Optimization Strategy Sheet xlsx' : 'Starting estimate') +
+        '</td></tr>'
+      );
+    })
+    .join('');
 
   return (
     '<div id="auditEstAssumptions_' +
     projId +
-    '" style="display:none;margin-top:10px;padding:12px;background:var(--s1);border:1px solid var(--border);border-radius:6px">' +
-    '<div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:8px">Audit Estimate Assumptions (company-wide — editable, applies to every project)</div>' +
+    '" style="display:' +
+    (window._auditEstAssumOpen && window._auditEstAssumOpen[projId] ? 'block' : 'none') +
+    ';margin-top:10px;padding:12px;background:var(--s1);border:1px solid var(--border);border-radius:6px">' +
+    '<div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:8px">Audit Estimate Assumptions (Hours Each is for this project; the other values are company-wide)</div>' +
     '<div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:10px">' +
     '<div><label style="font-size:11px;color:var(--text3)">Hours per building (site visit and travel, Full Facility Audit only)</label><br>' +
     '<input type="number" step="0.25" min="0" value="' +
@@ -772,9 +905,14 @@ function _auditEstAssumptionsHTML(projId) {
     _auditEstFmt(rate) +
     '/hour</div></div>' +
     '</div>' +
-    '<div style="font-size:12px;font-weight:700;color:var(--text2);margin:10px 0 6px">Hours per equipment type (one unit reviewed)</div>' +
-    '<div class="ch-tbl-outer" style="max-width:480px"><table class="ch-tbl" style="width:100%">' +
-    '<thead><tr><th>Equipment Type</th><th>Hours</th><th>Source</th></tr></thead><tbody>' +
+    '<div style="display:flex;align-items:center;gap:12px;margin:10px 0 6px"><div style="font-size:12px;font-weight:700;color:var(--text2)">Hours Each per equipment type (this project; blank = default)</div>' +
+    '<button type="button" ' +
+    (Object.keys(ovr).length ? '' : 'disabled ') +
+    'onclick="auditEstResetAllHours(\'' +
+    projId +
+    "')\" style=\"font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid var(--border);background:var(--s3);color:var(--text2);cursor:pointer\">Reset all</button></div>" +
+    '<div class="ch-tbl-outer" style="max-width:560px"><table class="ch-tbl" style="width:100%">' +
+    '<thead><tr><th>Equipment Type</th><th>Hours Each</th><th>Default</th><th></th><th>Default source</th></tr></thead><tbody>' +
     rows +
     '</tbody></table></div>' +
     '<div style="font-size:12px;font-weight:700;color:var(--text2);margin:10px 0 6px">Full Facility Audit — additional per-building hours</div>' +
@@ -834,6 +972,11 @@ var AUDIT_EST_TABLE_CSS =
   '.ae-tbl tfoot td{background:var(--s1);font-weight:700;border-top:2px solid var(--border2);border-bottom:none}' +
   '.ae-tbl tbody tr:hover td{background:var(--s4)}' +
   '.ae-bldg-tbl th,.ae-bldg-tbl td{padding:3px 6px}' +
+  '.ae-exp{background:none;border:none;color:var(--text2);cursor:pointer;padding:0 4px 0 0;font-size:11px}' +
+  '.ae-ovr{color:var(--accent);cursor:help}' +
+  '.ae-tbl tr.ae-detail td{white-space:normal;background:var(--s1)}' +
+  '.ae-detail-in{width:0;min-width:100%;padding:5px 8px;font-size:11px;line-height:1.4;color:var(--text2);box-sizing:border-box}' +
+  '.ae-detail-h{font-weight:700;color:var(--text);margin-bottom:2px}.ae-unit{padding:1px 0}' +
   '</style>';
 
 /* ── Main render entry — called from initCostEstimateTab (app/pricing-estimator.js) ────────── */
@@ -887,17 +1030,19 @@ function auditEstToggleAssumptions(projId) {
   var el = document.getElementById('auditEstAssumptions_' + projId);
   if (!el) return;
   el.style.display = el.style.display === 'none' ? 'block' : 'none';
+  window._auditEstAssumOpen = window._auditEstAssumOpen || {};
+  window._auditEstAssumOpen[projId] = el.style.display === 'block';
 }
 
 function auditEstSaveHours(projId, cat, value) {
-  var n = parseFloat(value);
-  if (isNaN(n) || n < 0) {
-    showToast('Enter a valid number of hours', 'error');
-    return;
-  }
-  auditEstSetConfig('hoursPerEquip.' + cat, n);
+  var res = auditEstSetHourOverride(projId, cat, value);
+  if (res === 'invalid') showToast('Enter hours of 0 or more, or leave blank for the default', 'error');
+  else if (res === 'failed') showToast('Could not save the hours', 'error');
   if (typeof initCostEstimateTab === 'function') initCostEstimateTab(projId);
-  if (typeof showToast === 'function') showToast('Assumption updated', 'success');
+}
+function auditEstResetAllHours(projId) {
+  if (auditEstClearHourOverrides(projId) === 'failed') showToast('Could not reset the hours', 'error');
+  if (typeof initCostEstimateTab === 'function') initCostEstimateTab(projId);
 }
 
 function auditEstSaveField(projId, path, value) {

@@ -74,3 +74,54 @@ assert.strictEqual(b.byBuilding.reduce((s, x) => s + cents(x.hours), 0), cents(b
 assert.strictEqual(b.byBuilding.reduce((s, x) => s + cents(x.cost), 0), cents(b.totalCost));
 assert.strictEqual(b.byBuilding.reduce((s, x) => s + (x.sampled || 0), 0), 3);
 console.log('PASS concept-group tests');
+
+// ── Hours Each overrides (per project) ──
+(function () {
+  const rows = [].concat(mk('vav', 6, P('reheatValve'), 'A'), mk('vav', 5, P(), 'B'), mk('ahu', 3, P('oaDamperPosition'), 'A'));
+  const ctx = make(rows);
+  const cents = (x) => Math.round(x * 100);
+  const get = (t) => ctx.auditEstComputeBreakdown('p', t);
+  const base = get('bas'), baseFull = get('full');
+  const vavDefault = base.rows.find((r) => r.category === 'vav').hoursEach;
+  assert.strictEqual(ctx.auditEstSetHourOverride('p', 'vav', '2'), 'ok');
+  let o = get('bas');
+  let vr = o.rows.find((r) => r.category === 'vav');
+  assert.strictEqual(vr.hoursEach, 2); assert.strictEqual(vr.overridden, true); assert.strictEqual(vr.defaultHoursEach, vavDefault);
+  assert.ok(o.totalHours !== base.totalHours);
+  assert.strictEqual(o.rows.find((r) => r.category === 'ahu').overridden, false);
+  const f = get('full'); // applies to the Full table too
+  assert.strictEqual(f.rows.find((r) => r.category === 'vav').hoursEach, 2);
+  [o, f].forEach((b) => {
+    assert.strictEqual(b.byBuilding.reduce((s, x) => s + cents(x.hours), 0), cents(b.totalHours));
+    assert.strictEqual(b.byBuilding.reduce((s, x) => s + cents(x.cost), 0), cents(b.totalCost));
+    assert.ok(isFinite(b.totalHours) && isFinite(b.totalCost));
+  });
+  // zero is valid (a free type), still finite
+  assert.strictEqual(ctx.auditEstSetHourOverride('p', 'vav', '0'), 'ok');
+  assert.ok(isFinite(get('bas').totalCost));
+  // invalid input leaves the stored value unchanged
+  for (const bad of ['-1', 'abc', 'NaN', 'Infinity']) assert.strictEqual(ctx.auditEstSetHourOverride('p', 'vav', bad), 'invalid');
+  assert.strictEqual(get('bas').rows.find((r) => r.category === 'vav').hoursEach, 0);
+  // blank = default
+  assert.strictEqual(ctx.auditEstSetHourOverride('p', 'vav', '  '), 'ok');
+  assert.strictEqual(get('bas').totalHours, base.totalHours);
+  assert.strictEqual(get('full').totalHours, baseFull.totalHours);
+  // reset all restores every default
+  ctx.auditEstSetHourOverride('p', 'vav', '3'); ctx.auditEstSetHourOverride('p', 'ahu', '4');
+  assert.strictEqual(Object.keys(ctx.auditEstGetHourOverrides('p')).length, 2);
+  ctx.auditEstClearHourOverrides('p');
+  assert.strictEqual(get('bas').totalCost, base.totalCost);
+  // other project unaffected; corrupt stored values ignored
+  ctx.auditEstSetHourOverride('q', 'vav', '9');
+  assert.strictEqual(Object.keys(ctx.auditEstGetHourOverrides('p')).length, 0);
+  ctx.sset('en_pricing_audit_hours_p', { vav: 'x', ahu: -2, ct: null, hwp: NaN });
+  assert.strictEqual(Object.keys(ctx.auditEstGetHourOverrides('p')).length, 0);
+  assert.strictEqual(get('bas').totalCost, base.totalCost);
+  // storage failure does not throw
+  ctx.sset = () => { throw new Error('quota'); };
+  assert.strictEqual(ctx.auditEstSetHourOverride('p', 'vav', '1'), 'failed');
+  // groupList carries representative unit + building
+  const g = base.rows.find((r) => r.category === 'vav').groupList[0];
+  assert.ok(g.rep && g.repBuilding && typeof g.count === 'number');
+})();
+console.log('PASS hours override tests');
