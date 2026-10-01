@@ -2944,8 +2944,7 @@ function buildCatalogRows(projId, buildingNames) {
       var _catEntry = catalog && sku ? catalog[sku] : null;
       var _listPrice = _catEntry && _catEntry.list != null ? _catEntry.list : null;
       var _netPrice = _catEntry && _catEntry.net != null ? _catEntry.net : null;
-      var _contractPrice =
-        _pricingUnitPriceFor(_catEntry, { priceBasis: 'contract' });
+      var _contractPrice = _pricingUnitPriceFor(_catEntry, { priceBasis: 'contract' });
 
       rows.push({
         id: 'hw_' + bName + '_' + gKey + '_' + rowIdx++,
@@ -3470,7 +3469,13 @@ function _pricingWorkbookTotals(set, agg, base) {
   });
   base.grand = total;
   base.method = 'workbook';
-  base.workbook = { input: input, summary: calc.summary, tasks: tasks, settings: set, chain: auditEstWorkbookChain(calc) };
+  base.workbook = {
+    input: input,
+    summary: calc.summary,
+    tasks: tasks,
+    settings: set,
+    chain: auditEstWorkbookChain(calc),
+  };
   return base;
 }
 
@@ -3537,7 +3542,9 @@ function _pricingComputeTotals(rows, estimate, projId) {
         wbAgg.rows2.push({ id: toggleKey, c: Math.round(price * 100) });
         wbAdd(
           row.isSensorInvestigation ? 'startup_checkout' : 'bas_programming',
-          row.hrsPerUnit != null ? row.hrsPerUnit * row.qty : price / (_pricingGetConfig().hourlyRate || COST_LABOR_RATE_DEFAULT),
+          row.hrsPerUnit != null
+            ? row.hrsPerUnit * row.qty
+            : price / (_pricingGetConfig().hourlyRate || COST_LABOR_RATE_DEFAULT),
         );
       }
     }
@@ -4297,8 +4304,7 @@ function buildRecommendedRows(projId) {
           var _optEntry = catalog ? catalog[cheaper.sku] : null;
           rec.listPrice = _optEntry && _optEntry.list != null ? _optEntry.list : null;
           rec.netPrice = _optEntry && _optEntry.net != null ? _optEntry.net : null;
-          rec.contractPrice =
-            _pricingUnitPriceFor(_optEntry, { priceBasis: 'contract' });
+          rec.contractPrice = _pricingUnitPriceFor(_optEntry, { priceBasis: 'contract' });
         }
       }
     }
@@ -4675,8 +4681,7 @@ function buildOptionalPointRows(projId) {
       var _catEntry = catalog && sku ? catalog[sku] : null;
       var _listPrice = _catEntry && _catEntry.list != null ? _catEntry.list : null;
       var _netPrice = _catEntry && _catEntry.net != null ? _catEntry.net : null;
-      var _contractPrice =
-        _pricingUnitPriceFor(_catEntry, { priceBasis: 'contract' });
+      var _contractPrice = _pricingUnitPriceFor(_catEntry, { priceBasis: 'contract' });
 
       rows.push({
         id: 'opt_' + bName + '_' + gKey + '_' + rowIdx++,
@@ -5075,7 +5080,9 @@ function _pricingApplyQtyOverrides(projId, rows) {
     // branch later reads it.
     if (cloned.phase === 1 && !cloned.ioOnly && cloned.installHours != null) {
       var _qtyOvInstRate =
-        cloned.installLaborRate != null ? cloned.installLaborRate : _pricingGetConfig().hourlyRate || COST_LABOR_RATE_DEFAULT;
+        cloned.installLaborRate != null
+          ? cloned.installLaborRate
+          : _pricingGetConfig().hourlyRate || COST_LABOR_RATE_DEFAULT;
       cloned.installLaborTotal = parseFloat((cloned.installHours * qty * _qtyOvInstRate).toFixed(2));
       if (cloned.partsUnitPrice != null) {
         cloned.partsLineTotal = parseFloat((cloned.partsUnitPrice * qty).toFixed(2));
@@ -7199,7 +7206,9 @@ function _pricingRenderCondensedTab(projId, el, estimate, tier) {
       return s + (it.lineTotal || 0);
     }, 0);
     var foot =
-      '<tr><td colspan="' + (condWbOn ? 3 : 4) + '" style="padding:6px 10px;font-weight:700;background:var(--s1);border-top:2px solid var(--border2)">Subtotal</td>' +
+      '<tr><td colspan="' +
+      (condWbOn ? 3 : 4) +
+      '" style="padding:6px 10px;font-weight:700;background:var(--s1);border-top:2px solid var(--border2)">Subtotal</td>' +
       '<td style="padding:6px 10px;text-align:right;font-weight:700;background:var(--s1);border-top:2px solid var(--border2);font-variant-numeric:tabular-nums">' +
       _pricingFmt(sum) +
       '</td></tr>';
@@ -9594,11 +9603,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     // col 9: Contract — hw's per-unit contract price, own cell (Phase 4 923ca9b/75827077: split
     // from the sequence's hours input, which now lives in its own Hours column below — no more
     // "+" glue text needed since price and hours are independent cells).
-    var _hwContractText = hwRow.ioOnly
-      ? '—'
-      : hwRow.contractPrice != null
-        ? _pricingFmt(hwRow.contractPrice)
-        : '—';
+    var _hwContractText = hwRow.ioOnly ? '—' : hwRow.contractPrice != null ? _pricingFmt(hwRow.contractPrice) : '—';
     cells.push(_hwContractText);
 
     // col 10: Hours — sequence's editable hours-override input (same control/onchange as
@@ -9669,7 +9674,11 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     var _lineTotalContent =
       totals.rowShares && !combinedOn
         ? '<span style="color:var(--text3)">—</span>'
-        : '<span' + (!combinedOn ? ' style="color:var(--text3)"' : '') + '>' + _pricingFmt(_combinedLineTotal) + '</span>';
+        : '<span' +
+          (!combinedOn ? ' style="color:var(--text3)"' : '') +
+          '>' +
+          _pricingFmt(_combinedLineTotal) +
+          '</span>';
     cells.push(_lineTotalContent);
 
     // col 13: Impact — same rule as renderRow (Recommended tier phase-2 only), sourced from the
@@ -10412,6 +10421,21 @@ function _pricingEstimateTypeBarHTML(projId, type) {
     '</select></label>' +
     switchHTML +
     rateBtn +
+    (type === 'retrofit'
+      ? '<button type="button" class="btn btn-ghost btn-sm" id="estExportExcel-' +
+        projId +
+        '" onclick="pricingExportExcel(\'' +
+        projId +
+        '\')"' +
+        (wbSet ? '' : ' disabled') +
+        ' title="' +
+        (wbSet
+          ? 'Download this estimate as an Excel file, one sheet set per tier'
+          : 'Switch to the Workbook method to export') +
+        '" style="cursor:' +
+        (wbSet ? 'pointer' : 'not-allowed;opacity:.5') +
+        '">Export to Excel</button>'
+      : '') +
     '</div>' +
     (type === 'retrofit' && wbSet ? _pricingWorkbookPanelHTML(projId, wbSet) : '')
   );
@@ -10451,6 +10475,78 @@ function _pricingWorkbookPanelHTML(projId, wbSet) {
     auditEstWorkbookPanelHTML(projId, { settings: wbSet, chain: wb ? wb.chain : [], tasks: tasks }, 'Labor by task') +
     '</details>'
   );
+}
+
+/* ── Excel export of the Cost Estimate (WP6, 2026-10-01) ─────────────────────────────────────
+   Workbook mode only. One file, one sheet set per priced tier (Compliance, Recommended, Full
+   Scope). Each set is filled with the same EstimateWorkbook input _pricingComputeTotals priced the
+   tier with, so the sheet totals equal the tier footer total. Parts price order is the page's
+   (typed manualPrices -> catalog) because the input comes from _pricingComputeTotals itself. */
+var PRICING_EXPORT_TIERS = [
+  { key: 'compliance', label: 'Compliance' },
+  { key: 'recommended', label: 'Recommended' },
+  { key: 'full-scope', label: 'Full Scope' },
+];
+function _pricingExportSets(projId) {
+  var data = _pricingComputeSummaryData(projId, _pricingGetEstimate(projId));
+  var sets = [];
+  PRICING_EXPORT_TIERS.forEach(function (t) {
+    var tt = data.tierTotals[t.key];
+    if (!tt || tt.method !== 'workbook' || tt.grand == null) return;
+    var input = JSON.parse(JSON.stringify(tt.workbook.input));
+    (input.parts || []).forEach(function (p) {
+      p.desc = 'Materials, ' + t.label + ' tier';
+    });
+    sets.push({ name: t.label, input: input, grand: tt.grand, meta: { title: t.label + ' Cost Estimate' } });
+  });
+  return sets;
+}
+function pricingExportExcel(projId) {
+  if (!_pricingWorkbookSettings(projId)) {
+    showToast('Switch to the Workbook method to export to Excel', 'error');
+    return;
+  }
+  var sets = _pricingExportSets(projId);
+  if (!sets.length) {
+    showToast('Nothing priced yet to export', 'error');
+    return;
+  }
+  var proj = (typeof projects !== 'undefined' ? projects : []).find(function (x) {
+    return String(x.id) === String(projId);
+  });
+  var projName = proj ? proj.client || proj.name || 'Project' : 'Project';
+  var d = new Date();
+  var pad = function (n) {
+    return (n < 10 ? '0' : '') + n;
+  };
+  var meta = {
+    customer: projName,
+    project: projName + ' Cost Estimate',
+    title: 'Cost Estimate',
+    date: d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()),
+    preparedBy: 'Control Service Company',
+  };
+  var p;
+  try {
+    p = EstimateWorkbookExport.exportSetsBlob(sets, meta);
+  } catch (e) {
+    showToast('Excel export is not available: ' + (e && e.message ? e.message : e), 'error');
+    return;
+  }
+  p.then(function (blob) {
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = EstimateWorkbookExport.fileName({ date: meta.date, project: projName + ' Cost' });
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () {
+      URL.revokeObjectURL(a.href);
+      a.remove();
+    }, 1000);
+    showToast('Exported ' + a.download, 'success');
+  }).catch(function (e) {
+    showToast('Excel export failed: ' + (e && e.message ? e.message : e), 'error');
+  });
 }
 
 /* ── Estimate type wrapper (replaces the 2026-09-25 Audit Estimate append) ───────────────────
