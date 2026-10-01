@@ -1775,6 +1775,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.01.58', date: '2026-10-01', title: 'Cost Estimate: Estimate type menu',
+    items: [
+      { type: 'feature', text: 'Cost Estimate: new Estimate type menu (BAS Audit, Full Facility Audit, Retrofit). Only the selected type is shown. The choice is saved per project. Projects without retrofit pricing open on BAS Audit.' }
+    ]
+  },
   { v: 'v2026.10.01.57', date: '2026-10-01', title: 'Cost Estimate: audit sample picked by matching controls',
     items: [
       { type: 'change', text: 'Cost Estimate - Audit Estimate: units to sample are now picked by matching control features from the Equipment Matrix (economizer, fan speed, heating and cooling type, CO2), one per group, instead of a fixed percentage.' },
