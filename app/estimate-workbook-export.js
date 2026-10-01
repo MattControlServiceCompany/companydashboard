@@ -233,6 +233,31 @@
     });
   }
 
+  // Template sheets that carry the estimate. "Sheet1" is an empty template leftover and is not
+  // copied into multi-set exports.
+  var SET_SHEETS = ['Info', 'Proposal', 'Dash', 'Mat & Equip', 'Labor Rates', QUOTE, 'NS'];
+  var MAX_SHEET = 31;
+
+  // Load the template and fill it for one estimate (inputs, formulas kept, cached results).
+  function buildFilled(Lib, bytes, input, meta, date) {
+    var wb = new Lib.Workbook();
+    return wb.xlsx.load(bytes).then(function () {
+      writeInputs(wb, input, meta, date);
+      writeCachedResults(wb, EW.compute(input), serial(date));
+      fixBlankRules(wb);
+      return wb;
+    });
+  }
+
+  function finishWorkbook(wb, meta, date) {
+    wb.calcProperties = { fullCalcOnLoad: true };
+    wb.creator = 'Control Service Company';
+    wb.lastModifiedBy = meta.preparedBy || 'Control Service Company';
+    wb.created = date;
+    wb.modified = date;
+    return wb.xlsx.writeBuffer();
+  }
+
   /* exportWorkbook(input, meta, opts) -> Promise<ArrayBuffer|Buffer>
        input: same object EstimateWorkbook.compute() takes (parts may also carry partNo, desc, code)
        meta:  {customer, project, title, date ('YYYY-MM-DD' or Date), preparedBy}
@@ -240,20 +265,132 @@
   function exportWorkbook(input, meta, opts) {
     var m = meta || {};
     var Lib = getExcelJS(opts);
-    var calc = EW.compute(input);
     var date = parseDate(m.date);
     return loadTemplateBytes(opts).then(function (bytes) {
-      var wb = new Lib.Workbook();
-      return wb.xlsx.load(bytes).then(function () {
-        writeInputs(wb, input, m, date);
-        writeCachedResults(wb, calc, serial(date));
-        fixBlankRules(wb);
-        wb.calcProperties = { fullCalcOnLoad: true };
-        wb.creator = 'Control Service Company';
-        wb.lastModifiedBy = m.preparedBy || 'Control Service Company';
-        wb.created = date;
-        wb.modified = date;
-        return wb.xlsx.writeBuffer();
+      return buildFilled(Lib, bytes, input, m, date).then(function (wb) {
+        return finishWorkbook(wb, m, date);
+      });
+    });
+  }
+
+  // Sheet-name prefix for a set: no illegal characters ([ ] : * ? / \ and quotes), at most
+  // MAX_SHEET - longest sheet name - 1 characters, unique (case-insensitive) among the sets.
+  function setPrefixes(sets) {
+    var longest = SET_SHEETS.reduce(function (n, s) {
+      return Math.max(n, s.length);
+    }, 0);
+    var room = MAX_SHEET - longest - 1;
+    var used = {};
+    return sets.map(function (st, i) {
+      var base =
+        String(st.name == null ? '' : st.name)
+          .replace(/[\[\]:*?\/\\'"]/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim() || 'Set ' + (i + 1);
+      var p = base.slice(0, room).trim();
+      var n = 1;
+      while (used[p.toLowerCase()]) {
+        n++;
+        var suf = ' ' + n;
+        p = base.slice(0, room - suf.length).trim() + suf;
+      }
+      used[p.toLowerCase()] = true;
+      return p;
+    });
+  }
+
+  // Rewrite template sheet references in a formula/validation string: Info!A1 -> 'Tier Info'!A1.
+  function renameRefs(text, nameMap) {
+    return String(text).replace(/(?:'([^']+)'|\b([A-Za-z][A-Za-z0-9_]*))!/g, function (all, q, bare) {
+      var n = q != null ? q : bare;
+      return Object.prototype.hasOwnProperty.call(nameMap, n) ? "'" + nameMap[n] + "'!" : all;
+    });
+  }
+
+  // Copy one sheet from a filled template workbook into dst under newName (formulas re-pointed
+  // at the renamed sheets, images re-registered in dst).
+  function copySheet(dst, src, newName, nameMap, imageIds) {
+    var model = src.model;
+    model.name = newName;
+    model.rows.forEach(function (row) {
+      (row.cells || []).forEach(function (c) {
+        if (c.formula != null) c.formula = renameRefs(c.formula, nameMap);
+        if (c.sharedFormula != null && typeof c.sharedFormula === 'string' && /!/.test(c.sharedFormula))
+          c.sharedFormula = renameRefs(c.sharedFormula, nameMap);
+      });
+    });
+    if (model.dataValidations) {
+      Object.keys(model.dataValidations).forEach(function (k) {
+        var dv = model.dataValidations[k];
+        if (dv && dv.formulae)
+          dv.formulae = dv.formulae.map(function (f) {
+            return typeof f === 'string' ? renameRefs(f, nameMap) : f;
+          });
+      });
+    }
+    (model.conditionalFormattings || []).forEach(function (cf) {
+      (cf.rules || []).forEach(function (r) {
+        if (r.formulae)
+          r.formulae = r.formulae.map(function (f) {
+            return typeof f === 'string' ? renameRefs(f, nameMap) : f;
+          });
+      });
+    });
+    model.media = (model.media || []).map(function (md) {
+      var o = {};
+      Object.keys(md).forEach(function (k) {
+        o[k] = md[k];
+      });
+      o.imageId = imageIds(md.imageId);
+      return o;
+    });
+    var ws = dst.addWorksheet(newName);
+    ws.model = model;
+    ws.name = newName;
+    ws.state = src.state;
+    return ws;
+  }
+
+  /* exportWorkbookSets(sets, meta, opts) -> Promise<ArrayBuffer|Buffer>
+       sets: [{name, input, meta?}] one estimate each (for example one per tier). A single set is
+             exactly exportWorkbook(). With 2+ sets the file holds one sheet set per entry; each
+             sheet is named "<set name> <template sheet>" (31-character limit, no illegal
+             characters, unique). set.meta overrides fields of meta for that set (title, project).
+       The template is read once per set and never changed on disk. */
+  function exportWorkbookSets(sets, meta, opts) {
+    var m = meta || {};
+    if (!sets || !sets.length) return Promise.reject(new Error('Nothing to export'));
+    if (sets.length === 1) return exportWorkbook(sets[0].input, Object.assign({}, m, sets[0].meta || {}), opts);
+    var Lib = getExcelJS(opts);
+    var date = parseDate(m.date);
+    var prefixes = setPrefixes(sets);
+    var out = new Lib.Workbook();
+    return loadTemplateBytes(opts).then(function (bytes) {
+      var chain = Promise.resolve();
+      sets.forEach(function (st, i) {
+        chain = chain.then(function () {
+          var sm = Object.assign({}, m, st.meta || {});
+          return buildFilled(Lib, bytes, st.input, sm, date).then(function (wb) {
+            var nameMap = {};
+            SET_SHEETS.forEach(function (n) {
+              nameMap[n] = prefixes[i] + ' ' + n;
+            });
+            var ids = {};
+            var imageIds = function (id) {
+              if (ids[id] == null) {
+                var img = wb.getImage(id);
+                ids[id] = out.addImage({ buffer: img.buffer, extension: img.extension });
+              }
+              return ids[id];
+            };
+            SET_SHEETS.forEach(function (n) {
+              copySheet(out, wb.getWorksheet(n), nameMap[n], nameMap, imageIds);
+            });
+          });
+        });
+      });
+      return chain.then(function () {
+        return finishWorkbook(out, m, date);
       });
     });
   }
@@ -265,5 +402,20 @@
     });
   }
 
-  return { exportWorkbook: exportWorkbook, exportBlob: exportBlob, fileName: fileName, XLSX_MIME: XLSX_MIME };
+  // Browser helper for multi-set exports: resolves to a Blob.
+  function exportSetsBlob(sets, meta, opts) {
+    return exportWorkbookSets(sets, meta, opts).then(function (buf) {
+      return new Blob([buf], { type: XLSX_MIME });
+    });
+  }
+
+  return {
+    exportWorkbook: exportWorkbook,
+    exportWorkbookSets: exportWorkbookSets,
+    exportBlob: exportBlob,
+    exportSetsBlob: exportSetsBlob,
+    fileName: fileName,
+    setPrefixes: setPrefixes,
+    XLSX_MIME: XLSX_MIME,
+  };
 });
