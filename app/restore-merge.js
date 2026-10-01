@@ -7,8 +7,10 @@
 // Modes:
 //   'add'     Add missing only (default). Existing data is never changed.
 //   'merge'   Backup updates records with the same id. Nothing is removed.
-//   'replace' Backup value replaces the current value (explicit choice only).
-// In NO mode is a key or a record deleted because it is absent from the backup.
+//   'replace' Backup value replaces the current value (explicit choice only);
+//             records not in the backup are removed.
+// Add and merge never remove anything. Replace removes records that are not in
+// the backup (the preview shows the count) but never blanks a non-empty value.
 //
 // Record identity (found in the code, not guessed):
 //   en_projects, en_tasks, en_customers, ems_leads_v1, en_report_history
@@ -57,9 +59,15 @@ const RestoreMerge = (() => {
   // Shape of a key: { path: [listNames], idOf } for lists of records, or
   // { map: true } for an id-keyed object, or null (no stable id).
   const ID = (r) => r && r.id;
+  // Same identity as app/db.js (date|name|type). When any of the three is
+  // missing, use every field so different events do not collapse together.
+  const dcId = (r) => {
+    if (!r) return r;
+    return r.date && r.name && r.type ? r.date + '|' + r.name + '|' + r.type : canon(r);
+  };
   function specFor(key) {
     if (key === 'en_pricing_catalog') return { map: true };
-    if (key === 'en_dc_events') return { path: ['events'], idOf: (r) => r && r.date + '|' + r.name + '|' + r.type };
+    if (key === 'en_dc_events') return { path: ['events'], idOf: dcId };
     if (key.indexOf('en_eqmatrix_cmaps_') === 0) return { path: [], idOf: (r) => r && r.rawName };
     if (key === 'en_eqmatrix_' || /^en_eqmatrix_\d/.test(key)) return { path: ['rows'], idOf: ID };
     if (/^en_utility_(cust_)?[^_]*$/.test(key) && key !== 'en_utility_audit_log') {
@@ -101,15 +109,14 @@ const RestoreMerge = (() => {
     }
   }
 
+  const isRec = (r) => r && typeof r === 'object' && !Array.isArray(r);
+  function hasId(r, idOf) {
+    const id = idOf(r);
+    return id !== undefined && id !== null && id !== '';
+  }
+  // A list is mergeable when every item is a record and at least one has an id.
   function listOk(list, idOf) {
-    return (
-      Array.isArray(list) &&
-      list.every((r) => {
-        if (!r || typeof r !== 'object') return false;
-        const id = idOf(r);
-        return id !== undefined && id !== null && id !== '';
-      })
-    );
+    return Array.isArray(list) && list.every(isRec) && (list.length === 0 || list.some((r) => hasId(r, idOf)));
   }
   function countLeaves(list, path) {
     if (!Array.isArray(list)) return 0;
@@ -119,13 +126,25 @@ const RestoreMerge = (() => {
 
   // Merge one list level. Returns merged list or null when not applicable.
   // `names` = remaining child-list names below this level.
+  // Rules (add and merge): current records are never removed; a field that
+  // exists only in the current record is kept; a duplicate id in the backup
+  // resolves to the LAST one; records without an id are kept as they are and
+  // backup records without an id are appended only when no deep-equal record
+  // exists in the current list.
   function mergeList(cur, bak, names, idOf, mode, st) {
     if (!listOk(cur, idOf) || !listOk(bak, idOf)) return null;
     const out = cur.slice();
     const at = new Map();
-    cur.forEach((r, i) => at.set(idOf(r), i));
+    cur.forEach((r, i) => {
+      if (hasId(r, idOf)) at.set(idOf(r), i);
+    });
+    const byId = new Map();
+    const noId = [];
     for (const b of bak) {
-      const id = idOf(b);
+      if (hasId(b, idOf)) byId.set(idOf(b), b); // last duplicate wins
+      else noId.push(b);
+    }
+    for (const [id, b] of byId) {
       if (!at.has(id)) {
         st.added += names.length ? countLeaves([b], names) : 1;
         out.push(b);
@@ -136,24 +155,83 @@ const RestoreMerge = (() => {
       const c = out[i];
       if (names.length) {
         // Parent record: children merge; the record's own fields follow the mode.
+        // Merge starts from the CURRENT record, so fields only in current stay.
         const child = names[0];
         const cc = Array.isArray(c[child]) ? c[child] : [];
         const bc = Array.isArray(b[child]) ? b[child] : [];
         const sub = mergeList(cc, bc, names.slice(1), idOf, mode, st);
         if (sub === null) return null;
-        const base = mode === 'merge' ? b : c;
-        const next = Object.assign({}, base, { [child]: sub });
+        const next = Object.assign({}, c, mode === 'merge' ? b : {});
+        if (Array.isArray(c[child]) || sub.length) next[child] = sub;
+        else delete next[child];
+        if (mode === 'merge') {
+          const own = (r) => Object.assign({}, r, { [child]: null });
+          if (!same(own(next), own(c))) st.updated += 1;
+        }
         if (!same(next, c)) out[i] = next;
       } else if (same(c, b)) {
         st.kept += 1;
       } else if (mode === 'merge') {
         st.updated += 1;
-        out[i] = b;
+        out[i] = Object.assign({}, c, b);
       } else {
         st.kept += 1;
       }
     }
+    for (const b of noId) {
+      if (out.some((o) => same(o, b))) {
+        st.kept += 1;
+      } else {
+        st.added += names.length ? countLeaves([b], names) : 1;
+        out.push(b);
+      }
+    }
     return out;
+  }
+
+  // Records in `cur` that a Replace would drop because `bak` has no match.
+  function removedList(cur, bak, names, idOf) {
+    if (!Array.isArray(cur)) return 0;
+    const bakArr = Array.isArray(bak) ? bak : [];
+    const bakBy = new Map();
+    bakArr.forEach((b) => {
+      if (isRec(b) && hasId(b, idOf)) bakBy.set(idOf(b), b);
+    });
+    let n = 0;
+    for (const c of cur) {
+      if (isRec(c) && hasId(c, idOf)) {
+        const b = bakBy.get(idOf(c));
+        if (!b) n += names.length ? countLeaves([c], names) : 1;
+        else if (names.length) n += removedList(c[names[0]], b[names[0]], names.slice(1), idOf);
+      } else if (!bakArr.some((b) => same(b, c))) {
+        n += 1;
+      }
+    }
+    return n;
+  }
+  // Fallback for values without an id spec: list items that are not
+  // deep-equal to any backup item (top-level list, or lists inside an object).
+  function removedLoose(cur, bak) {
+    const cnt = (c, b) => (Array.isArray(c) ? c.filter((x) => !(Array.isArray(b) ? b : []).some((y) => same(x, y))).length : 0);
+    if (Array.isArray(cur)) return cnt(cur, bak);
+    if (isRec(cur)) {
+      return Object.keys(cur).reduce((n, k) => n + cnt(cur[k], isRec(bak) ? bak[k] : undefined), 0);
+    }
+    return 0;
+  }
+  function removedCount(key, cur, bak) {
+    const spec = specFor(key);
+    if (spec.map) {
+      return isRec(cur) ? Object.keys(cur).filter((k) => !(isRec(bak) && k in bak)).length : 0;
+    }
+    if (spec.path.length === 0) {
+      return listOk(cur, spec.idOf) && listOk(bak, spec.idOf) ? removedList(cur, bak, [], spec.idOf) : removedLoose(cur, bak);
+    }
+    const f = spec.path[0];
+    if (isRec(cur) && isRec(bak) && listOk(cur[f], spec.idOf) && listOk(bak[f], spec.idOf)) {
+      return removedList(cur[f], bak[f], spec.path.slice(1), spec.idOf);
+    }
+    return removedLoose(cur, bak);
   }
 
   function mergeMap(cur, bak, mode, st) {
@@ -185,15 +263,22 @@ const RestoreMerge = (() => {
   }
 
   // mergeValue(key, current, backup, mode)
-  //   -> { value, changed, added, updated, kept }
-  // `current` undefined = key absent. Nothing is ever removed.
+  //   -> { value, changed, added, updated, kept, removed }
+  // `current` undefined = key absent. Add and merge never remove anything.
+  // Replace sets the key to the backup value and reports `removed` = records
+  // in current that the backup does not have. Replace never blanks a
+  // non-empty current value with an empty backup value.
   function mergeValue(key, currentRaw, backupRaw, mode) {
     const cur = parseMaybe(currentRaw);
     const bak = parseMaybe(backupRaw);
-    const res = (value, changed, added, updated, kept) => ({ value, changed, added, updated, kept });
+    const res = (value, changed, added, updated, kept, removed) => ({ value, changed, added, updated, kept, removed: removed || 0 });
     if (same(cur, bak) && !(cur === undefined)) return res(cur, false, 0, 0, wholeCount(key, cur));
-    if (mode === 'replace' && !isEmpty(cur)) return res(bak, true, 0, 1, 0);
     if (isEmpty(bak) && !isEmpty(cur)) return res(cur, false, 0, 0, 1); // never blank out existing data
+    if (mode === 'replace' && !isEmpty(cur)) {
+      const m = mergeValue(key, cur, bak, 'merge');
+      const removed = removedCount(key, cur, bak);
+      return m.changed ? res(bak, true, m.added, m.updated, m.kept, removed) : res(bak, true, 0, 1, m.kept, removed);
+    }
     if (isEmpty(cur)) {
       if (isEmpty(bak) && cur !== undefined) return res(cur, false, 0, 0, 0);
       return res(bak, true, wholeCount(key, bak), 0, 0);
@@ -235,10 +320,11 @@ const RestoreMerge = (() => {
   function summarize(items) {
     const by = new Map();
     for (const it of items) {
-      const g = by.get(it.label) || { label: it.label, added: 0, updated: 0, kept: 0 };
+      const g = by.get(it.label) || { label: it.label, added: 0, updated: 0, kept: 0, removed: 0 };
       g.added += it.added;
       g.updated += it.updated;
       g.kept += it.kept;
+      g.removed += it.removed || 0;
       by.set(it.label, g);
     }
     return Array.from(by.values()).sort((a, b) => a.label.localeCompare(b.label));

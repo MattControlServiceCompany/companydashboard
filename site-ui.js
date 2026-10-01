@@ -153,48 +153,6 @@
     if (typeof showToast === 'function') showToast('Backup downloaded');
   }
 
-  function processRestoreFile(file) {
-    // DEAD CODE: this file is never <script src>'d by any page (only fetched as
-    // text to regex CH_VERSION — see index.html/service-department.html version
-    // label code). The live copies are app/site-functions.js, index.html, and
-    // service-department.html (own inline copies). Do not treat this as reachable.
-    if (!file) return;
-    if (!file.name.toLowerCase().endsWith('.json')) {
-      if (typeof showToast === 'function') showToast('Please drop a .json backup file');
-      return;
-    }
-    var reader = new FileReader();
-    reader.onload = function (ev) {
-      try {
-        var data = JSON.parse(ev.target.result);
-        Object.keys(data).forEach(function (key) {
-          if (key.startsWith('__session__')) {
-            sessionStorage.setItem(key.replace('__session__', ''), data[key]);
-          } else {
-            localStorage.setItem(key, data[key]);
-          }
-        });
-        if (typeof showToast === 'function') showToast('Data restored — reloading...');
-        setTimeout(function () {
-          location.reload();
-        }, 1200);
-      } catch (err) {
-        if (typeof showToast === 'function') showToast('Invalid backup file');
-      }
-    };
-    reader.readAsText(file);
-  }
-
-  function restoreData() {
-    var input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.json';
-    input.onchange = function (e) {
-      processRestoreFile(e.target.files[0]);
-    };
-    input.click();
-  }
-
   /* ── RESET DATA ── */
   async function resetData() {
     if (
@@ -233,7 +191,6 @@
       '<div class="sb-date" id="sb-date">Loading...</div>' +
       '<div class="sb-btn-row">' +
       '<button class="sb-btn" onclick="window.__siteUI.backupData()" title="Backup all data">Backup</button>' +
-      '<button class="sb-btn" onclick="window.__siteUI.restoreData()" title="Restore from backup">Restore</button>' +
       '</div>' +
       '<button class="sb-btn danger" style="width:100%" onclick="window.__siteUI.resetData()" title="WARNING: Permanently deletes ALL projects, buildings, meters, and bills. Cannot be undone.">Reset Data</button>' +
       '<div class="sb-version" style="text-align:center;font-size:10px;color:var(--text3);margin-top:8px;font-family:var(--mono);letter-spacing:0.5px">' +
@@ -837,7 +794,6 @@
     openHelp: openHelp,
     closeHelp: closeHelp,
     backupData: backupData,
-    restoreData: restoreData,
     resetData: resetData,
     checkDefaultLogin: checkDefaultLogin,
     applyAccentColor: applyAccentColor,

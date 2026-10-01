@@ -1212,6 +1212,8 @@ function _restoreStyle() {
     ".rst-tbl thead th{background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;text-align:center;border-bottom:1px solid var(--border2)}" +
     ".rst-tbl td.n{text-align:right}" +
     ".rst-tbl th:first-child,.rst-tbl td:first-child{width:40%;text-align:left}" +
+    ".rst-tbl td.rst-rm{background:var(--amber-dim);color:var(--text);font-weight:700}" +
+    ".rst-rm-note{border-left:3px solid var(--amber);padding-left:8px}" +
     ".rst-list{margin:6px 0 0;padding-left:18px;color:var(--text2);word-break:break-word}" +
     ".rst-prog{color:var(--text2);margin:8px 0}";
   document.head.appendChild(st);
@@ -1329,6 +1331,11 @@ function _restoreDialog(backup, getCurrent, scopeOf, server, syncOn, useDB) {
       "</small></span></label>"
     );
   }
+  function removedTotal(p) {
+    return p.items.reduce(function (t, i) {
+      return t + (i.changed ? i.removed || 0 : 0);
+    }, 0);
+  }
   function renderPreview() {
     var p = currentPlan();
     var rows = RestoreMerge.summarize(p.items);
@@ -1343,30 +1350,30 @@ function _restoreDialog(backup, getCurrent, scopeOf, server, syncOn, useDB) {
       (syncOn
         ? "Sync is on. Restore compares the backup with the current server data. Both users share the server data."
         : "Sync is off. Restore compares the backup with the data on this device.") +
-      " Restore does not delete anything in any mode.</p>" +
+      " Add and Merge never remove anything. Replace removes records that are not in the backup.</p>" +
       opt(
         "add",
         "Add missing only (recommended)",
         "Adds data that is not in " +
           where +
-          " yet. Existing data does not change.",
+          " yet. Existing data does not change. Nothing is removed.",
       ) +
       opt(
         "merge",
         "Merge (backup updates matching records)",
-        "Adds missing data. Records with the same ID take the backup version. Other data stays.",
+        "Adds missing data. Records with the same ID take the backup version. Other records and fields stay. Nothing is removed.",
       ) +
       opt(
         "replace",
         "Replace",
         "Backup values replace the current values. This overwrites " +
           where +
-          ".",
+          " and removes records that are not in the backup.",
       ) +
-      '<div class="rst-tbl-outer"><table class="rst-tbl"><thead><tr><th>Data</th><th>Added</th><th>Updated</th><th>Kept</th></tr></thead><tbody>';
+      '<div class="rst-tbl-outer"><table class="rst-tbl"><thead><tr><th>Data</th><th>Added</th><th>Updated</th><th>Kept</th>' + (mode === "replace" ? "<th>Removed</th>" : "") + '</tr></thead><tbody>';
     if (!rows.length)
       html +=
-        '<tr><td colspan="4">The backup has no data to restore.</td></tr>';
+        '<tr><td colspan="5">The backup has no data to restore.</td></tr>';
     rows.forEach(function (r) {
       html +=
         '<tr><td title="' +
@@ -1379,7 +1386,11 @@ function _restoreDialog(backup, getCurrent, scopeOf, server, syncOn, useDB) {
         r.updated +
         '</td><td class="n">' +
         r.kept +
-        "</td></tr>";
+        "</td>" +
+        (mode === "replace"
+          ? '<td class="n' + (r.removed ? " rst-rm" : "") + '">' + r.removed + "</td>"
+          : "") +
+        "</tr>";
     });
     html += "</tbody></table></div>";
     html +=
@@ -1393,6 +1404,18 @@ function _restoreDialog(backup, getCurrent, scopeOf, server, syncOn, useDB) {
       "</p>";
     body.innerHTML = html;
     var n = changedItems.length;
+    if (mode === "replace" && removedTotal(p)) {
+      body.insertAdjacentHTML(
+        "beforeend",
+        '<p class="rst-note rst-rm-note"><b>Replace will remove ' +
+          removedTotal(p) +
+          " record" +
+          (removedTotal(p) === 1 ? "" : "s") +
+          " that " +
+          (removedTotal(p) === 1 ? "is" : "are") +
+          " not in the backup.</b> A copy of the current data downloads first.</p>",
+      );
+    }
     ftr.innerHTML =
       '<button class="btn btn-ghost" id="rstCancel">Cancel</button>' +
       '<button class="btn btn-em" id="rstApply"' +
@@ -1415,6 +1438,7 @@ function _restoreDialog(backup, getCurrent, scopeOf, server, syncOn, useDB) {
     });
   }
   function renderReplaceConfirm() {
+    var rm = removedTotal(currentPlan());
     body.innerHTML =
       '<p class="rst-note"><b>Replace overwrites ' +
       where +
@@ -1422,7 +1446,13 @@ function _restoreDialog(backup, getCurrent, scopeOf, server, syncOn, useDB) {
       (syncOn
         ? "The server data is shared. Both users will see the backup values instead of the current values."
         : "The backup values replace the matching data on this device.") +
-      " Data that is not in the backup stays.</p>";
+      " <b>" +
+      rm +
+      " record" +
+      (rm === 1 ? "" : "s") +
+      " will be removed</b> because " +
+      (rm === 1 ? "it is" : "they are") +
+      " not in the backup. Keys that are not in the backup stay. A copy of the current data downloads first.</p>";
     ftr.innerHTML =
       '<button class="btn btn-ghost" id="rstBack">Go back</button>' +
       '<button class="btn btn-em" id="rstReplaceYes">Yes, overwrite ' +
@@ -1457,33 +1487,47 @@ function _restoreDialog(backup, getCurrent, scopeOf, server, syncOn, useDB) {
     var failed = [];
     var localDone = 0;
     try {
-      if (syncOn) {
-        var before = {};
-        changed.forEach(function (it) {
-          if (scopeOf(it.key) !== "local" && server.has(it.key))
-            before[it.key] = server.get(it.key).value;
-        });
-        if (Object.keys(before).length) {
-          var d = new Date();
-          var pad = function (n) {
-            return String(n).padStart(2, "0");
-          };
-          var stamp =
-            d.getFullYear() +
-            pad(d.getMonth() + 1) +
-            pad(d.getDate()) +
-            "-" +
-            pad(d.getHours()) +
-            pad(d.getMinutes());
-          progress("Saving a copy of the current server data...");
+      var before = {};
+      changed.forEach(function (it) {
+        if (syncOn && scopeOf(it.key) !== "local") {
+          if (server.has(it.key)) before[it.key] = server.get(it.key).value;
+        } else if (!syncOn) {
+          var cv = getCurrent(it.key);
+          if (cv !== undefined) before[it.key] = cv;
+        }
+      });
+      if (Object.keys(before).length) {
+        var d = new Date();
+        var pad = function (n) {
+          return String(n).padStart(2, "0");
+        };
+        var stamp =
+          d.getFullYear() +
+          pad(d.getMonth() + 1) +
+          pad(d.getDate()) +
+          "-" +
+          pad(d.getHours()) +
+          pad(d.getMinutes());
+        progress(
+          syncOn
+            ? "Saving a copy of the current server data..."
+            : "Saving a copy of the current data on this device...",
+        );
+        try {
           _downloadJson(
-            "CompanyHub-server-before-restore-" + stamp + ".json",
+            (syncOn
+              ? "CompanyHub-server-before-restore-"
+              : "CompanyHub-before-restore-") +
+              stamp +
+              ".json",
             before,
           );
-          await new Promise(function (r) {
-            setTimeout(r, 400);
-          });
+        } catch (e) {
+          throw new Error("could not save the safety copy: " + (e && e.message));
         }
+        await new Promise(function (r) {
+          setTimeout(r, 400);
+        });
       }
       var pushes = changed.filter(function (i) {
         return syncOn && scopeOf(i.key) !== "local";

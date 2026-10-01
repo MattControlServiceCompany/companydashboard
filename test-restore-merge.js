@@ -153,4 +153,175 @@ t('JSON-text backup values are parsed before merge', () => {
   assert.deepStrictEqual(ids(r.value), [1, 2, 3]);
 });
 
+// ---- Fixes after review (2026-10-01) ----
+for (const mode of ["add", "merge"]) {
+  t("B1 current-only fields survive / " + mode, () => {
+    const c = {
+      buildings: [
+        {
+          id: "b1",
+          name: "X",
+          cfg: { a: 1 },
+          meters: [{ id: "m1", label: "L", bills: [{ id: "x1" }] }],
+        },
+      ],
+    };
+    const b = {
+      buildings: [
+        {
+          id: "b1",
+          name: "Y",
+          meters: [{ id: "m1", bills: [{ id: "x1" }, { id: "x2" }] }],
+        },
+      ],
+    };
+    const r = RM.mergeValue("en_utility_p1", c, b, mode);
+    const bl = r.value.buildings[0];
+    assert.deepStrictEqual(bl.cfg, { a: 1 });
+    assert.strictEqual(bl.name, mode === "merge" ? "Y" : "X");
+    assert.strictEqual(bl.meters[0].label, "L");
+    assert.deepStrictEqual(ids(bl.meters[0].bills), ["x1", "x2"]);
+    const exact = RM.mergeValue(
+      "en_utility_p1",
+      { buildings: [{ id: "b1", name: "X", cfg: { a: 1 } }] },
+      { buildings: [{ id: "b1", name: "Y" }] },
+      mode,
+    );
+    assert.deepStrictEqual(
+      exact.value.buildings[0],
+      mode === "merge"
+        ? { id: "b1", name: "Y", cfg: { a: 1 } }
+        : { id: "b1", name: "X", cfg: { a: 1 } },
+    );
+    if (mode === "merge") assert.strictEqual(exact.updated, 1); // parent field change is counted
+  });
+}
+t("B1 flat record: current-only field kept in merge", () => {
+  const r = RM.mergeValue(
+    "en_tasks",
+    [{ id: 1, text: "a", extra: 5 }],
+    [{ id: 1, text: "b" }],
+    "merge",
+  );
+  assert.deepStrictEqual(r.value, [{ id: 1, text: "b", extra: 5 }]);
+});
+
+t(
+  "B2 replace: removed count, same-id replaced, empty backup never blanks",
+  () => {
+    const c = [{ id: 1 }, { id: 2 }];
+    const one = RM.mergeValue("en_tasks", c, [{ id: 1 }], "replace");
+    assert.deepStrictEqual(one.value, [{ id: 1 }]);
+    assert.strictEqual(one.removed, 1);
+    assert.strictEqual(one.changed, true);
+    const empty = RM.mergeValue("en_tasks", c, [], "replace");
+    assert.deepStrictEqual(empty.value, c);
+    assert.strictEqual(empty.changed, false);
+    assert.strictEqual(empty.removed, 0);
+    assert.strictEqual(
+      RM.mergeValue("en_pricing_config", { a: 1 }, {}, "replace").changed,
+      false,
+    );
+    assert.strictEqual(
+      RM.mergeValue("en_pricing_config", { a: 1 }, "", "replace").changed,
+      false,
+    );
+    const nested = RM.mergeValue(
+      "en_utility_p1",
+      {
+        buildings: [
+          {
+            id: "b1",
+            meters: [
+              { id: "m1", bills: [{ id: 1 }, { id: 2 }] },
+              { id: "m2", bills: [{ id: 3 }] },
+            ],
+          },
+          { id: "b2", meters: [] },
+        ],
+      },
+      { buildings: [{ id: "b1", meters: [{ id: "m1", bills: [{ id: 1 }] }] }] },
+      "replace",
+    );
+    assert.strictEqual(nested.removed, 2); // bill 2, and bill 3 under removed meter m2 (b2 has no bill leaves)
+    const map = RM.mergeValue(
+      "en_pricing_catalog",
+      { A: { n: 1 }, B: { n: 2 } },
+      { A: { n: 1 } },
+      "replace",
+    );
+    assert.strictEqual(map.removed, 1);
+    assert.deepStrictEqual(Object.keys(map.value), ["A"]);
+  },
+);
+t("B2 add and merge never report removed", () => {
+  for (const mode of ["add", "merge"]) {
+    const r = RM.mergeValue(
+      "en_tasks",
+      [{ id: 1 }, { id: 2 }],
+      [{ id: 1 }, { id: 3 }],
+      mode,
+    );
+    assert.strictEqual(r.removed, 0);
+    assert.strictEqual(r.value.length, 3);
+  }
+  const sum = RM.summarize(
+    RM.plan(
+      { en_tasks: [{ id: 1 }] },
+      () => [{ id: 1, x: 1 }, { id: 2 }],
+      "replace",
+    ).items,
+  );
+  assert.strictEqual(sum[0].removed, 1);
+});
+
+for (const mode of ["add", "merge"]) {
+  t(
+    "items lacking id: kept, deep-equal not duplicated, new appended / " + mode,
+    () => {
+      const c = [{ id: 1 }, { t: "same" }];
+      const b = [{ id: 2 }, { t: "same" }, { t: "new" }];
+      const r = RM.mergeValue("en_tasks", c, b, mode);
+      assert.deepStrictEqual(r.value, [
+        { id: 1 },
+        { t: "same" },
+        { id: 2 },
+        { t: "new" },
+      ]);
+      assert.deepStrictEqual([r.added, r.kept], [2, 1]);
+    },
+  );
+  t("duplicate ids in backup: last wins in both modes / " + mode, () => {
+    const r = RM.mergeValue(
+      "en_tasks",
+      [{ id: 1, v: "cur" }],
+      [
+        { id: 5, v: "first" },
+        { id: 5, v: "last" },
+        { id: 1, v: "b1" },
+        { id: 1, v: "b2" },
+      ],
+      mode,
+    );
+    assert.strictEqual(r.value.find((x) => x.id === 5).v, "last");
+    assert.strictEqual(r.value.filter((x) => x.id === 5).length, 1);
+    assert.strictEqual(
+      r.value.find((x) => x.id === 1).v,
+      mode === "merge" ? "b2" : "cur",
+    );
+  });
+  t("dc events missing name/type do not collapse / " + mode, () => {
+    const c = { events: [{ date: "2026-01-01", name: "A", type: "x" }] };
+    const b = {
+      events: [
+        { date: "2026-02-02" },
+        { date: "2026-02-02", note: "two" },
+        { date: "2026-01-01", name: "A", type: "x" },
+      ],
+    };
+    const r = RM.mergeValue("en_dc_events", c, b, mode);
+    assert.strictEqual(r.value.events.length, 3);
+    assert.strictEqual(r.added, 2);
+  });
+}
 console.log('\n' + pass + ' tests passed');
