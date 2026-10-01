@@ -1775,6 +1775,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.01.56', date: '2026-10-01', title: 'Cost Estimate: one-page scrolling and aligned audit tables',
+    items: [
+      { type: 'fix', text: 'Cost Estimate: the whole tab now scrolls as one page (no more stuck scrolling or empty gap), and the Audit Estimate tables are aligned with the rest of the page and sized to their contents.' }
+    ]
+  },
   { v: 'v2026.10.01.55', date: '2026-10-01', title: 'Cost Estimate: Cost by Building',
     items: [
       { type: 'feature', text: 'Cost Estimate: Audit Estimate now has a Cost by Building table under the BAS and Full Facility audits (hours and cost per building, plus a Project-wide row for review and report).' },
