@@ -234,6 +234,16 @@ function auditEstSetHourOverride(projId, cat, value) {
   }
   return _auditEstWriteHourOverrides(projId, o) ? 'ok' : 'failed';
 }
+// Where the default Hours Each of a type comes from: 'company' (saved in audit_estimate_config
+// .hoursPerEquip) or 'built-in' (AUDIT_EST_HOURS_PER_EQUIP_DEFAULT). Reads the stored object
+// directly because auditEstGetConfig() merges the two.
+function auditEstDefaultSource(cat) {
+  var stored = sget('audit_estimate_config', null);
+  var v = stored && stored.hoursPerEquip ? stored.hoursPerEquip[cat] : null;
+  // auditEstSetConfig() saves the whole merged object, so a stored value equal to the built-in one is not a company choice.
+  var b = AUDIT_EST_HOURS_PER_EQUIP_DEFAULT[cat];
+  return typeof v === 'number' && isFinite(v) && v !== b ? 'company' : 'built-in';
+}
 function auditEstClearHourOverrides(projId) {
   return _auditEstWriteHourOverrides(projId, {}) ? 'ok' : 'failed';
 }
@@ -472,6 +482,7 @@ function auditEstComputeBreakdown(projId, auditType) {
       avgPoints: e.avgPoints,
       hoursEach: hoursEach,
       defaultHoursEach: defaultHoursEach,
+      defaultSource: auditEstDefaultSource(e.category),
       overridden: overridden,
       hours: hours,
       cost: Math.round(hours * rate * 100) / 100,
@@ -672,7 +683,7 @@ function _auditEstBreakdownTableHTML(b, titleText) {
         numTd(r.sampled) +
         numTd(
           (r.overridden
-            ? '<span class="ae-ovr" title="Changed from default ' + r.defaultHoursEach.toFixed(2) + '">&bull;</span> '
+            ? '<span class="ae-ovr" title="Project value. Changed from the ' + r.defaultSource + ' default ' + r.defaultHoursEach.toFixed(2) + '">&bull;</span> '
             : '') + r.hoursEach.toFixed(2)
         ) +
         numTd(r.hours.toFixed(1)) +
@@ -843,7 +854,9 @@ function _auditEstAssumptionsHTML(projId) {
         (has ? ovr[cat] : '') +
         '" placeholder="' +
         r.defaultHoursEach.toFixed(2) +
-        '" title="Blank = default ' +
+        '" title="Blank = ' +
+        r.defaultSource +
+        ' default ' +
         r.defaultHoursEach.toFixed(2) +
         '" id="auditEstHrs_' +
         projId +
@@ -854,15 +867,32 @@ function _auditEstAssumptionsHTML(projId) {
         "','" +
         cat +
         "', this.value)\">" +
-        '</td><td class="ch-tbl-col-type-number">' +
+        '</td><td class="ch-tbl-col-type-number" title="From the ' +
+        r.defaultSource +
+        ' default">' +
         r.defaultHoursEach.toFixed(2) +
+        (r.defaultSource === 'company' ? ' *' : '') +
         '</td><td class="ch-tbl-col-type-label"><button type="button" ' +
         (has ? '' : 'disabled ') +
         'onclick="auditEstSaveHours(\'' +
         projId +
         "','" +
         cat +
-        "', '')\" style=\"font-size:11px;padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:var(--s3);color:var(--text2);cursor:pointer\">Reset</button></td>" +
+        "', '')\" style=\"font-size:11px;padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:var(--s3);color:var(--text2);cursor:pointer\">Reset</button> <button type=\"button\" " +
+        (has ? '' : 'disabled ') +
+        "title=\"Save this value as the company default for every project\" onclick=\"auditEstSaveCompanyHours('" +
+        projId +
+        "','" +
+        cat +
+        "')\" style=\"font-size:11px;padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:var(--s3);color:var(--text2);cursor:pointer\">Set company default</button> <button type=\"button\" " +
+        (r.defaultSource === 'company' ? '' : 'disabled ') +
+        "title=\"Put the company default back to the built-in " +
+        (AUDIT_EST_HOURS_PER_EQUIP_DEFAULT[cat] != null ? AUDIT_EST_HOURS_PER_EQUIP_DEFAULT[cat].toFixed(2) : '1.00') +
+        "\" onclick=\"auditEstResetCompanyHours('" +
+        projId +
+        "','" +
+        cat +
+        "')\" style=\"font-size:11px;padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:var(--s3);color:var(--text2);cursor:pointer\">Built-in default</button></td>" +
         '<td class="ch-tbl-col-type-label" style="font-size:11px;color:var(--text3)">' +
         (sourced ? 'Optimization Strategy Sheet xlsx' : 'Starting estimate') +
         '</td></tr>'
@@ -912,7 +942,7 @@ function _auditEstAssumptionsHTML(projId) {
     projId +
     "')\" style=\"font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid var(--border);background:var(--s3);color:var(--text2);cursor:pointer\">Reset all</button></div>" +
     '<div class="ch-tbl-outer" style="max-width:560px"><table class="ch-tbl" style="width:100%">' +
-    '<thead><tr><th>Equipment Type</th><th>Hours Each</th><th>Default</th><th></th><th>Default source</th></tr></thead><tbody>' +
+    '<thead><tr><th>Equipment Type</th><th>Hours Each</th><th>Default (* = company)</th><th>Actions</th><th>Default source</th></tr></thead><tbody>' +
     rows +
     '</tbody></table></div>' +
     '<div style="font-size:12px;font-weight:700;color:var(--text2);margin:10px 0 6px">Full Facility Audit — additional per-building hours</div>' +
@@ -1038,6 +1068,22 @@ function auditEstSaveHours(projId, cat, value) {
   var res = auditEstSetHourOverride(projId, cat, value);
   if (res === 'invalid') showToast('Enter hours of 0 or more, or leave blank for the default', 'error');
   else if (res === 'failed') showToast('Could not save the hours', 'error');
+  if (typeof initCostEstimateTab === 'function') initCostEstimateTab(projId);
+}
+// Save the project's value as the company default (shared by every project). The project
+// override is cleared so the row now shows the new default. Existing stored values are only
+// replaced by this explicit action, with a history entry.
+function auditEstSaveCompanyHours(projId, cat) {
+  var v = auditEstGetHourOverrides(projId)[cat];
+  if (v == null) return;
+  auditEstSetConfig('hoursPerEquip.' + cat, v);
+  auditEstSetHourOverride(projId, cat, '');
+  if (typeof initCostEstimateTab === 'function') initCostEstimateTab(projId);
+}
+// Company default back to the built-in value (written as that value; history records it).
+function auditEstResetCompanyHours(projId, cat) {
+  var b = AUDIT_EST_HOURS_PER_EQUIP_DEFAULT[cat];
+  auditEstSetConfig('hoursPerEquip.' + cat, b != null ? b : 1);
   if (typeof initCostEstimateTab === 'function') initCostEstimateTab(projId);
 }
 function auditEstResetAllHours(projId) {

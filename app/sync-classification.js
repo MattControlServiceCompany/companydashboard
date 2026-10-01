@@ -84,6 +84,11 @@ const SyncClassification = (() => {
     },
     { pattern: 'en_alarms_', prefix: true, note: 'bas-alarms.js: en_alarms_<pid>' },
     { pattern: 'en_hours_', prefix: true, note: 'hours.js: en_hours_<pid>' },
+    {
+      pattern: 'audit_estimate_config',
+      prefix: false,
+      note: 'audit-estimate.js: company-wide Audit Estimate assumptions (hoursPerEquip, hoursPerBuilding, hoursReport, matrixReviewHours, fullFacility.*, history) — no rate, no per-user data; both users need the same company defaults',
+    },
     { pattern: 'en_budget_', prefix: true, note: 'budget.js: en_budget_<pid>' },
     { pattern: 'en_meetingTemplates', prefix: false, note: 'csv-import.js: single global key' },
     { pattern: 'sv_saData', prefix: false, note: 'service-department.html service-agreement data' },

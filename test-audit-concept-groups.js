@@ -125,3 +125,43 @@ console.log('PASS concept-group tests');
   assert.ok(g.rep && g.repBuilding && typeof g.count === 'number');
 })();
 console.log('PASS hours override tests');
+
+// ── Resolution order: project override -> company default -> built-in ──
+(function () {
+  const rows = mk('vav', 4, P('reheatValve'), 'A');
+  const store = { audit_estimate_config: null };
+  const ctx = make(rows);
+  // make() has its own store; rebuild a context with a shared, inspectable store
+  const vm = require('vm');
+  const c2 = { window: {}, console, sget: (k, d) => (store[k] != null ? store[k] : d), sset: (k, v) => { store[k] = JSON.parse(JSON.stringify(v)); },
+    emLoadMatrix: () => ({ rows }), emIsPhantomRow: () => false, emGetNormalizedPoints: (r) => r.pts, _pricingGetConfig: () => ({ hourlyRate: 100 }) };
+  vm.createContext(c2); vm.runInContext(src, c2);
+  const vav = () => c2.auditEstComputeBreakdown('p', 'bas').rows[0];
+  assert.strictEqual(vav().hoursEach, 1.12); assert.strictEqual(vav().defaultSource, 'built-in');
+  // company edit
+  c2.auditEstSetConfig('hoursPerEquip.vav', 2.5);
+  assert.strictEqual(vav().hoursEach, 2.5); assert.strictEqual(vav().defaultSource, 'company');
+  assert.strictEqual(store.audit_estimate_config.hoursPerEquip.vav, 2.5);
+  // other stored fields untouched
+  c2.auditEstSetConfig('hoursReport', 7);
+  assert.strictEqual(store.audit_estimate_config.hoursReport, 7); assert.strictEqual(store.audit_estimate_config.hoursPerEquip.vav, 2.5);
+  // project override wins, defaultHoursEach is the company value
+  c2.auditEstSetHourOverride('p', 'vav', '4');
+  assert.strictEqual(vav().hoursEach, 4); assert.strictEqual(vav().defaultHoursEach, 2.5);
+  // save project value as company default clears the override and shares the value
+  c2.auditEstSaveCompanyHours('p', 'vav'); // window.initCostEstimateTab absent: guarded
+  assert.strictEqual(vav().hoursEach, 4); assert.strictEqual(vav().overridden, false);
+  assert.strictEqual(store.audit_estimate_config.hoursPerEquip.vav, 4);
+  // reset company default to built-in
+  c2.auditEstResetCompanyHours('p', 'vav');
+  assert.strictEqual(vav().hoursEach, 1.12);
+  assert.strictEqual(store.audit_estimate_config.hoursReport, 7); // never rewrites other values
+  assert.ok(store.audit_estimate_config.history.length >= 3);
+})();
+// sync rule
+(function () {
+  const SC = require('./app/sync-classification.js');
+  assert.strictEqual(SC.classifyKey('audit_estimate_config'), 'synced');
+  assert.strictEqual(SC.classifyKey('en_pricing_audit_hours_9'), 'synced');
+})();
+console.log('PASS resolution order + sync rule tests');
