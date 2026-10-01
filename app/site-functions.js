@@ -1775,6 +1775,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.01.54', date: '2026-10-01', title: 'Cost Estimate: smaller audit sample, optional Hardware & Installation',
+    items: [
+      { type: 'change', text: 'Cost Estimate: Audit Estimate now samples about the square root of each equipment count (for example 19 AHUs gives 5, 236 VAVs gives 16). Change it with Sample factor in Edit Assumptions.' },
+      { type: 'change', text: 'Cost Estimate: Hardware & Installation is now hidden until you click the Hardware & Install button. The choice is remembered for each project.' }
+    ]
+  },
   {
     v: 'v2026.09.30.53',
     date: '2026-09-30',
