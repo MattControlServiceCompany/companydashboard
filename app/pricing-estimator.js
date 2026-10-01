@@ -8059,16 +8059,14 @@ function _pricingComputeRecommendedTimeline(projId) {
   }, 0);
   var drift = Math.round((grand - sumMeasures) * 100) / 100;
   if (grandTotals.method === 'workbook') {
-    // Workbook mode: split the whole-dollar tier total over the phases by largest remainder,
-    // weighted by each phase's own priced total, so the phases add up to the tier total exactly.
-    var wbShares = _auditEstAllocate(
-      grand,
-      out.map(function (p) {
-        return Math.round(p.measuresTotal * 100);
-      }),
-    );
-    out.forEach(function (p, k) {
-      p.measuresTotal = wbShares[k];
+    // Workbook mode: a phase's amount is the sum of its rows' shares (rowShares, the one allocator
+    // shared with the row table and the Summary), so phases add up to the tier total exactly.
+    out.forEach(function (p) {
+      var c = 0;
+      p.rows.forEach(function (r) {
+        c += grandTotals.rowShares[r._baseId || r.id] || 0;
+      });
+      p.measuresTotal = c;
     });
   } else if (drift !== 0) {
     for (var i = out.length - 1; i >= 0; i--) {
@@ -10523,41 +10521,37 @@ function _pricingComputeSummaryData(projId, estimate) {
     });
   });
 
+  var tierTotals = {};
+  tierDefs.forEach(function (t) {
+    tierTotals[t.key] = _pricingComputeTotals(perTier[t.key], estimate, projId);
+  });
+
   var buildings = bldgOrder.map(function (bName) {
     var tiers = {};
     tierDefs.forEach(function (t) {
       var bRows = perTier[t.key].filter(function (r) {
         return r.building === bName;
       });
+      var wbT = tierTotals[t.key];
+      if (wbT.method === 'workbook') {
+        // Workbook mode: a building's amount is the sum of its rows' shares (rowShares, the one
+        // allocator the row table and the Recommended timeline also use) - no separate split.
+        var hwSum = 0,
+          lbSum = 0;
+        bRows.forEach(function (r) {
+          var sh = wbT.rowShares[r._baseId || r.id] || 0;
+          if (r.phase === 1) hwSum += sh;
+          else if (r.phase === 2) lbSum += sh;
+        });
+        tiers[t.key] = { items: bRows.length, hw: hwSum, lb: lbSum, total: hwSum + lbSum };
+        return;
+      }
       var bt = _pricingComputeTotals(bRows, estimate, projId);
-      var hwSum = bt.phase1 || 0;
-      var lbSum = bt.phase2 || 0;
-      tiers[t.key] = { items: bRows.length, hw: hwSum, lb: lbSum, total: hwSum + lbSum };
+      var hwH = bt.phase1 || 0;
+      var lbH = bt.phase2 || 0;
+      tiers[t.key] = { items: bRows.length, hw: hwH, lb: lbH, total: hwH + lbH };
     });
     return { building: bName, tiers: tiers };
-  });
-
-  var tierTotals = {};
-  tierDefs.forEach(function (t) {
-    tierTotals[t.key] = _pricingComputeTotals(perTier[t.key], estimate, projId);
-    if (tierTotals[t.key].method === 'workbook') {
-      // Workbook mode: the per-building hardware and labor figures are largest-remainder shares of
-      // the tier's workbook phase totals (weights: each building's own priced figure), so the
-      // buildings add up to the tier total exactly.
-      var wbT = tierTotals[t.key];
-      ['hw', 'lb'].forEach(function (f) {
-        var shares = _auditEstAllocate(
-          f === 'hw' ? wbT.phase1 : wbT.phase2,
-          buildings.map(function (b) {
-            return Math.round(b.tiers[t.key][f] * 100);
-          }),
-        );
-        buildings.forEach(function (b, k) {
-          b.tiers[t.key][f] = shares[k];
-          b.tiers[t.key].total = b.tiers[t.key].hw + b.tiers[t.key].lb;
-        });
-      });
-    }
   });
 
   // perTier exposed so the client proposal's optional "Itemized Measures" sub-option can

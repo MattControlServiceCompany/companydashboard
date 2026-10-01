@@ -370,4 +370,48 @@ const plain = (x) => JSON.parse(JSON.stringify(x));
   ok('Compare Rec. Total column: workbook foots to footer; hourly = line total');
 }
 
+// 10. One building split: in workbook mode a building shows the same amount in the row table (sum of its
+// rows' shares), the Recommended timeline (phase amounts = sum of the building amounts in that phase) and
+// Summary; phases add up to the tier total.
+{
+  const T = tiers();
+  const e = { rowToggles: {}, manualPrices: {}, laborOverrides: {}, installHoursOverrides: {}, qtyOverrides: {} };
+  const wb = make(read('app/pricing-estimator.js'), { en_pricing_catalog: catalog, en_pricing_estimate_p: e }, T);
+  // fixed envelope per phase so the timeline spreads the rows over several phases
+  wb._pricingComputeProgramCostModel = (p, k) => {
+    const ph = [];
+    for (let i = 0; i < k; i++)
+      ph.push({ measuresAvailable: 150, allowanceTotal: 1150, emLaborTotal: 1000, overCommitted: false });
+    return { phases: ph, programAllowanceTotal: 1, programEmLaborTotal: 1, monthlyAllowance: 1 };
+  };
+  const tot = wb._pricingComputeTotals(T.recommended, e, 'p');
+  assert.strictEqual(tot.method, 'workbook');
+  const key = (r) => r._baseId || r.id;
+  const rowB = {};
+  T.recommended.forEach((r) => (rowB[r.building] = (rowB[r.building] || 0) + (tot.rowShares[key(r)] || 0)));
+  const tl = wb._pricingComputeRecommendedTimeline('p');
+  assert.ok(tl && tl.phases.length >= 2, 'timeline has several phases');
+  const tlB = {};
+  let phaseSum = 0;
+  tl.phases.forEach((p) => {
+    const perB = {};
+    p.rows.forEach((r) => (perB[r.building] = (perB[r.building] || 0) + (tot.rowShares[key(r)] || 0)));
+    assert.strictEqual(
+      p.measuresTotal,
+      Object.keys(perB).reduce((a, b) => a + perB[b], 0),
+      'phase amount == sum of its building amounts',
+    );
+    Object.keys(perB).forEach((b) => (tlB[b] = (tlB[b] || 0) + perB[b]));
+    phaseSum += p.measuresTotal;
+  });
+  assert.strictEqual(phaseSum, tot.grand, 'phases sum to tier total');
+  const sd = wb._pricingComputeSummaryData('p', e);
+  sd.buildings.forEach((b) => {
+    assert.strictEqual(b.tiers.recommended.total, rowB[b.building] || 0, 'summary == row table ' + b.building);
+    if (rowB[b.building]) assert.strictEqual(tlB[b.building], rowB[b.building], 'timeline == row table ' + b.building);
+  });
+  assert.strictEqual(sd.buildings.reduce((a, b) => a + b.tiers.recommended.total, 0), tot.grand);
+  ok('workbook: building amount equal in row table, timeline and Summary; phases sum to ' + tot.grand);
+}
+
 console.log('\n' + n + ' checks passed');
