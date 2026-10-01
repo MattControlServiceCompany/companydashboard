@@ -2296,6 +2296,14 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.01.61', date: '2026-10-01', title: 'Cost Estimate: workbook pricing on proposals and Budget Fit',
+    items: [
+      { type: 'feature', text: 'Cost Estimate: the "Workbook | Hourly $170" switch is now on the Cost Estimate page. Workbook pricing is the default, so tier totals on existing estimates can change. Choose Hourly $170 to keep the old method.' },
+      { type: 'change', text: 'Cost Estimate: proposals print the exact workbook total. Hourly still rounds up to the next $100.' },
+      { type: 'change', text: 'Cost Estimate: Budget Fit uses the same total as the footer, and the Compare tab Rec. Total column adds up to the recommended footer total.' },
+      { type: 'change', text: 'Cost Estimate: the Rate button is hidden in Workbook mode, because the workbook sets the rate.' }
+    ]
+  },
   { v: 'v2026.10.01.60', date: '2026-10-01', title: 'Restore from backup has three modes',
     items: [
       { type: 'feature', text: 'Sidebar Restore button: Restore now has three modes. Add missing only (the default), Merge, and Replace. A preview shows what each mode will change before you confirm.' },
