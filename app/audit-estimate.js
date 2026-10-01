@@ -558,7 +558,7 @@ function _auditEstBreakdownTableHTML(b, titleText) {
   };
 
   return (
-    '<div style="flex:1 1 600px;min-width:0">' +
+    '<div style="flex:0 1 auto;min-width:0;max-width:100%">' +
     '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:6px">' +
     _auditEstEsc(titleText) +
     '</div>' +
@@ -568,7 +568,7 @@ function _auditEstBreakdownTableHTML(b, titleText) {
     // scroll box around just the table rows made the totals row/buttons unreachable by
     // scrolling the outer wrap (caught in headless verification, 2026-09-25).
     '<div class="ch-tbl-outer ae-tbl-outer">' +
-    '<table class="ch-tbl ae-tbl" style="width:100%">' +
+    '<table class="ch-tbl ae-tbl">' +
     '<thead><tr>' +
     '<th class="ae-left">Equipment Type</th>' +
     th('Count', 'Number of units of this type in the Equipment Matrix.') +
@@ -646,7 +646,7 @@ function _auditEstByBuildingTableHTML(b) {
   };
   return (
     '<div style="font-size:12px;font-weight:700;color:var(--text);margin:12px 0 4px">Cost by Building</div>' +
-    '<div class="ch-tbl-outer ae-tbl-outer"><table class="ch-tbl ae-tbl ae-bldg-tbl" style="width:100%">' +
+    '<div class="ch-tbl-outer ae-tbl-outer"><table class="ch-tbl ae-tbl ae-bldg-tbl">' +
     '<thead><tr><th class="ae-left">Building</th>' +
     th('Equipment', 'Units of auditable equipment in this building.') +
     th('Sampled', 'Sampled units of each type, shared across buildings by how many units each has.') +
@@ -784,9 +784,9 @@ function _auditEstAssumptionsHTML(projId) {
    sideways only when the window is too narrow for the columns, never the page. */
 var AUDIT_EST_TABLE_CSS =
   '<style>' +
-  '.ae-tbl-outer{border:1px solid var(--border);border-radius:6px;overflow-x:auto;overflow-y:hidden}' +
-  '.ae-tbl{border-collapse:separate;border-spacing:0;font-size:12px;font-variant-numeric:tabular-nums}' +
-  '.ae-tbl th,.ae-tbl td{padding:5px 6px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);color:var(--text)}.ae-tbl th{white-space:nowrap}.ae-tbl td.ch-tbl-col-type-currency{white-space:nowrap}' +
+  '.ae-tbl-outer{border:1px solid var(--border);border-radius:6px;overflow-x:auto;overflow-y:hidden;width:fit-content;max-width:100%}' +
+  '.ae-tbl{border-collapse:separate;border-spacing:0;width:auto;font-size:12px;font-variant-numeric:tabular-nums}' +
+  '.ae-tbl th,.ae-tbl td{padding:5px 6px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);color:var(--text)}.ae-tbl th{white-space:nowrap}.ae-tbl td{white-space:nowrap}' +
   '.ae-tbl th:last-child,.ae-tbl td:last-child{border-right:none}' +
   '.ae-tbl tbody tr:last-child td{border-bottom:none}' +
   '.ae-tbl thead th{background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;text-align:right;border-bottom:1px solid var(--border2);cursor:help}' +

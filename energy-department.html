@@ -4667,6 +4667,24 @@
         flex-direction: column;
         overflow: hidden;
       }
+      /* Cost Estimate: #ptab-cost-estimate-body-* is the ONE vertical scroller. The pricing
+         panel (any tier / condensed or full itemization) flows at natural height inside it, so
+         there is no fixed-height region, no nested vertical scroll box, and no empty gap above
+         the Audit Estimate. !important overrides the inline height:100% / flex:1 /
+         overflow:hidden the tier renderers in app/pricing-estimator.js write. */
+      [id^='ptab-cost-estimate-body-'] .ch-panel {
+        height: auto !important;
+        flex: 0 0 auto !important;
+        min-height: 0 !important;
+        overflow: visible !important;
+      }
+      [id^='ptab-cost-estimate-body-'] .ch-panel-body,
+      [id^='ptab-cost-estimate-body-'] .ch-panel-body > .ch-tbl-outer,
+      [id^='ptab-cost-estimate-body-'] .ch-panel-body .ch-tbl-scroll {
+        flex: 0 0 auto !important;
+        min-height: 0 !important;
+        overflow-y: visible !important;
+      }
       .dash-grid {
         display: grid;
         grid-template-columns: 1fr 360px;
