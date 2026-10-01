@@ -1775,6 +1775,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.01.55', date: '2026-10-01', title: 'Cost Estimate: Cost by Building',
+    items: [
+      { type: 'feature', text: 'Cost Estimate: Audit Estimate now has a Cost by Building table under the BAS and Full Facility audits (hours and cost per building, plus a Project-wide row for review and report).' },
+      { type: 'fix', text: 'Cost Estimate: the Audit Estimate section no longer scrolls inside a small box.' }
+    ]
+  },
   { v: 'v2026.10.01.54', date: '2026-10-01', title: 'Cost Estimate: smaller audit sample, optional Hardware & Installation',
     items: [
       { type: 'change', text: 'Cost Estimate: Audit Estimate now samples about the square root of each equipment count (for example 19 AHUs gives 5, 236 VAVs gives 16). Change it with Sample factor in Edit Assumptions.' },
