@@ -10,6 +10,7 @@ What it does (XML level, so formulas, styles, widths, print setup and sheet orde
   - drops every cached formula value (the export writes them from estimate-workbook.js)
   - blanks every input cell and every client-specific string
   - drops SharePoint/customXml/calcChain parts and personal document properties
+  - strips print header/footer text that holds a name, email or phone (keeps page numbers)
   - sets fullCalcOnLoad on the workbook
   - scans the result for client strings and exits 1 if any are found
 """
@@ -90,6 +91,19 @@ def load_shared_strings(xml):
     return [html.unescape(''.join(re.findall(r'<t[^>]*>(.*?)</t>', x, re.S))) for x in items]
 
 
+CONTACT = re.compile(r'@|\d{3}[-. )]+\d{3}[-.]\d{4}|' + '|'.join(re.escape(t) for t in FORBIDDEN), re.I)
+
+
+def clean_header_footer(m):
+    """Drop any header/footer that carries a name, email or phone. Keep a bare page-number footer."""
+    kind, body = m.group(1) + m.group(2), html.unescape(m.group(3))
+    if not CONTACT.search(body):
+        return m.group(0)
+    if re.search(r'&[PN]', body):
+        return '<%s>&amp;R&amp;P of &amp;N</%s>' % (kind, kind)
+    return ''
+
+
 def process_sheet(xml, blank, sst, blanked_strings):
     def cell(m):
         ref, attrs, body = m.group(1), m.group(2), m.group(3)
@@ -114,6 +128,8 @@ def process_sheet(xml, blank, sst, blanked_strings):
     # form-control buttons (macro) at the end of the worksheet
     xml = re.sub(r'<mc:AlternateContent[^>]*><mc:Choice Requires="x14"><controls>.*</controls></mc:Choice></mc:AlternateContent>(?=</worksheet>)', '', xml, flags=re.S)
     xml = re.sub(r'\s+codeName="[^"]*"', '', xml)
+    xml = re.sub(r'<(odd|even|first)(Header|Footer)>(.*?)</\1\2>', clean_header_footer, xml, flags=re.S)
+    xml = re.sub(r'<headerFooter[^>]*>\s*</headerFooter>', '', xml)
     return xml
 
 
@@ -215,6 +231,10 @@ def scan(path, blanked_strings):
             if n.endswith(('.jpeg', '.png', '.bin')):
                 continue
             text = html.unescape(z.read(n).decode('utf8', 'replace')).lower()
+            # any email address; any phone number inside a print header/footer (letterhead phone is company, not staff)
+            hf = ''.join(re.findall(r'<headerFooter.*?</headerFooter>', text, re.S))
+            if re.search(r'[\w.+-]+@[\w-]+\.[a-z]{2,}', text) or re.search(r'\d{3}[-. )]\d{3}[-.]\d{4}', hf):
+                hits.append((n, 'email/phone pattern'))
             for t in needles:
                 if t in text:
                     hits.append((n, t))
