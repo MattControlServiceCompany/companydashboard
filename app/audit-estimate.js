@@ -220,6 +220,10 @@ function auditEstGetEquipmentSummary(projId) {
   var byCat = {};
   var excluded = {};
 
+  // Buildings the matrix lists that have no rows yet still get a line in Cost by Building.
+  (matData.buildings || []).forEach(function (n) {
+    if (typeof n === 'string' && n) allBuildings[n] = true;
+  });
   rows.forEach(function (r) {
     var bName = r.building || 'Unknown Building';
     var cat = r.category || 'other';
@@ -615,16 +619,18 @@ function _auditEstByBuildingTableHTML(b) {
   };
   var body = b.byBuilding
     .map(function (x) {
-      var zero = !x.projectWide && !x.equipment && !x.hours;
+      var dash = function (v) {
+        return v ? v : '—';
+      };
       return (
         '<tr><td class="ch-tbl-col-type-label">' +
         _auditEstEsc(x.building) +
         '</td>' +
-        num(x.equipment == null || zero ? '—' : x.equipment) +
-        num(x.sampled == null || zero ? '—' : x.sampled) +
-        num(zero ? '—' : x.hours.toFixed(1)) +
+        num(dash(x.equipment)) +
+        num(dash(x.sampled)) +
+        num(x.hours ? x.hours.toFixed(1) : '—') +
         '<td class="ch-tbl-col-type-currency">' +
-        (zero ? '—' : _auditEstFmt(x.cost)) +
+        (x.cost ? _auditEstFmt(x.cost) : '—') +
         '</td></tr>'
       );
     })

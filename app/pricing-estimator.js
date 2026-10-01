@@ -10170,9 +10170,12 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     if (!wrap) {
       wrap = document.createElement('div');
       wrap.id = wrapId;
-      wrap.style.cssText = 'flex-shrink:0;max-height:480px;overflow-y:auto';
+      wrap.style.cssText = 'flex-shrink:0';
       el.appendChild(wrap);
     }
+    // The tab body is the one scroll region: the estimate above keeps its height, the Audit
+    // Estimate shows at natural height under it, and the body scrolls (not the Audit section).
+    el.style.overflowY = 'auto';
     wrap.innerHTML = auditEstRenderHTML(projId);
   };
 })();

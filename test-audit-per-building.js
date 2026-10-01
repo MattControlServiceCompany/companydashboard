@@ -1,13 +1,13 @@
 // Unit tests for auditEstComputeBreakdown().byBuilding — SYNTHETIC data only.
 const fs = require('fs'), vm = require('vm'), assert = require('assert');
 const src = fs.readFileSync(__dirname + '/app/audit-estimate.js', 'utf8');
-function make(rows, cfgOver, rate) {
+function make(rows, cfgOver, rate, mbuildings) {
   const store = { audit_estimate_config: cfgOver || null };
   const ctx = {
     window: {}, console,
     sget: (k, d) => (store[k] != null ? store[k] : d),
     sset: (k, v) => { store[k] = v; },
-    emLoadMatrix: () => ({ rows }),
+    emLoadMatrix: () => ({ rows, buildings: mbuildings }),
     emIsPhantomRow: () => false,
     emGetNormalizedPoints: () => ({}),
     _pricingGetConfig: () => ({ hourlyRate: rate == null ? 120 : rate }),
@@ -72,5 +72,13 @@ for (const cnt of [[5, 3, 0, 1], [1, 1, 1], [40, 7, 13, 2, 9], [2]]) {
   const b = make(rows, null).auditEstComputeBreakdown('p', 'bas');
   assert.strictEqual(b.byBuilding.filter((x) => !x.projectWide).reduce((s, x) => s + x.sampled, 0), b.rows[0].sampled);
   check(b, 'single ' + cnt);
+}
+// Matrix-only building (listed in matrix.buildings, no rows) appears with zeros; invariants hold.
+for (const t of ['bas', 'full']) {
+  const z = make(fixture(), null, 120, ['Alpha Hall', 'Zeta Not In Matrix']).auditEstComputeBreakdown('p', t);
+  const zb = z.byBuilding.find((x) => x.building === 'Zeta Not In Matrix');
+  assert.ok(zb && zb.equipment === 0 && zb.sampled === 0 && zb.hours === 0 && zb.cost === 0);
+  assert.strictEqual(z.byBuilding.length, 7);
+  check(z, 'zeta ' + t);
 }
 console.log('PASS', n, 'invariant checks + allocation/zero-equipment/sampleFactor tests');
