@@ -52,14 +52,15 @@
 // --------------------------------------------------
 // Headless Chromium (bundled Playwright Chromium, NEVER port 9222 / the user's live Edge) loads
 // the REAL energy-department.html, restores the REAL JOCO backup export through
-// window.__siteUI.restoreData() (the actual UI restore path), then calls the REAL production
+// window.__siteUI.restoreData(data, {mode:'replace', confirm:true, safetyCopy:false}) (the real
+// restore engine, programmatic entry without the preview dialog), then calls the REAL production
 // functions in-page (buildCatalogRows, collectASHRAE36Data, generateASHRAE36AuditHTML,
 // generateASHRAE36ProposalHTML, _pricingComputeSummaryData, _pricingProposalTermAndFuture,
 // _rptA36PhaseSeqCategoryNames, ...) -- nothing in this file reimplements any report or pricing
 // logic. The generated HTML is injected into a real (detached) DOM node on the live page so
 // figures are extracted from an actual rendered DOM, not a string napkin-match.
 //
-// HARNESS TRAP (documented in the plan; handled below): restoreData() triggers a delayed
+// HARNESS TRAP (documented in the plan; handled below): the programmatic restoreData() triggers a delayed
 // location.reload(). page.waitForNavigation({waitUntil:'load'}) is armed BEFORE setFiles() and
 // awaited immediately after -- only then do we poll for DB-ready.
 //
@@ -736,15 +737,18 @@ function printReport(label, results, bundle) {
       /* no intro modal, fine */
     }
 
-    // Harness trap fix: arm the navigation wait BEFORE triggering the restore (restoreData()
-    // schedules a delayed location.reload()). Await it immediately after setFiles, THEN poll
-    // for DB-ready -- never the other order.
+    // Harness trap fix: arm the navigation wait BEFORE triggering the restore (the
+    // programmatic restoreData() schedules a delayed location.reload()). Await it right
+    // after the call returns, THEN poll for DB-ready -- never the other order.
+    // Programmatic API: Replace into the empty profile, no preview dialog, no safety copy
+    // (fixture data in a fresh profile).
     const navWait = page.waitForNavigation({ waitUntil: 'load' });
-    const [fc] = await Promise.all([
-      page.waitForEvent('filechooser'),
-      page.evaluate(() => window.__siteUI.restoreData()),
-    ]);
-    await fc.setFiles(DATA_FILE);
+    const seed = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+    const seeded = await page.evaluate(
+      (data) => window.__siteUI.restoreData(data, { mode: 'replace', confirm: true, safetyCopy: false }),
+      seed,
+    );
+    console.log('Seed result: ' + JSON.stringify(seeded));
     await navWait;
 
     let ready = false;

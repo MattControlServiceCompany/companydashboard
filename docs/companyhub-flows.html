@@ -290,7 +290,7 @@ var FLOWS = [
     ]
   },
   {
-    id: 'backup', name: 'Backup / Restore', desc: 'Export or import all localStorage data as JSON (data-only, no bill PDFs)',
+    id: 'backup', name: 'Backup / Restore', desc: 'Export all data as JSON (data-only, no bill PDFs). Restore compares the file with the current data per key family (app/restore-merge.js), previews Add missing only / Merge (fills blanks) / Replace, downloads a safety copy, then writes (server CAS with explicitOverwrite when sync is on)',
     path: ['user','energy','siteui','ls'],
     steps: [
       { from:'user', to:'energy', label:'User clicks Backup button', detail:'Sidebar, energy-department.html (the only remaining page with a sidebar).' },
