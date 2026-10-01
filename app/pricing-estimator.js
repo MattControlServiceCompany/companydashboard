@@ -6625,6 +6625,25 @@ function _pricingApplyColWidths(projId) {
    Summary's old caption slot as a generic reserved-elastic-space passthrough any caller may use
    (e.g. the Compliance/Full-Scope condensed-view toggle — see _pricingRenderCondensedTab).
    ─────────────────────────────────────────────────────────────────────────── */
+/* Per-project on-screen preference: show the condensed view's Hardware & Installation section.
+   Default OFF. Display only — never touches totals or proposal output. */
+function _pricingGetShowHardware(projId) {
+  try {
+    return sget('en_pricing_show_hw_' + projId, false) === true;
+  } catch (e) {
+    return false;
+  }
+}
+function _pricingToggleShowHardware(projId) {
+  try {
+    var p = sset('en_pricing_show_hw_' + projId, !_pricingGetShowHardware(projId));
+    if (p && p.catch) p.catch(function () {});
+  } catch (e) {
+    /* storage unavailable — preference not saved */
+  }
+  if (typeof initCostEstimateTab === 'function') initCostEstimateTab(projId);
+}
+
 function _pricingBuildToolbarHTML(projId, tier, opts) {
   opts = opts || {};
   var isRecommended = tier === 'recommended';
@@ -6694,6 +6713,18 @@ function _pricingBuildToolbarHTML(projId, tier, opts) {
       ? _pricingFmt(Number(_budgetForBtn.amount)) +
         ({ monthly: '/mo', quarterly: '/qtr', annual: '/yr', lump: '' }[_budgetForBtn.denomination] || '')
       : 'Not set';
+  // Hardware & Install toggle (2026-10-01) — shows the condensed view's Hardware & Installation
+  // section; default OFF, remembered per project. Only active on the condensed view (opts.hwToggle).
+  var _hwOn = _pricingGetShowHardware(projId);
+  var hwBtnHTML =
+    '<button class="btn btn-ghost btn-sm" onclick="_pricingToggleShowHardware(\'' +
+    projId +
+    '\')" aria-pressed="' +
+    (_hwOn ? 'true' : 'false') +
+    '" title="Show or hide the Hardware &amp; Installation section (display only — totals and the proposal do not change)" style="cursor:pointer' +
+    (_hwOn ? ';border-color:var(--accent);color:var(--accent)' : '') +
+    '">Hardware &amp; Install</button>';
+
   var budgetBtnHTML =
     '<button class="btn btn-ghost btn-sm" onclick="_pricingOpenBudgetPopover(\'' +
     projId +
@@ -6789,6 +6820,7 @@ function _pricingBuildToolbarHTML(projId, tier, opts) {
     slot(importCsvHTML, rowFilterActive),
     slot(tableSettingsBtnHTML, rowFilterActive),
     slot(legendBtnHTML, rowFilterActive),
+    slot(hwBtnHTML, !!opts.hwToggle),
     slot(budgetBtnHTML, rowFilterActive),
     slot(rateBtnHTML, rowFilterActive),
     // Tier toggle — 35742dd5 (Phase 2) established that the flex:1 spacer must sit AFTER Tier,
@@ -6925,6 +6957,7 @@ function _pricingRenderCondensedTab(projId, el, estimate, tier) {
 
   var toolbarHTML = _pricingBuildToolbarHTML(projId, tier, {
     allBuildings: allBuildings,
+    hwToggle: true,
     middleHTML:
       '<span style="font-size:11px;color:var(--text2)">Condensed — ' +
       itemCount +
@@ -7032,7 +7065,7 @@ function _pricingRenderCondensedTab(projId, el, estimate, tier) {
     '<div class="ch-panel" style="display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden;height:100%">',
     toolbarHTML,
     '<div class="ch-panel-body" style="flex:1;min-height:220px;overflow:auto;padding-top:10px">',
-    section('Hardware & Installation', agg.hw),
+    _pricingGetShowHardware(projId) ? section('Hardware & Installation', agg.hw) : '',
     section('Programming', agg.lb),
     emptyState,
     '</div>',

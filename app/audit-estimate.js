@@ -125,10 +125,9 @@ var AUDIT_EST_DEFAULTS = {
   hoursPerEquip: Object.assign({}, AUDIT_EST_HOURS_PER_EQUIP_DEFAULT),
   hoursPerBuilding: 2, // estimate — site visit + travel time, per building (Full Facility Audit ONLY)
   hoursReport: 4, // estimate — fixed report writing/analysis hours (BAS Audit)
-  // Sample-based review (2026-09-30): units of one type with the same Equipment Matrix points
-  // form a group; one unit per group is reviewed, plus a follow-up share of the remaining units.
+  // Sample-based review (2026-10-01): review about sampleFactor x sqrt(count) units of each type.
   matrixReviewHours: 0.5, // estimate — fixed Equipment Matrix review per equipment type
-  followUpPct: 0.1, // estimate — share of the non-sampled units that need a follow-up look
+  sampleFactor: 1.0, // estimate — sample size = ceil(sampleFactor x sqrt(count)) per equipment type
   fullFacility: {
     hoursMechanicalWalkthroughPerBuilding: 2, // estimate — non-BAS mechanical walk-through
     hoursLightingReviewPerBuilding: 1, // estimate
@@ -239,7 +238,7 @@ function auditEstGetEquipmentSummary(projId) {
       byCat[cat].totalPoints += pts;
       // Point set = the mapped column keys the Equipment Matrix shows for this row
       // (emGetNormalizedPoints), NOT raw BAS point keys. The first unit of each point set in
-      // matrix order is the sampled unit.
+      // matrix order is the first of its group (Groups column is information only).
       var sig = auditEstPointSetSignature(r, projId);
       if (!byCat[cat].groups[sig]) {
         byCat[cat].groups[sig] = 0;
@@ -288,10 +287,11 @@ function auditEstComputeBreakdown(projId, auditType) {
 
   var rows = summary.equipTypes.map(function (e) {
     var hoursEach = cfg.hoursPerEquip[e.category] != null ? cfg.hoursPerEquip[e.category] : 1;
-    // Sample model: review one unit per point-set group, plus followUpPct of the rest, plus a
-    // fixed Equipment Matrix review. Never more than reviewing every unit.
+    // Sample model: review min(count, max(1, ceil(sampleFactor x sqrt(count)))) units, plus a
+    // fixed Equipment Matrix review. Never more than reviewing every unit. Groups (distinct
+    // point sets) are shown for information only.
     var fullHours = e.count * hoursEach;
-    var reviewedUnits = e.groupCount + Math.ceil(cfg.followUpPct * (e.count - e.groupCount) - 1e-9);
+    var reviewedUnits = Math.min(e.count, Math.max(1, Math.ceil(cfg.sampleFactor * Math.sqrt(e.count) - 1e-9)));
     var sampleHours = cfg.matrixReviewHours + reviewedUnits * hoursEach;
     if (sampleHours >= fullHours) reviewedUnits = e.count;
     var hours = Math.round(Math.min(fullHours, sampleHours) * 100) / 100;
@@ -478,10 +478,10 @@ function _auditEstBreakdownTableHTML(b, titleText) {
     '<thead><tr>' +
     '<th class="ae-left">Equipment Type</th>' +
     th('Count', 'Number of units of this type in the Equipment Matrix.') +
-    th('Groups', 'Units of the same type that have the same points form one group. Each group is reviewed once.') +
+    th('Groups', 'Units of the same type that have the same points form one group. For information only.') +
     th(
       'Sampled',
-      'Units reviewed: one from each group, plus a share of the other units for follow-up. Never more than Count.',
+      'Units reviewed: about the square root of Count, times the sample factor. Never more than Count.',
     ) +
     th('Hours Each', 'Hours to review one unit.') +
     th('Hours', 'Matrix review time plus the Sampled units times Hours Each. Never more than Count times Hours Each.') +
@@ -568,12 +568,13 @@ function _auditEstAssumptionsHTML(projId) {
     '" style="width:80px;text-align:right;background:var(--s2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 6px" onchange="auditEstSaveField(\'' +
     projId +
     "','matrixReviewHours', this.value)\"></div>" +
-    '<div><label style="font-size:11px;color:var(--text3)">Follow-up share of the other units (%)</label><br>' +
-    '<input type="number" step="1" min="0" max="100" value="' +
-    Math.round(cfg.followUpPct * 10000) / 100 +
-    '" style="width:80px;text-align:right;background:var(--s2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 6px" onchange="auditEstSaveFollowUp(\'' +
+    '<div><label style="font-size:11px;color:var(--text3)">Sample factor (per equipment type)</label><br>' +
+    '<input type="number" step="0.25" min="0.25" value="' +
+    cfg.sampleFactor +
+    '" style="width:80px;text-align:right;background:var(--s2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 6px" onchange="auditEstSaveSampleFactor(\'' +
     projId +
-    "', this.value)\"></div>" +
+    "', this.value)\"><br>" +
+    '<span style="font-size:10px;color:var(--text3)">Sample about the square root of each equipment count; 1.0 = √count</span></div>' +
     '<div><label style="font-size:11px;color:var(--text3)">Report and analysis hours (fixed)</label><br>' +
     '<input type="number" step="0.25" min="0" value="' +
     cfg.hoursReport +
@@ -725,13 +726,13 @@ function auditEstSaveField(projId, path, value) {
   if (typeof showToast === 'function') showToast('Assumption updated', 'success');
 }
 
-function auditEstSaveFollowUp(projId, value) {
+function auditEstSaveSampleFactor(projId, value) {
   var n = parseFloat(value);
-  if (isNaN(n) || n < 0 || n > 100) {
-    showToast('Enter a percent from 0 to 100', 'error');
+  if (isNaN(n) || n <= 0 || n > 10) {
+    showToast('Enter a sample factor above 0 and up to 10', 'error');
     return;
   }
-  auditEstSetConfig('followUpPct', n / 100);
+  auditEstSetConfig('sampleFactor', n);
   if (typeof initCostEstimateTab === 'function') initCostEstimateTab(projId);
   if (typeof showToast === 'function') showToast('Assumption updated', 'success');
 }
