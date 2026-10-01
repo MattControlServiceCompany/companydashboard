@@ -836,7 +836,8 @@ function _auditEstByBuildingTableHTML(b) {
 }
 
 /* ── UI: editable assumptions table ──────────────────────────────────────────────────────── */
-function _auditEstAssumptionsHTML(projId) {
+function _auditEstAssumptionsHTML(projId, auditType) {
+  var isFull = auditType === 'full';
   var cfg = auditEstGetConfig();
   var rate = auditEstGetHourlyRate();
   var ovr = auditEstGetHourOverrides(projId);
@@ -908,14 +909,16 @@ function _auditEstAssumptionsHTML(projId) {
     ';margin-top:10px;padding:12px;background:var(--s1);border:1px solid var(--border);border-radius:6px">' +
     '<div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:8px">Audit Estimate Assumptions (Hours Each is for this project; the other values are company-wide)</div>' +
     '<div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:10px">' +
-    '<div><label style="font-size:11px;color:var(--text3)">Hours per building (site visit and travel, Full Facility Audit only)</label><br>' +
-    '<input type="number" step="0.25" min="0" value="' +
-    cfg.hoursPerBuilding +
-    '" id="auditEstBldgHrs_' +
-    projId +
-    '" style="width:80px;text-align:right;background:var(--s2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 6px" onchange="auditEstSaveField(\'' +
-    projId +
-    "','hoursPerBuilding', this.value)\"></div>" +
+    (isFull
+      ? '<div><label style="font-size:11px;color:var(--text3)">Hours per building (site visit and travel)</label><br>' +
+        '<input type="number" step="0.25" min="0" value="' +
+        cfg.hoursPerBuilding +
+        '" id="auditEstBldgHrs_' +
+        projId +
+        '" style="width:80px;text-align:right;background:var(--s2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 6px" onchange="auditEstSaveField(\'' +
+        projId +
+        "','hoursPerBuilding', this.value)\"></div>"
+      : '') +
     '<div><label style="font-size:11px;color:var(--text3)">Matrix review hours (per equipment type)</label><br>' +
     '<input type="number" step="0.25" min="0" value="' +
     cfg.matrixReviewHours +
@@ -945,37 +948,39 @@ function _auditEstAssumptionsHTML(projId) {
     '<thead><tr><th>Equipment Type</th><th>Hours Each</th><th>Default (* = company)</th><th>Actions</th><th>Default source</th></tr></thead><tbody>' +
     rows +
     '</tbody></table></div>' +
-    '<div style="font-size:12px;font-weight:700;color:var(--text2);margin:10px 0 6px">Full Facility Audit — additional per-building hours</div>' +
-    '<div style="display:flex;gap:16px;flex-wrap:wrap">' +
-    [
-      'hoursMechanicalWalkthroughPerBuilding',
-      'hoursLightingReviewPerBuilding',
-      'hoursEnvelopeReviewPerBuilding',
-      'hoursUtilityBillReviewPerBuilding',
-      'hoursReportExtra',
-    ]
-      .map(function (k) {
-        var lbl = {
-          hoursMechanicalWalkthroughPerBuilding: 'Mechanical Walk-Through / Building',
-          hoursLightingReviewPerBuilding: 'Lighting Review / Building',
-          hoursEnvelopeReviewPerBuilding: 'Envelope Review / Building',
-          hoursUtilityBillReviewPerBuilding: 'Utility Bill Review / Building',
-          hoursReportExtra: 'Additional Report Hours (fixed)',
-        }[k];
-        return (
-          '<div><label style="font-size:11px;color:var(--text3)">' +
-          lbl +
-          '</label><br><input type="number" step="0.25" min="0" value="' +
-          cfg.fullFacility[k] +
-          '" style="width:80px;text-align:right;background:var(--s2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 6px" onchange="auditEstSaveField(\'' +
-          projId +
-          "','fullFacility." +
-          k +
-          '\', this.value)"></div>'
-        );
-      })
-      .join('') +
-    '</div>' +
+    (isFull
+      ? '<div style="font-size:12px;font-weight:700;color:var(--text2);margin:10px 0 6px">Full Facility Audit — additional per-building hours</div>' +
+        '<div style="display:flex;gap:16px;flex-wrap:wrap">' +
+        [
+          'hoursMechanicalWalkthroughPerBuilding',
+          'hoursLightingReviewPerBuilding',
+          'hoursEnvelopeReviewPerBuilding',
+          'hoursUtilityBillReviewPerBuilding',
+          'hoursReportExtra',
+        ]
+          .map(function (k) {
+            var lbl = {
+              hoursMechanicalWalkthroughPerBuilding: 'Mechanical Walk-Through / Building',
+              hoursLightingReviewPerBuilding: 'Lighting Review / Building',
+              hoursEnvelopeReviewPerBuilding: 'Envelope Review / Building',
+              hoursUtilityBillReviewPerBuilding: 'Utility Bill Review / Building',
+              hoursReportExtra: 'Additional Report Hours (fixed)',
+            }[k];
+            return (
+              '<div><label style="font-size:11px;color:var(--text3)">' +
+              lbl +
+              '</label><br><input type="number" step="0.25" min="0" value="' +
+              cfg.fullFacility[k] +
+              '" style="width:80px;text-align:right;background:var(--s2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 6px" onchange="auditEstSaveField(\'' +
+              projId +
+              "','fullFacility." +
+              k +
+              '\', this.value)"></div>'
+            );
+          })
+          .join('') +
+        '</div>'
+      : '') +
     '<div style="margin-top:10px"><button onclick="auditEstShowHistory(\'' +
     projId +
     '\')" style="font-size:11px;padding:4px 10px;border-radius:4px;border:1px solid var(--border);background:var(--s3);color:var(--text2);cursor:pointer">View Change History (' +
@@ -1010,14 +1015,15 @@ var AUDIT_EST_TABLE_CSS =
   '</style>';
 
 /* ── Main render entry — called from initCostEstimateTab (app/pricing-estimator.js) ────────── */
-function auditEstRenderHTML(projId) {
-  var basB = auditEstComputeBreakdown(projId, 'bas');
-  var fullB = auditEstComputeBreakdown(projId, 'full');
+function auditEstRenderHTML(projId, auditType) {
+  var isFull = auditType === 'full';
+  var typeName = isFull ? 'Full Facility Audit' : 'Building Automation System Audit';
+  var b = auditEstComputeBreakdown(projId, isFull ? 'full' : 'bas');
   var excludedNote = '';
-  if (basB && basB.excluded && basB.excluded.length) {
+  if (b && b.excluded && b.excluded.length) {
     excludedNote =
-      '<div style="font-size:11px;color:var(--text3);margin-top:6px">Not counted per unit in either audit (covered as building-level items, or out of scope): ' +
-      basB.excluded
+      '<div style="font-size:11px;color:var(--text3);margin-top:6px">Not counted per unit (covered as building-level items, or out of scope): ' +
+      b.excluded
         .map(function (x) {
           return _auditEstEsc(x.label) + ' (' + x.count + ')';
         })
@@ -1029,27 +1035,31 @@ function auditEstRenderHTML(projId) {
     '<div class="ch-panel" style="margin-top:16px;border-top:2px solid var(--border2);padding-top:14px">' +
     '<div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">' +
     '<div>' +
-    '<div style="font-size:15px;font-weight:700;color:var(--text)">Audit Estimate</div>' +
-    '<div style="font-size:12px;color:var(--text3);margin-top:2px">Estimated hours and cost to run a Building Automation System Audit or a Full Facility Audit on this project, computed from the Equipment Matrix.</div>' +
+    '<div style="font-size:15px;font-weight:700;color:var(--text)">' +
+    typeName +
+    ' Estimate</div>' +
+    '<div style="font-size:12px;color:var(--text3);margin-top:2px">Estimated hours and cost to run a ' +
+    typeName +
+    ' on this project, computed from the Equipment Matrix.</div>' +
     '</div>' +
     '<button onclick="auditEstToggleAssumptions(\'' +
     projId +
     '\')" style="font-size:11px;padding:5px 10px;border-radius:4px;border:1px solid var(--border);background:var(--s3);color:var(--text2);cursor:pointer">Edit Assumptions</button>' +
     '</div>' +
-    _auditEstAssumptionsHTML(projId) +
+    _auditEstAssumptionsHTML(projId, isFull ? 'full' : 'bas') +
     '<div style="display:flex;gap:20px;flex-wrap:wrap;margin-top:14px">' +
-    _auditEstBreakdownTableHTML(basB, 'Building Automation System Audit') +
-    _auditEstBreakdownTableHTML(fullB, 'Full Facility Audit') +
+    _auditEstBreakdownTableHTML(b, typeName) +
     '</div>' +
     excludedNote +
-    (basB
+    (b
       ? '<div style="margin-top:12px;display:flex;gap:8px">' +
         '<button onclick="auditEstGenerateProposal(\'' +
         projId +
-        '\',\'bas\')" class="rpt-toolbar-btn" style="font-size:12px;padding:6px 12px;border-radius:4px;border:1px solid var(--border);background:var(--accent);color:#fff;cursor:pointer">Generate Building Automation System Audit Proposal</button>' +
-        '<button onclick="auditEstGenerateProposal(\'' +
-        projId +
-        '\',\'full\')" style="font-size:12px;padding:6px 12px;border-radius:4px;border:1px solid var(--border);background:var(--accent);color:#fff;cursor:pointer">Generate Full Facility Audit Proposal</button>' +
+        "','" +
+        (isFull ? 'full' : 'bas') +
+        '\')" class="rpt-toolbar-btn" style="font-size:12px;padding:6px 12px;border-radius:4px;border:1px solid var(--border);background:var(--accent);color:#fff;cursor:pointer">Generate ' +
+        typeName +
+        ' Proposal</button>' +
         '</div>'
       : '') +
     '</div>'
