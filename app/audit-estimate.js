@@ -394,6 +394,28 @@ function auditEstGetEquipmentSummary(projId) {
   };
 }
 
+// Step list "How this total is built" from an EstimateWorkbook.compute() result. Shared by the
+// Audit Estimate and the Cost Estimate (app/pricing-estimator.js).
+function auditEstWorkbookChain(calc) {
+  var D = EstimateWorkbook.DEFAULTS;
+  var sm = calc.summary;
+  var pctOf = function (v) {
+    return Math.round(v * 10000) / 100 + '%';
+  };
+  var chain = [
+    { key: 'labor', label: 'Labor', amount: sm.labor },
+    { key: 'tools', label: 'Tools (' + pctOf(D.pct.smallTools) + ' of labor)', amount: calc.cells['Dash!G32'] },
+    { key: 'rentalTax', label: 'Tool rental tax (paid by CSC)', amount: calc.cells['Dash!G33'] },
+    { key: 'direct', label: 'Direct cost', amount: sm.direct, sub: true },
+    { key: 'overhead', label: 'Overhead (' + pctOf(D.pct.overhead) + ')', amount: sm.overhead },
+    { key: 'profit', label: 'Profit (' + pctOf(D.pct.profit) + ')', amount: sm.profit },
+  ];
+  if (sm.tax) chain.push({ key: 'tax', label: 'Project sales tax (Kansas)', amount: sm.tax });
+  if (sm.bond) chain.push({ key: 'bond', label: 'Bond (' + pctOf(D.pct.bond) + ')', amount: sm.bond });
+  chain.push({ key: 'total', label: 'Total', amount: sm.total, sub: true });
+  return chain;
+}
+
 /* ── Pricing method + workbook settings (per project) ─────────────────────────────────────────
    Key en_pricing_workbook_<projId> (en_pricing_ prefix, so it syncs). Fields, all optional:
    method ('hourly'; absent = 'workbook'), roles { <taskTypeId>: <role code> } (only changed
@@ -676,20 +698,7 @@ function auditEstComputeBreakdown(projId, auditType) {
     var wbInput = { hours: roleHours, ot: wbSet.ot, state: wbSet.state, taxRate: wbSet.taxRate, bond: wbSet.bond };
     var calc = EstimateWorkbook.compute(wbInput);
     var sm = calc.summary;
-    var pctOf = function (v) {
-      return Math.round(v * 10000) / 100 + '%';
-    };
-    var chain = [
-      { key: 'labor', label: 'Labor', amount: sm.labor },
-      { key: 'tools', label: 'Tools (' + pctOf(D.pct.smallTools) + ' of labor)', amount: calc.cells['Dash!G32'] },
-      { key: 'rentalTax', label: 'Tool rental tax (paid by CSC)', amount: calc.cells['Dash!G33'] },
-      { key: 'direct', label: 'Direct cost', amount: sm.direct, sub: true },
-      { key: 'overhead', label: 'Overhead (' + pctOf(D.pct.overhead) + ')', amount: sm.overhead },
-      { key: 'profit', label: 'Profit (' + pctOf(D.pct.profit) + ')', amount: sm.profit },
-    ];
-    if (sm.tax) chain.push({ key: 'tax', label: 'Project sales tax (Kansas)', amount: sm.tax });
-    if (sm.bond) chain.push({ key: 'bond', label: 'Bond (' + pctOf(D.pct.bond) + ')', amount: sm.bond });
-    chain.push({ key: 'total', label: 'Total', amount: sm.total, sub: true });
+    var chain = auditEstWorkbookChain(calc);
     wb = { input: wbInput, tasks: tasks, roleHours: roleHours, summary: sm, settings: wbSet, chain: chain };
     totalCost = sm.total;
     // Each line's cost is its share of the total (largest remainder, whole dollars), so the
@@ -981,9 +990,11 @@ function _auditEstBreakdownTableHTML(b, titleText) {
    auditEstComputeBreakdown); each task type's role is a select saved per project. */
 function _auditEstWorkbookPanelHTML(b) {
   if (!b || b.method !== 'workbook' || !b.workbook) return '';
-  var w = b.workbook;
+  return auditEstWorkbookPanelHTML(b.projId, b.workbook, 'Labor by task');
+}
+// w = { settings, chain, tasks:[{id,label,hours,role}] }. Also used by the Cost Estimate.
+function auditEstWorkbookPanelHTML(pid, w, taskHead) {
   var D = EstimateWorkbook.DEFAULTS;
-  var pid = b.projId;
   var selStyle =
     'font-size:11px;padding:2px 4px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px;max-width:100%';
   var opt = function (list, cur) {
@@ -1005,6 +1016,7 @@ function _auditEstWorkbookPanelHTML(b) {
     "','taxRate',this.value/100)\"></label>" +
     '<label><input type="checkbox"' + (w.settings.bond ? ' checked' : '') + ' onchange="auditEstSaveWorkbook(\'' + pid +
     "','bond',this.checked)\"> Bond</label>" +
+    (auditEstOtHasNoEffect(w.tasks) ? '<span class="ae-note">Overtime has no effect: no role used here has an overtime rate.</span>' : '') +
     '</div>';
   var chainRows = w.chain
     .map(function (c) {
@@ -1036,13 +1048,26 @@ function _auditEstWorkbookPanelHTML(b) {
     '<div style="font-size:12px;font-weight:700;color:var(--text);margin:12px 0 4px">How this total is built (workbook)</div>' +
     ctl +
     '<div class="ae-wb-grid">' +
+    (w.chain.length
+      ? '<div class="ch-tbl-outer ae-tbl-outer"><table class="ch-tbl ae-tbl ae-chain-tbl">' +
+        '<thead><tr><th class="ae-left">Step</th><th>Amount</th></tr></thead><tbody>' + chainRows + '</tbody></table></div>'
+      : '') +
     '<div class="ch-tbl-outer ae-tbl-outer"><table class="ch-tbl ae-tbl ae-chain-tbl">' +
-    '<thead><tr><th class="ae-left">Step</th><th>Amount</th></tr></thead><tbody>' + chainRows + '</tbody></table></div>' +
-    '<div class="ch-tbl-outer ae-tbl-outer"><table class="ch-tbl ae-tbl ae-chain-tbl">' +
-    '<thead><tr><th class="ae-left">Labor by task</th><th>Hours</th><th class="ae-left">Role</th></tr></thead><tbody>' +
+    '<thead><tr><th class="ae-left">' + _auditEstEsc(taskHead) + '</th><th>Hours</th><th class="ae-left">Role</th></tr></thead><tbody>' +
     taskRows + '</tbody></table></div>' +
     '</div></div>'
   );
+}
+
+// True when no role that has hours can be paid overtime (PE, DE, SE, TR, IT have none).
+function auditEstOtHasNoEffect(tasks) {
+  var ot = {};
+  EstimateWorkbook.DEFAULTS.roles.forEach(function (r) {
+    ot[r.code] = r.ot;
+  });
+  return !tasks.some(function (t) {
+    return t.hours > 0 && ot[t.role];
+  });
 }
 
 function auditEstSaveWorkbook(projId, field, value) {

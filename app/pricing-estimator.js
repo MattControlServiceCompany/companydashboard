@@ -3403,8 +3403,65 @@ function _pricingFmt(val) {
   return '$' + Number(val).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+/* ── Workbook pricing for tiers (WP4, 2026-10-01) ─────────────────────────────────────────────
+   Method switch and settings live in app/audit-estimate.js (key en_pricing_workbook_<projId>;
+   method absent = workbook). In workbook mode _pricingComputeTotals prices the included rows with
+   EstimateWorkbook.compute() instead of summing line totals:
+     - materials: the parts part of every hardware row (line total minus install labor), one line
+     - labor hours by role: hardware install hours (task install_per_point), sequence programming
+       hours (bas_programming), sensor investigation hours (startup_checkout); role = project
+       setting or the task default
+     - OT, tax state, tax rate, bond from the project settings; no $100 round-up
+   grand = compute() total. phase1 (hardware) and phase2 (labor) split it by largest remainder,
+   weighted by their hourly-method dollars, so they add up to grand exactly.
+   Pass projId as the third argument of _pricingComputeTotals; without it the Hourly sum is used. */
+function _pricingWorkbookSettings(projId) {
+  if (projId == null || typeof EstimateWorkbook === 'undefined' || typeof auditEstGetWorkbookSettings !== 'function')
+    return null;
+  var set = auditEstGetWorkbookSettings(projId);
+  return set.method === 'workbook' ? set : null;
+}
+function _pricingWorkbookRole(set, taskId) {
+  return set.roles[taskId] || EstimateWorkbook.DEFAULTS.taskRoleMap[taskId];
+}
+// agg: {partsC (cents), hours: {taskId: hours}, p1C, p2C (hourly-method cents)}
+function _pricingWorkbookTotals(set, agg, base) {
+  var roleC = {};
+  var tasks = [];
+  Object.keys(agg.hours).forEach(function (id) {
+    var role = _pricingWorkbookRole(set, id);
+    var c = Math.round(agg.hours[id] * 100);
+    roleC[role] = (roleC[role] || 0) + c;
+    tasks.push({
+      id: id,
+      label: EstimateWorkbook.DEFAULTS.taskTypes.filter(function (t) {
+        return t.id === id;
+      })[0].label,
+      hours: c / 100,
+      role: role,
+    });
+  });
+  var roleHours = {};
+  Object.keys(roleC).forEach(function (k) {
+    roleHours[k] = roleC[k] / 100;
+  });
+  var input = { hours: roleHours, ot: set.ot, state: set.state, taxRate: set.taxRate, bond: set.bond };
+  if (agg.partsC) input.parts = [{ qty: 1, unit: agg.partsC / 100 }];
+  var calc = EstimateWorkbook.compute(input);
+  var total = calc.summary.total;
+  var split = _auditEstAllocate(total, [agg.p1C, agg.p2C]);
+  base.phase1 = split[0];
+  base.phase2 = split[1];
+  base.grand = total;
+  base.method = 'workbook';
+  base.workbook = { input: input, summary: calc.summary, tasks: tasks, settings: set, chain: auditEstWorkbookChain(calc) };
+  return base;
+}
+
 /* ── Compute footer totals ── */
-function _pricingComputeTotals(rows, estimate) {
+function _pricingComputeTotals(rows, estimate, projId) {
+  var wbSet = _pricingWorkbookSettings(projId);
+  var wbAgg = wbSet ? { partsC: 0, hours: {}, p1C: 0, p2C: 0 } : null;
   var phase1 = 0,
     phase2 = 0;
   var included = 0,
@@ -3449,6 +3506,23 @@ function _pricingComputeTotals(rows, estimate) {
     hasAnyPrice = true;
     if (row.phase === 1) phase1 += price;
     else if (row.phase === 2) phase2 += price;
+    if (wbAgg) {
+      var wbAdd = function (task, hrs) {
+        if (hrs > 0) wbAgg.hours[task] = (wbAgg.hours[task] || 0) + hrs;
+      };
+      if (row.phase === 1) {
+        var instC = Math.round((row.installLaborTotal || 0) * 100);
+        wbAgg.partsC += Math.round(price * 100) - instC;
+        wbAgg.p1C += Math.round(price * 100);
+        wbAdd('install_per_point', (row.installHours || 0) * row.qty);
+      } else if (row.phase === 2) {
+        wbAgg.p2C += Math.round(price * 100);
+        wbAdd(
+          row.isSensorInvestigation ? 'startup_checkout' : 'bas_programming',
+          row.hrsPerUnit != null ? row.hrsPerUnit * row.qty : price / (_pricingGetConfig().hourlyRate || COST_LABOR_RATE_DEFAULT),
+        );
+      }
+    }
   });
 
   // Bug B fix: grandTotal is null ONLY when zero included rows are priced.
@@ -3460,7 +3534,7 @@ function _pricingComputeTotals(rows, estimate) {
   // Round to cents once, here (float sums such as 0.1 + 0.2 must not leak out of the total).
   var p1 = Math.round(phase1 * 100) / 100;
   var p2 = Math.round(phase2 * 100) / 100;
-  return {
+  var out = {
     phase1: grandNull ? null : p1,
     phase2: grandNull ? null : p2,
     grand: grandNull ? null : Math.round((p1 + p2) * 100) / 100,
@@ -3471,6 +3545,8 @@ function _pricingComputeTotals(rows, estimate) {
     hasAnyPrice: hasAnyPrice,
     noCatalog: !hasCatalog, // true when no pricing CSV imported; callers use to show "import CSV" note
   };
+  if (wbAgg && !grandNull) return _pricingWorkbookTotals(wbSet, wbAgg, out);
+  return out;
 }
 
 /* ── Main Tab Renderer ── */
@@ -3484,7 +3560,7 @@ function initCostEstimateTab(projId) {
   var estimate = _pricingGetEstimate(projId);
   var rows = buildComplianceRows(projId);
   _pricingRowCache[projId] = rows;
-  var totals = _pricingComputeTotals(rows, estimate);
+  var totals = _pricingComputeTotals(rows, estimate, projId);
   var hasCatalog = !!(catalog && Object.keys(catalog).length > 0);
 
   // ── Toolbar HTML
@@ -3943,7 +4019,7 @@ function _pricingRefreshFooter(projId) {
   var est = _pricingGetEstimate(projId);
   var cfg = _pricingGetConfig();
   var catalog = sget('en_pricing_catalog', null);
-  var totals = _pricingComputeTotals(rows, est);
+  var totals = _pricingComputeTotals(rows, est, projId);
   var hasCatalog = !!(catalog && Object.keys(catalog).length > 0);
 
   var _rfCaveatParts = [];
@@ -5607,6 +5683,8 @@ function _pricingComputeBudgetFitPlan(projId) {
   var units = _pricingBuildRoiUnits(poolRows);
   var plan = _pricingGreedyPrefix(units, comp.total);
 
+  // Hourly on purpose: _pricingGreedyPrefix above sums hourly line totals, so the before/after
+  // pair has to use the same method.
   var totals = _pricingComputeTotals(rows, estimate);
   return {
     ceiling: comp.total,
@@ -6742,6 +6820,9 @@ function _pricingBuildToolbarHTML(projId, tier, opts) {
   // markup/onchange wiring as the Table Settings "Hourly Rate:" row, same en_pricing_config
   // storage key. Label shows the current $/hr so the toolbar itself answers "what rate is this
   // estimate using" without opening anything.
+  // Workbook mode prices labor by role, so the single hourly Rate does not apply: the button is
+  // hidden (slot keeps its box so the Tier toggle does not move).
+  var _rateApplies = !_pricingWorkbookSettings(projId);
   var cfgForRateBtn = _pricingGetConfig();
   var rateBtnHTML =
     '<button class="btn btn-ghost btn-sm" onclick="_pricingOpenRatePopover(\'' +
@@ -6822,7 +6903,7 @@ function _pricingBuildToolbarHTML(projId, tier, opts) {
     slot(legendBtnHTML, rowFilterActive),
     slot(hwBtnHTML, !!opts.hwToggle),
     slot(budgetBtnHTML, rowFilterActive),
-    slot(rateBtnHTML, rowFilterActive),
+    slot(rateBtnHTML, rowFilterActive && _rateApplies),
     // Tier toggle — 35742dd5 (Phase 2) established that the flex:1 spacer must sit AFTER Tier,
     // not before it, so Tier's left edge is just the natural width of the fixed left-side
     // content (now IDENTICAL on all 5 views) — never wrapped in slot(): this is the one control
@@ -7410,7 +7491,7 @@ function _pricingComputeRecommendedTimeline(projId) {
   rows = _pricingApplyQtyOverrides(projId, rows);
   if (!rows.length) return null;
 
-  var grandTotals = _pricingComputeTotals(rows, estimate);
+  var grandTotals = _pricingComputeTotals(rows, estimate, projId);
   if (grandTotals.grand === null) return null; // nothing priced yet — same silent-until-priced convention as the rest of this file
 
   // naturalRank: buildRecommendedRows' own natural/source row order (building-grouped,
@@ -7465,7 +7546,7 @@ function _pricingComputeRecommendedTimeline(projId) {
       rows: unitRows,
       building: u.seqRow.building,
       score: u.score,
-      total: _pricingComputeTotals(unitRows, estimate).grand || 0,
+      total: _pricingComputeTotals(unitRows, estimate, projId).grand || 0,
     };
   });
   // Defensive safety net (expected no-op — see step 1 above): if any row from `rows` is NOT a
@@ -7485,7 +7566,7 @@ function _pricingComputeRecommendedTimeline(projId) {
       rows: [r],
       building: r.building,
       score: _pricingEquipRowScore(r),
-      total: _pricingComputeTotals([r], estimate).grand || 0,
+      total: _pricingComputeTotals([r], estimate, projId).grand || 0,
     });
   });
   // 2026-07-28 (fix/roi-no-hardware-first-per-unit): no-hardware-first primary key, ROI score
@@ -7894,7 +7975,19 @@ function _pricingComputeRecommendedTimeline(projId) {
     return s + p.measuresTotal;
   }, 0);
   var drift = Math.round((grand - sumMeasures) * 100) / 100;
-  if (drift !== 0) {
+  if (grandTotals.method === 'workbook') {
+    // Workbook mode: split the whole-dollar tier total over the phases by largest remainder,
+    // weighted by each phase's own priced total, so the phases add up to the tier total exactly.
+    var wbShares = _auditEstAllocate(
+      grand,
+      out.map(function (p) {
+        return Math.round(p.measuresTotal * 100);
+      }),
+    );
+    out.forEach(function (p, k) {
+      p.measuresTotal = wbShares[k];
+    });
+  } else if (drift !== 0) {
     for (var i = out.length - 1; i >= 0; i--) {
       // Bug 3306c189 fix note: this used to check `out[i].buildings.length`, which broke once
       // `buildings` became deduped (a phase can have real rows/measuresTotal but zero NEWLY-named
@@ -8048,7 +8141,7 @@ function _pricingComputeTermMonthlyAllocation(projId, termRows, monthCount, mont
       rows: unitRows,
       building: u.seqRow.building,
       score: u.score,
-      total: _pricingComputeTotals(unitRows, estimate).grand || 0,
+      total: _pricingComputeTotals(unitRows, estimate, projId).grand || 0,
     };
   });
   // Defensive fold-in — identical safety net to _pricingComputeRecommendedTimeline's own (~L7414):
@@ -8067,7 +8160,7 @@ function _pricingComputeTermMonthlyAllocation(projId, termRows, monthCount, mont
       rows: [r],
       building: r.building,
       score: _pricingEquipRowScore(r),
-      total: _pricingComputeTotals([r], estimate).grand || 0,
+      total: _pricingComputeTotals([r], estimate, projId).grand || 0,
     });
   });
   units = _pricingSortUnitsNoHwFirst(units);
@@ -8572,8 +8665,8 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   _pricingRowCache[projId] = filteredRows;
   if (recRows) _pricingRowCache[projId + '_rec'] = recRows;
 
-  var totals = _pricingComputeTotals(filteredRows, estimate);
-  var recTotals = recRows ? _pricingComputeTotals(recRows, estimate) : null;
+  var totals = _pricingComputeTotals(filteredRows, estimate, projId);
+  var recTotals = recRows ? _pricingComputeTotals(recRows, estimate, projId) : null;
 
   var buildings = [];
   var bSet2 = {};
@@ -10186,8 +10279,11 @@ function _pricingSetEstimateType(projId, type) {
   initCostEstimateTab(projId);
 }
 function _pricingEstimateTypeBarHTML(projId, type) {
+  var wbSet = _pricingWorkbookSettings(projId);
+  // Rate chip: Hourly method only (the workbook prices labor by role). The method switch comes
+  // first so it keeps its place in both modes.
   var rateBtn = '';
-  if (type !== 'retrofit') {
+  if (type !== 'retrofit' && !wbSet) {
     // Audits use the same labor rate as the retrofit estimate (auditEstGetHourlyRate), so the
     // rate chip stays visible here; the retrofit-only controls (pricing import, Table Settings,
     // Legend, Budget, tier, building filter, sort, Hardware & Install) are not rendered.
@@ -10196,10 +10292,11 @@ function _pricingEstimateTypeBarHTML(projId, type) {
       projId +
       '\',this)" title="Labor rate — the $ per hour used by the Hourly audit method and the retrofit estimate" style="cursor:pointer">Rate: ' +
       _pricingFmt(_pricingGetConfig().hourlyRate || COST_LABOR_RATE_DEFAULT) +
-      '/hr</button>' +
-      (typeof auditEstMethodSwitchHTML === 'function' ? auditEstMethodSwitchHTML(projId) : '');
+      '/hr</button>';
   }
+  var switchHTML = typeof auditEstMethodSwitchHTML === 'function' ? auditEstMethodSwitchHTML(projId) : '';
   return (
+    (typeof AUDIT_EST_TABLE_CSS === 'string' && type === 'retrofit' ? AUDIT_EST_TABLE_CSS : '') +
     '<div id="estTypeBar-' +
     projId +
     '" style="flex-shrink:0;padding:10px 14px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--s1);border-bottom:1px solid var(--border2)">' +
@@ -10213,8 +10310,44 @@ function _pricingEstimateTypeBarHTML(projId, type) {
       return '<option value="' + t.key + '"' + (t.key === type ? ' selected' : '') + '>' + t.label + '</option>';
     }).join('') +
     '</select></label>' +
+    switchHTML +
     rateBtn +
-    '</div>'
+    '</div>' +
+    (type === 'retrofit' && wbSet ? _pricingWorkbookPanelHTML(projId, wbSet) : '')
+  );
+}
+
+// Retrofit Cost Estimate, workbook mode: pricing settings (overtime, tax, bond, role per task)
+// and the "How this total is built" steps for the tier on screen (same rows as the footer).
+function _pricingWorkbookPanelHTML(projId, wbSet) {
+  var est = _pricingGetEstimate(projId);
+  var rows = _pricingRowCache[projId];
+  var totals = rows ? _pricingComputeTotals(rows, est, projId) : null;
+  var wb = totals && totals.workbook ? totals.workbook : null;
+  var ids = ['install_per_point', 'bas_programming', 'startup_checkout'];
+  var D = EstimateWorkbook.DEFAULTS;
+  var tasks = ids.map(function (id) {
+    var t = wb
+      ? wb.tasks.filter(function (x) {
+          return x.id === id;
+        })[0]
+      : null;
+    return {
+      id: id,
+      label: D.taskTypes.filter(function (x) {
+        return x.id === id;
+      })[0].label,
+      hours: t ? t.hours : 0,
+      role: _pricingWorkbookRole(wbSet, id),
+    };
+  });
+  return (
+    '<details style="flex-shrink:0;padding:6px 14px;background:var(--s1);border-bottom:1px solid var(--border2)">' +
+    '<summary style="font-size:11px;color:var(--text2);cursor:pointer">Pricing settings and how this total is built' +
+    (totals && totals.grand != null ? ' (' + _auditEstFmtWhole(totals.grand) + ')' : '') +
+    '</summary>' +
+    auditEstWorkbookPanelHTML(projId, { settings: wbSet, chain: wb ? wb.chain : [], tasks: tasks }, 'Labor by task') +
+    '</details>'
   );
 }
 
@@ -10292,7 +10425,7 @@ function _pricingComputeSummaryData(projId, estimate) {
       var bRows = perTier[t.key].filter(function (r) {
         return r.building === bName;
       });
-      var bt = _pricingComputeTotals(bRows, estimate);
+      var bt = _pricingComputeTotals(bRows, estimate, projId);
       var hwSum = bt.phase1 || 0;
       var lbSum = bt.phase2 || 0;
       tiers[t.key] = { items: bRows.length, hw: hwSum, lb: lbSum, total: hwSum + lbSum };
@@ -10302,7 +10435,25 @@ function _pricingComputeSummaryData(projId, estimate) {
 
   var tierTotals = {};
   tierDefs.forEach(function (t) {
-    tierTotals[t.key] = _pricingComputeTotals(perTier[t.key], estimate);
+    tierTotals[t.key] = _pricingComputeTotals(perTier[t.key], estimate, projId);
+    if (tierTotals[t.key].method === 'workbook') {
+      // Workbook mode: the per-building hardware and labor figures are largest-remainder shares of
+      // the tier's workbook phase totals (weights: each building's own priced figure), so the
+      // buildings add up to the tier total exactly.
+      var wbT = tierTotals[t.key];
+      ['hw', 'lb'].forEach(function (f) {
+        var shares = _auditEstAllocate(
+          f === 'hw' ? wbT.phase1 : wbT.phase2,
+          buildings.map(function (b) {
+            return Math.round(b.tiers[t.key][f] * 100);
+          }),
+        );
+        buildings.forEach(function (b, k) {
+          b.tiers[t.key][f] = shares[k];
+          b.tiers[t.key].total = b.tiers[t.key].hw + b.tiers[t.key].lb;
+        });
+      });
+    }
   });
 
   // perTier exposed so the client proposal's optional "Itemized Measures" sub-option can
@@ -10337,7 +10488,7 @@ function _pricingComputeSummaryData(projId, estimate) {
     }
     var cfg = _pricingGetConfig();
     var catalog = sget('en_pricing_catalog', null);
-    var totals = _pricingComputeTotals(rows, est);
+    var totals = _pricingComputeTotals(rows, est, projId);
     var filterBldg = _pricingBldgFilter[projId] || '';
 
     // 45ceb14f: re-derive the Tier-label + advisory-line state the same way the full render
