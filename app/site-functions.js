@@ -2296,6 +2296,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.01.63', date: '2026-10-01', title: 'Cost Estimate: Export to Excel',
+    items: [
+      { type: 'feature', text: 'Cost Estimate: new Export to Excel button (Workbook method). It saves one file with a set of sheets for each tier. The values match the totals on the page.' }
+    ]
+  },
   { v: 'v2026.10.01.62', date: '2026-10-01', title: 'Cost Estimate: one amount per building',
     items: [
       { type: 'fix', text: 'Cost Estimate: in Workbook mode, each building now shows the same amount on the row table, the timeline and the Summary.' }
