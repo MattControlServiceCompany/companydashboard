@@ -348,4 +348,26 @@ const plain = (x) => JSON.parse(JSON.stringify(x));
   ok('budget fit (workbook): after-total <= target and equals the footer total');
 }
 
+// 9. Compare tab "Rec. Total" column: workbook mode foots to the recommended footer hardware subtotal;
+// Hourly mode shows each matched row's own line total.
+{
+  const T = tiers();
+  const rec = T.recommended.filter((r) => r.phase === 1);
+  const e = { rowToggles: {}, manualPrices: {}, laborOverrides: {}, installHoursOverrides: {}, qtyOverrides: {} };
+  const wbC = make(read('app/pricing-estimator.js'), { en_pricing_catalog: catalog }, T);
+  const tot = wbC._pricingComputeTotals(T.recommended, e, 'p');
+  assert.strictEqual(tot.method, 'workbook');
+  const colSum = rec.reduce((sum, r) => sum + Math.round(wbC._pricingBothRecAmount(r, tot) * 100), 0);
+  assert.strictEqual(colSum, Math.round(tot.phase1 * 100), 'workbook Rec. Total column == footer hardware');
+  const hC = make(
+    read('app/pricing-estimator.js'),
+    { en_pricing_catalog: catalog, en_pricing_workbook_p: { method: 'hourly' } },
+    T,
+  );
+  const ht = hC._pricingComputeTotals(T.recommended, e, 'p');
+  rec.forEach((r) => assert.strictEqual(hC._pricingBothRecAmount(r, ht), r.lineTotal, 'hourly == lineTotal'));
+  assert.strictEqual(hC._pricingBothRecAmount(null, ht), null);
+  ok('Compare Rec. Total column: workbook foots to footer; hourly = line total');
+}
+
 console.log('\n' + n + ' checks passed');

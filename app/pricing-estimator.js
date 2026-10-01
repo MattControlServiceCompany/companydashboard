@@ -3567,6 +3567,18 @@ function _pricingComputeTotals(rows, estimate, projId) {
   return out;
 }
 
+/* Compare tab "Rec. Total" amount for one matched recommended row. Hourly: the row's own line total.
+   Workbook mode: the row's share of the recommended tier's workbook total (same shares the itemized
+   table shows), so the column adds up to the recommended footer. */
+function _pricingBothRecAmount(recRow, recTotals) {
+  if (!recRow) return null;
+  if (recTotals && recTotals.rowShares && !recRow.ioOnly) {
+    var sh = recTotals.rowShares[recRow._baseId || recRow.id];
+    return sh != null ? sh : null;
+  }
+  return recRow.lineTotal;
+}
+
 /* ── Main Tab Renderer ── */
 function initCostEstimateTab(projId) {
   var el = document.getElementById('ptab-cost-estimate-body-' + projId);
@@ -9380,7 +9392,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
 
     // Both-mode extra col (Recommended Line Total)
     if (isBothMd) {
-      var recLt = matchedRecRow ? matchedRecRow.lineTotal : null;
+      var recLt = _pricingBothRecAmount(matchedRecRow, recTotals);
       if (hiddenCols.indexOf(-1) === -1) {
         // extra col always visible
         tds +=
@@ -9752,7 +9764,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     });
 
     if (isBothMd) {
-      var recLt = matchedRecRow ? matchedRecRow.lineTotal : null;
+      var recLt = _pricingBothRecAmount(matchedRecRow, recTotals);
       if (hiddenCols.indexOf(-1) === -1) {
         tds +=
           '<td style="text-align:right;font-variant-numeric:tabular-nums;font-size:11px;padding:5px 8px;border-left:2px solid var(--border2);border-bottom:1px solid var(--border);color:var(--accent)">' +
