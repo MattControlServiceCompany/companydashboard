@@ -9,16 +9,22 @@ function make(rows, cfgOver, rate, mbuildings) {
     sset: (k, v) => { store[k] = v; },
     emLoadMatrix: () => ({ rows, buildings: mbuildings }),
     emIsPhantomRow: () => false,
-    emGetNormalizedPoints: () => ({}),
+    emGetNormalizedPoints: (r) => r.pts || {},
     _pricingGetConfig: () => ({ hourlyRate: rate == null ? 120 : rate }),
   };
   vm.createContext(ctx);
   vm.runInContext(src, ctx);
   return ctx;
 }
+const MIXES = [
+  [{}],
+  [{}, { reheatValve: 1 }],
+  [{}, { reheatValve: 1 }, { zoneCO2: 1 }, { reheatValve: 1, zoneCO2: 1 }, { auto_scr: 1 }],
+];
+let MIX = MIXES[0], mix = 1;
 function fixture() {
   const rows = [];
-  const add = (b, cat, n) => { for (let i = 0; i < n; i++) rows.push({ building: b, category: cat, points: { a: 1 } }); };
+  const add = (b, cat, n) => { for (let i = 0; i < n; i++) rows.push({ building: b, category: cat, points: { a: 1 }, pts: MIX[(i + rows.length) % mix] }); };
   add('Alpha Hall', 'vav', 23); add('Beta  Annex', 'vav', 9); add('Gamma', 'vav', 4);
   add('Alpha Hall', 'ahu', 2); add('Gamma', 'ahu', 1);
   add('Beta  Annex', 'rtu', 7); add('Delta', 'rtu', 1);
@@ -39,12 +45,13 @@ function check(b, label) {
   assert.strictEqual(sumE, b.rows.reduce((s, r) => s + r.count, 0), label + ' equipment');
   n++;
 }
-for (const sf of [0.25, 0.5, 1, 1.5, 2, 3, 10]) {
+for (const sf of [0, 1, 2]) {
+  MIX = MIXES[sf]; mix = MIX.length;
   for (const rate of [120, 97.35]) {
-    const ctx = make(fixture(), { sampleFactor: sf }, rate);
+    const ctx = make(fixture(), null, rate);
     for (const t of ['bas', 'full']) {
       const b = ctx.auditEstComputeBreakdown('p', t);
-      check(b, t + ' sf=' + sf + ' rate=' + rate);
+      check(b, t + ' mix=' + sf + ' rate=' + rate);
       assert.strictEqual(b.byBuilding.length, 6); // 5 buildings + Project-wide
       const eps = b.byBuilding.find((x) => x.building === 'Epsilon Empty');
       assert.ok(eps && eps.equipment === 0 && eps.sampled === 0 && eps.hours === 0 && eps.cost === 0);
@@ -61,10 +68,13 @@ const f = make(fixture(), null).auditEstComputeBreakdown('p', 'full');
 const bas = make(fixture(), null).auditEstComputeBreakdown('p', 'bas');
 assert.ok(f.byBuilding.find((x) => x.building === 'Delta').hours > bas.byBuilding.find((x) => x.building === 'Delta').hours);
 assert.strictEqual(f.byBuilding.find((x) => x.building === 'Epsilon Empty').hours, 0);
-// Sample factor changes sampled total
-const lo = make(fixture(), { sampleFactor: 0.5 }).auditEstComputeBreakdown('p', 'bas');
-const hi = make(fixture(), { sampleFactor: 2 }).auditEstComputeBreakdown('p', 'bas');
+// More distinct control features -> more groups -> more sampled
+MIX = MIXES[0]; mix = 1;
+const lo = make(fixture(), null).auditEstComputeBreakdown('p', 'bas');
+MIX = MIXES[2]; mix = MIX.length;
+const hi = make(fixture(), null).auditEstComputeBreakdown('p', 'bas');
 assert.ok(hi.byBuilding.reduce((s, x) => s + (x.sampled || 0), 0) > lo.byBuilding.reduce((s, x) => s + (x.sampled || 0), 0));
+MIX = MIXES[0]; mix = 1;
 // Per-type allocation sums (single-type project)
 for (const cnt of [[5, 3, 0, 1], [1, 1, 1], [40, 7, 13, 2, 9], [2]]) {
   const rows = [];
@@ -81,4 +91,4 @@ for (const t of ['bas', 'full']) {
   assert.strictEqual(z.byBuilding.length, 7);
   check(z, 'zeta ' + t);
 }
-console.log('PASS', n, 'invariant checks + allocation/zero-equipment/sampleFactor tests');
+console.log('PASS', n, 'invariant checks + allocation/zero-equipment/mix tests');

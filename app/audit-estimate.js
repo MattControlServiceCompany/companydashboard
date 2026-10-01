@@ -125,9 +125,8 @@ var AUDIT_EST_DEFAULTS = {
   hoursPerEquip: Object.assign({}, AUDIT_EST_HOURS_PER_EQUIP_DEFAULT),
   hoursPerBuilding: 2, // estimate — site visit + travel time, per building (Full Facility Audit ONLY)
   hoursReport: 4, // estimate — fixed report writing/analysis hours (BAS Audit)
-  // Sample-based review (2026-10-01): review about sampleFactor x sqrt(count) units of each type.
+  // Sample-based review (2026-10-01): one unit per group of units with the same control features.
   matrixReviewHours: 0.5, // estimate — fixed Equipment Matrix review per equipment type
-  sampleFactor: 1.0, // estimate — sample size = ceil(sampleFactor x sqrt(count)) per equipment type
   fullFacility: {
     hoursMechanicalWalkthroughPerBuilding: 2, // estimate — non-BAS mechanical walk-through
     hoursLightingReviewPerBuilding: 1, // estimate
@@ -193,17 +192,59 @@ function auditEstGetHourlyRate() {
    equipment. Reuses emLoadMatrix()/emIsPhantomRow() (app/equipment-matrix.js) — the SAME
    equipment rows the Equipment Matrix tab and the ASHRAE 36 Audit Report read, so counts here
    always agree with what the Equipment Matrix tab shows. */
-// Point-set signature: the sorted mapped column keys the Equipment Matrix shows for this row.
+// Control concepts: units of a type that have the same SET of these concepts are one group (one
+// unit of the group is sampled). Each concept is found from the Equipment Matrix normalized point
+// keys (emGetNormalizedPoints): curated column keys plus a few vendor "auto_" name patterns
+// (scr, circuit, baseboard, vfd). Validated on real BAS data 2026-10-01 for air-side equipment.
+var AUDIT_EST_CONCEPTS = [
+  ['Economizer', /econom|^oaDamperPosition$|returnAirDamper|reliefDamper|mixedAirTemp|returnAirEnthalpy|exhaustAirDamper/i],
+  ['Fan speed/VFD', /vfd|^supplyFanSpeed$|^returnFanSpeed$|^exhaustFanSpeed$|fanSpeedCommand/i],
+  ['Electric heat', /scr|baseboard|electricHeat|unitHeater/i],
+  ['Hot-water heat', /^heatingValve$|^reheatValve$|heatingCoil|heatSourceSupplyTemp|hotDeck|preheat/i],
+  ['DX cooling', /circuit|condensing|compressor|cuStage|cuEnable/i],
+  ['Chilled-water cooling', /^coolingValve$|coolingCoil|coolSourceSupplyTemp|chw/i],
+  ['CO2', /co2|carbonDioxide/i],
+  ['Zone temp', /^zoneAirTemp$|^zoneTemp$/i],
+];
+// Types the concept list was NOT validated for (plants, zones): the group is the exact set of
+// mapped keys (auto_ keys left out).
+var AUDIT_EST_MAPPED_KEY_TYPES = ['hwp', 'chwp', 'ct', 'zone'];
+
+// Group signature of one equipment row: { sig, concepts } where concepts is a readable list.
 // emGetNormalizedPoints reads the project's custom aliases through window._emActivePid, so set it
 // to this project for the call and restore it after.
-function auditEstPointSetSignature(row, projId) {
+function auditEstPointSetSignature(row, projId, cat) {
   var prev = window._emActivePid;
   window._emActivePid = projId;
+  var keys;
   try {
-    return Object.keys(emGetNormalizedPoints(row)).sort().join('|');
+    keys = Object.keys(emGetNormalizedPoints(row));
   } finally {
     window._emActivePid = prev;
   }
+  if (AUDIT_EST_MAPPED_KEY_TYPES.indexOf(cat) !== -1) {
+    var mapped = keys
+      .filter(function (k) {
+        return k.indexOf('auto_') !== 0;
+      })
+      .sort();
+    return { sig: mapped.join('|'), concepts: [] };
+  }
+  var found = {};
+  keys.forEach(function (k) {
+    for (var i = 0; i < AUDIT_EST_CONCEPTS.length; i++) {
+      if (AUDIT_EST_CONCEPTS[i][1].test(k)) {
+        found[AUDIT_EST_CONCEPTS[i][0]] = true;
+        return; // a key counts toward the first matching concept only
+      }
+    }
+  });
+  var names = AUDIT_EST_CONCEPTS.map(function (c) {
+    return c[0];
+  }).filter(function (n) {
+    return found[n];
+  });
+  return { sig: names.join('|'), concepts: names };
 }
 
 function auditEstGetEquipmentSummary(projId) {
@@ -239,19 +280,20 @@ function auditEstGetEquipmentSummary(projId) {
           count: 0,
           totalPoints: 0,
           groups: {},
+          groupOrder: [],
           byBuilding: {},
         };
       byCat[cat].count++;
       byCat[cat].byBuilding[bName] = (byCat[cat].byBuilding[bName] || 0) + 1;
       byCat[cat].totalPoints += pts;
-      // Point set = the mapped column keys the Equipment Matrix shows for this row
-      // (emGetNormalizedPoints), NOT raw BAS point keys. The first unit of each point set in
-      // matrix order is the first of its group (Groups column is information only).
-      var sig = auditEstPointSetSignature(r, projId);
-      if (!byCat[cat].groups[sig]) {
-        byCat[cat].groups[sig] = 0;
+      // Group = units with the same control concepts (see AUDIT_EST_CONCEPTS). The first unit of
+      // a group in matrix order is its representative: one per group is sampled.
+      var g = auditEstPointSetSignature(r, projId, cat);
+      if (!byCat[cat].groups[g.sig]) {
+        byCat[cat].groups[g.sig] = { concepts: g.concepts, count: 0, rep: r.name || r.id || '' };
+        byCat[cat].groupOrder.push(g.sig);
       }
-      byCat[cat].groups[sig]++;
+      byCat[cat].groups[g.sig].count++;
     } else {
       if (!excluded[cat])
         excluded[cat] = {
@@ -268,7 +310,10 @@ function auditEstGetEquipmentSummary(projId) {
   }).map(function (c) {
     var e = byCat[c];
     e.avgPoints = e.count > 0 ? Math.round((e.totalPoints / e.count) * 10) / 10 : 0;
-    e.groupCount = Object.keys(e.groups).length;
+    e.groupCount = e.groupOrder.length;
+    e.groupList = e.groupOrder.map(function (k) {
+      return e.groups[k];
+    });
     return e;
   });
 
@@ -341,11 +386,10 @@ function auditEstComputeBreakdown(projId, auditType) {
 
   var rows = summary.equipTypes.map(function (e) {
     var hoursEach = cfg.hoursPerEquip[e.category] != null ? cfg.hoursPerEquip[e.category] : 1;
-    // Sample model: review min(count, max(1, ceil(sampleFactor x sqrt(count)))) units, plus a
-    // fixed Equipment Matrix review. Never more than reviewing every unit. Groups (distinct
-    // point sets) are shown for information only.
+    // Sample model: review one unit per group (units with the same control features), plus a
+    // fixed Equipment Matrix review. Never more than reviewing every unit.
     var fullHours = e.count * hoursEach;
-    var reviewedUnits = Math.min(e.count, Math.max(1, Math.ceil(cfg.sampleFactor * Math.sqrt(e.count) - 1e-9)));
+    var reviewedUnits = Math.min(e.count, e.groupCount);
     var sampleHours = cfg.matrixReviewHours + reviewedUnits * hoursEach;
     if (sampleHours >= fullHours) reviewedUnits = e.count;
     var hours = Math.round(Math.min(fullHours, sampleHours) * 100) / 100;
@@ -370,6 +414,7 @@ function auditEstComputeBreakdown(projId, auditType) {
       label: e.label,
       count: e.count,
       groupCount: e.groupCount,
+      groupList: e.groupList,
       sampled: reviewedUnits,
       avgPoints: e.avgPoints,
       hoursEach: hoursEach,
@@ -572,8 +617,8 @@ function _auditEstBreakdownTableHTML(b, titleText) {
     '<thead><tr>' +
     '<th class="ae-left">Equipment Type</th>' +
     th('Count', 'Number of units of this type in the Equipment Matrix.') +
-    th('Groups', 'Units of the same type that have the same points form one group. For information only.') +
-    th('Sampled', 'Units reviewed: about the square root of Count, times the sample factor. Never more than Count.') +
+    th('Groups', 'Units with the same control features (economizer, VFD, heating, cooling, CO2, zone temp) count as one group. One unit per group is sampled.') +
+    th('Sampled', 'Units reviewed: one per group. Never more than Count.') +
     th('Hours Each', 'Hours to review one unit.') +
     th('Hours', 'Matrix review time plus the Sampled units times Hours Each. Never more than Count times Hours Each.') +
     th('Cost', 'Hours times the labor rate.') +
@@ -714,13 +759,6 @@ function _auditEstAssumptionsHTML(projId) {
     '" style="width:80px;text-align:right;background:var(--s2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 6px" onchange="auditEstSaveField(\'' +
     projId +
     "','matrixReviewHours', this.value)\"></div>" +
-    '<div><label style="font-size:11px;color:var(--text3)">Sample factor (per equipment type)</label><br>' +
-    '<input type="number" step="0.25" min="0.25" value="' +
-    cfg.sampleFactor +
-    '" style="width:80px;text-align:right;background:var(--s2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:3px 6px" onchange="auditEstSaveSampleFactor(\'' +
-    projId +
-    '\', this.value)"><br>' +
-    '<span style="font-size:10px;color:var(--text3)">Sample about the square root of each equipment count; 1.0 = √count</span></div>' +
     '<div><label style="font-size:11px;color:var(--text3)">Report and analysis hours (fixed)</label><br>' +
     '<input type="number" step="0.25" min="0" value="' +
     cfg.hoursReport +
@@ -869,17 +907,6 @@ function auditEstSaveField(projId, path, value) {
     return;
   }
   auditEstSetConfig(path, n);
-  if (typeof initCostEstimateTab === 'function') initCostEstimateTab(projId);
-  if (typeof showToast === 'function') showToast('Assumption updated', 'success');
-}
-
-function auditEstSaveSampleFactor(projId, value) {
-  var n = parseFloat(value);
-  if (isNaN(n) || n <= 0 || n > 10) {
-    showToast('Enter a sample factor above 0 and up to 10', 'error');
-    return;
-  }
-  auditEstSetConfig('sampleFactor', n);
   if (typeof initCostEstimateTab === 'function') initCostEstimateTab(projId);
   if (typeof showToast === 'function') showToast('Assumption updated', 'success');
 }
