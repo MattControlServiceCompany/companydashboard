@@ -1663,7 +1663,11 @@ const DB = (() => {
   }
   // Reads the CURRENT server rows for `keys` (local keys). Resolves to a Map
   // localKey -> { value, version, deleted } for keys that exist on the server.
-  // Throws on any failure: the caller must abort with zero writes.
+  // Throws when the manifest cannot be read: the caller must abort with zero
+  // writes. A key the manifest lists but whose row cannot be read (network
+  // error, non-OK status, bad JSON, for example a value over the Function
+  // response cap) is returned as { unreadable: true, error } so the caller
+  // can skip that one key and still restore the rest.
   async function restoreFetchServer(keys) {
     const manifest = await _fetchManifestWithTimeout(30000);
     const onServer = new Set((Array.isArray(manifest) ? manifest : []).map((m) => m.key));
@@ -1671,9 +1675,20 @@ const DB = (() => {
     for (const key of keys) {
       const wire = _wireKey(key);
       if (wire === null || !onServer.has(wire)) continue;
-      const rows = await _batchGet([wire]);
-      const row = Array.isArray(rows) ? rows.find((r) => r.key === wire) : null;
-      if (!row) throw new Error('server returned no row for an existing key');
+      let row = null;
+      let error = '';
+      try {
+        const rows = await _batchGet([wire]);
+        row = Array.isArray(rows) ? rows.find((r) => r.key === wire) : null;
+        if (!row) error = 'server returned no row for an existing key';
+      } catch (e) {
+        error = (e && e.message) || String(e);
+      }
+      if (!row) {
+        console.warn('[DB] restore: could not read server key', key, error);
+        out.set(key, { unreadable: true, error });
+        continue;
+      }
       out.set(key, { value: row.deleted ? undefined : row.value, version: row.version, deleted: !!row.deleted });
     }
     return out;

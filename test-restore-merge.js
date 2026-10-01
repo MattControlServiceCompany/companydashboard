@@ -83,7 +83,8 @@ function countBy(list) {
 }
 // Backup record matched to the current record that owns a leaf path (records policy levels only).
 function matchedBackupRecord(bak, cur, path, pol) {
-  if (pol.kind === 'map') return isRec(bak) && path.length && path[0] in bak ? { b: bak[path[0]], rest: path.slice(1) } : MISSING;
+  if (pol.kind === 'map')
+    return isRec(bak) && path.length && path[0] in bak ? { b: bak[path[0]], rest: path.slice(1) } : MISSING;
   let b = bak;
   let c = cur;
   let level = pol.path.length ? 0 : -1;
@@ -130,7 +131,18 @@ function removedOracleLevels(c, r, pol, level) {
     const k = idKey(x, pol.idOf);
     const j = k === null ? ra.findIndex((y) => same(x, y)) : ra.findIndex((y) => idKey(y, pol.idOf) === k);
     if (j === -1) n += countIn(x, pol, level);
-    else if (pol.path[level]) n += removedOracleLevels(x[pol.path[level]], ra[j][pol.path[level]], pol, level + 1);
+    else {
+      // matched record: nested lists and objects the backup record lacks also vanish
+      const child = pol.path[level];
+      const omit = (q) => {
+        if (!child || !isRec(q)) return q;
+        const o = Object.assign({}, q);
+        delete o[child];
+        return o;
+      };
+      if (k !== null) n += removedOracleLoose(omit(x), omit(ra[j]));
+      if (child) n += removedOracleLevels(x[child], ra[j][child], pol, level + 1);
+    }
   });
   return n;
 }
@@ -221,7 +233,10 @@ function checkInvariants(key, cur, bak, mode, label) {
       const m = k === null ? res.find((x) => same(x, c)) : res.find((x) => idKey(x, pol.idOf) === k);
       assert.ok(m, label + ': current record lost ' + J(c));
       if (eff === 'add' || k === null) assert.ok(same(m, c), label + ': add changed record ' + k);
-      else if (!pol.newer) Object.keys(c).forEach((f) => assert.ok(!RM.meaningful(c[f]) || same(m[f], c[f]), label + ': merge overwrote ' + f));
+      else if (!pol.newer)
+        Object.keys(c).forEach((f) =>
+          assert.ok(!RM.meaningful(c[f]) || same(m[f], c[f]), label + ': merge overwrote ' + f),
+        );
     });
     assert.ok(res.length >= curP.length, label + ': list shrank');
     return r;
@@ -241,8 +256,7 @@ function checkInvariants(key, cur, bak, mode, label) {
       const atPolicyList =
         (Array.isArray(cv) && (p.length === 0 ? !pol.path.length : pol.path.indexOf(p[p.length - 1]) !== -1)) ||
         (pol.kind === 'map' && p.length === 0);
-      if (eff === 'add' && !atPolicyList)
-        assert.fail(label + ': add filled ' + J(p));
+      if (eff === 'add' && !atPolicyList) assert.fail(label + ': add filled ' + J(p));
       continue;
     }
     if (eff === 'add') assert.fail(label + ': add changed ' + J(p) + ' ' + J(cv) + ' -> ' + J(rv));
@@ -450,7 +464,7 @@ t('T5 replace removed count: parent without children, id-less lists, nested obje
   const c = util();
   const b = { buildings: [{ id: 'b1', name: 'Main', meters: [{ id: 'm1', bills: [{ id: 'r1' }] }] }] };
   const r = checkInvariants(U, c, b, 'replace', 'T5 util');
-  assert.strictEqual(r.removed, 6); // r2; m2+r3; b2+m9+m8
+  assert.strictEqual(r.removed, 7); // r2; m2+r3; b2+m9+m8; baseline object of matched m1
   const only = checkInvariants(
     U,
     { buildings: [{ id: 'b1' }, { id: 'b2', meters: [{ id: 'm9' }, { id: 'm8' }] }] },
@@ -525,6 +539,74 @@ t('T5 replace removed count: parent without children, id-less lists, nested obje
     'T5 cmaps',
   );
   assert.strictEqual(cm.removed, 1);
+});
+
+// ---------------------------------------------------------------- T5b replace: nested data inside matched projects
+t('T5b replace counts nested rows dropped inside matched projects (setpoints, zones, snapshots, measures)', () => {
+  const c = proj();
+  c[0].setpoints = [
+    {
+      buildingId: 'b1',
+      zones: [
+        { name: 'Z1', occ: 70 },
+        { name: 'Z2', occ: 71 },
+      ],
+    },
+    { buildingId: 'b2', zones: [{ name: 'Z3', occ: 72 }] },
+  ];
+  c[0].basSnapshots = [
+    { id: 's1', rows: [{ a: 1 }, { a: 2 }, { a: 3 }] },
+    { id: 's2', rows: [{ a: 9 }] },
+  ];
+  // Backup project (same id): one setpoint entry gone, zone edited in the other,
+  // snapshot s2 gone, two rows gone from s1, measures list absent.
+  const b = clone(c);
+  b[0].setpoints = [
+    {
+      buildingId: 'b1',
+      zones: [
+        { name: 'Z1', occ: 70 },
+        { name: 'Z2', occ: 68 },
+      ],
+    },
+  ];
+  b[0].basSnapshots = [{ id: 's1', rows: [{ a: 1 }] }];
+  delete b[0].savingsData;
+  const r = checkInvariants('en_projects', c, b, 'replace', 'T5b proj');
+  assert.ok(r.changed);
+  // setpoints: entry b2 (1) + entry b1 edited (1, id-less entries compare whole);
+  // snapshots: s2 (1) + rows a:2, a:3 (2); savingsData object (1) = 6
+  assert.strictEqual(r.removed, 6);
+  assert.strictEqual(r.added, 0);
+  // A project record kept byte-equal in the backup removes nothing.
+  const same2 = checkInvariants('en_projects', c, clone(c), 'replace', 'T5b same');
+  assert.strictEqual(same2.changed, false);
+  assert.strictEqual(same2.removed, 0);
+  // The plan total (what the second confirm shows) carries the nested count.
+  const p = RM.plan({ en_projects: b }, (k) => (k === 'en_projects' ? c : undefined), 'replace');
+  const total = p.items.reduce((t, i) => t + (i.changed ? i.removed : 0), 0);
+  assert.strictEqual(total, 6);
+  assert.strictEqual(RM.summarize(p.items).find((s) => s.label === 'Projects').removed, 6);
+  // Matched utility records: a building/meter field list the backup lacks counts too.
+  const cu = util();
+  const bu = clone(cu);
+  cu.buildings[0].addrAliases = ['x', 'y'];
+  delete bu.buildings[0].meters[0].baseline;
+  const ru = checkInvariants(U, cu, bu, 'replace', 'T5b util');
+  assert.strictEqual(ru.removed, 3); // 2 aliases + baseline object
+});
+
+// ---------------------------------------------------------------- T5c plan: unreadable server key is never written
+t('T5c plan: a key the server could not return is listed unreadable and never changed in any mode', () => {
+  const backup = { en_tasks: [{ id: 1 }], en_eqmatrix_1779664753271: { rows: [{ id: 'A||x' }] } };
+  for (const mode of MODES) {
+    const p = RM.plan(backup, () => undefined, mode, { isUnreadable: (k) => k === 'en_eqmatrix_1779664753271' });
+    const eq = p.items.find((i) => i.key === 'en_eqmatrix_1779664753271');
+    assert.ok(eq.unreadable && !eq.changed && eq.value === undefined, mode);
+    assert.strictEqual(eq.added + eq.updated + eq.kept + eq.removed, 0);
+    assert.ok(p.items.find((i) => i.key === 'en_tasks').changed, mode);
+    assert.strictEqual(RM.summarize(p.items).find((s) => s.label === 'Equipment matrix').unreadable, 1);
+  }
 });
 
 // ---------------------------------------------------------------- T6 presented savings frozen
@@ -636,33 +718,33 @@ t('T10 cross-key: dependencies name the owner key; added building outside projec
   const backup = {
     en_customers: [{ id: 'cust_1', name: 'C' }],
     en_projects: proj(),
-    en_utility_cust_cust_1: util(),
+    en_utility_cust_1: util(),
     en_budget_1779664753271: { a: 1 },
     en_tasks: [{ id: 1 }],
   };
   const none = () => undefined;
-  assert.strictEqual(RM.dependsOn('en_utility_cust_cust_1', backup, none), 'en_customers');
+  assert.strictEqual(RM.dependsOn('en_utility_cust_1', backup, none), 'en_customers');
   assert.strictEqual(RM.dependsOn('en_budget_1779664753271', backup, none), 'en_projects');
   assert.strictEqual(RM.dependsOn('en_tasks', backup, none), null);
   // owner already present in current: no dependency
   const has = (k) => (k === 'en_customers' ? [{ id: 'cust_1' }] : k === 'en_projects' ? proj() : undefined);
-  assert.strictEqual(RM.dependsOn('en_utility_cust_cust_1', backup, has), null);
+  assert.strictEqual(RM.dependsOn('en_utility_cust_1', backup, has), null);
   assert.strictEqual(RM.dependsOn('en_budget_1779664753271', backup, has), null);
   // building added to the blob that no project scope lists
   const curUtil = util();
   const bakUtil = util();
   bakUtil.buildings.push({ id: 'b3', name: 'Orphan', meters: [] });
   const p = RM.plan(
-    { en_utility_cust_cust_1: bakUtil },
-    (k) => (k === 'en_utility_cust_cust_1' ? curUtil : k === 'en_projects' ? proj() : undefined),
+    { en_utility_cust_1: bakUtil },
+    (k) => (k === 'en_utility_cust_1' ? curUtil : k === 'en_projects' ? proj() : undefined),
     'add',
   );
   assert.ok(/1 added building\(s\) are not in any project scope: Orphan/.test(p.notes.join(' ')), p.notes.join(' '));
   const inScope = clone(proj());
   inScope[0].scope.buildingIds.push('b3');
   const p2 = RM.plan(
-    { en_utility_cust_cust_1: bakUtil },
-    (k) => (k === 'en_utility_cust_cust_1' ? curUtil : k === 'en_projects' ? inScope : undefined),
+    { en_utility_cust_1: bakUtil },
+    (k) => (k === 'en_utility_cust_1' ? curUtil : k === 'en_projects' ? inScope : undefined),
     'add',
   );
   assert.strictEqual(p2.notes.length, 0);

@@ -475,6 +475,21 @@ async function safeText(res) {
   }
 }
 
+// Responses over GZIP_RESPONSE_THRESHOLD bytes go out gzip-compressed
+// (Content-Encoding: gzip, base64 body with isBase64Encoded) so a large kv
+// value (the ~9.5 MB equipment-matrix key) fits under Netlify's ~6 MB
+// synchronous-Function response cap. The browser's fetch decodes it
+// transparently; status codes and JSON bodies are unchanged (CAS/409 too).
+const GZIP_RESPONSE_THRESHOLD = 1024 * 1024;
 function respond(statusCode, body) {
-  return { statusCode, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) };
+  const text = JSON.stringify(body);
+  if (text.length < GZIP_RESPONSE_THRESHOLD) {
+    return { statusCode, headers: { 'content-type': 'application/json' }, body: text };
+  }
+  return {
+    statusCode,
+    headers: { 'content-type': 'application/json', 'content-encoding': 'gzip' },
+    body: zlib.gzipSync(text).toString('base64'),
+    isBase64Encoded: true,
+  };
 }

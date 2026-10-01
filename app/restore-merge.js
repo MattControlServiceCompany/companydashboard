@@ -119,7 +119,11 @@ const RestoreMerge = (() => {
   const ID = (r) => r.id;
   // Calendar event: a string date (the {events:[...]} wrapper has none).
   const dcId = (r) =>
-    typeof r.date !== 'string' || !r.date ? undefined : r.name && r.type ? r.date + '|' + r.name + '|' + r.type : canon(r);
+    typeof r.date !== 'string' || !r.date
+      ? undefined
+      : r.name && r.type
+        ? r.date + '|' + r.name + '|' + r.type
+        : canon(r);
   const auditId = (r) => (r.ts === undefined ? undefined : [r.ts, r.action, r.projId, r.bldgId, r.meterId].join('|'));
   const presentedId = (r) =>
     r.projectId === undefined ? undefined : [r.projectId, r.periodStart, r.periodEnd].join('|');
@@ -322,6 +326,36 @@ const RestoreMerge = (() => {
     }
     return n;
   }
+  // Nested data that vanishes inside records MATCHED at policy levels when
+  // the backup record replaces the current one: setpoints, zones, snapshot
+  // rows, measures, any list or object field the backup record lacks
+  // (counted by removedLoose; the policy child list is counted by
+  // removedAtLevels). Replace shows the sum so the second confirm is true.
+  function removedInMatched(cur, bak, pol, level) {
+    const curArr = Array.isArray(cur) ? cur : [];
+    const bakArr = Array.isArray(bak) ? bak : [];
+    const by = new Map();
+    bakArr.forEach((b) => {
+      const k = idKey(b, pol.idOf);
+      if (k !== null && !by.has(k)) by.set(k, b);
+    });
+    const child = pol.path[level];
+    const omit = (r) => {
+      if (!child || !isRec(r)) return r;
+      const o = Object.assign({}, r);
+      delete o[child];
+      return o;
+    };
+    let n = 0;
+    for (const c of curArr) {
+      const k = idKey(c, pol.idOf);
+      if (k === null || !by.has(k)) continue;
+      const b = by.get(k);
+      n += removedLoose(omit(c), omit(b));
+      if (child) n += removedInMatched(c[child], b[child], pol, level + 1);
+    }
+    return n;
+  }
   // Loose count for whole-key policies: list items (any depth) and
   // object-valued fields in cur that the backup does not have.
   function removedLoose(cur, bak) {
@@ -471,8 +505,10 @@ const RestoreMerge = (() => {
         return done(v, true);
       }
       const v = cleanAll(bak);
-      st.removed = removedAtLevels(curList, list(v), pol, pol.path.length ? 1 : 0);
-      st.added = Math.max(0, countAll(v) - (countAll(cur) - st.removed));
+      const lvl = pol.path.length ? 1 : 0;
+      const gone = removedAtLevels(curList, list(v), pol, lvl);
+      st.removed = gone + removedInMatched(curList, list(v), pol, lvl);
+      st.added = Math.max(0, countAll(v) - (countAll(cur) - gone));
       st.updated = 1;
       if (pol.path.length && isRec(cur))
         st.removed += removedLoose(Object.assign({}, cur, { [pol.path[0]]: undefined }), v);
@@ -502,9 +538,11 @@ const RestoreMerge = (() => {
   }
 
   // plan(backup, getCurrent, mode, opts)
-  //   opts.isDeleted(key)  -> true when the server holds a tombstone for the key
-  //   opts.restoreDeleted  -> array of tombstoned keys the user ticked
-  // -> { items: [{key,label,value,changed,added,updated,kept,removed,names,policy,tombstoned,why}],
+  //   opts.isDeleted(key)    -> true when the server holds a tombstone for the key
+  //   opts.restoreDeleted    -> array of tombstoned keys the user ticked
+  //   opts.isUnreadable(key) -> true when the current server value could not be
+  //                             read; the key is never written in any mode
+  // -> { items: [{key,label,value,changed,added,updated,kept,removed,names,policy,tombstoned,unreadable,why}],
   //      skipped: [{key, why}], notes: [strings], backupVersion }
   function plan(backup, getCurrent, mode, opts) {
     opts = opts || {};
@@ -512,15 +550,9 @@ const RestoreMerge = (() => {
     const skipped = [];
     const keys = Object.keys(backup);
     const ticked = new Set(opts.restoreDeleted || []);
-    for (const key of keys) {
-      const pol = policyFor(key, keys);
-      if (pol.kind === 'never') {
-        skipped.push({ key, why: pol.why });
-        continue;
-      }
-      const tomb = !!(opts.isDeleted && opts.isDeleted(key));
-      if (tomb && !ticked.has(key)) {
-        items.push({
+    const inert = (key, pol, flag) =>
+      Object.assign(
+        {
           key,
           label: labelFor(key),
           value: undefined,
@@ -531,12 +563,28 @@ const RestoreMerge = (() => {
           removed: 0,
           names: [],
           policy: pol.kind,
-          tombstoned: true,
-        });
+          tombstoned: false,
+          unreadable: false,
+        },
+        flag,
+      );
+    for (const key of keys) {
+      const pol = policyFor(key, keys);
+      if (pol.kind === 'never') {
+        skipped.push({ key, why: pol.why });
+        continue;
+      }
+      if (opts.isUnreadable && opts.isUnreadable(key)) {
+        items.push(inert(key, pol, { unreadable: true }));
+        continue;
+      }
+      const tomb = !!(opts.isDeleted && opts.isDeleted(key));
+      if (tomb && !ticked.has(key)) {
+        items.push(inert(key, pol, { tombstoned: true }));
         continue;
       }
       const r = mergeValue(key, tomb ? undefined : getCurrent(key), backup[key], mode, keys);
-      items.push(Object.assign({ key, label: labelFor(key), tombstoned: tomb }, r));
+      items.push(Object.assign({ key, label: labelFor(key), tombstoned: tomb, unreadable: false }, r));
     }
     return { items, skipped, notes: crossNotes(items, backup, getCurrent), backupVersion: backupVersion(backup) };
   }
@@ -551,9 +599,12 @@ const RestoreMerge = (() => {
     const projItem = byKey.get('en_projects');
     const projects = parseMaybe(projItem && projItem.changed ? projItem.value : getCurrent('en_projects'));
     const projList = Array.isArray(projects) ? projects : [];
-    // Added buildings that no project scope shows.
+    // Added buildings that no project scope shows. The key is
+    // 'en_utility_' + customer id and the customer id is 'cust_<project id>'
+    // (utility-data.js: customerId = P.customerId || 'cust_' + P.id), so the
+    // key en_utility_cust_<N> belongs to the customer row with id cust_<N>.
     for (const it of items) {
-      const m = /^en_utility_cust_(.+)$/.exec(it.key);
+      const m = /^en_utility_(cust_.+)$/.exec(it.key);
       if (!m || !it.changed) continue;
       const curV = parseMaybe(getCurrent(it.key));
       const curIds = new Set(((isRec(curV) && curV.buildings) || []).map((b) => String(b.id)));
@@ -604,6 +655,7 @@ const RestoreMerge = (() => {
         removed: 0,
         names: [],
         tombstoned: 0,
+        unreadable: 0,
       };
       g.added += it.added;
       g.updated += it.updated;
@@ -611,14 +663,16 @@ const RestoreMerge = (() => {
       g.removed += it.removed || 0;
       if (it.changed) g.names = g.names.concat(it.names || []);
       if (it.tombstoned) g.tombstoned += 1;
+      if (it.unreadable) g.unreadable += 1;
       by.set(it.label, g);
     }
     return Array.from(by.values()).sort((a, b) => a.label.localeCompare(b.label));
   }
 
   // Keys whose push depends on another key's push (apply or fail together):
-  // en_utility_cust_<id> needs its customer row; a key ending in a project id
-  // needs that project. Only when the owner record is NEW to the current data.
+  // en_utility_cust_<N> needs its customer row (id cust_<N>, see crossNotes);
+  // a key ending in a project id needs that project. Only when the owner
+  // record is NEW to the current data.
   function dependsOn(key, backup, getCurrent) {
     const has = (listKey, id) => {
       const l = parseMaybe(getCurrent(listKey));
@@ -628,7 +682,7 @@ const RestoreMerge = (() => {
       const l = parseMaybe(backup[listKey]);
       return Array.isArray(l) && l.some((r) => isRec(r) && String(r.id) === id);
     };
-    let m = /^en_utility_cust_(.+)$/.exec(key);
+    let m = /^en_utility_(cust_.+)$/.exec(key);
     if (m) return inBackup('en_customers', m[1]) && !has('en_customers', m[1]) ? 'en_customers' : null;
     m = /_(\d{6,})$/.exec(key);
     if (m) return inBackup('en_projects', m[1]) && !has('en_projects', m[1]) ? 'en_projects' : null;

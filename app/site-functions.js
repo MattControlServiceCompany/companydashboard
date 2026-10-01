@@ -1283,6 +1283,11 @@ async function _restoreContext(backup) {
   function isDeleted(k) {
     return syncOn && scopeOf(k) !== 'local' && server.has(k) && !!server.get(k).deleted;
   }
+  // A key the server holds but could not return (read error, value over the
+  // response cap): never written in any mode, listed as not changed.
+  function isUnreadable(k) {
+    return syncOn && scopeOf(k) !== 'local' && server.has(k) && !!server.get(k).unreadable;
+  }
   return {
     backup: backup,
     syncOn: syncOn,
@@ -1290,8 +1295,37 @@ async function _restoreContext(backup) {
     scopeOf: scopeOf,
     getCurrent: getCurrent,
     isDeleted: isDeleted,
+    isUnreadable: isUnreadable,
     server: server,
   };
+}
+function _restoreUnreadable(p) {
+  return p.items.filter(function (i) {
+    return i.unreadable;
+  });
+}
+function _restoreUnreadableHtml(p) {
+  var u = _restoreUnreadable(p);
+  if (!u.length) return '';
+  return (
+    '<p class="rst-note rst-rm-note"><b>' +
+    u.length +
+    ' item(s) could not be read from the server. ' +
+    (u.length === 1 ? 'It is' : 'They are') +
+    ' not changed in any mode.</b></p><ul class="rst-list">' +
+    u
+      .map(function (i) {
+        return (
+          '<li>' +
+          _restoreEsc(i.label) +
+          ' <small>' +
+          _restoreEsc(i.key) +
+          ' (could not read from server, not changed)</small></li>'
+        );
+      })
+      .join('') +
+    '</ul>'
+  );
 }
 
 // Writes one plan. Before ANY write, a safety copy with the current value of
@@ -1422,6 +1456,7 @@ async function _restoreStart(backup, opts) {
   if (['add', 'merge', 'replace'].indexOf(mode) === -1) throw new Error('restoreData: unknown mode ' + mode);
   var p = RestoreMerge.plan(backup, ctx.getCurrent, mode, {
     isDeleted: ctx.isDeleted,
+    isUnreadable: ctx.isUnreadable,
     restoreDeleted: opts.restoreDeleted || [],
   });
   var res = await _restoreApply(ctx, p, opts, function (m) {
@@ -1430,6 +1465,9 @@ async function _restoreStart(backup, opts) {
   res.changed = p.items.filter(function (i) {
     return i.changed;
   }).length;
+  res.unreadable = _restoreUnreadable(p).map(function (i) {
+    return i.key;
+  });
   if (opts.reload !== false) {
     setTimeout(function () {
       location.reload();
@@ -1469,6 +1507,7 @@ function _restoreDialog(ctx) {
   function currentPlan() {
     return RestoreMerge.plan(backup, getCurrent, mode, {
       isDeleted: ctx.isDeleted,
+      isUnreadable: ctx.isUnreadable,
       restoreDeleted: Object.keys(restoreDeleted).filter(function (k) {
         return restoreDeleted[k];
       }),
@@ -1577,6 +1616,7 @@ function _restoreDialog(ctx) {
     p.notes.forEach(function (note) {
       html += '<p class="rst-note rst-rm-note">' + _restoreEsc(note) + '</p>';
     });
+    html += _restoreUnreadableHtml(p);
     var tombs = p.items.filter(function (i) {
       return i.tombstoned;
     });
@@ -1700,6 +1740,7 @@ function _restoreDialog(ctx) {
           .join('') +
         '</ul>';
     }
+    html += _restoreUnreadableHtml(p);
     body.innerHTML = html;
     ftr.innerHTML = '<button class="btn btn-em" id="rstDone">Close and reload</button>';
     ftr.querySelector('#rstDone').onclick = function () {
