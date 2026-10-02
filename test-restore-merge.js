@@ -1331,4 +1331,11 @@ t('ab7631eb absent key: JSON-text backup value is parsed; null current counts as
     assert.deepStrictEqual(n.value, [{ id: 1, text: 't' }]);
   }
 });
+t('absent key: scalar strings keep their type; objects and arrays are parsed', () => {
+  for (const raw of ['123', 'true', '2026', '06107']) {
+    for (const mode of MODES) assert.strictEqual(mv('some_plain_key', undefined, raw, mode).value, raw, raw + ' ' + mode);
+  }
+  assert.deepStrictEqual(mv('some_plain_key', undefined, '{"a":1}', 'add').value, { a: 1 });
+  assert.deepStrictEqual(mv('some_plain_key', undefined, '[1,2]', 'add').value, [1, 2]);
+});
 console.log(pass + ' tests passed (final)');

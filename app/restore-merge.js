@@ -387,7 +387,8 @@ const RestoreMerge = (() => {
   // Result in the representation the current value already has.
   function represent(value, currentRaw, cur, backupRaw, bak) {
     if (currentRaw !== undefined && currentRaw !== null) return isJsonText(currentRaw, cur) ? JSON.stringify(value) : value;
-    return value; // absent key: write the parsed value
+    // absent key: objects and arrays are written parsed; scalars keep the backup's own form
+    return isCont(value) ? value : backupRaw;
   }
 
   // mergeValue(key, current, backup, mode, backupKeys)
