@@ -22087,6 +22087,28 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       // page count K, but a short remainder chunk is redistributed instead of stranded alone on a
       // trailing page. w:cantSplit (docx-writer.js) still keeps each <tr> intact; this only changes
       // WHERE the chunk boundary falls, never within a row.
+      //
+      // 2026-10-01 (fix/itemized-continuation-overflow, backlog 54046a13): the 30/68 constants above
+      // are a model, and it under-counts once rows wrap (the 10pt text floor lifts 9px text to
+      // 13.34px, so a long item name or clientSummary takes 2-3 lines): measured pages ran 50-430px
+      // past the footer. Same fix as the readiness / setpoint tables (fix/report-table-fit-one-page):
+      // read the TRUE row heights, the thead and the heading back from a hidden render, size the
+      // budget from them, and reserve the closing disclaimer on the last page. The constants stay as
+      // the no-DOM fallback.
+      var _itTitleSample =
+        '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px">Cost Estimate: Itemized Measures, ' +
+        _esc(c.label) +
+        ' (1 of 9)</div>';
+      var _itTheadM = _rptMeasureTableTokens(itTableHead, tokens);
+      var _itTitleM = _itTheadM === null ? null : _rptMeasureHtmlH(_itTitleSample);
+      if (_itTheadM !== null && _itTitleM !== null) {
+        _itemizedBudget = _rptContentBudget('flush') - _itTitleM - _itTheadM - 12 - 4;
+      }
+      if (c === tierCols[tierCols.length - 1] && discBlock) {
+        // The disclaimer prints under the final tier's last table; reserve its height so it cannot
+        // be pushed into the footer (empty-html token: occupies budget only, adds no markup).
+        tokens.push({ type: 'row', estH: _rptMeasureHtmlH(discBlock) || 120, html: '' });
+      }
       var chunks = _rptPaginateTokensBalanced(tokens, _itemizedBudget);
       var numChunks = chunks.length;
 
