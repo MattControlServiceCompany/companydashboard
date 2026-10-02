@@ -4416,14 +4416,20 @@ function emRenderMatrix(container, data, pid) {
     'Includes every imported control program (lighting, fire, plumbing, and more), not just heating and cooling equipment; see the Audit Report for the ASHRAE 36 scoped count.' +
     '</div>';
 
+  // Everything above the table sits in one block capped at 40% of the window height, so on a
+  // small window (half-width 640 px, short laptop screens) the table always keeps usable height
+  // instead of being squeezed to a few pixels. On normal windows the block is shorter than the
+  // cap and does not scroll.
   container.innerHTML =
     '<div style="display:flex;flex-direction:column;flex:1;min-height:0">' +
+    '<div id="em-top-block" style="flex:0 0 auto;max-height:40vh;overflow-y:auto">' +
     statsHtml +
     scopeNoteHtml +
     '<div style="flex-shrink:0;border-bottom:1px solid var(--border)">' +
     toolbarHtml +
     '</div>' +
     '<div id="em-upload-inline" style="display:none;flex-shrink:0;border-bottom:1px solid var(--border);padding:16px 20px"></div>' +
+    '</div>' +
     '<div id="em-table-wrap" class="em-table-wrap" style="flex:1;min-height:0"></div>' +
     '</div>';
 
