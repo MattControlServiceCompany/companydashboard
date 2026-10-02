@@ -69,7 +69,7 @@ for (const rate of [170, 120, 97.35]) {
       'hourlyRate',
     ])
       assert.strictEqual(h[k], o[k], 'hourly ' + k + ' ' + t + ' ' + rate);
-    deq(h.byBuilding, o.byBuilding);
+    deq(h.byBuilding.map(({ types, site, ...x }) => x), o.byBuilding);
     deq(h.extras, o.extras);
     deq(
       h.rows.map((r) => [r.category, r.hours, r.cost, r.sampled]),

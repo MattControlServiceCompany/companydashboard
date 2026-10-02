@@ -812,6 +812,10 @@ function auditEstComputeBreakdown(projId, auditType) {
   });
   var bSampled = bEquip.slice();
   var bHrs = bEquip.slice();
+  var bSite = bEquip.slice();
+  var bType = bList.map(function () {
+    return [];
+  });
   var projHrs = 0;
   // Buildings that carry the Full Facility per-building line items (same set as buildingCount).
   var bPriced = bList.map(function (n) {
@@ -844,6 +848,7 @@ function auditEstComputeBreakdown(projId, auditType) {
       bEquip[i] += counts[i];
       bSampled[i] += sampAlloc[i];
       bHrs[i] += unitAlloc[i];
+      bType[i].push({ category: e.category, label: e.label, equipment: counts[i], sampled: sampAlloc[i], hundredths: unitAlloc[i] });
     });
     return {
       category: e.category,
@@ -900,6 +905,7 @@ function auditEstComputeBreakdown(projId, auditType) {
   lineItems.forEach(function (x) {
     _auditEstAllocate(Math.round(x.hours * 100), bPriced).forEach(function (v, i) {
       bHrs[i] += v;
+      bSite[i] += v;
     });
   });
   projHrs += Math.round(reportHours * 100);
@@ -1013,7 +1019,34 @@ function auditEstComputeBreakdown(projId, auditType) {
   var unit = isWorkbook ? 1 : 100;
   var costC = _auditEstAllocate(Math.round(totalCost * unit), bHrs.concat([projHrs]));
   var byBuilding = bList.map(function (n, i) {
-    return { building: n, equipment: bEquip[i], sampled: bSampled[i], hours: bHrs[i] / 100, cost: costC[i] / unit };
+    // Split this building's cost across its equipment types and site items (exact to the unit).
+    var parts = _auditEstAllocate(
+      costC[i],
+      bType[i]
+        .map(function (t) {
+          return t.hundredths;
+        })
+        .concat([bSite[i]])
+    );
+    var types = bType[i]
+      .filter(function (t) {
+        return t.equipment > 0;
+      })
+      .map(function (t) {
+        var k = bType[i].indexOf(t);
+        return { category: t.category, label: t.label, equipment: t.equipment, sampled: t.sampled, hours: t.hundredths / 100, cost: parts[k] / unit };
+      });
+    var site = { hours: bSite[i] / 100, cost: parts[bType[i].length] / unit };
+    // Types with no units in this building carry no hours, so their parts are 0; keep the sum exact.
+    return {
+      building: n,
+      equipment: bEquip[i],
+      sampled: bSampled[i],
+      hours: bHrs[i] / 100,
+      cost: costC[i] / unit,
+      types: types,
+      site: site,
+    };
   });
   byBuilding.push({
     building: 'Project-wide',
@@ -1632,6 +1665,31 @@ function _auditEstByBuildingTableHTML(b) {
       var dash = function (v) {
         return v ? v : '—';
       };
+      var sub = (x.types || [])
+        .map(function (t) {
+          return (
+            '<tr class="ae-bldg-sub"><td class="ch-tbl-col-type-label ae-bldg-sub-lbl">' +
+            _auditEstEsc(t.label) +
+            '</td>' +
+            num(dash(t.equipment)) +
+            num(dash(t.sampled)) +
+            num(t.hours ? t.hours.toFixed(1) : '—') +
+            '<td class="ch-tbl-col-type-currency">' +
+            (t.cost ? _auditEstMoney(b)(t.cost) : '—') +
+            '</td></tr>'
+          );
+        })
+        .join('');
+      if (x.site && x.site.hours) {
+        sub +=
+          '<tr class="ae-bldg-sub"><td class="ch-tbl-col-type-label ae-bldg-sub-lbl">Site items</td>' +
+          num('—') +
+          num('—') +
+          num(x.site.hours.toFixed(1)) +
+          '<td class="ch-tbl-col-type-currency">' +
+          (x.site.cost ? _auditEstMoney(b)(x.site.cost) : '—') +
+          '</td></tr>';
+      }
       return (
         '<tr><td class="ch-tbl-col-type-label">' +
         _auditEstEsc(x.building) +
@@ -1641,7 +1699,8 @@ function _auditEstByBuildingTableHTML(b) {
         num(x.hours ? x.hours.toFixed(1) : '—') +
         '<td class="ch-tbl-col-type-currency">' +
         (x.cost ? _auditEstMoney(b)(x.cost) : '—') +
-        '</td></tr>'
+        '</td></tr>' +
+        sub
       );
     })
     .join('');
@@ -1857,6 +1916,8 @@ var AUDIT_EST_TABLE_CSS =
   '.ae-tbl tfoot td{background:var(--s1);font-weight:700;border-top:2px solid var(--border2);border-bottom:none}' +
   '.ae-tbl tbody tr:hover td{background:var(--s4)}' +
   '.ae-bldg-tbl th,.ae-bldg-tbl td{padding:3px 6px}' +
+  '.ae-bldg-tbl .ae-bldg-sub td{font-size:11px;color:var(--text)}' +
+  '.ae-bldg-tbl .ae-bldg-sub-lbl{padding-left:20px}' +
   '.ae-exp{background:none;border:none;color:var(--text2);cursor:pointer;padding:0 4px 0 0;font-size:11px}' +
   '.ae-ovr{color:var(--accent);cursor:help}' +
   '.ae-tbl tr.ae-detail td{white-space:normal;background:var(--s1)}' +
