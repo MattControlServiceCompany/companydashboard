@@ -122,15 +122,14 @@
       '.ch-sync-status-key-in-sync .ch-sync-status-key-name{color:var(--accent,#2563eb);}' +
       '.ch-sync-status-key-diverged .ch-sync-status-key-name{color:var(--warn,#b45309);}' +
       '.ch-sync-status-key-pending .ch-sync-status-key-name{color:var(--text2,#9aa3b8);}' +
-      // Narrow windows: the three corner controls stacked at bottom-right covered page
-      // content (calendar days, buttons) at 640-800px. At 899px and below (the sidebar is hidden) they sit in ONE row on
-      // the bottom edge (status left, archive next, unsynced pill right) and .content
-      // reserves that row, so nothing sits on top of the page.
-      '@media (max-width:899px){' +
+      // All widths: the three corner controls sit in ONE row on the bottom edge (status
+      // left, archive next, unsynced pill right) and .content reserves that row, so nothing
+      // covers page content. At 900px and wider the row starts right of the 220px sidebar.
       '#ch-sync-status-btn,#ch-archive-link,#ch-sync-pill{bottom:6px;font-size:11px;padding:4px 10px;}' +
-      '#ch-sync-status-btn{left:16px;right:auto;}' +
-      '#ch-archive-link{left:116px;right:auto;}' +
-      '.content{margin-bottom:38px;}}';
+      '#ch-sync-status-btn{left:236px;right:auto;}' +
+      '#ch-archive-link{left:336px;right:auto;}' +
+      '.content{margin-bottom:38px;}' +
+      '@media (max-width:899px){#ch-sync-status-btn{left:16px;}#ch-archive-link{left:116px;}}';
     document.head.appendChild(style);
   }
 
