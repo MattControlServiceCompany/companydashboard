@@ -106,6 +106,13 @@
     var D = EW.DEFAULTS;
     var project = meta.project || '';
 
+    // The template carries a named logistics signature on the parts quote; export it blank.
+    quote.eachRow(function (row) {
+      row.eachCell(function (cell) {
+        if (typeof cell.value === 'string' && /Garret Hart/i.test(cell.value)) cell.value = null;
+      });
+    });
+
     put(info, 'C7', project);
     put(info, 'C9', meta.title || project);
     put(info, 'C12', meta.preparedBy);
