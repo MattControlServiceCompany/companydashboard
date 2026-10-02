@@ -414,4 +414,92 @@ const plain = (x) => JSON.parse(JSON.stringify(x));
   ok('workbook: building amount equal in row table, timeline and Summary; phases sum to ' + tot.grand);
 }
 
+// 10. Building filter (workbook): the filtered amounts are the sum of the chosen buildings' shares from the
+// full estimate - equal to those buildings' amounts in Summary and the timeline, for ANY subset of
+// buildings. Hourly: filtered totals deep-equal the main-branch compute on the same subset.
+{
+  const mainPE = cp.execFileSync('git', ['show', '12a6614:app/pricing-estimator.js'], {
+    cwd: ROOT,
+    encoding: 'utf8',
+    maxBuffer: 1 << 26,
+  });
+  const plain = (x) => JSON.parse(JSON.stringify(x));
+  let seed = 4242;
+  const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff), seed / 0x7fffffff);
+  const BL = ['Alpha', 'Beta', 'Gamma', 'Delta'];
+  const key = (r) => r._baseId || r.id;
+  let subsets = 0;
+  for (let it = 0; it < 60; it++) {
+    const rows = [];
+    const cnt = 4 + Math.floor(rnd() * 8);
+    for (let i = 0; i < cnt; i++) {
+      const b = BL[Math.floor(rnd() * BL.length)];
+      rows.push(hw('x' + i, b, 1 + Math.floor(rnd() * 9), +(rnd() * 200 + 0.37).toFixed(2), [0.25, 0.5, 1, 1.5][i % 4], RATE));
+      rows.push(sq('y' + i, b, 1 + Math.floor(rnd() * 4), [0.5, 1.25, 2.5, 3.4][i % 4], RATE));
+    }
+    const T = { compliance: rows, recommended: rows, 'full-scope': rows };
+    const cat = {};
+    rows.forEach((r) => r.sku && (cat[r.sku] = { list: 1 }));
+    const e = { rowToggles: {}, manualPrices: {}, laborOverrides: {}, installHoursOverrides: {}, qtyOverrides: {} };
+    rows.forEach((r) => rnd() < 0.1 && (e.rowToggles[r.id] = false));
+    const store = () => ({ en_pricing_catalog: cat, en_pricing_estimate_p: e });
+    const wb = make(read('app/pricing-estimator.js'), store(), T);
+    wb._pricingComputeProgramCostModel = (p, k) => ({
+      phases: Array.from({ length: k }, () => ({ measuresAvailable: 150, allowanceTotal: 1150, emLaborTotal: 1000, overCommitted: false })),
+      programAllowanceTotal: 1,
+      programEmLaborTotal: 1,
+      monthlyAllowance: 1,
+    });
+    const hr = make(read('app/pricing-estimator.js'), Object.assign(store(), { en_pricing_workbook_p: { method: 'hourly' } }), T);
+    const mn = make(mainPE, Object.assign(store(), { en_pricing_workbook_p: { method: 'hourly' } }), T);
+    const tot = wb._pricingComputeTotals(rows, e, 'p');
+    if (tot.grand === null) continue;
+    const sd = wb._pricingComputeSummaryData('p', e);
+    const tl = wb._pricingComputeRecommendedTimeline('p');
+    const tlB = {};
+    if (tl)
+      tl.phases.forEach((p) =>
+        p.rows.forEach((r) => (tlB[r.building] = (tlB[r.building] || 0) + (tot.rowShares[key(r)] || 0))),
+      );
+    const names = BL.filter((b) => rows.some((r) => r.building === b));
+    for (let mask = 1; mask < 1 << names.length; mask++) {
+      const pickB = names.filter((_, i) => mask & (1 << i));
+      const sub = rows.filter((r) => pickB.indexOf(r.building) >= 0);
+      subsets++;
+      const f = wb._pricingComputeFilteredTotals(rows, sub, e, 'p');
+      const sumSummary = sd.buildings
+        .filter((b) => pickB.indexOf(b.building) >= 0)
+        .reduce((a, b) => a + Math.round(b.tiers.recommended.total * 100), 0);
+      // No `_all` cache (condensed tab path): totals built on demand equal the cached-path/footer total.
+      const fNoAll = wb._pricingComputeFilteredTotals(null, sub, e, 'p');
+      assert.strictEqual(fNoAll.grand, f.grand, 'condensed (no _all) == footer filtered total ' + pickB);
+      assert.deepStrictEqual(plain(fNoAll.rowShares), plain(f.rowShares), 'no-_all rowShares == footer ' + pickB);
+      if (f.grand !== null) {
+        assert.strictEqual(Math.round(fNoAll.grand * 100), sumSummary, 'no-_all total == Summary sum ' + pickB);
+        assert.strictEqual(Math.round(f.grand * 100), sumSummary, 'filtered total == Summary sum ' + pickB);
+        assert.strictEqual(Math.round((f.phase1 + f.phase2) * 100), Math.round(f.grand * 100), 'phases foot');
+        const sumRows = Object.keys(f.rowShares).reduce((a, k) => a + Math.round(f.rowShares[k] * 100), 0);
+        assert.strictEqual(sumRows, Math.round(f.grand * 100), 'filtered rowShares foot');
+        if (tl) {
+          const sumTl = pickB.reduce((a, b) => a + Math.round((tlB[b] || 0) * 100), 0);
+          assert.strictEqual(Math.round(f.grand * 100), sumTl, 'filtered total == timeline sum ' + pickB);
+        }
+        sub.forEach((r) => {
+          if (!r.ioOnly && f.rowShares[key(r)] != null)
+            assert.strictEqual(f.rowShares[key(r)], tot.rowShares[key(r)], 'row share unchanged by filter');
+        });
+      }
+      assert.deepStrictEqual(
+        plain(hr._pricingComputeFilteredTotals(rows, sub, e, 'p')),
+        plain(mn._pricingComputeTotals(sub, e, 'p')),
+        'hourly filtered == main ' + pickB,
+      );
+    }
+    // no filter: identical to the plain compute
+    assert.deepStrictEqual(plain(wb._pricingComputeFilteredTotals(rows, rows, e, 'p')), plain(tot));
+  }
+  assert.ok(subsets > 200, 'enough subsets ran: ' + subsets);
+  ok('building filter (workbook): any subset == sum of those buildings in Summary/timeline; Hourly == main (' + subsets + ' subsets)');
+}
+
 console.log('\n' + n + ' checks passed');

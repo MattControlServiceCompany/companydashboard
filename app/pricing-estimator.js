@@ -3581,6 +3581,43 @@ function _pricingComputeTotals(rows, estimate, projId) {
   return out;
 }
 
+/* Workbook mode with a building filter: the filtered amounts are the sum of the filtered rows' shares
+   from the FULL estimate (the same shares the timeline and Summary use), never a second workbook
+   compute on the subset. Counts and pending flags still come from the filtered rows. Hourly, and
+   workbook with no filter, return the plain subset totals unchanged. The workbook breakdown stays
+   the full estimate's. */
+function _pricingComputeFilteredTotals(allRows, filteredRows, estimate, projId) {
+  var t = _pricingComputeTotals(filteredRows, estimate, projId);
+  if (!_pricingWorkbookSettings(projId)) return t;
+  // No full-estimate rows given (cache absent): build them on demand, same builders the footer uses.
+  if (!allRows) {
+    var tr = estimate && estimate.tier;
+    var bld = tr === 'recommended' ? buildRecommendedRows : tr === 'full-scope' ? buildFullScopeRows : buildComplianceRows;
+    allRows = _pricingApplyQtyOverrides(projId, _pricingApplyLaborOverrides(projId, bld(projId)));
+  }
+  if (filteredRows.length === allRows.length) return t;
+  var full = _pricingComputeTotals(allRows, estimate, projId);
+  if (full.method !== 'workbook' || t.grand === null) return t;
+  var p1C = 0,
+    p2C = 0,
+    shares = {};
+  filteredRows.forEach(function (r) {
+    var k = r._baseId || r.id;
+    var sh = full.rowShares[k];
+    if (sh == null || shares[k] != null) return;
+    shares[k] = sh;
+    if (r.phase === 1) p1C += Math.round(sh * 100);
+    else if (r.phase === 2) p2C += Math.round(sh * 100);
+  });
+  t.phase1 = p1C / 100;
+  t.phase2 = p2C / 100;
+  t.grand = (p1C + p2C) / 100;
+  t.rowShares = shares;
+  t.method = 'workbook';
+  t.workbook = full.workbook;
+  return t;
+}
+
 /* Compare tab "Rec. Total" amount for one matched recommended row. Hourly: the row's own line total.
    Workbook mode: the row's share of the recommended tier's workbook total (same shares the itemized
    table shows), so the column adds up to the recommended footer. */
@@ -7152,10 +7189,12 @@ function _pricingRenderCondensedTab(projId, el, estimate, tier) {
       })
     : baseRows;
 
+  _pricingRowCache[projId] = filteredRows;
+  _pricingRowCache[projId + '_all'] = baseRows;
   var agg = _pricingComputeCondensedRows(filteredRows, estimate);
   // Workbook mode: line totals are shares of the workbook Hardware / Programming totals (so the
   // subtotals match the footer figures) and the hourly Unit Price column is not shown.
-  var condWb = _pricingComputeTotals(filteredRows, estimate, projId);
+  var condWb = _pricingComputeFilteredTotals(baseRows, filteredRows, estimate, projId);
   var condWbOn = condWb.method === 'workbook';
   if (condWbOn) {
     agg = { hw: _auditEstShareLines(agg.hw, condWb.phase1), lb: _auditEstShareLines(agg.lb, condWb.phase2) };
@@ -8784,6 +8823,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
         return r.building === filterBldg;
       })
     : baseRows;
+  var recRowsAll = recRows;
   if (filterBldg && recRows) {
     recRows = recRows.filter(function (r) {
       return r.building === filterBldg;
@@ -8792,10 +8832,11 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
 
   // Update cache with labor-override-applied, filtered rows
   _pricingRowCache[projId] = filteredRows;
+  _pricingRowCache[projId + '_all'] = baseRows;
   if (recRows) _pricingRowCache[projId + '_rec'] = recRows;
 
-  var totals = _pricingComputeTotals(filteredRows, estimate, projId);
-  var recTotals = recRows ? _pricingComputeTotals(recRows, estimate, projId) : null;
+  var totals = _pricingComputeFilteredTotals(baseRows, filteredRows, estimate, projId);
+  var recTotals = recRows ? _pricingComputeFilteredTotals(recRowsAll, recRows, estimate, projId) : null;
 
   var buildings = [];
   var bSet2 = {};
@@ -10478,7 +10519,12 @@ function _pricingEstimateTypeBarHTML(projId, type) {
           : 'Switch to the Workbook method to export') +
         '" style="cursor:' +
         (wbSet ? 'pointer' : 'not-allowed;opacity:.5') +
-        '">Export to Excel</button>'
+        '">Export to Excel</button>' +
+        (wbSet && _pricingBldgFilter[projId]
+          ? '<span id="estExportNote-' +
+            projId +
+            '" title="The Excel file always holds the whole estimate, not only the building chosen in the filter" style="font-size:11px;color:var(--text2)">Exports all buildings</span>'
+          : '')
       : '') +
     '</div>' +
     (type === 'retrofit' && wbSet ? _pricingWorkbookPanelHTML(projId, wbSet) : '')
@@ -10490,7 +10536,7 @@ function _pricingEstimateTypeBarHTML(projId, type) {
 function _pricingWorkbookPanelHTML(projId, wbSet) {
   var est = _pricingGetEstimate(projId);
   var rows = _pricingRowCache[projId];
-  var totals = rows ? _pricingComputeTotals(rows, est, projId) : null;
+  var totals = rows ? _pricingComputeFilteredTotals(_pricingRowCache[projId + '_all'], rows, est, projId) : null;
   var wb = totals && totals.workbook ? totals.workbook : null;
   var ids = ['install_per_point', 'bas_programming', 'startup_checkout'];
   var D = EstimateWorkbook.DEFAULTS;
@@ -10726,7 +10772,7 @@ function _pricingComputeSummaryData(projId, estimate) {
     }
     var cfg = _pricingGetConfig();
     var catalog = sget('en_pricing_catalog', null);
-    var totals = _pricingComputeTotals(rows, est, projId);
+    var totals = _pricingComputeFilteredTotals(_pricingRowCache[projId + '_all'], rows, est, projId);
     var filterBldg = _pricingBldgFilter[projId] || '';
 
     // 45ceb14f: re-derive the Tier-label + advisory-line state the same way the full render
