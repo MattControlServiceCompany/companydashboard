@@ -1121,7 +1121,7 @@ async function siteBackup() {
   }
   await _waitForDBReadyForBackup();
   // Get all DB data (IndexedDB-backed)
-  var dbData = typeof DB !== 'undefined' && DB.isReady() ? DB.getAll() : {};
+  var dbData = typeof DB !== 'undefined' && DB.isReady() ? DB.getAllForExport() : {};
   // Also grab any remaining localStorage keys (preferences, settings)
   var lsData = {};
   for (var i = 0; i < localStorage.length; i++) {

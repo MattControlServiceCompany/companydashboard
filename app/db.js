@@ -488,6 +488,41 @@ const DB = (() => {
   // unprefixed name used for _cache/_replicaVersions) — this function is the
   // one place that resolves it to the wire key (see _wireKey) for a per-user
   // key. Never pass a pre-prefixed key in.
+  // Derived per-meter caches: getMeterSavings()/getNormRows() recompute them on load and write
+  // them back onto the live meter objects, which are the same objects held in _cache. They must
+  // never leave the app (backup export, server push). ONE list, ONE function (9914423a).
+  const DERIVED_METER_FIELDS = ['_savingsCache', '_savingsCacheKey', '_reg', '_savingsByYM', '_unitSavByCalMo'];
+  function _isUtilityKey(key) {
+    return /^en_utility_(cust_.+|\d+)$/.test(key);
+  }
+  // Returns `value` unchanged unless it is utility data holding derived caches; then returns a
+  // copy with them removed (never mutates the live objects). Strings holding JSON are left alone.
+  function stripDerivedCaches(key, value) {
+    if (!_isUtilityKey(key) || !value || !Array.isArray(value.buildings)) return value;
+    return Object.assign({}, value, {
+      buildings: value.buildings.map((b) =>
+        !b || !Array.isArray(b.meters)
+          ? b
+          : Object.assign({}, b, {
+              meters: b.meters.map((m) => {
+                if (!m || !DERIVED_METER_FIELDS.some((f) => f in m)) return m;
+                const c = Object.assign({}, m);
+                DERIVED_METER_FIELDS.forEach((f) => delete c[f]);
+                return c;
+              }),
+            })
+      ),
+    });
+  }
+  // Export copy of the whole cache: every key passed through stripDerivedCaches.
+  function getAllForExport() {
+    const out = {};
+    Object.keys(_cache).forEach((k) => {
+      out[k] = stripDerivedCaches(k, _cache[k]);
+    });
+    return out;
+  }
+
   async function _sendKvPut(key, payload) {
     const wireKey = _wireKey(key);
     if (wireKey === null) {
@@ -503,7 +538,7 @@ const DB = (() => {
     const baseVersion = entry && typeof entry.version === 'number' ? entry.version : null;
     const bodyObj = isTombstone
       ? { key: wireKey, deleted: true, baseVersion }
-      : { key: wireKey, value: payload.value, baseVersion };
+      : { key: wireKey, value: stripDerivedCaches(key, payload.value), baseVersion };
     // Phase 2b conflict-modal "Overwrite with mine" / "Restore my version"
     // actions set this so kv-sync.js snapshots the row being replaced into
     // kv_history BEFORE the overwrite lands (kv-sync.js handlePut, explicit
@@ -1809,6 +1844,9 @@ const DB = (() => {
     clear,
     getAllKeys,
     getAll,
+    getAllForExport,
+    stripDerivedCaches,
+    DERIVED_METER_FIELDS,
     isReady,
     isFallback,
     isLoadFailed,

@@ -103,6 +103,7 @@ function makeSandbox(opts) {
   const DB = {
     isReady: () => ready,
     getAll: () => (ready ? Object.assign({}, SYNTHETIC_BILLS) : {}),
+    getAllForExport: () => (ready ? Object.assign({}, SYNTHETIC_BILLS) : {}),
   };
   let capturedBlobContent = null;
   function FakeBlob(parts) {
