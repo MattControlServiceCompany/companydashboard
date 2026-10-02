@@ -2296,6 +2296,14 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.02.69', date: '2026-10-02', title: 'Zone schedules, Cost Estimate hardware toggle, sync controls',
+    items: [
+      { type: 'feature', text: 'Equipment Matrix Summary drill-down and the Woodland report: each zone now shows its own effective schedule for one day, taken from the WebCTRL export, or a note when the file has none.' },
+      { type: 'feature', text: 'Cost Estimate, Full Itemization: a new Include hardware checkbox shows or hides hardware lines and their totals in that view.' },
+      { type: 'feature', text: 'Cost Estimate sensor investigation: the role can now be set to PE, and the exported proposal leaves the Garret Hart signature blank.' },
+      { type: 'fix', text: 'Sync controls at the top of every page no longer cover page content at any window width.' }
+    ]
+  },
   { v: 'v2026.10.02.68', date: '2026-10-02', title: 'Cost Estimate: equipment types per building; safer Restore Merge',
     items: [
       { type: 'feature', text: 'Cost Estimate, Cost by Building: each building now lists its equipment types (count, sampled, hours, cost) as sub-rows that add up to the building total.' },
