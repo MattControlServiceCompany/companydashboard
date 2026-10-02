@@ -43,6 +43,15 @@ function check(b, label) {
   assert.strictEqual(sumS, b.rows.reduce((s, r) => s + r.sampled, 0), label + ' sampled');
   const sumE = b.byBuilding.reduce((s, x) => s + (x.equipment || 0), 0);
   assert.strictEqual(sumE, b.rows.reduce((s, r) => s + r.count, 0), label + ' equipment');
+  // Per-type sub-rows sum exactly to each building's cost, hours, sampled, equipment.
+  b.byBuilding.filter((x) => !x.projectWide).forEach((x) => {
+    const tc = x.types.reduce((s, t) => s + cents(t.cost), 0) + cents(x.site.cost);
+    assert.strictEqual(tc, cents(x.cost), label + ' types cost ' + x.building);
+    const th = x.types.reduce((s, t) => s + cents(t.hours), 0) + cents(x.site.hours);
+    assert.strictEqual(th, cents(x.hours), label + ' types hours ' + x.building);
+    assert.strictEqual(x.types.reduce((s, t) => s + t.sampled, 0), x.sampled, label + ' types sampled');
+    assert.strictEqual(x.types.reduce((s, t) => s + t.equipment, 0), x.equipment, label + ' types equip');
+  });
   n++;
 }
 for (const sf of [0, 1, 2]) {
