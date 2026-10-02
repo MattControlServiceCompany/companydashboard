@@ -125,11 +125,46 @@
       localStorage.setItem(
         'en_pricing_catalog',
         JSON.stringify({
-          'N1-10K-2-D-8-BB-A': { list: 45, net: 27, contract: 18, computed_net: 27, category: 'Sensor', desc: 'Duct Temp Sensor 8in' },
-          'N1-10K-2-D-12-WP-A': { list: 52, net: 31.2, contract: 20.8, computed_net: 31.2, category: 'Sensor', desc: 'OAT Sensor Weatherproof' },
-          'N1-ZPS-LR-EZ-NT-IN-A': { list: 120, net: 72, contract: 48, computed_net: 72, category: 'Sensor', desc: 'Duct Static Pressure' },
-          'ZS2-ALC': { list: 95, net: 57, contract: 38, computed_net: 57, category: 'Sensor', desc: 'Zone Temp Wall Sensor' },
-          'ZS2-HC-ALC': { list: 145, net: 87, contract: 58, computed_net: 87, category: 'Sensor', desc: 'Zone CO2 Temp Wall Sensor' },
+          'N1-10K-2-D-8-BB-A': {
+            list: 45,
+            net: 27,
+            contract: 18,
+            computed_net: 27,
+            category: 'Sensor',
+            desc: 'Duct Temp Sensor 8in',
+          },
+          'N1-10K-2-D-12-WP-A': {
+            list: 52,
+            net: 31.2,
+            contract: 20.8,
+            computed_net: 31.2,
+            category: 'Sensor',
+            desc: 'OAT Sensor Weatherproof',
+          },
+          'N1-ZPS-LR-EZ-NT-IN-A': {
+            list: 120,
+            net: 72,
+            contract: 48,
+            computed_net: 72,
+            category: 'Sensor',
+            desc: 'Duct Static Pressure',
+          },
+          'ZS2-ALC': {
+            list: 95,
+            net: 57,
+            contract: 38,
+            computed_net: 57,
+            category: 'Sensor',
+            desc: 'Zone Temp Wall Sensor',
+          },
+          'ZS2-HC-ALC': {
+            list: 145,
+            net: 87,
+            contract: 58,
+            computed_net: 87,
+            category: 'Sensor',
+            desc: 'Zone CO2 Temp Wall Sensor',
+          },
         }),
       );
       localStorage.setItem(
@@ -147,7 +182,7 @@
       );
     </script>
 
-    <script src="file:///C:/Users/Matt Miller/AI/companydashboard/app/pricing-estimator.js"></script>
+    <script src="../app/pricing-estimator.js"></script>
 
     <script>
       // Exposed for tools/ce-totals-check.js via page.evaluate(() => window.__ceSnapshot())
