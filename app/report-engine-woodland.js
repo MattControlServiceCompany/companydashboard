@@ -688,6 +688,7 @@ function _wdLoadZoneSetpoints(projId, bldgName) {
       unoccHeat: num(pts.zoneUnoccHtgSetpoint),
       unoccCool: num(pts.zoneUnoccCoolSetpoint),
       complete: occHeat != null && occCool != null,
+      schedule: typeof emZoneScheduleDisplay === 'function' ? emZoneScheduleDisplay(row) : 'No schedule in file',
     });
   });
   zones.sort(function (a, c) {
@@ -2036,6 +2037,8 @@ function rptPageWoodlandBASCalc(n, d) {
           '</td><td class="rpt-n">' +
           sp(z.unoccCool) +
           '</td><td>' +
+          z.schedule +
+          '</td><td>' +
           (z.complete ? 'Both occupied setpoints found' : 'Occupied setpoint missing') +
           '</td></tr>'
         );
@@ -2056,7 +2059,7 @@ function rptPageWoodlandBASCalc(n, d) {
       ' of ' +
       chunk.length +
       ' zones on this sheet have both occupied setpoints on record.</div>' +
-      '<table class="rpt-table rpt-table-wrap rpt-mp-dense" style="table-layout:fixed"><thead><tr><th style="width:34%">Zone</th><th class="rpt-n" style="width:12%">Occupied Heating</th><th class="rpt-n" style="width:12%">Occupied Cooling</th><th class="rpt-n" style="width:12%">Unoccupied Heating</th><th class="rpt-n" style="width:12%">Unoccupied Cooling</th><th style="width:18%">Status</th></tr></thead><tbody>' +
+      '<table class="rpt-table rpt-table-wrap rpt-mp-dense" style="table-layout:fixed"><thead><tr><th style="width:24%">Zone</th><th class="rpt-n" style="width:11%">Occupied Heating</th><th class="rpt-n" style="width:11%">Occupied Cooling</th><th class="rpt-n" style="width:11%">Unoccupied Heating</th><th class="rpt-n" style="width:11%">Unoccupied Cooling</th><th style="width:16%">Effective Schedule</th><th style="width:16%">Status</th></tr></thead><tbody>' +
       rows +
       '</tbody></table>';
     pages.push(
