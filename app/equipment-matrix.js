@@ -5091,7 +5091,12 @@ function emGetColDefs(projId) {
     { key: 'category', label: 'Equipment Type', group: 'id', width: 130, isCategory: true },
     // 2026-09-23 (item 5ar): the imported Effective Schedules CSV's occupied period for this
     // row, when one was attached — see emAttachEffectiveSchedules / existingScheduleText.
-    { key: 'existingScheduleText', label: 'Effective schedule (one day, from WebCTRL export)', group: 'id', width: 220 },
+    {
+      key: 'existingScheduleText',
+      label: 'Effective schedule (one day, from WebCTRL export)',
+      group: 'id',
+      width: 220,
+    },
   ];
   for (var i = 0; i < checkCols14.length; i++) {
     var ck = checkCols14[i];
@@ -8482,7 +8487,10 @@ function emRenderBuildingDetailView(data, filters, buildingName) {
   html += '<th style="' + thCenter + '">Status</th>';
   html += '<th style="' + thCenter + '">Damper Position</th>';
   html += '<th style="' + thCenter + '">Discharge Air Temperature</th>';
-  html += '<th style="' + thStyle + '" title="Effective schedule (one day, from WebCTRL export)">Effective schedule (one day, from WebCTRL export)</th>';
+  html +=
+    '<th style="' +
+    thStyle +
+    '" title="Effective schedule (one day, from WebCTRL export)">Effective schedule (one day, from WebCTRL export)</th>';
   html += '</tr></thead>';
   html += '<tbody>';
 
@@ -8578,7 +8586,11 @@ function emRenderBuildingDetailView(data, filters, buildingName) {
       html += '<td style="' + tdCenter + '">' + dampDisplay + '</td>';
       html += '<td style="' + tdCenter + '">' + datDisplay + '</td>';
       html +=
-        '<td style="' + tdBase + 'color:var(--text2);white-space:nowrap">' + emHtmlEsc(emZoneScheduleDisplay(row)) + '</td>';
+        '<td style="' +
+        tdBase +
+        'color:var(--text2);white-space:nowrap">' +
+        emHtmlEsc(emZoneScheduleDisplay(row)) +
+        '</td>';
       html += '</tr>';
     }
   }
@@ -10803,7 +10815,8 @@ function emAttachEffectiveSchedules(pid, csvText, fileName) {
           stopStr: block.stopStr,
           rawText: p.scheduleText,
         };
-        row.existingScheduleText = emZoneScheduleDisplay(row) + ' (one day, from WebCTRL export; imported ' + importDate + ')';
+        row.existingScheduleText =
+          emZoneScheduleDisplay(row) + ' (one day, from WebCTRL export; imported ' + importDate + ')';
       } else {
         row.existingSchedule = { rawText: p.scheduleText };
         row.existingScheduleText = 'No occupied period in source file (imported ' + importDate + ')';
@@ -13802,6 +13815,10 @@ var GL36_CO2_DEFAULTS = {
   sport_stages: { ppm: 1391, label: 'Stages, Studios', group: 'Sports and Entertainment' },
 };
 
+/* afe7abb5: raw point names that are ONE temperature setpoint used for both heating and cooling.
+   Anchored on purpose: names with Heating/Cooling/Occupied/Active/Offset/Feedback/To-device words do not match. */
+var EM_COMBINED_SETPOINT_RE = /^\s*(?:(?:zone|room|space)\s+)?temp(?:erature)?\s+set\s?point\s*$/i;
+
 /* ── EM_POINT_CATEGORIES ────────────────────────────────────────────────────
    Structured per-equipment-type point category map.
    Each entry: { key, label, ashrae36Name, ashrae36Section, required,
@@ -15021,6 +15038,24 @@ var EM_POINT_CATEGORIES = {
 
   /* ── VAV (Single-Duct with Reheat, ASHRAE 36 §5.6) ────────────────── */
   vav: [
+    // afe7abb5: single combined Temperature Setpoint (heat = cool, deadband 0). Its own category,
+    // listed FIRST so the point is claimed here and not also by zoneTemp's /space temp/ (one point = one point).
+    // Optional: never counted as missing; emComputeCompliance marks coolSP/htgSP N/A when this is covered.
+    {
+      key: 'combinedSP',
+      label: 'Combined Temperature Setpoint (heat = cool)',
+      required: false,
+      ashrae36Name: 'Zone Temperature Setpoint (single, heat = cool)',
+      ashrae36Section: '3.1.1.1',
+      patterns: [EM_COMBINED_SETPOINT_RE],
+      aliases: [
+        'temperature setpoint',
+        'temperature set point',
+        'space temperature set point',
+        'zone temperature setpoint',
+        'room temperature setpoint',
+      ],
+    },
     {
       key: 'zoneTemp',
       label: 'Zone Air Temperature',
@@ -15579,6 +15614,24 @@ var EM_POINT_CATEGORIES = {
 
   /* ── FPB (Fan-Powered Box — Parallel or Series, ASHRAE 36 §5.7/5.8) ─ */
   fpb: [
+    // afe7abb5: single combined Temperature Setpoint (heat = cool, deadband 0). Its own category,
+    // listed FIRST so the point is claimed here and not also by zoneTemp's /space temp/ (one point = one point).
+    // Optional: never counted as missing; emComputeCompliance marks coolSP/htgSP N/A when this is covered.
+    {
+      key: 'combinedSP',
+      label: 'Combined Temperature Setpoint (heat = cool)',
+      required: false,
+      ashrae36Name: 'Zone Temperature Setpoint (single, heat = cool)',
+      ashrae36Section: '3.1.1.1',
+      patterns: [EM_COMBINED_SETPOINT_RE],
+      aliases: [
+        'temperature setpoint',
+        'temperature set point',
+        'space temperature set point',
+        'zone temperature setpoint',
+        'room temperature setpoint',
+      ],
+    },
     {
       key: 'zoneTemp',
       label: 'Zone Air Temperature',
@@ -15941,6 +15994,24 @@ var EM_POINT_CATEGORIES = {
 
   /* ── DDVAV (Dual Duct VAV, ASHRAE 36 §5.13) ────────────────────────── */
   ddvav: [
+    // afe7abb5: single combined Temperature Setpoint (heat = cool, deadband 0). Its own category,
+    // listed FIRST so the point is claimed here and not also by zoneTemp's /space temp/ (one point = one point).
+    // Optional: never counted as missing; emComputeCompliance marks coolSP/htgSP N/A when this is covered.
+    {
+      key: 'combinedSP',
+      label: 'Combined Temperature Setpoint (heat = cool)',
+      required: false,
+      ashrae36Name: 'Zone Temperature Setpoint (single, heat = cool)',
+      ashrae36Section: '3.1.1.1',
+      patterns: [EM_COMBINED_SETPOINT_RE],
+      aliases: [
+        'temperature setpoint',
+        'temperature set point',
+        'space temperature set point',
+        'zone temperature setpoint',
+        'room temperature setpoint',
+      ],
+    },
     {
       key: 'zoneTemp',
       label: 'Zone Air Temperature',
@@ -17770,6 +17841,24 @@ var EM_POINT_CATEGORIES = {
 
   /* ── M3 NEW TYPE: FCU (Fan Coil Unit / VRF indoor unit) ─────────────── */
   fcu: [
+    // afe7abb5: single combined Temperature Setpoint (heat = cool, deadband 0). Its own category,
+    // listed FIRST so the point is claimed here and not also by zoneTemp's /space temp/ (one point = one point).
+    // Optional: never counted as missing; emComputeCompliance marks coolSP/htgSP N/A when this is covered.
+    {
+      key: 'combinedSP',
+      label: 'Combined Temperature Setpoint (heat = cool)',
+      required: false,
+      ashrae36Name: 'Zone Temperature Setpoint (single, heat = cool)',
+      ashrae36Section: '3.1.1.1',
+      patterns: [EM_COMBINED_SETPOINT_RE],
+      aliases: [
+        'temperature setpoint',
+        'temperature set point',
+        'space temperature set point',
+        'zone temperature setpoint',
+        'room temperature setpoint',
+      ],
+    },
     {
       key: 'zoneTemp',
       label: 'Zone Air Temperature',
@@ -18994,6 +19083,24 @@ var EM_POINT_CATEGORIES = {
 
   /* ── M3 NEW TYPE: Zone (VVT zone-damper terminal) ───────────────────── */
   zone: [
+    // afe7abb5: single combined Temperature Setpoint (heat = cool, deadband 0). Its own category,
+    // listed FIRST so the point is claimed here and not also by zoneTemp's /space temp/ (one point = one point).
+    // Optional: never counted as missing; emComputeCompliance marks coolSP/htgSP N/A when this is covered.
+    {
+      key: 'combinedSP',
+      label: 'Combined Temperature Setpoint (heat = cool)',
+      required: false,
+      ashrae36Name: 'Zone Temperature Setpoint (single, heat = cool)',
+      ashrae36Section: '3.1.1.1',
+      patterns: [EM_COMBINED_SETPOINT_RE],
+      aliases: [
+        'temperature setpoint',
+        'temperature set point',
+        'space temperature set point',
+        'zone temperature setpoint',
+        'room temperature setpoint',
+      ],
+    },
     {
       key: 'zoneTemp',
       label: 'Zone Air Temperature',
@@ -20814,6 +20921,14 @@ function emComputeCompliance(equipRow, configFlags, customMappings) {
 
     totalRequired++;
 
+    // afe7abb5: a single combined Temperature Setpoint serves as heat = cool, so a missing
+    // separate heating/cooling setpoint is N/A, not missing. A real split point still counts.
+    if ((def.key === 'coolSP' || def.key === 'htgSP') && coveredKeys.combinedSP && !coveredKeys[def.key]) {
+      naPoints.push({ categoryKey: def.key, categoryLabel: def.label, reason: 'single combined setpoint' });
+      totalNA++;
+      continue;
+    }
+
     // Check if this category is N/A due to a config flag being false
     if (def.configFlag) {
       // Default flag value: look up EM_EQUIP_CONFIG_FLAGS for default
@@ -21065,11 +21180,61 @@ function emComputeSetpointCompliance(equipRow, configFlags, overrides) {
 
   var results = [];
 
-  // ── 5. Occupied heating setpoint ─────────────────────────────────────────
-  results.push(_makeResult('occHeat', 'Occ Heat Setpoint', occHeat, tempLimits.occHeat, 1));
+  // afe7abb5: a single combined Temperature Setpoint (no separate heating/cooling point) counts as
+  // heat = cool, deadband 0. It gets its own result ('occSingle'); occHeat/occCool/deadband are NA.
+  var hasCombined = false;
+  var combinedSp = null;
+  if (occHeat === null && occCool === null) {
+    var _spRaw = Object.assign({}, equipRow.pointsRaw || {}, equipRow.points || {});
+    var _spNames = Object.keys(_spRaw);
+    for (var _sni = 0; _sni < _spNames.length; _sni++) {
+      if (!EM_COMBINED_SETPOINT_RE.test(_spNames[_sni])) continue;
+      hasCombined = true;
+      var _cv = _toFloat(_spRaw[_spNames[_sni]]);
+      if (_cv !== null) {
+        combinedSp = _cv;
+        break;
+      }
+    }
+  }
+  function _naResult(checkKey, label, gl36Default) {
+    return {
+      checkKey: checkKey,
+      label: label,
+      actualValue: null,
+      gl36Default: gl36Default,
+      deadbandOtherValue: null,
+      status: 'NA',
+      deviationNote: null,
+      intentionalFlag: false,
+    };
+  }
 
-  // ── 6. Occupied cooling setpoint ─────────────────────────────────────────
-  results.push(_makeResult('occCool', 'Occ Cool Setpoint', occCool, tempLimits.occCool, 1));
+  if (hasCombined) {
+    // One value checked against the GL36 occupied heat..cool band (+/-1F).
+    var _bandMid = (tempLimits.occHeat + tempLimits.occCool) / 2;
+    var _bandHalf = Math.abs(tempLimits.occCool - tempLimits.occHeat) / 2 + 1;
+    var _sRes = _makeResult('occSingle', 'Occupied Combined Setpoint (heat = cool)', combinedSp, _bandMid, _bandHalf);
+    if (_sRes.status === 'DEVIATION') {
+      _sRes.deviationNote =
+        'Actual ' +
+        combinedSp +
+        '°F outside ASHRAE 36 occupied band ' +
+        (tempLimits.occHeat - 1) +
+        '–' +
+        (tempLimits.occCool + 1) +
+        '°F';
+    }
+    results.push(_sRes);
+    results.push(_naResult('occHeat', 'Occ Heat Setpoint', tempLimits.occHeat));
+    results.push(_naResult('occCool', 'Occ Cool Setpoint', tempLimits.occCool));
+  } else {
+    // ── 5. Occupied heating setpoint ─────────────────────────────────────────
+    results.push(_makeResult('occHeat', 'Occ Heat Setpoint', occHeat, tempLimits.occHeat, 1));
+
+    // ── 6. Occupied cooling setpoint ─────────────────────────────────────────
+    results.push(_makeResult('occCool', 'Occ Cool Setpoint', occCool, tempLimits.occCool, 1));
+  }
 
   // ── 7. Unoccupied heating setpoint ───────────────────────────────────────
   results.push(_makeResult('unoccHeat', 'Unocc Heat Setpoint', unoccHeat, tempLimits.unoccHeat, 1));
@@ -21083,7 +21248,12 @@ function emComputeSetpointCompliance(equipRow, configFlags, overrides) {
   // 1–<2°F → PASS with note 'below recommended 2f deadband'
   // ≥2°F  → PASS
   var dbEntry;
-  if (occCool === null || occHeat === null) {
+  if (hasCombined) {
+    // Combined setpoint: heat = cool by definition (deadband 0) — not a deadband violation, not missing.
+    dbEntry = _naResult('deadband', 'Deadband (Occupied Cooling − Occupied Heating)', tempLimits.deadbandMin);
+    dbEntry.deadbandOtherValue = tempLimits.deadbandRec;
+    dbEntry.intentionalFlag = spOvr['deadband'] === true;
+  } else if (occCool === null || occHeat === null) {
     dbEntry = {
       checkKey: 'deadband',
       label: 'Deadband (Occupied Cooling − Occupied Heating)',
