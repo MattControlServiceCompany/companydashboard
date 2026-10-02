@@ -218,6 +218,10 @@ async function scanHeaders(page, containerSel, label, results) {
       restoreBtn.click({ force: true }),
     ]);
     await chooser.setFiles(FIXTURE);
+    await page.waitForSelector('#rstApply', { timeout: 15000 });
+    await page.click('#rstApply');
+    await page.waitForSelector('#rstDone', { timeout: 60000 });
+    await page.click('#rstDone');
     await page.waitForTimeout(3000);
     await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {});
     await page.waitForTimeout(1500);
