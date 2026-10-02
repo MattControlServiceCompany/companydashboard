@@ -470,7 +470,12 @@ const plain = (x) => JSON.parse(JSON.stringify(x));
       const sumSummary = sd.buildings
         .filter((b) => pickB.indexOf(b.building) >= 0)
         .reduce((a, b) => a + Math.round(b.tiers.recommended.total * 100), 0);
+      // No `_all` cache (condensed tab path): totals built on demand equal the cached-path/footer total.
+      const fNoAll = wb._pricingComputeFilteredTotals(null, sub, e, 'p');
+      assert.strictEqual(fNoAll.grand, f.grand, 'condensed (no _all) == footer filtered total ' + pickB);
+      assert.deepStrictEqual(plain(fNoAll.rowShares), plain(f.rowShares), 'no-_all rowShares == footer ' + pickB);
       if (f.grand !== null) {
+        assert.strictEqual(Math.round(fNoAll.grand * 100), sumSummary, 'no-_all total == Summary sum ' + pickB);
         assert.strictEqual(Math.round(f.grand * 100), sumSummary, 'filtered total == Summary sum ' + pickB);
         assert.strictEqual(Math.round((f.phase1 + f.phase2) * 100), Math.round(f.grand * 100), 'phases foot');
         const sumRows = Object.keys(f.rowShares).reduce((a, k) => a + Math.round(f.rowShares[k] * 100), 0);

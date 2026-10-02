@@ -3588,7 +3588,14 @@ function _pricingComputeTotals(rows, estimate, projId) {
    the full estimate's. */
 function _pricingComputeFilteredTotals(allRows, filteredRows, estimate, projId) {
   var t = _pricingComputeTotals(filteredRows, estimate, projId);
-  if (!allRows || filteredRows.length === allRows.length || !_pricingWorkbookSettings(projId)) return t;
+  if (!_pricingWorkbookSettings(projId)) return t;
+  // No full-estimate rows given (cache absent): build them on demand, same builders the footer uses.
+  if (!allRows) {
+    var tr = estimate && estimate.tier;
+    var bld = tr === 'recommended' ? buildRecommendedRows : tr === 'full-scope' ? buildFullScopeRows : buildComplianceRows;
+    allRows = _pricingApplyQtyOverrides(projId, _pricingApplyLaborOverrides(projId, bld(projId)));
+  }
+  if (filteredRows.length === allRows.length) return t;
   var full = _pricingComputeTotals(allRows, estimate, projId);
   if (full.method !== 'workbook' || t.grand === null) return t;
   var p1C = 0,
@@ -7182,6 +7189,8 @@ function _pricingRenderCondensedTab(projId, el, estimate, tier) {
       })
     : baseRows;
 
+  _pricingRowCache[projId] = filteredRows;
+  _pricingRowCache[projId + '_all'] = baseRows;
   var agg = _pricingComputeCondensedRows(filteredRows, estimate);
   // Workbook mode: line totals are shares of the workbook Hardware / Programming totals (so the
   // subtotals match the footer figures) and the hourly Unit Price column is not shown.
