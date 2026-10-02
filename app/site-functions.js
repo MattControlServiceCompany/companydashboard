@@ -2296,6 +2296,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.02.72', date: '2026-10-02', title: 'ASHRAE 36 wording',
+    items: [
+      { type: 'change', text: 'BAS Trends, ECM Calculators, Equipment Matrix and Pricing Estimator: the labels and notes now say ASHRAE 36 instead of GL36, G36 or Guideline 36.' }
+    ]
+  },
   { v: 'v2026.10.02.71', date: '2026-10-02', title: 'Equipment Matrix combined setpoints, Audit Report setpoint review',
     items: [
       { type: 'fix', text: 'Equipment Matrix: a zone with a single combined temperature setpoint is now checked as its own setpoint instead of showing No Data.' },
