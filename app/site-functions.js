@@ -2296,6 +2296,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.01.65', date: '2026-10-01', title: 'Sync buttons no longer cover page content',
+    items: [
+      { type: 'fix', text: 'Sync status and unsynced-changes buttons no longer cover page content on narrow windows. They now sit in one row at the bottom of every page.' }
+    ]
+  },
   { v: 'v2026.10.01.64', date: '2026-10-01', title: 'Company pricing settings and typed overrides',
     items: [
       { type: 'feature', text: 'Audit Estimate and Cost Estimate: new "Company pricing settings (all projects)" section. It holds the role rates, percentages, tax defaults and default roles, with a reset and a change history. A change applies to every project on the Workbook method.' },
