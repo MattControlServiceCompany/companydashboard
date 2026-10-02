@@ -2296,6 +2296,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.01.67', date: '2026-10-01', title: 'Cost Estimate: Itemized Measures pages fit the page',
+    items: [
+      { type: 'fix', text: 'Cost Estimate proposal, Itemized Measures pages: long itemized tables no longer run past the page footer, and the closing disclaimer stays above it.' }
+    ]
+  },
   { v: 'v2026.10.01.66', date: '2026-10-01', title: 'Cost Estimate: building filter totals',
     items: [
       { type: 'fix', text: 'Cost Estimate: with a building filter on, the totals now show the share of the full estimate for those buildings, the same as the timeline and the summary.' },
