@@ -27,7 +27,7 @@
 //   - Ids match by String(id); the current record keeps its own id type.
 //   - Numeric-looking strings compare equal to numbers; the current type stays.
 //   - Output keeps the representation of the current value (JSON text stays
-//     text, object stays object); an absent key takes the backup's form.
+//     text, object stays object); an absent (or null) key takes the parsed backup value.
 //   - Derived meter caches are stripped from restored utility data.
 //   - A tombstoned key (deleted on the server on purpose) is skipped unless
 //     the caller lists it in opts.restoreDeleted.
@@ -161,7 +161,6 @@ const RestoreMerge = (() => {
         kind: 'records',
         path: [],
         idOf: ID,
-        newer: 'updatedAt',
         sortBy: '_origIdx',
         name: (r) => str(r.name || r.company || r.id),
       };
@@ -285,10 +284,7 @@ const RestoreMerge = (() => {
       const i = at.get(k);
       const c = out[i];
       let next = c;
-      if (pol.newer && isRec(b) && str(b[pol.newer]) > str(c[pol.newer]) && mode === 'merge') {
-        next = cleanRec(b, pol, level);
-        st.updated += 1;
-      } else if (mode === 'merge') {
+      if (mode === 'merge') {
         const own = pol.strip && pol.stripLevel === level ? stripFields(b, pol.strip) : Object.assign({}, b);
         if (child) delete own[child];
         next = fill(c, own, st);
@@ -390,9 +386,8 @@ const RestoreMerge = (() => {
 
   // Result in the representation the current value already has.
   function represent(value, currentRaw, cur, backupRaw, bak) {
-    if (currentRaw !== undefined) return isJsonText(currentRaw, cur) ? JSON.stringify(value) : value;
-    if (same(value, bak)) return backupRaw;
-    return isJsonText(backupRaw, bak) ? JSON.stringify(value) : value;
+    if (currentRaw !== undefined && currentRaw !== null) return isJsonText(currentRaw, cur) ? JSON.stringify(value) : value;
+    return value; // absent key: write the parsed value
   }
 
   // mergeValue(key, current, backup, mode, backupKeys)
@@ -425,7 +420,7 @@ const RestoreMerge = (() => {
     };
 
     // Absent key: take the backup (cleaned), in every mode.
-    if (cur === undefined) {
+    if (cur === undefined || cur === null) {
       if (!meaningful(bak)) return done(cur, false);
       const v = cleanAll(bak);
       st.added = Math.max(1, countAll(v));

@@ -233,7 +233,7 @@ function checkInvariants(key, cur, bak, mode, label) {
       const m = k === null ? res.find((x) => same(x, c)) : res.find((x) => idKey(x, pol.idOf) === k);
       assert.ok(m, label + ': current record lost ' + J(c));
       if (eff === 'add' || k === null) assert.ok(same(m, c), label + ': add changed record ' + k);
-      else if (!pol.newer)
+      else
         Object.keys(c).forEach((f) =>
           assert.ok(!RM.meaningful(c[f]) || same(m[f], c[f]), label + ': merge overwrote ' + f),
         );
@@ -632,7 +632,7 @@ t('T6 en_presented_savings: add adds a missing period; merge and replace never c
 // ---------------------------------------------------------------- T7 representation
 t('T7 stringified JSON keeps its representation; scalars never change type', () => {
   const s1 = checkInvariants('bldgperf_cfg_b1', undefined, '{"cscPct":0}', 'add', 'T7 absent string');
-  assert.strictEqual(s1.value, '{"cscPct":0}');
+  assert.deepStrictEqual(s1.value, { cscPct: 0 }); // ab7631eb: absent key is written parsed
   const o1 = checkInvariants(
     'bldgperf_cfg_b1',
     { cscPct: 1 },
@@ -1013,7 +1013,7 @@ t('T18 order: audit log stays chronological; leads keep _origIdx order after Add
     'merge',
     'T18 newer',
   );
-  assert.strictEqual(newer.value[0].n, 'new');
+  assert.strictEqual(newer.value[0].n, 'old'); // a filled value never changes, even when the backup is newer
   const older = checkInvariants(
     'ems_leads_v1',
     [{ id: 'l1', updatedAt: '2026-03-01', n: 'cur' }],
@@ -1304,3 +1304,31 @@ t('property / idempotence over generated cases (add, merge)', () => {
 });
 console.log('property cases: ' + J(COUNTS));
 console.log('\n' + pass + ' tests passed');
+
+t('18ac9ed0 merge: newer backup lead fills empty fields only, never drops local fields', () => {
+  const cur = [{ id: 1, name: 'A', notes: 'local notes', phone: '111', updatedAt: '2026-01-01', extra: 'x', email: '' }];
+  const bak = [{ id: 1, name: 'A-old', email: 'a@x.test', updatedAt: '2026-05-01' }];
+  const r = mv('ems_leads_v1', J(cur), J(bak), 'merge');
+  const v = JSON.parse(r.value)[0];
+  assert.strictEqual(v.name, 'A');
+  assert.strictEqual(v.notes, 'local notes');
+  assert.strictEqual(v.phone, '111');
+  assert.strictEqual(v.extra, 'x');
+  assert.strictEqual(v.email, 'a@x.test');
+  assert.strictEqual(v.updatedAt, '2026-01-01');
+  assert.strictEqual(JSON.parse(mv('ems_leads_v1', J(cur), J(bak), 'add').changed ? '[]' : '[]').length, 0);
+  assert.strictEqual(mv('ems_leads_v1', J(cur), J(bak), 'add').changed, false);
+  assert.strictEqual(mv('ems_leads_v1', J(cur), J(bak), 'replace').value, J(bak));
+});
+t('ab7631eb absent key: JSON-text backup value is parsed; null current counts as absent', () => {
+  const r = mv('en_tasks', undefined, J([{ id: 1, text: 't' }]), 'merge');
+  assert.ok(Array.isArray(r.value), 'absent key must be written parsed');
+  const k = mv('some_plain_key', undefined, J({ a: 1 }), 'add');
+  assert.deepStrictEqual(k.value, { a: 1 });
+  for (const mode of ['add', 'merge']) {
+    const n = mv('en_tasks', null, J([{ id: 1, text: 't' }]), mode);
+    assert.strictEqual(n.changed, true, 'null current blocked ' + mode);
+    assert.deepStrictEqual(n.value, [{ id: 1, text: 't' }]);
+  }
+});
+console.log(pass + ' tests passed (final)');
