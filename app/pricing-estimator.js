@@ -3592,7 +3592,8 @@ function _pricingComputeFilteredTotals(allRows, filteredRows, estimate, projId) 
   // No full-estimate rows given (cache absent): build them on demand, same builders the footer uses.
   if (!allRows) {
     var tr = estimate && estimate.tier;
-    var bld = tr === 'recommended' ? buildRecommendedRows : tr === 'full-scope' ? buildFullScopeRows : buildComplianceRows;
+    var bld =
+      tr === 'recommended' ? buildRecommendedRows : tr === 'full-scope' ? buildFullScopeRows : buildComplianceRows;
     allRows = _pricingApplyQtyOverrides(projId, _pricingApplyLaborOverrides(projId, bld(projId)));
   }
   if (filteredRows.length === allRows.length) return t;
@@ -5148,14 +5149,29 @@ function _pricingPartPriceCellHTML(projId, rowKey, row, typed) {
     : 'Catalog price. Type a price to replace it';
   return (
     '<div style="display:flex;align-items:center;gap:4px">' +
-    '<input type="number" min="0" step="0.01" value="' + shown + '"' +
-    ' placeholder="Enter price" aria-label="Part price" title="' + tip + '"' +
+    '<input type="number" min="0" step="0.01" value="' +
+    shown +
+    '"' +
+    ' placeholder="Enter price" aria-label="Part price" title="' +
+    tip +
+    '"' +
     ' style="width:100%;min-width:0;box-sizing:border-box;font-size:11px;padding:2px 5px;background:var(--s3);color:var(--text);border-radius:4px;text-align:right;font-variant-numeric:tabular-nums;border:1px solid ' +
-    (on ? 'var(--accent)' : 'var(--border)') + '"' +
-    ' onchange="_pricingPartPriceChange(\'' + projId + "','" + rowKey + '\',this.value)">' +
+    (on ? 'var(--accent)' : 'var(--border)') +
+    '"' +
+    ' onchange="_pricingPartPriceChange(\'' +
+    projId +
+    "','" +
+    rowKey +
+    '\',this.value)">' +
     (on
-      ? '<button type="button" onclick="_pricingPartPriceChange(\'' + projId + "','" + rowKey + '\',\'\')"' +
-        ' title="Reset to the catalog price' + (catalogPrice != null ? ' (' + _pricingFmt(catalogPrice) + ')' : '') + '"' +
+      ? '<button type="button" onclick="_pricingPartPriceChange(\'' +
+        projId +
+        "','" +
+        rowKey +
+        "','')\"" +
+        ' title="Reset to the catalog price' +
+        (catalogPrice != null ? ' (' + _pricingFmt(catalogPrice) + ')' : '') +
+        '"' +
         ' style="font-size:9px;padding:1px 4px;background:var(--s4);color:var(--text2);border:1px solid var(--border);border-radius:3px;cursor:pointer;line-height:1.2">&#8634;</button>'
       : '') +
     '</div>'
@@ -7095,6 +7111,32 @@ function _pricingSetCondensedView(projId, tier, condensed) {
   initCostEstimateTab(projId);
 }
 
+// Full Itemization view = Compliance/Full-Scope tier with the condensed view switched off.
+function _pricingFullItemizationTier(tier) {
+  return tier === 'compliance' || tier === 'full-scope';
+}
+
+function _pricingSetIncludeHardware(projId, on) {
+  var est = _pricingGetEstimate(projId);
+  est.includeHardware = !!on;
+  _pricingSetEstimate(projId, est);
+  initCostEstimateTab(projId);
+}
+
+function _pricingIncludeHardwareHTML(projId, estimate) {
+  return (
+    '<label class="btn btn-ghost btn-sm" style="cursor:pointer;display:inline-flex;align-items:center;gap:4px;margin-left:6px" ' +
+    'title="Show or hide hardware lines in this view. Hiding them also removes them from this view totals.">' +
+    '<input type="checkbox" id="pricing-include-hw-' +
+    projId +
+    '"' +
+    (estimate.includeHardware === false ? '' : ' checked') +
+    ' onchange="_pricingSetIncludeHardware(\'' +
+    projId +
+    '\',this.checked)" style="cursor:pointer"> Include hardware</label>'
+  );
+}
+
 function _pricingCondensedToggleHTML(projId, tier, isCondensed) {
   return isCondensed
     ? '<button class="btn btn-ghost btn-sm" onclick="_pricingSetCondensedView(\'' +
@@ -8818,6 +8860,14 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     }
   });
 
+  // "Include hardware" (Full Itemization view only): OFF drops every phase-1 hardware row before
+  // totals, so the table and the footer both exclude hardware. Per-project, saved on the estimate.
+  if (_pricingFullItemizationTier(tier) && estimate.includeHardware === false) {
+    baseRows = baseRows.filter(function (r) {
+      return r.phase !== 1;
+    });
+  }
+
   var filteredRows = filterBldg
     ? baseRows.filter(function (r) {
         return r.building === filterBldg;
@@ -8989,7 +9039,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   // forever once opted out, since condensedTier is a persisted per-project preference.
   var _condensedToggleBackHTML =
     (tier === 'compliance' || tier === 'full-scope') && estimate.condensedTier && estimate.condensedTier[tier] === false
-      ? _pricingCondensedToggleHTML(projId, tier, false)
+      ? _pricingCondensedToggleHTML(projId, tier, false) + _pricingIncludeHardwareHTML(projId, estimate)
       : '';
   var toolbarHTML = _pricingBuildToolbarHTML(projId, tier, {
     allBuildings: allBuildings,
