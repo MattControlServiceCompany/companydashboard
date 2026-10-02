@@ -172,7 +172,7 @@
     { id: 'sensor_investigation', label: 'Sensor investigation', role: 'PE' },
     { id: 'commissioning', label: 'Commissioning', role: 'CO' },
     { id: 'training', label: 'Training', role: 'TR' },
-    { id: 'network_ip', label: 'Network and IP', role: 'IT' },
+    { id: 'network_ip', label: 'Network and internet address', role: 'IT' },
     { id: 'engineering_design', label: 'Engineering and design', role: 'DE' },
     { id: 'monthly_service', label: 'Monthly service', role: 'PE' },
     { id: 'meetings', label: 'Meetings', role: 'PE' },

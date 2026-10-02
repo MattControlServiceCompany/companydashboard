@@ -1442,7 +1442,7 @@ function auditEstCompanySettingsHTML(pid) {
         (tiedTo
           ? '<span title="This wage always equals the ' + _auditEstEsc(tiedName) + ' wage. Change it there.">Same as ' + _auditEstEsc(tiedName) + '</span>'
           : _auditEstCfgInput(pid, 'rate', r.code, Math.round(shown * 100) / 100, dflt, '0.01', 76,
-          'Hourly wage for ' + r.name + '. Payroll taxes, insurance and benefits are added on top of it.', ' $/hr')) +
+          'Hourly wage for ' + r.name + '. Payroll taxes, insurance and benefits are added on top of it.', ' per hour')) +
         '</td><td class="ch-tbl-col-type-currency" title="Wage plus payroll taxes, insurance and benefits">' +
         _auditEstFmt(cost[i].P) + '</td></tr>'
       );
@@ -1528,7 +1528,7 @@ function auditEstCompanySettingsHTML(pid) {
     '<summary>Company pricing settings (all projects)</summary>' +
     '<div class="ae-note" style="margin:4px 0 8px">A changed value has an accent border and a reset button. Reset puts back the default. A project can keep its own tax state, tax rate, or role for a work type. Those projects ignore the company value for that field.</div>' +
     '<div class="ae-wb-grid">' +
-    tbl('<th class="ae-left">Labor role</th><th>Base rate $/hr</th><th>Cost $/hr</th>', rateRows) +
+    tbl('<th class="ae-left">Labor role</th><th>Base rate per hour</th><th>Cost per hour</th>', rateRows) +
     '<div style="display:flex;flex-direction:column;gap:12px">' +
     tbl('<th class="ae-left">Percentage line</th><th>Percent</th>', pctRows) +
     tbl('<th class="ae-left">Tax default</th><th class="ae-left">Value</th>', taxRows) +
