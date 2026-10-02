@@ -3377,24 +3377,17 @@ function emExtractEquipmentGroups(rows, colMap) {
       var category = _cpNameBase || emClassifyEquipType(_cpEquipName);
 
       // Group key: building + full control program (location is not part of the key).
-      // Identity: building + control program, plus its full BACnet path.
-      // Groups are first held under a path-root key, so two different pieces of equipment that
-      // share a name stay separate no matter what order the CSV lists them in. After the loop
-      // (see "finalize keys" below) a name that is unique keeps the plain id building||equipName;
-      // a name shared by several paths gets a stable id per root, never an order number.
+      // Identity: building + control program. Same building + same name is the same equipment
+      // (splitting same-name units by BACnet path needs a data migration and is a separate item).
       var groupKey = building + '||' + equipName;
-      var _thisPathRoot = bacnetPath; // full BACnet path of the control program: the stable identity
-      var _internalKey = groupKey + '||@' + _thisPathRoot;
-      if (!groups.has(_internalKey)) {
-        groups.set(_internalKey, {
+      if (!groups.has(groupKey)) {
+        groups.set(groupKey, {
           building: building,
           floor: wfloor,
           location: location,
           equipName: equipName,
           equipTypeStr: equipName,
           category: category,
-          bacnetPathRoot: _thisPathRoot,
-          baseKey: groupKey,
           bacnetLocation: bacnetPath, // 2224d15d: full BACnet path for integration-stub detection at audit time
           checkValues: {},
           pointValues: {},
@@ -3402,7 +3395,7 @@ function emExtractEquipmentGroups(rows, colMap) {
           colMap: colMap,
         });
       }
-      var wgroup = groups.get(_internalKey);
+      var wgroup = groups.get(groupKey);
 
       // M4: Capture EVERY raw point name→value in rawPointMap (0-safe: skip only null/undefined).
       // pointVal from CSV trim() is always a string, never null/undefined, so store unconditionally
@@ -3553,19 +3546,7 @@ function emExtractEquipmentGroups(rows, colMap) {
         }
       }
     });
-    // finalize keys: unique name -> plain id; shared name -> the lowest path root keeps the plain
-    // id (so older stored rows still match) and every other root gets building||name||@root.
-    var _rootsByBase = {};
-    groups.forEach(function (grp) {
-      (_rootsByBase[grp.baseKey] = _rootsByBase[grp.baseKey] || []).push(grp.bacnetPathRoot);
-    });
-    var finalGroups = new Map();
-    groups.forEach(function (grp) {
-      var roots = _rootsByBase[grp.baseKey].slice().sort();
-      var key = roots[0] === grp.bacnetPathRoot ? grp.baseKey : grp.baseKey + '||@' + grp.bacnetPathRoot;
-      finalGroups.set(key, grp);
-    });
-    return finalGroups;
+    return groups;
   }
 
   // ── Enriched 45-column matrix format (original) ──
@@ -3964,10 +3945,17 @@ function emSaveMatrix(projId, data) {
 // Fields a CSV import owns. When an incoming row matches a stored row by id, ONLY these are
 // overwritten; every other field (notes, editedAt, existingSchedule*, custom columns, physical
 // attributes, data.edits) belongs to the user and is kept.
-// category and subtype are derived from the points (and re-derived when a matrix loads), so they are
-// only overwritten when one of the CSV data fields actually changed.
-var EM_CSV_DATA_FIELDS = ['checks', 'points', 'pointsRaw', 'bacnetLocation', 'location', 'floor'];
-var EM_CSV_OWNED_FIELDS = EM_CSV_DATA_FIELDS.concat(['category', 'subtype']);
+// A re-import merges PER POINT NAME: points in the CSV update or add, points not in the CSV are kept
+// (a partial CSV, for example an airflow-only export, must never shrink a row). Category and subtype
+// only change when the new CSV had at least as many points as the stored row AND the new class is more
+// specific (stored class is "other"/blank); they are never downgraded.
+function emMergePointMaps(oldMap, newMap) {
+  var out = {};
+  var k;
+  for (k in oldMap || {}) out[k] = oldMap[k];
+  for (k in newMap || {}) out[k] = newMap[k];
+  return out;
+}
 
 function emMergeIntoMatrix(existingData, newRows) {
   var existing = existingData && existingData.rows ? existingData.rows : [];
@@ -3992,19 +3980,36 @@ function emMergeIntoMatrix(existingData, newRows) {
     } else if (touched[nr.id]) {
       ambiguousCount++;
     } else {
+      touched[nr.id] = true;
       var changed = false;
-      for (var f = 0; f < EM_CSV_DATA_FIELDS.length; f++) {
-        var fk = EM_CSV_DATA_FIELDS[f];
-        if (JSON.stringify(old[fk] === undefined ? null : old[fk]) !== JSON.stringify(nr[fk] === undefined ? null : nr[fk])) {
+      var oldPointCount = Object.keys(old.pointsRaw || {}).length;
+      var newPointCount = Object.keys(nr.pointsRaw || {}).length;
+      ['pointsRaw', 'points'].forEach(function (mapKey) {
+        var mergedMap = emMergePointMaps(old[mapKey], nr[mapKey]);
+        if (JSON.stringify(mergedMap) !== JSON.stringify(old[mapKey] || {})) {
+          old[mapKey] = mergedMap;
           changed = true;
         }
+      });
+      // checks: keep the stored value unless the CSV has a non-blank one
+      var mergedChecks = {};
+      var ck;
+      for (ck in old.checks || {}) mergedChecks[ck] = old.checks[ck];
+      for (ck in nr.checks || {}) if (nr.checks[ck] !== '' && nr.checks[ck] != null) mergedChecks[ck] = nr.checks[ck];
+      if (JSON.stringify(mergedChecks) !== JSON.stringify(old.checks || {})) {
+        old.checks = mergedChecks;
+        changed = true;
       }
-      if (changed) {
-        for (var g = 0; g < EM_CSV_OWNED_FIELDS.length; g++) {
-          old[EM_CSV_OWNED_FIELDS[g]] = nr[EM_CSV_OWNED_FIELDS[g]];
+      ['bacnetLocation', 'location', 'floor'].forEach(function (fk) {
+        if (nr[fk] && nr[fk] !== old[fk] && !old[fk]) {
+          old[fk] = nr[fk];
+          changed = true;
         }
+      });
+      if (changed && newPointCount >= oldPointCount) {
+        if ((!old.category || old.category === 'other') && nr.category && nr.category !== 'other') old.category = nr.category;
+        if (!old.subtype && nr.subtype) old.subtype = nr.subtype;
       }
-      touched[nr.id] = true;
       if (changed) updatedCount++;
       else unchangedCount++;
     }
