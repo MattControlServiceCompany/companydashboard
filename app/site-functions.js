@@ -2296,6 +2296,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.02.71', date: '2026-10-02', title: 'Equipment Matrix combined setpoints, Audit Report setpoint review',
+    items: [
+      { type: 'fix', text: 'Equipment Matrix: a zone with a single combined temperature setpoint is now checked as its own setpoint instead of showing No Data.' },
+      { type: 'fix', text: 'Audit Report, Setpoint Programming Review: buildings with no zone setpoint data no longer say Not Scheduled.' }
+    ]
+  },
   { v: 'v2026.10.02.70', date: '2026-10-02', title: 'Cost Estimate phase amounts, plainer labels',
     items: [
       { type: 'fix', text: 'Cost Estimate: Hardware and Programming phase amounts now price the programming hours on their own as Phase 2, and Phase 1 is the total minus Phase 2, so hardware costs no longer show up in the Programming amount. The grand total does not change.' },
