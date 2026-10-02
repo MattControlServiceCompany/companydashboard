@@ -77,7 +77,7 @@ function loadFn(file, fnName) {
 }
 
 const SRC_FILE = REPO + '/app/site-functions.js';
-const fns = [loadFn(SRC_FILE, '_waitForDBReadyForBackup'), loadFn(SRC_FILE, 'siteBackup')].join('\n\n');
+const fns = [loadFn(SRC_FILE, '_waitForDBReadyForBackup'), loadFn(SRC_FILE, '_downloadJson'), loadFn(SRC_FILE, 'siteBackup')].join('\n\n');
 
 // ─── Build one fresh sandbox per case: a SYNTHETIC fake-DB/localStorage/document/Blob/URL,
 // matching the real DB API shape (isReady/getAll) and the real 'dbReady' window event
