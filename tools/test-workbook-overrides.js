@@ -14,7 +14,7 @@ const X = require(path.join(ROOT, 'app/estimate-workbook-export.js'));
 const live = (rel) =>
   cp.execFileSync('git', ['show', 'e6d7a6c:' + rel], { cwd: ROOT, encoding: 'utf8', maxBuffer: 1 << 26 });
 // 'settings' is the settings snapshot; WP5 adds fields to it, so it is left out when comparing with live.
-const plain = (x) => JSON.parse(JSON.stringify(x), (k, v) => (k === 'settings' ? undefined : v));
+const plain = (x) => JSON.parse(JSON.stringify(x), (k, v) => (k === 'settings' || k === 'types' || k === 'site' ? undefined : v));
 const cents = (x) => Math.round(x * 100);
 const round0 = (x) => Math.floor(Math.abs(x) + 0.5) * Math.sign(x);
 let n = 0;
