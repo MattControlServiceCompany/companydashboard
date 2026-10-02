@@ -44,7 +44,8 @@ const RestoreMerge = (() => {
     [/^en_utility_null$/, 'junk key'],
   ];
   // Derived per-meter caches: saveUtilityData() deletes them before every write.
-  const METER_CACHE_FIELDS = ['_savingsCache', '_savingsCacheKey', '_reg', '_savingsByYM', '_unitSavByCalMo'];
+  // The one list lives in app/db.js (DB.DERIVED_METER_FIELDS); db.js loads before this file.
+  const METER_CACHE_FIELDS = DB.DERIVED_METER_FIELDS;
 
   // [test, plain-English label]. First match wins.
   const LABELS = [

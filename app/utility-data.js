@@ -861,11 +861,9 @@ function saveUtilityData(pid) {
     // getNormRows() — safe to delete from the live in-memory objects.
     (utilityData[pid].buildings || []).forEach(function (b) {
       (b.meters || []).forEach(function (m) {
-        delete m._savingsCache;
-        delete m._savingsCacheKey;
-        delete m._reg;
-        delete m._savingsByYM;
-        delete m._unitSavByCalMo;
+        DB.DERIVED_METER_FIELDS.forEach(function (f) {
+          delete m[f];
+        });
       });
     });
     const _serialized = JSON.stringify(utilityData[pid]);
