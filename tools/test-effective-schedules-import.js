@@ -90,8 +90,8 @@ assert(src.includes('function _emParseScheduleBlock'), 'source contains _emParse
 assert(src.includes('function emTriggerEffectiveSchedulesImport'), 'source contains the import button handler');
 assert(src.includes('function emShowEffectiveSchedulesResult'), 'source reports the import result (matched/unmatched)');
 assert(
-  src.includes('nr.existingSchedule = old.existingSchedule || nr.existingSchedule'),
-  'emMergeIntoMatrix preserves existingSchedule across a later BAS Points CSV re-import',
+  src.includes('skippedCount++'),
+  'emMergeIntoMatrix skips rows that already exist, so an attached schedule survives a later BAS Points CSV re-import',
 );
 
 const sandbox = {

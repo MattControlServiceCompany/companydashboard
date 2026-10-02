@@ -3979,24 +3979,23 @@ function emSaveMatrix(projId, data) {
 
 function emMergeIntoMatrix(existingData, newRows) {
   var existing = existingData && existingData.rows ? existingData.rows : [];
+  // Dedup by id: an equipment row that already exists is kept exactly as stored (notes, edits,
+  // attached schedules and all) and the incoming copy is skipped. Counts are returned so the
+  // import summary can tell the user how many rows were added vs skipped as duplicates.
   var byId = {};
   for (var i = 0; i < existing.length; i++) {
     byId[existing[i].id] = existing[i];
   }
+  var addedCount = 0;
+  var skippedCount = 0;
   for (var j = 0; j < newRows.length; j++) {
     var nr = newRows[j];
     if (byId[nr.id]) {
-      var old = byId[nr.id];
-      nr.notes = old.notes || nr.notes;
-      nr.editedAt = old.editedAt || nr.editedAt;
-      // 2026-09-23 (item 5ar): keep an attached Effective Schedules import across future
-      // BAS Points CSV re-imports — same preservation pattern as notes/editedAt above.
-      nr.existingSchedule = old.existingSchedule || nr.existingSchedule;
-      nr.existingScheduleText = old.existingScheduleText || nr.existingScheduleText;
-      nr.existingScheduleImportedAt = old.existingScheduleImportedAt || nr.existingScheduleImportedAt;
-      nr.existingScheduleFileName = old.existingScheduleFileName || nr.existingScheduleFileName;
+      skippedCount++;
+    } else {
+      byId[nr.id] = nr;
+      addedCount++;
     }
-    byId[nr.id] = nr;
   }
   var merged = [];
   var seen = {};
@@ -4042,13 +4041,19 @@ function emMergeIntoMatrix(existingData, newRows) {
     return (a || '').toLowerCase() < (b || '').toLowerCase() ? -1 : 1;
   });
 
-  return { rows: merged, importedAt: new Date().toISOString(), buildings: buildings };
+  return {
+    rows: merged,
+    importedAt: new Date().toISOString(),
+    buildings: buildings,
+    addedCount: addedCount,
+    skippedCount: skippedCount,
+  };
 }
 
 /* ── PHASE 3: VIEW SCAFFOLD ── */
 
 var _emPendingFiles = [];
-var _emImportMode = 'merge'; // 'merge' = add to existing data; 'replace' = clear and reimport
+var _emImportMode = 'merge'; // button label only: 'merge' = Import CSVs, 'reimport' = Re-Import CSVs. Both add new equipment and skip duplicates; neither removes existing equipment.
 // Module-level HVAC priority map — used at import time (emMergeIntoMatrix) and display time (emRenderTable, emRenderAuditTable)
 var _emTypePriority = {
   ahu: 0,
@@ -4626,10 +4631,6 @@ function emShowUploadPanel(btn, mode, pid) {
     return;
   }
 
-  // Re-Import mode requires confirmation before opening the panel
-  if (resolvedMode === 'replace') {
-    if (!confirm('This will replace all existing equipment data for this project. Continue?')) return;
-  }
   _emImportMode = resolvedMode;
   // Lock in the target pid at panel-open time so file-drop cannot use a stale pid
   _emUploadTargetPid = resolvedPid;
@@ -4660,7 +4661,7 @@ function emCloseUploadModal(btn, resolvedMode) {
   _emUploadTargetPid = null;
   var backdrop = document.getElementById('em-upload-modal-backdrop');
   if (backdrop) backdrop.parentNode.removeChild(backdrop);
-  if (btn) btn.textContent = resolvedMode === 'replace' ? 'Re-Import CSVs' : 'Import CSVs';
+  if (btn) btn.textContent = resolvedMode === 'reimport' ? 'Re-Import CSVs' : 'Import CSVs';
 }
 
 /* ── Effective Schedules CSV import — file picker + result modal (item 5ar) ──
@@ -4982,7 +4983,7 @@ function emRenderToolbar(data, pid, projBadge) {
     pid +
     '\')" style="height:28px;font-size:11px">Import CSVs</button>' +
     (data.rows && data.rows.length > 0
-      ? '<button class="btn btn-ghost btn-sm" onclick="emShowUploadPanel(this,\'replace\',\'' +
+      ? '<button class="btn btn-ghost btn-sm" onclick="emShowUploadPanel(this,\'reimport\',\'' +
         pid +
         '\')" style="height:28px;font-size:11px;color:#b45309;border-color:#d97706">Re-Import CSVs</button>'
       : '') +
@@ -11362,42 +11363,20 @@ function emHandleImport(pid) {
 
     // Only save to DB when a project is selected
     if (pid) {
-      // In replace mode: snapshot old notes/editedAt and old buildings BEFORE wiping, so we can
-      // (a) re-apply hand-typed notes to matching rows, and (b) warn about removed buildings.
-      var _replaceNotesMap = {}; // id → { notes, editedAt }
-      var _oldBuildingSet = {}; // building name → true
-      if (_emImportMode === 'replace') {
-        var _oldData = emLoadMatrix(pid) || { rows: [], buildings: [] };
-        (_oldData.rows || []).forEach(function (r) {
-          if (r.id) {
-            _replaceNotesMap[r.id] = { notes: r.notes || '', editedAt: r.editedAt || '' };
-          }
-          if (r.building) _oldBuildingSet[r.building] = true;
-        });
-      }
-
-      // merge mode: preserve existing rows and dedup by id; replace mode: start fresh
-      var baseData =
-        _emImportMode === 'replace' ? { rows: [], buildings: [] } : emLoadMatrix(pid) || { rows: [], buildings: [] };
+      // Import always merges into the stored matrix: new equipment is appended, rows that
+      // already exist (same building + control program) are skipped, and nothing is removed.
+      var baseData = emLoadMatrix(pid) || { rows: [], buildings: [] };
       var merged = emMergeIntoMatrix(baseData, allRows);
-
-      // Re-apply preserved notes/editedAt onto newly merged rows (replace mode only).
-      // emMergeIntoMatrix ran with empty existing[], so the preservation block inside it
-      // never fired. Walk the merged rows here and restore from our snapshot.
-      if (_emImportMode === 'replace') {
-        var _notesPreservedCount = 0;
-        merged.rows.forEach(function (r) {
-          var saved = _replaceNotesMap[r.id];
-          if (saved) {
-            if (saved.notes && !r.notes) {
-              r.notes = saved.notes;
-              _notesPreservedCount++;
-            }
-            if (saved.editedAt && !r.editedAt) r.editedAt = saved.editedAt;
-          }
-        });
-      }
-      merged.totalBASPoints = totalRawRows;
+      // Point total grows only by the points of rows that were actually added (skipped duplicates add none).
+      var _baseIds = {};
+      (baseData.rows || []).forEach(function (r) {
+        _baseIds[r.id] = true;
+      });
+      var _addedPoints = 0;
+      merged.rows.forEach(function (r) {
+        if (!_baseIds[r.id]) _addedPoints += Object.keys(r.pointsRaw || {}).length;
+      });
+      merged.totalBASPoints = (baseData.totalBASPoints || 0) + _addedPoints;
       // Show "Saving..." while awaiting the real IDB commit (tx.oncomplete).
       // We do NOT show "Import complete" until the write is fully durable on disk.
       if (statusEl) statusEl.textContent = 'Saving to database...';
@@ -11431,15 +11410,16 @@ function emHandleImport(pid) {
             console.warn('[EquipMatrix] navigator.storage.persist() failed:', e);
           });
       }
-      var modeLabel = _emImportMode === 'replace' ? 'Re-imported' : 'Imported';
       var successMsg =
-        modeLabel +
-        ' ' +
-        totalRawRows.toLocaleString() +
-        ' rows from ' +
+        'Import complete — ' +
+        merged.addedCount.toLocaleString() +
+        ' equipment added, ' +
+        merged.skippedCount.toLocaleString() +
+        ' skipped as duplicates (' +
         pending +
         ' file' +
-        (pending !== 1 ? 's' : '');
+        (pending !== 1 ? 's' : '') +
+        ')';
       // Compute category breakdown from allRows (the newly imported rows)
       var catCounts = {};
       var catOrder = ['ahu', 'vav', 'fpb', 'ddvav', 'hwp', 'chwp', 'ct', 'lighting', 'other'];
@@ -11479,58 +11459,13 @@ function emHandleImport(pid) {
           catLines.push('<div style="padding:1px 0">' + label + '</div>');
         }
       });
-      // Compute diff for replace mode: compare old row IDs vs new row IDs.
-      var _replaceDiffHtml = '';
-      if (_emImportMode === 'replace') {
-        var _newIdSet = {};
-        merged.rows.forEach(function (r) {
-          _newIdSet[r.id] = true;
-        });
-        var _oldIds = Object.keys(_replaceNotesMap);
-        var _addedCount = 0;
-        var _removedCount = 0;
-        var _updatedCount = 0;
-        merged.rows.forEach(function (r) {
-          if (_replaceNotesMap[r.id]) {
-            _updatedCount++;
-          } else {
-            _addedCount++;
-          }
-        });
-        _oldIds.forEach(function (id) {
-          if (!_newIdSet[id]) _removedCount++;
-        });
-        var _removedBuildings = Object.keys(_oldBuildingSet).filter(function (b) {
-          return !importBuildings[b];
-        });
-        var _diffParts = [];
-        if (_addedCount > 0) _diffParts.push('+' + _addedCount + ' added');
-        if (_removedCount > 0) _diffParts.push('−' + _removedCount + ' removed');
-        if (_updatedCount > 0) _diffParts.push(_updatedCount + ' updated');
-        if (_notesPreservedCount > 0) _diffParts.push(_notesPreservedCount + ' notes preserved');
-        _replaceDiffHtml =
-          '<div style="margin-top:6px;border-top:1px solid var(--border);padding-top:6px;font-weight:600;color:var(--text)">' +
-          'Changes vs. previous import:</div>' +
-          '<div style="padding:1px 0">' +
-          (_diffParts.length ? _diffParts.join(' &nbsp;|&nbsp; ') : 'No changes') +
-          '</div>';
-        if (_removedBuildings.length > 0) {
-          _replaceDiffHtml +=
-            '<div style="margin-top:6px;background:#fef3c7;border:1px solid #f59e0b;border-radius:4px;padding:6px 8px;color:#92400e;font-weight:600">' +
-            'WARNING: The following building' +
-            (_removedBuildings.length > 1 ? 's were' : ' was') +
-            ' in the previous import but NOT in the new CSVs — those rows were removed:<br>' +
-            '<span style="font-weight:400">' +
-            _removedBuildings
-              .map(function (b) {
-                return '&bull; ' + b;
-              })
-              .join('<br>') +
-            '</span>' +
-            '<br><span style="font-weight:400;font-style:italic">To keep those buildings, re-import all CSVs together or use Import (not Re-Import).</span>' +
-            '</div>';
-        }
-      }
+      // Added vs skipped-as-duplicate counts, so a re-import never looks like it duplicated data.
+      var _addSkipHtml =
+        '<div style="margin-top:6px;border-top:1px solid var(--border);padding-top:6px;font-weight:600;color:var(--text)">' +
+        merged.addedCount.toLocaleString() +
+        ' new equipment added &nbsp;|&nbsp; ' +
+        merged.skippedCount.toLocaleString() +
+        ' skipped as duplicates (already in the matrix)</div>';
 
       var summaryHtml =
         '<div style="font-size:11px;color:var(--text2);line-height:1.6;background:var(--s3);border-radius:4px;padding:8px 10px">' +
@@ -11545,7 +11480,7 @@ function emHandleImport(pid) {
         ' of ' +
         allRows.length.toLocaleString() +
         '</div>' +
-        _replaceDiffHtml +
+        _addSkipHtml +
         (otherRate > 0.2
           ? '<div style="margin-top:6px;color:#f59e0b;font-weight:600">⚠ High unclassified rate — some equipment types may need mapping</div>'
           : '') +
@@ -11558,7 +11493,12 @@ function emHandleImport(pid) {
       if (successWrap) {
         successWrap.style.display = 'flex';
         if (successMsgEl)
-          successMsgEl.textContent = modeLabel + ' complete — ' + allRows.length.toLocaleString() + ' equipment rows';
+          successMsgEl.textContent =
+            'Import complete — ' +
+            merged.addedCount.toLocaleString() +
+            ' added, ' +
+            merged.skippedCount.toLocaleString() +
+            ' skipped as duplicates';
       }
       if (summaryEl) {
         summaryEl.innerHTML = summaryHtml;
