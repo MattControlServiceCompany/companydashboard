@@ -2296,6 +2296,13 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.02.68', date: '2026-10-02', title: 'Cost Estimate: equipment types per building; safer Restore Merge',
+    items: [
+      { type: 'feature', text: 'Cost Estimate, Cost by Building: each building now lists its equipment types (count, sampled, hours, cost) as sub-rows that add up to the building total.' },
+      { type: 'fix', text: 'Restore Merge in Settings: matched leads now keep their existing entries and only empty fields are filled from the backup.' },
+      { type: 'fix', text: 'Restore Merge in Settings: text values in a backup are kept as written instead of being converted.' }
+    ]
+  },
   { v: 'v2026.10.01.67', date: '2026-10-01', title: 'Cost Estimate: Itemized Measures pages fit the page',
     items: [
       { type: 'fix', text: 'Cost Estimate proposal, Itemized Measures pages: long itemized tables no longer run past the page footer, and the closing disclaimer stays above it.' }
