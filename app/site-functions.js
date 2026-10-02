@@ -2296,6 +2296,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.02.70', date: '2026-10-02', title: 'Cost Estimate phase amounts, plainer labels',
+    items: [
+      { type: 'fix', text: 'Cost Estimate: Hardware and Programming phase amounts now price the programming hours on their own as Phase 2, and Phase 1 is the total minus Phase 2, so hardware costs no longer show up in the Programming amount. The grand total does not change.' },
+      { type: 'change', text: 'Cost Estimate and report headers: labels now read "per hour" instead of "$/hr" and spell out "IP" in full.' }
+    ]
+  },
   { v: 'v2026.10.02.69', date: '2026-10-02', title: 'Zone schedules, Cost Estimate hardware toggle, sync controls',
     items: [
       { type: 'feature', text: 'Equipment Matrix Summary drill-down and the Woodland report: each zone now shows its own effective schedule for one day, taken from the WebCTRL export, or a note when the file has none.' },

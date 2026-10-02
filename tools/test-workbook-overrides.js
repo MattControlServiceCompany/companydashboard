@@ -353,6 +353,9 @@ function auditBox(store, srcs) {
     return sb;
   }
 
+  // The phase split (Phase 2 = programming alone, Phase 1 = rest) deliberately differs from live v.63; compare everything else (per-building hw/lb/total shares follow the split too).
+  const nonPhase = (t, shares) =>
+    JSON.parse(JSON.stringify(t, (k, v) => (k === 'phase1' || k === 'phase2' || k === 'rowShares' || (shares && (k === 'hw' || k === 'lb' || k === 'total')) ? undefined : v)));
   // C1. nothing stored: totals, summary data, export sets identical to live v.63; nothing written
   {
     const store = { en_pricing_catalog: catalog };
@@ -360,13 +363,13 @@ function auditBox(store, srcs) {
     const lv = ceBox({ en_pricing_catalog: catalog }, live('app/pricing-estimator.js'), live('app/audit-estimate.js'));
     for (const k of Object.keys(T))
       assert.deepStrictEqual(
-        plain(nw._pricingComputeTotals(T[k], est, 'p')),
-        plain(lv._pricingComputeTotals(T[k], est, 'p')),
+        nonPhase(plain(nw._pricingComputeTotals(T[k], est, 'p'))),
+        nonPhase(plain(lv._pricingComputeTotals(T[k], est, 'p'))),
         k,
       );
     assert.deepStrictEqual(
-      plain(nw._pricingComputeSummaryData('p', est)),
-      plain(lv._pricingComputeSummaryData('p', est)),
+      nonPhase(plain(nw._pricingComputeSummaryData('p', est)), true),
+      nonPhase(plain(lv._pricingComputeSummaryData('p', est)), true),
     );
     assert.deepStrictEqual(plain(nw._pricingExportSets('p')), plain(lv._pricingExportSets('p')));
     nw.auditEstCompanySettingsHTML('p');
@@ -531,8 +534,8 @@ function auditBox(store, srcs) {
     );
     for (const k of Object.keys(T))
       assert.deepStrictEqual(
-        plain(nw._pricingComputeTotals(T[k], est, 'p')),
-        plain(lv._pricingComputeTotals(T[k], est, 'p')),
+        nonPhase(plain(nw._pricingComputeTotals(T[k], est, 'p'))),
+        nonPhase(plain(lv._pricingComputeTotals(T[k], est, 'p'))),
         k,
       );
     const a1 = auditBox({
