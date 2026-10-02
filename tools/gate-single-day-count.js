@@ -23,6 +23,7 @@ const MS_DAY = /\b86400000\b|\b864e5\b|\b1000\s*\*\s*60\s*\*\s*60\s*\*\s*24\b|\b
 // [file, exact text that must appear on the line, reason]
 const ALLOWED = [
   ['app/utility-data.js', 'const diff = Math.round((e - s) / (1000 * 60 * 60 * 24));', 'calcDays itself'],
+  ['app/estimate-workbook-export.js', 'Date.UTC(1899, 11, 30)) / 86400000', 'Excel date serial, not a billing day count'],
   ['app/bas-alarms.js', 'var msPerDay = 86400000;', 'time-window filter on alarm timestamps'],
   ['app/bill-analysis.js', 'Date.now() + 86400000 * 60', 'future-date sanity window'],
   ['app/bill-analysis.js', 'overlapMs / 86400000', 'overlap between two bills, compared with a tolerance'],
