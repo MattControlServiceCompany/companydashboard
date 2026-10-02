@@ -5091,7 +5091,7 @@ function emGetColDefs(projId) {
     { key: 'category', label: 'Equipment Type', group: 'id', width: 130, isCategory: true },
     // 2026-09-23 (item 5ar): the imported Effective Schedules CSV's occupied period for this
     // row, when one was attached — see emAttachEffectiveSchedules / existingScheduleText.
-    { key: 'existingScheduleText', label: 'Effective Schedule (Imported)', group: 'id', width: 220 },
+    { key: 'existingScheduleText', label: 'Effective schedule (one day, from WebCTRL export)', group: 'id', width: 220 },
   ];
   for (var i = 0; i < checkCols14.length; i++) {
     var ck = checkCols14[i];
@@ -8482,12 +8482,13 @@ function emRenderBuildingDetailView(data, filters, buildingName) {
   html += '<th style="' + thCenter + '">Status</th>';
   html += '<th style="' + thCenter + '">Damper Position</th>';
   html += '<th style="' + thCenter + '">Discharge Air Temperature</th>';
+  html += '<th style="' + thStyle + '" title="Effective schedule (one day, from WebCTRL export)">Effective schedule (one day, from WebCTRL export)</th>';
   html += '</tr></thead>';
   html += '<tbody>';
 
   if (pageRows.length === 0) {
     html +=
-      '<tr><td colspan="9" style="padding:32px;text-align:center;font-size:14px;color:var(--text2)">' +
+      '<tr><td colspan="10" style="padding:32px;text-align:center;font-size:14px;color:var(--text2)">' +
       'No zone equipment rows for this building with current filters.</td></tr>';
   } else {
     var tdBase = 'padding:10px 14px;border-bottom:1px solid var(--border);vertical-align:middle;font-size:15px;';
@@ -8576,6 +8577,8 @@ function emRenderBuildingDetailView(data, filters, buildingName) {
       html += '<td style="' + tdCenter + '">' + statusPill + '</td>';
       html += '<td style="' + tdCenter + '">' + dampDisplay + '</td>';
       html += '<td style="' + tdCenter + '">' + datDisplay + '</td>';
+      html +=
+        '<td style="' + tdBase + 'color:var(--text2);white-space:nowrap">' + emHtmlEsc(emZoneScheduleDisplay(row)) + '</td>';
       html += '</tr>';
     }
   }
@@ -8603,7 +8606,7 @@ function emRenderBuildingDetailView(data, filters, buildingName) {
   html += '<td style="' + ftdCenter + '">' + fmtFootAvg(bs.zoneTemp) + '</td>';
   html += '<td style="' + ftdCenter + '">' + fmtFootAvg(bs.htgSp) + '</td>';
   html += '<td style="' + ftdCenter + '">' + fmtFootAvg(bs.coolSp) + '</td>';
-  html += '<td colspan="3" style="' + ftdBase + '"></td>';
+  html += '<td colspan="4" style="' + ftdBase + '"></td>';
   html += '</tr>';
   html += '</tfoot>';
 
@@ -10743,6 +10746,21 @@ function _emParseScheduleBlock(text) {
 // Equipment Matrix, writes the matched schedule onto each matching row, and
 // saves the matrix. Returns { matchedCount, totalCount, unmatched } — never
 // throws away unmatched rows; the caller must show them (emShowEffectiveSchedulesResult).
+// Per-zone effective schedule text for display (Summary building detail, Woodland report).
+// Reads ONLY the row's own imported schedule — never inherited from an AHU. Blank file entry
+// shows 'No schedule in file'.
+function emZoneScheduleDisplay(row) {
+  var es = row && row.existingSchedule;
+  if (!es) return 'No schedule in file';
+  // One day only, no weekday info in the WebCTRL file: show each occupied block exactly as written.
+  var re = /\bOccupied from\s+(\d{1,2}:\d{2}\s*[AP]M)\s+to\s+(\d{1,2}:\d{2}\s*[AP]M)/gi;
+  var m,
+    parts = [];
+  while ((m = re.exec(es.rawText || ''))) parts.push(m[1].toUpperCase() + '-' + m[2].toUpperCase());
+  if (parts.length) return 'Occ ' + parts.join('; ');
+  return 'No occupied period in file';
+}
+
 function emAttachEffectiveSchedules(pid, csvText, fileName) {
   var data = emLoadMatrix(pid);
   if (!data || !data.rows || !data.rows.length) {
@@ -10785,7 +10803,7 @@ function emAttachEffectiveSchedules(pid, csvText, fileName) {
           stopStr: block.stopStr,
           rawText: p.scheduleText,
         };
-        row.existingScheduleText = block.startStr + '-' + block.stopStr + ' Mon-Fri (imported ' + importDate + ')';
+        row.existingScheduleText = emZoneScheduleDisplay(row) + ' (one day, from WebCTRL export; imported ' + importDate + ')';
       } else {
         row.existingSchedule = { rawText: p.scheduleText };
         row.existingScheduleText = 'No occupied period in source file (imported ' + importDate + ')';
