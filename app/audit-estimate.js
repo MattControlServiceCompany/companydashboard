@@ -575,7 +575,7 @@ var AUDIT_EST_PCT_FIELDS = [
   { key: 'smallTools', label: 'Small tools', tip: 'Added to labor cost to cover small tools and supplies.' },
   { key: 'overhead', label: 'Overhead', tip: 'Company overhead, added to direct cost.' },
   { key: 'profit', label: 'Profit', tip: 'Profit, added to direct cost plus overhead.' },
-  { key: 'subProfit', label: 'Markup on subcontractor work', tip: 'Added to subcontractor cost, before the project total.' },
+  { key: 'subProfit', label: 'Lower-tier subcontractor profit', tip: 'Profit added to subcontractor lines. It only applies to subcontractor lines, and the Cost Estimate tab has no subcontractor input yet, so it changes no price here.' },
   { key: 'bond', label: 'Bond', tip: 'Bond cost, added to the project total when the bond is turned on.' },
 ];
 function _auditEstCfgRaw() {
@@ -593,6 +593,7 @@ function auditEstGetWorkbookConfig() {
   var baseRates = {};
   var sr = raw.baseRates && typeof raw.baseRates === 'object' ? raw.baseRates : {};
   D.roles.forEach(function (r) {
+    if (EstimateWorkbook.TIED_BASE[r.code]) return;
     if (typeof sr[r.code] === 'number' && isFinite(sr[r.code]) && sr[r.code] > 0) baseRates[r.code] = sr[r.code];
   });
   var pct = {};
@@ -648,7 +649,7 @@ function auditEstSetWorkbookConfig(field, value) {
     var role = D.roles.filter(function (r) {
       return value && r.code === value.code;
     })[0];
-    if (!role) return 'invalid';
+    if (!role || EstimateWorkbook.TIED_BASE[role.code]) return 'invalid';
     name = 'Base rate ' + role.code;
     from = before.baseRates[role.code] != null ? before.baseRates[role.code] : role.base;
     o.baseRates = o.baseRates || {};
@@ -1396,12 +1397,20 @@ function auditEstCompanySettingsHTML(pid) {
     .map(function (r, i) {
       var shown = cfg.baseRates[r.code] != null ? cfg.baseRates[r.code] : r.base;
       var dflt = Math.round(r.base * 100) / 100;
+      var tiedTo = EstimateWorkbook.TIED_BASE[r.code];
+      var tiedName = tiedTo
+        ? D.roles.filter(function (x) {
+            return x.code === tiedTo;
+          })[0].name
+        : '';
       return (
         '<tr><td class="ch-tbl-col-type-label" title="' + _auditEstEsc(r.name) + '">' + r.code + ' ' + _auditEstEsc(r.name) +
-        '</td><td class="ch-tbl-col-type-number">' +
-        _auditEstCfgInput(pid, 'rate', r.code, Math.round(shown * 100) / 100, dflt, '0.01', 76,
-          'Hourly wage for ' + r.name + '. Burdens are added on top of it.', ' $/hr') +
-        '</td><td class="ch-tbl-col-type-currency" title="Wage plus burdens (taxes, insurance, benefits)">' +
+        '</td><td class="ch-tbl-col-type-' + (tiedTo ? 'label' : 'number') + '">' +
+        (tiedTo
+          ? '<span title="This wage always equals the ' + _auditEstEsc(tiedName) + ' wage. Change it there.">Same as ' + _auditEstEsc(tiedName) + '</span>'
+          : _auditEstCfgInput(pid, 'rate', r.code, Math.round(shown * 100) / 100, dflt, '0.01', 76,
+          'Hourly wage for ' + r.name + '. Payroll taxes, insurance and benefits are added on top of it.', ' $/hr')) +
+        '</td><td class="ch-tbl-col-type-currency" title="Wage plus payroll taxes, insurance and benefits">' +
         _auditEstFmt(cost[i].P) + '</td></tr>'
       );
     })
@@ -1428,13 +1437,13 @@ function auditEstCompanySettingsHTML(pid) {
     return '<button type="button" class="ae-ov-reset" title="Reset to the default (' + dflt + ')" onclick="' + js + '">&#8634;</button>';
   };
   var taxRows =
-    '<tr><td class="ch-tbl-col-type-label" title="New projects start with this tax state">Tax state</td><td class="ch-tbl-col-type-label">' +
+    '<tr><td class="ch-tbl-col-type-label" title="Changes the tax state of every project that uses the Workbook method and has no tax state of its own">Tax state</td><td class="ch-tbl-col-type-label">' +
     '<span class="ae-ov"><select class="ae-ov-in' + (stateOn ? ' on' : '') + '" onchange="auditEstSaveCompany(\'' + pid + "','state','',this.value)\">" +
     opt(AUDIT_EST_STATE_OPTIONS, cfg.state) + '</select>' +
     (stateOn ? resetBtn("auditEstSaveCompany('" + pid + "','state','','')", D.state) : '') + '</span></td></tr>' +
-    '<tr><td class="ch-tbl-col-type-label" title="New projects start with this tax rate">Tax rate</td><td class="ch-tbl-col-type-number">' +
+    '<tr><td class="ch-tbl-col-type-label" title="Changes the tax rate of every project that uses the Workbook method and has no tax rate of its own">Tax rate</td><td class="ch-tbl-col-type-number">' +
     _auditEstCfgInput(pid, 'taxRate', '', Math.round(cfg.taxRate * 100000) / 1000, Math.round(D.taxRate * 100000) / 1000,
-      '0.001', 64, 'New projects start with this tax rate. Percent.', '%') +
+      '0.001', 64, 'Applies to every project that uses the Workbook method and has no tax rate of its own. Percent.', '%') +
     '</td></tr>';
   var roleSelRows = D.taskTypes
     .map(function (t) {
@@ -1442,7 +1451,7 @@ function auditEstCompanySettingsHTML(pid) {
       var on = cur !== t.role;
       return (
         '<tr><td class="ch-tbl-col-type-label">' + _auditEstEsc(t.label) + '</td><td class="ch-tbl-col-type-label">' +
-        '<span class="ae-ov"><select class="ae-ov-in' + (on ? ' on' : '') + '" title="Role that does this work on new estimates" onchange="auditEstSaveCompany(\'' + pid + "','role','" + t.id + "',this.value)\">" +
+        '<span class="ae-ov"><select class="ae-ov-in' + (on ? ' on' : '') + '" title="Role that does this work on every Workbook estimate that has no role of its own for this work" onchange="auditEstSaveCompany(\'' + pid + "','role','" + t.id + "',this.value)\">" +
         D.roles
           .map(function (r) {
             return '<option value="' + r.code + '"' + (r.code === cur ? ' selected' : '') + ' title="' + _auditEstEsc(r.name) + '">' + r.code + '</option>';
@@ -1484,7 +1493,7 @@ function auditEstCompanySettingsHTML(pid) {
   return (
     '<details class="ae-company"' + (_auditEstCompanyOpen ? ' open' : '') + ' ontoggle="_auditEstCompanyOpen=this.open">' +
     '<summary>Company pricing settings (all projects)</summary>' +
-    '<div class="ae-note" style="margin:4px 0 8px">A changed value has an accent border and a reset button. Reset puts back the default. A project that sets its own value keeps it.</div>' +
+    '<div class="ae-note" style="margin:4px 0 8px">A changed value has an accent border and a reset button. Reset puts back the default. A project can keep its own tax state, tax rate, or role for a work type. Those projects ignore the company value for that field.</div>' +
     '<div class="ae-wb-grid">' +
     tbl('<th class="ae-left">Labor role</th><th>Base rate $/hr</th><th>Cost $/hr</th>', rateRows) +
     '<div style="display:flex;flex-direction:column;gap:12px">' +

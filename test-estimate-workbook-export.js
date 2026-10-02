@@ -176,9 +176,30 @@ async function checkCached(label, input) {
   eq(X.fileName(META), '2026-10-01-sample-project-alpha-estimate.xlsx', 'file name');
   eq(X.fileName({ project: '  A/B & C!! ', date: '2026-01-02' }), '2026-01-02-a-b-c-estimate.xlsx', 'slug');
 
+  // 5b. Tied base rates (Labor Rates D12=D11, D14=D10, D15=D11, D19=D10): the review case.
+  // Cached values alone cannot catch a tie error, so section 6 recalculates this file independently.
+  const tied = {
+    hours: { SE: 20, CO: 5, TR: 2 },
+    ot: 'x1.5',
+    state: 'Kansas',
+    taxRate: 0.0925,
+    bond: true,
+    parts: [{ qty: 1, unit: 1234.56 }],
+    baseRates: { DE: 100, PE: 130 },
+    pct: { overhead: 0.12, profit: 0.25, freight: 0.07, smallTools: 0.02, subProfit: 0.08, bond: 0.02 },
+    subs: [{ amount: 1000, bondPct: 0 }],
+  };
+  const t = await checkCached('tied', tied);
+  eq(t.calc.cells['LaborRates!D12'], 100, 'SE follows DE');
+  eq(t.calc.cells['LaborRates!D14'], 130, 'CO follows PE');
+  eq(t.calc.cells['LaborRates!D15'], 100, 'TR follows DE');
+  const tiedOwn = W.compute(Object.assign({}, tied, { baseRates: { DE: 100, PE: 130, SE: 5, CO: 5, TR: 5 } }));
+  eq(tiedOwn.summary.total, t.calc.summary.total, 'own override on a tied role is ignored');
+
   // 6. Independent recalculation: LibreOffice if present, else python `formulas`.
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'est-export-'));
-  const files = { base: r.buf, full: f.buf };
+  const files = { base: r.buf, full: f.buf, tied: t.buf };
+  const inputs = { base: base, full: full, tied: tied };
   let recalcTool = null,
     recalcCompared = 0;
   const soffice = ['soffice', 'libreoffice'].find((c) => {
@@ -223,7 +244,7 @@ async function checkCached(label, input) {
         break;
       }
     }
-    const calc = W.compute(k === 'base' ? base : full);
+    const calc = W.compute(inputs[k]);
     Object.keys(calc.cells).forEach((key) => {
       const i = key.indexOf('!'),
         sheet = SHEETS[key.slice(0, i)].toUpperCase(),

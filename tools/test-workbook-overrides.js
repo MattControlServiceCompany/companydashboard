@@ -381,7 +381,7 @@ function auditBox(store, srcs) {
     const base = {};
     for (const k of Object.keys(T)) base[k] = plain(c._pricingComputeTotals(T[k], est, 'p'));
     c.auditEstSetWorkbookConfig('rate', { code: 'EI', value: 70 });
-    c.auditEstSetWorkbookConfig('rate', { code: 'SE', value: 150 });
+    c.auditEstSetWorkbookConfig('rate', { code: 'DE', value: 150 });
     c.auditEstSetWorkbookConfig('pct', { key: 'smallTools', value: 0.02 });
     c.auditEstSetWorkbookConfig('state', 'Missouri');
     c.auditEstSetWorkbookConfig('taxRate', 0.08);
@@ -390,7 +390,7 @@ function auditBox(store, srcs) {
     const instH = 3 * 1.5 + 7 * 0.75 + 2;
     const exp = EW.compute({
       hours: { EI: instH, SE: 2 * 2.5 + 5 * 1.25 },
-      baseRates: { EI: 70, SE: 150 },
+      baseRates: { EI: 70, DE: 150 },
       pct: { smallTools: 0.02 },
       state: 'Missouri',
       taxRate: 0.08,
@@ -405,7 +405,7 @@ function auditBox(store, srcs) {
       const key = { Compliance: 'compliance', Recommended: 'recommended', 'Full Scope': 'full-scope' }[s.name];
       assert.strictEqual(s.grand, c._pricingComputeTotals(T[key], est, 'p').grand, 'export set == footer ' + s.name);
       assert.strictEqual(EW.compute(s.input).summary.total, s.grand);
-      assert.deepStrictEqual(plain(s.input.baseRates), { EI: 70, SE: 150 });
+      assert.deepStrictEqual(plain(s.input.baseRates), { EI: 70, DE: 150 });
     });
     const sd = c._pricingComputeSummaryData('p', est);
     for (const k of Object.keys(T)) {
@@ -451,7 +451,7 @@ function auditBox(store, srcs) {
     for (const s of sets) assert.strictEqual(wb.getWorksheet(s.name + ' Dash').getCell('N36').value.result, s.grand);
     ok('cost estimate: company rates/percent/tax -> footer == proposal == export == building shares (' + r.grand + ')');
 
-    ['EI', 'SE'].forEach((code) => c.auditEstSetWorkbookConfig('rate', { code, value: '' }));
+    ['EI', 'DE'].forEach((code) => c.auditEstSetWorkbookConfig('rate', { code, value: '' }));
     c.auditEstSetWorkbookConfig('pct', { key: 'smallTools', value: '' });
     c.auditEstSetWorkbookConfig('state', '');
     c.auditEstSetWorkbookConfig('taxRate', '');
@@ -559,6 +559,7 @@ function auditBox(store, srcs) {
     const c = auditBox(store);
     assert.strictEqual(c.auditEstSetWorkbookConfig('rate', { code: 'PE', value: -5 }), 'invalid');
     assert.strictEqual(c.auditEstSetWorkbookConfig('rate', { code: 'XX', value: 5 }), 'invalid');
+    ['SE', 'CO', 'TR'].forEach((code) => assert.strictEqual(c.auditEstSetWorkbookConfig('rate', { code, value: 90 }), 'invalid')); // tied to another role
     assert.strictEqual(c.auditEstSetWorkbookConfig('pct', { key: 'profit', value: 2 }), 'invalid');
     assert.strictEqual(c.auditEstSetWorkbookConfig('state', 'Texas'), 'invalid');
     assert.strictEqual(c.auditEstSetWorkbookConfig('role', { task: 'audit_report', role: 'ZZ' }), 'invalid');

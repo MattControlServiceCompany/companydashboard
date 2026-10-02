@@ -240,10 +240,15 @@
   }
 
   // rateTable({PE: baseRate, ...}) -> [{code,name,row,D..R}]. Optional base-rate overrides.
+  // Tied base rates (workbook Labor Rates formulas): D12 (SE) = D11 (DE), D14 (CO) = D10 (PE),
+  // D15 (TR) = D11 (DE). Row 19 (Warranty Labor) D19 = D10 (PE) is carried by Dash!F17 = Dash!F8.
+  // A tied role never takes its own override; it follows its source role.
+  var TIED_BASE = { SE: 'DE', CO: 'PE', TR: 'DE' };
   function rateTable(baseOverrides) {
     var ov = baseOverrides || {};
     return ROLES.map(function (r) {
-      var o = roleRates(r, ov[r.code]);
+      var src = TIED_BASE[r.code];
+      var o = roleRates(r, src ? ov[src] : ov[r.code]);
       o.code = r.code;
       o.name = r.name;
       o.row = r.rRow;
@@ -448,6 +453,7 @@
   return {
     compute: compute,
     rateTable: rateTable,
+    TIED_BASE: TIED_BASE,
     round0: round0,
     DEFAULTS: DEFAULTS,
   };
