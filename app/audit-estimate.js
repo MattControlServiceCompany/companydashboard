@@ -396,8 +396,8 @@ function auditEstGetEquipmentSummary(projId) {
 
 // Step list "How this total is built" from an EstimateWorkbook.compute() result. Shared by the
 // Audit Estimate and the Cost Estimate (app/pricing-estimator.js).
-function auditEstWorkbookChain(calc) {
-  var D = EstimateWorkbook.DEFAULTS;
+function auditEstWorkbookChain(calc, pctOverrides) {
+  var D = { pct: auditEstEffectivePct(pctOverrides) };
   var sm = calc.summary;
   var pctOf = function (v) {
     return Math.round(v * 10000) / 100 + '%';
@@ -422,6 +422,10 @@ function auditEstWorkbookChain(calc) {
    tasks), ot ('Not Applicable' | 'x1.5' | 'x2.0'), state ('Kansas' | 'Missouri'), taxRate
    (0.0875 = 8.75%), bond (boolean). Absent field = the EstimateWorkbook.DEFAULTS value. */
 var AUDIT_EST_OT_OPTIONS = ['Not Applicable', 'x1.5', 'x2.0'];
+/* Also stored per project (WP5): hours { <audit task id>: hours } = typed hours that replace the
+   computed hours of that task (Audit Estimate), and partPrices { <row id>: unit price } = typed
+   unit price of a Cost Estimate part line (wins over manualPrices, which wins over the catalog).
+   Defaults for role, tax state and tax rate come from the company settings (below). */
 var AUDIT_EST_STATE_OPTIONS = ['Kansas', 'Missouri'];
 function _auditEstWbKey(projId) {
   return 'en_pricing_workbook_' + projId;
@@ -450,15 +454,44 @@ function auditEstGetWorkbookSettings(projId) {
     )
       roles[t] = code;
   });
-  var tax = typeof raw.taxRate === 'number' && isFinite(raw.taxRate) && raw.taxRate >= 0 ? raw.taxRate : D.taxRate;
+  var cfg = auditEstGetWorkbookConfig();
+  var allRoles = {};
+  Object.keys(cfg.roles).forEach(function (t) {
+    allRoles[t] = cfg.roles[t];
+  });
+  Object.keys(roles).forEach(function (t) {
+    allRoles[t] = roles[t];
+  });
+  var tax = typeof raw.taxRate === 'number' && isFinite(raw.taxRate) && raw.taxRate >= 0 ? raw.taxRate : cfg.taxRate;
+  var hours = {};
+  var storedHours = raw.hours && typeof raw.hours === 'object' ? raw.hours : {};
+  Object.keys(storedHours).forEach(function (t) {
+    var h = storedHours[t];
+    if (D.taskRoleMap[t] != null && typeof h === 'number' && isFinite(h) && h >= 0) hours[t] = h;
+  });
+  var partPrices = {};
+  var storedPrices = raw.partPrices && typeof raw.partPrices === 'object' ? raw.partPrices : {};
+  Object.keys(storedPrices).forEach(function (k) {
+    var p = storedPrices[k];
+    if (typeof p === 'number' && isFinite(p) && p > 0) partPrices[k] = p;
+  });
   return {
     method: raw.method === 'hourly' ? 'hourly' : 'workbook',
-    roles: roles,
+    roles: allRoles,
     ot: AUDIT_EST_OT_OPTIONS.indexOf(raw.ot) !== -1 ? raw.ot : D.ot,
-    state: AUDIT_EST_STATE_OPTIONS.indexOf(raw.state) !== -1 ? raw.state : D.state,
+    state: AUDIT_EST_STATE_OPTIONS.indexOf(raw.state) !== -1 ? raw.state : cfg.state,
     taxRate: tax,
     bond: raw.bond === true,
+    hours: hours,
+    partPrices: partPrices,
+    baseRates: cfg.baseRates,
+    pct: cfg.pct,
   };
+}
+// Company role default a project falls back to when it stores nothing for that task.
+function _auditEstRoleDefault(task) {
+  var cfg = auditEstGetWorkbookConfig();
+  return cfg.roles[task] || EstimateWorkbook.DEFAULTS.taskRoleMap[task];
 }
 // Stores only what differs from the defaults (method 'workbook' = field absent).
 // field: 'method' | 'ot' | 'state' | 'taxRate' | 'bond' | 'role' (value {task, role}).
@@ -473,13 +506,15 @@ function auditEstSetWorkbookSetting(projId, field, value) {
   } else if (field === 'ot' || field === 'state') {
     var opts = field === 'ot' ? AUDIT_EST_OT_OPTIONS : AUDIT_EST_STATE_OPTIONS;
     if (opts.indexOf(value) === -1) return 'invalid';
-    if (value === D[field]) delete o[field];
+    var dflt = field === 'ot' ? D.ot : auditEstGetWorkbookConfig().state;
+    if (value === dflt) delete o[field];
     else o[field] = value;
   } else if (field === 'taxRate') {
     var txt = value == null ? '' : String(value).trim();
-    var n = txt === '' ? D.taxRate : Number(txt);
+    var cfgTax = auditEstGetWorkbookConfig().taxRate;
+    var n = txt === '' ? cfgTax : Number(txt);
     if (!isFinite(n) || n < 0 || n > 1) return 'invalid';
-    if (n === D.taxRate) delete o.taxRate;
+    if (n === cfgTax) delete o.taxRate;
     else o.taxRate = n;
   } else if (field === 'bond') {
     if (value) o.bond = true;
@@ -490,12 +525,213 @@ function auditEstSetWorkbookSetting(projId, field, value) {
     });
     if (D.taskRoleMap[value.task] == null || !okRole) return 'invalid';
     o.roles = o.roles || {};
-    if (value.role === D.taskRoleMap[value.task]) delete o.roles[value.task];
+    if (value.role === _auditEstRoleDefault(value.task)) delete o.roles[value.task];
     else o.roles[value.task] = value.role;
     if (!Object.keys(o.roles).length) delete o.roles;
+  } else if (field === 'hours') {
+    // value {task, hours}; blank or null = back to the computed hours.
+    if (!value || D.taskRoleMap[value.task] == null) return 'invalid';
+    var htxt = value.hours == null ? '' : String(value.hours).trim();
+    o.hours = o.hours || {};
+    if (htxt === '') delete o.hours[value.task];
+    else {
+      var hn = Number(htxt);
+      if (!isFinite(hn) || hn < 0 || hn > 100000) return 'invalid';
+      o.hours[value.task] = hn;
+    }
+    if (!Object.keys(o.hours).length) delete o.hours;
+  } else if (field === 'partPrice') {
+    // value {row, price}; blank or null = back to the manual or catalog price.
+    if (!value || value.row == null || value.row === '') return 'invalid';
+    var ptxt = value.price == null ? '' : String(value.price).trim();
+    o.partPrices = o.partPrices || {};
+    if (ptxt === '') delete o.partPrices[value.row];
+    else {
+      var pn = Number(ptxt);
+      if (!isFinite(pn) || pn <= 0 || pn > 10000000) return 'invalid';
+      o.partPrices[value.row] = pn;
+    }
+    if (!Object.keys(o.partPrices).length) delete o.partPrices;
   } else return 'invalid';
   try {
     var p = sset(_auditEstWbKey(projId), o);
+    if (p && p.catch) p.catch(function () {});
+    return 'ok';
+  } catch (e) {
+    return 'failed';
+  }
+}
+
+/* ── Company workbook settings (WP5) ─────────────────────────────────────────────────────────
+   Key en_pricing_workbook_config (en_pricing_ prefix, so it syncs). Stores only what differs from
+   EstimateWorkbook.DEFAULTS: baseRates { <role code>: $/hr }, pct { <name>: fraction }, state,
+   taxRate, roles { <task id>: <role code> }, history [ {t, who, field, from, to} ] (newest last,
+   capped). Absent = the module default. Nothing is written until the user changes a field. */
+var AUDIT_EST_CFG_KEY = 'en_pricing_workbook_config';
+var AUDIT_EST_CFG_HISTORY_MAX = 200;
+// The percentage lines a user may change, with plain names and what each one does.
+var AUDIT_EST_PCT_FIELDS = [
+  { key: 'freight', label: 'Freight on parts', tip: 'Added to the parts cost to cover shipping.' },
+  { key: 'smallTools', label: 'Small tools', tip: 'Added to labor cost to cover small tools and supplies.' },
+  { key: 'overhead', label: 'Overhead', tip: 'Company overhead, added to direct cost.' },
+  { key: 'profit', label: 'Profit', tip: 'Profit, added to direct cost plus overhead.' },
+  { key: 'subProfit', label: 'Markup on subcontractor work', tip: 'Added to subcontractor cost, before the project total.' },
+  { key: 'bond', label: 'Bond', tip: 'Bond cost, added to the project total when the bond is turned on.' },
+];
+function _auditEstCfgRaw() {
+  var raw = null;
+  try {
+    raw = sget(AUDIT_EST_CFG_KEY, null);
+  } catch (e) {
+    raw = null;
+  }
+  return raw && typeof raw === 'object' ? raw : {};
+}
+function auditEstGetWorkbookConfig() {
+  var raw = _auditEstCfgRaw();
+  var D = EstimateWorkbook.DEFAULTS;
+  var baseRates = {};
+  var sr = raw.baseRates && typeof raw.baseRates === 'object' ? raw.baseRates : {};
+  D.roles.forEach(function (r) {
+    if (typeof sr[r.code] === 'number' && isFinite(sr[r.code]) && sr[r.code] > 0) baseRates[r.code] = sr[r.code];
+  });
+  var pct = {};
+  var sp = raw.pct && typeof raw.pct === 'object' ? raw.pct : {};
+  AUDIT_EST_PCT_FIELDS.forEach(function (f) {
+    if (typeof sp[f.key] === 'number' && isFinite(sp[f.key]) && sp[f.key] >= 0 && sp[f.key] <= 1) pct[f.key] = sp[f.key];
+  });
+  var roles = {};
+  var st = raw.roles && typeof raw.roles === 'object' ? raw.roles : {};
+  Object.keys(st).forEach(function (t) {
+    var ok = D.roles.some(function (r) {
+      return r.code === st[t];
+    });
+    if (D.taskRoleMap[t] != null && ok) roles[t] = st[t];
+  });
+  return {
+    baseRates: baseRates,
+    pct: pct,
+    state: AUDIT_EST_STATE_OPTIONS.indexOf(raw.state) !== -1 ? raw.state : D.state,
+    taxRate: typeof raw.taxRate === 'number' && isFinite(raw.taxRate) && raw.taxRate >= 0 ? raw.taxRate : D.taxRate,
+    roles: roles,
+    history: Array.isArray(raw.history) ? raw.history : [],
+  };
+}
+// Module defaults with the changed fields applied: the percentage lines used for the steps list.
+function auditEstEffectivePct(pctOverrides) {
+  var D = EstimateWorkbook.DEFAULTS;
+  var out = {};
+  Object.keys(D.pct).forEach(function (k) {
+    out[k] = pctOverrides && pctOverrides[k] != null ? pctOverrides[k] : D.pct[k];
+  });
+  return out;
+}
+function _auditEstWho() {
+  try {
+    if (typeof currentUser !== 'undefined' && currentUser && currentUser.name) return String(currentUser.name);
+  } catch (e) {
+    /* no identity */
+  }
+  return '';
+}
+// field: 'rate' {code, value} | 'pct' {key, value} | 'state' | 'taxRate' | 'role' {task, role}.
+// A blank or null value resets that field to the module default. Returns 'ok' | 'invalid' | 'failed'.
+function auditEstSetWorkbookConfig(field, value) {
+  var D = EstimateWorkbook.DEFAULTS;
+  var before = auditEstGetWorkbookConfig();
+  var o = JSON.parse(JSON.stringify(_auditEstCfgRaw()));
+  var blank = function (v) {
+    return v == null || String(v).trim() === '';
+  };
+  var name, from, to;
+  if (field === 'rate') {
+    var role = D.roles.filter(function (r) {
+      return value && r.code === value.code;
+    })[0];
+    if (!role) return 'invalid';
+    name = 'Base rate ' + role.code;
+    from = before.baseRates[role.code] != null ? before.baseRates[role.code] : role.base;
+    o.baseRates = o.baseRates || {};
+    if (blank(value.value) || Number(value.value) === role.base) {
+      delete o.baseRates[role.code];
+      to = role.base;
+    } else {
+      var rn = Number(value.value);
+      if (!isFinite(rn) || rn <= 0 || rn > 10000) return 'invalid';
+      o.baseRates[role.code] = rn;
+      to = rn;
+    }
+    if (!Object.keys(o.baseRates).length) delete o.baseRates;
+  } else if (field === 'pct') {
+    var pf = AUDIT_EST_PCT_FIELDS.filter(function (f) {
+      return value && f.key === value.key;
+    })[0];
+    if (!pf) return 'invalid';
+    name = pf.label;
+    from = before.pct[pf.key] != null ? before.pct[pf.key] : D.pct[pf.key];
+    o.pct = o.pct || {};
+    if (blank(value.value) || Number(value.value) === D.pct[pf.key]) {
+      delete o.pct[pf.key];
+      to = D.pct[pf.key];
+    } else {
+      var pn = Number(value.value);
+      if (!isFinite(pn) || pn < 0 || pn > 1) return 'invalid';
+      o.pct[pf.key] = pn;
+      to = pn;
+    }
+    if (!Object.keys(o.pct).length) delete o.pct;
+  } else if (field === 'state') {
+    name = 'Default tax state';
+    from = before.state;
+    if (blank(value) || value === D.state) {
+      delete o.state;
+      to = D.state;
+    } else if (AUDIT_EST_STATE_OPTIONS.indexOf(value) !== -1) {
+      o.state = value;
+      to = value;
+    } else return 'invalid';
+  } else if (field === 'taxRate') {
+    name = 'Default tax rate';
+    from = before.taxRate;
+    if (blank(value) || Number(value) === D.taxRate) {
+      delete o.taxRate;
+      to = D.taxRate;
+    } else {
+      var tn = Number(value);
+      if (!isFinite(tn) || tn < 0 || tn > 1) return 'invalid';
+      o.taxRate = tn;
+      to = tn;
+    }
+  } else if (field === 'role') {
+    var tt = D.taskTypes.filter(function (t) {
+      return value && t.id === value.task;
+    })[0];
+    if (!tt) return 'invalid';
+    name = 'Default role: ' + tt.label;
+    from = before.roles[tt.id] || tt.role;
+    o.roles = o.roles || {};
+    if (blank(value.role) || value.role === tt.role) {
+      delete o.roles[tt.id];
+      to = tt.role;
+    } else if (
+      D.roles.some(function (r) {
+        return r.code === value.role;
+      })
+    ) {
+      o.roles[tt.id] = value.role;
+      to = value.role;
+    } else return 'invalid';
+    if (!Object.keys(o.roles).length) delete o.roles;
+  } else return 'invalid';
+  if (from === to) return 'ok'; // nothing changed: no write, no history line
+  var hist = Array.isArray(o.history) ? o.history : [];
+  var entry = { t: new Date().toISOString(), field: name, from: from, to: to };
+  var who = _auditEstWho();
+  if (who) entry.who = who;
+  hist.push(entry);
+  o.history = hist.slice(-AUDIT_EST_CFG_HISTORY_MAX);
+  try {
+    var p = sset(AUDIT_EST_CFG_KEY, o);
     if (p && p.catch) p.catch(function () {});
     return 'ok';
   } catch (e) {
@@ -705,7 +941,15 @@ function auditEstComputeBreakdown(projId, auditType) {
       });
     }
     var roleC = {};
+    var anyHourOverride = false;
     tasks.forEach(function (t) {
+      // Typed hours (project setting) replace the computed hours of the task.
+      t.computedHours = t.hours;
+      if (wbSet.hours[t.id] != null) {
+        t.hours = wbSet.hours[t.id];
+        t.overridden = true;
+        anyHourOverride = true;
+      }
       t.role = wbSet.roles[t.id] || D.taskRoleMap[t.id];
       t.label = D.taskTypes.filter(function (x) {
         return x.id === t.id;
@@ -717,10 +961,26 @@ function auditEstComputeBreakdown(projId, auditType) {
       roleHours[k] = roleC[k] / 100;
     });
     var wbInput = { hours: roleHours, ot: wbSet.ot, state: wbSet.state, taxRate: wbSet.taxRate, bond: wbSet.bond };
+    // Company settings (changed fields only): base rates and percentage lines.
+    if (Object.keys(wbSet.baseRates).length) wbInput.baseRates = wbSet.baseRates;
+    if (Object.keys(wbSet.pct).length) wbInput.pct = wbSet.pct;
     var calc = EstimateWorkbook.compute(wbInput);
     var sm = calc.summary;
-    var chain = auditEstWorkbookChain(calc);
-    wb = { input: wbInput, tasks: tasks, roleHours: roleHours, summary: sm, settings: wbSet, chain: chain };
+    var chain = auditEstWorkbookChain(calc, wbSet.pct);
+    wb = {
+      input: wbInput,
+      tasks: tasks,
+      roleHours: roleHours,
+      summary: sm,
+      settings: wbSet,
+      chain: chain,
+      hourEdit: true,
+    };
+    if (anyHourOverride)
+      totalHours =
+        tasks.reduce(function (s, t) {
+          return s + Math.round(t.hours * 100);
+        }, 0) / 100;
     totalCost = sm.total;
     // Each line's cost is its share of the total (largest remainder, whole dollars), so the
     // type rows, site items and report add up to the total exactly.
@@ -1060,7 +1320,8 @@ function auditEstWorkbookPanelHTML(pid, w, taskHead) {
         '</select>';
       return (
         '<tr><td class="ch-tbl-col-type-label">' + _auditEstEsc(t.label) + '</td><td class="ch-tbl-col-type-number">' +
-        t.hours.toFixed(2) + '</td><td class="ch-tbl-col-type-label">' + sel + '</td></tr>'
+        (w.hourEdit ? _auditEstHoursCellHTML(pid, t) : t.hours.toFixed(2)) +
+        '</td><td class="ch-tbl-col-type-label">' + sel + '</td></tr>'
       );
     })
     .join('');
@@ -1076,8 +1337,181 @@ function auditEstWorkbookPanelHTML(pid, w, taskHead) {
     '<div class="ch-tbl-outer ae-tbl-outer"><table class="ch-tbl ae-tbl ae-chain-tbl">' +
     '<thead><tr><th class="ae-left">' + _auditEstEsc(taskHead) + '</th><th>Hours</th><th class="ae-left">Role</th></tr></thead><tbody>' +
     taskRows + '</tbody></table></div>' +
-    '</div></div>'
+    '</div>' +
+    auditEstCompanySettingsHTML(pid) +
+    '</div>'
   );
+}
+
+// Typed-hours cell (Audit Estimate): an input that shows the computed hours until the user types
+// a value. A typed value gets the accent border and a reset button back to the computed hours.
+function _auditEstHoursCellHTML(pid, t) {
+  var computed = t.computedHours != null ? t.computedHours : t.hours;
+  var on = !!t.overridden;
+  return (
+    '<span class="ae-ov">' +
+    '<input type="number" min="0" step="0.25" value="' + t.hours + '" aria-label="Hours for ' + _auditEstEsc(t.label) + '"' +
+    ' title="' + (on ? 'Typed hours. Computed hours are ' + computed.toFixed(2) : 'Computed hours. Type a number to replace them') + '"' +
+    ' class="ae-ov-in' + (on ? ' on' : '') + '"' +
+    ' onchange="auditEstSaveWorkbookHours(\'' + pid + "','" + t.id + "',this.value)\">" +
+    (on
+      ? '<button type="button" class="ae-ov-reset" title="Reset to the computed hours (' + computed.toFixed(2) +
+        ')" onclick="auditEstSaveWorkbookHours(\'' + pid + "','" + t.id + "','')\">&#8634;</button>"
+      : '') +
+    '</span>'
+  );
+}
+
+/* ── UI: Company pricing settings (all projects) ──────────────────────────────────────────────
+   Rendered at the bottom of the same panel as the per-project settings (Audit Estimate and Cost
+   Estimate share it). A changed field gets the accent border and a reset button; reset removes
+   the stored field. The history lists the latest changes, newest first. */
+var _auditEstCompanyOpen = false;
+function _auditEstCfgInput(pid, field, key, shown, dflt, step, w, tipBase, unit) {
+  var on = shown !== dflt;
+  var arg = "'" + pid + "','" + field + "','" + key + "'";
+  return (
+    '<span class="ae-ov"><input type="number" min="0" step="' + step + '" value="' + shown + '"' +
+    ' style="width:' + w + 'px"' +
+    ' class="ae-ov-in' + (on ? ' on' : '') + '" title="' + _auditEstEsc(tipBase + (on ? ' Default: ' + dflt + unit + '.' : '')) + '"' +
+    ' onchange="auditEstSaveCompany(' + arg + ',this.value)">' +
+    (on
+      ? '<button type="button" class="ae-ov-reset" title="Reset to the default (' + dflt + unit + ')"' +
+        ' onclick="auditEstSaveCompany(' + arg + ",'')\">&#8634;</button>"
+      : '') +
+    '</span>'
+  );
+}
+function auditEstCompanySettingsHTML(pid) {
+  var D = EstimateWorkbook.DEFAULTS;
+  var cfg = auditEstGetWorkbookConfig();
+  var tbl = function (head, body) {
+    return (
+      '<div class="ch-tbl-outer ae-tbl-outer"><table class="ch-tbl ae-tbl ae-chain-tbl"><thead><tr>' + head +
+      '</tr></thead><tbody>' + body + '</tbody></table></div>'
+    );
+  };
+  var cost = EstimateWorkbook.rateTable(cfg.baseRates);
+  var rateRows = D.roles
+    .map(function (r, i) {
+      var shown = cfg.baseRates[r.code] != null ? cfg.baseRates[r.code] : r.base;
+      var dflt = Math.round(r.base * 100) / 100;
+      return (
+        '<tr><td class="ch-tbl-col-type-label" title="' + _auditEstEsc(r.name) + '">' + r.code + ' ' + _auditEstEsc(r.name) +
+        '</td><td class="ch-tbl-col-type-number">' +
+        _auditEstCfgInput(pid, 'rate', r.code, Math.round(shown * 100) / 100, dflt, '0.01', 76,
+          'Hourly wage for ' + r.name + '. Burdens are added on top of it.', ' $/hr') +
+        '</td><td class="ch-tbl-col-type-currency" title="Wage plus burdens (taxes, insurance, benefits)">' +
+        _auditEstFmt(cost[i].P) + '</td></tr>'
+      );
+    })
+    .join('');
+  var pctRows = AUDIT_EST_PCT_FIELDS.map(function (f) {
+    var cur = cfg.pct[f.key] != null ? cfg.pct[f.key] : D.pct[f.key];
+    return (
+      '<tr><td class="ch-tbl-col-type-label" title="' + _auditEstEsc(f.tip) + '">' + _auditEstEsc(f.label) +
+      '</td><td class="ch-tbl-col-type-number">' +
+      _auditEstCfgInput(pid, 'pct', f.key, Math.round(cur * 100000) / 1000, Math.round(D.pct[f.key] * 100000) / 1000,
+        '0.1', 64, f.tip + ' Percent.', '%') +
+      '</td></tr>'
+    );
+  }).join('');
+  var opt = function (list, cur) {
+    return list
+      .map(function (o) {
+        return '<option' + (o === cur ? ' selected' : '') + '>' + _auditEstEsc(o) + '</option>';
+      })
+      .join('');
+  };
+  var stateOn = cfg.state !== D.state;
+  var resetBtn = function (js, dflt) {
+    return '<button type="button" class="ae-ov-reset" title="Reset to the default (' + dflt + ')" onclick="' + js + '">&#8634;</button>';
+  };
+  var taxRows =
+    '<tr><td class="ch-tbl-col-type-label" title="New projects start with this tax state">Tax state</td><td class="ch-tbl-col-type-label">' +
+    '<span class="ae-ov"><select class="ae-ov-in' + (stateOn ? ' on' : '') + '" onchange="auditEstSaveCompany(\'' + pid + "','state','',this.value)\">" +
+    opt(AUDIT_EST_STATE_OPTIONS, cfg.state) + '</select>' +
+    (stateOn ? resetBtn("auditEstSaveCompany('" + pid + "','state','','')", D.state) : '') + '</span></td></tr>' +
+    '<tr><td class="ch-tbl-col-type-label" title="New projects start with this tax rate">Tax rate</td><td class="ch-tbl-col-type-number">' +
+    _auditEstCfgInput(pid, 'taxRate', '', Math.round(cfg.taxRate * 100000) / 1000, Math.round(D.taxRate * 100000) / 1000,
+      '0.001', 64, 'New projects start with this tax rate. Percent.', '%') +
+    '</td></tr>';
+  var roleSelRows = D.taskTypes
+    .map(function (t) {
+      var cur = cfg.roles[t.id] || t.role;
+      var on = cur !== t.role;
+      return (
+        '<tr><td class="ch-tbl-col-type-label">' + _auditEstEsc(t.label) + '</td><td class="ch-tbl-col-type-label">' +
+        '<span class="ae-ov"><select class="ae-ov-in' + (on ? ' on' : '') + '" title="Role that does this work on new estimates" onchange="auditEstSaveCompany(\'' + pid + "','role','" + t.id + "',this.value)\">" +
+        D.roles
+          .map(function (r) {
+            return '<option value="' + r.code + '"' + (r.code === cur ? ' selected' : '') + ' title="' + _auditEstEsc(r.name) + '">' + r.code + '</option>';
+          })
+          .join('') +
+        '</select>' +
+        (on ? resetBtn("auditEstSaveCompany('" + pid + "','role','" + t.id + "','')", t.role) : '') +
+        '</span></td></tr>'
+      );
+    })
+    .join('');
+  var pctNames = {};
+  AUDIT_EST_PCT_FIELDS.forEach(function (f) {
+    pctNames[f.label] = true;
+  });
+  var fmtVal = function (field, v) {
+    if (pctNames[field] || field === 'Default tax rate') return Math.round(v * 100000) / 1000 + '%';
+    if (field.indexOf('Base rate') === 0) return _auditEstFmt(v);
+    return String(v);
+  };
+  var hist = cfg.history.slice(-12).reverse();
+  var histRows = hist.length
+    ? hist
+        .map(function (h) {
+          var d = new Date(h.t);
+          var when = isNaN(d.getTime())
+            ? ''
+            : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + ' ' +
+              d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+          return (
+            '<tr><td class="ch-tbl-col-type-label">' + _auditEstEsc(when) + '</td><td class="ch-tbl-col-type-label">' +
+            _auditEstEsc(h.who || '') + '</td><td class="ch-tbl-col-type-label">' + _auditEstEsc(h.field) +
+            '</td><td class="ch-tbl-col-type-label">' + _auditEstEsc(fmtVal(h.field, h.from)) + ' &rarr; ' +
+            _auditEstEsc(fmtVal(h.field, h.to)) + '</td></tr>'
+          );
+        })
+        .join('')
+    : '<tr><td class="ch-tbl-col-type-label" colspan="4">No changes yet. Settings are at their defaults.</td></tr>';
+  return (
+    '<details class="ae-company"' + (_auditEstCompanyOpen ? ' open' : '') + ' ontoggle="_auditEstCompanyOpen=this.open">' +
+    '<summary>Company pricing settings (all projects)</summary>' +
+    '<div class="ae-note" style="margin:4px 0 8px">A changed value has an accent border and a reset button. Reset puts back the default. A project that sets its own value keeps it.</div>' +
+    '<div class="ae-wb-grid">' +
+    tbl('<th class="ae-left">Labor role</th><th>Base rate $/hr</th><th>Cost $/hr</th>', rateRows) +
+    '<div style="display:flex;flex-direction:column;gap:12px">' +
+    tbl('<th class="ae-left">Percentage line</th><th>Percent</th>', pctRows) +
+    tbl('<th class="ae-left">Tax default</th><th class="ae-left">Value</th>', taxRows) +
+    '</div>' +
+    tbl('<th class="ae-left">Work type</th><th class="ae-left">Default role</th>', roleSelRows) +
+    '</div>' +
+    '<div style="font-size:12px;font-weight:700;color:var(--text);margin:10px 0 4px">Change history</div>' +
+    tbl('<th class="ae-left">When</th><th class="ae-left">Who</th><th class="ae-left">Field</th><th class="ae-left">Change</th>', histRows) +
+    '</details>'
+  );
+}
+function auditEstSaveCompany(pid, field, key, value) {
+  var v = value;
+  var blank = value == null || String(value).trim() === '';
+  if (field === 'rate') v = { code: key, value: value };
+  else if (field === 'pct') v = { key: key, value: blank ? '' : Math.round(Number(value) * 10000) / 1000000 };
+  else if (field === 'taxRate') v = blank ? '' : Math.round(Number(value) * 10000) / 1000000;
+  else if (field === 'role') v = { task: key, role: value };
+  var res = auditEstSetWorkbookConfig(field, v);
+  if (res === 'invalid') showToast('That value is not valid', 'error');
+  else if (res === 'failed') showToast('Could not save the setting', 'error');
+  if (typeof initCostEstimateTab === 'function') initCostEstimateTab(pid);
+}
+function auditEstSaveWorkbookHours(projId, task, value) {
+  auditEstSaveWorkbook(projId, 'hours', { task: task, hours: value });
 }
 
 // True when no role that has hours can be paid overtime (PE, DE, SE, TR, IT have none).
@@ -1400,6 +1834,9 @@ var AUDIT_EST_TABLE_CSS =
   '.ae-assum{max-width:560px}.ae-assum td{overflow-wrap:anywhere}.ae-wrap{flex:0 1 auto;min-width:0;max-width:100%}.ae-wb-grid{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-start}' +
   '.ae-ctl{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;font-size:11px;color:var(--text2);margin-bottom:6px}.ae-ctl label{display:flex;align-items:center;gap:4px}' +
   '.ae-tbl tr.ae-sub td{background:var(--s1);font-weight:700}' +
+  '.ae-ov{display:inline-flex;align-items:center;gap:3px;max-width:100%}.ae-ov-in{font-size:11px;padding:2px 4px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px;max-width:100%;box-sizing:border-box;text-align:right;font-variant-numeric:tabular-nums}.ae-ov-in[type=number]{width:64px}select.ae-ov-in{text-align:left}.ae-ov-in.on{border-color:var(--accent)}' +
+  '.ae-ov-reset{font-size:10px;padding:1px 4px;background:var(--s4);color:var(--text2);border:1px solid var(--border);border-radius:3px;cursor:pointer;line-height:1.2}' +
+  '.ae-company{margin-top:10px;font-size:12px}.ae-company>summary{cursor:pointer;font-size:12px;font-weight:700;color:var(--text);margin-bottom:4px}.ae-note{font-size:11px;color:var(--text2)}' +
   '.ae-seg{display:inline-flex;border:1px solid var(--border);border-radius:4px;overflow:hidden}.ae-seg-btn{font-size:11px;padding:3px 10px;border:none;background:var(--s3);color:var(--text2);cursor:pointer}.ae-seg-btn+.ae-seg-btn{border-left:1px solid var(--border)}.ae-seg-btn.on{background:var(--accent);color:#fff;font-weight:700}' +
   '@media (max-width:900px){.ae-tbl{font-size:11px}.ae-tbl th,.ae-tbl td{padding:3px 4px}.ae-tbl thead th{font-size:9px;letter-spacing:0}.ae-exp{padding:0 2px 0 0}}' +
   '.ae-tbl th:last-child,.ae-tbl td:last-child{border-right:none}' +

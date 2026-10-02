@@ -200,6 +200,10 @@ for (const t of ['bas', 'full']) {
     state: 'Kansas',
     taxRate: 0,
     bond: false,
+    hours: {},
+    partPrices: {},
+    baseRates: {},
+    pct: {},
   });
   n++;
 }

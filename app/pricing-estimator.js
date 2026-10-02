@@ -3445,6 +3445,9 @@ function _pricingWorkbookTotals(set, agg, base) {
     roleHours[k] = roleC[k] / 100;
   });
   var input = { hours: roleHours, ot: set.ot, state: set.state, taxRate: set.taxRate, bond: set.bond };
+  // Company settings (changed fields only): base rates and percentage lines.
+  if (Object.keys(set.baseRates).length) input.baseRates = set.baseRates;
+  if (Object.keys(set.pct).length) input.pct = set.pct;
   if (agg.partsC) input.parts = [{ qty: 1, unit: agg.partsC / 100 }];
   var calc = EstimateWorkbook.compute(input);
   var total = calc.summary.total;
@@ -3474,7 +3477,7 @@ function _pricingWorkbookTotals(set, agg, base) {
     summary: calc.summary,
     tasks: tasks,
     settings: set,
-    chain: auditEstWorkbookChain(calc),
+    chain: auditEstWorkbookChain(calc, set.pct),
   };
   return base;
 }
@@ -3516,6 +3519,10 @@ function _pricingComputeTotals(rows, estimate, projId) {
       // just because the parts price was typed in manually) — fold it in once a real manual price
       // makes this row priced at all. Stays null/pending exactly as before when no manual price yet.
       price = isNaN(manual) || manual === 0 ? null : manual * row.qty + (row.installLaborTotal || 0);
+    }
+    // Workbook mode: a typed unit price for this part line wins over the manual price and the catalog.
+    if (wbSet && row.phase === 1 && wbSet.partPrices[toggleKey] != null) {
+      price = wbSet.partPrices[toggleKey] * row.qty + (row.installLaborTotal || 0);
     }
 
     if (price === null) {
@@ -5090,6 +5097,35 @@ function _pricingApplyQtyOverrides(projId, rows) {
     }
     return cloned;
   });
+}
+
+/* ── Typed part price (workbook mode, WP5) ────────────────────────────────────────────────
+   Stored per project as partPrices[rowKey] in en_pricing_workbook_<projId> (see audit-estimate.js).
+   Typed price wins over manualPrices, which wins over the catalog price. Blank = reset. */
+function _pricingPartPriceCellHTML(projId, rowKey, row, typed) {
+  var on = typed != null;
+  var catalogPrice = row.partsUnitPrice != null ? row.partsUnitPrice : row.contractPrice;
+  var shown = on ? typed : catalogPrice != null ? Math.round(catalogPrice * 100) / 100 : '';
+  var tip = on
+    ? 'Typed price. The catalog price is ' + (catalogPrice != null ? _pricingFmt(catalogPrice) : 'not set')
+    : 'Catalog price. Type a price to replace it';
+  return (
+    '<div style="display:flex;align-items:center;gap:4px">' +
+    '<input type="number" min="0" step="0.01" value="' + shown + '"' +
+    ' placeholder="Enter price" aria-label="Part price" title="' + tip + '"' +
+    ' style="width:100%;min-width:0;box-sizing:border-box;font-size:11px;padding:2px 5px;background:var(--s3);color:var(--text);border-radius:4px;text-align:right;font-variant-numeric:tabular-nums;border:1px solid ' +
+    (on ? 'var(--accent)' : 'var(--border)') + '"' +
+    ' onchange="_pricingPartPriceChange(\'' + projId + "','" + rowKey + '\',this.value)">' +
+    (on
+      ? '<button type="button" onclick="_pricingPartPriceChange(\'' + projId + "','" + rowKey + '\',\'\')"' +
+        ' title="Reset to the catalog price' + (catalogPrice != null ? ' (' + _pricingFmt(catalogPrice) + ')' : '') + '"' +
+        ' style="font-size:9px;padding:1px 4px;background:var(--s4);color:var(--text2);border:1px solid var(--border);border-radius:3px;cursor:pointer;line-height:1.2">&#8634;</button>'
+      : '') +
+    '</div>'
+  );
+}
+function _pricingPartPriceChange(projId, rowKey, val) {
+  auditEstSaveWorkbook(projId, 'partPrice', { row: rowKey, price: val });
 }
 
 /* ── Unit-price override for any row (extends existing manualPrices) ─────── */
@@ -8922,6 +8958,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   // ── 8. Render row function (Phase 4: adds hours-override input for labor rows)
   var recRowIdxByBase = isBothMode ? _buildBothModeIndex(recRows || []) : {};
 
+  var workbookPartPrices = totals.rowShares ? auditEstGetWorkbookSettings(projId).partPrices : {};
   function renderRow(row, isBothMd, matchedRecRow, hiddenCols) {
     var toggleKey = row._baseId || row.id;
     var toggleOn = estimate.rowToggles[toggleKey] !== false;
@@ -9135,6 +9172,9 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
         "','" +
         toggleKey +
         '\')">';
+    } else if (totals.rowShares && row.phase === 1) {
+      // Workbook mode: the part price can be typed over the catalog price (typed marker + reset).
+      contractContent = _pricingPartPriceCellHTML(projId, toggleKey, row, workbookPartPrices[toggleKey]);
     } else {
       contractContent =
         row.contractPrice != null ? _pricingFmt(row.contractPrice) : '<span style="color:var(--text3)">—</span>';
@@ -9604,6 +9644,10 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     // from the sequence's hours input, which now lives in its own Hours column below — no more
     // "+" glue text needed since price and hours are independent cells).
     var _hwContractText = hwRow.ioOnly ? '—' : hwRow.contractPrice != null ? _pricingFmt(hwRow.contractPrice) : '—';
+    if (totals.rowShares && !hwRow.ioOnly && !hwRow.noSku && hwRow.phase === 1 && hasCatalog) {
+      // Workbook mode: typed part price over the catalog price (same cell as renderRow).
+      _hwContractText = _pricingPartPriceCellHTML(projId, hwToggleKey, hwRow, workbookPartPrices[hwToggleKey]);
+    }
     cells.push(_hwContractText);
 
     // col 10: Hours — sequence's editable hours-override input (same control/onchange as
