@@ -2296,6 +2296,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.02.73', date: '2026-10-02', title: 'Backup and sync fix',
+    items: [
+      { type: 'fix', text: 'Backup and sync: backups and server sync no longer include calculated savings values that the app rebuilds on its own, so backup files are smaller and no longer show false changes in the conflict check.' }
+    ]
+  },
   { v: 'v2026.10.02.72', date: '2026-10-02', title: 'ASHRAE 36 wording',
     items: [
       { type: 'change', text: 'BAS Trends, ECM Calculators, Equipment Matrix and Pricing Estimator: the labels and notes now say ASHRAE 36 instead of GL36, G36 or Guideline 36.' }
