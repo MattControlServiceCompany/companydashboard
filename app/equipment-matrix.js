@@ -21214,12 +21214,12 @@ function emComputeSetpointCompliance(equipRow, configFlags, overrides) {
     // One value checked against the GL36 occupied heat..cool band (+/-1F).
     var _bandMid = (tempLimits.occHeat + tempLimits.occCool) / 2;
     var _bandHalf = Math.abs(tempLimits.occCool - tempLimits.occHeat) / 2 + 1;
-    var _sRes = _makeResult('occSingle', 'Occ Combined Setpoint (heat = cool)', combinedSp, _bandMid, _bandHalf);
+    var _sRes = _makeResult('occSingle', 'Occupied Combined Setpoint (heat = cool)', combinedSp, _bandMid, _bandHalf);
     if (_sRes.status === 'DEVIATION') {
       _sRes.deviationNote =
         'Actual ' +
         combinedSp +
-        '°F outside GL36 occupied band ' +
+        '°F outside ASHRAE 36 occupied band ' +
         (tempLimits.occHeat - 1) +
         '–' +
         (tempLimits.occCool + 1) +
