@@ -316,6 +316,27 @@ const plain = (x) => JSON.parse(JSON.stringify(x));
   ok('proposal: Hourly panel keeps qty x unit lines');
 }
 
+// 3b. Phase split (workbook): Phase 2 = the programming labor priced alone (its labor + tools + OH + profit);
+// Phase 1 = everything else. Phase 2 is the same with hardware on or off; grand total unchanged.
+{
+  const T = tiers();
+  const c = make(read('app/pricing-estimator.js'), { en_pricing_catalog: catalog }, T);
+  const seqH = 2 * 2.5 + 5 * 1.25;
+  const own = EW.compute({ hours: { SE: seqH } }).summary.total;
+  const on = c._pricingComputeTotals(T.recommended, est, 'p');
+  assert.strictEqual(on.phase2, own, 'phase 2 == programming priced alone');
+  assert.strictEqual(on.phase1 + on.phase2, on.grand);
+  const off = c._pricingComputeTotals(
+    T.recommended.filter((r) => r.phase === 2),
+    est,
+    'p',
+  );
+  assert.strictEqual(off.phase2, own);
+  assert.strictEqual(off.phase1, 0);
+  assert.strictEqual(off.grand, own);
+  ok('workbook phase split: phase 2 = own programming cost (' + own + ') with hardware on or off');
+}
+
 // 4. Budget Fit in workbook mode: after-total <= target and equals the footer total of the kept rows.
 {
   // Six buildings, each one sensor row paired with one supply-air-reset sequence row (one unit each).

@@ -3411,8 +3411,9 @@ function _pricingFmt(val) {
        hours (bas_programming), sensor investigation hours (sensor_investigation, default role PE); role = project
        setting or the task default
      - OT, tax state, tax rate, bond from the project settings; no $100 round-up
-   grand = compute() total. phase1 (hardware) and phase2 (labor) split it by largest remainder,
-   weighted by their hourly-method dollars, so they add up to grand exactly.
+   grand = compute() total. phase2 (programming) = the programming hours priced alone through the
+   workbook (own labor + tools + overhead + profit); phase1 (hardware) = grand - phase2, so they add up
+   to grand exactly and materials never land in phase 2.
    Pass projId as the third argument of _pricingComputeTotals; without it the Hourly sum is used. */
 function _pricingWorkbookSettings(projId) {
   if (projId == null || typeof EstimateWorkbook === 'undefined' || typeof auditEstGetWorkbookSettings !== 'function')
@@ -3423,14 +3424,17 @@ function _pricingWorkbookSettings(projId) {
 function _pricingWorkbookRole(set, taskId) {
   return set.roles[taskId] || EstimateWorkbook.DEFAULTS.taskRoleMap[taskId];
 }
-// agg: {partsC (cents), hours: {taskId: hours}, p1C, p2C (hourly-method cents)}
+// agg: {partsC (cents), hours: {taskId: hours}, hours2: {taskId: hours} (programming only), p1C, p2C}
 function _pricingWorkbookTotals(set, agg, base) {
   var roleC = {};
+  var roleC2 = {};
   var tasks = [];
   Object.keys(agg.hours).forEach(function (id) {
     var role = _pricingWorkbookRole(set, id);
     var c = Math.round(agg.hours[id] * 100);
     roleC[role] = (roleC[role] || 0) + c;
+    var c2 = Math.round((agg.hours2[id] || 0) * 100);
+    if (c2) roleC2[role] = (roleC2[role] || 0) + c2;
     tasks.push({
       id: id,
       label: EstimateWorkbook.DEFAULTS.taskTypes.filter(function (t) {
@@ -3451,7 +3455,21 @@ function _pricingWorkbookTotals(set, agg, base) {
   if (agg.partsC) input.parts = [{ qty: 1, unit: agg.partsC / 100 }];
   var calc = EstimateWorkbook.compute(input);
   var total = calc.summary.total;
-  var split = _auditEstAllocate(total, [agg.p1C, agg.p2C]);
+  // Phase split: Phase 2 = the programming labor priced alone through the same workbook (its labor,
+  // tools, overhead, profit, tax, bond). Phase 1 = the rest of the total (all materials, install labor
+  // and their overhead/profit/tax), so the two add up to the total exactly. One split for every consumer.
+  var hours2 = {};
+  Object.keys(roleC2).forEach(function (k) {
+    hours2[k] = roleC2[k] / 100;
+  });
+  var p2Input = {};
+  Object.keys(input).forEach(function (k) {
+    p2Input[k] = input[k];
+  });
+  p2Input.hours = hours2;
+  delete p2Input.parts;
+  var p2 = agg.p2C ? Math.min(total, EstimateWorkbook.compute(p2Input).summary.total) : 0;
+  var split = [total - p2, p2];
   base.phase1 = split[0];
   base.phase2 = split[1];
   // Per-row display amounts: each included priced row's share of its phase's workbook total.
@@ -3485,7 +3503,7 @@ function _pricingWorkbookTotals(set, agg, base) {
 /* ── Compute footer totals ── */
 function _pricingComputeTotals(rows, estimate, projId) {
   var wbSet = _pricingWorkbookSettings(projId);
-  var wbAgg = wbSet ? { partsC: 0, hours: {}, p1C: 0, p2C: 0, rows1: [], rows2: [] } : null;
+  var wbAgg = wbSet ? { partsC: 0, hours: {}, hours2: {}, p1C: 0, p2C: 0, rows1: [], rows2: [] } : null;
   var phase1 = 0,
     phase2 = 0;
   var included = 0,
@@ -3547,12 +3565,13 @@ function _pricingComputeTotals(rows, estimate, projId) {
       } else if (row.phase === 2) {
         wbAgg.p2C += Math.round(price * 100);
         wbAgg.rows2.push({ id: toggleKey, c: Math.round(price * 100) });
-        wbAdd(
-          row.isSensorInvestigation ? 'sensor_investigation' : 'bas_programming',
+        var _t2 = row.isSensorInvestigation ? 'sensor_investigation' : 'bas_programming';
+        var _h2 =
           row.hrsPerUnit != null
             ? row.hrsPerUnit * row.qty
-            : price / (_pricingGetConfig().hourlyRate || COST_LABOR_RATE_DEFAULT),
-        );
+            : price / (_pricingGetConfig().hourlyRate || COST_LABOR_RATE_DEFAULT);
+        wbAdd(_t2, _h2);
+        if (_h2 > 0) wbAgg.hours2[_t2] = (wbAgg.hours2[_t2] || 0) + _h2;
       }
     }
   });
