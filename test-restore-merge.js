@@ -3,6 +3,7 @@
 // T1..T19 = test cases 1-19 from 2026-10-01-research-data-shapes.md section 6
 // (T14 and T19 live in the e2e script; T20 = the gate scripts themselves).
 const assert = require('assert');
+global.DB = require('./tools/load-db-for-test.js');
 const RM = require('./app/restore-merge.js');
 
 let pass = 0;

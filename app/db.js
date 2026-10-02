@@ -569,7 +569,7 @@ const DB = (() => {
       let okHash = json.hash || null;
       if (!okHash && !isTombstone) {
         try {
-          okHash = await _sha256Hex(_canonicalJSON(payload.value));
+          okHash = await _sha256Hex(_canonicalJSON(stripDerivedCaches(key, payload.value)));
         } catch (e) {
           okHash = null;
         }
@@ -733,7 +733,10 @@ const DB = (() => {
     // robustness improvement (helps any accidental double-write, not just this migration).
     if (!payload.deleted && !current.deleted && current.value !== undefined) {
       try {
-        if (JSON.stringify(payload.value) === JSON.stringify(current.value)) {
+        if (
+          JSON.stringify(stripDerivedCaches(key, payload.value)) ===
+          JSON.stringify(stripDerivedCaches(key, current.value))
+        ) {
           _replicaVersions[key] = { version: current.version, hash: current.hash || null };
           _persistReplicaState();
           return;
@@ -1037,7 +1040,7 @@ const DB = (() => {
     if (localValue !== undefined) {
       let localHash = null;
       try {
-        localHash = await _sha256Hex(_canonicalJSON(localValue));
+        localHash = await _sha256Hex(_canonicalJSON(stripDerivedCaches(localKey, localValue)));
       } catch (e) {
         localHash = null;
       }

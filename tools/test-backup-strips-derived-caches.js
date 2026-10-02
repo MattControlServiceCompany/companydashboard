@@ -7,18 +7,8 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
-const vm = require('vm');
 const assert = require('assert');
-const src = fs.readFileSync(path.join(__dirname, '..', 'app', 'db.js'), 'utf8');
-const win = { addEventListener() {}, dispatchEvent() {}, location: { hostname: 'x' } };
-const sandbox = {
-  window: win, document: { addEventListener() {}, visibilityState: 'visible' }, localStorage: { getItem: () => null, setItem() {}, removeItem() {}, key: () => null, length: 0 },
-  console, setTimeout, clearTimeout, setInterval, clearInterval, Promise, CustomEvent: function () {}, Event: function () {}, navigator: {},
-  indexedDB: undefined, fetch: async () => ({ ok: true, status: 200, json: async () => ({}) }),
-};
-vm.createContext(sandbox);
-vm.runInContext(src + '\n;this.__DB = DB;', sandbox);
-const DB = sandbox.__DB;
+const DB = require('./load-db-for-test.js');
 assert.ok(typeof DB.getAllForExport === 'function' && typeof DB.stripDerivedCaches === 'function', 'export strip API missing');
 
 const meter = { id: 'm1', label: 'Gas', bills: [{ id: 'b1', cost: 5 }], costSavOverrides: { '2026-02': 364.6 },
@@ -36,7 +26,22 @@ assert.strictEqual(out.other, 7);
 // non-utility keys and JSON-string values pass through untouched
 const other = { _reg: 1 };
 assert.strictEqual(DB.stripDerivedCaches('en_projects', other), other);
-// restore-merge must use the same field list
-const RM = require('../app/restore-merge.js');
-assert.deepStrictEqual([...RM.METER_CACHE_FIELDS].sort(), [...DB.DERIVED_METER_FIELDS].sort());
+// single source: restore-merge and utility-data take the list from DB, not their own copy
+global.DB = DB;
+assert.strictEqual(require('../app/restore-merge.js').METER_CACHE_FIELDS, DB.DERIVED_METER_FIELDS);
+['app/utility-data.js', 'app/restore-merge.js'].forEach((f) =>
+  assert.ok(!/delete m\._savingsCacheKey|'_savingsCacheKey'/.test(fs.readFileSync(path.join(__dirname, '..', f), 'utf8')), f + ' keeps its own field list')
+);
+
+// Conflict short-circuit and hash: a cache-only difference is not a conflict (strip both sides).
+const a = { buildings: [{ meters: [{ id: 'm', bills: [1], _savingsCache: { s: 1 }, _reg: {} }] }] };
+const b = { buildings: [{ meters: [{ id: 'm', bills: [1] }] }] };
+assert.strictEqual(
+  JSON.stringify(DB.stripDerivedCaches('en_utility_cust_9', a)),
+  JSON.stringify(DB.stripDerivedCaches('en_utility_cust_9', b))
+);
+const dbSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'db.js'), 'utf8');
+assert.ok(/JSON\.stringify\(stripDerivedCaches\(key, payload\.value\)\)\s*===\s*JSON\.stringify\(stripDerivedCaches\(key, current\.value\)\)/.test(dbSrc), 'short-circuit must compare stripped vs stripped');
+assert.ok(/_canonicalJSON\(stripDerivedCaches\(localKey, localValue\)\)/.test(dbSrc), 'pull-side local hash must be stripped');
+assert.ok(/_canonicalJSON\(stripDerivedCaches\(key, payload\.value\)\)/.test(dbSrc), 'push-ack hash must be stripped');
 console.log('PASS test-backup-strips-derived-caches');
