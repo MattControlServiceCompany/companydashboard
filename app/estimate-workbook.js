@@ -169,6 +169,7 @@
     { id: 'install_per_point', label: 'Install per point', role: 'EI' },
     { id: 'install_pneumatic_valve', label: 'Pneumatic and valve install', role: 'PI' },
     { id: 'startup_checkout', label: 'Startup and checkout', role: 'SC' },
+    { id: 'sensor_investigation', label: 'Sensor investigation', role: 'PE' },
     { id: 'commissioning', label: 'Commissioning', role: 'CO' },
     { id: 'training', label: 'Training', role: 'TR' },
     { id: 'network_ip', label: 'Network and IP', role: 'IT' },

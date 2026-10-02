@@ -3408,7 +3408,7 @@ function _pricingFmt(val) {
    EstimateWorkbook.compute() instead of summing line totals:
      - materials: the parts part of every hardware row (line total minus install labor), one line
      - labor hours by role: hardware install hours (task install_per_point), sequence programming
-       hours (bas_programming), sensor investigation hours (startup_checkout); role = project
+       hours (bas_programming), sensor investigation hours (sensor_investigation, default role PE); role = project
        setting or the task default
      - OT, tax state, tax rate, bond from the project settings; no $100 round-up
    grand = compute() total. phase1 (hardware) and phase2 (labor) split it by largest remainder,
@@ -3548,7 +3548,7 @@ function _pricingComputeTotals(rows, estimate, projId) {
         wbAgg.p2C += Math.round(price * 100);
         wbAgg.rows2.push({ id: toggleKey, c: Math.round(price * 100) });
         wbAdd(
-          row.isSensorInvestigation ? 'startup_checkout' : 'bas_programming',
+          row.isSensorInvestigation ? 'sensor_investigation' : 'bas_programming',
           row.hrsPerUnit != null
             ? row.hrsPerUnit * row.qty
             : price / (_pricingGetConfig().hourlyRate || COST_LABOR_RATE_DEFAULT),
@@ -10538,7 +10538,7 @@ function _pricingWorkbookPanelHTML(projId, wbSet) {
   var rows = _pricingRowCache[projId];
   var totals = rows ? _pricingComputeFilteredTotals(_pricingRowCache[projId + '_all'], rows, est, projId) : null;
   var wb = totals && totals.workbook ? totals.workbook : null;
-  var ids = ['install_per_point', 'bas_programming', 'startup_checkout'];
+  var ids = ['install_per_point', 'bas_programming', 'sensor_investigation'];
   var D = EstimateWorkbook.DEFAULTS;
   var tasks = ids.map(function (id) {
     var t = wb
