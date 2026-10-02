@@ -5607,10 +5607,10 @@ function emGetAuditColDefs(filteredRows) {
       isAuditSpValues: true,
       spZoneEquipTypes: Object.keys(_spZoneCats),
       title:
-        'GL36 §3.1.1.1 / Table 3.1.1.3 — Compares actual zone setpoint values against GL36 defaults. ' +
+        'ASHRAE 36 §3.1.1.1 / Table 3.1.1.3 — Compares actual zone setpoint values against ASHRAE 36 defaults. ' +
         'Green = All Match, Amber = Needs Review (deviations found — may be intentional per §3.1.1.1), ' +
         'Gray = No Data (setpoints not in BAS export), — = not applicable to this equipment type. ' +
-        'Click Coverage % cell to see the full GL36 Setpoint Check detail.',
+        'Click Coverage % cell to see the full ASHRAE 36 Setpoint Check detail.',
     });
   }
 
@@ -9373,7 +9373,7 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
         '<td style="' +
         baseStyle +
         'background:rgba(39,174,96,0.15);color:#27ae60;font-weight:700;font-size:11px" ' +
-        'title="All setpoint checks match GL36 defaults (±1°F / ±50 ppm)">All Match</td>'
+        'title="All setpoint checks match ASHRAE 36 defaults (±1°F / ±50 ppm)">All Match</td>'
       );
     }
     // Amber — deviations need review
@@ -21162,7 +21162,7 @@ function emComputeSetpointCompliance(equipRow, configFlags, overrides) {
       } else {
         status = 'DEVIATION';
         var unit = toleranceAbs === 50 ? ' ppm' : '°F';
-        deviationNote = 'Actual ' + actual + unit + ' vs GL36 default ' + gl36Default + unit;
+        deviationNote = 'Actual ' + actual + unit + ' vs ASHRAE 36 default ' + gl36Default + unit;
       }
     }
 
@@ -21269,7 +21269,7 @@ function emComputeSetpointCompliance(equipRow, configFlags, overrides) {
     var dbStatus, dbNote;
     if (db < tempLimits.deadbandMin) {
       dbStatus = 'DEVIATION';
-      dbNote = 'Deadband ' + db.toFixed(1) + '°F below GL36 ' + tempLimits.deadbandMin + '°F minimum';
+      dbNote = 'Deadband ' + db.toFixed(1) + '°F below ASHRAE 36 ' + tempLimits.deadbandMin + '°F minimum';
     } else if (db < tempLimits.deadbandRec) {
       dbStatus = 'PASS';
       dbNote = 'Below recommended ' + tempLimits.deadbandRec + '°F deadband (actual ' + db.toFixed(1) + '°F)';

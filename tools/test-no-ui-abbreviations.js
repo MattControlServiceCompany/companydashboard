@@ -84,6 +84,10 @@ const BANNED_WORDS = [
   // Occ/Unocc above, so they get the same whole-word ban site-wide.
   'Htg', // -> "Heating"
   'Clg', // -> "Cooling"
+  // 2026-10-02 — Matt's rule: user-visible text says "ASHRAE 36", never these three spellings.
+  'GL36',
+  'G36',
+  'Guideline 36',
 ];
 
 // A bare-symbol form `\b` can't bound ("#" isn't a word character) — checked by substring,

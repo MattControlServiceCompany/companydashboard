@@ -1186,18 +1186,18 @@ function btRunBehavioralChecks(summaries) {
           btRound(satRange, 1) +
           '°F over ' +
           dates.length +
-          ' days (<4°F threshold). Fixed setpoint detected — G36 §5.16.3 not running.',
+          ' days (<4°F threshold). Fixed setpoint detected — ASHRAE 36 §5.16.3 not running.',
       };
     } else if (satRange < 6) {
       checks.satReset = {
         verdict: 'WARN',
         detail:
-          'SAT range ' + btRound(satRange, 1) + '°F. Some variation but may not meet full G36 demand-based reset.',
+          'SAT range ' + btRound(satRange, 1) + '°F. Some variation but may not meet full ASHRAE 36 demand-based reset.',
       };
     } else {
       checks.satReset = {
         verdict: 'PASS',
-        detail: 'SAT range ' + btRound(satRange, 1) + '°F — consistent with active G36 reset.',
+        detail: 'SAT range ' + btRound(satRange, 1) + '°F — consistent with active ASHRAE 36 reset.',
       };
     }
     checks.satReset.range = btRound(satRange, 1);
@@ -1221,17 +1221,17 @@ function btRunBehavioralChecks(summaries) {
       checks.dspReset = {
         verdict: 'FAIL',
         detail:
-          'DSP range only ' + btRound(spRange, 2) + '" WC (<0.1" threshold). Fixed setpoint — G36 §5.16.4 not running.',
+          'DSP range only ' + btRound(spRange, 2) + '" WC (<0.1" threshold). Fixed setpoint — ASHRAE 36 §5.16.4 not running.',
       };
     } else if (spRange < 0.3) {
       checks.dspReset = {
         verdict: 'WARN',
-        detail: 'DSP range ' + btRound(spRange, 2) + '" WC. Some variation, may not meet full G36 reset.',
+        detail: 'DSP range ' + btRound(spRange, 2) + '" WC. Some variation, may not meet full ASHRAE 36 reset.',
       };
     } else {
       checks.dspReset = {
         verdict: 'PASS',
-        detail: 'DSP range ' + btRound(spRange, 2) + '" WC — consistent with active G36 trim-and-respond.',
+        detail: 'DSP range ' + btRound(spRange, 2) + '" WC — consistent with active ASHRAE 36 trim-and-respond.',
       };
     }
     checks.dspReset.range = btRound(spRange, 2);
@@ -4923,7 +4923,7 @@ function btEstimateSavings(projId, bldgId, opts) {
       annualKwh: Math.round(satCoolingKwh),
       annualTherms: Math.round(reheatThermsSaved),
       annualDollars: satDollars === null ? null : Math.round(satDollars),
-      detail: satFails + ' of ' + satEquipCount + ' AHUs show fixed SAT setpoint (ASHRAE G36 §5.16.3 not running)',
+      detail: satFails + ' of ' + satEquipCount + ' AHUs show fixed SAT setpoint (ASHRAE 36 §5.16.3 not running)',
       basis: '12% of AHU cooling energy + 5°F reheat reduction @ ' + cfmPerAhu.toLocaleString() + ' CFM',
       assumption: btAssumeText(fanKw, cfmPerAhu),
     });
@@ -4949,7 +4949,7 @@ function btEstimateSavings(projId, bldgId, opts) {
       annualKwh: Math.round(dspKwh),
       annualTherms: 0,
       annualDollars: dspDollars === null ? null : Math.round(dspDollars),
-      detail: dspFails + ' of ' + dspEquipCount + ' AHUs show fixed duct static pressure (G36 §5.16.4 not running)',
+      detail: dspFails + ' of ' + dspEquipCount + ' AHUs show fixed duct static pressure (ASHRAE 36 §5.16.4 not running)',
       basis: 'Fan affinity laws — 20% SP reduction → ' + Math.round(savingsFraction * 100) + '% fan power savings',
       assumption: btAssumeText(fanKwDsp),
     });

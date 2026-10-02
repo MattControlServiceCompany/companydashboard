@@ -159,11 +159,11 @@ const INSTALL_HOURS_BY_POINT_DEFAULT = (function () {
 /* ── ROI Savings Impact Model — Phase 5 (2026-06-19)
    Sources:
      [NLR-DSP-2026]  Allen, NLR/TP-5500-98345, OSTI 3022261 (fan SP reset)
-     [LBNL-G36-2022] Zhang/Blum/Granderson, J.Bldg.Perf.Sim. 15(2), OSTI 1842567 (31% avg HVAC)
-     [ORNL-G36-2024] Energy & Buildings, DOI:10.1016/j.enbuild.2024.115005 (42% research facility)
+     [LBNL-ASHRAE36-2022] Zhang/Blum/Granderson, J.Bldg.Perf.Sim. 15(2), OSTI 1842567 (31% avg HVAC)
+     [ORNL-ASHRAE36-2024] Energy & Buildings, DOI:10.1016/j.enbuild.2024.115005 (42% research facility)
      [NREL-DCV-2023] OSTI 2284042 (DCV 2.6% site energy)
      [NLR-VSP-2025]  OSTI 3021527 (variable-speed pumps; proxy for DP reset)
-     [G36-2021]      ASHRAE Guideline 36-2021
+     [ASHRAE36-2021]      ASHRAE 36-2021
      [CSC-BAS-CALC]  CSC BAS Savings Calculator (internal)
    ─────────────────────────────────────────────────────────────────────────── */
 
@@ -219,13 +219,13 @@ const SEQUENCE_SAVINGS_IMPACT = {
     nominalCostTier: 1,
     savingsRationale:
       'Supply air temperature trim-and-respond reset eliminates over-cooling and simultaneous heating, ' +
-      'reducing chiller and reheat energy. Multizone-VAV simulation: G36 controls cut HVAC energy 31% avg ' +
+      'reducing chiller and reheat energy. Multizone-VAV simulation: ASHRAE 36 controls cut HVAC energy 31% avg ' +
       '(LBNL 2022). ' +
       ORNL_CONTEXT_SENTENCE,
     clientSummary:
       'Adjusts supply air temperature to match real-time building demand, reducing simultaneous heating and ' +
       'cooling and lowering overall heating and cooling energy use.',
-    source: '[LBNL-G36-2022]',
+    source: '[LBNL-ASHRAE36-2022]',
     sourceType: SAVINGS_SOURCE_LITERATURE,
   },
   ahu_economizer: {
@@ -240,7 +240,7 @@ const SEQUENCE_SAVINGS_IMPACT = {
     clientSummary:
       'Uses outdoor air for free cooling whenever conditions allow, reducing mechanical cooling run time and ' +
       'compressor energy.',
-    source: '[G36-2021]',
+    source: '[ASHRAE36-2021]',
     sourceType: SAVINGS_SOURCE_ENGINEERING,
   },
   demandCtrl: {
@@ -338,7 +338,7 @@ const SEQUENCE_SAVINGS_IMPACT = {
       '⚠ Verify boiler type: MED (non-condensing) / MED-HIGH (condensing).',
     clientSummary:
       'Lowers boiler water temperature during mild weather, reducing boiler firing and heating gas consumption.',
-    source: '[G36-2021]',
+    source: '[ASHRAE36-2021]',
     sourceType: SAVINGS_SOURCE_ENGINEERING,
   },
   chwp_supply_reset: {
@@ -353,7 +353,7 @@ const SEQUENCE_SAVINGS_IMPACT = {
       'Centrifugal chillers most sensitive to CHWST; scroll/recip see smaller gains. ' +
       'Requires site-specific calculation for $ savings.',
     clientSummary: 'Raises chilled water temperature under light cooling loads, reducing chiller energy use.',
-    source: '[G36-2021]',
+    source: '[ASHRAE36-2021]',
     sourceType: SAVINGS_SOURCE_ENGINEERING,
   },
   hwp_pump_dp_reset: {
@@ -395,7 +395,7 @@ const SEQUENCE_SAVINGS_IMPACT = {
     clientSummary:
       'Coordinates return fan speed with the supply fan, maintaining proper building pressurization and ' +
       'eliminating wasted recirculation energy.',
-    source: '[G36-2021]',
+    source: '[ASHRAE36-2021]',
     sourceType: SAVINGS_SOURCE_ENGINEERING,
   },
   vav_zone_temp: {
@@ -404,14 +404,14 @@ const SEQUENCE_SAVINGS_IMPACT = {
     weight: 1.5,
     nominalCostTier: 1,
     savingsRationale:
-      'Zone temperature setpoints enable G36 dual-maximum logic — heating only activates below the heating ' +
+      'Zone temperature setpoints enable ASHRAE 36 dual-maximum logic — heating only activates below the heating ' +
       'setpoint, cooling only above the cooling setpoint, with a deadband in between. Eliminating zone ' +
       'over-conditioning directly reduces both heating and cooling energy. ' +
       'High prevalence in JOCO portfolio: 766 VAV units missing coolSP/htgSP.',
     clientSummary:
       'Establishes separate heating and cooling setpoints with a deadband between them, eliminating unnecessary ' +
       'simultaneous heating and cooling at the zone level.',
-    source: '[G36-2021]',
+    source: '[ASHRAE36-2021]',
     sourceType: SAVINGS_SOURCE_ENGINEERING,
   },
   vav_reheat: {
@@ -420,7 +420,7 @@ const SEQUENCE_SAVINGS_IMPACT = {
     weight: 1,
     nominalCostTier: 1,
     savingsRationale:
-      'G36 reheat sequencing prevents simultaneous heating and cooling by releasing reheat only after the ' +
+      'ASHRAE 36 reheat sequencing prevents simultaneous heating and cooling by releasing reheat only after the ' +
       'cooling damper reaches minimum. Correct implementation can eliminate 5–15% of building energy waste ' +
       'in systems with misconfigured VAV reheat (rule of thumb from audit practice; no published study — ' +
       'confirm via BAS trend data before citing in a contract).',
@@ -443,7 +443,7 @@ const SEQUENCE_SAVINGS_IMPACT = {
     clientSummary:
       'Ensures the correct amount of outside air is delivered at every fan speed, meeting ventilation ' +
       'requirements while avoiding over-ventilation energy waste.',
-    source: '[G36-2021]',
+    source: '[ASHRAE36-2021]',
     sourceType: SAVINGS_SOURCE_ENGINEERING,
   },
   vav_damper_writeback: {
@@ -458,7 +458,7 @@ const SEQUENCE_SAVINGS_IMPACT = {
     clientSummary:
       'Provides zone damper position feedback to the building automation system, enabling duct pressure reset ' +
       'and automatic unoccupied-mode damper closure.',
-    source: '[G36-2021]',
+    source: '[ASHRAE36-2021]',
     sourceType: SAVINGS_SOURCE_ENGINEERING,
     // Plain-language rewrite (no-abbreviations pass, 2026-07-31): was 'Enables Duct SP Reset'.
     enablesLabel: 'Enables Duct Pressure Reset',
@@ -475,7 +475,7 @@ const SEQUENCE_SAVINGS_IMPACT = {
     clientSummary:
       'Sequences multiple boilers so the right-sized unit runs at each load level, avoiding part-load ' +
       'inefficiency and enabling hot water temperature reset.',
-    source: '[G36-2021]',
+    source: '[ASHRAE36-2021]',
     sourceType: SAVINGS_SOURCE_ENGINEERING,
     // Plain-language rewrite (no-abbreviations pass, 2026-07-31): was 'Enables HW Plant Reset'.
     enablesLabel: 'Enables Hot Water Plant Reset',
@@ -492,7 +492,7 @@ const SEQUENCE_SAVINGS_IMPACT = {
     clientSummary:
       'Sequences multiple chillers so the right-sized unit runs at each load level, avoiding part-load ' +
       'inefficiency and enabling chilled water temperature reset.',
-    source: '[G36-2021]',
+    source: '[ASHRAE36-2021]',
     sourceType: SAVINGS_SOURCE_ENGINEERING,
     // Plain-language rewrite (no-abbreviations pass, 2026-07-31): was 'Enables CHW Plant Reset'.
     enablesLabel: 'Enables Chilled Water Plant Reset',
@@ -509,7 +509,7 @@ const SEQUENCE_SAVINGS_IMPACT = {
     clientSummary:
       'Protects heating and cooling coils from freeze damage during cold weather, reducing the risk of costly ' +
       'equipment failure.',
-    source: '[G36-2021]',
+    source: '[ASHRAE36-2021]',
     sourceType: SAVINGS_SOURCE_ENGINEERING,
   },
 };
@@ -583,7 +583,7 @@ function _hwRowKeyMatchesBlocking(hwPointKey, blockingKeys) {
    ─────────────────────────────────────────────────────────────────────────── */
 const SAVINGS_RANGE_MAP = {
   ahu_dsp_reset: { lowPct: 0.22, highPct: 0.65, energyBasis: 'fan', citation: '[NLR-DSP-2026]' },
-  ahu_sat_reset: { lowPct: 0.22, highPct: 0.42, energyBasis: 'fan', citation: '[LBNL-G36-2022 / ORNL-G36-2024]' },
+  ahu_sat_reset: { lowPct: 0.22, highPct: 0.42, energyBasis: 'fan', citation: '[LBNL-ASHRAE36-2022 / ORNL-ASHRAE36-2024]' },
   demandCtrl: { lowPct: 0.022, highPct: 0.03, energyBasis: 'elec', citation: '[NREL-DCV-2023]' },
   vav_dcv: { lowPct: 0.022, highPct: 0.03, energyBasis: 'elec', citation: '[NREL-DCV-2023]' },
   // All others: qualitative only (no fabricated % from engineering-only sources)

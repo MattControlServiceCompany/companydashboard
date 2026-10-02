@@ -1747,7 +1747,7 @@ const ECM_TEMPLATES = {
     name: 'VAV Reheat Optimization',
     category: 'HVAC Controls',
     description:
-      'Estimates savings from reducing simultaneous heating and cooling in VAV systems via two measures: (1) Supply Air Temperature (SAT) reset — raise SAT during mild weather so reheat zones need less heat while the AHU cools less air; (2) Minimum airflow setpoint reduction — per ASHRAE Guideline 36.',
+      'Estimates savings from reducing simultaneous heating and cooling in VAV systems via two measures: (1) Supply Air Temperature (SAT) reset — raise SAT during mild weather so reheat zones need less heat while the AHU cools less air; (2) Minimum airflow setpoint reduction — per ASHRAE 36.',
     icon: '🔁',
     inputs: [
       {
