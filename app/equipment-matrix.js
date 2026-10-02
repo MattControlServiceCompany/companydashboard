@@ -3376,53 +3376,25 @@ function emExtractEquipmentGroups(rows, colMap) {
       var _cpNameBase = emParseEquipBaseName(_cpEquipName);
       var category = _cpNameBase || emClassifyEquipType(_cpEquipName);
 
-      // Group key: building + full control program. Location is no longer part of key.
-      // In JOCO WebCTRL each control program string is unique per building (it encodes
-      // both equipment type and building abbreviation), so collisions are not expected in
-      // normal data.  The guard below detects the rare case where the same key would be
-      // produced for a LOGICALLY DIFFERENT equipment (i.e. the stored group has a different
-      // bacnetPath root) and appends a numeric disambiguator to prevent silent point loss.
+      // Group key: building + full control program (location is not part of the key).
+      // Identity: building + control program, plus its full BACnet path.
+      // Groups are first held under a path-root key, so two different pieces of equipment that
+      // share a name stay separate no matter what order the CSV lists them in. After the loop
+      // (see "finalize keys" below) a name that is unique keeps the plain id building||equipName;
+      // a name shared by several paths gets a stable id per root, never an order number.
       var groupKey = building + '||' + equipName;
-      if (groups.has(groupKey)) {
-        // Key already exists — check if it's from the same bacnetPath root (safe merge) or
-        // a distinct logical equipment (collision that would lose points).
-        var _existingGroup = groups.get(groupKey);
-        var _existingPathRoot = _existingGroup.bacnetPathRoot || '';
-        var _thisPathRoot = bacnetPath.split('/').slice(0, 3).join('/');
-        if (_existingPathRoot && _existingPathRoot !== _thisPathRoot) {
-          // Genuine collision from a different path: append disambiguator
-          var _disambig = 2;
-          while (groups.has(groupKey + '||#' + _disambig)) {
-            _disambig++;
-          }
-          groupKey = groupKey + '||#' + _disambig;
-          // Fall through to create a new group below
-          groups.set(groupKey, {
-            building: building,
-            floor: wfloor,
-            location: location,
-            equipName: equipName,
-            equipTypeStr: equipName,
-            category: category,
-            bacnetPathRoot: _thisPathRoot,
-            bacnetLocation: bacnetPath, // 2224d15d: full BACnet path for integration-stub detection at audit time
-            checkValues: {},
-            pointValues: {},
-            rawPointMap: {}, // M4: all raw BAS point names captured at import
-            colMap: colMap,
-          });
-        }
-        // else: same path root — normal multi-point accumulation, use existing group
-      } else {
-        var _thisPathRoot2 = bacnetPath.split('/').slice(0, 3).join('/');
-        groups.set(groupKey, {
+      var _thisPathRoot = bacnetPath; // full BACnet path of the control program: the stable identity
+      var _internalKey = groupKey + '||@' + _thisPathRoot;
+      if (!groups.has(_internalKey)) {
+        groups.set(_internalKey, {
           building: building,
           floor: wfloor,
           location: location,
           equipName: equipName,
           equipTypeStr: equipName,
           category: category,
-          bacnetPathRoot: _thisPathRoot2,
+          bacnetPathRoot: _thisPathRoot,
+          baseKey: groupKey,
           bacnetLocation: bacnetPath, // 2224d15d: full BACnet path for integration-stub detection at audit time
           checkValues: {},
           pointValues: {},
@@ -3430,7 +3402,7 @@ function emExtractEquipmentGroups(rows, colMap) {
           colMap: colMap,
         });
       }
-      var wgroup = groups.get(groupKey);
+      var wgroup = groups.get(_internalKey);
 
       // M4: Capture EVERY raw point name→value in rawPointMap (0-safe: skip only null/undefined).
       // pointVal from CSV trim() is always a string, never null/undefined, so store unconditionally
@@ -3581,7 +3553,19 @@ function emExtractEquipmentGroups(rows, colMap) {
         }
       }
     });
-    return groups;
+    // finalize keys: unique name -> plain id; shared name -> the lowest path root keeps the plain
+    // id (so older stored rows still match) and every other root gets building||name||@root.
+    var _rootsByBase = {};
+    groups.forEach(function (grp) {
+      (_rootsByBase[grp.baseKey] = _rootsByBase[grp.baseKey] || []).push(grp.bacnetPathRoot);
+    });
+    var finalGroups = new Map();
+    groups.forEach(function (grp) {
+      var roots = _rootsByBase[grp.baseKey].slice().sort();
+      var key = roots[0] === grp.bacnetPathRoot ? grp.baseKey : grp.baseKey + '||@' + grp.bacnetPathRoot;
+      finalGroups.set(key, grp);
+    });
+    return finalGroups;
   }
 
   // ── Enriched 45-column matrix format (original) ──
@@ -3977,42 +3961,55 @@ function emSaveMatrix(projId, data) {
   return sset('en_eqmatrix_' + projId, data);
 }
 
+// Fields a CSV import owns. When an incoming row matches a stored row by id, ONLY these are
+// overwritten; every other field (notes, editedAt, existingSchedule*, custom columns, physical
+// attributes, data.edits) belongs to the user and is kept.
+// category and subtype are derived from the points (and re-derived when a matrix loads), so they are
+// only overwritten when one of the CSV data fields actually changed.
+var EM_CSV_DATA_FIELDS = ['checks', 'points', 'pointsRaw', 'bacnetLocation', 'location', 'floor'];
+var EM_CSV_OWNED_FIELDS = EM_CSV_DATA_FIELDS.concat(['category', 'subtype']);
+
 function emMergeIntoMatrix(existingData, newRows) {
   var existing = existingData && existingData.rows ? existingData.rows : [];
-  // Dedup by id: an equipment row that already exists is kept exactly as stored (notes, edits,
-  // attached schedules and all) and the incoming copy is skipped. Counts are returned so the
-  // import summary can tell the user how many rows were added vs skipped as duplicates.
   var byId = {};
   for (var i = 0; i < existing.length; i++) {
     byId[existing[i].id] = existing[i];
   }
+  var touched = {}; // ids already added or updated by THIS import
   var addedCount = 0;
-  var skippedCount = 0;
+  var updatedCount = 0;
+  var unchangedCount = 0;
+  var ambiguousCount = 0; // same id twice in one import (different files): first one wins, rest reported
+  var toAdd = [];
   for (var j = 0; j < newRows.length; j++) {
     var nr = newRows[j];
-    if (byId[nr.id]) {
-      skippedCount++;
-    } else {
+    var old = byId[nr.id];
+    if (!old) {
       byId[nr.id] = nr;
+      touched[nr.id] = true;
+      toAdd.push(nr);
       addedCount++;
+    } else if (touched[nr.id]) {
+      ambiguousCount++;
+    } else {
+      var changed = false;
+      for (var f = 0; f < EM_CSV_DATA_FIELDS.length; f++) {
+        var fk = EM_CSV_DATA_FIELDS[f];
+        if (JSON.stringify(old[fk] === undefined ? null : old[fk]) !== JSON.stringify(nr[fk] === undefined ? null : nr[fk])) {
+          changed = true;
+        }
+      }
+      if (changed) {
+        for (var g = 0; g < EM_CSV_OWNED_FIELDS.length; g++) {
+          old[EM_CSV_OWNED_FIELDS[g]] = nr[EM_CSV_OWNED_FIELDS[g]];
+        }
+      }
+      touched[nr.id] = true;
+      if (changed) updatedCount++;
+      else unchangedCount++;
     }
   }
-  var merged = [];
-  var seen = {};
-  for (var k = 0; k < existing.length; k++) {
-    var id = existing[k].id;
-    if (!seen[id]) {
-      merged.push(byId[id]);
-      seen[id] = true;
-    }
-  }
-  for (var m = 0; m < newRows.length; m++) {
-    var nid = newRows[m].id;
-    if (!seen[nid]) {
-      merged.push(byId[nid]);
-      seen[nid] = true;
-    }
-  }
+  var merged = existing.concat(toAdd);
   // ── Sort rows: building alphabetically, then HVAC types before non-HVAC, then equipment name ──
   // M3: expanded priority map — extracted to module scope as _emTypePriority (shared with render functions)
   merged.sort(function (a, b) {
@@ -4041,13 +4038,19 @@ function emMergeIntoMatrix(existingData, newRows) {
     return (a || '').toLowerCase() < (b || '').toLowerCase() ? -1 : 1;
   });
 
-  return {
-    rows: merged,
-    importedAt: new Date().toISOString(),
-    buildings: buildings,
-    addedCount: addedCount,
-    skippedCount: skippedCount,
-  };
+  // Keep every other top-level field of the stored matrix (edits, config flags, ...).
+  var result = {};
+  Object.keys(existingData || {}).forEach(function (k) {
+    result[k] = existingData[k];
+  });
+  result.rows = merged;
+  result.importedAt = new Date().toISOString();
+  result.buildings = buildings;
+  result.addedCount = addedCount;
+  result.updatedCount = updatedCount;
+  result.unchangedCount = unchangedCount;
+  result.ambiguousCount = ambiguousCount;
+  return result;
 }
 
 /* ── PHASE 3: VIEW SCAFFOLD ── */
@@ -4199,6 +4202,7 @@ function emInjectMatrixCSS() {
   var style = document.createElement('style');
   style.id = 'em-matrix-styles';
   style.textContent = [
+    '@media (max-height: 760px), (max-width: 900px) { #em-stats-bar, #em-scope-note { display: none !important; } }',
     '.em-table-wrap { overflow: scroll; scrollbar-gutter: stable both-edges; isolation: isolate; }',
     '.em-table-wrap::-webkit-scrollbar { height: 14px; width: 14px; }',
     '.em-table-wrap::-webkit-scrollbar-thumb { background: var(--s4); border-radius: 7px; border: 3px solid var(--s2); }',
@@ -4412,24 +4416,21 @@ function emRenderMatrix(container, data, pid) {
   // and cooling equipment ASHRAE 36 applies to. Plain text, no box/card, dense
   // single line, 11px (above the 10pt floor).
   var scopeNoteHtml =
-    '<div style="padding:4px 20px;font-size:11px;line-height:1.4;color:var(--text3);border-bottom:1px solid var(--border);flex-shrink:0">' +
+    '<div id="em-scope-note" style="padding:4px 20px;font-size:11px;line-height:1.4;color:var(--text3);border-bottom:1px solid var(--border);flex-shrink:0">' +
     'Includes every imported control program (lighting, fire, plumbing, and more), not just heating and cooling equipment; see the Audit Report for the ASHRAE 36 scoped count.' +
     '</div>';
 
-  // Everything above the table sits in one block capped at 40% of the window height, so on a
-  // small window (half-width 640 px, short laptop screens) the table always keeps usable height
-  // instead of being squeezed to a few pixels. On normal windows the block is shorter than the
-  // cap and does not scroll.
+  // Nothing above the table scrolls. On a small window (short or narrow) the statistics bar and
+  // the scope note are hidden by CSS (see emInjectMatrixCSS) so the toolbar stays visible and the
+  // table keeps usable height.
   container.innerHTML =
     '<div style="display:flex;flex-direction:column;flex:1;min-height:0">' +
-    '<div id="em-top-block" style="flex:0 0 auto;max-height:40vh;overflow-y:auto">' +
     statsHtml +
     scopeNoteHtml +
     '<div style="flex-shrink:0;border-bottom:1px solid var(--border)">' +
     toolbarHtml +
     '</div>' +
     '<div id="em-upload-inline" style="display:none;flex-shrink:0;border-bottom:1px solid var(--border);padding:16px 20px"></div>' +
-    '</div>' +
     '<div id="em-table-wrap" class="em-table-wrap" style="flex:1;min-height:0"></div>' +
     '</div>';
 
@@ -11373,6 +11374,25 @@ function emHandleImport(pid) {
       // already exist (same building + control program) are skipped, and nothing is removed.
       var baseData = emLoadMatrix(pid) || { rows: [], buildings: [] };
       var merged = emMergeIntoMatrix(baseData, allRows);
+      // Counts are for the summary only; they are not stored with the matrix.
+      var _cnt = {
+        added: merged.addedCount,
+        updated: merged.updatedCount,
+        unchanged: merged.unchangedCount,
+        ambiguous: merged.ambiguousCount,
+      };
+      delete merged.addedCount;
+      delete merged.updatedCount;
+      delete merged.unchangedCount;
+      delete merged.ambiguousCount;
+      var _cntText =
+        _cnt.added.toLocaleString() +
+        ' added, ' +
+        _cnt.updated.toLocaleString() +
+        ' updated, ' +
+        _cnt.unchanged.toLocaleString() +
+        ' unchanged' +
+        (_cnt.ambiguous ? ', ' + _cnt.ambiguous.toLocaleString() + ' ambiguous (same name twice in this import, first one used)' : '');
       // Point total grows only by the points of rows that were actually added (skipped duplicates add none).
       var _baseIds = {};
       (baseData.rows || []).forEach(function (r) {
@@ -11418,10 +11438,8 @@ function emHandleImport(pid) {
       }
       var successMsg =
         'Import complete — ' +
-        merged.addedCount.toLocaleString() +
-        ' equipment added, ' +
-        merged.skippedCount.toLocaleString() +
-        ' skipped as duplicates (' +
+        _cntText +
+        ' (' +
         pending +
         ' file' +
         (pending !== 1 ? 's' : '') +
@@ -11468,10 +11486,8 @@ function emHandleImport(pid) {
       // Added vs skipped-as-duplicate counts, so a re-import never looks like it duplicated data.
       var _addSkipHtml =
         '<div style="margin-top:6px;border-top:1px solid var(--border);padding-top:6px;font-weight:600;color:var(--text)">' +
-        merged.addedCount.toLocaleString() +
-        ' new equipment added &nbsp;|&nbsp; ' +
-        merged.skippedCount.toLocaleString() +
-        ' skipped as duplicates (already in the matrix)</div>';
+        _cntText +
+        ' (existing equipment is never removed; user notes and edits are kept)</div>';
 
       var summaryHtml =
         '<div style="font-size:11px;color:var(--text2);line-height:1.6;background:var(--s3);border-radius:4px;padding:8px 10px">' +
@@ -11501,10 +11517,7 @@ function emHandleImport(pid) {
         if (successMsgEl)
           successMsgEl.textContent =
             'Import complete — ' +
-            merged.addedCount.toLocaleString() +
-            ' added, ' +
-            merged.skippedCount.toLocaleString() +
-            ' skipped as duplicates';
+            _cntText;
       }
       if (summaryEl) {
         summaryEl.innerHTML = summaryHtml;

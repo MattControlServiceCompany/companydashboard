@@ -89,10 +89,6 @@ assert(src.includes('function emParseEffectiveSchedulesCSV'), 'source contains e
 assert(src.includes('function _emParseScheduleBlock'), 'source contains _emParseScheduleBlock');
 assert(src.includes('function emTriggerEffectiveSchedulesImport'), 'source contains the import button handler');
 assert(src.includes('function emShowEffectiveSchedulesResult'), 'source reports the import result (matched/unmatched)');
-assert(
-  src.includes('skippedCount++'),
-  'emMergeIntoMatrix skips rows that already exist, so an attached schedule survives a later BAS Points CSV re-import',
-);
 
 const sandbox = {
   console,
@@ -181,6 +177,64 @@ assert(
   mergedR1.existingSchedule.startStr === '6:00',
   'preserved schedule keeps its original 6:00 start after re-merge',
 );
+
+// ── 7. Behavioral: re-importing a NEWER BAS Points CSV (emMergeIntoMatrix) ───────────────────
+// Old matrix (from an older export) + newer CSV: CSV-owned fields update, user fields stay,
+// nothing is lost, nothing is duplicated, colliding control-program names get stable keys.
+function importCsv(lines) {
+  const text = ['Location,Control Program,Name,Value,Type'].concat(lines).join(String.fromCharCode(10));
+  const parsed = sandbox.emParseCSVText(text);
+  const colMap = sandbox.emDetectColMap(parsed[0]);
+  const groups = sandbox.emExtractEquipmentGroups(parsed.slice(1), colMap);
+  const out = [];
+  groups.forEach((g, k) => out.push(sandbox.emGroupToMatrixRow(k, g)));
+  return out;
+}
+const P1 = '/Fixture District/Fixture Middle School/First Floor';
+const oldCsv = [
+  P1 + ',Rooftop Unit 1,Zone Temp,70 F,BAI',
+  P1 + ',Rooftop Unit 2,Zone Temp,71 F,BAI',
+  '/Fixture District/Fixture Middle School/Wing A/Pumps,Pump - FMS,Status,On,BAI',
+  '/Fixture District/Fixture Middle School/Wing B/Pumps,Pump - FMS,Status,Off,BAI',
+];
+let stored = { rows: importCsv(oldCsv), edits: { 'k::x': 'kept' }, importedAt: 'old', buildings: [] };
+assert(stored.rows.length === 4, 'old import yields 4 rows (colliding Pump - FMS kept as 2), got ' + stored.rows.length);
+const ids = stored.rows.map((r) => r.id);
+assert(new Set(ids).size === 4, 'colliding names get 4 distinct ids: ' + ids.join(' ; '));
+const ru1 = stored.rows.find((r) => r.equipName === 'Rooftop Unit 1');
+ru1.notes = 'user note';
+ru1.editedAt = 'T1';
+ru1.existingSchedule = { startStr: '7:00' };
+ru1.custom_col_1 = 'custom';
+ru1.serial = 'SN-1';
+const pumpWingB = stored.rows.find((r) => r.bacnetLocation.indexOf('Wing B') !== -1);
+pumpWingB.notes = 'wing b pump note';
+// same CSV again, rows listed in REVERSE order: nothing added, updated or lost
+let m = sandbox.emMergeIntoMatrix(stored, importCsv(oldCsv.slice().reverse()));
+assert(m.addedCount === 0 && m.updatedCount === 0 && m.unchangedCount === 4, 'same CSV (reversed order): 0 added, 0 updated, 4 unchanged, got ' + [m.addedCount, m.updatedCount, m.unchangedCount]);
+assert(m.rows.length === 4, 'row count stays 4');
+assert(m.rows.find((r) => r.bacnetLocation.indexOf('Wing B') !== -1).notes === 'wing b pump note', 'colliding row keeps its own note after reversed-order re-import');
+// newer CSV: one value changed, one new point, one new equipment, one equipment missing from the file
+const newCsv = [
+  P1 + ',Rooftop Unit 1,Zone Temp,75 F,BAI',
+  P1 + ',Rooftop Unit 1,Supply Fan Status,On,BAI',
+  '/Fixture District/Fixture Middle School/Wing A/Pumps,Pump - FMS,Status,On,BAI',
+  '/Fixture District/Fixture Middle School/Wing B/Pumps,Pump - FMS,Status,Off,BAI',
+  P1 + ',Rooftop Unit 3,Zone Temp,72 F,BAI',
+];
+m = sandbox.emMergeIntoMatrix(m, importCsv(newCsv));
+assert(m.addedCount === 1 && m.updatedCount === 1 && m.unchangedCount === 2, 'newer CSV: 1 added, 1 updated, 2 unchanged, got ' + [m.addedCount, m.updatedCount, m.unchangedCount]);
+assert(m.rows.length === 5, 'no rows lost, no duplicates: 5 rows, got ' + m.rows.length);
+const nru1 = m.rows.find((r) => r.equipName === 'Rooftop Unit 1');
+assert(JSON.stringify(nru1.pointsRaw).indexOf('75 F') !== -1 && nru1.pointsRaw['Supply Fan Status'] === 'On', 'CSV-owned pointsRaw updated');
+assert(nru1.notes === 'user note' && nru1.editedAt === 'T1' && nru1.existingSchedule.startStr === '7:00', 'notes, editedAt, existingSchedule kept');
+assert(nru1.custom_col_1 === 'custom' && nru1.serial === 'SN-1', 'custom column and physical attribute kept');
+assert(m.rows.find((r) => r.equipName === 'Rooftop Unit 2') !== undefined, 'equipment missing from the newer CSV is never deleted');
+assert(m.edits && m.edits['k::x'] === 'kept', 'stored data.edits survive the merge');
+// ambiguity: same id twice inside one import is reported, not silently merged
+const dup = importCsv([P1 + ',Rooftop Unit 9,Zone Temp,1 F,BAI']);
+m = sandbox.emMergeIntoMatrix(m, dup.concat(dup));
+assert(m.addedCount === 1 && m.ambiguousCount === 1, 'same id twice in one import: 1 added, 1 ambiguous, got ' + [m.addedCount, m.ambiguousCount]);
 
 // ── 6. Export CSV column defs include the imported schedule text (Raw View / Export CSV) ─────
 const colDefs = sandbox.emGetColDefs(FIXTURE_PID);
