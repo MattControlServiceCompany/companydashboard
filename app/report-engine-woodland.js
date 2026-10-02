@@ -2059,7 +2059,7 @@ function rptPageWoodlandBASCalc(n, d) {
       ' of ' +
       chunk.length +
       ' zones on this sheet have both occupied setpoints on record.</div>' +
-      '<table class="rpt-table rpt-table-wrap rpt-mp-dense" style="table-layout:fixed"><thead><tr><th style="width:24%">Zone</th><th class="rpt-n" style="width:11%">Occupied Heating</th><th class="rpt-n" style="width:11%">Occupied Cooling</th><th class="rpt-n" style="width:11%">Unoccupied Heating</th><th class="rpt-n" style="width:11%">Unoccupied Cooling</th><th style="width:16%">Effective Schedule</th><th style="width:16%">Status</th></tr></thead><tbody>' +
+      '<table class="rpt-table rpt-table-wrap rpt-mp-dense" style="table-layout:fixed"><thead><tr><th style="width:24%">Zone</th><th class="rpt-n" style="width:11%">Occupied Heating</th><th class="rpt-n" style="width:11%">Occupied Cooling</th><th class="rpt-n" style="width:11%">Unoccupied Heating</th><th class="rpt-n" style="width:11%">Unoccupied Cooling</th><th style="width:16%" title="Effective schedule (one day, from WebCTRL export)">Effective schedule (one day, from WebCTRL export)</th><th style="width:16%">Status</th></tr></thead><tbody>' +
       rows +
       '</tbody></table>';
     pages.push(
