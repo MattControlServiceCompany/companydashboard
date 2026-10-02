@@ -17841,12 +17841,14 @@ function rptPageASHRAE36SetpointReview(n, d) {
     (b.equipResults || []).forEach(function (eq) {
       if (!ZONE_CATS[eq.category]) return;
       var sp = eq.spCompliance;
-      if (!sp || (!sp.hasAnyData && !sp.hasAnyNotScheduled)) return;
+      // f7c7c4ae: a zone with no setpoint value in the export is left out, never reported as
+      // "Not Scheduled" — absence of data in the export is not a statement about the building.
+      if (!sp || !sp.hasAnyData) return;
 
       var hasUnackDeviation = sp.results.some(function (r) {
         return r.status === 'DEVIATION' && !r.intentionalFlag;
       });
-      var displayStatus = hasUnackDeviation ? 'NEEDS_REVIEW' : sp.hasAnyNotScheduled ? 'NOT_SCHEDULED' : 'MATCHES';
+      var displayStatus = hasUnackDeviation ? 'NEEDS_REVIEW' : 'MATCHES';
 
       var occHeatEntry = sp.results.find(function (r) {
         return r.checkKey === 'occHeat';
@@ -18004,22 +18006,13 @@ function rptPageASHRAE36SetpointReview(n, d) {
     var avgRecUnoccHeat = _mean(recUnoccHeatVals);
     var avgRecUnoccCool = _mean(recUnoccCoolVals);
 
-    // Building status: NEEDS_REVIEW if any zones deviate; NOT_SCHEDULED if no
-    // actual data at all; MATCHES otherwise.
-    var bStatus;
-    if (deviatorCount > 0) {
-      bStatus = 'NEEDS_REVIEW';
-    } else if (!hasAnyData) {
-      bStatus = 'NOT_SCHEDULED';
-    } else {
-      bStatus = 'MATCHES';
-    }
+    // Building status: NEEDS_REVIEW if any zones deviate; MATCHES otherwise. Every zone here
+    // has at least one setpoint value (zones without data are filtered out above).
+    var bStatus = deviatorCount > 0 ? 'NEEDS_REVIEW' : 'MATCHES';
 
     var deviatorLabel;
     if (deviatorCount > 0) {
       deviatorLabel = deviatorCount + ' of ' + zones.length + ' zone' + (zones.length !== 1 ? 's' : '') + (deviatorCount !== 1 ? ' differ' : ' differs') + ' from ASHRAE 36 defaults';
-    } else if (!hasAnyData) {
-      deviatorLabel = zones.length + ' zone' + (zones.length !== 1 ? 's' : '') + ': no setpoint programmed';
     } else {
       deviatorLabel = zones.length + ' zone' + (zones.length !== 1 ? 's' : '') + ' match';
     }
@@ -18057,7 +18050,7 @@ function rptPageASHRAE36SetpointReview(n, d) {
   });
 
   // Sort: Needs-Review first, then Not-Scheduled, then Matches; alpha within group.
-  var STATUS_ORDER_B = { NEEDS_REVIEW: 0, NOT_SCHEDULED: 1, MATCHES: 2 };
+  var STATUS_ORDER_B = { NEEDS_REVIEW: 0, MATCHES: 1 };
   buildingRows.sort(function (a, b2) {
     var ao = STATUS_ORDER_B[a.bStatus] !== undefined ? STATUS_ORDER_B[a.bStatus] : 99;
     var bo = STATUS_ORDER_B[b2.bStatus] !== undefined ? STATUS_ORDER_B[b2.bStatus] : 99;
@@ -18113,8 +18106,6 @@ function rptPageASHRAE36SetpointReview(n, d) {
   function _statusCell(status) {
     if (status === 'NEEDS_REVIEW') {
       return '<span style="font-size:9px;font-weight:700;color:var(--rpt-orange)">Reprogram to Standard</span>';
-    } else if (status === 'NOT_SCHEDULED') {
-      return '<span style="font-size:9px;font-weight:700;color:var(--rpt-page-text)">Not Scheduled</span>';
     }
     return '<span style="font-size:9px;font-weight:700;color:var(--rpt-green)">Matches</span>';
   }
@@ -18225,12 +18216,8 @@ function rptPageASHRAE36SetpointReview(n, d) {
   var matchesTotal = buildingRows.filter(function (r) {
     return r.bStatus === 'MATCHES';
   }).length;
-  var notScheduledTotal = buildingRows.filter(function (r) {
-    return r.bStatus === 'NOT_SCHEDULED';
-  }).length;
   var summaryParts = [buildingRows.length + ' building' + (buildingRows.length !== 1 ? 's' : '')];
   if (needsReviewTotal > 0) summaryParts.push(needsReviewTotal + ' to reprogram to standard');
-  if (notScheduledTotal > 0) summaryParts.push(notScheduledTotal + ' Not Scheduled');
   if (matchesTotal > 0) summaryParts.push(matchesTotal + ' match ASHRAE 36 defaults');
 
   var totalsCallout =
@@ -18265,7 +18252,7 @@ function rptPageASHRAE36SetpointReview(n, d) {
       _excludedCount +
       ' of ' +
       _totalScoredBuildings +
-      ' buildings are not included here because their heating and cooling equipment (rooftop units, heaters, exhaust fans, and similar) has no separate zone-level setpoints to review.' +
+      ' buildings are not included here because the building automation data has no zone-level setpoints to review for them.' +
       '</div>' +
       '</div>';
   }
