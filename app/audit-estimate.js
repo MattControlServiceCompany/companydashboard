@@ -334,7 +334,7 @@ function auditEstGetEquipmentSummary(projId) {
   rows.forEach(function (r) {
     var bName = r.building || 'Unknown Building';
     var cat = r.category || 'other';
-    var pts = r.points ? Object.keys(r.points).length : 0;
+    var pts = emRowPointCount(r);
     allBuildings[bName] = true; // every project building, also ones with no auditable equipment
     if (AUDIT_EST_CATEGORIES.indexOf(cat) !== -1) {
       // Only a building with an auditable category is priced (same set the proposal lists).

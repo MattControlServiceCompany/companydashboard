@@ -5630,6 +5630,17 @@ function emGetAuditColDefs(filteredRows) {
   return defs;
 }
 
+/* ── emRowPointCount ────────────────────────────────────────────────────────
+   The single point count for one equipment row: the raw point names from the CSV (pointsRaw).
+   row.points also holds mapper alias keys (outdoorAirTemp, zoneStatus, ...) for the same
+   physical points, so counting it double counts. Older rows without pointsRaw fall back to points. */
+function emRowPointCount(row) {
+  if (!row) return 0;
+  var raw = row.pointsRaw ? Object.keys(row.pointsRaw).length : 0;
+  if (raw > 0) return raw;
+  return row.points ? Object.keys(row.points).length : 0;
+}
+
 /* ── emComputeAuditStats ────────────────────────────────────────────────────
    Compute average compliance % and total BAS point count across all rows.
    Returns: { avgCoverage: number, totalBASPoints: number }              */
@@ -5641,8 +5652,7 @@ function emComputeAuditStats(rows) {
   var _auditStatsPid = window._emActivePid || '';
   for (var i = 0; i < rows.length; i++) {
     var r = rows[i];
-    var pts = r.points || {};
-    totalPts += Object.keys(pts).length;
+    totalPts += emRowPointCount(r);
     if (r.category && EM_POINT_CATEGORIES[r.category]) {
       // space-type-classifier-2026-07-29 fix: real per-row flags so the footer/summary
       // avgCoverage stat agrees with the priced coverage and the Audit table column.
@@ -6666,7 +6676,7 @@ function emComputeAuditFooterTotals(rows, defs) {
 
   for (var ri = 0; ri < rows.length; ri++) {
     var r = rows[ri];
-    ptSum += Object.keys(r.points || {}).length;
+    ptSum += emRowPointCount(r);
     var comp = null;
     // space-type-classifier-2026-07-29 fix: load once per row (not per emComputeCompliance
     // call below) so the footer aggregates agree with the priced coverage without adding
@@ -7057,8 +7067,8 @@ function emRenderTable(data, filters) {
   if (countEl) {
     var totalPts = 0,
       filteredPts = 0;
-    for (var i = 0; i < rows.length; i++) totalPts += Object.keys(rows[i].points || {}).length;
-    for (var i = 0; i < filtered.length; i++) filteredPts += Object.keys(filtered[i].points || {}).length;
+    for (var i = 0; i < rows.length; i++) totalPts += emRowPointCount(rows[i]);
+    for (var i = 0; i < filtered.length; i++) filteredPts += emRowPointCount(filtered[i]);
     var ptsText =
       filtered.length < rows.length
         ? filteredPts.toLocaleString() + ' of ' + totalPts.toLocaleString() + ' Building Automation System Points'
@@ -10301,7 +10311,7 @@ function emFormatCell(val, def, row) {
   var s = String(val);
   // Step 3 — offline sentinel display: WebCTRL "no data" markers render as muted "offline" label.
   // DISPLAY ONLY — do NOT filter these at import time or delete from row.points.
-  // Points must still count toward Total BAS Points (Object.keys(row.points).length unchanged).
+  // Points must still count toward Total BAS Points (emRowPointCount unchanged).
   // Place before isCategory and check_ branches so it applies to Live + dynamic columns.
   if (s.trim() === '?' || s.trim() === 'offline') {
     return '<span style="color:var(--text3);font-size:11px;font-style:italic">offline</span>';

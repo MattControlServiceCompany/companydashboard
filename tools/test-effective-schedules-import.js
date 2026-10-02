@@ -243,6 +243,15 @@ const dup = importCsv([P1 + ',Rooftop Unit 9,Zone Temp,1 F,BAI']);
 m = sandbox.emMergeIntoMatrix(m, dup.concat(dup));
 assert(m.addedCount === 1 && m.ambiguousCount === 1, 'same id twice in one import: 1 added, 1 ambiguous, got ' + [m.addedCount, m.ambiguousCount]);
 
+// ── 7b. Point totals count raw CSV points, never mapper alias keys ──────────────────────────
+const aliasRow = { id: 'a', category: 'ahu', pointsRaw: { 'OA Temp': '50', 'Zone Status': 'On' }, points: { 'OA Temp': '50', 'Zone Status': 'On', outdoorAirTemp: '50', zoneStatus: 'On' }, checks: {} };
+assert(sandbox.emRowPointCount(aliasRow) === 2, 'alias keys are not counted: 2 raw points, got ' + sandbox.emRowPointCount(aliasRow));
+assert(sandbox.emRowPointCount({ points: { a: 1, b: 2, c: 3 } }) === 3, 'older rows without pointsRaw fall back to points');
+const beforeTotal = sandbox.emComputeAuditStats([aliasRow]).totalBASPoints;
+const grown = JSON.parse(JSON.stringify(aliasRow));
+grown.points.zoneTemperature = '70';
+assert(sandbox.emComputeAuditStats([grown]).totalBASPoints === beforeTotal, 'Audit total unchanged when only alias keys are added to points');
+
 // ── 6. Export CSV column defs include the imported schedule text (Raw View / Export CSV) ─────
 const colDefs = sandbox.emGetColDefs(FIXTURE_PID);
 const eschCol = colDefs.find((d) => d.key === 'existingScheduleText');
