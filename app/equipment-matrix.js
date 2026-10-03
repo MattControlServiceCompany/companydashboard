@@ -2179,6 +2179,7 @@ function emDetectColMap(headerRow) {
       // emParseCSVText splits the export cells that have a space after the closing quote into extra fields, so row width varies and the Path is
       // read from the END of each row. pathLast is false when the export has no Path column at the end.
       pathLast: (headerRow[headerRow.length - 1] || '').trim().toLowerCase() === 'path',
+      headerLen: headerRow.length,
       checkStart: -1,
       checkCount: 0,
       pointStart: -1,
@@ -3406,7 +3407,7 @@ function emExtractEquipmentGroups(rows, colMap) {
       // the same point name on two different Paths counts twice. No Path column: the point name is the id.
       // This set is used for counting only. It never feeds the ASHRAE 36 point mapping below.
       if (pointName !== '') {
-        var _pathId = colMap.pathLast ? (wrow[wrow.length - 1] || '').trim() : '';
+        var _pathId = colMap.pathLast && wrow.length >= colMap.headerLen ? (wrow[wrow.length - 1] || '').trim() : '';
         wgroup.pathSet[_pathId !== '' ? _pathId : 'name:' + pointName] = true;
       }
 
@@ -11421,6 +11422,18 @@ function emQueueFiles(files) {
   emHandleImport(_emUploadTargetPid);
 }
 
+// Import order helpers: files are read in name order and their rows joined in that order.
+function emSortFilesByName(files) {
+  return files.slice().sort(function (a, b) {
+    return a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
+  });
+}
+function emFlattenFileRows(rowsByFile) {
+  var out = [];
+  for (var i = 0; i < rowsByFile.length; i++) if (rowsByFile[i]) out = out.concat(rowsByFile[i]);
+  return out;
+}
+
 function emHandleImport(pid) {
   if (!_emPendingFiles || _emPendingFiles.length === 0) return;
   var statusEl = document.getElementById('em-import-status');
@@ -11428,6 +11441,8 @@ function emHandleImport(pid) {
   // Use flex so spinner and text sit side-by-side (see emRenderUploadPanel)
   if (statusWrap) statusWrap.style.display = 'flex';
   if (statusEl) statusEl.textContent = 'Parsing file 1 of ' + _emPendingFiles.length + '...';
+  _emPendingFiles = emSortFilesByName(_emPendingFiles); // stable file order, so the winning duplicate row never depends on session
+  var rowsByFile = []; // each file's rows by its index; flattened in index order, never in read-completion order
   var allRows = [];
   var detectedFormats = [];
   var pending = _emPendingFiles.length;
@@ -11438,6 +11453,7 @@ function emHandleImport(pid) {
       if (statusEl) statusEl.textContent = 'Processing file ' + (done + 1) + ' of ' + pending + '...';
       return;
     }
+    allRows = emFlattenFileRows(rowsByFile);
 
     // ── Zero-row warning ──
     if (allRows.length === 0) {
@@ -11619,7 +11635,7 @@ function emHandleImport(pid) {
     }
   }
   for (var i = 0; i < _emPendingFiles.length; i++) {
-    (function (file) {
+    (function (file, fileIdx) {
       var reader = new FileReader();
       reader.onload = function (e) {
         var text = e.target.result;
@@ -11631,16 +11647,18 @@ function emHandleImport(pid) {
         var colMap = emDetectColMap(parsed[0]);
         detectedFormats.push(colMap.format || 'enriched');
         var groups = emExtractEquipmentGroups(parsed.slice(1), colMap);
+        var fileRows = [];
         groups.forEach(function (group, key) {
-          allRows.push(emGroupToMatrixRow(key, group));
+          fileRows.push(emGroupToMatrixRow(key, group));
         });
+        rowsByFile[fileIdx] = fileRows;
         onFileDone();
       };
       reader.onerror = function () {
         onFileDone();
       };
       reader.readAsText(file);
-    })(_emPendingFiles[i]);
+    })(_emPendingFiles[i], i);
   }
 }
 

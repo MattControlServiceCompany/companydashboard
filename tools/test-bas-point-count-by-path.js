@@ -146,5 +146,23 @@ const alias = {
 };
 assert(sandbox.emRowPointCount(alias) === 1, 'alias keys not counted');
 
+// 8. Import order: files sort by name and rows flatten in file-index order, whatever order the reads finish.
+const fa = importCsv([line('Rooftop Unit 1', 'Zone Temp', '70', '#rtu1/zt')]);
+const fb = importCsv([line('Rooftop Unit 1', 'Zone Temp', '99', '#rtu1/zt'), line('Rooftop Unit 1', 'Fan', 'On', '#rtu1/fan')]);
+const fileList = [{ name: 'b.csv' }, { name: 'a.csv' }];
+assert(sandbox.emSortFilesByName(fileList).map((f) => f.name).join() === 'a.csv,b.csv', 'files sort by name');
+function runOrder(completion) {
+  const byIdx = [];
+  const rowsFor = [fa, fb];
+  completion.forEach((i) => (byIdx[i] = rowsFor[i]));
+  const merged = sandbox.emMergeIntoMatrix({ rows: [], buildings: [] }, sandbox.emFlattenFileRows(byIdx));
+  return JSON.stringify(merged.rows.map((r) => [r.id, r.pointsRaw, r.pointPaths]));
+}
+assert(runOrder([0, 1]) === runOrder([1, 0]), 'shuffled file completion order gives the same merged result');
+
+// 9. Path guard: a row narrower than the header never stores a wrong column as the Path (point name is the id).
+const shortRows = importCsv([[L, 'Rooftop Unit 1', 'Zone Temp', '70', 'BAV'].join(',')]);
+assert(shortRows[0].pointPaths.join() === 'name:Zone Temp', 'short row falls back to the point name, got ' + shortRows[0].pointPaths.join());
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
