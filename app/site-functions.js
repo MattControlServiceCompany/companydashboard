@@ -2296,6 +2296,14 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.02.74', date: '2026-10-02', title: 'Equipment Matrix re-import and point counts',
+    items: [
+      { type: 'change', text: 'Equipment Matrix: Re-Import now merges by point name. It never deletes rows and keeps your edits and added fields. A summary shows how many points were added, updated, and unchanged.' },
+      { type: 'fix', text: 'Equipment Matrix: the toolbar is now always visible.' },
+      { type: 'change', text: 'Equipment Matrix: BAS point totals now count each distinct point once, so totals may change after you re-import CSVs. Older rows are marked "approximate until re-import".' },
+      { type: 'fix', text: 'Equipment Matrix: files import in a fixed order, so results are the same every time.' }
+    ]
+  },
   { v: 'v2026.10.02.73', date: '2026-10-02', title: 'Backup and sync fix',
     items: [
       { type: 'fix', text: 'Backup and sync: backups and server sync no longer include calculated savings values that the app rebuilds on its own, so backup files are smaller and no longer show false changes in the conflict check.' }
