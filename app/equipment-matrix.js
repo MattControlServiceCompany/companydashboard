@@ -2175,6 +2175,10 @@ function emDetectColMap(headerRow) {
       // ("Location","Control Program","Name","Value","Type","COV Increment",...) and confirmed
       // live against report1779125231048.csv:64 ("Cooling Set Point Signal","5.7 V","BAO",...).
       pointType: 4, // BACnet object type (e.g. BAI, BAO, BALM, BMSV, ANI) — index verified live
+      // WebCTRL "Path" column (point reference, unique per point object). It is the LAST column of the export.
+      // emParseCSVText splits the export cells that have a space after the closing quote into extra fields, so row width varies and the Path is
+      // read from the END of each row. pathLast is false when the export has no Path column at the end.
+      pathLast: (headerRow[headerRow.length - 1] || '').trim().toLowerCase() === 'path',
       checkStart: -1,
       checkCount: 0,
       pointStart: -1,
@@ -3392,10 +3396,19 @@ function emExtractEquipmentGroups(rows, colMap) {
           checkValues: {},
           pointValues: {},
           rawPointMap: {}, // M4: all raw BAS point names captured at import
+          pathSet: {}, // distinct point ids (WebCTRL Path) seen for this control program, for the point count only
           colMap: colMap,
         });
       }
       var wgroup = groups.get(groupKey);
+
+      // Distinct point count: one id per WebCTRL Path. Exact repeat lines share a Path and count once;
+      // the same point name on two different Paths counts twice. No Path column: the point name is the id.
+      // This set is used for counting only. It never feeds the ASHRAE 36 point mapping below.
+      if (pointName !== '') {
+        var _pathId = colMap.pathLast ? (wrow[wrow.length - 1] || '').trim() : '';
+        wgroup.pathSet[_pathId !== '' ? _pathId : 'name:' + pointName] = true;
+      }
 
       // M4: Capture EVERY raw point name→value in rawPointMap (0-safe: skip only null/undefined).
       // pointVal from CSV trim() is always a string, never null/undefined, so store unconditionally
@@ -3666,6 +3679,7 @@ function emGroupToMatrixRow(groupKey, group) {
     checks: checks,
     points: group.pointValues,
     pointsRaw: group.rawPointMap || {}, // M4: complete raw point name→value map
+    pointPaths: group.pathSet ? Object.keys(group.pathSet).sort() : undefined, // distinct point ids (count only); absent on rows imported before this field
     schema: 2, // M4: rows with pointsRaw set are schema version 2
     // Physical Attributes
     serial: '',
@@ -3957,6 +3971,14 @@ function emMergePointMaps(oldMap, newMap) {
   return out;
 }
 
+// Union of two point-id lists (sorted, unique). Used for the distinct point count only.
+function emUnionPointPaths(a, b) {
+  var seen = {};
+  (a || []).forEach(function (k) { seen[k] = true; });
+  (b || []).forEach(function (k) { seen[k] = true; });
+  return Object.keys(seen).sort();
+}
+
 function emMergeIntoMatrix(existingData, newRows) {
   var existing = existingData && existingData.rows ? existingData.rows : [];
   var byId = {};
@@ -3964,11 +3986,13 @@ function emMergeIntoMatrix(existingData, newRows) {
     byId[existing[i].id] = existing[i];
   }
   var touched = {}; // ids already added or updated by THIS import
+  var wasChanged = {}; // id -> true when the row is already counted as updated
   var addedCount = 0;
   var updatedCount = 0;
   var unchangedCount = 0;
   var ambiguousCount = 0; // same id twice in one import (different files): first one wins, rest reported
   var toAdd = [];
+  var addedNow = {}; // ids added by THIS import (already counted as added)
   for (var j = 0; j < newRows.length; j++) {
     var nr = newRows[j];
     var old = byId[nr.id];
@@ -3976,9 +4000,21 @@ function emMergeIntoMatrix(existingData, newRows) {
       byId[nr.id] = nr;
       touched[nr.id] = true;
       toAdd.push(nr);
+      addedNow[nr.id] = true;
       addedCount++;
     } else if (touched[nr.id]) {
       ambiguousCount++;
+      // Same equipment in a second file: its point values stay ignored (first wins), but its distinct
+      // points still count toward the point total.
+      var _unionAmb = emUnionPointPaths(old.pointPaths, nr.pointPaths);
+      if (nr.pointPaths && JSON.stringify(_unionAmb) !== JSON.stringify(old.pointPaths || [])) {
+        old.pointPaths = _unionAmb;
+        if (!wasChanged[nr.id] && !addedNow[nr.id]) {
+          wasChanged[nr.id] = true;
+          unchangedCount--;
+          updatedCount++;
+        }
+      }
     } else {
       touched[nr.id] = true;
       var changed = false;
@@ -3991,6 +4027,11 @@ function emMergeIntoMatrix(existingData, newRows) {
           changed = true;
         }
       });
+      var mergedPaths = emUnionPointPaths(old.pointPaths, nr.pointPaths);
+      if (nr.pointPaths && JSON.stringify(mergedPaths) !== JSON.stringify(old.pointPaths || [])) {
+        old.pointPaths = mergedPaths;
+        changed = true;
+      }
       // checks: keep the stored value unless the CSV has a non-blank one
       var mergedChecks = {};
       var ck;
@@ -4010,8 +4051,10 @@ function emMergeIntoMatrix(existingData, newRows) {
         if ((!old.category || old.category === 'other') && nr.category && nr.category !== 'other') old.category = nr.category;
         if (!old.subtype && nr.subtype) old.subtype = nr.subtype;
       }
-      if (changed) updatedCount++;
-      else unchangedCount++;
+      if (changed) {
+        updatedCount++;
+        wasChanged[nr.id] = true;
+      } else unchangedCount++;
     }
   }
   var merged = existing.concat(toAdd);
@@ -4395,6 +4438,7 @@ function emRenderMatrix(container, data, pid) {
   }
 
   var stats = emCalcSummaryStats(data.rows || []);
+  var _initPts = emPointTotal(data.rows || []);
   var statsHtml =
     '<div id="em-stats-bar" style="display:flex;gap:16px;flex-wrap:wrap;padding:12px 20px;border-bottom:1px solid var(--border);background:var(--s1);flex-shrink:0">' +
     emStatPill('Buildings', stats.buildings) +
@@ -4405,7 +4449,7 @@ function emRenderMatrix(container, data, pid) {
     (stats.lighting ? emStatPill('Lighting', stats.lighting) : '') +
     (stats.other ? emStatPill('Other', stats.other) : '') +
     emStatPill('Has Data', stats.live) +
-    (data.totalBASPoints ? emStatPill('Building Automation System Points', data.totalBASPoints.toLocaleString()) : '') +
+    (_initPts.total ? emStatPill('Building Automation System Points', _initPts.total.toLocaleString(), _initPts.title) : '') +
     '</div>';
 
   var projBadge = projName
@@ -4468,9 +4512,9 @@ function emRenderMatrix(container, data, pid) {
   emSetZoom(0);
 }
 
-function emStatPill(label, val) {
+function emStatPill(label, val, title) {
   return (
-    '<div style="display:flex;flex-direction:column;align-items:center;min-width:64px">' +
+    '<div' + (title ? ' title="' + emHtmlEsc(title) + '"' : '') + ' style="display:flex;flex-direction:column;align-items:center;min-width:64px">' +
     '<div style="font-size:18px;font-weight:700;color:var(--text);line-height:1">' +
     val +
     '</div>' +
@@ -4488,9 +4532,9 @@ function emStatPill(label, val) {
    instead of a row of oversized cards. Audit View's 5 KPI pills are untouched
    (emStatPill) — they were never the complaint and stay full-size as the
    at-a-glance headline numbers. */
-function emStatPillCompact(label, val) {
+function emStatPillCompact(label, val, title) {
   return (
-    '<div style="display:flex;flex-direction:column;align-items:center;min-width:46px;padding:1px 2px">' +
+    '<div' + (title ? ' title="' + emHtmlEsc(title) + '"' : '') + ' style="display:flex;flex-direction:column;align-items:center;min-width:46px;padding:1px 2px">' +
     '<div style="font-size:13px;font-weight:700;color:var(--text);line-height:1.1">' +
     val +
     '</div>' +
@@ -5631,14 +5675,46 @@ function emGetAuditColDefs(filteredRows) {
 }
 
 /* ── emRowPointCount ────────────────────────────────────────────────────────
-   The single point count for one equipment row: the raw point names from the CSV (pointsRaw).
-   row.points also holds mapper alias keys (outdoorAirTemp, zoneStatus, ...) for the same
-   physical points, so counting it double counts. Older rows without pointsRaw fall back to points. */
+   The single point count for one equipment row. It counts DISTINCT points by WebCTRL Path:
+   row.pointPaths holds one id per point (exact repeat lines share a Path and count once; the same
+   point name on two Paths counts twice). row.points also holds mapper alias keys (outdoorAirTemp,
+   zoneStatus, ...) for the same physical points, so it is never counted.
+   Rows without pointPaths (imported before it existed) fall back to the raw point names, then to
+   points: that count is approximate until the row is re-imported. A re-import on top of an old row
+   can leave pointPaths shorter than the stored names; the larger of the two is used, never less. */
 function emRowPointCount(row) {
   if (!row) return 0;
-  var raw = row.pointsRaw ? Object.keys(row.pointsRaw).length : 0;
-  if (raw > 0) return raw;
-  return row.points ? Object.keys(row.points).length : 0;
+  var names = row.pointsRaw ? Object.keys(row.pointsRaw).length : 0;
+  if (names === 0) names = row.points ? Object.keys(row.points).length : 0;
+  var paths = row.pointPaths ? row.pointPaths.length : 0;
+  return paths > names ? paths : names;
+}
+
+// True when emRowPointCount(row) is the exact distinct-path count for this row.
+function emRowPointCountExact(row) {
+  if (!row || !row.pointPaths || row.pointPaths.length === 0) return false;
+  var names = row.pointsRaw ? Object.keys(row.pointsRaw).length : 0;
+  return row.pointPaths.length >= names;
+}
+
+// Total distinct points over rows, plus the hover text for the stat pill. Every BAS point total on
+// screen comes from here. Pass ALL rows to count (phantom sub-component rows hold real points).
+function emPointTotal(rows) {
+  var total = 0;
+  var approxRows = 0;
+  (rows || []).forEach(function (r) {
+    total += emRowPointCount(r);
+    if (!emRowPointCountExact(r)) approxRows++;
+  });
+  var title = 'Distinct points, counted by WebCTRL point path. A repeated line counts once.';
+  if (approxRows > 0) {
+    title =
+      'Approximate until re-import: ' +
+      approxRows.toLocaleString() +
+      ' equipment rows were imported before point paths were kept, so their points are counted by point name. ' +
+      'Re-import the CSVs to make the total exact.';
+  }
+  return { total: total, approxRows: approxRows, title: title };
 }
 
 /* ── emComputeAuditStats ────────────────────────────────────────────────────
@@ -5692,12 +5768,13 @@ function emComputeAuditStats(rows) {
 
 /* ── emUpdateStatsPillsForAudit ─────────────────────────────────────────────
    Replace the stats bar with audit-mode pills when in audit view.       */
-function emUpdateStatsPillsForAudit(rows) {
+function emUpdateStatsPillsForAudit(rows, pointRows) {
   var bar = document.getElementById('em-stats-bar');
   if (!bar) return;
   emResetStatsBarLayout(bar); // undo Raw View's stacked/collapsible layout if it was active
   var base = emCalcSummaryStats(rows);
   var audit = emComputeAuditStats(rows);
+  var _pt = emPointTotal(pointRows || rows);
   var avgCov = audit.avgCoverage;
   var covColor = avgCov >= 75 ? '#27ae60' : avgCov >= 50 ? '#e67e22' : '#c0392b';
   var covPill =
@@ -5727,7 +5804,7 @@ function emUpdateStatsPillsForAudit(rows) {
     emStatPill('Equipment', base.total) +
     covPill +
     seqPill +
-    emStatPill('Building Automation System Points', audit.totalBASPoints.toLocaleString());
+    emStatPill('Building Automation System Points', _pt.total.toLocaleString(), _pt.title);
 }
 
 /* ── emUpdateStatsPillsForRaw ───────────────────────────────────────────────
@@ -5738,10 +5815,11 @@ function emUpdateStatsPillsForAudit(rows) {
    (b) a collapsible "Equipment Breakdown" toggle line above the grid so the
    whole thing can be reduced to one line on click — all numbers stay
    reachable either way, nothing is hidden by default. */
-function emUpdateStatsPillsForRaw(rows, totalBASPoints) {
+function emUpdateStatsPillsForRaw(rows) {
   var bar = document.getElementById('em-stats-bar');
   if (!bar) return;
   var stats = emCalcSummaryStats(rows);
+  var _rawPt = emPointTotal(rows);
   var pillsHtml =
     emStatPillCompact('Buildings', stats.buildings) +
     emStatPillCompact('Equipment', stats.total) +
@@ -5770,7 +5848,7 @@ function emUpdateStatsPillsForRaw(rows, totalBASPoints) {
     (stats.monitoring ? emStatPillCompact('Monitoring', stats.monitoring) : '') +
     (stats.other ? emStatPillCompact('Other', stats.other) : '') +
     emStatPillCompact('Has Data', stats.live) +
-    (totalBASPoints ? emStatPillCompact('Building Automation System Points', totalBASPoints.toLocaleString()) : '');
+    (_rawPt.total ? emStatPillCompact('Building Automation System Points', _rawPt.total.toLocaleString(), _rawPt.title) : '');
 
   var collapsed = emGetRawStatsCollapsed();
   bar.style.display = 'block';
@@ -5800,20 +5878,15 @@ function emUpdateStatsPillsForRaw(rows, totalBASPoints) {
    Points) so Summary and Audit read as visually consistent. `rows` must be
    the ALL-BUILDINGS filtered set emRenderSummaryView already builds (goal
    8c7dcc71: Summary always ignores the building filter).
-   BAS Points source: takes `totalBASPoints` as a caller-supplied param
-   (same pattern emUpdateStatsPillsForRaw already uses for the same reason)
-   instead of computing it from emComputeAuditStats(rows).totalBASPoints.
-   Do NOT change this to audit.totalBASPoints without reading item 3958ea20
-   first -- Audit's emComputeAuditStats() and Summary's #em-row-count use two
-   different counting formulas for the same rows; this function intentionally
-   keeps Summary's header pill and Summary's #em-row-count in agreement
-   rather than introducing a third number.                                */
-function emUpdateStatsPillsForSummary(rows, totalBASPoints) {
+   BAS Points source: emPointTotal(pointRows), the same single count every view uses.
+   pointRows is the all-buildings set before phantom rows are removed (phantom rows hold real points). */
+function emUpdateStatsPillsForSummary(rows, pointRows) {
   var bar = document.getElementById('em-stats-bar');
   if (!bar) return;
   emResetStatsBarLayout(bar); // undo Raw View's stacked/collapsible layout if it was active
   var base = emCalcSummaryStats(rows);
   var audit = emComputeAuditStats(rows);
+  var _pt = emPointTotal(pointRows || rows);
   var avgCov = audit.avgCoverage;
   var covColor = avgCov >= 75 ? '#27ae60' : avgCov >= 50 ? '#e67e22' : '#c0392b';
   var covPill =
@@ -5843,7 +5916,7 @@ function emUpdateStatsPillsForSummary(rows, totalBASPoints) {
     emStatPill('Equipment', base.total) +
     covPill +
     seqPill +
-    (totalBASPoints ? emStatPill('Building Automation System Points', totalBASPoints.toLocaleString()) : '');
+    emStatPill('Building Automation System Points', _pt.total.toLocaleString(), _pt.title);
 }
 
 /* ── emBuildAllPointsTableHtml (561fe067) ────────────────────────────────────
@@ -7065,15 +7138,14 @@ function emRenderTable(data, filters) {
 
   var countEl = document.getElementById('em-row-count');
   if (countEl) {
-    var totalPts = 0,
-      filteredPts = 0;
-    for (var i = 0; i < rows.length; i++) totalPts += emRowPointCount(rows[i]);
-    for (var i = 0; i < filtered.length; i++) filteredPts += emRowPointCount(filtered[i]);
+    var _rawAll = emPointTotal(rows);
+    var _rawFiltered = emPointTotal(filtered);
     var ptsText =
       filtered.length < rows.length
-        ? filteredPts.toLocaleString() + ' of ' + totalPts.toLocaleString() + ' Building Automation System Points'
-        : totalPts.toLocaleString() + ' Total Building Automation System Points';
+        ? _rawFiltered.total.toLocaleString() + ' of ' + _rawAll.total.toLocaleString() + ' Building Automation System Points'
+        : _rawAll.total.toLocaleString() + ' Total Building Automation System Points';
     countEl.textContent = ptsText;
+    countEl.title = _rawAll.title;
   }
 
   // Pagination removed (2026-09-23) — all filtered rows render into the single
@@ -7132,7 +7204,7 @@ function emRenderTable(data, filters) {
   // Pagination bar removed (2026-09-23) — see note above.
 
   // Update stats bar for raw view
-  emUpdateStatsPillsForRaw(rows, data.totalBASPoints);
+  emUpdateStatsPillsForRaw(rows);
 
   // ── Quick Win 3: Chunked async render ────────────────────────────────────
   // Determine if the table is "large" (many cols × rows likely to block the main
@@ -7993,6 +8065,7 @@ function emRenderSummaryView(data, filters) {
   // and other views (Audit / Raw) continue to honor the building filter normally.
   var summaryFilters = Object.assign({}, filters, { building: '' });
   var filtered = emFilterRows(rows, summaryFilters);
+  var _summaryPointRows = filtered; // phantom rows hold real points: they count in the point total
 
   // Strip phantom rows from Summary view rollup — they skew equipment counts and averages.
   filtered = filtered.filter(function (row) {
@@ -8001,15 +8074,14 @@ function emRenderSummaryView(data, filters) {
 
   // Update row count pill
   var countEl = document.getElementById('em-row-count');
-  var totalPts = 0,
-    filteredPts = 0;
-  for (var ii = 0; ii < rows.length; ii++) totalPts += Object.keys(rows[ii].points || {}).length;
-  for (var ii = 0; ii < filtered.length; ii++) filteredPts += Object.keys(filtered[ii].points || {}).length;
+  var _sumAll = emPointTotal(rows);
+  var _sumFiltered = emPointTotal(_summaryPointRows);
   if (countEl) {
     countEl.textContent =
-      filtered.length < rows.length
-        ? filteredPts.toLocaleString() + ' of ' + totalPts.toLocaleString() + ' Building Automation System Points'
-        : totalPts.toLocaleString() + ' Total Building Automation System Points';
+      _sumFiltered.total < _sumAll.total
+        ? _sumFiltered.total.toLocaleString() + ' of ' + _sumAll.total.toLocaleString() + ' Building Automation System Points'
+        : _sumAll.total.toLocaleString() + ' Total Building Automation System Points';
+    countEl.title = _sumAll.title;
   }
 
   // Fix 485802f4: refresh the header stat-pill bar for Summary view. Previously
@@ -8022,7 +8094,7 @@ function emRenderSummaryView(data, filters) {
   // covers the drilled-into-one-building case (see subtask 3 note below /
   // emRenderBuildingDetailView, which has its own separate single-building
   // stat line and intentionally does not touch #em-stats-bar).
-  emUpdateStatsPillsForSummary(filtered, filteredPts);
+  emUpdateStatsPillsForSummary(filtered, _summaryPointRows);
 
   // ── Drill-down routing ──
   if (_emDrillBuilding !== null) {
@@ -8670,6 +8742,7 @@ function emRenderAuditTable(data, filters) {
   var _auditPid = window._emActivePid || '';
   var _auditMaps = emLoadCustomMappings(_auditPid);
   var filtered = emFilterRows(rows, filters);
+  var _auditPointRows = filtered; // phantom rows hold real points: they count in the point total, not in the equipment list
 
   // Exclude phantom BAS sub-component rows (VFD Integration, Supply/Return Duct).
   // These are stored from old imports and must be excluded from Audit view without re-import.
@@ -8855,7 +8928,7 @@ function emRenderAuditTable(data, filters) {
   // Pagination bar removed (2026-09-23) — all rows render in the scrollable wrap.
 
   // Update stats bar for audit view (pass filtered, not raw rows, so pills match visible rows)
-  emUpdateStatsPillsForAudit(filtered);
+  emUpdateStatsPillsForAudit(filtered, _auditPointRows);
 
   // Page Total row removed (2026-09-23) — pageRows === filtered now, so it was a duplicate
   // of the Total row. Total row kept.
@@ -10224,7 +10297,6 @@ function emDeleteAllRows(pid) {
     return;
   data.rows = [];
   data.buildings = [];
-  data.totalBASPoints = 0;
   emSaveMatrix(pid, data).catch(() => {});
   var container = document.getElementById('em-proj-wrap');
   if (container) emRenderMatrix(container, data, pid);
@@ -11358,7 +11430,6 @@ function emHandleImport(pid) {
   if (statusEl) statusEl.textContent = 'Parsing file 1 of ' + _emPendingFiles.length + '...';
   var allRows = [];
   var detectedFormats = [];
-  var totalRawRows = 0; // count of raw CSV data rows across all files, before grouping
   var pending = _emPendingFiles.length;
   var done = 0;
   async function onFileDone() {
@@ -11408,16 +11479,6 @@ function emHandleImport(pid) {
         _cnt.unchanged.toLocaleString() +
         ' unchanged' +
         (_cnt.ambiguous ? ', ' + _cnt.ambiguous.toLocaleString() + ' ambiguous (same name twice in this import, first one used)' : '');
-      // Point total grows only by the points of rows that were actually added (skipped duplicates add none).
-      var _baseIds = {};
-      (baseData.rows || []).forEach(function (r) {
-        _baseIds[r.id] = true;
-      });
-      var _addedPoints = 0;
-      merged.rows.forEach(function (r) {
-        if (!_baseIds[r.id]) _addedPoints += Object.keys(r.pointsRaw || {}).length;
-      });
-      merged.totalBASPoints = (baseData.totalBASPoints || 0) + _addedPoints;
       // Show "Saving..." while awaiting the real IDB commit (tx.oncomplete).
       // We do NOT show "Import complete" until the write is fully durable on disk.
       if (statusEl) statusEl.textContent = 'Saving to database...';
@@ -11485,7 +11546,7 @@ function emHandleImport(pid) {
       });
       var importBldgCount = Object.keys(importBuildings).length;
       var otherRate = allRows.length > 0 ? (catCounts['other'] || 0) / allRows.length : 0;
-      var showPoints = totalRawRows !== allRows.length;
+      var _impPoints = emPointTotal(emMergeIntoMatrix({ rows: [] }, JSON.parse(JSON.stringify(allRows))).rows).total; // distinct points in the files just read, a repeat in two files counts once
       // Build category breakdown lines
       var catLines = [];
       catOrder.forEach(function (k) {
@@ -11511,7 +11572,7 @@ function emHandleImport(pid) {
         '<div style="margin-top:6px;border-top:1px solid var(--border);padding-top:6px">' +
         'Buildings: ' +
         importBldgCount +
-        (showPoints ? ' &nbsp;|&nbsp; Building Automation System Points: ' + totalRawRows.toLocaleString() : '') +
+        (_impPoints ? ' &nbsp;|&nbsp; Building Automation System Points: ' + _impPoints.toLocaleString() : '') +
         ' &nbsp;|&nbsp; Floor field non-blank: ' +
         withFloor.toLocaleString() +
         ' of ' +
@@ -11569,8 +11630,6 @@ function emHandleImport(pid) {
         }
         var colMap = emDetectColMap(parsed[0]);
         detectedFormats.push(colMap.format || 'enriched');
-        // Count raw data rows (header row excluded) before grouping
-        totalRawRows += parsed.slice(1).length;
         var groups = emExtractEquipmentGroups(parsed.slice(1), colMap);
         groups.forEach(function (group, key) {
           allRows.push(emGroupToMatrixRow(key, group));
