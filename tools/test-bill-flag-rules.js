@@ -529,5 +529,44 @@ console.log('=== 8. dollar amounts in a row title ===');
   assert(!/'\$1 title="' \+ _flagTitle/.test(ud) && !/'\$1 class="bill-flagged" title="' \+ _flagTitle/.test(ud), 'row title is inserted with a function replacer (a "$1" in a message must not be read as a group)');
 }
 
+// -- 9 usage vs usage charge (water and sewer, the meter's own rate from getStoredRate) --
+console.log('=== 9. usage does not match charge ===');
+{
+  const sewer = (mut) => {
+    const bills = [];
+    for (let i = 0; i < 12; i++) {
+      const m = i + 1;
+      const gal = 100000 + (i % 3) * 5000;
+      bills.push({ id: 's' + i, start: d(2024, m, 1), end: m === 12 ? d(2025, 1, 1) : d(2024, m + 1, 1), sewerUsage: String(gal), sewerCharge: (gal * 0.01).toFixed(2), totalCost: (gal * 0.01).toFixed(2) });
+    }
+    if (mut) mut(bills);
+    return { id: 'ms', commodity: 'Sewer', bills };
+  };
+  const setCharge = (id, factor) => (bills) => {
+    const b = bills.find((x) => x.id === id);
+    b.sewerCharge = (+b.sewerCharge * factor).toFixed(2);
+    b.totalCost = b.sewerCharge;
+  };
+  assert(!anyRule(run(sewer()), 'usage_charge_mismatch'), 'clean sewer meter: no flag');
+  assert(!anyRule(run(sewer(setCharge('s4', 1.5))), 'usage_charge_mismatch'), 'rate 1.5x the usual: normal rate change, no flag');
+  const hi = run(sewer(setCharge('s4', 2.3)));
+  assert(has(hi, 's4', 'usage_charge_mismatch'), 'charge 2.3x what the usage costs: flag');
+  assert(/Usage does not match charge: 1\d\d,\d{3} gal/.test(hi.perBill.s4.find((f) => f.rule === 'usage_charge_mismatch').message), 'message names the usage and the cost');
+  assert(has(run(sewer(setCharge('s4', 0.4))), 's4', 'usage_charge_mismatch'), 'charge 2.5x lower than the usage costs: flag');
+  // a tiny bill carrying fixed fees is not tested
+  const tiny = run(sewer((bills) => Object.assign(bills[5], { sewerUsage: '300', sewerCharge: '30.00', totalCost: '30.00' })));
+  assert(!has(tiny, 's5', 'usage_charge_mismatch'), 'tiny usage with fixed fees: not tested');
+  // electric and gas keep the 3x charge rule only
+  assert(!anyRule(run(gasMeter([2023, 2024], setCharge2())), 'usage_charge_mismatch'), 'gas is not tested by this rule');
+  function setCharge2() {
+    return (bills) => {
+      const b = find({ bills }, 'g2024-1');
+      b.gasCharge = '600';
+      b.totalCost = '623.33';
+      b.thermCost = '623.33';
+    };
+  }
+}
+
 console.log('test-bill-flag-rules: ' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);

@@ -33,6 +33,8 @@ const BILL_FLAG_THRESHOLDS = {
   USAGE_MIN_PEERS: 1,
   MATERIAL_FRAC: 0.1, // skip dead months: larger daily use under this share of the meter's 90th percentile
   RATE_MULT: 3, // total charge vs usage x the meter's usual rate
+  USAGE_CHARGE_MIN_USAGE_FRAC: 0.5, // only bills with at least this share of the meter's middle usage are tested
+  USAGE_CHARGE_MULT: 2, // the bill's own rate (usage charge / usage) vs the meter's usual rate, from getStoredRate
   RATE_MIN_BILLS: 6,
   RATE_MIN_USAGE_FRAC: 0.1,
   ZERO_CHARGE_MULT: 2,
@@ -58,6 +60,7 @@ const BILL_FLAG_RULES = {
   usage_negative: { label: 'Usage', severity: 'warn' },
   cost_missing: { label: 'Total Cost', severity: 'warn' },
   charge_vs_usage: { label: 'Total Cost', severity: 'warn' },
+  usage_charge_mismatch: { label: 'Usage', severity: 'warn' },
   water_sewer_parity: { label: 'Usage', severity: 'warn' },
   usage_vs_same_month: { label: 'Usage', severity: 'warn' },
   fac_kw_missing: { label: 'Facilities kW', severity: 'warn' },
@@ -224,6 +227,17 @@ function computeMeterFlagSummary(meter, building) {
   const rateTot = rows
     .filter((r) => r.u > 0 && r.cost > 0 && r.u >= T.RATE_MIN_USAGE_FRAC * (medU || 0))
     .map((r) => _bfCostBasis(r.b, r.cost) / r.u);
+  // The meter's usual $ per unit from the one shared per-bill rate function (getStoredRate, computations/rates.js).
+  // Water and sewer only: their usage charge is a clean $ per gallon. (Electric and gas bills carry demand, fixed and
+  // index charges, so they keep the 3x charge_vs_usage rule.) Bills with tiny usage are left out: fixed fees swamp the rate.
+  const _rateKey = { Water: 'water', Sewer: 'sewer' }[c];
+  const ownRates = new Map();
+  if (_rateKey)
+    rows.forEach((r) => {
+      const v = r.u !== null && r.u >= T.USAGE_CHARGE_MIN_USAGE_FRAC * (medU || 0) && r.u > 0 ? getStoredRate(r.b, _rateKey) : 0;
+      if (v > 0) ownRates.set(r, v);
+    });
+  const medOwnRate = ownRates.size >= T.RATE_MIN_BILLS ? _bfMedian([...ownRates.values()]) : null;
   const medRateTot = rateTot.length >= T.RATE_MIN_BILLS ? _bfMedian(rateTot) : null;
   const gasRatio =
     c === 'Gas'
@@ -678,6 +692,40 @@ function computeMeterFlagSummary(meter, building) {
             'x or more.',
           'totalCost',
         );
+    }
+    // Usage x the meter's usual rate must match the usage charge (the shared rate function, getStoredRate).
+    if (medOwnRate && ownRates.has(r) && !perBill[b.id]?.some((f) => f.rule === 'charge_vs_usage')) {
+      const own = ownRates.get(r);
+      const charge = own * r.u;
+      // the meter's usual minimum bill is a floor: fixed fees on a small bill are not a mismatch
+      const expected = Math.max(medOwnRate * r.u, minCharge);
+      const ratio = charge / expected;
+      if (ratio >= T.USAGE_CHARGE_MULT || ratio <= 1 / T.USAGE_CHARGE_MULT) {
+        add(
+          b,
+          'usage_charge_mismatch',
+          'Usage does not match charge: ' +
+            _bfFmt(r.u, 0) +
+            ' ' +
+            _bfUnit(c) +
+            " at this meter's usual " +
+            medOwnRate.toFixed(4) +
+            ' per ' +
+            _bfUnit(c) +
+            ' (or its smallest usual bill ' +
+            _bfMoney(minCharge) +
+            ', whichever is more) would cost about ' +
+            _bfMoney(expected) +
+            ', but the bill charges ' +
+            _bfMoney(charge) +
+            ' (' +
+            (ratio >= 1 ? _bfFmt(ratio) + 'x higher' : _bfFmt(1 / ratio) + 'x lower') +
+            '). Flag at ' +
+            T.USAGE_CHARGE_MULT +
+            'x or more.',
+          'usage',
+        );
+      }
     }
     if (Array.isArray(b._flags) && b._flags.some((f) => f.id === FAC_KW_MISSING_STORED_ID && !f.dismissed)) {
       const f = b._flags.find((x) => x.id === FAC_KW_MISSING_STORED_ID && !x.dismissed);

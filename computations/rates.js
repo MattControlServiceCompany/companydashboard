@@ -83,14 +83,17 @@ function getStoredRate(bill, type) {
     case 'water': {
       var stored = parseBillNumber(bill.totalWaterRate);
       if (stored > 0) return stored;
-      var cost = parseBillNumber(bill.WaterCharge) || parseBillNumber(bill.totalCost) || 0;
-      var usage = parseBillNumber(bill.WaterUsage) || 0;
+      var cost = parseBillNumber(bill.WaterCharge) || parseBillNumber(bill.waterCharge) || parseBillNumber(bill.totalCost) || 0;
+      var usage = parseBillNumber(bill.WaterUsage) || parseBillNumber(bill.waterUsage) || 0;
       return usage > 0 && cost > 0 ? cost / usage : 0;
     }
     case 'sewer': {
       var stored = parseBillNumber(bill.totalSewerRate);
       if (stored > 0) return stored;
-      return 0;
+      // sewer dollars / sewer gallons (getBillUsageOrNull, computations/savings.js, falls back to water gallons)
+      var cost = parseBillNumber(bill.sewerCharge) || parseBillNumber(bill.SewerCharge) || 0;
+      var usage = typeof getBillUsageOrNull === 'function' ? getBillUsageOrNull(bill, 'Sewer') || 0 : 0;
+      return usage > 0 && cost > 0 ? cost / usage : 0;
     }
     default:
       return 0;

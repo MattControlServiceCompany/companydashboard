@@ -84,6 +84,14 @@ if (!/computeMeterFlagSummary\(/.test(read('app/bill-corrections-review.js')))
 if (!/computeMeterFlagSummary\(/.test(read('computations/data-quality.js')))
   problems.push('computations/data-quality.js does not call computeMeterFlagSummary');
 
+// 5. behavior: render the page on a synthetic fixture; pill = banner = rows = badge = panel = shared function
+const beh = require('child_process').spawnSync(
+  process.execPath,
+  [path.join(__dirname, 'gate-bill-flag-behavior.js'), REPO],
+  { encoding: 'utf8' },
+);
+if (beh.status !== 0) problems.push('behavior gate failed:\n' + (beh.stdout || '') + (beh.stderr || ''));
+
 if (problems.length) {
   console.log('FAIL gate-single-bill-flag-count');
   problems.forEach((p) => console.log('  ' + p));
