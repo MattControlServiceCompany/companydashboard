@@ -408,6 +408,24 @@ async function main() {
     const loadErrs = takeErrors();
     add('pages', 'energy-department.html load + restore', loadErrs.length ? 'FAIL' : 'PASS', loadErrs.join(' ; '));
 
+    // ---- 0. weather cache must survive the restore (savings use weather; an empty cache
+    // silently moves every weather-normalized savings value) ----
+    const wddKeys = Object.keys(seed).filter((k) => /^en_wdd_/.test(k) && seed[k] && Object.keys(seed[k]).length);
+    const wddLoaded = await page.evaluate(
+      (ks) => ks.filter((k) => { const v = DB.get(k, null); return v && Object.keys(v).length; }),
+      wddKeys,
+    );
+    const wddMissing = wddKeys.filter((k) => wddLoaded.indexOf(k) < 0);
+    console.log('weather cache  : ' + wddLoaded.length + '/' + wddKeys.length + ' en_wdd_* keys loaded after restore (' + wddKeys.join(', ') + ')');
+    add(
+      'pages',
+      'weather cache present after restore',
+      wddMissing.length ? 'FAIL' : 'PASS',
+      wddMissing.length
+        ? 'backup has weather but the app cache is empty for: ' + wddMissing.join(', ') + ' -- savings values are NOT weather-normalized'
+        : wddLoaded.length + ' keys',
+    );
+
     // ---- 1. protected numbers ----
     probe = await page.evaluate(probeInPage);
     Object.keys(probe)
