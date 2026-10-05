@@ -461,7 +461,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
         } else {
           const actTherms = actUsage;
           const actThermCost = bfr.reduce(
-            (s, b2) => s + (parseFloat(b2.gasCharge) || parseFloat(b2.thermCost) || parseFloat(b2.cost) || 0),
+            (s, b2) => s + getBillGasCost(b2), // the ONE gas cost accessor (computations/rates.js)
             0,
           );
 

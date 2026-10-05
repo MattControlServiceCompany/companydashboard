@@ -482,14 +482,8 @@ function getMeterSavings(m, bills, incl, projId, bldgId, opts) {
       unitSav.gallons = galRate > 0 ? expUsage - actGallons : 0;
     } else {
       const actTherms = actUsage;
-      const actThermCost = bfr.reduce(
-        (s, b) =>
-          s +
-          (parseBillNumberOrZero(b.gasCharge) ||
-            parseBillNumberOrZero(b.thermCost) ||
-            parseBillNumberOrZero(b.cost)),
-        0,
-      );
+      // getBillGasCost (computations/rates.js) — the ONE gas cost accessor (visible Gas Charge).
+      const actThermCost = bfr.reduce((s, b) => s + getBillGasCost(b), 0);
       // Blend of the bills in this month: mean of each bill's resolved $/therm (blank bills
       // left out, not counted as 0 - math-02 M1). Only a Gas meter derives a rate from the
       // bill's gas fields; this branch also runs for Water/Sewer/Stormwater/Steam meters.

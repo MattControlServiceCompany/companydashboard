@@ -208,7 +208,7 @@ function detectRateChanges(m, bills, incl) {
       cost = parseFloat(b.totalCost || 0);
     } else if (isGas) {
       usage = resolveGasUsageTherms(b);
-      cost = parseFloat(b.gasCharge || b.thermCost || b.totalCost || b.cost || 0);
+      cost = getBillGasCost(b); // the ONE gas cost accessor (computations/rates.js)
     } else if (isPropane) {
       usage = parseFloat(b.gallonsDelivered || b.kwh || 0);
       cost = parseFloat(b.totalCost || b.cost || 0);

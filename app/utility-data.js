@@ -392,7 +392,7 @@ function loadUtilityData() {
         for (const mt of b.meters || []) {
           for (const bill of mt.bills || []) {
             billsScanned++;
-            const gasChg = parseFloat(bill.GasCharge) || parseFloat(bill.gasCharge) || parseFloat(bill.thermCost) || 0;
+            const gasChg = getBillGasCost(bill);
             if (gasChg <= 0 || typeof resolveGasUsageTherms !== 'function') continue;
             const usage = resolveGasUsageTherms(bill);
             if (usage <= 0) continue;
@@ -453,7 +453,7 @@ function loadUtilityData() {
               });
               continue;
             }
-            const gasChg = parseFloat(bill.GasCharge) || parseFloat(bill.gasCharge) || parseFloat(bill.thermCost) || 0;
+            const gasChg = getBillGasCost(bill);
             if (gasChg <= 0 || typeof resolveGasUsageTherms !== 'function') continue;
             const usage = resolveGasUsageTherms(bill);
             if (usage <= 0) continue;
@@ -737,13 +737,13 @@ function loadUtilityData() {
     for (const entry of _thermsReport.wouldFix) {
       const bill = entry.bill;
       const oldTherms = parseBillNumber(bill.therms);
-      const oldThermCost = parseBillNumber(bill.thermCost);
+      const oldGasCost = getBillGasCost(bill);
       bill.therms = entry.newTherms;
       bill._thermsUnitFixed = true;
       bill._thermsUnitFixedFrom = entry.source;
       // Recompute totalGasRate so $/therm is correct (~$0.42 not ~$4.18)
-      if (oldThermCost > 0 && entry.newTherms > 0) {
-        bill.totalGasRate = (oldThermCost / entry.newTherms).toFixed(5);
+      if (oldGasCost > 0 && entry.newTherms > 0) {
+        bill.totalGasRate = (oldGasCost / entry.newTherms).toFixed(5);
       }
       _thermsFixed++;
       console.log(
@@ -10902,14 +10902,9 @@ function renderPerfPane(pane, m, bills, incl) {
         const bfr = bills.filter((b) => normMonth(b.start, b.end, incl, bills) === r.ym);
         if (!bfr.length) return;
         const actualTherms = bfr.reduce((s, b) => s + resolveGasUsageTherms(b), 0);
-        const thermCostAmt = bfr.reduce(
-          (s, b) => s + (parseFloat(b.gasCharge) || parseFloat(b.thermCost) || parseFloat(b.cost) || 0),
-          0,
-        );
-        const totalGasCost = bfr.reduce(
-          (s, b) => s + (parseFloat(b.gasCharge) || parseFloat(b.thermCost) || parseFloat(b.cost) || 0),
-          0,
-        );
+        // getBillGasCost (computations/rates.js) — the ONE gas cost accessor (visible Gas Charge).
+        const thermCostAmt = bfr.reduce((s, b) => s + getBillGasCost(b), 0);
+        const totalGasCost = thermCostAmt;
         const _storedGasRate = bfr.reduce((s, b) => s + (parseFloat(b.totalGasRate) || 0), 0) / bfr.length;
         if (actualTherms > 0)
           gasCostByYm[r.ym] = {

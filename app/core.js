@@ -1793,7 +1793,7 @@ function _updateCompactHdrBaseline(projId) {
       // Fallback (no baseline set on this meter yet): raw all-bills sum, labeled "Total Cost"
       // instead of "Baseline" below — not an audited baseline reconciliation figure.
       (m.bills || []).forEach((bill) => {
-        totalCost += parseFloat(bill.totalCost) || parseFloat(bill.thermCost) || parseFloat(bill.cost) || 0;
+        totalCost += parseFloat(bill.totalCost) || getBillGasCost(bill) || parseFloat(bill.cost) || 0;
         if (m.commodity === 'Gas') {
           totalTherms += resolveGasUsageTherms(bill);
         } else if (m.commodity === 'Propane') {
@@ -2079,7 +2079,7 @@ function initDashboardTab(projId) {
             // Cost (2026-09-23 single-source fix); never read bill.facKWCost/facilitiesCharge directly.
             curCost += (parseFloat(bill.kwhCost) || 0) + (parseFloat(bill.kwCost) || 0) + getBillFacKWCost(bill);
           } else {
-            curCost += parseFloat(bill.totalCost) || parseFloat(bill.thermCost) || parseFloat(bill.cost) || 0;
+            curCost += parseFloat(bill.totalCost) || getBillGasCost(bill) || parseFloat(bill.cost) || 0;
           }
           if (m.commodity === 'Gas') {
             // Single source of truth (2026-09-22): same gas-usage helper the baseline uses
@@ -2098,7 +2098,7 @@ function initDashboardTab(projId) {
           if (m.commodity === 'Electric') {
             allCost += (parseFloat(bill.kwhCost) || 0) + (parseFloat(bill.kwCost) || 0) + getBillFacKWCost(bill);
           } else {
-            allCost += parseFloat(bill.totalCost) || parseFloat(bill.thermCost) || parseFloat(bill.cost) || 0;
+            allCost += parseFloat(bill.totalCost) || getBillGasCost(bill) || parseFloat(bill.cost) || 0;
           }
           if (m.commodity === 'Gas') {
             // Same single gas-usage helper as curTherms above.

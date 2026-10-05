@@ -109,12 +109,7 @@ function getStoredRate(bill, type) {
     case 'gas': {
       var stored = parseBillNumber(bill.totalGasRate);
       if (stored > 0) return stored;
-      var cost =
-        parseBillNumber(bill.GasCharge) ||
-        parseBillNumber(bill.gasCharge) ||
-        parseBillNumber(bill.thermCost) ||
-        parseBillNumber(bill.totalCost) ||
-        0;
+      var cost = getBillGasCost(bill);
       // 2026-09-23 (item 2026-09-23-gas-rate-fix): route usage through the single canonical
       // resolveGasUsageTherms() (computations/savings.js) instead of a second, duplicate
       // PascalCase-only Therms/CCF check + a separate MMBtu-fallback that divided cost by raw
@@ -208,7 +203,7 @@ function ensureBillRates(bill) {
     // through resolveGasUsageTherms(bill) — the same canonical Therms-usage resolver
     // computeSeasonalBldgRates uses (computations/savings.js) — so this always writes a real
     // $/Therm value, one usage definition, no duplicate math.
-    var gasChg = parseBillNumber(bill.GasCharge) || parseBillNumber(bill.gasCharge) || parseBillNumber(bill.thermCost);
+    var gasChg = getBillGasCost(bill);
     var gasUsage = typeof resolveGasUsageTherms === 'function' ? resolveGasUsageTherms(bill) : 0;
     if (gasUsage > 0 && gasChg > 0) {
       bill.totalGasRate = (gasChg / gasUsage).toFixed(5);
@@ -331,12 +326,7 @@ function getExtractedRate(parsed, type) {
       return usage > 0 && cost > 0 ? cost / usage : 0;
     }
     case 'gas': {
-      var cost =
-        parseBillNumber(parsed.GasCharge) ||
-        parseBillNumber(parsed.gasCharge) ||
-        parseBillNumber(parsed.thermCost) ||
-        parseBillNumber(parsed.totalCost) ||
-        0;
+      var cost = getBillGasCost(parsed);
       var usage = resolveGasUsageTherms({
         NaturalGasTherms: parsed.NaturalGasTherms,
         NaturalGasCCF: parsed.NaturalGasCCF,
@@ -820,12 +810,7 @@ function computeSeasonalBldgRates(projId, bldgId) {
     // already-shipped one-time migration outside this item's scope — logged to the backlog
     // instead of changed here.
     var gasRows = billRates(gasMeters, function (bill) {
-      var cost =
-        parseBillNumber(bill.GasCharge) ||
-        parseBillNumber(bill.gasCharge) ||
-        parseBillNumber(bill.thermCost) ||
-        parseBillNumber(bill.totalCost) ||
-        0;
+      var cost = getBillGasCost(bill);
       var usage = typeof resolveGasUsageTherms === 'function' ? resolveGasUsageTherms(bill) : 0;
       return usage > 0 && cost > 0 ? cost / usage : 0;
     });

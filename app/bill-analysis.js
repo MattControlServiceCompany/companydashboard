@@ -6985,12 +6985,7 @@ window._mbUpdateSaveAllBtn = _mbUpdateSaveAllBtn;
 // resolveGasUsageTherms expects, then delegates ALL usage-to-Therms math to it — no
 // duplicate conversion logic here or at any call site.
 function _computeGasRate(bill) {
-  const c =
-    parseBillNumber(bill.GasCharge) ||
-    parseBillNumber(bill.gasCharge) ||
-    parseBillNumber(bill.TotalCurrentCharges) ||
-    parseBillNumber(bill.TotalAmountDue) ||
-    parseBillNumber(bill.totalCost);
+  const c = getBillGasCost(bill); // the ONE gas cost accessor (computations/rates.js)
   const usage =
     typeof resolveGasUsageTherms === 'function'
       ? resolveGasUsageTherms({
