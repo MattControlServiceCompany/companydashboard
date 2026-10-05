@@ -2017,7 +2017,6 @@
       /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    DATA & STORAGE
 â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
-      const STORAGE_KEY = 'ems_leads_v1';
       let leads = [];
       let activeLeadId = null;
       let sortCol = 'company';
@@ -2073,60 +2072,27 @@
         { key: '', label: '— Skip —' },
       ];
 
-      /* PERSISTENT STORAGE (choke point) --
-         KEEP IN SYNC WITH app/core.js sset()/sget(). This page cannot load
-         app/core.js directly -- core.js declares page-global bindings
-         (currentUser, enterApp, signOut, init, projects, etc.) that would
-         collide with this file's own top-level declarations and break the
-         page. So this is a deliberate, synced copy -- not a driveby
-         duplicate. If you fix a bug in core.js's sset()/sget(), port the
-         fix here too. Backlog: supabase migration plan Phase 0.2. */
-      function sset(k, v) {
-        if (window.DB && window.DB.isReady()) {
-          return window.DB.set(k, v); // IDB -- unlimited storage, returns a Promise
-        }
-        try {
-          localStorage.setItem(k, JSON.stringify(v));
-          return Promise.resolve();
-        } catch (e) {
-          console.warn('sset failed:', e);
-          return Promise.reject(e);
-        }
+      /* PERSISTENT STORAGE -- all reads/writes go through app/ems-leads-store.js
+         (DB.get/DB.set, synced to the shared backend). The store is created once
+         DB is ready (see DOMContentLoaded below). */
+      let emsStore = null;
+      function showToast(msg) {
+        const el = document.getElementById('toast');
+        const m = document.getElementById('toastMsg');
+        if (!el || !m) return;
+        m.textContent = msg;
+        el.classList.add('toast-show');
+        clearTimeout(window._toastTimer);
+        window._toastTimer = setTimeout(() => el.classList.remove('toast-show'), 3500);
       }
-      function sget(k, fb) {
-        // READ-PATH: when the IndexedDB cache is warm, read from it first.
-        if (window.DB && window.DB.isReady()) {
-          const dbVal = window.DB.get(k);
-          if (dbVal !== null && dbVal !== undefined) return dbVal;
-          // Key not in IDB cache -- try localStorage (covers keys written
-          // before DB was ready).
-          try {
-            const r = localStorage.getItem(k);
-            if (r !== null) return JSON.parse(r);
-          } catch (e) {
-            /* fall through */
-          }
-          return fb;
-        }
-        // DB not ready yet -- legacy path
-        try {
-          const r = localStorage.getItem(k);
-          return r !== null ? JSON.parse(r) : fb;
-        } catch (e) {
-          return fb;
-        }
-      }
-
       function load() {
-        try {
-          leads = sget(STORAGE_KEY, []);
-          if (!Array.isArray(leads)) leads = [];
-        } catch (e) {
-          leads = [];
-        }
+        leads = emsStore.loadLeads();
       }
       function save() {
-        sset(STORAGE_KEY, leads);
+        Promise.resolve(emsStore.saveLeads(leads)).catch((e) => {
+          console.warn('EMS Leads save failed:', e);
+          showToast('Save failed — try again');
+        });
       }
       function genId() {
         return Date.now().toString(36) + Math.random().toString(36).slice(2);
@@ -2142,15 +2108,16 @@
       window.addEventListener('DOMContentLoaded', () => {
         // Drag-and-drop setup
         document.addEventListener('dragover', (e) => e.preventDefault());
-        if (window.DB && typeof DB.warmCache === 'function') {
-          DB.warmCache().then(() => {
-            load();
-            renderAll();
-          });
-        } else {
+        DB.warmCache().then(async () => {
+          emsStore = EmsLeadsStore.create(window.DB, localStorage);
+          try {
+            await emsStore.migrateRawStorage(); // one-time: old raw localStorage values -> sync layer
+          } catch (e) {
+            console.warn('EMS Leads raw-storage migration failed (raw copy kept):', e);
+          }
           load();
           renderAll();
-        }
+        });
       });
 
       function renderAll() {
@@ -3043,6 +3010,7 @@
     <script src="app/sync-classification.js?v=81"></script>
     <script src="app/db.js?v=81"></script>
     <script src="app/sync-ui.js?v=81"></script>
+    <script src="app/ems-leads-store.js?v=81"></script>
     <script src="feedback-widget.js?v=81"></script>
   </body>
 </html>

@@ -102,7 +102,17 @@ const SyncClassification = (() => {
     {
       pattern: 'ems_leads_v1',
       prefix: false,
-      note: 'ems-leads.html — currently BYPASSES the sset/DB.set choke point entirely (raw localStorage, no app/db.js script tag). Classified SYNCED for when Phase 0.2 routes it through sset/db.js; the predicate below cannot make this key start replicating on its own until that routing lands.',
+      note: 'EMS Leads list, shared by both users. Read/written only through app/ems-leads-store.js (DB.get/DB.set), used by the EMS Leads tab in energy-department.html and by ems-leads.html. One-time migration of any old raw localStorage copy lives in that store.',
+    },
+    {
+      pattern: 'ems_field_defs',
+      prefix: false,
+      note: 'EMS Leads custom field labels and custom fields (energy-department.html EMS Leads tab, via app/ems-leads-store.js). Shared so both users see the same columns.',
+    },
+    {
+      pattern: 'ems_client_types',
+      prefix: false,
+      note: 'EMS Leads editable client-type list (energy-department.html EMS Leads tab, via app/ems-leads-store.js). Shared so both users see the same list.',
     },
     {
       pattern: 'en_wdd_',

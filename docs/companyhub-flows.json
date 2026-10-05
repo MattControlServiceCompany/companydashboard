@@ -230,7 +230,8 @@
           "name": "Lead CRUD Operations",
           "description": "Create, read, update, delete leads. Detail drawer with 3 tabs: Overview (form), Activity Log, AI Tools (disabled).",
           "functions": ["openNewLeadModal()", "saveNewLead()", "openDrawer(id)", "closeDrawer()", "saveDrawerChanges()", "deleteCurrentLead()"],
-          "storageKeys": ["ems_leads_v1"],
+          "storageKeys": ["ems_leads_v1", "ems_field_defs", "ems_client_types"],
+          "storageLayer": "app/ems-leads-store.js (DB.get/DB.set, synced). One-time migration of old raw localStorage copies; used by ems-leads.html and the EMS Leads tab in energy-department.html",
           "dataModel": {
             "lead": {
               "id": "string  -  timestamp base36 + random",

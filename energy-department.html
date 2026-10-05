@@ -11985,7 +11985,9 @@
                Selectors scoped to #view-ems / ems-specific IDs
             ---------------------------------------- */
             (function () {
-              const EMS_KEY = 'ems_leads_v1';
+              // All EMS Leads storage goes through app/ems-leads-store.js (DB.get/DB.set,
+              // synced to the shared backend). emsStore is created in emsBoot() once DB is ready.
+              let emsStore = null;
               const EMS_STAGES = ['Prospect', 'Qualifying', 'Proposal', 'Won', 'Lost'];
               const EMS_STAGE_COLORS = {
                 Prospect: '#2a3450',
@@ -12007,7 +12009,6 @@
                 Lost: 'sp-lost',
                 'On Hold': 'sp-on-hold',
               };
-              const EMS_FIELDS_KEY = 'ems_field_defs';
               const EMS_BUILTIN_FIELDS = [
                 { key: 'company', label: 'Company Name *', builtin: true },
                 { key: 'address', label: 'Address', builtin: true },
@@ -12038,7 +12039,7 @@
 
               function emsLoadFields() {
                 try {
-                  const saved = JSON.parse(localStorage.getItem(EMS_FIELDS_KEY) || '{}');
+                  const saved = emsStore ? emsStore.loadFieldDefs() : {};
                   // Merge: start with builtins (with any saved label overrides), then append custom fields
                   const builtins = EMS_BUILTIN_FIELDS.map((f) => ({ ...f, label: saved.labels?.[f.key] ?? f.label }));
                   const customs = saved.custom || [];
@@ -12056,9 +12057,16 @@
                     if (f.label !== EMS_BUILTIN_FIELDS.find((b) => b.key === f.key)?.label) labels[f.key] = f.label;
                   } else custom.push({ key: f.key, label: f.label });
                 });
-                localStorage.setItem(EMS_FIELDS_KEY, JSON.stringify({ labels, custom }));
+                emsPersist(emsStore.saveFieldDefs({ labels, custom }));
               }
-              let EMS_LEAD_FIELDS = emsLoadFields();
+              let EMS_LEAD_FIELDS = [...EMS_BUILTIN_FIELDS, { key: '', label: '— Skip —' }]; // reloaded in emsBoot()
+              function emsPersist(p) {
+                // DB.set returns a Promise; a failed write must be visible, never silent.
+                Promise.resolve(p).catch((e) => {
+                  console.warn('EMS Leads save failed:', e);
+                  if (typeof showToast === 'function') showToast('EMS Leads save failed — try again', 'error');
+                });
+              }
 
               // Field editor UI
               window.emsToggleFieldEditor = function () {
@@ -12134,11 +12142,7 @@
                 emsCsvRows = [];
 
               function emsLoad() {
-                try {
-                  emsLeads = JSON.parse(localStorage.getItem(EMS_KEY) || '[]');
-                } catch (e) {
-                  emsLeads = [];
-                }
+                emsLeads = emsStore.loadLeads();
                 // Stamp original order index — used to restore default table order
                 emsLeads.forEach((l, i) => {
                   if (l._origIdx == null) l._origIdx = i;
@@ -12329,7 +12333,7 @@
                 showToast('Migration applied ✓ — fields remapped and duplicates removed');
               };
               function emsSave() {
-                localStorage.setItem(EMS_KEY, JSON.stringify(emsLeads));
+                emsPersist(emsStore.saveLeads(emsLeads));
               }
               function emsGenId() {
                 return Date.now().toString(36) + Math.random().toString(36).slice(2);
@@ -13020,7 +13024,6 @@
               ];
 
               /* -- Client Types — editable list -- */
-              const EMS_CLIENT_TYPES_KEY = 'ems_client_types';
               const EMS_CLIENT_TYPES_DEFAULT = [
                 'School',
                 'Municipality',
@@ -13034,17 +13037,13 @@
               ];
 
               function emsLoadClientTypes() {
-                try {
-                  const saved = JSON.parse(localStorage.getItem(EMS_CLIENT_TYPES_KEY));
-                  return Array.isArray(saved) && saved.length ? saved : [...EMS_CLIENT_TYPES_DEFAULT];
-                } catch (e) {
-                  return [...EMS_CLIENT_TYPES_DEFAULT];
-                }
+                const saved = emsStore ? emsStore.loadClientTypes() : null;
+                return saved || [...EMS_CLIENT_TYPES_DEFAULT];
               }
               function emsSaveClientTypes(types) {
-                localStorage.setItem(EMS_CLIENT_TYPES_KEY, JSON.stringify(types));
+                emsPersist(emsStore.saveClientTypes(types));
               }
-              let emsClientTypes = emsLoadClientTypes();
+              let emsClientTypes = [...EMS_CLIENT_TYPES_DEFAULT]; // reloaded in emsBoot()
 
               function emsClientTypeOptions(selectedVal) {
                 return (
@@ -13952,10 +13951,28 @@
                 }
               });
 
-              // Init
-              emsLoad();
-              emsMigrateLeads(); // normalize legacy CSV data (dates, key names, bad state values)
-              emsRenderAll(); // populate counts immediately on page load
+              // Init -- waits for DB (IndexedDB cache + server hydration) before reading anything.
+              let emsBooted = false;
+              async function emsBoot() {
+                if (emsBooted) return;
+                emsBooted = true;
+                emsStore = EmsLeadsStore.create(window.DB, localStorage);
+                try {
+                  await emsStore.migrateRawStorage(); // one-time: old raw localStorage values -> sync layer
+                } catch (e) {
+                  console.warn('EMS Leads raw-storage migration failed (raw copy kept):', e);
+                }
+                EMS_LEAD_FIELDS = emsLoadFields();
+                emsClientTypes = emsLoadClientTypes();
+                emsLoad();
+                emsMigrateLeads(); // normalize legacy CSV data (dates, key names, bad state values)
+                emsRenderAll(); // populate counts immediately on page load
+              }
+              if (window.DB && window.DB.isReady()) emsBoot();
+              else {
+                window.addEventListener('dbReady', emsBoot, { once: true });
+                window.addEventListener('dbLoadFailed', emsBoot, { once: true });
+              }
             })();
           </script>
           <script>
@@ -15787,6 +15804,7 @@
     <script src="app/sync-classification.js?v=81"></script>
     <script src="app/db.js?v=81"></script>
     <script src="app/sync-ui.js?v=81"></script>
+    <script src="app/ems-leads-store.js?v=81"></script>
     <script src="app/core.js?v=81"></script>
     <script src="app/energy-savings.js?v=81"></script>
     <script src="app/bill-analysis.js?v=81"></script>
