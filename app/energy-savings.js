@@ -4180,7 +4180,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     ReadDifference: _isMultiMeterChange ? null : meterRow?._fixedDifference || meterRow?.[6]?.replace(/,/g, '') || null,
     MeterMultiplier: _meterCombined?.multiplier || meterRow?.[7]?.replace(/,/g, '') || _mlMeter?.multiplier || null,
     kWhConsumed: adjKwh,
-    ActualKW: _meterCombined?.kw || meterRow?.[9] || _mlMeter?.kwUsed || null,
+    ActualKW: billValueOrNull(_meterCombined?.kw, meterRow?.[9], _mlMeter?.kwUsed),
     ActualRKVA: _meterCombined?.rkva || meterRow?.[10] || _mlMeter?.rkvaUsed || null,
     CustomerCharge: custChg,
     FacilitiesKW: facKW,
@@ -5827,7 +5827,7 @@ function _lbg_buildGasBill(
     Commodity: 'Gas',
     StartRead: gas.prevRead || null,
     EndRead: gas.currRead || null,
-    NaturalGasTherms: gas.usage || null,
+    NaturalGasTherms: billValueOrNull(gas.usage),
     CustomerCharge: r.baseCharge,
     FuelAdjustment: signedFuelAdj,
   };
@@ -5942,7 +5942,7 @@ function _lbg_buildGasBill(
     return null;
   }
   if (gasLine.held) return heldBill(gasLine.reason, gas.charge);
-  base.NaturalGasTherms = gasLine.usage || null;
+  base.NaturalGasTherms = billValueOrNull(gasLine.usage);
   let gasTotal = gasLine.gasTotal;
   const gasVariable = gasLine.gasVariable;
   // False when the value came from the Current Bill reconciliation, which
@@ -9728,7 +9728,7 @@ const UTILITY_RULES = [
           Commodity: 'Gas',
           StartRead: gas.prevRead || null,
           EndRead: gas.currRead || null,
-          NaturalGasTherms: gasLine.usage || null,
+          NaturalGasTherms: billValueOrNull(gasLine.usage),
           CustomerCharge: r.baseCharge,
           FuelAdjustment: signedFuelAdj,
         };
