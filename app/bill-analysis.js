@@ -1061,6 +1061,9 @@ function _applyExtractionGates(bills, gateA, gateB, gateWRE) {
     if (gateA) _pushGateReason(b, gateA.message, null);
     if (gateB) _pushGateReason(b, gateB.message, null);
     if (gateWRE) _pushGateReason(b, gateWRE.message, null);
+    // Constellation extractor could not read this site's account id and did not guess (item 62a38985).
+    if (b._acctIdUnread)
+      _pushGateReason(b, 'Account id could not be read from the scan; not guessed. Verify against the source PDF', null);
     const gc = b._correction_pending_TotalCurrentCharges;
     if (gc) {
       // REVIEW FIX (18b33d9f round 3, BLOCKING 1): gc is set ONLY when the

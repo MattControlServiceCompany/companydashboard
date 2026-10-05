@@ -6017,6 +6017,29 @@ function _lbg_facilityLookup(acct) {
   }
 }
 
+// Constellation Customer ID normalizer: THE one place that decides what an account id is
+// (item 62a38985). The id parse, the unreadable-id fallback and the dedup key all call it.
+// OCR reads "RG-233583" as "RG.233583", "RG43506046" or with a one-digit slip ("RG.233887").
+// Known ids = read in clean hyphen form 3+ times in the same file. An unknown id exactly one
+// digit away from exactly ONE known id snaps to it. If two known ids are one digit away, ids
+// already read cleanly in the same invoice are dropped (a site appears once per invoice);
+// still ambiguous -> no snap, raw digits kept. Returns 'RG<digits>' or null (not an RG id).
+const _CONST_CUST_ID_RE = /Customer\s+I\S?\s*[:;]\s*(RG[^\d\s]?\d+)/gi;
+const _constKnownCustIds = (t, minReads) => {
+  const n = {};
+  for (const m of t.matchAll(/Customer\s+I\S?\s*[:;]\s*RG-(\d+)/gi)) n[m[1]] = (n[m[1]] || 0) + 1;
+  return Object.keys(n).filter((k) => n[k] >= (minReads || 3));
+};
+const _constNormCustId = (raw, known, seenInInvoice) => {
+  const m = /^\s*RG[^\d\s]?(\d+)\s*$/i.exec(raw || '');
+  if (!m) return null;
+  const digits = m[1];
+  if (!known || known.includes(digits)) return 'RG' + digits;
+  const near0 = known.filter((k) => k.length === digits.length && [...k].filter((c, i) => c !== digits[i]).length === 1);
+  const near = near0.length > 1 && seenInInvoice ? near0.filter((k) => !seenInInvoice.has(k)) : near0;
+  return 'RG' + (near.length === 1 ? near[0] : digits);
+};
+
 const UTILITY_RULES = [
   {
     name: 'Evergy',
@@ -6967,8 +6990,10 @@ const UTILITY_RULES = [
       }
 
       const results = [];
+      const _knownIds = _constKnownCustIds(t);
       for (const invText of invoices) {
         if (!invText.trim()) continue;
+        const _seen = new Set(_constKnownCustIds(invText, 1));
 
         // ── Level 2: split each invoice into per-site blocks ──
         // Each site starts with "Service for Mon-YYYY" line.
@@ -7001,7 +7026,15 @@ const UTILITY_RULES = [
           // item 62a38985 — identity fields were resolving one site ahead of the money).
           const identityPortion = invoiceHeader + '\n' + prevTail;
           const siteText = identityPortion + '\n' + siteChunks[i];
-          const bill = this.extract(siteText, identityPortion.length);
+          // Site 1's id is at the end of the invoice header (chunk 0). For every later site the
+          // header id is site 1's, so the id search must start AFTER the header (idFrom).
+          const idFrom = i === 1 ? 0 : invoiceHeader.length + 1;
+          const bill = this.extract(siteText, identityPortion.length, {
+            knownIds: _knownIds,
+            seenIds: _seen,
+            idFrom,
+            siteNo: i,
+          });
           if (bill && !bill._skipRecord) results.push(bill);
         }
       }
@@ -7013,7 +7046,13 @@ const UTILITY_RULES = [
       if (results.length > 0) {
         const seenKey = new Map(); // key → index in dedupedResults
         for (const bill of results) {
-          const key = (bill.AccountNumber || '') + '|' + (bill.BillingPeriodStart || '');
+          // Unreadable-id rows get their own key (never collide with, or overwrite, another site).
+          // Readable ids go through the one normalizer.
+          const key = bill._acctIdUnread
+            ? 'UNREAD|' + bill.AccountNumber + '|' + (bill.BillingPeriodStart || '')
+            : (_constNormCustId(bill.AccountNumber, _knownIds) || bill.AccountNumber || '') +
+              '|' +
+              (bill.BillingPeriodStart || '');
           if (seenKey.has(key)) {
             // Replace the earlier duplicate with this later one
             dedupedResults[seenKey.get(key)] = bill;
@@ -7025,7 +7064,8 @@ const UTILITY_RULES = [
       }
       return dedupedResults.length > 0 ? dedupedResults : [this.extract(t)];
     },
-    extract: function (t, identityBoundary) {
+    extract: function (t, identityBoundary, idOpts) {
+      idOpts = idOpts || {};
       // ── Number cleaning helper ──
       // Remove commas, handle "$" prefix, handle bare ":" misread as "." in OCR.
       const fixNum = (s) => {
@@ -7068,8 +7108,13 @@ const UTILITY_RULES = [
       // IMPORTANT: the siteText passed to extract() is structured as:
       //   invoiceHeader (has site 1's Customer ID) + prevTail (has THIS site's Customer ID) + site charges
       // We must use the LAST Customer ID found in the text, not the first.
-      const _custIdAll = [..._identityText.matchAll(/Customer\s+ID:\s*(RG-?\d+)/gi)];
+      const _idText = _identityText.slice(idOpts.idFrom || 0);
+      const _custIdAll = [..._idText.matchAll(_CONST_CUST_ID_RE)];
       const custIdM = _custIdAll.length > 0 ? _custIdAll[_custIdAll.length - 1] : null;
+      // Site split with no readable id in this site's own window: never use the header's id
+      // (it is site 1's) and never the shared LDC account. Mark the bill (_acctIdUnread) so it
+      // stays out of dedup collisions and the bill review flags it.
+      const _idUnread = typeof identityBoundary === 'number' && !custIdM;
       // C1 fix: capture full multi-segment LDC Account (e.g. "<REDACTED-ACCT-SEG1> <REDACTED-ACCT-SEG2> <REDACTED-ACCT-SEG3>").
       // Old regex ([0-9]+) stopped at first space, capturing only "<REDACTED-ACCT-SEG1>".
       // New pattern allows digits + spaces up to 30 chars, then trim trailing spaces.
@@ -7077,10 +7122,11 @@ const UTILITY_RULES = [
       const _ldcAll = [..._identityText.matchAll(/LDC\s*Account:\s*([0-9][0-9 ]{5,30})/gi)];
       const ldcM = _ldcAll.length > 0 ? _ldcAll[_ldcAll.length - 1] : null;
       const bgM = t.match(/Account\s*ID:\s*(BG-\d+)/i);
-      const AccountNumber =
-        (custIdM ? custIdM[1].replace(/[^A-Z0-9]/gi, '') : null) ||
-        (ldcM ? ldcM[1].trim() : null) ||
-        (bgM ? bgM[1] : null);
+      const AccountNumber = _idUnread
+        ? 'ID-UNREAD-site' + (idOpts.siteNo || 0)
+        : (custIdM ? _constNormCustId(custIdM[1], idOpts.knownIds, idOpts.seenIds) : null) ||
+          (ldcM ? ldcM[1].trim() : null) ||
+          (bgM ? bgM[1] : null);
 
       // Guard: no usable account number means we can't identify this block.
       if (!AccountNumber) {
@@ -7238,6 +7284,7 @@ const UTILITY_RULES = [
           _reason: 'Missing required fields (AccountNumber + period + total)',
           commodity: 'gas',
           _utilityName: 'Constellation',
+          _acctIdUnread: _idUnread,
         };
       }
 
@@ -7257,6 +7304,7 @@ const UTILITY_RULES = [
         TotalAmountDue,
         commodity: 'gas',
         _utilityName: 'Constellation',
+        _acctIdUnread: _idUnread,
       };
     },
     _hasKeyField: function (extracted) {
