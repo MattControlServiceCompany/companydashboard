@@ -1035,7 +1035,7 @@ async function compactPdfStorageUI() {
     'Compact PDF Storage will scan every stored bill PDF (' +
     keyCount +
     ' currently stored), collapse byte-identical duplicates down to one copy each, and permanently delete the redundant copies. Export PDFs (backup) first — this cannot be undone.';
-  if ((window.CH_AUTH.backendMode() === 'on' || window.CH_AUTH.backendMode() === 'shadow')) {
+  if (window.CH_AUTH.backendMode() === 'on') {
     msg +=
       ' Server copies of consolidated PDFs will remain until server-side dedup is added — this only shrinks local storage.';
   }
@@ -1774,23 +1774,6 @@ async function siteResetData() {
     )
   )
     return;
-  // 2a.4b — Reset must NOT silently disable sync. localStorage.clear() below
-  // (and DB.clear()'s own localStorage.clear() fallback if IndexedDB is
-  // unavailable) would otherwise wipe ch_backend_mode along with everything
-  // else, turning sync off with no error and reloading into an empty
-  // local-only app instead of the intended "reset = re-hydrate from server"
-  // (supabase-migration-plan-FINAL-2026-07-19.md §3 integration #4, task
-  // 2a.4b). Capture the flag now, restore it AFTER every clear path below —
-  // warmCache()'s existing hydration step then does the full re-pull on
-  // reload for free (mode 'on' -> _hydrate() runs; mode 'off' unchanged).
-  var _chBackendModeReset = null;
-  var _chBackendEnabledReset = null;
-  try {
-    _chBackendModeReset = localStorage.getItem('ch_backend_mode');
-  } catch (e) {}
-  try {
-    _chBackendEnabledReset = localStorage.getItem('ch_backend_enabled');
-  } catch (e) {}
   localStorage.clear();
   sessionStorage.clear();
   if (window.DB && window.DB.clear) {
@@ -1799,10 +1782,6 @@ async function siteResetData() {
   if (typeof pdfClearAll === 'function') {
     await pdfClearAll();
   }
-  try {
-    if (_chBackendModeReset !== null) localStorage.setItem('ch_backend_mode', _chBackendModeReset);
-    if (_chBackendEnabledReset !== null) localStorage.setItem('ch_backend_enabled', _chBackendEnabledReset);
-  } catch (e) {}
   if (typeof showToast === 'function') showToast('Reset — reloading...');
   setTimeout(function () {
     location.reload();

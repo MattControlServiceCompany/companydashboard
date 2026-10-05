@@ -110,7 +110,6 @@
       '.ch-sync-status-body{display:flex;flex-direction:column;gap:12px;}' +
       '.ch-sync-status-mode-row{padding-bottom:10px;border-bottom:1px solid var(--border,#333);}' +
       '.ch-sync-status-label{color:var(--text,#fff);font-size:13px;font-weight:600;margin-bottom:8px;}' +
-      '.ch-sync-status-btn-row{display:flex;gap:6px;flex-wrap:wrap;}' +
       '.ch-sync-status-queue{color:var(--text,#fff);font-size:13px;padding:8px 0;' +
       'border-bottom:1px solid var(--border,#333);}' +
       '.ch-sync-status-headline{font-size:14px;font-weight:700;margin-bottom:4px;}' +
@@ -232,6 +231,13 @@
 
   window.addEventListener('dbOfflineBanner', function () {
     renderOfflineBanner(true);
+  });
+
+  // First connect of a browser that had local-only data: one-line result.
+  window.addEventListener('dbFirstConnect', function (e) {
+    var d = (e && e.detail) || {};
+    var msg = (d.uploaded || 0) + ' uploaded, ' + (d.updated || 0) + ' updated from server';
+    if (typeof showToast === 'function') showToast(msg, 'info', 10000);
   });
 
   window.addEventListener('dbHydrated', function () {
@@ -624,11 +630,11 @@
 
   // =========================================================================
   // Phase 2a.7 — Sync-status panel (phase2a-build-plan.md task 2a.7 /
-  // supabase-migration-plan-FINAL-2026-07-19.md §8's off|shadow|on flag).
+  // supabase-migration-plan-FINAL-2026-07-19.md §8's sync mode).
   // Self-contained in this file per the dispatch constraint — no HTML edits,
   // no db.js changes; reads only the read-only accessors Pass B exposed:
   // DB.getSyncStatus() (async — hits the manifest endpoint), DB.getQueueDepth(),
-  // DB.setBackendMode(mode). Opened from a small always-visible control placed
+  // the derived mode. Opened from a small always-visible control placed
   // in this same pill/banner area, bottom-left (opposite the pill/archive-link
   // stack at bottom-right) so it never collides with them.
   // =========================================================================
@@ -640,7 +646,6 @@
 
   function _modeLabel(mode) {
     if (mode === 'off') return 'Off (no syncing)';
-    if (mode === 'shadow') return 'Shadow (syncing quietly, for testing only)';
     if (mode === 'on') return 'On (fully syncing)';
     return String(mode);
   }
@@ -669,6 +674,8 @@
     el.onclick = openSyncStatusPanel;
   }
 
+  // Read-only line: the mode is derived (signed in on the production host =
+  // On). There is no switch.
   function _renderModeControl(container, currentMode) {
     var row = document.createElement('div');
     row.className = 'ch-sync-status-mode-row';
@@ -676,34 +683,6 @@
     label.className = 'ch-sync-status-label';
     label.textContent = 'Backend mode: ' + _modeLabel(currentMode);
     row.appendChild(label);
-
-    // Admin-only control: the mode switcher itself is gated on auth being
-    // present (per dispatch instructions — Phase 1 isn't wired on this
-    // branch yet, so gate on a simple window.CH_AUTH presence check; it
-    // lights up automatically once Phase 1 lands, zero further changes here).
-    var hasAuth = typeof window !== 'undefined' && !!window.CH_AUTH;
-    if (hasAuth) {
-      var btnRow = document.createElement('div');
-      btnRow.className = 'ch-sync-status-btn-row';
-      ['off', 'shadow', 'on'].forEach(function (m) {
-        var btn = document.createElement('button');
-        btn.className = 'ch-conflict-btn ch-sync-mode-btn' + (m === currentMode ? ' ch-conflict-primary' : '');
-        btn.textContent = m;
-        btn.addEventListener('click', function () {
-          if (m === currentMode) return;
-          if (!window.DB || typeof window.DB.setBackendMode !== 'function') return;
-          window.DB.setBackendMode(m);
-          openSyncStatusPanel(); // re-render the whole panel against the new mode
-        });
-        btnRow.appendChild(btn);
-      });
-      row.appendChild(btnRow);
-    } else {
-      var note = document.createElement('div');
-      note.className = 'ch-conflict-meta';
-      note.textContent = 'Sign in required to change the sync mode.';
-      row.appendChild(note);
-    }
     container.appendChild(row);
   }
 

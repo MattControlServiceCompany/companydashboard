@@ -307,7 +307,7 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
   await scenario('6', async () => {
     const srv = makeServer(SEED());
-    const { ctx, DB } = await boot({ host: NETLIFY, signedIn: true, storedMode: 'shadow', server: srv });
+    const { ctx, DB, ls } = await boot({ host: NETLIFY, signedIn: true, storedMode: 'shadow', server: srv });
     const want = SEED();
     check(
       '6 stored shadow on Netlify: mode is on',
@@ -316,9 +316,9 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     );
     check('6 stored shadow on Netlify: hydrated, not overwritten', same(cacheOf(DB, Object.keys(want)), want), '');
     check(
-      '6 stored shadow on Netlify: setBackendMode(shadow) refused',
-      DB.setBackendMode('shadow') === false && ctx.window.CH_AUTH.backendMode() === 'on',
-      '',
+      '6 stored shadow on Netlify: stored value removed, no setBackendMode API',
+      ls.get('ch_backend_mode') === undefined && DB.setBackendMode === undefined,
+      String(ls.get('ch_backend_mode')),
     );
     check('6 stored shadow on Netlify: 0 PUTs', srv.puts.length === 0, srv.puts.length + ' PUTs');
   });
@@ -328,10 +328,11 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     const stale = { en_budget_a: { n: 'STALE-LOCAL' }, en_budget_local_only: { keep: true } };
     const { DB } = await boot({ host: NETLIFY, signedIn: true, storedMode: 'on', server: srv, idbSeed: stale });
     await tick(40);
+    const puts7 = srv.puts.map((p) => JSON.parse(p).key);
     check(
-      '7 drift (stale local, empty version map): 0 wholesale pushes',
-      srv.puts.length === 0,
-      srv.puts.length + ' PUTs',
+      '7 drift (stale local, empty version map): no push of the drifted key; only the local-only key is uploaded',
+      puts7.length === 1 && puts7[0] === 'en_budget_local_only',
+      puts7.join(','),
     );
     check('7 drift: server wins locally', same(DB.get('en_budget_a'), { n: 1 }), JSON.stringify(DB.get('en_budget_a')));
     check('7 drift: server value unchanged', same(srv.rows.get('en_budget_a').value, { n: 1 }), '');
@@ -341,6 +342,76 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
       arch.some((e) => e.key === 'en_budget_a' && same(e.losingValue, { n: 'STALE-LOCAL' })),
       'archive=' + arch.length,
     );
+  });
+
+  // Always-on: stored 'off' on the production host is ignored and removed.
+  await scenario('11', async () => {
+    const srv = makeServer(SEED());
+    const b = await boot({ host: NETLIFY, signedIn: true, storedMode: 'off', server: srv });
+    const want = SEED();
+    check('11 stored off + signed in on Netlify: mode on', b.ctx.window.CH_AUTH.backendMode() === 'on', b.ctx.window.CH_AUTH.backendMode());
+    check('11 stored off: removed from storage', b.ls.get('ch_backend_mode') === undefined && b.ls.get('ch_backend_enabled') === undefined, String(b.ls.get('ch_backend_mode')));
+    check('11 stored off: hydrated from server', same(cacheOf(b.DB, Object.keys(want)), want), '');
+  });
+
+  // First connect of a formerly-off browser: local-only key uploaded, differing key archived.
+  await scenario('12', async () => {
+    const srv = makeServer(SEED());
+    const idbSeed = { en_budget_a: { n: 'OLD-LOCAL' }, en_budget_local_only: { keep: [1, 2] }, en_conflict_archive: [] };
+    let fired = null;
+    const b = await boot({
+      host: NETLIFY,
+      signedIn: true,
+      storedMode: 'off',
+      server: srv,
+      idbSeed,
+      onCtx: (c) => c.addEventListener('dbFirstConnect', (e) => (fired = e.detail)),
+    });
+    await tick(60);
+    const row = srv.rows.get('en_budget_local_only');
+    check('12 local-only key uploaded to server', row && same(row.value, { keep: [1, 2] }) && row.version === 1, JSON.stringify(row));
+    check('12 local-only key has a local version entry', !!(b.idb.data.get('ch_replica_state') || {}).en_budget_local_only, '');
+    check('12 differing key: server wins locally', same(b.DB.get('en_budget_a'), { n: 1 }), JSON.stringify(b.DB.get('en_budget_a')));
+    check('12 differing key: server value untouched', same(srv.rows.get('en_budget_a').value, { n: 1 }) && srv.rows.get('en_budget_a').version === 1, '');
+    const arch = b.DB.get('en_conflict_archive', []);
+    check('12 differing key: old local value archived', arch.some((e) => e.key === 'en_budget_a' && same(e.losingValue, { n: 'OLD-LOCAL' })), 'archive=' + arch.length);
+    check('12 exactly one PUT (the local-only key)', srv.puts.length === 1, srv.puts.length + ' PUTs');
+    check('12 one-line result event: 1 uploaded, updated from server', fired && fired.uploaded === 1 && fired.updated >= 1, JSON.stringify(fired));
+    check('12 queue empty', b.DB.getQueueDepth() === 0, 'q=' + b.DB.getQueueDepth());
+  });
+
+  // Archive entry made during hydration must land in the DB (core.js sset writes to
+  // localStorage while the DB is not ready, which hid the entry from the viewer).
+  await scenario('12b', async () => {
+    const srv = makeServer(SEED());
+    const b = await boot({
+      host: NETLIFY, signedIn: true, server: srv, idbSeed: { en_budget_a: { n: 'OLD-LOCAL' } },
+      onCtx: (c) => {
+        c.sset = (k, v) => (c.window.DB.isReady() ? c.window.DB.set(k, v) : (c.localStorage.setItem(k, JSON.stringify(v)), Promise.resolve()));
+      },
+    });
+    const arch = b.DB.getConflictArchive();
+    check('12b hydration archive entry is in the DB cache', arch.some((e) => e.key === 'en_budget_a'), 'archive=' + arch.length);
+  });
+
+  // Upload runs once: a second load makes no PUT; a server tombstone is never resurrected.
+  await scenario('13', async () => {
+    const seed = SEED();
+    seed.en_budget_gone = { deleted: true };
+    const srv = makeServer(seed);
+    const b1 = await boot({ host: NETLIFY, signedIn: true, server: srv, idbSeed: { en_budget_new: 7, en_budget_gone: { stale: 1 } } });
+    await tick(60);
+    const after1 = srv.puts.length;
+    check('13 first load: local-only key uploaded, tombstoned key not re-uploaded', after1 === 1 && srv.rows.get('en_budget_new').value === 7 && srv.rows.get('en_budget_gone').deleted === true, srv.puts.length + ' PUTs');
+    await boot({ host: NETLIFY, signedIn: true, server: srv, reuse: b1 });
+    await tick(60);
+    check('13 second load: no further PUT', srv.puts.length === after1, srv.puts.length + ' PUTs');
+  });
+
+  // Sync status panel: no mode switch code at all.
+  await scenario('14', async () => {
+    const ui = read('sync-ui.js');
+    check('14 sync-ui.js has no mode switch code', !/ch-sync-mode-btn|setBackendMode/.test(ui), '');
   });
 
   // Review fix 2: any non-production host is off even with a stored 'on'/'shadow'.

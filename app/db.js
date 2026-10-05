@@ -112,33 +112,12 @@ const DB = (() => {
   // per feedback_user_always_hard_refreshes.md).
   const LOCAL_IDENTITY_KEY = 'ch_local_identity';
 
-  // --- Backend mode (upgrades the old boolean ch_backend_enabled flag) ----
-  // off    = today's app, no network (byte-identical to pre-2a behavior).
-  // shadow = writes replicate (CAS), reads stay local, hydration OFF,
-  //          conflicts logged (archived) not modal'd; on 409, auto-adopt +
-  //          retry once (integration #2).
-  // on     = full: hydration at load + manifest polling + write-through.
+  // --- Backend mode -------------------------------------------------------
+  // Derived only by CH_AUTH.backendMode(): 'on' = signed in on the production
+  // Netlify host (hydration at load + manifest polling + write-through);
+  // 'off' = everywhere else (no network). There is no stored switch.
   function _backendMode() {
     return typeof window !== 'undefined' && window.CH_AUTH ? window.CH_AUTH.backendMode() : 'off';
-  }
-
-  function setBackendMode(mode) {
-    if (['off', 'shadow', 'on'].indexOf(mode) === -1) {
-      console.warn('[DB] setBackendMode: invalid mode', mode);
-      return false;
-    }
-    // 'shadow' overwrites the server (auto-adopt + retry); on Netlify it is refused.
-    if (mode === 'shadow' && typeof location !== 'undefined' && /\.netlify\.app$/i.test(location.hostname || '')) {
-      console.warn('[DB] setBackendMode: shadow is refused on Netlify');
-      return false;
-    }
-    try {
-      localStorage.setItem('ch_backend_mode', mode);
-      return true;
-    } catch (e) {
-      console.warn('[DB] setBackendMode: failed to persist flag:', e);
-      return false;
-    }
   }
 
   // Keys that never sync to the backend. Delegates to the single
@@ -443,12 +422,15 @@ const DB = (() => {
   function _appendConflictArchive(entry) {
     const full = Object.assign({ archivedAt: new Date().toISOString() }, entry);
     try {
-      if (typeof sget !== 'function' || typeof sset !== 'function') {
-        console.warn('[DB] Cannot archive conflict — sget/sset (core.js) not loaded:', entry.key);
-        return;
-      }
-      const archive = sget('en_conflict_archive', []).concat([full]);
-      sset('en_conflict_archive', archive);
+      // Written through this module's own set(), NOT core.js sset(): sset sends
+      // the write to localStorage while the DB is not ready yet (hydration runs
+      // inside warmCache, before ready), which hides the entry from the
+      // conflict-archive viewer (DB.getConflictArchive reads the DB cache).
+      const prior = _cache['en_conflict_archive'];
+      const archive = (Array.isArray(prior) ? prior : []).concat([full]);
+      Promise.resolve(set('en_conflict_archive', archive)).catch((e) =>
+        console.warn('[DB] Failed to persist conflict archive:', e),
+      );
       if (entry.reason === 'hydration-server-wins') _archivedLocalThisRun++;
       if (isConflictArchiveFull() && typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('conflictArchiveFull', { detail: { count: archive.length } }));
@@ -682,36 +664,6 @@ const DB = (() => {
       winningUpdatedBy: current && current.updatedBy,
       winningUpdatedAt: current && current.updatedAt,
     });
-
-    if (mode === 'shadow') {
-      // Integration #2 shadow behavior: auto-adopt the server version and
-      // retry the PUT once, so the server keeps tracking edits through a
-      // rare collision instead of shadow silently getting stuck. Shadow mode
-      // never shows a modal — reads stay local-only in shadow, so there is
-      // no live page for a modal to interrupt.
-      if (current) {
-        _replicaVersions[key] = { version: current.version, hash: current.hash || null };
-        _persistReplicaState();
-      }
-      if (typeof showToast === 'function') {
-        showToast('Backend sync conflict on ' + key + ' — local copy archived, see en_conflict_archive.', 'error');
-      }
-      if (current) {
-        let retryResult;
-        try {
-          retryResult = await _sendKvPut(key, payload);
-        } catch (e) {
-          retryResult = { status: 'network-error' };
-        }
-        if (retryResult.status === 'network-error' || retryResult.status === 'error') {
-          _enqueueWrite(key, payload);
-        }
-        // 'ok' -> _sendKvPut already updated the version map.
-        // 'conflict' again -> leave as a logged conflict, no further retry
-        // (avoid a retry loop).
-      }
-      return;
-    }
 
     if (mode !== 'on') return; // 'off' never replicates, so never reaches here
 
@@ -1087,7 +1039,7 @@ const DB = (() => {
 
   async function _hydrateInner() {
     const mode = _backendMode();
-    if (mode !== 'on') return; // shadow/off: hydration is OFF per plan §8
+    if (mode !== 'on') return; // off: no hydration
 
     let manifest;
     try {
@@ -1171,6 +1123,7 @@ const DB = (() => {
       }
     }
 
+    let updatedFromServer = 0;
     // Hash-compare conflict check (integration #3 / R15 hydration-drift drill).
     for (const { m, localKey } of conflictCheckKeys) {
       // No version map entry and a local value exists: server wins (or a pure
@@ -1182,16 +1135,57 @@ const DB = (() => {
         console.warn('[DB] Hydration: drift fetch failed, leaving key untouched:', localKey, e);
         continue;
       }
-      if (rows[0]) await _reconcileIncoming(localKey, rows[0], m.hash);
+      if (rows[0]) {
+        const before = _cache[localKey];
+        await _reconcileIncoming(localKey, rows[0], m.hash);
+        if (_cache[localKey] !== before) updatedFromServer++;
+      }
+    }
+
+    // First connect of a browser whose data was only local (for example it was
+    // in the old "off" mode): upload every synced key the server has never
+    // seen. Insert only (baseVersion null), so an existing server row can
+    // never be overwritten here. A key that is not in the manifest and has no
+    // version entry here was never on the server. A tombstoned key IS in the
+    // manifest, so it is never resurrected. Runs once per key: after the PUT
+    // the key has a version entry.
+    const onServer = new Set(manifest.map((m) => m.key));
+    let uploaded = 0;
+    for (const localKey of Object.keys(_cache)) {
+      if (!_shouldReplicate(localKey)) continue;
+      const value = _cache[localKey];
+      if (value === undefined || value === null) continue;
+      if (_replicaVersions[localKey]) continue;
+      if (_syncQueue.some((e) => e.key === localKey)) continue;
+      const wire = _wireKey(localKey);
+      if (wire === null || onServer.has(wire)) continue;
+      let r;
+      try {
+        r = await _sendKvPut(localKey, { value });
+      } catch (e) {
+        r = { status: 'network-error' };
+      }
+      if (r.status === 'ok') uploaded++;
+      else if (r.status === 'network-error' || r.status === 'error') _enqueueWrite(localKey, { value });
+      // 'conflict': another device inserted it meanwhile; next load takes the drift path (server wins, local archived).
     }
 
     _persistReplicaState();
     if (typeof window !== 'undefined') {
       window.dispatchEvent(
         new CustomEvent('dbHydrated', {
-          detail: { applied: routineFetchKeys.length + tombstoneKeys.length, conflicts: conflictCheckKeys.length },
+          detail: {
+            applied: routineFetchKeys.length + tombstoneKeys.length,
+            conflicts: conflictCheckKeys.length,
+            uploaded,
+          },
         }),
       );
+      if (uploaded > 0 || conflictCheckKeys.length > 0) {
+        window.dispatchEvent(
+          new CustomEvent('dbFirstConnect', { detail: { uploaded, updated: updatedFromServer + routineFetchKeys.length } }),
+        );
+      }
     }
   }
 
@@ -1860,7 +1854,6 @@ const DB = (() => {
     getConflictArchive,
     isConflictArchiveFull,
     clearConflictArchive,
-    setBackendMode,
     restoreScope,
     restoreFetchServer,
     restorePush,
