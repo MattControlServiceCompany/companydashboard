@@ -791,7 +791,6 @@ t('T12 never-restore keys untouched in all modes; per-user key added only when a
     '_debug_propane_bills',
     'en_sewer_backfill_report_v1',
     'en_utility_null',
-    'en_wdd_90001',
     'ch_backend_mode',
     '_companyHubBackup',
   ];
@@ -1338,5 +1337,17 @@ t('absent key: scalar strings keep their type; objects and arrays are parsed', (
   }
   assert.deepStrictEqual(mv('some_plain_key', undefined, '{"a":1}', 'add').value, { a: 1 });
   assert.deepStrictEqual(mv('some_plain_key', undefined, '[1,2]', 'add').value, [1, 2]);
+});
+t('restore keeps weather (en_wdd_<zip>): written when absent in add, merge and replace', () => {
+  const rows = [{ month: 4, year: 2026, hdd: 300, cdd: 0, avg_temp: 50 }];
+  assert.strictEqual(RM.policyFor('en_wdd_90001', []).kind, 'key');
+  for (const mode of MODES) {
+    const r = mv('en_wdd_90001', undefined, J(rows), mode);
+    assert.strictEqual(r.changed, true, 'weather dropped ' + mode);
+    assert.deepStrictEqual(r.value, rows);
+  }
+  const p = RM.plan({ en_wdd_90001: rows }, () => undefined, 'add');
+  assert.strictEqual(p.skipped.length, 0);
+  assert.strictEqual(p.items[0].changed, true);
 });
 console.log(pass + ' tests passed (final)');

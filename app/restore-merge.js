@@ -37,7 +37,6 @@ const RestoreMerge = (() => {
   const NEVER = [
     [/^ch_user$/, 'signed-in user identity'],
     [/^ch_(seen_version|last_seen_version|qs_seen|idb_migrated|verification_results|notifs)$/, 'device state'],
-    [/^en_wdd_/, 'weather cache (recomputed)'],
     [/^_/, 'debug data'],
     [/^en_sewer_backfill_report/, 'debug data'],
     [/^en_utility_.*_v\d+$/, 'migration flag'],
