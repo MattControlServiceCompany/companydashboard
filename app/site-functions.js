@@ -2296,6 +2296,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.05.75', date: '2026-10-05', title: 'Equipment Matrix keeps same-name equipment apart',
+    items: [
+      { type: 'fix', text: 'Equipment Matrix: equipment with the same name on different controller paths now imports as separate rows instead of being merged into one.' },
+      { type: 'fix', text: 'Equipment Matrix: re-importing a CSV that has only one path of a same-name equipment updates only that row. A new path adds a new row. Your edits and added fields stay.' }
+    ]
+  },
   { v: 'v2026.10.02.74', date: '2026-10-02', title: 'Equipment Matrix re-import and point counts',
     items: [
       { type: 'change', text: 'Equipment Matrix: Re-Import now merges by point name. It never deletes rows and keeps your edits and added fields. A summary shows how many points were added, updated, and unchanged.' },
