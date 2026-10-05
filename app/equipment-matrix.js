@@ -3570,19 +3570,39 @@ function emExtractEquipmentGroups(rows, colMap, storedRows) {
     groups.forEach(function (grp) {
       (_pathsByBase[grp.baseKey] = _pathsByBase[grp.baseKey] || []).push(grp.bacnetLocation);
     });
-    var _storedLoc = {};
+    // Re-import: an incoming (base, path) goes to the stored row that already holds that path (plain or ||@path id).
+    // Only a path no stored row holds gets a new id. The claim rule (stored plain-row path, else lowest path)
+    // applies to the unmatched paths only when the name is not yet split (no stored ||@ sibling).
+    var _storedByBase = {};
     (storedRows || []).forEach(function (sr) {
-      _storedLoc[sr.id] = sr.bacnetLocation || '';
+      var sid = String(sr.id || '');
+      var at = sid.indexOf('||@');
+      var base = at === -1 ? sid : sid.slice(0, at);
+      var loc = sr.bacnetLocation || (at === -1 ? '' : sid.slice(at + 3));
+      var e = (_storedByBase[base] = _storedByBase[base] || { pathToId: {}, plainId: false, plainLoc: '', split: false });
+      if (at === -1) {
+        e.plainId = true;
+        e.plainLoc = loc;
+      } else e.split = true;
+      if (loc) e.pathToId[loc] = sid;
     });
     var _plainPath = {};
     Object.keys(_pathsByBase).forEach(function (base) {
+      var st = _storedByBase[base];
       var paths = _pathsByBase[base].slice().sort();
-      _plainPath[base] =
-        _storedLoc[base] !== undefined && paths.indexOf(_storedLoc[base]) !== -1 ? _storedLoc[base] : paths[0];
+      var unmatched = paths.filter(function (p) {
+        return !(st && st.pathToId[p] !== undefined);
+      });
+      // plain id is open to unmatched paths when no stored plain row exists, or the name is not split yet
+      var open = !st || !st.plainId || (!st.split && !(st.plainLoc && st.pathToId[st.plainLoc] && paths.indexOf(st.plainLoc) !== -1));
+      _plainPath[base] = open && unmatched.length ? unmatched[0] : null;
     });
     var finalGroups = new Map();
     groups.forEach(function (grp) {
-      var key = _plainPath[grp.baseKey] === grp.bacnetLocation ? grp.baseKey : grp.baseKey + '||@' + grp.bacnetLocation;
+      var st = _storedByBase[grp.baseKey];
+      var key;
+      if (st && st.pathToId[grp.bacnetLocation] !== undefined) key = st.pathToId[grp.bacnetLocation];
+      else key = _plainPath[grp.baseKey] === grp.bacnetLocation ? grp.baseKey : grp.baseKey + '||@' + grp.bacnetLocation;
       finalGroups.set(key, grp);
     });
     return finalGroups;

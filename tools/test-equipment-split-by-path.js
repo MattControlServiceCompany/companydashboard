@@ -185,5 +185,31 @@ assert(
   'audit same-name consolidation key includes building and path',
 );
 
+
+// 8. Partial re-import after a split: a CSV holding ONE path updates only the row that holds that path.
+const P3 = BASE + 'Penthouse E';
+const splitState = JSON.parse(JSON.stringify(merged)); // plain = P2 (claimed), sibling = P1
+function partial(p, val) {
+  const before = JSON.parse(JSON.stringify(splitState));
+  const inc = importCsv([line(p, 'UH-4', 'Space Temp', val, '#x/st')], before.rows);
+  const res = sandbox.emMergeIntoMatrix(before, inc);
+  const get = (id) => res.rows.find((r) => r.id === id);
+  return { res, get, before };
+}
+const PL = 'Fixture School||UH-4';
+let q = partial(P2, '99'); // claimed path
+assert(q.res.rows.length === 3, '8a claimed-path CSV: no new row, got ' + q.res.rows.length);
+assert(q.get(PL).pointsRaw['Space Temp'] === '99', '8a claimed row updated');
+assert(q.get(PL + '||@' + P1).pointsRaw['Space Temp'] === '70', '8a sibling untouched');
+q = partial(P1, '88'); // sibling path
+assert(q.res.rows.length === 3, '8b sibling-path CSV: no new row, got ' + q.res.rows.length);
+assert(q.get(PL + '||@' + P1).pointsRaw['Space Temp'] === '88', '8b sibling row updated');
+assert(q.get(PL).pointsRaw['Space Temp'] === '65', '8b claimed row untouched');
+assert(q.get(PL).notes === 'user note on UH-4', '8b notes intact');
+q = partial(P3, '77'); // brand-new path
+assert(q.res.rows.length === 4 && q.res.addedCount === 1, '8c new path: exactly one row added, got ' + q.res.rows.length);
+assert(q.get(PL + '||@' + P3) && q.get(PL + '||@' + P3).pointsRaw['Space Temp'] === '77', '8c new path gets ||@ id');
+assert(q.get(PL).pointsRaw['Space Temp'] === '65' && q.get(PL + '||@' + P1).pointsRaw['Space Temp'] === '70', '8c existing rows untouched');
+
 console.log(failed ? 'FAILED ' + failed + ' / ' + (passed + failed) : 'PASS ' + passed + ' checks');
 process.exit(failed ? 1 : 0);
