@@ -411,12 +411,12 @@ async function pdfStore(id, base64) {
     console.warn('pdfStore failed:', e);
     return false;
   }
-  // --- Phase 2c write-through tail (ch_backend_mode kill switch) ---
+  // --- Phase 2c write-through tail (sync is on only when signed in on the production host) ---
   // Local IDB write above is unchanged/first, exactly as today. When mode is
   // 'off' this is a single localStorage.getItem call — effectively free,
   // zero network, matching db.js's replication-tail guarantee for DB.set().
   const mode = window.CH_AUTH.backendMode();
-  if (mode === 'on' || mode === 'shadow') {
+  if (mode === 'on') {
     try {
       _pdfEnqueue('upload', id);
     } catch (e) {
@@ -443,8 +443,7 @@ async function pdfLoad(id) {
   if (local) return local; // local hit — unchanged behavior, never touches the network.
   if (localFailed) return null; // IDB itself broke — unchanged behavior, no fallback attempted.
   // Local miss (IDB opened fine, key just isn't there). Phase 2c server
-  // fallback — ONLY in full 'on' mode (mirrors db.js: reads/hydration stay
-  // local-only in 'off' AND 'shadow'; only 'on' ever reads remotely).
+  // fallback — ONLY in full 'on' mode (mirrors db.js: only 'on' ever reads remotely).
   if (window.CH_AUTH.backendMode() !== 'on') return null;
   try {
     const base64 = await _pdfDownload(id);
@@ -472,7 +471,7 @@ async function pdfDelete(id) {
   // --- Phase 2c: propagate delete to the server (see _pdfDeleteCommit's
   // KNOWN GAP note — pdf-sync.js has no DELETE route on this branch yet). ---
   const mode = window.CH_AUTH.backendMode();
-  if (mode === 'on' || mode === 'shadow') {
+  if (mode === 'on') {
     try {
       _pdfEnqueue('delete', id);
     } catch (e) {

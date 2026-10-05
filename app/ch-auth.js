@@ -56,31 +56,33 @@
   var _refreshInFlight = null; // Promise | null — de-dupes overlapping refresh calls
 
   // THE single backend-mode reader (db.js, sync-ui.js, core.js, site-functions.js
-  // all call CH_AUTH.backendMode()). Returns 'off' | 'shadow' | 'on'.
-  //  - Only the PRODUCTION Netlify host syncs: *.netlify.app and not a deploy
-  //    preview or branch deploy (those contain '--'). Signed in = 'on'. Signed
-  //    out = 'off' (nothing is pushed; the sign-in prompt shows). A stored 'off'
-  //    wins. 'shadow' overwrites the server, so stored/legacy 'shadow' reads 'on'.
-  //  - EVERY other host (github.io, localhost, file://, previews, custom
-  //    domains): always 'off', whatever is stored. /.netlify/functions does not
-  //    exist there, so there must be zero sync calls.
+  // all call CH_AUTH.backendMode()). Returns 'off' | 'on'.
+  //  - Only the PRODUCTION Netlify host syncs: exactly cscdashboard.netlify.app.
+  //    Every other host (deploy previews, other Netlify sites) is 'off'. Signed in = ALWAYS 'on',
+  //    in every browser. There is no per-browser switch: a stored
+  //    ch_backend_mode / ch_backend_enabled value from an older version is
+  //    ignored and removed. Signed out = 'off' (nothing is pushed; the
+  //    sign-in prompt shows).
+  //  - EVERY other host (github.io testing host, localhost, file://, previews,
+  //    custom domains): always 'off'. /.netlify/functions does not exist
+  //    there, so there must be zero sync calls.
   function _isNetlifyHost() {
     var h = typeof location !== 'undefined' ? location.hostname || '' : '';
-    return /\.netlify\.app$/i.test(h) && h.indexOf('--') === -1;
+    return h.toLowerCase() === 'cscdashboard.netlify.app';
+  }
+  function _dropLegacyModeFlags() {
+    try {
+      localStorage.removeItem('ch_backend_mode');
+      localStorage.removeItem('ch_backend_enabled');
+    } catch (e) {
+      /* storage unavailable: nothing to remove */
+    }
   }
   function backendMode() {
     if (typeof localStorage === 'undefined') return 'off';
-    var v, legacy;
-    try {
-      v = localStorage.getItem('ch_backend_mode');
-      legacy = localStorage.getItem('ch_backend_enabled');
-    } catch (e) {
-      return 'off';
-    }
-    var stored = v === 'off' || v === 'shadow' || v === 'on' ? v : legacy === 'true' ? 'shadow' : null;
     if (!_isNetlifyHost()) return 'off';
     if (_signedOut) return 'off';
-    if (stored === 'off') return 'off';
+    _dropLegacyModeFlags();
     return 'on';
   }
 

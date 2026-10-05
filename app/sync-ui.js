@@ -75,6 +75,12 @@
       'border-color:var(--accent,#2563eb);color:#fff;}' +
       '.ch-conflict-btn.ch-conflict-primary:hover{filter:brightness(1.1);}' +
       '.ch-conflict-btn:disabled{opacity:.5;cursor:not-allowed;}' +
+      '.ch-conflict-rec{background:var(--s3,#1e2438);border:1px solid var(--border,#333);' +
+      'border-radius:6px;padding:8px 10px;margin:0 0 8px;display:flex;flex-wrap:wrap;gap:4px 16px;align-items:center;}' +
+      '.ch-conflict-rec-name{flex-basis:100%;font-weight:600;color:var(--text,#fff);}' +
+      '.ch-conflict-rec label{color:var(--text,#fff);cursor:pointer;display:inline-flex;gap:6px;align-items:center;}' +
+      '.ch-conflict-field{flex-basis:100%;padding:4px 8px;margin-bottom:4px;background:var(--s2,#181d2e);' +
+      'border:1px solid var(--border,#333);border-radius:4px;color:var(--text,#fff);overflow-wrap:anywhere;}' +
       '.ch-conflict-typed{margin-top:4px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;' +
       'justify-content:flex-end;width:100%;}' +
       '.ch-conflict-typed input{flex:1;min-width:140px;padding:6px 8px;border-radius:4px;' +
@@ -110,7 +116,6 @@
       '.ch-sync-status-body{display:flex;flex-direction:column;gap:12px;}' +
       '.ch-sync-status-mode-row{padding-bottom:10px;border-bottom:1px solid var(--border,#333);}' +
       '.ch-sync-status-label{color:var(--text,#fff);font-size:13px;font-weight:600;margin-bottom:8px;}' +
-      '.ch-sync-status-btn-row{display:flex;gap:6px;flex-wrap:wrap;}' +
       '.ch-sync-status-queue{color:var(--text,#fff);font-size:13px;padding:8px 0;' +
       'border-bottom:1px solid var(--border,#333);}' +
       '.ch-sync-status-headline{font-size:14px;font-weight:700;margin-bottom:4px;}' +
@@ -188,11 +193,13 @@
   // The conflict archive is never trimmed by the app. Past its size cap this
   // notice stays until the user exports the archive and confirms the clear.
   function renderArchiveFullBanner() {
-    if (!window.DB || typeof window.DB.isConflictArchiveFull !== 'function' || !window.DB.isConflictArchiveFull()) return;
+    if (!window.DB || typeof window.DB.isConflictArchiveFull !== 'function' || !window.DB.isConflictArchiveFull())
+      return;
     ensureStyles();
     var el = ensureEl('ch-sync-archive-full-banner');
     var n = window.DB.getConflictArchive().length;
-    el.textContent = 'The conflict history is large (' + n + ' entries) and holds copies of replaced edits. Save it to a file.';
+    el.textContent =
+      'The conflict history is large (' + n + ' entries) and holds copies of replaced edits. Save it to a file.';
     var btn = document.createElement('button');
     btn.textContent = 'Export conflict history';
     btn.onclick = function () {
@@ -232,6 +239,13 @@
 
   window.addEventListener('dbOfflineBanner', function () {
     renderOfflineBanner(true);
+  });
+
+  // First connect of a browser that had local-only data: one-line result.
+  window.addEventListener('dbFirstConnect', function (e) {
+    var d = (e && e.detail) || {};
+    var msg = (d.uploaded || 0) + ' uploaded, ' + (d.updated || 0) + ' updated from server';
+    if (typeof showToast === 'function') showToast(msg, 'info', 10000);
   });
 
   window.addEventListener('dbHydrated', function () {
@@ -276,6 +290,22 @@
     ['en_alarms_', 'this alarm log'],
     ['en_hours_', 'this hours log'],
     ['en_budget_', 'this budget data'],
+    ['en_customers', 'the customer list'],
+    ['en_deleted_records', 'the deletion records'],
+    ['en_presented_savings', 'the presented-to-client savings marks'],
+    ['en_agreement_', 'this service agreement setup'],
+    ['en_value_corrections', 'the value corrections log'],
+    ['en_wdd_', 'this weather data'],
+    ['bldgperf_cfg_', 'a building performance chart setting'],
+    ['bldgsavproj_cfg_', 'a building savings projection setting'],
+    ['en_bills_zoom_', 'a bill table zoom setting'],
+    ['en_sv_matrix_zoom_', 'a matrix zoom setting'],
+    ['en_em_zoom', 'the equipment matrix zoom setting'],
+    ['en_perf_zoom', 'the performance table zoom setting'],
+    ['audit_estimate_config', 'the audit estimate assumptions'],
+    ['ems_leads_v1', 'the EMS leads list'],
+    ['sv_', 'this service department data'],
+    ['ch_', 'a personal display setting'],
   ];
   function friendlyKeyName(key) {
     if (FRIENDLY_KEY_NAMES[key]) return FRIENDLY_KEY_NAMES[key];
@@ -283,6 +313,13 @@
       if (key.indexOf(FRIENDLY_KEY_PREFIXES[i][0]) === 0) return FRIENDLY_KEY_PREFIXES[i][1];
     }
     return 'this item';
+  }
+
+  // One short, readable line for a field value in the conflict modal.
+  function _shortValue(v) {
+    if (v === undefined || v === null || v === '') return '(empty)';
+    var s = typeof v === 'object' ? JSON.stringify(v) : String(v);
+    return s.length > 160 ? s.slice(0, 157) + '...' : s;
   }
 
   function fmtDate(iso) {
@@ -348,18 +385,9 @@
         { action: 'discard-mine', label: 'Discard my change', primary: false, gated: false },
       ];
     }
-    if (descriptor.conflictClass === 'union-candidate') {
-      return [
-        { action: 'keep-both', label: 'Keep both (recommended)', primary: true, gated: false },
-        { action: 'load-theirs', label: 'Load theirs', primary: false, gated: false },
-        {
-          action: 'overwrite-mine',
-          label: 'Overwrite with mine',
-          primary: false,
-          gated: descriptor.typedConfirmRequired,
-        },
-        { action: 'save-copy', label: 'Save mine as a copy / download', primary: false, gated: false },
-      ];
+    if (descriptor.conflictClass === 'records') {
+      // Per-record choice. The record not chosen goes to the conflict history.
+      return [{ action: 'records', label: 'Save my choices', primary: true, gated: false }];
     }
     return [
       { action: 'load-theirs', label: 'Load theirs (recommended)', primary: true, gated: false },
@@ -389,6 +417,44 @@
         esc(when) +
         ' while you were editing it.</p>';
       html += '<p>Your changes were not lost — they are saved and available below.</p>';
+    } else if (descriptor.conflictClass === 'records') {
+      var recs = descriptor.records || [];
+      html +=
+        '<p><strong>' +
+        esc(who) +
+        '</strong> and you both changed the same ' +
+        (recs.length === 1 ? 'item' : recs.length + ' items') +
+        ' in ' +
+        esc(name) +
+        ' (theirs saved at ' +
+        esc(when) +
+        '). Everything else was merged already. Choose which version to keep for each item. ' +
+        'The version you do not keep stays in the conflict history.</p>';
+      recs.forEach(function (r, i) {
+        var fields = r.fields || [];
+        html += '<div class="ch-conflict-rec">' + '<div class="ch-conflict-rec-name">' + esc(r.label) + '</div>';
+        // Both values of every field changed on both sides, so the choice is informed.
+        fields.forEach(function (f) {
+          html +=
+            '<div class="ch-conflict-field"><div class="ch-conflict-meta">' +
+            esc(f) +
+            '</div>' +
+            '<div><span class="ch-conflict-meta">Theirs: </span>' +
+            esc(_shortValue(r.server && r.server[f])) +
+            '</div>' +
+            '<div><span class="ch-conflict-meta">Mine: </span>' +
+            esc(_shortValue(r.local && r.local[f])) +
+            '</div></div>';
+        });
+        html +=
+          '<label><input type="radio" name="ch-conflict-rec-' +
+          i +
+          '" value="theirs" checked> Keep theirs</label>' +
+          '<label><input type="radio" name="ch-conflict-rec-' +
+          i +
+          '" value="mine"> Keep mine</label>' +
+          '</div>';
+      });
     } else {
       html +=
         '<p><strong>' +
@@ -435,7 +501,9 @@
     hdr.textContent =
       descriptor.conflictClass === 'tombstone'
         ? 'This was deleted while you were editing it'
-        : 'Someone else changed this while you were editing';
+        : descriptor.conflictClass === 'records'
+          ? 'You both changed the same item'
+          : 'Someone else changed this while you were editing';
 
     var body = document.createElement('div');
     body.className = 'ch-conflict-body';
@@ -460,7 +528,13 @@
         downloadJSON(descriptor.key, descriptor.local.deleted ? null : descriptor.local.value);
       }
       var resolution = { action: btnCfg.action };
-      if (btnCfg.action === 'keep-both') resolution.unionValue = descriptor.unionPreview;
+      if (btnCfg.action === 'records') {
+        resolution.choices = {};
+        (descriptor.records || []).forEach(function (r, i) {
+          var picked = body.querySelector('input[name="ch-conflict-rec-' + i + '"]:checked');
+          resolution.choices[String(r.id)] = picked && picked.value === 'mine' ? 'mine' : 'theirs';
+        });
+      }
       finish(resolution);
     }
 
@@ -624,11 +698,11 @@
 
   // =========================================================================
   // Phase 2a.7 — Sync-status panel (phase2a-build-plan.md task 2a.7 /
-  // supabase-migration-plan-FINAL-2026-07-19.md §8's off|shadow|on flag).
+  // supabase-migration-plan-FINAL-2026-07-19.md §8's sync mode).
   // Self-contained in this file per the dispatch constraint — no HTML edits,
   // no db.js changes; reads only the read-only accessors Pass B exposed:
   // DB.getSyncStatus() (async — hits the manifest endpoint), DB.getQueueDepth(),
-  // DB.setBackendMode(mode). Opened from a small always-visible control placed
+  // the derived mode. Opened from a small always-visible control placed
   // in this same pill/banner area, bottom-left (opposite the pill/archive-link
   // stack at bottom-right) so it never collides with them.
   // =========================================================================
@@ -640,7 +714,6 @@
 
   function _modeLabel(mode) {
     if (mode === 'off') return 'Off (no syncing)';
-    if (mode === 'shadow') return 'Shadow (syncing quietly, for testing only)';
     if (mode === 'on') return 'On (fully syncing)';
     return String(mode);
   }
@@ -669,6 +742,8 @@
     el.onclick = openSyncStatusPanel;
   }
 
+  // Read-only line: the mode is derived (signed in on the production host =
+  // On). There is no switch.
   function _renderModeControl(container, currentMode) {
     var row = document.createElement('div');
     row.className = 'ch-sync-status-mode-row';
@@ -676,34 +751,6 @@
     label.className = 'ch-sync-status-label';
     label.textContent = 'Backend mode: ' + _modeLabel(currentMode);
     row.appendChild(label);
-
-    // Admin-only control: the mode switcher itself is gated on auth being
-    // present (per dispatch instructions — Phase 1 isn't wired on this
-    // branch yet, so gate on a simple window.CH_AUTH presence check; it
-    // lights up automatically once Phase 1 lands, zero further changes here).
-    var hasAuth = typeof window !== 'undefined' && !!window.CH_AUTH;
-    if (hasAuth) {
-      var btnRow = document.createElement('div');
-      btnRow.className = 'ch-sync-status-btn-row';
-      ['off', 'shadow', 'on'].forEach(function (m) {
-        var btn = document.createElement('button');
-        btn.className = 'ch-conflict-btn ch-sync-mode-btn' + (m === currentMode ? ' ch-conflict-primary' : '');
-        btn.textContent = m;
-        btn.addEventListener('click', function () {
-          if (m === currentMode) return;
-          if (!window.DB || typeof window.DB.setBackendMode !== 'function') return;
-          window.DB.setBackendMode(m);
-          openSyncStatusPanel(); // re-render the whole panel against the new mode
-        });
-        btnRow.appendChild(btn);
-      });
-      row.appendChild(btnRow);
-    } else {
-      var note = document.createElement('div');
-      note.className = 'ch-conflict-meta';
-      note.textContent = 'Sign in required to change the sync mode.';
-      row.appendChild(note);
-    }
     container.appendChild(row);
   }
 
@@ -715,6 +762,65 @@
       depth > 0 ? depth + ' change' + (depth === 1 ? '' : 's') + ' waiting to sync' : 'No changes waiting to sync';
     container.appendChild(row);
   }
+
+  // First-connect upload progress (runs after the page shows; see db.js _uploadFirstConnect).
+  function _uploadProgressText(p) {
+    if (!p || !p.total) return '';
+    if (p.running) return 'Uploading your saved data for the first time: ' + p.done + ' of ' + p.total;
+    if (p.failed > 0)
+      return (
+        p.failed +
+        ' of ' +
+        p.total +
+        ' items could not upload yet. They wait in the sync queue and retry by themselves.'
+      );
+    return 'First upload finished: ' + p.uploaded + ' items uploaded.';
+  }
+  function _renderUploadProgress(container) {
+    var row = document.createElement('div');
+    row.id = 'ch-sync-status-upload';
+    row.className = 'ch-sync-status-queue';
+    var p = window.DB && window.DB.getUploadProgress ? window.DB.getUploadProgress() : null;
+    row.textContent = _uploadProgressText(p);
+    row.style.display = row.textContent ? '' : 'none';
+    container.appendChild(row);
+  }
+  window.addEventListener('dbUploadProgress', function (e) {
+    var el = document.getElementById('ch-sync-status-upload');
+    if (!el || !_statusPanelOpen) return;
+    el.textContent = _uploadProgressText(e.detail);
+    el.style.display = el.textContent ? '' : 'none';
+  });
+
+  // Deletion records (db.js _refreshTombstones). While they cannot be loaded,
+  // the project, customer, task, calendar and lead lists are not merged or
+  // uploaded; the engine retries by itself.
+  function _deletionRecordsText(d) {
+    if (!d || d.ok !== false) return '';
+    var next = d.nextRetryAt ? Math.max(0, Math.round((d.nextRetryAt - Date.now()) / 1000)) : null;
+    return (
+      'The deletion records could not be loaded from the server' +
+      (d.error ? ' (' + d.error + ')' : '') +
+      '. The project, customer, task, calendar and lead lists wait until this succeeds. ' +
+      'Nothing is lost. The engine retries by itself' +
+      (next !== null ? ' in ' + next + ' seconds' : '') +
+      '.'
+    );
+  }
+  function _renderDeletionRecords(container, d) {
+    var row = document.createElement('div');
+    row.id = 'ch-sync-status-deletions';
+    row.className = 'ch-sync-status-queue ch-sync-warn';
+    row.textContent = _deletionRecordsText(d);
+    row.style.display = row.textContent ? '' : 'none';
+    container.appendChild(row);
+  }
+  window.addEventListener('dbDeletionRecordsStatus', function (e) {
+    var el = document.getElementById('ch-sync-status-deletions');
+    if (!el || !_statusPanelOpen) return;
+    el.textContent = _deletionRecordsText(e.detail);
+    el.style.display = el.textContent ? '' : 'none';
+  });
 
   function _renderKeyList(container, status) {
     var listWrap = document.createElement('div');
@@ -760,24 +866,34 @@
     }
     listWrap.appendChild(headline);
 
+    // One row per distinct item and state (many keys share one plain name, for
+    // example one chart setting per building). When anything is pending or
+    // diverged, only those rows are listed; in-sync rows are summed in the headline.
+    var listAll = counts.diverged === 0 && counts.pending === 0;
+    var groups = [];
+    var byLabel = {};
     keys.forEach(function (k) {
       var state = _keyState(k);
+      if (!listAll && state === 'in-sync') return;
+      var label = friendlyKeyName(k.key);
+      var gk = label + '|' + state;
+      if (!byLabel[gk]) {
+        byLabel[gk] = { label: label, state: state, keys: [], deleted: 0 };
+        groups.push(byLabel[gk]);
+      }
+      byLabel[gk].keys.push(k.key);
+      if (k.deleted) byLabel[gk].deleted++;
+    });
+    groups.forEach(function (g) {
       var row = document.createElement('div');
-      row.className = 'ch-sync-status-key ch-sync-status-key-' + state;
+      row.className = 'ch-sync-status-key ch-sync-status-key-' + g.state;
       var name = document.createElement('div');
       name.className = 'ch-sync-status-key-name';
-      name.textContent = friendlyKeyName(k.key);
+      name.textContent = g.label + (g.keys.length > 1 ? ' (' + g.keys.length + ' items)' : '');
+      row.title = g.keys.slice(0, 8).join('\n') + (g.keys.length > 8 ? '\n...' : ''); // internal names on hover only
       var meta = document.createElement('div');
       meta.className = 'ch-conflict-meta';
-      meta.textContent =
-        k.key +
-        ' — ' +
-        _keyStateLabel(state) +
-        (k.deleted ? ' (deleted)' : '') +
-        ' — local v' +
-        (k.localVersion == null ? '—' : k.localVersion) +
-        ', server v' +
-        k.serverVersion;
+      meta.textContent = _keyStateLabel(g.state) + (g.deleted ? ' (' + g.deleted + ' deleted)' : '');
       row.appendChild(name);
       row.appendChild(meta);
       listWrap.appendChild(row);
@@ -812,6 +928,7 @@
     var currentMode = _currentBackendMode();
     _renderModeControl(body, currentMode);
     _renderQueueDepth(body, window.DB && typeof window.DB.getQueueDepth === 'function' ? window.DB.getQueueDepth() : 0);
+    _renderUploadProgress(body);
 
     var loading = document.createElement('div');
     loading.id = 'ch-sync-status-loading';
@@ -828,6 +945,7 @@
         .then(function (status) {
           if (!_statusPanelOpen) return; // panel was closed before the fetch resolved
           if (loading.parentNode) loading.parentNode.removeChild(loading);
+          _renderDeletionRecords(body, status.deletionRecords);
           _renderKeyList(body, status);
         })
         .catch(function (e) {

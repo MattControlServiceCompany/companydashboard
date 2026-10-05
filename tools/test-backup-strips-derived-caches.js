@@ -42,6 +42,6 @@ assert.strictEqual(
 );
 const dbSrc = fs.readFileSync(path.join(__dirname, '..', 'app', 'db.js'), 'utf8');
 assert.ok(/JSON\.stringify\(stripDerivedCaches\(key, payload\.value\)\)\s*===\s*JSON\.stringify\(stripDerivedCaches\(key, current\.value\)\)/.test(dbSrc), 'short-circuit must compare stripped vs stripped');
-assert.ok(/_canonicalJSON\(stripDerivedCaches\(localKey, localValue\)\)/.test(dbSrc), 'pull-side local hash must be stripped');
+assert.ok(/_canonicalJSON\(stripDerivedCaches\(localKey, origLocal\)\)/.test(dbSrc), 'pull-side local hash must be stripped');
 assert.ok(/_canonicalJSON\(stripDerivedCaches\(key, payload\.value\)\)/.test(dbSrc), 'push-ack hash must be stripped');
 console.log('PASS test-backup-strips-derived-caches');
