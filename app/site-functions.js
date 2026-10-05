@@ -2296,6 +2296,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.05.76', date: '2026-10-05', title: 'Create a meter from the Assign window',
+    items: [
+      { type: 'feature', text: 'PDF / OCR, Assign Bill: you can now create a new meter right in the Assign window when the building has no meter of that type.' }
+    ]
+  },
   { v: 'v2026.10.05.75', date: '2026-10-05', title: 'Equipment Matrix keeps same-name equipment apart',
     items: [
       { type: 'fix', text: 'Equipment Matrix: equipment with the same name on different controller paths now imports as separate rows instead of being merged into one.' },
