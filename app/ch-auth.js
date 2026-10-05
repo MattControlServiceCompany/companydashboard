@@ -57,8 +57,8 @@
 
   // THE single backend-mode reader (db.js, sync-ui.js, core.js, site-functions.js
   // all call CH_AUTH.backendMode()). Returns 'off' | 'on'.
-  //  - Only the PRODUCTION Netlify host syncs: *.netlify.app and not a deploy
-  //    preview or branch deploy (those contain '--'). Signed in = ALWAYS 'on',
+  //  - Only the PRODUCTION Netlify host syncs: exactly cscdashboard.netlify.app.
+  //    Every other host (deploy previews, other Netlify sites) is 'off'. Signed in = ALWAYS 'on',
   //    in every browser. There is no per-browser switch: a stored
   //    ch_backend_mode / ch_backend_enabled value from an older version is
   //    ignored and removed. Signed out = 'off' (nothing is pushed; the
@@ -68,7 +68,7 @@
   //    there, so there must be zero sync calls.
   function _isNetlifyHost() {
     var h = typeof location !== 'undefined' ? location.hostname || '' : '';
-    return /\.netlify\.app$/i.test(h) && h.indexOf('--') === -1;
+    return h.toLowerCase() === 'cscdashboard.netlify.app';
   }
   function _dropLegacyModeFlags() {
     try {

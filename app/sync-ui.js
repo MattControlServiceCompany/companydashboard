@@ -695,6 +695,30 @@
     container.appendChild(row);
   }
 
+  // First-connect upload progress (runs after the page shows; see db.js _uploadFirstConnect).
+  function _uploadProgressText(p) {
+    if (!p || !p.total) return '';
+    if (p.running) return 'Uploading your saved data for the first time: ' + p.done + ' of ' + p.total;
+    if (p.failed > 0)
+      return p.failed + ' of ' + p.total + ' items could not upload yet. They wait in the sync queue and retry by themselves.';
+    return 'First upload finished: ' + p.uploaded + ' items uploaded.';
+  }
+  function _renderUploadProgress(container) {
+    var row = document.createElement('div');
+    row.id = 'ch-sync-status-upload';
+    row.className = 'ch-sync-status-queue';
+    var p = window.DB && window.DB.getUploadProgress ? window.DB.getUploadProgress() : null;
+    row.textContent = _uploadProgressText(p);
+    row.style.display = row.textContent ? '' : 'none';
+    container.appendChild(row);
+  }
+  window.addEventListener('dbUploadProgress', function (e) {
+    var el = document.getElementById('ch-sync-status-upload');
+    if (!el || !_statusPanelOpen) return;
+    el.textContent = _uploadProgressText(e.detail);
+    el.style.display = el.textContent ? '' : 'none';
+  });
+
   function _renderKeyList(container, status) {
     var listWrap = document.createElement('div');
     listWrap.id = 'ch-sync-status-keys';
@@ -791,6 +815,7 @@
     var currentMode = _currentBackendMode();
     _renderModeControl(body, currentMode);
     _renderQueueDepth(body, window.DB && typeof window.DB.getQueueDepth === 'function' ? window.DB.getQueueDepth() : 0);
+    _renderUploadProgress(body);
 
     var loading = document.createElement('div');
     loading.id = 'ch-sync-status-loading';

@@ -73,6 +73,11 @@ const SyncClassification = (() => {
     },
     { pattern: 'en_tasks', prefix: false, note: 'core.js: 3 write sites, csv-import.js: 1' },
     {
+      pattern: 'en_deleted_records',
+      prefix: false,
+      note: 'app/db.js deletion records (TOMBSTONE_KEY): every record removed from en_projects/en_customers/en_tasks/en_dc_events, with the removed item, so a stale browser cannot bring it back. Shared by both users; merged by id, never overwritten.',
+    },
+    {
       pattern: 'en_dc_events',
       prefix: false,
       note: 'district-calendar.js — write at :144, CAS-tombstone delete at :514 per plan integration #1',

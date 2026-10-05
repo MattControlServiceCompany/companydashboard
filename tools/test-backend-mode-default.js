@@ -20,7 +20,7 @@ const ROOT = process.env.APP_ROOT || path.join(__dirname, '..');
 const read = (f) => fs.readFileSync(path.join(ROOT, 'app', f), 'utf8');
 const SRC = { auth: read('ch-auth.js'), cls: read('sync-classification.js'), db: read('db.js') };
 
-const NETLIFY = 'chub-test.netlify.app';
+const NETLIFY = 'cscdashboard.netlify.app';
 const PAGES = 'example.github.io';
 const tick = (ms) => new Promise((r) => setTimeout(r, ms || 0));
 
@@ -126,6 +126,14 @@ function makeServer(seed) {
     }
     if (method === 'PUT') {
       srv.puts.push(opts.body);
+      if (srv.putLatency) await tick(srv.putLatency);
+      if (srv.failPutOnce && srv.failPutOnce.size) {
+        const fk = JSON.parse(opts.body).key;
+        if (srv.failPutOnce.has(fk)) {
+          srv.failPutOnce.delete(fk);
+          return res(500, { error: 'boom' });
+        }
+      }
       if (srv.unauthorized401ForPut) return res(401, { error: 'unauthorized' });
       const b = JSON.parse(opts.body);
       if (b.deleted) srv.tombstones.push(b.key);
@@ -643,6 +651,86 @@ await scenario("C", async () => {
     JSON.stringify(st2.en_budget_b),
   );
 });
+
+  // ---- F1: deletions must not be resurrected by a stale browser ----
+  const proj = (id, name) => ({ id, name });
+  const ids = (v) => (Array.isArray(v) ? v.map((p) => p.id).sort((a, b) => a - b) : null);
+  await scenario('F1a', async () => {
+    const srv = makeServer({ en_projects: [proj(1, 'P1'), proj(2, 'P2')] });
+    const A = await boot({ host: NETLIFY, signedIn: true, server: srv });
+    A.DB.set('en_projects', [proj(2, 'P2')]); // user A deletes P1
+    await tick(60);
+    const B = await boot({
+      host: NETLIFY,
+      signedIn: true,
+      server: srv,
+      idbSeed: { en_projects: [proj(1, 'P1'), proj(2, 'P2'), proj(3, 'P3-B-only')] }, // stale, never synced
+    });
+    await tick(120);
+    check('F1a server list keeps P1 deleted, keeps B-only P3', same(ids(srv.rows.get('en_projects').value), [2, 3]), JSON.stringify(ids(srv.rows.get('en_projects').value)));
+    check('F1a stale B local: P1 stays deleted, P3 kept', same(ids(B.DB.get('en_projects')), [2, 3]), JSON.stringify(ids(B.DB.get('en_projects'))));
+    const A2 = await boot({ host: NETLIFY, signedIn: true, server: srv, reuse: A });
+    check('F1a A local after reload: [2,3]', same(ids(A2.DB.get('en_projects')), [2, 3]), JSON.stringify(ids(A2.DB.get('en_projects'))));
+    const tomb = srv.rows.get('en_deleted_records') && srv.rows.get('en_deleted_records').value;
+    check('F1a deleted record recoverable on server (item kept in deletion records)', tomb && tomb.en_projects && tomb.en_projects['1'] && tomb.en_projects['1'].item && tomb.en_projects['1'].item.name === 'P1', JSON.stringify(tomb).slice(0, 200));
+    check('F1a stale B archived the local copy that held P1', JSON.stringify(B.DB.get('en_conflict_archive', [])).indexOf('P1') !== -1, '');
+  });
+
+  await scenario('F1b', async () => {
+    const srv = makeServer({ en_projects: [proj(1, 'P1'), proj(2, 'P2')] });
+    const A = await boot({ host: NETLIFY, signedIn: true, server: srv });
+    const B = await boot({ host: NETLIFY, signedIn: true, server: srv });
+    A.DB.set('en_projects', [proj(2, 'P2')]);
+    await tick(60);
+    const B2 = await boot({ host: NETLIFY, signedIn: true, server: srv, reuse: B });
+    check('F1b normal two-user: unedited B reload follows the delete', same(ids(B2.DB.get('en_projects')), [2]), JSON.stringify(ids(B2.DB.get('en_projects'))));
+    // B edits from a stale list: conflict preview must not bring P1 back.
+    let desc = null;
+    const srv2 = makeServer({ en_projects: [proj(1, 'P1'), proj(2, 'P2')] });
+    const D = await boot({
+      host: NETLIFY, signedIn: true, server: srv2,
+      onCtx: (ctx) => { ctx.window.SyncConflictUI = { showConflictModal: async (d) => { desc = d; return { action: 'keep-both', unionValue: d.unionPreview }; } }; },
+    });
+    const E = await boot({ host: NETLIFY, signedIn: true, server: srv2 });
+    E.DB.set('en_projects', [proj(2, 'P2')]); // E deletes P1
+    await tick(60);
+    D.DB.set('en_projects', [proj(1, 'P1'), proj(2, 'P2'), proj(4, 'P4')]); // D still holds P1, adds P4
+    await tick(120);
+    check('F1b stale edit conflict: union preview has no P1', desc && same(ids(desc.unionPreview), [2, 4]), desc ? JSON.stringify(ids(desc.unionPreview)) : 'no modal');
+    check('F1b stale edit: final server list [2,4]', same(ids(srv2.rows.get('en_projects').value), [2, 4]), JSON.stringify(ids(srv2.rows.get('en_projects').value)));
+  });
+
+  // ---- F2: first-connect upload is in the background ----
+  await scenario('F2', async () => {
+    const srv = makeServer({ en_budget_seed: 1 });
+    srv.putLatency = 40;
+    srv.failPutOnce = new Set(['en_budget_k3']);
+    const idbSeed = {};
+    for (let i = 0; i < 20; i++) idbSeed['en_budget_k' + i] = { i };
+    const t0 = Date.now();
+    const B = await boot({ host: NETLIFY, signedIn: true, server: srv, idbSeed });
+    const tRender = Date.now() - t0;
+    const rowsAtRender = srv.rows.size;
+    check('F2 warmCache (render) resolves before uploads finish', rowsAtRender < 21 && tRender < 400, 'rows=' + rowsAtRender + ' ms=' + tRender);
+    await tick(600);
+    check('F2 background upload finished: 19 keys on server, 1 failed', srv.rows.size === 1 + 19 && !srv.rows.has('en_budget_k3'), 'rows=' + srv.rows.size);
+    check('F2 failed upload is queued (never lost)', B.DB.getQueueDepth() === 1 && B.DB.get('en_budget_k3') !== null, 'q=' + B.DB.getQueueDepth());
+    check('F2 user sees the failure', B.toasts.some((m) => /could not|waiting/i.test(m)), JSON.stringify(B.toasts));
+    const pr = B.DB.getUploadProgress && B.DB.getUploadProgress();
+    check('F2 progress reported (total 20, failed 1)', pr && pr.total === 20 && pr.failed === 1 && pr.running === false, JSON.stringify(pr));
+    B.ctx.window.dispatchEvent({ type: 'online' });
+    await tick(300);
+    check('F2 failed upload retried and lands', srv.rows.has('en_budget_k3') && B.DB.getQueueDepth() === 0, 'q=' + B.DB.getQueueDepth());
+  });
+
+
+  await scenario('H', async () => {
+    for (const h of ['other-site.netlify.app', 'deploy-preview-3--cscdashboard.netlify.app', 'cscdashboard.netlify.app.evil.com']) {
+      const srv = makeServer(SEED());
+      const { ctx } = await boot({ host: h, signedIn: true, server: srv });
+      check('H host ' + h + ': mode off, 0 calls', ctx.window.CH_AUTH.backendMode() === 'off' && srv.calls.length === 0, srv.calls.length + '');
+    }
+  });
 
   let fail = 0;
   results.forEach((r) => {
