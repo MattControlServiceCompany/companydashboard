@@ -6021,13 +6021,15 @@ function _lbg_facilityLookup(acct) {
 // (item 62a38985). The id parse, the unreadable-id fallback and the dedup key all call it.
 // OCR reads "RG-233583" as "RG.233583", "RG43506046" or with a one-digit slip ("RG.233887").
 // Known ids = read in clean hyphen form 3+ times in the same file. An unknown id exactly one
-// digit away from exactly ONE known id snaps to it. If two known ids are one digit away, ids
-// already read cleanly in the same invoice are dropped (a site appears once per invoice);
-// still ambiguous -> no snap, raw digits kept. Returns 'RG<digits>' or null (not an RG id).
+// digit away from exactly ONE known id snaps to it, after dropping known ids already read
+// cleanly in the same invoice (a site appears once per invoice); still ambiguous -> no snap, raw digits kept. Returns 'RG<digits>' or null (not an RG id).
 const _CONST_CUST_ID_RE = /Customer\s+I\S?\s*[:;]\s*(RG[^\d\s]?\d+)/gi;
 const _constKnownCustIds = (t, minReads) => {
   const n = {};
-  for (const m of t.matchAll(/Customer\s+I\S?\s*[:;]\s*RG-(\d+)/gi)) n[m[1]] = (n[m[1]] || 0) + 1;
+  for (const m of t.matchAll(_CONST_CUST_ID_RE)) {
+    const h = /^RG-(\d+)$/i.exec(m[1]);
+    if (h) n[h[1]] = (n[h[1]] || 0) + 1;
+  }
   return Object.keys(n).filter((k) => n[k] >= (minReads || 3));
 };
 const _constNormCustId = (raw, known, seenInInvoice) => {
@@ -6036,7 +6038,8 @@ const _constNormCustId = (raw, known, seenInInvoice) => {
   const digits = m[1];
   if (!known || known.includes(digits)) return 'RG' + digits;
   const near0 = known.filter((k) => k.length === digits.length && [...k].filter((c, i) => c !== digits[i]).length === 1);
-  const near = near0.length > 1 && seenInInvoice ? near0.filter((k) => !seenInInvoice.has(k)) : near0;
+  // Never snap to an id already read cleanly in this invoice (a site appears once per invoice).
+  const near = seenInInvoice ? near0.filter((k) => !seenInInvoice.has(k)) : near0;
   return 'RG' + (near.length === 1 ? near[0] : digits);
 };
 
@@ -7050,7 +7053,7 @@ const UTILITY_RULES = [
           // Readable ids go through the one normalizer.
           const key = bill._acctIdUnread
             ? 'UNREAD|' + bill.AccountNumber + '|' + (bill.BillingPeriodStart || '')
-            : (_constNormCustId(bill.AccountNumber, _knownIds) || bill.AccountNumber || '') +
+            : (_constNormCustId(bill.AccountNumber) || bill.AccountNumber || '') +
               '|' +
               (bill.BillingPeriodStart || '');
           if (seenKey.has(key)) {

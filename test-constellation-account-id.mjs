@@ -117,6 +117,18 @@ if (unread) {
   ok(g._gateTripped === true && /not guessed/.test((g._gateReasons || []).join(' ')), 'unreadable id row trips a review gate with a reason');
 }
 
+// Review case (bb5947a): a REAL new account RG-900012 (clean read, only 2 times in the file) is one digit
+// from known RG-900002. It must keep its own account and must not overwrite real site 2.
+{
+  const idsNew = [C('900001'), C('900002'), C('900012')];
+  const t2 = [clean, clean, clean, clean, clean, clean, idsNew, idsNew].map((l, n) => invoice(n, l)).join('\n');
+  const b2 = rule.extractAll(t2);
+  const g = (acct, mon) => { const b = b2.find((x) => x.AccountNumber === acct && x.BillingPeriodStart === '0' + mon + '/01/2030'); return b ? Number(b.TotalCurrentCharges) : null; };
+  ok(b2.length === 24, 'new-account case keeps all 24 rows, got ' + b2.length);
+  ok(g('RG900002', 7) === 207 && g('RG900002', 8) === 208, 'real site 2 Jul/Aug NOT overwritten');
+  ok(g('RG900012', 7) === 307 && g('RG900012', 8) === 308, 'clean new id RG900012 keeps its own account (not snapped)');
+}
+
 // normalizer unit cases
 const known = ['900001', '900002', '900003'];
 ok(T.norm('RG.900002', known) === 'RG900002', 'norm: dotted');
@@ -124,6 +136,7 @@ ok(T.norm('RG900002', known) === 'RG900002', 'norm: no separator');
 ok(T.norm('RG-900082', known) === 'RG900002', 'norm: one-digit slip snaps');
 ok(T.norm('RG-900009', known) === 'RG900009', 'norm: three candidates, no seen set -> raw');
 ok(T.norm('RG-9000000', known) === 'RG9000000', 'norm: different length -> raw');
+ok(T.norm('RG-900012', known, new Set(['900002'])) === 'RG900012', 'norm: never snaps to an id already read in the invoice');
 ok(T.norm('RG-900082', null) === 'RG900082', 'norm: no known set -> raw');
 ok(T.norm('Customer', known) === null, 'norm: not an RG id -> null');
 ok(T.known('Customer ID: RG-1\nCustomer ID: RG-1\nCustomer ID: RG.2\nCustomer ID: RG-1').join() === '1', 'known set: hyphen form 3+ only');
