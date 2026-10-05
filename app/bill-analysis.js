@@ -21346,6 +21346,9 @@ function openAssignModal(billId) {
   const bill = bills.find((b) => b.id === billId);
   _assignBillCommodity = bill?.Commodity || '';
   if (bill?.projId) projSel.value = bill.projId;
+  // Prefill the "new meter" number boxes from the bill; the user can edit them.
+  document.getElementById('abm-new-acct').value = bill?.AccountNumber || '';
+  document.getElementById('abm-new-meterno').value = bill?.MeterNumber || '';
   populateAssignBuildings();
   document.getElementById('assignBillModal').classList.add('open');
 }
@@ -21368,27 +21371,33 @@ function populateAssignBuildings() {
     bldgs.map((b) => `<option value="${b.id}">${b.name}</option>`).join('');
   populateAssignMeters();
 }
+// Value of the "Create new meter" choice in the Assign modal's meter list.
+const ASSIGN_CREATE_NEW = '__CREATE_NEW__';
+function toggleAssignCreate() {
+  const isNew = document.getElementById('abm-meter').value === ASSIGN_CREATE_NEW;
+  document.getElementById('abm-create-box').style.display = isNew ? 'block' : 'none';
+}
 function populateAssignMeters() {
   const pid = parseInt(document.getElementById('abm-proj').value);
   const bid = document.getElementById('abm-bldg').value;
   const meterSel = document.getElementById('abm-meter');
   if (!pid || !bid) {
     meterSel.innerHTML = '<option value="">— Select building first —</option>';
+    toggleAssignCreate();
     return;
   }
   const bldg = getUDBldg(pid, bid);
   const meters = (bldg?.meters || []).filter((m) => !_assignBillCommodity || m.commodity === _assignBillCommodity);
-  if (!meters.length) {
-    const commLabel = _assignBillCommodity || '';
-    meterSel.innerHTML = `<option value="">No${commLabel ? ' ' + commLabel : ''} meters in this building</option>`;
-    return;
-  }
-  meterSel.innerHTML = meters
-    .map(
-      (m) =>
-        `<option value="${m.id}">${[m.commodity, m.provider, m.account ? '#' + m.account : '', m.maddr].filter(Boolean).join(' ')}</option>`,
-    )
-    .join('');
+  const commLabel = _assignBillCommodity || '';
+  const createOpt = `<option value="${ASSIGN_CREATE_NEW}">+ Create new${commLabel ? ' ' + commLabel : ''} meter</option>`;
+  meterSel.innerHTML =
+    meters
+      .map(
+        (m) =>
+          `<option value="${m.id}">${[m.commodity, m.provider, m.account ? '#' + m.account : '', m.maddr].filter(Boolean).join(' ')}</option>`,
+      )
+      .join('') + createOpt;
+  toggleAssignCreate();
 }
 function confirmAssignBill() {
   const pid = parseInt(document.getElementById('abm-proj').value);
@@ -21398,6 +21407,13 @@ function confirmAssignBill() {
     showToast('Select project, building, and meter');
     return;
   }
+  const createNew = mid === ASSIGN_CREATE_NEW;
+  const newAcct = (document.getElementById('abm-new-acct').value || '').trim();
+  const newMeterNo = (document.getElementById('abm-new-meterno').value || '').trim();
+  if (createNew && !newAcct && !newMeterNo) {
+    showToast('Enter the account number or meter number for the new meter');
+    return;
+  }
   const bills = sget('en_pdf_bills', []) || [];
   const bill = bills.find((b) => b.id === _assignBillId);
   if (!bill) return;
@@ -21405,8 +21421,8 @@ function confirmAssignBill() {
   if (!proj) return;
   const bldg = getUDBldg(pid, bid);
   if (!bldg) return;
-  const meter = (bldg.meters || []).find((m) => m.id === mid);
-  if (!meter) return;
+  let meter = createNew ? null : (bldg.meters || []).find((m) => m.id === mid);
+  if (!createNew && !meter) return;
   // Build billing row from bill data (same mapping as savePDFData)
   // F1 (21b4e21f): shared cost/usage mapper — see _extractedToBillRowCosts.
   const { kwh, kwCost, kwhCost, otherCost, taxCost, totalCost } = _extractedToBillRowCosts(bill);
@@ -21533,9 +21549,27 @@ function confirmAssignBill() {
       diff.toFixed(2) +
       '). You can still assign but review the values.';
   }
+  // Create-new-meter choice: reuse the one shared create-meter routine
+  // (_autoCreateMeterAndSaveBill) on the chosen building. It saves the bill and
+  // never removes or replaces an existing meter. If a meter with this account
+  // already exists in the project it saves the bill there instead.
+  let dup = null;
+  if (createNew) {
+    const created = _autoCreateMeterAndSaveBill(
+      Object.assign({}, bill, { AccountNumber: newAcct, MeterNumber: newMeterNo }),
+      pid,
+      billRow,
+      bid,
+    );
+    if (!created || !created.meter) {
+      showToast('Could not create the meter. Check the account number.');
+      return;
+    }
+    meter = created.meter;
+  } else {
   // Check for duplicate — merge new data with existing if found
   meter.bills = meter.bills || [];
-  const dup = meter.bills.find((r) => r.start === billRow.start && r.end === billRow.end);
+  dup = meter.bills.find((r) => r.start === billRow.start && r.end === billRow.end);
   if (dup) {
     // Merge: keep existing data, fill in any new non-empty fields
     for (const [key, val] of Object.entries(billRow)) {
@@ -21560,6 +21594,7 @@ function confirmAssignBill() {
   } else {
     meter.bills.push(billRow);
     meter.bills.sort((a, b) => _parseISO(a.start) - _parseISO(b.start));
+  }
   }
   // Remove from Saved Bills after assignment — it's now in Utility Data
   const updatedBills = bills.filter((b) => b.id !== _assignBillId);

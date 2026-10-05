@@ -15149,7 +15149,20 @@
             </div>
             <div class="fg">
               <label class="fl">Electric Meter</label>
-              <select class="fs" id="abm-meter"></select>
+              <select class="fs" id="abm-meter" onchange="toggleAssignCreate()"></select>
+            </div>
+            <div id="abm-create-box" style="display: none">
+              <div class="fg">
+                <label class="fl">Account number for the new meter</label>
+                <input class="fi" id="abm-new-acct" type="text" />
+              </div>
+              <div class="fg">
+                <label class="fl">Meter number (optional)</label>
+                <input class="fi" id="abm-new-meterno" type="text" />
+              </div>
+              <div style="font-size: 11px; color: var(--text2)">
+                Filled in from the bill. Fix it if it is wrong. Meter details can be edited later in Meter Settings.
+              </div>
             </div>
             <div
               id="abm-validation"
