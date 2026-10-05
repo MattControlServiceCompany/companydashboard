@@ -515,6 +515,7 @@ const DB = (() => {
       // desired inert behavior here).
       return { status: 'skipped-no-user' };
     }
+    const epoch = _identityEpoch;
     const isTombstone = payload.deleted === true;
     const entry = _replicaVersions[key];
     const baseVersion = entry && typeof entry.version === 'number' ? entry.version : null;
@@ -547,6 +548,7 @@ const DB = (() => {
       // Non-JSON response (unexpected) — treat as a server error.
     }
 
+    if (epoch !== _identityEpoch) return { status: 'stale-identity' }; // user changed mid-request: stamp nothing
     if (res.status === 200) {
       let okHash = json.hash || null;
       if (!okHash && !isTombstone) {
@@ -555,6 +557,7 @@ const DB = (() => {
         } catch (e) {
           okHash = null;
         }
+        if (epoch !== _identityEpoch) return { status: 'stale-identity' };
       }
       _replicaVersions[key] = { version: json.version, hash: okHash };
       _persistReplicaState();
@@ -604,7 +607,7 @@ const DB = (() => {
     },
     en_dc_events: {
       getItems: (v) => (v && Array.isArray(v.events) ? v.events : null),
-      setItems: (v, items) => Object.assign({}, v, { events: items }),
+      setItems: (v, items) => _safeAssign({}, v, { events: items }),
       getId: (item) => item && item.date + '|' + item.name + '|' + item.type,
     },
   };
@@ -619,6 +622,22 @@ const DB = (() => {
   // (restore, re-import) gets `restored` set to the time it came back, which
   // turns that entry off; a newer delete turns it on again (larger t).
   const TOMBSTONE_KEY = 'en_deleted_records';
+  // Server JSON must never reach these property names on a local object.
+  function _unsafeKey(k) {
+    return k === '__proto__' || k === 'constructor' || k === 'prototype';
+  }
+  function _own(obj, k) {
+    return !!obj && !_unsafeKey(k) && Object.prototype.hasOwnProperty.call(obj, k);
+  }
+  function _safeAssign(target, ...sources) {
+    sources.forEach((src) => {
+      if (!src || typeof src !== 'object') return;
+      Object.keys(src).forEach((k) => {
+        if (!_unsafeKey(k)) target[k] = src[k];
+      });
+    });
+    return target;
+  }
   function _tombStamp(e) {
     return Math.max((e && e.t) || 0, (e && e.restored) || 0);
   }
@@ -630,8 +649,10 @@ const DB = (() => {
     [a, b].forEach((src) => {
       if (!src || typeof src !== 'object') return;
       Object.keys(src).forEach((lk) => {
+        if (_unsafeKey(lk)) return;
         out[lk] = out[lk] || {};
         Object.keys(src[lk] || {}).forEach((id) => {
+          if (_unsafeKey(id)) return;
           const cur = out[lk][id];
           if (!cur || _tombStamp(src[lk][id]) > _tombStamp(cur)) out[lk][id] = src[lk][id];
         });
@@ -662,13 +683,14 @@ const DB = (() => {
     const now = Date.now();
     before.forEach((item, id) => {
       if (after.has(id)) return;
+      if (_unsafeKey(id)) return;
       tomb[key] = tomb[key] || {};
       tomb[key][id] = { t: now, item };
       changed = true;
     });
     after.forEach((_item, id) => {
       if (before.has(id)) return;
-      const e = tomb[key] && tomb[key][id];
+      const e = _own(tomb[key], id) ? tomb[key][id] : null;
       if (e && _tombActive(e)) {
         e.restored = now > (e.t || 0) ? now : (e.t || 0) + 1;
         changed = true;
@@ -679,14 +701,14 @@ const DB = (() => {
   // Drops every item with an active deletion entry. Returns { value, removed }.
   function _dropTombstoned(key, value) {
     const cfg = UNION_KEY_CONFIG[key];
-    const tomb = _cache[TOMBSTONE_KEY] && _cache[TOMBSTONE_KEY][key];
+    const tomb = _own(_cache[TOMBSTONE_KEY], key) ? _cache[TOMBSTONE_KEY][key] : null;
     if (!cfg || !tomb || value === undefined || value === null) return { value, removed: [] };
     const items = cfg.getItems(value);
     if (!Array.isArray(items)) return { value, removed: [] };
     const removed = [];
     const kept = items.filter((it) => {
       const id = cfg.getId(it);
-      if (id !== undefined && id !== null && _tombActive(tomb[String(id)])) {
+      if (id !== undefined && id !== null && _own(tomb, String(id)) && _tombActive(tomb[String(id)])) {
         removed.push(it);
         return false;
       }
@@ -697,6 +719,7 @@ const DB = (() => {
   // Brings the latest deletion records from the server into the local copy
   // (union by id, newest stamp wins) and pushes back any local-only entries.
   async function _refreshTombstones() {
+    const epoch = _identityEpoch;
     let rows = [];
     try {
       rows = await _batchGet([TOMBSTONE_KEY]);
@@ -704,7 +727,7 @@ const DB = (() => {
       return; // offline: the local copy is used as is
     }
     const row = rows && rows[0];
-    if (!row || row.deleted) return;
+    if (!row || row.deleted || epoch !== _identityEpoch) return;
     await _reconcileIncoming(TOMBSTONE_KEY, row, row.hash || null);
   }
 
@@ -956,6 +979,7 @@ const DB = (() => {
       return;
     }
     if (result.status === 'ok') return;
+    if (result.status === 'stale-identity' && _isPerUserKey(key)) return; // previous user's pref: never queue under the new user
     if (result.status === 'conflict') {
       await _handleConflict(key, payload, result.body, mode);
       return;
@@ -1045,6 +1069,10 @@ const DB = (() => {
   // Non-reentrant: overlapping callers (warmCache, identity change) share ONE
   // in-flight run. A caller that arrives mid-run sets a flag, so the run
   // repeats once more after it ends (the newer identity/state is honoured).
+  // Identity epoch: bumped on every signed-in identity change. Work that
+  // started under an earlier epoch (hydrate, upload, a PUT) must not write
+  // into the cache, version map or server state once someone else is signed in.
+  let _identityEpoch = 0;
   let _hydrateInFlight = null;
   let _hydrateRerun = false;
   function _hydrate() {
@@ -1076,6 +1104,7 @@ const DB = (() => {
   // Local is never overwritten unless it is unchanged since the last sync or
   // is archived first. A pure-additive list key (UNION_KEY_CONFIG) is merged.
   async function _reconcileIncoming(localKey, row, mHash) {
+    const epoch = _identityEpoch;
     const origLocal = _cache[localKey];
     const base = _replicaVersions[localKey];
     const stamp = { version: row.version, hash: mHash || null };
@@ -1087,6 +1116,7 @@ const DB = (() => {
         stamp.hash = null;
       }
     }
+    if (epoch !== _identityEpoch) return;
     mHash = stamp.hash;
     let merged = null; // value to keep locally AND push to the server
     let localValue = origLocal;
@@ -1110,9 +1140,12 @@ const DB = (() => {
       if (ss.removed.length) merged = ss.value; // server list still holds deleted records: write the clean list back
     }
     // Deletion records themselves: keep both sides' entries, newest stamp wins.
-    if (localKey === TOMBSTONE_KEY && !row.deleted && origLocal !== undefined) {
-      const both = _mergeTombstones(origLocal, row.value);
-      skipArchive = true;
+    if (localKey === TOMBSTONE_KEY && !row.deleted) {
+      // Server JSON is rebuilt key by key (unsafe names skipped) before it is stored or merged.
+      const clean = _mergeTombstones({}, row.value);
+      const both = origLocal !== undefined ? _mergeTombstones(origLocal, clean) : clean;
+      serverValue = clean;
+      if (origLocal !== undefined) skipArchive = true;
       if (_canonicalJSON(both) !== _canonicalJSON(row.value)) merged = both;
     }
     if (origLocal !== undefined && merged === null) {
@@ -1122,6 +1155,7 @@ const DB = (() => {
       } catch (e) {
         localHash = null;
       }
+      if (epoch !== _identityEpoch) return;
       if (!row.deleted && localHash !== null && localHash === mHash) {
         _replicaVersions[localKey] = stamp; // same content: adopt the version only
         return;
@@ -1155,6 +1189,7 @@ const DB = (() => {
         });
       }
     }
+    if (epoch !== _identityEpoch) return;
     if (merged !== null) {
       await _rawSet(localKey, merged);
       _replicaVersions[localKey] = stamp;
@@ -1171,14 +1206,22 @@ const DB = (() => {
       }
       return;
     }
+    if (epoch !== _identityEpoch) return;
     if (row.deleted) await _rawDelete(localKey);
     else await _rawSet(localKey, serverValue);
+    if (epoch !== _identityEpoch) {
+      // Identity changed during the write: remove what this run just wrote for the old user.
+      if (_isPerUserKey(localKey)) await _rawDelete(localKey);
+      return;
+    }
     _replicaVersions[localKey] = stamp;
   }
 
   async function _hydrateInner() {
     const mode = _backendMode();
     if (mode !== 'on') return; // off: no hydration
+    const epoch = _identityEpoch;
+    const stale = () => epoch !== _identityEpoch; // identity changed: discard this run
 
     let manifest;
     try {
@@ -1190,6 +1233,7 @@ const DB = (() => {
       }
       return;
     }
+    if (stale()) return;
 
     const routineFetchKeys = []; // WIRE keys (manifest form) to batch-GET
     const routineFetchLocalKey = {}; // wireKey -> localKey, for applying results
@@ -1205,6 +1249,7 @@ const DB = (() => {
         await _refreshTombstones();
       }
     }
+    if (stale()) return;
 
     for (const m of manifest) {
       if (m.key === TOMBSTONE_KEY) continue; // handled above
@@ -1251,6 +1296,7 @@ const DB = (() => {
     // NEVER "absent from manifest -> delete" (that would delete a brand-new
     // un-synced local key; we only ever act on an EXPLICIT manifest entry).
     for (const { m, localKey } of tombstoneKeys) {
+      if (stale()) return;
       await _reconcileIncoming(localKey, { deleted: true, version: m.version }, m.hash);
     }
 
@@ -1265,7 +1311,9 @@ const DB = (() => {
         console.warn('[DB] Hydration: batched GET failed, skipping this batch:', e);
         rows = [];
       }
+      if (stale()) return;
       for (const row of rows) {
+        if (stale()) return;
         const localKey = routineFetchLocalKey[row.key] || row.key;
         if (_syncQueue.some((e) => e.key === localKey)) continue; // race guard, re-check
         const manifestEntry = manifest.find((m) => m.key === row.key);
@@ -1290,7 +1338,9 @@ const DB = (() => {
           }
         }),
       );
+      if (stale()) return;
       for (let j = 0; j < chunk.length; j++) {
+        if (stale()) return;
         const { m, localKey } = chunk[j];
         const rows = fetched[j];
         // No version map entry and a local value exists: server wins (or a pure
@@ -1310,6 +1360,7 @@ const DB = (() => {
     // version entry here was never on the server. A tombstoned key IS in the
     // manifest, so it is never resurrected. Runs once per key: after the PUT
     // the key has a version entry.
+    if (stale()) return;
     const onServer = new Set(manifest.map((m) => m.key));
     const uploadKeys = [];
     for (const localKey of Object.keys(_cache)) {
@@ -1337,7 +1388,7 @@ const DB = (() => {
     }
     // Render first: the app does not wait for this. Runs in the background.
     if (uploadKeys.length) {
-      _uploadFirstConnect(uploadKeys, updatedFromServer + routineFetchKeys.length);
+      _uploadFirstConnect(uploadKeys, updatedFromServer + routineFetchKeys.length, epoch);
     } else if (conflictCheckKeys.length > 0 && typeof window !== 'undefined') {
       window.dispatchEvent(
         new CustomEvent('dbFirstConnect', {
@@ -1363,7 +1414,8 @@ const DB = (() => {
       window.dispatchEvent(new CustomEvent('dbUploadProgress', { detail: getUploadProgress() }));
     }
   }
-  async function _uploadFirstConnect(keys, updated) {
+  async function _uploadFirstConnect(keys, updated, epoch) {
+    if (epoch !== _identityEpoch) return;
     if (_uploadProgress.running) {
       // A second run (identity change) adds to the same pass.
       _uploadProgress.total += keys.length;
@@ -1377,6 +1429,7 @@ const DB = (() => {
         const localKey = queue.shift();
         const value = _cache[localKey]; // newest local value at upload time
         const skip =
+          epoch !== _identityEpoch ||
           _backendMode() !== 'on' ||
           value === undefined ||
           value === null ||
@@ -1389,6 +1442,7 @@ const DB = (() => {
           } catch (e) {
             r = { status: 'network-error' };
           }
+          if (epoch !== _identityEpoch) continue;
           if (r.status === 'ok') _uploadProgress.uploaded++;
           else if (r.status === 'network-error' || r.status === 'error') {
             _enqueueWrite(localKey, { value });
@@ -1402,6 +1456,7 @@ const DB = (() => {
     const workers = [];
     for (let i = 0; i < Math.min(UPLOAD_CONCURRENCY, keys.length); i++) workers.push(worker());
     await Promise.all(workers);
+    if (epoch !== _identityEpoch) return; // a newer identity owns the progress now
     _uploadProgress.running = false;
     _persistReplicaState();
     _emitUploadProgress();
@@ -1534,6 +1589,8 @@ const DB = (() => {
     const uid = _myUserId();
     if (uid === _lastKnownUserId) return; // chAuthStateChanged fired but the signed-in identity didn't actually change
     _lastKnownUserId = uid;
+    _identityEpoch++; // in-flight work for the previous user now discards itself
+    _uploadProgress = { running: false, total: 0, done: 0, uploaded: 0, failed: 0 };
     const cleared = _clearPerUserLocalState();
     // Finding 2 — persist the new owner durably so a hard refresh right after
     // this switch (warmCache() -> _checkDurableIdentityMarker() below) sees

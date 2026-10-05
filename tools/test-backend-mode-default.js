@@ -118,6 +118,7 @@ function makeServer(seed) {
       );
     }
     if (method === 'GET') {
+      if (srv.getLatency) await tick(srv.getLatency);
       const keys = decodeURIComponent(url.split('keys=')[1]).split(',');
       return res(
         200,
@@ -730,6 +731,40 @@ await scenario("C", async () => {
       const { ctx } = await boot({ host: h, signedIn: true, server: srv });
       check('H host ' + h + ': mode off, 0 calls', ctx.window.CH_AUTH.backendMode() === 'off' && srv.calls.length === 0, srv.calls.length + '');
     }
+  });
+
+  // ---- Identity switch race + prototype keys ----
+  await scenario('S1', async () => {
+    const seedSrv = { en_budget_s: { n: 1 } };
+    for (let i = 0; i < 30; i++) seedSrv['user-1::ch_pref_a' + i] = 'A-secret-' + i; // user A's per-user rows on the server
+    const srv = makeServer(seedSrv);
+    srv.getLatency = 150;
+    const b = await boot({ host: NETLIFY, signedIn: true, server: srv, skipWarm: true });
+    const hyd = b.DB.warmCache(); // user A hydrates: manifest, then a slow batch read
+    await tick(220); // manifest done, batch read pending
+    const s2 = JSON.parse(b.ls.get('ch_sb_session'));
+    s2.user_id = 'user-2';
+    b.ls.set('ch_sb_session', JSON.stringify(s2));
+    b.ctx.window.CH_AUTH.getUserId = () => 'user-2';
+    b.ctx.window.dispatchEvent({ type: 'chAuthStateChanged' });
+    await hyd;
+    await tick(900);
+    const leaked = Object.keys(seedSrv).filter((k) => k.indexOf('user-1::') === 0 && b.DB.get(k.slice(8)) !== null);
+    check('S1 old user per-user rows are not written into the cache after the switch', leaked.length === 0, leaked.length + ' leaked, e.g. ' + leaked.slice(0, 2));
+    const puts = srv.puts.map((x) => JSON.parse(x)).filter((x) => JSON.stringify(x.value || '').indexOf('A-secret') !== -1);
+    check('S1 old user values never PUT to the server', puts.length === 0, puts.length + '');
+    check('S1 upload progress not left running', !b.DB.getUploadProgress().running, JSON.stringify(b.DB.getUploadProgress()));
+  });
+
+  await scenario('P1', async () => {
+    const evil = JSON.parse('{"__proto__":{"polluted":1},"constructor":{"prototype":{"polluted":2}},"ok":{"t":5}}');
+    const srv = makeServer({ en_projects: [proj(1, 'P1')], en_deleted_records: { en_projects: evil, constructor: { x: 1 } } });
+    const B = await boot({ host: NETLIFY, signedIn: true, server: srv, idbSeed: { en_projects: [proj(1, 'P1')], en_deleted_records: { en_projects: { 9: { t: 3, item: proj(9, 'x') } } } } });
+    await tick(100);
+    check('P1 Object.prototype not polluted', ({}).polluted === undefined && ({}).x === undefined, String(({}).polluted));
+    const d = B.DB.get('en_deleted_records') || {};
+    check('P1 merged records hold no __proto__/constructor keys', !Object.prototype.hasOwnProperty.call(d, 'constructor') && !Object.prototype.hasOwnProperty.call(d.en_projects || {}, '__proto__') && !Object.prototype.hasOwnProperty.call(d.en_projects || {}, 'constructor'), JSON.stringify(d).slice(0, 200));
+    check('P1 id "__proto__" in a list is not dropped as deleted', same(ids(B.DB.get('en_projects')), [1]), JSON.stringify(B.DB.get('en_projects')));
   });
 
   let fail = 0;
