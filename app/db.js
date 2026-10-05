@@ -746,8 +746,25 @@ const DB = (() => {
     const curItems = cfg.getItems(cur);
     const nextItems = cfg.getItems(next);
     if (!Array.isArray(curItems) || !Array.isArray(nextItems)) return next;
+    // Keep object identity: a page can hold a record object (the open project)
+    // across a save. Fields are copied INTO the existing object by id, and
+    // fields the merge removed are deleted, so a later edit through the held
+    // reference is still the record that gets saved.
+    const curById = _itemIds(key, cur);
     curItems.length = 0;
-    nextItems.forEach((it) => curItems.push(it));
+    nextItems.forEach((it) => {
+      const id = cfg.getId(it);
+      const old = id !== undefined && id !== null ? curById.get(String(id)) : undefined;
+      if (old && old !== it && _isPlainObject(old) && _isPlainObject(it)) {
+        Object.keys(old).forEach((f) => {
+          if (!Object.prototype.hasOwnProperty.call(it, f)) delete old[f];
+        });
+        _safeAssign(old, it);
+        curItems.push(old);
+      } else {
+        curItems.push(it);
+      }
+    });
     if (!Array.isArray(cur)) {
       _safeAssign(cur, next);
       cur[cfg.itemsProp] = curItems;

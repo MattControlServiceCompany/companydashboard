@@ -956,6 +956,36 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
       JSON.stringify(s.map((p) => p.name)),
     );
   });
+  await scenario('X5', async () => {
+    const srv = makeServer(four());
+    const { A, B } = await pair(srv);
+    const list = A.DB.get('en_projects');
+    const held = list.find((p) => p.id === 1); // the open project, held across a save
+    B.DB.set(
+      'en_projects',
+      JSON.parse(JSON.stringify(B.DB.get('en_projects'))).map((p) =>
+        p.id === 1 ? Object.assign({}, p, { client: 'Client by B' }) : p,
+      ),
+    );
+    await tick(300);
+    list.find((p) => p.id === 2).name = 'P2 by A';
+    A.DB.set('en_projects', list); // 409 -> merge brings B's P1 client into A's list
+    await tick(400);
+    check(
+      'X5 merge keeps the held object (same reference, B field copied in)',
+      list.find((p) => p.id === 1) === held && held.client === 'Client by B',
+      JSON.stringify(held),
+    );
+    held.name = 'P1 via held reference';
+    A.DB.set('en_projects', list);
+    await tick(400);
+    const s1 = byId(srv.rows.get('en_projects').value, 1);
+    check(
+      'X5 edit through the held reference reaches the server with B field kept',
+      s1.name === 'P1 via held reference' && s1.client === 'Client by B',
+      JSON.stringify(s1),
+    );
+  });
   await scenario('X3', async () => {
     const srv = makeServer(four());
     const A = await boot({ host: NETLIFY, signedIn: true, server: srv });

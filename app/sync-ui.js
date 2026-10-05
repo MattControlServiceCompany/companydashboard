@@ -866,23 +866,34 @@
     }
     listWrap.appendChild(headline);
 
+    // One row per distinct item and state (many keys share one plain name, for
+    // example one chart setting per building). When anything is pending or
+    // diverged, only those rows are listed; in-sync rows are summed in the headline.
+    var listAll = counts.diverged === 0 && counts.pending === 0;
+    var groups = [];
+    var byLabel = {};
     keys.forEach(function (k) {
       var state = _keyState(k);
+      if (!listAll && state === 'in-sync') return;
+      var label = friendlyKeyName(k.key);
+      var gk = label + '|' + state;
+      if (!byLabel[gk]) {
+        byLabel[gk] = { label: label, state: state, keys: [], deleted: 0 };
+        groups.push(byLabel[gk]);
+      }
+      byLabel[gk].keys.push(k.key);
+      if (k.deleted) byLabel[gk].deleted++;
+    });
+    groups.forEach(function (g) {
       var row = document.createElement('div');
-      row.className = 'ch-sync-status-key ch-sync-status-key-' + state;
+      row.className = 'ch-sync-status-key ch-sync-status-key-' + g.state;
       var name = document.createElement('div');
       name.className = 'ch-sync-status-key-name';
-      name.textContent = friendlyKeyName(k.key);
-      row.title = k.key; // the internal name only on hover, never in the row text
+      name.textContent = g.label + (g.keys.length > 1 ? ' (' + g.keys.length + ' items)' : '');
+      row.title = g.keys.slice(0, 8).join('\n') + (g.keys.length > 8 ? '\n...' : ''); // internal names on hover only
       var meta = document.createElement('div');
       meta.className = 'ch-conflict-meta';
-      meta.textContent =
-        _keyStateLabel(state) +
-        (k.deleted ? ' (deleted)' : '') +
-        ' — local v' +
-        (k.localVersion == null ? '—' : k.localVersion) +
-        ', server v' +
-        k.serverVersion;
+      meta.textContent = _keyStateLabel(g.state) + (g.deleted ? ' (' + g.deleted + ' deleted)' : '');
       row.appendChild(name);
       row.appendChild(meta);
       listWrap.appendChild(row);
