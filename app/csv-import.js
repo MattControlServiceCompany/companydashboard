@@ -556,7 +556,7 @@ function showBillCsvPreview(rows, m, fname, warnings) {
       if (isElec)
         cells = `<td>${r.kwh != null ? (+r.kwh).toLocaleString() : '—'}</td><td>${_d(r.demandKW)}</td><td>${_d(r.facKW)}</td><td>${_dc(r.demandCharge)}</td><td>${_dc(r.facKWCost)}</td><td>${_dc2(r.totalCost)}</td>`;
       else if (isGas) {
-        const thermsVal = resolveGasUsageTherms(r) || null;
+        const thermsVal = resolveGasUsageThermsOrNull(r);
         cells =
           '<td>' + (thermsVal != null ? (+thermsVal).toLocaleString() : '—') + '</td><td>' + _dc(r.gasCharge) + '</td>';
       } else {
@@ -1034,7 +1034,7 @@ function renderBillRow(row, m, incl, allBills, cols, rowNum) {
       typeof _gasUsageDisplay === 'function'
     ) {
       const resolved = _gasUsageDisplay(row, c.entry.gasUnit);
-      if (resolved) {
+      if (resolved !== null) {
         raw = resolved;
         _gasFallbackApplied = true;
       }

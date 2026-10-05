@@ -3654,8 +3654,9 @@ function renderMeterWorkspace() {
    strictly greater.
 ───────────────────────────────────────────────────────────── */
 function _gasUsageDisplay(r, unit) {
-  const thermsBasis = typeof resolveGasUsageTherms === 'function' ? resolveGasUsageTherms(r || {}) : 0;
-  if (!thermsBasis) return 0;
+  // null = no usage on the bill (missing, shows as a dash); a real 0 stays 0.
+  const thermsBasis = resolveGasUsageThermsOrNull(r || {});
+  if (thermsBasis === null) return null;
   if (unit === 'MMBtu') return thermsBasis / 10;
   if (unit === 'CCF') return convertUnit(thermsBasis, 'Therms', 'CCF', 'Gas');
   return thermsBasis; // Therms

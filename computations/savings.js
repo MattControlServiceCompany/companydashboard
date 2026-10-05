@@ -111,6 +111,34 @@ function getBillUsageOrNull(bill, commodity) {
   return null;
 }
 
+/* resolveGasUsageThermsOrNull(b) - same value as resolveGasUsageTherms, but null when the bill has NO
+   usage field at all (missing). A real 0 returns 0. Display and save code use this one, so a missing
+   usage shows as missing and a real 0 shows as 0 (Matt 2026-10-05). Savings keep resolveGasUsageTherms. */
+function resolveGasUsageThermsOrNull(b) {
+  const keys = ['therms', 'naturalGasTherms', 'naturalGasCCF', 'naturalGasMCF', 'naturalGasMMbtu', 'usage'];
+  const has = keys.some(
+    (k) => parseBillNumber(b[k]) !== null || parseBillNumber(b[k.charAt(0).toUpperCase() + k.slice(1)]) !== null,
+  );
+  return has ? resolveGasUsageTherms(b) : null;
+}
+
+/* gasBillSaveFields(src) - the ONE mapping of gas usage and gas charge for a bill being saved.
+   src = extractor bill (NaturalGasTherms, GasCharge ...) or saved-style bill. Returns the stored
+   `therms` and `thermCost`: '' when missing, a real 0 stays 0. thermCost is the gas commodity
+   charge (bug d4c78f06); total charges are the fallback only when GasCharge is missing. */
+function gasBillSaveFields(src) {
+  const usage = resolveGasUsageThermsOrNull(src);
+  const hasGasField = ['naturalGasTherms', 'naturalGasCCF', 'naturalGasMMbtu'].some(
+    (k) => parseBillNumber(src[k]) !== null || parseBillNumber(src[k.charAt(0).toUpperCase() + k.slice(1)]) !== null,
+  );
+  return {
+    therms: usage === null ? '' : usage,
+    thermCost: hasGasField
+      ? billValueOrBlank(src.GasCharge, src.gasCharge, src.TotalCurrentCharges, src.TotalAmountDue)
+      : '',
+  };
+}
+
 /* ─────────────────────────────────────────────────────────────
    checkRateIncomplete(opts)
    a67db8ce (2026-09-09) — single source of truth for "is this row's rate

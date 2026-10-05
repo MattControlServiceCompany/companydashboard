@@ -7262,10 +7262,10 @@ async function confirmAutoAssign() {
       tdcKW: bill.TDCkW || '',
       taxExemptDelivery: bill.TaxExemptDelivery || '',
       billOffset: bill.BillOffset || '',
-      naturalGasCCF: bill.NaturalGasCCF || '',
+      naturalGasCCF: billValueOrBlank(bill.NaturalGasCCF),
       thermFactor: bill.ThermFactor || '',
-      naturalGasTherms: bill.NaturalGasTherms || '',
-      naturalGasMMbtu: bill.NaturalGasMMbtu || bill.naturalGasMMbtu || '',
+      naturalGasTherms: billValueOrBlank(bill.NaturalGasTherms),
+      naturalGasMMbtu: billValueOrBlank(bill.NaturalGasMMbtu, bill.naturalGasMMbtu),
       // WRE per-site charge components and printed rates (Fix a84458f0 + printed-rates fix)
       _wreTriggerCharge: bill._wreTriggerCharge || '',
       _wreIndexCharge: bill._wreIndexCharge || '',
@@ -7294,23 +7294,15 @@ async function confirmAutoAssign() {
       _mmbtuRateMismatch: bill._mmbtuRateMismatch || undefined,
       _mmbtuMissingWithCharge: bill._mmbtuMissingWithCharge || undefined,
       // Fix [therms-unit-2026-06-22]: canonicalize therms to Therms at save time.
-      therms: resolveGasUsageTherms(bill) || '',
-      // Bug d4c78f06: thermCost must be the gas commodity cost (GasCharge),
-      // not TotalCurrentCharges (which includes base/customer/tax charges).
-      // The $/therm rate in Meter Data + Baseline Data tables divides by this field.
-      // Fall back to TotalCurrentCharges only when GasCharge is unavailable.
-      thermCost:
-        bill.NaturalGasTherms || bill.NaturalGasCCF || bill.NaturalGasMMbtu || bill.naturalGasMMbtu
-          ? bill.GasCharge || bill.TotalCurrentCharges || bill.TotalAmountDue || ''
-          : '',
-      gasCharge: bill.GasCharge || '',
-      fuelAdjustment: bill.FuelAdjustment || '',
-      waterUsage: bill.WaterUsage || '',
-      waterCharge: bill.WaterCharge || '',
-      waterProtectionFee: bill.WaterProtectionFee || '',
-      sewerUsage: bill.SewerUsage || '',
-      sewerCharge: bill.SewerCharge || '',
-      stormWaterCharge: bill.StormWaterCharge || '',
+      ...gasBillSaveFields(bill),
+      gasCharge: billValueOrBlank(bill.GasCharge),
+      fuelAdjustment: billValueOrBlank(bill.FuelAdjustment),
+      waterUsage: billValueOrBlank(bill.WaterUsage),
+      waterCharge: billValueOrBlank(bill.WaterCharge),
+      waterProtectionFee: billValueOrBlank(bill.WaterProtectionFee),
+      sewerUsage: billValueOrBlank(bill.SewerUsage),
+      sewerCharge: billValueOrBlank(bill.SewerCharge),
+      stormWaterCharge: billValueOrBlank(bill.StormWaterCharge),
       invoiceNumber: bill.InvoiceNumber || '',
       saleNumber: bill.SaleNumber || '',
       deliveryDate: bill.DeliveryDate || '',
@@ -7731,10 +7723,10 @@ async function _mbSaveOneBill(bi, action) {
     tdcKW: bill.TDCkW || '',
     taxExemptDelivery: bill.TaxExemptDelivery || '',
     billOffset: bill.BillOffset || '',
-    naturalGasCCF: bill.NaturalGasCCF || '',
+    naturalGasCCF: billValueOrBlank(bill.NaturalGasCCF),
     thermFactor: bill.ThermFactor || '',
-    naturalGasTherms: bill.NaturalGasTherms || '',
-    naturalGasMMbtu: bill.NaturalGasMMbtu || bill.naturalGasMMbtu || '',
+    naturalGasTherms: billValueOrBlank(bill.NaturalGasTherms),
+    naturalGasMMbtu: billValueOrBlank(bill.NaturalGasMMbtu, bill.naturalGasMMbtu),
     _wreTriggerCharge: bill._wreTriggerCharge || '',
     _wreIndexCharge: bill._wreIndexCharge || '',
     _wreSWECharge: bill._wreSWECharge || '',
@@ -7759,19 +7751,15 @@ async function _mbSaveOneBill(bi, action) {
     _manualReviewLabel: bill._manualReviewLabel || '',
     _mmbtuRateMismatch: bill._mmbtuRateMismatch || undefined,
     _mmbtuMissingWithCharge: bill._mmbtuMissingWithCharge || undefined,
-    therms: resolveGasUsageTherms(bill) || '',
-    thermCost:
-      bill.NaturalGasTherms || bill.NaturalGasCCF || bill.NaturalGasMMbtu || bill.naturalGasMMbtu
-        ? bill.GasCharge || bill.TotalCurrentCharges || bill.TotalAmountDue || ''
-        : '',
-    gasCharge: bill.GasCharge || '',
-    fuelAdjustment: bill.FuelAdjustment || '',
-    waterUsage: bill.WaterUsage || '',
-    waterCharge: bill.WaterCharge || '',
-    waterProtectionFee: bill.WaterProtectionFee || '',
-    sewerUsage: bill.SewerUsage || '',
-    sewerCharge: bill.SewerCharge || '',
-    stormWaterCharge: bill.StormWaterCharge || '',
+    ...gasBillSaveFields(bill),
+    gasCharge: billValueOrBlank(bill.GasCharge),
+    fuelAdjustment: billValueOrBlank(bill.FuelAdjustment),
+    waterUsage: billValueOrBlank(bill.WaterUsage),
+    waterCharge: billValueOrBlank(bill.WaterCharge),
+    waterProtectionFee: billValueOrBlank(bill.WaterProtectionFee),
+    sewerUsage: billValueOrBlank(bill.SewerUsage),
+    sewerCharge: billValueOrBlank(bill.SewerCharge),
+    stormWaterCharge: billValueOrBlank(bill.StormWaterCharge),
     invoiceNumber: bill.InvoiceNumber || '',
     saleNumber: bill.SaleNumber || '',
     deliveryDate: bill.DeliveryDate || '',
@@ -8976,10 +8964,10 @@ function _saveBillToMatchedMeter(extracted, match) {
     rkvaRate: extracted.RkVARate || '',
     // Non-electric commodity fields — written when the extractor emits them,
     // empty string otherwise so the Edit modal's per-commodity layout renders cleanly.
-    naturalGasCCF: extracted.NaturalGasCCF || '',
+    naturalGasCCF: billValueOrBlank(extracted.NaturalGasCCF),
     thermFactor: extracted.ThermFactor || '',
-    naturalGasTherms: extracted.NaturalGasTherms || '',
-    naturalGasMMbtu: extracted.NaturalGasMMbtu || '',
+    naturalGasTherms: billValueOrBlank(extracted.NaturalGasTherms),
+    naturalGasMMbtu: billValueOrBlank(extracted.NaturalGasMMbtu),
     // WRE per-site charge components and printed rates (Fix a84458f0 + printed-rates fix)
     _wreTriggerCharge: extracted._wreTriggerCharge || '',
     _wreIndexCharge: extracted._wreIndexCharge || '',
@@ -9004,21 +8992,15 @@ function _saveBillToMatchedMeter(extracted, match) {
     // Fix [therms-unit-2026-06-22]: canonicalize therms to Therms at save time.
     // Wood River (and any future MMBtu extractor) sets NaturalGasMMbtu; Constellation/KGS
     // set NaturalGasTherms (already Therms). resolveGasUsageTherms converts: Therms > CCF > MMBtu.
-    therms: resolveGasUsageTherms(extracted) || '',
-    // Bug d4c78f06: use GasCharge (commodity cost) for thermCost so $/therm rate
-    // in tables uses energy-only cost, not total bill cost.
-    thermCost:
-      extracted.NaturalGasTherms || extracted.NaturalGasCCF || extracted.NaturalGasMMbtu
-        ? extracted.GasCharge || extracted.TotalCurrentCharges || extracted.TotalAmountDue || ''
-        : '',
-    gasCharge: extracted.GasCharge || '',
-    fuelAdjustment: extracted.FuelAdjustment || '',
-    waterUsage: extracted.WaterUsage || '',
-    waterCharge: extracted.WaterCharge || '',
-    waterProtectionFee: extracted.WaterProtectionFee || '',
-    sewerUsage: extracted.SewerUsage || '',
-    sewerCharge: extracted.SewerCharge || '',
-    stormWaterCharge: extracted.StormWaterCharge || '',
+    ...gasBillSaveFields(extracted),
+    gasCharge: billValueOrBlank(extracted.GasCharge),
+    fuelAdjustment: billValueOrBlank(extracted.FuelAdjustment),
+    waterUsage: billValueOrBlank(extracted.WaterUsage),
+    waterCharge: billValueOrBlank(extracted.WaterCharge),
+    waterProtectionFee: billValueOrBlank(extracted.WaterProtectionFee),
+    sewerUsage: billValueOrBlank(extracted.SewerUsage),
+    sewerCharge: billValueOrBlank(extracted.SewerCharge),
+    stormWaterCharge: billValueOrBlank(extracted.StormWaterCharge),
     invoiceNumber: extracted.InvoiceNumber || '',
     saleNumber: extracted.SaleNumber || '',
     deliveryDate: extracted.DeliveryDate || '',
@@ -20779,24 +20761,20 @@ function confirmAssignBill() {
     Meter2_RKVA: bill.Meter2_RKVA || '',
     // Non-electric commodity fields (matches _saveBillToMatchedMeter mapping)
     commodity: bill.Commodity || '',
-    naturalGasCCF: bill.NaturalGasCCF || '',
+    naturalGasCCF: billValueOrBlank(bill.NaturalGasCCF),
     thermFactor: bill.ThermFactor || '',
-    naturalGasTherms: bill.NaturalGasTherms || '',
-    naturalGasMMbtu: bill.NaturalGasMMbtu || bill.naturalGasMMbtu || '',
+    naturalGasTherms: billValueOrBlank(bill.NaturalGasTherms),
+    naturalGasMMbtu: billValueOrBlank(bill.NaturalGasMMbtu, bill.naturalGasMMbtu),
     // Fix [therms-unit-2026-06-22]: canonicalize therms to Therms at save time.
-    therms: resolveGasUsageTherms(bill) || '',
-    thermCost:
-      bill.NaturalGasTherms || bill.NaturalGasCCF || bill.NaturalGasMMbtu || bill.naturalGasMMbtu
-        ? bill.GasCharge || bill.TotalCurrentCharges || ''
-        : '',
-    gasCharge: bill.GasCharge || '',
-    fuelAdjustment: bill.FuelAdjustment || '',
-    waterUsage: bill.WaterUsage || '',
-    waterCharge: bill.WaterCharge || '',
-    waterProtectionFee: bill.WaterProtectionFee || '',
-    sewerUsage: bill.SewerUsage || '',
-    sewerCharge: bill.SewerCharge || '',
-    stormWaterCharge: bill.StormWaterCharge || '',
+    ...gasBillSaveFields(bill),
+    gasCharge: billValueOrBlank(bill.GasCharge),
+    fuelAdjustment: billValueOrBlank(bill.FuelAdjustment),
+    waterUsage: billValueOrBlank(bill.WaterUsage),
+    waterCharge: billValueOrBlank(bill.WaterCharge),
+    waterProtectionFee: billValueOrBlank(bill.WaterProtectionFee),
+    sewerUsage: billValueOrBlank(bill.SewerUsage),
+    sewerCharge: billValueOrBlank(bill.SewerCharge),
+    stormWaterCharge: billValueOrBlank(bill.StormWaterCharge),
     invoiceNumber: bill.InvoiceNumber || '',
     saleNumber: bill.SaleNumber || '',
     deliveryDate: bill.DeliveryDate || '',
@@ -21129,13 +21107,13 @@ function confirmManualAssign() {
     // Gas fields
     therms: extracted.NaturalGasTherms || extracted.NaturalGasMMbtu || '',
     ccf: extracted.NaturalGasCCF || '',
-    naturalGasMMbtu: extracted.NaturalGasMMbtu || '',
+    naturalGasMMbtu: billValueOrBlank(extracted.NaturalGasMMbtu),
     gasCost: extracted.GasCharge || extracted.TotalCurrentCharges || '',
     fuelAdj: extracted.FuelAdjustment || '',
     // Water/sewer fields
-    waterUsage: extracted.WaterUsage || '',
+    waterUsage: billValueOrBlank(extracted.WaterUsage),
     waterCost: extracted.WaterCharge || '',
-    sewerUsage: extracted.SewerUsage || '',
+    sewerUsage: billValueOrBlank(extracted.SewerUsage),
     sewerCost: extracted.SewerCharge || '',
     stormCost: extracted.StormWaterCharge || '',
     // Propane
@@ -21533,27 +21511,22 @@ async function _saveSinglePDFBill(extracted, projId) {
     eerRate: extracted.EERRate || '',
     ptsRate: extracted.PTSRate || '',
     rkvaRate: extracted.RkVARate || '',
-    naturalGasCCF: extracted.NaturalGasCCF || '',
+    naturalGasCCF: billValueOrBlank(extracted.NaturalGasCCF),
     thermFactor: extracted.ThermFactor || '',
-    naturalGasTherms: extracted.NaturalGasTherms || '',
-    naturalGasMMbtu: extracted.NaturalGasMMbtu || '',
+    naturalGasTherms: billValueOrBlank(extracted.NaturalGasTherms),
+    naturalGasMMbtu: billValueOrBlank(extracted.NaturalGasMMbtu),
     // Fix [therms-unit-2026-06-22]: canonicalize therms to Therms at save time.
-    therms: isGas ? resolveGasUsageTherms(extracted) || '' : '',
+    ...(isGas ? gasBillSaveFields(extracted) : { therms: '', thermCost: '' }),
     // Bug d4c78f06: use GasCharge (commodity cost) for thermCost so $/therm rate
     // in tables uses energy-only cost, not total bill cost.
-    thermCost: isGas
-      ? extracted.NaturalGasTherms || extracted.NaturalGasCCF || extracted.NaturalGasMMbtu
-        ? extracted.GasCharge || extracted.TotalCurrentCharges || extracted.TotalAmountDue || ''
-        : ''
-      : '',
-    gasCharge: extracted.GasCharge || '',
-    fuelAdjustment: extracted.FuelAdjustment || '',
-    waterUsage: extracted.WaterUsage || '',
-    waterCharge: extracted.WaterCharge || '',
-    waterProtectionFee: extracted.WaterProtectionFee || '',
-    sewerUsage: extracted.SewerUsage || '',
-    sewerCharge: extracted.SewerCharge || '',
-    stormWaterCharge: extracted.StormWaterCharge || '',
+    gasCharge: billValueOrBlank(extracted.GasCharge),
+    fuelAdjustment: billValueOrBlank(extracted.FuelAdjustment),
+    waterUsage: billValueOrBlank(extracted.WaterUsage),
+    waterCharge: billValueOrBlank(extracted.WaterCharge),
+    waterProtectionFee: billValueOrBlank(extracted.WaterProtectionFee),
+    sewerUsage: billValueOrBlank(extracted.SewerUsage),
+    sewerCharge: billValueOrBlank(extracted.SewerCharge),
+    stormWaterCharge: billValueOrBlank(extracted.StormWaterCharge),
     invoiceNumber: extracted.InvoiceNumber || '',
     saleNumber: extracted.SaleNumber || '',
     deliveryDate: extracted.DeliveryDate || '',
