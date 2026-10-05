@@ -2296,6 +2296,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.05.78', date: '2026-10-05', title: 'Backup restore keeps weather data',
+    items: [
+      { type: 'fix', text: 'Backup restore (Settings page): restoring a backup now keeps weather data, so savings after a restore match the original.' }
+    ]
+  },
   { v: 'v2026.10.05.77', date: '2026-10-05', title: 'Reports: bills listed under the correct month',
     items: [
       { type: 'fix', text: 'Reports: Appendix D now lists each bill under the same month the savings use. Louisburg Q1 February now shows all 11 baseline-meter bills (5 were listed under March).' },
