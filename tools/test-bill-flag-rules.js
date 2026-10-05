@@ -526,18 +526,28 @@ console.log('=== 7. summary ===');
 console.log('=== 8. dollar amounts in a row title ===');
 {
   const ud = require('fs').readFileSync(require('path').join(__dirname, '..', 'app/utility-data.js'), 'utf8');
-  assert(!/'\$1 title="' \+ _flagTitle/.test(ud) && !/'\$1 class="bill-flagged" title="' \+ _flagTitle/.test(ud), 'row title is inserted with a function replacer (a "$1" in a message must not be read as a group)');
+  assert(
+    !/'\$1 title="' \+ _flagTitle/.test(ud) && !/'\$1 class="bill-flagged" title="' \+ _flagTitle/.test(ud),
+    'row title is inserted with a function replacer (a "$1" in a message must not be read as a group)',
+  );
 }
 
-// -- 9 usage vs usage charge (water and sewer, the meter's own rate from getStoredRate) --
+// -- 9 usage vs usage charge (water and sewer, each bill's own rate = its usage charge / usage, getBillOwnUnitRate) --
 console.log('=== 9. usage does not match charge ===');
 {
   const sewer = (mut) => {
     const bills = [];
     for (let i = 0; i < 12; i++) {
       const m = i + 1;
-      const gal = 100000 + (i % 3) * 5000;
-      bills.push({ id: 's' + i, start: d(2024, m, 1), end: m === 12 ? d(2025, 1, 1) : d(2024, m + 1, 1), sewerUsage: String(gal), sewerCharge: (gal * 0.01).toFixed(2), totalCost: (gal * 0.01).toFixed(2) });
+      const gal = 100000 + i * 1300; // every charge is unique: no bill is a flat or minimum charge
+      bills.push({
+        id: 's' + i,
+        start: d(2024, m, 1),
+        end: m === 12 ? d(2025, 1, 1) : d(2024, m + 1, 1),
+        sewerUsage: String(gal),
+        sewerCharge: (gal * 0.01).toFixed(2),
+        totalCost: (gal * 0.01).toFixed(2),
+      });
     }
     if (mut) mut(bills);
     return { id: 'ms', commodity: 'Sewer', bills };
@@ -548,16 +558,100 @@ console.log('=== 9. usage does not match charge ===');
     b.totalCost = b.sewerCharge;
   };
   assert(!anyRule(run(sewer()), 'usage_charge_mismatch'), 'clean sewer meter: no flag');
-  assert(!anyRule(run(sewer(setCharge('s4', 1.5))), 'usage_charge_mismatch'), 'rate 1.5x the usual: normal rate change, no flag');
+  assert(
+    !anyRule(run(sewer(setCharge('s4', 1.5))), 'usage_charge_mismatch'),
+    'rate 1.5x the usual: normal rate change, no flag',
+  );
   const hi = run(sewer(setCharge('s4', 2.3)));
   assert(has(hi, 's4', 'usage_charge_mismatch'), 'charge 2.3x what the usage costs: flag');
-  assert(/Usage does not match charge: 1\d\d,\d{3} gal/.test(hi.perBill.s4.find((f) => f.rule === 'usage_charge_mismatch').message), 'message names the usage and the cost');
-  assert(has(run(sewer(setCharge('s4', 0.4))), 's4', 'usage_charge_mismatch'), 'charge 2.5x lower than the usage costs: flag');
+  const hiMsg = hi.perBill.s4.find((f) => f.rule === 'usage_charge_mismatch').message;
+  assert(/Usage does not match charge: 1\d\d,\d{3} gal/.test(hiMsg), 'message names the usage');
+  assert(
+    /but the bill charges \$2,419\.60 \(2\.3x higher\)/.test(hiMsg),
+    "message shows the bill's own sewer charge (105,200 gal x 0.01 x 2.3 = $2,419.60), not a rate x usage product",
+  );
+  assert(
+    has(run(sewer(setCharge('s4', 0.4))), 's4', 'usage_charge_mismatch'),
+    'charge 2.5x lower than the usage costs: flag',
+  );
   // a tiny bill carrying fixed fees is not tested
-  const tiny = run(sewer((bills) => Object.assign(bills[5], { sewerUsage: '300', sewerCharge: '30.00', totalCost: '30.00' })));
+  const tiny = run(
+    sewer((bills) => Object.assign(bills[5], { sewerUsage: '300', sewerCharge: '30.00', totalCost: '30.00' })),
+  );
   assert(!has(tiny, 's5', 'usage_charge_mismatch'), 'tiny usage with fixed fees: not tested');
+  // the stored rate field is never read: a stale totalSewerRate on a correct bill gives no flag (Rockville Sewer 2026-03-15)
+  const stale = run(sewer((bills) => bills.forEach((b) => (b.totalSewerRate = b.id === 's4' ? '0.99407' : '0.01'))));
+  assert(!anyRule(stale, 'usage_charge_mismatch'), 'stale stored totalSewerRate (99x) on a correct bill: no flag');
+  // and a wrong bill still flags when its stored rate looks normal
+  const staleOk = run(
+    sewer((bills) => {
+      setCharge('s4', 2.3)(bills);
+      bills.forEach((b) => (b.totalSewerRate = '0.01'));
+    }),
+  );
+  assert(has(staleOk, 's4', 'usage_charge_mismatch'), 'wrong charge with a normal-looking stored rate: flag');
+  // flat charge: the same sewer charge to the cent on 3 or more bills (Rockville Sewer $695.85 x 9) is not a $ per gallon
+  const flat = run(
+    sewer((bills) =>
+      [6, 7, 8, 9, 10, 11].forEach((i) => {
+        bills[i].sewerCharge = '695.85';
+        bills[i].totalCost = '695.85';
+        bills[i].sewerUsage = String(12400 + i * 20000);
+      }),
+    ),
+  );
+  assert(
+    !anyRule(flat, 'usage_charge_mismatch'),
+    'flat charge on 6 bills with gallons from 132,400 to 232,400: those bills are not tested',
+  );
+  // but a wrong bill on the same meter still flags against the rest (Rockville Sewer 2024-07-15)
+  const flatPlus = run(
+    sewer((bills) => {
+      [6, 7, 8, 9, 10, 11].forEach((i) => {
+        bills[i].sewerCharge = '695.85';
+        bills[i].totalCost = '695.85';
+        bills[i].sewerUsage = String(12400 + i * 20000);
+      });
+      setCharge('s2', 0.4)(bills);
+    }),
+  );
+  assert(
+    has(flatPlus, 's2', 'usage_charge_mismatch') && !has(flatPlus, 's8', 'usage_charge_mismatch'),
+    'a 2.5x-low bill on a meter with flat bills: flagged; the flat bills are not',
+  );
+  // a minimum charge repeated on small bills (Maintenance Sewer $27.00 x 8) does not stop the test of the other bills
+  const minimum = run(
+    sewer((bills) => {
+      [0, 1, 2, 3].forEach((i) => {
+        bills[i].sewerCharge = '27.00';
+        bills[i].totalCost = '27.00';
+        bills[i].sewerUsage = String(60000 + i * 1000);
+      });
+      setCharge('s9', 0.4)(bills);
+    }),
+  );
+  assert(
+    has(minimum, 's9', 'usage_charge_mismatch') && !has(minimum, 's1', 'usage_charge_mismatch'),
+    'minimum-charge bills are skipped; the 2.5x-low bill on the same meter is flagged',
+  );
+  // only 2 repeats of one charge: those bills are tested like any other
+  const two = run(
+    sewer((bills) => {
+      [6, 7].forEach((i) => {
+        bills[i].sewerCharge = '400.00';
+        bills[i].totalCost = '400.00';
+      });
+    }),
+  );
+  assert(
+    has(two, 's6', 'usage_charge_mismatch') && has(two, 's7', 'usage_charge_mismatch'),
+    'a charge repeated on only 2 bills is still tested (both are 2.7x low)',
+  );
   // electric and gas keep the 3x charge rule only
-  assert(!anyRule(run(gasMeter([2023, 2024], setCharge2())), 'usage_charge_mismatch'), 'gas is not tested by this rule');
+  assert(
+    !anyRule(run(gasMeter([2023, 2024], setCharge2())), 'usage_charge_mismatch'),
+    'gas is not tested by this rule',
+  );
   function setCharge2() {
     return (bills) => {
       const b = find({ bills }, 'g2024-1');

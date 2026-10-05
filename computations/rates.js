@@ -39,6 +39,27 @@ function getBillFacKWCost(bill) {
   return parseBillNumber(v) || 0;
 }
 
+// getBillUsageCharge(bill, type) - the ONE usage-charge dollars of a water or sewer bill: the bill's own
+// charge line (waterCharge / sewerCharge), never the bill total and never a stored rate field.
+// Callers: getBillOwnUnitRate, the usage_charge_mismatch flag (computations/bill-flags.js).
+function getBillUsageCharge(bill, type) {
+  if (!bill) return 0;
+  if (type === 'water') return parseBillNumber(bill.WaterCharge) || parseBillNumber(bill.waterCharge) || 0;
+  if (type === 'sewer') return parseBillNumber(bill.SewerCharge) || parseBillNumber(bill.sewerCharge) || 0;
+  return 0;
+}
+
+// getBillOwnUnitRate(bill, type) - the ONE $ per gallon computed from the bill's own usage charge and usage
+// (getBillUsageCharge / getBillUsageOrNull). It never reads totalWaterRate / totalSewerRate: those stored
+// fields can be stale (Rockville Water 2026-03-15 held 0.04821 for a $0.0097 bill; review 2026-10-05).
+// Callers: getStoredRate (fallback), ensureBillRates (what it stores), the usage_charge_mismatch flag.
+function getBillOwnUnitRate(bill, type) {
+  if (type !== 'water' && type !== 'sewer') return 0;
+  var cost = getBillUsageCharge(bill, type);
+  var usage = getBillUsageOrNull(bill, type === 'water' ? 'Water' : 'Sewer') || 0;
+  return usage > 0 && cost > 0 ? cost / usage : 0;
+}
+
 // New canonical function for rate lookup
 function getStoredRate(bill, type) {
   switch (type) {
@@ -51,7 +72,9 @@ function getStoredRate(bill, type) {
       // their sum so CSV-imported electric bills derive a real $/kWh (item 2026-09-21
       // rate-calc-and-electric-components.md gap #2).
       var cost =
-        parseBillNumber(bill.kwhCost) || (parseBillNumber(bill.onPeakCost) || 0) + (parseBillNumber(bill.offPeakCost) || 0) || 0;
+        parseBillNumber(bill.kwhCost) ||
+        (parseBillNumber(bill.onPeakCost) || 0) + (parseBillNumber(bill.offPeakCost) || 0) ||
+        0;
       return usage > 0 && cost > 0 ? cost / usage : 0;
     }
     case 'gas': {
@@ -83,17 +106,17 @@ function getStoredRate(bill, type) {
     case 'water': {
       var stored = parseBillNumber(bill.totalWaterRate);
       if (stored > 0) return stored;
-      var cost = parseBillNumber(bill.WaterCharge) || parseBillNumber(bill.waterCharge) || parseBillNumber(bill.totalCost) || 0;
-      var usage = parseBillNumber(bill.WaterUsage) || parseBillNumber(bill.waterUsage) || 0;
+      var own = getBillOwnUnitRate(bill, 'water');
+      if (own > 0) return own;
+      // no water charge line: the bill total over the gallons
+      var cost = parseBillNumber(bill.totalCost) || 0;
+      var usage = getBillUsageOrNull(bill, 'Water') || 0;
       return usage > 0 && cost > 0 ? cost / usage : 0;
     }
     case 'sewer': {
       var stored = parseBillNumber(bill.totalSewerRate);
       if (stored > 0) return stored;
-      // sewer dollars / sewer gallons (getBillUsageOrNull, computations/savings.js, falls back to water gallons)
-      var cost = parseBillNumber(bill.sewerCharge) || parseBillNumber(bill.SewerCharge) || 0;
-      var usage = typeof getBillUsageOrNull === 'function' ? getBillUsageOrNull(bill, 'Sewer') || 0 : 0;
-      return usage > 0 && cost > 0 ? cost / usage : 0;
+      return getBillOwnUnitRate(bill, 'sewer');
     }
     default:
       return 0;
@@ -111,7 +134,12 @@ function getStoredKwRate(bill) {
   var stored = parseBillNumber(bill.totalKwRate);
   if (stored > 0) return stored;
   var billedKW =
-    parseBillNumber(bill.billedKW) || parseBillNumber(bill.demandKW) || parseBillNumber(bill.BilledKW) || parseBillNumber(bill.ActualKW) || parseBillNumber(bill.FacilitiesKW) || 0;
+    parseBillNumber(bill.billedKW) ||
+    parseBillNumber(bill.demandKW) ||
+    parseBillNumber(bill.BilledKW) ||
+    parseBillNumber(bill.ActualKW) ||
+    parseBillNumber(bill.FacilitiesKW) ||
+    0;
   if (!(billedKW > 0)) return 0;
   var demandCost = parseBillNumber(bill.demandCharge) + parseBillNumber(bill.tdcCharge) || parseBillNumber(bill.kwCost);
   var cost = demandCost + getBillFacKWCost(bill);
@@ -175,22 +203,20 @@ function ensureBillRates(bill) {
     }
   }
 
-  // Water: totalWaterRate
+  // Water: totalWaterRate (the one own-rate function, getBillOwnUnitRate)
   if (!parseBillNumber(bill.totalWaterRate)) {
-    var wUsage = parseBillNumber(bill.WaterUsage) || parseBillNumber(bill.waterUsage);
-    var wChg = parseBillNumber(bill.WaterCharge) || parseBillNumber(bill.waterCharge);
-    if (wUsage > 0 && wChg > 0) {
-      bill.totalWaterRate = (wChg / wUsage).toFixed(5);
+    var wRate = getBillOwnUnitRate(bill, 'water');
+    if (wRate > 0) {
+      bill.totalWaterRate = wRate.toFixed(5);
       changed = true;
     }
   }
 
   // Sewer: totalSewerRate
   if (!parseBillNumber(bill.totalSewerRate)) {
-    var sUsage = parseBillNumber(bill.SewerUsage) || parseBillNumber(bill.sewerUsage);
-    var sChg = parseBillNumber(bill.SewerCharge) || parseBillNumber(bill.sewerCharge);
-    if (sUsage > 0 && sChg > 0) {
-      bill.totalSewerRate = (sChg / sUsage).toFixed(5);
+    var sRate = getBillOwnUnitRate(bill, 'sewer');
+    if (sRate > 0) {
+      bill.totalSewerRate = sRate.toFixed(5);
       changed = true;
     }
   }
@@ -267,12 +293,21 @@ function getExtractedRate(parsed, type) {
       return usage > 0 && cost > 0 ? cost / usage : 0;
     }
     case 'kw': {
-      var cost = parseBillNumber(parsed.FacilitiesCharge) + parseBillNumber(parsed.BilledKWCharge) + parseBillNumber(parsed.TDCCharge);
-      var usage = parseBillNumber(parsed.BilledKW) || parseBillNumber(parsed.ActualKW) || parseBillNumber(parsed.FacilitiesKW);
+      var cost =
+        parseBillNumber(parsed.FacilitiesCharge) +
+        parseBillNumber(parsed.BilledKWCharge) +
+        parseBillNumber(parsed.TDCCharge);
+      var usage =
+        parseBillNumber(parsed.BilledKW) || parseBillNumber(parsed.ActualKW) || parseBillNumber(parsed.FacilitiesKW);
       return usage > 0 && cost > 0 ? cost / usage : 0;
     }
     case 'gas': {
-      var cost = parseBillNumber(parsed.GasCharge) || parseBillNumber(parsed.gasCharge) || parseBillNumber(parsed.thermCost) || parseBillNumber(parsed.totalCost) || 0;
+      var cost =
+        parseBillNumber(parsed.GasCharge) ||
+        parseBillNumber(parsed.gasCharge) ||
+        parseBillNumber(parsed.thermCost) ||
+        parseBillNumber(parsed.totalCost) ||
+        0;
       var usage = resolveGasUsageTherms({
         NaturalGasTherms: parsed.NaturalGasTherms,
         NaturalGasCCF: parsed.NaturalGasCCF,

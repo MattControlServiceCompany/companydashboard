@@ -56,7 +56,12 @@ function makeContext() {
       .join('\n'),
     ctx,
   );
-  vm.runInContext(fnSource('computations/rates.js', 'getStoredRate'), ctx);
+  vm.runInContext(
+    ['getBillUsageCharge', 'getBillOwnUnitRate', 'getStoredRate']
+      .map((n) => fnSource('computations/rates.js', n))
+      .join('\n'),
+    ctx,
+  );
   vm.runInContext(read('computations/bill-flags.js'), ctx);
   return ctx;
 }
