@@ -2275,6 +2275,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.05.79', date: '2026-10-05', title: 'Sync keeps both edits',
+    items: [
+      { type: 'fix', text: 'Sync: when two people edit at the same time, both changes are kept. A real conflict shows both values so you can choose.' },
+      { type: 'change', text: 'Sync status uses plain words.' }
+    ]
+  },
   { v: 'v2026.10.05.78', date: '2026-10-05', title: 'Backup restore keeps weather data',
     items: [
       { type: 'fix', text: 'Backup restore (Settings page): restoring a backup now keeps weather data, so savings after a restore match the original.' }
