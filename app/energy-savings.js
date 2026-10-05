@@ -7040,11 +7040,18 @@ const UTILITY_RULES = [
       // (everything after the boundary) holds this site's own charges PLUS
       // the NEXT site's leaked trailing identity header, so identity fields
       // must never search past the boundary. Money fields (Total/usage,
-      // below) intentionally keep searching the full text — they are
-      // already correct via first-match within siteChunks[i].
+      // below) search ONLY this site's own text (everything after the
+      // boundary). prevTail holds the PREVIOUS site's "Total Current Site
+      // Charges" and MMBtu lines, so a first-match over the full text pairs
+      // this site's account with the previous site's money (item 62a38985,
+      // failed verification 2026-10-05 on real OCR).
       const _identityText =
         typeof identityBoundary === 'number' && identityBoundary >= 0 && identityBoundary <= t.length
           ? t.slice(0, identityBoundary)
+          : t;
+      const _siteOwnText =
+        typeof identityBoundary === 'number' && identityBoundary >= 0 && identityBoundary <= t.length
+          ? t.slice(identityBoundary)
           : t;
 
       // ── AccountNumber ──
@@ -7120,7 +7127,7 @@ const UTILITY_RULES = [
 
       // ── BillingPeriod ──
       // "Service for Dec-2024 - Actual" → month name + 4-digit year
-      const svcM = t.match(/Service\s+for\s+([A-Z][a-z]{2,})-(\d{4})/i);
+      const svcM = _siteOwnText.match(/Service\s+for\s+([A-Z][a-z]{2,})-(\d{4})/i);
       let BillingPeriodStart = null;
       let BillingPeriodEnd = null;
       if (svcM) {
@@ -7169,8 +7176,8 @@ const UTILITY_RULES = [
       //   2. "Subtotal Gas Supply Charges" line — fallback if OCR missed IC line.
       // Never fall back to summing all MMBtu occurrences (that is the root-cause bug).
       let NaturalGasTherms = null;
-      const _icM = t.match(/Incremental\s+Costs[^\n]{0,90}?([\d,]+\.?\d*)\s*MMBt[uUyY]/i);
-      const _subtotalM = t.match(/Subtotal\s+Gas\s+Supply\s+Charges[^\n]{0,90}?([\d,]+\.?\d*)\s*MMBt[uUyY]/i);
+      const _icM = _siteOwnText.match(/Incremental\s+Costs[^\n]{0,90}?([\d,]+\.?\d*)\s*MMBt[uUyY]/i);
+      const _subtotalM = _siteOwnText.match(/Subtotal\s+Gas\s+Supply\s+Charges[^\n]{0,90}?([\d,]+\.?\d*)\s*MMBt[uUyY]/i);
       const _mmBtuRaw = _icM ? _icM[1] : _subtotalM ? _subtotalM[1] : null;
       if (_mmBtuRaw) {
         const mmBtuVal = parseFloat(_mmBtuRaw.replace(/,/g, ''));
@@ -7183,12 +7190,23 @@ const UTILITY_RULES = [
       // ── TotalCurrentCharges ──
       // Prefer per-site "Total Current Site Charges $NNN.NN".
       // Fallback: invoice-level "Total New Charges $NNN.NN" or "Total Amount Due $NNN.NN".
-      const siteChargeM = t.match(/Total\s+Current\s+Site\s+Charges\s*\$?([\d,]+\.\d{2})/i);
-      const newChargeM = t.match(/Total\s+New\s+Charges\s*\$?([\d,]+\.\d{2})/i);
-      const amtDueM = t.match(/Total\s+Amount\s+Due\s*\$?([\d,]+\.\d{2})/i);
+      const siteChargeM = _siteOwnText.match(/Total\s+Current\s+Site\s+Charges\s*\$?([\d,]+\.\d{2})/i);
+      // Invoice-level totals are a fallback ONLY for a single-block extract. In a
+      // multi-site split (identityBoundary given) they are the whole invoice's total
+      // (repeated in every page header), so stamping one on a site with no printed
+      // site total gives that site the invoice's dollars.
+      const _isSiteSplit = typeof identityBoundary === 'number';
+      const newChargeM = _isSiteSplit ? null : _siteOwnText.match(/Total\s+New\s+Charges\s*\$?([\d,]+\.\d{2})/i);
+      const amtDueM = _isSiteSplit ? null : _siteOwnText.match(/Total\s+Amount\s+Due\s*\$?([\d,]+\.\d{2})/i);
       const rawTotal = siteChargeM ? siteChargeM[1] : newChargeM ? newChargeM[1] : amtDueM ? amtDueM[1] : null;
       const TotalCurrentCharges = fixNum(rawTotal);
       const TotalAmountDue = TotalCurrentCharges;
+
+      // ── GasCharge ──
+      // Printed "Subtotal Gas Supply Charges ... $NNN.NN" (supply line only;
+      // delivery/other charges are separate lines, see item abb69e07).
+      const _gasChargeM = _siteOwnText.match(/Subtotal\s+Gas\s+Supply\s+Charges[^\n]*?\$\s*([\d,]+\.\d{2})/i);
+      const GasCharge = _gasChargeM ? fixNum(_gasChargeM[1]) : null;
 
       // ── StatementDate ──
       // "Invoice Date: 01/16/25" — two-digit year
@@ -7233,7 +7251,7 @@ const UTILITY_RULES = [
         StatementDate,
         NaturalGasTherms,
         NaturalGasCCF: null,
-        GasCharge: NaturalGasTherms && TotalCurrentCharges ? null : null, // not split out
+        GasCharge,
         CustomerCharge: null,
         TotalCurrentCharges,
         TotalAmountDue,
