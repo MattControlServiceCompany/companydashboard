@@ -328,6 +328,12 @@ const DB = (() => {
   // ch_sync_queue) and for applying already-verified server values during
   // hydration (which update _replicaVersions separately, not through set()).
   function _rawSet(key, value) {
+    // A collection merged by the engine is adopted IN PLACE: page globals hold
+    // the cache reference (core.js init `projects = sget(...)`) and must see it.
+    if (UNION_KEY_CONFIG[key]) {
+      value = _adoptCollection(key, value);
+      _noteCollection(key, value);
+    }
     _cache[key] = value;
     if (_usingFallback) {
       try {
@@ -379,6 +385,7 @@ const DB = (() => {
     _replicaVersions = stored && typeof stored === 'object' ? stored : {};
     const base = _cache[SYNC_BASE_KEY];
     _syncBase = base && typeof base === 'object' ? base : {};
+    Object.keys(UNION_KEY_CONFIG).forEach((k) => _noteCollection(k, _cache[k]));
   }
   function _persistReplicaState() {
     _rawSet(REPLICA_STATE_KEY, _replicaVersions);
@@ -633,6 +640,7 @@ const DB = (() => {
     }),
     en_tasks: Object.assign({}, _bareList, { getLabel: (it) => it && it.text }),
     en_dc_events: {
+      itemsProp: 'events',
       getItems: (v) => (v && Array.isArray(v.events) ? v.events : null),
       setItems: (v, items) => _safeAssign({}, v, { events: items }),
       getId: (item) => item && item.date + '|' + item.name + '|' + item.type,
@@ -719,9 +727,35 @@ const DB = (() => {
   // from oldValue, so a stale deletion record can never delete a restored
   // item again. Returns the replication promise of the shared key (null if
   // nothing changed) so a caller can wait for the server to hold the records.
-  function _recordDeletions(key, oldValue, newValue, restoreAll) {
+  // --- Page globals and the cache share one reference ---------------------------
+  // Pages load a collection once (core.js init: `projects = sget('en_projects')`,
+  // ems-leads.html `leads = sget(...)`, district-calendar `dcEvents`) and save the
+  // same array back with sset. When the engine merges in another user's record
+  // (409 merge, hydration) the merged list is written INTO that array, so the
+  // page's next save still holds the record. Deletions are detected against
+  // _lastItems, the ids this tab last stored for the key, never against the array
+  // the page passes (that can be the same, already mutated, reference).
+  const _lastItems = {}; // key -> Map(id -> item) as of the last store
+  function _noteCollection(key, value) {
+    _lastItems[key] = _itemIds(key, value);
+  }
+  function _adoptCollection(key, next) {
+    const cfg = UNION_KEY_CONFIG[key];
+    const cur = _cache[key];
+    if (!cfg || cur === next || !cur || typeof cur !== 'object' || !next || typeof next !== 'object') return next;
+    const curItems = cfg.getItems(cur);
+    const nextItems = cfg.getItems(next);
+    if (!Array.isArray(curItems) || !Array.isArray(nextItems)) return next;
+    curItems.length = 0;
+    nextItems.forEach((it) => curItems.push(it));
+    if (!Array.isArray(cur)) {
+      _safeAssign(cur, next);
+      cur[cfg.itemsProp] = curItems;
+    }
+    return cur;
+  }
+  function _recordDeletions(key, before, newValue, restoreAll) {
     if (!UNION_KEY_CONFIG[key]) return null;
-    const before = _itemIds(key, oldValue);
     const after = _itemIds(key, newValue);
     if (!before.size && !after.size) return null;
     const tomb = _mergeTombstones(_cache[TOMBSTONE_KEY], null);
@@ -798,12 +832,20 @@ const DB = (() => {
       );
     }
   }
+  // Plain words for the Sync status panel (no HTTP jargon).
+  function _plainFetchError(e) {
+    const msg = String((e && e.message) || e || '');
+    const m = msg.match(/(\d{3})\s*$/);
+    if (m) return 'the server answered with an error, code ' + m[1];
+    if (/abort/i.test(msg)) return 'the server took too long to answer';
+    return 'no connection to the server';
+  }
   function _noteTombstoneFailure(e) {
     const failures = _tombstoneState.failures + 1;
     const delay = Math.min(TOMBSTONE_RETRY_BASE_MS * Math.pow(2, failures - 1), TOMBSTONE_RETRY_MAX_MS);
     _tombstoneState = {
       ok: false,
-      error: String((e && e.message) || e),
+      error: _plainFetchError(e),
       failures,
       nextRetryAt: Date.now() + delay,
     };
@@ -2207,7 +2249,10 @@ const DB = (() => {
 
   function set(key, value) {
     // F1: removed list items are recorded BEFORE the list write (item copy kept locally).
-    if (UNION_KEY_CONFIG[key]) _recordDeletions(key, _cache[key], value, false);
+    if (UNION_KEY_CONFIG[key]) {
+      _recordDeletions(key, _lastItems[key] || _itemIds(key, _cache[key]), value, false);
+      _noteCollection(key, value);
+    }
     // Update in-memory cache immediately so the UI stays responsive.
     _cache[key] = value;
     if (typeof window !== 'undefined') {
@@ -2362,7 +2407,7 @@ const DB = (() => {
     // restored, and the server holds that BEFORE the list is written, so a
     // stale browser can never delete the restored items again.
     if (UNION_KEY_CONFIG[key]) {
-      const p = _recordDeletions(key, serverRow ? serverRow.value : _cache[key], value, true);
+      const p = _recordDeletions(key, _itemIds(key, serverRow ? serverRow.value : _cache[key]), value, true);
       if (p) await p;
     }
     const prev = _replicaVersions[key];

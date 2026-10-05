@@ -817,16 +817,33 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     let modals = 0;
     const srv2 = makeServer({ en_projects: [proj(1, 'P1'), proj(2, 'P2')] });
     const D = await boot({
-      host: NETLIFY, signedIn: true, server: srv2,
-      onCtx: (ctx) => { ctx.window.SyncConflictUI = { showConflictModal: async () => { modals++; return { action: 'load-theirs' }; } }; },
+      host: NETLIFY,
+      signedIn: true,
+      server: srv2,
+      onCtx: (ctx) => {
+        ctx.window.SyncConflictUI = {
+          showConflictModal: async () => {
+            modals++;
+            return { action: 'load-theirs' };
+          },
+        };
+      },
     });
     const E = await boot({ host: NETLIFY, signedIn: true, server: srv2 });
     E.DB.set('en_projects', [proj(2, 'P2')]); // E deletes P1
     await tick(60);
     D.DB.set('en_projects', [proj(1, 'P1'), proj(2, 'P2'), proj(4, 'P4')]); // D still holds P1, adds P4
     await tick(200);
-    check('F1b stale edit (addition only): merged with no modal', modals === 0 && same(ids(D.DB.get('en_projects')), [2, 4]), 'modals=' + modals + ' local=' + JSON.stringify(ids(D.DB.get('en_projects'))));
-    check('F1b stale edit: final server list [2,4]', same(ids(srv2.rows.get('en_projects').value), [2, 4]), JSON.stringify(ids(srv2.rows.get('en_projects').value)));
+    check(
+      'F1b stale edit (addition only): merged with no modal',
+      modals === 0 && same(ids(D.DB.get('en_projects')), [2, 4]),
+      'modals=' + modals + ' local=' + JSON.stringify(ids(D.DB.get('en_projects'))),
+    );
+    check(
+      'F1b stale edit: final server list [2,4]',
+      same(ids(srv2.rows.get('en_projects').value), [2, 4]),
+      JSON.stringify(ids(srv2.rows.get('en_projects').value)),
+    );
   });
 
   // ---- Re-review fixes (2026-10-05): two users, one shared list ----
@@ -839,7 +856,8 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     };
   };
   const pair = async (srv, answerA, answerB) => {
-    const mA = [], mB = [];
+    const mA = [],
+      mB = [];
     const A = await boot({ host: NETLIFY, signedIn: true, server: srv, onCtx: modalStub(mA, answerA) });
     const B = await boot({ host: NETLIFY, signedIn: true, server: srv, onCtx: modalStub(mB, answerB) });
     return { A, B, mA, mB };
@@ -850,21 +868,137 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     const t = srv.rows.get('en_deleted_records');
     return t && t.value && t.value.en_projects ? Object.keys(t.value.en_projects).map(Number).sort() : [];
   };
+  const rename = (b, id, name) =>
+    b.DB.set(
+      'en_projects',
+      JSON.parse(JSON.stringify(b.DB.get('en_projects'))).map((p) =>
+        p.id === id ? Object.assign({}, p, { name }) : p,
+      ),
+    );
+  const byId = (list, id) => (list || []).find((p) => p.id === id);
 
   // Finding 1: two users delete different projects at the same time.
   await scenario('R1', async () => {
     const srv = makeServer(four());
     const { A, B, mA, mB } = await pair(srv);
-    A.DB.set('en_projects', A.DB.get('en_projects').filter((p) => p.id !== 1));
-    B.DB.set('en_projects', B.DB.get('en_projects').filter((p) => p.id !== 2));
+    A.DB.set(
+      'en_projects',
+      A.DB.get('en_projects').filter((p) => p.id !== 1),
+    );
+    B.DB.set(
+      'en_projects',
+      B.DB.get('en_projects').filter((p) => p.id !== 2),
+    );
     await tick(400);
     check('R1 concurrent deletes: server list lost both', same(srvIds(srv), [3, 4]), JSON.stringify(srvIds(srv)));
-    check('R1 concurrent deletes: server deletion records hold both ids', same(tombIds(srv), [1, 2]), JSON.stringify(tombIds(srv)));
-    check('R1 concurrent deletes: no modal on either side', mA.length === 0 && mB.length === 0, 'A=' + mA.length + ' B=' + mB.length);
+    check(
+      'R1 concurrent deletes: server deletion records hold both ids',
+      same(tombIds(srv), [1, 2]),
+      JSON.stringify(tombIds(srv)),
+    );
+    check(
+      'R1 concurrent deletes: no modal on either side',
+      mA.length === 0 && mB.length === 0,
+      'A=' + mA.length + ' B=' + mB.length,
+    );
     const A2 = await boot({ host: NETLIFY, signedIn: true, server: srv, reuse: A });
     const B2 = await boot({ host: NETLIFY, signedIn: true, server: srv, reuse: B });
-    check('R1 both browsers show [3,4] after reload', same(ids(A2.DB.get('en_projects')), [3, 4]) && same(ids(B2.DB.get('en_projects')), [3, 4]), JSON.stringify(ids(A2.DB.get('en_projects'))) + JSON.stringify(ids(B2.DB.get('en_projects'))));
+    check(
+      'R1 both browsers show [3,4] after reload',
+      same(ids(A2.DB.get('en_projects')), [3, 4]) && same(ids(B2.DB.get('en_projects')), [3, 4]),
+      JSON.stringify(ids(A2.DB.get('en_projects'))) + JSON.stringify(ids(B2.DB.get('en_projects'))),
+    );
     check('R1 queue empty on both', A2.DB.getQueueDepth() === 0 && B2.DB.getQueueDepth() === 0, '');
+  });
+
+  // B1 (re-review): page globals hold the cache reference and are saved back as is.
+  // A merge must land INSIDE that reference, so the next page save keeps the other
+  // user's record (X1) and the other user's edit (X2).
+  await scenario('X1', async () => {
+    const srv = makeServer(four());
+    const { A, B } = await pair(srv);
+    const staleA = A.DB.get('en_projects'); // stands for the page global `projects` (core.js init)
+    B.DB.set('en_projects', B.DB.get('en_projects').concat([proj(5, 'P5-from-B')]));
+    await tick(300);
+    staleA[0].name = 'P1-edited-by-A';
+    A.DB.set('en_projects', staleA); // 409 -> merge brings P5 into A's list
+    await tick(400);
+    check(
+      'X1 merge lands in the page global (same reference)',
+      A.DB.get('en_projects') === staleA && same(ids(staleA), [1, 2, 3, 4, 5]),
+      JSON.stringify(ids(staleA)),
+    );
+    staleA[1].name = 'P2-edited-by-A';
+    A.DB.set('en_projects', staleA);
+    await tick(400);
+    check(
+      'X1 B project 5 survives A second edit from the page list',
+      srvIds(srv).includes(5) && same(tombIds(srv), []),
+      JSON.stringify(srvIds(srv)) + ' tomb ' + JSON.stringify(tombIds(srv)),
+    );
+  });
+  await scenario('X2', async () => {
+    const srv = makeServer(four());
+    const { A, B } = await pair(srv);
+    const staleA = A.DB.get('en_projects');
+    rename(B, 3, 'P3 by B');
+    await tick(300);
+    staleA[0].name = 'P1 by A';
+    A.DB.set('en_projects', staleA); // 409 -> merge brings B's P3 edit into A's list
+    await tick(400);
+    staleA[1].name = 'P2 by A';
+    A.DB.set('en_projects', staleA);
+    await tick(400);
+    const s = srv.rows.get('en_projects').value;
+    check(
+      'X2 other user edit survives a later save from the page list',
+      byId(s, 3).name === 'P3 by B' && byId(s, 1).name === 'P1 by A' && byId(s, 2).name === 'P2 by A',
+      JSON.stringify(s.map((p) => p.name)),
+    );
+  });
+  await scenario('X3', async () => {
+    const srv = makeServer(four());
+    const A = await boot({ host: NETLIFY, signedIn: true, server: srv });
+    const list = A.DB.get('en_projects');
+    list.splice(0, 1); // page deletes P1 in place and saves the same array
+    A.DB.set('en_projects', list);
+    await tick(200);
+    check(
+      'X3 in-place delete on the same reference still records the deletion',
+      same(srvIds(srv), [2, 3, 4]) && same(tombIds(srv), [1]),
+      JSON.stringify(srvIds(srv)) + ' tomb ' + JSON.stringify(tombIds(srv)),
+    );
+  });
+  await scenario('X4', async () => {
+    const ev = (name) => ({ date: '2026-10-05', name, type: 'holiday' });
+    const srv = makeServer({ en_dc_events: { events: [ev('E1')], viewYear: 2026, viewMonth: 9 } });
+    const { A, B } = await pair(srv);
+    const pageEvents = A.DB.get('en_dc_events').events; // district-calendar `dcEvents`
+    B.DB.set('en_dc_events', { events: [ev('E1'), ev('E2-from-B')], viewYear: 2026, viewMonth: 9 });
+    await tick(300);
+    pageEvents.push(ev('E3-from-A'));
+    A.DB.set('en_dc_events', { events: pageEvents, viewYear: 2026, viewMonth: 10 }); // 409 -> merge
+    await tick(400);
+    check(
+      'X4 calendar merge lands in the page events array',
+      pageEvents
+        .map((e) => e.name)
+        .sort()
+        .join(',') === 'E1,E2-from-B,E3-from-A',
+      pageEvents.map((e) => e.name).join(','),
+    );
+    A.DB.set('en_dc_events', { events: pageEvents, viewYear: 2026, viewMonth: 11 });
+    await tick(400);
+    const names = srv.rows
+      .get('en_dc_events')
+      .value.events.map((e) => e.name)
+      .sort()
+      .join(',');
+    check(
+      'X4 calendar: both users events on the server after a later page save',
+      names === 'E1,E2-from-B,E3-from-A',
+      names,
+    );
   });
 
   // Finding 2: restore from backup (sync on) must survive a stale browser.
@@ -876,13 +1010,34 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     const rows = await A.DB.restoreFetchServer(['en_projects']);
     const r = await A.DB.restorePush('en_projects', [proj(1, 'P1'), proj(2, 'P2')], rows.get('en_projects') || null);
     await tick(60);
-    check('R2 restorePush ok and server list has P1 again', r.ok && same(srvIds(srv), [1, 2]), JSON.stringify(r) + JSON.stringify(srvIds(srv)));
-    const C = await boot({ host: NETLIFY, signedIn: true, server: srv, idbSeed: { en_projects: [proj(1, 'P1'), proj(2, 'P2')] } }); // stale, never synced
+    check(
+      'R2 restorePush ok and server list has P1 again',
+      r.ok && same(srvIds(srv), [1, 2]),
+      JSON.stringify(r) + JSON.stringify(srvIds(srv)),
+    );
+    const C = await boot({
+      host: NETLIFY,
+      signedIn: true,
+      server: srv,
+      idbSeed: { en_projects: [proj(1, 'P1'), proj(2, 'P2')] },
+    }); // stale, never synced
     await tick(200);
-    check('R2 stale browser after restore: server still has P1', same(srvIds(srv), [1, 2]), JSON.stringify(srvIds(srv)));
-    check('R2 stale browser local has P1', same(ids(C.DB.get('en_projects')), [1, 2]), JSON.stringify(ids(C.DB.get('en_projects'))));
+    check(
+      'R2 stale browser after restore: server still has P1',
+      same(srvIds(srv), [1, 2]),
+      JSON.stringify(srvIds(srv)),
+    );
+    check(
+      'R2 stale browser local has P1',
+      same(ids(C.DB.get('en_projects')), [1, 2]),
+      JSON.stringify(ids(C.DB.get('en_projects'))),
+    );
     const A2 = await boot({ host: NETLIFY, signedIn: true, server: srv, reuse: A });
-    check('R2 restoring browser still has P1 after reload', same(ids(A2.DB.get('en_projects')), [1, 2]), JSON.stringify(ids(A2.DB.get('en_projects'))));
+    check(
+      'R2 restoring browser still has P1 after reload',
+      same(ids(A2.DB.get('en_projects')), [1, 2]),
+      JSON.stringify(ids(A2.DB.get('en_projects'))),
+    );
   });
 
   // Finding 3: deletion-record fetch fails -> no merge/upload of lists until it succeeds.
@@ -895,35 +1050,58 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     const putsBefore = srv.puts.length;
     let statusEvents = [];
     const C = await boot({
-      host: NETLIFY, signedIn: true, server: srv,
+      host: NETLIFY,
+      signedIn: true,
+      server: srv,
       idbSeed: { en_projects: [proj(1, 'P1'), proj(2, 'P2')] },
       onCtx: (c) => c.addEventListener('dbDeletionRecordsStatus', (e) => statusEvents.push(e.detail)),
     });
     await tick(300);
-    check('R3 fetch 500: no PUT of the list, server keeps P1 deleted', srv.puts.length === putsBefore && same(srvIds(srv), [2]), 'puts=' + (srv.puts.length - putsBefore) + ' ' + JSON.stringify(srvIds(srv)));
+    check(
+      'R3 fetch 500: no PUT of the list, server keeps P1 deleted',
+      srv.puts.length === putsBefore && same(srvIds(srv), [2]),
+      'puts=' + (srv.puts.length - putsBefore) + ' ' + JSON.stringify(srvIds(srv)),
+    );
     const st = await C.DB.getSyncStatus();
-    check('R3 fetch 500: sync status reports the blocked deletion records', st.deletionRecords && st.deletionRecords.ok === false && statusEvents.some((e) => e.ok === false), JSON.stringify(st.deletionRecords));
+    check(
+      'R3 fetch 500: sync status reports the blocked deletion records',
+      st.deletionRecords && st.deletionRecords.ok === false && statusEvents.some((e) => e.ok === false),
+      JSON.stringify(st.deletionRecords),
+    );
     srv.failGetKeys = null;
     await tick(5600); // first retry after 5 s
-    check('R3 after the server recovers: records loaded, stale list merged, P1 stays deleted', same(ids(C.DB.get('en_projects')), [2]) && same(srvIds(srv), [2]) && statusEvents.some((e) => e.ok === true), JSON.stringify(ids(C.DB.get('en_projects'))) + ' ' + JSON.stringify(statusEvents.map((e) => e.ok)));
+    check(
+      'R3 after the server recovers: records loaded, stale list merged, P1 stays deleted',
+      same(ids(C.DB.get('en_projects')), [2]) && same(srvIds(srv), [2]) && statusEvents.some((e) => e.ok === true),
+      JSON.stringify(ids(C.DB.get('en_projects'))) + ' ' + JSON.stringify(statusEvents.map((e) => e.ok)),
+    );
   });
 
   // Finding 4: deletion records hold stamps only and expire after 90 days.
   await scenario('R4', async () => {
     const old = Date.now() - 91 * 24 * 3600 * 1000;
-    const srv = makeServer({ en_projects: [proj(1, 'P1'), proj(2, 'P2')], en_deleted_records: { en_projects: { 9: { t: old, item: proj(9, 'old') } } } });
+    const srv = makeServer({
+      en_projects: [proj(1, 'P1'), proj(2, 'P2')],
+      en_deleted_records: { en_projects: { 9: { t: old, item: proj(9, 'old') } } },
+    });
     const A = await boot({ host: NETLIFY, signedIn: true, server: srv });
     A.DB.set('en_projects', [proj(2, 'P2')]);
     await tick(100);
     const t = srv.rows.get('en_deleted_records').value;
-    check('R4 shared record: stamp only, 91-day-old entry pruned', t.en_projects && t.en_projects['1'] && t.en_projects['1'].item === undefined && t.en_projects['9'] === undefined, JSON.stringify(t));
+    check(
+      'R4 shared record: stamp only, 91-day-old entry pruned',
+      t.en_projects && t.en_projects['1'] && t.en_projects['1'].item === undefined && t.en_projects['9'] === undefined,
+      JSON.stringify(t),
+    );
     const kept = A.idb.data.get('ch_deleted_items') || {};
-    check('R4 local copy of the deleted item kept (90 days)', kept.en_projects && kept.en_projects['1'] && kept.en_projects['1'].item.name === 'P1', JSON.stringify(kept));
+    check(
+      'R4 local copy of the deleted item kept (90 days)',
+      kept.en_projects && kept.en_projects['1'] && kept.en_projects['1'].item.name === 'P1',
+      JSON.stringify(kept),
+    );
   });
 
   // Finding 5 (core goal): two users edit at the same time.
-  const rename = (b, id, name) => b.DB.set('en_projects', JSON.parse(JSON.stringify(b.DB.get('en_projects'))).map((p) => (p.id === id ? Object.assign({}, p, { name }) : p)));
-  const byId = (list, id) => (list || []).find((p) => p.id === id);
   await scenario('R5', async () => {
     const srv = makeServer(four());
     const { A, B, mA, mB } = await pair(srv);
@@ -931,38 +1109,88 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     rename(B, 2, 'P2 by B');
     await tick(400);
     const s = srv.rows.get('en_projects').value;
-    check('R5 different projects at once: server has both edits', byId(s, 1).name === 'P1 by A' && byId(s, 2).name === 'P2 by B', JSON.stringify(s.map((p) => p.name)));
+    check(
+      'R5 different projects at once: server has both edits',
+      byId(s, 1).name === 'P1 by A' && byId(s, 2).name === 'P2 by B',
+      JSON.stringify(s.map((p) => p.name)),
+    );
     check('R5 different projects: no modal', mA.length === 0 && mB.length === 0, 'A=' + mA.length + ' B=' + mB.length);
     const A2 = await boot({ host: NETLIFY, signedIn: true, server: srv, reuse: A });
     const B2 = await boot({ host: NETLIFY, signedIn: true, server: srv, reuse: B });
-    const a = A2.DB.get('en_projects'), b = B2.DB.get('en_projects');
-    check('R5 both browsers hold both edits after reload', byId(a, 1).name === 'P1 by A' && byId(a, 2).name === 'P2 by B' && byId(b, 1).name === 'P1 by A' && byId(b, 2).name === 'P2 by B', JSON.stringify(a.map((p) => p.name)) + JSON.stringify(b.map((p) => p.name)));
-    check('R5 nothing archived as lost', A2.DB.getConflictArchive().length === 0 && B2.DB.getConflictArchive().length === 0, A2.DB.getConflictArchive().length + '/' + B2.DB.getConflictArchive().length);
+    const a = A2.DB.get('en_projects'),
+      b = B2.DB.get('en_projects');
+    check(
+      'R5 both browsers hold both edits after reload',
+      byId(a, 1).name === 'P1 by A' &&
+        byId(a, 2).name === 'P2 by B' &&
+        byId(b, 1).name === 'P1 by A' &&
+        byId(b, 2).name === 'P2 by B',
+      JSON.stringify(a.map((p) => p.name)) + JSON.stringify(b.map((p) => p.name)),
+    );
+    check(
+      'R5 nothing archived as lost',
+      A2.DB.getConflictArchive().length === 0 && B2.DB.getConflictArchive().length === 0,
+      A2.DB.getConflictArchive().length + '/' + B2.DB.getConflictArchive().length,
+    );
   });
   await scenario('R5b', async () => {
     const srv = makeServer(four());
     const { A, B, mA, mB } = await pair(srv);
     rename(A, 1, 'P1 by A');
-    B.DB.set('en_projects', JSON.parse(JSON.stringify(B.DB.get('en_projects'))).map((p) => (p.id === 1 ? Object.assign({}, p, { client: 'Client by B' }) : p)));
+    B.DB.set(
+      'en_projects',
+      JSON.parse(JSON.stringify(B.DB.get('en_projects'))).map((p) =>
+        p.id === 1 ? Object.assign({}, p, { client: 'Client by B' }) : p,
+      ),
+    );
     await tick(400);
     const s1 = byId(srv.rows.get('en_projects').value, 1);
-    check('R5b same project, different fields: both fields on the server, no modal', s1.name === 'P1 by A' && s1.client === 'Client by B' && mA.length === 0 && mB.length === 0, JSON.stringify(s1) + ' modals=' + (mA.length + mB.length));
+    check(
+      'R5b same project, different fields: both fields on the server, no modal',
+      s1.name === 'P1 by A' && s1.client === 'Client by B' && mA.length === 0 && mB.length === 0,
+      JSON.stringify(s1) + ' modals=' + (mA.length + mB.length),
+    );
   });
   await scenario('R5c', async () => {
     const srv = makeServer(four());
-    const answer = (d) => ({ action: 'records', choices: Object.fromEntries(d.records.map((r) => [String(r.id), 'mine'])) });
+    const answer = (d) => ({
+      action: 'records',
+      choices: Object.fromEntries(d.records.map((r) => [String(r.id), 'mine'])),
+    });
     const { A, B, mA, mB } = await pair(srv, answer, answer);
     rename(A, 1, 'P1 by A');
     rename(B, 1, 'P1 by B');
     await tick(400);
     const m = mA.concat(mB);
-    check('R5c same field on both sides: one per-record prompt, only that record listed', m.length === 1 && m[0].conflictClass === 'records' && m[0].records.length === 1 && String(m[0].records[0].id) === '1' && same(m[0].records[0].fields, ['name']), JSON.stringify(m.map((d) => d.conflictClass + ':' + (d.records || []).map((r) => r.id))));
+    check(
+      'R5c same field on both sides: one per-record prompt, only that record listed',
+      m.length === 1 &&
+        m[0].conflictClass === 'records' &&
+        m[0].records.length === 1 &&
+        String(m[0].records[0].id) === '1' &&
+        same(m[0].records[0].fields, ['name']),
+      JSON.stringify(m.map((d) => d.conflictClass + ':' + (d.records || []).map((r) => r.id))),
+    );
     const loser = m.length === 1 ? (mA.length ? B : A) : null; // the side that did not get the prompt
     const winner = m.length === 1 ? (mA.length ? A : B) : null;
     const s1 = byId(srv.rows.get('en_projects').value, 1);
-    check('R5c "keep mine" wins on the server', winner && s1.name === (winner === A ? 'P1 by A' : 'P1 by B'), JSON.stringify(s1));
+    check(
+      'R5c "keep mine" wins on the server',
+      winner && s1.name === (winner === A ? 'P1 by A' : 'P1 by B'),
+      JSON.stringify(s1),
+    );
     const arch = winner ? winner.DB.getConflictArchive() : [];
-    check('R5c the other version is archived (record-conflict), nothing silently dropped', loser && arch.some((e) => e.reason === 'record-conflict' && e.losingValue && e.losingValue.name === (loser === A ? 'P1 by A' : 'P1 by B')), JSON.stringify(arch.map((e) => e.reason + ':' + (e.losingValue && e.losingValue.name))));
+    check(
+      'R5c the other version is archived (record-conflict), nothing silently dropped',
+      loser &&
+        arch.some(
+          (e) =>
+            e.reason === 'record-conflict' &&
+            e.losingValue &&
+            e.losingValue.name === (loser === A ? 'P1 by A' : 'P1 by B'),
+        ),
+      JSON.stringify(arch.map((e) => e.reason + ':' + (e.losingValue && e.losingValue.name))),
+    );
     check('R5c other projects untouched', same(srvIds(srv), [1, 2, 3, 4]), JSON.stringify(srvIds(srv)));
   });
 
@@ -970,20 +1198,36 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   await scenario('R9', async () => {
     const srv = makeServer(four());
     const { A, B, mA } = await pair(srv);
-    B.DB.set('en_projects', B.DB.get('en_projects').filter((p) => p.id !== 1)); // B deletes P1
+    B.DB.set(
+      'en_projects',
+      B.DB.get('en_projects').filter((p) => p.id !== 1),
+    ); // B deletes P1
     await tick(120);
     rename(A, 1, 'P1 edited by A'); // A still holds P1
     await tick(300);
     const arch = A.DB.getConflictArchive();
-    check('R9 stale edit of a deleted project: archived as deleted-elsewhere, no modal', mA.length === 0 && arch.some((e) => e.reason === 'deleted-elsewhere' && JSON.stringify(e.losingValue).indexOf('P1 edited by A') !== -1), 'modals=' + mA.length + ' ' + JSON.stringify(arch.map((e) => e.reason)));
-    check('R9 P1 stays deleted on the server and locally', same(srvIds(srv), [2, 3, 4]) && same(ids(A.DB.get('en_projects')), [2, 3, 4]), JSON.stringify(srvIds(srv)) + JSON.stringify(ids(A.DB.get('en_projects'))));
+    check(
+      'R9 stale edit of a deleted project: archived as deleted-elsewhere, no modal',
+      mA.length === 0 &&
+        arch.some(
+          (e) => e.reason === 'deleted-elsewhere' && JSON.stringify(e.losingValue).indexOf('P1 edited by A') !== -1,
+        ),
+      'modals=' + mA.length + ' ' + JSON.stringify(arch.map((e) => e.reason)),
+    );
+    check(
+      'R9 P1 stays deleted on the server and locally',
+      same(srvIds(srv), [2, 3, 4]) && same(ids(A.DB.get('en_projects')), [2, 3, 4]),
+      JSON.stringify(srvIds(srv)) + JSON.stringify(ids(A.DB.get('en_projects'))),
+    );
   });
 
   // Finding 6: a modal resolved after a user switch writes nothing.
   await scenario('R6', async () => {
     const srv = makeServer(SEED());
     const b = await boot({
-      host: NETLIFY, signedIn: true, server: srv,
+      host: NETLIFY,
+      signedIn: true,
+      server: srv,
       onCtx: (c) => {
         c.window.SyncConflictUI = {
           showConflictModal: async () => {
@@ -1000,10 +1244,22 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     const putsBefore = srv.puts.length;
     b.DB.set('en_budget_a', { n: 'MINE' });
     await tick(400);
-    const puts = srv.puts.slice(putsBefore).map((p) => JSON.parse(p)).filter((p) => p.key === 'en_budget_a');
-    check('R6 overwrite chosen after a user switch: nothing sent, server untouched', puts.length === 1 && same(srv.rows.get('en_budget_a').value, { n: 'OTHER-DEVICE' }), puts.length + ' PUTs (1 = the original 409 attempt)');
+    const puts = srv.puts
+      .slice(putsBefore)
+      .map((p) => JSON.parse(p))
+      .filter((p) => p.key === 'en_budget_a');
+    check(
+      'R6 overwrite chosen after a user switch: nothing sent, server untouched',
+      puts.length === 1 && same(srv.rows.get('en_budget_a').value, { n: 'OTHER-DEVICE' }),
+      puts.length + ' PUTs (1 = the original 409 attempt)',
+    );
     // The new identity's own hydration pulled the server value; the local edit is archived, not lost.
-    check('R6 new identity holds the server value, the old edit is archived', same(b.DB.get('en_budget_a'), { n: 'OTHER-DEVICE' }) && b.DB.getConflictArchive().some((e) => same(e.losingValue, { n: 'MINE' })), JSON.stringify(b.DB.get('en_budget_a')));
+    check(
+      'R6 new identity holds the server value, the old edit is archived',
+      same(b.DB.get('en_budget_a'), { n: 'OTHER-DEVICE' }) &&
+        b.DB.getConflictArchive().some((e) => same(e.losingValue, { n: 'MINE' })),
+      JSON.stringify(b.DB.get('en_budget_a')),
+    );
   });
 
   // Finding 7: stale upload workers never touch the new identity's progress counter.
@@ -1018,7 +1274,11 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     b.ctx.window.dispatchEvent({ type: 'chAuthStateChanged' });
     await tick(900);
     const p = b.DB.getUploadProgress();
-    check('R7 progress after the switch belongs to the new identity (no stale increments)', p.running === false && p.done <= p.total, JSON.stringify(p));
+    check(
+      'R7 progress after the switch belongs to the new identity (no stale increments)',
+      p.running === false && p.done <= p.total,
+      JSON.stringify(p),
+    );
   });
 
   // Hardening: a batch-GET row that was not requested is ignored (no junk cache key).

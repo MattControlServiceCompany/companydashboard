@@ -79,6 +79,8 @@
       'border-radius:6px;padding:8px 10px;margin:0 0 8px;display:flex;flex-wrap:wrap;gap:4px 16px;align-items:center;}' +
       '.ch-conflict-rec-name{flex-basis:100%;font-weight:600;color:var(--text,#fff);}' +
       '.ch-conflict-rec label{color:var(--text,#fff);cursor:pointer;display:inline-flex;gap:6px;align-items:center;}' +
+      '.ch-conflict-field{flex-basis:100%;padding:4px 8px;margin-bottom:4px;background:var(--s2,#181d2e);' +
+      'border:1px solid var(--border,#333);border-radius:4px;color:var(--text,#fff);overflow-wrap:anywhere;}' +
       '.ch-conflict-typed{margin-top:4px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;' +
       'justify-content:flex-end;width:100%;}' +
       '.ch-conflict-typed input{flex:1;min-width:140px;padding:6px 8px;border-radius:4px;' +
@@ -288,6 +290,22 @@
     ['en_alarms_', 'this alarm log'],
     ['en_hours_', 'this hours log'],
     ['en_budget_', 'this budget data'],
+    ['en_customers', 'the customer list'],
+    ['en_deleted_records', 'the deletion records'],
+    ['en_presented_savings', 'the presented-to-client savings marks'],
+    ['en_agreement_', 'this service agreement setup'],
+    ['en_value_corrections', 'the value corrections log'],
+    ['en_wdd_', 'this weather data'],
+    ['bldgperf_cfg_', 'a building performance chart setting'],
+    ['bldgsavproj_cfg_', 'a building savings projection setting'],
+    ['en_bills_zoom_', 'a bill table zoom setting'],
+    ['en_sv_matrix_zoom_', 'a matrix zoom setting'],
+    ['en_em_zoom', 'the equipment matrix zoom setting'],
+    ['en_perf_zoom', 'the performance table zoom setting'],
+    ['audit_estimate_config', 'the audit estimate assumptions'],
+    ['ems_leads_v1', 'the EMS leads list'],
+    ['sv_', 'this service department data'],
+    ['ch_', 'a personal display setting'],
   ];
   function friendlyKeyName(key) {
     if (FRIENDLY_KEY_NAMES[key]) return FRIENDLY_KEY_NAMES[key];
@@ -295,6 +313,13 @@
       if (key.indexOf(FRIENDLY_KEY_PREFIXES[i][0]) === 0) return FRIENDLY_KEY_PREFIXES[i][1];
     }
     return 'this item';
+  }
+
+  // One short, readable line for a field value in the conflict modal.
+  function _shortValue(v) {
+    if (v === undefined || v === null || v === '') return '(empty)';
+    var s = typeof v === 'object' ? JSON.stringify(v) : String(v);
+    return s.length > 160 ? s.slice(0, 157) + '...' : s;
   }
 
   function fmtDate(iso) {
@@ -406,13 +431,22 @@
         '). Everything else was merged already. Choose which version to keep for each item. ' +
         'The version you do not keep stays in the conflict history.</p>';
       recs.forEach(function (r, i) {
-        var fields = (r.fields || []).join(', ');
+        var fields = r.fields || [];
+        html += '<div class="ch-conflict-rec">' + '<div class="ch-conflict-rec-name">' + esc(r.label) + '</div>';
+        // Both values of every field changed on both sides, so the choice is informed.
+        fields.forEach(function (f) {
+          html +=
+            '<div class="ch-conflict-field"><div class="ch-conflict-meta">' +
+            esc(f) +
+            '</div>' +
+            '<div><span class="ch-conflict-meta">Theirs: </span>' +
+            esc(_shortValue(r.server && r.server[f])) +
+            '</div>' +
+            '<div><span class="ch-conflict-meta">Mine: </span>' +
+            esc(_shortValue(r.local && r.local[f])) +
+            '</div></div>';
+        });
         html +=
-          '<div class="ch-conflict-rec">' +
-          '<div class="ch-conflict-rec-name">' +
-          esc(r.label) +
-          '</div>' +
-          (fields ? '<div class="ch-conflict-meta">Changed on both sides: ' + esc(fields) + '</div>' : '') +
           '<label><input type="radio" name="ch-conflict-rec-' +
           i +
           '" value="theirs" checked> Keep theirs</label>' +
@@ -839,11 +873,10 @@
       var name = document.createElement('div');
       name.className = 'ch-sync-status-key-name';
       name.textContent = friendlyKeyName(k.key);
+      row.title = k.key; // the internal name only on hover, never in the row text
       var meta = document.createElement('div');
       meta.className = 'ch-conflict-meta';
       meta.textContent =
-        k.key +
-        ' — ' +
         _keyStateLabel(state) +
         (k.deleted ? ' (deleted)' : '') +
         ' — local v' +
