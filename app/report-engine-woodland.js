@@ -395,13 +395,6 @@ function _wdOptionMeasures(p, bldgId) {
   });
 }
 
-function _wdDaysInMonth(ym) {
-  var parts = (ym || '').split('-');
-  var y = parseInt(parts[0], 10),
-    m = parseInt(parts[1], 10);
-  if (!y || !m) return 30;
-  return new Date(y, m, 0).getDate();
-}
 // Billing days printed on the bill. A blank or zero field is MISSING: null, never the calendar days
 // of the month (WP-08). Callers print "-" and leave it out of the Total row.
 function _wdBillDays(bill) {
@@ -1761,7 +1754,7 @@ function rptPageWoodlandBaseline(n, d) {
     bl.months.forEach(function (ym) {
       var moIdx = parseInt(ym.split('-')[1], 10) - 1;
       var moLabel = WOODLAND_MO_FULL[moIdx] + ' ' + ym.split('-')[0];
-      var days = _wdDaysInMonth(ym);
+      var days = calDaysInMonth(ym);
       var wx = d.wxByYm[ym] || { hdd: 0, cdd: 0 };
       var hddR = _wdRoundHalfUp(wx.hdd || 0, 0);
       var cddR = _wdRoundHalfUp(wx.cdd || 0, 0);
@@ -2924,7 +2917,7 @@ async function exportWoodlandReportToXlsx(data) {
     styleHeaderRow(hRow3);
     var firstDataRow3 = ws2.rowCount + 1;
     data.elecBL.months.forEach(function (ym) {
-      var days = _wdDaysInMonth(ym);
+      var days = calDaysInMonth(ym);
       var wx = data.wxByYm[ym] || { hdd: 0, cdd: 0 };
       var hddR = _wdRoundHalfUp(wx.hdd || 0, 0);
       var cddR = _wdRoundHalfUp(wx.cdd || 0, 0);

@@ -23,6 +23,7 @@ const fixISO = (d) => {
 };
 const ctx = { _parseISO: (d) => new Date(fixISO(d) + 'T12:00:00'), console };
 vm.createContext(ctx);
+vm.runInContext(fs.readFileSync(path.join(REPO, 'lib/date-helpers.js'), 'utf8'), ctx);
 vm.runInContext(
   fs.readFileSync(path.join(REPO, 'computations/normalization.js'), 'utf8') + '\nthis.normMonth = normMonth;',
   ctx,

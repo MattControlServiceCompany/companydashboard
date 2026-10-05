@@ -76,7 +76,6 @@ const sandbox = { console };
 vm.createContext(sandbox);
 
 const stubs = [
-  "function calDaysInMonth(ym){const [y,m]=ym.split('-').map(Number);return new Date(y,m,0).getDate();}",
   'function getStoredRate(){return 0;}',
   'var udSelProjId = null;',
   'function getUDProj(){ return {}; }',
@@ -111,6 +110,8 @@ const savingsSrc = fs.readFileSync(REPO + '/computations/savings.js', 'utf8');
 
 vm.runInContext(
   stubs +
+    '\n' +
+    fs.readFileSync(REPO + '/lib/date-helpers.js', 'utf8') +
     '\n' +
     fns.join('\n\n') +
     '\n\n' +

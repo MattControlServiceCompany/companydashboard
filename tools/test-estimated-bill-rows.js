@@ -86,6 +86,12 @@ vm.runInContext(
     "const _MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];",
   sandbox,
 );
+vm.runInContext(
+  fs.readFileSync(REPO + '/lib/date-helpers.js', 'utf8') +
+    '\n' +
+    fs.readFileSync(REPO + '/computations/normalization.js', 'utf8'),
+  sandbox,
+);
 vm.runInContext(fns.join('\n\n'), sandbox);
 
 console.log('=== 1. computeLiveBillFlags — an estimated bill is never flagged / never counted ===');
@@ -181,7 +187,10 @@ console.log('=== 2. One day-count method — Spring Hill High June-2025 gap (202
     const gd = sandbox.calcDays('2025-05-20', '2025-06-19', incl);
     const pd = sandbox.calcDays('2025-04-21', '2025-05-20', incl);
     const nd = sandbox.calcDays('2025-06-19', '2025-07-21', incl);
-    assert(gd === (incl ? 31 : 30) && pd === (incl ? 30 : 29) && nd === (incl ? 33 : 32), 'SHH days ' + (incl ? 'Inclusive' : 'Exclusive') + ': gap ' + gd + ', prev ' + pd + ', next ' + nd);
+    assert(
+      gd === (incl ? 31 : 30) && pd === (incl ? 30 : 29) && nd === (incl ? 33 : 32),
+      'SHH days ' + (incl ? 'Inclusive' : 'Exclusive') + ': gap ' + gd + ', prev ' + pd + ', next ' + nd,
+    );
   });
   // Regression guard: the gap-line day count in app/utility-data.js and the estimate-row day
   // count in app/csv-import.js must both go through calcDays (the one shared, toggle-aware
@@ -232,7 +241,10 @@ console.log('=== 3. Estimate precision + cost (synthetic; Matt 2026-09-29) ===')
     const real = [prev, next, other];
     assert(sandbox._storedDecimals('1000.1000') === 1, 'padding zeros do not count: "1000.1000" -> 1 dp');
     assert(sandbox._storedDecimals('112252.4400') === 2, '"112252.4400" -> 2 dp');
-    assert(sandbox._storedDecimals('12') === 0 && sandbox._storedDecimals('12.50') === 1, 'integer 0 dp, 12.50 is 1 dp');
+    assert(
+      sandbox._storedDecimals('12') === 0 && sandbox._storedDecimals('12.50') === 1,
+      'integer 0 dp, 12.50 is 1 dp',
+    );
     assert(sandbox._usageColDecimals(real, 'kwh') === 2, 'column decimals = max meaningful among real rows (2)');
     assert(
       sandbox._usageColDecimals([...real, { kwh: '9.12345678', estimated: true }], 'kwh') === 2,
@@ -264,7 +276,10 @@ console.log('=== 3. Estimate precision + cost (synthetic; Matt 2026-09-29) ===')
       'every kWh row shows exactly 2 decimals: ' + shown.join(' | '),
     );
     assert(shown[1] === '1,500.20', 'estimate shows 1,500.20 (got ' + shown[1] + ')');
-    assert(sandbox._billFormatValue('12.5', { type: 'number', key: 'kwh' }, () => 2) === '12.50', '12.5 shows as 12.50');
+    assert(
+      sandbox._billFormatValue('12.5', { type: 'number', key: 'kwh' }, () => 2) === '12.50',
+      '12.5 shows as 12.50',
+    );
 
     // Extractor: Evergy page-1 "Previously Billed" line.
     const pb = sandbox.parseEvergyPreviouslyBilled;
@@ -275,7 +290,10 @@ console.log('=== 3. Estimate precision + cost (synthetic; Matt 2026-09-29) ===')
     assert(pb('Payment Received 07/07 - Thank you  -$9.00') === null, 'no Previously Billed line -> null');
   }
   const bcr = fs.readFileSync(path.join(REPO, 'app/bill-corrections-review.js'), 'utf8');
-  assert(/_bcrScanEvergyPreviouslyBilled,\s*\n\s*_bcrScanStatisticalFlags/.test(bcr), 'Review Bill Corrections runs the Previously Billed scan');
+  assert(
+    /_bcrScanEvergyPreviouslyBilled,\s*\n\s*_bcrScanStatisticalFlags/.test(bcr),
+    'Review Bill Corrections runs the Previously Billed scan',
+  );
   const ba = fs.readFileSync(path.join(REPO, 'app/bill-analysis.js'), 'utf8');
   assert(/previouslyBilled: extracted\.PreviouslyBilled/.test(ba), 'extracted PreviouslyBilled is saved on the bill');
   assert(/fields: \['PreviouslyBilled'\]/.test(ba), 'extraction detail shows Previously Billed (Charges section)');

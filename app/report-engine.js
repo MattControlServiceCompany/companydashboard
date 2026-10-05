@@ -905,6 +905,9 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
         normMonth(bill.start, bill.end, m.inclusive !== false, bills) || (bill.start ? bill.start.substring(0, 7) : '');
       if (!reportYMs.includes(_billYm)) return;
       rawBills.push({
+        // Month of THIS bill within its own meter's bill chain. Appendix D groups by this value and never
+        // re-runs month assignment on the pooled bills of several meters (WP-09).
+        ym: _billYm,
         building: b.name || '—',
         commodity: m.commodity,
         provider: m.provider || bill.provider || '—',
@@ -8587,10 +8590,6 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
     'November',
     'December',
   ];
-  function _daysInMonth(ym) {
-    var p = ym.split('-');
-    return new Date(parseInt(p[0]), parseInt(p[1]), 0).getDate();
-  }
 
   var regressionExplainer =
     '<div contenteditable="true" style="padding:10px 14px;font-size:11px;line-height:1.7;color:var(--rpt-page-text);margin-bottom:12px">' +
@@ -8818,7 +8817,7 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
         var ym = entry.ym || '';
         var moIdx = ym ? parseInt(ym.split('-')[1], 10) - 1 : -1;
         var moName = moIdx >= 0 ? MO_FULL[moIdx] : ym;
-        var days = ym ? _daysInMonth(ym) : 30;
+        var days = ym ? calDaysInMonth(ym) : 30;
         var wx = wxByYm[ym] || {};
 
         var hdd, cdd;
@@ -9353,6 +9352,19 @@ function rptPageAppendixWeather(n, d, appLetter) {
   return { html: page1 + page2, pageCount: 2 };
 }
 
+// Appendix D grouping: each raw bill carries its own month (bill.ym, assigned per meter in
+// collectReportData). Returns { 'YYYY-MM': [bills] } for the reported months only.
+function _rptBillsByPeriodMonth(rawBills, periodYMs) {
+  var byMonth = {};
+  periodYMs.forEach(function (ym) {
+    byMonth[ym] = [];
+  });
+  (rawBills || []).forEach(function (bill) {
+    if (byMonth[bill.ym]) byMonth[bill.ym].push(bill);
+  });
+  return byMonth;
+}
+
 function rptPageAppendixBills(n, d, appLetter) {
   appLetter = appLetter || 'D';
 
@@ -9380,16 +9392,7 @@ function rptPageAppendixBills(n, d, appLetter) {
   }
 
   // Build bill index per month from rawBills collected in collectReportData
-  var billsByMonth = {};
-  periodYMs.forEach(function (ym) {
-    billsByMonth[ym] = [];
-  });
-  (d.rawBills || []).forEach(function (bill) {
-    var ym = normMonth(bill.start, bill.end, true, d.rawBills || []) || (bill.start ? bill.start.substring(0, 7) : '');
-    if (billsByMonth[ym]) {
-      billsByMonth[ym].push(bill);
-    }
-  });
+  var billsByMonth = _rptBillsByPeriodMonth(d.rawBills || [], periodYMs);
 
   // fix/report-content-pagination (2026-07-28): this used to concatenate every reporting-period
   // month's bill table (each potentially listing every building's bills for that month, up to
@@ -9515,7 +9518,7 @@ function rptPageAppendixBills(n, d, appLetter) {
   var allBillImages = [];
   (d.rawBills || []).forEach(function (bill) {
     if (!bill.pdfImage) return;
-    var ym = normMonth(bill.start, bill.end, true, d.rawBills || []) || (bill.start ? bill.start.substring(0, 7) : '');
+    var ym = bill.ym || '';
     var parts = ym ? ym.split('-') : null;
     var moLabel = parts && parts.length === 2 ? monthNames[parseInt(parts[1], 10) - 1] + ' ' + parts[0] : '';
     allBillImages.push(

@@ -65,6 +65,7 @@ function buildSandbox() {
   vm.runInContext(
     `
     var projects = [];
+    function _parseISO(d) { return new Date(d + 'T12:00:00'); }
     function forEachCustomerBuilding(projectsList, fn) {
       (projectsList || []).forEach((p) => (p.buildings || p.buildings === 0 ? p.buildings : []).forEach((b) => fn(b, p)));
     }
@@ -82,7 +83,13 @@ function loadFile(sandbox, relPath) {
 
 function setup() {
   const { sandbox, bldgBarStub } = buildSandbox();
-  for (const p of ['lib/formatting.js', 'app/energy-savings.js', 'app/bill-analysis.js']) {
+  for (const p of [
+    'lib/formatting.js',
+    'lib/date-helpers.js',
+    'computations/normalization.js',
+    'app/energy-savings.js',
+    'app/bill-analysis.js',
+  ]) {
     loadFile(sandbox, p);
   }
   return { sandbox, bldgBarStub };
