@@ -680,23 +680,9 @@ function importBillCsvRows() {
   // the missing quantity, computed from this meter's own billed/demand kW history — never a
   // fabricated constant — and never overwrites a real facKW value already on the row.
   _backfillCsvFacilitiesKW(m);
-  // Run validation on all newly-imported/updated bills so _flags are persisted immediately
-  if (typeof runBillValidation === 'function') {
-    _csvImportRows.forEach((r) => {
-      const addedBill = m.bills.find((b) => b.start === r.start);
-      if (addedBill) runBillValidation(m, addedBill);
-    });
-  }
-  // Must run AFTER runBillValidation (above), which replaces bill._flags wholesale —
-  // converts any bill._facKWMissing marker left by _backfillCsvFacilitiesKW into a
-  // persistent, site-UI-only flag (see _flagFacKWMissingBills below).
+  // Convert the facilities-kW marker left by _backfillCsvFacilitiesKW into a persistent, site-UI-only flag
+  // (see _flagFacKWMissingBills below). Other bill flags are live: computeMeterFlagSummary.
   _flagFacKWMissingBills(m);
-  // Run building-level cross-meter validation (water vs sewer parity, etc.)
-  // Uses the already-resolved `b` (not a fresh udSelProjId/udSelBldgId lookup) so it stays
-  // correct even when the fallback meter search above was needed.
-  if (typeof runBuildingValidation === 'function') {
-    runBuildingValidation(b);
-  }
   saveUtilityData();
   closeBillCsvModal();
   udActiveTab = 'bills';
@@ -792,8 +778,8 @@ function backfillFacilitiesKW(billsForMeter) {
 // _flagFacKWMissingBills(m) — converts any bill._facKWMissing marker left by
 // backfillFacilitiesKW() into a persistent bill._flags entry (id 'facKWMissing_warn') the
 // Bills tab already knows how to render. Site UI only — reports read the stored bill fields
-// directly and never render _flags, so this never reaches a client deliverable. Must run
-// AFTER runBillValidation, which replaces bill._flags wholesale on every validation pass.
+// directly and never render _flags, so this never reaches a client deliverable. All other bill flags are live
+// (computations/bill-flags.js) and never stored.
 function _flagFacKWMissingBills(m) {
   if (!m || !m.bills) return;
   const today = new Date().toISOString().slice(0, 10);
@@ -2785,16 +2771,6 @@ function saveBillRow() {
     showToast('Period added ✓');
   }
   m.bills.sort((a, b) => _parseISO(a.start) - _parseISO(b.start));
-  // Run validation on the saved bill to keep _flags current
-  if (typeof runBillValidation === 'function') {
-    const _savedBill = row || m.bills.find((b) => b.start === data.start) || m.bills[m.bills.length - 1];
-    if (_savedBill) runBillValidation(m, _savedBill);
-  }
-  // Run building-level cross-meter validation (water vs sewer parity, etc.)
-  if (typeof runBuildingValidation === 'function' && typeof getUDBldg === 'function') {
-    const _editBldg = getUDBldg(udSelProjId, udSelBldgId);
-    if (_editBldg) runBuildingValidation(_editBldg);
-  }
   saveUtilityData();
   closeBillModal();
   renderMeterWorkspace();

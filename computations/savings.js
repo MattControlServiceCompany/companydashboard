@@ -50,21 +50,65 @@ function projHasContract(projId) {
    (NaturalGasCCF). Converted values are rounded to 6 decimals, which
    removes float noise and changes no printed figure.
 ───────────────────────────────────────────────────────────── */
-function resolveGasUsageTherms(b) {
-  const num = (k) => parseBillNumber(b[k]) || parseBillNumber(b[k.charAt(0).toUpperCase() + k.slice(1)]);
-  const therms = num('therms') || num('naturalGasTherms');
-  if (therms) return therms;
-  const ccf = num('naturalGasCCF');
-  if (ccf) {
-    const printed = num('thermFactor');
-    const factor = printed > 1 && printed < 1.2 ? printed : UNIT_TO_BASE.CCF.factor;
-    return Math.round(ccf * factor * 1e6) / 1e6;
+function resolveGasUsageThermsOrNull(b) {
+  // null = no gas usage source on the bill at all (missing). 0 = a source says 0 and no source says more.
+  // The first source with a non-zero value wins (same numbers as before); this only adds "was it blank?".
+  const num = (k) => {
+    const lo = parseBillNumber(b[k]);
+    if (lo) return lo;
+    const up = parseBillNumber(b[k.charAt(0).toUpperCase() + k.slice(1)]);
+    return up || (lo === null ? up : lo);
+  };
+  const round6 = (v) => Math.round(v * 1e6) / 1e6;
+  const sources = [
+    () => num('therms'),
+    () => num('naturalGasTherms'),
+    () => {
+      const ccf = num('naturalGasCCF');
+      if (!ccf) return ccf;
+      const printed = num('thermFactor');
+      const factor = printed > 1 && printed < 1.2 ? printed : UNIT_TO_BASE.CCF.factor;
+      return round6(ccf * factor);
+    },
+    () => {
+      const mcf = num('naturalGasMCF');
+      return mcf ? round6(convertUnit(mcf, 'DTh', 'Therms', 'Gas')) : mcf;
+    },
+    () => {
+      const mmbtu = num('naturalGasMMbtu');
+      return mmbtu ? round6(convertUnit(mmbtu, 'MMBtu', 'Therms', 'Gas')) : mmbtu;
+    },
+    () => num('usage'),
+  ];
+  let sawValue = false;
+  for (const read of sources) {
+    const v = read();
+    if (v) return v;
+    if (v !== null) sawValue = true;
   }
-  const mcf = num('naturalGasMCF');
-  if (mcf) return Math.round(convertUnit(mcf, 'DTh', 'Therms', 'Gas') * 1e6) / 1e6;
-  const mmbtu = num('naturalGasMMbtu');
-  if (mmbtu) return Math.round(convertUnit(mmbtu, 'MMBtu', 'Therms', 'Gas') * 1e6) / 1e6;
-  return num('usage') || 0;
+  return sawValue ? 0 : null;
+}
+function resolveGasUsageTherms(b) {
+  const v = resolveGasUsageThermsOrNull(b);
+  return v === null ? 0 : v;
+}
+
+/* getBillUsageOrNull(bill, commodity): the one "usage of this bill, or null when blank" reader for the
+   bill-flag rules. null = missing, 0 = a real zero. Stormwater has no usage (flat charge). */
+function getBillUsageOrNull(bill, commodity) {
+  const first = (...vals) => {
+    for (const v of vals) {
+      const n = parseBillNumber(v);
+      if (n !== null) return n;
+    }
+    return null;
+  };
+  if (commodity === 'Electric') return parseBillNumber(bill.kwh);
+  if (commodity === 'Gas') return resolveGasUsageThermsOrNull(bill);
+  if (commodity === 'Water') return parseBillNumber(bill.waterUsage);
+  if (commodity === 'Sewer') return first(bill.sewerUsage, bill.waterUsage);
+  if (commodity === 'Propane') return first(bill.gallonsDelivered, bill.kwh);
+  return null;
 }
 
 /* ─────────────────────────────────────────────────────────────

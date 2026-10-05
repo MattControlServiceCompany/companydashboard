@@ -13,8 +13,8 @@
  *   3. Evergy RkVA rate OCR digit-misread (app/energy-savings.js
  *      _extractEvergy single-part rate cross-check).
  *   4. City of Louisburg account-number OCR misread.
- *   5. computeLiveBillFlags (extraction/bill-validation.js) — the same
- *      statistical-flag computation as the Utility Data building badge.
+ *   5. computeMeterFlagSummary (computations/bill-flags.js) — the same
+ *      flag computation as the Utility Data building badge, meter pill and banner.
  *
  * SYNTHETIC fixtures only — no real client data. Loads the REAL functions
  * (app/bill-corrections-review.js, extraction/bill-validation.js,
@@ -88,10 +88,15 @@ function loadFile(sandbox, relPath) {
 function setup() {
   const sandbox = buildSandbox();
   // Same load order as energy-department.html: bill-analysis before
-  // bill-validation (computeLiveBillFlags/dismissBillFlag) before utility-data.
+  // bill-validation (dismissBillFlag) before utility-data; computations/bill-flags.js
+  // (computeMeterFlagSummary) needs normalization.js and savings.js.
   for (const p of [
     'lib/formatting.js',
     'computations/rates.js',
+    'lib/date-helpers.js',
+    'computations/normalization.js',
+    'computations/savings.js',
+    'computations/bill-flags.js',
     'app/energy-savings.js',
     'app/bill-analysis.js',
     'extraction/bill-validation.js',

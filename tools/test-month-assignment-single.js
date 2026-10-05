@@ -1,7 +1,7 @@
 // tools/test-month-assignment-single.js - WP-09 (math-audit 2026-09-28): ONE month assignment.
 // Run: node tools/test-month-assignment-single.js
 // SYNTHETIC data only. Loads the REAL functions from the app files, never a copy.
-//   P2a  the bill-flag engine month (_billNormMonth) equals the keeper normMonth chain (Dec/Jan/Feb/Mar)
+//   P2a  the keeper normMonth chain gives Dec/Jan/Feb/Mar, and the bill-flag engine (computations/bill-flags.js) takes its month from it
 //   V1   Appendix D month grouping uses each bill's own per-meter month (ym), never a pooled re-run
 //   N1   project normBasis is found when the project id is a number in one place and a string in another
 //   N2   getNormRows day split: a reversed-date bill is excluded with a warning, a runaway period is capped
@@ -49,7 +49,6 @@ vm.runInContext(read('lib/date-helpers.js'), ctx);
 vm.runInContext(read('computations/normalization.js'), ctx);
 vm.runInContext(['_fixISO', '_parseISO'].map((n) => loadFn('app/utility-data.js', n)).join('\n'), ctx);
 for (const [file, fn] of [
-  ['app/bill-analysis.js', '_billNormMonth'],
   ['app/report-engine.js', '_rptBillsByPeriodMonth'],
 ]) {
   try {
@@ -69,12 +68,9 @@ for (const [file, fn] of [
   ];
   const chain = bills.map((b) => ctx.normMonth(b.start, b.end, true, bills));
   assert(chain.join() === '2025-12,2026-01,2026-02,2026-03', 'keeper chain Dec/Jan/Feb/Mar, got ' + chain.join());
-  const idx = bills.map((b) => (ctx._billNormMonth ? ctx._billNormMonth(b, bills) : 'missing'));
-  assert(idx.join() === '11,0,1,2', 'P2a _billNormMonth follows the keeper chain (11,0,1,2), got ' + idx.join());
-  assert(
-    ctx._billNormMonth && ctx._billNormMonth({ start: '', end: '' }, bills) === -1,
-    'P2a bill without dates returns -1',
-  );
+  const flagSrc = read('computations/bill-flags.js');
+  assert(/normMonth\(b\.start, b\.end, incl, sortedAll\)/.test(flagSrc), 'P2a the flag engine month is the keeper normMonth over the meter bills');
+  assert(!/function _billNormMonth|_monthToSeason/.test(read('app/bill-analysis.js')), 'P2a no second month rule in bill-analysis.js');
 }
 
 // V1: two meters, own months Jan/Feb/Mar each; Appendix D must keep them
@@ -147,11 +143,6 @@ for (const [file, fn] of [
     const src = read(f);
     for (const [re, what] of banned) assert(!re.test(src), 'G ' + f + ' still has ' + what);
   }
-  const ba = read('app/bill-analysis.js');
-  assert(
-    !/function _billNormMonth\([^)]*\)\s*\{[\s\S]{0,600}daysInStart/.test(ba),
-    'G _billNormMonth no longer holds a majority copy',
-  );
   const re = read('app/report-engine.js');
   assert(
     !/normMonth\(bill\.start, bill\.end, true, d\.rawBills/.test(re),

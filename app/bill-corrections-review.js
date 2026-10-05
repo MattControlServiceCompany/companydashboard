@@ -9,10 +9,9 @@
        digit, found by comparing it against the same meter's other bills.
      - Evergy: a single-digit OCR misread on the printed RkVA rate.
      - Evergy: the "Previously Billed" amount on a bill that follows a missing period.
-     - Every bill the Utility Data page's own statistical check
-       (_analyzeMeterBills, the same computation behind the "⚠ N review"
-       building badge and the "N billing period(s) flagged" banner) currently
-       flags as looking unusual next to that meter's own history.
+     - Every bill the shared bill-flag function (computeMeterFlagSummary,
+       computations/bill-flags.js) flags, the same function behind the "N review"
+       building badge, the meter pill and the "N bills flagged for review" banner.
 
    This file never rewrites a saved bill on its own. It shows a table of
    proposed changes / flagged bills and only writes a row Matt applies or
@@ -35,12 +34,11 @@
         present, or by their account number tracing back to one of the open
         project's own meters — anything that can't be matched to the open
         project is dropped, never shown.
-     2. ONE COMBINED LIST — the statistical "flagged for review" list is
-        computed by calling the EXACT SAME _analyzeMeterBills +
-        computeLiveBillFlags (extraction/bill-validation.js) that the "⚠ N
-        review" building badge and the bills-table banner already use, so
-        this panel's flagged count and the badge's count are the same
-        number by construction.
+     2. ONE COMBINED LIST — the "flagged for review" list is computed by
+        calling computeMeterFlagSummary (computations/bill-flags.js), the one
+        function the "N review" building badge, the meter pill and the
+        bills-table banner also call, so every count is the same number of
+        flagged BILLS by construction.
      3. NEVER LOSE PROGRESS — every bill's check result
         (bcr_result_<billId>_<scanId>__<fieldKey>) and every PDF page's read
         text (bcr_pdftext_<pdfKey>) is persisted the moment it's known, via
@@ -68,11 +66,11 @@
 
    Depends on globals already loaded earlier on this page: sget/sset (core.js),
    pdfLoad/pdfStore (core.js), extractPDFText/_postExtractionVerify
-   (bill-analysis.js), UTILITY_RULES (energy-savings.js), computeLiveBillFlags/
-   dismissBillFlag (extraction/bill-validation.js), saveUtilityData/
+   (bill-analysis.js), UTILITY_RULES (energy-savings.js), computeMeterFlagSummary
+   (computations/bill-flags.js), dismissBillFlag (extraction/bill-validation.js), saveUtilityData/
    logUtilityAudit/_auditCtxFromIds/_auditPeriodLabel/getUDBldgs/getUDMeter/
    meterLabel/openBillModal/udSelProjId/udSelBldgId (utility-data.js/
-   csv-import.js), _analyzeMeterBills (bill-analysis.js), showToast
+   csv-import.js), showToast
    (site-ui.js).
    ═══════════════════════════════════════════════════════════════════════ */
 
@@ -126,19 +124,6 @@ function _bcrBillLabel(projName, bldgName, meterLbl, bill) {
 function _bcrPlainBillLabel(bldgName, commodity) {
   const c = (commodity || '').toLowerCase();
   return (bldgName || 'this building') + (c ? ' ' + c : '') + ' bill';
-}
-// _analyzeMeterBills' flags carry the raw internal field name (e.g.
-// "totalCost", "thermCost") — humanize it for display in the statistical
-// "Flagged for review" table's Field column (camelCase -> spaced Title Case).
-// Plain-words rewrite only; the flag's own reason text is left exactly as
-// _analyzeMeterBills wrote it (that's the "same computation" this scan
-// reuses — see the SCAN 5 header comment).
-function _bcrHumanizeField(key) {
-  if (!key) return '';
-  const spaced = String(key)
-    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-    .replace(/_/g, ' ');
-  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 // Rough remaining-time phrase from a millisecond estimate. Returns '' when there
 // isn't enough information yet (first page of a PDF has no per-page rate to go on).
@@ -1540,34 +1525,21 @@ async function _bcrScanEvergyPreviouslyBilled(pid, proj, bldgs, ctl) {
 }
 
 /* ══════════════════════════════════════════════════════
-   SCAN 5 — statistical "flagged for review" bills (2026-09-25, new). Reuses
-   the EXACT SAME _analyzeMeterBills + computeLiveBillFlags computation the
-   Utility Data building badge ("⚠ N review") and bills-table banner already
-   use, so this list and that badge's count are the same number by
-   construction, not two independent computations that happen to agree.
+   SCAN 5 - "flagged for review" bills. Calls the ONE shared flag function
+   (computeMeterFlagSummary, computations/bill-flags.js), the same one the "N review"
+   building badge, the meter pill and the bills-table banner use, so this list and
+   those counts are the same number of bills by construction.
    ══════════════════════════════════════════════════════ */
 async function _bcrScanStatisticalFlags(pid, proj, bldgs, ctl) {
-  ctl.progress.phaseLabel = "Checking for unusual-looking numbers next to each meter's own history";
+  ctl.progress.phaseLabel = "Checking for bills that look wrong next to each meter's own history";
   ctl.progress.pageLine = '';
   ctl.progress.etaLine = '';
   bldgs.forEach((bldg) => {
     (bldg.meters || []).forEach((meter) => {
-      const bills = meter.bills || [];
-      if (bills.length < 4 || typeof _analyzeMeterBills !== 'function') return;
-      const sortFn =
-        typeof _parseISO === 'function'
-          ? (a, b) => _parseISO(a.start) - _parseISO(b.start)
-          : (a, b) => new Date(a.start) - new Date(b.start);
-      const sorted = bills.slice().sort(sortFn);
-      let live = {};
-      try {
-        live = _analyzeMeterBills(sorted, meter) || {};
-      } catch (e) {
-        return;
-      }
-      bills.forEach((bill) => {
-        const flags = typeof computeLiveBillFlags === 'function' ? computeLiveBillFlags(bill, live[bill.id] || []) : [];
-        if (!flags.length) return;
+      const summary = computeMeterFlagSummary(meter, bldg);
+      (meter.bills || []).forEach((bill) => {
+        const flags = summary.perBill[bill.id];
+        if (!flags || !flags.length) return;
         ctl.flagged.push({
           kind: 'flagged',
           _rowId: 'flag:' + bill.id,
@@ -1579,21 +1551,12 @@ async function _bcrScanStatisticalFlags(pid, proj, bldgs, ctl) {
           bldgName: bldg.name || bldg.addr || '',
           meterLabel: meterLabel(meter),
           period: _bcrPeriodLabel(bill.start, bill.end),
-          field: flags.map((f) => _bcrHumanizeField(f.field)).join(', '),
-          reason: flags
-            .map((f) => f.msg)
-            .filter(Boolean)
-            .join(' '),
+          field: [...new Set(flags.map((f) => f.label))].join(', '),
+          reason: flags.map((f) => f.message).join(' '),
           pdfKey: bill.pdfKey || null,
-          // Individual flag count on THIS bill — a bill can carry more than one
-          // simultaneous flag (e.g. a rate outlier AND a usage outlier), and
-          // this is what the "⚠ N review" building badge / bills-table banner
-          // actually count (flag INSTANCES, not distinct bills). One row is
-          // still shown per bill here for a usable table, but this field lets
-          // the panel's own displayed total match the badge's number exactly
-          // (2026-09-25 fix — see requirement 2 in the rebuild plan).
+          // Flag count on THIS bill: shown in hover text only. The number shown is flagged bills.
           flagCount: flags.length,
-          flagIds: flags.map((f) => f._persistFlag && f._persistFlag.id).filter(Boolean),
+          flagIds: [...new Set(flags.map((f) => f.dismissId))],
         });
       });
     });
@@ -1910,21 +1873,13 @@ function _bcrRenderProgress(ctl) {
     ' correction' +
     (ctl.rows.length === 1 ? '' : 's') +
     ', ' +
-    _bcrFlagInstanceTotal(ctl.flagged) +
+    ctl.flagged.length +
     ' flagged for review, ' +
     ctl.skipped.length +
     ' checked with no change needed.</div>' +
     '</div>'
   );
 }
-// The "⚠ N review" building badge / bills-table banner count individual FLAG
-// instances, not distinct bills (one bill can carry more than one flag at
-// once) — sum the same way here so the panel's own number matches theirs
-// exactly (2026-09-25 fix, requirement 2).
-function _bcrFlagInstanceTotal(flagged) {
-  return flagged.reduce((sum, r) => sum + (r.flagCount || 1), 0);
-}
-
 function _bcrRenderSummary(ctl) {
   if (!ctl.rows.length) return '';
   const { byField, byBuilding } = _bcrFieldCounts(ctl.rows);
@@ -2055,14 +2010,14 @@ function _bcrRenderFlagged(flagged) {
     '</span>' +
     '<span class="bcr-group-title">Flagged for review</span>' +
     '<span class="bcr-group-count">' +
-    _bcrFlagInstanceTotal(flagged) +
-    ' flag' +
-    (_bcrFlagInstanceTotal(flagged) === 1 ? '' : 's') +
-    ' on ' +
     flagged.length +
     ' bill' +
     (flagged.length === 1 ? '' : 's') +
-    " — numbers that look unusual next to that meter's own history</span>" +
+    ' flagged for review (' +
+    flagged.reduce((n, r) => n + r.flagCount, 0) +
+    ' flag' +
+    (flagged.reduce((n, r) => n + r.flagCount, 0) === 1 ? '' : 's') +
+    ')</span>' +
     '</div>' +
     '<div class="bcr-group-body' +
     (collapsed ? ' collapsed' : '') +

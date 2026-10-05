@@ -35,13 +35,6 @@ const _openMeterIds = new Set(); // tracks which meter cards are expanded
 let _vcmActive = false; // Value Correction Mode toggle state (Update a3a423eb)
 let _vcmKeyHandler = null; // module-level ref so Cancel/Save can remove it
 
-// Flag ids written directly to bill._flags (not produced by _analyzeMeterBills's live
-// recompute) that must still count/render in the Bills tab, meter pills, and building nav
-// badge: waterSewerParity_warn (_analyzeWaterSewerParity / runBuildingValidation) and
-// facKWMissing_warn (backfillFacilitiesKW / _flagFacKWMissingBills, app/csv-import.js —
-// 2026-09-23 Facilities kW fix; also set by the en_utility_facKW_backfilled_v1 load migration).
-const _PERSISTED_UI_FLAG_IDS = ['waterSewerParity_warn', 'facKWMissing_warn'];
-
 // Phase 0.1 (2026-07-19): pid -> last-written serialized JSON snapshot, used by
 // saveUtilityData() to skip re-writing projects whose data hasn't changed since
 // the last save. Seeded from disk in loadUtilityData() so the very first save
@@ -1671,36 +1664,11 @@ function renderUDProjList() {
                   ? `<span style="color:var(--amber);font-size:10px" title="${mWithBl} of ${mCount} baseline meters have baselines set">⚠ ${mWithBl}/${mCount} BL</span>`
                   : `<span style="color:var(--text3);font-size:10px" title="No baselines set">— 0/${mCount} BL</span>`
               : '';
-          // Count active (non-dismissed) flags across all meters → bills in this building.
-          // Update 94abf6d6: use live _analyzeMeterBills result; consult _flags only for
-          // dismissed IDs and cross-meter flags so stale stored flags never inflate the count.
-          const _bFlagCount = _allMeters.reduce((sum, meter) => {
-            const _mBills = meter.bills || [];
-            const _liveMeterFlags =
-              typeof _analyzeMeterBills === 'function' && _mBills.length >= 4
-                ? _analyzeMeterBills(
-                    _mBills.slice().sort((a, b) => _parseISO(a.start) - _parseISO(b.start)),
-                    meter,
-                  )
-                : {};
-            return (
-              sum +
-              _mBills.reduce((s, bill) => {
-                // computeLiveBillFlags (extraction/bill-validation.js) — the ONE shared
-                // computation this badge, the meter pill, the bills-table banner, and the
-                // Review Bill Corrections panel all use (2026-09-25 rebuild).
-                return (
-                  s +
-                  (typeof computeLiveBillFlags === 'function'
-                    ? computeLiveBillFlags(bill, _liveMeterFlags[bill.id] || []).length
-                    : 0)
-                );
-              }, 0)
-            );
-          }, 0);
+          // Flagged BILLS in this building: the ONE shared flag function (computations/bill-flags.js).
+          const _bFlags = computeBuildingFlagSummary(b);
           const flagBadge =
-            _bFlagCount > 0
-              ? `<span style="color:var(--amber);font-size:10px" title="${_bFlagCount} bill flag${_bFlagCount !== 1 ? 's' : ''} need review">⚠ ${_bFlagCount} review</span>`
+            _bFlags.flaggedBills > 0
+              ? `<span style="color:var(--amber);font-size:10px" title="${billFlagHoverText(_bFlags)}">⚠ ${_bFlags.flaggedBills} review</span>`
               : '';
           const bldgActive = b.id === udSelBldgId ? ' active' : '';
           html += `<div class="ud-nav-bldg-item${bldgActive}" onclick="udSelectBldg('${b.id}')">
@@ -3289,27 +3257,8 @@ function renderUDDetail(targetWrap) {
       .map((m) => {
         const active = m.id === _curMid;
         const bcount = (m.bills || []).length;
-        // Count active (non-dismissed) flags across all bills on this meter.
-        // Update 94abf6d6: live _analyzeMeterBills result; _flags only for dismissed IDs
-        // and cross-meter flags (waterSewerParity_warn).
-        const _mBillsList = m.bills || [];
-        const _mLiveFlags =
-          typeof _analyzeMeterBills === 'function' && _mBillsList.length >= 4
-            ? _analyzeMeterBills(
-                _mBillsList.slice().sort((a, b) => _parseISO(a.start) - _parseISO(b.start)),
-                m,
-              )
-            : {};
-        // computeLiveBillFlags (extraction/bill-validation.js) — same shared computation
-        // as the building badge and bills-table banner (2026-09-25 rebuild).
-        const _mFlagCount = _mBillsList.reduce((sum, bill) => {
-          return (
-            sum +
-            (typeof computeLiveBillFlags === 'function'
-              ? computeLiveBillFlags(bill, _mLiveFlags[bill.id] || []).length
-              : 0)
-          );
-        }, 0);
+        // Flagged BILLS on this meter: the ONE shared flag function (computations/bill-flags.js).
+        const _mFlags = computeMeterFlagSummary(m, b);
         const _pClsMap = {
           Electric: ' elec-pill',
           Gas: ' gas-pill',
@@ -3345,13 +3294,11 @@ function renderUDDetail(targetWrap) {
                 ? '<span style="font-size:8px;font-weight:700;color:var(--em2);background:rgba(56,189,248,.15);padding:1px 4px;border-radius:3px;margin-left:2px" title="No valid saved regression — open Baseline and Save to freeze.">🔗 BL</span>'
                 : '';
         const _flagTag =
-          _mFlagCount > 0
+          _mFlags.flaggedBills > 0
             ? '<span style="font-size:8px;font-weight:700;color:var(--amber);background:rgba(245,158,11,.12);padding:1px 4px;border-radius:3px;margin-left:2px" title="' +
-              _mFlagCount +
-              ' bill flag' +
-              (_mFlagCount !== 1 ? 's' : '') +
-              ' need review">⚠ ' +
-              _mFlagCount +
+              billFlagHoverText(_mFlags) +
+              '">⚠ ' +
+              _mFlags.flaggedBills +
               '</span>'
             : '';
         // Fix 67cb827d (secondary): ensure m._reg is populated for R² scoring
@@ -3363,7 +3310,7 @@ function renderUDDetail(targetWrap) {
           const _pillBills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
           if (_pillBills.length) getNormRows(m, _pillBills, m.inclusive !== false, _pillWeather);
         }
-        var _dq = typeof computeMeterQualityScore === 'function' ? computeMeterQualityScore(m) : null;
+        var _dq = typeof computeMeterQualityScore === 'function' ? computeMeterQualityScore(m, b) : null;
         var _dqBadge = _dq ? getMeterQualityBadge(_dq.score) : null;
         var _dqTag = _dqBadge
           ? '<span style="background:' +
@@ -4231,18 +4178,13 @@ function renderBillsPane(pane, m, bills, incl) {
 
   const colgroup = '';
 
-  // ── Statistical analysis on saved bills ──
-  // Always pass an ascending-sorted copy so the rate-anomaly trailing window
-  // and YoY find() operate on chronological order regardless of the user's
-  // display sort preference (newest-first reverses the array before this point).
-  const billFlags = _analyzeMeterBills(
-    bills.slice().sort((a, b) => _parseISO(a.start) - _parseISO(b.start)),
-    m,
-  );
+  // ── Bill flags: the ONE shared flag function (computations/bill-flags.js). The banner, the meter pill,
+  // the building badge, the Review Bill Corrections panel and the data-quality score all call it.
+  const billFlagSummary = computeMeterFlagSummary(m, getUDBldg(udSelProjId, udSelBldgId));
+  const billFlags = billFlagSummary.perBill;
 
   // Build rows with gap detection + outlier highlighting
   let tblBody = '';
-  let flagCount = 0;
   // Build a dynamic field→column-index map from the cols array so flag
   // icons land on the right column even after Update 82 added new
   // commodity-aware columns. Column 0 = #, 1 = Norm Month, 2 = Start,
@@ -4316,17 +4258,8 @@ function renderBillsPane(pane, m, bills, incl) {
         tblBody += `<tr class="ud-bill-gap-row"><td colspan="${cols.length}"><div class="ud-bill-gap-msg"><span style="flex-shrink:0;white-space:nowrap">⚠️ Gap in data — ${gapMonths > 1 ? '~' + gapMonths + ' months (' : ''}${gapDays} day${gapDays !== 1 ? 's' : ''}${gapMonths > 1 ? ')' : ''} missing between ${fmtDate(gapEarlier)} and ${fmtDate(gapLater)}${_emptyRowNote}</span>${estimateBtn}</div></td></tr>`;
       }
     }
-    // Live-compute wins (Update 94abf6d6): always use freshly-computed billFlags
-    // from _analyzeMeterBills as the display source of truth.
-    // computeLiveBillFlags (extraction/bill-validation.js) — the ONE shared
-    // computation this banner, the building badge, the meter pill, and the
-    // Review Bill Corrections panel all use (2026-09-25 rebuild). Reads
-    // row._flags ONLY for dismissed flag IDs + cross-meter flags
-    // (waterSewerParity_warn / facKWMissing_warn) so dismissals survive
-    // dataset changes without showing stale flags.
-    const liveFlagsRaw = billFlags[row.id] || [];
-    const flags = typeof computeLiveBillFlags === 'function' ? computeLiveBillFlags(row, liveFlagsRaw) : [];
-    if (flags.length) flagCount++;
+    // Flags for this row come from the shared summary (dismissed flags are already removed).
+    const flags = billFlags[row.id] || [];
     let rowHtml = renderBillRow(row, m, incl, bills, cols, idx + 1);
     // Meter change and charge part indicators (icons only — onclick stays as showBillSplitPanel from renderBillRow)
     if (row.Meter1_ReadStart) {
@@ -4341,56 +4274,30 @@ function renderBillsPane(pane, m, bills, incl) {
     // Add amber background and colored flag badges for flagged rows
     if (flags.length) {
       const _flagTitle = flags
-        .map((f) => f.msg)
-        .join('; ')
+        .map((f) => f.message)
+        .join('&#10;')
         .replace(/"/g, '&quot;');
       // If the <tr> already has a class attribute, append to it; otherwise insert a new one
       if (/(<tr[^>]*)\sclass="/.test(rowHtml)) {
         rowHtml = rowHtml.replace(/(<tr[^>]*\sclass=")/, '$1bill-flagged ');
-        rowHtml = rowHtml.replace(/(<tr)(\s)/, '$1 title="' + _flagTitle + '"$2');
+        rowHtml = rowHtml.replace(/(<tr)(\s)/, (m0, t, sp) => t + ' title="' + _flagTitle + '"' + sp);
       } else {
-        rowHtml = rowHtml.replace(/(<tr)([ >])/, '$1 class="bill-flagged" title="' + _flagTitle + '"$2');
+        rowHtml = rowHtml.replace(/(<tr)([ >])/, (m0, t, sp) => t + ' class="bill-flagged" title="' + _flagTitle + '"' + sp);
       }
       flags.forEach((f) => {
         if (f.field == null || fieldColMap[f.field] == null) return;
         const colIdx = fieldColMap[f.field];
-        const _warnColLabel =
-          {
-            kwh: 'kWh',
-            kwhCost: 'kWh Cost',
-            demandKW: 'Demand kW',
-            billedKW: 'Billed kW',
-            kwCost: 'kW Cost',
-            totalCost: 'Total Cost',
-            days: 'Billing Days',
-            therms: 'Therms',
-            thermCost: 'Gas Charge',
-            usage: 'Usage',
-            cost: 'Cost',
-            waterUsage: 'Water Usage',
-            waterCharge: 'Water Charge',
-            sewerCharge: 'Sewer Charge',
-            stormWaterCharge: 'Stormwater Charge',
-            gallonsDelivered: 'Gallons',
-            readDifference: 'Read Difference',
-            start: 'Start Date',
-          }[f.field] ||
-          f.field ||
-          '';
-        const _warnTip = (_warnColLabel ? _warnColLabel + ': ' : '') + f.msg;
+        const _warnTip = f.label + ': ' + f.message;
         // Use red dot for errors, amber for warnings
-        const _dotColor = f.level === 'error' ? 'var(--danger,#ef4444)' : 'var(--amber)';
-        // Build dismiss onclick if the flag is persisted (has _persistFlag with an id)
-        const _pf = f._persistFlag;
-        const _dismissAttr = _pf
-          ? ` onclick="event.stopPropagation();dismissBillFlag('${udSelProjId}','${udSelBldgId}','${m.id}','${row.id}','${_pf.id}','');return false;"`
-          : '';
-        const _dismissTip = _pf ? ' Click to dismiss.' : '';
+        const _dotColor = f.severity === 'error' ? 'var(--danger,#ef4444)' : 'var(--amber)';
+        // Click a dot to dismiss that one flag (stored by rule id; other flags on the bill stay)
+        const _dismissAttr = ` onclick="event.stopPropagation();dismissBillFlag('${udSelProjId}','${udSelBldgId}','${m.id}','${row.id}','${f.dismissId}','');return false;"`;
+        const _dismissTip = ' Click to dismiss.';
         let tdCount = 0;
         rowHtml = rowHtml.replace(/<td([^>]*)>/g, (match, attrs) => {
           tdCount++;
           if (tdCount === colIdx + 1) {
-            return `<td${attrs}><span title="${(_warnTip + _dismissTip).replace(/"/g, '&quot;')}" style="cursor:${_pf ? 'pointer' : 'help'};color:${_dotColor};font-size:10px;margin-right:3px;opacity:0.9;user-select:none"${_dismissAttr}>●</span>`;
+            return `<td${attrs}><span title="${(_warnTip + _dismissTip).replace(/"/g, '&quot;')}" style="cursor:pointer;color:${_dotColor};font-size:10px;margin-right:3px;opacity:0.9;user-select:none"${_dismissAttr}>●</span>`;
           }
           return match;
         });
@@ -4682,13 +4589,15 @@ function renderBillsPane(pane, m, bills, incl) {
   // the workspace itself). Fixed by switching that calc to a getBoundingClientRect
   // measurement, which accounts for this banner automatically — no class hook needed.
   const flagBanner =
-    flagCount > 0
-      ? '<div style="padding:8px 14px;background:var(--amber-dim);border:1px solid rgba(245,158,11,.25);border-radius:6px;margin:8px 14px;font-size:12px;color:var(--amber);font-weight:500;display:flex;align-items:center;gap:8px">' +
+    billFlagSummary.flaggedBills > 0
+      ? '<div style="padding:8px 14px;background:var(--amber-dim);border:1px solid rgba(245,158,11,.25);border-radius:6px;margin:8px 14px;font-size:12px;color:var(--amber);font-weight:500;display:flex;align-items:center;gap:8px" title="' +
+        billFlagHoverText(billFlagSummary) +
+        '">' +
         '<span>⚠</span><span>' +
-        flagCount +
-        ' billing period' +
-        (flagCount !== 1 ? 's' : '') +
-        ' flagged — values may be statistically out of range. Hover flagged rows for details.</span>' +
+        billFlagSummary.flaggedBills +
+        ' bill' +
+        (billFlagSummary.flaggedBills !== 1 ? 's' : '') +
+        ' flagged for review. Hover a flagged row to see what to check.</span>' +
         '</div>'
       : '';
 
@@ -8737,7 +8646,7 @@ function renderMeterDataPane(pane, m, bills, incl) {
   const allRows = sortedBills.length ? getNormRows(m, sortedBills, incl, weatherByYm) : [];
 
   // ── Data quality score ── (after getNormRows so m._reg is available)
-  const _dqScore = typeof computeMeterQualityScore === 'function' ? computeMeterQualityScore(m) : null;
+  const _dqScore = typeof computeMeterQualityScore === 'function' ? computeMeterQualityScore(m, bldg) : null;
   const _dqBadgeData = _dqScore ? getMeterQualityBadge(_dqScore.score) : null;
   const bl = m.baseline || null;
   const blMonths = bl && bl.months ? bl.months : [];

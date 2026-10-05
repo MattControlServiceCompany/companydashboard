@@ -2,12 +2,13 @@
 // Returns a 0-100 score across 5 components.
 
 /**
- * computeMeterQualityScore(m)
- * @param {object} m — meter object with .bills, .baseline, ._flags
+ * computeMeterQualityScore(m, building)
+ * @param {object} m — meter object with .bills, .baseline
+ * @param {object} building — the building that holds the meter (water vs sewer flags need its other meters)
  * @returns {{ score: number, components: { dataMonths, baselineR2, gaps, fieldCompleteness, flags } }}
  *   Each component: { points: number, max: number, detail: string }
  */
-function computeMeterQualityScore(m) {
+function computeMeterQualityScore(m, building) {
   var bills = Array.isArray(m.bills) ? m.bills : [];
 
   // ── 1. dataMonths (max 25) ──
@@ -106,20 +107,13 @@ function computeMeterQualityScore(m) {
   };
 
   // ── 5. flags (max 15) ──
-  var totalFlags = bills.reduce(function (sum, bill) {
-    if (!Array.isArray(bill._flags)) return sum;
-    return (
-      sum +
-      bill._flags.filter(function (f) {
-        return !f.dismissed;
-      }).length
-    );
-  }, 0);
+  // Flagged BILLS from the one shared flag function (computations/bill-flags.js).
+  var totalFlags = computeMeterFlagSummary(m, building).flaggedBills;
   var flagsPts = Math.max(0, 15 - totalFlags * 2);
   var flags = {
     points: flagsPts,
     max: 15,
-    detail: totalFlags + ' flag' + (totalFlags !== 1 ? 's' : ''),
+    detail: totalFlags + ' flagged bill' + (totalFlags !== 1 ? 's' : ''),
     rawValue: totalFlags,
   };
 

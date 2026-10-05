@@ -1,131 +1,8 @@
-// extraction/bill-validation.js — Bill validation coordination layer
-// Loaded before app/bill-analysis.js per energy-department.html script order.
-// Depends on: _analyzeMeterBills (app/bill-analysis.js), getUDProj (app/utility-data.js or core.js),
-//             saveUtilityData (utility-data.js), renderMeterWorkspace (utility-data.js)
-
-/**
- * Run bill validation for a single bill on a meter.
- * Calls _analyzeMeterBills on all bills in the meter, extracts flags for
- * this specific bill, converts to the persistent _flags array format, and
- * writes to bill._flags.
- *
- * @param {object} meter  - Meter object with .commodity, .bills[]
- * @param {object} bill   - Bill object on that meter (mutated in place)
- */
-function runBillValidation(meter, bill) {
-  if (!meter || !bill || typeof _analyzeMeterBills !== 'function') return;
-  const bills = meter.bills || [];
-  // _analyzeMeterBills needs at least 4 bills to compute stats
-  const allFlags = _analyzeMeterBills(bills, meter);
-  const transientFlags = allFlags[bill.id] || [];
-
-  // Convert transient { field, msg, level } → persistent { id, label, severity, firedAt, dismissed, dismissNote }
-  // Preserve any existing dismissed flags — merge by id so dismissals survive a re-validation.
-  // Also preserve any cross-meter flags (e.g. waterSewerParity_warn) that are not produced by
-  // _analyzeMeterBills — those are managed by runBuildingValidation and must not be wiped here.
-  const existing = Array.isArray(bill._flags) ? bill._flags : [];
-  const today = new Date().toISOString().slice(0, 10);
-  const newFlags = transientFlags.map((f) => {
-    const flagId = (f.field || 'unknown') + '_' + (f.level || 'warn');
-    const prev = existing.find((e) => e.id === flagId);
-    return {
-      id: flagId,
-      label: f.msg || '',
-      severity: f.level === 'error' ? 'error' : 'warning',
-      firedAt: prev ? prev.firedAt : today,
-      dismissed: prev ? prev.dismissed : false,
-      dismissNote: prev ? prev.dismissNote : '',
-    };
-  });
-  // Carry forward any flags not managed by _analyzeMeterBills's live recompute — these are
-  // written directly to bill._flags elsewhere and must survive a re-validation pass:
-  // waterSewerParity_warn (_analyzeWaterSewerParity / runBuildingValidation) and
-  // facKWMissing_warn (backfillFacilitiesKW / _flagFacKWMissingBills, app/csv-import.js —
-  // 2026-09-23 Facilities kW fix).
-  const CROSS_METER_FLAG_IDS = ['waterSewerParity_warn', 'facKWMissing_warn'];
-  const crossMeterFlags = existing.filter((f) => CROSS_METER_FLAG_IDS.includes(f.id));
-  bill._flags = [...newFlags, ...crossMeterFlags];
-}
-
-/**
- * Return the count of active (non-dismissed) flags on a bill.
- * Returns 0 if no _flags array or all dismissed.
- *
- * @param {object} bill
- * @returns {number}
- */
-function getBillFlagCount(bill) {
-  if (!bill || !Array.isArray(bill._flags)) return 0;
-  return bill._flags.filter((f) => !f.dismissed).length;
-}
-
-/**
- * Compute the live (non-dismissed) flags for one bill from a fresh
- * _analyzeMeterBills() result plus that bill's own persisted dismiss/
- * cross-meter state (bill._flags). This is the ONE shared computation used
- * by the Utility Data building nav "⚠ N review" badge, the meter pill
- * count, the per-meter bills-table flag banner, AND the Review Bill
- * Corrections panel's flagged-for-review list — so every place that shows a
- * flagged-bill count for the same bill shows the exact same number, by
- * construction, not by two independent computations that happen to agree
- * (2026-09-25, Review Bill Corrections rebuild — extracted verbatim from
- * app/utility-data.js's pre-existing badge/banner logic, no behavior
- * change).
- *
- * @param {object} bill - bill row; reads bill._flags for dismissed IDs and
- *   cross-meter flags (waterSewerParity_warn, facKWMissing_warn).
- * @param {Array} liveFlagsRaw - _analyzeMeterBills(sortedBills, meter)[bill.id] || []
- * @returns {Array<{field, msg, level, _persistFlag}>}
- */
-function computeLiveBillFlags(bill, liveFlagsRaw) {
-  // 2026-09-25 (d5b815dc): a bill added via "Estimate missing period" (estimated:true) is a
-  // synthetic usage-only placeholder, not a real reading — it must never be flagged as
-  // statistically unusual and must never count toward any "N review" count (building badge,
-  // meter pill, bills-table banner, Review Bill Corrections panel). All four read counts via
-  // this one shared function, so returning no flags here — before any dismissed/cross-meter
-  // logic — is the single place that guarantees all of them agree at 0 for an estimated bill.
-  if (bill && bill.estimated) return [];
-  const _dismissedIds = new Set(
-    Array.isArray(bill && bill._flags) ? bill._flags.filter((f) => f.dismissed).map((f) => f.id) : [],
-  );
-  const _crossMeterFlags = Array.isArray(bill && bill._flags)
-    ? bill._flags.filter((f) => _PERSISTED_UI_FLAG_IDS.includes(f.id) && !f.dismissed)
-    : [];
-  return [
-    ...(liveFlagsRaw || [])
-      .filter((f) => {
-        const fId = (f.field || 'unknown') + '_' + (f.level || 'warn');
-        return !_dismissedIds.has(fId);
-      })
-      .map((f) => ({
-        field: f.field,
-        msg: f.msg,
-        level: f.level,
-        _persistFlag: { id: (f.field || 'unknown') + '_' + (f.level || 'warn') },
-      })),
-    ..._crossMeterFlags.map((f) => ({
-      field: (f.id || '').split('_').slice(0, -1).join('_') || f.id,
-      msg: f.label,
-      level: f.severity === 'error' ? 'error' : 'warn',
-      _persistFlag: f,
-    })),
-  ];
-}
-
-/**
- * Run building-level validation checks that require cross-meter context.
- * Currently runs the water vs sewer parity check across all buildings' meters.
- *
- * Call this after saving any Water or Sewer bill, passing the building object.
- * Safe to call for any building — returns immediately if the building lacks
- * both a Water and Sewer meter.
- *
- * @param {object} building  - Building object with .meters[]
- */
-function runBuildingValidation(building) {
-  if (!building || typeof _analyzeWaterSewerParity !== 'function') return;
-  _analyzeWaterSewerParity(building);
-}
+// extraction/bill-validation.js - dismissing a bill flag.
+// Bill flags are computed live by computeMeterFlagSummary (computations/bill-flags.js) and are never
+// stored. The only thing stored on a bill is the user's dismissal, by rule id (flag.dismissId).
+// Depends on: getUDProj (app/utility-data.js or core.js), saveUtilityData and renderMeterWorkspace
+// (app/utility-data.js).
 
 /**
  * Dismiss a specific flag on a bill and persist.
@@ -147,8 +24,7 @@ function dismissBillFlag(projId, bldgId, meterId, billId, flagId, note) {
   if (!meter) return;
   const bill = (meter.bills || []).find((b) => b.id === billId);
   if (!bill) return;
-  // Update 94abf6d6: live-computed flags are no longer pre-written to _flags, so the
-  // entry may not exist yet when the user first dismisses a flag. Create it if absent.
+  // Flags are live, so the stored entry may not exist yet when the user first dismisses a flag. Create it if absent.
   if (!Array.isArray(bill._flags)) bill._flags = [];
   let flag = bill._flags.find((f) => f.id === flagId);
   if (!flag) {

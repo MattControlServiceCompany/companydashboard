@@ -31,7 +31,6 @@ const ALLOWED = [
   ],
   ['app/bas-alarms.js', 'var msPerDay = 86400000;', 'time-window filter on alarm timestamps'],
   ['app/bill-analysis.js', 'Date.now() + 86400000 * 60', 'future-date sanity window'],
-  ['app/bill-analysis.js', 'overlapMs / 86400000', 'overlap between two bills, compared with a tolerance'],
   ['app/bill-analysis.js', '(p1 - p2) / 86400000', 'meter-read date closeness (tolerance)'],
   ['app/bill-analysis.js', 'toDate(prevEnd)) / 86400000', 'gap between two bills (tolerance)'],
   ['app/bill-analysis.js', '(da - db) / 86400000', 'fuzzy period match (tolerance)'],

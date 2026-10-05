@@ -52,7 +52,7 @@ const R = (s) => vm.runInContext(s, sb);
 R(
   'var __t = { m: null, toasts: [] }; resolveUDMeter = function () { return { b: { id: "b1", meters: [] }, m: __t.m }; };' +
     '_syncEmbedUDContext = function () {}; saveUtilityData = function () {}; closeBillCsvModal = function () {};' +
-    'renderMeterWorkspace = function () {}; addNotif = function () {}; runBillValidation = function () {}; runBuildingValidation = function () {};',
+    'renderMeterWorkspace = function () {}; addNotif = function () {};',
 );
 function freshMeter() {
   return {
