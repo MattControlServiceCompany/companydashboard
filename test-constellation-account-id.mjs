@@ -1,8 +1,8 @@
 // test-constellation-account-id.mjs (item 62a38985): Constellation per-site account id.
 // Synthetic fixture only (no client data). Loads the REAL app files via vm, calls the REAL
 // UTILITY_RULES Constellation extractAll and _applyExtractionGates.
-// Covers: dotted id, damaged label, one-digit slip, two candidates (ambiguous, and
-// narrowed by "already read in this invoice"), the site-1 collision, and the unreadable-id row.
+// Covers: dotted id, damaged label, one-digit slip (snaps only when the service address matches the
+// known id's address), a clean new id one digit from a known id (no snap), the site-1 collision, and the unreadable-id row.
 // Run: node test-constellation-account-id.mjs
 
 import fs from 'fs';
@@ -64,16 +64,17 @@ const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug'];
 function invoice(n, idLines) {
   let s = '%%PAGE_1%%\nMonthly Invoice\nConstellation   Invoice Date: 0' + (n + 1) + '/16/30   Account ID: BG-000001\n' +
     'Invoice Number: ' + (7000 + n) + '\nSample Customer\n1 Sample Way\n';
-  if (idLines[0]) s += idLines[0] + '\n';
+  // Real layout: the service address is printed BEFORE the Customer ID, then "Service for".
   s += '1 Test St, Baldwin City, KS 66006\n';
+  if (idLines[0]) s += idLines[0] + '\n';
   for (let k = 0; k < 3; k++) {
     const total = (100 * (k + 1) + n + 1).toFixed(2);
     s += 'Service for ' + MON[n] + '-2030 - Actual\n';
     s += 'Incremental Costs  10.00 MMBtu  $4.00000  $40.00\nSubtotal Gas Supply Charges  10.00 MMBtu  $40.00\n';
     s += 'Total Current Site Charges $' + total + '\n';
     if (k < 2) {
-      if (idLines[k + 1]) s += idLines[k + 1] + '\n';
       s += (k + 2) + ' Test St, Baldwin City, KS 66006\n';
+      if (idLines[k + 1]) s += idLines[k + 1] + '\n';
     }
   }
   return s;
@@ -86,8 +87,8 @@ const invoices = [
   clean, // Mar
   clean, // Apr
   [C('900001'), 'Customer ID: RG.900082', C('900003')], // May: one-digit slip, one candidate
-  [C('900001'), 'Customer ID: RG.900009', C('900003')], // Jun: 3 candidates, 2 already read here -> snaps to 900002
-  [C('900001'), 'Customer ID: RG.900009', 'Customer ID: RG.900008'], // Jul: two candidates left -> NO snap
+  [C('900001'), 'Customer ID: RG.900009', C('900003')], // Jun: 3 neighbours; address "2 Test St" matches only 900002 -> snaps
+  [C('900001'), 'Customer ID: RG.900009', 'Customer ID: RG.900008'], // Jul: both snap by address (2 -> 900002, 3 -> 900003)
   [C('900001'), C('900002'), null], // Aug: site 3 label lost entirely
 ];
 const text = invoices.map((l, n) => invoice(n, l)).join('\n');
@@ -100,8 +101,8 @@ ok(bills.length === 24, 'row count 24, got ' + bills.length);
 ok(tot('RG900002', 2) === 202, 'dotted id (Feb site 2) -> RG900002 202, got ' + tot('RG900002', 2));
 ok(tot('RG900003', 2) === 302, 'damaged label (Feb site 3) -> RG900003 302, got ' + tot('RG900003', 2));
 ok(tot('RG900002', 5) === 205, 'one-digit slip 900082 -> RG900002 (May 205), got ' + tot('RG900002', 5));
-ok(tot('RG900002', 6) === 206, 'two-candidate id narrowed by ids already read in invoice -> RG900002 (Jun 206), got ' + tot('RG900002', 6));
-ok(tot('RG900009', 7) === 207 && tot('RG900008', 7) === 307, 'ambiguous id NOT snapped (Jul keeps raw RG900009 / RG900008)');
+ok(tot('RG900002', 6) === 206, 'three-neighbour slip id snapped by service address -> RG900002 (Jun 206), got ' + tot('RG900002', 6));
+ok(tot('RG900002', 7) === 207 && tot('RG900003', 7) === 307, 'Jul slips snap by address to RG900002 / RG900003, got ' + tot('RG900002', 7) + '/' + tot('RG900003', 7));
 ok(tot('RG900001', 8) === 108, 'collision: site 1 Aug total survives (108), got ' + tot('RG900001', 8));
 const unread = bills.find((b) => b._acctIdUnread);
 ok(!!unread && unread.AccountNumber !== 'RG900001' && Number(unread.TotalCurrentCharges) === 308, 'unreadable id row kept, marked, own account, own total 308');
@@ -129,17 +130,30 @@ if (unread) {
   ok(g('RG900012', 7) === 307 && g('RG900012', 8) === 308, 'clean new id RG900012 keeps its own account (not snapped)');
 }
 
+// Review rule (Manager 2026-10-05): a one-digit-near id whose service address is NOT the known id's
+// address keeps its own id, even when the read is damaged (dotted).
+{
+  const idsDot = [C('900001'), C('900002'), 'Customer ID: RG.900012'];
+  const t3 = [clean, clean, clean, clean, clean, idsDot].map((l, n) => invoice(n, l)).join('\n');
+  const b3 = rule.extractAll(t3);
+  ok(b3.length === 18, 'dotted new-id case keeps all 18 rows, got ' + b3.length);
+  const x = b3.find((b) => b.AccountNumber === 'RG900012' && b.BillingPeriodStart === '06/01/2030');
+  ok(!!x && Number(x.TotalCurrentCharges) === 306, 'dotted RG.900012 at site 3 address keeps own id (306)');
+}
+
 // normalizer unit cases
-const known = ['900001', '900002', '900003'];
+const known = new Map([['900001', new Set(['1 test'])], ['900002', new Set(['2 test'])], ['900003', new Set(['3 test'])]]);
+const A2 = '2 Test St, Baldwin City, KS 66006';
 ok(T.norm('RG.900002', known) === 'RG900002', 'norm: dotted');
 ok(T.norm('RG900002', known) === 'RG900002', 'norm: no separator');
-ok(T.norm('RG-900082', known) === 'RG900002', 'norm: one-digit slip snaps');
-ok(T.norm('RG-900009', known) === 'RG900009', 'norm: three candidates, no seen set -> raw');
-ok(T.norm('RG-9000000', known) === 'RG9000000', 'norm: different length -> raw');
-ok(T.norm('RG-900012', known, new Set(['900002'])) === 'RG900012', 'norm: never snaps to an id already read in the invoice');
-ok(T.norm('RG-900082', null) === 'RG900082', 'norm: no known set -> raw');
-ok(T.norm('Customer', known) === null, 'norm: not an RG id -> null');
-ok(T.known('Customer ID: RG-1\nCustomer ID: RG-1\nCustomer ID: RG.2\nCustomer ID: RG-1').join() === '1', 'known set: hyphen form 3+ only');
+ok(T.norm('RG-900082', known, A2) === 'RG900002', 'norm: one-digit slip + matching address snaps');
+ok(T.norm('RG-900082', known) === 'RG900082', 'norm: no address -> no snap');
+ok(T.norm('RG-900082', known, '3 Test St, Baldwin City, KS 66006') === 'RG900082', 'norm: other account address -> no snap');
+ok(T.norm('RG-9000000', known, A2) === 'RG9000000', 'norm: different length -> raw');
+ok(T.norm('RG-900082', null, A2) === 'RG900082', 'norm: no known set -> raw');
+ok(T.norm('Customer', known, A2) === null, 'norm: not an RG id -> null');
+const kk = T.known('1 Main St, Baldwin City, KS 66006\nCustomer ID: RG-1\nCustomer ID: RG-1\nCustomer ID: RG.2\nCustomer ID: RG-1');
+ok([...kk.keys()].join() === '1' && kk.get('1').has('1 main'), 'known set: hyphen form 3+ only, with address key');
 
 console.log(pass + '/' + (pass + fail) + ' assertions passed');
 process.exit(fail ? 1 : 0);

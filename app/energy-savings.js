@@ -4524,8 +4524,12 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     parseBillNumber(result.PTSCharge);
   const _totalKwh = parseBillNumber(result.kWhConsumed);
   result.TotalKWhRate = _totalKwh > 0 && _kwhChargeSum > 0 ? _kwhChargeSum / _totalKwh : null;
-  const _kwChargeSum = parseBillNumber(result.FacilitiesCharge) + parseBillNumber(result.BilledKWCharge) + parseBillNumber(result.TDCCharge);
-  const _totalKw = parseBillNumber(result.BilledKW) || parseBillNumber(result.ActualKW) || parseBillNumber(result.FacilitiesKW);
+  const _kwChargeSum =
+    parseBillNumber(result.FacilitiesCharge) +
+    parseBillNumber(result.BilledKWCharge) +
+    parseBillNumber(result.TDCCharge);
+  const _totalKw =
+    parseBillNumber(result.BilledKW) || parseBillNumber(result.ActualKW) || parseBillNumber(result.FacilitiesKW);
   result.TotalKWRate = _totalKw > 0 && _kwChargeSum > 0 ? _kwChargeSum / _totalKw : null;
 
   // Reconcile xChg totals with xRate computed totals: when xRate found
@@ -6020,26 +6024,54 @@ function _lbg_facilityLookup(acct) {
 // Constellation Customer ID normalizer: THE one place that decides what an account id is
 // (item 62a38985). The id parse, the unreadable-id fallback and the dedup key all call it.
 // OCR reads "RG-233583" as "RG.233583", "RG43506046" or with a one-digit slip ("RG.233887").
-// Known ids = read in clean hyphen form 3+ times in the same file. An unknown id exactly one
-// digit away from exactly ONE known id snaps to it, after dropping known ids already read
-// cleanly in the same invoice (a site appears once per invoice); still ambiguous -> no snap, raw digits kept. Returns 'RG<digits>' or null (not an RG id).
+// Known ids = read in clean hyphen form 3+ times in the same file, each with the service address
+// printed just before it. An unknown id snaps to a known id ONLY when it is exactly one digit away
+// AND the bill's service address matches that known id's address. Otherwise the id stays as read
+// (digits kept). Returns 'RG<digits>' or null (not an RG id).
 const _CONST_CUST_ID_RE = /Customer\s+I\S?\s*[:;]\s*(RG[^\d\s]?\d+)/gi;
+// The street line printed before position idx (last address match in the window before it), or null.
+// Also gives the bill's ServiceAddress (one address rule for both uses).
+const _constAddrBefore = (text, idx, win) => {
+  const w = text.slice(Math.max(0, idx - (win || 800)), idx);
+  const bald = [...w.matchAll(/^(\d+\s+[A-Za-z0-9 #]+,\s*Baldwin\s*City[^\n]*)/gim)];
+  const gen = [
+    ...w.matchAll(/^(\d+\s+[A-Za-z0-9 .#]+,\s*[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?,\s*[A-Z]{2}\s*\d{5}(?:-\d{4})?)/gm),
+  ];
+  const m = bald.length > 0 ? bald[bald.length - 1] : gen.length > 0 ? gen[gen.length - 1] : null;
+  return m ? m[1].trim() : null;
+};
+// Address match key: house number + street name word ("718 dearborn"); null if no address.
+const _constAddrKey = (addr) => {
+  const m = /^(\d+)\s+([A-Za-z0-9]+)/.exec(addr || '');
+  return m ? (m[1] + ' ' + m[2]).toLowerCase() : null;
+};
+// Known ids: Map digits -> Set of address keys seen with clean hyphen reads of that id.
 const _constKnownCustIds = (t, minReads) => {
   const n = {};
+  const addrs = {};
   for (const m of t.matchAll(_CONST_CUST_ID_RE)) {
     const h = /^RG-(\d+)$/i.exec(m[1]);
-    if (h) n[h[1]] = (n[h[1]] || 0) + 1;
+    if (!h) continue;
+    n[h[1]] = (n[h[1]] || 0) + 1;
+    const k = _constAddrKey(_constAddrBefore(t, m.index));
+    if (k) (addrs[h[1]] = addrs[h[1]] || new Set()).add(k);
   }
-  return Object.keys(n).filter((k) => n[k] >= (minReads || 3));
+  const known = new Map();
+  for (const id of Object.keys(n)) if (n[id] >= (minReads || 3)) known.set(id, addrs[id] || new Set());
+  return known;
 };
-const _constNormCustId = (raw, known, seenInInvoice) => {
+const _constNormCustId = (raw, known, addr) => {
   const m = /^\s*RG[^\d\s]?(\d+)\s*$/i.exec(raw || '');
   if (!m) return null;
   const digits = m[1];
-  if (!known || known.includes(digits)) return 'RG' + digits;
-  const near0 = known.filter((k) => k.length === digits.length && [...k].filter((c, i) => c !== digits[i]).length === 1);
-  // Never snap to an id already read cleanly in this invoice (a site appears once per invoice).
-  const near = seenInInvoice ? near0.filter((k) => !seenInInvoice.has(k)) : near0;
+  if (!known || known.has(digits)) return 'RG' + digits;
+  const key = _constAddrKey(addr);
+  const near = key
+    ? [...known.keys()].filter(
+        (k) =>
+          k.length === digits.length && [...k].filter((c, i) => c !== digits[i]).length === 1 && known.get(k).has(key),
+      )
+    : [];
   return 'RG' + (near.length === 1 ? near[0] : digits);
 };
 
@@ -6996,7 +7028,6 @@ const UTILITY_RULES = [
       const _knownIds = _constKnownCustIds(t);
       for (const invText of invoices) {
         if (!invText.trim()) continue;
-        const _seen = new Set(_constKnownCustIds(invText, 1));
 
         // ── Level 2: split each invoice into per-site blocks ──
         // Each site starts with "Service for Mon-YYYY" line.
@@ -7034,7 +7065,6 @@ const UTILITY_RULES = [
           const idFrom = i === 1 ? 0 : invoiceHeader.length + 1;
           const bill = this.extract(siteText, identityPortion.length, {
             knownIds: _knownIds,
-            seenIds: _seen,
             idFrom,
             siteNo: i,
           });
@@ -7127,7 +7157,7 @@ const UTILITY_RULES = [
       const bgM = t.match(/Account\s*ID:\s*(BG-\d+)/i);
       const AccountNumber = _idUnread
         ? 'ID-UNREAD-site' + (idOpts.siteNo || 0)
-        : (custIdM ? _constNormCustId(custIdM[1], idOpts.knownIds, idOpts.seenIds) : null) ||
+        : (custIdM ? _constNormCustId(custIdM[1], idOpts.knownIds, _constAddrBefore(_idText, custIdM.index)) : null) ||
           (ldcM ? ldcM[1].trim() : null) ||
           (bgM ? bgM[1] : null);
 
@@ -7160,19 +7190,7 @@ const UTILITY_RULES = [
       // AccountNumber). Within that window, take the LAST match (closest to the
       // boundary) so an invoice-level billing address earlier in the header does not
       // win over the current site's own address sitting at the end of prevTail.
-      const _addrAllBaldwin = [..._identityText.matchAll(/^(\d+\s+[A-Za-z0-9 #]+,\s*Baldwin\s*City[^\n]*)/gim)];
-      const _addrAllGeneric = [
-        ..._identityText.matchAll(
-          /^(\d+\s+[A-Za-z0-9 .#]+,\s*[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?,\s*[A-Z]{2}\s*\d{5}(?:-\d{4})?)/gm,
-        ),
-      ];
-      const addrM =
-        _addrAllBaldwin.length > 0
-          ? _addrAllBaldwin[_addrAllBaldwin.length - 1]
-          : _addrAllGeneric.length > 0
-            ? _addrAllGeneric[_addrAllGeneric.length - 1]
-            : null;
-      const ServiceAddress = addrM ? addrM[1].trim() : null;
+      const ServiceAddress = _constAddrBefore(_identityText, _identityText.length, Infinity);
 
       // ── BillingPeriod ──
       // "Service for Dec-2024 - Actual" → month name + 4-digit year
@@ -7226,7 +7244,9 @@ const UTILITY_RULES = [
       // Never fall back to summing all MMBtu occurrences (that is the root-cause bug).
       let NaturalGasTherms = null;
       const _icM = _siteOwnText.match(/Incremental\s+Costs[^\n]{0,90}?([\d,]+\.?\d*)\s*MMBt[uUyY]/i);
-      const _subtotalM = _siteOwnText.match(/Subtotal\s+Gas\s+Supply\s+Charges[^\n]{0,90}?([\d,]+\.?\d*)\s*MMBt[uUyY]/i);
+      const _subtotalM = _siteOwnText.match(
+        /Subtotal\s+Gas\s+Supply\s+Charges[^\n]{0,90}?([\d,]+\.?\d*)\s*MMBt[uUyY]/i,
+      );
       const _mmBtuRaw = _icM ? _icM[1] : _subtotalM ? _subtotalM[1] : null;
       if (_mmBtuRaw) {
         const mmBtuVal = parseFloat(_mmBtuRaw.replace(/,/g, ''));
