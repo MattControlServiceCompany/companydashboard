@@ -18,12 +18,17 @@ const path = require('path');
 
 const REPO = process.argv[2] ? path.resolve(process.argv[2]) : path.join(__dirname, '..');
 const DIRS = ['app', 'computations', 'extraction', 'lib'];
-const MS_DAY = /\b86400000\b|\b864e5\b|\b1000\s*\*\s*60\s*\*\s*60\s*\*\s*24\b|\b24\s*\*\s*60\s*\*\s*60\s*\*\s*1000\b|\b24\s*\*\s*3600\s*\*\s*1000\b/i;
+const MS_DAY =
+  /\b86400000\b|\b864e5\b|\b1000\s*\*\s*60\s*\*\s*60\s*\*\s*24\b|\b24\s*\*\s*60\s*\*\s*60\s*\*\s*1000\b|\b24\s*\*\s*3600\s*\*\s*1000\b/i;
 
 // [file, exact text that must appear on the line, reason]
 const ALLOWED = [
   ['app/utility-data.js', 'const diff = Math.round((e - s) / (1000 * 60 * 60 * 24));', 'calcDays itself'],
-  ['app/estimate-workbook-export.js', 'Date.UTC(1899, 11, 30)) / 86400000', 'Excel date serial, not a billing day count'],
+  [
+    'app/estimate-workbook-export.js',
+    'Date.UTC(1899, 11, 30)) / 86400000',
+    'Excel date serial, not a billing day count',
+  ],
   ['app/bas-alarms.js', 'var msPerDay = 86400000;', 'time-window filter on alarm timestamps'],
   ['app/bill-analysis.js', 'Date.now() + 86400000 * 60', 'future-date sanity window'],
   ['app/bill-analysis.js', 'overlapMs / 86400000', 'overlap between two bills, compared with a tolerance'],
@@ -31,6 +36,11 @@ const ALLOWED = [
   ['app/bill-analysis.js', 'toDate(prevEnd)) / 86400000', 'gap between two bills (tolerance)'],
   ['app/bill-analysis.js', '(da - db) / 86400000', 'fuzzy period match (tolerance)'],
   ['app/core.js', '(due - NOW) / (1000 * 60 * 60 * 24)', 'countdown to a due date from now'],
+  [
+    'app/db.js',
+    'DELETED_ITEM_RETENTION_MS = 90 * 24 * 60 * 60 * 1000',
+    'deletion-record retention window (sync engine)',
+  ],
   ['app/energy-savings.js', '180 * 86400000', 'year-boundary window'],
   ['app/energy-savings.js', 'Math.abs(mrd - bp) / 86400000', 'meter-read date closeness (tolerance)'],
   ['app/energy-savings.js', '(da - db) / 86400000', 'duplicate-period closeness (tolerance)'],
@@ -38,9 +48,17 @@ const ALLOWED = [
   ['app/portal-export.js', '365.25 * 24 * 3600 * 1000', 'ms per year constant'],
   ['app/report-engine.js', '365.25 * 86400000', 'ms per year constant'],
   ['computations/data-quality.js', '(curDate - prevDate) / 86400000', 'gap between two bills (tolerance)'],
-  ['computations/normalization.js', 'const gapDays = (s - _parseISO(prevEnd))', 'chain gap between two bills (tolerance)'],
+  [
+    'computations/normalization.js',
+    'const gapDays = (s - _parseISO(prevEnd))',
+    'chain gap between two bills (tolerance)',
+  ],
   ['computations/normalization.js', 'return (s - e) / (1000 * 60 * 60 * 24) > 3;', 'detectGap (tolerance)'],
-  ['computations/normalization.js', 'const days = Math.round((spanEnd - cur)', 'propane delivery month split (half-open date span)'],
+  [
+    'computations/normalization.js',
+    'const days = Math.round((spanEnd - cur)',
+    'propane delivery month split (half-open date span)',
+  ],
 ];
 
 const problems = [];

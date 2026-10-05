@@ -10,8 +10,18 @@ const DB = (() => {
   const KV_SYNC_URL = '/.netlify/functions/kv-sync';
   const REPLICA_STATE_KEY = 'ch_replica_state'; // 2a.3 — local-only, excluded from replication+backup
   const SYNC_QUEUE_KEY = 'ch_sync_queue'; // 2a.5 — local-only, excluded from replication+backup
+  // Local-only: the server value of each collection key (UNION_KEY_CONFIG) at the
+  // version in ch_replica_state. The base of every per-record three-way merge.
+  const SYNC_BASE_KEY = 'ch_sync_base';
+  // Local-only: full copy of every item this browser removed from a collection,
+  // kept DELETED_ITEM_RETENTION_MS. The shared deletion record holds only the stamp.
+  const DELETED_ITEMS_KEY = 'ch_deleted_items';
+  const DELETED_ITEM_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
   const GZIP_THRESHOLD_BYTES = 1024 * 1024; // 2a item 6 — gzip PUT bodies over ~1MB
   const MANIFEST_TIMEOUT_MS = 4000; // §2.2 offline timeout window (~3-5s)
+  const BATCH_GET_TIMEOUT_MS = 60000; // one batched GET (a value can be several MB gzipped)
+  const TOMBSTONE_RETRY_BASE_MS = 5000; // deletion-record fetch failed: retry 5s, 10s, 20s ... up to 5 min
+  const TOMBSTONE_RETRY_MAX_MS = 5 * 60 * 1000;
   const POLL_INTERVAL_MS = 60000; // 2a.6 — manifest polling cadence
   const QUEUE_DRAIN_INTERVAL_MS = 15000; // 2a.5 — retry queue drain cadence
 
@@ -31,6 +41,7 @@ const DB = (() => {
   // Persisted write-through to IDB (via _rawSet, bypassing the replication
   // tail — this key is local-only bookkeeping, not app data).
   let _replicaVersions = {};
+  let _syncBase = {}; // collection key -> server value at _replicaVersions[key].version (SYNC_BASE_KEY)
 
   // --- 2a.5: durable offline retry queue -----------------------------------
   // Ordered array of { id, key, value, deleted, baseVersion, ts }. A failed
@@ -290,6 +301,9 @@ const DB = (() => {
       Object.keys(value)
         .sort()
         .forEach((k) => {
+          // An own "__proto__" key from server JSON must not change this object's
+          // prototype. kv-sync.js drops it from the hash input the same way.
+          if (k === '__proto__') return;
           out[k] = _sortKeysDeep(value[k]);
         });
       return out;
@@ -363,9 +377,22 @@ const DB = (() => {
   function _loadReplicaState() {
     const stored = _cache[REPLICA_STATE_KEY];
     _replicaVersions = stored && typeof stored === 'object' ? stored : {};
+    const base = _cache[SYNC_BASE_KEY];
+    _syncBase = base && typeof base === 'object' ? base : {};
   }
   function _persistReplicaState() {
     _rawSet(REPLICA_STATE_KEY, _replicaVersions);
+  }
+  // The ONE place a key is stamped as "in sync at this server version". For a
+  // collection key the server value at that version is kept as the merge base.
+  function _setSynced(key, stamp, serverValue) {
+    _replicaVersions[key] = stamp;
+    if (UNION_KEY_CONFIG[key]) {
+      if (stamp.deleted || serverValue === undefined || serverValue === null) delete _syncBase[key];
+      else _syncBase[key] = JSON.parse(JSON.stringify(serverValue));
+      _rawSet(SYNC_BASE_KEY, _syncBase);
+    }
+    _persistReplicaState();
   }
 
   // --- 2a.5: sync-queue persistence + pill event ----------------------------
@@ -492,7 +519,7 @@ const DB = (() => {
                 DERIVED_METER_FIELDS.forEach((f) => delete c[f]);
                 return c;
               }),
-            })
+            }),
       ),
     });
   }
@@ -528,13 +555,17 @@ const DB = (() => {
     // deliberate overwrite only — never set on an ordinary write).
     if (payload.explicitOverwrite === true) bodyObj.explicitOverwrite = true;
     const bodyStr = JSON.stringify(bodyObj);
+    // Token and wire key belong to the same identity: both are read before the
+    // gzip await, and the request is dropped if the identity changed during it.
+    const authHeaders = _authHeaders();
     const gz = await _maybeGzipBody(bodyStr);
+    if (epoch !== _identityEpoch || _wireKey(key) !== wireKey) return { status: 'stale-identity' };
 
     let res;
     try {
       res = await fetch(KV_SYNC_URL, {
         method: 'PUT',
-        headers: Object.assign({ 'content-type': 'application/json' }, gz.headers, _authHeaders()),
+        headers: Object.assign({ 'content-type': 'application/json' }, gz.headers, authHeaders),
         body: gz.body,
       });
     } catch (e) {
@@ -559,8 +590,7 @@ const DB = (() => {
         }
         if (epoch !== _identityEpoch) return { status: 'stale-identity' };
       }
-      _replicaVersions[key] = { version: json.version, hash: okHash };
-      _persistReplicaState();
+      _setSynced(key, { version: json.version, hash: okHash }, isTombstone ? undefined : bodyObj.value);
       return { status: 'ok', body: json };
     }
     if (res.status === 409) {
@@ -569,9 +599,10 @@ const DB = (() => {
     return { status: 'error', body: json, httpStatus: res.status };
   }
 
-  // --- Phase 2b: array-of-id keys eligible for the "Keep both" disjoint-
-  // additive union offer (integration #6). Every entry not listed here falls
-  // straight to the standard 3-button modal — no union is even attempted.
+  // --- Collection keys: one list of records with a stable id ------------------
+  // Every key here is merged RECORD BY RECORD (three-way, against the last
+  // server value in _syncBase) by _mergeCollection, the ONE merge for these
+  // keys: hydration, the write-conflict (409) path and restore all call it.
   //
   // NOTE (flagged, not guessed): en_projects and en_tasks are bare arrays of
   // objects with a stable `.id` (core.js:786 `tasks.push({id: Date.now(), ...})`,
@@ -584,43 +615,45 @@ const DB = (() => {
   // on screen" UI state, not data; the merge keeps the SERVER's values for
   // those two fields — an arbitrary but low-stakes tie-break, called out here
   // rather than silently decided.
+  const _bareList = {
+    getItems: (v) => (Array.isArray(v) ? v : null),
+    setItems: (_v, items) => items,
+    getId: (item) => item && item.id,
+  };
   const UNION_KEY_CONFIG = {
-    en_projects: {
-      getItems: (v) => (Array.isArray(v) ? v : null),
-      setItems: (_v, items) => items,
-      getId: (item) => item && item.id,
-    },
-    // Customer/Multi-Project (2026-09-24): same bare-id-array union-merge pattern as
-    // en_projects/en_tasks. Deterministic customer ids ('cust_' + projectId, see
-    // _selfHealCustomersAndScope in app/utility-data.js) make two independent browsers
-    // migrating the same project converge on byte-identical shared-id rows, so this
-    // merges cleanly with no conflict modal.
-    en_customers: {
-      getItems: (v) => (Array.isArray(v) ? v : null),
-      setItems: (_v, items) => items,
-      getId: (item) => item && item.id,
-    },
-    en_tasks: {
-      getItems: (v) => (Array.isArray(v) ? v : null),
-      setItems: (_v, items) => items,
-      getId: (item) => item && item.id,
-    },
+    en_projects: Object.assign({}, _bareList, {
+      getLabel: (it) => it && it.name,
+    }),
+    // Customer/Multi-Project (2026-09-24): deterministic customer ids ('cust_' +
+    // projectId, see _selfHealCustomersAndScope in app/utility-data.js) make two
+    // independent browsers migrating the same project converge on byte-identical
+    // shared-id rows, so this merges cleanly with no conflict modal.
+    en_customers: Object.assign({}, _bareList, {
+      getLabel: (it) => it && it.name,
+    }),
+    en_tasks: Object.assign({}, _bareList, { getLabel: (it) => it && it.text }),
     en_dc_events: {
       getItems: (v) => (v && Array.isArray(v.events) ? v.events : null),
       setItems: (v, items) => _safeAssign({}, v, { events: items }),
       getId: (item) => item && item.date + '|' + item.name + '|' + item.type,
+      getLabel: (it) => it && it.name + ' (' + it.date + ')',
     },
+    // ems-leads.html: array of leads with genId() ids, written through sset.
+    ems_leads_v1: Object.assign({}, _bareList, {
+      getLabel: (it) => it && (it.company || it.name),
+    }),
   };
 
   // --- Deletion records (F1, 2026-10-05) -------------------------------------
   // A union merge cannot tell "added locally" from "deleted on the server".
-  // So every removal from a UNION_KEY_CONFIG list is recorded, with the full
-  // removed record, in ONE synced key: { <listKey>: { <id>: { t, item,
-  // restored? } } }. The record is the recovery copy: a deleted item is never
-  // only gone. Every merge (hydration, conflict preview) drops a record whose
-  // id has an active deletion entry, on both sides. An id added again later
-  // (restore, re-import) gets `restored` set to the time it came back, which
-  // turns that entry off; a newer delete turns it on again (larger t).
+  // So every removal from a UNION_KEY_CONFIG list is recorded in ONE synced
+  // key: { <listKey>: { <id>: { t, restored? } } } (stamps only, so the key
+  // stays small). The removed item itself is kept on the deleting browser in
+  // DELETED_ITEMS_KEY for DELETED_ITEM_RETENTION_MS. Every merge drops a record
+  // whose id has an active deletion entry, on both sides. An id added again
+  // later (restore, re-import) gets `restored` set to the time it came back,
+  // which turns that entry off; a newer delete turns it on again (larger t).
+  // Entries older than DELETED_ITEM_RETENTION_MS are pruned in _mergeTombstones.
   const TOMBSTONE_KEY = 'en_deleted_records';
   // Server JSON must never reach these property names on a local object.
   function _unsafeKey(k) {
@@ -644,8 +677,11 @@ const DB = (() => {
   function _tombActive(e) {
     return !!e && !((e.restored || 0) >= (e.t || 0) && e.restored);
   }
+  // Union of two deletion-record sets, newest stamp per id wins; rebuilt key by
+  // key (unsafe names skipped); entries past the retention window dropped.
   function _mergeTombstones(a, b) {
     const out = {};
+    const cutoff = Date.now() - DELETED_ITEM_RETENTION_MS;
     [a, b].forEach((src) => {
       if (!src || typeof src !== 'object') return;
       Object.keys(src).forEach((lk) => {
@@ -653,8 +689,12 @@ const DB = (() => {
         out[lk] = out[lk] || {};
         Object.keys(src[lk] || {}).forEach((id) => {
           if (_unsafeKey(id)) return;
+          const e = src[lk][id];
+          if (!e || typeof e !== 'object' || _tombStamp(e) < cutoff) return;
           const cur = out[lk][id];
-          if (!cur || _tombStamp(src[lk][id]) > _tombStamp(cur)) out[lk][id] = src[lk][id];
+          if (!cur || _tombStamp(e) > _tombStamp(cur)) {
+            out[lk][id] = e.restored ? { t: e.t, restored: e.restored } : { t: e.t };
+          }
         });
       });
     });
@@ -671,32 +711,59 @@ const DB = (() => {
     });
     return m;
   }
-  // set() calls this with the value before and after: records removed ids,
-  // and marks ids that came back as restored.
-  function _recordDeletions(key, oldValue, newValue) {
-    if (!UNION_KEY_CONFIG[key]) return;
+  // The ONE function for "this collection changed from oldValue to newValue":
+  // set() and restorePush call it. Records removed ids (stamp in the shared
+  // key, the item in DELETED_ITEMS_KEY) and marks ids that came back as
+  // restored. `restoreAll` (restore from backup) marks EVERY id in newValue
+  // that has an active deletion entry as restored, not only the ones absent
+  // from oldValue, so a stale deletion record can never delete a restored
+  // item again. Returns the replication promise of the shared key (null if
+  // nothing changed) so a caller can wait for the server to hold the records.
+  function _recordDeletions(key, oldValue, newValue, restoreAll) {
+    if (!UNION_KEY_CONFIG[key]) return null;
     const before = _itemIds(key, oldValue);
     const after = _itemIds(key, newValue);
-    if (!before.size && !after.size) return;
-    const tomb = JSON.parse(JSON.stringify(_cache[TOMBSTONE_KEY] || {}));
+    if (!before.size && !after.size) return null;
+    const tomb = _mergeTombstones(_cache[TOMBSTONE_KEY], null);
+    const kept = JSON.parse(JSON.stringify(_cache[DELETED_ITEMS_KEY] || {}));
     let changed = false;
+    let keptChanged = false;
     const now = Date.now();
     before.forEach((item, id) => {
       if (after.has(id)) return;
       if (_unsafeKey(id)) return;
       tomb[key] = tomb[key] || {};
-      tomb[key][id] = { t: now, item };
+      tomb[key][id] = { t: now };
+      kept[key] = kept[key] || {};
+      kept[key][id] = { t: now, item };
       changed = true;
+      keptChanged = true;
     });
     after.forEach((_item, id) => {
-      if (before.has(id)) return;
+      if (!restoreAll && before.has(id)) return;
       const e = _own(tomb[key], id) ? tomb[key][id] : null;
       if (e && _tombActive(e)) {
         e.restored = now > (e.t || 0) ? now : (e.t || 0) + 1;
         changed = true;
       }
     });
-    if (changed) set(TOMBSTONE_KEY, tomb);
+    Object.keys(kept).forEach((lk) => {
+      Object.keys(kept[lk] || {}).forEach((id) => {
+        if ((kept[lk][id].t || 0) < now - DELETED_ITEM_RETENTION_MS) {
+          delete kept[lk][id];
+          keptChanged = true;
+        }
+      });
+    });
+    if (keptChanged) _rawSet(DELETED_ITEMS_KEY, kept);
+    if (!changed) return null;
+    _rawSet(TOMBSTONE_KEY, tomb);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('dataUpdated', { detail: { key: TOMBSTONE_KEY } }));
+    }
+    return _replicateWrite(TOMBSTONE_KEY, { value: tomb }).catch((e) =>
+      console.warn('[DB] replication tail error:', TOMBSTONE_KEY, e),
+    );
   }
   // Drops every item with an active deletion entry. Returns { value, removed }.
   function _dropTombstoned(key, value) {
@@ -716,77 +783,212 @@ const DB = (() => {
     });
     return removed.length ? { value: cfg.setItems(value, kept), removed } : { value, removed };
   }
+  // Deletion-record fetch state. FAIL CLOSED: while `ok` is false no collection
+  // key is merged, uploaded or re-sent (a merge without the latest records
+  // would bring deleted items back). Retries by itself with backoff; shown in
+  // Sync status (getSyncStatus().deletionRecords, event dbDeletionRecordsStatus).
+  let _tombstoneState = { ok: true, error: null, failures: 0, nextRetryAt: null };
+  let _tombstoneRetryTimer = null;
+  function _emitTombstoneState() {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('dbDeletionRecordsStatus', {
+          detail: Object.assign({}, _tombstoneState),
+        }),
+      );
+    }
+  }
+  function _noteTombstoneFailure(e) {
+    const failures = _tombstoneState.failures + 1;
+    const delay = Math.min(TOMBSTONE_RETRY_BASE_MS * Math.pow(2, failures - 1), TOMBSTONE_RETRY_MAX_MS);
+    _tombstoneState = {
+      ok: false,
+      error: String((e && e.message) || e),
+      failures,
+      nextRetryAt: Date.now() + delay,
+    };
+    _emitTombstoneState();
+    if (_tombstoneRetryTimer) clearTimeout(_tombstoneRetryTimer);
+    _tombstoneRetryTimer = setTimeout(async () => {
+      _tombstoneRetryTimer = null;
+      if (_backendMode() !== 'on') return;
+      if (await _refreshTombstones()) {
+        try {
+          await _hydrate(); // the collection keys skipped while blocked
+        } catch (err) {
+          console.warn('[DB] Re-hydrate after deletion records recovered failed:', err);
+        }
+      }
+    }, delay);
+  }
   // Brings the latest deletion records from the server into the local copy
   // (union by id, newest stamp wins) and pushes back any local-only entries.
+  // Resolves true when the records are current, false when the fetch failed
+  // (state recorded, retry scheduled) or the identity changed meanwhile.
   async function _refreshTombstones() {
     const epoch = _identityEpoch;
     let rows = [];
     try {
       rows = await _batchGet([TOMBSTONE_KEY]);
     } catch (e) {
-      return; // offline: the local copy is used as is
+      _noteTombstoneFailure(e);
+      return false;
     }
+    if (epoch !== _identityEpoch) return false;
     const row = rows && rows[0];
-    if (!row || row.deleted || epoch !== _identityEpoch) return;
-    await _reconcileIncoming(TOMBSTONE_KEY, row, row.hash || null);
+    if (row && !row.deleted) await _reconcileIncoming(TOMBSTONE_KEY, row, row.hash || null);
+    if (epoch !== _identityEpoch) return false;
+    if (_tombstoneRetryTimer) {
+      clearTimeout(_tombstoneRetryTimer);
+      _tombstoneRetryTimer = null;
+    }
+    const wasBlocked = !_tombstoneState.ok;
+    _tombstoneState = { ok: true, error: null, failures: 0, nextRetryAt: null };
+    if (wasBlocked) _emitTombstoneState();
+    return true;
+  }
+  function _tombstonesBlocked() {
+    return !_tombstoneState.ok;
   }
 
-  // Returns the merged value if `localValue`/`serverValue` are a pure
-  // disjoint-additive union (each side only ADDED new ids; every id present
-  // on both sides is byte-identical), else null (not eligible — fall back to
-  // the standard modal). No true three-way base snapshot exists client-side
-  // (only the two current states), so this is a conservative two-way
-  // heuristic: it only ever offers a union when the shared items match
-  // exactly, never when it would have to guess at an edit vs a removal.
-  function _computeDisjointUnion(key, localValue, serverValue) {
+  // --- The ONE merge for a collection key (per record, three-way) ------------
+  // base = the server value at the version this browser last synced
+  // (_syncBase), local = this browser's list, server = the server's list now.
+  // Items with an active deletion record are dropped from every side first
+  // (the dropped local copies are archived as 'deleted-elsewhere'). Then per id:
+  //   same on both sides            -> keep
+  //   changed on one side only      -> that side (a removal on that side removes it)
+  //   removed here, changed there   -> theirs (nothing was edited here)
+  //   changed here, removed there   -> mine (no deletion record: never drop an edit)
+  //   changed on both sides         -> field by field (plain objects): a field
+  //                                    changed on one side only merges; the same
+  //                                    field changed on both sides is a CONFLICT
+  // A conflict record keeps the server version in `value`; the caller decides
+  // (hydration: server wins, local archived; write path: the user chooses).
+  // Returns null when a side is not a list at all (not a collection value).
+  function _diffFields(a, b) {
+    const out = [];
+    const keys = new Set(Object.keys(a || {}).concat(Object.keys(b || {})));
+    keys.forEach((f) => {
+      if (_unsafeKey(f)) return;
+      if (_canonicalJSON(a ? a[f] : undefined) !== _canonicalJSON(b ? b[f] : undefined)) out.push(f);
+    });
+    return out;
+  }
+  function _isPlainObject(v) {
+    return !!v && typeof v === 'object' && !Array.isArray(v);
+  }
+  function _mergeFields(b, l, s) {
+    if (!_isPlainObject(b) || !_isPlainObject(l) || !_isPlainObject(s)) return null;
+    const out = {};
+    const keys = new Set(Object.keys(b).concat(Object.keys(l), Object.keys(s)));
+    for (const f of keys) {
+      if (_unsafeKey(f)) continue;
+      const cb = _canonicalJSON(b[f]);
+      const cl = _canonicalJSON(l[f]);
+      const cs = _canonicalJSON(s[f]);
+      let v;
+      if (cl === cs) v = s[f];
+      else if (cl === cb) v = s[f];
+      else if (cs === cb) v = l[f];
+      else return null; // same field changed on both sides
+      if (v !== undefined) out[f] = v;
+    }
+    return out;
+  }
+  function _mergeCollection(key, baseValue, localValue, serverValue) {
     const cfg = UNION_KEY_CONFIG[key];
     if (!cfg) return null;
-    const localItems = cfg.getItems(localValue);
-    const serverItems = cfg.getItems(serverValue);
-    if (!Array.isArray(localItems) || !Array.isArray(serverItems)) return null;
-
-    const serverById = new Map();
-    serverItems.forEach((it) => {
-      const id = cfg.getId(it);
-      if (id !== undefined && id !== null) serverById.set(id, it);
-    });
-
-    const localOnly = [];
-    for (const it of localItems) {
-      const id = cfg.getId(it);
-      if (id === undefined || id === null) continue;
-      if (!serverById.has(id)) {
-        localOnly.push(it);
-        continue;
-      }
-      // Shared id on both sides — must be byte-identical or this is a real
-      // edit conflict, not a pure addition. Bail to the standard modal.
-      const serverItem = serverById.get(id);
-      if (_canonicalJSON(it) !== _canonicalJSON(serverItem)) return null;
+    const isList = (v) => v === undefined || v === null || Array.isArray(cfg.getItems(v));
+    if (!isList(localValue) || !isList(serverValue)) return null;
+    const ls = _dropTombstoned(key, localValue);
+    const ss = _dropTombstoned(key, serverValue);
+    if (ls.removed.length) {
+      _appendConflictArchive({
+        key,
+        reason: 'deleted-elsewhere',
+        losingSide: 'local',
+        losingValue: ls.removed,
+        winningSide: 'server',
+      });
     }
-    if (!localOnly.length) return null; // nothing new locally — no union to offer
-
-    const mergedItems = serverItems.concat(localOnly);
-    return cfg.setItems(serverValue, mergedItems);
+    const B = _itemIds(key, _dropTombstoned(key, baseValue).value);
+    const L = _itemIds(key, ls.value);
+    const S = _itemIds(key, ss.value);
+    const conflicts = [];
+    const out = [];
+    const order = Array.from(S.keys()).concat(Array.from(L.keys()).filter((id) => !S.has(id)));
+    for (const id of order) {
+      const b = B.get(id);
+      const l = L.get(id);
+      const s = S.get(id);
+      const cb = _canonicalJSON(b);
+      const cl = _canonicalJSON(l);
+      const cs = _canonicalJSON(s);
+      let v;
+      if (cl === cs) v = s;
+      else if (cl === cb) v = s;
+      else if (cs === cb) v = l;
+      else if (l === undefined) v = s;
+      else if (s === undefined) v = l;
+      else {
+        v = _mergeFields(b, l, s);
+        if (v === null) {
+          conflicts.push({
+            id,
+            base: b,
+            local: l,
+            server: s,
+            fields: _diffFields(l, s),
+          });
+          v = s;
+        }
+      }
+      if (v !== undefined) out.push(v);
+    }
+    const shape = serverValue !== undefined && serverValue !== null ? ss.value : ls.value;
+    return {
+      value: cfg.setItems(shape, out),
+      conflicts,
+      removedLocal: ls.removed,
+    };
+  }
+  // Applies the user's per-record choices to a merge result: 'mine' puts the
+  // local record back in place of the server one; the losing record of every
+  // conflict is archived first.
+  function _applyRecordChoices(key, merge, choices) {
+    const cfg = UNION_KEY_CONFIG[key];
+    const mine = new Map();
+    merge.conflicts.forEach((c) => {
+      const pick = choices && _own(choices, String(c.id)) ? choices[String(c.id)] : 'theirs';
+      const keepMine = pick === 'mine';
+      _appendConflictArchive({
+        key,
+        reason: 'record-conflict',
+        recordId: c.id,
+        losingSide: keepMine ? 'server' : 'local',
+        losingValue: keepMine ? c.server : c.local,
+        winningSide: keepMine ? 'local' : 'server',
+      });
+      if (keepMine) mine.set(String(c.id), c.local);
+    });
+    if (!mine.size) return merge.value;
+    const items = cfg.getItems(merge.value).map((it) => {
+      const id = cfg.getId(it);
+      return id !== undefined && id !== null && mine.has(String(id)) ? mine.get(String(id)) : it;
+    });
+    return cfg.setItems(merge.value, items);
   }
 
   // --- Conflict handling (write-time 409) -----------------------------------
-  async function _handleConflict(key, payload, body, mode) {
+  // `depth` counts re-sends after a merge; the queue takes over past the cap.
+  // The identity epoch is captured here and re-checked after every await: a
+  // conflict resolved after a user switch writes nothing.
+  const CONFLICT_RESEND_CAP = 4;
+  async function _handleConflict(key, payload, body, mode, depth) {
+    depth = depth || 0;
+    const epoch = _identityEpoch;
     const current = body && body.current;
-    // Data-safety invariant: archive the losing local write BEFORE adopting
-    // the server version or opening any modal — never silently lose either
-    // side, and never let a modal button be clickable before this has run.
-    _appendConflictArchive({
-      key,
-      reason: current && current.deleted ? 'write-conflict-tombstone' : 'write-conflict-server-wins',
-      losingSide: 'local',
-      losingValue: payload.deleted ? null : payload.value,
-      losingDeleted: !!payload.deleted,
-      winningVersion: current && current.version,
-      winningUpdatedBy: current && current.updatedBy,
-      winningUpdatedAt: current && current.updatedAt,
-    });
-
     if (mode !== 'on') return; // 'off' never replicates, so never reaches here
 
     if (!current) {
@@ -797,6 +999,41 @@ const DB = (() => {
       _enqueueWrite(key, payload);
       return;
     }
+
+    // Deletion records: union by id (newest stamp wins) and re-send. Never a modal.
+    if (key === TOMBSTONE_KEY && !payload.deleted && !current.deleted) {
+      const merged = _mergeTombstones(
+        _cache[TOMBSTONE_KEY] !== undefined ? _cache[TOMBSTONE_KEY] : payload.value,
+        current.value,
+      );
+      await _rawSet(TOMBSTONE_KEY, merged);
+      if (epoch !== _identityEpoch) return;
+      _setSynced(TOMBSTONE_KEY, { version: current.version, hash: current.hash || null }, null);
+      await _resendMerged(key, merged, epoch, depth);
+      return;
+    }
+
+    // Collection keys: per-record three-way merge. A modal only when the same
+    // record was changed on both sides, and then the user chooses per record.
+    if (UNION_KEY_CONFIG[key] && !payload.deleted && !current.deleted) {
+      const handled = await _resolveCollectionConflict(key, payload, current, epoch, depth);
+      if (handled) return;
+      if (epoch !== _identityEpoch) return;
+    }
+
+    // Data-safety invariant: archive the losing local write BEFORE adopting
+    // the server version or opening any modal — never silently lose either
+    // side, and never let a modal button be clickable before this has run.
+    _appendConflictArchive({
+      key,
+      reason: current.deleted ? 'write-conflict-tombstone' : 'write-conflict-server-wins',
+      losingSide: 'local',
+      losingValue: payload.deleted ? null : payload.value,
+      losingDeleted: !!payload.deleted,
+      winningVersion: current.version,
+      winningUpdatedBy: current.updatedBy,
+      winningUpdatedAt: current.updatedAt,
+    });
 
     // Customer/Multi-Project (2026-09-24, BLOCKER 3 fix): byte-identical short-circuit.
     // Deterministic customer ids mean two browsers migrating the same project can write
@@ -811,8 +1048,7 @@ const DB = (() => {
           JSON.stringify(stripDerivedCaches(key, payload.value)) ===
           JSON.stringify(stripDerivedCaches(key, current.value))
         ) {
-          _replicaVersions[key] = { version: current.version, hash: current.hash || null };
-          _persistReplicaState();
+          _setSynced(key, { version: current.version, hash: current.hash || null }, current.value);
           return;
         }
       } catch (e) {
@@ -820,22 +1056,116 @@ const DB = (() => {
       }
     }
 
-    await _presentConflictModal(key, payload, current);
+    await _presentConflictModal(key, payload, current, epoch);
+  }
+
+  // Re-sends a merged value at the server version just adopted. A new 409
+  // merges again (bounded); a network/server error goes to the retry queue.
+  async function _resendMerged(key, value, epoch, depth) {
+    let r;
+    try {
+      r = await _sendKvPut(key, { value });
+    } catch (e) {
+      r = { status: 'network-error' };
+    }
+    if (epoch !== _identityEpoch) return;
+    if (r.status === 'ok') return;
+    if (r.status === 'conflict' && depth < CONFLICT_RESEND_CAP) {
+      await _handleConflict(key, { value }, r.body, 'on', depth + 1);
+      return;
+    }
+    _enqueueWrite(key, { value });
+  }
+
+  // Write-conflict path for a collection key. Resolves true when it handled
+  // the conflict (merged, queued, or dropped after an identity change), false
+  // when the value is not a list (the caller falls back to the whole-key modal).
+  async function _resolveCollectionConflict(key, payload, current, epoch, depth) {
+    if (!(await _refreshTombstones())) {
+      // FAIL CLOSED: without the latest deletion records a merge could bring a
+      // deleted item back. The retry queue sends this write again later.
+      if (epoch === _identityEpoch) _enqueueWrite(key, payload);
+      return true;
+    }
+    if (epoch !== _identityEpoch) return true;
+    // Merge the LIVE local list (newer than the payload if the user kept editing).
+    const local = _cache[key] !== undefined ? _cache[key] : payload.value;
+    const merge = _mergeCollection(key, _syncBase[key], local, current.value);
+    if (merge === null) return false;
+    let value = merge.value;
+    if (merge.conflicts.length) {
+      if (
+        typeof window === 'undefined' ||
+        !window.SyncConflictUI ||
+        typeof window.SyncConflictUI.showConflictModal !== 'function'
+      ) {
+        console.warn('[DB] SyncConflictUI unavailable — record conflict left queued:', key);
+        _enqueueWrite(key, payload);
+        return true;
+      }
+      const cfg = UNION_KEY_CONFIG[key];
+      const localBase = _replicaVersions[key];
+      const descriptor = {
+        key,
+        conflictClass: 'records',
+        records: merge.conflicts.map((c) => ({
+          id: c.id,
+          label: String((cfg.getLabel && cfg.getLabel(c.local)) || c.id),
+          fields: c.fields,
+          local: c.local,
+          server: c.server,
+        })),
+        local: { value: local, deleted: false },
+        server: {
+          value: current.value,
+          version: current.version,
+          deleted: false,
+          updatedBy: current.updatedBy,
+          updatedAt: current.updatedAt,
+        },
+        localBaseVersion: localBase && typeof localBase.version === 'number' ? localBase.version : null,
+        typedConfirmRequired: false,
+      };
+      let resolution;
+      try {
+        resolution = await window.SyncConflictUI.showConflictModal(descriptor);
+      } catch (e) {
+        console.warn('[DB] Conflict modal threw, leaving write queued:', key, e);
+        _enqueueWrite(key, payload);
+        return true;
+      }
+      if (epoch !== _identityEpoch) return true; // user switched while the modal was open: write nothing
+      value = _applyRecordChoices(key, merge, resolution && resolution.choices);
+    }
+    await _rawSet(key, value);
+    if (epoch !== _identityEpoch) return true;
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('dataUpdated', { detail: { key } }));
+    }
+    _setSynced(key, { version: current.version, hash: current.hash || null }, current.value);
+    await _resendMerged(key, value, epoch, depth);
+    if (epoch === _identityEpoch && typeof showToast === 'function') {
+      showToast(
+        merge.conflicts.length
+          ? 'Your choices were saved. The other versions are in the conflict history.'
+          : 'Changes saved by another user were merged with yours. Nothing was lost.',
+        'info',
+      );
+    }
+    return true;
   }
 
   // --- Phase 2b: blocking conflict modal (full/'on' mode only) --------------
-  async function _presentConflictModal(key, payload, current) {
+  async function _presentConflictModal(key, payload, current, epoch) {
     const isTombstoneConflict = current.deleted === true && !payload.deleted;
-    let unionPreview = null;
-    if (!isTombstoneConflict && !payload.deleted && !current.deleted) {
-      if (UNION_KEY_CONFIG[key]) await _refreshTombstones();
-      unionPreview = _computeDisjointUnion(key, _dropTombstoned(key, payload.value).value, _dropTombstoned(key, current.value).value);
-    }
     const localBase = _replicaVersions[key];
 
     const descriptor = {
       key,
-      local: { value: payload.deleted ? undefined : payload.value, deleted: !!payload.deleted },
+      local: {
+        value: payload.deleted ? undefined : payload.value,
+        deleted: !!payload.deleted,
+      },
       server: {
         value: current.value,
         version: current.version,
@@ -844,8 +1174,7 @@ const DB = (() => {
         updatedAt: current.updatedAt,
       },
       localBaseVersion: localBase && typeof localBase.version === 'number' ? localBase.version : null,
-      conflictClass: isTombstoneConflict ? 'tombstone' : unionPreview ? 'union-candidate' : 'standard',
-      unionPreview,
+      conflictClass: isTombstoneConflict ? 'tombstone' : 'standard',
       typedConfirmRequired: key.indexOf('en_utility_') === 0,
     };
 
@@ -867,12 +1196,13 @@ const DB = (() => {
       _enqueueWrite(key, payload);
       return;
     }
+    if (epoch !== _identityEpoch) return; // user switched while the modal was open: write nothing
 
-    await _applyConflictResolution(key, payload, current, resolution);
+    await _applyConflictResolution(key, payload, current, resolution, epoch);
   }
 
   // --- Phase 2b: execute the user's chosen conflict-modal resolution --------
-  async function _applyConflictResolution(key, payload, current, resolution) {
+  async function _applyConflictResolution(key, payload, current, resolution, epoch) {
     const action = resolution && resolution.action;
 
     if (action === 'load-theirs' || action === 'save-copy' || action === 'discard-mine') {
@@ -880,12 +1210,20 @@ const DB = (() => {
       // Adopt the server's current value/version as the new local truth.
       if (current.deleted) {
         await _rawDelete(key);
-        _replicaVersions[key] = { version: current.version, hash: current.hash || null, deleted: true };
+        if (epoch !== _identityEpoch) return;
+        _setSynced(key, {
+          version: current.version,
+          hash: current.hash || null,
+          deleted: true,
+        });
       } else {
         await _rawSet(key, current.value);
-        _replicaVersions[key] = { version: current.version, hash: current.hash || null };
+        if (epoch !== _identityEpoch) {
+          if (_isPerUserKey(key)) await _rawDelete(key); // never leave the old user's row under the new user
+          return;
+        }
+        _setSynced(key, { version: current.version, hash: current.hash || null }, current.value);
       }
-      _persistReplicaState();
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('dataUpdated', { detail: { key } }));
       }
@@ -898,14 +1236,17 @@ const DB = (() => {
     if (action === 'overwrite-mine' || action === 'restore-mine') {
       // Retry at the server's current version with explicitOverwrite so
       // kv-sync.js snapshots the row being replaced into kv_history first.
-      _replicaVersions[key] = { version: current.version, hash: current.hash || null };
-      const retryPayload = Object.assign({}, payload, { explicitOverwrite: true });
+      _setSynced(key, { version: current.version, hash: current.hash || null }, current.value);
+      const retryPayload = Object.assign({}, payload, {
+        explicitOverwrite: true,
+      });
       let result;
       try {
         result = await _sendKvPut(key, retryPayload);
       } catch (e) {
         result = { status: 'network-error' };
       }
+      if (epoch !== _identityEpoch) return;
       if (result.status === 'ok') {
         if (typeof showToast === 'function') {
           showToast('Your version was saved, replacing the server copy.', 'info');
@@ -918,40 +1259,6 @@ const DB = (() => {
         return;
       }
       _enqueueWrite(key, retryPayload);
-      return;
-    }
-
-    if (action === 'keep-both') {
-      const unionValue = resolution.unionValue;
-      const cfg = UNION_KEY_CONFIG[key];
-      if (!cfg || !Array.isArray(cfg.getItems(unionValue))) {
-        console.warn('[DB] keep-both resolution missing a usable unionValue, falling back to load-theirs:', key);
-        await _applyConflictResolution(key, payload, current, { action: 'load-theirs' });
-        return;
-      }
-      await _rawSet(key, unionValue);
-      _replicaVersions[key] = { version: current.version, hash: current.hash || null };
-      const unionPayload = { value: unionValue };
-      let result;
-      try {
-        result = await _sendKvPut(key, unionPayload);
-      } catch (e) {
-        result = { status: 'network-error' };
-      }
-      if (result.status === 'ok') {
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('dataUpdated', { detail: { key } }));
-        }
-        if (typeof showToast === 'function') {
-          showToast('Merged both versions — nothing was lost.', 'info');
-        }
-        return;
-      }
-      if (result.status === 'conflict') {
-        await _handleConflict(key, unionPayload, result.body, 'on');
-        return;
-      }
-      _enqueueWrite(key, unionPayload);
       return;
     }
 
@@ -1061,7 +1368,20 @@ const DB = (() => {
   async function _batchGet(keys) {
     if (!keys.length) return [];
     const url = KV_SYNC_URL + '?keys=' + encodeURIComponent(keys.join(','));
-    const res = await fetch(url, { method: 'GET', headers: _authHeaders() });
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = setTimeout(() => {
+      if (controller) controller.abort();
+    }, BATCH_GET_TIMEOUT_MS);
+    let res;
+    try {
+      res = await fetch(url, {
+        method: 'GET',
+        headers: _authHeaders(),
+        signal: controller ? controller.signal : undefined,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
     if (!res.ok) throw new Error('batch GET failed: ' + res.status);
     return res.json();
   }
@@ -1119,36 +1439,36 @@ const DB = (() => {
     if (epoch !== _identityEpoch) return;
     mHash = stamp.hash;
     let merged = null; // value to keep locally AND push to the server
-    let localValue = origLocal;
     let serverValue = row.value;
-    let skipArchive = false;
-    // Deletion records (F1): both sides lose every record someone deleted.
+    let collectionMerge = null;
+    // Collection keys: the ONE per-record merge (_mergeCollection). A record
+    // changed on both sides takes the server version here (no modal at load);
+    // the local record is archived first and counted for the toast.
     if (UNION_KEY_CONFIG[localKey] && !row.deleted) {
-      const ls = _dropTombstoned(localKey, origLocal);
-      const ss = _dropTombstoned(localKey, row.value);
-      if (ls.removed.length) {
-        _appendConflictArchive({
-          key: localKey,
-          reason: 'deleted-elsewhere',
-          losingSide: 'local',
-          losingValue: ls.removed,
-          winningSide: 'server',
+      collectionMerge = _mergeCollection(localKey, _syncBase[localKey], origLocal, row.value);
+      if (collectionMerge !== null) {
+        collectionMerge.conflicts.forEach((c) => {
+          _appendConflictArchive({
+            key: localKey,
+            reason: 'hydration-server-wins',
+            recordId: c.id,
+            losingSide: 'local',
+            losingValue: c.local,
+            losingVersion: base && typeof base.version === 'number' ? base.version : null,
+            winningSide: 'server',
+          });
         });
+        if (_canonicalJSON(collectionMerge.value) !== _canonicalJSON(row.value)) merged = collectionMerge.value;
       }
-      localValue = ls.value;
-      serverValue = ss.value;
-      if (ss.removed.length) merged = ss.value; // server list still holds deleted records: write the clean list back
     }
     // Deletion records themselves: keep both sides' entries, newest stamp wins.
+    // Server JSON is rebuilt key by key (unsafe names skipped) before it is stored or merged.
     if (localKey === TOMBSTONE_KEY && !row.deleted) {
-      // Server JSON is rebuilt key by key (unsafe names skipped) before it is stored or merged.
-      const clean = _mergeTombstones({}, row.value);
-      const both = origLocal !== undefined ? _mergeTombstones(origLocal, clean) : clean;
-      serverValue = clean;
-      if (origLocal !== undefined) skipArchive = true;
+      const both = _mergeTombstones(origLocal, row.value);
+      serverValue = both;
       if (_canonicalJSON(both) !== _canonicalJSON(row.value)) merged = both;
     }
-    if (origLocal !== undefined && merged === null) {
+    if (origLocal !== undefined && merged === null && collectionMerge === null && localKey !== TOMBSTONE_KEY) {
       let localHash = null;
       try {
         localHash = await _sha256Hex(_canonicalJSON(stripDerivedCaches(localKey, origLocal)));
@@ -1157,34 +1477,18 @@ const DB = (() => {
       }
       if (epoch !== _identityEpoch) return;
       if (!row.deleted && localHash !== null && localHash === mHash) {
-        _replicaVersions[localKey] = stamp; // same content: adopt the version only
+        _setSynced(localKey, stamp, row.value); // same content: adopt the version only
         return;
       }
       const unedited = localHash !== null && base && base.hash && base.hash === localHash;
-      if (!unedited && !skipArchive) {
-        if (!row.deleted) merged = _computeDisjointUnion(localKey, localValue, serverValue);
-        if (merged === null) {
-          _appendConflictArchive({
-            key: localKey,
-            reason: 'hydration-server-wins',
-            losingSide: 'local',
-            losingValue: origLocal,
-            losingVersion: base && typeof base.version === 'number' ? base.version : null,
-            losingHash: localHash,
-            winningSide: 'server',
-          });
-        }
-      }
-    } else if (origLocal !== undefined && merged !== null && UNION_KEY_CONFIG[localKey]) {
-      // Server list was cleaned. Local additions still count: union them in.
-      const u = _computeDisjointUnion(localKey, localValue, serverValue);
-      if (u !== null) merged = u;
-      else if (_canonicalJSON(localValue) !== _canonicalJSON(serverValue)) {
+      if (!unedited) {
         _appendConflictArchive({
           key: localKey,
           reason: 'hydration-server-wins',
           losingSide: 'local',
           losingValue: origLocal,
+          losingVersion: base && typeof base.version === 'number' ? base.version : null,
+          losingHash: localHash,
           winningSide: 'server',
         });
       }
@@ -1192,13 +1496,15 @@ const DB = (() => {
     if (epoch !== _identityEpoch) return;
     if (merged !== null) {
       await _rawSet(localKey, merged);
-      _replicaVersions[localKey] = stamp;
+      if (epoch !== _identityEpoch) return;
+      _setSynced(localKey, stamp, row.value); // base = what the server holds at this version
       let putResult;
       try {
         putResult = await _sendKvPut(localKey, { value: merged });
       } catch (e) {
         putResult = { status: 'network-error' };
       }
+      if (epoch !== _identityEpoch) return;
       if (putResult.status === 'conflict') {
         await _handleConflict(localKey, { value: merged }, putResult.body, _backendMode());
       } else if (putResult.status === 'network-error' || putResult.status === 'error') {
@@ -1214,7 +1520,25 @@ const DB = (() => {
       if (_isPerUserKey(localKey)) await _rawDelete(localKey);
       return;
     }
-    _replicaVersions[localKey] = stamp;
+    _setSynced(localKey, stamp, row.deleted ? undefined : row.value);
+  }
+
+  // A collection key synced by an earlier build has a version entry but no
+  // merge base. When the local list still matches the hash of that version,
+  // the local list IS the server value at that version: use it as the base.
+  async function _seedMissingBases() {
+    for (const key of Object.keys(UNION_KEY_CONFIG)) {
+      const entry = _replicaVersions[key];
+      if (!entry || typeof entry.version !== 'number' || !entry.hash) continue;
+      if (_own(_syncBase, key) || _cache[key] === undefined) continue;
+      let h = null;
+      try {
+        h = await _sha256Hex(_canonicalJSON(_cache[key]));
+      } catch (e) {
+        h = null;
+      }
+      if (h !== null && h === entry.hash) _setSynced(key, entry, _cache[key]);
+    }
   }
 
   async function _hydrateInner() {
@@ -1236,19 +1560,24 @@ const DB = (() => {
     if (stale()) return;
 
     const routineFetchKeys = []; // WIRE keys (manifest form) to batch-GET
-    const routineFetchLocalKey = {}; // wireKey -> localKey, for applying results
+    const routineFetchLocalKey = new Map(); // wireKey -> localKey, for applying results
     const conflictCheckKeys = []; // { m, localKey } needing a hash-compare
     const tombstoneKeys = []; // { m, localKey } to delete locally
 
     // F1: the deletion records are applied FIRST, so every list merge below
-    // already knows what the other side deleted.
+    // already knows what the other side deleted. FAIL CLOSED: if they cannot
+    // be fetched, every collection key is left alone this run (no merge, no
+    // upload) and the retry re-runs hydration when the fetch succeeds.
     const tombRow = manifest.find((m) => m.key === TOMBSTONE_KEY && !m.deleted);
-    if (tombRow && !_syncQueue.some((e) => e.key === TOMBSTONE_KEY)) {
+    let tombOk = true;
+    if (!_syncQueue.some((e) => e.key === TOMBSTONE_KEY)) {
       const lv = _replicaVersions[TOMBSTONE_KEY];
-      if (!lv || typeof lv.version !== 'number' || lv.version < tombRow.version) {
-        await _refreshTombstones();
-      }
+      const serverNewer = !!tombRow && (!lv || typeof lv.version !== 'number' || lv.version < tombRow.version);
+      // An earlier failure is confirmed cleared before any merge.
+      if (serverNewer || _tombstonesBlocked()) tombOk = await _refreshTombstones();
     }
+    if (stale()) return;
+    if (tombOk) await _seedMissingBases();
     if (stale()) return;
 
     for (const m of manifest) {
@@ -1264,6 +1593,7 @@ const DB = (() => {
 
       // A pending local write for this LOCAL key must not be clobbered by hydration.
       if (_syncQueue.some((e) => e.key === localKey)) continue;
+      if (!tombOk && UNION_KEY_CONFIG[localKey]) continue; // deletion records unknown: no merge
 
       const local = _replicaVersions[localKey];
       const localHasValidEntry = !!(local && typeof local.version === 'number');
@@ -1276,14 +1606,14 @@ const DB = (() => {
       if (localHasValidEntry) {
         if (m.version > local.version) {
           routineFetchKeys.push(m.key);
-          routineFetchLocalKey[m.key] = localKey;
+          routineFetchLocalKey.set(m.key, localKey);
         }
         // else: local already at/ahead of this version — leave alone.
       } else if (_cache[localKey] === undefined) {
         // Brand-new-to-this-machine key (blank machine / never seen before) —
         // routine pull, not a conflict.
         routineFetchKeys.push(m.key);
-        routineFetchLocalKey[m.key] = localKey;
+        routineFetchLocalKey.set(m.key, localKey);
       } else {
         // No entry, or stale/unknown entry, AND a local value already exists
         // — integration #3: potential local-newer-than-seed conflict, never
@@ -1314,7 +1644,8 @@ const DB = (() => {
       if (stale()) return;
       for (const row of rows) {
         if (stale()) return;
-        const localKey = routineFetchLocalKey[row.key] || row.key;
+        if (!row || !routineFetchLocalKey.has(row.key)) continue; // only rows this run asked for
+        const localKey = routineFetchLocalKey.get(row.key);
         if (_syncQueue.some((e) => e.key === localKey)) continue; // race guard, re-check
         const manifestEntry = manifest.find((m) => m.key === row.key);
         await _reconcileIncoming(localKey, row, manifestEntry ? manifestEntry.hash : null);
@@ -1369,6 +1700,7 @@ const DB = (() => {
       if (value === undefined || value === null) continue;
       if (_replicaVersions[localKey]) continue;
       if (_syncQueue.some((e) => e.key === localKey)) continue;
+      if (!tombOk && UNION_KEY_CONFIG[localKey]) continue; // deletion records unknown: no upload
       const wire = _wireKey(localKey);
       if (wire === null || onServer.has(wire)) continue;
       uploadKeys.push(localKey);
@@ -1426,10 +1758,10 @@ const DB = (() => {
     const queue = keys.slice();
     const worker = async () => {
       while (queue.length) {
+        if (epoch !== _identityEpoch) return; // a newer identity owns the progress counter now
         const localKey = queue.shift();
         const value = _cache[localKey]; // newest local value at upload time
         const skip =
-          epoch !== _identityEpoch ||
           _backendMode() !== 'on' ||
           value === undefined ||
           value === null ||
@@ -1442,7 +1774,7 @@ const DB = (() => {
           } catch (e) {
             r = { status: 'network-error' };
           }
-          if (epoch !== _identityEpoch) continue;
+          if (epoch !== _identityEpoch) return;
           if (r.status === 'ok') _uploadProgress.uploaded++;
           else if (r.status === 'network-error' || r.status === 'error') {
             _enqueueWrite(localKey, { value });
@@ -1874,8 +2206,8 @@ const DB = (() => {
   }
 
   function set(key, value) {
-    // F1: removed list items are recorded (with the full item) BEFORE the list write.
-    if (UNION_KEY_CONFIG[key]) _recordDeletions(key, _cache[key], value);
+    // F1: removed list items are recorded BEFORE the list write (item copy kept locally).
+    if (UNION_KEY_CONFIG[key]) _recordDeletions(key, _cache[key], value, false);
     // Update in-memory cache immediately so the UI stays responsive.
     _cache[key] = value;
     if (typeof window !== 'undefined') {
@@ -2025,6 +2357,14 @@ const DB = (() => {
   // An existing row is replaced with explicitOverwrite so kv-sync.js keeps
   // the previous server value in kv_history (server-side undo).
   async function restorePush(key, value, serverRow) {
+    // A restored collection goes through the same "list changed" function as
+    // set(): every restored id with an active deletion record is marked
+    // restored, and the server holds that BEFORE the list is written, so a
+    // stale browser can never delete the restored items again.
+    if (UNION_KEY_CONFIG[key]) {
+      const p = _recordDeletions(key, serverRow ? serverRow.value : _cache[key], value, true);
+      if (p) await p;
+    }
     const prev = _replicaVersions[key];
     if (serverRow) _replicaVersions[key] = { version: serverRow.version, hash: null };
     else delete _replicaVersions[key];
@@ -2080,12 +2420,13 @@ const DB = (() => {
   }
   async function getSyncStatus() {
     const mode = _backendMode();
-    if (mode === 'off') return { mode, keys: [], queueDepth: _syncQueue.length };
+    const deletionRecords = Object.assign({}, _tombstoneState);
+    if (mode === 'off') return { mode, keys: [], queueDepth: _syncQueue.length, deletionRecords };
     let manifest;
     try {
       manifest = await _fetchManifestWithTimeout(MANIFEST_TIMEOUT_MS);
     } catch (e) {
-      return { mode, error: 'manifest fetch failed', keys: [], queueDepth: _syncQueue.length };
+      return { mode, error: 'manifest fetch failed', keys: [], queueDepth: _syncQueue.length, deletionRecords };
     }
     const keys = [];
     for (const m of manifest) {
@@ -2105,7 +2446,7 @@ const DB = (() => {
         inSync: !!(local && local.version === m.version),
       });
     }
-    return { mode, keys, queueDepth: _syncQueue.length };
+    return { mode, keys, queueDepth: _syncQueue.length, deletionRecords };
   }
 
   // Safety net: if the user navigates away while an IDB write is still in-flight,

@@ -33,7 +33,16 @@
 //     the caller lists it in opts.restoreDeleted.
 const RestoreMerge = (() => {
   // Engine bookkeeping, identity, migration gates, debug and derived keys.
-  const SKIP_KEYS = ['ch_replica_state', 'ch_sync_queue', 'ch_backend_mode', 'ch_local_identity', '_companyHubBackup'];
+  const SKIP_KEYS = [
+    'ch_replica_state',
+    'ch_sync_queue',
+    'ch_backend_mode',
+    'ch_local_identity',
+    'ch_sync_base',
+    'ch_deleted_items',
+    'en_deleted_records',
+    '_companyHubBackup',
+  ];
   const NEVER = [
     [/^ch_user$/, 'signed-in user identity'],
     [/^ch_(seen_version|last_seen_version|qs_seen|idb_migrated|verification_results|notifs)$/, 'device state'],
@@ -386,7 +395,8 @@ const RestoreMerge = (() => {
 
   // Result in the representation the current value already has.
   function represent(value, currentRaw, cur, backupRaw, bak) {
-    if (currentRaw !== undefined && currentRaw !== null) return isJsonText(currentRaw, cur) ? JSON.stringify(value) : value;
+    if (currentRaw !== undefined && currentRaw !== null)
+      return isJsonText(currentRaw, cur) ? JSON.stringify(value) : value;
     // absent key: objects and arrays are written parsed; scalars keep the backup's own form
     return isCont(value) ? value : backupRaw;
   }

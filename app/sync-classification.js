@@ -75,7 +75,7 @@ const SyncClassification = (() => {
     {
       pattern: 'en_deleted_records',
       prefix: false,
-      note: 'app/db.js deletion records (TOMBSTONE_KEY): every record removed from en_projects/en_customers/en_tasks/en_dc_events, with the removed item, so a stale browser cannot bring it back. Shared by both users; merged by id, never overwritten.',
+      note: 'app/db.js deletion records (TOMBSTONE_KEY): the deletion stamp of every record removed from en_projects/en_customers/en_tasks/en_dc_events/ems_leads_v1 (no item copy; that stays local in ch_deleted_items), so a stale browser cannot bring it back. Shared by both users; merged by id, never overwritten.',
     },
     {
       pattern: 'en_dc_events',
@@ -186,6 +186,16 @@ const SyncClassification = (() => {
       pattern: 'ch_backend_mode',
       prefix: false,
       note: 'db.js _backendMode()/setBackendMode() — the off|shadow|on kill switch itself. Read/written directly via localStorage today (never through sset/DB.set), excluded here as defense-in-depth so it can never accidentally sync per-user if that ever changes.',
+    },
+    {
+      pattern: 'ch_sync_base',
+      prefix: false,
+      note: 'db.js SYNC_BASE_KEY — the server value of each collection key at its synced version (merge base for the per-record three-way merge). Write-through via _rawSet. Engine-internal, must never sync at all.',
+    },
+    {
+      pattern: 'ch_deleted_items',
+      prefix: false,
+      note: 'db.js DELETED_ITEMS_KEY — full copy of items this browser removed from a collection, kept 90 days. Write-through via _rawSet. Engine-internal, local only.',
     },
     {
       pattern: 'ch_local_identity',

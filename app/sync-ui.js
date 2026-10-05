@@ -75,6 +75,10 @@
       'border-color:var(--accent,#2563eb);color:#fff;}' +
       '.ch-conflict-btn.ch-conflict-primary:hover{filter:brightness(1.1);}' +
       '.ch-conflict-btn:disabled{opacity:.5;cursor:not-allowed;}' +
+      '.ch-conflict-rec{background:var(--s3,#1e2438);border:1px solid var(--border,#333);' +
+      'border-radius:6px;padding:8px 10px;margin:0 0 8px;display:flex;flex-wrap:wrap;gap:4px 16px;align-items:center;}' +
+      '.ch-conflict-rec-name{flex-basis:100%;font-weight:600;color:var(--text,#fff);}' +
+      '.ch-conflict-rec label{color:var(--text,#fff);cursor:pointer;display:inline-flex;gap:6px;align-items:center;}' +
       '.ch-conflict-typed{margin-top:4px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;' +
       'justify-content:flex-end;width:100%;}' +
       '.ch-conflict-typed input{flex:1;min-width:140px;padding:6px 8px;border-radius:4px;' +
@@ -187,11 +191,13 @@
   // The conflict archive is never trimmed by the app. Past its size cap this
   // notice stays until the user exports the archive and confirms the clear.
   function renderArchiveFullBanner() {
-    if (!window.DB || typeof window.DB.isConflictArchiveFull !== 'function' || !window.DB.isConflictArchiveFull()) return;
+    if (!window.DB || typeof window.DB.isConflictArchiveFull !== 'function' || !window.DB.isConflictArchiveFull())
+      return;
     ensureStyles();
     var el = ensureEl('ch-sync-archive-full-banner');
     var n = window.DB.getConflictArchive().length;
-    el.textContent = 'The conflict history is large (' + n + ' entries) and holds copies of replaced edits. Save it to a file.';
+    el.textContent =
+      'The conflict history is large (' + n + ' entries) and holds copies of replaced edits. Save it to a file.';
     var btn = document.createElement('button');
     btn.textContent = 'Export conflict history';
     btn.onclick = function () {
@@ -354,18 +360,9 @@
         { action: 'discard-mine', label: 'Discard my change', primary: false, gated: false },
       ];
     }
-    if (descriptor.conflictClass === 'union-candidate') {
-      return [
-        { action: 'keep-both', label: 'Keep both (recommended)', primary: true, gated: false },
-        { action: 'load-theirs', label: 'Load theirs', primary: false, gated: false },
-        {
-          action: 'overwrite-mine',
-          label: 'Overwrite with mine',
-          primary: false,
-          gated: descriptor.typedConfirmRequired,
-        },
-        { action: 'save-copy', label: 'Save mine as a copy / download', primary: false, gated: false },
-      ];
+    if (descriptor.conflictClass === 'records') {
+      // Per-record choice. The record not chosen goes to the conflict history.
+      return [{ action: 'records', label: 'Save my choices', primary: true, gated: false }];
     }
     return [
       { action: 'load-theirs', label: 'Load theirs (recommended)', primary: true, gated: false },
@@ -395,6 +392,35 @@
         esc(when) +
         ' while you were editing it.</p>';
       html += '<p>Your changes were not lost — they are saved and available below.</p>';
+    } else if (descriptor.conflictClass === 'records') {
+      var recs = descriptor.records || [];
+      html +=
+        '<p><strong>' +
+        esc(who) +
+        '</strong> and you both changed the same ' +
+        (recs.length === 1 ? 'item' : recs.length + ' items') +
+        ' in ' +
+        esc(name) +
+        ' (theirs saved at ' +
+        esc(when) +
+        '). Everything else was merged already. Choose which version to keep for each item. ' +
+        'The version you do not keep stays in the conflict history.</p>';
+      recs.forEach(function (r, i) {
+        var fields = (r.fields || []).join(', ');
+        html +=
+          '<div class="ch-conflict-rec">' +
+          '<div class="ch-conflict-rec-name">' +
+          esc(r.label) +
+          '</div>' +
+          (fields ? '<div class="ch-conflict-meta">Changed on both sides: ' + esc(fields) + '</div>' : '') +
+          '<label><input type="radio" name="ch-conflict-rec-' +
+          i +
+          '" value="theirs" checked> Keep theirs</label>' +
+          '<label><input type="radio" name="ch-conflict-rec-' +
+          i +
+          '" value="mine"> Keep mine</label>' +
+          '</div>';
+      });
     } else {
       html +=
         '<p><strong>' +
@@ -441,7 +467,9 @@
     hdr.textContent =
       descriptor.conflictClass === 'tombstone'
         ? 'This was deleted while you were editing it'
-        : 'Someone else changed this while you were editing';
+        : descriptor.conflictClass === 'records'
+          ? 'You both changed the same item'
+          : 'Someone else changed this while you were editing';
 
     var body = document.createElement('div');
     body.className = 'ch-conflict-body';
@@ -466,7 +494,13 @@
         downloadJSON(descriptor.key, descriptor.local.deleted ? null : descriptor.local.value);
       }
       var resolution = { action: btnCfg.action };
-      if (btnCfg.action === 'keep-both') resolution.unionValue = descriptor.unionPreview;
+      if (btnCfg.action === 'records') {
+        resolution.choices = {};
+        (descriptor.records || []).forEach(function (r, i) {
+          var picked = body.querySelector('input[name="ch-conflict-rec-' + i + '"]:checked');
+          resolution.choices[String(r.id)] = picked && picked.value === 'mine' ? 'mine' : 'theirs';
+        });
+      }
       finish(resolution);
     }
 
@@ -700,7 +734,12 @@
     if (!p || !p.total) return '';
     if (p.running) return 'Uploading your saved data for the first time: ' + p.done + ' of ' + p.total;
     if (p.failed > 0)
-      return p.failed + ' of ' + p.total + ' items could not upload yet. They wait in the sync queue and retry by themselves.';
+      return (
+        p.failed +
+        ' of ' +
+        p.total +
+        ' items could not upload yet. They wait in the sync queue and retry by themselves.'
+      );
     return 'First upload finished: ' + p.uploaded + ' items uploaded.';
   }
   function _renderUploadProgress(container) {
@@ -716,6 +755,36 @@
     var el = document.getElementById('ch-sync-status-upload');
     if (!el || !_statusPanelOpen) return;
     el.textContent = _uploadProgressText(e.detail);
+    el.style.display = el.textContent ? '' : 'none';
+  });
+
+  // Deletion records (db.js _refreshTombstones). While they cannot be loaded,
+  // the project, customer, task, calendar and lead lists are not merged or
+  // uploaded; the engine retries by itself.
+  function _deletionRecordsText(d) {
+    if (!d || d.ok !== false) return '';
+    var next = d.nextRetryAt ? Math.max(0, Math.round((d.nextRetryAt - Date.now()) / 1000)) : null;
+    return (
+      'The deletion records could not be loaded from the server' +
+      (d.error ? ' (' + d.error + ')' : '') +
+      '. The project, customer, task, calendar and lead lists wait until this succeeds. ' +
+      'Nothing is lost. The engine retries by itself' +
+      (next !== null ? ' in ' + next + ' seconds' : '') +
+      '.'
+    );
+  }
+  function _renderDeletionRecords(container, d) {
+    var row = document.createElement('div');
+    row.id = 'ch-sync-status-deletions';
+    row.className = 'ch-sync-status-queue ch-sync-warn';
+    row.textContent = _deletionRecordsText(d);
+    row.style.display = row.textContent ? '' : 'none';
+    container.appendChild(row);
+  }
+  window.addEventListener('dbDeletionRecordsStatus', function (e) {
+    var el = document.getElementById('ch-sync-status-deletions');
+    if (!el || !_statusPanelOpen) return;
+    el.textContent = _deletionRecordsText(e.detail);
     el.style.display = el.textContent ? '' : 'none';
   });
 
@@ -832,6 +901,7 @@
         .then(function (status) {
           if (!_statusPanelOpen) return; // panel was closed before the fetch resolved
           if (loading.parentNode) loading.parentNode.removeChild(loading);
+          _renderDeletionRecords(body, status.deletionRecords);
           _renderKeyList(body, status);
         })
         .catch(function (e) {
