@@ -3325,7 +3325,7 @@ function emMapPointToColumn(pointName, pointType, equipCategory) {
   return _mapResult;
 }
 
-function emExtractEquipmentGroups(rows, colMap) {
+function emExtractEquipmentGroups(rows, colMap, storedRows) {
   var groups = new Map();
 
   // ── WebCTRL 14-column point-list format ──
@@ -3381,18 +3381,20 @@ function emExtractEquipmentGroups(rows, colMap) {
       var _cpNameBase = emParseEquipBaseName(_cpEquipName);
       var category = _cpNameBase || emClassifyEquipType(_cpEquipName);
 
-      // Group key: building + full control program (location is not part of the key).
-      // Identity: building + control program. Same building + same name is the same equipment
-      // (splitting same-name units by BACnet path needs a data migration and is a separate item).
+      // Identity: building + control program, plus the full BACnet path when the same name appears under
+      // more than one path (two real units). Groups are held under a path key; the finalize pass below
+      // gives a name that is unique the plain id building||equipName and a shared name one id per path.
       var groupKey = building + '||' + equipName;
-      if (!groups.has(groupKey)) {
-        groups.set(groupKey, {
+      var _internalKey = groupKey + '||@' + bacnetPath;
+      if (!groups.has(_internalKey)) {
+        groups.set(_internalKey, {
           building: building,
           floor: wfloor,
           location: location,
           equipName: equipName,
           equipTypeStr: equipName,
           category: category,
+          baseKey: groupKey,
           bacnetLocation: bacnetPath, // 2224d15d: full BACnet path for integration-stub detection at audit time
           checkValues: {},
           pointValues: {},
@@ -3401,7 +3403,7 @@ function emExtractEquipmentGroups(rows, colMap) {
           colMap: colMap,
         });
       }
-      var wgroup = groups.get(groupKey);
+      var wgroup = groups.get(_internalKey);
 
       // Distinct point count: one id per WebCTRL Path. Exact repeat lines share a Path and count once;
       // the same point name on two different Paths counts twice. No Path column: the point name is the id.
@@ -3560,7 +3562,50 @@ function emExtractEquipmentGroups(rows, colMap) {
         }
       }
     });
-    return groups;
+    // Finalize keys. A name seen under one path keeps the plain id. A name seen under several paths:
+    // one path keeps the plain id, the others get building||name||@path. The path that keeps the plain
+    // id is the one a stored row with that plain id already points at (so notes, edits and schedules
+    // stay with that unit); with no such stored row it is the lowest path (stable, never CSV order).
+    var _pathsByBase = {};
+    groups.forEach(function (grp) {
+      (_pathsByBase[grp.baseKey] = _pathsByBase[grp.baseKey] || []).push(grp.bacnetLocation);
+    });
+    // Re-import: an incoming (base, path) goes to the stored row that already holds that path (plain or ||@path id).
+    // Only a path no stored row holds gets a new id. The claim rule (stored plain-row path, else lowest path)
+    // applies to the unmatched paths only when the name is not yet split (no stored ||@ sibling).
+    var _storedByBase = {};
+    (storedRows || []).forEach(function (sr) {
+      var sid = String(sr.id || '');
+      var at = sid.indexOf('||@');
+      var base = at === -1 ? sid : sid.slice(0, at);
+      var loc = sr.bacnetLocation || (at === -1 ? '' : sid.slice(at + 3));
+      var e = (_storedByBase[base] = _storedByBase[base] || { pathToId: {}, plainId: false, plainLoc: '', split: false });
+      if (at === -1) {
+        e.plainId = true;
+        e.plainLoc = loc;
+      } else e.split = true;
+      if (loc) e.pathToId[loc] = sid;
+    });
+    var _plainPath = {};
+    Object.keys(_pathsByBase).forEach(function (base) {
+      var st = _storedByBase[base];
+      var paths = _pathsByBase[base].slice().sort();
+      var unmatched = paths.filter(function (p) {
+        return !(st && st.pathToId[p] !== undefined);
+      });
+      // plain id is open to unmatched paths when no stored plain row exists, or the name is not split yet
+      var open = !st || !st.plainId || (!st.split && !(st.plainLoc && st.pathToId[st.plainLoc] && paths.indexOf(st.plainLoc) !== -1));
+      _plainPath[base] = open && unmatched.length ? unmatched[0] : null;
+    });
+    var finalGroups = new Map();
+    groups.forEach(function (grp) {
+      var st = _storedByBase[grp.baseKey];
+      var key;
+      if (st && st.pathToId[grp.bacnetLocation] !== undefined) key = st.pathToId[grp.bacnetLocation];
+      else key = _plainPath[grp.baseKey] === grp.bacnetLocation ? grp.baseKey : grp.baseKey + '||@' + grp.bacnetLocation;
+      finalGroups.set(key, grp);
+    });
+    return finalGroups;
   }
 
   // ── Enriched 45-column matrix format (original) ──
@@ -10901,6 +10946,13 @@ function emAttachEffectiveSchedules(pid, csvText, fileName) {
       continue;
     }
     var block = _emParseScheduleBlock(p.scheduleText);
+    // Same name under several paths is several units: attach only to the one at this path.
+    if (matches.length > 1) {
+      var _atPath = matches.filter(function (m) {
+        return (m.bacnetLocation || '') === (p.location || '').trim();
+      });
+      if (_atPath.length) matches = _atPath;
+    }
     for (var k = 0; k < matches.length; k++) {
       var row = matches[k];
       if (block.hasOccupied) {
@@ -11445,6 +11497,7 @@ function emHandleImport(pid) {
   var rowsByFile = []; // each file's rows by its index; flattened in index order, never in read-completion order
   var allRows = [];
   var detectedFormats = [];
+  var _emStoredRowsForImport = ((pid && emLoadMatrix(pid)) || { rows: [] }).rows || []; // lets the split-by-path rule keep a stored row's plain id
   var pending = _emPendingFiles.length;
   var done = 0;
   async function onFileDone() {
@@ -11646,7 +11699,7 @@ function emHandleImport(pid) {
         }
         var colMap = emDetectColMap(parsed[0]);
         detectedFormats.push(colMap.format || 'enriched');
-        var groups = emExtractEquipmentGroups(parsed.slice(1), colMap);
+        var groups = emExtractEquipmentGroups(parsed.slice(1), colMap, _emStoredRowsForImport);
         var fileRows = [];
         groups.forEach(function (group, key) {
           fileRows.push(emGroupToMatrixRow(key, group));

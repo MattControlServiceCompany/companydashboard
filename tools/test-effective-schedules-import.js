@@ -198,9 +198,9 @@ const oldCsv = [
   '/Fixture District/Fixture Middle School/Wing B/Pumps,Pump - FMS,Status B,Off,BAI',
 ];
 let stored = { rows: importCsv(oldCsv), edits: { 'k::x': 'kept' }, importedAt: 'old', buildings: [] };
-assert(stored.rows.length === 3, 'old import yields 3 rows (same building + same name = one row), got ' + stored.rows.length);
+assert(stored.rows.length === 4, 'old import yields 4 rows (same name under two paths = two rows), got ' + stored.rows.length);
 const ids = stored.rows.map((r) => r.id);
-assert(new Set(ids).size === 3 && ids.every((i) => i.indexOf('@') === -1), 'ids are building||name, no path suffix: ' + ids.join(' ; '));
+assert(new Set(ids).size === 4 && ids.filter((i) => i.indexOf('@') !== -1).length === 1, 'ids are building||name, only the second Pump path has a path suffix: ' + ids.join(' ; '));
 const ru1 = stored.rows.find((r) => r.equipName === 'Rooftop Unit 1');
 ru1.notes = 'user note';
 ru1.editedAt = 'T1';
@@ -209,8 +209,8 @@ ru1.custom_col_1 = 'custom';
 ru1.serial = 'SN-1';
 // same CSV again, rows listed in REVERSE order: nothing added, updated or lost
 let m = sandbox.emMergeIntoMatrix(stored, importCsv(oldCsv.slice().reverse()));
-assert(m.addedCount === 0 && m.updatedCount === 0 && m.unchangedCount === 3, 'same CSV (reversed order): 0 added, 0 updated, 3 unchanged, got ' + [m.addedCount, m.updatedCount, m.unchangedCount]);
-assert(m.rows.length === 3, 'row count stays 3');
+assert(m.addedCount === 0 && m.updatedCount === 0 && m.unchangedCount === 4, 'same CSV (reversed order): 0 added, 0 updated, 4 unchanged, got ' + [m.addedCount, m.updatedCount, m.unchangedCount]);
+assert(m.rows.length === 4, 'row count stays 4');
 // newer CSV: one value changed, one new point, one new equipment, one equipment missing from the file
 const newCsv = [
   P1 + ',Rooftop Unit 1,Zone Temp,75 F,BAI',
@@ -220,8 +220,8 @@ const newCsv = [
   P1 + ',Rooftop Unit 3,Zone Temp,72 F,BAI',
 ];
 m = sandbox.emMergeIntoMatrix(m, importCsv(newCsv));
-assert(m.addedCount === 1 && m.updatedCount === 1 && m.unchangedCount === 1, 'newer CSV: 1 added, 1 updated, 1 unchanged, got ' + [m.addedCount, m.updatedCount, m.unchangedCount]);
-assert(m.rows.length === 4, 'no rows lost, no duplicates: 4 rows, got ' + m.rows.length);
+assert(m.addedCount === 1 && m.updatedCount === 1 && m.unchangedCount === 2, 'newer CSV: 1 added, 1 updated, 2 unchanged, got ' + [m.addedCount, m.updatedCount, m.unchangedCount]);
+assert(m.rows.length === 5, 'no rows lost, no duplicates: 5 rows, got ' + m.rows.length);
 const nru1 = m.rows.find((r) => r.equipName === 'Rooftop Unit 1');
 assert(JSON.stringify(nru1.pointsRaw).indexOf('75 F') !== -1 && nru1.pointsRaw['Supply Fan Status'] === 'On', 'CSV-owned pointsRaw updated');
 assert(nru1.notes === 'user note' && nru1.editedAt === 'T1' && nru1.existingSchedule.startStr === '7:00', 'notes, editedAt, existingSchedule kept');
@@ -237,7 +237,7 @@ m = sandbox.emMergeIntoMatrix(m, partial);
 const pru1 = m.rows.find((r) => r.equipName === 'Rooftop Unit 1');
 assert(Object.keys(pru1.pointsRaw).length === beforePts + 1 && pru1.pointsRaw['Zone Temp'] === '75 F' && pru1.pointsRaw['Airflow'] === '500 cfm', 'partial CSV adds its point and keeps all stored points');
 assert(pru1.category === beforeCat, 'partial CSV never changes category (no downgrade to other)');
-assert(m.updatedCount === 1 && m.rows.length === 4, 'partial CSV: 1 updated, no rows added or lost');
+assert(m.updatedCount === 1 && m.rows.length === 5, 'partial CSV: 1 updated, no rows added or lost');
 // ambiguity: same id twice inside one import is reported, not silently merged
 const dup = importCsv([P1 + ',Rooftop Unit 9,Zone Temp,1 F,BAI']);
 m = sandbox.emMergeIntoMatrix(m, dup.concat(dup));
