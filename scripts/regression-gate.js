@@ -457,13 +457,19 @@ async function main() {
       takeErrors();
       const r = await page.evaluate((a) => {
         const btn = document.querySelector(`.s-item[onclick*="'${a.id}'"]`);
-        sv(a.id, btn);
+        let thrown = '';
+        try {
+          sv(a.id, btn);
+        } catch (e) {
+          thrown = 'threw: ' + e.message;
+        }
         const el = document.getElementById('view-' + a.id);
-        return { active: !!(el && el.classList.contains('active')) };
+        return { active: !!(el && el.classList.contains('active')), thrown };
       }, v);
       await page.waitForTimeout(350);
       const has = await page.evaluate((s) => document.querySelectorAll(s).length, v.sel);
       const errs = takeErrors();
+      if (r.thrown) errs.push(r.thrown);
       const ok = r.active && has > 0 && !errs.length;
       add(
         'pages',
@@ -476,7 +482,15 @@ async function main() {
     // ---- 2b. every project tab on every project ----
     const projs = await page.evaluate(() => DB.get('en_projects', []).map((p) => ({ id: p.id, name: p.name })));
     for (const p of projs) {
-      await page.evaluate((id) => openDetail(isNaN(Number(id)) ? id : Number(id)), p.id);
+      const openThrown = await page.evaluate((id) => {
+        try {
+          openDetail(isNaN(Number(id)) ? id : Number(id));
+          return '';
+        } catch (e) {
+          return 'openDetail threw: ' + e.message;
+        }
+      }, p.id);
+      if (openThrown) add('pages', p.name + ': open project', 'FAIL', openThrown);
       await page.waitForTimeout(500);
       const tabs = await page.evaluate(() =>
         [...document.querySelectorAll('#pdTabBar button[data-tab]')].map((b) => b.dataset.tab),
@@ -493,9 +507,14 @@ async function main() {
         takeErrors();
         const act = await page.evaluate((tab) => {
           const b = document.querySelector(`#pdTabBar button[data-tab="${tab}"]`);
-          sPTab(tab, b);
+          let thrown = '';
+          try {
+            sPTab(tab, b);
+          } catch (e) {
+            thrown = 'threw: ' + e.message;
+          }
           const el = document.getElementById('ptab-' + tab);
-          return !!(el && el.classList.contains('active'));
+          return { active: !!(el && el.classList.contains('active')), thrown };
         }, t);
         await page.waitForTimeout(350);
         const sel = PROJECT_TAB_SEL[t] || '*';
@@ -507,12 +526,13 @@ async function main() {
           { t, sel },
         );
         const errs = takeErrors();
-        const ok = act && info.has > 0 && info.len > 20 && !errs.length;
+        if (act.thrown) errs.push(act.thrown);
+        const ok = act.active && info.has > 0 && info.len > 20 && !errs.length;
         add(
           'pages',
           p.name + ': tab ' + t,
           ok ? 'PASS' : 'FAIL',
-          ok ? '' : `active=${act} controls(${sel})=${info.has} textLen=${info.len} ${errs.join(' ; ')}`,
+          ok ? '' : `active=${act.active} controls(${sel})=${info.has} textLen=${info.len} ${errs.join(' ; ')}`,
         );
       }
     }
