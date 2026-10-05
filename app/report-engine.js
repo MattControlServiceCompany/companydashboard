@@ -14424,7 +14424,7 @@ function collectASHRAE36Data(projId, reportDate, buildingNames) {
     if (!auditableRows.length) return;
 
     // ── CHANGE 2: Rule 1 — Same-name consolidation ───────────────────────────
-    // Group auditable rows by (equipName + category). When the same equipment
+    // Group auditable rows by (building + path + equipName + category). When the same equipment
     // program has multiple rows (e.g. an AHU's "Supply Duct" and "Return Duct"
     // sub-programs share the AHU equipName with different location values), merge
     // them into one consolidated row so compliance is scored over the full point set.
@@ -14436,7 +14436,7 @@ function collectASHRAE36Data(projId, reportDate, buildingNames) {
     (function () {
       var nameGroups = {};
       auditableRows.forEach(function (r) {
-        var key = r.equipName + '\x00' + r.category;
+        var key = (r.building || '') + '\x00' + (r.bacnetLocation || '') + '\x00' + r.equipName + '\x00' + r.category;
         if (!nameGroups[key]) nameGroups[key] = [];
         nameGroups[key].push(r);
       });
