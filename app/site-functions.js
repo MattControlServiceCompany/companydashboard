@@ -2296,6 +2296,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.05.77', date: '2026-10-05', title: 'Reports: bills listed under the correct month',
+    items: [
+      { type: 'fix', text: 'Reports: Appendix D now lists each bill under the same month the savings use. Louisburg Q1 February now shows all 11 baseline-meter bills (5 were listed under March).' },
+      { type: 'fix', text: 'Bill Analysis: bill flags, extraction labels, add-month and days-in-month now all use one month rule, so a bill is never dropped or counted in two months.' }
+    ]
+  },
   { v: 'v2026.10.05.76', date: '2026-10-05', title: 'Create a meter from the Assign window',
     items: [
       { type: 'feature', text: 'PDF / OCR, Assign Bill: you can now create a new meter right in the Assign window when the building has no meter of that type.' }
