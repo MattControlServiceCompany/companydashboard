@@ -74,6 +74,7 @@ const dayFns = ['_fixISO', '_parseISO', 'calcDays']
   const stubs = [
     "function calDaysInMonth(ym){const [y,m]=ym.split('-').map(Number);return new Date(y,m,0).getDate();}",
     'function resolveGasUsageTherms(b){return parseFloat(b.therms)||0;}',
+    'var udSelProjId = null;',
   ].join('\n');
   vm.runInContext(
     stubs +

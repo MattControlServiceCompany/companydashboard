@@ -30,7 +30,6 @@ const ALLOWED = [
   ['app/bill-analysis.js', '(p1 - p2) / 86400000', 'meter-read date closeness (tolerance)'],
   ['app/bill-analysis.js', 'toDate(prevEnd)) / 86400000', 'gap between two bills (tolerance)'],
   ['app/bill-analysis.js', '(da - db) / 86400000', 'fuzzy period match (tolerance)'],
-  ['app/bill-analysis.js', '(item.s - prevEnd) / 86400000', 'gap between two bills (tolerance)'],
   ['app/core.js', '(due - NOW) / (1000 * 60 * 60 * 24)', 'countdown to a due date from now'],
   ['app/energy-savings.js', '180 * 86400000', 'year-boundary window'],
   ['app/energy-savings.js', 'Math.abs(mrd - bp) / 86400000', 'meter-read date closeness (tolerance)'],

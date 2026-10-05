@@ -757,18 +757,13 @@ function detectStatisticalOutliers(extracted, historicalCache, pdfBillsIndex) {
 }
 
 // Analyze saved meter bills for statistical outliers — returns {billId: [{msg,level},...]}
-function _billNormMonth(b) {
+// Month index (0-11) a bill belongs to, from the ONE month rule, normMonth (continuity chain across the
+// meter's bills). allBills is the bill list the bill belongs to. -1 when the bill has no usable dates.
+function _billNormMonth(b, allBills) {
   if (!b.start || !b.end) return -1;
-  const s = _parseISO(b.start);
-  const e = _parseISO(b.end);
-  if (isNaN(s) || isNaN(e)) return -1;
-  const sm = s.getMonth(),
-    em = e.getMonth();
-  if (sm === em) return sm;
-  const lastOfStart = new Date(s.getFullYear(), sm + 1, 0).getDate();
-  const daysInStart = lastOfStart - s.getDate() + 1;
-  const daysInEnd = e.getDate();
-  return daysInStart >= daysInEnd ? sm : em;
+  if (isNaN(_parseISO(b.start)) || isNaN(_parseISO(b.end))) return -1;
+  const ym = normMonth(b.start, b.end, true, allBills);
+  return ym ? parseInt(ym.split('-')[1], 10) - 1 : -1;
 }
 function _monthToSeason(m) {
   if (m === 11 || m === 0 || m === 1) return 'winter';
@@ -874,7 +869,7 @@ function _analyzeMeterBills(bills, m) {
       ? ['therms', 'start', 'end']
       : ['start', 'end'];
 
-  const normMonths = bills.map(_billNormMonth);
+  const normMonths = bills.map((b) => _billNormMonth(b, bills));
   const seasons = normMonths.map((nm) => (nm >= 0 ? _monthToSeason(nm) : null));
 
   const allStats = {};
@@ -1113,7 +1108,7 @@ function _analyzeMeterBills(bills, m) {
             if (!other.start || !other.end || other.id === b.id || other.estimated) return false;
             const otherYear = _parseISO(other.start).getFullYear();
             if (otherYear !== thisYear - 1) return false;
-            return _billNormMonth(other) === thisNormMonth;
+            return _billNormMonth(other, bills) === thisNormMonth;
           });
           if (priorYearBill) {
             const priorUsage = _usageFn.fn(priorYearBill);
@@ -1291,8 +1286,8 @@ function _analyzeWaterSewerParity(building) {
   // Build an index of sewer bills by normalized month+year key.
   // Key: "YYYY-MM" where MM is the 0-based month from _billNormMonth.
   // Uses end-date year so the key stays stable regardless of billing period start.
-  function _wspNormKey(bill) {
-    const nm = _billNormMonth(bill);
+  function _wspNormKey(bill, meterBills) {
+    const nm = _billNormMonth(bill, meterBills);
     if (nm < 0) return null;
     const e = _parseISO(bill.end);
     if (!e || isNaN(e)) return null;
@@ -1301,7 +1296,7 @@ function _analyzeWaterSewerParity(building) {
 
   const sewerByKey = {};
   for (const sb of sewerBills) {
-    const k = _wspNormKey(sb);
+    const k = _wspNormKey(sb, sewerBills);
     if (k) sewerByKey[k] = sb;
   }
 
@@ -1376,7 +1371,7 @@ function _analyzeWaterSewerParity(building) {
   }
 
   for (const wb of waterBills) {
-    const k = _wspNormKey(wb);
+    const k = _wspNormKey(wb, waterBills);
     if (!k) continue;
     const sb = sewerByKey[k];
     if (!sb) continue;
@@ -17766,69 +17761,12 @@ function renderMultiBillUI(bills, box) {
     const yy = m[3].length === 4 ? m[3].slice(2) : m[3];
     return mm + '/' + dd + '/' + yy;
   };
-  // Majority-month label (e.g. "Mar 2024") for a bill's period. Uses majority-days
-  // inline to avoid the MM/DD/YYYY ↔ YYYY-MM-DD format mismatch with normMonth.
-  // Tie-break (Update 83): when two months have equal day counts, the
-  // month with higher ratio-of-days-in-that-month wins (e.g. 18/28 Feb
-  // beats 18/31 Jan) so sibling bills with near-identical periods land
-  // in the same month.
-  const _monthLabel = (bill) => {
-    const parse = (str) => {
-      if (!str) return null;
-      const s = String(str).trim();
-      const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
-      if (m) {
-        const yr = m[3].length === 2 ? 2000 + +m[3] : +m[3];
-        return new Date(yr, +m[1] - 1, +m[2]);
-      }
-      const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-      if (iso) return new Date(+iso[1], +iso[2] - 1, +iso[3]);
-      return null;
-    };
-    // Single-date delivery events (propane) use DeliveryDate directly.
-    if (bill.DeliveryDate) {
-      const d = parse(bill.DeliveryDate);
-      return d ? d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : '';
-    }
-    const s = parse(bill.BillingPeriodStart);
-    const e = parse(bill.BillingPeriodEnd);
-    if (!s || !e || s > e) return '';
-    const counts = {};
-    let cur = new Date(s);
-    while (cur <= e) {
-      const key = cur.getFullYear() + '-' + (cur.getMonth() + 1);
-      counts[key] = (counts[key] || 0) + 1;
-      cur.setDate(cur.getDate() + 1);
-    }
-    const top = Object.entries(counts).sort((a, b) => {
-      if (b[1] !== a[1]) return b[1] - a[1];
-      const [yA, mA] = a[0].split('-').map(Number);
-      const [yB, mB] = b[0].split('-').map(Number);
-      const dimA = new Date(yA, mA, 0).getDate();
-      const dimB = new Date(yB, mB, 0).getDate();
-      return b[1] / dimB - a[1] / dimA;
-    })[0][0];
-    const [y, mo] = top.split('-').map(Number);
-    return new Date(y, mo - 1, 1).toLocaleDateString('en-US', {
-      month: 'short',
-      year: 'numeric',
-    });
-  };
-  // Build consecutive-aware month labels per commodity group so bills
-  // like 12/15-1/14 (majority Dec) and 1/14-2/20 (majority Feb) don't
-  // skip January. Within each commodity, bills are sorted by start date
-  // and each gets nextMonth(prev) when consecutive (gap ≤ 3 days).
-  const _monthLabelMap = {};
-  const _commGroups = {};
-  bills.forEach((b, i) => {
-    const c = (b.Commodity || 'Other') + '|' + (b.AccountNumber || '_') + '|' + (b.ServiceAddress || '_');
-    if (!_commGroups[c]) _commGroups[c] = [];
-    _commGroups[c].push(i);
-  });
+  // Month assignment goes through the ONE keeper, normMonth (computations/normalization.js):
+  // majority-days month for one bill, plus the Dec/Jan/Feb continuity chain across a group.
+  // Dates here are MM/DD/YYYY (Evergy) or YYYY-MM-DD, so they are turned into ISO first.
   const _parseDt = (str) => {
     if (!str) return null;
     const s = String(str).trim();
-    // Accept both MM/DD/YYYY (Evergy) and YYYY-MM-DD (ISO from saved bills)
     const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
     if (m) {
       const yr = m[3].length === 2 ? 2000 + +m[3] : +m[3];
@@ -17838,68 +17776,51 @@ function renderMultiBillUI(bills, box) {
     if (iso) return new Date(+iso[1], +iso[2] - 1, +iso[3]);
     return null;
   };
-  const _majMonth = (s, e) => {
-    if (!s || !e || s > e) return s ? s.getFullYear() + '-' + String(s.getMonth() + 1).padStart(2, '0') : null;
-    const counts = {};
-    let cur = new Date(s);
-    let iter = 0;
-    while (cur <= e && iter++ < 120) {
-      const key = cur.getFullYear() + '-' + String(cur.getMonth() + 1).padStart(2, '0');
-      counts[key] = (counts[key] || 0) + 1;
-      cur.setDate(cur.getDate() + 1);
-    }
-    const entries = Object.entries(counts).sort((a, b) => {
-      if (b[1] !== a[1]) return b[1] - a[1];
-      const [yA, mA] = a[0].split('-').map(Number);
-      const [yB, mB] = b[0].split('-').map(Number);
-      return b[1] / new Date(yB, mB, 0).getDate() - a[1] / new Date(yA, mA, 0).getDate();
-    });
-    return entries.length ? entries[0][0] : null;
+  const _isoOf = (d) =>
+    d ? d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') : null;
+  const _ymLabel = (ym) => {
+    const [y, mo] = ym.split('-').map(Number);
+    return new Date(y, mo - 1, 1).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
   };
-  const _nextMo = (ym) => {
-    let [y, mo] = ym.split('-').map(Number);
-    if (++mo > 12) {
-      mo = 1;
-      y++;
+  // Single bill (no group context): majority-days month.
+  const _monthLabel = (bill) => {
+    // Single-date delivery events (propane) use DeliveryDate directly.
+    if (bill.DeliveryDate) {
+      const d = _parseDt(bill.DeliveryDate);
+      return d ? d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : '';
     }
-    return y + '-' + String(mo).padStart(2, '0');
+    const s = _parseDt(bill.BillingPeriodStart);
+    const e = _parseDt(bill.BillingPeriodEnd);
+    if (!s || !e || s > e) return '';
+    return _ymLabel(normMonth(_isoOf(s), _isoOf(e), true));
   };
+  // Consecutive-aware month labels per commodity group so bills like 12/15-1/14 (majority Dec)
+  // and 1/14-2/20 (majority Feb) do not skip January.
+  const _monthLabelMap = {};
+  const _commGroups = {};
+  bills.forEach((b, i) => {
+    const c = (b.Commodity || 'Other') + '|' + (b.AccountNumber || '_') + '|' + (b.ServiceAddress || '_');
+    if (!_commGroups[c]) _commGroups[c] = [];
+    _commGroups[c].push(i);
+  });
   for (const indices of Object.values(_commGroups)) {
-    const sorted = indices
-      .map((i) => ({
-        i,
-        s: _parseDt(bills[i].BillingPeriodStart),
-        e: _parseDt(bills[i].BillingPeriodEnd),
-        dd: _parseDt(bills[i].DeliveryDate),
-      }))
-      .sort((a, b) => (a.s || a.dd || 0) - (b.s || b.dd || 0));
-    let prevYm = null;
-    let prevEnd = null;
-    for (const item of sorted) {
-      let ym;
+    const items = indices.map((i) => ({
+      i,
+      s: _parseDt(bills[i].BillingPeriodStart),
+      e: _parseDt(bills[i].BillingPeriodEnd),
+      dd: _parseDt(bills[i].DeliveryDate),
+    }));
+    const periodBills = items
+      .filter((it) => it.s && it.e)
+      .map((it) => ({ start: _isoOf(it.s), end: _isoOf(it.e) }));
+    for (const item of items) {
+      let ym = null;
       if (item.dd && !item.s) {
-        ym = item.dd.getFullYear() + '-' + String(item.dd.getMonth() + 1).padStart(2, '0');
+        ym = _isoOf(item.dd).slice(0, 7);
       } else if (item.s && item.e) {
-        if (prevYm && prevEnd) {
-          const gap = (item.s - prevEnd) / 86400000;
-          ym = gap <= 3 ? _nextMo(prevYm) : _majMonth(item.s, item.e);
-        } else {
-          ym = _majMonth(item.s, item.e);
-        }
-      } else {
-        ym = null;
+        ym = normMonth(_isoOf(item.s), _isoOf(item.e), true, periodBills);
       }
-      if (ym) {
-        const [y, mo] = ym.split('-').map(Number);
-        _monthLabelMap[item.i] = new Date(y, mo - 1, 1).toLocaleDateString('en-US', {
-          month: 'short',
-          year: 'numeric',
-        });
-      } else {
-        _monthLabelMap[item.i] = '';
-      }
-      prevYm = ym;
-      prevEnd = item.e || item.dd;
+      _monthLabelMap[item.i] = ym ? _ymLabel(ym) : '';
     }
   }
   // Build period labels with sort indices for descending order.
