@@ -60,6 +60,35 @@ function getBillOwnUnitRate(bill, type) {
   return usage > 0 && cost > 0 ? cost / usage : 0;
 }
 
+// getBillGasCostOrNull(bill) — the ONE accessor for a bill's gas commodity cost (dollars).
+// Source field: `gasCharge` (BILL_SCHEMA.Gas "Gas Charge", the field the Bills table and the
+// Edit modal show) or the extractor's `GasCharge`. Nothing else is read first. The old stored
+// copy `thermCost` (written by the PDF save paths and the modal's hidden inputs until
+// 2026-10-05, and often equal to the whole bill total or stale after a modal edit) is never read.
+// Fallback: when the bill has NO gas charge at all but does carry gas usage, the whole bill
+// total (totalCost / TotalCurrentCharges / TotalAmountDue) is the only gas dollar figure on the
+// bill, so that is returned. A bill with no gas usage never gets a gas cost from its total
+// (this accessor also runs for Water/Sewer meters inside the shared non-electric branches).
+// Returns null when the bill has neither (missing is not 0). getBillGasCost returns 0 instead.
+// Every reader — flag rule (app/bill-analysis.js), savings (computations/savings.js), rates
+// (this file), normalization, anomaly detection, budget, dashboard roll-ups, report engine,
+// Utility Data roll-ups — must call one of these two, never bill.gasCharge/thermCost directly.
+function getBillGasCostOrNull(bill) {
+  if (!bill) return null;
+  var v = billValueOrNull(bill.gasCharge, bill.GasCharge);
+  if (v === null) {
+    var hasUsage =
+      typeof resolveGasUsageThermsOrNull === 'function' ? resolveGasUsageThermsOrNull(bill) !== null : false;
+    if (!hasUsage) return null;
+    v = billValueOrNull(bill.totalCost, bill.TotalCurrentCharges, bill.TotalAmountDue);
+  }
+  return parseBillNumber(v);
+}
+function getBillGasCost(bill) {
+  var v = getBillGasCostOrNull(bill);
+  return v === null ? 0 : v;
+}
+
 // New canonical function for rate lookup
 function getStoredRate(bill, type) {
   switch (type) {
