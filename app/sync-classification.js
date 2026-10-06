@@ -188,6 +188,11 @@ const SyncClassification = (() => {
   // defensively in case that ever changes).
   const PER_USER_CH_ENGINE_EXCLUSIONS = [
     {
+      pattern: 'ch_sb_session',
+      prefix: false,
+      note: 'app/ch-auth.js SESSION_STORAGE_KEY (2026-10-06) — the Supabase access and refresh tokens, raw localStorage, shared by every tab. Never a sync key: in localStorage-fallback mode (no IndexedDB) db.js loads every localStorage key into its cache, and the first-connect upload would otherwise PUT it to the server as <uid>::ch_sb_session, and the identity-change sweep would remove it. Local-only, never in a backup (restore-merge NEVER list).',
+    },
+    {
       pattern: 'ch_replica_state',
       prefix: false,
       note: 'db.js REPLICA_STATE_KEY — per-key version-map bookkeeping (write-through via _rawSet, bypasses replication entirely). Engine-internal, must never sync at all, per-user or otherwise.',

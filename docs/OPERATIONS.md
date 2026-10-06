@@ -128,6 +128,12 @@ Many short `setTimeout` calls (toasts, URL cleanup, UI yield) are one-shot. They
   version stamp `ch_rv::<key>` (also one with no cached value) are removed; queue entries are never deleted. Merge bases
   and `ch_deleted_items` hold collection keys only (shared). `ch_last_user` holds the last user's id and email (the
   "N unsynced changes by <email>" bar reads it). How to check: node test-sync-golive-blockers.js, the "7d:" tests.
+- The auth session `ch_sb_session` (access and refresh tokens, app/ch-auth.js) is classified local-only at the one place
+  that decides what syncs (app/sync-classification.js `PER_USER_CH_ENGINE_EXCLUSIONS`). It never gets a wire key, is never
+  uploaded by the first-connect upload, and is never removed by the identity-change sweep. This matters in
+  localStorage-fallback mode (IndexedDB unavailable), where db.js loads every localStorage key into its cache. How to
+  check: node test-sync-golive-blockers.js, the "(a):" test; `SyncClassification.classifyKey('ch_sb_session')` is
+  `local-only`.
 
 ## 7. How to keep this file current
 

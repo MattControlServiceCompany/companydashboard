@@ -2253,6 +2253,46 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
       assert.strictEqual(JSON.parse(L.store.ch_local_identity), 'u2');
     },
   );
+  // ---- (a) (2026-10-06): localStorage-fallback mode (no IndexedDB) never syncs the auth session (real db.js + classification)
+  await t(
+    '(a): fallback-mode first connect uploads local data but never ch_sb_session; identity change keeps the new session',
+    async () => {
+      const puts = [];
+      const L = loadReal({
+        userId: 'u1',
+        tokenFetch: tokByEmail,
+        kvFetch: async (u, o) => {
+          if (o && o.method === 'PUT') {
+            puts.push(JSON.parse(o.body).key);
+            return ok({ version: 1, hash: null, deleted: false });
+          }
+          return ok([]); // fresh server: empty manifest
+        },
+      });
+      L.store.en_budget_x = JSON.stringify({ n: 1 }); // local-only data of the old "off" mode
+      await L.DB.warmCache();
+      await tick(80);
+      assert.ok(puts.includes('en_budget_x'), 'first-connect upload ran');
+      assert.ok(
+        !puts.some((k) => /ch_sb_session/.test(k)),
+        'the session (tokens) is never uploaded: ' + JSON.stringify(puts),
+      );
+      const SC = require('./app/sync-classification.js');
+      assert.strictEqual(SC.classifyKey('ch_sb_session'), 'local-only');
+      assert.strictEqual(SC.shouldReplicate('ch_sb_session'), false);
+      assert.strictEqual(SC.isPerUser('ch_sb_session'), false);
+      // identity change in fallback mode: the per-user sweep must not remove the new user's session
+      await L.A.signOut();
+      await L.A.signIn('u2@example.com', 'pw');
+      await tick(60);
+      assert.strictEqual(
+        JSON.parse(L.store.ch_sb_session).user_id,
+        'u2',
+        'new session kept through the per-user sweep',
+      );
+      assert.ok(!puts.some((k) => /ch_sb_session/.test(k)));
+    },
+  );
   console.log(pass + ' passed');
 })().catch((e) => {
   console.error('FAIL', e);
