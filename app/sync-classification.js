@@ -208,6 +208,11 @@ const SyncClassification = (() => {
       note: 'db.js SYNC_BASE_KEY — the server value of each collection key at its synced version (merge base for the per-record three-way merge). Write-through via _rawSet. Engine-internal, must never sync at all.',
     },
     {
+      pattern: 'ch_rv::',
+      prefix: true,
+      note: "db.js RV_PREFIX (2026-10-06) — one record per synced key: its version stamp and (collections) merge base. Replaces the whole-map ch_replica_state/ch_sync_base so one tab never overwrites another tab's stamps. Engine-internal, never syncs, never in a backup.",
+    },
+    {
       pattern: 'ch_deleted_items',
       prefix: false,
       note: 'db.js DELETED_ITEMS_KEY — full copy of items this browser removed from a collection, kept 90 days. Write-through via _rawSet. Engine-internal, local only.',

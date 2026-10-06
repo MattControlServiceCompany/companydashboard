@@ -1259,7 +1259,7 @@ async function _restoreContext(backup) {
   var useDB = typeof DB !== 'undefined' && DB.isReady();
   var all = useDB ? DB.getAll() : {};
   var keys = Object.keys(backup).filter(function (k) {
-    return RestoreMerge.SKIP_KEYS.indexOf(k) === -1;
+    return !RestoreMerge.isEngineKey(k);
   });
   function scopeOf(k) {
     if (!syncOn || _restoreIsLsKey(k)) return 'local';

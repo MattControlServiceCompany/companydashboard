@@ -15,7 +15,7 @@ function load({ mode, syncHost, fetchImpl, classify }) {
       '  return {\n    warmCache,',
       '  return {\n    __t: { _hydrate, _batchGetChunked, _drainQueueOnce, _clearPerUserLocalState, _handleAuthIdentityChange, _pollManifestForChanges, _stampOf: (k) => _replicaVersions[k], _baseOf: (k) => _syncBase[k], _queue: () => _syncQueue },\n    warmCache,',
     );
-  const store = {};
+  const store = arguments[0].store || {};
   const events = [];
   const state = { mode, syncHost };
   const win = {
@@ -1546,6 +1546,50 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     assert.ok(!/bspCfg\.savingsPct != null/.test(ud), 'no private default rule left');
     const render = ud.slice(ud.indexOf('function renderBldgSavProjPane'), ud.indexOf('function getBspCfg'));
     assert.ok(!/DB\.set\(/.test(render), 'rendering the Savings Projection pane writes nothing');
+  });
+
+  // ---- fix 5: one version-stamp record per key; a second tab never overwrites the first tab's stamps
+  await t('fix 5: two tabs share one storage; each tab writes only the stamp of the key it synced', async () => {
+    const store = {};
+    const S = putServer();
+    const mk = () => load({ mode: 'on', syncHost: true, classify: true, fetchImpl: S.fetchImpl, store });
+    const A = mk();
+    const B = mk();
+    await A.DB.warmCache();
+    await B.DB.warmCache(); // tab B loaded before tab A synced anything
+    A.DB.set('en_budget_x', { n: 1 }); // tab A syncs X -> version 1
+    await tick();
+    B.DB.set('en_budget_y', { n: 1 }); // tab B syncs Y; B's memory never saw X's stamp
+    await tick();
+    assert.strictEqual(A.DB.__t._stampOf('en_budget_x').version, 1);
+    assert.strictEqual(B.DB.__t._stampOf('en_budget_y').version, 2);
+    assert.ok(store['ch_rv::en_budget_x'] && store['ch_rv::en_budget_y'], 'one record per key in storage');
+    assert.ok(!('ch_replica_state' in store) && !('ch_sync_base' in store), 'no whole-map records');
+    const C = mk(); // fresh load after both tabs
+    await C.DB.warmCache();
+    assert.strictEqual(C.DB.__t._stampOf('en_budget_x').version, 1, "tab B's write did not drop tab A's stamp for X");
+    assert.strictEqual(C.DB.__t._stampOf('en_budget_y').version, 2);
+  });
+  await t('fix 5: a collection key keeps its merge base in the same record; stamps of an older build are split once', async () => {
+    const store = {};
+    const S = putServer();
+    const A = load({ mode: 'on', syncHost: true, classify: true, fetchImpl: S.fetchImpl, store });
+    await A.DB.warmCache();
+    A.DB.set('en_tasks', [{ id: 1, text: 'a' }]);
+    await tick();
+    const rec = JSON.parse(store['ch_rv::en_tasks']);
+    assert.strictEqual(rec.stamp.version, 1);
+    assert.deepStrictEqual(rec.base, [{ id: 1, text: 'a' }], 'merge base = what the server received');
+    // an older build left whole-map records
+    const old = { ch_replica_state: JSON.stringify({ en_budget_q: { version: 4, hash: 'h4' }, en_tasks: { version: 9, hash: 'h9' } }), ch_sync_base: JSON.stringify({ en_tasks: [{ id: 9 }] }) };
+    const store2 = Object.assign({}, old, { 'ch_rv::en_tasks': store['ch_rv::en_tasks'] });
+    const B = load({ mode: 'on', syncHost: true, classify: true, fetchImpl: S.fetchImpl, store: store2 });
+    await B.DB.warmCache();
+    assert.strictEqual(B.DB.__t._stampOf('en_budget_q').version, 4, 'old map entry migrated');
+    assert.strictEqual(B.DB.__t._stampOf('en_tasks').version, 1, 'a per-key record wins over the old map');
+    assert.ok(store2['ch_rv::en_budget_q'], 'migrated entry persisted per key');
+    assert.ok(!('ch_replica_state' in store2) && !('ch_sync_base' in store2), 'old maps removed after the split');
+    assert.ok(!Object.keys(B.DB.getAllForExport()).some((k) => k.indexOf('ch_rv::') === 0), 'stamps never in a backup');
   });
   console.log(pass + ' passed');
 })().catch((e) => {

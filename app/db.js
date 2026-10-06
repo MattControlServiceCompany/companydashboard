@@ -8,7 +8,10 @@ const DB = (() => {
   const DB_VERSION = 1;
 
   const KV_SYNC_URL = '/.netlify/functions/kv-sync';
-  const REPLICA_STATE_KEY = 'ch_replica_state'; // 2a.3 — local-only, excluded from replication+backup
+  const REPLICA_STATE_KEY = 'ch_replica_state'; // older builds: whole-map stamps, split once into RV_PREFIX records
+  // One local-only record per synced key: ch_rv::<key> = { stamp: {version, hash, deleted?}, base? }.
+  // A tab writes only the record of the key it synced, so it can never overwrite another tab's stamps.
+  const RV_PREFIX = 'ch_rv::';
   const SYNC_QUEUE_KEY = 'ch_sync_queue'; // 2a.5 — local-only, excluded from replication+backup
   // Local-only: the server value of each collection key (UNION_KEY_CONFIG) at the
   // version in ch_replica_state. The base of every per-record three-way merge.
@@ -371,16 +374,43 @@ const DB = (() => {
       .catch(() => {});
   }
 
-  // --- 2a.3: version-map persistence ----------------------------------------
+  // --- 2a.3: version-stamp persistence, one record per key -------------------
   function _loadReplicaState() {
-    const stored = _cache[REPLICA_STATE_KEY];
-    _replicaVersions = stored && typeof stored === 'object' ? stored : {};
-    const base = _cache[SYNC_BASE_KEY];
-    _syncBase = base && typeof base === 'object' ? base : {};
+    _replicaVersions = {};
+    _syncBase = {};
+    Object.keys(_cache).forEach((k) => {
+      if (k.indexOf(RV_PREFIX) !== 0) return;
+      const rec = _cache[k];
+      if (!rec || typeof rec !== 'object') return;
+      const key = k.slice(RV_PREFIX.length);
+      if (rec.stamp) _replicaVersions[key] = rec.stamp;
+      if (rec.base !== undefined) _syncBase[key] = rec.base;
+    });
+    // Whole-map records written by an older build: split them once into
+    // per-key records (a per-key record that already exists is newer), then
+    // remove the maps. Sync state is user state; it is never just dropped.
+    const oldMap = _cache[REPLICA_STATE_KEY];
+    const oldBase = _cache[SYNC_BASE_KEY];
+    if (oldMap && typeof oldMap === 'object') {
+      Object.keys(oldMap).forEach((key) => {
+        if (_replicaVersions[key]) return;
+        _replicaVersions[key] = oldMap[key];
+        if (oldBase && typeof oldBase === 'object' && _own(oldBase, key)) _syncBase[key] = oldBase[key];
+        _persistStamp(key);
+      });
+    }
+    if (oldMap !== undefined) _rawDelete(REPLICA_STATE_KEY);
+    if (oldBase !== undefined) _rawDelete(SYNC_BASE_KEY);
     Object.keys(UNION_KEY_CONFIG).forEach((k) => _noteCollection(k, _cache[k]));
   }
-  function _persistReplicaState() {
-    _rawSet(REPLICA_STATE_KEY, _replicaVersions);
+  // The ONE writer of a key's sync record (its stamp and, for a collection
+  // key, its merge base). No stamp and no base: the record is removed.
+  function _persistStamp(key) {
+    const rec = {};
+    if (_replicaVersions[key]) rec.stamp = _replicaVersions[key];
+    if (_own(_syncBase, key)) rec.base = _syncBase[key];
+    if (!rec.stamp && rec.base === undefined) _rawDelete(RV_PREFIX + key);
+    else _rawSet(RV_PREFIX + key, rec);
   }
   // The ONE place a key is stamped as "in sync at this server version". For a
   // collection key the server value at that version is kept as the merge base.
@@ -389,9 +419,8 @@ const DB = (() => {
     if (_collectionCfg(key)) {
       if (stamp.deleted || serverValue === undefined || serverValue === null) delete _syncBase[key];
       else _syncBase[key] = JSON.parse(JSON.stringify(serverValue));
-      _rawSet(SYNC_BASE_KEY, _syncBase);
     }
-    _persistReplicaState();
+    _persistStamp(key);
   }
 
   // --- 2a.5: sync-queue persistence + pill event ----------------------------
@@ -425,8 +454,8 @@ const DB = (() => {
         losingVersion: typeof e.baseVersion === 'number' ? e.baseVersion : null,
       });
       delete _replicaVersions[e.key];
+      _persistStamp(e.key); // the merge base (collections) is kept for the next hydration
     });
-    _persistReplicaState();
     _persistSyncQueue();
   }
   // Owner tag for queued edits: the user id (and email) last signed in on this
@@ -640,6 +669,7 @@ const DB = (() => {
   function getAllForExport() {
     const out = {};
     Object.keys(_cache).forEach((k) => {
+      if (k.indexOf(RV_PREFIX) === 0) return; // this browser's sync stamps: never in a backup
       out[k] = stripDerivedCaches(k, _cache[k]);
     });
     return out;
@@ -2118,7 +2148,6 @@ const DB = (() => {
       uploadKeys.push(localKey);
     }
 
-    _persistReplicaState();
     if (typeof window !== 'undefined') {
       window.dispatchEvent(
         new CustomEvent('dbHydrated', {
@@ -2202,7 +2231,6 @@ const DB = (() => {
     await Promise.all(workers);
     if (epoch !== _identityEpoch) return; // a newer identity owns the progress now
     _uploadProgress.running = false;
-    _persistReplicaState();
     _emitUploadProgress();
     if (typeof window !== 'undefined') {
       window.dispatchEvent(
@@ -2317,6 +2345,8 @@ const DB = (() => {
     cleared.forEach((k) => {
       delete _cache[k];
       delete _replicaVersions[k];
+      delete _syncBase[k];
+      _persistStamp(k);
       // --- Finding 2 --- durable delete, not just the in-memory cache.
       // warmCache() does an unconditional store.getAll() on every load and
       // would otherwise silently repopulate _cache with the previous user's
@@ -2337,9 +2367,6 @@ const DB = (() => {
     // Queued entries are owner-tagged: the drain sends only the signed-in
     // user's own entries, so another user's pending edit can never replay
     // under the new user's wire-key prefix. No entry is deleted here.
-    if (cleared.length) {
-      _persistReplicaState();
-    }
     return cleared;
   }
 

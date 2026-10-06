@@ -44,6 +44,9 @@ const RestoreMerge = (() => {
     'en_deleted_records',
     '_companyHubBackup',
   ];
+  // The ONE "engine bookkeeping key" rule for restore and backup: the exact keys
+  // above plus the per-key sync records (db.js RV_PREFIX, ch_rv::<key>).
+  const isEngineKey = (k) => SKIP_KEYS.indexOf(k) !== -1 || k.indexOf('ch_rv::') === 0;
   const NEVER = [
     [/^ch_user$/, 'signed-in user identity'],
     [/^ch_(seen_version|last_seen_version|qs_seen|idb_migrated|verification_results|notifs)$/, 'device state'],
@@ -145,7 +148,7 @@ const RestoreMerge = (() => {
 
   // policyFor(key, backupKeys) -> { kind, path, idOf, name, ... }
   function policyFor(key, backupKeys) {
-    if (SKIP_KEYS.indexOf(key) !== -1) return { kind: 'never', why: 'internal setting' };
+    if (isEngineKey(key)) return { kind: 'never', why: 'internal setting' };
     for (const [re, why] of NEVER) if (re.test(key)) return { kind: 'never', why };
     if (/^en_utility_\d+$/.test(key)) {
       // Legacy per-project copy. Inert when the backup also holds the live
@@ -702,6 +705,7 @@ const RestoreMerge = (() => {
 
   return {
     SKIP_KEYS,
+    isEngineKey,
     METER_CACHE_FIELDS,
     labelFor,
     policyFor,

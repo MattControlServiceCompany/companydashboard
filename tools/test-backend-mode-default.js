@@ -416,7 +416,7 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     );
     check(
       '12 local-only key has a local version entry',
-      !!(b.idb.data.get('ch_replica_state') || {}).en_budget_local_only,
+      !!(b.idb.data.get('ch_rv::en_budget_local_only') || {}).stamp,
       '',
     );
     check(
@@ -712,7 +712,12 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     const srv = makeServer(SEED());
     srv.noHash = true;
     const b1 = await boot({ host: NETLIFY, signedIn: true, server: srv });
-    const st = b1.idb.data.get('ch_replica_state') || {};
+    const stampsOf = (bb) => {
+      const m = {};
+      for (const [k, v] of bb.idb.data) if (k.startsWith('ch_rv::') && v && v.stamp) m[k.slice(7)] = v.stamp;
+      return m;
+    };
+    const st = stampsOf(b1);
     check(
       'C every stamped version has a hash (server sent none)',
       Object.keys(st).length >= 5 && Object.values(st).every((v) => typeof v.hash === 'string' && v.hash.length === 64),
@@ -736,7 +741,7 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     );
     b2.DB.set('en_budget_b', [9]);
     await tick(30);
-    const st2 = b2.idb.data.get('ch_replica_state') || {};
+    const st2 = stampsOf(b2);
     check(
       'C own PUT stamps a hash too',
       st2.en_budget_b && typeof st2.en_budget_b.hash === 'string' && st2.en_budget_b.hash.length === 64,

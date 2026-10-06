@@ -90,6 +90,11 @@ Many short `setTimeout` calls (toasts, URL cleanup, UI yield) are one-shot. They
   Savings Projection panes save only from their inputs and buttons (`bpSave`, `bspSave`), never on open, and
   `getBspCfg` is the one reader of the Savings Projection settings with defaults. How to check: open a project
   Dashboard tab and both panes with the Network tab filtered on `kv-sync`: zero PUT.
+- Version stamps are one local record per key, `ch_rv::<key>` = `{ stamp: {version, hash}, base? }` (app/db.js
+  `_persistStamp`, the one writer; `_setSynced` the one stamper). A tab writes only the record of the key it synced, so a
+  second tab can never overwrite the first tab's stamps (the old whole-map `ch_replica_state`/`ch_sync_base` are split once
+  on the first load and removed). These records never sync and are never in a backup (`RestoreMerge.isEngineKey`).
+  How to check: DevTools, Application, IndexedDB, CompanyHub store: keys `ch_rv::en_projects` etc.; no `ch_replica_state`.
 - Queue entries with no owner tag (saved by v2026.10.06.83 or older) are never sent (`_retireOwnerlessEntries`, runs when
   the queue loads). Each goes to Conflict history as `queue-entry-no-owner` with its value, leaves the queue, and its
   version stamp is dropped so the next load compares the local copy with the server. How to check: after one load the
