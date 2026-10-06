@@ -1299,6 +1299,7 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     };
     const events = [];
     const listeners = {};
+    const heldLocks = new Set();
     const win = {
       addEventListener(type, fn) {
         (listeners[type] = listeners[type] || []).push(fn);
@@ -1349,7 +1350,20 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
       Event: function (t) {
         this.type = t;
       },
-      navigator: {},
+      // Web Locks with ifAvailable semantics, as in a browser: two drains in one tab never overlap.
+      navigator: {
+        locks: {
+          request: async (name, opts, cb) => {
+            if (heldLocks.has(name)) return cb(null);
+            heldLocks.add(name);
+            try {
+              return await cb({ name });
+            } finally {
+              heldLocks.delete(name);
+            }
+          },
+        },
+      },
       indexedDB: undefined,
       fetch: (u, o) => (String(u).indexOf('/auth/v1/token') >= 0 ? opts.tokenFetch(u, o) : opts.kvFetch(u, o)),
     };
@@ -1590,6 +1604,117 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     assert.ok(store2['ch_rv::en_budget_q'], 'migrated entry persisted per key');
     assert.ok(!('ch_replica_state' in store2) && !('ch_sync_base' in store2), 'old maps removed after the split');
     assert.ok(!Object.keys(B.DB.getAllForExport()).some((k) => k.indexOf('ch_rv::') === 0), 'stamps never in a backup');
+  });
+
+  // ---- fix 9: behavior tests that run the REAL code
+  // Cuts a top-level function (with its "async" prefix) out of an app file by brace matching.
+  const cutFn = (file, name) => {
+    const src = fs.readFileSync(path.join(__dirname, 'app', file), 'utf8').split('\r').join('');
+    let start = src.indexOf('async function ' + name + '(');
+    if (start < 0) start = src.indexOf('function ' + name + '(');
+    assert.ok(start >= 0, name + ' exists in ' + file);
+    let depth = 0;
+    let i = src.indexOf('{', start);
+    for (; i < src.length; i++) {
+      if (src[i] === '{') depth++;
+      if (src[i] === '}' && --depth === 0) break;
+    }
+    return src.slice(start, i + 1);
+  };
+  // The real core.js _pdfDrainQueueLocked with its collaborators stubbed; the owner rule is the real DB.entryBelongsTo.
+  const runPdfDrain = async (me, entries) => {
+    let queue = entries.map((e) => Object.assign({}, e));
+    const sent = [];
+    const { DB } = load({ mode: 'on', syncHost: true, fetchImpl: async () => ok([]) });
+    const win = { CH_AUTH: { getUserId: () => me, backendMode: () => 'on' }, DB: { entryBelongsTo: DB.entryBelongsTo } };
+    const drain = new Function(
+      'window', '_pdfQueueLoad', '_pdfQueueSave', 'pdfLoad', '_pdfDeleteCommit', '_pdfUploadCommit', '_pdfWithAuthRetry', 'console',
+      cutFn('core.js', '_pdfDrainQueueLocked') + '; return _pdfDrainQueueLocked;',
+    )(
+      win,
+      () => queue.map((e) => Object.assign({}, e)),
+      (q) => { queue = q; },
+      async () => 'base64',
+      async (k) => { sent.push('delete ' + k); return { status: 'ok' }; },
+      async (k) => { sent.push('upload ' + k); return { status: 'ok' }; },
+      (run) => run(),
+      { warn() {} },
+    );
+    await drain();
+    return { queue, sent };
+  };
+  await t('fix 9: PDF drain claims no-owner and own-hint entries for the verified user; skips every other user\'s entry', async () => {
+    const r = await runPdfDrain('u1', [
+      { id: 'p1', type: 'upload', key: 'pdf-a' }, // older build: no owner tag
+      { id: 'p2', type: 'upload', key: 'pdf-b', owner: { id: null, hintId: 'u1' } }, // queued signed out, u1 was last here
+      { id: 'p3', type: 'delete', key: 'pdf-c', owner: { id: 'u2' } }, // another user's
+      { id: 'p4', type: 'upload', key: 'pdf-d', owner: { id: null, hintId: 'u2' } }, // another user's hint
+    ]);
+    assert.deepStrictEqual(r.sent, ['upload pdf-a', 'upload pdf-b']);
+    assert.deepStrictEqual(r.queue.map((e) => e.id), ['p3', 'p4'], 'other users\' entries stay queued');
+    assert.deepStrictEqual(r.queue[0].owner, { id: 'u2' }, 'owner tags untouched');
+    assert.deepStrictEqual(r.queue[1].owner, { id: null, hintId: 'u2' });
+  });
+  await t('fix 9: PDF drain with no verified user sends nothing and changes nothing', async () => {
+    const entries = [{ id: 'p1', type: 'upload', key: 'pdf-a' }, { id: 'p2', type: 'upload', key: 'pdf-b', owner: { id: 'u1' } }];
+    const r = await runPdfDrain(null, entries);
+    assert.deepStrictEqual(r.sent, []);
+    assert.deepStrictEqual(r.queue, entries);
+  });
+  // The real sync-ui.js _safeToReload with its OPEN_DIALOG_SELECTOR, run against a fake document/window.
+  const safeToReload = (st) => {
+    const src = fs.readFileSync(path.join(__dirname, 'app', 'sync-ui.js'), 'utf8').split('\r').join('');
+    const sel = src.match(/var OPEN_DIALOG_SELECTOR =[\s\S]*?;\n/)[0];
+    const doc = { activeElement: st.active || null, querySelector: (q) => (st.dialog ? { matched: q } : null) };
+    const win = {
+      DB: { getQueueDepth: () => st.queue || 0 },
+      pdfQueueDepth: () => st.pdfQueue || 0,
+    };
+    return new Function('document', 'window', sel + cutFn('sync-ui.js', '_safeToReload') + '; return _safeToReload();')(doc, win);
+  };
+  await t('fix 9: _safeToReload blocks while typing, with an open dialog, or with unsent data; allows otherwise', () => {
+    assert.strictEqual(safeToReload({}), true);
+    assert.strictEqual(safeToReload({ active: { tagName: 'INPUT' } }), false, 'typing in an input');
+    assert.strictEqual(safeToReload({ active: { tagName: 'DIV', isContentEditable: true } }), false, 'typing in a contenteditable');
+    assert.strictEqual(safeToReload({ dialog: true }), false, 'an open dialog');
+    assert.strictEqual(safeToReload({ queue: 1 }), false, 'unsent data writes');
+    assert.strictEqual(safeToReload({ pdfQueue: 1 }), false, 'unsent PDFs');
+    assert.strictEqual(safeToReload({ active: { tagName: 'BUTTON' } }), true, 'focus on a button is not typing');
+  });
+  await t('fix 9: real db.js drain, user id changes across the refresh: A\'s entry stays queued under A, nothing goes to B::key', async () => {
+    const puts = [];
+    const L = loadReal({
+      userId: 'u1',
+      tokenFetch: tokUser('u2'), // the refresh picks up the account another tab switched to
+      kvFetch: async (u, o) => {
+        if (!o || o.method !== 'PUT') return ok([]);
+        const key = JSON.parse(o.body).key;
+        puts.push({ key, auth: o.headers.Authorization });
+        if (key === 'u1::ch_pref_x') return put401; // A's token was revoked
+        return ok({ version: 1, hash: null, deleted: false });
+      },
+    });
+    L.store.ch_local_identity = 'u1';
+    L.store.ch_sync_queue = JSON.stringify([
+      { id: 'qa', key: 'ch_pref_x', value: 'A-value', deleted: false, baseVersion: null, ts: 1, owner: { id: 'u1', email: null } },
+    ]);
+    await L.DB.warmCache(); // the startup drain (B1b) sends A's queued entry
+    await tick(80);
+    assert.strictEqual(L.DB.getQueueDepth(), 1);
+    assert.strictEqual(L.A.getUserId(), 'u2', 'the refresh switched this tab to B');
+    const pref = puts.filter((p) => /ch_pref_x$/.test(p.key));
+    assert.strictEqual(pref.length, 1, 'sent once, as A, before the refresh');
+    assert.strictEqual(pref[0].key, 'u1::ch_pref_x');
+    assert.ok(!puts.some((p) => p.key === 'u2::ch_pref_x'), 'never written under B');
+    const q = L.DB.__t._queue();
+    assert.strictEqual(q.length, 1, 'A\'s entry still queued');
+    assert.strictEqual(q[0].owner.id, 'u1');
+    assert.strictEqual(q[0].value, 'A-value');
+    // B's own drain afterwards skips A's entry
+    await L.DB.__t._drainQueueOnce();
+    await tick(40);
+    assert.strictEqual(puts.filter((p) => /ch_pref_x$/.test(p.key)).length, 1, 'B\'s drain does not send A\'s entry');
+    assert.strictEqual(L.A.backendMode(), 'on', 'B stays signed in');
   });
   console.log(pass + ' passed');
 })().catch((e) => {

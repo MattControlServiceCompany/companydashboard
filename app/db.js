@@ -1728,7 +1728,13 @@ const DB = (() => {
   // Still 401 but the session was kept (the refresh could not reach Supabase):
   // the offline banner; the write stays queued and is retried later.
   async function _putWithAuth(key, payload) {
+    const me = _myUserId();
     const r = await _withAuthRetry(() => _sendKvPut(key, payload));
+    // The refresh switched this tab to another signed-in account: the
+    // identity-change path already re-rendered the bars for the new user;
+    // nothing to report. (A sign-out is still reported below.)
+    const now = _myUserId();
+    if (now && now !== me) return r;
     if (r && r.status === 'error' && _isAuthRefusal(r.httpStatus)) _reportFinalRefusal(r.httpStatus, 'write-refused');
     return r;
   }
