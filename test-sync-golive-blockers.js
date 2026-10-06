@@ -285,16 +285,99 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     assert.strictEqual(puts.length, 1);
     assert.strictEqual(L.DB.getQueueDepth(), 0);
   });
-  await t('_clearPerUserLocalState keeps a per-user key with a pending queued edit', async () => {
-    const L = load({ classify: true, mode: 'on', syncHost: true, fetchImpl: async () => ok([]) });
+  await t('identity change always clears per-user key from cache; queue keeps A value; A back re-applies it; B never sees it', async () => {
+    const puts = [];
+    const L = load({
+      classify: true, mode: 'off', syncHost: true,
+      fetchImpl: async (u, o) => { if (o && o.method === 'PUT') puts.push(JSON.parse(o.body)); return ok({ version: 1, hash: 'h' }); },
+    });
     await L.DB.warmCache();
-    L.state.mode = 'off'; L.state.uid = null;
-    await L.DB.set('ch_theme', 'dark');
-    await L.DB.set('ch_sidebar_pref', 'x');
-    const cleared = L.DB.__t._clearPerUserLocalState();
-    assert.ok(!cleared.includes('ch_theme'));
-    assert.strictEqual(L.DB.get('ch_theme'), 'dark');
+    L.state.uid = 'A'; L.state.mode = 'on';
+    await L.DB.__t._handleAuthIdentityChange();
+    L.state.mode = 'off'; // session lost
+    await L.DB.set('ch_theme', 'darkA');
+    assert.strictEqual(L.DB.getQueueDepth(), 1);
+    L.state.uid = 'B'; L.state.mode = 'on';
+    await L.DB.__t._handleAuthIdentityChange();
+    assert.ok(L.DB.get('ch_theme') == null, 'B must not see A value');
+    assert.strictEqual(puts.filter((p) => p.key.indexOf('B::') === 0).length, 0, 'nothing written under B');
+    assert.strictEqual(L.DB.getQueueDepth(), 1, 'A entry kept');
+    L.state.uid = 'A';
+    await L.DB.__t._handleAuthIdentityChange();
+    assert.strictEqual(puts.length, 1);
+    assert.strictEqual(puts[0].key, 'A::ch_theme');
+    assert.strictEqual(puts[0].value, 'darkA');
+    assert.strictEqual(L.DB.getQueueDepth(), 0);
+  });
+  await t('A queued value is back in cache for A before the drain (re-apply)', async () => {
+    const L = load({ classify: true, mode: 'off', syncHost: true, fetchImpl: async () => { throw new Error('offline'); } });
+    await L.DB.warmCache();
+    L.state.uid = 'A'; L.state.mode = 'on';
+    await L.DB.__t._handleAuthIdentityChange();
+    L.state.mode = 'off';
+    await L.DB.set('ch_theme', 'darkA');
+    L.state.uid = 'B'; L.state.mode = 'on';
+    await L.DB.__t._handleAuthIdentityChange();
+    assert.ok(L.DB.get('ch_theme') == null);
+    L.state.uid = 'A';
+    await L.DB.__t._handleAuthIdentityChange();
+    assert.strictEqual(L.DB.get('ch_theme'), 'darkA');
+  });
+  await t('attribution: signed-out edit has no owner id; a different person signing in does not send it', async () => {
+    const puts = [];
+    const L = load({ classify: false, mode: 'off', syncHost: true,
+      fetchImpl: async (u, o) => { if (o && o.method === 'PUT') puts.push(JSON.parse(o.body)); return ok({ version: 1, hash: 'h' }); } });
+    await L.DB.warmCache();
+    L.state.uid = 'A'; L.state.mode = 'on';
+    await L.DB.__t._handleAuthIdentityChange();
+    L.state.uid = null; L.state.mode = 'off'; // A session expired
+    await L.DB.set('en_note', 'edit while expired');
+    assert.strictEqual(L.DB.getQueueDepth(), 1);
+    L.state.uid = 'B'; L.state.mode = 'on';
+    await L.DB.__t._handleAuthIdentityChange();
+    assert.strictEqual(puts.length, 0, 'B must not send an edit made before B signed in as A');
+    L.state.uid = 'A';
+    await L.DB.__t._handleAuthIdentityChange();
+    assert.strictEqual(puts.length, 1, 'A signs back in: edit goes out');
+    assert.strictEqual(L.DB.getQueueDepth(), 0);
+  });
+  await t('attribution: edit whose send fails is queued under the user who made it, even if identity changed during the send', async () => {
+    let release;
+    const gate = new Promise((r) => { release = r; });
+    const L = load({ classify: false, mode: 'on', syncHost: true,
+      fetchImpl: async (u, o) => { if (o && o.method === 'PUT') { await gate; throw new Error('net'); } return ok([]); } });
+    await L.DB.warmCache();
+    L.state.uid = 'A';
+    const pending = L.DB.set('en_note', 'by A');
+    await new Promise((r) => setTimeout(r, 20));
+    L.state.uid = 'B';
+    await L.DB.__t._handleAuthIdentityChange();
+    release();
+    await pending;
+    await new Promise((r) => setTimeout(r, 20));
+    const info = L.DB.getForeignQueueInfo();
+    const q = JSON.parse(L.store['ch_sync_queue']).filter((e) => e.key === 'en_note');
+    assert.ok(q.some((e) => e.owner.id === 'A' && e.value === 'by A'), 'queued under A');
+    assert.strictEqual(info.length, 1, 'entry owned by A, foreign to B');
+    assert.strictEqual(info[0].id, 'A');
+  });
+  await t('attribution: drain stops when identity changes mid-drain; no A entry sent with B token', async () => {
+    const puts = [];
+    let L;
+    L = load({ classify: false, mode: 'on', syncHost: true,
+      fetchImpl: async (u, o) => {
+        if (o && o.method === 'PUT') { puts.push(JSON.parse(o.body)); L.state.uid = 'B'; return ok({ version: 1, hash: 'h' }); }
+        return ok([]);
+      } });
+    await L.DB.warmCache();
+    L.state.uid = 'A'; L.state.mode = 'off';
+    await L.DB.set('en_n1', 1);
+    await L.DB.set('en_n2', 2);
     assert.strictEqual(L.DB.getQueueDepth(), 2);
+    L.state.mode = 'on';
+    await L.DB.__t._drainQueueOnce();
+    assert.strictEqual(puts.length, 1, 'second A entry not sent after identity became B');
+    assert.strictEqual(L.DB.getQueueDepth(), 1);
   });
 
   // ---- Demo (manager decision 3) and one ch_user clear function (decision 4)

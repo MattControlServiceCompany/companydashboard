@@ -439,7 +439,48 @@ const DB = (() => {
       _recordLastUser();
       return _lastUser && _lastUser.id === id ? _lastUser : { id, email: null };
     }
-    return _lastUser || { id: null, email: null };
+    // Signed out: NO verified identity. The entry has no owner id. It records
+    // only which verified user was last on this browser (hintId). The drain
+    // hands it to that user alone, and only when that user's verified session
+    // id matches. A different person signing in never gets it.
+    return { id: null, email: null, hintId: _lastUser && _lastUser.id ? _lastUser.id : null };
+  }
+  function _entryOwnerKey(o) {
+    return o && o.id ? 'id:' + o.id : 'hint:' + ((o && o.hintId) || '');
+  }
+  // True when the signed-in verified user may send/re-apply this entry.
+  function _entryBelongsTo(e, me) {
+    if (!me || !e.owner) return false;
+    if (e.owner.id) return e.owner.id === me;
+    return !!e.owner.hintId && e.owner.hintId === me;
+  }
+  // Signed-out entries become the verified user's own when that same user signs in.
+  function _claimSignedOutEntries(me) {
+    if (!me) return;
+    let changed = false;
+    _syncQueue.forEach((e) => {
+      if (e.owner && !e.owner.id && e.owner.hintId === me) {
+        e.owner = { id: me, email: (_lastUser && _lastUser.id === me && _lastUser.email) || null };
+        changed = true;
+      }
+    });
+    if (changed) _persistSyncQueue();
+  }
+  // Put this user's queued per-user values back into the local cache (the
+  // identity change removed them so another user never sees or writes them).
+  function _reapplyQueuedPerUserValues(me) {
+    if (!me) return;
+    _claimSignedOutEntries(me);
+    _syncQueue.forEach((e) => {
+      if (!_isPerUserKey(e.key) || !_entryBelongsTo(e, me)) return;
+      if (e.deleted) {
+        delete _cache[e.key];
+        _rawDelete(e.key);
+      } else {
+        _cache[e.key] = e.value;
+        _rawSet(e.key, e.value);
+      }
+    });
   }
   // Pending edits that belong to a different user than the one signed in now.
   // Never sent, never deleted; the bar in sync-ui.js reports them.
@@ -447,8 +488,11 @@ const DB = (() => {
     const me = _myUserId();
     const by = {};
     _syncQueue.forEach((e) => {
-      if (!e.owner || !e.owner.id || e.owner.id === me) return;
-      const o = by[e.owner.id] || (by[e.owner.id] = { id: e.owner.id, email: e.owner.email || 'another user', count: 0 });
+      if (!e.owner || _entryBelongsTo(e, me)) return;
+      const oid = e.owner.id || e.owner.hintId;
+      if (!oid) return;
+      const oEmail = e.owner.email || (_lastUser && _lastUser.id === oid ? _lastUser.email : null);
+      const o = by[oid] || (by[oid] = { id: oid, email: oEmail || 'another user', count: 0 });
       o.count++;
     });
     return Object.keys(by).map((k) => by[k]);
@@ -473,9 +517,11 @@ const DB = (() => {
     // {key,...}" wording does not explicitly forbid coalescing; this keeps it
     // an ordered list (still FIFO across distinct keys) while guaranteeing a
     // given key only ever replays its most recent local value.
-    const owner = _queueOwner();
+    // Owner = the verified user who made the edit, captured when the edit began
+    // (payload.owner). Never re-read after an await: the user may have changed.
+    const owner = payload.owner || _queueOwner();
     // Coalesce per key AND owner: one user's edit never replaces another user's pending edit.
-    _syncQueue = _syncQueue.filter((e) => !(e.key === key && ((e.owner && e.owner.id) || null) === owner.id));
+    _syncQueue = _syncQueue.filter((e) => !(e.key === key && _entryOwnerKey(e.owner) === _entryOwnerKey(owner)));
     _syncQueue.push({
       id: _genId(),
       key,
@@ -1378,6 +1424,7 @@ const DB = (() => {
   async function _replicateWrite(key, payload) {
     const mode = _backendMode();
     if (!_shouldReplicate(key)) return;
+    payload = Object.assign({}, payload, { owner: _queueOwner() }); // who made this edit, fixed now
     if (mode === 'off') {
       // B1b (2026-10-06): signed out / session lost on the sync host. Keep the
       // edit in the durable queue; it uploads (CAS, never overwriting a newer
@@ -1414,11 +1461,15 @@ const DB = (() => {
   async function _drainQueueLocked() {
     // Send only the signed-in user's own entries; others stay queued untouched.
     const me = _myUserId();
+    _claimSignedOutEntries(me);
     const snapshot = _syncQueue.filter((e) => e.owner && e.owner.id && e.owner.id === me);
+    const epoch = _identityEpoch;
     for (const entry of snapshot) {
+      // Identity changed during the drain: stop. The token now belongs to someone else.
+      if (epoch !== _identityEpoch || _myUserId() !== me) return;
       // Entry may have already been resolved/superseded by a concurrent op.
       if (!_syncQueue.some((e) => e.id === entry.id)) continue;
-      const payload = entry.deleted ? { deleted: true } : { value: entry.value };
+      const payload = entry.deleted ? { deleted: true, owner: entry.owner } : { value: entry.value, owner: entry.owner };
       // _sendKvPut always reads baseVersion from the live _replicaVersions
       // map (not entry.baseVersion) — a real conflict still 409s honestly.
       let result;
@@ -1427,6 +1478,7 @@ const DB = (() => {
       } catch (e) {
         result = { status: 'network-error' };
       }
+      if (epoch !== _identityEpoch) return;
       if (result.status === 'ok') {
         _syncQueue = _syncQueue.filter((e) => e.id !== entry.id);
         _persistSyncQueue();
@@ -2019,10 +2071,9 @@ const DB = (() => {
       }
     }
 
-    // Never delete a key that still has a pending queued edit (any owner).
-    for (let i = cleared.length - 1; i >= 0; i--) {
-      if (_syncQueue.some((e) => e.key === cleared[i])) cleared.splice(i, 1);
-    }
+    // Per-user keys are ALWAYS removed from the local cache, even with a queued
+    // edit: the queue entry keeps the value, and _reapplyQueuedPerUserValues puts
+    // it back when its owner signs in again. The next user never sees it or saves it.
 
     cleared.forEach((k) => {
       delete _cache[k];
@@ -2062,6 +2113,7 @@ const DB = (() => {
     _identityEpoch++; // in-flight work for the previous user now discards itself
     _uploadProgress = { running: false, total: 0, done: 0, uploaded: 0, failed: 0 };
     const cleared = _clearPerUserLocalState();
+    _reapplyQueuedPerUserValues(uid); // this user's own queued values, before hydrate and drain
     // Finding 2 — persist the new owner durably so a hard refresh right after
     // this switch (warmCache() -> _checkDurableIdentityMarker() below) sees
     // the state is already clean for `uid` and does not need to clear again.
@@ -2113,6 +2165,7 @@ const DB = (() => {
     // switch).
     if (priorKnown && currentUid && priorKnown !== currentUid) {
       cleared = _clearPerUserLocalState();
+      _reapplyQueuedPerUserValues(currentUid);
       _lastKnownUserId = currentUid;
       if (typeof window !== 'undefined' && cleared.length) {
         window.dispatchEvent(
