@@ -10693,8 +10693,8 @@ function renderPerfPane(pane, m, bills, incl) {
         kwhCostAmt,
         energyCostAmt,
         totalBillCost,
-        kwhRate: _storedKwhRate || (actualKwh > 0 && kwhCostAmt > 0 ? kwhCostAmt / actualKwh : 0),
-        kwRate: _storedKwRate || (bilKW > 0 && kwCostAmt + facKWCostAmt > 0 ? (kwCostAmt + facKWCostAmt) / bilKW : 0),
+        kwhRate: _storedKwhRate,
+        kwRate: _storedKwRate,
       };
     });
   }
@@ -10712,7 +10712,7 @@ function renderPerfPane(pane, m, bills, incl) {
           gasCostByYm[r.ym] = {
             thermCostAmt: actCost,
             totalBillCost: actCost,
-            thermRate: _storedRate || (actCost > 0 ? actCost / actGallons : 0),
+            thermRate: _storedRate,
           };
       });
     } else {
@@ -10729,7 +10729,7 @@ function renderPerfPane(pane, m, bills, incl) {
           gasCostByYm[r.ym] = {
             thermCostAmt,
             totalBillCost: totalGasCost,
-            thermRate: _storedGasRate || (thermCostAmt > 0 ? thermCostAmt / actualTherms : 0),
+            thermRate: _storedGasRate,
           };
       });
     }

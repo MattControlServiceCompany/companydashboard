@@ -293,6 +293,10 @@ function sumElectricEnergyCharges(parsed) {
   );
 }
 
+// getExtractedRate(parsed, type) - a DIFFERENT value from getStoredRate: the preview rate of a freshly
+// extracted PDF (extractor field names, before any save). Propane uses the printed UnitPrice and
+// gas without therms uses $/MMBtu; getStoredRate is the all-in $/Therm of a saved bill. Same cost
+// accessors; do not use it for saved bills.
 function getExtractedRate(parsed, type) {
   switch (type) {
     case 'kwh': {
@@ -318,7 +322,7 @@ function getExtractedRate(parsed, type) {
       });
       if (usage > 0 && cost > 0) return cost / usage;
       // MMBtu fallback: WRE meters store usage as naturalGasMMbtu; divide charge by MMBtu
-      // so the result is $/MMBtu rather than $/Therm — mirrors getStoredRate('gas') above.
+      // so the result is $/MMBtu rather than $/Therm (getStoredRate converts to Therms instead).
       var mmbtu = parseBillNumber(parsed.naturalGasMMbtu) || parseBillNumber(parsed.NaturalGasMMbtu) || 0;
       return mmbtu > 0 && cost > 0 ? cost / mmbtu : 0;
     }
