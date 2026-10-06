@@ -1,6 +1,6 @@
 'use strict';
 const assert = require('assert');
-const { keepAlive, config } = require('../netlify/functions/supabase-keepalive.js');
+const { keepAlive } = require('../netlify/functions/supabase-keepalive.js');
 (async () => {
   const env = { SUPABASE_URL: 'https://example.invalid', SUPABASE_SECRET_KEY: 'test-key' };
   const calls = [];
@@ -17,6 +17,8 @@ const { keepAlive, config } = require('../netlify/functions/supabase-keepalive.j
   assert.strictEqual(r.ok, false);
   r = await keepAlive({}, ok);
   assert.strictEqual(r.ok, false);
-  assert.strictEqual(config.schedule, '@daily');
+  const toml = require('fs').readFileSync(require('path').join(__dirname, '..', 'netlify.toml'), 'utf8');
+  assert.ok(/\[functions\."supabase-keepalive"\]\s*schedule\s*=\s*"@daily"/.test(toml));
+  assert.strictEqual(require('../netlify/functions/supabase-keepalive.js').config, undefined);
   console.log('supabase-keepalive: all tests passed');
 })().catch((e) => { console.error(e); process.exit(1); });

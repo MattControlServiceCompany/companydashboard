@@ -2,7 +2,7 @@
 // WHY: the Supabase free plan pauses a project after a period of inactivity, which took the site
 // down (2026-10-06). One small READ-ONLY query each day counts as activity.
 // Env vars (same as kv-sync.js): SUPABASE_URL, SUPABASE_SECRET_KEY. No writes. No key is logged.
-// Schedule syntax: https://docs.netlify.com/functions/scheduled-functions/ (exports.config.schedule).
+// Schedule is declared in netlify.toml ([functions."supabase-keepalive"] schedule) -- one place only.
 
 async function keepAlive(env, fetchImpl) {
   const url = env.SUPABASE_URL;
@@ -35,4 +35,3 @@ exports.handler = async () => {
   const r = await keepAlive(process.env, fetch);
   return { statusCode: r.ok ? 200 : 502 };
 };
-exports.config = { schedule: '@daily' };

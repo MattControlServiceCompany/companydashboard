@@ -23,6 +23,9 @@
 [functions]
   directory = "netlify/functions"
 
+[functions."supabase-keepalive"]
+  schedule = "@daily"
+
 [dev]
   publish = "."
   framework = "#static"
