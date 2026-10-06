@@ -6,9 +6,9 @@
 // beyond the small public accessors DB already exposes (getQueueDepth, getConflictArchive).
 // Renders:
 //   1. "N unsynced changes" pill (syncQueueChanged) — bottom-right badge.
-//   2. Passive "X changed — refresh" banner (remoteChange) — does NOT auto-swap _cache
-//      under a live page (supabase-migration-plan-FINAL-2026-07-19.md §2.4 — no silent
-//      live-merge in v1).
+//   2. (M1) Server changes with no pending local edit are applied by db.js and the page
+//      reloads when it is safe (dbRemoteApplied). The passive "X changed - refresh" banner
+//      (remoteChange) shows only when they could not be applied or a reload is unsafe.
 //   3. Persistent "offline — showing local copy" banner (dbOfflineBanner), cleared by the
 //      next successful hydration/manifest round-trip (dbHydrated).
 //   4. (Phase 2b) A BLOCKING conflict-resolution modal, opened by app/db.js calling
@@ -299,6 +299,24 @@
 
   window.addEventListener('remoteChange', function (e) {
     renderRemoteChangeBanner(e.detail && e.detail.keys);
+  });
+
+  // M1: db.js already applied these server changes to the local copy. The page
+  // holds its own in-memory lists, so the ONE way to show them is a page reload.
+  // Reload only when nothing here can be lost by it (no field being edited, no
+  // dialog open, nothing unsent); otherwise show the refresh bar instead.
+  function _safeToReload() {
+    var a = document.activeElement;
+    var typing =
+      a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT' || a.isContentEditable);
+    var dialog = document.querySelector('.modal-overlay.open, .modal.open, #ch-conflict-overlay, dialog[open]');
+    var unsent = window.DB && typeof window.DB.getQueueDepth === 'function' && window.DB.getQueueDepth() > 0;
+    return !typing && !dialog && !unsent;
+  }
+  window.addEventListener('dbRemoteApplied', function (e) {
+    var keys = (e.detail && e.detail.keys) || [];
+    if (_safeToReload()) window.location.reload();
+    else renderRemoteChangeBanner(keys);
   });
 
   window.addEventListener('dbOfflineBanner', function () {

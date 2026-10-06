@@ -2103,10 +2103,13 @@ const DB = (() => {
     }
   }
 
-  // --- 2a.6: manifest polling (60s + focus) — diff-only, no auto-apply. -----
-  // Per §2.4 of the migration plan: do NOT silently swap _cache under a live
-  // page in v1. Dispatches `remoteChange` (mirrors the existing `dataUpdated`
-  // pattern at set()) so app/sync-ui.js can render a passive "refresh" banner.
+  // --- 2a.6 + M1: manifest polling (60s + focus) ------------------------------
+  // A newer server version of a key this browser has NO pending edit for is
+  // applied by the ONE hydration function (_hydrate: merge, never overwrite an
+  // edit, archive what loses) and announced with `dbRemoteApplied`, so
+  // app/sync-ui.js re-renders. A key that could not be applied (a pending local
+  // edit waits in the queue, or the fetch failed) is announced with
+  // `remoteChange`, which shows the passive "refresh" bar.
   async function _pollManifestForChanges() {
     if (_backendMode() !== 'on') return;
     let manifest;
@@ -2115,24 +2118,37 @@ const DB = (() => {
     } catch (e) {
       return; // transient — next poll cycle will retry
     }
-    const changedKeys = [];
+    const changed = []; // { localKey, version } — local (unprefixed) key, as sync-ui.js displays it
     for (const m of manifest) {
       const resolved = _resolveManifestKey(m.key); // skips foreign per-user rows entirely
       if (!resolved) continue;
       const localKey = resolved.localKey;
       const local = _replicaVersions[localKey];
       if (local && typeof local.version === 'number' && m.version > local.version) {
-        changedKeys.push(localKey); // local (unprefixed) key — matches what sync-ui.js displays
+        changed.push({ localKey, version: m.version });
       }
     }
     if (typeof window !== 'undefined') {
       // A successful manifest round-trip proves we're online — clears any
       // stale "offline" banner even if nothing actually changed.
       window.dispatchEvent(new CustomEvent('dbHydrated', { detail: { applied: 0, conflicts: 0, pollOnly: true } }));
-      if (changedKeys.length) {
-        window.dispatchEvent(new CustomEvent('remoteChange', { detail: { keys: changedKeys } }));
-      }
     }
+    if (!changed.length) return;
+    const epoch = _identityEpoch;
+    try {
+      await _hydrate();
+    } catch (e) {
+      console.warn('[DB] Poll: applying server changes failed, showing the refresh bar:', e);
+    }
+    if (epoch !== _identityEpoch || typeof window === 'undefined') return;
+    const applied = [];
+    const notApplied = [];
+    changed.forEach((c) => {
+      const v = _replicaVersions[c.localKey];
+      (v && typeof v.version === 'number' && v.version >= c.version ? applied : notApplied).push(c.localKey);
+    });
+    if (applied.length) window.dispatchEvent(new CustomEvent('dbRemoteApplied', { detail: { keys: applied } }));
+    if (notApplied.length) window.dispatchEvent(new CustomEvent('remoteChange', { detail: { keys: notApplied } }));
   }
 
   // --- Per-user-settings-sync (2026-07-20 fix) — shared-browser identity

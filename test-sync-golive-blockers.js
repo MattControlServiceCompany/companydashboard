@@ -555,6 +555,53 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     assert.strictEqual(L.DB.getQueueDepth(), 1, 'local list kept in the queue, not lost');
     assert.ok(JSON.stringify(L.DB.get(KEY)).includes('no-id.pdf'), 'local record still present');
   });
+
+  // ---- M1: poll applies server changes when there is no pending local edit
+  await t('M1 poll applies a newer server value (no pending edit), announces dbRemoteApplied, no refresh bar', async () => {
+    const srv = makeServer({ en_note: 'v1' });
+    const L = await syncedBrowser(srv);
+    assert.strictEqual(L.DB.get('en_note'), 'v1');
+    srv.rows.en_note = { value: 'v2', version: 2, hash: 'h2' };
+    L.events.length = 0;
+    await L.DB.__t._pollManifestForChanges();
+    assert.strictEqual(L.DB.get('en_note'), 'v2', 'value applied to the local copy');
+    const applied = L.events.find((e) => e.type === 'dbRemoteApplied');
+    assert.ok(applied && Array.from(applied.detail.keys).join(',') === 'en_note', 'dbRemoteApplied sent');
+    assert.ok(!L.events.some((e) => e.type === 'remoteChange'), 'no refresh bar event');
+  });
+  await t('M1 poll with a pending local edit for the key keeps the edit and asks for a refresh (remoteChange)', async () => {
+    const srv = makeServer({ en_note: 'v1' });
+    const L = await syncedBrowser(srv);
+    srv.rows.en_note = { value: 'v2', version: 2, hash: 'h2' };
+    const edit = L.DB.set('en_note', 'mine'); // 409 against v2 -> merge cannot apply to a plain string -> stays queued
+    await edit;
+    await settle();
+    assert.ok(L.DB.getQueueDepth() >= 1, 'edit is waiting in the queue');
+    L.events.length = 0;
+    await L.DB.__t._pollManifestForChanges();
+    assert.strictEqual(L.DB.get('en_note'), 'mine', 'pending local edit not overwritten');
+    assert.ok(L.events.some((e) => e.type === 'remoteChange'), 'refresh bar event');
+    assert.ok(!L.events.some((e) => e.type === 'dbRemoteApplied'), 'not announced as applied');
+  });
+  await t('M1 poll applies a changed utility list by merging, keeps a different local pending list', async () => {
+    const KEY = 'en_pdf_bills';
+    const srv = makeServer({ [KEY]: [{ id: 'pb1' }], en_other: 'o1' });
+    const L = await syncedBrowser(srv);
+    srv.rows[KEY] = { value: [{ id: 'pb1' }, { id: 'pb2' }], version: 2, hash: 'h2' };
+    srv.rows.en_other = { value: 'o2', version: 2, hash: 'h2' };
+    L.events.length = 0;
+    await L.DB.__t._pollManifestForChanges();
+    assert.deepStrictEqual(L.DB.get(KEY).map((x) => x.id), ['pb1', 'pb2']);
+    assert.strictEqual(L.DB.get('en_other'), 'o2');
+    const applied = L.events.find((e) => e.type === 'dbRemoteApplied');
+    assert.deepStrictEqual(Array.from(applied.detail.keys).sort(), ['en_other', KEY]);
+  });
+  await t('M1 sync-ui reloads only when safe, otherwise shows the bar (source check)', () => {
+    const ui = fs.readFileSync(path.join(__dirname, 'app', 'sync-ui.js'), 'utf8');
+    assert.ok(/addEventListener\('dbRemoteApplied'/.test(ui));
+    assert.ok(/function _safeToReload\(\)/.test(ui));
+    assert.ok(/_safeToReload\(\)\) window\.location\.reload\(\);\s*else renderRemoteChangeBanner/.test(ui));
+  });
   console.log(pass + ' passed');
 })().catch((e) => {
   console.error('FAIL', e);
