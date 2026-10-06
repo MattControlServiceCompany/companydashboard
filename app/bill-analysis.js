@@ -7146,9 +7146,7 @@ async function confirmAutoAssign() {
       demandKW: billValueOrBlank(bill.ActualKW),
       billedKW: billValueOrBlank(bill.BilledKW),
       facKW: billValueOrBlank(bill.FacilitiesKW),
-      facKWCost: billValueOrBlank(bill.FacilitiesCharge),
       totalCost,
-      fromPDF: true,
       pdfBillId: billId,
       hasPDF,
       pdfKey: pdfKey || null,
@@ -7576,9 +7574,7 @@ async function _mbSaveOneBill(bi, action) {
     demandKW: billValueOrBlank(bill.ActualKW),
     billedKW: billValueOrBlank(bill.BilledKW),
     facKW: billValueOrBlank(bill.FacilitiesKW),
-    facKWCost: billValueOrBlank(bill.FacilitiesCharge),
     totalCost,
-    fromPDF: true,
     pdfBillId: billId,
     hasPDF,
     pdfKey: pdfKey || null,
@@ -8382,7 +8378,7 @@ async function _pdfCompactWalkAndRemap(oldKeyToCanonical) {
   const dirtyProjIds = new Set();
 
   function isPdfClaiming(rec) {
-    return !!(rec && (rec.hasPDF || rec.pdfKey));
+    return billHasPdf(rec);
   }
   function candidatesFor(rec) {
     const c = [];
@@ -8787,10 +8783,8 @@ function _saveBillToMatchedMeter(extracted, match) {
     actualRKVA: billValueOrBlank(extracted.ActualRKVA),
     billedKW: billValueOrBlank(extracted.BilledKW),
     facKW: billValueOrBlank(extracted.FacilitiesKW),
-    facKWCost: billValueOrBlank(extracted.FacilitiesCharge),
     tdcKW: billValueOrBlank(extracted.TDCkW),
     totalCost,
-    fromPDF: true,
     // pdfBillId is REQUIRED for the Bills table render to show the 📄 button
     // (renderBillRow gates on `row.pdfBillId && row.hasPDF`). Without it the
     // button is suppressed even though the PDF is stored and loadable, so every
@@ -11469,7 +11463,7 @@ function _buildDiffFields(extracted, existing) {
     ActualKW: 'demandKW',
     BilledKW: 'billedKW',
     FacilitiesKW: 'facKW',
-    FacilitiesCharge: 'facKWCost',
+    FacilitiesCharge: 'facilitiesCharge',
     TotalCurrentCharges: 'totalCost',
     RateSchedule: 'rateSchedule',
     CustomerCharge: 'customerCharge',
@@ -11654,7 +11648,7 @@ async function _checkDuplicates(bills, statusCb) {
           bldgName: b.name,
           meterLabel: m.commodity + ' · Account ' + (m.account || '—') + ' · Meter ' + (m.meter || '—'),
           meter: m,
-          hasPDF: !!bill.hasPDF,
+          hasPDF: billHasPdf(bill),
           pdfKey: bill.pdfKey || null,
         };
         assignedBills.push(entry);
@@ -11764,7 +11758,7 @@ async function _checkDuplicates(bills, statusCb) {
           locationType: 'assigned',
           projId: ab.projId,
           meter: ab.meter,
-          hasPDF: ab.hasPDF,
+          hasPDF: billHasPdf(ab),
           pdfKey: ab.pdfKey,
           // `site`: matched by invoice + service address only (no account/meter
           // number agreement). Save paths treat such a dup as WEAK — never
@@ -11798,7 +11792,7 @@ async function _checkDuplicates(bills, statusCb) {
           location: 'Saved Bills' + (sb.projName ? ' (' + sb.projName + ')' : ''),
           locationType: 'saved',
           savedBillId: sb.id,
-          hasPDF: !!sb.hasPDF,
+          hasPDF: billHasPdf(sb),
           pdfKey: sb.pdfKey || null,
           matchFields: { account: acctMatch, period: periodMatch, meter: meterMatch },
           diffFields,
@@ -12292,7 +12286,7 @@ function _renderDupModal(billIdx) {
   if (dup.matchFields.account) matchParts.push('Account');
   if (dup.matchFields.period) matchParts.push('Period');
   if (dup.matchFields.meter) matchParts.push('Meter');
-  const pdfHtml = dup.hasPDF
+  const pdfHtml = billHasPdf(dup)
     ? `<span style="cursor:pointer;text-decoration:underline;color:var(--accent)" onclick="_viewDupPDF(${billIdx})">&#128196; PDF stored</span>`
     : 'No PDF stored';
   document.getElementById('dupModalInfo').innerHTML =
@@ -12557,7 +12551,7 @@ async function attachOnlyDupBill() {
 
 async function _viewDupPDF(billIdx) {
   const dup = (window._pdfDupMap || {})[billIdx];
-  if (!dup || !dup.hasPDF) {
+  if (!billHasPdf(dup)) {
     showToast('No PDF stored for existing bill');
     return;
   }
@@ -17961,7 +17955,7 @@ async function _applyDupUpdate(billIdx, extracted, dup) {
       ActualRKVA: 'actualRKVA',
       BilledKW: 'billedKW',
       FacilitiesKW: 'facKW',
-      FacilitiesCharge: 'facKWCost',
+      FacilitiesCharge: 'facilitiesCharge',
       TotalCurrentCharges: 'totalCost',
       RateSchedule: 'rateSchedule',
       OnPeakKWh: 'onPeakKwh',
@@ -20000,7 +19994,7 @@ function renderSavedBills() {
             </div>
             <div style="display:flex;gap:6px;flex-shrink:0">
               <button class="btn btn-ghost btn-sm" onclick="viewSavedBill('${b.id}')">Data</button>
-              ${b.hasPDF ? `<button class="btn btn-ghost btn-sm" onclick="viewSavedPDF('${b.id}',${b.pdfPageStart || 'null'},${b.pdfPageEnd || 'null'},'${b.pdfKey || ''}')">PDF</button>` : ''}
+              ${billHasPdf(b) ? `<button class="btn btn-ghost btn-sm" onclick="viewSavedPDF('${b.id}',${b.pdfPageStart || 'null'},${b.pdfPageEnd || 'null'},'${b.pdfKey || ''}')">PDF</button>` : ''}
               <button class="btn btn-em btn-sm" onclick="openAssignModal('${b.id}')">Assign</button>
               <button class="btn btn-ghost btn-sm" style="color:var(--red);border-color:var(--red)" onclick="deleteSavedBill('${b.id}')">Delete</button>
             </div>
@@ -20042,7 +20036,7 @@ function renderSavedBills() {
               </div>
               <div style="display:flex;gap:5px;flex-shrink:0">
                 <button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="viewSavedBill('${b.id}')">Data</button>
-                ${b.hasPDF ? `<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="viewSavedPDF('${b.id}',${b.pdfPageStart || 'null'},${b.pdfPageEnd || 'null'},'${b.pdfKey || ''}')">PDF</button>` : ''}
+                ${billHasPdf(b) ? `<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="viewSavedPDF('${b.id}',${b.pdfPageStart || 'null'},${b.pdfPageEnd || 'null'},'${b.pdfKey || ''}')">PDF</button>` : ''}
                 <button class="btn btn-em btn-sm" style="font-size:10px" onclick="openAssignModal('${b.id}')">Assign</button>
                 <button class="btn btn-ghost btn-sm" style="font-size:10px;color:var(--red);border-color:var(--red)" onclick="deleteSavedBill('${b.id}')">Delete</button>
               </div>
@@ -20512,11 +20506,9 @@ function confirmAssignBill() {
     demandKW: billValueOrBlank(bill.ActualKW),
     billedKW: billValueOrBlank(bill.BilledKW),
     facKW: billValueOrBlank(bill.FacilitiesKW),
-    facKWCost: billValueOrBlank(bill.FacilitiesCharge),
     totalCost,
-    fromPDF: true,
     pdfBillId: bill.id,
-    hasPDF: !!bill.hasPDF,
+    hasPDF: billHasPdf(bill),
     rateSchedule: bill.RateSchedule || '',
     onPeakKwh: billValueOrBlank(bill.OnPeakKWh, bill.EnergyOnPeakKWh),
     offPeakKwh: billValueOrBlank(bill.OffPeakKWh, bill.EnergyOffPeakKWh),
@@ -20647,8 +20639,8 @@ function confirmAssignBill() {
       ) {
         dup[key] = newVal;
       }
-      // Also update if new value is different and likely more accurate (from OCR re-extraction)
-      if (newVal && newVal !== '' && existing !== newVal && billRow.fromPDF) {
+      // Also update if new value is different: this row comes from a fresh OCR extraction.
+      if (newVal && newVal !== '' && existing !== newVal) {
         dup[key] = newVal;
       }
     }
@@ -20873,7 +20865,6 @@ function confirmManualAssign() {
     demandKW: billValueOrBlank(extracted.ActualKW),
     billedKW: billValueOrBlank(extracted.BilledKW),
     facKW: billValueOrBlank(extracted.FacilitiesKW),
-    facKWCost: billValueOrBlank(extracted.FacilitiesCharge),
     tdcKW: billValueOrBlank(extracted.TDCkW),
     totalCost,
     rateSchedule: extracted.RateSchedule || '',
@@ -20890,7 +20881,6 @@ function confirmManualAssign() {
     franchiseFee: billValueOrBlank(extracted.FranchiseFee),
     franchiseFee1: billValueOrBlank(extracted.FranchiseFee1),
     franchiseFee2: billValueOrBlank(extracted.FranchiseFee2),
-    fromPDF: true,
     _manuallyAssigned: true,
     // Gas fields
     therms: billValueOrBlank(extracted.NaturalGasTherms, extracted.NaturalGasMMbtu),
@@ -21241,10 +21231,8 @@ async function _saveSinglePDFBill(extracted, projId) {
     actualRKVA: billValueOrBlank(extracted.ActualRKVA),
     billedKW: billValueOrBlank(extracted.BilledKW),
     facKW: billValueOrBlank(extracted.FacilitiesKW),
-    facKWCost: billValueOrBlank(extracted.FacilitiesCharge),
     tdcKW: billValueOrBlank(extracted.TDCkW),
     totalCost: totalCostRaw,
-    fromPDF: true,
     pdfBillId: billRecord.id,
     hasPDF,
     pdfKey,

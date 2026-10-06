@@ -49,6 +49,14 @@ function getBillUsageCharge(bill, type) {
   return 0;
 }
 
+// billHasPdf(bill) — the ONE answer to "does this bill have an attached PDF?". A bill has a PDF when
+// it carries a pdfKey (the storage key of the attached file) or the hasPDF mark the save paths set.
+// The old third flag `fromPDF` (always true on every PDF save path, so it said nothing) is not
+// written any more (2026-10-05 duplicate-bill-fields audit step 7) and is never read.
+function billHasPdf(bill) {
+  return !!(bill && (bill.hasPDF || bill.pdfKey));
+}
+
 // getBillKwCost(bill) / getBillKwhCost(bill) — the ONE accessors for the electric demand dollars
 // (demandCharge + tdcCharge, the Bills table "kW Cost $" without the Facilities part) and the electric
 // energy dollars (onPeakCost + offPeakCost + ecaCharge + eerCharge + ptsCharge, the Bills table

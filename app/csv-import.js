@@ -309,7 +309,7 @@ function parseBillCsv(text, fname) {
       row.billedKW = g(iBilledKW);
       row.facKW = g(iFacKW);
       row.demandCharge = g(iKwCost); // schema: 'Billed kW Charge'
-      row.facKWCost = g(iFacKWCst); // schema fallbackKey of 'facilitiesCharge'
+      row.facilitiesCharge = g(iFacKWCst); // schema: 'Facilities Charge' (the one written name)
       row.onPeakCost = g(iKwhCst); // schema: 'Energy On-Peak Charge' — CONDENSED_CATEGORIES.Electric
       // sums onPeakCost+offPeakCost for "kWh Cost $", so a single non-split energy
       // cost column is fully represented by onPeakCost alone.
@@ -393,18 +393,8 @@ function parseBillCsv(text, fname) {
       }
     });
 
-    // Sync facKWCost <-> facilitiesCharge at write time (2026-09-23): BILL_SCHEMA.Electric
-    // documents 'facilitiesCharge' as the modern key with 'facKWCost' as its legacy fallbackKey.
-    // Every reader now goes through the single getBillFacKWCost() accessor (computations/
-    // rates.js), which already resolves facilitiesCharge -> facKWCost — so this sync is a
-    // belt-and-suspenders write-time convenience (keeps both names populated for any code
-    // outside the accessor's reach, e.g. XLSX/Word export field lookups), not a correctness
-    // requirement for the app's own cost math.
-
-    if (isElec) {
-      if (row.facKWCost == null && row.facilitiesCharge != null) row.facKWCost = row.facilitiesCharge;
-      else if (row.facilitiesCharge == null && row.facKWCost != null) row.facilitiesCharge = row.facKWCost;
-    }
+    // Facilities kW Cost is written under ONE name, facilitiesCharge (the BILL_SCHEMA key). The old
+    // facKWCost copy is not written any more (2026-10-05 audit step 7); getBillFacKWCost reads both.
 
     // Sync gas usage to canonical therms (Fix [therms-unit-2026-06-22] in saveBillRow(),
     // mirrored here) so CSV-imported gas bills populate row.therms — the field
@@ -543,7 +533,7 @@ function showBillCsvPreview(rows, m, fname, warnings) {
       const _dc2 = (v) =>
         v != null ? '$' + (+v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
       if (isElec)
-        cells = `<td>${r.kwh != null ? (+r.kwh).toLocaleString() : '—'}</td><td>${_d(r.demandKW)}</td><td>${_d(r.facKW)}</td><td>${_dc(r.demandCharge)}</td><td>${_dc(r.facKWCost)}</td><td>${_dc2(r.totalCost)}</td>`;
+        cells = `<td>${r.kwh != null ? (+r.kwh).toLocaleString() : '—'}</td><td>${_d(r.demandKW)}</td><td>${_d(r.facKW)}</td><td>${_dc(r.demandCharge)}</td><td>${_dc(getBillFacKWCost(r))}</td><td>${_dc2(r.totalCost)}</td>`;
       else if (isGas) {
         const thermsVal = resolveGasUsageThermsOrNull(r);
         cells =
@@ -853,7 +843,7 @@ function renderBillRow(row, m, incl, allBills, cols, rowNum) {
   // those rows. viewSavedPDF already handles an empty first arg gracefully.
   const pdfLookupId = row.pdfBillId || row.id || '';
   const pdfBtn =
-    (row.hasPDF || row.pdfKey) && (row.pdfBillId || row.pdfKey)
+    billHasPdf(row) && (row.pdfBillId || row.pdfKey)
       ? `<button class="btn-edit" onclick="viewSavedPDF('${pdfLookupId}',${row.pdfPageStart || 'null'},${row.pdfPageEnd || 'null'},'${row.pdfKey || ''}')" title="View source PDF" style="color:var(--accent)">📄</button>`
       : '';
   // Actions column is always the last col and is right-sticky.
@@ -2131,7 +2121,7 @@ function showBillSplitPanel(mid, billId, evt) {
     : document.getElementById('udMeterWorkspace');
   if (!pane) return;
 
-  const pdfAvail = (row.hasPDF || row.pdfKey) && (row.pdfBillId || row.pdfKey);
+  const pdfAvail = billHasPdf(row) && (row.pdfBillId || row.pdfKey);
   const pdfLookupId = row.pdfBillId || row.id || '';
   const period = (row.start ? fmtDate(row.start) : '?') + ' → ' + (row.end ? fmtDate(row.end) : '?');
 
@@ -2441,7 +2431,6 @@ function openBillModal(mid, editRowId) {
   // stale when the user edited Gas Charge in this modal. Readers use getBillGasCost.
   const LEGACY_PASSTHROUGH = [
     'kwCost',
-    'facKWCost',
     'kwhCost',
     'otherCost',
     'taxCost',
@@ -2676,7 +2665,6 @@ function saveBillRow() {
   // Legacy passthroughs — preserve any values already on the row (never thermCost, see openBillModal).
   const LEGACY_PASSTHROUGH = [
     'kwCost',
-    'facKWCost',
     'kwhCost',
     'otherCost',
     'taxCost',

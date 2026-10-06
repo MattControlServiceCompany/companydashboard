@@ -352,23 +352,14 @@ function loadUtilityData() {
   // gated version and self-heals if the algorithm is ever corrected again.
   {
     let facKWFilled = 0;
-    let facKWCostSynced = 0;
     for (const pid of Object.keys(utilityData)) {
       const ud = utilityData[pid];
       for (const b of ud.buildings || []) {
         for (const mt of b.meters || []) {
           if (mt.commodity !== 'Electric' || !mt.bills || !mt.bills.length) continue;
-          // (a) facKWCost <-> facilitiesCharge sync — never overwrites a value already present.
-          mt.bills.forEach((bill) => {
-            if (bill.facKWCost == null && bill.facilitiesCharge != null) {
-              bill.facKWCost = bill.facilitiesCharge;
-              facKWCostSynced++;
-            } else if (bill.facilitiesCharge == null && bill.facKWCost != null) {
-              bill.facilitiesCharge = bill.facKWCost;
-              facKWCostSynced++;
-            }
-          });
-          // (b) facKW backfill — same fill order as CSV import (charge/known-rate, then a full
+          // (The facKWCost <-> facilitiesCharge copy sync that used to run here is gone, 2026-10-05
+          // audit step 7: facilitiesCharge is the one written name, getBillFacKWCost reads both.)
+          // facKW backfill — same fill order as CSV import (charge/known-rate, then a full
           // 12-month rolling peak, then leave blank + flag). typeof-guarded: this file loads
           // before app/csv-import.js in script order, but loadUtilityData() only runs after
           // every page script has parsed, so backfillFacilitiesKW is always defined by call time.
@@ -379,15 +370,9 @@ function loadUtilityData() {
         }
       }
     }
-    if (facKWFilled > 0 || facKWCostSynced > 0) {
+    if (facKWFilled > 0) {
       saveUtilityData(SAVE_ALL_PROJECTS); // touches every loaded project; dirty-checked per project
-      console.log(
-        '[Facilities kW backfill] Filled facKW on ' +
-          facKWFilled +
-          ' bill(s), synced facKWCost<->facilitiesCharge on ' +
-          facKWCostSynced +
-          ' bill(s)',
-      );
+      console.log('[Facilities kW backfill] Filled facKW on ' + facKWFilled + ' bill(s)');
     }
   }
   // One-time migration: backfill sewerUsage from matching water bills
@@ -10797,7 +10782,7 @@ function renderPerfPane(pane, m, bills, incl) {
       e.facKW = Math.max(e.facKW, parseBillNumber(b.facKW));
       // Granular charge fields
       e.demandCharge += parseBillNumber(b.demandCharge);
-      e.facilitiesCharge += parseBillNumber(b.facilitiesCharge || b.facKWCost);
+      e.facilitiesCharge += getBillFacKWCost(b);
       e.tdcCharge += parseBillNumber(b.tdcCharge);
       e.onPeakCost += parseBillNumber(b.onPeakCost);
       e.offPeakCost += parseBillNumber(b.offPeakCost);
@@ -10806,7 +10791,7 @@ function renderPerfPane(pane, m, bills, incl) {
       e.ptsCharge += parseBillNumber(b.ptsCharge);
       // Fallback aggregate fields
       e.kwCost += getBillKwCost(b);
-      e.facKWCost += parseBillNumber(b.facKWCost);
+      e.facKWCost += getBillFacKWCost(b);
       e.kwhCost += getBillKwhCost(b);
       e.customerCharge += parseBillNumber(b.customerCharge);
       e.rkvaCharge += parseBillNumber(b.rkvaCharge);
@@ -11092,10 +11077,6 @@ function renderPerfPane(pane, m, bills, incl) {
     typeof computeAnomalyScores === 'function' ? computeAnomalyScores(m, allRows, blRows, bills, incl) : {};
   const _anomalyRateMap = typeof detectRateChanges === 'function' ? detectRateChanges(m, bills, incl) : {};
   const _anomalyBaseloadTrend = typeof getBaseloadTrend === 'function' ? getBaseloadTrend(m, allRows, blRows) : null;
-  // Attach transient _anomaly flag to each bill object (not persisted)
-  if (typeof attachAnomalyToBills === 'function') {
-    attachAnomalyToBills(_anomalyScoreMap, bills, incl);
-  }
   const anomalySection =
     typeof anomalyAlertHTML === 'function' && filteredPostRows.length
       ? '<div style="margin-bottom:14px">' +

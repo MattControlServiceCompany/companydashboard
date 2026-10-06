@@ -296,23 +296,9 @@ function getAnomalySummary(scoreMap, rateMap, baseloadTrend) {
   };
 }
 
-// ── attachAnomalyToBills ──────────────────────────────────────────────────────
-// Attach _anomaly object to each bill row (transient — not persisted to localStorage).
-// This makes the score accessible anywhere that has the bill object.
-// scoreMap: output of computeAnomalyScores()
-// bills: meter's raw bill array
-// incl: meter's inclusive setting
-function attachAnomalyToBills(scoreMap, bills, incl) {
-  if (!scoreMap || !bills) return;
-  bills.forEach((b) => {
-    const ym = normMonth(b.start, b.end, incl, bills);
-    if (ym && scoreMap[ym]) {
-      b._anomaly = scoreMap[ym];
-    } else {
-      b._anomaly = null;
-    }
-  });
-}
+// (attachAnomalyToBills, which wrote a transient `_anomaly` object onto every bill row — and so
+// into the saved data on the next save — is gone, 2026-10-05 audit step 7. The score map from
+// computeAnomalyScores is the only form of this value; nothing read bill._anomaly.)
 
 // ── anomalyAlertHTML ──────────────────────────────────────────────────────────
 // Builds the HTML for the anomaly alert panel (injected into renderPerfPane).
