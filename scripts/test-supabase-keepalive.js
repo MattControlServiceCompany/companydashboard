@@ -1,0 +1,22 @@
+'use strict';
+const assert = require('assert');
+const { keepAlive, config } = require('../netlify/functions/supabase-keepalive.js');
+(async () => {
+  const env = { SUPABASE_URL: 'https://example.invalid', SUPABASE_SECRET_KEY: 'test-key' };
+  const calls = [];
+  const ok = async (u, o) => { calls.push([u, o]); return { ok: true, status: 200, json: async () => [{ key: 'a' }] }; };
+  let r = await keepAlive(env, ok);
+  assert.strictEqual(r.ok, true);
+  assert.strictEqual(calls.length, 1);
+  assert.strictEqual(calls[0][1].method, 'GET');
+  assert.ok(!calls[0][1].body);
+  assert.ok(/\/rest\/v1\/kv\?.*limit=1/.test(calls[0][0]));
+  r = await keepAlive(env, async () => ({ ok: false, status: 503 }));
+  assert.deepStrictEqual(r, { ok: false, status: 503 });
+  r = await keepAlive(env, async () => { throw new Error('net'); });
+  assert.strictEqual(r.ok, false);
+  r = await keepAlive({}, ok);
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(config.schedule, '@daily');
+  console.log('supabase-keepalive: all tests passed');
+})().catch((e) => { console.error(e); process.exit(1); });
