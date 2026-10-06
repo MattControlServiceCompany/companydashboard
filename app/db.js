@@ -683,10 +683,15 @@ const DB = (() => {
 
     if (epoch !== _identityEpoch) return { status: 'stale-identity' }; // user changed mid-request: stamp nothing
     if (res.status === 200) {
+      // The merge base and the fallback hash come from the body the server
+      // RECEIVED (bodyStr), never from the live object: the page may have
+      // changed it while the request was in flight, and those changes are not
+      // on the server yet. Parsed only when needed (collection base, no hash).
+      const sent = !isTombstone && (_collectionCfg(key) || !json.hash) ? JSON.parse(bodyStr).value : undefined;
       let okHash = json.hash || null;
       if (!okHash && !isTombstone) {
         try {
-          okHash = await _sha256Hex(_canonicalJSON(stripDerivedCaches(key, payload.value)));
+          okHash = await _sha256Hex(_canonicalJSON(sent));
         } catch (e) {
           okHash = null;
         }
@@ -694,7 +699,7 @@ const DB = (() => {
       }
       const stamp = { version: json.version, hash: okHash };
       if (isTombstone) stamp.deleted = true; // a later set() of the same value must be sent again
-      _setSynced(key, stamp, isTombstone ? undefined : bodyObj.value);
+      _setSynced(key, stamp, sent);
       return { status: 'ok', body: json };
     }
     if (res.status === 409) {
