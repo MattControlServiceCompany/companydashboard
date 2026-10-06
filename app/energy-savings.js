@@ -6039,9 +6039,9 @@ const _constAddrBefore = (text, idx, win) => {
   for (const s of w.matchAll(/^.*(?:Total\s+Current\s+Site\s+Charges|Customer\s+I\S?\s*[:;]).*$/gim)) cut = s.index + s[0].length;
   w = w.slice(cut);
   // Street line may carry extra comma segments (facility name) before the city: "605 6th St, Mabee Gym, Baldwin City, KS".
-  const bald = [...w.matchAll(/^(\d+\s+[A-Za-z0-9 .#]+(?:,[^,\n]+)*?,\s*Baldwin\s*City[^\n]*)/gim)];
+  const bald = [...w.matchAll(/^[$ ]*(\d+\s+[A-Za-z0-9 .#]+(?:,[^,\n]+)*?,\s*Baldwin\s*City[^\n]*)/gim)];
   const gen = [
-    ...w.matchAll(/^(\d+\s+[A-Za-z0-9 .#]+(?:,[^,\n]+)*?,\s*[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?,\s*[A-Z]{2}\s*\d{5}(?:-\d{4})?)/gm),
+    ...w.matchAll(/^[$ ]*(\d+\s+[A-Za-z0-9 .#]+(?:,[^,\n]+)*?,\s*[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?,\s*[A-Z]{2}\s*\d{5}(?:-\d{4})?)/gm),
   ];
   const m = bald.length > 0 ? bald[bald.length - 1] : gen.length > 0 ? gen[gen.length - 1] : null;
   return m ? m[1].trim() : null;
@@ -7196,7 +7196,9 @@ const UTILITY_RULES = [
       // AccountNumber). Within that window, take the LAST match (closest to the
       // boundary) so an invoice-level billing address earlier in the header does not
       // win over the current site's own address sitting at the end of prevTail.
-      const ServiceAddress = _constAddrBefore(_identityText, _identityText.length, Infinity);
+      // Same rule and same anchor as the id path: the address printed just before THIS bill's own
+      // Customer ID line (the window cut must not include that line, so anchor at its start).
+      const ServiceAddress = _constAddrBefore(_idText, custIdM ? custIdM.index : _idText.length);
 
       // ── BillingPeriod ──
       // "Service for Dec-2024 - Actual" → month name + 4-digit year

@@ -112,6 +112,12 @@ for (const b of bills) ok(b._acctIdUnread || /^RG\d+$/.test(b.AccountNumber), 'n
 const keys = new Set(bills.map((b) => b.AccountNumber + '|' + b.BillingPeriodStart));
 ok(keys.size === bills.length, 'no duplicate (account, month)');
 
+// ServiceAddress (review 3): each bill carries its OWN site address (non-null, no leak from another site).
+for (const b of bills) {
+  const siteNo = Math.floor(Number(b.TotalCurrentCharges) / 100);
+  ok(b.ServiceAddress === siteNo + ' Test St, Baldwin City, KS 66006', 'ServiceAddress is own site ' + siteNo + ' address, got ' + b.ServiceAddress + ' (' + b.AccountNumber + ' ' + b.BillingPeriodStart + ')');
+}
+
 // gate: the bill review must hold the unreadable row
 if (unread) {
   const g = { ...unread };
