@@ -6032,10 +6032,16 @@ const _CONST_CUST_ID_RE = /Customer\s+I\S?\s*[:;]\s*(RG[^\d\s]?\d+)/gi;
 // The street line printed before position idx (last address match in the window before it), or null.
 // Also gives the bill's ServiceAddress (one address rule for both uses).
 const _constAddrBefore = (text, idx, win) => {
-  const w = text.slice(Math.max(0, idx - (win || 800)), idx);
-  const bald = [...w.matchAll(/^(\d+\s+[A-Za-z0-9 #]+,\s*Baldwin\s*City[^\n]*)/gim)];
+  let w = text.slice(Math.max(0, idx - (win || 800)), idx);
+  // Stop at the previous site's block: only text after its last "Total Current Site Charges" or
+  // "Customer ID:" line can hold this bill's address.
+  let cut = 0;
+  for (const s of w.matchAll(/^.*(?:Total\s+Current\s+Site\s+Charges|Customer\s+I\S?\s*[:;]).*$/gim)) cut = s.index + s[0].length;
+  w = w.slice(cut);
+  // Street line may carry extra comma segments (facility name) before the city: "605 6th St, Mabee Gym, Baldwin City, KS".
+  const bald = [...w.matchAll(/^(\d+\s+[A-Za-z0-9 .#]+(?:,[^,\n]+)*?,\s*Baldwin\s*City[^\n]*)/gim)];
   const gen = [
-    ...w.matchAll(/^(\d+\s+[A-Za-z0-9 .#]+,\s*[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?,\s*[A-Z]{2}\s*\d{5}(?:-\d{4})?)/gm),
+    ...w.matchAll(/^(\d+\s+[A-Za-z0-9 .#]+(?:,[^,\n]+)*?,\s*[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?,\s*[A-Z]{2}\s*\d{5}(?:-\d{4})?)/gm),
   ];
   const m = bald.length > 0 ? bald[bald.length - 1] : gen.length > 0 ? gen[gen.length - 1] : null;
   return m ? m[1].trim() : null;

@@ -45,6 +45,7 @@ function load() {
     'this.__t = { rules: typeof UTILITY_RULES !== "undefined" ? UTILITY_RULES : null,' +
       ' norm: typeof _constNormCustId !== "undefined" ? _constNormCustId : null,' +
       ' known: typeof _constKnownCustIds !== "undefined" ? _constKnownCustIds : null,' +
+      ' addr: typeof _constAddrBefore !== "undefined" ? _constAddrBefore : null,' +
       ' gates: typeof _applyExtractionGates !== "undefined" ? _applyExtractionGates : null };',
     ctx,
   );
@@ -55,7 +56,7 @@ let pass = 0, fail = 0;
 const ok = (c, m) => { if (c) pass++; else { fail++; console.log('  FAIL: ' + m); } };
 
 const T = load();
-if (!T.rules || !T.norm || !T.known || !T.gates) { console.log('FAIL: app functions not loaded', Object.keys(T)); process.exit(1); }
+if (!T.rules || !T.norm || !T.known || !T.gates || !T.addr) { console.log('FAIL: app functions not loaded', Object.keys(T)); process.exit(1); }
 const rule = T.rules.find((r) => /Constellation/.test(r.name));
 
 // ---- synthetic invoice builder -------------------------------------------------------
@@ -154,6 +155,21 @@ ok(T.norm('RG-900082', null, A2) === 'RG900082', 'norm: no known set -> raw');
 ok(T.norm('Customer', known, A2) === null, 'norm: not an RG id -> null');
 const kk = T.known('1 Main St, Baldwin City, KS 66006\nCustomer ID: RG-1\nCustomer ID: RG-1\nCustomer ID: RG.2\nCustomer ID: RG-1');
 ok([...kk.keys()].join() === '1' && kk.get('1').has('1 main'), 'known set: hyphen form 3+ only, with address key');
+
+// Review 2 (2026-10-05): address line with an extra facility-name segment, and the window stops at the previous block.
+{
+  const AB = T.addr;
+  const mab = 'Total Current Site Charges $1.00\n\nTest Facility KS\n\n5 Test St, Gym Name, Baldwin City, KS 66006-4202\n\nCustomer ID: RG-900579\n';
+  ok(AB(mab, mab.indexOf('Customer ID')) === '5 Test St, Gym Name, Baldwin City, KS 66006-4202', 'addr: extra comma segment parsed');
+  const leak = '9 Old St, Baldwin City, KS 66006\nCustomer ID: RG-900001\nTotal Current Site Charges $2.00\n\nNo address here\nCustomer ID: RG-900002\n';
+  ok(AB(leak, leak.lastIndexOf('Customer ID')) === null, 'addr: window stops at previous block (no leak from prior site)');
+  const known2 = new Map([['900579', new Set(['5 test'])], ['900001', new Set(['9 test'])]]);
+  ok(T.norm('RG-900679', known2, AB(mab, mab.indexOf('Customer ID'))) === 'RG900579', 'norm: Mabee-style misread snaps to its known id');
+  const blk = '5 Test St, Gym Name, Baldwin City, KS 66006\nCustomer ID: RG-900579\nTotal Current Site Charges $1.00\n';
+  const kn = T.known(blk + blk + blk + '7 Other St, Baldwin City, KS 66006\nCustomer ID: RG-90000046\nTotal Current Site Charges $1.00\n');
+  ok(kn.get('900579') && kn.get('900579').has('5 test') && kn.get('900579').size === 1, 'known: Mabee-style id bound to its own address only');
+  ok(T.norm('RG90000046', kn, '7 Other St, Baldwin City') === 'RG90000046', 'norm: real distinct id stays unsnapped');
+}
 
 console.log(pass + '/' + (pass + fail) + ' assertions passed');
 process.exit(fail ? 1 : 0);
