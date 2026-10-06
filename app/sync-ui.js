@@ -44,6 +44,9 @@
       '#ch-sync-banner-stack>div{text-align:center;font-size:13px;padding:6px 12px;display:none;}' +
       '#ch-sync-banner{background:var(--accent,#2563eb);color:#fff;}' +
       '#ch-sync-offline-banner{background:var(--warn,#b45309);color:#fff;}' +
+      '#ch-sync-signedout-banner,#ch-sync-hydrate-failed-banner{background:var(--warn,#b45309);color:#fff;}' +
+      '#ch-sync-signedout-banner button,#ch-sync-hydrate-failed-banner button{margin-left:8px;border-radius:4px;padding:2px 10px;font-size:12px;' +
+      'font-family:inherit;cursor:pointer;border:1px solid #fff;background:transparent;color:#fff;}' +
       '#ch-sync-archive-full-banner{background:var(--warn,#b45309);color:#fff;}' +
       '#ch-sync-archive-full-banner button{margin-left:8px;border-radius:4px;padding:2px 10px;font-size:12px;' +
       'font-family:inherit;cursor:pointer;border:1px solid #fff;background:transparent;color:#fff;}' +
@@ -153,7 +156,7 @@
     if (!el) {
       el = document.createElement('div');
       el.id = id;
-      if (id === 'ch-sync-banner' || id === 'ch-sync-offline-banner' || id === 'ch-sync-archive-full-banner') {
+      if (/^ch-sync-(banner|offline-banner|archive-full-banner|signedout-banner|hydrate-failed-banner)$/.test(id)) {
         ensureStack().appendChild(el);
       } else {
         document.body.appendChild(el);
@@ -189,6 +192,54 @@
     el.textContent = 'Offline — showing local copy. Edits will sync when reconnected.';
     el.style.display = show ? 'block' : 'none';
   }
+
+  // B2: signed out on the sync host = nothing syncs. Say so and force sign-in.
+  // Shown only when the page is past the login screen (index.html shows its own form).
+  function renderSignedOutBar() {
+    var needs = !!(window.CH_AUTH && window.CH_AUTH.needsSignIn && window.CH_AUTH.needsSignIn());
+    var login = document.getElementById('loginScreen');
+    var onLoginScreen = !!login && window.getComputedStyle(login).display !== 'none';
+    var show = needs && !onLoginScreen;
+    if (!show && !document.getElementById('ch-sync-signedout-banner')) return;
+    ensureStyles();
+    var el = ensureEl('ch-sync-signedout-banner');
+    if (!el.firstChild) {
+      el.appendChild(
+        document.createTextNode('Signed out - not syncing. Changes stay in this browser until you sign in.'),
+      );
+      var btn = document.createElement('button');
+      btn.textContent = 'Sign in';
+      btn.onclick = function () {
+        try {
+          sessionStorage.removeItem('ch_user');
+          localStorage.removeItem('ch_user');
+        } catch (e) {
+          /* storage unavailable: redirect anyway */
+        }
+        window.location.href = 'index.html';
+      };
+      el.appendChild(btn);
+    }
+    el.style.display = show ? 'block' : 'none';
+  }
+  window.addEventListener('chAuthStateChanged', renderSignedOutBar);
+  window.addEventListener('dbReady', renderSignedOutBar);
+  document.addEventListener('DOMContentLoaded', renderSignedOutBar);
+
+  // B4: some keys could not be loaded from the server after one retry.
+  window.addEventListener('dbHydrateFailed', function (e) {
+    ensureStyles();
+    var el = ensureEl('ch-sync-hydrate-failed-banner');
+    var n = e.detail && e.detail.keys ? e.detail.keys.length : 0;
+    el.textContent = 'Could not load ' + n + ' saved item' + (n === 1 ? '' : 's') + ' from the server. Some data may be missing. ';
+    var btn = document.createElement('button');
+    btn.textContent = 'Reload';
+    btn.onclick = function () {
+      window.location.reload();
+    };
+    el.appendChild(btn);
+    el.style.display = 'block';
+  });
 
   // The conflict archive is never trimmed by the app. Past its size cap this
   // notice stays until the user exports the archive and confirms the clear.

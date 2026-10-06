@@ -19,6 +19,7 @@ const DB = (() => {
   const DELETED_ITEM_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
   const GZIP_THRESHOLD_BYTES = 1024 * 1024; // 2a item 6 — gzip PUT bodies over ~1MB
   const MANIFEST_TIMEOUT_MS = 4000; // §2.2 offline timeout window (~3-5s)
+  const BATCH_GET_CHUNK_KEYS = 6; // keys per hydration GET (B4)
   const BATCH_GET_TIMEOUT_MS = 60000; // one batched GET (a value can be several MB gzipped)
   const TOMBSTONE_RETRY_BASE_MS = 5000; // deletion-record fetch failed: retry 5s, 10s, 20s ... up to 5 min
   const TOMBSTONE_RETRY_MAX_MS = 5 * 60 * 1000;
@@ -129,6 +130,10 @@ const DB = (() => {
   // 'off' = everywhere else (no network). There is no stored switch.
   function _backendMode() {
     return typeof window !== 'undefined' && window.CH_AUTH ? window.CH_AUTH.backendMode() : 'off';
+  }
+
+  function _isSyncHost() {
+    return typeof window !== 'undefined' && !!window.CH_AUTH && window.CH_AUTH.isSyncHost() === true;
   }
 
   // Keys that never sync to the backend. Delegates to the single
@@ -1328,8 +1333,14 @@ const DB = (() => {
   // --- Live write replication tail (set()/remove() call this) --------------
   async function _replicateWrite(key, payload) {
     const mode = _backendMode();
-    if (mode === 'off') return;
     if (!_shouldReplicate(key)) return;
+    if (mode === 'off') {
+      // B1b (2026-10-06): signed out / session lost on the sync host. Keep the
+      // edit in the durable queue; it uploads (CAS, never overwriting a newer
+      // server row) when sign-in brings sync back. Other hosts never sync.
+      if (_isSyncHost() && !_isPerUserKey(key)) _enqueueWrite(key, payload);
+      return;
+    }
     // Per-user key + nobody signed in: behave local-only. No fetch, no
     // enqueue — this is the primary guard (INERTNESS: signed-out mirrors
     // classify()==='local-only' exactly). _sendKvPut also re-checks this
@@ -1443,6 +1454,29 @@ const DB = (() => {
     }
     if (!res.ok) throw new Error('batch GET failed: ' + res.status);
     return res.json();
+  }
+
+  // B4 (2026-10-06): the hydration pull never sends one huge GET. Keys go in
+  // chunks of BATCH_GET_CHUNK_KEYS; a failed chunk is retried once; keys of a
+  // chunk that still fails are returned in failedKeys so the caller can show a
+  // visible error (never an empty app with no message).
+  async function _batchGetChunked(keys) {
+    const rows = [];
+    const failedKeys = [];
+    for (let i = 0; i < keys.length; i += BATCH_GET_CHUNK_KEYS) {
+      const chunk = keys.slice(i, i + BATCH_GET_CHUNK_KEYS);
+      let got = null;
+      for (let attempt = 0; attempt < 2 && got === null; attempt++) {
+        try {
+          got = await _batchGet(chunk);
+        } catch (e) {
+          console.warn('[DB] Hydration: chunk GET failed (attempt ' + (attempt + 1) + '):', e);
+        }
+      }
+      if (got === null) failedKeys.push(...chunk);
+      else rows.push(...got);
+    }
+    return { rows, failedKeys };
   }
 
   // Non-reentrant: overlapping callers (warmCache, identity change) share ONE
@@ -1693,12 +1727,10 @@ const DB = (() => {
     // is only reached when the local version map already proves the server
     // is strictly newer, or the key never existed locally at all).
     if (routineFetchKeys.length) {
-      let rows = [];
-      try {
-        rows = await _batchGet(routineFetchKeys); // wire keys — the real backend primary keys
-      } catch (e) {
-        console.warn('[DB] Hydration: batched GET failed, skipping this batch:', e);
-        rows = [];
+      const pulled = await _batchGetChunked(routineFetchKeys); // wire keys — the real backend primary keys
+      const rows = pulled.rows;
+      if (pulled.failedKeys.length && !stale() && typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('dbHydrateFailed', { detail: { keys: pulled.failedKeys } }));
       }
       if (stale()) return;
       for (const row of rows) {
@@ -1999,6 +2031,8 @@ const DB = (() => {
     } catch (e) {
       console.warn('[DB] Re-hydrate after identity change failed:', e);
     }
+    // B1b: push edits queued while signed out (CAS; a newer server row goes to _handleConflict).
+    await _drainQueueOnce();
   }
 
   // --- Finding 2 (adversarial review 2026-07-25/26) -------------------------

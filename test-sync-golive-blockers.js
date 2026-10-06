@@ -1,0 +1,228 @@
+// Unit tests for the Netlify go-live sync blockers B1b, B2, B4 (local mocks only; no network).
+// Run: node test-sync-golive-blockers.js
+'use strict';
+const assert = require('assert');
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
+
+function load({ mode, syncHost, fetchImpl }) {
+  let src = fs.readFileSync(path.join(__dirname, 'app', 'db.js'), 'utf8');
+  src = src.split(String.fromCharCode(13)).join("").replace(
+    '  return {\n    warmCache,',
+    '  return {\n    __t: { _hydrate, _batchGetChunked, _drainQueueOnce },\n    warmCache,',
+  );
+  const store = {};
+  const events = [];
+  const state = { mode, syncHost };
+  const win = {
+    addEventListener() {},
+    dispatchEvent(e) {
+      events.push(e);
+    },
+    location: { hostname: 'x' },
+    CH_AUTH: {
+      backendMode: () => state.mode,
+      isSyncHost: () => state.syncHost,
+      getToken: () => 'tok',
+      getUserId: () => (state.mode === 'on' ? 'u1' : null),
+    },
+  };
+  const sandbox = {
+    window: win,
+    document: { addEventListener() {}, visibilityState: 'visible' },
+    localStorage: {
+      getItem: (k) => (k in store ? store[k] : null),
+      setItem: (k, v) => {
+        store[k] = String(v);
+      },
+      removeItem: (k) => {
+        delete store[k];
+      },
+      key: (i) => Object.keys(store)[i] || null,
+      get length() {
+        return Object.keys(store).length;
+      },
+    },
+    console: { log() {}, warn() {}, error() {} },
+    setTimeout,
+    clearTimeout,
+    setInterval: () => 0,
+    clearInterval,
+    Promise,
+    TextEncoder,
+    URL,
+    AbortController,
+    CustomEvent: function (type, init) {
+      this.type = type;
+      this.detail = init && init.detail;
+    },
+    Event: function (t) {
+      this.type = t;
+    },
+    navigator: {},
+    indexedDB: undefined,
+    fetch: fetchImpl,
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(src + '\n;this.__DB = DB;', sandbox);
+  return { DB: sandbox.__DB, state, events, store };
+}
+let pass = 0;
+async function t(name, fn) {
+  await fn();
+  pass++;
+  console.log('PASS ' + name);
+}
+const ok = (body) => ({ ok: true, status: 200, json: async () => body });
+
+(async () => {
+  // ---- B4: chunking + retry + failure reporting
+  await t('B4 chunks keys, never one huge GET', async () => {
+    const urls = [];
+    const { DB } = load({
+      mode: 'on',
+      syncHost: true,
+      fetchImpl: async (u) => {
+        urls.push(u);
+        return ok([]);
+      },
+    });
+    const keys = Array.from({ length: 20 }, (_, i) => 'k' + i);
+    const r = await DB.__t._batchGetChunked(keys);
+    assert.strictEqual(urls.length, Math.ceil(20 / 6));
+    urls.forEach((u) => assert.ok(decodeURIComponent(u.split('keys=')[1]).split(',').length <= 6));
+    assert.strictEqual(r.failedKeys.length, 0);
+  });
+  await t('B4 retries a failed chunk once and succeeds', async () => {
+    let calls = 0;
+    const { DB } = load({
+      mode: 'on',
+      syncHost: true,
+      fetchImpl: async () => {
+        calls++;
+        return calls === 1 ? { ok: false, status: 500 } : ok([{ key: 'a' }]);
+      },
+    });
+    const r = await DB.__t._batchGetChunked(['a']);
+    assert.strictEqual(calls, 2);
+    assert.strictEqual(r.rows.length, 1);
+    assert.strictEqual(r.failedKeys.length, 0);
+  });
+  await t('B4 chunk failing twice is reported in failedKeys; other chunks still load', async () => {
+    const { DB } = load({
+      mode: 'on',
+      syncHost: true,
+      fetchImpl: async (u) => (decodeURIComponent(u).includes('k0') ? { ok: false, status: 500 } : ok([{ key: 'k9' }])),
+    });
+    const r = await DB.__t._batchGetChunked(['k0', 'k1', 'k2', 'k3', 'k4', 'k5', 'k6', 'k7']);
+    assert.strictEqual(r.failedKeys.join(','), 'k0,k1,k2,k3,k4,k5');
+    assert.strictEqual(r.rows.length, 1);
+  });
+  await t('B4 hydrate dispatches dbHydrateFailed when a chunk fails', async () => {
+    const fetchImpl = async (u) => {
+      if (u.includes('manifest=1')) return ok([{ key: 'en_a', version: 1, hash: 'h', deleted: false }]);
+      return { ok: false, status: 500 };
+    };
+    const { DB, events } = load({ mode: 'on', syncHost: true, fetchImpl });
+    await DB.warmCache();
+    await DB.__t._hydrate();
+    const ev = events.find((e) => e.type === 'dbHydrateFailed');
+    assert.ok(ev, 'dbHydrateFailed not dispatched');
+    assert.strictEqual(Array.from(ev.detail.keys).join(','), 'en_a');
+  });
+
+  // ---- B1b: edits while signed out upload after sign-in, via CAS (baseVersion), never blind
+  await t('B1b edit while signed out on sync host is queued', async () => {
+    const { DB } = load({
+      mode: 'off',
+      syncHost: true,
+      fetchImpl: async () => {
+        throw new Error('no network expected');
+      },
+    });
+    await DB.warmCache();
+    await DB.set('en_projects', [{ id: 1 }]);
+    assert.strictEqual(DB.getQueueDepth(), 1);
+  });
+  await t('B1b edit on a non-sync host is NOT queued (zero sync)', async () => {
+    const { DB } = load({
+      mode: 'off',
+      syncHost: false,
+      fetchImpl: async () => {
+        throw new Error('no network expected');
+      },
+    });
+    await DB.warmCache();
+    await DB.set('en_projects', [{ id: 1 }]);
+    assert.strictEqual(DB.getQueueDepth(), 0);
+  });
+  await t('B1b queued edit is PUT once sync is back; a 409 is not overwritten', async () => {
+    const puts = [];
+    let respond = { ok: true, status: 200, json: async () => ({ version: 1, hash: 'h' }) };
+    const fetchImpl = async (u, o) => {
+      if (o && o.method === 'PUT') {
+        puts.push(o.body);
+        return respond;
+      }
+      return ok([]);
+    };
+    const L = load({ mode: 'off', syncHost: true, fetchImpl });
+    await L.DB.warmCache();
+    await L.DB.set('en_projects', [{ id: 1 }]);
+    await L.DB.__t._drainQueueOnce();
+    assert.strictEqual(puts.length, 0, 'nothing sent while off');
+    L.state.mode = 'on';
+    await L.DB.__t._drainQueueOnce();
+    assert.strictEqual(puts.length, 1);
+    assert.strictEqual(L.DB.getQueueDepth(), 0);
+    // server has a newer row -> 409 goes to the conflict path (CAS), never a blind overwrite
+    L.state.mode = 'off';
+    await L.DB.set('en_other', [{ id: 2 }]);
+    respond = { ok: false, status: 409, json: async () => ({ error: 'conflict', currentVersion: 5 }) };
+    L.state.mode = 'on';
+    const before = puts.length;
+    await L.DB.__t._drainQueueOnce();
+    assert.ok(puts.length - before >= 1);
+    puts.slice(before).forEach((b) => assert.ok(!/"force"\s*:\s*true/.test(String(b))));
+  });
+
+  // ---- B2: Sign Out calls CH_AUTH.signOut; one needsSignIn rule
+  await t('B2 core.js signOut awaits CH_AUTH.signOut before redirect', () => {
+    const core = fs.readFileSync(path.join(__dirname, 'app', 'core.js'), 'utf8');
+    const m = core.match(/async function signOut\(\) \{[\s\S]*?\n\}/);
+    assert.ok(m, 'signOut not async');
+    assert.ok(m[0].indexOf('await window.CH_AUTH.signOut()') > -1);
+    assert.ok(m[0].indexOf('await window.CH_AUTH.signOut()') < m[0].indexOf('window.location.href'));
+  });
+  await t('B2 ch-auth: needsSignIn only on the sync host while signed out', () => {
+    const src = fs.readFileSync(path.join(__dirname, 'app', 'ch-auth.js'), 'utf8');
+    for (const [host, expectNeeds] of [
+      ['cscdashboard.netlify.app', true],
+      ['example.github.io', false],
+    ]) {
+      const win = { addEventListener() {}, dispatchEvent() {}, location: { hostname: host } };
+      const sb = {
+        window: win,
+        location: { hostname: host },
+        localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
+        CustomEvent: function () {},
+        fetch: async () => ({ ok: true, json: async () => ({}) }),
+        setInterval: () => 0,
+        Math,
+        Date,
+        JSON,
+        Promise,
+        console,
+      };
+      vm.createContext(sb);
+      vm.runInContext(src, sb);
+      assert.strictEqual(win.CH_AUTH.needsSignIn(), expectNeeds);
+      assert.strictEqual(win.CH_AUTH.isSyncHost(), expectNeeds);
+    }
+  });
+  console.log(pass + ' passed');
+})().catch((e) => {
+  console.error('FAIL', e);
+  process.exit(1);
+});

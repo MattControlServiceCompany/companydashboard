@@ -294,12 +294,21 @@
     return _cachedUserId;
   }
 
+  // True when this page is on the sync host but nobody holds a valid session.
+  // THE single "must sign in" rule: index.html auto-login, core.js auto-enter
+  // and the signed-out bar in sync-ui.js all call this.
+  function needsSignIn() {
+    return _isNetlifyHost() && _signedOut;
+  }
+
   window.CH_AUTH = {
+    needsSignIn: needsSignIn,
     getToken: getToken,
     getTokenInteractive: getTokenInteractive,
     isSignedOut: isSignedOut,
     backendMode: backendMode,
     getUserId: getUserId,
+    isSyncHost: _isNetlifyHost,
     signIn: signIn,
     signOut: signOut,
   };

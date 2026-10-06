@@ -861,7 +861,9 @@ function sv(id, btn) {
 
 /* ── AUTH ── */
 let currentUser = null;
-function signOut() {
+async function signOut() {
+  // B2: clear the Supabase session first (CH_AUTH.signOut clears it locally even if the network call fails).
+  if (window.CH_AUTH && typeof window.CH_AUTH.signOut === 'function') await window.CH_AUTH.signOut();
   sessionStorage.removeItem('ch_user');
   localStorage.removeItem('ch_user');
   window.location.href = 'index.html';
@@ -875,7 +877,8 @@ function enterApp() {
 (function () {
   try {
     const s = sessionStorage.getItem('ch_user') || localStorage.getItem('ch_user');
-    if (s) {
+    // B2: on the sync host a saved name without a live session must sign in again.
+    if (s && !(window.CH_AUTH && window.CH_AUTH.needsSignIn())) {
       currentUser = JSON.parse(s);
       enterApp();
     }

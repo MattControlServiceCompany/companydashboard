@@ -1240,7 +1240,8 @@
       // Auto-login if session exists
       (function () {
         const u = loadSession();
-        if (u) {
+        // B2: on the sync host a saved name without a live session must sign in again.
+        if (u && !(window.CH_AUTH && window.CH_AUTH.needsSignIn())) {
           currentUser = u;
           enterApp();
         }
