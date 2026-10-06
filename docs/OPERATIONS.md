@@ -58,6 +58,10 @@ Many short `setTimeout` calls (toasts, URL cleanup, UI yield) are one-shot. They
   The email in the token must be in env var AUTHORIZED_USERS (comma-separated list). (kv-sync.js:134-163, 125-129)
 - To add or remove a user: change AUTHORIZED_USERS in Netlify site settings, then redeploy.
 - Demo login is off on the sync host. The button is hidden and `loginDemo()` returns at once. (index.html:1188-1190, 1241-1243)
+- A failed token refresh (app/ch-auth.js `_startRefresh`, rule `_refreshRefused`) ends the session only when Supabase
+  REFUSED the refresh token: HTTP 400, 401 or 403. A network error or a 5xx (Supabase paused) keeps the session; the
+  5-minute timer, or the next 401 on a request, tries again. How to check: with the network off, the signed-out bar
+  must not appear; the offline banner does.
 - A 401 on a data write or on the queue drain: one token refresh, then the same request again (`CH_AUTH.withAuthRetry`,
   called from `_putWithAuth` in app/db.js, the one place a refused write is reported). The "server refused this sign-in"
   bar (`dbAuthRejected`) shows only when the final answer is still 401/403 and the session ended. If the refresh could not

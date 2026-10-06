@@ -1413,6 +1413,46 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
       assert.strictEqual(L.DB.getQueueDepth(), 1, 'the edit is kept in the queue');
     },
   );
+
+  // ---- fix 3: a failed token refresh ends the session only when the server REFUSED it
+  const refreshCase = async (tokenFetch) => {
+    const L = loadAuth(tokenFetch);
+    L.events.length = 0;
+    let runs = 0;
+    const out = await L.A.withAuthRetry(async () => {
+      runs++;
+      return { status: 'error', httpStatus: 401 };
+    });
+    return { L, runs, out };
+  };
+  await t('fix 3: refresh cannot reach Supabase (network error): session kept, no sign-out, no retry now', async () => {
+    const { L, runs, out } = await refreshCase(async () => {
+      throw new TypeError('Failed to fetch');
+    });
+    assert.strictEqual(runs, 1);
+    assert.strictEqual(out.httpStatus, 401, 'the caller gets the refusal back and retries later');
+    assert.strictEqual(L.A.backendMode(), 'on', 'still signed in');
+    assert.ok(L.store.ch_sb_session, 'session still stored');
+    assert.ok(!L.events.some((x) => x.startsWith('chAuthStateChanged')), 'no sign-out event');
+  });
+  await t('fix 3: refresh answered 5xx (Supabase paused): session kept', async () => {
+    const { L } = await refreshCase(async () => ({ ok: false, status: 503, json: async () => ({ error: 'down' }) }));
+    assert.strictEqual(L.A.backendMode(), 'on');
+    assert.ok(L.store.ch_sb_session);
+  });
+  await t('fix 3: refresh refused (400 invalid_grant): session ended', async () => {
+    const { L } = await refreshCase(async () => ({
+      ok: false,
+      status: 400,
+      json: async () => ({ error: 'invalid_grant' }),
+    }));
+    assert.strictEqual(L.A.backendMode(), 'off');
+    assert.ok(!L.store.ch_sb_session, 'session removed');
+    assert.ok(
+      L.events.some((x) => x.startsWith('chAuthStateChanged:{"signedOut":true')),
+      'sign-out event',
+    );
+  });
   console.log(pass + ' passed');
 })().catch((e) => {
   console.error('FAIL', e);

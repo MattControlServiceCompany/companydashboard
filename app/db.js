@@ -1672,13 +1672,17 @@ const DB = (() => {
   // the offline banner; the write stays queued and is retried later.
   async function _putWithAuth(key, payload) {
     const r = await _withAuthRetry(() => _sendKvPut(key, payload));
-    if (r && r.status === 'error' && _isAuthRefusal(r.httpStatus)) {
-      const a = typeof window !== 'undefined' ? window.CH_AUTH : null;
-      const sessionKept = !!a && typeof a.withAuthRetry === 'function' && _backendMode() === 'on';
-      if (sessionKept) _reportServerFailure(new Error('token refresh unreachable'), 'write-refresh-unreachable');
-      else _reportServerFailure(_httpError('write refused: ' + r.httpStatus, r.httpStatus));
-    }
+    if (r && r.status === 'error' && _isAuthRefusal(r.httpStatus)) _reportFinalRefusal(r.httpStatus, 'write-refused');
     return r;
+  }
+  // The ONE rule for a 401/403 that withAuthRetry could not fix (write, drain,
+  // poll). Session ended -> "server refused this sign-in" bar. Session kept
+  // (the refresh could not reach Supabase) -> offline banner, retry later.
+  function _reportFinalRefusal(status, reason) {
+    const a = typeof window !== 'undefined' ? window.CH_AUTH : null;
+    const sessionKept = !!a && typeof a.withAuthRetry === 'function' && _backendMode() === 'on';
+    if (sessionKept) _reportServerFailure(new Error('token refresh unreachable'), reason + '-refresh-unreachable');
+    else _reportServerFailure(_httpError(reason + ': ' + status, status));
   }
   function _reportServerFailure(e, reason) {
     if (typeof window === 'undefined') return;
@@ -2205,7 +2209,7 @@ const DB = (() => {
     try {
       manifest = await _withAuthRetry(() => _fetchManifestWithTimeout(MANIFEST_TIMEOUT_MS));
     } catch (e) {
-      if (e && _isAuthRefusal(e.httpStatus)) _reportServerFailure(e, 'poll-failed'); // not transient: say so
+      if (e && _isAuthRefusal(e.httpStatus)) _reportFinalRefusal(e.httpStatus, 'poll-failed'); // not transient: say so
       return; // transient — next poll cycle will retry
     }
     const changed = []; // { localKey, version } — local (unprefixed) key, as sync-ui.js displays it

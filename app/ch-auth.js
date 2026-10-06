@@ -203,9 +203,10 @@
     return { userId: session.user_id, email: session.email };
   }
 
-  // Silent refresh using the stored refresh_token. Never prompts the user —
-  // a failure here just means "signed out", surfaced via chAuthStateChanged
-  // so the app can show the login screen again.
+  // Silent refresh using the stored refresh_token. Never prompts the user.
+  // A refusal (see _refreshRefused) means "signed out", surfaced via
+  // chAuthStateChanged so the app can show the login screen again; any other
+  // failure keeps the session and is tried again later.
   async function _refresh(session) {
     var body = await _tokenRequest('grant_type=refresh_token', { refresh_token: session.refresh_token });
     var next = _sessionFromTokenResponse(body);
@@ -239,12 +240,20 @@
     return _startRefresh(session);
   }
 
+  // THE single rule for a failed refresh: only a REFUSED refresh token ends the
+  // session (400 invalid_grant, 401, 403). No network, or a server error
+  // (Supabase paused, 5xx), keeps the session: the next interval, or the next
+  // 401 on a request, tries again and nothing is lost or queued as signed out.
+  function _refreshRefused(e) {
+    return !!e && (e.status === 400 || e.status === 401 || e.status === 403);
+  }
   function _startRefresh(session) {
     _refreshInFlight = _refresh(session)
       .catch(function (e) {
-        // Refresh token invalid/expired/revoked — sign the user out locally.
-        _clearSession();
-        _setSignedOut(true);
+        if (_refreshRefused(e)) {
+          _clearSession();
+          _setSignedOut(true);
+        }
         return null;
       })
       .then(function (result) {
@@ -262,7 +271,10 @@
   // shows, and a new sign-in (chAuthStateChanged) restarts everything.
   function _onServerRefusal(status, alreadyRetried) {
     if (status === 401 && !alreadyRetried) {
-      if (_refreshInFlight) return _refreshInFlight.then(function (s) { return !!s; });
+      if (_refreshInFlight)
+        return _refreshInFlight.then(function (s) {
+          return !!s;
+        });
       var session = _loadSession();
       if (!session) {
         _applySession(null);
