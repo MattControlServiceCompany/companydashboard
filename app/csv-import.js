@@ -2453,8 +2453,6 @@ function openBillModal(mid, editRowId) {
     'renewableCharge',
     'solarCredit',
     'therms',
-    'usage',
-    'cost',
   ];
   for (const k of LEGACY_PASSTHROUGH) {
     const v = row && row[k] != null ? String(row[k]).replace(/"/g, '&quot;') : '';
@@ -2690,8 +2688,6 @@ function saveBillRow() {
     'renewableCharge',
     'solarCredit',
     'therms',
-    'usage',
-    'cost',
   ];
   for (const k of LEGACY_PASSTHROUGH) {
     const v = g('bl-' + k);

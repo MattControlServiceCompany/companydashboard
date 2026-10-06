@@ -7077,17 +7077,11 @@ function _extractedToBillRowCosts(bill) {
   const otherCost = _capToAcceptedTotal(otherCostRaw).toFixed(2);
   const taxCost = _capToAcceptedTotal(taxCostRaw).toFixed(2);
   const totalCost = bill.TotalCurrentCharges || bill.TotalAmountDue || '';
-  // Usage quantity superset — one canonical order covering every commodity
-  // any of the six prior sites recognized (electric kWh incl. Baldwin's `kWh`
-  // field, gas Therms/CCF/MMbtu, propane gallons).
-  const kwh =
-    bill.kWhConsumed ||
-    bill.kWh ||
-    bill.NaturalGasTherms ||
-    bill.NaturalGasCCF ||
-    bill.NaturalGasMMbtu ||
-    bill.GallonsDelivered ||
-    '';
+  // Usage quantity: electric kWh (incl. Baldwin's `kWh` field) or propane gallons.
+  // Gas usage is NOT stored in `kwh` any more (2026-10-05 duplicate-bill-fields audit step 4):
+  // a gas bill carries `therms` (gasBillSaveTherms) and every gas reader goes through
+  // resolveGasUsageTherms. Old gas bills keep their stored `kwh`; nothing deletes it.
+  const kwh = bill.kWhConsumed || bill.kWh || bill.GallonsDelivered || '';
   return { kwh, kwCost, kwhCost, otherCost, taxCost, totalCost };
 }
 
