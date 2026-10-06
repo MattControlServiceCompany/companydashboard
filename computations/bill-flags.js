@@ -483,6 +483,8 @@ function computeMeterFlagSummary(meter, building) {
         );
     }
     if (c === 'Gas') {
+      // Integrity check of the old stored copy thermCost (no longer written) against the bill's own parts. Not a cost
+      // reader: every cost reader calls getBillGasCost. Kept so existing flag counts do not move (Matt 2026-10-06).
       const th = num(b.thermCost),
         g = num(b.gasCharge),
         cu = num(b.customerCharge);
