@@ -602,6 +602,21 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     assert.ok(/function _safeToReload\(\)/.test(ui));
     assert.ok(/_safeToReload\(\)\) window\.location\.reload\(\);\s*else renderRemoteChangeBanner/.test(ui));
   });
+
+  // ---- M10: load-time writers
+  await t('M10 every load-time saveUtilityData(SAVE_ALL_PROJECTS) runs only when a migration changed data', () => {
+    const src = fs.readFileSync(path.join(__dirname, 'app', 'utility-data.js'), 'utf8').split('\r').join('');
+    const lines = src.split('\n');
+    let seen = 0;
+    lines.forEach((ln, i) => {
+      if (!/^\s+saveUtilityData\(SAVE_ALL_PROJECTS\);/.test(ln)) return;
+      seen++;
+      assert.ok(/^\s*if \(.*> 0.*\) \{\s*$/.test(lines[i - 1]), 'unguarded load-time write at line ' + (i + 1));
+    });
+    assert.ok(seen >= 8, 'expected the 8 migration writes, saw ' + seen);
+    // The dirty check (unchanged project is never written) must stay in saveUtilityData.
+    assert.ok(/if \(_lastSavedSnapshot\[pid\] === _serialized\) return;/.test(src));
+  });
   console.log(pass + ' passed');
 })().catch((e) => {
   console.error('FAIL', e);
