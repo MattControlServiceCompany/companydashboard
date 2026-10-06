@@ -2275,6 +2275,13 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.06.80', date: '2026-10-06', title: 'Fewer false bill flags',
+    items: [
+      { type: 'fix', text: 'Utility Data: the water and sewer "usage does not match charge" flag now compares each bill to its own price per unit, and skips flat and minimum charges, so correct bills are no longer flagged.' },
+      { type: 'change', text: 'Utility Data: the banner, the flag pill, the bill badge, the review panel and the data quality score now all count flagged bills the same way.' },
+      { type: 'feature', text: 'Utility Data: new bill checks for usage that does not match the charge, and for dollar amounts typed into a row title.' }
+    ]
+  },
   { v: 'v2026.10.05.79', date: '2026-10-05', title: 'Sync keeps both edits',
     items: [
       { type: 'fix', text: 'Sync: when two people edit at the same time, both changes are kept. A real conflict shows both values so you can choose.' },
