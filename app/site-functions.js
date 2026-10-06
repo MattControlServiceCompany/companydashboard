@@ -2275,6 +2275,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.06.81', date: '2026-10-06', title: 'Constellation gas bills land on the right account',
+    items: [
+      { type: 'fix', text: 'Utility Data: Constellation gas bills with a damaged or dotted account number are now matched to the correct account and service address, instead of being booked on the first site.' },
+      { type: 'fix', text: 'Utility Data: if a Constellation account number cannot be read, the bill is flagged for review and is no longer booked on a site by mistake.' }
+    ]
+  },
   { v: 'v2026.10.06.80', date: '2026-10-06', title: 'Fewer false bill flags',
     items: [
       { type: 'fix', text: 'Utility Data: the water and sewer "usage does not match charge" flag now compares each bill to its own price per unit, and skips flat and minimum charges, so correct bills are no longer flagged.' },
