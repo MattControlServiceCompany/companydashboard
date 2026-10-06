@@ -44,7 +44,8 @@
       '#ch-sync-banner-stack>div{text-align:center;font-size:13px;padding:6px 12px;display:none;}' +
       '#ch-sync-banner{background:var(--accent,#2563eb);color:#fff;}' +
       '#ch-sync-offline-banner{background:var(--warn,#b45309);color:#fff;}' +
-      '#ch-sync-signedout-banner,#ch-sync-foreign-banner,#ch-sync-hydrate-failed-banner,#ch-sync-auth-rejected-banner{background:var(--warn,#b45309);color:#fff;}' +
+      '#ch-sync-signedout-banner,#ch-sync-foreign-banner,#ch-sync-hydrate-failed-banner,#ch-sync-auth-rejected-banner,#ch-sync-oldhost-banner{background:var(--warn,#b45309);color:#fff;}' +
+      '#ch-sync-oldhost-banner button{margin-left:8px;border-radius:4px;padding:2px 10px;font-size:12px;font-family:inherit;cursor:pointer;border:1px solid #fff;background:transparent;color:#fff;}' +
       '#ch-sync-signedout-banner button,#ch-sync-foreign-banner button,#ch-sync-hydrate-failed-banner button{margin-left:8px;border-radius:4px;padding:2px 10px;font-size:12px;' +
       'font-family:inherit;cursor:pointer;border:1px solid #fff;background:transparent;color:#fff;}' +
       '#ch-sync-archive-full-banner{background:var(--warn,#b45309);color:#fff;}' +
@@ -156,7 +157,7 @@
     if (!el) {
       el = document.createElement('div');
       el.id = id;
-      if (/^ch-sync-(banner|offline-banner|archive-full-banner|signedout-banner|foreign-banner|hydrate-failed-banner|auth-rejected-banner)$/.test(id)) {
+      if (/^ch-sync-(banner|offline-banner|archive-full-banner|signedout-banner|foreign-banner|hydrate-failed-banner|auth-rejected-banner|oldhost-banner)$/.test(id)) {
         ensureStack().appendChild(el);
       } else {
         document.body.appendChild(el);
@@ -217,6 +218,28 @@
     }
     el.style.display = show ? 'block' : 'none';
   }
+  // M9: the old GitHub Pages site still serves the whole app, but nothing made
+  // there is shared. Say so on every page and point to the real site.
+  var SYNC_SITE_URL = 'https://cscdashboard.netlify.app/';
+  function renderOldHostBar() {
+    var host = (window.location && window.location.hostname) || '';
+    if (!/\.github\.io$/i.test(host)) return;
+    ensureStyles();
+    var el = ensureEl('ch-sync-oldhost-banner');
+    if (el.firstChild) return;
+    el.appendChild(
+      document.createTextNode('This is the old test site. Changes made here are not shared and are not saved to the server.'),
+    );
+    var btn = document.createElement('button');
+    btn.textContent = 'Open the main site';
+    btn.onclick = function () {
+      window.location.href = SYNC_SITE_URL;
+    };
+    el.appendChild(btn);
+    el.style.display = 'block';
+  }
+  document.addEventListener('DOMContentLoaded', renderOldHostBar);
+  if (document.readyState !== 'loading') renderOldHostBar();
   window.addEventListener('chAuthStateChanged', renderSignedOutBar);
   window.addEventListener('dbReady', renderSignedOutBar);
   document.addEventListener('DOMContentLoaded', renderSignedOutBar);
