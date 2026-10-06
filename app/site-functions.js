@@ -2275,6 +2275,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.06.85', date: '2026-10-06', title: 'EMS Leads: safer display of lead text',
+    items: [
+      { type: 'fix', text: 'EMS Leads now shows lead names, notes and imported spreadsheet columns as plain text only, so odd or unsafe text in a lead can no longer change how the page behaves.' },
+      { type: 'fix', text: 'The EMS Leads import column picker now handles unusual column names safely, and dollar amounts typed as text show correctly.' }
+    ]
+  },
   { v: 'v2026.10.06.84', date: '2026-10-06', title: 'Sign-in is now required, and first load is safer',
     items: [
       { type: 'feature', text: 'A bar at the top now tells you when you are signed out, so you always know whether your changes will be shared.' },
