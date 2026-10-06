@@ -120,6 +120,14 @@ Many short `setTimeout` calls (toasts, URL cleanup, UI yield) are one-shot. They
   Another user's per-user entry, or one saved by a build before owner tags, stays in storage, is never shown and is never
   removed by this user (`clearConflictArchive` removes only entries the user can see). app/sync-ui.js redraws the link and
   closes the panel on `chAuthStateChanged`. How to check: node test-sync-golive-blockers.js, the "7c:" tests.
+- Local per-user stores on a shared browser (app/db.js). The one "a write for this key is still waiting" rule is
+  `_hasQueuedWrite` (hydration skip, first-connect upload skip, `_valueChanged`): a queued entry counts for a shared key
+  whoever owns it (same server row), and for a per-user key only when it is the signed-in user's own (`_entryBelongsTo`),
+  so another user's queued pref never blocks this user's own row from loading. On an identity change
+  (`_clearPerUserLocalState`, live or hard refresh) the per-user cache values, raw localStorage prefs, AND every per-user
+  version stamp `ch_rv::<key>` (also one with no cached value) are removed; queue entries are never deleted. Merge bases
+  and `ch_deleted_items` hold collection keys only (shared). `ch_last_user` holds the last user's id and email (the
+  "N unsynced changes by <email>" bar reads it). How to check: node test-sync-golive-blockers.js, the "7d:" tests.
 
 ## 7. How to keep this file current
 

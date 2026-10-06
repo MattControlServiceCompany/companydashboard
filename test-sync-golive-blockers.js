@@ -2157,6 +2157,102 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
       .join('');
     assert.ok(/addEventListener\('chAuthStateChanged', function \(\) \{[\s\S]{0,200}renderArchiveLink\(\);/.test(ui));
   });
+  // ---- 7d (2026-10-06): local per-user stores never act across users (real db.js, localStorage fallback mode)
+  const perUserServer = (uid, value) => {
+    const puts = [];
+    const wire = uid + '::ch_pref_x';
+    const kvFetch = async (u, o) => {
+      if (o && o.method === 'PUT') {
+        puts.push(JSON.parse(o.body).key);
+        return ok({ version: 2, hash: null, deleted: false });
+      }
+      if (/manifest=1/.test(u)) return ok([{ key: wire, version: 1, hash: sha(value), deleted: false }]);
+      if (/keys=/.test(u))
+        return ok([{ key: wire, value, version: 1, hash: sha(value), deleted: false, updatedBy: uid }]);
+      return ok([]);
+    };
+    return { puts, kvFetch };
+  };
+  await t(
+    "7d: A's queued per-user edit does not block B's hydration of B's own row; A's entry stays queued, nothing sent",
+    async () => {
+      const S = perUserServer('u2', 'B-value');
+      const L = loadReal({ userId: 'u2', tokenFetch: tokByEmail, kvFetch: S.kvFetch });
+      L.store.ch_local_identity = 'u2';
+      L.store.ch_sync_queue = JSON.stringify([
+        {
+          id: 'qa',
+          key: 'ch_pref_x',
+          value: 'A-value',
+          deleted: false,
+          baseVersion: null,
+          ts: 1,
+          owner: { id: 'u1', email: null },
+        },
+      ]);
+      await L.DB.warmCache();
+      await tick(60);
+      assert.strictEqual(L.DB.get('ch_pref_x'), 'B-value', "B's own server value applied");
+      assert.strictEqual(L.DB.getQueueDepth(), 1, "A's entry still queued");
+      assert.strictEqual(L.DB.__t._queue()[0].owner.id, 'u1');
+      assert.ok(!S.puts.some((k) => /ch_pref_x$/.test(k)), 'nothing sent for the key');
+      assert.strictEqual(L.DB.__t._stampOf('ch_pref_x').version, 1);
+    },
+  );
+  await t(
+    '7d: a queued edit for a SHARED key (any owner) still holds hydration of that key (unchanged rule)',
+    async () => {
+      const puts = [];
+      const L = loadReal({
+        userId: 'u2',
+        tokenFetch: tokByEmail,
+        kvFetch: async (u, o) => {
+          if (o && o.method === 'PUT') {
+            puts.push(JSON.parse(o.body).key);
+            return ok({ version: 2, hash: null, deleted: false });
+          }
+          if (/manifest=1/.test(u))
+            return ok([{ key: 'en_budget_x', version: 1, hash: sha('server'), deleted: false }]);
+          if (/keys=/.test(u))
+            return ok([{ key: 'en_budget_x', value: 'server', version: 1, hash: sha('server'), deleted: false }]);
+          return ok([]);
+        },
+      });
+      L.store.ch_local_identity = 'u2';
+      L.store.en_budget_x = JSON.stringify('A-unsent');
+      L.store.ch_sync_queue = JSON.stringify([
+        {
+          id: 'qa',
+          key: 'en_budget_x',
+          value: 'A-unsent',
+          deleted: false,
+          baseVersion: null,
+          ts: 1,
+          owner: { id: 'u1', email: null },
+        },
+      ]);
+      await L.DB.warmCache();
+      await tick(60);
+      assert.strictEqual(L.DB.get('en_budget_x'), 'A-unsent', "held until A's entry is sent (same server row)");
+      assert.strictEqual(L.DB.getQueueDepth(), 1);
+      assert.ok(!puts.some((k) => /en_budget_x$/.test(k)), "A's unsent value never uploaded by B");
+    },
+  );
+  await t(
+    "7d: a per-user version stamp with no cached value is cleared on an identity change (hard refresh), so B's row loads",
+    async () => {
+      const S = perUserServer('u2', 'B-value');
+      const L = loadReal({ userId: 'u2', tokenFetch: tokByEmail, kvFetch: S.kvFetch });
+      L.store.ch_local_identity = 'u1'; // A was the last user on this browser
+      L.store['ch_rv::ch_pref_x'] = JSON.stringify({ stamp: { version: 5, hash: 'h5' } }); // A's stamp, value already gone
+      await L.DB.warmCache();
+      await tick(60);
+      assert.strictEqual(L.DB.get('ch_pref_x'), 'B-value');
+      assert.strictEqual(L.DB.__t._stampOf('ch_pref_x').version, 1, "A's stale stamp replaced by B's");
+      assert.strictEqual(JSON.parse(L.store['ch_rv::ch_pref_x']).stamp.version, 1);
+      assert.strictEqual(JSON.parse(L.store.ch_local_identity), 'u2');
+    },
+  );
   console.log(pass + ' passed');
 })().catch((e) => {
   console.error('FAIL', e);

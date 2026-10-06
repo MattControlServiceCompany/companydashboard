@@ -494,6 +494,17 @@ const DB = (() => {
     if (e.owner.id) return e.owner.id === me;
     return !!e.owner.hintId && e.owner.hintId === me;
   }
+  // THE "is a write for this key still waiting" rule for every sync path
+  // (hydration skip, first-connect upload skip, value-changed). A queued entry
+  // counts only when it targets the same server row as this user's key: any
+  // owner for a shared key; for a per-user key only the signed-in user's own
+  // entry. Another user's per-user entry goes to that user's row and must not
+  // block this user's hydration or upload.
+  function _hasQueuedWrite(key) {
+    if (!_isPerUserKey(key)) return _syncQueue.some((e) => e.key === key);
+    const me = _myUserId();
+    return _syncQueue.some((e) => e.key === key && _entryBelongsTo(e, me));
+  }
   // Signed-out entries become the verified user's own when that same user signs in.
   function _claimSignedOutEntries(me) {
     if (!me) return;
@@ -1631,7 +1642,7 @@ const DB = (() => {
   async function _valueChanged(key, value) {
     const entry = _replicaVersions[key];
     if (!entry || !entry.hash || entry.deleted) return true;
-    if (_syncQueue.some((e) => e.key === key)) return true;
+    if (_hasQueuedWrite(key)) return true;
     try {
       return (await _sha256Hex(_canonicalJSON(stripDerivedCaches(key, value)))) !== entry.hash;
     } catch (e) {
@@ -2046,7 +2057,7 @@ const DB = (() => {
     // upload) and the retry re-runs hydration when the fetch succeeds.
     const tombRow = manifest.find((m) => m.key === TOMBSTONE_KEY && !m.deleted);
     let tombOk = true;
-    if (!_syncQueue.some((e) => e.key === TOMBSTONE_KEY)) {
+    if (!_hasQueuedWrite(TOMBSTONE_KEY)) {
       const lv = _replicaVersions[TOMBSTONE_KEY];
       const serverNewer = !!tombRow && (!lv || typeof lv.version !== 'number' || lv.version < tombRow.version);
       // An earlier failure is confirmed cleared before any merge.
@@ -2068,7 +2079,7 @@ const DB = (() => {
       const localKey = resolved.localKey;
 
       // A pending local write for this LOCAL key must not be clobbered by hydration.
-      if (_syncQueue.some((e) => e.key === localKey)) continue;
+      if (_hasQueuedWrite(localKey)) continue;
       if (!tombOk && UNION_KEY_CONFIG[localKey]) continue; // deletion records unknown: no merge
 
       const local = _replicaVersions[localKey];
@@ -2120,7 +2131,7 @@ const DB = (() => {
         if (stale()) return;
         if (!row || !routineFetchLocalKey.has(row.key)) continue; // only rows this run asked for
         const localKey = routineFetchLocalKey.get(row.key);
-        if (_syncQueue.some((e) => e.key === localKey)) continue; // race guard, re-check
+        if (_hasQueuedWrite(localKey)) continue; // race guard, re-check
         const manifestEntry = manifest.find((m) => m.key === row.key);
         await _reconcileIncoming(localKey, row, manifestEntry ? manifestEntry.hash : null);
       }
@@ -2151,7 +2162,7 @@ const DB = (() => {
         // No version map entry and a local value exists: server wins (or a pure
         // union merge); the local value is archived first. Never a wholesale push.
         if (!rows || !rows[0]) continue;
-        if (_syncQueue.some((e) => e.key === localKey)) continue; // race guard
+        if (_hasQueuedWrite(localKey)) continue; // race guard
         const before = _cache[localKey];
         await _reconcileIncoming(localKey, rows[0], m.hash);
         if (_cache[localKey] !== before) updatedFromServer++;
@@ -2173,7 +2184,7 @@ const DB = (() => {
       const value = _cache[localKey];
       if (value === undefined || value === null) continue;
       if (_replicaVersions[localKey]) continue;
-      if (_syncQueue.some((e) => e.key === localKey)) continue;
+      if (_hasQueuedWrite(localKey)) continue;
       if (!tombOk && UNION_KEY_CONFIG[localKey]) continue; // deletion records unknown: no upload
       const wire = _wireKey(localKey);
       if (wire === null || onServer.has(wire)) continue;
@@ -2239,7 +2250,7 @@ const DB = (() => {
           value === undefined ||
           value === null ||
           _replicaVersions[localKey] ||
-          _syncQueue.some((e) => e.key === localKey);
+          _hasQueuedWrite(localKey);
         if (!skip) {
           let r;
           try {
@@ -2346,6 +2357,12 @@ const DB = (() => {
     const cleared = [];
     Object.keys(_cache).forEach((k) => {
       if (_isPerUserKey(k)) cleared.push(k);
+    });
+    // A per-user key can hold a version stamp (ch_rv::<key>) with no cached
+    // value (a deleted pref, or a value already removed): the stamp is the
+    // previous user's too, so it goes on the same clear list.
+    Object.keys(_replicaVersions).forEach((k) => {
+      if (_isPerUserKey(k) && cleared.indexOf(k) === -1) cleared.push(k);
     });
     // --- Finding 1 (adversarial review 2026-07-25/26) -----------------------
     // Force the raw-localStorage-only per-user keys onto this same clear list
