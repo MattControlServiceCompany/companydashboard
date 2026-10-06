@@ -2838,7 +2838,7 @@
           }
         });
 
-        const fieldOpts = LEAD_FIELDS.map((f) => `<option value="${f.key}">${f.label}</option>`).join('');
+        const fieldOpts = LEAD_FIELDS.map((f) => `<option value="${esc(f.key)}">${esc(f.label)}</option>`).join('');
         document.getElementById('mapBody').innerHTML = csvHeaders
           .map(
             (h, i) => `
@@ -2983,8 +2983,12 @@
       /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    HELPERS
 â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+      // Keep in step with emsFmtNum in energy-department.html.
       function fmtNum(n) {
-        n = Number(n) || 0;
+        if (n === null || n === undefined || String(n).trim() === '') return '–';
+        const raw = n;
+        n = typeof n === 'number' ? n : Number(String(n).replace(/[$,\s]/g, ''));
+        if (!Number.isFinite(n)) return esc(raw);
         if (n >= 1000000) return (n / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
         if (n >= 1000) return (n / 1000).toFixed(0) + 'K';
         return n.toLocaleString();

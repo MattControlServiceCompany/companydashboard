@@ -59,7 +59,13 @@ const lead = {
 };
 const SEED = {
   ems_leads_v1: [lead],
-  ems_field_defs: { [P1]: { label: P2 }, [P3]: P4 },
+  ems_field_defs: {
+    labels: { company: P1 },
+    custom: [
+      { key: '"></option></select><img src=x onerror=alert(1)>', label: P1 },
+      { key: P3, label: P2 },
+    ],
+  },
   ems_client_types: [P1, P2, P3],
 };
 
@@ -100,6 +106,17 @@ const SEED = {
         });
       }, P4);
       await page.waitForTimeout(1500);
+      // CSV mapper: paste a CSV so the field-def options (key + label) are rendered.
+      await page.evaluate(() => {
+        const ta = document.getElementById('emsCsvPaste') || document.getElementById('csvPaste');
+        if (!ta) return;
+        ta.value = 'Company,City,Notes\nAcme,Town,hi';
+        const fn = window.emsParseCSVPreview || window.parseCSVPreview;
+        try {
+          if (fn) fn();
+        } catch (e) {}
+      });
+      await page.waitForTimeout(500);
       const r = await page.evaluate(() => {
         const leadCards = document.querySelectorAll('.lead-card, #tableBody tr, #emsTableBody tr').length;
         return {
@@ -111,6 +128,7 @@ const SEED = {
           autofocus: document.querySelectorAll('[autofocus]').length,
           injectedScripts: Array.from(document.scripts).filter((s) => /__xss/.test(s.textContent)).length,
           leadCards,
+          mapSelects: document.querySelectorAll('#emsMapBody select, #mapBody select').length,
           rendered: document.body.innerHTML.includes('&lt;img src=x onerror=alert(1)&gt;'),
         };
       });
@@ -121,6 +139,7 @@ const SEED = {
       ok(r.svgOnload === 0 && r.onerror === 0, file + ': no onerror/onload element created');
       ok(r.onfocus === 0 && r.autofocus === 0, file + ': no attribute breakout (onfocus/autofocus)');
       ok(r.injectedScripts === 0, file + ': no injected <script> element');
+      ok(r.mapSelects > 0, file + ': CSV mapper rendered (selects=' + r.mapSelects + ')');
       ok(r.leadCards > 0 && r.rendered, file + ': payload lead rendered as escaped text (cards=' + r.leadCards + ')');
     } finally {
       await context.close();

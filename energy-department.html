@@ -12352,8 +12352,12 @@
                   .replace(/"/g, '&quot;')
                   .replace(/'/g, '&#39;');
               }
+              // Keep in step with fmtNum in ems-leads.html.
               function emsFmtNum(n) {
-                n = Number(n) || 0;
+                if (n === null || n === undefined || String(n).trim() === '') return '–';
+                const raw = n;
+                n = typeof n === 'number' ? n : Number(String(n).replace(/[$,\s]/g, ''));
+                if (!Number.isFinite(n)) return emsEsc(raw);
                 if (n >= 1000000) return (n / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
                 if (n >= 1000) return (n / 1000).toFixed(0) + 'K';
                 return n.toLocaleString();
@@ -13634,7 +13638,7 @@
                     }
                   }
                 });
-                const fieldOpts = EMS_LEAD_FIELDS.map((f) => `<option value="${f.key}">${f.label}</option>`).join('');
+                const fieldOpts = EMS_LEAD_FIELDS.map((f) => `<option value="${emsEsc(f.key)}">${emsEsc(f.label)}</option>`).join('');
                 document.getElementById('emsMapBody').innerHTML = emsCsvHeaders
                   .map(
                     (h, i) =>
