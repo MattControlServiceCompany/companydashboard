@@ -12344,9 +12344,16 @@
                 return Date.now().toString(36) + Math.random().toString(36).slice(2);
               }
               function emsEsc(s) {
-                return (s || '').toString().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                return (s || '')
+                  .toString()
+                  .replace(/&/g, '&amp;')
+                  .replace(/</g, '&lt;')
+                  .replace(/>/g, '&gt;')
+                  .replace(/"/g, '&quot;')
+                  .replace(/'/g, '&#39;');
               }
               function emsFmtNum(n) {
+                n = Number(n) || 0;
                 if (n >= 1000000) return (n / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
                 if (n >= 1000) return (n / 1000).toFixed(0) + 'K';
                 return n.toLocaleString();
@@ -12413,7 +12420,7 @@
                   const val = sel.value;
                   sel.innerHTML =
                     '<option value="">All CSC Contacts</option>' +
-                    cscs.map((c) => `<option${c === val ? ' selected' : ''}>${c}</option>`).join('');
+                    cscs.map((c) => `<option${c === val ? ' selected' : ''}>${emsEsc(c)}</option>`).join('');
                 });
               }
 
@@ -12506,9 +12513,9 @@
                 const pc =
                   l.priority === 'High' ? 'var(--danger)' : l.priority === 'Low' ? 'var(--text3)' : 'var(--warn)';
                 return `<div class="lead-card" draggable="true"
-                ondragstart="emsDragStart('${l.id}',event)"
+                data-lead-id="${emsEsc(l.id)}" ondragstart="emsDragStart(this.dataset.leadId,event)"
                 ondragend="event.target.classList.remove('dragging')"
-                onclick="emsOpenDrawer('${l.id}')">
+                data-lead-id="${emsEsc(l.id)}" onclick="emsOpenDrawer(this.dataset.leadId)">
                 <div style="display:flex;align-items:flex-start;gap:7px">
                   <div class="priority-dot" style="background:${pc};margin-top:4px"></div>
                   <div class="lc-company">${emsEsc(l.company || '—')}</div>
@@ -12518,12 +12525,12 @@
                   if (bldgs.length) {
                     const first = bldgs[0];
                     const loc = first.address || [first.city, first.state].filter(Boolean).join(', ');
-                    return (
+                    return emsEsc(
                       (bldgs.length > 1 ? bldgs.length + ' buildings' : first.buildingType || '1 building') +
-                      (loc ? ' · ' + loc : '')
+                        (loc ? ' · ' + loc : ''),
                     );
                   }
-                  return l.address || l.buildingType || 'No location set';
+                  return emsEsc(l.address || l.buildingType || 'No location set');
                 })()}</div>
                 ${l.cscContact ? `<div style="font-size:10px;color:var(--em2)">👤 ${emsEsc(l.cscContact)}</div>` : ''}
                 ${
@@ -12536,7 +12543,7 @@
                 }
                 <div class="lc-row">
                   <div class="lc-value">${l.annualValue ? '$' + emsFmtNum(l.annualValue) : ''}</div>
-                  <div class="lc-date">${l.type || ''}</div>
+                  <div class="lc-date">${emsEsc(l.type || '')}</div>
                 </div>
                 ${l.nextAction ? `<div class="lc-action ${ov ? 'overdue-flag' : ''}">${ov ? '⚠' : '📅'} ${emsEsc(l.nextAction)}${nad ? ' (' + emsFmtDate(l.nextActionDate) + ')' : ''}</div>` : ''}
               </div>`;
@@ -12627,7 +12634,7 @@
                     ? `<tr><td colspan="12" style="text-align:center;padding:40px;color:var(--text3)">No leads found</td></tr>`
                     : data
                         .map(
-                          (l) => `<tr onclick="emsOpenDrawer('${l.id}')">
+                          (l) => `<tr data-lead-id="${emsEsc(l.id)}" onclick="emsOpenDrawer(this.dataset.leadId)">
                   <td class="td-company">${emsEsc(l.company || '—')}</td>
                   <td>${emsEsc(l.clientType || '—')}</td>
                   <td>${emsEsc(
@@ -12642,8 +12649,8 @@
                   <td class="td-mono">${emsEsc(l.saNum || '—')}</td>
                   <td>${emsEsc(l.webctrlVersion || '—')}</td>
                   <td style="${emsOverdue(l.renewalDate) ? 'color:var(--danger)' : ''}">${emsFmtDate(l.renewalDate) || '—'}</td>
-                  <td><span class="stage-pill ${EMS_STAGE_CLS[l.stage] || ''}">${l.stage || '—'}</span></td>
-                  <td class="pri-${(l.priority || '').toLowerCase()}">${l.priority || '—'}</td>
+                  <td><span class="stage-pill ${EMS_STAGE_CLS[l.stage] || ''}">${emsEsc(l.stage || '—')}</span></td>
+                  <td class="pri-${emsEsc((l.priority || '').toLowerCase())}">${emsEsc(l.priority || '—')}</td>
                   <td>${emsEsc(l.cscContact || '—')}</td>
                   <td class="td-mono">${l.annualValue ? '$' + emsFmtNum(l.annualValue) : '—'}</td>
                   <td style="${emsOverdue(l.nextActionDate) ? 'color:var(--danger)' : ''}">${emsFmtDate(l.nextActionDate) || '—'}</td>
@@ -12701,13 +12708,13 @@
                       .map(
                         (
                           l,
-                        ) => `<div style="background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;transition:border-color .14s" onclick="emsOpenDrawer('${l.id}')" onmouseover="this.style.borderColor='var(--em)'" onmouseout="this.style.borderColor='var(--border)'">
+                        ) => `<div style="background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;transition:border-color .14s" data-lead-id="${emsEsc(l.id)}" onclick="emsOpenDrawer(this.dataset.leadId)" onmouseover="this.style.borderColor='var(--em)'" onmouseout="this.style.borderColor='var(--border)'">
                       <div>
                         <div style="font-family:var(--head);font-size:13px;font-weight:700">${emsEsc(l.company)}</div>
-                        <div style="font-size:11px;color:var(--text2);margin-top:3px">${l.nextAction || 'No action specified'} ${l.nextActionDate ? '— ' + emsFmtDate(l.nextActionDate) : ''}</div>
+                        <div style="font-size:11px;color:var(--text2);margin-top:3px">${emsEsc(l.nextAction || 'No action specified')} ${l.nextActionDate ? '— ' + emsFmtDate(l.nextActionDate) : ''}</div>
                       </div>
                       <div style="display:flex;align-items:center;gap:10px">
-                        <span class="stage-pill ${EMS_STAGE_CLS[l.stage] || ''}">${l.stage}</span>
+                        <span class="stage-pill ${EMS_STAGE_CLS[l.stage] || ''}">${emsEsc(l.stage)}</span>
                         ${l.cscContact ? `<span style="font-size:11px;color:var(--em2)">${emsEsc(l.cscContact)}</span>` : ''}
                       </div>
                     </div>`,
@@ -12781,7 +12788,7 @@
                         .sort((a, b) => b[1] - a[1])
                         .map(
                           ([k, v]) => `
-                        <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px"><span>${k}</span><span style="font-family:var(--mono);color:var(--em)">${v}</span></div>`,
+                        <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px"><span>${emsEsc(k)}</span><span style="font-family:var(--mono);color:var(--em)">${v}</span></div>`,
                         )
                         .join('')}
                     </div>
@@ -12794,7 +12801,7 @@
                       .sort((a, b) => b[1] - a[1])
                       .map(
                         ([k, v]) =>
-                          `<div style="background:var(--s3);border:1px solid var(--border);border-radius:7px;padding:8px 13px;font-size:12px"><span style="color:var(--text2)">${k}</span><span style="font-family:var(--mono);color:var(--em);margin-left:8px">${v}</span></div>`,
+                          `<div style="background:var(--s3);border:1px solid var(--border);border-radius:7px;padding:8px 13px;font-size:12px"><span style="color:var(--text2)">${emsEsc(k)}</span><span style="font-family:var(--mono);color:var(--em);margin-left:8px">${v}</span></div>`,
                       )
                       .join('')}
                   </div>
@@ -13163,53 +13170,53 @@
                 container.innerHTML = bldgs
                   .map(
                     (b, i) => `
-                <div class="bldg-card${i === 0 ? ' open' : ''}" id="ebldg-${b.id}">
-                  <div class="bldg-card-hdr" onclick="emsToggleBuilding('${b.id}')">
+                <div class="bldg-card${i === 0 ? ' open' : ''}" id="ebldg-${emsEsc(b.id)}">
+                  <div class="bldg-card-hdr" data-bid="${emsEsc(b.id)}" onclick="emsToggleBuilding(this.dataset.bid)">
                     <span class="bldg-card-ico">🏢</span>
                     <span class="bldg-card-name">${emsEsc(b.name || 'Building ' + (i + 1))}</span>
-                    <span class="bldg-card-meta">${[b.city, b.state].filter(Boolean).join(', ')}</span>
+                    <span class="bldg-card-meta">${emsEsc([b.city, b.state].filter(Boolean).join(', '))}</span>
                     <span class="bldg-card-chevron">▼</span>
                   </div>
                   <div class="bldg-card-body">
                     <div class="bldg-grid">
                       <div class="bldg-field" style="grid-column:1/-1">
                         <div class="bldg-lbl">Building Name / Label</div>
-                        <input class="bldg-input" data-bid="${b.id}" data-field="name" value="${emsEsc(b.name || '')}" placeholder="e.g. Main Campus, Annex, Warehouse A">
+                        <input class="bldg-input" data-bid="${emsEsc(b.id)}" data-field="name" value="${emsEsc(b.name || '')}" placeholder="e.g. Main Campus, Annex, Warehouse A">
                       </div>
                       <div class="bldg-field" style="grid-column:1/-1">
                         <div class="bldg-lbl">Address</div>
-                        <input class="bldg-input" data-bid="${b.id}" data-field="address" value="${emsEsc(b.address || '')}" placeholder="Street address" onblur="emsParseAddress(this)">
+                        <input class="bldg-input" data-bid="${emsEsc(b.id)}" data-field="address" value="${emsEsc(b.address || '')}" placeholder="Street address" onblur="emsParseAddress(this)">
                       </div>
                       <div class="bldg-field">
                         <div class="bldg-lbl">City</div>
-                        <input class="bldg-input" data-bid="${b.id}" data-field="city" value="${emsEsc(b.city || '')}" placeholder="City">
+                        <input class="bldg-input" data-bid="${emsEsc(b.id)}" data-field="city" value="${emsEsc(b.city || '')}" placeholder="City">
                       </div>
                       <div class="bldg-field">
                         <div class="bldg-lbl">State</div>
-                        <input class="bldg-input" data-bid="${b.id}" data-field="state" value="${emsEsc(b.state || '')}" placeholder="State">
+                        <input class="bldg-input" data-bid="${emsEsc(b.id)}" data-field="state" value="${emsEsc(b.state || '')}" placeholder="State">
                       </div>
                       <div class="bldg-field">
                         <div class="bldg-lbl">Zip</div>
-                        <input class="bldg-input" data-bid="${b.id}" data-field="zip" value="${emsEsc(b.zip || '')}" placeholder="Zip">
+                        <input class="bldg-input" data-bid="${emsEsc(b.id)}" data-field="zip" value="${emsEsc(b.zip || '')}" placeholder="Zip">
                       </div>
                       <div class="bldg-field">
                         <div class="bldg-lbl">Sq Ft</div>
-                        <input class="bldg-input" data-bid="${b.id}" data-field="sqft" type="number" value="${b.sqft || ''}" placeholder="0">
+                        <input class="bldg-input" data-bid="${emsEsc(b.id)}" data-field="sqft" type="number" value="${emsEsc(b.sqft || '')}" placeholder="0">
                       </div>
                       <div class="bldg-field" style="grid-column:1/-1">
                         <div class="bldg-lbl">Building Type</div>
-                        <select class="bldg-select" data-bid="${b.id}" data-field="buildingType">
+                        <select class="bldg-select" data-bid="${emsEsc(b.id)}" data-field="buildingType">
                           <option value="">— Select —</option>
-                          ${EMS_BLDG_TYPES.map((t) => `<option${b.buildingType === t ? ' selected' : ''}>${t}</option>`).join('')}
+                          ${EMS_BLDG_TYPES.map((t) => `<option${b.buildingType === t ? ' selected' : ''}>${emsEsc(t)}</option>`).join('')}
                         </select>
                       </div>
                       <div class="bldg-field" style="grid-column:1/-1">
                         <div class="bldg-lbl">Notes</div>
-                        <input class="bldg-input" data-bid="${b.id}" data-field="notes" value="${emsEsc(b.notes || '')}" placeholder="e.g. BAS brand, system age, contact on site...">
+                        <input class="bldg-input" data-bid="${emsEsc(b.id)}" data-field="notes" value="${emsEsc(b.notes || '')}" placeholder="e.g. BAS brand, system age, contact on site...">
                       </div>
                     </div>
                     <div class="bldg-footer">
-                      <button onclick="emsRemoveBuilding('${b.id}')" style="font-family:var(--font);font-size:11px;font-weight:600;padding:4px 10px;border-radius:5px;border:1px solid rgba(240,80,80,.4);background:transparent;color:var(--red);cursor:pointer;transition:all .14s" onmouseover="this.style.background='rgba(240,80,80,.12)'" onmouseout="this.style.background='transparent'">🗑 Remove</button>
+                      <button data-bid="${emsEsc(b.id)}" onclick="emsRemoveBuilding(this.dataset.bid)" style="font-family:var(--font);font-size:11px;font-weight:600;padding:4px 10px;border-radius:5px;border:1px solid rgba(240,80,80,.4);background:transparent;color:var(--red);cursor:pointer;transition:all .14s" onmouseover="this.style.background='rgba(240,80,80,.12)'" onmouseout="this.style.background='transparent'">🗑 Remove</button>
                     </div>
                   </div>
                 </div>`,
@@ -13444,7 +13451,7 @@
                         .reverse()
                         .map(
                           (a) =>
-                            `<div class="activity-item"><div class="act-dot" style="background:${a.color || 'var(--em)'}"></div><div class="act-body"><div class="act-text">${emsEsc(a.text)}</div><div class="act-time">${a.time} · ${a.user || 'You'}</div></div></div>`,
+                            `<div class="activity-item"><div class="act-dot" style="background:var(--em)"></div><div class="act-body"><div class="act-text">${emsEsc(a.text)}</div><div class="act-time">${emsEsc(a.time)} · ${emsEsc(a.user || 'You')}</div></div></div>`,
                         )
                         .join('');
               }
@@ -13631,7 +13638,7 @@
                 document.getElementById('emsMapBody').innerHTML = emsCsvHeaders
                   .map(
                     (h, i) =>
-                      `<tr><td style="font-family:var(--mono);font-size:11px;color:var(--em)">${h || '(blank)'}</td><td style="font-size:11px;color:var(--text2)">${emsCsvRows[0]?.[i] || ''}</td><td><select id="emap-${i}">${fieldOpts}</select></td></tr>`,
+                      `<tr><td style="font-family:var(--mono);font-size:11px;color:var(--em)">${emsEsc(h || '(blank)')}</td><td style="font-size:11px;color:var(--text2)">${emsEsc(emsCsvRows[0]?.[i] || '')}</td><td><select id="emap-${i}">${fieldOpts}</select></td></tr>`,
                   )
                   .join('');
                 emsCsvHeaders.forEach((_, i) => {
@@ -13646,7 +13653,7 @@
                   'PREVIEW (first 3 rows):\n' +
                   parsed
                     .slice(0, 4)
-                    .map((r) => r.join(' | '))
+                    .map((r) => r.map((c) => emsEsc(c)).join(' | '))
                     .join('\n');
                 // Show dup panel and calculate preview
                 document.getElementById('emsDupPanel').style.display = 'block';
