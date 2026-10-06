@@ -612,6 +612,15 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     assert.ok(/pdfQueueDepth\(\) > 0/.test(ui));
   });
 
+  await t('PDF queue entries carry the owner tag and the drain sends only the verified user own entries (source check)', () => {
+    const core = fs.readFileSync(path.join(__dirname, 'app', 'core.js'), 'utf8');
+    assert.ok(/owner: window\.DB\.queueOwner\(\)/.test(core));
+    assert.ok(/window\.DB\.entryBelongsTo\(entry, me\)\) continue/.test(core));
+    assert.ok(/getUserId\(\);\s*if \(!me\) return/.test(core));
+    const db = fs.readFileSync(path.join(__dirname, 'app', 'db.js'), 'utf8');
+    assert.ok(/queueOwner: _queueOwner,\s*entryBelongsTo: _entryBelongsTo/.test(db));
+  });
+
   // ---- M10: load-time writers
   await t('M10 every load-time saveUtilityData(SAVE_ALL_PROJECTS) runs only when a migration changed data', () => {
     const src = fs.readFileSync(path.join(__dirname, 'app', 'utility-data.js'), 'utf8').split('\r').join('');

@@ -2836,6 +2836,8 @@ const DB = (() => {
     getUploadProgress,
     getQueueDepth,
     getForeignQueueInfo,
+    queueOwner: _queueOwner,
+    entryBelongsTo: _entryBelongsTo,
     getConflictArchive,
     isConflictArchiveFull,
     clearConflictArchive,

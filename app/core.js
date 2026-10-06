@@ -177,7 +177,9 @@ window.pdfQueueDepth = () => _pdfQueueLoad().length;
 // has one meaningful action queued at a time (upload, or later a delete).
 function _pdfEnqueue(type, key) {
   const queue = _pdfQueueLoad().filter((e) => e.key !== key);
-  queue.push({ id: _pdfQueueGenId(), type, key, ts: Date.now() });
+  // Owner tag: the SAME rule as the kv queue (db.js _queueOwner: verified id, or the
+  // last verified user as a hint when signed out). Another user never sends it.
+  queue.push({ id: _pdfQueueGenId(), type, key, ts: Date.now(), owner: window.DB.queueOwner() });
   _pdfQueueSave(queue);
   _pdfKickDrain();
 }
@@ -333,9 +335,21 @@ function _pdfCacheLocalOnly(id, base64) {
 // --- 2c: single-owner queue drain (Web Locks, same F7 multi-tab guard db.js
 // uses for its kv queue) ----------------------------------------------------
 async function _pdfDrainQueueLocked() {
+  const me = window.CH_AUTH.getUserId();
+  if (!me) return; // no verified identity: send nothing
+  // A signed-out entry becomes this user's own only when this user was the last one
+  // verified on this browser (hint); an entry without an owner tag is from before
+  // owner tags existed and was queued while signed in, so the first verified user keeps it.
+  _pdfQueueSave(
+    _pdfQueueLoad().map((e) => {
+      if (!e.owner || (!e.owner.id && e.owner.hintId === me)) return Object.assign({}, e, { owner: { id: me } });
+      return e;
+    }),
+  );
   const snapshot = _pdfQueueLoad();
   for (const entry of snapshot) {
     if (!_pdfQueueLoad().some((e) => e.id === entry.id)) continue; // superseded meanwhile
+    if (!window.DB.entryBelongsTo(entry, me)) continue; // another user's entry: never sent
     let result;
     try {
       if (entry.type === 'delete') {
