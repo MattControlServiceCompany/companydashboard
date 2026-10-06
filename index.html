@@ -1157,7 +1157,7 @@
           <button class="btn-ms" id="loginSubmitBtn" type="submit">Sign In</button>
         </form>
         <div class="login-divider"><span>or</span></div>
-        <button class="btn-demo" onclick="loginDemo()">Continue in Demo Mode</button>
+        <button class="btn-demo" id="chDemoBtn" onclick="loginDemo()">Continue in Demo Mode</button>
         <p class="login-note">Sign-in is verified by CompanyHub's backend — your password is never stored locally.</p>
       </div>
     </div>
@@ -1182,11 +1182,12 @@
         }
       }
       function clearSession() {
-        sessionStorage.removeItem('ch_user');
-        localStorage.removeItem('ch_user');
+        if (window.CH_AUTH && window.CH_AUTH.clearSavedUser) window.CH_AUTH.clearSavedUser();
       }
 
+      // Demo login is disabled on the sync host (a demo session must never write real data).
       function loginDemo() {
+        if (window.CH_AUTH && window.CH_AUTH.isSyncHost()) return;
         currentUser = { name: 'Demo User', email: 'demo@controlservice.com', initials: 'DU', isReal: false };
         saveSession(currentUser);
         enterApp();
@@ -1235,6 +1236,13 @@
          unhiding a local #app shell. (feature/energy-dept-only, 2026-08-24) */
       function enterApp() {
         window.location.href = 'energy-department.html';
+      }
+
+      if (window.CH_AUTH && window.CH_AUTH.isSyncHost()) {
+        const demoBtn = document.getElementById('chDemoBtn');
+        if (demoBtn) demoBtn.style.display = 'none';
+        const divider = document.querySelector('.login-divider');
+        if (divider) divider.style.display = 'none';
       }
 
       // Auto-login if session exists

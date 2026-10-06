@@ -208,6 +208,11 @@ const SyncClassification = (() => {
       note: 'db.js DELETED_ITEMS_KEY — full copy of items this browser removed from a collection, kept 90 days. Write-through via _rawSet. Engine-internal, local only.',
     },
     {
+      pattern: 'ch_last_user',
+      prefix: false,
+      note: 'db.js LAST_USER_KEY (2026-10-06) — id/email of the user last signed in on this browser; owner tag for queued edits. Engine-internal, never syncs.',
+    },
+    {
       pattern: 'ch_local_identity',
       prefix: false,
       note: "per-user-settings-sync hardening (2026-07-26, Finding 2) — db.js LOCAL_IDENTITY_KEY, a durable marker of which signed-in identity this browser's per-user local state currently belongs to (write-through via _rawSet, bypasses replication entirely, same as ch_replica_state/ch_sync_queue above). Engine-internal bookkeeping, must never sync at all.",

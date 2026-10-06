@@ -44,8 +44,8 @@
       '#ch-sync-banner-stack>div{text-align:center;font-size:13px;padding:6px 12px;display:none;}' +
       '#ch-sync-banner{background:var(--accent,#2563eb);color:#fff;}' +
       '#ch-sync-offline-banner{background:var(--warn,#b45309);color:#fff;}' +
-      '#ch-sync-signedout-banner,#ch-sync-hydrate-failed-banner{background:var(--warn,#b45309);color:#fff;}' +
-      '#ch-sync-signedout-banner button,#ch-sync-hydrate-failed-banner button{margin-left:8px;border-radius:4px;padding:2px 10px;font-size:12px;' +
+      '#ch-sync-signedout-banner,#ch-sync-foreign-banner,#ch-sync-hydrate-failed-banner{background:var(--warn,#b45309);color:#fff;}' +
+      '#ch-sync-signedout-banner button,#ch-sync-foreign-banner button,#ch-sync-hydrate-failed-banner button{margin-left:8px;border-radius:4px;padding:2px 10px;font-size:12px;' +
       'font-family:inherit;cursor:pointer;border:1px solid #fff;background:transparent;color:#fff;}' +
       '#ch-sync-archive-full-banner{background:var(--warn,#b45309);color:#fff;}' +
       '#ch-sync-archive-full-banner button{margin-left:8px;border-radius:4px;padding:2px 10px;font-size:12px;' +
@@ -156,7 +156,7 @@
     if (!el) {
       el = document.createElement('div');
       el.id = id;
-      if (/^ch-sync-(banner|offline-banner|archive-full-banner|signedout-banner|hydrate-failed-banner)$/.test(id)) {
+      if (/^ch-sync-(banner|offline-banner|archive-full-banner|signedout-banner|foreign-banner|hydrate-failed-banner)$/.test(id)) {
         ensureStack().appendChild(el);
       } else {
         document.body.appendChild(el);
@@ -210,12 +210,7 @@
       var btn = document.createElement('button');
       btn.textContent = 'Sign in';
       btn.onclick = function () {
-        try {
-          sessionStorage.removeItem('ch_user');
-          localStorage.removeItem('ch_user');
-        } catch (e) {
-          /* storage unavailable: redirect anyway */
-        }
+        if (window.CH_AUTH && window.CH_AUTH.clearSavedUser) window.CH_AUTH.clearSavedUser();
         window.location.href = 'index.html';
       };
       el.appendChild(btn);
@@ -225,6 +220,24 @@
   window.addEventListener('chAuthStateChanged', renderSignedOutBar);
   window.addEventListener('dbReady', renderSignedOutBar);
   document.addEventListener('DOMContentLoaded', renderSignedOutBar);
+
+  // Pending edits made by a different user than the one signed in now. Never sent, never deleted.
+  function renderForeignQueueBar() {
+    var info = window.DB && window.DB.getForeignQueueInfo ? window.DB.getForeignQueueInfo() : [];
+    var el = document.getElementById('ch-sync-foreign-banner');
+    if (!info.length && !el) return;
+    ensureStyles();
+    el = ensureEl('ch-sync-foreign-banner');
+    el.textContent = info
+      .map(function (o) {
+        return o.count + ' unsent change' + (o.count === 1 ? '' : 's') + ' from ' + o.email + ' - sign in as that user to send them.';
+      })
+      .join(' ');
+    el.style.display = info.length ? 'block' : 'none';
+  }
+  window.addEventListener('syncQueueChanged', renderForeignQueueBar);
+  window.addEventListener('dbReady', renderForeignQueueBar);
+  window.addEventListener('chAuthStateChanged', renderForeignQueueBar);
 
   // B4: some keys could not be loaded from the server after one retry.
   window.addEventListener('dbHydrateFailed', function (e) {

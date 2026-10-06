@@ -50,6 +50,7 @@
   var REFRESH_MARGIN_SECONDS = 5 * 60; // refresh once within 5 min of expiry
 
   var _cachedToken = null; // string | null — read synchronously by getToken()
+  var _cachedEmail = null; // string | null — shown in the unsent-changes bar
   var _cachedUserId = null; // string | null — Supabase auth user UUID (durable per-user id)
   var _signedOut = true; // true whenever nobody has a valid session
   var _refreshTimer = null;
@@ -123,6 +124,7 @@
     }
     _cachedToken = null;
     _cachedUserId = null;
+    _cachedEmail = null;
   }
 
   function _setSignedOut(signedOut) {
@@ -136,6 +138,7 @@
   function _applySession(session) {
     _cachedToken = session && session.access_token ? session.access_token : null;
     _cachedUserId = session && session.user_id ? session.user_id : null;
+    _cachedEmail = session && session.email ? session.email : null;
     _setSignedOut(!_cachedToken);
   }
 
@@ -282,6 +285,21 @@
     return _cachedToken;
   }
 
+  function getEmail() {
+    return _cachedEmail;
+  }
+
+  // THE single place that forgets the saved display name (ch_user). Called by
+  // core.js signOut, the signed-out bar Sign in button and index.html.
+  function clearSavedUser() {
+    try {
+      sessionStorage.removeItem('ch_user');
+      localStorage.removeItem('ch_user');
+    } catch (e) {
+      /* storage unavailable */
+    }
+  }
+
   function isSignedOut() {
     return _signedOut;
   }
@@ -308,6 +326,8 @@
     isSignedOut: isSignedOut,
     backendMode: backendMode,
     getUserId: getUserId,
+    getEmail: getEmail,
+    clearSavedUser: clearSavedUser,
     isSyncHost: _isNetlifyHost,
     signIn: signIn,
     signOut: signOut,

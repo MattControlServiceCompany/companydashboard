@@ -8511,9 +8511,11 @@
         <button class="btn-ms" onclick="window.location.href = 'index.html'">← Return to Sign In</button>
         <button
           class="btn-ms"
+          id="chDemoBtn"
           style="margin-top: 8px; background: var(--s3); color: var(--text2); border: 1px solid var(--s4)"
           onclick="
             (function () {
+              if (window.CH_AUTH && window.CH_AUTH.isSyncHost()) return;
               var u = { name: 'Demo User', email: 'demo@controlservice.com', initials: 'DU', isReal: false };
               sessionStorage.setItem('ch_user', JSON.stringify(u));
               localStorage.setItem('ch_user', JSON.stringify(u));
@@ -8524,6 +8526,9 @@
         >
           Continue as Demo
         </button>
+        <script>
+          if (window.CH_AUTH && window.CH_AUTH.isSyncHost()) document.getElementById('chDemoBtn').style.display = 'none';
+        </script>
       </div>
     </div>
 

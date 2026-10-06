@@ -6,11 +6,11 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-function load({ mode, syncHost, fetchImpl }) {
+function load({ mode, syncHost, fetchImpl, classify }) {
   let src = fs.readFileSync(path.join(__dirname, 'app', 'db.js'), 'utf8');
   src = src.split(String.fromCharCode(13)).join("").replace(
     '  return {\n    warmCache,',
-    '  return {\n    __t: { _hydrate, _batchGetChunked, _drainQueueOnce },\n    warmCache,',
+    '  return {\n    __t: { _hydrate, _batchGetChunked, _drainQueueOnce, _clearPerUserLocalState, _handleAuthIdentityChange },\n    warmCache,',
   );
   const store = {};
   const events = [];
@@ -25,9 +25,11 @@ function load({ mode, syncHost, fetchImpl }) {
       backendMode: () => state.mode,
       isSyncHost: () => state.syncHost,
       getToken: () => 'tok',
-      getUserId: () => (state.mode === 'on' ? 'u1' : null),
+      getUserId: () => (state.uid !== undefined ? state.uid : state.mode === 'on' ? 'u1' : null),
+      getEmail: () => state.email || 'u1@example.com',
     },
   };
+  if (classify) win.SyncClassification = require('./app/sync-classification.js');
   const sandbox = {
     window: win,
     document: { addEventListener() {}, visibilityState: 'visible' },
@@ -167,8 +169,9 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
       }
       return ok([]);
     };
-    const L = load({ mode: 'off', syncHost: true, fetchImpl });
+    const L = load({ mode: 'on', syncHost: true, fetchImpl });
     await L.DB.warmCache();
+    L.state.mode = 'off';
     await L.DB.set('en_projects', [{ id: 1 }]);
     await L.DB.__t._drainQueueOnce();
     assert.strictEqual(puts.length, 0, 'nothing sent while off');
@@ -220,6 +223,97 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
       assert.strictEqual(win.CH_AUTH.needsSignIn(), expectNeeds);
       assert.strictEqual(win.CH_AUTH.isSyncHost(), expectNeeds);
     }
+  });
+
+  // ---- Owner tags (manager decision 1)
+  const sendOk = () => ({ ok: true, status: 200, json: async () => ({ version: 1, hash: 'h' }) });
+  await t('Owner: entries of another user are never sent and never deleted; bar info reports them', async () => {
+    const puts = [];
+    const L = load({ mode: 'on', syncHost: true, fetchImpl: async (u, o) => { if (o && o.method === 'PUT') { puts.push(o.body); return sendOk(); } return ok([]); } });
+    await L.DB.warmCache(); // u1 signed in, recorded as last user
+    L.state.mode = 'off'; L.state.uid = null;
+    await L.DB.set('en_projects', [{ id: 1 }]);
+    assert.strictEqual(L.DB.getQueueDepth(), 1);
+    L.state.mode = 'on'; L.state.uid = 'u2'; L.state.email = 'u2@example.com';
+    await L.DB.__t._drainQueueOnce();
+    assert.strictEqual(puts.length, 0, 'user u2 must not send u1 edit');
+    assert.strictEqual(L.DB.getQueueDepth(), 1, 'entry kept');
+    const info = L.DB.getForeignQueueInfo();
+    assert.strictEqual(info.length, 1);
+    assert.strictEqual(info[0].email, 'u1@example.com');
+    assert.strictEqual(info[0].count, 1);
+    // u1 signs back in: it drains
+    L.state.uid = 'u1';
+    await L.DB.__t._drainQueueOnce();
+    assert.strictEqual(puts.length, 1);
+    assert.strictEqual(L.DB.getQueueDepth(), 0);
+  });
+  await t('Owner: same key from two users coalesces per owner, not across owners', async () => {
+    const L = load({ mode: 'on', syncHost: true, fetchImpl: async () => ok([]) });
+    await L.DB.warmCache();
+    L.state.mode = 'off'; L.state.uid = null;
+    await L.DB.set('en_projects', [{ id: 1 }]);
+    L.state.mode = 'off'; L.state.uid = 'u2'; L.state.email = 'u2@example.com';
+    await L.DB.set('en_projects', [{ id: 2 }]);
+    const q = JSON.parse(L.store['ch_sync_queue'] || '[]').filter((e) => e.key === 'en_projects');
+    assert.strictEqual(q.length, 2);
+    assert.notStrictEqual(q[0].owner.id, q[1].owner.id);
+  });
+  await t('Owner: edit with no known user is kept but never sent', async () => {
+    const puts = [];
+    const L = load({ mode: 'off', syncHost: true, fetchImpl: async (u, o) => { if (o && o.method === 'PUT') puts.push(1); return ok([]); } });
+    await L.DB.warmCache();
+    await L.DB.set('en_projects', [{ id: 1 }]);
+    L.state.mode = 'on'; L.state.uid = 'u2';
+    await L.DB.__t._drainQueueOnce();
+    assert.strictEqual(puts.length, 0);
+    assert.strictEqual(L.DB.getQueueDepth(), 1);
+  });
+
+  // ---- Per-user keys (manager decision 2)
+  await t('Per-user key edited while signed out is queued, survives the sign-in clear, and is sent for the same user', async () => {
+    const puts = [];
+    const L = load({ classify: true, mode: 'on', syncHost: true, fetchImpl: async (u, o) => { if (o && o.method === 'PUT') { puts.push(o.body); return sendOk(); } return ok([]); } });
+    await L.DB.warmCache();
+    L.state.mode = 'off'; L.state.uid = null;
+    await L.DB.__t._handleAuthIdentityChange(); // sign-out event
+    await L.DB.set('ch_theme', 'dark');
+    assert.strictEqual(L.DB.getQueueDepth(), 1, 'per-user edit queued');
+    L.state.mode = 'on'; L.state.uid = 'u1';
+    await L.DB.__t._handleAuthIdentityChange();
+    assert.strictEqual(L.DB.get('ch_theme'), 'dark', 'local value not deleted');
+    assert.strictEqual(puts.length, 1);
+    assert.strictEqual(L.DB.getQueueDepth(), 0);
+  });
+  await t('_clearPerUserLocalState keeps a per-user key with a pending queued edit', async () => {
+    const L = load({ classify: true, mode: 'on', syncHost: true, fetchImpl: async () => ok([]) });
+    await L.DB.warmCache();
+    L.state.mode = 'off'; L.state.uid = null;
+    await L.DB.set('ch_theme', 'dark');
+    await L.DB.set('ch_sidebar_pref', 'x');
+    const cleared = L.DB.__t._clearPerUserLocalState();
+    assert.ok(!cleared.includes('ch_theme'));
+    assert.strictEqual(L.DB.get('ch_theme'), 'dark');
+    assert.strictEqual(L.DB.getQueueDepth(), 2);
+  });
+
+  // ---- Demo (manager decision 3) and one ch_user clear function (decision 4)
+  await t('Demo is disabled and hidden on the sync host (index.html + energy-department.html)', () => {
+    const idx = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+    const m = idx.match(/function loginDemo\(\) \{[\s\S]*?\n      \}/);
+    assert.ok(/isSyncHost\(\)\) return;/.test(m[0]), 'loginDemo guard');
+    assert.ok(/chDemoBtn[\s\S]{0,200}display = 'none'/.test(idx), 'index hides demo button');
+    const ed = fs.readFileSync(path.join(__dirname, 'energy-department.html'), 'utf8');
+    assert.ok(/id="chDemoBtn"/.test(ed) && /isSyncHost\(\)\) return;/.test(ed));
+    assert.ok(/isSyncHost\(\)\) document\.getElementById\('chDemoBtn'\)\.style\.display = 'none'/.test(ed));
+  });
+  await t("ch_user clearing lives only in CH_AUTH.clearSavedUser; 3 callers use it", () => {
+    const rd = (f) => fs.readFileSync(path.join(__dirname, f), 'utf8');
+    for (const f of ['app/core.js', 'app/sync-ui.js', 'index.html']) {
+      assert.ok(rd(f).includes('CH_AUTH.clearSavedUser'), f);
+      assert.ok(!/removeItem\('ch_user'\)/.test(rd(f)), f + ' still clears ch_user itself');
+    }
+    assert.ok(/removeItem\('ch_user'\)/.test(rd('app/ch-auth.js')));
   });
   console.log(pass + ' passed');
 })().catch((e) => {

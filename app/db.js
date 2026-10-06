@@ -123,6 +123,9 @@ const DB = (() => {
   // sign-out/sign-in inside the same tab session (Matt always hard-refreshes,
   // per feedback_user_always_hard_refreshes.md).
   const LOCAL_IDENTITY_KEY = 'ch_local_identity';
+  // Last user id/email signed in on this browser; owner tag for queued edits.
+  const LAST_USER_KEY = 'ch_last_user';
+  let _lastUser = null;
 
   // --- Backend mode -------------------------------------------------------
   // Derived only by CH_AUTH.backendMode(): 'on' = signed in on the production
@@ -411,6 +414,44 @@ const DB = (() => {
   function _loadSyncQueue() {
     const stored = _cache[SYNC_QUEUE_KEY];
     _syncQueue = Array.isArray(stored) ? stored : [];
+    const lu = _cache[LAST_USER_KEY];
+    _lastUser = lu && typeof lu.id === 'string' ? lu : null;
+    _recordLastUser();
+  }
+  // Owner tag for queued edits: the user id (and email) last signed in on this
+  // browser. Persisted so an edit made while signed out keeps its owner across reload.
+  function _recordLastUser() {
+    const id = _myUserId();
+    if (!id) return;
+    let email = null;
+    try {
+      email = window.CH_AUTH && window.CH_AUTH.getEmail ? window.CH_AUTH.getEmail() : null;
+    } catch (e) {
+      email = null;
+    }
+    if (_lastUser && _lastUser.id === id && (_lastUser.email || null) === email) return;
+    _lastUser = { id, email };
+    _rawSet(LAST_USER_KEY, _lastUser);
+  }
+  function _queueOwner() {
+    const id = _myUserId();
+    if (id) {
+      _recordLastUser();
+      return _lastUser && _lastUser.id === id ? _lastUser : { id, email: null };
+    }
+    return _lastUser || { id: null, email: null };
+  }
+  // Pending edits that belong to a different user than the one signed in now.
+  // Never sent, never deleted; the bar in sync-ui.js reports them.
+  function getForeignQueueInfo() {
+    const me = _myUserId();
+    const by = {};
+    _syncQueue.forEach((e) => {
+      if (!e.owner || !e.owner.id || e.owner.id === me) return;
+      const o = by[e.owner.id] || (by[e.owner.id] = { id: e.owner.id, email: e.owner.email || 'another user', count: 0 });
+      o.count++;
+    });
+    return Object.keys(by).map((k) => by[k]);
   }
   function _persistSyncQueue() {
     _rawSet(SYNC_QUEUE_KEY, _syncQueue);
@@ -432,10 +473,13 @@ const DB = (() => {
     // {key,...}" wording does not explicitly forbid coalescing; this keeps it
     // an ordered list (still FIFO across distinct keys) while guaranteeing a
     // given key only ever replays its most recent local value.
-    _syncQueue = _syncQueue.filter((e) => e.key !== key);
+    const owner = _queueOwner();
+    // Coalesce per key AND owner: one user's edit never replaces another user's pending edit.
+    _syncQueue = _syncQueue.filter((e) => !(e.key === key && ((e.owner && e.owner.id) || null) === owner.id));
     _syncQueue.push({
       id: _genId(),
       key,
+      owner,
       value: payload.deleted ? undefined : payload.value,
       deleted: !!payload.deleted,
       baseVersion:
@@ -1338,7 +1382,8 @@ const DB = (() => {
       // B1b (2026-10-06): signed out / session lost on the sync host. Keep the
       // edit in the durable queue; it uploads (CAS, never overwriting a newer
       // server row) when sign-in brings sync back. Other hosts never sync.
-      if (_isSyncHost() && !_isPerUserKey(key)) _enqueueWrite(key, payload);
+      // Per-user keys queue too (owner-tagged), so the bar text is true for all keys.
+      if (_isSyncHost()) _enqueueWrite(key, payload);
       return;
     }
     // Per-user key + nobody signed in: behave local-only. No fetch, no
@@ -1367,7 +1412,9 @@ const DB = (() => {
 
   // --- 2a.5: single-owner retry-queue drain (Web Locks, F7 guard) -----------
   async function _drainQueueLocked() {
-    const snapshot = _syncQueue.slice();
+    // Send only the signed-in user's own entries; others stay queued untouched.
+    const me = _myUserId();
+    const snapshot = _syncQueue.filter((e) => e.owner && e.owner.id && e.owner.id === me);
     for (const entry of snapshot) {
       // Entry may have already been resolved/superseded by a concurrent op.
       if (!_syncQueue.some((e) => e.id === entry.id)) continue;
@@ -1972,6 +2019,11 @@ const DB = (() => {
       }
     }
 
+    // Never delete a key that still has a pending queued edit (any owner).
+    for (let i = cleared.length - 1; i >= 0; i--) {
+      if (_syncQueue.some((e) => e.key === cleared[i])) cleared.splice(i, 1);
+    }
+
     cleared.forEach((k) => {
       delete _cache[k];
       delete _replicaVersions[k];
@@ -1992,18 +2044,11 @@ const DB = (() => {
       }
     });
 
-    const queueHadPerUserEntries = _syncQueue.some((e) => _isPerUserKey(e.key));
-    if (queueHadPerUserEntries) {
-      // A pending write from the PREVIOUS user's session must never replay
-      // under the new user's wire-key prefix. _enqueueWrite only ever stores
-      // the LOCAL key (_sendKvPut re-resolves the wire key at send time), so
-      // an undropped entry here would silently push the old user's value
-      // into the new user's row on the next queue drain.
-      _syncQueue = _syncQueue.filter((e) => !_isPerUserKey(e.key));
-    }
-    if (cleared.length || queueHadPerUserEntries) {
+    // Queued entries are owner-tagged: the drain sends only the signed-in
+    // user's own entries, so another user's pending edit can never replay
+    // under the new user's wire-key prefix. No entry is deleted here.
+    if (cleared.length) {
       _persistReplicaState();
-      _persistSyncQueue();
     }
     return cleared;
   }
@@ -2012,6 +2057,8 @@ const DB = (() => {
     const uid = _myUserId();
     if (uid === _lastKnownUserId) return; // chAuthStateChanged fired but the signed-in identity didn't actually change
     _lastKnownUserId = uid;
+    _recordLastUser();
+    _persistSyncQueue(); // refresh the bars for the new identity
     _identityEpoch++; // in-flight work for the previous user now discards itself
     _uploadProgress = { running: false, total: 0, done: 0, uploaded: 0, failed: 0 };
     const cleared = _clearPerUserLocalState();
@@ -2583,6 +2630,7 @@ const DB = (() => {
     getSyncStatus,
     getUploadProgress,
     getQueueDepth,
+    getForeignQueueInfo,
     getConflictArchive,
     isConflictArchiveFull,
     clearConflictArchive,

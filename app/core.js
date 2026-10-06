@@ -864,8 +864,7 @@ let currentUser = null;
 async function signOut() {
   // B2: clear the Supabase session first (CH_AUTH.signOut clears it locally even if the network call fails).
   if (window.CH_AUTH && typeof window.CH_AUTH.signOut === 'function') await window.CH_AUTH.signOut();
-  sessionStorage.removeItem('ch_user');
-  localStorage.removeItem('ch_user');
+  if (window.CH_AUTH && window.CH_AUTH.clearSavedUser) window.CH_AUTH.clearSavedUser();
   window.location.href = 'index.html';
 }
 function enterApp() {

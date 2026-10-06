@@ -38,6 +38,7 @@ const RestoreMerge = (() => {
     'ch_sync_queue',
     'ch_backend_mode',
     'ch_local_identity',
+    'ch_last_user',
     'ch_sync_base',
     'ch_deleted_items',
     'en_deleted_records',
