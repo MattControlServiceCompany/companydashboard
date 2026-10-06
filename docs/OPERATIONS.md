@@ -84,6 +84,12 @@ Many short `setTimeout` calls (toasts, URL cleanup, UI yield) are one-shot. They
   the answer; the newest waiting value wins. Two PUTs for one key never overlap.
 - How to check: open the browser DevTools Network tab on the sync host, filter `kv-sync`, reload the page and open the
   Building Performance and Savings Projection panes. Expected: zero PUT requests.
+- Nothing is saved without a user edit: project progress is computed on read (app/core.js `projectProgress`, never
+  stored on the Dashboard tab); recurring-meeting agendas and their tasks get ids from the project id and meeting date
+  (app/csv-import.js `stableNumericId`), so two browsers generate one identical record; the Building Performance and
+  Savings Projection panes save only from their inputs and buttons (`bpSave`, `bspSave`), never on open, and
+  `getBspCfg` is the one reader of the Savings Projection settings with defaults. How to check: open a project
+  Dashboard tab and both panes with the Network tab filtered on `kv-sync`: zero PUT.
 - Queue entries with no owner tag (saved by v2026.10.06.83 or older) are never sent (`_retireOwnerlessEntries`, runs when
   the queue loads). Each goes to Conflict history as `queue-entry-no-owner` with its value, leaves the queue, and its
   version stamp is dropped so the next load compares the local copy with the server. How to check: after one load the

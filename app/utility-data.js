@@ -2157,9 +2157,7 @@ function renderUDProjAggPanel(content) {
       } else if (projHasContract(udSelProjId)) {
         // 2026-09-15 (SA-gate fix): dead code (unreferenced in this file), but gated
         // anyway as cheap insurance against the same fallback leak if it's ever wired up.
-        const bspKey = 'bldgsavproj_cfg_' + (b.id || b.name);
-        const bspCfg = DB.get(bspKey, {});
-        const savPct = (bspCfg.savingsPct != null ? bspCfg.savingsPct : 0) / 100;
+        const savPct = getBspCfg(b).savingsPct / 100; // one reader
         wtSav += savPct * bldgBase;
       }
       wtBase += bldgBase;
@@ -2465,9 +2463,7 @@ function renderUDProjAggPanel(content) {
           _perfProjSavByMo[mo] += v;
         });
       } else if (_hasSA) {
-        const bspKey = 'bldgsavproj_cfg_' + (b.id || b.name);
-        const bspCfg = DB.get(bspKey, {});
-        const savPct = (bspCfg.savingsPct != null ? bspCfg.savingsPct : 0) / 100;
+        const savPct = getBspCfg(b).savingsPct / 100; // one reader
         const bMoBase = aggBaseMoMapForBldgs([b]);
         for (let mo = 0; mo < 12; mo++) _perfProjSavByMo[mo] += (bMoBase[mo] || 0) * savPct;
       }
@@ -3535,8 +3531,10 @@ function toggleBldgSavProjPanel() {
       try {
         const _k = 'bldgsavproj_cfg_' + (_b3.id || _b3.name);
         const _c = DB.get(_k, {});
-        delete _c.moBase;
-        DB.set(_k, _c);
+        if ('moBase' in _c) {
+          delete _c.moBase;
+          DB.set(_k, _c);
+        }
       } catch (e) {}
     }
     renderBldgSavProjPane(document.getElementById('bldgSavProjPaneInner'), b);
@@ -9423,8 +9421,13 @@ let _bpPostBaselineStartYM = null; // earliest post-baseline YYYY-MM across all 
 let _bpMsrSavByMo = null; // measure-based monthly savings for Building Performance (null = use savPct fallback)
 let _bspBaselineByCalMo = null;
 let _bspMsrSavByMo = null; // measure-based monthly savings for Building Savings Projection (null = use savPct fallback)
+// The building and project of the pane on screen. renderProjUDBody restores udSelProjId/udSelBldgId
+// right after render, so the input handlers (bpSave, bspSave, recalc) must not read those globals.
+let _bpPane = null; // { b, projId } of the Building Performance pane
+let _bspPane = null; // { b, projId } of the Savings Projection pane
 
 function renderBldgPerfPane(pane, b) {
+  _bpPane = { b, projId: udSelProjId };
   if (!b) {
     pane.innerHTML = '<div class="ud-empty">No building selected</div>';
     return;
@@ -9451,9 +9454,7 @@ function renderBldgPerfPane(pane, b) {
   _bpActualSavingsByCalMo = null; // reset, will be computed below
 
   // ── Projected spend per calendar month — from BSP saved config ──
-  const bspKey = 'bldgsavproj_cfg_' + (b.id || b.name);
-  const bspCfg = DB.get(bspKey, {});
-  const savPct = (bspCfg.savingsPct != null ? bspCfg.savingsPct : 0) / 100;
+  const savPct = getBspCfg(b).savingsPct / 100; // one reader
   _bpMsrSavByMo = getBldgMeasureSavingsByMo(udSelProjId, b.id);
 
   // ── Actual savings per calendar month ──
@@ -9561,20 +9562,20 @@ function renderBldgPerfPane(pane, b) {
             <!-- Fixed $ input (shown in fixed mode) -->
             <div id="bp-csc-fixed-wrap" style="display:${_showCsc && defCscMode === 'fixed' ? 'flex' : 'none'};flex-direction:column;gap:4px">
               <label style="font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.6px">Fixed Monthly Cost $</label>
-              <input id="bp-cscfixed" type="number" value="${defCscFixed}" min="0" step="1"
+              <input id="bp-cscfixed" type="number" value="${defCscFixed}" min="0" step="1" oninput="bpChanged()"
                 style="width:100px;font-family:var(--mono);font-size:13px;color:var(--em);background:var(--s3);border:1px solid var(--border);border-radius:6px;padding:5px 8px;outline:none">
             </div>
             <!-- Years -->
             <div style="display:flex;flex-direction:column;gap:4px">
               <label style="font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.6px">Years</label>
-              <select id="bp-years" style="font-family:var(--mono);font-size:13px;color:var(--text);background:var(--s3);border:1px solid var(--border);border-radius:6px;padding:5px 8px;outline:none">
+              <select id="bp-years" onchange="bpChanged()" style="font-family:var(--mono);font-size:13px;color:var(--text);background:var(--s3);border:1px solid var(--border);border-radius:6px;padding:5px 8px;outline:none">
                 ${[1, 2, 3, 4, 5].map((y) => `<option value="${y}"${y === defYears ? ' selected' : ''}>${y} Year${y > 1 ? 's' : ''}</option>`).join('')}
               </select>
             </div>
             <!-- Escalation rate -->
             <div style="display:flex;flex-direction:column;gap:4px">
               <label style="font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.6px">Utility Escalation %/Year</label>
-              <input id="bp-escpct" type="number" value="${defEscPct}" min="0" max="20" step="0.1"
+              <input id="bp-escpct" type="number" value="${defEscPct}" min="0" max="20" step="0.1" oninput="bpChanged()"
                 style="width:80px;font-family:var(--mono);font-size:13px;color:var(--em);background:var(--s3);border:1px solid var(--border);border-radius:6px;padding:5px 8px;outline:none">
             </div>
             <!-- View -->
@@ -9607,7 +9608,7 @@ function bpSetView(v) {
     btn.style.background = vv === v ? 'var(--em)' : 'transparent';
     btn.style.color = vv === v ? '#05080f' : 'var(--text2)';
   });
-  bpRecalc();
+  bpChanged();
 }
 
 function bpSetMode(m) {
@@ -9622,7 +9623,7 @@ function bpSetMode(m) {
   const fw = document.getElementById('bp-csc-fixed-wrap');
   if (pw) pw.style.display = m === 'pct' ? 'flex' : 'none';
   if (fw) fw.style.display = m === 'fixed' ? 'flex' : 'none';
-  bpRecalc();
+  bpChanged();
 }
 
 function bpApplyToAllBuildings() {
@@ -9631,7 +9632,7 @@ function bpApplyToAllBuildings() {
   const cscFixed = parseFloat(document.getElementById('bp-cscfixed')?.value || 0);
   const years = parseInt(document.getElementById('bp-years')?.value || 3);
   const escPct = parseFloat(document.getElementById('bp-escpct')?.value || 0);
-  const bldgs = getUDBldgs(udSelProjId);
+  const bldgs = getUDBldgs(_bpPane ? _bpPane.projId : null);
   if (!bldgs.length) return;
   const settings = { cscMode, cscFixed, years, escPct, _customEsc: true };
   let count = 0;
@@ -9659,9 +9660,35 @@ function bpApplyToAllBuildings() {
   );
 }
 
+// Saves the Building Performance settings from the pane fields. Called from the
+// user's edits only (inputs, view and mode buttons), never from render: opening
+// the pane writes nothing. Fields the pane does not edit are kept.
+function bpSave() {
+  const b = _bpPane && _bpPane.b;
+  if (!b || !document.getElementById('bp-escpct')) return;
+  const storeKey = 'bldgperf_cfg_' + (b.id || b.name);
+  const escPctIn = parseFloat(document.getElementById('bp-escpct')?.value || 0);
+  const _projEsc = projects.find((p) => p.id === _bpPane.projId)?.escalation ?? 3;
+  const cfg = Object.assign({}, DB.get(storeKey, {}), {
+    cscMode: _bpMode,
+    cscFixed: parseFloat(document.getElementById('bp-cscfixed')?.value || 0),
+    years: parseInt(document.getElementById('bp-years')?.value || 3),
+    escPct: escPctIn,
+    view: _bpView,
+  });
+  delete cfg.moBase;
+  cfg._customEsc = escPctIn !== _projEsc ? true : undefined;
+  DB.set(storeKey, cfg);
+}
+function bpChanged() {
+  bpSave();
+  bpRecalc();
+}
+
 function bpRecalc() {
   const cscMode = _bpMode;
-  const _showCsc = getProjectContract(projects.find((p) => p.id === udSelProjId)).cscPct !== null;
+  const _projId = _bpPane ? _bpPane.projId : null;
+  const _showCsc = getProjectContract(projects.find((p) => p.id === _projId)).cscPct !== null;
   const cscPct = parseFloat(document.getElementById('bp-cscpct')?.value || 0) / 100;
   const cscFixed = parseFloat(document.getElementById('bp-cscfixed')?.value || 0);
   const years = parseInt(document.getElementById('bp-years')?.value || 3);
@@ -9670,37 +9697,16 @@ function bpRecalc() {
   const moBase = _bpBaselineByCalMo || Array(12).fill(0);
   const annBase = moBase.reduce((s, v) => s + v, 0);
 
-  // Save config
-  const b = getUDBldg(udSelProjId, udSelBldgId);
-  if (b) {
-    const storeKey = 'bldgperf_cfg_' + (b.id || b.name);
-    try {
-      const _prevCfg = DB.get(storeKey, {});
-      const _projM = projects.find((p) => p.id === udSelProjId);
-      const _projEsc = _projM?.escalation ?? 3;
-      const _saveCfg = Object.assign({}, _prevCfg, {
-        cscMode,
-        cscFixed,
-        years,
-        escPct: escPct * 100,
-        view,
-      });
-      delete _saveCfg.moBase;
-      _saveCfg._customEsc = escPct * 100 !== _projEsc ? true : undefined;
-      DB.set(storeKey, _saveCfg);
-    } catch (e) {}
-  }
+  const b = _bpPane ? _bpPane.b : null; // the pane's building; settings are saved by bpSave (user edits only)
 
-  // Projected spend from BSP config
-  const bspKey = b ? 'bldgsavproj_cfg_' + (b.id || b.name) : null;
-  const bspCfg = bspKey ? DB.get(bspKey, {}) : {};
-  const savPct = (bspCfg.savingsPct != null ? bspCfg.savingsPct : 0) / 100;
+  // Projected spend from the Savings Projection settings (one reader: getBspCfg)
+  const savPct = (b ? getBspCfg(b, projects.find((p) => p.id === _projId)).savingsPct : 0) / 100;
   const _msrSavByMo = _bpMsrSavByMo;
   const _useMeasures = !!_msrSavByMo;
   // 2026-09-15 (SA-gate fix): the manual "savings %" projection fallback (used when no
   // measures exist) never checked the project's `sa` (Service Agreement #). Same gate as
   // getMeterSavings/getBldgMeasureSavingsByMo — no contract means no projected savings.
-  const _hasSA = projHasContract(udSelProjId);
+  const _hasSA = projHasContract(_projId);
 
   // Actual savings per calendar month (re-computed from stored data if available, or from b)
   // We re-use _bpActualSavingsByCalMo if set, else re-derive
@@ -10097,6 +10103,7 @@ function bpRecalc() {
 }
 
 function renderBldgSavProjPane(pane, b) {
+  _bspPane = { b, projId: udSelProjId };
   if (!b) {
     pane.innerHTML = '<div class="ud-empty">No building selected</div>';
     return;
@@ -10123,18 +10130,16 @@ function renderBldgSavProjPane(pane, b) {
   });
 
   // ── Saved settings ──
-  const storeKey = 'bldgsavproj_cfg_' + (b.id || b.name);
-  const cfg = DB.get(storeKey, {});
-  const defSavingsPct = cfg.savingsPct ?? 11;
-  const defClientPct = cfg.clientPct ?? 5;
-  // CSC share: read from getProjectContract (Project Settings), shown read-only below
   const projMeta2 = projects.find((p) => p.id === udSelProjId);
+  const cfg = getBspCfg(b, projMeta2); // stored values with the defaults filled in (one reader)
+  const defSavingsPct = cfg.savingsPct;
+  const defClientPct = cfg.clientPct;
+  // CSC share: read from getProjectContract (Project Settings), shown read-only below
   const defCscPct = getProjectContract(projMeta2).cscPct ?? 0;
   const _showCsc = getProjectContract(projMeta2).cscPct !== null;
-  const defYears = cfg.years ?? 3;
-  // Fall back to project-level escalation if building has no custom override
-  const defEscPct = cfg._customEsc ? cfg.escPct : (projMeta2?.escalation ?? cfg.escPct ?? 3);
-  const defView = cfg.view ?? 'monthly';
+  const defYears = cfg.years;
+  const defEscPct = cfg.escPct;
+  const defView = cfg.view;
 
   // Sync global view state from saved config so bspRecalc uses correct values
   _bspView = defView;
@@ -10172,12 +10177,12 @@ function renderBldgSavProjPane(pane, b) {
           <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:18px;background:var(--s2);border:1px solid var(--border);border-radius:9px;padding:13px 16px">
             <div style="display:flex;flex-direction:column;gap:4px">
               <label style="font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.6px">Projected Savings %</label>
-              <input id="bsp-savpct" type="number" value="${defSavingsPct}" min="0" max="100" step="0.1" oninput="bspRecalc()"
+              <input id="bsp-savpct" type="number" value="${defSavingsPct}" min="0" max="100" step="0.1" oninput="bspChanged()"
                 style="width:80px;font-family:var(--mono);font-size:13px;color:var(--em);background:var(--s3);border:1px solid var(--border);border-radius:6px;padding:5px 8px;outline:none">
             </div>
             <div style="display:${_showCsc ? 'flex' : 'none'};flex-direction:column;gap:4px">
               <label style="font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.6px">Client Savings %</label>
-              <input id="bsp-clipct" type="number" value="${defClientPct}" min="0" max="100" step="0.1" oninput="bspRecalc()"
+              <input id="bsp-clipct" type="number" value="${defClientPct}" min="0" max="100" step="0.1" oninput="bspChanged()"
                 style="width:80px;font-family:var(--mono);font-size:13px;color:var(--em);background:var(--s3);border:1px solid var(--border);border-radius:6px;padding:5px 8px;outline:none">
             </div>
             <div style="display:${_showCsc ? 'flex' : 'none'};flex-direction:column;gap:4px">
@@ -10187,13 +10192,13 @@ function renderBldgSavProjPane(pane, b) {
             </div>
             <div style="display:flex;flex-direction:column;gap:4px">
               <label style="font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.6px">Years</label>
-              <select id="bsp-years" onchange="bspRecalc()" style="font-family:var(--mono);font-size:13px;color:var(--text);background:var(--s3);border:1px solid var(--border);border-radius:6px;padding:5px 8px;outline:none">
+              <select id="bsp-years" onchange="bspChanged()" style="font-family:var(--mono);font-size:13px;color:var(--text);background:var(--s3);border:1px solid var(--border);border-radius:6px;padding:5px 8px;outline:none">
                 ${[1, 2, 3, 4, 5].map((y) => `<option value="${y}"${y === defYears ? ' selected' : ''}>${y} Year${y > 1 ? 's' : ''}</option>`).join('')}
               </select>
             </div>
             <div style="display:flex;flex-direction:column;gap:4px">
               <label style="font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.6px">Utility Escalation %/Year</label>
-              <input id="bsp-escpct" type="number" value="${defEscPct}" min="0" max="20" step="0.1" oninput="bspRecalc()"
+              <input id="bsp-escpct" type="number" value="${defEscPct}" min="0" max="20" step="0.1" oninput="bspChanged()"
                 style="width:80px;font-family:var(--mono);font-size:13px;color:var(--em);background:var(--s3);border:1px solid var(--border);border-radius:6px;padding:5px 8px;outline:none">
             </div>
             <div style="display:flex;flex-direction:column;gap:4px">
@@ -10205,7 +10210,7 @@ function renderBldgSavProjPane(pane, b) {
                   style="font-family:var(--font);font-size:11px;font-weight:600;padding:5px 10px;border-radius:5px;border:1px solid var(--border);cursor:pointer;background:${defView === 'quarterly' ? 'var(--em)' : 'transparent'};color:${defView === 'quarterly' ? '#05080f' : 'var(--text2)'}">Quarterly</button>
               </div>
             </div>
-            <button onclick="bspRecalc()" style="font-family:var(--font);font-size:12px;font-weight:700;padding:7px 16px;border-radius:7px;border:none;cursor:pointer;background:var(--em);color:#05080f;align-self:flex-end">⚡ Recalculate</button>
+            <button onclick="bspChanged()" style="font-family:var(--font);font-size:12px;font-weight:700;padding:7px 16px;border-radius:7px;border:none;cursor:pointer;background:var(--em);color:#05080f;align-self:flex-end">⚡ Recalculate</button>
           </div>
 
 
@@ -10214,6 +10219,21 @@ function renderBldgSavProjPane(pane, b) {
 
   // Defer recalc until after caller appends pane to DOM
   setTimeout(() => bspRecalc(), 0);
+}
+
+// The ONE reader of a building's Savings Projection settings: the stored values
+// with the pane's defaults filled in. The pane, bpRecalc (projected spend) and
+// the savings-% fallbacks all read through it; nothing is saved just to read.
+function getBspCfg(b, proj) {
+  const cfg = DB.get('bldgsavproj_cfg_' + (b.id || b.name), {});
+  const projMeta = proj || projects.find((p) => p.id === udSelProjId);
+  return {
+    savingsPct: cfg.savingsPct ?? 11,
+    clientPct: cfg.clientPct ?? 5,
+    years: cfg.years ?? 3,
+    escPct: cfg._customEsc ? cfg.escPct : (projMeta?.escalation ?? cfg.escPct ?? 3),
+    view: cfg.view ?? 'monthly',
+  };
 }
 
 // Current view state
@@ -10226,6 +10246,34 @@ function bspSetView(v) {
     btn.style.background = vv === v ? 'var(--em)' : 'transparent';
     btn.style.color = vv === v ? '#05080f' : 'var(--text2)';
   });
+  bspChanged();
+}
+
+// Saves the Savings Projection settings from the pane fields. Called from the
+// user's edits only (inputs, Recalculate, view buttons), never from render:
+// opening the pane writes nothing. Stored fields the pane does not edit
+// (cscPct, _customCsc) are kept. Percent fields are stored as typed, with no
+// /100 then *100 round trip (that wrote 3.5000000000000004).
+function bspSave() {
+  if (!document.getElementById('bsp-savpct')) return;
+  const b = _bspPane && _bspPane.b;
+  if (!b) return;
+  const storeKey = 'bldgsavproj_cfg_' + (b.id || b.name);
+  const escPctIn = parseFloat(document.getElementById('bsp-escpct').value ?? 0);
+  const _projEsc = projects.find((p) => p.id === _bspPane.projId)?.escalation ?? 3;
+  const cfg = Object.assign({}, DB.get(storeKey, {}), {
+    savingsPct: parseFloat(document.getElementById('bsp-savpct').value ?? 0),
+    clientPct: parseFloat(document.getElementById('bsp-clipct').value ?? 0),
+    years: parseInt(document.getElementById('bsp-years').value ?? 3),
+    escPct: escPctIn,
+    view: _bspView,
+  });
+  delete cfg.moBase;
+  cfg._customEsc = escPctIn !== _projEsc ? true : undefined;
+  DB.set(storeKey, cfg);
+}
+function bspChanged() {
+  bspSave();
   bspRecalc();
 }
 
@@ -10233,7 +10281,8 @@ function bspRecalc() {
   // Guard: skip if DOM inputs don't exist yet (prevents corrupting localStorage with zeros)
   if (!document.getElementById('bsp-savpct')) return;
   const savPct = parseFloat(document.getElementById('bsp-savpct').value ?? 0) / 100;
-  const _showCsc = getProjectContract(projects.find((p) => p.id === udSelProjId)).cscPct !== null;
+  const _projId = _bspPane ? _bspPane.projId : null;
+  const _showCsc = getProjectContract(projects.find((p) => p.id === _projId)).cscPct !== null;
   const cliPct = parseFloat(document.getElementById('bsp-clipct').value ?? 0) / 100;
   const cscPct = parseFloat(document.getElementById('bsp-cscpct').value ?? 0) / 100;
   const years = parseInt(document.getElementById('bsp-years').value ?? 3);
@@ -10242,28 +10291,7 @@ function bspRecalc() {
   const moBase = _bspBaselineByCalMo || Array(12).fill(0);
   const annBase = moBase.reduce((s, v) => s + v, 0);
 
-  // Save config
-  const b = getUDBldg(udSelProjId, udSelBldgId);
-  if (b) {
-    const storeKey = 'bldgsavproj_cfg_' + (b.id || b.name);
-    try {
-      const _prevBspCfg = DB.get(storeKey, {});
-      const _saveBspCfg = {
-        savingsPct: savPct * 100,
-        clientPct: cliPct * 100,
-        years,
-        escPct: escPct * 100,
-        view,
-      };
-      // Mark custom escalation if value differs from the project default
-      const _projM2 = projects.find((p) => p.id === udSelProjId);
-      const _projEsc2 = _projM2?.escalation ?? 3;
-      if (escPct * 100 !== _projEsc2) {
-        _saveBspCfg._customEsc = true;
-      }
-      DB.set(storeKey, _saveBspCfg);
-    } catch (e) {}
-  }
+  const b = _bspPane ? _bspPane.b : null; // the pane's building; settings are saved by bspSave (user edits only)
 
   const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const $f = (v) => '$' + Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -10312,7 +10340,7 @@ function bspRecalc() {
   // 2026-09-15 (SA-gate fix): the manual "savings %" projection fallback (used when no
   // measures exist) never checked the project's `sa` (Service Agreement #). Same gate as
   // getMeterSavings/getBldgMeasureSavingsByMo — no contract means no projected savings.
-  const _hasSA = projHasContract(udSelProjId);
+  const _hasSA = projHasContract(_projId);
   function bspGetProjSav(col) {
     if (_useM) {
       if (col.isTotal) return _msrSav.reduce((s, v) => s + v, 0);

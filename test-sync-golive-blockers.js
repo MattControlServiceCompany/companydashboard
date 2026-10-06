@@ -1491,6 +1491,62 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     assert.ok(puts.some((p) => p.key === 'en_budget_r'), 'the owned entry drains');
     assert.strictEqual(DB.getQueueDepth(), 0, 'queue count reaches 0');
   });
+
+  // ---- fix 2: no-action writers. The real functions, cut from the app files and run as is.
+  const fnFrom = (file, name) => {
+    const src = fs.readFileSync(path.join(__dirname, 'app', file), 'utf8').split('\r').join('');
+    const start = src.indexOf('function ' + name + '(');
+    assert.ok(start >= 0, name + ' exists in ' + file);
+    let depth = 0;
+    let i = src.indexOf('{', start);
+    for (; i < src.length; i++) {
+      if (src[i] === '{') depth++;
+      if (src[i] === '}' && --depth === 0) break;
+    }
+    return src.slice(start, i + 1);
+  };
+  await t('fix 2: recurring-meeting agenda and task ids are deterministic numbers (same on two browsers), not Date.now', () => {
+    const stableNumericId = new Function(fnFrom('csv-import.js', 'stableNumericId') + '; return stableNumericId;')();
+    const a = stableNumericId('agenda', 1776960415854, '2026-10-14');
+    assert.strictEqual(a, stableNumericId('agenda', 1776960415854, '2026-10-14'), 'same inputs, same id');
+    assert.ok(Number.isSafeInteger(a) && a > 0);
+    assert.notStrictEqual(a, stableNumericId('agenda', 1776960415854, '2026-11-11'));
+    assert.notStrictEqual(a, stableNumericId('agenda', 1776960415855, '2026-10-14'));
+    assert.notStrictEqual(a, stableNumericId('task', 1776960415854, a));
+    const csv = fs.readFileSync(path.join(__dirname, 'app', 'csv-import.js'), 'utf8');
+    const gen = csv.slice(csv.indexOf('function checkRecurringMeetings'), csv.indexOf('function openMtgTemplateSettings'));
+    assert.ok(!/Date\.now\(\)|new Date\(\)\.toISOString\(\)/.test(gen), 'no clock values in the generated agenda');
+    const task = fnFrom('csv-import.js', 'createMeetingTask');
+    assert.ok(!/Date\.now\(\)/.test(task) && /stableNumericId\('task', p\.id, m\.id\)/.test(task));
+  });
+  await t('fix 2: project progress is computed from the dates on read; the dashboard writes nothing on load', () => {
+    const core = fs.readFileSync(path.join(__dirname, 'app', 'core.js'), 'utf8').split('\r').join('');
+    const src = fnFrom('core.js', 'calcAutoProgress') + '\n' + fnFrom('core.js', 'projectProgress');
+    const today = new Date();
+    const d = (off) => new Date(today.getFullYear(), today.getMonth(), today.getDate() + off).toISOString().slice(0, 10);
+    const projects = [{ id: 1, start: d(-50), end: d(50), progress: 0 }, { id: 2, start: d(-50), end: d(50), progress: 90 }];
+    const projectProgress = new Function('projects', src + '; return projectProgress;')(projects);
+    assert.ok([50, 51].includes(projectProgress(projects[0])), 'from the dates (today is mid-way, rounded)');
+    assert.strictEqual(projectProgress(projects[1]), 90, 'a higher typed value stays');
+    assert.ok(!/_p\.progress = auto/.test(core), 'no auto progress write on the dashboard tab');
+    assert.ok(!/\$\{p\.progress \|\| 0\}/.test(core), 'every bar and input reads projectProgress');
+    const es = fs.readFileSync(path.join(__dirname, 'app', 'energy-savings.js'), 'utf8');
+    assert.ok(/progress: projectProgress\(p\)/.test(es));
+  });
+  await t('fix 2: the Performance and Savings Projection panes save only from user edits; readers share getBspCfg', () => {
+    const ud = fs.readFileSync(path.join(__dirname, 'app', 'utility-data.js'), 'utf8').split('\r').join('');
+    const body = (name) => fnFrom('utility-data.js', name);
+    assert.ok(!/DB\.set\(/.test(body('bpRecalc')), 'bpRecalc does not save');
+    assert.ok(!/DB\.set\(/.test(body('bspRecalc')), 'bspRecalc does not save');
+    assert.ok(/DB\.set\(storeKey, cfg\)/.test(body('bpSave')) && /DB\.set\(storeKey, cfg\)/.test(body('bspSave')));
+    assert.ok(/Object\.assign\(\{\}, DB\.get\(storeKey, \{\}\)/.test(body('bspSave')), 'stored fields (cscPct, _customCsc) kept');
+    assert.ok(!/\* 100/.test(body('bspSave')), 'percent stored as typed, no float round trip');
+    assert.ok(!/oninput="bspRecalc\(\)"|onchange="bspRecalc\(\)"|onclick="bspRecalc\(\)"/.test(ud), 'inputs call bspChanged');
+    assert.strictEqual((ud.match(/getBspCfg\(b/g) || []).length >= 5, true, 'the pane and every savingsPct reader use getBspCfg');
+    assert.ok(!/bspCfg\.savingsPct != null/.test(ud), 'no private default rule left');
+    const render = ud.slice(ud.indexOf('function renderBldgSavProjPane'), ud.indexOf('function getBspCfg'));
+    assert.ok(!/DB\.set\(/.test(render), 'rendering the Savings Projection pane writes nothing');
+  });
   console.log(pass + ' passed');
 })().catch((e) => {
   console.error('FAIL', e);

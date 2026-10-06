@@ -740,9 +740,7 @@ function updateHomeStats() {
   // the data model stores m.baseline.months array
   const baselineCount = projects.filter((p) => {
     const projBldgs = getUDBldgs(p.id) || [];
-    return projBldgs.some((b) =>
-      (b.meters || []).some((m) => m.baseline?.months?.length > 0),
-    );
+    return projBldgs.some((b) => (b.meters || []).some((m) => m.baseline?.months?.length > 0));
   }).length;
   document.getElementById('h-base').textContent = baselineCount;
   // Sum estimated savings/yr by computing from meter-level savings (byCalMo).
@@ -1235,7 +1233,7 @@ function renderProjTable() {
             <td style="font-size:12px">${p.pm || '—'}</td>
             <td style="font-family:var(--mono);font-size:12px;color:var(--em)">${cv}</td>
             <td style="font-size:12px;color:var(--text2)">${sd}</td>
-            <td><div class="tpbar"><div class="tpbar-track"><div class="tpbar-fill" style="width:${p.progress || 0}%"></div></div><span class="tpbar-pct">${p.progress || 0}%</span></div></td>
+            <td><div class="tpbar"><div class="tpbar-track"><div class="tpbar-fill" style="width:${projectProgress(p)}%"></div></div><span class="tpbar-pct">${projectProgress(p)}%</span></div></td>
             <td style="text-align:center;font-size:12px;color:${pt > 0 ? 'var(--warn)' : 'var(--text2)'}">${pt}</td>
             <td><div style="display:flex;gap:5px">
               <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();editProj(${p.id})">Edit</button>
@@ -1349,8 +1347,8 @@ function renderDetail(p) {
             </div>
             <div class="pd-prog-row">
               <span style="font-size:12px;color:var(--text2);min-width:70px">Progress</span>
-              <div class="pd-prog-bar"><div class="pd-prog-fill" id="hpf" style="width:${p.progress || 0}%"></div></div>
-              <input class="pd-prog-input" type="number" min="0" max="100" value="${p.progress || 0}" oninput="updateProg(${p.id},this.value)">
+              <div class="pd-prog-bar"><div class="pd-prog-fill" id="hpf" style="width:${projectProgress(p)}%"></div></div>
+              <input class="pd-prog-input" type="number" min="0" max="100" value="${projectProgress(p)}" oninput="updateProg(${p.id},this.value)">
               <span style="font-size:11px;color:var(--text2)">%</span>
               ${p.phase ? `<span style="font-size:11px;color:var(--text2);margin-left:6px">· ${p.phase}</span>` : ''}
             </div>
@@ -1714,7 +1712,17 @@ function renderDetail(p) {
                     <label style="display:flex;flex-direction:column;gap:4px">
                       <span style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.5px">Contract Type</span>
                       <select class="fi" id="ps-contractType-${p.id}" onchange="updateProjPerfSetting(${p.id},'contractType',this.value||undefined);renderDetail(projects.find((x)=>x.id===${p.id}))" style="width:100%;font-family:var(--mono)">
-                        ${[['', 'Not set'], ['sharedSavings', 'Shared savings (CSC share)'], ['fixedProject', 'Fixed project (no shared savings)'], ['none', 'No contract']].map((o) => `<option value="${o[0]}"${(getProjectContract(p).type || '') === o[0] ? ' selected' : ''}>${o[1]}</option>`).join('')}
+                        ${[
+                          ['', 'Not set'],
+                          ['sharedSavings', 'Shared savings (CSC share)'],
+                          ['fixedProject', 'Fixed project (no shared savings)'],
+                          ['none', 'No contract'],
+                        ]
+                          .map(
+                            (o) =>
+                              `<option value="${o[0]}"${(getProjectContract(p).type || '') === o[0] ? ' selected' : ''}>${o[1]}</option>`,
+                          )
+                          .join('')}
                       </select>
                     </label>
                     <label style="display:flex;flex-direction:column;gap:4px">
@@ -1851,19 +1859,7 @@ function _updateCompactHdrBaseline(projId) {
     blEl.innerHTML =
       label + ' <span class="phc-val">' + (useCost > 0 ? '$' + Math.round(useCost).toLocaleString() : '—') + '</span>';
   if (euiEl) euiEl.innerHTML = 'Site Energy Use Intensity <span class="phc-val">' + eui + '</span>';
-  // Auto-update progress
-  const _p = projects.find((x) => x.id === projId);
-  if (_p) {
-    const auto = calcAutoProgress(projId);
-    if (auto !== (_p.progress || 0)) {
-      _p.progress = auto;
-      sset('en_projects', projects);
-      const f = document.getElementById('hpf');
-      if (f) f.style.width = auto + '%';
-      const inp = document.querySelector('.pd-prog-input');
-      if (inp) inp.value = auto;
-    }
-  }
+  // Progress is computed at render time (projectProgress), never saved on load.
 }
 
 function _dashGetBaselineBills(m) {
@@ -2852,6 +2848,13 @@ function calcAutoProgress(projId) {
   if (now <= start) return 0;
   return Math.round(((now - start) / (end - start)) * 100);
 }
+// The ONE project-progress value: computed from the dates on every read, never
+// stored on load (a stored value only matters when the user typed a higher one).
+// Every bar, input and report reads this; a page load writes nothing.
+function projectProgress(p) {
+  if (!p) return 0;
+  return Math.max(calcAutoProgress(p.id), p.progress || 0);
+}
 function updateProg(id, val) {
   const p = projects.find((p) => p.id === id);
   if (!p) return;
@@ -3196,8 +3199,8 @@ function updateProjPerfSetting(projId, field, value) {
       : field === 'contractType'
         ? 'Contract Type'
         : field === 'escalation'
-        ? 'Utility Escalation'
-        : 'Contract Years' + ' updated ✓',
+          ? 'Utility Escalation'
+          : 'Contract Years' + ' updated ✓',
   );
 }
 

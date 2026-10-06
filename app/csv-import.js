@@ -4170,7 +4170,7 @@ function createMeetingTask(p, m) {
   );
   if (exists) return;
   tasks.push({
-    id: Date.now() + 1,
+    id: stableNumericId('task', p.id, m.id),
     text: `Meeting: ${m.projectNickname} — ${m.type === 'agenda' ? 'Agenda' : 'Minutes'}`,
     due: (m.date || '').split('T')[0],
     projId: p.id,
@@ -4363,6 +4363,24 @@ function getNthWeekdayOfMonth(year, month, nth, weekday) {
   return null;
 }
 
+// The ONE id rule for records the app generates on its own (recurring-meeting
+// agendas and their tasks): a number computed from the inputs, so two browsers
+// that generate the same record make the same id and the sync merge sees one
+// record, not two. Never Date.now(). Two 32-bit FNV-1a hashes of the joined
+// parts, combined below 2^52 (a safe integer; the ids are used unquoted in
+// onclick handlers like the Date.now() ids of hand-made records).
+function stableNumericId() {
+  const s = Array.prototype.join.call(arguments, '|');
+  let h1 = 0x811c9dc5;
+  let h2 = 0x050c5d1f;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 0x01000193) >>> 0;
+    h2 = Math.imul(h2 ^ c, 0x01000193) >>> 0;
+  }
+  return h1 * 0x100000 + (h2 >>> 12);
+}
+
 function checkRecurringMeetings() {
   const now = new Date();
   let generated = 0;
@@ -4392,8 +4410,11 @@ function checkRecurringMeetings() {
                 .sort((a, b) => new Date(b.date) - new Date(a.date))[0];
               if (lastAgenda) topics = JSON.parse(JSON.stringify(lastAgenda.topics));
             }
+            // Every field comes from the project and the meeting date, so two
+            // browsers make byte-identical records (one record for the merge).
+            const genIso = generateBy.toISOString();
             const agenda = {
-              id: Date.now() + generated,
+              id: stableNumericId('agenda', p.id, dateStr),
               type: 'agenda',
               linkedAgendaId: null,
               date: meetDate.toISOString().slice(0, 16),
@@ -4414,9 +4435,9 @@ function checkRecurringMeetings() {
               ],
               sectionHeading: tmpl.sectionHeading,
               topics: topics,
-              history: [{ timestamp: new Date().toISOString(), action: 'auto_generated', snapshot: null }],
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
+              history: [{ timestamp: genIso, action: 'auto_generated', snapshot: null }],
+              createdAt: genIso,
+              updatedAt: genIso,
             };
             p.meetings.push(agenda);
             createMeetingTask(p, agenda);

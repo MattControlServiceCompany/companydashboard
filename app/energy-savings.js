@@ -1942,7 +1942,7 @@ function editProj(id) {
     savings: p.savings,
     start: p.start,
     end: p.end,
-    progress: p.progress,
+    progress: projectProgress(p),
     notes: p.notes,
     tags: p.tags,
     escalation: p.escalation,
@@ -6036,12 +6036,15 @@ const _constAddrBefore = (text, idx, win) => {
   // Stop at the previous site's block: only text after its last "Total Current Site Charges" or
   // "Customer ID:" line can hold this bill's address.
   let cut = 0;
-  for (const s of w.matchAll(/^.*(?:Total\s+Current\s+Site\s+Charges|Customer\s+I\S?\s*[:;]).*$/gim)) cut = s.index + s[0].length;
+  for (const s of w.matchAll(/^.*(?:Total\s+Current\s+Site\s+Charges|Customer\s+I\S?\s*[:;]).*$/gim))
+    cut = s.index + s[0].length;
   w = w.slice(cut);
   // Street line may carry extra comma segments (facility name) before the city: "605 6th St, Mabee Gym, Baldwin City, KS".
   const bald = [...w.matchAll(/^[$ ]*(\d+\s+[A-Za-z0-9 .#]+(?:,[^,\n]+)*?,\s*Baldwin\s*City[^\n]*)/gim)];
   const gen = [
-    ...w.matchAll(/^[$ ]*(\d+\s+[A-Za-z0-9 .#]+(?:,[^,\n]+)*?,\s*[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?,\s*[A-Z]{2}\s*\d{5}(?:-\d{4})?)/gm),
+    ...w.matchAll(
+      /^[$ ]*(\d+\s+[A-Za-z0-9 .#]+(?:,[^,\n]+)*?,\s*[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?,\s*[A-Z]{2}\s*\d{5}(?:-\d{4})?)/gm,
+    ),
   ];
   const m = bald.length > 0 ? bald[bald.length - 1] : gen.length > 0 ? gen[gen.length - 1] : null;
   return m ? m[1].trim() : null;
