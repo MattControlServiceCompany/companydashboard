@@ -58,6 +58,12 @@ Many short `setTimeout` calls (toasts, URL cleanup, UI yield) are one-shot. They
   The email in the token must be in env var AUTHORIZED_USERS (comma-separated list). (kv-sync.js:134-163, 125-129)
 - To add or remove a user: change AUTHORIZED_USERS in Netlify site settings, then redeploy.
 - Demo login is off on the sync host. The button is hidden and `loginDemo()` returns at once. (index.html:1188-1190, 1241-1243)
+- A 401 on a data write or on the queue drain: one token refresh, then the same request again (`CH_AUTH.withAuthRetry`,
+  called from `_putWithAuth` in app/db.js, the one place a refused write is reported). The "server refused this sign-in"
+  bar (`dbAuthRejected`) shows only when the final answer is still 401/403 and the session ended. If the refresh could not
+  reach Supabase, the session is kept, the offline banner shows, and the write stays queued for the next drain.
+  How to check: in DevTools Network, a PUT answered 401 is followed by a `/auth/v1/token` call and a second PUT (200);
+  no red bar appears.
 
 ## 5. Supabase
 

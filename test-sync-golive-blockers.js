@@ -1068,7 +1068,11 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
         .split('\r')
         .join('');
       assert.ok(/_withAuthRetry\(\(\) => _fetchManifestWithTimeout/.test(src), 'poll wrapped');
-      assert.ok(/_withAuthRetry\(\(\) => _sendKvPut\(entry\.key, payload\)\)/.test(src), 'kv drain wrapped');
+      assert.ok(
+        /_putWithAuth\(entry\.key, payload\)/.test(src) &&
+          /_withAuthRetry\(\(\) => _sendKvPut\(key, payload\)\)/.test(src),
+        'kv drain wrapped',
+      );
       const core = fs
         .readFileSync(path.join(__dirname, 'app', 'core.js'), 'utf8')
         .split('\r')
@@ -1280,6 +1284,135 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     assert.strictEqual(SC.canonicalJSON({ b: [{ z: 1, a: 2 }], a: 1 }), '{"a":1,"b":[{"a":2,"z":1}]}');
     assert.strictEqual(SC.auditEntryId({ z: 1, a: 2 }), SC.canonicalJSON({ a: 2, z: 1 }));
   });
+
+  // ---- the REAL ch-auth.js and the REAL db.js in one sandbox (fix 8, fix 9)
+  function loadReal(opts) {
+    const uid = opts.userId || 'u1';
+    const store = {
+      ch_sb_session: JSON.stringify({
+        access_token: FK('a'),
+        refresh_token: FK('r1'),
+        expires_at: Math.floor(Date.now() / 1000) + 3600,
+        user_id: uid,
+        email: uid + '@example.com',
+      }),
+    };
+    const events = [];
+    const listeners = {};
+    const win = {
+      addEventListener(type, fn) {
+        (listeners[type] = listeners[type] || []).push(fn);
+      },
+      dispatchEvent(e) {
+        events.push(e);
+        (listeners[e.type] || []).forEach((fn) => fn(e));
+        return true;
+      },
+      location: { hostname: 'cscdashboard.netlify.app' },
+    };
+    const sandbox = {
+      window: win,
+      document: { addEventListener() {}, visibilityState: 'visible' },
+      location: win.location,
+      localStorage: {
+        getItem: (k) => (k in store ? store[k] : null),
+        setItem: (k, v) => {
+          store[k] = String(v);
+        },
+        removeItem: (k) => {
+          delete store[k];
+        },
+        key: (i) => Object.keys(store)[i] || null,
+        get length() {
+          return Object.keys(store).length;
+        },
+      },
+      console: { log() {}, warn() {}, error() {} },
+      setTimeout,
+      clearTimeout,
+      setInterval: () => 0,
+      clearInterval,
+      Promise,
+      Date,
+      Math,
+      JSON,
+      Error,
+      Number,
+      TextEncoder,
+      crypto: globalThis.crypto,
+      URL,
+      AbortController,
+      CustomEvent: function (type, init) {
+        this.type = type;
+        this.detail = init && init.detail;
+      },
+      Event: function (t) {
+        this.type = t;
+      },
+      navigator: {},
+      indexedDB: undefined,
+      fetch: (u, o) => (String(u).indexOf('/auth/v1/token') >= 0 ? opts.tokenFetch(u, o) : opts.kvFetch(u, o)),
+    };
+    vm.createContext(sandbox);
+    vm.runInContext(fs.readFileSync(path.join(__dirname, 'app', 'ch-auth.js'), 'utf8'), sandbox);
+    win.SyncClassification = require('./app/sync-classification.js');
+    const src = fs
+      .readFileSync(path.join(__dirname, 'app', 'db.js'), 'utf8')
+      .split('\r')
+      .join('')
+      .replace(
+        '  return {\n    warmCache,',
+        '  return {\n    __t: { _drainQueueOnce, _queue: () => _syncQueue, _stampOf: (k) => _replicaVersions[k] },\n    warmCache,',
+      );
+    vm.runInContext(src + '\n;this.__DB = DB;', sandbox);
+    return { DB: sandbox.__DB, A: win.CH_AUTH, events, store };
+  }
+  const put401 = { ok: false, status: 401, json: async () => ({ error: 'expired' }) };
+  await t('fix 8: a 401 that the token refresh fixes shows no "server refused" bar', async () => {
+    const sent = [];
+    const L = loadReal({
+      tokenFetch: tokUser('u1'),
+      kvFetch: async (u, o) => {
+        if (!o || o.method !== 'PUT') return ok([]);
+        if (JSON.parse(o.body).key !== 'en_budget_z') return ok({ version: 1, hash: null, deleted: false }); // first-connect uploads of other keys
+        sent.push(o.headers.Authorization);
+        return sent.length === 1 ? put401 : ok({ version: 1, hash: null, deleted: false });
+      },
+    });
+    await L.DB.warmCache();
+    L.events.length = 0;
+    L.DB.set('en_budget_z', { n: 1 });
+    await tick(80);
+    assert.strictEqual(sent.length, 2, 'refreshed once, then sent again');
+    assert.notStrictEqual(sent[0], sent[1], 'the retry carries the new token');
+    assert.ok(!L.events.some((e) => e.type === 'dbAuthRejected'), 'no false "server refused" bar');
+    assert.strictEqual(L.DB.getQueueDepth(), 0);
+    assert.strictEqual(L.A.backendMode(), 'on');
+    assert.strictEqual(L.DB.__t._stampOf('en_budget_z').version, 1);
+  });
+  await t(
+    'fix 8: a write still refused after the refresh shows the bar once, ends the session, keeps the edit queued',
+    async () => {
+      let puts = 0;
+      const L = loadReal({
+        tokenFetch: tokUser('u1'),
+        kvFetch: async (u, o) => {
+          if (!o || o.method !== 'PUT') return ok([]);
+          if (JSON.parse(o.body).key !== 'en_budget_z') return ok({ version: 1, hash: null, deleted: false }); // first-connect uploads of other keys
+          puts++;
+          return put401;
+        },
+      });
+      await L.DB.warmCache();
+      L.events.length = 0;
+      L.DB.set('en_budget_z', { n: 1 });
+      await tick(80);
+      assert.strictEqual(puts, 2);
+      assert.strictEqual(L.events.filter((e) => e.type === 'dbAuthRejected').length, 1, 'reported once, at the end');
+      assert.strictEqual(L.A.backendMode(), 'off', 'session ended');
+      assert.strictEqual(L.DB.getQueueDepth(), 1, 'the edit is kept in the queue');
+    },
+  );
   console.log(pass + ' passed');
 })().catch((e) => {
   console.error('FAIL', e);

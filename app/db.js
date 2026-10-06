@@ -689,7 +689,7 @@ const DB = (() => {
     if (res.status === 409) {
       return { status: 'conflict', body: json };
     }
-    if (_isAuthRefusal(res.status)) _reportServerFailure(_httpError('write refused: ' + res.status, res.status));
+    // A 401/403 is reported by _putWithAuth, after the one refresh-and-retry.
     return { status: 'error', body: json, httpStatus: res.status };
   }
 
@@ -1576,7 +1576,7 @@ const DB = (() => {
     if (!payload.deleted && !(await _valueChanged(key, payload.value))) return;
     let result;
     try {
-      result = await _sendKvPut(key, payload);
+      result = await _putWithAuth(key, payload);
     } catch (e) {
       console.warn('[DB] Replication tail threw unexpectedly (treated as network error):', key, e);
       _enqueueWrite(key, payload);
@@ -1611,7 +1611,7 @@ const DB = (() => {
       // map (not entry.baseVersion) — a real conflict still 409s honestly.
       let result;
       try {
-        result = await _withAuthRetry(() => _sendKvPut(entry.key, payload));
+        result = await _putWithAuth(entry.key, payload);
       } catch (e) {
         result = { status: 'network-error' };
       }
@@ -1664,6 +1664,21 @@ const DB = (() => {
   function _withAuthRetry(run) {
     const a = typeof window !== 'undefined' ? window.CH_AUTH : null;
     return a && typeof a.withAuthRetry === 'function' ? a.withAuthRetry(run) : run();
+  }
+  // The ONE place a refused write is reported, and only after withAuthRetry
+  // had its one refresh-and-retry. A 401 that the refresh fixes shows nothing.
+  // Refused for good (session ended): the "server refused this sign-in" bar.
+  // Still 401 but the session was kept (the refresh could not reach Supabase):
+  // the offline banner; the write stays queued and is retried later.
+  async function _putWithAuth(key, payload) {
+    const r = await _withAuthRetry(() => _sendKvPut(key, payload));
+    if (r && r.status === 'error' && _isAuthRefusal(r.httpStatus)) {
+      const a = typeof window !== 'undefined' ? window.CH_AUTH : null;
+      const sessionKept = !!a && typeof a.withAuthRetry === 'function' && _backendMode() === 'on';
+      if (sessionKept) _reportServerFailure(new Error('token refresh unreachable'), 'write-refresh-unreachable');
+      else _reportServerFailure(_httpError('write refused: ' + r.httpStatus, r.httpStatus));
+    }
+    return r;
   }
   function _reportServerFailure(e, reason) {
     if (typeof window === 'undefined') return;
