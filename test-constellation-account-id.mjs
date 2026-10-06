@@ -148,6 +148,15 @@ if (unread) {
   ok(!!x && Number(x.TotalCurrentCharges) === 306, 'dotted RG.900012 at site 3 address keeps own id (306)');
 }
 
+// ServiceAddress: every bill gets its OWN site address (never null, never another site's).
+// Site k prints "k Test St" before its Customer ID; the unreadable-id row (Aug site 3) too.
+for (const b of bills) {
+  const want = b._acctIdUnread ? '3 Test St, Baldwin City, KS 66006' : null;
+  const site = Math.round((Number(b.TotalCurrentCharges) - 1) / 100);
+  ok(b.ServiceAddress === (want || site + ' Test St, Baldwin City, KS 66006'), 'ServiceAddress own site, got ' + b.ServiceAddress + ' for total ' + b.TotalCurrentCharges);
+}
+ok(bills.every((b) => b.ServiceAddress), 'no null ServiceAddress');
+
 // normalizer unit cases
 const known = new Map([['900001', new Set(['1 test'])], ['900002', new Set(['2 test'])], ['900003', new Set(['3 test'])]]);
 const A2 = '2 Test St, Baldwin City, KS 66006';
