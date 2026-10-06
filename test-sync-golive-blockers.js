@@ -10,7 +10,7 @@ function load({ mode, syncHost, fetchImpl, classify }) {
   let src = fs.readFileSync(path.join(__dirname, 'app', 'db.js'), 'utf8');
   src = src.split(String.fromCharCode(13)).join("").replace(
     '  return {\n    warmCache,',
-    '  return {\n    __t: { _hydrate, _batchGetChunked, _drainQueueOnce, _clearPerUserLocalState, _handleAuthIdentityChange },\n    warmCache,',
+    '  return {\n    __t: { _hydrate, _batchGetChunked, _drainQueueOnce, _clearPerUserLocalState, _handleAuthIdentityChange, _pollManifestForChanges },\n    warmCache,',
   );
   const store = {};
   const events = [];
@@ -397,6 +397,163 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
       assert.ok(!/removeItem\('ch_user'\)/.test(rd(f)), f + ' still clears ch_user itself');
     }
     assert.ok(/removeItem\('ch_user'\)/.test(rd('app/ch-auth.js')));
+  });
+
+  // ---- M2: two users editing at once (in-memory kv server with real CAS)
+  function makeServer(initial) {
+    const rows = {};
+    Object.keys(initial || {}).forEach((k) => (rows[k] = { value: initial[k], version: 1, hash: 'h' + k + '1' }));
+    const puts = [];
+    const fetchImpl = async (u, o) => {
+      if (o && o.method === 'PUT') {
+        const b = JSON.parse(o.body);
+        puts.push(b);
+        const cur = rows[b.key];
+        if (cur && b.baseVersion !== cur.version) return { ok: false, status: 409, json: async () => ({ current: Object.assign({ key: b.key }, cur) }) };
+        const version = cur ? cur.version + 1 : 1;
+        rows[b.key] = { value: b.value, version, hash: 'h' + b.key + version };
+        return { ok: true, status: 200, json: async () => ({ version, hash: rows[b.key].hash }) };
+      }
+      if (u.includes('manifest=1')) {
+        return ok(Object.keys(rows).map((k) => ({ key: k, version: rows[k].version, hash: rows[k].hash, deleted: false })));
+      }
+      const keys = decodeURIComponent(u.split('keys=')[1] || '').split(',').filter(Boolean);
+      return ok(keys.filter((k) => rows[k]).map((k) => Object.assign({ key: k, deleted: false }, rows[k])));
+    };
+    return { rows, puts, fetchImpl };
+  }
+  const clone = (v) => JSON.parse(JSON.stringify(v));
+  const bill = (id, kwh) => ({ id, start: '2025-0' + id.slice(-1) + '-01', end: '2025-0' + id.slice(-1) + '-28', kwh });
+  const util0 = () => ({
+    buildings: [
+      { id: 'b1', name: 'Main', meters: [{ id: 'm1', label: 'Elec', bills: [bill('r1', 100)] }] },
+      { id: 'b2', name: 'Gym', meters: [{ id: 'm2', label: 'Gas', bills: [bill('r2', 50)] }] },
+    ],
+  });
+  const billIds = (v) => v.buildings.flatMap((b) => b.meters.flatMap((m) => m.bills.map((x) => x.id))).sort();
+  // Brings a browser to "in sync with the server at version 1" through hydration.
+  async function syncedBrowser(srv) {
+    const L = load({ mode: 'on', syncHost: true, classify: false, fetchImpl: srv.fetchImpl });
+    await L.DB.warmCache();
+    await L.DB.__t._hydrate();
+    return L;
+  }
+  const settle = () => new Promise((r) => setTimeout(r, 40));
+  await t('M2 utility data: bills added to different meters by two users both survive; no modal', async () => {
+    const KEY = 'en_utility_cust_1';
+    const srv = makeServer({ [KEY]: util0() });
+    const L = await syncedBrowser(srv);
+    const A = clone(L.DB.get(KEY));
+    const theirs = util0();
+    theirs.buildings[1].meters[0].bills.push(bill('r3', 70));
+    srv.rows[KEY] = { value: theirs, version: 2, hash: 'h2' };
+    A.buildings[0].meters[0].bills.push(bill('r4', 120));
+    await L.DB.set(KEY, A);
+    await settle();
+    assert.deepStrictEqual(billIds(srv.rows[KEY].value), ['r1', 'r2', 'r3', 'r4']);
+    assert.strictEqual(L.DB.getQueueDepth(), 0, 'nothing left queued');
+    assert.strictEqual(srv.rows[KEY].version, 3);
+    assert.deepStrictEqual(billIds(L.DB.get(KEY)), ['r1', 'r2', 'r3', 'r4'], 'local copy holds both');
+  });
+  await t('M2 utility data: bills added to the SAME meter by two users both survive', async () => {
+    const KEY = 'en_utility_cust_1';
+    const srv = makeServer({ [KEY]: util0() });
+    const L = await syncedBrowser(srv);
+    const A = clone(L.DB.get(KEY));
+    const theirs = util0();
+    theirs.buildings[0].meters[0].bills.push(bill('r3', 70));
+    srv.rows[KEY] = { value: theirs, version: 2, hash: 'h2' };
+    A.buildings[0].meters[0].bills.push(bill('r4', 120));
+    await L.DB.set(KEY, A);
+    await settle();
+    assert.deepStrictEqual(billIds(srv.rows[KEY].value), ['r1', 'r2', 'r3', 'r4']);
+    assert.strictEqual(L.DB.getQueueDepth(), 0);
+  });
+  await t('M2 utility data: derived caches on live meters do not make a false conflict', async () => {
+    const KEY = 'en_utility_cust_1';
+    const srv = makeServer({ [KEY]: util0() });
+    const L = await syncedBrowser(srv);
+    const A = clone(L.DB.get(KEY));
+    A.buildings[0].meters[0]._savingsCache = { x: 1 };
+    const theirs = util0();
+    theirs.buildings[1].meters[0].bills.push(bill('r3', 70));
+    srv.rows[KEY] = { value: theirs, version: 2, hash: 'h2' };
+    A.buildings[0].meters[0].bills[0].kwh = 101;
+    await L.DB.set(KEY, A);
+    await settle();
+    assert.strictEqual(srv.rows[KEY].value.buildings[0].meters[0].bills[0].kwh, 101);
+    assert.deepStrictEqual(billIds(srv.rows[KEY].value), ['r1', 'r2', 'r3']);
+    assert.ok(!JSON.stringify(srv.rows[KEY].value).includes('_savingsCache'));
+  });
+  await t('M2 utility data: same bill field changed by both users is a real conflict; server not overwritten, edit kept', async () => {
+    const KEY = 'en_utility_cust_1';
+    const srv = makeServer({ [KEY]: util0() });
+    const L = await syncedBrowser(srv);
+    const A = clone(L.DB.get(KEY));
+    const theirs = util0();
+    theirs.buildings[0].meters[0].bills[0].kwh = 999;
+    srv.rows[KEY] = { value: theirs, version: 2, hash: 'h2' };
+    A.buildings[0].meters[0].bills[0].kwh = 111;
+    await L.DB.set(KEY, A);
+    await settle();
+    // No page UI in this sandbox: the engine must not overwrite the server and must keep the edit.
+    assert.strictEqual(srv.rows[KEY].value.buildings[0].meters[0].bills[0].kwh, 999);
+    assert.strictEqual(L.DB.getQueueDepth(), 1, 'local edit kept in the queue');
+  });
+  await t('M2 utility data: a removed building on one side and a rename on the other both apply', async () => {
+    const KEY = 'en_utility_cust_1';
+    const srv = makeServer({ [KEY]: util0() });
+    const L = await syncedBrowser(srv);
+    const theirs = util0();
+    theirs.buildings[0].name = 'Main Hall';
+    srv.rows[KEY] = { value: theirs, version: 2, hash: 'h2' };
+    const A = clone(L.DB.get(KEY));
+    A.buildings.splice(1, 1);
+    await L.DB.set(KEY, A);
+    await settle();
+    assert.deepStrictEqual(srv.rows[KEY].value.buildings.map((b) => b.name), ['Main Hall']);
+  });
+  await t('M2 audit log: entries written by two users are both kept (append-only), newest first', async () => {
+    const KEY = 'en_utility_audit_log';
+    const e = (ts, a) => ({ ts, action: a, projId: 'p', bldgId: 'b', meterId: 'm' });
+    const srv = makeServer({ [KEY]: [e('2025-01-01T00:00:00Z', 'old')] });
+    const L = await syncedBrowser(srv);
+    srv.rows[KEY] = { value: [e('2025-03-01T00:00:00Z', 'theirs'), e('2025-01-01T00:00:00Z', 'old')], version: 2, hash: 'h2' };
+    await L.DB.set(KEY, [e('2025-02-01T00:00:00Z', 'mine'), e('2025-01-01T00:00:00Z', 'old')]);
+    await settle();
+    assert.deepStrictEqual(srv.rows[KEY].value.map((x) => x.action), ['theirs', 'mine', 'old']);
+    assert.strictEqual(L.DB.getQueueDepth(), 0);
+  });
+  await t('M2 audit log: two identical entries stay two entries', async () => {
+    const KEY = 'en_utility_audit_log';
+    const e = { ts: '2025-01-01T00:00:00Z', action: 'edit', projId: 'p', bldgId: 'b', meterId: 'm' };
+    const srv = makeServer({ [KEY]: [e] });
+    const L = await syncedBrowser(srv);
+    srv.rows[KEY] = { value: [e], version: 2, hash: 'h2' };
+    await L.DB.set(KEY, [e, e]);
+    await settle();
+    assert.strictEqual(srv.rows[KEY].value.length, 2);
+  });
+  await t('M2 en_pdf_bills: records added by two users are both kept', async () => {
+    const KEY = 'en_pdf_bills';
+    const srv = makeServer({ [KEY]: [{ id: 'pb1', fileName: 'a.pdf' }] });
+    const L = await syncedBrowser(srv);
+    srv.rows[KEY] = { value: [{ id: 'pb1', fileName: 'a.pdf' }, { id: 'pb2', fileName: 'b.pdf' }], version: 2, hash: 'h2' };
+    await L.DB.set(KEY, [{ id: 'pb1', fileName: 'a.pdf' }, { id: 'pb3', fileName: 'c.pdf' }]);
+    await settle();
+    assert.deepStrictEqual(srv.rows[KEY].value.map((x) => x.id).sort(), ['pb1', 'pb2', 'pb3']);
+    assert.strictEqual(L.DB.getQueueDepth(), 0);
+  });
+  await t('M2 en_pdf_bills: a record without an id is never merged away (no silent drop)', async () => {
+    const KEY = 'en_pdf_bills';
+    const srv = makeServer({ [KEY]: [{ id: 'pb1' }] });
+    const L = await syncedBrowser(srv);
+    srv.rows[KEY] = { value: [{ id: 'pb1' }, { id: 'pb2' }], version: 2, hash: 'h2' };
+    await L.DB.set(KEY, [{ id: 'pb1' }, { fileName: 'no-id.pdf' }]);
+    await settle();
+    assert.strictEqual(srv.rows[KEY].value.length, 2, 'server not overwritten');
+    assert.strictEqual(L.DB.getQueueDepth(), 1, 'local list kept in the queue, not lost');
+    assert.ok(JSON.stringify(L.DB.get(KEY)).includes('no-id.pdf'), 'local record still present');
   });
   console.log(pass + ' passed');
 })().catch((e) => {

@@ -338,9 +338,9 @@ const DB = (() => {
   function _rawSet(key, value) {
     // A collection merged by the engine is adopted IN PLACE: page globals hold
     // the cache reference (core.js init `projects = sget(...)`) and must see it.
-    if (UNION_KEY_CONFIG[key]) {
+    if (_collectionCfg(key)) {
       value = _adoptCollection(key, value);
-      _noteCollection(key, value);
+      if (UNION_KEY_CONFIG[key]) _noteCollection(key, value);
     }
     _cache[key] = value;
     if (_usingFallback) {
@@ -402,7 +402,7 @@ const DB = (() => {
   // collection key the server value at that version is kept as the merge base.
   function _setSynced(key, stamp, serverValue) {
     _replicaVersions[key] = stamp;
-    if (UNION_KEY_CONFIG[key]) {
+    if (_collectionCfg(key)) {
       if (stamp.deleted || serverValue === undefined || serverValue === null) delete _syncBase[key];
       else _syncBase[key] = JSON.parse(JSON.stringify(serverValue));
       _rawSet(SYNC_BASE_KEY, _syncBase);
@@ -747,6 +747,55 @@ const DB = (() => {
     }),
   };
 
+  // --- Keys merged by id WITHOUT deletion records (M2, 2026-10-06) ------------
+  // Two users editing the same key at once must not lose edits. These keys use
+  // the same three-way merge (_mergeCollection) as UNION_KEY_CONFIG, but a
+  // removal is decided by the merge base alone (no shared deletion record), and
+  // every item must carry an id (requireIds): a list that cannot be matched by
+  // id is not merged and goes to the whole-key conflict modal, so nothing is
+  // dropped. `children` names nested id lists merged the same way.
+  //   en_utility_audit_log  append-only: an entry never changes after it is written
+  //   en_pdf_bills          list of held bill records, id 'pb...'
+  //   en_utility_<id>       { buildings:[{id, meters:[{id, bills:[{id}]}]}] }
+  const _byIdProp = (it) => it && it.id;
+  const AUDIT_ENTRY_ID = (it) => (it && typeof it === 'object' ? _canonicalJSON(it) : undefined);
+  const MERGE_ONLY_CONFIG = {
+    audit: {
+      noDeletionRecords: true,
+      requireIds: true,
+      idOccurrence: true, // two identical entries stay two entries (id + '#n')
+      getItems: (v) => (Array.isArray(v) ? v : null),
+      // Newest first, like logUtilityAudit writes it.
+      setItems: (_v, items) =>
+        items.slice().sort((a, b) => (a && b && a.ts < b.ts ? 1 : a && b && a.ts > b.ts ? -1 : 0)),
+      getId: AUDIT_ENTRY_ID,
+      getLabel: (it) => it && it.action,
+    },
+    pdfBills: Object.assign({ noDeletionRecords: true, requireIds: true }, _bareList, {
+      getLabel: (it) => it && (it.id || it.fileName),
+    }),
+    utility: {
+      noDeletionRecords: true,
+      requireIds: true,
+      itemsProp: 'buildings',
+      getItems: (v) => (v && Array.isArray(v.buildings) ? v.buildings : null),
+      setItems: (v, items) => _safeAssign({}, v, { buildings: items }),
+      getId: _byIdProp,
+      getLabel: (it) => it && it.name,
+      children: {
+        meters: { getId: _byIdProp, children: { bills: { getId: _byIdProp } } },
+      },
+    },
+  };
+  // The ONE lookup for "is this key merged by id, and how".
+  function _collectionCfg(key) {
+    if (UNION_KEY_CONFIG[key]) return UNION_KEY_CONFIG[key];
+    if (key === 'en_utility_audit_log') return MERGE_ONLY_CONFIG.audit;
+    if (key === 'en_pdf_bills') return MERGE_ONLY_CONFIG.pdfBills;
+    if (_isUtilityKey(key)) return MERGE_ONLY_CONFIG.utility;
+    return null;
+  }
+
   // --- Deletion records (F1, 2026-10-05) -------------------------------------
   // A union merge cannot tell "added locally" from "deleted on the server".
   // So every removal from a UNION_KEY_CONFIG list is recorded in ONE synced
@@ -803,16 +852,36 @@ const DB = (() => {
     });
     return out;
   }
-  function _itemIds(key, value) {
-    const cfg = UNION_KEY_CONFIG[key];
-    const items = cfg ? cfg.getItems(value) : null;
+  // id -> item. `occurrence`: a repeated id gets '#n' so identical items all stay.
+  function _idMapOf(items, getId, occurrence) {
     const m = new Map();
     if (!Array.isArray(items)) return m;
     items.forEach((it) => {
-      const id = cfg.getId(it);
-      if (id !== undefined && id !== null) m.set(String(id), it);
+      const id = getId(it);
+      if (id === undefined || id === null) return;
+      let k = String(id);
+      if (occurrence) for (let n = 1; m.has(k); n++) k = String(id) + '#' + n;
+      m.set(k, it);
     });
     return m;
+  }
+  function _itemIds(key, value) {
+    const cfg = _collectionCfg(key);
+    return cfg ? _idMapOf(cfg.getItems(value), cfg.getId, cfg.idOccurrence) : new Map();
+  }
+  // True when every item has an id and (unless repeats are allowed) no id repeats.
+  function _idsUsable(items, getId, occurrence) {
+    if (!Array.isArray(items)) return true;
+    const seen = new Set();
+    for (const it of items) {
+      const id = getId(it);
+      if (id === undefined || id === null || id === '') return false;
+      if (!occurrence) {
+        if (seen.has(String(id))) return false;
+        seen.add(String(id));
+      }
+    }
+    return true;
   }
   // The ONE function for "this collection changed from oldValue to newValue":
   // set() and restorePush call it. Records removed ids (stamp in the shared
@@ -835,7 +904,7 @@ const DB = (() => {
     _lastItems[key] = _itemIds(key, value);
   }
   function _adoptCollection(key, next) {
-    const cfg = UNION_KEY_CONFIG[key];
+    const cfg = _collectionCfg(key);
     const cur = _cache[key];
     if (!cfg || cur === next || !cur || typeof cur !== 'object' || !next || typeof next !== 'object') return next;
     const curItems = cfg.getItems(cur);
@@ -913,9 +982,9 @@ const DB = (() => {
   }
   // Drops every item with an active deletion entry. Returns { value, removed }.
   function _dropTombstoned(key, value) {
-    const cfg = UNION_KEY_CONFIG[key];
+    const cfg = _collectionCfg(key);
     const tomb = _own(_cache[TOMBSTONE_KEY], key) ? _cache[TOMBSTONE_KEY][key] : null;
-    if (!cfg || !tomb || value === undefined || value === null) return { value, removed: [] };
+    if (!cfg || cfg.noDeletionRecords || !tomb || value === undefined || value === null) return { value, removed: [] };
     const items = cfg.getItems(value);
     if (!Array.isArray(items)) return { value, removed: [] };
     const removed = [];
@@ -1032,7 +1101,7 @@ const DB = (() => {
   function _isPlainObject(v) {
     return !!v && typeof v === 'object' && !Array.isArray(v);
   }
-  function _mergeFields(b, l, s) {
+  function _mergeFields(b, l, s, children) {
     if (!_isPlainObject(b) || !_isPlainObject(l) || !_isPlainObject(s)) return null;
     const out = {};
     const keys = new Set(Object.keys(b).concat(Object.keys(l), Object.keys(s)));
@@ -1045,31 +1114,34 @@ const DB = (() => {
       if (cl === cs) v = s[f];
       else if (cl === cb) v = s[f];
       else if (cs === cb) v = l[f];
-      else return null; // same field changed on both sides
+      else if (children && _own(children, f)) {
+        // A nested id list changed on both sides: merge it by id as well.
+        v = _mergeNestedList(b[f], l[f], s[f], children[f]);
+        if (v === null) return null;
+      } else return null; // same field changed on both sides
       if (v !== undefined) out[f] = v;
     }
     return out;
   }
-  function _mergeCollection(key, baseValue, localValue, serverValue) {
-    const cfg = UNION_KEY_CONFIG[key];
-    if (!cfg) return null;
-    const isList = (v) => v === undefined || v === null || Array.isArray(cfg.getItems(v));
-    if (!isList(localValue) || !isList(serverValue)) return null;
-    const ls = _dropTombstoned(key, localValue);
-    const ss = _dropTombstoned(key, serverValue);
-    if (ls.removed.length) {
-      _appendConflictArchive({
-        key,
-        reason: 'deleted-elsewhere',
-        losingSide: 'local',
-        losingValue: ls.removed,
-        winningSide: 'server',
-      });
-    }
-    const B = _itemIds(key, _dropTombstoned(key, baseValue).value);
-    const L = _itemIds(key, ls.value);
-    const S = _itemIds(key, ss.value);
+  function _mergeNestedList(b, l, s, spec) {
+    const ok = (v) => v === undefined || v === null || Array.isArray(v);
+    if (!ok(b) || !ok(l) || !ok(s)) return null;
+    if (!_idsUsable(l, spec.getId) || !_idsUsable(s, spec.getId)) return null; // cannot match by id: no merge
     const conflicts = [];
+    const out = _mergeIdMaps(
+      _idMapOf(b, spec.getId),
+      _idMapOf(l, spec.getId),
+      _idMapOf(s, spec.getId),
+      spec.children,
+      conflicts,
+    );
+    return conflicts.length ? null : out;
+  }
+  // Per-id three-way merge of three id maps (see the table above _diffFields).
+  // Order: the server's order, then ids only this side has. A record changed on
+  // both sides is merged field by field; an unmergeable one is pushed to
+  // `conflicts` and takes the server version here.
+  function _mergeIdMaps(B, L, S, children, conflicts) {
     const out = [];
     const order = Array.from(S.keys()).concat(Array.from(L.keys()).filter((id) => !S.has(id)));
     for (const id of order) {
@@ -1086,7 +1158,7 @@ const DB = (() => {
       else if (l === undefined) v = s;
       else if (s === undefined) v = l;
       else {
-        v = _mergeFields(b, l, s);
+        v = _mergeFields(b, l, s, children);
         if (v === null) {
           conflicts.push({
             id,
@@ -1100,6 +1172,36 @@ const DB = (() => {
       }
       if (v !== undefined) out.push(v);
     }
+    return out;
+  }
+  function _mergeCollection(key, baseValue, localValue, serverValue) {
+    const cfg = _collectionCfg(key);
+    if (!cfg) return null;
+    // Derived caches on the live objects are not edits: compare without them.
+    localValue = stripDerivedCaches(key, localValue);
+    const isList = (v) => v === undefined || v === null || Array.isArray(cfg.getItems(v));
+    if (!isList(localValue) || !isList(serverValue)) return null;
+    const ls = _dropTombstoned(key, localValue);
+    const ss = _dropTombstoned(key, serverValue);
+    if (cfg.requireIds) {
+      // An item without an id (or a repeated id) cannot be matched: no merge, nothing dropped.
+      const usable = (v) => v === undefined || v === null || _idsUsable(cfg.getItems(v), cfg.getId, cfg.idOccurrence);
+      if (!usable(ls.value) || !usable(ss.value)) return null;
+    }
+    if (ls.removed.length) {
+      _appendConflictArchive({
+        key,
+        reason: 'deleted-elsewhere',
+        losingSide: 'local',
+        losingValue: ls.removed,
+        winningSide: 'server',
+      });
+    }
+    const B = _itemIds(key, _dropTombstoned(key, baseValue).value);
+    const L = _itemIds(key, ls.value);
+    const S = _itemIds(key, ss.value);
+    const conflicts = [];
+    const out = _mergeIdMaps(B, L, S, cfg.children, conflicts);
     const shape = serverValue !== undefined && serverValue !== null ? ss.value : ls.value;
     return {
       value: cfg.setItems(shape, out),
@@ -1111,7 +1213,7 @@ const DB = (() => {
   // local record back in place of the server one; the losing record of every
   // conflict is archived first.
   function _applyRecordChoices(key, merge, choices) {
-    const cfg = UNION_KEY_CONFIG[key];
+    const cfg = _collectionCfg(key);
     const mine = new Map();
     merge.conflicts.forEach((c) => {
       const pick = choices && _own(choices, String(c.id)) ? choices[String(c.id)] : 'theirs';
@@ -1169,7 +1271,7 @@ const DB = (() => {
 
     // Collection keys: per-record three-way merge. A modal only when the same
     // record was changed on both sides, and then the user chooses per record.
-    if (UNION_KEY_CONFIG[key] && !payload.deleted && !current.deleted) {
+    if (_collectionCfg(key) && !payload.deleted && !current.deleted) {
       const handled = await _resolveCollectionConflict(key, payload, current, epoch, depth);
       if (handled) return;
       if (epoch !== _identityEpoch) return;
@@ -1235,7 +1337,7 @@ const DB = (() => {
   // the conflict (merged, queued, or dropped after an identity change), false
   // when the value is not a list (the caller falls back to the whole-key modal).
   async function _resolveCollectionConflict(key, payload, current, epoch, depth) {
-    if (!(await _refreshTombstones())) {
+    if (!_collectionCfg(key).noDeletionRecords && !(await _refreshTombstones())) {
       // FAIL CLOSED: without the latest deletion records a merge could bring a
       // deleted item back. The retry queue sends this write again later.
       if (epoch === _identityEpoch) _enqueueWrite(key, payload);
@@ -1257,7 +1359,7 @@ const DB = (() => {
         _enqueueWrite(key, payload);
         return true;
       }
-      const cfg = UNION_KEY_CONFIG[key];
+      const cfg = _collectionCfg(key);
       const localBase = _replicaVersions[key];
       const descriptor = {
         key,
@@ -1636,7 +1738,7 @@ const DB = (() => {
     // Collection keys: the ONE per-record merge (_mergeCollection). A record
     // changed on both sides takes the server version here (no modal at load);
     // the local record is archived first and counted for the toast.
-    if (UNION_KEY_CONFIG[localKey] && !row.deleted) {
+    if (_collectionCfg(localKey) && !row.deleted) {
       collectionMerge = _mergeCollection(localKey, _syncBase[localKey], origLocal, row.value);
       if (collectionMerge !== null) {
         collectionMerge.conflicts.forEach((c) => {
@@ -1719,7 +1821,7 @@ const DB = (() => {
   // merge base. When the local list still matches the hash of that version,
   // the local list IS the server value at that version: use it as the base.
   async function _seedMissingBases() {
-    for (const key of Object.keys(UNION_KEY_CONFIG)) {
+    for (const key of Object.keys(_cache).filter((k) => _collectionCfg(k))) {
       const entry = _replicaVersions[key];
       if (!entry || typeof entry.version !== 'number' || !entry.hash) continue;
       if (_own(_syncBase, key) || _cache[key] === undefined) continue;
