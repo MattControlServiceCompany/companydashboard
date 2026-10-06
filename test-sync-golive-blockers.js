@@ -811,6 +811,39 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     assert.ok(L.events.some((e) => e.type === 'dbAuthRejected'), 'existing not-authorized message is shown');
     assert.strictEqual(wraps, 0);
   });
+  // ---- identity change on refresh (2026-10-06): A's queued edit must never go out as B
+  const tokUser = (id) => async () => ({ ok: true, status: 200, json: async () => ({ access_token: FK('t' + id), refresh_token: FK('r9'), expires_in: 3600, user: { id, email: id + '@example.com' } }) });
+  await t('401, refresh returns the SAME user: retried exactly once', async () => {
+    const L = loadAuth(tokUser('u1'));
+    L.events.length = 0; // ignore load-time events
+    let calls = 0;
+    const out = await L.A.withAuthRetry(async () => (++calls === 1 ? { status: 'error', httpStatus: 401 } : { status: 'ok' }));
+    assert.strictEqual(calls, 2);
+    assert.strictEqual(out.status, 'ok');
+    assert.ok(!L.events.some((x) => x.startsWith('chAuthStateChanged')), 'no identity event for the same user');
+  });
+  await t('401, refresh returns a DIFFERENT user: no retry, event fired, A entry stays queued under A', async () => {
+    const L = loadAuth(tokUser('u2'));
+    L.events.length = 0;
+    const queue = [{ id: 'q1', key: 'pref', value: 'A-value', owner: { id: 'u1' } }];
+    let sentAs = [];
+    let calls = 0;
+    // Mirrors the db.js drain: owner filter, send through withAuthRetry, delete only on ok.
+    const me = L.A.getUserId();
+    for (const e of queue.filter((x) => x.owner.id === me)) {
+      const out = await L.A.withAuthRetry(async () => { calls++; sentAs.push(L.A.getUserId()); return { status: 'error', httpStatus: 401 }; });
+      if (out.status === 'ok') queue.splice(queue.indexOf(e), 1);
+    }
+    assert.strictEqual(calls, 1, 'not sent again after the account changed');
+    assert.deepStrictEqual(sentAs, ['u1']);
+    assert.strictEqual(queue.length, 1, 'A entry still queued');
+    assert.strictEqual(queue[0].owner.id, 'u1');
+    assert.strictEqual(L.A.getUserId(), 'u2');
+    assert.strictEqual(L.A.backendMode(), 'on', 'B stays signed in');
+    assert.ok(L.events.some((x) => x.startsWith('chAuthStateChanged')), 'identity-change event fired');
+    // the next drain pass for B skips A's entry (owner check)
+    assert.strictEqual(queue.filter((x) => x.owner.id === L.A.getUserId()).length, 0);
+  });
   console.log(pass + ' passed');
 })().catch((e) => {
   console.error('FAIL', e);

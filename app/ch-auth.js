@@ -135,11 +135,19 @@
     }
   }
 
+  // One identity-change path: a changed user id sends chAuthStateChanged just like
+  // a sign-in or sign-out does (db.js bumps its identity epoch on it), even when
+  // the signed-out flag did not change (another tab switched accounts).
   function _applySession(session) {
+    var prevId = _cachedUserId;
     _cachedToken = session && session.access_token ? session.access_token : null;
     _cachedUserId = session && session.user_id ? session.user_id : null;
     _cachedEmail = session && session.email ? session.email : null;
+    var wasSignedOut = _signedOut;
     _setSignedOut(!_cachedToken);
+    if (_signedOut === wasSignedOut && prevId !== _cachedUserId) {
+      window.dispatchEvent(new CustomEvent('chAuthStateChanged', { detail: { signedOut: _signedOut } }));
+    }
   }
 
   // Normalizes a Supabase Auth token-endpoint response body into the shape
@@ -274,6 +282,7 @@
   // exactly what run() did on the final attempt.
   async function withAuthRetry(run) {
     for (var tries = 0; ; tries++) {
+      var idBefore = _cachedUserId;
       var out;
       var threw = false;
       try {
@@ -288,6 +297,9 @@
         return out;
       }
       var again = await _onServerRefusal(st, tries > 0);
+      // The refresh picked up a different account (another tab switched users).
+      // This request was built for the old user: never send it again as the new one.
+      if (again && _cachedUserId !== idBefore) again = false;
       if (!again) {
         if (threw) throw out;
         return out;
