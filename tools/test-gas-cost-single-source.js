@@ -10,6 +10,8 @@
 //   2. A real 0 gas charge stays 0; a missing gas charge is null (OrNull) or 0 (plain).
 //   3. The whole-bill total is the fallback ONLY when gasCharge is blank AND the bill has gas
 //      usage — a Water/Sewer bill never gets a "gas cost" from its total.
+//   4. STRUCTURAL: no reader anywhere in app/, computations/, lib/ or extraction/ reads bill.thermCost,
+//      and no writer stores it (the hidden `bl-thermCost` modal input is gone).
 'use strict';
 
 const fs = require('fs');
@@ -95,6 +97,26 @@ assert(
   'water bill: no gas usage, no gas cost',
 );
 assert(costOrNull({ totalCost: '120.00' }) === null, 'no usage field at all: no gas cost');
+
+console.log('4. structural: thermCost is never read or written in app code');
+// Strip block and line comments first: a comment that names the old field is history, not a read.
+function stripComments(src) {
+  return src.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' ')).replace(/\/\/.*$/gm, '');
+}
+const SCAN_DIRS = ['app', 'computations', 'lib', 'extraction'];
+const offenders = [];
+for (const dir of SCAN_DIRS) {
+  const full = path.join(REPO, dir);
+  if (!fs.existsSync(full)) continue;
+  for (const f of fs.readdirSync(full)) {
+    if (!f.endsWith('.js')) continue;
+    const lines = stripComments(fs.readFileSync(path.join(full, f), 'utf8')).split('\n');
+    lines.forEach((l, n) => {
+      if (/\bthermCost\b/.test(l)) offenders.push(dir + '/' + f + ':' + (n + 1) + ' ' + l.trim());
+    });
+  }
+}
+assert(offenders.length === 0, 'thermCost still referenced in code:' + offenders.map((o) => '\n    ' + o).join(''));
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);

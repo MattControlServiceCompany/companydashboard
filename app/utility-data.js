@@ -10614,14 +10614,14 @@ function renderPerfPane(pane, m, bills, incl) {
       // billed usage; the predicted value lives under kwhPredicted/thermsPredicted).
       usage: isElec ? v.kwhPredicted : m.commodity === 'Gas' ? v.thermsPredicted : isPropane_p ? v.gallons : v.kgal,
       energyCost: isElec ? v.energyCost : 0,
-      thermCost: m.commodity === 'Gas' || isPropane_p ? v.cost : 0,
+      gasCost: m.commodity === 'Gas' || isPropane_p ? v.cost : 0,
       totalCost: v.totalCost ?? v.cost,
     };
   });
   const hasBlCalMap = Object.keys(meterDataByMo).length > 0;
   const blByCalMo = Object.fromEntries(Object.entries(meterDataByMo).map(([mo, v]) => [mo, v.usage]));
   const blKwhCostByCalMo = Object.fromEntries(Object.entries(meterDataByMo).map(([mo, v]) => [mo, v.energyCost]));
-  const blThermCostByCalMo = Object.fromEntries(Object.entries(meterDataByMo).map(([mo, v]) => [mo, v.thermCost]));
+  const blThermCostByCalMo = Object.fromEntries(Object.entries(meterDataByMo).map(([mo, v]) => [mo, v.gasCost]));
   const blTotalCostByCalMo = Object.fromEntries(Object.entries(meterDataByMo).map(([mo, v]) => [mo, v.totalCost]));
   // Per-calendar-month baseline kW from buildMoMap (seasonal, not flat average)
   const blDemKWByCalMo = {};

@@ -7289,7 +7289,7 @@ async function confirmAutoAssign() {
       _mmbtuRateMismatch: bill._mmbtuRateMismatch || undefined,
       _mmbtuMissingWithCharge: bill._mmbtuMissingWithCharge || undefined,
       // Fix [therms-unit-2026-06-22]: canonicalize therms to Therms at save time.
-      ...gasBillSaveFields(bill),
+      therms: gasBillSaveTherms(bill),
       gasCharge: billValueOrBlank(bill.GasCharge),
       fuelAdjustment: billValueOrBlank(bill.FuelAdjustment),
       waterUsage: billValueOrBlank(bill.WaterUsage),
@@ -7746,7 +7746,7 @@ async function _mbSaveOneBill(bi, action) {
     _manualReviewLabel: bill._manualReviewLabel || '',
     _mmbtuRateMismatch: bill._mmbtuRateMismatch || undefined,
     _mmbtuMissingWithCharge: bill._mmbtuMissingWithCharge || undefined,
-    ...gasBillSaveFields(bill),
+    therms: gasBillSaveTherms(bill),
     gasCharge: billValueOrBlank(bill.GasCharge),
     fuelAdjustment: billValueOrBlank(bill.FuelAdjustment),
     waterUsage: billValueOrBlank(bill.WaterUsage),
@@ -8987,7 +8987,7 @@ function _saveBillToMatchedMeter(extracted, match) {
     // Fix [therms-unit-2026-06-22]: canonicalize therms to Therms at save time.
     // Wood River (and any future MMBtu extractor) sets NaturalGasMMbtu; Constellation/KGS
     // set NaturalGasTherms (already Therms). resolveGasUsageTherms converts: Therms > CCF > MMBtu.
-    ...gasBillSaveFields(extracted),
+    therms: gasBillSaveTherms(extracted),
     gasCharge: billValueOrBlank(extracted.GasCharge),
     fuelAdjustment: billValueOrBlank(extracted.FuelAdjustment),
     waterUsage: billValueOrBlank(extracted.WaterUsage),
@@ -20761,7 +20761,7 @@ function confirmAssignBill() {
     naturalGasTherms: billValueOrBlank(bill.NaturalGasTherms),
     naturalGasMMbtu: billValueOrBlank(bill.NaturalGasMMbtu, bill.naturalGasMMbtu),
     // Fix [therms-unit-2026-06-22]: canonicalize therms to Therms at save time.
-    ...gasBillSaveFields(bill),
+    therms: gasBillSaveTherms(bill),
     gasCharge: billValueOrBlank(bill.GasCharge),
     fuelAdjustment: billValueOrBlank(bill.FuelAdjustment),
     waterUsage: billValueOrBlank(bill.WaterUsage),
@@ -21511,9 +21511,7 @@ async function _saveSinglePDFBill(extracted, projId) {
     naturalGasTherms: billValueOrBlank(extracted.NaturalGasTherms),
     naturalGasMMbtu: billValueOrBlank(extracted.NaturalGasMMbtu),
     // Fix [therms-unit-2026-06-22]: canonicalize therms to Therms at save time.
-    ...(isGas ? gasBillSaveFields(extracted) : { therms: '', thermCost: '' }),
-    // Bug d4c78f06: use GasCharge (commodity cost) for thermCost so $/therm rate
-    // in tables uses energy-only cost, not total bill cost.
+    therms: isGas ? gasBillSaveTherms(extracted) : '',
     gasCharge: billValueOrBlank(extracted.GasCharge),
     fuelAdjustment: billValueOrBlank(extracted.FuelAdjustment),
     waterUsage: billValueOrBlank(extracted.WaterUsage),

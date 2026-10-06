@@ -122,21 +122,14 @@ function resolveGasUsageThermsOrNull(b) {
   return has ? resolveGasUsageTherms(b) : null;
 }
 
-/* gasBillSaveFields(src) - the ONE mapping of gas usage and gas charge for a bill being saved.
-   src = extractor bill (NaturalGasTherms, GasCharge ...) or saved-style bill. Returns the stored
-   `therms` and `thermCost`: '' when missing, a real 0 stays 0. thermCost is the gas commodity
-   charge (bug d4c78f06); total charges are the fallback only when GasCharge is missing. */
-function gasBillSaveFields(src) {
+/* gasBillSaveTherms(src) - the ONE mapping of gas usage for a bill being saved: the stored
+   `therms` ('' when missing, a real 0 stays 0). src = extractor bill (NaturalGasTherms ...) or
+   saved-style bill. The gas charge is NOT copied any more: the stored copy `thermCost` is gone
+   (2026-10-05 duplicate-bill-fields audit step 3); every reader calls getBillGasCost
+   (computations/rates.js), which reads the visible `gasCharge`. */
+function gasBillSaveTherms(src) {
   const usage = resolveGasUsageThermsOrNull(src);
-  const hasGasField = ['naturalGasTherms', 'naturalGasCCF', 'naturalGasMMbtu'].some(
-    (k) => parseBillNumber(src[k]) !== null || parseBillNumber(src[k.charAt(0).toUpperCase() + k.slice(1)]) !== null,
-  );
-  return {
-    therms: usage === null ? '' : usage,
-    thermCost: hasGasField
-      ? billValueOrBlank(src.GasCharge, src.gasCharge, src.TotalCurrentCharges, src.TotalAmountDue)
-      : '',
-  };
+  return usage === null ? '' : usage;
 }
 
 /* ─────────────────────────────────────────────────────────────
