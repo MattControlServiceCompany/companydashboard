@@ -2275,6 +2275,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.06.83', date: '2026-10-06', title: 'The dashboard now stays awake on its own',
+    items: [
+      { type: 'fix', text: 'The shared dashboard data no longer goes to sleep after a few quiet days. A small daily check keeps it active, so the site does not go offline again.' }
+    ]
+  },
   { v: 'v2026.10.06.82', date: '2026-10-06', title: 'EMS Leads now save and sync like the rest of the dashboard',
     items: [
       { type: 'fix', text: 'EMS Leads: your leads now save to the shared dashboard data, so both users see the same list on any browser instead of each browser keeping its own copy.' },
