@@ -617,6 +617,31 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     // The dirty check (unchanged project is never written) must stay in saveUtilityData.
     assert.ok(/if \(_lastSavedSnapshot\[pid\] === _serialized\) return;/.test(src));
   });
+
+  // ---- M6: 401/403 is "refused", not "offline"
+  await t('M6 hydration manifest answered 403 -> dbAuthRejected, not dbOfflineBanner', async () => {
+    const { DB, events } = load({ mode: 'on', syncHost: true, fetchImpl: async () => ({ ok: false, status: 403 }) });
+    await DB.warmCache();
+    await DB.__t._hydrate();
+    const rej = events.find((e) => e.type === 'dbAuthRejected');
+    assert.ok(rej && rej.detail.status === 403);
+    assert.ok(!events.some((e) => e.type === 'dbOfflineBanner'));
+  });
+  await t('M6 network failure still shows the offline banner', async () => {
+    const { DB, events } = load({ mode: 'on', syncHost: true, fetchImpl: async () => { throw new Error('net'); } });
+    await DB.warmCache();
+    await DB.__t._hydrate();
+    assert.ok(events.some((e) => e.type === 'dbOfflineBanner'));
+    assert.ok(!events.some((e) => e.type === 'dbAuthRejected'));
+  });
+  await t('M6 a write answered 401 raises dbAuthRejected', async () => {
+    const { DB, events } = load({ mode: 'on', syncHost: true, fetchImpl: async (u, o) => (o && o.method === 'PUT' ? { ok: false, status: 401, json: async () => ({}) } : ok([])) });
+    await DB.warmCache();
+    await DB.set('en_note', 'x');
+    await new Promise((r) => setTimeout(r, 30));
+    assert.ok(events.some((e) => e.type === 'dbAuthRejected' && e.detail.status === 401));
+    assert.strictEqual(DB.getQueueDepth(), 1, 'edit kept');
+  });
   console.log(pass + ' passed');
 })().catch((e) => {
   console.error('FAIL', e);

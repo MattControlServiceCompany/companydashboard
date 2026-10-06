@@ -698,6 +698,7 @@ const DB = (() => {
     if (res.status === 409) {
       return { status: 'conflict', body: json };
     }
+    if (_isAuthRefusal(res.status)) _reportServerFailure(_httpError('write refused: ' + res.status, res.status));
     return { status: 'error', body: json, httpStatus: res.status };
   }
 
@@ -1613,6 +1614,25 @@ const DB = (() => {
   }
 
   // --- 2a.2: hydration (the warmCache() capstone) ---------------------------
+  // M6: an answer of 401/403 means the server refused this sign-in. That is not
+  // "offline": the ONE function below tells the page which of the two it is.
+  function _httpError(message, status) {
+    const e = new Error(message);
+    e.httpStatus = status;
+    return e;
+  }
+  function _isAuthRefusal(status) {
+    return status === 401 || status === 403;
+  }
+  function _reportServerFailure(e, reason) {
+    if (typeof window === 'undefined') return;
+    const status = e && e.httpStatus;
+    if (_isAuthRefusal(status)) {
+      window.dispatchEvent(new CustomEvent('dbAuthRejected', { detail: { status } }));
+    } else {
+      window.dispatchEvent(new CustomEvent('dbOfflineBanner', { detail: { reason } }));
+    }
+  }
   function _fetchManifestWithTimeout(timeoutMs) {
     return new Promise((resolve, reject) => {
       const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
@@ -1627,7 +1647,7 @@ const DB = (() => {
       })
         .then((res) => {
           clearTimeout(timer);
-          if (!res.ok) return reject(new Error('manifest fetch failed: ' + res.status));
+          if (!res.ok) return reject(_httpError('manifest fetch failed: ' + res.status, res.status));
           res.json().then(resolve).catch(reject);
         })
         .catch((e) => {
@@ -1653,7 +1673,7 @@ const DB = (() => {
     } finally {
       clearTimeout(timer);
     }
-    if (!res.ok) throw new Error('batch GET failed: ' + res.status);
+    if (!res.ok) throw _httpError('batch GET failed: ' + res.status, res.status);
     return res.json();
   }
 
@@ -1846,9 +1866,7 @@ const DB = (() => {
       manifest = await _fetchManifestWithTimeout(MANIFEST_TIMEOUT_MS);
     } catch (e) {
       console.warn('[DB] Hydration: manifest fetch failed/timed out, proceeding on local mirror:', e);
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('dbOfflineBanner', { detail: { reason: 'hydration-manifest-failed' } }));
-      }
+      _reportServerFailure(e, 'hydration-manifest-failed');
       return;
     }
     if (stale()) return;
@@ -2116,6 +2134,7 @@ const DB = (() => {
     try {
       manifest = await _fetchManifestWithTimeout(MANIFEST_TIMEOUT_MS);
     } catch (e) {
+      if (e && _isAuthRefusal(e.httpStatus)) _reportServerFailure(e, 'poll-failed'); // not transient: say so
       return; // transient — next poll cycle will retry
     }
     const changed = []; // { localKey, version } — local (unprefixed) key, as sync-ui.js displays it

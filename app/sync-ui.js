@@ -44,7 +44,7 @@
       '#ch-sync-banner-stack>div{text-align:center;font-size:13px;padding:6px 12px;display:none;}' +
       '#ch-sync-banner{background:var(--accent,#2563eb);color:#fff;}' +
       '#ch-sync-offline-banner{background:var(--warn,#b45309);color:#fff;}' +
-      '#ch-sync-signedout-banner,#ch-sync-foreign-banner,#ch-sync-hydrate-failed-banner{background:var(--warn,#b45309);color:#fff;}' +
+      '#ch-sync-signedout-banner,#ch-sync-foreign-banner,#ch-sync-hydrate-failed-banner,#ch-sync-auth-rejected-banner{background:var(--warn,#b45309);color:#fff;}' +
       '#ch-sync-signedout-banner button,#ch-sync-foreign-banner button,#ch-sync-hydrate-failed-banner button{margin-left:8px;border-radius:4px;padding:2px 10px;font-size:12px;' +
       'font-family:inherit;cursor:pointer;border:1px solid #fff;background:transparent;color:#fff;}' +
       '#ch-sync-archive-full-banner{background:var(--warn,#b45309);color:#fff;}' +
@@ -156,7 +156,7 @@
     if (!el) {
       el = document.createElement('div');
       el.id = id;
-      if (/^ch-sync-(banner|offline-banner|archive-full-banner|signedout-banner|foreign-banner|hydrate-failed-banner)$/.test(id)) {
+      if (/^ch-sync-(banner|offline-banner|archive-full-banner|signedout-banner|foreign-banner|hydrate-failed-banner|auth-rejected-banner)$/.test(id)) {
         ensureStack().appendChild(el);
       } else {
         document.body.appendChild(el);
@@ -323,6 +323,18 @@
     renderOfflineBanner(true);
   });
 
+  // M6: the server answered 401/403. This is not "offline": the sign-in was refused.
+  window.addEventListener('dbAuthRejected', function (e) {
+    ensureStyles();
+    var el = ensureEl('ch-sync-auth-rejected-banner');
+    var code = (e.detail && e.detail.status) || 403;
+    el.textContent =
+      'The server refused this sign-in (error ' +
+      code +
+      '). Your changes stay in this browser and are not syncing. Sign out and sign in again, or ask your administrator for access.';
+    el.style.display = 'block';
+  });
+
   // First connect of a browser that had local-only data: one-line result.
   window.addEventListener('dbFirstConnect', function (e) {
     var d = (e && e.detail) || {};
@@ -334,6 +346,8 @@
     // A successful manifest round-trip (hydration OR a poll cycle) proves
     // we're online — clears any stale offline banner.
     renderOfflineBanner(false);
+    var rej = document.getElementById('ch-sync-auth-rejected-banner');
+    if (rej) rej.style.display = 'none';
   });
 
   // Initial paint once DB is ready, in case a queue already had entries left
