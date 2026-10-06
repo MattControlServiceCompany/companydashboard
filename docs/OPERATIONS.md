@@ -66,7 +66,16 @@ Many short `setTimeout` calls (toasts, URL cleanup, UI yield) are one-shot. They
 - Prevention: the `supabase-keepalive` function (section 2) runs each day and reads one row from table `kv`.
 - If the project is paused: restore it in the Supabase dashboard, then check the keepalive log.
 
-## 6. How to keep this file current
+## 6. Sync write rules (app/db.js)
+
+- A `DB.set` sends a PUT only when the canonical hash of the value differs from the hash stamped at the last sync
+  (`_valueChanged`, one rule). Opening a pane or loading a page with no edit sends nothing.
+- One PUT in flight per key (`_replicateWrite`). A write that arrives while one is in flight waits and is sent after
+  the answer; the newest waiting value wins. Two PUTs for one key never overlap.
+- How to check: open the browser DevTools Network tab on the sync host, filter `kv-sync`, reload the page and open the
+  Building Performance and Savings Projection panes. Expected: zero PUT requests.
+
+## 7. How to keep this file current
 
 Any commit that changes these facts must update this file in the same commit.
 This includes a new or changed function, schedule, env var name, timer, host, or sign-in rule.

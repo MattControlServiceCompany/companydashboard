@@ -692,7 +692,9 @@ const DB = (() => {
         }
         if (epoch !== _identityEpoch) return { status: 'stale-identity' };
       }
-      _setSynced(key, { version: json.version, hash: okHash }, isTombstone ? undefined : bodyObj.value);
+      const stamp = { version: json.version, hash: okHash };
+      if (isTombstone) stamp.deleted = true; // a later set() of the same value must be sent again
+      _setSynced(key, stamp, isTombstone ? undefined : bodyObj.value);
       return { status: 'ok', body: json };
     }
     if (res.status === 409) {
@@ -1524,10 +1526,47 @@ const DB = (() => {
   }
 
   // --- Live write replication tail (set()/remove() call this) --------------
+  // ONE PUT in flight per key. A write that arrives while one is in flight
+  // waits (the newest value wins, older waiting values are dropped) and goes
+  // out after the answer, at the version the answer stamped. Two PUTs for one
+  // key never overlap, so the second can never 409 against the first.
+  const _writeBusy = {};
+  const _writeNext = {};
   async function _replicateWrite(key, payload) {
-    const mode = _backendMode();
     if (!_shouldReplicate(key)) return;
     payload = Object.assign({}, payload, { owner: _queueOwner() }); // who made this edit, fixed now
+    if (_writeBusy[key]) {
+      _writeNext[key] = payload;
+      return;
+    }
+    _writeBusy[key] = true;
+    try {
+      let p = payload;
+      while (p) {
+        delete _writeNext[key];
+        await _writeOne(key, p);
+        p = _writeNext[key];
+      }
+    } finally {
+      delete _writeBusy[key];
+      delete _writeNext[key];
+    }
+  }
+  // The ONE "did this value change since the last sync" rule: the canonical
+  // hash of the value differs from the stamp's hash. No stamp, a deleted
+  // stamp, or a queued write for the key all count as changed.
+  async function _valueChanged(key, value) {
+    const entry = _replicaVersions[key];
+    if (!entry || !entry.hash || entry.deleted) return true;
+    if (_syncQueue.some((e) => e.key === key)) return true;
+    try {
+      return (await _sha256Hex(_canonicalJSON(stripDerivedCaches(key, value)))) !== entry.hash;
+    } catch (e) {
+      return true;
+    }
+  }
+  async function _writeOne(key, payload) {
+    const mode = _backendMode();
     if (mode === 'off') {
       // B1b (2026-10-06): signed out / session lost on the sync host. Keep the
       // edit in the durable queue; it uploads (CAS, never overwriting a newer
@@ -1542,6 +1581,9 @@ const DB = (() => {
     // (via _wireKey returning null) as defense-in-depth for the queue-drain/
     // hydration-drift-repush/conflict-retry paths that call it directly.
     if (_isPerUserKey(key) && !_myUserId()) return;
+    // A value the server already holds is not sent (opening a pane, a render
+    // that re-saves, a migration that changes nothing).
+    if (!payload.deleted && !(await _valueChanged(key, payload.value))) return;
     let result;
     try {
       result = await _sendKvPut(key, payload);
@@ -1572,7 +1614,9 @@ const DB = (() => {
       if (epoch !== _identityEpoch || _myUserId() !== me) return;
       // Entry may have already been resolved/superseded by a concurrent op.
       if (!_syncQueue.some((e) => e.id === entry.id)) continue;
-      const payload = entry.deleted ? { deleted: true, owner: entry.owner } : { value: entry.value, owner: entry.owner };
+      const payload = entry.deleted
+        ? { deleted: true, owner: entry.owner }
+        : { value: entry.value, owner: entry.owner };
       // _sendKvPut always reads baseVersion from the live _replicaVersions
       // map (not entry.baseVersion) — a real conflict still 409s honestly.
       let result;
