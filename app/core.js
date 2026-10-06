@@ -392,11 +392,20 @@ if (typeof window !== 'undefined') {
   window.addEventListener('online', function () {
     _pdfDrainQueueOnce().catch(() => {});
   });
+  // Sign-in turns sync on: send the uploads queued while signed out (M5).
+  window.addEventListener('chAuthStateChanged', function () {
+    _pdfDrainQueueOnce().catch(() => {});
+  });
   // Attempt an immediate drain in case the queue has leftover entries from a
   // prior offline session and we're already online.
   _pdfDrainQueueOnce().catch(() => {});
 }
 
+// The ONE rule for "does this PDF go to the server": sync host, signed in or not.
+function _pdfShouldQueueUpload() {
+  const a = window.CH_AUTH;
+  return !!a && (a.backendMode() === 'on' || (typeof a.isSyncHost === 'function' && a.isSyncHost()));
+}
 async function pdfStore(id, base64) {
   let ok;
   try {
@@ -415,8 +424,10 @@ async function pdfStore(id, base64) {
   // Local IDB write above is unchanged/first, exactly as today. When mode is
   // 'off' this is a single localStorage.getItem call — effectively free,
   // zero network, matching db.js's replication-tail guarantee for DB.set().
-  const mode = window.CH_AUTH.backendMode();
-  if (mode === 'on') {
+  // M5: on the sync host the upload is queued even while signed out (mode 'off').
+  // The queue is durable; _pdfDrainQueueOnce sends it once sign-in puts mode back
+  // to 'on', so a PDF saved while signed out is never left only on this browser.
+  if (_pdfShouldQueueUpload()) {
     try {
       _pdfEnqueue('upload', id);
     } catch (e) {

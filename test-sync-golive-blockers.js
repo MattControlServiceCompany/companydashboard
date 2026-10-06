@@ -676,6 +676,19 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     assert.ok(/_startupRefresh = _refreshIfNeeded\(\)/.test(src));
     assert.ok(/ready: ready,/.test(src));
   });
+
+  // ---- M5: a PDF saved while signed out is queued for upload
+  await t('M5 pdfStore queues the upload on the sync host even when signed out; not on other hosts', () => {
+    const src = fs.readFileSync(path.join(__dirname, 'app', 'core.js'), 'utf8').split('\r').join('');
+    const fn = src.match(/function _pdfShouldQueueUpload\(\) \{[\s\S]*?\n\}/)[0];
+    const run = (auth) => vm.runInNewContext(fn + '\n_pdfShouldQueueUpload()', { window: { CH_AUTH: auth } });
+    assert.strictEqual(run({ backendMode: () => 'off', isSyncHost: () => true }), true, 'signed out on sync host');
+    assert.strictEqual(run({ backendMode: () => 'on', isSyncHost: () => true }), true, 'signed in');
+    assert.strictEqual(run({ backendMode: () => 'off', isSyncHost: () => false }), false, 'GitHub Pages: never');
+    const store = src.match(/async function pdfStore\(id, base64\) \{[\s\S]*?\n\}/)[0];
+    assert.ok(/_pdfShouldQueueUpload\(\)/.test(store) && !/backendMode\(\)/.test(store));
+    assert.ok(/addEventListener\('chAuthStateChanged'[\s\S]{0,80}_pdfDrainQueueOnce/.test(src), 'sign-in drains the queue');
+  });
   console.log(pass + ' passed');
 })().catch((e) => {
   console.error('FAIL', e);
