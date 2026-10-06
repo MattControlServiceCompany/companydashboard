@@ -228,6 +228,10 @@
       _applySession(session);
       return Promise.resolve(session);
     }
+    return _startRefresh(session);
+  }
+
+  function _startRefresh(session) {
     _refreshInFlight = _refresh(session)
       .catch(function (e) {
         // Refresh token invalid/expired/revoked — sign the user out locally.
@@ -240,6 +244,55 @@
         return result;
       });
     return _refreshInFlight;
+  }
+
+  // THE single rule for a server answer of 401/403 (kv-sync poll, kv-sync queue
+  // drain, pdf-sync queue drain all use withAuthRetry). 401 = the token was
+  // refused: refresh ONCE and let the caller send again. A second 401, or any 403
+  // (account not allowed), ends the session locally. That sets "signed out",
+  // so backendMode() is 'off' (every timer goes quiet), the signed-out bar
+  // shows, and a new sign-in (chAuthStateChanged) restarts everything.
+  function _onServerRefusal(status, alreadyRetried) {
+    if (status === 401 && !alreadyRetried) {
+      if (_refreshInFlight) return _refreshInFlight.then(function (s) { return !!s; });
+      var session = _loadSession();
+      if (!session) {
+        _applySession(null);
+        return Promise.resolve(false);
+      }
+      return _startRefresh(session).then(function (s) {
+        return !!s;
+      });
+    }
+    _clearSession();
+    _setSignedOut(true);
+    return Promise.resolve(false);
+  }
+
+  // run() does one request. It either throws an Error with .httpStatus or
+  // returns an object with .httpStatus when the server refused. Returns/throws
+  // exactly what run() did on the final attempt.
+  async function withAuthRetry(run) {
+    for (var tries = 0; ; tries++) {
+      var out;
+      var threw = false;
+      try {
+        out = await run();
+      } catch (e) {
+        out = e;
+        threw = true;
+      }
+      var st = out && out.httpStatus;
+      if (st !== 401 && st !== 403) {
+        if (threw) throw out;
+        return out;
+      }
+      var again = await _onServerRefusal(st, tries > 0);
+      if (!again) {
+        if (threw) throw out;
+        return out;
+      }
+    }
   }
 
   // M7: the first refresh at page load. A stored token that already expired is
@@ -340,6 +393,7 @@
     isSyncHost: _isNetlifyHost,
     signIn: signIn,
     signOut: signOut,
+    withAuthRetry: withAuthRetry,
   };
 
   // Prime the in-memory cache from any existing localStorage session

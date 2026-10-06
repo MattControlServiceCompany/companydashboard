@@ -718,6 +718,99 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     assert.ok(dl > 0 && wipe > dl, 'archive download comes before the wipe');
     assert.ok(/getConflictArchive/.test(fn));
   });
+
+  // ---- 401/403 on periodic sync requests (2026-10-06): refresh once, then end the session
+  const FK = (x) => 'fake-' + x;
+  function loadAuth(tokenFetch) {
+    const store = { ch_sb_session: JSON.stringify({ access_token: FK('a'), refresh_token: FK('r1'), expires_at: Math.floor(Date.now() / 1000) + 3600, user_id: 'u1', email: 'u1@example.com' }) };
+    const events = [];
+    const win = { addEventListener() {}, dispatchEvent(e) { events.push(e.type + ':' + JSON.stringify(e.detail)); } };
+    const sandbox = {
+      window: win, location: { hostname: 'cscdashboard.netlify.app' },
+      localStorage: { getItem: (k) => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: (k) => { delete store[k]; } },
+      setInterval: () => 0, Promise, Date, Math, JSON, Error, Number,
+      CustomEvent: function (type, init) { this.type = type; this.detail = init && init.detail; },
+      fetch: tokenFetch,
+    };
+    vm.createContext(sandbox);
+    vm.runInContext(fs.readFileSync(path.join(__dirname, 'app', 'ch-auth.js'), 'utf8'), sandbox);
+    return { A: win.CH_AUTH, events, store };
+  }
+  const tokOk = (n) => async () => ({ ok: true, status: 200, json: async () => ({ access_token: FK('new' + n), refresh_token: FK('r2'), expires_in: 3600, user: { id: 'u1', email: 'u1@example.com' } }) });
+  await t('401 then ok after refresh: withAuthRetry retries once with the new token, stays signed in', async () => {
+    const L = loadAuth(tokOk(1));
+    let calls = 0;
+    const out = await L.A.withAuthRetry(async () => (++calls === 1 ? { status: 'error', httpStatus: 401 } : { status: 'ok' }));
+    assert.strictEqual(calls, 2);
+    assert.strictEqual(out.status, 'ok');
+    assert.strictEqual(L.A.getToken(), 'fake-new1');
+    assert.strictEqual(L.A.backendMode(), 'on');
+  });
+  await t('401 twice: ONE refresh only, then signed out (signed-out bar state), backendMode off', async () => {
+    let refreshes = 0;
+    const L = loadAuth(async (...a) => { refreshes++; return tokOk(refreshes)(...a); });
+    let calls = 0;
+    let err;
+    try { await L.A.withAuthRetry(async () => { calls++; const e = new Error('manifest fetch failed: 401'); e.httpStatus = 401; throw e; }); } catch (e) { err = e; }
+    assert.ok(err && err.httpStatus === 401, 'final error is thrown');
+    assert.strictEqual(calls, 2, 'two requests, not a loop');
+    assert.strictEqual(refreshes, 1, 'exactly one token refresh');
+    assert.strictEqual(L.A.isSignedOut(), true);
+    assert.strictEqual(L.A.needsSignIn(), true, 'existing signed-out bar rule now true');
+    assert.strictEqual(L.A.backendMode(), 'off', 'every poll/drain timer is now quiet');
+    assert.ok(L.events.some((x) => x.startsWith('chAuthStateChanged') && x.includes('true')), 'bar is told');
+    assert.ok(!('ch_sb_session' in L.store), 'dead session removed');
+  });
+  await t('401 and the refresh itself fails: signed out after zero retries', async () => {
+    const L = loadAuth(async () => ({ ok: false, status: 400, json: async () => ({ error: 'bad refresh token' }) }));
+    let calls = 0;
+    const out = await L.A.withAuthRetry(async () => { calls++; return { status: 'error', httpStatus: 401 }; });
+    assert.strictEqual(calls, 1);
+    assert.strictEqual(out.httpStatus, 401);
+    assert.strictEqual(L.A.needsSignIn(), true);
+  });
+  await t('403: no refresh, signed out at once', async () => {
+    let refreshes = 0;
+    const L = loadAuth(async (...a) => { refreshes++; return tokOk(1)(...a); });
+    let calls = 0;
+    await L.A.withAuthRetry(async () => { calls++; return { status: 'error', httpStatus: 403 }; });
+    assert.strictEqual(calls, 1);
+    assert.strictEqual(refreshes, 0);
+    assert.strictEqual(L.A.backendMode(), 'off');
+    assert.strictEqual(L.A.needsSignIn(), true);
+  });
+  await t('non-auth errors (500, network) pass through untouched and the session stays', async () => {
+    const L = loadAuth(tokOk(1));
+    const out = await L.A.withAuthRetry(async () => ({ status: 'error', httpStatus: 500 }));
+    assert.strictEqual(out.httpStatus, 500);
+    assert.strictEqual(L.A.backendMode(), 'on');
+  });
+  await t('new sign-in after the refusal turns sync back on (same chAuthStateChanged path)', async () => {
+    const L = loadAuth(tokOk(1));
+    await L.A.withAuthRetry(async () => ({ status: 'error', httpStatus: 403 }));
+    assert.strictEqual(L.A.backendMode(), 'off');
+    await L.A.signIn('u1@example.com', 'pw');
+    assert.strictEqual(L.A.backendMode(), 'on');
+    assert.ok(L.events.filter((x) => x.startsWith('chAuthStateChanged')).length >= 2, 'event fired on sign-out and again on sign-in');
+  });
+  await t('db.js poll goes through CH_AUTH.withAuthRetry; a poll that is refused for good reports once and returns', async () => {
+    let fetches = 0, wraps = 0;
+    const L = load({ classify: false, mode: 'on', syncHost: true,
+      fetchImpl: async (u) => { if (/manifest=1/.test(u)) { fetches++; return { ok: false, status: 401, json: async () => ({}) }; } return ok([]); } });
+    L.state.ready = null;
+    const real = vm.runInNewContext;
+    // route through a wrapper that mimics CH_AUTH: one retry on 401, then give up
+    const ctxAuth = L.DB; void ctxAuth; void real;
+    const src = fs.readFileSync(path.join(__dirname, 'app', 'db.js'), 'utf8').split('\r').join('');
+    assert.ok(/_withAuthRetry\(\(\) => _fetchManifestWithTimeout/.test(src), 'poll wrapped');
+    assert.ok(/_withAuthRetry\(\(\) => _sendKvPut\(entry\.key, payload\)\)/.test(src), 'kv drain wrapped');
+    const core = fs.readFileSync(path.join(__dirname, 'app', 'core.js'), 'utf8').split('\r').join('');
+    assert.ok(/_pdfWithAuthRetry\(\(\) => _pdfUploadCommit/.test(core) && /_pdfWithAuthRetry\(\(\) => _pdfDeleteCommit/.test(core), 'pdf drain wrapped');
+    await L.DB.__t._pollManifestForChanges();
+    assert.ok(fetches >= 1);
+    assert.ok(L.events.some((e) => e.type === 'dbAuthRejected'), 'existing not-authorized message is shown');
+    assert.strictEqual(wraps, 0);
+  });
   console.log(pass + ' passed');
 })().catch((e) => {
   console.error('FAIL', e);

@@ -353,7 +353,7 @@ async function _pdfDrainQueueLocked() {
     let result;
     try {
       if (entry.type === 'delete') {
-        result = await _pdfDeleteCommit(entry.key);
+        result = await _pdfWithAuthRetry(() => _pdfDeleteCommit(entry.key));
       } else {
         // Re-read the local IDB copy at drain time (the durable source of
         // truth already written by pdfStore's local-first write) rather than
@@ -362,12 +362,13 @@ async function _pdfDrainQueueLocked() {
         if (!base64) {
           result = { status: 'ok' }; // nothing local left to upload — drop silently
         } else {
-          result = await _pdfUploadCommit(entry.key, base64);
+          result = await _pdfWithAuthRetry(() => _pdfUploadCommit(entry.key, base64));
         }
       }
     } catch (e) {
       result = { status: 'network-error', error: e };
     }
+    if (window.CH_AUTH.backendMode() === 'off') return; // the server refused this sign-in: session ended, stop sending
     if (result.status === 'ok' || result.status === 'terminal') {
       if (result.conflict) {
         console.warn(
@@ -380,6 +381,11 @@ async function _pdfDrainQueueLocked() {
     }
     // network-error / server-error — leave queued, retry next cycle.
   }
+}
+// The ONE rule for 401/403 is CH_AUTH.withAuthRetry (ch-auth.js).
+function _pdfWithAuthRetry(run) {
+  const a = window.CH_AUTH;
+  return a && typeof a.withAuthRetry === 'function' ? a.withAuthRetry(run) : run();
 }
 async function _pdfDrainQueueOnce() {
   const queue = _pdfQueueLoad();

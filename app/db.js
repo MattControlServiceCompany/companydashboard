@@ -1577,11 +1577,12 @@ const DB = (() => {
       // map (not entry.baseVersion) — a real conflict still 409s honestly.
       let result;
       try {
-        result = await _sendKvPut(entry.key, payload);
+        result = await _withAuthRetry(() => _sendKvPut(entry.key, payload));
       } catch (e) {
         result = { status: 'network-error' };
       }
       if (epoch !== _identityEpoch) return;
+      if (_backendMode() === 'off') return; // the server refused this sign-in: session ended, stop sending
       if (result.status === 'ok') {
         _syncQueue = _syncQueue.filter((e) => e.id !== entry.id);
         _persistSyncQueue();
@@ -1623,6 +1624,12 @@ const DB = (() => {
   }
   function _isAuthRefusal(status) {
     return status === 401 || status === 403;
+  }
+  // The ONE rule for a 401/403 answer lives in CH_AUTH.withAuthRetry (ch-auth.js):
+  // refresh once on 401, else end the session so every timer goes quiet.
+  function _withAuthRetry(run) {
+    const a = typeof window !== 'undefined' ? window.CH_AUTH : null;
+    return a && typeof a.withAuthRetry === 'function' ? a.withAuthRetry(run) : run();
   }
   function _reportServerFailure(e, reason) {
     if (typeof window === 'undefined') return;
@@ -2147,7 +2154,7 @@ const DB = (() => {
     if (_backendMode() !== 'on') return;
     let manifest;
     try {
-      manifest = await _fetchManifestWithTimeout(MANIFEST_TIMEOUT_MS);
+      manifest = await _withAuthRetry(() => _fetchManifestWithTimeout(MANIFEST_TIMEOUT_MS));
     } catch (e) {
       if (e && _isAuthRefusal(e.httpStatus)) _reportServerFailure(e, 'poll-failed'); // not transient: say so
       return; // transient — next poll cycle will retry
