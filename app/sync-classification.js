@@ -125,6 +125,11 @@ const SyncClassification = (() => {
       note: 'AUDIT_LOG_KEY in utility-data.js — incidentally also matches the en_utility_ prefix above; listed explicitly for clarity. Audit trail of bill edits, valuable to share between users.',
     },
     {
+      pattern: 'en_louisburg_facility_map',
+      prefix: false,
+      note: 'energy-savings.js _lbg_facilityLookup: user-filled map {account: facility name} used when a Louisburg bill is read. Shared so both users read bills the same way (M4).',
+    },
+    {
       pattern: 'en_value_corrections',
       prefix: false,
       note: 'csv-import.js:706 — manual value-correction audit log tied to utility data edits. Same class of data as en_utility_audit_log; both users should see it.',

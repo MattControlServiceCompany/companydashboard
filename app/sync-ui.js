@@ -392,6 +392,7 @@
     ['en_agreement_', 'this service agreement setup'],
     ['en_value_corrections', 'the value corrections log'],
     ['en_wdd_', 'this weather data'],
+    ['en_louisburg_facility_map', 'the Louisburg facility name list'],
     ['bldgperf_cfg_', 'a building performance chart setting'],
     ['bldgsavproj_cfg_', 'a building savings projection setting'],
     ['en_bills_zoom_', 'a bill table zoom setting'],
