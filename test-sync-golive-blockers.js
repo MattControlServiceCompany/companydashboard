@@ -1469,46 +1469,81 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
   });
 
   // ---- fix 4: queue entries with no owner (older build) are never sent under a guessed user
-  await t('fix 4: an ownerless queue entry is archived, leaves the queue, is never sent; owned entries still drain', async () => {
-    const puts = [];
-    const serverVal = { n: 'server' };
-    const { DB, store } = load({
-      mode: 'on',
-      syncHost: true,
-      classify: true,
-      fetchImpl: async (u, o) => {
-        if (o && o.method === 'PUT') {
-          puts.push(JSON.parse(o.body));
-          return ok({ version: 2, hash: sha(JSON.parse(o.body).value), deleted: false });
-        }
-        if (/manifest=1/.test(u)) return ok([{ key: 'en_budget_q', version: 1, hash: sha(serverVal), deleted: false }]);
-        if (/keys=/.test(u)) return ok([{ key: 'en_budget_q', value: serverVal, version: 1, hash: sha(serverVal), deleted: false, updatedBy: 'x' }]);
-        return ok([]);
-      },
-    });
-    store.en_budget_q = JSON.stringify({ n: 'local-unsent' });
-    store.ch_replica_state = JSON.stringify({ en_budget_q: { version: 1, hash: 'stale' } });
-    store.ch_sync_queue = JSON.stringify([
-      { id: 'old1', key: 'en_budget_q', value: { n: 'local-unsent' }, deleted: false, baseVersion: 1, ts: 1 }, // v83: no owner
-      { id: 'new1', key: 'en_budget_r', value: { n: 'mine' }, deleted: false, baseVersion: null, ts: 2, owner: { id: 'u1', email: null } },
-    ]);
-    await DB.warmCache();
-    const arch = DB.getConflictArchive();
-    const retired = arch.filter((e) => e.reason === 'queue-entry-no-owner');
-    assert.strictEqual(retired.length, 1, 'ownerless entry archived once');
-    assert.deepStrictEqual(JSON.parse(JSON.stringify(retired[0].losingValue)), { n: 'local-unsent' }, 'value kept');
-    assert.ok(!DB.__t._queue().some((e) => e.id === 'old1'), 'ownerless entry left the queue');
-    assert.ok(!puts.some((p) => p.key === 'en_budget_q' || /::en_budget_q$/.test(p.key)), 'never sent, under nobody');
-    assert.deepStrictEqual(JSON.parse(JSON.stringify(DB.get('en_budget_q'))), serverVal, 'server value adopted, local copy archived');
-    assert.ok(arch.some((e) => e.reason === 'hydration-server-wins' && e.key === 'en_budget_q'), 'local copy archived by hydration');
-    await DB.__t._drainQueueOnce();
-    assert.ok(puts.some((p) => p.key === 'en_budget_r'), 'the owned entry drains');
-    assert.strictEqual(DB.getQueueDepth(), 0, 'queue count reaches 0');
-  });
+  await t(
+    'fix 4: an ownerless queue entry is archived, leaves the queue, is never sent; owned entries still drain',
+    async () => {
+      const puts = [];
+      const serverVal = { n: 'server' };
+      const { DB, store } = load({
+        mode: 'on',
+        syncHost: true,
+        classify: true,
+        fetchImpl: async (u, o) => {
+          if (o && o.method === 'PUT') {
+            puts.push(JSON.parse(o.body));
+            return ok({ version: 2, hash: sha(JSON.parse(o.body).value), deleted: false });
+          }
+          if (/manifest=1/.test(u))
+            return ok([{ key: 'en_budget_q', version: 1, hash: sha(serverVal), deleted: false }]);
+          if (/keys=/.test(u))
+            return ok([
+              {
+                key: 'en_budget_q',
+                value: serverVal,
+                version: 1,
+                hash: sha(serverVal),
+                deleted: false,
+                updatedBy: 'x',
+              },
+            ]);
+          return ok([]);
+        },
+      });
+      store.en_budget_q = JSON.stringify({ n: 'local-unsent' });
+      store.ch_replica_state = JSON.stringify({ en_budget_q: { version: 1, hash: 'stale' } });
+      store.ch_sync_queue = JSON.stringify([
+        { id: 'old1', key: 'en_budget_q', value: { n: 'local-unsent' }, deleted: false, baseVersion: 1, ts: 1 }, // v83: no owner
+        {
+          id: 'new1',
+          key: 'en_budget_r',
+          value: { n: 'mine' },
+          deleted: false,
+          baseVersion: null,
+          ts: 2,
+          owner: { id: 'u1', email: null },
+        },
+      ]);
+      await DB.warmCache();
+      const arch = DB.getConflictArchive();
+      const retired = arch.filter((e) => e.reason === 'queue-entry-no-owner');
+      assert.strictEqual(retired.length, 1, 'ownerless entry archived once');
+      assert.deepStrictEqual(JSON.parse(JSON.stringify(retired[0].losingValue)), { n: 'local-unsent' }, 'value kept');
+      assert.ok(!DB.__t._queue().some((e) => e.id === 'old1'), 'ownerless entry left the queue');
+      assert.ok(!puts.some((p) => p.key === 'en_budget_q' || /::en_budget_q$/.test(p.key)), 'never sent, under nobody');
+      assert.deepStrictEqual(
+        JSON.parse(JSON.stringify(DB.get('en_budget_q'))),
+        serverVal,
+        'server value adopted, local copy archived',
+      );
+      assert.ok(
+        arch.some((e) => e.reason === 'hydration-server-wins' && e.key === 'en_budget_q'),
+        'local copy archived by hydration',
+      );
+      await DB.__t._drainQueueOnce();
+      assert.ok(
+        puts.some((p) => p.key === 'en_budget_r'),
+        'the owned entry drains',
+      );
+      assert.strictEqual(DB.getQueueDepth(), 0, 'queue count reaches 0');
+    },
+  );
 
   // ---- fix 2: no-action writers. The real functions, cut from the app files and run as is.
   const fnFrom = (file, name) => {
-    const src = fs.readFileSync(path.join(__dirname, 'app', file), 'utf8').split('\r').join('');
+    const src = fs
+      .readFileSync(path.join(__dirname, 'app', file), 'utf8')
+      .split('\r')
+      .join('');
     const start = src.indexOf('function ' + name + '(');
     assert.ok(start >= 0, name + ' exists in ' + file);
     let depth = 0;
@@ -1519,26 +1554,39 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     }
     return src.slice(start, i + 1);
   };
-  await t('fix 2: recurring-meeting agenda and task ids are deterministic numbers (same on two browsers), not Date.now', () => {
-    const stableNumericId = new Function(fnFrom('csv-import.js', 'stableNumericId') + '; return stableNumericId;')();
-    const a = stableNumericId('agenda', 1776960415854, '2026-10-14');
-    assert.strictEqual(a, stableNumericId('agenda', 1776960415854, '2026-10-14'), 'same inputs, same id');
-    assert.ok(Number.isSafeInteger(a) && a > 0);
-    assert.notStrictEqual(a, stableNumericId('agenda', 1776960415854, '2026-11-11'));
-    assert.notStrictEqual(a, stableNumericId('agenda', 1776960415855, '2026-10-14'));
-    assert.notStrictEqual(a, stableNumericId('task', 1776960415854, a));
-    const csv = fs.readFileSync(path.join(__dirname, 'app', 'csv-import.js'), 'utf8');
-    const gen = csv.slice(csv.indexOf('function checkRecurringMeetings'), csv.indexOf('function openMtgTemplateSettings'));
-    assert.ok(!/Date\.now\(\)|new Date\(\)\.toISOString\(\)/.test(gen), 'no clock values in the generated agenda');
-    const task = fnFrom('csv-import.js', 'createMeetingTask');
-    assert.ok(!/Date\.now\(\)/.test(task) && /stableNumericId\('task', p\.id, m\.id\)/.test(task));
-  });
+  await t(
+    'fix 2: recurring-meeting agenda and task ids are deterministic numbers (same on two browsers), not Date.now',
+    () => {
+      const stableNumericId = new Function(fnFrom('csv-import.js', 'stableNumericId') + '; return stableNumericId;')();
+      const a = stableNumericId('agenda', 1776960415854, '2026-10-14');
+      assert.strictEqual(a, stableNumericId('agenda', 1776960415854, '2026-10-14'), 'same inputs, same id');
+      assert.ok(Number.isSafeInteger(a) && a > 0);
+      assert.notStrictEqual(a, stableNumericId('agenda', 1776960415854, '2026-11-11'));
+      assert.notStrictEqual(a, stableNumericId('agenda', 1776960415855, '2026-10-14'));
+      assert.notStrictEqual(a, stableNumericId('task', 1776960415854, a));
+      const csv = fs.readFileSync(path.join(__dirname, 'app', 'csv-import.js'), 'utf8');
+      const gen = csv.slice(
+        csv.indexOf('function checkRecurringMeetings'),
+        csv.indexOf('function openMtgTemplateSettings'),
+      );
+      assert.ok(!/Date\.now\(\)|new Date\(\)\.toISOString\(\)/.test(gen), 'no clock values in the generated agenda');
+      const task = fnFrom('csv-import.js', 'createMeetingTask');
+      assert.ok(!/Date\.now\(\)/.test(task) && /stableNumericId\('task', p\.id, m\.id\)/.test(task));
+    },
+  );
   await t('fix 2: project progress is computed from the dates on read; the dashboard writes nothing on load', () => {
-    const core = fs.readFileSync(path.join(__dirname, 'app', 'core.js'), 'utf8').split('\r').join('');
+    const core = fs
+      .readFileSync(path.join(__dirname, 'app', 'core.js'), 'utf8')
+      .split('\r')
+      .join('');
     const src = fnFrom('core.js', 'calcAutoProgress') + '\n' + fnFrom('core.js', 'projectProgress');
     const today = new Date();
-    const d = (off) => new Date(today.getFullYear(), today.getMonth(), today.getDate() + off).toISOString().slice(0, 10);
-    const projects = [{ id: 1, start: d(-50), end: d(50), progress: 0 }, { id: 2, start: d(-50), end: d(50), progress: 90 }];
+    const d = (off) =>
+      new Date(today.getFullYear(), today.getMonth(), today.getDate() + off).toISOString().slice(0, 10);
+    const projects = [
+      { id: 1, start: d(-50), end: d(50), progress: 0 },
+      { id: 2, start: d(-50), end: d(50), progress: 90 },
+    ];
     const projectProgress = new Function('projects', src + '; return projectProgress;')(projects);
     assert.ok([50, 51].includes(projectProgress(projects[0])), 'from the dates (today is mid-way, rounded)');
     assert.strictEqual(projectProgress(projects[1]), 90, 'a higher typed value stays');
@@ -1547,20 +1595,36 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     const es = fs.readFileSync(path.join(__dirname, 'app', 'energy-savings.js'), 'utf8');
     assert.ok(/progress: projectProgress\(p\)/.test(es));
   });
-  await t('fix 2: the Performance and Savings Projection panes save only from user edits; readers share getBspCfg', () => {
-    const ud = fs.readFileSync(path.join(__dirname, 'app', 'utility-data.js'), 'utf8').split('\r').join('');
-    const body = (name) => fnFrom('utility-data.js', name);
-    assert.ok(!/DB\.set\(/.test(body('bpRecalc')), 'bpRecalc does not save');
-    assert.ok(!/DB\.set\(/.test(body('bspRecalc')), 'bspRecalc does not save');
-    assert.ok(/DB\.set\(storeKey, cfg\)/.test(body('bpSave')) && /DB\.set\(storeKey, cfg\)/.test(body('bspSave')));
-    assert.ok(/Object\.assign\(\{\}, DB\.get\(storeKey, \{\}\)/.test(body('bspSave')), 'stored fields (cscPct, _customCsc) kept');
-    assert.ok(!/\* 100/.test(body('bspSave')), 'percent stored as typed, no float round trip');
-    assert.ok(!/oninput="bspRecalc\(\)"|onchange="bspRecalc\(\)"|onclick="bspRecalc\(\)"/.test(ud), 'inputs call bspChanged');
-    assert.strictEqual((ud.match(/getBspCfg\(b/g) || []).length >= 5, true, 'the pane and every savingsPct reader use getBspCfg');
-    assert.ok(!/bspCfg\.savingsPct != null/.test(ud), 'no private default rule left');
-    const render = ud.slice(ud.indexOf('function renderBldgSavProjPane'), ud.indexOf('function getBspCfg'));
-    assert.ok(!/DB\.set\(/.test(render), 'rendering the Savings Projection pane writes nothing');
-  });
+  await t(
+    'fix 2: the Performance and Savings Projection panes save only from user edits; readers share getBspCfg',
+    () => {
+      const ud = fs
+        .readFileSync(path.join(__dirname, 'app', 'utility-data.js'), 'utf8')
+        .split('\r')
+        .join('');
+      const body = (name) => fnFrom('utility-data.js', name);
+      assert.ok(!/DB\.set\(/.test(body('bpRecalc')), 'bpRecalc does not save');
+      assert.ok(!/DB\.set\(/.test(body('bspRecalc')), 'bspRecalc does not save');
+      assert.ok(/DB\.set\(storeKey, cfg\)/.test(body('bpSave')) && /DB\.set\(storeKey, cfg\)/.test(body('bspSave')));
+      assert.ok(
+        /Object\.assign\(\{\}, DB\.get\(storeKey, \{\}\)/.test(body('bspSave')),
+        'stored fields (cscPct, _customCsc) kept',
+      );
+      assert.ok(!/\* 100/.test(body('bspSave')), 'percent stored as typed, no float round trip');
+      assert.ok(
+        !/oninput="bspRecalc\(\)"|onchange="bspRecalc\(\)"|onclick="bspRecalc\(\)"/.test(ud),
+        'inputs call bspChanged',
+      );
+      assert.strictEqual(
+        (ud.match(/getBspCfg\(b/g) || []).length >= 5,
+        true,
+        'the pane and every savingsPct reader use getBspCfg',
+      );
+      assert.ok(!/bspCfg\.savingsPct != null/.test(ud), 'no private default rule left');
+      const render = ud.slice(ud.indexOf('function renderBldgSavProjPane'), ud.indexOf('function getBspCfg'));
+      assert.ok(!/DB\.set\(/.test(render), 'rendering the Savings Projection pane writes nothing');
+    },
+  );
 
   // ---- fix 5: one version-stamp record per key; a second tab never overwrites the first tab's stamps
   await t('fix 5: two tabs share one storage; each tab writes only the stamp of the key it synced', async () => {
@@ -1584,32 +1648,47 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     assert.strictEqual(C.DB.__t._stampOf('en_budget_x').version, 1, "tab B's write did not drop tab A's stamp for X");
     assert.strictEqual(C.DB.__t._stampOf('en_budget_y').version, 2);
   });
-  await t('fix 5: a collection key keeps its merge base in the same record; stamps of an older build are split once', async () => {
-    const store = {};
-    const S = putServer();
-    const A = load({ mode: 'on', syncHost: true, classify: true, fetchImpl: S.fetchImpl, store });
-    await A.DB.warmCache();
-    A.DB.set('en_tasks', [{ id: 1, text: 'a' }]);
-    await tick();
-    const rec = JSON.parse(store['ch_rv::en_tasks']);
-    assert.strictEqual(rec.stamp.version, 1);
-    assert.deepStrictEqual(rec.base, [{ id: 1, text: 'a' }], 'merge base = what the server received');
-    // an older build left whole-map records
-    const old = { ch_replica_state: JSON.stringify({ en_budget_q: { version: 4, hash: 'h4' }, en_tasks: { version: 9, hash: 'h9' } }), ch_sync_base: JSON.stringify({ en_tasks: [{ id: 9 }] }) };
-    const store2 = Object.assign({}, old, { 'ch_rv::en_tasks': store['ch_rv::en_tasks'] });
-    const B = load({ mode: 'on', syncHost: true, classify: true, fetchImpl: S.fetchImpl, store: store2 });
-    await B.DB.warmCache();
-    assert.strictEqual(B.DB.__t._stampOf('en_budget_q').version, 4, 'old map entry migrated');
-    assert.strictEqual(B.DB.__t._stampOf('en_tasks').version, 1, 'a per-key record wins over the old map');
-    assert.ok(store2['ch_rv::en_budget_q'], 'migrated entry persisted per key');
-    assert.ok(!('ch_replica_state' in store2) && !('ch_sync_base' in store2), 'old maps removed after the split');
-    assert.ok(!Object.keys(B.DB.getAllForExport()).some((k) => k.indexOf('ch_rv::') === 0), 'stamps never in a backup');
-  });
+  await t(
+    'fix 5: a collection key keeps its merge base in the same record; stamps of an older build are split once',
+    async () => {
+      const store = {};
+      const S = putServer();
+      const A = load({ mode: 'on', syncHost: true, classify: true, fetchImpl: S.fetchImpl, store });
+      await A.DB.warmCache();
+      A.DB.set('en_tasks', [{ id: 1, text: 'a' }]);
+      await tick();
+      const rec = JSON.parse(store['ch_rv::en_tasks']);
+      assert.strictEqual(rec.stamp.version, 1);
+      assert.deepStrictEqual(rec.base, [{ id: 1, text: 'a' }], 'merge base = what the server received');
+      // an older build left whole-map records
+      const old = {
+        ch_replica_state: JSON.stringify({
+          en_budget_q: { version: 4, hash: 'h4' },
+          en_tasks: { version: 9, hash: 'h9' },
+        }),
+        ch_sync_base: JSON.stringify({ en_tasks: [{ id: 9 }] }),
+      };
+      const store2 = Object.assign({}, old, { 'ch_rv::en_tasks': store['ch_rv::en_tasks'] });
+      const B = load({ mode: 'on', syncHost: true, classify: true, fetchImpl: S.fetchImpl, store: store2 });
+      await B.DB.warmCache();
+      assert.strictEqual(B.DB.__t._stampOf('en_budget_q').version, 4, 'old map entry migrated');
+      assert.strictEqual(B.DB.__t._stampOf('en_tasks').version, 1, 'a per-key record wins over the old map');
+      assert.ok(store2['ch_rv::en_budget_q'], 'migrated entry persisted per key');
+      assert.ok(!('ch_replica_state' in store2) && !('ch_sync_base' in store2), 'old maps removed after the split');
+      assert.ok(
+        !Object.keys(B.DB.getAllForExport()).some((k) => k.indexOf('ch_rv::') === 0),
+        'stamps never in a backup',
+      );
+    },
+  );
 
   // ---- fix 9: behavior tests that run the REAL code
   // Cuts a top-level function (with its "async" prefix) out of an app file by brace matching.
   const cutFn = (file, name) => {
-    const src = fs.readFileSync(path.join(__dirname, 'app', file), 'utf8').split('\r').join('');
+    const src = fs
+      .readFileSync(path.join(__dirname, 'app', file), 'utf8')
+      .split('\r')
+      .join('');
     let start = src.indexOf('async function ' + name + '(');
     if (start < 0) start = src.indexOf('function ' + name + '(');
     assert.ok(start >= 0, name + ' exists in ' + file);
@@ -1626,95 +1705,258 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     let queue = entries.map((e) => Object.assign({}, e));
     const sent = [];
     const { DB } = load({ mode: 'on', syncHost: true, fetchImpl: async () => ok([]) });
-    const win = { CH_AUTH: { getUserId: () => me, backendMode: () => 'on' }, DB: { entryBelongsTo: DB.entryBelongsTo } };
+    const win = {
+      CH_AUTH: { getUserId: () => me, backendMode: () => 'on' },
+      DB: { entryBelongsTo: DB.entryBelongsTo },
+    };
     const drain = new Function(
-      'window', '_pdfQueueLoad', '_pdfQueueSave', 'pdfLoad', '_pdfDeleteCommit', '_pdfUploadCommit', '_pdfWithAuthRetry', 'console',
+      'window',
+      '_pdfQueueLoad',
+      '_pdfQueueSave',
+      'pdfLoad',
+      '_pdfDeleteCommit',
+      '_pdfUploadCommit',
+      '_pdfWithAuthRetry',
+      'console',
       cutFn('core.js', '_pdfDrainQueueLocked') + '; return _pdfDrainQueueLocked;',
     )(
       win,
       () => queue.map((e) => Object.assign({}, e)),
-      (q) => { queue = q; },
+      (q) => {
+        queue = q;
+      },
       async () => 'base64',
-      async (k) => { sent.push('delete ' + k); return { status: 'ok' }; },
-      async (k) => { sent.push('upload ' + k); return { status: 'ok' }; },
+      async (k) => {
+        sent.push('delete ' + k);
+        return { status: 'ok' };
+      },
+      async (k) => {
+        sent.push('upload ' + k);
+        return { status: 'ok' };
+      },
       (run) => run(),
       { warn() {} },
     );
     await drain();
     return { queue, sent };
   };
-  await t('fix 9: PDF drain claims no-owner and own-hint entries for the verified user; skips every other user\'s entry', async () => {
-    const r = await runPdfDrain('u1', [
-      { id: 'p1', type: 'upload', key: 'pdf-a' }, // older build: no owner tag
-      { id: 'p2', type: 'upload', key: 'pdf-b', owner: { id: null, hintId: 'u1' } }, // queued signed out, u1 was last here
-      { id: 'p3', type: 'delete', key: 'pdf-c', owner: { id: 'u2' } }, // another user's
-      { id: 'p4', type: 'upload', key: 'pdf-d', owner: { id: null, hintId: 'u2' } }, // another user's hint
-    ]);
-    assert.deepStrictEqual(r.sent, ['upload pdf-a', 'upload pdf-b']);
-    assert.deepStrictEqual(r.queue.map((e) => e.id), ['p3', 'p4'], 'other users\' entries stay queued');
-    assert.deepStrictEqual(r.queue[0].owner, { id: 'u2' }, 'owner tags untouched');
-    assert.deepStrictEqual(r.queue[1].owner, { id: null, hintId: 'u2' });
-  });
+  await t(
+    "fix 9: PDF drain claims no-owner and own-hint entries for the verified user; skips every other user's entry",
+    async () => {
+      const r = await runPdfDrain('u1', [
+        { id: 'p1', type: 'upload', key: 'pdf-a' }, // older build: no owner tag
+        { id: 'p2', type: 'upload', key: 'pdf-b', owner: { id: null, hintId: 'u1' } }, // queued signed out, u1 was last here
+        { id: 'p3', type: 'delete', key: 'pdf-c', owner: { id: 'u2' } }, // another user's
+        { id: 'p4', type: 'upload', key: 'pdf-d', owner: { id: null, hintId: 'u2' } }, // another user's hint
+      ]);
+      assert.deepStrictEqual(r.sent, ['upload pdf-a', 'upload pdf-b']);
+      assert.deepStrictEqual(
+        r.queue.map((e) => e.id),
+        ['p3', 'p4'],
+        "other users' entries stay queued",
+      );
+      assert.deepStrictEqual(r.queue[0].owner, { id: 'u2' }, 'owner tags untouched');
+      assert.deepStrictEqual(r.queue[1].owner, { id: null, hintId: 'u2' });
+    },
+  );
   await t('fix 9: PDF drain with no verified user sends nothing and changes nothing', async () => {
-    const entries = [{ id: 'p1', type: 'upload', key: 'pdf-a' }, { id: 'p2', type: 'upload', key: 'pdf-b', owner: { id: 'u1' } }];
+    const entries = [
+      { id: 'p1', type: 'upload', key: 'pdf-a' },
+      { id: 'p2', type: 'upload', key: 'pdf-b', owner: { id: 'u1' } },
+    ];
     const r = await runPdfDrain(null, entries);
     assert.deepStrictEqual(r.sent, []);
     assert.deepStrictEqual(r.queue, entries);
   });
   // The real sync-ui.js _safeToReload with its OPEN_DIALOG_SELECTOR, run against a fake document/window.
   const safeToReload = (st) => {
-    const src = fs.readFileSync(path.join(__dirname, 'app', 'sync-ui.js'), 'utf8').split('\r').join('');
+    const src = fs
+      .readFileSync(path.join(__dirname, 'app', 'sync-ui.js'), 'utf8')
+      .split('\r')
+      .join('');
     const sel = src.match(/var OPEN_DIALOG_SELECTOR =[\s\S]*?;\n/)[0];
     const doc = { activeElement: st.active || null, querySelector: (q) => (st.dialog ? { matched: q } : null) };
     const win = {
       DB: { getQueueDepth: () => st.queue || 0 },
       pdfQueueDepth: () => st.pdfQueue || 0,
     };
-    return new Function('document', 'window', sel + cutFn('sync-ui.js', '_safeToReload') + '; return _safeToReload();')(doc, win);
+    return new Function('document', 'window', sel + cutFn('sync-ui.js', '_safeToReload') + '; return _safeToReload();')(
+      doc,
+      win,
+    );
   };
-  await t('fix 9: _safeToReload blocks while typing, with an open dialog, or with unsent data; allows otherwise', () => {
-    assert.strictEqual(safeToReload({}), true);
-    assert.strictEqual(safeToReload({ active: { tagName: 'INPUT' } }), false, 'typing in an input');
-    assert.strictEqual(safeToReload({ active: { tagName: 'DIV', isContentEditable: true } }), false, 'typing in a contenteditable');
-    assert.strictEqual(safeToReload({ dialog: true }), false, 'an open dialog');
-    assert.strictEqual(safeToReload({ queue: 1 }), false, 'unsent data writes');
-    assert.strictEqual(safeToReload({ pdfQueue: 1 }), false, 'unsent PDFs');
-    assert.strictEqual(safeToReload({ active: { tagName: 'BUTTON' } }), true, 'focus on a button is not typing');
-  });
-  await t('fix 9: real db.js drain, user id changes across the refresh: A\'s entry stays queued under A, nothing goes to B::key', async () => {
-    const puts = [];
-    const L = loadReal({
-      userId: 'u1',
-      tokenFetch: tokUser('u2'), // the refresh picks up the account another tab switched to
-      kvFetch: async (u, o) => {
-        if (!o || o.method !== 'PUT') return ok([]);
-        const key = JSON.parse(o.body).key;
-        puts.push({ key, auth: o.headers.Authorization });
-        if (key === 'u1::ch_pref_x') return put401; // A's token was revoked
-        return ok({ version: 1, hash: null, deleted: false });
-      },
+  await t(
+    'fix 9: _safeToReload blocks while typing, with an open dialog, or with unsent data; allows otherwise',
+    () => {
+      assert.strictEqual(safeToReload({}), true);
+      assert.strictEqual(safeToReload({ active: { tagName: 'INPUT' } }), false, 'typing in an input');
+      assert.strictEqual(
+        safeToReload({ active: { tagName: 'DIV', isContentEditable: true } }),
+        false,
+        'typing in a contenteditable',
+      );
+      assert.strictEqual(safeToReload({ dialog: true }), false, 'an open dialog');
+      assert.strictEqual(safeToReload({ queue: 1 }), false, 'unsent data writes');
+      assert.strictEqual(safeToReload({ pdfQueue: 1 }), false, 'unsent PDFs');
+      assert.strictEqual(safeToReload({ active: { tagName: 'BUTTON' } }), true, 'focus on a button is not typing');
+    },
+  );
+  await t(
+    "fix 9: real db.js drain, user id changes across the refresh: A's entry stays queued under A, nothing goes to B::key",
+    async () => {
+      const puts = [];
+      const L = loadReal({
+        userId: 'u1',
+        tokenFetch: tokUser('u2'), // the refresh picks up the account another tab switched to
+        kvFetch: async (u, o) => {
+          if (!o || o.method !== 'PUT') return ok([]);
+          const key = JSON.parse(o.body).key;
+          puts.push({ key, auth: o.headers.Authorization });
+          if (key === 'u1::ch_pref_x') return put401; // A's token was revoked
+          return ok({ version: 1, hash: null, deleted: false });
+        },
+      });
+      L.store.ch_local_identity = 'u1';
+      L.store.ch_sync_queue = JSON.stringify([
+        {
+          id: 'qa',
+          key: 'ch_pref_x',
+          value: 'A-value',
+          deleted: false,
+          baseVersion: null,
+          ts: 1,
+          owner: { id: 'u1', email: null },
+        },
+      ]);
+      await L.DB.warmCache(); // the startup drain (B1b) sends A's queued entry
+      await tick(80);
+      assert.strictEqual(L.DB.getQueueDepth(), 1);
+      assert.strictEqual(L.A.getUserId(), 'u2', 'the refresh switched this tab to B');
+      const pref = puts.filter((p) => /ch_pref_x$/.test(p.key));
+      assert.strictEqual(pref.length, 1, 'sent once, as A, before the refresh');
+      assert.strictEqual(pref[0].key, 'u1::ch_pref_x');
+      assert.ok(!puts.some((p) => p.key === 'u2::ch_pref_x'), 'never written under B');
+      const q = L.DB.__t._queue();
+      assert.strictEqual(q.length, 1, "A's entry still queued");
+      assert.strictEqual(q[0].owner.id, 'u1');
+      assert.strictEqual(q[0].value, 'A-value');
+      // B's own drain afterwards skips A's entry
+      await L.DB.__t._drainQueueOnce();
+      await tick(40);
+      assert.strictEqual(puts.filter((p) => /ch_pref_x$/.test(p.key)).length, 1, "B's drain does not send A's entry");
+      assert.strictEqual(L.A.backendMode(), 'on', 'B stays signed in');
+    },
+  );
+  // ---- 7a (2026-10-06): a token refresh result belongs to the session it started from (real ch-auth.js)
+  const gatedToken = (resp) => {
+    let release;
+    const gate = new Promise((r) => {
+      release = r;
     });
-    L.store.ch_local_identity = 'u1';
-    L.store.ch_sync_queue = JSON.stringify([
-      { id: 'qa', key: 'ch_pref_x', value: 'A-value', deleted: false, baseVersion: null, ts: 1, owner: { id: 'u1', email: null } },
-    ]);
-    await L.DB.warmCache(); // the startup drain (B1b) sends A's queued entry
-    await tick(80);
-    assert.strictEqual(L.DB.getQueueDepth(), 1);
-    assert.strictEqual(L.A.getUserId(), 'u2', 'the refresh switched this tab to B');
-    const pref = puts.filter((p) => /ch_pref_x$/.test(p.key));
-    assert.strictEqual(pref.length, 1, 'sent once, as A, before the refresh');
-    assert.strictEqual(pref[0].key, 'u1::ch_pref_x');
-    assert.ok(!puts.some((p) => p.key === 'u2::ch_pref_x'), 'never written under B');
-    const q = L.DB.__t._queue();
-    assert.strictEqual(q.length, 1, 'A\'s entry still queued');
-    assert.strictEqual(q[0].owner.id, 'u1');
-    assert.strictEqual(q[0].value, 'A-value');
-    // B's own drain afterwards skips A's entry
-    await L.DB.__t._drainQueueOnce();
-    await tick(40);
-    assert.strictEqual(puts.filter((p) => /ch_pref_x$/.test(p.key)).length, 1, 'B\'s drain does not send A\'s entry');
-    assert.strictEqual(L.A.backendMode(), 'on', 'B stays signed in');
+    return {
+      release,
+      fetch: async () => {
+        await gate;
+        return resp;
+      },
+    };
+  };
+  const sessionJSON = (uid, tok, rt) =>
+    JSON.stringify({
+      access_token: tok,
+      refresh_token: rt,
+      expires_at: Math.floor(Date.now() / 1000) + 3600,
+      user_id: uid,
+      email: uid + '@example.com',
+    });
+  const refusedOnce = async () => ({ status: 'error', httpStatus: 401 });
+  await t(
+    "7a: refresh in flight, another tab signs in as B: A's result is dropped, B's session kept, this tab follows B, no retry",
+    async () => {
+      const g = gatedToken({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          access_token: FK('a2'),
+          refresh_token: FK('r2'),
+          expires_in: 3600,
+          user: { id: 'u1', email: 'u1@example.com' },
+        }),
+      });
+      const L = loadAuth(g.fetch);
+      let calls = 0;
+      const p = L.A.withAuthRetry(async () => {
+        calls++;
+        return refusedOnce();
+      });
+      await tick(10);
+      L.store.ch_sb_session = sessionJSON('u2', FK('b'), FK('rb')); // tab 2 signs in as B
+      g.release();
+      const out = await p;
+      const s = JSON.parse(L.store.ch_sb_session);
+      assert.strictEqual(s.user_id, 'u2', 'B session not overwritten by A');
+      assert.strictEqual(s.access_token, FK('b'));
+      assert.strictEqual(L.A.getUserId(), 'u2', 'this tab follows storage');
+      assert.strictEqual(L.A.getToken(), FK('b'));
+      assert.strictEqual(calls, 1, "A's request never sent again as B");
+      assert.strictEqual(out.httpStatus, 401);
+      assert.ok(
+        L.events.some((x) => x.startsWith('chAuthStateChanged')),
+        'identity change announced',
+      );
+    },
+  );
+  await t(
+    '7a: refresh in flight, another tab signs out: the session is not resurrected; this tab is signed out',
+    async () => {
+      const g = gatedToken({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          access_token: FK('a2'),
+          refresh_token: FK('r2'),
+          expires_in: 3600,
+          user: { id: 'u1', email: 'u1@example.com' },
+        }),
+      });
+      const L = loadAuth(g.fetch);
+      let calls = 0;
+      const p = L.A.withAuthRetry(async () => {
+        calls++;
+        return refusedOnce();
+      });
+      await tick(10);
+      delete L.store.ch_sb_session; // tab 2 signed out
+      g.release();
+      await p;
+      assert.ok(!('ch_sb_session' in L.store), 'signed-out session not written back');
+      assert.strictEqual(L.A.isSignedOut(), true);
+      assert.strictEqual(L.A.getToken(), null);
+      assert.strictEqual(calls, 1);
+    },
+  );
+  await t("7a: refresh REFUSED while another tab signed in as B: B's session is kept, this tab follows B", async () => {
+    const g = gatedToken({ ok: false, status: 400, json: async () => ({ error: 'invalid_grant' }) });
+    const L = loadAuth(g.fetch);
+    const p = L.A.withAuthRetry(refusedOnce);
+    await tick(10);
+    L.store.ch_sb_session = sessionJSON('u2', FK('b'), FK('rb'));
+    g.release();
+    await p;
+    assert.strictEqual(JSON.parse(L.store.ch_sb_session).user_id, 'u2', "B not signed out by A's refusal");
+    assert.strictEqual(L.A.getUserId(), 'u2');
+    assert.strictEqual(L.A.backendMode(), 'on');
+  });
+  await t('7a: same session throughout: the refresh result is saved and applied as before', async () => {
+    const L = loadAuth(tokOk(7));
+    let calls = 0;
+    const out = await L.A.withAuthRetry(async () =>
+      ++calls === 1 ? { status: 'error', httpStatus: 401 } : { status: 'ok' },
+    );
+    assert.strictEqual(out.status, 'ok');
+    assert.strictEqual(JSON.parse(L.store.ch_sb_session).access_token, FK('new7'));
+    assert.strictEqual(L.A.getToken(), FK('new7'));
+    assert.strictEqual(L.A.getUserId(), 'u1');
   });
   console.log(pass + ' passed');
 })().catch((e) => {

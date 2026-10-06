@@ -69,6 +69,13 @@ Many short `setTimeout` calls (toasts, URL cleanup, UI yield) are one-shot. They
   REFUSED the refresh token: HTTP 400, 401 or 403. A network error or a 5xx (Supabase paused) keeps the session; the
   5-minute timer, or the next 401 on a request, tries again. How to check: with the network off, the signed-out bar
   must not appear; the offline banner does.
+- A token refresh result belongs to the session it started from (app/ch-auth.js `_refresh`; the one check is
+  `_sameStoredSession`: same user id and same refresh token in storage). The stored session `ch_sb_session` is shared by
+  every tab. After the Supabase answer it is read again. If another tab changed it meanwhile (a different user signed
+  in, or signed out) the result is dropped: nothing is saved, nothing is applied, and this tab follows the stored session
+  (`chAuthStateChanged` fires, db.js bumps its identity epoch). A REFUSED refresh (400/401/403) also ends only the session
+  it was for; a session another tab stored meanwhile is kept. How to check: node test-sync-golive-blockers.js, the four
+  "7a:" tests (real ch-auth.js with a held token request).
 - A 401 on a data write or on the queue drain: one token refresh, then the same request again (`CH_AUTH.withAuthRetry`,
   called from `_putWithAuth` in app/db.js, the one place a refused write is reported). The "server refused this sign-in"
   bar (`dbAuthRejected`) shows only when the final answer is still 401/403 and the session ended. If the refresh could not

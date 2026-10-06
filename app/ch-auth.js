@@ -209,6 +209,16 @@
   // failure keeps the session and is tried again later.
   async function _refresh(session) {
     var body = await _tokenRequest('grant_type=refresh_token', { refresh_token: session.refresh_token });
+    // The stored session is shared by every tab. While this request was in
+    // flight another tab may have signed in as a different user, signed out, or
+    // refreshed the same user. The refresh result belongs to the session it
+    // started from: when storage no longer holds that session, the result is
+    // dropped (never saved, never applied) and this tab follows storage instead.
+    if (!_sameStoredSession(session)) {
+      var stored = _loadSession();
+      _applySession(stored);
+      return stored;
+    }
     var next = _sessionFromTokenResponse(body);
     // Supabase Auth rotates the refresh_token on every use; if the response
     // omits one for some reason, keep the previous refresh_token rather than
@@ -217,6 +227,13 @@
     _saveSession(next);
     _applySession(next);
     return next;
+  }
+  // True when storage still holds the session a refresh started from (same
+  // user id and same refresh token). THE one check for "did another tab change
+  // the session meanwhile".
+  function _sameStoredSession(session) {
+    var stored = _loadSession();
+    return !!stored && stored.user_id === session.user_id && stored.refresh_token === session.refresh_token;
   }
 
   // De-duped: if a refresh is already in flight (e.g. two tabs' timers fire
@@ -250,6 +267,14 @@
   function _startRefresh(session) {
     _refreshInFlight = _refresh(session)
       .catch(function (e) {
+        // A refusal ends only the session it was for. If another tab replaced
+        // the stored session meanwhile (new user), that session is kept and
+        // this tab follows it.
+        if (!_sameStoredSession(session)) {
+          var stored = _loadSession();
+          _applySession(stored);
+          return stored;
+        }
         if (_refreshRefused(e)) {
           _clearSession();
           _setSignedOut(true);
