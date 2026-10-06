@@ -105,8 +105,8 @@ function getBillUsageOrNull(bill, commodity) {
   };
   if (commodity === 'Electric') return parseBillNumber(bill.kwh);
   if (commodity === 'Gas') return resolveGasUsageThermsOrNull(bill);
-  if (commodity === 'Water') return parseBillNumber(bill.waterUsage);
-  if (commodity === 'Sewer') return first(bill.sewerUsage, bill.waterUsage);
+  if (commodity === 'Water') return first(bill.waterUsage, bill.WaterUsage);
+  if (commodity === 'Sewer') return first(bill.sewerUsage, bill.SewerUsage, bill.waterUsage);
   if (commodity === 'Propane') return first(bill.gallonsDelivered, bill.kwh);
   return null;
 }
