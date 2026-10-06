@@ -298,28 +298,12 @@ const DB = (() => {
     }
   }
 
-  // --- Canonical JSON + hash — MUST mirror kv-sync.js's sortKeysDeep/
-  // canonicalJSON/sha256Hex exactly (finding F8) so the client's hash-compare
-  // (integration #3) actually means something against the server's `hash`
-  // column. ------------------------------------------------------------------
-  function _sortKeysDeep(value) {
-    if (Array.isArray(value)) return value.map(_sortKeysDeep);
-    if (value && typeof value === 'object') {
-      const out = {};
-      Object.keys(value)
-        .sort()
-        .forEach((k) => {
-          // An own "__proto__" key from server JSON must not change this object's
-          // prototype. kv-sync.js drops it from the hash input the same way.
-          if (k === '__proto__') return;
-          out[k] = _sortKeysDeep(value[k]);
-        });
-      return out;
-    }
-    return value;
-  }
+  // --- Canonical JSON + hash ------------------------------------------------
+  // The ONE canonical form is SyncClassification.canonicalJSON (app/sync-
+  // classification.js, shared with restore-merge.js; kv-sync.js mirrors it so
+  // the client's hash equals the server's `hash` column). db.js only calls it.
   function _canonicalJSON(value) {
-    return JSON.stringify(_sortKeysDeep(value));
+    return window.SyncClassification.canonicalJSON(value);
   }
   async function _sha256Hex(str) {
     if (typeof crypto === 'undefined' || !crypto.subtle) throw new Error('SubtleCrypto unavailable');
@@ -1285,6 +1269,28 @@ const DB = (() => {
       if (epoch !== _identityEpoch) return;
     }
 
+    // Customer/Multi-Project (2026-09-24, BLOCKER 3 fix): same-content short-circuit.
+    // Deterministic customer ids mean two browsers migrating the same project can write
+    // identical content to the same key (en_customers, en_utility_<customerId>) at nearly
+    // the same time. If the local payload and the server's current value are the same in
+    // canonical form, nothing is lost and there is nothing to reconcile — adopt the
+    // server's version, no archive entry, no modal. Canonical, not JSON.stringify:
+    // Postgres jsonb returns keys in its own order, so equal values differ byte for byte
+    // and the "someone else changed this" dialog opened for identical data.
+    if (!payload.deleted && !current.deleted && current.value !== undefined) {
+      try {
+        if (
+          _canonicalJSON(stripDerivedCaches(key, payload.value)) ===
+          _canonicalJSON(stripDerivedCaches(key, current.value))
+        ) {
+          _setSynced(key, { version: current.version, hash: current.hash || null }, current.value);
+          return;
+        }
+      } catch (e) {
+        /* fall through to the normal modal path if either side isn't serializable */
+      }
+    }
+
     // Data-safety invariant: archive the losing local write BEFORE adopting
     // the server version or opening any modal — never silently lose either
     // side, and never let a modal button be clickable before this has run.
@@ -1298,27 +1304,6 @@ const DB = (() => {
       winningUpdatedBy: current.updatedBy,
       winningUpdatedAt: current.updatedAt,
     });
-
-    // Customer/Multi-Project (2026-09-24, BLOCKER 3 fix): byte-identical short-circuit.
-    // Deterministic customer ids mean two browsers migrating the same project can write
-    // identical content to the same key (en_customers, en_utility_<customerId>) at nearly
-    // the same time. If the local payload and the server's current value are byte-for-byte
-    // identical, there is nothing to reconcile — silently adopt the server's version and
-    // skip the modal instead of interrupting the user over a non-conflict. General
-    // robustness improvement (helps any accidental double-write, not just this migration).
-    if (!payload.deleted && !current.deleted && current.value !== undefined) {
-      try {
-        if (
-          JSON.stringify(stripDerivedCaches(key, payload.value)) ===
-          JSON.stringify(stripDerivedCaches(key, current.value))
-        ) {
-          _setSynced(key, { version: current.version, hash: current.hash || null }, current.value);
-          return;
-        }
-      } catch (e) {
-        /* fall through to the normal modal path if either side isn't serializable */
-      }
-    }
 
     await _presentConflictModal(key, payload, current, epoch);
   }

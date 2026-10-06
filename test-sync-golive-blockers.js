@@ -35,7 +35,9 @@ function load({ mode, syncHost, fetchImpl, classify }) {
   };
   const SCreal = require('./app/sync-classification.js');
   // Without classify only the audit id rule is provided (db.js always calls it).
-  win.SyncClassification = classify ? SCreal : { auditEntryId: SCreal.auditEntryId };
+  win.SyncClassification = classify
+    ? SCreal
+    : { auditEntryId: SCreal.auditEntryId, canonicalJSON: SCreal.canonicalJSON };
   const sandbox = {
     window: win,
     document: { addEventListener() {}, visibilityState: 'visible' },
@@ -1225,6 +1227,58 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     await tick();
     assert.strictEqual(DB.__t._baseOf('en_tasks').length, 11);
     assert.strictEqual(DB.get('en_tasks').length, 11, 'no task lost');
+  });
+  await t('fix 7: a 409 whose server value is the same content in jsonb key order is no conflict', async () => {
+    let n = 0;
+    const { DB } = load({
+      mode: 'on',
+      syncHost: true,
+      classify: true,
+      fetchImpl: async (u, o) => {
+        if (!o || o.method !== 'PUT') return ok([]);
+        n++;
+        // jsonb orders keys by length then bytes: {years, escPct} comes back as {years, escPct} vs sent {escPct, years}
+        return {
+          ok: false,
+          status: 409,
+          json: async () => ({
+            conflict: true,
+            current: {
+              key: 'bldgperf_cfg_b1',
+              value: { years: 3, escPct: 3.5, cscMode: 'pct' },
+              version: 7,
+              hash: 'h7',
+              deleted: false,
+              updatedBy: 'other',
+            },
+          }),
+        };
+      },
+    });
+    await DB.warmCache();
+    DB.set('bldgperf_cfg_b1', { cscMode: 'pct', escPct: 3.5, years: 3 });
+    await tick();
+    assert.strictEqual(n, 1);
+    assert.strictEqual(DB.getConflictArchive().length, 0, 'no Conflict history entry for identical data');
+    assert.strictEqual(DB.getQueueDepth(), 0, 'nothing queued');
+    assert.strictEqual(DB.__t._stampOf('bldgperf_cfg_b1').version, 7, 'server version adopted');
+  });
+  await t('fix 7: one canonical-JSON function; db.js, restore-merge.js and the audit id all use it', () => {
+    const SC = require('./app/sync-classification.js');
+    assert.strictEqual(typeof SC.canonicalJSON, 'function');
+    const db = fs.readFileSync(path.join(__dirname, 'app', 'db.js'), 'utf8');
+    const rm = fs.readFileSync(path.join(__dirname, 'app', 'restore-merge.js'), 'utf8');
+    assert.ok(
+      !/function _sortKeysDeep|JSON\.stringify\(stripDerivedCaches/.test(db),
+      'db.js has no private canonical form',
+    );
+    assert.ok(/SyncClassification\.canonicalJSON\(value\)/.test(db));
+    assert.ok(
+      /SC\.canonicalJSON\(/.test(rm) && !/\.sort\(\)\s*\.map\(\(k\) => JSON\.stringify\(k\)/.test(rm),
+      'restore-merge.js delegates',
+    );
+    assert.strictEqual(SC.canonicalJSON({ b: [{ z: 1, a: 2 }], a: 1 }), '{"a":1,"b":[{"a":2,"z":1}]}');
+    assert.strictEqual(SC.auditEntryId({ z: 1, a: 2 }), SC.canonicalJSON({ a: 2, z: 1 }));
   });
   console.log(pass + ' passed');
 })().catch((e) => {

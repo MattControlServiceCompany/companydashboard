@@ -407,26 +407,41 @@ const SyncClassification = (() => {
   }
 
   /**
-   * The ONE rule for "which audit-log entry is this": the entry's whole content with
-   * keys sorted. Called by app/db.js (sync merge) and app/restore-merge.js (restore).
+   * The ONE canonical JSON form of a value: keys sorted at every depth, an own
+   * "__proto__" key dropped, then JSON.stringify. Mirrors kv-sync.js
+   * sortKeysDeep/canonicalJSON exactly, so a hash of this text equals the
+   * server's `hash` column. Every "same value?" compare and every hash in
+   * app/db.js and app/restore-merge.js goes through this function.
+   */
+  function sortKeysDeep(value) {
+    if (Array.isArray(value)) return value.map(sortKeysDeep);
+    if (value && typeof value === 'object') {
+      const out = {};
+      Object.keys(value)
+        .sort()
+        .forEach((k) => {
+          if (k === '__proto__') return; // never changes the prototype of `out`
+          out[k] = sortKeysDeep(value[k]);
+        });
+      return out;
+    }
+    return value;
+  }
+  function canonicalJSON(value) {
+    return JSON.stringify(sortKeysDeep(value));
+  }
+
+  /**
+   * The ONE rule for "which audit-log entry is this": the entry's whole content in
+   * canonical form. Called by app/db.js (sync merge) and app/restore-merge.js (restore).
    */
   function auditEntryId(entry) {
     if (!entry || typeof entry !== 'object') return undefined;
-    const sort = (v) =>
-      Array.isArray(v)
-        ? v.map(sort)
-        : v && typeof v === 'object'
-          ? Object.keys(v)
-              .sort()
-              .reduce((o, k) => {
-                o[k] = sort(v[k]);
-                return o;
-              }, {})
-          : v;
-    return JSON.stringify(sort(entry));
+    return canonicalJSON(entry);
   }
 
   return {
+    canonicalJSON,
     SYNCED,
     LOCAL_ONLY,
     LOCAL_ONLY_OVERRIDES,

@@ -98,22 +98,23 @@ const RestoreMerge = (() => {
     if (typeof v === 'object') return Object.keys(v).length > 0;
     return true;
   }
+  // Backup text holds some numbers as strings: a numeric-looking string equals
+  // the number (restore-only rule). The canonical form itself is the ONE
+  // function SyncClassification.canonicalJSON, shared with db.js.
   const NUM = /^-?\d+(\.\d+)?$/;
-  function canon(v) {
-    if (Array.isArray(v)) return '[' + v.map(canon).join(',') + ']';
+  function numNorm(v) {
+    if (Array.isArray(v)) return v.map(numNorm);
     if (isRec(v)) {
-      return (
-        '{' +
-        Object.keys(v)
-          .sort()
-          .map((k) => JSON.stringify(k) + ':' + canon(v[k]))
-          .join(',') +
-        '}'
-      );
+      const o = {};
+      Object.keys(v).forEach((k) => {
+        o[k] = numNorm(v[k]);
+      });
+      return o;
     }
-    if (typeof v === 'string' && NUM.test(v)) return String(Number(v));
-    return JSON.stringify(v === undefined ? null : v);
+    if (typeof v === 'string' && NUM.test(v)) return Number(v);
+    return v === undefined ? null : v;
   }
+  const canon = (v) => SC.canonicalJSON(numNorm(v));
   const same = (a, b) => canon(a) === canon(b);
   // Backup files hold some values as JSON text. Compare and merge real values.
   function parseMaybe(v) {
@@ -135,7 +136,8 @@ const RestoreMerge = (() => {
         ? r.date + '|' + r.name + '|' + r.type
         : canon(r);
   // Audit entry identity: the ONE rule lives in sync-classification.js (also used by db.js).
-  const SC = typeof module !== 'undefined' && module.exports ? require('./sync-classification.js') : window.SyncClassification;
+  const SC =
+    typeof module !== 'undefined' && module.exports ? require('./sync-classification.js') : window.SyncClassification;
   const auditId = (r) => SC.auditEntryId(r);
   const presentedId = (r) =>
     r.projectId === undefined ? undefined : [r.projectId, r.periodStart, r.periodEnd].join('|');
