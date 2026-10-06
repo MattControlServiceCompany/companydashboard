@@ -334,17 +334,6 @@ function parseBillCsv(text, fname) {
       // total-cost column (full-schema export re-import) when one is actually detected.
       const gTotCst = g(iTotCst);
       row.totalCost = gTotCst != null ? gTotCst : row.gasCharge;
-      // Derive totalGasRate ($/Therm) directly at import time. getStoredRate('gas') in the
-      // shared computations/rates.js only checks PascalCase bill.NaturalGasTherms/NaturalGasCCF
-      // (the PDF-extractor's field-name convention) — it does NOT recognize the camelCase
-      // naturalGasTherms/naturalGasCCF keys BILL_SCHEMA (and this import) uses, so its
-      // charge/usage fallback silently returns 0 for CSV-imported bills. That's a pre-existing
-      // gap in a shared file outside this fix's scope (app/csv-import.js only) — compute the
-      // rate here instead so the Gas Rates section shows a real value rather than blank.
-      const gThermsForRate = resolveGasUsageTherms(row);
-      if (gThermsForRate > 0 && row.gasCharge > 0) {
-        row.totalGasRate = Math.round((row.gasCharge / gThermsForRate) * 100000) / 100000;
-      }
     } else {
       // Water / Sewer / Stormwater / Propane — write the exact BILL_SCHEMA key per
       // commodity so the schema-driven display reads real values instead of the
@@ -1781,17 +1770,23 @@ function _billSchemaFor(commodity) {
 // legacy rows that were saved before the field was renamed.
 function _billReadValue(row, entry) {
   if (!row) return '';
-  if (entry.key === 'totalKwhRate') {
-    const rate = getStoredRate(row, 'kwh');
-    if (rate > 0) return rate.toFixed(5);
-  }
+  // Rate columns are never read from the row: getStoredRate / getStoredKwRate (computations/rates.js)
+  // compute them from the bill's own cost and usage, so the Bills table can never show a stale rate.
+  const _RATE_KEY_TYPE = {
+    totalKwhRate: 'kwh',
+    totalGasRate: 'gas',
+    totalWaterRate: 'water',
+    totalSewerRate: 'sewer',
+    totalPropaneRate: 'propane',
+    totalStormwaterRate: 'stormwater',
+  };
   if (entry.key === 'totalKwRate') {
     const rate = getStoredKwRate(row);
-    if (rate > 0) return rate.toFixed(5);
+    return rate > 0 ? rate.toFixed(5) : '';
   }
-  if (entry.key === 'totalGasRate') {
-    const rate = getStoredRate(row, 'gas');
-    if (rate > 0) return rate.toFixed(5);
+  if (_RATE_KEY_TYPE[entry.key]) {
+    const rate = getStoredRate(row, _RATE_KEY_TYPE[entry.key]);
+    return rate > 0 ? (entry.key === 'totalStormwaterRate' ? rate.toFixed(2) : rate.toFixed(5)) : '';
   }
   const direct = row[entry.key];
   if (direct !== undefined && direct !== null && direct !== '' && direct !== 'null') return direct;

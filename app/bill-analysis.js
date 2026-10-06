@@ -6970,36 +6970,6 @@ function _mbUpdateSaveAllBtn() {
 }
 window._mbUpdateSaveAllBtn = _mbUpdateSaveAllBtn;
 
-// Item 2026-09-23 (gas-rate-fix2, cold-review follow-up): single shared $/Therm rate
-// mapper — replaces four previously-diverged copies (confirmAutoAssign, _mbSaveOneBill,
-// _saveBillToMatchedMeter, _saveSinglePDFBill). Three of the four divided charge by raw
-// naturalGasMMbtu (a $/MMBtu value, no x10 conversion) and stored it in totalGasRate,
-// mislabeled as $/Therm — the exact bug the resolveGasUsageTherms fix (computations/rates.js
-// getStoredRate/ensureBillRates) was supposed to eliminate but never reached these call
-// sites, because getStoredRate('gas') trusts an already-stored totalGasRate first
-// (computations/rates.js:61-62) and these paths always populate it at save time.
-// resolveGasUsageTherms() (computations/savings.js) only reads camelCase usage fields
-// (naturalGasTherms/naturalGasMMbtu/naturalGasCCF/therms) — the raw extracted/bill object
-// at these save sites is PascalCase (OCR extractor output: NaturalGasTherms/
-// NaturalGasMMbtu/NaturalGasCCF), so this helper builds the minimal camelCase mirror
-// resolveGasUsageTherms expects, then delegates ALL usage-to-Therms math to it — no
-// duplicate conversion logic here or at any call site.
-function _computeGasRate(bill) {
-  const c = getBillGasCost(bill); // the ONE gas cost accessor (computations/rates.js)
-  const usage =
-    typeof resolveGasUsageTherms === 'function'
-      ? resolveGasUsageTherms({
-          therms: bill.therms,
-          naturalGasTherms: bill.NaturalGasTherms || bill.naturalGasTherms,
-          naturalGasMMbtu: bill.NaturalGasMMbtu || bill.naturalGasMMbtu,
-          naturalGasCCF: bill.NaturalGasCCF || bill.naturalGasCCF,
-          thermFactor: bill.ThermFactor || bill.thermFactor,
-          usage: bill.usage,
-        })
-      : 0;
-  return usage > 0 && c > 0 ? (c / usage).toFixed(5) : '';
-}
-window._computeGasRate = _computeGasRate;
 
 // Shared meter-existence guard (item 0bc25b67): a saved Louisburg bill was
 // found filed under a meter no bill of its own identity actually matches —
@@ -7296,16 +7266,6 @@ async function confirmAutoAssign() {
       unitPrice: billValueOrBlank(bill.UnitPrice),
       subtotal: billValueOrBlank(bill.Subtotal),
       tax: billValueOrBlank(bill.Tax),
-      totalKwhRate: (() => {
-        const _kwh = parseBillNumber(bill.kWhConsumed);
-        const _chg = parseBillNumber(kwhCost);
-        return _kwh > 0 && _chg > 0 ? (_chg / _kwh).toFixed(5) : bill.TotalKWhRate || '';
-      })(),
-      totalKwRate: (() => {
-        const _kw = parseBillNumber(bill.BilledKW) || parseBillNumber(bill.ActualKW) || parseBillNumber(bill.FacilitiesKW);
-        const _chg = parseBillNumber(kwCost) + parseBillNumber(bill.FacilitiesCharge);
-        return _kw > 0 && _chg > 0 ? (_chg / _kw).toFixed(5) : bill.TotalKWRate || '';
-      })(),
       facilitiesRate: billValueOrBlank(bill.FacilitiesRate),
       demandRate: billValueOrBlank(bill.DemandRate),
       tdcRate: billValueOrBlank(bill.TDCRate),
@@ -7315,30 +7275,6 @@ async function confirmAutoAssign() {
       eerRate: billValueOrBlank(bill.EERRate),
       ptsRate: billValueOrBlank(bill.PTSRate),
       rkvaRate: billValueOrBlank(bill.RkVARate),
-      // Non-electric commodity rates — routed through the single shared _computeGasRate
-      // helper (2026-09-23 gas-rate-fix2), which always returns $/Therm (never $/MMBtu).
-      totalGasRate: _computeGasRate(bill),
-      totalWaterRate: (() => {
-        const u = parseBillNumber(bill.WaterUsage);
-        const c = parseBillNumber(bill.WaterCharge) || parseBillNumber(bill.TotalCurrentCharges) || parseBillNumber(bill.TotalAmountDue);
-        return u > 0 && c > 0 ? (c / u).toFixed(5) : '';
-      })(),
-      totalPropaneRate: (() => {
-        const g = parseBillNumber(bill.GallonsDelivered);
-        const up = parseBillNumberOrZero(bill.UnitPrice);
-        if (up > 0) return up.toFixed(5);
-        const c = parseBillNumber(bill.TotalCurrentCharges) || parseBillNumber(bill.TotalAmountDue);
-        return g > 0 && c > 0 ? (c / g).toFixed(5) : '';
-      })(),
-      totalSewerRate: (() => {
-        const u = parseBillNumber(bill.SewerUsage);
-        const c = parseBillNumber(bill.SewerCharge);
-        return u > 0 && c > 0 ? (c / u).toFixed(5) : '';
-      })(),
-      totalStormwaterRate: (() => {
-        const c = parseBillNumberOrZero(bill.StormWaterCharge);
-        return c > 0 ? c.toFixed(2) : '';
-      })(),
     };
     if (bill._rates) {
       const cp = {};
@@ -7749,16 +7685,6 @@ async function _mbSaveOneBill(bi, action) {
     unitPrice: billValueOrBlank(bill.UnitPrice),
     subtotal: billValueOrBlank(bill.Subtotal),
     tax: billValueOrBlank(bill.Tax),
-    totalKwhRate: (function () {
-      const _kwh = parseBillNumber(bill.kWhConsumed);
-      const _chg = parseBillNumber(kwhCost);
-      return _kwh > 0 && _chg > 0 ? (_chg / _kwh).toFixed(5) : bill.TotalKWhRate || '';
-    })(),
-    totalKwRate: (function () {
-      const _kw = parseBillNumber(bill.BilledKW) || parseBillNumber(bill.ActualKW) || parseBillNumber(bill.FacilitiesKW);
-      const _chg = parseBillNumber(kwCost) + parseBillNumber(bill.FacilitiesCharge);
-      return _kw > 0 && _chg > 0 ? (_chg / _kw).toFixed(5) : bill.TotalKWRate || '';
-    })(),
     facilitiesRate: billValueOrBlank(bill.FacilitiesRate),
     demandRate: billValueOrBlank(bill.DemandRate),
     tdcRate: billValueOrBlank(bill.TDCRate),
@@ -7768,30 +7694,6 @@ async function _mbSaveOneBill(bi, action) {
     eerRate: billValueOrBlank(bill.EERRate),
     ptsRate: billValueOrBlank(bill.PTSRate),
     rkvaRate: billValueOrBlank(bill.RkVARate),
-    // Non-electric commodity rate — routed through the single shared _computeGasRate
-    // helper (2026-09-23 gas-rate-fix2), which always returns $/Therm (never $/MMBtu).
-    totalGasRate: _computeGasRate(bill),
-    totalWaterRate: (function () {
-      const u = parseBillNumber(bill.WaterUsage);
-      const c = parseBillNumber(bill.WaterCharge) || parseBillNumber(bill.TotalCurrentCharges) || parseBillNumber(bill.TotalAmountDue);
-      return u > 0 && c > 0 ? (c / u).toFixed(5) : '';
-    })(),
-    totalPropaneRate: (function () {
-      const g = parseBillNumber(bill.GallonsDelivered);
-      const up = parseBillNumberOrZero(bill.UnitPrice);
-      if (up > 0) return up.toFixed(5);
-      const c = parseBillNumber(bill.TotalCurrentCharges) || parseBillNumber(bill.TotalAmountDue);
-      return g > 0 && c > 0 ? (c / g).toFixed(5) : '';
-    })(),
-    totalSewerRate: (function () {
-      const u = parseBillNumber(bill.SewerUsage);
-      const c = parseBillNumber(bill.SewerCharge);
-      return u > 0 && c > 0 ? (c / u).toFixed(5) : '';
-    })(),
-    totalStormwaterRate: (function () {
-      const c = parseBillNumberOrZero(bill.StormWaterCharge);
-      return c > 0 ? c.toFixed(2) : '';
-    })(),
   };
 
   if (bill._rates) {
@@ -8920,16 +8822,6 @@ function _saveBillToMatchedMeter(extracted, match) {
     franchiseFee2: billValueOrBlank(extracted.FranchiseFee2),
     solarCredit: billValueOrBlank(extracted.SolarCredit),
     generationKwh: billValueOrBlank(extracted.GenerationKwh),
-    totalKwhRate: (() => {
-      const _kwh = parseBillNumber(extracted.kWhConsumed);
-      const _chg = parseBillNumber(kwhCost);
-      return _kwh > 0 && _chg > 0 ? (_chg / _kwh).toFixed(5) : extracted.TotalKWhRate || '';
-    })(),
-    totalKwRate: (() => {
-      const _kw = parseBillNumber(extracted.BilledKW) || parseBillNumber(extracted.ActualKW) || parseBillNumber(extracted.FacilitiesKW);
-      const _chg = parseBillNumber(kwCost) + parseBillNumber(extracted.FacilitiesCharge);
-      return _kw > 0 && _chg > 0 ? (_chg / _kw).toFixed(5) : extracted.TotalKWRate || '';
-    })(),
     facilitiesRate: billValueOrBlank(extracted.FacilitiesRate),
     demandRate: billValueOrBlank(extracted.DemandRate),
     tdcRate: billValueOrBlank(extracted.TDCRate),
@@ -8986,30 +8878,6 @@ function _saveBillToMatchedMeter(extracted, match) {
     unitPrice: billValueOrBlank(extracted.UnitPrice),
     subtotal: billValueOrBlank(extracted.Subtotal),
     tax: billValueOrBlank(extracted.Tax),
-    // Non-electric commodity rate — routed through the single shared _computeGasRate
-    // helper (2026-09-23 gas-rate-fix2), which always returns $/Therm (never $/MMBtu).
-    totalGasRate: _computeGasRate(extracted),
-    totalWaterRate: (() => {
-      const u = parseBillNumber(extracted.WaterUsage);
-      const c = parseBillNumber(extracted.WaterCharge) || parseBillNumber(extracted.TotalCurrentCharges) || parseBillNumber(extracted.TotalAmountDue);
-      return u > 0 && c > 0 ? (c / u).toFixed(5) : '';
-    })(),
-    totalPropaneRate: (() => {
-      const g = parseBillNumber(extracted.GallonsDelivered);
-      const up = parseBillNumberOrZero(extracted.UnitPrice);
-      if (up > 0) return up.toFixed(5);
-      const c = parseBillNumber(extracted.TotalCurrentCharges) || parseBillNumber(extracted.TotalAmountDue);
-      return g > 0 && c > 0 ? (c / g).toFixed(5) : '';
-    })(),
-    totalSewerRate: (() => {
-      const u = parseBillNumber(extracted.SewerUsage);
-      const c = parseBillNumber(extracted.SewerCharge);
-      return u > 0 && c > 0 ? (c / u).toFixed(5) : '';
-    })(),
-    totalStormwaterRate: (() => {
-      const c = parseBillNumberOrZero(extracted.StormWaterCharge);
-      return c > 0 ? c.toFixed(2) : '';
-    })(),
     Meter1_ReadStart: extracted.Meter1_ReadStart || '',
     Meter1_ReadEnd: extracted.Meter1_ReadEnd || '',
     Meter1_StartRead: extracted.Meter1_StartRead || '',
@@ -11618,8 +11486,6 @@ function _buildDiffFields(extracted, existing) {
     TaxExemptDelivery: 'taxExemptDelivery',
     BillOffset: 'billOffset',
     MiscellaneousCharge: 'miscellaneousCharge',
-    TotalKWhRate: 'totalKwhRate',
-    TotalKWRate: 'totalKwRate',
     OnPeakRate: 'onPeakRate',
     OffPeakRate: 'offPeakRate',
     OnPeakKWh: 'onPeakKwh',
@@ -18128,8 +17994,6 @@ async function _applyDupUpdate(billIdx, extracted, dup) {
       ECARate: 'ecaRate',
       EERRate: 'eerRate',
       PTSRate: 'ptsRate',
-      TotalKWRate: 'totalKwRate',
-      TotalKWhRate: 'totalKwhRate',
       // Gas
       NaturalGasCCF: 'naturalGasCCF',
       NaturalGasTherms: 'naturalGasTherms',
@@ -21408,16 +21272,6 @@ async function _saveSinglePDFBill(extracted, projId) {
     franchiseFee2: billValueOrBlank(extracted.FranchiseFee2),
     solarCredit: billValueOrBlank(extracted.SolarCredit),
     generationKwh: billValueOrBlank(extracted.GenerationKwh),
-    totalKwhRate: (() => {
-      const _kwh = parseBillNumber(extracted.kWhConsumed);
-      const _chg = parseBillNumber(kwhCost);
-      return _kwh > 0 && _chg > 0 ? (_chg / _kwh).toFixed(5) : extracted.TotalKWhRate || '';
-    })(),
-    totalKwRate: (() => {
-      const _kw = parseBillNumber(extracted.BilledKW) || parseBillNumber(extracted.ActualKW) || parseBillNumber(extracted.FacilitiesKW);
-      const _chg = parseBillNumber(kwCost) + parseBillNumber(extracted.FacilitiesCharge);
-      return _kw > 0 && _chg > 0 ? (_chg / _kw).toFixed(5) : extracted.TotalKWRate || '';
-    })(),
     facilitiesRate: billValueOrBlank(extracted.FacilitiesRate),
     demandRate: billValueOrBlank(extracted.DemandRate),
     tdcRate: billValueOrBlank(extracted.TDCRate),
@@ -21449,30 +21303,6 @@ async function _saveSinglePDFBill(extracted, projId) {
     unitPrice: billValueOrBlank(extracted.UnitPrice),
     subtotal: billValueOrBlank(extracted.Subtotal),
     tax: billValueOrBlank(extracted.Tax),
-    // Non-electric commodity rate — routed through the single shared _computeGasRate
-    // helper (2026-09-23 gas-rate-fix2), which always returns $/Therm (never $/MMBtu).
-    totalGasRate: _computeGasRate(extracted),
-    totalWaterRate: (() => {
-      const u = parseBillNumber(extracted.WaterUsage);
-      const c = parseBillNumber(extracted.WaterCharge) || parseBillNumber(extracted.TotalCurrentCharges) || parseBillNumber(extracted.TotalAmountDue);
-      return u > 0 && c > 0 ? (c / u).toFixed(5) : '';
-    })(),
-    totalPropaneRate: (() => {
-      const g = parseBillNumber(extracted.GallonsDelivered);
-      const up = parseBillNumberOrZero(extracted.UnitPrice);
-      if (up > 0) return up.toFixed(5);
-      const c = parseBillNumber(extracted.TotalCurrentCharges) || parseBillNumber(extracted.TotalAmountDue);
-      return g > 0 && c > 0 ? (c / g).toFixed(5) : '';
-    })(),
-    totalSewerRate: (() => {
-      const u = parseBillNumber(extracted.SewerUsage);
-      const c = parseBillNumber(extracted.SewerCharge);
-      return u > 0 && c > 0 ? (c / u).toFixed(5) : '';
-    })(),
-    totalStormwaterRate: (() => {
-      const c = parseBillNumberOrZero(extracted.StormWaterCharge);
-      return c > 0 ? c.toFixed(2) : '';
-    })(),
   };
   // SHOULD-FIX (86669b5f review round 2, item #3): the en_pdf_bills record
   // above (pdfBills.push + sset, just above) is ALREADY durably persisted by

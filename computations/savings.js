@@ -481,10 +481,7 @@ function getMeterSavings(m, bills, incl, projId, bldgId, opts) {
       // left out, not counted as 0 - math-02 M1). Only a Gas meter derives a rate from the
       // bill's gas fields; this branch also runs for Water/Sewer/Stormwater/Steam meters.
       const _gasRates = bfr
-        .map(
-          (b) =>
-            parseBillNumberOrZero(b.totalGasRate) || (isGas ? getStoredRate(b, "gas") : 0),
-        )
+        .map((b) => (isGas ? getStoredRate(b, "gas") : 0))
         .filter((rt) => rt > 0);
       const _sGasRate = _gasRates.length
         ? _gasRates.reduce((s, rt) => s + rt, 0) / _gasRates.length

@@ -209,9 +209,7 @@ for (const blank of ['', null, undefined, 'N/A']) {
     'resolveGasUsageTherms blank ' + label + ' = 0',
     get(sb, 'resolveGasUsageTherms')({ therms: blank, naturalGasTherms: blank }) === 0,
   );
-  noThrow('ensureBillRates blank ' + label, () =>
-    get(sb, 'ensureBillRates')({ kWhConsumed: blank, kwhCost: blank, totalCost: blank }),
-  );
+  noThrow('getStoredRate kwh blank ' + label, () => getStoredRate({ kWhConsumed: blank, onPeakCost: blank, totalCost: blank }, 'kwh'));
   // extractor mapper (direct .toFixed on cost buckets)
   const rc = noThrow('_extractedToBillRowCosts blank ' + label, () =>
     get(
