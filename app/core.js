@@ -168,6 +168,8 @@ function _pdfQueueSave(queue) {
 function _pdfQueueGenId() {
   return Date.now() + '-' + Math.random().toString(36).slice(2, 8);
 }
+// Number of PDF actions not yet sent (read by app/sync-ui.js before a reload).
+window.pdfQueueDepth = () => _pdfQueueLoad().length;
 // Coalesce to the latest pending action per key — same reasoning as db.js's
 // _enqueueWrite (whole-value/whole-blob replace pattern; replaying a stale
 // queued action after a newer one exists for the same key would regress

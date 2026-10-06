@@ -328,12 +328,18 @@
   // holds its own in-memory lists, so the ONE way to show them is a page reload.
   // Reload only when nothing here can be lost by it (no field being edited, no
   // dialog open, nothing unsent); otherwise show the refresh bar instead.
+  // The ONE list of "a dialog is open" selectors. The app's dialogs use .modal-bg.open
+  // (and .ems-modal-bg.open on the EMS view).
+  var OPEN_DIALOG_SELECTOR =
+    '.modal-bg.open, .ems-modal-bg.open, .modal-overlay.open, .modal.open, #ch-conflict-overlay, dialog[open]';
   function _safeToReload() {
     var a = document.activeElement;
     var typing =
       a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT' || a.isContentEditable);
-    var dialog = document.querySelector('.modal-overlay.open, .modal.open, #ch-conflict-overlay, dialog[open]');
-    var unsent = window.DB && typeof window.DB.getQueueDepth === 'function' && window.DB.getQueueDepth() > 0;
+    var dialog = document.querySelector(OPEN_DIALOG_SELECTOR);
+    var unsent =
+      (window.DB && typeof window.DB.getQueueDepth === 'function' && window.DB.getQueueDepth() > 0) ||
+      (typeof window.pdfQueueDepth === 'function' && window.pdfQueueDepth() > 0);
     return !typing && !dialog && !unsent;
   }
   window.addEventListener('dbRemoteApplied', function (e) {

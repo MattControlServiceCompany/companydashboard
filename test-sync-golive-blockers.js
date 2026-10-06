@@ -604,6 +604,14 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     assert.ok(/_safeToReload\(\)\) window\.location\.reload\(\);\s*else renderRemoteChangeBanner/.test(ui));
   });
 
+  await t('M1 reload guard blocks on the app dialogs (.modal-bg.open) and an unsent PDF queue (source check)', () => {
+    const ui = fs.readFileSync(path.join(__dirname, 'app', 'sync-ui.js'), 'utf8');
+    const m = /OPEN_DIALOG_SELECTOR =\s*'([^']+)'/.exec(ui);
+    assert.ok(m, 'one dialog selector');
+    assert.ok(/\.modal-bg\.open/.test(m[1]) && /\.ems-modal-bg\.open/.test(m[1]));
+    assert.ok(/pdfQueueDepth\(\) > 0/.test(ui));
+  });
+
   // ---- M10: load-time writers
   await t('M10 every load-time saveUtilityData(SAVE_ALL_PROJECTS) runs only when a migration changed data', () => {
     const src = fs.readFileSync(path.join(__dirname, 'app', 'utility-data.js'), 'utf8').split('\r').join('');
