@@ -7177,10 +7177,6 @@ async function confirmAutoAssign() {
       billedKW: billValueOrBlank(bill.BilledKW),
       facKW: billValueOrBlank(bill.FacilitiesKW),
       facKWCost: billValueOrBlank(bill.FacilitiesCharge),
-      kwCost,
-      kwhCost,
-      otherCost,
-      taxCost,
       totalCost,
       fromPDF: true,
       pdfBillId: billId,
@@ -7645,10 +7641,6 @@ async function _mbSaveOneBill(bi, action) {
     billedKW: billValueOrBlank(bill.BilledKW),
     facKW: billValueOrBlank(bill.FacilitiesKW),
     facKWCost: billValueOrBlank(bill.FacilitiesCharge),
-    kwCost,
-    kwhCost,
-    otherCost,
-    taxCost,
     totalCost,
     fromPDF: true,
     pdfBillId: billId,
@@ -8895,10 +8887,6 @@ function _saveBillToMatchedMeter(extracted, match) {
     facKW: billValueOrBlank(extracted.FacilitiesKW),
     facKWCost: billValueOrBlank(extracted.FacilitiesCharge),
     tdcKW: billValueOrBlank(extracted.TDCkW),
-    kwCost,
-    kwhCost,
-    otherCost,
-    taxCost,
     totalCost,
     fromPDF: true,
     // pdfBillId is REQUIRED for the Bills table render to show the 📄 button
@@ -18217,52 +18205,10 @@ async function _applyDupUpdate(billIdx, extracted, dup) {
         existing.pdfKey,
       );
     };
-    // Recalculate cost aggregates from whatever is currently on `existing` AFTER
-    // the field-level updates have been applied. Reading back from existing (instead
-    // of from the raw extracted payload) preserves values the user manually entered
-    // in the Edit Billing Period modal. But we also have a SECOND safety rule:
-    // never overwrite a valid aggregate with a NEW value that is materially lower
-    // than the old one. A noisier re-extraction that misses some constituent charges
-    // would otherwise overwrite a correct $4,821.93 kwhCost with $755.93 simply
-    // because only the on-peak portion landed — that would silently corrupt the
-    // Utility Data bills table. The only way an aggregate goes DOWN is if the user
-    // explicitly overwrote (action === 'overwrite'), in which case we trust their
-    // intent. For merge and field-select we keep the higher value.
-    const preserveHigher = (label, newVal, oldRaw) => {
-      const newNum = parseBillNumber(newVal);
-      const oldNum = parseBillNumberOrZero(oldRaw);
-      if (dup.action === 'overwrite') return newVal; // trust explicit intent
-      if (newNum === null) return oldRaw || '';
-      // Allow small rounding drift but never a real decrease.
-      if (oldNum > newNum + 0.5) return String(oldNum.toFixed(2));
-      return newVal;
-    };
-    const _recalcAggregates = () => {
-      const newKwhCost = (
-        parseBillNumber(existing.onPeakCost) +
-        parseBillNumber(existing.offPeakCost) +
-        parseBillNumber(existing.ecaCharge) +
-        parseBillNumber(existing.eerCharge) +
-        parseBillNumber(existing.ptsCharge)
-      ).toFixed(2);
-      const newKwCost = (parseBillNumber(existing.demandCharge) + parseBillNumber(existing.tdcCharge)).toFixed(2);
-      // Tax exempt delivery and bill offset aren't stored in billRow, so they have
-      // to come from the new extraction if the user asked to apply it; otherwise
-      // customerCharge + rkvaCharge are the otherCost contributors we can still
-      // reconstruct from the post-merge row.
-      const newOtherCost = (
-        parseBillNumber(existing.customerCharge) +
-        parseBillNumber(existing.rkvaCharge) +
-        parseBillNumber(extracted.TaxExemptDelivery) +
-        parseBillNumber(extracted.BillOffset) +
-        parseBillNumber(extracted.MiscellaneousCharge)
-      ).toFixed(2);
-      const newTaxCost = parseBillNumberOrZero(existing.franchiseFee).toFixed(2);
-      existing.kwhCost = preserveHigher('kwhCost', newKwhCost, existing.kwhCost);
-      existing.kwCost = preserveHigher('kwCost', newKwCost, existing.kwCost);
-      existing.otherCost = preserveHigher('otherCost', newOtherCost, existing.otherCost);
-      existing.taxCost = preserveHigher('taxCost', newTaxCost, existing.taxCost);
-    };
+    // The roll-ups kwCost / kwhCost / otherCost / taxCost are not stored any more (2026-10-05
+    // duplicate-bill-fields audit step 6): every reader calls getBillKwCost / getBillKwhCost /
+    // getBillOtherCost / getBillTaxCost (computations/rates.js) over the component fields the
+    // FIELD_MAP writes above, so there is nothing to recalculate here.
     if (dup.action === 'overwrite') {
       // Replace all mapped fields with extracted value when non-empty
       for (const [extKey, billKey] of Object.entries(FIELD_MAP)) {
@@ -18273,7 +18219,6 @@ async function _applyDupUpdate(billIdx, extracted, dup) {
       // Apply ISO conversion to date fields written via FIELD_MAP
       if (existing.statementDate) existing.statementDate = toISO(existing.statementDate) || existing.statementDate;
       _copyPageRange();
-      _recalcAggregates();
     } else if (dup.action === 'merge') {
       // Fill only empty fields
       for (const [extKey, billKey] of Object.entries(FIELD_MAP)) {
@@ -18297,7 +18242,6 @@ async function _applyDupUpdate(billIdx, extracted, dup) {
           existing.pdfBillId = 'pb' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
         }
       }
-      _recalcAggregates();
     } else if (dup.action === 'field-select') {
       // Apply per-field selections — #118: never write null/undefined over an existing value
       for (const d of dup.diffFields) {
@@ -18311,7 +18255,6 @@ async function _applyDupUpdate(billIdx, extracted, dup) {
         }
       }
       _copyPageRange();
-      _recalcAggregates();
     } else if (dup.action === 'attach-pdf-only') {
       // Attach PDFs only mode: touch ONLY the PDF link + page-range fields.
       // Every other field on `existing` is left exactly as-is, including
@@ -20706,10 +20649,6 @@ function confirmAssignBill() {
     billedKW: billValueOrBlank(bill.BilledKW),
     facKW: billValueOrBlank(bill.FacilitiesKW),
     facKWCost: billValueOrBlank(bill.FacilitiesCharge),
-    kwCost,
-    kwhCost,
-    otherCost,
-    taxCost,
     totalCost,
     fromPDF: true,
     pdfBillId: bill.id,
@@ -21072,10 +21011,6 @@ function confirmManualAssign() {
     facKW: billValueOrBlank(extracted.FacilitiesKW),
     facKWCost: billValueOrBlank(extracted.FacilitiesCharge),
     tdcKW: billValueOrBlank(extracted.TDCkW),
-    kwCost,
-    kwhCost,
-    otherCost,
-    taxCost,
     totalCost,
     rateSchedule: extracted.RateSchedule || '',
     onPeakKwh: billValueOrBlank(extracted.OnPeakKWh),
@@ -21413,10 +21348,6 @@ async function _saveSinglePDFBill(extracted, projId) {
   // .toFixed further down) expects a number, same as before this fix.
   const {
     kwh: usageQty,
-    kwCost,
-    kwhCost,
-    otherCost,
-    taxCost,
     totalCost: totalCostRaw,
   } = _extractedToBillRowCosts(extracted);
   const totalCost = parseBillNumber(totalCostRaw);
@@ -21448,10 +21379,6 @@ async function _saveSinglePDFBill(extracted, projId) {
     facKW: billValueOrBlank(extracted.FacilitiesKW),
     facKWCost: billValueOrBlank(extracted.FacilitiesCharge),
     tdcKW: billValueOrBlank(extracted.TDCkW),
-    kwCost,
-    kwhCost,
-    otherCost,
-    taxCost,
     totalCost: totalCostRaw,
     fromPDF: true,
     pdfBillId: billRecord.id,

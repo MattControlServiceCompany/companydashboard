@@ -112,10 +112,7 @@ function getActualForMonth(projId, commodity, buildingId, yearMonth) {
           const cost =
             parseFloat(bill.totalCost) ||
             getBillGasCost(bill) ||
-            parseFloat(bill.kwCost || 0) +
-              parseFloat(bill.kwhCost || 0) +
-              parseFloat(bill.otherCost || 0) +
-              parseFloat(bill.taxCost || 0) ||
+            getBillKwCost(bill) + getBillKwhCost(bill) + getBillOtherCost(bill) + getBillTaxCost(bill) ||
             parseFloat(bill.cost || 0) ||
             0;
           total += cost;

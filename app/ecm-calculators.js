@@ -2451,7 +2451,7 @@ function getProjectRates(projId) {
             elecKwh += kwh;
             elecBills++;
           }
-          const dc = parseFloat(bill.kwCost) || 0; // BilledKWCharge + TDCCharge
+          const dc = getBillKwCost(bill); // BilledKWCharge + TDCCharge
           const bkw = parseFloat(bill.billedKW || bill.BilledKW) || 0;
           if (dc > 0 && bkw > 0) {
             demandCharge += dc;
@@ -2464,10 +2464,7 @@ function getProjectRates(projId) {
           // naturalGasTherms/naturalGasMMbtu/naturalGasCCF/usage chain), with bill.units/bill.kwh
           // as a last-resort generic-field fallback for older records that used neither.
           const _gasTotalCost = parseFloat(bill.totalCost) || 0;
-          const _gasLineCost =
-            (parseFloat(bill.kwhCost) || 0) +
-            (parseFloat(bill.otherCost) || 0) +
-            (parseFloat(bill.taxCost) || 0);
+          const _gasLineCost = getBillKwhCost(bill) + getBillOtherCost(bill) + getBillTaxCost(bill);
           const cost = _gasTotalCost > 0 ? _gasTotalCost : _gasLineCost;
           const therms =
             resolveGasUsageTherms(bill) ||

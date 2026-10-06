@@ -393,7 +393,7 @@ function getMeterSavings(m, bills, incl, projId, bldgId, opts) {
         ? _kwhRates.reduce((s, rt) => s + rt, 0) / _kwhRates.length
         : 0;
       const kwhCostAmt = bfr.reduce(
-        (s, b) => s + parseBillNumberOrZero(b.kwhCost),
+        (s, b) => s + getBillKwhCost(b),
         0,
       );
       kwhRate =

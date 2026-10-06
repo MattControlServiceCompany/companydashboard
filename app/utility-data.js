@@ -3683,12 +3683,7 @@ const CONDENSED_CATEGORIES = {
       label: 'kWh Cost $',
       type: 'currency',
       w: 100,
-      compute: (r) =>
-        parseBillNumber(r.onPeakCost) +
-        parseBillNumber(r.offPeakCost) +
-        parseBillNumber(r.ecaCharge) +
-        parseBillNumber(r.eerCharge) +
-        parseBillNumber(r.ptsCharge),
+      compute: (r) => getBillKwhCost(r),
     },
     {
       // Blended kWh rate — prefer stored rate from bill, fall back to computation
@@ -3698,12 +3693,7 @@ const CONDENSED_CATEGORIES = {
       compute: (r) => {
         const stored = getStoredRate(r, 'kwh');
         if (stored > 0) return stored;
-        const cost =
-          parseBillNumber(r.onPeakCost) +
-          parseBillNumber(r.offPeakCost) +
-          parseBillNumber(r.ecaCharge) +
-          parseBillNumber(r.eerCharge) +
-          parseBillNumber(r.ptsCharge);
+        const cost = getBillKwhCost(r);
         const kwh = parseBillNumber(r.kwh);
         return kwh > 0 ? cost / kwh : 0;
       },
@@ -3717,7 +3707,7 @@ const CONDENSED_CATEGORIES = {
       w: 100,
       // getBillFacKWCost (computations/rates.js) — the ONE accessor for Facilities kW Cost
       // (2026-09-23 single-source fix); never read r.facKWCost/r.facilitiesCharge directly.
-      compute: (r) => parseBillNumber(r.demandCharge) + parseBillNumber(r.tdcCharge) + getBillFacKWCost(r),
+      compute: (r) => getBillKwCost(r) + getBillFacKWCost(r),
     },
     {
       // Blended kW rate — SSOT getStoredKwRate() (computations/rates.js): stored
@@ -3733,12 +3723,9 @@ const CONDENSED_CATEGORIES = {
       label: 'Other Charges $',
       type: 'currency',
       w: 120,
-      compute: (r) =>
-        parseBillNumber(r.customerCharge) +
-        parseBillNumber(r.rkvaCharge) +
-        parseBillNumber(r.taxExemptDelivery) +
-        parseBillNumber(r.billOffset) +
-        parseBillNumber(r.franchiseFee),
+      // getBillOtherCost + getBillTaxCost (computations/rates.js): every line that is not energy,
+      // demand or facilities. One formula for this cell and for every roll-up that reads it.
+      compute: (r) => getBillOtherCost(r) + getBillTaxCost(r),
     },
     { label: 'Total Cost $', type: 'currency', w: 110, key: 'totalCost' },
   ],
@@ -6944,7 +6931,7 @@ function renderBaselinePane(pane, m, bills, incl) {
       if (!ym) return;
       // getBillFacKWCost (computations/rates.js) — the ONE accessor for Facilities kW Cost
       // (2026-09-23 single-source fix); never read b.facKWCost/facilitiesCharge directly.
-      const kwC = parseFloat(b.kwCost || 0) + getBillFacKWCost(b);
+      const kwC = getBillKwCost(b) + getBillFacKWCost(b);
       const ec = parseFloat(b.totalCost || 0) - kwC;
       energyCostByYm[ym] = (energyCostByYm[ym] || 0) + ec;
     });
@@ -6957,7 +6944,7 @@ function renderBaselinePane(pane, m, bills, incl) {
     let summerKwRate = null,
       winterKwRate = null;
     if (m.commodity === 'Electric') {
-      const demandBills = blBillsForRate.filter((b) => (b.demandKW || 0) > 0 && (b.kwCost || 0) > 0);
+      const demandBills = blBillsForRate.filter((b) => (b.demandKW || 0) > 0 && getBillKwCost(b) > 0);
       const sumDem = demandBills.filter((b) => {
         const mo = _parseISO(b.start).getMonth() + 1;
         return mo >= 6 && mo <= 9;
@@ -6966,8 +6953,8 @@ function renderBaselinePane(pane, m, bills, incl) {
         const mo = _parseISO(b.start).getMonth() + 1;
         return mo === 12 || mo <= 3;
       });
-      summerKwRate = sumDem.length ? sumDem.reduce((s, b) => s + b.kwCost / b.demandKW, 0) / sumDem.length : null;
-      winterKwRate = winDem.length ? winDem.reduce((s, b) => s + b.kwCost / b.demandKW, 0) / winDem.length : null;
+      summerKwRate = sumDem.length ? sumDem.reduce((s, b) => s + getBillKwCost(b) / b.demandKW, 0) / sumDem.length : null;
+      winterKwRate = winDem.length ? winDem.reduce((s, b) => s + getBillKwCost(b) / b.demandKW, 0) / winDem.length : null;
     }
 
     // Summer (Jun–Sep) vs Winter (Dec–Mar) $/unit rates using energyCost
@@ -7520,7 +7507,7 @@ function refreshBaselineStats(mid) {
       if (!ym) return;
       // getBillFacKWCost (computations/rates.js) — the ONE accessor for Facilities kW Cost
       // (2026-09-23 single-source fix); never read b.facKWCost/facilitiesCharge directly.
-      const kwC = parseFloat(b.kwCost || 0) + getBillFacKWCost(b);
+      const kwC = getBillKwCost(b) + getBillFacKWCost(b);
       eCostByYm2[ym] = (eCostByYm2[ym] || 0) + parseFloat(b.totalCost || 0) - kwC;
     });
     const costRows = blRows.filter((r) => r.usage > 0 && eCostByYm2[r.ym] > 0);
@@ -7530,7 +7517,7 @@ function refreshBaselineStats(mid) {
     let summerKwRate = null,
       winterKwRate = null;
     if (m.commodity === 'Electric') {
-      const dBills = blBillsR.filter((b) => (b.demandKW || 0) > 0 && (b.kwCost || 0) > 0);
+      const dBills = blBillsR.filter((b) => (b.demandKW || 0) > 0 && getBillKwCost(b) > 0);
       const sumDem = dBills.filter((b) => {
         const mo = _parseISO(b.start).getMonth() + 1;
         return mo >= 6 && mo <= 9;
@@ -7539,8 +7526,8 @@ function refreshBaselineStats(mid) {
         const mo = _parseISO(b.start).getMonth() + 1;
         return mo === 12 || mo <= 3;
       });
-      summerKwRate = sumDem.length ? sumDem.reduce((s, b) => s + b.kwCost / b.demandKW, 0) / sumDem.length : null;
-      winterKwRate = winDem.length ? winDem.reduce((s, b) => s + b.kwCost / b.demandKW, 0) / winDem.length : null;
+      summerKwRate = sumDem.length ? sumDem.reduce((s, b) => s + getBillKwCost(b) / b.demandKW, 0) / sumDem.length : null;
+      winterKwRate = winDem.length ? winDem.reduce((s, b) => s + getBillKwCost(b) / b.demandKW, 0) / winDem.length : null;
     }
     const sumR = costRows.filter((r) => {
       const mo = parseInt(r.ym.split('-')[1]);
@@ -10856,11 +10843,11 @@ function renderPerfPane(pane, m, bills, incl) {
       if (!bfr.length) return;
       const n = bfr.length;
       const actualKwh = bfr.reduce((s, b) => s + parseFloat(b.kwh || 0), 0);
-      const kwCostAmt = bfr.reduce((s, b) => s + parseFloat(b.kwCost || 0), 0);
+      const kwCostAmt = bfr.reduce((s, b) => s + getBillKwCost(b), 0);
       // getBillFacKWCost (computations/rates.js) — the ONE accessor for Facilities kW Cost
       // (2026-09-23 single-source fix); never read b.facKWCost/facilitiesCharge directly.
       const facKWCostAmt = bfr.reduce((s, b) => s + getBillFacKWCost(b), 0);
-      const kwhCostAmt = bfr.reduce((s, b) => s + parseFloat(b.kwhCost || 0), 0);
+      const kwhCostAmt = bfr.reduce((s, b) => s + getBillKwhCost(b), 0);
       // energyCost mirrors Meter Data "Energy Cost" = totalCost - kwCost
       const totalBillCost = bfr.reduce((s, b) => s + parseFloat(b.totalCost || 0), 0);
       const energyCostAmt = totalBillCost - kwCostAmt - facKWCostAmt;
@@ -10971,9 +10958,9 @@ function renderPerfPane(pane, m, bills, incl) {
       e.eerCharge += parseBillNumber(b.eerCharge);
       e.ptsCharge += parseBillNumber(b.ptsCharge);
       // Fallback aggregate fields
-      e.kwCost += parseBillNumber(b.kwCost);
+      e.kwCost += getBillKwCost(b);
       e.facKWCost += parseBillNumber(b.facKWCost);
-      e.kwhCost += parseBillNumber(b.kwhCost);
+      e.kwhCost += getBillKwhCost(b);
       e.customerCharge += parseBillNumber(b.customerCharge);
       e.rkvaCharge += parseBillNumber(b.rkvaCharge);
       e.taxExemptDelivery += parseBillNumber(b.taxExemptDelivery);

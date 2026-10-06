@@ -60,6 +60,63 @@ function getBillOwnUnitRate(bill, type) {
   return usage > 0 && cost > 0 ? cost / usage : 0;
 }
 
+// getBillKwCost(bill) / getBillKwhCost(bill) — the ONE accessors for the electric demand dollars
+// (demandCharge + tdcCharge, the Bills table "kW Cost $" without the Facilities part) and the electric
+// energy dollars (onPeakCost + offPeakCost + ecaCharge + eerCharge + ptsCharge, the Bills table
+// "kWh Cost $"). They add up the visible component fields. The stored roll-up copies `kwCost` /
+// `kwhCost` (written by the PDF save paths until 2026-10-05) are read ONLY when the bill has none of
+// the component fields. On the 2026-09-30 backup all 263 electric bills agree to the cent.
+function getBillKwCost(bill) {
+  if (!bill) return 0;
+  var d = parseBillNumber(bill.demandCharge);
+  var t = parseBillNumber(bill.tdcCharge);
+  if (d !== null || t !== null) return (d || 0) + (t || 0);
+  return parseBillNumber(bill.kwCost) || 0;
+}
+function getBillKwhCost(bill) {
+  if (!bill) return 0;
+  var parts = [bill.onPeakCost, bill.offPeakCost, bill.ecaCharge, bill.eerCharge, bill.ptsCharge].map(parseBillNumber);
+  var any = false;
+  var sum = 0;
+  for (var i = 0; i < parts.length; i++) {
+    if (parts[i] !== null) {
+      any = true;
+      sum += parts[i];
+    }
+  }
+  if (any) return sum;
+  return parseBillNumber(bill.kwhCost) || 0;
+}
+// getBillOtherCost(bill) / getBillTaxCost(bill) — the ONE accessors for the rest of an electric bill.
+// "Other" = customerCharge + rkvaCharge + taxExemptDelivery + billOffset + miscellaneousCharge (every
+// line that is not energy, not demand, not facilities, not tax). "Tax" = franchiseFee. This settles the
+// two old formulas (the stored otherCost copy folded in miscellaneousCharge; the Bills table cell folded
+// in franchiseFee instead): the Bills table "Other Charges $" is getBillOtherCost + getBillTaxCost, so
+// the four accessors plus getBillFacKWCost add up to the whole bill. The stored copies otherCost /
+// taxCost are read only when a bill has none of the component fields.
+function getBillOtherCost(bill) {
+  if (!bill) return 0;
+  var parts = [bill.customerCharge, bill.rkvaCharge, bill.taxExemptDelivery, bill.billOffset, bill.miscellaneousCharge].map(
+    parseBillNumber,
+  );
+  var any = false;
+  var sum = 0;
+  for (var i = 0; i < parts.length; i++) {
+    if (parts[i] !== null) {
+      any = true;
+      sum += parts[i];
+    }
+  }
+  if (any) return sum;
+  return parseBillNumber(bill.otherCost) || 0;
+}
+function getBillTaxCost(bill) {
+  if (!bill) return 0;
+  var v = parseBillNumber(bill.franchiseFee);
+  if (v !== null) return v;
+  return parseBillNumber(bill.taxCost) || 0;
+}
+
 // getBillGasCostOrNull(bill) — the ONE accessor for a bill's gas commodity cost (dollars).
 // Source field: `gasCharge` (BILL_SCHEMA.Gas "Gas Charge", the field the Bills table and the
 // Edit modal show) or the extractor's `GasCharge`. Nothing else is read first. The old stored
@@ -100,10 +157,7 @@ function getStoredRate(bill, type) {
       // onPeakCost/offPeakCost instead of the PDF extractor's kwhCost — fall back to
       // their sum so CSV-imported electric bills derive a real $/kWh (item 2026-09-21
       // rate-calc-and-electric-components.md gap #2).
-      var cost =
-        parseBillNumber(bill.kwhCost) ||
-        (parseBillNumber(bill.onPeakCost) || 0) + (parseBillNumber(bill.offPeakCost) || 0) ||
-        0;
+      var cost = getBillKwhCost(bill);
       return usage > 0 && cost > 0 ? cost / usage : 0;
     }
     case 'gas': {
@@ -165,7 +219,7 @@ function getStoredKwRate(bill) {
     parseBillNumber(bill.FacilitiesKW) ||
     0;
   if (!(billedKW > 0)) return 0;
-  var demandCost = parseBillNumber(bill.demandCharge) + parseBillNumber(bill.tdcCharge) || parseBillNumber(bill.kwCost);
+  var demandCost = getBillKwCost(bill);
   var cost = demandCost + getBillFacKWCost(bill);
   return cost > 0 ? cost / billedKW : 0;
 }
@@ -178,7 +232,7 @@ function ensureBillRates(bill) {
   // Electric: totalKwhRate
   if (!parseBillNumber(bill.totalKwhRate)) {
     var kwh = parseBillNumber(bill.kWhConsumed) || parseBillNumber(bill.totalKwh) || parseBillNumber(bill.kwh);
-    var kwhCost = parseBillNumber(bill.kwhCost);
+    var kwhCost = getBillKwhCost(bill);
     if (kwh > 0 && kwhCost > 0) {
       bill.totalKwhRate = (kwhCost / kwh).toFixed(5);
       changed = true;
