@@ -24,10 +24,10 @@
 
 const SyncClassification = (() => {
   // ── Open question Q5/Q7 (plan §"Open questions", item 5) ──────────────────
-  // Weather cache (en_wdd_*) defaults to LOCAL-ONLY (derived/rebuildable cache,
-  // keeping it out shrinks hydration). Flip this to `true` if Matt decides the
-  // weather cache should sync instead. ONE line, nothing else to touch.
-  const SYNC_WEATHER_CACHE = false; // Q5/Q7 default: false = en_wdd_* stays LOCAL-ONLY
+  // Weather data (en_wdd_<zip>) SYNCS (M3, 2026-10-06). It also holds the weather
+  // CSV a user uploads as a manual override, so two users must see the same
+  // months or weather-normalized figures differ. The keys are small.
+  const SYNC_WEATHER_CACHE = true;
 
   // ── SYNCED — server-authoritative, hydrated at load, CAS on write ─────────
   // Each entry is either an exact key or a prefix (dynamic-suffix key family).
@@ -117,7 +117,7 @@ const SyncClassification = (() => {
     {
       pattern: 'en_wdd_',
       prefix: true,
-      note: 'weather cache — gated by SYNC_WEATHER_CACHE toggle above, NOT unconditionally synced. See shouldReplicate().',
+      note: 'weather data and user-uploaded weather CSV overrides — gated by SYNC_WEATHER_CACHE toggle above (now true). See shouldReplicate().',
     },
     {
       pattern: 'en_utility_audit_log',

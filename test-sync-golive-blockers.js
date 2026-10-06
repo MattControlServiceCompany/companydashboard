@@ -642,6 +642,12 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     assert.ok(events.some((e) => e.type === 'dbAuthRejected' && e.detail.status === 401));
     assert.strictEqual(DB.getQueueDepth(), 1, 'edit kept');
   });
+
+  // ---- M3: weather data syncs
+  await t('M3 en_wdd_<zip> is classified synced', () => {
+    const SC = require('./app/sync-classification.js');
+    assert.strictEqual(SC.classifyKey('en_wdd_66053'), 'synced');
+  });
   console.log(pass + ' passed');
 })().catch((e) => {
   console.error('FAIL', e);
