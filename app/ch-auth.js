@@ -242,10 +242,18 @@
     return _refreshInFlight;
   }
 
+  // M7: the first refresh at page load. A stored token that already expired is
+  // primed into the cache synchronously, so a request sent before this refresh
+  // ends would carry a dead token. db.js awaits ready() before its first request.
+  var _startupRefresh = Promise.resolve(null);
+  function ready() {
+    return _startupRefresh;
+  }
+
   function _startBackgroundRefresh() {
     if (backendMode() === 'off') return; // kill switch — no network on load
     if (_refreshTimer) return;
-    _refreshIfNeeded();
+    _startupRefresh = _refreshIfNeeded();
     _refreshTimer = setInterval(_refreshIfNeeded, REFRESH_INTERVAL_MS);
   }
 
@@ -323,6 +331,7 @@
     needsSignIn: needsSignIn,
     getToken: getToken,
     getTokenInteractive: getTokenInteractive,
+    ready: ready,
     isSignedOut: isSignedOut,
     backendMode: backendMode,
     getUserId: getUserId,

@@ -25,6 +25,7 @@ function load({ mode, syncHost, fetchImpl, classify }) {
       backendMode: () => state.mode,
       isSyncHost: () => state.syncHost,
       getToken: () => 'tok',
+      ready: () => (state.ready ? state.ready() : Promise.resolve()),
       getUserId: () => (state.uid !== undefined ? state.uid : state.mode === 'on' ? 'u1' : null),
       getEmail: () => state.email || 'u1@example.com',
     },
@@ -653,6 +654,27 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
   await t('M4 en_louisburg_facility_map is classified synced', () => {
     const SC = require('./app/sync-classification.js');
     assert.strictEqual(SC.classifyKey('en_louisburg_facility_map'), 'synced');
+  });
+
+  // ---- M7: no request before the first token refresh ends
+  await t('M7 hydration waits for CH_AUTH.ready() before the first request', async () => {
+    const urls = [];
+    const L = load({ mode: 'on', syncHost: true, fetchImpl: async (u) => { urls.push(u); return ok([]); } });
+    let release;
+    await L.DB.warmCache();
+    urls.length = 0;
+    L.state.ready = () => new Promise((r) => { release = r; });
+    const h = L.DB.__t._hydrate();
+    await new Promise((r) => setTimeout(r, 30));
+    assert.strictEqual(urls.length, 0, 'no request while the refresh is pending: ' + urls.join(' '));
+    release();
+    await h;
+    assert.ok(urls.length >= 1, 'request sent after the refresh ended');
+  });
+  await t('M7 ch-auth exposes ready() resolved by the first refresh (source check)', () => {
+    const src = fs.readFileSync(path.join(__dirname, 'app', 'ch-auth.js'), 'utf8');
+    assert.ok(/_startupRefresh = _refreshIfNeeded\(\)/.test(src));
+    assert.ok(/ready: ready,/.test(src));
   });
   console.log(pass + ' passed');
 })().catch((e) => {

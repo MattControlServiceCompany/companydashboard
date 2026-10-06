@@ -1855,11 +1855,26 @@ const DB = (() => {
     }
   }
 
+  // M7: wait for the first sign-in refresh before the first request, so an
+  // expired stored token is never sent. Capped: a slow refresh must not block
+  // loading from the local copy.
+  const AUTH_READY_TIMEOUT_MS = 8000;
+  function _authReady() {
+    const auth = typeof window !== 'undefined' ? window.CH_AUTH : null;
+    if (!auth || typeof auth.ready !== 'function') return Promise.resolve();
+    let timer;
+    const cap = new Promise((resolve) => {
+      timer = setTimeout(resolve, AUTH_READY_TIMEOUT_MS);
+    });
+    return Promise.race([Promise.resolve(auth.ready()).catch(() => null), cap]).then(() => clearTimeout(timer));
+  }
   async function _hydrateInner() {
     const mode = _backendMode();
     if (mode !== 'on') return; // off: no hydration
     const epoch = _identityEpoch;
     const stale = () => epoch !== _identityEpoch; // identity changed: discard this run
+    await _authReady();
+    if (stale() || _backendMode() !== 'on') return;
 
     let manifest;
     try {
