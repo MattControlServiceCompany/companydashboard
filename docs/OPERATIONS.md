@@ -23,7 +23,7 @@ No secrets are in this file. Only env var NAMES are listed.
 |---|---|---|---|
 | kv-sync | Shared data store. GET manifest/keys/key. PUT with version check. Keeps change history. (kv-sync.js:210-245) | HTTP `/.netlify/functions/kv-sync` (app/db.js:10). No schedule. | SUPABASE_URL, SUPABASE_SECRET_KEY, AUTHORIZED_USERS, CH_TEST_JWKS_URL (test only) (kv-sync.js:78-79,91,125) |
 | pdf-sync | Stores and returns PDF files. Single or chunked PUT. (pdf-sync.js:323-342) | HTTP. No schedule. | SUPABASE_URL, SUPABASE_SECRET_KEY, AUTHORIZED_USERS, ALLOWED_ORIGIN (optional), CH_TEST_JWKS_URL (test only) (pdf-sync.js:120-121,135,155,226) |
-| supabase-keepalive | One read of one row in table `kv`. Stops Supabase from pausing. Returns 200 on success, 502 on failure. (supabase-keepalive.js:1-37) | Schedule `@daily` (netlify.toml:23-24). `@daily` = 00:00 UTC = 19:00 Central (CDT, summer) or 18:00 Central (CST, winter). | SUPABASE_URL, SUPABASE_SECRET_KEY |
+| supabase-keepalive | One read of one row in table `kv`. Stops Supabase from pausing. Returns 200 on success, 502 on failure. (supabase-keepalive.js:1-37) | Schedule `@daily` (netlify.toml:26-27). `@daily` = 00:00 UTC = 19:00 Central (CDT, summer) or 18:00 Central (CST, winter). | SUPABASE_URL, SUPABASE_SECRET_KEY |
 
 How to check that a function works:
 - Netlify dashboard, site cscdashboard, Observability, then Functions. Open the function and read the invocation log.
