@@ -2275,6 +2275,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.06.82', date: '2026-10-06', title: 'EMS Leads now save and sync like the rest of the dashboard',
+    items: [
+      { type: 'fix', text: 'EMS Leads: your leads now save to the shared dashboard data, so both users see the same list on any browser instead of each browser keeping its own copy.' },
+      { type: 'change', text: 'EMS Leads: leads already saved in your browser are moved into the shared list the first time you open the page, and an archived copy is kept.' }
+    ]
+  },
   { v: 'v2026.10.06.81', date: '2026-10-06', title: 'Constellation gas bills land on the right account',
     items: [
       { type: 'fix', text: 'Utility Data: Constellation gas bills with a damaged or dotted account number are now matched to the correct account and service address, instead of being booked on the first site.' },
