@@ -401,6 +401,33 @@ const DB = (() => {
     const lu = _cache[LAST_USER_KEY];
     _lastUser = lu && typeof lu.id === 'string' ? lu : null;
     _recordLastUser();
+    _retireOwnerlessEntries();
+  }
+  // Entries saved by a build before owner tags existed (v83 and older) name no
+  // user. They are NEVER sent: a guessed owner could write one user's data under
+  // another user's account. Each one goes to the conflict archive (value kept)
+  // and leaves the queue, so the count cannot stay stuck. Its version stamp is
+  // dropped so the next hydration compares the local copy with the server
+  // honestly: same content adopts the version; a collection key merges record
+  // by record (local additions are kept and sent); any other key takes the
+  // server value and archives the local copy with the usual toast.
+  function _retireOwnerlessEntries() {
+    const ownerless = _syncQueue.filter((e) => !e.owner);
+    if (!ownerless.length) return;
+    _syncQueue = _syncQueue.filter((e) => !!e.owner);
+    ownerless.forEach((e) => {
+      _appendConflictArchive({
+        key: e.key,
+        reason: 'queue-entry-no-owner',
+        losingSide: 'local',
+        losingValue: e.deleted ? null : e.value,
+        losingDeleted: !!e.deleted,
+        losingVersion: typeof e.baseVersion === 'number' ? e.baseVersion : null,
+      });
+      delete _replicaVersions[e.key];
+    });
+    _persistReplicaState();
+    _persistSyncQueue();
   }
   // Owner tag for queued edits: the user id (and email) last signed in on this
   // browser. Persisted so an edit made while signed out keeps its owner across reload.

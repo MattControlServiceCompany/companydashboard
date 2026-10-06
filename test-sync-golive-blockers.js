@@ -1453,6 +1453,44 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
       'sign-out event',
     );
   });
+
+  // ---- fix 4: queue entries with no owner (older build) are never sent under a guessed user
+  await t('fix 4: an ownerless queue entry is archived, leaves the queue, is never sent; owned entries still drain', async () => {
+    const puts = [];
+    const serverVal = { n: 'server' };
+    const { DB, store } = load({
+      mode: 'on',
+      syncHost: true,
+      classify: true,
+      fetchImpl: async (u, o) => {
+        if (o && o.method === 'PUT') {
+          puts.push(JSON.parse(o.body));
+          return ok({ version: 2, hash: sha(JSON.parse(o.body).value), deleted: false });
+        }
+        if (/manifest=1/.test(u)) return ok([{ key: 'en_budget_q', version: 1, hash: sha(serverVal), deleted: false }]);
+        if (/keys=/.test(u)) return ok([{ key: 'en_budget_q', value: serverVal, version: 1, hash: sha(serverVal), deleted: false, updatedBy: 'x' }]);
+        return ok([]);
+      },
+    });
+    store.en_budget_q = JSON.stringify({ n: 'local-unsent' });
+    store.ch_replica_state = JSON.stringify({ en_budget_q: { version: 1, hash: 'stale' } });
+    store.ch_sync_queue = JSON.stringify([
+      { id: 'old1', key: 'en_budget_q', value: { n: 'local-unsent' }, deleted: false, baseVersion: 1, ts: 1 }, // v83: no owner
+      { id: 'new1', key: 'en_budget_r', value: { n: 'mine' }, deleted: false, baseVersion: null, ts: 2, owner: { id: 'u1', email: null } },
+    ]);
+    await DB.warmCache();
+    const arch = DB.getConflictArchive();
+    const retired = arch.filter((e) => e.reason === 'queue-entry-no-owner');
+    assert.strictEqual(retired.length, 1, 'ownerless entry archived once');
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(retired[0].losingValue)), { n: 'local-unsent' }, 'value kept');
+    assert.ok(!DB.__t._queue().some((e) => e.id === 'old1'), 'ownerless entry left the queue');
+    assert.ok(!puts.some((p) => p.key === 'en_budget_q' || /::en_budget_q$/.test(p.key)), 'never sent, under nobody');
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(DB.get('en_budget_q'))), serverVal, 'server value adopted, local copy archived');
+    assert.ok(arch.some((e) => e.reason === 'hydration-server-wins' && e.key === 'en_budget_q'), 'local copy archived by hydration');
+    await DB.__t._drainQueueOnce();
+    assert.ok(puts.some((p) => p.key === 'en_budget_r'), 'the owned entry drains');
+    assert.strictEqual(DB.getQueueDepth(), 0, 'queue count reaches 0');
+  });
   console.log(pass + ' passed');
 })().catch((e) => {
   console.error('FAIL', e);

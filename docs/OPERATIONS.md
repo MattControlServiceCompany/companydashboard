@@ -84,6 +84,10 @@ Many short `setTimeout` calls (toasts, URL cleanup, UI yield) are one-shot. They
   the answer; the newest waiting value wins. Two PUTs for one key never overlap.
 - How to check: open the browser DevTools Network tab on the sync host, filter `kv-sync`, reload the page and open the
   Building Performance and Savings Projection panes. Expected: zero PUT requests.
+- Queue entries with no owner tag (saved by v2026.10.06.83 or older) are never sent (`_retireOwnerlessEntries`, runs when
+  the queue loads). Each goes to Conflict history as `queue-entry-no-owner` with its value, leaves the queue, and its
+  version stamp is dropped so the next load compares the local copy with the server. How to check: after one load the
+  "N unsynced changes" bar is gone and Sync status, Conflict history lists the entries.
 
 ## 7. How to keep this file current
 
