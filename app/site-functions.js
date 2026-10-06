@@ -1774,6 +1774,12 @@ async function siteResetData() {
     )
   )
     return;
+  // M8: the conflict archive holds the only copy of values a sync did not keep.
+  // It is erased with everything else, so save it to a file first.
+  const _archive = window.DB && window.DB.getConflictArchive ? window.DB.getConflictArchive() : [];
+  if (_archive.length) {
+    _downloadJSON(_archive, 'CompanyHub-conflict-archive-' + new Date().toISOString().slice(0, 10) + '.json');
+  }
   localStorage.clear();
   sessionStorage.clear();
   if (window.DB && window.DB.clear) {

@@ -689,6 +689,16 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     assert.ok(/_pdfShouldQueueUpload\(\)/.test(store) && !/backendMode\(\)/.test(store));
     assert.ok(/addEventListener\('chAuthStateChanged'[\s\S]{0,80}_pdfDrainQueueOnce/.test(src), 'sign-in drains the queue');
   });
+
+  // ---- M8: Reset keeps a copy of the conflict archive
+  await t('M8 siteResetData saves the conflict archive to a file before it erases data', () => {
+    const src = fs.readFileSync(path.join(__dirname, 'app', 'site-functions.js'), 'utf8').split('\r').join('');
+    const fn = src.match(/async function siteResetData\(\) \{[\s\S]*?\n\}/)[0];
+    const dl = fn.indexOf('_downloadJSON(_archive');
+    const wipe = fn.indexOf('localStorage.clear()');
+    assert.ok(dl > 0 && wipe > dl, 'archive download comes before the wipe');
+    assert.ok(/getConflictArchive/.test(fn));
+  });
   console.log(pass + ' passed');
 })().catch((e) => {
   console.error('FAIL', e);
