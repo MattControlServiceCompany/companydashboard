@@ -2275,6 +2275,15 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.06.84', date: '2026-10-06', title: 'Sign-in is now required, and first load is safer',
+    items: [
+      { type: 'feature', text: 'A bar at the top now tells you when you are signed out, so you always know whether your changes will be shared.' },
+      { type: 'change', text: 'You must sign in to use the shared dashboard data. Signing out now fully signs you out of the saved session.' },
+      { type: 'fix', text: 'Edits made while signed out are kept and sent to the shared data when you sign in again, under your own account.' },
+      { type: 'fix', text: 'The first load of a large shared data set is safer and no longer fails or stalls on big projects.' },
+      { type: 'change', text: 'The demo sign-in is turned off on the shared site.' }
+    ]
+  },
   { v: 'v2026.10.06.83', date: '2026-10-06', title: 'The dashboard now stays awake on its own',
     items: [
       { type: 'fix', text: 'The shared dashboard data no longer goes to sleep after a few quiet days. A small daily check keeps it active, so the site does not go offline again.' }
