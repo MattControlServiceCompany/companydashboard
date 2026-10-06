@@ -134,7 +134,9 @@ const RestoreMerge = (() => {
       : r.name && r.type
         ? r.date + '|' + r.name + '|' + r.type
         : canon(r);
-  const auditId = (r) => (r.ts === undefined ? undefined : [r.ts, r.action, r.projId, r.bldgId, r.meterId].join('|'));
+  // Audit entry identity: the ONE rule lives in sync-classification.js (also used by db.js).
+  const SC = typeof module !== 'undefined' && module.exports ? require('./sync-classification.js') : window.SyncClassification;
+  const auditId = (r) => SC.auditEntryId(r);
   const presentedId = (r) =>
     r.projectId === undefined ? undefined : [r.projectId, r.periodStart, r.periodEnd].join('|');
   const str = (v) => (v === undefined || v === null ? '' : String(v));

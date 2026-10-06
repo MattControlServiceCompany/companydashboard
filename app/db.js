@@ -759,7 +759,7 @@ const DB = (() => {
   //   en_pdf_bills          list of held bill records, id 'pb...'
   //   en_utility_<id>       { buildings:[{id, meters:[{id, bills:[{id}]}]}] }
   const _byIdProp = (it) => it && it.id;
-  const AUDIT_ENTRY_ID = (it) => (it && typeof it === 'object' ? _canonicalJSON(it) : undefined);
+  const AUDIT_ENTRY_ID = (it) => window.SyncClassification.auditEntryId(it);
   const MERGE_ONLY_CONFIG = {
     audit: {
       noDeletionRecords: true,

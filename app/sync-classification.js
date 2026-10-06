@@ -406,6 +406,26 @@ const SyncClassification = (() => {
     return shouldReplicate(key) ? 'synced' : 'local-only';
   }
 
+  /**
+   * The ONE rule for "which audit-log entry is this": the entry's whole content with
+   * keys sorted. Called by app/db.js (sync merge) and app/restore-merge.js (restore).
+   */
+  function auditEntryId(entry) {
+    if (!entry || typeof entry !== 'object') return undefined;
+    const sort = (v) =>
+      Array.isArray(v)
+        ? v.map(sort)
+        : v && typeof v === 'object'
+          ? Object.keys(v)
+              .sort()
+              .reduce((o, k) => {
+                o[k] = sort(v[k]);
+                return o;
+              }, {})
+          : v;
+    return JSON.stringify(sort(entry));
+  }
+
   return {
     SYNCED,
     LOCAL_ONLY,
@@ -417,6 +437,7 @@ const SyncClassification = (() => {
     shouldReplicate,
     isPerUser,
     classify,
+    auditEntryId,
   };
 })();
 

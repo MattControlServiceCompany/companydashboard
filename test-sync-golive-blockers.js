@@ -30,7 +30,9 @@ function load({ mode, syncHost, fetchImpl, classify }) {
       getEmail: () => state.email || 'u1@example.com',
     },
   };
-  if (classify) win.SyncClassification = require('./app/sync-classification.js');
+  const SCreal = require('./app/sync-classification.js');
+  // Without classify only the audit id rule is provided (db.js always calls it).
+  win.SyncClassification = classify ? SCreal : { auditEntryId: SCreal.auditEntryId };
   const sandbox = {
     window: win,
     document: { addEventListener() {}, visibilityState: 'visible' },
