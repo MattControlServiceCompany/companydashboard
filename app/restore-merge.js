@@ -46,7 +46,7 @@ const RestoreMerge = (() => {
   ];
   // The ONE "engine bookkeeping key" rule for restore and backup: the exact keys
   // above plus the per-key sync records (db.js RV_PREFIX, ch_rv::<key>).
-  const isEngineKey = (k) => SKIP_KEYS.indexOf(k) !== -1 || k.indexOf('ch_rv::') === 0;
+  const isEngineKey = (k) => SKIP_KEYS.indexOf(k) !== -1 || k.indexOf('ch_rv::') === 0 || SC.isNeverBackupKey(k);
   const NEVER = [
     [/^ch_user$/, 'signed-in user identity'],
     [/^ch_(seen_version|last_seen_version|qs_seen|idb_migrated|verification_results|notifs)$/, 'device state'],

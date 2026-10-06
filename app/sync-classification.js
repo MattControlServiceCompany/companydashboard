@@ -190,6 +190,7 @@ const SyncClassification = (() => {
     {
       pattern: 'ch_sb_session',
       prefix: false,
+      neverBackup: true,
       note: 'app/ch-auth.js SESSION_STORAGE_KEY (2026-10-06) — the Supabase access and refresh tokens, raw localStorage, shared by every tab. Never a sync key: in localStorage-fallback mode (no IndexedDB) db.js loads every localStorage key into its cache, and the first-connect upload would otherwise PUT it to the server as <uid>::ch_sb_session, and the identity-change sweep would remove it. Local-only, never in a backup (restore-merge NEVER list).',
     },
     {
@@ -450,8 +451,18 @@ const SyncClassification = (() => {
     return canonicalJSON(entry);
   }
 
+  /**
+   * The ONE list of auth/session keys that never go into a backup file and are never written by a
+   * restore: the PER_USER_CH_ENGINE_EXCLUSIONS entries marked neverBackup. Called by siteBackup
+   * (app/site-functions.js) and RestoreMerge.isEngineKey (app/restore-merge.js).
+   */
+  function isNeverBackupKey(key) {
+    return PER_USER_CH_ENGINE_EXCLUSIONS.some((e) => e.neverBackup === true && !e.prefix && e.pattern === key);
+  }
+
   return {
     canonicalJSON,
+    isNeverBackupKey,
     SYNCED,
     LOCAL_ONLY,
     LOCAL_ONLY_OVERRIDES,

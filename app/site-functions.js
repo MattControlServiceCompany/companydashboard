@@ -1130,6 +1130,11 @@ async function siteBackup() {
   }
   // Merge — DB data takes precedence
   var allData = Object.assign({}, lsData, dbData);
+  // Auth/session keys (the refresh token) never go into a backup file. The one list is
+  // SyncClassification.isNeverBackupKey (app/sync-classification.js).
+  Object.keys(allData).forEach(function (k) {
+    if (window.SyncClassification.isNeverBackupKey(k)) delete allData[k];
+  });
   var data = allData;
   // Raw bill PDFs live in the separate en_pdf_store IndexedDB database and are
   // intentionally NOT included in this backup. Serializing all PDFs' base64

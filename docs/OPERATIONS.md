@@ -109,6 +109,11 @@ Many short `setTimeout` calls (toasts, URL cleanup, UI yield) are one-shot. They
   second tab can never overwrite the first tab's stamps (the old whole-map `ch_replica_state`/`ch_sync_base` are split once
   on the first load and removed). These records never sync and are never in a backup (`RestoreMerge.isEngineKey`).
   How to check: DevTools, Application, IndexedDB, CompanyHub store: keys `ch_rv::en_projects` etc.; no `ch_replica_state`.
+- Auth/session keys (`ch_sb_session`, the refresh token) are never in a backup file and a restore never writes them. The one
+  list is the `neverBackup` entries of `PER_USER_CH_ENGINE_EXCLUSIONS` (app/sync-classification.js), read through
+  `SyncClassification.isNeverBackupKey`. `siteBackup` (app/site-functions.js) drops them and `RestoreMerge.isEngineKey`
+  (app/restore-merge.js) skips them. How to check: node test-sync-golive-blockers.js, the "(e):" test; open a new backup
+  file and search for `ch_sb_session`: no match.
 - Queue entries with no owner tag (saved by v2026.10.06.83 or older) are never sent (`_retireOwnerlessEntries`, runs when
   the queue loads). Each goes to Conflict history as `queue-entry-no-owner` with its value, leaves the queue, and its
   version stamp is dropped so the next load compares the local copy with the server. How to check: after one load the

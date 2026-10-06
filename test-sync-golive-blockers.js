@@ -2293,6 +2293,57 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
       assert.ok(!puts.some((k) => /ch_sb_session/.test(k)));
     },
   );
+  // ---- (e) (2026-10-06): the backup file never holds the auth session; restore never writes it (real site-functions.js, sync-classification.js, restore-merge.js)
+  const siteFnSrc = (name) =>
+    fs
+      .readFileSync(path.join(__dirname, 'app', 'site-functions.js'), 'utf8')
+      .split('\r')
+      .join('')
+      .match(new RegExp('(?:async )?function ' + name + String.raw`\(\) \{[\s\S]*?\n\}`))[0];
+  await t('(e): siteBackup leaves ch_sb_session out of the file; restore-merge treats it as never-restore', async () => {
+    const vm = require('vm');
+    const SC = require('./app/sync-classification.js');
+    const RM = (() => {
+      global.DB = { DERIVED_METER_FIELDS: [] };
+      try {
+        return require('./app/restore-merge.js');
+      } finally {
+        delete global.DB;
+      }
+    })();
+    const ls = { ch_sb_session: '{"refresh_token":"SECRET-RT"}', ch_theme: 'dark' };
+    let written = null;
+    const ctx = {
+      window: { SyncClassification: SC },
+      localStorage: {
+        get length() {
+          return Object.keys(ls).length;
+        },
+        key: (i) => Object.keys(ls)[i],
+        getItem: (k) => ls[k],
+      },
+      DB: { isReady: () => true, getAllForExport: () => ({ en_projects: [], ch_sb_session: '{"refresh_token":"SECRET-RT"}' }) },
+      _waitForDBReadyForBackup: async () => {},
+      _downloadJson: (f, d) => {
+        written = d;
+      },
+      showToast: () => {},
+      Date,
+      Object,
+      String,
+    };
+    vm.createContext(ctx);
+    vm.runInContext(siteFnSrc('siteBackup'), ctx);
+    await vm.runInContext('siteBackup()', ctx);
+    assert.ok(written, 'backup written');
+    assert.ok(!('ch_sb_session' in written), 'no ch_sb_session in the backup');
+    assert.ok(!JSON.stringify(written).includes('SECRET-RT'), 'no token text in the backup');
+    assert.strictEqual(written.ch_theme, 'dark', 'other keys still exported');
+    assert.ok('en_projects' in written);
+    assert.strictEqual(RM.isEngineKey('ch_sb_session'), true, 'restore skips the session key');
+    assert.strictEqual(SC.isNeverBackupKey('ch_sb_session'), true);
+    assert.strictEqual(SC.isNeverBackupKey('ch_theme'), false);
+  });
   console.log(pass + ' passed');
 })().catch((e) => {
   console.error('FAIL', e);
