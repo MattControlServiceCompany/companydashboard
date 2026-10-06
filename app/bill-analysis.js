@@ -20881,22 +20881,35 @@ function confirmManualAssign() {
     franchiseFee: billValueOrBlank(extracted.FranchiseFee),
     franchiseFee1: billValueOrBlank(extracted.FranchiseFee1),
     franchiseFee2: billValueOrBlank(extracted.FranchiseFee2),
-    _manuallyAssigned: true,
-    // Gas fields
-    therms: billValueOrBlank(extracted.NaturalGasTherms, extracted.NaturalGasMMbtu),
-    ccf: billValueOrBlank(extracted.NaturalGasCCF),
+    rkvaCharge: billValueOrBlank(extracted.RkVACharge),
+    taxExemptDelivery: billValueOrBlank(extracted.TaxExemptDelivery),
+    billOffset: billValueOrBlank(extracted.BillOffset),
+    miscellaneousCharge: billValueOrBlank(extracted.MiscellaneousCharge),
+    // Gas / water / sewer / propane: the BILL_SCHEMA names, the same ones every other save path
+    // writes (2026-10-05 audit step 8 — this path used private aliases ccf/gasCost/fuelAdj/
+    // waterCost/sewerCost/stormCost/gallons/propaneCost that no reader ever looked at, and put raw
+    // MMBtu in `therms` with no unit conversion).
+    therms: gasBillSaveTherms(extracted),
+    naturalGasTherms: billValueOrBlank(extracted.NaturalGasTherms),
+    naturalGasCCF: billValueOrBlank(extracted.NaturalGasCCF),
+    thermFactor: billValueOrBlank(extracted.ThermFactor),
     naturalGasMMbtu: billValueOrBlank(extracted.NaturalGasMMbtu),
-    gasCost: billValueOrBlank(extracted.GasCharge, extracted.TotalCurrentCharges),
-    fuelAdj: billValueOrBlank(extracted.FuelAdjustment),
-    // Water/sewer fields
+    gasCharge: billValueOrBlank(extracted.GasCharge),
+    fuelAdjustment: billValueOrBlank(extracted.FuelAdjustment),
     waterUsage: billValueOrBlank(extracted.WaterUsage),
-    waterCost: billValueOrBlank(extracted.WaterCharge),
+    waterCharge: billValueOrBlank(extracted.WaterCharge),
+    waterProtectionFee: billValueOrBlank(extracted.WaterProtectionFee),
     sewerUsage: billValueOrBlank(extracted.SewerUsage),
-    sewerCost: billValueOrBlank(extracted.SewerCharge),
-    stormCost: billValueOrBlank(extracted.StormWaterCharge),
-    // Propane
-    gallons: billValueOrBlank(extracted.GallonsDelivered),
-    propaneCost: billValueOrBlank(extracted.Subtotal),
+    sewerCharge: billValueOrBlank(extracted.SewerCharge),
+    stormWaterCharge: billValueOrBlank(extracted.StormWaterCharge),
+    invoiceNumber: extracted.InvoiceNumber || '',
+    saleNumber: extracted.SaleNumber || '',
+    deliveryDate: extracted.DeliveryDate || '',
+    fuelType: extracted.FuelType || '',
+    gallonsDelivered: billValueOrBlank(extracted.GallonsDelivered),
+    unitPrice: billValueOrBlank(extracted.UnitPrice),
+    subtotal: billValueOrBlank(extracted.Subtotal),
+    tax: billValueOrBlank(extracted.Tax),
   };
 
   meter.bills = meter.bills || [];

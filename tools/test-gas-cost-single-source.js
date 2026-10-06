@@ -109,7 +109,7 @@ for (const dir of SCAN_DIRS) {
   const full = path.join(REPO, dir);
   if (!fs.existsSync(full)) continue;
   for (const f of fs.readdirSync(full)) {
-    if (!f.endsWith('.js')) continue;
+    if (!f.endsWith('.js') || f.endsWith('.gate.js')) continue; // deploy gates name the retired field on purpose
     const lines = stripComments(fs.readFileSync(path.join(full, f), 'utf8')).split('\n');
     lines.forEach((l, n) => {
       if (/\bthermCost\b/.test(l)) offenders.push(dir + '/' + f + ':' + (n + 1) + ' ' + l.trim());

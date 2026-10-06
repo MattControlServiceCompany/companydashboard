@@ -2426,22 +2426,9 @@ function openBillModal(mid, editRowId) {
   if (commKey === 'electric') {
     body += `<div style="display:flex;justify-content:flex-end;margin-top:8px"><button class="btn btn-ghost btn-sm" type="button" onclick="billAutoSum()" title="Sum individual line items into Total">Σ Auto-Sum</button></div>`;
   }
-  // Legacy hidden inputs — preserve old aggregate fields on existing rows.
-  // thermCost is NOT here any more (2026-10-05): it was a stored copy of gasCharge that went
-  // stale when the user edited Gas Charge in this modal. Readers use getBillGasCost.
-  const LEGACY_PASSTHROUGH = [
-    'kwCost',
-    'kwhCost',
-    'otherCost',
-    'taxCost',
-    'renewableCharge',
-    'solarCredit',
-    'therms',
-  ];
-  for (const k of LEGACY_PASSTHROUGH) {
-    const v = row && row[k] != null ? String(row[k]).replace(/"/g, '&quot;') : '';
-    body += `<input type="hidden" id="bl-${k}" value="${v}">`;
-  }
+  // No hidden inputs (2026-10-05 duplicate-bill-fields audit step 8): the modal shows exactly the
+  // BILL_SCHEMA fields and saves exactly those. An edit merges into the existing row
+  // (Object.assign in saveBillRow), so a field this modal does not show is never lost.
   document.getElementById('billModalBody').innerHTML = body;
   // Auto-populate End Date when Start Date changes (only if End Date is empty)
   const _blStartInp = document.getElementById('bl-start');
@@ -2639,11 +2626,8 @@ function saveBillRow() {
   const row = udBillEditId ? m.bills.find((r) => r.id === udBillEditId) : null;
   const g = (id) => _billStripCurrency(document.getElementById(id)?.value || '');
   // Update 82: schema-driven writer. Iterates BILL_SCHEMA[commodity] and
-  // reads each field from `bl-<key>` input. Legacy aggregate fields
-  // (kwCost, facKWCost, kwhCost, otherCost, taxCost, renewableCharge,
-  // solarCredit, therms, usage, cost) are round-tripped via
-  // hidden inputs populated by openBillModal so existing saved rows
-  // don't lose data.
+  // reads each field from `bl-<key>` input. Nothing else is written: the old
+  // hidden round trip of stored copies is gone (2026-10-05 audit step 8).
   const schema = _billSchemaFor(m.commodity);
   const data = {};
   for (const entry of schema) {
@@ -2661,20 +2645,6 @@ function saveBillRow() {
     }
     if (v !== '') data[entry.key] = v;
     else if (entry.key === 'start' || entry.key === 'end') data[entry.key] = '';
-  }
-  // Legacy passthroughs — preserve any values already on the row (never thermCost, see openBillModal).
-  const LEGACY_PASSTHROUGH = [
-    'kwCost',
-    'kwhCost',
-    'otherCost',
-    'taxCost',
-    'renewableCharge',
-    'solarCredit',
-    'therms',
-  ];
-  for (const k of LEGACY_PASSTHROUGH) {
-    const v = g('bl-' + k);
-    if (v !== '') data[k] = v;
   }
   // Bug #133 / Fix [therms-unit-2026-06-22]: sync gas usage to canonical therms (Therms).
   // The one resolver (resolveGasUsageTherms) does the unit math: Therms, then CCF, then MMBtu.
