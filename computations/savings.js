@@ -111,17 +111,6 @@ function getBillUsageOrNull(bill, commodity) {
   return null;
 }
 
-/* resolveGasUsageThermsOrNull(b) - same value as resolveGasUsageTherms, but null when the bill has NO
-   usage field at all (missing). A real 0 returns 0. Display and save code use this one, so a missing
-   usage shows as missing and a real 0 shows as 0 (Matt 2026-10-05). Savings keep resolveGasUsageTherms. */
-function resolveGasUsageThermsOrNull(b) {
-  const keys = ['therms', 'naturalGasTherms', 'naturalGasCCF', 'naturalGasMCF', 'naturalGasMMbtu', 'usage'];
-  const has = keys.some(
-    (k) => parseBillNumber(b[k]) !== null || parseBillNumber(b[k.charAt(0).toUpperCase() + k.slice(1)]) !== null,
-  );
-  return has ? resolveGasUsageTherms(b) : null;
-}
-
 /* gasBillSaveTherms(src) - the ONE mapping of gas usage for a bill being saved: the stored
    `therms` ('' when missing, a real 0 stays 0). src = extractor bill (NaturalGasTherms ...) or
    saved-style bill. The gas charge is NOT copied any more: the stored copy `thermCost` is gone
