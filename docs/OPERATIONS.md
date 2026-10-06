@@ -113,6 +113,13 @@ Many short `setTimeout` calls (toasts, URL cleanup, UI yield) are one-shot. They
   the queue loads). Each goes to Conflict history as `queue-entry-no-owner` with its value, leaves the queue, and its
   version stamp is dropped so the next load compares the local copy with the server. How to check: after one load the
   "N unsynced changes" bar is gone and Sync status, Conflict history lists the entries.
+- Conflict history (`en_conflict_archive`, local only) is one list per browser. Every entry carries an owner tag
+  (`_appendConflictArchive`, same shape as a queue entry). The one visibility rule is `_archiveEntryVisible`, applied by
+  `DB.getConflictArchive` (the one reader: the viewer, the export button and Reset all call it): an entry for a shared
+  key is shown to everyone on this browser; an entry for a per-user key (`ch_*` prefs, zoom levels) only to its owner.
+  Another user's per-user entry, or one saved by a build before owner tags, stays in storage, is never shown and is never
+  removed by this user (`clearConflictArchive` removes only entries the user can see). app/sync-ui.js redraws the link and
+  closes the panel on `chAuthStateChanged`. How to check: node test-sync-golive-blockers.js, the "7c:" tests.
 
 ## 7. How to keep this file current
 

@@ -589,7 +589,12 @@ const DB = (() => {
   // Written IMMEDIATELY (before the caller overwrites the local value): the
   // IDB put is issued first, and same-store transactions commit in order.
   function _appendConflictArchive(entry) {
-    const full = Object.assign({ archivedAt: new Date().toISOString() }, entry);
+    // Owner tag = the same shape and rule as a queue entry (_queueOwner /
+    // _entryBelongsTo): the verified user signed in now, or the signed-out hint.
+    const full = Object.assign(
+      { archivedAt: new Date().toISOString(), owner: Object.assign({}, _queueOwner()) },
+      entry,
+    );
     try {
       // Written through this module's own set(), NOT core.js sset(): sset sends
       // the write to localStorage while the DB is not ready yet (hydration runs
@@ -618,12 +623,33 @@ const DB = (() => {
       return false;
     }
   }
-  // Removes the FIRST `count` entries (the ones the user exported). Call only
-  // after the export file was saved and the user confirmed.
+  // THE visibility rule for Conflict history (getConflictArchive, the one
+  // reader every viewer and export calls): an entry for a shared key is shown
+  // to everyone on this browser; an entry for a per-user key only to its owner
+  // (the queue-entry ownership rule, _entryBelongsTo). A per-user entry of
+  // another user, or one with no owner tag (older build), stays in storage and
+  // is never shown and never deleted by this user.
+  function _archiveEntryVisible(e, me) {
+    return !!e && (!_isPerUserKey(e.key) || _entryBelongsTo(e, me));
+  }
+  // Removes the FIRST `count` entries this user can see (the ones the user
+  // exported). Call only after the export file was saved and the user
+  // confirmed. Entries hidden from this user are kept.
   function clearConflictArchive(count) {
     const v = _cache['en_conflict_archive'];
     if (!Array.isArray(v) || !(count > 0)) return;
-    set('en_conflict_archive', v.slice(count));
+    const me = _myUserId();
+    let left = count;
+    set(
+      'en_conflict_archive',
+      v.filter((e) => {
+        if (left > 0 && _archiveEntryVisible(e, me)) {
+          left--;
+          return false;
+        }
+        return true;
+      }),
+    );
   }
   // showToast lives in core.js, loaded after db.js, so wait for it.
   function _showLater(msg, kind) {
@@ -2884,7 +2910,9 @@ const DB = (() => {
   // sync-ui.js to know about the sget/sset global naming convention.
   function getConflictArchive() {
     const v = _cache['en_conflict_archive'];
-    return Array.isArray(v) ? v : [];
+    if (!Array.isArray(v)) return [];
+    const me = _myUserId();
+    return v.filter((e) => _archiveEntryVisible(e, me)); // rule: _archiveEntryVisible
   }
   async function getSyncStatus() {
     const mode = _backendMode();

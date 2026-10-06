@@ -1376,7 +1376,7 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
       .join('')
       .replace(
         '  return {\n    warmCache,',
-        '  return {\n    __t: { _drainQueueOnce, _queue: () => _syncQueue, _stampOf: (k) => _replicaVersions[k] },\n    warmCache,',
+        '  return {\n    __t: { _drainQueueOnce, _queue: () => _syncQueue, _stampOf: (k) => _replicaVersions[k], _appendConflictArchive },\n    warmCache,',
       );
     vm.runInContext(src + '\n;this.__DB = DB;', sandbox);
     return { DB: sandbox.__DB, A: win.CH_AUTH, events, store };
@@ -2042,6 +2042,120 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     assert.strictEqual(JSON.parse(L.store.ch_sb_session).access_token, FK('new7'));
     assert.strictEqual(L.A.getToken(), FK('new7'));
     assert.strictEqual(L.A.getUserId(), 'u1');
+  });
+  // ---- 7c (2026-10-06): Conflict history entries are owner-tagged; a per-user entry is shown only to its owner (real db.js)
+  const tokByEmail = async (u, o) => {
+    const b = o && o.body ? JSON.parse(o.body) : {};
+    const id = b.email ? b.email.split('@')[0] : 'u1';
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        access_token: FK('t' + id),
+        refresh_token: FK('r' + id),
+        expires_in: 3600,
+        user: { id, email: id + '@example.com' },
+      }),
+    };
+  };
+  // vm-realm arrays are not reference-equal to host arrays: compare by JSON.
+  const sameJSON = (a, b, msg) => assert.strictEqual(JSON.stringify(a), JSON.stringify(b), msg);
+  await t(
+    "7c: A's per-user archive entry is hidden from B, kept in storage, shown again to A; shared-key entries show to both",
+    async () => {
+      const L = loadReal({ userId: 'u1', tokenFetch: tokByEmail, kvFetch: async () => ok([]) });
+      await L.DB.warmCache();
+      const raw = () => JSON.parse(L.store.en_conflict_archive || '[]');
+      L.DB.__t._appendConflictArchive({
+        key: 'ch_pref_x',
+        reason: 'hydration-server-wins',
+        losingSide: 'local',
+        losingValue: 'A-private',
+      });
+      L.DB.__t._appendConflictArchive({
+        key: 'en_budget_x',
+        reason: 'hydration-server-wins',
+        losingSide: 'local',
+        losingValue: 'shared-loser',
+      });
+      await tick(20);
+      sameJSON(
+        L.DB.getConflictArchive().map((e) => e.key),
+        ['ch_pref_x', 'en_budget_x'],
+      );
+      sameJSON(
+        raw().map((e) => e.owner.id),
+        ['u1', 'u1'],
+        'every entry carries its owner',
+      );
+      await L.A.signOut();
+      await L.A.signIn('u2@example.com', 'pw');
+      await tick(40);
+      assert.strictEqual(L.A.getUserId(), 'u2');
+      sameJSON(
+        L.DB.getConflictArchive().map((e) => e.key),
+        ['en_budget_x'],
+        'B sees the shared entry only',
+      );
+      assert.ok(!JSON.stringify(L.DB.getConflictArchive()).includes('A-private'), "A's losing value never shown to B");
+      assert.strictEqual(raw().length, 2, "A's entry still stored");
+      L.DB.__t._appendConflictArchive({
+        key: 'ch_pref_x',
+        reason: 'hydration-server-wins',
+        losingSide: 'local',
+        losingValue: 'B-private',
+      });
+      await tick(20);
+      sameJSON(
+        L.DB.getConflictArchive().map((e) => e.losingValue),
+        ['shared-loser', 'B-private'],
+      );
+      // B exports and clears what B can see: A's entry is untouched
+      L.DB.clearConflictArchive(2);
+      await tick(20);
+      sameJSON(L.DB.getConflictArchive(), []);
+      sameJSON(
+        raw().map((e) => [e.key, e.owner.id, e.losingValue]),
+        [['ch_pref_x', 'u1', 'A-private']],
+      );
+      await L.A.signOut();
+      await L.A.signIn('u1@example.com', 'pw');
+      await tick(40);
+      sameJSON(
+        L.DB.getConflictArchive().map((e) => e.losingValue),
+        ['A-private'],
+        "A sees A's entry again",
+      );
+    },
+  );
+  await t(
+    '7c: entries saved by an older build (no owner tag): shared key shown, per-user key hidden from everyone and kept',
+    async () => {
+      const L = loadReal({ userId: 'u1', tokenFetch: tokByEmail, kvFetch: async () => ok([]) });
+      L.store.en_conflict_archive = JSON.stringify([
+        { key: 'ch_pref_x', losingValue: 'someone-private', archivedAt: 'x' },
+        { key: 'en_budget_x', losingValue: 'shared', archivedAt: 'x' },
+      ]);
+      await L.DB.warmCache();
+      sameJSON(
+        L.DB.getConflictArchive().map((e) => e.key),
+        ['en_budget_x'],
+      );
+      L.DB.clearConflictArchive(5);
+      await tick(20);
+      sameJSON(
+        JSON.parse(L.store.en_conflict_archive).map((e) => e.key),
+        ['ch_pref_x'],
+        'hidden entry kept',
+      );
+    },
+  );
+  await t('7c: sync-ui redraws Conflict history on an identity change', () => {
+    const ui = fs
+      .readFileSync(path.join(__dirname, 'app', 'sync-ui.js'), 'utf8')
+      .split('\r')
+      .join('');
+    assert.ok(/addEventListener\('chAuthStateChanged', function \(\) \{[\s\S]{0,200}renderArchiveLink\(\);/.test(ui));
   });
   console.log(pass + ' passed');
 })().catch((e) => {

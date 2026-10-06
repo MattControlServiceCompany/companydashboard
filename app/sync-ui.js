@@ -157,7 +157,11 @@
     if (!el) {
       el = document.createElement('div');
       el.id = id;
-      if (/^ch-sync-(banner|offline-banner|archive-full-banner|signedout-banner|foreign-banner|hydrate-failed-banner|auth-rejected-banner|oldhost-banner)$/.test(id)) {
+      if (
+        /^ch-sync-(banner|offline-banner|archive-full-banner|signedout-banner|foreign-banner|hydrate-failed-banner|auth-rejected-banner|oldhost-banner)$/.test(
+          id,
+        )
+      ) {
         ensureStack().appendChild(el);
       } else {
         document.body.appendChild(el);
@@ -228,7 +232,9 @@
     var el = ensureEl('ch-sync-oldhost-banner');
     if (el.firstChild) return;
     el.appendChild(
-      document.createTextNode('This is the old test site. Changes made here are not shared and are not saved to the server.'),
+      document.createTextNode(
+        'This is the old test site. Changes made here are not shared and are not saved to the server.',
+      ),
     );
     var btn = document.createElement('button');
     btn.textContent = 'Open the main site';
@@ -253,7 +259,14 @@
     el = ensureEl('ch-sync-foreign-banner');
     el.textContent = info
       .map(function (o) {
-        return o.count + ' unsent change' + (o.count === 1 ? '' : 's') + ' from ' + o.email + ' - sign in as that user to send them.';
+        return (
+          o.count +
+          ' unsent change' +
+          (o.count === 1 ? '' : 's') +
+          ' from ' +
+          o.email +
+          ' - sign in as that user to send them.'
+        );
       })
       .join(' ');
     el.style.display = info.length ? 'block' : 'none';
@@ -267,7 +280,8 @@
     ensureStyles();
     var el = ensureEl('ch-sync-hydrate-failed-banner');
     var n = e.detail && e.detail.keys ? e.detail.keys.length : 0;
-    el.textContent = 'Could not load ' + n + ' saved item' + (n === 1 ? '' : 's') + ' from the server. Some data may be missing. ';
+    el.textContent =
+      'Could not load ' + n + ' saved item' + (n === 1 ? '' : 's') + ' from the server. Some data may be missing. ';
     var btn = document.createElement('button');
     btn.textContent = 'Reload';
     btn.onclick = function () {
@@ -820,6 +834,13 @@
 
   window.addEventListener('dataUpdated', function (e) {
     if (e.detail && e.detail.key === 'en_conflict_archive') renderArchiveLink();
+  });
+  // What Conflict history shows depends on who is signed in (DB.getConflictArchive):
+  // on an identity change close the open panel and redraw the link for the new user.
+  window.addEventListener('chAuthStateChanged', function () {
+    var panel = document.getElementById('ch-archive-panel');
+    if (panel) panel.classList.remove('ch-open');
+    renderArchiveLink();
   });
 
   // =========================================================================
