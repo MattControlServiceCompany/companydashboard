@@ -1701,12 +1701,15 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     return src.slice(start, i + 1);
   };
   // The real core.js _pdfDrainQueueLocked with its collaborators stubbed; the owner rule is the real DB.entryBelongsTo.
-  const runPdfDrain = async (me, entries) => {
+  // opts.onSend(key, user) runs inside each commit (during its await) and may switch the signed-in user.
+  const runPdfDrain = async (me, entries, opts) => {
     let queue = entries.map((e) => Object.assign({}, e));
     const sent = [];
+    const user = { id: me, tag: 'tok-' + me };
+    const onSend = (opts && opts.onSend) || (() => {});
     const { DB } = load({ mode: 'on', syncHost: true, fetchImpl: async () => ok([]) });
     const win = {
-      CH_AUTH: { getUserId: () => me, backendMode: () => 'on' },
+      CH_AUTH: { getUserId: () => user.id, backendMode: () => 'on' },
       DB: { entryBelongsTo: DB.entryBelongsTo },
     };
     const drain = new Function(
@@ -1718,7 +1721,7 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
       '_pdfUploadCommit',
       '_pdfWithAuthRetry',
       'console',
-      cutFn('core.js', '_pdfDrainQueueLocked') + '; return _pdfDrainQueueLocked;',
+      cutFn('core.js', '_pdfUserChanged') + cutFn('core.js', '_pdfDrainQueueLocked') + '; return _pdfDrainQueueLocked;',
     )(
       win,
       () => queue.map((e) => Object.assign({}, e)),
@@ -1727,18 +1730,20 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
       },
       async () => 'base64',
       async (k) => {
-        sent.push('delete ' + k);
+        sent.push('delete ' + k + ' as ' + user.tag);
+        await onSend(k, user);
         return { status: 'ok' };
       },
       async (k) => {
-        sent.push('upload ' + k);
+        sent.push('upload ' + k + ' as ' + user.tag);
+        await onSend(k, user);
         return { status: 'ok' };
       },
       (run) => run(),
       { warn() {} },
     );
     await drain();
-    return { queue, sent };
+    return { queue, sent: sent.map((s) => s.replace(/ as tok-\w+$/, '')), sentAs: sent };
   };
   await t(
     "fix 9: PDF drain claims no-owner and own-hint entries for the verified user; skips every other user's entry",
@@ -1767,6 +1772,86 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     const r = await runPdfDrain(null, entries);
     assert.deepStrictEqual(r.sent, []);
     assert.deepStrictEqual(r.queue, entries);
+  });
+  // ---- 7b (2026-10-06): the PDF drain stops when the signed-in user changes mid-drain (real core.js)
+  await t(
+    "7b: user switches A -> B during the first send: the rest of A's entries are never sent with B's token",
+    async () => {
+      const entries = [
+        { id: 1, type: 'delete', key: 'pdf-1', owner: { id: 'A' } },
+        { id: 2, type: 'delete', key: 'pdf-2', owner: { id: 'A' } },
+        { id: 3, type: 'upload', key: 'pdf-3', owner: { id: 'A' } },
+      ];
+      const r = await runPdfDrain('A', entries, {
+        onSend: async (k, user) => {
+          await tick(10);
+          if (k === 'pdf-1') {
+            user.id = 'B';
+            user.tag = 'tok-B';
+          }
+        },
+      });
+      assert.deepStrictEqual(r.sentAs, ['delete pdf-1 as tok-A'], 'only the send that started as A');
+      assert.ok(!r.sentAs.some((s) => / as tok-B$/.test(s)), "nothing sent with B's token");
+      assert.deepStrictEqual(
+        r.queue.map((e) => e.id),
+        [1, 2, 3],
+        "nothing removed after the switch; A's entries wait for A",
+      );
+      assert.deepStrictEqual(
+        r.queue.map((e) => e.owner.id),
+        ['A', 'A', 'A'],
+        'owner tags untouched',
+      );
+    },
+  );
+  await t('7b: user switches during the local PDF read (before the upload): the upload is not sent', async () => {
+    let queue = [{ id: 1, type: 'upload', key: 'pdf-1', owner: { id: 'A' } }];
+    const sent = [];
+    const user = { id: 'A' };
+    const { DB } = load({ mode: 'on', syncHost: true, fetchImpl: async () => ok([]) });
+    const drain = new Function(
+      'window',
+      '_pdfQueueLoad',
+      '_pdfQueueSave',
+      'pdfLoad',
+      '_pdfDeleteCommit',
+      '_pdfUploadCommit',
+      '_pdfWithAuthRetry',
+      'console',
+      cutFn('core.js', '_pdfUserChanged') + cutFn('core.js', '_pdfDrainQueueLocked') + '; return _pdfDrainQueueLocked;',
+    )(
+      { CH_AUTH: { getUserId: () => user.id, backendMode: () => 'on' }, DB: { entryBelongsTo: DB.entryBelongsTo } },
+      () => queue.map((e) => Object.assign({}, e)),
+      (q) => {
+        queue = q;
+      },
+      async () => {
+        user.id = 'B';
+        return 'base64';
+      }, // the switch lands while the blob is read
+      async (k) => {
+        sent.push('delete ' + k);
+        return { status: 'ok' };
+      },
+      async (k) => {
+        sent.push('upload ' + k);
+        return { status: 'ok' };
+      },
+      (run) => run(),
+      { warn() {} },
+    );
+    await drain();
+    assert.deepStrictEqual(sent, []);
+    assert.strictEqual(queue.length, 1, "A's upload still queued");
+  });
+  await t('7b: same user throughout: every own entry is sent and removed (no regression)', async () => {
+    const r = await runPdfDrain('A', [
+      { id: 1, type: 'delete', key: 'pdf-1', owner: { id: 'A' } },
+      { id: 2, type: 'upload', key: 'pdf-2', owner: { id: 'A' } },
+    ]);
+    assert.deepStrictEqual(r.sent, ['delete pdf-1', 'upload pdf-2']);
+    assert.deepStrictEqual(r.queue, []);
   });
   // The real sync-ui.js _safeToReload with its OPEN_DIALOG_SELECTOR, run against a fake document/window.
   const safeToReload = (st) => {

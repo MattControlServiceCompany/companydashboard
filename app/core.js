@@ -348,6 +348,9 @@ async function _pdfDrainQueueLocked() {
   );
   const snapshot = _pdfQueueLoad();
   for (const entry of snapshot) {
+    // Identity changed during the drain (another tab switched accounts): stop.
+    // The token now belongs to someone else; the rest of the snapshot is A's.
+    if (_pdfUserChanged(me)) return;
     if (!_pdfQueueLoad().some((e) => e.id === entry.id)) continue; // superseded meanwhile
     if (!window.DB.entryBelongsTo(entry, me)) continue; // another user's entry: never sent
     let result;
@@ -359,6 +362,7 @@ async function _pdfDrainQueueLocked() {
         // truth already written by pdfStore's local-first write) rather than
         // duplicating the blob into the queue entry itself.
         const base64 = await pdfLoad(entry.key);
+        if (_pdfUserChanged(me)) return;
         if (!base64) {
           result = { status: 'ok' }; // nothing local left to upload — drop silently
         } else {
@@ -368,6 +372,7 @@ async function _pdfDrainQueueLocked() {
     } catch (e) {
       result = { status: 'network-error', error: e };
     }
+    if (_pdfUserChanged(me)) return; // same rule as the db.js drain: nothing is removed or stamped for the other user
     if (window.CH_AUTH.backendMode() === 'off') return; // the server refused this sign-in: session ended, stop sending
     if (result.status === 'ok' || result.status === 'terminal') {
       if (result.conflict) {
@@ -381,6 +386,11 @@ async function _pdfDrainQueueLocked() {
     }
     // network-error / server-error — leave queued, retry next cycle.
   }
+}
+// THE one "did the signed-in user change since this drain started" check for
+// the PDF drain (the verified id from CH_AUTH, the same source db.js reads).
+function _pdfUserChanged(me) {
+  return window.CH_AUTH.getUserId() !== me;
 }
 // The ONE rule for 401/403 is CH_AUTH.withAuthRetry (ch-auth.js).
 function _pdfWithAuthRetry(run) {
