@@ -2931,6 +2931,12 @@ const DB = (() => {
     const me = _myUserId();
     return v.filter((e) => _archiveEntryVisible(e, me)); // rule: _archiveEntryVisible
   }
+  // Every stored entry with its owner tag, for the pre-wipe export in siteResetData ONLY.
+  // Not a viewer reader: who SEES an entry stays with getConflictArchive (_archiveEntryVisible).
+  function getConflictArchiveAll() {
+    const v = _cache['en_conflict_archive'];
+    return Array.isArray(v) ? v.slice() : [];
+  }
   async function getSyncStatus() {
     const mode = _backendMode();
     const deletionRecords = Object.assign({}, _tombstoneState);
@@ -3004,6 +3010,7 @@ const DB = (() => {
     queueOwner: _queueOwner,
     entryBelongsTo: _entryBelongsTo,
     getConflictArchive,
+    getConflictArchiveAll,
     isConflictArchiveFull,
     clearConflictArchive,
     restoreScope,

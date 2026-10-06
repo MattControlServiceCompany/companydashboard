@@ -125,6 +125,8 @@ Many short `setTimeout` calls (toasts, URL cleanup, UI yield) are one-shot. They
   Another user's per-user entry, or one saved by a build before owner tags, stays in storage, is never shown and is never
   removed by this user (`clearConflictArchive` removes only entries the user can see). app/sync-ui.js redraws the link and
   closes the panel on `chAuthStateChanged`. How to check: node test-sync-golive-blockers.js, the "7c:" tests.
+  Reset (`siteResetData`) is the one exception to the visibility rule: before it wipes, it saves ALL stored entries with their
+  owner tags (`DB.getConflictArchiveAll`), so no other user's entry is lost with no copy. How to check: the "(f):" test.
 - Local per-user stores on a shared browser (app/db.js). The one "a write for this key is still waiting" rule is
   `_hasQueuedWrite` (hydration skip, first-connect upload skip, `_valueChanged`): a queued entry counts for a shared key
   whoever owns it (same server row), and for a per-user key only when it is the signed-in user's own (`_entryBelongsTo`),

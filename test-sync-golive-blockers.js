@@ -894,7 +894,7 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     const dl = fn.indexOf('_downloadJSON(_archive');
     const wipe = fn.indexOf('localStorage.clear()');
     assert.ok(dl > 0 && wipe > dl, 'archive download comes before the wipe');
-    assert.ok(/getConflictArchive/.test(fn));
+    assert.ok(/getConflictArchiveAll/.test(fn));
   });
 
   // ---- 401/403 on periodic sync requests (2026-10-06): refresh once, then end the session
@@ -2343,6 +2343,43 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     assert.strictEqual(RM.isEngineKey('ch_sb_session'), true, 'restore skips the session key');
     assert.strictEqual(SC.isNeverBackupKey('ch_sb_session'), true);
     assert.strictEqual(SC.isNeverBackupKey('ch_theme'), false);
+  });
+  // ---- (f) (2026-10-06): Reset exports ALL archive entries (every owner) before the wipe; the viewer rule is unchanged
+  await t('(f): siteResetData exports every stored archive entry with its owner tag; viewer still shows only own', async () => {
+    const vm = require('vm');
+    const L = loadReal({ userId: 'u1', tokenFetch: tokByEmail, kvFetch: async () => ok([]) });
+    L.store.en_conflict_archive = JSON.stringify([
+      { key: 'ch_pref_x', losingValue: 'B-private', owner: { id: 'u2', email: 'u2@example.com' }, archivedAt: 't' },
+      { key: 'ch_pref_y', losingValue: 'A-private', owner: { id: 'u1', email: 'u1@example.com' }, archivedAt: 't' },
+      { key: 'en_budget_x', losingValue: 'shared', owner: { id: 'u2', email: null }, archivedAt: 't' },
+    ]);
+    await L.DB.warmCache();
+    await tick(30);
+    assert.deepStrictEqual(
+      L.DB.getConflictArchive().map((e) => e.key).sort(),
+      ['ch_pref_y', 'en_budget_x'],
+      'viewer: B-private hidden from u1',
+    );
+    let exported = null;
+    const ctx = {
+      DB: Object.assign({}, L.DB, { clear: async () => {} }), // real readers, no real wipe
+      confirm: () => true,
+      _downloadJSON: (d) => {
+        exported = d;
+      },
+      localStorage: { clear: () => {} },
+      sessionStorage: { clear: () => {} },
+      setTimeout: () => {},
+      location: { reload: () => {} },
+      Date,
+    };
+    ctx.window = ctx;
+    vm.createContext(ctx);
+    vm.runInContext(siteFnSrc('siteResetData'), ctx);
+    await vm.runInContext('siteResetData()', ctx);
+    assert.ok(exported, 'archive exported before the wipe');
+    assert.strictEqual(exported.length, 3, 'all 3 stored entries exported');
+    assert.ok(exported.some((e) => e.losingValue === 'B-private' && e.owner && e.owner.id === 'u2'), "other user's entry kept with owner tag");
   });
   console.log(pass + ' passed');
 })().catch((e) => {

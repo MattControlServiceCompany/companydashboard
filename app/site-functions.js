@@ -1781,7 +1781,9 @@ async function siteResetData() {
     return;
   // M8: the conflict archive holds the only copy of values a sync did not keep.
   // It is erased with everything else, so save it to a file first.
-  const _archive = window.DB && window.DB.getConflictArchive ? window.DB.getConflictArchive() : [];
+  // ALL stored entries with their owner tag, not only the ones this user can see: the wipe
+  // would otherwise destroy another user's entries with no copy.
+  const _archive = window.DB && window.DB.getConflictArchiveAll ? window.DB.getConflictArchiveAll() : [];
   if (_archive.length) {
     _downloadJSON(_archive, 'CompanyHub-conflict-archive-' + new Date().toISOString().slice(0, 10) + '.json');
   }
