@@ -1685,7 +1685,22 @@ function _decideOnOffPeakKWh(b, kwhConsumed, kwhHeld) {
           applied = true;
         }
       }
-      if (!applied) {
+      // A leg with no readable rate line (damaged rate text) cannot be named as
+      // the misread leg above. If kWhConsumed is not held, agrees with the
+      // charge-basis total, and exactly ONE leg self-verifies, the
+      // kWhConsumed-derived path below corrects the other leg (or gates by
+      // itself). Defer to it instead of gating here. Real disagreements
+      // (both legs verify, kWhConsumed held or off-basis) still gate.
+      const deferToKwhPath =
+        !applied &&
+        kwhConsumed > 0 &&
+        !kwhHeld &&
+        Math.abs(kwhConsumed - basisTotal) <= _BASIS_TIGHT &&
+        Math.abs(onQty + offQty - kwhConsumed) > 1 &&
+        onVerified !== offVerified;
+      if (deferToKwhPath) {
+        // fall through to the kWhConsumed-derived path
+      } else if (!applied) {
         result.gate =
           'OnPeakKWh (' +
           onQty.toFixed(4) +
@@ -1703,7 +1718,7 @@ function _decideOnOffPeakKWh(b, kwhConsumed, kwhHeld) {
         // BOTH OnPeakKWh and OffPeakKWh are corrected, not on the first edit.
         result.gateFields = ['OnPeakKWh', 'OffPeakKWh'];
       }
-      return result;
+      if (!deferToKwhPath) return result;
     }
   }
 
