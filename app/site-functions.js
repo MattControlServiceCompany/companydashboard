@@ -2397,6 +2397,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.07.90', date: '2026-10-07', title: 'Quick Start opens after you sign in',
+    items: [
+      { type: 'fix', text: 'The Quick Start guide no longer opens on top of the sign-in screen. It opens once, after you sign in for the first time.' }
+    ]
+  },
   { v: 'v2026.10.07.89', date: '2026-10-07', title: 'Clearer restore note',
     items: [
       { type: 'change', text: 'Restore button (bottom of the left sidebar, next to Backup): if an item is in both the backup file and the site, the site now uses the version from the backup. Items you added after the backup stay. Nothing is deleted unless you tick it in the restore results.' }
