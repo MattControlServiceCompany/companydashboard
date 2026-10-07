@@ -345,7 +345,6 @@ const CONSUMERS = {
   'app/utility-data.js': [/totalSavingsWithPresented\(/, /Object\.values\(actSavByMo\)\.reduce/, /savVals\.reduce/, /Object\.values\(actByMo\)\.reduce/],
   'app/graphics-setpoints.js': [/totalSavingsWithPresented\(/, /\.reduce\(\(s, \[, v\]\) => s \+ v, 0\)\s*:\s*0;/],
   'app/report-engine.js': [/totalSavingsWithPresented\(/, /periodSavings \+= totalCostSav/],
-  'app/portal-export.js': [/getProjectSavingsTotal\(/],
 };
 Object.keys(CONSUMERS).forEach((f) => {
   const src = readSrc(f);
@@ -423,7 +422,6 @@ assert(
   assert(/elec\.costSaved = _presUnits\.elecDollars/.test(rep) && /gas\.costSaved = _presUnits\.gasDollars/.test(rep) && /propane\.costSaved = _presUnits\.propaneDollars/.test(rep),
     "report engine takes per-commodity dollars from the keeper record");
   assert(/totalUnitsWithPresented\(/.test(rd("app/graphics-setpoints.js")) && /egfxUnitsByBldgYm/.test(rd("app/graphics-setpoints.js")), "Energy Graphics unit totals go through the keeper");
-  assert(/totalUnitsWithPresented\(/.test(rd("app/portal-export.js")), "portal CO2 units go through the keeper");
   const core = rd("app/core.js");
   assert(/meterSavByYMs\.push/.test(core) && /addBldgQuarters = \(projId, bldgId, meterByYMs\)/.test(core), "dashboard quarters pick the newest year per meter");
 }

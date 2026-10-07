@@ -204,7 +204,7 @@ function getMeterSavings(m, bills, incl, projId, bldgId, opts) {
   // signal is the project record's `sa` field (Service Agreement #) - a project with no SA
   // (Spring Hill, JOCO, Baker: sa="") must show ZERO savings everywhere, not a phantom
   // number from a bill that happens to look complete. String(x.id) === String(projId) is
-  // required because app/portal-export.js passes projId as a String while projects[].id
+  // required because some callers pass projId as a String while projects[].id
   // are numbers - a strict === here would silently fail that caller.
   const _proj =
     typeof projects !== "undefined"
@@ -629,7 +629,7 @@ function getProjectSavingsByYM(projId) {
 ───────────────────────────────────────────────────────────── */
 function getBldgMeasureSavingsByMo(projId, bldgId) {
   // 2026-09-15 (SA-gate fix): String(x.id) === String(projId) matches the getMeterSavings
-  // gate above — portal-export passes projId as a String while projects[].id are numbers,
+  // gate above — some callers pass projId as a String while projects[].id are numbers,
   // so a strict === here silently failed that caller.
   // 2026-09-21 (SA-gate scope fix): the SA# (Service Agreement #) requirement was removed
   // from this path. It belongs only to ACTUAL/bill-based savings (getMeterSavings, above),

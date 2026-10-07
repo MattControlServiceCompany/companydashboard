@@ -81,7 +81,6 @@ function newestBackup() {
 const OTHER_PAGES = [
   { name: 'index.html', url: '/index.html', sel: '#loginForm' },
   { name: 'ems-leads.html', url: '/ems-leads.html', sel: '#sb-all' },
-  { name: 'portal/index.html', url: '/portal/index.html', sel: 'body *' },
 ];
 const SIDEBAR_VIEWS = [
   { id: 'home', sel: '#view-home button' },

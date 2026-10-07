@@ -44,7 +44,6 @@ const ALLOWED = [
   ['app/energy-savings.js', 'Math.abs(mrd - bp) / 86400000', 'meter-read date closeness (tolerance)'],
   ['app/energy-savings.js', '(da - db) / 86400000', 'duplicate-period closeness (tolerance)'],
   ['app/energy-savings.js', '20 * 86400000', 'cluster window'],
-  ['app/portal-export.js', '365.25 * 24 * 3600 * 1000', 'ms per year constant'],
   ['app/report-engine.js', '365.25 * 86400000', 'ms per year constant'],
   ['computations/data-quality.js', '(curDate - prevDate) / 86400000', 'gap between two bills (tolerance)'],
   [
