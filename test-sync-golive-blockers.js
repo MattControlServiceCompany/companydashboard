@@ -1531,6 +1531,30 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     });
   }
 
+  // ---- re-review F6: a stale tab's 403 never clears another user's shared session (REAL ch-auth.js)
+  await t('F6: tab cached as A gets 403 while storage holds B: B stays signed in', async () => {
+    const L = loadReal({ userId: 'u1', tokenFetch: tokUser('u1'), kvFetch: async () => ok([]) });
+    assert.strictEqual(L.A.getUserId(), 'u1');
+    L.store.ch_sb_session = JSON.stringify({
+      access_token: FK('b'),
+      refresh_token: FK('rb'),
+      expires_at: Math.floor(Date.now() / 1000) + 3600,
+      user_id: 'u2',
+      email: 'u2@example.com',
+    });
+    const out = await L.A.withAuthRetry(async () => ({ status: 'error', httpStatus: 403 }));
+    assert.strictEqual(out.httpStatus, 403);
+    assert.ok(L.store.ch_sb_session && JSON.parse(L.store.ch_sb_session).user_id === 'u2', 'B session kept in storage');
+    assert.strictEqual(L.A.getUserId(), 'u2', 'this tab now follows B');
+    assert.strictEqual(L.A.backendMode(), 'on');
+  });
+  await t('F6: 403 for the stored user itself still ends the session', async () => {
+    const L = loadReal({ userId: 'u1', tokenFetch: tokUser('u1'), kvFetch: async () => ok([]) });
+    await L.A.withAuthRetry(async () => ({ status: 'error', httpStatus: 403 }));
+    assert.strictEqual(L.A.backendMode(), 'off');
+    assert.ok(!L.store.ch_sb_session);
+  });
+
   // ---- fix 3: a failed token refresh ends the session only when the server REFUSED it
   const refreshCase = async (tokenFetch) => {
     const L = loadAuth(tokenFetch);

@@ -309,6 +309,13 @@
         return !!s;
       });
     }
+    // Another tab may have signed a different user in since this tab last looked: the stored
+    // session is theirs, not the one this refusal is about. Take it over; never clear it.
+    var stored = _loadSession();
+    if (stored && stored.user_id !== _cachedUserId) {
+      _applySession(stored);
+      return Promise.resolve(false);
+    }
     _clearSession();
     _setSignedOut(true);
     return Promise.resolve(false);
