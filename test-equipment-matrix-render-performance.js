@@ -15,11 +15,10 @@
 // Browser: plain Chromium (never Edge/msedge), headless, unique C:\Temp profile per run, closed
 // in a finally block. Run: node test-equipment-matrix-render-performance.js
 
-const { chromium } = require('playwright');
+const { launchBrowser } = require('./tools/launch-browser.js');
 
 const REPO = __dirname;
 const SITE_PATH = 'file:///' + REPO.replace(/\\/g, '/') + '/energy-department.html';
-const PROFILE_DIR = 'C:\\Temp\\em-perf-test-profile-' + Date.now();
 const SYNTH_PID = 999000222; // fake numeric project id, never collides with a real project
 const ROW_COUNT = 3000;
 const BUILDING_COUNT = 30; // 100 rows/building, roughly matches JOCO's real building density
@@ -117,10 +116,7 @@ function buildSyntheticMatrix() {
 (async () => {
   const matrix = buildSyntheticMatrix();
 
-  const context = await chromium.launchPersistentContext(PROFILE_DIR, {
-    headless: true,
-    viewport: { width: 1920, height: 1080 },
-  });
+  const context = await launchBrowser('em-perf', { viewport: { width: 1920, height: 1080 } });
   try {
     const page = await context.newPage();
     page.on('pageerror', (err) => console.log('PAGE ERROR:', err.message));

@@ -132,6 +132,8 @@ function makeSandbox(opts) {
     },
   };
   vm.createContext(sandbox);
+  // The REAL classification lib (siteBackup calls window.SyncClassification.isNeverBackupKey), not a stub copy.
+  vm.runInContext(fs.readFileSync(REPO + '/app/sync-classification.js', 'utf8'), sandbox, { filename: 'sync-classification.js' });
   vm.runInContext(fns, sandbox, { filename: 'site-functions-extract.js' });
   return sandbox;
 }

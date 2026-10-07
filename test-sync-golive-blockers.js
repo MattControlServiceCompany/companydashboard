@@ -6,6 +6,13 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
+// Back-off drain timers (15 s and longer) in db.js must not keep the test process alive.
+function setTimeoutUnrefLong(fn, ms, ...r) {
+  const h = setTimeout(fn, ms, ...r);
+  if (ms >= 10000 && h.unref) h.unref();
+  return h;
+}
+
 function load({ mode, syncHost, fetchImpl, classify }) {
   let src = fs.readFileSync(path.join(__dirname, 'app', 'db.js'), 'utf8');
   src = src
@@ -1026,7 +1033,7 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
       sessionStorage: fakeStorage(store),
       BroadcastChannel: o.net ? o.net.FakeBC : undefined,
       navigator: o.net ? { locks: o.net.locks } : {},
-      setTimeout,
+      setTimeout: setTimeoutUnrefLong,
       clearTimeout,
       setInterval: () => 0,
       Promise,
@@ -1405,7 +1412,7 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
         },
       },
       console: { log() {}, warn() {}, error() {} },
-      setTimeout,
+      setTimeout: setTimeoutUnrefLong,
       clearTimeout,
       setInterval: () => 0,
       clearInterval,

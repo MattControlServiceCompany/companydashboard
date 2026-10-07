@@ -20,16 +20,13 @@
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
-const os = require('os');
 
 const REPO = path.join(__dirname, '..');
-const PW_PATH = path.join('C:', 'Users', 'Matt Miller', 'AI', 'companydashboard', 'node_modules', 'playwright-core');
-const { chromium } = require(PW_PATH);
+const { launchBrowser } = require('./launch-browser.js');
 
 const OUT_DIR =
   process.argv[2] || path.join('C:', 'Users', 'Matt Miller', 'AI', '_context', 'temp', '2026-09-24-report-headers');
 const FIXTURE = path.join(OUT_DIR, '2026-09-24-restore-copy.json');
-const PROFILE = path.join(os.tmpdir(), 'chd-report-header-test-' + Date.now());
 
 let passed = 0,
   failed = 0;
@@ -178,8 +175,7 @@ async function scanHeaders(page, containerSel, label, results) {
   const SITE = 'http://127.0.0.1:' + port + '/energy-department.html';
   console.log('Serving worktree at ' + SITE);
 
-  const context = await chromium.launchPersistentContext(PROFILE, {
-    headless: true,
+  const context = await launchBrowser('report-header-overflow', {
     viewport: { width: 1920, height: 1080 },
     acceptDownloads: true,
   });

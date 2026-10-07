@@ -1,16 +1,10 @@
 // Real-browser test (headless bundled Chromium, file://, no real data): the first-visit Quick Start guide
 // must NOT open over the sign-in screen, must open once after sign-in, and must not open on a second visit.
 // Run: node test-quickstart-after-signin.js
-let chromium;
-try {
-  ({ chromium } = require('playwright'));
-} catch (e) {
-  ({ chromium } = require('C:/Users/Matt Miller/AI/companydashboard/node_modules/playwright'));
-}
+const { launchBrowser } = require('./tools/launch-browser.js');
 const path = require('path');
 const fs = require('fs');
 const SITE = 'file:///' + __dirname.split(path.sep).join('/') + '/energy-department.html';
-const PROFILE = path.join('C:\Temp', 'qs-signin-test-profile-' + Date.now());
 let pass = 0;
 let fail = 0;
 function eq(a, b, l) {
@@ -29,7 +23,7 @@ const USER = { name: 'Test User', email: 'test@example.com', initials: 'TU', isR
 (async () => {
   let ctx;
   try {
-    ctx = await chromium.launchPersistentContext(PROFILE, { headless: true, viewport: { width: 1280, height: 800 } });
+    ctx = await launchBrowser('qs-signin', { viewport: { width: 1280, height: 800 } });
     const page = await ctx.newPage();
     const errs = [];
     page.on('pageerror', (e) => errs.push(String(e)));
@@ -69,7 +63,6 @@ const USER = { name: 'Test User', email: 'test@example.com', initials: 'TU', isR
     eq(errs.length, 0, 'no console errors: ' + errs.join(' | '));
   } finally {
     if (ctx) await ctx.close();
-    fs.rmSync(PROFILE, { recursive: true, force: true });
   }
   console.log('quickstart-after-signin: ' + pass + ' pass, ' + fail + ' fail');
   process.exit(fail ? 1 : 0);

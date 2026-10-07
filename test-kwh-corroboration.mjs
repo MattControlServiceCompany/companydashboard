@@ -70,8 +70,10 @@ const LOAD_ORDER = [
   'lib/shared-charts.js',
   'computations/report-data.js',
   'computations/data-quality.js',
+  'app/sync-classification.js',
   'app/db.js',
   'app/core.js',
+  'app/utility-data.js',
   'app/energy-savings.js',
   'app/bill-analysis.js',
 ];
@@ -97,8 +99,10 @@ function loadRealPipeline() {
     Chart: function () {},
     setTimeout,
     clearTimeout,
-    setInterval,
+    setInterval: () => 0, // page timers (core.js, bill-analysis.js) must not keep Node alive
     clearInterval,
+    TextEncoder,
+    TextDecoder,
     performance: { now: () => Date.now() },
     Image: function () {},
   };

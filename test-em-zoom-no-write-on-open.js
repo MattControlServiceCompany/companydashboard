@@ -1,12 +1,11 @@
 // Real-browser test (synthetic data, headless bundled Chromium, file://): opening the Equipment Matrix
 // must NOT call DB.set('en_em_zoom'); a click on the zoom button must call it once.
 // Run: node test-em-zoom-no-write-on-open.js
-const { chromium } = require('playwright');
+const { launchBrowser } = require('./tools/launch-browser.js');
 const path = require('path');
 const fs = require('fs');
 const REPO = __dirname;
 const SITE = 'file:///' + REPO.split(path.sep).join('/') + '/energy-department.html';
-const PROFILE = path.join('C:\Temp', 'em-zoom-test-profile-' + Date.now());
 const PID = 999000222;
 let pass = 0;
 let fail = 0;
@@ -41,10 +40,7 @@ function eq(a, b, l) {
     buildings: [b],
     totalBASPoints: 0,
   };
-  const ctx = await chromium.launchPersistentContext(PROFILE, {
-    headless: true,
-    viewport: { width: 1920, height: 1080 },
-  });
+  const ctx = await launchBrowser('em-zoom', { viewport: { width: 1920, height: 1080 } });
   try {
     const page = await ctx.newPage();
     await ctx.addInitScript(
@@ -97,9 +93,6 @@ function eq(a, b, l) {
     eq(await page.evaluate(() => document.getElementById('em-zoom-label').textContent), '110%', 'label shows 110%');
   } finally {
     await ctx.close();
-    try {
-      fs.rmSync(PROFILE, { recursive: true, force: true });
-    } catch (e) {}
   }
   console.log(pass + ' passed, ' + fail + ' failed');
   process.exit(fail ? 1 : 0);

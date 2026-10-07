@@ -98,6 +98,11 @@ function resolvePlaywright(repoRoot) {
   try {
     return require(path.join(repoRoot, 'node_modules', 'playwright'));
   } catch (e) {
+    try {
+      return require('playwright'); // NODE_PATH from regression-gate.js (CH_PLAYWRIGHT_NODE_MODULES)
+    } catch (e2) {
+      /* fall through to the primary checkout */
+    }
     const FALLBACK_PLAYWRIGHT_HOST = 'C:/Users/Matt Miller/AI/companydashboard';
     if (path.resolve(repoRoot) !== path.resolve(FALLBACK_PLAYWRIGHT_HOST)) {
       return require(path.join(FALLBACK_PLAYWRIGHT_HOST, 'node_modules', 'playwright'));
@@ -795,6 +800,7 @@ function printReport(label, results, bundle) {
     exitCode = 1;
   } finally {
     await context.close();
+    fs.rmSync(profileDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   }
   process.exit(exitCode);
 })();
