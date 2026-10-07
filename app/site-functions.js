@@ -2397,6 +2397,16 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.07.88', date: '2026-10-07', title: 'Safer restore from backup, quieter update check',
+    items: [
+      { type: 'change', text: 'Restore from backup: when a record exists in both the backup and your current data, the backup copy now wins. Records that exist only in your current data are kept. Anything that would remove data waits until you tick it.' },
+      { type: 'fix', text: 'The restore results list now shows file names and messages safely, even when they contain quotation marks.' },
+      { type: 'change', text: 'The "Reload to update" bar now checks for a new version only when you open the page or return to the tab, at most once an hour.' },
+      { type: 'fix', text: 'Cost Estimate: opening the page no longer saves your table layout, and a phase that goes over its allowance now shows a warning instead of an error.' },
+      { type: 'change', text: 'Closing the browser now signs you out. Reloading the page or opening a new tab keeps you signed in.' },
+      { type: 'change', text: 'Removed the unused client portal export code.' }
+    ]
+  },
   { v: 'v2026.10.06.87', date: '2026-10-06', title: 'Zoom and theme stay put, shared changes appear sooner',
     items: [
       { type: 'fix', text: 'Equipment Matrix zoom is now saved only when you change it yourself, so opening the page no longer overwrites your saved zoom.' },
@@ -6722,7 +6732,7 @@ var RELEASE_NOTES = [
     items: [
       {
         type: 'feature',
-        text: 'Energy Department: if you leave a tab open and a new version is released while you are away, the page now shows a "Reload to update" banner when you come back to the tab (or every few minutes if it stays open in the background). Click Reload and it saves your current place before refreshing, so you never end up unknowingly running old code. You can also dismiss the banner if you want to keep working and reload later.',
+        text: 'Energy Department: if you leave a tab open and a new version is released while you are away, the page now shows a "Reload to update" banner when you open the page or come back to the tab (checked at most once an hour). Click Reload and it saves your current place before refreshing, so you never end up unknowingly running old code. You can also dismiss the banner if you want to keep working and reload later.',
       },
     ],
   },
