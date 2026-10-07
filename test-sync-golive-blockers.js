@@ -1428,6 +1428,40 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     },
   );
 
+  // ---- re-review F1: an edit by A is never sent with B's token or key (REAL db.js + ch-auth.js)
+  await t('F1: A edits twice, B signs in during PUT #1: the waiting value is never PUT as B', async () => {
+    const puts = [];
+    let release;
+    const held = new Promise((r) => (release = r));
+    const L = loadReal({
+      userId: 'u1',
+      tokenFetch: tokUser('u2'),
+      kvFetch: async (u, o) => {
+        if (!o || o.method !== 'PUT') return ok([]);
+        const body = JSON.parse(o.body);
+        puts.push({ auth: o.headers.Authorization, key: body.key, value: body.value });
+        if (body.key === 'u1::ch_theme') {
+          await held;
+          return put401; // the refresh then returns user B: identity changes in flight
+        }
+        return ok({ version: 1, hash: null, deleted: false });
+      },
+    });
+    await L.DB.warmCache();
+    puts.length = 0;
+    L.DB.set('ch_theme', 'A-first');
+    await tick(40);
+    L.DB.set('ch_theme', 'A-second'); // waits behind PUT #1, owner A
+    await tick(40);
+    release();
+    await tick(200);
+    assert.strictEqual(L.A.getUserId(), 'u2', 'identity changed to B');
+    const toB = puts.filter((x) => /^u2::/.test(x.key) && x.key.indexOf('ch_theme') >= 0);
+    assert.deepStrictEqual(toB, [], 'no PUT of the key under B');
+    assert.ok(puts.every((x) => x.value !== 'A-second'), 'A-second never sent');
+    assert.strictEqual(L.DB.__t._stampOf('ch_theme'), undefined, 'no stamp set for B');
+  });
+
   // ---- fix 3: a failed token refresh ends the session only when the server REFUSED it
   const refreshCase = async (tokenFetch) => {
     const L = loadAuth(tokenFetch);

@@ -713,6 +713,9 @@ const DB = (() => {
   }
 
   async function _sendKvPut(key, payload) {
+    // The edit's author is not the signed-in user now (the identity changed while
+    // the write waited): never send it with the new user's token or key.
+    if (payload.owner && payload.owner.id && payload.owner.id !== _myUserId()) return { status: 'stale-identity' };
     const wireKey = _wireKey(key);
     if (wireKey === null) {
       // Per-user key, nobody signed in — behave local-only: no fetch, no
