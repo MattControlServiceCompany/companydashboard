@@ -11,20 +11,14 @@
  *     intent 'display' at scale 3.0 x 1.6 and at zoom 12 x 1.6 (the Louisburg crop zoom).
  *
  * The real functions are cut out of the app file and run in the page. pdf.js 3.11.174 (the version
- * energy-department.html loads) is cached in C:\Temp\ocr-hidden-tab-cache from cdnjs on first run.
+ * energy-department.html loads) is read from the local cache C:\Temp\ocr-hidden-tab-cache (saved once from cdnjs; the test never downloads).
  *
  * Usage: node tools/test-ocr-hidden-tab.js [path-to-bill-analysis.js]
  * Exit code 1 on any failure.
  */
 const fs = require('fs');
 const path = require('path');
-const https = require('https');
-
-const PW = [
-  path.join('C:', 'Users', 'Matt Miller', 'AI', 'companydashboard', 'node_modules', 'playwright-core'),
-  path.join(__dirname, '..', 'node_modules', 'playwright-core'),
-].find((p) => fs.existsSync(p));
-const { chromium } = require(PW);
+const { launchBrowser } = require('./launch-browser.js');
 
 const SRC = process.argv[2] || path.join(__dirname, '..', 'app', 'bill-analysis.js');
 const CACHE = path.join('C:', 'Temp', 'ocr-hidden-tab-cache');
@@ -40,22 +34,6 @@ function check(name, cond, detail) {
     failed++;
     console.log('FAIL: ' + name + (detail !== undefined ? '  -> ' + JSON.stringify(detail) : ''));
   }
-}
-
-function download(url, dest) {
-  return new Promise((resolve, reject) => {
-    https
-      .get(url, (res) => {
-        if (res.statusCode !== 200) return reject(new Error(url + ' -> ' + res.statusCode));
-        const chunks = [];
-        res.on('data', (c) => chunks.push(c));
-        res.on('end', () => {
-          fs.writeFileSync(dest, Buffer.concat(chunks));
-          resolve();
-        });
-      })
-      .on('error', reject);
-  });
 }
 
 // Synthetic one-page PDF: a title line and stroked lines. No client data.
@@ -93,23 +71,24 @@ function appSlice() {
 }
 
 (async () => {
-  fs.mkdirSync(CACHE, { recursive: true });
+  // No network in the gate: pdf.js 3.11.174 must already be in CACHE (saved once from PDFJS below).
   for (const f of ['pdf.min.js', 'pdf.worker.min.js']) {
-    if (!fs.existsSync(path.join(CACHE, f))) await download(PDFJS + f, path.join(CACHE, f));
+    if (!fs.existsSync(path.join(CACHE, f))) {
+      console.log('FAIL: missing ' + path.join(CACHE, f) + ' (save it once from ' + PDFJS + f + ')');
+      process.exit(1);
+    }
   }
-  const profile = path.join('C:', 'Temp', 'ocr-hidden-tab-profile-' + Date.now());
-  fs.mkdirSync(profile, { recursive: true });
   const cacheUrl = 'file:///' + CACHE.replace(/\\/g, '/');
   fs.writeFileSync(
-    path.join(profile, 'page.html'),
+    path.join(CACHE, 'page.html'),
     `<html><body><script src="${cacheUrl}/pdf.min.js"></script><script src="${cacheUrl}/pdf.worker.min.js"></script></body></html>`,
   );
-  const pageUrl = 'file:///' + profile.replace(/\\/g, '/') + '/page.html';
+  const pageUrl = 'file:///' + CACHE.replace(/\\/g, '/') + '/page.html';
   const code = appSlice();
   const letterPdf = makePdf(612, 792, 1500);
   const smallPdf = makePdf(100, 130, 60);
 
-  const ctx = await chromium.launchPersistentContext(profile, { headless: true });
+  const ctx = await launchBrowser('ocr-hidden-tab');
   const out = {};
   try {
     for (const mode of ['visible', 'hidden']) {
