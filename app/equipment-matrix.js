@@ -4554,8 +4554,8 @@ function emRenderMatrix(container, data, pid) {
     });
 
   emRenderTable(data, _emFilters);
-  // Apply persisted zoom (no-op at 100% but sets up the style tag consistently)
-  emSetZoom(0);
+  // Apply persisted zoom (read only; saving happens only when the user clicks zoom)
+  emApplyZoom();
 }
 
 function emStatPill(label, val, title) {
@@ -5132,12 +5132,17 @@ function emRenderToolbar(data, pid, projBadge) {
  * emSetZoom — Adjusts the table zoom level by `delta` percent (e.g. +10 or -10).
  * Clamped to 50–150. Applies font-size and padding scaling to .em-table-wrap
  * proportionally: at 100% font-size is 11px and cell padding is 4px 8px.
- * Persists the choice to IndexedDB as `en_em_zoom`.
+ * Persists the choice to IndexedDB as `en_em_zoom`. Only called from the
+ * zoom buttons; opening the view calls emApplyZoom() (no write).
  */
 function emSetZoom(delta) {
   _emZoomLevel = Math.min(150, Math.max(50, _emZoomLevel + delta));
   DB.set('en_em_zoom', String(_emZoomLevel));
+  emApplyZoom();
+}
 
+/** emApplyZoom — paints the current _emZoomLevel. Never writes to DB. */
+function emApplyZoom() {
   var wrap = document.getElementById('em-table-wrap');
   if (wrap) {
     var ratio = _emZoomLevel / 100;

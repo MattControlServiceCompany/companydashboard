@@ -12309,9 +12309,12 @@ function setTableZoom(containerId, delta, storageKey, labelId) {
   } else {
     level = Math.min(150, Math.max(50, level + delta));
   }
-  try {
-    localStorage.setItem(storageKey, String(level));
-  } catch (e) {}
+  // Save only on a user zoom click; a re-apply (delta null) must not write.
+  if (delta !== null && delta !== undefined) {
+    try {
+      localStorage.setItem(storageKey, String(level));
+    } catch (e) {}
+  }
 
   var wrap = document.getElementById(containerId);
   if (wrap) {

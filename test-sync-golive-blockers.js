@@ -368,6 +368,34 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
       assert.strictEqual(L.DB.getQueueDepth(), 0);
     },
   );
+  await t('theme survives A->B->A in one browser; B does not get the theme of A; nothing is sent', async () => {
+    const puts = [];
+    const L = load({
+      classify: true,
+      mode: 'off',
+      syncHost: true,
+      fetchImpl: async (u, o) => {
+        if (o && o.method === 'PUT') puts.push(JSON.parse(o.body));
+        return ok([]);
+      },
+    });
+    await L.DB.warmCache();
+    L.state.uid = 'A';
+    L.state.mode = 'on';
+    await L.DB.__t._handleAuthIdentityChange();
+    L.store.ch_theme = 'light'; // raw write, as siteApplyTheme does
+    L.state.uid = 'B';
+    await L.DB.__t._handleAuthIdentityChange();
+    assert.ok(L.store.ch_theme == null, 'B must not inherit the theme of A');
+    L.store.ch_theme = 'dark'; // B picks dark
+    L.state.uid = 'A';
+    await L.DB.__t._handleAuthIdentityChange();
+    assert.strictEqual(L.store.ch_theme, 'light', 'A gets the Light theme back');
+    L.state.uid = 'B';
+    await L.DB.__t._handleAuthIdentityChange();
+    assert.strictEqual(L.store.ch_theme, 'dark', 'B gets own theme back');
+    assert.strictEqual(puts.filter((p) => /theme/.test(p.key)).length, 0, 'theme never sent to the server');
+  });
   await t('A queued value is back in cache for A before the drain (re-apply)', async () => {
     const L = load({
       classify: true,

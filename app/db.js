@@ -2387,8 +2387,25 @@ const DB = (() => {
   // closes the gap on). ch-auth.js dispatches `chAuthStateChanged` on every
   // sign-in/out; the listener registered near the bottom of this file wires
   // it to _handleAuthIdentityChange below.
-  function _clearPerUserLocalState() {
+  // Theme is not private data and is never sent to the server. It stays a raw
+  // localStorage key (the pre-paint script reads it before any user is known),
+  // but on an identity switch it is parked under a per-user LOCAL key so the
+  // user who set it gets it back and the next user does not inherit it.
+  function _themeStashKey(uid) {
+    return 'ch_theme_user::' + uid;
+  }
+  function _clearPerUserLocalState(prevUid, nextUid) {
     const cleared = [];
+    let nextTheme = null;
+    if (typeof localStorage !== 'undefined') {
+      try {
+        const cur = localStorage.getItem('ch_theme');
+        if (prevUid && cur) localStorage.setItem(_themeStashKey(prevUid), cur);
+        if (nextUid) nextTheme = localStorage.getItem(_themeStashKey(nextUid));
+      } catch (e) {
+        console.warn('[DB] theme stash failed:', e);
+      }
+    }
     Object.keys(_cache).forEach((k) => {
       if (_isPerUserKey(k)) cleared.push(k);
     });
@@ -2447,6 +2464,17 @@ const DB = (() => {
       }
     });
 
+    if (nextTheme && typeof localStorage !== 'undefined') {
+      try {
+        localStorage.setItem('ch_theme', nextTheme);
+        if (typeof document !== 'undefined' && document.documentElement && document.documentElement.setAttribute) {
+          document.documentElement.setAttribute('data-theme', nextTheme === 'light' ? 'light' : 'dark');
+        }
+      } catch (e) {
+        console.warn('[DB] theme restore failed:', e);
+      }
+    }
+
     // Queued entries are owner-tagged: the drain sends only the signed-in
     // user's own entries, so another user's pending edit can never replay
     // under the new user's wire-key prefix. No entry is deleted here.
@@ -2456,12 +2484,13 @@ const DB = (() => {
   async function _handleAuthIdentityChange() {
     const uid = _myUserId();
     if (uid === _lastKnownUserId) return; // chAuthStateChanged fired but the signed-in identity didn't actually change
+    const prevUid = _lastKnownUserId;
     _lastKnownUserId = uid;
     _recordLastUser();
     _persistSyncQueue(); // refresh the bars for the new identity
     _identityEpoch++; // in-flight work for the previous user now discards itself
     _uploadProgress = { running: false, total: 0, done: 0, uploaded: 0, failed: 0 };
-    const cleared = _clearPerUserLocalState();
+    const cleared = _clearPerUserLocalState(prevUid, uid);
     _reapplyQueuedPerUserValues(uid); // this user's own queued values, before hydrate and drain
     // Finding 2 — persist the new owner durably so a hard refresh right after
     // this switch (warmCache() -> _checkDurableIdentityMarker() below) sees
@@ -2513,7 +2542,7 @@ const DB = (() => {
     // punishing a temporary silent-refresh failure as if it were a real
     // switch).
     if (priorKnown && currentUid && priorKnown !== currentUid) {
-      cleared = _clearPerUserLocalState();
+      cleared = _clearPerUserLocalState(priorKnown, currentUid);
       _reapplyQueuedPerUserValues(currentUid);
       _lastKnownUserId = currentUid;
       if (typeof window !== 'undefined' && cleared.length) {

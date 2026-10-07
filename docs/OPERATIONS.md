@@ -104,6 +104,11 @@ Many short `setTimeout` calls (toasts, URL cleanup, UI yield) are one-shot. They
   Savings Projection panes save only from their inputs and buttons (`bpSave`, `bspSave`), never on open, and
   `getBspCfg` is the one reader of the Savings Projection settings with defaults. How to check: open a project
   Dashboard tab and both panes with the Network tab filtered on `kv-sync`: zero PUT.
+  Same rule for zoom: opening the Equipment Matrix only reads `en_em_zoom` and paints it (`emApplyZoom`, app/equipment-matrix.js);
+  only the zoom buttons save (`emSetZoom`). `setTableZoom` (app/site-functions.js) saves to local storage only on a click, not on a re-apply.
+  Theme: `ch_theme` stays a raw local key, never sent to the server. On a user switch app/db.js `_clearPerUserLocalState(prevUid, nextUid)`
+  parks it under the local key `ch_theme_user::<userId>` and puts back the next user's own value, so A keeps Light after A->B->A and B
+  does not get A's theme. How to check: node test-sync-golive-blockers.js (theme test), node test-em-zoom-no-write-on-open.js.
 - Version stamps are one local record per key, `ch_rv::<key>` = `{ stamp: {version, hash}, base? }` (app/db.js
   `_persistStamp`, the one writer; `_setSynced` the one stamper). A tab writes only the record of the key it synced, so a
   second tab can never overwrite the first tab's stamps (the old whole-map `ch_replica_state`/`ch_sync_base` are split once
