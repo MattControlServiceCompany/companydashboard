@@ -623,14 +623,8 @@ async function main() {
   // Excluded = fails or hangs on main today (stale tests) or needs the internet. Each is listed with its reason
   // and shown as INFO so it is never invisible. Remove an entry when the test is fixed.
   const TEST_EXCLUDE = {
-    'tools/test-backend-mode-default.js': 'fails on main: 3 of 149 checks fail',
-    'tools/test-backup-strips-derived-caches.js': 'fails on main: short-circuit assertion',
-    'tools/test-backup-waits-for-db-ready.js': 'fails on main: crashes in siteBackup',
-    'tools/test-ocr-hidden-tab.js': 'needs the internet (pdf.js from cdnjs) and crashes on main',
-    'tools/test-report-header-overflow.js': 'needs an external temp folder (2026-09-24-report-headers); crashes on main',
-    'test-sync-golive-blockers.js': 'hangs more than 180 s on main',
-    'test-broadmoor-eca-split.mjs': 'hangs more than 120 s (timeout) on main',
-    'test-kwh-corroboration.mjs': 'fails on main: app/db.js load error (RV_PREFIX) then calcDays is not defined',
+    'test-kwh-corroboration.mjs':
+      'fails on main: 2 of 47 checks (acceptance on the real April 2026 Louisburg OCR file): bill 3 account number loses its first digit (9 digits, expected 10) and bill 2 OffPeakKWh stays 1912.7998 (expected 1932.8056). Passes at commit aebba42b. Needs a site fix.',
   };
   const testFiles = [];
   ['tools', '.'].forEach((d) => {
