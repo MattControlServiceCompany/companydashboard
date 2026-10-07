@@ -1793,7 +1793,7 @@ function _updateCompactHdrBaseline(projId) {
       // Fallback (no baseline set on this meter yet): raw all-bills sum, labeled "Total Cost"
       // instead of "Baseline" below — not an audited baseline reconciliation figure.
       (m.bills || []).forEach((bill) => {
-        totalCost += parseFloat(bill.totalCost) || parseFloat(bill.thermCost) || parseFloat(bill.cost) || 0;
+        totalCost += parseFloat(bill.totalCost) || getBillGasCost(bill) || parseFloat(bill.cost) || 0;
         if (m.commodity === 'Gas') {
           totalTherms += resolveGasUsageTherms(bill);
         } else if (m.commodity === 'Propane') {
@@ -2077,9 +2077,9 @@ function initDashboardTab(projId) {
           if (m.commodity === 'Electric') {
             // getBillFacKWCost (computations/rates.js) — the ONE accessor for Facilities kW
             // Cost (2026-09-23 single-source fix); never read bill.facKWCost/facilitiesCharge directly.
-            curCost += (parseFloat(bill.kwhCost) || 0) + (parseFloat(bill.kwCost) || 0) + getBillFacKWCost(bill);
+            curCost += getBillKwhCost(bill) + getBillKwCost(bill) + getBillFacKWCost(bill);
           } else {
-            curCost += parseFloat(bill.totalCost) || parseFloat(bill.thermCost) || parseFloat(bill.cost) || 0;
+            curCost += parseFloat(bill.totalCost) || getBillGasCost(bill) || parseFloat(bill.cost) || 0;
           }
           if (m.commodity === 'Gas') {
             // Single source of truth (2026-09-22): same gas-usage helper the baseline uses
@@ -2096,9 +2096,9 @@ function initDashboardTab(projId) {
         // Tally all bills as fallback when no baseline is set
         (m.bills || []).forEach((bill) => {
           if (m.commodity === 'Electric') {
-            allCost += (parseFloat(bill.kwhCost) || 0) + (parseFloat(bill.kwCost) || 0) + getBillFacKWCost(bill);
+            allCost += getBillKwhCost(bill) + getBillKwCost(bill) + getBillFacKWCost(bill);
           } else {
-            allCost += parseFloat(bill.totalCost) || parseFloat(bill.thermCost) || parseFloat(bill.cost) || 0;
+            allCost += parseFloat(bill.totalCost) || getBillGasCost(bill) || parseFloat(bill.cost) || 0;
           }
           if (m.commodity === 'Gas') {
             // Same single gas-usage helper as curTherms above.
@@ -3801,22 +3801,22 @@ async function autoAssignAllSavedBills(projId) {
       utilityCompany: sb.UtilityCompany || sb.utilityCompany || '',
       customerName: sb.CustomerName || sb.customerName || '',
       accountNumber: sb.AccountNumber || sb.accountNumber || '',
-      kwh: sb.kWhConsumed || sb.kwh || '',
-      demandKW: sb.ActualKW || sb.demandKW || '',
-      billedKW: sb.BilledKW || sb.billedKW || '',
-      totalCost: sb.TotalCurrentCharges || sb.totalCost || '',
-      kwhCost: sb.kwhCost || '',
-      kwCost: sb.kwCost || '',
-      otherCost: sb.otherCost || '',
-      taxCost: sb.taxCost || '',
-      naturalGasTherms: sb.NaturalGasTherms || sb.naturalGasTherms || '',
-      gasCharge: sb.GasCharge || sb.gasCharge || '',
-      gallonsDelivered: sb.GallonsDelivered || sb.gallonsDelivered || '',
+      kwh: billValueOrBlank(sb.kWhConsumed, sb.kwh),
+      demandKW: billValueOrBlank(sb.ActualKW, sb.demandKW),
+      billedKW: billValueOrBlank(sb.BilledKW, sb.billedKW),
+      totalCost: billValueOrBlank(sb.TotalCurrentCharges, sb.totalCost),
+      kwhCost: billValueOrBlank(sb.kwhCost),
+      kwCost: billValueOrBlank(sb.kwCost),
+      otherCost: billValueOrBlank(sb.otherCost),
+      taxCost: billValueOrBlank(sb.taxCost),
+      naturalGasTherms: billValueOrBlank(sb.NaturalGasTherms, sb.naturalGasTherms),
+      gasCharge: billValueOrBlank(sb.GasCharge, sb.gasCharge),
+      gallonsDelivered: billValueOrBlank(sb.GallonsDelivered, sb.gallonsDelivered),
       pdfBillId: sb.id,
-      hasPDF: !!sb.hasPDF,
+      hasPDF: billHasPdf(sb),
       pdfKey: sb.pdfKey || '',
-      pdfPageStart: sb.pdfPageStart || '',
-      pdfPageEnd: sb.pdfPageEnd || '',
+      pdfPageStart: billValueOrBlank(sb.pdfPageStart),
+      pdfPageEnd: billValueOrBlank(sb.pdfPageEnd),
     };
     // BLOCKER C fix: write via the customer, not the project — match.projId is only a
     // representative pointer (findMeterMatch); the building may not be in that specific
@@ -3884,22 +3884,22 @@ async function assignSavedBillFromProj(billId, projId) {
     utilityCompany: sb.UtilityCompany || sb.utilityCompany || '',
     customerName: sb.CustomerName || sb.customerName || '',
     accountNumber: sb.AccountNumber || sb.accountNumber || '',
-    kwh: sb.kWhConsumed || sb.kwh || '',
-    demandKW: sb.ActualKW || sb.demandKW || '',
-    billedKW: sb.BilledKW || sb.billedKW || '',
-    totalCost: sb.TotalCurrentCharges || sb.totalCost || '',
-    kwhCost: sb.kwhCost || '',
-    kwCost: sb.kwCost || '',
-    otherCost: sb.otherCost || '',
-    taxCost: sb.taxCost || '',
-    naturalGasTherms: sb.NaturalGasTherms || sb.naturalGasTherms || '',
-    gasCharge: sb.GasCharge || sb.gasCharge || '',
-    gallonsDelivered: sb.GallonsDelivered || sb.gallonsDelivered || '',
+    kwh: billValueOrBlank(sb.kWhConsumed, sb.kwh),
+    demandKW: billValueOrBlank(sb.ActualKW, sb.demandKW),
+    billedKW: billValueOrBlank(sb.BilledKW, sb.billedKW),
+    totalCost: billValueOrBlank(sb.TotalCurrentCharges, sb.totalCost),
+    kwhCost: billValueOrBlank(sb.kwhCost),
+    kwCost: billValueOrBlank(sb.kwCost),
+    otherCost: billValueOrBlank(sb.otherCost),
+    taxCost: billValueOrBlank(sb.taxCost),
+    naturalGasTherms: billValueOrBlank(sb.NaturalGasTherms, sb.naturalGasTherms),
+    gasCharge: billValueOrBlank(sb.GasCharge, sb.gasCharge),
+    gallonsDelivered: billValueOrBlank(sb.GallonsDelivered, sb.gallonsDelivered),
     pdfBillId: sb.id,
-    hasPDF: !!sb.hasPDF,
+    hasPDF: billHasPdf(sb),
     pdfKey: sb.pdfKey || '',
-    pdfPageStart: sb.pdfPageStart || '',
-    pdfPageEnd: sb.pdfPageEnd || '',
+    pdfPageStart: billValueOrBlank(sb.pdfPageStart),
+    pdfPageEnd: billValueOrBlank(sb.pdfPageEnd),
   };
 
   if (!m.bills) m.bills = [];

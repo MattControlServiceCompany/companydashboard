@@ -68,6 +68,13 @@ vm.createContext(sandbox);
 const fns = [
   loadFn(REPO + '/lib/formatting.js', 'parseBillNumber'),
   loadFn(REPO + '/lib/formatting.js', 'parseBillNumberOrZero'),
+  loadFn(REPO + '/lib/formatting.js', 'billValueOrNull'),
+  // _analyzeMeterBills reads bill dollars through the one accessors in computations/rates.js.
+  loadFn(REPO + '/computations/rates.js', 'getBillFacKWCost'),
+  loadFn(REPO + '/computations/rates.js', 'getBillKwCost'),
+  loadFn(REPO + '/computations/rates.js', 'getBillKwhCost'),
+  loadFn(REPO + '/computations/rates.js', 'getBillGasCostOrNull'),
+  loadFn(REPO + '/computations/rates.js', 'getBillGasCost'),
   loadFn(REPO + '/app/utility-data.js', '_fixISO'),
   loadFn(REPO + '/app/utility-data.js', '_parseISO'),
   loadFn(REPO + '/app/utility-data.js', 'calcDays'),

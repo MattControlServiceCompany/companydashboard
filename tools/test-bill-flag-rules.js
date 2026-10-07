@@ -532,7 +532,7 @@ console.log('=== 8. dollar amounts in a row title ===');
   );
 }
 
-// -- 9 usage vs usage charge (water and sewer, each bill's own rate = its usage charge / usage, getBillOwnUnitRate) --
+// -- 9 usage vs usage charge (water and sewer, each bill's own rate = its usage charge / usage, getStoredRate) --
 console.log('=== 9. usage does not match charge ===');
 {
   const sewer = (mut) => {

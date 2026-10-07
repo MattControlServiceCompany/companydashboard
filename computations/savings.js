@@ -105,10 +105,20 @@ function getBillUsageOrNull(bill, commodity) {
   };
   if (commodity === 'Electric') return parseBillNumber(bill.kwh);
   if (commodity === 'Gas') return resolveGasUsageThermsOrNull(bill);
-  if (commodity === 'Water') return parseBillNumber(bill.waterUsage);
-  if (commodity === 'Sewer') return first(bill.sewerUsage, bill.waterUsage);
+  if (commodity === 'Water') return first(bill.waterUsage, bill.WaterUsage);
+  if (commodity === 'Sewer') return first(bill.sewerUsage, bill.SewerUsage, bill.waterUsage);
   if (commodity === 'Propane') return first(bill.gallonsDelivered, bill.kwh);
   return null;
+}
+
+/* gasBillSaveTherms(src) - the ONE mapping of gas usage for a bill being saved: the stored
+   `therms` ('' when missing, a real 0 stays 0). src = extractor bill (NaturalGasTherms ...) or
+   saved-style bill. The gas charge is NOT copied any more: the stored copy `thermCost` is gone
+   (2026-10-05 duplicate-bill-fields audit step 3); every reader calls getBillGasCost
+   (computations/rates.js), which reads the visible `gasCharge`. */
+function gasBillSaveTherms(src) {
+  const usage = resolveGasUsageThermsOrNull(src);
+  return usage === null ? '' : usage;
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -372,7 +382,7 @@ function getMeterSavings(m, bills, incl, projId, bldgId, opts) {
         ? _kwhRates.reduce((s, rt) => s + rt, 0) / _kwhRates.length
         : 0;
       const kwhCostAmt = bfr.reduce(
-        (s, b) => s + parseBillNumberOrZero(b.kwhCost),
+        (s, b) => s + getBillKwhCost(b),
         0,
       );
       kwhRate =
@@ -454,22 +464,13 @@ function getMeterSavings(m, bills, incl, projId, bldgId, opts) {
       unitSav.gallons = galRate > 0 ? expUsage - actGallons : 0;
     } else {
       const actTherms = actUsage;
-      const actThermCost = bfr.reduce(
-        (s, b) =>
-          s +
-          (parseBillNumberOrZero(b.gasCharge) ||
-            parseBillNumberOrZero(b.thermCost) ||
-            parseBillNumberOrZero(b.cost)),
-        0,
-      );
+      // getBillGasCost (computations/rates.js) — the ONE gas cost accessor (visible Gas Charge).
+      const actThermCost = bfr.reduce((s, b) => s + getBillGasCost(b), 0);
       // Blend of the bills in this month: mean of each bill's resolved $/therm (blank bills
       // left out, not counted as 0 - math-02 M1). Only a Gas meter derives a rate from the
       // bill's gas fields; this branch also runs for Water/Sewer/Stormwater/Steam meters.
       const _gasRates = bfr
-        .map(
-          (b) =>
-            parseBillNumberOrZero(b.totalGasRate) || (isGas ? getStoredRate(b, "gas") : 0),
-        )
+        .map((b) => (isGas ? getStoredRate(b, "gas") : 0))
         .filter((rt) => rt > 0);
       const _sGasRate = _gasRates.length
         ? _gasRates.reduce((s, rt) => s + rt, 0) / _gasRates.length

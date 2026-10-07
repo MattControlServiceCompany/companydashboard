@@ -155,16 +155,14 @@ const sumOf = (o) => Object.values(o).reduce((a, b) => a + b, 0);
     '3: legacy bill $/kW is 13.00, got ' + ev(sb, 'getStoredKwRate(legacy)'),
   );
   assert(near(ev(sb, 'getStoredKwRate(granular)'), 13), '3: granular bill $/kW is 13.00');
-  sb.b1 = Object.assign({}, sb.legacy);
-  sb.b2 = Object.assign({}, sb.granular);
-  ev(sb, 'ensureBillRates(b1); ensureBillRates(b2);');
+  // 2026-10-05 (audit step 5): rates are computed on read, never stored. A stale stored copy loses.
+  sb.b1 = Object.assign({ totalKwRate: '99' }, sb.legacy);
+  sb.b2 = Object.assign({ totalKwRate: '99' }, sb.granular);
+  assert(near(ev(sb, 'getStoredKwRate(b1)'), 13), '3: a stale stored totalKwRate never wins (legacy bill)');
+  assert(near(ev(sb, 'getStoredKwRate(b2)'), 13), '3: a stale stored totalKwRate never wins (granular bill)');
   assert(
-    near(parseFloat(sb.b1.totalKwRate), 13),
-    '3: ensureBillRates writes 13.00 for a legacy bill, got ' + sb.b1.totalKwRate,
-  );
-  assert(
-    near(parseFloat(sb.b2.totalKwRate), 13),
-    '3: ensureBillRates writes 13.00 for a granular bill, got ' + sb.b2.totalKwRate,
+    !/function ensureBillRates/.test(fs.readFileSync(path.join(REPO, 'computations/rates.js'), 'utf8')),
+    '3: ensureBillRates (the stored-rate writer) is gone',
   );
   assert(ev(sb, "getStoredRate(legacy, 'kw')") === 0, "3: getStoredRate has no 'kw' case any more");
 })();
@@ -369,7 +367,7 @@ const sumOf = (o) => Object.values(o).reduce((a, b) => a + b, 0);
         totalCost: '900',
         demandKW: '90',
         billedKW: '95',
-        kwCost: '500',
+        kwCost: '522.50', // 522.50 / 95 billed kW = $5.50/kW (rates are computed on read since 2026-10-05)
         totalKwRate: '5.50000',
       }),
     );

@@ -57,7 +57,7 @@ function makeContext() {
     ctx,
   );
   vm.runInContext(
-    ['getBillUsageCharge', 'getBillOwnUnitRate', 'getStoredRate']
+    ['getBillUsageCharge', 'getStoredRate']
       .map((n) => fnSource('computations/rates.js', n))
       .join('\n'),
     ctx,

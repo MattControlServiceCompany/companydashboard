@@ -316,10 +316,7 @@ function renderBuildingScorecardPane(pane, b, projId) {
     // Total cost & usage for cost/sqft and load factor
     bills.forEach(function (bill) {
       var billCost =
-        (parseFloat(bill.kwhCost) || 0) +
-        (parseFloat(bill.kwCost) || 0) +
-        (parseFloat(bill.otherCost) || 0) +
-        (parseFloat(bill.taxCost) || 0);
+        getBillKwhCost(bill) + getBillKwCost(bill) + getBillOtherCost(bill) + getBillTaxCost(bill);
       if (!billCost) {
         billCost = parseFloat(bill.totalCost || bill.cost) || 0;
       }

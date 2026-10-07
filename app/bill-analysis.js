@@ -6970,41 +6970,6 @@ function _mbUpdateSaveAllBtn() {
 }
 window._mbUpdateSaveAllBtn = _mbUpdateSaveAllBtn;
 
-// Item 2026-09-23 (gas-rate-fix2, cold-review follow-up): single shared $/Therm rate
-// mapper — replaces four previously-diverged copies (confirmAutoAssign, _mbSaveOneBill,
-// _saveBillToMatchedMeter, _saveSinglePDFBill). Three of the four divided charge by raw
-// naturalGasMMbtu (a $/MMBtu value, no x10 conversion) and stored it in totalGasRate,
-// mislabeled as $/Therm — the exact bug the resolveGasUsageTherms fix (computations/rates.js
-// getStoredRate/ensureBillRates) was supposed to eliminate but never reached these call
-// sites, because getStoredRate('gas') trusts an already-stored totalGasRate first
-// (computations/rates.js:61-62) and these paths always populate it at save time.
-// resolveGasUsageTherms() (computations/savings.js) only reads camelCase usage fields
-// (naturalGasTherms/naturalGasMMbtu/naturalGasCCF/therms) — the raw extracted/bill object
-// at these save sites is PascalCase (OCR extractor output: NaturalGasTherms/
-// NaturalGasMMbtu/NaturalGasCCF), so this helper builds the minimal camelCase mirror
-// resolveGasUsageTherms expects, then delegates ALL usage-to-Therms math to it — no
-// duplicate conversion logic here or at any call site.
-function _computeGasRate(bill) {
-  const c =
-    parseBillNumber(bill.GasCharge) ||
-    parseBillNumber(bill.gasCharge) ||
-    parseBillNumber(bill.TotalCurrentCharges) ||
-    parseBillNumber(bill.TotalAmountDue) ||
-    parseBillNumber(bill.totalCost);
-  const usage =
-    typeof resolveGasUsageTherms === 'function'
-      ? resolveGasUsageTherms({
-          therms: bill.therms,
-          naturalGasTherms: bill.NaturalGasTherms || bill.naturalGasTherms,
-          naturalGasMMbtu: bill.NaturalGasMMbtu || bill.naturalGasMMbtu,
-          naturalGasCCF: bill.NaturalGasCCF || bill.naturalGasCCF,
-          thermFactor: bill.ThermFactor || bill.thermFactor,
-          usage: bill.usage,
-        })
-      : 0;
-  return usage > 0 && c > 0 ? (c / usage).toFixed(5) : '';
-}
-window._computeGasRate = _computeGasRate;
 
 // Shared meter-existence guard (item 0bc25b67): a saved Louisburg bill was
 // found filed under a meter no bill of its own identity actually matches —
@@ -7082,17 +7047,11 @@ function _extractedToBillRowCosts(bill) {
   const otherCost = _capToAcceptedTotal(otherCostRaw).toFixed(2);
   const taxCost = _capToAcceptedTotal(taxCostRaw).toFixed(2);
   const totalCost = bill.TotalCurrentCharges || bill.TotalAmountDue || '';
-  // Usage quantity superset — one canonical order covering every commodity
-  // any of the six prior sites recognized (electric kWh incl. Baldwin's `kWh`
-  // field, gas Therms/CCF/MMbtu, propane gallons).
-  const kwh =
-    bill.kWhConsumed ||
-    bill.kWh ||
-    bill.NaturalGasTherms ||
-    bill.NaturalGasCCF ||
-    bill.NaturalGasMMbtu ||
-    bill.GallonsDelivered ||
-    '';
+  // Usage quantity: electric kWh (incl. Baldwin's `kWh` field) or propane gallons.
+  // Gas usage is NOT stored in `kwh` any more (2026-10-05 duplicate-bill-fields audit step 4):
+  // a gas bill carries `therms` (gasBillSaveTherms) and every gas reader goes through
+  // resolveGasUsageTherms. Old gas bills keep their stored `kwh`; nothing deletes it.
+  const kwh = bill.kWhConsumed || bill.kWh || bill.GallonsDelivered || '';
   return { kwh, kwCost, kwhCost, otherCost, taxCost, totalCost };
 }
 
@@ -7184,16 +7143,10 @@ async function confirmAutoAssign() {
       start: toISO(bill.BillingPeriodStart || bill.DeliveryDate),
       end: toISO(bill.BillingPeriodEnd || bill.DeliveryDate),
       kwh,
-      demandKW: bill.ActualKW || '',
-      billedKW: bill.BilledKW || '',
-      facKW: bill.FacilitiesKW || '',
-      facKWCost: bill.FacilitiesCharge || '',
-      kwCost,
-      kwhCost,
-      otherCost,
-      taxCost,
+      demandKW: billValueOrBlank(bill.ActualKW),
+      billedKW: billValueOrBlank(bill.BilledKW),
+      facKW: billValueOrBlank(bill.FacilitiesKW),
       totalCost,
-      fromPDF: true,
       pdfBillId: billId,
       hasPDF,
       pdfKey: pdfKey || null,
@@ -7204,85 +7157,85 @@ async function confirmAutoAssign() {
       // inputs blank even though the PDF extractor captured real values. Must stay
       // in sync with the single-bill path in _saveSinglePDFBill.
       rateSchedule: bill.RateSchedule || '',
-      onPeakKwh: bill.OnPeakKWh || bill.EnergyOnPeakKWh || '',
-      offPeakKwh: bill.OffPeakKWh || bill.EnergyOffPeakKWh || '',
-      onPeakCost: bill.EnergyOnPeakCharge || '',
-      offPeakCost: bill.EnergyOffPeakCharge || '',
-      customerCharge: bill.CustomerCharge || '',
-      demandCharge: bill.BilledKWCharge || '',
-      facilitiesCharge: bill.FacilitiesCharge || '',
-      ecaCharge: bill.ECACharge || '',
-      eerCharge: bill.EERCharge || '',
-      ptsCharge: bill.PTSCharge || '',
-      tdcCharge: bill.TDCCharge || '',
-      rkvaCharge: bill.RkVACharge || '',
-      miscellaneousCharge: bill.MiscellaneousCharge || '',
-      renewableCharge: bill.RenewableCharge || '',
-      franchiseFee: bill.FranchiseFee || '',
+      onPeakKwh: billValueOrBlank(bill.OnPeakKWh, bill.EnergyOnPeakKWh),
+      offPeakKwh: billValueOrBlank(bill.OffPeakKWh, bill.EnergyOffPeakKWh),
+      onPeakCost: billValueOrBlank(bill.EnergyOnPeakCharge),
+      offPeakCost: billValueOrBlank(bill.EnergyOffPeakCharge),
+      customerCharge: billValueOrBlank(bill.CustomerCharge),
+      demandCharge: billValueOrBlank(bill.BilledKWCharge),
+      facilitiesCharge: billValueOrBlank(bill.FacilitiesCharge),
+      ecaCharge: billValueOrBlank(bill.ECACharge),
+      eerCharge: billValueOrBlank(bill.EERCharge),
+      ptsCharge: billValueOrBlank(bill.PTSCharge),
+      tdcCharge: billValueOrBlank(bill.TDCCharge),
+      rkvaCharge: billValueOrBlank(bill.RkVACharge),
+      miscellaneousCharge: billValueOrBlank(bill.MiscellaneousCharge),
+      renewableCharge: billValueOrBlank(bill.RenewableCharge),
+      franchiseFee: billValueOrBlank(bill.FranchiseFee),
       // KGS has two separate Franchise Fee lines; store individually so _LAYOUT_KGS
       // can display FranchiseFee1 and FranchiseFee2 on saved (re-rendered) bills.
       // (single-bill save path _saveSinglePDFBill already persists these — keep in sync)
-      franchiseFee1: bill.FranchiseFee1 || '',
-      franchiseFee2: bill.FranchiseFee2 || '',
-      solarCredit: bill.SolarCredit || '',
-      generationKwh: bill.GenerationKwh || '',
+      franchiseFee1: billValueOrBlank(bill.FranchiseFee1),
+      franchiseFee2: billValueOrBlank(bill.FranchiseFee2),
+      solarCredit: billValueOrBlank(bill.SolarCredit),
+      generationKwh: billValueOrBlank(bill.GenerationKwh),
       Meter1_ReadStart: bill.Meter1_ReadStart || '',
       Meter1_ReadEnd: bill.Meter1_ReadEnd || '',
       Meter1_StartRead: bill.Meter1_StartRead || '',
       Meter1_EndRead: bill.Meter1_EndRead || '',
-      Meter1_ReadDiff: bill.Meter1_ReadDiff || '',
-      Meter1_Multiplier: bill.Meter1_Multiplier || '',
-      Meter1_kWh: bill.Meter1_kWh || '',
-      Meter1_KW: bill.Meter1_KW || '',
-      Meter1_RKVA: bill.Meter1_RKVA || '',
+      Meter1_ReadDiff: billValueOrBlank(bill.Meter1_ReadDiff),
+      Meter1_Multiplier: billValueOrBlank(bill.Meter1_Multiplier),
+      Meter1_kWh: billValueOrBlank(bill.Meter1_kWh),
+      Meter1_KW: billValueOrBlank(bill.Meter1_KW),
+      Meter1_RKVA: billValueOrBlank(bill.Meter1_RKVA),
       Meter2_ReadStart: bill.Meter2_ReadStart || '',
       Meter2_ReadEnd: bill.Meter2_ReadEnd || '',
       Meter2_StartRead: bill.Meter2_StartRead || '',
       Meter2_EndRead: bill.Meter2_EndRead || '',
-      Meter2_ReadDiff: bill.Meter2_ReadDiff || '',
-      Meter2_Multiplier: bill.Meter2_Multiplier || '',
-      Meter2_kWh: bill.Meter2_kWh || '',
-      Meter2_KW: bill.Meter2_KW || '',
-      Meter2_RKVA: bill.Meter2_RKVA || '',
+      Meter2_ReadDiff: billValueOrBlank(bill.Meter2_ReadDiff),
+      Meter2_Multiplier: billValueOrBlank(bill.Meter2_Multiplier),
+      Meter2_kWh: billValueOrBlank(bill.Meter2_kWh),
+      Meter2_KW: billValueOrBlank(bill.Meter2_KW),
+      Meter2_RKVA: billValueOrBlank(bill.Meter2_RKVA),
       utilityCompany: bill.UtilityCompany || '',
       customerName: bill.CustomerName || '',
       serviceAddress: bill.ServiceAddress || '',
       accountNumber: bill.AccountNumber || '',
       meterNumber: bill.MeterNumber || '',
-      numberOfDays: bill.NumberOfDays || '',
+      numberOfDays: billValueOrBlank(bill.NumberOfDays),
       meterReadStart: bill.MeterReadStart || '',
       meterReadEnd: bill.MeterReadEnd || '',
       billDate: bill.BillDate || '',
       commodity: bill.Commodity || '',
       startRead: bill.StartRead || '',
       endRead: bill.EndRead || '',
-      readDifference: bill.ReadDifference || '',
-      meterMultiplier: bill.MeterMultiplier || '',
-      actualRKVA: bill.ActualRKVA || '',
-      tdcKW: bill.TDCkW || '',
-      taxExemptDelivery: bill.TaxExemptDelivery || '',
-      billOffset: bill.BillOffset || '',
-      naturalGasCCF: bill.NaturalGasCCF || '',
-      thermFactor: bill.ThermFactor || '',
-      naturalGasTherms: bill.NaturalGasTherms || '',
-      naturalGasMMbtu: bill.NaturalGasMMbtu || bill.naturalGasMMbtu || '',
+      readDifference: billValueOrBlank(bill.ReadDifference),
+      meterMultiplier: billValueOrBlank(bill.MeterMultiplier),
+      actualRKVA: billValueOrBlank(bill.ActualRKVA),
+      tdcKW: billValueOrBlank(bill.TDCkW),
+      taxExemptDelivery: billValueOrBlank(bill.TaxExemptDelivery),
+      billOffset: billValueOrBlank(bill.BillOffset),
+      naturalGasCCF: billValueOrBlank(bill.NaturalGasCCF),
+      thermFactor: billValueOrBlank(bill.ThermFactor),
+      naturalGasTherms: billValueOrBlank(bill.NaturalGasTherms),
+      naturalGasMMbtu: billValueOrBlank(bill.NaturalGasMMbtu, bill.naturalGasMMbtu),
       // WRE per-site charge components and printed rates (Fix a84458f0 + printed-rates fix)
-      _wreTriggerCharge: bill._wreTriggerCharge || '',
-      _wreIndexCharge: bill._wreIndexCharge || '',
-      _wreSWECharge: bill._wreSWECharge || '',
-      _wreTriggerMMbtu: bill._wreTriggerMMbtu || '',
-      _wreIndexMMbtu: bill._wreIndexMMbtu || '',
+      _wreTriggerCharge: billValueOrBlank(bill._wreTriggerCharge),
+      _wreIndexCharge: billValueOrBlank(bill._wreIndexCharge),
+      _wreSWECharge: billValueOrBlank(bill._wreSWECharge),
+      _wreTriggerMMbtu: billValueOrBlank(bill._wreTriggerMMbtu),
+      _wreIndexMMbtu: billValueOrBlank(bill._wreIndexMMbtu),
       // Fix (2026-09-23, WRE invoice-fields fix, item 1): _wreSWEMMbtu was missing
       // from this whitelist, so even though energy-savings.js now emits it, it
       // was silently dropped at save time and never reached storage/display.
-      _wreSWEMMbtu: bill._wreSWEMMbtu || '',
+      _wreSWEMMbtu: billValueOrBlank(bill._wreSWEMMbtu),
       // Fix (2026-09-24, WRE Fuel-column display): same whitelist gap as
       // _wreSWEMMbtu above — the Fuel column volumes (energy-savings.js) were
       // being dropped at save time. See the matching comment in energy-savings.js.
-      _wreTriggerFuelMMbtu: bill._wreTriggerFuelMMbtu || '',
-      _wreIndexFuelMMbtu: bill._wreIndexFuelMMbtu || '',
-      _wreTriggerRate: bill._wreTriggerRate || '',
-      _wreIndexRate: bill._wreIndexRate || '',
+      _wreTriggerFuelMMbtu: billValueOrBlank(bill._wreTriggerFuelMMbtu),
+      _wreIndexFuelMMbtu: billValueOrBlank(bill._wreIndexFuelMMbtu),
+      _wreTriggerRate: billValueOrBlank(bill._wreTriggerRate),
+      _wreIndexRate: billValueOrBlank(bill._wreIndexRate),
       // Fix (2026-09-23, WRE invoice-fields fix, item 2): _manualReview/
       // _manualReviewLabel/_mmbtuRateMismatch/_mmbtuMissingWithCharge were ALSO
       // missing from this whitelist — a bill flagged for manual review by the
@@ -7294,74 +7247,32 @@ async function confirmAutoAssign() {
       _mmbtuRateMismatch: bill._mmbtuRateMismatch || undefined,
       _mmbtuMissingWithCharge: bill._mmbtuMissingWithCharge || undefined,
       // Fix [therms-unit-2026-06-22]: canonicalize therms to Therms at save time.
-      therms: resolveGasUsageTherms(bill) || '',
-      // Bug d4c78f06: thermCost must be the gas commodity cost (GasCharge),
-      // not TotalCurrentCharges (which includes base/customer/tax charges).
-      // The $/therm rate in Meter Data + Baseline Data tables divides by this field.
-      // Fall back to TotalCurrentCharges only when GasCharge is unavailable.
-      thermCost:
-        bill.NaturalGasTherms || bill.NaturalGasCCF || bill.NaturalGasMMbtu || bill.naturalGasMMbtu
-          ? bill.GasCharge || bill.TotalCurrentCharges || bill.TotalAmountDue || ''
-          : '',
-      gasCharge: bill.GasCharge || '',
-      fuelAdjustment: bill.FuelAdjustment || '',
-      waterUsage: bill.WaterUsage || '',
-      waterCharge: bill.WaterCharge || '',
-      waterProtectionFee: bill.WaterProtectionFee || '',
-      sewerUsage: bill.SewerUsage || '',
-      sewerCharge: bill.SewerCharge || '',
-      stormWaterCharge: bill.StormWaterCharge || '',
+      therms: gasBillSaveTherms(bill),
+      gasCharge: billValueOrBlank(bill.GasCharge),
+      fuelAdjustment: billValueOrBlank(bill.FuelAdjustment),
+      waterUsage: billValueOrBlank(bill.WaterUsage),
+      waterCharge: billValueOrBlank(bill.WaterCharge),
+      waterProtectionFee: billValueOrBlank(bill.WaterProtectionFee),
+      sewerUsage: billValueOrBlank(bill.SewerUsage),
+      sewerCharge: billValueOrBlank(bill.SewerCharge),
+      stormWaterCharge: billValueOrBlank(bill.StormWaterCharge),
       invoiceNumber: bill.InvoiceNumber || '',
       saleNumber: bill.SaleNumber || '',
       deliveryDate: bill.DeliveryDate || '',
       fuelType: bill.FuelType || '',
-      gallonsDelivered: bill.GallonsDelivered || '',
-      unitPrice: bill.UnitPrice || '',
-      subtotal: bill.Subtotal || '',
-      tax: bill.Tax || '',
-      totalKwhRate: (() => {
-        const _kwh = parseBillNumber(bill.kWhConsumed);
-        const _chg = parseBillNumber(kwhCost);
-        return _kwh > 0 && _chg > 0 ? (_chg / _kwh).toFixed(5) : bill.TotalKWhRate || '';
-      })(),
-      totalKwRate: (() => {
-        const _kw = parseBillNumber(bill.BilledKW) || parseBillNumber(bill.ActualKW) || parseBillNumber(bill.FacilitiesKW);
-        const _chg = parseBillNumber(kwCost) + parseBillNumber(bill.FacilitiesCharge);
-        return _kw > 0 && _chg > 0 ? (_chg / _kw).toFixed(5) : bill.TotalKWRate || '';
-      })(),
-      facilitiesRate: bill.FacilitiesRate || '',
-      demandRate: bill.DemandRate || '',
-      tdcRate: bill.TDCRate || '',
-      onPeakRate: bill.OnPeakRate || '',
-      offPeakRate: bill.OffPeakRate || '',
-      ecaRate: bill.ECARate || '',
-      eerRate: bill.EERRate || '',
-      ptsRate: bill.PTSRate || '',
-      rkvaRate: bill.RkVARate || '',
-      // Non-electric commodity rates — routed through the single shared _computeGasRate
-      // helper (2026-09-23 gas-rate-fix2), which always returns $/Therm (never $/MMBtu).
-      totalGasRate: _computeGasRate(bill),
-      totalWaterRate: (() => {
-        const u = parseBillNumber(bill.WaterUsage);
-        const c = parseBillNumber(bill.WaterCharge) || parseBillNumber(bill.TotalCurrentCharges) || parseBillNumber(bill.TotalAmountDue);
-        return u > 0 && c > 0 ? (c / u).toFixed(5) : '';
-      })(),
-      totalPropaneRate: (() => {
-        const g = parseBillNumber(bill.GallonsDelivered);
-        const up = parseBillNumberOrZero(bill.UnitPrice);
-        if (up > 0) return up.toFixed(5);
-        const c = parseBillNumber(bill.TotalCurrentCharges) || parseBillNumber(bill.TotalAmountDue);
-        return g > 0 && c > 0 ? (c / g).toFixed(5) : '';
-      })(),
-      totalSewerRate: (() => {
-        const u = parseBillNumber(bill.SewerUsage);
-        const c = parseBillNumber(bill.SewerCharge);
-        return u > 0 && c > 0 ? (c / u).toFixed(5) : '';
-      })(),
-      totalStormwaterRate: (() => {
-        const c = parseBillNumberOrZero(bill.StormWaterCharge);
-        return c > 0 ? c.toFixed(2) : '';
-      })(),
+      gallonsDelivered: billValueOrBlank(bill.GallonsDelivered),
+      unitPrice: billValueOrBlank(bill.UnitPrice),
+      subtotal: billValueOrBlank(bill.Subtotal),
+      tax: billValueOrBlank(bill.Tax),
+      facilitiesRate: billValueOrBlank(bill.FacilitiesRate),
+      demandRate: billValueOrBlank(bill.DemandRate),
+      tdcRate: billValueOrBlank(bill.TDCRate),
+      onPeakRate: billValueOrBlank(bill.OnPeakRate),
+      offPeakRate: billValueOrBlank(bill.OffPeakRate),
+      ecaRate: billValueOrBlank(bill.ECARate),
+      eerRate: billValueOrBlank(bill.EERRate),
+      ptsRate: billValueOrBlank(bill.PTSRate),
+      rkvaRate: billValueOrBlank(bill.RkVARate),
     };
     if (bill._rates) {
       const cp = {};
@@ -7369,7 +7280,7 @@ async function confirmAutoAssign() {
         if (v.parts && v.parts.length > 1) {
           cp[k] = v.parts.map((p) => ({
             qty: p.qty || null,
-            rate: p.rate || null,
+            rate: billValueOrNull(p.rate),
             unit: p.unit || null,
             charge: p.ocrCharge != null ? p.ocrCharge : p.computed,
           }));
@@ -7660,95 +7571,89 @@ async function _mbSaveOneBill(bi, action) {
     start: toISO(bill.BillingPeriodStart || bill.DeliveryDate),
     end: toISO(bill.BillingPeriodEnd || bill.DeliveryDate),
     kwh,
-    demandKW: bill.ActualKW || '',
-    billedKW: bill.BilledKW || '',
-    facKW: bill.FacilitiesKW || '',
-    facKWCost: bill.FacilitiesCharge || '',
-    kwCost,
-    kwhCost,
-    otherCost,
-    taxCost,
+    demandKW: billValueOrBlank(bill.ActualKW),
+    billedKW: billValueOrBlank(bill.BilledKW),
+    facKW: billValueOrBlank(bill.FacilitiesKW),
     totalCost,
-    fromPDF: true,
     pdfBillId: billId,
     hasPDF,
     pdfKey: pdfKey || null,
     pdfPageStart: bill._pageStart || null,
     pdfPageEnd: bill._pageEnd || null,
     rateSchedule: bill.RateSchedule || '',
-    onPeakKwh: bill.OnPeakKWh || bill.EnergyOnPeakKWh || '',
-    offPeakKwh: bill.OffPeakKWh || bill.EnergyOffPeakKWh || '',
-    onPeakCost: bill.EnergyOnPeakCharge || '',
-    offPeakCost: bill.EnergyOffPeakCharge || '',
-    customerCharge: bill.CustomerCharge || '',
-    demandCharge: bill.BilledKWCharge || '',
-    facilitiesCharge: bill.FacilitiesCharge || '',
-    ecaCharge: bill.ECACharge || '',
-    eerCharge: bill.EERCharge || '',
-    ptsCharge: bill.PTSCharge || '',
-    tdcCharge: bill.TDCCharge || '',
-    rkvaCharge: bill.RkVACharge || '',
-    miscellaneousCharge: bill.MiscellaneousCharge || '',
-    renewableCharge: bill.RenewableCharge || '',
-    franchiseFee: bill.FranchiseFee || '',
-    franchiseFee1: bill.FranchiseFee1 || '',
-    franchiseFee2: bill.FranchiseFee2 || '',
-    solarCredit: bill.SolarCredit || '',
-    generationKwh: bill.GenerationKwh || '',
+    onPeakKwh: billValueOrBlank(bill.OnPeakKWh, bill.EnergyOnPeakKWh),
+    offPeakKwh: billValueOrBlank(bill.OffPeakKWh, bill.EnergyOffPeakKWh),
+    onPeakCost: billValueOrBlank(bill.EnergyOnPeakCharge),
+    offPeakCost: billValueOrBlank(bill.EnergyOffPeakCharge),
+    customerCharge: billValueOrBlank(bill.CustomerCharge),
+    demandCharge: billValueOrBlank(bill.BilledKWCharge),
+    facilitiesCharge: billValueOrBlank(bill.FacilitiesCharge),
+    ecaCharge: billValueOrBlank(bill.ECACharge),
+    eerCharge: billValueOrBlank(bill.EERCharge),
+    ptsCharge: billValueOrBlank(bill.PTSCharge),
+    tdcCharge: billValueOrBlank(bill.TDCCharge),
+    rkvaCharge: billValueOrBlank(bill.RkVACharge),
+    miscellaneousCharge: billValueOrBlank(bill.MiscellaneousCharge),
+    renewableCharge: billValueOrBlank(bill.RenewableCharge),
+    franchiseFee: billValueOrBlank(bill.FranchiseFee),
+    franchiseFee1: billValueOrBlank(bill.FranchiseFee1),
+    franchiseFee2: billValueOrBlank(bill.FranchiseFee2),
+    solarCredit: billValueOrBlank(bill.SolarCredit),
+    generationKwh: billValueOrBlank(bill.GenerationKwh),
     Meter1_ReadStart: bill.Meter1_ReadStart || '',
     Meter1_ReadEnd: bill.Meter1_ReadEnd || '',
     Meter1_StartRead: bill.Meter1_StartRead || '',
     Meter1_EndRead: bill.Meter1_EndRead || '',
-    Meter1_ReadDiff: bill.Meter1_ReadDiff || '',
-    Meter1_Multiplier: bill.Meter1_Multiplier || '',
-    Meter1_kWh: bill.Meter1_kWh || '',
-    Meter1_KW: bill.Meter1_KW || '',
-    Meter1_RKVA: bill.Meter1_RKVA || '',
+    Meter1_ReadDiff: billValueOrBlank(bill.Meter1_ReadDiff),
+    Meter1_Multiplier: billValueOrBlank(bill.Meter1_Multiplier),
+    Meter1_kWh: billValueOrBlank(bill.Meter1_kWh),
+    Meter1_KW: billValueOrBlank(bill.Meter1_KW),
+    Meter1_RKVA: billValueOrBlank(bill.Meter1_RKVA),
     Meter2_ReadStart: bill.Meter2_ReadStart || '',
     Meter2_ReadEnd: bill.Meter2_ReadEnd || '',
     Meter2_StartRead: bill.Meter2_StartRead || '',
     Meter2_EndRead: bill.Meter2_EndRead || '',
-    Meter2_ReadDiff: bill.Meter2_ReadDiff || '',
-    Meter2_Multiplier: bill.Meter2_Multiplier || '',
-    Meter2_kWh: bill.Meter2_kWh || '',
-    Meter2_KW: bill.Meter2_KW || '',
-    Meter2_RKVA: bill.Meter2_RKVA || '',
+    Meter2_ReadDiff: billValueOrBlank(bill.Meter2_ReadDiff),
+    Meter2_Multiplier: billValueOrBlank(bill.Meter2_Multiplier),
+    Meter2_kWh: billValueOrBlank(bill.Meter2_kWh),
+    Meter2_KW: billValueOrBlank(bill.Meter2_KW),
+    Meter2_RKVA: billValueOrBlank(bill.Meter2_RKVA),
     utilityCompany: bill.UtilityCompany || '',
     customerName: bill.CustomerName || '',
     serviceAddress: bill.ServiceAddress || '',
     accountNumber: bill.AccountNumber || '',
     meterNumber: bill.MeterNumber || '',
-    numberOfDays: bill.NumberOfDays || '',
+    numberOfDays: billValueOrBlank(bill.NumberOfDays),
     meterReadStart: bill.MeterReadStart || '',
     meterReadEnd: bill.MeterReadEnd || '',
     billDate: bill.BillDate || '',
     commodity: bill.Commodity || '',
     startRead: bill.StartRead || '',
     endRead: bill.EndRead || '',
-    readDifference: bill.ReadDifference || '',
-    meterMultiplier: bill.MeterMultiplier || '',
-    actualRKVA: bill.ActualRKVA || '',
-    tdcKW: bill.TDCkW || '',
-    taxExemptDelivery: bill.TaxExemptDelivery || '',
-    billOffset: bill.BillOffset || '',
-    naturalGasCCF: bill.NaturalGasCCF || '',
-    thermFactor: bill.ThermFactor || '',
-    naturalGasTherms: bill.NaturalGasTherms || '',
-    naturalGasMMbtu: bill.NaturalGasMMbtu || bill.naturalGasMMbtu || '',
-    _wreTriggerCharge: bill._wreTriggerCharge || '',
-    _wreIndexCharge: bill._wreIndexCharge || '',
-    _wreSWECharge: bill._wreSWECharge || '',
-    _wreTriggerMMbtu: bill._wreTriggerMMbtu || '',
-    _wreIndexMMbtu: bill._wreIndexMMbtu || '',
+    readDifference: billValueOrBlank(bill.ReadDifference),
+    meterMultiplier: billValueOrBlank(bill.MeterMultiplier),
+    actualRKVA: billValueOrBlank(bill.ActualRKVA),
+    tdcKW: billValueOrBlank(bill.TDCkW),
+    taxExemptDelivery: billValueOrBlank(bill.TaxExemptDelivery),
+    billOffset: billValueOrBlank(bill.BillOffset),
+    naturalGasCCF: billValueOrBlank(bill.NaturalGasCCF),
+    thermFactor: billValueOrBlank(bill.ThermFactor),
+    naturalGasTherms: billValueOrBlank(bill.NaturalGasTherms),
+    naturalGasMMbtu: billValueOrBlank(bill.NaturalGasMMbtu, bill.naturalGasMMbtu),
+    _wreTriggerCharge: billValueOrBlank(bill._wreTriggerCharge),
+    _wreIndexCharge: billValueOrBlank(bill._wreIndexCharge),
+    _wreSWECharge: billValueOrBlank(bill._wreSWECharge),
+    _wreTriggerMMbtu: billValueOrBlank(bill._wreTriggerMMbtu),
+    _wreIndexMMbtu: billValueOrBlank(bill._wreIndexMMbtu),
     // Fix (2026-09-23, WRE invoice-fields fix, item 1): was missing from this
     // whitelist — see the matching comment in confirmAutoAssign() above.
-    _wreSWEMMbtu: bill._wreSWEMMbtu || '',
+    _wreSWEMMbtu: billValueOrBlank(bill._wreSWEMMbtu),
     // Fix (2026-09-24, WRE Fuel-column display): same whitelist gap as
     // _wreSWEMMbtu above — see the matching comment in confirmAutoAssign() above.
-    _wreTriggerFuelMMbtu: bill._wreTriggerFuelMMbtu || '',
-    _wreIndexFuelMMbtu: bill._wreIndexFuelMMbtu || '',
-    _wreTriggerRate: bill._wreTriggerRate || '',
-    _wreIndexRate: bill._wreIndexRate || '',
+    _wreTriggerFuelMMbtu: billValueOrBlank(bill._wreTriggerFuelMMbtu),
+    _wreIndexFuelMMbtu: billValueOrBlank(bill._wreIndexFuelMMbtu),
+    _wreTriggerRate: billValueOrBlank(bill._wreTriggerRate),
+    _wreIndexRate: billValueOrBlank(bill._wreIndexRate),
     // Fix (2026-09-23, WRE invoice-fields fix, item 2): was missing from this
     // whitelist — see the matching comment in confirmAutoAssign() above. This is
     // the multi-building bulk-save path (_mbSaveOneBill), the actual path a
@@ -7759,70 +7664,32 @@ async function _mbSaveOneBill(bi, action) {
     _manualReviewLabel: bill._manualReviewLabel || '',
     _mmbtuRateMismatch: bill._mmbtuRateMismatch || undefined,
     _mmbtuMissingWithCharge: bill._mmbtuMissingWithCharge || undefined,
-    therms: resolveGasUsageTherms(bill) || '',
-    thermCost:
-      bill.NaturalGasTherms || bill.NaturalGasCCF || bill.NaturalGasMMbtu || bill.naturalGasMMbtu
-        ? bill.GasCharge || bill.TotalCurrentCharges || bill.TotalAmountDue || ''
-        : '',
-    gasCharge: bill.GasCharge || '',
-    fuelAdjustment: bill.FuelAdjustment || '',
-    waterUsage: bill.WaterUsage || '',
-    waterCharge: bill.WaterCharge || '',
-    waterProtectionFee: bill.WaterProtectionFee || '',
-    sewerUsage: bill.SewerUsage || '',
-    sewerCharge: bill.SewerCharge || '',
-    stormWaterCharge: bill.StormWaterCharge || '',
+    therms: gasBillSaveTherms(bill),
+    gasCharge: billValueOrBlank(bill.GasCharge),
+    fuelAdjustment: billValueOrBlank(bill.FuelAdjustment),
+    waterUsage: billValueOrBlank(bill.WaterUsage),
+    waterCharge: billValueOrBlank(bill.WaterCharge),
+    waterProtectionFee: billValueOrBlank(bill.WaterProtectionFee),
+    sewerUsage: billValueOrBlank(bill.SewerUsage),
+    sewerCharge: billValueOrBlank(bill.SewerCharge),
+    stormWaterCharge: billValueOrBlank(bill.StormWaterCharge),
     invoiceNumber: bill.InvoiceNumber || '',
     saleNumber: bill.SaleNumber || '',
     deliveryDate: bill.DeliveryDate || '',
     fuelType: bill.FuelType || '',
-    gallonsDelivered: bill.GallonsDelivered || '',
-    unitPrice: bill.UnitPrice || '',
-    subtotal: bill.Subtotal || '',
-    tax: bill.Tax || '',
-    totalKwhRate: (function () {
-      const _kwh = parseBillNumber(bill.kWhConsumed);
-      const _chg = parseBillNumber(kwhCost);
-      return _kwh > 0 && _chg > 0 ? (_chg / _kwh).toFixed(5) : bill.TotalKWhRate || '';
-    })(),
-    totalKwRate: (function () {
-      const _kw = parseBillNumber(bill.BilledKW) || parseBillNumber(bill.ActualKW) || parseBillNumber(bill.FacilitiesKW);
-      const _chg = parseBillNumber(kwCost) + parseBillNumber(bill.FacilitiesCharge);
-      return _kw > 0 && _chg > 0 ? (_chg / _kw).toFixed(5) : bill.TotalKWRate || '';
-    })(),
-    facilitiesRate: bill.FacilitiesRate || '',
-    demandRate: bill.DemandRate || '',
-    tdcRate: bill.TDCRate || '',
-    onPeakRate: bill.OnPeakRate || '',
-    offPeakRate: bill.OffPeakRate || '',
-    ecaRate: bill.ECARate || '',
-    eerRate: bill.EERRate || '',
-    ptsRate: bill.PTSRate || '',
-    rkvaRate: bill.RkVARate || '',
-    // Non-electric commodity rate — routed through the single shared _computeGasRate
-    // helper (2026-09-23 gas-rate-fix2), which always returns $/Therm (never $/MMBtu).
-    totalGasRate: _computeGasRate(bill),
-    totalWaterRate: (function () {
-      const u = parseBillNumber(bill.WaterUsage);
-      const c = parseBillNumber(bill.WaterCharge) || parseBillNumber(bill.TotalCurrentCharges) || parseBillNumber(bill.TotalAmountDue);
-      return u > 0 && c > 0 ? (c / u).toFixed(5) : '';
-    })(),
-    totalPropaneRate: (function () {
-      const g = parseBillNumber(bill.GallonsDelivered);
-      const up = parseBillNumberOrZero(bill.UnitPrice);
-      if (up > 0) return up.toFixed(5);
-      const c = parseBillNumber(bill.TotalCurrentCharges) || parseBillNumber(bill.TotalAmountDue);
-      return g > 0 && c > 0 ? (c / g).toFixed(5) : '';
-    })(),
-    totalSewerRate: (function () {
-      const u = parseBillNumber(bill.SewerUsage);
-      const c = parseBillNumber(bill.SewerCharge);
-      return u > 0 && c > 0 ? (c / u).toFixed(5) : '';
-    })(),
-    totalStormwaterRate: (function () {
-      const c = parseBillNumberOrZero(bill.StormWaterCharge);
-      return c > 0 ? c.toFixed(2) : '';
-    })(),
+    gallonsDelivered: billValueOrBlank(bill.GallonsDelivered),
+    unitPrice: billValueOrBlank(bill.UnitPrice),
+    subtotal: billValueOrBlank(bill.Subtotal),
+    tax: billValueOrBlank(bill.Tax),
+    facilitiesRate: billValueOrBlank(bill.FacilitiesRate),
+    demandRate: billValueOrBlank(bill.DemandRate),
+    tdcRate: billValueOrBlank(bill.TDCRate),
+    onPeakRate: billValueOrBlank(bill.OnPeakRate),
+    offPeakRate: billValueOrBlank(bill.OffPeakRate),
+    ecaRate: billValueOrBlank(bill.ECARate),
+    eerRate: billValueOrBlank(bill.EERRate),
+    ptsRate: billValueOrBlank(bill.PTSRate),
+    rkvaRate: billValueOrBlank(bill.RkVARate),
   };
 
   if (bill._rates) {
@@ -7832,7 +7699,7 @@ async function _mbSaveOneBill(bi, action) {
         cp[k] = v.parts.map(function (p) {
           return {
             qty: p.qty || null,
-            rate: p.rate || null,
+            rate: billValueOrNull(p.rate),
             unit: p.unit || null,
             charge: p.ocrCharge != null ? p.ocrCharge : p.computed,
           };
@@ -8511,7 +8378,7 @@ async function _pdfCompactWalkAndRemap(oldKeyToCanonical) {
   const dirtyProjIds = new Set();
 
   function isPdfClaiming(rec) {
-    return !!(rec && (rec.hasPDF || rec.pdfKey));
+    return billHasPdf(rec);
   }
   function candidatesFor(rec) {
     const c = [];
@@ -8902,28 +8769,22 @@ function _saveBillToMatchedMeter(extracted, match) {
     serviceAddress: extracted.ServiceAddress || '',
     accountNumber: extracted.AccountNumber || '',
     meterNumber: extracted.MeterNumber || '',
-    numberOfDays: extracted.NumberOfDays || '',
+    numberOfDays: billValueOrBlank(extracted.NumberOfDays),
     meterReadStart: extracted.MeterReadStart || '',
     meterReadEnd: extracted.MeterReadEnd || '',
     startRead: extracted.StartRead || '',
     endRead: extracted.EndRead || '',
-    readDifference: extracted.ReadDifference || '',
-    meterMultiplier: extracted.MeterMultiplier || '',
+    readDifference: billValueOrBlank(extracted.ReadDifference),
+    meterMultiplier: billValueOrBlank(extracted.MeterMultiplier),
     billDate: extracted.BillDate || '',
     commodity: extracted.Commodity || '',
     kwh: usageQty,
-    demandKW: extracted.ActualKW || '',
-    actualRKVA: extracted.ActualRKVA || '',
-    billedKW: extracted.BilledKW || '',
-    facKW: extracted.FacilitiesKW || '',
-    facKWCost: extracted.FacilitiesCharge || '',
-    tdcKW: extracted.TDCkW || '',
-    kwCost,
-    kwhCost,
-    otherCost,
-    taxCost,
+    demandKW: billValueOrBlank(extracted.ActualKW),
+    actualRKVA: billValueOrBlank(extracted.ActualRKVA),
+    billedKW: billValueOrBlank(extracted.BilledKW),
+    facKW: billValueOrBlank(extracted.FacilitiesKW),
+    tdcKW: billValueOrBlank(extracted.TDCkW),
     totalCost,
-    fromPDF: true,
     // pdfBillId is REQUIRED for the Bills table render to show the 📄 button
     // (renderBillRow gates on `row.pdfBillId && row.hasPDF`). Without it the
     // button is suppressed even though the PDF is stored and loadable, so every
@@ -8934,67 +8795,57 @@ function _saveBillToMatchedMeter(extracted, match) {
     pdfPageEnd: extracted._pageEnd || null,
     pdfKey: extracted._pdfSharedKey || null,
     rateSchedule: extracted.RateSchedule || '',
-    onPeakKwh: extracted.OnPeakKWh || extracted.EnergyOnPeakKWh || '',
-    offPeakKwh: extracted.OffPeakKWh || extracted.EnergyOffPeakKWh || '',
-    onPeakCost: extracted.EnergyOnPeakCharge || '',
-    offPeakCost: extracted.EnergyOffPeakCharge || '',
-    customerCharge: extracted.CustomerCharge || '',
-    demandCharge: extracted.BilledKWCharge || '',
-    facilitiesCharge: extracted.FacilitiesCharge || '',
-    ecaCharge: extracted.ECACharge || '',
-    eerCharge: extracted.EERCharge || '',
-    ptsCharge: extracted.PTSCharge || '',
-    tdcCharge: extracted.TDCCharge || '',
-    rkvaCharge: extracted.RkVACharge || '',
-    taxExemptDelivery: extracted.TaxExemptDelivery || '',
-    billOffset: extracted.BillOffset || '',
-    miscellaneousCharge: extracted.MiscellaneousCharge || '',
-    renewableCharge: extracted.RenewableCharge || '',
-    franchiseFee: extracted.FranchiseFee || '',
-    franchiseFee1: extracted.FranchiseFee1 || '',
-    franchiseFee2: extracted.FranchiseFee2 || '',
-    solarCredit: extracted.SolarCredit || '',
-    generationKwh: extracted.GenerationKwh || '',
-    totalKwhRate: (() => {
-      const _kwh = parseBillNumber(extracted.kWhConsumed);
-      const _chg = parseBillNumber(kwhCost);
-      return _kwh > 0 && _chg > 0 ? (_chg / _kwh).toFixed(5) : extracted.TotalKWhRate || '';
-    })(),
-    totalKwRate: (() => {
-      const _kw = parseBillNumber(extracted.BilledKW) || parseBillNumber(extracted.ActualKW) || parseBillNumber(extracted.FacilitiesKW);
-      const _chg = parseBillNumber(kwCost) + parseBillNumber(extracted.FacilitiesCharge);
-      return _kw > 0 && _chg > 0 ? (_chg / _kw).toFixed(5) : extracted.TotalKWRate || '';
-    })(),
-    facilitiesRate: extracted.FacilitiesRate || '',
-    demandRate: extracted.DemandRate || '',
-    tdcRate: extracted.TDCRate || '',
-    onPeakRate: extracted.OnPeakRate || '',
-    offPeakRate: extracted.OffPeakRate || '',
-    ecaRate: extracted.ECARate || '',
-    eerRate: extracted.EERRate || '',
-    ptsRate: extracted.PTSRate || '',
-    rkvaRate: extracted.RkVARate || '',
+    onPeakKwh: billValueOrBlank(extracted.OnPeakKWh, extracted.EnergyOnPeakKWh),
+    offPeakKwh: billValueOrBlank(extracted.OffPeakKWh, extracted.EnergyOffPeakKWh),
+    onPeakCost: billValueOrBlank(extracted.EnergyOnPeakCharge),
+    offPeakCost: billValueOrBlank(extracted.EnergyOffPeakCharge),
+    customerCharge: billValueOrBlank(extracted.CustomerCharge),
+    demandCharge: billValueOrBlank(extracted.BilledKWCharge),
+    facilitiesCharge: billValueOrBlank(extracted.FacilitiesCharge),
+    ecaCharge: billValueOrBlank(extracted.ECACharge),
+    eerCharge: billValueOrBlank(extracted.EERCharge),
+    ptsCharge: billValueOrBlank(extracted.PTSCharge),
+    tdcCharge: billValueOrBlank(extracted.TDCCharge),
+    rkvaCharge: billValueOrBlank(extracted.RkVACharge),
+    taxExemptDelivery: billValueOrBlank(extracted.TaxExemptDelivery),
+    billOffset: billValueOrBlank(extracted.BillOffset),
+    miscellaneousCharge: billValueOrBlank(extracted.MiscellaneousCharge),
+    renewableCharge: billValueOrBlank(extracted.RenewableCharge),
+    franchiseFee: billValueOrBlank(extracted.FranchiseFee),
+    franchiseFee1: billValueOrBlank(extracted.FranchiseFee1),
+    franchiseFee2: billValueOrBlank(extracted.FranchiseFee2),
+    solarCredit: billValueOrBlank(extracted.SolarCredit),
+    generationKwh: billValueOrBlank(extracted.GenerationKwh),
+    facilitiesRate: billValueOrBlank(extracted.FacilitiesRate),
+    demandRate: billValueOrBlank(extracted.DemandRate),
+    tdcRate: billValueOrBlank(extracted.TDCRate),
+    onPeakRate: billValueOrBlank(extracted.OnPeakRate),
+    offPeakRate: billValueOrBlank(extracted.OffPeakRate),
+    ecaRate: billValueOrBlank(extracted.ECARate),
+    eerRate: billValueOrBlank(extracted.EERRate),
+    ptsRate: billValueOrBlank(extracted.PTSRate),
+    rkvaRate: billValueOrBlank(extracted.RkVARate),
     // Non-electric commodity fields — written when the extractor emits them,
     // empty string otherwise so the Edit modal's per-commodity layout renders cleanly.
-    naturalGasCCF: extracted.NaturalGasCCF || '',
-    thermFactor: extracted.ThermFactor || '',
-    naturalGasTherms: extracted.NaturalGasTherms || '',
-    naturalGasMMbtu: extracted.NaturalGasMMbtu || '',
+    naturalGasCCF: billValueOrBlank(extracted.NaturalGasCCF),
+    thermFactor: billValueOrBlank(extracted.ThermFactor),
+    naturalGasTherms: billValueOrBlank(extracted.NaturalGasTherms),
+    naturalGasMMbtu: billValueOrBlank(extracted.NaturalGasMMbtu),
     // WRE per-site charge components and printed rates (Fix a84458f0 + printed-rates fix)
-    _wreTriggerCharge: extracted._wreTriggerCharge || '',
-    _wreIndexCharge: extracted._wreIndexCharge || '',
-    _wreSWECharge: extracted._wreSWECharge || '',
-    _wreTriggerMMbtu: extracted._wreTriggerMMbtu || '',
-    _wreIndexMMbtu: extracted._wreIndexMMbtu || '',
+    _wreTriggerCharge: billValueOrBlank(extracted._wreTriggerCharge),
+    _wreIndexCharge: billValueOrBlank(extracted._wreIndexCharge),
+    _wreSWECharge: billValueOrBlank(extracted._wreSWECharge),
+    _wreTriggerMMbtu: billValueOrBlank(extracted._wreTriggerMMbtu),
+    _wreIndexMMbtu: billValueOrBlank(extracted._wreIndexMMbtu),
     // Fix (2026-09-23, WRE invoice-fields fix, item 1): was missing from this
     // whitelist — see the matching comment in confirmAutoAssign() above.
-    _wreSWEMMbtu: extracted._wreSWEMMbtu || '',
+    _wreSWEMMbtu: billValueOrBlank(extracted._wreSWEMMbtu),
     // Fix (2026-09-24, WRE Fuel-column display): same whitelist gap as
     // _wreSWEMMbtu above — see the matching comment in confirmAutoAssign() above.
-    _wreTriggerFuelMMbtu: extracted._wreTriggerFuelMMbtu || '',
-    _wreIndexFuelMMbtu: extracted._wreIndexFuelMMbtu || '',
-    _wreTriggerRate: extracted._wreTriggerRate || '',
-    _wreIndexRate: extracted._wreIndexRate || '',
+    _wreTriggerFuelMMbtu: billValueOrBlank(extracted._wreTriggerFuelMMbtu),
+    _wreIndexFuelMMbtu: billValueOrBlank(extracted._wreIndexFuelMMbtu),
+    _wreTriggerRate: billValueOrBlank(extracted._wreTriggerRate),
+    _wreIndexRate: billValueOrBlank(extracted._wreIndexRate),
     // Fix (2026-09-23, WRE invoice-fields fix, item 2): was missing from this
     // whitelist — see the matching comment in confirmAutoAssign() above.
     _manualReview: extracted._manualReview || undefined,
@@ -9004,71 +8855,41 @@ function _saveBillToMatchedMeter(extracted, match) {
     // Fix [therms-unit-2026-06-22]: canonicalize therms to Therms at save time.
     // Wood River (and any future MMBtu extractor) sets NaturalGasMMbtu; Constellation/KGS
     // set NaturalGasTherms (already Therms). resolveGasUsageTherms converts: Therms > CCF > MMBtu.
-    therms: resolveGasUsageTherms(extracted) || '',
-    // Bug d4c78f06: use GasCharge (commodity cost) for thermCost so $/therm rate
-    // in tables uses energy-only cost, not total bill cost.
-    thermCost:
-      extracted.NaturalGasTherms || extracted.NaturalGasCCF || extracted.NaturalGasMMbtu
-        ? extracted.GasCharge || extracted.TotalCurrentCharges || extracted.TotalAmountDue || ''
-        : '',
-    gasCharge: extracted.GasCharge || '',
-    fuelAdjustment: extracted.FuelAdjustment || '',
-    waterUsage: extracted.WaterUsage || '',
-    waterCharge: extracted.WaterCharge || '',
-    waterProtectionFee: extracted.WaterProtectionFee || '',
-    sewerUsage: extracted.SewerUsage || '',
-    sewerCharge: extracted.SewerCharge || '',
-    stormWaterCharge: extracted.StormWaterCharge || '',
+    therms: gasBillSaveTherms(extracted),
+    gasCharge: billValueOrBlank(extracted.GasCharge),
+    fuelAdjustment: billValueOrBlank(extracted.FuelAdjustment),
+    waterUsage: billValueOrBlank(extracted.WaterUsage),
+    waterCharge: billValueOrBlank(extracted.WaterCharge),
+    waterProtectionFee: billValueOrBlank(extracted.WaterProtectionFee),
+    sewerUsage: billValueOrBlank(extracted.SewerUsage),
+    sewerCharge: billValueOrBlank(extracted.SewerCharge),
+    stormWaterCharge: billValueOrBlank(extracted.StormWaterCharge),
     invoiceNumber: extracted.InvoiceNumber || '',
     saleNumber: extracted.SaleNumber || '',
     deliveryDate: extracted.DeliveryDate || '',
     fuelType: extracted.FuelType || '',
-    gallonsDelivered: extracted.GallonsDelivered || '',
-    unitPrice: extracted.UnitPrice || '',
-    subtotal: extracted.Subtotal || '',
-    tax: extracted.Tax || '',
-    // Non-electric commodity rate — routed through the single shared _computeGasRate
-    // helper (2026-09-23 gas-rate-fix2), which always returns $/Therm (never $/MMBtu).
-    totalGasRate: _computeGasRate(extracted),
-    totalWaterRate: (() => {
-      const u = parseBillNumber(extracted.WaterUsage);
-      const c = parseBillNumber(extracted.WaterCharge) || parseBillNumber(extracted.TotalCurrentCharges) || parseBillNumber(extracted.TotalAmountDue);
-      return u > 0 && c > 0 ? (c / u).toFixed(5) : '';
-    })(),
-    totalPropaneRate: (() => {
-      const g = parseBillNumber(extracted.GallonsDelivered);
-      const up = parseBillNumberOrZero(extracted.UnitPrice);
-      if (up > 0) return up.toFixed(5);
-      const c = parseBillNumber(extracted.TotalCurrentCharges) || parseBillNumber(extracted.TotalAmountDue);
-      return g > 0 && c > 0 ? (c / g).toFixed(5) : '';
-    })(),
-    totalSewerRate: (() => {
-      const u = parseBillNumber(extracted.SewerUsage);
-      const c = parseBillNumber(extracted.SewerCharge);
-      return u > 0 && c > 0 ? (c / u).toFixed(5) : '';
-    })(),
-    totalStormwaterRate: (() => {
-      const c = parseBillNumberOrZero(extracted.StormWaterCharge);
-      return c > 0 ? c.toFixed(2) : '';
-    })(),
+    gallonsDelivered: billValueOrBlank(extracted.GallonsDelivered),
+    unitPrice: billValueOrBlank(extracted.UnitPrice),
+    subtotal: billValueOrBlank(extracted.Subtotal),
+    tax: billValueOrBlank(extracted.Tax),
     Meter1_ReadStart: extracted.Meter1_ReadStart || '',
     Meter1_ReadEnd: extracted.Meter1_ReadEnd || '',
     Meter1_StartRead: extracted.Meter1_StartRead || '',
     Meter1_EndRead: extracted.Meter1_EndRead || '',
-    Meter1_ReadDiff: extracted.Meter1_ReadDiff || '',
-    Meter1_Multiplier: extracted.Meter1_Multiplier || '',
-    Meter1_kWh: extracted.Meter1_kWh || '',
-    Meter1_KW: extracted.Meter1_KW || '',
-    Meter1_RKVA: extracted.Meter1_RKVA || '',
+    Meter1_ReadDiff: billValueOrBlank(extracted.Meter1_ReadDiff),
+    Meter1_Multiplier: billValueOrBlank(extracted.Meter1_Multiplier),
+    Meter1_kWh: billValueOrBlank(extracted.Meter1_kWh),
+    Meter1_KW: billValueOrBlank(extracted.Meter1_KW),
+    Meter1_RKVA: billValueOrBlank(extracted.Meter1_RKVA),
     Meter2_ReadStart: extracted.Meter2_ReadStart || '',
     Meter2_ReadEnd: extracted.Meter2_ReadEnd || '',
     Meter2_StartRead: extracted.Meter2_StartRead || '',
     Meter2_EndRead: extracted.Meter2_EndRead || '',
-    Meter2_ReadDiff: extracted.Meter2_ReadDiff || '',
-    Meter2_Multiplier: extracted.Meter2_Multiplier || '',
-    Meter2_kWh: extracted.Meter2_kWh || '',
-    Meter2_KW: extracted.Meter2_KW || '',
-    Meter2_RKVA: extracted.Meter2_RKVA || '',
+    Meter2_ReadDiff: billValueOrBlank(extracted.Meter2_ReadDiff),
+    Meter2_Multiplier: billValueOrBlank(extracted.Meter2_Multiplier),
+    Meter2_kWh: billValueOrBlank(extracted.Meter2_kWh),
+    Meter2_KW: billValueOrBlank(extracted.Meter2_KW),
+    Meter2_RKVA: billValueOrBlank(extracted.Meter2_RKVA),
     // Fix 3: KGS-specific fields
     mcfBilled: extracted.McfBilled || null,
     deliveryCharge: extracted.DeliveryCharge || null,
@@ -9085,7 +8906,7 @@ function _saveBillToMatchedMeter(extracted, match) {
       if (v.parts && v.parts.length > 1) {
         cp[k] = v.parts.map((p) => ({
           qty: p.qty || null,
-          rate: p.rate || null,
+          rate: billValueOrNull(p.rate),
           unit: p.unit || null,
           charge: p.ocrCharge != null ? p.ocrCharge : p.computed,
         }));
@@ -11642,7 +11463,7 @@ function _buildDiffFields(extracted, existing) {
     ActualKW: 'demandKW',
     BilledKW: 'billedKW',
     FacilitiesKW: 'facKW',
-    FacilitiesCharge: 'facKWCost',
+    FacilitiesCharge: 'facilitiesCharge',
     TotalCurrentCharges: 'totalCost',
     RateSchedule: 'rateSchedule',
     CustomerCharge: 'customerCharge',
@@ -11659,8 +11480,6 @@ function _buildDiffFields(extracted, existing) {
     TaxExemptDelivery: 'taxExemptDelivery',
     BillOffset: 'billOffset',
     MiscellaneousCharge: 'miscellaneousCharge',
-    TotalKWhRate: 'totalKwhRate',
-    TotalKWRate: 'totalKwRate',
     OnPeakRate: 'onPeakRate',
     OffPeakRate: 'offPeakRate',
     OnPeakKWh: 'onPeakKwh',
@@ -11829,7 +11648,7 @@ async function _checkDuplicates(bills, statusCb) {
           bldgName: b.name,
           meterLabel: m.commodity + ' · Account ' + (m.account || '—') + ' · Meter ' + (m.meter || '—'),
           meter: m,
-          hasPDF: !!bill.hasPDF,
+          hasPDF: billHasPdf(bill),
           pdfKey: bill.pdfKey || null,
         };
         assignedBills.push(entry);
@@ -11939,7 +11758,7 @@ async function _checkDuplicates(bills, statusCb) {
           locationType: 'assigned',
           projId: ab.projId,
           meter: ab.meter,
-          hasPDF: ab.hasPDF,
+          hasPDF: billHasPdf(ab),
           pdfKey: ab.pdfKey,
           // `site`: matched by invoice + service address only (no account/meter
           // number agreement). Save paths treat such a dup as WEAK — never
@@ -11973,7 +11792,7 @@ async function _checkDuplicates(bills, statusCb) {
           location: 'Saved Bills' + (sb.projName ? ' (' + sb.projName + ')' : ''),
           locationType: 'saved',
           savedBillId: sb.id,
-          hasPDF: !!sb.hasPDF,
+          hasPDF: billHasPdf(sb),
           pdfKey: sb.pdfKey || null,
           matchFields: { account: acctMatch, period: periodMatch, meter: meterMatch },
           diffFields,
@@ -12467,7 +12286,7 @@ function _renderDupModal(billIdx) {
   if (dup.matchFields.account) matchParts.push('Account');
   if (dup.matchFields.period) matchParts.push('Period');
   if (dup.matchFields.meter) matchParts.push('Meter');
-  const pdfHtml = dup.hasPDF
+  const pdfHtml = billHasPdf(dup)
     ? `<span style="cursor:pointer;text-decoration:underline;color:var(--accent)" onclick="_viewDupPDF(${billIdx})">&#128196; PDF stored</span>`
     : 'No PDF stored';
   document.getElementById('dupModalInfo').innerHTML =
@@ -12732,7 +12551,7 @@ async function attachOnlyDupBill() {
 
 async function _viewDupPDF(billIdx) {
   const dup = (window._pdfDupMap || {})[billIdx];
-  if (!dup || !dup.hasPDF) {
+  if (!billHasPdf(dup)) {
     showToast('No PDF stored for existing bill');
     return;
   }
@@ -18136,7 +17955,7 @@ async function _applyDupUpdate(billIdx, extracted, dup) {
       ActualRKVA: 'actualRKVA',
       BilledKW: 'billedKW',
       FacilitiesKW: 'facKW',
-      FacilitiesCharge: 'facKWCost',
+      FacilitiesCharge: 'facilitiesCharge',
       TotalCurrentCharges: 'totalCost',
       RateSchedule: 'rateSchedule',
       OnPeakKWh: 'onPeakKwh',
@@ -18169,8 +17988,6 @@ async function _applyDupUpdate(billIdx, extracted, dup) {
       ECARate: 'ecaRate',
       EERRate: 'eerRate',
       PTSRate: 'ptsRate',
-      TotalKWRate: 'totalKwRate',
-      TotalKWhRate: 'totalKwhRate',
       // Gas
       NaturalGasCCF: 'naturalGasCCF',
       NaturalGasTherms: 'naturalGasTherms',
@@ -18246,52 +18063,10 @@ async function _applyDupUpdate(billIdx, extracted, dup) {
         existing.pdfKey,
       );
     };
-    // Recalculate cost aggregates from whatever is currently on `existing` AFTER
-    // the field-level updates have been applied. Reading back from existing (instead
-    // of from the raw extracted payload) preserves values the user manually entered
-    // in the Edit Billing Period modal. But we also have a SECOND safety rule:
-    // never overwrite a valid aggregate with a NEW value that is materially lower
-    // than the old one. A noisier re-extraction that misses some constituent charges
-    // would otherwise overwrite a correct $4,821.93 kwhCost with $755.93 simply
-    // because only the on-peak portion landed — that would silently corrupt the
-    // Utility Data bills table. The only way an aggregate goes DOWN is if the user
-    // explicitly overwrote (action === 'overwrite'), in which case we trust their
-    // intent. For merge and field-select we keep the higher value.
-    const preserveHigher = (label, newVal, oldRaw) => {
-      const newNum = parseBillNumber(newVal);
-      const oldNum = parseBillNumberOrZero(oldRaw);
-      if (dup.action === 'overwrite') return newVal; // trust explicit intent
-      if (newNum === null) return oldRaw || '';
-      // Allow small rounding drift but never a real decrease.
-      if (oldNum > newNum + 0.5) return String(oldNum.toFixed(2));
-      return newVal;
-    };
-    const _recalcAggregates = () => {
-      const newKwhCost = (
-        parseBillNumber(existing.onPeakCost) +
-        parseBillNumber(existing.offPeakCost) +
-        parseBillNumber(existing.ecaCharge) +
-        parseBillNumber(existing.eerCharge) +
-        parseBillNumber(existing.ptsCharge)
-      ).toFixed(2);
-      const newKwCost = (parseBillNumber(existing.demandCharge) + parseBillNumber(existing.tdcCharge)).toFixed(2);
-      // Tax exempt delivery and bill offset aren't stored in billRow, so they have
-      // to come from the new extraction if the user asked to apply it; otherwise
-      // customerCharge + rkvaCharge are the otherCost contributors we can still
-      // reconstruct from the post-merge row.
-      const newOtherCost = (
-        parseBillNumber(existing.customerCharge) +
-        parseBillNumber(existing.rkvaCharge) +
-        parseBillNumber(extracted.TaxExemptDelivery) +
-        parseBillNumber(extracted.BillOffset) +
-        parseBillNumber(extracted.MiscellaneousCharge)
-      ).toFixed(2);
-      const newTaxCost = parseBillNumberOrZero(existing.franchiseFee).toFixed(2);
-      existing.kwhCost = preserveHigher('kwhCost', newKwhCost, existing.kwhCost);
-      existing.kwCost = preserveHigher('kwCost', newKwCost, existing.kwCost);
-      existing.otherCost = preserveHigher('otherCost', newOtherCost, existing.otherCost);
-      existing.taxCost = preserveHigher('taxCost', newTaxCost, existing.taxCost);
-    };
+    // The roll-ups kwCost / kwhCost / otherCost / taxCost are not stored any more (2026-10-05
+    // duplicate-bill-fields audit step 6): every reader calls getBillKwCost / getBillKwhCost /
+    // getBillOtherCost / getBillTaxCost (computations/rates.js) over the component fields the
+    // FIELD_MAP writes above, so there is nothing to recalculate here.
     if (dup.action === 'overwrite') {
       // Replace all mapped fields with extracted value when non-empty
       for (const [extKey, billKey] of Object.entries(FIELD_MAP)) {
@@ -18302,7 +18077,6 @@ async function _applyDupUpdate(billIdx, extracted, dup) {
       // Apply ISO conversion to date fields written via FIELD_MAP
       if (existing.statementDate) existing.statementDate = toISO(existing.statementDate) || existing.statementDate;
       _copyPageRange();
-      _recalcAggregates();
     } else if (dup.action === 'merge') {
       // Fill only empty fields
       for (const [extKey, billKey] of Object.entries(FIELD_MAP)) {
@@ -18326,7 +18100,6 @@ async function _applyDupUpdate(billIdx, extracted, dup) {
           existing.pdfBillId = 'pb' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
         }
       }
-      _recalcAggregates();
     } else if (dup.action === 'field-select') {
       // Apply per-field selections — #118: never write null/undefined over an existing value
       for (const d of dup.diffFields) {
@@ -18340,7 +18113,6 @@ async function _applyDupUpdate(billIdx, extracted, dup) {
         }
       }
       _copyPageRange();
-      _recalcAggregates();
     } else if (dup.action === 'attach-pdf-only') {
       // Attach PDFs only mode: touch ONLY the PDF link + page-range fields.
       // Every other field on `existing` is left exactly as-is, including
@@ -20222,7 +19994,7 @@ function renderSavedBills() {
             </div>
             <div style="display:flex;gap:6px;flex-shrink:0">
               <button class="btn btn-ghost btn-sm" onclick="viewSavedBill('${b.id}')">Data</button>
-              ${b.hasPDF ? `<button class="btn btn-ghost btn-sm" onclick="viewSavedPDF('${b.id}',${b.pdfPageStart || 'null'},${b.pdfPageEnd || 'null'},'${b.pdfKey || ''}')">PDF</button>` : ''}
+              ${billHasPdf(b) ? `<button class="btn btn-ghost btn-sm" onclick="viewSavedPDF('${b.id}',${b.pdfPageStart || 'null'},${b.pdfPageEnd || 'null'},'${b.pdfKey || ''}')">PDF</button>` : ''}
               <button class="btn btn-em btn-sm" onclick="openAssignModal('${b.id}')">Assign</button>
               <button class="btn btn-ghost btn-sm" style="color:var(--red);border-color:var(--red)" onclick="deleteSavedBill('${b.id}')">Delete</button>
             </div>
@@ -20264,7 +20036,7 @@ function renderSavedBills() {
               </div>
               <div style="display:flex;gap:5px;flex-shrink:0">
                 <button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="viewSavedBill('${b.id}')">Data</button>
-                ${b.hasPDF ? `<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="viewSavedPDF('${b.id}',${b.pdfPageStart || 'null'},${b.pdfPageEnd || 'null'},'${b.pdfKey || ''}')">PDF</button>` : ''}
+                ${billHasPdf(b) ? `<button class="btn btn-ghost btn-sm" style="font-size:10px" onclick="viewSavedPDF('${b.id}',${b.pdfPageStart || 'null'},${b.pdfPageEnd || 'null'},'${b.pdfKey || ''}')">PDF</button>` : ''}
                 <button class="btn btn-em btn-sm" style="font-size:10px" onclick="openAssignModal('${b.id}')">Assign</button>
                 <button class="btn btn-ghost btn-sm" style="font-size:10px;color:var(--red);border-color:var(--red)" onclick="deleteSavedBill('${b.id}')">Delete</button>
               </div>
@@ -20731,80 +20503,70 @@ function confirmAssignBill() {
     start: toISO(bill.BillingPeriodStart || bill.DeliveryDate),
     end: toISO(bill.BillingPeriodEnd || bill.DeliveryDate),
     kwh,
-    demandKW: bill.ActualKW || '',
-    billedKW: bill.BilledKW || '',
-    facKW: bill.FacilitiesKW || '',
-    facKWCost: bill.FacilitiesCharge || '',
-    kwCost,
-    kwhCost,
-    otherCost,
-    taxCost,
+    demandKW: billValueOrBlank(bill.ActualKW),
+    billedKW: billValueOrBlank(bill.BilledKW),
+    facKW: billValueOrBlank(bill.FacilitiesKW),
     totalCost,
-    fromPDF: true,
     pdfBillId: bill.id,
-    hasPDF: !!bill.hasPDF,
+    hasPDF: billHasPdf(bill),
     rateSchedule: bill.RateSchedule || '',
-    onPeakKwh: bill.OnPeakKWh || bill.EnergyOnPeakKWh || '',
-    offPeakKwh: bill.OffPeakKWh || bill.EnergyOffPeakKWh || '',
-    onPeakCost: bill.EnergyOnPeakCharge || '',
-    offPeakCost: bill.EnergyOffPeakCharge || '',
-    customerCharge: bill.CustomerCharge || '',
-    demandCharge: bill.BilledKWCharge || '',
-    facilitiesCharge: bill.FacilitiesCharge || '',
-    ecaCharge: bill.ECACharge || '',
-    eerCharge: bill.EERCharge || '',
-    ptsCharge: bill.PTSCharge || '',
-    tdcCharge: bill.TDCCharge || '',
-    renewableCharge: bill.RenewableCharge || '',
-    franchiseFee: bill.FranchiseFee || '',
-    solarCredit: bill.SolarCredit || '',
-    generationKwh: bill.GenerationKwh || '',
+    onPeakKwh: billValueOrBlank(bill.OnPeakKWh, bill.EnergyOnPeakKWh),
+    offPeakKwh: billValueOrBlank(bill.OffPeakKWh, bill.EnergyOffPeakKWh),
+    onPeakCost: billValueOrBlank(bill.EnergyOnPeakCharge),
+    offPeakCost: billValueOrBlank(bill.EnergyOffPeakCharge),
+    customerCharge: billValueOrBlank(bill.CustomerCharge),
+    demandCharge: billValueOrBlank(bill.BilledKWCharge),
+    facilitiesCharge: billValueOrBlank(bill.FacilitiesCharge),
+    ecaCharge: billValueOrBlank(bill.ECACharge),
+    eerCharge: billValueOrBlank(bill.EERCharge),
+    ptsCharge: billValueOrBlank(bill.PTSCharge),
+    tdcCharge: billValueOrBlank(bill.TDCCharge),
+    renewableCharge: billValueOrBlank(bill.RenewableCharge),
+    franchiseFee: billValueOrBlank(bill.FranchiseFee),
+    solarCredit: billValueOrBlank(bill.SolarCredit),
+    generationKwh: billValueOrBlank(bill.GenerationKwh),
     Meter1_ReadStart: bill.Meter1_ReadStart || '',
     Meter1_ReadEnd: bill.Meter1_ReadEnd || '',
     Meter1_StartRead: bill.Meter1_StartRead || '',
     Meter1_EndRead: bill.Meter1_EndRead || '',
-    Meter1_ReadDiff: bill.Meter1_ReadDiff || '',
-    Meter1_Multiplier: bill.Meter1_Multiplier || '',
-    Meter1_kWh: bill.Meter1_kWh || '',
-    Meter1_KW: bill.Meter1_KW || '',
-    Meter1_RKVA: bill.Meter1_RKVA || '',
+    Meter1_ReadDiff: billValueOrBlank(bill.Meter1_ReadDiff),
+    Meter1_Multiplier: billValueOrBlank(bill.Meter1_Multiplier),
+    Meter1_kWh: billValueOrBlank(bill.Meter1_kWh),
+    Meter1_KW: billValueOrBlank(bill.Meter1_KW),
+    Meter1_RKVA: billValueOrBlank(bill.Meter1_RKVA),
     Meter2_ReadStart: bill.Meter2_ReadStart || '',
     Meter2_ReadEnd: bill.Meter2_ReadEnd || '',
     Meter2_StartRead: bill.Meter2_StartRead || '',
     Meter2_EndRead: bill.Meter2_EndRead || '',
-    Meter2_ReadDiff: bill.Meter2_ReadDiff || '',
-    Meter2_Multiplier: bill.Meter2_Multiplier || '',
-    Meter2_kWh: bill.Meter2_kWh || '',
-    Meter2_KW: bill.Meter2_KW || '',
-    Meter2_RKVA: bill.Meter2_RKVA || '',
+    Meter2_ReadDiff: billValueOrBlank(bill.Meter2_ReadDiff),
+    Meter2_Multiplier: billValueOrBlank(bill.Meter2_Multiplier),
+    Meter2_kWh: billValueOrBlank(bill.Meter2_kWh),
+    Meter2_KW: billValueOrBlank(bill.Meter2_KW),
+    Meter2_RKVA: billValueOrBlank(bill.Meter2_RKVA),
     // Non-electric commodity fields (matches _saveBillToMatchedMeter mapping)
     commodity: bill.Commodity || '',
-    naturalGasCCF: bill.NaturalGasCCF || '',
-    thermFactor: bill.ThermFactor || '',
-    naturalGasTherms: bill.NaturalGasTherms || '',
-    naturalGasMMbtu: bill.NaturalGasMMbtu || bill.naturalGasMMbtu || '',
+    naturalGasCCF: billValueOrBlank(bill.NaturalGasCCF),
+    thermFactor: billValueOrBlank(bill.ThermFactor),
+    naturalGasTherms: billValueOrBlank(bill.NaturalGasTherms),
+    naturalGasMMbtu: billValueOrBlank(bill.NaturalGasMMbtu, bill.naturalGasMMbtu),
     // Fix [therms-unit-2026-06-22]: canonicalize therms to Therms at save time.
-    therms: resolveGasUsageTherms(bill) || '',
-    thermCost:
-      bill.NaturalGasTherms || bill.NaturalGasCCF || bill.NaturalGasMMbtu || bill.naturalGasMMbtu
-        ? bill.GasCharge || bill.TotalCurrentCharges || ''
-        : '',
-    gasCharge: bill.GasCharge || '',
-    fuelAdjustment: bill.FuelAdjustment || '',
-    waterUsage: bill.WaterUsage || '',
-    waterCharge: bill.WaterCharge || '',
-    waterProtectionFee: bill.WaterProtectionFee || '',
-    sewerUsage: bill.SewerUsage || '',
-    sewerCharge: bill.SewerCharge || '',
-    stormWaterCharge: bill.StormWaterCharge || '',
+    therms: gasBillSaveTherms(bill),
+    gasCharge: billValueOrBlank(bill.GasCharge),
+    fuelAdjustment: billValueOrBlank(bill.FuelAdjustment),
+    waterUsage: billValueOrBlank(bill.WaterUsage),
+    waterCharge: billValueOrBlank(bill.WaterCharge),
+    waterProtectionFee: billValueOrBlank(bill.WaterProtectionFee),
+    sewerUsage: billValueOrBlank(bill.SewerUsage),
+    sewerCharge: billValueOrBlank(bill.SewerCharge),
+    stormWaterCharge: billValueOrBlank(bill.StormWaterCharge),
     invoiceNumber: bill.InvoiceNumber || '',
     saleNumber: bill.SaleNumber || '',
     deliveryDate: bill.DeliveryDate || '',
     fuelType: bill.FuelType || '',
-    gallonsDelivered: bill.GallonsDelivered || '',
-    unitPrice: bill.UnitPrice || '',
-    subtotal: bill.Subtotal || '',
-    tax: bill.Tax || '',
+    gallonsDelivered: billValueOrBlank(bill.GallonsDelivered),
+    unitPrice: billValueOrBlank(bill.UnitPrice),
+    subtotal: billValueOrBlank(bill.Subtotal),
+    tax: billValueOrBlank(bill.Tax),
     mcfBilled: bill.McfBilled || null,
     deliveryCharge: bill.DeliveryCharge || null,
     gasSystemReliability: bill.GasSystemReliability || null,
@@ -20817,7 +20579,7 @@ function confirmAssignBill() {
       if (v.parts && v.parts.length > 1) {
         cp[k] = v.parts.map((p) => ({
           qty: p.qty || null,
-          rate: p.rate || null,
+          rate: billValueOrNull(p.rate),
           unit: p.unit || null,
           charge: p.ocrCharge != null ? p.ocrCharge : p.computed,
         }));
@@ -20877,8 +20639,8 @@ function confirmAssignBill() {
       ) {
         dup[key] = newVal;
       }
-      // Also update if new value is different and likely more accurate (from OCR re-extraction)
-      if (newVal && newVal !== '' && existing !== newVal && billRow.fromPDF) {
+      // Also update if new value is different: this row comes from a fresh OCR extraction.
+      if (newVal && newVal !== '' && existing !== newVal) {
         dup[key] = newVal;
       }
     }
@@ -21090,57 +20852,64 @@ function confirmManualAssign() {
     serviceAddress: extracted.ServiceAddress || '',
     accountNumber: extracted.AccountNumber || '',
     meterNumber: extracted.MeterNumber || '',
-    numberOfDays: extracted.NumberOfDays || '',
+    numberOfDays: billValueOrBlank(extracted.NumberOfDays),
     meterReadStart: extracted.MeterReadStart || '',
     meterReadEnd: extracted.MeterReadEnd || '',
     startRead: extracted.StartRead || '',
     endRead: extracted.EndRead || '',
-    readDifference: extracted.ReadDifference || '',
-    meterMultiplier: extracted.MeterMultiplier || '',
+    readDifference: billValueOrBlank(extracted.ReadDifference),
+    meterMultiplier: billValueOrBlank(extracted.MeterMultiplier),
     billDate: extracted.BillDate || '',
     commodity: extracted.Commodity || '',
     kwh: usageQty,
-    demandKW: extracted.ActualKW || '',
-    billedKW: extracted.BilledKW || '',
-    facKW: extracted.FacilitiesKW || '',
-    facKWCost: extracted.FacilitiesCharge || '',
-    tdcKW: extracted.TDCkW || '',
-    kwCost,
-    kwhCost,
-    otherCost,
-    taxCost,
+    demandKW: billValueOrBlank(extracted.ActualKW),
+    billedKW: billValueOrBlank(extracted.BilledKW),
+    facKW: billValueOrBlank(extracted.FacilitiesKW),
+    tdcKW: billValueOrBlank(extracted.TDCkW),
     totalCost,
     rateSchedule: extracted.RateSchedule || '',
-    onPeakKwh: extracted.OnPeakKWh || '',
-    offPeakKwh: extracted.OffPeakKWh || '',
-    onPeakCost: extracted.EnergyOnPeakCharge || '',
-    offPeakCost: extracted.EnergyOffPeakCharge || '',
-    customerCharge: extracted.CustomerCharge || '',
-    demandCharge: extracted.BilledKWCharge || '',
-    ecaCharge: extracted.ECACharge || '',
-    eerCharge: extracted.EERCharge || '',
-    ptsCharge: extracted.PTSCharge || '',
-    tdcCharge: extracted.TDCCharge || '',
-    franchiseFee: extracted.FranchiseFee || '',
-    franchiseFee1: extracted.FranchiseFee1 || '',
-    franchiseFee2: extracted.FranchiseFee2 || '',
-    fromPDF: true,
-    _manuallyAssigned: true,
-    // Gas fields
-    therms: extracted.NaturalGasTherms || extracted.NaturalGasMMbtu || '',
-    ccf: extracted.NaturalGasCCF || '',
-    naturalGasMMbtu: extracted.NaturalGasMMbtu || '',
-    gasCost: extracted.GasCharge || extracted.TotalCurrentCharges || '',
-    fuelAdj: extracted.FuelAdjustment || '',
-    // Water/sewer fields
-    waterUsage: extracted.WaterUsage || '',
-    waterCost: extracted.WaterCharge || '',
-    sewerUsage: extracted.SewerUsage || '',
-    sewerCost: extracted.SewerCharge || '',
-    stormCost: extracted.StormWaterCharge || '',
-    // Propane
-    gallons: extracted.GallonsDelivered || '',
-    propaneCost: extracted.Subtotal || '',
+    onPeakKwh: billValueOrBlank(extracted.OnPeakKWh),
+    offPeakKwh: billValueOrBlank(extracted.OffPeakKWh),
+    onPeakCost: billValueOrBlank(extracted.EnergyOnPeakCharge),
+    offPeakCost: billValueOrBlank(extracted.EnergyOffPeakCharge),
+    customerCharge: billValueOrBlank(extracted.CustomerCharge),
+    demandCharge: billValueOrBlank(extracted.BilledKWCharge),
+    ecaCharge: billValueOrBlank(extracted.ECACharge),
+    eerCharge: billValueOrBlank(extracted.EERCharge),
+    ptsCharge: billValueOrBlank(extracted.PTSCharge),
+    tdcCharge: billValueOrBlank(extracted.TDCCharge),
+    franchiseFee: billValueOrBlank(extracted.FranchiseFee),
+    franchiseFee1: billValueOrBlank(extracted.FranchiseFee1),
+    franchiseFee2: billValueOrBlank(extracted.FranchiseFee2),
+    rkvaCharge: billValueOrBlank(extracted.RkVACharge),
+    taxExemptDelivery: billValueOrBlank(extracted.TaxExemptDelivery),
+    billOffset: billValueOrBlank(extracted.BillOffset),
+    miscellaneousCharge: billValueOrBlank(extracted.MiscellaneousCharge),
+    // Gas / water / sewer / propane: the BILL_SCHEMA names, the same ones every other save path
+    // writes (2026-10-05 audit step 8 — this path used private aliases ccf/gasCost/fuelAdj/
+    // waterCost/sewerCost/stormCost/gallons/propaneCost that no reader ever looked at, and put raw
+    // MMBtu in `therms` with no unit conversion).
+    therms: gasBillSaveTherms(extracted),
+    naturalGasTherms: billValueOrBlank(extracted.NaturalGasTherms),
+    naturalGasCCF: billValueOrBlank(extracted.NaturalGasCCF),
+    thermFactor: billValueOrBlank(extracted.ThermFactor),
+    naturalGasMMbtu: billValueOrBlank(extracted.NaturalGasMMbtu),
+    gasCharge: billValueOrBlank(extracted.GasCharge),
+    fuelAdjustment: billValueOrBlank(extracted.FuelAdjustment),
+    waterUsage: billValueOrBlank(extracted.WaterUsage),
+    waterCharge: billValueOrBlank(extracted.WaterCharge),
+    waterProtectionFee: billValueOrBlank(extracted.WaterProtectionFee),
+    sewerUsage: billValueOrBlank(extracted.SewerUsage),
+    sewerCharge: billValueOrBlank(extracted.SewerCharge),
+    stormWaterCharge: billValueOrBlank(extracted.StormWaterCharge),
+    invoiceNumber: extracted.InvoiceNumber || '',
+    saleNumber: extracted.SaleNumber || '',
+    deliveryDate: extracted.DeliveryDate || '',
+    fuelType: extracted.FuelType || '',
+    gallonsDelivered: billValueOrBlank(extracted.GallonsDelivered),
+    unitPrice: billValueOrBlank(extracted.UnitPrice),
+    subtotal: billValueOrBlank(extracted.Subtotal),
+    tax: billValueOrBlank(extracted.Tax),
   };
 
   meter.bills = meter.bills || [];
@@ -21446,10 +21215,6 @@ async function _saveSinglePDFBill(extracted, projId) {
   // .toFixed further down) expects a number, same as before this fix.
   const {
     kwh: usageQty,
-    kwCost,
-    kwhCost,
-    otherCost,
-    taxCost,
     totalCost: totalCostRaw,
   } = _extractedToBillRowCosts(extracted);
   const totalCost = parseBillNumber(totalCostRaw);
@@ -21465,127 +21230,80 @@ async function _saveSinglePDFBill(extracted, projId) {
     serviceAddress: extracted.ServiceAddress || '',
     accountNumber: extracted.AccountNumber || '',
     meterNumber: extracted.MeterNumber || '',
-    numberOfDays: extracted.NumberOfDays || '',
+    numberOfDays: billValueOrBlank(extracted.NumberOfDays),
     meterReadStart: extracted.MeterReadStart || '',
     meterReadEnd: extracted.MeterReadEnd || '',
     startRead: extracted.StartRead || '',
     endRead: extracted.EndRead || '',
-    readDifference: extracted.ReadDifference || '',
-    meterMultiplier: extracted.MeterMultiplier || '',
+    readDifference: billValueOrBlank(extracted.ReadDifference),
+    meterMultiplier: billValueOrBlank(extracted.MeterMultiplier),
     billDate: extracted.BillDate || '',
     commodity: extracted.Commodity || '',
     kwh: usageQty,
-    demandKW: extracted.ActualKW || '',
-    actualRKVA: extracted.ActualRKVA || '',
-    billedKW: extracted.BilledKW || '',
-    facKW: extracted.FacilitiesKW || '',
-    facKWCost: extracted.FacilitiesCharge || '',
-    tdcKW: extracted.TDCkW || '',
-    kwCost,
-    kwhCost,
-    otherCost,
-    taxCost,
+    demandKW: billValueOrBlank(extracted.ActualKW),
+    actualRKVA: billValueOrBlank(extracted.ActualRKVA),
+    billedKW: billValueOrBlank(extracted.BilledKW),
+    facKW: billValueOrBlank(extracted.FacilitiesKW),
+    tdcKW: billValueOrBlank(extracted.TDCkW),
     totalCost: totalCostRaw,
-    fromPDF: true,
     pdfBillId: billRecord.id,
     hasPDF,
     pdfKey,
     pdfPageStart: extracted._pageStart || null,
     pdfPageEnd: extracted._pageEnd || null,
     rateSchedule: extracted.RateSchedule || '',
-    onPeakKwh: extracted.OnPeakKWh || extracted.EnergyOnPeakKWh || '',
-    offPeakKwh: extracted.OffPeakKWh || extracted.EnergyOffPeakKWh || '',
-    onPeakCost: extracted.EnergyOnPeakCharge || '',
-    offPeakCost: extracted.EnergyOffPeakCharge || '',
-    customerCharge: extracted.CustomerCharge || '',
-    demandCharge: extracted.BilledKWCharge || '',
-    facilitiesCharge: extracted.FacilitiesCharge || '',
-    ecaCharge: extracted.ECACharge || '',
-    eerCharge: extracted.EERCharge || '',
-    ptsCharge: extracted.PTSCharge || '',
-    tdcCharge: extracted.TDCCharge || '',
-    rkvaCharge: extracted.RkVACharge || '',
-    taxExemptDelivery: extracted.TaxExemptDelivery || '',
-    billOffset: extracted.BillOffset || '',
-    miscellaneousCharge: extracted.MiscellaneousCharge || '',
-    renewableCharge: extracted.RenewableCharge || '',
-    franchiseFee: extracted.FranchiseFee || '',
-    franchiseFee1: extracted.FranchiseFee1 || '',
-    franchiseFee2: extracted.FranchiseFee2 || '',
-    solarCredit: extracted.SolarCredit || '',
-    generationKwh: extracted.GenerationKwh || '',
-    totalKwhRate: (() => {
-      const _kwh = parseBillNumber(extracted.kWhConsumed);
-      const _chg = parseBillNumber(kwhCost);
-      return _kwh > 0 && _chg > 0 ? (_chg / _kwh).toFixed(5) : extracted.TotalKWhRate || '';
-    })(),
-    totalKwRate: (() => {
-      const _kw = parseBillNumber(extracted.BilledKW) || parseBillNumber(extracted.ActualKW) || parseBillNumber(extracted.FacilitiesKW);
-      const _chg = parseBillNumber(kwCost) + parseBillNumber(extracted.FacilitiesCharge);
-      return _kw > 0 && _chg > 0 ? (_chg / _kw).toFixed(5) : extracted.TotalKWRate || '';
-    })(),
-    facilitiesRate: extracted.FacilitiesRate || '',
-    demandRate: extracted.DemandRate || '',
-    tdcRate: extracted.TDCRate || '',
-    onPeakRate: extracted.OnPeakRate || '',
-    offPeakRate: extracted.OffPeakRate || '',
-    ecaRate: extracted.ECARate || '',
-    eerRate: extracted.EERRate || '',
-    ptsRate: extracted.PTSRate || '',
-    rkvaRate: extracted.RkVARate || '',
-    naturalGasCCF: extracted.NaturalGasCCF || '',
-    thermFactor: extracted.ThermFactor || '',
-    naturalGasTherms: extracted.NaturalGasTherms || '',
-    naturalGasMMbtu: extracted.NaturalGasMMbtu || '',
+    onPeakKwh: billValueOrBlank(extracted.OnPeakKWh, extracted.EnergyOnPeakKWh),
+    offPeakKwh: billValueOrBlank(extracted.OffPeakKWh, extracted.EnergyOffPeakKWh),
+    onPeakCost: billValueOrBlank(extracted.EnergyOnPeakCharge),
+    offPeakCost: billValueOrBlank(extracted.EnergyOffPeakCharge),
+    customerCharge: billValueOrBlank(extracted.CustomerCharge),
+    demandCharge: billValueOrBlank(extracted.BilledKWCharge),
+    facilitiesCharge: billValueOrBlank(extracted.FacilitiesCharge),
+    ecaCharge: billValueOrBlank(extracted.ECACharge),
+    eerCharge: billValueOrBlank(extracted.EERCharge),
+    ptsCharge: billValueOrBlank(extracted.PTSCharge),
+    tdcCharge: billValueOrBlank(extracted.TDCCharge),
+    rkvaCharge: billValueOrBlank(extracted.RkVACharge),
+    taxExemptDelivery: billValueOrBlank(extracted.TaxExemptDelivery),
+    billOffset: billValueOrBlank(extracted.BillOffset),
+    miscellaneousCharge: billValueOrBlank(extracted.MiscellaneousCharge),
+    renewableCharge: billValueOrBlank(extracted.RenewableCharge),
+    franchiseFee: billValueOrBlank(extracted.FranchiseFee),
+    franchiseFee1: billValueOrBlank(extracted.FranchiseFee1),
+    franchiseFee2: billValueOrBlank(extracted.FranchiseFee2),
+    solarCredit: billValueOrBlank(extracted.SolarCredit),
+    generationKwh: billValueOrBlank(extracted.GenerationKwh),
+    facilitiesRate: billValueOrBlank(extracted.FacilitiesRate),
+    demandRate: billValueOrBlank(extracted.DemandRate),
+    tdcRate: billValueOrBlank(extracted.TDCRate),
+    onPeakRate: billValueOrBlank(extracted.OnPeakRate),
+    offPeakRate: billValueOrBlank(extracted.OffPeakRate),
+    ecaRate: billValueOrBlank(extracted.ECARate),
+    eerRate: billValueOrBlank(extracted.EERRate),
+    ptsRate: billValueOrBlank(extracted.PTSRate),
+    rkvaRate: billValueOrBlank(extracted.RkVARate),
+    naturalGasCCF: billValueOrBlank(extracted.NaturalGasCCF),
+    thermFactor: billValueOrBlank(extracted.ThermFactor),
+    naturalGasTherms: billValueOrBlank(extracted.NaturalGasTherms),
+    naturalGasMMbtu: billValueOrBlank(extracted.NaturalGasMMbtu),
     // Fix [therms-unit-2026-06-22]: canonicalize therms to Therms at save time.
-    therms: isGas ? resolveGasUsageTherms(extracted) || '' : '',
-    // Bug d4c78f06: use GasCharge (commodity cost) for thermCost so $/therm rate
-    // in tables uses energy-only cost, not total bill cost.
-    thermCost: isGas
-      ? extracted.NaturalGasTherms || extracted.NaturalGasCCF || extracted.NaturalGasMMbtu
-        ? extracted.GasCharge || extracted.TotalCurrentCharges || extracted.TotalAmountDue || ''
-        : ''
-      : '',
-    gasCharge: extracted.GasCharge || '',
-    fuelAdjustment: extracted.FuelAdjustment || '',
-    waterUsage: extracted.WaterUsage || '',
-    waterCharge: extracted.WaterCharge || '',
-    waterProtectionFee: extracted.WaterProtectionFee || '',
-    sewerUsage: extracted.SewerUsage || '',
-    sewerCharge: extracted.SewerCharge || '',
-    stormWaterCharge: extracted.StormWaterCharge || '',
+    therms: isGas ? gasBillSaveTherms(extracted) : '',
+    gasCharge: billValueOrBlank(extracted.GasCharge),
+    fuelAdjustment: billValueOrBlank(extracted.FuelAdjustment),
+    waterUsage: billValueOrBlank(extracted.WaterUsage),
+    waterCharge: billValueOrBlank(extracted.WaterCharge),
+    waterProtectionFee: billValueOrBlank(extracted.WaterProtectionFee),
+    sewerUsage: billValueOrBlank(extracted.SewerUsage),
+    sewerCharge: billValueOrBlank(extracted.SewerCharge),
+    stormWaterCharge: billValueOrBlank(extracted.StormWaterCharge),
     invoiceNumber: extracted.InvoiceNumber || '',
     saleNumber: extracted.SaleNumber || '',
     deliveryDate: extracted.DeliveryDate || '',
     fuelType: extracted.FuelType || '',
-    gallonsDelivered: extracted.GallonsDelivered || '',
-    unitPrice: extracted.UnitPrice || '',
-    subtotal: extracted.Subtotal || '',
-    tax: extracted.Tax || '',
-    // Non-electric commodity rate — routed through the single shared _computeGasRate
-    // helper (2026-09-23 gas-rate-fix2), which always returns $/Therm (never $/MMBtu).
-    totalGasRate: _computeGasRate(extracted),
-    totalWaterRate: (() => {
-      const u = parseBillNumber(extracted.WaterUsage);
-      const c = parseBillNumber(extracted.WaterCharge) || parseBillNumber(extracted.TotalCurrentCharges) || parseBillNumber(extracted.TotalAmountDue);
-      return u > 0 && c > 0 ? (c / u).toFixed(5) : '';
-    })(),
-    totalPropaneRate: (() => {
-      const g = parseBillNumber(extracted.GallonsDelivered);
-      const up = parseBillNumberOrZero(extracted.UnitPrice);
-      if (up > 0) return up.toFixed(5);
-      const c = parseBillNumber(extracted.TotalCurrentCharges) || parseBillNumber(extracted.TotalAmountDue);
-      return g > 0 && c > 0 ? (c / g).toFixed(5) : '';
-    })(),
-    totalSewerRate: (() => {
-      const u = parseBillNumber(extracted.SewerUsage);
-      const c = parseBillNumber(extracted.SewerCharge);
-      return u > 0 && c > 0 ? (c / u).toFixed(5) : '';
-    })(),
-    totalStormwaterRate: (() => {
-      const c = parseBillNumberOrZero(extracted.StormWaterCharge);
-      return c > 0 ? c.toFixed(2) : '';
-    })(),
+    gallonsDelivered: billValueOrBlank(extracted.GallonsDelivered),
+    unitPrice: billValueOrBlank(extracted.UnitPrice),
+    subtotal: billValueOrBlank(extracted.Subtotal),
+    tax: billValueOrBlank(extracted.Tax),
   };
   // SHOULD-FIX (86669b5f review round 2, item #3): the en_pdf_bills record
   // above (pdfBills.push + sset, just above) is ALREADY durably persisted by

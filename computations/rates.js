@@ -41,7 +41,7 @@ function getBillFacKWCost(bill) {
 
 // getBillUsageCharge(bill, type) - the ONE usage-charge dollars of a water or sewer bill: the bill's own
 // charge line (waterCharge / sewerCharge), never the bill total and never a stored rate field.
-// Callers: getBillOwnUnitRate, the usage_charge_mismatch flag (computations/bill-flags.js).
+// Callers: getStoredRate (water and sewer), the usage_charge_mismatch flag (computations/bill-flags.js).
 function getBillUsageCharge(bill, type) {
   if (!bill) return 0;
   if (type === 'water') return parseBillNumber(bill.WaterCharge) || parseBillNumber(bill.waterCharge) || 0;
@@ -49,90 +49,176 @@ function getBillUsageCharge(bill, type) {
   return 0;
 }
 
-// getBillOwnUnitRate(bill, type) - the ONE $ per gallon computed from the bill's own usage charge and usage
-// (getBillUsageCharge / getBillUsageOrNull). It never reads totalWaterRate / totalSewerRate: those stored
-// fields can be stale (Rockville Water 2026-03-15 held 0.04821 for a $0.0097 bill; review 2026-10-05).
-// Callers: getStoredRate (fallback), ensureBillRates (what it stores), the usage_charge_mismatch flag.
-function getBillOwnUnitRate(bill, type) {
-  if (type !== 'water' && type !== 'sewer') return 0;
-  var cost = getBillUsageCharge(bill, type);
-  var usage = getBillUsageOrNull(bill, type === 'water' ? 'Water' : 'Sewer') || 0;
-  return usage > 0 && cost > 0 ? cost / usage : 0;
+// billHasPdf(bill) — the ONE answer to "does this bill have an attached PDF?". A bill has a PDF when
+// it carries a pdfKey (the storage key of the attached file) or the hasPDF mark the save paths set.
+// The old third flag `fromPDF` (always true on every PDF save path, so it said nothing) is not
+// written any more (2026-10-05 duplicate-bill-fields audit step 7) and is never read.
+function billHasPdf(bill) {
+  return !!(bill && (bill.hasPDF || bill.pdfKey));
 }
 
-// New canonical function for rate lookup
+// getBillKwCost(bill) / getBillKwhCost(bill) — the ONE accessors for the electric demand dollars
+// (demandCharge + tdcCharge, the Bills table "kW Cost $" without the Facilities part) and the electric
+// energy dollars (onPeakCost + offPeakCost + ecaCharge + eerCharge + ptsCharge, the Bills table
+// "kWh Cost $"). They add up the visible component fields. The stored roll-up copies `kwCost` /
+// `kwhCost` (written by the PDF save paths until 2026-10-05) are read ONLY when the bill has none of
+// the component fields. On the 2026-09-30 backup all 263 electric bills agree to the cent.
+function getBillKwCost(bill) {
+  if (!bill) return 0;
+  var d = parseBillNumber(bill.demandCharge);
+  var t = parseBillNumber(bill.tdcCharge);
+  if (d !== null || t !== null) return (d || 0) + (t || 0);
+  return parseBillNumber(bill.kwCost) || 0;
+}
+function getBillKwhCost(bill) {
+  if (!bill) return 0;
+  var parts = [bill.onPeakCost, bill.offPeakCost, bill.ecaCharge, bill.eerCharge, bill.ptsCharge].map(parseBillNumber);
+  var any = false;
+  var sum = 0;
+  for (var i = 0; i < parts.length; i++) {
+    if (parts[i] !== null) {
+      any = true;
+      sum += parts[i];
+    }
+  }
+  if (any) return sum;
+  return parseBillNumber(bill.kwhCost) || 0;
+}
+// getBillOtherCost(bill) / getBillTaxCost(bill) — the ONE accessors for the rest of an electric bill.
+// "Other" = customerCharge + rkvaCharge + taxExemptDelivery + billOffset + miscellaneousCharge (every
+// line that is not energy, not demand, not facilities, not tax). "Tax" = franchiseFee. This settles the
+// two old formulas (the stored otherCost copy folded in miscellaneousCharge; the Bills table cell folded
+// in franchiseFee instead): the Bills table "Other Charges $" is getBillOtherCost + getBillTaxCost, so
+// the four accessors plus getBillFacKWCost add up to the whole bill. The stored copies otherCost /
+// taxCost are read only when a bill has none of the component fields.
+function getBillOtherCost(bill) {
+  if (!bill) return 0;
+  var parts = [bill.customerCharge, bill.rkvaCharge, bill.taxExemptDelivery, bill.billOffset, bill.miscellaneousCharge].map(
+    parseBillNumber,
+  );
+  var any = false;
+  var sum = 0;
+  for (var i = 0; i < parts.length; i++) {
+    if (parts[i] !== null) {
+      any = true;
+      sum += parts[i];
+    }
+  }
+  if (any) return sum;
+  return parseBillNumber(bill.otherCost) || 0;
+}
+function getBillTaxCost(bill) {
+  if (!bill) return 0;
+  var v = parseBillNumber(bill.franchiseFee);
+  if (v !== null) return v;
+  return parseBillNumber(bill.taxCost) || 0;
+}
+
+// getBillGasCostOrNull(bill) — the ONE accessor for a bill's gas commodity cost (dollars).
+// Source field: `gasCharge` (BILL_SCHEMA.Gas "Gas Charge", the field the Bills table and the
+// Edit modal show) or the extractor's `GasCharge`. Nothing else is read first. The old stored
+// copy `thermCost` (written by the PDF save paths and the modal's hidden inputs until
+// 2026-10-05, and often equal to the whole bill total or stale after a modal edit) is never read.
+// Fallback: when the bill has NO gas charge at all but does carry gas usage, the whole bill
+// total (totalCost / TotalCurrentCharges / TotalAmountDue) is the only gas dollar figure on the
+// bill, so that is returned. A bill with no gas usage never gets a gas cost from its total
+// (this accessor also runs for Water/Sewer meters inside the shared non-electric branches).
+// Returns null when the bill has neither (missing is not 0). getBillGasCost returns 0 instead.
+// Every reader — flag rule (app/bill-analysis.js), savings (computations/savings.js), rates
+// (this file), normalization, anomaly detection, budget, dashboard roll-ups, report engine,
+// Utility Data roll-ups — must call one of these two, never bill.gasCharge/thermCost directly.
+function getBillGasCostOrNull(bill) {
+  if (!bill) return null;
+  var v = billValueOrNull(bill.gasCharge, bill.GasCharge);
+  if (v === null) {
+    var hasUsage =
+      typeof resolveGasUsageThermsOrNull === 'function' ? resolveGasUsageThermsOrNull(bill) !== null : false;
+    if (!hasUsage) return null;
+    v = billValueOrNull(bill.totalCost, bill.TotalCurrentCharges, bill.TotalAmountDue);
+  }
+  return parseBillNumber(v);
+}
+function getBillGasCost(bill) {
+  var v = getBillGasCostOrNull(bill);
+  return v === null ? 0 : v;
+}
+
+// getStoredRate(bill, type) — the ONE $/unit rate for a bill ('kwh' | 'gas' | 'propane' | 'water' |
+// 'sewer' | 'stormwater'). It is COMPUTED from the bill's own dollars and usage through the one
+// cost accessors above and the one usage resolver (resolveGasUsageTherms), so the rate can never
+// disagree with the cost and usage the Bills table shows. The old stored copies (totalKwhRate,
+// totalGasRate, totalWaterRate, totalSewerRate, totalPropaneRate, totalStormwaterRate — written by
+// the PDF save paths, the CSV import and ensureBillRates until 2026-10-05, and stale after any edit)
+// are read ONLY when the bill has no cost or no usage to compute from. Nothing writes them any more.
+// Propane is the all-in rate (whole delivered cost / gallons), the same rule the savings engine
+// uses (computations/savings.js D-9), not the printed unit price.
 function getStoredRate(bill, type) {
+  if (!bill) return 0;
+  var computed = 0;
+  var stored = 0;
   switch (type) {
     case 'kwh': {
-      var stored = parseBillNumber(bill.totalKwhRate);
-      if (stored > 0) return stored;
-      var usage = parseBillNumber(bill.kWhConsumed) || parseBillNumber(bill.totalKwh) || parseBillNumber(bill.kwh) || 0;
-      // CSV-imported bills (BILL_SCHEMA.Electric, app/csv-import.js) use camelCase
-      // onPeakCost/offPeakCost instead of the PDF extractor's kwhCost — fall back to
-      // their sum so CSV-imported electric bills derive a real $/kWh (item 2026-09-21
-      // rate-calc-and-electric-components.md gap #2).
-      var cost =
-        parseBillNumber(bill.kwhCost) ||
-        (parseBillNumber(bill.onPeakCost) || 0) + (parseBillNumber(bill.offPeakCost) || 0) ||
-        0;
-      return usage > 0 && cost > 0 ? cost / usage : 0;
+      var kwh = parseBillNumber(bill.kWhConsumed) || parseBillNumber(bill.totalKwh) || parseBillNumber(bill.kwh) || 0;
+      var kwhCost = getBillKwhCost(bill);
+      computed = kwh > 0 && kwhCost > 0 ? kwhCost / kwh : 0;
+      stored = parseBillNumber(bill.totalKwhRate);
+      break;
     }
     case 'gas': {
-      var stored = parseBillNumber(bill.totalGasRate);
-      if (stored > 0) return stored;
-      var cost =
-        parseBillNumber(bill.GasCharge) ||
-        parseBillNumber(bill.gasCharge) ||
-        parseBillNumber(bill.thermCost) ||
-        parseBillNumber(bill.totalCost) ||
-        0;
-      // 2026-09-23 (item 2026-09-23-gas-rate-fix): route usage through the single canonical
-      // resolveGasUsageTherms() (computations/savings.js) instead of a second, duplicate
-      // PascalCase-only Therms/CCF check + a separate MMBtu-fallback that divided cost by raw
-      // naturalGasMMbtu (a $/MMBtu number, not $/Therm — see ensureBillRates below, the
-      // companyhub-single-rate-source-and-gas-mmbtu-bug.md wiki article). resolveGasUsageTherms
-      // already converts naturalGasMMbtu x10 to a Therms-equivalent, so this always returns
-      // $/Therm regardless of which usage field a bill actually carries.
-      var usage = typeof resolveGasUsageTherms === 'function' ? resolveGasUsageTherms(bill) : 0;
-      return usage > 0 && cost > 0 ? cost / usage : 0;
+      var gasCost = getBillGasCost(bill);
+      // resolveGasUsageTherms (computations/savings.js) converts CCF / MMBtu to Therms, so this is
+      // always $/Therm whichever usage field the bill carries.
+      var therms = typeof resolveGasUsageTherms === 'function' ? resolveGasUsageTherms(bill) : 0;
+      computed = therms > 0 && gasCost > 0 ? gasCost / therms : 0;
+      stored = parseBillNumber(bill.totalGasRate);
+      break;
     }
     case 'propane': {
-      var stored = parseBillNumber(bill.totalPropaneRate);
-      if (stored > 0) return stored;
-      var cost = parseBillNumber(bill.totalCost) || parseBillNumber(bill.TotalAmountDue) || 0;
-      var usage = parseBillNumber(bill.GallonsDelivered) || 0;
-      return usage > 0 && cost > 0 ? cost / usage : 0;
+      var gal = parseBillNumber(bill.gallonsDelivered) || parseBillNumber(bill.GallonsDelivered) || 0;
+      var propCost =
+        parseBillNumber(bill.totalCost) || parseBillNumber(bill.TotalCurrentCharges) || parseBillNumber(bill.TotalAmountDue) || 0;
+      computed = gal > 0 && propCost > 0 ? propCost / gal : 0;
+      stored = parseBillNumber(bill.totalPropaneRate);
+      break;
     }
     case 'water': {
-      var stored = parseBillNumber(bill.totalWaterRate);
-      if (stored > 0) return stored;
-      var own = getBillOwnUnitRate(bill, 'water');
-      if (own > 0) return own;
-      // no water charge line: the bill total over the gallons
-      var cost = parseBillNumber(bill.totalCost) || 0;
-      var usage = getBillUsageOrNull(bill, 'Water') || 0;
-      return usage > 0 && cost > 0 ? cost / usage : 0;
+      // getBillUsageCharge = the bill's own water charge line; with no charge line, the bill total.
+      var wUsage = getBillUsageOrNull(bill, 'Water') || 0;
+      var wCost =
+        getBillUsageCharge(bill, 'water') || parseBillNumber(bill.totalCost) || parseBillNumber(bill.TotalCurrentCharges) || 0;
+      computed = wUsage > 0 && wCost > 0 ? wCost / wUsage : 0;
+      stored = parseBillNumber(bill.totalWaterRate);
+      break;
     }
     case 'sewer': {
-      var stored = parseBillNumber(bill.totalSewerRate);
-      if (stored > 0) return stored;
-      return getBillOwnUnitRate(bill, 'sewer');
+      var sUsage = getBillUsageOrNull(bill, 'Sewer') || 0;
+      var sCost = getBillUsageCharge(bill, 'sewer');
+      computed = sUsage > 0 && sCost > 0 ? sCost / sUsage : 0;
+      stored = parseBillNumber(bill.totalSewerRate);
+      break;
+    }
+    case 'stormwater': {
+      // Stormwater has no usage: the "rate" column is the charge itself.
+      computed = parseBillNumber(bill.stormWaterCharge) || parseBillNumber(bill.StormWaterCharge) || 0;
+      stored = parseBillNumber(bill.totalStormwaterRate);
+      break;
     }
     default:
       return 0;
   }
+  if (computed > 0) return computed;
+  return stored > 0 ? stored : 0;
 }
 
 // getStoredKwRate(bill) - the ONE $/kW (demand) rate for a bill.
-// SSOT for the Bills table, Meter Performance, the savings engine, ensureBillRates and the
-// missing-rate cascade. Precedence: stored totalKwRate, then demand dollars / billed kW.
-// Demand dollars = (demandCharge + tdcCharge, or the legacy kwCost when those are blank)
-// plus the Facilities kW cost (getBillFacKWCost). Older bills that hold only kwCost and
-// facKWCost therefore give the same rate as newer bills that hold the same dollars under
-// demandCharge and facilitiesCharge (WP-04, math-02 H12/D6).
+// SSOT for the Bills table, Meter Performance, the savings engine and the missing-rate cascade.
+// Computed: demand dollars (getBillKwCost: demandCharge + tdcCharge, or the legacy kwCost) plus the
+// Facilities kW cost (getBillFacKWCost), divided by billed kW. Older bills that hold only kwCost and
+// facKWCost therefore give the same rate as newer bills that hold the same dollars under demandCharge
+// and facilitiesCharge (WP-04, math-02 H12/D6). The stored totalKwRate is read only when the bill has
+// no dollars or no kW to compute from (same rule as getStoredRate).
 function getStoredKwRate(bill) {
-  var stored = parseBillNumber(bill.totalKwRate);
-  if (stored > 0) return stored;
+  if (!bill) return 0;
   var billedKW =
     parseBillNumber(bill.billedKW) ||
     parseBillNumber(bill.demandKW) ||
@@ -140,88 +226,10 @@ function getStoredKwRate(bill) {
     parseBillNumber(bill.ActualKW) ||
     parseBillNumber(bill.FacilitiesKW) ||
     0;
-  if (!(billedKW > 0)) return 0;
-  var demandCost = parseBillNumber(bill.demandCharge) + parseBillNumber(bill.tdcCharge) || parseBillNumber(bill.kwCost);
-  var cost = demandCost + getBillFacKWCost(bill);
-  return cost > 0 ? cost / billedKW : 0;
-}
-
-// Populate missing derived rate fields on a bill from its usage + cost data.
-// Returns true if any field was added/updated, false if bill was already complete.
-function ensureBillRates(bill) {
-  var changed = false;
-
-  // Electric: totalKwhRate
-  if (!parseBillNumber(bill.totalKwhRate)) {
-    var kwh = parseBillNumber(bill.kWhConsumed) || parseBillNumber(bill.totalKwh) || parseBillNumber(bill.kwh);
-    var kwhCost = parseBillNumber(bill.kwhCost);
-    if (kwh > 0 && kwhCost > 0) {
-      bill.totalKwhRate = (kwhCost / kwh).toFixed(5);
-      changed = true;
-    }
-  }
-
-  // Electric: totalKwRate (the full per-kW cost, from the one keeper getStoredKwRate)
-  if (!parseBillNumber(bill.totalKwRate)) {
-    var kwRate = getStoredKwRate(bill);
-    if (kwRate > 0) {
-      bill.totalKwRate = kwRate.toFixed(5);
-      changed = true;
-    }
-  }
-
-  // Gas: totalGasRate (use gasCharge/commodity cost, not total bill cost — bug d4c78f06)
-  if (!parseBillNumber(bill.totalGasRate)) {
-    // 2026-09-23 (item 2026-09-23-gas-rate-fix): was a PascalCase-only Therms/CCF check with a
-    // separate MMBtu fallback that stored cost/naturalGasMMbtu — a $/MMBtu number — in this same
-    // field, mislabeled as $/Therm, for any MMBtu-only meter (e.g. WRE bills, no
-    // NaturalGasTherms/NaturalGasCCF). Confirmed 6-16x too high on Spring Hill High. Now routes
-    // through resolveGasUsageTherms(bill) — the same canonical Therms-usage resolver
-    // computeSeasonalBldgRates uses (computations/savings.js) — so this always writes a real
-    // $/Therm value, one usage definition, no duplicate math.
-    var gasChg = parseBillNumber(bill.GasCharge) || parseBillNumber(bill.gasCharge) || parseBillNumber(bill.thermCost);
-    var gasUsage = typeof resolveGasUsageTherms === 'function' ? resolveGasUsageTherms(bill) : 0;
-    if (gasUsage > 0 && gasChg > 0) {
-      bill.totalGasRate = (gasChg / gasUsage).toFixed(5);
-      changed = true;
-    }
-  }
-
-  // Propane: totalPropaneRate (prefer unitPrice if available)
-  if (!parseBillNumber(bill.totalPropaneRate)) {
-    var up = parseBillNumberOrZero(bill.UnitPrice) || parseBillNumber(bill.unitPrice);
-    if (up > 0) {
-      bill.totalPropaneRate = up.toFixed(5);
-      changed = true;
-    } else {
-      var gal = parseBillNumber(bill.GallonsDelivered) || parseBillNumber(bill.gallonsDelivered);
-      var propCost = parseBillNumber(bill.totalCost) || parseBillNumber(bill.TotalAmountDue);
-      if (gal > 0 && propCost > 0) {
-        bill.totalPropaneRate = (propCost / gal).toFixed(5);
-        changed = true;
-      }
-    }
-  }
-
-  // Water: totalWaterRate (the one own-rate function, getBillOwnUnitRate)
-  if (!parseBillNumber(bill.totalWaterRate)) {
-    var wRate = getBillOwnUnitRate(bill, 'water');
-    if (wRate > 0) {
-      bill.totalWaterRate = wRate.toFixed(5);
-      changed = true;
-    }
-  }
-
-  // Sewer: totalSewerRate
-  if (!parseBillNumber(bill.totalSewerRate)) {
-    var sRate = getBillOwnUnitRate(bill, 'sewer');
-    if (sRate > 0) {
-      bill.totalSewerRate = sRate.toFixed(5);
-      changed = true;
-    }
-  }
-
-  return changed;
+  var cost = getBillKwCost(bill) + getBillFacKWCost(bill);
+  if (billedKW > 0 && cost > 0) return cost / billedKW;
+  var stored = parseBillNumber(bill.totalKwRate);
+  return stored > 0 ? stored : 0;
 }
 
 function validateImpliedRate(commodity, usage, charge, utilityName) {
@@ -285,6 +293,10 @@ function sumElectricEnergyCharges(parsed) {
   );
 }
 
+// getExtractedRate(parsed, type) - a DIFFERENT value from getStoredRate: the preview rate of a freshly
+// extracted PDF (extractor field names, before any save). Propane uses the printed UnitPrice and
+// gas without therms uses $/MMBtu; getStoredRate is the all-in $/Therm of a saved bill. Same cost
+// accessors; do not use it for saved bills.
 function getExtractedRate(parsed, type) {
   switch (type) {
     case 'kwh': {
@@ -302,12 +314,7 @@ function getExtractedRate(parsed, type) {
       return usage > 0 && cost > 0 ? cost / usage : 0;
     }
     case 'gas': {
-      var cost =
-        parseBillNumber(parsed.GasCharge) ||
-        parseBillNumber(parsed.gasCharge) ||
-        parseBillNumber(parsed.thermCost) ||
-        parseBillNumber(parsed.totalCost) ||
-        0;
+      var cost = getBillGasCost(parsed);
       var usage = resolveGasUsageTherms({
         NaturalGasTherms: parsed.NaturalGasTherms,
         NaturalGasCCF: parsed.NaturalGasCCF,
@@ -315,7 +322,7 @@ function getExtractedRate(parsed, type) {
       });
       if (usage > 0 && cost > 0) return cost / usage;
       // MMBtu fallback: WRE meters store usage as naturalGasMMbtu; divide charge by MMBtu
-      // so the result is $/MMBtu rather than $/Therm — mirrors getStoredRate('gas') above.
+      // so the result is $/MMBtu rather than $/Therm (getStoredRate converts to Therms instead).
       var mmbtu = parseBillNumber(parsed.naturalGasMMbtu) || parseBillNumber(parsed.NaturalGasMMbtu) || 0;
       return mmbtu > 0 && cost > 0 ? cost / mmbtu : 0;
     }
@@ -775,30 +782,10 @@ function computeSeasonalBldgRates(projId, bldgId) {
   }
 
   if (gasMeters.length) {
-    // Gas rate per bill: cost / resolveGasUsageTherms(bill) — deliberately NOT
-    // bill.totalGasRate (ensureBillRates's one-time-migration field). ensureBillRates has the
-    // same PascalCase-only usage gap resolveGasUsageTherms's own header comment documents for
-    // getStoredRate, PLUS a second, worse bug found while building this function (2026-09-23):
-    // for an MMBtu-only meter (naturalGasMMbtu, no NaturalGasTherms/NaturalGasCCF — e.g. Spring
-    // Hill High), ensureBillRates's usage detection is 0, so it falls to its MMBtu branch and
-    // stores cost/naturalGasMMbtu (a $/MMBtu number) in totalGasRate — but bill.therms is
-    // SEPARATELY, correctly canonicalized elsewhere to naturalGasMMbtu*10 (Therms-equivalent),
-    // so that stored totalGasRate is 10x too high relative to every other bill's real $/Therm
-    // (confirmed on Spring Hill High: March's totalGasRate correctly used NaturalGasTherms and
-    // reads $0.52/Therm, but June-Apr's used the MMBtu branch and read $3.32-$8.35/Therm — same
-    // meter, same rate schedule, 6-16x apart). Recomputing fresh via resolveGasUsageTherms here
-    // avoids trusting that stale/wrong-unit stored value; ensureBillRates itself is a separate,
-    // already-shipped one-time migration outside this item's scope — logged to the backlog
-    // instead of changed here.
+    // Gas rate per bill: getStoredRate(bill, 'gas') — the one $/Therm rate (gas cost accessor /
+    // resolveGasUsageTherms). Nothing stores a rate any more (2026-10-05 audit step 5).
     var gasRows = billRates(gasMeters, function (bill) {
-      var cost =
-        parseBillNumber(bill.GasCharge) ||
-        parseBillNumber(bill.gasCharge) ||
-        parseBillNumber(bill.thermCost) ||
-        parseBillNumber(bill.totalCost) ||
-        0;
-      var usage = typeof resolveGasUsageTherms === 'function' ? resolveGasUsageTherms(bill) : 0;
-      return usage > 0 && cost > 0 ? cost / usage : 0;
+      return getStoredRate(bill, 'gas');
     });
     var gasSplit = seasonSplit(gasRows);
     out.gasSummer = Math.round(mean(gasSplit.summer) * 1000) / 1000;

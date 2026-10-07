@@ -325,162 +325,9 @@ function loadUtilityData() {
     }
     DB.set(_migratedKey, '1');
   }
-  // One-time migration: backfill derived rate fields on bills that have
-  // usage + cost data but missing rate fields (totalGasRate, totalPropaneRate, etc.)
-  const _ratesMigratedKey = 'en_utility_rates_backfilled_v2';
-  if (!DB.get(_ratesMigratedKey)) {
-    let ratesFilled = 0;
-    let billsScanned = 0;
-    for (const pid of Object.keys(utilityData)) {
-      const ud = utilityData[pid];
-      for (const b of ud.buildings || []) {
-        for (const mt of b.meters || []) {
-          for (const bill of mt.bills || []) {
-            billsScanned++;
-            // Clear old totalKwRate so it gets recalculated with Facilities kW Cost included.
-            // getBillFacKWCost (computations/rates.js) — the ONE accessor for Facilities kW
-            // Cost (2026-09-23 single-source fix); never read bill.facKWCost/facilitiesCharge directly.
-            if (bill.totalKwRate && getBillFacKWCost(bill) > 0) {
-              delete bill.totalKwRate;
-            }
-            if (ensureBillRates(bill)) ratesFilled++;
-          }
-        }
-      }
-    }
-    if (ratesFilled > 0) {
-      saveUtilityData(SAVE_ALL_PROJECTS); // one-time migration touches every loaded project
-      console.log(
-        '[rate backfill v2] Recalculated rates on ' + ratesFilled + ' bills (totalKwRate now includes facKWCost)',
-      );
-    }
-    // Guard (2026-09-23, item 2026-09-23-gas-rate-fix2): same gate-timing fix already applied to
-    // en_utility_gas_mmbtu_rate_fixed_v1 below — only set the gate once bills were actually
-    // scanned, so a pre-data pass (fresh profile, before Restore) retries next load instead of
-    // permanently masking real data.
-    if (billsScanned > 0) DB.set(_ratesMigratedKey, '1');
-  }
-  // One-time migration (2026-09-23, item 2026-09-23-gas-rate-fix): recompute bill.totalGasRate
-  // on EVERY gas bill via resolveGasUsageTherms(bill) — the same canonical usage resolver
-  // computeSeasonalBldgRates uses. The v2 migration above (en_utility_rates_backfilled_v2)
-  // already ran once on real data and, for MMBtu-only meters (naturalGasMMbtu, no
-  // NaturalGasTherms/NaturalGasCCF — e.g. WRE bills), wrote cost/naturalGasMMbtu — a raw $/MMBtu
-  // number — into totalGasRate, the same field every other bill on that meter uses for real
-  // $/Therm (confirmed 6-16x too high on Spring Hill High; see
-  // companyhub-single-rate-source-and-gas-mmbtu-bug.md). That stored value is gated behind
-  // en_utility_rates_backfilled_v2 and will not self-correct, so this recomputes every bill's
-  // totalGasRate fresh from its own usage + charge fields (never deletes a bill or any other
-  // field) so the Bills table's $/Therm column matches Energy Savings / Report Inputs / BAS
-  // Savings Calc, which already read gas rates through resolveGasUsageTherms.
-  // Bug (found 2026-09-23 verifying this same fix): initUtilityTool() -> loadUtilityData() runs
-  // on EVERY page load, including the very first load of a fresh browser/profile BEFORE any
-  // project data exists (or is restored) — utilityData is {} at that point. A migration that
-  // unconditionally does DB.set(gateKey,'1') after its scan loop (regardless of whether the loop
-  // found anything) permanently trips its own gate on that empty pass, so it silently never runs
-  // again once real data shows up (Restore, or Supabase sync landing later) — confirmed via
-  // headless test: Spring Hill High's MMBtu bills still showed the old 3.18-8.35 $/MMBtu-as-
-  // $/Therm values after a fresh-profile restore. Only set the gate once bills were actually
-  // scanned (billsScanned > 0), so an empty/pre-data pass retries on the next load instead of
-  // masking real data forever.
-  const _gasMMbtuRateFixedKey = 'en_utility_gas_mmbtu_rate_fixed_v1';
-  if (!DB.get(_gasMMbtuRateFixedKey)) {
-    let gasRateFixed = 0;
-    let billsScanned = 0;
-    for (const pid of Object.keys(utilityData)) {
-      const ud = utilityData[pid];
-      for (const b of ud.buildings || []) {
-        for (const mt of b.meters || []) {
-          for (const bill of mt.bills || []) {
-            billsScanned++;
-            const gasChg = parseFloat(bill.GasCharge) || parseFloat(bill.gasCharge) || parseFloat(bill.thermCost) || 0;
-            if (gasChg <= 0 || typeof resolveGasUsageTherms !== 'function') continue;
-            const usage = resolveGasUsageTherms(bill);
-            if (usage <= 0) continue;
-            const correct = (gasChg / usage).toFixed(5);
-            if (bill.totalGasRate !== correct) {
-              bill.totalGasRate = correct;
-              gasRateFixed++;
-            }
-          }
-        }
-      }
-    }
-    if (gasRateFixed > 0) {
-      saveUtilityData(SAVE_ALL_PROJECTS); // one-time migration touches every loaded project
-      console.log('[gas MMBtu rate fix] Recalculated totalGasRate on ' + gasRateFixed + ' bills (MMBtu-unit bug)');
-    }
-    if (billsScanned > 0) DB.set(_gasMMbtuRateFixedKey, '1');
-  }
-  // One-time SECOND-PASS migration (2026-09-23, item 2026-09-23-gas-rate-fix2 — cold-review
-  // follow-up, NOT READY finding #2): en_utility_gas_mmbtu_rate_fixed_v1 above already ran
-  // once on real user data BEFORE the three buggy bill-SAVE paths in app/bill-analysis.js
-  // (confirmAutoAssign, _mbSaveOneBill, _saveBillToMatchedMeter) were fixed to route through
-  // the shared _computeGasRate() helper. Any MMBtu-only gas bill saved through one of those
-  // paths in the window between v1's gate tripping and this fix landing kept a wrong,
-  // 6-16x-too-high $/MMBtu-as-$/Therm totalGasRate — and v1's gate, already permanently set,
-  // will never re-run to catch it. This migration re-scans every bill (same billsScanned>0
-  // gate-timing guard as v1, so an empty/pre-Restore/pre-sync pass never trips the gate or
-  // calls saveUtilityData — it cannot sync a value computed before real data has landed) and
-  // recomputes totalGasRate ONLY on the MMBtu-only shape (naturalGasMMbtu present, no
-  // naturalGasTherms/naturalGasCCF — the exact bug signature) via resolveGasUsageTherms(),
-  // the one canonical usage resolver. NEVER overwrites a bill whose totalGasRate the user
-  // hand-edited — the Bill Edit modal and Value Correction Mode both stamp
-  // bill._userCorrected.totalGasRate = {original, at} (app/csv-import.js saveBillRow /
-  // submitValueCorrection) — those bills are skipped and logged in a report instead.
-  const _gasMMbtuRateFixedKeyV2 = 'en_utility_gas_mmbtu_rate_fixed_v2';
-  if (!DB.get(_gasMMbtuRateFixedKeyV2)) {
-    let gasRateFixedV2 = 0;
-    let billsScannedV2 = 0;
-    const _skippedManualV2 = [];
-    for (const pid of Object.keys(utilityData)) {
-      const ud = utilityData[pid];
-      for (const b of ud.buildings || []) {
-        for (const mt of b.meters || []) {
-          for (const bill of mt.bills || []) {
-            billsScannedV2++;
-            const mmbtuOnly =
-              (parseFloat(bill.naturalGasMMbtu) || parseFloat(bill.NaturalGasMMbtu) || 0) > 0 &&
-              !(parseFloat(bill.naturalGasTherms) || parseFloat(bill.NaturalGasTherms) || 0) &&
-              !(parseFloat(bill.naturalGasCCF) || parseFloat(bill.NaturalGasCCF) || 0);
-            if (!mmbtuOnly) continue;
-            if (bill._userCorrected && bill._userCorrected.totalGasRate) {
-              _skippedManualV2.push({
-                pid,
-                building: b.name || b.id,
-                meter: mt.name || mt.id || mt.commodity,
-                billEnd: bill.end,
-                storedRate: bill.totalGasRate,
-              });
-              continue;
-            }
-            const gasChg = parseFloat(bill.GasCharge) || parseFloat(bill.gasCharge) || parseFloat(bill.thermCost) || 0;
-            if (gasChg <= 0 || typeof resolveGasUsageTherms !== 'function') continue;
-            const usage = resolveGasUsageTherms(bill);
-            if (usage <= 0) continue;
-            const correct = (gasChg / usage).toFixed(5);
-            if (bill.totalGasRate !== correct) {
-              bill.totalGasRate = correct;
-              gasRateFixedV2++;
-            }
-          }
-        }
-      }
-    }
-    if (_skippedManualV2.length) {
-      console.warn(
-        '[gas MMBtu rate fix v2] Skipped ' + _skippedManualV2.length + ' hand-corrected bill(s) — left untouched:',
-      );
-      console.table(_skippedManualV2);
-      DB.set('en_gas_mmbtu_rate_fix_v2_skipped_report', JSON.stringify(_skippedManualV2));
-    }
-    if (gasRateFixedV2 > 0) {
-      saveUtilityData(SAVE_ALL_PROJECTS); // one-time migration touches every loaded project
-      console.log(
-        '[gas MMBtu rate fix v2] Recalculated totalGasRate on ' + gasRateFixedV2 + ' MMBtu-only bills (second pass)',
-      );
-    }
-    if (billsScannedV2 > 0) DB.set(_gasMMbtuRateFixedKeyV2, '1');
-  }
+  // (2026-10-05 duplicate-bill-fields audit step 5: the three one-time rate backfills that used to
+  // run here — en_utility_rates_backfilled_v2, en_utility_gas_mmbtu_rate_fixed_v1/v2 — are gone.
+  // Rates are not stored any more; getStoredRate / getStoredKwRate compute them on every read.)
   // Facilities kW backfill + facKWCost sync (2026-09-23, Facilities kW single-source fix,
   // cold-review Q3; re-armed 2026-09-25 — see below): repair Electric bills whose facKW is
   // null/missing and/or whose Facilities kW Cost sits under only ONE of
@@ -505,23 +352,14 @@ function loadUtilityData() {
   // gated version and self-heals if the algorithm is ever corrected again.
   {
     let facKWFilled = 0;
-    let facKWCostSynced = 0;
     for (const pid of Object.keys(utilityData)) {
       const ud = utilityData[pid];
       for (const b of ud.buildings || []) {
         for (const mt of b.meters || []) {
           if (mt.commodity !== 'Electric' || !mt.bills || !mt.bills.length) continue;
-          // (a) facKWCost <-> facilitiesCharge sync — never overwrites a value already present.
-          mt.bills.forEach((bill) => {
-            if (bill.facKWCost == null && bill.facilitiesCharge != null) {
-              bill.facKWCost = bill.facilitiesCharge;
-              facKWCostSynced++;
-            } else if (bill.facilitiesCharge == null && bill.facKWCost != null) {
-              bill.facilitiesCharge = bill.facKWCost;
-              facKWCostSynced++;
-            }
-          });
-          // (b) facKW backfill — same fill order as CSV import (charge/known-rate, then a full
+          // (The facKWCost <-> facilitiesCharge copy sync that used to run here is gone, 2026-10-05
+          // audit step 7: facilitiesCharge is the one written name, getBillFacKWCost reads both.)
+          // facKW backfill — same fill order as CSV import (charge/known-rate, then a full
           // 12-month rolling peak, then leave blank + flag). typeof-guarded: this file loads
           // before app/csv-import.js in script order, but loadUtilityData() only runs after
           // every page script has parsed, so backfillFacilitiesKW is always defined by call time.
@@ -532,15 +370,9 @@ function loadUtilityData() {
         }
       }
     }
-    if (facKWFilled > 0 || facKWCostSynced > 0) {
+    if (facKWFilled > 0) {
       saveUtilityData(SAVE_ALL_PROJECTS); // touches every loaded project; dirty-checked per project
-      console.log(
-        '[Facilities kW backfill] Filled facKW on ' +
-          facKWFilled +
-          ' bill(s), synced facKWCost<->facilitiesCharge on ' +
-          facKWCostSynced +
-          ' bill(s)',
-      );
+      console.log('[Facilities kW backfill] Filled facKW on ' + facKWFilled + ' bill(s)');
     }
   }
   // One-time migration: backfill sewerUsage from matching water bills
@@ -737,14 +569,9 @@ function loadUtilityData() {
     for (const entry of _thermsReport.wouldFix) {
       const bill = entry.bill;
       const oldTherms = parseBillNumber(bill.therms);
-      const oldThermCost = parseBillNumber(bill.thermCost);
       bill.therms = entry.newTherms;
       bill._thermsUnitFixed = true;
       bill._thermsUnitFixedFrom = entry.source;
-      // Recompute totalGasRate so $/therm is correct (~$0.42 not ~$4.18)
-      if (oldThermCost > 0 && entry.newTherms > 0) {
-        bill.totalGasRate = (oldThermCost / entry.newTherms).toFixed(5);
-      }
       _thermsFixed++;
       console.log(
         '[therms-unit migration v1] Fixed ' +
@@ -3654,8 +3481,9 @@ function renderMeterWorkspace() {
    strictly greater.
 ───────────────────────────────────────────────────────────── */
 function _gasUsageDisplay(r, unit) {
-  const thermsBasis = typeof resolveGasUsageTherms === 'function' ? resolveGasUsageTherms(r || {}) : 0;
-  if (!thermsBasis) return 0;
+  // null = no usage on the bill (missing, shows as a dash); a real 0 stays 0.
+  const thermsBasis = resolveGasUsageThermsOrNull(r || {});
+  if (thermsBasis === null) return null;
   if (unit === 'MMBtu') return thermsBasis / 10;
   if (unit === 'CCF') return convertUnit(thermsBasis, 'Therms', 'CCF', 'Gas');
   return thermsBasis; // Therms
@@ -3682,12 +3510,7 @@ const CONDENSED_CATEGORIES = {
       label: 'kWh Cost $',
       type: 'currency',
       w: 100,
-      compute: (r) =>
-        parseBillNumber(r.onPeakCost) +
-        parseBillNumber(r.offPeakCost) +
-        parseBillNumber(r.ecaCharge) +
-        parseBillNumber(r.eerCharge) +
-        parseBillNumber(r.ptsCharge),
+      compute: (r) => getBillKwhCost(r),
     },
     {
       // Blended kWh rate — prefer stored rate from bill, fall back to computation
@@ -3697,12 +3520,7 @@ const CONDENSED_CATEGORIES = {
       compute: (r) => {
         const stored = getStoredRate(r, 'kwh');
         if (stored > 0) return stored;
-        const cost =
-          parseBillNumber(r.onPeakCost) +
-          parseBillNumber(r.offPeakCost) +
-          parseBillNumber(r.ecaCharge) +
-          parseBillNumber(r.eerCharge) +
-          parseBillNumber(r.ptsCharge);
+        const cost = getBillKwhCost(r);
         const kwh = parseBillNumber(r.kwh);
         return kwh > 0 ? cost / kwh : 0;
       },
@@ -3716,7 +3534,7 @@ const CONDENSED_CATEGORIES = {
       w: 100,
       // getBillFacKWCost (computations/rates.js) — the ONE accessor for Facilities kW Cost
       // (2026-09-23 single-source fix); never read r.facKWCost/r.facilitiesCharge directly.
-      compute: (r) => parseBillNumber(r.demandCharge) + parseBillNumber(r.tdcCharge) + getBillFacKWCost(r),
+      compute: (r) => getBillKwCost(r) + getBillFacKWCost(r),
     },
     {
       // Blended kW rate — SSOT getStoredKwRate() (computations/rates.js): stored
@@ -3732,12 +3550,9 @@ const CONDENSED_CATEGORIES = {
       label: 'Other Charges $',
       type: 'currency',
       w: 120,
-      compute: (r) =>
-        parseBillNumber(r.customerCharge) +
-        parseBillNumber(r.rkvaCharge) +
-        parseBillNumber(r.taxExemptDelivery) +
-        parseBillNumber(r.billOffset) +
-        parseBillNumber(r.franchiseFee),
+      // getBillOtherCost + getBillTaxCost (computations/rates.js): every line that is not energy,
+      // demand or facilities. One formula for this cell and for every roll-up that reads it.
+      compute: (r) => getBillOtherCost(r) + getBillTaxCost(r),
     },
     { label: 'Total Cost $', type: 'currency', w: 110, key: 'totalCost' },
   ],
@@ -6943,7 +6758,7 @@ function renderBaselinePane(pane, m, bills, incl) {
       if (!ym) return;
       // getBillFacKWCost (computations/rates.js) — the ONE accessor for Facilities kW Cost
       // (2026-09-23 single-source fix); never read b.facKWCost/facilitiesCharge directly.
-      const kwC = parseFloat(b.kwCost || 0) + getBillFacKWCost(b);
+      const kwC = getBillKwCost(b) + getBillFacKWCost(b);
       const ec = parseFloat(b.totalCost || 0) - kwC;
       energyCostByYm[ym] = (energyCostByYm[ym] || 0) + ec;
     });
@@ -6956,7 +6771,7 @@ function renderBaselinePane(pane, m, bills, incl) {
     let summerKwRate = null,
       winterKwRate = null;
     if (m.commodity === 'Electric') {
-      const demandBills = blBillsForRate.filter((b) => (b.demandKW || 0) > 0 && (b.kwCost || 0) > 0);
+      const demandBills = blBillsForRate.filter((b) => (b.demandKW || 0) > 0 && getBillKwCost(b) > 0);
       const sumDem = demandBills.filter((b) => {
         const mo = _parseISO(b.start).getMonth() + 1;
         return mo >= 6 && mo <= 9;
@@ -6965,8 +6780,8 @@ function renderBaselinePane(pane, m, bills, incl) {
         const mo = _parseISO(b.start).getMonth() + 1;
         return mo === 12 || mo <= 3;
       });
-      summerKwRate = sumDem.length ? sumDem.reduce((s, b) => s + b.kwCost / b.demandKW, 0) / sumDem.length : null;
-      winterKwRate = winDem.length ? winDem.reduce((s, b) => s + b.kwCost / b.demandKW, 0) / winDem.length : null;
+      summerKwRate = sumDem.length ? sumDem.reduce((s, b) => s + getBillKwCost(b) / b.demandKW, 0) / sumDem.length : null;
+      winterKwRate = winDem.length ? winDem.reduce((s, b) => s + getBillKwCost(b) / b.demandKW, 0) / winDem.length : null;
     }
 
     // Summer (Jun–Sep) vs Winter (Dec–Mar) $/unit rates using energyCost
@@ -7519,7 +7334,7 @@ function refreshBaselineStats(mid) {
       if (!ym) return;
       // getBillFacKWCost (computations/rates.js) — the ONE accessor for Facilities kW Cost
       // (2026-09-23 single-source fix); never read b.facKWCost/facilitiesCharge directly.
-      const kwC = parseFloat(b.kwCost || 0) + getBillFacKWCost(b);
+      const kwC = getBillKwCost(b) + getBillFacKWCost(b);
       eCostByYm2[ym] = (eCostByYm2[ym] || 0) + parseFloat(b.totalCost || 0) - kwC;
     });
     const costRows = blRows.filter((r) => r.usage > 0 && eCostByYm2[r.ym] > 0);
@@ -7529,7 +7344,7 @@ function refreshBaselineStats(mid) {
     let summerKwRate = null,
       winterKwRate = null;
     if (m.commodity === 'Electric') {
-      const dBills = blBillsR.filter((b) => (b.demandKW || 0) > 0 && (b.kwCost || 0) > 0);
+      const dBills = blBillsR.filter((b) => (b.demandKW || 0) > 0 && getBillKwCost(b) > 0);
       const sumDem = dBills.filter((b) => {
         const mo = _parseISO(b.start).getMonth() + 1;
         return mo >= 6 && mo <= 9;
@@ -7538,8 +7353,8 @@ function refreshBaselineStats(mid) {
         const mo = _parseISO(b.start).getMonth() + 1;
         return mo === 12 || mo <= 3;
       });
-      summerKwRate = sumDem.length ? sumDem.reduce((s, b) => s + b.kwCost / b.demandKW, 0) / sumDem.length : null;
-      winterKwRate = winDem.length ? winDem.reduce((s, b) => s + b.kwCost / b.demandKW, 0) / winDem.length : null;
+      summerKwRate = sumDem.length ? sumDem.reduce((s, b) => s + getBillKwCost(b) / b.demandKW, 0) / sumDem.length : null;
+      winterKwRate = winDem.length ? winDem.reduce((s, b) => s + getBillKwCost(b) / b.demandKW, 0) / winDem.length : null;
     }
     const sumR = costRows.filter((r) => {
       const mo = parseInt(r.ym.split('-')[1]);
@@ -10613,14 +10428,14 @@ function renderPerfPane(pane, m, bills, incl) {
       // billed usage; the predicted value lives under kwhPredicted/thermsPredicted).
       usage: isElec ? v.kwhPredicted : m.commodity === 'Gas' ? v.thermsPredicted : isPropane_p ? v.gallons : v.kgal,
       energyCost: isElec ? v.energyCost : 0,
-      thermCost: m.commodity === 'Gas' || isPropane_p ? v.cost : 0,
+      gasCost: m.commodity === 'Gas' || isPropane_p ? v.cost : 0,
       totalCost: v.totalCost ?? v.cost,
     };
   });
   const hasBlCalMap = Object.keys(meterDataByMo).length > 0;
   const blByCalMo = Object.fromEntries(Object.entries(meterDataByMo).map(([mo, v]) => [mo, v.usage]));
   const blKwhCostByCalMo = Object.fromEntries(Object.entries(meterDataByMo).map(([mo, v]) => [mo, v.energyCost]));
-  const blThermCostByCalMo = Object.fromEntries(Object.entries(meterDataByMo).map(([mo, v]) => [mo, v.thermCost]));
+  const blThermCostByCalMo = Object.fromEntries(Object.entries(meterDataByMo).map(([mo, v]) => [mo, v.gasCost]));
   const blTotalCostByCalMo = Object.fromEntries(Object.entries(meterDataByMo).map(([mo, v]) => [mo, v.totalCost]));
   // Per-calendar-month baseline kW from buildMoMap (seasonal, not flat average)
   const blDemKWByCalMo = {};
@@ -10855,17 +10670,21 @@ function renderPerfPane(pane, m, bills, incl) {
       if (!bfr.length) return;
       const n = bfr.length;
       const actualKwh = bfr.reduce((s, b) => s + parseFloat(b.kwh || 0), 0);
-      const kwCostAmt = bfr.reduce((s, b) => s + parseFloat(b.kwCost || 0), 0);
+      const kwCostAmt = bfr.reduce((s, b) => s + getBillKwCost(b), 0);
       // getBillFacKWCost (computations/rates.js) — the ONE accessor for Facilities kW Cost
       // (2026-09-23 single-source fix); never read b.facKWCost/facilitiesCharge directly.
       const facKWCostAmt = bfr.reduce((s, b) => s + getBillFacKWCost(b), 0);
-      const kwhCostAmt = bfr.reduce((s, b) => s + parseFloat(b.kwhCost || 0), 0);
+      const kwhCostAmt = bfr.reduce((s, b) => s + getBillKwhCost(b), 0);
       // energyCost mirrors Meter Data "Energy Cost" = totalCost - kwCost
       const totalBillCost = bfr.reduce((s, b) => s + parseFloat(b.totalCost || 0), 0);
       const energyCostAmt = totalBillCost - kwCostAmt - facKWCostAmt;
       const bilKW = bfr.length ? Math.max(...bfr.map((b) => parseFloat(b.billedKW || b.demandKW || 0))) : 0;
-      const _storedKwhRate = bfr.reduce((s, b) => s + (parseFloat(b.totalKwhRate) || 0), 0) / n;
-      const _storedKwRate = bfr.reduce((s, b) => s + (parseFloat(b.totalKwRate) || 0), 0) / n;
+      // Blend of the bills in this month through the one rate functions (computations/rates.js);
+      // a bill with no resolvable rate is left out of the mean, never counted as 0.
+      const _billKwhRates = bfr.map((b) => getStoredRate(b, 'kwh')).filter((rt) => rt > 0);
+      const _storedKwhRate = _billKwhRates.length ? _billKwhRates.reduce((s, rt) => s + rt, 0) / _billKwhRates.length : 0;
+      const _billKwRates = bfr.map((b) => getStoredKwRate(b)).filter((rt) => rt > 0);
+      const _storedKwRate = _billKwRates.length ? _billKwRates.reduce((s, rt) => s + rt, 0) / _billKwRates.length : 0;
       perfDemByYm[r.ym] = {
         demKW: bfr.length ? Math.max(...bfr.map((b) => parseFloat(b.demandKW || 0))) : 0,
         bilKW,
@@ -10874,8 +10693,8 @@ function renderPerfPane(pane, m, bills, incl) {
         kwhCostAmt,
         energyCostAmt,
         totalBillCost,
-        kwhRate: _storedKwhRate || (actualKwh > 0 && kwhCostAmt > 0 ? kwhCostAmt / actualKwh : 0),
-        kwRate: _storedKwRate || (bilKW > 0 && kwCostAmt + facKWCostAmt > 0 ? (kwCostAmt + facKWCostAmt) / bilKW : 0),
+        kwhRate: _storedKwhRate,
+        kwRate: _storedKwRate,
       };
     });
   }
@@ -10888,12 +10707,12 @@ function renderPerfPane(pane, m, bills, incl) {
         const bfr = bills.filter((b) => normMonth(b.start, b.end, incl, bills) === r.ym);
         const actGallons = r.usage;
         const actCost = r.cost;
-        const _storedRate = bfr.length ? parseFloat(bfr[0].totalPropaneRate) || 0 : 0;
+        const _storedRate = bfr.length ? getStoredRate(bfr[0], 'propane') : 0;
         if (actGallons > 0)
           gasCostByYm[r.ym] = {
             thermCostAmt: actCost,
             totalBillCost: actCost,
-            thermRate: _storedRate || (actCost > 0 ? actCost / actGallons : 0),
+            thermRate: _storedRate,
           };
       });
     } else {
@@ -10901,20 +10720,16 @@ function renderPerfPane(pane, m, bills, incl) {
         const bfr = bills.filter((b) => normMonth(b.start, b.end, incl, bills) === r.ym);
         if (!bfr.length) return;
         const actualTherms = bfr.reduce((s, b) => s + resolveGasUsageTherms(b), 0);
-        const thermCostAmt = bfr.reduce(
-          (s, b) => s + (parseFloat(b.gasCharge) || parseFloat(b.thermCost) || parseFloat(b.cost) || 0),
-          0,
-        );
-        const totalGasCost = bfr.reduce(
-          (s, b) => s + (parseFloat(b.gasCharge) || parseFloat(b.thermCost) || parseFloat(b.cost) || 0),
-          0,
-        );
-        const _storedGasRate = bfr.reduce((s, b) => s + (parseFloat(b.totalGasRate) || 0), 0) / bfr.length;
+        // getBillGasCost (computations/rates.js) — the ONE gas cost accessor (visible Gas Charge).
+        const thermCostAmt = bfr.reduce((s, b) => s + getBillGasCost(b), 0);
+        const totalGasCost = thermCostAmt;
+        const _billGasRates = bfr.map((b) => getStoredRate(b, 'gas')).filter((rt) => rt > 0);
+        const _storedGasRate = _billGasRates.length ? _billGasRates.reduce((s, rt) => s + rt, 0) / _billGasRates.length : 0;
         if (actualTherms > 0)
           gasCostByYm[r.ym] = {
             thermCostAmt,
             totalBillCost: totalGasCost,
-            thermRate: _storedGasRate || (thermCostAmt > 0 ? thermCostAmt / actualTherms : 0),
+            thermRate: _storedGasRate,
           };
       });
     }
@@ -10967,7 +10782,7 @@ function renderPerfPane(pane, m, bills, incl) {
       e.facKW = Math.max(e.facKW, parseBillNumber(b.facKW));
       // Granular charge fields
       e.demandCharge += parseBillNumber(b.demandCharge);
-      e.facilitiesCharge += parseBillNumber(b.facilitiesCharge || b.facKWCost);
+      e.facilitiesCharge += getBillFacKWCost(b);
       e.tdcCharge += parseBillNumber(b.tdcCharge);
       e.onPeakCost += parseBillNumber(b.onPeakCost);
       e.offPeakCost += parseBillNumber(b.offPeakCost);
@@ -10975,9 +10790,9 @@ function renderPerfPane(pane, m, bills, incl) {
       e.eerCharge += parseBillNumber(b.eerCharge);
       e.ptsCharge += parseBillNumber(b.ptsCharge);
       // Fallback aggregate fields
-      e.kwCost += parseBillNumber(b.kwCost);
-      e.facKWCost += parseBillNumber(b.facKWCost);
-      e.kwhCost += parseBillNumber(b.kwhCost);
+      e.kwCost += getBillKwCost(b);
+      e.facKWCost += getBillFacKWCost(b);
+      e.kwhCost += getBillKwhCost(b);
       e.customerCharge += parseBillNumber(b.customerCharge);
       e.rkvaCharge += parseBillNumber(b.rkvaCharge);
       e.taxExemptDelivery += parseBillNumber(b.taxExemptDelivery);
@@ -11262,10 +11077,6 @@ function renderPerfPane(pane, m, bills, incl) {
     typeof computeAnomalyScores === 'function' ? computeAnomalyScores(m, allRows, blRows, bills, incl) : {};
   const _anomalyRateMap = typeof detectRateChanges === 'function' ? detectRateChanges(m, bills, incl) : {};
   const _anomalyBaseloadTrend = typeof getBaseloadTrend === 'function' ? getBaseloadTrend(m, allRows, blRows) : null;
-  // Attach transient _anomaly flag to each bill object (not persisted)
-  if (typeof attachAnomalyToBills === 'function') {
-    attachAnomalyToBills(_anomalyScoreMap, bills, incl);
-  }
   const anomalySection =
     typeof anomalyAlertHTML === 'function' && filteredPostRows.length
       ? '<div style="margin-bottom:14px">' +

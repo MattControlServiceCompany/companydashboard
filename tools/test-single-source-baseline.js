@@ -95,6 +95,7 @@ const fns = [
   loadFn(REPO + '/lib/formatting.js', '_fmtUSD'),
   loadFn(REPO + '/lib/formatting.js', 'parseBillNumber'),
   loadFn(REPO + '/lib/formatting.js', 'parseBillNumberOrZero'),
+  loadFn(REPO + '/lib/formatting.js', 'billValueOrNull'),
   loadFn(REPO + '/app/report-engine.js', '_rptUnit'),
   loadFn(REPO + '/app/report-engine.js', 'rptBuildBaselineDataTable'),
 ];

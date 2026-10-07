@@ -414,8 +414,8 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
             ? Math.max(...bfr.map((b2) => parseBillNumberOrZero(b2.billedKW) || parseBillNumberOrZero(b2.demandKW)))
             : 0;
           const blExpKW = meterUnitsByYM[r.ym] ? meterUnitsByYM[r.ym].kw + actBilKW : blDemKWByCalMo[calMo] || 0;
-          const kwhCostAmt = bfr.reduce((s, b2) => s + parseBillNumberOrZero(b2.kwhCost), 0);
-          const kwCostAmt = bfr.reduce((s, b2) => s + parseBillNumberOrZero(b2.kwCost), 0);
+          const kwhCostAmt = bfr.reduce((s, b2) => s + getBillKwhCost(b2), 0);
+          const kwCostAmt = bfr.reduce((s, b2) => s + getBillKwCost(b2), 0);
           // getBillFacKWCost (computations/rates.js) — the ONE accessor for Facilities kW
           // Cost (2026-09-23 single-source fix); never read b2.facKWCost/facilitiesCharge directly.
           const facKWCostAmt = bfr.reduce((s, b2) => s + getBillFacKWCost(b2), 0);
@@ -461,7 +461,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
         } else {
           const actTherms = actUsage;
           const actThermCost = bfr.reduce(
-            (s, b2) => s + (parseFloat(b2.gasCharge) || parseFloat(b2.thermCost) || parseFloat(b2.cost) || 0),
+            (s, b2) => s + getBillGasCost(b2), // the ONE gas cost accessor (computations/rates.js)
             0,
           );
 

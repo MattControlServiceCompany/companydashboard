@@ -309,7 +309,7 @@ function parseBillCsv(text, fname) {
       row.billedKW = g(iBilledKW);
       row.facKW = g(iFacKW);
       row.demandCharge = g(iKwCost); // schema: 'Billed kW Charge'
-      row.facKWCost = g(iFacKWCst); // schema fallbackKey of 'facilitiesCharge'
+      row.facilitiesCharge = g(iFacKWCst); // schema: 'Facilities Charge' (the one written name)
       row.onPeakCost = g(iKwhCst); // schema: 'Energy On-Peak Charge' — CONDENSED_CATEGORIES.Electric
       // sums onPeakCost+offPeakCost for "kWh Cost $", so a single non-split energy
       // cost column is fully represented by onPeakCost alone.
@@ -334,17 +334,6 @@ function parseBillCsv(text, fname) {
       // total-cost column (full-schema export re-import) when one is actually detected.
       const gTotCst = g(iTotCst);
       row.totalCost = gTotCst != null ? gTotCst : row.gasCharge;
-      // Derive totalGasRate ($/Therm) directly at import time. getStoredRate('gas') in the
-      // shared computations/rates.js only checks PascalCase bill.NaturalGasTherms/NaturalGasCCF
-      // (the PDF-extractor's field-name convention) — it does NOT recognize the camelCase
-      // naturalGasTherms/naturalGasCCF keys BILL_SCHEMA (and this import) uses, so its
-      // charge/usage fallback silently returns 0 for CSV-imported bills. That's a pre-existing
-      // gap in a shared file outside this fix's scope (app/csv-import.js only) — compute the
-      // rate here instead so the Gas Rates section shows a real value rather than blank.
-      const gThermsForRate = resolveGasUsageTherms(row);
-      if (gThermsForRate > 0 && row.gasCharge > 0) {
-        row.totalGasRate = Math.round((row.gasCharge / gThermsForRate) * 100000) / 100000;
-      }
     } else {
       // Water / Sewer / Stormwater / Propane — write the exact BILL_SCHEMA key per
       // commodity so the schema-driven display reads real values instead of the
@@ -404,18 +393,8 @@ function parseBillCsv(text, fname) {
       }
     });
 
-    // Sync facKWCost <-> facilitiesCharge at write time (2026-09-23): BILL_SCHEMA.Electric
-    // documents 'facilitiesCharge' as the modern key with 'facKWCost' as its legacy fallbackKey.
-    // Every reader now goes through the single getBillFacKWCost() accessor (computations/
-    // rates.js), which already resolves facilitiesCharge -> facKWCost — so this sync is a
-    // belt-and-suspenders write-time convenience (keeps both names populated for any code
-    // outside the accessor's reach, e.g. XLSX/Word export field lookups), not a correctness
-    // requirement for the app's own cost math.
-
-    if (isElec) {
-      if (row.facKWCost == null && row.facilitiesCharge != null) row.facKWCost = row.facilitiesCharge;
-      else if (row.facilitiesCharge == null && row.facKWCost != null) row.facilitiesCharge = row.facKWCost;
-    }
+    // Facilities kW Cost is written under ONE name, facilitiesCharge (the BILL_SCHEMA key). The old
+    // facKWCost copy is not written any more (2026-10-05 audit step 7); getBillFacKWCost reads both.
 
     // Sync gas usage to canonical therms (Fix [therms-unit-2026-06-22] in saveBillRow(),
     // mirrored here) so CSV-imported gas bills populate row.therms — the field
@@ -554,9 +533,9 @@ function showBillCsvPreview(rows, m, fname, warnings) {
       const _dc2 = (v) =>
         v != null ? '$' + (+v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
       if (isElec)
-        cells = `<td>${r.kwh != null ? (+r.kwh).toLocaleString() : '—'}</td><td>${_d(r.demandKW)}</td><td>${_d(r.facKW)}</td><td>${_dc(r.demandCharge)}</td><td>${_dc(r.facKWCost)}</td><td>${_dc2(r.totalCost)}</td>`;
+        cells = `<td>${r.kwh != null ? (+r.kwh).toLocaleString() : '—'}</td><td>${_d(r.demandKW)}</td><td>${_d(r.facKW)}</td><td>${_dc(r.demandCharge)}</td><td>${_dc(getBillFacKWCost(r))}</td><td>${_dc2(r.totalCost)}</td>`;
       else if (isGas) {
-        const thermsVal = resolveGasUsageTherms(r) || null;
+        const thermsVal = resolveGasUsageThermsOrNull(r);
         cells =
           '<td>' + (thermsVal != null ? (+thermsVal).toLocaleString() : '—') + '</td><td>' + _dc(r.gasCharge) + '</td>';
       } else {
@@ -864,7 +843,7 @@ function renderBillRow(row, m, incl, allBills, cols, rowNum) {
   // those rows. viewSavedPDF already handles an empty first arg gracefully.
   const pdfLookupId = row.pdfBillId || row.id || '';
   const pdfBtn =
-    (row.hasPDF || row.pdfKey) && (row.pdfBillId || row.pdfKey)
+    billHasPdf(row) && (row.pdfBillId || row.pdfKey)
       ? `<button class="btn-edit" onclick="viewSavedPDF('${pdfLookupId}',${row.pdfPageStart || 'null'},${row.pdfPageEnd || 'null'},'${row.pdfKey || ''}')" title="View source PDF" style="color:var(--accent)">📄</button>`
       : '';
   // Actions column is always the last col and is right-sticky.
@@ -1034,7 +1013,7 @@ function renderBillRow(row, m, incl, allBills, cols, rowNum) {
       typeof _gasUsageDisplay === 'function'
     ) {
       const resolved = _gasUsageDisplay(row, c.entry.gasUnit);
-      if (resolved) {
+      if (resolved !== null) {
         raw = resolved;
         _gasFallbackApplied = true;
       }
@@ -1781,17 +1760,23 @@ function _billSchemaFor(commodity) {
 // legacy rows that were saved before the field was renamed.
 function _billReadValue(row, entry) {
   if (!row) return '';
-  if (entry.key === 'totalKwhRate') {
-    const rate = getStoredRate(row, 'kwh');
-    if (rate > 0) return rate.toFixed(5);
-  }
+  // Rate columns are never read from the row: getStoredRate / getStoredKwRate (computations/rates.js)
+  // compute them from the bill's own cost and usage, so the Bills table can never show a stale rate.
+  const _RATE_KEY_TYPE = {
+    totalKwhRate: 'kwh',
+    totalGasRate: 'gas',
+    totalWaterRate: 'water',
+    totalSewerRate: 'sewer',
+    totalPropaneRate: 'propane',
+    totalStormwaterRate: 'stormwater',
+  };
   if (entry.key === 'totalKwRate') {
     const rate = getStoredKwRate(row);
-    if (rate > 0) return rate.toFixed(5);
+    return rate > 0 ? rate.toFixed(5) : '';
   }
-  if (entry.key === 'totalGasRate') {
-    const rate = getStoredRate(row, 'gas');
-    if (rate > 0) return rate.toFixed(5);
+  if (_RATE_KEY_TYPE[entry.key]) {
+    const rate = getStoredRate(row, _RATE_KEY_TYPE[entry.key]);
+    return rate > 0 ? (entry.key === 'totalStormwaterRate' ? rate.toFixed(2) : rate.toFixed(5)) : '';
   }
   const direct = row[entry.key];
   if (direct !== undefined && direct !== null && direct !== '' && direct !== 'null') return direct;
@@ -2136,7 +2121,7 @@ function showBillSplitPanel(mid, billId, evt) {
     : document.getElementById('udMeterWorkspace');
   if (!pane) return;
 
-  const pdfAvail = (row.hasPDF || row.pdfKey) && (row.pdfBillId || row.pdfKey);
+  const pdfAvail = billHasPdf(row) && (row.pdfBillId || row.pdfKey);
   const pdfLookupId = row.pdfBillId || row.id || '';
   const period = (row.start ? fmtDate(row.start) : '?') + ' → ' + (row.end ? fmtDate(row.end) : '?');
 
@@ -2441,24 +2426,9 @@ function openBillModal(mid, editRowId) {
   if (commKey === 'electric') {
     body += `<div style="display:flex;justify-content:flex-end;margin-top:8px"><button class="btn btn-ghost btn-sm" type="button" onclick="billAutoSum()" title="Sum individual line items into Total">Σ Auto-Sum</button></div>`;
   }
-  // Legacy hidden inputs — preserve old aggregate fields on existing rows
-  const LEGACY_PASSTHROUGH = [
-    'kwCost',
-    'facKWCost',
-    'kwhCost',
-    'otherCost',
-    'taxCost',
-    'renewableCharge',
-    'solarCredit',
-    'therms',
-    'thermCost',
-    'usage',
-    'cost',
-  ];
-  for (const k of LEGACY_PASSTHROUGH) {
-    const v = row && row[k] != null ? String(row[k]).replace(/"/g, '&quot;') : '';
-    body += `<input type="hidden" id="bl-${k}" value="${v}">`;
-  }
+  // No hidden inputs (2026-10-05 duplicate-bill-fields audit step 8): the modal shows exactly the
+  // BILL_SCHEMA fields and saves exactly those. An edit merges into the existing row
+  // (Object.assign in saveBillRow), so a field this modal does not show is never lost.
   document.getElementById('billModalBody').innerHTML = body;
   // Auto-populate End Date when Start Date changes (only if End Date is empty)
   const _blStartInp = document.getElementById('bl-start');
@@ -2656,11 +2626,8 @@ function saveBillRow() {
   const row = udBillEditId ? m.bills.find((r) => r.id === udBillEditId) : null;
   const g = (id) => _billStripCurrency(document.getElementById(id)?.value || '');
   // Update 82: schema-driven writer. Iterates BILL_SCHEMA[commodity] and
-  // reads each field from `bl-<key>` input. Legacy aggregate fields
-  // (kwCost, facKWCost, kwhCost, otherCost, taxCost, renewableCharge,
-  // solarCredit, therms, thermCost, usage, cost) are round-tripped via
-  // hidden inputs populated by openBillModal so existing saved rows
-  // don't lose data.
+  // reads each field from `bl-<key>` input. Nothing else is written: the old
+  // hidden round trip of stored copies is gone (2026-10-05 audit step 8).
   const schema = _billSchemaFor(m.commodity);
   const data = {};
   for (const entry of schema) {
@@ -2678,24 +2645,6 @@ function saveBillRow() {
     }
     if (v !== '') data[entry.key] = v;
     else if (entry.key === 'start' || entry.key === 'end') data[entry.key] = '';
-  }
-  // Legacy passthroughs — preserve any values already on the row.
-  const LEGACY_PASSTHROUGH = [
-    'kwCost',
-    'facKWCost',
-    'kwhCost',
-    'otherCost',
-    'taxCost',
-    'renewableCharge',
-    'solarCredit',
-    'therms',
-    'thermCost',
-    'usage',
-    'cost',
-  ];
-  for (const k of LEGACY_PASSTHROUGH) {
-    const v = g('bl-' + k);
-    if (v !== '') data[k] = v;
   }
   // Bug #133 / Fix [therms-unit-2026-06-22]: sync gas usage to canonical therms (Therms).
   // The one resolver (resolveGasUsageTherms) does the unit math: Therms, then CCF, then MMBtu.

@@ -262,12 +262,17 @@ assert(
 );
 
 // Change a bill, the rate (math input) and add an override; edit Q2 as well.
+// (Rates are computed on read since 2026-10-05: $/therm = gasCharge / therms, never the stored
+// totalGasRate. So an edit keeps gasCharge consistent with the $1.00 fixture rate, and the
+// "rate" edit is a gasCharge edit.)
 billOf(meter1, "2025-02-01").therms = 1500;
 billOf(meter1, "2025-02-01").usage = 1500;
-billOf(meter1, "2025-03-01").totalGasRate = 2.5;
+billOf(meter1, "2025-02-01").gasCharge = 1500;
+billOf(meter1, "2025-03-01").gasCharge = 800 * 2.5;
 meter1.baseline.costSavOverrides = { "2025-01": 12345 };
 billOf(meter2, "2025-04-01").therms = 100;
 billOf(meter2, "2025-04-01").usage = 100;
+billOf(meter2, "2025-04-01").gasCharge = 100;
 const cur1 = perBldg();
 assert(
   near(cur1["b-syn-1"]["2025-01"], 12345),
