@@ -445,14 +445,18 @@ const DB = (() => {
     if (!ownerless.length) return;
     _syncQueue = _syncQueue.filter((e) => !!e.owner);
     ownerless.forEach((e) => {
-      _appendConflictArchive({
+      const archived = {
         key: e.key,
         reason: 'queue-entry-no-owner',
         losingSide: 'local',
         losingValue: e.deleted ? null : e.value,
         losingDeleted: !!e.deleted,
         losingVersion: typeof e.baseVersion === 'number' ? e.baseVersion : null,
-      });
+      };
+      // A per-user value of unknown author is archived with NO owner: shown to nobody, never sent.
+      // (Not under whoever happens to be signed in at load.) Shared keys keep the default owner.
+      if (_isPerUserKey(e.key)) archived.owner = { id: null, email: null, hintId: null };
+      _appendConflictArchive(archived);
       delete _replicaVersions[e.key];
       _persistStamp(e.key); // the merge base (collections) is kept for the next hydration
     });

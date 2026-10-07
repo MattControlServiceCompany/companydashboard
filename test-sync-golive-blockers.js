@@ -1487,6 +1487,27 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     assert.strictEqual(L.DB.getConflictArchiveAll, undefined, 'no unfiltered reader in the public API');
   });
 
+  // ---- re-review F4: an ownerless per-user queue entry is not archived under the signed-in user
+  await t('F4: ownerless per-user entry is archived with no owner: hidden, never sent', async () => {
+    const puts = [];
+    const L = loadReal({
+      userId: 'u1',
+      tokenFetch: tokUser('u1'),
+      kvFetch: async (u, o) => {
+        if (o && o.method === 'PUT') puts.push(JSON.parse(o.body).key);
+        return ok([]);
+      },
+    });
+    L.store.ch_sync_queue = JSON.stringify([
+      { id: 'o1', key: 'ch_theme', value: 'A-old-theme', deleted: false, baseVersion: null, ts: 1 },
+    ]);
+    await L.DB.warmCache();
+    await tick(30);
+    assert.ok(!JSON.stringify(L.DB.getConflictArchive()).includes('A-old-theme'), 'not shown to the signed-in user');
+    assert.ok(JSON.stringify(L.DB.getConflictArchiveOthers()).includes('A-old-theme'), 'value kept in storage');
+    assert.ok(!puts.some((k) => /ch_theme/.test(k)), 'never sent');
+  });
+
   // ---- fix 3: a failed token refresh ends the session only when the server REFUSED it
   const refreshCase = async (tokenFetch) => {
     const L = loadAuth(tokenFetch);
