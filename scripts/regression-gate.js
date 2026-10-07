@@ -46,8 +46,8 @@ const DOWNLOADS = 'C:/Users/Matt Miller/Downloads';
 const DEFAULT_ORACLE = 'C:/Users/Matt Miller/AI/_context/reference/known-good-values/regression-oracle.json';
 
 // ---- playwright: no node_modules in the repo. Resolve from CH_PLAYWRIGHT_NODE_MODULES (default: the
-// temp install on disk), then this tree's own install. The same dir goes to child tests as NODE_PATH. ----
-const PW_MODULES = process.env.CH_PLAYWRIGHT_NODE_MODULES || 'C:/Users/Matt Miller/AI/_context/temp/2026-10-02-point-count-review/node_modules';
+// permanent copy in _context/tools/playwright-runtime), then this tree's own install. The same dir goes to child tests as NODE_PATH. ----
+const PW_MODULES = process.env.CH_PLAYWRIGHT_NODE_MODULES || 'C:/Users/Matt Miller/AI/_context/tools/playwright-runtime/node_modules';
 function resolvePlaywright() {
   const dirs = [PW_MODULES, path.join(REPO_ROOT, 'node_modules')];
   for (const d of dirs) {
@@ -350,6 +350,9 @@ async function main() {
   if (!fs.existsSync(oraclePath)) throw new Error('oracle not found: ' + oraclePath + ' (lives outside the repo)');
   const oracle = JSON.parse(fs.readFileSync(oraclePath, 'utf8'));
 
+  // Temp-leak guard: every entry in these dirs before the run; anything new after the tests = FAIL + delete.
+  const TMP_DIRS = ['C:/Temp'];
+  const tmpBefore = TMP_DIRS.map((d) => new Set(fs.readdirSync(d)));
   const work = path.join('C:/Temp', 'regression-gate-' + Date.now());
   fs.mkdirSync(work, { recursive: true });
   const dataCopy = path.join(work, 'backup-copy.json');
@@ -626,11 +629,13 @@ async function main() {
     'tools/test-ocr-hidden-tab.js': 'needs the internet (pdf.js from cdnjs) and crashes on main',
     'tools/test-report-header-overflow.js': 'needs an external temp folder (2026-09-24-report-headers); crashes on main',
     'test-sync-golive-blockers.js': 'hangs more than 180 s on main',
+    'test-broadmoor-eca-split.mjs': 'hangs more than 120 s (timeout) on main',
+    'test-kwh-corroboration.mjs': 'fails on main: app/db.js load error (RV_PREFIX) then calcDays is not defined',
   };
   const testFiles = [];
   ['tools', '.'].forEach((d) => {
     fs.readdirSync(path.join(REPO_ROOT, d))
-      .filter((f) => /^test-.*\.js$/.test(f))
+      .filter((f) => /^test-.*\.(js|mjs)$/.test(f))
       .forEach((f) => testFiles.push(d === '.' ? f : d + '/' + f));
   });
   testFiles.sort();
@@ -658,6 +663,21 @@ async function main() {
     });
   const queue = toRun.slice();
   await Promise.all([1, 2, 3].map(async () => { while (queue.length) await runTest(queue.shift()); }));
+
+  // ---- temp-leak guard: the run (gate + every test) must leave nothing new in C:/Temp ----
+  let leaked = 0;
+  TMP_DIRS.forEach((d, i) => {
+    fs.readdirSync(d)
+      .filter((e) => !tmpBefore[i].has(e))
+      .forEach((e) => {
+        leaked++;
+        // Delete only timestamp-named entries (profiles, scratch dirs): a plain name may belong to another session.
+        const del = /[0-9]{12,}/.test(e);
+        add('temp-leak', d + '/' + e, 'FAIL', del ? 'left behind by the run; deleted by the gate' : 'new entry during the run (not deleted: no timestamp in name)');
+        if (del) fs.rmSync(path.join(d, e), { recursive: true, force: true });
+      });
+  });
+  if (!leaked) add('temp-leak', 'no new entries in ' + TMP_DIRS.join(', '), 'PASS', '');
 
   // ---- report ----
   const groups = {};
