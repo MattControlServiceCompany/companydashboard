@@ -300,8 +300,8 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     await tick(20);
     check('3 Netlify signed-out: 0 PUTs', srv.puts.length === 0, srv.puts.length + ' PUTs');
     check(
-      '3 Netlify signed-out: mode off, nothing queued',
-      ctx.window.CH_AUTH.backendMode() === 'off' && DB.getQueueDepth() === 0,
+      '3 Netlify signed-out: mode off, the 3 edits wait in the durable queue (B1b, commit 87f476f6)',
+      ctx.window.CH_AUTH.backendMode() === 'off' && DB.getQueueDepth() === 3,
       ctx.window.CH_AUTH.backendMode() + ' q=' + DB.getQueueDepth(),
     );
   });
@@ -544,15 +544,18 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
       arch.some((e) => e.key === 'en_budget_a' && same(e.losingValue, { n: 'SIGNED-OUT-EDIT' })),
       'archive=' + JSON.stringify(arch.map((e) => e.key)),
     );
+    // B1b (commit 87f476f6): the signed-out edit is sent at its old version on sign-in. The server refuses it
+    // (409), so the other device's row is never overwritten. The user then decides in the conflict dialog.
+    const sent = srv.puts.slice(putsBefore).map((x) => JSON.parse(x));
     check(
-      '8 ...server value applied, 0 PUTs',
-      same(b3.DB.get('en_budget_a'), { n: 'OTHER-DEVICE' }) && srv.puts.length === putsBefore,
-      '',
+      '8 ...signed-out edit sent as ONE version-checked PUT (base version 1), refused by the server',
+      sent.length === 1 && sent[0].key === 'en_budget_a' && sent[0].baseVersion === 1,
+      JSON.stringify(sent),
     );
     check(
-      '8 ...toast points to the archive',
-      b3.toasts.some((t) => /conflict archive/.test(t)),
-      JSON.stringify(b3.toasts),
+      '8 ...other device value on the server is not overwritten',
+      same(srv.rows.get('en_budget_a').value, { n: 'OTHER-DEVICE' }) && srv.rows.get('en_budget_a').version === 9,
+      JSON.stringify(srv.rows.get('en_budget_a')),
     );
   });
 
