@@ -1199,9 +1199,10 @@ function _downloadJson(filename, obj) {
     URL.revokeObjectURL(url);
   }, 1500);
 }
+// Text AND attribute safe: encodes & < > " ' so it is safe inside title="..." and title='...' too.
 function _restoreEsc(s) {
-  return String(s).replace(/[&<>"]/g, function (c) {
-    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+  return String(s).replace(/[&<>"']/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
   });
 }
 function _restoreStyle() {
