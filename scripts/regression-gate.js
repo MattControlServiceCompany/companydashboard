@@ -625,10 +625,7 @@ async function main() {
   // ---- standalone feature tests: every tools/test-*.js and repo-root test-*.js, one child process each ----
   // Excluded = fails or hangs on main today (stale tests) or needs the internet. Each is listed with its reason
   // and shown as INFO so it is never invisible. Remove an entry when the test is fixed.
-  const TEST_EXCLUDE = {
-    'test-kwh-corroboration.mjs':
-      'fails on main: 2 of 47 checks (acceptance on the real April 2026 Louisburg OCR file): bill 3 account number loses its first digit (9 digits, expected 10) and bill 2 OffPeakKWh stays 1912.7998 (expected 1932.8056). Passes at commit aebba42b. Needs a site fix.',
-  };
+  const TEST_EXCLUDE = {};
   const testFiles = [];
   ['tools', '.'].forEach((d) => {
     fs.readdirSync(path.join(REPO_ROOT, d))

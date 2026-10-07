@@ -303,3 +303,5 @@ Nothing is deleted by this restore. On a record in both, the backup value wins; 
 
 Any commit that changes these facts must update this file in the same commit.
 This includes a new or changed function, schedule, env var name, timer, host, or sign-in rule.
+
+- Evergy bill reading (PDF/OCR import; no schedule, no env var). Account number: `_evgAccountsIn` / `_evgPickAccount` (app/energy-savings.js, near `_EVG_ADDR`) are the one reader used by `extractAll`, `extract`, `_acctForIdx` and `_pageOwnAccts`. They keep only the candidates of the longest digit length, so an OCR-damaged first digit (9 digits) loses to the clean 10-digit line. On/Off-Peak kWh: `_decideOnOffPeakKWh` (app/bill-analysis.js, about line 1688) defers to the kWhConsumed-derived path when a leg has no readable rate line, kWhConsumed is not held, it agrees with the charge-basis total within 0.05 kWh, and exactly one leg self-verifies. How to check: `node test-kwh-corroboration.mjs` (expect all assertions pass).

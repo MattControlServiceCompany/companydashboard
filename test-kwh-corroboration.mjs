@@ -131,6 +131,7 @@ function loadRealPipeline() {
       'this.__decideQuantityCorrection = typeof _decideQuantityCorrection !== "undefined" ? _decideQuantityCorrection : null;',
       'this.__gatherKwhWitnesses = typeof _gatherKwhWitnesses !== "undefined" ? _gatherKwhWitnesses : null;',
       'this.__decideOnOffPeakKWh = typeof _decideOnOffPeakKWh !== "undefined" ? _decideOnOffPeakKWh : null;',
+      'this.__evgAccountsIn = typeof _evgAccountsIn !== "undefined" ? _evgAccountsIn : null;',
     ].join('\n'),
     ctx,
     { filename: 'export-tags.js' },
@@ -143,6 +144,7 @@ function loadRealPipeline() {
     decideQuantityCorrection: ctx.__decideQuantityCorrection,
     gatherKwhWitnesses: ctx.__gatherKwhWitnesses,
     decideOnOffPeakKWh: ctx.__decideOnOffPeakKWh,
+    evgAccountsIn: ctx.__evgAccountsIn,
     skipped,
   };
 }
@@ -399,6 +401,22 @@ async function main() {
       !!d.gate,
       'decideOnOff: changeover trap — both legs self-verify but disagree with the (corrupted) total — gate, don\'t guess',
     );
+  }
+
+  // ── _evgAccountsIn (synthetic text): OCR-damaged first digit must not win ──
+  {
+    const page = 'Account Number : \u00a7123456789\nBilling Date: 01/01/2026\nAccount Number : 0123456789\n';
+    assertEqual(
+      JSON.stringify(X.evgAccountsIn(page)),
+      JSON.stringify(['0123456789']),
+      'evgAccountsIn: damaged 9-digit line is dropped, clean 10-digit account kept',
+    );
+    assertEqual(
+      JSON.stringify(X.evgAccountsIn('Account Number : 1111111111\nAccount Number : 2222222222\n')),
+      JSON.stringify(['1111111111', '2222222222']),
+      'evgAccountsIn: two real accounts on one text are both kept, in order',
+    );
+    assertEqual(JSON.stringify(X.evgAccountsIn('no account here')), JSON.stringify([]), 'evgAccountsIn: none found');
   }
 
   // ── ACCEPTANCE TEST: Matt's real 4-bill Louisburg April 2026 extraction ──
