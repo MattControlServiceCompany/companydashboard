@@ -1,7 +1,7 @@
 # CompanyHub Operations Reference
 
 Facts about hosts, background jobs, timers, sign-in, and Supabase.
-Line numbers are from branch fix/2026-10-06-auth-identity (2026-10-06); sections 1, 2 and 5 from commit 6eb7a5f9 (main).
+Line numbers are from branch fix/2026-10-06-auth-identity at its head after the 2026-10-06 re-review fixes; sections 1, 2 and 5 from commit 6eb7a5f9 (main).
 No secrets are in this file. Only env var NAMES are listed.
 
 ## 1. Hosts
@@ -37,12 +37,12 @@ How to check that a function works:
 
 | Timer | What it does | Interval | When it stops |
 |---|---|---|---|
-| Queue drain (app/db.js:2454, const at :30) | Retries unsynced data writes through `_putWithAuth` (one refresh-and-retry on 401, see section 4) | 15 s | Never (page life). Also runs on `online` and after sign-in (`chAuthStateChanged`). Sends nothing while sync is off. |
-| Manifest poll (app/db.js:2456, const at :29; `_pollManifestForChanges` :2261) | Checks for data changes from the other user through `CH_AUTH.withAuthRetry` (:2265). Changed keys are applied by `_hydrate` (merge, archive what loses), then `dbRemoteApplied` (:2299) makes app/sync-ui.js reload the page when it is safe (`_safeToReload` :335-347: nobody typing, no open dialog, nothing unsent); keys it could not apply show the "changed, refresh" banner. | 60 s | Never. Also runs on window `focus`. Quiet while sync is off. |
+| Queue drain (app/db.js:2532, const at :30) | Retries unsynced data writes through `_putWithAuth` (one refresh-and-retry on 401, see section 4) | 15 s | Never (page life). Also runs on `online` and after sign-in (`chAuthStateChanged`). Sends nothing while sync is off. |
+| Manifest poll (app/db.js:2534, const at :29; `_pollManifestForChanges` :2333) | Checks for data changes from the other user through `CH_AUTH.withAuthRetry` (:2337). Changed keys are applied by `_hydrate` (merge, archive what loses), then `dbRemoteApplied` (:2371) makes app/sync-ui.js reload the page when it is safe (`_safeToReload`, app/sync-ui.js:349: nobody typing, no open dialog, nothing unsent); keys it could not apply show the "changed, refresh" banner. | 60 s | Never. Also runs on window `focus`. Quiet while sync is off. |
 | PDF queue drain (app/core.js `_pdfDrainQueueOnce`, const at :110) | Retries unsynced PDF writes through `CH_AUTH.withAuthRetry` (`_pdfWithAuthRetry`); sends only the verified user's own entries (`DB.entryBelongsTo`). The drain stops at once when the signed-in user changes during it (`_pdfUserChanged`, checked before each entry and after each await, same rule as the db.js drain): nothing more is sent, removed or stamped for the other user. | 15 s | Never. Also runs on `online` and on sign-in (`chAuthStateChanged`). |
-| Tombstone retry (app/db.js:966) | Retries failed delete sync, one-shot, with back-off | Variable delay | Clears when it fires or is replaced (db.js:965). Skips if sync is off. |
-| Session refresh (app/ch-auth.js:334, const at :49) | Refreshes the sign-in token if near expiry | 5 min | Never. Does not start when sync is off (ch-auth.js:331). |
-| Version check (app/report-engine.js:12518) | Reloads page state when a new version is live | 5 min | Never. Also runs when the tab becomes visible. |
+| Tombstone retry (app/db.js:1134) | Retries failed delete sync, one-shot, with back-off | Variable delay | Clears when it fires or is replaced (db.js:1133). Skips if sync is off. |
+| Session refresh (app/ch-auth.js:366, const at :49) | Refreshes the sign-in token if near expiry | 5 min | Never. Does not start when sync is off (ch-auth.js:363). |
+| Version check (app/report-engine.js:12516, `_checkForVersionUpdate` :12528) | Looks for a new version and shows an update bar with a Reload button. It never reloads the page by itself (:12576) | 5 min | Never. Also runs when the tab becomes visible. |
 | Clock (app/site-functions.js:34; site-ui.js:774) | Updates the clock text | 15 s | Never. |
 | Bill dump (app/bill-analysis.js:12768) | Copies the open bill to localStorage for debug | 2 s | Never. |
 | OCR abort poll (app/bill-analysis.js:13989) | Checks the abort flag and OCR time budget | 250 ms | `clearInterval` when OCR call ends (:14011,:14015). |
@@ -52,16 +52,16 @@ Many short `setTimeout` calls (toasts, URL cleanup, UI yield) are one-shot. They
 
 ## 4. Sign-in and allowlist
 
-- Sign-in screen: index.html. It calls `CH_AUTH.signIn(email, password)` (app/ch-auth.js:190). Supabase Auth checks the password.
-- Sync mode is `on` only on exactly cscdashboard.netlify.app and only when signed in. Every other host is `off`. (app/ch-auth.js:60-87)
+- Sign-in screen: index.html. It calls `CH_AUTH.signIn(email, password)` (app/ch-auth.js:198). Supabase Auth checks the password.
+- Sync mode is `on` only on exactly cscdashboard.netlify.app and only when signed in. Every other host is `off`. (app/ch-auth.js:70-95; `_isNetlifyHost` :70, `backendMode` :82)
 - Server check: every kv-sync and pdf-sync request must carry a valid Supabase token (checked against Supabase JWKS).
   The email in the token must be in env var AUTHORIZED_USERS (comma-separated list). (kv-sync.js:134-163, 125-129)
 - To add or remove a user: change AUTHORIZED_USERS in Netlify site settings, then redeploy.
 - Demo login is off on the sync host. The button is hidden and `loginDemo()` returns at once. (index.html:1188-1190, 1241-1243)
-- Startup: app/db.js waits for the first token refresh, `CH_AUTH.ready()`, for at most 8 s (`_authReady`, db.js:1978-1993)
+- Startup: app/db.js waits for the first token refresh, `CH_AUTH.ready()`, for at most 8 s (`_authReady`, db.js:2051-2059)
   before its first server request, so a stored token that already expired is never sent. A slower refresh does not block
   loading from the local copy.
-- The ONE rule for a server answer of 401/403 is `CH_AUTH.withAuthRetry` (app/ch-auth.js:295; `_onServerRefusal` :272):
+- The ONE rule for a server answer of 401/403 is `CH_AUTH.withAuthRetry` (app/ch-auth.js:327; `_onServerRefusal` :297):
   401 = refresh the token once and send the same request again; a second 401, or any 403, ends the session (sync off,
   signed-out bar, every timer quiet). A refresh that comes back as a different user never retries the request. The
   manifest poll, the data queue drain, the live write and the PDF queue drain all go through it.
@@ -107,7 +107,7 @@ Many short `setTimeout` calls (toasts, URL cleanup, UI yield) are one-shot. They
 - Version stamps are one local record per key, `ch_rv::<key>` = `{ stamp: {version, hash}, base? }` (app/db.js
   `_persistStamp`, the one writer; `_setSynced` the one stamper). A tab writes only the record of the key it synced, so a
   second tab can never overwrite the first tab's stamps (the old whole-map `ch_replica_state`/`ch_sync_base` are split once
-  on the first load and removed). These records never sync and are never in a backup (`RestoreMerge.isEngineKey`).
+  on the first load and removed). These records never sync and are never in a backup (the one prefix is `SyncClassification.RV_PREFIX`; `isNeverBackupKey` covers it for `siteBackup` and `RestoreMerge.isEngineKey`).
   How to check: DevTools, Application, IndexedDB, CompanyHub store: keys `ch_rv::en_projects` etc.; no `ch_replica_state`.
 - Auth/session keys (`ch_sb_session`, the refresh token) are never in a backup file and a restore never writes them. The one
   list is the `neverBackup` entries of `PER_USER_CH_ENGINE_EXCLUSIONS` (app/sync-classification.js), read through
@@ -125,8 +125,21 @@ Many short `setTimeout` calls (toasts, URL cleanup, UI yield) are one-shot. They
   Another user's per-user entry, or one saved by a build before owner tags, stays in storage, is never shown and is never
   removed by this user (`clearConflictArchive` removes only entries the user can see). app/sync-ui.js redraws the link and
   closes the panel on `chAuthStateChanged`. How to check: node test-sync-golive-blockers.js, the "7c:" tests.
-  Reset (`siteResetData`) is the one exception to the visibility rule: before it wipes, it saves ALL stored entries with their
-  owner tags (`DB.getConflictArchiveAll`), so no other user's entry is lost with no copy. How to check: the "(f):" test.
+  Reset (`siteResetData`, site-functions.js) exports only the entries this user can see (`DB.getConflictArchive`), never
+  another user's. The wipe KEEPS the entries this user cannot see (`DB.getConflictArchiveOthers`, written back after
+  `DB.clear()`): they are neither exported nor deleted. The backup (`DB.getAllForExport`, then `siteBackup`) holds the same
+  visible list only, and never `ch_sync_queue` (unsent edits may belong to another user). An old per-user queue entry with no
+  owner tag is archived with NO owner (`_retireOwnerlessEntries`): shown to nobody, never sent, kept. How to check:
+  node test-sync-golive-blockers.js, the "F2/F3:" and "F4:" tests.
+- Identity guards on the write path (app/db.js). `_sendKvPut` is the ONE sender: if the edit's owner id is not the signed-in
+  user at send time it returns `stale-identity` (no PUT, no stamp), so a value waiting behind another PUT or a hash check is
+  never sent with the next user's token or key. A successful live write (`_writeOne`) removes older queued entries for the
+  same key and owner, so the drain cannot replay an old value. A live server row with no value (or null) is unreadable:
+  `_reconcileIncoming` keeps the local copy and its stamp and raises `dbHydrateFailed`. A refusal (403 or second 401) in a
+  tab whose cached user differs from the stored session takes over the stored session (`_onServerRefusal`), it never clears
+  it. How to check: node test-sync-golive-blockers.js, the "F1:", "F5:", "F6:" and "later successful write" tests.
+- Savings %: `getBspCfg` (app/utility-data.js) is the ONE reader of a building's `savingsPct` (default 11, a stored 0 stays 0).
+  utility-data.js, report-engine.js and graphics-setpoints.js all call it.
 - Local per-user stores on a shared browser (app/db.js). The one "a write for this key is still waiting" rule is
   `_hasQueuedWrite` (hydration skip, first-connect upload skip, `_valueChanged`): a queued entry counts for a shared key
   whoever owns it (same server row), and for a per-user key only when it is the signed-in user's own (`_entryBelongsTo`),
