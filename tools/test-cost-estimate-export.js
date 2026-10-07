@@ -71,6 +71,7 @@ function make(store, tiers) {
   sb.window = sb;
   sb.globalThis = sb;
   vm.createContext(sb);
+  vm.runInContext(read('lib/formatting.js'), sb);
   vm.runInContext(read('app/pricing-estimator.js'), sb);
   vm.runInContext(read('app/estimate-workbook.js'), sb);
   vm.runInContext(read('app/audit-estimate.js'), sb);

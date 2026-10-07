@@ -1090,11 +1090,6 @@ function _auditEstFmt(n) {
       .replace(/\B(?=(\d{3})+(?!\d)\.\d{2}$)/g, ',')
   );
 }
-function _auditEstEsc(s) {
-  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
-    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
-  });
-}
 
 /* ── Client-facing proposal price rounding (2026-09-25) ──────────────────────────────────────
    The internal breakdown above keeps the exact computed totalCost, in dollars and cents, for
@@ -1150,11 +1145,11 @@ function _auditEstUnitsDetailHTML(projId, auditType, r) {
       var others = g.count - 1;
       return (
         '<div class="ae-unit"><b>' +
-        _auditEstEsc(g.rep) +
+        _escHtml(g.rep) +
         '</b>' +
-        (g.repBuilding ? ' &middot; ' + _auditEstEsc(g.repBuilding) : '') +
+        (g.repBuilding ? ' &middot; ' + _escHtml(g.repBuilding) : '') +
         ' &middot; ' +
-        _auditEstEsc(g.concepts && g.concepts.length ? g.concepts.join(' + ') : 'No listed control features') +
+        _escHtml(g.concepts && g.concepts.length ? g.concepts.join(' + ') : 'No listed control features') +
         ' &middot; ' +
         (others > 0 ? others + ' similar unit' + (others === 1 ? '' : 's') : 'no similar units') +
         '</div>'
@@ -1163,7 +1158,7 @@ function _auditEstUnitsDetailHTML(projId, auditType, r) {
     .join('');
   return (
     '<tr class="ae-detail"><td colspan="7" style="padding:0"><div class="ae-detail-in"><div class="ae-detail-h">Units to sample: ' +
-    _auditEstEsc(r.label) +
+    _escHtml(r.label) +
     '</div>' +
     items +
     '</div></td></tr>'
@@ -1190,7 +1185,7 @@ function _auditEstBreakdownTableHTML(b, titleText) {
       return (
         '<tr><td class="ch-tbl-col-type-label">' +
         _auditEstUnitsToggleHTML(b.projId, b.auditType, r) +
-        _auditEstEsc(r.label) +
+        _escHtml(r.label) +
         '</td>' +
         numTd(r.count) +
         numTd(r.groupCount) +
@@ -1213,7 +1208,7 @@ function _auditEstBreakdownTableHTML(b, titleText) {
     .map(function (x) {
       return (
         '<tr><td class="ch-tbl-col-type-label">' +
-        _auditEstEsc(x.label) +
+        _escHtml(x.label) +
         '</td>' +
         numTd(b.buildingCount + ' buildings') +
         numTd('—') +
@@ -1239,13 +1234,13 @@ function _auditEstBreakdownTableHTML(b, titleText) {
         '</td></tr>'
       : '';
   var th = function (label, tip) {
-    return '<th title="' + _auditEstEsc(tip) + '">' + label + '</th>';
+    return '<th title="' + _escHtml(tip) + '">' + label + '</th>';
   };
 
   return (
     '<div class="ae-wrap">' +
     '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:6px">' +
-    _auditEstEsc(titleText) +
+    _escHtml(titleText) +
     '</div>' +
     // No inner overflow:auto here (ui-standards.md "one scroll region per panel") — the
     // outer flex-shrink:0 wrap (app/pricing-estimator.js's initCostEstimateTab patch) is the
@@ -1315,7 +1310,7 @@ function auditEstWorkbookPanelHTML(pid, w, taskHead) {
   var opt = function (list, cur) {
     return list
       .map(function (o) {
-        return '<option' + (o === cur ? ' selected' : '') + '>' + _auditEstEsc(o) + '</option>';
+        return '<option' + (o === cur ? ' selected' : '') + '>' + _escHtml(o) + '</option>';
       })
       .join('');
   };
@@ -1336,7 +1331,7 @@ function auditEstWorkbookPanelHTML(pid, w, taskHead) {
   var chainRows = w.chain
     .map(function (c) {
       return (
-        '<tr' + (c.sub ? ' class="ae-sub"' : '') + '><td class="ch-tbl-col-type-label">' + _auditEstEsc(c.label) +
+        '<tr' + (c.sub ? ' class="ae-sub"' : '') + '><td class="ch-tbl-col-type-label">' + _escHtml(c.label) +
         '</td><td class="ch-tbl-col-type-currency">' + _auditEstFmtWhole(c.amount) + '</td></tr>'
       );
     })
@@ -1348,12 +1343,12 @@ function auditEstWorkbookPanelHTML(pid, w, taskHead) {
         pid + "','" + t.id + "',this.value)\">" +
         D.roles
           .map(function (r) {
-            return '<option value="' + r.code + '"' + (r.code === t.role ? ' selected' : '') + ' title="' + _auditEstEsc(r.name) + '">' + r.code + '</option>';
+            return '<option value="' + r.code + '"' + (r.code === t.role ? ' selected' : '') + ' title="' + _escHtml(r.name) + '">' + r.code + '</option>';
           })
           .join('') +
         '</select>';
       return (
-        '<tr><td class="ch-tbl-col-type-label">' + _auditEstEsc(t.label) + '</td><td class="ch-tbl-col-type-number">' +
+        '<tr><td class="ch-tbl-col-type-label">' + _escHtml(t.label) + '</td><td class="ch-tbl-col-type-number">' +
         (w.hourEdit ? _auditEstHoursCellHTML(pid, t) : t.hours.toFixed(2)) +
         '</td><td class="ch-tbl-col-type-label">' + sel + '</td></tr>'
       );
@@ -1369,7 +1364,7 @@ function auditEstWorkbookPanelHTML(pid, w, taskHead) {
         '<thead><tr><th class="ae-left">Step</th><th>Amount</th></tr></thead><tbody>' + chainRows + '</tbody></table></div>'
       : '') +
     '<div class="ch-tbl-outer ae-tbl-outer"><table class="ch-tbl ae-tbl ae-chain-tbl">' +
-    '<thead><tr><th class="ae-left">' + _auditEstEsc(taskHead) + '</th><th>Hours</th><th class="ae-left">Role</th></tr></thead><tbody>' +
+    '<thead><tr><th class="ae-left">' + _escHtml(taskHead) + '</th><th>Hours</th><th class="ae-left">Role</th></tr></thead><tbody>' +
     taskRows + '</tbody></table></div>' +
     '</div>' +
     auditEstCompanySettingsHTML(pid) +
@@ -1384,7 +1379,7 @@ function _auditEstHoursCellHTML(pid, t) {
   var on = !!t.overridden;
   return (
     '<span class="ae-ov">' +
-    '<input type="number" min="0" step="0.25" value="' + t.hours + '" aria-label="Hours for ' + _auditEstEsc(t.label) + '"' +
+    '<input type="number" min="0" step="0.25" value="' + t.hours + '" aria-label="Hours for ' + _escHtml(t.label) + '"' +
     ' title="' + (on ? 'Typed hours. Computed hours are ' + computed.toFixed(2) : 'Computed hours. Type a number to replace them') + '"' +
     ' class="ae-ov-in' + (on ? ' on' : '') + '"' +
     ' onchange="auditEstSaveWorkbookHours(\'' + pid + "','" + t.id + "',this.value)\">" +
@@ -1407,7 +1402,7 @@ function _auditEstCfgInput(pid, field, key, shown, dflt, step, w, tipBase, unit)
   return (
     '<span class="ae-ov"><input type="number" min="0" step="' + step + '" value="' + shown + '"' +
     ' style="width:' + w + 'px"' +
-    ' class="ae-ov-in' + (on ? ' on' : '') + '" title="' + _auditEstEsc(tipBase + (on ? ' Default: ' + dflt + unit + '.' : '')) + '"' +
+    ' class="ae-ov-in' + (on ? ' on' : '') + '" title="' + _escHtml(tipBase + (on ? ' Default: ' + dflt + unit + '.' : '')) + '"' +
     ' onchange="auditEstSaveCompany(' + arg + ',this.value)">' +
     (on
       ? '<button type="button" class="ae-ov-reset" title="Reset to the default (' + dflt + unit + ')"' +
@@ -1437,10 +1432,10 @@ function auditEstCompanySettingsHTML(pid) {
           })[0].name
         : '';
       return (
-        '<tr><td class="ch-tbl-col-type-label" title="' + _auditEstEsc(r.name) + '">' + r.code + ' ' + _auditEstEsc(r.name) +
+        '<tr><td class="ch-tbl-col-type-label" title="' + _escHtml(r.name) + '">' + r.code + ' ' + _escHtml(r.name) +
         '</td><td class="ch-tbl-col-type-' + (tiedTo ? 'label' : 'number') + '">' +
         (tiedTo
-          ? '<span title="This wage always equals the ' + _auditEstEsc(tiedName) + ' wage. Change it there.">Same as ' + _auditEstEsc(tiedName) + '</span>'
+          ? '<span title="This wage always equals the ' + _escHtml(tiedName) + ' wage. Change it there.">Same as ' + _escHtml(tiedName) + '</span>'
           : _auditEstCfgInput(pid, 'rate', r.code, Math.round(shown * 100) / 100, dflt, '0.01', 76,
           'Hourly wage for ' + r.name + '. Payroll taxes, insurance and benefits are added on top of it.', ' per hour')) +
         '</td><td class="ch-tbl-col-type-currency" title="Wage plus payroll taxes, insurance and benefits">' +
@@ -1451,7 +1446,7 @@ function auditEstCompanySettingsHTML(pid) {
   var pctRows = AUDIT_EST_PCT_FIELDS.map(function (f) {
     var cur = cfg.pct[f.key] != null ? cfg.pct[f.key] : D.pct[f.key];
     return (
-      '<tr><td class="ch-tbl-col-type-label" title="' + _auditEstEsc(f.tip) + '">' + _auditEstEsc(f.label) +
+      '<tr><td class="ch-tbl-col-type-label" title="' + _escHtml(f.tip) + '">' + _escHtml(f.label) +
       '</td><td class="ch-tbl-col-type-number">' +
       _auditEstCfgInput(pid, 'pct', f.key, Math.round(cur * 100000) / 1000, Math.round(D.pct[f.key] * 100000) / 1000,
         '0.1', 64, f.tip + ' Percent.', '%') +
@@ -1461,7 +1456,7 @@ function auditEstCompanySettingsHTML(pid) {
   var opt = function (list, cur) {
     return list
       .map(function (o) {
-        return '<option' + (o === cur ? ' selected' : '') + '>' + _auditEstEsc(o) + '</option>';
+        return '<option' + (o === cur ? ' selected' : '') + '>' + _escHtml(o) + '</option>';
       })
       .join('');
   };
@@ -1483,11 +1478,11 @@ function auditEstCompanySettingsHTML(pid) {
       var cur = cfg.roles[t.id] || t.role;
       var on = cur !== t.role;
       return (
-        '<tr><td class="ch-tbl-col-type-label">' + _auditEstEsc(t.label) + '</td><td class="ch-tbl-col-type-label">' +
+        '<tr><td class="ch-tbl-col-type-label">' + _escHtml(t.label) + '</td><td class="ch-tbl-col-type-label">' +
         '<span class="ae-ov"><select class="ae-ov-in' + (on ? ' on' : '') + '" title="Role that does this work on every Workbook estimate that has no role of its own for this work" onchange="auditEstSaveCompany(\'' + pid + "','role','" + t.id + "',this.value)\">" +
         D.roles
           .map(function (r) {
-            return '<option value="' + r.code + '"' + (r.code === cur ? ' selected' : '') + ' title="' + _auditEstEsc(r.name) + '">' + r.code + '</option>';
+            return '<option value="' + r.code + '"' + (r.code === cur ? ' selected' : '') + ' title="' + _escHtml(r.name) + '">' + r.code + '</option>';
           })
           .join('') +
         '</select>' +
@@ -1515,10 +1510,10 @@ function auditEstCompanySettingsHTML(pid) {
             : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + ' ' +
               d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
           return (
-            '<tr><td class="ch-tbl-col-type-label">' + _auditEstEsc(when) + '</td><td class="ch-tbl-col-type-label">' +
-            _auditEstEsc(h.who || '') + '</td><td class="ch-tbl-col-type-label">' + _auditEstEsc(h.field) +
-            '</td><td class="ch-tbl-col-type-label">' + _auditEstEsc(fmtVal(h.field, h.from)) + ' &rarr; ' +
-            _auditEstEsc(fmtVal(h.field, h.to)) + '</td></tr>'
+            '<tr><td class="ch-tbl-col-type-label">' + _escHtml(when) + '</td><td class="ch-tbl-col-type-label">' +
+            _escHtml(h.who || '') + '</td><td class="ch-tbl-col-type-label">' + _escHtml(h.field) +
+            '</td><td class="ch-tbl-col-type-label">' + _escHtml(fmtVal(h.field, h.from)) + ' &rarr; ' +
+            _escHtml(fmtVal(h.field, h.to)) + '</td></tr>'
           );
         })
         .join('')
@@ -1584,7 +1579,7 @@ function auditEstMethodSwitchHTML(projId, estType) {
   var btn = function (m, label, tip) {
     return (
       '<button type="button" class="ae-seg-btn' + (cur === m ? ' on' : '') + '" aria-pressed="' + (cur === m) +
-      '" title="' + _auditEstEsc(tip) + '" onclick="auditEstSetMethod(\'' + projId + "','" + m + "')\">" + label + '</button>'
+      '" title="' + _escHtml(tip) + '" onclick="auditEstSetMethod(\'' + projId + "','" + m + "')\">" + label + '</button>'
     );
   };
   return (
@@ -1669,7 +1664,7 @@ function _auditEstByBuildingTableHTML(b) {
         .map(function (t) {
           return (
             '<tr class="ae-bldg-sub"><td class="ch-tbl-col-type-label ae-bldg-sub-lbl">' +
-            _auditEstEsc(t.label) +
+            _escHtml(t.label) +
             '</td>' +
             num(dash(t.equipment)) +
             num(dash(t.sampled)) +
@@ -1692,7 +1687,7 @@ function _auditEstByBuildingTableHTML(b) {
       }
       return (
         '<tr><td class="ch-tbl-col-type-label">' +
-        _auditEstEsc(x.building) +
+        _escHtml(x.building) +
         '</td>' +
         num(dash(x.equipment)) +
         num(dash(x.sampled)) +
@@ -1711,7 +1706,7 @@ function _auditEstByBuildingTableHTML(b) {
     return s + (x.sampled || 0);
   }, 0);
   var th = function (l, tip) {
-    return '<th title="' + _auditEstEsc(tip) + '">' + l + '</th>';
+    return '<th title="' + _escHtml(tip) + '">' + l + '</th>';
   };
   return (
     '<div style="font-size:12px;font-weight:700;color:var(--text);margin:12px 0 4px">Cost by Building</div>' +
@@ -1747,7 +1742,7 @@ function _auditEstAssumptionsHTML(projId, auditType) {
       var sourced = ['vav', 'heater', 'fpb', 'rtu', 'ahu', 'fcu'].indexOf(cat) !== -1;
       return (
         '<tr><td class="ch-tbl-col-type-label">' +
-        _auditEstEsc(r.label) +
+        _escHtml(r.label) +
         '</td><td class="ch-tbl-col-type-number">' +
         '<input type="number" step="0.01" min="0" value="' +
         (has ? ovr[cat] : '') +
@@ -1936,7 +1931,7 @@ function auditEstRenderHTML(projId, auditType) {
       '<div style="font-size:11px;color:var(--text3);margin-top:6px">Not counted per unit (covered as building-level items, or out of scope): ' +
       b.excluded
         .map(function (x) {
-          return _auditEstEsc(x.label) + ' (' + x.count + ')';
+          return _escHtml(x.label) + ' (' + x.count + ')';
         })
         .join(', ') +
       '.</div>';
@@ -2048,7 +2043,7 @@ function auditEstShowHistory(projId) {
         '<tr><td>' +
         (isNaN(d) ? h.date : d.toLocaleString()) +
         '</td><td>' +
-        _auditEstEsc(h.field) +
+        _escHtml(h.field) +
         '</td><td>' +
         h.old +
         '</td><td>' +
@@ -2081,7 +2076,7 @@ function _auditEstShowHistoryModal(bodyHTML) {
   heading.style.cssText = 'font-size:14px;font-weight:700;color:var(--text);margin-bottom:10px';
   heading.textContent = 'Audit Estimate — Assumption Change History';
   var content = document.createElement('div');
-  content.innerHTML = bodyHTML; // built entirely from _auditEstEsc()-escaped/numeric values above
+  content.innerHTML = bodyHTML; // built entirely from _escHtml()-escaped/numeric values above
   var closeBtn = document.createElement('button');
   closeBtn.textContent = 'Close';
   closeBtn.style.cssText =

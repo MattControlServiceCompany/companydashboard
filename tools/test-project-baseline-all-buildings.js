@@ -103,11 +103,8 @@ const fns = [
   loadFn(REPO + '/app/utility-data.js', '_udToggleAllBldgRow'),
   loadFn(REPO + '/app/utility-data.js', '_udMeterMonthRowsHtml'),
   loadFn(REPO + '/app/utility-data.js', '_udRenderAllBuildingsBaselineSection'),
-  // csv-import.js loads AFTER utility-data.js in energy-department.html, so its
-  // (DOM-independent, regex-based) _escHtml definition is the one in effect at
-  // runtime — not bill-analysis.js's earlier createElement-based one, which the
-  // later script-tag redeclaration shadows.
-  loadFn(REPO + '/app/csv-import.js', '_escHtml'),
+  // _escHtml is the ONE shared HTML escape (lib/formatting.js).
+  loadFn(REPO + '/lib/formatting.js', '_escHtml'),
 ];
 
 const dateHelpersSrc = fs.readFileSync(REPO + '/lib/date-helpers.js', 'utf8');

@@ -1898,7 +1898,7 @@ function _hvlRenderMsr(projId) {
   const bldgOpts = udBldgs
     .map(
       (b) =>
-        `<option value="${_esc(b.id)}"${b.id === selBid ? ' selected' : ''}>${_esc(b.name || 'Building')}</option>`,
+        `<option value="${_escHtml(b.id)}"${b.id === selBid ? ' selected' : ''}>${_escHtml(b.name || 'Building')}</option>`,
     )
     .join('');
   const bldgSelectorHtml = `<div class="fg"><label class="fl">Building</label>
@@ -1912,7 +1912,7 @@ function _hvlRenderMsr(projId) {
   }
 
   const b = getUDBldg(projId, selBid);
-  const bName = _esc(b?.name || 'Building');
+  const bName = _escHtml(b?.name || 'Building');
   const check =
     typeof wdCheckReportInputs === 'function' ? wdCheckReportInputs(projId, selBid) : { ok: false, missing: [] };
 
@@ -1923,10 +1923,10 @@ function _hvlRenderMsr(projId) {
         <div style="background:var(--warn-dim);border:1px solid var(--warn);border-radius:8px;padding:12px 14px;font-size:12px;color:var(--warn);margin-top:12px">
           Savings for ${bName} need setpoint and rate inputs before a measure can be created.
           <ul style="margin:8px 0 0 18px;padding:0">
-            ${check.missing.map((m) => `<li>${_esc(m.label)}</li>`).join('')}
+            ${check.missing.map((m) => `<li>${_escHtml(m.label)}</li>`).join('')}
           </ul>
         </div>
-        <div style="margin-top:12px"><button class="btn btn-em btn-sm" onclick="_hvlOpenReportInputsAndRefresh(${projId},'${_esc(selBid)}')">Open Report Inputs</button></div>
+        <div style="margin-top:12px"><button class="btn btn-em btn-sm" onclick="_hvlOpenReportInputsAndRefresh(${projId},'${_escHtml(selBid)}')">Open Report Inputs</button></div>
       </div>
     </div>`;
     return;
@@ -1959,8 +1959,8 @@ function _hvlRenderMsr(projId) {
             ${rows
               .map(
                 (r) => `<tr>
-              <td style="font-weight:700">Option ${_esc(r.letter)}</td>
-              <td>${_esc(r.heatSP)}°F / ${_esc(r.coolSP)}°F</td>
+              <td style="font-weight:700">Option ${_escHtml(r.letter)}</td>
+              <td>${_escHtml(r.heatSP)}°F / ${_escHtml(r.coolSP)}°F</td>
               <td style="text-align:right;font-family:var(--mono)">${Math.round(r.annualKwh).toLocaleString()}</td>
               <td style="text-align:right;font-family:var(--mono)">${r.annualKw.toFixed(1)}</td>
               <td style="text-align:right;font-family:var(--mono)">${Math.round(r.annualGas).toLocaleString()}</td>
@@ -1972,7 +1972,7 @@ function _hvlRenderMsr(projId) {
         </table>
       </div>
       <div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">
-        <button class="btn btn-em" onclick="_hvlCreateMsrFromOptions(${projId},'${_esc(selBid)}')">+ Create Savings Measures (A/B/C)</button>
+        <button class="btn btn-em" onclick="_hvlCreateMsrFromOptions(${projId},'${_escHtml(selBid)}')">+ Create Savings Measures (A/B/C)</button>
       </div>
     </div>
   </div>`;
@@ -2271,10 +2271,10 @@ function _hvlExportBodyHtml(data) {
     '$' + (Math.round(n * 100) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   let h = '';
   h += `<h1>HVAC Load Estimation</h1>`;
-  h += `<table class="hvl-x-meta"><tr><td>Building</td><td>${_esc(data.buildingName)}</td></tr>`;
-  h += `<tr><td>Method</td><td>${_esc(data.method)}</td></tr>`;
-  h += `<tr><td>Generated</td><td>${_esc(data.generatedAt.toLocaleString())}</td></tr>`;
-  h += `<tr><td>Last Saved</td><td>${_esc(data.savedAt ? data.savedAt.toLocaleString() : 'Not saved yet')}</td></tr></table>`;
+  h += `<table class="hvl-x-meta"><tr><td>Building</td><td>${_escHtml(data.buildingName)}</td></tr>`;
+  h += `<tr><td>Method</td><td>${_escHtml(data.method)}</td></tr>`;
+  h += `<tr><td>Generated</td><td>${_escHtml(data.generatedAt.toLocaleString())}</td></tr>`;
+  h += `<tr><td>Last Saved</td><td>${_escHtml(data.savedAt ? data.savedAt.toLocaleString() : 'Not saved yet')}</td></tr></table>`;
 
   h += `<h2>Summary</h2>`;
   h += `<table class="hvl-x-tbl"><tr><th>Annual Total</th><th>Heating and Cooling</th><th>Other</th><th>Total</th></tr>`;
@@ -2286,24 +2286,24 @@ function _hvlExportBodyHtml(data) {
     h += `<h2>Setpoint Savings Options</h2>`;
     h += `<table class="hvl-x-tbl"><tr><th>Option</th><th>Occupied Heating</th><th>Occupied Cooling</th><th>Electricity Saved</th><th>Electric Demand Saved</th><th>Natural Gas Saved</th><th>Cost Saved</th></tr>`;
     data.options.forEach((o) => {
-      h += `<tr><td>Option ${_esc(o.letter)}</td><td>${_esc(o.heatSP)}°F</td><td>${_esc(o.coolSP)}°F</td><td>${fmt(o.annualKwh)} kWh/yr</td><td>${fmt1(o.annualKw)} kW</td><td>${fmt(o.annualGas)} Therms/yr</td><td>${money(o.dollar)}/yr</td></tr>`;
+      h += `<tr><td>Option ${_escHtml(o.letter)}</td><td>${_escHtml(o.heatSP)}°F</td><td>${_escHtml(o.coolSP)}°F</td><td>${fmt(o.annualKwh)} kWh/yr</td><td>${fmt1(o.annualKw)} kW</td><td>${fmt(o.annualGas)} Therms/yr</td><td>${money(o.dollar)}/yr</td></tr>`;
     });
     h += `</table>`;
   } else if (data.optionsMissing.length) {
     h += `<h2>Setpoint Savings Options</h2><p>The following inputs are needed before savings options can be shown:</p><ul>`;
-    data.optionsMissing.forEach((m) => (h += `<li>${_esc(m.label)}</li>`));
+    data.optionsMissing.forEach((m) => (h += `<li>${_escHtml(m.label)}</li>`));
     h += `</ul>`;
   }
 
   h += `<h2>Inputs</h2><table class="hvl-x-tbl"><tr><th>Input</th><th>Value</th><th>Source</th></tr>`;
   data.inputs.forEach(
-    (i) => (h += `<tr><td>${_esc(i.label)}</td><td>${_esc(i.value)}</td><td>${_esc(i.source)}</td></tr>`),
+    (i) => (h += `<tr><td>${_escHtml(i.label)}</td><td>${_escHtml(i.value)}</td><td>${_escHtml(i.source)}</td></tr>`),
   );
   h += `</table>`;
 
   h += `<h2>Monthly Breakdown</h2><table class="hvl-x-tbl hvl-x-monthly"><tr><th>Category</th>${_HVL_MONTHS_FULL.map((m) => `<th>${m.slice(0, 3)}</th>`).join('')}<th>Annual</th></tr>`;
   const addRow = (label, arr) =>
-    (h += `<tr><td>${_esc(label)}</td>${arr.map((v) => `<td>${fmt1(v)}</td>`).join('')}<td><strong>${fmt1(arr.reduce((s, v) => s + v, 0))}</strong></td></tr>`);
+    (h += `<tr><td>${_escHtml(label)}</td>${arr.map((v) => `<td>${fmt1(v)}</td>`).join('')}<td><strong>${fmt1(arr.reduce((s, v) => s + v, 0))}</strong></td></tr>`);
   addRow('Cooling Electricity (kWh)', est.monthlyCoolKwh);
   addRow('Heating Electricity (kWh)', est.monthlyHeatKwh);
   addRow('Other Electricity (kWh)', est.monthlyNonHvacKwh);
@@ -2351,7 +2351,7 @@ function hvacLoadExportWord(projId) {
     ' @page Section1 {size:8.5in 11in; margin:0.75in;} div.Section1 {page:Section1;}' +
     '</style>' +
     '<title>HVAC Load Estimation — ' +
-    _esc(data.buildingName) +
+    _escHtml(data.buildingName) +
     '</title></head>' +
     '<body><div class="Section1">' +
     bodyHtml +

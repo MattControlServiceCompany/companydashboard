@@ -33,15 +33,6 @@ const HOURS_CATEGORIES = [
   'Other',
 ];
 
-/* ── XSS escape helper ── */
-function _esc(str) {
-  return String(str == null ? '' : str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
 /* ── Week-start helper (Mon–Sun weeks, Monday = week key) ── */
 function _getWeekStart(dateStr) {
   // Returns YYYY-MM-DD for the Monday of the week containing dateStr.
@@ -229,8 +220,8 @@ function _renderHoursTab(projId, data) {
           <tr>
             <td style="white-space:nowrap;color:var(--text2)">${dateLabel}${weekBadge}</td>
             <td style="text-align:right;font-family:var(--mono);font-weight:600;color:var(--em)">${(parseFloat(e.hours) || 0).toFixed(1)}</td>
-            <td><span style="background:var(--s3);border-radius:4px;padding:2px 7px;font-size:11px">${_esc(e.category) || '—'}</span></td>
-            <td style="color:var(--text2);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${_esc(e.note)}">${e.note ? _esc(e.note) : '<span style="color:var(--text3)">—</span>'}</td>
+            <td><span style="background:var(--s3);border-radius:4px;padding:2px 7px;font-size:11px">${_escHtml(e.category) || '—'}</span></td>
+            <td style="color:var(--text2);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${_escHtml(e.note)}">${e.note ? _escHtml(e.note) : '<span style="color:var(--text3)">—</span>'}</td>
             <td style="text-align:center;white-space:nowrap">
               <button class="btn btn-ghost btn-sm" style="font-size:10px;margin-right:4px" onclick="_hoursEditEntry(${projId},${e.id})">Edit</button>
               <button class="btn btn-ghost btn-sm" style="font-size:10px;color:var(--danger);border-color:rgba(240,80,80,.3)" onclick="_hoursDeleteEntry(${projId},${e.id})">Delete</button>

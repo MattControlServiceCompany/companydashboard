@@ -6970,7 +6970,6 @@ function _mbUpdateSaveAllBtn() {
 }
 window._mbUpdateSaveAllBtn = _mbUpdateSaveAllBtn;
 
-
 // Shared meter-existence guard (item 0bc25b67): a saved Louisburg bill was
 // found filed under a meter no bill of its own identity actually matches —
 // traced to save paths trusting a CAPTURED meter object (from findMeterMatch,
@@ -9329,12 +9328,6 @@ function cancelQueue() {
     clearQueue();
   }
   showToast('Queue cancelled');
-}
-
-function _escHtml(s) {
-  const d = document.createElement('div');
-  d.textContent = s;
-  return d.innerHTML;
 }
 
 function renderQueueProgress() {
@@ -13012,7 +13005,7 @@ function togglePDFRawText() {
       '<div style="font-size:11px;color:var(--accent);margin-bottom:8px;font-weight:600">' +
       label +
       '</div><pre style="font-size:10px;line-height:1.5;white-space:pre-wrap;word-break:break-all;color:var(--text2);margin:0">' +
-      section.replace(/&/g, '&amp;').replace(/</g, '&lt;') +
+      _escHtml(section) +
       '</pre>';
   }
 }
@@ -16927,7 +16920,7 @@ async function processPDF(file) {
       const msg = (err && err.message) || String(err);
       box.innerHTML =
         '<div style="padding:14px;font-size:13px;color:var(--red)">&#9888; <strong>Extraction failed after reading the PDF.</strong><br>' +
-        String(msg).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]) +
+        _escHtml(msg) +
         '</div>';
       dz.textContent = file.name + ' — extraction failed';
       showToast('Extraction failed: ' + msg);
@@ -18899,13 +18892,7 @@ function renderPDFFields(parsed, warnings) {
 
   // Helper: build a single field cell HTML
   // Escape double quotes and newlines so a message can live inside a title="..." attribute.
-  const _titleEscape = (s) =>
-    String(s || '')
-      .replace(/&/g, '&amp;')
-      .replace(/"/g, '&quot;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/\n/g, ' ');
+  const _titleEscape = (s) => _escHtml(s).replace(/\n/g, ' ');
   function buildCell(k) {
     const v = parsed[k] ?? '';
     const fw = warnMap[k] || [];

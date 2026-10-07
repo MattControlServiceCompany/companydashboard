@@ -28,6 +28,7 @@ function make(src, rows, store, rate) {
     _pricingGetConfig: () => ({ hourlyRate: rate == null ? 170 : rate }),
   };
   vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(__dirname + '/lib/formatting.js', 'utf8'), ctx);
   vm.runInContext(src, ctx);
   return ctx;
 }

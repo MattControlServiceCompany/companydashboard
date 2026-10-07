@@ -13,14 +13,6 @@
 //           walking the DOM.
 // ═══════════════════════════════════════════════════
 
-function _scopeTreeEsc(s) {
-  return String(s == null ? '' : s)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
 // Pure string builder (no DOM) — testable in Node. opts.onChange = name of a global function
 // called with the root element after any toggle.
 function scopeTreeHTML(nodes, opts) {
@@ -35,7 +27,7 @@ function scopeTreeHTML(nodes, opts) {
         }));
     var attrs = '';
     Object.keys(node.attrs || {}).forEach(function (k) {
-      attrs += ' data-' + k + '="' + _scopeTreeEsc(node.attrs[k]) + '"';
+      attrs += ' data-' + k + '="' + _escHtml(node.attrs[k]) + '"';
     });
     var h =
       '<div class="st-node">' +
@@ -43,9 +35,9 @@ function scopeTreeHTML(nodes, opts) {
       (disabled ? 'default;opacity:.55' : 'pointer') +
       '">' +
       '<input type="checkbox" class="st-cb" data-kind="' +
-      _scopeTreeEsc(node.kind) +
+      _escHtml(node.kind) +
       '" data-id="' +
-      _scopeTreeEsc(node.id) +
+      _escHtml(node.id) +
       '"' +
       attrs +
       (node.checked && !disabled ? ' checked' : '') +
@@ -54,12 +46,12 @@ function scopeTreeHTML(nodes, opts) {
       '<span style="font-size:12px;color:var(--text);' +
       (depth === 0 ? 'font-weight:600;' : '') +
       'overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
-      _scopeTreeEsc(node.label) +
+      _escHtml(node.label) +
       '</span>' +
-      (node.hint ? '<span style="font-size:10px;color:var(--text3)">' + _scopeTreeEsc(node.hint) + '</span>' : '') +
+      (node.hint ? '<span style="font-size:10px;color:var(--text3)">' + _escHtml(node.hint) + '</span>' : '') +
       (node.sub
         ? '<span style="font-size:10px;color:var(--text3);margin-left:auto;white-space:nowrap">' +
-          _scopeTreeEsc(node.sub) +
+          _escHtml(node.sub) +
           '</span>'
         : '') +
       '</label>';
@@ -75,7 +67,7 @@ function scopeTreeHTML(nodes, opts) {
   }
   var out =
     '<div class="scope-tree" data-onchange="' +
-    _scopeTreeEsc(opts.onChange || '') +
+    _escHtml(opts.onChange || '') +
     '" style="display:flex;flex-direction:column;gap:2px">';
   (nodes || []).forEach(function (n) {
     out += render(n, 0);

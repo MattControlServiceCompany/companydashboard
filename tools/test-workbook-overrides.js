@@ -77,6 +77,7 @@ function makeSandbox(store, srcs, extra) {
   sb.window = sb;
   sb.globalThis = sb;
   vm.createContext(sb);
+  vm.runInContext(read('lib/formatting.js'), sb);
   srcs.forEach((s) => vm.runInContext(s, sb));
   return sb;
 }

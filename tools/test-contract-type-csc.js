@@ -29,6 +29,7 @@ function makeCtx(projs, store) {
   };
   ctx.window = ctx;
   vm.createContext(ctx);
+  vm.runInContext(rd('lib/formatting.js'), ctx);
   vm.runInContext(rd('computations/csc.js'), ctx);
   vm.runInContext(rd('app/agreement-engine.js'), ctx);
   return { ctx, toasts, store };

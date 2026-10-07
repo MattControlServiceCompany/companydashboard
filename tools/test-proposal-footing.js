@@ -49,8 +49,7 @@ const sb = { console };
 sb.window = sb;
 vm.createContext(sb);
 const pre = [
-  'function _esc(s){ return String(s == null ? "" : s); }',
-  'function _rptV2Esc(s){ return String(s == null ? "" : s); }',
+  'function _escHtml(s){ return String(s == null ? "" : s); }',
   'function rptPage(n, title, body){ return { html: body }; }',
   'function _rptPresentedLineHTML(){ return ""; }',
   'function _rptYtdKicker(){ return ""; }',

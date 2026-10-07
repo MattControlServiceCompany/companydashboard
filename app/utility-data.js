@@ -2326,7 +2326,7 @@ function renderUDProjAggPanel(content) {
         (_ppIncomplete.length !== 1 ? 's' : '') +
         ' excluded from savings — rate data incomplete:</strong><ul style="margin:6px 0 0 18px;padding:0">' +
         _ppIncomplete
-          .map((x) => '<li>' + esc(x.bldg) + ' / ' + esc(x.meter) + ' — ' + esc(x.ym) + ' (' + esc(x.reason) + ')</li>')
+          .map((x) => '<li>' + _escHtml(x.bldg) + ' / ' + _escHtml(x.meter) + ' — ' + _escHtml(x.ym) + ' (' + _escHtml(x.reason) + ')</li>')
           .join('') +
         '</ul></div>'
       : '';
@@ -9306,7 +9306,7 @@ function renderBldgPerfPane(pane, b) {
       ' month' +
       (_bpIncomplete.length !== 1 ? 's' : '') +
       ' excluded from savings — rate data incomplete:</strong><ul style="margin:6px 0 0 18px;padding:0">' +
-      _bpIncomplete.map((x) => '<li>' + esc(x.meter) + ' — ' + esc(x.ym) + ' (' + esc(x.reason) + ')</li>').join('') +
+      _bpIncomplete.map((x) => '<li>' + _escHtml(x.meter) + ' — ' + _escHtml(x.ym) + ' (' + _escHtml(x.reason) + ')</li>').join('') +
       '</ul></div>'
     : '';
   const hasActual = Object.keys(actualSavingsByCalMo).length > 0;

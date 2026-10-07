@@ -833,7 +833,7 @@ function sooParaToPreviewHtml(para) {
   if (para.heading1) {
     var htext = para.runs
       .map(function (r) {
-        return emHtmlEsc(r.text);
+        return _escHtml(r.text);
       })
       .join('');
     return (
@@ -845,7 +845,7 @@ function sooParaToPreviewHtml(para) {
   }
   var inner = para.runs
     .map(function (r) {
-      var t = emHtmlEsc(r.text);
+      var t = _escHtml(r.text);
       return r.bold ? '<strong>' + t + '</strong>' : t;
     })
     .join('');

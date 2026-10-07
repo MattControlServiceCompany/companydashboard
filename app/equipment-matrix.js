@@ -4560,7 +4560,7 @@ function emRenderMatrix(container, data, pid) {
 
 function emStatPill(label, val, title) {
   return (
-    '<div' + (title ? ' title="' + emHtmlEsc(title) + '"' : '') + ' style="display:flex;flex-direction:column;align-items:center;min-width:64px">' +
+    '<div' + (title ? ' title="' + _escHtml(title) + '"' : '') + ' style="display:flex;flex-direction:column;align-items:center;min-width:64px">' +
     '<div style="font-size:18px;font-weight:700;color:var(--text);line-height:1">' +
     val +
     '</div>' +
@@ -4580,7 +4580,7 @@ function emStatPill(label, val, title) {
    at-a-glance headline numbers. */
 function emStatPillCompact(label, val, title) {
   return (
-    '<div' + (title ? ' title="' + emHtmlEsc(title) + '"' : '') + ' style="display:flex;flex-direction:column;align-items:center;min-width:46px;padding:1px 2px">' +
+    '<div' + (title ? ' title="' + _escHtml(title) + '"' : '') + ' style="display:flex;flex-direction:column;align-items:center;min-width:46px;padding:1px 2px">' +
     '<div style="font-size:13px;font-weight:700;color:var(--text);line-height:1.1">' +
     val +
     '</div>' +
@@ -4826,7 +4826,7 @@ function emShowEffectiveSchedulesResult(result) {
     'width:560px;max-width:calc(100vw - 32px);z-index:9999;padding:20px;max-height:calc(100vh - 110px);overflow-y:auto';
 
   var summary = result.error
-    ? emHtmlEsc(result.error)
+    ? _escHtml(result.error)
     : 'Matched ' +
       result.matchedCount +
       ' of ' +
@@ -4841,9 +4841,9 @@ function emShowEffectiveSchedulesResult(result) {
       .map(function (u) {
         return (
           '<tr><td style="padding:4px 8px;border-bottom:1px solid var(--border);font-size:11px;color:var(--text)">' +
-          emHtmlEsc(u.building) +
+          _escHtml(u.building) +
           '</td><td style="padding:4px 8px;border-bottom:1px solid var(--border);font-size:11px;color:var(--text)">' +
-          emHtmlEsc(u.controlProgram) +
+          _escHtml(u.controlProgram) +
           '</td></tr>'
         );
       })
@@ -6071,12 +6071,12 @@ function emBuildAllPointsTableHtml(row) {
         ? '<span style="background:var(--accent);color:#fff;border-radius:3px;padding:1px 5px;font-size:10px;' +
           'display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom"' +
           ' title="' +
-          emHtmlEsc(_arLabel) +
+          _escHtml(_arLabel) +
           (_arHasCollision
             ? ' — ' + _apColCount[_arMapped] + ' points map to this column; only one value is shown in the Audit view'
             : '') +
           '">' +
-          emHtmlEsc(_arLabel) +
+          _escHtml(_arLabel) +
           '</span>' +
           (_arHasCollision
             ? '<span style="color:#f59e0b;margin-left:4px;cursor:default" title="Collision: ' +
@@ -6084,20 +6084,20 @@ function emBuildAllPointsTableHtml(row) {
               ' points map here">&#x26A0;</span>'
             : '')
         : '<span style="background:var(--s2);border:1px solid var(--border);color:var(--text2);border-radius:3px;padding:1px 5px;font-size:10px">Other</span>';
-      var _arValDisplay = _arVal === '' ? '<span style="color:var(--text3)">empty</span>' : emHtmlEsc(String(_arVal));
+      var _arValDisplay = _arVal === '' ? '<span style="color:var(--text3)">empty</span>' : _escHtml(String(_arVal));
       html +=
         '<tr>' +
         '<td style="padding:2px 10px 2px 0;border-bottom:1px solid var(--border);white-space:normal;word-break:break-word;overflow:hidden;color:var(--text)" title="' +
-        emHtmlEsc(_arKey) +
+        _escHtml(_arKey) +
         '">' +
-        emHtmlEsc(_arKey) +
+        _escHtml(_arKey) +
         '</td>' +
         // em-panel-resize-2026-09-25: the Value cell clips long values ("706182" cut to "70618…")
         // — add a title so the full value (with its exact text/units) is available on hover,
         // matching the Point Name cell's existing title above and the ASHRAE Category badge's
         // existing title (built into _arBadge). Skip the title for the empty-state placeholder.
         '<td style="padding:2px 10px;border-bottom:1px solid var(--border);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text2)"' +
-        (_arVal === '' ? '' : ' title="' + emHtmlEsc(String(_arVal)) + '"') +
+        (_arVal === '' ? '' : ' title="' + _escHtml(String(_arVal)) + '"') +
         '>' +
         _arValDisplay +
         '</td>' +
@@ -6126,10 +6126,10 @@ function emBuildAllPointsTableHtml(row) {
       html +=
         '<tr>' +
         '<td style="padding:2px 10px 2px 0;border-bottom:1px solid var(--border);white-space:nowrap;color:var(--text)">' +
-        emHtmlEsc(_lk2) +
+        _escHtml(_lk2) +
         '</td>' +
         '<td style="padding:2px 0 2px 10px;border-bottom:1px solid var(--border);white-space:nowrap;color:var(--text2)">' +
-        emHtmlEsc(String(_lv2)) +
+        _escHtml(String(_lv2)) +
         '</td>' +
         '</tr>';
     }
@@ -7001,7 +7001,7 @@ var _emNavListenersAttached = false;
    to a permanently null handler.
 
    Fixed the same way as 3a2067e: the drill-down/back links carry
-   emHtmlEsc()'d data-* attributes (correct HTML-attribute escaping, not
+   _escHtml()'d data-* attributes (correct HTML-attribute escaping, not
    JS-string-in-HTML-attribute encoding) instead of attribute-embedded JS,
    plus a single delegated listener attached once to `document` (guarded by
    _emNavListenersAttached) that reads event.target.closest(...) + .dataset
@@ -7937,7 +7937,7 @@ function emRenderSequenceView(data, filters) {
     bodyHtml =
       '<div style="padding:40px;text-align:center;color:var(--text3);font-size:13px">' +
       'Sequence of Operations generation for ' +
-      emHtmlEsc(EM_CATEGORY_LABELS[unsupportedRequestedType] || unsupportedRequestedType) +
+      _escHtml(EM_CATEGORY_LABELS[unsupportedRequestedType] || unsupportedRequestedType) +
       ' equipment is not available yet — VAV Terminal Units only for now.</div>';
   } else if (!activeCat) {
     bodyHtml =
@@ -7956,9 +7956,9 @@ function emRenderSequenceView(data, filters) {
       bodyHtml =
         '<div style="padding:40px;text-align:center;color:var(--text3);font-size:13px">' +
         'No ' +
-        emHtmlEsc(EM_CATEGORY_LABELS[activeCat] || activeCat) +
+        _escHtml(EM_CATEGORY_LABELS[activeCat] || activeCat) +
         ' equipment found in ' +
-        emHtmlEsc(bldg) +
+        _escHtml(bldg) +
         '.</div>';
     } else {
       // Reset the checklist's default selection whenever the building/type scope changes —
@@ -8000,11 +8000,11 @@ function emRenderSequenceView(data, filters) {
           return (
             '<label style="display:flex;align-items:center;gap:6px;font-size:12px;padding:3px 4px;cursor:pointer;border-radius:3px" onmouseover="this.style.background=\'var(--s3)\'" onmouseout="this.style.background=\'\'">' +
             '<input type="checkbox" data-em-seq-row-toggle data-row-id="' +
-            emHtmlEsc(r.id) +
+            _escHtml(r.id) +
             '" ' +
             (checked ? 'checked' : '') +
             '>' +
-            emHtmlEsc(r.equipName || r.name || r.id) +
+            _escHtml(r.equipName || r.name || r.id) +
             '</label>'
           );
         })
@@ -8023,7 +8023,7 @@ function emRenderSequenceView(data, filters) {
                 (g.boxLabels.length === 1 ? '' : 's') +
                 ': ' +
                 '<span style="color:var(--text2)">' +
-                emHtmlEsc(g.boxLabels.join(', ')) +
+                _escHtml(g.boxLabels.join(', ')) +
                 '</span>' +
                 '</div>'
               );
@@ -8049,16 +8049,16 @@ function emRenderSequenceView(data, filters) {
         ' of ' +
         scopeRows.length +
         ' ' +
-        emHtmlEsc(EM_CATEGORY_LABELS[activeCat] || activeCat) +
+        _escHtml(EM_CATEGORY_LABELS[activeCat] || activeCat) +
         ' units selected in ' +
-        emHtmlEsc(bldg) +
+        _escHtml(bldg) +
         ' — ' +
         groups.length +
         ' clause set' +
         (groups.length === 1 ? '' : 's') +
         '</span>' +
         '<button data-em-seq-generate data-selected-row-ids="' +
-        emHtmlEsc(selectedIdsCsv) +
+        _escHtml(selectedIdsCsv) +
         '" class="btn btn-em btn-sm" ' +
         (groups.length ? '' : 'disabled') +
         ' style="height:28px;font-size:11px">Generate Sequence</button>' +
@@ -8072,7 +8072,7 @@ function emRenderSequenceView(data, filters) {
         '<span style="display:flex;gap:6px">' +
         '<a href="#" data-em-seq-select-all style="font-size:10px;color:var(--accent)">All</a>' +
         '<a href="#" data-em-seq-select-none data-row-ids="' +
-        emHtmlEsc(allIdsCsv) +
+        _escHtml(allIdsCsv) +
         '" style="font-size:10px;color:var(--accent)">None</a>' +
         '</span>' +
         '</div>' +
@@ -8358,16 +8358,16 @@ function emRenderSummaryView(data, filters) {
       var bldg = bldgNames[bi];
       var bs = zoneStats[bldg];
       // Building name as hyperlink — fix/em-event-attr-delegation: data-* attrs
-      // (emHtmlEsc'd) + delegated listener (see _emAttachNavDelegatedListeners)
+      // (_escHtml'd) + delegated listener (see _emAttachNavDelegatedListeners)
       // instead of JSON.stringify()-into-onclick, which broke for every value.
       var bldgLink =
         '<a href="#" data-em-drill-building="1" data-pid="' +
-        emHtmlEsc(pid) +
+        _escHtml(pid) +
         '" data-building="' +
-        emHtmlEsc(bldg) +
+        _escHtml(bldg) +
         '" ' +
         'style="color:var(--accent);cursor:pointer;font-weight:600;text-decoration:none">' +
-        emHtmlEsc(bldg) +
+        _escHtml(bldg) +
         '</a>';
       // Zones vs Setpoints cell
       var vsCell;
@@ -8590,13 +8590,13 @@ function emRenderBuildingDetailView(data, filters, buildingName) {
   var html = '<div style="padding:24px;overflow:auto;height:100%;box-sizing:border-box">';
   html +=
     '<button data-em-exit-drill="1" data-pid="' +
-    emHtmlEsc(pid) +
+    _escHtml(pid) +
     '" ' +
     'style="background:var(--s2);border:1px solid var(--border);color:var(--text);' +
     'padding:6px 14px;border-radius:4px;cursor:pointer;font-size:13px;margin-bottom:16px">&#8592; Back to Summary</button>';
   html +=
     '<h2 style="font-size:22px;font-weight:700;margin:0 0 16px 0;color:var(--text)">' +
-    emHtmlEsc(buildingName) +
+    _escHtml(buildingName) +
     '</h2>';
 
   // ── Stats bar ──
@@ -8717,14 +8717,14 @@ function emRenderBuildingDetailView(data, filters, buildingName) {
           : '<span style="color:var(--text3)">—</span>';
 
       html += '<tr style="min-height:44px">';
-      html += '<td style="' + tdBase + 'font-weight:500">' + emHtmlEsc(row.equipName || row.name || '') + '</td>';
+      html += '<td style="' + tdBase + 'font-weight:500">' + _escHtml(row.equipName || row.name || '') + '</td>';
       html +=
         '<td style="' +
         tdBase +
         'color:var(--text2)">' +
-        emHtmlEsc(catLabels[row.category] || row.category || '') +
+        _escHtml(catLabels[row.category] || row.category || '') +
         '</td>';
-      html += '<td style="' + tdBase + 'color:var(--text2)">' + emHtmlEsc(row.floor || '') + '</td>';
+      html += '<td style="' + tdBase + 'color:var(--text2)">' + _escHtml(row.floor || '') + '</td>';
       html += '<td style="' + tdCenter + tempBg + '">' + tempDisplay + '</td>';
       html += '<td style="' + tdCenter + '">' + htgDisplay + '</td>';
       html += '<td style="' + tdCenter + '">' + coolDisplay + '</td>';
@@ -8735,7 +8735,7 @@ function emRenderBuildingDetailView(data, filters, buildingName) {
         '<td style="' +
         tdBase +
         'color:var(--text2);white-space:nowrap">' +
-        emHtmlEsc(emZoneScheduleDisplay(row)) +
+        _escHtml(emZoneScheduleDisplay(row)) +
         '</td>';
       html += '</tr>';
     }
@@ -8926,7 +8926,7 @@ function emRenderAuditTable(data, filters) {
       '<th data-ci="' +
       ci +
       '" ' +
-      (d.title ? 'title="' + emHtmlEsc(d.title) + '" ' : '') +
+      (d.title ? 'title="' + _escHtml(d.title) + '" ' : '') +
       'style="position:sticky;top:0;background:var(--s2);' +
       borderTop +
       'font-weight:600;color:var(--text2);white-space:nowrap;' +
@@ -9092,13 +9092,13 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
 
   // ── Frozen identity columns ──
   if (def.key === 'building') {
-    return '<td style="' + baseStyle + 'text-align:left;font-weight:500">' + emHtmlEsc(row.building || '') + '</td>';
+    return '<td style="' + baseStyle + 'text-align:left;font-weight:500">' + _escHtml(row.building || '') + '</td>';
   }
   if (def.key === 'floor') {
-    return '<td style="' + baseStyle + 'text-align:left">' + emHtmlEsc(row.floor || '') + '</td>';
+    return '<td style="' + baseStyle + 'text-align:left">' + _escHtml(row.floor || '') + '</td>';
   }
   if (def.key === 'equipName') {
-    return '<td style="' + baseStyle + 'text-align:left">' + emHtmlEsc(row.equipName || row.name || '') + '</td>';
+    return '<td style="' + baseStyle + 'text-align:left">' + _escHtml(row.equipName || row.name || '') + '</td>';
   }
 
   // ── Equipment Type ──
@@ -9114,9 +9114,9 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
       var _flagCatLabel = EM_CATEGORY_LABELS[row.pointEvidenceFlag.suggested] || row.pointEvidenceFlag.suggested;
       _flagMarkup =
         ' <span title="Point signature suggests ' +
-        emHtmlEsc(_flagCatLabel) +
+        _escHtml(_flagCatLabel) +
         ' instead of ' +
-        emHtmlEsc(catLabel) +
+        _escHtml(catLabel) +
         ' — evidence was not strong enough to auto-reclassify, flagged for review" ' +
         'style="border-bottom:1px dotted var(--text3);cursor:help;color:var(--text3)">(?)</span>';
     }
@@ -9124,7 +9124,7 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
       '<td style="' +
       baseStyle +
       'text-align:left;font-size:10px;color:var(--text2)">' +
-      emHtmlEsc(catLabel) +
+      _escHtml(catLabel) +
       _flagMarkup +
       '</td>'
     );
@@ -9305,7 +9305,7 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
         if (_normVal != null) rawVal = _normVal;
       }
       var displayVal = rawVal !== '' ? (String(rawVal).length > 8 ? String(rawVal).slice(0, 8) : String(rawVal)) : null;
-      var tooltipBase = emHtmlEsc((match.pointName || '') + (rawVal !== '' ? ': ' + rawVal : ''));
+      var tooltipBase = _escHtml((match.pointName || '') + (rawVal !== '' ? ': ' + rawVal : ''));
 
       // FIX 65030b9b: detect "present but blank at export time" state.
       // A point is in this state when: (a) the compliance engine found it covered via
@@ -9323,7 +9323,7 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
         row.pointsRaw[match.pointName] === '';
       if (isBlankAtExport) {
         var blankTitle =
-          emHtmlEsc(match.pointName || '') + ': point exists on controller but had no live value at export time';
+          _escHtml(match.pointName || '') + ': point exists on controller but had no live value at export time';
         return (
           '<td style="' +
           baseStyle +
@@ -9342,7 +9342,7 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
           'background:rgba(39,174,96,0.15);color:#27ae60;font-weight:700" title="' +
           greenTitle +
           '">' +
-          (displayVal !== null ? emHtmlEsc(displayVal) : '') +
+          (displayVal !== null ? _escHtml(displayVal) : '') +
           '</td>'
         );
       } else {
@@ -9354,7 +9354,7 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
           'background:rgba(230,126,34,0.15);color:#e67e22;font-weight:700" title="' +
           amberTitle +
           '">' +
-          (displayVal !== null ? emHtmlEsc(displayVal) : '') +
+          (displayVal !== null ? _escHtml(displayVal) : '') +
           '</td>'
         );
       }
@@ -9365,7 +9365,7 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
         '<td style="' +
         baseStyle +
         'background:rgba(192,57,43,0.15);color:#c0392b;font-weight:700" title="Not found: ' +
-        emHtmlEsc(def.label || catKey) +
+        _escHtml(def.label || catKey) +
         '"></td>'
       );
     }
@@ -9442,7 +9442,7 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
         baseStyle +
         'background:rgba(39,174,96,0.15);color:#27ae60;font-weight:700" ' +
         'title="' +
-        emHtmlEsc(bTooltip) +
+        _escHtml(bTooltip) +
         '">PASS</td>'
       );
     }
@@ -9452,7 +9452,7 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
         baseStyle +
         'background:rgba(230,126,34,0.15);color:#e67e22;font-weight:700" ' +
         'title="' +
-        emHtmlEsc(bTooltip) +
+        _escHtml(bTooltip) +
         '">WARN</td>'
       );
     }
@@ -9462,7 +9462,7 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
         baseStyle +
         'background:rgba(192,57,43,0.15);color:#c0392b;font-weight:700" ' +
         'title="' +
-        emHtmlEsc(bTooltip) +
+        _escHtml(bTooltip) +
         '">FAIL</td>'
       );
     }
@@ -9472,7 +9472,7 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
       baseStyle +
       'color:var(--text3);font-size:10px" ' +
       'title="' +
-      emHtmlEsc(bTooltip) +
+      _escHtml(bTooltip) +
       '">No Data</td>'
     );
   }
@@ -9500,7 +9500,7 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
         '<td style="' +
         baseStyle +
         'color:var(--text3);font-size:11px" title="' +
-        emHtmlEsc(_spNoDataTooltip) +
+        _escHtml(_spNoDataTooltip) +
         '">No Data</td>'
       );
     }
@@ -9530,7 +9530,7 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
       baseStyle +
       'background:rgba(230,126,34,0.15);color:#e67e22;font-weight:700;font-size:11px;cursor:pointer" ' +
       'title="' +
-      emHtmlEsc(_spTooltip) +
+      _escHtml(_spTooltip) +
       '" onclick="emShowComplianceDetail(\'' +
       String(row.id).replace(/'/g, "\\'") +
       '\')">' +
@@ -9541,18 +9541,7 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
 
   // ── Fallback ──
   // Milestone 1: use != null guard (0-safe) instead of || '' (was falsy)
-  return '<td style="' + baseStyle + '">' + emHtmlEsc(String(row[def.key] != null ? row[def.key] : '')) + '</td>';
-}
-
-/* ── emHtmlEsc ──────────────────────────────────────────────────────────────
-   Escape HTML special characters for safe insertion into HTML strings.   */
-function emHtmlEsc(str) {
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
+  return '<td style="' + baseStyle + '">' + _escHtml(String(row[def.key] != null ? row[def.key] : '')) + '</td>';
 }
 
 /* ── emAuditGetSortVal ──────────────────────────────────────────────────────
@@ -9692,7 +9681,7 @@ var _emPanelListenersAttached = false;
    "Unexpected end of input" when the browser tries to compile it.
 
    Fixed by moving every interactive control in this panel off
-   attribute-embedded-JS entirely: each control carries emHtmlEsc()'d data-*
+   attribute-embedded-JS entirely: each control carries _escHtml()'d data-*
    attributes (correct HTML-attribute escaping — not JS-string-in-HTML-
    attribute, which is what broke this) and a single delegated listener,
    attached once to `document`, reads event.target/.closest() + .dataset
@@ -9792,7 +9781,7 @@ function emShowComplianceDetail(rowId) {
         '<div style="font-size:11px;padding:2px 0;border-bottom:1px solid var(--border)"' +
         tier +
         '>' +
-        emHtmlEsc((p.matchTier <= 2 ? '✓ ' : '~ ') + p.categoryLabel + ' — “' + (p.pointName || '') + '”') +
+        _escHtml((p.matchTier <= 2 ? '✓ ' : '~ ') + p.categoryLabel + ' — “' + (p.pointName || '') + '”') +
         '</div>';
     }
   }
@@ -9804,7 +9793,7 @@ function emShowComplianceDetail(rowId) {
     for (var mp = 0; mp < c.missingPoints.length; mp++) {
       covHtml +=
         '<div style="font-size:11px;padding:2px 0;border-bottom:1px solid var(--border);color:#c0392b">' +
-        emHtmlEsc('✗ ' + c.missingPoints[mp].categoryLabel) +
+        _escHtml('✗ ' + c.missingPoints[mp].categoryLabel) +
         '</div>';
     }
   }
@@ -9816,7 +9805,7 @@ function emShowComplianceDetail(rowId) {
     for (var np = 0; np < c.naPoints.length; np++) {
       covHtml +=
         '<div style="font-size:11px;padding:2px 0;color:var(--text3)">' +
-        emHtmlEsc('— ' + c.naPoints[np].categoryLabel) +
+        _escHtml('— ' + c.naPoints[np].categoryLabel) +
         '</div>';
     }
   }
@@ -9840,12 +9829,12 @@ function emShowComplianceDetail(rowId) {
       // the first embedded quote per the HTML5 tokenizer, leaving an unparseable
       // handler that silently compiled to null and never fired for ANY pid/rowId/
       // flagKey value — not just ones containing quotes. Fixed by moving off
-      // attribute-embedded-JS entirely: emHtmlEsc'd data-* attributes (safe HTML
+      // attribute-embedded-JS entirely: _escHtml'd data-* attributes (safe HTML
       // attribute escaping, not JS-string-in-HTML-attribute) + a single delegated
       // listener (see _emAttachPanelDelegatedListeners) that reads .dataset.       */
-      var safeRowIdAttr = emHtmlEsc(rowId);
-      var safePidAttr = emHtmlEsc(pid);
-      var safeFdKeyAttr = emHtmlEsc(fd.key);
+      var safeRowIdAttr = _escHtml(rowId);
+      var safePidAttr = _escHtml(pid);
+      var safeFdKeyAttr = _escHtml(fd.key);
 
       if (fd.type === 'select') {
         // ── Select dropdown (zoneType, occupancyCat) ──────────────────────
@@ -9888,7 +9877,7 @@ function emShowComplianceDetail(rowId) {
             oLabel = zoneTypeLabels[oKey] || oKey;
           }
           var isSelected = oKey === currentVal ? ' selected' : '';
-          optionsHtml += '<option value="' + emHtmlEsc(oKey) + '"' + isSelected + '>' + emHtmlEsc(oLabel) + '</option>';
+          optionsHtml += '<option value="' + _escHtml(oKey) + '"' + isSelected + '>' + _escHtml(oLabel) + '</option>';
         }
 
         var inferredHint =
@@ -9898,7 +9887,7 @@ function emShowComplianceDetail(rowId) {
         cfHtml +=
           '<div style="margin-bottom:8px">' +
           '<label style="font-size:11px;color:var(--text2);display:block;margin-bottom:3px">' +
-          emHtmlEsc(fd.label) +
+          _escHtml(fd.label) +
           inferredHint +
           '</label>' +
           '<select data-em-config-flag="1" data-pid="' +
@@ -9927,7 +9916,7 @@ function emShowComplianceDetail(rowId) {
           (isChecked ? ' checked' : '') +
           ' style="width:14px;height:14px;cursor:pointer">' +
           '<span style="font-size:12px;color:var(--text)">' +
-          emHtmlEsc(fd.label) +
+          _escHtml(fd.label) +
           '</span>' +
           '</div>';
       }
@@ -9989,11 +9978,11 @@ function emShowComplianceDetail(rowId) {
           // config-flag controls above — fixed the same way (data-* + delegated listener).
           markBtn =
             ' <button data-em-mark-sp-override="1" data-pid="' +
-            emHtmlEsc(pid) +
+            _escHtml(pid) +
             '" data-row-id="' +
-            emHtmlEsc(rowId) +
+            _escHtml(rowId) +
             '" data-check-key="' +
-            emHtmlEsc(sr.checkKey) +
+            _escHtml(sr.checkKey) +
             '" ' +
             'style="font-size:10px;padding:1px 6px;background:var(--s2);border:1px solid var(--border);' +
             'color:var(--text2);border-radius:3px;cursor:pointer;margin-left:4px" ' +
@@ -10001,24 +9990,24 @@ function emShowComplianceDetail(rowId) {
         }
       }
 
-      var trTooltip = sr.deviationNote ? ' title="' + emHtmlEsc(sr.deviationNote) + '"' : '';
+      var trTooltip = sr.deviationNote ? ' title="' + _escHtml(sr.deviationNote) + '"' : '';
       spHtml +=
         '<tr' +
         trTooltip +
         '>' +
         '<td style="padding:4px 6px;border:1px solid var(--border)">' +
-        emHtmlEsc(sr.label) +
+        _escHtml(sr.label) +
         '</td>' +
         '<td style="padding:4px 6px;border:1px solid var(--border);text-align:right">' +
-        emHtmlEsc(actualDisp) +
+        _escHtml(actualDisp) +
         '</td>' +
         '<td style="padding:4px 6px;border:1px solid var(--border);text-align:right;color:var(--text3)">' +
-        emHtmlEsc(defaultDisp) +
+        _escHtml(defaultDisp) +
         '</td>' +
         '<td style="padding:4px 6px;border:1px solid var(--border);color:' +
         srColor +
         ';white-space:nowrap">' +
-        emHtmlEsc(srIcon) +
+        _escHtml(srIcon) +
         markBtn +
         '</td>' +
         '</tr>';
@@ -10036,7 +10025,7 @@ function emShowComplianceDetail(rowId) {
   var allPtsHtml =
     '<div style="margin-bottom:16px">' +
     '<div data-em-toggle-all-points="1" data-row-id="' +
-    emHtmlEsc(rowId) +
+    _escHtml(rowId) +
     '" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;' +
     'font-weight:600;font-size:12px;color:var(--text2);text-transform:uppercase;letter-spacing:0.05em;' +
     'margin-bottom:8px">' +
@@ -10069,10 +10058,10 @@ function emShowComplianceDetail(rowId) {
     'border-bottom:1px solid var(--border);background:var(--s1);flex-shrink:0">' +
     '<div>' +
     '<div style="font-weight:700;font-size:13px;color:var(--text)">' +
-    emHtmlEsc(equipName) +
+    _escHtml(equipName) +
     '</div>' +
     '<div style="font-size:11px;color:var(--text3)">' +
-    emHtmlEsc(catLabel) +
+    _escHtml(catLabel) +
     ' &mdash; ASHRAE 36 Detail</div>' +
     '</div>' +
     '<div style="display:flex;align-items:center;gap:6px">' +
@@ -10080,7 +10069,7 @@ function emShowComplianceDetail(rowId) {
     // matches sooGenerateForRow's own category guard in app/soo-generator.js.
     (category === 'vav'
       ? '<button data-soo-generate-row="1" data-row-id="' +
-        emHtmlEsc(rowId) +
+        _escHtml(rowId) +
         '" style="font-size:10px;padding:3px 8px;background:var(--s2);border:1px solid var(--border);' +
         'color:var(--text2);border-radius:3px;cursor:pointer" ' +
         'title="Generate a Sequence of Operations document for this equipment">Generate Sequence</button>'
@@ -10196,7 +10185,7 @@ function emShowAutoKeyDetail(rowId) {
     'border-bottom:1px solid var(--border);background:var(--s1);flex-shrink:0">' +
     '<div>' +
     '<div style="font-weight:700;font-size:13px;color:var(--text)">' +
-    emHtmlEsc(equipName) +
+    _escHtml(equipName) +
     '</div>' +
     '<div style="font-size:11px;color:var(--text3)">ASHRAE 36 Points &amp; Other Building Automation System Points</div>' +
     '</div>' +
@@ -10428,8 +10417,8 @@ function emFormatCell(val, def, row) {
   // = '?' (not blank, not a guessed value)") — bypass the generic '--' / offline-sentinel
   // handling below (which is for the rest of the raw BAS point columns) and reuse the
   // same _emSpDisplay/_emAdjustDisplay formatting the Setpoint & Schedule export uses.
-  if (def.isSpAdjustRange) return emHtmlEsc(String(val));
-  if (def.isSpDisplay) return emHtmlEsc(_emSpDisplay(val));
+  if (def.isSpAdjustRange) return _escHtml(String(val));
+  if (def.isSpDisplay) return _escHtml(_emSpDisplay(val));
   if (val === null || val === undefined || val === '') return '--';
   var s = String(val);
   // Step 3 — offline sentinel display: WebCTRL "no data" markers render as muted "offline" label.
@@ -11215,7 +11204,7 @@ function emOpenSetpointExportDialog(pid, lockedBldgId) {
     bldgOptsList
       .map(function (b) {
         var sel = lockedBldgValid && b.id === lockedBldgId ? ' selected' : '';
-        return '<option value="' + emHtmlEsc(b.id) + '"' + sel + '>' + emHtmlEsc(b.name) + '</option>';
+        return '<option value="' + _escHtml(b.id) + '"' + sel + '>' + _escHtml(b.name) + '</option>';
       })
       .join('');
 
@@ -11231,11 +11220,11 @@ function emOpenSetpointExportDialog(pid, lockedBldgId) {
         '<select id="em-sp-export-option" style="font-size:12px;padding:5px 8px;background:var(--s2);border:1px solid var(--border);color:var(--text);border-radius:4px;width:100%">' +
         optionLetters
           .map(function (l) {
-            return '<option value="' + emHtmlEsc(l) + '">Option ' + emHtmlEsc(l) + '</option>';
+            return '<option value="' + _escHtml(l) + '">Option ' + _escHtml(l) + '</option>';
           })
           .join('') +
         '</select></div>'
-      : '<input type="hidden" id="em-sp-export-option" value="' + emHtmlEsc(optionLetters[0] || '') + '">';
+      : '<input type="hidden" id="em-sp-export-option" value="' + _escHtml(optionLetters[0] || '') + '">';
 
   var html =
     '<div id="em-sp-export-modal" class="modal-bg open" onclick="if(event.target===this)document.getElementById(\'em-sp-export-modal\').remove()">' +
@@ -11247,7 +11236,7 @@ function emOpenSetpointExportDialog(pid, lockedBldgId) {
     '<div id="em-sp-export-note" style="font-size:11px;color:var(--text3);margin-bottom:10px"></div>' +
     (lockedBldgUnresolvedName
       ? '<div style="font-size:11px;color:#b45309;background:rgba(217,119,6,0.1);border:1px solid rgba(217,119,6,0.3);border-radius:4px;padding:6px 8px;margin-bottom:10px">"' +
-        emHtmlEsc(lockedBldgUnresolvedName) +
+        _escHtml(lockedBldgUnresolvedName) +
         '" has no Equipment Matrix rows under a matching building name — showing all buildings in this project\'s matrix instead.</div>'
       : '') +
     '<div><label style="font-size:11px;color:var(--text3);display:block;margin-bottom:4px">Building</label>' +
@@ -11471,7 +11460,7 @@ function emQueueFiles(files) {
   if (listHeader) listHeader.textContent = 'Files queued: ' + _emPendingFiles.length;
   var html = '';
   for (var j = 0; j < _emPendingFiles.length; j++) {
-    html += '<li style="padding:2px 0;color:var(--text)">' + emHtmlEsc(_emPendingFiles[j].name) + '</li>';
+    html += '<li style="padding:2px 0;color:var(--text)">' + _escHtml(_emPendingFiles[j].name) + '</li>';
   }
   itemsUl.innerHTML = html;
   // Auto-start import as soon as valid CSVs are queued.
@@ -21679,7 +21668,7 @@ function emRenderCreateBldgsTable(rows) {
       i +
       '" ' +
       'value="' +
-      emHtmlEsc(row.name) +
+      _escHtml(row.name) +
       '" ' +
       (row.alreadyExists ? 'disabled ' : '') +
       'style="width:100%;font-size:12px;padding:2px 6px;background:var(--s2);border:1px solid var(--border);' +
@@ -22381,7 +22370,7 @@ function emRenderSequenceCell(seqName, readiness) {
       baseStyle +
       'background:rgba(39,174,96,0.15);color:#27ae60;font-weight:700" ' +
       'title="' +
-      emHtmlEsc(tooltip) +
+      _escHtml(tooltip) +
       '">Yes</td>'
     );
   }
@@ -22391,7 +22380,7 @@ function emRenderSequenceCell(seqName, readiness) {
       baseStyle +
       'background:rgba(230,126,34,0.15);color:#e67e22;font-weight:700" ' +
       'title="' +
-      emHtmlEsc(tooltip) +
+      _escHtml(tooltip) +
       '">Partial</td>'
     );
   }
@@ -22401,7 +22390,7 @@ function emRenderSequenceCell(seqName, readiness) {
       baseStyle +
       'background:rgba(192,57,43,0.15);color:#c0392b;font-weight:700" ' +
       'title="' +
-      emHtmlEsc(tooltip) +
+      _escHtml(tooltip) +
       '">No</td>'
     );
   }
@@ -22688,9 +22677,9 @@ function emBuildFunctionalCatOptions() {
 function emBuildCategoryDropdown(rawName, equipCategory, currentVal, allCatOptions) {
   var selectHtml =
     '<select data-rawname="' +
-    emHtmlEsc(rawName) +
+    _escHtml(rawName) +
     '" data-equip="' +
-    emHtmlEsc(equipCategory) +
+    _escHtml(equipCategory) +
     '" ' +
     'style="font-size:11px;padding:2px 6px;background:var(--s2);border:1px solid var(--border);' +
     'color:var(--text);border-radius:4px;height:24px;max-width:280px">' +
@@ -22704,7 +22693,7 @@ function emBuildCategoryDropdown(rawName, equipCategory, currentVal, allCatOptio
     var opt = allCatOptions[oi];
     if (opt.funcGroup !== lastGroup) {
       if (lastGroup !== '') selectHtml += '</optgroup>';
-      selectHtml += '<optgroup label="' + emHtmlEsc(opt.funcGroup) + '">';
+      selectHtml += '<optgroup label="' + _escHtml(opt.funcGroup) + '">';
       lastGroup = opt.funcGroup;
     }
     var optVal = opt.equipType + ':' + opt.key;
@@ -22718,11 +22707,11 @@ function emBuildCategoryDropdown(rawName, equipCategory, currentVal, allCatOptio
         !selectHtml.includes(' selected'));
     selectHtml +=
       '<option value="' +
-      emHtmlEsc(optVal) +
+      _escHtml(optVal) +
       '"' +
       (isSelected ? ' selected' : '') +
       '>' +
-      emHtmlEsc(opt.label) +
+      _escHtml(opt.label) +
       '</option>';
   }
   if (lastGroup !== '') selectHtml += '</optgroup>';
@@ -23184,8 +23173,8 @@ function emOpenManageMappings(pid) {
         var fsBadgeTip = fsMeta ? fsMeta.badgeTooltip : '';
         var fsBadgeColor = fsBadge === 'High' ? '#2a7d4f' : fsBadge === 'Med' ? '#8a6a00' : '#a04000';
         var fsColLabel = fsMeta ? fsMeta.colLabel : pe.colKey || '';
-        var fsRawEsc = emHtmlEsc(pe.rawName);
-        var fsColKeyEsc = emHtmlEsc(pe.colKey || '');
+        var fsRawEsc = _escHtml(pe.rawName);
+        var fsColKeyEsc = _escHtml(pe.colKey || '');
         suggestRows +=
           '<tr data-suggest-raw="' +
           fsRawEsc +
@@ -23199,7 +23188,7 @@ function emOpenManageMappings(pid) {
           fsRawEsc +
           '</td>' +
           '<td style="padding:6px 12px;font-size:11px;color:var(--text)">' +
-          emHtmlEsc(fsColLabel) +
+          _escHtml(fsColLabel) +
           '</td>' +
           '<td style="padding:6px 8px;white-space:nowrap">' +
           (fsBadge
@@ -23208,17 +23197,17 @@ function emOpenManageMappings(pid) {
               ';padding:2px 6px;border:1px solid ' +
               fsBadgeColor +
               ';border-radius:3px" title="' +
-              emHtmlEsc(fsBadgeTip) +
+              _escHtml(fsBadgeTip) +
               '">' +
               fsBadge +
               '</span> '
             : '') +
           '<button onclick="emAcceptSuggestionInModal(this)" data-pid="' +
-          emHtmlEsc(pid) +
+          _escHtml(pid) +
           '" ' +
           'style="font-size:10px;padding:3px 8px;background:var(--accent);border:none;color:#fff;border-radius:3px;cursor:pointer;margin-right:4px">Accept</button>' +
           '<button onclick="emDismissSuggestionInModal(this)" data-pid="' +
-          emHtmlEsc(pid) +
+          _escHtml(pid) +
           '" ' +
           'style="font-size:10px;padding:3px 8px;background:var(--s3);border:1px solid var(--border);color:var(--text);border-radius:3px;cursor:pointer">Dismiss</button>' +
           '</td><td></td></tr>';
@@ -23271,10 +23260,10 @@ function emOpenManageMappings(pid) {
           htmlParts.push(
             '<tr style="border-bottom:1px solid var(--border)">' +
               '<td style="padding:6px 12px;font-size:11px;font-family:Consolas,monospace;color:var(--text);max-width:320px;word-break:break-word">' +
-              emHtmlEsc(up.name) +
+              _escHtml(up.name) +
               '</td>' +
               '<td style="padding:6px 12px;font-size:11px;color:var(--text2);text-align:center;white-space:nowrap" title="' +
-              emHtmlEsc(countTitle) +
+              _escHtml(countTitle) +
               '">' +
               up.count +
               '</td>' +
@@ -23318,10 +23307,10 @@ function emOpenManageMappings(pid) {
           htmlParts.push(
             '<tr style="border-bottom:1px solid var(--border)">' +
               '<td style="padding:6px 12px;font-size:11px;font-family:Consolas,monospace;color:var(--text);max-width:320px;word-break:break-word">' +
-              emHtmlEsc(op.name) +
+              _escHtml(op.name) +
               '</td>' +
               '<td style="padding:6px 12px;font-size:11px;color:var(--text2);text-align:center;white-space:nowrap" title="' +
-              emHtmlEsc(opCountTitle) +
+              _escHtml(opCountTitle) +
               '">' +
               op.count +
               '</td>' +
@@ -23354,29 +23343,29 @@ function emOpenManageMappings(pid) {
           htmlParts.push(
             '<tr style="border-bottom:1px solid var(--border)">' +
               '<td style="padding:6px 12px;font-size:11px;font-family:Consolas,monospace;color:var(--text);max-width:280px;word-break:break-word">' +
-              emHtmlEsc(mp.name) +
+              _escHtml(mp.name) +
               '</td>' +
               '<td style="padding:6px 12px;font-size:11px;color:var(--text2);text-align:center;white-space:nowrap" title="' +
-              emHtmlEsc(mCountTitle) +
+              _escHtml(mCountTitle) +
               '">' +
               mp.count +
               '</td>' +
               '<td style="padding:6px 12px;font-size:11px;color:var(--text2)">' +
               '<span class="em-automatch-label">' +
-              emHtmlEsc(mp.matchedLabel) +
+              _escHtml(mp.matchedLabel) +
               '</span> ' +
               '<button onclick="emEditAutoMatchRow(this)" data-rawname="' +
-              emHtmlEsc(mp.name) +
+              _escHtml(mp.name) +
               '" data-equip="' +
-              emHtmlEsc(mp.equipCategory) +
+              _escHtml(mp.equipCategory) +
               '" data-matchedkey="' +
-              emHtmlEsc(mp.matchedKey) +
+              _escHtml(mp.matchedKey) +
               '" style="font-size:10px;padding:2px 7px;background:var(--s3);border:1px solid var(--border);' +
               'color:var(--text);border-radius:3px;cursor:pointer;margin-left:8px" ' +
               'title="Change this point\'s assigned category">Edit</button>' +
               '</td>' +
               '<td style="padding:6px 12px;font-size:11px;text-align:center" title="' +
-              emHtmlEsc(confTitle) +
+              _escHtml(confTitle) +
               '">' +
               '<span style="color:' +
               confColor +

@@ -4427,7 +4427,7 @@ function btBuildOATSvg(pts, metricKey, metricDef) {
       '" opacity="0.85" ' +
       'stroke="var(--s1)" stroke-width="1" ' +
       'data-tip="' +
-      btEscapeAttr(tipText) +
+      _escHtml(tipText) +
       '" class="bt-oat-dot" style="cursor:pointer;"/>';
   });
 
@@ -4483,7 +4483,7 @@ function btBuildOATSvg(pts, metricKey, metricDef) {
           '" y="' +
           (annY + 14 + li * 15) +
           '" text-anchor="middle" font-size="10" fill="var(--text2)">' +
-          btEscapeHtml(l) +
+          _escHtml(l) +
           '</text>'
         );
       })
@@ -4504,7 +4504,7 @@ function btBuildOATSvg(pts, metricKey, metricDef) {
     '" text-anchor="middle" font-size="11" fill="var(--text3)" transform="rotate(-90,12,' +
     (pt + ch / 2) +
     ')">' +
-    btEscapeHtml(metricDef.label) +
+    _escHtml(metricDef.label) +
     '</text>';
 
   // Tooltip div (positioned absolutely inside the SVG wrapper)
@@ -4587,16 +4587,6 @@ function btNiceTicks(min, max, target) {
     ticks.push(btRound(t, 6));
   }
   return ticks;
-}
-
-/** Escape a string for use in an SVG/HTML attribute value */
-function btEscapeAttr(str) {
-  return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
-/** Escape a string for use in SVG text content */
-function btEscapeHtml(str) {
-  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 /* ── SUBTAB REGISTRATION (Phase 3 hook) ─────────────────────────────────────── */
@@ -5041,9 +5031,9 @@ function btRenderSavingsPanel(projId, bldgId) {
     rows +=
       '<tr style="border-bottom:1px solid var(--border)">' +
       '<td style="padding:6px 8px;color:var(--text);font-size:11px">' +
-      btEscapeHtml(e.label) +
+      _escHtml(e.label) +
       '<div style="font-size:10px;color:var(--text3);font-weight:400">' +
-      btEscapeHtml(e.assumption) +
+      _escHtml(e.assumption) +
       '</div>' +
       '</td>' +
       '<td style="padding:6px 8px;color:var(--text2);font-size:11px;font-family:Consolas,monospace">' +
@@ -5056,9 +5046,9 @@ function btRenderSavingsPanel(projId, bldgId) {
       '</td>' +
       '<td style="padding:6px 8px;color:var(--text3);font-size:10px">' +
       '<span title="' +
-      btEscapeAttr(e.basis) +
+      _escHtml(e.basis) +
       '" style="cursor:help;text-decoration:underline dotted">' +
-      btEscapeHtml(e.detail) +
+      _escHtml(e.detail) +
       '</span>' +
       '</td>' +
       '</tr>';

@@ -242,7 +242,7 @@ function baOpenImportModal() {
   var projOptions = projects
     .map(function (p) {
       var sel = activeProjId && p.id === activeProjId ? ' selected' : '';
-      return '<option value="' + baEsc(p.id) + '"' + sel + '>' + baEsc(p.name || p.id) + '</option>';
+      return '<option value="' + _escHtml(p.id) + '"' + sel + '>' + _escHtml(p.name || p.id) + '</option>';
     })
     .join('');
 
@@ -604,7 +604,7 @@ function baRenderLog(body, rows) {
       '<span style="color:var(--text);">Showing alarms for <strong>' +
       drillDimName +
       '</strong>: <strong>' +
-      baEsc(drillDisplayValue) +
+      _escHtml(drillDisplayValue) +
       '</strong></span>' +
       '<button onclick="baClearDrillFilter()" style="margin-left:auto;background:none;border:1px solid var(--border);color:var(--text2);border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer;" title="Clear chart filter">&times; Clear</button>' +
       '</div>';
@@ -679,7 +679,7 @@ function baRenderLog(body, rows) {
       .map(function (r) {
         // bgStyle removed — no row background tinting
         var ackText = r.acknowledged
-          ? '&#10003; ' + baEsc(r.acknowledgedBy || 'Acknowledged')
+          ? '&#10003; ' + _escHtml(r.acknowledgedBy || 'Acknowledged')
           : '<span style="color:var(--amber);">Unacknowledged</span>';
         var dateText = r.ts ? r.ts.toLocaleString() : '';
         return (
@@ -688,30 +688,30 @@ function baRenderLog(body, rows) {
           dateText +
           '</td>' +
           '<td style="padding:7px 10px;font-size:12px;color:var(--text);">' +
-          baEsc(r.building) +
+          _escHtml(r.building) +
           '</td>' +
           '<td style="padding:7px 10px;font-size:12px;color:var(--text);">' +
-          baEsc(r.category) +
+          _escHtml(r.category) +
           '</td>' +
           '<td style="padding:7px 10px;font-size:12px;color:var(--text);">' +
-          baEsc(r.source) +
+          _escHtml(r.source) +
           '</td>' +
           '<td style="padding:7px 10px;font-size:12px;color:var(--text2);white-space:normal;word-break:break-word;cursor:default;"' +
           (r.description
             ? ' data-desc="' +
-              baEsc(r.description) +
+              _escHtml(r.description) +
               '" onmouseenter="baTip(this,this.dataset.desc)" onmouseleave="baTipHide()"'
             : '') +
           '>' +
-          baEsc(r.description) +
+          _escHtml(r.description) +
           '</td>' +
           '<td style="padding:7px 10px;font-size:12px;font-weight:600;color:' +
           (r.state === 'Fault' ? 'var(--red)' : r.state === 'Offnormal' ? 'var(--amber)' : 'var(--green)') +
           ';">' +
-          baEsc(r.state) +
+          _escHtml(r.state) +
           '</td>' +
           '<td style="padding:7px 10px;font-size:12px;color:var(--text3);">' +
-          baEsc(r.duration) +
+          _escHtml(r.duration) +
           '</td>' +
           '<td style="padding:7px 10px;font-size:12px;">' +
           ackText +
@@ -1030,7 +1030,7 @@ function _baInlineDrillRender(container, rows) {
     '<span style="color:var(--text);">Showing alarms for <strong>' +
     drillDimName +
     '</strong>: <strong>' +
-    baEsc(drillDisplayValue) +
+    _escHtml(drillDisplayValue) +
     '</strong></span>' +
     '<button onclick="baClearDrillFilter()" style="margin-left:auto;background:none;border:1px solid var(--border);color:var(--text2);border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer;" title="Clear chart filter">&times; Clear</button>' +
     '</div>';
@@ -1073,7 +1073,7 @@ function _baInlineDrillRender(container, rows) {
     pageRows
       .map(function (r) {
         var ackText = r.acknowledged
-          ? '&#10003; ' + baEsc(r.acknowledgedBy || 'Acknowledged')
+          ? '&#10003; ' + _escHtml(r.acknowledgedBy || 'Acknowledged')
           : '<span style="color:var(--amber);">Unacknowledged</span>';
         var dateText = r.ts ? r.ts.toLocaleString() : '';
         return (
@@ -1082,30 +1082,30 @@ function _baInlineDrillRender(container, rows) {
           dateText +
           '</td>' +
           '<td style="padding:7px 10px;font-size:12px;color:var(--text);">' +
-          baEsc(r.building) +
+          _escHtml(r.building) +
           '</td>' +
           '<td style="padding:7px 10px;font-size:12px;color:var(--text);">' +
-          baEsc(r.category) +
+          _escHtml(r.category) +
           '</td>' +
           '<td style="padding:7px 10px;font-size:12px;color:var(--text);">' +
-          baEsc(r.source) +
+          _escHtml(r.source) +
           '</td>' +
           '<td style="padding:7px 10px;font-size:12px;color:var(--text2);white-space:normal;word-break:break-word;cursor:default;"' +
           (r.description
             ? ' data-desc="' +
-              baEsc(r.description) +
+              _escHtml(r.description) +
               '" onmouseenter="baTip(this,this.dataset.desc)" onmouseleave="baTipHide()"'
             : '') +
           '>' +
-          baEsc(r.description) +
+          _escHtml(r.description) +
           '</td>' +
           '<td style="padding:7px 10px;font-size:12px;font-weight:600;color:' +
           (r.state === 'Fault' ? 'var(--red)' : r.state === 'Offnormal' ? 'var(--amber)' : 'var(--green)') +
           ';">' +
-          baEsc(r.state) +
+          _escHtml(r.state) +
           '</td>' +
           '<td style="padding:7px 10px;font-size:12px;color:var(--text3);">' +
-          baEsc(r.duration) +
+          _escHtml(r.duration) +
           '</td>' +
           '<td style="padding:7px 10px;font-size:12px;">' +
           ackText +
@@ -1549,12 +1549,6 @@ function baRenderTimeline(body, rows) {
 
 // ── Utility helpers ──────────────────────────────────────────────────────────
 
-/** Escape HTML entities */
-function baEsc(s) {
-  s = s == null ? '' : String(s);
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
 /** Unique values from an array */
 function baUnique(arr) {
   var seen = {};
@@ -1579,7 +1573,7 @@ function baSelect(id, options, selected, placeholder, onchange, allLabel) {
       .map(function (o) {
         return (
           '<option value="' +
-          baEsc(o) +
+          _escHtml(o) +
           '"' +
           (o === selected ? ' selected' : '') +
           '>' +
@@ -1621,7 +1615,7 @@ function baDownloadFilteredCSV() {
       r.ts ? '"' + r.ts.toLocaleString() + '"' : '',
       r.acknowledged,
       r.acknowledgedAt ? '"' + r.acknowledgedAt.toLocaleString() + '"' : '',
-      '"' + baEsc(r.acknowledgedBy || '') + '"',
+      '"' + (r.acknowledgedBy || '').replace(/"/g, '""') + '"',
       '"' + (r.category || '').replace(/"/g, '""') + '"',
       '"' + (r.location || '').replace(/"/g, '""') + '"',
       '"' + (r.building || '').replace(/"/g, '""') + '"',

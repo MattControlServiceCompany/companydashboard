@@ -1499,22 +1499,12 @@ function refreshCustomerDropdown(selectedId) {
           '"' +
           (c.id === selectedId ? ' selected' : '') +
           '>' +
-          _escHtmlEs(c.name) +
+          _escHtml(c.name) +
           '</option>',
       )
       .join('') +
     '<option value="__new__">+ New customer…</option>';
 }
-// Tiny local HTML-escape (mirrors the app-wide _escHtml pattern) so a customer name with
-// HTML-significant characters never breaks the dropdown's innerHTML build.
-function _escHtmlEs(s) {
-  return String(s == null ? '' : s)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
 function onCustomerDropdownChange() {
   const sel = document.getElementById('mp-customer');
   const newInput = document.getElementById('mp-customer-new');
@@ -1583,7 +1573,7 @@ function renderMpBuildingsChecklist() {
             '"' +
             (mExcluded ? '' : ' checked') +
             ' onchange="_mpChecklistChanged()">' +
-            _escHtmlEs((m.commodity || 'Meter') + (m.account ? ' · ' + m.account : '')) +
+            _escHtml((m.commodity || 'Meter') + (m.account ? ' · ' + m.account : '')) +
             ' <span style="color:var(--text3)">(baseline included when checked)</span></label>'
           );
         })
@@ -1596,7 +1586,7 @@ function renderMpBuildingsChecklist() {
         '"' +
         (bChecked ? ' checked' : '') +
         ' onchange="_mpChecklistChanged()">' +
-        _escHtmlEs(b.name || 'Building') +
+        _escHtml(b.name || 'Building') +
         '</label>' +
         (bChecked ? meterRows : '') +
         '</div>'
@@ -1739,7 +1729,7 @@ function _mpAutofillPopulateSourceDropdown(excludeId) {
     .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   sel.innerHTML =
     '<option value="">— Select a project to fill from —</option>' +
-    list.map((p) => '<option value="' + p.id + '">' + _escHtmlEs(p.name) + '</option>').join('');
+    list.map((p) => '<option value="' + p.id + '">' + _escHtml(p.name) + '</option>').join('');
   sel.value = '';
   const wrap = document.getElementById('mp-autofill-list');
   const box = document.getElementById('mp-autofill-fields');
@@ -1791,14 +1781,14 @@ function _mpAutofillSourceChanged() {
   if (!rows.length) {
     box.innerHTML =
       '<div style="color:var(--text3);padding:4px 0">' +
-      _escHtmlEs(buildingsNote || 'This project has no values to fill.') +
+      _escHtml(buildingsNote || 'This project has no values to fill.') +
       '</div>';
     wrap.style.display = '';
     return;
   }
   box.innerHTML =
     (buildingsNote
-      ? '<div style="color:var(--text3);padding:2px 0 8px;font-size:11px">' + _escHtmlEs(buildingsNote) + '</div>'
+      ? '<div style="color:var(--text3);padding:2px 0 8px;font-size:11px">' + _escHtml(buildingsNote) + '</div>'
       : '') +
     rows
       .map(
@@ -1808,9 +1798,9 @@ function _mpAutofillSourceChanged() {
           r.field.key +
           '" checked style="margin-top:2px">' +
           '<span style="flex:1"><span style="font-weight:600">' +
-          _escHtmlEs(r.field.label) +
+          _escHtml(r.field.label) +
           '</span><span style="display:block;color:var(--text3)">' +
-          _escHtmlEs(r.preview) +
+          _escHtml(r.preview) +
           '</span></span></label>',
       )
       .join('');

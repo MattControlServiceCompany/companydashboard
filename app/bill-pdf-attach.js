@@ -49,14 +49,6 @@ if (typeof module !== 'undefined' && module.exports) {
 /* ── UI (browser only) ── */
 var _bpa = null; // { projId, rows:[{name,b64,period,sel:{mid:true},from,to}], meters:[], periods:[], startMid }
 
-function _bpaEsc(s) {
-  return String(s == null ? '' : s)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
 async function _bpaSha256Hex(b64) {
   const bin = atob(b64);
   const bytes = new Uint8Array(bin.length);
@@ -171,7 +163,7 @@ function _bpaRender() {
         .map(
           (bn) =>
             '<div style="margin-top:4px"><span style="font-size:11px;color:var(--text3)">' +
-            _bpaEsc(bn) +
+            _escHtml(bn) +
             '</span> ' +
             byBldg[bn]
               .map((mt) => {
@@ -190,7 +182,7 @@ function _bpaRender() {
                   ',&quot;' +
                   mt.mid +
                   '&quot;,this.checked)"> ' +
-                  _bpaEsc(mt.commodity + ' ' + (mt.m.account || mt.m.meter || '')) +
+                  _escHtml(mt.commodity + ' ' + (mt.m.account || mt.m.meter || '')) +
                   (dis ? ' (no bill this period)' : '') +
                   (has ? ' <span style="color:var(--text2)">(already has a PDF)</span>' : '') +
                   '</label>'
@@ -206,7 +198,7 @@ function _bpaRender() {
         '<a href="#" style="font-weight:600;color:var(--accent)" title="Click to preview" onclick="bpaPreview(' +
         i +
         ');return false">' +
-        _bpaEsc(row.name) +
+        _escHtml(row.name) +
         '</a>' +
         '<select class="fs" style="width:auto" onchange="bpaSetPeriod(' +
         i +
@@ -214,11 +206,11 @@ function _bpaRender() {
         opts +
         '</select>' +
         '<span style="font-size:12px">Pages (optional): <input class="fi" type="number" min="1" style="width:64px;padding:4px 6px" value="' +
-        _bpaEsc(row.from) +
+        _escHtml(row.from) +
         '" onchange="_bpa.rows[' +
         i +
         '].from=this.value"> to <input class="fi" type="number" min="1" style="width:64px;padding:4px 6px" value="' +
-        _bpaEsc(row.to) +
+        _escHtml(row.to) +
         '" onchange="_bpa.rows[' +
         i +
         '].to=this.value"></span>' +

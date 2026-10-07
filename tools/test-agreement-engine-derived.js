@@ -33,6 +33,7 @@ function makeCtx(opts) {
   };
   ctx.window = ctx;
   vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(path.join(root, 'lib', 'formatting.js'), 'utf8'), ctx);
   vm.runInContext(fs.readFileSync(path.join(root, 'computations', 'csc.js'), 'utf8'), ctx);
   vm.runInContext(fs.readFileSync(path.join(root, 'app', 'agreement-engine.js'), 'utf8'), ctx);
   return { ctx, store, toasts, els };

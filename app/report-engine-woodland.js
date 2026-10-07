@@ -1064,12 +1064,6 @@ function wdOpenReportInputs(projId, bldgId) {
 }
 window.wdOpenReportInputs = wdOpenReportInputs;
 
-function _wdEsc(s) {
-  return String(s == null ? '' : s)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/"/g, '&quot;');
-}
 function _wdRenderInputs() {
   var c = _wdInputsCtx;
   if (!c) return;
@@ -1086,7 +1080,7 @@ function _wdRenderInputs() {
       '</label><input class="fi" type="number" step="' +
       f.step +
       '" value="' +
-      (val === null || val === undefined ? '' : _wdEsc(val)) +
+      (val === null || val === undefined ? '' : _escHtml(val)) +
       '" onchange="' +
       onchange +
       '"></div>'
@@ -1099,7 +1093,7 @@ function _wdRenderInputs() {
     : '<div style="padding:8px 12px;border:1px solid var(--warn);border-radius:6px;background:var(--warn-dim);font-size:12px"><div style="font-weight:700;color:var(--warn);margin-bottom:4px">The report cannot be generated until these inputs are set:</div><ul style="margin:0;padding-left:18px">' +
       chk.missing
         .map(function (x) {
-          return '<li>' + _wdEsc(x.label) + ' <span style="color:var(--text3)">— ' + _wdEsc(x.where) + '</span></li>';
+          return '<li>' + _escHtml(x.label) + ' <span style="color:var(--text3)">— ' + _escHtml(x.where) + '</span></li>';
         })
         .join('') +
       '</ul></div>';
@@ -1123,7 +1117,7 @@ function _wdRenderInputs() {
       } else dollars = '<span style="color:var(--text3)">not computed</span>';
       return (
         '<tr><td><input class="fi" style="width:48px;text-align:center" maxlength="1" value="' +
-        _wdEsc(o.letter || '') +
+        _escHtml(o.letter || '') +
         '" onchange="wdInputsSetOpt(' +
         i +
         ",'letter',this.value.toUpperCase())\"></td>" +
@@ -1150,7 +1144,7 @@ function _wdRenderInputs() {
     '<div id="wd-inputs-modal" class="modal-bg open" onclick="if(event.target===this)wdCloseReportInputs()">' +
     '<div class="modal" style="width:860px">' +
     '<div class="modal-hdr"><div class="modal-title">Baseline + BAS Savings Report — Inputs · ' +
-    _wdEsc(b.name) +
+    _escHtml(b.name) +
     '</div><button class="modal-x" onclick="wdCloseReportInputs()">✕</button></div>' +
     '<div class="modal-body" style="display:flex;flex-direction:column;gap:14px">' +
     status +

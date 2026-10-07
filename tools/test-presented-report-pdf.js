@@ -42,7 +42,7 @@ const sb = {
   document: { getElementById: el, createElement: () => ({}), body: { appendChild() {} }, querySelectorAll: () => [] },
   sget: (k, d) => (k in store ? JSON.parse(JSON.stringify(store[k])) : d),
   sset: (k, v) => (store[k] = JSON.parse(JSON.stringify(v))),
-  _rptV2Esc: (s) =>
+  _escHtml: (s) =>
     String(s == null ? '' : s)
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;'),
