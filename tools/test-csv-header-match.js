@@ -43,7 +43,7 @@ const sb = {
 sb.window = sb;
 sb.globalThis = sb;
 vm.createContext(sb);
-for (const rel of ['lib/formatting.js', 'computations/rates.js', 'computations/savings.js', 'app/utility-data.js', 'app/csv-import.js']) {
+for (const rel of ['lib/formatting.js', 'lib/date-helpers.js', 'computations/rates.js', 'computations/savings.js', 'app/utility-data.js', 'app/csv-import.js']) {
   try {
     vm.runInContext(fs.readFileSync(path.join(REPO, rel), 'utf8'), sb, { filename: rel });
   } catch (e) {
@@ -112,6 +112,18 @@ check('cost headers first, loose Energy / Demand / Total', same(g, E1), g);
 const L = { start: '2026-01-01', end: '2026-01-31', kwh: 1000, kw: 50, fac: 45, cost: 1234.56 };
 g = mapped('start_date,end_date,kwh,actual_kw,facilities_kw,total_cost', '2026-01-01,2026-01-31,1000,50,45,1234.56');
 check('LSR7 header set maps every column', same(g, L), g);
+
+// ---- review fm-20261007-k8 round 2: Total Charges and TotalkWh keep working ----
+g = mapped('Service From,Service To,Usage,Total Charges', '2026-01-01,2026-01-31,1000,1234.56');
+check('Total Charges is cost (Service From/To)', g.cost === 1234.56 && g.kwh === 1000 && g.end === '2026-01-31', g);
+g = mapped('Start Date,End Date,Usage (CCF),Total Charges', '2026-01-01,2026-01-31,1000,1234.56');
+check('Usage (CCF) + Total Charges: cost = Total Charges', g.cost === 1234.56, g);
+g = mapped('Start Date,End Date,Total Amount,kWh', '2026-01-01,2026-01-31,1234.56,1000');
+check('Total Amount is cost', g.cost === 1234.56 && g.kwh === 1000, g);
+g = mapped('Start Date,End Date,TotalkWh,Total Cost', '2026-01-01,2026-01-31,1000,1234.56');
+check('TotalkWh (no space) is kWh', g.kwh === 1000 && g.cost === 1234.56, g);
+g = mapped('Start Date,End Date,Total kWh,Total Cost', '2026-01-01,2026-01-31,1000,1234.56');
+check('Total kWh stays kWh, Total Cost stays cost', g.kwh === 1000 && g.cost === 1234.56, g);
 
 console.log('test-csv-header-match: ' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);

@@ -198,13 +198,10 @@ function parseBillCsv(text, fname) {
   const ci = (names, skip) => {
     if (!hdr) return -1;
     // Exact match first (b4b257cd): try every candidate name for an EXACT
-    // header-cell match before falling back to substring. Needed now that
-    // full-schema export headers coexist on one row — e.g. "demandCharge"
-    // and "meterReadStart" both CONTAIN "demand"/"start", so a pure
-    // substring scan for row.demandKW/row.start could grab the wrong column.
-    // An exact match against the real column name always wins; substring
-    // stays as the fallback for hand-built CSVs using loose header text
-    // like "start_date" or "actual_kw" that isn't an exact schema key.
+    // header-cell match before the token pass. Needed now that full-schema
+    // export headers coexist on one row: "demandCharge" and "meterReadStart"
+    // both hold the words "demand"/"start", so an exact match against the
+    // real column name must always win over a loose match.
     for (const n of names) {
       const i = hdr.indexOf(n);
       if (i >= 0) return i;
@@ -220,6 +217,7 @@ function parseBillCsv(text, fname) {
       for (const w of t) {
         if (/^(cost|charge|charges|rate|amount|price)$/.test(w)) c.add('cost');
         if (/^(id|#|number|num|no)$/.test(w)) c.add('id');
+        if (isAlias && w === 'total') c.add('cost'); // an alias "total" names the bill cost, so "Total Charges" is its header
         if (w === 'date' || (isAlias && /^(start|begin|from|end|to|thru|through)$/.test(w))) c.add('date');
       }
       return c;
@@ -247,7 +245,7 @@ function parseBillCsv(text, fname) {
   // so that a CSV exported from the Bills tab can be re-imported without losing cost columns.
   const iStart = hdr ? Math.max(ci(['start', 'begin', 'from']), 0) : 0;
   const iEnd = hdr ? (ci(['end', 'to', 'thru', 'through']) > -1 ? ci(['end', 'to', 'thru', 'through']) : 1) : 1;
-  const iKwh = hdr ? ci(['kwh', 'consumption', 'usage', 'energy']) : 2;
+  const iKwh = hdr ? ci(['kwh', 'totalkwh', 'consumption', 'usage', 'energy']) : 2;
   const iDemand = hdr ? ci(['actual_kw', 'actual kw', 'demand_kw', 'demand kw', 'peak kw', 'demand', 'demandkw']) : 3;
   // camelCase aliases: 'billedkw' matches export header 'billedKW' (lowercased by hdr processing)
   const iBilledKW = hdr ? ci(['billed_kw', 'billed kw', 'billkw', 'bill_kw', 'billedkw']) : 4;
