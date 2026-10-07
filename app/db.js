@@ -707,6 +707,12 @@ const DB = (() => {
     const out = {};
     Object.keys(_cache).forEach((k) => {
       if (k.indexOf(RV_PREFIX) === 0) return; // this browser's sync stamps: never in a backup
+      if (k === SYNC_QUEUE_KEY) return; // unsent edits (may hold another user's values): restore skips it, never in a backup
+      if (k === 'en_conflict_archive') {
+        // only the entries this user may see (one rule: _archiveEntryVisible)
+        out[k] = getConflictArchive();
+        return;
+      }
       out[k] = stripDerivedCaches(k, _cache[k]);
     });
     return out;
@@ -2934,11 +2940,13 @@ const DB = (() => {
     const me = _myUserId();
     return v.filter((e) => _archiveEntryVisible(e, me)); // rule: _archiveEntryVisible
   }
-  // Every stored entry with its owner tag, for the pre-wipe export in siteResetData ONLY.
-  // Not a viewer reader: who SEES an entry stays with getConflictArchive (_archiveEntryVisible).
-  function getConflictArchiveAll() {
+  // The entries this user may NOT see (another user's per-user entries, or entries with no owner
+  // tag). Reset keeps them: they are never exported to this user and never deleted by this user.
+  function getConflictArchiveOthers() {
     const v = _cache['en_conflict_archive'];
-    return Array.isArray(v) ? v.slice() : [];
+    if (!Array.isArray(v)) return [];
+    const me = _myUserId();
+    return v.filter((e) => !_archiveEntryVisible(e, me)); // rule: _archiveEntryVisible
   }
   async function getSyncStatus() {
     const mode = _backendMode();
@@ -3013,7 +3021,7 @@ const DB = (() => {
     queueOwner: _queueOwner,
     entryBelongsTo: _entryBelongsTo,
     getConflictArchive,
-    getConflictArchiveAll,
+    getConflictArchiveOthers,
     isConflictArchiveFull,
     clearConflictArchive,
     restoreScope,

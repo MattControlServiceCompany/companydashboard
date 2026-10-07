@@ -894,7 +894,11 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     const dl = fn.indexOf('_downloadJSON(_archive');
     const wipe = fn.indexOf('localStorage.clear()');
     assert.ok(dl > 0 && wipe > dl, 'archive download comes before the wipe');
-    assert.ok(/getConflictArchiveAll/.test(fn));
+    assert.ok(/getConflictArchive\(\)/.test(fn) && !/getConflictArchiveAll/.test(fn), 'exports only what this user may see');
+    assert.ok(
+      /getConflictArchiveOthers/.test(fn) && fn.indexOf("set('en_conflict_archive'") > fn.indexOf('DB.clear()'),
+      "another user's entries are written back after the wipe",
+    );
   });
 
   // ---- 401/403 on periodic sync requests (2026-10-06): refresh once, then end the session
@@ -1460,6 +1464,27 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     assert.deepStrictEqual(toB, [], 'no PUT of the key under B');
     assert.ok(puts.every((x) => x.value !== 'A-second'), 'A-second never sent');
     assert.strictEqual(L.DB.__t._stampOf('ch_theme'), undefined, 'no stamp set for B');
+  });
+
+  // ---- re-review F2/F3: backup and Reset never hold another user's per-user archive or queue values
+  await t('F2/F3: export, Reset list and kept list use the one visibility rule (REAL db.js)', async () => {
+    const sameJSON = (a, b) => assert.strictEqual(JSON.stringify(a), JSON.stringify(b));
+    const L = loadReal({ userId: 'u1', tokenFetch: tokUser('u1'), kvFetch: async () => ok([]) });
+    await L.DB.warmCache();
+    const ap = L.DB.__t._appendConflictArchive;
+    ap({ key: 'ch_theme', owner: { id: 'u2', email: 'b' }, losingValue: 'B-private' });
+    ap({ key: 'ch_theme', owner: { id: 'u1', email: 'a' }, losingValue: 'A-mine' });
+    ap({ key: 'en_budget_z', owner: { id: 'u2', email: 'b' }, losingValue: 'B-shared' });
+    ap({ key: 'ch_theme', owner: { id: null, email: null, hintId: null }, losingValue: 'ownerless' });
+    L.DB.set('ch_sync_queue', [{ id: 'q', key: 'bills_col_widths_x', owner: { id: 'u2' }, value: 'B-queued' }]);
+    const exp = L.DB.getAllForExport();
+    const txt = JSON.stringify(exp);
+    assert.ok(!txt.includes('B-private') && !txt.includes('ownerless'), 'no hidden per-user entry in the backup');
+    assert.ok(!txt.includes('B-queued') && !('ch_sync_queue' in exp), 'no queue values in the backup');
+    sameJSON(exp.en_conflict_archive.map((e) => e.losingValue).sort(), ['A-mine', 'B-shared']);
+    sameJSON(L.DB.getConflictArchive().map((e) => e.losingValue).sort(), ['A-mine', 'B-shared']);
+    sameJSON(L.DB.getConflictArchiveOthers().map((e) => e.losingValue).sort(), ['B-private', 'ownerless']);
+    assert.strictEqual(L.DB.getConflictArchiveAll, undefined, 'no unfiltered reader in the public API');
   });
 
   // ---- fix 3: a failed token refresh ends the session only when the server REFUSED it
@@ -2412,8 +2437,10 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     vm.runInContext(siteFnSrc('siteResetData'), ctx);
     await vm.runInContext('siteResetData()', ctx);
     assert.ok(exported, 'archive exported before the wipe');
-    assert.strictEqual(exported.length, 3, 'all 3 stored entries exported');
-    assert.ok(exported.some((e) => e.losingValue === 'B-private' && e.owner && e.owner.id === 'u2'), "other user's entry kept with owner tag");
+    assert.strictEqual(exported.length, 2, 'only the entries u1 may see are exported');
+    assert.ok(!JSON.stringify(exported).includes('B-private'), "other user's private value is not in the file");
+    const kept = L.DB.getConflictArchiveOthers();
+    assert.ok(kept.length === 1 && kept[0].losingValue === 'B-private', "other user's entry is written back after the wipe");
   });
   console.log(pass + ' passed');
 })().catch((e) => {

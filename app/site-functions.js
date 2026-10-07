@@ -1135,6 +1135,12 @@ async function siteBackup() {
   Object.keys(allData).forEach(function (k) {
     if (window.SyncClassification.isNeverBackupKey(k)) delete allData[k];
   });
+  // Per-user archive entries and unsent edits of another user stay out of the file. The DB export
+  // (DB.getAllForExport) already holds the filtered list; a raw localStorage copy never overrides it.
+  ['en_conflict_archive', 'ch_sync_queue'].forEach(function (k) {
+    if (k in dbData) allData[k] = dbData[k];
+    else delete allData[k];
+  });
   var data = allData;
   // Raw bill PDFs live in the separate en_pdf_store IndexedDB database and are
   // intentionally NOT included in this backup. Serializing all PDFs' base64
@@ -1781,9 +1787,10 @@ async function siteResetData() {
     return;
   // M8: the conflict archive holds the only copy of values a sync did not keep.
   // It is erased with everything else, so save it to a file first.
-  // ALL stored entries with their owner tag, not only the ones this user can see: the wipe
-  // would otherwise destroy another user's entries with no copy.
-  const _archive = window.DB && window.DB.getConflictArchiveAll ? window.DB.getConflictArchiveAll() : [];
+  // Only the entries this user may see (DB.getConflictArchive) go into the file. Another user's
+  // entries are NOT exported and NOT deleted: they are written back after the wipe.
+  const _archive = window.DB && window.DB.getConflictArchive ? window.DB.getConflictArchive() : [];
+  const _keptOthers = window.DB && window.DB.getConflictArchiveOthers ? window.DB.getConflictArchiveOthers() : [];
   if (_archive.length) {
     _downloadJSON(_archive, 'CompanyHub-conflict-archive-' + new Date().toISOString().slice(0, 10) + '.json');
   }
@@ -1791,6 +1798,7 @@ async function siteResetData() {
   sessionStorage.clear();
   if (window.DB && window.DB.clear) {
     await window.DB.clear();
+    if (_keptOthers.length) window.DB.set('en_conflict_archive', _keptOthers);
   }
   if (typeof pdfClearAll === 'function') {
     await pdfClearAll();
