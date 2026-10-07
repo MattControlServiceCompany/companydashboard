@@ -20,13 +20,12 @@
 //
 // Run: node test-equipment-matrix-no-pagination-dom.js   (from the repo root)
 
-const { chromium } = require('playwright');
+const { launchBrowser } = require('./tools/launch-browser.js');
 const fs = require('fs');
 const path = require('path');
 
 const REPO = __dirname;
 const SITE_PATH = 'file:///' + REPO.replace(/\\/g, '/') + '/energy-department.html';
-const PROFILE_DIR = 'C:\\Temp\\em-no-pagination-test-profile-' + Date.now();
 const SYNTH_PID = 999000111; // fake numeric project id, never collides with a real project
 
 let pass = 0;
@@ -113,10 +112,7 @@ function buildSyntheticMatrix() {
   const matrix = buildSyntheticMatrix();
   const EXPECTED_ROW_COUNT = matrix.rows.length; // 132
 
-  const context = await chromium.launchPersistentContext(PROFILE_DIR, {
-    headless: true,
-    viewport: { width: 1920, height: 1080 },
-  });
+  const context = await launchBrowser('em-no-pagination', { viewport: { width: 1920, height: 1080 } });
   try {
     const page = await context.newPage();
 
