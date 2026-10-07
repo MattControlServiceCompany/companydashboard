@@ -5,7 +5,8 @@ const fs = require('fs');
 const { chromium } = require('playwright');
 
 async function launchBrowser(task, opts) {
-  const dir = 'C:/Temp/' + task + '-profile-' + Date.now() + '-' + process.pid;
+  // CH_GATE_TAG (set by scripts/regression-gate.js) goes first so the gate can find and delete only its own leaks.
+  const dir = 'C:/Temp/' + (process.env.CH_GATE_TAG ? process.env.CH_GATE_TAG + '-' : '') + task + '-profile-' + Date.now() + '-' + process.pid;
   const ctx = await chromium.launchPersistentContext(
     dir,
     Object.assign({ headless: true, args: ['--disable-gpu'], viewport: { width: 1920, height: 1080 } }, opts),

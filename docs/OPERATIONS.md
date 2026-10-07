@@ -280,9 +280,12 @@ Nothing is deleted by this restore. On a record in both, the backup value wins; 
   reason and show as INFO; remove an entry when the test is fixed. Playwright comes from the env var
   `CH_PLAYWRIGHT_NODE_MODULES` (default `C:/Users/Matt Miller/AI/_context/tools/playwright-runtime/node_modules`, a permanent copy of the same Playwright version so the installed Chromium matches);
   the gate passes it to child tests as NODE_PATH. No junction or npm install is needed in the primary checkout or a worktree.
-  Temp-leak guard: the gate lists `C:/Temp` before the run; any new entry after the tests is a FAIL that names it, and timestamp-named
-  entries are deleted. Browser tests must use `tools/launch-browser.js` (`launchBrowser(task, opts)`): `ctx.close()` there also deletes
-  the profile. Do not run other browser jobs that write to `C:/Temp` while the gate runs (they would show as leaks).
+  Temp-leak guard: the gate makes a run tag `ch-gate-<pid>-<start ms>` and passes it to every child test in the env var
+  `CH_GATE_TAG`. `tools/launch-browser.js` (`launchBrowser(task, opts)`) puts the tag at the start of the profile folder name
+  (`C:/Temp/<tag>-<task>-profile-...`) and `ctx.close()` there also deletes the profile. The gate's own work folder is `<tag>-work`.
+  After the tests the gate lists `C:/Temp`: a new entry whose name starts with the tag is a FAIL and the gate deletes it. Any other
+  new entry (for example a profile of another agent that ran at the same time) is shown as INFO and is never deleted and never a FAIL.
+  Browser tests must use `launchBrowser`. Tests that use `os.tmpdir()` (AppData, not `C:/Temp`) are outside the guard.
 - Bill CSV header matching (app/csv-import.js `ci()` inside `parseBillCsv`). One rule for every column: exact header first,
   then whole-word match. A header with a cost, id or date word is claimed only by an alias of the same class, so
   "Energy Cost" is not kWh, "Bill ID" is not cost and "Total" is not an end date. How to check:
