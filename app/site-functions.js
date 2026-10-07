@@ -2397,9 +2397,13 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.07.89', date: '2026-10-07', title: 'Clearer restore note',
+    items: [
+      { type: 'change', text: 'Restore button (bottom of the left sidebar, next to Backup): if an item is in both the backup file and the site, the site now uses the version from the backup. Items you added after the backup stay. Nothing is deleted unless you tick it in the restore results.' }
+    ]
+  },
   { v: 'v2026.10.07.88', date: '2026-10-07', title: 'Safer restore from backup, quieter update check',
     items: [
-      { type: 'change', text: 'Restore from backup: when a record exists in both the backup and your current data, the backup copy now wins. Records that exist only in your current data are kept. Anything that would remove data waits until you tick it.' },
       { type: 'fix', text: 'The restore results list now shows file names and messages safely, even when they contain quotation marks.' },
       { type: 'change', text: 'The "Reload to update" bar now checks for a new version only when you open the page or return to the tab, at most once an hour.' },
       { type: 'fix', text: 'Cost Estimate: opening the page no longer saves your table layout, and a phase that goes over its allowance now shows a warning instead of an error.' },
