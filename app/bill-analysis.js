@@ -1687,7 +1687,7 @@ function _decideOnOffPeakKWh(b, kwhConsumed, kwhHeld) {
       }
       // A leg with no readable rate line (damaged rate text) cannot be named as
       // the misread leg above. If kWhConsumed is not held, agrees with the
-      // charge-basis total, and exactly ONE leg self-verifies, the
+      // charge-basis total, and exactly ONE leg self-verifies (and that leg also passes the strict check), the
       // kWhConsumed-derived path below corrects the other leg (or gates by
       // itself). Defer to it instead of gating here. Real disagreements
       // (both legs verify, kWhConsumed held or off-basis) still gate.
@@ -1697,7 +1697,8 @@ function _decideOnOffPeakKWh(b, kwhConsumed, kwhHeld) {
         !kwhHeld &&
         Math.abs(kwhConsumed - basisTotal) <= _BASIS_TIGHT &&
         Math.abs(onQty + offQty - kwhConsumed) > 1 &&
-        onVerified !== offVerified;
+        onVerified !== offVerified &&
+        (onVerified ? onStrict : offStrict);
       if (deferToKwhPath) {
         // fall through to the kWhConsumed-derived path
       } else if (!applied) {

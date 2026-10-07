@@ -403,6 +403,35 @@ async function main() {
     );
   }
 
+  // ── OffPeak deferral needs the STRICT check on the trusted leg ──
+  // Basis total 1000 kWh (ECA 1000 x 0.1 = $100.00). kWhConsumed 1000 agrees. The Off leg has no
+  // readable rate line (damaged), OffPeakKWh is misread (550). The On leg is the only leg
+  // that self-verifies. Strict (half-cent) pass: defer, Off is derived (600). Pass only the
+  // loose 1-cent check ($40.00 vs printed $40.01): refuse to trust it, gate.
+  {
+    const mk = (onPrinted) => ({
+      OnPeakKWh: '400',
+      OffPeakKWh: '550',
+      EnergyOnPeakCharge: onPrinted,
+      EnergyOffPeakCharge: '60.00',
+      ECACharge: '100.00',
+      _rates: {
+        EnergyOnPeakCharge: { rate: 0.1, parts: [{ qty: 400, rate: 0.1, computed: 40.0 }] },
+        ECACharge: { rate: 0.1, parts: [{ qty: 1000, rate: 0.1, computed: 100.0 }] },
+      },
+    });
+    const strictOk = X.decideOnOffPeakKWh(mk('40.00'), 1000, false);
+    assertTrue(
+      !strictOk.gate && !!strictOk.offCorrection && Math.abs(strictOk.offCorrection.value - 600) < 0.001,
+      'decideOnOff: trusted leg passes strict check — deferral derives the other leg (600)',
+    );
+    const looseOnly = X.decideOnOffPeakKWh(mk('40.01'), 1000, false);
+    assertTrue(
+      !!looseOnly.gate && !looseOnly.offCorrection && !looseOnly.onCorrection,
+      'decideOnOff: trusted leg passes only the loose 1-cent check — gate, no deferral',
+    );
+  }
+
   // ── _evgAccountsIn (synthetic text): OCR-damaged first digit must not win ──
   {
     const page = 'Account Number : \u00a7123456789\nBilling Date: 01/01/2026\nAccount Number : 0123456789\n';
@@ -415,6 +444,11 @@ async function main() {
       JSON.stringify(X.evgAccountsIn('Account Number : 1111111111\nAccount Number : 2222222222\n')),
       JSON.stringify(['1111111111', '2222222222']),
       'evgAccountsIn: two real accounts on one text are both kept, in order',
+    );
+    assertEqual(
+      JSON.stringify(X.evgAccountsIn('Account Number : 0123456789\nAccount Number : 6699289683 12 345\n')),
+      JSON.stringify(['0123456789', '6699289683']),
+      'evgAccountsIn: a digit group after a space does not merge into the account',
     );
     assertEqual(JSON.stringify(X.evgAccountsIn('no account here')), JSON.stringify([]), 'evgAccountsIn: none found');
   }
