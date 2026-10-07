@@ -45,13 +45,19 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 const DOWNLOADS = 'C:/Users/Matt Miller/Downloads';
 const DEFAULT_ORACLE = 'C:/Users/Matt Miller/AI/_context/reference/known-good-values/regression-oracle.json';
 
-// ---- playwright: this tree's install first, then the primary checkout's (worktrees have none) ----
+// ---- playwright: no node_modules in the repo. Resolve from CH_PLAYWRIGHT_NODE_MODULES (default: the
+// temp install on disk), then this tree's own install. The same dir goes to child tests as NODE_PATH. ----
+const PW_MODULES = process.env.CH_PLAYWRIGHT_NODE_MODULES || 'C:/Users/Matt Miller/AI/_context/temp/2026-10-02-point-count-review/node_modules';
 function resolvePlaywright() {
-  try {
-    return require(path.join(REPO_ROOT, 'node_modules', 'playwright'));
-  } catch (e) {
-    return require('C:/Users/Matt Miller/AI/companydashboard/node_modules/playwright');
+  const dirs = [PW_MODULES, path.join(REPO_ROOT, 'node_modules')];
+  for (const d of dirs) {
+    try {
+      return require(path.join(d, 'playwright'));
+    } catch (e) {
+      /* try next */
+    }
   }
+  throw new Error('playwright not found; set CH_PLAYWRIGHT_NODE_MODULES to a node_modules dir that has it (tried ' + dirs.join(', ') + ')');
 }
 const { chromium } = resolvePlaywright();
 
@@ -593,6 +599,7 @@ async function main() {
   } else {
     const rc = spawnSync(process.execPath, [path.join(REPO_ROOT, 'scripts', 'verify-report-reconciliation.js')], {
       cwd: REPO_ROOT,
+      env: Object.assign({}, process.env, { NODE_PATH: PW_MODULES }),
       encoding: 'utf8',
       maxBuffer: 64 * 1024 * 1024,
     });
@@ -608,6 +615,49 @@ async function main() {
       rc.status === 0 ? '' : bad.join(' ; ') || text.slice(-300),
     );
   }
+
+  // ---- standalone feature tests: every tools/test-*.js and repo-root test-*.js, one child process each ----
+  // Excluded = fails or hangs on main today (stale tests) or needs the internet. Each is listed with its reason
+  // and shown as INFO so it is never invisible. Remove an entry when the test is fixed.
+  const TEST_EXCLUDE = {
+    'tools/test-backend-mode-default.js': 'fails on main: 3 of 149 checks fail',
+    'tools/test-backup-strips-derived-caches.js': 'fails on main: short-circuit assertion',
+    'tools/test-backup-waits-for-db-ready.js': 'fails on main: crashes in siteBackup',
+    'tools/test-ocr-hidden-tab.js': 'needs the internet (pdf.js from cdnjs) and crashes on main',
+    'tools/test-report-header-overflow.js': 'needs an external temp folder (2026-09-24-report-headers); crashes on main',
+    'test-sync-golive-blockers.js': 'hangs more than 180 s on main',
+  };
+  const testFiles = [];
+  ['tools', '.'].forEach((d) => {
+    fs.readdirSync(path.join(REPO_ROOT, d))
+      .filter((f) => /^test-.*\.js$/.test(f))
+      .forEach((f) => testFiles.push(d === '.' ? f : d + '/' + f));
+  });
+  testFiles.sort();
+  const toRun = testFiles.filter((f) => {
+    if (TEST_EXCLUDE[f]) add('feature-tests', f, 'INFO', 'EXCLUDED: ' + TEST_EXCLUDE[f]);
+    return !TEST_EXCLUDE[f];
+  });
+  const runTest = (f) =>
+    new Promise((resolve) => {
+      const cp = require('child_process').spawn(process.execPath, [f], {
+        cwd: REPO_ROOT,
+        env: Object.assign({}, process.env, { NODE_PATH: PW_MODULES }),
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      let out = '';
+      cp.stdout.on('data', (c) => (out += c));
+      cp.stderr.on('data', (c) => (out += c));
+      const timer = setTimeout(() => cp.kill(), 240000);
+      cp.on('close', (code) => {
+        clearTimeout(timer);
+        const tail = out.trim().split(String.fromCharCode(10)).slice(-3).join(' | ').slice(0, 300);
+        add('feature-tests', f, code === 0 ? 'PASS' : 'FAIL', code === 0 ? '' : 'exit ' + code + ' :: ' + tail);
+        resolve();
+      });
+    });
+  const queue = toRun.slice();
+  await Promise.all([1, 2, 3].map(async () => { while (queue.length) await runTest(queue.shift()); }));
 
   // ---- report ----
   const groups = {};
