@@ -1689,7 +1689,15 @@ const DB = (() => {
       _enqueueWrite(key, payload);
       return;
     }
-    if (result.status === 'ok') return;
+    if (result.status === 'ok') {
+      // This newer value is on the server: an older queued value for the same key and owner
+      // must never be replayed over it by the drain.
+      const ok = _entryOwnerKey(payload.owner);
+      const before = _syncQueue.length;
+      _syncQueue = _syncQueue.filter((e) => !(e.key === key && _entryOwnerKey(e.owner) === ok));
+      if (_syncQueue.length !== before) _persistSyncQueue();
+      return;
+    }
     if (result.status === 'stale-identity' && _isPerUserKey(key)) return; // previous user's pref: never queue under the new user
     if (result.status === 'conflict') {
       await _handleConflict(key, payload, result.body, mode);

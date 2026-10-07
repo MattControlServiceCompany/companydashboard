@@ -1432,6 +1432,35 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     assert.ok(!puts.some((x) => x.value === 'A-value'), "B's drain never sends A's entry");
   });
 
+  await t('later successful write removes the older queued entry for the same key (REAL db.js)', async () => {
+    const puts = [];
+    let offline = true;
+    const L = loadReal({
+      userId: 'u1',
+      tokenFetch: tokUser('u1'),
+      kvFetch: async (u, o) => {
+        if (!o || o.method !== 'PUT') return ok([]);
+        const body = JSON.parse(o.body);
+        if (body.key !== 'en_budget_z') return ok({ version: 1, hash: null, deleted: false });
+        puts.push(body.value);
+        if (offline) throw new TypeError('Failed to fetch');
+        return ok({ version: 1, hash: null, deleted: false });
+      },
+    });
+    await L.DB.warmCache();
+    await tick(60);
+    L.DB.set('en_budget_z', { n: 'old' });
+    await tick(60);
+    assert.strictEqual(L.DB.getQueueDepth(), 1, 'the failed write is queued');
+    offline = false;
+    L.DB.set('en_budget_z', { n: 'new' });
+    await tick(60);
+    assert.strictEqual(L.DB.getQueueDepth(), 0, 'the successful write dropped the older queued entry');
+    puts.length = 0;
+    await L.DB.__t._drainQueueOnce();
+    assert.deepStrictEqual(puts, [], 'the drain replays nothing');
+  });
+
   // ---- re-review F1: an edit by A is never sent with B's token or key (REAL db.js + ch-auth.js)
   await t('F1: A edits twice, B signs in during PUT #1: the waiting value is never PUT as B', async () => {
     const puts = [];
