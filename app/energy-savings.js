@@ -5542,7 +5542,9 @@ const _EVG_CHG = /Ch[gaq9][.:]?/i; // matches Chg, Cha, Chq, Ch9, Chg.
 // a first-match rule returned a 9-digit account. A lost digit only makes a
 // candidate SHORTER, so _evgAccountsIn keeps only the candidates of the longest
 // digit length found (all real accounts on the text, damaged ones dropped).
-const _EVG_ACCT_G = /[Aa]ccount\s*(?:N[ou]mber\s*)?[^0-9A-Za-z\n]{0,6}\s*[(\[\u00a9]?(\d[\d ]{4,18}\d)/gm;
+// A candidate ends at the end of the digit token: Evergy prints the account as one
+// unbroken digit string, so a separate digit group after a space is not merged.
+const _EVG_ACCT_G = /[Aa]ccount\s*(?:N[ou]mber\s*)?[^0-9A-Za-z\n]{0,6}\s*[(\[\u00a9]?(\d{6,20})/gm;
 function _evgAccountsIn(text) {
   const all = [...String(text || '').matchAll(_EVG_ACCT_G)].map((m) => m[1].replace(/\s/g, ''));
   const maxLen = Math.max(0, ...all.map((a) => a.length));
