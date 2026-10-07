@@ -5229,6 +5229,7 @@ function _pricingGetColWidths(projId) {
 }
 function _pricingSetColWidths(projId, widths) {
   sset('ch_tbl_col_widths_pricing_tbl_' + projId, widths);
+  _pricingStampColSchemaVersion(projId);
 }
 
 /* ── Column hidden set helpers ─────────────────────────────────────────────── */
@@ -5237,6 +5238,7 @@ function _pricingGetHiddenCols(projId) {
 }
 function _pricingSetHiddenCols(projId, hiddenArr) {
   sset('ch_tbl_hidden_pricing_tbl_' + projId, hiddenArr);
+  _pricingStampColSchemaVersion(projId);
 }
 
 /* ── Column-schema migration (review-phase4.md #2; extended cc78ac9e) ──────
@@ -5273,12 +5275,21 @@ function _pricingGetColSchemaVersion(projId) {
 function _pricingSetColSchemaVersion(projId, ver) {
   sset('ch_tbl_colschema_ver_pricing_tbl_' + projId, ver);
 }
+// Called only from the user-edit setters above: a user-saved width/hidden set is always in the
+// current schema, so mark it. Never called on render (nothing is saved without a user edit).
+function _pricingStampColSchemaVersion(projId) {
+  if (_pricingGetColSchemaVersion(projId) < PRICING_COL_SCHEMA_VERSION) {
+    _pricingSetColSchemaVersion(projId, PRICING_COL_SCHEMA_VERSION);
+  }
+}
 function _pricingMigrateColSchema(projId) {
   var storedVer = _pricingGetColSchemaVersion(projId);
   if (storedVer >= PRICING_COL_SCHEMA_VERSION) return; // already migrated (or fresh) — idempotent no-op
 
   var widths = _pricingGetColWidths(projId);
   var hidden = _pricingGetHiddenCols(projId);
+  // Nothing stored = defaults. A missing value is not saved on render (no write without a user edit).
+  if (!Object.keys(widths).length && !hidden.length) return;
 
   _PRICING_COL_SCHEMA_SHIFT_STEPS.forEach(function (step) {
     if (storedVer > step.fromVer) return; // already past this step
@@ -5297,6 +5308,7 @@ function _pricingMigrateColSchema(projId) {
     });
   });
 
+  // Only reached when the user has stored prefs from an older schema: relocate them once.
   _pricingSetColWidths(projId, widths);
   _pricingSetHiddenCols(projId, hidden);
   _pricingSetColSchemaVersion(projId, PRICING_COL_SCHEMA_VERSION);
@@ -8253,7 +8265,7 @@ function _pricingComputeRecommendedTimeline(projId) {
     p.overCommitted = totalCommitted > p.allowanceTotal;
     p.overageAmount = p.overCommitted ? Math.round((totalCommitted - p.allowanceTotal) * 100) / 100 : 0;
     if (p.overCommitted) {
-      console.error(
+      console.warn(
         '[_pricingComputeRecommendedTimeline] PHASE OVER ALLOWANCE (labor + measures combined): ' +
           p.label +
           ' — EM labor ' +
