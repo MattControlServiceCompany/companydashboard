@@ -1117,36 +1117,6 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     assert.strictEqual(out.status, 'ok');
     assert.ok(!L.events.some((x) => x.startsWith('chAuthStateChanged')), 'no identity event for the same user');
   });
-  await t('401, refresh returns a DIFFERENT user: no retry, event fired, A entry stays queued under A', async () => {
-    const L = loadAuth(tokUser('u2'));
-    L.events.length = 0;
-    const queue = [{ id: 'q1', key: 'pref', value: 'A-value', owner: { id: 'u1' } }];
-    let sentAs = [];
-    let calls = 0;
-    // Mirrors the db.js drain: owner filter, send through withAuthRetry, delete only on ok.
-    const me = L.A.getUserId();
-    for (const e of queue.filter((x) => x.owner.id === me)) {
-      const out = await L.A.withAuthRetry(async () => {
-        calls++;
-        sentAs.push(L.A.getUserId());
-        return { status: 'error', httpStatus: 401 };
-      });
-      if (out.status === 'ok') queue.splice(queue.indexOf(e), 1);
-    }
-    assert.strictEqual(calls, 1, 'not sent again after the account changed');
-    assert.deepStrictEqual(sentAs, ['u1']);
-    assert.strictEqual(queue.length, 1, 'A entry still queued');
-    assert.strictEqual(queue[0].owner.id, 'u1');
-    assert.strictEqual(L.A.getUserId(), 'u2');
-    assert.strictEqual(L.A.backendMode(), 'on', 'B stays signed in');
-    assert.ok(
-      L.events.some((x) => x.startsWith('chAuthStateChanged')),
-      'identity-change event fired',
-    );
-    // the next drain pass for B skips A's entry (owner check)
-    assert.strictEqual(queue.filter((x) => x.owner.id === L.A.getUserId()).length, 0);
-  });
-
   // ---- phantom conflicts (2026-10-06): hash-gated PUT, one PUT in flight per key, base = sent body
   const sortDeep = (v) =>
     Array.isArray(v)
@@ -1431,6 +1401,36 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
       assert.strictEqual(L.DB.getQueueDepth(), 1, 'the edit is kept in the queue');
     },
   );
+
+  await t('401, refresh returns a DIFFERENT user: REAL drain sends nothing as B, A entry stays queued under A', async () => {
+    const puts = [];
+    const L = loadReal({
+      userId: 'u1',
+      tokenFetch: tokUser('u2'), // the refresh after the 401 returns user B
+      kvFetch: async (u, o) => {
+        if (!o || o.method !== 'PUT') return ok([]);
+        const body = JSON.parse(o.body);
+        puts.push({ auth: o.headers.Authorization, key: body.key, value: body.value });
+        return body.key === 'en_budget_z' ? put401 : ok({ version: 1, hash: null, deleted: false });
+      },
+    });
+    L.store.ch_sync_queue = JSON.stringify([
+      { id: 'q1', key: 'en_budget_z', value: 'A-value', deleted: false, baseVersion: null, ts: 1, owner: { id: 'u1', email: 'u1@example.com' } },
+    ]);
+    await L.DB.warmCache();
+    await tick(60);
+    await L.DB.__t._drainQueueOnce(); // the load already drained once; this run must change nothing
+    await tick(60);
+    const mine = puts.filter((x) => x.key.indexOf('en_budget_z') >= 0);
+    assert.strictEqual(mine.length, 1, 'sent once, not again after the account changed');
+    assert.strictEqual(mine[0].auth, 'Bearer ' + FK('a'), "with A's token");
+    assert.strictEqual(L.A.getUserId(), 'u2');
+    assert.strictEqual(L.A.backendMode(), 'on', 'B stays signed in');
+    assert.ok(L.DB.__t._queue().some((e) => e.id === 'q1' && e.owner.id === 'u1'), 'A entry still queued under A');
+    puts.length = 0;
+    await L.DB.__t._drainQueueOnce();
+    assert.ok(!puts.some((x) => x.value === 'A-value'), "B's drain never sends A's entry");
+  });
 
   // ---- re-review F1: an edit by A is never sent with B's token or key (REAL db.js + ch-auth.js)
   await t('F1: A edits twice, B signs in during PUT #1: the waiting value is never PUT as B', async () => {
