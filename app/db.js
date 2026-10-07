@@ -1911,6 +1911,14 @@ const DB = (() => {
   // Local is never overwritten unless it is unchanged since the last sync or
   // is archived first. A pure-additive list key (UNION_KEY_CONFIG) is merged.
   async function _reconcileIncoming(localKey, row, mHash) {
+    // A live server row with no value is unreadable, never a value: keep the local copy and
+    // its stamp, and show the "could not load" notice for this key.
+    if (!row.deleted && (row.value === undefined || row.value === null)) {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('dbHydrateFailed', { detail: { keys: [localKey] } }));
+      }
+      return;
+    }
     const epoch = _identityEpoch;
     const origLocal = _cache[localKey];
     const base = _replicaVersions[localKey];

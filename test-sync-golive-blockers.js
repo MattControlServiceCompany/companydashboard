@@ -1508,6 +1508,29 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     assert.ok(!puts.some((k) => /ch_theme/.test(k)), 'never sent');
   });
 
+  // ---- re-review F5: a server row with no value never replaces the local copy (REAL db.js)
+  for (const shape of [{}, { value: null }]) {
+    await t('F5: server row ' + JSON.stringify(shape) + ' keeps the local copy and its stamp', async () => {
+      const L = loadReal({
+        userId: 'u1',
+        tokenFetch: tokUser('u1'),
+        kvFetch: async (u, o) => {
+          if (o && o.method === 'PUT') return ok({ version: 8, hash: null, deleted: false });
+          if (/manifest=1/.test(u)) return ok([{ key: 'en_budget_z', version: 7, hash: 'zz', deleted: false }]);
+          if (/keys=/.test(u)) return ok([Object.assign({ key: 'en_budget_z', version: 7, deleted: false }, shape)]);
+          return ok([]);
+        },
+      });
+      L.store.en_budget_z = JSON.stringify({ n: 1, important: true });
+      await L.DB.warmCache();
+      await tick(100);
+      assert.deepStrictEqual(JSON.parse(JSON.stringify(L.DB.get('en_budget_z'))), { n: 1, important: true });
+      assert.ok(L.store.en_budget_z.includes('important'), 'storage untouched');
+      assert.ok(!(L.DB.__t._stampOf('en_budget_z') || {}).version, 'no server stamp adopted');
+      assert.ok(L.events.some((e) => e.type === 'dbHydrateFailed'), 'notice raised');
+    });
+  }
+
   // ---- fix 3: a failed token refresh ends the session only when the server REFUSED it
   const refreshCase = async (tokenFetch) => {
     const L = loadAuth(tokenFetch);
