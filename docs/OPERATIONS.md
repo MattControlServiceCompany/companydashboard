@@ -273,6 +273,10 @@ Nothing is deleted by this restore. On a record in both, the backup value wins; 
   writes a key that is not a BILL_SCHEMA key (app/csv-import.js) or on the short META list, when `openBillModal` renders a
   hidden `bl-` input, or when `billHasPdf` is not the one PDF answer. How to check: node computations/bill-save-fields.gate.js
   (exit 0); node tools/test-rate-single-source.js.
+- Bill CSV header matching (app/csv-import.js `ci()` inside `parseBillCsv`). One rule for every column: exact header first,
+  then whole-word match. A header with a cost, id or date word is claimed only by an alias of the same class, so
+  "Energy Cost" is not kWh, "Bill ID" is not cost and "Total" is not an end date. How to check:
+  node tools/test-csv-header-match.js (exit 0); node tools/test-csv-partial-reimport.js.
 
 ## 6d. HTML escape (2026-10-07, branch 2026-10-07-shared-escape)
 
