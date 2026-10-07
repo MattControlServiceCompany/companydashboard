@@ -3,10 +3,9 @@
 // user create a new meter when the building has no meter of the bill's type.
 // 100% SYNTHETIC data. Real app code, headless bundled Chromium, unique profile.
 // Run: node test-assign-bill-create-meter-dom.js   (from the repo root)
-const { chromium } = require('playwright');
+const { launchBrowser } = require('./tools/launch-browser.js');
 const REPO = __dirname;
 const SITE = 'file:///' + REPO.split(String.fromCharCode(92)).join('/') + '/energy-department.html';
-const PROFILE = 'C:/Temp/assign-create-meter-test-profile-' + Date.now();
 const PID = 999000222;
 const CID = 'cust_' + PID;
 let pass = 0;
@@ -15,10 +14,7 @@ const ok = (c, l) => (c ? pass++ : failures.push(l));
 const eq = (a, e, l) => ok(a === e, l + ': expected ' + JSON.stringify(e) + ', got ' + JSON.stringify(a));
 
 (async () => {
-  const context = await chromium.launchPersistentContext(PROFILE, {
-    headless: true,
-    viewport: { width: 1600, height: 900 },
-  });
+  const context = await launchBrowser('assign-create-meter', { viewport: { width: 1600, height: 900 } });
   try {
     const page = await context.newPage();
     const seed = {
