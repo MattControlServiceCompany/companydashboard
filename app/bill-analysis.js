@@ -6295,7 +6295,7 @@ function findMeterMatch(extracted) {
   // buildings against each other, so for Electric (Maintenance has 2 meters,
   // Broadmoor has 1) Maintenance dropped out of the candidate list first,
   // leaving Broadmoor as the sole "uncontested" candidate — a confirmed
-  // misroute to Broadmoor's real meter m1776962667307 with no ambiguity flag
+  // misroute to Broadmoor's real meter mNNNNNN with no ambiguity flag
   // (see _context/temp/2026-09-01-pass2-independent-gate.md, "Check 4").
   // Building-level matching is now resolved FIRST, across every building on
   // every project, before any per-building meter-count filtering runs — a

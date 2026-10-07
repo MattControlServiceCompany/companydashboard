@@ -2391,6 +2391,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.07.95', date: '2026-10-07', title: 'Bill PDF import checks stricter',
+    items: [
+      { type: 'fix', text: 'Bill PDF import checks account numbers and Off Peak kWh more strictly.' }
+    ]
+  },
   { v: 'v2026.10.07.94', date: '2026-10-07', title: 'Bill PDF import reads account numbers and Off Peak kWh correctly',
     items: [
       { type: 'fix', text: 'Bill PDF import: when a scanned Evergy bill had a damaged character, the import could drop the first digit of the account number or take the wrong Off Peak kWh. It now reads them correctly. Bills imported before this keep the old values until you import them again.' }
