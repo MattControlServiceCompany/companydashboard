@@ -302,9 +302,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
     const bMeters = allBldgMeters.filter((x) => x.b === b);
 
     // Per-building savings % from Building Savings Projection config
-    const bspKey = 'bldgsavproj_cfg_' + (b.id || b.name);
-    const bspCfg = DB.get(bspKey, {});
-    const bldgSavPct = (bspCfg.savingsPct != null ? bspCfg.savingsPct : 0) / 100;
+    const bldgSavPct = getBspCfg(b).savingsPct / 100; // the ONE reader (utility-data.js getBspCfg)
 
     bMeters.forEach(({ m, bills, incl, allRows, bl, blEnd, postRows }) => {
       commoditySet.add(m.commodity);

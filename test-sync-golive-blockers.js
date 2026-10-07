@@ -1753,6 +1753,24 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     },
   );
 
+  await t('F-single-source: getBspCfg is the ONE reader of savingsPct; a real 0 stays 0 in every file', () => {
+    ['report-engine.js', 'graphics-setpoints.js'].forEach((f) => {
+      const src = fs.readFileSync(path.join(__dirname, 'app', f), 'utf8');
+      assert.ok(!/bldgsavproj_cfg_/.test(src), f + ' has no raw reader of the savings config');
+      assert.ok(/getBspCfg\(b\)\.savingsPct/.test(src), f + ' reads through getBspCfg');
+      assert.ok(!/savingsPct\s*\|\|\s*11/.test(src), f + ' does not turn a 0 into 11');
+    });
+    const make = (stored) =>
+      new Function(
+        'DB',
+        'projects',
+        'udSelProjId',
+        fnFrom('utility-data.js', 'getBspCfg') + '; return getBspCfg;',
+      )({ get: () => stored }, [], null);
+    assert.strictEqual(make({ savingsPct: 0 })({ id: 'b' }).savingsPct, 0, 'real 0 stays 0');
+    assert.strictEqual(make({})({ id: 'b' }).savingsPct, 11, 'never set: the pane default');
+  });
+
   // ---- fix 5: one version-stamp record per key; a second tab never overwrites the first tab's stamps
   await t('fix 5: two tabs share one storage; each tab writes only the stamp of the key it synced', async () => {
     const store = {};

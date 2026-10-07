@@ -183,9 +183,7 @@ function _pvRenderBldgPerf(b, projId) {
   });
   var hasActual = Object.keys(actualSavByCalMo).length > 0;
   var msrSav = getBldgMeasureSavingsByMo(projId, b.id);
-  var bspKey = 'bldgsavproj_cfg_' + (b.id || b.name);
-  var bspCfg = DB.get(bspKey, {});
-  var savPct = (bspCfg.savingsPct || 11) / 100;
+  var savPct = getBspCfg(b).savingsPct / 100; // the ONE reader (utility-data.js getBspCfg); a real 0 stays 0
   // 2026-09-15 (SA-gate fix): the % fallback below never checked the project's `sa`
   // (Service Agreement #). No contract means no projected savings.
   var _hasSA = projHasContract(projId);
@@ -2244,9 +2242,7 @@ function egfxRefresh(projId) {
         } else if (projHasContract(projId)) {
           // 2026-09-15 (SA-gate fix): no contract means no projected savings — skip
           // the % fallback accumulation entirely so the chart shows $0 for that building.
-          const bspKey = 'bldgsavproj_cfg_' + (b.id || b.name);
-          const bspCfg = DB.get(bspKey, {});
-          const savPct = (bspCfg.savingsPct != null ? bspCfg.savingsPct : 0) / 100;
+          const savPct = getBspCfg(b).savingsPct / 100; // the ONE reader (utility-data.js getBspCfg)
           const bMoBase = aggBaseMoMapForBldgs([b]);
           for (let mo = 0; mo < 12; mo++) _egfxProjSavByMo[mo] += (bMoBase[mo] || 0) * savPct;
         }
