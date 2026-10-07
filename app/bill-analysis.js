@@ -6265,8 +6265,8 @@ function findMeterMatch(extracted) {
   // overrides them, so the identity happy path above is untouched. Handles
   // the "account renumbered, same physical hookup" case: City of Louisburg
   // re-numbered utility accounts but never updated some meters' stored
-  // account (e.g. High School's gas meter still carries the OLD 900101
-  // while the new bill reads 09-009001-00). That bill hits the Fix-1
+  // account (e.g. High School's gas meter still carries the OLD NNNNNN
+  // while the new bill reads NN-NNNNNN-00). That bill hits the Fix-1
   // identity-contradiction veto above (line ~5708 `continue`) and is
   // dropped from addrCandidates entirely, so it reaches here with both
   // bestMatch and addrMatch null even though its ServiceAddress plainly
@@ -15946,7 +15946,7 @@ async function processPDF(file) {
                   // lenient predicate (`_singleHasKeyField`) the first pass used, and
                   // refuse the wholesale replace when it would leave the file with
                   // fewer valid bills than the first pass already had — see the
-                  // eea98fd5/02-002364-00 Louisburg incident for why `retryValid.length`
+                  // eea98fd5/NN-NNNNNN-00 Louisburg incident for why `retryValid.length`
                   // alone is not a safe proxy for "no bills lost".
                   const retryValidLenient = retryBills2.filter((b) => _singleHasKeyField(b));
                   const retryWouldLoseBills = retryValidLenient.length < _origValidBillCount;

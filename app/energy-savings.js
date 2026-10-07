@@ -5857,7 +5857,7 @@ function _lbg_buildGasBill(
   // A null FuelAdjustment that reached this function is NEVER treated as $0
   // once its printed line is known to exist (fuelAdjMeta.lineSeen) — that
   // silently shipped the pre-adjustment total as final on a real bill (HS,
-  // acct 09-009001-00, 7/15/2026: shipped $540.33 instead of the true
+  // acct NN-NNNNNN-00, 7/15/2026: shipped $540.33 instead of the true
   // $507.96, printed Fuel Adjustment -$32.37). Resolve once, up front, using
   // the pre-adjustment Gas total each branch below already computes for
   // itself as `preAdjGasTotal`.
@@ -5960,7 +5960,7 @@ function _lbg_buildGasBill(
   // `gasTotal = gasTotal + (signedFuelAdj || 0)` unconditionally — a null
   // signedFuelAdj (garbled label, never regex-matched) silently fell
   // through the `|| 0` and shipped `gasTotal` (the PRE-adjustment total) as
-  // final. Real bill: HS, acct 09-009001-00, 7/15/2026 — printed Gas
+  // final. Real bill: HS, acct NN-NNNNNN-00, 7/15/2026 — printed Gas
   // $540.33, Fuel Adjustment -$32.37, true Gas total $507.96; the old code
   // shipped $540.33. Resolve-or-hold before ever touching gasTotal.
   const _fa2 = resolveFuelAdjOrHold(gasTotal, gasVariable, gasTotalConfident);
@@ -7673,7 +7673,7 @@ const UTILITY_RULES = [
             // frequently misread by OCR — verified on Inv 447604 (Apr 2025): "AcctUMeter",
             // "AcctMeter" (slash dropped entirely). The old regex required a literal "/" in
             // the label, so every site on that invoice silently lost its AccountNumber AND
-            // MeterNumber even though the VALUE side ("560001/T920419C") read back fine —
+            // MeterNumber even though the VALUE side ("NNNNNN/XNNNNNNX") read back fine —
             // only the label's punctuation was corrupted. Tolerate 0-2 stray characters
             // (U/1/l/I/|/./space/etc, OCR's common misreads of "/") between "Acct" and
             // "Meter" in the LABEL only; the VALUE separator below is unchanged.
@@ -9831,7 +9831,7 @@ const UTILITY_RULES = [
       // Address group was `\d+\s*[A-Z][...]` — required the digit run to be
       // followed (after optional whitespace) by a LETTER. Fix (2026-08-24,
       // defect #3 of the Louisburg 100%-accuracy gate): on the Broadmoor EMS
-      // account (02-002360-00) one OCR pass reads the printed "105 S 5TH ST
+      // account (NN-NNNNNN-00) one OCR pass reads the printed "105 S 5TH ST
       // E" as "1058 5STHE" — the direction letter "S" itself misread as
       // digit "8" (a known Tesseract confusable pair), leaving BOTH tokens
       // ("1058" and "5STHE") starting with a digit and no letter anywhere
@@ -9852,7 +9852,7 @@ const UTILITY_RULES = [
       // run of OCR junk (a stray misread period, comma, etc.) landing
       // directly against the account-number digits with NO whitespace of
       // its own — e.g. real OCR text "825 WILDCAT DR                    .09-
-      // 009002-00" (account 09-009002-00, Irrigation, Feb 2026 scan). The
+      // 009002-00" (account NN-NNNNNN-00, Irrigation, Feb 2026 scan). The
       // old pattern required `\s+` to be immediately followed by the 2-char
       // digit class; that stray "." sat between the whitespace run and the
       // digits, so `\s+` was satisfied by the spaces but the very next
@@ -9896,7 +9896,7 @@ const UTILITY_RULES = [
       }
       // FIX (2026-08-24, Louisburg visual audit bug #4): normalize the
       // recurring OCR garble family for 105 S 5th St E (Broadmoor EMS acct
-      // 02-002360-00 / Maintenance Bldg acct 02-002364-00 — same physical
+      // NN-NNNNNN-00 / Maintenance Bldg acct NN-NNNNNN-00 — same physical
       // building, two accounts). Confirmed against 5 real bill renders
       // (Jan/Feb/Mar 2026) that this address NEVER extracts correctly on
       // either account: seen garbles include "105S STHE", "105 S5THE",
@@ -9912,7 +9912,7 @@ const UTILITY_RULES = [
         ServiceAddress = '105 S 5TH E';
       }
       // FIX (backlog 7a051fed): a further OCR garble family for this SAME
-      // confirmed address (Broadmoor EMS acct 02-002360-00): "Gas Bills May
+      // confirmed address (Broadmoor EMS acct NN-NNNNNN-00): "Gas Bills May
       // 2026 - BES.pdf" and "SKM_C551i26081711320.pdf" both read the "S" in
       // "105 S 5TH E" as digit "8" instead (a second, distinct Tesseract
       // confusable of the same direction letter), producing "1058S 5STHE"
@@ -10265,7 +10265,7 @@ const UTILITY_RULES = [
         // Mirrors the existing fuzzy G[A4]S tolerance on the Gas label.
         // FIX (backlog eea98fd5): also tolerate a handwritten pen annotation
         // overlapping the printed "WATER" glyphs and garbling individual
-        // letters — confirmed on a real bill (account 02-002364-00, 6/15–
+        // letters — confirmed on a real bill (account NN-NNNNNN-00, 6/15–
         // 7/15/2026) where a stroke through the label made Tesseract read
         // "WATER" as "/WAIER" (T→I). Without this, the entire Water line
         // item — and the $44.33 charge on it — was silently dropped from
@@ -10290,7 +10290,7 @@ const UTILITY_RULES = [
           }
         }
         // Water Protection Fee: accumulate ALL occurrences, not just the
-        // first. A 2-physical-water-meter account (e.g. 16-016001-00, 977 N
+        // first. A 2-physical-water-meter account (e.g. NN-NNNNNN-00, 977 N
         // Rockville Rd) prints one WATER PROTECTION line PER METER — the old
         // `!wpf` guard kept only one of the two identical-looking lines,
         // silently dropping the 2nd meter's fee from the Water sub-total
@@ -10345,7 +10345,7 @@ const UTILITY_RULES = [
       // charge to reconcile — a $400 (vs $4.00) stormwater charge broke
       // that page-total arithmetic check by exactly enough to mask a
       // genuine FuelAdjustment sign error on the same bill (real bill,
-      // 02-002360-00, 12/15/2025-1/14/2026: printed FUEL ADJUSTMENT credit
+      // NN-NNNNNN-00, 12/15/2025-1/14/2026: printed FUEL ADJUSTMENT credit
       // OCR'd without its minus sign, AND stormwater OCR'd "400" for
       // "4.00" — with only the fuel-adjustment fix, the two bugs canceled
       // out of the reconciliation check and neither got corrected).

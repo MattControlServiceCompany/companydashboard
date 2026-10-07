@@ -71,7 +71,7 @@ Attn: Fake Contact                                                              
 Faketown, KS 00000                                                                Bill Date: 01/01/2099
 Pmt Due Date: 01/16/2099
 Item Mmbtu Fuel Rate $
-Service Address: Test Elementary - 100 Test St                                   Acct/Meter: 900101/M000001A
+Service Address: Test Elementary - 100 Test St                                   Acct/Meter: A0001/M000001A
 Faketown, KS 00000                                                      Pipeline: SoStar MKT
 Utility: Atmos
 Trigger - Fixed   10.00   0.15   $5.0000   $50.75

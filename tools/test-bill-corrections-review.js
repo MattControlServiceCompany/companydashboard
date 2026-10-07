@@ -488,7 +488,7 @@ async function main() {
         id: 'r_test_louacct_1',
         start: '2025-01-16',
         end: '2025-02-16',
-        accountNumber: '1800100',
+        accountNumber: '1700200',
         utilityCompany: 'City of Louisburg',
         commodity: 'Electric',
         totalCost: '210.00',
@@ -497,7 +497,7 @@ async function main() {
         id: 'r_test_louacct_2',
         start: '2025-02-16',
         end: '2025-03-16',
-        accountNumber: '1800100',
+        accountNumber: '1700200',
         utilityCompany: 'City of Louisburg',
         commodity: 'Electric',
         totalCost: '198.00',
@@ -506,7 +506,7 @@ async function main() {
         id: 'r_test_louacct_bad',
         start: '2025-04-16',
         end: '2025-05-16',
-        accountNumber: '1600100', // OCR misread of 1800100 — the bug
+        accountNumber: '1600200', // OCR misread of 1700200 — the bug
         utilityCompany: 'City of Louisburg',
         commodity: 'Electric',
         totalCost: '205.00',
@@ -657,10 +657,10 @@ async function main() {
   if (!louAcctRow) {
     failures++;
     console.error('FAIL Case 7: Louisburg account-number OCR misread bill was not flagged');
-  } else if (louAcctRow.correctedValue !== '1800100' || louAcctRow.currentValue !== '1600100') {
+  } else if (louAcctRow.correctedValue !== '1700200' || louAcctRow.currentValue !== '1600200') {
     failures++;
     console.error(
-      'FAIL Case 7: expected 1600100 -> 1800100, got ' + louAcctRow.currentValue + ' -> ' + louAcctRow.correctedValue,
+      'FAIL Case 7: expected 1600200 -> 1700200, got ' + louAcctRow.currentValue + ' -> ' + louAcctRow.correctedValue,
     );
   } else {
     console.log(

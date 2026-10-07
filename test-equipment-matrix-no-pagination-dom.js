@@ -26,7 +26,7 @@ const path = require('path');
 
 const REPO = __dirname;
 const SITE_PATH = 'file:///' + REPO.replace(/\\/g, '/') + '/energy-department.html';
-const SYNTH_PID = 999000111; // fake numeric project id, never collides with a real project
+const SYNTH_PID = 999000222; // fake numeric project id, never collides with a real project
 
 let pass = 0;
 let fail = 0;
