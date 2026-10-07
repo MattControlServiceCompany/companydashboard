@@ -2296,6 +2296,13 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.06.87', date: '2026-10-06', title: 'Zoom and theme stay put, shared changes appear sooner',
+    items: [
+      { type: 'fix', text: 'Equipment Matrix zoom is now saved only when you change it yourself, so opening the page no longer overwrites your saved zoom.' },
+      { type: 'fix', text: 'Your color theme is now kept for each person. Switching to another account no longer changes the theme you chose.' },
+      { type: 'fix', text: 'Changes made by the other user now appear without a manual reload, including items created after you opened the page.' }
+    ]
+  },
   { v: 'v2026.10.06.86', date: '2026-10-06', title: 'Safer saving, separate sign-ins, one source for bill rates',
     items: [
       { type: 'fix', text: 'Projects, Service Agreements and EMS Leads no longer show false sync conflicts when you have not made any edits.' },
