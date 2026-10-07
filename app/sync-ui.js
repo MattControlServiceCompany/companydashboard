@@ -932,6 +932,15 @@
     row.className = 'ch-sync-status-queue';
     row.textContent =
       depth > 0 ? depth + ' change' + (depth === 1 ? '' : 's') + ' waiting to sync' : 'No changes waiting to sync';
+    // Failed keys by name with the HTTP status (db.js getQueueFailures / describeFailure).
+    var fails = window.DB && window.DB.getQueueFailures ? window.DB.getQueueFailures() : [];
+    fails.forEach(function (f) {
+      var line = document.createElement('div');
+      line.className = 'ch-sync-status-failure';
+      line.textContent =
+        window.DB.describeFailure(f) + (f.permanent ? ' - the server will not accept this value' : ' - will retry');
+      row.appendChild(line);
+    });
     container.appendChild(row);
   }
 
@@ -944,7 +953,15 @@
         p.failed +
         ' of ' +
         p.total +
-        ' items could not upload yet. They wait in the sync queue and retry by themselves.'
+        ' items could not upload yet: ' +
+        (p.failures || [])
+          .slice(0, 5)
+          .map(function (f) {
+            return window.DB.describeFailure(f);
+          })
+          .join(', ') +
+        ((p.failures || []).length > 5 ? ' and ' + (p.failures.length - 5) + ' more' : '') +
+        '. They wait in the sync queue and retry by themselves.'
       );
     return 'First upload finished: ' + p.uploaded + ' items uploaded.';
   }

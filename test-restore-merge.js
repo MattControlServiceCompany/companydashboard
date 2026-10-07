@@ -1350,4 +1350,83 @@ t('restore keeps weather (en_wdd_<zip>): written when absent in add, merge and r
   assert.strictEqual(p.skipped.length, 0);
   assert.strictEqual(p.items[0].changed, true);
 });
+// ---------------------------------------------------------------- mode 'backup-wins' (Make this backup the server copy)
+const bwUtil = (extra) => ({
+  buildings: [{ id: 'b1', name: 'Main', meters: [{ id: 'm1', label: 'Meter 1', bills: [{ id: 'x1', total: 10 }] }] }].concat(extra || []),
+});
+t("backup-wins (a): a differing plain key takes the backup value; changed", () => {
+  const r = mv('some_plain_key', J({ a: 1 }), J({ a: 2 }), 'backup-wins');
+  assert.strictEqual(r.changed, true);
+  assert.deepStrictEqual(RM.parseMaybe(r.value), { a: 2 });
+  assert.strictEqual(r.removed, 0);
+});
+t('backup-wins (b): an equal key is unchanged (no PUT)', () => {
+  const r = mv('some_plain_key', { a: 1, b: [1] }, { b: [1], a: 1 }, 'backup-wins');
+  assert.strictEqual(r.changed, false);
+  const n = mv('some_plain_key', { n: 1 }, { n: '1' }, 'backup-wins');
+  assert.strictEqual(n.changed, false, 'number text equals the number');
+});
+t('backup-wins (c): en_projects and en_tasks are merged; no server-only record is removed', () => {
+  for (const key of ['en_projects', 'en_tasks']) {
+    const cur = [{ id: 'p1', name: 'Old' }, { id: 'srv', name: 'Server only' }];
+    const bak = [{ id: 'p1', name: 'Old' }, { id: 'new', name: 'Backup only' }];
+    const r = mv(key, cur, bak, 'backup-wins');
+    assert.strictEqual(r.changed, true, key);
+    assert.deepStrictEqual(ids(r.value).sort(), ['new', 'p1', 'srv'], key + ' = union');
+    assert.strictEqual(r.removed, 0);
+  }
+});
+t('backup-wins (c2): per-customer utility data = union; a matched record takes the backup value; server-only records stay', () => {
+  const cur = bwUtil([{ id: 'srvB', name: 'Server building', meters: [] }]);
+  cur.buildings[0].meters[0].label = 'August label';
+  cur.buildings[0].meters[0].bills.push({ id: 'srvBill', total: 5 });
+  const bak = bwUtil();
+  bak.buildings[0].meters[0].label = 'Newest label';
+  bak.buildings[0].meters[0].bills[0].total = 11;
+  const r = mv('en_utility_cust_c1', cur, bak, 'backup-wins');
+  assert.strictEqual(r.changed, true);
+  const b = r.value.buildings;
+  assert.deepStrictEqual(ids(b).sort(), ['b1', 'srvB']);
+  assert.strictEqual(b[0].meters[0].label, 'Newest label');
+  assert.deepStrictEqual(ids(b[0].meters[0].bills).sort(), ['srvBill', 'x1']);
+  assert.strictEqual(b[0].meters[0].bills.find((x) => x.id === 'x1').total, 11);
+  assert.strictEqual(r.removed, 0);
+});
+t('backup-wins (d): a legacy en_utility_<id> key is skipped when the backup holds en_utility_cust_ keys', () => {
+  const backup = { en_utility_123: J(bwUtil()), en_utility_cust_c1: J(bwUtil()) };
+  const p = RM.plan(backup, () => J({ buildings: [] }), 'backup-wins');
+  assert.deepStrictEqual(p.skipped.map((x) => x.key), ['en_utility_123']);
+  assert.ok(!p.items.some((i) => i.key === 'en_utility_123'));
+});
+t('backup-wins (e): a key that would remove server records is held (unticked) with the count; a tick sends it', () => {
+  const cur = { cfg: { list: [{ id: 'a' }, { id: 'b' }] } };
+  const bak = { cfg: { list: [{ id: 'a' }] } };
+  const p = RM.plan({ some_plain_key: bak }, () => cur, 'backup-wins');
+  const it = p.items[0];
+  assert.strictEqual(it.held, true);
+  assert.strictEqual(it.changed, false);
+  assert.strictEqual(it.removed, 1);
+  const q = RM.plan({ some_plain_key: bak }, () => cur, 'backup-wins', { allowRemoval: ['some_plain_key'] });
+  assert.strictEqual(q.items[0].held, false);
+  assert.strictEqual(q.items[0].changed, true);
+});
+t('backup-wins (f): idempotent - a plan on the post-apply state has 0 changes', () => {
+  const backup = {
+    some_plain_key: { a: 2 },
+    en_projects: [{ id: 'p1', name: 'P' }, { id: 'new', name: 'N' }],
+    en_utility_cust_c1: bwUtil(),
+    brand_new_key: 'x',
+  };
+  const server = {
+    some_plain_key: { a: 1 },
+    en_projects: [{ id: 'p1', name: 'P' }, { id: 'srv', name: 'S' }],
+    en_utility_cust_c1: bwUtil([{ id: 'srvB', name: 'S', meters: [] }]),
+  };
+  const first = RM.plan(backup, (k) => server[k], 'backup-wins');
+  const changed = first.items.filter((i) => i.changed);
+  assert.strictEqual(changed.length, 3, 'three keys change once; the customer data already holds every backup record');
+  changed.forEach((i) => (server[i.key] = i.value));
+  const second = RM.plan(backup, (k) => server[k], 'backup-wins');
+  assert.strictEqual(second.items.filter((i) => i.changed).length, 0, 'second run: 0 changes');
+});
 console.log(pass + ' tests passed (final)');

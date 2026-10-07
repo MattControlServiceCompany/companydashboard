@@ -1461,6 +1461,179 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     );
   });
 
+  // ---- Go-live cutover (2026-10-07): "Make this backup the server copy" on a gap-shaped SYNTHETIC backup.
+  // Real app/db.js + app/restore-merge.js + the real restore functions cut out of app/site-functions.js.
+  const SF_SRC = fs.readFileSync(path.join(ROOT, 'app', 'site-functions.js'), 'utf8').split('\r').join('');
+  const sfFrom = SF_SRC.indexOf('var _RESTORE_LS_ONLY');
+  const sfTo = SF_SRC.indexOf('function _restoreDialog');
+  const RESTORE_SRC = SF_SRC.slice(sfFrom, sfTo);
+  const RM_SRC = fs.readFileSync(path.join(ROOT, 'app', 'restore-merge.js'), 'utf8');
+  const canonOf = (v) => JSON.stringify(sortDeep(v));
+  const idsOf = (list) => list.map((r) => r.id).sort();
+  const bootRestore = (server) =>
+    boot({
+      host: NETLIFY,
+      signedIn: true,
+      server,
+      onCtx: (ctx) => {
+        vm.runInContext(RM_SRC, ctx);
+        vm.runInContext(RESTORE_SRC, ctx);
+      },
+    });
+  const gapServer = () => {
+    const rows = {};
+    for (let i = 1; i <= 8; i++) rows['en_budget_d' + i] = { n: 'august-' + i, keep: [i] };
+    for (let i = 1; i <= 6; i++) rows['en_budget_same' + i] = { n: 'same-' + i };
+    rows.en_projects = [
+      { id: 'p1', name: 'Project One' },
+      { id: 'pSrv', name: 'Server only project' },
+    ];
+    rows.en_tasks = [
+      { id: 't1', text: 'task one' },
+      { id: 'tSrv', text: 'server only task' },
+    ];
+    rows.en_utility_cust_c1 = {
+      buildings: [
+        {
+          id: 'b1',
+          name: 'Main',
+          meters: [
+            {
+              id: 'm1',
+              label: 'August label',
+              bills: [
+                { id: 'x1', total: 10 },
+                { id: 'xSrv', total: 5 },
+              ],
+            },
+          ],
+        },
+        { id: 'bSrv', name: 'Server only building', meters: [] },
+      ],
+    };
+    rows.en_utility_555 = { legacy: 'august' }; // legacy copy, differs, must stay
+    return rows;
+  };
+  const gapBackup = () => {
+    const b = {};
+    for (let i = 1; i <= 8; i++) b['en_budget_d' + i] = { n: 'newest-' + i, keep: [i] };
+    for (let i = 1; i <= 6; i++) b['en_budget_same' + i] = { n: 'same-' + i };
+    b.en_projects = [
+      { id: 'p1', name: 'Project One' },
+      { id: 'pNew', name: 'Backup only project' },
+    ];
+    b.en_tasks = [
+      { id: 't1', text: 'task one edited' },
+      { id: 'tNew', text: 'backup only task' },
+    ];
+    b.en_utility_cust_c1 = {
+      buildings: [
+        {
+          id: 'b1',
+          name: 'Main',
+          meters: [{ id: 'm1', label: 'Newest label', bills: [{ id: 'x1', total: 11 }] }],
+        },
+      ],
+    };
+    b.en_utility_555 = { legacy: 'newest' };
+    b.en_budget_m1 = { n: 'missing-1' };
+    b.en_budget_m2 = [1, 2, 3];
+    b.en_budget_m3 = 'missing-3';
+    b.en_budget_m4 = { deep: { x: 4 } };
+    b.en_budget_big = { blob: 'x'.repeat(2300000) }; // 2.3 MB
+    return b;
+  };
+
+  await scenario('G1', async () => {
+    const srv = makeServer(gapServer());
+    srv.history = [];
+    const origFetch = srv.fetch;
+    srv.fetch = async (url, opts) => {
+      // Same snapshot rule as kv-sync.js: an explicit overwrite keeps the old row in kv_history.
+      if (opts && (opts.method || '').toUpperCase() === 'PUT') {
+        const b = JSON.parse(opts.body);
+        const cur = srv.rows.get(b.key);
+        if (b.explicitOverwrite && cur && cur.version === b.baseVersion)
+          srv.history.push({ key: b.key, version: cur.version, value: cur.value });
+      }
+      // The real server sends copies over the wire; the shared in-memory rows must not alias the client cache.
+      const r = await origFetch(url, opts);
+      const body = await r.json();
+      return { ok: r.ok, status: r.status, json: async () => JSON.parse(JSON.stringify(body)) };
+    };
+    const before = new Map(Array.from(srv.rows, ([k, r]) => [k, JSON.parse(JSON.stringify(r))]));
+    const backup = gapBackup();
+    const { ctx } = await bootRestore(srv);
+    const baseline = srv.puts.length;
+    const res = await ctx._restoreStart(backup, { mode: 'backup-wins', confirm: true, safetyCopy: false, reload: false });
+    const sent = srv.puts.slice(baseline).map((p) => JSON.parse(p));
+    const sentKeys = sent.map((p) => p.key);
+    const row = (k) => srv.rows.get(k) && srv.rows.get(k).value;
+
+    check('G1 no failures', res.failed.length === 0, JSON.stringify(res.failed));
+    check('G1 5 missing keys inserted as v1 (baseVersion null, no overwrite flag)',
+      ['en_budget_m1', 'en_budget_m2', 'en_budget_m3', 'en_budget_m4', 'en_budget_big'].every((k) => {
+        const p = sent.find((x) => x.key === k);
+        return p && p.baseVersion === null && !p.explicitOverwrite && srv.rows.get(k).version === 1;
+      }), sentKeys.join(','));
+    check('G1 the 2.3 MB key is on the server and equals the backup',
+      canonOf(row('en_budget_big')) === canonOf(backup.en_budget_big), '');
+    for (let i = 1; i <= 8; i++)
+      check('G1 differing key en_budget_d' + i + ' equals the backup', canonOf(row('en_budget_d' + i)) === canonOf(backup['en_budget_d' + i]), '');
+    check('G1 equal keys are not sent (0 PUT)', !sentKeys.some((k) => /en_budget_same/.test(k)), sentKeys.join(','));
+    check('G1 en_projects = union of backup and server records', same(idsOf(row('en_projects')), ['p1', 'pNew', 'pSrv']), JSON.stringify(idsOf(row('en_projects'))));
+    check('G1 en_tasks = union; server-only task kept', same(idsOf(row('en_tasks')), ['t1', 'tNew', 'tSrv']), JSON.stringify(idsOf(row('en_tasks'))));
+    const cu = row('en_utility_cust_c1');
+    const m1 = cu.buildings.find((b) => b.id === 'b1').meters[0];
+    check('G1 customer data: backup label and bill value win on matched records', m1.label === 'Newest label' && m1.bills.find((x) => x.id === 'x1').total === 11, JSON.stringify(m1));
+    check('G1 customer data: server-only building and bill stay', cu.buildings.some((b) => b.id === 'bSrv') && m1.bills.some((x) => x.id === 'xSrv'), '');
+    check('G1 legacy en_utility_555 skipped: server keeps its copy, never sent', canonOf(row('en_utility_555')) === canonOf(before.get('en_utility_555').value) && !sentKeys.includes('en_utility_555'), '');
+    check('G1 0 deletes: no tombstone PUT, no row removed', sent.every((p) => !p.deleted) && srv.tombstones.length === 0 && Array.from(before.keys()).every((k) => srv.rows.has(k)), '');
+    const overwritten = sent.filter((p) => p.baseVersion !== null).map((p) => p.key).sort();
+    check('G1 kv_history holds the OLD copy of every overwritten key (and only those)',
+      same(srv.history.map((h) => h.key).sort(), overwritten) &&
+        srv.history.every((h) => canonOf(h.value) === canonOf(before.get(h.key).value)),
+      srv.history.map((h) => h.key).join(',') + ' vs ' + overwritten.join(','));
+    check('G1 overwrite PUTs use the server version just read as the base',
+      sent.filter((p) => p.baseVersion !== null).every((p) => p.baseVersion === before.get(p.key).version && p.explicitOverwrite === true), '');
+    check('G1 per-key result list: one OK row per sent key, with an action text',
+      res.results.length === sent.length && res.results.every((r) => r.ok && r.action && r.httpStatus === 200), JSON.stringify(res.results.slice(0, 2)));
+    const putsAfterFirst = srv.puts.length;
+    const again = await ctx._restoreStart(backup, { mode: 'backup-wins', confirm: true, safetyCopy: false, reload: false });
+    check('G1 second run is idempotent: 0 changes, 0 PUT', again.changed === 0 && srv.puts.length === putsAfterFirst, again.changed + ' changed, ' + (srv.puts.length - putsAfterFirst) + ' PUT');
+  });
+
+  await scenario('G2', async () => {
+    // A key whose backup lacks records the server holds is held back by default; a tick sends it.
+    const srv = makeServer({ en_budget_h: { list: [{ id: 'a' }, { id: 'b' }] }, en_budget_ok: { n: 1 } });
+    const { ctx } = await bootRestore(srv);
+    const backup = { en_budget_h: { list: [{ id: 'a' }] }, en_budget_ok: { n: 2 } };
+    const base = srv.puts.length;
+    const r1 = await ctx._restoreStart(backup, { mode: 'backup-wins', confirm: true, safetyCopy: false, reload: false });
+    const k1 = srv.puts.slice(base).map((p) => JSON.parse(p).key);
+    check('G2 held key not sent by default; the other key is', k1.join(',') === 'en_budget_ok' && r1.changed === 1, k1.join(','));
+    check('G2 held key unchanged on the server', same(srv.rows.get('en_budget_h').value.list.map((x) => x.id), ['a', 'b']), '');
+    const r2 = await ctx._restoreStart(backup, { mode: 'backup-wins', confirm: true, safetyCopy: false, reload: false, allowRemoval: ['en_budget_h'] });
+    check('G2 ticked key is sent', r2.changed === 1 && same(srv.rows.get('en_budget_h').value.list.map((x) => x.id), ['a']), JSON.stringify(srv.rows.get('en_budget_h').value));
+  });
+
+  await scenario('G3', async () => {
+    // A failed key shows its HTTP status in the result list; the other keys still go.
+    const srv = makeServer({ en_budget_a: { n: 1 }, en_budget_b: { n: 1 } });
+    const { ctx } = await bootRestore(srv);
+    const origFetch = srv.fetch;
+    srv.fetch = async (url, opts) => {
+      if (opts && (opts.method || '').toUpperCase() === 'PUT' && JSON.parse(opts.body).key === 'en_budget_a')
+        return { ok: false, status: 502, json: async () => ({ error: 'bad gateway' }) };
+      return origFetch(url, opts);
+    };
+    ctx.fetch = srv.fetch;
+    const res = await ctx._restoreStart({ en_budget_a: { n: 2 }, en_budget_b: { n: 2 } }, { mode: 'backup-wins', confirm: true, safetyCopy: false, reload: false });
+    const bad = res.results.find((r) => r.key === 'en_budget_a');
+    check('G3 failed key: result row says Failed with HTTP 502', bad && !bad.ok && bad.httpStatus === 502, JSON.stringify(bad));
+    check('G3 other key still sent', res.results.some((r) => r.key === 'en_budget_b' && r.ok), '');
+  });
+
   let fail = 0;
   results.forEach((r) => {
     if (!r.ok) fail++;

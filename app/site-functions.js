@@ -1315,6 +1315,49 @@ function _restoreUnreadable(p) {
     return i.unreadable;
   });
 }
+// Per-key result list after an apply: key, OK or failed with the HTTP status.
+// One row per plan item, so a key that was not sent says why.
+function _restoreResultTable(p, res) {
+  var by = {};
+  (res.results || []).forEach(function (r) {
+    by[r.key] = r;
+  });
+  var rows = p.items.map(function (i) {
+    var r = by[i.key];
+    var st = r ? (r.ok ? 'OK' : 'Failed' + (r.httpStatus ? ' (HTTP ' + r.httpStatus + ')' : '')) : 'Not sent';
+    var why = r
+      ? r.action
+      : i.held
+        ? 'waits for your tick: would remove ' + i.removed + ' record(s)'
+        : i.tombstoned
+          ? 'deleted on the server on purpose'
+          : i.unreadable
+            ? 'could not read from the server'
+            : 'already the same, no change';
+    return (
+      '<tr><td>' +
+      _restoreEsc(i.key) +
+      '</td><td class="' +
+      (r && !r.ok ? 'rst-rm' : '') +
+      '">' +
+      st +
+      '</td><td title="' +
+      _restoreEsc(why) +
+      '">' +
+      _restoreEsc(why) +
+      '</td></tr>'
+    );
+  });
+  (p.skipped || []).forEach(function (s) {
+    rows.push('<tr><td>' + _restoreEsc(s.key) + '</td><td>Skipped</td><td>' + _restoreEsc(s.why) + '</td></tr>');
+  });
+  if (!rows.length) return '';
+  return (
+    '<div class="rst-tbl-outer" id="rstResults"><table class="rst-tbl"><thead><tr><th>Key</th><th>Result</th><th>Detail</th></tr></thead><tbody>' +
+    rows.join('') +
+    '</tbody></table></div>'
+  );
+}
 function _restoreUnreadableHtml(p) {
   var u = _restoreUnreadable(p);
   if (!u.length) return '';
@@ -1353,6 +1396,8 @@ async function _restoreApply(ctx, p, opts, progress) {
   var sent = 0;
   var failed = [];
   var localDone = 0;
+  // One row per plan item: { key, ok, action, httpStatus }. The dialog shows it after the apply.
+  var results = [];
   try {
     if (changed.length && opts.safetyCopy !== false) {
       var before = {};
@@ -1408,13 +1453,25 @@ async function _restoreApply(ctx, p, opts, progress) {
       if (dep && failedKeys[dep]) {
         failedKeys[it.key] = true;
         failed.push(it.key + ' (not sent: ' + dep + ' failed)');
+        results.push({ key: it.key, ok: false, action: 'not sent: ' + dep + ' failed', httpStatus: null });
         continue;
       }
-      var r = await DB.restorePush(it.key, it.value, ctx.server.get(it.key) || null);
-      if (r.ok) sent++;
-      else {
+      var srvRow = ctx.server.get(it.key) || null;
+      var r = await DB.restorePush(it.key, it.value, srvRow);
+      if (r.ok) {
+        sent++;
+        results.push({
+          key: it.key,
+          ok: true,
+          action: srvRow
+            ? 'overwrote v' + srvRow.version + ' with v' + (srvRow.version + 1) + ', old copy kept in history'
+            : 'inserted as v1',
+          httpStatus: 200,
+        });
+      } else {
         failedKeys[it.key] = true;
         failed.push(it.key + ' (' + r.status + ')');
+        results.push({ key: it.key, ok: false, action: String(r.status), httpStatus: r.httpStatus || null });
       }
     }
     for (var j = 0; j < locals.length; j++) {
@@ -1427,12 +1484,13 @@ async function _restoreApply(ctx, p, opts, progress) {
         await DB.set(k, v);
       }
       localDone++;
+      results.push({ key: k, ok: true, action: 'saved on this device', httpStatus: null });
     }
   } catch (err) {
     console.warn('[restore] failed:', err);
     failed.push('unexpected error: ' + (err && err.message));
   }
-  return { sent: sent, failed: failed, localDone: localDone };
+  return { sent: sent, failed: failed, localDone: localDone, results: results };
 }
 
 async function _restoreStart(backup, opts) {
@@ -1464,11 +1522,12 @@ async function _restoreStart(backup, opts) {
     throw new Error('restoreData: opts.safetyCopy must be true or false when confirm is true');
   }
   var mode = opts.mode || 'add';
-  if (['add', 'merge', 'replace'].indexOf(mode) === -1) throw new Error('restoreData: unknown mode ' + mode);
+  if (['add', 'merge', 'replace', 'backup-wins'].indexOf(mode) === -1) throw new Error('restoreData: unknown mode ' + mode);
   var p = RestoreMerge.plan(backup, ctx.getCurrent, mode, {
     isDeleted: ctx.isDeleted,
     isUnreadable: ctx.isUnreadable,
     restoreDeleted: opts.restoreDeleted || [],
+    allowRemoval: opts.allowRemoval || [],
   });
   var res = await _restoreApply(ctx, p, opts, function (m) {
     console.log('[restore] ' + m);
@@ -1515,10 +1574,14 @@ function _restoreDialog(ctx) {
   bg.querySelector('#rstX').onclick = close;
 
   var restoreDeleted = {}; // tombstoned keys the user ticked
+  var allowRemoval = {}; // 'backup-wins' keys the user ticked although they would remove records
   function currentPlan() {
     return RestoreMerge.plan(backup, getCurrent, mode, {
       isDeleted: ctx.isDeleted,
       isUnreadable: ctx.isUnreadable,
+      allowRemoval: Object.keys(allowRemoval).filter(function (k) {
+        return allowRemoval[k];
+      }),
       restoreDeleted: Object.keys(restoreDeleted).filter(function (k) {
         return restoreDeleted[k];
       }),
@@ -1568,7 +1631,7 @@ function _restoreDialog(ctx) {
       (syncOn
         ? 'Sync is on. Restore compares the backup with the current server data. Both users share the server data.'
         : 'Sync is off. Restore compares the backup with the data on this device.') +
-      ' Add and Merge never remove anything. Replace removes records that are not in the backup. A copy of the current data downloads before anything is written.</p>' +
+      ' Add, Merge and Make this backup the server copy never remove a record. Replace removes records that are not in the backup. A copy of the current data downloads before anything is written.</p>' +
       opt(
         'add',
         'Add missing only (recommended)',
@@ -1585,6 +1648,11 @@ function _restoreDialog(ctx) {
         'Backup values replace the current values. This overwrites ' +
           where +
           ' and removes records that are not in the backup.',
+      ) +
+      opt(
+        'backup-wins',
+        'Make this backup the server copy',
+        'Every value that differs takes the backup value. Customer, project and task lists are merged: records merged, none removed. Old values stay in the server history. A key that would remove data waits for your tick.',
       ) +
       '<div class="rst-tbl-outer"><table class="rst-tbl"><thead><tr><th>Data</th><th>Added</th><th>Updated</th><th>Kept</th>' +
       (mode === 'replace' ? '<th>Removed</th>' : '') +
@@ -1628,6 +1696,31 @@ function _restoreDialog(ctx) {
       html += '<p class="rst-note rst-rm-note">' + _restoreEsc(note) + '</p>';
     });
     html += _restoreUnreadableHtml(p);
+    var held = p.items.filter(function (i) {
+      return i.held || (mode === 'backup-wins' && allowRemoval[i.key]);
+    });
+    if (held.length) {
+      html +=
+        '<p class="rst-note rst-rm-note"><b>' +
+        held.length +
+        ' item(s) would remove records that the backup does not have.</b> They are not sent unless you tick them.</p>';
+      held.forEach(function (i) {
+        html +=
+          '<label class="rst-opt"><input type="checkbox" class="rstHeld" data-key="' +
+          _restoreEsc(i.key) +
+          '"' +
+          (allowRemoval[i.key] ? ' checked' : '') +
+          '><span>Send ' +
+          _restoreEsc(i.label) +
+          ' <small>' +
+          _restoreEsc(i.key) +
+          ' (removes ' +
+          i.removed +
+          ' record' +
+          (i.removed === 1 ? '' : 's') +
+          ')</small></span></label>';
+      });
+    }
     var tombs = p.items.filter(function (i) {
       return i.tombstoned;
     });
@@ -1662,6 +1755,12 @@ function _restoreDialog(ctx) {
         '</ul></details>';
     }
     body.innerHTML = html;
+    body.querySelectorAll('.rstHeld').forEach(function (cb) {
+      cb.onchange = function () {
+        allowRemoval[cb.getAttribute('data-key')] = cb.checked;
+        renderPreview();
+      };
+    });
     body.querySelectorAll('.rstTomb').forEach(function (cb) {
       cb.onchange = function () {
         restoreDeleted[cb.getAttribute('data-key')] = cb.checked;
@@ -1752,6 +1851,7 @@ function _restoreDialog(ctx) {
         '</ul>';
     }
     html += _restoreUnreadableHtml(p);
+    html += _restoreResultTable(p, res);
     body.innerHTML = html;
     ftr.innerHTML = '<button class="btn btn-em" id="rstDone">Close and reload</button>';
     ftr.querySelector('#rstDone').onclick = function () {

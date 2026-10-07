@@ -259,6 +259,11 @@ const SyncClassification = (() => {
     { pattern: 'en_utility_sewer_usage_backfilled_v1', prefix: false, note: 'utility-data.js:126 — same as above.' },
     { pattern: 'en_utility_therms_mmbtu_fix_v1', prefix: false, note: 'utility-data.js:221/352 — same as above.' },
     {
+      pattern: 'en_utility_facKW_backfilled_v1',
+      prefix: false,
+      note: 'Obsolete one-shot facKW backfill flag (the gate was removed 2026-09-25). Older browsers still hold it. Same as above: per-machine, must NOT sync.',
+    },
+    {
       pattern: 'en_sewer_backfill_report_v1',
       prefix: false,
       note: 'utility-data.js:204 — one-time diagnostic report (console.table companion), not user-facing data.',
@@ -467,7 +472,9 @@ const SyncClassification = (() => {
    */
   function isNeverBackupKey(key) {
     return PER_USER_CH_ENGINE_EXCLUSIONS.some(
-      (e) => e.neverBackup === true && (e.prefix ? typeof key === 'string' && key.indexOf(e.pattern) === 0 : e.pattern === key),
+      (e) =>
+        e.neverBackup === true &&
+        (e.prefix ? typeof key === 'string' && key.indexOf(e.pattern) === 0 : e.pattern === key),
     );
   }
 

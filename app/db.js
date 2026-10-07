@@ -1716,6 +1716,14 @@ const DB = (() => {
   }
 
   // --- 2a.5: single-owner retry-queue drain (Web Locks, F7 guard) -----------
+  // Last failed send per queued key: { key, status, httpStatus, permanent }. A key leaves
+  // the map when its send succeeds or its entry leaves the queue. 400, 413 and 422 will
+  // never succeed by retrying (permanent: true).
+  const _queueFailures = new Map();
+  const PERMANENT_HTTP = [400, 413, 422];
+  function getQueueFailures() {
+    return Array.from(_queueFailures.values()).filter((f) => _syncQueue.some((e) => e.key === f.key));
+  }
   async function _drainQueueLocked() {
     // Send only the signed-in user's own entries; others stay queued untouched.
     const me = _myUserId();
@@ -1741,17 +1749,25 @@ const DB = (() => {
       if (epoch !== _identityEpoch) return;
       if (_backendMode() === 'off') return; // the server refused this sign-in: session ended, stop sending
       if (result.status === 'ok') {
+        _queueFailures.delete(entry.key);
         _syncQueue = _syncQueue.filter((e) => e.id !== entry.id);
         _persistSyncQueue();
         continue;
       }
       if (result.status === 'conflict') {
+        _queueFailures.delete(entry.key);
         await _handleConflict(entry.key, payload, result.body, _backendMode());
         _syncQueue = _syncQueue.filter((e) => e.id !== entry.id);
         _persistSyncQueue();
         continue;
       }
       // still failing (offline/server error) — leave in queue, retry next cycle.
+      _queueFailures.set(entry.key, {
+        key: entry.key,
+        status: result.status,
+        httpStatus: result.httpStatus || null,
+        permanent: PERMANENT_HTTP.indexOf(result.httpStatus) !== -1,
+      });
     }
   }
   async function _drainQueueOnce() {
@@ -2079,6 +2095,21 @@ const DB = (() => {
     if (local && typeof local.version === 'number') return m.version > local.version;
     return !m.deleted && _cache[localKey] === undefined;
   }
+  // The ONE rule for "an unstamped key whose local value differs from the server
+  // needs the user's answer": a live server row, a plain key (not a collection,
+  // not the deletion records) and a meaningful local value.
+  function _driftNeedsAsk(localKey, local, row) {
+    if (!row || row.deleted || row.value === undefined || row.value === null) return false;
+    if (_collectionCfg(localKey) || localKey === TOMBSTONE_KEY) return false;
+    // No dialog on this page (nobody can answer): the old rule stays, server wins and the
+    // local value is archived first.
+    if (typeof window === 'undefined' || !window.SyncConflictUI || typeof window.SyncConflictUI.showConflictModal !== 'function')
+      return false;
+    if (local === undefined || local === null || local === '') return false;
+    if (Array.isArray(local) && !local.length) return false;
+    if (typeof local === 'object' && !Array.isArray(local) && !Object.keys(local).length) return false;
+    return true;
+  }
   async function _hydrateInner() {
     const mode = _backendMode();
     if (mode !== 'on') return; // off: no hydration
@@ -2211,6 +2242,26 @@ const DB = (() => {
         if (!rows || !rows[0]) continue;
         if (_hasQueuedWrite(localKey)) continue; // race guard
         const before = _cache[localKey];
+        // A plain (non-collection) key with a real local value and no stamp: the
+        // user decides in the conflict modal. Never a silent server-wins. Same
+        // content is adopted silently by _handleConflict. Collection keys keep
+        // the per-record merge in _reconcileIncoming.
+        if (_driftNeedsAsk(localKey, before, rows[0])) {
+          const row = rows[0];
+          const current = {
+            value: row.value,
+            version: row.version,
+            hash: row.hash || m.hash || null,
+            deleted: false,
+            updatedBy: row.updatedBy || row.updated_by,
+            updatedAt: row.updatedAt || row.updated_at,
+          };
+          // Not awaited: the modal waits for the user and must not hold the load.
+          _handleConflict(localKey, { value: before }, { current }, 'on').catch((e) =>
+            console.warn('[DB] Hydration: conflict handling failed, key left unstamped:', localKey, e),
+          );
+          continue;
+        }
         await _reconcileIncoming(localKey, rows[0], m.hash);
         if (_cache[localKey] !== before) updatedFromServer++;
       }
@@ -2268,9 +2319,13 @@ const DB = (() => {
   // 'conflict' = another device inserted it meanwhile: the next load takes the
   // drift path (server wins, local archived).
   const UPLOAD_CONCURRENCY = 4;
-  let _uploadProgress = { running: false, total: 0, done: 0, uploaded: 0, failed: 0 };
+  let _uploadProgress = { running: false, total: 0, done: 0, uploaded: 0, failed: 0, failures: [] };
   function getUploadProgress() {
-    return Object.assign({}, _uploadProgress);
+    return Object.assign({}, _uploadProgress, { failures: _uploadProgress.failures.slice() });
+  }
+  // "key (HTTP 502)" text for a failure row. ONE function: toast and Sync status use it.
+  function describeFailure(f) {
+    return f.key + ' (' + (f.httpStatus ? 'HTTP ' + f.httpStatus : f.status) + ')';
   }
   function _emitUploadProgress() {
     if (typeof window !== 'undefined') {
@@ -2283,7 +2338,7 @@ const DB = (() => {
       // A second run (identity change) adds to the same pass.
       _uploadProgress.total += keys.length;
     } else {
-      _uploadProgress = { running: true, total: keys.length, done: 0, uploaded: 0, failed: 0 };
+      _uploadProgress = { running: true, total: keys.length, done: 0, uploaded: 0, failed: 0, failures: [] };
     }
     _emitUploadProgress();
     const queue = keys.slice();
@@ -2310,6 +2365,11 @@ const DB = (() => {
           else if (r.status === 'network-error' || r.status === 'error') {
             _enqueueWrite(localKey, { value });
             _uploadProgress.failed++;
+            _uploadProgress.failures.push({ key: localKey, status: r.status, httpStatus: r.httpStatus || null });
+          } else if (r.status === 'conflict') {
+            // Another device inserted the key first: not uploaded. The next load asks.
+            _uploadProgress.failed++;
+            _uploadProgress.failures.push({ key: localKey, status: 'conflict', httpStatus: 409 });
           }
         }
         _uploadProgress.done++;
@@ -2329,11 +2389,16 @@ const DB = (() => {
     }
     if (_uploadProgress.failed > 0) {
       if (typeof showToast === 'function') {
+        const shown = _uploadProgress.failures.slice(0, 5).map(describeFailure);
+        const more = _uploadProgress.failures.length - shown.length;
         showToast(
           _uploadProgress.failed +
             ' item' +
             (_uploadProgress.failed === 1 ? '' : 's') +
-            ' could not upload yet. They are saved here and wait in the sync queue. The upload retries by itself.',
+            ' could not upload yet: ' +
+            shown.join(', ') +
+            (more > 0 ? ' and ' + more + ' more' : '') +
+            '. Items that failed on the server wait in the sync queue and retry by themselves.',
           'warning',
           10000,
         );
@@ -2501,7 +2566,7 @@ const DB = (() => {
     _recordLastUser();
     _persistSyncQueue(); // refresh the bars for the new identity
     _identityEpoch++; // in-flight work for the previous user now discards itself
-    _uploadProgress = { running: false, total: 0, done: 0, uploaded: 0, failed: 0 };
+    _uploadProgress = { running: false, total: 0, done: 0, uploaded: 0, failed: 0, failures: [] };
     const cleared = _clearPerUserLocalState(prevUid, uid);
     _reapplyQueuedPerUserValues(uid); // this user's own queued values, before hydrate and drain
     // Finding 2 — persist the new owner durably so a hard refresh right after
@@ -2963,7 +3028,11 @@ const DB = (() => {
     if (r.status !== 'ok') {
       if (prev) _replicaVersions[key] = prev;
       else delete _replicaVersions[key];
-      return { ok: false, status: r.status === 'error' ? 'server error ' + (r.httpStatus || '') : r.status };
+      return {
+        ok: false,
+        status: r.status === 'error' ? 'server error ' + (r.httpStatus || '') : r.status,
+        httpStatus: r.status === 'conflict' ? 409 : r.httpStatus || null,
+      };
     }
     await _rawSet(key, value);
     return { ok: true };
@@ -3082,6 +3151,8 @@ const DB = (() => {
     resetPendingWrites,
     getSyncStatus,
     getUploadProgress,
+    getQueueFailures,
+    describeFailure,
     getQueueDepth,
     getForeignQueueInfo,
     queueOwner: _queueOwner,

@@ -261,7 +261,21 @@ const RestoreMerge = (() => {
     });
   }
 
-  // Add/merge one list level. Current items are never removed or reordered
+  // Backup-wins on one matched record: every field the backup record holds
+  // replaces the current value. Fields only the current record holds stay.
+  function win(cur, bak, st) {
+    if (!isRec(cur) || !isRec(bak)) return cur;
+    let out = cur;
+    for (const k of Object.keys(bak)) {
+      if (bak[k] === undefined || same(cur[k], bak[k])) continue;
+      if (out === cur) out = Object.assign({}, cur);
+      out[k] = bak[k];
+    }
+    if (out !== cur) st.updated += 1;
+    return out;
+  }
+
+  // Add/merge/backup-wins one list level. Current items are never removed or reordered
   // (sortBy only orders the result when the policy says the list is ordered).
   function mergeLevel(cur, bak, pol, level, mode, st) {
     const bakArr = Array.isArray(bak) ? bak : [];
@@ -301,10 +315,10 @@ const RestoreMerge = (() => {
       const i = at.get(k);
       const c = out[i];
       let next = c;
-      if (mode === 'merge') {
+      if (mode === 'merge' || mode === 'backup-wins') {
         const own = pol.strip && pol.stripLevel === level ? stripFields(b, pol.strip) : Object.assign({}, b);
         if (child) delete own[child];
-        next = fill(c, own, st);
+        next = mode === 'merge' ? fill(c, own, st) : win(c, own, st);
       }
       if (child && Array.isArray(b[child])) {
         const cc = Array.isArray(c[child]) ? c[child] : [];
@@ -462,8 +476,11 @@ const RestoreMerge = (() => {
       return done(cur, false);
     }
 
+    // 'backup-wins' = "make this backup the server copy": the backup value for
+    // every differing plain key and map; per-customer utility data is a union in
+    // which the backup record wins; every other record list is a plain Add.
     if (pol.kind === 'key') {
-      if (mode !== 'replace' || !meaningful(cur)) {
+      if ((mode !== 'replace' && mode !== 'backup-wins') || !meaningful(cur)) {
         if (!meaningful(cur)) {
           st.added = 1;
           return done(bak, true);
@@ -481,7 +498,7 @@ const RestoreMerge = (() => {
         st.kept = 1;
         return done(cur, false);
       }
-      if (mode === 'replace') {
+      if (mode === 'replace' || mode === 'backup-wins') {
         st.removed = Object.keys(cur).filter((k) => !(k in bak)).length;
         st.added = Object.keys(bak).filter((k) => !(k in cur)).length;
         st.updated = Object.keys(bak).filter((k) => k in cur && !same(cur[k], bak[k])).length;
@@ -511,7 +528,8 @@ const RestoreMerge = (() => {
     // records / frozen
     const curList = list(cur);
     const bakList = list(bak);
-    const eff = pol.kind === 'frozen' ? 'add' : mode;
+    const eff =
+      pol.kind === 'frozen' ? 'add' : mode === 'backup-wins' ? (pol.cross === 'utility' ? 'backup-wins' : 'add') : mode;
     if (eff === 'replace') {
       if (!meaningful(curList) && !isRec(cur)) {
         const v = cleanAll(bak);
@@ -554,6 +572,8 @@ const RestoreMerge = (() => {
   // plan(backup, getCurrent, mode, opts)
   //   opts.isDeleted(key)    -> true when the server holds a tombstone for the key
   //   opts.restoreDeleted    -> array of tombstoned keys the user ticked
+  //   opts.allowRemoval      -> array of keys the user ticked in 'backup-wins' mode although
+  //                             the backup lacks records the server holds (item.held = false)
   //   opts.isUnreadable(key) -> true when the current server value could not be
   //                             read; the key is never written in any mode
   // -> { items: [{key,label,value,changed,added,updated,kept,removed,names,policy,tombstoned,unreadable,why}],
@@ -564,6 +584,7 @@ const RestoreMerge = (() => {
     const skipped = [];
     const keys = Object.keys(backup);
     const ticked = new Set(opts.restoreDeleted || []);
+    const allowed = new Set(opts.allowRemoval || []);
     const inert = (key, pol, flag) =>
       Object.assign(
         {
@@ -598,7 +619,11 @@ const RestoreMerge = (() => {
         continue;
       }
       const r = mergeValue(key, tomb ? undefined : getCurrent(key), backup[key], mode, keys);
-      items.push(Object.assign({ key, label: labelFor(key), tombstoned: tomb, unreadable: false }, r));
+      // backup-wins never removes data by default: a key that would remove
+      // records waits (held) until the user ticks it.
+      const held = mode === 'backup-wins' && r.changed && r.removed > 0 && !allowed.has(key);
+      if (held) Object.assign(r, { changed: false, value: undefined });
+      items.push(Object.assign({ key, label: labelFor(key), tombstoned: tomb, unreadable: false, held }, r));
     }
     return { items, skipped, notes: crossNotes(items, backup, getCurrent), backupVersion: backupVersion(backup) };
   }

@@ -183,6 +183,60 @@ Many short `setTimeout` calls (toasts, URL cleanup, UI yield) are one-shot. They
   check: node test-sync-golive-blockers.js, the "(a):" test; `SyncClassification.classifyKey('ch_sb_session')` is
   `local-only`.
 
+- Restore mode "Make this backup the server copy" (`'backup-wins'`, app/restore-merge.js `mergeValue` and `plan`, dialog in
+  app/site-functions.js `_restoreDialog`). It reuses `_restoreApply` and `DB.restorePush` (no second upload path): a key that
+  is absent on the server is inserted at version 1 (`baseVersion` null); a key that differs is replaced at the server version
+  just read, with `explicitOverwrite`, so kv-sync.js keeps the old copy in `kv_history` (20 per key, 30 days). A key whose
+  content already equals the backup is not sent. Rules: a plain key or map takes the backup value; the record lists
+  (`en_projects`, `en_customers`, `en_tasks`, `en_dc_events`, `ems_leads_v1`, the audit log, report history) are an
+  Add (union by id, nothing removed); per-customer `en_utility_cust_<id>` is a union by id in which the backup record wins
+  field by field on a matched record, and server-only buildings, meters and bills stay; legacy `en_utility_<id>` keys are
+  skipped; nothing is deleted; a tombstoned key stays deleted unless ticked; a per-user key goes only to the signed-in user
+  (`DB.restoreScope`). A key that would still remove records (a plain key whose nested lists lose items) is HELD: listed with
+  the count, unticked, not sent until the user ticks it (`opts.allowRemoval`, `item.held`). After the apply the dialog shows
+  one row per key: OK with the action ("inserted as v1", "overwrote vN with vN+1, old copy kept in history"), Failed with the
+  HTTP status (`DB.restorePush` returns `httpStatus`: 409 for a conflict, the server code otherwise), Skipped or Not sent with
+  the reason. A second run with the same file finds server = backup and sends nothing. How to check:
+  node test-restore-merge.js ("backup-wins" tests), node test-sync-golive-blockers.js ("migration R1-R3"),
+  node tools/test-backend-mode-default.js (scenarios G1-G3: a synthetic backup with 5 missing keys incl. one 2.3 MB key,
+  differing keys and collection keys with server-only records).
+- Unstamped differing key (app/db.js `_hydrateInner` drift loop, `_driftNeedsAsk`). A key with no `ch_rv` stamp, a real local
+  value and a live server row that differs used to take the server value silently (local archived). A plain key (not a
+  collection key, not the deletion records) now opens the existing conflict modal through `_handleConflict`: "Overwrite with
+  mine" sends the local value at the server version with `explicitOverwrite`; "Keep server" loads the server value. Nothing is
+  written before the user answers; the local copy is archived first; a dismissed dialog leaves the key unstamped and it asks
+  again on the next load. Same content is adopted silently. Collection keys still merge per record. A page with no conflict
+  dialog keeps the old rule (server wins, local archived). How to check: node test-sync-golive-blockers.js, "migration H1-H6".
+- Failures name the key. The first-connect upload keeps `{key, status, httpStatus}` for every failed key (a 409 counts as
+  failed) in `DB.getUploadProgress().failures`; the toast and the Sync status panel list up to five keys as "key (HTTP 502)"
+  (`DB.describeFailure`, the one text function). A queued write that keeps failing is listed by `DB.getQueueFailures()` with
+  its HTTP status (400, 413 and 422 are marked permanent); the Sync status panel shows them under the queue count.
+  How to check: node test-sync-golive-blockers.js, "migration U1/U2" and "migration D1".
+- `en_utility_facKW_backfilled_v1` (obsolete one-shot flag) is local-only (app/sync-classification.js
+  `LOCAL_ONLY_OVERRIDES`), so a first connect never uploads it.
+
+## 6c. Go-live cutover (one time): make the Netlify site hold the GitHub-site data
+
+Why: Matt worked only on the GitHub site since 2026-08-19. The server holds the August seed. The GitHub site never syncs.
+Matt's steps, in this order:
+
+1. On the GitHub site: Backup. Save the file. This is the fresh backup. Do not edit data on the GitHub site after this.
+2. Open the Netlify site (cscdashboard.netlify.app). Sign in as yourself first. Do not sign in as another user first.
+   Per-user settings go to the signed-in user.
+3. If a "conflict" window opens on load for a setting, read it. "Keep server" keeps the server value. "Overwrite with mine"
+   sends this browser's value. The old value is kept in the server history either way.
+4. Open Restore. Choose the backup file from step 1.
+5. Choose "Make this backup the server copy". Read the table. Read the list "would remove records that the backup does not
+   have". Leave those items unticked. Tick one only after you compare it.
+6. Click Restore. A safety copy of the current server values downloads first. Keep that file.
+7. Read the result list. Every row must say OK or Skipped. A Failed row shows the key name and the HTTP status. Send that
+   list to the developer.
+8. Click "Close and reload". Open Restore again, choose the same file and the same mode. The button must say
+   "Nothing to change". If it lists items, read them.
+
+Nothing is deleted by this restore. A key the backup lacks is not touched. Old server values are in `kv_history`
+(kv-sync.js `snapshotHistory`). To undo one key, read its row in `kv_history` in the Supabase dashboard.
+
 ## 6b. Bill fields (merged 2026-10-06, fix/2026-10-05-hidden-fields)
 
 - Retired stored bill fields. Bill rows no longer store copies or roll-ups next to the real fields (thermCost, kwCost,

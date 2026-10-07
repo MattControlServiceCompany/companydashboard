@@ -33,6 +33,7 @@ function load({ mode, syncHost, fetchImpl, classify }) {
       getEmail: () => state.email || 'u1@example.com',
     },
   };
+  if (arguments[0].modal) win.SyncConflictUI = { showConflictModal: arguments[0].modal };
   const SCreal = require('./app/sync-classification.js');
   // Without classify only the audit id rule is provided (db.js always calls it).
   win.SyncClassification = classify
@@ -74,6 +75,7 @@ function load({ mode, syncHost, fetchImpl, classify }) {
     navigator: {},
     indexedDB: undefined,
     fetch: fetchImpl,
+    showToast: arguments[0].toast,
   };
   vm.createContext(sandbox);
   vm.runInContext(src + '\n;this.__DB = DB;', sandbox);
@@ -3321,6 +3323,159 @@ await t("8l: a load with no edit sends 0 PUT (reload and reopen)", async () => {
   await tick(300);
   assert.strictEqual(puts.length, 0, "zero PUT: " + JSON.stringify(puts));
 });
+
+  // ---- migration cutover (2026-10-07): restore base version, unstamped differing key asks, failures name the key
+  const kvRow = (key, value, version) => ({ key, value, version, hash: sha(value), deleted: false });
+  function kvServer(rows, o) {
+    o = o || {};
+    const puts = [];
+    const res = (status, body) => ({ ok: status >= 200 && status < 300, status, json: async () => body });
+    const fetchImpl = async (u, opts) => {
+      if (opts && opts.method === 'PUT') {
+        const body = JSON.parse(opts.body);
+        puts.push(body);
+        const code = o.putStatus ? o.putStatus(body.key) : 200;
+        if (code === 409) return res(409, { conflict: true, current: rows.find((r) => r.key === body.key) || null });
+        if (code !== 200) return res(code, { error: 'x' });
+        return res(200, { version: (body.baseVersion || 0) + 1, hash: sha(body.value), deleted: false });
+      }
+      if (/manifest=1/.test(u)) return res(200, rows.map((r) => ({ key: r.key, version: r.version, hash: r.hash, deleted: false })));
+      const keys = decodeURIComponent(String(u).split('keys=')[1] || '').split(',');
+      return res(200, rows.filter((r) => keys.indexOf(r.key) !== -1));
+    };
+    return { puts, fetchImpl };
+  }
+  await t('migration R1: restorePush on an ABSENT key sends baseVersion null (insert), no overwrite flag', async () => {
+    const S = kvServer([]);
+    const { DB } = load({ mode: 'on', syncHost: true, classify: true, fetchImpl: S.fetchImpl });
+    await DB.warmCache();
+    const r = await DB.restorePush('en_budget_new', { n: 1 }, null);
+    assert.strictEqual(r.ok, true);
+    assert.strictEqual(S.puts.length, 1);
+    assert.strictEqual(S.puts[0].baseVersion, null);
+    assert.ok(!('explicitOverwrite' in S.puts[0]));
+  });
+  await t('migration R2: restorePush on a PRESENT key sends baseVersion = server version + explicitOverwrite', async () => {
+    const S = kvServer([kvRow('en_budget_a', { n: 1 }, 4)]);
+    const { DB } = load({ mode: 'on', syncHost: true, classify: true, fetchImpl: S.fetchImpl });
+    await DB.warmCache();
+    const r = await DB.restorePush('en_budget_a', { n: 2 }, { value: { n: 1 }, version: 4 });
+    assert.strictEqual(r.ok, true);
+    assert.strictEqual(S.puts[0].baseVersion, 4);
+    assert.strictEqual(S.puts[0].explicitOverwrite, true);
+    assert.deepStrictEqual(S.puts[0].value, { n: 2 });
+  });
+  await t('migration R3: 409 -> conflict (HTTP 409); 502 -> "server error 502" with httpStatus 502', async () => {
+    const S = kvServer([kvRow('en_budget_a', { n: 1 }, 4)], { putStatus: (k) => (k === 'en_budget_a' ? 409 : 502) });
+    const { DB } = load({ mode: 'on', syncHost: true, classify: true, fetchImpl: S.fetchImpl });
+    await DB.warmCache();
+    const a = await DB.restorePush('en_budget_a', { n: 2 }, { value: { n: 1 }, version: 4 });
+    assert.deepStrictEqual([a.ok, a.status, a.httpStatus], [false, 'conflict', 409]);
+    const b = await DB.restorePush('en_budget_b', { n: 2 }, null);
+    assert.deepStrictEqual([b.ok, b.status, b.httpStatus], [false, 'server error 502', 502]);
+  });
+
+  async function hydrateScenario(localValue, serverValue, o) {
+    o = o || {};
+    const key = o.key || 'en_budget_x';
+    const store = {};
+    store[key] = JSON.stringify(localValue); // unstamped: no ch_rv record
+    const S = kvServer([kvRow(key, serverValue, 7)]);
+    const asked = [];
+    const L = load({
+      mode: 'on',
+      syncHost: true,
+      classify: true,
+      fetchImpl: S.fetchImpl,
+      store,
+      modal: o.noModal ? undefined : async (d) => (asked.push(d), o.answer || { action: 'dismiss' }),
+    });
+    await L.DB.warmCache();
+    await L.DB.__t._hydrate();
+    await tick(80);
+    return { L, S, asked, key };
+  }
+  await t('migration H1: unstamped + differing plain key: modal opens, local value kept, 0 PUT, archive entry, still unstamped', async () => {
+    const { L, S, asked, key } = await hydrateScenario({ n: 'LOCAL' }, { n: 'SERVER' });
+    assert.strictEqual(asked.length, 1, 'modal opened once');
+    assert.strictEqual(asked[0].key, key);
+    assert.strictEqual(JSON.stringify(L.DB.get(key)), JSON.stringify({ n: 'LOCAL' }), 'local value unchanged');
+    assert.strictEqual(S.puts.filter((p) => p.key === key).length, 0, 'no server write');
+    assert.ok(L.DB.getConflictArchive().some((e) => e.key === key), 'local copy archived');
+    assert.ok(!L.DB.__t._stampOf(key), 'key stays unstamped: asked again next load');
+  });
+  await t('migration H2: unstamped + equal content: adopts the version silently (no modal)', async () => {
+    const { L, asked, key } = await hydrateScenario({ a: 1, b: 2 }, { b: 2, a: 1 });
+    assert.strictEqual(asked.length, 0);
+    assert.strictEqual(L.DB.__t._stampOf(key).version, 7);
+  });
+  await t('migration H3: unstamped collection key still merges per record (no whole-key modal)', async () => {
+    const { L, asked, key } = await hydrateScenario([{ id: 'a', text: 'local' }], [{ id: 'b', text: 'server' }], {
+      key: 'en_tasks',
+    });
+    assert.strictEqual(asked.length, 0);
+    assert.strictEqual(
+      L.DB.get(key)
+        .map((r) => r.id)
+        .sort()
+        .join(','),
+      'a,b',
+    );
+  });
+  await t('migration H4: "Overwrite with mine" -> PUT at the server version with explicitOverwrite, local value sent', async () => {
+    const { S, key } = await hydrateScenario({ n: 'LOCAL' }, { n: 'SERVER' }, { answer: { action: 'overwrite-mine' } });
+    const p = S.puts.filter((x) => x.key === key);
+    assert.strictEqual(p.length, 1);
+    assert.strictEqual(p[0].baseVersion, 7);
+    assert.strictEqual(p[0].explicitOverwrite, true);
+    assert.strictEqual(JSON.stringify(p[0].value), JSON.stringify({ n: 'LOCAL' }));
+  });
+  await t('migration H5: "Keep server" -> server value loaded and the key is stamped', async () => {
+    const { L, S, key } = await hydrateScenario({ n: 'LOCAL' }, { n: 'SERVER' }, { answer: { action: 'load-theirs' } });
+    assert.strictEqual(JSON.stringify(L.DB.get(key)), JSON.stringify({ n: 'SERVER' }));
+    assert.strictEqual(L.DB.__t._stampOf(key).version, 7);
+    assert.strictEqual(S.puts.filter((x) => x.key === key).length, 0);
+  });
+  await t('migration H6: a page with no conflict dialog keeps the old rule (server wins, local archived)', async () => {
+    const { L, key } = await hydrateScenario({ n: 'LOCAL' }, { n: 'SERVER' }, { noModal: true });
+    assert.strictEqual(JSON.stringify(L.DB.get(key)), JSON.stringify({ n: 'SERVER' }));
+    assert.ok(L.DB.getConflictArchive().some((e) => e.key === key));
+  });
+  await t('migration U1/U2: first-connect upload failures keep key + HTTP status; toast and Sync status text name the key', async () => {
+    const toasts = [];
+    const store = {
+      en_budget_p: JSON.stringify({ n: 1 }),
+      en_budget_q: JSON.stringify({ n: 2 }),
+      en_budget_r: JSON.stringify({ n: 3 }),
+    };
+    const S = kvServer([], { putStatus: (k) => (k === 'en_budget_p' ? 502 : k === 'en_budget_q' ? 409 : 200) });
+    const L = load({ mode: 'on', syncHost: true, classify: true, fetchImpl: S.fetchImpl, store, toast: (m) => toasts.push(m) });
+    await L.DB.warmCache(); // warmCache runs the one hydration and the first-connect upload
+    await tick(200);
+    const f = L.DB.getUploadProgress().failures;
+    const by = Object.fromEntries(f.map((x) => [x.key, x.httpStatus]));
+    assert.strictEqual(JSON.stringify(by), JSON.stringify({ en_budget_p: 502, en_budget_q: 409 }));
+    assert.ok(
+      toasts.some((m) => /en_budget_p \(HTTP 502\)/.test(m) && /en_budget_q \(HTTP 409\)/.test(m)),
+      toasts.join('|'),
+    );
+    const ui = fs.readFileSync(path.join(__dirname, 'app', 'sync-ui.js'), 'utf8');
+    assert.ok(/describeFailure/.test(ui), 'Sync status uses the same describeFailure');
+  });
+  await t('migration D1: a queued write that keeps failing is listed by key with its HTTP status (413 = permanent)', async () => {
+    let code = 500;
+    const S = kvServer([], { putStatus: () => code });
+    const L = load({ mode: 'on', syncHost: true, classify: true, fetchImpl: S.fetchImpl });
+    await L.DB.warmCache();
+    L.DB.set('en_budget_big', { n: 1 });
+    await tick(60);
+    assert.strictEqual(L.DB.getQueueDepth(), 1);
+    code = 413;
+    await L.DB.__t._drainQueueOnce();
+    const f = L.DB.getQueueFailures();
+    assert.strictEqual(JSON.stringify(f.map((x) => [x.key, x.httpStatus, x.permanent])), JSON.stringify([['en_budget_big', 413, true]]));
+    assert.strictEqual(L.DB.describeFailure(f[0]), 'en_budget_big (HTTP 413)');
+  });
   console.log(pass + ' passed');
 })().catch((e) => {
   console.error('FAIL', e);
