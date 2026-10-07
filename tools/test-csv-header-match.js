@@ -97,10 +97,10 @@ function mapped(h, v) {
   load(m, row(h, v));
   R('importBillCsvRows')();
   const b = m.bills[0] || {};
-  return { start: b.start, end: b.end, kwh: num(b.kwh), kw: num(b.demandKW), fac: num(b.facKW), cost: num(b.totalCost) };
+  return { start: b.start, end: b.end, kwh: num(b.kwh), kw: num(b.demandKW), fac: num(b.facKW) === undefined ? null : num(b.facKW), cost: num(b.totalCost) };
 }
 const same = (a, e) => JSON.stringify(a) === JSON.stringify(e);
-const E1 = { start: '2026-01-01', end: '2026-01-31', kwh: 1000, kw: 50, fac: undefined, cost: 1234.56 };
+const E1 = { start: '2026-01-01', end: '2026-01-31', kwh: 1000, kw: 50, fac: null, cost: 1234.56 };
 let g = mapped('Start Date,End Date,Bill ID,Energy Cost,Energy (kWh),Demand Cost,Demand (kW),Bill Amount ($)', '2026-01-01,2026-01-31,B-1,111,1000,222,50,1234.56');
 check('Energy Cost / Energy (kWh) / Demand Cost / Demand (kW) / Bill ID / Bill Amount', same(g, E1), g);
 g = mapped('Total,Start Date,To Date,kWh,Peak kW,Bill Amount', '999,2026-01-01,2026-01-31,1000,50,1234.56');
