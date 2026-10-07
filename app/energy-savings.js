@@ -4133,7 +4133,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     AccountNumber:
       acctOverride ||
       // FIX (2026-08-24, Louisburg visual audit bug #6): `\s+` -> `\s*`
-      // between "Account" and "Number" (see `_EVG_ACCT`/`_acctForIdx`
+      // between "Account" and "Number" (see `_evgAccountsIn`/`_acctForIdx`
       // comments for the confirmed real-bill glued-OCR example this covers).
       t.match(/Account\s*(?:Number\s*)?[:\s©®=]+\s*(\d[\d ]{4,18}\d)/im)?.[1]?.replace(/\s/g, '') ||
       null,
@@ -5535,7 +5535,22 @@ const _EVG_CHG = /Ch[gaq9][.:]?/i; // matches Chg, Cha, Chq, Ch9, Chg.
 // ("AccountNumber", no space) even though the printed digits are legible.
 // See the matching fix + comment on `_acctForIdx` further below for the
 // confirmed real-bill example.
-const _EVG_ACCT = /[Aa]ccount\s*(?:N[ou]mber\s*)?[^0-9A-Za-z\n]{0,6}(\d[\d ]{4,18}\d)/m;
+// ONE shared rule for reading Evergy account numbers from text (a page or the
+// whole document). Every call site uses _evgAccountsIn / _evgPickAccount.
+// OCR can damage the FIRST digit of an "Account Number :" line ("6699289683"
+// read as "§699289683"). The tolerant separator accepts the damaged line, and
+// a first-match rule returned a 9-digit account. A lost digit only makes a
+// candidate SHORTER, so _evgAccountsIn keeps only the candidates of the longest
+// digit length found (all real accounts on the text, damaged ones dropped).
+const _EVG_ACCT_G = /[Aa]ccount\s*(?:N[ou]mber\s*)?[^0-9A-Za-z\n]{0,6}\s*[(\[\u00a9]?(\d[\d ]{4,18}\d)/gm;
+function _evgAccountsIn(text) {
+  const all = [...String(text || '').matchAll(_EVG_ACCT_G)].map((m) => m[1].replace(/\s/g, ''));
+  const maxLen = Math.max(0, ...all.map((a) => a.length));
+  return all.filter((a) => a.length === maxLen);
+}
+function _evgPickAccount(accts) {
+  return accts.length ? accts[0] : null;
+}
 const _EVG_ADDR =
   /^(\d+\s+\w[\w\s,]{3,50}(?:KS|MO|KY|OK|NE|IA|AR|TX|CO|IL|IN|OH|MI|PA|NY|NJ|CT|MA|VA|NC|SC|GA|FL|TN|MS|AL|LA|NM|AZ|UT|ID|OR|WA|MT|WY|ND|SD|MN|WI|NV|CA))\s*$/m;
 
@@ -6086,7 +6101,7 @@ const UTILITY_RULES = [
       (/Customer\s+Ch[gaq9]/i.test(t) && /ECA\s+Ch[gaq9]/i.test(t)) ||
       (/Current\s+Charges/i.test(t) && /Evergy|evergy/i.test(t)),
     extractAll: (t) => {
-      const acct = t.match(_EVG_ACCT)?.[1]?.replace(/\s/g, '') || null;
+      const acct = _evgPickAccount(_evgAccountsIn(t));
       const addrM = t.match(_EVG_ADDR);
       // ── Multi-bill split (rewritten) ──
       // The earlier split relied on matching "Billing Details - service from"
@@ -6136,11 +6151,7 @@ const UTILITY_RULES = [
         // page, where the printed number itself is sharp/unambiguous.
         // `\s+` -> `\s*` tolerates the glued form while still matching every
         // spaced form exactly as before (strict superset).
-        const acctMatches = [
-          ...pageText.matchAll(/[Aa]ccount\s*(?:N[ou]mber\s*)?[^0-9A-Za-z\n]{0,6}\s*[(\[©]?(\d[\d ]{4,18}\d)/gm),
-        ];
-        if (acctMatches.length === 0) return null;
-        return acctMatches[0][1].replace(/\s/g, '');
+        return _evgPickAccount(_evgAccountsIn(pageText));
       };
       const _addrForIdx = (idx) => {
         const pageText = _pageTextForIdx(idx);
@@ -6426,10 +6437,7 @@ const UTILITY_RULES = [
       const _pageOwnAccts = (page) => {
         const pageText = _pfPageTextMap[page];
         if (!pageText) return [];
-        const acctMatches = [
-          ...pageText.matchAll(/[Aa]ccount\s+(?:N[ou]mber\s*)?[^0-9A-Za-z\n]{0,6}\s*[(\[©]?(\d[\d ]{4,18}\d)/gm),
-        ];
-        return acctMatches.map((am) => am[1].replace(/\s/g, ''));
+        return _evgAccountsIn(pageText);
       };
       const _pageHasForeignBd = (page, ownAcct) => {
         if (!ownAcct) return false;
@@ -6965,7 +6973,7 @@ const UTILITY_RULES = [
       return results;
     },
     extract: (t) => {
-      const acct = t.match(_EVG_ACCT)?.[1]?.replace(/\s/g, '') || null;
+      const acct = _evgPickAccount(_evgAccountsIn(t));
       const addrM = t.match(_EVG_ADDR);
       return _extractEvergy(t, acct, addrM?.[1]?.trim() || null);
     },
