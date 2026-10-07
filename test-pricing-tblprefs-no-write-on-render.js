@@ -1,12 +1,11 @@
 // Real-browser test (synthetic data, headless bundled Chromium, file://): rendering the Cost Estimate
 // table with no stored prefs must send 0 DB.set writes; a column resize/hide sends writes; stored prefs are kept.
 // Run: node test-pricing-tblprefs-no-write-on-render.js [screenshot.png]
-const { chromium } = require('playwright');
+const { launchBrowser } = require('./tools/launch-browser.js');
 const path = require('path');
 const fs = require('fs');
 const REPO = __dirname;
 const SITE = 'file:///' + REPO.split(path.sep).join('/') + '/energy-department.html';
-const PROFILE = path.join('C:\Temp', 'tblprefs-test-profile-' + Date.now());
 const PID = 999000333;
 let pass = 0,
   fail = 0;
@@ -18,7 +17,7 @@ function eq(a, b, l) {
   }
 }
 (async () => {
-  const ctx = await chromium.launchPersistentContext(PROFILE, { headless: true, viewport: { width: 1920, height: 1080 } });
+  const ctx = await launchBrowser('tblprefs', { viewport: { width: 1920, height: 1080 } });
   try {
     const page = await ctx.newPage();
     const errs = [];
@@ -71,7 +70,6 @@ function eq(a, b, l) {
     eq(errs.filter((e) => e.indexOf('PHASE OVER') >= 0).length, 0, 'no console.error PHASE OVER');
   } finally {
     await ctx.close();
-    try { fs.rmSync(PROFILE, { recursive: true, force: true }); } catch (e) {}
   }
   console.log(pass + ' passed, ' + fail + ' failed');
   process.exit(fail ? 1 : 0);
