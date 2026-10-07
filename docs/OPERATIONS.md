@@ -134,7 +134,7 @@ Many short `setTimeout` calls (toasts, URL cleanup, UI yield) are one-shot. They
 - Identity guards on the write path (app/db.js). `_sendKvPut` is the ONE sender: if the edit's owner id is not the signed-in
   user at send time it returns `stale-identity` (no PUT, no stamp), so a value waiting behind another PUT or a hash check is
   never sent with the next user's token or key. A successful live write (`_writeOne`) removes older queued entries for the
-  same key and owner, so the drain cannot replay an old value. A live server row with no value (or null) is unreadable:
+  same key and owner, so the drain cannot replay an old value. A per-user edit whose author signs out while it is in flight (`stale-identity` in `_writeOne`, app/db.js) is queued under the AUTHOR's id (`payload.owner`), never sent as another user, and drains when that author signs in again. A live server row with no value (or null) is unreadable:
   `_reconcileIncoming` keeps the local copy and its stamp and raises `dbHydrateFailed`. A refusal (403 or second 401) in a
   tab whose cached user differs from the stored session takes over the stored session (`_onServerRefusal`), it never clears
   it. How to check: node test-sync-golive-blockers.js, the "F1:", "F5:", "F6:" and "later successful write" tests.

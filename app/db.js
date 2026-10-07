@@ -1698,7 +1698,12 @@ const DB = (() => {
       if (_syncQueue.length !== before) _persistSyncQueue();
       return;
     }
-    if (result.status === 'stale-identity' && _isPerUserKey(key)) return; // previous user's pref: never queue under the new user
+    if (result.status === 'stale-identity' && _isPerUserKey(key)) {
+      // The author is no longer signed in. Keep the edit, but ONLY under its author's id
+      // (payload.owner, never the current user): it drains when that author signs in again.
+      if (payload.owner && payload.owner.id) _enqueueWrite(key, payload);
+      return;
+    }
     if (result.status === 'conflict') {
       await _handleConflict(key, payload, result.body, mode);
       return;
