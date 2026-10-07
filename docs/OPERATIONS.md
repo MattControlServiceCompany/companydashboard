@@ -37,18 +37,40 @@ How to check that a function works:
 
 | Timer | What it does | Interval | When it stops |
 |---|---|---|---|
-| Queue drain (app/db.js:2532, const at :30) | Retries unsynced data writes through `_putWithAuth` (one refresh-and-retry on 401, see section 4) | 15 s | Never (page life). Also runs on `online` and after sign-in (`chAuthStateChanged`). Sends nothing while sync is off. |
-| Manifest poll (app/db.js:2534, const at :29; `_pollManifestForChanges` :2333) | Checks for data changes from the other user through `CH_AUTH.withAuthRetry` (:2337). A key counts as changed by ONE rule, `_serverRowNeedsRoutinePull` (app/db.js, above `_hydrateInner`), shared with `_hydrate`: the server version is newer than the local stamp, OR the key is brand new to this browser (no stamp, nothing cached). So a key another user creates after this page loaded (for example the first task) is picked up by the next poll without a reload. Changed keys are applied by `_hydrate` (merge, archive what loses), then `dbRemoteApplied` makes app/sync-ui.js reload the page when it is safe (`_safeToReload`: nobody typing, no open dialog, nothing unsent). If it is not safe, the banner shows and `_reloadWhenSafe` (app/sync-ui.js) checks every 3 s and reloads once it is safe, so the change is never dropped; a user switch or sign-out (`chAuthStateChanged`) clears that timer; keys it could not apply show the "changed, refresh" banner. The poll sends no PUT. Check: test-sync-golive-blockers.js POLL1/POLL2. | 60 s | Never. Also runs on window `focus`. Quiet while sync is off. |
+| Queue drain (app/db.js `_drainQueueOnce` :1779, back-off timer `_scheduleDrain` :1812, consts at :33-35) | Retries unsynced data writes through `_putWithAuth` (one refresh-and-retry on 401, see section 4). It runs on page load, on `online`, after sign-in (`chAuthStateChanged`) and after a write that failed (`_enqueueWrite`). While this user has a queued item that a retry can still send, ONE back-off timer retries: 15 s, then doubling to 5 min; a drain that sends something resets it to 15 s. | 15 s up to 5 min, only while items are queued | The timer does not exist when the queue is empty, when the only items belong to another user, or when every item failed for good (HTTP 400, 413, 422). Sends nothing while sync is off. Check: test-sync-golive-blockers.js CREDIT4-CREDIT6. |
+| Remote-change check (NO timer; `_remoteCheckIfDue` app/db.js:2450 calls `_checkForRemoteChanges` :2455; listeners in `_startBackgroundSync` :2678) | Asks the server whether the other user changed data, through `CH_AUTH.withAuthRetry`. It runs on page load (`_hydrate`), when the tab becomes visible (`visibilitychange`) and when the window gains focus. It never runs while `document.hidden`, and at most once per 5 minutes (`REMOTE_CHECK_MIN_MS`) counted from the last manifest GET of any kind (`_lastManifestAt`, set in `_fetchManifestWithTimeout`). A key counts as changed by ONE rule, `_serverRowNeedsRoutinePull` (app/db.js, above `_hydrateInner`), shared with `_hydrate`: the server version is newer than the local stamp, OR the key is brand new to this browser (no stamp, nothing cached). So a key another user creates after this page loaded (for example the first task) is picked up by the next check without a reload. Changed keys are applied by `_hydrate` (merge, archive what loses), then `dbRemoteApplied` makes app/sync-ui.js reload the page when it is safe (`_safeToReload`: nobody typing, no open dialog, nothing unsent). If it is not safe, the banner shows and `_reloadWhenSafe` (app/sync-ui.js, local only, no server call) checks every 3 s and reloads once it is safe, so the change is never dropped; a user switch or sign-out (`chAuthStateChanged`) clears that timer; keys it could not apply show the "changed, refresh" banner. The check sends no PUT. Writes still find a conflict by the 409 answer. Check: test-sync-golive-blockers.js POLL1/POLL2 (the check itself) and CREDIT1-CREDIT3 (idle hidden tab = 0 calls; visible = exactly 1 manifest GET, none inside 5 min). | none (events only) | Quiet while sync is off. |
 | PDF queue drain (app/core.js `_pdfDrainQueueOnce`, const at :110) | Retries unsynced PDF writes through `CH_AUTH.withAuthRetry` (`_pdfWithAuthRetry`); sends only the verified user's own entries (`DB.entryBelongsTo`). The drain stops at once when the signed-in user changes during it (`_pdfUserChanged`, checked before each entry and after each await, same rule as the db.js drain): nothing more is sent, removed or stamped for the other user. | 15 s | Never. Also runs on `online` and on sign-in (`chAuthStateChanged`). |
 | Tombstone retry (app/db.js:1134) | Retries failed delete sync, one-shot, with back-off | Variable delay | Clears when it fires or is replaced (db.js:1133). Skips if sync is off. |
-| Session refresh (app/ch-auth.js:366, const at :49) | Refreshes the sign-in token if near expiry | 5 min | Never. Does not start when sync is off (ch-auth.js:363). |
-| Version check (app/report-engine.js:12516, `_checkForVersionUpdate` :12528) | Looks for a new version and shows an update bar with a Reload button. It never reloads the page by itself (:12576) | 5 min | Never. Also runs when the tab becomes visible. |
+| Session refresh (app/ch-auth.js:366, const at :49) | Refreshes the sign-in token if near expiry | 5 min (talks to Supabase Auth only when the token is within 5 min of expiry, about once an hour) | Never. Does not start when sync is off (ch-auth.js:363). |
+| Version check (app/report-engine.js:12516, `_checkForVersionUpdate` :12528) | Looks for a new version and shows an update bar with a Reload button. It never reloads the page by itself (:12576) | 5 min, skipped while the tab is hidden | Never. Also runs when the tab becomes visible. |
 | Clock (app/site-functions.js:34; site-ui.js:774) | Updates the clock text | 15 s | Never. |
 | Bill dump (app/bill-analysis.js:12768) | Copies the open bill to localStorage for debug | 2 s | Never. |
 | OCR abort poll (app/bill-analysis.js:13989) | Checks the abort flag and OCR time budget | 250 ms | `clearInterval` when OCR call ends (:14011,:14015). |
 | Bill review render (app/bill-corrections-review.js:1830) | Redraws the review modal | 400 ms | Cleared on next open (:1829) and on close (:1838). |
 
 Many short `setTimeout` calls (toasts, URL cleanup, UI yield) are one-shot. They are not listed.
+
+### Netlify credit cost (Matt, 2026-10-07)
+
+Netlify Free plan: Function compute is 10 credits per GB-hour, plus requests. The old 60 s manifest poll cost about 1.1
+credits a day for ONE open tab, 24 hours a day, even when nobody looked at it (1440 Function calls a day; about 0.0008
+credits a call, from that figure). It is removed.
+
+- No idle calls. A tab that is hidden or left alone calls no Netlify Function: 0 calls a day. Calls come only from the user:
+  page load (manifest + the changed keys), tab visible again or window focus (one manifest GET at most every 5 min), and
+  each save (one PUT). A queued write that failed retries on the back-off timer only until it is sent.
+- Estimate per user per day, working about 8 hours: load 1 to 10 calls, visible-tab checks 10 to 40 (maximum 96 at 5 min
+  apart), saves 50 to 200 PUTs. About 100 to 300 calls, or roughly 0.1 to 0.25 credits a day. This is an estimate, not a
+  measurement. Check the real number in the Netlify dashboard (Observability, Functions, kv-sync, invocations per day).
+- Every remaining timer that can call a Netlify Function or Supabase:
+
+| Timer | Calls | How often | Credits a day (estimate) |
+|---|---|---|---|
+| Data queue back-off (app/db.js:1812) | kv-sync PUT | Only while this user has a sendable queued item: 15 s, 30 s, 60 s ... 5 min. None when empty. Worst case (server answers 5xx all day) 288 calls | 0 normally; at most about 0.2 |
+| PDF queue drain (app/core.js:423, every 15 s) | pdf-sync, only when the PDF queue holds this user's items; the function returns at once when empty (`_pdfDrainQueueOnce`) | 0 calls when empty | 0 normally |
+| Session refresh (app/ch-auth.js:511, every 5 min) | Supabase Auth token endpoint (not a Netlify Function), only when the token is within 5 min of expiry | about 24 a day per open tab, hidden or not | 0 Netlify credits (Supabase) |
+| Version check (app/report-engine.js:12517, every 5 min) | Static file `site-ui.js` (about 1 MB, not a Function). Skipped while the tab is hidden. Also runs on load and when the tab becomes visible | Visible tab: up to 288 a day, about 1 MB each before compression | Bandwidth, not Function compute. A visible tab left open all day costs the most of all. Matt: decide if the 5 min backstop stays |
+| supabase-keepalive (netlify.toml:27, `@daily`) | One Supabase read | 1 a day | about 0 |
 
 ## 4. Sign-in and allowlist
 
@@ -64,7 +86,7 @@ Many short `setTimeout` calls (toasts, URL cleanup, UI yield) are one-shot. They
 - The ONE rule for a server answer of 401/403 is `CH_AUTH.withAuthRetry` (app/ch-auth.js:327; `_onServerRefusal` :297):
   401 = refresh the token once and send the same request again; a second 401, or any 403, ends the session (sync off,
   signed-out bar, every timer quiet). A refresh that comes back as a different user never retries the request. The
-  manifest poll, the data queue drain, the live write and the PDF queue drain all go through it.
+  remote-change check, the data queue drain, the live write and the PDF queue drain all go through it.
 - A failed token refresh (app/ch-auth.js `_startRefresh`, rule `_refreshRefused`) ends the session only when Supabase
   REFUSED the refresh token: HTTP 400, 401 or 403. A network error or a 5xx (Supabase paused) keeps the session; the
   5-minute timer, or the next 401 on a request, tries again. How to check: with the network off, the signed-out bar

@@ -13,13 +13,14 @@ function load({ mode, syncHost, fetchImpl, classify }) {
     .join('')
     .replace(
       '  return {\n    warmCache,',
-      '  return {\n    __t: { _hydrate, _batchGetChunked, _drainQueueOnce, _clearPerUserLocalState, _handleAuthIdentityChange, _pollManifestForChanges, _stampOf: (k) => _replicaVersions[k], _baseOf: (k) => _syncBase[k], _queue: () => _syncQueue },\n    warmCache,',
+      '  return {\n    __t: { _hydrate, _batchGetChunked, _drainQueueOnce, _clearPerUserLocalState, _handleAuthIdentityChange, _checkForRemoteChanges, _remoteCheckIfDue, _startBackgroundSync, _stampOf: (k) => _replicaVersions[k], _baseOf: (k) => _syncBase[k], _queue: () => _syncQueue },\n    warmCache,',
     );
   const store = arguments[0].store || {};
   const events = [];
   const state = { mode, syncHost };
+  const env = arguments[0].env; // optional: fake clock, document and listener registry (credit-cost tests)
   const win = {
-    addEventListener() {},
+    addEventListener: env ? (n, f) => env.on('window', n, f) : () => {},
     dispatchEvent(e) {
       events.push(e);
     },
@@ -41,7 +42,7 @@ function load({ mode, syncHost, fetchImpl, classify }) {
     : { auditEntryId: SCreal.auditEntryId, canonicalJSON: SCreal.canonicalJSON };
   const sandbox = {
     window: win,
-    document: { addEventListener() {}, visibilityState: 'visible' },
+    document: env ? env.document : { addEventListener() {}, visibilityState: 'visible' },
     localStorage: {
       getItem: (k) => (k in store ? store[k] : null),
       setItem: (k, v) => {
@@ -56,9 +57,17 @@ function load({ mode, syncHost, fetchImpl, classify }) {
       },
     },
     console: { log() {}, warn() {}, error() {} },
-    setTimeout,
-    clearTimeout,
-    setInterval: () => 0,
+    // Back-off drain timers (15 s and longer) must not keep the test process alive.
+    setTimeout: env
+      ? env.setTimeout
+      : (fn, ms, ...r) => {
+          const h = setTimeout(fn, ms, ...r);
+          if (ms >= 10000 && h.unref) h.unref();
+          return h;
+        },
+    clearTimeout: env ? env.clearTimeout : clearTimeout,
+    setInterval: env ? env.setInterval : () => 0,
+    Date: env ? env.Date : Date,
     clearInterval,
     Promise,
     TextEncoder,
@@ -728,7 +737,7 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
       assert.strictEqual(L.DB.get('en_note'), 'v1');
       srv.rows.en_note = { value: 'v2', version: 2, hash: 'h2' };
       L.events.length = 0;
-      await L.DB.__t._pollManifestForChanges();
+      await L.DB.__t._checkForRemoteChanges();
       assert.strictEqual(L.DB.get('en_note'), 'v2', 'value applied to the local copy');
       const applied = L.events.find((e) => e.type === 'dbRemoteApplied');
       assert.ok(applied && Array.from(applied.detail.keys).join(',') === 'en_note', 'dbRemoteApplied sent');
@@ -746,7 +755,7 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
       await settle();
       assert.ok(L.DB.getQueueDepth() >= 1, 'edit is waiting in the queue');
       L.events.length = 0;
-      await L.DB.__t._pollManifestForChanges();
+      await L.DB.__t._checkForRemoteChanges();
       assert.strictEqual(L.DB.get('en_note'), 'mine', 'pending local edit not overwritten');
       assert.ok(
         L.events.some((e) => e.type === 'remoteChange'),
@@ -762,7 +771,7 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     srv.rows[KEY] = { value: [{ id: 'pb1' }, { id: 'pb2' }], version: 2, hash: 'h2' };
     srv.rows.en_other = { value: 'o2', version: 2, hash: 'h2' };
     L.events.length = 0;
-    await L.DB.__t._pollManifestForChanges();
+    await L.DB.__t._checkForRemoteChanges();
     assert.deepStrictEqual(
       L.DB.get(KEY).map((x) => x.id),
       ['pb1', 'pb2'],
@@ -1173,7 +1182,7 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
           /_pdfWithAuthRetry\(\(\) => _pdfDeleteCommit/.test(core),
         'pdf drain wrapped',
       );
-      await L.DB.__t._pollManifestForChanges();
+      await L.DB.__t._checkForRemoteChanges();
       assert.ok(fetches >= 1);
       assert.ok(
         L.events.some((e) => e.type === 'dbAuthRejected'),
@@ -2741,7 +2750,7 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     srv.rows.en_tasks = { value: [{ id: 't1', text: 'first task' }], version: 1, hash: 'ht1' };
     L.events.length = 0;
     const putsBefore = srv.puts.length;
-    await L.DB.__t._pollManifestForChanges();
+    await L.DB.__t._checkForRemoteChanges();
     assert.deepStrictEqual(clone(L.DB.get('en_tasks')), [{ id: 't1', text: 'first task' }], 'applied by the poll');
     const applied = L.events.find((e) => e.type === 'dbRemoteApplied');
     assert.ok(applied && Array.from(applied.detail.keys).join(',') === 'en_tasks', 'dbRemoteApplied announced');
@@ -2751,7 +2760,7 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     assert.strictEqual(L.DB.getConflictArchive().length, 0, 'no conflict');
     // A second poll with nothing new does nothing.
     L.events.length = 0;
-    await L.DB.__t._pollManifestForChanges();
+    await L.DB.__t._checkForRemoteChanges();
     assert.ok(!L.events.some((e) => e.type === 'dbRemoteApplied'), 'second poll silent');
   });
   await t('POLL1 a key whose server row is deleted and has no stamp is not announced', async () => {
@@ -2773,7 +2782,7 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     // The loaded browser used the old fetchImpl reference; rebuild with the wrapper.
     const L2 = await syncedBrowser(srv);
     L2.events.length = 0;
-    await L2.DB.__t._pollManifestForChanges();
+    await L2.DB.__t._checkForRemoteChanges();
     assert.ok(!L2.events.some((e) => e.type === 'dbRemoteApplied' || e.type === 'remoteChange'));
   });
   // The real sync-ui.js run against a fake window/document.
@@ -2992,7 +3001,7 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     // Meanwhile another user creates the same key on the server.
     srv.rows.en_tasks = { value: { n: 'theirs' }, version: 1, hash: 'hnew1' };
     L.events.length = 0;
-    await L.DB.__t._pollManifestForChanges();
+    await L.DB.__t._checkForRemoteChanges();
     await settle();
     assert.deepStrictEqual(clone(L.DB.get('en_tasks')), { n: 'local' }, 'local value kept');
     assert.strictEqual(L.DB.getQueueDepth(), 1, 'still queued');
@@ -3476,6 +3485,278 @@ await t("8l: a load with no edit sends 0 PUT (reload and reopen)", async () => {
     assert.strictEqual(JSON.stringify(f.map((x) => [x.key, x.httpStatus, x.permanent])), JSON.stringify([['en_budget_big', 413, true]]));
     assert.strictEqual(L.DB.describeFailure(f[0]), 'en_budget_big (HTTP 413)');
   });
+// ---- Netlify credit cost (2026-10-07): no timer polls; the server is asked only when the user is looking
+function makeEnv() {
+  let now = 1800000000000;
+  const timers = new Map();
+  let seq = 0;
+  const handlers = { window: {}, document: {} };
+  const env = {
+    intervals: 0,
+    document: {
+      hidden: false,
+      visibilityState: "visible",
+      addEventListener: (n, f) => env.on("document", n, f),
+    },
+    on: (who, n, f) => (handlers[who][n] = handlers[who][n] || []).push(f),
+    fire: (who, n) => (handlers[who][n] || []).forEach((f) => f({ type: n })),
+    setTimeout: (fn, ms) => {
+      timers.set(++seq, { at: now + (ms || 0), fn });
+      return seq;
+    },
+    clearTimeout: (id) => timers.delete(id),
+    setInterval: () => {
+      env.intervals++;
+      return 0;
+    },
+    // Timers that wait 10 s or more (a poll or a retry). One-shot 0 ms tasks are not counted.
+    pending: () => Array.from(timers.values()).filter((v) => v.at - now >= 10000).length,
+    delays: () => Array.from(timers.values()).map((v) => v.at - now),
+    Date: class extends Date {
+      constructor(...a) {
+        super(...(a.length ? a : [now]));
+      }
+      static now() {
+        return now;
+      }
+    },
+    // Move the clock forward, running due timers in order (each one gets a few real ticks to finish).
+    async advance(ms) {
+      const end = now + ms;
+      for (;;) {
+        let next = null;
+        timers.forEach((v, k) => {
+          if (v.at <= end && (!next || v.at < next[1].at)) next = [k, v];
+        });
+        if (!next) break;
+        timers.delete(next[0]);
+        now = Math.max(now, next[1].at);
+        next[1].fn();
+        await tick(5);
+      }
+      now = end;
+    },
+    setHidden(h) {
+      env.document.hidden = h;
+      env.document.visibilityState = h ? "hidden" : "visible";
+      env.fire("document", "visibilitychange");
+    },
+  };
+  return env;
+}
+const countManifest = (urls) => urls.filter((u) => /manifest=1/.test(u)).length;
+function countingServer(rows, o) {
+  const S = kvServer(rows, o);
+  const urls = [];
+  const fetchImpl = async (u, opts) => {
+    urls.push(String(u) + (opts && opts.method === "PUT" ? " PUT" : ""));
+    return S.fetchImpl(u, opts);
+  };
+  return { urls, fetchImpl, puts: S.puts };
+}
+await t(
+  "CREDIT1 a hidden idle tab makes 0 Function calls for 6 hours; no interval exists",
+  async () => {
+    const env = makeEnv();
+    const S = countingServer([kvRow("en_budget_a", { n: 1 }, 1)]);
+    const L = load({
+      mode: "on",
+      syncHost: true,
+      classify: true,
+      fetchImpl: S.fetchImpl,
+      env,
+    });
+    await L.DB.warmCache();
+    await L.DB.__t._hydrate();
+    env.setHidden(true);
+    const base = S.urls.length;
+    assert.ok(base >= 1, "the load itself asked the server");
+    await env.advance(6 * 60 * 60 * 1000);
+    env.fire("window", "focus"); // a focus event while hidden is ignored too
+    await tick(20);
+    assert.strictEqual(
+      S.urls.length - base,
+      0,
+      "calls while idle and hidden: " + S.urls.slice(base).join(","),
+    );
+    assert.strictEqual(env.intervals, 0, "no setInterval at all");
+    assert.strictEqual(
+      env.pending(),
+      0,
+      "no timer pending with an empty queue",
+    );
+  },
+);
+await t(
+  "CREDIT2 tab visible again: exactly 1 manifest GET, then none inside 5 minutes, then 1 after",
+  async () => {
+    const env = makeEnv();
+    const S = countingServer([kvRow("en_budget_a", { n: 1 }, 1)]);
+    const L = load({
+      mode: "on",
+      syncHost: true,
+      classify: true,
+      fetchImpl: S.fetchImpl,
+      env,
+    });
+    await L.DB.warmCache();
+    await L.DB.__t._hydrate();
+    env.setHidden(true);
+    await env.advance(30 * 60 * 1000);
+    const base = countManifest(S.urls);
+    env.setHidden(false);
+    await tick(30);
+    assert.strictEqual(
+      countManifest(S.urls) - base,
+      1,
+      "one manifest GET on becoming visible",
+    );
+    env.fire("window", "focus");
+    env.setHidden(true);
+    env.setHidden(false);
+    await tick(30);
+    await env.advance(4 * 60 * 1000);
+    env.fire("window", "focus");
+    env.setHidden(false);
+    await tick(30);
+    assert.strictEqual(
+      countManifest(S.urls) - base,
+      1,
+      "none inside 5 minutes (focus + visible repeated)",
+    );
+    await env.advance(2 * 60 * 1000);
+    env.fire("window", "focus");
+    await tick(30);
+    assert.strictEqual(
+      countManifest(S.urls) - base,
+      2,
+      "one more after 5 minutes",
+    );
+    assert.strictEqual(env.intervals, 0);
+  },
+);
+await t(
+  "CREDIT3 a change by the other user shows up when the tab becomes visible (no timer)",
+  async () => {
+    const env = makeEnv();
+    const rows = [kvRow("en_budget_a", { n: 1 }, 1)];
+    const S = countingServer(rows);
+    const L = load({
+      mode: "on",
+      syncHost: true,
+      classify: true,
+      fetchImpl: S.fetchImpl,
+      env,
+    });
+    await L.DB.warmCache();
+    await L.DB.__t._hydrate();
+    env.setHidden(true);
+    rows[0] = kvRow("en_budget_a", { n: 2 }, 2);
+    await env.advance(10 * 60 * 1000);
+    assert.deepStrictEqual(
+      L.DB.get("en_budget_a"),
+      { n: 1 },
+      "not applied while hidden",
+    );
+    env.setHidden(false);
+    await tick(60);
+    assert.deepStrictEqual(
+      L.DB.get("en_budget_a"),
+      { n: 2 },
+      "applied after the tab is visible",
+    );
+    assert.ok(L.events.some((e) => e.type === "dbRemoteApplied"));
+  },
+);
+await t(
+  "CREDIT4 an empty queue makes 0 drain calls on any trigger and starts no timer",
+  async () => {
+    const env = makeEnv();
+    const S = countingServer([]);
+    const L = load({
+      mode: "on",
+      syncHost: true,
+      classify: true,
+      fetchImpl: S.fetchImpl,
+      env,
+    });
+    await L.DB.warmCache();
+    const base = S.urls.length;
+    env.fire("window", "online");
+    await L.DB.__t._drainQueueOnce();
+    await env.advance(60 * 60 * 1000);
+    assert.strictEqual(S.urls.length - base, 0);
+    assert.strictEqual(env.pending(), 0);
+  },
+);
+await t(
+  "CREDIT5 a queued item drains with back-off, then the calls stop",
+  async () => {
+    const env = makeEnv();
+    let fail = true;
+    const S = countingServer([], { putStatus: () => (fail ? 500 : 200) });
+    const L = load({
+      mode: "on",
+      syncHost: true,
+      classify: true,
+      fetchImpl: S.fetchImpl,
+      env,
+    });
+    await L.DB.warmCache();
+    L.DB.set("en_budget_q", { n: 1 });
+    await tick(60);
+    assert.strictEqual(L.DB.getQueueDepth(), 1);
+    const puts = () => S.urls.filter((u) => / PUT$/.test(u)).length;
+    const p0 = puts();
+    assert.strictEqual(
+      env.pending(),
+      1,
+      "one back-off timer while an item is queued " + env.delays(),
+    );
+    await env.advance(15000);
+    await env.advance(30000);
+    await env.advance(60000);
+    const retried = puts() - p0;
+    assert.ok(
+      retried >= 2 && retried <= 3,
+      "retries follow the back-off (15 s, 30 s, 60 s): " + retried,
+    );
+    fail = false;
+    await env.advance(5 * 60 * 1000);
+    assert.strictEqual(L.DB.getQueueDepth(), 0, "drained");
+    const after = S.urls.length;
+    await env.advance(60 * 60 * 1000);
+    assert.strictEqual(
+      S.urls.length,
+      after,
+      "no calls after the queue is empty",
+    );
+    assert.strictEqual(env.pending(), 0, "timer stopped");
+    assert.strictEqual(env.intervals, 0);
+  },
+);
+await t(
+  "CREDIT6 a permanent failure (HTTP 413) stops the retry timer",
+  async () => {
+    const env = makeEnv();
+    const S = countingServer([], { putStatus: () => 413 });
+    const L = load({
+      mode: "on",
+      syncHost: true,
+      classify: true,
+      fetchImpl: S.fetchImpl,
+      env,
+    });
+    await L.DB.warmCache();
+    L.DB.set("en_budget_q", { n: 1 });
+    await tick(60);
+    await env.advance(15000);
+    assert.strictEqual(env.pending(), 0, "no timer for a permanent failure");
+    const n = S.urls.length;
+    await env.advance(60 * 60 * 1000);
+    assert.strictEqual(S.urls.length, n);
+  },
+);
   console.log(pass + ' passed');
 })().catch((e) => {
   console.error('FAIL', e);

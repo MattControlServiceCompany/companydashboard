@@ -26,8 +26,13 @@ const DB = (() => {
   const BATCH_GET_TIMEOUT_MS = 60000; // one batched GET (a value can be several MB gzipped)
   const TOMBSTONE_RETRY_BASE_MS = 5000; // deletion-record fetch failed: retry 5s, 10s, 20s ... up to 5 min
   const TOMBSTONE_RETRY_MAX_MS = 5 * 60 * 1000;
-  const POLL_INTERVAL_MS = 60000; // 2a.6 — manifest polling cadence
-  const QUEUE_DRAIN_INTERVAL_MS = 15000; // 2a.5 — retry queue drain cadence
+  // Netlify credit cost (2026-10-07): NO timer asks the server whether data changed. The check runs on
+  // page load (_hydrate), when the tab becomes visible, and when the window gains focus; at most once per
+  // REMOTE_CHECK_MIN_MS and never while the tab is hidden. The retry queue drains on load, 'online', after
+  // a write, and on a back-off timer only while sendable items are queued (it stops when the queue is empty).
+  const REMOTE_CHECK_MIN_MS = 5 * 60 * 1000;
+  const DRAIN_BACKOFF_MIN_MS = 15000;
+  const DRAIN_BACKOFF_MAX_MS = 5 * 60 * 1000;
 
   let _db = null;
   const _cache = {};
@@ -135,7 +140,7 @@ const DB = (() => {
 
   // --- Backend mode -------------------------------------------------------
   // Derived only by CH_AUTH.backendMode(): 'on' = signed in on the production
-  // Netlify host (hydration at load + manifest polling + write-through);
+  // Netlify host (hydration at load + remote-change check on load, tab visible and focus + write-through);
   // 'off' = everywhere else (no network). There is no stored switch.
   function _backendMode() {
     return typeof window !== 'undefined' && window.CH_AUTH ? window.CH_AUTH.backendMode() : 'off';
@@ -225,7 +230,7 @@ const DB = (() => {
     if (!uid || !localKey) return null;
     return { uid, localKey };
   }
-  // The SINGLE gate every manifest-walking loop (_hydrate/_pollManifestForChanges/
+  // The SINGLE gate every manifest-walking loop (_hydrate/_checkForRemoteChanges/
   // getSyncStatus) funnels through. Returns `{ localKey }` if this manifest
   // entry belongs to the current tab (either a normal synced key, or a
   // per-user key namespaced to MY signed-in userId), or `null` if it must be
@@ -593,6 +598,7 @@ const DB = (() => {
       ts: Date.now(),
     });
     _persistSyncQueue();
+    _scheduleDrain();
   }
 
   // --- Conflict archive (data-safety invariant, applies to every auto-adopt
@@ -1773,6 +1779,7 @@ const DB = (() => {
   async function _drainQueueOnce() {
     if (!_syncQueue.length) return;
     if (_backendMode() === 'off') return;
+    const before = _syncQueue.length;
     if (typeof navigator !== 'undefined' && navigator.locks && navigator.locks.request) {
       try {
         await navigator.locks.request('ch_sync_drain', { ifAvailable: true }, async (lock) => {
@@ -1785,6 +1792,29 @@ const DB = (() => {
     } else {
       await _drainQueueLocked();
     }
+    // Progress resets the back-off; no progress doubles it. An empty queue schedules nothing.
+    _drainDelay = _syncQueue.length < before ? DRAIN_BACKOFF_MIN_MS : Math.min(_drainDelay * 2, DRAIN_BACKOFF_MAX_MS);
+    _scheduleDrain();
+  }
+  // The ONLY timer of the retry queue. It exists only while this user has a queued item that a retry can
+  // still send (not another user's entry, not a permanent failure such as HTTP 400/413/422).
+  let _drainTimer = null;
+  let _drainDelay = DRAIN_BACKOFF_MIN_MS;
+  function _queueHasSendable() {
+    if (_backendMode() === 'off') return false;
+    const me = _myUserId();
+    return _syncQueue.some((e) => {
+      if (!(e.owner && e.owner.id && e.owner.id === me)) return false;
+      const f = _queueFailures.get(e.key);
+      return !(f && f.permanent);
+    });
+  }
+  function _scheduleDrain() {
+    if (_drainTimer || typeof window === 'undefined' || !_queueHasSendable()) return;
+    _drainTimer = setTimeout(() => {
+      _drainTimer = null;
+      _drainQueueOnce();
+    }, _drainDelay);
   }
 
   // --- 2a.2: hydration (the warmCache() capstone) ---------------------------
@@ -1838,7 +1868,9 @@ const DB = (() => {
       window.dispatchEvent(new CustomEvent('dbOfflineBanner', { detail: { reason } }));
     }
   }
+  let _lastManifestAt = 0; // when this tab last asked the server for the manifest (any caller)
   function _fetchManifestWithTimeout(timeoutMs) {
+    _lastManifestAt = Date.now();
     return new Promise((resolve, reject) => {
       const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
       const timer = setTimeout(() => {
@@ -2088,7 +2120,7 @@ const DB = (() => {
   // The ONE rule for "this server row must be pulled without a conflict check":
   // the server version is strictly newer than a valid local stamp, OR the key is
   // brand new to this machine (no valid stamp, nothing cached; never for a deleted
-  // row). Used by _hydrate (page load) and by the manifest poll, so a key that
+  // row). Used by _hydrate (page load) and by the remote-change check, so a key that
   // first appears on the server after page load is picked up without a reload.
   function _serverRowNeedsRoutinePull(m, localKey) {
     const local = _replicaVersions[localKey];
@@ -2406,21 +2438,28 @@ const DB = (() => {
     }
   }
 
-  // --- 2a.6 + M1: manifest polling (60s + focus) ------------------------------
+  // --- 2a.6 + M1: check for changes made by the other user (no timer) -----------
   // A newer server version of a key this browser has NO pending edit for is
   // applied by the ONE hydration function (_hydrate: merge, never overwrite an
   // edit, archive what loses) and announced with `dbRemoteApplied`, so
   // app/sync-ui.js re-renders. A key that could not be applied (a pending local
   // edit waits in the queue, or the fetch failed) is announced with
   // `remoteChange`, which shows the passive "refresh" bar.
-  async function _pollManifestForChanges() {
+  // _remoteCheckIfDue is the gate every trigger uses (tab visible again, window focus): never while the
+  // tab is hidden, at most once per REMOTE_CHECK_MIN_MS since the last manifest GET of any kind.
+  function _remoteCheckIfDue() {
+    if (typeof document !== 'undefined' && document.hidden) return Promise.resolve();
+    if (Date.now() - _lastManifestAt < REMOTE_CHECK_MIN_MS) return Promise.resolve();
+    return _checkForRemoteChanges();
+  }
+  async function _checkForRemoteChanges() {
     if (_backendMode() !== 'on') return;
     let manifest;
     try {
       manifest = await _withAuthRetry(() => _fetchManifestWithTimeout(MANIFEST_TIMEOUT_MS));
     } catch (e) {
-      if (e && _isAuthRefusal(e.httpStatus)) _reportFinalRefusal(e.httpStatus, 'poll-failed'); // not transient: say so
-      return; // transient — next poll cycle will retry
+      if (e && _isAuthRefusal(e.httpStatus)) _reportFinalRefusal(e.httpStatus, 'remote-check-failed'); // not transient: say so
+      return; // transient — the next visible-tab check retries
     }
     const changed = []; // { localKey, version } — local (unprefixed) key, as sync-ui.js displays it
     for (const m of manifest) {
@@ -2434,14 +2473,14 @@ const DB = (() => {
     if (typeof window !== 'undefined') {
       // A successful manifest round-trip proves we're online — clears any
       // stale "offline" banner even if nothing actually changed.
-      window.dispatchEvent(new CustomEvent('dbHydrated', { detail: { applied: 0, conflicts: 0, pollOnly: true } }));
+      window.dispatchEvent(new CustomEvent('dbHydrated', { detail: { applied: 0, conflicts: 0, checkOnly: true } }));
     }
     if (!changed.length) return;
     const epoch = _identityEpoch;
     try {
       await _hydrate();
     } catch (e) {
-      console.warn('[DB] Poll: applying server changes failed, showing the refresh bar:', e);
+      console.warn('[DB] Remote check: applying server changes failed, showing the refresh bar:', e);
     }
     if (epoch !== _identityEpoch || typeof window === 'undefined') return;
     const applied = [];
@@ -2640,10 +2679,13 @@ const DB = (() => {
     if (_backgroundTasksStarted) return;
     _backgroundTasksStarted = true;
     if (typeof window === 'undefined') return;
-    setInterval(_drainQueueOnce, QUEUE_DRAIN_INTERVAL_MS);
     window.addEventListener('online', _drainQueueOnce);
-    setInterval(_pollManifestForChanges, POLL_INTERVAL_MS);
-    window.addEventListener('focus', _pollManifestForChanges);
+    if (typeof document !== 'undefined' && document.addEventListener) {
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) _remoteCheckIfDue();
+      });
+    }
+    window.addEventListener('focus', _remoteCheckIfDue);
     // Attempt an immediate drain in case the queue has leftover entries from
     // a prior offline session and we're already online.
     _drainQueueOnce();

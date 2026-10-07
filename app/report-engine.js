@@ -12513,7 +12513,10 @@ function initUtilityTool() {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') _checkForVersionUpdate();
   });
-  setInterval(_checkForVersionUpdate, 5 * 60 * 1000);
+  // Netlify credit cost (2026-10-07): site-ui.js is about 1 MB, so the backstop skips a hidden tab.
+  setInterval(() => {
+    if (!document.hidden) _checkForVersionUpdate();
+  }, 5 * 60 * 1000);
   // Restore any state saved before a version-triggered page reload (issue 066423b5)
   _restorePageStateAfterVersionUpdate();
 }
