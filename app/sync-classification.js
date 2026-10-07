@@ -186,6 +186,8 @@ const SyncClassification = (() => {
   // plus ch_backend_mode (db.js's own mode flag, read directly via
   // localStorage — never routed through sset/DB.set today, excluded here
   // defensively in case that ever changes).
+  // The ONE spelling of the per-key sync record prefix (db.js stamps, restore-merge, backup).
+  const RV_PREFIX = 'ch_rv::';
   const PER_USER_CH_ENGINE_EXCLUSIONS = [
     {
       pattern: 'ch_sb_session',
@@ -214,8 +216,9 @@ const SyncClassification = (() => {
       note: 'db.js SYNC_BASE_KEY — the server value of each collection key at its synced version (merge base for the per-record three-way merge). Write-through via _rawSet. Engine-internal, must never sync at all.',
     },
     {
-      pattern: 'ch_rv::',
+      pattern: RV_PREFIX,
       prefix: true,
+      neverBackup: true,
       note: "db.js RV_PREFIX (2026-10-06) — one record per synced key: its version stamp and (collections) merge base. Replaces the whole-map ch_replica_state/ch_sync_base so one tab never overwrites another tab's stamps. Engine-internal, never syncs, never in a backup.",
     },
     {
@@ -457,12 +460,15 @@ const SyncClassification = (() => {
    * (app/site-functions.js) and RestoreMerge.isEngineKey (app/restore-merge.js).
    */
   function isNeverBackupKey(key) {
-    return PER_USER_CH_ENGINE_EXCLUSIONS.some((e) => e.neverBackup === true && !e.prefix && e.pattern === key);
+    return PER_USER_CH_ENGINE_EXCLUSIONS.some(
+      (e) => e.neverBackup === true && (e.prefix ? typeof key === 'string' && key.indexOf(e.pattern) === 0 : e.pattern === key),
+    );
   }
 
   return {
     canonicalJSON,
     isNeverBackupKey,
+    RV_PREFIX,
     SYNCED,
     LOCAL_ONLY,
     LOCAL_ONLY_OVERRIDES,

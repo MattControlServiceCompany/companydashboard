@@ -11,7 +11,7 @@ const DB = (() => {
   const REPLICA_STATE_KEY = 'ch_replica_state'; // older builds: whole-map stamps, split once into RV_PREFIX records
   // One local-only record per synced key: ch_rv::<key> = { stamp: {version, hash, deleted?}, base? }.
   // A tab writes only the record of the key it synced, so it can never overwrite another tab's stamps.
-  const RV_PREFIX = 'ch_rv::';
+  const RV_PREFIX = window.SyncClassification.RV_PREFIX; // the one spelling (sync-classification.js)
   const SYNC_QUEUE_KEY = 'ch_sync_queue'; // 2a.5 — local-only, excluded from replication+backup
   // Local-only: the server value of each collection key (UNION_KEY_CONFIG) at the
   // version in ch_replica_state. The base of every per-record three-way merge.

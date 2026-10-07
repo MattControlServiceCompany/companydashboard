@@ -11,6 +11,7 @@ const sandbox = {
   console, setTimeout, clearTimeout, setInterval, clearInterval, Promise, CustomEvent: function () {}, Event: function () {}, navigator: {},
   indexedDB: undefined, fetch: async () => ({ ok: true, status: 200, json: async () => ({}) }),
 };
+win.SyncClassification = require('../app/sync-classification.js'); // the page loads it before db.js
 vm.createContext(sandbox);
 vm.runInContext(src + '\n;this.__DB = DB;', sandbox);
 module.exports = sandbox.__DB;

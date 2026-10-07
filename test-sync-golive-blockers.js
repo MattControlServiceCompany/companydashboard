@@ -1771,6 +1771,20 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     assert.strictEqual(make({})({ id: 'b' }).savingsPct, 11, 'never set: the pane default');
   });
 
+  await t("F-single-source: 'ch_rv::' is spelled once (sync-classification.js); backup and restore skip it", () => {
+    fs.readdirSync(path.join(__dirname, 'app'))
+      .filter((f) => /\.js$/.test(f) && f !== 'sync-classification.js')
+      .forEach((f) => {
+        const src = fs.readFileSync(path.join(__dirname, 'app', f), 'utf8');
+        const code = src.replace(/^\s*(\/\/|\*).*$/gm, '');
+        assert.ok(!/['"]ch_rv::/.test(code), f + ' has its own copy of the prefix');
+      });
+    const SC = require('./app/sync-classification.js');
+    assert.strictEqual(SC.RV_PREFIX, 'ch_rv::');
+    assert.ok(SC.isNeverBackupKey('ch_rv::en_budget_x') && SC.isNeverBackupKey('ch_sb_session'));
+    assert.ok(!SC.isNeverBackupKey('en_budget_x'));
+  });
+
   // ---- fix 5: one version-stamp record per key; a second tab never overwrites the first tab's stamps
   await t('fix 5: two tabs share one storage; each tab writes only the stamp of the key it synced', async () => {
     const store = {};
