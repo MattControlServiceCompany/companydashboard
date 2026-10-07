@@ -2062,6 +2062,16 @@ const DB = (() => {
     });
     return Promise.race([Promise.resolve(auth.ready()).catch(() => null), cap]).then(() => clearTimeout(timer));
   }
+  // The ONE rule for "this server row must be pulled without a conflict check":
+  // the server version is strictly newer than a valid local stamp, OR the key is
+  // brand new to this machine (no valid stamp, nothing cached; never for a deleted
+  // row). Used by _hydrate (page load) and by the manifest poll, so a key that
+  // first appears on the server after page load is picked up without a reload.
+  function _serverRowNeedsRoutinePull(m, localKey) {
+    const local = _replicaVersions[localKey];
+    if (local && typeof local.version === 'number') return m.version > local.version;
+    return !m.deleted && _cache[localKey] === undefined;
+  }
   async function _hydrateInner() {
     const mode = _backendMode();
     if (mode !== 'on') return; // off: no hydration
@@ -2124,17 +2134,13 @@ const DB = (() => {
         continue;
       }
 
-      if (localHasValidEntry) {
-        if (m.version > local.version) {
-          routineFetchKeys.push(m.key);
-          routineFetchLocalKey.set(m.key, localKey);
-        }
-        // else: local already at/ahead of this version — leave alone.
-      } else if (_cache[localKey] === undefined) {
-        // Brand-new-to-this-machine key (blank machine / never seen before) —
-        // routine pull, not a conflict.
+      if (_serverRowNeedsRoutinePull(m, localKey)) {
+        // Server strictly newer than the local stamp, or a brand-new-to-this-machine
+        // key (never seen before) — routine pull, not a conflict.
         routineFetchKeys.push(m.key);
         routineFetchLocalKey.set(m.key, localKey);
+      } else if (localHasValidEntry) {
+        // local already at/ahead of this version — leave alone.
       } else {
         // No entry, or stale/unknown entry, AND a local value already exists
         // — integration #3: potential local-newer-than-seed conflict, never
@@ -2349,8 +2355,7 @@ const DB = (() => {
       const resolved = _resolveManifestKey(m.key); // skips foreign per-user rows entirely
       if (!resolved) continue;
       const localKey = resolved.localKey;
-      const local = _replicaVersions[localKey];
-      if (local && typeof local.version === 'number' && m.version > local.version) {
+      if (_serverRowNeedsRoutinePull(m, localKey)) {
         changed.push({ localKey, version: m.version });
       }
     }

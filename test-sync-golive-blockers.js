@@ -773,7 +773,7 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     const ui = fs.readFileSync(path.join(__dirname, 'app', 'sync-ui.js'), 'utf8');
     assert.ok(/addEventListener\('dbRemoteApplied'/.test(ui));
     assert.ok(/function _safeToReload\(\)/.test(ui));
-    assert.ok(/_safeToReload\(\)\) window\.location\.reload\(\);\s*else renderRemoteChangeBanner/.test(ui));
+    assert.ok(/_safeToReload\(\)\) window\.location\.reload\(\);\s*else \{\s*renderRemoteChangeBanner/.test(ui));
   });
 
   await t('M1 reload guard blocks on the app dialogs (.modal-bg.open) and an unsent PDF queue (source check)', () => {
@@ -2664,6 +2664,165 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     assert.strictEqual(L.DB.getConflictArchive().length, 0, "own entry is wiped");
     const kept = L.DB.getConflictArchiveOthers();
     assert.ok(kept.length === 1 && kept[0].losingValue === 'B-private', "other user's entry survives the real clear");
+  });
+  // ---- Poll fixes (2026-10-06): a key first created on the server after page load; a change seen while unsafe
+  await t('POLL1 a key created on the server AFTER load is applied by the next poll (no reload, no PUT)', async () => {
+    const srv = makeServer({ en_note: 'v1' });
+    // classify:true so the real RV_PREFIX keeps the local stamp records out of the PUT count
+    const L = load({ mode: 'on', syncHost: true, classify: true, fetchImpl: srv.fetchImpl });
+    await L.DB.warmCache();
+    await L.DB.__t._hydrate();
+    await settle();
+    assert.ok(!L.DB.__t._stampOf('en_tasks'), 'no stamp before');
+    srv.rows.en_tasks = { value: [{ id: 't1', text: 'first task' }], version: 1, hash: 'ht1' };
+    L.events.length = 0;
+    const putsBefore = srv.puts.length;
+    await L.DB.__t._pollManifestForChanges();
+    assert.deepStrictEqual(clone(L.DB.get('en_tasks')), [{ id: 't1', text: 'first task' }], 'applied by the poll');
+    const applied = L.events.find((e) => e.type === 'dbRemoteApplied');
+    assert.ok(applied && Array.from(applied.detail.keys).join(',') === 'en_tasks', 'dbRemoteApplied announced');
+    assert.ok(!L.events.some((e) => e.type === 'remoteChange'), 'no refresh bar');
+    assert.strictEqual(srv.puts.length, putsBefore, 'no PUT');
+    assert.strictEqual(L.DB.getQueueDepth(), 0, 'nothing queued');
+    assert.strictEqual(L.DB.getConflictArchive().length, 0, 'no conflict');
+    // A second poll with nothing new does nothing.
+    L.events.length = 0;
+    await L.DB.__t._pollManifestForChanges();
+    assert.ok(!L.events.some((e) => e.type === 'dbRemoteApplied'), 'second poll silent');
+  });
+  await t('POLL1 a key whose server row is deleted and has no stamp is not announced', async () => {
+    const srv = makeServer({ en_note: 'v1' });
+    const L = await syncedBrowser(srv);
+    srv.rows.en_gone = { value: 'x', version: 2, hash: 'hg' };
+    const f0 = srv.fetchImpl;
+    srv.fetchImpl = async (u, o) => {
+      if (String(u).includes('manifest=1')) {
+        const r = await f0(u, o);
+        const list = await r.json();
+        list.forEach((m) => {
+          if (m.key === 'en_gone') m.deleted = true;
+        });
+        return ok(list);
+      }
+      return f0(u, o);
+    };
+    // The loaded browser used the old fetchImpl reference; rebuild with the wrapper.
+    const L2 = await syncedBrowser(srv);
+    L2.events.length = 0;
+    await L2.DB.__t._pollManifestForChanges();
+    assert.ok(!L2.events.some((e) => e.type === 'dbRemoteApplied' || e.type === 'remoteChange'));
+  });
+  // The real sync-ui.js run against a fake window/document.
+  function loadSyncUi(st) {
+    const src = fs.readFileSync(path.join(__dirname, 'app', 'sync-ui.js'), 'utf8').split('\r').join('');
+    const handlers = {};
+    const timers = [];
+    const mkEl = () => {
+      const el = {
+        style: {},
+        children: [],
+        classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
+        appendChild(c) {
+          el.children.push(c);
+          return c;
+        },
+        addEventListener() {},
+        setAttribute() {},
+        removeChild() {},
+        remove() {},
+        querySelector: () => null,
+        querySelectorAll: () => [],
+      };
+      return el;
+    };
+    const els = {};
+    const doc = {
+      get activeElement() {
+        return st.active || null;
+      },
+      querySelector: (q) => (st.dialog ? { matched: q } : null),
+      getElementById: (id) => els[id] || null,
+      createElement: () => mkEl(),
+      body: mkEl(),
+      head: mkEl(),
+      addEventListener() {},
+    };
+    doc.body.appendChild = (c) => {
+      if (c && c.id) els[c.id] = c;
+      return c;
+    };
+    st.reloads = 0;
+    const win = {
+      addEventListener: (n, f) => {
+        (handlers[n] = handlers[n] || []).push(f);
+      },
+      removeEventListener() {},
+      DB: { getQueueDepth: () => st.queue || 0 },
+      pdfQueueDepth: () => 0,
+      location: {
+        reload: () => {
+          st.reloads++;
+        },
+      },
+    };
+    const sb = {
+      window: win,
+      document: doc,
+      console,
+      setTimeout: (f) => {
+        timers.push({ f, kind: 't' });
+        return timers.length;
+      },
+      clearTimeout() {},
+      setInterval: (f) => {
+        const h = { f, kind: 'i', live: true };
+        timers.push(h);
+        return h;
+      },
+      clearInterval: (h) => {
+        if (h) h.live = false;
+      },
+    };
+    vm.createContext(sb);
+    vm.runInContext(src, sb);
+    return {
+      fire: (n, detail) => (handlers[n] || []).forEach((f) => f({ detail })),
+      tick: () => timers.filter((x) => x.kind === 'i' && x.live).forEach((x) => x.f()),
+      intervals: () => timers.filter((x) => x.kind === 'i' && x.live).length,
+    };
+  }
+  await t('POLL2 a change seen while unsafe is kept and the page reloads once it becomes safe', () => {
+    const st = { active: { tagName: 'INPUT' } };
+    const ui = loadSyncUi(st);
+    ui.fire('dbRemoteApplied', { keys: ['en_tasks'] });
+    assert.strictEqual(st.reloads, 0, 'no reload while typing');
+    ui.tick();
+    assert.strictEqual(st.reloads, 0, 'still typing: still no reload');
+    st.dialog = true;
+    st.active = null;
+    ui.tick();
+    assert.strictEqual(st.reloads, 0, 'dialog open: no reload');
+    st.dialog = false;
+    st.queue = 2;
+    ui.tick();
+    assert.strictEqual(st.reloads, 0, 'unsent data: no reload');
+    st.queue = 0;
+    ui.tick();
+    assert.strictEqual(st.reloads, 1, 'safe now: reload');
+    assert.strictEqual(ui.intervals(), 0, 'retry stops after the reload');
+    // Several unsafe events share one retry loop.
+    const st2 = { active: { tagName: 'TEXTAREA' } };
+    const ui2 = loadSyncUi(st2);
+    ui2.fire('dbRemoteApplied', { keys: ['a'] });
+    ui2.fire('dbRemoteApplied', { keys: ['b'] });
+    assert.strictEqual(ui2.intervals(), 1, 'one retry loop');
+  });
+  await t('POLL2 a change seen while safe reloads at once and starts no retry loop', () => {
+    const st = {};
+    const ui = loadSyncUi(st);
+    ui.fire('dbRemoteApplied', { keys: ['en_tasks'] });
+    assert.strictEqual(st.reloads, 1);
+    assert.strictEqual(ui.intervals(), 0);
   });
   console.log(pass + ' passed');
 })().catch((e) => {

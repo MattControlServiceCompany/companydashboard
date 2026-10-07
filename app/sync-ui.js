@@ -356,10 +356,28 @@
       (typeof window.pdfQueueDepth === 'function' && window.pdfQueueDepth() > 0);
     return !typing && !dialog && !unsent;
   }
+  // A change that arrives while a reload is unsafe is KEPT (the stamp already
+  // advanced, so no later poll would announce it again). It is retried every
+  // few seconds and the page reloads as soon as it is safe. A reload also loads
+  // the applied data, so nothing is lost; no local edit is overwritten.
+  var _pendingReloadTimer = null;
+  var PENDING_RELOAD_RETRY_MS = 3000;
+  function _reloadWhenSafe() {
+    if (_pendingReloadTimer) return;
+    _pendingReloadTimer = setInterval(function () {
+      if (!_safeToReload()) return;
+      clearInterval(_pendingReloadTimer);
+      _pendingReloadTimer = null;
+      window.location.reload();
+    }, PENDING_RELOAD_RETRY_MS);
+  }
   window.addEventListener('dbRemoteApplied', function (e) {
     var keys = (e.detail && e.detail.keys) || [];
     if (_safeToReload()) window.location.reload();
-    else renderRemoteChangeBanner(keys);
+    else {
+      renderRemoteChangeBanner(keys);
+      _reloadWhenSafe();
+    }
   });
 
   window.addEventListener('dbOfflineBanner', function () {
