@@ -195,7 +195,7 @@ function parseBillCsv(text, fname) {
         .split(',')
         .map((h) => h.trim())
     : null;
-  const ci = (names, skip) => {
+  const ci = (names) => {
     if (!hdr) return -1;
     // Exact match first (b4b257cd): try every candidate name for an EXACT
     // header-cell match before the token pass. Needed now that full-schema
@@ -211,7 +211,30 @@ function parseBillCsv(text, fname) {
     // carries a class word (cost, id, date) is claimed only by aliases of the same class:
     // "Energy Cost" is never kWh, "Demand Cost" is never kW, "Bill ID" is never the bill cost,
     // "Bill Date" is never the bill cost, "Start Date" still matches 'start'.
-    const tok = (x) => x.toLowerCase().match(/[a-z0-9$#]+/g) || [];
+    // Glued words ("TotalCharges", "TotalkWh", "BillID") are split into the known words
+    // (this call's alias words + class words + "total"), fewest pieces, so the same rule applies.
+    const vocab = new Set(['total', 'cost', 'charge', 'charges', 'rate', 'amount', 'price', 'id', 'number', 'date']);
+    for (const n of names) for (const w of n.toLowerCase().match(/[a-z0-9$#]+/g) || []) vocab.add(w);
+    const split = (w) => {
+      const best = [[]];
+      for (let e = 1; e <= w.length; e++) {
+        best[e] = null;
+        for (let b = 0; b < e; b++) {
+          if (best[b] && vocab.has(w.slice(b, e)) && (!best[e] || best[b].length + 1 < best[e].length))
+            best[e] = best[b].concat(w.slice(b, e));
+        }
+      }
+      return best[w.length];
+    };
+    const tok = (x) => {
+      const out = [];
+      for (const w of x.toLowerCase().match(/[a-z0-9$#]+/g) || []) {
+        const sp = vocab.has(w) ? null : split(w);
+        if (sp) out.push(...sp);
+        else out.push(w);
+      }
+      return out;
+    };
     const classOf = (t, isAlias) => {
       const c = new Set();
       for (const w of t) {
@@ -245,7 +268,7 @@ function parseBillCsv(text, fname) {
   // so that a CSV exported from the Bills tab can be re-imported without losing cost columns.
   const iStart = hdr ? Math.max(ci(['start', 'begin', 'from']), 0) : 0;
   const iEnd = hdr ? (ci(['end', 'to', 'thru', 'through']) > -1 ? ci(['end', 'to', 'thru', 'through']) : 1) : 1;
-  const iKwh = hdr ? ci(['kwh', 'totalkwh', 'consumption', 'usage', 'energy']) : 2;
+  const iKwh = hdr ? ci(['kwh', 'consumption', 'usage', 'energy']) : 2;
   const iDemand = hdr ? ci(['actual_kw', 'actual kw', 'demand_kw', 'demand kw', 'peak kw', 'demand', 'demandkw']) : 3;
   // camelCase aliases: 'billedkw' matches export header 'billedKW' (lowercased by hdr processing)
   const iBilledKW = hdr ? ci(['billed_kw', 'billed kw', 'billkw', 'bill_kw', 'billedkw']) : 4;

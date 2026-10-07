@@ -125,5 +125,15 @@ check('TotalkWh (no space) is kWh', g.kwh === 1000 && g.cost === 1234.56, g);
 g = mapped('Start Date,End Date,Total kWh,Total Cost', '2026-01-01,2026-01-31,1000,1234.56');
 check('Total kWh stays kWh, Total Cost stays cost', g.kwh === 1000 && g.cost === 1234.56, g);
 
+g = mapped('Start Date,End Date,kWh,TotalCharges', '2026-01-01,2026-01-31,1000,1234.56');
+check('TotalCharges (glued) is cost', g.cost === 1234.56 && g.kwh === 1000, g);
+g = mapped('Start Date,End Date,kWh,Total_Charges', '2026-01-01,2026-01-31,1000,1234.56');
+check('Total_Charges is cost', g.cost === 1234.56, g);
+g = mapped('Start Date,End Date,kWh,total-cost', '2026-01-01,2026-01-31,1000,1234.56');
+check('total-cost is cost', g.cost === 1234.56, g);
+g = mapped('Start Date,End Date,BillID,kWh,Bill Amount', '2026-01-01,2026-01-31,77,1000,1234.56');
+check('BillID (glued id) is never cost', g.cost === 1234.56 && g.kwh === 1000, g);
+check('BillID alone is never cost (stored cost kept)', costOf(row('start_date,end_date,BillID,kwh', '2026-01-01,2026-01-31,77,1000')) === 9056.1);
+
 console.log('test-csv-header-match: ' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);
