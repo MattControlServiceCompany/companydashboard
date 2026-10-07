@@ -155,6 +155,19 @@ Many short `setTimeout` calls (toasts, URL cleanup, UI yield) are one-shot. They
   check: node test-sync-golive-blockers.js, the "(a):" test; `SyncClassification.classifyKey('ch_sb_session')` is
   `local-only`.
 
+## 6b. Bill fields (merged 2026-10-06, fix/2026-10-05-hidden-fields)
+
+- Retired stored bill fields. Bill rows no longer store copies or roll-ups next to the real fields (thermCost, kwCost,
+  kwhCost, otherCost, taxCost, total*Rate, facKWCost, kwh on gas bills, fromPDF). `getBillOwnUnitRate` is removed.
+  `getStoredRate(bill, type)` (computations/rates.js:155) is the ONE rate function every page calls: it computes cost over
+  usage and reads the old stored rate only when the bill has no cost or no usage. `getExtractedRate(parsed, type)`
+  (computations/rates.js:300) is a different value: the preview rate of a freshly extracted PDF, before the bill is saved.
+  `billHasPdf` (computations/rates.js) is the one "has a PDF" answer. The Edit Bill modal round-trips no hidden inputs.
+- Bill-save-fields gate (computations/bill-save-fields.gate.js). Fails when a bill-row builder in app/bill-analysis.js
+  writes a key that is not a BILL_SCHEMA key (app/csv-import.js) or on the short META list, when `openBillModal` renders a
+  hidden `bl-` input, or when `billHasPdf` is not the one PDF answer. How to check: node computations/bill-save-fields.gate.js
+  (exit 0); node tools/test-rate-single-source.js.
+
 ## 7. How to keep this file current
 
 Any commit that changes these facts must update this file in the same commit.
