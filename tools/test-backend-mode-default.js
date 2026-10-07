@@ -1485,11 +1485,11 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     for (let i = 1; i <= 8; i++) rows['en_budget_d' + i] = { n: 'august-' + i, keep: [i] };
     for (let i = 1; i <= 6; i++) rows['en_budget_same' + i] = { n: 'same-' + i };
     rows.en_projects = [
-      { id: 'p1', name: 'Project One' },
+      { id: 'p1', name: 'August name', status: 'august-status' },
       { id: 'pSrv', name: 'Server only project' },
     ];
     rows.en_tasks = [
-      { id: 't1', text: 'task one' },
+      { id: 't1', text: 'august task text' },
       { id: 'tSrv', text: 'server only task' },
     ];
     rows.en_utility_cust_c1 = {
@@ -1581,6 +1581,11 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     for (let i = 1; i <= 8; i++)
       check('G1 differing key en_budget_d' + i + ' equals the backup', canonOf(row('en_budget_d' + i)) === canonOf(backup['en_budget_d' + i]), '');
     check('G1 equal keys are not sent (0 PUT)', !sentKeys.some((k) => /en_budget_same/.test(k)), sentKeys.join(','));
+    const rec = (k, id) => (row(k) || []).find((r) => r.id === id) || {};
+    check('G1 matched records = backup values (en_projects p1, en_tasks t1)',
+      rec('en_projects', 'p1').name === 'Project One' && rec('en_tasks', 't1').text === 'task one edited', JSON.stringify([rec('en_projects', 'p1'), rec('en_tasks', 't1')]));
+    check('G1 server-only records kept unchanged (pSrv, tSrv)',
+      rec('en_projects', 'pSrv').name === 'Server only project' && rec('en_tasks', 'tSrv').text === 'server only task', '');
     check('G1 en_projects = union of backup and server records', same(idsOf(row('en_projects')), ['p1', 'pNew', 'pSrv']), JSON.stringify(idsOf(row('en_projects'))));
     check('G1 en_tasks = union; server-only task kept', same(idsOf(row('en_tasks')), ['t1', 'tNew', 'tSrv']), JSON.stringify(idsOf(row('en_tasks'))));
     const cu = row('en_utility_cust_c1');

@@ -187,10 +187,12 @@ Many short `setTimeout` calls (toasts, URL cleanup, UI yield) are one-shot. They
   app/site-functions.js `_restoreDialog`). It reuses `_restoreApply` and `DB.restorePush` (no second upload path): a key that
   is absent on the server is inserted at version 1 (`baseVersion` null); a key that differs is replaced at the server version
   just read, with `explicitOverwrite`, so kv-sync.js keeps the old copy in `kv_history` (20 per key, 30 days). A key whose
-  content already equals the backup is not sent. Rules: a plain key or map takes the backup value; the record lists
-  (`en_projects`, `en_customers`, `en_tasks`, `en_dc_events`, `ems_leads_v1`, the audit log, report history) are an
-  Add (union by id, nothing removed); per-customer `en_utility_cust_<id>` is a union by id in which the backup record wins
-  field by field on a matched record, and server-only buildings, meters and bills stay; legacy `en_utility_<id>` keys are
+  content already equals the backup is not sent. Rules: a plain key or map takes the backup value; EVERY record collection
+  key (`en_projects`, `en_customers`, `en_tasks`, `en_dc_events`, `ems_leads_v1`, the audit log, report history,
+  `en_utility_cust_<id>` with its buildings, meters and bills, `en_eqmatrix_cmaps_*`) is a union by id in which the BACKUP
+  record wins field by field on a matched id (Matt worked only on the GitHub site since 2026-08-19, so the backup is newer);
+  records only the server holds are kept, never deleted. The one exception is `en_presented_savings` (frozen client figures):
+  add-only. The old server copy of every changed key stays in `kv_history`. legacy `en_utility_<id>` keys are
   skipped; nothing is deleted; a tombstoned key stays deleted unless ticked; a per-user key goes only to the signed-in user
   (`DB.restoreScope`). A key that would still remove records (a plain key whose nested lists lose items) is HELD: listed with
   the count, unticked, not sent until the user ticks it (`opts.allowRemoval`, `item.held`). After the apply the dialog shows
@@ -234,7 +236,7 @@ Matt's steps, in this order:
 8. Click "Close and reload". Open Restore again, choose the same file and the same mode. The button must say
    "Nothing to change". If it lists items, read them.
 
-Nothing is deleted by this restore. A key the backup lacks is not touched. Old server values are in `kv_history`
+Nothing is deleted by this restore. On a record in both, the backup value wins; a record only on the server stays. A key the backup lacks is not touched. Old server values are in `kv_history`
 (kv-sync.js `snapshotHistory`). To undo one key, read its row in `kv_history` in the Supabase dashboard.
 
 ## 6b. Bill fields (merged 2026-10-06, fix/2026-10-05-hidden-fields)

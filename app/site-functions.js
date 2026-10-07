@@ -1652,7 +1652,7 @@ function _restoreDialog(ctx) {
       opt(
         'backup-wins',
         'Make this backup the server copy',
-        'Every value that differs takes the backup value. Customer, project and task lists are merged: records merged, none removed. Old values stay in the server history. A key that would remove data waits for your tick.',
+        'Every value that differs takes the backup value. Customer, project and task lists are merged: a record in both takes the backup value, a record only on the server stays, none removed. Old values stay in the server history. A key that would remove data waits for your tick.',
       ) +
       '<div class="rst-tbl-outer"><table class="rst-tbl"><thead><tr><th>Data</th><th>Added</th><th>Updated</th><th>Kept</th>' +
       (mode === 'replace' ? '<th>Removed</th>' : '') +

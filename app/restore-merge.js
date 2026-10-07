@@ -477,8 +477,9 @@ const RestoreMerge = (() => {
     }
 
     // 'backup-wins' = "make this backup the server copy": the backup value for
-    // every differing plain key and map; per-customer utility data is a union in
-    // which the backup record wins; every other record list is a plain Add.
+    // every differing plain key and map; every record collection is a union in
+    // which the backup record wins on a matched id and server-only records stay.
+    // en_presented_savings (frozen client figures) stays add-only.
     if (pol.kind === 'key') {
       if ((mode !== 'replace' && mode !== 'backup-wins') || !meaningful(cur)) {
         if (!meaningful(cur)) {
@@ -528,8 +529,7 @@ const RestoreMerge = (() => {
     // records / frozen
     const curList = list(cur);
     const bakList = list(bak);
-    const eff =
-      pol.kind === 'frozen' ? 'add' : mode === 'backup-wins' ? (pol.cross === 'utility' ? 'backup-wins' : 'add') : mode;
+    const eff = pol.kind === 'frozen' ? 'add' : mode;
     if (eff === 'replace') {
       if (!meaningful(curList) && !isRec(cur)) {
         const v = cleanAll(bak);

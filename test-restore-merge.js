@@ -1366,15 +1366,31 @@ t('backup-wins (b): an equal key is unchanged (no PUT)', () => {
   const n = mv('some_plain_key', { n: 1 }, { n: '1' }, 'backup-wins');
   assert.strictEqual(n.changed, false, 'number text equals the number');
 });
-t('backup-wins (c): en_projects and en_tasks are merged; no server-only record is removed', () => {
-  for (const key of ['en_projects', 'en_tasks']) {
-    const cur = [{ id: 'p1', name: 'Old' }, { id: 'srv', name: 'Server only' }];
-    const bak = [{ id: 'p1', name: 'Old' }, { id: 'new', name: 'Backup only' }];
-    const r = mv(key, cur, bak, 'backup-wins');
+t('backup-wins (c): every collection key = union; matched id takes the backup value; server-only kept; 0 removed', () => {
+  const mk = {
+    en_projects: [(n) => ({ id: 'p1', name: n, extra: 'srv' }), { id: 'srv', name: 'Server only' }, { id: 'new', name: 'Backup only' }],
+    en_tasks: [(n) => ({ id: 'p1', text: n }), { id: 'srv', text: 'Server only' }, { id: 'new', text: 'Backup only' }],
+    en_customers: [(n) => ({ id: 'p1', name: n }), { id: 'srv', name: 'Server only' }, { id: 'new', name: 'Backup only' }],
+    ems_leads_v1: [(n) => ({ id: 'p1', name: n }), { id: 'srv', name: 'Server only' }, { id: 'new', name: 'Backup only' }],
+    en_report_history: [(n) => ({ id: 'p1', title: n }), { id: 'srv', title: 'Server only' }, { id: 'new', title: 'Backup only' }],
+  };
+  for (const key of Object.keys(mk)) {
+    const [f, srvOnly, bakOnly] = mk[key];
+    const r = mv(key, [f('August value'), srvOnly], [f('Backup value'), bakOnly], 'backup-wins');
     assert.strictEqual(r.changed, true, key);
     assert.deepStrictEqual(ids(r.value).sort(), ['new', 'p1', 'srv'], key + ' = union');
-    assert.strictEqual(r.removed, 0);
+    const m = r.value.find((x) => x.id === 'p1');
+    assert.ok(JSON.stringify(m).includes('Backup value') && !JSON.stringify(m).includes('August value'), key + ' matched = backup');
+    assert.deepStrictEqual(r.value.find((x) => x.id === 'srv'), srvOnly, key + ' server-only kept');
+    assert.strictEqual(r.removed, 0, key);
   }
+  // a field only the server record holds stays (union per field)
+  assert.strictEqual(mv('en_projects', [{ id: 'p1', name: 'A', extra: 'srv' }], [{ id: 'p1', name: 'B' }], 'backup-wins').value[0].extra, 'srv');
+});
+t('backup-wins (c1): en_presented_savings (frozen client figures) stays add-only', () => {
+  const k = (v) => ({ projectId: 'p', periodStart: '2026-01-01', periodEnd: '2026-03-31', v });
+  const r = mv('en_presented_savings', [k('frozen')], [k('changed')], 'backup-wins');
+  assert.strictEqual(r.changed, false);
 });
 t('backup-wins (c2): per-customer utility data = union; a matched record takes the backup value; server-only records stay', () => {
   const cur = bwUtil([{ id: 'srvB', name: 'Server building', meters: [] }]);
