@@ -1297,6 +1297,9 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
         removeItem: (k) => {
           delete store[k];
         },
+        clear: () => {
+          Object.keys(store).forEach((k) => delete store[k]);
+        },
         key: (i) => Object.keys(store)[i] || null,
         get length() {
           return Object.keys(store).length;
@@ -2599,6 +2602,40 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     assert.ok(!JSON.stringify(exported).includes('B-private'), "other user's private value is not in the file");
     const kept = L.DB.getConflictArchiveOthers();
     assert.ok(kept.length === 1 && kept[0].losingValue === 'B-private', "other user's entry is written back after the wipe");
+  });
+  // ---- (g) (2026-10-06): Reset with the REAL DB.clear: own entries exported then wiped, other users' entries survive
+  await t("(g): siteResetData with the real DB.clear keeps other users' archive entries and wipes the user's own", async () => {
+    const vm = require('vm');
+    const L = loadReal({ userId: 'u1', tokenFetch: tokByEmail, kvFetch: async () => ok([]) });
+    L.store.en_conflict_archive = JSON.stringify([
+      { key: 'ch_pref_x', losingValue: 'B-private', owner: { id: 'u2', email: 'u2@example.com' }, archivedAt: 't' },
+      { key: 'ch_pref_y', losingValue: 'A-private', owner: { id: 'u1', email: 'u1@example.com' }, archivedAt: 't' },
+    ]);
+    await L.DB.warmCache();
+    await tick(30);
+    let exported = null;
+    const ctx = {
+      DB: L.DB,
+      confirm: () => true,
+      _downloadJSON: (d) => {
+        exported = d;
+      },
+      localStorage: { clear: () => {} },
+      sessionStorage: { clear: () => {} },
+      setTimeout: () => {},
+      location: { reload: () => {} },
+      Date,
+    };
+    ctx.window = ctx;
+    vm.createContext(ctx);
+    vm.runInContext(siteFnSrc('siteResetData'), ctx);
+    await vm.runInContext('siteResetData()', ctx);
+    assert.strictEqual(exported.length, 1, "only the user's own entry is exported");
+    assert.strictEqual(exported[0].losingValue, 'A-private');
+    await tick(30);
+    assert.strictEqual(L.DB.getConflictArchive().length, 0, "own entry is wiped");
+    const kept = L.DB.getConflictArchiveOthers();
+    assert.ok(kept.length === 1 && kept[0].losingValue === 'B-private', "other user's entry survives the real clear");
   });
   console.log(pass + ' passed');
 })().catch((e) => {
