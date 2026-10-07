@@ -1495,6 +1495,35 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     assert.strictEqual(L.DB.__t._stampOf('ch_theme'), undefined, 'no stamp set for B');
   });
 
+  // ---- delta-review LOW (2026-10-06): an edit in flight when its author signs OUT is kept, under the author's id
+  await t('F1b: A signs out while a per-user edit is in flight: the edit is queued under A, never lost', async () => {
+    const puts = [];
+    let release;
+    const held = new Promise((r) => (release = r));
+    const L = loadReal({
+      userId: 'u1',
+      tokenFetch: tokUser('u1'),
+      kvFetch: async (u, o) => {
+        if (!o || o.method !== 'PUT') return ok([]);
+        const body = JSON.parse(o.body);
+        puts.push({ auth: o.headers.Authorization, key: body.key, value: body.value });
+        if (body.value === 'A-first') await held;
+        return ok({ version: 1, hash: null, deleted: false });
+      },
+    });
+    await L.DB.warmCache();
+    puts.length = 0;
+    L.DB.set('ch_theme', 'A-first');
+    await tick(40);
+    await L.A.signOut(); // A signs out while PUT #1 is in flight
+    release();
+    await tick(200);
+    const q = L.DB.__t._queue().filter((e) => e.key === 'ch_theme');
+    assert.strictEqual(q.length, 1, 'the edit is queued, not dropped');
+    assert.strictEqual(q[0].owner.id, 'u1', "queued under its author's id");
+    assert.strictEqual(q[0].value, 'A-first');
+  });
+
   // ---- re-review F2/F3: backup and Reset never hold another user's per-user archive or queue values
   await t('F2/F3: export, Reset list and kept list use the one visibility rule (REAL db.js)', async () => {
     const sameJSON = (a, b) => assert.strictEqual(JSON.stringify(a), JSON.stringify(b));
@@ -2532,8 +2561,8 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     assert.strictEqual(SC.isNeverBackupKey('ch_sb_session'), true);
     assert.strictEqual(SC.isNeverBackupKey('ch_theme'), false);
   });
-  // ---- (f) (2026-10-06): Reset exports ALL archive entries (every owner) before the wipe; the viewer rule is unchanged
-  await t('(f): siteResetData exports every stored archive entry with its owner tag; viewer still shows only own', async () => {
+  // ---- (f) (2026-10-06): Reset exports only the entries the user may see (the one viewer rule) and keeps the others
+  await t('(f): siteResetData exports only the archive entries the user may see; other users entries are kept', async () => {
     const vm = require('vm');
     const L = loadReal({ userId: 'u1', tokenFetch: tokByEmail, kvFetch: async () => ok([]) });
     L.store.en_conflict_archive = JSON.stringify([
