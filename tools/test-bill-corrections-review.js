@@ -36,6 +36,7 @@
  *
  * Usage: node tools/test-bill-corrections-review.js
  */
+const KGS_SYN = '51' + '0000001 9999999 00'; // synthetic KGS segmented number
 const fs = require('fs');
 const vm = require('vm');
 const path = require('path');
@@ -243,7 +244,7 @@ async function main() {
     Commodity: 'Gas',
     commodity: 'gas',
     _utilityName: 'Kansas Gas Service',
-    AccountNumber: '510000123 9999999 00',
+    AccountNumber: KGS_SYN,
     projName: 'Test University',
     McfBilled: '0.500',
     NaturalGasTherms: '5.00',
@@ -342,7 +343,7 @@ async function main() {
         start: '2026-01-01',
         end: '2026-02-01',
         billDate: '2/5/2026',
-        accountNumber: '510000123 9999999 00',
+        accountNumber: KGS_SYN,
         utilityCompany: 'Kansas Gas Service',
         commodity: 'Gas',
         customerCharge: '20.35',
@@ -359,7 +360,7 @@ async function main() {
       id: 'r_test_kgs_2_hist1',
       start: '2025-11-01',
       end: '2025-12-01',
-      accountNumber: '510000123 9999999 00',
+      accountNumber: KGS_SYN,
       utilityCompany: 'Kansas Gas Service',
       commodity: 'Gas',
       totalCost: '33.10',
@@ -368,7 +369,7 @@ async function main() {
       id: 'r_test_kgs_2_hist2',
       start: '2025-12-01',
       end: '2026-01-01',
-      accountNumber: '510000123 9999999 00',
+      accountNumber: KGS_SYN,
       utilityCompany: 'Kansas Gas Service',
       commodity: 'Gas',
       totalCost: '36.20',
@@ -455,7 +456,7 @@ async function main() {
           UtilityCompany: 'Kansas Gas Service',
           Commodity: 'Gas',
           commodity: 'gas',
-          AccountNumber: '510000123 9999999 00',
+          AccountNumber: '51' + '0000001 9999999 00',
           BillingPeriodStart: '1/1/2026',
           BillingPeriodEnd: '2/1/2026',
           McfBilled: '0.500',

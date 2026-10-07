@@ -2508,7 +2508,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // after confirming (via a Strategy C simulation, not just "does it parse")
   // that doing so won't suppress a residual-based correction elsewhere.
   // "Comparative Usage Information" is sometimes OCR'd too badly to match its
-  // own phrase (e.g. "Qomparthve UsEgainormation" — Louisburg acct 2885731561
+  // own phrase (e.g. "Qomparthve UsEgainormation" — Louisburg acct 1000001
   // BALLFIELDS 06/01-06/29/2026), which silently skips the whole table-bleed
   // cleanup window even for charge lines that opted into it. "Days ... Avg
   // Temp" is the same comparative-usage-table's column header row and reads
@@ -2868,8 +2868,8 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     /(\d{1,2}\/?\d{1,3})[^\S\n]+(\d{1,2}\/?\d{1,3})[^\S\n]+(?:(\d+)|\S{1,4})?[^\S\n]+[-+]?[^\S\n]*(?:([\d,]+(?:\.\d+)?)|\S+)[^\S\n]+[-+]?[^\S\n]*(?:([\d,]+(?:\.\d+)?)|\S+)[^\S\n]+[-+]?[^\S\n]*(?:([\d,]+(?:\.\d+)?)|\S+)[^\S\n]+[-+]?[^\S\n]*(?:([\d,.]+)|\S+)[^\S\n]+[-+]?[^\S\n]*(?:([\d,]+(?:\.\d+)?)|\S+)[^\S\n]+(?:([\d,.]+)|\S+)(?:[^\S\n]+(?:([\d,.]+)|\S+))?/g;
   // ── TABLE-BLEED GUARD (perf fix, 020084cb) ──
   // _meterRe chains 7 consecutive `(?:(NUM)|\S+)` alternations to parse one clean meter-
-  // read row. On some bills (confirmed: LHS acct 2885731561 09/28-10/27/2025; bes-mb-
-  // field-house acct 0669287870 04/08-05/07/2026) the "Comparative Usage Information"
+  // read row. On some bills (confirmed: LHS acct 1000001 09/28-10/27/2025; bes-mb-
+  // field-house acct 1000002 04/08-05/07/2026) the "Comparative Usage Information"
   // table's OCR-garbled bar-chart/legend text survives the letter-strip pre-normalize
   // above and superficially resembles a partial meter row (short digit/dash/degree-
   // symbol tokens), sending the regex into catastrophic backtracking (measured up to
@@ -2969,7 +2969,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // since groups 4-10 already tolerate almost any token via their \S+ fallback; the dates are
   // what actually protects against a false-positive row match today. But a bill can garble
   // BOTH date tokens past any digit-substitution recovery (e.g. "40s"/"oss" for "04/09"/
-  // "05/08" — Field House, April 2026 electric bill, acct 8980291458) while every remaining
+  // "05/08" — Field House, April 2026 electric bill, acct 1000003) while every remaining
   // column — Days, EndRead, StartRead, Difference, Multiplier, kWhUsed, KWUsed, RKVAUsed —
   // reads perfectly. The strict primary regex correctly refuses to match that line at all, so
   // those numeric reads are silently lost. Recover them here, but ONLY when the primary pass
@@ -2990,7 +2990,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // fixtures after adding this guard (see dashboardlogic entry for this fix).
   if (_meterRows.length === 0 && _meterT.length < 8000) {
     // Leading-token budget widened 2 -> 3 (Louisburg digit-repair Group 3, account
-    // 1257228027, 01/29-03/02/2026 bill): a badly garbled date pair ("© ois0 os03") can
+    // 1000005, 01/29-03/02/2026 bill): a badly garbled date pair ("© ois0 os03") can
     // fragment into FOUR stray tokens after the letter-strip pre-normalize (e.g. "0",
     // "03", "00", "32") before the real EndRead/StartRead/.../RKVAUsed run of clean
     // numbers begins — one more than the previous budget (2 generic + 1 optional Days
@@ -3075,7 +3075,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     // branch exists to paper over is exactly as likely to mean "the arithmetic TARGET is wrong
     // because a SIBLING column (EndRead/StartRead/Difference/kWh) was itself OCR-garbled" as it
     // is to mean "this OCR string genuinely has a spurious extra leading digit." On the
-    // Maintenance Bldg April 2026 bill (account 0669287870) it was the former: EndRead's raw
+    // Maintenance Bldg April 2026 bill (account 1000002) it was the former: EndRead's raw
     // OCR ("B4,784.6376") lost its leading 8 to a letter-for-digit misread earlier in the
     // pipeline, which made the row's own checksum target one digit short — and this padding
     // branch then rewrote the ALREADY-CORRECT StartRead ("84,385.0790", matching the printed
@@ -3176,7 +3176,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     // Difference is End-Start, so its integer part is almost always 1-4 digits (vs
     // EndRead/StartRead's full meter-register length) — same "decimal point OCR'd to
     // nothing" mechanism, narrower length gate (5-8 digits total: 1-4 integer + 4
-    // decimal). Louisburg digit-repair Group 3 (account 8980291458, 06/08-07/08/2026):
+    // decimal). Louisburg digit-repair Group 3 (account 1000003, 06/08-07/08/2026):
     // Difference printed as "163577" instead of "16.3577".
     const _insertDecimal4Diff = (s) => {
       if (!s || s.includes('.')) return null;
@@ -3232,7 +3232,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // integer-digit count (or EndRead has exactly one MORE digit than StartRead, on a genuine
   // meter rollover — never fewer). When OCR drops a leading digit from one of them (e.g. an "8"
   // misread as a letter that a later normalize pass blanks to whitespace — confirmed root cause
-  // on the Maint Bldg April 2026 bill, account 0669287870: "84,784.6376" OCR'd as "B4,784.6376"
+  // on the Maint Bldg April 2026 bill, account 1000002: "84,784.6376" OCR'd as "B4,784.6376"
   // then normalized to " 4,784.6376", losing the 8 entirely), that digit-count mismatch against
   // its sibling column IS the missing evidence — restoring the sibling's leading digit(s) is a
   // structural repair (same category as the missing-decimal recovery above), not a digit GUESS,
@@ -3381,7 +3381,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     // BOTH individually OCR-garbled by one digit each. Tiers 1-3 only ever hold ONE side fixed
     // (at its raw, possibly-wrong value) while solving for the other, so they never find a fix
     // when both sides need correcting at once — confirmed on Maint Bldg Meter 2 (account
-    // 0669287870, April 2026): raw EndRead "58,674.0800" (true "58,674.0600") and raw StartRead
+    // 1000002, April 2026): raw EndRead "58,674.0800" (true "58,674.0600") and raw StartRead
     // "58,116.1510" (true "58,115.1510") each need exactly one plausible digit swap, but neither
     // swap alone reconciles against the OTHER column's still-raw value. Only reached once the
     // Difference column is trusted (either it already agreed, or Tier 2/3 already corrected it)
@@ -3527,7 +3527,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       // Only emit an RKVA figure when at least one meter row actually printed
       // one — an MGA-schedule bill with no RKVA column on any row is a
       // genuinely absent field, not a real 0.0000 reading (Louisburg acct
-      // 0669287870).
+      // 1000002).
       rkva: hasRkva ? maxRkva.toFixed(4) : null,
     };
   })();
@@ -3840,7 +3840,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // accounts print one line per taxing jurisdiction below Subtotal, e.g.
   // "Kansas State Sales Tax @ 6.5% ... $22.57" / "Miami County Sales Tax @
   // 1.5% ... $5.21" / "Louisburg City Sales Tax @ 1.5% ... $5.21" (Louisburg
-  // Ballfields acct 2885731561, 04/22-05/31/2026 bill — verified against the
+  // Ballfields acct 1000001, 04/22-05/31/2026 bill — verified against the
   // rendered PDF). No field previously captured these lines, so
   // _recompSum below fell short of TotalCurrentCharges by exactly the tax
   // total, and the gap-inference block fabricated the residual into
@@ -4287,7 +4287,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // all (a separate bar-chart bleed, not this table).
   //
   // But on a rate-CHANGEOVER bill where "ECA" text IS present for every segment (e.g.
-  // Louisburg Field House acct 2129690146, 04/08-05/07/2026: ECA seg1 04-09..04-30 @
+  // Louisburg Field House acct 1000006, 04/08-05/07/2026: ECA seg1 04-09..04-30 @
   // $0.01763/kWh, seg2 05-01..05-07 @ $0.01521/kWh), the base scan finds segment 1 fine
   // but segment 2's qty/rate text sits inside the same Comparative-Usage-Information
   // table-bleed window that regressed EER/PTS, so segment 2 silently drops its qty/rate
@@ -4341,7 +4341,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   const _rEer = xRate('EER' + SEP + C, null, true);
   // PTS sits immediately after EER in print order and is bled into by the
   // same Comparative-Usage-Information table on the same bills (Louisburg
-  // acct 2885731561 BALLFIELDS 06/01-06/29/2026) — opt in for the same
+  // acct 1000001 BALLFIELDS 06/01-06/29/2026) — opt in for the same
   // reason EER did above.
   const _rPts = xRate('PTS' + SEP + C, null, true);
   const _rTdc = xRate('TD[CG]' + SEP + C);
@@ -5187,7 +5187,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // a keyword + a trailing "$X.XX" and is tolerant of OCR noise in between, so it
   // regularly succeeds even when xRate()'s much more specific "<qty> kWh at
   // $<rate> per kWh" phrase fails to match at all (root-caused on the Louisburg
-  // Circle Grove Elementary acct 3517540689 May 05/05-06/04/2026 bill, Off-Peak
+  // Circle Grove Elementary acct 1000004 May 05/05-06/04/2026 bill, Off-Peak
   // line: OCR degraded "at $0.04960 per kWh" past all 5 of xRate's fallback
   // patterns). When that happens, `_rates[chargeField]` is never populated (xRate
   // found nothing at all for that charge), so `OnPeakRate`/`OffPeakRate` come back
@@ -5537,8 +5537,8 @@ const _EVG_CHG = /Ch[gaq9][.:]?/i; // matches Chg, Cha, Chq, Ch9, Chg.
 // confirmed real-bill example.
 // ONE shared rule for reading Evergy account numbers from text (a page or the
 // whole document). Every call site uses _evgAccountsIn / _evgPickAccount.
-// OCR can damage the FIRST digit of an "Account Number :" line ("6699289683"
-// read as "§699289683"). The tolerant separator accepts the damaged line, and
+// OCR can damage the FIRST digit of an "Account Number :" line ("1000007"
+// read as "§000007"). The tolerant separator accepts the damaged line, and
 // a first-match rule returned a 9-digit account. A lost digit only makes a
 // candidate SHORTER, so _evgAccountsIn keeps only the candidates of the longest
 // digit length found (all real accounts on the text, damaged ones dropped).
@@ -6146,7 +6146,7 @@ const UTILITY_RULES = [
         // FIX (2026-08-24, Louisburg visual audit bug #6): "Account" and
         // "Number" tolerated `\s+` (one-or-more) between them, requiring a
         // space. Real OCR on the New HS bill (202 Aquatic Dr, acct
-        // 2885731561, Dec 2025) read the header as one glued token
+        // 1000001, Dec 2025) read the header as one glued token
         // "AccountNumber" with zero space — confirmed against the rendered
         // page, where the printed number itself is sharp/unambiguous.
         // `\s+` -> `\s*` tolerates the glued form while still matching every
@@ -6161,7 +6161,7 @@ const UTILITY_RULES = [
       // Facility disambiguator (backlog acc68bdb) — a single Evergy account
       // can legitimately cover TWO distinct facilities for the same billing
       // period (e.g. New HS "2LGSF" and Ballfields "2MGSE", both on account
-      // 2885731561 at 202 Aquatic Dr). Read the rate/meter-class code that
+      // 1000001 at 202 Aquatic Dr). Read the rate/meter-class code that
       // prints immediately before that page's own "Billing Details" header
       // (the same signal already used for the RateSchedule field) so the
       // dedup key below can tell the two apart instead of collapsing them.
@@ -6286,7 +6286,7 @@ const UTILITY_RULES = [
         const _provenSameAcct = !!(prev && prev._acct && m._acct && prev._acct === m._acct);
         // Even when the account IS proven equal, a resolved facility signal
         // that disagrees (backlog acc68bdb — New HS "2LGSF" vs Ballfields
-        // "2MGSE", both account 2885731561) still means these are two
+        // "2MGSE", both account 1000001) still means these are two
         // distinct bills sharing one account, not a cover/detail repeat.
         const _distinctBillsCollision =
           prevIsBd && curIsBd && (!_provenSameAcct || (prev && _facilityConflict(prev, m)));
@@ -7671,7 +7671,7 @@ const UTILITY_RULES = [
             // frequently misread by OCR — verified on Inv 447604 (Apr 2025): "AcctUMeter",
             // "AcctMeter" (slash dropped entirely). The old regex required a literal "/" in
             // the label, so every site on that invoice silently lost its AccountNumber AND
-            // MeterNumber even though the VALUE side ("560189/T920419C") read back fine —
+            // MeterNumber even though the VALUE side ("560001/T920419C") read back fine —
             // only the label's punctuation was corrupted. Tolerate 0-2 stray characters
             // (U/1/l/I/|/./space/etc, OCR's common misreads of "/") between "Acct" and
             // "Meter" in the LABEL only; the VALUE separator below is unchanged.

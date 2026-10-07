@@ -15,6 +15,7 @@
  *
  * Usage: node tools/test-bill-number-parser.js
  */
+const KGS_SYN = '500000001 2000001 18'; // synthetic KGS segmented number
 const fs = require('fs');
 const vm = require('vm');
 const path = require('path');
@@ -153,7 +154,7 @@ check('KGS rule found', !!kgs);
 const kgsText = [
   'Kansas Gas Service',
   'Statement Date 02-10-26',
-  'Account Number 510000123 2051604 18',
+  'Account Number ' + KGS_SYN,
   'ABC12345 01-10-26 02-09-26 30 100 133 1.0000 3.300 $0.2034 6.9480',
   'Service Charge $1,234.56',
   'Delivery Charge $10.34',

@@ -26,6 +26,7 @@
  *   (defaults to ../app/bill-analysis.js relative to this file — pass the
  *   path to a PRE-FIX copy to confirm this test fails on the old code)
  */
+const KGS_SYN = '510000001 9999999 00'; // synthetic KGS segmented number
 const fs = require('fs');
 const vm = require('vm');
 const path = require('path');
@@ -78,7 +79,7 @@ function makeMinChargeBill(overrides) {
       Commodity: 'Gas',
       commodity: 'gas',
       _utilityName: 'Kansas Gas Service',
-      AccountNumber: '510000123 9999999 00',
+      AccountNumber: KGS_SYN,
       McfBilled: '0.500',
       NaturalGasTherms: '5.00',
       CustomerCharge: '20.35',
