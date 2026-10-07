@@ -44,6 +44,9 @@ const RestoreMerge = (() => {
     'en_deleted_records',
     '_companyHubBackup',
   ];
+  // The ONE "engine bookkeeping key" rule for restore and backup: the exact keys
+  // above plus the per-key sync records (db.js RV_PREFIX, ch_rv::<key>).
+  const isEngineKey = (k) => SKIP_KEYS.indexOf(k) !== -1 || SC.isNeverBackupKey(k); // SC covers the SC.RV_PREFIX records
   const NEVER = [
     [/^ch_user$/, 'signed-in user identity'],
     [/^ch_(seen_version|last_seen_version|qs_seen|idb_migrated|verification_results|notifs)$/, 'device state'],
@@ -98,22 +101,23 @@ const RestoreMerge = (() => {
     if (typeof v === 'object') return Object.keys(v).length > 0;
     return true;
   }
+  // Backup text holds some numbers as strings: a numeric-looking string equals
+  // the number (restore-only rule). The canonical form itself is the ONE
+  // function SyncClassification.canonicalJSON, shared with db.js.
   const NUM = /^-?\d+(\.\d+)?$/;
-  function canon(v) {
-    if (Array.isArray(v)) return '[' + v.map(canon).join(',') + ']';
+  function numNorm(v) {
+    if (Array.isArray(v)) return v.map(numNorm);
     if (isRec(v)) {
-      return (
-        '{' +
-        Object.keys(v)
-          .sort()
-          .map((k) => JSON.stringify(k) + ':' + canon(v[k]))
-          .join(',') +
-        '}'
-      );
+      const o = {};
+      Object.keys(v).forEach((k) => {
+        o[k] = numNorm(v[k]);
+      });
+      return o;
     }
-    if (typeof v === 'string' && NUM.test(v)) return String(Number(v));
-    return JSON.stringify(v === undefined ? null : v);
+    if (typeof v === 'string' && NUM.test(v)) return Number(v);
+    return v === undefined ? null : v;
   }
+  const canon = (v) => SC.canonicalJSON(numNorm(v));
   const same = (a, b) => canon(a) === canon(b);
   // Backup files hold some values as JSON text. Compare and merge real values.
   function parseMaybe(v) {
@@ -134,14 +138,17 @@ const RestoreMerge = (() => {
       : r.name && r.type
         ? r.date + '|' + r.name + '|' + r.type
         : canon(r);
-  const auditId = (r) => (r.ts === undefined ? undefined : [r.ts, r.action, r.projId, r.bldgId, r.meterId].join('|'));
+  // Audit entry identity: the ONE rule lives in sync-classification.js (also used by db.js).
+  const SC =
+    typeof module !== 'undefined' && module.exports ? require('./sync-classification.js') : window.SyncClassification;
+  const auditId = (r) => SC.auditEntryId(r);
   const presentedId = (r) =>
     r.projectId === undefined ? undefined : [r.projectId, r.periodStart, r.periodEnd].join('|');
   const str = (v) => (v === undefined || v === null ? '' : String(v));
 
   // policyFor(key, backupKeys) -> { kind, path, idOf, name, ... }
   function policyFor(key, backupKeys) {
-    if (SKIP_KEYS.indexOf(key) !== -1) return { kind: 'never', why: 'internal setting' };
+    if (isEngineKey(key)) return { kind: 'never', why: 'internal setting' };
     for (const [re, why] of NEVER) if (re.test(key)) return { kind: 'never', why };
     if (/^en_utility_\d+$/.test(key)) {
       // Legacy per-project copy. Inert when the backup also holds the live
@@ -698,6 +705,7 @@ const RestoreMerge = (() => {
 
   return {
     SKIP_KEYS,
+    isEngineKey,
     METER_CACHE_FIELDS,
     labelFor,
     policyFor,

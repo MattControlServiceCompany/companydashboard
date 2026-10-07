@@ -6,9 +6,9 @@
 // beyond the small public accessors DB already exposes (getQueueDepth, getConflictArchive).
 // Renders:
 //   1. "N unsynced changes" pill (syncQueueChanged) — bottom-right badge.
-//   2. Passive "X changed — refresh" banner (remoteChange) — does NOT auto-swap _cache
-//      under a live page (supabase-migration-plan-FINAL-2026-07-19.md §2.4 — no silent
-//      live-merge in v1).
+//   2. (M1) Server changes with no pending local edit are applied by db.js and the page
+//      reloads when it is safe (dbRemoteApplied). The passive "X changed - refresh" banner
+//      (remoteChange) shows only when they could not be applied or a reload is unsafe.
 //   3. Persistent "offline — showing local copy" banner (dbOfflineBanner), cleared by the
 //      next successful hydration/manifest round-trip (dbHydrated).
 //   4. (Phase 2b) A BLOCKING conflict-resolution modal, opened by app/db.js calling
@@ -44,7 +44,8 @@
       '#ch-sync-banner-stack>div{text-align:center;font-size:13px;padding:6px 12px;display:none;}' +
       '#ch-sync-banner{background:var(--accent,#2563eb);color:#fff;}' +
       '#ch-sync-offline-banner{background:var(--warn,#b45309);color:#fff;}' +
-      '#ch-sync-signedout-banner,#ch-sync-foreign-banner,#ch-sync-hydrate-failed-banner{background:var(--warn,#b45309);color:#fff;}' +
+      '#ch-sync-signedout-banner,#ch-sync-foreign-banner,#ch-sync-hydrate-failed-banner,#ch-sync-auth-rejected-banner,#ch-sync-oldhost-banner{background:var(--warn,#b45309);color:#fff;}' +
+      '#ch-sync-oldhost-banner button{margin-left:8px;border-radius:4px;padding:2px 10px;font-size:12px;font-family:inherit;cursor:pointer;border:1px solid #fff;background:transparent;color:#fff;}' +
       '#ch-sync-signedout-banner button,#ch-sync-foreign-banner button,#ch-sync-hydrate-failed-banner button{margin-left:8px;border-radius:4px;padding:2px 10px;font-size:12px;' +
       'font-family:inherit;cursor:pointer;border:1px solid #fff;background:transparent;color:#fff;}' +
       '#ch-sync-archive-full-banner{background:var(--warn,#b45309);color:#fff;}' +
@@ -156,7 +157,11 @@
     if (!el) {
       el = document.createElement('div');
       el.id = id;
-      if (/^ch-sync-(banner|offline-banner|archive-full-banner|signedout-banner|foreign-banner|hydrate-failed-banner)$/.test(id)) {
+      if (
+        /^ch-sync-(banner|offline-banner|archive-full-banner|signedout-banner|foreign-banner|hydrate-failed-banner|auth-rejected-banner|oldhost-banner)$/.test(
+          id,
+        )
+      ) {
         ensureStack().appendChild(el);
       } else {
         document.body.appendChild(el);
@@ -217,6 +222,30 @@
     }
     el.style.display = show ? 'block' : 'none';
   }
+  // M9: the old GitHub Pages site still serves the whole app, but nothing made
+  // there is shared. Say so on every page and point to the real site.
+  var SYNC_SITE_URL = 'https://cscdashboard.netlify.app/';
+  function renderOldHostBar() {
+    var host = (window.location && window.location.hostname) || '';
+    if (!/\.github\.io$/i.test(host)) return;
+    ensureStyles();
+    var el = ensureEl('ch-sync-oldhost-banner');
+    if (el.firstChild) return;
+    el.appendChild(
+      document.createTextNode(
+        'This is the old test site. Changes made here are not shared and are not saved to the server.',
+      ),
+    );
+    var btn = document.createElement('button');
+    btn.textContent = 'Open the main site';
+    btn.onclick = function () {
+      window.location.href = SYNC_SITE_URL;
+    };
+    el.appendChild(btn);
+    el.style.display = 'block';
+  }
+  document.addEventListener('DOMContentLoaded', renderOldHostBar);
+  if (document.readyState !== 'loading') renderOldHostBar();
   window.addEventListener('chAuthStateChanged', renderSignedOutBar);
   window.addEventListener('dbReady', renderSignedOutBar);
   document.addEventListener('DOMContentLoaded', renderSignedOutBar);
@@ -230,7 +259,14 @@
     el = ensureEl('ch-sync-foreign-banner');
     el.textContent = info
       .map(function (o) {
-        return o.count + ' unsent change' + (o.count === 1 ? '' : 's') + ' from ' + o.email + ' - sign in as that user to send them.';
+        return (
+          o.count +
+          ' unsent change' +
+          (o.count === 1 ? '' : 's') +
+          ' from ' +
+          o.email +
+          ' - sign in as that user to send them.'
+        );
       })
       .join(' ');
     el.style.display = info.length ? 'block' : 'none';
@@ -244,7 +280,8 @@
     ensureStyles();
     var el = ensureEl('ch-sync-hydrate-failed-banner');
     var n = e.detail && e.detail.keys ? e.detail.keys.length : 0;
-    el.textContent = 'Could not load ' + n + ' saved item' + (n === 1 ? '' : 's') + ' from the server. Some data may be missing. ';
+    el.textContent =
+      'Could not load ' + n + ' saved item' + (n === 1 ? '' : 's') + ' from the server. Some data may be missing. ';
     var btn = document.createElement('button');
     btn.textContent = 'Reload';
     btn.onclick = function () {
@@ -301,8 +338,44 @@
     renderRemoteChangeBanner(e.detail && e.detail.keys);
   });
 
+  // M1: db.js already applied these server changes to the local copy. The page
+  // holds its own in-memory lists, so the ONE way to show them is a page reload.
+  // Reload only when nothing here can be lost by it (no field being edited, no
+  // dialog open, nothing unsent); otherwise show the refresh bar instead.
+  // The ONE list of "a dialog is open" selectors. The app's dialogs use .modal-bg.open
+  // (and .ems-modal-bg.open on the EMS view).
+  var OPEN_DIALOG_SELECTOR =
+    '.modal-bg.open, .ems-modal-bg.open, .modal-overlay.open, .modal.open, #ch-conflict-overlay, dialog[open]';
+  function _safeToReload() {
+    var a = document.activeElement;
+    var typing =
+      a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT' || a.isContentEditable);
+    var dialog = document.querySelector(OPEN_DIALOG_SELECTOR);
+    var unsent =
+      (window.DB && typeof window.DB.getQueueDepth === 'function' && window.DB.getQueueDepth() > 0) ||
+      (typeof window.pdfQueueDepth === 'function' && window.pdfQueueDepth() > 0);
+    return !typing && !dialog && !unsent;
+  }
+  window.addEventListener('dbRemoteApplied', function (e) {
+    var keys = (e.detail && e.detail.keys) || [];
+    if (_safeToReload()) window.location.reload();
+    else renderRemoteChangeBanner(keys);
+  });
+
   window.addEventListener('dbOfflineBanner', function () {
     renderOfflineBanner(true);
+  });
+
+  // M6: the server answered 401/403. This is not "offline": the sign-in was refused.
+  window.addEventListener('dbAuthRejected', function (e) {
+    ensureStyles();
+    var el = ensureEl('ch-sync-auth-rejected-banner');
+    var code = (e.detail && e.detail.status) || 403;
+    el.textContent =
+      'The server refused this sign-in (error ' +
+      code +
+      '). Your changes stay in this browser and are not syncing. Sign out and sign in again, or ask your administrator for access.';
+    el.style.display = 'block';
   });
 
   // First connect of a browser that had local-only data: one-line result.
@@ -316,6 +389,8 @@
     // A successful manifest round-trip (hydration OR a poll cycle) proves
     // we're online — clears any stale offline banner.
     renderOfflineBanner(false);
+    var rej = document.getElementById('ch-sync-auth-rejected-banner');
+    if (rej) rej.style.display = 'none';
   });
 
   // Initial paint once DB is ready, in case a queue already had entries left
@@ -360,6 +435,7 @@
     ['en_agreement_', 'this service agreement setup'],
     ['en_value_corrections', 'the value corrections log'],
     ['en_wdd_', 'this weather data'],
+    ['en_louisburg_facility_map', 'the Louisburg facility name list'],
     ['bldgperf_cfg_', 'a building performance chart setting'],
     ['bldgsavproj_cfg_', 'a building savings projection setting'],
     ['en_bills_zoom_', 'a bill table zoom setting'],
@@ -758,6 +834,13 @@
 
   window.addEventListener('dataUpdated', function (e) {
     if (e.detail && e.detail.key === 'en_conflict_archive') renderArchiveLink();
+  });
+  // What Conflict history shows depends on who is signed in (DB.getConflictArchive):
+  // on an identity change close the open panel and redraw the link for the new user.
+  window.addEventListener('chAuthStateChanged', function () {
+    var panel = document.getElementById('ch-archive-panel');
+    if (panel) panel.classList.remove('ch-open');
+    renderArchiveLink();
   });
 
   // =========================================================================

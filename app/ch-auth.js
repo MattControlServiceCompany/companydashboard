@@ -135,11 +135,19 @@
     }
   }
 
+  // One identity-change path: a changed user id sends chAuthStateChanged just like
+  // a sign-in or sign-out does (db.js bumps its identity epoch on it), even when
+  // the signed-out flag did not change (another tab switched accounts).
   function _applySession(session) {
+    var prevId = _cachedUserId;
     _cachedToken = session && session.access_token ? session.access_token : null;
     _cachedUserId = session && session.user_id ? session.user_id : null;
     _cachedEmail = session && session.email ? session.email : null;
+    var wasSignedOut = _signedOut;
     _setSignedOut(!_cachedToken);
+    if (_signedOut === wasSignedOut && prevId !== _cachedUserId) {
+      window.dispatchEvent(new CustomEvent('chAuthStateChanged', { detail: { signedOut: _signedOut } }));
+    }
   }
 
   // Normalizes a Supabase Auth token-endpoint response body into the shape
@@ -195,11 +203,22 @@
     return { userId: session.user_id, email: session.email };
   }
 
-  // Silent refresh using the stored refresh_token. Never prompts the user —
-  // a failure here just means "signed out", surfaced via chAuthStateChanged
-  // so the app can show the login screen again.
+  // Silent refresh using the stored refresh_token. Never prompts the user.
+  // A refusal (see _refreshRefused) means "signed out", surfaced via
+  // chAuthStateChanged so the app can show the login screen again; any other
+  // failure keeps the session and is tried again later.
   async function _refresh(session) {
     var body = await _tokenRequest('grant_type=refresh_token', { refresh_token: session.refresh_token });
+    // The stored session is shared by every tab. While this request was in
+    // flight another tab may have signed in as a different user, signed out, or
+    // refreshed the same user. The refresh result belongs to the session it
+    // started from: when storage no longer holds that session, the result is
+    // dropped (never saved, never applied) and this tab follows storage instead.
+    if (!_sameStoredSession(session)) {
+      var stored = _loadSession();
+      _applySession(stored);
+      return stored;
+    }
     var next = _sessionFromTokenResponse(body);
     // Supabase Auth rotates the refresh_token on every use; if the response
     // omits one for some reason, keep the previous refresh_token rather than
@@ -208,6 +227,13 @@
     _saveSession(next);
     _applySession(next);
     return next;
+  }
+  // True when storage still holds the session a refresh started from (same
+  // user id and same refresh token). THE one check for "did another tab change
+  // the session meanwhile".
+  function _sameStoredSession(session) {
+    var stored = _loadSession();
+    return !!stored && stored.user_id === session.user_id && stored.refresh_token === session.refresh_token;
   }
 
   // De-duped: if a refresh is already in flight (e.g. two tabs' timers fire
@@ -228,11 +254,31 @@
       _applySession(session);
       return Promise.resolve(session);
     }
+    return _startRefresh(session);
+  }
+
+  // THE single rule for a failed refresh: only a REFUSED refresh token ends the
+  // session (400 invalid_grant, 401, 403). No network, or a server error
+  // (Supabase paused, 5xx), keeps the session: the next interval, or the next
+  // 401 on a request, tries again and nothing is lost or queued as signed out.
+  function _refreshRefused(e) {
+    return !!e && (e.status === 400 || e.status === 401 || e.status === 403);
+  }
+  function _startRefresh(session) {
     _refreshInFlight = _refresh(session)
       .catch(function (e) {
-        // Refresh token invalid/expired/revoked — sign the user out locally.
-        _clearSession();
-        _setSignedOut(true);
+        // A refusal ends only the session it was for. If another tab replaced
+        // the stored session meanwhile (new user), that session is kept and
+        // this tab follows it.
+        if (!_sameStoredSession(session)) {
+          var stored = _loadSession();
+          _applySession(stored);
+          return stored;
+        }
+        if (_refreshRefused(e)) {
+          _clearSession();
+          _setSignedOut(true);
+        }
         return null;
       })
       .then(function (result) {
@@ -242,10 +288,81 @@
     return _refreshInFlight;
   }
 
+  // THE single rule for a server answer of 401/403 (kv-sync poll, kv-sync queue
+  // drain, pdf-sync queue drain all use withAuthRetry). 401 = the token was
+  // refused: refresh ONCE and let the caller send again. A second 401, or any 403
+  // (account not allowed), ends the session locally. That sets "signed out",
+  // so backendMode() is 'off' (every timer goes quiet), the signed-out bar
+  // shows, and a new sign-in (chAuthStateChanged) restarts everything.
+  function _onServerRefusal(status, alreadyRetried) {
+    if (status === 401 && !alreadyRetried) {
+      if (_refreshInFlight)
+        return _refreshInFlight.then(function (s) {
+          return !!s;
+        });
+      var session = _loadSession();
+      if (!session) {
+        _applySession(null);
+        return Promise.resolve(false);
+      }
+      return _startRefresh(session).then(function (s) {
+        return !!s;
+      });
+    }
+    // Another tab may have signed a different user in since this tab last looked: the stored
+    // session is theirs, not the one this refusal is about. Take it over; never clear it.
+    var stored = _loadSession();
+    if (stored && stored.user_id !== _cachedUserId) {
+      _applySession(stored);
+      return Promise.resolve(false);
+    }
+    _clearSession();
+    _setSignedOut(true);
+    return Promise.resolve(false);
+  }
+
+  // run() does one request. It either throws an Error with .httpStatus or
+  // returns an object with .httpStatus when the server refused. Returns/throws
+  // exactly what run() did on the final attempt.
+  async function withAuthRetry(run) {
+    for (var tries = 0; ; tries++) {
+      var idBefore = _cachedUserId;
+      var out;
+      var threw = false;
+      try {
+        out = await run();
+      } catch (e) {
+        out = e;
+        threw = true;
+      }
+      var st = out && out.httpStatus;
+      if (st !== 401 && st !== 403) {
+        if (threw) throw out;
+        return out;
+      }
+      var again = await _onServerRefusal(st, tries > 0);
+      // The refresh picked up a different account (another tab switched users).
+      // This request was built for the old user: never send it again as the new one.
+      if (again && _cachedUserId !== idBefore) again = false;
+      if (!again) {
+        if (threw) throw out;
+        return out;
+      }
+    }
+  }
+
+  // M7: the first refresh at page load. A stored token that already expired is
+  // primed into the cache synchronously, so a request sent before this refresh
+  // ends would carry a dead token. db.js awaits ready() before its first request.
+  var _startupRefresh = Promise.resolve(null);
+  function ready() {
+    return _startupRefresh;
+  }
+
   function _startBackgroundRefresh() {
     if (backendMode() === 'off') return; // kill switch — no network on load
     if (_refreshTimer) return;
-    _refreshIfNeeded();
+    _startupRefresh = _refreshIfNeeded();
     _refreshTimer = setInterval(_refreshIfNeeded, REFRESH_INTERVAL_MS);
   }
 
@@ -323,6 +440,7 @@
     needsSignIn: needsSignIn,
     getToken: getToken,
     getTokenInteractive: getTokenInteractive,
+    ready: ready,
     isSignedOut: isSignedOut,
     backendMode: backendMode,
     getUserId: getUserId,
@@ -331,6 +449,7 @@
     isSyncHost: _isNetlifyHost,
     signIn: signIn,
     signOut: signOut,
+    withAuthRetry: withAuthRetry,
   };
 
   // Prime the in-memory cache from any existing localStorage session

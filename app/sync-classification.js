@@ -24,10 +24,10 @@
 
 const SyncClassification = (() => {
   // ── Open question Q5/Q7 (plan §"Open questions", item 5) ──────────────────
-  // Weather cache (en_wdd_*) defaults to LOCAL-ONLY (derived/rebuildable cache,
-  // keeping it out shrinks hydration). Flip this to `true` if Matt decides the
-  // weather cache should sync instead. ONE line, nothing else to touch.
-  const SYNC_WEATHER_CACHE = false; // Q5/Q7 default: false = en_wdd_* stays LOCAL-ONLY
+  // Weather data (en_wdd_<zip>) SYNCS (M3, 2026-10-06). It also holds the weather
+  // CSV a user uploads as a manual override, so two users must see the same
+  // months or weather-normalized figures differ. The keys are small.
+  const SYNC_WEATHER_CACHE = true;
 
   // ── SYNCED — server-authoritative, hydrated at load, CAS on write ─────────
   // Each entry is either an exact key or a prefix (dynamic-suffix key family).
@@ -117,12 +117,17 @@ const SyncClassification = (() => {
     {
       pattern: 'en_wdd_',
       prefix: true,
-      note: 'weather cache — gated by SYNC_WEATHER_CACHE toggle above, NOT unconditionally synced. See shouldReplicate().',
+      note: 'weather data and user-uploaded weather CSV overrides — gated by SYNC_WEATHER_CACHE toggle above (now true). See shouldReplicate().',
     },
     {
       pattern: 'en_utility_audit_log',
       prefix: false,
       note: 'AUDIT_LOG_KEY in utility-data.js — incidentally also matches the en_utility_ prefix above; listed explicitly for clarity. Audit trail of bill edits, valuable to share between users.',
+    },
+    {
+      pattern: 'en_louisburg_facility_map',
+      prefix: false,
+      note: 'energy-savings.js _lbg_facilityLookup: user-filled map {account: facility name} used when a Louisburg bill is read. Shared so both users read bills the same way (M4).',
     },
     {
       pattern: 'en_value_corrections',
@@ -181,7 +186,15 @@ const SyncClassification = (() => {
   // plus ch_backend_mode (db.js's own mode flag, read directly via
   // localStorage — never routed through sset/DB.set today, excluded here
   // defensively in case that ever changes).
+  // The ONE spelling of the per-key sync record prefix (db.js stamps, restore-merge, backup).
+  const RV_PREFIX = 'ch_rv::';
   const PER_USER_CH_ENGINE_EXCLUSIONS = [
+    {
+      pattern: 'ch_sb_session',
+      prefix: false,
+      neverBackup: true,
+      note: 'app/ch-auth.js SESSION_STORAGE_KEY (2026-10-06) — the Supabase access and refresh tokens, raw localStorage, shared by every tab. Never a sync key: in localStorage-fallback mode (no IndexedDB) db.js loads every localStorage key into its cache, and the first-connect upload would otherwise PUT it to the server as <uid>::ch_sb_session, and the identity-change sweep would remove it. Local-only, never in a backup (restore-merge NEVER list).',
+    },
     {
       pattern: 'ch_replica_state',
       prefix: false,
@@ -201,6 +214,12 @@ const SyncClassification = (() => {
       pattern: 'ch_sync_base',
       prefix: false,
       note: 'db.js SYNC_BASE_KEY — the server value of each collection key at its synced version (merge base for the per-record three-way merge). Write-through via _rawSet. Engine-internal, must never sync at all.',
+    },
+    {
+      pattern: RV_PREFIX,
+      prefix: true,
+      neverBackup: true,
+      note: "db.js RV_PREFIX (2026-10-06) — one record per synced key: its version stamp and (collections) merge base. Replaces the whole-map ch_replica_state/ch_sync_base so one tab never overwrites another tab's stamps. Engine-internal, never syncs, never in a backup.",
     },
     {
       pattern: 'ch_deleted_items',
@@ -401,7 +420,55 @@ const SyncClassification = (() => {
     return shouldReplicate(key) ? 'synced' : 'local-only';
   }
 
+  /**
+   * The ONE canonical JSON form of a value: keys sorted at every depth, an own
+   * "__proto__" key dropped, then JSON.stringify. Mirrors kv-sync.js
+   * sortKeysDeep/canonicalJSON exactly, so a hash of this text equals the
+   * server's `hash` column. Every "same value?" compare and every hash in
+   * app/db.js and app/restore-merge.js goes through this function.
+   */
+  function sortKeysDeep(value) {
+    if (Array.isArray(value)) return value.map(sortKeysDeep);
+    if (value && typeof value === 'object') {
+      const out = {};
+      Object.keys(value)
+        .sort()
+        .forEach((k) => {
+          if (k === '__proto__') return; // never changes the prototype of `out`
+          out[k] = sortKeysDeep(value[k]);
+        });
+      return out;
+    }
+    return value;
+  }
+  function canonicalJSON(value) {
+    return JSON.stringify(sortKeysDeep(value));
+  }
+
+  /**
+   * The ONE rule for "which audit-log entry is this": the entry's whole content in
+   * canonical form. Called by app/db.js (sync merge) and app/restore-merge.js (restore).
+   */
+  function auditEntryId(entry) {
+    if (!entry || typeof entry !== 'object') return undefined;
+    return canonicalJSON(entry);
+  }
+
+  /**
+   * The ONE list of auth/session keys that never go into a backup file and are never written by a
+   * restore: the PER_USER_CH_ENGINE_EXCLUSIONS entries marked neverBackup. Called by siteBackup
+   * (app/site-functions.js) and RestoreMerge.isEngineKey (app/restore-merge.js).
+   */
+  function isNeverBackupKey(key) {
+    return PER_USER_CH_ENGINE_EXCLUSIONS.some(
+      (e) => e.neverBackup === true && (e.prefix ? typeof key === 'string' && key.indexOf(e.pattern) === 0 : e.pattern === key),
+    );
+  }
+
   return {
+    canonicalJSON,
+    isNeverBackupKey,
+    RV_PREFIX,
     SYNCED,
     LOCAL_ONLY,
     LOCAL_ONLY_OVERRIDES,
@@ -412,6 +479,7 @@ const SyncClassification = (() => {
     shouldReplicate,
     isPerUser,
     classify,
+    auditEntryId,
   };
 })();
 

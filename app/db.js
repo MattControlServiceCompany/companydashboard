@@ -8,7 +8,10 @@ const DB = (() => {
   const DB_VERSION = 1;
 
   const KV_SYNC_URL = '/.netlify/functions/kv-sync';
-  const REPLICA_STATE_KEY = 'ch_replica_state'; // 2a.3 — local-only, excluded from replication+backup
+  const REPLICA_STATE_KEY = 'ch_replica_state'; // older builds: whole-map stamps, split once into RV_PREFIX records
+  // One local-only record per synced key: ch_rv::<key> = { stamp: {version, hash, deleted?}, base? }.
+  // A tab writes only the record of the key it synced, so it can never overwrite another tab's stamps.
+  const RV_PREFIX = window.SyncClassification.RV_PREFIX; // the one spelling (sync-classification.js)
   const SYNC_QUEUE_KEY = 'ch_sync_queue'; // 2a.5 — local-only, excluded from replication+backup
   // Local-only: the server value of each collection key (UNION_KEY_CONFIG) at the
   // version in ch_replica_state. The base of every per-record three-way merge.
@@ -298,28 +301,12 @@ const DB = (() => {
     }
   }
 
-  // --- Canonical JSON + hash — MUST mirror kv-sync.js's sortKeysDeep/
-  // canonicalJSON/sha256Hex exactly (finding F8) so the client's hash-compare
-  // (integration #3) actually means something against the server's `hash`
-  // column. ------------------------------------------------------------------
-  function _sortKeysDeep(value) {
-    if (Array.isArray(value)) return value.map(_sortKeysDeep);
-    if (value && typeof value === 'object') {
-      const out = {};
-      Object.keys(value)
-        .sort()
-        .forEach((k) => {
-          // An own "__proto__" key from server JSON must not change this object's
-          // prototype. kv-sync.js drops it from the hash input the same way.
-          if (k === '__proto__') return;
-          out[k] = _sortKeysDeep(value[k]);
-        });
-      return out;
-    }
-    return value;
-  }
+  // --- Canonical JSON + hash ------------------------------------------------
+  // The ONE canonical form is SyncClassification.canonicalJSON (app/sync-
+  // classification.js, shared with restore-merge.js; kv-sync.js mirrors it so
+  // the client's hash equals the server's `hash` column). db.js only calls it.
   function _canonicalJSON(value) {
-    return JSON.stringify(_sortKeysDeep(value));
+    return window.SyncClassification.canonicalJSON(value);
   }
   async function _sha256Hex(str) {
     if (typeof crypto === 'undefined' || !crypto.subtle) throw new Error('SubtleCrypto unavailable');
@@ -338,9 +325,9 @@ const DB = (() => {
   function _rawSet(key, value) {
     // A collection merged by the engine is adopted IN PLACE: page globals hold
     // the cache reference (core.js init `projects = sget(...)`) and must see it.
-    if (UNION_KEY_CONFIG[key]) {
+    if (_collectionCfg(key)) {
       value = _adoptCollection(key, value);
-      _noteCollection(key, value);
+      if (UNION_KEY_CONFIG[key]) _noteCollection(key, value);
     }
     _cache[key] = value;
     if (_usingFallback) {
@@ -387,27 +374,53 @@ const DB = (() => {
       .catch(() => {});
   }
 
-  // --- 2a.3: version-map persistence ----------------------------------------
+  // --- 2a.3: version-stamp persistence, one record per key -------------------
   function _loadReplicaState() {
-    const stored = _cache[REPLICA_STATE_KEY];
-    _replicaVersions = stored && typeof stored === 'object' ? stored : {};
-    const base = _cache[SYNC_BASE_KEY];
-    _syncBase = base && typeof base === 'object' ? base : {};
+    _replicaVersions = {};
+    _syncBase = {};
+    Object.keys(_cache).forEach((k) => {
+      if (k.indexOf(RV_PREFIX) !== 0) return;
+      const rec = _cache[k];
+      if (!rec || typeof rec !== 'object') return;
+      const key = k.slice(RV_PREFIX.length);
+      if (rec.stamp) _replicaVersions[key] = rec.stamp;
+      if (rec.base !== undefined) _syncBase[key] = rec.base;
+    });
+    // Whole-map records written by an older build: split them once into
+    // per-key records (a per-key record that already exists is newer), then
+    // remove the maps. Sync state is user state; it is never just dropped.
+    const oldMap = _cache[REPLICA_STATE_KEY];
+    const oldBase = _cache[SYNC_BASE_KEY];
+    if (oldMap && typeof oldMap === 'object') {
+      Object.keys(oldMap).forEach((key) => {
+        if (_replicaVersions[key]) return;
+        _replicaVersions[key] = oldMap[key];
+        if (oldBase && typeof oldBase === 'object' && _own(oldBase, key)) _syncBase[key] = oldBase[key];
+        _persistStamp(key);
+      });
+    }
+    if (oldMap !== undefined) _rawDelete(REPLICA_STATE_KEY);
+    if (oldBase !== undefined) _rawDelete(SYNC_BASE_KEY);
     Object.keys(UNION_KEY_CONFIG).forEach((k) => _noteCollection(k, _cache[k]));
   }
-  function _persistReplicaState() {
-    _rawSet(REPLICA_STATE_KEY, _replicaVersions);
+  // The ONE writer of a key's sync record (its stamp and, for a collection
+  // key, its merge base). No stamp and no base: the record is removed.
+  function _persistStamp(key) {
+    const rec = {};
+    if (_replicaVersions[key]) rec.stamp = _replicaVersions[key];
+    if (_own(_syncBase, key)) rec.base = _syncBase[key];
+    if (!rec.stamp && rec.base === undefined) _rawDelete(RV_PREFIX + key);
+    else _rawSet(RV_PREFIX + key, rec);
   }
   // The ONE place a key is stamped as "in sync at this server version". For a
   // collection key the server value at that version is kept as the merge base.
   function _setSynced(key, stamp, serverValue) {
     _replicaVersions[key] = stamp;
-    if (UNION_KEY_CONFIG[key]) {
+    if (_collectionCfg(key)) {
       if (stamp.deleted || serverValue === undefined || serverValue === null) delete _syncBase[key];
       else _syncBase[key] = JSON.parse(JSON.stringify(serverValue));
-      _rawSet(SYNC_BASE_KEY, _syncBase);
     }
-    _persistReplicaState();
+    _persistStamp(key);
   }
 
   // --- 2a.5: sync-queue persistence + pill event ----------------------------
@@ -417,6 +430,37 @@ const DB = (() => {
     const lu = _cache[LAST_USER_KEY];
     _lastUser = lu && typeof lu.id === 'string' ? lu : null;
     _recordLastUser();
+    _retireOwnerlessEntries();
+  }
+  // Entries saved by a build before owner tags existed (v83 and older) name no
+  // user. They are NEVER sent: a guessed owner could write one user's data under
+  // another user's account. Each one goes to the conflict archive (value kept)
+  // and leaves the queue, so the count cannot stay stuck. Its version stamp is
+  // dropped so the next hydration compares the local copy with the server
+  // honestly: same content adopts the version; a collection key merges record
+  // by record (local additions are kept and sent); any other key takes the
+  // server value and archives the local copy with the usual toast.
+  function _retireOwnerlessEntries() {
+    const ownerless = _syncQueue.filter((e) => !e.owner);
+    if (!ownerless.length) return;
+    _syncQueue = _syncQueue.filter((e) => !!e.owner);
+    ownerless.forEach((e) => {
+      const archived = {
+        key: e.key,
+        reason: 'queue-entry-no-owner',
+        losingSide: 'local',
+        losingValue: e.deleted ? null : e.value,
+        losingDeleted: !!e.deleted,
+        losingVersion: typeof e.baseVersion === 'number' ? e.baseVersion : null,
+      };
+      // A per-user value of unknown author is archived with NO owner: shown to nobody, never sent.
+      // (Not under whoever happens to be signed in at load.) Shared keys keep the default owner.
+      if (_isPerUserKey(e.key)) archived.owner = { id: null, email: null, hintId: null };
+      _appendConflictArchive(archived);
+      delete _replicaVersions[e.key];
+      _persistStamp(e.key); // the merge base (collections) is kept for the next hydration
+    });
+    _persistSyncQueue();
   }
   // Owner tag for queued edits: the user id (and email) last signed in on this
   // browser. Persisted so an edit made while signed out keeps its owner across reload.
@@ -453,6 +497,17 @@ const DB = (() => {
     if (!me || !e.owner) return false;
     if (e.owner.id) return e.owner.id === me;
     return !!e.owner.hintId && e.owner.hintId === me;
+  }
+  // THE "is a write for this key still waiting" rule for every sync path
+  // (hydration skip, first-connect upload skip, value-changed). A queued entry
+  // counts only when it targets the same server row as this user's key: any
+  // owner for a shared key; for a per-user key only the signed-in user's own
+  // entry. Another user's per-user entry goes to that user's row and must not
+  // block this user's hydration or upload.
+  function _hasQueuedWrite(key) {
+    if (!_isPerUserKey(key)) return _syncQueue.some((e) => e.key === key);
+    const me = _myUserId();
+    return _syncQueue.some((e) => e.key === key && _entryBelongsTo(e, me));
   }
   // Signed-out entries become the verified user's own when that same user signs in.
   function _claimSignedOutEntries(me) {
@@ -549,7 +604,12 @@ const DB = (() => {
   // Written IMMEDIATELY (before the caller overwrites the local value): the
   // IDB put is issued first, and same-store transactions commit in order.
   function _appendConflictArchive(entry) {
-    const full = Object.assign({ archivedAt: new Date().toISOString() }, entry);
+    // Owner tag = the same shape and rule as a queue entry (_queueOwner /
+    // _entryBelongsTo): the verified user signed in now, or the signed-out hint.
+    const full = Object.assign(
+      { archivedAt: new Date().toISOString(), owner: Object.assign({}, _queueOwner()) },
+      entry,
+    );
     try {
       // Written through this module's own set(), NOT core.js sset(): sset sends
       // the write to localStorage while the DB is not ready yet (hydration runs
@@ -578,12 +638,33 @@ const DB = (() => {
       return false;
     }
   }
-  // Removes the FIRST `count` entries (the ones the user exported). Call only
-  // after the export file was saved and the user confirmed.
+  // THE visibility rule for Conflict history (getConflictArchive, the one
+  // reader every viewer and export calls): an entry for a shared key is shown
+  // to everyone on this browser; an entry for a per-user key only to its owner
+  // (the queue-entry ownership rule, _entryBelongsTo). A per-user entry of
+  // another user, or one with no owner tag (older build), stays in storage and
+  // is never shown and never deleted by this user.
+  function _archiveEntryVisible(e, me) {
+    return !!e && (!_isPerUserKey(e.key) || _entryBelongsTo(e, me));
+  }
+  // Removes the FIRST `count` entries this user can see (the ones the user
+  // exported). Call only after the export file was saved and the user
+  // confirmed. Entries hidden from this user are kept.
   function clearConflictArchive(count) {
     const v = _cache['en_conflict_archive'];
     if (!Array.isArray(v) || !(count > 0)) return;
-    set('en_conflict_archive', v.slice(count));
+    const me = _myUserId();
+    let left = count;
+    set(
+      'en_conflict_archive',
+      v.filter((e) => {
+        if (left > 0 && _archiveEntryVisible(e, me)) {
+          left--;
+          return false;
+        }
+        return true;
+      }),
+    );
   }
   // showToast lives in core.js, loaded after db.js, so wait for it.
   function _showLater(msg, kind) {
@@ -629,12 +710,22 @@ const DB = (() => {
   function getAllForExport() {
     const out = {};
     Object.keys(_cache).forEach((k) => {
+      if (k.indexOf(RV_PREFIX) === 0) return; // this browser's sync stamps: never in a backup
+      if (k === SYNC_QUEUE_KEY) return; // unsent edits (may hold another user's values): restore skips it, never in a backup
+      if (k === 'en_conflict_archive') {
+        // only the entries this user may see (one rule: _archiveEntryVisible)
+        out[k] = getConflictArchive();
+        return;
+      }
       out[k] = stripDerivedCaches(k, _cache[k]);
     });
     return out;
   }
 
   async function _sendKvPut(key, payload) {
+    // The edit's author is not the signed-in user now (the identity changed while
+    // the write waited): never send it with the new user's token or key.
+    if (payload.owner && payload.owner.id && payload.owner.id !== _myUserId()) return { status: 'stale-identity' };
     const wireKey = _wireKey(key);
     if (wireKey === null) {
       // Per-user key, nobody signed in — behave local-only: no fetch, no
@@ -683,21 +774,29 @@ const DB = (() => {
 
     if (epoch !== _identityEpoch) return { status: 'stale-identity' }; // user changed mid-request: stamp nothing
     if (res.status === 200) {
+      // The merge base and the fallback hash come from the body the server
+      // RECEIVED (bodyStr), never from the live object: the page may have
+      // changed it while the request was in flight, and those changes are not
+      // on the server yet. Parsed only when needed (collection base, no hash).
+      const sent = !isTombstone && (_collectionCfg(key) || !json.hash) ? JSON.parse(bodyStr).value : undefined;
       let okHash = json.hash || null;
       if (!okHash && !isTombstone) {
         try {
-          okHash = await _sha256Hex(_canonicalJSON(stripDerivedCaches(key, payload.value)));
+          okHash = await _sha256Hex(_canonicalJSON(sent));
         } catch (e) {
           okHash = null;
         }
         if (epoch !== _identityEpoch) return { status: 'stale-identity' };
       }
-      _setSynced(key, { version: json.version, hash: okHash }, isTombstone ? undefined : bodyObj.value);
+      const stamp = { version: json.version, hash: okHash };
+      if (isTombstone) stamp.deleted = true; // a later set() of the same value must be sent again
+      _setSynced(key, stamp, sent);
       return { status: 'ok', body: json };
     }
     if (res.status === 409) {
       return { status: 'conflict', body: json };
     }
+    // A 401/403 is reported by _putWithAuth, after the one refresh-and-retry.
     return { status: 'error', body: json, httpStatus: res.status };
   }
 
@@ -746,6 +845,55 @@ const DB = (() => {
       getLabel: (it) => it && (it.company || it.name),
     }),
   };
+
+  // --- Keys merged by id WITHOUT deletion records (M2, 2026-10-06) ------------
+  // Two users editing the same key at once must not lose edits. These keys use
+  // the same three-way merge (_mergeCollection) as UNION_KEY_CONFIG, but a
+  // removal is decided by the merge base alone (no shared deletion record), and
+  // every item must carry an id (requireIds): a list that cannot be matched by
+  // id is not merged and goes to the whole-key conflict modal, so nothing is
+  // dropped. `children` names nested id lists merged the same way.
+  //   en_utility_audit_log  append-only: an entry never changes after it is written
+  //   en_pdf_bills          list of held bill records, id 'pb...'
+  //   en_utility_<id>       { buildings:[{id, meters:[{id, bills:[{id}]}]}] }
+  const _byIdProp = (it) => it && it.id;
+  const AUDIT_ENTRY_ID = (it) => window.SyncClassification.auditEntryId(it);
+  const MERGE_ONLY_CONFIG = {
+    audit: {
+      noDeletionRecords: true,
+      requireIds: true,
+      idOccurrence: true, // two identical entries stay two entries (id + '#n')
+      getItems: (v) => (Array.isArray(v) ? v : null),
+      // Newest first, like logUtilityAudit writes it.
+      setItems: (_v, items) =>
+        items.slice().sort((a, b) => (a && b && a.ts < b.ts ? 1 : a && b && a.ts > b.ts ? -1 : 0)),
+      getId: AUDIT_ENTRY_ID,
+      getLabel: (it) => it && it.action,
+    },
+    pdfBills: Object.assign({ noDeletionRecords: true, requireIds: true }, _bareList, {
+      getLabel: (it) => it && (it.id || it.fileName),
+    }),
+    utility: {
+      noDeletionRecords: true,
+      requireIds: true,
+      itemsProp: 'buildings',
+      getItems: (v) => (v && Array.isArray(v.buildings) ? v.buildings : null),
+      setItems: (v, items) => _safeAssign({}, v, { buildings: items }),
+      getId: _byIdProp,
+      getLabel: (it) => it && it.name,
+      children: {
+        meters: { getId: _byIdProp, children: { bills: { getId: _byIdProp } } },
+      },
+    },
+  };
+  // The ONE lookup for "is this key merged by id, and how".
+  function _collectionCfg(key) {
+    if (UNION_KEY_CONFIG[key]) return UNION_KEY_CONFIG[key];
+    if (key === 'en_utility_audit_log') return MERGE_ONLY_CONFIG.audit;
+    if (key === 'en_pdf_bills') return MERGE_ONLY_CONFIG.pdfBills;
+    if (_isUtilityKey(key)) return MERGE_ONLY_CONFIG.utility;
+    return null;
+  }
 
   // --- Deletion records (F1, 2026-10-05) -------------------------------------
   // A union merge cannot tell "added locally" from "deleted on the server".
@@ -803,16 +951,36 @@ const DB = (() => {
     });
     return out;
   }
-  function _itemIds(key, value) {
-    const cfg = UNION_KEY_CONFIG[key];
-    const items = cfg ? cfg.getItems(value) : null;
+  // id -> item. `occurrence`: a repeated id gets '#n' so identical items all stay.
+  function _idMapOf(items, getId, occurrence) {
     const m = new Map();
     if (!Array.isArray(items)) return m;
     items.forEach((it) => {
-      const id = cfg.getId(it);
-      if (id !== undefined && id !== null) m.set(String(id), it);
+      const id = getId(it);
+      if (id === undefined || id === null) return;
+      let k = String(id);
+      if (occurrence) for (let n = 1; m.has(k); n++) k = String(id) + '#' + n;
+      m.set(k, it);
     });
     return m;
+  }
+  function _itemIds(key, value) {
+    const cfg = _collectionCfg(key);
+    return cfg ? _idMapOf(cfg.getItems(value), cfg.getId, cfg.idOccurrence) : new Map();
+  }
+  // True when every item has an id and (unless repeats are allowed) no id repeats.
+  function _idsUsable(items, getId, occurrence) {
+    if (!Array.isArray(items)) return true;
+    const seen = new Set();
+    for (const it of items) {
+      const id = getId(it);
+      if (id === undefined || id === null || id === '') return false;
+      if (!occurrence) {
+        if (seen.has(String(id))) return false;
+        seen.add(String(id));
+      }
+    }
+    return true;
   }
   // The ONE function for "this collection changed from oldValue to newValue":
   // set() and restorePush call it. Records removed ids (stamp in the shared
@@ -835,7 +1003,7 @@ const DB = (() => {
     _lastItems[key] = _itemIds(key, value);
   }
   function _adoptCollection(key, next) {
-    const cfg = UNION_KEY_CONFIG[key];
+    const cfg = _collectionCfg(key);
     const cur = _cache[key];
     if (!cfg || cur === next || !cur || typeof cur !== 'object' || !next || typeof next !== 'object') return next;
     const curItems = cfg.getItems(cur);
@@ -913,9 +1081,9 @@ const DB = (() => {
   }
   // Drops every item with an active deletion entry. Returns { value, removed }.
   function _dropTombstoned(key, value) {
-    const cfg = UNION_KEY_CONFIG[key];
+    const cfg = _collectionCfg(key);
     const tomb = _own(_cache[TOMBSTONE_KEY], key) ? _cache[TOMBSTONE_KEY][key] : null;
-    if (!cfg || !tomb || value === undefined || value === null) return { value, removed: [] };
+    if (!cfg || cfg.noDeletionRecords || !tomb || value === undefined || value === null) return { value, removed: [] };
     const items = cfg.getItems(value);
     if (!Array.isArray(items)) return { value, removed: [] };
     const removed = [];
@@ -1032,7 +1200,7 @@ const DB = (() => {
   function _isPlainObject(v) {
     return !!v && typeof v === 'object' && !Array.isArray(v);
   }
-  function _mergeFields(b, l, s) {
+  function _mergeFields(b, l, s, children) {
     if (!_isPlainObject(b) || !_isPlainObject(l) || !_isPlainObject(s)) return null;
     const out = {};
     const keys = new Set(Object.keys(b).concat(Object.keys(l), Object.keys(s)));
@@ -1045,31 +1213,34 @@ const DB = (() => {
       if (cl === cs) v = s[f];
       else if (cl === cb) v = s[f];
       else if (cs === cb) v = l[f];
-      else return null; // same field changed on both sides
+      else if (children && _own(children, f)) {
+        // A nested id list changed on both sides: merge it by id as well.
+        v = _mergeNestedList(b[f], l[f], s[f], children[f]);
+        if (v === null) return null;
+      } else return null; // same field changed on both sides
       if (v !== undefined) out[f] = v;
     }
     return out;
   }
-  function _mergeCollection(key, baseValue, localValue, serverValue) {
-    const cfg = UNION_KEY_CONFIG[key];
-    if (!cfg) return null;
-    const isList = (v) => v === undefined || v === null || Array.isArray(cfg.getItems(v));
-    if (!isList(localValue) || !isList(serverValue)) return null;
-    const ls = _dropTombstoned(key, localValue);
-    const ss = _dropTombstoned(key, serverValue);
-    if (ls.removed.length) {
-      _appendConflictArchive({
-        key,
-        reason: 'deleted-elsewhere',
-        losingSide: 'local',
-        losingValue: ls.removed,
-        winningSide: 'server',
-      });
-    }
-    const B = _itemIds(key, _dropTombstoned(key, baseValue).value);
-    const L = _itemIds(key, ls.value);
-    const S = _itemIds(key, ss.value);
+  function _mergeNestedList(b, l, s, spec) {
+    const ok = (v) => v === undefined || v === null || Array.isArray(v);
+    if (!ok(b) || !ok(l) || !ok(s)) return null;
+    if (!_idsUsable(l, spec.getId) || !_idsUsable(s, spec.getId)) return null; // cannot match by id: no merge
     const conflicts = [];
+    const out = _mergeIdMaps(
+      _idMapOf(b, spec.getId),
+      _idMapOf(l, spec.getId),
+      _idMapOf(s, spec.getId),
+      spec.children,
+      conflicts,
+    );
+    return conflicts.length ? null : out;
+  }
+  // Per-id three-way merge of three id maps (see the table above _diffFields).
+  // Order: the server's order, then ids only this side has. A record changed on
+  // both sides is merged field by field; an unmergeable one is pushed to
+  // `conflicts` and takes the server version here.
+  function _mergeIdMaps(B, L, S, children, conflicts) {
     const out = [];
     const order = Array.from(S.keys()).concat(Array.from(L.keys()).filter((id) => !S.has(id)));
     for (const id of order) {
@@ -1086,7 +1257,7 @@ const DB = (() => {
       else if (l === undefined) v = s;
       else if (s === undefined) v = l;
       else {
-        v = _mergeFields(b, l, s);
+        v = _mergeFields(b, l, s, children);
         if (v === null) {
           conflicts.push({
             id,
@@ -1100,6 +1271,36 @@ const DB = (() => {
       }
       if (v !== undefined) out.push(v);
     }
+    return out;
+  }
+  function _mergeCollection(key, baseValue, localValue, serverValue) {
+    const cfg = _collectionCfg(key);
+    if (!cfg) return null;
+    // Derived caches on the live objects are not edits: compare without them.
+    localValue = stripDerivedCaches(key, localValue);
+    const isList = (v) => v === undefined || v === null || Array.isArray(cfg.getItems(v));
+    if (!isList(localValue) || !isList(serverValue)) return null;
+    const ls = _dropTombstoned(key, localValue);
+    const ss = _dropTombstoned(key, serverValue);
+    if (cfg.requireIds) {
+      // An item without an id (or a repeated id) cannot be matched: no merge, nothing dropped.
+      const usable = (v) => v === undefined || v === null || _idsUsable(cfg.getItems(v), cfg.getId, cfg.idOccurrence);
+      if (!usable(ls.value) || !usable(ss.value)) return null;
+    }
+    if (ls.removed.length) {
+      _appendConflictArchive({
+        key,
+        reason: 'deleted-elsewhere',
+        losingSide: 'local',
+        losingValue: ls.removed,
+        winningSide: 'server',
+      });
+    }
+    const B = _itemIds(key, _dropTombstoned(key, baseValue).value);
+    const L = _itemIds(key, ls.value);
+    const S = _itemIds(key, ss.value);
+    const conflicts = [];
+    const out = _mergeIdMaps(B, L, S, cfg.children, conflicts);
     const shape = serverValue !== undefined && serverValue !== null ? ss.value : ls.value;
     return {
       value: cfg.setItems(shape, out),
@@ -1111,7 +1312,7 @@ const DB = (() => {
   // local record back in place of the server one; the losing record of every
   // conflict is archived first.
   function _applyRecordChoices(key, merge, choices) {
-    const cfg = UNION_KEY_CONFIG[key];
+    const cfg = _collectionCfg(key);
     const mine = new Map();
     merge.conflicts.forEach((c) => {
       const pick = choices && _own(choices, String(c.id)) ? choices[String(c.id)] : 'theirs';
@@ -1169,10 +1370,32 @@ const DB = (() => {
 
     // Collection keys: per-record three-way merge. A modal only when the same
     // record was changed on both sides, and then the user chooses per record.
-    if (UNION_KEY_CONFIG[key] && !payload.deleted && !current.deleted) {
+    if (_collectionCfg(key) && !payload.deleted && !current.deleted) {
       const handled = await _resolveCollectionConflict(key, payload, current, epoch, depth);
       if (handled) return;
       if (epoch !== _identityEpoch) return;
+    }
+
+    // Customer/Multi-Project (2026-09-24, BLOCKER 3 fix): same-content short-circuit.
+    // Deterministic customer ids mean two browsers migrating the same project can write
+    // identical content to the same key (en_customers, en_utility_<customerId>) at nearly
+    // the same time. If the local payload and the server's current value are the same in
+    // canonical form, nothing is lost and there is nothing to reconcile — adopt the
+    // server's version, no archive entry, no modal. Canonical, not JSON.stringify:
+    // Postgres jsonb returns keys in its own order, so equal values differ byte for byte
+    // and the "someone else changed this" dialog opened for identical data.
+    if (!payload.deleted && !current.deleted && current.value !== undefined) {
+      try {
+        if (
+          _canonicalJSON(stripDerivedCaches(key, payload.value)) ===
+          _canonicalJSON(stripDerivedCaches(key, current.value))
+        ) {
+          _setSynced(key, { version: current.version, hash: current.hash || null }, current.value);
+          return;
+        }
+      } catch (e) {
+        /* fall through to the normal modal path if either side isn't serializable */
+      }
     }
 
     // Data-safety invariant: archive the losing local write BEFORE adopting
@@ -1188,27 +1411,6 @@ const DB = (() => {
       winningUpdatedBy: current.updatedBy,
       winningUpdatedAt: current.updatedAt,
     });
-
-    // Customer/Multi-Project (2026-09-24, BLOCKER 3 fix): byte-identical short-circuit.
-    // Deterministic customer ids mean two browsers migrating the same project can write
-    // identical content to the same key (en_customers, en_utility_<customerId>) at nearly
-    // the same time. If the local payload and the server's current value are byte-for-byte
-    // identical, there is nothing to reconcile — silently adopt the server's version and
-    // skip the modal instead of interrupting the user over a non-conflict. General
-    // robustness improvement (helps any accidental double-write, not just this migration).
-    if (!payload.deleted && !current.deleted && current.value !== undefined) {
-      try {
-        if (
-          JSON.stringify(stripDerivedCaches(key, payload.value)) ===
-          JSON.stringify(stripDerivedCaches(key, current.value))
-        ) {
-          _setSynced(key, { version: current.version, hash: current.hash || null }, current.value);
-          return;
-        }
-      } catch (e) {
-        /* fall through to the normal modal path if either side isn't serializable */
-      }
-    }
 
     await _presentConflictModal(key, payload, current, epoch);
   }
@@ -1235,7 +1437,7 @@ const DB = (() => {
   // the conflict (merged, queued, or dropped after an identity change), false
   // when the value is not a list (the caller falls back to the whole-key modal).
   async function _resolveCollectionConflict(key, payload, current, epoch, depth) {
-    if (!(await _refreshTombstones())) {
+    if (!_collectionCfg(key).noDeletionRecords && !(await _refreshTombstones())) {
       // FAIL CLOSED: without the latest deletion records a merge could bring a
       // deleted item back. The retry queue sends this write again later.
       if (epoch === _identityEpoch) _enqueueWrite(key, payload);
@@ -1257,7 +1459,7 @@ const DB = (() => {
         _enqueueWrite(key, payload);
         return true;
       }
-      const cfg = UNION_KEY_CONFIG[key];
+      const cfg = _collectionCfg(key);
       const localBase = _replicaVersions[key];
       const descriptor = {
         key,
@@ -1421,10 +1623,47 @@ const DB = (() => {
   }
 
   // --- Live write replication tail (set()/remove() call this) --------------
+  // ONE PUT in flight per key. A write that arrives while one is in flight
+  // waits (the newest value wins, older waiting values are dropped) and goes
+  // out after the answer, at the version the answer stamped. Two PUTs for one
+  // key never overlap, so the second can never 409 against the first.
+  const _writeBusy = {};
+  const _writeNext = {};
   async function _replicateWrite(key, payload) {
-    const mode = _backendMode();
     if (!_shouldReplicate(key)) return;
     payload = Object.assign({}, payload, { owner: _queueOwner() }); // who made this edit, fixed now
+    if (_writeBusy[key]) {
+      _writeNext[key] = payload;
+      return;
+    }
+    _writeBusy[key] = true;
+    try {
+      let p = payload;
+      while (p) {
+        delete _writeNext[key];
+        await _writeOne(key, p);
+        p = _writeNext[key];
+      }
+    } finally {
+      delete _writeBusy[key];
+      delete _writeNext[key];
+    }
+  }
+  // The ONE "did this value change since the last sync" rule: the canonical
+  // hash of the value differs from the stamp's hash. No stamp, a deleted
+  // stamp, or a queued write for the key all count as changed.
+  async function _valueChanged(key, value) {
+    const entry = _replicaVersions[key];
+    if (!entry || !entry.hash || entry.deleted) return true;
+    if (_hasQueuedWrite(key)) return true;
+    try {
+      return (await _sha256Hex(_canonicalJSON(stripDerivedCaches(key, value)))) !== entry.hash;
+    } catch (e) {
+      return true;
+    }
+  }
+  async function _writeOne(key, payload) {
+    const mode = _backendMode();
     if (mode === 'off') {
       // B1b (2026-10-06): signed out / session lost on the sync host. Keep the
       // edit in the durable queue; it uploads (CAS, never overwriting a newer
@@ -1439,16 +1678,32 @@ const DB = (() => {
     // (via _wireKey returning null) as defense-in-depth for the queue-drain/
     // hydration-drift-repush/conflict-retry paths that call it directly.
     if (_isPerUserKey(key) && !_myUserId()) return;
+    // A value the server already holds is not sent (opening a pane, a render
+    // that re-saves, a migration that changes nothing).
+    if (!payload.deleted && !(await _valueChanged(key, payload.value))) return;
     let result;
     try {
-      result = await _sendKvPut(key, payload);
+      result = await _putWithAuth(key, payload);
     } catch (e) {
       console.warn('[DB] Replication tail threw unexpectedly (treated as network error):', key, e);
       _enqueueWrite(key, payload);
       return;
     }
-    if (result.status === 'ok') return;
-    if (result.status === 'stale-identity' && _isPerUserKey(key)) return; // previous user's pref: never queue under the new user
+    if (result.status === 'ok') {
+      // This newer value is on the server: an older queued value for the same key and owner
+      // must never be replayed over it by the drain.
+      const ok = _entryOwnerKey(payload.owner);
+      const before = _syncQueue.length;
+      _syncQueue = _syncQueue.filter((e) => !(e.key === key && _entryOwnerKey(e.owner) === ok));
+      if (_syncQueue.length !== before) _persistSyncQueue();
+      return;
+    }
+    if (result.status === 'stale-identity' && _isPerUserKey(key)) {
+      // The author is no longer signed in. Keep the edit, but ONLY under its author's id
+      // (payload.owner, never the current user): it drains when that author signs in again.
+      if (payload.owner && payload.owner.id) _enqueueWrite(key, payload);
+      return;
+    }
     if (result.status === 'conflict') {
       await _handleConflict(key, payload, result.body, mode);
       return;
@@ -1469,16 +1724,19 @@ const DB = (() => {
       if (epoch !== _identityEpoch || _myUserId() !== me) return;
       // Entry may have already been resolved/superseded by a concurrent op.
       if (!_syncQueue.some((e) => e.id === entry.id)) continue;
-      const payload = entry.deleted ? { deleted: true, owner: entry.owner } : { value: entry.value, owner: entry.owner };
+      const payload = entry.deleted
+        ? { deleted: true, owner: entry.owner }
+        : { value: entry.value, owner: entry.owner };
       // _sendKvPut always reads baseVersion from the live _replicaVersions
       // map (not entry.baseVersion) — a real conflict still 409s honestly.
       let result;
       try {
-        result = await _sendKvPut(entry.key, payload);
+        result = await _putWithAuth(entry.key, payload);
       } catch (e) {
         result = { status: 'network-error' };
       }
       if (epoch !== _identityEpoch) return;
+      if (_backendMode() === 'off') return; // the server refused this sign-in: session ended, stop sending
       if (result.status === 'ok') {
         _syncQueue = _syncQueue.filter((e) => e.id !== entry.id);
         _persistSyncQueue();
@@ -1511,6 +1769,56 @@ const DB = (() => {
   }
 
   // --- 2a.2: hydration (the warmCache() capstone) ---------------------------
+  // M6: an answer of 401/403 means the server refused this sign-in. That is not
+  // "offline": the ONE function below tells the page which of the two it is.
+  function _httpError(message, status) {
+    const e = new Error(message);
+    e.httpStatus = status;
+    return e;
+  }
+  function _isAuthRefusal(status) {
+    return status === 401 || status === 403;
+  }
+  // The ONE rule for a 401/403 answer lives in CH_AUTH.withAuthRetry (ch-auth.js):
+  // refresh once on 401, else end the session so every timer goes quiet.
+  function _withAuthRetry(run) {
+    const a = typeof window !== 'undefined' ? window.CH_AUTH : null;
+    return a && typeof a.withAuthRetry === 'function' ? a.withAuthRetry(run) : run();
+  }
+  // The ONE place a refused write is reported, and only after withAuthRetry
+  // had its one refresh-and-retry. A 401 that the refresh fixes shows nothing.
+  // Refused for good (session ended): the "server refused this sign-in" bar.
+  // Still 401 but the session was kept (the refresh could not reach Supabase):
+  // the offline banner; the write stays queued and is retried later.
+  async function _putWithAuth(key, payload) {
+    const me = _myUserId();
+    const r = await _withAuthRetry(() => _sendKvPut(key, payload));
+    // The refresh switched this tab to another signed-in account: the
+    // identity-change path already re-rendered the bars for the new user;
+    // nothing to report. (A sign-out is still reported below.)
+    const now = _myUserId();
+    if (now && now !== me) return r;
+    if (r && r.status === 'error' && _isAuthRefusal(r.httpStatus)) _reportFinalRefusal(r.httpStatus, 'write-refused');
+    return r;
+  }
+  // The ONE rule for a 401/403 that withAuthRetry could not fix (write, drain,
+  // poll). Session ended -> "server refused this sign-in" bar. Session kept
+  // (the refresh could not reach Supabase) -> offline banner, retry later.
+  function _reportFinalRefusal(status, reason) {
+    const a = typeof window !== 'undefined' ? window.CH_AUTH : null;
+    const sessionKept = !!a && typeof a.withAuthRetry === 'function' && _backendMode() === 'on';
+    if (sessionKept) _reportServerFailure(new Error('token refresh unreachable'), reason + '-refresh-unreachable');
+    else _reportServerFailure(_httpError(reason + ': ' + status, status));
+  }
+  function _reportServerFailure(e, reason) {
+    if (typeof window === 'undefined') return;
+    const status = e && e.httpStatus;
+    if (_isAuthRefusal(status)) {
+      window.dispatchEvent(new CustomEvent('dbAuthRejected', { detail: { status } }));
+    } else {
+      window.dispatchEvent(new CustomEvent('dbOfflineBanner', { detail: { reason } }));
+    }
+  }
   function _fetchManifestWithTimeout(timeoutMs) {
     return new Promise((resolve, reject) => {
       const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
@@ -1525,7 +1833,7 @@ const DB = (() => {
       })
         .then((res) => {
           clearTimeout(timer);
-          if (!res.ok) return reject(new Error('manifest fetch failed: ' + res.status));
+          if (!res.ok) return reject(_httpError('manifest fetch failed: ' + res.status, res.status));
           res.json().then(resolve).catch(reject);
         })
         .catch((e) => {
@@ -1551,7 +1859,7 @@ const DB = (() => {
     } finally {
       clearTimeout(timer);
     }
-    if (!res.ok) throw new Error('batch GET failed: ' + res.status);
+    if (!res.ok) throw _httpError('batch GET failed: ' + res.status, res.status);
     return res.json();
   }
 
@@ -1616,6 +1924,14 @@ const DB = (() => {
   // Local is never overwritten unless it is unchanged since the last sync or
   // is archived first. A pure-additive list key (UNION_KEY_CONFIG) is merged.
   async function _reconcileIncoming(localKey, row, mHash) {
+    // A live server row with no value is unreadable, never a value: keep the local copy and
+    // its stamp, and show the "could not load" notice for this key.
+    if (!row.deleted && (row.value === undefined || row.value === null)) {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('dbHydrateFailed', { detail: { keys: [localKey] } }));
+      }
+      return;
+    }
     const epoch = _identityEpoch;
     const origLocal = _cache[localKey];
     const base = _replicaVersions[localKey];
@@ -1636,7 +1952,7 @@ const DB = (() => {
     // Collection keys: the ONE per-record merge (_mergeCollection). A record
     // changed on both sides takes the server version here (no modal at load);
     // the local record is archived first and counted for the toast.
-    if (UNION_KEY_CONFIG[localKey] && !row.deleted) {
+    if (_collectionCfg(localKey) && !row.deleted) {
       collectionMerge = _mergeCollection(localKey, _syncBase[localKey], origLocal, row.value);
       if (collectionMerge !== null) {
         collectionMerge.conflicts.forEach((c) => {
@@ -1719,7 +2035,7 @@ const DB = (() => {
   // merge base. When the local list still matches the hash of that version,
   // the local list IS the server value at that version: use it as the base.
   async function _seedMissingBases() {
-    for (const key of Object.keys(UNION_KEY_CONFIG)) {
+    for (const key of Object.keys(_cache).filter((k) => _collectionCfg(k))) {
       const entry = _replicaVersions[key];
       if (!entry || typeof entry.version !== 'number' || !entry.hash) continue;
       if (_own(_syncBase, key) || _cache[key] === undefined) continue;
@@ -1733,20 +2049,33 @@ const DB = (() => {
     }
   }
 
+  // M7: wait for the first sign-in refresh before the first request, so an
+  // expired stored token is never sent. Capped: a slow refresh must not block
+  // loading from the local copy.
+  const AUTH_READY_TIMEOUT_MS = 8000;
+  function _authReady() {
+    const auth = typeof window !== 'undefined' ? window.CH_AUTH : null;
+    if (!auth || typeof auth.ready !== 'function') return Promise.resolve();
+    let timer;
+    const cap = new Promise((resolve) => {
+      timer = setTimeout(resolve, AUTH_READY_TIMEOUT_MS);
+    });
+    return Promise.race([Promise.resolve(auth.ready()).catch(() => null), cap]).then(() => clearTimeout(timer));
+  }
   async function _hydrateInner() {
     const mode = _backendMode();
     if (mode !== 'on') return; // off: no hydration
     const epoch = _identityEpoch;
     const stale = () => epoch !== _identityEpoch; // identity changed: discard this run
+    await _authReady();
+    if (stale() || _backendMode() !== 'on') return;
 
     let manifest;
     try {
       manifest = await _fetchManifestWithTimeout(MANIFEST_TIMEOUT_MS);
     } catch (e) {
       console.warn('[DB] Hydration: manifest fetch failed/timed out, proceeding on local mirror:', e);
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('dbOfflineBanner', { detail: { reason: 'hydration-manifest-failed' } }));
-      }
+      _reportServerFailure(e, 'hydration-manifest-failed');
       return;
     }
     if (stale()) return;
@@ -1762,7 +2091,7 @@ const DB = (() => {
     // upload) and the retry re-runs hydration when the fetch succeeds.
     const tombRow = manifest.find((m) => m.key === TOMBSTONE_KEY && !m.deleted);
     let tombOk = true;
-    if (!_syncQueue.some((e) => e.key === TOMBSTONE_KEY)) {
+    if (!_hasQueuedWrite(TOMBSTONE_KEY)) {
       const lv = _replicaVersions[TOMBSTONE_KEY];
       const serverNewer = !!tombRow && (!lv || typeof lv.version !== 'number' || lv.version < tombRow.version);
       // An earlier failure is confirmed cleared before any merge.
@@ -1784,7 +2113,7 @@ const DB = (() => {
       const localKey = resolved.localKey;
 
       // A pending local write for this LOCAL key must not be clobbered by hydration.
-      if (_syncQueue.some((e) => e.key === localKey)) continue;
+      if (_hasQueuedWrite(localKey)) continue;
       if (!tombOk && UNION_KEY_CONFIG[localKey]) continue; // deletion records unknown: no merge
 
       const local = _replicaVersions[localKey];
@@ -1836,7 +2165,7 @@ const DB = (() => {
         if (stale()) return;
         if (!row || !routineFetchLocalKey.has(row.key)) continue; // only rows this run asked for
         const localKey = routineFetchLocalKey.get(row.key);
-        if (_syncQueue.some((e) => e.key === localKey)) continue; // race guard, re-check
+        if (_hasQueuedWrite(localKey)) continue; // race guard, re-check
         const manifestEntry = manifest.find((m) => m.key === row.key);
         await _reconcileIncoming(localKey, row, manifestEntry ? manifestEntry.hash : null);
       }
@@ -1867,7 +2196,7 @@ const DB = (() => {
         // No version map entry and a local value exists: server wins (or a pure
         // union merge); the local value is archived first. Never a wholesale push.
         if (!rows || !rows[0]) continue;
-        if (_syncQueue.some((e) => e.key === localKey)) continue; // race guard
+        if (_hasQueuedWrite(localKey)) continue; // race guard
         const before = _cache[localKey];
         await _reconcileIncoming(localKey, rows[0], m.hash);
         if (_cache[localKey] !== before) updatedFromServer++;
@@ -1889,14 +2218,13 @@ const DB = (() => {
       const value = _cache[localKey];
       if (value === undefined || value === null) continue;
       if (_replicaVersions[localKey]) continue;
-      if (_syncQueue.some((e) => e.key === localKey)) continue;
+      if (_hasQueuedWrite(localKey)) continue;
       if (!tombOk && UNION_KEY_CONFIG[localKey]) continue; // deletion records unknown: no upload
       const wire = _wireKey(localKey);
       if (wire === null || onServer.has(wire)) continue;
       uploadKeys.push(localKey);
     }
 
-    _persistReplicaState();
     if (typeof window !== 'undefined') {
       window.dispatchEvent(
         new CustomEvent('dbHydrated', {
@@ -1956,7 +2284,7 @@ const DB = (() => {
           value === undefined ||
           value === null ||
           _replicaVersions[localKey] ||
-          _syncQueue.some((e) => e.key === localKey);
+          _hasQueuedWrite(localKey);
         if (!skip) {
           let r;
           try {
@@ -1980,7 +2308,6 @@ const DB = (() => {
     await Promise.all(workers);
     if (epoch !== _identityEpoch) return; // a newer identity owns the progress now
     _uploadProgress.running = false;
-    _persistReplicaState();
     _emitUploadProgress();
     if (typeof window !== 'undefined') {
       window.dispatchEvent(
@@ -2001,36 +2328,53 @@ const DB = (() => {
     }
   }
 
-  // --- 2a.6: manifest polling (60s + focus) — diff-only, no auto-apply. -----
-  // Per §2.4 of the migration plan: do NOT silently swap _cache under a live
-  // page in v1. Dispatches `remoteChange` (mirrors the existing `dataUpdated`
-  // pattern at set()) so app/sync-ui.js can render a passive "refresh" banner.
+  // --- 2a.6 + M1: manifest polling (60s + focus) ------------------------------
+  // A newer server version of a key this browser has NO pending edit for is
+  // applied by the ONE hydration function (_hydrate: merge, never overwrite an
+  // edit, archive what loses) and announced with `dbRemoteApplied`, so
+  // app/sync-ui.js re-renders. A key that could not be applied (a pending local
+  // edit waits in the queue, or the fetch failed) is announced with
+  // `remoteChange`, which shows the passive "refresh" bar.
   async function _pollManifestForChanges() {
     if (_backendMode() !== 'on') return;
     let manifest;
     try {
-      manifest = await _fetchManifestWithTimeout(MANIFEST_TIMEOUT_MS);
+      manifest = await _withAuthRetry(() => _fetchManifestWithTimeout(MANIFEST_TIMEOUT_MS));
     } catch (e) {
+      if (e && _isAuthRefusal(e.httpStatus)) _reportFinalRefusal(e.httpStatus, 'poll-failed'); // not transient: say so
       return; // transient — next poll cycle will retry
     }
-    const changedKeys = [];
+    const changed = []; // { localKey, version } — local (unprefixed) key, as sync-ui.js displays it
     for (const m of manifest) {
       const resolved = _resolveManifestKey(m.key); // skips foreign per-user rows entirely
       if (!resolved) continue;
       const localKey = resolved.localKey;
       const local = _replicaVersions[localKey];
       if (local && typeof local.version === 'number' && m.version > local.version) {
-        changedKeys.push(localKey); // local (unprefixed) key — matches what sync-ui.js displays
+        changed.push({ localKey, version: m.version });
       }
     }
     if (typeof window !== 'undefined') {
       // A successful manifest round-trip proves we're online — clears any
       // stale "offline" banner even if nothing actually changed.
       window.dispatchEvent(new CustomEvent('dbHydrated', { detail: { applied: 0, conflicts: 0, pollOnly: true } }));
-      if (changedKeys.length) {
-        window.dispatchEvent(new CustomEvent('remoteChange', { detail: { keys: changedKeys } }));
-      }
     }
+    if (!changed.length) return;
+    const epoch = _identityEpoch;
+    try {
+      await _hydrate();
+    } catch (e) {
+      console.warn('[DB] Poll: applying server changes failed, showing the refresh bar:', e);
+    }
+    if (epoch !== _identityEpoch || typeof window === 'undefined') return;
+    const applied = [];
+    const notApplied = [];
+    changed.forEach((c) => {
+      const v = _replicaVersions[c.localKey];
+      (v && typeof v.version === 'number' && v.version >= c.version ? applied : notApplied).push(c.localKey);
+    });
+    if (applied.length) window.dispatchEvent(new CustomEvent('dbRemoteApplied', { detail: { keys: applied } }));
+    if (notApplied.length) window.dispatchEvent(new CustomEvent('remoteChange', { detail: { keys: notApplied } }));
   }
 
   // --- Per-user-settings-sync (2026-07-20 fix) — shared-browser identity
@@ -2047,6 +2391,12 @@ const DB = (() => {
     const cleared = [];
     Object.keys(_cache).forEach((k) => {
       if (_isPerUserKey(k)) cleared.push(k);
+    });
+    // A per-user key can hold a version stamp (ch_rv::<key>) with no cached
+    // value (a deleted pref, or a value already removed): the stamp is the
+    // previous user's too, so it goes on the same clear list.
+    Object.keys(_replicaVersions).forEach((k) => {
+      if (_isPerUserKey(k) && cleared.indexOf(k) === -1) cleared.push(k);
     });
     // --- Finding 1 (adversarial review 2026-07-25/26) -----------------------
     // Force the raw-localStorage-only per-user keys onto this same clear list
@@ -2078,6 +2428,8 @@ const DB = (() => {
     cleared.forEach((k) => {
       delete _cache[k];
       delete _replicaVersions[k];
+      delete _syncBase[k];
+      _persistStamp(k);
       // --- Finding 2 --- durable delete, not just the in-memory cache.
       // warmCache() does an unconditional store.getAll() on every load and
       // would otherwise silently repopulate _cache with the previous user's
@@ -2098,9 +2450,6 @@ const DB = (() => {
     // Queued entries are owner-tagged: the drain sends only the signed-in
     // user's own entries, so another user's pending edit can never replay
     // under the new user's wire-key prefix. No entry is deleted here.
-    if (cleared.length) {
-      _persistReplicaState();
-    }
     return cleared;
   }
 
@@ -2612,7 +2961,17 @@ const DB = (() => {
   // sync-ui.js to know about the sget/sset global naming convention.
   function getConflictArchive() {
     const v = _cache['en_conflict_archive'];
-    return Array.isArray(v) ? v : [];
+    if (!Array.isArray(v)) return [];
+    const me = _myUserId();
+    return v.filter((e) => _archiveEntryVisible(e, me)); // rule: _archiveEntryVisible
+  }
+  // The entries this user may NOT see (another user's per-user entries, or entries with no owner
+  // tag). Reset keeps them: they are never exported to this user and never deleted by this user.
+  function getConflictArchiveOthers() {
+    const v = _cache['en_conflict_archive'];
+    if (!Array.isArray(v)) return [];
+    const me = _myUserId();
+    return v.filter((e) => !_archiveEntryVisible(e, me)); // rule: _archiveEntryVisible
   }
   async function getSyncStatus() {
     const mode = _backendMode();
@@ -2684,7 +3043,10 @@ const DB = (() => {
     getUploadProgress,
     getQueueDepth,
     getForeignQueueInfo,
+    queueOwner: _queueOwner,
+    entryBelongsTo: _entryBelongsTo,
     getConflictArchive,
+    getConflictArchiveOthers,
     isConflictArchiveFull,
     clearConflictArchive,
     restoreScope,

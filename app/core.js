@@ -168,6 +168,8 @@ function _pdfQueueSave(queue) {
 function _pdfQueueGenId() {
   return Date.now() + '-' + Math.random().toString(36).slice(2, 8);
 }
+// Number of PDF actions not yet sent (read by app/sync-ui.js before a reload).
+window.pdfQueueDepth = () => _pdfQueueLoad().length;
 // Coalesce to the latest pending action per key — same reasoning as db.js's
 // _enqueueWrite (whole-value/whole-blob replace pattern; replaying a stale
 // queued action after a newer one exists for the same key would regress
@@ -175,7 +177,9 @@ function _pdfQueueGenId() {
 // has one meaningful action queued at a time (upload, or later a delete).
 function _pdfEnqueue(type, key) {
   const queue = _pdfQueueLoad().filter((e) => e.key !== key);
-  queue.push({ id: _pdfQueueGenId(), type, key, ts: Date.now() });
+  // Owner tag: the SAME rule as the kv queue (db.js _queueOwner: verified id, or the
+  // last verified user as a hint when signed out). Another user never sends it.
+  queue.push({ id: _pdfQueueGenId(), type, key, ts: Date.now(), owner: window.DB.queueOwner() });
   _pdfQueueSave(queue);
   _pdfKickDrain();
 }
@@ -331,27 +335,45 @@ function _pdfCacheLocalOnly(id, base64) {
 // --- 2c: single-owner queue drain (Web Locks, same F7 multi-tab guard db.js
 // uses for its kv queue) ----------------------------------------------------
 async function _pdfDrainQueueLocked() {
+  const me = window.CH_AUTH.getUserId();
+  if (!me) return; // no verified identity: send nothing
+  // A signed-out entry becomes this user's own only when this user was the last one
+  // verified on this browser (hint); an entry without an owner tag is from before
+  // owner tags existed and was queued while signed in, so the first verified user keeps it.
+  _pdfQueueSave(
+    _pdfQueueLoad().map((e) => {
+      if (!e.owner || (!e.owner.id && e.owner.hintId === me)) return Object.assign({}, e, { owner: { id: me } });
+      return e;
+    }),
+  );
   const snapshot = _pdfQueueLoad();
   for (const entry of snapshot) {
+    // Identity changed during the drain (another tab switched accounts): stop.
+    // The token now belongs to someone else; the rest of the snapshot is A's.
+    if (_pdfUserChanged(me)) return;
     if (!_pdfQueueLoad().some((e) => e.id === entry.id)) continue; // superseded meanwhile
+    if (!window.DB.entryBelongsTo(entry, me)) continue; // another user's entry: never sent
     let result;
     try {
       if (entry.type === 'delete') {
-        result = await _pdfDeleteCommit(entry.key);
+        result = await _pdfWithAuthRetry(() => _pdfDeleteCommit(entry.key));
       } else {
         // Re-read the local IDB copy at drain time (the durable source of
         // truth already written by pdfStore's local-first write) rather than
         // duplicating the blob into the queue entry itself.
         const base64 = await pdfLoad(entry.key);
+        if (_pdfUserChanged(me)) return;
         if (!base64) {
           result = { status: 'ok' }; // nothing local left to upload — drop silently
         } else {
-          result = await _pdfUploadCommit(entry.key, base64);
+          result = await _pdfWithAuthRetry(() => _pdfUploadCommit(entry.key, base64));
         }
       }
     } catch (e) {
       result = { status: 'network-error', error: e };
     }
+    if (_pdfUserChanged(me)) return; // same rule as the db.js drain: nothing is removed or stamped for the other user
+    if (window.CH_AUTH.backendMode() === 'off') return; // the server refused this sign-in: session ended, stop sending
     if (result.status === 'ok' || result.status === 'terminal') {
       if (result.conflict) {
         console.warn(
@@ -364,6 +386,16 @@ async function _pdfDrainQueueLocked() {
     }
     // network-error / server-error — leave queued, retry next cycle.
   }
+}
+// THE one "did the signed-in user change since this drain started" check for
+// the PDF drain (the verified id from CH_AUTH, the same source db.js reads).
+function _pdfUserChanged(me) {
+  return window.CH_AUTH.getUserId() !== me;
+}
+// The ONE rule for 401/403 is CH_AUTH.withAuthRetry (ch-auth.js).
+function _pdfWithAuthRetry(run) {
+  const a = window.CH_AUTH;
+  return a && typeof a.withAuthRetry === 'function' ? a.withAuthRetry(run) : run();
 }
 async function _pdfDrainQueueOnce() {
   const queue = _pdfQueueLoad();
@@ -392,11 +424,20 @@ if (typeof window !== 'undefined') {
   window.addEventListener('online', function () {
     _pdfDrainQueueOnce().catch(() => {});
   });
+  // Sign-in turns sync on: send the uploads queued while signed out (M5).
+  window.addEventListener('chAuthStateChanged', function () {
+    _pdfDrainQueueOnce().catch(() => {});
+  });
   // Attempt an immediate drain in case the queue has leftover entries from a
   // prior offline session and we're already online.
   _pdfDrainQueueOnce().catch(() => {});
 }
 
+// The ONE rule for "does this PDF go to the server": sync host, signed in or not.
+function _pdfShouldQueueUpload() {
+  const a = window.CH_AUTH;
+  return !!a && (a.backendMode() === 'on' || (typeof a.isSyncHost === 'function' && a.isSyncHost()));
+}
 async function pdfStore(id, base64) {
   let ok;
   try {
@@ -415,8 +456,10 @@ async function pdfStore(id, base64) {
   // Local IDB write above is unchanged/first, exactly as today. When mode is
   // 'off' this is a single localStorage.getItem call — effectively free,
   // zero network, matching db.js's replication-tail guarantee for DB.set().
-  const mode = window.CH_AUTH.backendMode();
-  if (mode === 'on') {
+  // M5: on the sync host the upload is queued even while signed out (mode 'off').
+  // The queue is durable; _pdfDrainQueueOnce sends it once sign-in puts mode back
+  // to 'on', so a PDF saved while signed out is never left only on this browser.
+  if (_pdfShouldQueueUpload()) {
     try {
       _pdfEnqueue('upload', id);
     } catch (e) {
@@ -707,9 +750,7 @@ function updateHomeStats() {
   // the data model stores m.baseline.months array
   const baselineCount = projects.filter((p) => {
     const projBldgs = getUDBldgs(p.id) || [];
-    return projBldgs.some((b) =>
-      (b.meters || []).some((m) => m.baseline?.months?.length > 0),
-    );
+    return projBldgs.some((b) => (b.meters || []).some((m) => m.baseline?.months?.length > 0));
   }).length;
   document.getElementById('h-base').textContent = baselineCount;
   // Sum estimated savings/yr by computing from meter-level savings (byCalMo).
@@ -1202,7 +1243,7 @@ function renderProjTable() {
             <td style="font-size:12px">${p.pm || '—'}</td>
             <td style="font-family:var(--mono);font-size:12px;color:var(--em)">${cv}</td>
             <td style="font-size:12px;color:var(--text2)">${sd}</td>
-            <td><div class="tpbar"><div class="tpbar-track"><div class="tpbar-fill" style="width:${p.progress || 0}%"></div></div><span class="tpbar-pct">${p.progress || 0}%</span></div></td>
+            <td><div class="tpbar"><div class="tpbar-track"><div class="tpbar-fill" style="width:${projectProgress(p)}%"></div></div><span class="tpbar-pct">${projectProgress(p)}%</span></div></td>
             <td style="text-align:center;font-size:12px;color:${pt > 0 ? 'var(--warn)' : 'var(--text2)'}">${pt}</td>
             <td><div style="display:flex;gap:5px">
               <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();editProj(${p.id})">Edit</button>
@@ -1316,8 +1357,8 @@ function renderDetail(p) {
             </div>
             <div class="pd-prog-row">
               <span style="font-size:12px;color:var(--text2);min-width:70px">Progress</span>
-              <div class="pd-prog-bar"><div class="pd-prog-fill" id="hpf" style="width:${p.progress || 0}%"></div></div>
-              <input class="pd-prog-input" type="number" min="0" max="100" value="${p.progress || 0}" oninput="updateProg(${p.id},this.value)">
+              <div class="pd-prog-bar"><div class="pd-prog-fill" id="hpf" style="width:${projectProgress(p)}%"></div></div>
+              <input class="pd-prog-input" type="number" min="0" max="100" value="${projectProgress(p)}" oninput="updateProg(${p.id},this.value)">
               <span style="font-size:11px;color:var(--text2)">%</span>
               ${p.phase ? `<span style="font-size:11px;color:var(--text2);margin-left:6px">· ${p.phase}</span>` : ''}
             </div>
@@ -1681,7 +1722,17 @@ function renderDetail(p) {
                     <label style="display:flex;flex-direction:column;gap:4px">
                       <span style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.5px">Contract Type</span>
                       <select class="fi" id="ps-contractType-${p.id}" onchange="updateProjPerfSetting(${p.id},'contractType',this.value||undefined);renderDetail(projects.find((x)=>x.id===${p.id}))" style="width:100%;font-family:var(--mono)">
-                        ${[['', 'Not set'], ['sharedSavings', 'Shared savings (CSC share)'], ['fixedProject', 'Fixed project (no shared savings)'], ['none', 'No contract']].map((o) => `<option value="${o[0]}"${(getProjectContract(p).type || '') === o[0] ? ' selected' : ''}>${o[1]}</option>`).join('')}
+                        ${[
+                          ['', 'Not set'],
+                          ['sharedSavings', 'Shared savings (CSC share)'],
+                          ['fixedProject', 'Fixed project (no shared savings)'],
+                          ['none', 'No contract'],
+                        ]
+                          .map(
+                            (o) =>
+                              `<option value="${o[0]}"${(getProjectContract(p).type || '') === o[0] ? ' selected' : ''}>${o[1]}</option>`,
+                          )
+                          .join('')}
                       </select>
                     </label>
                     <label style="display:flex;flex-direction:column;gap:4px">
@@ -1818,19 +1869,7 @@ function _updateCompactHdrBaseline(projId) {
     blEl.innerHTML =
       label + ' <span class="phc-val">' + (useCost > 0 ? '$' + Math.round(useCost).toLocaleString() : '—') + '</span>';
   if (euiEl) euiEl.innerHTML = 'Site Energy Use Intensity <span class="phc-val">' + eui + '</span>';
-  // Auto-update progress
-  const _p = projects.find((x) => x.id === projId);
-  if (_p) {
-    const auto = calcAutoProgress(projId);
-    if (auto !== (_p.progress || 0)) {
-      _p.progress = auto;
-      sset('en_projects', projects);
-      const f = document.getElementById('hpf');
-      if (f) f.style.width = auto + '%';
-      const inp = document.querySelector('.pd-prog-input');
-      if (inp) inp.value = auto;
-    }
-  }
+  // Progress is computed at render time (projectProgress), never saved on load.
 }
 
 function _dashGetBaselineBills(m) {
@@ -2819,6 +2858,13 @@ function calcAutoProgress(projId) {
   if (now <= start) return 0;
   return Math.round(((now - start) / (end - start)) * 100);
 }
+// The ONE project-progress value: computed from the dates on every read, never
+// stored on load (a stored value only matters when the user typed a higher one).
+// Every bar, input and report reads this; a page load writes nothing.
+function projectProgress(p) {
+  if (!p) return 0;
+  return Math.max(calcAutoProgress(p.id), p.progress || 0);
+}
 function updateProg(id, val) {
   const p = projects.find((p) => p.id === id);
   if (!p) return;
@@ -3163,8 +3209,8 @@ function updateProjPerfSetting(projId, field, value) {
       : field === 'contractType'
         ? 'Contract Type'
         : field === 'escalation'
-        ? 'Utility Escalation'
-        : 'Contract Years' + ' updated ✓',
+          ? 'Utility Escalation'
+          : 'Contract Years' + ' updated ✓',
   );
 }
 
