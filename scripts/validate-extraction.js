@@ -402,7 +402,7 @@ function findExtractedBill(gtBill, sweepSource) {
 
   // Disambiguate multiple same-account candidates (e.g. one account with two
   // simultaneous meters billed for the identical period, such as Louisburg
-  // High School's main meter + Ballfields meter on account 2885731561) using
+  // High School's main meter + Ballfields meter on account 1000001) using
   // RateSchedule — a stable identifying field, independent of account/period,
   // that GT records for every electric bill (54/54) and that ties each GT
   // record to exactly one extracted record when it billed under a different
@@ -723,7 +723,7 @@ function diffBill(gtBill, extBill) {
   } else {
     if (isMultiMeter) {
       unmapped.push(
-        `meter[] — ${gtBill.meters.length} meters, multi-meter account (0669287870-style) — skipped per-meter field diff, see task edge-case note`,
+        `meter[] — ${gtBill.meters.length} meters, multi-meter account (1000002-style) — skipped per-meter field diff, see task edge-case note`,
       );
     } else {
       compareGroup(ELECTRIC_FIELD_MAP.meter, gtBill.meter, 'meter');

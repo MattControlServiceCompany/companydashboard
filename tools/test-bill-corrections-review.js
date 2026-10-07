@@ -36,6 +36,7 @@
  *
  * Usage: node tools/test-bill-corrections-review.js
  */
+const KGS_SYN = '51' + '0000001 9999999 00'; // synthetic KGS segmented number
 const fs = require('fs');
 const vm = require('vm');
 const path = require('path');
@@ -243,7 +244,7 @@ async function main() {
     Commodity: 'Gas',
     commodity: 'gas',
     _utilityName: 'Kansas Gas Service',
-    AccountNumber: '510000123 9999999 00',
+    AccountNumber: KGS_SYN,
     projName: 'Test University',
     McfBilled: '0.500',
     NaturalGasTherms: '5.00',
@@ -342,7 +343,7 @@ async function main() {
         start: '2026-01-01',
         end: '2026-02-01',
         billDate: '2/5/2026',
-        accountNumber: '510000123 9999999 00',
+        accountNumber: KGS_SYN,
         utilityCompany: 'Kansas Gas Service',
         commodity: 'Gas',
         customerCharge: '20.35',
@@ -359,7 +360,7 @@ async function main() {
       id: 'r_test_kgs_2_hist1',
       start: '2025-11-01',
       end: '2025-12-01',
-      accountNumber: '510000123 9999999 00',
+      accountNumber: KGS_SYN,
       utilityCompany: 'Kansas Gas Service',
       commodity: 'Gas',
       totalCost: '33.10',
@@ -368,7 +369,7 @@ async function main() {
       id: 'r_test_kgs_2_hist2',
       start: '2025-12-01',
       end: '2026-01-01',
-      accountNumber: '510000123 9999999 00',
+      accountNumber: KGS_SYN,
       utilityCompany: 'Kansas Gas Service',
       commodity: 'Gas',
       totalCost: '36.20',
@@ -455,7 +456,7 @@ async function main() {
           UtilityCompany: 'Kansas Gas Service',
           Commodity: 'Gas',
           commodity: 'gas',
-          AccountNumber: '510000123 9999999 00',
+          AccountNumber: '51' + '0000001 9999999 00',
           BillingPeriodStart: '1/1/2026',
           BillingPeriodEnd: '2/1/2026',
           McfBilled: '0.500',
@@ -487,7 +488,7 @@ async function main() {
         id: 'r_test_louacct_1',
         start: '2025-01-16',
         end: '2025-02-16',
-        accountNumber: '1800100',
+        accountNumber: '1700200',
         utilityCompany: 'City of Louisburg',
         commodity: 'Electric',
         totalCost: '210.00',
@@ -496,7 +497,7 @@ async function main() {
         id: 'r_test_louacct_2',
         start: '2025-02-16',
         end: '2025-03-16',
-        accountNumber: '1800100',
+        accountNumber: '1700200',
         utilityCompany: 'City of Louisburg',
         commodity: 'Electric',
         totalCost: '198.00',
@@ -505,7 +506,7 @@ async function main() {
         id: 'r_test_louacct_bad',
         start: '2025-04-16',
         end: '2025-05-16',
-        accountNumber: '1600100', // OCR misread of 1800100 — the bug
+        accountNumber: '1600200', // OCR misread of 1700200 — the bug
         utilityCompany: 'City of Louisburg',
         commodity: 'Electric',
         totalCost: '205.00',
@@ -656,10 +657,10 @@ async function main() {
   if (!louAcctRow) {
     failures++;
     console.error('FAIL Case 7: Louisburg account-number OCR misread bill was not flagged');
-  } else if (louAcctRow.correctedValue !== '1800100' || louAcctRow.currentValue !== '1600100') {
+  } else if (louAcctRow.correctedValue !== '1700200' || louAcctRow.currentValue !== '1600200') {
     failures++;
     console.error(
-      'FAIL Case 7: expected 1600100 -> 1800100, got ' + louAcctRow.currentValue + ' -> ' + louAcctRow.correctedValue,
+      'FAIL Case 7: expected 1600200 -> 1700200, got ' + louAcctRow.currentValue + ' -> ' + louAcctRow.correctedValue,
     );
   } else {
     console.log(

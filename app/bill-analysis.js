@@ -486,7 +486,7 @@ function detectStatisticalOutliers(extracted, historicalCache, pdfBillsIndex) {
   // Fix (2026-08-28, backlog 1a505f4e, reworked after review): gather
   // {bill, addr} pairs instead of bare bill objects so a same-account/
   // different-physical-meter candidate (e.g. Louisburg High School + its
-  // Ball Field meter, both billed under Evergy account 2885731561) can be
+  // Ball Field meter, both billed under Evergy account 1000001) can be
   // filtered out below by ServiceAddress. `addr` is ALWAYS the candidate
   // bill's own recorded address (ServiceAddress/serviceAddress) — never a
   // meter-level `maddr` proxy. Deliberately not `|| m.maddr`: `maddr` is
@@ -1410,7 +1410,7 @@ function _gatherKwhWitnesses(b) {
 // present) they all agree with each other. Evergy sometimes prints this
 // rate-basis kWh a fraction of a kWh apart from the meter-table kWh Used
 // figure — both are genuinely printed as-is on the bill, not a misread
-// (confirmed on Louisburg bill 2885731561_2026-03-02_2026-03-31: meter kWh
+// (confirmed on Louisburg bill 1000001_2026-03-02_2026-03-31: meter kWh
 // Used = 113020.72, but ECA/EER/PTS all print 113021.28 — the ON+OFF peak
 // split is billed against the charge-basis total, not the meter-table one).
 // Used to refine a low-fidelity kWh-identity-derived On/OffPeakKWh split
@@ -1590,7 +1590,7 @@ function _decideOnOffPeakKWh(b, kwhConsumed, kwhHeld) {
   // ── BASIS-DERIVED SINGLE-LEG CORRECTION (2026-08-26, backlog f776f47b,
   // Off-Peak kWh OCR misread accepted silently) ──
   // Root cause: a leg misread by a fraction of a kWh (Circle Grove account
-  // 3517540689, 06/04/2026-07/06/2026: OffPeakKWh OCR'd as 7172.5350,
+  // 1000004, 06/04/2026-07/06/2026: OffPeakKWh OCR'd as 7172.5350,
   // printed value was 7172.5950) slips past the loose `<=1` "already
   // consistent" check just below (onQty+offQty vs kwhConsumed differed by
   // only ~0.07 kWh here) AND slips past onVerified/offVerified above —
@@ -1687,7 +1687,7 @@ function _decideOnOffPeakKWh(b, kwhConsumed, kwhHeld) {
       }
       // A leg with no readable rate line (damaged rate text) cannot be named as
       // the misread leg above. If kWhConsumed is not held, agrees with the
-      // charge-basis total, and exactly ONE leg self-verifies, the
+      // charge-basis total, and exactly ONE leg self-verifies (and that leg also passes the strict check), the
       // kWhConsumed-derived path below corrects the other leg (or gates by
       // itself). Defer to it instead of gating here. Real disagreements
       // (both legs verify, kWhConsumed held or off-basis) still gate.
@@ -1697,7 +1697,8 @@ function _decideOnOffPeakKWh(b, kwhConsumed, kwhHeld) {
         !kwhHeld &&
         Math.abs(kwhConsumed - basisTotal) <= _BASIS_TIGHT &&
         Math.abs(onQty + offQty - kwhConsumed) > 1 &&
-        onVerified !== offVerified;
+        onVerified !== offVerified &&
+        (onVerified ? onStrict : offStrict);
       if (deferToKwhPath) {
         // fall through to the kWhConsumed-derived path
       } else if (!applied) {
@@ -2571,7 +2572,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
               const xRateParts = ri.parts || [ri];
               // xChg's own total is the LITERAL printed-dollar sum scraped straight off the
               // bill; xRate's `.computed` is RE-DERIVED from qty×rate per part and can drift
-              // from the printed total by a few cents on rounding (AMITY acct 1257228027 ECA:
+              // from the printed total by a few cents on rounding (AMITY acct 1000005 ECA:
               // printed $758.28 vs re-derived $758.81). When xChg found the same number of
               // parts as xRate (or more), trust xChg's printed total and skip the xRate
               // overwrite. Only let xRate's computed value win when xChg found STRICTLY FEWER
@@ -5445,14 +5446,14 @@ function _acctFuzzyMatch(a, b) {
 // or veto an otherwise-correct address/name match via the Fix-1
 // account-contradiction check below. Derived from every real account format
 // seen in this codebase (never hardcode one client's specific numbers):
-//   - Evergy / Wood River bare digits: "560189", "8000210803"
-//   - Wood River dash-segmented: "60-736484"
-//   - KGS space-segmented digit groups: "510000123 2051604 18"
-//   - Constellation short-letter-prefix + digits: "RG233590", "BG-96832"
+//   - Evergy / Wood River bare digits: "560001", "8000000001"
+//   - Wood River dash-segmented: "60-700001"
+//   - KGS space-segmented digit groups: "500000001 2000001 18"
+//   - Constellation short-letter-prefix + digits: "RG233590", "BG-90001"
 // None of these real formats ever contain a whitespace-separated token made
 // of letters only (a "word" fragment) — that shape only shows up in
 // garbled OCR text. A single-token value may carry a short (1-3 char)
-// letter prefix (Constellation) or internal dashes (Wood River "60-736484", Louisburg city "NN-NNNNNN-NN"; M-D-Y and ISO dates and 3-3-4 phone shapes rejected); a
+// letter prefix (Constellation) or internal dashes (Wood River "60-700001", Louisburg city "NN-NNNNNN-NN"; M-D-Y and ISO dates and 3-3-4 phone shapes rejected); a
 // multi-token value (KGS) must be pure digit groups throughout.
 function _isPlausibleAccountNumber(raw) {
   const s = String(raw || '').trim();
@@ -6018,7 +6019,7 @@ function findMeterMatch(extracted) {
   // bill's account+commodity, collected across ALL buildings instead of
   // returning on the first hit. A SHARED Evergy account with more than one
   // meter (Louisburg High School + its Ball Field meter both bill under
-  // 2885731561) cannot be told apart by account+commodity alone — the old
+  // 1000001) cannot be told apart by account+commodity alone — the old
   // immediate-return silently attached the bill to whichever meter the loop
   // happened to reach first. Resolved once the full scan completes: see
   // _pickIdentityCandidate above and its call site below the loop.
@@ -6264,8 +6265,8 @@ function findMeterMatch(extracted) {
   // overrides them, so the identity happy path above is untouched. Handles
   // the "account renumbered, same physical hookup" case: City of Louisburg
   // re-numbered utility accounts but never updated some meters' stored
-  // account (e.g. High School's gas meter still carries the OLD 900101
-  // while the new bill reads 09-009001-00). That bill hits the Fix-1
+  // account (e.g. High School's gas meter still carries the OLD NNNNNN
+  // while the new bill reads NN-NNNNNN-00). That bill hits the Fix-1
   // identity-contradiction veto above (line ~5708 `continue`) and is
   // dropped from addrCandidates entirely, so it reaches here with both
   // bestMatch and addrMatch null even though its ServiceAddress plainly
@@ -14256,7 +14257,7 @@ async function extractPDFText(ab, statusCb, opts) {
         // a printed "$X.XXXXX per kWh" rate was misread (e.g. Tesseract reading "3"
         // as "8"), because the misread text still carries the exact same keywords,
         // $ signs, and kWh counts as a correct reading. Confirmed on the Louisburg
-        // April 2026 Maint Bldg bill (acct 0669287870): the early-exit's own first
+        // April 2026 Maint Bldg bill (acct 1000002): the early-exit's own first
         // two passes (2.5x, 3.5x) both scored 12 (>=10 early-exit threshold) yet
         // disagreed with EACH OTHER on the "Energy Chg On Pk" charge line's rate —
         // "$0.03728" vs "$0.087283" — while later un-run passes already in
@@ -15945,7 +15946,7 @@ async function processPDF(file) {
                   // lenient predicate (`_singleHasKeyField`) the first pass used, and
                   // refuse the wholesale replace when it would leave the file with
                   // fewer valid bills than the first pass already had — see the
-                  // eea98fd5/02-002364-00 Louisburg incident for why `retryValid.length`
+                  // eea98fd5/NN-NNNNNN-00 Louisburg incident for why `retryValid.length`
                   // alone is not a safe proxy for "no bills lost".
                   const retryValidLenient = retryBills2.filter((b) => _singleHasKeyField(b));
                   const retryWouldLoseBills = retryValidLenient.length < _origValidBillCount;
@@ -16316,7 +16317,7 @@ async function processPDF(file) {
           // charge line's own kWh figure, AND it can never recover the paired
           // *Rate field (the identity has no rate term), leaving OnPeakRate/
           // OffPeakRate permanently null. Root-caused on the Louisburg
-          // SKM_C551i Evergy bill (acct 8980291458): the OCR pass processPDF
+          // SKM_C551i Evergy bill (acct 1000003): the OCR pass processPDF
           // kept as "best text" (lowest countCriticalMissing — BillingPeriodStart/
           // AccountNumber/kWhConsumed/TotalCurrentCharges were already present)
           // garbled the Off-Peak charge line just enough that `xRate` never
@@ -16389,7 +16390,7 @@ async function processPDF(file) {
                       // another, or introduce a qty/rate pair that don't belong
                       // together.
                       //
-                      // SELF-VERIFY GUARD (Louisburg acct 2885731561 03/02-03/31):
+                      // SELF-VERIFY GUARD (Louisburg acct 1000001 03/02-03/31):
                       // "read directly" is not the same as "read correctly" — an
                       // alt pass can read a charge-line quantity cleanly (no
                       // fallback flag) while still misreading its digits (e.g. a
@@ -16440,14 +16441,14 @@ async function processPDF(file) {
           }
 
           // ── MULTI-PASS OCR CONSENSUS FOR METER-READ FIELDS (identity-consistency winner, ACCOUNT-KEYED) ──
-          // Fix (2026-08-25, Circle Grove meter-row digit corruption, acct 3517540689,
-          // SKM_C551i26071613190.pdf#p4; also recovers High School accts 1257228027 /
-          // 8980291458 on the same file). A meter-row OCR misread can be internally
+          // Fix (2026-08-25, Circle Grove meter-row digit corruption, acct 1000004,
+          // SKM_C551i26071613190.pdf#p4; also recovers High School accts 1000005 /
+          // 1000003 on the same file). A meter-row OCR misread can be internally
           // SELF-CONSISTENT in isolation — the digit-correction/checksum engine
           // (_reconcileNumber in energy-savings.js) can never catch it because
           // nothing on that ONE field LOOKS broken. What actually distinguishes a
           // correct reading from a corrupted one, verified directly against this
-          // file's own two captured OCR passes for account 3517540689, is that a
+          // file's own two captured OCR passes for account 1000004, is that a
           // genuine meter-row reading satisfies BOTH physical identities every
           // Evergy bill's meter table encodes: EndRead - StartRead = ReadDifference,
           // and ReadDifference * MeterMultiplier = kWhConsumed. Measured on this
@@ -16494,7 +16495,7 @@ async function processPDF(file) {
             // SEPARATELY rather than as one all-or-nothing group. On the bills
             // this targets, it's common for exactly one field in a trio to be
             // OCR-corrupted while the other two (and thus the OTHER identity's
-            // trio) are perfectly readable — e.g. Louisburg acct 1257228027's
+            // trio) are perfectly readable — e.g. Louisburg acct 1000005's
             // 06/29-07/29 bill has a correct StartRead/ReadDifference/
             // MeterMultiplier/kWhConsumed on its one alternate pass, but a
             // corrupted EndRead (13200.8243 misread from 13290.8243) that alone
@@ -16677,7 +16678,7 @@ async function processPDF(file) {
                     // reading for another. Also requires the alt reading to
                     // self-verify against the bill's own printed charge amount
                     // (qty × rate ≈ b[chargeField]) — see the self-verify guard
-                    // note in the block above (Louisburg acct 2885731561).
+                    // note in the block above (Louisburg acct 1000001).
                     const altQtyR = parseBillNumber(altBill && altBill[pair.kwhField]);
                     const altRateR = parseBillNumber(altBill && altBill[pair.rateField]);
                     const ownChargeR = parseBillNumber(b[pair.chargeField]);
@@ -18615,7 +18616,7 @@ function renderPDFFields(parsed, warnings) {
       qtyField: '_wreTriggerMMbtu',
       // Fix (2026-09-24, WRE Fuel-column display): the invoice's own charge formula
       // is charge = (Mmbtu + Fuel) x Rate (verified against the printed Apr/May 2025
-      // Board of Education 560189 lines: (4.74+0.08) x $4.7550 = $22.92, matching the
+      // Board of Education 560001 lines: (4.74+0.08) x $4.7550 = $22.92, matching the
       // printed charge to the cent). fuelField feeds the rate cross-check's basis
       // below — usage (qtyField) itself stays billed MMbtu only; Fuel never gets
       // added into it (see the Sub-Total/Total Natural Gas lines on the source
@@ -21343,7 +21344,7 @@ async function _saveSinglePDFBill(extracted, projId) {
       // never called the shared findMeterMatch()/_pickIdentityCandidate()
       // disambiguation, so a bill on a shared Evergy account with more than one
       // physical meter (e.g. Louisburg High School + its Ball Fields meter, both
-      // account 2885731561) silently landed on whichever meter the loop happened
+      // account 1000001) silently landed on whichever meter the loop happened
       // to reach first, with zero address disambiguation. Not latent anymore now
       // that a real 2nd same-account meter exists. Routed through the SAME shared
       // matcher every other save path already uses (saveQueuedBills,
