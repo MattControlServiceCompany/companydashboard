@@ -2391,6 +2391,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.07.92', date: '2026-10-07', title: 'Bill import reads the right columns',
+    items: [
+      { type: 'fix', text: 'Utility Data > meter > Bills > Import more periods via CSV: the bill total, kWh and demand now come from the right columns, even when the file also has columns like Bill ID, Energy Cost or Total Charges.' }
+    ]
+  },
   { v: 'v2026.10.07.91', date: '2026-10-07', title: 'Names with special characters show correctly',
     items: [
       { type: 'fix', text: 'Names and notes with characters like \' & < > now show the same way on every page.' }
