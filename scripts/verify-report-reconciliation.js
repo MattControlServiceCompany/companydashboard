@@ -800,6 +800,7 @@ function printReport(label, results, bundle) {
     exitCode = 1;
   } finally {
     await context.close();
+    fs.rmSync(profileDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   }
   process.exit(exitCode);
 })();
