@@ -273,13 +273,16 @@ Nothing is deleted by this restore. On a record in both, the backup value wins; 
   writes a key that is not a BILL_SCHEMA key (app/csv-import.js) or on the short META list, when `openBillModal` renders a
   hidden `bl-` input, or when `billHasPdf` is not the one PDF answer. How to check: node computations/bill-save-fields.gate.js
   (exit 0); node tools/test-rate-single-source.js.
-- Regression gate (scripts/regression-gate.js). Run: `node scripts/regression-gate.js` (about 165 s, exit 0 = pass). It
+- Regression gate (scripts/regression-gate.js). Run: `node scripts/regression-gate.js` (about 230 s, exit 0 = pass). It
   checks pages and numbers against the oracle, runs scripts/verify-report-reconciliation.js, and runs EVERY `tools/test-*.js`
-  and repo-root `test-*.js` as its own child process (3 at a time, 240 s limit each; a non-zero exit is a FAIL). New test files
+  and repo-root `test-*.js` / `test-*.mjs` as its own child process (3 at a time, 240 s limit each; a non-zero exit is a FAIL). New test files
   are found by glob. Tests that fail or hang on main, or need the internet, are listed in `TEST_EXCLUDE` in the gate with the
   reason and show as INFO; remove an entry when the test is fixed. Playwright comes from the env var
-  `CH_PLAYWRIGHT_NODE_MODULES` (default `C:/Users/Matt Miller/AI/_context/temp/2026-10-02-point-count-review/node_modules`);
+  `CH_PLAYWRIGHT_NODE_MODULES` (default `C:/Users/Matt Miller/AI/_context/tools/playwright-runtime/node_modules`, a permanent copy of the same Playwright version so the installed Chromium matches);
   the gate passes it to child tests as NODE_PATH. No junction or npm install is needed in the primary checkout or a worktree.
+  Temp-leak guard: the gate lists `C:/Temp` before the run; any new entry after the tests is a FAIL that names it, and timestamp-named
+  entries are deleted. Browser tests must use `tools/launch-browser.js` (`launchBrowser(task, opts)`): `ctx.close()` there also deletes
+  the profile. Do not run other browser jobs that write to `C:/Temp` while the gate runs (they would show as leaks).
 - Bill CSV header matching (app/csv-import.js `ci()` inside `parseBillCsv`). One rule for every column: exact header first,
   then whole-word match. A header with a cost, id or date word is claimed only by an alias of the same class, so
   "Energy Cost" is not kWh, "Bill ID" is not cost and "Total" is not an end date. How to check:
