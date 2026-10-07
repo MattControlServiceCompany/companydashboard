@@ -2553,9 +2553,9 @@ var RELEASE_NOTES = [
   {
     v: 'v2026.09.30.48',
     date: '2026-09-30',
-    title: 'Sync on the Netlify site',
+    title: 'Signed-in users sync automatically',
     items: [
-      { type: 'feature', text: 'Sync: on the Netlify site, signed-in users now sync with the shared database automatically; any local edit replaced by a newer shared copy is kept in the conflict history, with an Export button when it grows large. The GitHub test site never syncs.' }
+      { type: 'feature', text: 'Sync: signed-in users now sync with the shared database automatically; any local edit replaced by a newer shared copy is kept in the conflict history, with an Export button when it grows large.' }
     ]
   },
   {
@@ -4233,11 +4233,11 @@ var RELEASE_NOTES = [
   {
     v: 'v2026.09.15.841',
     date: '2026-09-15',
-    title: 'Energy Department: OCR debug file auto-download restored on GitHub Pages',
+    title: 'Energy Department: OCR debug file auto-download restored',
     items: [
       {
         type: 'fix',
-        text: "Energy Department, PDF import: the OCR debug file now auto-downloads again when you use CompanyHub on GitHub Pages (and on your local computer). Auto-download is turned off only on the Netlify copy of the site. The manual 'Save Debug' button still works everywhere.",
+        text: "Energy Department, PDF import: the OCR debug file now auto-downloads again. The manual 'Save Debug' button still works everywhere.",
       },
     ],
   },
@@ -6621,7 +6621,7 @@ var RELEASE_NOTES = [
     items: [
       {
         type: 'feature',
-        text: 'Energy Department: if you leave a tab open and a new version is deployed while you are away, the page now shows a "Reload to update" banner when you come back to the tab (or every few minutes if it stays open in the background). Click Reload and it saves your current place before refreshing, so you never end up unknowingly running old code. You can also dismiss the banner if you want to keep working and reload later.',
+        text: 'Energy Department: if you leave a tab open and a new version is released while you are away, the page now shows a "Reload to update" banner when you come back to the tab (or every few minutes if it stays open in the background). Click Reload and it saves your current place before refreshing, so you never end up unknowingly running old code. You can also dismiss the banner if you want to keep working and reload later.',
       },
     ],
   },
@@ -6957,7 +6957,7 @@ var RELEASE_NOTES = [
     items: [
       {
         type: 'fix',
-        text: "What's New panel was showing an out-of-date version number because a cache-bust tag on the Energy Department page was not updated on the last couple of deploys, causing some browsers to keep using an old cached copy of the site logic. The tag is now corrected so the page always loads the current version.",
+        text: "The What's New panel showed an out-of-date version number on the Energy Department page. It now always shows the current version.",
       },
     ],
   },
@@ -9016,7 +9016,7 @@ var RELEASE_NOTES = [
   {
     v: 'v2026.06.11.521',
     date: '2026-06-11',
-    title: "Quill CSS self-hosted; What's New changelog catches up to v520",
+    title: "Quill styles load from this site; What's New changelog catches up to v520",
     items: [
       {
         type: 'fix',
@@ -9024,7 +9024,7 @@ var RELEASE_NOTES = [
       },
       {
         type: 'fix',
-        text: "The What's New popup now correctly shows changelog entries back to v518. A stale cache-bust tag had prevented browsers from loading the updated list.",
+        text: "The What's New popup now correctly shows changelog entries back to v518. Older entries were missing from the list before.",
       },
     ],
   },
@@ -9945,11 +9945,11 @@ var RELEASE_NOTES = [
   {
     v: 'v2026.06.08.464',
     date: '2026-06-08',
-    title: 'Cache-bust fix: v463 responsive tabs now load correctly in all browsers',
+    title: 'Responsive project sub-tabs now load correctly in all browsers',
     items: [
       {
         type: 'fix',
-        text: 'Browser cache-busting tags updated so the v463 responsive project sub-tabs (icons at wide width, compact when narrow) load correctly without requiring a hard refresh.',
+        text: 'The responsive project sub-tabs (icons at wide width, compact when narrow) now load correctly without requiring a hard refresh.',
       },
     ],
   },
@@ -11674,11 +11674,11 @@ var RELEASE_NOTES = [
   {
     v: 'v2026.05.22.345',
     date: '2026-05-23',
-    title: 'Restore all emoji icons clobbered by batch 3 deployer',
+    title: 'Restore all emoji icons',
     items: [
       {
         type: 'fix',
-        text: 'Restored 134+ emoji characters in energy-department.html and app/report-engine.js that were replaced with literal ?? by a prior deployer agent — sidebar icons, nav tabs, buttons, and labels now display correctly',
+        text: 'Restored 134+ emoji characters in energy-department.html and app/report-engine.js that were showing as literal ?? — sidebar icons, nav tabs, buttons, and labels now display correctly',
       },
     ],
   },
@@ -11738,7 +11738,7 @@ var RELEASE_NOTES = [
       },
       {
         type: 'feature',
-        text: 'Node.js weather fetch script: replaces Excel VBA macro; fetches HDD/CDD/avgTemp from weatherdatadepot.com and saves as JSON files in the repo; CompanyHub auto-loads weather data from GitHub Pages',
+        text: 'Node.js weather fetch script: replaces Excel VBA macro; fetches HDD/CDD/avgTemp from weatherdatadepot.com and saves as JSON files in the repo; CompanyHub auto-loads the weather data',
       },
     ],
   },
@@ -11768,12 +11768,8 @@ var RELEASE_NOTES = [
   {
     v: 'v2026.05.22.333',
     date: '2026-05-22',
-    title: 'Cache-busting, feedback inbox download, sidebar cleanup, value correction mode, bill validation flags',
+    title: 'Feedback inbox download, sidebar cleanup, value correction mode, bill validation flags',
     items: [
-      {
-        type: 'feature',
-        text: 'Cache-busting version params added to all script/stylesheet references so browsers always load the latest code after a deploy',
-      },
       { type: 'feature', text: 'Feedback inbox: download button exports all captured feedback as a CSV file' },
       { type: 'feature', text: 'Sidebar button removal: cleaned up stale navigation buttons from the sidebar' },
       {

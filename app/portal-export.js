@@ -232,12 +232,12 @@ function publishClientPortal(projId) {
   const isWebProtocol = location.protocol === 'http:' || location.protocol === 'https:';
 
   if (!isWebProtocol) {
-    showToast('Portal links only work on the live site — publish from the hosted app, not a local file.', 'warning');
+    showToast('Portal links do not work from a local file. Open CompanyHub in the browser to publish.', 'warning');
   } else {
     const toastMsg =
       'Portal data downloaded as ' +
       filename +
-      '. Upload to GitHub → portal-data/ to go live. Client URL copied to clipboard.';
+      '. Client URL copied to clipboard.';
 
     showToast(toastMsg);
 
