@@ -196,6 +196,12 @@ const SyncClassification = (() => {
       note: 'app/ch-auth.js SESSION_STORAGE_KEY (2026-10-06) — the Supabase access and refresh tokens, raw localStorage, shared by every tab. Never a sync key: in localStorage-fallback mode (no IndexedDB) db.js loads every localStorage key into its cache, and the first-connect upload would otherwise PUT it to the server as <uid>::ch_sb_session, and the identity-change sweep would remove it. Local-only, never in a backup (restore-merge NEVER list).',
     },
     {
+      pattern: 'ch_theme_user::',
+      prefix: true,
+      neverBackup: true,
+      note: 'db.js _themeStashKey (2026-10-06) — the theme a user had when they switched away, parked under a per-user LOCAL key (raw localStorage, never through DB.set). Local-only and never in a backup: it holds other users ids.',
+    },
+    {
       pattern: 'ch_replica_state',
       prefix: false,
       note: 'db.js REPLICA_STATE_KEY — per-key version-map bookkeeping (write-through via _rawSet, bypasses replication entirely). Engine-internal, must never sync at all, per-user or otherwise.',

@@ -1945,6 +1945,9 @@ const DB = (() => {
       }
     }
     if (epoch !== _identityEpoch) return;
+    // A local edit made during the hash await is never replaced: its own write goes to the server
+    // and the server decides if it is a conflict. Keep the local value and stamp as they are.
+    if (_cache[localKey] !== origLocal || _hasQueuedWrite(localKey)) return;
     mHash = stamp.hash;
     let merged = null; // value to keep locally AND push to the server
     let serverValue = row.value;
@@ -1984,6 +1987,7 @@ const DB = (() => {
         localHash = null;
       }
       if (epoch !== _identityEpoch) return;
+      if (_cache[localKey] !== origLocal || _hasQueuedWrite(localKey)) return; // edited during the hash await: keep it
       if (!row.deleted && localHash !== null && localHash === mHash) {
         _setSynced(localKey, stamp, row.value); // same content: adopt the version only
         return;

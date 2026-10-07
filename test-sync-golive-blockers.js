@@ -61,7 +61,7 @@ function load({ mode, syncHost, fetchImpl, classify }) {
     clearInterval,
     Promise,
     TextEncoder,
-    crypto: globalThis.crypto, // real SHA-256: the "value changed" rule hashes with crypto.subtle
+    crypto: arguments[0].crypto || globalThis.crypto, // real SHA-256: the "value changed" rule hashes with crypto.subtle
     URL,
     AbortController,
     CustomEvent: function (type, init) {
@@ -2823,6 +2823,128 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     ui.fire('dbRemoteApplied', { keys: ['en_tasks'] });
     assert.strictEqual(st.reloads, 1);
     assert.strictEqual(ui.intervals(), 0);
+  });
+
+  // ---- Review fixes (2026-10-06)
+  await t('REV1 the theme stash ch_theme_user::<uid> is never in a backup file (the one never-backup rule)', async () => {
+    const SC = require('./app/sync-classification.js');
+    assert.strictEqual(SC.isNeverBackupKey('ch_theme_user::u1'), true);
+    assert.strictEqual(SC.classifyKey('ch_theme_user::u1'), 'local-only');
+    assert.strictEqual(SC.isNeverBackupKey('ch_theme'), false);
+    const ls = { ch_theme: 'dark', 'ch_theme_user::u-other': 'light' };
+    let written = null;
+    const ctx = {
+      window: { SyncClassification: SC },
+      localStorage: {
+        get length() {
+          return Object.keys(ls).length;
+        },
+        key: (i) => Object.keys(ls)[i],
+        getItem: (k) => ls[k],
+      },
+      DB: { isReady: () => true, getAllForExport: () => ({ en_projects: [] }) },
+      _waitForDBReadyForBackup: async () => {},
+      _downloadJson: (f, d) => {
+        written = d;
+      },
+      showToast: () => {},
+      Date,
+      Object,
+      String,
+    };
+    vm.createContext(ctx);
+    vm.runInContext(siteFnSrc('siteBackup'), ctx);
+    await vm.runInContext('siteBackup()', ctx);
+    assert.ok(written, 'backup written');
+    assert.ok(!Object.keys(written).some((k) => k.indexOf('ch_theme_user::') === 0), 'no theme stash key in the backup');
+    assert.strictEqual(written.ch_theme, 'dark', 'the theme itself is still exported');
+  });
+  await t('REV2 a pending reload timer is cleared on a user switch or sign-out', () => {
+    const st = { active: { tagName: 'INPUT' } };
+    const ui = loadSyncUi(st);
+    ui.fire('dbRemoteApplied', { keys: ['en_tasks'] });
+    assert.strictEqual(ui.intervals(), 1, 'retry loop running');
+    ui.fire('chAuthStateChanged', { signedOut: false });
+    assert.strictEqual(ui.intervals(), 0, 'retry loop cleared by the user switch');
+    st.active = null;
+    ui.tick();
+    assert.strictEqual(st.reloads, 0, 'no reload for the previous user');
+    // A later unsafe event starts a fresh loop (the flag was reset too).
+    st.active = { tagName: 'INPUT' };
+    ui.fire('dbRemoteApplied', { keys: ['en_tasks'] });
+    assert.strictEqual(ui.intervals(), 1, 'a new loop can start');
+    ui.fire('chAuthStateChanged', { signedOut: true });
+    assert.strictEqual(ui.intervals(), 0, 'cleared on sign-out too');
+  });
+  await t('REV3 a local edit made while the server value is being hashed is never overwritten', async () => {
+    const srv = makeServer({ en_note: 'v1' });
+    let hook = null;
+    const realSubtle = globalThis.crypto.subtle;
+    const fakeCrypto = {
+      subtle: {
+        digest: async (...a) => {
+          if (hook) {
+            const h = hook;
+            hook = null;
+            h();
+          }
+          return realSubtle.digest(...a);
+        },
+      },
+    };
+    const L = load({ mode: 'on', syncHost: true, classify: false, fetchImpl: srv.fetchImpl, crypto: fakeCrypto });
+    await L.DB.warmCache();
+    await L.DB.__t._hydrate();
+    await settle();
+    assert.strictEqual(L.DB.get('en_note'), 'v1');
+    // Another user changes the key. Our edit lands inside the await of the reconcile.
+    srv.rows.en_note = { value: 'server-v2', version: 2, hash: 'hen_note2' };
+    let edit = null;
+    hook = () => {
+      edit = L.DB.set('en_note', 'local-edit-in-gap');
+    };
+    await L.DB.__t._hydrate();
+    await edit;
+    await settle();
+    assert.ok(hook === null, 'the edit was injected during the real await');
+    assert.strictEqual(L.DB.get('en_note'), 'local-edit-in-gap', 'local edit not replaced by the server value');
+  });
+  await t('REV4 a key created on the server while this browser holds a queued local value for it: local kept and sent, no loss, no phantom conflict', async () => {
+    const srv = makeServer({ en_projects: [] });
+    let down = false;
+    const f0 = srv.fetchImpl;
+    const fetchImpl = async (u, o) => {
+      if (down && o && o.method === 'PUT') throw new TypeError('Failed to fetch');
+      return f0(u, o);
+    };
+    const L = load({ mode: 'on', syncHost: true, classify: true, fetchImpl });
+    await L.DB.warmCache();
+    await L.DB.__t._hydrate();
+    await settle();
+    down = true;
+    await L.DB.set('en_tasks', { n: 'local' }); // offline: queued, never reached the server
+    await settle();
+    assert.strictEqual(L.DB.getQueueDepth(), 1, 'queued');
+    // Meanwhile another user creates the same key on the server.
+    srv.rows.en_tasks = { value: { n: 'theirs' }, version: 1, hash: 'hnew1' };
+    L.events.length = 0;
+    await L.DB.__t._pollManifestForChanges();
+    await settle();
+    assert.deepStrictEqual(clone(L.DB.get('en_tasks')), { n: 'local' }, 'local value kept');
+    assert.strictEqual(L.DB.getQueueDepth(), 1, 'still queued');
+    assert.ok(!L.events.some((e) => e.type === 'dbRemoteApplied' && Array.from(e.detail.keys).includes('en_tasks')), 'not announced as applied');
+    assert.strictEqual(L.DB.getConflictArchive().length, 0, 'no phantom conflict archive');
+    // Back online: the queued value is sent.
+    down = false;
+    await L.DB.__t._drainQueueOnce();
+    await settle();
+    assert.strictEqual(srv.puts.filter((p) => p.key === 'en_tasks').length, 1, 'exactly one PUT, nothing sent by the poll');
+    assert.deepStrictEqual(clone(srv.puts.find((p) => p.key === 'en_tasks').value), { n: 'local' }, 'the local value was sent');
+    assert.deepStrictEqual(clone(L.DB.get('en_tasks')), { n: 'local' }, 'local value still held');
+    const onServer = JSON.stringify(srv.rows.en_tasks.value);
+    const archived = JSON.stringify(L.DB.getConflictArchive());
+    assert.ok(onServer.includes('local') || archived.includes('local'), 'local value is on the server or archived: not lost');
+    assert.ok(onServer.includes('theirs') || archived.includes('theirs'), 'their value is on the server or archived: not lost');
   });
   console.log(pass + ' passed');
 })().catch((e) => {

@@ -371,6 +371,13 @@
       window.location.reload();
     }, PENDING_RELOAD_RETRY_MS);
   }
+  // A user switch or sign-out ends the pending reload: the change was for the previous user.
+  window.addEventListener('chAuthStateChanged', function () {
+    if (_pendingReloadTimer) {
+      clearInterval(_pendingReloadTimer);
+      _pendingReloadTimer = null;
+    }
+  });
   window.addEventListener('dbRemoteApplied', function (e) {
     var keys = (e.detail && e.detail.keys) || [];
     if (_safeToReload()) window.location.reload();
