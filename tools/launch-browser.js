@@ -1,13 +1,24 @@
-// launch-browser.js — shared headless launcher: bundled Playwright Chromium (never Edge),
-// unique C:\Temp profile per run. Caller must close the returned context in try/finally.
+// launch-browser.js — the ONE shared headless launcher for tests: bundled Playwright Chromium (never Edge),
+// unique C:\Temp profile per run. The launcher owns the profile: ctx.close() closes the browser and then
+// deletes the profile dir, so a test only has to call close() in try/finally. Do not build profiles elsewhere.
+const fs = require('fs');
 const { chromium } = require('playwright');
 
-function launchBrowser(task) {
-  return chromium.launchPersistentContext('C:\\Temp\\' + task + '-profile-' + Date.now(), {
-    headless: true,
-    args: ['--disable-gpu'],
-    viewport: { width: 1920, height: 1080 },
-  });
+async function launchBrowser(task, opts) {
+  const dir = 'C:/Temp/' + task + '-profile-' + Date.now() + '-' + process.pid;
+  const ctx = await chromium.launchPersistentContext(
+    dir,
+    Object.assign({ headless: true, args: ['--disable-gpu'], viewport: { width: 1920, height: 1080 } }, opts),
+  );
+  const close = ctx.close.bind(ctx);
+  ctx.close = async () => {
+    try {
+      await close();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    }
+  };
+  return ctx;
 }
 
 module.exports = { launchBrowser };
