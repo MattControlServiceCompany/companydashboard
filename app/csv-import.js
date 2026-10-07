@@ -244,7 +244,11 @@ function parseBillCsv(text, fname) {
   // camelCase alias: 'kwhcost' matches export header 'kwhCost'
   const iKwhCst = hdr ? ci(['kwh_cost', 'kwh cost', 'energy cost', 'energy$', 'energy_cost', 'kwhcost']) : 8;
   const iTotCst = hdr
-    ? ci(['total_cost', 'total cost', 'total$', 'bill', 'amount', 'total', 'totalcost'])
+    ? ci(
+        ['total_cost', 'total cost', 'total$', 'bill amount', 'bill total', 'bill', 'amount', 'total', 'totalcost'],
+        // A cost column is never an id, number or date ("Bill ID", "Bill #", "Bill Date").
+        /\bid\b|#|\bnumber\b|\bnum\b|\bno\b|\bdate\b/,
+      )
     : isElec
       ? 9
       : 3;
