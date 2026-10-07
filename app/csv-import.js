@@ -195,24 +195,69 @@ function parseBillCsv(text, fname) {
         .split(',')
         .map((h) => h.trim())
     : null;
-  const ci = (names, skip) => {
+  const ci = (names) => {
     if (!hdr) return -1;
     // Exact match first (b4b257cd): try every candidate name for an EXACT
-    // header-cell match before falling back to substring. Needed now that
-    // full-schema export headers coexist on one row — e.g. "demandCharge"
-    // and "meterReadStart" both CONTAIN "demand"/"start", so a pure
-    // substring scan for row.demandKW/row.start could grab the wrong column.
-    // An exact match against the real column name always wins; substring
-    // stays as the fallback for hand-built CSVs using loose header text
-    // like "start_date" or "actual_kw" that isn't an exact schema key.
+    // header-cell match before the token pass. Needed now that full-schema
+    // export headers coexist on one row: "demandCharge" and "meterReadStart"
+    // both hold the words "demand"/"start", so an exact match against the
+    // real column name must always win over a loose match.
     for (const n of names) {
       const i = hdr.indexOf(n);
       if (i >= 0) return i;
     }
-    // skip (optional RegExp): headers to ignore in the substring pass, so a usage lookup
-    // never lands on a cost column ("ccf_used,therm_cost": 'therm' must not pick 'therm_cost').
+    // Token pass (one rule for every column). A header matches an alias only when the alias
+    // words appear as WHOLE words in the header ("to" never matches "Total"). A header that
+    // carries a class word (cost, id, date) is claimed only by aliases of the same class:
+    // "Energy Cost" is never kWh, "Demand Cost" is never kW, "Bill ID" is never the bill cost,
+    // "Bill Date" is never the bill cost, "Start Date" still matches 'start'.
+    // Glued words ("TotalCharges", "TotalkWh", "BillID") are split into the known words
+    // (this call's alias words + class words + "total"), fewest pieces, so the same rule applies.
+    const vocab = new Set(['total', 'cost', 'charge', 'charges', 'rate', 'amount', 'price', 'id', 'number', 'date']);
+    for (const n of names) for (const w of n.toLowerCase().match(/[a-z0-9$#]+/g) || []) vocab.add(w);
+    const split = (w) => {
+      const best = [[]];
+      for (let e = 1; e <= w.length; e++) {
+        best[e] = null;
+        for (let b = 0; b < e; b++) {
+          if (best[b] && vocab.has(w.slice(b, e)) && (!best[e] || best[b].length + 1 < best[e].length))
+            best[e] = best[b].concat(w.slice(b, e));
+        }
+      }
+      return best[w.length];
+    };
+    const tok = (x) => {
+      const out = [];
+      for (const w of x.toLowerCase().match(/[a-z0-9$#]+/g) || []) {
+        const sp = vocab.has(w) ? null : split(w);
+        if (sp) out.push(...sp);
+        else out.push(w);
+      }
+      return out;
+    };
+    const classOf = (t, isAlias) => {
+      const c = new Set();
+      for (const w of t) {
+        if (/^(cost|charge|charges|rate|amount|price)$/.test(w)) c.add('cost');
+        if (/^(id|#|number|num|no)$/.test(w)) c.add('id');
+        if (isAlias && w === 'total') c.add('cost'); // an alias "total" names the bill cost, so "Total Charges" is its header
+        if (w === 'date' || (isAlias && /^(start|begin|from|end|to|thru|through)$/.test(w))) c.add('date');
+      }
+      return c;
+    };
+    const has = (t, a) => {
+      for (let k = 0; k + a.length <= t.length; k++) if (a.every((w, j) => t[k + j] === w)) return true;
+      return false;
+    };
     for (const n of names) {
-      const i = hdr.findIndex((h) => h.includes(n) && !(skip && skip.test(h)));
+      const a = tok(n);
+      const ac = classOf(a, true);
+      const i = hdr.findIndex((h) => {
+        const t = tok(h);
+        if (!a.length || !has(t, a)) return false;
+        for (const c of classOf(t, false)) if (!ac.has(c)) return false;
+        return true;
+      });
       if (i >= 0) return i;
     }
     return -1;
@@ -244,11 +289,13 @@ function parseBillCsv(text, fname) {
   // camelCase alias: 'kwhcost' matches export header 'kwhCost'
   const iKwhCst = hdr ? ci(['kwh_cost', 'kwh cost', 'energy cost', 'energy$', 'energy_cost', 'kwhcost']) : 8;
   const iTotCst = hdr
-    ? ci(['total_cost', 'total cost', 'total$', 'bill', 'amount', 'total', 'totalcost'])
+    ? ci(
+        ['total_cost', 'total cost', 'total$', 'bill amount', 'bill total', 'bill', 'amount', 'total', 'totalcost'],
+      )
     : isElec
       ? 9
       : 3;
-  const iTherms = hdr ? ci(['therms', 'therm', 'gas', 'ccf', 'mmbtu', 'mcf'], /cost|charge|\$|rate|amount|total/) : 2;
+  const iTherms = hdr ? ci(['therms', 'therm', 'gas', 'ccf', 'mmbtu', 'mcf']) : 2;
   // camelCase alias: 'thermcost' matches export header 'thermCost'
   const iThCost = hdr ? ci(['therm_cost', 'therm cost', 'gas cost', 'gas$', 'thermcost']) : 3;
   const iUsage = hdr ? ci(['usage', 'consumption', 'hcf', 'kgal', 'mlb']) : 2;
