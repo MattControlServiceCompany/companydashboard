@@ -12,7 +12,7 @@ function _rptPresentedLineHTML(notice, sidePad) {
     'margin:6px 0;padding:0 ' +
     (sidePad == null ? '14px' : sidePad) +
     ';font-size:11px;font-weight:600;color:var(--rpt-green-dark)">' +
-    _rptV2Esc(notice) +
+    _escHtml(notice) +
     '</div>'
   );
 }
@@ -131,14 +131,14 @@ function _rptPresentedChooser(projId, yms, label, onUpdated) {
   var on = new Date(rec.presentedAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
   var body =
     '<div style="font-size:13px;color:var(--text);margin-bottom:12px">' +
-    _rptV2Esc(label || 'This period') +
+    _escHtml(label || 'This period') +
     ' was presented to the client on ' +
-    _rptV2Esc(on) +
+    _escHtml(on) +
     '.</div>';
   if (rec.pdfKey) {
     body +=
       '<button id="pcOpenBtn" class="btn btn-em" style="width:100%;margin-bottom:8px" onclick="_rptPresentedChoiceOpen()">Presented report' +
-      (rec.pdfName ? ' (' + _rptV2Esc(rec.pdfName) + ')' : '') +
+      (rec.pdfName ? ' (' + _escHtml(rec.pdfName) + ')' : '') +
       '</button>';
   } else {
     body +=
@@ -212,12 +212,12 @@ function _rptOpenPresentedForm(ctx) {
     .map(function (b) {
       return (
         '<tr data-bldg="' +
-        _rptV2Esc(b.id) +
+        _escHtml(b.id) +
         '">' +
         '<td style="' +
         cellCss +
         '">' +
-        _rptV2Esc(b.name) +
+        _escHtml(b.name) +
         '</td>' +
         '<td style="' +
         cellCss +
@@ -263,7 +263,7 @@ function _rptOpenPresentedForm(ctx) {
   var thCss = 'border:1px solid var(--border);padding:5px 8px;background:var(--s1);text-align:left;font-size:11px';
   var body =
     '<div style="font-size:12px;color:var(--text2);margin-bottom:10px">Period: <strong style="color:var(--text)">' +
-    _rptV2Esc(d.period.label || ctx.yms[0] + ' through ' + ctx.yms[ctx.yms.length - 1]) +
+    _escHtml(d.period.label || ctx.yms[0] + ' through ' + ctx.yms[ctx.yms.length - 1]) +
     '</strong>. Enter the figures exactly as printed in the document you gave the client. Only the figures you enter are locked. Monthly detail stays recalculated.</div>' +
     '<div style="display:flex;gap:12px;margin-bottom:10px">' +
     '<label style="flex:2;font-size:12px;color:var(--text2)">Document name<input id="pfDocName" type="text" style="' +

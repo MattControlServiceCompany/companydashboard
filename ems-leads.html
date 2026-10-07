@@ -1351,7 +1351,7 @@
         }
       }
     </style>
-    <link rel="stylesheet" href="feedback-widget.css?v=90" />
+    <link rel="stylesheet" href="feedback-widget.css?v=91" />
   </head>
   <body>
     <!-- TOPBAR -->
@@ -2149,7 +2149,7 @@
           const val = sel.value;
           sel.innerHTML =
             `<option value="">All CSC Contacts</option>` +
-            cscs.map((c) => `<option${c === val ? ' selected' : ''}>${esc(c)}</option>`).join('');
+            cscs.map((c) => `<option${c === val ? ' selected' : ''}>${_escHtml(c)}</option>`).join('');
         });
       }
 
@@ -2255,28 +2255,28 @@
           l.priority === 'High' ? 'var(--danger)' : l.priority === 'Low' ? 'var(--text3)' : 'var(--warn)';
         return `
     <div class="lead-card" draggable="true"
-      data-lead-id="${esc(l.id)}" ondragstart="dragStart(this.dataset.leadId,event)"
+      data-lead-id="${_escHtml(l.id)}" ondragstart="dragStart(this.dataset.leadId,event)"
       ondragend="event.target.classList.remove('dragging')"
-      data-lead-id="${esc(l.id)}" onclick="openDrawer(this.dataset.leadId)">
+      data-lead-id="${_escHtml(l.id)}" onclick="openDrawer(this.dataset.leadId)">
       <div style="display:flex;align-items:flex-start;gap:7px">
         <div class="priority-dot" style="background:${priColor};margin-top:4px"></div>
-        <div class="lc-company">${esc(l.company || '—')}</div>
+        <div class="lc-company">${_escHtml(l.company || '—')}</div>
       </div>
-      <div class="lc-meta">${esc([l.buildingType, l.city && l.state ? l.city + ', ' + l.state : l.city || l.state].filter(Boolean).join(' Â· ') || 'No location set')}</div>
-      ${l.cscContact ? `<div style="font-size:10px;color:var(--em2)">👤 ${esc(l.cscContact)}</div>` : ''}
+      <div class="lc-meta">${_escHtml([l.buildingType, l.city && l.state ? l.city + ', ' + l.state : l.city || l.state].filter(Boolean).join(' Â· ') || 'No location set')}</div>
+      ${l.cscContact ? `<div style="font-size:10px;color:var(--em2)">👤 ${_escHtml(l.cscContact)}</div>` : ''}
       ${
         l.tags && l.tags.length
           ? `<div class="lc-tags">${l.tags
               .slice(0, 3)
-              .map((t) => `<span class="tag">${esc(t)}</span>`)
+              .map((t) => `<span class="tag">${_escHtml(t)}</span>`)
               .join('')}</div>`
           : ''
       }
       <div class="lc-row">
         <div class="lc-value">${l.annualValue ? '$' + fmtNum(l.annualValue) : ''}</div>
-        <div class="lc-date">${esc(l.type || '')}</div>
+        <div class="lc-date">${_escHtml(l.type || '')}</div>
       </div>
-      ${l.nextAction ? `<div class="lc-action ${overdue ? 'overdue-flag' : ''}">${overdue ? 'âš ' : 'â†’'} ${esc(l.nextAction)}${nad ? ' (' + fmtDate(l.nextActionDate) + ')' : ''}</div>` : ''}
+      ${l.nextAction ? `<div class="lc-action ${overdue ? 'overdue-flag' : ''}">${overdue ? 'âš ' : 'â†’'} ${_escHtml(l.nextAction)}${nad ? ' (' + fmtDate(l.nextActionDate) + ')' : ''}</div>` : ''}
     </div>`;
       }
 
@@ -2332,12 +2332,12 @@
             : data
                 .map(
                   (l) => `
-        <tr data-lead-id="${esc(l.id)}" onclick="openDrawer(this.dataset.leadId)">
-          <td class="td-company">${esc(l.company || '—')}</td>
-          <td>${esc([l.city, l.state].filter(Boolean).join(', ') || '—')}</td>
-          <td><span class="stage-pill ${STAGE_CLS[l.stage] || ''}">${esc(l.stage || '—')}</span></td>
-          <td class="pri-${esc((l.priority || '').toLowerCase())}">${esc(l.priority || '—')}</td>
-          <td>${esc(l.cscContact || '—')}</td>
+        <tr data-lead-id="${_escHtml(l.id)}" onclick="openDrawer(this.dataset.leadId)">
+          <td class="td-company">${_escHtml(l.company || '—')}</td>
+          <td>${_escHtml([l.city, l.state].filter(Boolean).join(', ') || '—')}</td>
+          <td><span class="stage-pill ${STAGE_CLS[l.stage] || ''}">${_escHtml(l.stage || '—')}</span></td>
+          <td class="pri-${_escHtml((l.priority || '').toLowerCase())}">${_escHtml(l.priority || '—')}</td>
+          <td>${_escHtml(l.cscContact || '—')}</td>
           <td class="td-mono">${l.annualValue ? '$' + fmtNum(l.annualValue) : '—'}</td>
           <td style="${isOverdue(l.nextActionDate) ? 'color:var(--danger)' : ''}">${l.nextActionDate ? fmtDate(l.nextActionDate) : '—'}</td>
           <td>${l.lastContact ? fmtDate(l.lastContact) : '—'}</td>
@@ -2387,14 +2387,14 @@
         ${items
           .map(
             (l) => `
-          <div style="background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;transition:border-color .14s" data-lead-id="${esc(l.id)}" onclick="openDrawer(this.dataset.leadId)" onmouseover="this.style.borderColor='var(--em)'" onmouseout="this.style.borderColor='var(--border)'">
+          <div style="background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;transition:border-color .14s" data-lead-id="${_escHtml(l.id)}" onclick="openDrawer(this.dataset.leadId)" onmouseover="this.style.borderColor='var(--em)'" onmouseout="this.style.borderColor='var(--border)'">
             <div>
-              <div style="font-family:var(--head);font-size:13px;font-weight:700">${esc(l.company)}</div>
-              <div style="font-size:11px;color:var(--text2);margin-top:3px">${esc(l.nextAction || 'No action specified')} ${l.nextActionDate ? 'Â· ' + fmtDate(l.nextActionDate) : ''}</div>
+              <div style="font-family:var(--head);font-size:13px;font-weight:700">${_escHtml(l.company)}</div>
+              <div style="font-size:11px;color:var(--text2);margin-top:3px">${_escHtml(l.nextAction || 'No action specified')} ${l.nextActionDate ? 'Â· ' + fmtDate(l.nextActionDate) : ''}</div>
             </div>
             <div style="display:flex;align-items:center;gap:10px">
-              <span class="stage-pill ${STAGE_CLS[l.stage] || ''}">${esc(l.stage)}</span>
-              ${l.cscContact ? `<span style="font-size:11px;color:var(--em2)">${esc(l.cscContact)}</span>` : ''}
+              <span class="stage-pill ${STAGE_CLS[l.stage] || ''}">${_escHtml(l.stage)}</span>
+              ${l.cscContact ? `<span style="font-size:11px;color:var(--em2)">${_escHtml(l.cscContact)}</span>` : ''}
             </div>
           </div>`,
           )
@@ -2480,7 +2480,7 @@
             .map(
               ([k, v]) => `
             <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px">
-              <span>${esc(k)}</span><span style="font-family:var(--mono);color:var(--em)">${v}</span>
+              <span>${_escHtml(k)}</span><span style="font-family:var(--mono);color:var(--em)">${v}</span>
             </div>`,
             )
             .join('')}
@@ -2495,7 +2495,7 @@
           .map(
             ([k, v]) => `
           <div style="background:var(--s3);border:1px solid var(--border);border-radius:7px;padding:8px 13px;font-size:12px">
-            <span style="color:var(--text2)">${esc(k)}</span>
+            <span style="color:var(--text2)">${_escHtml(k)}</span>
             <span style="font-family:var(--mono);color:var(--em);margin-left:8px">${v}</span>
           </div>`,
           )
@@ -2634,8 +2634,8 @@
         <div class="activity-item">
           <div class="act-dot" style="background:var(--em)"></div>
           <div class="act-body">
-            <div class="act-text">${esc(a.text)}</div>
-            <div class="act-time">${esc(a.time)} Â· ${esc(a.user || 'You')}</div>
+            <div class="act-text">${_escHtml(a.text)}</div>
+            <div class="act-time">${_escHtml(a.time)} Â· ${_escHtml(a.user || 'You')}</div>
           </div>
         </div>`,
                 )
@@ -2838,13 +2838,13 @@
           }
         });
 
-        const fieldOpts = LEAD_FIELDS.map((f) => `<option value="${esc(f.key)}">${esc(f.label)}</option>`).join('');
+        const fieldOpts = LEAD_FIELDS.map((f) => `<option value="${_escHtml(f.key)}">${_escHtml(f.label)}</option>`).join('');
         document.getElementById('mapBody').innerHTML = csvHeaders
           .map(
             (h, i) => `
     <tr>
-      <td style="font-family:var(--mono);font-size:11px;color:var(--em)">${esc(h) || '(blank)'}</td>
-      <td style="font-size:11px;color:var(--text2);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(csvRows[0]?.[i]) || ''}</td>
+      <td style="font-family:var(--mono);font-size:11px;color:var(--em)">${_escHtml(h) || '(blank)'}</td>
+      <td style="font-size:11px;color:var(--text2);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_escHtml(csvRows[0]?.[i]) || ''}</td>
       <td><select class="map-table select" id="map-${i}">${fieldOpts}</select></td>
     </tr>`,
           )
@@ -2863,7 +2863,7 @@
           'PREVIEW (first 3 rows):\n' +
           parsed
             .slice(0, 4)
-            .map((r) => r.map((c) => esc(c)).join(' | '))
+            .map((r) => r.map((c) => _escHtml(c)).join(' | '))
             .join('\n');
       }
 
@@ -2988,7 +2988,7 @@
         if (n === null || n === undefined || String(n).trim() === '') return '–';
         const raw = n;
         n = typeof n === 'number' ? n : Number(String(n).replace(/[$,\s]/g, ''));
-        if (!Number.isFinite(n)) return esc(raw);
+        if (!Number.isFinite(n)) return _escHtml(raw);
         if (n >= 1000000) return (n / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
         if (n >= 1000) return (n / 1000).toFixed(0) + 'K';
         return n.toLocaleString();
@@ -3002,22 +3002,18 @@
             year: 'numeric',
           });
         } catch (e) {
-          return esc(d);
+          return _escHtml(d);
         }
       }
       function isOverdue(d) {
         return d && new Date(d + 'T00:00:00') < new Date(new Date().toDateString());
       }
-      function esc(s) {
-        return (s || '').toString().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-          .replace(/"/g, '&quot;')
-          .replace(/'/g, '&#39;');
-      }
     </script>
-    <script src="app/sync-classification.js?v=90"></script>
-    <script src="app/db.js?v=90"></script>
-    <script src="app/sync-ui.js?v=90"></script>
-    <script src="app/ems-leads-store.js?v=90"></script>
-    <script src="feedback-widget.js?v=90"></script>
+    <script src="lib/formatting.js?v=91"></script>
+    <script src="app/sync-classification.js?v=91"></script>
+    <script src="app/db.js?v=91"></script>
+    <script src="app/sync-ui.js?v=91"></script>
+    <script src="app/ems-leads-store.js?v=91"></script>
+    <script src="feedback-widget.js?v=91"></script>
   </body>
 </html>

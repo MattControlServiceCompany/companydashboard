@@ -1315,7 +1315,7 @@ function _pricingLaborBreakdownHTML(projId) {
     ';text-align:left">Labor Category</th>' +
     bd.months
       .map(function (m) {
-        return '<th style="' + thBase + ';text-align:right">' + _pricingEscText(m.label) + '</th>';
+        return '<th style="' + thBase + ';text-align:right">' + _escHtml(m.label) + '</th>';
       })
       .join('');
 
@@ -1339,7 +1339,7 @@ function _pricingLaborBreakdownHTML(projId) {
         '<tr><td style="' +
         tdBase +
         ';white-space:normal;word-break:break-word;color:var(--text)">' +
-        _pricingEscText(cat) +
+        _escHtml(cat) +
         '</td>' +
         cells +
         '</tr>'
@@ -1387,7 +1387,7 @@ function _pricingLaborBreakdownHTML(projId) {
       overMonths
         .map(function (m) {
           return (
-            _pricingEscText(m.label) +
+            _escHtml(m.label) +
             ' — ' +
             _pricingFmt(m.laborCost) +
             ' vs. ' +
@@ -1656,18 +1656,6 @@ function _pricingSortRecommendedRows(rows) {
   });
 }
 
-/* ── Small HTML-escape helper for module-level (non-closure) functions.
-   Mirrors the `_esc` closure defined inside initCostEstimateTab — needed here because
-   _pricingTopRoiCallout is a standalone top-level function (b771dec6 3b).
-   ─────────────────────────────────────────────────────────────────────────── */
-function _pricingEscText(s) {
-  return String(s || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
 /* ── Top-ROI callout card (correction #12)
    Criteria: HIGH or MED-HIGH tier AND effectiveCostTier <= 2 AND not enabler AND not safety AND >= 1 instance
    Shows 2-4 items; hidden if < 2.
@@ -1698,7 +1686,7 @@ function _pricingTopRoiCallout(projId, recRows, showDisclaimer) {
   // b771dec6 3b: disclaimer body built independent of the `unique.length < 2` gate below,
   // so it is never silently dropped when there are too few qualifying measures to show a list.
   var _disclaimerBodyHTML =
-    '<strong style="color:var(--text2)">M&amp;V Disclaimer:</strong> ' + _pricingEscText(SAVINGS_DISCLAIMER_TEXT);
+    '<strong style="color:var(--text2)">M&amp;V Disclaimer:</strong> ' + _escHtml(SAVINGS_DISCLAIMER_TEXT);
 
   if (unique.length < 2) {
     if (!showDisclaimer) return '';
@@ -3812,17 +3800,17 @@ function initCostEstimateTab(projId) {
       '</td>',
       // col 2: Building (frozen)
       '<td class="ch-frozen" style="max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;padding:5px 8px">' +
-        _esc(row.building) +
+        _escHtml(row.building) +
         '</td>',
       // col 3: Item
       '<td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;padding:5px 8px">' +
-        _esc(row.item) +
+        _escHtml(row.item) +
         '</td>',
       // col 4: Type
-      '<td style="font-size:10px;color:var(--text2);white-space:nowrap;padding:5px 8px">' + _esc(row.type) + '</td>',
+      '<td style="font-size:10px;color:var(--text2);white-space:nowrap;padding:5px 8px">' + _escHtml(row.type) + '</td>',
       // col 5: Equipment
       '<td style="font-size:10px;color:var(--text2);white-space:nowrap;padding:5px 8px">' +
-        _esc(row.equipment) +
+        _escHtml(row.equipment) +
         '</td>',
       // col 6: Qty
       '<td style="text-align:right;font-variant-numeric:tabular-nums;font-size:11px;padding:5px 8px">' +
@@ -3841,7 +3829,7 @@ function initCostEstimateTab(projId) {
       // col 10: Notes — visible text = note + G36 §; tooltip = whyNeeded (or whyNotHardware for programming rows)
       (function () {
         var noteText = row.note || '';
-        if (row.g36Section) noteText += (noteText ? ' · ' : '') + _esc(row.g36Section);
+        if (row.g36Section) noteText += (noteText ? ' · ' : '') + _escHtml(row.g36Section);
         // Build tooltip: for ioOnly Programming rows (integral VVT dampers), surface whyNotHardware;
         // for all others surface whyNeeded; phase-2 sequence rows have no rationale field.
         var tooltipText = '';
@@ -3852,7 +3840,7 @@ function initCostEstimateTab(projId) {
           tooltipText = row.whyNeeded;
           if (row.g36Section) tooltipText += ' (' + row.g36Section + ')';
         }
-        var titleAttr = tooltipText ? ' title="' + _esc(tooltipText) + '"' : '';
+        var titleAttr = tooltipText ? ' title="' + _escHtml(tooltipText) + '"' : '';
         var cursorStyle = tooltipText ? 'cursor:help;' : '';
         return (
           '<td style="font-size:10px;color:var(--text3);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:5px 8px;' +
@@ -3860,20 +3848,12 @@ function initCostEstimateTab(projId) {
           '"' +
           titleAttr +
           '>' +
-          _esc(noteText) +
+          _escHtml(noteText) +
           '</td>'
         );
       })(),
       '</tr>',
     ].join('');
-  }
-
-  function _esc(s) {
-    return String(s || '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
   }
 
   var tableBodyHTML = '';
@@ -3905,7 +3885,7 @@ function initCostEstimateTab(projId) {
       tableBodyHTML += [
         '<tr>',
         '<td colspan="10" style="background:var(--s1);padding:6px 10px;font-size:11px;font-weight:700;color:var(--text2);border-bottom:1px solid var(--border2)">',
-        _esc(bName),
+        _escHtml(bName),
         bTotal > 0 && hasCatalog
           ? ' <span style="font-weight:400;color:var(--text3)">— ' + _pricingFmt(bTotal) + ' est.</span>'
           : '',
@@ -7053,11 +7033,11 @@ function _pricingBuildToolbarHTML(projId, tier, opts) {
       .map(function (b) {
         return (
           '<option value="' +
-          _pricingEscText(b) +
+          _escHtml(b) +
           '"' +
           (filterBldg === b ? ' selected' : '') +
           '>' +
-          _pricingEscText(b) +
+          _escHtml(b) +
           '</option>'
         );
       })
@@ -7322,7 +7302,7 @@ function _pricingRenderCondensedTab(projId, el, estimate, tier) {
           '<td style="' +
           tdBase +
           ';white-space:normal;word-break:break-word;color:var(--text)">' +
-          _pricingEscText(it.item) +
+          _escHtml(it.item) +
           '</td>' +
           '<td style="' +
           tdBase +
@@ -7363,7 +7343,7 @@ function _pricingRenderCondensedTab(projId, el, estimate, tier) {
     return (
       '<div style="margin:0 14px 14px">' +
       '<div style="font-weight:700;color:var(--text2);margin-bottom:6px;font-size:11px;text-transform:uppercase;letter-spacing:0.5px">' +
-      _pricingEscText(title) +
+      _escHtml(title) +
       '</div>' +
       '<div class="ch-tbl-outer" style="margin:0"><div class="ch-tbl-scroll" style="overflow:auto">' +
       '<table class="ch-tbl" style="border-collapse:separate;border-spacing:0;width:100%">' +
@@ -8611,7 +8591,7 @@ function _pricingRecommendedTimelineHTML(projId) {
       // re-deriving a "N buildings: ..." string from the raw (now-deduped) `buildings` array here,
       // which would otherwise undercount buildings with real work this phase that were merely
       // introduced earlier. Already includes the "no additional scope this period" fallback text.
-      var scope = _pricingEscText(p.facilitiesText);
+      var scope = _escHtml(p.facilitiesText);
       var allowanceCell = hasBudget
         ? _pricingFmt(p.allowanceTotal)
         : _pricingFmt(p.measuresTotal) +
@@ -8634,12 +8614,12 @@ function _pricingRecommendedTimelineHTML(projId) {
         '<td style="' +
         tdBase +
         ';font-weight:700;color:var(--text)">' +
-        _pricingEscText(p.label) +
+        _escHtml(p.label) +
         '</td>' +
         '<td style="' +
         tdBase +
         ';white-space:nowrap;color:var(--text2)">' +
-        _pricingEscText(p.dateRange) +
+        _escHtml(p.dateRange) +
         '</td>' +
         '<td style="' +
         tdBase +
@@ -8681,13 +8661,13 @@ function _pricingRecommendedTimelineHTML(projId) {
       'period (' +
       tl.phases
         .map(function (p) {
-          return _pricingEscText(p.label) + ': ' + _pricingFmt(p.emLaborTotal);
+          return _escHtml(p.label) + ': ' + _pricingFmt(p.emLaborTotal);
         })
         .join(' · ') +
       ') — the dollar amount left over for hardware/programming measures after that labor is ' +
       tl.phases
         .map(function (p) {
-          return _pricingEscText(p.label) + ': ' + _pricingFmt(p.measuresAvailable);
+          return _escHtml(p.label) + ': ' + _pricingFmt(p.measuresAvailable);
         })
         .join(' · ') +
       '.' +
@@ -8695,7 +8675,7 @@ function _pricingRecommendedTimelineHTML(projId) {
         ? ' <span style="color:var(--warn);font-weight:700">Over allowance (labor + measures combined): ' +
           overCommittedPhases
             .map(function (p) {
-              return _pricingEscText(p.label) + ' by ' + _pricingFmt(p.overageAmount);
+              return _escHtml(p.label) + ' by ' + _pricingFmt(p.overageAmount);
             })
             .join(' · ') +
           '.</span>'
@@ -8957,15 +8937,6 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   // Avg electricity rate ($/kWh) — derived from en_utility_<projId> bills in _pricingGetProjectAnnualElec
   var _elecRate = _annualElecData.elecRate || 0.1;
 
-  // ── 6. Helpers
-  function _esc(s) {
-    return String(s || '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
-  }
-
   // 0ae36950: single-line $-savings-range chip, rendered in the Impact column (Recommended tier
   // phase-2 rows only). Replaces the old wrapping <div> that was appended below the Notes-cell
   // input — at narrow Notes-column widths that div's white-space:normal text wrapped into many
@@ -8999,7 +8970,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
         _anySavingsShown = true;
         return (
           '<span title="' +
-          _esc(
+          _escHtml(
             'Literature range: ' +
               Math.round(_litRange.lowPct * 100) +
               '–' +
@@ -9031,7 +9002,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
         _anySavingsShown = true;
         return (
           '<span title="' +
-          _esc('Literature range — M&V required \xb7 ' + _range.citation) +
+          _escHtml('Literature range — M&V required \xb7 ' + _range.citation) +
           '" style="' +
           _chipBase +
           'background:rgba(134,239,172,0.12);color:#86efac">Est. ' +
@@ -9120,9 +9091,9 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       '<span style="font-size:11px;display:inline-block;vertical-align:middle;max-width:' +
         _pricingClipSpanMaxW(1) +
         'px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' +
-        _esc(row.building) +
+        _escHtml(row.building) +
         '">' +
-        _esc(row.building) +
+        _escHtml(row.building) +
         '</span>',
     );
 
@@ -9131,9 +9102,9 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       '<span style="font-size:11px;display:inline-block;vertical-align:middle;max-width:' +
         _pricingClipSpanMaxW(2) +
         'px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' +
-        _esc(row.item) +
+        _escHtml(row.item) +
         '">' +
-        _esc(row.item) +
+        _escHtml(row.item) +
         '</span>',
     );
 
@@ -9142,9 +9113,9 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       '<span style="font-size:10px;color:var(--text2);display:inline-block;vertical-align:middle;max-width:' +
         _pricingClipSpanMaxW(3) +
         'px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' +
-        _esc(row.type) +
+        _escHtml(row.type) +
         '">' +
-        _esc(row.type) +
+        _escHtml(row.type) +
         '</span>',
     );
 
@@ -9153,9 +9124,9 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       '<span style="font-size:10px;color:var(--text2);display:inline-block;vertical-align:middle;max-width:' +
         _pricingClipSpanMaxW(4) +
         'px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' +
-        _esc(row.equipment) +
+        _escHtml(row.equipment) +
         '">' +
-        _esc(row.equipment) +
+        _escHtml(row.equipment) +
         '</span>',
     );
 
@@ -9205,7 +9176,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     } else {
       var optNote = row.optimized
         ? '<span title="Optimizer: was ' +
-          _esc(row.optimizerOriginalSku || '') +
+          _escHtml(row.optimizerOriginalSku || '') +
           '" style="color:var(--accent);margin-right:3px;font-size:10px">✓</span>'
         : '';
       skuContent =
@@ -9214,7 +9185,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
           : '') +
         optNote +
         '<span style="font-family:monospace;font-size:10px">' +
-        _esc(row.sku) +
+        _escHtml(row.sku) +
         '</span>';
     }
     cells.push(skuContent);
@@ -9465,7 +9436,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
         impactCellContent =
           '<span title="This point has no cost of its own — it unblocks the listed sequence(s)" ' +
           'style="font-size:9px;color:var(--text3);font-style:italic">Enables: ' +
-          _esc(_enablesLabels.join(', ')) +
+          _escHtml(_enablesLabels.join(', ')) +
           '</span>';
       }
     }
@@ -9491,7 +9462,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       var _rationalePrefix12 = row.clientSummary || row.savingsRationale;
       _tooltipText12 = _rationalePrefix12 + (_tooltipText12 ? ' \xb7 ' + _tooltipText12 : '');
     }
-    var _titleAttr12 = _tooltipText12 ? ' title="' + _esc(_tooltipText12) + '"' : '';
+    var _titleAttr12 = _tooltipText12 ? ' title="' + _escHtml(_tooltipText12) + '"' : '';
     var _cursorStyle12 = _tooltipText12 ? 'cursor:help;' : '';
 
     // Editable note override (Fix: item 6f26cbfd) — persists to est.noteOverrides[rowId]
@@ -9503,13 +9474,13 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     var _notePlaceholder = _noteText12 || 'Add note…';
     // Build tooltip from static text + any G36/tooltip text (for plain rows)
     var _noteTitleAttr = _noteText12
-      ? ' title="' + _esc(_noteText12) + (_tooltipText12 ? ' \xb7 ' + _esc(_tooltipText12) : '') + '"'
+      ? ' title="' + _escHtml(_noteText12) + (_tooltipText12 ? ' \xb7 ' + _escHtml(_tooltipText12) : '') + '"'
       : _titleAttr12;
     var _noteInputHTML =
       '<input type="text" value="' +
-      _esc(_noteOverrideVal) +
+      _escHtml(_noteOverrideVal) +
       '" placeholder="' +
-      _esc(_notePlaceholder) +
+      _escHtml(_notePlaceholder) +
       '"' +
       _noteTitleAttr +
       ' style="width:100%;font-size:10px;padding:2px 4px;background:' +
@@ -9621,9 +9592,9 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       '<span style="font-size:11px;display:inline-block;vertical-align:middle;max-width:' +
         _pricingClipSpanMaxW(1) +
         'px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' +
-        _esc(hwRow.building) +
+        _escHtml(hwRow.building) +
         '">' +
-        _esc(hwRow.building) +
+        _escHtml(hwRow.building) +
         '</span>',
     );
 
@@ -9635,11 +9606,11 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       '<span style="font-size:11px;display:inline-block;vertical-align:middle;max-width:' +
         _pricingClipSpanMaxW(2) +
         'px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' +
-        _esc(_combinedItemFull) +
+        _escHtml(_combinedItemFull) +
         '">' +
-        _esc(hwRow.item) +
+        _escHtml(hwRow.item) +
         ' <span style="color:var(--text3)">+</span> ' +
-        _esc(seqRow.item) +
+        _escHtml(seqRow.item) +
         '</span>',
     );
 
@@ -9649,9 +9620,9 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       '<span style="font-size:10px;color:var(--text2);display:inline-block;vertical-align:middle;max-width:' +
         _pricingClipSpanMaxW(3) +
         'px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' +
-        _esc(_combinedTypeFull) +
+        _escHtml(_combinedTypeFull) +
         '">' +
-        _esc(_combinedTypeFull) +
+        _escHtml(_combinedTypeFull) +
         '</span>',
     );
 
@@ -9661,9 +9632,9 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       '<span style="font-size:10px;color:var(--text2);display:inline-block;vertical-align:middle;max-width:' +
         _pricingClipSpanMaxW(4) +
         'px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' +
-        _esc(_combinedEquipFull) +
+        _escHtml(_combinedEquipFull) +
         '">' +
-        _esc(_combinedEquipFull) +
+        _escHtml(_combinedEquipFull) +
         '</span>',
     );
 
@@ -9730,7 +9701,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     } else {
       var _optNote = hwRow.optimized
         ? '<span title="Optimizer: was ' +
-          _esc(hwRow.optimizerOriginalSku || '') +
+          _escHtml(hwRow.optimizerOriginalSku || '') +
           '" style="color:var(--accent);margin-right:3px;font-size:10px">✓</span>'
         : '';
       _skuContent =
@@ -9739,7 +9710,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
           : '') +
         _optNote +
         '<span style="font-family:monospace;font-size:10px">' +
-        _esc(hwRow.sku) +
+        _escHtml(hwRow.sku) +
         '</span>';
     }
     cells.push(_skuContent);
@@ -9892,15 +9863,15 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
         : hwToggleKey;
     var _noteOverrideVal = _noteOverrides[_noteKey] || '';
     var _noteTitleAttr = _combinedTooltip
-      ? ' title="' + _esc(_noteText12 ? _noteText12 + ' \xb7 ' + _combinedTooltip : _combinedTooltip) + '"'
+      ? ' title="' + _escHtml(_noteText12 ? _noteText12 + ' \xb7 ' + _combinedTooltip : _combinedTooltip) + '"'
       : _noteText12
-        ? ' title="' + _esc(_noteText12) + '"'
+        ? ' title="' + _escHtml(_noteText12) + '"'
         : '';
     var _noteInputHTML =
       '<input type="text" value="' +
-      _esc(_noteOverrideVal) +
+      _escHtml(_noteOverrideVal) +
       '" placeholder="' +
-      _esc(_notePlaceholder) +
+      _escHtml(_notePlaceholder) +
       '"' +
       _noteTitleAttr +
       ' style="width:100%;font-size:10px;padding:2px 4px;background:' +
@@ -9948,9 +9919,9 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
 
     return (
       '<tr class="ch-tbl-row-merged" data-merged-hw="' +
-      _esc(hwRow.id) +
+      _escHtml(hwRow.id) +
       '" data-merged-seq="' +
-      _esc(seqRow.id) +
+      _escHtml(seqRow.id) +
       '" style="' +
       rowStyle +
       '">' +
@@ -10165,7 +10136,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
 
   if (filterBldg) {
     footerParts.push(
-      '<span style="font-size:11px;color:var(--accent);font-weight:600">Filter: ' + _esc(filterBldg) + '</span>',
+      '<span style="font-size:11px;color:var(--accent);font-weight:600">Filter: ' + _escHtml(filterBldg) + '</span>',
     );
   }
 

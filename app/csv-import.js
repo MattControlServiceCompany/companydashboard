@@ -2291,7 +2291,6 @@ function openBillModal(mid, editRowId) {
       }
     );
   };
-  const escapeAttr = (v) => (v === undefined || v === null ? '' : String(v).replace(/"/g, '&quot;'));
   const readVal = (pdfKey) => {
     const entry = schemaEntry(pdfKey);
     const val = _billReadValue(row, entry);
@@ -2310,19 +2309,19 @@ function openBillModal(mid, editRowId) {
     let step = '';
     let ph = '';
     let extraAttr = '';
-    let displayVal = escapeAttr(rawVal);
+    let displayVal = _escHtml(rawVal);
     if (e.type === 'date') inputType = 'date';
     else if (e.type === 'number') {
       inputType = 'text';
       extraAttr = ' inputmode="decimal"';
       ph = '0';
-      displayVal = escapeAttr(rawVal != null && rawVal !== '' ? _billFmtNumber(rawVal) : '');
+      displayVal = _escHtml(rawVal != null && rawVal !== '' ? _billFmtNumber(rawVal) : '');
       extraAttr += ` onfocus="_billModalFocus(this)" onblur="_billModalBlur(this,false)"`;
     } else if (e.type === 'currency') {
       inputType = 'text';
       extraAttr = ' inputmode="decimal"';
       ph = '$0.00';
-      displayVal = escapeAttr(rawVal != null && rawVal !== '' ? _billFmtCurrency(rawVal) : '');
+      displayVal = _escHtml(rawVal != null && rawVal !== '' ? _billFmtCurrency(rawVal) : '');
       extraAttr += ` onfocus="_billModalFocus(this)" onblur="_billModalBlur(this,true)"`;
     }
     return `<div class="ef-item"><div class="ef-key">${e.label}${required}</div><input class="ef-input" id="${id}" type="${inputType}"${step} placeholder="${ph}" value="${displayVal}"${extraAttr} autocomplete="off"></div>`;
@@ -2332,7 +2331,7 @@ function openBillModal(mid, editRowId) {
     const chargeEntry = schemaEntry(r.chargeField);
     const chargeId = 'bl-' + chargeEntry.key;
     const chargeRaw = readVal(r.chargeField);
-    const chargeVal = escapeAttr(chargeRaw != null && chargeRaw !== '' ? _billFmtCurrency(chargeRaw) : '');
+    const chargeVal = _escHtml(chargeRaw != null && chargeRaw !== '' ? _billFmtCurrency(chargeRaw) : '');
     const unit = r.unit || '';
     const dp = /kwh|therms|ccf/i.test(unit) ? 5 : 3;
     const recalc = `onchange="_billRecalcRow('${r.chargeField}')" oninput="_billRecalcRow('${r.chargeField}')"`;
@@ -2341,7 +2340,7 @@ function openBillModal(mid, editRowId) {
       const qtyEntry = schemaEntry(r.qtyField);
       const qtyId = 'bl-' + qtyEntry.key;
       const qtyRaw = readVal(r.qtyField);
-      const qtyVal = escapeAttr(qtyRaw != null && qtyRaw !== '' ? _billFmtNumber(qtyRaw) : '');
+      const qtyVal = _escHtml(qtyRaw != null && qtyRaw !== '' ? _billFmtNumber(qtyRaw) : '');
       const qtyLabel = r.label + (unit ? ' ' + unit : '');
       qtyHtml = `<div class="ef-item"><div class="ef-key">${qtyLabel}</div><input class="ef-input bl-qty-input" id="${qtyId}" type="text" inputmode="decimal" placeholder="0" value="${qtyVal}" ${recalc} onfocus="_billModalFocus(this)" onblur="_billModalBlur(this,false)" autocomplete="off"></div>`;
     } else {
@@ -2359,14 +2358,14 @@ function openBillModal(mid, editRowId) {
     const chargeEntry = schemaEntry(r.chargeField);
     const chargeId = 'bl-' + chargeEntry.key;
     const chargeRaw = readVal(r.chargeField);
-    const chargeVal = escapeAttr(chargeRaw != null && chargeRaw !== '' ? _billFmtCurrency(chargeRaw) : '');
+    const chargeVal = _escHtml(chargeRaw != null && chargeRaw !== '' ? _billFmtCurrency(chargeRaw) : '');
     const recalc = `onchange="_billRecalcRow('${r.chargeField}')" oninput="_billRecalcRow('${r.chargeField}')"`;
     let kwHtml;
     if (r.kwField) {
       const kwEntry = schemaEntry(r.kwField);
       const kwId = 'bl-' + kwEntry.key;
       const kwRaw = readVal(r.kwField);
-      const kwVal = escapeAttr(kwRaw != null && kwRaw !== '' ? _billFmtNumber(kwRaw) : '');
+      const kwVal = _escHtml(kwRaw != null && kwRaw !== '' ? _billFmtNumber(kwRaw) : '');
       kwHtml = `<div class="ef-item"><div class="ef-key">${kwEntry.label}</div><input class="ef-input" id="${kwId}" type="text" inputmode="decimal" placeholder="0" value="${kwVal}" onfocus="_billModalFocus(this)" onblur="_billModalBlur(this,false)" autocomplete="off"></div>`;
     } else {
       kwHtml = '<div></div>';
@@ -2380,7 +2379,7 @@ function openBillModal(mid, editRowId) {
     const chargeEntry = schemaEntry(r.chargeField);
     const chargeId = 'bl-' + chargeEntry.key;
     const chargeRaw = readVal(r.chargeField);
-    const chargeVal = escapeAttr(chargeRaw != null && chargeRaw !== '' ? _billFmtCurrency(chargeRaw) : '');
+    const chargeVal = _escHtml(chargeRaw != null && chargeRaw !== '' ? _billFmtCurrency(chargeRaw) : '');
     // When the user types in the Total field directly, mark it as manually edited
     // so auto-calculation stops overriding their value.
     const recalc = `onchange="_billRecalcRow('${r.chargeField}')" oninput="_billTotalManualEdit(this);_billRecalcRow('${r.chargeField}')"`;
@@ -3817,7 +3816,7 @@ function renderMeetingEditorBody() {
   let h = '';
   // Header section
   h += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
-          <div class="fg"><label class="fl">Project Nickname</label><input class="fi" id="mtg-nickname" value="${esc(m.projectNickname)}" oninput="mtgSchedulePreview()"></div>
+          <div class="fg"><label class="fl">Project Nickname</label><input class="fi" id="mtg-nickname" value="${_escHtml(m.projectNickname)}" oninput="mtgSchedulePreview()"></div>
           <div class="fg"><label class="fl">Document Type</label>
             <div style="display:flex;gap:4px;margin-top:4px">
               <button class="ptpill ${m.type === 'agenda' ? 'sel' : ''}" onclick="_editingMeeting.type='agenda';renderMeetingEditorBody()">Agenda</button>
@@ -3825,7 +3824,7 @@ function renderMeetingEditorBody() {
             </div>
           </div>
           <div class="fg"><label class="fl">Meeting Date & Time</label><input class="fi" type="datetime-local" id="mtg-date" value="${m.date}" oninput="mtgSchedulePreview()"></div>
-          <div class="fg"><label class="fl">Section Heading</label><input class="fi" id="mtg-heading" value="${esc(m.sectionHeading)}" oninput="mtgSchedulePreview()"></div>
+          <div class="fg"><label class="fl">Section Heading</label><input class="fi" id="mtg-heading" value="${_escHtml(m.sectionHeading)}" oninput="mtgSchedulePreview()"></div>
         </div>`;
   // Recurring schedule section
   const _p = projects.find((x) => x.id === _editingMeetingProjId);
@@ -3861,7 +3860,7 @@ function renderMeetingEditorBody() {
   m.contactTables.forEach((ct, ti) => {
     h += `<div class="mtg-contact-tbl" style="border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:10px">
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-              <input class="fi" style="flex:1;font-weight:700;font-style:italic" value="${esc(ct.label)}" onchange="mtgUpdateCtLabel(${ti},this.value)">
+              <input class="fi" style="flex:1;font-weight:700;font-style:italic" value="${_escHtml(ct.label)}" onchange="mtgUpdateCtLabel(${ti},this.value)">
               ${ti >= 2 ? `<button class="btn btn-ghost btn-sm" onclick="mtgRemoveContactTable(${ti})" style="color:var(--warn)">✕</button>` : ''}
             </div>
             <div class="mtg-contact-hdr"><span>Name</span><span>Mobile Phone</span><span>E-mail</span><span style="width:28px"></span></div>`;
@@ -3875,14 +3874,14 @@ function renderMeetingEditorBody() {
         ? `<select class="fs" style="width:auto;min-width:44px;flex-shrink:0;padding:4px" onchange="mtgPickContact(${ti},${ci},this.value,${ti === 0})"><option value="">📋</option>${_pickerSrc
             .map((pc, pci) => {
               const pcName = pc.name || ((pc.first || '') + (pc.last ? ' ' + pc.last : '')).trim() || 'Contact';
-              return '<option value="' + pci + '">' + esc(pcName) + '</option>';
+              return '<option value="' + pci + '">' + _escHtml(pcName) + '</option>';
             })
             .join('')}</select>`
         : '';
       h += `<div class="mtg-contact-row">
-              <div style="display:flex;gap:4px;flex:1">${pickerHtml}<input class="fi" style="flex:1" value="${esc(c.name)}" onchange="mtgUpdateContact(${ti},${ci},'name',this.value)"></div>
-              <input class="fi" value="${esc(c.phone)}" onchange="mtgUpdateContact(${ti},${ci},'phone',this.value)">
-              <input class="fi" value="${esc(c.email)}" onchange="mtgUpdateContact(${ti},${ci},'email',this.value)">
+              <div style="display:flex;gap:4px;flex:1">${pickerHtml}<input class="fi" style="flex:1" value="${_escHtml(c.name)}" onchange="mtgUpdateContact(${ti},${ci},'name',this.value)"></div>
+              <input class="fi" value="${_escHtml(c.phone)}" onchange="mtgUpdateContact(${ti},${ci},'phone',this.value)">
+              <input class="fi" value="${_escHtml(c.email)}" onchange="mtgUpdateContact(${ti},${ci},'email',this.value)">
               <button class="btn btn-ghost btn-sm" onclick="mtgRemoveContact(${ti},${ci})" style="color:var(--warn)">✕</button>
             </div>`;
     });
@@ -3897,7 +3896,7 @@ function renderMeetingEditorBody() {
             <div class="mtg-topic-num">${ti + 1}.</div>
             <div class="mtg-topic-body">
               <div style="display:flex;gap:6px;align-items:center">
-                <input class="fi" style="flex:1" value="${esc(t.text)}" onchange="mtgUpdateTopic(${ti},this.value)" ${isLast ? 'readonly' : ''}>
+                <input class="fi" style="flex:1" value="${_escHtml(t.text)}" onchange="mtgUpdateTopic(${ti},this.value)" ${isLast ? 'readonly' : ''}>
                 <div style="display:flex;gap:2px">
                   ${ti > 0 && !isLast ? `<button class="btn btn-ghost btn-sm" onclick="mtgMoveTopic(${ti},-1)">▲</button>` : ''}
                   ${ti < m.topics.length - 2 ? `<button class="btn btn-ghost btn-sm" onclick="mtgMoveTopic(${ti},1)">▼</button>` : ''}
@@ -3908,7 +3907,7 @@ function renderMeetingEditorBody() {
     t.subItems.forEach((si, sii) => {
       h += `<div class="mtg-sub-item">
               <span class="mtg-sub-letter">${String.fromCharCode(97 + sii)}.</span>
-              <input class="fi" style="flex:1" value="${esc(si)}" onchange="mtgUpdateSubItem(${ti},${sii},this.value)">
+              <input class="fi" style="flex:1" value="${_escHtml(si)}" onchange="mtgUpdateSubItem(${ti},${sii},this.value)">
               <button class="btn btn-ghost btn-sm" style="color:var(--warn)" onclick="mtgRemoveSubItem(${ti},${sii})">✕</button>
             </div>`;
     });
@@ -3919,10 +3918,6 @@ function renderMeetingEditorBody() {
   h += `<button class="btn btn-ghost btn-sm" onclick="mtgAddTopic()">+ Add Topic</button>`;
   body.innerHTML = h;
   mtgSchedulePreview();
-}
-
-function esc(s) {
-  return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 // Contact table helpers
@@ -4406,16 +4401,16 @@ function checkRecurringMeetings() {
 function openMtgTemplateSettings() {
   const t = getDefaultTemplate();
   const body = document.getElementById('mtgTemplateBody');
-  let h = `<div class="fg"><label class="fl">Template Name</label><input class="fi" id="tmpl-name" value="${esc(t.name)}"></div>
-          <div class="fg"><label class="fl">Section Heading</label><input class="fi" id="tmpl-heading" value="${esc(t.sectionHeading)}"></div>
-          <div class="fg"><label class="fl">Default End Topic</label><input class="fi" id="tmpl-endtopic" value="${esc(t.defaultEndTopic)}"></div>
+  let h = `<div class="fg"><label class="fl">Template Name</label><input class="fi" id="tmpl-name" value="${_escHtml(t.name)}"></div>
+          <div class="fg"><label class="fl">Section Heading</label><input class="fi" id="tmpl-heading" value="${_escHtml(t.sectionHeading)}"></div>
+          <div class="fg"><label class="fl">Default End Topic</label><input class="fi" id="tmpl-endtopic" value="${_escHtml(t.defaultEndTopic)}"></div>
           <div style="font-size:13px;font-weight:700;margin:12px 0 8px">Default CSC Contacts</div>
           <div id="tmpl-contacts">`;
   t.cscContacts.forEach((c, i) => {
     h += `<div class="mtg-contact-row" style="margin-bottom:6px">
-            <input class="fi" id="tc-name-${i}" value="${esc(c.name)}" placeholder="Name">
-            <input class="fi" id="tc-phone-${i}" value="${esc(c.phone)}" placeholder="Phone">
-            <input class="fi" id="tc-email-${i}" value="${esc(c.email)}" placeholder="Email">
+            <input class="fi" id="tc-name-${i}" value="${_escHtml(c.name)}" placeholder="Name">
+            <input class="fi" id="tc-phone-${i}" value="${_escHtml(c.phone)}" placeholder="Phone">
+            <input class="fi" id="tc-email-${i}" value="${_escHtml(c.email)}" placeholder="Email">
             <button class="btn btn-ghost btn-sm" onclick="this.parentElement.remove()" style="color:var(--warn)">✕</button>
           </div>`;
   });
@@ -5039,10 +5034,6 @@ function importBuildingList() {
   closeBldgImportModal();
 }
 window.importBuildingList = importBuildingList;
-
-function _escHtml(s) {
-  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
 
 // #113575be: Open PDF import flow from the Bills tab.
 // Resolves embed context, navigates to the PDF/OCR view, pre-selects the project,

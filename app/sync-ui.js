@@ -471,12 +471,6 @@
     }
   }
 
-  function esc(s) {
-    var d = document.createElement('div');
-    d.textContent = s === null || s === undefined ? '' : String(s);
-    return d.innerHTML;
-  }
-
   function downloadJSON(key, value) {
     try {
       var blob = new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' });
@@ -550,40 +544,40 @@
     if (descriptor.conflictClass === 'tombstone') {
       html +=
         '<p><strong>' +
-        esc(who) +
+        _escHtml(who) +
         '</strong> deleted ' +
-        esc(name) +
+        _escHtml(name) +
         ' at ' +
-        esc(when) +
+        _escHtml(when) +
         ' while you were editing it.</p>';
       html += '<p>Your changes were not lost — they are saved and available below.</p>';
     } else if (descriptor.conflictClass === 'records') {
       var recs = descriptor.records || [];
       html +=
         '<p><strong>' +
-        esc(who) +
+        _escHtml(who) +
         '</strong> and you both changed the same ' +
         (recs.length === 1 ? 'item' : recs.length + ' items') +
         ' in ' +
-        esc(name) +
+        _escHtml(name) +
         ' (theirs saved at ' +
-        esc(when) +
+        _escHtml(when) +
         '). Everything else was merged already. Choose which version to keep for each item. ' +
         'The version you do not keep stays in the conflict history.</p>';
       recs.forEach(function (r, i) {
         var fields = r.fields || [];
-        html += '<div class="ch-conflict-rec">' + '<div class="ch-conflict-rec-name">' + esc(r.label) + '</div>';
+        html += '<div class="ch-conflict-rec">' + '<div class="ch-conflict-rec-name">' + _escHtml(r.label) + '</div>';
         // Both values of every field changed on both sides, so the choice is informed.
         fields.forEach(function (f) {
           html +=
             '<div class="ch-conflict-field"><div class="ch-conflict-meta">' +
-            esc(f) +
+            _escHtml(f) +
             '</div>' +
             '<div><span class="ch-conflict-meta">Theirs: </span>' +
-            esc(_shortValue(r.server && r.server[f])) +
+            _escHtml(_shortValue(r.server && r.server[f])) +
             '</div>' +
             '<div><span class="ch-conflict-meta">Mine: </span>' +
-            esc(_shortValue(r.local && r.local[f])) +
+            _escHtml(_shortValue(r.local && r.local[f])) +
             '</div></div>';
         });
         html +=
@@ -598,17 +592,17 @@
     } else {
       html +=
         '<p><strong>' +
-        esc(who) +
+        _escHtml(who) +
         '</strong> changed ' +
-        esc(name) +
+        _escHtml(name) +
         ' at ' +
-        esc(when) +
+        _escHtml(when) +
         ' while you were editing it. Saving your changes now would overwrite theirs.</p>';
       html +=
         '<p class="ch-conflict-meta">Their saved version: ' +
-        esc(descriptor.server.version) +
+        _escHtml(descriptor.server.version) +
         '. Yours was based on version: ' +
-        esc(descriptor.localBaseVersion != null ? descriptor.localBaseVersion : 'unknown') +
+        _escHtml(descriptor.localBaseVersion != null ? descriptor.localBaseVersion : 'unknown') +
         '.</p>';
       if (descriptor.conflictClass === 'union-candidate') {
         html +=

@@ -1199,12 +1199,6 @@ function _downloadJson(filename, obj) {
     URL.revokeObjectURL(url);
   }, 1500);
 }
-// Text AND attribute safe: encodes & < > " ' so it is safe inside title="..." and title='...' too.
-function _restoreEsc(s) {
-  return String(s).replace(/[&<>"']/g, function (c) {
-    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
-  });
-}
 function _restoreStyle() {
   if (document.getElementById('restoreDlgStyle')) return;
   var st = document.createElement('style');
@@ -1337,20 +1331,20 @@ function _restoreResultTable(p, res) {
             : 'already the same, no change';
     return (
       '<tr><td>' +
-      _restoreEsc(i.key) +
+      _escHtml(i.key) +
       '</td><td class="' +
       (r && !r.ok ? 'rst-rm' : '') +
       '">' +
       st +
       '</td><td title="' +
-      _restoreEsc(why) +
+      _escHtml(why) +
       '">' +
-      _restoreEsc(why) +
+      _escHtml(why) +
       '</td></tr>'
     );
   });
   (p.skipped || []).forEach(function (s) {
-    rows.push('<tr><td>' + _restoreEsc(s.key) + '</td><td>Skipped</td><td>' + _restoreEsc(s.why) + '</td></tr>');
+    rows.push('<tr><td>' + _escHtml(s.key) + '</td><td>Skipped</td><td>' + _escHtml(s.why) + '</td></tr>');
   });
   if (!rows.length) return '';
   return (
@@ -1372,9 +1366,9 @@ function _restoreUnreadableHtml(p) {
       .map(function (i) {
         return (
           '<li>' +
-          _restoreEsc(i.label) +
+          _escHtml(i.label) +
           ' <small>' +
-          _restoreEsc(i.key) +
+          _escHtml(i.key) +
           ' (could not read from server, not changed)</small></li>'
         );
       })
@@ -1594,7 +1588,7 @@ function _restoreDialog(ctx) {
     return (
       shown
         .map(function (n) {
-          return '<li>' + _restoreEsc(n || '(no name)') + '</li>';
+          return '<li>' + _escHtml(n || '(no name)') + '</li>';
         })
         .join('') + (more > 0 ? '<li>and ' + more + ' more</li>' : '')
     );
@@ -1662,9 +1656,9 @@ function _restoreDialog(ctx) {
     rows.forEach(function (r) {
       html +=
         '<tr><td title="' +
-        _restoreEsc(r.label) +
+        _escHtml(r.label) +
         '">' +
-        _restoreEsc(r.label) +
+        _escHtml(r.label) +
         '</td><td class="n">' +
         r.added +
         '</td><td class="n">' +
@@ -1684,17 +1678,17 @@ function _restoreDialog(ctx) {
       html += '<details class="rst-det"><summary>What will be added</summary>';
       named.forEach(function (r) {
         html +=
-          '<b>' + _restoreEsc(r.label) + '</b><ul class="rst-list">' + namesHtml(r.names.filter(Boolean), 30) + '</ul>';
+          '<b>' + _escHtml(r.label) + '</b><ul class="rst-list">' + namesHtml(r.names.filter(Boolean), 30) + '</ul>';
       });
       html += '</details>';
     }
     html +=
       '<p class="rst-note">&quot;Kept&quot; means unchanged. Counts are records (projects, buildings, meters, bills, rows). Other data counts once per setting.' +
-      (p.backupVersion ? ' Backup made with app version ' + _restoreEsc(p.backupVersion) + '.' : '') +
+      (p.backupVersion ? ' Backup made with app version ' + _escHtml(p.backupVersion) + '.' : '') +
       (syncOn && localOnly ? ' ' + localOnly + ' changed item(s) stay on this device only.' : '') +
       '</p>';
     p.notes.forEach(function (note) {
-      html += '<p class="rst-note rst-rm-note">' + _restoreEsc(note) + '</p>';
+      html += '<p class="rst-note rst-rm-note">' + _escHtml(note) + '</p>';
     });
     html += _restoreUnreadableHtml(p);
     var held = p.items.filter(function (i) {
@@ -1708,13 +1702,13 @@ function _restoreDialog(ctx) {
       held.forEach(function (i) {
         html +=
           '<label class="rst-opt"><input type="checkbox" class="rstHeld" data-key="' +
-          _restoreEsc(i.key) +
+          _escHtml(i.key) +
           '"' +
           (allowRemoval[i.key] ? ' checked' : '') +
           '><span>Send ' +
-          _restoreEsc(i.label) +
+          _escHtml(i.label) +
           ' <small>' +
-          _restoreEsc(i.key) +
+          _escHtml(i.key) +
           ' (removes ' +
           i.removed +
           ' record' +
@@ -1733,13 +1727,13 @@ function _restoreDialog(ctx) {
       tombs.forEach(function (i) {
         html +=
           '<label class="rst-opt"><input type="checkbox" class="rstTomb" data-key="' +
-          _restoreEsc(i.key) +
+          _escHtml(i.key) +
           '"' +
           (restoreDeleted[i.key] ? ' checked' : '') +
           '><span>Restore ' +
-          _restoreEsc(i.label) +
+          _escHtml(i.label) +
           ' <small>' +
-          _restoreEsc(i.key) +
+          _escHtml(i.key) +
           '</small></span></label>';
       });
     }
@@ -1750,7 +1744,7 @@ function _restoreDialog(ctx) {
         ' item(s) are never restored</summary><ul class="rst-list">' +
         p.skipped
           .map(function (s) {
-            return '<li>' + _restoreEsc(s.key) + ' <small>' + _restoreEsc(s.why) + '</small></li>';
+            return '<li>' + _escHtml(s.key) + ' <small>' + _escHtml(s.why) + '</small></li>';
           })
           .join('') +
         '</ul></details>';
@@ -1846,7 +1840,7 @@ function _restoreDialog(ctx) {
         '<p class="rst-note">These items were not sent. The server did not change for them:</p><ul class="rst-list">' +
         res.failed
           .map(function (f) {
-            return '<li>' + _restoreEsc(f) + '</li>';
+            return '<li>' + _escHtml(f) + '</li>';
           })
           .join('') +
         '</ul>';
@@ -2397,6 +2391,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.07.91', date: '2026-10-07', title: 'Names with special characters show correctly',
+    items: [
+      { type: 'fix', text: 'Names and notes with characters like \' & < > now show the same way on every page.' }
+    ]
+  },
   { v: 'v2026.10.07.90', date: '2026-10-07', title: 'Quick Start opens after you sign in',
     items: [
       { type: 'fix', text: 'The Quick Start guide no longer opens on top of the sign-in screen. It opens once, after you sign in for the first time.' }

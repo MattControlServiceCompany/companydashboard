@@ -274,6 +274,14 @@ Nothing is deleted by this restore. On a record in both, the backup value wins; 
   hidden `bl-` input, or when `billHasPdf` is not the one PDF answer. How to check: node computations/bill-save-fields.gate.js
   (exit 0); node tools/test-rate-single-source.js.
 
+## 6d. HTML escape (2026-10-07, branch 2026-10-07-shared-escape)
+
+- `_escHtml(s)` (lib/formatting.js) is the ONE HTML escape. It encodes & < > " ' and turns null/undefined into an empty string.
+  Every page calls it. index.html, energy-department.html and ems-leads.html load lib/formatting.js before app/sync-ui.js.
+  The 20 private escapers (_esc, esc, emsEsc, baEsc, _bcrEsc, ...) are removed. Do not add a new one.
+  The two Word XML escapers (_docxEscapeXml in app/docx-writer.js, _sooXmlEsc in app/soo-generator.js) write XML, not HTML, and stay.
+  How to check: node tools/test-single-html-escape.js (exit 0). It fails on a private copy or a page that does not load the module.
+
 ## 7. How to keep this file current
 
 Any commit that changes these facts must update this file in the same commit.

@@ -45,7 +45,7 @@ const store = {};
 const pre = [
   'var __store = {}; function sget(k, d){ return k in __store ? JSON.parse(JSON.stringify(__store[k])) : d; }',
   'function sset(k, v){ __store[k] = JSON.parse(JSON.stringify(v)); }',
-  'function _rptV2Esc(s){ return String(s == null ? "" : s); }',
+  'function _escHtml(s){ return String(s == null ? "" : s); }',
   'function rptPage(n, title, body){ return body; }',
   'function _rptPresentedLineHTML(){ return ""; }',
   'function _rptYtdKicker(){ return ""; }',

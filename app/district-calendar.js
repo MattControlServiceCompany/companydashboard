@@ -800,7 +800,7 @@ function renderDistCalTable(projId) {
               );
               return `<tr>
             <td><input class="fi" type="date" value="${ev.date || ''}" onchange="distCalUpdate(${projId},${i},'date',this.value)" style="font-family:var(--mono)"></td>
-            <td><input class="fi" value="${esc(ev.name || '')}" onchange="distCalUpdate(${projId},${i},'name',this.value)" style="width:100%"></td>
+            <td><input class="fi" value="${_escHtml(ev.name || '')}" onchange="distCalUpdate(${projId},${i},'name',this.value)" style="width:100%"></td>
             <td><select class="fs" onchange="distCalUpdate(${projId},${i},'type',this.value)">${opts}</select></td>
             <td><button class="btn-del" onclick="distCalRemove(${projId},${i})">✕</button></td>
           </tr>`;
@@ -987,7 +987,7 @@ function _distCalRenderPreview(projId) {
     ).join('');
     rows += `<tr>
             <td style="padding:3px 5px"><input class="fi" type="date" value="${ev.date || ''}" onchange="window._distCalPendingImport[${projId}][${i}].date=this.value" style="font-family:var(--mono)"></td>
-            <td style="padding:3px 5px"><input class="fi" value="${esc(ev.name || '')}" onchange="window._distCalPendingImport[${projId}][${i}].name=this.value" style="width:100%"></td>
+            <td style="padding:3px 5px"><input class="fi" value="${_escHtml(ev.name || '')}" onchange="window._distCalPendingImport[${projId}][${i}].name=this.value" style="width:100%"></td>
             <td style="padding:3px 5px"><select class="fs" onchange="window._distCalPendingImport[${projId}][${i}].type=this.value">${selOpts}</select></td>
             <td style="padding:3px 5px"><button class="btn-del" onclick="window._distCalPendingImport[${projId}][${i}]._deleted=true;_distCalRenderPreview(${projId})">✕</button></td>
           </tr>`;

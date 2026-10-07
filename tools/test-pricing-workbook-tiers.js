@@ -257,7 +257,7 @@ const plain = (x) => JSON.parse(JSON.stringify(x));
   vm.createContext(rsb);
   vm.runInContext(
     [
-      'function _esc(s){ return String(s == null ? "" : s); }',
+      'function _escHtml(s){ return String(s == null ? "" : s); }',
       fnSrc(read('app/audit-estimate.js'), '_auditEstAllocate'),
       fnSrc(read('app/audit-estimate.js'), '_auditEstShareLines'),
     ]

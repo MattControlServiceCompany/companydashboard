@@ -11,13 +11,15 @@ const ROOT = process.env.APP_ROOT || path.join(__dirname, '..');
 const { launchBrowser } = require(path.join(ROOT, 'tools', 'launch-browser.js'));
 
 const SF = fs.readFileSync(path.join(ROOT, 'app', 'site-functions.js'), 'utf8');
-function grab(name) {
-  const i = SF.indexOf('function ' + name + '(');
+function grab(name, text) {
+  const SF2 = text || SF;
+  const i = SF2.indexOf('function ' + name + '(');
   if (i < 0) throw new Error('missing ' + name);
-  const j = i + SF.slice(i).search(/\r?\n\}\r?\n/) + 3;
-  return SF.slice(i, j);
+  const j = i + SF2.slice(i).search(/\r?\n\}\r?\n/) + 3;
+  return SF2.slice(i, j);
 }
-const src = grab('_restoreEsc') + grab('_restoreResultTable');
+const FM = fs.readFileSync(path.join(ROOT, 'lib', 'formatting.js'), 'utf8');
+const src = grab('_escHtml', FM) + grab('_restoreResultTable');
 const EVIL = `x" onmouseover="window.__x=1" '\' <b id=inj>&amp;</b> <script>window.__x=2</script> ' onfocus='window.__x=3`;
 
 let fails = 0;
@@ -33,7 +35,7 @@ const ok = (c, m) => {
     await page.setContent('<body></body>');
     const r = await page.evaluate(
       ({ src, EVIL }) => {
-        const f = new Function(src + '; return { esc: _restoreEsc, table: _restoreResultTable };')();
+        const f = new Function(src + '; return { esc: _escHtml, table: _restoreResultTable };')();
         const plan = { items: [{ key: EVIL, label: EVIL }], skipped: [{ key: EVIL, why: EVIL }] };
         const res = { results: [{ key: EVIL, ok: true, action: EVIL, httpStatus: 200 }] };
         const box = document.createElement('div');

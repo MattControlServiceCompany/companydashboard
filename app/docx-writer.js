@@ -1490,7 +1490,7 @@ function _docxWalkInline(node, fmt, entries, ctx) {
   //
   // A DIV is still block-level HTML even when flattened this way -- if it
   // follows content already collected in THIS cell/leaf (e.g. the ASHRAE 36
-  // Sequences table's `_esc(seq.label) + '<div>Requires: ...</div>'`,
+  // Sequences table's `_escHtml(seq.label) + '<div>Requires: ...</div>'`,
   // app/report-engine.js ~14020), a browser/html2canvas would start it on a
   // new line, but a bare inline flatten concatenates it onto the same line
   // with no separator at all -- found 2026-07-31 rendering the real
@@ -1878,7 +1878,7 @@ function _docxTranslateTable(tableEl, ctx) {
           // delegation loop (added whole-cloth by Step 8, never routed through that helper) still
           // had it. Found 2026-07-31 via the plan's own content-completeness diff (source text vs
           // rendered PDF text): the ASHRAE 36 Sequences glossary table's first column is
-          // `_esc(seq.label) + '<div>Requires: ...</div>'` (report-engine.js) -- a LOOSE text node
+          // `_escHtml(seq.label) + '<div>Requires: ...</div>'` (report-engine.js) -- a LOOSE text node
           // (the sequence name, e.g. "Supply Air Temperature Reset") immediately followed by a
           // <div> element (the "Requires: ..." line). _docxHasBlockChild(cell) is true (the DIV
           // qualifies), so this cell takes this delegation branch; iterating cell.children skipped

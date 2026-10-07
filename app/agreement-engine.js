@@ -177,10 +177,6 @@ function _agreementFmtDateLong(dateObj) {
   return _AGREEMENT_MONTHS[dateObj.getMonth()] + ' ' + dateObj.getDate() + ', ' + dateObj.getFullYear();
 }
 
-function _agreementEsc(s) {
-  return typeof _esc === 'function' ? _esc(s) : String(s == null ? '' : s);
-}
-
 // 2026-08-02 (defect register D-01/D-02/D-19): _agreementUnconfirmedFlag() USED to append
 // "(default value ... pending your confirmation)" in orange after the minimum-spend sentence
 // (Section 1.1) and after the escalation clause (Section 3.1.ii). That annotation shipped inside a
@@ -339,7 +335,7 @@ var _AGR_SUBHEAD = 'font-size:14px;font-weight:700;color:var(--rpt-page-text);ma
 // header, image only, no text bar) and the base PNG/PDF renders.
 function rptPageAgreementCover(n, d) {
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
-  var esc = _agreementEsc;
+  var esc = _escHtml;
 
   // 2026-07-31 (Word Export Rebuild plan Step 6, AI/_context/plans/word-export-rebuild-2026-07-30.md
   // Part D lines 306-311): was a plain <div><div> pair -- the docx-writer.js DOM->OOXML translator
@@ -496,7 +492,7 @@ function rptPageAgreementCover(n, d) {
  */
 var _agreementCommercialRenderers = {
   monthlyAllowance: function (d) {
-    var esc = _agreementEsc;
+    var esc = _escHtml;
     var allowanceStr =
       d.allowanceAmount != null
         ? _agreementSpellDollars(d.allowanceAmount)
@@ -911,7 +907,7 @@ function rptPageAgreementTermTermination(n, d) {
 // multi-page sections — see generateAgreementHTML for the caller-side spread.
 function rptPageAgreementGeneralProvisions(n, d) {
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
-  var esc = _agreementEsc;
+  var esc = _escHtml;
 
   var html =
     '<h2 style="' +
@@ -1025,7 +1021,7 @@ function rptPageAgreementGeneralProvisions(n, d) {
 // ─── Page 5: Signature Block ───────────────────────────────────────────────────────────────────
 function rptPageAgreementSignatureBlock(n, d) {
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
-  var esc = _agreementEsc;
+  var esc = _escHtml;
 
   var html =
     '<div style="' +
@@ -1111,7 +1107,7 @@ function openAgreementReportModal(projId) {
   }
 
   var cfg = _agreementGetConfig(projId);
-  var esc = _agreementEsc;
+  var esc = _escHtml;
   var proj = (typeof projects !== 'undefined' ? projects : []).find(function (x) {
     return String(x.id) === String(projId);
   });

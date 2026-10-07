@@ -85,13 +85,7 @@ let _bcrSkippedCollapsed = true;
 let _bcrUnchecked = new Set(); // row._rowId the user explicitly unchecked (survives re-renders while scanning)
 
 /* ── small local helpers (kept private to this file) ── */
-function _bcrEsc(s) {
-  return String(s == null ? '' : s)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
+
 function _bcrToISO(d) {
   if (!d) return '';
   if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
@@ -1859,12 +1853,12 @@ function _bcrRenderProgress(ctl) {
   return (
     '<div class="bcr-progress-wrap">' +
     '<div class="bcr-progress-label">' +
-    _bcrEsc(p.phaseLabel) +
+    _escHtml(p.phaseLabel) +
     '</div>' +
     (p.pageLine
       ? '<div class="bcr-progress-page">' +
-        _bcrEsc(p.pageLine) +
-        (p.etaLine ? ' — ' + _bcrEsc(p.etaLine) : '') +
+        _escHtml(p.pageLine) +
+        (p.etaLine ? ' — ' + _escHtml(p.etaLine) : '') +
         '</div>'
       : '') +
     '<div class="bcr-progress-bar"><div class="bcr-progress-fill" style="width:100%;opacity:.35"></div></div>' +
@@ -1885,11 +1879,11 @@ function _bcrRenderSummary(ctl) {
   const { byField, byBuilding } = _bcrFieldCounts(ctl.rows);
   const fieldList = Object.entries(byField)
     .sort((a, b) => b[1] - a[1])
-    .map(([f, n]) => '<div class="bcr-summary-col">' + _bcrEsc(f) + ': <b>' + n + '</b></div>')
+    .map(([f, n]) => '<div class="bcr-summary-col">' + _escHtml(f) + ': <b>' + n + '</b></div>')
     .join('');
   const bldgList = Object.entries(byBuilding)
     .sort((a, b) => b[1] - a[1])
-    .map(([b, n]) => '<div class="bcr-summary-col">' + _bcrEsc(b) + ': <b>' + n + '</b></div>')
+    .map(([b, n]) => '<div class="bcr-summary-col">' + _escHtml(b) + ': <b>' + n + '</b></div>')
     .join('');
   const bldgCount = Object.keys(byBuilding).length;
   return (
@@ -1916,7 +1910,7 @@ function _bcrRenderSummary(ctl) {
 
 function _bcrPdfBtn(pdfKey) {
   if (!pdfKey) return '<span class="bcr-reason">No PDF stored</span>';
-  return '<button class="bcr-pdf-btn" data-pdfkey="' + _bcrEsc(pdfKey) + '">View PDF</button>';
+  return '<button class="bcr-pdf-btn" data-pdfkey="' + _escHtml(pdfKey) + '">View PDF</button>';
 }
 
 function _bcrRenderGroups(rows) {
@@ -1932,26 +1926,26 @@ function _bcrRenderGroups(rows) {
     const collapsed = !!_bcrGroupCollapse[key];
     html +=
       '<div class="bcr-group" data-groupkey="' +
-      _bcrEsc(key) +
+      _escHtml(key) +
       '">' +
       '<div class="bcr-group-hdr" data-toggle="' +
-      _bcrEsc(key) +
+      _escHtml(key) +
       '">' +
       '<span class="bcr-caret">' +
       (collapsed ? '▶' : '▼') +
       '</span>' +
       '<input type="checkbox" class="bcr-group-check" data-groupkey="' +
-      _bcrEsc(key) +
+      _escHtml(key) +
       '" checked onclick="event.stopPropagation()">' +
       '<span class="bcr-group-title">' +
-      _bcrEsc(g.title) +
+      _escHtml(g.title) +
       '</span>' +
       '<span class="bcr-group-count">' +
       g.rows.length +
       ' correction' +
       (g.rows.length === 1 ? '' : 's') +
       ' · ' +
-      _bcrEsc(g.utility) +
+      _escHtml(g.utility) +
       '</span>' +
       '</div>' +
       '<div class="bcr-group-body' +
@@ -1965,31 +1959,31 @@ function _bcrRenderGroups(rows) {
       html +=
         '<tr>' +
         '<td><input type="checkbox" class="bcr-row-check" data-groupkey="' +
-        _bcrEsc(key) +
+        _escHtml(key) +
         '" data-rowid="' +
-        _bcrEsc(row._rowId) +
+        _escHtml(row._rowId) +
         '"' +
         checked +
         '></td>' +
         '<td>' +
-        _bcrEsc(row.period) +
+        _escHtml(row.period) +
         '</td>' +
         '<td>' +
-        _bcrEsc(row.field) +
+        _escHtml(row.field) +
         '</td>' +
         '<td>' +
-        _bcrEsc(_bcrFormatDisplayValue(row.field, row.currentValue, row.currentValue)) +
+        _escHtml(_bcrFormatDisplayValue(row.field, row.currentValue, row.currentValue)) +
         '</td>' +
         '<td><b>' +
-        _bcrEsc(_bcrFormatDisplayValue(row.field, row.correctedValue, row.currentValue)) +
+        _escHtml(_bcrFormatDisplayValue(row.field, row.correctedValue, row.currentValue)) +
         '</b></td>' +
         '<td class="bcr-reason">' +
-        _bcrEsc(row.reason) +
+        _escHtml(row.reason) +
         '</td>' +
         '<td>' +
         _bcrPdfBtn(row.pdfKey) +
         '<button class="bcr-dismiss-btn" data-dismissrow="' +
-        _bcrEsc(row._rowId) +
+        _escHtml(row._rowId) +
         '">Dismiss as correct</button>' +
         '</td>' +
         '</tr>';
@@ -2025,24 +2019,24 @@ function _bcrRenderFlagged(flagged) {
   flagged.forEach((row) => {
     html +=
       '<tr><td>' +
-      _bcrEsc(row.bldgName) +
+      _escHtml(row.bldgName) +
       '</td><td>' +
-      _bcrEsc(row.meterLabel) +
+      _escHtml(row.meterLabel) +
       '</td><td>' +
-      _bcrEsc(row.utility) +
+      _escHtml(row.utility) +
       '</td><td>' +
-      _bcrEsc(row.period) +
+      _escHtml(row.period) +
       '</td><td>' +
-      _bcrEsc(row.field) +
+      _escHtml(row.field) +
       '</td><td class="bcr-reason">' +
-      _bcrEsc(row.reason) +
+      _escHtml(row.reason) +
       '</td><td>' +
       _bcrPdfBtn(row.pdfKey) +
       '<button class="bcr-edit-btn" data-editflag="' +
-      _bcrEsc(row._rowId) +
+      _escHtml(row._rowId) +
       '">Edit</button>' +
       '<button class="bcr-dismiss-btn" data-dismissflag="' +
-      _bcrEsc(row._rowId) +
+      _escHtml(row._rowId) +
       '">Dismiss as correct</button>' +
       '</td></tr>';
   });
@@ -2056,17 +2050,17 @@ function _bcrRenderSkipped(skipped) {
   const couldNot = skipped.filter((s) => s.kind !== 'no-change');
   const row = (s) =>
     '<tr><td>' +
-    _bcrEsc(s.building || '') +
+    _escHtml(s.building || '') +
     '</td><td>' +
-    _bcrEsc(s.meter || '') +
+    _escHtml(s.meter || '') +
     '</td><td>' +
-    _bcrEsc(s.utility || '') +
+    _escHtml(s.utility || '') +
     '</td><td>' +
-    _bcrEsc(s.period || '') +
+    _escHtml(s.period || '') +
     '</td><td>' +
-    _bcrEsc(s.field || '') +
+    _escHtml(s.field || '') +
     '</td><td class="bcr-reason">' +
-    _bcrEsc(s.reason) +
+    _escHtml(s.reason) +
     '</td></tr>';
   return (
     '<div class="bcr-group" style="margin-top:4px">' +
@@ -2122,7 +2116,7 @@ function _bcrRender() {
   const body = document.getElementById('bcrBody');
   const ftr = document.getElementById('bcrFtr');
   if (!body || !ctl) return;
-  let html = '<div class="bcr-intro">' + _bcrEsc(_BCR_INTRO_TEXT) + '</div>';
+  let html = '<div class="bcr-intro">' + _escHtml(_BCR_INTRO_TEXT) + '</div>';
   html += _bcrRenderProgress(ctl);
   const nothingYet = ctl.status !== 'scanning' && !ctl.rows.length && !ctl.flagged.length && !ctl.skipped.length;
   if (nothingYet) {
@@ -2135,7 +2129,7 @@ function _bcrRender() {
     if (!ctl.rows.length && !ctl.flagged.length && ctl.status === 'done') {
       html =
         '<div class="bcr-intro">' +
-        _bcrEsc(_BCR_INTRO_TEXT) +
+        _escHtml(_BCR_INTRO_TEXT) +
         '</div>' +
         '<div style="padding:24px;text-align:center;color:var(--text2)">No pending bill corrections.</div>' +
         _bcrRenderSkipped(ctl.skipped);

@@ -11819,15 +11819,6 @@ const REPORT_SECTIONS = [
 
 var _rptV2ProjId = null;
 
-// 2026-09-24 (fix/report-headers-and-empty-period, task 5b, problem 3): escapes text this
-// modal inserts into innerHTML from live building names / month labels (never trust building
-// names as pre-safe — they are free-text the user typed on the Utility Data tab).
-function _rptV2Esc(s) {
-  return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
-    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
-  });
-}
-
 // Returns the 3 YYYY-MM strings for a given calendar quarter.
 function _rptV2QuarterYMs(year, quarter) {
   var startMo = (quarter - 1) * 3 + 1;
@@ -11966,8 +11957,8 @@ function _rptV2RefreshCoverageWarning() {
     .map(function (r) {
       var detail = r.allMissing
         ? 'no bills for Q' + quarter + ' ' + year
-        : 'missing ' + r.missingMonths.map(_rptV2Esc).join(', ');
-      return '<div style="margin-top:2px">' + _rptV2Esc(r.name) + ' — ' + detail + '</div>';
+        : 'missing ' + r.missingMonths.map(_escHtml).join(', ');
+      return '<div style="margin-top:2px">' + _escHtml(r.name) + ' — ' + detail + '</div>';
     })
     .join('');
   warnEl.style.display = '';
@@ -15605,7 +15596,7 @@ function rptPageASHRAE36Executive(n, d) {
           RPT_BODY_PX +
           'px;color:var(--rpt-page-text);line-height:1.6">' +
           '<span style="font-weight:700">' +
-          _esc(s.label) +
+          _escHtml(s.label) +
           '.</span> ' +
           rptCount(s.qty) +
           // fix/report-tighten-exec-paragraphs (2026-08-03, Matt: "Can we not tighten those
@@ -15613,7 +15604,7 @@ function rptPageASHRAE36Executive(n, d) {
           // summary) and "this sequence" -> "this" (the heading directly above already names the
           // sequence). Same fact, fewer words.
           ' pieces of equipment still need this programmed. ' +
-          _esc(s.plain) +
+          _escHtml(s.plain) +
           '</div>' +
           '</div>'
         );
@@ -16471,11 +16462,11 @@ function rptPageASHRAE36CostEstimate(n, d) {
         'border:1px solid var(--rpt-border);vertical-align:top;width:' +
         A36_SEQ_COL_NAME_PCT +
         '%">' +
-        _esc(seqName) +
+        _escHtml(seqName) +
         (sensorLine
           ? '<div style="font-size:9px;font-weight:400;color:var(--rpt-page-text);margin-top:3px;line-height:1.4">' +
             'Requires: ' +
-            _esc(sensorLine) +
+            _escHtml(sensorLine) +
             '</div>'
           : '') +
         '</td>' +
@@ -16485,7 +16476,7 @@ function rptPageASHRAE36CostEstimate(n, d) {
         '%' +
         sectionNowrap +
         '">' +
-        _esc(sectionText) +
+        _escHtml(sectionText) +
         '</td>' +
         '<td style="padding:4px 8px;font-size:11px;color:var(--rpt-page-text);' +
         'border:1px solid var(--rpt-border);vertical-align:top;text-align:right;width:' +
@@ -16495,7 +16486,7 @@ function rptPageASHRAE36CostEstimate(n, d) {
         '</td>' +
         '<td style="padding:4px 8px;font-size:11px;color:var(--rpt-page-text);' +
         'border:1px solid var(--rpt-border);line-height:1.5;vertical-align:top">' +
-        _esc(plainDesc) +
+        _escHtml(plainDesc) +
         '</td>' +
         '</tr>';
       // U2 / RC-A (2026-08-02, D-04): estH was a two-bucket guess (82px with a "Requires:"
@@ -16674,7 +16665,7 @@ function rptPageASHRAE36CostEstimate(n, d) {
       '<div style="font-size:' +
       RPT_SECTION_HEAD_PX +
       'px;font-weight:700;color:var(--rpt-blue);margin-bottom:8px">' +
-      _esc(SEQ_SECTION_TITLE + _seqPartSuffix(idx, total)) +
+      _escHtml(SEQ_SECTION_TITLE + _seqPartSuffix(idx, total)) +
       '</div>'
     );
   }
@@ -18541,7 +18532,7 @@ function _rptA36CoverPricingStrip(d) {
         RPT_SECTION_HEAD_PX +
         'px;font-weight:700;color:var(--rpt-page-text);border-bottom:2px solid var(--rpt-rule);' +
         'padding-bottom:3px;margin-bottom:5px">' +
-        _esc(headline) +
+        _escHtml(headline) +
         '</div>' +
         '<div style="font-size:14px;color:var(--rpt-page-text);line-height:1.6">' +
         t.desc(amtStr, svcSentence) +
@@ -18817,10 +18808,6 @@ function rptPageASHRAE36ProposalCover(n, d) {
   // is untouched; only the mid-sentence renders on this page use the shortened form.
   var displayClient = _rptProposalDisplayClientName(d.project.name);
 
-  function esc(s) {
-    return typeof _esc === 'function' ? _esc(s) : String(s == null ? '' : s);
-  }
-
   // Density pass (2026-07-26, page-1 clip fix): tightened from 12/5 margin, 1.55 line-height to
   // fit all 5 "Why This Approach" bullets above the wave footer without shrinking type past a
   // readable floor — see dashboardlogic.md 2026-07-26 entry for the before/after px-past-footer
@@ -18865,7 +18852,7 @@ function rptPageASHRAE36ProposalCover(n, d) {
     RPT_DOC_TITLE_PX +
     'px;font-weight:700;color:var(--rpt-blue);text-align:center;margin-bottom:4px">Service Proposal</div>' +
     '<div style="font-size:15px;font-weight:700;color:var(--rpt-page-text);text-align:center;margin-bottom:12px">' +
-    esc(d.project.name) +
+    _escHtml(d.project.name) +
     '</div>' +
     '</div>';
 
@@ -18877,7 +18864,7 @@ function rptPageASHRAE36ProposalCover(n, d) {
     '<div style="' +
     BODY +
     '">Control Service Company completed an ASHRAE 36 readiness assessment across the ' +
-    esc(displayClient) +
+    _escHtml(displayClient) +
     ' building portfolio. The assessment identified an overall readiness score of ' +
     p.composite +
     '% across ' +
@@ -18927,7 +18914,7 @@ function rptPageASHRAE36ProposalCover(n, d) {
   // ...FullScope near rptPageASHRAE36ProposalScope) — both still with no dollar total.
   var findingsPara =
     'Reaching full ASHRAE 36 compliance across the ' +
-    esc(displayClient) +
+    _escHtml(displayClient) +
     ' portfolio requires two categories of work, in sequence. The first is the instrumentation ' +
     'and safety programming every ASHRAE 36 sequence depends on (sensors, actuators, and ' +
     'safety-critical programming such as freeze protection), which must be in place before any ' +
@@ -19000,10 +18987,6 @@ function rptPageASHRAE36ProposalCover(n, d) {
 function _rptA36RecommendedServicesInnerHTML(d) {
   var displayClient = _rptProposalDisplayClientName(d.project.name);
 
-  function esc(s) {
-    return typeof _esc === 'function' ? _esc(s) : String(s == null ? '' : s);
-  }
-
   // D-12 (2026-08-03): 12px (9pt printed, 10.005pt after the floor) -> the 13pt section tier.
   // Same HEAD/BODY literals used throughout the ASHRAE 36 Proposal page family.
   var HEAD = 'font-size:' + RPT_SECTION_HEAD_PX + 'px;font-weight:700;color:var(--rpt-page-text);margin:5px 0 2px';
@@ -19042,7 +19025,7 @@ function _rptA36RecommendedServicesInnerHTML(d) {
       budgetFmt +
       ' per month, carrying out the highest-return improvements first. Each phase is fully ' +
       'funded as it is completed, so ' +
-      esc(displayClient) +
+      _escHtml(displayClient) +
       ' is never asked to approve a large capital expenditure — a one-time capital expense ' +
       'becomes a manageable ongoing operating cost.';
   } else {
@@ -19050,7 +19033,7 @@ function _rptA36RecommendedServicesInnerHTML(d) {
       'Rather than pursuing a large one-time capital project, Control Service Company recommends a ' +
       'phased Energy Management Services approach focused on the highest-value opportunities first. This approach ' +
       'allows ' +
-      esc(displayClient) +
+      _escHtml(displayClient) +
       ' to improve building performance using a predictable monthly budget while continuously ' +
       'expanding optimization efforts over time.';
   }
@@ -19430,7 +19413,7 @@ function _rptA36JoinList(arr) {
 }
 
 /**
- * _rptA36MonthLaborSentence(monthRows, bucketIdx, esc) — builds the "Ongoing Energy Management
+ * _rptA36MonthLaborSentence(monthRows, bucketIdx) — builds the "Ongoing Energy Management
  * labor" lead sentence(s) for one calendar month row of the Proposal months table, from that
  * month's real bucket rows (bd.months[bucketIdx-1].rows — see caller). Three groups, in the order
  * Matt asked for ("starting from the Ongoing Energy Management labor and building up: early
@@ -19440,7 +19423,7 @@ function _rptA36JoinList(arr) {
  * uses) only changes the setup sentence's verb tense (sets up vs. continues tapering) — never
  * invents a category that isn't in monthRows.
  */
-function _rptA36MonthLaborSentence(monthRows, bucketIdx, esc) {
+function _rptA36MonthLaborSentence(monthRows, bucketIdx) {
   monthRows = monthRows || [];
   var audit = [],
     setup = [],
@@ -19459,14 +19442,14 @@ function _rptA36MonthLaborSentence(monthRows, bucketIdx, esc) {
   });
   var sentences = [];
   if (recurring.length) {
-    sentences.push('Ongoing Energy Management labor this month covers ' + esc(_rptA36JoinList(recurring)) + '.');
+    sentences.push('Ongoing Energy Management labor this month covers ' + _escHtml(_rptA36JoinList(recurring)) + '.');
   }
   if (audit.length) {
-    sentences.push('This month also finishes the ASHRAE 36 Audit Report (' + esc(_rptA36JoinList(audit)) + ').');
+    sentences.push('This month also finishes the ASHRAE 36 Audit Report (' + _escHtml(_rptA36JoinList(audit)) + ').');
   }
   if (setup.length) {
     var verb = bucketIdx === 1 ? 'sets up' : 'continues, at a reduced level as the initial setup tapers off,';
-    sentences.push('This month also ' + verb + ' ' + esc(_rptA36JoinList(setup)) + '.');
+    sentences.push('This month also ' + verb + ' ' + _escHtml(_rptA36JoinList(setup)) + '.');
   }
   return sentences.join(' ');
 }
@@ -19572,21 +19555,21 @@ function _rptA36MonthSequenceGroups(items) {
 }
 
 /**
- * _rptA36MonthSequenceSentence(groups, esc) — turns _rptA36MonthSequenceGroups' output into one
+ * _rptA36MonthSequenceSentence(groups) — turns _rptA36MonthSequenceGroups' output into one
  * sentence naming each sequence type once, with the buildings it touches that month named in a
  * parenthetical (or, past BUILDING_LIST_MAX, just a count — "the list is long" case Matt's spec
  * calls out) rather than as a count-only "3 buildings" with no names, or a duplicated sentence per
  * building.
  */
-function _rptA36MonthSequenceSentence(groups, esc) {
+function _rptA36MonthSequenceSentence(groups) {
   if (!groups || !groups.length) return '';
   var BUILDING_LIST_MAX = 4;
   var parts = groups.map(function (g) {
     var n = g.buildings.length;
-    if (n === 1) return esc(g.label) + ' programming at ' + esc(g.buildings[0]);
+    if (n === 1) return _escHtml(g.label) + ' programming at ' + _escHtml(g.buildings[0]);
     if (n <= BUILDING_LIST_MAX)
-      return esc(g.label) + ' programming across ' + n + ' buildings (' + g.buildings.map(esc).join(', ') + ')';
-    return esc(g.label) + ' programming across ' + n + ' buildings';
+      return _escHtml(g.label) + ' programming across ' + n + ' buildings (' + g.buildings.map(_escHtml).join(', ') + ')';
+    return _escHtml(g.label) + ' programming across ' + n + ' buildings';
   });
   var joined = parts.length === 1 ? parts[0] : parts.slice(0, -1).join('; ') + '; and ' + parts[parts.length - 1];
   return 'Sequence programming this month: ' + joined + '.';
@@ -19656,10 +19639,6 @@ function _rptA36MeasureContentH(html) {
  *     footers (measured via page.pdf() print-path render, not just the on-screen preview).
  */
 function _rptA36PhaseTableDerive(d, opts) {
-  function esc(s) {
-    return typeof _esc === 'function' ? _esc(s) : String(s == null ? '' : s);
-  }
-
   // Density pass (2026-07-27, page-2/3 merge): margin/line-height tightened (spacing only, font
   // size unchanged) — see rptPageASHRAE36ProposalPhaseAndVision's header comment.
   //
@@ -19781,7 +19760,7 @@ function _rptA36PhaseTableDerive(d, opts) {
     '<tr>' +
     headCols
       .map(function (m) {
-        return '<th style="' + thStyle + '">' + esc(m) + '</th>';
+        return '<th style="' + thStyle + '">' + _escHtml(m) + '</th>';
       })
       .join('') +
     '</tr>';
@@ -19921,11 +19900,11 @@ function _rptA36PhaseTableDerive(d, opts) {
       var seqLine = isNew
         ? 'Begin ' + g.label + ' programming' + (cTxt ? ' (' + cTxt + ')' : '') + '.'
         : g.label + ' programming (continues' + (cTxt ? ' — ' + cTxt : '') + ').';
-      lines.push('<div style="' + _cellSeqLineStyle + '">' + esc(seqLine) + '</div>');
+      lines.push('<div style="' + _cellSeqLineStyle + '">' + _escHtml(seqLine) + '</div>');
       charLens.push(seqLine.length);
     });
     if (!lines.length) {
-      lines.push('<div style="' + _cellLineStyle + '">' + esc(MONTH_EMPTY_TEXT) + '</div>');
+      lines.push('<div style="' + _cellLineStyle + '">' + _escHtml(MONTH_EMPTY_TEXT) + '</div>');
       charLens.push(MONTH_EMPTY_TEXT.length);
     }
     return { label: m, cellHTML: lines.join(''), charLens: charLens };
@@ -19964,7 +19943,7 @@ function _rptA36PhaseTableDerive(d, opts) {
       allTermCatNames.length === 1
         ? allTermCatNames[0]
         : allTermCatNames.slice(0, -1).join(', ') + ' and ' + allTermCatNames[allTermCatNames.length - 1];
-    expectedResultsText = 'Reporting, alarms, and efficiency/comfort gains from ' + esc(namesText2) + '.';
+    expectedResultsText = 'Reporting, alarms, and efficiency/comfort gains from ' + _escHtml(namesText2) + '.';
   }
 
   // futureRowHTML (the "Future Work" inline table row) DELETED along with the whole Future Work
@@ -20253,10 +20232,6 @@ function _rptA36VisionInnerHTML(d, opts) {
   // Prose-only display name — see _rptProposalDisplayClientName above rptPageASHRAE36ProposalCover.
   var displayClient = _rptProposalDisplayClientName(d.project.name);
 
-  function esc(s) {
-    return typeof _esc === 'function' ? _esc(s) : String(s == null ? '' : s);
-  }
-
   // Density pass (2026-07-27, page-2/3 merge — see rptPageASHRAE36ProposalPhaseAndVision's header
   // comment): tightened from 10px/5px heading margins and 1.55 line-height to the SAME 1.38
   // line-height page 1 (rptPageASHRAE36ProposalCover's BODY var) already established as this
@@ -20312,9 +20287,9 @@ function _rptA36VisionInnerHTML(d, opts) {
     // right direction.
     var termRangeIntro = phaseTableOn
       ? 'The current term (' +
-        esc(termRangeLabel) +
+        _escHtml(termRangeLabel) +
         ') is set out in the Included Improvements schedule earlier in this proposal.'
-      : 'The current term runs ' + esc(termRangeLabel) + '.';
+      : 'The current term runs ' + _escHtml(termRangeLabel) + '.';
     // R7 (2026-08-03, V-22): the second sentence used to assert "Phases are sequenced by expected
     // return on investment: the highest-return measures come first." Ranking by what the work
     // returns to the client IS the real rule and is NOT being dropped — but the schedule this
@@ -20339,7 +20314,7 @@ function _rptA36VisionInnerHTML(d, opts) {
       termRangeIntro +
       ' Control Service Company orders the work by the return each ' +
       'improvement is expected to deliver to ' +
-      esc(displayClient) +
+      _escHtml(displayClient) +
       ', so the improvements expected to return the most are carried out first. Each stage of the ' +
       'work is funded through the monthly service allowance as it is completed, with no fixed end ' +
       'date; the service continues for as long as improvement opportunities remain.</div>';
@@ -20370,7 +20345,7 @@ function _rptA36VisionInnerHTML(d, opts) {
     'project. The objective is to continuously improve heating and cooling system performance, increase energy ' +
     'efficiency, improve occupant comfort, and progressively increase ASHRAE 36 alignments across ' +
     'the ' +
-    esc(displayClient) +
+    _escHtml(displayClient) +
     ' portfolio.</div>' +
     '<div style="' +
     BODY +
@@ -20523,9 +20498,6 @@ function rptPageASHRAE36ProposalPhaseAndVision(n, d, opts) {
  */
 function _rptA36ComplianceScopeInnerHTML(d) {
   var displayClient = _rptProposalDisplayClientName(d.project.name);
-  function esc(s) {
-    return typeof _esc === 'function' ? _esc(s) : String(s == null ? '' : s);
-  }
   // D-12 (2026-08-03): 12px -> the 13pt section tier (same reason as the margin:5px variant).
   var HEAD = 'font-size:' + RPT_SECTION_HEAD_PX + 'px;font-weight:700;color:var(--rpt-page-text);margin:4px 0 3px';
   var BODY = 'font-size:14px;color:var(--rpt-page-text);line-height:1.38';
@@ -20564,7 +20536,7 @@ function _rptA36ComplianceScopeInnerHTML(d) {
     'carry the sensors and actuators its control sequences depend on, its safety programming must ' +
     'be in place, and the sequences themselves must be programmed and verified on that equipment. ' +
     'Across the ' +
-    esc(displayClient) +
+    _escHtml(displayClient) +
     ' portfolio, the audit identified <strong>' +
     rptCount(sensorCount) +
     ' sensor' +
@@ -20620,9 +20592,6 @@ function rptPageASHRAE36ProposalComplianceScope(n, d) {
  */
 function _rptA36FullScopeInnerHTML(d) {
   var displayClient = _rptProposalDisplayClientName(d.project.name);
-  function esc(s) {
-    return typeof _esc === 'function' ? _esc(s) : String(s == null ? '' : s);
-  }
   // D-12 (2026-08-03): 12px -> the 13pt section tier (same reason as the margin:5px variant).
   var HEAD = 'font-size:' + RPT_SECTION_HEAD_PX + 'px;font-weight:700;color:var(--rpt-page-text);margin:4px 0 3px';
   var BODY = 'font-size:14px;color:var(--rpt-page-text);line-height:1.38';
@@ -20637,7 +20606,7 @@ function _rptA36FullScopeInnerHTML(d) {
     '<div style="' +
     BODY +
     '">Completing full ASHRAE 36 compliance across the ' +
-    esc(displayClient) +
+    _escHtml(displayClient) +
     ' portfolio means programming every applicable ASHRAE 36 optimization sequence on top of ' +
     'the instrumentation and safety programming above, and adding portfolio-wide reporting that ' +
     'continuously checks that every sequence keeps performing as intended.</div>' +
@@ -21186,7 +21155,7 @@ function _rptA36TierDetailPanelHTML(key, tt, summaryData, estimateState, wantIte
       } else if (c.qty > 1) {
         priceStr = ' (qty ' + c.qty + ')';
       }
-      return '<li>' + _esc(c.label) + priceStr + '</li>';
+      return '<li>' + _escHtml(c.label) + priceStr + '</li>';
     });
     var catDelta = wantItemized && printed.length && subtotalR != null ? _rptRoundingDelta(subtotalR, printed) : null;
     if (catDelta !== null) catLines.push('<li>Rounding: ' + fmtUSD(catDelta) + '</li>');
@@ -21240,7 +21209,7 @@ function _rptA36TierDetailPanelHTML(key, tt, summaryData, estimateState, wantIte
       } else if (it.qty > 1) {
         priceStr = ' (qty ' + it.qty + ')';
       }
-      return '<li>' + _esc(it.item || '') + priceStr + '</li>';
+      return '<li>' + _escHtml(it.item || '') + priceStr + '</li>';
     });
     var itemDelta =
       wantItemized && printedTotals.length && subtotalR != null ? _rptRoundingDelta(subtotalR, printedTotals) : null;
@@ -21253,7 +21222,7 @@ function _rptA36TierDetailPanelHTML(key, tt, summaryData, estimateState, wantIte
     return (
       '<div style="margin-bottom:6px">' +
       '<div style="font-size:9px;font-weight:700;color:var(--rpt-page-text)">' +
-      _esc(title) +
+      _escHtml(title) +
       subtotalHTML +
       '</div>' +
       listHTML +
@@ -21384,7 +21353,7 @@ function _rptA36RecommendedTimelineHTML(d) {
         '<td style="' +
         tdStyle +
         ';font-weight:700">' +
-        _esc(p.label) +
+        _escHtml(p.label) +
         '</td>' +
         '<td style="' +
         tdStyle +
@@ -21394,7 +21363,7 @@ function _rptA36RecommendedTimelineHTML(d) {
         '<td style="' +
         tdStyle +
         '">' +
-        _esc(improvements) +
+        _escHtml(improvements) +
         '</td>' +
         '</tr>'
       );
@@ -21422,7 +21391,7 @@ function _rptA36RecommendedTimelineHTML(d) {
       '<td style="' +
       tdStyle +
       '">Beyond the initial term: ' +
-      _esc(futureCatNames.join(', ')) +
+      _escHtml(futureCatNames.join(', ')) +
       '.</td>' +
       '</tr>';
   }
@@ -21564,7 +21533,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
     '<tr>' +
     tierCols
       .map(function (c) {
-        return '<th style="' + thStyle + '">' + _esc(c.label) + '</th>';
+        return '<th style="' + thStyle + '">' + _escHtml(c.label) + '</th>';
       })
       .join('') +
     '</tr>';
@@ -21576,7 +21545,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
     '<tr>' +
     tierCols
       .map(function (c) {
-        return '<td style="' + descStyle + '">' + _esc(c.desc) + '</td>';
+        return '<td style="' + descStyle + '">' + _escHtml(c.desc) + '</td>';
       })
       .join('') +
     '</tr>';
@@ -21822,7 +21791,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
     '<div style="font-size:9px;color:var(--rpt-page-text);line-height:1.5;margin-top:8px;padding-top:8px;' +
     'border-top:1px solid var(--rpt-rule)">' +
     '<span style="font-weight:700">Estimate &amp; Savings Disclaimer: </span>' +
-    _esc(disc) +
+    _escHtml(disc) +
     '</div>';
 
   // Monthly Energy Management Service Agreement (2026-07-20) — client-facing not-to-exceed line.
@@ -22015,11 +21984,11 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
         var tdR = td + ';text-align:right';
         var nameHTML =
           '<div>' +
-          _esc(row.item || '') +
+          _escHtml(row.item || '') +
           '</div>' +
           (row.clientSummary
             ? '<div style="font-size:8px;color:var(--rpt-page-text);margin-top:2px;line-height:1.4">' +
-              _esc(row.clientSummary) +
+              _escHtml(row.clientSummary) +
               '</div>'
             : '');
         return (
@@ -22096,7 +22065,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       // the no-DOM fallback.
       var _itTitleSample =
         '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px">Cost Estimate: Itemized Measures, ' +
-        _esc(c.label) +
+        _escHtml(c.label) +
         ' (1 of 9)</div>';
       var _itTheadM = _rptMeasureTableTokens(itTableHead, tokens);
       var _itTitleM = _itTheadM === null ? null : _rptMeasureHtmlH(_itTitleSample);
@@ -22125,7 +22094,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
           // Items 6b/8 (2026-08-03): title case (uppercase transform removed) and no
           // "continued" in continuation headings — "(2 of 3)".
           '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px">Cost Estimate: Itemized Measures, ' +
-          _esc(c.label) +
+          _escHtml(c.label) +
           (numChunks > 1 ? ' (' + (idx + 1) + ' of ' + numChunks + ')' : '') +
           '</div>';
         var body = itTitle + itTable + (idx === numChunks - 1 && c === tierCols[tierCols.length - 1] ? discBlock : '');
@@ -22181,7 +22150,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       return (
         '<div style="font-size:9px;color:var(--rpt-page-text);line-height:1.7;padding-left:14px;position:relative">' +
         '<span style="position:absolute;left:0">&#8226;</span>' +
-        _esc(c.label) +
+        _escHtml(c.label) +
         priceStr +
         '</div>'
       );
@@ -22219,7 +22188,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       return (
         '<div style="font-size:9px;color:var(--rpt-page-text);line-height:1.7;padding-left:14px;position:relative">' +
         '<span style="position:absolute;left:0">&#8226;</span>' +
-        _esc(it.item || '') +
+        _escHtml(it.item || '') +
         priceStr +
         '</div>'
       );
@@ -22235,7 +22204,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
           : '';
       return (
         '<div style="font-size:10px;font-weight:700;color:var(--rpt-page-text);margin:10px 0 3px">' +
-        _esc(title) +
+        _escHtml(title) +
         subtotalHTML +
         '</div>'
       );
@@ -22359,7 +22328,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
           // Items 6b/8 (2026-08-03): title case (uppercase transform removed) and no
           // "continued" in continuation headings — "(2 of 3)".
           '<div style="font-size:11px;font-weight:700;color:var(--rpt-blue);margin-bottom:6px">Install &amp; Programming Detail, ' +
-          _esc(c.label) +
+          _escHtml(c.label) +
           (numChunks > 1 ? ' (' + (idx + 1) + ' of ' + numChunks + ')' : '') +
           '</div>';
         pages.push(
@@ -23291,7 +23260,7 @@ function _rptAuditProposalCoverInnerHTML(data) {
     .map(function (b) {
       return (
         '<tr><td style="padding:6px 10px;border-bottom:1px solid var(--rpt-border)">' +
-        _rptV2Esc(b.name) +
+        _escHtml(b.name) +
         '</td><td style="padding:6px 10px;border-bottom:1px solid var(--rpt-border);text-align:right">' +
         b.equipCount +
         '</td></tr>'
@@ -23302,12 +23271,12 @@ function _rptAuditProposalCoverInnerHTML(data) {
   var typeRowsHTML = data.sampleRows
     .map(function (r) {
       return (
-        '<tr><td style="' + td + '">' + _rptV2Esc(r.label) +
+        '<tr><td style="' + td + '">' + _escHtml(r.label) +
         '</td><td style="' + td + ';text-align:right">' + r.count +
         '</td><td style="' + td + ';text-align:right">' + r.sampled + '</td></tr>' +
         (r.units && r.units.length
           ? '<tr><td colspan="3" style="padding:0 10px 2px;border-bottom:1px solid var(--rpt-border);font-size:9px;line-height:1.2;color:var(--rpt-page-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:0">' +
-            _rptV2Esc(r.units.slice(0, 2).join(', ')) +
+            _escHtml(r.units.slice(0, 2).join(', ')) +
             (r.units.length > 2 ? ' +' + (r.units.length - 2) + ' more' : '') +
             '</td></tr>'
           : '')
@@ -23318,16 +23287,16 @@ function _rptAuditProposalCoverInnerHTML(data) {
   return (
     '<div style="padding:8px 48px 4px">' +
     '<div style="font-size:22px;font-weight:700;color:var(--rpt-blue);margin-bottom:2px">' +
-    _rptV2Esc(copy.title) +
+    _escHtml(copy.title) +
     '</div>' +
     '<div style="font-size:13px;color:var(--rpt-page-text);margin-bottom:2px">' +
-    _rptV2Esc(data.project.client) +
+    _escHtml(data.project.client) +
     '</div>' +
     '<div style="font-size:11px;color:var(--rpt-page-text);margin-bottom:16px">' +
-    _rptV2Esc(data.rawDate) +
+    _escHtml(data.rawDate) +
     '</div>' +
     '<div style="font-size:13px;line-height:1.5;color:var(--rpt-page-text);margin-bottom:16px">' +
-    _rptV2Esc(copy.covers) +
+    _escHtml(copy.covers) +
     '</div>' +
     '<div style="display:flex;gap:24px;align-items:flex-start">' +
     '<div style="flex:1 1 0;min-width:0">' +
@@ -23362,7 +23331,7 @@ function _rptAuditProposalDetailInnerHTML(data) {
   var copy = AUDIT_PROPOSAL_COPY[data.auditType] || AUDIT_PROPOSAL_COPY.bas;
   var delivHTML = copy.deliverables
     .map(function (d) {
-      return '<li style="margin-bottom:6px">' + _rptV2Esc(d) + '</li>';
+      return '<li style="margin-bottom:6px">' + _escHtml(d) + '</li>';
     })
     .join('');
 
@@ -23380,7 +23349,7 @@ function _rptAuditProposalDetailInnerHTML(data) {
     '</ul>' +
     '<div style="font-size:16px;font-weight:700;color:var(--rpt-blue);margin-bottom:8px">Schedule</div>' +
     '<div style="font-size:13px;line-height:1.5;color:var(--rpt-page-text);margin-bottom:16px">' +
-    _rptV2Esc(copy.schedule) +
+    _escHtml(copy.schedule) +
     '</div>' +
     '<div style="font-size:16px;font-weight:700;color:var(--rpt-blue);margin-bottom:8px">Total Price</div>' +
     '<div style="font-size:24px;font-weight:700;color:var(--rpt-blue);margin-bottom:16px">' +
