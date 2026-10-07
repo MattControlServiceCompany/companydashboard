@@ -42,7 +42,7 @@ How to check that a function works:
 | PDF queue drain (app/core.js `_pdfDrainQueueOnce`, const at :110) | Retries unsynced PDF writes through `CH_AUTH.withAuthRetry` (`_pdfWithAuthRetry`); sends only the verified user's own entries (`DB.entryBelongsTo`). The drain stops at once when the signed-in user changes during it (`_pdfUserChanged`, checked before each entry and after each await, same rule as the db.js drain): nothing more is sent, removed or stamped for the other user. | 15 s | Never. Also runs on `online` and on sign-in (`chAuthStateChanged`). |
 | Tombstone retry (app/db.js:1134) | Retries failed delete sync, one-shot, with back-off | Variable delay | Clears when it fires or is replaced (db.js:1133). Skips if sync is off. |
 | Session refresh (app/ch-auth.js:366, const at :49) | Refreshes the sign-in token if near expiry | 5 min (talks to Supabase Auth only when the token is within 5 min of expiry, about once an hour) | Never. Does not start when sync is off (ch-auth.js:363). |
-| Version check (app/report-engine.js:12516, `_checkForVersionUpdate` :12528) | Looks for a new version and shows an update bar with a Reload button. It never reloads the page by itself (:12576) | 5 min, skipped while the tab is hidden | Never. Also runs when the tab becomes visible. |
+| Version check (NO timer; `_checkForVersionUpdate` app/report-engine.js, listeners in the page-load init just above it) | Sends a HEAD request for `site-ui.js` (`cache: 'no-store'`) and compares the ETag (or Last-Modified) with the value from this tab's first check. If it changed, it does ONE GET of `site-ui.js` to read the new version and shows an update bar with a Reload button. It never reloads the page by itself. | none (events only): on page load, and when the tab becomes visible or gets focus, at most once an hour (`_CH_VER_MIN_GAP_MS`) | Never runs while `document.hidden`. Check: test-sync-golive-blockers.js CREDIT7. |
 | Clock (app/site-functions.js:34; site-ui.js:774) | Updates the clock text | 15 s | Never. |
 | Bill dump (app/bill-analysis.js:12768) | Copies the open bill to localStorage for debug | 2 s | Never. |
 | OCR abort poll (app/bill-analysis.js:13989) | Checks the abort flag and OCR time budget | 250 ms | `clearInterval` when OCR call ends (:14011,:14015). |
@@ -60,7 +60,7 @@ credits a call, from that figure). It is removed.
   page load (manifest + the changed keys), tab visible again or window focus (one manifest GET at most every 5 min), and
   each save (one PUT). A queued write that failed retries on the back-off timer only until it is sent.
 - Estimate per user per day, working about 8 hours: load 1 to 10 calls, visible-tab checks 10 to 40 (maximum 96 at 5 min
-  apart), saves 50 to 200 PUTs. About 100 to 300 calls, or roughly 0.1 to 0.25 credits a day. This is an estimate, not a
+  apart), saves 50 to 200 PUTs. The version check adds about 0 (HEAD requests, at most once an hour). About 100 to 300 calls, or roughly 0.1 to 0.25 credits a day. This is an estimate, not a
   measurement. Check the real number in the Netlify dashboard (Observability, Functions, kv-sync, invocations per day).
 - Every remaining timer that can call a Netlify Function or Supabase:
 
@@ -69,7 +69,7 @@ credits a call, from that figure). It is removed.
 | Data queue back-off (app/db.js:1812) | kv-sync PUT | Only while this user has a sendable queued item: 15 s, 30 s, 60 s ... 5 min. None when empty. Worst case (server answers 5xx all day) 288 calls | 0 normally; at most about 0.2 |
 | PDF queue drain (app/core.js:423, every 15 s) | pdf-sync, only when the PDF queue holds this user's items; the function returns at once when empty (`_pdfDrainQueueOnce`) | 0 calls when empty | 0 normally |
 | Session refresh (app/ch-auth.js:511, every 5 min) | Supabase Auth token endpoint (not a Netlify Function), only when the token is within 5 min of expiry | about 24 a day per open tab, hidden or not | 0 Netlify credits (Supabase) |
-| Version check (app/report-engine.js:12517, every 5 min) | Static file `site-ui.js` (about 1 MB, not a Function). Skipped while the tab is hidden. Also runs on load and when the tab becomes visible | Visible tab: up to 288 a day, about 1 MB each before compression | Bandwidth, not Function compute. A visible tab left open all day costs the most of all. Matt: decide if the 5 min backstop stays |
+| Version check (no timer; app/report-engine.js `_checkForVersionUpdate`) | HEAD request for static file `site-ui.js` (headers only, a few hundred bytes, not a Function). Runs on load and on visible or focus, at most once an hour, never while hidden. One 1 MB GET only after a deploy changes the ETag | A tab left open all day: 1 to 24 HEAD requests a day, about 0.01 MB | About 0 credits a day. Before this change: up to 96 MB a day per visible tab, about 2 credits |
 | supabase-keepalive (netlify.toml:27, `@daily`) | One Supabase read | 1 a day | about 0 |
 
 ## 4. Sign-in and allowlist

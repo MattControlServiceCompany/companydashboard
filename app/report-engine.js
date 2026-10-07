@@ -12510,13 +12510,14 @@ function initUtilityTool() {
   // background. Re-run the same check whenever the tab regains focus (the moment
   // the user would actually notice/care), plus a slow interval backstop for tabs
   // that are never explicitly re-focused (e.g. a second monitor that's always visible).
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') _checkForVersionUpdate();
-  });
-  // Netlify credit cost (2026-10-07): site-ui.js is about 1 MB, so the backstop skips a hidden tab.
-  setInterval(() => {
-    if (!document.hidden) _checkForVersionUpdate();
-  }, 5 * 60 * 1000);
+  // Netlify credit cost (2026-10-07): no timer. Check on load, and on visible or focus at most once an hour.
+  const _verRecheck = () => {
+    if (document.hidden) return;
+    if (Date.now() - _chVerLastCheck < _CH_VER_MIN_GAP_MS) return;
+    _checkForVersionUpdate();
+  };
+  document.addEventListener('visibilitychange', _verRecheck);
+  window.addEventListener('focus', _verRecheck);
   // Restore any state saved before a version-triggered page reload (issue 066423b5)
   _restorePageStateAfterVersionUpdate();
 }
@@ -12524,52 +12525,59 @@ function initUtilityTool() {
 // Tracks a version the user has explicitly dismissed in THIS tab so re-checks
 // (visibilitychange/interval) don't keep re-nagging about the same release.
 let _chVersionDismissed = null;
+let _chVerLastCheck = 0;
+let _chVerBaseline = null; // ETag or Last-Modified of site-ui.js from the first check of this tab
+const _CH_VER_MIN_GAP_MS = 60 * 60 * 1000;
 
-/* Fetch the live server's version and compare it to the version actually baked into
-   this tab's already-loaded code. Shared by the initial page-load check, the
-   visibilitychange re-check, and the interval backstop -- issue e9f1157c. */
+/* Netlify credit cost (2026-10-07): the check sends a HEAD request for site-ui.js (a few hundred bytes,
+   not the 1 MB body) and compares the ETag (or Last-Modified) with the value from this tab's first check.
+   Only when the header changed does it GET the file once, to read the new version for the banner.
+   The badge text comes from the loaded code (RELEASE_NOTES), not from the server. */
 function _checkForVersionUpdate() {
-  fetch('site-ui.js?nocache=' + Date.now())
-    .then((r) => r.text())
-    .then((t) => {
-      const m = t.match(/CH_VERSION\s*=\s*'([^']+)'/);
-      if (!m) return;
-      const fetchedVer = m[1];
-      // Issue e9f1157c / Matt report 2026-07-29: the badge must show loadedVer (the
-      // version actually baked into the code this tab already has in memory), never
-      // fetchedVer (the LIVE server version). A tab left open across a deploy keeps
-      // executing whatever it loaded originally -- painting fetchedVer made the badge
-      // jump to the new number instantly on deploy, with no click and no reload,
-      // before the tab was running any of that code. loadedVer comes from
-      // RELEASE_NOTES[0].v, which ships inside app/site-functions.js and loaded with
-      // this page's own cache-busted ?v= tag (see script tags near the bottom of
-      // energy-department.html). Fall back to storedVer (localStorage, shared across
-      // tabs) only if RELEASE_NOTES isn't available yet. fetchedVer is used SOLELY
-      // for update detection (the comparison below) and the reload banner -- never
-      // to paint "what am I running".
-      const _CH_VER_KEY = 'ch_last_seen_version';
-      const storedVer = localStorage.getItem(_CH_VER_KEY);
-      const loadedVer = (typeof RELEASE_NOTES !== 'undefined' && RELEASE_NOTES[0] && RELEASE_NOTES[0].v) || storedVer;
-      const el = document.getElementById('en-sb-version');
-      if (el) {
-        // Bug f5b133dc: detect CDP/Playwright-opened tab and show indicator
-        const _isCDP = !!(
-          navigator.webdriver ||
-          window.__playwright ||
-          window.__pwInitScripts ||
-          window._playwrightChannel
-        );
-        el.textContent = (loadedVer || fetchedVer) + (_isCDP ? ' [CDP]' : '');
+  _chVerLastCheck = Date.now();
+  fetch('site-ui.js', { method: 'HEAD', cache: 'no-store' })
+    .then((r) => {
+      const tag = r.headers.get('ETag') || r.headers.get('Last-Modified');
+      if (!tag) return;
+      if (_chVerBaseline === null) {
+        _chVerBaseline = tag;
+        _paintLoadedVersion();
+        return;
       }
-      if (loadedVer && loadedVer !== fetchedVer && fetchedVer !== _chVersionDismissed) {
-        // Do NOT auto-reload — a silent reload would destroy in-progress work
-        // (e.g. a mid-batch extraction review). Show a persistent, actionable
-        // control instead; the user decides when to reload.
-        _showVersionUpdateBanner(fetchedVer);
-      }
-      localStorage.setItem(_CH_VER_KEY, fetchedVer);
+      if (tag === _chVerBaseline) return;
+      return fetch('site-ui.js?nocache=' + Date.now(), { cache: 'no-store' })
+        .then((g) => g.text())
+        .then((t) => {
+          const m = t.match(/CH_VERSION\s*=\s*'([^']+)'/);
+          if (!m) return;
+          const fetchedVer = m[1];
+          const loadedVer = _loadedVersion();
+          if (loadedVer && loadedVer !== fetchedVer && fetchedVer !== _chVersionDismissed) {
+            // Do NOT auto-reload: a silent reload would destroy in-progress work.
+            _showVersionUpdateBanner(fetchedVer);
+          }
+          localStorage.setItem('ch_last_seen_version', fetchedVer);
+        });
     })
     .catch(() => {});
+}
+
+/* The version baked into the code this tab already has (RELEASE_NOTES ships with app/site-functions.js),
+   never the live server version (issue e9f1157c). Falls back to the value saved by another tab. */
+function _loadedVersion() {
+  return (
+    (typeof RELEASE_NOTES !== 'undefined' && RELEASE_NOTES[0] && RELEASE_NOTES[0].v) ||
+    localStorage.getItem('ch_last_seen_version')
+  );
+}
+
+function _paintLoadedVersion() {
+  const el = document.getElementById('en-sb-version');
+  if (!el) return;
+  // Bug f5b133dc: detect CDP/Playwright-opened tab and show indicator
+  const _isCDP = !!(navigator.webdriver || window.__playwright || window.__pwInitScripts || window._playwrightChannel);
+  const v = _loadedVersion();
+  if (v) el.textContent = v + (_isCDP ? ' [CDP]' : '');
 }
 
 /* Persistent, actionable "Reload to update" control shown when this tab's already-

@@ -3757,6 +3757,27 @@ await t(
     assert.strictEqual(S.urls.length, n);
   },
 );
+await t(
+  "CREDIT7 version check: no timer, HEAD request, hourly limit, no hidden check, no GET of site-ui.js on the normal path",
+  async () => {
+    const src = fs.readFileSync(path.join(__dirname, "app", "report-engine.js"), "utf8");
+    const a = src.indexOf("let _chVersionDismissed");
+    const b = src.indexOf("function _showVersionUpdateBanner");
+    const block = src.slice(a, b);
+    const init = src.slice(src.indexOf("_checkForVersionUpdate();"), src.indexOf("_restorePageStateAfterVersionUpdate();"));
+    assert.ok(a > 0 && b > a, "version check block found");
+    assert.ok(!/setInterval|setTimeout/.test(block + init), "no timer loop for the version check");
+    assert.ok(/method:\s*'HEAD'[^)]*cache:\s*'no-store'/.test(block), "check uses HEAD with no-store");
+    assert.ok(/ETag/.test(block) && /Last-Modified/.test(block), "compares ETag or Last-Modified");
+    // the only GET of site-ui.js sits after the header comparison (changed header only)
+    const gets = block.match(/fetch\('site-ui\.js\?nocache/g) || [];
+    assert.strictEqual(gets.length, 1);
+    assert.ok(block.indexOf("tag === _chVerBaseline") < block.indexOf("site-ui.js?nocache"), "GET only after header changed");
+    assert.ok(/_CH_VER_MIN_GAP_MS\s*=\s*60 \* 60 \* 1000/.test(block), "one hour limit");
+    assert.ok(/if \(document\.hidden\) return;/.test(init), "never while hidden");
+    assert.ok(/addEventListener\('visibilitychange'/.test(init) && /addEventListener\('focus'/.test(init));
+  },
+);
   console.log(pass + ' passed');
 })().catch((e) => {
   console.error('FAIL', e);
