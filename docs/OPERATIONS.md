@@ -109,6 +109,10 @@ Many short `setTimeout` calls (toasts, URL cleanup, UI yield) are one-shot. They
   Theme: `ch_theme` stays a raw local key, never sent to the server. On a user switch app/db.js `_clearPerUserLocalState(prevUid, nextUid)`
   parks it under the local key `ch_theme_user::<userId>` (never in a backup: `isNeverBackupKey` lists the prefix) and puts back the next user's own value, so A keeps Light after A->B->A and B
   does not get A's theme. How to check: node test-sync-golive-blockers.js (theme test), node test-em-zoom-no-write-on-open.js.
+  Table prefs: the Cost Estimate table keeps column widths, hidden columns and a schema marker in `ch_tbl_*_pricing_tbl_<projectId>` (app/pricing-estimator.js).
+  Render never writes them: `_pricingMigrateColSchema` returns when nothing is stored; `_pricingSetColWidths`/`_pricingSetHiddenCols` (user resize/hide/show only) also stamp the schema marker.
+  How to check: node test-pricing-tblprefs-no-write-on-render.js (6 pass); Network tab, filter `kv-sync`, open JOCO Cost Estimate: zero PUT.
+  Phase over allowance is a data notice: `console.warn` (not error) in `_pricingComputeRecommendedTimeline`.
 - Version stamps are one local record per key, `ch_rv::<key>` = `{ stamp: {version, hash}, base? }` (app/db.js
   `_persistStamp`, the one writer; `_setSynced` the one stamper). A tab writes only the record of the key it synced, so a
   second tab can never overwrite the first tab's stamps (the old whole-map `ch_replica_state`/`ch_sync_base` are split once
