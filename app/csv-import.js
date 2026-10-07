@@ -209,10 +209,34 @@ function parseBillCsv(text, fname) {
       const i = hdr.indexOf(n);
       if (i >= 0) return i;
     }
-    // skip (optional RegExp): headers to ignore in the substring pass, so a usage lookup
-    // never lands on a cost column ("ccf_used,therm_cost": 'therm' must not pick 'therm_cost').
+    // Token pass (one rule for every column). A header matches an alias only when the alias
+    // words appear as WHOLE words in the header ("to" never matches "Total"). A header that
+    // carries a class word (cost, id, date) is claimed only by aliases of the same class:
+    // "Energy Cost" is never kWh, "Demand Cost" is never kW, "Bill ID" is never the bill cost,
+    // "Bill Date" is never the bill cost, "Start Date" still matches 'start'.
+    const tok = (x) => x.toLowerCase().match(/[a-z0-9$#]+/g) || [];
+    const classOf = (t, isAlias) => {
+      const c = new Set();
+      for (const w of t) {
+        if (/^(cost|charge|charges|rate|amount|price)$/.test(w)) c.add('cost');
+        if (/^(id|#|number|num|no)$/.test(w)) c.add('id');
+        if (w === 'date' || (isAlias && /^(start|begin|from|end|to|thru|through)$/.test(w))) c.add('date');
+      }
+      return c;
+    };
+    const has = (t, a) => {
+      for (let k = 0; k + a.length <= t.length; k++) if (a.every((w, j) => t[k + j] === w)) return true;
+      return false;
+    };
     for (const n of names) {
-      const i = hdr.findIndex((h) => h.includes(n) && !(skip && skip.test(h)));
+      const a = tok(n);
+      const ac = classOf(a, true);
+      const i = hdr.findIndex((h) => {
+        const t = tok(h);
+        if (!a.length || !has(t, a)) return false;
+        for (const c of classOf(t, false)) if (!ac.has(c)) return false;
+        return true;
+      });
       if (i >= 0) return i;
     }
     return -1;
@@ -246,13 +270,11 @@ function parseBillCsv(text, fname) {
   const iTotCst = hdr
     ? ci(
         ['total_cost', 'total cost', 'total$', 'bill amount', 'bill total', 'bill', 'amount', 'total', 'totalcost'],
-        // A cost column is never an id, number or date ("Bill ID", "Bill #", "Bill Date").
-        /\bid\b|#|\bnumber\b|\bnum\b|\bno\b|\bdate\b/,
       )
     : isElec
       ? 9
       : 3;
-  const iTherms = hdr ? ci(['therms', 'therm', 'gas', 'ccf', 'mmbtu', 'mcf'], /cost|charge|\$|rate|amount|total/) : 2;
+  const iTherms = hdr ? ci(['therms', 'therm', 'gas', 'ccf', 'mmbtu', 'mcf']) : 2;
   // camelCase alias: 'thermcost' matches export header 'thermCost'
   const iThCost = hdr ? ci(['therm_cost', 'therm cost', 'gas cost', 'gas$', 'thermcost']) : 3;
   const iUsage = hdr ? ci(['usage', 'consumption', 'hcf', 'kgal', 'mlb']) : 2;
