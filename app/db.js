@@ -96,7 +96,10 @@ const DB = (() => {
   // login sets it synchronously at the moment of sign-in, well before the
   // next chAuthStateChanged event or warmCache() cycle observes the switch)
   // — and the existing signOut()'s clearSession() already removes it on an
-  // explicit sign-out. Force-deleting it here would instead risk logging the
+  // explicit sign-out. (2026-10-07: the Supabase session itself is now in per-tab
+  // sessionStorage, so ch_user can outlive it after a browser close; every page
+  // checks CH_AUTH.needsSignIn() first, so a saved name alone never signs in.)
+  // Force-deleting it here would instead risk logging the
   // CURRENT (correct) user out on their very next refresh, which is strictly
   // worse than the risk it would guard against: ch_user has zero effect on
   // which backend row a write lands in (that is controlled entirely by

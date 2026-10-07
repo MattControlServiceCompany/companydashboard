@@ -193,7 +193,7 @@ const SyncClassification = (() => {
       pattern: 'ch_sb_session',
       prefix: false,
       neverBackup: true,
-      note: 'app/ch-auth.js SESSION_STORAGE_KEY (2026-10-06) — the Supabase access and refresh tokens, raw localStorage, shared by every tab. Never a sync key: in localStorage-fallback mode (no IndexedDB) db.js loads every localStorage key into its cache, and the first-connect upload would otherwise PUT it to the server as <uid>::ch_sb_session, and the identity-change sweep would remove it. Local-only, never in a backup (restore-merge NEVER list).',
+      note: 'app/ch-auth.js SESSION_STORAGE_KEY (2026-10-06) — the Supabase access and refresh tokens, raw sessionStorage (per tab, handed to new tabs over a BroadcastChannel; since 2026-10-07 never localStorage). Never a sync key: in localStorage-fallback mode (no IndexedDB) db.js loads every localStorage key into its cache, and the first-connect upload would otherwise PUT it to the server as <uid>::ch_sb_session, and the identity-change sweep would remove it. Local-only, never in a backup (restore-merge NEVER list).',
     },
     {
       pattern: 'ch_theme_user::',

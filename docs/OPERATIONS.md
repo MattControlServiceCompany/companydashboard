@@ -69,9 +69,28 @@ Many short `setTimeout` calls (toasts, URL cleanup, UI yield) are one-shot. They
   REFUSED the refresh token: HTTP 400, 401 or 403. A network error or a 5xx (Supabase paused) keeps the session; the
   5-minute timer, or the next 401 on a request, tries again. How to check: with the network off, the signed-out bar
   must not appear; the offline banner does.
+- Closing the browser signs the user out (2026-10-07; app/ch-auth.js `_store`, `_askPeers`, `_acceptPeerSession`,
+  `_withRefreshLock`). The session `ch_sb_session` (access + refresh token) lives in per-tab sessionStorage, never
+  localStorage. A reload keeps it. A new tab has none, so it asks the open tabs over BroadcastChannel `ch_auth` (message
+  `need`; a signed-in tab answers `session`) and waits at most 400 ms (`CH_AUTH.settled()`; index.html and app/core.js wait
+  for it before they choose between the app and the sign-in screen). No answer = signed out. Every sign-in, refresh and
+  sign-out is broadcast (`session` / `signout`), so a sign-out in one tab signs out all tabs, and a different user
+  signing in on one tab is followed by the others. Only one tab refreshes at a time (`navigator.locks`
+  `ch_auth_refresh`); a tab that waited for the lock uses the session a peer already refreshed and makes no token call.
+  A refused refresh first asks the peers once (400 ms) for a newer session before the tab signs out. Needs no env var.
+  An old localStorage `ch_sb_session` is deleted at load and never used, so each user signs in once after this release.
+  The offline queue (`ch_sync_queue`, IndexedDB), the per-user cache, `ch_last_user` and `ch_local_identity` are NOT
+  touched on close: signed out = sync off, queued edits wait; the same user signing in again sends them once; a
+  different user never sends them (`_entryBelongsTo`). Do not add any clear on pagehide/beforeunload. Limits: if the
+  browser restores tabs on start (Chrome "Continue where you left off", Ctrl+Shift+T, Edge restore) it restores
+  sessionStorage too and the user stays signed in; page code cannot stop that. The server-side refresh token stays valid
+  until sign-out or revoke (Supabase Free has no inactivity limit; not checked in the dashboard); the client now keeps it
+  only while a tab is open. How to check: node test-sync-golive-blockers.js ("8a:" to "8l:" tests); in DevTools
+  Application, `ch_sb_session` is under Session Storage and absent from Local Storage; close all windows, open the site:
+  the sign-in screen shows.
 - A token refresh result belongs to the session it started from (app/ch-auth.js `_refresh`; the one check is
-  `_sameStoredSession`: same user id and same refresh token in storage). The stored session `ch_sb_session` is shared by
-  every tab. After the Supabase answer it is read again. If another tab changed it meanwhile (a different user signed
+  `_sameStoredSession`: same user id and same refresh token in storage). The tab's session `ch_sb_session` is kept equal to
+  the other tabs' by the broadcasts above. After the Supabase answer it is read again. If another tab changed it meanwhile (a different user signed
   in, or signed out) the result is dropped: nothing is saved, nothing is applied, and this tab follows the stored session
   (`chAuthStateChanged` fires, db.js bumps its identity epoch). A REFUSED refresh (400/401/403) also ends only the session
   it was for; a session another tab stored meanwhile is kept. How to check: node test-sync-golive-blockers.js, the four
@@ -155,8 +174,8 @@ Many short `setTimeout` calls (toasts, URL cleanup, UI yield) are one-shot. They
   "N unsynced changes by <email>" bar reads it). How to check: node test-sync-golive-blockers.js, the "7d:" tests.
 - The auth session `ch_sb_session` (access and refresh tokens, app/ch-auth.js) is classified local-only at the one place
   that decides what syncs (app/sync-classification.js `PER_USER_CH_ENGINE_EXCLUSIONS`). It never gets a wire key, is never
-  uploaded by the first-connect upload, and is never removed by the identity-change sweep. This matters in
-  localStorage-fallback mode (IndexedDB unavailable), where db.js loads every localStorage key into its cache. How to
+  uploaded by the first-connect upload, and is never removed by the identity-change sweep. It is now in sessionStorage; the rule stays so a
+  localStorage copy can never sync. This matters in localStorage-fallback mode (IndexedDB unavailable), where db.js loads every localStorage key into its cache. How to
   check: node test-sync-golive-blockers.js, the "(a):" test; `SyncClassification.classifyKey('ch_sb_session')` is
   `local-only`.
 

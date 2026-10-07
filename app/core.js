@@ -915,14 +915,20 @@ function enterApp() {
   document.getElementById('topAv').textContent = currentUser.initials;
 }
 (function () {
-  try {
-    const s = sessionStorage.getItem('ch_user') || localStorage.getItem('ch_user');
-    // B2: on the sync host a saved name without a live session must sign in again.
-    if (s && !(window.CH_AUTH && window.CH_AUTH.needsSignIn())) {
-      currentUser = JSON.parse(s);
-      enterApp();
-    }
-  } catch (e) {}
+  // A new tab asks the open tabs for the session first (CH_AUTH.settled(), <= 400 ms).
+  const known = window.CH_AUTH && window.CH_AUTH.settled ? window.CH_AUTH.settled() : Promise.resolve();
+  Promise.resolve(known)
+    .catch(() => {})
+    .then(() => {
+      try {
+        const s = sessionStorage.getItem('ch_user') || localStorage.getItem('ch_user');
+        // B2: on the sync host a saved name without a live session must sign in again.
+        if (s && !(window.CH_AUTH && window.CH_AUTH.needsSignIn())) {
+          currentUser = JSON.parse(s);
+          enterApp();
+        }
+      } catch (e) {}
+    });
 })();
 
 /* ── HOME CALENDAR ── */

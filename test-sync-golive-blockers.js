@@ -931,8 +931,67 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
 
   // ---- 401/403 on periodic sync requests (2026-10-06): refresh once, then end the session
   const FK = (x) => 'fake-' + x;
-  function loadAuth(tokenFetch) {
-    const store = {
+  const sessionJSON = (uid, tok, rt) =>
+    JSON.stringify({
+      access_token: tok,
+      refresh_token: rt,
+      expires_at: Math.floor(Date.now() / 1000) + 3600,
+      user_id: uid,
+      email: uid + '@example.com',
+    });
+  // 8x (2026-10-07): the session lives in per-tab sessionStorage; tabs hand it to each other over a BroadcastChannel.
+  // makeNet() is a fake browser: tabs created with the same net share one channel and one set of Web Locks.
+  function makeNet() {
+    const chans = [];
+    const held = new Map();
+    class FakeBC {
+      constructor(name) {
+        this.name = name;
+        this.onmessage = null;
+        chans.push(this);
+      }
+      postMessage(d) {
+        const copy = JSON.parse(JSON.stringify(d));
+        chans.forEach((c) => {
+          if (c !== this && c.name === this.name)
+            Promise.resolve().then(() => c.onmessage && c.onmessage({ data: copy }));
+        });
+      }
+    }
+    const locks = {
+      request: async (name, cb) => {
+        while (held.get(name)) await held.get(name);
+        let release;
+        held.set(
+          name,
+          new Promise((r) => {
+            release = r;
+          }),
+        );
+        try {
+          return await cb({ name });
+        } finally {
+          held.delete(name);
+          release();
+        }
+      },
+    };
+    return { FakeBC, locks, chans };
+  }
+  function fakeStorage(store) {
+    return {
+      getItem: (k) => (k in store ? store[k] : null),
+      setItem: (k, v) => {
+        store[k] = String(v);
+      },
+      removeItem: (k) => {
+        delete store[k];
+      },
+    };
+  }
+  function loadAuth(tokenFetch, o) {
+    o = o || {};
+    const store = o.sess || {
       ch_sb_session: JSON.stringify({
         access_token: FK('a'),
         refresh_token: FK('r1'),
@@ -941,6 +1000,7 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
         email: 'u1@example.com',
       }),
     };
+    const ls = o.ls || {};
     const events = [];
     const win = {
       addEventListener() {},
@@ -951,15 +1011,12 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     const sandbox = {
       window: win,
       location: { hostname: 'cscdashboard.netlify.app' },
-      localStorage: {
-        getItem: (k) => (k in store ? store[k] : null),
-        setItem: (k, v) => {
-          store[k] = String(v);
-        },
-        removeItem: (k) => {
-          delete store[k];
-        },
-      },
+      localStorage: fakeStorage(ls),
+      sessionStorage: fakeStorage(store),
+      BroadcastChannel: o.net ? o.net.FakeBC : undefined,
+      navigator: o.net ? { locks: o.net.locks } : {},
+      setTimeout,
+      clearTimeout,
       setInterval: () => 0,
       Promise,
       Date,
@@ -975,7 +1032,7 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     };
     vm.createContext(sandbox);
     vm.runInContext(fs.readFileSync(path.join(__dirname, 'app', 'ch-auth.js'), 'utf8'), sandbox);
-    return { A: win.CH_AUTH, events, store };
+    return { A: win.CH_AUTH, events, store, sess: store, ls };
   }
   const tokOk = (n) => async () => ({
     ok: true,
@@ -1290,7 +1347,8 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
   // ---- the REAL ch-auth.js and the REAL db.js in one sandbox (fix 8, fix 9)
   function loadReal(opts) {
     const uid = opts.userId || 'u1';
-    const store = {
+    const store = opts.store || {};
+    const sess = opts.sess || {
       ch_sb_session: JSON.stringify({
         access_token: FK('a'),
         refresh_token: FK('r1'),
@@ -1317,6 +1375,8 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
       window: win,
       document: { addEventListener() {}, visibilityState: 'visible' },
       location: win.location,
+      sessionStorage: fakeStorage(sess),
+      BroadcastChannel: opts.net ? opts.net.FakeBC : undefined,
       localStorage: {
         getItem: (k) => (k in store ? store[k] : null),
         setItem: (k, v) => {
@@ -1358,7 +1418,8 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
       // Web Locks with ifAvailable semantics, as in a browser: two drains in one tab never overlap.
       navigator: {
         locks: {
-          request: async (name, opts, cb) => {
+          request: async (name, o2, cb) => {
+            if (typeof o2 === 'function') return o2({ name }); // ch-auth refresh lock (no options)
             if (heldLocks.has(name)) return cb(null);
             heldLocks.add(name);
             try {
@@ -1384,7 +1445,7 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
         '  return {\n    __t: { _drainQueueOnce, _queue: () => _syncQueue, _stampOf: (k) => _replicaVersions[k], _appendConflictArchive },\n    warmCache,',
       );
     vm.runInContext(src + '\n;this.__DB = DB;', sandbox);
-    return { DB: sandbox.__DB, A: win.CH_AUTH, events, store };
+    return { DB: sandbox.__DB, A: win.CH_AUTH, events, store, sess };
   }
   const put401 = { ok: false, status: 401, json: async () => ({ error: 'expired' }) };
   await t('fix 8: a 401 that the token refresh fixes shows no "server refused" bar', async () => {
@@ -1622,18 +1683,18 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
 
   // ---- re-review F6: a stale tab's 403 never clears another user's shared session (REAL ch-auth.js)
   await t('F6: tab cached as A gets 403 while storage holds B: B stays signed in', async () => {
-    const L = loadReal({ userId: 'u1', tokenFetch: tokUser('u1'), kvFetch: async () => ok([]) });
+    const net = makeNet();
+    const L = loadReal({ userId: 'u1', tokenFetch: tokUser('u1'), kvFetch: async () => ok([]), net });
+    const peer = new net.FakeBC('ch_auth');
     assert.strictEqual(L.A.getUserId(), 'u1');
-    L.store.ch_sb_session = JSON.stringify({
-      access_token: FK('b'),
-      refresh_token: FK('rb'),
-      expires_at: Math.floor(Date.now() / 1000) + 3600,
-      user_id: 'u2',
-      email: 'u2@example.com',
+    // tab B signs in as u2 while this tab's request (built for u1) is in flight
+    const out = await L.A.withAuthRetry(async () => {
+      peer.postMessage({ t: 'session', session: JSON.parse(sessionJSON('u2', FK('b'), FK('rb'))) });
+      await tick(10);
+      return { status: 'error', httpStatus: 403 };
     });
-    const out = await L.A.withAuthRetry(async () => ({ status: 'error', httpStatus: 403 }));
     assert.strictEqual(out.httpStatus, 403);
-    assert.ok(L.store.ch_sb_session && JSON.parse(L.store.ch_sb_session).user_id === 'u2', 'B session kept in storage');
+    assert.ok(L.sess.ch_sb_session && JSON.parse(L.sess.ch_sb_session).user_id === 'u2', 'B session kept in storage');
     assert.strictEqual(L.A.getUserId(), 'u2', 'this tab now follows B');
     assert.strictEqual(L.A.backendMode(), 'on');
   });
@@ -1641,7 +1702,7 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     const L = loadReal({ userId: 'u1', tokenFetch: tokUser('u1'), kvFetch: async () => ok([]) });
     await L.A.withAuthRetry(async () => ({ status: 'error', httpStatus: 403 }));
     assert.strictEqual(L.A.backendMode(), 'off');
-    assert.ok(!L.store.ch_sb_session);
+    assert.ok(!L.sess.ch_sb_session);
   });
 
   // ---- fix 3: a failed token refresh ends the session only when the server REFUSED it
@@ -2194,14 +2255,6 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
       },
     };
   };
-  const sessionJSON = (uid, tok, rt) =>
-    JSON.stringify({
-      access_token: tok,
-      refresh_token: rt,
-      expires_at: Math.floor(Date.now() / 1000) + 3600,
-      user_id: uid,
-      email: uid + '@example.com',
-    });
   const refusedOnce = async () => ({ status: 'error', httpStatus: 401 });
   await t(
     "7a: refresh in flight, another tab signs in as B: A's result is dropped, B's session kept, this tab follows B, no retry",
@@ -2216,14 +2269,17 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
           user: { id: 'u1', email: 'u1@example.com' },
         }),
       });
-      const L = loadAuth(g.fetch);
+      const net = makeNet();
+      const L = loadAuth(g.fetch, { net });
+      const peer = new net.FakeBC('ch_auth');
       let calls = 0;
       const p = L.A.withAuthRetry(async () => {
         calls++;
         return refusedOnce();
       });
       await tick(10);
-      L.store.ch_sb_session = sessionJSON('u2', FK('b'), FK('rb')); // tab 2 signs in as B
+      peer.postMessage({ t: 'session', session: JSON.parse(sessionJSON('u2', FK('b'), FK('rb'))) }); // tab 2 signs in as B
+      await tick(10);
       g.release();
       const out = await p;
       const s = JSON.parse(L.store.ch_sb_session);
@@ -2252,14 +2308,17 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
           user: { id: 'u1', email: 'u1@example.com' },
         }),
       });
-      const L = loadAuth(g.fetch);
+      const net = makeNet();
+      const L = loadAuth(g.fetch, { net });
+      const peer = new net.FakeBC('ch_auth');
       let calls = 0;
       const p = L.A.withAuthRetry(async () => {
         calls++;
         return refusedOnce();
       });
       await tick(10);
-      delete L.store.ch_sb_session; // tab 2 signed out
+      peer.postMessage({ t: 'signout' }); // tab 2 signed out
+      await tick(10);
       g.release();
       await p;
       assert.ok(!('ch_sb_session' in L.store), 'signed-out session not written back');
@@ -2270,10 +2329,13 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
   );
   await t("7a: refresh REFUSED while another tab signed in as B: B's session is kept, this tab follows B", async () => {
     const g = gatedToken({ ok: false, status: 400, json: async () => ({ error: 'invalid_grant' }) });
-    const L = loadAuth(g.fetch);
+    const net = makeNet();
+    const L = loadAuth(g.fetch, { net });
+    const peer = new net.FakeBC('ch_auth');
     const p = L.A.withAuthRetry(refusedOnce);
     await tick(10);
-    L.store.ch_sb_session = sessionJSON('u2', FK('b'), FK('rb'));
+    peer.postMessage({ t: 'session', session: JSON.parse(sessionJSON('u2', FK('b'), FK('rb'))) });
+    await tick(10);
     g.release();
     await p;
     assert.strictEqual(JSON.parse(L.store.ch_sb_session).user_id, 'u2', "B not signed out by A's refusal");
@@ -2534,7 +2596,7 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
       await L.A.signIn('u2@example.com', 'pw');
       await tick(60);
       assert.strictEqual(
-        JSON.parse(L.store.ch_sb_session).user_id,
+        JSON.parse(L.sess.ch_sb_session).user_id,
         'u2',
         'new session kept through the per-user sweep',
       );
@@ -2946,6 +3008,319 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     assert.ok(onServer.includes('local') || archived.includes('local'), 'local value is on the server or archived: not lost');
     assert.ok(onServer.includes('theirs') || archived.includes('theirs'), 'their value is on the server or archived: not lost');
   });
+// ---- 8 (2026-10-07): closing the browser signs the user out. Session in per-tab sessionStorage + BroadcastChannel handoff.
+const tokNew = (n, uid) => async () => ({
+  ok: true,
+  status: 200,
+  json: async () => ({
+    access_token: FK("n" + n),
+    refresh_token: FK("rn" + n),
+    expires_in: 3600,
+    user: { id: uid || "u1", email: (uid || "u1") + "@example.com" },
+  }),
+});
+const noNet = async () => {
+  throw new Error("no network call expected");
+};
+const emptySess = () => ({});
+await t(
+  "8a: sign-in writes sessionStorage; localStorage never holds ch_sb_session",
+  async () => {
+    const net = makeNet();
+    const L = loadAuth(tokNew(1), { net, sess: emptySess() });
+    await L.A.signIn("u1@example.com", "pw");
+    assert.ok(L.sess.ch_sb_session, "in sessionStorage");
+    assert.ok(!("ch_sb_session" in L.ls), "not in localStorage");
+    assert.strictEqual(L.A.backendMode(), "on");
+  },
+);
+await t(
+  "8b: reload (new instance, same sessionStorage): signed in, no network call",
+  async () => {
+    const L1 = loadAuth(tokNew(1), { net: makeNet() });
+    const L2 = loadAuth(noNet, { net: makeNet(), sess: L1.sess });
+    await L2.A.ready();
+    assert.strictEqual(L2.A.isSignedOut(), false);
+    assert.strictEqual(L2.A.getUserId(), "u1");
+    assert.strictEqual(L2.A.getToken(), FK("a"));
+  },
+);
+await t(
+  "8c: new tab (empty sessionStorage) + a signed-in peer: handshake gives the session, no password",
+  async () => {
+    const net = makeNet();
+    const A = loadAuth(noNet, { net });
+    const B = loadAuth(noNet, { net, sess: emptySess() });
+    assert.strictEqual(B.A.isSignedOut(), true, "before the answer");
+    await B.A.settled();
+    await B.A.ready();
+    assert.strictEqual(B.A.isSignedOut(), false);
+    assert.strictEqual(B.A.needsSignIn(), false);
+    assert.strictEqual(B.A.getToken(), FK("a"));
+    assert.ok(B.sess.ch_sb_session, "saved in the new tab sessionStorage");
+    assert.ok(A.A.getToken());
+  },
+);
+await t(
+  "8d: new tab with no peer: signed out within 400 ms, needsSignIn true",
+  async () => {
+    const net = makeNet();
+    const t0 = Date.now();
+    const B = loadAuth(noNet, { net, sess: emptySess() });
+    await B.A.ready();
+    const dt = Date.now() - t0;
+    assert.ok(dt >= 350 && dt < 900, "waited about 400 ms, took " + dt);
+    assert.strictEqual(B.A.isSignedOut(), true);
+    assert.strictEqual(B.A.needsSignIn(), true);
+    assert.strictEqual(B.A.backendMode(), "off");
+  },
+);
+await t(
+  "8e: close all tabs (every sessionStorage dropped): a new instance is signed out",
+  async () => {
+    const A = loadAuth(noNet, { net: makeNet() });
+    assert.strictEqual(A.A.isSignedOut(), false);
+    const L = loadAuth(noNet, { net: makeNet(), sess: emptySess(), ls: A.ls });
+    await L.A.ready();
+    assert.strictEqual(L.A.needsSignIn(), true);
+  },
+);
+await t(
+  "8f: sign-out in tab A signs out tab B; chAuthStateChanged fires once in B",
+  async () => {
+    const net = makeNet();
+    const A = loadAuth(
+      async () => ({ ok: true, status: 200, json: async () => ({}) }),
+      { net },
+    );
+    const B = loadAuth(noNet, {
+      net,
+      sess: JSON.parse(JSON.stringify(A.sess)),
+    });
+    B.events.length = 0;
+    await A.A.signOut();
+    await tick(20);
+    assert.strictEqual(B.A.isSignedOut(), true);
+    assert.ok(!B.sess.ch_sb_session, "B session removed");
+    assert.strictEqual(
+      B.events.filter((x) => x.startsWith("chAuthStateChanged")).length,
+      1,
+    );
+  },
+);
+await t(
+  "8g: refresh in tab A: B gets the new refresh token, no token call; two timers = ONE request",
+  async () => {
+    const net = makeNet();
+    const soon = () => ({
+      ch_sb_session: JSON.stringify({
+        access_token: FK("old"),
+        refresh_token: FK("r1"),
+        expires_at: Math.floor(Date.now() / 1000) + 30,
+        user_id: "u1",
+        email: "u1@example.com",
+      }),
+    });
+    let reqs = 0;
+    const slowTok = async () => {
+      reqs++;
+      await tick(20);
+      return tokNew(reqs)();
+    };
+    // both tabs load with an almost-expired token: both start a refresh at load
+    const A = loadAuth(slowTok, { net, sess: soon() });
+    const B = loadAuth(slowTok, { net, sess: soon() });
+    await Promise.all([A.A.ready(), B.A.ready()]);
+    await tick(20);
+    assert.strictEqual(reqs, 1, "exactly one token request for two tabs");
+    assert.strictEqual(
+      B.A.getToken(),
+      FK("n1"),
+      "B holds the token A refreshed",
+    );
+    assert.strictEqual(
+      JSON.parse(B.sess.ch_sb_session).refresh_token,
+      FK("rn1"),
+    );
+  },
+);
+await t(
+  "8h: refresh refused while a peer holds a newer session: tab keeps the peer session",
+  async () => {
+    const net = makeNet();
+    const peer = new net.FakeBC("ch_auth");
+    const L = loadAuth(
+      async () => {
+        await tick(10);
+        return {
+          ok: false,
+          status: 400,
+          json: async () => ({ error: "invalid_grant" }),
+        };
+      },
+      { net },
+    );
+    // the peer answers the "need" the refused tab sends, with a newer session of the same user
+    peer.onmessage = (ev) => {
+      if (ev.data.t === "need")
+        peer.postMessage({
+          t: "session",
+          session: {
+            access_token: FK("peer"),
+            refresh_token: FK("rpeer"),
+            expires_at: Math.floor(Date.now() / 1000) + 7200,
+            user_id: "u1",
+            email: "u1@example.com",
+          },
+        });
+    };
+    let runs = 0;
+    const out = await L.A.withAuthRetry(async () =>
+      ++runs === 1 ? { status: "error", httpStatus: 401 } : { status: "ok" },
+    );
+    assert.strictEqual(L.A.isSignedOut(), false);
+    assert.strictEqual(L.A.getToken(), FK("peer"));
+    assert.strictEqual(out.status, "ok", "retried once with the peer session");
+  },
+);
+await t(
+  "8i: a different user signs in on tab A: tab B follows (identity event), is not cleared",
+  async () => {
+    const net = makeNet();
+    const A = loadAuth(tokNew(2, "u2"), { net });
+    const B = loadAuth(noNet, { net });
+    B.events.length = 0;
+    await A.A.signIn("u2@example.com", "pw");
+    await tick(20);
+    assert.strictEqual(B.A.getUserId(), "u2");
+    assert.strictEqual(B.A.isSignedOut(), false);
+    assert.ok(
+      B.events.some((x) => x.startsWith("chAuthStateChanged")),
+      "identity change announced",
+    );
+  },
+);
+await t(
+  "8j: a legacy localStorage ch_sb_session is removed at load and never used to sign in",
+  async () => {
+    const ls = {
+      ch_sb_session: sessionJSON("u1", FK("legacy"), FK("rlegacy")),
+    };
+    const L = loadAuth(noNet, { net: makeNet(), sess: emptySess(), ls });
+    await L.A.ready();
+    assert.ok(!("ch_sb_session" in ls), "removed from disk");
+    assert.strictEqual(L.A.isSignedOut(), true);
+    assert.strictEqual(L.A.getToken(), null);
+  },
+);
+// 8k: queue and per-user data across a close (REAL db.js + REAL ch-auth.js; localStorage persists, sessionStorage does not)
+await t(
+  "8k: unsynced edit survives close; same user sends it once; another user never sends or sees it",
+  async () => {
+    const S = {}; // persistent localStorage (the "disk")
+    const putsOf = [];
+    const kv = (fail) => async (u, o) => {
+      if (!o || o.method !== "PUT") return ok([]);
+      const b = JSON.parse(o.body);
+      putsOf.push({ key: b.key, value: b.value });
+      if (fail) throw new TypeError("Failed to fetch");
+      return ok({ version: 1, hash: null, deleted: false });
+    };
+    const queued = (L) => L.DB.__t._queue().filter((e) => e.key === "ch_theme");
+    // session 1: user u1 edits while the server is unreachable
+    const L1 = loadReal({
+      userId: "u1",
+      store: S,
+      tokenFetch: tokUser("u1"),
+      kvFetch: kv(true),
+    });
+    await L1.DB.warmCache();
+    L1.DB.set("ch_theme", "U-edit");
+    await tick(60);
+    assert.strictEqual(queued(L1).length, 1, "edit queued");
+    // browser closed: sessionStorage gone, localStorage kept. Reopen: signed out.
+    putsOf.length = 0;
+    const L2 = loadReal({
+      store: S,
+      sess: emptySess(),
+      tokenFetch: tokUser("u1"),
+      kvFetch: kv(false),
+    });
+    await L2.DB.warmCache();
+    await tick(100);
+    assert.strictEqual(L2.A.isSignedOut(), true);
+    assert.strictEqual(putsOf.length, 0, "signed out: no PUT");
+    assert.strictEqual(queued(L2).length, 1, "edit still queued");
+    assert.strictEqual(
+      JSON.stringify(L2.DB.getForeignQueueInfo().map((x) => x.id + ":" + x.count)),
+      '["u1:1"]',
+      "unsynced bar data (by user u1) still there",
+    );
+    // another user (u2) signs in: the entry is not sent and not shown as u2 data
+    const L3 = loadReal({
+      store: S,
+      sess: emptySess(),
+      tokenFetch: tokUser("u2"),
+      kvFetch: kv(false),
+    });
+    await L3.DB.warmCache();
+    await L3.A.signIn("u2@example.com", "pw");
+    await tick(250);
+    assert.ok(
+      !putsOf.some((p) => p.value === "U-edit"),
+      "u2 never sends the u1 edit",
+    );
+    assert.strictEqual(queued(L3).length, 1, "still queued for u1");
+    assert.notStrictEqual(
+      L3.DB.get("ch_theme"),
+      "U-edit",
+      "u2 does not see the u1 value",
+    );
+    // browser closed again; u1 signs in: the edit is sent exactly once
+    putsOf.length = 0;
+    const L4 = loadReal({
+      store: S,
+      sess: emptySess(),
+      tokenFetch: tokUser("u1"),
+      kvFetch: kv(false),
+    });
+    await L4.DB.warmCache();
+    await L4.A.signIn("u1@example.com", "pw");
+    await tick(300);
+    assert.strictEqual(
+      putsOf.filter((p) => p.key === "u1::ch_theme" && p.value === "U-edit")
+        .length,
+      1,
+      "sent once",
+    );
+    assert.strictEqual(queued(L4).length, 0, "queue emptied");
+  },
+);
+await t("8l: a load with no edit sends 0 PUT (reload and reopen)", async () => {
+  const S = {};
+  const L1 = loadReal({
+    userId: "u1",
+    store: S,
+    tokenFetch: tokUser("u1"),
+    kvFetch: async () => ok([]),
+  });
+  await L1.DB.warmCache();
+  await tick(100);
+  const puts = [];
+  const L2 = loadReal({
+    userId: "u1",
+    store: S,
+    sess: L1.sess,
+    tokenFetch: noNet,
+    kvFetch: async (u, o) => {
+      if (o && o.method === "PUT") puts.push(JSON.parse(o.body).key);
+      return ok([]);
+    },
+  });
+  await L2.DB.warmCache();
+  await tick(300);
+  assert.strictEqual(puts.length, 0, "zero PUT: " + JSON.stringify(puts));
+});
   console.log(pass + ' passed');
 })().catch((e) => {
   console.error('FAIL', e);

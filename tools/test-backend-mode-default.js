@@ -175,10 +175,17 @@ async function boot({ host, signedIn, storedMode, server, idbSeed, lsSeed, reuse
   const ls = reuse ? reuse.ls : new Map(Object.entries(lsSeed || {}));
   const toasts = [];
   if (storedMode) ls.set('ch_backend_mode', storedMode);
+  // 2026-10-07: the session lives in per-tab sessionStorage (a fresh one each boot = browser reopened).
+  const ss = new Map();
   ls.delete('ch_sb_session');
   if (signedIn) {
-    ls.set('ch_sb_session', JSON.stringify(fakeSession()));
+    ss.set('ch_sb_session', JSON.stringify(fakeSession()));
   }
+  const sessionStorage = {
+    getItem: (k) => (ss.has(k) ? ss.get(k) : null),
+    setItem: (k, v) => ss.set(k, String(v)),
+    removeItem: (k) => ss.delete(k),
+  };
   const localStorage = {
     getItem: (k) => (ls.has(k) ? ls.get(k) : null),
     setItem: (k, v) => ls.set(k, String(v)),
@@ -194,6 +201,7 @@ async function boot({ host, signedIn, storedMode, server, idbSeed, lsSeed, reuse
     process,
     location: { hostname: host },
     localStorage,
+    sessionStorage,
     indexedDB: idb,
     fetch: server.fetch,
     crypto: webcrypto,
@@ -234,7 +242,7 @@ async function boot({ host, signedIn, storedMode, server, idbSeed, lsSeed, reuse
   if (onCtx) onCtx(ctx);
   if (onIdb) onIdb(idb);
   if (!skipWarm) await ctx.window.DB.warmCache();
-  return { ctx, DB: ctx.window.DB, idb, ls, toasts };
+  return { ctx, DB: ctx.window.DB, idb, ls, ss, toasts };
 }
 
 const results = [];
@@ -1397,9 +1405,9 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     const b = await boot({ host: NETLIFY, signedIn: true, server: srv, skipWarm: true });
     const hyd = b.DB.warmCache(); // user A hydrates: manifest, then a slow batch read
     await tick(220); // manifest done, batch read pending
-    const s2 = JSON.parse(b.ls.get('ch_sb_session'));
+    const s2 = JSON.parse(b.ss.get('ch_sb_session'));
     s2.user_id = 'user-2';
-    b.ls.set('ch_sb_session', JSON.stringify(s2));
+    b.ss.set('ch_sb_session', JSON.stringify(s2));
     b.ctx.window.CH_AUTH.getUserId = () => 'user-2';
     b.ctx.window.dispatchEvent({ type: 'chAuthStateChanged' });
     await hyd;

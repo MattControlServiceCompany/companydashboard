@@ -15,12 +15,18 @@
 //
 // IMPORTANT — `_authHeaders()` calls `window.CH_AUTH.getToken()`
 // SYNCHRONOUSLY (no `await`). This module keeps a session (access_token +
-// refresh_token + expires_at) in localStorage under `ch_sb_session` (shared
-// across tabs/pages — a session started on one department page is usable
-// when a new tab is opened directly to another), refreshes the access token
-// in the background before it expires, and `getToken()` just returns the
-// last token it already has cached in memory (or `null` if signed out /
-// refresh failed).
+// refresh_token + expires_at) in sessionStorage under `ch_sb_session`
+// (2026-10-07). sessionStorage is per tab: it survives a reload, and it is
+// gone when the browser (every tab) closes, so closing the browser signs the
+// user out. A new tab starts with an empty sessionStorage and asks the open
+// tabs for the session over a BroadcastChannel (`ch_auth`, `need` / `session`
+// / `signout` messages; wait <= 400 ms; no answer = signed out). Only one tab
+// refreshes at a time (navigator.locks 'ch_auth_refresh'); every refresh,
+// sign-in and sign-out is broadcast so the other tabs follow. A
+// localStorage `ch_sb_session` from an older version is deleted at load and
+// never used. The module refreshes the access token in the background
+// before it expires, and `getToken()` just returns the last token it already
+// has cached in memory (or `null` if signed out / refresh failed).
 //
 // The actual sign-in UI (email + password form) lives in index.html's login
 // screen and calls `window.CH_AUTH.signIn(email, password)` /
@@ -45,7 +51,10 @@
 
   var TOKEN_ENDPOINT = SUPABASE_URL + '/auth/v1/token';
   var LOGOUT_ENDPOINT = SUPABASE_URL + '/auth/v1/logout';
-  var SESSION_STORAGE_KEY = 'ch_sb_session'; // { access_token, refresh_token, expires_at (epoch seconds), user_id, email }
+  var SESSION_STORAGE_KEY = 'ch_sb_session'; // { access_token, refresh_token, expires_at (epoch seconds), user_id, email } — in sessionStorage
+  var CHANNEL_NAME = 'ch_auth'; // BroadcastChannel shared by every tab of this browser
+  var REFRESH_LOCK_NAME = 'ch_auth_refresh';
+  var HANDSHAKE_MS = 400; // how long a tab waits for a peer's session
   var REFRESH_INTERVAL_MS = 5 * 60 * 1000; // background check cadence
   var REFRESH_MARGIN_SECONDS = 5 * 60; // refresh once within 5 min of expiry
 
@@ -87,11 +96,32 @@
     return 'on';
   }
 
+  // THE one place that picks where the session lives: sessionStorage (this tab,
+  // survives reload, gone when the browser closes). Never localStorage.
+  function _store() {
+    try {
+      return typeof sessionStorage !== 'undefined' ? sessionStorage : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // A ch_sb_session left in localStorage by an older version is a token on disk.
+  // Remove it. Never read it as a session.
+  function _dropLegacySession() {
+    try {
+      if (typeof localStorage !== 'undefined') localStorage.removeItem(SESSION_STORAGE_KEY);
+    } catch (e) {
+      /* storage unavailable: nothing to remove */
+    }
+  }
+
   function _loadSession() {
-    if (typeof localStorage === 'undefined') return null;
+    var st = _store();
+    if (!st) return null;
     var raw;
     try {
-      raw = localStorage.getItem(SESSION_STORAGE_KEY);
+      raw = st.getItem(SESSION_STORAGE_KEY);
     } catch (e) {
       return null;
     }
@@ -106,25 +136,99 @@
   }
 
   function _saveSession(session) {
-    if (typeof localStorage === 'undefined') return;
+    var st = _store();
+    if (!st) return;
     try {
-      localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+      st.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
     } catch (e) {
       /* non-fatal — in-memory cache below still works for this tab/session */
     }
   }
 
   function _clearSession() {
-    if (typeof localStorage !== 'undefined') {
+    var st = _store();
+    if (st) {
       try {
-        localStorage.removeItem(SESSION_STORAGE_KEY);
+        st.removeItem(SESSION_STORAGE_KEY);
       } catch (e) {
         /* ignore */
       }
     }
+    _dropLegacySession();
     _cachedToken = null;
     _cachedUserId = null;
     _cachedEmail = null;
+  }
+
+  // ── Tab handoff (BroadcastChannel) ─────────────────────────────────────────
+  var _bc = null;
+  try {
+    if (typeof BroadcastChannel !== 'undefined') _bc = new BroadcastChannel(CHANNEL_NAME);
+  } catch (e) {
+    _bc = null;
+  }
+  var _waiters = []; // callbacks waiting for a peer's session
+  function _post(msg) {
+    if (!_bc) return;
+    try {
+      _bc.postMessage(msg);
+    } catch (e) {
+      /* channel closed: this tab works alone */
+    }
+  }
+  // Ask the other tabs for their session. Resolves with the session a peer sent
+  // (already stored + applied by the message handler), or null after HANDSHAKE_MS.
+  function _askPeers() {
+    if (!_bc) return Promise.resolve(null);
+    return new Promise(function (resolve) {
+      var done = false;
+      var timer = null;
+      function finish(sess) {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        var i = _waiters.indexOf(finish);
+        if (i >= 0) _waiters.splice(i, 1);
+        resolve(sess);
+      }
+      timer = setTimeout(function () {
+        finish(null);
+      }, HANDSHAKE_MS);
+      _waiters.push(finish);
+      _post({ t: 'need' });
+    });
+  }
+  function _validSession(x) {
+    return !!x && typeof x.access_token === 'string' && typeof x.refresh_token === 'string';
+  }
+  // A peer's session: take it when we hold none, when it is a different user
+  // (follow, never clear), or when it is the same user and newer.
+  function _acceptPeerSession(sess) {
+    if (!_validSession(sess)) return null;
+    var cur = _loadSession();
+    var sameUser = !!cur && cur.user_id === sess.user_id;
+    if (sameUser && !((sess.expires_at || 0) > (cur.expires_at || 0))) return null;
+    _saveSession(sess);
+    _applySession(sess);
+    _ensureTimer();
+    return sess;
+  }
+  if (_bc) {
+    _bc.onmessage = function (ev) {
+      var m = ev && ev.data;
+      if (!m) return;
+      if (m.t === 'need') {
+        var mine = _loadSession();
+        if (mine && !_signedOut) _post({ t: 'session', session: mine });
+      } else if (m.t === 'session') {
+        var took = _acceptPeerSession(m.session);
+        var list = _waiters.slice();
+        for (var i = 0; i < list.length; i++) list[i](took);
+      } else if (m.t === 'signout') {
+        _clearSession();
+        _setSignedOut(true);
+      }
+    };
   }
 
   function _setSignedOut(signedOut) {
@@ -200,6 +304,7 @@
     var session = _sessionFromTokenResponse(body);
     _saveSession(session);
     _applySession(session);
+    _post({ t: 'session', session: session });
     return { userId: session.user_id, email: session.email };
   }
 
@@ -207,7 +312,36 @@
   // A refusal (see _refreshRefused) means "signed out", surfaced via
   // chAuthStateChanged so the app can show the login screen again; any other
   // failure keeps the session and is tried again later.
-  async function _refresh(session) {
+  // Only one tab calls the token endpoint at a time (Web Locks). A tab that waits
+  // for the lock re-reads its session first: a peer may have refreshed already
+  // (its broadcast is stored here), so the network call is skipped.
+  function _withRefreshLock(fn) {
+    var locks = typeof navigator !== 'undefined' ? navigator.locks : null;
+    if (locks && typeof locks.request === 'function') return locks.request(REFRESH_LOCK_NAME, fn);
+    return fn();
+  }
+  function _refresh(session) {
+    return _withRefreshLock(async function () {
+      var cur = _loadSession();
+      if (!cur) {
+        _applySession(null);
+        return null;
+      }
+      if (cur.user_id !== session.user_id) {
+        _applySession(cur);
+        return cur;
+      }
+      if (cur.refresh_token !== session.refresh_token) {
+        if (cur.expires_at - Math.floor(Date.now() / 1000) > REFRESH_MARGIN_SECONDS) {
+          _applySession(cur);
+          return cur;
+        }
+        session = cur;
+      }
+      return _refreshNow(session);
+    });
+  }
+  async function _refreshNow(session) {
     var body = await _tokenRequest('grant_type=refresh_token', { refresh_token: session.refresh_token });
     // The stored session is shared by every tab. While this request was in
     // flight another tab may have signed in as a different user, signed out, or
@@ -226,6 +360,7 @@
     if (!next.refresh_token) next.refresh_token = session.refresh_token;
     _saveSession(next);
     _applySession(next);
+    _post({ t: 'session', session: next });
     return next;
   }
   // True when storage still holds the session a refresh started from (same
@@ -266,7 +401,7 @@
   }
   function _startRefresh(session) {
     _refreshInFlight = _refresh(session)
-      .catch(function (e) {
+      .catch(async function (e) {
         // A refusal ends only the session it was for. If another tab replaced
         // the stored session meanwhile (new user), that session is kept and
         // this tab follows it.
@@ -276,6 +411,14 @@
           return stored;
         }
         if (_refreshRefused(e)) {
+          // A peer may hold a newer session (lost the rotation race): ask once
+          // before ending this tab's session.
+          await _askPeers();
+          if (!_sameStoredSession(session)) {
+            var newer = _loadSession();
+            _applySession(newer);
+            return newer;
+          }
           _clearSession();
           _setSignedOut(true);
         }
@@ -294,7 +437,11 @@
   // (account not allowed), ends the session locally. That sets "signed out",
   // so backendMode() is 'off' (every timer goes quiet), the signed-out bar
   // shows, and a new sign-in (chAuthStateChanged) restarts everything.
-  function _onServerRefusal(status, alreadyRetried) {
+  function _onServerRefusal(status, alreadyRetried, idBefore) {
+    // Another tab switched the user while this request was in flight (the tab
+    // follows peers at once): the refusal belongs to the old user's request.
+    // It never ends the new user's session and is never sent again.
+    if (idBefore !== undefined && idBefore !== _cachedUserId) return Promise.resolve(false);
     if (status === 401 && !alreadyRetried) {
       if (_refreshInFlight)
         return _refreshInFlight.then(function (s) {
@@ -340,7 +487,7 @@
         if (threw) throw out;
         return out;
       }
-      var again = await _onServerRefusal(st, tries > 0);
+      var again = await _onServerRefusal(st, tries > 0, idBefore);
       // The refresh picked up a different account (another tab switched users).
       // This request was built for the old user: never send it again as the new one.
       if (again && _cachedUserId !== idBefore) again = false;
@@ -359,11 +506,24 @@
     return _startupRefresh;
   }
 
+  function _ensureTimer() {
+    if (_refreshTimer || backendMode() === 'off') return;
+    _refreshTimer = setInterval(_refreshIfNeeded, REFRESH_INTERVAL_MS);
+  }
+
   function _startBackgroundRefresh() {
     if (backendMode() === 'off') return; // kill switch — no network on load
     if (_refreshTimer) return;
     _startupRefresh = _refreshIfNeeded();
-    _refreshTimer = setInterval(_refreshIfNeeded, REFRESH_INTERVAL_MS);
+    _ensureTimer();
+  }
+
+  // Settles once this tab knows whether it holds a session. A tab that starts
+  // with no session asks the open tabs (<= HANDSHAKE_MS). Page code that decides
+  // "enter the app or show sign-in" at load awaits this, not the token refresh.
+  var _handshake = Promise.resolve(null);
+  function settled() {
+    return _handshake;
   }
 
   // Explicit, user-initiated sign-out. Best-effort revokes the refresh token
@@ -373,6 +533,7 @@
     var session = _loadSession();
     _clearSession();
     _setSignedOut(true);
+    _post({ t: 'signout' });
     if (session && session.access_token) {
       try {
         await fetch(LOGOUT_ENDPOINT + '?scope=global', {
@@ -441,6 +602,7 @@
     getToken: getToken,
     getTokenInteractive: getTokenInteractive,
     ready: ready,
+    settled: settled,
     isSignedOut: isSignedOut,
     backendMode: backendMode,
     getUserId: getUserId,
@@ -452,7 +614,10 @@
     withAuthRetry: withAuthRetry,
   };
 
-  // Prime the in-memory cache from any existing localStorage session
+  // The old localStorage session is deleted, never used (2026-10-07).
+  _dropLegacySession();
+
+  // Prime the in-memory cache from this tab's sessionStorage session
   // immediately (synchronously) so a same-tab getToken() call right after
   // load doesn't race the async refresh below.
   (function primeFromStorage() {
@@ -460,5 +625,11 @@
     if (session) _applySession(session);
   })();
 
-  _startBackgroundRefresh();
+  if (_signedOut && _isNetlifyHost() && _bc) {
+    // New tab: no session of its own. Ask the open tabs; ready() waits for the answer.
+    _handshake = _askPeers();
+    _startupRefresh = _handshake;
+  } else {
+    _startBackgroundRefresh();
+  }
 })();
