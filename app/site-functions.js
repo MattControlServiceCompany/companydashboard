@@ -2391,6 +2391,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.07.93', date: '2026-10-07', title: 'Internal checks updated',
+    items: [
+      { type: 'change', text: 'No change to the pages. The automatic checks that run before each release are now more reliable.' }
+    ]
+  },
   { v: 'v2026.10.07.92', date: '2026-10-07', title: 'Bill import reads the right columns',
     items: [
       { type: 'fix', text: 'Utility Data > meter > Bills > Import more periods via CSV: the bill total, kWh and demand now come from the right columns, even when the file also has columns like Bill ID, Energy Cost or Total Charges.' }
