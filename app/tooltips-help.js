@@ -279,15 +279,18 @@
       }
 
       /* ── Initial contextual tooltips + auto Quick Start ── */
+      // One rule: open the first-visit guide only when the app is shown (signed in).
+      // Called from the timer below and from enterApp() in core.js. ch_qs_seen is set only when the modal opens.
+      function autoQuickStart() {
+        var app = document.getElementById('app');
+        if (!app || !app.classList.contains('visible')) return;
+        if (localStorage.getItem('ch_qs_seen') || !chGetSetting('showQuickStart', true)) return;
+        openQuickStart();
+        localStorage.setItem('ch_qs_seen', '1');
+      }
+      window.autoQuickStart = autoQuickStart;
       document.addEventListener('DOMContentLoaded', function () {
-        // Auto-show quick start on first visit
-        var seen = localStorage.getItem('ch_qs_seen');
-        if (!seen && chGetSetting('showQuickStart', true)) {
-          setTimeout(function () {
-            openQuickStart();
-            localStorage.setItem('ch_qs_seen', '1');
-          }, 1200);
-        }
+        setTimeout(autoQuickStart, 1200);
 
         // Attach contextual tooltips after DOM is settled
         setTimeout(function () {

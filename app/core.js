@@ -913,6 +913,7 @@ function enterApp() {
   document.getElementById('app').classList.add('visible');
   document.getElementById('topName').textContent = currentUser.name;
   document.getElementById('topAv').textContent = currentUser.initials;
+  if (typeof autoQuickStart === 'function') setTimeout(autoQuickStart, 1200);
 }
 (function () {
   // A new tab asks the open tabs for the session first (CH_AUTH.settled(), <= 400 ms).
