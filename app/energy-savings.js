@@ -3450,7 +3450,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       else break;
     }
     const m = t.slice(markerIdx, row.index).match(_EVG_ADDR);
-    return m ? m[1].trim().replace(/\s+/g, ' ').toUpperCase() : null;
+    return m ? m[1].replace(/[\s,]+/g, '').toUpperCase() : null;
   };
   for (const row of _meterRows) row._addr = _meterRowAddr(row);
   const _meterGroup = _meterRows.length
@@ -5528,7 +5528,10 @@ function _extractEvergy(t, acctOverride, addrOverride) {
 // OCR-tolerant patterns for Evergy bills
 // Common OCR misreads: g→q/9, l→1/I, D→O, a→o, s→5, i→l, e→c
 const _EVG_BILLING_DETAILS = /B[il1]{2}[il1]ng\s+D[ec]t[ao][il1]{1,2}[s5]?\s*[-\u2013\—]\s*[s5]erv[il1]ce\s+from/i;
-const _EVG_SERVICE_FROM = /[s5]erv[il1]ce\s+from[:\s]\s*(\d{2}\/\d{2}\/\d{4})\s+to[:\s]\s*(\d{2}\/\d{2}\/\d{4})/i;
+// ONE source for the "service from <date> to <date>" pair. OCR can read a "|" or ":" before a date.
+const _EVG_SERVICE_FROM_SRC =
+  '[s5]erv[il1]ce\\s+from[:\\s|]+(\\d{2}\\/\\d{2}\\/\\d{4})\\s+to[:\\s|]+(\\d{2}\\/\\d{2}\\/\\d{4})';
+const _EVG_SERVICE_FROM = new RegExp(_EVG_SERVICE_FROM_SRC, 'i');
 const _EVG_CHG = /Ch[gaq9][.:]?/i; // matches Chg, Cha, Chq, Ch9, Chg.
 // FIX (2026-08-24, Louisburg visual audit bug #6): `\s+` -> `\s*` between
 // "Account" and "Number" — real OCR glues them into one token on some pages
@@ -5554,7 +5557,7 @@ function _evgPickAccount(accts) {
   return accts.length ? accts[0] : null;
 }
 const _EVG_ADDR =
-  /^(\d+\s+\w[\w\s,]{3,50}(?:KS|MO|KY|OK|NE|IA|AR|TX|CO|IL|IN|OH|MI|PA|NY|NJ|CT|MA|VA|NC|SC|GA|FL|TN|MS|AL|LA|NM|AZ|UT|ID|OR|WA|MT|WY|ND|SD|MN|WI|NV|CA))\s*$/m;
+  /^(\d+\s+\w[\w\s,]{3,50}(?:KS|MO|KY|OK|NE|IA|AR|TX|CO|IL|IN|OH|MI|PA|NY|NJ|CT|MA|VA|NC|SC|GA|FL|TN|MS|AL|LA|NM|AZ|UT|ID|OR|WA|MT|WY|ND|SD|MN|WI|NV|CA))[^\w\n]*$/m;
 
 // Shared helpers for the City of Louisburg + Propane rules below.
 function _lbg_splitPages(t) {
@@ -6105,6 +6108,9 @@ const UTILITY_RULES = [
     extractAll: (t) => {
       const acct = _evgPickAccount(_evgAccountsIn(t));
       const addrM = t.match(_EVG_ADDR);
+      // The first address in the document is a safe fallback only when the document has ONE distinct address.
+      const _docAddrs = new Set([...t.matchAll(new RegExp(_EVG_ADDR.source, 'gm'))].map((m) => m[1].replace(/[\s,]+/g, '')));
+      const _docHasOneAddr = _docAddrs.size <= 1;
       // ── Multi-bill split (rewritten) ──
       // The earlier split relied on matching "Billing Details - service from"
       // headers directly, and when Tesseract OCR garbled even ONE header past
@@ -6120,7 +6126,7 @@ const UTILITY_RULES = [
       // Each bill mentions its date pair TWICE (cover + billing-details
       // header), so we dedupe by date pair and keep the LAST occurrence
       // (which is the billing-details section, where the charge lines live).
-      const sfRe = /service\s+from[:\s]\s*(\d{2}\/\d{2}\/\d{4})\s+to[:\s]\s*(\d{2}\/\d{2}\/\d{4})/gi;
+      const sfRe = new RegExp(_EVG_SERVICE_FROM_SRC, 'gi');
       const sfMatches = [];
       let sfM;
       while ((sfM = sfRe.exec(t)) !== null) {
@@ -6587,9 +6593,7 @@ const UTILITY_RULES = [
         );
         const raw = t.split(splitRe);
         const getDatePair = (s) => {
-          const m =
-            s.match(_EVG_SERVICE_FROM) ||
-            s.match(/service\s+from[:\s]\s*(\d{2}\/\d{2}\/\d{4})\s+to[:\s]\s*(\d{2}\/\d{2}\/\d{4})/i);
+          const m = s.match(_EVG_SERVICE_FROM);
           return m ? m[1] + '|' + m[2] : null;
         };
         const sections = [];
@@ -6606,7 +6610,7 @@ const UTILITY_RULES = [
           }
         }
         validSections = sections.filter(
-          (s) => _EVG_SERVICE_FROM.test(s) || /service\s+from[:\s]\s*\d{2}\/\d{2}\/\d{4}/i.test(s),
+          (s) => _EVG_SERVICE_FROM.test(s) || /service\s+from[:\s|]+\d{2}\/\d{2}\/\d{4}/i.test(s),
         );
       }
       if (!validSections.length) return [_extractEvergy(t, acct, addrM?.[1]?.trim() || null)];
@@ -6665,7 +6669,14 @@ const UTILITY_RULES = [
       const _isMultiAcctBatch = _acctClusters.length > 1;
       const results = validSections.map((s, i) => {
         const billAcct = (uniqueBills[i] && uniqueBills[i]._acct) || (_isMultiAcctBatch ? null : acct);
-        const billAddr = (uniqueBills[i] && uniqueBills[i]._addr) || addrM?.[1]?.trim() || null;
+        // Address of this bill: its own page, else the only address that account shows on other bills,
+        // else (single-account or single-address document) the first address. Never another building's.
+        const _acctAddrs = new Set(uniqueBills.filter((b) => b._addr && b._acct && billAcct && _acctsAreOcrVariant(b._acct, billAcct)).map((b) => b._addr));
+        const billAddr =
+          (uniqueBills[i] && uniqueBills[i]._addr) ||
+          (billAcct && _acctAddrs.size === 1 ? [..._acctAddrs][0] : null) ||
+          (_isMultiAcctBatch && !_docHasOneAddr ? null : addrM?.[1]?.trim()) ||
+          null;
         const r = _extractEvergy(s, billAcct, billAddr);
         if (!r.CustomerName && fullCustName) r.CustomerName = fullCustName;
         if (!r.RateSchedule && fullRate) r.RateSchedule = fullRate;
