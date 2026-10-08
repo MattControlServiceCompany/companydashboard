@@ -47,7 +47,7 @@ function isAllowlisted(relPath) {
   if (relPath === 'computations/rates.cascade.gate.js') return true;
   if (relPath === 'test-verification.js') return true;
   if (relPath === 'test-backlog-runner.js') return true;
-  if (relPath === 'test-assign-bill-create-meter-dom.js') return true; // test seeds the raw storage key on purpose
+  if (relPath === 'test-assign-bill-create-meter-dom.js') return true; // exact file: test seeds the raw storage key on purpose; no other file is exempt here
   return false;
 }
 
