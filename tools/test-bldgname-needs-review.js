@@ -166,7 +166,7 @@ function main() {
 
   // ── Case 1: plausible address branch + missing critical field -> MUST tag ──
   {
-    const bills = [makeBill('ACCT001', '307 E South St', {}), makeBill('ACCT002', '999 Other St', {})];
+    const bills = [makeBill('ACCT001', '307 E Sample St', {}), makeBill('ACCT002', '999 Other St', {})];
     const warnings = [warn('error', 'TotalCurrentCharges'), clean()];
     const labels = runCase(sandbox, bldgBarStub, 'plausible+missing', bills, warnings);
     expect(
@@ -178,7 +178,7 @@ function main() {
 
   // ── Case 2: plausible address branch + all fields clean -> NO tag ──
   {
-    const bills = [makeBill('ACCT001', '307 E South St', {}), makeBill('ACCT002', '999 Other St', {})];
+    const bills = [makeBill('ACCT001', '307 E Sample St', {}), makeBill('ACCT002', '999 Other St', {})];
     const warnings = [clean(), clean()];
     const labels = runCase(sandbox, bldgBarStub, 'plausible+clean', bills, warnings);
     expect(

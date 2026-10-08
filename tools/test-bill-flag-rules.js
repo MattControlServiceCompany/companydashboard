@@ -579,7 +579,7 @@ console.log('=== 9. usage does not match charge ===');
     sewer((bills) => Object.assign(bills[5], { sewerUsage: '300', sewerCharge: '30.00', totalCost: '30.00' })),
   );
   assert(!has(tiny, 's5', 'usage_charge_mismatch'), 'tiny usage with fixed fees: not tested');
-  // the stored rate field is never read: a stale totalSewerRate on a correct bill gives no flag (Rockville Sewer 2026-03-15)
+  // the stored rate field is never read: a stale totalSewerRate on a correct bill gives no flag (Site H Sewer 2026-03-15)
   const stale = run(sewer((bills) => bills.forEach((b) => (b.totalSewerRate = b.id === 's4' ? '0.99407' : '0.01'))));
   assert(!anyRule(stale, 'usage_charge_mismatch'), 'stale stored totalSewerRate (99x) on a correct bill: no flag');
   // and a wrong bill still flags when its stored rate looks normal
@@ -590,7 +590,7 @@ console.log('=== 9. usage does not match charge ===');
     }),
   );
   assert(has(staleOk, 's4', 'usage_charge_mismatch'), 'wrong charge with a normal-looking stored rate: flag');
-  // flat charge: the same sewer charge to the cent on 3 or more bills (Rockville Sewer $695.85 x 9) is not a $ per gallon
+  // flat charge: the same sewer charge to the cent on 3 or more bills (Site H Sewer $695.85 x 9) is not a $ per gallon
   const flat = run(
     sewer((bills) =>
       [6, 7, 8, 9, 10, 11].forEach((i) => {
@@ -604,7 +604,7 @@ console.log('=== 9. usage does not match charge ===');
     !anyRule(flat, 'usage_charge_mismatch'),
     'flat charge on 6 bills with gallons from 132,400 to 232,400: those bills are not tested',
   );
-  // but a wrong bill on the same meter still flags against the rest (Rockville Sewer 2024-07-15)
+  // but a wrong bill on the same meter still flags against the rest (Site H Sewer 2024-07-15)
   const flatPlus = run(
     sewer((bills) => {
       [6, 7, 8, 9, 10, 11].forEach((i) => {

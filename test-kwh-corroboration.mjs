@@ -7,7 +7,7 @@
 //      exported from app/bill-analysis.js via the same Node `vm` technique
 //      used by AI/_context/reference/ocr-harness/gate-a-run.mjs and
 //      test_ocr_phase0_harness.mjs — loads the REAL source, no reimplementation.
-//   2. The acceptance test: Matt's real 4-bill Louisburg April 2026 Evergy
+//   2. The acceptance test: Matt's real 4-bill Client A April 2026 Utility E
 //      extraction, driven through the REAL extractAll() + _postExtractionVerify()
 //      + analyzeBillExtraction() pipeline from raw OCR text (same raw text
 //      captured in his production debug file), asserting every corrected
@@ -16,6 +16,7 @@
 // Run: node test-kwh-corroboration.mjs   (from the repo root)
 
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import vm from 'vm';
 import { fileURLToPath } from 'url';
@@ -232,7 +233,7 @@ async function main() {
     assertTrue(d.hold === true, 'decideQuantity: tied strong buckets refuse rather than pick a side');
   }
 
-  // ── _gatherKwhWitnesses (synthetic bill matching Louisburg bill 4 shape) ──
+  // ── _gatherKwhWitnesses (synthetic bill matching Client A bill 4 shape) ──
   {
     const bill4 = {
       kWhConsumed: '1053.8400',
@@ -455,12 +456,11 @@ async function main() {
     assertEqual(JSON.stringify(X.evgAccountsIn('no account here')), JSON.stringify([]), 'evgAccountsIn: none found');
   }
 
-  // ── ACCEPTANCE TEST: Matt's real 4-bill Louisburg April 2026 extraction ──
-  const DEBUG_FILE = path.join(
-    'C:\\Users\\Matt Miller\\Downloads',
-    'ocr-debug_April 2026 Electric bills - BES_ MB_ Field House_20260714_113332.txt',
-  );
-  if (fs.existsSync(DEBUG_FILE)) {
+  // ── ACCEPTANCE TEST: Matt's real 4-bill Client A April 2026 extraction ──
+  const DL_DIR = path.join(os.homedir(), 'Downloads');
+  const DEBUG_NAME = fs.existsSync(DL_DIR) ? fs.readdirSync(DL_DIR).find((n) => /^ocr-debug_April 2026 Electric bills.*\.txt$/.test(n)) : null;
+  const DEBUG_FILE = DEBUG_NAME ? path.join(DL_DIR, DEBUG_NAME) : '';
+  if (DEBUG_FILE && fs.existsSync(DEBUG_FILE)) {
     const debugText = fs.readFileSync(DEBUG_FILE, 'utf8');
     const marker = '=== RAW OCR TEXT ===';
     const idx = debugText.indexOf(marker);
@@ -496,7 +496,7 @@ async function main() {
     assertEqual(pf(bill2.OnPeakKWh), 349.6962, 'ACCEPTANCE bill2: OnPeakKWh correct');
     assertEqual(pf(bill2.OffPeakKWh), 1932.8056, 'ACCEPTANCE bill2: OffPeakKWh correct (was 1912.7998)');
     assertEqual(pf(bill2.TotalCurrentCharges), 561.57, 'ACCEPTANCE bill2: dollar total unchanged');
-    // Bill 3 — Louis Elementary (49636.144) — must be unaffected by this fix.
+    // Bill 3 — Site K Elementary (49636.144) — must be unaffected by this fix.
     assertEqual(pf(bill3.kWhConsumed), 49636.144, 'ACCEPTANCE bill3: kWhConsumed unchanged');
     assertEqual(pf(bill3.TotalCurrentCharges), 5718.13, 'ACCEPTANCE bill3: dollar total unchanged');
     // Bill 4 — the primary repro (kWhConsumed silently overwritten 1053.84 -> 973.04).

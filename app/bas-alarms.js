@@ -100,7 +100,7 @@ function baSplitCSV(text) {
 
 function baBuildingFromLocation(loc) {
   var parts = (loc || '').split('/').filter(Boolean);
-  // parts[0] = district/site root (e.g. "Louisburg School District")
+  // parts[0] = district/site root (e.g. "Client A School District")
   // parts[1] = building name when a specific building is targeted
   // If only the root segment is present (no building path) the alarm is
   // site-wide / BAS-level with no specific building. Both that case and the

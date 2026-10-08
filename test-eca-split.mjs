@@ -1,9 +1,9 @@
-// test-broadmoor-eca-split.mjs — targeted self-check for the split-ECA
+// test-eca-split.mjs — targeted self-check for the split-ECA
 // kWhConsumed witness-consensus override (2026-09-03).
 // Loads the REAL app/bill-analysis.js via the same vm technique as
 // test-kwh-corroboration.mjs (no reimplementation of app logic).
 //
-// Run: node test-broadmoor-eca-split.mjs
+// Run: node test-eca-split.mjs
 
 import fs from 'fs';
 import path from 'path';
@@ -72,7 +72,7 @@ function loadRealPipeline() {
     console,
     window: sandboxWindow,
     document: sandboxDocument,
-    navigator: { userAgent: 'node-broadmoor-eca-split-test' },
+    navigator: { userAgent: 'node-eca-split-test' },
     localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
     Chart: function () {},
     setTimeout, clearTimeout, setInterval: () => 0, clearInterval, TextEncoder, TextDecoder,
@@ -124,7 +124,7 @@ async function main() {
   assertTrue(!!X.decideQuantityCorrection, 'export: _decideQuantityCorrection');
   assertTrue(!!X.gatherKwhWitnesses, 'export: _gatherKwhWitnesses');
 
-  // ── Case A: Broadmoor shape via _gatherKwhWitnesses + _decideQuantityCorrection ──
+  // ── Case A: Site F shape via _gatherKwhWitnesses + _decideQuantityCorrection ──
   // kWhConsumed extracted as ONLY the 2nd ECA sub-line (13,357.0909) instead of
   // the full-period total (35,618.9091 + 13,357.0909 = 48,976). EER/PTS/ECA-sum/
   // On+Off-peak-sum all self-verify and unanimously agree on 48,976.
@@ -161,16 +161,16 @@ async function main() {
 
     const witnesses = X.gatherKwhWitnesses(bill);
     const bySource = Object.fromEntries(witnesses.map((w) => [w.source, w]));
-    assertTrue(!!bySource['ECACharge'] && bySource['ECACharge'].value === 48976, 'Broadmoor: ECACharge witness sums both sub-lines to 48976');
-    assertTrue(!!bySource['EERCharge'] && bySource['EERCharge'].strong, 'Broadmoor: EER witness self-verifies STRONG');
-    assertTrue(!!bySource['PTSCharge'] && bySource['PTSCharge'].strong, 'Broadmoor: PTS witness self-verifies STRONG');
-    assertTrue(!!bySource['On+Off peak sum'] && bySource['On+Off peak sum'].strong, 'Broadmoor: On+Off-peak witness self-verifies STRONG');
+    assertTrue(!!bySource['ECACharge'] && bySource['ECACharge'].value === 48976, 'Fixture: ECACharge witness sums both sub-lines to 48976');
+    assertTrue(!!bySource['EERCharge'] && bySource['EERCharge'].strong, 'Fixture: EER witness self-verifies STRONG');
+    assertTrue(!!bySource['PTSCharge'] && bySource['PTSCharge'].strong, 'Fixture: PTS witness self-verifies STRONG');
+    assertTrue(!!bySource['On+Off peak sum'] && bySource['On+Off peak sum'].strong, 'Fixture: On+Off-peak witness self-verifies STRONG');
 
     const decision = X.decideQuantityCorrection('kWhConsumed', pf(bill.kWhConsumed), witnesses);
-    assertTrue(decision.apply === true, 'Broadmoor: decision applies despite >5% swing (unanimous override)');
-    assertTrue(decision.unanimousOverride === true, 'Broadmoor: decision flagged as unanimousOverride');
-    assertEqual(decision.corrected, 48976, 'Broadmoor: corrected kWhConsumed = 48976 (full ECA-split total)');
-    console.log('Broadmoor decision.reason:', decision.reason);
+    assertTrue(decision.apply === true, 'Fixture: decision applies despite >5% swing (unanimous override)');
+    assertTrue(decision.unanimousOverride === true, 'Fixture: decision flagged as unanimousOverride');
+    assertEqual(decision.corrected, 48976, 'Fixture: corrected kWhConsumed = 48976 (full ECA-split total)');
+    console.log('Fixture decision.reason:', decision.reason);
   }
 
   // ── Case B: LMS bill 30 regression guard — unanimous strong witnesses but NO

@@ -10,14 +10,14 @@
 //   - Project Baseline panel      (utility-data.js renderUDProjAggPanel's getNormRows+buildMoMap loop)
 //   - Energy Graphics EUI card    (graphics-setpoints.js egfxRefresh's buildMoMap loop + computeBaselineEUI)
 //   - Baseline report table       (report-engine.js rptBuildBaselineDataTable, called directly)
-//   - xlsx export data            (report-engine-woodland.js exportWoodlandReportToXlsx ws3 loop —
+//   - xlsx export data            (report-engine-woodland.js exportClient BReportToXlsx ws3 loop —
 //                                  same eM.kwh/eM.totalCost/gM.therms/gM.cost field reads, verified
 //                                  both numerically against the same buildMoMap object and by a
 //                                  source-text assertion that the exporter reads those exact fields)
 //
 // SYNTHETIC fixture only is used for the committed pass/fail gate (never real client data in the
 // repo). When a local CompanyHub backup is available (arg or latest in Downloads), this also runs
-// the same 5-surface comparison against Woodland Spring Middle's real May 2025–Apr 2026 baseline
+// the same 5-surface comparison against Client B Spring Middle's real May 2025–Apr 2026 baseline
 // and prints the surface x value table — informational only, not required for CI to pass.
 'use strict';
 
@@ -167,7 +167,7 @@ assert(
   'HTML report: Annual kW row never labeled "(peak)"',
 );
 
-// 2026-09-22 regression gate: Woodland page 1 raw-bills table (rptPageWoodlandBills) had its
+// 2026-09-22 regression gate: Client B page 1 raw-bills table (rptPageClient BBills) had its
 // OWN separate "TOTAL (Annual)" kW cell bug — Math.max + a "(peak)" suffix — independent of
 // rptBuildBaselineDataTable above (different function, different table). Same rule: a Total
 // row is always a SUM of the 12 monthly billed kW, never a peak/max.
@@ -185,7 +185,7 @@ assert(
   'Woodland page 1 HTML: kW Total accumulates as a running sum',
 );
 
-// Same rule for the Woodland xlsx export's Page 1 (Bills) sheet — ws1's Electric block.
+// Same rule for the Client B xlsx export's Page 1 (Bills) sheet — ws1's Electric block.
 const ws1Src = wdSrc.slice(
   wdSrc.indexOf('async function exportWoodlandReportToXlsx'),
   wdSrc.indexOf("ws1.addRow(['Natural Gas']);"),
@@ -197,7 +197,7 @@ assert(
 assert(!/MAX\(D/.test(ws1Src), 'Woodland xlsx Page 1 sheet: no MAX() formula on the kW Total cell');
 assert(!/\(peak\)/i.test(ws1Src), 'Woodland xlsx Page 1 sheet: no "(peak)" note on the kW Total cell');
 
-// ─── Page 7 "Demand kW Saved" (rptPageWoodlandOptions HTML + exportWoodlandReportToXlsx ws6) ────
+// ─── Page 7 "Demand kW Saved" (rptPageClient BOptions HTML + exportClient BReportToXlsx ws6) ────
 // 2026-09-22 fix: this column was Math.max(monthly kW saved) — the single August peak — mislabeled
 // "Peak Demand kW Saved". Rule: an annual kW figure is the SUM of the 12 monthly values.
 assert(!/peakDemandKw/.test(wdSrc), 'Woodland options: no peakDemandKw field name remains anywhere in the file');
@@ -240,7 +240,7 @@ assert(
 
 // Execute the REAL demandKwSaved formula (extracted verbatim above) against a synthetic 12-month
 // kw[] array whose August value (19.2) is deliberately the max but NOT the sum, then render the
-// REAL rptPageWoodlandOptions() HTML with that computed value — proving computation and rendering
+// REAL rptPageClient BOptions() HTML with that computed value — proving computation and rendering
 // both land on the sum, end to end, not just via source-text pattern matching.
 const wdOptionFns = [
   loadFn(REPO + '/app/report-engine.js', 'rptPage'),
@@ -576,9 +576,9 @@ const backupPath = process.argv[2] || findLatestBackup();
 if (backupPath && fs.existsSync(backupPath)) {
   console.log('\nUsing real backup (informational only): ' + backupPath);
   const data = JSON.parse(fs.readFileSync(backupPath, 'utf8'));
-  const projId = 1781636180197; // Spring Hill Schools
+  const projId = 1781636180197; // Client C Schools
   const ud = data['en_utility_' + projId];
-  const b = ud && ud.buildings.find((x) => x.id === 'b1781636210689'); // Woodland Spring Middle
+  const b = ud && ud.buildings.find((x) => x.id === 'b1781636210689'); // Client B Spring Middle
   if (b) {
     const em = b.meters.find((m) => m.commodity === 'Electric');
     const gm = b.meters.find((m) => m.commodity === 'Gas');

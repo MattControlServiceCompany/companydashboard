@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """One-off build of app/assets/estimate-template.xlsx from a source copy of the CSC
-change-order cost workbook (.xlsm). Never point it at a SharePoint original.
+change-order cost workbook (.xlsm). Never point it at a document-site original.
 
 Usage: python scripts/build-estimate-template.py <source-copy.xlsm> [out.xlsx]
 
@@ -9,7 +9,7 @@ What it does (XML level, so formulas, styles, widths, print setup and sheet orde
   - strips _xlfn.SINGLE( ) wrappers from formulas
   - drops every cached formula value (the export writes them from estimate-workbook.js)
   - blanks every input cell and every client-specific string
-  - drops SharePoint/customXml/calcChain parts and personal document properties
+  - drops document-site/customXml/calcChain parts and personal document properties
   - strips print header/footer text that holds a name, email or phone (keeps page numbers)
   - sets fullCalcOnLoad on the workbook
   - scans the result for client strings and exits 1 if any are found
@@ -166,7 +166,7 @@ def build(src, out):
             blanked.add(text)
     parts['xl/sharedStrings.xml'] = sx.encode('utf8')
 
-    # sheet rels: drop control props, vml of removed buttons, SharePoint-bound items
+    # sheet rels: drop control props, vml of removed buttons, document-site-bound items
     for p in [p for p in parts if p.startswith('xl/worksheets/_rels/')]:
         x = parts[p].decode('utf8')
         x = re.sub(r'<Relationship [^>]*Target="\.\./ctrlProps/[^>]*/>', '', x)
@@ -183,7 +183,7 @@ def build(src, out):
         x = re.sub(r'\smacro="[^"]*"', ' macro=""', x)
         parts[p] = x.encode('utf8')
 
-    # workbook: macro-free, no SharePoint path, full recalc on load
+    # workbook: macro-free, no document-site path, full recalc on load
     wb = parts['xl/workbook.xml'].decode('utf8')
     wb = re.sub(r'<mc:AlternateContent[^>]*><mc:Choice Requires="x15"><x15ac:absPath.*?</mc:AlternateContent>', '', wb, flags=re.S)
     wb = re.sub(r'\s+codeName="[^"]*"', '', wb)

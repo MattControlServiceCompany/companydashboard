@@ -14,8 +14,8 @@
 // USAGE
 //   node scripts/regression-gate.js [--data <backup.json>] [--oracle <oracle.json>]
 //        [--skip-reconcile] [--capture-baseline] [--json <out.json>]
-//   Default --data   = newest C:\Users\Matt Miller\Downloads\CompanyHub-localdatafile-*.json
-//   Default --oracle = C:\Users\Matt Miller\AI\_context\reference\known-good-values\regression-oracle.json
+//   Default --data   = newest <home>\Downloads\CompanyHub-localdatafile-*.json
+//   Default --oracle = <context dir>\reference\known-good-values\regression-oracle.json  (context dir = CH_CONTEXT_DIR, default <home>\AI\_context)
 //   --capture-baseline: add every probe value that has NO oracle entry to the oracle file as tier
 //     "baseline-current" (value = what current code computes, NOT a verified truth), then exit 0.
 //     Existing entries are never changed. Upgrade an entry's tier/source by hand once a trusted
@@ -42,12 +42,13 @@ const os = require('os');
 const { spawnSync, execSync } = require('child_process');
 
 const REPO_ROOT = path.resolve(__dirname, '..');
-const DOWNLOADS = 'C:/Users/Matt Miller/Downloads';
-const DEFAULT_ORACLE = 'C:/Users/Matt Miller/AI/_context/reference/known-good-values/regression-oracle.json';
+const DOWNLOADS = path.join(os.homedir(), 'Downloads').split(path.sep).join('/');
+const CTX_DIR = (process.env.CH_CONTEXT_DIR || path.join(os.homedir(), 'AI', '_context')).split(path.sep).join('/');
+const DEFAULT_ORACLE = CTX_DIR + '/reference/known-good-values/regression-oracle.json';
 
 // ---- playwright: no node_modules in the repo. Resolve from CH_PLAYWRIGHT_NODE_MODULES (default: the
 // permanent copy in _context/tools/playwright-runtime), then this tree's own install. The same dir goes to child tests as NODE_PATH. ----
-const PW_MODULES = process.env.CH_PLAYWRIGHT_NODE_MODULES || 'C:/Users/Matt Miller/AI/_context/tools/playwright-runtime/node_modules';
+const PW_MODULES = process.env.CH_PLAYWRIGHT_NODE_MODULES || CTX_DIR + '/tools/playwright-runtime/node_modules';
 function resolvePlaywright() {
   const dirs = [PW_MODULES, path.join(REPO_ROOT, 'node_modules')];
   for (const d of dirs) {
@@ -57,7 +58,11 @@ function resolvePlaywright() {
       /* try next */
     }
   }
-  throw new Error('playwright not found; set CH_PLAYWRIGHT_NODE_MODULES to a node_modules dir that has it (tried ' + dirs.join(', ') + ')');
+  throw new Error(
+    'playwright not found; set CH_PLAYWRIGHT_NODE_MODULES to a node_modules dir that has it (tried ' +
+      dirs.join(', ') +
+      ')',
+  );
 }
 const { chromium } = resolvePlaywright();
 
@@ -423,17 +428,31 @@ async function main() {
     // silently moves every weather-normalized savings value) ----
     const wddKeys = Object.keys(seed).filter((k) => /^en_wdd_/.test(k) && seed[k] && Object.keys(seed[k]).length);
     const wddLoaded = await page.evaluate(
-      (ks) => ks.filter((k) => { const v = DB.get(k, null); return v && Object.keys(v).length; }),
+      (ks) =>
+        ks.filter((k) => {
+          const v = DB.get(k, null);
+          return v && Object.keys(v).length;
+        }),
       wddKeys,
     );
     const wddMissing = wddKeys.filter((k) => wddLoaded.indexOf(k) < 0);
-    console.log('weather cache  : ' + wddLoaded.length + '/' + wddKeys.length + ' en_wdd_* keys loaded after restore (' + wddKeys.join(', ') + ')');
+    console.log(
+      'weather cache  : ' +
+        wddLoaded.length +
+        '/' +
+        wddKeys.length +
+        ' en_wdd_* keys loaded after restore (' +
+        wddKeys.join(', ') +
+        ')',
+    );
     add(
       'pages',
       'weather cache present after restore',
       wddMissing.length ? 'FAIL' : 'PASS',
       wddMissing.length
-        ? 'backup has weather but the app cache is empty for: ' + wddMissing.join(', ') + ' -- savings values are NOT weather-normalized'
+        ? 'backup has weather but the app cache is empty for: ' +
+            wddMissing.join(', ') +
+            ' -- savings values are NOT weather-normalized'
         : wddLoaded.length + ' keys',
     );
 
@@ -656,7 +675,11 @@ async function main() {
       });
     });
   const queue = toRun.slice();
-  await Promise.all([1, 2, 3].map(async () => { while (queue.length) await runTest(queue.shift()); }));
+  await Promise.all(
+    [1, 2, 3].map(async () => {
+      while (queue.length) await runTest(queue.shift());
+    }),
+  );
 
   // ---- temp-leak guard: the run (gate + every test) must leave nothing tagged with RUN_TAG in C:/Temp ----
   let leaked = 0;
@@ -669,11 +692,72 @@ async function main() {
           add('temp-leak', d + '/' + e, 'FAIL', 'left behind by this run; deleted by the gate');
           fs.rmSync(path.join(d, e), { recursive: true, force: true });
         } else {
-          add('temp-leak', d + '/' + e, 'INFO', 'new entry from another process (name lacks run tag ' + RUN_TAG + '); not deleted');
+          add(
+            'temp-leak',
+            d + '/' + e,
+            'INFO',
+            'new entry from another process (name lacks run tag ' + RUN_TAG + '); not deleted',
+          );
         }
       });
   });
   if (!leaked) add('temp-leak', 'no entries tagged ' + RUN_TAG + ' left in ' + TMP_DIRS.join(', '), 'PASS', '');
+
+  // ---- repo leak ratchet (Matt, 2026-10-08): the repo must not tell a reader who the clients are, what data
+  // sources it reads, or internal infrastructure. The patterns live OUTSIDE the repo (private file, one ERE per line,
+  // label = P01.. by order). scripts/leak-ratchet.json holds only the counts per label. A count may go DOWN; UP = FAIL.
+  // Counts = matching lines in tracked file contents (git grep -IciE) + tracked file names. Update the ratchet with
+  // --update-leak-ratchet after a scrub lowers the counts. ----
+  {
+    const patFile = process.env.CH_LEAK_PATTERNS || CTX_DIR + '/reference/private/2026-10-08-repo-leak-patterns.txt';
+    const ratchetFile = path.join(REPO_ROOT, 'scripts', 'leak-ratchet.json');
+    if (!fs.existsSync(patFile)) {
+      add('leak-guard', 'repo leak ratchet', 'INFO', 'SKIPPED: private pattern file not found');
+    } else {
+      const pats = fs
+        .readFileSync(patFile, 'utf8')
+        .split(/\r?\n/)
+        .filter((l) => l.trim() && !l.startsWith('#'));
+      const names = execSync('git ls-files', { cwd: REPO_ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
+        .split(/\r?\n/)
+        .filter(Boolean);
+      const counts = {};
+      pats.forEach((p, i) => {
+        const label = 'P' + String(i + 1).padStart(2, '0');
+        const g = spawnSync('git', ['grep', '-IciE', '-e', p], { cwd: REPO_ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+        let n = 0;
+        (g.stdout || '')
+          .split(/\r?\n/)
+          .filter(Boolean)
+          .forEach((l) => {
+            n += parseInt(l.slice(l.lastIndexOf(':') + 1), 10) || 0;
+          });
+        const re = new RegExp(p, 'i');
+        n += names.filter((x) => re.test(x)).length;
+        counts[label] = n;
+      });
+      if (args['update-leak-ratchet']) {
+        fs.writeFileSync(ratchetFile, JSON.stringify(counts, null, 2) + '\n');
+        add('leak-guard', 'repo leak ratchet', 'INFO', 'ratchet file rewritten with current counts');
+      } else if (!fs.existsSync(ratchetFile)) {
+        add('leak-guard', 'repo leak ratchet', 'INFO', 'no scripts/leak-ratchet.json; run with --update-leak-ratchet');
+      } else {
+        const ratchet = JSON.parse(fs.readFileSync(ratchetFile, 'utf8'));
+        const up = Object.keys(counts).filter((k) => counts[k] > (ratchet[k] === undefined ? 0 : ratchet[k]));
+        const down = Object.keys(counts).filter((k) => counts[k] < (ratchet[k] === undefined ? 0 : ratchet[k]));
+        add(
+          'leak-guard',
+          'repo leak ratchet (' + Object.keys(counts).length + ' patterns)',
+          up.length ? 'FAIL' : 'PASS',
+          up.length
+            ? 'count went UP for ' + up.map((k) => k + ' ' + ratchet[k] + '->' + counts[k]).join(', ')
+            : down.length
+              ? 'lower than ratchet for ' + down.join(', ') + ' (run --update-leak-ratchet)'
+              : '',
+        );
+      }
+    }
+  }
 
   // ---- report ----
   const groups = {};

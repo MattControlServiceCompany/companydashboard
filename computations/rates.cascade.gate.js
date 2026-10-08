@@ -6,7 +6,7 @@
 // gaps as designed.
 //
 // Spec:   _context/plans/2026-09-10-missing-rate-resolution-cascade.md
-// Rates:  _context/research/2026-09-10-louisburg-published-utility-rates/findings.md
+// Rates:  _context/research/2026-09-10-client-a-published-utility-rates/findings.md
 //
 // Run:    node computations/rates.cascade.gate.js
 // Exits nonzero on any assertion failure.
@@ -92,9 +92,9 @@ function mkBill(start, end, fields) {
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   STEP 2 — Published seasonal rate (Circle Grove electric, 2MGSE)
+   STEP 2 — Published seasonal rate (Site G electric, 2MGSE)
    ═══════════════════════════════════════════════════════════════ */
-check('step2: gapped Circle Grove electric SUMMER month (2026-07) resolves to 2MGSE published summer rate', () => {
+check('step2: gapped Site G electric SUMMER month (2026-07) resolves to 2MGSE published summer rate', () => {
   const meter = {
     id: 'cg-electric-test',
     commodity: 'Electric',
@@ -115,14 +115,14 @@ check('step2: gapped Circle Grove electric SUMMER month (2026-07) resolves to 2M
   assert.ok(Math.abs(rKw.rate - expectedKw) < 1e-9, 'kw rate=' + rKw.rate + ' expected=' + expectedKw);
 });
 
-check('step2: gapped Circle Grove electric WINTER month (2026-05) resolves to 2MGSE published winter rate', () => {
+check('step2: gapped Site G electric WINTER month (2026-05) resolves to 2MGSE published winter rate', () => {
   const meter = {
     id: 'cg-electric-test2',
     commodity: 'Electric',
     rateSchedule: '2MGSE',
     bills: [mkBill('2026-05-01', '2026-05-31', {})],
   };
-  // May is a WINTER month on the Evergy Metro tariff (NOT May-Sep summer).
+  // May is a WINTER month on the Utility E Metro tariff (NOT May-Sep summer).
   const rKwh = sandbox.resolveMeterRate('proj-test', meter, '2026-05', { component: 'kwh', incl: {}, allMeters: [] });
   assert.strictEqual(rKwh.step, 2);
   assert.strictEqual(rKwh.source, 'published-winter');
@@ -144,10 +144,10 @@ check('step2: Louisburg municipal gas resolves to the flat non-seasonal publishe
 });
 
 check(
-  'step2: Broadmoor/Field House (AE alias) kw component is NEVER guessed — falls through, energy still resolves',
+  'step2: Site F/Field House (AE alias) kw component is NEVER guessed — falls through, energy still resolves',
   () => {
     const meter = {
-      id: 'broadmoor-test',
+      id: 'site-f-test',
       commodity: 'Electric',
       rateSchedule: '2LGAE',
       bills: [mkBill('2026-07-01', '2026-07-31', {})],
@@ -165,9 +165,9 @@ check(
 /* ═══════════════════════════════════════════════════════════════
    STEP 3 — Peer meter, same rate schedule, same billing month
    ═══════════════════════════════════════════════════════════════ */
-check('step3 (isolated): gapped Middle School (2LGSE) resolves via Rockville peer for the same month', () => {
-  const rockville = {
-    id: 'rockville',
+check('step3 (isolated): gapped Middle School (2LGSE) resolves via Site H peer for the same month', () => {
+  const siteH = {
+    id: 'site-h',
     commodity: 'Electric',
     rateSchedule: '2LGSE',
     bills: [mkBill('2026-03-01', '2026-03-31', { totalKwhRate: '0.05500' })],
@@ -178,10 +178,10 @@ check('step3 (isolated): gapped Middle School (2LGSE) resolves via Rockville pee
     rateSchedule: '2LGSE',
     bills: [mkBill('2026-03-01', '2026-03-31', {})], // gap — no rate
   };
-  const r = sandbox._cascadePeerRate([rockville, middleSchool], middleSchool, {}, '2026-03', 'kwh');
+  const r = sandbox._cascadePeerRate([siteH, middleSchool], middleSchool, {}, '2026-03', 'kwh');
   assert.ok(r, 'peer step should resolve');
   assert.strictEqual(r.rate, 0.055);
-  assert.strictEqual(r.peerMeterId, 'rockville');
+  assert.strictEqual(r.peerMeterId, 'site-h');
 });
 
 check('step3 (end-to-end, non-published schedule): peer wins when published truly cannot resolve', () => {

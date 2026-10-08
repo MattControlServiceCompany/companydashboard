@@ -7,7 +7,7 @@
 //     an annual/inflated sum).
 //   - Narrative: read d.weather.totals.hddBl (collectWeatherData, app/csv-import.js), which
 //     sums hddBl ONLY for inPeriod (reporting-quarter) months.
-// Real certified PDF ("Louisburg USD #416 - Quarterly Savings Report 2026.05.11 with Degree
+// Real certified PDF ("Client A USD #416 - Quarterly Savings Report 2026.05.11 with Degree
 // Day info.pdf") shipped both numbers side by side: table 5,535 vs narrative 2,114.
 //
 // Fix: rptPageAppendixWeather now reads totHddBl/totHddCur/totCddBl/totCddCur (and the

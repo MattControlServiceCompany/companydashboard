@@ -51,7 +51,7 @@
 // HARNESS OF RECORD
 // --------------------------------------------------
 // Headless Chromium (bundled Playwright Chromium, NEVER port 9222 / the user's live Edge) loads
-// the REAL energy-department.html, restores the REAL JOCO backup export through
+// the REAL energy-department.html, restores the REAL Client D backup export through
 // window.__siteUI.restoreData(data, {mode:'replace', confirm:true, safetyCopy:false}) (the real
 // restore engine, programmatic entry without the preview dialog), then calls the REAL production
 // functions in-page (buildCatalogRows, collectASHRAE36Data, generateASHRAE36AuditHTML,
@@ -103,8 +103,8 @@ function resolvePlaywright(repoRoot) {
     } catch (e2) {
       /* fall through to the primary checkout */
     }
-    const FALLBACK_PLAYWRIGHT_HOST = 'C:/Users/Matt Miller/AI/companydashboard';
-    if (path.resolve(repoRoot) !== path.resolve(FALLBACK_PLAYWRIGHT_HOST)) {
+    const FALLBACK_PLAYWRIGHT_HOST = process.env.CH_PLAYWRIGHT_HOST_DIR;
+    if (FALLBACK_PLAYWRIGHT_HOST && path.resolve(repoRoot) !== path.resolve(FALLBACK_PLAYWRIGHT_HOST)) {
       return require(path.join(FALLBACK_PLAYWRIGHT_HOST, 'node_modules', 'playwright'));
     }
     throw e;
@@ -126,7 +126,12 @@ function parseArgs(argv) {
 }
 const args = parseArgs(process.argv.slice(2));
 
-const DEFAULT_ORACLE = 'C:/Users/Matt Miller/AI/_context/reference/known-good-values/joco-harness-config.json';
+const DEFAULT_ORACLE = path.join(
+  process.env.CH_CONTEXT_DIR || path.join(require('os').homedir(), 'AI', '_context'),
+  'reference',
+  'known-good-values',
+  'joco-harness-config.json',
+);
 const ORACLE_PATH = args.oracle || DEFAULT_ORACLE;
 if (!fs.existsSync(ORACLE_PATH)) {
   console.error('FATAL: oracle config not found at', ORACLE_PATH);
@@ -275,7 +280,7 @@ const REGISTRY = [
   },
   {
     // INVERTED 2026-08-03 (was future-work-section-rendered-when-scope-exists): Matt does not
-    // want Future Work shown in the JOCO Service Proposal, so the whole client-facing Future Work
+    // want Future Work shown in the Client D Service Proposal, so the whole client-facing Future Work
     // render path (standalone section, inline table row, Vision-page fallback) was DELETED from
     // report-engine.js. This check now guards the opposite invariant: the deleted section must
     // never come back. The opt-in Cost Estimate page's internal timeline keeps its Future Work
@@ -615,12 +620,12 @@ async function gatherLetterheadData(page, projId) {
         sections[s.key] = true;
       });
       // collectReportData() needs Utility Data buildings (getUDBldgs) -- a genuinely different
-      // data shape than the Equipment Matrix data the ASHRAE checks above use. The default JOCO
+      // data shape than the Equipment Matrix data the ASHRAE checks above use. The default Client D
       // oracle fixture (joco-harness-config.json) was built for the ASHRAE registry entries and
       // has zero Utility Data buildings, so generateReportHTML legitimately cannot run against
       // it. That is not a letterhead defect -- SKIP (not fail) rather than false-failing the gate
       // every time it runs against that fixture. Run with --data/--proj pointed at a project that
-      // HAS Utility Data buildings (e.g. Louisburg) to actually exercise this check.
+      // HAS Utility Data buildings (e.g. Client A) to actually exercise this check.
       const data = collectReportData(projId, null, null, 'quarterly');
       if (!data) {
         out.skip = true;

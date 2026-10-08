@@ -241,7 +241,7 @@ function validateImpliedRate(commodity, usage, charge, utilityName) {
   const expected = commRates[rateKey];
   if (!expected) return null;
 
-  // Use utility-specific override if available (e.g. Louisburg gas)
+  // Use utility-specific override if available (e.g. Client A gas)
   let expMin = expected.min,
     expMax = expected.max,
     expTypical = expected.typical;
@@ -350,11 +350,11 @@ function getExtractedRate(parsed, type) {
 /* ══════════════════════════════════════════════════════════════════════════
    Missing-rate resolution cascade (SSOT) — resolveMeterRate()
    Spec: _context/plans/2026-09-10-missing-rate-resolution-cascade.md
-   Rates: _context/research/2026-09-10-louisburg-published-utility-rates/findings.md
+   Rates: _context/research/2026-09-10-client-a-published-utility-rates/findings.md
 
    5-step cascade, stop at first hit:
      1. Own bill rate for the month (getStoredRate / getStoredKwRate)
-     2. Published seasonal tariff rate (table below; Evergy Metro + Louisburg gas only)
+     2. Published seasonal tariff rate (table below; Utility E Metro + Client A gas only)
      3. Peer meter on the SAME rate schedule with a rate for the SAME month
      4. Same-meter previous month WITHIN the same rate season (never crosses the
         Jun-Sep / Oct-May boundary)
@@ -366,13 +366,13 @@ function getExtractedRate(parsed, type) {
    be called standalone, e.g. by the gate test).
    ══════════════════════════════════════════════════════════════════════════ */
 
-// Evergy Metro tariff season: Summer = Jun-Sep, Winter = Oct-May (Docket
+// Utility E Metro tariff season: Summer = Jun-Sep, Winter = Oct-May (Docket
 // 23-EKCE-775-RTS + bill cross-check — NOT the May-Sep initial assumption).
 var _EVERGY_METRO_SUMMER_MONTHS = [6, 7, 8, 9];
 
 // Published rates ($/kWh energy on/off-peak, $/kW demand, $/kW facilities).
-// Building -> code: High School=2LGSF, Middle School & Rockville=2LGSE,
-// Circle Grove=2MGSE. Penny-exact cross-check against Louisburg bills.
+// Building -> code: High School=2LGSF, Middle School & Site H=2LGSE,
+// Site G=2MGSE. Penny-exact cross-check against Client A bills.
 var PUBLISHED_ELECTRIC_RATES = {
   '2LGSE': {
     onPkSu: 0.07852,
@@ -402,13 +402,13 @@ var PUBLISHED_ELECTRIC_RATES = {
     facil: 2.854,
   },
 };
-// Broadmoor (2LGAE) / Field House (2MGAE): energy matches 2LGSE / 2MGSE exactly
+// Site F (2LGAE) / Field House (2MGAE): energy matches 2LGSE / 2MGSE exactly
 // (bill cross-check); demand does NOT — no public AE demand sheet was found, so
 // per the plan we never hardcode a guessed AE demand. Energy-only alias; the kW
 // (demand) component for these two codes falls through to cascade steps 3-5.
 var PUBLISHED_ELECTRIC_ENERGY_ALIAS = { '2LGAE': '2LGSE', '2MGAE': '2MGSE' };
 
-// City of Louisburg municipal gas: flat, non-seasonal.
+// City of Client A municipal gas: flat, non-seasonal.
 var PUBLISHED_GAS_FLAT_RATES = { louisburg: 0.798062 };
 
 function _evergyMetroSeason(ym) {
@@ -657,14 +657,14 @@ function resolveMeterRate(projId, meter, ym, opts) {
    getStoredRate/getStoredKwRate already use everywhere else in the app —
    never a different charge-field subset.
 
-   Season: Evergy Metro Jun-Sep = summer, Oct-May = winter (docket
+   Season: Utility E Metro Jun-Sep = summer, Oct-May = winter (docket
    23-EKCE-775-RTS + bill cross-check — see _EVERGY_METRO_SUMMER_MONTHS
    above). A bill's calendar month is resolved with normMonth() — the same
    majority-days-in-month resolver the missing-rate cascade and every
    baseline table use — NOT a naive `new Date(bill.start).getMonth()`, which
    misclassifies billing periods that straddle the season boundary (e.g. a
    bill starting May 20 and ending June 19 is mostly June, but a naive
-   start-month read calls it May/winter — see the Woodland Spring Middle
+   start-month read calls it May/winter — see the Client B Spring Middle
    2025-05-20 bill, which the utility itself bills at the SUMMER demand
    rate).
 

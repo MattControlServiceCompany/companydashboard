@@ -255,7 +255,7 @@ const SEQUENCE_SAVINGS_IMPACT = {
     // install and gives us good information" / "DCV should be highest priority." This was NOT yet
     // true for the ROI ranking that actually decides PHASE membership/order
     // (_pricingEquipRowScore, read by _pricingBuildRoiUnits/_pricingComputeRecommendedTimeline) —
-    // only the Recommended-tier TABLE DISPLAY sort had a DCV-first override. A real JOCO vav_dcv
+    // only the Recommended-tier TABLE DISPLAY sort had a DCV-first override. A real Client D vav_dcv
     // unit measured as low as score 1.25 (weight 2.5 / effectiveCostTier 2, when its CO2 sensor is
     // still a hardware gap) against ahu_sat_reset/ahu_dsp_reset's 3 — nowhere close to "highest".
     //
@@ -266,7 +266,7 @@ const SEQUENCE_SAVINGS_IMPACT = {
     //
     // Sizing, REVISED after real-data verification (2026-07-27, same day/branch): the first attempt
     // used bonus=2, which made DCV's WORST case (weight 2.5 / costTier 2 = 1.25 + 2 = 3.25) exceed
-    // dsp/sat-reset's max (weight 3 / costTier 1 = 3) outright — not merely tied. On real JOCO data
+    // dsp/sat-reset's max (weight 3 / costTier 1 = 3) outright — not merely tied. On real Client D data
     // this had a second-order effect nobody asked for: because DCV strictly outranked dsp/sat-reset
     // (no longer TIED with them), the ~750-unit DCV candidate pool no longer competed in the same
     // tie group _pricingDiversifyTiedUnits round-robins — it simply out-ranked the ~24-unit
@@ -544,7 +544,7 @@ const SEQUENCE_BLOCKING_SENSORS = {
    sensor key named above, because buildCatalogRows re-prices/re-groups a handful of point keys
    into a DIFFERENT catalog bucket for correct SKU selection or display consolidation:
      - 'co2_zone': the 2026-07-27 CO2 SKU correction (see dashboardlogic.md addendum) routes a
-       zone missing ONLY co2 (zoneTemp already present — the common case, ~749 of 776 real JOCO
+       zone missing ONLY co2 (zoneTemp already present — the common case, ~749 of 776 real Client D
        instances) to 'co2_zone_standalone' (SKU N1-AQX-C-A), not 'co2_zone' (the combo SKU, only
        used when zoneTemp is ALSO missing). SEQUENCE_BLOCKING_SENSORS.vav_dcv still names the
        original 'co2_zone' key.
@@ -726,7 +726,7 @@ function _pricingGetBudget(projId) {
     fitAppliedAt: null,
     serviceHoursPerMonth: 36, // Monthly Service Agreement (2026-07-20): hours/month drawn against
     // the monthly allowance (this.amount) at the shared global en_pricing_config.hourlyRate — see
-    // _pricingComputeMonthlyService, below. Editable per-project; 36 is Matt's JOCO default.
+    // _pricingComputeMonthlyService, below. Editable per-project; 36 is Matt's Client D default.
   };
   if (!stored) return dflt;
   return Object.assign({}, dflt, stored);
@@ -775,7 +775,7 @@ function _pricingComputeBudgetTotal(budget) {
 }
 
 /* ── Monthly Service Agreement (2026-07-20) ───────────────────────────────────
-   JOCO's offering is a MONTHLY energy-management SERVICE-ALLOWANCE agreement: the client pays
+   Client D's offering is a MONTHLY energy-management SERVICE-ALLOWANCE agreement: the client pays
    monthly and draws down a monthly allowance at a labor rate for parts + install labor + all
    other labor. This computes that monthly figure from the per-project serviceHoursPerMonth
    budget field (default 36) × the shared global en_pricing_config.hourlyRate — the SAME rate
@@ -909,7 +909,7 @@ function _pricingGetBuildingCount(projId) {
        - Utility Bill Data Entry — client: "Utility bills becoming labor hours should be able to
          easily estimate based on number of buildings." The PRIOR version was wrong two ways: (1) a
          flat 3 hrs/mo that never scaled with portfolio size, sized off nothing in particular, and
-         (2) gated on `_pricingProjectHasUtilityBills` — i.e. it showed ZERO for Johnson County
+         (2) gated on `_pricingProjectHasUtilityBills` — i.e. it showed ZERO for Client D
          today purely because no bills happen to be loaded into this database yet, even though the
          signed agreement commits CSC to this work every month regardless of what's currently on
          file. The labor exists because of the CONTRACT, not the current state of the app's data —
@@ -918,7 +918,7 @@ function _pricingGetBuildingCount(projId) {
          building data to size it from) and scales with `_pricingGetBuildingCount(projId)` — the
          SAME building count `buildCatalogRows` above already reads from `collectASHRAE36Data`, so
          this can never drift from the building count shown anywhere else fed by that same source
-         (27 for Johnson County today), and campus-wide/non-equipment "buildings" are excluded the
+         (27 for Client D today), and campus-wide/non-equipment "buildings" are excluded the
          same way that function already excludes them (a building with zero AUDITABLE equipment rows
          never enters `ashData.buildings` in the first place — see collectASHRAE36Data's
          `auditableRows.length` guard in report-engine.js). Rate:
@@ -1184,7 +1184,7 @@ function _pricingComputeMonthlyLaborBreakdown(projId) {
   // 2026-07-28 (comprehensive-monthly-cap task, item 2 — "Enforce the cap per month, not only per
   // phase"): monthlyAllowance uses _pricingMonthlyAllowanceAmount (the same denomination-normalized
   // $/mo figure the calendar-phase model below uses), NOT svc.allowance (which is budget.amount
-  // taken as-is regardless of denomination — correct for JOCO today since its budget is already
+  // taken as-is regardless of denomination — correct for Client D today since its budget is already
   // 'monthly', but would silently compare an annual/quarterly figure against a month's labor for a
   // differently-configured project). Null when no budget.amount is configured — same
   // silent-until-configured convention as the rest of this feature; laborCost/overCap/overageAmount
@@ -1980,7 +1980,7 @@ const PRICE_POINT_MAP = {
   },
   // co2_zone_standalone (2026-07-28, audit-finding correction): a STANDALONE zone CO2 room sensor
   // for the case where the zone's temperature sensor is ALREADY present and only CO2 is missing —
-  // 658 of 685 real zone-side CO2 gaps in the JOCO portfolio are this case. Before this entry
+  // 658 of 685 real zone-side CO2 gaps in the Client D portfolio are this case. Before this entry
   // existed, buildCatalogRows fell through to the co2_zone COMBO entry above (ZS2-HC-ALC) for these
   // too, which prices replacing a working temperature sensor just to add CO2 — a real overcharge.
   // N1-AQX-C-A is a real, distinct catalog SKU (verified present: list $914, contract $365.60 at
@@ -2002,7 +2002,7 @@ const PRICE_POINT_MAP = {
   // recommended unless they already have it or want it") AND no occupancy point was matched.
   // Before this entry existed, that gap hit PRICE_POINT_MAP's `if (!mapEntry) return;` guard in
   // buildCatalogRows and silently vanished from every tier — same failure mode as the co2 bug,
-  // just gated behind a manual per-unit flag so it never fired on real (unedited) JOCO data.
+  // just gated behind a manual per-unit flag so it never fired on real (unedited) Client D data.
   // ZS2-M-ALC (verified present in en_pricing_catalog: list $610, desc 'Std Temp Motion ALC') is
   // the cheapest catalog device carrying an occupancy/motion sensor — engReview flagged because
   // the zone's existing wall sensor (already accounted for by its own zoneTemp/co2_zone gap row,
@@ -2063,7 +2063,7 @@ const PRICE_POINT_MAP = {
      Rationale: VAV/VVT terminal boxes have integral factory-installed actuators commanded over
      the internal bus. A missing dampCmd BACnet point is a control point-exposure gap, not
      missing hardware. Add an actuator SKU (AFRB24-MFT-06-A) only if field inspection confirms
-     a pneumatic or failed actuator. (Investigation 2026-06-19: JOCO Courthouse 378/378 VAVs
+     a pneumatic or failed actuator. (Investigation 2026-06-19: Client D Courthouse 378/378 VAVs
      are Carrier VVT — no dampCmd BACnet point; mapping to new ~$44 actuators overstated ~$16.6k.) */
   dampCmd: {
     defaultSku: null,
@@ -2680,7 +2680,7 @@ function buildCatalogRows(projId, buildingNames) {
         // before this remap ever ran — every co2 gap on every project silently vanished from every
         // tier (Catalog/Compliance/Full Scope) while DCV programming labor (which reads
         // eq.seqReadiness, a completely separate code path) was still priced, so DCV programming
-        // was being sold with zero CO2 hardware ever budgeted for it. On real JOCO data: 754 of 899
+        // was being sold with zero CO2 hardware ever budgeted for it. On real Client D data: 754 of 899
         // VAV/AHU units are missing co2, 0 CO2 hardware rows existed in any tier before this fix.
         var effectiveKey = pointKey;
         if (pointKey === 'co2') {
@@ -2792,7 +2792,7 @@ function buildCatalogRows(projId, buildingNames) {
             return;
           }
           // CO2-only gap (zoneTemp already present) — P0 correction (2026-07-28, audit finding):
-          // 658 of 685 real zone-side CO2 gaps in the JOCO portfolio are this case (temp sensor
+          // 658 of 685 real zone-side CO2 gaps in the Client D portfolio are this case (temp sensor
           // already installed, only CO2 missing). Before this branch existed, these fell through
           // to the general case below and were priced with the co2_zone COMBO mapEntry
           // (ZS2-HC-ALC, $589.20 contract) — replacing a working temperature sensor to add CO2,
@@ -5445,7 +5445,7 @@ function _pricingEquipRowScore(row) {
    sensor never appears standalone once its sequence claims it. Shared by the grouped
    render loop, the flat 'equipment' sort mode, and (new) the Recommended/Fit-to-Budget
    membership engine (_pricingBuildRoiUnits) — one implementation, upgraded once.
-   JOCO $ effect of this change: +$160 (7 previously-stranded OAT rows) vs the old
+   Client D $ effect of this change: +$160 (7 previously-stranded OAT rows) vs the old
    claim-one behavior — logged in dashboardlogic.md. ── */
 function _pricingPairHwSeq(hw, lb) {
   var claimedHwIds = {};
@@ -5611,7 +5611,7 @@ function _pricingBuildRoiUnits(rows) {
    worst case Courthouse vav_dcv ($236,251.20) pushed two phases later than its score warrants.
    Replaced with the SAME additive-bonus mechanism _pricingEquipRowScore already uses for DCV's
    priorityBonus (a flat premium added to the weight/effectiveCostTier ratio, not a hard
-   re-ordering rule) — see PRICING_NO_HW_SCORE_BONUS below. Simulated against real JOCO data
+   re-ordering rule) — see PRICING_NO_HW_SCORE_BONUS below. Simulated against real Client D data
    (Downloads\CompanyHub-localdatafile-20260729.json) at bonus 0.5/1.0/2.0: 0.5 and 1.0 gave the
    identical result (headroom exists, not a knife edge) — Phases 1-2 stay 100% programming, Phase
    3 now carries real hardware (7 hardware installs across phases 1-3, was 0) — while 2.0
@@ -5664,7 +5664,7 @@ function _pricingSortUnitsNoHwFirst(units) {
    below. Without this, a family that ties on score with a much larger candidate pool (e.g. DCV
    tied with dsp/sat-reset after the 2026-07-27 priorityBonus fix) could still have the greedy
    MEMBERSHIP walk (not just phase placement) fill the whole ceiling with the larger pool before
-   ever reaching the smaller one — real-data verification found exactly this on JOCO before this
+   ever reaching the smaller one — real-data verification found exactly this on Client D before this
    line was added. See _pricingDiversifyTiedUnits' header comment for the full diagnosis.
 
    2026-07-28 (fix/roi-no-hardware-first-per-unit): sort/diversify replaced with
@@ -5696,7 +5696,7 @@ function _pricingGreedyPrefix(units, ceiling) {
    Bug 2744e688 (2026-07-27, fix/phase-table-diversity-and-grouping): measure-family diversity
    tie-break for the calendar-phase packer (_pricingComputeRecommendedTimeline).
 
-   Diagnosis (already established, not re-derived here): 24 real JOCO units tie at score 3 — 19
+   Diagnosis (already established, not re-derived here): 24 real Client D units tie at score 3 — 19
    ahu_sat_reset + 5 ahu_dsp_reset (both 'high' tier, weight 3, effectiveCostTier 1 — see
    SEQUENCE_SAVINGS_IMPACT above). Because Array#sort is stable, a plain score-desc sort left every
    sat-reset unit ahead of every dsp-reset unit within that tie (sat-reset units simply occur first
@@ -7466,7 +7466,7 @@ function _pricingMonthlyAllowanceAmount(budget) {
    tier's priced-MEASURES total (itself fit against a 12-month budget ceiling) stretched across a
    29-calendar-month rollout — never the actual calendar-period cost of the monthly service
    allowance. This computes the real calendar cost: months-in-phase (from _pricingPhaseDateDefs)
-   x the monthly allowance (_pricingMonthlyAllowanceAmount) — e.g. JOCO $6,250/mo: Phase 1 (5 mo)
+   x the monthly allowance (_pricingMonthlyAllowanceAmount) — e.g. Client D $6,250/mo: Phase 1 (5 mo)
    = $31,250, Phase 2/3 (12 mo each) = $75,000, program total (29 mo) = $181,250. This part was
    already correct and is UNCHANGED by the 2026-07-26 rebuild below.
 
@@ -7662,7 +7662,7 @@ function _pricingComputeProgramCostModel(projId, phaseCount) {
         jumble (task constraint).
      6. REPAIR PASS (added 2026-07-27, same branch — the single-pass greedy above has no
         backtracking, so it strands whatever slack is left in an earlier phase once a later phase
-        runs over: on real JOCO data Phase 1 finished +$138.20 under, Phase 2 +$59.70 under, Phase
+        runs over: on real Client D data Phase 1 finished +$138.20 under, Phase 2 +$59.70 under, Phase
         3 -$168.50 OVER, and the smallest unit anywhere ($259.50) is bigger than either individual
         gap, so no single relocate could ever close it). After the greedy walk, every phase over
         its OWN real envelope (not the Infinity placeholder step 3 used for phase index 2) is
@@ -7692,7 +7692,7 @@ function _pricingComputeProgramCostModel(projId, phaseCount) {
    NOTHING downstream ever looked at that residual: the phase-level `overCommitted` flag returned
    below compared EM labor alone (`emLaborTotal`) against `allowanceTotal`, never `measuresTotal` —
    so a phase whose priced measures alone blew through `measuresAvailable` reported `overCommitted:
-   false`. Measured on real Johnson County data at the commit this branch forked from (e3a5538):
+   false`. Measured on real Client D data at the commit this branch forked from (e3a5538):
    Phase 3 priced measures $41,945 against a $41,784 `measuresAvailable` envelope, $161 over, with
    `overCommitted` still `false`. Fixed below: `overCommitted` is now computed AFTER the drift-fold
    (so it reflects each phase's FINAL `measuresTotal`) as `(emLaborTotal + measuresTotal) >
@@ -7824,7 +7824,7 @@ function _pricingComputeRecommendedTimeline(projId) {
   // phaseIdx against anymore — phaseIdx only ever advances forward, generating a new calendar phase
   // on demand each time it does (2026-07-28: no more fixed 3-element array, no more Infinity
   // safety-valve phase — every phase's envelope is its own real measuresAvailable).
-  // Oversized-unit guard (2026-07-28, found during verification against real JOCO data): a single
+  // Oversized-unit guard (2026-07-28, found during verification against real Client D data): a single
   // "unit" can legitimately be larger than one whole calendar phase's measures envelope — e.g. a
   // consolidated multi-device row (buildCatalogRows groups by point-type + equipment-type PER
   // BUILDING, so "44 AHUs needing a duct-static sensor at this building" can be ONE row/unit whose
@@ -7885,7 +7885,7 @@ function _pricingComputeRecommendedTimeline(projId) {
   var realEnvelope = phaseShare.slice();
   var repairLog = []; // every relocate/swap actually performed — surfaced on the return value for verification/reporting, not rendered anywhere
   // REPAIR_MAX_PASSES: scales with portfolio size (6 full relocate-then-swap passes per unit,
-  // floored at 50) instead of a flat constant tuned to JOCO's ~49-unit portfolio, so this can't
+  // floored at 50) instead of a flat constant tuned to Client D's ~49-unit portfolio, so this can't
   // loop unboundedly on a much larger one. Each pass itself does O(unitsInPhase^2) work across
   // phaseUnits.length phases (2026-07-28: no longer a fixed 3 — however many phases the greedy
   // walk actually generated, bounded by PRICING_MAX_RECOMMENDED_PHASES), so total work stays
@@ -7941,7 +7941,7 @@ function _pricingComputeRecommendedTimeline(projId) {
       // only fully resolve pi's overage when the RECEIVING phase's own slack is >= pi's entire
       // overage (slack(pj) >= overage(pi)) — algebraically, u.total - v.total must sit in
       // [overage(pi), slack(pj)] simultaneously, which is only possible when slack(pj) is that
-      // big. When NO phase individually holds enough slack (e.g. JOCO: Phase 1 slack $138.20 and
+      // big. When NO phase individually holds enough slack (e.g. Client D: Phase 1 slack $138.20 and
       // Phase 2 slack $59.70 are each smaller than Phase 3's $168.50 overage), fully resolving in
       // ONE swap is mathematically impossible no matter which units are chosen — this is a
       // property of the envelope numbers, not of this algorithm's search depth. In that case the
@@ -8226,7 +8226,7 @@ function _pricingComputeRecommendedTimeline(projId) {
   // cents to a few dollars — checking before the fold could miss/misreport a violation on that
   // phase). totalCommitted = emLaborTotal + measuresTotal — every dollar this phase actually draws
   // against the allowance, parts AND labor together, never labor alone. Measured defect this
-  // replaced, on real Johnson County data at the commit this branch forked from (e3a5538, projId
+  // replaced, on real Client D data at the commit this branch forked from (e3a5538, projId
   // 1779664753271): Phase 3 priced $41,945.00 in measures against a $41,784.00 measuresAvailable
   // envelope — $161.00 over — with the old labor-only `overCommitted` still reporting `false`,
   // because measuresTotal was never part of that comparison. (The dispatch that opened this task
@@ -8301,7 +8301,7 @@ function _pricingComputeRecommendedTimeline(projId) {
  * `monthlyAllowance` (e.g. $6,250) as every month's packing envelope. But the term phase's own
  * committed rows (termRows) were never priced against that gross figure — they were admitted by
  * _pricingComputeRecommendedTimeline's phase-level walk against `measuresAvailable`
- * (allowanceTotal minus that phase's EM labor cost, ~7414/~7193), which for JOCO's real Phase 1
+ * (allowanceTotal minus that phase's EM labor cost, ~7414/~7193), which for Client D's real Phase 1
  * is only $12,566 across the whole 5-month term (measured 2026-08-02: allowanceTotal $31,250 −
  * emLaborTotal $18,684). Sub-allocating that already-labor-netted $12,566 total across 5 months
  * using a flat $6,250/month GROSS envelope mathematically drains in ~2 months

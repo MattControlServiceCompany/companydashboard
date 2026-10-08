@@ -617,9 +617,9 @@ function _pdfBackupGetAll() {
  *      never the whole store.
  *
  * Real corpus measured 2026-07-26 (investigation for this task): the actual
- * client bill PDFs on disk (OneDrive "Projects-OneDrive", per-client
+ * client bill PDFs on disk (per-client
  * "Utility Bills" folders, 191 files) average ~2.1MB raw with a max of
- * ~50.6MB raw (Baker's largest combined multi-meter/multi-year gas bill) —
+ * ~50.6MB raw (Client E's largest combined multi-meter/multi-year gas bill) —
  * consistent with netlify/functions/pdf-sync.js's own header comment, which
  * separately measured "up to 64.33MB base64" for the same building's bill.
  * That one real file is the reason batches are sized by BYTES, not a fixed

@@ -4,7 +4,8 @@
 // old key unreferenced). After Compact: A and B still load, C old key is gone.
 // Env: APP_ROOT=<dir> to run against another checkout (for example main).
 const path = require('path'), fs = require('fs'), http = require('http');
-process.env.CH_PLAYWRIGHT_NODE_MODULES = process.env.CH_PLAYWRIGHT_NODE_MODULES || 'C:/Users/Matt Miller/AI/_context/tools/playwright-runtime/node_modules';
+process.env.CH_PLAYWRIGHT_NODE_MODULES = process.env.CH_PLAYWRIGHT_NODE_MODULES ||
+  path.join(process.env.CH_CONTEXT_DIR || path.join(require('os').homedir(), 'AI', '_context'), 'tools', 'playwright-runtime', 'node_modules');
 module.paths.unshift(process.env.CH_PLAYWRIGHT_NODE_MODULES);
 const ROOT = process.env.APP_ROOT || path.join(__dirname, '..');
 const { launchBrowser } = require(path.join(__dirname, 'launch-browser.js'));

@@ -94,7 +94,7 @@ function buildSyntheticMatrix() {
   // 2 synthetic Meters (Gas + Water, name-driven)
   rows.push(baseRow('SYN Gas Meter', 'other', { 'Meter Input': '1', Demand: '2' }));
   rows.push(baseRow('SYN Water Meter', 'other', { 'Meter Input': '1', Demand: '2' }));
-  // 2 synthetic room-monitor rows (points-driven, matches the real Woodland MS pattern)
+  // 2 synthetic room-monitor rows (points-driven, matches the real Client B MS pattern)
   ['SYN Room A101', 'SYN Room B202'].forEach((n) => {
     rows.push(
       baseRow(n, 'other', {

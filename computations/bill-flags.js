@@ -234,9 +234,9 @@ function computeMeterFlagSummary(meter, building) {
   // Water and sewer only: their usage charge is a clean $ per gallon. (Electric and gas bills carry demand, fixed and
   // index charges, so they keep the 3x charge_vs_usage rule.) Bills with tiny usage are left out: fixed fees swamp the rate.
   // A charge that repeats to the cent on FLAT_CHARGE_BILLS or more bills of the meter is a flat or minimum charge
-  // (Rockville Sewer $695.85 x 9, Maintenance Sewer $27.00 x 8): those bills have no $ per gallon. They are neither
+  // (Site H Sewer $695.85 x 9, Maintenance Sewer $27.00 x 8): those bills have no $ per gallon. They are neither
   // tested nor used for the meter's usual rate. Skipping the whole meter would lose real errors on its other bills
-  // (Rockville Sewer 2024-07-15, Maintenance Sewer 2024-12-15; review 2026-10-05).
+  // (Site H Sewer 2024-07-15, Maintenance Sewer 2024-12-15; review 2026-10-05).
   const _rateKey = { Water: 'water', Sewer: 'sewer' }[c];
   const ownRates = new Map();
   if (_rateKey) {

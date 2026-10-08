@@ -4,11 +4,11 @@
 
    What this panel checks, for the CURRENTLY OPEN PROJECT ONLY:
      - Kansas Gas Service: a 100x OCR decimal-drop on the printed bill total.
-     - City of Louisburg: the saved Bill Date is really the Penalty Date.
-     - City of Louisburg: the saved account number has a single OCR-misread
+     - City of Client A: the saved Bill Date is really the Penalty Date.
+     - City of Client A: the saved account number has a single OCR-misread
        digit, found by comparing it against the same meter's other bills.
-     - Evergy: a single-digit OCR misread on the printed RkVA rate.
-     - Evergy: the "Previously Billed" amount on a bill that follows a missing period.
+     - Utility E: a single-digit OCR misread on the printed RkVA rate.
+     - Utility E: the "Previously Billed" amount on a bill that follows a missing period.
      - Every bill the shared bill-flag function (computeMeterFlagSummary,
        computations/bill-flags.js) flags, the same function behind the "N review"
        building badge, the meter pill and the "N bills flagged for review" banner.
@@ -825,7 +825,7 @@ async function _bcrScanKGSMeterBills(pid, proj, bldgs, ctl) {
 }
 
 /* ══════════════════════════════════════════════════════
-   SCAN 2 — City of Louisburg Bill Date reading the Penalty Date instead
+   SCAN 2 — City of Client A Bill Date reading the Penalty Date instead
    ══════════════════════════════════════════════════════ */
 async function _bcrScanLouisburgDate(pid, proj, bldgs, ctl) {
   const rule = (typeof UTILITY_RULES !== 'undefined' ? UTILITY_RULES : []).find((r) => r.name === 'City of Louisburg');
@@ -1054,7 +1054,7 @@ async function _bcrScanLouisburgDate(pid, proj, bldgs, ctl) {
 }
 
 /* ══════════════════════════════════════════════════════
-   SCAN 3 — City of Louisburg account-number OCR misread. A same-meter
+   SCAN 3 — City of Client A account-number OCR misread. A same-meter
    consistency check — no PDF re-read is required to find the candidate.
    ══════════════════════════════════════════════════════ */
 async function _bcrScanLouisburgAccountOCR(pid, proj, bldgs, ctl) {
@@ -1133,7 +1133,7 @@ async function _bcrScanLouisburgAccountOCR(pid, proj, bldgs, ctl) {
 }
 
 /* ══════════════════════════════════════════════════════
-   SCAN 4 — Evergy RkVA rate OCR digit-misread
+   SCAN 4 — Utility E RkVA rate OCR digit-misread
    ══════════════════════════════════════════════════════ */
 async function _bcrScanEvergyRkva(pid, proj, bldgs, ctl) {
   const rule = (typeof UTILITY_RULES !== 'undefined' ? UTILITY_RULES : []).find((r) => r.name === 'Evergy');
@@ -1400,10 +1400,10 @@ async function _bcrScanEvergyRkva(pid, proj, bldgs, ctl) {
 }
 
 /* ══════════════════════════════════════════════════════
-   SCAN 4b — Evergy "Previously Billed" for bills that follow a gap (2026-09-29).
+   SCAN 4b — Utility E "Previously Billed" for bills that follow a gap (2026-09-29).
    "Estimate missing period" fills the missing bill's total cost from the NEXT
    bill's "Previously Billed" amount. Bills saved before the extractor read that
-   line have no value. This scan re-reads ONLY the stored PDF of an Evergy bill
+   line have no value. This scan re-reads ONLY the stored PDF of an Utility E bill
    that starts after a gap and has no value yet, and proposes the amount. Same
    rules as every scan here: cached pages are reused, nothing is written until
    Matt clicks Apply, and no page is ever re-scanned that is already cached.

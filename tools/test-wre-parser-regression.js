@@ -1,7 +1,7 @@
 /**
  * test-wre-parser-regression.js
  *
- * Standalone regression test for the Wood River Energy (WRE) parser in
+ * Standalone regression test for the WRE (WRE) parser in
  * app/energy-savings.js — no browser required. Loads the real UTILITY_RULES
  * array via Node's vm module (same source, same code path as production —
  * NOT a reimplementation) and runs WRE.extractAll() against real raw-OCR-
@@ -21,14 +21,14 @@
  *   2026-09-21 fix (no site on these 3 invoices has an SWE line or a >999
  *   bare-digit single-component sum, so neither fix branch fires on them).
  *
- *   - wre-486834-raw.txt (Jan 2026, Inv 486834) — SWE-line fix target. EVERY
+ *   - wre-486834-raw.txt (Jan 2026, Inv D) — SWE-line fix target. EVERY
  *     site on this invoice prints a Special Weather Event line (winter
  *     surcharge applies invoice-wide, not just to one site), so the fix
- *     legitimately recovers all 10 sites' usage, not only Woodland Springs
+ *     legitimately recovers all 10 sites' usage, not only Synthetic Springs
  *     MS (site #10: 621.14 MMbtu / $3,214.50, from Trigger 169.55 + Index
  *     508.49 + SWE -56.89 = 621.15 ≈ printed Sub-Total 621.14).
- *   - wre-469609-raw.txt (Sep 2025, Inv 469609) — decimal-dropout fix target.
- *     Woodland Springs MS (site #10) is Index-only; the Index MMbtu line
+ *   - wre-469609-raw.txt (Sep 2025, Inv E) — decimal-dropout fix target.
+ *     Synthetic Springs MS (site #10) is Index-only; the Index MMbtu line
  *     reads "6557" (decimal dropped) while the Sub-Total's own line already
  *     reads the correct "65.57" — sum/100 reconciliation suppresses the
  *     false mismatch flag. The same decimal-dropout shape also existed on 2
@@ -37,10 +37,10 @@
  *     GasCharge stays null for all of these — this OCR pass never captured a
  *     decimal-complete dollar figure for them (a separate, un-fixed
  *     dollar-capture gap, out of scope for this MMbtu-flagging fix).
- *   - wre-474908-raw.txt (Oct 2025, Inv 474908) — same decimal-dropout shape,
- *     isolated to Woodland Springs MS only (site #10: "10474"→104.74).
- *   - wre-452084-raw.txt (May 2025, Inv 452084) — invoice-wide OCR corruption
- *     on the Woodland Springs MS line ("Icke (FON)" for "Index (FOM)", digits
+ *   - wre-474908-raw.txt (Oct 2025, Inv F) — same decimal-dropout shape,
+ *     isolated to Synthetic Springs MS only (site #10: "10474"→104.74).
+ *   - wre-452084-raw.txt (May 2025, Inv B) — invoice-wide OCR corruption
+ *     on the Synthetic Springs MS line ("Icke (FON)" for "Index (FOM)", digits
  *     scrambled). Confirmed byte-identical output before vs. after the fix —
  *     stays null/flagged. This invoice is NOT reconstructable without
  *     fabricating digits and is intentionally excluded from both fixes.
@@ -88,35 +88,35 @@ function run(wre, fixtureFile) {
 // the raw captured string, e.g. "417.16" or "1,425.42").
 const EXPECTED = {
   'wre-447604-raw.txt': [
-    { addr: 'BoE - 101 E South 52', mmbtu: null, charge: null },
-    { addr: 'BolE - 107 E South St', mmbtu: '599', charge: null },
-    { addr: 'High Schl - 19701 5 Ridgedew', mmbtu: '18.77', charge: '90.68' },
-    { addr: 'Elem - 300 5 Webster 51', mmbtu: null, charge: null },
-    { addr: 'Elem - 300 5 Wiehaler 51', mmbtu: null, charge: null },
-    { addr: 'Mid Sch So - 307 E Sounh 51', mmbtu: null, charge: '417.16', manualReview: true, mmbtuRateMismatch: true },
+    { addr: 'BoE - 101 E Sample 52', mmbtu: null, charge: null },
+    { addr: 'BolE - 107 E Sample St', mmbtu: '599', charge: null },
+    { addr: 'High Schl - 12701 5 Hillcrst', mmbtu: '18.77', charge: '90.68' },
+    { addr: 'Elem - 300 5 Example 51', mmbtu: null, charge: null },
+    { addr: 'Elem - 300 5 Exarnple 51', mmbtu: null, charge: null },
+    { addr: 'Mid Sch So - 307 E Sampl 51', mmbtu: null, charge: '417.16', manualReview: true, mmbtuRateMismatch: true },
     {
-      addr: 'Mid Sch Mo - 300 E South SU',
+      addr: 'Mid Sch Mo - 300 E Sample SU',
       mmbtu: null,
       charge: '3082.38',
       manualReview: true,
       mmbtuRateMismatch: true,
     },
     {
-      addr: 'Timber Sage - 166800 W 17 3nd',
+      addr: 'Pine Run - 116800 W 17 3nd',
       mmbtu: null,
       charge: null,
       manualReview: true,
       mmbtuRateMismatch: true,
     },
     {
-      addr: 'Wall Crk - 19250 Ricgesiew Rd',
+      addr: 'Alpha Crk - 12250 Hllcrest Rd',
       mmbtu: null,
       charge: '307.60',
       manualReview: true,
       mmbtuRateMismatch: true,
     },
     {
-      addr: 'Wind Spg MS - 17450',
+      addr: 'Sind Spg MS - 11450',
       mmbtu: null,
       charge: '706.12',
       manualReview: true,
@@ -124,65 +124,65 @@ const EXPECTED = {
     },
   ],
   'wre-478203-raw.txt': [
-    { addr: 'BofE - 101 E South St', mmbtu: '13.49', charge: '56.45' },
-    { addr: 'BofE - 101 E South St', mmbtu: '25.63', charge: '107.23' },
-    { addr: 'High Schl - 19701 S Ridgeview', mmbtu: '14.6', charge: '61.13' },
-    { addr: 'Elem - 300 S Webster St', mmbtu: '60.63', charge: '253.67' },
-    { addr: 'Elem - 300 S Webster St', mmbtu: '123.3', charge: '515.86' },
-    { addr: 'Mid Schl So - 301 E South St', mmbtu: '199.74', charge: '835.76' },
-    { addr: 'Mid Schl No - 300 E South St', mmbtu: '340.66', charge: '1,425.42' },
-    { addr: 'Timber Sage - 15800 W 173rd Te', mmbtu: '192.2', charge: '804.19' },
-    { addr: 'Wolf Crk - 19250 Ridgeview Rd', mmbtu: '133.06', charge: '556.74' },
-    { addr: 'Wdlnd Spg MS - 17450 W 167th S', mmbtu: '205.2', charge: '858.61' },
+    { addr: 'BofE - 101 E Sample St', mmbtu: '13.49', charge: '56.45' },
+    { addr: 'BofE - 101 E Sample St', mmbtu: '25.63', charge: '107.23' },
+    { addr: 'High Schl - 12701 S Hillcrest', mmbtu: '14.6', charge: '61.13' },
+    { addr: 'Elem - 300 S Example St', mmbtu: '60.63', charge: '253.67' },
+    { addr: 'Elem - 300 S Example St', mmbtu: '123.3', charge: '515.86' },
+    { addr: 'Mid Schl So - 301 E Sample St', mmbtu: '199.74', charge: '835.76' },
+    { addr: 'Mid Schl No - 300 E Sample St', mmbtu: '340.66', charge: '1,425.42' },
+    { addr: 'Pine Run - 11800 W 113rd Te', mmbtu: '192.2', charge: '804.19' },
+    { addr: 'Alpha Crk - 12250 Hillcrest Rd', mmbtu: '133.06', charge: '556.74' },
+    { addr: 'Sdlnd Spg MS - 11450 W 117th S', mmbtu: '205.2', charge: '858.61' },
   ],
   'wre-442427-raw.txt': [
-    { addr: 'BofE - 101 E South St', mmbtu: '9.58', charge: '50.31' },
-    { addr: 'BofE - 101 E South St', mmbtu: '20.39', charge: '107.11' },
-    { addr: 'High Schl - 19701 S Ridgeview', mmbtu: '13.79', charge: '72.38' },
-    { addr: 'Elem - 300 S Webster St', mmbtu: '56.42', charge: '296.13' },
-    { addr: 'Elem - 300 S Webster St', mmbtu: '109.77', charge: '576.23' },
+    { addr: 'BofE - 101 E Sample St', mmbtu: '9.58', charge: '50.31' },
+    { addr: 'BofE - 101 E Sample St', mmbtu: '20.39', charge: '107.11' },
+    { addr: 'High Schl - 12701 S Hillcrest', mmbtu: '13.79', charge: '72.38' },
+    { addr: 'Elem - 300 S Example St', mmbtu: '56.42', charge: '296.13' },
+    { addr: 'Elem - 300 S Example St', mmbtu: '109.77', charge: '576.23' },
     {
-      addr: 'Mid Schl So - 301 E South St',
+      addr: 'Mid Schl So - 301 E Sample St',
       mmbtu: null,
       charge: '903.15',
       manualReview: true,
       mmbtuRateMismatch: true,
     },
-    { addr: 'Mid Schl No - 300 E South St', mmbtu: '266.8', charge: '1,400.57' },
-    { addr: 'Timber Sage - 15800 W 173rd Te', mmbtu: '219.34', charge: '1,151.43' },
-    { addr: 'Wolf Crk - 19250 Ridgeview Rd', mmbtu: '122.67', charge: '643.98' },
-    { addr: 'Wdind Spg MS - 17450 W 167th S', mmbtu: '242.54', charge: '1,273.22' },
+    { addr: 'Mid Schl No - 300 E Sample St', mmbtu: '266.8', charge: '1,400.57' },
+    { addr: 'Pine Run - 11800 W 113rd Te', mmbtu: '219.34', charge: '1,151.43' },
+    { addr: 'Alpha Crk - 12250 Hillcrest Rd', mmbtu: '122.67', charge: '643.98' },
+    { addr: 'Sdind Spg MS - 11450 W 117th S', mmbtu: '242.54', charge: '1,273.22' },
   ],
-  // ── Jan 2026 (Inv 486834) — SWE-omitted-from-validation fix target ──
+  // ── Jan 2026 (Inv D) — SWE-omitted-from-validation fix target ──
   // FIXED (2026-09-21): every site here prints an SWE line; all 10 now
   // reconcile via Trigger+Index+SWE instead of false-flagging on Trigger+
   // Index alone.
   'wre-486834-raw.txt': [
-    { addr: 'BofE - 101 E South St', mmbtu: '32.54', charge: '246.36' },
-    { addr: 'BofE - 101 E South St', mmbtu: '64.55', charge: '502.94' },
-    { addr: 'High Schl - 19701 S Ridgeview', mmbtu: '27.14', charge: '233.85' },
-    { addr: 'Elem - 300 S Webster St', mmbtu: '158.54', charge: '1,058.61' },
-    { addr: 'Elem - 300 S Webster St', mmbtu: '476.2', charge: '3,318.19' },
-    { addr: 'Mid Schl So - 301 E South St', mmbtu: '635.13', charge: '5,244.86' },
-    { addr: 'Mid Schl No - 300 E South St', mmbtu: '715.62', charge: '4,747.74' },
-    { addr: 'Timber Sage - 15800 W 173rd Te', mmbtu: '532.97', charge: '3,880.17' },
-    { addr: 'Wolf Crk - 19250 Ridgeview Rd', mmbtu: '370.3', charge: '2,963.15' },
-    // Woodland Springs MS — the plan's named target site.
-    { addr: 'Wdind Spg MS - 17450 W 167th St', mmbtu: '621.14', charge: '3,214.50' },
+    { addr: 'BofE - 101 E Sample St', mmbtu: '32.54', charge: '246.36' },
+    { addr: 'BofE - 101 E Sample St', mmbtu: '64.55', charge: '502.94' },
+    { addr: 'High Schl - 12701 S Hillcrest', mmbtu: '27.14', charge: '233.85' },
+    { addr: 'Elem - 300 S Example St', mmbtu: '158.54', charge: '1,058.61' },
+    { addr: 'Elem - 300 S Example St', mmbtu: '476.2', charge: '3,318.19' },
+    { addr: 'Mid Schl So - 301 E Sample St', mmbtu: '635.13', charge: '5,244.86' },
+    { addr: 'Mid Schl No - 300 E Sample St', mmbtu: '715.62', charge: '4,747.74' },
+    { addr: 'Pine Run - 11800 W 113rd Te', mmbtu: '532.97', charge: '3,880.17' },
+    { addr: 'Alpha Crk - 12250 Hillcrest Rd', mmbtu: '370.3', charge: '2,963.15' },
+    // Synthetic Springs MS — the plan's named target site.
+    { addr: 'Sdind Spg MS - 11450 W 117th St', mmbtu: '621.14', charge: '3,214.50' },
   ],
-  // ── Sep 2025 (Inv 469609) — decimal-dropout fix target ──
+  // ── Sep 2025 (Inv E) — decimal-dropout fix target ──
   'wre-469609-raw.txt': [
-    { addr: 'BofE - 101 E South St', mmbtu: '0', charge: '0.00' },
-    // FIXED (2026-09-21): same decimal-dropout shape as Woodland below
+    { addr: 'BofE - 101 E Sample St', mmbtu: '0', charge: '0.00' },
+    // FIXED (2026-09-21): same decimal-dropout shape as Client B below
     // ("237"→2.37), same invoice.
     { addr: 'BoE tore sams', mmbtu: '2.37', charge: null },
-    { addr: 'ona 19701 3 nn', mmbtu: '17.4', charge: null },
-    { addr: 'Elms Swabsterst', mmbtu: '7.61', charge: null },
+    { addr: 'ona 12701 3 nn', mmbtu: '17.4', charge: null },
+    { addr: 'Elms Sexamplest', mmbtu: '7.61', charge: null },
     { addr: '', mmbtu: null, charge: null, manualReview: true, mmbtuRateMismatch: true },
     { addr: 'h St', mmbtu: '27.3', charge: null },
     // FIXED (2026-09-21): "12161"→121.61 decimal-dropout, same invoice.
     { addr: 'WEBER gba', mmbtu: '121.61', charge: null },
-    { addr: 'Timber Sage 15800 W 17310 Tor', mmbtu: '28.77', charge: null },
+    { addr: 'Pine Run 11800 W 11310 Tor', mmbtu: '28.77', charge: null },
     { addr: 'Lc', mmbtu: '21.92', charge: null },
     // FIXED (2026-09-21): decimal-dropout suppression — Index line reads
     // "6557" (no decimal) but the Sub-Total's OWN line already reads the
@@ -191,13 +191,13 @@ const EXPECTED = {
     // fixture's OCR pass never captured a decimal-complete dollar figure for
     // this site (Index line ends "$214", no cents; Sub-Total line has no $ at
     // all) — a SEPARATE, un-fixed dollar-capture gap, out of scope here.
-    { addr: 'Wand Spg MS 174501 16710', mmbtu: '65.57', charge: null },
+    { addr: 'Sand Spg MS 114501 11710', mmbtu: '65.57', charge: null },
   ],
-  // ── Oct 2025 (Inv 474908) — same decimal-dropout fix target, isolated to
-  //    Woodland Springs MS only on this invoice ──
+  // ── Oct 2025 (Inv F) — same decimal-dropout fix target, isolated to
+  //    Synthetic Springs MS only on this invoice ──
   'wre-474908-raw.txt': [
-    { addr: 'BofE - 101 E South St', mmbtu: '3.43', charge: null },
-    { addr: 'BofE - 101 E South St', mmbtu: '8.63', charge: null },
+    { addr: 'BofE - 101 E Sample St', mmbtu: '3.43', charge: null },
+    { addr: 'BofE - 101 E Sample St', mmbtu: '8.63', charge: null },
     { addr: 'Acct/Meter:', mmbtu: '16.13', charge: null },
     { addr: 'Acct/Meter:', mmbtu: '19.3', charge: null },
     { addr: 'Acct/Meter:', mmbtu: '48.89', charge: null },
@@ -210,33 +210,33 @@ const EXPECTED = {
     // this OCR pass — separate, un-fixed dollar-capture gap).
     { addr: '', mmbtu: '104.74', charge: null },
   ],
-  // ── May 2025 (Inv 452084) — MUST remain unrecoverable/flagged ──
+  // ── May 2025 (Inv B) — MUST remain unrecoverable/flagged ──
   // Confirmed byte-identical to pre-fix output across all 10 sites.
   'wre-452084-raw.txt': [
-    { addr: 'BolE - 101 E South St', mmbtu: '562', charge: null },
-    { addr: 'BolE - 101 E South St', mmbtu: '154', charge: '16.01' },
-    { addr: 'High Schl - 19701 5 Ridgeview', mmbtu: null, charge: null },
-    { addr: 'Elem - 300 5 Webster 51', mmbtu: '11.58', charge: '49.18' },
-    { addr: 'Elem - 300 5 Wishsler 51', mmbtu: '26.71', charge: '113.31' },
-    { addr: 'Mid Schl So - 307 E South St', mmbtu: '4.1', charge: null },
+    { addr: 'BolE - 101 E Sample St', mmbtu: '562', charge: null },
+    { addr: 'BolE - 101 E Sample St', mmbtu: '154', charge: '16.01' },
+    { addr: 'High Schl - 12701 5 Hillcrest', mmbtu: null, charge: null },
+    { addr: 'Elem - 300 5 Example 51', mmbtu: '11.58', charge: '49.18' },
+    { addr: 'Elem - 300 5 Exampler 51', mmbtu: '26.71', charge: '113.31' },
+    { addr: 'Mid Schl So - 307 E Sample St', mmbtu: '4.1', charge: null },
     { addr: 'Mid Sch No', mmbtu: null, charge: null, manualReview: true, mmbtuRateMismatch: true },
     {
-      addr: 'Timber Sage - 16600 W 173d Tes',
+      addr: 'Pine Run - 11600 W 113d Tes',
       mmbtu: null,
       charge: '3242.61',
       manualReview: true,
       mmbtuRateMismatch: true,
     },
     {
-      addr: 'Wall Crk - 19250 Ridgeview Rd',
+      addr: 'Alpha Crk - 12250 Hillcrest Rd',
       mmbtu: null,
       charge: '140.93',
       manualReview: true,
       mmbtuRateMismatch: true,
     },
-    // Woodland Springs MS — invoice-wide OCR corruption ("Icke (FON)" for
+    // Synthetic Springs MS — invoice-wide OCR corruption ("Icke (FON)" for
     // "Index (FOM)"). Must stay null/flagged — no digit reconstruction.
-    { addr: 'Wind Spg MS - 17450', mmbtu: null, charge: null, manualReview: true, mmbtuRateMismatch: true },
+    { addr: 'Sind Spg MS - 11450', mmbtu: null, charge: null, manualReview: true, mmbtuRateMismatch: true },
   ],
 };
 

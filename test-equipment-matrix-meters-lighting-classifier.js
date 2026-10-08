@@ -116,7 +116,7 @@ assertEqual(
   'plumbing',
   'name: Synth Irrigation Water Meter -> plumbing (NOT meter)',
 );
-// "chilled water" resolves to chwp (real JOCO row "Chilled Water System BTU Meter" -> chwp) —
+// "chilled water" resolves to chwp (real Client D row "Chilled Water System BTU Meter" -> chwp) —
 // still proves the new meter regexes never shadow an earlier, more specific match.
 assertEqual(
   sb.emClassifyEquipType('Synth Chilled Water System BTU Meter'),
@@ -174,7 +174,7 @@ const meterGroupWater = { category: 'meter', equipName: 'Synth Water Meter', poi
 assertEqual(sb.emVerifyTypeByPoints(meterGroupWater).subtype, 'water', 'verify: meter subtype = water');
 
 // ── (a) Classifier: Rule 16 room-temperature monitoring (points-driven, name-independent) ──
-// Fixture mirrors the real Woodland MS "B136 Office/Storage"-style point set: setpoints + zone
+// Fixture mirrors the real Client B MS "B136 Office/Storage"-style point set: setpoints + zone
 // temp + comms alarm, but NO flow/damper/valve/fan/VFD points — i.e. a monitored space, not a
 // terminal box. Category name is deliberately generic/synthetic ("Synth Room A") to prove the
 // classification comes from POINTS, never a hardcoded room-name list.
@@ -223,9 +223,9 @@ assertEqual(
   'verify: FCU fixture (zone temp + heating valve) -> fcu (Rule 10, unaffected)',
 );
 
-// ── 2026-09-24: misspelled "Enviromental Index" (JOCO's real BAS source data — missing the
+// ── 2026-09-24: misspelled "Enviromental Index" (Client D's real BAS source data — missing the
 // second "n") must classify the same as the correctly-spelled "Environmental Index", not fall
-// to 'other'. Synthetic fixture mirrors the JOCO Control-Program naming shape. ──────────────
+// to 'other'. Synthetic fixture mirrors the Client D Control-Program naming shape. ──────────────
 assertEqual(
   sb.emClassifyEquipType('Enviromental Index'),
   'sensor',

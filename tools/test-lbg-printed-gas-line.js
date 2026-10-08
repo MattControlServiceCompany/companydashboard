@@ -1,7 +1,7 @@
 /**
  * test-lbg-printed-gas-line.js
  *
- * Louisburg gas: the PRINTED GAS line always wins over usage x rate.
+ * Client A gas: the PRINTED GAS line always wins over usage x rate.
  * GasCharge = printed GAS line - customer charge (23.33). Usage x rate is only
  * a check. A failed check is reconciled against the printed Current Bill; if
  * that cannot prove a printed value, the bill is held. The computed value is

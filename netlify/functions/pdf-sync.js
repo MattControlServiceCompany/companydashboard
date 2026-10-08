@@ -20,7 +20,7 @@
 // R5 (measured 2026-07-19): gzip does NOT help here -- PDFs are already-
 // compressed binary. The real fix is a CHUNK protocol, because Netlify's
 // ~6MB synchronous-Function body cap is far below real combined-bill PDFs
-// (measured up to 64.33MB base64 for Baker's largest combined gas bill).
+// (measured up to 64.33MB base64 for Client E's largest combined gas bill).
 // Both upload and download are chunked; small blobs (the common case --
 // typical monthly bills are ~0.4MB base64) use a single PUT/GET with zero
 // chunking overhead. The one-time bulk PDF seed migration (Phase 3) bypasses

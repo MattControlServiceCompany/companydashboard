@@ -62,12 +62,12 @@ const EXPECTED_FIELDS = {
   },
 };
 
-// Evergy rate schedules confirmed (2026-08-26 tariff review, see
+// Utility E rate schedules confirmed (2026-08-26 tariff review, see
 // AI/_context/plans/2026-08-26-evergy-rate-schema-model.md) to have NO
 // billed-demand/kW charge by design — their per-kW Facilities Charge is a
 // separate line item and BilledKWCharge is legitimately always null on
 // these codes. Narrowest safe set: only a code read by sight against the
-// actual Evergy Kansas Metro tariff PDF. Do NOT alias suffix variants
+// actual Utility E Kansas Metro tariff PDF. Do NOT alias suffix variants
 // (2SGSEP/2SGSEW/2SGSEWP/2SUSE) until their meaning is confirmed — an
 // unconfirmed suffix falls back to the flat spec (still warns), which is
 // the safe default.
@@ -158,7 +158,7 @@ function validateBillData(extracted, utilityName) {
             parseBillNumber(extracted.SolarCredit) +
             parseBillNumber(extracted.RenewableCharge) +
             // Fix B (ballfields-cluster): SalesTax is extracted (municipal
-            // sales-tax lines on Evergy bills) but was missing from this sum,
+            // sales-tax lines on Utility E bills) but was missing from this sum,
             // leaving every taxed bill's compSum short by its tax total and
             // false-warning a mismatch. Null/absent on non-taxed bills, so
             // this term is +0 there and does not affect their reconciliation.
@@ -248,7 +248,7 @@ function validateBillData(extracted, utilityName) {
         });
       }
     }
-    // Wood River Energy: validate $/MMbtu rate (expected ~$3–$9/MMbtu)
+    // WRE: validate $/MMbtu rate (expected ~$3–$9/MMbtu)
     const _vMMbtu = parseBillNumber(extracted.NaturalGasMMbtu);
     const _vTotal = parseBillNumber(extracted.TotalCurrentCharges);
     if (_vMMbtu > 0 && _vTotal > 0 && /wood\s*river/i.test(_vUtilName)) {
@@ -431,7 +431,7 @@ function validateBillData(extracted, utilityName) {
       });
     }
   }
-  // Louisburg gas rate cross-check with date-aware rate schedule
+  // Client A gas rate cross-check with date-aware rate schedule
   const _lbgGasRates = [{ effectiveDate: '2000-01-01', rate: 0.798062 }];
   if (gasUsage > 0 && (extracted.UtilityCompany || '').includes('Louisburg')) {
     let billDate = extracted.BillingPeriodEnd || extracted.BillingPeriodStart || extracted.BillDate || '';
@@ -485,8 +485,8 @@ function detectStatisticalOutliers(extracted, historicalCache, pdfBillsIndex) {
   const extComm = (extracted.Commodity || '').toLowerCase();
   // Fix (2026-08-28, backlog 1a505f4e, reworked after review): gather
   // {bill, addr} pairs instead of bare bill objects so a same-account/
-  // different-physical-meter candidate (e.g. Louisburg High School + its
-  // Ball Field meter, both billed under Evergy account 1000001) can be
+  // different-physical-meter candidate (e.g. Client A High School + its
+  // Ball Field meter, both billed under Utility E account 1000001) can be
   // filtered out below by ServiceAddress. `addr` is ALWAYS the candidate
   // bill's own recorded address (ServiceAddress/serviceAddress) — never a
   // meter-level `maddr` proxy. Deliberately not `|| m.maddr`: `maddr` is
@@ -494,7 +494,7 @@ function detectStatisticalOutliers(extracted, historicalCache, pdfBillsIndex) {
   // ServiceAddress is the full OCR'd string (street+city+state, since
   // _EVG_ADDR requires a trailing state code) — comparing a short label
   // against a long address makes even a genuinely-matching pair score LOW
-  // under Levenshtein-ratio similarity (confirmed: real "202 Aquatic Dr"
+  // under Levenshtein-ratio similarity (confirmed: real "100 Sample Dr"
   // vs Ball Field's own long ServiceAddress scores 0.36, while the
   // legitimate long-vs-long High-School-vs-Ball-Field DIFFERENCE scores
   // 0.76 — a short-label proxy is not reliably separable from a genuine
@@ -550,7 +550,7 @@ function detectStatisticalOutliers(extracted, historicalCache, pdfBillsIndex) {
   // false-exclude a meter's own history. ADDR_SIMILARITY_THRESHOLD = 0.85:
   // comfortably above the real Ball-Field-vs-High-School collision's own
   // similarity score (0.76, measured against real backup data — both
-  // addresses are long-form and share "202 Aquatic Dr...Louisburg KS",
+  // addresses are long-form and share "100 Sample Dr...Client A KS",
   // differing only in the middle "New Hs" vs "Ballfields" segment), so the
   // genuine collision this fix targets is still excluded; comfortably below
   // a same-site OCR-noise variant (a 1-2 character typo scores well above
@@ -701,7 +701,7 @@ function detectStatisticalOutliers(extracted, historicalCache, pdfBillsIndex) {
         utilName,
       });
     }
-    // Fix (2026-09-06, WRE false high-rate warning): Wood River's $/MMbtu rate is
+    // Fix (2026-09-06, WRE false high-rate warning): WRE's $/MMbtu rate is
     // NOT routed through `_rateChecks` / the generic `validateImpliedRate('Gas', ...)`
     // below — that call compares against KNOWN_RATES.Gas.therm (typical ~$0.798/Therm)
     // with no unit conversion, a 10x mismatch that false-flagged every WRE bill
@@ -715,7 +715,7 @@ function detectStatisticalOutliers(extracted, historicalCache, pdfBillsIndex) {
     const kwhUsage = parseBillNumber(extracted.kWhConsumed);
     // Canonical 5-charge sum (rates.js sumElectricEnergyCharges) — was
     // OnPeak+OffPeak only, which dropped ECA+EER+PTS and made the implied
-    // rate disagree with the displayed rate, false-flagging valid Evergy
+    // rate disagree with the displayed rate, false-flagging valid Utility E
     // bills as "lower than typical" (item 377ea7f0).
     const kwhCharge = sumElectricEnergyCharges(extracted);
     if (kwhUsage > 0 && kwhCharge > 0) {
@@ -758,8 +758,8 @@ function detectStatisticalOutliers(extracted, historicalCache, pdfBillsIndex) {
 
 // ── EXTRACTION REFUSAL GATES (18b33d9f) ──────────────────────────────────
 // Every stage of the extraction pipeline can partially fail and still
-// return a success-shaped result (Louisburg: 20/67 pages produced zero OCR
-// text; Wood River: parser silently returned partial site blocks; Rockville:
+// return a success-shaped result (Client A: 20/67 pages produced zero OCR
+// text; WRE: parser silently returned partial site blocks; Site H:
 // a total auto-corrected 276% and rendered as a green checkmark). These
 // functions are the SINGLE shared implementation of the four gates —
 // called from both the queue path (_extractSingleFileForQueue) and the
@@ -770,7 +770,7 @@ function detectStatisticalOutliers(extracted, historicalCache, pdfBillsIndex) {
 // extractPDFText() now always attaches (see _finalizePageCoverage inside
 // extractPDFText). Trips when any page was skipped-budget, skipped-cap, or
 // came back ocr-empty — the exact class of defect that dropped 20 of 67
-// Louisburg pages with no visible signal.
+// Client A pages with no visible signal.
 function _gateA_evaluateCoverage() {
   const cov = window._pdfPageCoverage;
   window._pdfPageCoverage = null; // consume once, same convention as _pdfOcrBudgetExceeded
@@ -799,18 +799,18 @@ function _gateA_evaluateCoverage() {
 // "Account Number:") in the RAW text — including anchors inside blocks that
 // FAILED to close into a bill — and compares to how many bills the rule
 // actually emitted. A shortfall means the parser silently dropped a billing
-// period (the Wood River symptom). The already-existing zero-bills case
+// period (the WRE symptom). The already-existing zero-bills case
 // (finalBills.length === 0) is caught upstream by both callers before this
 // runs and is NOT this gate's concern — this only catches the PARTIAL case.
 // REVIEW FIX (18b33d9f round 2, CRITICAL 1): a flat regex tally of the two
 // anchors double-counts every provider whose anchor repeats once per PAGE of
-// a multi-page bill — which is the NORMAL Evergy layout, not an edge case.
-// "Each Evergy page has a 'Billing Date: MM/DD/YYYY' and 'Account Number :
-// XXX' printed in its header." (energy-savings.js ~4790) and the Evergy
+// a multi-page bill — which is the NORMAL Utility E layout, not an edge case.
+// "Each Utility E page has a 'Billing Date: MM/DD/YYYY' and 'Account Number :
+// XXX' printed in its header." (energy-savings.js ~4790) and the Utility E
 // extractor's own PRIMARY bill-splitting strategy is built on exactly that
 // repetition (energy-savings.js ~4789-4849, "Billing Date + Account Number
 // per-page grouping"). A naive count tripped Gate B on every correctly
-// extracted multi-page Evergy bill. Fixed by reusing that same idea, kept
+// extracted multi-page Utility E bill. Fixed by reusing that same idea, kept
 // provider-agnostic: split the raw text into per-page chunks on the
 // %%PAGE_N%% markers extractPDFText always inserts, extract an identity key
 // per page (account number, else service address; plus a nearby billing/
@@ -824,9 +824,9 @@ function _gateA_evaluateCoverage() {
 // occasionally missing a genuinely ambiguous case.
 // FIX (18b33d9f, 2026-09-16, item 18b33d9f gap 1): the per-page-single-match
 // logic below assumes AT MOST ONE identity anchor per physical page, which is
-// correct for Evergy/Louisburg/Rockville-style bills (one account per page)
+// correct for Utility E/Client A/Site H-style bills (one account per page)
 // but silently wrong for providers whose extractAll legitimately produces
-// MANY bills per physical page — Wood River Energy prints ~10 "Service
+// MANY bills per physical page — WRE prints ~10 "Service
 // Address:" site blocks on one or two pages (known-good-values/
 // spring-hill.md). For those providers, `expected` from the per-page tally
 // below could never exceed 1-2, so GATE B never tripped even when only 2 of
@@ -868,10 +868,10 @@ function _gateB_billCountCheck(rawText, billCount, providerName) {
   // run swallow a trailing "\n202" from the NEXT line's address ("202 Aquatic
   // Dr...") when the account number was immediately followed by a line break,
   // fabricating a bogus second "account" and false-tripping Gate B on a clean
-  // multi-page Evergy bill. Restrict to same-line whitespace only (space/tab).
+  // multi-page Utility E bill. Restrict to same-line whitespace only (space/tab).
   const _acctRe = /Account\s*(?:Number)?\s*:?\s*(\d[\d \t\-]{3,20}\d)/i;
   const _addrRe = /Service\s*Address\s*:?\s*([^\n]{5,60})/i;
-  // FIX (Louisburg audit #10): "Bil{1,2}ing" (not literal "Billing") tolerates
+  // FIX (Client A audit #10): "Bil{1,2}ing" (not literal "Billing") tolerates
   // the confirmed Tesseract misread "Biling" (dropped one 'l'). Reproduced on
   // "February 2026 Electric bills - HS, MS, RES.pdf": 3 accounts x 2 pages =
   // 6 pages is a CORRECT 3-bill extraction, but the first page of 2 of the 3
@@ -916,13 +916,13 @@ function _gateB_billCountCheck(rawText, billCount, providerName) {
   };
 }
 
-// GATE WRE — known per-invoice site-count baseline for Wood River Energy.
+// GATE WRE — known per-invoice site-count baseline for WRE.
 // (18b33d9f gap 2, 2026-09-16.) `_parseWRESiteBlocks` (energy-savings.js)
 // can fail to open a site block at all when OCR garbles the "Service
 // Address:" line badly enough that even its tolerant regex misses it — in
 // that case the anchor never appears in the raw text either, so GATE B's
 // matchAll anchor count above (which counts the SAME anchor) cannot catch
-// it. Wood River / Spring Hill invoices are ALWAYS exactly 10 per-site
+// it. WRE / Client C invoices are ALWAYS exactly 10 per-site
 // sub-totals (AI/_context/reference/known-good-values/spring-hill.md,
 // invoice #478203 Nov 2025 ground truth) — this is a fixed, known baseline
 // for this provider, not a guess. Any invoice whose parsed site-block count
@@ -1089,7 +1089,7 @@ function _applyExtractionGates(bills, gateA, gateB, gateWRE) {
 }
 
 // ── kWh QUANTITY WITNESS CORROBORATION (2026-07-14, kWh corruption cascade fix) ──
-// Root cause (Louisburg April 2026 Evergy, Matt's real bills — see
+// Root cause (Client A April 2026 Utility E, Matt's real bills — see
 // docs/dashboardlogic.md 2026-07-14 entry): kWhConsumed / OnPeakKWh / OffPeakKWh
 // were each touched by MULTIPLE sequential correction steps below (meter-table
 // ReadDifference cascade, charge-line consensus, on/off identity subtraction),
@@ -1110,11 +1110,11 @@ function _applyExtractionGates(bills, gateA, gateB, gateWRE) {
 // b._gateTripped / b._gateReasons contract, additive (never clobbers reasons
 // a dollar gate already wrote).
 const _Q_BUCKET_TOL = 0.005; // 0.5% — tight enough to separate a corrupted OCR
-// digit (Louisburg bill 2's kWh Used column was 0.88% off truth) from the
+// digit (Client A bill 2's kWh Used column was 0.88% off truth) from the
 // genuine <0.05% rounding noise between rate-derived and read-derived qty.
 const _Q_SELFVERIFY_CENTS = 0.01; // "qty × rate == printed charge, within a cent"
 const _QTY_CORRECTION_PCT_THRESHOLD = 5; // tighter than the $ gates' 15% — kWh
-// corrections are smaller-magnitude (Louisburg bill 4 was a 7.7% silent
+// corrections are smaller-magnitude (Client A bill 4 was a 7.7% silent
 // corruption the dollar gates' thresholds would never have caught).
 
 function _qtySelfVerifies(qty, rate, ocrCharge) {
@@ -1199,7 +1199,7 @@ function _decideQuantityCorrection(fieldName, currentValue, witnesses) {
   const runnerUp = buckets[1];
   // Within the winning bucket, prefer the STRONG (self-verified) witnesses'
   // own value over a WEAK witness that merely happened to anchor the bucket
-  // first — e.g. Louisburg bill 2's bucket contains ReadDifference×Multiplier
+  // first — e.g. Client A bill 2's bucket contains ReadDifference×Multiplier
   // (weak, 2282.4960) alongside EER/PTS (both strong, exactly 2282.5018); the
   // corrected figure should be the self-verified one.
   const strongInWinner = winner.items.filter((w) => w.strong);
@@ -1210,7 +1210,7 @@ function _decideQuantityCorrection(fieldName, currentValue, witnesses) {
   if (curInWinner) {
     // Current value already belongs to the strongest cluster — nothing to do.
     // (Keeps the bill's own printed figure rather than substituting a
-    // near-identical derived one — e.g. Louisburg bill 4 keeps 1053.8400
+    // near-identical derived one — e.g. Client A bill 4 keeps 1053.8400
     // rather than being "corrected" to EER/PTS's 1053.8354.)
     return { hold: false, apply: false, corrected: null, reason: null, buckets };
   }
@@ -1262,7 +1262,7 @@ function _decideQuantityCorrection(fieldName, currentValue, witnesses) {
     // winner (no strong witness anywhere disagrees), AND the only other
     // bucket is a "self-echo" of the extracted current value itself — i.e.
     // the extraction error is EXPLAINED (the bill's own printed figure only
-    // captured part of a split charge line, e.g. Broadmoor's split-ECA
+    // captured part of a split charge line, e.g. Site F's split-ECA
     // second sub-line), not just contradicted by an unexplained third value.
     // A genuine 3-way conflict (a second, non-current-matching bucket also
     // present — buckets.length > 2) or a swing with no self-echo bucket at
@@ -1343,7 +1343,7 @@ function _gatherKwhWitnesses(b) {
   // ReadDifference column, NOT a recomputation from EndRead/StartRead —
   // ReadDifference, MeterMultiplier and kWh Used are three INDEPENDENTLY
   // OCR'd meter-table columns; if all three agree that is real corroboration.
-  // Louisburg bill 4: printed ReadDifference (13.1730) × Multiplier (80) =
+  // Client A bill 4: printed ReadDifference (13.1730) × Multiplier (80) =
   // 1053.84 = printed kWh Used — agrees, so BOTH promoted to STRONG, while
   // EndRead(1728.5289)/StartRead(1716.3659) were the actual OCR-garbled reads.
   const rd = parseBillNumber(b.ReadDifference);
@@ -1357,7 +1357,7 @@ function _gatherKwhWitnesses(b) {
   // (c) EndRead − StartRead × MeterMultiplier — WEAK: no independent
   // self-check possible on raw meter reads. This is exactly the derivation
   // that silently overwrote a correct kWh Used column in production
-  // (Louisburg bill 4: EndRead/StartRead OCR was wrong while the printed
+  // (Client A bill 4: EndRead/StartRead OCR was wrong while the printed
   // ReadDifference column was correct).
   const endR = parseBillNumber(b.EndRead);
   const startR = parseBillNumber(b.StartRead);
@@ -1375,7 +1375,7 @@ function _gatherKwhWitnesses(b) {
     witnesses.push({ source: key, value: qty, strong });
   }
   // (f) ECA-parts-sum-implied qty — only trust the sum when EVERY part has
-  // both qty and rate (a null-qty part, as on Louisburg bill 4, means the sum
+  // both qty and rate (a null-qty part, as on Client A bill 4, means the sum
   // is a partial-period figure, not the full-period total).
   const ecaR = b._rates && b._rates.ECACharge;
   if (ecaR && ecaR.parts && ecaR.parts.length && ecaR.parts.every((p) => p.qty > 0 && p.rate > 0)) {
@@ -1407,10 +1407,10 @@ function _gatherKwhWitnesses(b) {
 // Returns the self-verified ECA/EER/PTS charge-line kWh basis when every
 // present charge line's parts have both qty and rate AND each self-verifies
 // against its own printed dollar amount, AND (when more than one is
-// present) they all agree with each other. Evergy sometimes prints this
+// present) they all agree with each other. Utility E sometimes prints this
 // rate-basis kWh a fraction of a kWh apart from the meter-table kWh Used
 // figure — both are genuinely printed as-is on the bill, not a misread
-// (confirmed on Louisburg bill 1000001_2026-03-02_2026-03-31: meter kWh
+// (confirmed on Client A bill 1000001_2026-03-02_2026-03-31: meter kWh
 // Used = 113020.72, but ECA/EER/PTS all print 113021.28 — the ON+OFF peak
 // split is billed against the charge-basis total, not the meter-table one).
 // Used to refine a low-fidelity kWh-identity-derived On/OffPeakKWh split
@@ -1476,7 +1476,7 @@ function _decideOnOffPeakKWh(b, kwhConsumed, kwhHeld) {
   // detect this — a leg missing the SAME tier from both its qty parts and its
   // dollar total will falsely self-verify. Refuse to derive from a leg with a
   // known-incomplete tier rather than manufacture a wrong identity-subtraction
-  // value (b1c8a984, Rockville Elementary 09/28/2025-10/27/2025).
+  // value (b1c8a984, Site H Elementary 09/28/2025-10/27/2025).
   const onIncompleteTier = !!(onR && (onR.parts || []).some((p) => p.qty == null));
   const offIncompleteTier = !!(offR && (offR.parts || []).some((p) => p.qty == null));
   if (onIncompleteTier || offIncompleteTier) {
@@ -1582,14 +1582,14 @@ function _decideOnOffPeakKWh(b, kwhConsumed, kwhHeld) {
   // diverges from its own rate-derived qty (onQty/offQty) by more than 0.5
   // kWh; it says nothing about whether the RATE-DERIVED qty itself is
   // trustworthy. Returning here unconditionally would let a self-heal fix on
-  // ONE leg (e.g. Circle Grove's OnPeakKWh field, corrupted upstream to
+  // ONE leg (e.g. Site G's OnPeakKWh field, corrupted upstream to
   // 1392.2570 by an unrelated identity-subtraction bug) silently block the
   // basis-derived check below from ever running for the OTHER leg in the
   // same pass.
 
   // ── BASIS-DERIVED SINGLE-LEG CORRECTION (2026-08-26, backlog f776f47b,
   // Off-Peak kWh OCR misread accepted silently) ──
-  // Root cause: a leg misread by a fraction of a kWh (Circle Grove account
+  // Root cause: a leg misread by a fraction of a kWh (Site G account
   // 1000004, 06/04/2026-07/06/2026: OffPeakKWh OCR'd as 7172.5350,
   // printed value was 7172.5950) slips past the loose `<=1` "already
   // consistent" check just below (onQty+offQty vs kwhConsumed differed by
@@ -1612,7 +1612,7 @@ function _decideOnOffPeakKWh(b, kwhConsumed, kwhHeld) {
     const _BASIS_TIGHT = 0.05; // kWh — tighter than the `<=1` kwhConsumed
     // check below on purpose: this compares against a SELF-VERIFIED basis
     // total (not a meter-table read), so it can safely be tight enough to
-    // catch Circle Grove's ~0.06 kWh gap (onQty+offQty=8554.7226 vs
+    // catch Site G's ~0.06 kWh gap (onQty+offQty=8554.7226 vs
     // basisTotal=8554.7826) without false-firing on the sub-0.01 kWh
     // basis-vs-sum rounding _chargeBasisTotal's own comment documents as
     // normal on clean bills.
@@ -1840,20 +1840,20 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
 
     // ── GATE C/D shared decision (18b33d9f round 2, CRITICAL 2) ──────────────
     // Moved up from inside the GENERAL VALIDATION block so BOTH that generic
-    // cross-provider path AND the Evergy-specific Stage 3 total-reconciliation
+    // cross-provider path AND the Utility E-specific Stage 3 total-reconciliation
     // path (below, ~line 1900) route their "should I trust compSum enough to
     // overwrite TotalCurrentCharges" decision through the SAME function.
     // Before this fix, Stage 3 wrote b.TotalCurrentCharges = compSum with NO
     // percentage/dollar ceiling at all, and ran BEFORE GENERAL VALIDATION — so
-    // for Evergy (the dominant provider in this codebase) a Rockville-class
+    // for Utility E (the dominant provider in this codebase) a Site H-class
     // 276% swing could already be committed by the time GENERAL VALIDATION's
     // gate ever looked at the bill (compSum === total by then, nothing to see).
     //
     // GATE D — charge provenance: verify each field's dollar value actually
     // appears within THIS BILL's own page range in the raw text — not only on
     // a neighboring bill's page. This is the cross-bill contamination that
-    // produced ee7acc56 (Rockville: a value that lived on an adjacent page got
-    // summed into this bill's total). Mirrors the SHAPE of the Evergy
+    // produced ee7acc56 (Site H: a value that lived on an adjacent page got
+    // summed into this bill's total). Mirrors the SHAPE of the Utility E
     // lastBdIdx/_pfPageMarkers guard in energy-savings.js (each bill owns only
     // its own page range).
     const _valueAppearsInText = (val, text) => {
@@ -1896,12 +1896,12 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
     };
     // GATE C — correction magnitude: a correction above EITHER threshold is
     // high-severity and must be held for user confirmation, not silently
-    // applied. Rockville: $7,710.81 -> $29,015.33 is a 276% swing that must
+    // applied. Site H: $7,710.81 -> $29,015.33 is a 276% swing that must
     // NOT auto-apply and must NOT render as a green checkmark.
     //   - Percentage floor: 15% (mirrors the dual %/$ condition pattern used
     //     elsewhere in this file, e.g. the KGS gas-total check).
     //   - Dollar floor SCALES with bill size (review "Also address" item):
-    //     Evergy fixtures routinely run $9k-$17k for a commercial account, so
+    //     Utility E fixtures routinely run $9k-$17k for a commercial account, so
     //     a flat $500 floor held every legitimate ~5% correction on those
     //     accounts (constant manual-review friction, exactly the "gate cries
     //     wolf" failure mode). $500 or 8% of the original total, whichever is
@@ -1954,7 +1954,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
     //
     // FIX(2026-06-22): MeterNumber is ALSO EXCLUDED from address-based consensus.
     // Two DISTINCT gas meters can legitimately share one building/ServiceAddress
-    // with DIFFERENT account AND meter numbers (e.g. the two Spring Hill Elementary
+    // with DIFFERENT account AND meter numbers (e.g. the two Client C Elementary
     // meters <REDACTED-METER> and <REDACTED-METER> at "<REDACTED-ADDR>", and
     // the two BofE meters <REDACTED-METER> and <REDACTED-METER>). Address-grouped
     // "consensus" was a 1-of-2 coin flip that overwrote one meter's number with the
@@ -1963,7 +1963,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
     // merged or corrected toward each other. Only the SAME meter's own historical
     // readings may inform a digit correction — that lives in the per-bill recovery
     // loop below (gated on hist.length, a no-op when there is no prior history, e.g.
-    // a first import like Spring Hill). Identity fields (AccountNumber, MeterNumber)
+    // a first import like Client C). Identity fields (AccountNumber, MeterNumber)
     // are never borrowed from sibling bills.
     if (bills.length > 1) {
       const _CONSENSUS_FIELDS = ['ServiceAddress', 'CustomerName', 'UtilityCompany', 'RateSchedule'];
@@ -2023,12 +2023,12 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         // overlap tiny group merge into an unrelated group. `_setsConflict` returns
         // false whenever EITHER side has no data for that field — which is correct
         // for "don't block a merge just because one side is silent" but was being
-        // reused as if it meant "the two sides agree". On real Wood River Energy
+        // reused as if it meant "the two sides agree". On real WRE
         // multi-site gas invoices, most per-site OCR blocks have null AccountNumber
         // AND null MeterNumber (both stripped by `_valsFor`'s Boolean filter), so
         // EVERY secondary field came back "no conflict" purely from having no data —
         // `_secondarySame` was true even when the two sites' addresses shared ZERO
-        // words. That silently merged 5 distinct Spring Hill sites into site #1's
+        // words. That silently merged 5 distinct Client C sites into site #1's
         // group, and the CONSENSUS_FIELDS vote below then overwrote all 5 sites'
         // ServiceAddress with site #1's address. `_setsAgree` instead requires an
         // ACTUAL shared non-empty value on both sides — real evidence, not merely
@@ -2063,7 +2063,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
             const _rateConflict = _setsConflict(_valsFor(sm, 'RateSchedule'), _lgRates);
             const _meterConflict = _setsConflict(_smMeterVals, _lgMeters);
             // (ballfields-match-gates, 2026-08-31) MeterNumber is never populated by
-            // some providers (Evergy prints no MeterNumber at all), so `_meterConflict`
+            // some providers (Utility E prints no MeterNumber at all), so `_meterConflict`
             // is structurally FALSE on every one of those bills — not because the
             // meters agree, but because there is no meter data to disagree with. The
             // old `_rateConflict && _meterConflict` guard treated that silence as if it
@@ -2326,7 +2326,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
       }
 
       // ── STORMWATER OCR DECIMAL-DROP FIX ──
-      // City of Louisburg stormwater is always ~$4. OCR sometimes drops the
+      // City of Client A stormwater is always ~$4. OCR sometimes drops the
       // decimal, producing $400 instead of $4.00. Auto-correct when dividing
       // by 100 lands in the plausible $2–$10 range.
       if (b.Commodity === 'Stormwater' && typeof b.StormWaterCharge === 'number' && b.StormWaterCharge > 20) {
@@ -2346,7 +2346,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
       }
 
       // ── STORMWATER SNAP-TO-KNOWN-RATE (tiny-digit OCR noise) ──
-      // City of Louisburg stormwater is a known flat $4.00/month on every
+      // City of Client A stormwater is a known flat $4.00/month on every
       // bill in the dataset (same rate confirmed above). A single-digit OCR
       // confusable (real bill: printed "4.00" read as "4.06") is too small
       // for the decimal-drop check above to catch (that fires on values
@@ -2532,7 +2532,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
             const _tdcChg = parseBillNumber(b.TDCCharge);
             const _tdcQty = parseBillNumber(b.TDCkW);
             const _tdcRate = _tdcChg / _tdcQty;
-            // Sanity: Evergy TDC rates are typically $1-$5/kW. Accept $0.10-$50/kW range.
+            // Sanity: Utility E TDC rates are typically $1-$5/kW. Accept $0.10-$50/kW range.
             if (_tdcRate >= 0.1 && _tdcRate <= 50) {
               b._rates.TDCCharge = {
                 qty: _tdcQty,
@@ -2664,7 +2664,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
 
           // 3d. Final decision — evidence-weighted, never blind.
           const finalDelta = compSum - ocrTotal;
-          // SUBTOTAL CORROBORATION GUARD: on Evergy tax-exempt bills the
+          // SUBTOTAL CORROBORATION GUARD: on Utility E tax-exempt bills the
           // printed Subtotal and Current Charges are always equal. When
           // both OCR'd cleanly to the same value, that pair is ground
           // truth — a compSum disagreement points to a per-charge bug
@@ -2677,7 +2677,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           } else {
             // Still disagree. Check if any per-charge rate mismatches remain
             // (signal that compSum is still contaminated). Set by the
-            // three-way qty×rate=charge validator inside _extractEvergy
+            // three-way qty×rate=charge validator inside _extractUtility E
             // (energy-savings.js ~3510, runs during extraction, before this
             // function) — narrow but real, not dead code.
             const hasRateMismatch = Object.keys(b).some((k) => k.startsWith('_rate_mismatch_'));
@@ -2688,8 +2688,8 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
               //
               // REVIEW FIX (18b33d9f round 2, CRITICAL 2): this write used to be
               // UNCONDITIONAL — no magnitude/provenance ceiling at all — and ran
-              // BEFORE the GENERAL VALIDATION block further down, so for Evergy
-              // (the dominant provider) a Rockville-class swing could already be
+              // BEFORE the GENERAL VALIDATION block further down, so for Utility E
+              // (the dominant provider) a Site H-class swing could already be
               // committed here, with GENERAL VALIDATION never even seeing it
               // (compSum === total by the time it ran). Route through the SAME
               // GATE C/D decision as the generic path instead of trusting compSum
@@ -2780,25 +2780,25 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
     }
 
     // ── PER-PART CHARGE VALIDATION (provider-agnostic, ungated) — item f776f47b ──
-    // The three-way qty×rate=charge per-part validator inside _extractEvergy
+    // The three-way qty×rate=charge per-part validator inside _extractUtility E
     // (energy-savings.js ~4225-4289) already computes _part_mismatches_<field>
-    // for every Evergy bill during extraction, but nothing downstream ever
-    // read it, so a single-line OCR digit misread (e.g. Louisburg USD #416
-    // High School Evergy Jun 2026: ECA line 116,233.536 kWh × $0.02059 =
+    // for every Utility E bill during extraction, but nothing downstream ever
+    // read it, so a single-line OCR digit misread (e.g. Client A USD #416
+    // High School Utility E Jun 2026: ECA line 116,233.536 kWh × $0.02059 =
     // $2,393.25 but OCR read $2,363.25 — off exactly the $30 the bill total
     // was under) surfaced only as a vague aggregate SUM MISMATCH banner that
     // couldn't name the offending line.
     //
     // This pass is deliberately keyed only off b._rates (not utilityName) so
     // it applies to any provider whose extractor populates _rates — not just
-    // Evergy — and it is UNGATED on the aggregate compSum/ocrTotal agreement
+    // Utility E — and it is UNGATED on the aggregate compSum/ocrTotal agreement
     // (unlike Strategy B above, which only runs once those two already
     // disagree): a bad line can hide inside a total that reconciles by
     // coincidence, so per-line math must be checked independently every time.
     //
     // It recomputes the exact same formula the extractor already applies
     // (qty × rate × prorationRatio, rounded to cents, 0.05 tolerance), so for
-    // Evergy bills where energy-savings.js already corrected/cleared a flag
+    // Utility E bills where energy-savings.js already corrected/cleared a flag
     // during extraction (single-part rate auto-correction, single-part
     // charge recovery, multi-part null-OCR cleanup — all of which mutate the
     // underlying _rates data, not just the flag), the recompute here
@@ -2816,7 +2816,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
       if (!b._rates) continue;
       // Check 2 signal (item cd999d9f): the whole-bill compSum-vs-printed-total
       // discrepancy, signed, captured once per bill from the SAME reconciliation
-      // that (for Evergy) already ran above in this function. A snapshot taken
+      // that (for Utility E) already ran above in this function. A snapshot taken
       // before any of this loop's own corrections — every candidate below is
       // tested against this SAME original whole-bill gap, never a
       // partially-corrected one.
@@ -2981,14 +2981,14 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
     }
 
     // ── CROSS-FIELD VALIDATION: kWhConsumed and ActualKW consensus from charge lines ──
-    // Per Evergy bill structure, several charge lines carry the SAME quantity:
+    // Per Utility E bill structure, several charge lines carry the SAME quantity:
     //   - PTS Chg qty = total kWh for the period
     //   - EER Chg qty = total kWh for the period
     //   - ECA Chg qty (sum of parts if seasonal) = total kWh
     //   - Energy On-Peak + Off-Peak qty sum = total kWh
     //   - TDC Chg qty = ActualKW (current month billed demand)
     // When the meter table is OCR-garbled but the charge lines extracted cleanly, we can recover
-    // kWhConsumed and ActualKW from this charge-line consensus. The CSC Evergy bill format rules:
+    // kWhConsumed and ActualKW from this charge-line consensus. The CSC Utility E bill format rules:
     //   - kW sanity: single monthly kW almost never exceeds 9,999.9999
     //   - kWh sanity: single monthly kWh almost never exceeds 999,999.9999
     // Anything outside those bounds is an OCR/parse error; reject and recover from consensus.
@@ -3073,7 +3073,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           }
           b._onOffPeakLocked = true;
         }
-        // ActualKW recovery rule (Evergy LGS Secondary minimum 200 kW billed demand):
+        // ActualKW recovery rule (Utility E LGS Secondary minimum 200 kW billed demand):
         //   BilledKW = max(ActualKW, 200)
         // Corollary: when BilledKW > 200, the floor is NOT applied, so ActualKW == BilledKW
         // by mathematical identity — we can recover ActualKW from the Demand Chg line.
@@ -3204,7 +3204,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
             };
             b.ActualKW = curBilledFinal.toFixed(4);
           }
-          // DECIMAL-SHIFT RECOVERY (Bill 29 Nov 2025 Louis Elementary):
+          // DECIMAL-SHIFT RECOVERY (a scanned bill):
           // OCR commonly drops the decimal on the meter table kW column
           // (e.g. "198.7920" → "1987920"). When curActual is far larger than
           // BilledKW (>2x), try shifting the decimal left by powers of 10 and
@@ -3361,7 +3361,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         // would conflict with the locked total (computedDiff × Multiplier far
         // from the corroborated kWhConsumed) is flagged diagnostically — NOT
         // blocked. ReadDifference still recomputes from EndRead/StartRead as
-        // before (a real, independently-OCR'd bill like Louisburg bill 3 can
+        // before (a real, independently-OCR'd bill like Client A bill 3 can
         // have a genuine meter-read/kWh-scale mismatch — that's a PRE-EXISTING
         // discrepancy the app already surfaces via _kwhCrossCheck, not
         // evidence the ReadDifference recompute itself is wrong; blocking it
@@ -3487,7 +3487,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         // pass above. If it's locked, this cascade becomes diagnostic-only —
         // this is the exact step that turned a 7.7%-off ReadDifference (itself
         // corrupted downstream of Step 1) into a silent kWhConsumed overwrite
-        // on Louisburg bill 4 (1053.84 → 973.04), because the old 10x-ratio
+        // on Client A bill 4 (1053.84 → 973.04), because the old 10x-ratio
         // guard only blocks gross corruption, not a plausible-looking 7.7% one.
         if (b._kwhConsumedLocked) {
           const _lockedKwh2 = parseBillNumberOrZero(b.kWhConsumed);
@@ -3645,7 +3645,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
     }
 
     // ── SEQUENTIAL READ VALIDATION + CROSS-BILL RECOVERY (Update 98) ──
-    // Multi-bill Evergy PDFs are a chain of continuous readings on one
+    // Multi-bill Utility E PDFs are a chain of continuous readings on one
     // account. A bill's period should abut its neighbors' periods and a
     // bill's StartRead should equal the previous bill's EndRead (unless
     // there was a meter change or an odometer rollover). We lean on this
@@ -3840,7 +3840,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
             // GATE (2026-07-14 kWh corroboration fix): this sibling arithmetic-
             // recovery pass ran the SAME ReadDifference×Multiplier cascade as
             // Step 2 above, just scoped to multi-bill PDFs — and reintroduced
-            // the identical Louisburg bill 4 corruption (973.04 overwriting the
+            // the identical Client A bill 4 corruption (973.04 overwriting the
             // corroborated 1053.84) even after Step 2 itself was gated. Once
             // kWhConsumed is locked by the witness corroboration pass, this
             // must be diagnostic-only too.
@@ -4085,7 +4085,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           const nb = bills[j];
           // Only propagate within the SAME account, and (when identifiable) the
           // SAME physical meter — a different account on the same PDF (e.g.
-          // Ballfields on a different account than Circle Grove) must never have
+          // Ballfields on a different account than Site G) must never have
           // its FacilitiesKW/Charge overwritten by another account's new peak.
           // Mirrors the account guard on the sibling rolling-peak block above (~3616).
           const _bAcct = (b.AccountNumber || '').replace(/[\s\-]/g, '');
@@ -4248,7 +4248,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
     // ── RE-VALIDATE: OnPeakKWh + OffPeakKWh = kWhConsumed ──
     // GATE (2026-07-14 kWh corroboration fix): this pass's unconditional
     // subtraction fallback ("if (!fixed) { derivedOn = total - offPk; ...
-    // apply unconditionally }") is exactly what corrupted Louisburg bill 4 in
+    // apply unconditionally }") is exactly what corrupted Client A bill 4 in
     // production — when kWhConsumed itself was wrong, NEITHER charge-based
     // re-derivation below can reconcile (both require the FULL identity to
     // hold within $1, which fails whenever total is the actual error), so
@@ -4983,7 +4983,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
     const ALL_CHARGE_FIELDS = [...new Set(Object.values(COMMODITY_CHARGE_FIELDS).flat())];
 
     // GATE C/D (18b33d9f): _decideTotalCorrection / _chargeFieldsHaveProvenance are
-    // defined once, above, near the top of this function — shared with the Evergy
+    // defined once, above, near the top of this function — shared with the Utility E
     // Stage 3 total-reconciliation path so the two can't drift (round-2 fix).
 
     for (const b of bills) {
@@ -5083,7 +5083,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
             return vi.field + ' ($' + vi.value.toFixed(2) + ') exceeded total ($' + parseBillNumberOrZero(origTotal).toFixed(2) + ')';
           })
           .join('; ');
-        // GATE C/D — correction magnitude + provenance (18b33d9f). Rockville:
+        // GATE C/D — correction magnitude + provenance (18b33d9f). Site H:
         // $7,710.81 -> $29,015.33 is a 276% swing that must NOT auto-apply and
         // must NOT render as a green checkmark.
         const decision = _decideTotalCorrection(b, origTotal, compSum, violations);
@@ -5245,11 +5245,11 @@ async function analyzeBillExtraction(bills, utilityName, historicalCache, status
     const b = bills[i];
     // Fix (2026-08-28, backlog 52c4bfb5): a bill recovered by
     // _unmatchedToSyntheticBills from a rule DIFFERENT than the file's
-    // primary rule (b._recoveredFromFallbackRule, e.g. an Evergy bill
-    // pulled out of a City-of-Louisburg-detected multi-bill file) must be
+    // primary rule (b._recoveredFromFallbackRule, e.g. an Utility E bill
+    // pulled out of a City-of-Client A-detected multi-bill file) must be
     // validated against ITS OWN field spec, not the file-level utilityName
-    // — otherwise a correct Evergy bill gets checked for "Total Amount Due"
-    // (a Louisburg-only field) and false-flags as missing. Non-recovered
+    // — otherwise a correct Utility E bill gets checked for "Total Amount Due"
+    // (a Client A-only field) and false-flags as missing. Non-recovered
     // bills are unaffected: this only wins when the marker is present.
     const vWarnings = validateBillData(
       b,
@@ -5334,19 +5334,19 @@ function _addressSimilarity(a, b) {
 // Positive SITE identity from two service addresses (fix/save-all-persist-bills,
 // review finding 1). Used by _checkDuplicates when an invoice number matches but
 // the account numbers cannot decide (blank/garbled on either side — routine for
-// Wood River Energy OCR). A consolidated invoice bills many sites under one
+// WRE OCR). A consolidated invoice bills many sites under one
 // number, so "same invoice + same period" is NOT the same bill; only a real
 // site match is. Signals, all reusing the matchers below this file already
 // trusts: identical normalized address; same house number AND fuzzy-equal
 // street-name tokens (_addrStreetNameTokens / _streetNameTokensFuzzyMatch);
 // or, when the street name is unreadable on one side, same house number AND
 // agreeing WRE site tags (_tagSplit / _buildingNameScore). Never true from a
-// house number alone (Spring Hill has "300 S Webster" and "300 E South").
+// house number alone (Client C has "300 S Example" and "300 E South").
 //
 // Review round 3 (never guess between two real candidates): two real Spring
 // Hill sites sit on the SAME street one house number apart — Middle School
-// "Mid Schl So - 301 E South St" and Early Learning Academy "Mid Schl No -
-// 300 E South St". A single OCR digit swap (300<->301) made house numbers
+// "Mid Schl So - 301 E Sample St" and Early Learning Academy "Mid Schl No -
+// 300 E Sample St". A single OCR digit swap (300<->301) made house numbers
 // equal and the street tokens are literally identical, so the round-2 helper
 // said "same site" for two different buildings. Two guards close that:
 //   1. Site tags must not CONTRADICT: when both addresses carry a WRE site
@@ -5405,7 +5405,7 @@ function _tagsContradict(tagA, tagB) {
 }
 // Could OCR of `a` plausibly have come from site `o`? Same fuzzy street name
 // (or unreadable on a side) and house numbers within ONE character edit
-// ("300" vs "301", "17450" vs "17456"). Used only to detect ambiguity.
+// ("300" vs "301", "11450" vs "17456"). Used only to detect ambiguity.
 function _siteAddrConfusable(a, o) {
   if (!a || !o) return false;
   const ta = _tagSplit(a);
@@ -5439,21 +5439,21 @@ function _acctFuzzyMatch(a, b) {
 // Plausibility guard (item 63a151a2): _parseWRESiteBlocks' raw-value OCR
 // fallback (energy-savings.js) can capture garbled text as an AccountNumber
 // when the slash-separated account/meter value is too illegible to split
-// (real tokens captured from Spring Hill invoice 447604: "S601 RTS ToC",
+// (real tokens captured from Client C invoice 447604: "S601 RTS ToC",
 // "RAS 122474", "a PN 1 edo"). Left unguarded, that garbage still satisfies
 // findMeterMatch's hasIdentity = !!(acct || meterNum) and can win the
 // identity-match branch ABOVE the safe _wreBuildingTagMatch name fallback,
 // or veto an otherwise-correct address/name match via the Fix-1
 // account-contradiction check below. Derived from every real account format
 // seen in this codebase (never hardcode one client's specific numbers):
-//   - Evergy / Wood River bare digits: "560001", "8000000001"
-//   - Wood River dash-segmented: "60-700001"
+//   - Utility E / WRE bare digits: "560001", "8000000001"
+//   - WRE dash-segmented: "60-700001"
 //   - KGS space-segmented digit groups: "500000001 2000001 18"
 //   - Constellation short-letter-prefix + digits: "RG233590", "BG-90001"
 // None of these real formats ever contain a whitespace-separated token made
 // of letters only (a "word" fragment) — that shape only shows up in
 // garbled OCR text. A single-token value may carry a short (1-3 char)
-// letter prefix (Constellation) or internal dashes (Wood River "60-700001", Louisburg city "NN-NNNNNN-NN"; M-D-Y and ISO dates and 3-3-4 phone shapes rejected); a
+// letter prefix (Constellation) or internal dashes (WRE "60-700001", Client A city "NN-NNNNNN-NN"; M-D-Y and ISO dates and 3-3-4 phone shapes rejected); a
 // multi-token value (KGS) must be pure digit groups throughout.
 function _isPlausibleAccountNumber(raw) {
   const s = String(raw || '').trim();
@@ -5467,10 +5467,10 @@ function _isPlausibleAccountNumber(raw) {
 // Fix 2 (ballfields-match-gates, 2026-08-31): _addressSimilarity's normalized-
 // Levenshtein metric divides by the LONGER of the two candidate strings' length,
 // which rewards a verbose stored maddr (one that happens to carry city/state/zip)
-// over a short, exact one. Measured against the real Louisburg data: the High
+// over a short, exact one. Measured against the real Client A data: the High
 // School bill's ServiceAddress scored 0.66 to the Ball Fields meter's long maddr
-// ("202 Aquatic Dr, Ballfields Louisburg, KS 66053") but only 0.43 to the HS
-// meter's short maddr ("202 Aquatic Dr") — the HS bill would misroute to Ball
+// ("100 Sample Dr, Ballfields Client A, KS 00000") but only 0.43 to the HS
+// meter's short maddr ("100 Sample Dr") — the HS bill would misroute to Ball
 // Fields under the old single-metric comparison. The street number/name is
 // identical across every meter at one physical site, so it carries no
 // disambiguating power; what actually distinguishes the two meters is the
@@ -5511,13 +5511,13 @@ function _addrStreetPart(a) {
 // fuzzy-threshold gate with an exact match (see that call site for why).
 // Returns {num, name} or null if the string does not start with a house
 // number (never guess a street identity for a prefixed/tagged address like
-// Spring Hill's "BofE - 101 E South St" -- that correctly falls through to
+// Client C's "BofE - 101 E Sample St" -- that correctly falls through to
 // null/no-match at the call site). `name` is every token after the number
 // up to and including the first recognized street-type suffix word
 // (st/street/dr/ave/rd/blvd/ln/ct/cir/pl/ter/way/etc.), which discards any
 // trailing city/state/zip whether or not a comma separates them (Spring
 // Hill's real stored addresses have no comma before the city name, e.g.
-// "101 E South St Spring Hill, KS 66083") and drops a trailing directional
+// "101 E Sample St Client C, KS 00000") and drops a trailing directional
 // suffix after the street type (e.g. the "E" in "5th St E") consistently on
 // both sides being compared. `name` is run through the existing
 // _normalizeAddr so "St"/"Street" etc. still fold together and comparison
@@ -5582,7 +5582,7 @@ function _streetIdentityMatch(a, b) {
 // ALL whitespace (`.replace(/[^a-z0-9]/g, '')`), gluing multi-word street names
 // into one token (e.g. "s webster st" -> "swebsterst"). A prior attempt at this
 // fix compared those glued strings with whole-string Levenshtein and regressed
-// "High Schl - 19701 5 Ridgedew" (OCR "S"->"5", dropped "Rd" suffix) from a
+// "High Schl - 12701 5 Hillcrst" (OCR "S"->"5", dropped "Rd" suffix) from a
 // resolved match to null, because one leading-character OCR misread pollutes an
 // entire glued-string comparison instead of staying isolated to one short token
 // (see docs/dashboardlogic.md 2026-09-17 and the wre-batch-matcher wiki article
@@ -5642,13 +5642,13 @@ function _identityAddressScore(billAddr, candidateAddr) {
   return streetScore * 0.6 + tailScore * 0.4;
 }
 // Fix D (issue #1 v2, ground-truth review): disambiguates among 2+ meters that
-// all matched a bill by account+commodity alone (a SHARED Evergy account with
-// more than one physical meter — e.g. Louisburg High School + its Ball Field
+// all matched a bill by account+commodity alone (a SHARED Utility E account with
+// more than one physical meter — e.g. Client A High School + its Ball Field
 // meter). Called ONLY when findMeterMatch already found more than one such
 // candidate; a lone candidate is returned directly by the caller and NEVER
 // reaches this function, so a meter's own short/hand-entered/OCR-garbled
 // maddr can never veto its only possible match (the exact regression that
-// broke 67 real Louisburg bills in the reverted v782 fix — see
+// broke 67 real Client A bills in the reverted v782 fix — see
 // docs/dashboardlogic.md 2026-08-27 entry). Among genuine multiple
 // candidates, picks the one whose recorded `meter.maddr` best matches the
 // bill's ServiceAddress: an exact street-normalized match wins outright;
@@ -5677,9 +5677,9 @@ function _pickIdentityCandidate(candidates, billServiceAddress) {
   return best;
 }
 // Fix (fix/wre-building-name-match, 2026-09-15): building-NAME match path for
-// Wood River Energy (and any other provider) consolidated invoices whose
+// WRE (and any other provider) consolidated invoices whose
 // ServiceAddress is a site-nickname TAG plus a bare street ("High Schl -
-// 19701 S Ridgeview", "BoE - 101 E South St") with no city/zip. The existing
+// 12701 S Hillcrest", "BoE - 101 E Sample St") with no city/zip. The existing
 // _addressSimilarity whole-string fallback above scores these ~0.04-0.21
 // against the stored "street, city, state zip" building/meter addresses (a
 // pure format mismatch, not a real dissimilarity) so they never clear the
@@ -5692,21 +5692,21 @@ function _pickIdentityCandidate(candidates, billServiceAddress) {
 // Gate: only fires when the ServiceAddress contains " - " with a non-numeric
 // prefix (_tagSplit below returns null for anything else, including a normal
 // "123 Main St - Suite 4" address, since that prefix starts with a digit) —
-// so this can never hijack Evergy/City of Louisburg/any provider whose
+// so this can never hijack Utility E/City of Client A/any provider whose
 // addresses don't carry this tag shape, and never overrides a bill that
 // already matched normally.
 //
-// Design (verified against the real Spring Hill Schools backup + the real
-// WRE OCR debug file for Inv 447604 — see the implementer report for the
+// Design (verified against the real Client C Schools backup + the real
+// WRE OCR debug file for Inv A — see the implementer report for the
 // full 10-site routing table): building identity is decided from the TAG
 // against building NAMES only (never addresses) via _buildingNameScore, with
 // a small, standard K-12 abbreviation table (elem/mid/hs/sch/boe/etc.) and
 // per-token fuzzy matching (reusing the existing _levenshtein helper) so OCR
-// noise on the tag doesn't block a real match. Because several Spring Hill
-// buildings share generic tokens ("Spring Hill X" appears in most names),
+// noise on the tag doesn't block a real match. Because several Client C
+// buildings share generic tokens ("Client C X" appears in most names),
 // a NAME-only score can tie across buildings or even point at the WRONG
 // sibling building outright (e.g. "Mid Sch Mo" name-scores highest against
-// "Spring Hill Middle School" even though the real site is "Spring Hill
+// "Client C Middle School" even though the real site is "Client C
 // Early Learning Academy") — so the street NUMBER from the tag's own street
 // text is cross-checked against every building's OWN stored street number
 // (_addrStreetIdentity, already used elsewhere in this file for exact
@@ -5716,7 +5716,7 @@ function _pickIdentityCandidate(candidates, billServiceAddress) {
 // is picked the same way: skip straight through when the building has only
 // one, otherwise require the incoming street number to uniquely pick one
 // meter over the others — two meters sharing an identical stored address
-// (Spring Hill's Board of Education and its Elementary both have two gas
+// (Client C's Board of Education and its Elementary both have two gas
 // meters at ONE street address each) correctly returns null so the bill
 // falls to manual instead of a 50/50 guess.
 const _BLDG_TAG_ABBR = {
@@ -5796,11 +5796,11 @@ const _WRE_MIN_NAME_SCORE = 0.5;
 //
 // Fix (b0b40258, 2026-09-17): `numOwners` (house-NUMBER-only cross-check) is
 // kept as the PRIMARY filter — a unique house-number match is trusted outright,
-// exactly as before, so single-collision-free rows (e.g. "High Schl - 19701
+// exactly as before, so single-collision-free rows (e.g. "High Schl - 12701
 // ...") are completely unaffected. Only when numOwners finds MORE THAN ONE
 // building sharing the incoming house number (a genuine collision, e.g. Spring
-// Hill Elementary "300 S Webster St" vs Spring Hill Early Learning Academy
-// "300 E South St", both house number 300) do we additionally disambiguate
+// Site L Elementary "300 S Example St" vs Client C Early Learning Academy
+// "300 E Sample St", both house number 300) do we additionally disambiguate
 // among THOSE candidates by fuzzy street-NAME token comparison
 // (_streetNameTokensFuzzyMatch, space-preserving — see comment there for why
 // gluing via _normalizeAddr broke a prior attempt at this fix). If exactly one
@@ -5863,9 +5863,9 @@ function _wreResolveMeter(bldg, streetPart, commodity) {
 // Fix (fix/wre-building-name-match, review round 2, 2026-09-15): district
 // scoping. The unscoped version above searches every project's buildings,
 // so a generic building-type token ("high"+"school") can collide across
-// DIFFERENT districts (Louisburg USD #416 has its own "High School" and
-// "Middle School" buildings, unrelated to Spring Hill's WRE invoice) —
-// verified against the real backup, this silently pushed 2 real Spring Hill
+// DIFFERENT districts (Client A USD #416 has its own "High School" and
+// "Middle School" buildings, unrelated to Client C's WRE invoice) —
+// verified against the real backup, this silently pushed 2 real Client C
 // sites to manual that a human would resolve instantly from context. Two
 // ways to know which district a WRE bill belongs to, tried in this order
 // (never guessed — an inconclusive result at either step just leaves the
@@ -5875,7 +5875,7 @@ function _wreResolveMeter(bldg, streetPart, commodity) {
 //      `window._pdfQueue.batchProjId`) — the same value every other
 //      identity/address/commodity-fallback UI branch in this file already
 //      treats as the user's chosen destination.
-//   2. The invoice's own customer/district name (WRE prints "Spring Hill
+//   2. The invoice's own customer/district name (WRE prints "Client C
 //      ISD 230" right after "Customer #:" — captured into CustomerName by
 //      the WRE extractor in energy-savings.js) fuzzy-matched against every
 //      project's name, dropping generic organizational-suffix tokens
@@ -5940,8 +5940,8 @@ function _inferProjectFromCustomerName(customerName, allProjects) {
 // match.matchType — the review-panel status label, the cascading-picker
 // hint, the single-bill banner header — already renders it correctly as an
 // unconfirmed, savable-but-flagged suggestion with zero new code). fuzzyScore
-// is pinned to 1.0 so the tag-prefixed ServiceAddress ("High Schl - 19701 S
-// Ridgeview") is never persisted as a bldg.addrAliases entry by the
+// is pinned to 1.0 so the tag-prefixed ServiceAddress ("High Schl - 12701 S
+// Hillcrest") is never persisted as a bldg.addrAliases entry by the
 // fuzzyScore<1.0 alias-learning branch in the PDF-drop handler — that alias
 // format doesn't match this building's real address shape and would only add
 // noise. `_wreTagMatch: true` is a harmless marker for audit/debugging only;
@@ -6017,8 +6017,8 @@ function findMeterMatch(extracted) {
   let bestMatch = null;
   // Fix D (issue #1 v2, ground-truth review): every meter that matches this
   // bill's account+commodity, collected across ALL buildings instead of
-  // returning on the first hit. A SHARED Evergy account with more than one
-  // meter (Louisburg High School + its Ball Field meter both bill under
+  // returning on the first hit. A SHARED Utility E account with more than one
+  // meter (Client A High School + its Ball Field meter both bill under
   // 1000001) cannot be told apart by account+commodity alone — the old
   // immediate-return silently attached the bill to whichever meter the loop
   // happened to reach first. Resolved once the full scan completes: see
@@ -6263,7 +6263,7 @@ function findMeterMatch(extracted) {
   // the identity AND address branches above both found nothing (bestMatch
   // and addrMatch are both null/undefined) — it NEVER runs before or
   // overrides them, so the identity happy path above is untouched. Handles
-  // the "account renumbered, same physical hookup" case: City of Louisburg
+  // the "account renumbered, same physical hookup" case: City of Client A
   // re-numbered utility accounts but never updated some meters' stored
   // account (e.g. High School's gas meter still carries the OLD NNNNNN
   // while the new bill reads NN-NNNNNN-00). That bill hits the Fix-1
@@ -6287,15 +6287,15 @@ function findMeterMatch(extracted) {
   //
   // Fix (b-46a984a0 building-level ambiguity guard, 2026-09-01): a
   // structural street match (_streetIdentityMatch, ~5616) can be exact for
-  // TWO distinct buildings at once — Louisburg Maintenance Building carries
-  // an alias ("105 S 5TH ST E LOUISBURG KS") that is structurally identical
-  // to Broadmoor Elementary's real address ("105 S 5th St E, Louisburg, KS
-  // 66053"). The prior version filtered each building by its OWN
+  // TWO distinct buildings at once — Client A Maintenance Building carries
+  // an alias ("105 S 5TH ST E CLIENT A KS") that is structurally identical
+  // to Site F Elementary's real address ("105 S 5th St E, Client A, KS
+  // 00000"). The prior version filtered each building by its OWN
   // same-commodity meter count (0 or 2+ => skip) before ever comparing
   // buildings against each other, so for Electric (Maintenance has 2 meters,
-  // Broadmoor has 1) Maintenance dropped out of the candidate list first,
-  // leaving Broadmoor as the sole "uncontested" candidate — a confirmed
-  // misroute to Broadmoor's real meter mNNNNNN with no ambiguity flag
+  // Site F has 1) Maintenance dropped out of the candidate list first,
+  // leaving Site F as the sole "uncontested" candidate — a confirmed
+  // misroute to Site F's real meter mNNNNNN with no ambiguity flag
   // (see _context/temp/2026-09-01-pass2-independent-gate.md, "Check 4").
   // Building-level matching is now resolved FIRST, across every building on
   // every project, before any per-building meter-count filtering runs — a
@@ -6986,7 +6986,7 @@ function _mbUpdateSaveAllBtn() {
 }
 window._mbUpdateSaveAllBtn = _mbUpdateSaveAllBtn;
 
-// Shared meter-existence guard (item 0bc25b67): a saved Louisburg bill was
+// Shared meter-existence guard (item 0bc25b67): a saved Client A bill was
 // found filed under a meter no bill of its own identity actually matches —
 // traced to save paths trusting a CAPTURED meter object (from findMeterMatch,
 // or held in _mbRowTargets/_autoAssignTarget since the review panel was
@@ -7006,11 +7006,11 @@ window._liveMeterOrNull = _liveMeterOrNull;
 // F1 (item 21b4e21f): single shared cost/usage mapper — replaces six previously
 // diverged copies (confirmAutoAssign, confirmMultiBuildingSave,
 // _saveBillToMatchedMeter, confirmAssignBill, confirmManualAssign,
-// _saveSinglePDFBill). Evergy bucket mapping + $0.10 validation tolerance are
+// _saveSinglePDFBill). Utility E bucket mapping + $0.10 validation tolerance are
 // FROZEN (CLAUDE.md) — do not change without explicit sign-off. The Baldwin
-// fallback (ElectricCharge + FuelAdjustment) activates ONLY when every Evergy
+// fallback (ElectricCharge + FuelAdjustment) activates ONLY when every Utility E
 // energy-charge field is absent, so it never double-counts against a real
-// Evergy sum. Usage chain is the superset of all six prior chains, in one
+// Utility E sum. Usage chain is the superset of all six prior chains, in one
 // canonical order, so no commodity's usage quantity is silently dropped.
 function _extractedToBillRowCosts(bill) {
   const hasVal = (v) => v !== undefined && v !== null && v !== '';
@@ -7030,7 +7030,7 @@ function _extractedToBillRowCosts(bill) {
   const kwCostRaw = parseBillNumberOrZero(bill.BilledKWCharge) + parseBillNumberOrZero(bill.TDCCharge);
   // otherCost folds in the RkVA reactive-power charge because it has no dedicated
   // column in the bills table — without it here the value would be silently dropped.
-  // MiscellaneousCharge (item f71c0013) is the pre-mid-2025 Evergy front-summary-page
+  // MiscellaneousCharge (item f71c0013) is the pre-mid-2025 Utility E front-summary-page
   // Miscellaneous/Adjustments line (sign-preserved) — same rationale as RkVA: no
   // dedicated column, must be folded in here so the $0.10 component-sum-vs-total
   // validation still reconciles once TotalCurrentCharges includes it.
@@ -7672,7 +7672,7 @@ async function _mbSaveOneBill(bi, action) {
     // Fix (2026-09-23, WRE invoice-fields fix, item 2): was missing from this
     // whitelist — see the matching comment in confirmAutoAssign() above. This is
     // the multi-building bulk-save path (_mbSaveOneBill), the actual path a
-    // multi-site WRE invoice (e.g. Spring Hill's 10-site Jan 2026 invoice) goes
+    // multi-site WRE invoice (e.g. Client C's 10-site Jan 2026 invoice) goes
     // through — without this, a bill flagged for manual review upstream lost
     // that flag here regardless of what energy-savings.js computed.
     _manualReview: bill._manualReview || undefined,
@@ -8772,7 +8772,7 @@ function _saveBillToMatchedMeter(extracted, match) {
     return yr + '-' + p[0].padStart(2, '0') + '-' + p[1].padStart(2, '0');
   };
   // Fix 2: parse service address from filename when OCR didn't capture it
-  // KGS filenames: "604 Dearborn St Howard Hall - Gas Bills.pdf"
+  // KGS filenames: "604 Sample St Example Hall - Gas Bills.pdf"
   const _srcFile = extracted._sourceFile || '';
   const _filenameAddr = _srcFile
     .replace(/\s*-\s*Gas Bills\.pdf$/i, '')
@@ -8875,7 +8875,7 @@ function _saveBillToMatchedMeter(extracted, match) {
     _mmbtuRateMismatch: extracted._mmbtuRateMismatch || undefined,
     _mmbtuMissingWithCharge: extracted._mmbtuMissingWithCharge || undefined,
     // Fix [therms-unit-2026-06-22]: canonicalize therms to Therms at save time.
-    // Wood River (and any future MMBtu extractor) sets NaturalGasMMbtu; Constellation/KGS
+    // WRE (and any future MMBtu extractor) sets NaturalGasMMbtu; Constellation/KGS
     // set NaturalGasTherms (already Therms). resolveGasUsageTherms converts: Therms > CCF > MMBtu.
     therms: gasBillSaveTherms(extracted),
     gasCharge: billValueOrBlank(extracted.GasCharge),
@@ -9606,7 +9606,7 @@ async function _extractSingleFileForQueue(file, fileIdx) {
         const _gateAResult = _gateA_evaluateCoverage(); // GATE A — consumes window._pdfPageCoverage once
 
         // Check specific local utilities first — their bills often appear in
-        // multi-utility PDFs alongside Evergy, and Evergy's broader detection
+        // multi-utility PDFs alongside Utility E, and Utility E's broader detection
         // would otherwise claim the entire file.
         let rule = UTILITY_RULES.find((r) => r.name && /Louisburg/i.test(r.name) && r.detect(text));
         if (!rule) rule = UTILITY_RULES.find((r) => r.detect(text));
@@ -9657,8 +9657,8 @@ async function _extractSingleFileForQueue(file, fileIdx) {
 
         // GATE B (61bed8f8): compare against the file's TRUE final bill/record
         // count — after cross-rule recovery has absorbed every page a local-
-        // utility rule (e.g. City of Louisburg) couldn't parse but another rule
-        // (e.g. Evergy) recovered. Comparing against pre-recovery bills.length
+        // utility rule (e.g. City of Client A) couldn't parse but another rule
+        // (e.g. Utility E) recovered. Comparing against pre-recovery bills.length
         // stamped a stale mismatch onto every individually-correct bill.
         const _gateBResult = _gateB_billCountCheck(text, finalBills.length, rule.name); // GATE B
         const _gateWREResult = _gateWRE_siteCountCheck(rule.name, _queueWreSiteBlockCount, finalBills.length); // GATE WRE
@@ -9672,7 +9672,7 @@ async function _extractSingleFileForQueue(file, fileIdx) {
         }
 
         // Convert _pageIndex to _pageStart/_pageEnd for extractors that
-        // set per-page indices (Louisburg) instead of page ranges (Evergy)
+        // set per-page indices (Client A) instead of page ranges (Utility E)
         finalBills.forEach((b) => {
           if (b._pageIndex && !b._pageStart) {
             b._pageStart = b._pageIndex;
@@ -9779,10 +9779,10 @@ function _groupQueueRows(rows) {
     // (~lines 8239-8250: identity/commodity matchTypes only) — 'address'
     // (fuzzy-only) and 'ambiguous' (no single meterId) are excluded on
     // purpose and fall through to the untouched exact-string key below.
-    // Root cause: some utilities (Wood River Energy) OCR the AccountNumber
+    // Root cause: some utilities (WRE) OCR the AccountNumber
     // differently on every scan of the same physical meter, so the old
     // exact-string key scattered one meter's bills across multiple orphan
-    // rows (e.g. Spring Hill April/May).
+    // rows (e.g. Client C April/May).
     const am = row._autoMatch;
     // Fix (15da4714): also trust matchType === 'address' when it carries the
     // _wreTagMatch marker (_wreBuildingTagMatch, only ever paired with a
@@ -9806,7 +9806,7 @@ function _groupQueueRows(rows) {
           ? 'meter:' + meterClean
           : // Fix (15da4714): a per-row key, not a shared '_unknown' literal --
             // bills with no confident match AND no usable OCR account/meter
-            // text (e.g. blank-OCR Wood River rows) must not silently merge
+            // text (e.g. blank-OCR WRE rows) must not silently merge
             // just because they share the same blank string.
             '_unknown:' + row.resultIdx + ':' + row.billIdx;
 
@@ -11797,7 +11797,7 @@ async function _checkDuplicates(bills, statusCb) {
       const existInv = norm(ab.bill.invoiceNumber || ab.bill.saleNumber);
       const invoiceMatch = extInv && existInv && extInv === existInv;
       // FIX (fix/save-all-persist-bills, 2026-09-21): a consolidated invoice
-      // (Wood River Energy bills 10 district sites under ONE invoice number,
+      // (WRE bills 10 district sites under ONE invoice number,
       // all with the same billing period) must never make site A's bill a
       // "duplicate" of site B's already-saved bill. That is exactly what
       // happened when the target meter had no bills yet: the account-keyed
@@ -13020,7 +13020,7 @@ function togglePDFRawText() {
     const text = window._pdfRawText || '(no raw text captured — try reloading the PDF)';
     const idx = window._pdfMultiIdx || 0;
     let validSections;
-    // Non-Evergy PDFs use %%PAGE_N%% markers — split by those instead
+    // Non-Utility E PDFs use %%PAGE_N%% markers — split by those instead
     const hasPageMarkers = /%%PAGE_\d+%%/.test(text);
     if (hasPageMarkers) {
       const pageMarkers = [...text.matchAll(/%%PAGE_(\d+)%%/g)];
@@ -13039,7 +13039,7 @@ function togglePDFRawText() {
       if (pageIdx >= validSections.length) pageIdx = Math.min(idx, validSections.length - 1);
       var section = validSections[pageIdx] || validSections[0] || text;
       // #113: If bill has _pageStart/_pageEnd (multi-page range), show "Pages X-Y"
-      // instead of "Page X of Y" for more accurate display (e.g. Louisburg multi-building PDFs)
+      // instead of "Page X of Y" for more accurate display (e.g. Client A multi-building PDFs)
       var label;
       if (currentBill && currentBill._pageStart != null && currentBill._pageEnd != null) {
         if (currentBill._pageStart === currentBill._pageEnd) {
@@ -13173,7 +13173,7 @@ function _cropCanvasTop(srcCanvas, height) {
 // works whether srcCanvas is a 1x preview or a 12x-zoom render. Same
 // manual-drawImage-crop discipline as _cropCanvasTop (never pass a
 // `rectangle` option to Tesseract — see that function's header comment for
-// why). Used by the Louisburg targeted-crop OCR fallback
+// why). Used by the Client A targeted-crop OCR fallback
 // (_lbgNeedsCropFallback below) to isolate just the charges-column value
 // cells at high zoom, instead of OCR'ing the whole page at that zoom (slow
 // and unnecessary — the fallback only needs one small region).
@@ -13192,7 +13192,7 @@ function _cropCanvasRegion(srcCanvas, xRatio, yRatio, wRatio, hRatio) {
 // _grayscaleCanvas (backlog 37d5fb0e-fueladj follow-up, 2026-09-14): plain
 // luminance grayscale, no thresholding (unlike binarizeCanvas's Otsu B/W
 // above) — the targeted-crop research
-// (_context/research/2026-09-13-louisburg-fa-targeted-crop/2026-09-13-results-table.md)
+// (_context/research/2026-09-13-client-a-fa-targeted-crop/2026-09-13-results-table.md)
 // found grayscale alone (no binarize) was the stable, reproducible winner
 // for reading the Total Amount Due cell at high zoom; Otsu was interchangeable
 // but not required. Returns a new canvas.
@@ -13220,13 +13220,13 @@ function _grayscaleCanvas(srcCanvas) {
 }
 // _lbgNeedsCropFallback (backlog 37d5fb0e-fueladj follow-up, 2026-09-14):
 // decides whether a page's full-page OCR text is missing the SPECIFIC fields
-// the Louisburg Fuel-Adjustment residual derivation needs
+// the Client A Fuel-Adjustment residual derivation needs
 // (_lbg_resolveFuelAdj / _faUnresolvedCommodities, app/energy-savings.js) —
 // i.e. whether this page would otherwise be HELD for manual review. Mirrors
 // (does not duplicate/reimplement) that guard's own field checks so the
 // fallback fires ONLY as a true fallback: never on a bill that already reads
 // cleanly (hard gate — see task's regression requirement). Deliberately
-// conservative: requires the Louisburg detect signature AND a Gas section
+// conservative: requires the Client A detect signature AND a Gas section
 // AND (no Current Bill/Total Amount Due total OR no Water line at all).
 function _lbgNeedsCropFallback(txt) {
   if (!txt) return false;
@@ -13309,7 +13309,7 @@ function _countOcrSignals(txt) {
 // without needing the loop's surrounding state (workerBox, statusCb, budgets).
 //
 // Extended from a 0°/180° probe to a full 0°/90°/180°/270° probe — image-only
-// scanned PDFs (e.g. Louisburg Kansas School District water/sewer bills) can
+// scanned PDFs (e.g. Client A Kansas School District water/sewer bills) can
 // carry a stray /Rotate 90 or /Rotate 270 flag on otherwise-upright content,
 // which the previous 0°/180°-only probe could never detect: those pages always
 // OCR'd sideways, scored ~0, and fell through to Generic Utility with every
@@ -13334,11 +13334,11 @@ function _countOcrSignals(txt) {
 //       stray OCR-noise digits on a rotated candidate.
 // 1.35 (35%) was derived from real fixture measurements, not guessed — the
 // task's suggested "~15%" was tried first and REJECTED because it falsely
-// rotates a genuine upright Louisburg bill (see below).
+// rotates a genuine upright Client A bill (see below).
 //
 // RE-ANCHORED 2026-09-13, item ea3091c3: the margin ratio ITSELF was never
 // the bug — the SIGNAL feeding it was. The 2026-09-08 measurements below
-// (sig0=42/sig90=64 for USD 416 Primary, etc.) were captured via the
+// (sig0=42/sig90=64 for District A Primary, etc.) were captured via the
 // ocr-harness's `makeRecognizeFn`, which — for an unrelated Node/Buffer
 // reason — ALREADY cropped the probe region manually via drawImage and
 // dropped the `rectangle` key before calling Tesseract (see that function's
@@ -13347,7 +13347,7 @@ function _countOcrSignals(txt) {
 // straight through to `w.recognize(canvas, params)` against a real live
 // <canvas>, which is the ONE input shape the harness's workaround never
 // exercised. Node-repro comparison on the real failing PDF's rasterized
-// page (Scan_20260908114831.pdf / USD 416 Primary, same pixels, same
+// page (Scan_20260908114831.pdf / District A Primary, same pixels, same
 // Tesseract worker, both paths run back-to-back — verified 2026-09-13):
 //   OLD (production): recognize(canvas, {rectangle}) → sig0=0 sig90=0
 //     sig180=0 sig270=0 — no candidate clears any margin, page OCR'd
@@ -13442,7 +13442,7 @@ async function _pickBestPageOrientation(canvasO, recognizeFn, onScores) {
 // WITHOUT capping every source at 72 DPI (see CORRECTION below — that was this
 // function's own bug from 2026-07-22 to 2026-08-17).
 //
-// Root cause (2026-07-22, Wood River Energy May/Sep/Oct 2025 invoice legibility):
+// Root cause (2026-07-22, WRE May/Sep/Oct 2025 invoice legibility):
 // pdf.js's CanvasGraphics sets `ctx.imageSmoothingEnabled` itself, immediately before
 // drawing each embedded raster image, via getImageSmoothingEnabled(transform, interpolate)
 // — see pdf.js display/canvas.js. When an image has no explicit PDF /Interpolate flag
@@ -13461,13 +13461,13 @@ async function _pickBestPageOrientation(canvasO, recognizeFn, onScores) {
 // of the source raster's actual native resolution. That unconditionally throws away
 // every pixel above 72 DPI before the Lanczos upscale ever runs — Lanczos interpolates
 // between existing samples, it cannot invent detail that scale:1 already discarded.
-// Reproduced on a real Louisburg gas bill with a genuine 150 DPI embedded scan
+// Reproduced on a real Client A gas bill with a genuine 150 DPI embedded scan
 // (`Gas Bills May 2026 - BES.pdf`, confirmed 1275x1650px JPEG on a 612x792pt page via
 // PyMuPDF): the 2026-07-22 mechanism corrupted SewerCharge ($508.93 -> unparseable),
 // WaterProtectionFee (1.61 -> 161, a 100x decimal-point loss), and the gas meter reads/
 // therms usage (3.339 -> unrecoverable) that a supersampled render recovers cleanly.
-// It also broke Evergy's meter-read table (MeterMultiplier/StartRead/EndRead came back
-// null on every bill) for the same reason — Evergy scans are 150 DPI too.
+// It also broke Utility E's meter-read table (MeterMultiplier/StartRead/EndRead came back
+// null on every bill) for the same reason — Utility E scans are 150 DPI too.
 //
 // Fix (supersample-then-downsample, replaces the 2026-07-22 scale:1 floor): render
 // ONCE at `targetScale * OCR_SUPERSAMPLE_FACTOR` — always AT OR ABOVE the requested
@@ -13477,14 +13477,14 @@ async function _pickBestPageOrientation(canvasO, recognizeFn, onScores) {
 // smoothing override the same way the 2026-07-22 fix did (that second resize is a plain
 // canvas-to-canvas operation, not a pdf.js render() call), but never discards resolution
 // above 72 DPI: for a high-DPI source, the supersample render preserves and even exceeds
-// the source's native detail; for a genuinely low-DPI source (Wood River, ~72 DPI), the
+// the source's native detail; for a genuinely low-DPI source (WRE, ~72 DPI), the
 // Lanczos DOWNSAMPLE from the oversized intermediate canvas smooths out the blocky edges
 // pdf.js's own disabled-smoothing draw leaves behind — a standard supersampling
 // antialiasing (SSAA) technique — so both source qualities come out clean without any
 // runtime detection of the source's actual DPI. Verified empirically (headless Chromium,
 // same pdf.js 3.11.174 / Tesseract.js 5 versions and worker params as production) against
-// both the 150 DPI Louisburg gas bill above AND the genuine 72 DPI Wood River Inv 452084
-// invoice: recovers $187.08/$242.61 on Wood River at least as well as the 2026-07-22
+// both the 150 DPI Client A gas bill above AND the genuine 72 DPI WRE Inv B
+// invoice: recovers $187.08/$242.61 on WRE at least as well as the 2026-07-22
 // scale:1 mechanism at every tested target scale, while also recovering the 150-DPI
 // bill's fields the 2026-07-22 mechanism corrupted. See docs/dashboardlogic.md
 // 2026-08-17 entry for the full before/after pass data.
@@ -13498,8 +13498,8 @@ async function _pickBestPageOrientation(canvasO, recognizeFn, onScores) {
 //
 // Fix (2026-07-22): even with imageSmoothingQuality:'high', canvas's built-in resize
 // filter measurably under-performs a real Lanczos filter for small/faint scanned
-// invoice text — verified side-by-side on the same source image (Wood River Energy
-// Inv 452084, May 2025): several per-site dollar figures that canvas's 'high' filter
+// invoice text — verified side-by-side on the same source image (WRE
+// Inv B, May 2025): several per-site dollar figures that canvas's 'high' filter
 // left unparseable (missing "$", missing decimal point, or digits merged with
 // neighboring columns) came through cleanly ($187.08, $242.61, etc. matching the
 // invoice's own printed values) once resized with this Lanczos-3 implementation
@@ -13677,7 +13677,7 @@ async function _lanczosResize(srcCanvas, dstW, dstH, a) {
 }
 // Supersample multiplier for _renderPageHQ (see its doc comment above for the full
 // reasoning). Chosen empirically (2026-08-17, item 29fa2c65) by comparing OCR text
-// quality across 1.3/1.6/2.0 on the genuinely-low-DPI Wood River Inv 452084 fixture —
+// quality across 1.3/1.6/2.0 on the genuinely-low-DPI WRE Inv B fixture —
 // 1.6 was the first value that matched-or-beat the old scale:1 mechanism's recovery of
 // known dollar figures ($187.08, $242.61); 1.3 was measurably worse (more garbled digit
 // strings) and 2.0 was not measurably better while costing more render time/memory, so
@@ -13808,7 +13808,7 @@ const OCR_TIMEOUT_MS = 90000;
 // FIX (b35c9b09, 2026-08-31) — throughput regression measured on TWO real
 // multi-page scans (headless, real Tesseract + real pdfjs-dist, no browser;
 // see dashboardlogic.md 2026-08-31 for the full harness output):
-//   - "May 2026 Electric Bills - RES, HS, MS.pdf" (6 pages, clean Evergy
+//   - "May 2026 Electric Bills - RES, HS, MS.pdf" (6 pages, clean Utility E
 //     layout): every page early-exits after 2 primary passes (2.5x+3.5x,
 //     score>=10) — ~110s/page average including decode.
 //   - "SKM_C551i26050610570.pdf" (10 pages, harder scan): pages routinely
@@ -14130,7 +14130,7 @@ async function extractPDFText(ab, statusCb, opts) {
       // F5: ensure every pool worker's WASM heap is freed even if the OCR loop throws
       try {
         // Provider-aware scoring: per-provider signal sets + generic bonuses.
-        // Evergy signals are the original BILL_SIGNALS verbatim — behavior unchanged.
+        // Utility E signals are the original BILL_SIGNALS verbatim — behavior unchanged.
         // Unknown providers fall through to generic-only scoring (never worse than before).
         const PROVIDER_SIGNALS = {
           evergy: [
@@ -14142,7 +14142,7 @@ async function extractPDFText(ab, statusCb, opts) {
             { rx: /Account\s+Number/i, w: 1 },
             { rx: /Billing\s+Date/i, w: 1 },
           ],
-          // Fix (2026-07-22): Wood River Energy invoices previously had NO entry here,
+          // Fix (2026-07-22): WRE invoices previously had NO entry here,
           // so every OCR pass scored ~0 under generic-only signals (WRE bills have no
           // "Account Number"/"Billing Date" text) — the multi-pass "best score" picker
           // could not tell an accurately-OCR'd pass from a garbled one and effectively
@@ -14198,7 +14198,7 @@ async function extractPDFText(ab, statusCb, opts) {
           if (/service\s+from[:\s]\s*\d{2}\/\d{2}/i.test(txt) || (/Customer\s+Ch/i.test(txt) && /ECA\s+Ch/i.test(txt)))
             return 'evergy';
           // Fix (2026-07-22): must be checked BEFORE constellation — constellation's
-          // /MMBtu/i signal alone would otherwise misclassify every Wood River Energy
+          // /MMBtu/i signal alone would otherwise misclassify every WRE
           // page (WRE's "Mmbtu" column header also matches that regex case-insensitively),
           // permanently locking WRE pages onto the wrong (near-zero-signal) scoring set.
           if (
@@ -14234,7 +14234,7 @@ async function extractPDFText(ab, statusCb, opts) {
         // makeScorePage() — factory that returns a scorePage function.
         // Provider is auto-detected from the first non-trivial pass (>100 chars) and locked
         // for all subsequent passes of the same page, so pass-0 text drives scoring for passes 1–6.
-        // Evergy: max keyword score = 7 + up to 3 bonuses = 10+, early-exit threshold >=10 unchanged.
+        // Utility E: max keyword score = 7 + up to 3 bonuses = 10+, early-exit threshold >=10 unchanged.
         const makeScorePage = () => {
           let detectedProvider = null;
           return (txt) => {
@@ -14254,7 +14254,7 @@ async function extractPDFText(ab, statusCb, opts) {
           };
         };
         const scorePage = makeScorePage();
-        // Detect Evergy bill cover page by unique layout signals. Cover pages only
+        // Detect Utility E bill cover page by unique layout signals. Cover pages only
         // need the 2.5x pass — they contain no meter/charge data worth reprocessing.
         const isCoverPage = (txt) => {
           let hits = 0;
@@ -14311,7 +14311,7 @@ async function extractPDFText(ab, statusCb, opts) {
           OCR_PER_PAGE_ALLOWANCE_MS * Math.max(1, ocrNeeded.length),
         );
         let _ocrBudgetExceeded = false;
-        // After the first decode timeout in this run, the Louisburg crop fallback
+        // After the first decode timeout in this run, the Client A crop fallback
         // (a ~19x render per page) is skipped for the remaining pages.
         let _lbgCropDecodeTimedOut = false;
         // Hoisted above the loop (was previously declared right before its one use at
@@ -14330,7 +14330,7 @@ async function extractPDFText(ab, statusCb, opts) {
         // $ counts, kWh counts) — it cannot tell that a single interior digit inside
         // a printed "$X.XXXXX per kWh" rate was misread (e.g. Tesseract reading "3"
         // as "8"), because the misread text still carries the exact same keywords,
-        // $ signs, and kWh counts as a correct reading. Confirmed on the Louisburg
+        // $ signs, and kWh counts as a correct reading. Confirmed on the Client A
         // April 2026 Maint Bldg bill (acct 1000002): the early-exit's own first
         // two passes (2.5x, 3.5x) both scored 12 (>=10 early-exit threshold) yet
         // disagreed with EACH OTHER on the "Energy Chg On Pk" charge line's rate —
@@ -14340,9 +14340,9 @@ async function extractPDFText(ab, statusCb, opts) {
         // string, that disagreement is a reliable "don't trust these digits yet"
         // signal — worth spending the remaining OCR_PASSES on a tie-breaking read
         // rather than trusting page-layout score alone. Matches by charge-line
-        // keyword only (not tied to Evergy) — has zero effect on providers whose
+        // keyword only (not tied to Utility E) — has zero effect on providers whose
         // bills don't carry this "at $X per kWh/kW" shape (Baldwin/Woodriver/KGS/
-        // Louisburg): the regex simply never matches, so their early-exit behavior,
+        // Client A): the regex simply never matches, so their early-exit behavior,
         // pass count, and OCR runtime are all completely unchanged.
         // SCOPE (regression-tested): deliberately limited to just "On Pk"/"Off Pk"
         // — the two keywords the actually-reported bug involves. An earlier,
@@ -14351,7 +14351,7 @@ async function extractPDFText(ab, statusCb, opts) {
         // cross-contaminated UNRELATED charge lines on 3 of them (e.g. patched a
         // correct "Facilities Chg ... $2.854 per kW" into the wrong "$0.00056 per
         // kW" — EER's rate bleeding into Facilities' line via the 3-line block
-        // window on a garbled pass). "On Pk"/"Off Pk" are Evergy's two ENERGY
+        // window on a garbled pass). "On Pk"/"Off Pk" are Utility E's two ENERGY
         // charge lines and, on every sample checked, are printed once per page
         // with no other "at $X per kWh" line close enough to bleed in — the other
         // seven keywords are not safe to include without a much stronger per-line
@@ -14446,7 +14446,7 @@ async function extractPDFText(ab, statusCb, opts) {
             bestScore = 0;
           // Winning orientation label ('90'/'180'/'270'/null) from the
           // CHANGE-4 probe below — captured here (outer page scope) so the
-          // Louisburg targeted-crop fallback near the end of this page's
+          // Client A targeted-crop fallback near the end of this page's
           // processing (backlog 37d5fb0e-fueladj follow-up, 2026-09-14) can
           // re-render at the SAME corrected orientation without re-probing.
           let _lbgOrientWinnerLabel = null;
@@ -14658,7 +14658,7 @@ async function extractPDFText(ab, statusCb, opts) {
                 break;
               }
             }
-            // Baldwin early exit at pass 1: scanned Baldwin pages have a lower max score ceiling than Evergy;
+            // Baldwin early exit at pass 1: scanned Baldwin pages have a lower max score ceiling than Utility E;
             // score >= 7 after 2 passes means account number + charge codes + dollar amounts are all present —
             // no benefit from running 4 more primary passes on a well-scanned page
             if (
@@ -14780,7 +14780,7 @@ async function extractPDFText(ab, statusCb, opts) {
           // that orientation and run a full OCR pass to replace the best result.
           const ORIENT_SCORE_THRESHOLD = 3;
           // FIX (ocr-orientprobe-reserve, 2026-09-09): a genuinely sideways scanned
-          // page (e.g. Louisburg /Rotate 270 CCITT Group-4 fax bills) never reaches
+          // page (e.g. Client A /Rotate 270 CCITT Group-4 fax bills) never reaches
           // the primary loop's score>=10 early-exit — every rotated-wrong pass scores
           // near 0 — so it burns ALL 6 primary + 3 retry passes (OCR_PASSES /
           // OCR_RETRY_PASSES, ~43-110s/pass measured — see OCR_PER_PAGE_ALLOWANCE_MS
@@ -14788,7 +14788,7 @@ async function extractPDFText(ab, statusCb, opts) {
           // _ocrPageBudgetExceeded (this page's OWN fair-share clock, b35c9b09) was
           // already true, so the old `!_ocrPageBudgetExceeded` condition on this gate
           // SKIPPED the orientation rescue entirely and kept the garbage 0° text as
-          // bestText — confirmed live on two real Louisburg scans, v2026.09.08.807,
+          // bestText — confirmed live on two real Client A scans, v2026.09.08.807,
           // both extracting 0 fields.
           //
           // Fix: the orientation gate below no longer depends on
@@ -14937,7 +14937,7 @@ async function extractPDFText(ab, statusCb, opts) {
                 // gives the corrected orientation only ONE read — an upright page gets
                 // up to 6 primary passes (OCR_PASSES: 2.5x/3.5x/2x/3x + psm4 variants)
                 // plus up to 3 retry passes (OCR_RETRY_PASSES: 1x/1.5x/4x) before its
-                // text is trusted. A genuinely-rotated scan (e.g. Louisburg /Rotate 270
+                // text is trusted. A genuinely-rotated scan (e.g. Client A /Rotate 270
                 // fax bills) never got that same corroboration at its TRUE orientation,
                 // so a single garbled digit in the $ column (the charges column) had no
                 // second read to out-vote it. Root-caused in
@@ -15106,18 +15106,18 @@ async function extractPDFText(ab, statusCb, opts) {
                   // multi-scale cascade above adds more candidate passes at the
                   // corrected orientation, so a purely score-driven pick can now land
                   // on a pass whose garbling happens to DROP the provider-identifying
-                  // footer text (e.g. Louisburg's "louisburgkansas.gov"/"City of
-                  // Louisburg") while still scoring highest on the generic $/date/kWh
+                  // footer text (e.g. Client A's "client-akansas.gov"/"City of
+                  // Client A") while still scoring highest on the generic $/date/kWh
                   // metric — root-caused on Scan_20260908114811.pdf, where
                   // 2.5x-psm4-rot90 (score 3.2) beat every other rotated pass but reads
                   // as Generic downstream (UTILITY_RULES.detect() finds no footer text),
                   // so the bill fell through to parseError:true with every field null,
-                  // instead of correctly detecting City of Louisburg the way the
+                  // instead of correctly detecting City of Client A the way the
                   // pre-multiscale single-pass code did. scorePage's own
                   // detectedProvider LOCK (see makeScorePage above) is shared across
                   // this page's WHOLE pass cascade (upright + rotated) and is
                   // deliberately left untouched here — that lock is a separate,
-                  // cross-provider concern (Evergy/KGS/Constellation/WoodRiver/
+                  // cross-provider concern (Utility E/KGS/Constellation/WoodRiver/
                   // Baldwin/Propane all rely on it) needing its own review. Instead,
                   // re-run the SAME pure, standalone _detectProvider() the lock itself
                   // calls against only the rotated-orientation candidates gathered by
@@ -15142,7 +15142,7 @@ async function extractPDFText(ab, statusCb, opts) {
                   // On an exact SCORE TIE, the sibling branches' own tie-break (longer text
                   // wins) is deliberately NOT reused here: measured on the real
                   // Scan_20260908114811.pdf regression fixture, the tied-score rotated pass
-                  // that keeps the Louisburg footer ("3.5x-psm4-rot90", 3629 chars) is
+                  // that keeps the Client A footer ("3.5x-psm4-rot90", 3629 chars) is
                   // SHORTER than the tied-score pass that drops it ("2.5x-psm4-rot90", 3920
                   // chars) — a pure length tie-break would keep the block permanently unable
                   // to recover provider detection for the exact bill this guard exists for,
@@ -15311,7 +15311,7 @@ async function extractPDFText(ab, statusCb, opts) {
             _earlyExitOverrideSnapshot !== null ? _earlyExitOverrideSnapshot : bestText,
             allPassTexts[pgNum],
           );
-          // ── Louisburg targeted-crop OCR fallback (backlog 37d5fb0e-fueladj
+          // ── Client A targeted-crop OCR fallback (backlog 37d5fb0e-fueladj
           // follow-up, 2026-09-14) ────────────────────────────────────────────
           // Fires ONLY when this page's full-page OCR (everything above —
           // primary/retry passes, orientation, binarize, rate-consensus) still
@@ -15319,7 +15319,7 @@ async function extractPDFText(ab, statusCb, opts) {
           // needs (_lbg_resolveFuelAdj / _faUnresolvedCommodities,
           // app/energy-savings.js): the Current Bill / Total Amount Due total
           // and/or a Water charge line. Root cause (see
-          // _context/research/2026-09-13-louisburg-fa-targeted-crop/2026-09-13-results-table.md):
+          // _context/research/2026-09-13-client-a-fa-targeted-crop/2026-09-13-results-table.md):
           // full-page OCR tops out at 4x zoom and the charges-column font is
           // too small/thin to survive at that scale; a tight, high-zoom crop of
           // just that column reliably reads it. Renders the page FRESH at a
@@ -15330,7 +15330,7 @@ async function extractPDFText(ab, statusCb, opts) {
           // OCRs it with psm 6 (uniform block — multiple stacked value lines).
           // The recovered text is appended to bestText behind a sentinel
           // delimiter, NOT blended into the main text — energy-savings.js's
-          // Louisburg _extractNew strips it back out and merges it through the
+          // Client A _extractNew strips it back out and merges it through the
           // SAME parseMetered/regex constructs already used for the main page,
           // filling in ONLY fields the main pass found nothing for at all (see
           // that file's merge block). This never fires on a bill that already
@@ -15341,7 +15341,7 @@ async function extractPDFText(ab, statusCb, opts) {
               if (statusCb) statusCb('OCR page ' + pgNum + '/' + maxPages + ' — Louisburg targeted-crop fallback...');
               // FIX (2026-09-14, verified against the real scan Scan_20260908114811.pdf
               // via a real pdfjs-dist+tesseract.js Node harness — see
-              // _context/research/2026-09-13-louisburg-fa-targeted-crop/2026-09-13-results-table.md):
+              // _context/research/2026-09-13-client-a-fa-targeted-crop/2026-09-13-results-table.md):
               // the first version of this fallback cropped the WHOLE charges column
               // (one wide region spanning every row) at 8x zoom with psm 6. That measured
               // as GARBLED on the real bill — the pen circle/strike marks and ruled table
@@ -15635,11 +15635,11 @@ function globalTaskGoTo() {
 // Each entry gets _manualReview:true so the UI can flag it distinctly.
 //
 // Cross-utility fallback (data-loss fix, 2026-08-19): a combined scan can
-// mix a local-utility (e.g. City of Louisburg) run with Evergy electric
+// mix a local-utility (e.g. City of Client A) run with Utility E electric
 // pages. The file-level rule selection in _extractSingleFileForQueue /
 // processPDF picks ONE rule for the whole file, so pages that rule can't
 // parse used to go straight to a manual-review stub — silently dropping
-// real bills (e.g. Evergy) that a DIFFERENT rule in UTILITY_RULES could
+// real bills (e.g. Utility E) that a DIFFERENT rule in UTILITY_RULES could
 // have extracted. Before giving up on a page, retry its own full page
 // text (u.pageText, added by extractAll's unmatched-page collector) against
 // every other rule's detect()/extract(). Only a page that no rule can
@@ -15693,18 +15693,18 @@ function _unmatchedToSyntheticBills(unmatchedPages) {
           recoveredBill = first;
           recoveredBill.UtilityCompany = recoveredBill.UtilityCompany || recoveredBill._utilityName || r.name || null;
           recoveredBill._recoveredFromFallbackRule = r.name || true;
-          // FIX (backlog b8123c92): Evergy's own extract()/_extractEvergy()
+          // FIX (backlog b8123c92): Utility E's own extract()/_extractUtility E()
           // never sets a Commodity field at all — every OTHER caller of an
-          // Evergy bill object papers over that with a `.Commodity ||
+          // Utility E bill object papers over that with a `.Commodity ||
           // 'Electric'` fallback default sprinkled across the display/save/
-          // match code (Evergy only ever bills electric service, so that
+          // match code (Utility E only ever bills electric service, so that
           // default is always correct for this provider). This recovery
           // path hands the bare extracted object straight through instead,
           // so a page recovered here carried Commodity: undefined all the
           // way to storage with no fallback ever applied. Make the same
-          // provider-known default explicit at the source for Evergy only —
+          // provider-known default explicit at the source for Utility E only —
           // NOT a blanket default for every rule this function can recover
-          // (the Louisburg rule already stamps its own correct Commodity
+          // (the Client A rule already stamps its own correct Commodity
           // per bill — Gas/Water/Sewer/Stormwater — inside its own
           // extract(), so this must not override those).
           if (r.name === 'Evergy' && !recoveredBill.Commodity) recoveredBill.Commodity = 'Electric';
@@ -15813,7 +15813,7 @@ async function processPDF(file) {
           const _extractUnmatchedPages = bills._unmatchedPages || [];
           // Guard (2322a12f): a non-empty _unmatchedPages means `rule` already
           // split this file correctly — some pages matched `rule` (e.g. a
-          // Louisburg gas page), others were deliberately left unmatched for
+          // Client A gas page), others were deliberately left unmatched for
           // a DIFFERENT provider's rule to pick up per-page later (see
           // _unmatchedToSyntheticBills). That marks this file as a genuine
           // multi-provider/multi-commodity document. See the OCR-retry guard
@@ -15860,7 +15860,7 @@ async function processPDF(file) {
           const totalMissing = retryBills.reduce((s, b) => s + countCriticalMissing(b, rule.name), 0);
           const missingRatio = retryBills.length > 0 ? totalMissing / retryBills.length : 0;
           // Fix (fix/wre-retry-gate-widen, 2026-09-21): the worstMissing/missingRatio
-          // thresholds above starve the common Wood River Energy case — a 10-site
+          // thresholds above starve the common WRE case — a 10-site
           // consolidated invoice where exactly ONE site fails the MMBtu x rate =
           // charge cross-check (energy-savings.js) and gets flagged. That's
           // worstMissing=1 and a missingRatio that's usually well under 0.1 once an
@@ -15996,8 +15996,8 @@ async function processPDF(file) {
                   if (!candidateFull || candidateFull.trim().length <= 100) return false;
                   // Guard (2322a12f): _fileHasMultiProviderSplit means this file
                   // already produced a correct per-page split across DIFFERENT
-                  // providers/commodities (e.g. a Louisburg gas page + a page left
-                  // unmatched for Evergy). Re-detecting a rule from the combined
+                  // providers/commodities (e.g. a Client A gas page + a page left
+                  // unmatched for Utility E). Re-detecting a rule from the combined
                   // candidate text (all pages concatenated) can match a different
                   // single-provider rule than the one that owns this file. When this
                   // file is known multi-provider, the retry must stay on the SAME
@@ -16018,7 +16018,7 @@ async function processPDF(file) {
                   // lenient predicate (`_singleHasKeyField`) the first pass used, and
                   // refuse the wholesale replace when it would leave the file with
                   // fewer valid bills than the first pass already had — see the
-                  // eea98fd5/NN-NNNNNN-00 Louisburg incident for why `retryValid.length`
+                  // eea98fd5/NN-NNNNNN-00 Client A incident for why `retryValid.length`
                   // alone is not a safe proxy for "no bills lost".
                   const retryValidLenient = retryBills2.filter((b) => _singleHasKeyField(b));
                   const retryWouldLoseBills = retryValidLenient.length < _origValidBillCount;
@@ -16317,7 +16317,7 @@ async function processPDF(file) {
                 // Try re-extracting from each alternate OCR text
                 for (const altText of altTexts) {
                   try {
-                    // Fix (8b6342e9): rule.extract() for Evergy returns a single
+                    // Fix (8b6342e9): rule.extract() for Utility E returns a single
                     // bill object, not an array — `!altBills.length` on the raw
                     // object is always true (undefined), so this block never ran
                     // for matched bills. Normalize the same way commit 5f563df
@@ -16375,7 +16375,7 @@ async function processPDF(file) {
             }
           }
           // ── MULTI-PASS OCR CONSENSUS (kWh-identity fallback recovery) ──
-          // Fix (2026-08-24, defect #2 of the Louisburg 100%-accuracy gate): the
+          // Fix (2026-08-24, defect #2 of the Client A 100%-accuracy gate): the
           // _sum_mismatch consensus block above only reconciles DOLLAR charge
           // fields, and only fires when the bill's charge total doesn't add up.
           // A bill can have a perfectly reconciling dollar total while its
@@ -16388,8 +16388,8 @@ async function processPDF(file) {
           // any rounding drift between the meter-table kWhConsumed and the
           // charge line's own kWh figure, AND it can never recover the paired
           // *Rate field (the identity has no rate term), leaving OnPeakRate/
-          // OffPeakRate permanently null. Root-caused on the Louisburg
-          // SKM_C551i Evergy bill (acct 1000003): the OCR pass processPDF
+          // OffPeakRate permanently null. Root-caused on the Client A
+          // SKM_C551i Utility E bill (acct 1000003): the OCR pass processPDF
           // kept as "best text" (lowest countCriticalMissing — BillingPeriodStart/
           // AccountNumber/kWhConsumed/TotalCurrentCharges were already present)
           // garbled the Off-Peak charge line just enough that `xRate` never
@@ -16444,7 +16444,7 @@ async function processPDF(file) {
                   for (const altText of altTexts2) {
                     try {
                       // Fix (8b6342e9): same array-normalization as the
-                      // _sum_mismatch block above — Evergy's extract() returns a
+                      // _sum_mismatch block above — Utility E's extract() returns a
                       // single object, so `!altBills.length` was always true and
                       // this block never adopted an alt-pass value for matched bills.
                       const altResult = rule.extract(altText);
@@ -16462,7 +16462,7 @@ async function processPDF(file) {
                       // another, or introduce a qty/rate pair that don't belong
                       // together.
                       //
-                      // SELF-VERIFY GUARD (Louisburg acct 1000001 03/02-03/31):
+                      // SELF-VERIFY GUARD (Client A acct 1000001 03/02-03/31):
                       // "read directly" is not the same as "read correctly" — an
                       // alt pass can read a charge-line quantity cleanly (no
                       // fallback flag) while still misreading its digits (e.g. a
@@ -16513,7 +16513,7 @@ async function processPDF(file) {
           }
 
           // ── MULTI-PASS OCR CONSENSUS FOR METER-READ FIELDS (identity-consistency winner, ACCOUNT-KEYED) ──
-          // Fix (2026-08-25, Circle Grove meter-row digit corruption, acct 1000004,
+          // Fix (2026-08-25, Site G meter-row digit corruption, acct 1000004,
           // SKM_C551i26071613190.pdf#p4; also recovers High School accts 1000005 /
           // 1000003 on the same file). A meter-row OCR misread can be internally
           // SELF-CONSISTENT in isolation — the digit-correction/checksum engine
@@ -16522,7 +16522,7 @@ async function processPDF(file) {
           // correct reading from a corrupted one, verified directly against this
           // file's own two captured OCR passes for account 1000004, is that a
           // genuine meter-row reading satisfies BOTH physical identities every
-          // Evergy bill's meter table encodes: EndRead - StartRead = ReadDifference,
+          // Utility E bill's meter table encodes: EndRead - StartRead = ReadDifference,
           // and ReadDifference * MeterMultiplier = kWhConsumed. Measured on this
           // page: the 2.5x pass (StartRead 15484.8371, EndRead 15698.7069,
           // ReadDifference 213.8698, kWhConsumed 8554.7920) satisfies both exactly;
@@ -16543,10 +16543,10 @@ async function processPDF(file) {
           // (branch fix/meter-row-ocr, reverted: validator 1084->972, 26 regressions).
           // That prototype matched an alt pass's re-extracted bill to `b` by BILLING
           // PERIOD ONLY. window._pdfOcrPasses is keyed by PAGE NUMBER across the WHOLE
-          // pdf, and Evergy's `rule.extract(pageText)` always returns whichever ONE
-          // account is FIRST on that page — so on a multi-bill Louisburg PDF where
+          // pdf, and Utility E's `rule.extract(pageText)` always returns whichever ONE
+          // account is FIRST on that page — so on a multi-bill Client A PDF where
           // several different accounts/buildings share one billing period (the normal
-          // case — Louisburg's buildings are billed on a common monthly cycle), a
+          // case — Client A's buildings are billed on a common monthly cycle), a
           // period-only match happily adopted another building's meter reading onto
           // `b`. Requiring the alt pass's own AccountNumber to match `b.AccountNumber`
           // (same normalization convention used throughout this file:
@@ -16567,7 +16567,7 @@ async function processPDF(file) {
             // SEPARATELY rather than as one all-or-nothing group. On the bills
             // this targets, it's common for exactly one field in a trio to be
             // OCR-corrupted while the other two (and thus the OTHER identity's
-            // trio) are perfectly readable — e.g. Louisburg acct 1000005's
+            // trio) are perfectly readable — e.g. Client A acct 1000005's
             // 06/29-07/29 bill has a correct StartRead/ReadDifference/
             // MeterMultiplier/kWhConsumed on its one alternate pass, but a
             // corrupted EndRead (13200.8243 misread from 13290.8243) that alone
@@ -16685,24 +16685,24 @@ async function processPDF(file) {
           const _syntheticReviewBills = _unmatchedToSyntheticBills(_extractUnmatchedPages);
 
           // ── MULTI-PASS OCR CONSENSUS FOR RECOVERED UNMATCHED PAGES ──
-          // Fix (2026-08-24, Louisburg synthetic-recovery defect): the kWh-identity
+          // Fix (2026-08-24, Client A synthetic-recovery defect): the kWh-identity
           // consensus block above only patches bills produced by the FILE-LEVEL
-          // `rule.extractAll(text)` pass (it's gated on `rule.name === 'Evergy'`,
+          // `rule.extractAll(text)` pass (it's gated on `rule.name === 'Utility E'`,
           // where `rule` is whichever provider owns the whole file — e.g. "City of
-          // Louisburg" for a mixed Louisburg+Evergy scan). It never runs against
+          // Client A" for a mixed Client A+Utility E scan). It never runs against
           // bills recovered by _unmatchedToSyntheticBills, because those bills are
-          // built from a DIFFERENT rule than the file-level one (an Evergy page
-          // mixed into a Louisburg scan) and don't exist yet at that point in the
+          // built from a DIFFERENT rule than the file-level one (an Utility E page
+          // mixed into a Client A scan) and don't exist yet at that point in the
           // pipeline. A recovered bill can carry the exact same
           // _auto_recovered_On/OffPeakKWh identity-fallback flags (set inside
-          // _extractEvergy, invoked by _unmatchedToSyntheticBills's own
+          // _extractUtility E, invoked by _unmatchedToSyntheticBills's own
           // `r.extract(u.pageText)` — see ~11996-12020 above) with no path to a
           // higher-fidelity alternate OCR pass. This block mirrors the one above
           // but (a) runs unconditionally on `_syntheticReviewBills` regardless of
           // the file-level `rule`, keying off each recovered bill's OWN rule
           // (`_recoveredFromFallbackRule`) instead, and (b) normalizes that rule's
           // `.extract()` return to an array the same way _unmatchedToSyntheticBills
-          // already does (Evergy's `.extract()` returns a single bill object, not
+          // already does (Utility E's `.extract()` returns a single bill object, not
           // an array — calling `.length` on it directly is always undefined).
           if (hasAltPasses && _syntheticReviewBills.length) {
             const KWH_FALLBACK_PAIRS_RECOVERED = [
@@ -16750,7 +16750,7 @@ async function processPDF(file) {
                     // reading for another. Also requires the alt reading to
                     // self-verify against the bill's own printed charge amount
                     // (qty × rate ≈ b[chargeField]) — see the self-verify guard
-                    // note in the block above (Louisburg acct 1000001).
+                    // note in the block above (Client A acct 1000001).
                     const altQtyR = parseBillNumber(altBill && altBill[pair.kwhField]);
                     const altRateR = parseBillNumber(altBill && altBill[pair.rateField]);
                     const ownChargeR = parseBillNumber(b[pair.chargeField]);
@@ -16828,7 +16828,7 @@ async function processPDF(file) {
           // GATE B (61bed8f8): compare against the file's TRUE final bill/record
           // count — evaluated here, after cross-rule recovery (_syntheticReviewBills,
           // ~13563-13672) has absorbed every page a local-utility rule (e.g. City of
-          // Louisburg) couldn't parse but another rule (e.g. Evergy) recovered.
+          // Client A) couldn't parse but another rule (e.g. Utility E) recovered.
           // Comparing against pre-recovery bills.length (the old call site, right
           // after `rule.extractAll(text)`) stamped a stale mismatch onto every
           // individually-correct bill. `text` is the original extractPDFText output
@@ -16836,7 +16836,7 @@ async function processPDF(file) {
           const _gateBResult = _gateB_billCountCheck(text, finalBills.length, rule.name); // GATE B
           // GATE WRE input (18b33d9f gap 2): read from the current `bills`
           // reference here (post any OCR-retry reassignment) so a retried
-          // Wood River extraction is checked against its OWN fresh site-block
+          // WRE extraction is checked against its OWN fresh site-block
           // count, not a stale pre-retry snapshot.
           const _gateWREResult = _gateWRE_siteCountCheck(rule.name, bills._wreSiteBlockCount, finalBills.length); // GATE WRE
 
@@ -17033,7 +17033,7 @@ function renderMultiBillUI(bills, box) {
   };
   // Month assignment goes through the ONE keeper, normMonth (computations/normalization.js):
   // majority-days month for one bill, plus the Dec/Jan/Feb continuity chain across a group.
-  // Dates here are MM/DD/YYYY (Evergy) or YYYY-MM-DD, so they are turned into ISO first.
+  // Dates here are MM/DD/YYYY (Utility E) or YYYY-MM-DD, so they are turned into ISO first.
   const _parseDt = (str) => {
     if (!str) return null;
     const s = String(str).trim();
@@ -17115,7 +17115,7 @@ function renderMultiBillUI(bills, box) {
       sortSource = bill.BillingPeriodStart || bill.BillDate || 0;
     }
     // Append a commodity suffix when multiple splits share the same date
-    // (Louisburg combined bills → "01/20/26 · Water", "01/20/26 · Gas", etc.)
+    // (Client A combined bills → "01/20/26 · Water", "01/20/26 · Gas", etc.)
     if (bill.Commodity && bill.Commodity !== 'Propane') {
       const _commAbbr = { Stormwater: 'Storm', Electric: 'Elec' };
       lbl = lbl + ' · ' + (_commAbbr[bill.Commodity] || bill.Commodity);
@@ -17158,7 +17158,7 @@ function renderMultiBillUI(bills, box) {
   // F6: scope the commodity pill list to the active building for a multi-account
   // batch, so a Water-only building never shows a Gas pill that belongs to a
   // different building in the same batch. The single-account combined-bill path
-  // (e.g. Louisburg Water+Sewer+Storm on one account) keeps the global list.
+  // (e.g. Client A Water+Sewer+Storm on one account) keeps the global list.
   const _commSourceBills =
     _multiAcct && window._pdfBuildingTab
       ? bills.filter((b) => (b.AccountNumber || '_unknown') === window._pdfBuildingTab)
@@ -18282,7 +18282,7 @@ async function _applyDupUpdate(billIdx, extracted, dup) {
     // gate): only promote a Saved Bills record onto a meter when the match is
     // 'identity' grade (account/meter-number hit). An 'address'-only match is an
     // unconfirmed guess — promoting on that guess risks the same silent-overwrite
-    // mechanism as the Louisburg Maintenance Building incident (11e47d64/9de73981)
+    // mechanism as the Client A Maintenance Building incident (11e47d64/9de73981)
     // if the promoted bill's period collides with an existing bill on the guessed
     // meter. On a non-identity match, leave the bill in Saved Bills — that is
     // already the safe review location, no extra action needed.
@@ -18430,7 +18430,7 @@ function renderPDFFields(parsed, warnings) {
     Meter2_kWh: 'kWh Used',
     Meter2_KW: 'KW Used',
     Meter2_RKVA: 'RKVA Used',
-    // Wood River Energy per-site charge components (Fix 1 — a84458f0)
+    // WRE per-site charge components (Fix 1 — a84458f0)
     _wreTriggerCharge: 'Trigger Charge',
     _wreIndexCharge: 'Index Charge',
     _wreSWECharge: 'SWE Charge',
@@ -18490,7 +18490,7 @@ function renderPDFFields(parsed, warnings) {
     '_wreIndexCharge',
     '_wreSWECharge',
   ]);
-  // Fields that MUST display with 4 decimal places (kW, kWh, meter reads per Evergy Billing Details rules)
+  // Fields that MUST display with 4 decimal places (kW, kWh, meter reads per Utility E Billing Details rules)
   const FOURDP_FIELDS = new Set([
     'FacilitiesKW',
     'BilledKW',
@@ -18534,7 +18534,7 @@ function renderPDFFields(parsed, warnings) {
   ]);
   // ── Field layouts per commodity (Update 81) ──
   // Pick the layout based on the bill's Commodity / FuelType / UtilityCompany
-  // so non-electric bills don't show empty Evergy charge rows.
+  // so non-electric bills don't show empty Utility E charge rows.
   //   type: 'wide' = full width, 'pair' = two fields side-by-side,
   //         'charge-line' = qty | rate | charge | running total,
   //         'total' = total row with running check
@@ -18649,8 +18649,8 @@ function renderPDFFields(parsed, warnings) {
     { type: 'charge-line', label: 'Fuel Adjustment', chargeField: 'FuelAdjustment', rateKey: null },
     { type: 'total', fields: ['TotalCurrentCharges'], chargeKey: 'TotalCurrentCharges' },
   ];
-  // Fix 1 + Fix 2 (a84458f0): Wood River Energy layout with per-site charge components.
-  // Detected via _detectCommodity when b._utilityName === 'Wood River Energy'.
+  // Fix 1 + Fix 2 (a84458f0): WRE layout with per-site charge components.
+  // Detected via _detectCommodity when b._utilityName === 'WRE'.
   // TotalCurrentCharges appears ONLY as the total row — NOT as a charge-line component.
   const _LAYOUT_WRE = [
     { section: 'Account Info' },
@@ -18892,11 +18892,11 @@ function renderPDFFields(parsed, warnings) {
   ];
   // Detect the commodity for this bill and pick a layout. Priority:
   // 1. KGS bills — detected by UtilityCompany name (gets dedicated layout with KGS field order)
-  // 2. Wood River Energy — dedicated layout with per-site charge components (Fix 1+2, a84458f0)
-  // 3. explicit Commodity field (Louisburg split + propane)
+  // 2. WRE — dedicated layout with per-site charge components (Fix 1+2, a84458f0)
+  // 3. explicit Commodity field (Client A split + propane)
   // 4. FuelType field (propane fallback when Commodity missing)
   // 5. UtilityCompany name hints (generic gas / spire)
-  // 6. Evergy / electric default
+  // 6. Utility E / electric default
   const _detectCommodity = (b) => {
     const uc = (b.UtilityCompany || '').toLowerCase();
     if (/kansas\s*gas/.test(uc) || b._utilityName === 'Kansas Gas Service') return 'kgs';
@@ -19135,7 +19135,7 @@ function renderPDFFields(parsed, warnings) {
   // Format numbers for display
   const fmtDollar = (v) =>
     v != null ? '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '';
-  // kW/kWh quantities always render with 4 decimal places per Evergy Billing Details rules
+  // kW/kWh quantities always render with 4 decimal places per Utility E Billing Details rules
   const fmtQty = (v, unit) =>
     v != null
       ? v.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 4 }) + ' ' + (unit || '')
@@ -19315,7 +19315,7 @@ function renderPDFFields(parsed, warnings) {
         .map((p, idx) => {
           const suffix =
             isTiered && row.chargeField === 'EnergyOnPeakCharge' ? ' Tier ' + (idx + 1) : ' (' + (idx + 1) + ')';
-          // 2026-07-08 (louisburg-b14af0e3): Strategy B (_postExtractionVerify, ~line
+          // 2026-07-08 (client-a-b14af0e3): Strategy B (_postExtractionVerify, ~line
           // 1810-1846) may already have corrected the FIELD-level charge
           // (parsed[row.chargeField]) from its rate-derived _rates[...].computed sum —
           // but it only ever rewrites the top-level field, never the stale per-part
@@ -19461,13 +19461,13 @@ function renderPDFFields(parsed, warnings) {
       'RenewableCharge',
       'MiscellaneousCharge',
       // Fix B (ballfields-cluster): SalesTax is extracted (municipal sales-tax
-      // lines on Evergy bills) but was missing here, so the printed total was
+      // lines on Utility E bills) but was missing here, so the printed total was
       // reported as under-summed by exactly the tax amount on every taxed
       // bill. Null/absent on non-taxed bills, so this contributes 0 there.
       'SalesTax',
       // Baldwin City electric bills use ElectricCharge + FuelAdjustment instead of
-      // Evergy-style per-charge fields. These are null on Evergy bills so they
-      // contribute 0 and do not affect Evergy validation.
+      // Utility E-style per-charge fields. These are null on Utility E bills so they
+      // contribute 0 and do not affect Utility E validation.
       'ElectricCharge',
       'FuelAdjustment',
     ],
@@ -19555,7 +19555,7 @@ function renderPDFFields(parsed, warnings) {
   const _detailTol = Math.max(0.02, 0.01 * _CHARGE_SUM_KEYS_RPF.length);
   const hasCurrentSumMismatch = Math.abs(_currentSumDiff) >= _detailTol;
   const sumMismatch = parsed['_sum_mismatch'];
-  // KGS-specific sum mismatch banner — mirrors the Evergy sumMismatchHtml handler below.
+  // KGS-specific sum mismatch banner — mirrors the Utility E sumMismatchHtml handler below.
   // Fires when Pass B2 could not safely reconcile the KGS component sum against
   // TotalCurrentCharges (out-of-band residual, ambiguous candidates, or missed charge line).
   const _sumMismatchKgs = parsed['_sum_mismatch_kgs'];
@@ -21130,7 +21130,7 @@ function _autoCreateMeterAndSaveBill(extracted, projId, billRow, preferBldgId) {
     // identity match — Steps 1/3 already tried account/meter-number identity
     // lookups and found nothing, which is why execution reached here. Auto-
     // committing a brand-new meter under a best-guess building risks the same
-    // misattachment class as the Louisburg Maintenance Building incident
+    // misattachment class as the Client A Maintenance Building incident
     // (11e47d64/9de73981), just shaped as a spurious new meter instead of an
     // overwrite. Do NOT auto-apply the address guess — intentionally do not set
     // targetBldg here, so a bill with no identity match always falls through to
@@ -21414,8 +21414,8 @@ async function _saveSinglePDFBill(extracted, projId) {
       // Fix 3 (item 63e43cab, ballfields-match-gates 2026-08-31): this used to be
       // a hand-duplicated first-match-wins loop over udProj.buildings/meters that
       // never called the shared findMeterMatch()/_pickIdentityCandidate()
-      // disambiguation, so a bill on a shared Evergy account with more than one
-      // physical meter (e.g. Louisburg High School + its Ball Fields meter, both
+      // disambiguation, so a bill on a shared Utility E account with more than one
+      // physical meter (e.g. Client A High School + its Ball Fields meter, both
       // account 1000001) silently landed on whichever meter the loop happened
       // to reach first, with zero address disambiguation. Not latent anymore now
       // that a real 2nd same-account meter exists. Routed through the SAME shared

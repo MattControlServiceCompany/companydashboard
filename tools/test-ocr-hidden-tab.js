@@ -8,7 +8,7 @@
  *     requestAnimationFrame never fires, and setTimeout has a 1 s minimum. Message events are not
  *     throttled. Both functions must finish, and hidden time must be near visible time.
  *  2. PIXEL IDENTITY. pdf.js render with intent 'print' (no rAF) must give the same pixels as
- *     intent 'display' at scale 3.0 x 1.6 and at zoom 12 x 1.6 (the Louisburg crop zoom).
+ *     intent 'display' at scale 3.0 x 1.6 and at zoom 12 x 1.6 (the Client A crop zoom).
  *
  * The real functions are cut out of the app file and run in the page. pdf.js 3.11.174 (the version
  * energy-department.html loads) is read from the local cache C:\Temp\ocr-hidden-tab-cache (saved once from cdnjs; the test never downloads).

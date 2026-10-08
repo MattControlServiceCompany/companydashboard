@@ -308,7 +308,7 @@ function _hvlBuildingHeatingSignals(projId, bldgId) {
 // not the unclassified fallback bucket — as electric heat (electric reheat, standalone electric
 // unit heater, or heat pump/VRF). Replaces the old p.heatType signal (a free-text project-level
 // field set only via a rarely-used modal, so it is essentially never populated) which is why a
-// building with a real electric-heat unit, like Spring Hill Schools / Woodland Spring Middle, was
+// building with a real electric-heat unit, like Client C Schools / Client B Spring Middle, was
 // showing "0% electric heating share" even though Equipment Matrix data for it exists (2026-09-23
 // fix — see docs/dashboardlogic.md).
 function _hvlBuildingHasElectricHeat(projId, bldgId) {
@@ -409,7 +409,7 @@ function hvacComputeGasThermsForBuilding(projId, bldgId) {
 // got this same treatment on 2026-09-23 — this field had no fresh-compute fallback at all until
 // now, so it always showed "Default value (not from building data)" for a building nobody had
 // reviewed in that tab yet, even when the building has a full year of its own electric bills, as
-// reported for Spring Hill Schools / Woodland Spring Middle). Returns null when the building has
+// reported for Client C Schools / Client B Spring Middle). Returns null when the building has
 // fewer than 6 populated calendar months of electric bill history — never invents a number. A
 // real SAVED HVAC Load Estimation for this project (p.hvacLoadEst + p.hvacLoadSavedAt) is
 // preferred over this fresh estimate by the caller (openBASCalc), same precedence as the gas
@@ -4071,7 +4071,7 @@ function openBASCalc(projId) {
   // open the HVAC Load Estimation tab and click Save first. Previously calCoolKwh had NO
   // fresh-compute fallback at all (unlike calHeatGas, which got one 2026-09-23), so it stayed
   // "Default value (not from building data)" for any building nobody had saved that tab for — the
-  // Spring Hill Schools / Woodland Spring Middle failure mode reported 2026-09-24.
+  // Client C Schools / Client B Spring Middle failure mode reported 2026-09-24.
   if (!autoCalCool && bldgId && typeof hvacComputeElecCoolKwhForBuilding === 'function') {
     const computedCool = hvacComputeElecCoolKwhForBuilding(projId, bldgId);
     if (computedCool && computedCool.coolingKwh)
@@ -4087,7 +4087,7 @@ function openBASCalc(projId) {
   // and the SAME Rules-of-Thumb gas-heating-share default the HVAC Load Estimation tab itself
   // uses — so calHeatGas fills without requiring a user to open that tab first. Previously this
   // only ever read the saved snapshot, which stays empty (and calHeatGas empty) for any building
-  // nobody has opened that tab for — the Spring Hill Schools / Woodland Spring Middle failure
+  // nobody has opened that tab for — the Client C Schools / Client B Spring Middle failure
   // mode reported 2026-09-23.
   if (p?.hvacLoadEst?.hvacGasT && p.hvacLoadSavedAt) {
     autoCalGas = {
@@ -4449,7 +4449,7 @@ function openBASCalc(projId) {
   _bcLiveCalc(projId);
 }
 
-// Shows/hides the Evergy rebate KPI card and detail breakdown based on the "Show Evergy
+// Shows/hides the Utility E rebate KPI card and detail breakdown based on the "Show Utility E
 // Rebate" checkbox (Section E). Off by default (item 5ap) — the rebate estimate is informational
 // only and must never be implied as part of the savings totals shown to a client, so it stays
 // out of sight unless someone deliberately opts in.
@@ -4899,7 +4899,7 @@ const newPeakCoolM = monthly(newCool, coolAdj, 1, true);
     annNonPeak += cs - pkSav + hs;
   }
 
-  // Evergy rebate — matches Excel Savings Calculator!V88/V89 (no MAX/IF floor anywhere in that
+  // Utility E rebate — matches Excel Savings Calculator!V88/V89 (no MAX/IF floor anywhere in that
   // chain; a negative peak or non-peak savings figure produces a negative rebate line that flows
   // straight into the total, same as the workbook). The site previously floored each term at 0,
   // which overstated the total whenever a component was negative (2026-09-22 parity audit finding
@@ -4976,7 +4976,7 @@ const newPeakCoolM = monthly(newCool, coolAdj, 1, true);
           <td style="text-align:right;padding:6px;font-family:var(--mono);font-size:11px">${fmt(annNonPeak)}</td>
         </tr></tbody></table>`;
 
-  // Evergy rebate summary — hidden unless "Show Evergy Rebate estimate" is checked (item 5ap):
+  // Utility E rebate summary — hidden unless "Show Utility E Rebate estimate" is checked (item 5ap):
   // informational only, never part of a savings total shown to a client (m.totalDollar in
   // bcApplyToMeasure/bcAddAsMeasure never includes it).
   const showRebate = document.getElementById('bc-showRebate')?.checked;

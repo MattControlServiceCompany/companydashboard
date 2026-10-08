@@ -7,11 +7,7 @@
   <body>
     <!--
       Regression-baseline harness for tools/ce-totals-check.js (b771dec6 Batch 0).
-      Dummy data below is copied verbatim from the b771dec6 investigation harness at
-      C:\Users\Matt Miller\AI\my-knowledge-base\outputs\2026-07-03-cost-estimate-tab-investigation\harness-source-1920.html
-      so totals stay comparable across batches. Building names are real JOCO names
-      (from known-good-values/joco.md) but all equipment IDs / point-gap lists / $
-      prices are synthetic dummy data — no real project data.
+      Dummy data below is synthetic: building names, equipment IDs, point-gap lists and prices are all dummy values.
     -->
     <script>
       function sget(k, def) {
@@ -33,8 +29,8 @@
       var projects = [
         {
           id: 9001,
-          name: 'Johnson County, Kansas (TEST DUMMY DATA)',
-          client: 'Johnson County, Kansas (TEST DUMMY DATA)',
+          name: 'Sample County (TEST DUMMY DATA)',
+          client: 'Sample County (TEST DUMMY DATA)',
         },
       ];
 
@@ -55,7 +51,7 @@
       }
       var _buildings = [
         {
-          name: 'Johnson County Courthouse',
+          name: 'Sample County Courthouse',
           equipResults: [
             makeEquip('ahu1', 'AHU-1', 'ahu', ['sat', 'dsp', 'oat', 'economizerCmd'], {
               ahu_sat_reset: BLOCKED,
@@ -87,7 +83,7 @@
           ],
         },
         {
-          name: 'MedAct 1159 Sunflower',
+          name: 'Sample Annex 1159 Main',
           equipResults: [
             makeEquip('rtu1', 'RTU-1', 'ahu', ['sat', 'rat', 'oat', 'dsp'], {
               ahu_sat_reset: BLOCKED,
@@ -108,7 +104,7 @@
           ],
         },
         {
-          name: 'Firestation-13',
+          name: 'Station-13',
           equipResults: [
             makeEquip('ahu3', 'AHU-3', 'ahu', ['sat', 'dsp', 'oat'], {
               ahu_sat_reset: BLOCKED,
@@ -175,9 +171,9 @@
       localStorage.setItem(
         'en_utility_9001',
         JSON.stringify([
-          { building: 'Johnson County Courthouse', type: 'electric', kwh: 40000, month: '2026-01', cost: 4200 },
-          { building: 'Johnson County Courthouse', type: 'electric', kwh: 38000, month: '2026-02', cost: 4000 },
-          { building: 'MedAct 1159 Sunflower', type: 'electric', kwh: 22000, month: '2026-01', cost: 2300 },
+          { building: 'Sample County Courthouse', type: 'electric', kwh: 40000, month: '2026-01', cost: 4200 },
+          { building: 'Sample County Courthouse', type: 'electric', kwh: 38000, month: '2026-02', cost: 4000 },
+          { building: 'Sample Annex 1159 Main', type: 'electric', kwh: 22000, month: '2026-01', cost: 2300 },
         ]),
       );
     </script>

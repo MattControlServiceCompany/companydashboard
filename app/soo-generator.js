@@ -10,7 +10,7 @@
    render/selection machinery: reheatActuator (4-way, wired into
    EM_EQUIP_CONFIG_FLAGS.vav) selecting reheat-modulating vs reheat-staged;
    co2Function (2-way) gating min-vent-co2 on 'dcv-reset' only; a new
-   occ-standby clause (JOCO-authored, no master text) gated on hasOccSensor;
+   occ-standby clause (Client D-authored, no master text) gated on hasOccSensor;
    isSeries added to EM_EQUIP_CONFIG_FLAGS.vav (previously fpb-only) wiring
    the already-built fan-series clause for real VAV rows. All 3
    SOO_BEHAVIOR_DEFAULTS settings (standbyAirflowMode, datFloorFailureMode,
@@ -22,7 +22,7 @@
    top of this file's UNCHANGED clause-selection logic (appliesWhen/paragraphs
    — zero edits below this note). New in this file: `sooRowSignature`/
    `sooGroupRowsBySignature` (auto-groups equipment by identical selected
-   clause-id set, mirroring the JOCO base-program collapse, so one clause set
+   clause-id set, mirroring the Client D base-program collapse, so one clause set
    covers many boxes instead of one wall of text per box); `sooBuildGroupDocParagraphs`
    (same clause body a single-row doc gets, headed by an "Applies to:" box
    list instead of one box name); `sooGenerateForRows` (the Sequence view's
@@ -74,7 +74,7 @@
    `_docxAssemble`/CSC_DOCX_SKELETON_B64, which is report-specific and must
    never be reused here).
 
-   HARD LESSON (blueprint, JOCO): reheat-actuator mechanism and CO2 function
+   HARD LESSON (blueprint, Client D): reheat-actuator mechanism and CO2 function
    are NOT safely inferable from point presence — point presence only proves
    a wire exists, not what the program does with it. Phase 1 reads
    flags.reheatActuator / flags.co2Function if a caller has set them, but
@@ -89,7 +89,7 @@
    "(adj.)" phrasing with no numeric fill — never invented.
    ───────────────────────────────────────────────────────────────────────── */
 
-/* ── 1. SOO_BEHAVIOR_DEFAULTS — the 3 open JOCO decisions ───────────────────
+/* ── 1. SOO_BEHAVIOR_DEFAULTS — the 3 open Client D decisions ───────────────────
    Unchanged from Phase 1a. None of the 3 non-default options exist in the
    master doc (see inventory §3) — they are authored, sourced from
    2026-09-13-joco-vav-soo-review/findings.md, never presented as docx
@@ -158,7 +158,7 @@ function _sooPara(runs, tight) {
    to the modulating/DCV-reset case, never inferred from points.
 
    paragraphs(ctx) replaces the old text/vars {{TOKEN}} model — each clause
-   below cites the exact master-doc paragraph(s) it reproduces, or "JOCO-only"
+   below cites the exact master-doc paragraph(s) it reproduces, or "Client D-only"
    where no master text exists. */
 var SOO_TEMPLATES = {
   vav: [
@@ -282,10 +282,10 @@ var SOO_TEMPLATES = {
       id: 'occ-standby',
       order: 75,
       title: 'Zone Occupancy Standby',
-      // Phase 2, JOCO-only — NO master-doc equivalent (inventory §2 row
+      // Phase 2, Client D-only — NO master-doc equivalent (inventory §2 row
       // "occ-sensor-standby": "(no equivalent text exists)"; findings.md §3
       // item 8 lists "occupancy-standby software preference" as an
-      // unresolved minor open item — there is no JOCO-decided wording to
+      // unresolved minor open item — there is no Client D-decided wording to
       // lift either). Authored fresh, gated strictly on the manual
       // hasOccSensor flag (default:false) AND the occSensor point actually
       // being mapped — same two-part gate as every other flag-driven clause
@@ -319,7 +319,7 @@ var SOO_TEMPLATES = {
       title: 'Minimum Ventilation on Carbon Dioxide (CO2) Concentration',
       // Phase 2: co2Function is a manual flag (EM_EQUIP_CONFIG_FLAGS.vav,
       // default 'dcv-reset') — NOT inferable from the co2 point being mapped
-      // (blueprint hard lesson; JOCO rev19 gap G: NE Offices VAV-10b was
+      // (blueprint hard lesson; Client D rev19 gap G: NE Offices VAV-10b was
       // upgraded alarm-only -> full DCV reset with zero point-side change).
       // 'alarm-only' selects THIS clause OUT — the master doc's own Alarms
       // block "High Zone Carbon Dioxide Concentration" row (below, gated
@@ -361,7 +361,7 @@ var SOO_TEMPLATES = {
       // its own "(adj.)" airflow phrase(s) plus the "Occupied:"/"Unoccupied:"
       // sub-labels. standbyAirflowMode selector (SOO_BEHAVIOR_DEFAULTS)
       // swaps the Unoccupied block: 'minimum' is the ONLY option with
-      // master-doc text; 'sameAsOccupiedMax' is authored/JOCO-sourced
+      // master-doc text; 'sameAsOccupiedMax' is authored/Client D-sourced
       // (inventory §3.1), never presented as a docx quotation.
       paragraphs: function (ctx) {
         var mode = (ctx.settings && ctx.settings.standbyAirflowMode) || 'minimum';
@@ -402,7 +402,7 @@ var SOO_TEMPLATES = {
           ),
         ];
         if (mode === 'sameAsOccupiedMax') {
-          // Authored alternate (JOCO review) — no master-doc equivalent.
+          // Authored alternate (Client D review) — no master-doc equivalent.
           paras.push(
             _sooPara(
               [
@@ -450,7 +450,7 @@ var SOO_TEMPLATES = {
       // (blueprint §"Point signal -> clause mapping"). reheatActuator is a
       // manual flag (Phase 2: now a real EM_EQUIP_CONFIG_FLAGS.vav select,
       // default 'pid-valve' — NOT point-derived); the 3 modulating
-      // mechanisms (pid-valve/linear-valve/floating-motor, incl. the JOCO
+      // mechanisms (pid-valve/linear-valve/floating-motor, incl. the Client D
       // "Three-Point Floating-Motor Reheat" type, findings.md coverage
       // table, 35 boxes) read as IDENTICAL master-doc prose — inventory §6:
       // "don't build three near-duplicate clause bodies for the three
@@ -531,7 +531,7 @@ var SOO_TEMPLATES = {
       id: 'dat-floor-failure',
       order: 125,
       title: 'Discharge Air Temperature (DAT) Floor Interlock',
-      // JOCO-only clause — no master-doc equivalent (inventory §2/§3). Gated
+      // Client D-only clause — no master-doc equivalent (inventory §2/§3). Gated
       // purely on the dat point being present (blueprint: "highest reach:
       // ~100% of reheat boxes"). Authored in the same visual convention as
       // Flow Control/Reheating Coil Valve (bold label, bold "(adj.)"
@@ -581,7 +581,7 @@ var SOO_TEMPLATES = {
       order: 140,
       title: 'Fan Control – Series',
       // Phase 2: isSeries is now a real EM_EQUIP_CONFIG_FLAGS.vav entry
-      // (default false — JOCO rev19 gap A: series fan-powered boxes are
+      // (default false — Client D rev19 gap A: series fan-powered boxes are
       // field-tagged plain VAV, so this must be a manual override, never
       // inferred; setting it does NOT force EM to recategorize the row as
       // fpb, per blueprint's explicit constraint). Defaults false, so this
@@ -751,7 +751,7 @@ function sooBuildDocParagraphs(ctx) {
 /* ── 7b. Sequence view: structural-signature grouping (Phase 3) ─────────────
    Blueprint: "auto-group equipment with an identical structural signature
    (same clause-id set) so one clause set covers many boxes — mirror the
-   JOCO base-program collapse; do NOT render one wall of text per box."
+   Client D base-program collapse; do NOT render one wall of text per box."
 
    The signature is the ordered list of SELECTED clause ids (reuses
    `sooSelectClauses` — zero re-derivation of Phase 1/2 selection logic) plus

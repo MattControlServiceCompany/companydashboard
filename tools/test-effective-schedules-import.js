@@ -11,7 +11,7 @@
 //   4. the Setpoint & Schedule export's Existing Occupied Time/Start/Stop/Sat & Sun columns show
 //      the imported schedule instead of "?"
 //   5. the imported schedule survives a later BAS Points CSV re-merge (emMergeIntoMatrix)
-// Uses a SYNTHETIC fixture shaped exactly like the real Woodland Spring Middle School WebCTRL
+// Uses a SYNTHETIC fixture shaped exactly like the real Client B Spring Middle School WebCTRL
 // Effective Schedules export (Location/Control Program/Effective Schedule columns, multi-line
 // "Occupied from X to Y" / "Unoccupied from X to Y" cell text) — no real client data in the repo.
 'use strict';
@@ -104,7 +104,7 @@ const sandbox = {
 vm.createContext(sandbox);
 vm.runInContext(src, sandbox, { filename: 'app/equipment-matrix.js' });
 
-// ── Real Woodland-shaped CSV text (synthetic building/equipment names) ──────────────────────
+// ── Real Client B-shaped CSV text (synthetic building/equipment names) ──────────────────────
 const CSV_TEXT =
   '"Location","Control Program","Effective Schedule"\n' +
   '"/Fixture District/Fixture Middle School/Area A","A137 North Gym RTU-15","Unoccupied from 12:00 AM to 6:00 AM\n' +

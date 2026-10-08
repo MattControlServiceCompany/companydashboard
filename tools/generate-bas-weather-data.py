@@ -3,22 +3,19 @@ Convert the "Temperature Data" and "Humidity Data" sheets in
 BAS Savings Calc Template.xlsm into one committed JS data file,
 app/data/bas-weather-bins.js, used by the BAS Savings Calc (app/calculators.js).
 
-Source workbook (not committed - read-only reference):
-  C:\\Users\\Matt Miller\\AI\\_context\\my-knowledge-base\\raw\\Calcs\\BAS Savings Calc Template.xlsm
-
-Layout notes: see
-  C:\\Users\\Matt Miller\\AI\\_context\\temp\\2026-09-22-bas-calc-weather\\2026-09-22-layout.txt
+Source workbook (not committed - read-only reference): set CH_BAS_CALC_TEMPLATE to its path.
 
 Usage:
   python tools/generate-bas-weather-data.py
-Run from the repo root (or any cwd - paths below are absolute).
+Run from the repo root (or any cwd).
 """
 
 import json
+import os
 import openpyxl
 
-SRC = r"C:\Users\Matt Miller\AI\_context\my-knowledge-base\raw\Calcs\BAS Savings Calc Template.xlsm"
-OUT = r"C:\Users\Matt Miller\AI\_context\temp\2026-09-22-bas-calc-weather-worktree\app\data\bas-weather-bins.js"
+SRC = os.environ["CH_BAS_CALC_TEMPLATE"]
+OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "app", "data", "bas-weather-bins.js")
 
 MONTHS = [
     "January", "February", "March", "April", "May", "June",

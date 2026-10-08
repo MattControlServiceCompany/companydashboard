@@ -4,7 +4,7 @@
 //   P1  calcDays: inclusive toggle 30 / exclusive 29; accepts M/D/YYYY strings and Date objects; DST + leap safe
 //   V4  getNormRows: two bills that share a read date never count that day twice (Jan 32 -> 31)
 //   V6  calculators.js prorate, America/Chicago: start on the 1st gives smD 30 / emD 0 (was smD -1)
-//   W   Woodland raw-bill table: blank numberOfDays prints "-" and is left out of TOTAL
+//   W   Client B raw-bill table: blank numberOfDays prints "-" and is left out of TOTAL
 //   G   gate-single-day-count.js passes on this tree and fails on inline /86400000 day math
 process.env.TZ = 'America/Chicago'; // V6 is a time-zone bug; every check below must hold here
 const fs = require('fs');
@@ -21,7 +21,7 @@ function assert(c, m) {
     console.log('  FAIL: ' + m);
   }
 }
-// The getNormRows shared-read-date fix is held back (Louisburg Q1/Q2 presented lock not active yet).
+// The getNormRows shared-read-date fix is held back (Client A Q1/Q2 presented lock not active yet).
 // Branch fix/wp-08-normrows-shared-date sets this to true.
 const SHARED_DATE_FIX = false;
 const near = (a, b, t) => Math.abs(a - b) <= (t || 1e-6);
@@ -163,7 +163,7 @@ const dayFns = ['_fixISO', '_parseISO', 'calcDays']
   );
 }
 
-// W: Woodland raw-bill table
+// W: Client B raw-bill table
 {
   const ctx = { console };
   vm.createContext(ctx);

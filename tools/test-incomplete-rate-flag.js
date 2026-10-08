@@ -149,7 +149,7 @@ if (typeof getMeterSavings !== 'function') {
     { start: '2025-02-01', end: '2025-02-28', kwh: 9500, totalKwhRate: 0.11, kwhCost: 1045, demandKW: 29 },
     { start: '2025-03-01', end: '2025-03-31', kwh: 10200, totalKwhRate: 0.11, kwhCost: 1122, demandKW: 31 },
     // post-baseline: real usage, but no stored rate AND no kwhCost fallback — mirrors the
-    // "Circle Grove electric May 2026" evidence (real usage/reduction, $0 shown).
+    // "Site G electric May 2026" evidence (real usage/reduction, $0 shown).
     { start: '2025-05-01', end: '2025-05-31', kwh: 8000, totalKwhRate: '', kwhCost: '', demandKW: 27 },
   ];
   const r = getMeterSavings(m, bills, true, 1, 'b1');

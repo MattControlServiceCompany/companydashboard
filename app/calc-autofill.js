@@ -199,8 +199,8 @@ function chCalcAutofillFields(projId, bldgId) {
     if (unoccHeat != null) out.exHeatUnocc = { value: unoccHeat, source: 'Set Points', isDefault: false };
   }
 
-  // Equipment Matrix fallback (2026-09-23): most buildings (e.g. Spring Hill Schools /
-  // Woodland Spring Middle) have no Set Points record at all — their real existing/proposed
+  // Equipment Matrix fallback (2026-09-23): most buildings (e.g. Client C Schools /
+  // Client B Spring Middle) have no Set Points record at all — their real existing/proposed
   // setpoint data lives in the Equipment Matrix instead. Reuse emBuildSetpointExportRows (app/
   // equipment-matrix.js) — the SAME join/normalize/heating-type logic as the Setpoint Export
   // feature and the "Use Equipment Matrix Data" button — instead of a second per-zone averaging
@@ -323,7 +323,7 @@ function _chParseClockHM(str) {
    values (55/70/70/60 existing, 50/85/60/55 proposed, OA shutoff no/yes, schedule 0-24 all week
    existing, 5-21 weekdays / 6-19 Sat & Sun proposed — the exact set a project saved before the
    company-standard-defaults feature existed, and the exact set reported 2026-09-23 on Spring
-   Hill Schools / Woodland Spring Middle). This is never a real user edit — nobody would type
+   Hill Schools / Client B Spring Middle). This is never a real user edit — nobody would type
    this exact 22-value combination by hand — so callers should treat it as "not user-entered" and
    let autofill/company-standard resolution run instead of treating it as a protected override.
    Requires ALL 22 fields present and exactly equal; a partial or empty bc never matches (that
