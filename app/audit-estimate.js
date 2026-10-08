@@ -547,9 +547,9 @@ function auditEstSetWorkbookSetting(projId, field, value) {
     o.partPrices = o.partPrices || {};
     if (ptxt === '') delete o.partPrices[value.row];
     else {
-      var pn = Number(ptxt);
-      if (!isFinite(pn) || pn <= 0 || pn > 10000000) return 'invalid';
-      o.partPrices[value.row] = pn;
+      var partPrice = Number(ptxt);
+      if (!isFinite(partPrice) || partPrice <= 0 || partPrice > 10000000) return 'invalid';
+      o.partPrices[value.row] = partPrice;
     }
     if (!Object.keys(o.partPrices).length) delete o.partPrices;
   } else return 'invalid';
@@ -664,21 +664,21 @@ function auditEstSetWorkbookConfig(field, value) {
     }
     if (!Object.keys(o.baseRates).length) delete o.baseRates;
   } else if (field === 'pct') {
-    var pf = AUDIT_EST_PCT_FIELDS.filter(function (f) {
+    var pctField = AUDIT_EST_PCT_FIELDS.filter(function (f) {
       return value && f.key === value.key;
     })[0];
-    if (!pf) return 'invalid';
-    name = pf.label;
-    from = before.pct[pf.key] != null ? before.pct[pf.key] : D.pct[pf.key];
+    if (!pctField) return 'invalid';
+    name = pctField.label;
+    from = before.pct[pctField.key] != null ? before.pct[pctField.key] : D.pct[pctField.key];
     o.pct = o.pct || {};
-    if (blank(value.value) || Number(value.value) === D.pct[pf.key]) {
-      delete o.pct[pf.key];
-      to = D.pct[pf.key];
+    if (blank(value.value) || Number(value.value) === D.pct[pctField.key]) {
+      delete o.pct[pctField.key];
+      to = D.pct[pctField.key];
     } else {
-      var pn = Number(value.value);
-      if (!isFinite(pn) || pn < 0 || pn > 1) return 'invalid';
-      o.pct[pf.key] = pn;
-      to = pn;
+      var pctValue = Number(value.value);
+      if (!isFinite(pctValue) || pctValue < 0 || pctValue > 1) return 'invalid';
+      o.pct[pctField.key] = pctValue;
+      to = pctValue;
     }
     if (!Object.keys(o.pct).length) delete o.pct;
   } else if (field === 'state') {

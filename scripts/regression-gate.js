@@ -599,6 +599,12 @@ async function main() {
     } catch (e) {}
   }
 
+  // ---- static gates: tools/gate-*.js listed here run on every gate run (exit 0 = PASS) ----
+  ['gate-single-number-parser.js'].forEach((g) => {
+    const r = spawnSync(process.execPath, [path.join(REPO_ROOT, 'tools', g)], { cwd: REPO_ROOT, encoding: 'utf8' });
+    add('static-gates', g, r.status === 0 ? 'PASS' : 'FAIL', r.status === 0 ? '' : (r.stdout || r.stderr || '').slice(0, 300));
+  });
+
   // ---- 3. existing report reconciliation harness (own browser; runs after ours is closed) ----
   if (args['skip-reconcile']) {
     add('reconciliation', 'verify-report-reconciliation.js', 'INFO', 'skipped (--skip-reconcile)');
