@@ -2477,6 +2477,13 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.08.96', date: '2026-10-08', title: 'Bill PDFs stay next to their values',
+    items: [
+      { type: 'fix', text: 'PDF / OCR: after a page reload, the bill PDF is still next to the extracted values, and the View PDF button still works. This includes bills from a batch.' },
+      { type: 'fix', text: 'PDF / OCR: two bills in one batch no longer share one PDF. Each bill opens its own PDF.' },
+      { type: 'fix', text: 'Compacting saved PDFs now keeps every PDF that a saved record still uses. If it cannot read a record, it deletes nothing.' }
+    ]
+  },
   { v: 'v2026.10.07.95', date: '2026-10-07', title: 'Bill PDF import checks stricter',
     items: [
       { type: 'fix', text: 'Bill PDF import checks account numbers and Off Peak kWh more strictly.' }
