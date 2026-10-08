@@ -6009,7 +6009,7 @@ function formatRateWarning(rr, label, unitLabel) {
 
 function _lbg_tokens(line) {
   if (!line) return [];
-  return [...line.matchAll(/-?[\d,]+\.\d+|-?[\d,]+-\d{2}|-?[\d,]+/g)]
+  return [...line.matchAll(/-?\.\d+|-?[\d,]+\.\d+|-?[\d,]+-\d{2}|-?[\d,]+/g)]
     .map((m) => m[0])
     .map((s) => (/^-?\d+-\d{2}$/.test(s) ? s.replace('-', '.') : s))
     .map((s) => parseFloat(s.replace(/,/g, '')))
@@ -8284,8 +8284,8 @@ const UTILITY_RULES = [
             BillDate,
             ProductionMonth,
             NaturalGasMMbtu: null,
-            TotalCurrentCharges: blk.dollar || null,
-            TotalAmountDue: blk.dollar || null,
+            TotalCurrentCharges: parseBillNumber(blk.dollar),
+            TotalAmountDue: parseBillNumber(blk.dollar),
             parseError: true,
             _manualReview: true,
             _manualReviewLabel:
@@ -8566,10 +8566,10 @@ const UTILITY_RULES = [
           NaturalGasMMbtu: _mmbtuRateMismatch ? null : blk.mmbtu != null ? String(blk.mmbtu) : null,
           NaturalGasTherms: null,
           NaturalGasCCF: null,
-          GasCharge: blk.dollar || null,
+          GasCharge: parseBillNumber(blk.dollar),
           CustomerCharge: null,
-          TotalCurrentCharges: blk.dollar || null,
-          TotalAmountDue: blk.dollar || null,
+          TotalCurrentCharges: parseBillNumber(blk.dollar),
+          TotalAmountDue: parseBillNumber(blk.dollar),
           // Per-site charge components (Fix 1 — a84458f0 defect 1)
           _wreTriggerCharge: blk.triggerCharge != null ? String(blk.triggerCharge) : null,
           _wreIndexCharge: blk.indexCharge != null ? String(blk.indexCharge) : null,
@@ -8653,10 +8653,7 @@ const UTILITY_RULES = [
 
       // ── Cross-check: sum of per-site SubTotals vs invoice summary ──
       if (results.length > 0 && summaryTotalCC) {
-        const siteSum = results.reduce(
-          (acc, r) => acc + (parseFloat((r.TotalCurrentCharges || '').replace(/,/g, '')) || 0),
-          0,
-        );
+        const siteSum = results.reduce((acc, r) => acc + parseBillNumberOrZero(r.TotalCurrentCharges), 0);
         const invTotal = parseFloat((summaryTotalCC || '').replace(/,/g, ''));
         const diff = Math.abs(siteSum - invTotal);
         if (diff > 0.5) {
@@ -8931,7 +8928,10 @@ const UTILITY_RULES = [
           // Multiple Account Numbers survived into extract() — anchor to only the FIRST one.
           // (extractAll should have prevented this via _splitAccountBlocks, but defence in depth.)
           // Use the region from the first Account Number to just before the second.
-          activeT = t.slice(_acctMatches[0].index, _acctMatches[1].index);
+          // Start at the line start (same as the single-account branch) so the customer name printed
+          // left of "Account Number" stays in the slice; else CustomerName reads "Account Number".
+          const _firstLineStart = t.lastIndexOf('\n', _acctMatches[0].index - 1) + 1;
+          activeT = t.slice(_firstLineStart, _acctMatches[1].index);
         }
 
         // === HEADER BLOCK ===
@@ -8989,14 +8989,15 @@ const UTILITY_RULES = [
         // Extract the street address from the beginning of that line, stopping before "Active".
         // Example: "305 6TH ST # 306          Active Deposit    NONE | Statement Date   11-18-25"
         // Uses activeT to avoid capturing another account's address.
-        const addrM = activeT.match(/([A-Z0-9#][A-Z0-9# ]{4,49?})\s{2,}Active\s+D/i);
+        const addrM = activeT.match(/([A-Z0-9#][A-Z0-9# ]{4,49})\s{2,}Active\s+D/i);
         // Fallback: if the primary pattern fails (OCR collision zone garbles "Active D"),
         // look for the street address in the mailing stub above "BALDWIN CITY, KS" in the
         // full text (t). The stub is outside activeT when "Account Number" is mid-page.
         // Pattern: a line of all-caps street text followed by 3+ spaces then BALDWIN CITY, KS.
+        // The match must start at a line start; mid-line it takes label text ("Statement Date").
         let ServiceAddress = addrM ? addrM[1].trim() : null;
         if (!ServiceAddress) {
-          const _stub = t.match(/([A-Z0-9][A-Z0-9 #]{4,49}?)\s{3,}[^\n]{0,20}\n\s*BALDWIN\s+CITY,?\s+KS/i);
+          const _stub = t.match(/(?:^|\n)[ \t]*([A-Z0-9][A-Z0-9 #]{4,49}?)\s{3,}[^\n]{0,20}\n\s*BALDWIN\s+CITY,?\s+KS/i);
           if (_stub) ServiceAddress = _stub[1].trim();
         }
 
@@ -9627,7 +9628,7 @@ const UTILITY_RULES = [
         if (!line) return { usage: null, charge: null, prevRead: null, currRead: null };
         const nums = _lbg_tokens(line);
         if (!nums.length) return { usage: null, charge: null, prevRead: null, currRead: null };
-        const rawTokens = [...line.matchAll(/-?[\d,]+(?:\.\d+|-\d{2})?/g)].map((m) => m[0]);
+        const rawTokens = [...line.matchAll(/-?\.\d+|-?[\d,]+(?:\.\d+|-\d{2})?/g)].map((m) => m[0]);
         const charge = _lbg_cleanCents(rawTokens[rawTokens.length - 1]);
         if (charge != null && charge > 0 && charge < 1 && rawTokens.length > 1) {
           console.warn('[Louisburg parseLine] Very low charge $' + charge + ' from line:', line);
