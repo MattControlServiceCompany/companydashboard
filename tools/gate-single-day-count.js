@@ -52,11 +52,6 @@ const ALLOWED = [
     'chain gap between two bills (tolerance)',
   ],
   ['computations/normalization.js', 'return (s - e) / (1000 * 60 * 60 * 24) > 3;', 'detectGap (tolerance)'],
-  [
-    'computations/normalization.js',
-    'const days = Math.round((spanEnd - cur)',
-    'propane delivery month split (half-open date span)',
-  ],
 ];
 
 const problems = [];
