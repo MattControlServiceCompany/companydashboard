@@ -2,8 +2,8 @@
 // Run: node tools/test-baseline-savings-report.js [path-to-backup.json]
 //
 // Loads the REAL app files into a Node vm sandbox (no browser, no network) seeded from a local
-// CompanyHub backup export, then runs the real collectClient BReportData() /
-// generateClient BReportHTML() / wdCheckReportInputs() / wdApplySetpointOptions() and asserts:
+// CompanyHub backup export, then runs the real the client-B report data collector() /
+// the client-B report HTML builder() / wdCheckReportInputs() / wdApplySetpointOptions() and asserts:
 //
 //   0. Source hygiene — no building-specific constants remain (rates, install cost, zone lists,
 //      client-share %); the xlsx exporter reads its narration from WD_TEXT (no duplicated prose).
@@ -1102,7 +1102,7 @@ console.log('\n--- 12. Forbidden jargon tokens; distinct energy-only vs. blended
   assert(t8b.includes('CSC (Control Service Company)'), 'CSC is expanded on first use');
   assert(t8b.includes('Sample calculation'), '"Sample calculation" replaces "Show your work"');
 
-  // (b) Forbidden tokens in the xlsx exporter's OWN source text (static scan — exportClient BReportToXlsx
+  // (b) Forbidden tokens in the xlsx exporter's OWN source text (static scan — the client-B xlsx exporter
   // needs a real DOM/canvas for its chart images and is not executed in this vm sandbox; every
   // narrative string it prints is asserted, above, to come from WD_TEXT, so the html8 scan already
   // covers the shared text — this additionally guards against a literal re-introduced directly in

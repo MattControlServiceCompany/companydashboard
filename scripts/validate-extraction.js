@@ -49,7 +49,7 @@ const GAS_SWEEP_RESULTS_PATH =
 // phase 2a). Separate ground-truth fixture, separate sweep-results file
 // (own harness: run-client-c-sweep.js), scored via the SAME electric
 // path as Client A (findExtractedBill / diffBill / ELECTRIC_FIELD_MAP)
-// after normalizeClient CBill() folds Client C's array-shaped charge
+// after the client-C bill normalizer() folds Client C's array-shaped charge
 // fields into the scalars that map already understands. Gas (WoodRiver
 // Energy consolidated invoices) is a separate later phase and is NOT wired
 // here.
@@ -128,7 +128,7 @@ const ELECTRIC_FIELD_MAP = {
     // tiers with no on/off split at all (High School, rate 2LGAEP, where the
     // extractor puts the whole combined amount in EnergyOnPeakCharge and
     // leaves EnergyOffPeakCharge null). Comparing the TOTAL dollar amount
-    // (this key, filled in by normalizeClient CBill() below) avoids
+    // (this key, filled in by the client-C bill normalizer() below) avoids
     // guessing which of the extractor's two fields holds which tier -- see
     // ELECTRIC_ACTUAL_GETTERS. Not present in the Client A fixture (no-op
     // there).
@@ -285,7 +285,7 @@ const KNOWN_UNMAPPED = new Set([
   'charges.energy_off_peak_win_charge',
 
   // --- Client C (Utility E) electric additions, 2026-08-26 ---
-  // Raw array/object-shaped GT keys that normalizeClient CBill() folds
+  // Raw array/object-shaped GT keys that the client-C bill normalizer() folds
   // into a single scalar under a DIFFERENT key (e.g. `eca_charges[]` ->
   // `eca_charge`) so the existing ELECTRIC_FIELD_MAP entries can score them.
   // The raw pre-fold key stays on the normalized bill (nothing is deleted)
@@ -910,7 +910,7 @@ gasReport.summary = {
 // (client-c-bills.json, electric_high_school + electric_middle_school),
 // separate sweep-results file, but reuses findExtractedBill()/diffBill()/
 // ELECTRIC_FIELD_MAP verbatim (same as the Client A electric run above),
-// after normalizeClient CBill() folds each bill's array-shaped charge
+// after the client-C bill normalizer() folds each bill's array-shaped charge
 // fields. Does not touch the Client A electric run, the gas run, or their
 // shared helpers/state (own bill list, own sweep object, own totals).
 // The full 25-bill sweep is run separately (a monitored step) — if

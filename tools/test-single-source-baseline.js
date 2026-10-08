@@ -10,7 +10,7 @@
 //   - Project Baseline panel      (utility-data.js renderUDProjAggPanel's getNormRows+buildMoMap loop)
 //   - Energy Graphics EUI card    (graphics-setpoints.js egfxRefresh's buildMoMap loop + computeBaselineEUI)
 //   - Baseline report table       (report-engine.js rptBuildBaselineDataTable, called directly)
-//   - xlsx export data            (report-engine-woodland.js exportClient BReportToXlsx ws3 loop —
+//   - xlsx export data            (report-engine-woodland.js the client-B xlsx exporter ws3 loop —
 //                                  same eM.kwh/eM.totalCost/gM.therms/gM.cost field reads, verified
 //                                  both numerically against the same buildMoMap object and by a
 //                                  source-text assertion that the exporter reads those exact fields)
@@ -167,7 +167,7 @@ assert(
   'HTML report: Annual kW row never labeled "(peak)"',
 );
 
-// 2026-09-22 regression gate: Client B page 1 raw-bills table (rptPageClient BBills) had its
+// 2026-09-22 regression gate: Client B page 1 raw-bills table (the client-B raw-bills page builder) had its
 // OWN separate "TOTAL (Annual)" kW cell bug — Math.max + a "(peak)" suffix — independent of
 // rptBuildBaselineDataTable above (different function, different table). Same rule: a Total
 // row is always a SUM of the 12 monthly billed kW, never a peak/max.
@@ -197,7 +197,7 @@ assert(
 assert(!/MAX\(D/.test(ws1Src), 'Woodland xlsx Page 1 sheet: no MAX() formula on the kW Total cell');
 assert(!/\(peak\)/i.test(ws1Src), 'Woodland xlsx Page 1 sheet: no "(peak)" note on the kW Total cell');
 
-// ─── Page 7 "Demand kW Saved" (rptPageClient BOptions HTML + exportClient BReportToXlsx ws6) ────
+// ─── Page 7 "Demand kW Saved" (the client-B options page builder HTML + the client-B xlsx exporter ws6) ────
 // 2026-09-22 fix: this column was Math.max(monthly kW saved) — the single August peak — mislabeled
 // "Peak Demand kW Saved". Rule: an annual kW figure is the SUM of the 12 monthly values.
 assert(!/peakDemandKw/.test(wdSrc), 'Woodland options: no peakDemandKw field name remains anywhere in the file');
@@ -240,7 +240,7 @@ assert(
 
 // Execute the REAL demandKwSaved formula (extracted verbatim above) against a synthetic 12-month
 // kw[] array whose August value (19.2) is deliberately the max but NOT the sum, then render the
-// REAL rptPageClient BOptions() HTML with that computed value — proving computation and rendering
+// REAL the client-B options page builder() HTML with that computed value — proving computation and rendering
 // both land on the sum, end to end, not just via source-text pattern matching.
 const wdOptionFns = [
   loadFn(REPO + '/app/report-engine.js', 'rptPage'),

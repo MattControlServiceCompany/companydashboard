@@ -10772,7 +10772,7 @@ function _emHasPt(v) {
 
 // Normalizes a building name for the Equipment Matrix <-> Utility Data join:
 // case, whitespace, and a trailing "School" ("Client B Spring Middle School"
-// -> "woodland spring middle", matching Utility Data's "Client B Spring
+// -> "client b spring middle", matching Utility Data's "Client B Spring
 // Middle"). Equipment Matrix rows carry no building id, so this join is
 // always by name.
 function _emNormBldgNameForJoin(name) {

@@ -11,7 +11,7 @@
  * not the sparse hand-edit-diff/override system the blueprint's Phase 2 describes.
  *
  * Ground truth for the shared boilerplate text is
- * AI/_context/specs/joco-energy-services-agreement-base-2026-07-23.md (verbatim Client D extraction)
+ * AI/_context/specs/<client-D agreement base spec>.md (verbatim Client D extraction)
  * cross-checked against Client A School District's own Energy Management Services Agreement
  * (profit-sharing deal) to determine what's truly universal boilerplate vs. commercial-terms-
  * specific language. See the implementer's report for the full diff table and every divergence
@@ -30,7 +30,7 @@
 var AGREEMENT_TEMPLATE_TYPES = ['monthlyAllowance', 'profitSharing', 'epcFlatCost', 'oneTimeCost'];
 
 // Client notice address as stated verbatim in the base Agreement document, Section 4.6
-// (_context/specs/joco-energy-services-agreement-base-2026-07-23.md). Used only when the project
+// (_context/specs/<client-D agreement base spec>.md). Used only when the project
 // record has no project-level address of its own. Line breaks are rendered as they appear in the
 // source document.
 var _AGREEMENT_BASE_CLIENT_ADDRESS = '111 S. Cherry St.,\nOlathe, KS 66061';
@@ -331,7 +331,7 @@ var _AGR_SUBHEAD = 'font-size:14px;font-weight:700;color:var(--rpt-page-text);ma
 // page wraps them. hero:true/full-width letterhead replaced with smallHeaderImg (the SAME
 // CSC_HEADER_B64 asset, inset at normal content width instead of stretched page-edge-to-edge) to
 // match his page 1's smaller top-left-logo/right-aligned-tagline header, per
-// joco-energy-services-agreement-base-2026-07-23.md's page-setup section (titlePg first-page
+// <client-D agreement base spec>.md's page-setup section (titlePg first-page
 // header, image only, no text bar) and the base PNG/PDF renders.
 function rptPageAgreementCover(n, d) {
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
@@ -961,8 +961,8 @@ function rptPageAgreementGeneralProvisions(n, d) {
     // 2026-08-02 (defect register D-03): this cell used to render the literal string
     // "[Client mailing address ... enter here]" — a placeholder shipping in a signable contract
     // where the base document carries a real, verified address. The base document
-    // (_context/specs/joco-energy-services-agreement-base-2026-07-23.md Section 4.6) states the
-    // Client notice address verbatim as "111 S. Cherry St., / Cityville, KS 66061". That value is now
+    // (_context/specs/<client-D agreement base spec>.md Section 4.6) states the
+    // Client notice address verbatim as "<street address>, <city>, <state> <zip>". That value is now
     // the fallback, exactly as the Contractor address on the left is hardcoded from the same source.
     // A project record that carries its own project-level address (proj.addr, the same field
     // report-engine.js reads) wins over it, so live data always beats the baked-in default.
@@ -1044,7 +1044,7 @@ function rptPageAgreementSignatureBlock(n, d) {
 
   // Signature page matches the Word original's own last page: same small logo/tagline letterhead
   // as page 1 (titlePg's "first" header applies per-section, and this page is the sole page of the
-  // document's second section per joco-energy-services-agreement-base-2026-07-23.md's page-setup
+  // document's second section per <client-D agreement base spec>.md's page-setup
   // section), no report title bar, and — verified directly against the base PDF's text layer
   // (page 5 carries a "5" run in the same footer position as pages 1-4) — a page number IS shown,
   // so noPageNum is intentionally left at its default (false) here.

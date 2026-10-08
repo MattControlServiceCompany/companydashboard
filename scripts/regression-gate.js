@@ -58,11 +58,7 @@ function resolvePlaywright() {
       /* try next */
     }
   }
-  throw new Error(
-    'playwright not found; set CH_PLAYWRIGHT_NODE_MODULES to a node_modules dir that has it (tried ' +
-      dirs.join(', ') +
-      ')',
-  );
+  throw new Error('playwright not found; set CH_PLAYWRIGHT_NODE_MODULES to a node_modules dir that has it (tried ' + dirs.join(', ') + ')');
 }
 const { chromium } = resolvePlaywright();
 
@@ -428,31 +424,17 @@ async function main() {
     // silently moves every weather-normalized savings value) ----
     const wddKeys = Object.keys(seed).filter((k) => /^en_wdd_/.test(k) && seed[k] && Object.keys(seed[k]).length);
     const wddLoaded = await page.evaluate(
-      (ks) =>
-        ks.filter((k) => {
-          const v = DB.get(k, null);
-          return v && Object.keys(v).length;
-        }),
+      (ks) => ks.filter((k) => { const v = DB.get(k, null); return v && Object.keys(v).length; }),
       wddKeys,
     );
     const wddMissing = wddKeys.filter((k) => wddLoaded.indexOf(k) < 0);
-    console.log(
-      'weather cache  : ' +
-        wddLoaded.length +
-        '/' +
-        wddKeys.length +
-        ' en_wdd_* keys loaded after restore (' +
-        wddKeys.join(', ') +
-        ')',
-    );
+    console.log('weather cache  : ' + wddLoaded.length + '/' + wddKeys.length + ' en_wdd_* keys loaded after restore (' + wddKeys.join(', ') + ')');
     add(
       'pages',
       'weather cache present after restore',
       wddMissing.length ? 'FAIL' : 'PASS',
       wddMissing.length
-        ? 'backup has weather but the app cache is empty for: ' +
-            wddMissing.join(', ') +
-            ' -- savings values are NOT weather-normalized'
+        ? 'backup has weather but the app cache is empty for: ' + wddMissing.join(', ') + ' -- savings values are NOT weather-normalized'
         : wddLoaded.length + ' keys',
     );
 
@@ -675,11 +657,7 @@ async function main() {
       });
     });
   const queue = toRun.slice();
-  await Promise.all(
-    [1, 2, 3].map(async () => {
-      while (queue.length) await runTest(queue.shift());
-    }),
-  );
+  await Promise.all([1, 2, 3].map(async () => { while (queue.length) await runTest(queue.shift()); }));
 
   // ---- temp-leak guard: the run (gate + every test) must leave nothing tagged with RUN_TAG in C:/Temp ----
   let leaked = 0;
@@ -692,12 +670,7 @@ async function main() {
           add('temp-leak', d + '/' + e, 'FAIL', 'left behind by this run; deleted by the gate');
           fs.rmSync(path.join(d, e), { recursive: true, force: true });
         } else {
-          add(
-            'temp-leak',
-            d + '/' + e,
-            'INFO',
-            'new entry from another process (name lacks run tag ' + RUN_TAG + '); not deleted',
-          );
+          add('temp-leak', d + '/' + e, 'INFO', 'new entry from another process (name lacks run tag ' + RUN_TAG + '); not deleted');
         }
       });
   });

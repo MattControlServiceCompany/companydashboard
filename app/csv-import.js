@@ -1258,7 +1258,7 @@ function toggleChargeDetail(rowId) {
 // ── Estimate missing period (feat/estimate-missing-period, 2026-09-25) ──
 // General "Estimate missing period" action for any meter's Bills table gap — replaces the
 // one-meter Client C High June-2025 special case that used to live in app/utility-data.js
-// (_injectClient CHighJuneGapEstimate, computed-at-load and stripped-before-save). Per Matt's
+// (the high-June gap estimate step, computed-at-load and stripped-before-save). Per Matt's
 // 2026-09-25 decision: accept a genuinely missing bill period and estimate its USAGE from the
 // day-weighted average daily usage of the bill immediately before and immediately after the gap.
 // Cost (Matt, 2026-09-29, supersedes the 2026-09-25 "no cost" rule): the bill AFTER the gap prints
