@@ -12,6 +12,7 @@ const os = require('os');
 const http = require('http');
 const ROOT = process.env.APP_ROOT || path.join(__dirname, '..');
 const { launchBrowser } = require(path.join(ROOT, 'tools', 'launch-browser.js'));
+const { fastNet } = require(path.join(ROOT, 'tools', 'pdf-test-net.js'));
 
 const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png' };
 const srv = http.createServer((q, r) => {
@@ -68,6 +69,12 @@ const pdfA = makePdf([
 const pdfB = makePdf([billPage('2000002', '04/01/2026', '04/30/2026', '300.00')]);
 const pdfC = makePdf([billPage('3000003', '05/01/2026', '05/31/2026', '400.00')]);
 
+// Wait until the page code is ready (not a long fixed wait), then a short settle for the restore step.
+const settle = async (page, ms) => {
+  await page.waitForFunction(() => typeof _pdfExportAllKeys === 'function' && window.CH_AUTH, null, { timeout: 60000 });
+  await page.waitForTimeout(ms || 700);
+};
+
 let fails = 0;
 const ok = (c, m) => {
   console.log((c ? 'PASS ' : 'FAIL ') + m);
@@ -87,8 +94,8 @@ const enq = (page) => page.evaluate(() => window.__enq.slice());
 const reset = (page) => page.evaluate(() => (window.__enq = []));
 
 async function extractOnly(page, url, files, syncOn) {
-  await page.goto(url);
-  await page.waitForTimeout(3000);
+  await page.goto(url, { waitUntil: 'domcontentloaded' });
+  await settle(page);
   await page.evaluate(async () => {
     sv('pdf', null);
     localStorage.removeItem('ch_pdf_local_only');
@@ -100,7 +107,7 @@ async function extractOnly(page, url, files, syncOn) {
     () => (window._pdfMultiBills && window._pdfMultiBills.length) || (window._pdfQueue && window._pdfQueue.status === 'done'),
     null, { timeout: 90000 },
   );
-  await page.waitForTimeout(3000);
+  await page.waitForTimeout(700);
 }
 
 (async () => {
@@ -114,11 +121,13 @@ async function extractOnly(page, url, files, syncOn) {
   fs.writeFileSync(fB, pdfB);
   fs.writeFileSync(fD, pdfC);
   const ctx = await launchBrowser('pdf-upload-gating');
+  await fastNet(ctx); // no OCR, CDN scripts cached (tools/pdf-test-net.js)
   try {
     const page = await ctx.newPage();
     page.on('pageerror', (e) => console.log('PAGEERR ' + e.message));
     await ctx.addInitScript(() => {
       localStorage.setItem('ch_qs_seen', '1');
+      localStorage.setItem('ch_settings', JSON.stringify({ rnShowMode: 'never' })); // no release-notes pop-up over the buttons
       const u = JSON.stringify({ name: 'Demo User', email: 'demo@example.com', initials: 'DU', isReal: false });
       localStorage.setItem('ch_user', u);
       sessionStorage.setItem('ch_user', u);

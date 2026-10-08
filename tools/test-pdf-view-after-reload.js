@@ -12,6 +12,7 @@ const os = require('os');
 const http = require('http');
 const ROOT = process.env.APP_ROOT || path.join(__dirname, '..');
 const { launchBrowser } = require(path.join(ROOT, 'tools', 'launch-browser.js'));
+const { fastNet } = require(path.join(ROOT, 'tools', 'pdf-test-net.js'));
 
 const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png' };
 const srv = http.createServer((q, r) => {
@@ -68,6 +69,12 @@ const pdfA = makePdf([
 const pdfB = makePdf([billPage('2000002', '04/01/2026', '04/30/2026', '300.00')]);
 const pdfC = makePdf([billPage('3000003', '05/01/2026', '05/31/2026', '400.00')]);
 
+// Wait until the page code is ready (not a long fixed wait), then a short settle for the restore step.
+const settle = async (page, ms) => {
+  await page.waitForFunction(() => typeof _pdfExportAllKeys === 'function' && window.CH_AUTH, null, { timeout: 60000 });
+  await page.waitForTimeout(ms || 700);
+};
+
 let fails = 0;
 const ok = (c, m) => {
   console.log((c ? 'PASS ' : 'FAIL ') + m);
@@ -96,8 +103,8 @@ const probe = (page) =>
   });
 
 async function extract(page, url, files) {
-  await page.goto(url);
-  await page.waitForTimeout(3000);
+  await page.goto(url, { waitUntil: 'domcontentloaded' });
+  await settle(page);
   await page.evaluate(() => sv('pdf', null));
   await page.waitForTimeout(500);
   await page.setInputFiles('#pdfInput', files);
@@ -105,13 +112,13 @@ async function extract(page, url, files) {
     () => (window._pdfMultiBills && window._pdfMultiBills.length) || (window._pdfQueue && window._pdfQueue.status === 'done'),
     null, { timeout: 90000 },
   );
-  await page.waitForTimeout(3000);
+  await page.waitForTimeout(700);
 }
 
 // Empty page: no saved work, no stored extraction PDFs. Then the page is loaded again.
 async function freshPage(page, url) {
-  await page.goto(url);
-  await page.waitForTimeout(3000);
+  await page.goto(url, { waitUntil: 'domcontentloaded' });
+  await settle(page);
   await page.evaluate(async () => {
     clearPDFOCR();
     sessionStorage.removeItem('ch_extraction_state');
@@ -126,7 +133,7 @@ async function addFiles(page, files, kind) {
     (k) => (k === 'batch' ? window._pdfQueue && window._pdfQueue.status === 'done' : !window._pdfQueue && window._pdfMultiBills && window._pdfMultiBills.length && window._pdfSrcKey),
     kind, { timeout: 90000 },
   );
-  await page.waitForTimeout(3000);
+  await page.waitForTimeout(700);
 }
 // What the page shows after a reload: 'empty', 'single:<b64>' or 'batch:<n files>'.
 const shown = (page) =>
@@ -139,10 +146,10 @@ const shown = (page) =>
     btn: (() => { const b = document.getElementById('pdfViewBtn'); return !!(b && getComputedStyle(b).display !== 'none' && b.getBoundingClientRect().width > 0); })(),
   }));
 const reloadPage = async (page) => {
-  await page.reload();
-  await page.waitForTimeout(4500);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await settle(page);
 };
-const clickClear = (page, fn) => page.click('button[onclick*="' + fn + '()"]').then(() => page.waitForTimeout(1500));
+const clickClear = (page, fn) => page.click('button[onclick*="' + fn + '()"]').then(() => page.waitForTimeout(700));
 
 (async () => {
   await new Promise((r) => srv.listen(0, r));
@@ -158,11 +165,13 @@ const clickClear = (page, fn) => page.click('button[onclick*="' + fn + '()"]').t
   const b64A = pdfA.toString('base64');
   const b64B = pdfB.toString('base64');
   const ctx = await launchBrowser('pdf-view-after-reload');
+  await fastNet(ctx); // no OCR, CDN scripts cached (tools/pdf-test-net.js)
   try {
     const page = await ctx.newPage();
     page.on('pageerror', (e) => console.log('PAGEERR ' + e.message));
     await ctx.addInitScript(() => {
       localStorage.setItem('ch_qs_seen', '1');
+      localStorage.setItem('ch_settings', JSON.stringify({ rnShowMode: 'never' })); // no release-notes pop-up over the buttons
       const u = JSON.stringify({ name: 'Demo User', email: 'demo@example.com', initials: 'DU', isReal: false });
       localStorage.setItem('ch_user', u);
       sessionStorage.setItem('ch_user', u);
@@ -172,8 +181,8 @@ const clickClear = (page, fn) => page.click('button[onclick*="' + fn + '()"]').t
     await extract(page, url, fA);
     for (let n = 0; n <= 2; n++) {
       if (n > 0) {
-        await page.reload();
-        await page.waitForTimeout(4500);
+        await page.reload({ waitUntil: 'domcontentloaded' });
+        await settle(page);
       }
       const r = await probe(page);
       const w = n === 0 ? 'single, after extraction' : 'single, after reload ' + n;
@@ -187,13 +196,13 @@ const clickClear = (page, fn) => page.click('button[onclick*="' + fn + '()"]').t
     await extract(page, url, [fA, fB]);
     for (let n = 0; n <= 2; n++) {
       if (n > 0) {
-        await page.reload();
-        await page.waitForTimeout(4500);
+        await page.reload({ waitUntil: 'domcontentloaded' });
+        await settle(page);
       }
       const w = n === 0 ? 'batch, after extraction' : 'batch, after reload ' + n;
       for (const [idx, want, name] of [[0, b64A, 'file A'], [1, b64B, 'file B']]) {
         await page.evaluate((i) => selectQueueFile(i), idx);
-        await page.waitForTimeout(800);
+        await page.waitForTimeout(400);
         const r = await probe(page);
         ok(r.view, w + ', ' + name + ': View PDF button visible');
         ok(r.dock, w + ', ' + name + ': dock shows a PDF');
