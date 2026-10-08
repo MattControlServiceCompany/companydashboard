@@ -13067,9 +13067,7 @@ function togglePDFRawText() {
       );
       const raw = text.split(splitRe);
       const getDP = (s) => {
-        const m =
-          s.match(_EVG_SERVICE_FROM) ||
-          s.match(/service\s+from[:\s]\s*(\d{2}\/\d{2}\/\d{4})\s+to[:\s]\s*(\d{2}\/\d{2}\/\d{4})/i);
+        const m = s.match(_EVG_SERVICE_FROM);
         return m ? m[1] + '|' + m[2] : null;
       };
       const sections = [];

@@ -2343,7 +2343,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     // summing/matching across both buildings' charge lines. Same-date,
     // same-or-unresolvable-account markers are still treated as one bill
     // (unchanged behavior for the legitimate rate-changeover case).
-    const _sf = /[s5]erv[il1]ce\s+from[:\s]\s*(\d{2}\/\d{2}\/\d{4})\s+to[:\s]\s*(\d{2}\/\d{2}\/\d{4})/i;
+    const _sf = _EVG_SERVICE_FROM;
     const bdDates = bdMarkers.map((idx) => {
       const dm = t.slice(idx, idx + 200).match(_sf);
       return dm ? dm[1] + '|' + dm[2] : null;
@@ -2813,9 +2813,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // ─────────────────────────────────────────────────────────────────────────────
 
   // ── Billing period (OCR-tolerant) ──
-  const bpMatch =
-    t.match(_EVG_SERVICE_FROM) ||
-    t.match(/service\s+from[:\s]\s*(\d{2}\/\d{2}\/\d{4})\s+to[:\s]\s*(\d{2}\/\d{2}\/\d{4})/i);
+  const bpMatch = t.match(_EVG_SERVICE_FROM);
   // Calculate days from billing dates (not from meter read table which may be a sub-period)
   let numDays = null;
   if (bpMatch) {
@@ -3450,13 +3448,13 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       else break;
     }
     const m = t.slice(markerIdx, row.index).match(_EVG_ADDR);
-    return m ? m[1].replace(/[\s,]+/g, '').toUpperCase() : null;
+    return m ? _evgAddrNorm(m[1]) : null;
   };
   for (const row of _meterRows) row._addr = _meterRowAddr(row);
   const _meterGroup = _meterRows.length
     ? _meterRows.filter((row) => {
         if (row === _meterRows[0]) return true;
-        if (row._addr && _meterRows[0]._addr) return row._addr === _meterRows[0]._addr;
+        if (row._addr && _meterRows[0]._addr) return _evgAddrKey(row._addr) === _evgAddrKey(_meterRows[0]._addr);
         const rowMult = (row[7] || '').replace(/,/g, '').trim();
         const anchorMult = (_meterRows[0][7] || '').replace(/,/g, '').trim();
         return rowMult === anchorMult;
@@ -5557,7 +5555,12 @@ function _evgPickAccount(accts) {
   return accts.length ? accts[0] : null;
 }
 const _EVG_ADDR =
-  /^(\d+\s+\w[\w\s,]{3,50}(?:KS|MO|KY|OK|NE|IA|AR|TX|CO|IL|IN|OH|MI|PA|NY|NJ|CT|MA|VA|NC|SC|GA|FL|TN|MS|AL|LA|NM|AZ|UT|ID|OR|WA|MT|WY|ND|SD|MN|WI|NV|CA))[^\w\n]*$/m;
+  /^(\d+\s+\w[\w\s,.]{3,50}(?:KS|MO|KY|OK|NE|IA|AR|TX|CO|IL|IN|OH|MI|PA|NY|NJ|CT|MA|VA|NC|SC|GA|FL|TN|MS|AL|LA|NM|AZ|UT|ID|OR|WA|MT|WY|ND|SD|MN|WI|NV|CA))[^\w\n]*$/m;
+
+// ONE address normalizer. _evgAddrNorm is the readable form (shown, stored). _evgAddrKey is the compare form:
+// OCR splits or joins words and swaps "," "." and space, so equal addresses must ignore spaces, commas and periods.
+const _evgAddrNorm = (a) => (a || '').replace(/\s+/g, ' ').trim().toUpperCase();
+const _evgAddrKey = (a) => _evgAddrNorm(a).replace(/[\s,.]+/g, '');
 
 // Shared helpers for the City of Louisburg + Propane rules below.
 function _lbg_splitPages(t) {
@@ -6109,7 +6112,7 @@ const UTILITY_RULES = [
       const acct = _evgPickAccount(_evgAccountsIn(t));
       const addrM = t.match(_EVG_ADDR);
       // The first address in the document is a safe fallback only when the document has ONE distinct address.
-      const _docAddrs = new Set([...t.matchAll(new RegExp(_EVG_ADDR.source, 'gm'))].map((m) => m[1].replace(/[\s,]+/g, '')));
+      const _docAddrs = new Set([...t.matchAll(new RegExp(_EVG_ADDR.source, 'gm'))].map((m) => _evgAddrKey(m[1])));
       const _docHasOneAddr = _docAddrs.size <= 1;
       // ── Multi-bill split (rewritten) ──
       // The earlier split relied on matching "Billing Details - service from"
@@ -6201,11 +6204,10 @@ const UTILITY_RULES = [
       // genuinely disagrees (e.g. "2LGSF" vs "2MGSE", or two different
       // service addresses) means two DISTINCT facilities share this
       // account+period and must NOT collapse into one hybrid record.
-      const _normAddr = (a) => (a || '').replace(/\s+/g, ' ').trim().toUpperCase();
       const _facilityConflict = (a, b) => {
         if (a._rate && b._rate && a._rate !== b._rate) return true;
-        const na = _normAddr(a._addr);
-        const nb = _normAddr(b._addr);
+        const na = _evgAddrKey(a._addr);
+        const nb = _evgAddrKey(b._addr);
         if (na && nb && na !== nb) return true;
         return false;
       };
@@ -6385,7 +6387,8 @@ const UTILITY_RULES = [
       const _pfBdPagesMax = [];
       for (const b of uniqueBills) {
         const idxs = b._groupIdxs || [b.idx];
-        let bdIdx = null, bdIdxMax = null;
+        let bdIdx = null,
+          bdIdxMax = null;
         for (const ix of [...idxs].sort((a, c) => a - c)) {
           const before = t.slice(Math.max(0, ix - 40), ix);
           if (/Billing\s+Details/i.test(before)) {
@@ -6393,7 +6396,10 @@ const UTILITY_RULES = [
             bdIdxMax = ix;
           }
         }
-        if (bdIdx === null) { bdIdx = Math.max(...idxs); bdIdxMax = bdIdx; }
+        if (bdIdx === null) {
+          bdIdx = Math.max(...idxs);
+          bdIdxMax = bdIdx;
+        }
         _pfBdPages.push(_pfPageForIdx(bdIdx));
         _pfBdPagesMax.push(_pfPageForIdx(bdIdxMax));
       }
@@ -6609,9 +6615,7 @@ const UTILITY_RULES = [
             sections.push(frag);
           }
         }
-        validSections = sections.filter(
-          (s) => _EVG_SERVICE_FROM.test(s) || /service\s+from[:\s|]+\d{2}\/\d{2}\/\d{4}/i.test(s),
-        );
+        validSections = sections.filter((s) => _EVG_SERVICE_FROM.test(s));
       }
       if (!validSections.length) return [_extractEvergy(t, acct, addrM?.[1]?.trim() || null)];
       // Extract CustomerName and RateSchedule from full text — per-section extraction
@@ -6671,10 +6675,13 @@ const UTILITY_RULES = [
         const billAcct = (uniqueBills[i] && uniqueBills[i]._acct) || (_isMultiAcctBatch ? null : acct);
         // Address of this bill: its own page, else the only address that account shows on other bills,
         // else (single-account or single-address document) the first address. Never another building's.
-        const _acctAddrs = new Set(uniqueBills.filter((b) => b._addr && b._acct && billAcct && _acctsAreOcrVariant(b._acct, billAcct)).map((b) => b._addr));
+        const _acctAddrBills = uniqueBills.filter(
+          (b) => b._addr && b._acct && billAcct && _acctsAreOcrVariant(b._acct, billAcct),
+        );
+        const _acctAddrs = new Set(_acctAddrBills.map((b) => _evgAddrKey(b._addr)));
         const billAddr =
           (uniqueBills[i] && uniqueBills[i]._addr) ||
-          (billAcct && _acctAddrs.size === 1 ? [..._acctAddrs][0] : null) ||
+          (billAcct && _acctAddrs.size === 1 ? _acctAddrBills[0]._addr : null) ||
           (_isMultiAcctBatch && !_docHasOneAddr ? null : addrM?.[1]?.trim()) ||
           null;
         const r = _extractEvergy(s, billAcct, billAddr);
@@ -9011,7 +9018,9 @@ const UTILITY_RULES = [
         // The match must start at a line start; mid-line it takes label text ("Statement Date").
         let ServiceAddress = addrM ? addrM[1].trim() : null;
         if (!ServiceAddress) {
-          const _stub = t.match(/(?:^|\n)[ \t]*([A-Z0-9][A-Z0-9 #]{4,49}?)\s{3,}[^\n]{0,20}\n\s*BALDWIN\s+CITY,?\s+KS/i);
+          const _stub = t.match(
+            /(?:^|\n)[ \t]*([A-Z0-9][A-Z0-9 #]{4,49}?)\s{3,}[^\n]{0,20}\n\s*BALDWIN\s+CITY,?\s+KS/i,
+          );
           if (_stub) ServiceAddress = _stub[1].trim();
         }
 
