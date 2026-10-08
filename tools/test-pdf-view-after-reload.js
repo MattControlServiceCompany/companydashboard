@@ -219,7 +219,7 @@ const clickClear = (page, fn) => page.click('button[onclick*="' + fn + '()"]').t
     r = await shown(page);
     ok(r.queue === 2 && r.names.join() === 'synthA.pdf,synthB.pdf', 'single then batch, reload: the page shows the batch A+B (queue ' + r.queue + ')');
     ok(!r.keys.includes('ch_extraction_state'), 'single then batch, reload: no old single record (' + r.keys.join(',') + ')');
-    // 3. batch, then Clear, then reload: empty, and the stored PDF copies are gone
+    // 3. batch, then Clear, then reload: empty, and the stored PDF copies stay
     await freshPage(page, url);
     await addFiles(page, [fA, fB], 'batch');
     let stored = await page.evaluate(() => (window._pdfQueue.results.map((x) => x.pdfKey)));
@@ -228,8 +228,8 @@ const clickClear = (page, fn) => page.click('button[onclick*="' + fn + '()"]').t
     r = await shown(page);
     ok(r.queue === 0 && !r.single && !r.btn && r.keys.length === 0, 'batch then Clear, reload: the page is empty (queue ' + r.queue + ', keys ' + r.keys.join(',') + ')');
     let left = await page.evaluate(async (ks) => { const o = []; for (const k of ks) if (await pdfLoad(k)) o.push(k); return o; }, stored);
-    ok(stored.length === 2 && left.length === 0, 'batch then Clear: the stored PDF copies are deleted (left ' + left.length + ')');
-    // 4. one file, then Clear, then reload: empty, and the stored PDF copy is gone
+    ok(stored.length === 2 && left.length === 2, 'batch then Clear: the stored PDF copies are NOT deleted (left ' + left.length + ')');
+    // 4. one file, then Clear, then reload: empty, and the stored PDF copy stays
     await freshPage(page, url);
     await addFiles(page, fC, 'single');
     stored = await page.evaluate(() => [window._pdfSrcKey]);
@@ -238,7 +238,13 @@ const clickClear = (page, fn) => page.click('button[onclick*="' + fn + '()"]').t
     r = await shown(page);
     ok(r.queue === 0 && !r.single && !r.btn && r.keys.length === 0, 'single then Clear, reload: the page is empty (keys ' + r.keys.join(',') + ')');
     left = await page.evaluate(async (ks) => { const o = []; for (const k of ks) if (await pdfLoad(k)) o.push(k); return o; }, stored);
-    ok(stored[0] && left.length === 0, 'single then Clear: the stored PDF copy is deleted (left ' + left.length + ')');
+    ok(stored[0] && left.length === 1, 'single then Clear: the stored PDF copy is NOT deleted (left ' + left.length + ')');
+    // a presented-report-style record points at the same key: it still opens after Clear
+    const ref = await page.evaluate(async (k) => {
+      const rec = { id: 'synthetic-presented', pdfKey: k };
+      return await pdfLoad(rec.pdfKey);
+    }, stored[0]);
+    ok(ref === b64C, 'single then Clear: a presented-record-style reference to the same key still opens');
   } finally {
     await ctx.close();
     srv.close();

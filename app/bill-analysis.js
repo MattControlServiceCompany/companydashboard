@@ -11359,7 +11359,6 @@ function _saveExtractionState() {
           passScores: window._pdfPassScores || [],
           billsSaved: window._pdfBillsSaved || false,
           pdfKey: window._pdfSrcKey || null,
-          newKeys: Array.from(_extractionNewPdfKeys),
           timestamp: Date.now(),
         }),
       );
@@ -11385,7 +11384,6 @@ function _saveExtractionState() {
           results: slimResults,
           status: window._pdfQueue.status,
           batchProjId: window._pdfQueue.batchProjId,
-          newKeys: Array.from(_extractionNewPdfKeys),
           _activeFileIdx: window._pdfQueue._activeFileIdx,
           // Rows keep only the user's choices. renderQueueResults rebuilds bill/result from the results.
           queueRows: window._pdfQueueRows
@@ -11419,7 +11417,6 @@ function _restoreExtractionState() {
     window._pdfPassScores = state.passScores;
     window._pdfBillsSaved = state.billsSaved || false;
     window._pdfSrcKey = state.pdfKey || null;
-    (state.newKeys || []).forEach((k) => _extractionNewPdfKeys.add(k));
     sessionStorage.removeItem('ch_extraction_state');
     return true;
   } catch (e) {
@@ -11449,7 +11446,6 @@ function _restoreQueueState() {
       _activeFileIdx: state._activeFileIdx || 0,
     };
     window._pdfQueueRows = state.queueRows || null;
-    (state.newKeys || []).forEach((k) => _extractionNewPdfKeys.add(k));
     sessionStorage.removeItem('ch_queue_state');
     return true;
   } catch (e) {
@@ -11459,15 +11455,11 @@ function _restoreQueueState() {
 
 // The source PDF of an extraction is kept ONCE in the bill PDF store (bpaStoreBlob, key
 // en_pdf_shared_<hash16>). Only the key goes to sessionStorage. Returns the key or null.
-// A blob this extraction created (not one that already existed) is tracked, so Clear can delete it.
-const _extractionNewPdfKeys = new Set();
-let _pdfDiscardDone = Promise.resolve();
+// The extraction flow never deletes a PDF blob. Compact PDF Storage decides what is unused.
 
 async function _storeExtractionPdf(b64) {
   try {
-    await _pdfDiscardDone; // a pending Clear cleanup must finish first, or it could delete this copy
     const blob = await bpaStoreBlob(b64, { hash: _bpaSha256Hex, load: pdfLoad, store: pdfStore });
-    if (blob && blob.stored) _extractionNewPdfKeys.add(blob.key);
     return blob ? blob.key : null;
   } catch (e) {
     console.warn('[Extraction] Could not store the source PDF:', e.message);
@@ -11514,33 +11506,9 @@ function _removeSavedWorkKeys() {
   sessionStorage.removeItem('ch_queue_state');
 }
 
-// A saved bill or a bill in a meter points at a PDF by pdfKey. Used so Clear never deletes a used PDF.
-async function _pdfKeyInUse(key) {
-  let used = false;
-  forEachCustomerBuilding(projects || [], (b) => {
-    for (const m of b.meters || []) for (const r of m.bills || []) if (r.pdfKey === key) used = true;
-  });
-  if (used) return true;
-  const flat = (await sget('en_pdf_bills', [])) || [];
-  return flat.some((r) => r.pdfKey === key);
-}
-
-// Clear = nothing comes back after a reload: drop the saved work, then delete the PDF copies this
-// extraction created (Saved Bills keep their own copy; a copy that a bill uses is kept).
+// Clear = nothing comes back after a reload: drop the saved work. The PDF blob is never deleted here.
 function _clearExtractionState() {
   _removeSavedWorkKeys();
-  const keys = Array.from(_extractionNewPdfKeys);
-  _extractionNewPdfKeys.clear();
-  if (!keys.length) return;
-  _pdfDiscardDone = _pdfDiscardDone.then(async function () {
-    for (const k of keys) {
-      try {
-        if (!(await _pdfKeyInUse(k))) await pdfDelete(k);
-      } catch (e) {
-        console.warn('[Extraction] Could not delete the unused PDF copy:', e.message);
-      }
-    }
-  });
 }
 
 function _buildDiffFields(extracted, existing) {
