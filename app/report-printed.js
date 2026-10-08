@@ -24,7 +24,7 @@ var _RPT_PRINTED_STATUS = { 'On Track': 'on_track', 'Near Target': 'near_target'
 
 function rptApplyPrintedToData(d) {
   if (!d || !d.printed) return d;
-  var pn = function (s, r, c, m, col, fb) {
+  var printedNum = function (s, r, c, m, col, fb) {
     return _rptPVn(d, s, r, c, m, col, fb);
   };
   var q = d.period && d.period.quarter ? d.period.quarter : 1;
@@ -34,56 +34,56 @@ function rptApplyPrintedToData(d) {
   (d.buildings || []).forEach(function (b) {
     var id = b.id;
     ['building table', 'building status'].forEach(function (sec) {
-      b.sqft = pn(sec, id, '', '', 'sqft', b.sqft);
-      b.blCost = pn(sec, id, '', '', 'baseline_cost', b.blCost);
-      b.curCost = pn(sec, id, '', '', 'actual_cost', b.curCost);
-      b.savings = pn(sec, id, '', '', 'savings', b.savings);
-      b.savingsPct = pn(sec, id, '', '', 'pct', b.savingsPct);
+      b.sqft = printedNum(sec, id, '', '', 'sqft', b.sqft);
+      b.blCost = printedNum(sec, id, '', '', 'baseline_cost', b.blCost);
+      b.curCost = printedNum(sec, id, '', '', 'actual_cost', b.curCost);
+      b.savings = printedNum(sec, id, '', '', 'savings', b.savings);
+      b.savingsPct = printedNum(sec, id, '', '', 'pct', b.savingsPct);
       var st = _RPT_PRINTED_STATUS[_rptPV(d, sec, id, '', '', 'status', '')];
       if (st) b.status = st;
     });
-    b.electric.kwhBl = pn('annual summary', id, '', 'baseline', 'kwh', b.electric.kwhBl);
-    b.electric.kwBl = pn('annual summary', id, '', 'baseline', 'kw', b.electric.kwBl);
-    b.gas.thermsBl = pn('annual summary', id, '', 'baseline', 'therms', b.gas.thermsBl);
-    b.propane.galBl = pn('annual summary', id, '', 'baseline', 'propane_gal', b.propane.galBl);
-    b.electric.kwhCur = pn('annual summary', id, '', 'current', 'kwh', b.electric.kwhCur);
-    b.electric.kwCur = pn('annual summary', id, '', 'current', 'kw', b.electric.kwCur);
-    b.gas.thermsCur = pn('annual summary', id, '', 'current', 'therms', b.gas.thermsCur);
-    b.propane.galCur = pn('annual summary', id, '', 'current', 'propane_gal', b.propane.galCur);
-    b.eui.baseline = pn('eui rankings', id, '', '', 'baseline_eui', b.eui.baseline);
-    b.eui.current = pn('eui rankings', id, '', '', 'current_eui', b.eui.current);
-    b.eui.cbecs = pn('eui rankings', id, '', '', 'cbecs', b.eui.cbecs);
-    b.eui.costPerSqft = pn('eui rankings', id, '', '', 'cost_per_sqft', b.eui.costPerSqft);
+    b.electric.kwhBl = printedNum('annual summary', id, '', 'baseline', 'kwh', b.electric.kwhBl);
+    b.electric.kwBl = printedNum('annual summary', id, '', 'baseline', 'kw', b.electric.kwBl);
+    b.gas.thermsBl = printedNum('annual summary', id, '', 'baseline', 'therms', b.gas.thermsBl);
+    b.propane.galBl = printedNum('annual summary', id, '', 'baseline', 'propane_gal', b.propane.galBl);
+    b.electric.kwhCur = printedNum('annual summary', id, '', 'current', 'kwh', b.electric.kwhCur);
+    b.electric.kwCur = printedNum('annual summary', id, '', 'current', 'kw', b.electric.kwCur);
+    b.gas.thermsCur = printedNum('annual summary', id, '', 'current', 'therms', b.gas.thermsCur);
+    b.propane.galCur = printedNum('annual summary', id, '', 'current', 'propane_gal', b.propane.galCur);
+    b.eui.baseline = printedNum('eui rankings', id, '', '', 'baseline_eui', b.eui.baseline);
+    b.eui.current = printedNum('eui rankings', id, '', '', 'current_eui', b.eui.current);
+    b.eui.cbecs = printedNum('eui rankings', id, '', '', 'cbecs', b.eui.cbecs);
+    b.eui.costPerSqft = printedNum('eui rankings', id, '', '', 'cost_per_sqft', b.eui.costPerSqft);
     var pct = _rptPV(d, 'eui rankings', id, '', '', 'percentile', undefined);
     if (typeof pct === 'string') b.eui.percentile = pct;
     if (starRows) b.eui.energyStar = _rptPV(d, 'key findings', id, '', '', 'energy_star', '') === 'Yes';
   });
   var T = 'Total Portfolio';
   var t = d.totals;
-  d.project.sqft = pn('building table', T, '', '', 'sqft', d.project.sqft);
-  t.savings = pn('building table', T, '', '', 'savings', t.savings);
-  t.blCost = pn('building table', T, '', '', 'baseline_cost', t.blCost);
-  t.curCost = pn('building table', T, '', '', 'actual_cost', t.curCost);
-  t.savingsPct = pn('building table', T, '', '', 'pct', t.savingsPct);
-  t.kwhBl = pn('quarterly table', 'quarter', '', '', 'baseline_kwh', t.kwhBl);
-  t.kwhCur = pn('quarterly table', 'quarter', '', '', 'actual_kwh', t.kwhCur);
-  t.thermsBl = pn('quarterly table', 'quarter', '', '', 'baseline_therms', t.thermsBl);
-  t.thermsCur = pn('quarterly table', 'quarter', '', '', 'actual_therms', t.thermsCur);
-  t.propaneBl = pn('quarterly table', 'quarter', '', '', 'baseline_gal', t.propaneBl);
-  t.propaneCur = pn('quarterly table', 'quarter', '', '', 'actual_gal', t.propaneCur);
-  t.peakKwBl = pn('usage summary', 'baseline', '', '', 'peak_kw', t.peakKwBl);
-  t.peakKwCur = pn('usage summary', 'current', '', '', 'peak_kw', t.peakKwCur);
-  t.euiBaseline = pn('usage summary', 'baseline', '', '', 'site_eui', t.euiBaseline);
-  t.euiCurrent = pn('usage summary', 'current', '', '', 'site_eui', t.euiCurrent);
-  t.kwhSaved = pn('key findings', 'Portfolio', '', '', 'kwh_avoided', t.kwhSaved);
-  t.thermsSaved = pn('key findings', 'Portfolio', '', '', 'therms_reduced', t.thermsSaved);
+  d.project.sqft = printedNum('building table', T, '', '', 'sqft', d.project.sqft);
+  t.savings = printedNum('building table', T, '', '', 'savings', t.savings);
+  t.blCost = printedNum('building table', T, '', '', 'baseline_cost', t.blCost);
+  t.curCost = printedNum('building table', T, '', '', 'actual_cost', t.curCost);
+  t.savingsPct = printedNum('building table', T, '', '', 'pct', t.savingsPct);
+  t.kwhBl = printedNum('quarterly table', 'quarter', '', '', 'baseline_kwh', t.kwhBl);
+  t.kwhCur = printedNum('quarterly table', 'quarter', '', '', 'actual_kwh', t.kwhCur);
+  t.thermsBl = printedNum('quarterly table', 'quarter', '', '', 'baseline_therms', t.thermsBl);
+  t.thermsCur = printedNum('quarterly table', 'quarter', '', '', 'actual_therms', t.thermsCur);
+  t.propaneBl = printedNum('quarterly table', 'quarter', '', '', 'baseline_gal', t.propaneBl);
+  t.propaneCur = printedNum('quarterly table', 'quarter', '', '', 'actual_gal', t.propaneCur);
+  t.peakKwBl = printedNum('usage summary', 'baseline', '', '', 'peak_kw', t.peakKwBl);
+  t.peakKwCur = printedNum('usage summary', 'current', '', '', 'peak_kw', t.peakKwCur);
+  t.euiBaseline = printedNum('usage summary', 'baseline', '', '', 'site_eui', t.euiBaseline);
+  t.euiCurrent = printedNum('usage summary', 'current', '', '', 'site_eui', t.euiCurrent);
+  t.kwhSaved = printedNum('key findings', 'Portfolio', '', '', 'kwh_avoided', t.kwhSaved);
+  t.thermsSaved = printedNum('key findings', 'Portfolio', '', '', 'therms_reduced', t.thermsSaved);
   var c = d.contract;
   ['q1', 'q2', 'q3', 'q4'].forEach(function (col, i) {
-    c.quarterlyTargets[i] = pn('quarterly targets', 'projected', '', '', col, c.quarterlyTargets[i]);
+    c.quarterlyTargets[i] = printedNum('quarterly targets', 'projected', '', '', col, c.quarterlyTargets[i]);
   });
-  c.quarterlyTargets[q - 1] = pn('cover', 'Portfolio', '', '', 'q_target', c.quarterlyTargets[q - 1]);
-  c.annualTarget = pn('quarterly targets', 'projected', '', '', 'annual', c.annualTarget);
-  c.escalation = pn('contract projection', 'Portfolio', '', '', 'escalation_pct', c.escalation);
+  c.quarterlyTargets[q - 1] = printedNum('cover', 'Portfolio', '', '', 'q_target', c.quarterlyTargets[q - 1]);
+  c.annualTarget = printedNum('quarterly targets', 'projected', '', '', 'annual', c.annualTarget);
+  c.escalation = printedNum('contract projection', 'Portfolio', '', '', 'escalation_pct', c.escalation);
   var pol = d.pollution;
   var POL = ['co2', 'ch4', 'n2o', 'so2', 'nox', 'hg_oz', 'pm10_oz', 'voc_oz', 'co_oz'];
   var EQ = [
@@ -100,13 +100,13 @@ function rptApplyPrintedToData(d) {
     'coalPlants',
   ];
   POL.forEach(function (k) {
-    pol.pollutants[k] = pn('environmental', 'Portfolio', '', '', k, pol.pollutants[k]);
+    pol.pollutants[k] = printedNum('environmental', 'Portfolio', '', '', k, pol.pollutants[k]);
   });
   EQ.forEach(function (k) {
-    pol.equivalents[k] = pn('environmental', 'Portfolio', '', '', k, pol.equivalents[k]);
+    pol.equivalents[k] = printedNum('environmental', 'Portfolio', '', '', k, pol.equivalents[k]);
   });
   ['kwhSaved', 'thermsSaved', 'propaneGalSaved'].forEach(function (k) {
-    pol.inputs[k] = pn('environmental', 'Portfolio', '', '', k, pol.inputs[k]);
+    pol.inputs[k] = printedNum('environmental', 'Portfolio', '', '', k, pol.inputs[k]);
   });
   return d;
 }
