@@ -66,6 +66,7 @@ const pdfA = makePdf([
   billPage('1000001', '03/01/2026', '03/31/2026', '200.00'),
 ]);
 const pdfB = makePdf([billPage('2000002', '04/01/2026', '04/30/2026', '300.00')]);
+const pdfC = makePdf([billPage('3000003', '05/01/2026', '05/31/2026', '400.00')]);
 
 let fails = 0;
 const ok = (c, m) => {
@@ -107,6 +108,42 @@ async function extract(page, url, files) {
   await page.waitForTimeout(3000);
 }
 
+// Empty page: no saved work, no stored extraction PDFs. Then the page is loaded again.
+async function freshPage(page, url) {
+  await page.goto(url);
+  await page.waitForTimeout(3000);
+  await page.evaluate(async () => {
+    clearPDFOCR();
+    sessionStorage.removeItem('ch_extraction_state');
+    sessionStorage.removeItem('ch_queue_state');
+    for (const k of await _pdfExportAllKeys()) if (/^en_pdf_shared_/.test(k)) await pdfDelete(k);
+  });
+}
+// Add files in the open page (no page load), then wait until that extraction is done.
+async function addFiles(page, files, kind) {
+  await page.setInputFiles('#pdfInput', files);
+  await page.waitForFunction(
+    (k) => (k === 'batch' ? window._pdfQueue && window._pdfQueue.status === 'done' : !window._pdfQueue && window._pdfMultiBills && window._pdfMultiBills.length && window._pdfSrcKey),
+    kind, { timeout: 90000 },
+  );
+  await page.waitForTimeout(3000);
+}
+// What the page shows after a reload: 'empty', 'single:<b64>' or 'batch:<n files>'.
+const shown = (page) =>
+  page.evaluate(() => ({
+    queue: window._pdfQueue ? window._pdfQueue.results.length : 0,
+    single: !!(window._pdfMultiBills && window._pdfMultiBills.length),
+    b64: window._pdfMultiBills && window._pdfMultiBills.length && typeof _pdfCurrentB64 === 'function' ? _pdfCurrentB64() : null,
+    names: window._pdfQueue ? window._pdfQueue.results.map((r) => r.fileName) : [],
+    keys: ['ch_extraction_state', 'ch_queue_state'].filter((k) => sessionStorage.getItem(k)),
+    btn: (() => { const b = document.getElementById('pdfViewBtn'); return !!(b && getComputedStyle(b).display !== 'none' && b.getBoundingClientRect().width > 0); })(),
+  }));
+const reloadPage = async (page) => {
+  await page.reload();
+  await page.waitForTimeout(4500);
+};
+const clickClear = (page, fn) => page.click('button[onclick*="' + fn + '()"]').then(() => page.waitForTimeout(1500));
+
 (async () => {
   await new Promise((r) => srv.listen(0, r));
   const url = `http://localhost:${srv.address().port}/energy-department.html`;
@@ -115,6 +152,9 @@ async function extract(page, url, files) {
   const fB = path.join(dir, 'synthB.pdf');
   fs.writeFileSync(fA, pdfA);
   fs.writeFileSync(fB, pdfB);
+  const fC = path.join(dir, 'synthC.pdf');
+  fs.writeFileSync(fC, pdfC);
+  const b64C = pdfC.toString('base64');
   const b64A = pdfA.toString('base64');
   const b64B = pdfB.toString('base64');
   const ctx = await launchBrowser('pdf-view-after-reload');
@@ -161,6 +201,44 @@ async function extract(page, url, files) {
         if (n === 0 && idx === 0) ok(!r.queueHasB64, 'batch: ch_queue_state holds no base64 PDF (' + r.queueLen + ' chars)');
       }
     }
+
+    // ---- Latest work wins; Clear means nothing comes back ----
+    // 1. batch (A+B), then one file (C), then reload: the page shows C only
+    await freshPage(page, url);
+    await addFiles(page, [fA, fB], 'batch');
+    await addFiles(page, fC, 'single');
+    await reloadPage(page);
+    let r = await shown(page);
+    ok(r.queue === 0 && r.single && r.b64 === b64C, 'batch then single, reload: the page shows the single file C (queue ' + r.queue + ')');
+    ok(r.keys.length <= 1 && !r.keys.includes('ch_queue_state'), 'batch then single, reload: no old batch record (' + r.keys.join(',') + ')');
+    // 2. one file (C), then batch (A+B), then reload: the page shows the batch
+    await freshPage(page, url);
+    await addFiles(page, fC, 'single');
+    await addFiles(page, [fA, fB], 'batch');
+    await reloadPage(page);
+    r = await shown(page);
+    ok(r.queue === 2 && r.names.join() === 'synthA.pdf,synthB.pdf', 'single then batch, reload: the page shows the batch A+B (queue ' + r.queue + ')');
+    ok(!r.keys.includes('ch_extraction_state'), 'single then batch, reload: no old single record (' + r.keys.join(',') + ')');
+    // 3. batch, then Clear, then reload: empty, and the stored PDF copies are gone
+    await freshPage(page, url);
+    await addFiles(page, [fA, fB], 'batch');
+    let stored = await page.evaluate(() => (window._pdfQueue.results.map((x) => x.pdfKey)));
+    await clickClear(page, 'clearQueue');
+    await reloadPage(page);
+    r = await shown(page);
+    ok(r.queue === 0 && !r.single && !r.btn && r.keys.length === 0, 'batch then Clear, reload: the page is empty (queue ' + r.queue + ', keys ' + r.keys.join(',') + ')');
+    let left = await page.evaluate(async (ks) => { const o = []; for (const k of ks) if (await pdfLoad(k)) o.push(k); return o; }, stored);
+    ok(stored.length === 2 && left.length === 0, 'batch then Clear: the stored PDF copies are deleted (left ' + left.length + ')');
+    // 4. one file, then Clear, then reload: empty, and the stored PDF copy is gone
+    await freshPage(page, url);
+    await addFiles(page, fC, 'single');
+    stored = await page.evaluate(() => [window._pdfSrcKey]);
+    await clickClear(page, 'clearPDFOCR');
+    await reloadPage(page);
+    r = await shown(page);
+    ok(r.queue === 0 && !r.single && !r.btn && r.keys.length === 0, 'single then Clear, reload: the page is empty (keys ' + r.keys.join(',') + ')');
+    left = await page.evaluate(async (ks) => { const o = []; for (const k of ks) if (await pdfLoad(k)) o.push(k); return o; }, stored);
+    ok(stored[0] && left.length === 0, 'single then Clear: the stored PDF copy is deleted (left ' + left.length + ')');
   } finally {
     await ctx.close();
     srv.close();
