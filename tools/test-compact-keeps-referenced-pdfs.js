@@ -37,6 +37,8 @@ const mk = (t) => Buffer.from('%PDF-1.4\n% SYNTHETIC ' + t + '\n%%EOF').toString
       await sset('en_presented_savings', [{ projectId: 'p1', periodStart: '2026-01', periodEnd: '2026-03', presentedAt: '2026-04-05T00:00:00Z', totalDollars: 1, buildings: { x: { dollars: 1 } }, pdfKey: 'en_pdf_shared_legacyAAA', pdfName: 'Q1.pdf' }]);
       await sset('en_utility_cust_unloaded', { buildings: [{ id: 'bX', name: 'Unloaded', meters: [{ id: 'mX', account: '123', bills: [{ id: 'r1', hasPDF: true, pdfKey: 'en_pdf_shared_legacyBBB' }] }] }] });
       await sset('en_pdf_bills', [{ id: 'pbC', hasPDF: true, pdfKey: 'en_pdf_shared_legacyCCC' }]);
+      await pdfStore('en_pdf_shared_legacyDDD', b.d);
+      await sset('en_bare_ref', { bills: [{ id: 'bd', _pdfSharedKey: 'legacyDDD' }] });
       log.run1 = await compactPdfStorage();
       log.A = !!(await pdfLoad('en_pdf_shared_legacyAAA'));
       log.B = !!(await pdfLoad('en_pdf_shared_legacyBBB'));
@@ -45,17 +47,49 @@ const mk = (t) => Buffer.from('%PDF-1.4\n% SYNTHETIC ' + t + '\n%%EOF').toString
       log.cNew = cNew;
       log.Cnew = !!(await pdfLoad(cNew));
       log.presentedKey = sget('en_presented_savings', [])[0].pdfKey;
+      log.D = !!(await pdfLoad('en_pdf_shared_legacyDDD'));
       log.run2 = await compactPdfStorage();
       log.A2 = !!(await pdfLoad('en_pdf_shared_legacyAAA'));
       log.B2 = !!(await pdfLoad('en_pdf_shared_legacyBBB'));
       return log;
-    }, { a: mk('A'), b: mk('B'), c: mk('C') });
+    }, { a: mk('A'), b: mk('B'), c: mk('C'), d: mk('D') });
     console.log(JSON.stringify(o));
     check('presented-report PDF still loads after Compact', o.A && o.presentedKey === 'en_pdf_shared_legacyAAA');
     check('unwalked-customer PDF still loads after Compact', o.B);
     check('unreferenced control old key is gone', !o.Cold);
     check('control record remapped to a loading canonical key', o.Cnew && o.cNew !== 'en_pdf_shared_legacyCCC');
     check('second Compact keeps A and B', o.A2 && o.B2 && !o.run2.scanFailed);
+    // Corrupt record: Compact must delete nothing. Toast wording for 1 and 2.
+    const o2 = await page.evaluate(async (b) => {
+      const log = {};
+      const toasts = [];
+      window.showToast = (m) => toasts.push(m);
+      window.confirmAsync = async () => true;
+      await sset('en_bare_ref', []);
+      await pdfStore('en_pdf_shared_legacyEEE', b.e);
+      await sset('en_pdf_bills', [{ id: 'pbE', hasPDF: true, pdfKey: 'en_pdf_shared_legacyEEE' }]);
+      await sset('en_corrupt_rec', '{"pdfKey": broken');
+      log.runBad = await compactPdfStorage();
+      log.E = !!(await pdfLoad('en_pdf_shared_legacyEEE'));
+      log.Ekeyok = !!(await pdfLoad(sget('en_pdf_bills', [])[0].pdfKey));
+      await sset('en_corrupt_rec', []);
+      // Toast wording: drive the real UI wrapper with a stubbed result.
+      const base = { aborted: false, hashed: 5, unique: 3, remapped: 0, scanFailed: false, alreadyBroken: [], failedVerify: [] };
+      const realCompact = window.compactPdfStorage;
+      for (const [name, del, kept] of [['toast1', 1, 1], ['toast2', 2, 2], ['toast0', 0, 0]]) {
+        window.compactPdfStorage = async () => Object.assign({}, base, { deleted: del, keptReferenced: kept });
+        toasts.length = 0;
+        await compactPdfStorageUI();
+        log[name] = toasts.filter((t) => /done/.test(t))[0] || toasts.join(' | ');
+      }
+      window.compactPdfStorage = realCompact;
+      return log;
+    }, { e: mk('E') });
+    console.log(JSON.stringify(o2));
+    check('bare-id reference keeps its PDF', o.D);
+    check('corrupt record: scan fails, nothing deleted, record untouched', o2.runBad.scanFailed && o2.runBad.deleted === 0 && o2.E && o2.Ekeyok);
+    check('toast singular: 1 copy', /deleted 1 redundant copy\./.test(o2.toast1) && /Kept 1 copy that/.test(o2.toast1));
+    check('toast plural: 2 copies', /Kept 2 copies that/.test(o2.toast2) && /deleted 2 redundant copies\./.test(o2.toast2) && /deleted 0 redundant copies\./.test(o2.toast0));
   } finally {
     await ctx.close();
     srv.close();

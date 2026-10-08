@@ -911,6 +911,7 @@ function collectReferencedPdfKeys() {
   }
   const keys = new Set();
   const seen = new Set();
+  let unparsable = 0;
   const KEY_RE = /^en_pdf_(shared|file)_/;
   function walk(v, depth) {
     if (v == null || depth > 40) return;
@@ -920,7 +921,7 @@ function collectReferencedPdfKeys() {
         try {
           walk(JSON.parse(v), depth + 1);
         } catch (e) {
-          /* plain text, not JSON */
+          unparsable++; // could hold a PDF key: scan is incomplete
         }
       }
       return;
@@ -934,6 +935,10 @@ function collectReferencedPdfKeys() {
       });
       return;
     }
+    // _pdfSharedKey is a bare id (in memory, before save) or a full key.
+    if ((typeof v._pdfSharedKey === 'string' || typeof v._pdfSharedKey === 'number') && v._pdfSharedKey !== '') {
+      keys.add('en_pdf_shared_' + String(v._pdfSharedKey).replace(/^en_pdf_shared_/, ''));
+    }
     if (typeof v.pdfKey === 'string' && v.pdfKey) keys.add(v.pdfKey);
     else if (v.hasPDF && (v.pdfBillId || v.id)) keys.add('en_pdf_file_' + (v.pdfBillId || v.id));
     Object.keys(v).forEach(function (k) {
@@ -945,6 +950,7 @@ function collectReferencedPdfKeys() {
     walk(all[k], 0);
   });
   if (typeof utilityData !== 'undefined') walk(utilityData, 0);
+  if (unparsable) throw new Error(unparsable + ' stored record(s) could not be read');
   return keys;
 }
 
@@ -1138,7 +1144,7 @@ async function compactPdfStorageUI() {
   }
   if (result.scanFailed) {
     if (typeof showToast === 'function') {
-      showToast('Compact PDF Storage could not check which PDFs are still in use. No PDFs were deleted.', 'error');
+      showToast('Compact PDF Storage could not read all stored records, so it cannot tell which PDFs are still in use. No PDFs were deleted.', 'error');
     }
     return;
   }
@@ -1151,8 +1157,13 @@ async function compactPdfStorageUI() {
     result.remapped +
     ' bill(s), deleted ' +
     result.deleted +
-    ' redundant copies.';
-  if (result.keptReferenced) summary += ' Kept ' + result.keptReferenced + ' copies that a record still uses.';
+    (result.deleted === 1 ? ' redundant copy.' : ' redundant copies.');
+  if (result.keptReferenced) {
+    summary +=
+      result.keptReferenced === 1
+        ? ' Kept 1 copy that a record still uses.'
+        : ' Kept ' + result.keptReferenced + ' copies that a record still uses.';
+  }
   if (result.alreadyBroken.length) {
     summary += ' ' + result.alreadyBroken.length + ' bill(s) already had a missing PDF (unrelated, left as-is).';
   }
