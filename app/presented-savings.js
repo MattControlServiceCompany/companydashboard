@@ -68,7 +68,7 @@ async function _rptPresentedAttachFile(projId, yms, file) {
     showToast('That file is not a PDF.', 'warn');
     return false;
   }
-  var blob = await bpaStoreBlob(b64, { hash: _bpaSha256Hex, load: pdfLoad, store: pdfStore });
+  var blob = await bpaStoreBlob(b64, { hash: _bpaSha256Hex, load: pdfLoad, store: pdfStore, ensureUploaded: pdfEnsureUploaded });
   if (!blob) {
     showToast('Could not store the PDF. Nothing was changed.', 'warn');
     return false;

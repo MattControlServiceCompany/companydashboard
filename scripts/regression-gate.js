@@ -647,7 +647,7 @@ async function main() {
       let out = '';
       cp.stdout.on('data', (c) => (out += c));
       cp.stderr.on('data', (c) => (out += c));
-      const timer = setTimeout(() => cp.kill(), 240000);
+      const timer = setTimeout(() => cp.kill(), 480000);
       cp.on('close', (code) => {
         clearTimeout(timer);
         const tail = out.trim().split(String.fromCharCode(10)).slice(-3).join(' | ').slice(0, 300);

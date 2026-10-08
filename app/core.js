@@ -438,7 +438,32 @@ function _pdfShouldQueueUpload() {
   const a = window.CH_AUTH;
   return !!a && (a.backendMode() === 'on' || (typeof a.isSyncHost === 'function' && a.isSyncHost()));
 }
-async function pdfStore(id, base64) {
+// Keys stored on this browser only (opts.localOnly). Upload is owed when a save uses one.
+const _PDF_LOCAL_ONLY_LS = 'ch_pdf_local_only';
+function _pdfLocalOnlyKeys() {
+  try {
+    return JSON.parse(localStorage.getItem(_PDF_LOCAL_ONLY_LS) || '[]');
+  } catch (e) {
+    return [];
+  }
+}
+function _pdfLocalOnlySet(key, on) {
+  const ks = _pdfLocalOnlyKeys().filter((k) => k !== key);
+  if (on) ks.push(key);
+  try {
+    localStorage.setItem(_PDF_LOCAL_ONLY_LS, JSON.stringify(ks));
+  } catch (e) {}
+}
+// The ONE save-side rule: a bill that points at a blob stored local-only must upload it now.
+// No-op for any other key (a blob that was queued before is not queued again).
+function pdfEnsureUploaded(key) {
+  if (!key || !_pdfLocalOnlyKeys().includes(key)) return false;
+  _pdfLocalOnlySet(key, false);
+  if (_pdfShouldQueueUpload()) _pdfEnqueue('upload', key);
+  return true;
+}
+// opts.localOnly: keep the blob on this browser, no server upload (extraction preview). A save calls pdfEnsureUploaded.
+async function pdfStore(id, base64, opts) {
   let ok;
   try {
     const db = await _openPdfDB();
@@ -459,6 +484,11 @@ async function pdfStore(id, base64) {
   // M5: on the sync host the upload is queued even while signed out (mode 'off').
   // The queue is durable; _pdfDrainQueueOnce sends it once sign-in puts mode back
   // to 'on', so a PDF saved while signed out is never left only on this browser.
+  if (opts && opts.localOnly) {
+    _pdfLocalOnlySet(id, true);
+    return ok;
+  }
+  if (_pdfLocalOnlyKeys().includes(id)) _pdfLocalOnlySet(id, false);
   if (_pdfShouldQueueUpload()) {
     try {
       _pdfEnqueue('upload', id);

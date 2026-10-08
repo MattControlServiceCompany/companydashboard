@@ -12468,8 +12468,16 @@ function initUtilityTool() {
     if (s.perfWeatherMode != null) _perfWeatherMode = s.perfWeatherMode;
     if (s.regrPanel != null) _regressionPanelVis = s.regrPanel;
   } catch (e) {}
-  if (_restoreExtractionState()) {
-    setTimeout(() => {
+  if (_restoreQueueState()) {
+    setTimeout(async () => {
+      if (window._pdfQueue && window._pdfQueue.results.length > 0) {
+        await _reloadExtractionPdf();
+        renderQueueResults();
+        showToast('Restored batch extraction results from previous session');
+      }
+    }, 500);
+  } else if (_restoreExtractionState()) {
+    setTimeout(async () => {
       const box = document.getElementById('pdfAIBox');
       if (box && window._pdfMultiBills && window._pdfMultiBills.length) {
         const idx = window._pdfMultiIdx || 0;
@@ -12480,14 +12488,8 @@ function initUtilityTool() {
         document.getElementById('dropZone').classList.add('collapsed');
         document.getElementById('pdfTypeSection').style.display = 'none';
         sv('pdf');
+        if (await _reloadExtractionPdf()) _showExtractionToolbar();
         showToast('Restored extraction results from previous session');
-      }
-    }, 500);
-  } else if (_restoreQueueState()) {
-    setTimeout(() => {
-      if (window._pdfQueue && window._pdfQueue.results.length > 0) {
-        renderQueueResults();
-        showToast('Restored batch extraction results from previous session');
       }
     }, 500);
   }
