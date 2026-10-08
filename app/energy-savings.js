@@ -6228,6 +6228,7 @@ const UTILITY_RULES = [
           const bi = bucket.indexOf(mergedInto);
           if (!m._rate) m._rate = mergedInto._rate;
           if (!m._addr) m._addr = mergedInto._addr;
+          m._dupIdxs = (mergedInto._dupIdxs || [mergedInto.idx]).concat([m.idx]);
           bucket[bi] = m;
         } else {
           bucket.push(m);
@@ -6313,7 +6314,7 @@ const UTILITY_RULES = [
           _merged[_merged.length - 1] = winner;
           continue;
         }
-        m._groupIdxs = [m.idx];
+        m._groupIdxs = m._dupIdxs || [m.idx];
         _merged.push(m);
       }
       uniqueBills = _merged;
@@ -6375,18 +6376,20 @@ const UTILITY_RULES = [
       // keeps the last match). Compute bdPage from that idx.
       let _pageFirstOk = uniqueBills.length > 0 && _pfPageMarkers.length > 0;
       const _pfBdPages = [];
+      const _pfBdPagesMax = [];
       for (const b of uniqueBills) {
         const idxs = b._groupIdxs || [b.idx];
-        let bdIdx = null;
-        for (const ix of idxs) {
+        let bdIdx = null, bdIdxMax = null;
+        for (const ix of [...idxs].sort((a, c) => a - c)) {
           const before = t.slice(Math.max(0, ix - 40), ix);
           if (/Billing\s+Details/i.test(before)) {
-            bdIdx = ix;
-            break;
+            if (bdIdx === null) bdIdx = ix;
+            bdIdxMax = ix;
           }
         }
-        if (bdIdx === null) bdIdx = Math.max(...idxs);
+        if (bdIdx === null) { bdIdx = Math.max(...idxs); bdIdxMax = bdIdx; }
         _pfBdPages.push(_pfPageForIdx(bdIdx));
+        _pfBdPagesMax.push(_pfPageForIdx(bdIdxMax));
       }
       // Partition pages across bills so each bill ALWAYS owns its own
       // billing-details page, plus a cover page when there is room before
@@ -6476,7 +6479,7 @@ const UTILITY_RULES = [
       if (_pageFirstOk) {
         for (let i = 0; i < uniqueBills.length; i++) {
           const bdPage = _pfBdPages[i];
-          const prevBd = i > 0 ? _pfBdPages[i - 1] : 0;
+          const prevBd = i > 0 ? _pfBdPagesMax[i - 1] : 0;
           let pageStart;
           if (i === 0) {
             pageStart = 1;
@@ -6491,7 +6494,7 @@ const UTILITY_RULES = [
         }
         for (let i = 0; i < uniqueBills.length; i++) {
           const bdPage = _pfBdPages[i];
-          let pageEnd = i + 1 < uniqueBills.length ? bdPage : _pfMaxPage;
+          let pageEnd = i + 1 < uniqueBills.length ? _pfBdPagesMax[i] : _pfMaxPage;
           if (i + 1 < uniqueBills.length) {
             const _ownAcct = uniqueBills[i]._acct || acct;
             const _limit = _pfPageStarts[i + 1] - 1;
