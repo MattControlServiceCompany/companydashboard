@@ -489,7 +489,7 @@ const VERIFICATION_TESTS = {
         {
           id: 'e01',
           backlogUuid: null,
-          name: 'Louisburg commodity routing — Gas/Water/Sewer/Stormwater to separate meters',
+          name: 'Client A commodity routing — Gas/Water/Sewer/Stormwater to separate meters',
           depth: 'mutate',
           check: {
             type: 'evaluate',
@@ -1703,7 +1703,7 @@ const VERIFICATION_TESTS = {
         {
           id: 'sb01',
           backlogUuid: 'b6990c1f',
-          name: 'Saved Bills rows show correct Account # per commodity (not all Evergy)',
+          name: 'Saved Bills rows show correct Account # per commodity (not all Utility E)',
           depth: 'observe',
           check: {
             type: 'evaluate',
@@ -3515,7 +3515,7 @@ const VERIFICATION_TESTS = {
         {
           id: 'of01',
           backlogUuid: '666be152',
-          name: 'Propane normalization verified — Circle Grove 5,507 gal — STUB: not yet implemented',
+          name: 'Propane normalization verified — Client B 5,507 gal — STUB: not yet implemented',
           depth: 'observe',
           check: {
             type: 'evaluate',

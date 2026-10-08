@@ -1,7 +1,7 @@
 /**
  * test-wre-scanned-sites.js
  *
- * Regression test for the Wood River Energy site reader (app/energy-savings.js) on a SCANNED
+ * Regression test for the the gas supplier site reader (app/energy-savings.js) on a SCANNED
  * invoice. The scan cuts off the right-hand $ columns and garbles some row labels. Every site must
  * still give its Mmbtu and its charge. The charge is rebuilt from the invoice's printed formula
  * (Mmbtu + Fuel) x Rate. Four sites: (1) no $ columns; (2) rate misread; (3) Sub-Total label lost,

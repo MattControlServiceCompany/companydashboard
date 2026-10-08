@@ -91,7 +91,7 @@ const sandbox = buildSandbox();
 const rate = (bill) => sandbox.getStoredRate(bill, 'gas');
 const near = (a, b) => Math.abs(a - b) < 1e-9;
 
-check('MMBtu-only OCR extraction (Wood River Energy shape, PascalCase) = charge / (MMBtu x 10)', () => {
+check('MMBtu-only OCR extraction (gas supplier shape, PascalCase) = charge / (MMBtu x 10)', () => {
   // Synthetic — not a real bill. $200 charge, 5 MMBtu = 50 Therms -> $4.00/Therm.
   assert.ok(
     near(rate({ GasCharge: '200.00', NaturalGasMMbtu: '5' }), 4),

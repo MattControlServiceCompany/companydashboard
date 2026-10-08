@@ -33,7 +33,7 @@ function check(label, ok, detail) {
 
 function page(lines, split) {
   return (
-    '%%PAGE_2%%\n4/10/25\nACCOUNT NUMBER\nBAKER UNIVERSITY/TEST GYM\n' +
+    '%%PAGE_2%%\n4/10/25\nACCOUNT NUMBER\nTEST UNIVERSITY/TEST GYM\n' +
     'ACCOUNT #: 100200300     DUE DATE AFTER DUE DATE\nSERVICE\nADDRESS: 100 TEST ST       4/25/25  100.00  90.00\n' +
     'Current Reading Previous Reading\n' +
     (split ? lines.labels.join('\n') + '\nTO CITY HALL\n' + lines.data.join('\n') + '\nCOPY ONLY - BANK PAID\n'

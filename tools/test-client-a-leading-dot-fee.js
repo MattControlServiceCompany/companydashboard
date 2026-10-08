@@ -1,13 +1,13 @@
 /**
- * test-louisburg-leading-dot-fee.js
+ * test-client-a-leading-dot-fee.js
  *
- * Regression test for the City of Louisburg old-format line reader (parseLine / _lbg_tokens in
+ * Regression test for the Client A old-format line reader (parseLine / _lbg_tokens in
  * app/energy-savings.js). A charge printed with no leading zero (".45") was read as 45, so the
  * water total was wrong by about $44. SYNTHETIC text only (fake account, address, amounts). Same
  * layout shape as an old-format page: GAS, FUEL ADJUSTMENT, STORM WATER, SEWER,
  * WATER PROTECTION FEE (".45"), WATER lines with Present, Previous, Usage and charge columns.
  *
- * Usage: node tools/test-louisburg-leading-dot-fee.js [path-to-energy-savings.js]
+ * Usage: node tools/test-client-a-leading-dot-fee.js [path-to-energy-savings.js]
  */
 const fs = require('fs');
 const vm = require('vm');
@@ -46,7 +46,7 @@ function check(label, ok, detail) {
 const text = [
   '%%PAGE_1%%',
   'ACCOUNT SUMMARY',
-  'Louisburg, KS 66053',
+  'Sampletown, ZZ 00000',
   'Service Address 100 S. SYNTH ST Account # 999000 Bill Date: 2/01/25',
   '12/15/24 1/15/25',
   'GAS 5100 4500 600 120.50',

@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// computations/evergy-sum-fixes.gate.js -- deploy gate for two Evergy bill-sum fixes.
+// computations/utility-e-sum-fixes.gate.js -- deploy gate for two Utility E bill-sum fixes.
 // 1. Taxed bill: Stage 3 sum must include sales tax, so no printed charge is rewritten.
 // 2. Two-part ECA where OCR adds a digit to part 1: the printed total proves the qty x rate value.
 //    Controls: correct bill unchanged; rounding drift keeps the printed value; 10x qty garble rejected.
-// All values are synthetic (fake name, fake account). Run: node computations/evergy-sum-fixes.gate.js
+// All values are synthetic (fake name, fake account). Run: node computations/utility-e-sum-fixes.gate.js
 // REPO env var picks another checkout (used to prove the test fails on old code).
 'use strict';
 const fs = require('fs');
@@ -84,7 +84,7 @@ const money = (n) =>
   (n < 0 ? '-$' : '$') + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const cents = (n) => Math.round(n * 100) / 100;
 
-// Taxed bill (layout copied from the real Evergy page shape, all numbers invented).
+// Taxed bill (layout copied from the real Utility E page shape, all numbers invented).
 function taxedBill() {
   const ch = {
     cust: 60.13,
@@ -145,7 +145,7 @@ Read Date     Read Date      Days         Read    )       Read (=)  Difference x
   return { text, ch, total };
 }
 
-// Two-part ECA bill (layout copied from the real Evergy page shape, all numbers invented).
+// Two-part ECA bill (layout copied from the real Utility E page shape, all numbers invented).
 // part1True is the true part 1 amount; part1Printed is the dollar text OCR returns for it.
 function ecaBill(part1True, part1Printed, qty1, rate1) {
   const p2 = 15.0;

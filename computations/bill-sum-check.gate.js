@@ -2,7 +2,7 @@
 // computations/bill-sum-check.gate.js -- deploy gate for validateBillData charge-sum check.
 // 1. A bill whose charges plus a miscellaneous charge equal the total gives no sum warning.
 // 2. A bill whose charges really differ from the total still gives the sum warning.
-// 3. Every field in the Evergy component list changes the sum (none is left out).
+// 3. Every field in the Utility E component list changes the sum (none is left out).
 // All values are synthetic. Run: node computations/bill-sum-check.gate.js
 'use strict';
 const fs = require('fs');
@@ -18,7 +18,8 @@ for (const f of ['lib/formatting.js', 'computations/rates.js', 'app/bill-analysi
   try { vm.runInContext(read(f), sb, { filename: f }); } catch (e) { /* browser-only tail code; the functions used here are already defined */ }
 }
 vm.runInContext('this.__V = validateBillData;', sb);
-const sumWarn = (b) => (sb.__V(b, 'Evergy').warnings || sb.__V(b, 'Evergy')).filter((w) => /Charges sum/.test(w.message));
+const UTIL = 'Evergy';
+const sumWarn = (b) => (sb.__V(b, UTIL).warnings || sb.__V(b, UTIL)).filter((w) => /Charges sum/.test(w.message));
 let failures = 0;
 function check(name, fn) {
   try { fn(); console.log('PASS  ' + name); } catch (e) { failures++; console.log('FAIL  ' + name + ' -- ' + e.message); }
@@ -37,7 +38,7 @@ check('real mismatch still warns', () => {
   assert.strictEqual(sumWarn(b).length, 1);
 });
 check('every component field is in the sum', () => {
-  const fields = vm.runInContext('EVERGY_COMPONENT_CHARGE_FIELDS', sb);
+  const fields = vm.runInContext('UTILITY_E_COMPONENT_CHARGE_FIELDS', sb);
   assert.ok(fields.length >= 17);
   for (const f of fields) {
     const b = { Commodity: 'Electric', TotalCurrentCharges: '1000.00' };

@@ -1,14 +1,14 @@
 /**
- * test-evergy-addr-dates.js
+ * test-utility-e-addr-dates.js
  *
- * Regression test for two Evergy extractAll defects in app/energy-savings.js:
+ * Regression test for two Utility E extractAll defects in app/energy-savings.js:
  *  1. ADDRESS BLEED. A stray ":" after the state made _EVG_ADDR fail for that page, so the bill took the
  *     FIRST address in the document (another building) in a multi-account document.
  *  2. DROPPED BILL. OCR read "service from | 02/01/2030 to 03/01/2030". The "|" broke the date regexes,
  *     the bill was dropped, its page went to the next bill, and Customer Chg was summed twice.
  *
  * SYNTHETIC text only (fake accounts, addresses, dates, amounts).
- * Usage: node tools/test-evergy-addr-dates.js [path-to-energy-savings.js]
+ * Usage: node tools/test-utility-e-addr-dates.js [path-to-energy-savings.js]
  *   Pass a PRE-FIX copy to confirm the test fails on the old code.
  */
 const fs = require('fs');
@@ -17,7 +17,7 @@ const path = require('path');
 
 const jsPath = process.argv[2] || path.join(__dirname, '..', 'app', 'energy-savings.js');
 
-function loadEvergy(scriptPath) {
+function loadRule(scriptPath) {
   const calcDays = (s, e) => Math.round((new Date(e) - new Date(s)) / 864e5);
   const sandbox = { window: {}, calcDays, console: { log: () => {}, warn: () => {}, error: () => {} } };
   vm.createContext(sandbox);
@@ -27,7 +27,7 @@ function loadEvergy(scriptPath) {
   vm.runInContext(fs.readFileSync(scriptPath, 'utf8'), sandbox, { filename: path.basename(scriptPath) });
   const rules = vm.runInContext('typeof UTILITY_RULES !== "undefined" ? UTILITY_RULES : null', sandbox);
   const rule = rules && rules.find((r) => r.name === 'Evergy');
-  if (!rule) throw new Error('Evergy rule not found in ' + scriptPath);
+  if (!rule) throw new Error('Rule not found in ' + scriptPath);
   return rule;
 }
 
@@ -45,7 +45,7 @@ function check(label, ok, detail) {
     console.log('  FAIL ' + label + (detail ? ' - ' + detail : ''));
   }
 }
-const rule = loadEvergy(jsPath);
+const rule = loadRule(jsPath);
 
 // Two accounts. Account 1 prints first (so its address is the first in the document).
 function addrText(addrB) {

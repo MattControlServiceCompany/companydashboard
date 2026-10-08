@@ -4,10 +4,10 @@
 // outliers by comparing against historical bills for the same account/meter.
 // ══════════════════════════════════════════════════════════════════════════════
 
-// Single list of Evergy electric component charge fields that add up to
+// Single list of Utility E electric component charge fields that add up to
 // TotalCurrentCharges. Used by validateBillData, the Gate C/D line-item check
 // and the Stage 3 charge reconciliation. Add a new charge field here only.
-const EVERGY_COMPONENT_CHARGE_FIELDS = [
+const UTILITY_E_COMPONENT_CHARGE_FIELDS = [
   'CustomerCharge',
   'FacilitiesCharge',
   'BilledKWCharge',
@@ -165,7 +165,7 @@ function validateBillData(extracted, utilityName) {
     if (total > 0) {
       const compSum =
         Math.round(
-          EVERGY_COMPONENT_CHARGE_FIELDS.reduce((sum, f) => sum + parseBillNumber(extracted[f]), 0) *
+          UTILITY_E_COMPONENT_CHARGE_FIELDS.reduce((sum, f) => sum + parseBillNumber(extracted[f]), 0) *
             100,
         ) / 100;
       const diff = Math.abs(compSum - total);
@@ -2486,7 +2486,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
       //       NEVER silently clobber ocrTotal when there's evidence of per-charge
       //       contamination.
       if (utilityName === 'Evergy') {
-        const CHARGE_FIELDS = EVERGY_COMPONENT_CHARGE_FIELDS;
+        const CHARGE_FIELDS = UTILITY_E_COMPONENT_CHARGE_FIELDS;
         // Round to cents to prevent floating-point accumulation errors
         // across 15 addends from producing phantom ±$0.01 mismatches.
         const _sumCharges = () => Math.round(CHARGE_FIELDS.reduce((s, f) => s + parseBillNumber(b[f]), 0) * 100) / 100;
@@ -4957,7 +4957,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
       Sewer: ['SewerCharge', 'SewerFranchiseFee'],
       Stormwater: ['StormWaterCharge'],
       Propane: ['PropaneCharge'],
-      Electric: EVERGY_COMPONENT_CHARGE_FIELDS,
+      Electric: UTILITY_E_COMPONENT_CHARGE_FIELDS,
     };
     const ALL_CHARGE_FIELDS = [...new Set(Object.values(COMMODITY_CHARGE_FIELDS).flat())];
 
@@ -16272,7 +16272,7 @@ async function processPDF(file) {
               }
               for (const b of billsWithMismatch) {
                 if (!b._sum_mismatch) continue; // may have been resolved by rate correction
-                const CHARGE_CHECK = EVERGY_COMPONENT_CHARGE_FIELDS;
+                const CHARGE_CHECK = UTILITY_E_COMPONENT_CHARGE_FIELDS;
                 const total = parseBillNumberOrZero(b.TotalCurrentCharges);
                 const currentSum = CHARGE_CHECK.reduce((s, f) => s + parseBillNumber(b[f]), 0);
                 const currentDiff = currentSum - total;

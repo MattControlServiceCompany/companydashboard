@@ -1,7 +1,7 @@
 /**
  * test-wre-total-is-number.js
  *
- * Regression test for the Wood River Energy site reader (app/energy-savings.js). A site total of
+ * Regression test for the the gas supplier site reader (app/energy-savings.js). A site total of
  * 1,000 or more was kept as text with its thousands comma ("1,020.00"). A reader that uses
  * parseFloat on that text gets 1. The totals must be numbers (shared parser parseBillNumber).
  * SYNTHETIC text only (fake district, addresses, accounts, round figures). Same layout shape as the

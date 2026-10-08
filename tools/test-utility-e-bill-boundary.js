@@ -1,7 +1,7 @@
 /**
- * test-evergy-bill-boundary.js
+ * test-utility-e-bill-boundary.js
  *
- * Regression test for the Evergy page-first bill grouping in app/energy-savings.js (extractAll).
+ * Regression test for the Utility E page-first bill grouping in app/energy-savings.js (extractAll).
  * Before the fix, a bill whose "Billing Details - service from" header prints on TWO pages
  * (the second page marked "(Continued)") was anchored on its LAST such page. Its real front
  * page was then claimed by nobody and the CONTINUATION ABSORPTION step gave it to the
@@ -13,7 +13,7 @@
  *   Bill B: page 3 front (has Miscellaneous), page 4 billing details, page 5 billing details (Continued).
  *   Bill C: page 6 front, page 7 billing details.
  *
- * Usage: node tools/test-evergy-bill-boundary.js [path-to-energy-savings.js]
+ * Usage: node tools/test-utility-e-bill-boundary.js [path-to-energy-savings.js]
  *   Pass a PRE-FIX copy to confirm the test fails on the old code.
  */
 const fs = require('fs');
@@ -22,7 +22,7 @@ const path = require('path');
 
 const jsPath = process.argv[2] || path.join(__dirname, '..', 'app', 'energy-savings.js');
 
-function loadEvergy(scriptPath) {
+function loadRule(scriptPath) {
   // calcDays lives in app/utility-data.js (needs a browser); a simple day count is enough here.
   const calcDays = (s, e) => Math.round((new Date(e) - new Date(s)) / 864e5);
   const sandbox = { window: {}, calcDays, console: { log: () => {}, warn: () => {}, error: () => {} } };
@@ -33,7 +33,7 @@ function loadEvergy(scriptPath) {
   vm.runInContext(fs.readFileSync(scriptPath, 'utf8'), sandbox, { filename: path.basename(scriptPath) });
   const rules = vm.runInContext('typeof UTILITY_RULES !== "undefined" ? UTILITY_RULES : null', sandbox);
   const rule = rules && rules.find((r) => r.name === 'Evergy');
-  if (!rule) throw new Error('Evergy rule not found in ' + scriptPath);
+  if (!rule) throw new Error('Rule not found in ' + scriptPath);
   return rule;
 }
 
@@ -78,7 +78,7 @@ function check(label, ok, detail) {
   }
 }
 
-const rule = loadEvergy(jsPath);
+const rule = loadRule(jsPath);
 
 console.log('Case 1: bill B has a Continued billing-details page');
 let bills = rule.extractAll(makeText(true));
