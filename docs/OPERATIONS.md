@@ -320,3 +320,10 @@ This includes a new or changed function, schedule, env var name, timer, host, or
 - What: `collectReferencedPdfKeys()` in app/site-functions.js scans all stored records (DB.getAll() and live utilityData) for PDF keys. `compactPdfStorage()` runs it after the remap commit. It deletes a non-canonical key only when no record uses it. If the scan throws, it deletes nothing (`scanFailed`).
 - When: only when the user clicks the sidebar button "Compact PDF Storage". No timer. No env var.
 - Check: run `node tools/test-compact-keeps-referenced-pdfs.js` (gate runs it). It must print 5 PASS.
+
+## Wood River scanned invoices (2026-10-08, branch 2026-10-08-woodriver-sites)
+- `_wreRebuildMissingCharges` (app/energy-savings.js:7652) runs inside `_parseWRESiteBlocks`, when a Wood River invoice is read (browser, no schedule, no env var).
+- A scan can cut off the right-hand $ columns. The site then has Mmbtu and Fuel but no charge. The charge is rebuilt as (Mmbtu + Fuel) x Rate. Rate = the most common Index rate on the invoice (at least 2 sites agree). The site is marked `_chargeRebuilt` on the block.
+- Skipped (left to the manual-review checks): sites with Trigger or Special Weather rows, Fuel not 0.5% to 4% of Mmbtu, or Index and Sub-Total Mmbtu that disagree.
+- A Sub-Total row with a lost label ("b-Total:", "E  -") is read when it is only two numbers (Mmbtu, Fuel) and the block has no Sub-Total yet.
+- Check: `node tools/test-wre-scanned-sites.js` (synthetic). In the browser console the line "[WRE] Block parser" shows the site count.

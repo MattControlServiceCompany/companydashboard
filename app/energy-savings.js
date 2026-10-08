@@ -7640,6 +7640,52 @@ const UTILITY_RULES = [
       // re-run against ALTERNATE OCR passes below to recover sites the PRIMARY
       // (highest-scoring) pass garbled. See the consensus merge step after
       // `siteBlocks` is built. Behavior against `t` alone is unchanged.
+      // Fix (2026-10-08, WRE scanned-invoice sites): scanned invoices (Sep/Oct 2025) lose
+      // the right-hand $ columns, so a site has Mmbtu + Fuel but no charge. WRE prints its
+      // own formula: charge = (Mmbtu + Fuel) x Rate (verified on the Jan 2026 invoice, see
+      // the Trigger-line comments). The Index rate is one price for the whole invoice, so
+      // the most common Index rate across the sites (at least 2 agree) is used - one
+      // misread rate ("$3.1800" for 3.19) cannot change a site. Only sites with Index and
+      // no Trigger/Special Weather row are rebuilt, only from a Mmbtu and Fuel pair (Sub-Total
+      // row first, then Index row) where Fuel is 0.5% to 4% of Mmbtu (a misread digit fails this). Marked
+      // _chargeRebuilt so it is never shown as a printed value.
+      function _wreRebuildMissingCharges(blocks) {
+        const _cnt = {};
+        for (const b of blocks) {
+          const r = b.indexRate != null ? parseFloat(b.indexRate) : NaN;
+          if (r > 0 && r < 100) _cnt[r.toFixed(4)] = (_cnt[r.toFixed(4)] || 0) + 1;
+        }
+        const _top = Object.entries(_cnt).sort((a, b) => b[1] - a[1])[0];
+        if (!_top || _top[1] < 2) return;
+        const _rate = parseFloat(_top[0]);
+        for (const b of blocks) {
+          if (b.dollar != null || b.indexCharge != null) continue;
+          if (b.triggerCharge != null || b.triggerMMbtu != null || b.sweCharge != null || b.sweMMbtu != null) continue;
+          let m = null;
+          let f = null;
+          for (const _m of [b.mmbtu, b.indexMMbtu]) {
+            for (const _f of [b.subFuel, b.indexFuelMMbtu]) {
+              if (m == null && _m != null && _f != null && _m > 0 && _f >= _m * 0.005 && _f <= _m * 0.04) {
+                m = _m;
+                f = _f;
+              }
+            }
+          }
+          if (m == null) continue;
+          // The Index row and the Sub-Total row print the same Mmbtu. If both were read and
+          // they disagree (other than a dropped decimal point), one is a misread digit and
+          // nothing here says which: leave the site to the existing manual-review checks.
+          // (A printed Mmbtu always has 2 decimals; an Index value with 3 is a misread, ignored.)
+          const _idxPrinted = b.indexMMbtu != null && Math.abs(b.indexMMbtu * 100 - Math.round(b.indexMMbtu * 100)) < 1e-6;
+          if (_idxPrinted && Math.abs(b.indexMMbtu - m) > 0.005 && Math.abs(b.indexMMbtu - m * 100) > 0.5) continue;
+          b.indexMMbtu = m;
+          b.indexFuelMMbtu = f;
+          b.indexRate = _top[0];
+          b.indexCharge = Math.round((m + f) * _rate * 100) / 100;
+          b._chargeRebuilt = true;
+        }
+      }
+
       function _parseWRESiteBlocks(text) {
         const _lines = text.split(/\r?\n/);
         const blocks = []; // [{ServiceAddress, AccountNumber, MeterNumber, mmbtu, dollar}]
@@ -7995,6 +8041,23 @@ const UTILITY_RULES = [
           // strict pattern, 8/10 matched once punctuation was tolerated. Widened to accept
           // any of :;,. as the closing punctuation (or none) and 0-2 chars (space/dash/
           // period) between "Sub" and "Total".
+          // Fix (2026-10-08, WRE scanned-invoice sites): on low-quality scans the Sub-Total
+          // LABEL is often unreadable ("b-Total:", "Sas Teal:", "E  -", a lone "3") while
+          // its two number columns (Mmbtu, Fuel) are intact. A line that is ONLY a short
+          // junk prefix + "n.nn  n.nn" (+ optional "$charge") inside an open block that has
+          // no Sub-Total yet is that same row. Same figures, label garbled; nothing invented.
+          const _wreUnlabeledSub =
+            _inSites && _cur && _cur.mmbtu == null && _cur.dollar == null && !/^\s*Sub[\s.\-]{0,2}Total/i.test(ln)
+              ? ln.match(/^\s*(?:\d\s+)?[^\d$£]{0,60}?\s*(\d[\d,]*\.\d{2})\s+(\d+\.\d{2}|\d{3})(?:\s+(?:[$£S]\s?(\d[\d,]*\.\d{2})|\S{1,8}))?\s*$/)
+              : null;
+          if (_wreUnlabeledSub) {
+            _cur.mmbtu = parseFloat(_wreUnlabeledSub[1].replace(/,/g, ''));
+            _cur.subFuel = parseFloat(
+              _wreUnlabeledSub[2].indexOf('.') < 0 ? _wreUnlabeledSub[2][0] + '.' + _wreUnlabeledSub[2].slice(1) : _wreUnlabeledSub[2],
+            );
+            if (_wreUnlabeledSub[3]) _cur.dollar = _wreFixOcrDollar(_wreUnlabeledSub[3]);
+            continue;
+          }
           if (_cur && /^\s*Sub[\s.\-]{0,2}Total\s*[:;,.]?/i.test(ln)) {
             // First number after the colon = MMbtu
             // Fix (2026-09-18, WRE usage-capture sweep): the old pattern required the
@@ -8005,7 +8068,9 @@ const UTILITY_RULES = [
             // the MMbtu capture the same tolerance via a short, lazy, non-digit skip
             // (0-3 chars) so it can step over one stray glyph without being loose
             // enough to jump ahead to an unrelated later number.
-            const _mmbtuM = ln.match(/Sub[\s.\-]{0,2}Total\s*[:;,.]?\s*[^\d]{0,3}?([\d,]+\.?\d*)/i);
+            // Fix (2026-10-08): a stray glyph can sit AFTER the spaces that follow the
+            // colon ("Sub-Total: _      17.40"); allow it before the digits.
+            const _mmbtuM = ln.match(/Sub[\s.\-]{0,2}Total\s*[:;,.]?\s*(?:[^\d\s]{1,3}\s*)?([\d,]+\.?\d*)/i);
             // Last dollar value on the line = site charge.
             // Accept both clean form ($1,425.42) and OCR-corrupted form ($1.425.42).
             // Fix (2026-09-15, WRE OCR-tolerance sweep): same £-for-$ OCR-misread
@@ -8014,6 +8079,12 @@ const UTILITY_RULES = [
             const _dollarM = ln.match(/[$£](\d{1,3}\.\d{3}\.\d{2})\s*$/) || ln.match(/[$£]([\d,]+\.\d{2})\s*$/);
             if (_mmbtuM) _cur.mmbtu = parseFloat(_mmbtuM[1].replace(/,/g, ''));
             if (_dollarM) _cur.dollar = _wreFixOcrDollar(_dollarM[1]);
+            // Fix (2026-10-08): Fuel column of the Sub-Total row (second number), used to
+            // rebuild a charge the scan cut off (see _wreRebuildMissingCharges).
+            if (_mmbtuM) {
+              const _fuelM = ln.slice(_mmbtuM.index + _mmbtuM[0].length).match(/^\s+(\d+\.\d+|\d{3})(?=\s|$)/);
+              if (_fuelM) _cur.subFuel = parseFloat(_fuelM[1].indexOf('.') < 0 ? _fuelM[1][0] + '.' + _fuelM[1].slice(1) : _fuelM[1]);
+            }
             // Fix (2026-09-18, WRE usage-capture sweep, TASK 5): a Sub-Total MMbtu
             // captured as a bare digit run with NO decimal point at all (e.g.
             // "14614") is a well-documented Tesseract failure mode (the decimal
@@ -8120,6 +8191,7 @@ const UTILITY_RULES = [
         // defined as the sum of the component charge lines printed directly above it on
         // every invoice on file — this is not a guessed value, it's the same figure
         // already correctly read from a different row of the same site block.
+        _wreRebuildMissingCharges(blocks);
         for (const b of blocks) {
           if (b.dollar == null) {
             const parts = [b.triggerCharge, b.indexCharge, b.sweCharge].filter((v) => v != null);
