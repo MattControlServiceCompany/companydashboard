@@ -151,7 +151,7 @@ console.log('=== 2. backfillFacilitiesKW — fill order ===');
 
 // 2c. Rolling 12-month peak — only fires when a full prior year of bills exists; never on a
 // short history even when later months in that short history have higher billed kW (the exact
-// Woodland Apr-Jun 2025 bug this fix closes — see the dashboardlogic entry for the real numbers).
+// Client B Apr-Jun 2025 bug this fix closes — see the dashboardlogic entry for the real numbers).
 {
   const bills = [
     { start: '2024-01-01', facKW: null, billedKW: 100 },

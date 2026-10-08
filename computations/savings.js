@@ -202,7 +202,7 @@ function getMeterSavings(m, bills, incl, projId, bldgId, opts) {
 
   // 2026-09-15 (SA-gate fix): savings only compute for a CONTRACTED project. The contract
   // signal is the project record's `sa` field (Service Agreement #) - a project with no SA
-  // (Spring Hill, JOCO, Baker: sa="") must show ZERO savings everywhere, not a phantom
+  // (Client C, Client D, Client E: sa="") must show ZERO savings everywhere, not a phantom
   // number from a bill that happens to look complete. String(x.id) === String(projId) is
   // required because some callers pass projId as a String while projects[].id
   // are numbers - a strict === here would silently fail that caller.
@@ -273,7 +273,7 @@ function getMeterSavings(m, bills, incl, projId, bldgId, opts) {
     : blRows;
   const blEnd = bl.months.slice().sort().pop();
   // 2026-09-15 (phantom-savings fix): exclude incompleteCycle rows - a genuinely short/stub
-  // bill that hasn't completed a real billing cycle yet must not book savings (Spring Hill:
+  // bill that hasn't completed a real billing cycle yet must not book savings (Client C:
   // baseline-only project with only a partial artifact bill after baseline end -> $0
   // savings everywhere, not a phantom number). incompleteCycle does NOT exclude complete
   // bills that merely straddle a calendar-month boundary (water/sewer irregular cycles),
@@ -672,7 +672,7 @@ function getBldgMeasureSavingsByMo(projId, bldgId) {
   // which need a contracted baseline to book real $ against. This function computes
   // ESTIMATED/PROJECTED measure-based savings (a planned measure x its own rates) — that
   // is independent of whether the project has a signed SA yet and must display regardless
-  // (Spring Hill, JOCO, Baker: sa="" but still need to show projected/estimated savings).
+  // (Client C, Client D, Client E: sa="" but still need to show projected/estimated savings).
   const p = projects.find((x) => String(x.id) === String(projId));
   if (!p || !p.savingsData) return null;
   const measures = (p.savingsData.measures || []).filter((m) => m.bldgId === bldgId && m.selected !== false);

@@ -6,7 +6,7 @@
 // otherCost/taxCost next to the charge lines, total*Rate next to cost and usage, facKWCost next
 // to facilitiesCharge, kwh on gas bills, fromPDF next to hasPDF/pdfKey) and the Edit modal
 // round-tripped them through hidden inputs. Each copy went stale the moment the visible field
-// was edited, and readers disagreed about which one to trust (Louisburg Q1 Appendix D listed 6
+// was edited, and readers disagreed about which one to trust (Client A Q1 Appendix D listed 6
 // February bills while the savings math used 11). Steps 1-7 removed every copy. This gate keeps
 // them out:
 //   1. Every key a bill-row builder in app/bill-analysis.js writes is either a BILL_SCHEMA key

@@ -58,10 +58,10 @@ function _looksLikeAddress(s) {
 // perfectly formed date pattern.
 function _stripAddressTrailingJunk(raw) {
   if (!raw) return null;
-  // Fix (2026-09-25, bill-panel-followup, case 6): WoodRiver Energy's
+  // Fix (2026-09-25, bill-panel-followup, case 6): WRE's
   // per-site ServiceAddress is a short building label, a bare dash, then the
-  // real street address (e.g. "BofE - 101 E South St", "High Schl - 19701 S
-  // Ridgeview"). The house-number-first logic below assumes token 0 IS the
+  // real street address (e.g. "BofE - 101 E Sample St", "High Schl - 12701 S
+  // Hillcrest"). The house-number-first logic below assumes token 0 IS the
   // house number, so on this format it kept only the label ("BofE") and then
   // broke on the real house number as if it were trailing garbage — every
   // WoodRiver site ended up with an unrecognizable one-word "address",
@@ -734,7 +734,7 @@ function _renderSavingsContent(wrap, projId) {
     }
   });
   if (_migrated) sset('en_projects', projects);
-  // Idempotent restore: Broadmoor Elementary (bldgId b1776962504464) in Louisburg project.
+  // Idempotent restore: Site F Elementary (bldgId b1776962504464) in Client A project.
   // Runs on every render — only mutates if measure is missing or has wrong data. Safe no-op otherwise.
   // Skips restore if user explicitly deleted this measure (tracked in sd._userDeletedIds).
   if (p.name && p.name.indexOf('Louisburg') !== -1) {
@@ -810,7 +810,7 @@ function _renderSavingsContent(wrap, projId) {
       }
     } // end if (!_bmUserDeleted)
   }
-  // Idempotent restore: Circle Grove Elementary (bldgId b1776962484232) in Louisburg project.
+  // Idempotent restore: Site G Elementary (bldgId b1776962484232) in Client A project.
   // Runs on every render — only mutates if measure is missing, has wrong data, or is unchecked.
   // Skips restore if user explicitly deleted this measure (tracked in sd._userDeletedIds).
   if (p.name && p.name.indexOf('Louisburg') !== -1) {
@@ -842,7 +842,7 @@ function _renderSavingsContent(wrap, projId) {
       const cgIdx = sd.measures.findIndex((m) => m.bldgId === 'b1776962484232');
       let _cgChanged = false;
       if (cgIdx === -1) {
-        // Measure is missing — push it (handles the case Circle Grove was deleted)
+        // Measure is missing — push it (handles the case Site G was deleted)
         sd.measures.push(_cgCorrect);
         _cgChanged = true;
       } else {
@@ -2232,8 +2232,8 @@ function refreshProjDropdowns() {
          3) If matched → extract and display
          4) If unrecognized → prompt user to share sample
       ── */
-// ── Evergy Billing Details — expected charge line ordering ──
-// Reference: Evergy bills always list charges in this order after "Billing Details":
+// ── Utility E Billing Details — expected charge line ordering ──
+// Reference: Utility E bills always list charges in this order after "Billing Details":
 //  1. Customer Charge — always line 1
 //  2. Facilities Charge — always line 2, per kW
 //  3. Demand Charge — always line 3 (may split onto 2 lines during summer/winter changeover
@@ -2272,7 +2272,7 @@ const _EVG_CHARGE_ORDER = [
   'BillOffset',
   'FranchiseFee',
 ];
-// Evergy OCR repair: a reading whose decimal point was dropped ("475.5360" -> "4755360").
+// Utility E OCR repair: a reading whose decimal point was dropped ("475.5360" -> "4755360").
 // Works on the extractor result in place. Values that still show printed decimals are never changed.
 function _evergyRepairDroppedDecimals(result) {
   // ── OCR DECIMAL RECOVERY: kW fields should be ###.#### (~3 digits + 4 decimals) ──
@@ -2311,7 +2311,7 @@ function _evergyRepairDroppedDecimals(result) {
     }
   }
 }
-// Evergy page-1 Account Summary prints "Previously Billed......... $X" = the TOTAL of the bill
+// Utility E page-1 Account Summary prints "Previously Billed......... $X" = the TOTAL of the bill
 // before this one (paid on this bill's Payment Received line). Returns "16674.53" style text, or
 // null when absent. "Estimate missing period" reads it from the bill AFTER a gap as the gap
 // period's actual total (Matt 2026-09-29).
@@ -2319,7 +2319,7 @@ function parseEvergyPreviouslyBilled(t) {
   const m = String(t || '').match(/Previously\s+Billed[.\s\u00b7\u2026]*\$?\s*([\d,]+\.\d{2})\b/i);
   return m ? m[1].replace(/,/g, '') : null;
 }
-// Evergy per-section extractor
+// Utility E per-section extractor
 function _extractEvergy(t, acctOverride, addrOverride) {
   // ── OCR digit cleanup: replace 'o'/'O' with '0' in numeric contexts ──
   t = t.replace(/(\d)o/gi, '$10').replace(/o(\d)/gi, '0$1');
@@ -2456,14 +2456,14 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     return found ? total.toFixed(2) : null;
   };
   // ── Table-bleed strip, opt-in only (see `enableTableBleedFix` param below) ──
-  // Evergy prints a "Comparative Usage Information" graphic (title / Period
+  // Utility E prints a "Comparative Usage Information" graphic (title / Period
   // header row / Current row / Previous row / Last Year row = 5 lines) as a
   // sidebar box. On some page layouts PDF text extraction merges this box's
   // text into the SAME visual rows as a charge's continuation lines,
   // injecting 60-150+ chars of column-padding text between the qty and the
   // "kWh/kW at $rate" text -- far beyond the 40-char GAP budget below --
   // even though both the qty and the rate are correctly OCR'd elsewhere in
-  // the same 5-line window (confirmed on the EER line of the Evergy Maint
+  // the same 5-line window (confirmed on the EER line of the Utility E Maint
   // Bldg bill, account <REDACTED-ACCT>, April 2026 -- see dashboardlogic entry).
   //
   // "Comparative Usage Information" itself is a STABLE, verbatim marker
@@ -2508,7 +2508,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // after confirming (via a Strategy C simulation, not just "does it parse")
   // that doing so won't suppress a residual-based correction elsewhere.
   // "Comparative Usage Information" is sometimes OCR'd too badly to match its
-  // own phrase (e.g. "Qomparthve UsEgainormation" — Louisburg acct 1000001
+  // own phrase (e.g. "Qomparthve UsEgainormation" — Client A acct 1000001
   // BALLFIELDS 06/01-06/29/2026), which silently skips the whole table-bleed
   // cleanup window even for charge lines that opted into it. "Days ... Avg
   // Temp" is the same comparative-usage-table's column header row and reads
@@ -2564,7 +2564,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     return aggQty > 0 ? aggComputed / aggQty : parts[0].rate;
   };
   // ── Rate extraction: captures rate, quantity, AND OCR'd charge from each charge line ──
-  // Evergy charge lines: "[keyword] [qty] kW/kWh at $[rate] per kW/kWh ... $[charge]"
+  // Utility E charge lines: "[keyword] [qty] kW/kWh at $[rate] per kW/kWh ... $[charge]"
   // Returns {qty, rate, unit, computed, parts[]} or null
   // Each part: {qty, rate, unit, computed, ocrCharge}
   const xRate = (keyword, excludeRe, enableTableBleedFix) => {
@@ -2671,7 +2671,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
         const qty = parseFloat(qtyStr);
         const rate = parseFloat(rateM[3].replace(/,/g, ''));
         const unit = 'k' + rateM[2];
-        // Sanity: Evergy rates are < $100/kW and < $1/kWh. Values like 70000 or 140000
+        // Sanity: Utility E rates are < $100/kW and < $1/kWh. Values like 70000 or 140000
         // are chart Y-axis numbers merged into charge lines by PDF text extraction.
         const isKwh = unit.toLowerCase().includes('h');
         const maxRate = isKwh ? 1 : 100; // kWh < $1, kW < $100
@@ -2723,7 +2723,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
           // Detect proration: "(for N of Y days)" applies a fraction to the computed charge.
           // Example: 304.2 kW × $11.683 × (29/31) = $3,324.68. Parens may be garbled by OCR.
           // STRICTLY kW-only — same rationale as the date-range proration gate below.
-          // On Evergy LGS tiered-kWh bills (ECA, EER, PTS, EnergyOn/OffPeak), each part's
+          // On Utility E LGS tiered-kWh bills (ECA, EER, PTS, EnergyOn/OffPeak), each part's
           // qty is ALREADY the segment's kWh used, NOT the whole-period kWh. Applying an
           // N/Y day ratio to a segment whose qty was already proportional to the segment's
           // days double-deflates computed (9530.679 × 0.01668 × (2/32) = 9.94 instead of
@@ -2743,7 +2743,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
             }
           }
           // ── DATE-RANGE PRORATION (kW-charges only) ──
-          // Evergy kW-based charge lines (TDC, Facilities, Demand, RkVA) can be split
+          // Utility E kW-based charge lines (TDC, Facilities, Demand, RkVA) can be split
           // across two date ranges when the rate changes mid-period. Both parts carry
           // the SAME qty (the period's peak kW) but different rates, and the billed
           // amount is the full rate × qty prorated by (range days / total bill days).
@@ -2849,7 +2849,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // perfectly legible. Days was previously part of the "row anchor" along with the two dates, so a
   // garbled Days token failed the anchor match and nulled the ENTIRE row — the exact per-column-
   // isolation failure the cef419c0 rewrite was meant to prevent, just one column earlier than
-  // intended. Days is never read out of meterRow downstream for Evergy (NumberOfDays is computed
+  // intended. Days is never read out of meterRow downstream for Utility E (NumberOfDays is computed
   // separately from the billing-period dates above), so tolerating a garbled token here is safe.
   // Unlike groups 4-10, Days' fallback is bounded to `\S{1,4}` (not unbounded `\S+`) and the whole
   // group is optional (trailing `?`): the pre-normalize pass (`_meterT` above) replaces every OCR
@@ -2989,7 +2989,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // turn this into a multi-second scan — measured against the 47-bill and 33-bill harness
   // fixtures after adding this guard (see dashboardlogic entry for this fix).
   if (_meterRows.length === 0 && _meterT.length < 8000) {
-    // Leading-token budget widened 2 -> 3 (Louisburg digit-repair Group 3, account
+    // Leading-token budget widened 2 -> 3 (Client A digit-repair Group 3, account
     // 1000005, 01/29-03/02/2026 bill): a badly garbled date pair ("© ois0 os03") can
     // fragment into FOUR stray tokens after the letter-strip pre-normalize (e.g. "0",
     // "03", "00", "32") before the real EndRead/StartRead/.../RKVAUsed run of clean
@@ -3069,7 +3069,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     const dotIdx = digitsOnly.indexOf('.');
     const decimals = dotIdx === -1 ? 0 : digitsOnly.length - dotIdx - 1;
     let targetStr = decimals > 0 ? targetVal.toFixed(decimals) : String(Math.round(targetVal));
-    // FIX (2026-08-24, Louisburg visual audit bug #5/#8): this used to left-pad a shorter
+    // FIX (2026-08-24, Client A visual audit bug #5/#8): this used to left-pad a shorter
     // arithmetic target with a leading zero so a "stray leading digit" could be treated as a
     // plausible single-digit substitution. That is unsound: the digit-count MISMATCH this
     // branch exists to paper over is exactly as likely to mean "the arithmetic TARGET is wrong
@@ -3110,7 +3110,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     return fixed;
   }
   // Enumerates every SINGLE plausible confusable-digit substitution of `ocrStr` (added
-  // 2026-08-24, Louisburg visual audit bug #8, for the joint EndRead/StartRead recovery tier
+  // 2026-08-24, Client A visual audit bug #8, for the joint EndRead/StartRead recovery tier
   // below). Unlike _reconcileNumber, this does not test against one arithmetic target — it
   // returns the whole candidate set (comma stripped from output, matching _reconcileNumber's
   // contract) so a caller can search for a pairing that satisfies an identity spanning two
@@ -3176,7 +3176,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     // Difference is End-Start, so its integer part is almost always 1-4 digits (vs
     // EndRead/StartRead's full meter-register length) — same "decimal point OCR'd to
     // nothing" mechanism, narrower length gate (5-8 digits total: 1-4 integer + 4
-    // decimal). Louisburg digit-repair Group 3 (account 1000003, 06/08-07/08/2026):
+    // decimal). Client A digit-repair Group 3 (account 1000003, 06/08-07/08/2026):
     // Difference printed as "163577" instead of "16.3577".
     const _insertDecimal4Diff = (s) => {
       if (!s || s.includes('.')) return null;
@@ -3226,7 +3226,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     }
   }
   // ── MISSING-LEADING-DIGIT RECOVERY (groups 4/5: EndRead/StartRead) ──
-  // Added 2026-08-24 (Louisburg visual audit bug #5/#8) alongside removing the unsound
+  // Added 2026-08-24 (Client A visual audit bug #5/#8) alongside removing the unsound
   // leading-digit-pad branch from _reconcileNumber above. A meter's EndRead and StartRead are
   // the same physical register, read on nearly the same date, so they always share the same
   // integer-digit count (or EndRead has exactly one MORE digit than StartRead, on a genuine
@@ -3308,8 +3308,8 @@ function _extractEvergy(t, acctOverride, addrOverride) {
 
     const _tryFixReads = (trustedDiff) => {
       const diffTimesM = parseFloat((trustedDiff * mult).toFixed(4));
-      // TOLERANCE (fix, 2026-08-24, Louisburg visual audit bug #8): Difference x Multiplier =
-      // kWh Used is an EXACT restatement on an Evergy meter-read row, not a rounded rate calc —
+      // TOLERANCE (fix, 2026-08-24, Client A visual audit bug #8): Difference x Multiplier =
+      // kWh Used is an EXACT restatement on an Utility E meter-read row, not a rounded rate calc —
       // the bill prints the same number twice (once as "Read Difference", again as "kWh Used")
       // whenever Multiplier is 1.0000, which is the common case. The old `< 1` tolerance was
       // loose enough to accept an OCR-garbled Difference (Maint Bldg Meter 2, raw "558.8080"
@@ -3377,7 +3377,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       }
     }
 
-    // Tier 4 (added 2026-08-24, Louisburg visual audit bug #8): EndRead AND StartRead are
+    // Tier 4 (added 2026-08-24, Client A visual audit bug #8): EndRead AND StartRead are
     // BOTH individually OCR-garbled by one digit each. Tiers 1-3 only ever hold ONE side fixed
     // (at its raw, possibly-wrong value) while solving for the other, so they never find a fix
     // when both sides need correcting at once — confirmed on Maint Bldg Meter 2 (account
@@ -3412,7 +3412,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     }
   }
   // Check for Delivered/Received labels near meter table (solar net metering indicator)
-  // Also accept "Net Meter" label (used by Evergy parallel-generation 2LGAEP bills).
+  // Also accept "Net Meter" label (used by Utility E parallel-generation 2LGAEP bills).
   // "Net Meter" appears on the page continuation note after the table — use a wider
   // forward window (1200 chars) than the Delivered/Received check (600 chars).
   const _hasSolarLabels = (() => {
@@ -3422,7 +3422,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     // Classic Delivered/Received format (labels appear in column headers near the table)
     if (/\bDeliver/i.test(t) && /\bRece[iv]/i.test(t) && /\bDeliver/i.test(region) && /\bRece[iv]/i.test(region))
       return true;
-    // Evergy parallel-generation: "Net Meter" label on the page following the meter table.
+    // Utility E parallel-generation: "Net Meter" label on the page following the meter table.
     // Use (?!ing) to avoid false match on "Net Metering program" (marketing text in standard bills).
     if (/Net\s+Meter(?!ing)/i.test(regionWide)) return true;
     return false;
@@ -3526,7 +3526,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       kw: maxKw.toFixed(4),
       // Only emit an RKVA figure when at least one meter row actually printed
       // one — an MGA-schedule bill with no RKVA column on any row is a
-      // genuinely absent field, not a real 0.0000 reading (Louisburg acct
+      // genuinely absent field, not a real 0.0000 reading (Client A acct
       // 1000002).
       rkva: hasRkva ? maxRkva.toFixed(4) : null,
     };
@@ -3562,9 +3562,9 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // Source 1: Meter read table — (EndRead - StartRead) × Multiplier (most reliable)
   // Source 2: ECA/EER/PTS charge line kWh quantities (full billing period total)
   // Source 3: Sum of Energy Chg tier kWh quantities
-  // Validation: Evergy values always have a decimal point; values without decimals are OCR errors
+  // Validation: Utility E values always have a decimal point; values without decimals are OCR errors
   const _validKwh = (v) => {
-    // All Evergy numeric values have decimals — a whole number > 10000 without decimal is suspicious
+    // All Utility E numeric values have decimals — a whole number > 10000 without decimal is suspicious
     if (v > 10000 && v === Math.floor(v)) return false;
     // Sanity: kWh should be between 100 and 2,000,000 for commercial
     return v > 0 && v < 2000000;
@@ -3719,7 +3719,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       ?.replace(/,/g, '') || null;
   const demChg = xChg('Demand' + SEP + C, null, 'BilledKWCharge');
   // ── Energy charges: date-aware On/Off Peak vs 3-tier ──
-  // Kansas Evergy switched from 3-tier to On/Off Peak on 12/21/2023.
+  // Kansas Utility E switched from 3-tier to On/Off Peak on 12/21/2023.
   // Before that date: 3 tiers (First 180h, Next 180h, Over 360h).
   // After: On Pk Sum/Win + Off Pk Sum/Win.
   // Always extract both formats — changeover bills (spanning 12/21/2023) have both.
@@ -3728,7 +3728,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   const offPkChg = xChg('Energy' + SEP + C + '[ \\t\\n\\r]+Off[ \\t\\n\\r]+P[kK]', null, 'EnergyOffPeakCharge');
   const tieredChg = xChg('Energy' + SEP + C, /On\s+P[kK]|Off\s+P[kK]/i);
   // E[CG]A tolerates Tesseract's C↔G confusion — e.g. the second ECA
-  // part on Louis Elementary's Oct 2025 bill prints as "EGA Chg", which
+  // part on Site K Elementary's Oct 2025 bill prints as "EGA Chg", which
   // a strict `ECA` match silently skipped so the $121.10 part was lost.
   const ecaChg = xChg('E[CG]A' + SEP + C, null, 'ECACharge');
   const eerChg = xChg('EER' + SEP + C, null, 'EERCharge');
@@ -3778,7 +3778,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     if (!_taxExemptParts.length) return null;
     return _taxExemptParts.reduce((a, b) => a + b, 0).toFixed(2);
   })();
-  // Parallel Generation Credit (Evergy 2LGAEP solar bills) — must extract BEFORE billOffset
+  // Parallel Generation Credit (Utility E 2LGAEP solar bills) — must extract BEFORE billOffset
   // so the fallback scan does not misidentify this credit as a Bill Offset.
   const parallelGenCredit = (() => {
     // Label and negative amount may be on the same line or split across two lines
@@ -3836,10 +3836,10 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     if (!_franchiseParts.length) return null;
     return _franchiseParts.reduce((a, b) => a + b, 0).toFixed(2);
   })();
-  // Sales tax capture (backlog #13, 2026-08-26). Municipally-taxed Evergy
+  // Sales tax capture (backlog #13, 2026-08-26). Municipally-taxed Utility E
   // accounts print one line per taxing jurisdiction below Subtotal, e.g.
   // "Kansas State Sales Tax @ 6.5% ... $22.57" / "Miami County Sales Tax @
-  // 1.5% ... $5.21" / "Louisburg City Sales Tax @ 1.5% ... $5.21" (Louisburg
+  // 1.5% ... $5.21" / "Client A City Sales Tax @ 1.5% ... $5.21" (Client A
   // Ballfields acct 1000001, 04/22-05/31/2026 bill — verified against the
   // rendered PDF). No field previously captured these lines, so
   // _recompSum below fell short of TotalCurrentCharges by exactly the tax
@@ -3891,7 +3891,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     return _salesTaxParts.reduce((a, b) => a + b, 0).toFixed(2);
   })();
   // Subtotal is the second independent total the bill prints (alongside
-  // "Current Charges"). For Evergy tax-exempt accounts these two values
+  // "Current Charges"). For Utility E tax-exempt accounts these two values
   // are always identical, so extracting both gives _postExtractionVerify
   // a ground-truth pair: when Subtotal and ocrTotal agree, compSum must
   // not be allowed to override them (a disagreement means a per-charge
@@ -3913,7 +3913,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     }
     return _stLastM ? _stLastM[1].replace(/,/g, '') : null;
   })();
-  // Miscellaneous / Adjustments line (item f71c0013). The pre-mid-2025 4-page Evergy
+  // Miscellaneous / Adjustments line (item f71c0013). The pre-mid-2025 4-page Utility E
   // template's front account-summary page prints three consecutive lines:
   //   Current Charges (details on back) ............................. $17,224.57
   //   Utility .............................................................. $16,912.24
@@ -4088,7 +4088,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     _salesTaxParts.length = 0;
   }
 
-  // Post-clean helper for CustomerName: Evergy bills often print other
+  // Post-clean helper for CustomerName: Utility E bills often print other
   // columns (Page X of Y, the `£` OCR artifact, stray column-separator
   // characters) on the same line as the customer name. The regexes match
   // greedily enough to occasionally pull those in. Strip:
@@ -4097,7 +4097,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   //      e.g. "USD #416                R           -" → "USD #416").
   //   3. Trailing single non-letter stray chars (dashes, bullets, pipes)
   //      with or without leading whitespace.
-  //   4. Trailing single isolated letter (e.g. "USD 416 R" → "USD 416")
+  //   4. Trailing single isolated letter (e.g. "District A R" → "District A")
   //      — safer than stripping 2-char tails which could be legit
   //      abbreviations (HS / MS / ES / HQ).
   const _cleanCustomerName = (s) => {
@@ -4115,7 +4115,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   const result = {
     UtilityCompany: 'Evergy',
     CustomerName:
-      // Relaxed: allow mixed-case letters so OCR producing "Circle Grove Elem" or
+      // Relaxed: allow mixed-case letters so OCR producing "Site G Elem" or
       // "CIRCLE GROVE" both match. The strict uppercase-only pattern missed bills
       // where Tesseract returned proper case.
       _cleanCustomerName(
@@ -4132,7 +4132,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       null,
     AccountNumber:
       acctOverride ||
-      // FIX (2026-08-24, Louisburg visual audit bug #6): `\s+` -> `\s*`
+      // FIX (2026-08-24, Client A visual audit bug #6): `\s+` -> `\s*`
       // between "Account" and "Number" (see `_evgAccountsIn`/`_acctForIdx`
       // comments for the confirmed real-bill glued-OCR example this covers).
       t.match(/Account\s*(?:Number\s*)?[:\s©®=]+\s*(\d[\d ]{4,18}\d)/im)?.[1]?.replace(/\s/g, '') ||
@@ -4287,7 +4287,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // all (a separate bar-chart bleed, not this table).
   //
   // But on a rate-CHANGEOVER bill where "ECA" text IS present for every segment (e.g.
-  // Louisburg Field House acct 1000006, 04/08-05/07/2026: ECA seg1 04-09..04-30 @
+  // Client A Field House acct 1000006, 04/08-05/07/2026: ECA seg1 04-09..04-30 @
   // $0.01763/kWh, seg2 05-01..05-07 @ $0.01521/kWh), the base scan finds segment 1 fine
   // but segment 2's qty/rate text sits inside the same Comparative-Usage-Information
   // table-bleed window that regressed EER/PTS, so segment 2 silently drops its qty/rate
@@ -4340,7 +4340,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // why ECA deliberately does NOT opt in). Item 5129e92f, 2026-06-30.
   const _rEer = xRate('EER' + SEP + C, null, true);
   // PTS sits immediately after EER in print order and is bled into by the
-  // same Comparative-Usage-Information table on the same bills (Louisburg
+  // same Comparative-Usage-Information table on the same bills (Client A
   // acct 1000001 BALLFIELDS 06/01-06/29/2026) — opt in for the same
   // reason EER did above.
   const _rPts = xRate('PTS' + SEP + C, null, true);
@@ -4448,9 +4448,9 @@ function _extractEvergy(t, acctOverride, addrOverride) {
         });
       }
       _rates[chargeKey].parts = existingParts;
-      // 2026-07-08 (louisburg-8f39b3ee): a part xRate fully parsed (has BOTH qty and
+      // 2026-07-08 (client-a-8f39b3ee): a part xRate fully parsed (has BOTH qty and
       // rate) already carries a trustworthy rate-derived `computed` — prefer it over
-      // `ocrCharge`, which can be a garbled OCR digit misread (e.g. Circle Grove May
+      // `ocrCharge`, which can be a garbled OCR digit misread (e.g. Site G May
       // bill: printed "$82.08" vs. the true 5455.7967 kWh x $0.01521 = $82.98 — a
       // genuine $0.90 OCR error the per-part validator, energy-savings.js ~3450-3465,
       // already flags but this recompute was silently erasing at the field level).
@@ -4490,7 +4490,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // rate is $0.00, or (b) the charge line was never found on the bill at
   // all (no entry in `_rates[k]`). The old `|| null` pattern could not tell
   // these apart and collapsed BOTH to null, which broke ground-truth checks
-  // for bills with a genuine $0.00 rate (e.g. Spring Hill EER). Presence in
+  // for bills with a genuine $0.00 rate (e.g. Client C EER). Presence in
   // `_rates[k]` is set only when `xRate()` actually matched that charge line
   // (see `if (_rXxxOk) _rates.XxxCharge = _rXxxOk;` above) — use THAT as the
   // gate instead of the numeric result, so a real 0 is preserved and an
@@ -4534,11 +4534,11 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     }
   }
 
-  // Evergy business rule: Bill Offset and Tax Exempt Delivery are always
+  // Utility E business rule: Bill Offset and Tax Exempt Delivery are always
   // mirror opposites — same absolute amount, opposite signs. If either
   // is present but the other is missing, derive the missing one.
   // Previously only ran one direction (TaxExempt → BillOffset), so a
-  // bill where the TaxExempt line was OCR-garbled (e.g. Louis Elementary
+  // bill where the TaxExempt line was OCR-garbled (e.g. Site K Elementary
   // Oct 2025 where "Tax ‘exempt" broke the regex) lost the $790.51
   // value even though BillOffset captured "-$790.51".
   // Guard: do NOT apply mirror rule on parallel-generation bills (SolarCredit present).
@@ -4553,7 +4553,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     // BillOffset is negative; TaxExemptDelivery is the positive mirror.
     result.TaxExemptDelivery = Math.abs(_boVal).toFixed(2);
   } else if (_teVal && _boVal) {
-    // Both extracted. The Evergy bill often prints the Bill Offset line
+    // Both extracted. The Utility E bill often prints the Bill Offset line
     // without an explicit minus sign (e.g. Bill 29 "Bill offset voices, $629.18"),
     // so OCR captures it as positive and the sign gets lost. Enforce the
     // mirror rule: TaxExempt positive, BillOffset negative, equal magnitude.
@@ -4568,7 +4568,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   }
 
   // ── STRUCTURAL POSITION FALLBACK: use _EVG_CHARGE_ORDER to recover missing values ──
-  // See charge ordering constant defined above _extractEvergy.
+  // See charge ordering constant defined above _extractUtility E.
   if (!result.CustomerCharge) {
     // Customer Charge is always the FIRST dollar amount after "Billing Details - service from"
     const lines = t.split('\n');
@@ -4770,7 +4770,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       //
       // ade32899: the tolerance used to be `diff / chargeVal` — dollars-per-kW
       // divided by dollars, a unit mismatch that made the gate near-impossible
-      // to trip on small charges. Louisburg Rockville RkVA: ocr rate 0.883 vs
+      // to trip on small charges. Client A Site H RkVA: ocr rate 0.883 vs
       // derived 0.663 (33% off) on an $11.79 charge computed to 1.9% under the
       // old formula and never corrected. Comparing the diff to the derived rate
       // itself (a true percentage of the rate) is what the other rate cross-checks
@@ -5186,8 +5186,8 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // (see the header comment above `xRate`'s definition). xChg() only needs to find
   // a keyword + a trailing "$X.XX" and is tolerant of OCR noise in between, so it
   // regularly succeeds even when xRate()'s much more specific "<qty> kWh at
-  // $<rate> per kWh" phrase fails to match at all (root-caused on the Louisburg
-  // Circle Grove Elementary acct 1000004 May 05/05-06/04/2026 bill, Off-Peak
+  // $<rate> per kWh" phrase fails to match at all (root-caused on the Client A
+  // Site G Elementary acct 1000004 May 05/05-06/04/2026 bill, Off-Peak
   // line: OCR degraded "at $0.04960 per kWh" past all 5 of xRate's fallback
   // patterns). When that happens, `_rates[chargeField]` is never populated (xRate
   // found nothing at all for that charge), so `OnPeakRate`/`OffPeakRate` come back
@@ -5213,7 +5213,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       const qty = parseBillNumber(result[qtyField]);
       if (charge > 0 && qty > 0) {
         const derivedRate = charge / qty;
-        // Same sanity ceiling xRate itself uses for kWh rates (~line 2216): Evergy
+        // Same sanity ceiling xRate itself uses for kWh rates (~line 2216): Utility E
         // on/off-peak energy rates are always well under $1/kWh.
         if (derivedRate > 0 && derivedRate < 1) {
           result[rateField] = derivedRate;
@@ -5375,7 +5375,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     }
   }
 
-  // ── DECIMAL FORMAT ENFORCEMENT (per Evergy Billing Details rules) ──
+  // ── DECIMAL FORMAT ENFORCEMENT (per Utility E Billing Details rules) ──
   // kW = #,###.#### (4 dp), kWh = #,###.#### (4 dp), charges = $#,###.## (2 dp)
   // StartRead/EndRead = ##,###.#### (4 dp), MeterMultiplier = ##.#### (4 dp)
   const _pad4 = (v) => {
@@ -5525,24 +5525,24 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   return result;
 }
 
-// OCR-tolerant patterns for Evergy bills
+// OCR-tolerant patterns for Utility E bills
 // Common OCR misreads: g→q/9, l→1/I, D→O, a→o, s→5, i→l, e→c
 const _EVG_BILLING_DETAILS = /B[il1]{2}[il1]ng\s+D[ec]t[ao][il1]{1,2}[s5]?\s*[-\u2013\—]\s*[s5]erv[il1]ce\s+from/i;
 const _EVG_SERVICE_FROM = /[s5]erv[il1]ce\s+from[:\s]\s*(\d{2}\/\d{2}\/\d{4})\s+to[:\s]\s*(\d{2}\/\d{2}\/\d{4})/i;
 const _EVG_CHG = /Ch[gaq9][.:]?/i; // matches Chg, Cha, Chq, Ch9, Chg.
-// FIX (2026-08-24, Louisburg visual audit bug #6): `\s+` -> `\s*` between
+// FIX (2026-08-24, Client A visual audit bug #6): `\s+` -> `\s*` between
 // "Account" and "Number" — real OCR glues them into one token on some pages
 // ("AccountNumber", no space) even though the printed digits are legible.
 // See the matching fix + comment on `_acctForIdx` further below for the
 // confirmed real-bill example.
-// ONE shared rule for reading Evergy account numbers from text (a page or the
+// ONE shared rule for reading Utility E account numbers from text (a page or the
 // whole document). Every call site uses _evgAccountsIn / _evgPickAccount.
 // OCR can damage the FIRST digit of an "Account Number :" line ("1000007"
 // read as "§000007"). The tolerant separator accepts the damaged line, and
 // a first-match rule returned a 9-digit account. A lost digit only makes a
 // candidate SHORTER, so _evgAccountsIn keeps only the candidates of the longest
 // digit length found (all real accounts on the text, damaged ones dropped).
-// A candidate ends at the end of the digit token: Evergy prints the account as one
+// A candidate ends at the end of the digit token: Utility E prints the account as one
 // unbroken digit string, so a separate digit group after a space is not merged.
 const _EVG_ACCT_G = /[Aa]ccount\s*(?:N[ou]mber\s*)?[^0-9A-Za-z\n]{0,6}\s*[(\[\u00a9]?(\d{6,20})/gm;
 function _evgAccountsIn(text) {
@@ -5556,7 +5556,7 @@ function _evgPickAccount(accts) {
 const _EVG_ADDR =
   /^(\d+\s+\w[\w\s,]{3,50}(?:KS|MO|KY|OK|NE|IA|AR|TX|CO|IL|IN|OH|MI|PA|NY|NJ|CT|MA|VA|NC|SC|GA|FL|TN|MS|AL|LA|NM|AZ|UT|ID|OR|WA|MT|WY|ND|SD|MN|WI|NV|CA))\s*$/m;
 
-// Shared helpers for the City of Louisburg + Propane rules below.
+// Shared helpers for the City of Client A + Propane rules below.
 function _lbg_splitPages(t) {
   const markers = [...t.matchAll(/%%PAGE_(\d+)%%/g)];
   if (!markers.length) return [t];
@@ -5597,7 +5597,7 @@ function _lbg_gasRate(billDate) {
   }
   return rate;
 }
-// Resolves the printed Louisburg GAS line into GasCharge. A printed value
+// Resolves the printed Client A GAS line into GasCharge. A printed value
 // ALWAYS wins over a computed one (Matt rule): GasCharge = printed GAS line -
 // customer charge, never usage x rate. Usage x rate is only a CHECK
 // (|printed variable - usage x rate| < $1). When the check fails, the printed
@@ -5674,7 +5674,7 @@ function _lbg_heldGasBill(base, reason, originalCharge) {
   };
 }
 
-// Reconciles a garbled or missing Louisburg Gas charge against the page's
+// Reconciles a garbled or missing Client A Gas charge against the page's
 // Current Bill total (this period's Water + Gas + Sewer + Stormwater sum)
 // minus the OTHER three commodities, which _extractNew already parsed
 // independently (backlog 5884be3d, 37f76621). Only ever called when the raw
@@ -5807,7 +5807,7 @@ function _lbg_resolveFuelAdj(
   };
 }
 
-// Builds the split "Gas" bill for a Louisburg new-format page, or null when
+// Builds the split "Gas" bill for a Client A new-format page, or null when
 // there's genuinely no Gas commodity on the page. Centralizes the garbled-
 // charge (rate exceeds $2.00/therm ceiling) and missing-charge (label
 // matched, no charge token parsed) recovery paths so both go through the
@@ -6016,7 +6016,7 @@ function _lbg_tokens(line) {
     .filter((n) => !isNaN(n));
 }
 // Customer-specific account → facility name map is user-populated via
-// DB key `en_louisburg_facility_map` (JSON object {acct:"NAME"}).
+// DB key `en_client-a_facility_map` (JSON object {acct:"NAME"}).
 // Nothing ships in source — the file stays free of customer data.
 function _lbg_facilityLookup(acct) {
   if (!acct) return null;
@@ -6145,9 +6145,9 @@ const UTILITY_RULES = [
       };
       const _acctForIdx = (idx) => {
         const pageText = _pageTextForIdx(idx);
-        // FIX (2026-08-24, Louisburg visual audit bug #6): "Account" and
+        // FIX (2026-08-24, Client A visual audit bug #6): "Account" and
         // "Number" tolerated `\s+` (one-or-more) between them, requiring a
-        // space. Real OCR on the New HS bill (202 Aquatic Dr, acct
+        // space. Real OCR on the New HS bill (100 Sample Dr, acct
         // 1000001, Dec 2025) read the header as one glued token
         // "AccountNumber" with zero space — confirmed against the rendered
         // page, where the printed number itself is sharp/unambiguous.
@@ -6160,10 +6160,10 @@ const UTILITY_RULES = [
         const addrMatch = pageText.match(_EVG_ADDR);
         return addrMatch ? addrMatch[1].trim() : null;
       };
-      // Facility disambiguator (backlog acc68bdb) — a single Evergy account
+      // Facility disambiguator (backlog acc68bdb) — a single Utility E account
       // can legitimately cover TWO distinct facilities for the same billing
       // period (e.g. New HS "2LGSF" and Ballfields "2MGSE", both on account
-      // 1000001 at 202 Aquatic Dr). Read the rate/meter-class code that
+      // 1000001 at 100 Sample Dr). Read the rate/meter-class code that
       // prints immediately before that page's own "Billing Details" header
       // (the same signal already used for the RateSchedule field) so the
       // dedup key below can tell the two apart instead of collapsing them.
@@ -6172,7 +6172,7 @@ const UTILITY_RULES = [
       // Details header) is trusted here. The generic "Rate: <code>" fallback
       // used elsewhere for the RateSchedule field is NOT reused — applied
       // to a whole page (rather than an already-isolated bill section) it
-      // false-positives on ordinary prose (e.g. "...Evergy's rate review."
+      // false-positives on ordinary prose (e.g. "...Utility E's rate review."
       // on an LHS cover page matched as rate code "review", which then
       // wrongly conflicted with the real "2LGSF" and split one bill in
       // two). Returning null on anything less certain is the safe default
@@ -6243,7 +6243,7 @@ const UTILITY_RULES = [
       // page). The exact-key dedup above leaves both as separate entries,
       // producing a phantom "extra bill" with overlapping page ranges. Walk
       // adjacent entries (sorted by idx) and merge when the end dates match
-      // AND start dates are within ±2 days — Evergy bills are ~30 days so
+      // AND start dates are within ±2 days — Utility E bills are ~30 days so
       // legit adjacent bills never share an end date, so this is safe.
       // Prefer the entry that has a "Billing Details" header within 40 chars
       // before its idx (that's the charge-line page — richer section).
@@ -6319,7 +6319,7 @@ const UTILITY_RULES = [
       uniqueBills = _merged;
 
       // ── CHAIN CONTINUITY NORMALIZATION ──
-      // Consecutive Evergy bills always share a meter-read date
+      // Consecutive Utility E bills always share a meter-read date
       // (prev.end === cur.start). When OCR misreads a digit in one of the
       // two date instances, the merged winner may still have a slightly
       // wrong start date. Walk adjacent pairs and snap cur.start to
@@ -6418,7 +6418,7 @@ const UTILITY_RULES = [
       // that page is "orphaned" — and this partition formula silently
       // annexes it as the NEXT real bill's cover page, gluing an entirely
       // different building's charge lines onto the next bill's section
-      // (root cause of cf3f0b8d: Rockville's BilledKWCharge/FacilitiesKW
+      // (root cause of cf3f0b8d: Site H's BilledKWCharge/FacilitiesKW
       // absorbing New HS's page 42). Guard: before granting `bdPage - 1` as
       // cover, confirm that page does not itself carry a "Billing Details -
       // service from" occurrence resolved to a DIFFERENT, non-null account
@@ -6669,7 +6669,7 @@ const UTILITY_RULES = [
         // Override BillingPeriodStart/End with the winning uniqueBills
         // entry's date pair. The section text may still contain BOTH the
         // dropped phantom match and the winning match (midpoint slicing
-        // doesn't physically remove text), and _extractEvergy picks the
+        // doesn't physically remove text), and _extractUtility E picks the
         // FIRST occurrence of service-from it finds — which may be the
         // phantom one. The uniqueBills entry has already been chain-
         // normalized (snapping to the prior bill's end date) so it's the
@@ -6742,7 +6742,7 @@ const UTILITY_RULES = [
         const _maxPage = _pageMarkers.length ? _pageMarkers[_pageMarkers.length - 1].page : 1;
 
         // ── STRATEGY 1: Billing Date + Account Number per-page grouping ──
-        // Each Evergy page has a "Billing Date: MM/DD/YYYY" and "Account Number :
+        // Each Utility E page has a "Billing Date: MM/DD/YYYY" and "Account Number :
         // XXX" printed in its header. Every page of the SAME bill shares the same
         // (account, billingDate) pair, so grouping pages by that pair gives the
         // exact page range for each bill — more reliable than any regex anchor
@@ -7138,10 +7138,10 @@ const UTILITY_RULES = [
 
       // ── AccountNumber ──
       // Priority: Customer ID (unique per building) > LDC Account (shared across
-      // all Baker campus buildings) > BG Account ID (invoice-level only).
+      // all Client E campus buildings) > BG Account ID (invoice-level only).
       //
       // C2 fix: Use Customer ID (RG-XXXXXX) as the per-building unique key.
-      // All 14 Baker buildings share the same LDC Account (<REDACTED-ACCT-SEG1> <REDACTED-ACCT-SEG2> <REDACTED-ACCT-SEG3>),
+      // All 14 Client E buildings share the same LDC Account (<REDACTED-ACCT-SEG1> <REDACTED-ACCT-SEG2> <REDACTED-ACCT-SEG3>),
       // so LDC Account alone cannot distinguish buildings. Customer ID is unique per
       // building and appears in every site block. Format varies: "RG-<REDACTED-ACCT>" (with
       // dash) or "RG<REDACTED-ACCT>" (no dash, OCR misread on some pages) — normalize by
@@ -7350,7 +7350,7 @@ const UTILITY_RULES = [
     },
   },
   // ── End Constellation NewEnergy ─────────────────────────────────────────
-  // ── Wood River Energy (Gas Supplier — multi-site district account) ───────
+  // ── WRE (Gas Supplier — multi-site district account) ───────
   // One consolidated invoice covers 10 service addresses.
   // extractAll() splits into per-building records; aggregate totals are
   // cross-checked but not saved as a separate record.
@@ -7378,17 +7378,17 @@ const UTILITY_RULES = [
       const BillDate = billDateM ? billDateM[1] : null;
 
       // Fix (fix/wre-building-name-match, 2026-09-15): CustomerName — the
-      // district/customer display name ("Spring Hill ISD 230") that WRE
+      // district/customer display name ("Client C ISD 230") that WRE
       // prints on the line right after "Customer #: <number>", used ONLY by
       // findMeterMatch's building-name fallback (bill-analysis.js) to scope
       // its candidate buildings to the invoice's own district and avoid a
-      // cross-district name collision (e.g. Louisburg USD #416 also has its
+      // cross-district name collision (e.g. Client A USD #416 also has its
       // own "High School"/"Middle School" buildings). Never used for
       // anything else — no existing consumer reads CustomerName from a WRE
       // bill, so this is purely additive. The name and the "Invoice #:"
       // label are OCR'd onto the SAME line in this two-column pdftotext
       // dump, separated by the wide gap pdftotext uses for column
-      // positioning ("Spring Hill ISD 230 <lots of spaces> Ioice #: ..."),
+      // positioning ("Client C ISD 230 <lots of spaces> Ioice #: ..."),
       // so the name is captured as the text before the first 2+-space gap
       // on the line immediately following the "Customer #:" label line.
       let CustomerName = null;
@@ -7405,17 +7405,17 @@ const UTILITY_RULES = [
               break;
             }
             // Fix (companion to 8ad232c1/b0b40258/15da4714 cluster,
-            // 2026-09-17): one sampled OCR pass (Inv 478203) joined the two
+            // 2026-09-17): one sampled OCR pass (Inv C) joined the two
             // columns with a SINGLE space instead of the usual wide gap
-            // ("Spring Hill USD 230 Invoice #: 478203"), so the 2+-space
+            // ("Client C District A Invoice #: 478203"), so the 2+-space
             // rule above never matches and CustomerName stays null for the
             // whole invoice. Fall back to cutting at the "Invoice #:" /
             // "Ioice #:" label text itself (present, if garbled, on every
             // sampled fixture) instead of requiring a wide gap. Verified
             // against all 4 real sampled WRE fixtures (still captures the 3
             // that already worked, now also captures 478203) and against
-            // real non-WRE fixtures (MFA propane, Evergy, City of
-            // Louisburg gas) with zero false captures — moot in practice
+            // real non-WRE fixtures (MFA propane, Utility E, City of
+            // Client A gas) with zero false captures — moot in practice
             // since this whole extractor only runs after the WRE-specific
             // `detect()` gate, but checked directly regardless.
             const _m2 = _line.match(
@@ -7440,7 +7440,7 @@ const UTILITY_RULES = [
         const _lines = t.split(/\r?\n/);
         // Fix (2026-09-06, WRE billing-period false-null bug): the inline regex used to
         // accept ANY alphabetic token before the year (e.g. OCR-garbled "Mary 2025" on
-        // Inv 452084's page-1 pass), which then failed the WRE_MONTH_MAP lookup below and
+        // Inv B's page-1 pass), which then failed the WRE_MONTH_MAP lookup below and
         // left BillingPeriodStart/End null for all 10 sites. monthRe (restricted to real
         // month names) is now defined up front and used to VALIDATE the inline capture —
         // an invalid token is rejected and we fall through to the line scan below, which
@@ -7624,7 +7624,7 @@ const UTILITY_RULES = [
       // is the site charge.  OCR invoices may corrupt thousands commas to periods
       // in dollar amounts (e.g. $1.058.61 → should be $1,058.61) — restored below.
       //
-      // The Timber Sage site straddles a page break: its "Service Address:" line
+      // The Pine Run site straddles a page break: its "Service Address:" line
       // is the last line of page 1, and the city line + item rows + Sub-Total all
       // appear on page 2.  Because we key off "Service Address:" to OPEN a block
       // and off "Sub-Total:" to CLOSE it, the page break is transparent.
@@ -7635,7 +7635,7 @@ const UTILITY_RULES = [
       const hasSWEGlobal = /Special\s+Weather\s+Event/i.test(t);
 
       // ── Block parser ──
-      // Fix (2026-07-22, Wood River per-site OCR consensus): factored the parsing
+      // Fix (2026-07-22, WRE per-site OCR consensus): factored the parsing
       // loop into a function of `text` (was inline against `t` only) so it can be
       // re-run against ALTERNATE OCR passes below to recover sites the PRIMARY
       // (highest-scoring) pass garbled. See the consensus merge step after
@@ -7654,14 +7654,14 @@ const UTILITY_RULES = [
 
           // Detect "Service Address:" line — opens a new site block.
           // The building name and Acct/Meter appear on the SAME line in all formats.
-          // Fix (2026-07-22, Wood River May/Sep/Oct 2025 legibility): same punctuation-
+          // Fix (2026-07-22, WRE May/Sep/Oct 2025 legibility): same punctuation-
           // corruption tolerance as the Sub-Total fix above — OCR misread this line's
-          // colon as a period on Inv 452084's High Schl site ("Service Address.  High
+          // colon as a period on Inv B's High Schl site ("Service Address.  High
           // Schl..."), which with the old strict-colon regex meant that site's block
           // never opened at all (not even a stub), silently shrinking the whole
           // downstream site array by one and shifting every later site's position.
           // Fix (f631c1f8, 2026-09-16): OCR also misreads the word "Address" itself
-          // on real Spring Hill invoices (verified on Inv 447604/452084: "Service
+          // on real Client C invoices (verified on Inv A/452084: "Service
           // Addiness:" for 3 of that invoice's 10 sites) — the old literal-"Address"
           // anchor meant those sites' blocks never opened at all, so there was no
           // record for their AccountNumber to ever attach to. "Add\w*" keeps matching
@@ -7670,7 +7670,7 @@ const UTILITY_RULES = [
             _inSites = true;
             // Extract building name (text between "Service Address:" and "Acct/Meter:")
             // Fix (2026-07-28, gas-bill-ocr-extraction): the "Acct/Meter" LABEL's slash is
-            // frequently misread by OCR — verified on Inv 447604 (Apr 2025): "AcctUMeter",
+            // frequently misread by OCR — verified on Inv A (Apr 2025): "AcctUMeter",
             // "AcctMeter" (slash dropped entirely). The old regex required a literal "/" in
             // the label, so every site on that invoice silently lost its AccountNumber AND
             // MeterNumber even though the VALUE side ("NNNNNN/XNNNNNNX") read back fine —
@@ -7679,7 +7679,7 @@ const UTILITY_RULES = [
             // "Meter" in the LABEL only; the VALUE separator below is unchanged.
             // Fix (f631c1f8, 2026-09-16): the "Acct" word itself is also frequently
             // misread beyond this tolerance — verified: "Aeocu Meter", "Accu Meter",
-            // "Acti Meter", "Acc Meter" (real Spring Hill Apr/May 2025 invoices). The
+            // "Acti Meter", "Acc Meter" (real Client C Apr/May 2025 invoices). The
             // literal "Acct" requirement meant the LABEL never matched on any of these,
             // so AccountNumber capture failed even when the value itself was legible.
             // "Meter" is the one word that reads correctly in every sample seen, so
@@ -7698,7 +7698,7 @@ const UTILITY_RULES = [
               // scan or non-slash-separated value). Fix (2026-09-06, WRE ServiceAddress
               // garbage bug): the old fallback captured `.+` to END OF LINE, which
               // swallowed the garbled "Acct/Meter: ..." tail INTO ServiceAddress (e.g.
-              // "BofE - 101 E South St                    AcctMeter:  SE0TOMGO0T E1340"),
+              // "BofE - 101 E Sample St                    AcctMeter:  SE0TOMGO0T E1340"),
               // breaking the downstream address-based meter matcher (findMeterMatch,
               // bill-analysis.js). Bound the capture to stop before the "Acct...Meter"
               // label — same boundary the primary regex above already respects — via a
@@ -7805,7 +7805,7 @@ const UTILITY_RULES = [
             // _wreTriggerCharge to stay null and the per-site Sum Mismatch banner to fire
             // even though GasCharge/TotalCurrentCharges themselves were correct.
             // Fix (2026-09-15, WRE OCR-tolerance sweep): OCR misread "$" as "£" on a
-            // real, legible High School charge (Inv 447604, site #3) — verified the
+            // real, legible High School charge (Inv A, site #3) — verified the
             // amount itself (90.68) was correct, only the currency glyph was wrong.
             // Widen the currency anchor to accept "£" too; the amount shape
             // (\d+\.\d{2}) is unchanged so this can't start matching non-currency
@@ -7858,12 +7858,12 @@ const UTILITY_RULES = [
             // Fix (2026-09-18, WRE usage-capture sweep): the old `[)\s]+` gate
             // required a paren/whitespace character IMMEDIATELY after "FOM" before
             // digits could start matching — verified failure: "(FOMY 00000" (a
-            // stray OCR'd "Y" sits between "FOM" and the digits, e.g. Timber Sage
-            // on Inv 447604). Insert a short (0-2 letter) stray-character
+            // stray OCR'd "Y" sits between "FOM" and the digits, e.g. Pine Run
+            // on Inv A). Insert a short (0-2 letter) stray-character
             // tolerance BETWEEN two `[)\s]*` runs rather than replacing them —
             // `[)\s]*` must stay unbounded (`*`, not a capped count) because real
             // OCR passes pad this column with dozens of spaces (verified: Inv
-            // 447604's Wall Crk site has ~70 spaces between "FOM)" and its
+            // 447604's Alpha Crk site has ~70 spaces between "FOM)" and its
             // digits) — a capped skip recovers the stray-letter case but silently
             // breaks the far more common wide-padding case, which is a real
             // regression caught by testing against real debug files, not a
@@ -7896,7 +7896,7 @@ const UTILITY_RULES = [
             // Fix (2026-09-15, WRE OCR-tolerance sweep): same £-for-$ OCR-misread
             // tolerance as the Trigger/Index charges above.
             // Fix (2026-09-21, WRE SWE-omitted-from-validation fix): the SWE dollar
-            // figure can itself print NEGATIVE (verified: Inv 486834/Jan 2026 site
+            // figure can itself print NEGATIVE (verified: Inv D/Jan 2026 site
             // #10 prints "$-293.47", not a positive surcharge like every other site
             // on the same invoice) — allow an optional leading "-" inside the
             // captured group so parseFloat carries the sign through.
@@ -7938,7 +7938,7 @@ const UTILITY_RULES = [
             // line (no currency sign, no decimal point at all) — covers site #7's
             // "3082 38" -> "3082.38". The (?<![.\d]) guard is required: without it
             // this matched digits carved out of the MIDDLE of an unrelated rate
-            // token (verified misfire: "34.7550             47" on Inv 447604 site
+            // token (verified misfire: "34.7550             47" on Inv A site
             // #10 matched "7550"+"47" as a fake $7,550.47 charge) — the guard
             // forces group 1 to start at a real token boundary, not mid-decimal.
             const _tolDollarM =
@@ -7985,13 +7985,13 @@ const UTILITY_RULES = [
           // Format: "Sub-Total:   13.49   0.13   $56.45"  (embedded)
           //         "Sub-Total:                                   9.58   0.11   $50.31" (OCR with wide spaces)
           // Fix 3: dollar value may have OCR comma→period corruption.
-          // Fix (2026-07-22, Wood River May/Sep/Oct 2025 legibility): the closing colon
+          // Fix (2026-07-22, WRE May/Sep/Oct 2025 legibility): the closing colon
           // after "Sub-Total" is frequently misread by OCR as a period, semicolon, or
           // comma ("Sub-Total.", "Sub-Total;", "Sub Total,"), and the dash between the
           // words is sometimes dropped entirely ("Sub Total:"). Requiring a literal
           // colon (and only a single optional dash) silently dropped ~70% of a real
           // invoice's per-site totals even after the render-quality fix above — verified
-          // against Inv 452084 (May 2025): only 3/10 Sub-Total lines matched the old
+          // against Inv B (May 2025): only 3/10 Sub-Total lines matched the old
           // strict pattern, 8/10 matched once punctuation was tolerated. Widened to accept
           // any of :;,. as the closing punctuation (or none) and 0-2 chars (space/dash/
           // period) between "Sub" and "Total".
@@ -8009,7 +8009,7 @@ const UTILITY_RULES = [
             // Last dollar value on the line = site charge.
             // Accept both clean form ($1,425.42) and OCR-corrupted form ($1.425.42).
             // Fix (2026-09-15, WRE OCR-tolerance sweep): same £-for-$ OCR-misread
-            // tolerance as the component-charge patterns above (verified: Inv 447604
+            // tolerance as the component-charge patterns above (verified: Inv A
             // site #3's Sub-Total prints "£90.68").
             const _dollarM = ln.match(/[$£](\d{1,3}\.\d{3}\.\d{2})\s*$/) || ln.match(/[$£]([\d,]+\.\d{2})\s*$/);
             if (_mmbtuM) _cur.mmbtu = parseFloat(_mmbtuM[1].replace(/,/g, ''));
@@ -8071,7 +8071,7 @@ const UTILITY_RULES = [
                   // The Sub-Total's OCR corruption (a dropped decimal point) is a
                   // whole-line OCR failure, not specific to this one column — the
                   // component line whose rate/charge just CONFIRMED this repair
-                  // (verified: Inv 452084 site "Elem-Wishsler", Index line read
+                  // (verified: Inv B site "Elem-Exampler", Index line read
                   // "2671" for a true 26.71) typically carries the exact same
                   // corrupted bare-digit reading. Apply the identical repair to
                   // THAT SAME sibling field only; otherwise the independent rate-
@@ -8140,7 +8140,7 @@ const UTILITY_RULES = [
               // triggerMMbtu/indexMMbtu component values, so the downstream
               // Sub-Total-vs-components identity check (_wreComponentSumMismatch)
               // can recognize it would otherwise be comparing this value to
-              // itself (circular/tautological — verified: Inv 447604 site #6,
+              // itself (circular/tautological — verified: Inv A site #6,
               // where Sub-Total's own line never parsed, so its "Sub-Total MMbtu"
               // was silently just the same wrong Index-line reading it's meant to
               // be checked against).
@@ -8158,7 +8158,7 @@ const UTILITY_RULES = [
       // ── Per-site OCR consensus recovery (2026-07-22) ──
       // `t` is ONE whole-page OCR pass chosen by keyword score — but that single
       // pass can still garble an individual site's Sub-Total line badly enough that
-      // NO site block gets produced for it at all (verified: WRE Inv 452084 May 2025
+      // NO site block gets produced for it at all (verified: WRE Inv B May 2025
       // — the "High Schl" site's Index/Sub-Total row was dropped or lost its "$" in
       // every one of the 9 render scale/PSM combinations tried for the winning page).
       // window._pdfOcrPasses already holds every OCR pass's full text (computed during
@@ -8211,7 +8211,7 @@ const UTILITY_RULES = [
             for (const _altBlocks of _altBlocksList) {
               // Fix (2026-07-22): EXACT index only — no positional window search.
               // This invoice format can legitimately repeat the SAME building name at
-              // multiple site blocks (e.g. "Elem - 300 S Webster St" appears twice, once
+              // multiple site blocks (e.g. "Elem - 300 S Example St" appears twice, once
               // per meter) — the only thing that distinguishes those entries is the
               // meter number, which OCR corrupts too unreliably to use as a key. A
               // window search (tried and reverted) matched on address text alone and
@@ -8250,8 +8250,8 @@ const UTILITY_RULES = [
         const blk = siteBlocks[i];
         // Fix (2026-07-28, gas-bill-ocr-extraction): a site block that has NEITHER an
         // AccountNumber NOR a usable mmbtu was previously `continue`d — silently dropped
-        // with zero trace. Verified on Inv 447604 (Apr 2025, low-DPI scan): 8 of this
-        // invoice's 10 known sites (per spring-hill.md's 10-site Wood River format) vanished
+        // with zero trace. Verified on Inv A (Apr 2025, low-DPI scan): 8 of this
+        // invoice's 10 known sites (per spring-hill.md's 10-site WRE format) vanished
         // this way with no warning, no manual-review row, nothing — the app showed 2 bills
         // and gave no indication 8 more existed on the page. Same class of defect as
         // b5951068 (per-page parse errors) but at the per-SITE level within one page. Surface
@@ -8265,7 +8265,7 @@ const UTILITY_RULES = [
         // only when NEITHER usage NOR charge exists; a missing AccountNumber
         // alone is surfaced as a non-blocking warning via the existing
         // validateBillData "important field" check (AccountNumber is in
-        // WRE's `important` list, EXPECTED_FIELDS['Wood River Energy'] —
+        // WRE's `important` list, EXPECTED_FIELDS['WRE'] —
         // bill-analysis.js), not as a parseError/manual-review block.
         if (!blk.AccountNumber && blk.mmbtu == null && blk.dollar == null) {
           if (!blk.ServiceAddress && blk.dollar == null) continue; // truly nothing legible — not even a stub worth showing
@@ -8300,13 +8300,13 @@ const UTILITY_RULES = [
         // Fix (2026-07-28, gas-bill-ocr-extraction TASK 3): rate-based sanity cross-
         // check. Tesseract can misread a digit in MMbtu (real 4.74 read as 174) or in
         // an account number, but the DOLLAR charge on this invoice format extracts
-        // correctly even on the worst real bill tested (verified exact on Inv 447604:
+        // correctly even on the worst real bill tested (verified exact on Inv A:
         // $22.92/$182.02/$417.16/$604.41). Each per-site block prints its own MMbtu,
         // rate, AND resulting charge for both the Trigger and Index components, so
         // MMbtu*rate can be checked against the printed charge without any external
         // data. Tolerance chosen from real observed data, not a guess: probed all 10
-        // sites' Trigger AND Index components (20 checks) on Inv 478203 (Nov 2025) —
-        // the one Spring Hill invoice with a real digital text layer (no OCR involved,
+        // sites' Trigger AND Index components (20 checks) on Inv C (Nov 2025) —
+        // the one Client C invoice with a real digital text layer (no OCR involved,
         // so every discrepancy here is legitimate bill-rounding, not misread digits).
         // Every single check came back within -0.89% to -0.97% of the printed charge
         // (the bill's printed MMbtu/rate are rounded to fewer decimals than its own
@@ -8342,7 +8342,7 @@ const UTILITY_RULES = [
         // MMbtu must equal Trigger MMbtu + Index MMbtu — they are literally the same
         // number, printed twice on the same invoice (once as two line items, once as
         // their sum). Needed because the rate-based check above goes blind whenever
-        // the RATE column itself is OCR-unreadable (confirmed on Inv 447604 site #1:
+        // the RATE column itself is OCR-unreadable (confirmed on Inv A site #1:
         // Sub-Total read as 174 MMbtu, but Index alone read as 424 MMbtu with the rate
         // column unreadable — the rate check had nothing to compare, but 424 MMbtu
         // from ONE component can never fit inside a 174 MMbtu total, which this check
@@ -8372,7 +8372,7 @@ const UTILITY_RULES = [
           // component line reads e.g. "10474" for "104.74" while the Sub-Total's
           // OWN line already parsed correctly WITH its decimal (verified: Inv
           // 474908/Oct 2025 site #10, Index "10474" vs correct Sub-Total 104.74;
-          // Inv 469609/Sep 2025 site #10, Index "6557" vs correct Sub-Total
+          // Inv E/Sep 2025 site #10, Index "6557" vs correct Sub-Total
           // 65.57). If sum/100 reconciles with the Sub-Total within the same
           // tolerance, this is that known shape, not a real mismatch — do not
           // flag. This mirrors the bare-digit repair heuristic already trusted
@@ -8389,7 +8389,7 @@ const UTILITY_RULES = [
         // _mmbtuFromComponentFallback above), running this identity check against
         // the SAME triggerMMbtu/indexMMbtu it was derived from is circular — it
         // can only ever compare a value to itself and will never catch a real
-        // misread (verified: Inv 447604 site #6, where this was true and the
+        // misread (verified: Inv A site #6, where this was true and the
         // check always silently passed). Skip the tautological comparison in
         // that case; the block below decides whether that leaves the site with
         // no independent verification at all.
@@ -8413,7 +8413,7 @@ const UTILITY_RULES = [
         // frequently fails to parse (no $/decimal on that specific line) even
         // when the component's own RATE (a clean 4-decimal $-anchored token,
         // e.g. "$4.7550") and the Sub-Total's own reliably-captured blk.dollar
-        // BOTH parsed fine. Verified hole (Wall Crk, Inv 447604 site #9):
+        // BOTH parsed fine. Verified hole (Alpha Crk, Inv A site #9):
         // mmbtu=366, dollar=$307.60, indexRate=$4.7550, indexCharge=null (the
         // Index line ends "2307 60" — no $/decimal, so _idxDollarM never
         // matches) — every check above no-ops (rate check needs indexCharge;
@@ -8493,7 +8493,7 @@ const UTILITY_RULES = [
         }
         // Fix (2026-09-15, WRE OCR-tolerance sweep): the tolerant component-line
         // fallback above can recover a usage number with NO printed rate and NO
-        // Sub-Total to cross-check it against (Inv 447604 site #7) — the rate/sum
+        // Sub-Total to cross-check it against (Inv A site #7) — the rate/sum
         // checks below go blind in that case (nothing to compare), so the fallback
         // marks that specific case via _tolUnverifiedMMbtu; fold it into the same
         // existing manual-review flag rather than inventing a second mechanism.
@@ -8591,7 +8591,7 @@ const UTILITY_RULES = [
           // already parsed (blk.sweMMbtu, above) but never shipped in the output
           // object, so it never had a way to display even though a qtyField/unit
           // exists in _LAYOUT_WRE for it (bill-analysis.js). Prints negative on a
-          // real invoice (e.g. Jan 2026 Woodland: -56.89) — that sign is real and
+          // real invoice (e.g. Jan 2026 Client B: -56.89) — that sign is real and
           // intentional (a credit), not stripped here.
           _wreSWEMMbtu: blk.sweMMbtu != null ? String(blk.sweMMbtu) : null,
           _wreTriggerRate: blk.triggerRate || null,
@@ -8676,7 +8676,7 @@ const UTILITY_RULES = [
       // 2026-09-16) — previously this was ONLY a console.log, never seen by
       // the app or the user. bill-analysis.js's GATE WRE reads this property
       // (same attach-to-array pattern already used for `_unmatchedPages`) and
-      // compares it to the known Spring Hill baseline of 10 sites/invoice.
+      // compares it to the known Client C baseline of 10 sites/invoice.
       results._wreSiteBlockCount = siteBlocks.length;
 
       return results;
@@ -8749,7 +8749,7 @@ const UTILITY_RULES = [
       );
     },
   },
-  // ── End Wood River Energy ─────────────────────────────────────────────────
+  // ── End WRE ─────────────────────────────────────────────────
   {
     name: 'Gas Utility (Spire / Kansas Gas Service / Atmos / Laclede / Black Hills)',
     // Broadened detector — accepts any common gas-bill signature so multi-bill PDFs
@@ -9269,7 +9269,7 @@ const UTILITY_RULES = [
     // adopted when migrating billing software. Mixed utility bills
     // (GAS + WATER + SEWER + STORMWATER + WATER PROTECTION FEE) all end
     // up on one page; this rule returns one bill row per page with every
-    // line-item populated. Verified against the 63-page Louisburg USD
+    // line-item populated. Verified against the 63-page Client A USD
     // 416 bill dump on 2026-04-14 — 53 customer bills, 0 field issues.
     detect: (t) =>
       /louisburgkansas\.gov|City\s*of\s*Louisburg|215\s*S\.?\s*Broadway/i.test(t) &&
@@ -9290,9 +9290,9 @@ const UTILITY_RULES = [
               preview: p.trim().slice(0, 200),
               // Full page text (not the 200-char preview) so a downstream
               // fallback can retry this page against OTHER UTILITY_RULES —
-              // e.g. an Evergy electric page mixed into a Louisburg multi-
+              // e.g. an Utility E electric page mixed into a Client A multi-
               // utility scan. See _unmatchedToSyntheticBills. Bug: combined
-              // Louisburg+Evergy PDFs silently dropped the Evergy pages.
+              // Client A+Utility E PDFs silently dropped the Utility E pages.
               pageText: p,
             });
           }
@@ -9386,7 +9386,7 @@ const UTILITY_RULES = [
       // After the BillDate-based backfill and period alignment, some bills
       // may still have null dates (e.g. when BillDate is also null on the
       // page). Infer dates from surrounding bills in the same account by
-      // looking at the date sequence. Louisburg bills are monthly (~15th
+      // looking at the date sequence. Client A bills are monthly (~15th
       // to ~15th), so consecutive bills share period boundaries.
       const _parseDt = (s) => {
         if (!s) return null;
@@ -9473,17 +9473,17 @@ const UTILITY_RULES = [
       // LGS (Large Gas Service) billing detail — gas-only page with
       // rate schedule like "LGS Primary Voltage - 2LGSF"
       //
-      // GUARD (bug 37d5fb0e, 2026-07-14): "LGS" here collides with Evergy's
+      // GUARD (bug 37d5fb0e, 2026-07-14): "LGS" here collides with Utility E's
       // own "Large General Service" ELECTRIC rate class (2LGSE/2LGSF), and
-      // Evergy prints the identical "Billing Details - service from
+      // Utility E prints the identical "Billing Details - service from
       // MM/DD/YYYY to MM/DD/YYYY" header on every bill it issues (see
-      // _EVG_BILLING_DETAILS / Evergy rule detect() above). Three genuine
-      // Evergy electric bills (LGS Secondary/Primary Voltage rate class)
-      // were claimed by this branch and emitted as "City of Louisburg" gas
+      // _EVG_BILLING_DETAILS / Utility E rule detect() above). Three genuine
+      // Utility E electric bills (LGS Secondary/Primary Voltage rate class)
+      // were claimed by this branch and emitted as "City of Client A" gas
       // with garbage field values. Electric bills always carry kWh/kW
-      // charge lines and Evergy-specific charge codes (Demand/Facilities/
+      // charge lines and Utility E-specific charge codes (Demand/Facilities/
       // TDC/ECA/EER/PTS/RkVA), none of which ever appear on a real
-      // City-of-Louisburg gas bill. Refuse the gas route when any of
+      // City-of-Client A gas bill. Refuse the gas route when any of
       // those electric signals are present so this rule can no longer
       // claim an electric bill.
       const _lgsLooksElectric =
@@ -9802,7 +9802,7 @@ const UTILITY_RULES = [
       return bills;
     },
     _extractNew: function (page) {
-      // Strip the Louisburg targeted-crop OCR fallback block (backlog
+      // Strip the Client A targeted-crop OCR fallback block (backlog
       // 37d5fb0e-fueladj follow-up, 2026-09-14 — bill-analysis.js
       // _lbgNeedsCropFallback / the page-processing loop's crop-fallback
       // block) OUT of the main page text before ANY parsing below ever sees
@@ -9830,7 +9830,7 @@ const UTILITY_RULES = [
       // District number is captured generically — no hardcoded IDs.
       // Address group was `\d+\s*[A-Z][...]` — required the digit run to be
       // followed (after optional whitespace) by a LETTER. Fix (2026-08-24,
-      // defect #3 of the Louisburg 100%-accuracy gate): on the Broadmoor EMS
+      // defect #3 of the Client A 100%-accuracy gate): on the Site F EMS
       // account (NN-NNNNNN-00) one OCR pass reads the printed "105 S 5TH ST
       // E" as "1058 5STHE" — the direction letter "S" itself misread as
       // digit "8" (a known Tesseract confusable pair), leaving BOTH tokens
@@ -9846,9 +9846,9 @@ const UTILITY_RULES = [
       // the digit-led-with-no-nearby-letter shape this defect needed. Confirmed
       // against 7 other independent OCR passes of the same bill that read the
       // cleaner "105S 5THE" (still garbled, but self-consistent with this
-      // same document's Evergy page printing "105 S 5TH ST E LOUISBURG KS" for
+      // same document's Utility E page printing "105 S 5TH ST E CLIENT A KS" for
       // the same property) — this also continues to match those unchanged.
-      // FIX (2026-08-24, Louisburg visual audit bug #5): tolerate a bounded
+      // FIX (2026-08-24, Client A visual audit bug #5): tolerate a bounded
       // run of OCR junk (a stray misread period, comma, etc.) landing
       // directly against the account-number digits with NO whitespace of
       // its own — e.g. real OCR text "825 WILDCAT DR                    .09-
@@ -9894,8 +9894,8 @@ const UTILITY_RULES = [
           }
         }
       }
-      // FIX (2026-08-24, Louisburg visual audit bug #4): normalize the
-      // recurring OCR garble family for 105 S 5th St E (Broadmoor EMS acct
+      // FIX (2026-08-24, Client A visual audit bug #4): normalize the
+      // recurring OCR garble family for 105 S 5th St E (Site F EMS acct
       // NN-NNNNNN-00 / Maintenance Bldg acct NN-NNNNNN-00 — same physical
       // building, two accounts). Confirmed against 5 real bill renders
       // (Jan/Feb/Mar 2026) that this address NEVER extracts correctly on
@@ -9912,7 +9912,7 @@ const UTILITY_RULES = [
         ServiceAddress = '105 S 5TH E';
       }
       // FIX (backlog 7a051fed): a further OCR garble family for this SAME
-      // confirmed address (Broadmoor EMS acct NN-NNNNNN-00): "Gas Bills May
+      // confirmed address (Site F EMS acct NN-NNNNNN-00): "Gas Bills May
       // 2026 - BES.pdf" and "SKM_C551i26081711320.pdf" both read the "S" in
       // "105 S 5TH E" as digit "8" instead (a second, distinct Tesseract
       // confusable of the same direction letter), producing "1058S 5STHE"
@@ -9929,7 +9929,7 @@ const UTILITY_RULES = [
       // FIX (2026-09-24, backlog 9b6ff356): the period row prints 5 dates in
       // order [BillingPeriodStart, BillingPeriodEnd, BillDate, PenaltyDate,
       // DueDate] — confirmed against the printed fixture values in
-      // AI/_context/reference/ocr-harness/fixtures/louisburg-gas-feb2026-hs-raw.txt
+      // AI/_context/reference/ocr-harness/fixtures/client-a-gas-feb2026-hs-raw.txt
       // ("1/14/2026 2/18/2026 2/23/2026 3/11/2026 3/10/2026" against printed
       // BillDate 2/23/2026, PenaltyDate 3/11/2026). The prior code (a stale
       // inline comment above mis-ordered the fields as BillFrom/BillTo/
@@ -9962,7 +9962,7 @@ const UTILITY_RULES = [
         // OCR-confusable already tolerated for TotalAmountDue's loose fallback
         // below ([.:]\\d{2}). Without it, "335:33"'s digit run stops at "335"
         // and the printed cents are silently dropped (defect: City of
-        // Louisburg May 2026 Gas TotalCurrentCharges landed $0.33 short,
+        // Client A May 2026 Gas TotalCurrentCharges landed $0.33 short,
         // 315.47 vs printed 315.80 — traced to this exact truncation, not a
         // fabricated CustomerCharge split).
         const afterToks = [...after.matchAll(/-?[\d,]+(?:[.:]\d+|-\d{2})?/g)].map((x) => x[0]);
@@ -10003,9 +10003,9 @@ const UTILITY_RULES = [
         // the real Current Reading into StartRead and fabricating a usage of
         // ~9000 (real bill: StartRead became 374, EndRead 9364, Usage 8990,
         // instead of StartRead 9364, EndRead 9737, Usage 373).
-        // FIX (2026-08-25, Louisburg batch 2, backlog TBD): broadened the
+        // FIX (2026-08-25, Client A batch 2, backlog TBD): broadened the
         // digit-run before the dot from a single digit to `\d+` — the same
-        // misread also hits multi-digit reads (real bill: City of Louisburg
+        // misread also hits multi-digit reads (real bill: City of Client A
         // water meter, "147,327" OCR'd as "147.327", a 3-digit prefix). The
         // old single-digit-only pattern never matched that shape, so
         // "147.327" stayed a non-integer decimal and dropped out of
@@ -10017,11 +10017,11 @@ const UTILITY_RULES = [
         //
         // Gas-only exception: a genuine 3-decimal usage figure that is the
         // LAST number before the commodity label is legitimate ONLY for gas
-        // (real bill: City of Louisburg gas, "3.339 GAS" — a real
+        // (real bill: City of Client A gas, "3.339 GAS" — a real
         // pressure/CCF-adjusted decimal-therms reading on a near-zero-usage
         // summer bill, not a misread comma). Water/sewer/stormwater usage is
         // always a whole number, so the identical shape there (real bill:
-        // City of Louisburg water, "58,552" OCR'd as "58.552" then landing
+        // City of Client A water, "58,552" OCR'd as "58.552" then landing
         // as the last token before "WATER") IS always a misread comma and
         // must still be fixed. `allowDecimalUsage` (true only for the Gas
         // call site) gates a trailing-digit lookahead that skips the fix
@@ -10143,10 +10143,10 @@ const UTILITY_RULES = [
           let decimalUsage = trailing.find(
             (n) => !Number.isInteger(n) && n >= 100 && (!computed || Math.abs(n - computed) < computed * 1.0),
           );
-          // FIX (2026-08-25, Louisburg batch 2, backlog TBD): the >=100
+          // FIX (2026-08-25, Client A batch 2, backlog TBD): the >=100
           // floor above exists to reject bar-chart axis-label decimals, but
           // it also silently rejects a genuinely small decimal usage column
-          // (real bill: City of Louisburg gas, near-zero-usage summer month,
+          // (real bill: City of Client A gas, near-zero-usage summer month,
           // "13,440 13,443 3.339 GAS" — printed usage 3.339 therms, below
           // the 100 floor, so this branch fell through to the raw
           // subtraction 3 and truncated the decimal). Magnitude alone can't
@@ -10291,7 +10291,7 @@ const UTILITY_RULES = [
         }
         // Water Protection Fee: accumulate ALL occurrences, not just the
         // first. A 2-physical-water-meter account (e.g. NN-NNNNNN-00, 977 N
-        // Rockville Rd) prints one WATER PROTECTION line PER METER — the old
+        // Site H Rd) prints one WATER PROTECTION line PER METER — the old
         // `!wpf` guard kept only one of the two identical-looking lines,
         // silently dropping the 2nd meter's fee from the Water sub-total
         // (defect: Feb/Mar/May 2026 bills each short by exactly one
@@ -10320,7 +10320,7 @@ const UTILITY_RULES = [
           if (!storm) storm = parseMetered(ln, /STORM\s*W[A4]TER/i);
         }
       }
-      // Fuel Adjustment is a permanent line on every Louisburg new-format
+      // Fuel Adjustment is a permanent line on every Client A new-format
       // Gas bill (confirmed on every real bill on file — dashboardlogic
       // Updates 74/99/142/146 all treat it as a standard field of this
       // layout). Its own label can OCR into pure noise (e.g. real bill
@@ -10338,7 +10338,7 @@ const UTILITY_RULES = [
         sewer.usage = water.usage;
       }
       // STORMWATER OCR DECIMAL-DROP FIX — moved earlier than the mirrored
-      // post-process pass in bill-analysis.js. City of Louisburg stormwater
+      // post-process pass in bill-analysis.js. City of Client A stormwater
       // is always ~$4/month; OCR sometimes drops the decimal, producing
       // $400 instead of $4.00. Must run BEFORE the Current-Bill-total sign
       // reconciliation just below, which needs the CORRECTED stormwater
@@ -10421,7 +10421,7 @@ const UTILITY_RULES = [
       const _currentBillRaw = page.match(/Current\s*Bill\s*\$?\s*([\d,]+\.\d{2})/i)?.[1]?.replace(/,/g, '') || null;
       let CurrentBillTotal = _currentBillRaw != null ? parseFloat(_currentBillRaw) : null;
 
-      // ── Louisburg targeted-crop OCR fallback merge (backlog 37d5fb0e-fueladj
+      // ── Client A targeted-crop OCR fallback merge (backlog 37d5fb0e-fueladj
       // follow-up, 2026-09-14) ─────────────────────────────────────────────
       // Fills in ONLY fields the main OCR pass above found NOTHING for at
       // all — every fill below is guarded by that field's own *LineSeen flag
@@ -10433,7 +10433,7 @@ const UTILITY_RULES = [
       // produced by bill-analysis.js's targeted-crop OCR fallback
       // (_lbgNeedsCropFallback / high-zoom charges-column crop — see that
       // file's comment and
-      // _context/research/2026-09-13-louisburg-fa-targeted-crop/2026-09-13-results-table.md)
+      // _context/research/2026-09-13-client-a-fa-targeted-crop/2026-09-13-results-table.md)
       // ONLY when the normal pass could not read the Current Bill/Total
       // Amount Due total and/or a Water line at all. Reuses the SAME
       // parseMetered/regex constructs already used above, just against the
@@ -10517,7 +10517,7 @@ const UTILITY_RULES = [
         // carried forward from a prior period (Total Amount Due = Current
         // Bill + PreviousBalance - Payments +/- Adjustments/Penalty, and that
         // carryover term is printed directly as "Account Balance" on every
-        // Louisburg new-format bill) — so once Total Amount Due is known and
+        // Client A new-format bill) — so once Total Amount Due is known and
         // the page's own printed Account Balance reads exactly $0.00, it is
         // safe to use it as CurrentBillTotal too. Never applied when Account
         // Balance is unknown/nonzero/unread — the existing "never reconcile
@@ -10529,7 +10529,7 @@ const UTILITY_RULES = [
           _lbgCropRecoveredFields.push('CurrentBillTotal(viaZeroBalance)');
         }
         // Gas usage decimal-cell recovery (2026-09-14 crop-fallback follow-up):
-        // Louisburg's printed Gas usage column is a pressure-corrected decimal
+        // Client A's printed Gas usage column is a pressure-corrected decimal
         // (see the `allowDecimalUsage=true` note on the GAS line-parsing loop
         // above) — on the real bill this fix was verified against, the
         // main-pass OCR never captured that decimal token, so gas.usage fell
@@ -10559,7 +10559,7 @@ const UTILITY_RULES = [
       // "WATER PROTECTION -$0.69" twice, OCR read both as positive "0.69"
       // while correctly capturing the minus sign on the SAME page's
       // negative WATER lines) and, same class, for FuelAdjustment (real
-      // bill, City of Louisburg gas, printed "FUEL ADJUSTMENT -0.17" with no
+      // bill, City of Client A gas, printed "FUEL ADJUSTMENT -0.17" with no
       // minus glyph at all surviving OCR — batch-2 fix). Cross-validate
       // against the page's own independently-printed Current Bill total —
       // the same anchor _lbg_buildGasBill already trusts for gas
@@ -11180,7 +11180,7 @@ const UTILITY_RULES = [
       if (_unmatchedPages.length) bills._unmatchedPages = _unmatchedPages;
 
       // Backfill missing billing periods from neighbor bills sharing the
-      // same BillDate — same strategy as City of Louisburg.
+      // same BillDate — same strategy as City of Client A.
       const byBillDate = {};
       for (const b of bills) {
         if (b.BillDate && b.BillingPeriodStart && b.BillingPeriodEnd) {

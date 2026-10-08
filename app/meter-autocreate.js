@@ -1,7 +1,7 @@
 ﻿// ===== Roster-driven auto-create missing meters (c8880ce7, 2026-09-13) =====
 //
 // Matt's intent: "I do not want to have to create the meters, I want the
-// site to create them." This module reads the existing OneDrive meter/
+// site to create them." This module reads the existing meter/
 // account roster (xlsx/csv, same file the customer already maintains),
 // resolves each unassigned Saved Bill to the EXISTING building it belongs
 // to, and proposes the missing meter for the user to review before anything
@@ -10,9 +10,9 @@
 //
 // Hard rules this file must never violate:
 //   - Never creates a new BUILDING — only adds meters to buildings that
-//     already exist (§3 of the plan: all needed Baker buildings already
+//     already exist (§3 of the plan: all needed Client E buildings already
 //     exist; a wrong-building auto-create risks the same misattachment
-//     class as the Louisburg Maintenance Building incident 11e47d64/9de73981).
+//     class as the Client A Maintenance Building incident 11e47d64/9de73981).
 //   - Never silently creates a meter or silently assigns a bill — every
 //     write happens only after the user reviews the plan in the modal and
 //     clicks the final confirm button.
@@ -38,7 +38,7 @@ function _macNormAcct(s) {
 }
 
 // Parse a 2D array of roster data rows (header row already stripped) into
-// structured entries. Columns (0-indexed), matching the real Baker roster
+// structured entries. Columns (0-indexed), matching the real Client E roster
 // layout (plan §2): A name, B sqft, C addr, D Baldwin service addr,
 // E Baldwin account#, F KGS service addr, G KGS account#, H KGS meter#,
 // I Constellation service addr, J Constellation account#.
@@ -343,7 +343,7 @@ function _macRunResolve() {
   const proj = (typeof projects !== 'undefined' ? projects : []).find((p) => p.id === projId);
   const buildings = getUDBldgs(projId) || [];
   const allBills = sget('en_pdf_bills', []) || [];
-  // Scope to this project's customer (v1 gate, plan §4.2 point 1 — Baker-
+  // Scope to this project's customer (v1 gate, plan §4.2 point 1 — Client E-
   // specific trigger is acceptable for v1; here derived from the project
   // name's first word rather than a hardcoded string, so the same modal
   // works for any project whose roster the user uploads).

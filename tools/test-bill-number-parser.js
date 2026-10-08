@@ -10,7 +10,7 @@
  *     and the rate is right (2,022.93 / 33 therms = 61.30 per therm, not 2 / 33 = 0.0606).
  *  3. Null path through each caller class (blank / "N/A" input must not throw and must not be read
  *     as a number): rate readers (rates.js), gas usage resolver (savings.js), extractor mappers and
- *     verifier (bill-analysis.js), Evergy decimal repair (energy-savings.js), CSV warnings (csv-import.js).
+ *     verifier (bill-analysis.js), Utility E decimal repair (energy-savings.js), CSV warnings (csv-import.js).
  *  4. Decimal repair never rewrites a real 12,345.6789 kW reading (E-20).
  *
  * Usage: node tools/test-bill-number-parser.js
@@ -286,7 +286,7 @@ noThrow('_postExtractionVerify blank/junk gas bill (KGS)', () =>
   ),
 );
 
-// Evergy decimal repair (E-20): a real reading keeps its digits; a dropped decimal is restored.
+// Utility E decimal repair (E-20): a real reading keeps its digits; a dropped decimal is restored.
 const repair = get(sb, '_evergyRepairDroppedDecimals');
 check('_evergyRepairDroppedDecimals exists', typeof repair === 'function');
 if (typeof repair === 'function') {

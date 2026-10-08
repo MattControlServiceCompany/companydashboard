@@ -98,7 +98,7 @@ var EM_EQUIP_TYPES = {
   'vfd integration': 'controls',
   // Environmental / weather programs
   'environmental index': 'sensor',
-  // 2026-09-24: JOCO's own BAS source data spells this "Enviromental Index" (missing the
+  // 2026-09-24: Client D's own BAS source data spells this "Enviromental Index" (missing the
   // second "n") on 5 real points — alias of the entry above so the typo in the user's data
   // matches too, instead of falling to 'other'. Never edit the user's data; fix the match.
   'enviromental index': 'sensor',
@@ -123,11 +123,11 @@ var EM_EQUIP_TYPES = {
   upsm: 'power', // review.md required change 3: "UPSM Monitoring" (2 real Courthouse rows)
   upsp: 'power', // review.md required change 3: "UPSP Monitoring" (2 real Courthouse rows)
   ats: 'power',
-  // Lighting — recognized category so JOCO-style "Lighting - ADC" parses correctly
+  // Lighting — recognized category so Client D-style "Lighting - ADC" parses correctly
   lighting: 'lighting',
   'lighting zone': 'lighting',
   'lighting control': 'lighting',
-  // Lighting / shade programs — JOCO Courthouse naming conventions
+  // Lighting / shade programs — Client D Courthouse naming conventions
   glpp: 'lighting',
   // M4: Non-HVAC specific categories — eliminate generic 'other'
   // Elevator systems
@@ -613,7 +613,7 @@ var EM_POINT_MAP = [
     label: 'Return Air Temperature',
     // 21eb08f8 Wave 6: added /energy\s+recovery\s+exhaust\s+air\s+temp/i for
     // "Energy Recovery Exhaust Air Temperature" — ERV exhaust air temp ≈ return air equivalent.
-    // erv cats already added in Wave 5. JOCO bucket-C matches: 1 name.
+    // erv cats already added in Wave 5. Client D bucket-C matches: 1 name.
     patterns: [/return air temp/i, /rat\b/i, /energy\s+recovery\s+exhaust\s+air\s+temp/i],
     // Phase 2A: guard against "Return Air Temperature Alarm", "Return Air Temp Setpoint".
     // M1A: added control-object exclusions — control selection MSVs and diagnostic fault flags.
@@ -656,7 +656,7 @@ var EM_POINT_MAP = [
     col: 'outdoorAirTemp',
     label: 'Outdoor Air Temperature (Live)',
     // FIX 4d: Added dry bulb patterns to match CSV 'Outside Air Dry Bulb'
-    // Phase 1: Added /outside air temperature/i and /outside\s+air\s+temp\b/i for JOCO naming ("Outside Air Temperature").
+    // Phase 1: Added /outside air temperature/i and /outside\s+air\s+temp\b/i for Client D naming ("Outside Air Temperature").
     patterns: [
       /outside air temperature/i,
       /outside\s+air\s+temp\b/i,
@@ -710,7 +710,7 @@ var EM_POINT_MAP = [
     label: 'Duct Static Pressure',
     // 21eb08f8 Wave 6: added /air\s+source\s+duct\s+static\b/i for "Air Source Duct Static"
     // (VVT air-source duct static pressure point). negativePatterns unchanged — "Air Source Duct Static"
-    // does not trigger any of them. JOCO bucket-C matches: 1 name.
+    // does not trigger any of them. Client D bucket-C matches: 1 name.
     patterns: [/duct static pressure/i, /\bdsp\b/i, /air\s+source\s+duct\s+static\b/i],
     // M1A: added negativePatterns. Blocks alarm objects (High/Low DSP Alarm), exhaust duct static
     // (routes to rdspLive which has /exhaust\s+duct\s+static/i confirmed), and DSP setpoint ANOs
@@ -740,7 +740,7 @@ var EM_POINT_MAP = [
     label: 'Outside Air Damper Position',
     // M4: added /outside\s+air\s+damper/i — "Outside Air Damper Position" was missing this
     // variant and falling through to damperPosition. "outdoor air damper" existed; "outside air
-    // damper" is a common alternative phrasing in JOCO data.
+    // damper" is a common alternative phrasing in Client D data.
     patterns: [/oa damper/i, /outdoor air damper/i, /outside\s+air\s+damper/i],
     types: ['AO', 'AI'],
     // b647981f: added 'rtu', 'mau' — RTU-1/RTU-2 have "Outside Air Damper Position" (BAV, 0.0 %);
@@ -809,7 +809,7 @@ var EM_POINT_MAP = [
     col: 'zoneAirTemp',
     label: 'Zone Air Temperature',
     // 21eb08f8 Wave 2: /\bzone\s+\d+\s+temp(erature)?\b/i added for numbered-zone variants.
-    // JOCO matches (5): Master Zone 1 Temperature ANI, Master Zone 2 Temperature ANI,
+    // Client D matches (5): Master Zone 1 Temperature ANI, Master Zone 2 Temperature ANI,
     //   Zone 1 Temperature, Zone 2 Temperature, Zone 3 Temperature
     // 'Master Zone N Temperature ANI' — 'ANI' is a BACnet suffix, NOT 'ano' (ANO=network output),
     // so it does NOT trigger the \bano\b negativePattern. Pattern confirmed safe.
@@ -898,7 +898,7 @@ var EM_POINT_MAP = [
   {
     col: 'zoneCoolAdjust',
     label: 'Cooling Setpoint Adjust',
-    // Phase 1 (item 21eb08f8): patterns derived from real JOCO WebCTRL raw export:
+    // Phase 1 (item 21eb08f8): patterns derived from real Client D WebCTRL raw export:
     //   "Setpoint / Cooling Setpoint Adjust" (BAV, HHW RTU-1, RTU-2, MAU-1)
     //   "Cooling Setpoint Adjust" (direct ANI variant)
     // negativePatterns: must NOT match "Cooling Setpoint" (the occupied SP) or "Unoccupied".
@@ -915,7 +915,7 @@ var EM_POINT_MAP = [
   {
     col: 'zoneHtgAdjust',
     label: 'Heating Setpoint Adjust',
-    // Phase 1 (item 21eb08f8): patterns derived from real JOCO WebCTRL raw export:
+    // Phase 1 (item 21eb08f8): patterns derived from real Client D WebCTRL raw export:
     //   "Setpoint / Heating Setpoint Adjust" (BAV, HHW RTU-1, RTU-2, MAU-1)
     //   "Heating Setpoint Adjust" (direct ANI variant)
     patterns: [/heating setpoint adjust/i, /htg setpoint adj/i, /heating set point adjust/i],
@@ -977,7 +977,7 @@ var EM_POINT_MAP = [
     // terminal rows where the broad /\bair\s*flow\b/i pattern would otherwise match.
     // fix/em-point-map-collisions-2: removed /\bflow\s+(control\s*\/\s*)?input\b/i — it and
     // /\bair\s*flow\b/i both matched "Air Flow" AND "Flow Control / Flow Input", two distinct
-    // real points co-occurring on the same VAV (828/1000+ VAV rows in JOCO data), colliding
+    // real points co-occurring on the same VAV (828/1000+ VAV rows in Client D data), colliding
     // into one column. "Flow Control / Flow Input" now has its own column (flowControlInput,
     // below).
     patterns: [/discharge airflow/i, /disc airflow/i, /zone airflow/i, /\bair\s*flow\b/i],
@@ -1011,7 +1011,7 @@ var EM_POINT_MAP = [
   {
     col: 'hwSupplyTemp',
     label: 'Hot Water Supply Temperature',
-    // Phase 1: added JOCO naming patterns (heating water supply / boiler supply water temp).
+    // Phase 1: added Client D naming patterns (heating water supply / boiler supply water temp).
     // 5eb5be06 Phase 1: added per-unit boiler supply/outlet/leaving temp patterns.
     patterns: [
       /hw supply temp/i,
@@ -1039,7 +1039,7 @@ var EM_POINT_MAP = [
   {
     col: 'hwReturnTemp',
     label: 'Hot Water Return Temperature',
-    // Phase 1: added JOCO naming patterns (heating water return / boiler return water temp).
+    // Phase 1: added Client D naming patterns (heating water return / boiler return water temp).
     // 5eb5be06 Phase 1: added per-unit boiler return/entering/inlet temp patterns.
     patterns: [
       /hw return temp/i,
@@ -1068,7 +1068,7 @@ var EM_POINT_MAP = [
   {
     col: 'hwDiffPressure',
     label: 'Hot Water Differential Pressure',
-    // Phase 1: added JOCO naming patterns for heating water differential pressure.
+    // Phase 1: added Client D naming patterns for heating water differential pressure.
     patterns: [
       /hw diff pressure/i,
       /hw differential/i,
@@ -1135,7 +1135,7 @@ var EM_POINT_MAP = [
   {
     col: 'chwDiffPressure',
     label: 'Chilled Water Differential Pressure',
-    // Phase 1: added JOCO naming pattern for chilled water differential pressure.
+    // Phase 1: added Client D naming pattern for chilled water differential pressure.
     // 5eb5be06 Phase 1: added loop DP and per-pump DP patterns.
     patterns: [
       /chw diff pressure/i,
@@ -1216,7 +1216,7 @@ var EM_POINT_MAP = [
       /co2\s*sensor/i,
       /co2\s*ppm/i,
       // 21eb08f8 Wave 2: numbered-zone CO2 variants
-      // JOCO matches (3): Zone 1 CO2, Zone 2 CO2, Zone 3 CO2
+      // Client D matches (3): Zone 1 CO2, Zone 2 CO2, Zone 3 CO2
       // Safety: /\bco2\b/i already catches these but the explicit pattern makes intent clear;
       //   negativePatterns already block alarm/high/low/override/fault/setpoint/oa contexts
       /\bzone\s+\d+\s+co2\b/i,
@@ -1266,7 +1266,7 @@ var EM_POINT_MAP = [
       /\bhumidity\b/i,
       /\bzone\s+hum\b/i,
       // 21eb08f8 Wave 2: numbered-zone humidity variants
-      // JOCO matches (3): Zone 1 Humidity, Zone 2 Humidity, Zone 3 Humidity
+      // Client D matches (3): Zone 1 Humidity, Zone 2 Humidity, Zone 3 Humidity
       // Safety: negativePatterns already block OA/outdoor/return/setpoint/exhaust/supply contexts
       /\bzone\s+\d+\s+hum(idity)?\b/i,
     ],
@@ -1283,7 +1283,7 @@ var EM_POINT_MAP = [
     cats: ['ahu', 'vav', 'fpb', 'ddvav', 'fcu', 'zone', 'furnace'],
   },
   // Phase 2C: expanded cats from ['ct'] to ['ct', 'ahu', 'dhu'] — "Outside Air Wet Bulb" and
-  // "Broadcast Wet Bulb" appear on AHU and DHU (pool dehumidifier) equipment in JOCO data,
+  // "Broadcast Wet Bulb" appear on AHU and DHU (pool dehumidifier) equipment in Client D data,
   // not only on cooling towers.
   {
     col: 'oaWetBulb',
@@ -1376,7 +1376,7 @@ var EM_POINT_MAP = [
     label: 'Primary Air Source Cool Request',
     // 21eb08f8 Wave 6: added /air\s+source\s+cool\s+requests?/i (explicit plural form).
     // Note: /air source cool request/i already matched "Air Source Cool Requests" as substring,
-    // but the explicit plural makes intent clear. JOCO bucket-C: "Air Source Cool Requests" (1 name).
+    // but the explicit plural makes intent clear. Client D bucket-C: "Air Source Cool Requests" (1 name).
     patterns: [
       /primary air source cool request/i,
       /air source cool request/i,
@@ -1391,7 +1391,7 @@ var EM_POINT_MAP = [
     col: 'primaryAirHtgRequest',
     label: 'Primary Air Source Heat Request',
     // 21eb08f8 Wave 6: added /air\s+source\s+heat\s+requests?/i (explicit plural form).
-    // JOCO bucket-C: "Air Source Heat Requests" (1 name).
+    // Client D bucket-C: "Air Source Heat Requests" (1 name).
     patterns: [
       /primary air source heat request/i,
       /air source heat request/i,
@@ -1539,17 +1539,17 @@ var EM_POINT_MAP = [
     col: 'scheduledOccupied',
     label: 'Scheduled Occupied',
     // 21eb08f8 Wave 4: added /\bschedule\s+mode\b/i for "Schedule Mode" / "Schedule Mode ANI/AV/MSV"
-    // JOCO matches (4): Schedule Mode, Schedule Mode ANI, Schedule Mode AV, Schedule Mode MSV
+    // Client D matches (4): Schedule Mode, Schedule Mode ANI, Schedule Mode AV, Schedule Mode MSV
     // These represent occupancy mode state (Occupied/Unoccupied/Standby) — same concept as
     // Scheduled Occupied. negativePatterns block "BACnet Schedule" and "override" forms.
     // Safety: /bacnet\s+schedule|override/i negativePattern remains intact; "Schedule Mode" does
     // not match either guard.
     // 21eb08f8 Wave 5: added /\blennox\s+occupied\b/i for "Lennox Occupied Status" / "Lennox Occupied Status ANI"
     // These are Lennox RTU occupancy state points — functionally equivalent to scheduledOccupied.
-    // JOCO matches: 2 names. negativePattern /bacnet\s+schedule|override/i unchanged.
+    // Client D matches: 2 names. negativePattern /bacnet\s+schedule|override/i unchanged.
     // 21eb08f8 Wave 6: added /\boccupancy\s+mode\b/i for "Occupancy Mode", "Occupancy Mode Feedback",
     // "DOAS Occupancy Mode ANO", "Force Occupancy Mode" — occupancy state output from zone/AHU programs.
-    // JOCO bucket-C matches: 4-6 names. negativePattern /bacnet\s+schedule|override/i unchanged.
+    // Client D bucket-C matches: 4-6 names. negativePattern /bacnet\s+schedule|override/i unchanged.
     patterns: [
       /\bscheduled?\s+occupied\b/i,
       /\bzone\s+schedule\b/i,
@@ -1582,7 +1582,7 @@ var EM_POINT_MAP = [
 
   // GROUP 1 — Missing Air Temperature columns (A7/A8/A9)
   // A7: Preheat Coil Leaving Air Temperature
-  // Taxonomy: "Preheat Air Temperature" (JOCO AHU1_extract), "OA Pre-Coil Temperature".
+  // Taxonomy: "Preheat Air Temperature" (Client D AHU1_extract), "OA Pre-Coil Temperature".
   {
     col: 'preheatAirTemp',
     label: 'Preheat Air Temperature',
@@ -1630,7 +1630,7 @@ var EM_POINT_MAP = [
   // D2: Return Air Humidity — at AHU or DHU level (distinct from zone RH)
   // Taxonomy: "Return Air Humidity" (DHU pool unit), "RA Hum", "AHU-1 - Return Air Humidity".
   // negativePatterns: set point excluded (that's D3 below).
-  // Phase 1: added diagnostic/control-selection/sensor-fail/alarm guard to block JOCO false-positives:
+  // Phase 1: added diagnostic/control-selection/sensor-fail/alarm guard to block Client D false-positives:
   //   "Diagnostic: Return Air Humidity Sensor Failed", "Air Source Return Air Humidity Control Selection".
   {
     col: 'returnAirHumidity',
@@ -1659,7 +1659,7 @@ var EM_POINT_MAP = [
   // SP-CO2: CO2 Setpoint — the programmed CO2 SP point (distinct from co2Live which is the
   // measured CO2 level). Typical BAS names: "CO2 Setpoint", "CO2 Set Point", "Zone CO2 Setpoint".
   // negativePatterns exclude alarm/limit objects and unocc variants (separate point category).
-  // RENDER-VERIFY DEFERRED: col routing against live JOCO data requires headless render.
+  // RENDER-VERIFY DEFERRED: col routing against live Client D data requires headless render.
   {
     col: 'zoneCO2Setpoint',
     label: 'Zone CO2 Setpoint',
@@ -1732,7 +1732,7 @@ var EM_POINT_MAP = [
     // "Outside Air CFM Setpoint", "AHU-3 Outside Air CFM Setpoint",
     // "AHU Manager - Minimum Outside Air CFM Set Point",
     // "Air Source Minimum Outside Air CFM Set Point" — OA minimum ventilation CFM target.
-    // JOCO bucket-C matches: 4 names.
+    // Client D bucket-C matches: 4 names.
     patterns: [
       /ventilation\s+cfm\s+set/i,
       /ventilation\s+cfm\s+setpoint/i,
@@ -1822,7 +1822,7 @@ var EM_POINT_MAP = [
     label: 'Supply Air Temperature Cooling Setpoint',
     // 21eb08f8 Wave 5: added /active\s+supply\s+temp.*set/i for "Active Supply Temperature Setpoint"
     // (Carrier/Lennox RTU effective SAT setpoint — says "Temperature Setpoint" not "Air Setpoint").
-    // JOCO matches: "Active Supply Temperature Setpoint" (1 name). negativePattern /heating/i unchanged.
+    // Client D matches: "Active Supply Temperature Setpoint" (1 name). negativePattern /heating/i unchanged.
     patterns: [
       /cooling\s+supply\s+air\s+set/i,
       /active\s+discharge\s+temp\s+set/i,
@@ -1847,7 +1847,7 @@ var EM_POINT_MAP = [
   },
 
   // H11: Economizer Setpoint
-  // Taxonomy: "Economizer Set Point", "Economizer Control Temp" (JOCO AHU1_extract trend file).
+  // Taxonomy: "Economizer Set Point", "Economizer Control Temp" (Client D AHU1_extract trend file).
   {
     col: 'economizerSetpoint',
     label: 'Economizer Setpoint',
@@ -1909,7 +1909,7 @@ var EM_POINT_MAP = [
     label: 'Exhaust Fan Speed',
     // 21eb08f8 Wave 6: added /energy\s+recovery\s+wheel\s+speed/i for "Energy Recovery Wheel Speed"
     // — ERV wheel speed is analogous to fan speed. erv cats already added in Wave 5.
-    // JOCO bucket-C matches: 1 name.
+    // Client D bucket-C matches: 1 name.
     patterns: [
       /exhaust\s+fan.*speed/i,
       /ef.*vfd.*speed/i,
@@ -1926,7 +1926,7 @@ var EM_POINT_MAP = [
   // ASHRAE 36 §5.16.1 / §4.2.9 — exhaust fan run monitoring.
   // ef.fanStatus in Engine 2 already requires this for ef-category rows.
   // Engine 1 col adds Raw View visibility for ef-type programs and AHU programs
-  // that directly control their own exhaust fan (18 of 329 JOCO AHU rows have this).
+  // that directly control their own exhaust fan (18 of 329 Client D AHU rows have this).
   // PLACEMENT: after exhaustFanSpeed entry.
   // \bon\b word boundary on the "on" alternative is MANDATORY — prevents false-positive
   // on "Exhaust Fan Only Command". command/latched/failure in negativePatterns prevents
@@ -2038,7 +2038,7 @@ var EM_POINT_MAP = [
   },
 
   // b8aec0d8: Alarm Relay column — routes alarm-state indicator points to alarmRelay.
-  // Real point names from JOCO data: "Alarm Relay Active", "Any Alarm Active Output",
+  // Real point names from Client D data: "Alarm Relay Active", "Any Alarm Active Output",
   // "Serious Alarm Active Output" (all on RTU/MAU programs).
   // EM_POINT_CATEGORIES.ahu (aliased by rtu) and .mau both define a key:'alarmRelay' entry
   // but EM_POINT_MAP had no col:'alarmRelay' entry, so emMapPointToColumn returned null.
@@ -2065,7 +2065,7 @@ var EM_POINT_MAP = [
   // zone/vav/fpb/ddvav category equipment — NOT for AHU-category units.
 
   // airSourceMode: VVT air-source heating/cooling/auto mode broadcast received by zone terminals.
-  // JOCO confirmed forms (2): "Air Source Mode", "8 STAT CLG Air Source Mode"
+  // Client D confirmed forms (2): "Air Source Mode", "8 STAT CLG Air Source Mode"
   // The "8 STAT CLG" prefix is a numeric-prefix BAS naming convention; /\bair\s+source\s+mode\b/i
   // matches both as substring. negativePatterns block alarm and RunFor accumulator variants.
   {
@@ -2078,7 +2078,7 @@ var EM_POINT_MAP = [
   },
 
   // airSourceStatus: VVT air-source run status (running/idle) broadcast to zone terminals.
-  // JOCO confirmed forms (3): "Air Source Status", "9 STAT HTG Air Source Status",
+  // Client D confirmed forms (3): "Air Source Status", "9 STAT HTG Air Source Status",
   //   "Air Source Status - RunFor"
   // "Air Source Status - RunFor" is an accumulated run-for-mode duration counter —
   // negativePatterns exclude it (not a live binary status reading).
@@ -2092,7 +2092,7 @@ var EM_POINT_MAP = [
   },
 
   // zoneStatus: occupancy/thermal-mode state of the zone (Occupied/Unoccupied/Warmup/Cooldown).
-  // JOCO confirmed form (1): "Zone Status"
+  // Client D confirmed form (1): "Zone Status"
   // Distinct from scheduledOccupied (binary on/off) — zoneStatus is a multi-state value
   // representing the current control mode. negativePatterns block comms and alarm variants.
   {
@@ -2171,7 +2171,7 @@ function emDetectColMap(headerRow) {
       equipType: 1, // inferred from equipment name portion
       pointName: 2, // BACnet point Name
       pointValue: 3, // Live value
-      // 3d6d7244 Batch 1: BACnet object Type column, verified against real JOCO WebCTRL header
+      // 3d6d7244 Batch 1: BACnet object Type column, verified against real Client D WebCTRL header
       // ("Location","Control Program","Name","Value","Type","COV Increment",...) and confirmed
       // live against report1779125231048.csv:64 ("Cooling Set Point Signal","5.7 V","BAO",...).
       pointType: 4, // BACnet object type (e.g. BAI, BAO, BALM, BMSV, ANI) — index verified live
@@ -2228,22 +2228,22 @@ function emDetectColMap(headerRow) {
   };
 }
 
-// Parse a BACnet path from WebCTRL (e.g. "/Johnson County/Courthouse/Fire/...")
+// Parse a BACnet path from WebCTRL (e.g. "/Client D/Courthouse/Fire/...")
 // Returns the building name.  Uses a CONSERVATIVE / WHITELIST approach to avoid
 // mistakenly expanding department/area segments into the building name:
 //
-//   Default:  building = parts[1]  (correct for ALL standard JOCO paths)
+//   Default:  building = parts[1]  (correct for ALL standard Client D paths)
 //   Exception: extend to parts[1] + '/' + parts[2] ONLY when all three conditions hold:
 //     1. parts[1] matches the known MedAct-station nesting pattern (/^medact\s*\d+/i)
 //     2. parts[2] exists and is non-empty
 //     3. parts[2] is NOT a floor/level segment (emIsFloorSegment returns false)
-//   This yields "MedAct 51/SS Olathe" for nested MedAct campus paths while leaving
-//   every other building — including "Jo Co Northeast Offices" — exactly as parts[1].
+//   This yields "MedAct 51/SS Cityville" for nested MedAct campus paths while leaving
+//   every other building — including "Client D Northeast Offices" — exactly as parts[1].
 //
 // Examples:
-//   "/Johnson County/Courthouse/First Floor"                   → "Courthouse"
-//   "/Johnson County/Jo Co Northeast Offices/Mental Health/…"  → "Jo Co Northeast Offices"
-//   "/New Century Complex/MedAct 51/SS Olathe/Support Services"→ "MedAct 51/SS Olathe"
+//   "/Client D/Courthouse/First Floor"                   → "Courthouse"
+//   "/Client D/Client D Northeast Offices/Mental Health/…"  → "Client D Northeast Offices"
+//   "/New Century Complex/MedAct 51/SS Cityville/Support Services"→ "MedAct 51/SS Cityville"
 //   "/New Century Complex/MedAct 1131 Shawnee/First Floor/…"   → "MedAct 1131 Shawnee"
 function emParseBACnetBuilding(pathStr) {
   if (!pathStr) return '';
@@ -2263,18 +2263,18 @@ function emParseBACnetBuilding(pathStr) {
 // Returns { location, equipName }
 // Auto-detects two naming conventions:
 //   Standard WebCTRL: "{Location/Area} - {Equipment Name}" (e.g. "Supply Duct - Air Handling Unit B1")
-//   JOCO-style:       "{Equipment Type} - {Building Abbr}" (e.g. "Cooling Towers - ADC")
+//   Client D-style:       "{Equipment Type} - {Building Abbr}" (e.g. "Cooling Towers - ADC")
 // Detection: if the part BEFORE the first " - " classifies to a known equipment type,
-// it is JOCO-style and the assignment is flipped (equipName=first, location=second).
+// it is Client D-style and the assignment is flipped (equipName=first, location=second).
 function emParseControlProgram(cpStr) {
   if (!cpStr) return { location: '', equipName: cpStr || '' };
   var idx = cpStr.indexOf(' - ');
   if (idx === -1) return { location: '', equipName: cpStr.trim() };
   var firstPart = cpStr.slice(0, idx).trim();
   var secondPart = cpStr.slice(idx + 3).trim();
-  // If the first segment is a recognizable equipment type, this is JOCO-style naming.
+  // If the first segment is a recognizable equipment type, this is Client D-style naming.
   // isKnownType triggers on HVAC types (non-'other' classification) AND on known non-HVAC
-  // program types that legitimately use the "Type - Building" JOCO naming pattern.
+  // program types that legitimately use the "Type - Building" Client D naming pattern.
   var firstCategory = emClassifyEquipType(firstPart);
   var isKnownType =
     firstCategory !== 'other' ||
@@ -2554,7 +2554,7 @@ function emClassifyEquipType(equipTypeStr) {
   if (/\bct\b/i.test(key)) return 'ct';
   // M3: Non-HVAC specific categories
   if (/outside.?air.?condition/i.test(key)) return 'sensor';
-  if (/outiside.?air.?condition/i.test(key)) return 'sensor'; // common typo in JOCO data
+  if (/outiside.?air.?condition/i.test(key)) return 'sensor'; // common typo in Client D data
   if (/environmental.?index/i.test(key)) return 'sensor';
   if (/weather.?station/i.test(key)) return 'sensor';
   if (/smoke.?damper/i.test(key)) return 'fire';
@@ -2566,7 +2566,7 @@ function emClassifyEquipType(equipTypeStr) {
   if (/vfd.?integration|vfd.?monitor/i.test(key)) return 'controls';
   // Lighting — general keyword
   if (/\blighting\b/i.test(key)) return 'lighting';
-  // Lighting / shade programs by naming convention (JOCO Courthouse)
+  // Lighting / shade programs by naming convention (Client D Courthouse)
   // GLPP-NN-* (glass panel lighting programs) — numeric panel ID prefix
   if (/^\d{4}\s+-\s+glpp-/i.test(key)) return 'lighting'; // e.g. "2800 - GLPP-46-2A"
   if (/^glpp-\d/i.test(key)) return 'lighting'; // e.g. "GLPP-21-1A"
@@ -2630,7 +2630,7 @@ function emClassifyEquipType(equipTypeStr) {
   if (/elevator\s+(pressurization|equip|lobby|room|water)/i.test(key)) return 'elevator';
   // Radiant tube heaters (RTH-1, RTH-4 — not caught by earlier patterns)
   if (/\brth[-\s]?\d/i.test(key)) return 'heater';
-  // VAS (Volume Air Source — shop-level VAV air sources in JOCO Fire Stations)
+  // VAS (Volume Air Source — shop-level VAV air sources in Client D Fire Stations)
   if (/\bvas[-\s]?\d/i.test(key)) return 'vav';
   // Fan unit programs (FU-1, FU-2, etc. — ceiling fan / unit ventilator style)
   if (/\bfu[-\s]?\d/i.test(key)) return 'fcu';
@@ -2736,7 +2736,7 @@ function emClassifyEquipType(equipTypeStr) {
   if (/\bliebert\b/i.test(key)) return 'fcu';
   // IHR (Infrared Heater) with suffix — not caught by earlier /\bigh/ pattern
   if (/\bihr[-\s]?\d/i.test(key)) return 'heater';
-  // ASU (Air Supply Unit) — context from JOCO is hot water differential pressure monitors
+  // ASU (Air Supply Unit) — context from Client D is hot water differential pressure monitors
   if (/^asu[-\s]?\d/i.test(key)) return 'monitoring'; // ASU-1, ASU-2, ASU-3 (standalone = monitors)
   if (/asu\s+\d+\s+hot water/i.test(key)) return 'plumbing'; // "ASU 12 Hot Water Differential Pressure"
   // HRU (Heat Recovery Unit) — energy recovery type
@@ -2746,7 +2746,7 @@ function emClassifyEquipType(equipTypeStr) {
   // TH (tube heater) variants not caught earlier
   if (/^th[-\s]?\d/i.test(key)) return 'heater';
   // SS-N (stairwell smoke sensor / pressurization?)
-  // From JOCO context these appear near elevator/mechanical programs — monitor bucket
+  // From Client D context these appear near elevator/mechanical programs — monitor bucket
   if (/^ss-\d/i.test(key)) return 'monitoring';
   // SP-N (stairwell pressurization fans)
   if (/^sp[-\s]?\d/i.test(key)) return 'ef'; // pressurization = exhaust fan type
@@ -2798,7 +2798,7 @@ function emClassifyEquipType(equipTypeStr) {
   // water', /irrigation/), cooling-tower makeup water meter -> ct (dict 'cooling tower'), boiler
   // gas meter -> hwp (/\bboiler\b/), chilled-water BTU meter -> chwp (/chilled.?water/), any BTU
   // meter -> plumbing (/btu meter/) — none of those reach these lines. Only a bare building
-  // utility meter name (e.g. "Woodland Gas Meter", "Woodland Water Meter", "KW Meter - MSC")
+  // utility meter name (e.g. "Client B Gas Meter", "Client B Water Meter", "KW Meter - MSC")
   // falls through to here. Subtype (electric/gas/water) is set by emClassifyMeterSubtype via
   // emVerifyTypeByPoints, not here — this function only returns the category string.
   if (/\bgas\s+meter\b/i.test(key)) return 'meter';
@@ -2819,7 +2819,7 @@ function emClassifyEquipType(equipTypeStr) {
 
 /* ── emClassifyMeterSubtype ──────────────────────────────────────────────────
    2026-09-23: Determines the Electric / Gas / Water subtype for a 'meter' category
-   row. Name-based first (e.g. "Woodland Gas Meter" -> gas, "Eaton Power Meter" ->
+   row. Name-based first (e.g. "Client B Gas Meter" -> gas, "Eaton Power Meter" ->
    electric), point-signature fallback for ambiguous names ("KW Demand Level" /
    "kWh" -> electric; "Heat Content" / "Energy Constant" / "Conversion Constant" are
    gas-metering-specific BACnet points, not present on electric or water meters ->
@@ -2910,7 +2910,7 @@ function emVerifyTypeByPoints(group) {
   // compressor telemetry, suction-line temperature, or DX heating/cooling capacity, it is a
   // packaged DX unit (DOAS/RTU/VRF), not a terminal box, even if it also happens to expose
   // airflow + damper + "air source mode" points that would otherwise satisfy Rules 6/7/8.
-  // Found via real JOCO data: MedAct DOAS-1 units (energy-recovery-wheel DOAS with a DX backup
+  // Found via real Client D data: MedAct DOAS-1 units (energy-recovery-wheel DOAS with a DX backup
   // coil) were being point-verified as 'vav' because Rule 8's condition set has no way to say
   // "this also has a compressor, so it cannot be a terminal box." Gates Rules 6/7/8 only —
   // Rules 9/12 (FCU/VRF, RTU/AHU) legitimately use DX signals as POSITIVE evidence and are
@@ -2956,7 +2956,7 @@ function emVerifyTypeByPoints(group) {
   // is never pulled in.
   // fix/em-classifier-lighting-leak (2026-09-25): bare lighting relay command pair — "Lighting
   // On"/"Lighting Off"/"Lights On"/"Lights Off" with no "group"/"zone"/"load N"/occupancy-sensor
-  // wording. Real JOCO Monitcello Library exterior/area lighting panels (Flag Pole, Patio,
+  // wording. Real Client D Monitcello Library exterior/area lighting panels (Flag Pole, Patio,
   // Collection North Center, Closed Sign North, etc. — 18 rows) expose exactly this pair (plus
   // Network Offline/Network Point Read Error/Schedule/Demand Level and shared OA weather points)
   // and nothing else, so the original regex below never fired and they fell through to 'other'.
@@ -2980,7 +2980,7 @@ function emVerifyTypeByPoints(group) {
   // fix/em-classifier-lighting-leak (2026-09-25) — Rule 0c: leak/water-detection sensor named
   // with no name-based hint. Mirrors the existing NAME-based rule (~line 2670,
   // /mechanical room.*water|mechanical room.*sump/i) that requires "water"/"sump" IN THE
-  // EQUIPMENT NAME before returning 'monitoring'. Some leak-detection equipment (e.g. real JOCO
+  // EQUIPMENT NAME before returning 'monitoring'. Some leak-detection equipment (e.g. real Client D
   // "Mechanical Room | WS-11") carries the signal only in its POINT names ("Leak Detection
   // Sensor", "Water Detected in Mechanical Room"), not the equipment name, so that name rule
   // never fires and it falls through to 'other'. Reuses the SAME 'monitoring' category as the
@@ -3049,7 +3049,7 @@ function emVerifyTypeByPoints(group) {
 
   // 8. VAV: airflow + damper position + air source mode, no terminal fan
   // fix/point-evidence-all-rows: gated on !hasDxSignal — see hasDxSignal comment above. Confirmed
-  // on real JOCO data: without this guard, MedAct DOAS-1 units (energy-recovery-wheel DOAS with a
+  // on real Client D data: without this guard, MedAct DOAS-1 units (energy-recovery-wheel DOAS with a
   // DX backup coil — condenser/evaporator pressure, DX heating capacity, suction line temp all
   // present) satisfied this rule's airflow+damper+air-source-mode signature and were wrongly
   // point-verified as 'vav'. A genuine VAV terminal box never has a refrigerant circuit.
@@ -3069,7 +3069,7 @@ function emVerifyTypeByPoints(group) {
   // 10. FCU (generic hydronic fan coil): zone temp + cooling/heating valve, no airflow, no supply fan
   // fix/point-evidence-all-rows: WEAK confidence. This is the broadest rule in the set — "zone temp"
   // and "a valve" both appear across many equipment families (AHU coils, VAV/FPB reheat valves that
-  // simply lack an exported airflow/CFM point). Confirmed on real JOCO data: NC Adult Detention rows
+  // simply lack an exported airflow/CFM point). Confirmed on real Client D data: NC Adult Detention rows
   // ("6A - RHC-0901" etc.) match this rule via zoneTemp+heatingValve, but ALSO expose "Air Source
   // Duct Static" and "Primary Air Source ... Request/Run" points — evidence of a duct-fed terminal,
   // not a standalone hydronic fan coil — which this rule's condition set has no way to weigh. Per
@@ -3215,7 +3215,7 @@ function emVerifyTypeByPoints(group) {
   // or fan coil. Only fires when the name pass found nothing (provisional === 'other'): a room
   // with this exact point signature ("Setpoint / Cooling Occupied Setpoint" etc. + "Zone Temp"
   // + "Zone Sensor Communications Alarm", no "Flow Control"/"Air Flow"/"Damper Position") is a
-  // monitored space, not equipment — e.g. Spring Hill Woodland MS "B136 Office/Storage", "B138
+  // monitored space, not equipment — e.g. Client C Client B MS "B136 Office/Storage", "B138
   // Electrical", "A135/C135/D118 Telecomm" (2026-09-23, Matt: "look at their points"). Point-
   // signature driven — never a hardcoded room-name list. Reuses the existing 'monitoring'
   // category (already used for Kitchen Cooler/Freezer, temp/leak/pressure monitors — see dict
@@ -3333,7 +3333,7 @@ function emExtractEquipmentGroups(rows, colMap, storedRows) {
   // Milestone 2: equipName = the FULL Control Program string (no longer split into
   // location + equipment tokens). Each control program is one equipment row.
   // Classification still uses the full CP string — emClassifyEquipType handles both
-  // standard ("Supply Duct - Air Handling Unit B1") and JOCO-style ("Cooling Towers - ADC").
+  // standard ("Supply Duct - Air Handling Unit B1") and Client D-style ("Cooling Towers - ADC").
   if (colMap.format === 'webctrl') {
     for (var wi = 0; wi < rows.length; wi++) {
       var wrow = rows[wi];
@@ -3800,7 +3800,7 @@ function emLoadMatrix(projId) {
   // Pass 0/A/B/C self-heal + hwp stale-row shim) is idempotent in-memory mutation against data
   // that only changes via emSaveMatrix — see _emSelfHealDone's declaration. Skip it once it has
   // already run for this projId's current data; emSaveMatrix clears the flag so the very next
-  // load after a real write reruns it exactly once. Measured: at JOCO's 2,721-row scale this
+  // load after a real write reruns it exactly once. Measured: at Client D's 2,721-row scale this
   // self-heal pass (emClassifyEquipType/emVerifyTypeByPoints, run up to 3x per row) previously
   // re-ran on EVERY view switch and filter change (every one of them calls emLoadMatrix), not
   // just on data change — this cache makes emLoadMatrix itself go from ~80-200ms to <1ms on the
@@ -3813,7 +3813,7 @@ function emLoadMatrix(projId) {
       }
 
       // 9018b1c6 — Pass 0: name-override for ANY stored row.
-      // Catches DOAS units mis-stored as 'vav' (JOCO DOAS-1 bug) and any other
+      // Catches DOAS units mis-stored as 'vav' (Client D DOAS-1 bug) and any other
       // case where the equipment name unambiguously overrides the stored category.
       // In-memory only; no storage mutation.
       if (_bcrow && _bcrow.equipName) {
@@ -3859,7 +3859,7 @@ function emLoadMatrix(projId) {
 
       // fix/point-evidence-all-rows (2026-07-28): Pass B — point-evidence verification, now runs
       // as an override on EVERY categorized row, not just the 7 gated categories above. Measured
-      // on real JOCO data: 90 rows had a point signature contradicting their stored category, and
+      // on real Client D data: 90 rows had a point signature contradicting their stored category, and
       // 100% of them sat outside the old gate (0 remained inside it — the mechanism worked, it was
       // simply pointed at a fraction of the data). Runs on the (possibly Pass-A-updated) category;
       // points take precedence over the name-derived guess for STRONG-confidence rule matches only.
@@ -4195,7 +4195,7 @@ var _emSeqListenersAttached = false;
 var _emZoomLevel = 100; // zoom percentage, 50–150
 // Performance (2026-09-23, fix/em-render-performance): emLoadMatrix's self-heal pass (Pass
 // 0/A/B/C name+point-evidence reclassification + the hwp stale-row shim) runs
-// emClassifyEquipType/emVerifyTypeByPoints across every row with points — at JOCO's 2,721-row
+// emClassifyEquipType/emVerifyTypeByPoints across every row with points — at Client D's 2,721-row
 // scale this ran on EVERY view switch and filter change (every one of those call sites calls
 // emLoadMatrix fresh), not just when data changed. sget()/DB.get() returns the SAME in-memory
 // object reference on every call until the next emSaveMatrix() write, so re-running identical
@@ -4307,7 +4307,7 @@ function emInjectMatrixCSS() {
     // same three-declaration string in its own inline style attribute.
     '.em-table-wrap td, .em-table-wrap th { border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); vertical-align: middle; }',
     // Performance (2026-09-23, fix/em-render-performance): Raw/Audit View data-cell modifier
-    // classes. A CPU profile of a 3,000-row synthetic render (real JOCO scale) found that ~88%
+    // classes. A CPU profile of a 3,000-row synthetic render (real Client D scale) found that ~88%
     // of the ~50-100s render time was native browser "(program)" work — NOT any JS function —
     // traced to insertAdjacentHTML/innerHTML parsing hundreds of thousands of <td> elements that
     // each carried a fully-spelled-out inline style="..." attribute (border-bottom, border-right,
@@ -4325,7 +4325,7 @@ function emInjectMatrixCSS() {
     // injected into a SEPARATE #em-sticky-col-style tag by emUpdateStickyOffsets() — see that
     // function's comment (2026-09-23, fix/em-render-performance) for why: a JS loop that
     // classList.add()'d + inline-styled thousands of individual row cells was measured as the
-    // single largest cost in the Equipment Matrix's render time at JOCO's 2,721-row scale.
+    // single largest cost in the Equipment Matrix's render time at Client D's 2,721-row scale.
     // Non-frozen headers stay at z-index 11 (above body, horizontally scrollable)
     '.em-table-wrap thead th { position: sticky; top: 0; background: var(--s2); z-index: 11; }',
     // Handle-div resize pattern — th must be relative so the handle can position absolutely
@@ -4351,7 +4351,7 @@ function emInjectMatrixCSS() {
  * We freeze whichever columns those are (always 3 data columns + delete button if present).
  *
  * Performance (2026-09-23, fix/em-render-performance): the previous implementation looped over
- * EVERY row (thead + tbody + tfoot — thousands of rows at JOCO's 2,721-row scale) and called
+ * EVERY row (thead + tbody + tfoot — thousands of rows at Client D's 2,721-row scale) and called
  * classList.add('em-frozen') + set .style.left on each of the leading 3-4 cells per row. That is
  * thousands of individual position:sticky elements each mutated in a tight synchronous JS loop —
  * measured (via function-level timing instrumentation against a 3,000-row synthetic fixture) at
@@ -6331,7 +6331,7 @@ function _emIsExcluded(rawName) {
 // rendering "5.7°F" even after the import-time fix shipped. This is independent of pointType
 // availability by design — it fixes already-imported data with no re-import.
 var EM_ZONE_SETPOINT_VALUE_GUARD_COLS = { zoneCoolSetpoint: true, zoneHtgSetpoint: true };
-// Real JOCO zone occupied setpoints observed in production data range 58.8°F-82.3°F
+// Real Client D zone occupied setpoints observed in production data range 58.8°F-82.3°F
 // (full-table-scan.json, em-summary-dataquality-2026-07-09 investigation). 45-95°F gives a
 // wide safety margin on both sides so no legitimate comfort-range setpoint is ever rejected,
 // while still excluding physically-impossible values like 5.7°F or a 200°F control signal.
@@ -6381,7 +6381,7 @@ function _emCO2Verdict(rawVal) {
   }
   var n = parseFloat(s);
   if (isNaN(n)) return { status: 'failed', reason: 'non-numeric CO2 reading ("' + s + '")' };
-  // Real JOCO zoneCO2 readings (co2-rh-distribution.js scan, 2026-07-28) span 381-875 ppm across
+  // Real Client D zoneCO2 readings (co2-rh-distribution.js scan, 2026-07-28) span 381-875 ppm across
   // 145 zones. Atmospheric CO2 floor is ~420 ppm — a reading below it is physically impossible
   // for an occupied, continuously-conditioned zone (CO2 can only be ADDED by occupants/combustion,
   // never subtracted below outdoor makeup air). MIN=300 sits comfortably below the real observed
@@ -6409,7 +6409,7 @@ function _emRHVerdict(rawVal) {
   }
   var n = parseFloat(s);
   if (isNaN(n)) return { status: 'failed', reason: 'non-numeric RH reading ("' + s + '")' };
-  // Real JOCO zoneRelativeHumidity readings (co2-rh-distribution.js scan) fall in 40-89.1%
+  // Real Client D zoneRelativeHumidity readings (co2-rh-distribution.js scan) fall in 40-89.1%
   // across 89 points. Two exclusions found in that same scan: "-25.0 %rh" (negative — no
   // physical meaning) and "0.0 %rh" (a continuously-conditioned occupied zone never sustains
   // literal 0% RH — same dead-sensor signature as the CO2 bug). Classified FAILED: negative RH
@@ -6431,10 +6431,10 @@ function _emZoneTempVerdict(rawVal) {
   }
   var n = parseFloat(s);
   if (isNaN(n)) return { status: 'failed', reason: 'non-numeric zone temp reading ("' + s + '")' };
-  // Real JOCO zoneAirTemp readings (temp-airflow-dist.js scan, 2026-07-28) span 63.5-97.3°F
+  // Real Client D zoneAirTemp readings (temp-airflow-dist.js scan, 2026-07-28) span 63.5-97.3°F
   // across 1,332 zones (including mechanical/heater/IT rooms, not just occupied comfort space,
   // hence the wider tail than a strict comfort-band guard). Two "0.0" dead-sensor readings found
-  // (Olathe Juvenile Detention Center ASU-1/ASU-2). A continuously-run mechanically-conditioned
+  // (Cityville Juvenile Detention Center ASU-1/ASU-2). A continuously-run mechanically-conditioned
   // building physically cannot sustain freezing (<32°F) or scalding (>120°F) zone air without a
   // total heating/cooling failure AND the sensor itself surviving to report it — set deliberately
   // WIDE of the real observed range (63.5-97.3) so no legitimate reading — including unoccupied
@@ -6457,7 +6457,7 @@ function _emAirflowVerdict(rawVal) {
   if (s === '') return { status: 'ok' };
   var n = parseFloat(s);
   if (isNaN(n)) return { status: 'failed', reason: 'non-numeric airflow reading ("' + s + '")' };
-  // Real JOCO dischargeAirflow readings (temp-airflow-dist.js scan) span 0-14,438 cfm across 896
+  // Real Client D dischargeAirflow readings (temp-airflow-dist.js scan) span 0-14,438 cfm across 896
   // points — 0 cfm is a LEGITIMATE reading (a VAV/FPB box with its damper fully closed shows zero
   // flow; many real rows do this), so unlike CO2/RH/temp, zero is NOT evidence of failure here and
   // is deliberately left unflagged. A handful of small negative readings were found (-9 to -37
@@ -6504,7 +6504,7 @@ function emGetNormalizedPoints(row) {
   // calling emGetNormalizedPoints).  When no custom mappings exist this returns {} and all
   // paths fall through to emMapPointToColumn exactly as before (zero coverage-delta guarantee).
   // Memoized at module level by pid: emLoadCustomAliases is called once per render pass,
-  // not once per row (~2700 rows at JOCO scale).  Cache is busted by emSaveManageMappings.
+  // not once per row (~2700 rows at Client D scale).  Cache is busted by emSaveManageMappings.
   var _pid = typeof window !== 'undefined' && window._emActivePid ? window._emActivePid : '';
   var _customAliases =
     _emAliasCachePid === _pid && _emAliasCache !== null
@@ -7420,7 +7420,7 @@ function emRenderTable(data, filters) {
   } else {
     // ── Large table: lazy row-append virtualization ─────────────────────────
     // Performance (2026-09-23, fix/em-render-performance): a CPU profile of a 3,000-row
-    // synthetic render (JOCO real scale) found that even AFTER removing per-row inline styles
+    // synthetic render (Client D real scale) found that even AFTER removing per-row inline styles
     // and per-row sticky-offset mutation (see the .em-mono/emUpdateStickyOffsets comments
     // above), constructing ALL ~2,700-3,000 rows' worth of <td> elements up front is still
     // fundamentally proportional to total cell count (~24s for 435,000 cells at this scale) —
@@ -7439,8 +7439,8 @@ function emRenderTable(data, filters) {
     // before the second batch ever runs, so they stay correct throughout.
     //
     // Performance (2026-09-24, fix/em-show-all-columns): a fixed 150-row batch assumed column
-    // count stayed roughly constant (~145 cols at JOCO scale by default). "Show All Point
-    // Columns" breaks that assumption — JOCO has 8,259 unique raw BAS point names, so
+    // count stayed roughly constant (~145 cols at Client D scale by default). "Show All Point
+    // Columns" breaks that assumption — Client D has 8,259 unique raw BAS point names, so
     // defs.length can jump ~57x. A fixed row batch means the CELL count in that first
     // synchronous batch scales with columns too: 150 rows x 8,259 cols = ~1.24M cells, and
     // measurement showed that froze the click handler for ~33s (see 2026-09-24 E2E review,
@@ -9206,7 +9206,7 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
   if (def.isAuditBasPts) {
     // Use emGetNormalizedPoints (WeakMap-cached) as source of truth so WebCTRL-imported rows
     // (which have pointsRaw but sparse row.points) show correct counts instead of "--".
-    // For enriched-CSV/JOCO rows, emGetNormalizedPoints returns the same col-key set as
+    // For enriched-CSV/Client D rows, emGetNormalizedPoints returns the same col-key set as
     // row.points — counts are identical, so no regression there.
     var _normPtsBas = emGetNormalizedPoints(row);
     var allPtKeysBas = Object.keys(_normPtsBas);
@@ -10694,7 +10694,7 @@ function _emFormatClockFromMinutes(mins) {
 
 // Builds the Proposed occupied start/stop pair for a building: school hours
 // (from _emGetSchoolHours) minus/plus the staff buffer on each side. Example:
-// Woodland's real school hours (7:30 AM-3:30 PM) and the general default
+// Client B's real school hours (7:30 AM-3:30 PM) and the general default
 // (7:30 AM-3:30 PM) both produce 6:00 start / 17:00 stop.
 function _emComputeProposedSchedule(bldgName) {
   var h = _emGetSchoolHours(bldgName);
@@ -10771,8 +10771,8 @@ function _emHasPt(v) {
 }
 
 // Normalizes a building name for the Equipment Matrix <-> Utility Data join:
-// case, whitespace, and a trailing "School" ("Woodland Spring Middle School"
-// -> "woodland spring middle", matching Utility Data's "Woodland Spring
+// case, whitespace, and a trailing "School" ("Client B Spring Middle School"
+// -> "client b spring middle", matching Utility Data's "Client B Spring
 // Middle"). Equipment Matrix rows carry no building id, so this join is
 // always by name.
 function _emNormBldgNameForJoin(name) {
@@ -10893,7 +10893,7 @@ function _emParseScheduleBlock(text) {
 // Equipment Matrix, writes the matched schedule onto each matching row, and
 // saves the matrix. Returns { matchedCount, totalCount, unmatched } — never
 // throws away unmatched rows; the caller must show them (emShowEffectiveSchedulesResult).
-// Per-zone effective schedule text for display (Summary building detail, Woodland report).
+// Per-zone effective schedule text for display (Summary building detail, Client B report).
 // Reads ONLY the row's own imported schedule — never inherited from an AHU. Blank file entry
 // shows 'No schedule in file'.
 function emZoneScheduleDisplay(row) {
@@ -11171,8 +11171,8 @@ function emOpenSetpointExportDialog(pid, lockedBldgId) {
   var bldgs = typeof getUDBldgs === 'function' ? getUDBldgs(pid) : [];
   var data = emLoadMatrix(pid);
   // 2026-09-23 fix: normalized-name match (case, whitespace, trailing "School") so a building
-  // like "Woodland Spring Middle School" in the Equipment Matrix still lists and locks against
-  // Utility Data's "Woodland Spring Middle" — see _emNormBldgNameForJoin.
+  // like "Client B Spring Middle School" in the Equipment Matrix still lists and locks against
+  // Utility Data's "Client B Spring Middle" — see _emNormBldgNameForJoin.
   var matrixBldgNames = {};
   ((data && data.rows) || []).forEach(function (r) {
     if (r.building) matrixBldgNames[_emNormBldgNameForJoin(r.building)] = true;
@@ -11767,7 +11767,7 @@ var EM_EXCLUSION_PATTERNS = [
   /^EI\s/i, // Environmental Index points (WebCTRL)
   /environmental\s*index/i,
   // 21eb08f8 Wave 1: Zone EI variants not caught by ^EI\s (start with "Zone", not "EI")
-  // JOCO matches: Zone EI Time Satisfied, Zone EI Total Weight (2 names)
+  // Client D matches: Zone EI Time Satisfied, Zone EI Total Weight (2 names)
   // Safety verified: no HVAC sensor keywords in matched names
   /\bzone\s+ei\b/i,
   // Note: air source mode/status are ASHRAE 36 Group 10 VVT control points — NOT excluded
@@ -11790,13 +11790,13 @@ var EM_EXCLUSION_PATTERNS = [
   /occupied\s*override/i,
   /occupancy\s*override/i,
   // 21eb08f8 Wave 1: Virtual override-time objects — control-layer accumulated time, not ASHRAE 36
-  // JOCO matches: Virtual Zone Override Time (1 name)
+  // Client D matches: Virtual Zone Override Time (1 name)
   // Safety: name starts with "Virtual" and contains "override time" — no HVAC sensor overlap
   /virtual.*override\s+time/i,
   // 21eb08f8 Wave 1: Bare Drive sub-objects — VFD/drive internal monitoring parameters
   // Pattern targets only names STARTING with "Drive" so it does NOT catch "Supply Fan VFD Amps"
   // or "Exhaust Fan VFD Amps" (which already map to supplyFanAmps/exhaustFanSpeed columns).
-  // JOCO matches (21): Drive Current, Drive DC Bus Voltage, Drive Fault, Drive Fault Status,
+  // Client D matches (21): Drive Current, Drive DC Bus Voltage, Drive Fault, Drive Fault Status,
   //   Drive Hand/Auto Control, Drive In Hand, Drive kWh, Drive MWh, Drive Output Frequency,
   //   Drive Output Speed, Drive Output Voltage, Drive Power, Drive Ready, Drive Run Enable,
   //   Drive Run Status, Drive Runtime, Drive Speed Reference, Drive System Not Communicating,
@@ -11804,22 +11804,22 @@ var EM_EXCLUSION_PATTERNS = [
   // Safety verified: no HVAC sensor keywords (supply/return/zone/temp/setpoint/valve/damper/fan/pressure/humidity/co2)
   /^drive\s+(current|dc\s+bus|kwh|mwh|output|power|runtime|speed\s+ref(erence)?|temperature|torque|ready|run|fault|hand|in\s+hand|valid|system)/i,
   // 21eb08f8 Wave 1: Branded drive status objects (ABB/Armstrong/Danfoss) not already excluded by \balarm\b
-  // JOCO matches (6): ABB Drive In Hand, Armstrong Drive HOA In Hand, Armstrong Drive HOA In Off,
+  // Client D matches (6): ABB Drive In Hand, Armstrong Drive HOA In Hand, Armstrong Drive HOA In Off,
   //   Armstrong Drive Warning, Danfoss Drive In Hand, Danfoss Drive Warning
   // Safety: pure drive-brand + drive-mode names, no HVAC sensor keywords
   /\b(ABB|Armstrong|Danfoss)\s+drive\s+(warning|hoa|in\s+hand)/i,
   // 21eb08f8 Wave 1: Chiller MCS controller internal variables (_MCS and _BAS prefixed)
   // These are integration objects between the BAS and chiller plant MCS controller —
   // chiller staging, capacity, refrigerant circuit values — not ASHRAE 36 zone/AHU points.
-  // JOCO _MCS matches (29): _MCS C1/C2/C3 ActSpeed/Amps/DisPress/FaultDesc/IGV%/SuctPress,
+  // Client D _MCS matches (29): _MCS C1/C2/C3 ActSpeed/Amps/DisPress/FaultDesc/IGV%/SuctPress,
   //   _MCS CHWaterDeltaP, _MCS ChwDiff Psi, _MCS CndDiffPsi, _MCS CndPsi, _MCS CWaterDeltaP,
   //   _MCS ECHWTemp, _MCS ECWTemp, _MCS Evap Pressure, _MCS LCHWTemp, _MCS LCWTemp, _MCS LoadLimit
-  // JOCO _BAS matches (6): _BAS Chw Set Point, _BAS Cooling_Active_Setpoint_Command to MCS, etc.
+  // Client D _BAS matches (6): _BAS Chw Set Point, _BAS Cooling_Active_Setpoint_Command to MCS, etc.
   // Safety: MCS/BAS-prefixed names are categorically chiller plant internal variables
   /^_MCS\s/i,
   /^_BAS\s/i,
   // 21eb08f8 Wave 1: x-prefixed chiller MCS variables (xC1_, xC2_, xC3_, xSystem, xCHW, xCW, xEvap)
-  // JOCO matches (38): xC1/xC2/xC3 RunHrs/ActiveState/ActPower/AlarmDesc/ShaftStability/Starts/Status/Superheat,
+  // Client D matches (38): xC1/xC2/xC3 RunHrs/ActiveState/ActPower/AlarmDesc/ShaftStability/Starts/Status/Superheat,
   //   xSystem_Alarm/Fault/Amps/Demand/Efficiency/Power/Status, xSysTempReset,
   //   xCHW_Flow, xCHWDeltaT, xCW_Flow, xEvap_Flow_Meter_1/_2, xEvap_In/Out_Humidity, xEvapApproach
   // Safety: all are chiller refrigerant circuit / plant monitoring variables; xEvap humidity points
@@ -11831,7 +11831,7 @@ var EM_EXCLUSION_PATTERNS = [
   /^xEvap/i,
   // 21eb08f8 Wave 5: Standalone VFD sub-objects (names STARTING with "VFD ")
   // Wave 1 excluded "Drive ..."-prefixed names; Wave 5 closes the VFD-prefixed gap.
-  // JOCO matches: ~111 names (VFD Amps, VFD Bypass, VFD Current, VFD DC Bus Voltage,
+  // Client D matches: ~111 names (VFD Amps, VFD Bypass, VFD Current, VFD DC Bus Voltage,
   //   VFD Fault Code, VFD Frequency, VFD HOA Status, VFD kWh, VFD MWh, VFD Output Speed, etc.)
   // SAFETY: Anchor ^VFD\s ensures "Supply Fan VFD Amps", "Return Fan VFD Speed" etc. (mid-string VFD)
   //   are NOT matched. Those already correctly route to supplyFanAmps / supplyFanSpeed columns.
@@ -11839,25 +11839,25 @@ var EM_EXCLUSION_PATTERNS = [
   // 21eb08f8 Wave 5: Weighted EI / EI weighting config objects
   // "Weighted EI #1"–"#16" not caught by existing ^EI\s (starts "Weighted", not "EI").
   // "Weights #1"–"#16" are EI weighting configuration values, not ASHRAE 36 points.
-  // JOCO matches: 17 + 17 = 34 names
+  // Client D matches: 17 + 17 = 34 names
   /^weighted\s+ei\b/i,
   /^weights\s+#/i,
   // 21eb08f8 Wave 5: WebCTRL fault-mirror objects ("Disabled, Status Is On" / "Enabled, Status Is Off")
   // WebCTRL convention: binary output object's inverse status is reflected in a separate point.
   // e.g. "Pump 1 Disabled, Status Is On" — these are fault-detection output mirrors, never sensors.
-  // JOCO matches: ~298 names confirmed.
+  // Client D matches: ~298 names confirmed.
   // SAFETY: supplyFanStatus already blocks these via its negativePattern /\b(disabled|enabled)\b/i;
   //   adding here simply removes them from Manage Mappings noise (no import-path behavior change).
   /\b(disabled|enabled),\s*status\s+is\s+(on|off)\b/i,
   // 21eb08f8 Wave 5: Automatic Transfer Switch (ATS) status points
   // ATS LS/S1/S2 On Normal Power/Emergency Power/Test — electrical switchgear, not ASHRAE 36.
-  // JOCO matches: ~12 names (ATS LS On Emergency Power, ATS S1 On Normal Power, etc.)
+  // Client D matches: ~12 names (ATS LS On Emergency Power, ATS S1 On Normal Power, etc.)
   // SAFETY: Anchor ^ATS[\s-] avoids swallowing hypothetical mid-string "ATS" in an HVAC name.
   /^ATS[\s-]/i,
   // 21eb08f8 Wave 5: Phase A/B/C electrical metering sub-objects
   // Power meter integration points from integrated electrical meters — phase-level current,
   // voltage, power, energy, apparent/reactive/real power, import/export/net kWh.
-  // JOCO matches: ~39 names starting "Phase A/B/C ...".
+  // Client D matches: ~39 names starting "Phase A/B/C ...".
   // SAFETY: Anchored ^phase\s+[abc]\s+(specific keywords) — does not match any HVAC sensor name
   //   in EM_POINT_MAP patterns. The keyword list prevents swallowing future points if any HVAC
   //   vendor prepends "Phase" to a point name unrelated to electrical metering.
@@ -11893,27 +11893,27 @@ var EM_EXCLUSION_PATTERNS = [
   // All remaining patterns verified zero bucket-A intersection before adding.
 
   // Refrigerant compressor circuit objects (DX/VRF/chiller compressor internal signals)
-  // JOCO bucket-C matches: ~166 names ("A Compressor Enable", "A Compressor Status",
+  // Client D bucket-C matches: ~166 names ("A Compressor Enable", "A Compressor Status",
   //   "A Compressor Signal", "A Compressor Discharge Temp", and VRF/DX compressor variants).
   // SAFETY: No EM_POINT_MAP column uses "compressor" as a positive keyword.
   //   No bucket A names contain "compressor" — verified against em_bucketA_mapped_20260623.txt.
   /\bcompressor\b/i,
 
   // Refrigerant circuit parameters (suction/superheat/subcooling/refrigerant)
-  // JOCO bucket-C matches: ~75 names (suction pressure/temp, superheat target, subcooling,
+  // Client D bucket-C matches: ~75 names (suction pressure/temp, superheat target, subcooling,
   //   refrigerant charge/level, etc.)
   // SAFETY: No bucket A names contain any of these keywords — verified.
   /\b(suction|superheat|subcool|refrigerant)\b/i,
 
   // DX/VRF inverter objects (DWBP series and other VRF inverter integration points)
-  // JOCO bucket-C matches: ~49 names (inverter capacity, inverter mode, inverter status, etc.)
+  // Client D bucket-C matches: ~49 names (inverter capacity, inverter mode, inverter status, etc.)
   // SAFETY: No bucket A names contain "inverter" — verified.
   /\binverter\b/i,
 
   // Electrical metering mid-string (kW, kWh, kVAr, kVA, power factor, real/reactive power, watts)
   // Complements Wave 5 /^phase\s+[abc].../ (which catches phase-prefixed names).
   // This catches mid-string occurrences: "Pump 1 kW ANI", "Bypass Mode kWh", "Fan kVAr", etc.
-  // JOCO bucket-C matches: ~152 names.
+  // Client D bucket-C matches: ~152 names.
   // SAFETY: No bucket A name contains kW/kWh/kVAr/kVA/watt/power factor — verified.
   //   The billing-demand exclusion (line ~8257) already blocks "KW Demand" forms; this adds
   //   broader electrical metering coverage.
@@ -11921,25 +11921,25 @@ var EM_EXCLUSION_PATTERNS = [
   /\b(kw|kwh|kvar|kva|power\s+factor|real\s+power|reactive\s+power|watt)\b/i,
 
   // BACnet communications failure objects (network diagnostic points, not ASHRAE 36 sensors)
-  // JOCO bucket-C matches: ~12 names ("AHU-3 Communications Failure", "Zone Communications
+  // Client D bucket-C matches: ~12 names ("AHU-3 Communications Failure", "Zone Communications
   //   Failure", "Primary Air Source Communications Failure", etc.)
   // Note: "Primary Air Source Communications Alarm" already excluded by /\balarm\b/i.
   // SAFETY: No bucket A names contain "comm failure" pattern — verified.
   /\bcomm(unications)?\s+failure\b/i,
 
   // Sump drainage / sump pump monitoring points (plumbing, not ASHRAE 36)
-  // JOCO bucket-C matches: ~5 names.
+  // Client D bucket-C matches: ~5 names.
   // SAFETY: No bucket A names contain "sump" — verified.
   /\bsump\b/i,
 
   // AHU/Cooling Tower safety shutdown objects (life-safety overrides, not ASHRAE 36 audit points)
-  // JOCO bucket-C matches: ~6 names ("AHU Safety Shutdown", "CT Safety Shutdown", etc.)
+  // Client D bucket-C matches: ~6 names ("AHU Safety Shutdown", "CT Safety Shutdown", etc.)
   // SAFETY: No bucket A names contain "safety shutdown" — verified.
   /\bsafety\s+shutdown\b/i,
 
   // Fireman's panel shutdown commands (life-safety fire override, not ASHRAE 36)
   // Catches: "Air Handler N Shutdown From Fireman's Panel", "Shutdown From Fire Panel",
-  //   "Shutdown From Fireman Panel" — 16+ names in JOCO confirmed.
+  //   "Shutdown From Fireman Panel" — 16+ names in Client D confirmed.
   // SAFETY: No bucket A names contain fireman or "shutdown from" — verified.
   /(fireman'?s?\s+panel|shutdown\s+from\s+(fireman|fire\s+panel))/i,
 
@@ -11949,7 +11949,7 @@ var EM_EXCLUSION_PATTERNS = [
   // This extends to catch "RTU Disabled, Supply Fan Status Is On" and similar variants
   // where the trailing phrase is ", <something> Status Is On/Off" without the exact
   // disabled/enabled comma pattern at the start.
-  // JOCO bucket-C matches: ~8 additional names.
+  // Client D bucket-C matches: ~8 additional names.
   // SAFETY: Verified bucket A "Status Is" names all end in "Open/Closed/Shut" — NOT On/Off.
   //   The `,?` makes the leading comma optional; `\b(on|off)\b` is word-bounded to prevent
   //   partial matches on "online", "offsite", etc.
@@ -12001,7 +12001,7 @@ var EM_EXCLUSION_PATTERNS = [
   // P1.1 — Diagnostic: prefix (closes 7d8d02ab Manage Mappings noise)
   // emMapPointToColumn already returns null for "Diagnostic: ..." names (diagnostic fast-exit step 2).
   // Adding here removes them from Manage Mappings unmatched list — display-only change, no import effect.
-  // JOCO bucket-C matches: ~91 names. Zero bucket-A hits verified.
+  // Client D bucket-C matches: ~91 names. Zero bucket-A hits verified.
   /^diagnostic:/i,
 
   // P1.2 — Targeted latched failure (replaces dropped broad /\blatched\b/i)
@@ -12010,14 +12010,14 @@ var EM_EXCLUSION_PATTERNS = [
   //          "AHU-N Latched Supply Fan Run Status Failure", "Boiler 4 Latched Run Status Failure"
   // Does NOT match: "CT-N Latched Fan Run Status Failure" → supplyFanStatus (bucket A, safe — "Fan"
   //   between "Latched" and "Run" prevents the pattern from matching those 7 bucket-A names).
-  // JOCO bucket-C matches: ~62 names. Zero bucket-A hits verified.
+  // Client D bucket-C matches: ~62 names. Zero bucket-A hits verified.
   /\blatched\s+(run\s+)?status\s+failure\b/i,
 
   // P1.3 — VVT zone coordination objects (chiller staging / AHU manager signals)
   // Catches: "Active Zones #1"-"#16", "Max Zones #1"-"#16",
   //          "Heat Request #1"-"#16", "Pressure Request #1"-"#16",
   //          "RunFor Maximum N", "Air Source RunforMax"
-  // JOCO bucket-C matches: ~94 names. Zero bucket-A hits verified (including "Air Source Status - RunFor").
+  // Client D bucket-C matches: ~94 names. Zero bucket-A hits verified (including "Air Source Status - RunFor").
   /^active\s+zones?\s*#/i,
   /^max\s+zones?\s*#/i,
   /^(heat|pressure|cool)\s+request\s*#/i,
@@ -12028,11 +12028,11 @@ var EM_EXCLUSION_PATTERNS = [
   // Catches: "500T Chillers Available", "500T Chillers Online", "Cooling Towers Online",
   //          "Chilled Water Pumps Online - Primary/Secondary", "Tower Water Pumps Online"
   // The AV-suffix versions are already in bucket B via /\b(available|online)\s+av\b/i.
-  // JOCO bucket-C matches: ~7 names. Zero bucket-A hits verified.
+  // Client D bucket-C matches: ~7 names. Zero bucket-A hits verified.
   /\b(chillers?|towers?|pumps?)\s+(available|online)\b(?!\s+av)/i,
 
   // P1.5 — Overhead door, hydrogen sensor, AccuChart — building system noise
-  // Not ASHRAE 36 HVAC audit points. JOCO matches: ~27 names total.
+  // Not ASHRAE 36 HVAC audit points. Client D matches: ~27 names total.
   // Zero bucket-A hits verified.
   /overhead\s+door/i,
   /\bhydrogen\s+sensor\b/i,
@@ -12043,14 +12043,14 @@ var EM_EXCLUSION_PATTERNS = [
   //          "Domestic Hot Water Tank 1/2 Temperature", "Domestic Hot Water System Supply",
   //          "Domestic Hot Water Flow"
   // Does NOT catch: "Domestic Hot Water Supply/Return Temperature" (already in bucket A → hwSupplyTemp/hwReturnTemp).
-  // JOCO bucket-C matches: ~25 names. Zero bucket-A hits verified.
+  // Client D bucket-C matches: ~25 names. Zero bucket-A hits verified.
   /domestic\s+hot\s+water\s+(boiler|tank|system\s+supply|flow)\b/i,
 
   // P1.7 — AHU/unit BV control objects — enable/disable command outputs and supervisor objects
   // These are DO command outputs or BACnet supervisor objects, NOT ASHRAE 36 sensor readings.
   // /\b(cooling|heating)\s+enabled\b/ verified safe: coolingValve/heatingValve negativePatterns
   //   already block /\benable\b/i so no bucket-A overlap. (?!\s+valve) prevents future conflicts.
-  // JOCO bucket-C matches: ~15 names. Zero bucket-A hits verified.
+  // Client D bucket-C matches: ~15 names. Zero bucket-A hits verified.
   /\b(cooling|heating)\s+enabled\b(?!\s+valve)/i,
   /\bnetwork\s+control\b/i,
   /\bnot\s+under\s+manager\s+control\b/i,
@@ -12065,14 +12065,14 @@ var EM_EXCLUSION_PATTERNS = [
   //          "Active Application Mode", "Active Mixing Valve", "Active LL Setpoint"
   // Does NOT catch: "Active Cooling Setpoint", "Active Heating Setpoint", etc. (bucket A — those
   //   have "Cooling", "Heating", "Humidity", "Supply" after "Active", not error/fault/warning words).
-  // JOCO bucket-C matches: ~36 names. Zero bucket-A hits verified.
+  // Client D bucket-C matches: ~36 names. Zero bucket-A hits verified.
   /^active\s+(error|fault|warning|problem|stage\b)/i,
   /activefaultdesc/i,
   /^active\s+(application|mixing\s+valve|ll\s+setpoint|reheat|supplemental|dx)/i,
 
   // P5 Group IV — Domestic water booster pumps (plumbing, not ASHRAE 36 HVAC)
   // "Booster Pump N Enable/Status/Speed" are domestic water pressure booster pumps.
-  // Distinct from ASHRAE 36 §5.21 HW/CHW plant pumps. ~30 names in JOCO bucket C.
+  // Distinct from ASHRAE 36 §5.21 HW/CHW plant pumps. ~30 names in Client D bucket C.
   // Zero bucket-A hits verified.
   /\bbooster\s+pump\b/i,
 ];
@@ -13479,7 +13479,7 @@ var EM_EQUIP_CONFIG_FLAGS = {
     // SOO Generator Phase 2 (item 3f1415af): reheat actuator MECHANISM is not
     // safely inferable from point presence (blueprint "HARD LESSON" — a
     // reheatValve point proves a wire exists, not what the program does with
-    // it). Manual flag, defaulted to the most common JOCO type (pid-valve),
+    // it). Manual flag, defaulted to the most common Client D type (pid-valve),
     // never auto-detected from point names. Consumed by
     // soo-generator.js SOO_TEMPLATES.vav reheat-modulating/reheat-staged/
     // reheat-floating-motor appliesWhen.
@@ -13495,7 +13495,7 @@ var EM_EQUIP_CONFIG_FLAGS = {
     // SOO Generator Phase 2: CO2 FUNCTION (full demand-control-ventilation
     // reset vs a plain high-CO2 alarm) is a program-structure decision, not
     // derivable from the co2 point being mapped (same hard-lesson class as
-    // reheatActuator — JOCO NE Offices VAV-10b was upgraded alarm-only ->
+    // reheatActuator — Client D NE Offices VAV-10b was upgraded alarm-only ->
     // full DCV reset with no point-side change). Manual flag, defaulted to
     // the more complete behavior (dcv-reset).
     {
@@ -13507,7 +13507,7 @@ var EM_EQUIP_CONFIG_FLAGS = {
     },
     { key: 'hasOccSensor', label: 'Has Occupancy Sensor', default: false },
     // SOO Generator Phase 2: series fan-powered VAV boxes are field-tagged as
-    // plain VAV (JOCO rev19 gap A, findings.md §2/§4 item A — ~63 boxes still
+    // plain VAV (Client D rev19 gap A, findings.md §2/§4 item A — ~63 boxes still
     // unconfirmed) so this must be a manual override, not inferred from
     // category. Mirrors the existing fpb.isSeries flag; adding it here does
     // NOT force recategorization of the row (blueprint explicit constraint).
@@ -14750,7 +14750,7 @@ var EM_POINT_CATEGORIES = {
     // Already added above as 'demandLevel'
 
     // Phase 1 (item 21eb08f8): Zone setpoint entries for AHU/RTU —————————————
-    // These match the Carrier/Lennox WebCTRL naming convention seen in JOCO HHW data.
+    // These match the Carrier/Lennox WebCTRL naming convention seen in Client D HHW data.
     // "Setpoint / Cooling Occupied Setpoint" and "Occupied Cooling Set Point" are the
     // two real variants in report1779132670069.csv. The aliases include both.
     // (rtu uses ahu via alias at EM_POINT_CATEGORIES.rtu = EM_POINT_CATEGORIES.ahu)
@@ -14845,7 +14845,7 @@ var EM_POINT_CATEGORIES = {
       ],
     },
     // Phase 1 (item 21eb08f8): Alarms category for AHU/RTU ——————————————————
-    // Alarm relay points are present on all Carrier/Lennox RTU programs in JOCO data.
+    // Alarm relay points are present on all Carrier/Lennox RTU programs in Client D data.
     // "Alarm Relay Active" (BALM type) and "Compressor Lockout Alarm BNI" are real
     // point names from report1779132670069.csv. These are not live sensor readings —
     // they are alarm-state indicators. required=false: absence is not a compliance gap.
@@ -19411,7 +19411,7 @@ var EM_POINT_CATEGORIES = {
 EM_POINT_CATEGORIES.rtu = EM_POINT_CATEGORIES.ahu;
 
 // Phase 1 (item 21eb08f8): MAU (Makeup Air Unit) compliance profile.
-// MAU-1 at JOCO HHW has SAT, OAT, occupied cooling/heating setpoints, and adjust points.
+// MAU-1 at Client D HHW has SAT, OAT, occupied cooling/heating setpoints, and adjust points.
 // MAU does NOT have RAT (no return path), no duct static (supply-only), no zone dampers.
 // required=false for setpoints/adjust — presence is informational, not a hard compliance gap.
 // Source: report1779132670069.csv MAU-1 point list.
@@ -21948,7 +21948,7 @@ var EM_SEQUENCE_DEFS = [
     // per-terminal but heat/cool setpoints live at the master controller (standard
     // for VVT — never a per-terminal BACnet point). A terminal reporting zone temp
     // IS controlling zone temperature; gating this sequence on setpoints produced a
-    // systematic false "Not Ready" for ~219 of 719 JOCO VAV rows. Setpoint hardware
+    // systematic false "Not Ready" for ~219 of 719 Client D VAV rows. Setpoint hardware
     // coverage is still tracked separately via EM_POINT_CATEGORIES (Sensors to
     // Install column) — this only changes SEQUENCE readiness, not hardware coverage.
     key: 'vav_zone_temp',

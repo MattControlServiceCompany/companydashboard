@@ -1,5 +1,5 @@
 // Verification script for fix/pricing-phases-and-sensor-hours (backlog 8d7911c1)
-// Seeds real JOCO data, then inspects the Cost Estimate tab, Service Proposal, and ASHRAE 36
+// Seeds real Client D data, then inspects the Cost Estimate tab, Service Proposal, and ASHRAE 36
 // Audit Report via direct JS evaluation against the compute/generator functions (more precise
 // than parsing rendered DOM text for structural checks), plus real UI screenshots.
 // ORDER NOTE: all direct-evaluate structural checks (timeline, proposal generator, audit
@@ -7,17 +7,19 @@
 // appears to be a real page reload that leaves report-engine.js's top-level functions
 // inaccessible afterward (harness/verification quirk, not evidence of an app bug — investigated
 // but not fully root-caused; sidestepped by ordering instead).
-const { chromium } = require('C:/Users/Matt Miller/AI/companydashboard/node_modules/playwright');
+const CTX_DIR = process.env.CH_CONTEXT_DIR || require('path').join(require('os').homedir(), 'AI', '_context');
+const { chromium } = require(require('path').join(process.env.CH_PLAYWRIGHT_NODE_MODULES || require('path').join(CTX_DIR, 'tools', 'playwright-runtime', 'node_modules'), 'playwright'));
 const fs = require('fs');
 
 const PROFILE = 'C:/Temp/verify-pricing-phases-profile-' + Date.now();
 // The tree this script runs FROM (primary checkout or worktree): scripts/ -> repo root.
 const REPO_ROOT = require('path').resolve(__dirname, '..');
 const PAGE_URL = 'file:///' + REPO_ROOT.replace(/\\/g, '/') + '/energy-department.html';
-const DATA_FILE = 'C:/Users/Matt Miller/Downloads/CompanyHub-localdatafile-20260727.json';
+const DATA_FILE =
+  process.env.CH_BACKUP_FILE || require('path').join(require('os').homedir(), 'Downloads', 'CompanyHub-localdatafile-20260727.json');
 // Verification artifacts go under _context/temp only (filing standard: dated
-// names, never the OneDrive Screenshots folder).
-const SHOT_DIR = 'C:/Users/Matt Miller/AI/_context/temp/verify-pricing-phases';
+// names, never a synced Screenshots folder).
+const SHOT_DIR = require('path').join(CTX_DIR, 'temp', 'verify-pricing-phases');
 const SHOT_DATE = new Date().toISOString().slice(0, 10);
 
 (async () => {
@@ -67,7 +69,7 @@ const SHOT_DATE = new Date().toISOString().slice(0, 10);
     console.log('WARNING: seed did not settle within timeout, continuing anyway');
   }
 
-  // Find JOCO project id
+  // Find Client D project id
   const projId = await page.evaluate(() => {
     const projects = typeof DB !== 'undefined' ? DB.get('en_projects', []) : [];
     const joco = projects.find((p) => /joco|johnson\s*county/i.test(p.name || ''));

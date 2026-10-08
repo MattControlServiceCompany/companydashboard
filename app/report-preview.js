@@ -509,7 +509,7 @@ function saveReportTemplate() {
 // plus its _saveReportToHistory() helper) removed — it produced an image-only PDF with no
 // selectable/searchable text (PyMuPDF get_text() returned '' on every page, 2026-09-25 E2E).
 // The "Download PDF" button now calls exportReportToPDF() (app/report-engine.js) directly, the
-// same native window.print()-based text PDF path used by the ASHRAE 36 / Proposal / Woodland /
+// same native window.print()-based text PDF path used by the ASHRAE 36 / Proposal / Client B /
 // Agreement reports (fix/report-not-copyable, 2026-07-22) — that function already branches on
 // which preview container is open (#reportPreviewContainer/#rptPreviewPages for this v2 preview
 // vs the legacy #reportOverlay/#reportPages) and already builds the correct Quarterly/Annual

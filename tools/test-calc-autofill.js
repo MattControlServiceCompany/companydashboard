@@ -7,14 +7,14 @@
 //      record, with the correct source label on each field.
 //   2. chResolveCalcField fixes the actual reported bug: a previously-saved field that still
 //      equals the shipped default (e.g. sqft:0, a project's stale pre-autofill basCalc) does NOT
-//      block autofill — this is the exact Spring Hill Schools / Woodland Spring Middle failure
+//      block autofill — this is the exact Client C Schools / Client B Spring Middle failure
 //      mode from the 2026-09-22 report.
 //   3. chResolveCalcField never overwrites a real user override — neither a saved value that
 //      differs from the shipped default, nor a field explicitly marked touched this session — and
 //      that the override survives a simulated re-open.
 //
 // SYNTHETIC fixture only for the committed pass/fail gate. When a local CompanyHub backup is
-// available, also runs chCalcAutofillFields against Spring Hill Schools / Woodland Spring Middle
+// available, also runs chCalcAutofillFields against Client C Schools / Client B Spring Middle
 // real data (informational cross-check, not required for the gate to pass).
 'use strict';
 
@@ -156,7 +156,7 @@ console.log('--- 2. chResolveCalcField — stale shipped-default save no longer 
   const sb = makeSandbox(projectsArr);
   const autoSqft = { value: 102817, source: 'building record', isDefault: false };
 
-  // This IS the Spring Hill Schools bug: openBASCalc's old gate saw `p.basCalc` already existed
+  // This IS the Client C Schools bug: openBASCalc's old gate saw `p.basCalc` already existed
   // (sqft:0, the shipped default) and skipped autofill entirely, forever.
   const staleDefaultSave = sb.chResolveCalcField(0, 0, autoSqft, new Set(), 'sqft');
   assert(staleDefaultSave.value === 102817, 'sqft autofills to 102817 even though a stale basCalc had saved 0');
@@ -345,7 +345,7 @@ console.log('--- 6b. Existing Saturday/Sunday schedule + Outside Air Shut Off (2
   // A row where the Effective Schedules import matched (real Mon-Fri times, col 11 'None' per
   // emBuildSetpointExportRows) resolves the weekend window to 0-0 (not scheduled = unoccupied),
   // sourced — not the old 0-24 "occupied all day, no setback" fallback, and not flagged as a
-  // shipped default. This is the reported Spring Hill Schools / Woodland Spring Middle symptom:
+  // shipped default. This is the reported Client C Schools / Client B Spring Middle symptom:
   // the existing schedule showing Saturday/Sunday 0-24 with "Default value (not from building
   // data)" for a building that DOES have an Effective Schedules import.
   const rowsMatched = [mkEmRow({ 9: '7:00', 10: '16:00', 11: 'None' })];
@@ -546,7 +546,7 @@ console.log('--- 10. Heating Source (heatSrc) — Equipment Matrix heating-type 
   }
 }
 
-// ─── Informational: real backup cross-check (Spring Hill Schools / Woodland Spring Middle) ───
+// ─── Informational: real backup cross-check (Client C Schools / Client B Spring Middle) ───
 function findLatestBackup() {
   const dl = path.join(os.homedir(), 'Downloads');
   if (!fs.existsSync(dl)) return null;

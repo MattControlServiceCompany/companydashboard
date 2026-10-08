@@ -1,7 +1,7 @@
 // tools/test-baseline-freeze-badge.js — Project Baseline "All Buildings" freeze badge gate.
 // Run: node tools/test-baseline-freeze-badge.js
 //
-// Backlog P0 35105124: Louisburg's High School and Middle School showed "Auto-inherited —
+// Backlog P0 35105124: Client A's High School and Middle School showed "Auto-inherited —
 // not frozen" on the Project Baseline "All Buildings" table even after their real,
 // savings-included Electric/Gas meters were explicitly saved and frozen. Root cause:
 // _udBuildingFreezeState() (app/utility-data.js) required EVERY meter with a baseline —
@@ -71,7 +71,7 @@ const _udBuildingFreezeState = sandbox._udBuildingFreezeStateFn;
 
 console.log('=== Project Baseline: All Buildings freeze badge gate (35105124) ===');
 
-// ── Scenario 1: Louisburg High School shape ─────────────────────────────────────────
+// ── Scenario 1: Client A High School shape ─────────────────────────────────────────
 // Electric + Gas meters: real bills, explicitly saved, frozen (isBaselineFrozen true).
 // A second, stray, zero-usage Electric meter: excluded from savings, auto-inherited
 // (never explicitly saved) — trust = 'inherited', not frozen.
@@ -86,7 +86,7 @@ assert(
   'High School shape: all SAVINGS-INCLUDED meters are frozen -> badge reads "Frozen" (got "' + hsResult + '")',
 );
 
-// ── Scenario 2: Louisburg Middle School shape ───────────────────────────────────────
+// ── Scenario 2: Client A Middle School shape ───────────────────────────────────────
 // Electric + Gas: real, saved, frozen. Water/Sewer/Stormwater: excluded, auto-inherited.
 const msMeterDetails = [
   { hasBaseline: true, included: true, trust: 'frozen' }, // Electric

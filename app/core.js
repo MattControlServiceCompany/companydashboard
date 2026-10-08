@@ -134,7 +134,7 @@ function _pdfBase64ToBytes(base64) {
 }
 function _pdfBytesToBase64(bytes) {
   // Chunked String.fromCharCode.apply to avoid a call-stack/argument-count
-  // blowup on large arrays (measured up to ~48MB raw for Baker's largest
+  // blowup on large arrays (measured up to ~48MB raw for Client E's largest
   // combined gas bill per pdf-sync.js's file header).
   const STEP = 0x8000;
   let binary = '';

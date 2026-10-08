@@ -7,12 +7,12 @@
  * plus reuses the Utility Data page's own statistical flag computation:
  *   1. Kansas Gas Service 100x OCR decimal-drop on TotalCurrentCharges
  *      (app/bill-analysis.js _postExtractionVerify).
- *   2. City of Louisburg new-format Bill Date reading the Penalty Date
+ *   2. City of Client A new-format Bill Date reading the Penalty Date
  *      instead of the printed Bill Date (app/energy-savings.js
- *      City of Louisburg rule, _extractNew).
- *   3. Evergy RkVA rate OCR digit-misread (app/energy-savings.js
- *      _extractEvergy single-part rate cross-check).
- *   4. City of Louisburg account-number OCR misread.
+ *      City of Client A rule, _extractNew).
+ *   3. Utility E RkVA rate OCR digit-misread (app/energy-savings.js
+ *      _extractUtility E single-part rate cross-check).
+ *   4. City of Client A account-number OCR misread.
  *   5. computeMeterFlagSummary (computations/bill-flags.js) — the same
  *      flag computation as the Utility Data building badge, meter pill and banner.
  *
@@ -186,8 +186,8 @@ async function runProjectScanCold(sandbox, pid) {
   return ctl;
 }
 
-// ── Louisburg synthetic new-format bill page (same structural markers as
-// tools/test-louisburg-billdate.js's makeSyntheticPage) ──
+// ── Client A synthetic new-format bill page (same structural markers as
+// tools/test-client-a-billdate.js's makeSyntheticPage) ──
 function louisburgPage(startDate, endDate, billDate, penaltyDate, dueDate, account) {
   return (
     `%%PAGE_1%%\n` +
@@ -215,7 +215,7 @@ function louisburgPage(startDate, endDate, billDate, penaltyDate, dueDate, accou
   );
 }
 
-// ── Evergy synthetic bill text (same structural markers as
+// ── Utility E synthetic bill text (same structural markers as
 // tools/test-rkva-rate-reconciliation.js's makeSyntheticBill) ──
 function evergyBillText(account, start, end, rkvaQty, rkvaRate, rkvaCharge) {
   return (
@@ -257,7 +257,7 @@ async function main() {
   vm.runInContext(`__store['en_pdf_bills'] = ${JSON.stringify([kgsBill])};`, sandbox);
   const kgs1Proj = { id: 'p_test_kgs1', customerId: 'cust_test_kgs1', name: 'Test KGS Unmatched Co' };
 
-  // ── Case 2: Louisburg penalty-date bug ──
+  // ── Case 2: Client A penalty-date bug ──
   const louMeter = {
     id: 'm_test_lou',
     commodity: 'Water',
@@ -285,7 +285,7 @@ async function main() {
     louisburgPage('3/1/2026', '4/1/2026', '4/5/2026', '4/20/2026', '4/19/2026', '09-999999-99'),
   );
 
-  // ── Case 3: Evergy RkVA rate misread ── (3 bills on one meter: 2 correct, 1 misread)
+  // ── Case 3: Utility E RkVA rate misread ── (3 bills on one meter: 2 correct, 1 misread)
   const evgMeter = {
     id: 'm_test_evg',
     commodity: 'Electric',
@@ -328,7 +328,7 @@ async function main() {
       },
     ],
   };
-  const evgBldg = { id: 'b_test_evg', name: 'Test Rockville', meters: [evgMeter] };
+  const evgBldg = { id: 'b_test_evg', name: 'Test Fixture', meters: [evgMeter] };
   const evgProj = { id: 'p_test_evg', customerId: 'cust_test_evg', name: 'Test Louisburg Electric' };
   storePdfText(sandbox, 'pdf_evg_bad', evergyBillText('9999999999', '07/14/2026', '08/13/2026', 17.784, 0.883, 11.79));
 
@@ -478,7 +478,7 @@ async function main() {
     sandbox,
   );
 
-  // ── Case 7: Louisburg account-number OCR misread ──
+  // ── Case 7: Client A account-number OCR misread ──
   const louAcctMeter = {
     id: 'm_test_louacct',
     commodity: 'Electric',
@@ -513,11 +513,11 @@ async function main() {
       },
     ],
   };
-  const louAcctBldg = { id: 'b_test_louacct', name: 'Test Rockville Elementary', meters: [louAcctMeter] };
+  const louAcctBldg = { id: 'b_test_louacct', name: 'Test Fixture Elementary', meters: [louAcctMeter] };
   const louAcctProj = { id: 'p_test_louacct', customerId: 'cust_test_louacct', name: 'Test Louisburg USD 416' };
 
   // ── Case 8 (new, 2026-09-25): resumed-scan fixture — a 3-"page" synthetic
-  // PDF (real content on page 2) for a fresh Louisburg-date bug, its own
+  // PDF (real content on page 2) for a fresh Client A-date bug, its own
   // project so cross-project isolation and resume don't interact. ──
   const louResumeMeter = {
     id: 'm_test_louresume',
@@ -761,7 +761,7 @@ async function main() {
   }
 
   // ── Case 10 (new, 2026-09-25): resumed scan does not re-read a cached page.
-  // First cold scan of the 3-page Louisburg-resume PDF reads all 3 pages and
+  // First cold scan of the 3-page Client A-resume PDF reads all 3 pages and
   // finds the correction; a second cold scan (simulating a reload — fresh
   // controller, same persisted store) must read ZERO pages (served entirely
   // from the persisted bcr_pdftext_ cache) and still surface the same row. ──

@@ -6,7 +6,7 @@
  * decimal point dropped (e.g. printed "$34.64" -> "3464"), inflating the
  * saved cost by 100x. Confirmed real cases (ground-truth reconciliation,
  * AI/_context/ground-truth/2026-09-07-site-vs-ground-truth-reconciliation.md):
- * Baker Student Health Oct 2025 ($3,464.00 site vs $34.64 GT) and Markham
+ * Client E Student Health Oct 2025 ($3,464.00 site vs $34.64 GT) and Markham
  * Apartments #202 (two occurrences).
  *
  * SYNTHETIC fixture only (no real client bill data) — a fabricated bill

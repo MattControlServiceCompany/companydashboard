@@ -11,7 +11,7 @@
 // Pattern follows test_eui_source_of_truth.js (this repo's local vm-based gate harness):
 // loads the REAL, unmodified computations/csc.js and app/report-engine.js into a Node vm
 // sandbox (no browser, no network) and:
-//   1. Unit-checks computeMultiYearCscTotals directly against the known-good Louisburg
+//   1. Unit-checks computeMultiYearCscTotals directly against the known-good Client A
 //      3-year figures: 3-Year Total $183,550, CSC (60%) $110,130, Client (40%) $73,420.
 //   2. Instruments computeMultiYearCscTotals (recording every call) BEFORE report-engine.js
 //      loads, then calls the REAL rptPageFinancial() and rptPageContractProjection()
@@ -54,14 +54,14 @@ if (!fs.existsSync(path.join(REPO, 'computations', 'csc.js'))) {
   process.exit(1);
 }
 
-// ─── Known-good Louisburg USD #416 figures (documented in backlog 92155caf / 91bc7d69) ──
+// ─── Known-good Client A USD #416 figures (documented in backlog 92155caf / 91bc7d69) ──
 const EXPECTED_TOTAL = 183550;
 const EXPECTED_CSC = 110130; // 60%
 const EXPECTED_CLIENT = 73420; // 40%
 const TOL = 1; // $1 tolerance — _fmtUSD() in lib/formatting.js itself rounds to the nearest dollar
 
 // ─── Synthetic (non-real) contract inputs engineered to reproduce the known-good totals ──
-// Louisburg's real contract terms are not reproduced here (no client PII in a committed
+// Client A's real contract terms are not reproduced here (no client PII in a committed
 // fixture) — instead these inputs are DERIVED backwards from the known-good $183,550 3-year
 // total so that feeding them into the real computeMultiYearCscTotals() must reproduce it.
 // contractYears=3, cscPct=60, clientPct=40 (matches the known-good 60/40 split exactly:

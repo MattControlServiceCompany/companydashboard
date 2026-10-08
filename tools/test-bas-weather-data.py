@@ -5,10 +5,10 @@ corresponding cell in the source workbook's "Temperature Data" and "Humidity Dat
 Usage: python tools/test-bas-weather-data.py
 Exits non-zero if any mismatch is found.
 """
-import json, sys, openpyxl
+import json, os, sys, openpyxl
 
-SRC = r"C:\Users\Matt Miller\AI\_context\my-knowledge-base\raw\Calcs\BAS Savings Calc Template.xlsm"
-DATA = r"C:\Users\Matt Miller\AI\_context\temp\2026-09-22-bas-calc-weather-worktree\app\data\bas-weather-bins.js"
+SRC = os.environ["CH_BAS_CALC_TEMPLATE"]
+DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "app", "data", "bas-weather-bins.js")
 
 # load generated JS data (strip the const assignment / trailing semicolon)
 with open(DATA, encoding="utf-8") as f:

@@ -5,7 +5,7 @@
 // "Existing Heating Gas Therms" (calHeatGas), which got a live-from-bills fallback on 2026-09-23
 // (hvacComputeGasThermsForBuilding), calCoolKwh only ever read a SAVED p.hvacLoadEst.coolKwhTotal
 // snapshot. For a project/building nobody had opened the HVAC Load Estimation tab and clicked
-// Save for — e.g. Spring Hill Schools / Woodland Spring Middle, reported 2026-09-24 — the field
+// Save for — e.g. Client C Schools / Client B Spring Middle, reported 2026-09-24 — the field
 // showed "0, Default value (not from building data)" even though the building has a full year of
 // its own electric bills that could compute a real figure, exactly the gap the gas fix already
 // closed for calHeatGas.
@@ -126,7 +126,7 @@ console.log('--- 1. hvacComputeElecCoolKwhForBuilding — real baseload computat
 {
   // Synthetic school-shaped electric load: flat 40,000 kWh/mo winter baseload, ramping up to a
   // clear 100,000 kWh summer peak (Jun/Jul/Aug) — a realistic cooling-driven seasonal shape, NOT
-  // Woodland's real numbers (per the repo's synthetic-fixtures-only rule).
+  // Client B's real numbers (per the repo's synthetic-fixtures-only rule).
   const byMo = [40000, 40000, 42000, 48000, 65000, 95000, 100000, 92000, 60000, 45000, 41000, 40000];
   const sb = makeSandbox({ elecMonthly: { byMo } });
   const r = sb.hvacComputeElecCoolKwhForBuilding(1, 'b1');

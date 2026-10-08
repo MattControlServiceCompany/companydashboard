@@ -2,8 +2,8 @@
 // Run: node tools/test-baseline-savings-report.js [path-to-backup.json]
 //
 // Loads the REAL app files into a Node vm sandbox (no browser, no network) seeded from a local
-// CompanyHub backup export, then runs the real collectWoodlandReportData() /
-// generateWoodlandReportHTML() / wdCheckReportInputs() / wdApplySetpointOptions() and asserts:
+// CompanyHub backup export, then runs the real the client-B report data collector() /
+// the client-B report HTML builder() / wdCheckReportInputs() / wdApplySetpointOptions() and asserts:
 //
 //   0. Source hygiene — no building-specific constants remain (rates, install cost, zone lists,
 //      client-share %); the xlsx exporter reads its narration from WD_TEXT (no duplicated prose).
@@ -65,7 +65,7 @@ console.log('Using backup: ' + backupPath);
 const backup = JSON.parse(fs.readFileSync(backupPath, 'utf8'));
 const J = (v) => (typeof v === 'string' ? JSON.parse(v) : v);
 
-// ─── Woodland memo inputs (2026-09-21 savings-calc memo) — the values the Manager enters in
+// ─── Client B memo inputs (2026-09-21 savings-calc memo) — the values the Manager enters in
 // the report's Inputs dialog; used here ONLY as in-memory backfill for the canonical backup. ──
 const OPT_RE = /Option\s+([A-Z])\s+(\d+)\s*\/\s*(\d+)/i;
 const AUDITED = {
@@ -981,7 +981,7 @@ console.log('\n--- 9. Synthetic building: missing inputs block the report and ar
 
 // ─── 11. Regression: gas prefill non-zero on naturalGasTherms-only bills; kW comma formatting ──
 // (2026-09-22) Root cause: calcBldgDefaultRates() (app/energy-savings.js, feeds
-// report-engine-woodland.js's Inputs-dialog prefill) read bill.therms directly. Woodland's own
+// report-engine-woodland.js's Inputs-dialog prefill) read bill.therms directly. Client B's own
 // CSV-imported gas bills carry the value ONLY in naturalGasTherms (bill.therms is absent), so the
 // prefill silently computed $0.00/Therm for both seasons. Fixed by routing every gas-usage read
 // through the single canonical resolveGasUsageTherms() (computations/savings.js).
@@ -1000,7 +1000,7 @@ console.log('\n--- 11. Gas $/Therm prefill non-zero on naturalGasTherms-only bil
       id: 'ngt' + i,
       start: ym + '-01',
       end: ym + '-' + last,
-      // Deliberately NO `therms` field — mirrors Woodland's real CSV-imported gas bills, which
+      // Deliberately NO `therms` field — mirrors Client B's real CSV-imported gas bills, which
       // store the value only in naturalGasTherms (report-engine-woodland.js / calcBldgDefaultRates
       // bug this section regression-guards).
       naturalGasTherms: th,
@@ -1102,7 +1102,7 @@ console.log('\n--- 12. Forbidden jargon tokens; distinct energy-only vs. blended
   assert(t8b.includes('CSC (Control Service Company)'), 'CSC is expanded on first use');
   assert(t8b.includes('Sample calculation'), '"Sample calculation" replaces "Show your work"');
 
-  // (b) Forbidden tokens in the xlsx exporter's OWN source text (static scan — exportWoodlandReportToXlsx
+  // (b) Forbidden tokens in the xlsx exporter's OWN source text (static scan — the client-B xlsx exporter
   // needs a real DOM/canvas for its chart images and is not executed in this vm sandbox; every
   // narrative string it prints is asserted, above, to come from WD_TEXT, so the html8 scan already
   // covers the shared text — this additionally guards against a literal re-introduced directly in
@@ -1160,7 +1160,7 @@ console.log('\n--- 12. Forbidden jargon tokens; distinct energy-only vs. blended
 // itself, and why a fixed static weight can't work, is documented in app/report-engine.js's
 // rptBuildBaselineDataTable, the _BL_COL_WEIGHT/_blKwhNeedPx block). This can't assert real
 // pixel overflow (no browser/layout engine in this vm sandbox — that was verified separately,
-// headless, against Woodland/Louisburg HS/synthetic 7- and 8-digit fixtures, see
+// headless, against Client B/Client A HS/synthetic 7- and 8-digit fixtures, see
 // 2026-09-23-report-kwh-overflow/2026-09-23-result.md), but it DOES prove the dynamic-width
 // code path actually fires (and by how much) from the table's own rendered colgroup HTML, so a
 // future revert/regression of the fix fails loudly here instead of silently.

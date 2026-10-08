@@ -1,5 +1,5 @@
 // test-equipment-matrix-heating-type-classifier.js
-// Unit tests for the 2026-09-23 heating-type classifier fix (backlog: Woodland Spring Middle
+// Unit tests for the 2026-09-23 heating-type classifier fix (backlog: Client B Spring Middle
 // HVAC Load Est showed 0% electric heating even though standalone electric unit heaters exist
 // in the Equipment Matrix — root cause: _emDeriveHeatingType had no rule at all for
 // category:'heater' rows, so a real "Unit Heater Amps"/"Tube Heater Amperage" BAS point (a
@@ -71,7 +71,7 @@ function deriveFor(row, hasGas) {
   return sb._emDeriveHeatingType(row, pts, hasGas);
 }
 
-// ── 1. Standalone electric unit heater — real "Unit Heater Amps" point (Woodland pattern) ──
+// ── 1. Standalone electric unit heater — real "Unit Heater Amps" point (Client B pattern) ──
 const synUnitHeater = {
   category: 'heater',
   equipName: 'SYN-A109 Vestibule Unit Heater',
@@ -87,7 +87,7 @@ const r1 = deriveFor(synUnitHeater, true);
 assertEqual(r1.key, 'electric', 'Unit Heater Amps -> electric key');
 assertEqual(r1.known, true, 'Unit Heater Amps -> known true');
 
-// ── 2. Standalone electric tube heater — "Tube Heater Amperage" (JOCO pattern) ──────────────
+// ── 2. Standalone electric tube heater — "Tube Heater Amperage" (Client D pattern) ──────────────
 const synTubeHeater = {
   category: 'heater',
   equipName: 'SYN Bay - TH-9',

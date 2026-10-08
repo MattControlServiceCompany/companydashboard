@@ -1,7 +1,7 @@
 /**
  * test-wre-fuel-mmbtu.js
  *
- * Standalone regression test (no browser required) for the WoodRiver Energy
+ * Standalone regression test (no browser required) for the WRE
  * (WRE) "Fuel" column fix (2026-09-24):
  *   1. Fuel MMBtu per site line (Trigger and Index) is shipped as its own
  *      output field (_wreTriggerFuelMMbtu / _wreIndexFuelMMbtu) — the
@@ -56,7 +56,7 @@ function loadWRE(scriptPath) {
 }
 
 // ── SYNTHETIC WRE invoice text — fully fabricated, modeled on the real
-// WoodRiver Energy layout (Item/Mmbtu/Fuel/Rate/$ per-site lines, Sub-Total
+// WRE layout (Item/Mmbtu/Fuel/Rate/$ per-site lines, Sub-Total
 // per site, Total Natural Gas summary). Site 1 has BOTH a Trigger and an
 // Index component (exercises both Fuel-capture regexes plus the
 // two-component Sub-Total cross-check); Site 2 has Index only (the common

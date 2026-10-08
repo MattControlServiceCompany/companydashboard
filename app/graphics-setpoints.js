@@ -3211,7 +3211,7 @@ function spParseCSV(text, projId, bldgId, fileName) {
     return;
   }
 
-  // Detect multi-building set points spreadsheet (e.g., "Louisburg Set Points.xlsx")
+  // Detect multi-building set points spreadsheet (e.g., "Client A Set Points.xlsx")
   var colBldgDetect = headers.findIndex(function (h) {
     return h === 'building name';
   });

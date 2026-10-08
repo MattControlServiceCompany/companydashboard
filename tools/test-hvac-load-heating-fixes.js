@@ -156,7 +156,7 @@ console.log('--- 1. _hvlDefaultGasPct ---');
 
 console.log('--- 2. _hvlBuildingHasElectricHeat — sourced from Equipment Matrix, never p.heatType ---');
 {
-  // All-gas classified rows -> false (matches Woodland Spring Middle's real 2026-09-23 data:
+  // All-gas classified rows -> false (matches Client B Spring Middle's real 2026-09-23 data:
   // 151/151 rows classified hydronic, 0 electricReheat/heatpump).
   let sb = makeSandbox({
     gasMonthly: { therms: 100 },
@@ -220,7 +220,7 @@ console.log('--- 3. hvacComputeGasThermsForBuilding — FALLBACK path, <6 popula
   assert(r.hvacGasPct === 80, 'gas-heat building uses the 80% default (matches _hvlDefaultGasPct(false))');
   assert(near(r.hvacGasT, 400, 0.01), `hvacGasT = totalGas * gasPct/100: got ${r && r.hvacGasT}, want 400`);
 
-  // Mixed building (Woodland Spring Middle's real pattern, 2026-09-23 fix): a central gas
+  // Mixed building (Client B Spring Middle's real pattern, 2026-09-23 fix): a central gas
   // boiler/hydronic reheat system (known hydronic rows) PLUS a few standalone electric unit
   // heaters (known electric rows) — stays gas-dominant (80%), since the school's gas bill is
   // still overwhelmingly space heating, not a few small vestibule heaters' worth of DHW/kitchen.

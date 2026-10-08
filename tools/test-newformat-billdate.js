@@ -1,21 +1,18 @@
 /**
- * test-louisburg-billdate.js
+ * test-newformat-billdate.js
  *
- * Standalone regression test for backlog 9b6ff356 — the City of Louisburg
- * "new format" bill reader (app/energy-savings.js, City of Louisburg rule,
+ * Standalone regression test for backlog 9b6ff356 — the City of Client A
+ * "new format" bill reader (app/energy-savings.js, City of Client A rule,
  * _extractNew) read the Penalty Date instead of the printed Bill Date on
  * every new-format bill (11/11 confirmed in the 2026-08-05 Track A
  * verification).
  *
  * The period row prints 5 dates in order:
  *   [BillingPeriodStart, BillingPeriodEnd, BillDate, PenaltyDate, DueDate]
- * confirmed against the printed values in the real fixture
- * AI/_context/reference/ocr-harness/fixtures/louisburg-gas-feb2026-hs-raw.txt
- * ("1/14/2026 2/18/2026 2/23/2026 3/11/2026 3/10/2026" against that
- * fixture's printed BillDate 2/23/2026 / PenaltyDate 3/11/2026). The buggy
- * code read dates[3] (Penalty Date) first instead of dates[2] (Bill Date).
+ * confirmed against the printed values on real new-format bills.
+ * The buggy code read dates[3] (Penalty Date) first instead of dates[2] (Bill Date).
  *
- * SYNTHETIC fixture only — a fabricated "City of Louisburg" new-format
+ * SYNTHETIC fixture only — a fabricated "City of Client A" new-format
  * bill page built from the same structural markers the real _extractNew
  * parser keys off (Customer Account Information header, "USD <district>
  * <name> <address> <account>" row, the 5-date period row, a Previous/
@@ -23,11 +20,11 @@
  * building name/address/account number, and fake dollar amounts — no
  * real client identifiers or bill data.
  *
- * Loads the REAL "City of Louisburg" rule from UTILITY_RULES in
+ * Loads the REAL "City of Client A" rule from UTILITY_RULES in
  * app/energy-savings.js via Node's vm module (same source, same code path
  * as production, not a reimplementation).
  *
- * Usage: node tools/test-louisburg-billdate.js [path-to-energy-savings.js]
+ * Usage: node tools/test-newformat-billdate.js [path-to-energy-savings.js]
  *   (defaults to ../app/energy-savings.js relative to this file — pass the
  *   path to a PRE-FIX copy to confirm this test fails on the old code)
  */
@@ -52,7 +49,7 @@ function loadLouisburgRule(scriptPath) {
   return rule;
 }
 
-// Builds a synthetic new-format Louisburg bill page. Only `billDate`,
+// Builds a synthetic new-format Client A bill page. Only `billDate`,
 // `penaltyDate`, and `dueDate` vary between test cases below — everything
 // else (fake district/name/address/account/amounts) stays fixed.
 function makeSyntheticPage(startDate, endDate, billDate, penaltyDate, dueDate) {

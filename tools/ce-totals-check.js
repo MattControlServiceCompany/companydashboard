@@ -16,7 +16,7 @@
 //                                            # (exit 0 on PASS, exit 1 on FAIL)
 //
 // Baseline file (NOT committed to git — lives outside the repo):
-//   C:\Users\Matt Miller\AI\_context\temp\ce-totals-baseline.json
+//   <context dir>\temp\ce-totals-baseline.json  (context dir = CH_CONTEXT_DIR, default <home>\AI\_context)
 
 const { launchBrowser } = require('./launch-browser');
 const fs = require('fs');
@@ -24,7 +24,11 @@ const path = require('path');
 
 const WRITE = process.argv.includes('--write');
 const HARNESS_URL = 'file:///' + path.join(__dirname, 'ce-totals-check-harness.html').replace(/\\/g, '/');
-const BASELINE_PATH = 'C:\\Users\\Matt Miller\\AI\\_context\\temp\\ce-totals-baseline.json';
+const BASELINE_PATH = path.join(
+  process.env.CH_CONTEXT_DIR || path.join(require('os').homedir(), 'AI', '_context'),
+  'temp',
+  'ce-totals-baseline.json',
+);
 
 function deepDiff(base, cur, prefix, out) {
   if (base === cur) return;

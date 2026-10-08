@@ -2,7 +2,7 @@
 // (2026-09-24, fix/report-headers-and-empty-period, task 5b, problem 1).
 // Run: node tools/test-report-header-overflow.js
 //
-// Renders the REAL Quarterly Report for Spring Hill Schools in a headless bundled Chromium
+// Renders the REAL Quarterly Report for Client C Schools in a headless bundled Chromium
 // browser (this repo's own node_modules/playwright-core, no extra deps), against a local
 // static server serving THIS worktree (so it exercises the actual uncommitted fix, not the
 // live site), restored from a COPY of a real CompanyHub backup through the site's own Restore
@@ -25,7 +25,8 @@ const REPO = path.join(__dirname, '..');
 const { launchBrowser } = require('./launch-browser.js');
 
 const OUT_DIR =
-  process.argv[2] || path.join('C:', 'Users', 'Matt Miller', 'AI', '_context', 'temp', '2026-09-24-report-headers');
+  process.argv[2] ||
+  path.join(process.env.CH_CONTEXT_DIR || path.join(require('os').homedir(), 'AI', '_context'), 'temp', '2026-09-24-report-headers');
 const FIXTURE = path.join(OUT_DIR, '2026-09-24-restore-copy.json');
 
 let passed = 0,
@@ -226,7 +227,7 @@ async function scanHeaders(page, containerSel, label, results) {
     });
     await page.waitForTimeout(400);
 
-    // ─── Spring Hill Schools: Documents → Generate Report ───────────────────────────────
+    // ─── Client C Schools: Documents → Generate Report ───────────────────────────────
     await clickText(page, 'Spring Hill Schools', true);
     await page.waitForTimeout(1200);
     await page.locator('#pdTabBar button', { hasText: 'Documents' }).click();
@@ -334,7 +335,7 @@ async function scanHeaders(page, containerSel, label, results) {
       'empty-quarter report states "No bills for this period" for buildings with no bills',
     );
     // The literal false claim this task fixes: a building status cell reading "On Track" while
-    // every $ figure on that SAME row is $0. Since Spring Hill's real bill history ends well
+    // every $ figure on that SAME row is $0. Since Client C's real bill history ends well
     // before Q3 2026, if "On Track" appears anywhere near "$0" rows in the Building Performance
     // table, the no-data override did not apply — check no "On Track" text is present in a
     // report whose entire period has no bills for any building.

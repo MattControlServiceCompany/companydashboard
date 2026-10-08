@@ -146,7 +146,7 @@
         background: var(--text2);
       }
       /* Manage Mappings modal body: wider, grabbable scrollbar scoped to #em-mm-body.
-         The global 5px rule is invisible against the dark modal background at JOCO scale
+         The global 5px rule is invisible against the dark modal background at Client D scale
          (225,000px content / 722px viewport → ~2px natural thumb, dark-on-dark colors). */
       #em-mm-body::-webkit-scrollbar {
         width: 12px;
@@ -2391,7 +2391,7 @@
         border-top: 2px solid var(--rpt-table-tot-bdr);
         background: var(--rpt-table-tot-bg);
       }
-      /* .rpt-avg (2026-09-22, Woodland report _rptTotalAvgRow helper): the Average row that
+      /* .rpt-avg (2026-09-22, Client B report _rptTotalAvgRow helper): the Average row that
          rides directly under every Total row (Coordinator constraint — every table needs BOTH).
          Reuses the same total-row tokens at reduced weight/italic so it reads as a sibling of
          the Total row, not a new visual language — no new color introduced. */
@@ -2545,7 +2545,7 @@
         font-size: 9px;
         padding: 2px 2px;
       }
-      /* Woodland Page 1 bill tables (2026-09-22): headers center (fix #4) while numbers sit
+      /* Client B Page 1 bill tables (2026-09-22): headers center (fix #4) while numbers sit
          right — with only 2px pad the 5-column gas table cannot get every centered header to
          overlap its right-aligned data at any column widths. An 8px right pad on numeric cells
          (the default non-compact .rpt-table td pad is already 6px) pulls the numbers toward the
@@ -8516,7 +8516,7 @@
           onclick="
             (function () {
               if (window.CH_AUTH && window.CH_AUTH.isSyncHost()) return;
-              var u = { name: 'Demo User', email: 'demo@controlservice.com', initials: 'DU', isReal: false };
+              var u = { name: 'Demo User', email: 'demo@example.com', initials: 'DU', isReal: false };
               sessionStorage.setItem('ch_user', JSON.stringify(u));
               localStorage.setItem('ch_user', JSON.stringify(u));
               currentUser = u;
@@ -9585,7 +9585,7 @@
                   <div style="padding: 15px">
                     <div class="fg">
                       <label class="fl">Project Name</label
-                      ><input class="fi" id="sp-proj" placeholder="e.g. Van Horn High School BAS Upgrade" />
+                      ><input class="fi" id="sp-proj" placeholder="e.g. Example High School BAS Upgrade" />
                     </div>
                     <div class="fg">
                       <label class="fl">Owner / Client</label
@@ -14045,7 +14045,7 @@
             <div class="modal-sect">Project Info</div>
             <div class="fg">
               <label class="fl">Project Name *</label
-              ><input class="fi" id="mp-name" placeholder="e.g. Van Horn High School BAS Upgrade" />
+              ><input class="fi" id="mp-name" placeholder="e.g. Example High School BAS Upgrade" />
             </div>
             <div class="fg">
               <label class="fl">Customer *</label
@@ -14083,7 +14083,7 @@
             </div>
             <div class="fg">
               <label class="fl">Building Address</label
-              ><input class="fi" id="mp-addr" placeholder="e.g. 2500 Van Horn Rd, Independence MO 64050" />
+              ><input class="fi" id="mp-addr" placeholder="e.g. 2500 Example Rd, Anytown MO 00000" />
             </div>
             <div class="fg">
               <label class="fl"
@@ -14307,14 +14307,14 @@
           <div class="modal-body">
             <div class="fg">
               <label class="fl">Facility Name *</label
-              ><input class="fi" id="bm-name" placeholder="e.g. Van Horn High School" />
+              ><input class="fi" id="bm-name" placeholder="e.g. Example High School" />
             </div>
             <div class="fg">
               <label class="fl">Facility Address</label
               ><input
                 class="fi"
                 id="bm-addr"
-                placeholder="e.g. 2500 Van Horn Rd, Independence MO 64050"
+                placeholder="e.g. 2500 Example Rd, Anytown MO 00000"
                 oninput="
                   (function (a) {
                     var z = document.getElementById('bm-zip');
@@ -14336,7 +14336,7 @@
                 style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; min-height: 24px"
               ></div>
               <div style="display: flex; gap: 6px">
-                <input class="fi" id="bm-alias-input" placeholder="e.g. 2500 Van Horn Road" style="flex: 1" />
+                <input class="fi" id="bm-alias-input" placeholder="e.g. 2500 Example Road" style="flex: 1" />
                 <button class="btn btn-ghost" type="button" onclick="bmAddAlias()" style="white-space: nowrap">
                   Add
                 </button>

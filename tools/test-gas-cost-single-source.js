@@ -112,7 +112,7 @@ for (const dir of SCAN_DIRS) {
     if (!f.endsWith('.js') || f.endsWith('.gate.js')) continue; // deploy gates name the retired field on purpose
     // The cost_field_mismatch flag (computations/bill-flags.js) is an integrity check of the OLD stored copy
     // against the bill's own parts. It is not a cost reader. Matt kept its flag counts (2026-10-06); retiring
-    // the rule changes 5 Louisburg flags and is a separate decision.
+    // the rule changes 5 Client A flags and is a separate decision.
     if (dir === 'computations' && f === 'bill-flags.js') continue;
     const lines = stripComments(fs.readFileSync(path.join(full, f), 'utf8')).split('\n');
     lines.forEach((l, n) => {

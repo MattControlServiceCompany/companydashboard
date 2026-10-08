@@ -434,7 +434,7 @@ function stripInterpolation(text) {
 const EXACT_TEXT_EXCEPTIONS = new Set([
   // Missouri's two-letter state code, used correctly in address placeholder examples — not the
   // "Mo" = month abbreviation Matt flagged.
-  'e.g. 2500 Van Horn Rd, Independence MO 64050',
+  'e.g. 2500 Example Rd, Anytown MO 00000',
   'e.g. MO',
   // report-engine.js:11417 — `'<option value="' + yr + '">' + yr + '</option>'` is JS string
   // concatenation (not a template literal), so the tag-text extractor sees the literal

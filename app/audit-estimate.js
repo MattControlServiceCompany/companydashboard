@@ -16,7 +16,7 @@
    2026-07-22: "just remove completely") for adding information he did not want there. A
    separate section avoids repeating that mistake.
 
-   Data sources for the default hours-per-equipment-type table: the Louisburg SD Optimization
+   Data sources for the default hours-per-equipment-type table: the Client A SD Optimization
    Strategy Sheet's "Equipment Data" sheet ("Time it takes to go through equipment", B2:C13,
    h:mm elapsed time) — see AUDIT_EST_HOURS_PER_EQUIP_DEFAULT for the cell citation on every
    value that sheet provides. Equipment types that sheet has no row for use a clearly labeled
@@ -96,7 +96,7 @@ var AUDIT_EST_EXCLUDED_CATEGORIES = [
 ];
 
 /* ── Hours per equipment type, "time it takes to go through" one unit during an audit walk-
-   through. SOURCE: Optimization Strategy Sheet - Louisburg SD 2026.01.09.xlsx, sheet
+   through. SOURCE: Optimization Strategy Sheet - Client A SD 2026.01.09.xlsx, sheet
    "Equipment Data", B2 "Time it takes to go through equipment", table B3:C13 (headers
    "Equipment Type" | "Time"), number format h:mm (elapsed HOURS:MINUTES, verified via the
    cell's number_format, not guessed). Cited per value; categories the sheet has no row for

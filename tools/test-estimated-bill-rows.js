@@ -12,7 +12,7 @@
 //   1b. An estimated bill's value must not shift another (real) bill's flag — removing the
 //       estimated bill from the meter must not change the flags computed for the real bills.
 //   2. One day-count method: calcDays (respecting the Inclusive/Exclusive toggle) gives the
-//      same number for the Spring Hill High June-2025 gap (2025-05-20 → 2025-06-19) that the
+//      same number for the Client C High June-2025 gap (2025-05-20 → 2025-06-19) that the
 //      "Estimate missing period" row shows (31 days, inclusive) — and a source-text sweep
 //      proves both the Bills-table gap line (app/utility-data.js) and estimateMissingPeriod
 //      (app/csv-import.js) call this same calcDays function, so they cannot silently diverge
@@ -130,7 +130,7 @@ console.log("=== 1b. computeMeterFlagSummary — an estimated bill must not shif
 
 console.log('=== 2. One day-count method — Spring Hill High June-2025 gap (2025-05-20 -> 2025-06-19) ===');
 {
-  // Real data (2026-09-25-companyhub-backup-copy.json): Spring Hill High Electric meter,
+  // Real data (2026-09-25-companyhub-backup-copy.json): Client C High Electric meter,
   // inclusive=true. Gap between the bill ending 2025-05-20 and the bill starting 2025-06-19.
   const gapStart = '2025-05-20';
   const gapEnd = '2025-06-19';
@@ -247,7 +247,7 @@ console.log('=== 3. Estimate precision + cost (synthetic; Matt 2026-09-29) ===')
       '12.5 shows as 12.50',
     );
 
-    // Extractor: Evergy page-1 "Previously Billed" line.
+    // Extractor: Utility E page-1 "Previously Billed" line.
     const pb = sandbox.parseEvergyPreviouslyBilled;
     assert(
       pb('Account Summary\nPreviously Billed.................. $1,234.50\nUtility .... $1,234.50') === '1234.50',

@@ -3,8 +3,8 @@
 //
 // Examples:
 //   node tools/verify.js
-//   node tools/verify.js "https://mattcontrolservicecompany.github.io/companydashboard/" "C:/Users/Matt Miller/AI/_context/temp/verify-deploy.png"
-//   node tools/verify.js "file:///C:/Users/Matt Miller/AI/companydashboard/index.html" "C:/Users/Matt Miller/AI/_context/temp/verify-local.png"
+//   node tools/verify.js "https://example.invalid/site/" "verify-deploy.png"
+//   node tools/verify.js "file:///<repo>/index.html" "verify-local.png"
 //
 // Uses bundled Playwright Chromium (never Edge) via tools/launch-browser.js.
 
@@ -13,8 +13,8 @@ const fs = require('fs');
 const path = require('path');
 
 const args = process.argv.slice(2);
-const target = args[0] || 'file:///C:/Users/Matt Miller/AI/companydashboard/index.html';
-const outPath = args[1] || 'C:/Users/Matt Miller/AI/_context/temp/verify-screenshot.png';
+const target = args[0] || require('url').pathToFileURL(path.join(__dirname, '..', 'index.html')).href;
+const outPath = args[1] || path.join(require('os').tmpdir(), 'verify-screenshot.png');
 
 (async () => {
   const context = await launchBrowser('verify');

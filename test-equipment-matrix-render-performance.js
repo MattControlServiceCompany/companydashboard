@@ -1,7 +1,7 @@
 // test-equipment-matrix-render-performance.js
 // Timing acceptance test for fix/em-render-performance (2026-09-23).
 //
-// Problem: JOCO (2,721 real equipment rows) took ~80s to open the Equipment Matrix's Raw View
+// Problem: Client D (2,721 real equipment rows) took ~80s to open the Equipment Matrix's Raw View
 // (and every other view, since they all funnel through emLoadMatrix()). Root cause (found by
 // measuring, not guessing): emLoadMatrix()'s self-heal pass (Pass 0/A/B/C name+point-evidence
 // reclassification + the hwp stale-row shim — emClassifyEquipType/emVerifyTypeByPoints run up to
@@ -21,7 +21,7 @@ const REPO = __dirname;
 const SITE_PATH = 'file:///' + REPO.replace(/\\/g, '/') + '/energy-department.html';
 const SYNTH_PID = 999000222; // fake numeric project id, never collides with a real project
 const ROW_COUNT = 3000;
-const BUILDING_COUNT = 30; // 100 rows/building, roughly matches JOCO's real building density
+const BUILDING_COUNT = 30; // 100 rows/building, roughly matches Client D's real building density
 const TARGET_MS = 2000;
 
 let pass = 0;

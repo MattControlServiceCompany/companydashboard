@@ -36,7 +36,7 @@
  * allowed range") and Word refused to open the file at all ("Open with the
  * Text Recovery converter") -- worse than a repair prompt. This is not
  * contrived: Excel's Alt+Enter inside a cell is literally \x0B, and OCR
- * extraction can emit stray bytes; JOCO's data comes from spreadsheets and
+ * extraction can emit stray bytes; Client D's data comes from spreadsheets and
  * OCR. Deliberately placed HERE (not in _docxWalkInline) because this is
  * the single choke point EVERY builder routes text and attribute values
  * through (including alt text and other DOM-derived attributes, not just
@@ -298,7 +298,7 @@ function _docxTableCell(opts) {
  * opts.header -- sets w:tblHeader (repeat this row on every page, spec §5c
  * note: must be added explicitly, it is never automatic).
  * w:cantSplit (2026-07-31, Step 8 fix): ALWAYS set, on every row (header or not) -- confirmed
- * 2026-07-31 via a real JOCO Service Proposal render: without it, Word freely splits a single
+ * 2026-07-31 via a real Client D Service Proposal render: without it, Word freely splits a single
  * <w:tr> across a page boundary mid-cell (a multi-paragraph item-detail cell's SECOND paragraph
  * orphaned onto the next page while the row's vertically-centered Total Qty value stayed rendered
  * on the first page, leaving an empty-looking Total Qty cell under the orphaned text) -- a proper
@@ -560,9 +560,9 @@ var _DOCX_PAGE_N_OF_M_RUNS =
  * paragraph to read "Page N of M".
  *
  * THE FORMAT IS "Page N of M". Matt, 2026-08-03: "I wanted 'Page N of M'." That
- * instruction is the authority for this footer and it OUTRANKS the Louisburg EMS
+ * instruction is the authority for this footer and it OUTRANKS the Client A EMS
  * Agreement baseline. The skeleton's footer1.xml/footer2.xml were lifted verbatim
- * from Louisburg (see app/docx-skeleton.js build step (c)) and carry a BARE
+ * from Client A (see app/docx-skeleton.js build step (c)) and carry a BARE
  * ` PAGE   \* MERGEFORMAT ` field, right-aligned, with no words around it. This
  * function deliberately BREAKS that byte-identical match, because the .docx is the
  * artifact Matt was actually complaining about and it has never had the format he
@@ -617,7 +617,7 @@ async function _docxApplyPageNumberFooters(zip) {
        w:pgMar top=639 bottom=1872 left=990 right=1170
      => usable BODY height = 15840 - 639 - 1872 = 13329 twips = 666.45pt (9.256in)
      => usable BODY width  = 12240 -  990 - 1170 = 10080 twips = 504pt (7.0in)
-     These match the Louisburg baseline byte-for-byte (same pgSz/pgMar).
+     These match the Client A baseline byte-for-byte (same pgSz/pgMar).
 
    - Letterhead lockup bottom edge: measured off the rendered letterhead,
      Templates\CSC Letterhead.pdf, rasterised at 72dpi (1px = 1pt) and scanned
@@ -626,12 +626,12 @@ async function _docxApplyPageNumberFooters(zip) {
      So the lockup's bottom edge sits at y=145pt from the page top, and the
      wave band starts at y=714pt.
 
-   - First-content top: the Louisburg baseline's own rendered page-1 title
+   - First-content top: the Client A baseline's own rendered page-1 title
      lands at y0 = 179.93pt (style spec §3, PDF-text-layer verified 2026-07-29),
      i.e. ~35pt clear below the lockup. That is the clearance this export must
      reproduce, so first content starts at 180pt from the page top.
 
-   The old construct got there by copying Louisburg's TEN empty leading
+   The old construct got there by copying Client A's TEN empty leading
    paragraphs (9 x 10.5pt + 1 x 18pt paragraph marks) and letting Word's own
    line-height model add up to the clearance. That is fragile (the total is a
    function of Arial's hhea metrics, which is why the register measured it as
@@ -644,7 +644,7 @@ var _DOCX_USABLE_HEIGHT_PT = (15840 - 639 - 1872) / 20; // 666.45
 var _DOCX_CONTENT_WIDTH_TWIPS = 12240 - 990 - 1170; // 10080 (= 504pt)
 var _DOCX_TOP_MARGIN_PT = 639 / 20; // 31.95
 var _DOCX_LETTERHEAD_INK_BOTTOM_PT = 145; // measured, CSC Letterhead.pdf @72dpi
-var _DOCX_FIRST_CONTENT_TOP_PT = 180; // Louisburg-measured title y0 179.93, rounded up
+var _DOCX_FIRST_CONTENT_TOP_PT = 180; // Client A-measured title y0 179.93, rounded up
 /* Height of the single page-1 spacer paragraph, in twips. */
 var _DOCX_LETTERHEAD_SPACER_TWIPS = Math.round((_DOCX_FIRST_CONTENT_TOP_PT - _DOCX_TOP_MARGIN_PT) * 20); // 2961
 
@@ -654,9 +654,9 @@ var _DOCX_LETTERHEAD_SPACER_TWIPS = Math.round((_DOCX_FIRST_CONTENT_TOP_PT - _DO
 
    Arial's own hhea box is (ascender 1854 + descender 434 + lineGap 67) / 2048
    = 1.1499 em, and using that number gets the wrong answer: it predicts the
-   Louisburg baseline's 10-paragraph leading stack (9 marks at 10.5pt + 1 at
+   Client A baseline's 10-paragraph leading stack (9 marks at 10.5pt + 1 at
    18pt = 112.5pt of font size) at 129.4pt, which would put its page-1 title at
-   y=161.3pt. Louisburg's ACTUAL Word render puts that title at y0=179.93pt
+   y=161.3pt. Client A's ACTUAL Word render puts that title at y0=179.93pt
    (style spec §3, PDF text layer, measured 2026-07-29) -- 18.6pt lower.
 
    The reason is styles.xml: docDefaults sets w:eastAsia="MS Mincho", and no run
@@ -1007,7 +1007,7 @@ async function _docxAssemble(documentXml, opts) {
   //
   // The skeleton (CSC Letterhead.docx) carries TEN empty leading <w:p>
   // paragraphs between <w:body> and <w:sectPr>, all Arial 10.5pt
-  // (w:sz/w:szCs=21) -- a verbatim copy of the Louisburg baseline's own
+  // (w:sz/w:szCs=21) -- a verbatim copy of the Client A baseline's own
   // construct. They exist ONLY to push body content below the full-page
   // letterhead's logo lockup on page 1; the page's own top margin (639 twips
   // = 31.95pt) ends well above the lockup and clears nothing on its own.
@@ -1028,7 +1028,7 @@ async function _docxAssemble(documentXml, opts) {
   //
   // The height is MEASURED, not chosen: the letterhead lockup's ink bottom
   // edge sits at y=145pt (Templates\CSC Letterhead.pdf rasterised at 72dpi,
-  // ink bands y38-y108 and y110-y144), and the Louisburg baseline's rendered
+  // ink bands y38-y108 and y110-y144), and the Client A baseline's rendered
   // page-1 title lands at y0=179.93pt -- ~35pt clear below the lockup. So
   // first content starts 180pt from the page top, and the spacer is
   // 180 - 31.95 = 148.05pt = 2961 twips. See the page-budget block above.
@@ -1068,7 +1068,7 @@ async function _docxAssemble(documentXml, opts) {
   // "Page N of M" in every footer part (Matt, 2026-08-03). Unconditional and
   // applied here rather than in the skeleton asset so the skeleton stays a
   // verbatim record of its two source templates. See the function's comment for
-  // why this deliberately diverges from the Louisburg footer.
+  // why this deliberately diverges from the Client A footer.
   await _docxApplyPageNumberFooters(zip);
 
   var blob = await zip.generateAsync({
@@ -1099,7 +1099,7 @@ async function _docxAssemble(documentXml, opts) {
 
    2026-07-31 spec deviation, Matt-authorized: H1 stays the spec §4d 18pt
    page-title size; H2-H6 get a NEW 13pt section-heading size the measured
-   Louisburg baseline does not contain (spec §4b census found only 10.5pt
+   Client A baseline does not contain (spec §4b census found only 10.5pt
    body + 18pt titles). See _DOCX_HEADING_SIZE_SECTION below for the full
    rationale and the exact complaint this closes.
 
@@ -1208,7 +1208,7 @@ var _DOCX_INDENT_FIRSTLINE = 360;
 
 /* Heading sizes (half-points). H1 = the spec §4b/§4d measured 18pt
    page/section title (w:sz=36), used AS-IS, unchanged from the baseline.
-   H2-H6 = a size the Louisburg baseline does NOT contain -- spec §4b's own
+   H2-H6 = a size the Client A baseline does NOT contain -- spec §4b's own
    census found only two body sizes in the whole document (10.5pt dominant
    body, 18pt titles; §4b line 230: "No other paragraph/heading sizes exist
    in the body"). Matt reviewed the v731 documents 2026-07-31 and reported
@@ -1217,7 +1217,7 @@ var _DOCX_INDENT_FIRSTLINE = 360;
    (2026-07-31) a THIRD level, 13pt (w:sz=26), Arial, NOT bold (larger font
    only -- no added weight was requested), for section headings below the
    page title.
-   ** DELIBERATE DEVIATION FROM THE MEASURED LOUISBURG BASELINE, AUTHORIZED
+   ** DELIBERATE DEVIATION FROM THE MEASURED CLIENT A BASELINE, AUTHORIZED
    BY MATT 2026-07-31. This is an addition (H1's 18pt title size is kept
    as-is), not a replacement of any measured value. ** */
 var _DOCX_HEADING_SIZE_H1 = 36; // 18pt -- spec §4d, unchanged baseline value
@@ -1529,7 +1529,7 @@ function _docxWalkInline(node, fmt, entries, ctx) {
  * size in the Proposal (19px cover title, 16px subtitle, 11px section eyebrows, 18px dollar
  * amounts, etc.) rendered as plain 10.5pt body text, reproducing Matt's exact "headers are the
  * same text size as the rest of the text" complaint even though the SOURCE markup already
- * carries the right sizes -- confirmed 2026-07-31 via a real JOCO Service Proposal PDF render
+ * carries the right sizes -- confirmed 2026-07-31 via a real Client D Service Proposal PDF render
  * (measured 10.56pt on every one of those elements; see this branch's dashboardlogic.md entry).
  *
  * Merge note (integration/docx-audit-proposal-merge, 2026-07-31): feature/docx-audit-step7
@@ -1865,7 +1865,7 @@ function _docxTranslateTable(tableEl, ctx) {
           // Proposal months table's Included Improvements cells, plan Step 8). _docxCollectRuns
           // only walks INLINE content and _docxWalkInline defensively SKIPS any block tag it
           // encounters (by design, for the page-level walk) -- so before this fix, a <td><ul>...
-          // </ul></td> cell silently produced an empty run (confirmed 2026-07-31 via a real JOCO
+          // </ul></td> cell silently produced an empty run (confirmed 2026-07-31 via a real Client D
           // Service Proposal render: every month cell carrying a category list rendered as a
           // literal empty <w:t/>, dropping the actual improvement names -- exactly the
           // "column per month" content Matt asked for, present in the source markup and in the
@@ -2159,7 +2159,7 @@ function _docxTranslateFlexRowTable(el, ctx) {
  * _docxTranslateTable's cell dispatch). Needed because CSS inheritance (a <td style="font-
  * size:9.5px"> whose <ul>/<li> children declare no font-size of their own, relying on normal
  * cascade) has no DOM equivalent once each element is inspected in isolation -- confirmed
- * 2026-07-31 via a real JOCO Service Proposal render: the months table's per-month <ul> content
+ * 2026-07-31 via a real Client D Service Proposal render: the months table's per-month <ul> content
  * rendered at the default 10.5pt body size (no ancestor font-size ever reached it) inside a
  * table cell (~1.17in wide including bullet/hanging indent), producing near letter-by-letter
  * word wrapping ("Demand- / Controlle / d / Ventilatio / n (AHU)") -- readable-width failure,
@@ -2339,7 +2339,7 @@ function _docxTranslateBlock(el, ctx, inheritedFmt) {
  * vertical space; when the preceding content already reaches the bottom
  * margin, Word pushes the WHOLE paragraph onto a fresh sheet and its own
  * forced break then turns that sheet into a genuinely blank page (reproduced
- * 2026-07-31: JOCO EMS Agreement page 2 of an 8-page render came back with one
+ * 2026-07-31: Client D EMS Agreement page 2 of an 8-page render came back with one
  * character, "2" -- the footer page number and nothing else). The register
  * found these still shipping at body index 16 and 36 (Audit), 36 (Proposal)
  * and 98 (Agreement) -- every one of them the fallback path below, taken

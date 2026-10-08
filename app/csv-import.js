@@ -729,7 +729,7 @@ function importBillCsvRows() {
 //
 // Mutates each bill in place. Fill order — never a guess when none of these apply
 // (2026-09-23 cold-review Q2 fix; the old rolling-peak-only version produced 289.8/289.8/333.0
-// for Woodland Spring Middle's Apr-Jun 2025 against a real, bill-stated 380.16 because its
+// for Client B Spring Middle's Apr-Jun 2025 against a real, bill-stated 380.16 because its
 // 13-row CSV has no prior year of history — see the dashboardlogic entry for the full trace):
 //   1. Real value already on the bill (CSV column or prior PDF extraction) — never overwritten.
 //   2. The bill's own Facilities Charge $ (getBillFacKWCost, computations/rates.js) divided by
@@ -1257,8 +1257,8 @@ function toggleChargeDetail(rowId) {
 }
 // ── Estimate missing period (feat/estimate-missing-period, 2026-09-25) ──
 // General "Estimate missing period" action for any meter's Bills table gap — replaces the
-// one-meter Spring Hill High June-2025 special case that used to live in app/utility-data.js
-// (_injectSpringHillHighJuneGapEstimate, computed-at-load and stripped-before-save). Per Matt's
+// one-meter Client C High June-2025 special case that used to live in app/utility-data.js
+// (the high-June gap estimate step, computed-at-load and stripped-before-save). Per Matt's
 // 2026-09-25 decision: accept a genuinely missing bill period and estimate its USAGE from the
 // day-weighted average daily usage of the bill immediately before and immediately after the gap.
 // Cost (Matt, 2026-09-29, supersedes the 2026-09-25 "no cost" rule): the bill AFTER the gap prints

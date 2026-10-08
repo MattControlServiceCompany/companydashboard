@@ -1,13 +1,13 @@
 /**
  * test-rkva-rate-reconciliation.js
  *
- * Standalone regression test for backlog ade32899 — the Evergy RkVA charge
+ * Standalone regression test for backlog ade32899 — the Utility E RkVA charge
  * cross-check detects an OCR digit-misread rate (rate x qty does not
  * reconcile with the printed charge) but never corrects the stored rate,
  * so the wrong per-unit rate keeps feeding downstream savings math even
  * though the printed dollar charge is preserved correctly.
  *
- * Real-world signature (Louisburg Rockville bill, backlog ade32899):
+ * Real-world signature (Client A Site H bill, backlog ade32899):
  *   printed line: "RkVA Chg 17.7840 kW at $0.663 per kW ... $11.79"
  *   OCR misread the rate 6 -> 8: stored RkVARate = 0.883
  *   The pipeline's own reconciliation flagged it:
@@ -25,13 +25,13 @@
  *        snapshotted from the pre-correction value earlier in the same
  *        function and was never updated.
  *
- * SYNTHETIC fixture only — a fabricated single-bill Evergy text block
- * using the same structural markers the real _extractEvergy parser keys
+ * SYNTHETIC fixture only — a fabricated single-bill Utility E text block
+ * using the same structural markers the real _extractUtility E parser keys
  * off ("Billing Details - service from" header, a "RkVA Chg <qty> kW at
  * $<rate> per kW ... $<charge>" line) with fake dollar amounts. No real
  * client identifiers or bill data.
  *
- * Loads the REAL _extractEvergy() function from app/energy-savings.js via
+ * Loads the REAL _extractUtility E() function from app/energy-savings.js via
  * Node's vm module (same source, same code path as production, not a
  * reimplementation).
  *
@@ -61,7 +61,7 @@ function loadExtractEvergy(scriptPath) {
   return fn;
 }
 
-// Builds a synthetic single-bill Evergy text block. `rkvaRate` is the (possibly
+// Builds a synthetic single-bill Utility E text block. `rkvaRate` is the (possibly
 // OCR-misread) per-unit rate printed on the RkVA Chg line; `rkvaCharge` is the
 // printed dollar total for that line (independently OCR'd, assumed correct —
 // matches the real-world signature where the charge column reads fine but the

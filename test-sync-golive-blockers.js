@@ -874,7 +874,7 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     assert.strictEqual(SC.classifyKey('en_wdd_66053'), 'synced');
   });
 
-  // ---- M4: Louisburg facility map syncs
+  // ---- M4: Client A facility map syncs
   await t('M4 en_louisburg_facility_map is classified synced', () => {
     const SC = require('./app/sync-classification.js');
     assert.strictEqual(SC.classifyKey('en_louisburg_facility_map'), 'synced');

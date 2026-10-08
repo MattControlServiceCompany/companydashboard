@@ -1,0 +1,30 @@
+%%PAGE_1%%
+Natural Gas Invoice
+Phone: [REDACTED-PHONE]
+Email: [REDACTED-EMAIL]
+Customer #: 10001
+Example District 100 Invoice #: 90003
+Attn: Sample Contact Production Month: September 2030
+100 Example Road Acct Rep: Sample Rep
+Sampletown, ZZ 00000 Bill Date: 01/10/2030
+Pmt Due Date: 01/25/2030
+Emailed to: [REDACTED-EMAIL]
+Item Mmbtu Fuel Rate £
+Service Address: Site One - 1 Alpha St Acct/Meter: 9001/M0001X
+Sampletown, ZZ 00000 Pipeline: Example Pipe
+Utility: Example Utility
+Trigger - Fixed 4.00 0.04 £5.1700 £20.90
+Index (FOM) 9.00 0.09 £3.7000 £33.69
+Sub-Total: 13.00 0.13 £54.59
+Service Address: Site Two - 2 Beta St Acct/Meter: 9002/M0002X
+Sampletown, ZZ 00000 Pipeline: Example Pipe
+Utility: Example Utility
+Index (FOM) 6557 1.06 £3.2200 £214
+Sub-Total: 65.57 1.06
+Mmbtu Fuel £
+Total Natural Gas: 78.57 1.19 £300.00
+Total Fees: £0.00
+Total Tax: £0.00
+Total Current Charges: £300.00
+Page: 1
+www.example-supplier.test

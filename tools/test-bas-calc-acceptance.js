@@ -352,7 +352,7 @@ if (r3) {
 
 console.log('=== 4. Mixed heatSrc 4 ("Both"), gas-dominant split — 2026-09-23 heating-type classifier fix ===');
 // Regression guard for a building the Equipment Matrix classifies as mixed (a central gas
-// boiler/hydronic plant PLUS a few known electric unit heaters — Woodland Spring Middle's real
+// boiler/hydronic plant PLUS a few known electric unit heaters — Client B Spring Middle's real
 // 2026-09-23 pattern): heatSrc correctly resolves to 4, and with no kWh calibration figure
 // entered (no meaningful electric heating load to calibrate — the building's heat is almost
 // entirely gas), pctGasHeat routes ~100% of the raw existing-heat load into the GAS bucket, not
@@ -361,7 +361,7 @@ console.log('=== 4. Mixed heatSrc 4 ("Both"), gas-dominant split — 2026-09-23 
 // heatSrc 1/3 fix above already solved, reappearing via a different path once a mostly-gas
 // building has ANY known electric-heat evidence at all.
 dom.set('bc-heatSrc', new FakeEl('4', 'SELECT')); // Both (Electric + Gas)
-dom.set('bc-calHeatGas', new FakeEl('19274')); // matches Woodland's real annual-gas x 80% figure
+dom.set('bc-calHeatGas', new FakeEl('19274')); // matches Client B's real annual-gas x 80% figure
 dom.set('bc-calHeatKwh', new FakeEl('')); // no meaningful kWh heating load — never entered
 sandbox._bcDoCalc('p1');
 const r4 = project._bcResults;

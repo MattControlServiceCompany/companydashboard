@@ -79,7 +79,7 @@
 // cap and pdf-sync.js's chunk-upload protocol (SINGLE_SHOT_LIMIT_BYTES/
 // CHUNK_SIZE) do NOT apply to it -- a single POST straight to Supabase
 // Storage can carry a whole PDF (measured up to ~50.6MB raw / 64.33MB
-// base64 for Baker's largest combined gas bill) in one request. What DOES
+// base64 for Client E's largest combined gas bill) in one request. What DOES
 // still apply, and is respected here, is the KB rule that crashed the app
 // once already (backlog ed645bbd): never assemble a monolithic multi-
 // hundred-MB object in memory. PDFs are migrated ONE FILE, ONE ITEM AT A

@@ -1,5 +1,5 @@
 // test-account-plausibility.mjs — _isPlausibleAccountNumber guard (63a151a2)
-// must accept multi-dash Louisburg-style accounts (synthetic values only) and
+// must accept multi-dash Client A-style accounts (synthetic values only) and
 // keep rejecting garbled OCR / date-shaped text.
 // Loads the REAL app/bill-analysis.js via the same vm technique as
 // test-kwh-corroboration.mjs (no reimplementation of app logic).
@@ -52,7 +52,7 @@ function loadRealPipeline() {
     console,
     window: sandboxWindow,
     document: sandboxDocument,
-    navigator: { userAgent: 'node-broadmoor-eca-split-test' },
+    navigator: { userAgent: 'node-eca-split-test' },
     localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
     Chart: function () {},
     setTimeout, clearTimeout, setInterval, clearInterval,
@@ -83,7 +83,7 @@ if (!plausible) {
 }
 const accept = ['560001', '8000000001', '60-700001', '500000001 2000001 18', 'RG233590', 'BG-90001',
   '07-123456-01', '02-000001-00', '11-222333-44', '1-2-3-4'];
-const reject = ['S601 RTS ToC', 'RAS 122474', 'a PN 1 edo', '', null, 'ToC', '09-15-2026', '9-5-26', '2026-09-15', '2026-9-5', '913-555-0100', '07-123456-AB', '07--123456', '-07-123456', '07-123456-'];
+const reject = ['S601 RTS ToC', 'RAS 122474', 'a PN 1 edo', '', null, 'ToC', '09-15-2026', '9-5-26', '2026-09-15', '2026-9-5', '000-555-0100', '07-123456-AB', '07--123456', '-07-123456', '07-123456-'];
 for (const a of accept) { if (plausible(a)) pass++; else { fail++; console.log('  should ACCEPT: ' + JSON.stringify(a)); } }
 for (const r of reject) { if (!plausible(r)) pass++; else { fail++; console.log('  should REJECT: ' + JSON.stringify(r)); } }
 console.log(pass + '/' + (pass + fail) + ' assertions passed');

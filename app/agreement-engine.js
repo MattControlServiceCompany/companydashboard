@@ -11,11 +11,11 @@
  * not the sparse hand-edit-diff/override system the blueprint's Phase 2 describes.
  *
  * Ground truth for the shared boilerplate text is
- * AI/_context/specs/joco-energy-services-agreement-base-2026-07-23.md (verbatim JOCO extraction)
- * cross-checked against Louisburg School District's own Energy Management Services Agreement
+ * AI/_context/specs/<client-D agreement base spec>.md (verbatim Client D extraction)
+ * cross-checked against Client A School District's own Energy Management Services Agreement
  * (profit-sharing deal) to determine what's truly universal boilerplate vs. commercial-terms-
  * specific language. See the implementer's report for the full diff table and every divergence
- * from the JOCO source this file makes on purpose (none silent — all called out below and in that
+ * from the Client D source this file makes on purpose (none silent — all called out below and in that
  * report).
  *
  * Parallel to report-engine.js, not merged into it (blueprint: "this is a distinct document type
@@ -30,7 +30,7 @@
 var AGREEMENT_TEMPLATE_TYPES = ['monthlyAllowance', 'profitSharing', 'epcFlatCost', 'oneTimeCost'];
 
 // Client notice address as stated verbatim in the base Agreement document, Section 4.6
-// (_context/specs/joco-energy-services-agreement-base-2026-07-23.md). Used only when the project
+// (_context/specs/<client-D agreement base spec>.md). Used only when the project
 // record has no project-level address of its own. Line breaks are rendered as they appear in the
 // source document.
 var _AGREEMENT_BASE_CLIENT_ADDRESS = '111 S. Cherry St.,\nOlathe, KS 66061';
@@ -116,7 +116,7 @@ var _AGREEMENT_ONES = [
 var _AGREEMENT_TENS = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
 
 // Whole-number-to-words (supports 0 - 999,999,999) — used to spell out dollar amounts the same way
-// the JOCO source does ("Six Thousand Two Hundred and Fifty Dollars ($6,250.00)"). Only whole
+// the Client D source does ("Six Thousand Two Hundred and Fifty Dollars ($6,250.00)"). Only whole
 // dollars are spelled out; the numeral form always carries the exact cents.
 function _agreementNumToWords(n) {
   n = Math.floor(Math.abs(Number(n) || 0));
@@ -149,7 +149,7 @@ function _agreementNumToWords(n) {
 }
 
 // "Six Thousand Two Hundred Fifty Dollars ($6,250.00)" — spelled words + exact numeral, matching
-// the JOCO source's own convention verbatim.
+// the Client D source's own convention verbatim.
 function _agreementSpellDollars(amount) {
   amount = Number(amount) || 0;
   var whole = Math.floor(amount);
@@ -205,7 +205,7 @@ function collectAgreementData(projId, templateType, opts) {
   // Client display/legal name — proj.client FIRST, falling back to proj.name, matching the exact
   // convention collectASHRAE36Data already uses (report-engine.js: "var projName = proj ?
   // proj.client || proj.name || 'Project' : 'Project'"). proj.name is frequently an internal short
-  // label (e.g. "JOCO"), never the client-facing name (e.g. "Johnson County, Kansas") — confirmed
+  // label (e.g. "Client D"), never the client-facing name (e.g. "Client D, Kansas") — confirmed
   // against the real seeded project record. Using raw proj.name here would put the internal label
   // in a legal document.
   var clientName = proj.client || proj.name || 'Project';
@@ -215,17 +215,17 @@ function collectAgreementData(projId, templateType, opts) {
   if (templateType) cfg.templateType = templateType;
   if (AGREEMENT_TEMPLATE_TYPES.indexOf(cfg.templateType) === -1) cfg.templateType = 'monthlyAllowance';
 
-  // Buildings covered — Johnson County has no Utility Data and never will (standing client
+  // Buildings covered — Client D has no Utility Data and never will (standing client
   // instruction, not a bug), so getUDBldgs always returns empty for this client and the Agreement
   // could never list a single building. Source from the Equipment Matrix instead, via
   // collectASHRAE36Data — the SAME function and campus-wide/weather exclusion logic
   // pricing-estimator.js's _pricingGetBuildingCount already relies on (auditableRows.length guard
-  // drops rows like the "Johnson County"/"New Century Complex" Weather-only stubs), so this can
+  // drops rows like the "Client D"/"New Century Complex" Weather-only stubs), so this can
   // never drift from the building count shown elsewhere in the app. See
   // _pricingGetBuildingCount (pricing-estimator.js) for the full rationale.
   var ashData = typeof collectASHRAE36Data === 'function' ? collectASHRAE36Data(projId) : null;
   // R5 (2026-08-03, D-14/V-07/D-21): the contract's scope list prints the CLIENT-VISIBLE name,
-  // never the raw Equipment Matrix key — otherwise item 26 reads "P25309 - Jo Co Arts and
+  // never the raw Equipment Matrix key — otherwise item 26 reads "P25309 - Client D Arts and
   // Heritage" (an internal building-automation identifier) and item 27 "Sheriffs Fleet
   // Maintenance". displayName is set for every building by collectASHRAE36Data via the one
   // shared helper rptBuildingDisplayName (report-engine.js); b.name is kept as the fallback so
@@ -331,7 +331,7 @@ var _AGR_SUBHEAD = 'font-size:14px;font-weight:700;color:var(--rpt-page-text);ma
 // page wraps them. hero:true/full-width letterhead replaced with smallHeaderImg (the SAME
 // CSC_HEADER_B64 asset, inset at normal content width instead of stretched page-edge-to-edge) to
 // match his page 1's smaller top-left-logo/right-aligned-tagline header, per
-// joco-energy-services-agreement-base-2026-07-23.md's page-setup section (titlePg first-page
+// <client-D agreement base spec>.md's page-setup section (titlePg first-page
 // header, image only, no text bar) and the base PNG/PDF renders.
 function rptPageAgreementCover(n, d) {
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
@@ -408,7 +408,7 @@ function rptPageAgreementCover(n, d) {
   }
 
   // U2 (2026-08-02, fix/u2-print-page-budget). This page was hand-composed as ONE fixed page with
-  // however many buildings the project has, and JOCO's 27 overran it: measured in a print render
+  // however many buildings the project has, and Client D's 27 overran it: measured in a print render
   // (PyMuPDF), buildings 26 and 27 printed at y709.0-720.7pt and past the sheet edge, i.e. on top
   // of / behind the footer wave band that occupies y711.0-792.0. Once the print body correctly
   // reserved the footer zone the page stopped overprinting and instead GREW, splitting onto a
@@ -420,7 +420,7 @@ function rptPageAgreementCover(n, d) {
   // constraint here (Matt, 2026-08-02: "I do not care about page count. All of the content is
   // what I care about."), so the remainder takes another page rather than anything being shrunk.
   //
-  // Constants, all measured in a print render of the real JOCO agreement rather than assumed:
+  // Constants, all measured in a print render of the real Client D agreement rather than assumed:
   //   COVER_CHROME_H  title + recital + templateNote + scopeHeading + the <ol>'s own top margin.
   //                   Measured 191.6px (content top to the first <li>'s top, 143.7pt x 4/3).
   //   COVER_LI_H      one <li>: _AGR_UL's 14px x line-height 1.42 = 19.9, + margin-bottom 2.
@@ -482,10 +482,10 @@ function rptPageAgreementCover(n, d) {
 /**
  * _agreementCommercialRenderers — map of four renderers (blueprint component list). Each returns
  * plain HTML fragments for insertion into rptPageAgreementCommercialTerms and
- * rptPageAgreementTermTermination. monthlyAllowance is sourced directly from the JOCO base spec
- * (verbatim boilerplate, live-bound amounts). profitSharing is sourced directly from Louisburg's
+ * rptPageAgreementTermTermination. monthlyAllowance is sourced directly from the Client D base spec
+ * (verbatim boilerplate, live-bound amounts). profitSharing is sourced directly from Client A's
  * real agreement (the client's own profit-share deal). epcFlatCost and oneTimeCost have NO source
- * document in either target — neither JOCO nor Louisburg represents those two deal types — so
+ * document in either target — neither Client D nor Client A represents those two deal types — so
  * their commercial-terms language below is original boilerplate authored to match the shared
  * structure; flagged explicitly in the implementer's report, not presented as verified client
  * language.
@@ -597,7 +597,7 @@ var _agreementCommercialRenderers = {
       hasRenewalEscalation: false,
       initialTermText: 'This Agreement shall remain in effect for three (3) years from the Effective Date.',
       earlyTerminationNoticeDays: 120,
-      earlyTerminationReimbursement: true, // Louisburg-specific: "if terminated within first 12 months" clause
+      earlyTerminationReimbursement: true, // Client A-specific: "if terminated within first 12 months" clause
     };
   },
 
@@ -797,10 +797,10 @@ function rptPageAgreementTermTermination(n, d) {
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
   var r = _agreementCommercialRenderers[d.templateType](d);
 
-  // NOTE ON DEFECT #3 (duplicated "Term:" heading): confirmed present in BOTH the JOCO source AND
-  // Louisburg's own agreement (an independently-drafted, separately-dated document) — see the
+  // NOTE ON DEFECT #3 (duplicated "Term:" heading): confirmed present in BOTH the Client D source AND
+  // Client A's own agreement (an independently-drafted, separately-dated document) — see the
   // implementer's diff report. That means it is a structural artifact of CSC's own template, not a
-  // one-off JOCO typo, so it is reproduced here as literal boilerplate per the "surface, don't
+  // one-off Client D typo, so it is reproduced here as literal boilerplate per the "surface, don't
   // silently fix" instruction, exactly as both source documents actually read.
   // 2026-07-31 (Word Export Rebuild plan Step 6, spec §4e -- "used for outline-numbered sub-levels
   // in the Agreement variant's numbered clauses"): every numbered sub-clause paragraph below this
@@ -829,7 +829,7 @@ function rptPageAgreementTermTermination(n, d) {
 
   // Roman-numeral sub-item labels computed dynamically rather than hardcoded, so omitting Renewal
   // Term (profitSharing/epcFlatCost/oneTimeCost) doesn't leave a skipped "ii." gap (i, [missing
-  // ii], iii, iv) — the JOCO source's own numbering is Word's native auto-renumbering outline list,
+  // ii], iii, iv) — the Client D source's own numbering is Word's native auto-renumbering outline list,
   // which would never produce a gap either.
   var _romanNumerals = ['i', 'ii', 'iii', 'iv', 'v'];
   var _termRomanIdx = 1; // "i. Term:" already used index 0 above
@@ -916,10 +916,10 @@ function rptPageAgreementGeneralProvisions(n, d) {
     '<h3 style="' +
     _AGR_SUBHEAD +
     '">4.1 Governing Law:</h3>' +
-    // DIVERGENCE FLAGGED, NOT FIXED: JOCO's source names Missouri here even though the Client is
-    // in Kansas. Louisburg's own parallel clause (a separately-dated, Kansas-based deal) names the
-    // CLIENT's own state instead — evidence this may be an oversight in the JOCO source, not an
-    // intentional CSC-favors-its-home-state clause. Reproduced verbatim from the JOCO source per
+    // DIVERGENCE FLAGGED, NOT FIXED: Client D's source names Missouri here even though the Client is
+    // in Kansas. Client A's own parallel clause (a separately-dated, Kansas-based deal) names the
+    // CLIENT's own state instead — evidence this may be an oversight in the Client D source, not an
+    // intentional CSC-favors-its-home-state clause. Reproduced verbatim from the Client D source per
     // "surface, do not silently fix"; see the implementer's report for the full writeup.
     '<div style="' +
     _AGR_BODY +
@@ -961,8 +961,8 @@ function rptPageAgreementGeneralProvisions(n, d) {
     // 2026-08-02 (defect register D-03): this cell used to render the literal string
     // "[Client mailing address ... enter here]" — a placeholder shipping in a signable contract
     // where the base document carries a real, verified address. The base document
-    // (_context/specs/joco-energy-services-agreement-base-2026-07-23.md Section 4.6) states the
-    // Client notice address verbatim as "111 S. Cherry St., / Olathe, KS 66061". That value is now
+    // (_context/specs/<client-D agreement base spec>.md Section 4.6) states the
+    // Client notice address verbatim as "<street address>, <city>, <state> <zip>". That value is now
     // the fallback, exactly as the Contractor address on the left is hardcoded from the same source.
     // A project record that carries its own project-level address (proj.addr, the same field
     // report-engine.js reads) wins over it, so live data always beats the baked-in default.
@@ -979,7 +979,7 @@ function rptPageAgreementGeneralProvisions(n, d) {
   // Dispute Resolution are the two longest clauses on this page (multiple full paragraphs each) —
   // moving 4.7-4.9 to a second page removes enough height to close the 291px/237px (screen/print)
   // overflow measured at the corrected 14px/10.5pt body size (headless re-measurement against real
-  // JOCO data, before this split: page 4 rendered 1263px vs the 1056px design height / 972px
+  // Client D data, before this split: page 4 rendered 1263px vs the 1056px design height / 972px
   // .rpt-body budget; after: both pages fit — see dashboardlogic.md 2026-07-29 entry for the
   // before/after numbers). No clause text was edited, shortened, or reworded — same html this
   // page has always rendered, just carried across two pages instead of one.
@@ -999,7 +999,7 @@ function rptPageAgreementGeneralProvisions(n, d) {
     '<div style="' +
     _AGR_BODY +
     '" contenteditable="true">In the event of any dispute arising out of or relating to this Agreement, the parties agree to exclusively use the following process in the following order for such dispute: (a) informally discuss and attempt to resolve the dispute before proceeding with any further action; (b) in the event this is not successful, the parties agree to cooperatively arrange and participate in non-binding mediation; (c) in the event the mediation is not successful, the parties agree to cooperatively arrange and participate in binding arbitration; (d) in the event informal resolution, mediation and binding arbitration are not successful to resolve the dispute to the satisfaction of both parties, either party will then have the right to pursue litigation.</div>' +
-    // DIVERGENCE FLAGGED, NOT FIXED (defect #1, base spec): JOCO's source names "Johnson County,
+    // DIVERGENCE FLAGGED, NOT FIXED (defect #1, base spec): Client D's source names "Client D,
     // Missouri" — a different state than the Client's actual Kansas notice address. Reproduced
     // verbatim per "do not silently correct... report every divergence so he can approve it."
     '<div style="' +
@@ -1044,7 +1044,7 @@ function rptPageAgreementSignatureBlock(n, d) {
 
   // Signature page matches the Word original's own last page: same small logo/tagline letterhead
   // as page 1 (titlePg's "first" header applies per-section, and this page is the sole page of the
-  // document's second section per joco-energy-services-agreement-base-2026-07-23.md's page-setup
+  // document's second section per <client-D agreement base spec>.md's page-setup
   // section), no report title bar, and — verified directly against the base PDF's text layer
   // (page 5 carries a "5" run in the same footer position as pages 1-4) — a page number IS shown,
   // so noPageNum is intentionally left at its default (false) here.

@@ -11,23 +11,20 @@
  * PAGE \* MERGEFORMAT page-number field in both footer parts, and the
  * TableGrid table style every report table depends on.
  *
- * NOTE (2026-08-03): those two footer parts are still the Louisburg baseline's
+ * NOTE (2026-08-03): those two footer parts are still the Client A baseline's
  * BARE page-number field AS STORED HERE, but no exported .docx ships them that
  * way -- _docxApplyPageNumberFooters() in app/docx-writer.js rewrites both to
  * "Page N of M" (literal text + PAGE field + literal text + NUMPAGES field) on
  * every assemble. Matt, 2026-08-03: "I wanted 'Page N of M'", which outranks the
- * Louisburg baseline for this footer. The asset is left verbatim on purpose so it
+ * Client A baseline for this footer. The asset is left verbatim on purpose so it
  * stays a faithful record of its two source templates; change the format in
  * docx-writer.js, not here.
  *
  * Built from:
- *   C:\Users\Matt Miller\OneDrive - Control Service Company\Templates\
- *   CSC Letterhead.docx  (read-only source, never modified)
+ *   the company letterhead template CSC Letterhead.docx  (read-only source, never modified)
  * with word/footer1.xml, word/footer2.xml, and the TableGrid style block
  * lifted verbatim from:
- *   C:\Users\Matt Miller\OneDrive - Control Service Company\Templates\
- *   Louisburg School District - Energy Management Services Agreement
- *   v20251217.docx  (also read-only, also never modified).
+ *   a signed services agreement .docx  (also read-only, also never modified).
  *
  * Build steps applied, in order:
  *   (a) drop header1.xml + image1.emf + their rels -- the "even" header
@@ -38,15 +35,15 @@
  *       2550x3300px/300dpi, quality 85, optimize=True. NOT a naive
  *       .convert('RGB') -- that measurably oversaturates these Adobe CMYK
  *       JPEGs (confirmed by side-by-side render against CSC Letterhead.pdf);
- *   (c) splice in Louisburg's footer1.xml/footer2.xml verbatim, plus the
+ *   (c) splice in Client A's footer1.xml/footer2.xml verbatim, plus the
  *       matching <w:footerReference> entries in sectPr (new rId13/rId14 --
  *       the header1.xml relationship, rId8, is freed by step (a) so there
  *       is no id collision) and the rels in document.xml.rels;
- *   (d) set w:pgMar w:footer="0" (was 720, matching the Louisburg baseline);
- *   (e) splice Louisburg's <w:style w:type="table" w:styleId="TableGrid">
+ *   (d) set w:pgMar w:footer="0" (was 720, matching the Client A baseline);
+ *   (e) splice Client A's <w:style w:type="table" w:styleId="TableGrid">
  *       block into styles.xml (absent from CSC Letterhead.docx);
  *   (f) clear dc:creator / cp:lastModifiedBy in docProps/core.xml (were
- *       "Anna Ladd" / "Matt Miller" -- internal names, general hygiene
+ *       two personal names -- internal names, general hygiene
  *       before a public repo, not a client-data issue);
  *   (g) 2026-07-31 fix/docx-listmarker-arial: patch word/numbering.xml's
  *       abstractNumId="5" (the ordered-list decimal/lowerLetter/... levels,
@@ -72,8 +69,8 @@
  *   const zip = await JSZip.loadAsync(bytes);
  *
  * To regenerate this asset (e.g. if the CSC Letterhead.docx artwork ever
- * changes): copy the two OneDrive source files above into a scratch
- * working dir (never edit the OneDrive originals), then run the build
+ * changes): copy the two source files above into a scratch
+ * working dir (never edit the originals), then run the build
  * script documented in the Step 1 implementation report / commit message
  * for this file (Pillow's ImageCms does the CMYK->RGB conversion; no other
  * dependency is needed to regenerate the asset itself), and replace the

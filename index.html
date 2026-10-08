@@ -1188,7 +1188,7 @@
       // Demo login is disabled on the sync host (a demo session must never write real data).
       function loginDemo() {
         if (window.CH_AUTH && window.CH_AUTH.isSyncHost()) return;
-        currentUser = { name: 'Demo User', email: 'demo@controlservice.com', initials: 'DU', isReal: false };
+        currentUser = { name: 'Demo User', email: 'demo@example.com', initials: 'DU', isReal: false };
         saveSession(currentUser);
         enterApp();
       }

@@ -19,7 +19,7 @@
 // result on d._a36CatalogRowsCache exactly once per report render.
 //
 // This test does NOT reimplement any pricing/compliance logic. It drives the real app in a
-// headless browser, restores the real JOCO backup through the real Restore button (via the
+// headless browser, restores the real Client D backup through the real Restore button (via the
 // shared restore-and-navigate.js harness), and calls the REAL production functions in-page:
 //   - buildCatalogRows(projId)            -- unscoped, used only to compute this test's OWN
 //                                             independent "expected" sum for one building, by
@@ -31,8 +31,8 @@
 //
 // Checks:
 //   1. Full selection (all 27 buildings) is unchanged: cover shows 1,285 sequences / 1,291
-//      sensors (the known-good JOCO figures from the 2026-09-25 bug report / dashboardlogic).
-//   2. One-building selection ("Jo Co Elections Office", 8 equipment): the cover's two totals
+//      sensors (the known-good Client D figures from the 2026-09-25 bug report / dashboardlogic).
+//   2. One-building selection ("Client D Elections Office", 8 equipment): the cover's two totals
 //      equal the SUM, over just that building's rows in the unscoped catalog, of the same
 //      phase===1&&!ioOnly / phase===2&&seqKey predicates the cover itself uses -- i.e. the
 //      literal "1-building totals equal the sum over that building's equipment" requirement.
@@ -41,7 +41,7 @@
 //      that already worked).
 //
 // SKIPS (exit 0) if the local CompanyHub backup used by restore-and-navigate.js's default is
-// not present -- this test needs real JOCO equipment-matrix data, which lives only in that
+// not present -- this test needs real Client D equipment-matrix data, which lives only in that
 // local file (never committed).
 //
 // Run (from the repo root): node tools/test-ashrae36-cover-scope.js [worktree path]
@@ -50,9 +50,10 @@
 const path = require('path');
 const fs = require('fs');
 
-const rn = require('C:\\Users\\Matt Miller\\AI\\_context\\tools\\restore-and-navigate.js');
+const CTX_DIR = process.env.CH_CONTEXT_DIR || path.join(require('os').homedir(), 'AI', '_context');
+const rn = require(path.join(CTX_DIR, 'tools', 'restore-and-navigate.js'));
 
-const DEFAULT_BACKUP = 'C:\\Users\\Matt Miller\\Downloads\\CompanyHub-localdatafile-20260922.json';
+const DEFAULT_BACKUP = path.join(require('os').homedir(), 'Downloads', 'CompanyHub-localdatafile-20260922.json');
 if (!fs.existsSync(DEFAULT_BACKUP)) {
   console.log('SKIP: local backup not found (' + DEFAULT_BACKUP + ') -- this test needs real JOCO data.');
   process.exit(0);
@@ -65,7 +66,7 @@ const WORKTREE = process.argv[2] || path.join(__dirname, '..');
 // tracked directory -- since it holds a copy of real project data.
 const RUN_DIR =
   process.env.ASHRAE36_TEST_RUN_DIR ||
-  'C:\\Users\\Matt Miller\\AI\\_context\\temp\\2026-09-25-ashrae36-cover-scope\\test-run';
+  path.join(CTX_DIR, 'temp', '2026-09-25-ashrae36-cover-scope', 'test-run');
 
 const EXPECTED_FULL_SEQUENCES = 1285;
 const EXPECTED_FULL_SENSORS = 1291;

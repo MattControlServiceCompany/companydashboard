@@ -10,7 +10,7 @@
  *
  * Built directly from the actual master template file (read-only source,
  * never modified):
- *   C:\Users\Matt Miller\AI\_context\my-knowledge-base\raw\
+ *   <context dir>\my-knowledge-base\raw\
  *   Master Sequences of Operation 2023.docx
  *
  * STRATEGY: every part is copied BYTE-IDENTICAL from that real file

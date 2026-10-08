@@ -1352,7 +1352,7 @@ const ECM_TEMPLATES = {
       },
     ],
     // TRM vacancy % midpoints by space type
-    // Source: missing-ecm-research-2026-05-16.md §ECM2 Table 1 (ComEd/Evergy TRM)
+    // Source: missing-ecm-research-2026-05-16.md §ECM2 Table 1 (ComEd/Utility E TRM)
     _vacancy: {
       classroom: 0.3,
       office_priv: 0.35,

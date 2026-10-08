@@ -5,7 +5,7 @@
 // savings options (A/B/C) stored as savings measures. Self-contained report type
 // (data._woodland = true), built entirely on the existing rptPage()/.rpt-page markup so the
 // generic exportReportToPDF() / exportReportToDocx() (app/report-engine.js) work with ZERO
-// changes. A fourth export surface, exportWoodlandReportToXlsx(), is added here (ExcelJS,
+// changes. A fourth export surface, the client-B xlsx exporter(), is added here (ExcelJS,
 // one sheet per page).
 //
 // Rebuild (2026-09-22): every page REUSES the site's own components and is sourced from the
@@ -56,7 +56,7 @@ var WOODLAND_MO_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 
 
 // -----------------------------------------------------------------------
 // WD_TEXT — the ONE source of every narrative sentence in this report (2026-09-22). The HTML
-// pages AND exportWoodlandReportToXlsx() both read from here, so the client sees identical
+// pages AND the client-B xlsx exporter() both read from here, so the client sees identical
 // wording on every surface and a wording change is made exactly once. Every function takes
 // the values it prints; nothing here is ever a placeholder — the report is blocked by
 // wdCheckReportInputs() before any page renders when an input is missing.
@@ -522,7 +522,7 @@ function _rptTotalAvgRow(cols, labelText, nMonths) {
 }
 
 // -----------------------------------------------------------------------
-// _wdBaselineHvac(elecBL, gasBL) — the ONE Woodland reader of a building's baseline months for the
+// _wdBaselineHvac(elecBL, gasBL) — the ONE Client B reader of a building's baseline months for the
 // HVAC split. Page 4 (_wdComputeHvacSplit) and the setpoint options (wdComputeSetpointOptions) both
 // call it, so they can never disagree. The split is the 3-lowest-month baseload method
 // (computeHvacEnduse, computations/hvac-enduse.js; Matt 2026-09-20) — the same function the BAS Calc
@@ -691,7 +691,7 @@ function _wdLoadZoneSetpoints(projId, bldgName) {
 }
 
 // -----------------------------------------------------------------------
-// collectWoodlandReportData(projId, buildingId)
+// the client-B report data collector(projId, buildingId)
 // -----------------------------------------------------------------------
 function _wdBuildMeterBaseline(m) {
   if (!m || !m.baseline || !m.baseline.months || !m.baseline.months.length) return null;
@@ -777,7 +777,7 @@ function _wdFullYear(bl) {
 // A raised occupied heating setpoint is a heating COST netted against the unoccupied setback
 // savings; a raised cooling setpoint is a cooling saving. Quantities are stored at 2 decimals.
 // Dollars are never computed here — the report values quantity × seasonal rate, monthly then
-// summed (collectWoodlandReportData).
+// summed (the client-B report data collector).
 // -----------------------------------------------------------------------
 function wdComputeSetpointOptions(cfg, elecBL, gasBL) {
   // The baseload split is read ONE way, site-wide: _wdBaselineHvac -> computeHvacEnduse (same
@@ -846,7 +846,7 @@ window.wdOptionAnnualDollar = wdOptionAnnualDollar;
 
 // wdOptionDollarByMonth(o, rates) — the report's OWN $ rounding convention (round every monthly
 // component to the cent first, then sum the already-rounded cents — see the long comment on its
-// call site in collectWoodlandReportData). This is a DIFFERENT, deliberately more-reproducible
+// call site in the client-B report data collector). This is a DIFFERENT, deliberately more-reproducible
 // total than wdOptionAnnualDollar (which sums full-precision dollars and rounds once, and is
 // what feeds the Energy Savings matrix's m.totalDollar). Use this one whenever a caller needs a
 // number that must equal the printed Baseline + BAS Savings Report (e.g. HVAC Load Estimation's
@@ -937,7 +937,7 @@ window.wdApplySetpointOptions = wdApplySetpointOptions;
 
 // -----------------------------------------------------------------------
 // wdCheckReportInputs(projId, bldgId) — the missing-input guard. Returns { ok, missing[] } where
-// each missing entry is { label, where }. generateWoodlandReport() refuses to render while
+// each missing entry is { label, where }. the client-B report entry point() refuses to render while
 // anything is missing, the Inputs dialog lists the same entries, and the building header
 // button carries the flag — one check, three surfaces.
 // -----------------------------------------------------------------------
@@ -1266,7 +1266,7 @@ function _wdWxByYm(b) {
 }
 
 // -----------------------------------------------------------------------
-// collectWoodlandReportData(projId, buildingId)
+// the client-B report data collector(projId, buildingId)
 // -----------------------------------------------------------------------
 function collectWoodlandReportData(projId, buildingId) {
   var p = projects.find(function (x) {
@@ -1416,7 +1416,7 @@ function collectWoodlandReportData(projId, buildingId) {
 }
 
 // -----------------------------------------------------------------------
-// generateWoodlandReport(projId, buildingId) — UI entry point (#ud-woodland-report-btn).
+// the client-B report entry point(projId, buildingId) — UI entry point (#ud-woodland-report-btn).
 // Always opens the Inputs dialog first: the user sees every savings input (and what is
 // missing) before a page is rendered. wdRenderReport() is the render step behind the
 // dialog's "Save & Generate Report" and re-runs the guard itself — a report with a missing
@@ -1457,7 +1457,7 @@ function wdRenderReport(projId, buildingId) {
 window.wdRenderReport = wdRenderReport;
 
 // -----------------------------------------------------------------------
-// generateWoodlandReportHTML(data) — 7 logical pages, numbered sequentially. The BAS Savings
+// the client-B report HTML builder(data) — 7 logical pages, numbered sequentially. The BAS Savings
 // Calculation page returns a variable number of physical sheets (zone-setpoint pages when the
 // Equipment Matrix has rows for this building, then Method, then Per-Month Detail), so page
 // numbers are assigned by a running counter rather than literals.
@@ -2551,7 +2551,7 @@ function rptPageWoodlandCharts(n, d) {
 }
 
 // =========================================================================
-// exportWoodlandReportToXlsx(data) — 4th export surface (ExcelJS, one sheet per page)
+// the client-B xlsx exporter(data) — 4th export surface (ExcelJS, one sheet per page)
 // =========================================================================
 function _wdHexFromComputedColor(str) {
   if (!str) return 'FFFFFF';

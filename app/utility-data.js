@@ -344,7 +344,7 @@ function loadUtilityData() {
   // corrected (charge/known-rate first, 12-month rolling peak second — replacing an
   // old rolling-peak-only pass that could not fill a bill until its meter had a full trailing
   // year of history), any browser whose gate had already latched under the old algorithm
-  // never got to run the corrected one (Woodland Spring Middle: 12 of 13 bills stuck blank
+  // never got to run the corrected one (Client B Spring Middle: 12 of 13 bills stuck blank
   // — see 2026-09-25-facilities-kw-rearm/2026-09-25-dashboardlogic-entry.md). Because
   // backfillFacilitiesKW() never overwrites a real value (see its own "never overwrite"
   // check) and saveUtilityData() only writes a project whose serialized content actually
@@ -466,7 +466,7 @@ function loadUtilityData() {
     // Guard 4: set key only after save completes
     DB.set(_sewerUsageMigratedKey, '1');
   }
-  // One-time migration: fix Wood River (MMBtu) gas bills where therms was stored
+  // One-time migration: fix WRE (MMBtu) gas bills where therms was stored
   // as raw MMBtu instead of Therms (×10). CCF bills also converted (UNIT_TO_BASE.CCF).
   // Fix [therms-unit-2026-06-22] — root cause: bill-analysis.js save path applied no
   // unit conversion when falling through to NaturalGasMMbtu. Constellation/KGS bills
@@ -762,7 +762,7 @@ function isBaselineFrozen(m) {
 }
 
 // P0 35105124(a): the binary frozen/not-frozen check above collapses two very
-// different "not frozen" causes into one look, which is what made Louisburg's
+// different "not frozen" causes into one look, which is what made Client A's
 // badges look like a bug when they were actually truthfully reporting two
 // distinct, legitimate conditions (see docs/dashboardlogic.md entry for this
 // fix, and investigation.md for the reproduction). Classifies a meter's
@@ -1722,7 +1722,7 @@ function _udBuildingSavingsStatus(meterDetails) {
 // number. One such excluded meter permanently pinned the whole building at
 // "Auto-inherited — not frozen" even after every meter that actually feeds
 // the Project Baseline $ totals was explicitly saved and frozen -- this is
-// the repro Matt reported: Louisburg's High School and Middle School showed
+// the repro Matt reported: Client A's High School and Middle School showed
 // "Not Frozen" here while their Electric/Gas meters were already frozen
 // (confirmed both by the per-meter chips on this same panel and by the
 // building-header badge, which already excluded these meters correctly).
@@ -4055,7 +4055,7 @@ function renderBillsPane(pane, m, bills, incl) {
           ? ' · ⚠ A row above has missing dates — delete it and re-extract the source PDF'
           : '';
         // General "Estimate missing period" action (feat/estimate-missing-period, 2026-09-25,
-        // replaces the one-meter Spring Hill High June-2025 special case that used to live here):
+        // replaces the one-meter Client C High June-2025 special case that used to live here):
         // any meter's real gap (detectGap already excludes 1-3 day month-boundary/read-date
         // artifacts — same threshold the "Gap in data" message above already uses) gets a button
         // that estimates the missing period's usage from the day-weighted average daily usage of
@@ -7447,10 +7447,10 @@ function blSelectAll(mid, sel) {
 // baseline recomputes start/end/months/reg but must never discard any other
 // user-entered baseline field -- most importantly manual `overrides` (read by
 // getNormRows(), computations/normalization.js:620-623, which takes
-// precedence over any reg, frozen or not) and Circle Grove Propane-style
+// precedence over any reg, frozen or not) and Site G Propane-style
 // `costSavOverrides` (read by savings.js). A bare `m.baseline = {start,end,
 // months,reg}` silently wiped both keys on re-save -- this was P1 bug
-// cc5a30f6, and it is what destroyed Matt's certified Louisburg baselines on
+// cc5a30f6, and it is what destroyed Matt's certified Client A baselines on
 // HS Electric and CG Propane between the 2026-06-05 and 2026-06-22 backups.
 // Spreading the existing object first keeps every key that isn't one of the
 // four explicitly being recomputed here.

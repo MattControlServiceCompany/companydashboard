@@ -4,7 +4,7 @@
 // bill. They compute from the bill's own cost and usage (through the one cost accessors and the one
 // gas usage resolver). The old stored copies (total*Rate) are read only when the bill has no cost or
 // no usage. Nothing writes them any more.
-//   1. A stale stored rate never wins over cost / usage (the Rockville Sewer 2026-03-15 shape: stored
+//   1. A stale stored rate never wins over cost / usage (the Site H Sewer 2026-03-15 shape: stored
 //      totalSewerRate 0.99407 while sewerCharge / sewerUsage says otherwise).
 //   2. camelCase (saved) and PascalCase (extractor) fields both resolve.
 //   3. Stored copy only when nothing can be computed; nothing at all -> 0.

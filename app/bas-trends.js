@@ -2178,8 +2178,8 @@ function btDeriveBuildingMatch(siteName, bldgSelectEl) {
     if (!val || val === '_manual') continue;
     if (btNormalize(opts[i].textContent || '') === target) return val;
   }
-  // Pass 2: partial containment either direction (e.g. "Louisburg High School"
-  // vs "Louisburg High")
+  // Pass 2: partial containment either direction (e.g. "Client A High School"
+  // vs "Client A High")
   for (var j = 0; j < opts.length; j++) {
     var val2 = opts[j].value;
     if (!val2 || val2 === '_manual') continue;

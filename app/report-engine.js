@@ -744,15 +744,15 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
   //
   // First attempt (kept in git history) changed only the missing-value fallback
   // (`sp.viewMode || 'individual'` -> `sp.viewMode || 'average'`). Verified against the REAL
-  // Louisburg backup (CompanyHub-localdatafile-20260910.json) before shipping and found that
-  // fallback fix to be a no-op for this project: all 6 of Louisburg's `p.setpoints[]` records
+  // Client A backup (CompanyHub-localdatafile-20260910.json) before shipping and found that
+  // fallback fix to be a no-op for this project: all 6 of Client A's `p.setpoints[]` records
   // already carry an EXPLICIT `viewMode:"individual"` (written only by
   // graphics-setpoints.js `spSetViewMode()`, itself only reachable from the "Individual
   // Zones"/"Building Average" toggle buttons on the live Set Points tab — so someone did click
   // that button at some point, almost certainly for zone-by-zone data entry convenience, not as a
   // deliberate "I want my reports per-zone" decision). Since a fallback only fires on a truly
   // missing value, and the real value here is never missing, the report would have kept rendering
-  // per-zone for Louisburg — failing the actual ask.
+  // per-zone for Client A — failing the actual ask.
   //
   // Fix actually shipped: the report's `viewMode` is now assigned unconditionally to 'average',
   // ignoring `sp.viewMode` entirely for report purposes. Blast radius:
@@ -1155,7 +1155,7 @@ function _rptContentBudget(variant) {
  * the report's minimum-legible-text floor (U2 / RC-A, 2026-08-02, DEFECTS-2026-08-02.md D-05).
  *
  * WHY THIS EXISTS. The standing rule is "no text below 10pt in any client document." The .docx
- * export already satisfied it (measured minimum w:sz = 20 = exactly 10pt in all three JOCO
+ * export already satisfied it (measured minimum w:sz = 20 = exactly 10pt in all three Client D
  * documents), but the PRINT path did not, and it is the print path that produces the PDFs Matt
  * actually sends. Measured via PyMuPDF span census on the live v2026.08.02.742 exports: the Audit
  * carried 373 spans under 10pt (7.5pt x146, 8.25pt x195, 6.75pt x31, 9.0pt x1), the Service
@@ -1196,7 +1196,7 @@ var RPT_MIN_TEXT_PX = Math.ceil((RPT_MIN_TEXT_PT / RPT_PRINT_PT_PER_PX) * 100) /
  *
  * Scope: only the specific tables that are marked with the 'rpt-mp-dense' CSS class are affected
  * (currently the Control Sequences table in rptPageASHRAE36CostEstimate and the Building ASHRAE
- * 36 Readiness table in rptPageASHRAE36Executive — both real multi-page tables on the JOCO
+ * 36 Readiness table in rptPageASHRAE36Executive — both real multi-page tables on the Client D
  * portfolio, 4 printed pages each before this change). Every other table in the report keeps the
  * normal RPT_MIN_TEXT_PX floor untouched.
  *
@@ -1555,10 +1555,10 @@ function _rptPaginateWithTail(tokens, firstBudget, contBudget, tailH) {
 // Footer page-number chrome, shared by rptPage()'s hero and interior branches.
 //
 // THE FORMAT IS "Page N of M". Matt, 2026-08-03: "I wanted 'Page N of M'." That instruction is
-// the authority for this footer and it OUTRANKS the Louisburg EMS Agreement baseline, whose
+// the authority for this footer and it OUTRANKS the Client A EMS Agreement baseline, whose
 // footer prints a bare right-aligned number. An earlier pass that same day (defect register
 // D-08, commit f891b0a) read Matt's report "the word documents don't have the right footer page
-// numbering format" as a request to match Louisburg and stripped the words down to a bare
+// numbering format" as a request to match Client A and stripped the words down to a bare
 // number on all three export paths. That was a misread and it has been reverted. Do NOT
 // "restore the baseline" here — the words are what he asked for, on all three artifacts
 // (this print/PDF path, the .docx footer parts in docx-skeleton.js, and the legacy .doc
@@ -1603,10 +1603,10 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
   // one caller tree that opts OUT explicitly (letterhead:false) on every one of its pages except
   // its two hero pages (Board Executive Summary, Cover) — Matt: "logo + wave on the FIRST 2 PAGES
   // ONLY, pages 3+ get a plain Page N of M footer." smallHeaderImg (below) is a distinct, unrelated
-  // feature (the JOCO Agreement's inset non-hero letterhead) and is not gated by this flag.
+  // feature (the Client D Agreement's inset non-hero letterhead) and is not gated by this flag.
   const letterhead = options.letterhead !== false;
   // smallHeaderImg (2026-07-28, Energy Management Services Agreement fidelity fix): additive
-  // opt-in flag, default false, so every existing caller renders exactly as before. The JOCO
+  // opt-in flag, default false, so every existing caller renders exactly as before. The Client D
   // Agreement's Word original places the SAME CSC_HEADER_B64 letterhead graphic (also used
   // full-bleed on hero pages) at its normal content width — inset within the standard 48px/0.5in
   // side margin, not stretched edge-to-edge across the whole page box — on its first page and its
@@ -2055,7 +2055,7 @@ function generateReportHTML(data, selectedSections) {
   }
   // fix/report-content-pagination (2026-07-28): appendixA/B/D now return {html, pageCount}
   // (same shape as rptPageObservations) instead of a single un-paginated HTML string, so
-  // large portfolios (e.g. JOCO's 26 buildings) no longer overflow .rpt-body on these pages.
+  // large portfolios (e.g. Client D's 26 buildings) no longer overflow .rpt-body on these pages.
   if (s.appendixA !== false) {
     var _apA = rptPageAppendixNormalization(pageNum, data, _nextAppLtr('norm'));
     pages.push(_tagSection(_apA.html, 'appendixA'));
@@ -2182,9 +2182,9 @@ function showReportOverlay(html, title) {
     var isSoo = !!(window._currentReportData && window._currentReportData._soo);
     saveBtn.style.display = isSoo ? 'none' : '';
   }
-  // Woodland report (2026-09-22): the 4th export surface (.xlsx, ExcelJS) only applies to this
+  // Client B report (2026-09-22): the 4th export surface (.xlsx, ExcelJS) only applies to this
   // one report type — hide the button for every other report so it doesn't linger visible after
-  // a Woodland preview is closed and a different report type is opened in the same overlay.
+  // a Client B preview is closed and a different report type is opened in the same overlay.
   var xlsxBtn = document.getElementById('rptXlsxBtn');
   if (xlsxBtn) {
     var isWoodland = !!(window._currentReportData && window._currentReportData._woodland);
@@ -2830,11 +2830,11 @@ function rptPageCover(n, d) {
   // report-pass2 FOLLOW-UP fix (2026-09-10, same-day re-review of the RENDERED print output):
   // removing Key Findings was not enough — hero + narrative + vs-box + 4 gauges + a 2-row,
   // up-to-7-card Building Status grid STILL overflowed the physical page on its own, on a real
-  // 7-building portfolio (Louisburg USD #416). Unlike the Key Findings bullets (which landed on
+  // 7-building portfolio (Client A USD #416). Unlike the Key Findings bullets (which landed on
   // an otherwise-blank physical page 2 and were merely visible-but-misnumbered), this overflow
   // was WORSE: PyMuPDF text-position extraction on the rendered PDF confirmed the 2nd row's
-  // savings-%/status-badge divs for the buildings past the 4th (e.g. Broadmoor Elementary, Field
-  // House, Maintenance Building on the Louisburg portfolio) never appear in the page's text layer
+  // savings-%/status-badge divs for the buildings past the 4th (e.g. Site F Elementary, Field
+  // House, Maintenance Building on the Client A portfolio) never appear in the page's text layer
   // at all — only their name div painted before the footer graphic's absolute-positioned band
   // overlapped and obscured the rest of that row. Root cause: `.rpt-page`'s SCREEN-preview CSS
   // (feature/report-layer-isolation-and-theme, 2026-07-28 — see that rule's own comment) makes it
@@ -3574,7 +3574,7 @@ function rptPageSavingsPerformance(n, d) {
 
   // report-pass2 fix (2026-09-10, UX review): headless measurement (print media, floor-aware)
   // found this page reliably overflows the physical page by ~76px on a real 7-building report
-  // (Louisburg USD #416) — chart + two per-building tables (Annual Summary by Year runs 2 rows
+  // (Client A USD #416) — chart + two per-building tables (Annual Summary by Year runs 2 rows
   // per building) is too much for one page once there are more than a handful of buildings, and
   // would only get worse on a larger portfolio. Split "Annual Summary by Building" onto its own
   // page — same fixed-split approach as rptPageAppendixWeather/rptPageEUI in this pass.
@@ -3875,12 +3875,12 @@ function rptPageEUI(n, d) {
     '</table>';
 
   // report-pass2 fix (2026-09-10, UX review): headless measurement (print media) found this page
-  // reliably overflows the physical page by ~150px on a real multi-building report (Louisburg USD
+  // reliably overflows the physical page by ~150px on a real multi-building report (Client A USD
   // #416, 7 buildings) — the rankings table + ENERGY STAR note + EUI-vs-CBECS chart + trend table
   // + intro paragraph simply don't fit one page once there are more than a handful of buildings.
   // Split into two pages (rankings on page 1; benchmark chart + trend table on page 2) — the same
   // "move fixed/semi-fixed content onto its own page rather than relying on native-overflow" fix
-  // as rptPageAppendixWeather. NOTE for a much larger building count (e.g. JOCO's 26 buildings)
+  // as rptPageAppendixWeather. NOTE for a much larger building count (e.g. Client D's 26 buildings)
   // even page 1's rankings table alone could still overflow — this split does not add per-row
   // pagination, so a portfolio that large should be re-verified separately.
   const page1Body =
@@ -5373,7 +5373,7 @@ function rptPageYearToDate(n, d) {
 /**
  * rptPageSetPoints — report-pass2 fix (2026-09-10, UX review of the rendered PDF): this used to
  * concatenate every zone from every building into ONE giant <table> handed to a single rptPage()
- * call, with zero pagination. On a real multi-building district (Louisburg USD #416, 7 buildings)
+ * call, with zero pagination. On a real multi-building district (Client A USD #416, 7 buildings)
  * that one unbounded table overflowed .rpt-body and relied entirely on the browser's native print
  * pagination "safety net" (see the @media print block comment in energy-department.html above
  * .rpt-table) to carry it across as many physical pages as it needed — measured at 18 physical
@@ -6107,7 +6107,7 @@ function rptBuildBaselineDataTable(b, d, opts) {
   // below) — not split evenly. Month (weight 4.3, sized for "Annual"/"MONTH") and Total Cost
   // (weight 4.8, sized for "$117,281") get the same content-driven treatment as every other
   // column, replacing the old fixed 6%/7% guesses.
-  // Verified by hand for the real Woodland Spring Middle table (12 columns: Month + 7 Electric +
+  // Verified by hand for the real Client B Spring Middle table (12 columns: Month + 7 Electric +
   // 3 Gas + Total Cost, the exact table in the reported screenshot) at the resulting 9px font —
   // every column's allocated px width clears its longest word's required px width (word-em ×
   // font-px + 6px padding + ~1px collapsed border) by 13-22px. Full per-column numbers in
@@ -6191,8 +6191,8 @@ function rptBuildBaselineDataTable(b, d, opts) {
   // 2026-09-23 kWh overflow fix (cold review Finding 1, dashboardlogic.md same-date entry): the
   // Annual row's kWh cell is the widest thing this column ever renders (it's the SUM of 12
   // non-negative monthly values, so it can never be shorter than any individual month). The
-  // kwh:45 baseline above was measured ONLY against Woodland's 6-digit "739,249" (7 chars incl.
-  // comma) and overflows any 7-digit ("1,615,411", 9 chars — Louisburg HS, DOM-confirmed deficit
+  // kwh:45 baseline above was measured ONLY against Client B's 6-digit "739,249" (7 chars incl.
+  // comma) and overflows any 7-digit ("1,615,411", 9 chars — Client A HS, DOM-confirmed deficit
   // 10px) or 8-digit ("13,150,000", 10 chars — synthetic fixture, deficit 17px) annual total.
   // Both measured deficits land exactly on needClientWpx = 7*chars - 10 (the same table's
   // observed ~43px rendered width at the 45-weight/7-char baseline, +7px per additional
@@ -6208,7 +6208,7 @@ function rptBuildBaselineDataTable(b, d, opts) {
   // exact prior weight/layout, byte-for-byte.
   // Threshold lowered 2026-09-22 (was >15) when the 2 unconditional Degree Days columns
   // (HDD, CDD) were added ahead of every commodity group: measured overflow at 9px on the real
-  // Woodland electric+gas table (14 columns: Month+HDD+CDD+7 Electric+3 Gas+Total) — the Annual
+  // Client B electric+gas table (14 columns: Month+HDD+CDD+7 Electric+3 Gas+Total) — the Annual
   // row's wider dollar figures ("$117,281", "$105,131") and a few header words ("Metered kW",
   // "Electric Cost") no longer cleared their column width once the same 100%-wide table had to
   // share it across 2 more columns. >13 (was >15) drops to 8px a column-count sooner, restoring
@@ -6231,7 +6231,7 @@ function rptBuildBaselineDataTable(b, d, opts) {
   // unavoidable shrink on the column best able to absorb it instead of diluting every column
   // equally (which is what the first version of this fix did, and it pushed 4 already-hairline
   // cells — Heating/Cooling/Therms headers, the "May 2025" Month cell — into a NEW 2px overflow;
-  // re-verified headless to 0 overflow on Woodland/Louisburg HS/a synthetic 8-digit fixture).
+  // re-verified headless to 0 overflow on Client B/Client A HS/a synthetic 8-digit fixture).
   var _blAvailPx = _rptGeometry().pageW - 2 * _rptGeometry().padX - 2; // 718px at default geometry, DOM-confirmed 2026-09-23
   var _blWeightSum = _blColWeights.reduce(function (a, w) {
     return a + w;
@@ -6248,7 +6248,7 @@ function rptBuildBaselineDataTable(b, d, opts) {
     var _blKwhChars = $n(_tKwh).length;
     if (_blKwhChars > 7) {
       // The browser's own measured need for this string (matches both real DOM data points
-      // exactly: Louisburg HS 9 chars -> 53px, a synthetic 10-char total -> 60px) as a CSS col
+      // exactly: Client A HS 9 chars -> 53px, a synthetic 10-char total -> 60px) as a CSS col
       // width target — the table's own td/th border consistently costs each cell 1px of
       // clientWidth versus its declared col width (collapsed borders, DOM-confirmed 2026-09-23),
       // so this target already lands kwh at the same tolerated <=1px deficit every other column
@@ -6260,7 +6260,7 @@ function rptBuildBaselineDataTable(b, d, opts) {
       _blLeftover -= _blKwhGrant;
       var _blKwhShort = _blKwhExtraNeeded - _blKwhGrant;
       // Donor exclusions (2026-09-23, DOM-verified, headless-tested — do not shorten this list
-      // without re-running check-overflow on Woodland/Louisburg HS/an 8-digit synthetic fixture):
+      // without re-running check-overflow on Client B/Client A HS/an 8-digit synthetic fixture):
       // Month/HDD/CDD (indices 0-2, single unsplittable header words "May 2025"/"Heating"/
       // "Cooling"), kW Cost, the Therms header, and Total Cost's Annual figure all measured with
       // genuinely 0 tolerance — donating even 1px from any of them produced a real 2px+ deficit,
@@ -8287,7 +8287,7 @@ function rptPageAppendixNormalization(n, d, appLetter) {
     '<h3 style="font-size:12px;font-weight:700;color:var(--rpt-page-text);margin:0 0 6px;text-transform:uppercase;letter-spacing:0.04em">Per-Building Meter Detail (cont.)</h3>';
 
   // fix/report-content-pagination (2026-07-28): this used to concatenate ALL buildings'
-  // meter tables into a single string handed to ONE rptPage() call — with JOCO's 26
+  // meter tables into a single string handed to ONE rptPage() call — with Client D's 26
   // buildings that overflowed .rpt-body with zero pagination (footer no longer pinned to
   // the page bottom in print). Now each building's block is a token; _rptPaginateTokens
   // (the same shared paginator rptPageObservations/rptPageASHRAE36Executive use) splits
@@ -8637,7 +8637,7 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
   // Build full calculation tables per building per commodity.
   // fix/report-content-pagination (2026-07-28): this used to concatenate ALL buildings' and
   // meters' calculation tables into a single `calcHTML` string handed to ONE rptPage() call —
-  // with JOCO's 26 buildings (each with up to several meters and a combined
+  // with Client D's 26 buildings (each with up to several meters and a combined
   // baseline+reporting-period row set per meter) that overflowed .rpt-body with zero
   // pagination. Now each meter's table is its own token (the building-name header rides
   // along with that building's first meter token); _rptPaginateTokens (same shared
@@ -8647,7 +8647,7 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
   // report-pass2 fix (2026-09-10): the metersWithCoeffs (regression) path below used to build
   // ONE atomic 'block' token per meter (its whole table as a single un-splittable unit). That
   // works fine while every meter's combined baseline+reporting-period row count is small, but a
-  // meter with a long combined history (measured: 19-20 rows on Louisburg USD #416's real data)
+  // meter with a long combined history (measured: 19-20 rows on Client A USD #416's real data)
   // produces a table taller than one physical page ALL BY ITSELF — no amount of estH tuning on an
   // atomic block can fix that, since _rptPaginateTokens can only decide whether a block STARTS a
   // new chunk, never split one down the middle. The browser's native-overflow safety net still
@@ -8791,7 +8791,7 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
       // runs on every real report, including the PDF export path) silently re-inflated this
       // table's font-size:9px up to 13.34px at render time, making every row far taller than any
       // pagination estimate assumed and reliably overflowing 300+ px onto near-blank continuation
-      // pages (measured, print-media, on Louisburg USD #416's real regression data).
+      // pages (measured, print-media, on Client A USD #416's real regression data).
       apbMeterMeta[groupKey] = {
         labelHTML: (isFirstBlockForBuilding ? bldgHeaderHTML : '') + meterBlockHTML,
         theadHTML: THEAD_HTML,
@@ -9394,7 +9394,7 @@ function rptPageAppendixBills(n, d, appLetter) {
 
   // fix/report-content-pagination (2026-07-28): this used to concatenate every reporting-period
   // month's bill table (each potentially listing every building's bills for that month, up to
-  // JOCO's 26 buildings) PLUS every scanned bill PDF thumbnail into a single string handed to
+  // Client D's 26 buildings) PLUS every scanned bill PDF thumbnail into a single string handed to
   // ONE rptPage() call — overflowing .rpt-body with zero pagination. Tokenizing per MONTH (one
   // token = one month's whole table) was tried first and measured (headless, stress-tested at
   // 4x building count) to still let a single heavy month's table blow through a page by itself,
@@ -9433,7 +9433,7 @@ function rptPageAppendixBills(n, d, appLetter) {
       // continuation page, which is why per-row estH also carries its own safety margin above
       // the bare measured row height.
       // report-pass2 FOLLOW-UP fix (2026-09-10, same-day re-review of the RENDERED print
-      // output): 46px was still short. Confirmed via a real print-media render of the Louisburg
+      // output): 46px was still short. Confirmed via a real print-media render of the Client A
       // Q2 report (3 month-groups, ~10 bill rows each, all landing on the section's FIRST page):
       // the LAST 1-2 rows of the 3rd month-group (June) still overflowed onto a near-blank
       // trailing physical page with no footer of its own — the page-1 budget itself, not just a
@@ -9458,7 +9458,7 @@ function rptPageAppendixBills(n, d, appLetter) {
         var _gal = bill.gallons || 0; // bill here is a collectReportData rawBills entry (line ~756),
         // whose .gallons field is already sourced from bill.gallonsDelivered upstream — NOT a raw
         // utility bill object. bill.gallonsDelivered does not exist on this shape (empirically
-        // verified: reading it produced 0 for a known-good Circle Grove propane bill).
+        // verified: reading it produced 0 for a known-good Site G propane bill).
         // Estimated rows (feat/estimate-missing-period, 2026-09-25): never shown as a
         // real bill in a client-facing report — tint the row and label the kWh cell instead
         // of a real amount/date, since there is no real cost or bill date for this period.
@@ -9606,7 +9606,7 @@ function rptPageAppendixBills(n, d, appLetter) {
   // is slightly under-filled, never overflowing.
   //
   // report-pass2 FOLLOW-UP fix (2026-09-10, same-day re-review of the RENDERED print output): a
-  // real print-media render of the Louisburg Q2 report still overflowed by 1-2 rows on the
+  // real print-media render of the Client A Q2 report still overflowed by 1-2 rows on the
   // section's FIRST page (3 month-groups packed tight, not just a continuation page) — this was
   // a general under-budget, not only the continuation-page re-render gap this comment originally
   // fixed. BILLS_FIRST_CHROME bumped 40->56 (the intro line's own real height plus a safety
@@ -10625,7 +10625,7 @@ async function exportReportToWord() {
     // Width source: NOT this file's own 0.5in-margin convention (which would give 7.5in, per
     // WORD_CONTENT_WIDTH above) — per the task's explicit instruction, this uses the measured CSC
     // document-style baseline instead: AI/_context/specs/csc-document-style-spec-2026-07-29.md
-    // section 1, extracted from Louisburg School District's actual OOXML sectPr (12240 twips page
+    // section 1, extracted from Client A School District's actual OOXML sectPr (12240 twips page
     // width minus 1170+990 twips left/right margins = 10080 twips = exactly 7.0000in / 672.00px
     // content width). Height derived by preserving this same image's existing aspect ratio already
     // established by the full-bleed regex above (816px:194px, i.e. 194/816): 672 * 194/816 =
@@ -10776,7 +10776,7 @@ async function exportReportToWord() {
     // its own metrics instead of always reading whatever page count this app estimated at
     // export time.
     // The format is "Page N of M" — Matt, 2026-08-03: "I wanted 'Page N of M'." An earlier pass
-    // that day (f891b0a) stripped the words to a bare number to match the Louisburg baseline;
+    // that day (f891b0a) stripped the words to a bare number to match the Client A baseline;
     // that was a misread of his report and is reverted. Both field codes are required: PAGE
     // alone cannot produce the "of M" half. See the footer-format comment above RPT_PAGENUM_DIV.
     const pageNumP = hasPageNum
@@ -11233,7 +11233,7 @@ function _rptSwapChartSvgForPng(svgEl, scale) {
         // only the first <text>) and the plain inline-walk path (which, for a multi-<text>
         // chart svg with no OOXML equivalent for <rect>/<line>, was leaking every axis/month
         // label through as a separate fragmented paragraph -- confirmed 2026-09-13 against a
-        // real Q2 2026 Louisburg .docx baseline) never sees this element at all.
+        // real Q2 2026 Client A .docx baseline) never sees this element at all.
         svgEl.parentNode.removeChild(svgEl);
         finish(true);
       } catch (e) {
@@ -11837,8 +11837,8 @@ function _rptV2QuarterYMs(year, quarter) {
 // a bill that falls inside a meter's OWN baseline window is baseline data, not a reportable
 // post-baseline actual — collectReportData()'s real per-building status (bldgHasBillsInPeriod,
 // this same file, ~line 380) only counts a month once it is past that meter's blEnd. Verified on
-// the real Spring Hill Schools fixture: the naive version picked Q1 2026 (raw bills exist every
-// month) while the ACTUAL rendered report still showed "No bills for this period" for Woodland
+// the real Client C Schools fixture: the naive version picked Q1 2026 (raw bills exist every
+// month) while the ACTUAL rendered report still showed "No bills for this period" for Client B
 // Spring Middle, because Jan-Mar 2026 is still inside that meter's baseline window — the exact
 // false-"On Track"-adjacent bug this task fixes, just one step upstream.
 //
@@ -13860,7 +13860,7 @@ var ASHRAE36_SECTIONS = {
     // step changed.
     { key: 'proposalCover', label: 'Proposal Summary (Title, Findings, Services)', group: 'Proposal', defaultOn: true },
     { key: 'proposalPhaseTable', label: 'Recommended Services — Phase Table', group: 'Proposal', defaultOn: true },
-    // futureWorkInline toggle REMOVED (Matt, 2026-08-03: no Future Work in the JOCO Service
+    // futureWorkInline toggle REMOVED (Matt, 2026-08-03: no Future Work in the Client D Service
     // Proposal at all — the whole Future Work code path was deleted, both the inline-row mode this
     // toggle enabled and the standalone-section default it switched away from).
     // R7 (2026-08-03, V-23): "&" spelled out, matching every other label and the section's own
@@ -14065,13 +14065,13 @@ function a36ScoreGradientColor(pct) {
  * NOT expanded):
  *
  *  1. `^P\d+\s*-\s*` — the BAS/internal project identifier prefix. Only occurrence in real
- *     data is "P25309 - Jo Co Arts and Heritage". Matt's own Service Proposal target document
+ *     data is "P25309 - Client D Arts and Heritage". Matt's own Service Proposal target document
  *     (_context/specs/joco-service-proposal-target-2026-07-23.md, Facilities Included row)
- *     names this building "Jo Co Arts and Heritage" with no prefix. Stripping it also repairs
+ *     names this building "Client D Arts and Heritage" with no prefix. Stripping it also repairs
  *     the sort, which is why the sort below keys on the display name.
- *  2. `Jo Co ` -> `Johnson County ` — "Jo Co" is an abbreviation of the client's own name. The
- *     stored client name is "Johnson County, Kansas" and the WebCTRL BACnet tree root for these
- *     buildings is literally "/Johnson County/" (dashboardlogic.md: "/Johnson County/Courthouse
+ *  2. `Client D ` -> `Client D ` — "Client D" is an abbreviation of the client's own name. The
+ *     stored client name is "Client D, Kansas" and the WebCTRL BACnet tree root for these
+ *     buildings is literally "/Client D/" (dashboardlogic.md: "/Client D/Courthouse
  *     -> Courthouse").
  *  3. `NC ` -> `New Century ` — every NC-prefixed building sits directly under the WebCTRL
  *     campus node "/New Century Complex/" in the raw exports: "/New Century Complex/NC Adult
@@ -14079,7 +14079,7 @@ function a36ScoreGradientColor(pct) {
  *     "/New Century Complex/NC Arc Programs Building", "/New Century Complex/NC Sheriff's
  *     Operations Building" (_context/backlog/investigations/c350cb0f-setpoint-verification.md,
  *     audit-plant-leveling-and-tiers.md, stages/3d6d7244/investigation.md). The naming
- *     convention is city/campus-prefixed throughout the same list ("Olathe Adult Detention
+ *     convention is city/campus-prefixed throughout the same list ("Cityville Adult Detention
  *     Center" vs "NC Adult Detention Center"), and "New Century Complex" is itself a building
  *     row in the same Equipment Matrix. Source-system evidence, not an inference from initials.
  *  4. `Firestation-13` -> `Fire Station 13`. Plain English spelling of a run-together source
@@ -14093,7 +14093,7 @@ function a36ScoreGradientColor(pct) {
  *
  * DELIBERATELY NOT EXPANDED (no evidence found; a wrong expansion in a client document is far
  * worse than an unexpanded one): "Arc" (as in "New Century Arc 1/3/4" and "Arc Programs
- * Building"), "MedAct", and "51/SS" in "MedAct 51/SS Olathe". Nothing in this repository, the
+ * Building"), "MedAct", and "51/SS" in "MedAct 51/SS Cityville". Nothing in this repository, the
  * Equipment Matrix, _context/specs/ or _context/reference/ states what they stand for, so they
  * are printed exactly as stored, pending Matt's confirmation.
  */
@@ -14132,8 +14132,8 @@ function rptBuildingDisplayName(raw) {
 
 /**
  * rptBuildingNameSort — comparator that orders buildings by their CLIENT-VISIBLE name.
- * D-14/V-08: with the raw name, "P25309 - Jo Co Arts and Heritage" filed under P, between
- * "Olathe Sheriff Training Facility" and "Sheriffs Fleet Maintenance", so a reader looking
+ * D-14/V-08: with the raw name, "P25309 - Client D Arts and Heritage" filed under P, between
+ * "Cityville Sheriff Training Facility" and "Sheriffs Fleet Maintenance", so a reader looking
  * under J concluded the building had been left out of the audit.
  */
 function rptBuildingNameSort(a, b) {
@@ -14309,7 +14309,7 @@ function collectASHRAE36Data(projId, reportDate, buildingNames) {
     // auditableRows. These categories are intentionally excluded from AUDITABLE
     // but their presence is meaningful infrastructure metadata per building.
     // 2026-09-23: electric/power utility meters ("Electric Meter (MSB1)", "Eaton Power Meter",
-    // "Woodland Electric Meter") moved from category 'power' to their own 'meter' category with
+    // "Client B Electric Meter") moved from category 'power' to their own 'meter' category with
     // subtype 'electric' (equipment-matrix.js EM_EQUIP_TYPES + emClassifyMeterSubtype) — without
     // the subtype==='electric' check here, a building whose only power-monitoring equipment was
     // an electric meter (no generator/UPS/ATS) would wrongly report "Not found in this export".
@@ -14344,7 +14344,7 @@ function collectASHRAE36Data(projId, reportDate, buildingNames) {
     var _EM_INTEGRATION_STUB_PATH_RE = /\/Integration\/Data\s+Transfer\b/i;
     var _EM_INTEGRATION_STUB_NAME_RE =
       /^(?:basement|\d+(?:st|nd|rd|th)\s+floor)\s*[-–]\s*(?:chiller|boiler|hot\s*water)\s*plant\b/i;
-    // Third layer: JOCO-style stubs stored without bacnetLocation, named
+    // Third layer: Client D-style stubs stored without bacnetLocation, named
     //   "Chiller 1 Integration".."Chiller 4 Integration" and
     //   "Boiler 1 Integration".."Boiler 4 Integration" (equipName === equipType).
     //   Also catches typo variants like "VFD Integration5" (stray digit suffix).
@@ -14389,7 +14389,7 @@ function collectASHRAE36Data(projId, reportDate, buildingNames) {
     //   - "Sewage Ejector Pump" (plumbing, not HVAC)
     //
     // NOTE: Return Duct / Supply Duct sub-patterns were removed from this regex.
-    //   In JOCO data, duct rows share equipName with their parent AHU and differ only
+    //   In Client D data, duct rows share equipName with their parent AHU and differ only
     //   in location field — they are handled by Rule 1 same-name consolidation below.
     //   The old duct patterns matched against equipName and were inert (never fired).
     //
@@ -14406,7 +14406,7 @@ function collectASHRAE36Data(projId, reportDate, buildingNames) {
 
     // CHANGE 1 — Unit-heater reclassification.
     // UH-N / CUH-N / GUH-N / TUH-N / IGH-N / TTH-N names are often stored under category
-    // 'hwp' due to import misclassification (~82 rows project-wide in JOCO).
+    // 'hwp' due to import misclassification (~82 rows project-wide in Client D).
     // Reclassify them to 'heater' on a row copy BEFORE the auditable filter so they:
     //   a) pass through as auditable (heater is in AUDITABLE list),
     //   b) do NOT inflate hwp counts, and
@@ -14808,7 +14808,7 @@ function collectASHRAE36Data(projId, reportDate, buildingNames) {
   // buildings" list and the Agreement's scope list can never disagree about where a building
   // belongs. Previously this array carried Object-key insertion order (i.e. Equipment Matrix row
   // order, which happens to be alphabetical by RAW name), which filed
-  // "P25309 - Jo Co Arts and Heritage" under P between "Olathe Sheriff Training Facility" and
+  // "P25309 - Client D Arts and Heritage" under P between "Cityville Sheriff Training Facility" and
   // "Sheriffs Fleet Maintenance". Sorting is a presentation choice only; every downstream lookup
   // is by name, never by index.
   buildingsData.sort(function (a, b) {
@@ -14930,7 +14930,7 @@ function collectASHRAE36Data(projId, reportDate, buildingNames) {
   var _invByBuilding = {}; // buildingName → { ashrae: N, other: N }
   // 736eea4c: Point Inventory must reflect the SAME qualifying-building set the compliance
   // sections use — not an independent, unfiltered pass over matData.rows (which leaked weather
-  // stubs like 'Johnson County' / 'New Century Complex' in as phantom buildings). buildingsData
+  // stubs like 'Client D' / 'New Century Complex' in as phantom buildings). buildingsData
   // is already fully built above (single source of truth: a building qualifies only if it had at
   // least one auditable row after self-heal + stub/non-equipment filtering).
   var _a36QualifyingBuildings = {};
@@ -15294,7 +15294,7 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded) {
   // is generated, for every category, not just those two; (2) ioOnly points, which wire to
   // existing controller I/O — $0 parts, 0 install hours, not new hardware; (3) building-level
   // dedup (oat / oaWetBulb / damper-position / zoneTemp+co2 combos) that collapses many
-  // per-equipment gaps into one physical device. Measured 2026-07-29 on real JOCO data: raw
+  // per-equipment gaps into one physical device. Measured 2026-07-29 on real Client D data: raw
   // sensors 4,049 vs. consolidated 1,311 (a 67.6% overcount); raw sequences 1,764 vs. consolidated
   // 1,313 (a 25.6% overcount). Matt: "we will look stupid if we tell them they need a bunch of
   // things and then we get started and realize they don't need any of it." The cover is the
@@ -15322,7 +15322,7 @@ function rptPageASHRAE36Cover(n, d, perBuildingIncluded) {
       // "must not reach the audit report... sensor failures are a service-scope/pricing matter,
       // not an ASHRAE 36 compliance finding." A plain `r.phase === 2` sum missed that distinction
       // and let 19 investigation rows (qty 19) inflate this cover figure by counting them as
-      // "sequences to program" — measured 2026-07-29 on real JOCO data: 1,304 vs. 1,285 once
+      // "sequences to program" — measured 2026-07-29 on real Client D data: 1,304 vs. 1,285 once
       // excluded. r.seqKey is only ever set on the actual G36 sequence-programming rows.
       else if (r.phase === 2 && r.seqKey) _a36SeqSum += r.qty || 0;
     });
@@ -15484,7 +15484,7 @@ function rptPageASHRAE36Executive(n, d) {
   // buildings across pages based on actual pixel-height estimates instead of flat counts.
   //
   // Fix B (2026-06-18, items 9f80ea0f/346e8add): dynamic first-page chrome budget.
-  // Old hardcoded ROWS_BUDGET_FIRST = 681 underestimated callout heights; JOCO has both
+  // Old hardcoded ROWS_BUDGET_FIRST = 681 underestimated callout heights; Client D has both
   // callouts simultaneously, causing 24 rows to pack into a space only safe for 21.
   //
   // Actual measured chrome heights:
@@ -15498,7 +15498,7 @@ function rptPageASHRAE36Executive(n, d) {
   // ROWS_BUDGET_CONT corrected: contHdr ~35px + tableTitle ~28px + thead ~32px + footnote ~35px
   //   = 130px consumed → row budget = 894 - 130 - 20 = 744px (was 811, omitted tableTitle)
   //
-  // Each building row estH raised to 34px to account for 2-line building names (e.g. JOCO).
+  // Each building row estH raised to 34px to account for 2-line building names (e.g. Client D).
   // ROWS_BUDGET_FIRST and ROWS_BUDGET_CONT are computed after callout strings are built (below).
 
   var p = d.portfolio;
@@ -15649,7 +15649,7 @@ function rptPageASHRAE36Executive(n, d) {
   }
 
   // Fix B: compute dynamic row budgets now that callout presence is known.
-  // Heights below are DOM-measured (2026-06-18 headless run against JOCO):
+  // Heights below are DOM-measured (2026-06-18 headless run against Client D):
   //   dcvCallout actual=86px, topGap callout actual=68px, thead actual=42px (spec had 32 — wrong),
   //   tableTitle actual=20px, footnote actual=15px (single line in headless).
   //   Row average actual=38px; estH set to 40px for safety margin on wrapping names.
@@ -15661,7 +15661,7 @@ function rptPageASHRAE36Executive(n, d) {
   // 1056) on the first Executive Summary page. Re-measured and bumped below; re-verified via
   // headless render afterward that checkOverflow() returns 0 and the page count is unchanged.
   // U2 / RC-A (2026-08-02, D-04 + D-05): ALL of the constants below were re-measured in a headless
-  // PRINT-media render of the real JOCO Audit (27 buildings) AFTER _rptApplyMinFontFloor raised
+  // PRINT-media render of the real Client D Audit (27 buildings) AFTER _rptApplyMinFontFloor raised
   // every sub-10pt string to the 13.34px floor. Every one of them had grown, because they are all
   // multi-line text blocks whose line count is set by the font size: the readiness footnote went
   // 45px -> 100px (the tier sentences now wrap far more), the occupancy-ventilation callout
@@ -15704,7 +15704,7 @@ function rptPageASHRAE36Executive(n, d) {
   _firstChromeH += 150;
   // Docx items 5+6 (2026-08-03): each sequence item is now ONE body-size flowing paragraph with a
   // bold inline lead-in (no 13pt heading), so the old 146px-per-block budget over-counted by
-  // ~50px per block. Re-measured headlessly against real JOCO data after the change
+  // ~50px per block. Re-measured headlessly against real Client D data after the change
   // (getBoundingClientRect().height + margin-bottom, print media): 55-100px per paragraph.
   // 105 is the safe-side per-paragraph budget.
   if (dcvCallout) _firstChromeH += 105; // occupancy-based ventilation paragraph
@@ -15716,7 +15716,7 @@ function rptPageASHRAE36Executive(n, d) {
   // scales with how many paragraphs actually render (topSeqTypes.length, 0-4) rather than a single
   // fixed literal, since an unlisted count here would either overshoot (fewer rows than budgeted,
   // wasting page space) or undershoot (more rows than budgeted, causing overflow) as the underlying
-  // data changes. Re-measured via headless render against real JOCO data after this change
+  // data changes. Re-measured via headless render against real Client D data after this change
   // (getBoundingClientRect().height + margin-bottom of each .rpt-a36-callout, print media): the 4
   // new paragraphs measured 100.8-123.2px each (shorter than dcvCallout's own 145.6px because each
   // sequence's plain-language description is one sentence, not two) — all comfortably inside the
@@ -15731,7 +15731,7 @@ function rptPageASHRAE36Executive(n, d) {
   // cropped it to 1699x85, silently deleting the green band) made the rendered footer image
   // ~107.6px tall at 816px page width (DOM-measured: .rpt-footer top = 948.4px on a 1056px
   // page, vs ~1015px top when the image was the broken 85px-tall crop). DOM-measured
-  // collision on live JOCO data (26 buildings) at the old base=894: page 2 of the Executive
+  // collision on live Client D data (26 buildings) at the old base=894: page 2 of the Executive
   // Summary rendered 13 rows whose content bottom (958.3px) sat 9.9px INTO the new footer's
   // top edge (948.4px) — the last line of the table footnote was drawn on top of the wave
   // graphic. A first attempt cut both FIRST and CONT bases by the full ~68px footer-height
@@ -15767,7 +15767,7 @@ function rptPageASHRAE36Executive(n, d) {
   // bar" conservatism no longer applies now that the bar it was compared against (D-12's own
   // pre-unification bordered bar, replaced by V-06) is gone. Flag for a headless re-verify pass:
   // this number assumes "(continued, N of M)" stays on one line at the 13pt tier like "(N of M)"
-  // does; re-measure if the JOCO portfolio (most chunks) ever shows it wrapping.
+  // does; re-measure if the Client D portfolio (most chunks) ever shows it wrapping.
   var EXEC_CONT_HEADER_H = 32; // measured — Building ASHRAE 36 Readiness caption at 13pt tier
   var _contChromeH = EXEC_CONT_HEADER_H + EXEC_THEAD_H_DENSE + EXEC_FOOTNOTE_H;
   // fix/report-remove-running-header-title (2026-08-03, Matt's fix #5): this page now always
@@ -15787,7 +15787,7 @@ function rptPageASHRAE36Executive(n, d) {
   // bar with a bottom rule — two adjacent pages of one table looked like two documents (and the
   // bar's border-bottom was a floating separator rule, which the standing rules forbid). Every
   // chunk now renders through _readinessCaption(): same style, same words, "(N of M)" on the first
-  // and "(continued, N of M)" after it, for ANY M (the JOCO table now splits into 4, not 2).
+  // and "(continued, N of M)" after it, for ANY M (the Client D table now splits into 4, not 2).
   // D-12 (2026-08-03): that shared caption's font raised 11px -> the 13pt section tier
   // (RPT_SECTION_HEAD_PX) — this heading introduces a table whose own column headers print at
   // 10pt, so at the old 11px (8.25pt authored, 10.005pt after the floor) it was barely larger than
@@ -15815,14 +15815,14 @@ function rptPageASHRAE36Executive(n, d) {
     'padding:6px 8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0;color:var(--rpt-page-text);text-align:center;white-space:normal;line-height:1.25;border:1px solid var(--rpt-border)';
   // Column widths (2026-07-09, fix/report-wording-compliance-rows): explicit colgroup +
   // table-layout:fixed added so column widths are deterministic instead of browser
-  // auto-layout. Auto-layout let long building names (e.g. "P25309 - Jo Co Arts and
-  // Heritage", "NC Sheriff's Operations Building", "Olathe Adult Detention Center") and the
+  // auto-layout. Auto-layout let long building names (e.g. "P25309 - Client D Arts and
+  // Heritage", "NC Sheriff's Operations Building", "Cityville Adult Detention Center") and the
   // Status column's longer "Partially Compliant · 434/764 sensors" text both wrap to a 2nd
   // line, breaking the "1 row = 1 line" invariant. Redistributed the 100% width from the
   // narrow-content columns (Equipment/Sensor Coverage/Sequence Readiness are 2-3 char
   // percentages or counts) and the Score column (whose bar had spare max-width, tightened
   // below) toward Building and Status, the two columns that actually need the room.
-  // Tuned via headless render against the real JOCO dataset (2026-07-09): the first pass
+  // Tuned via headless render against the real Client D dataset (2026-07-09): the first pass
   // (28/8/9/9/16/30) fixed 20 of 21 wrapped rows but left the longest building name
   // ("MedAct 1159 Sunflower Firestation-13", 37 chars) still wrapping. Took 3% from
   // Equipment/Sensor/Sequence (narrow numeric/percent content, had slack) and 2% from Score
@@ -15863,7 +15863,7 @@ function rptPageASHRAE36Executive(n, d) {
   // fitted against a 10px (7.5pt printed) header. The 10pt printed-text floor raises every th to
   // 13.34px, which is 33% wider type in columns that had 0-3px of slack, so the header words
   // overflowed their cells and PRINTED ON TOP OF the neighbouring header. Measured in a print
-  // render of the real JOCO audit (PyMuPDF span-pair overlap census, audit pages 2-5): 20
+  // render of the real Client D audit (PyMuPDF span-pair overlap census, audit pages 2-5): 20
   // overlapping span pairs, e.g. 'COVERAGE' over 'READINESS' by 8.7pt, 'READINESS' over 'SCORE'
   // by 9.8pt, 'EQUIPMENT' over 'SENSOR' by 5.6pt.
   //
@@ -15916,7 +15916,7 @@ function rptPageASHRAE36Executive(n, d) {
     '%">' +
     '</colgroup>';
   // 'rpt-mp-dense' (Matt's review, 2026-08-03): this table is a real multi-page table on the
-  // JOCO portfolio (measured 3-4 printed pages before this change) -- see
+  // Client D portfolio (measured 3-4 printed pages before this change) -- see
   // RPT_MULTIPAGE_TABLE_FONT_REDUCTION_PT's header comment for the mechanism. Every element
   // inside this <table> (head + rows) floors to RPT_MULTIPAGE_TABLE_MIN_PX instead of
   // RPT_MIN_TEXT_PX; content OUTSIDE the table (the callouts, the caption, the legend) is
@@ -15985,7 +15985,7 @@ function rptPageASHRAE36Executive(n, d) {
   // forced to nowrap — a name that needs 2 lines simply grows the row (and every cell in it)
   // to match; ROW_BOX_MIN_H is tuned to the 2-line ceiling so the common case looks uniform.
   // Density pass (feat/audit-report-reframe-density, 2026-07-09): was 40px, sized to force
-  // EVERY row (including the rare 2-line building name) to the same tall height. Most JOCO
+  // EVERY row (including the rare 2-line building name) to the same tall height. Most Client D
   // building names are short and fit on one line. See density investigation Finding 3
   // (stages/joco-audit-density-2026-07-09/investigation.md): 26 rows @ 50px/row = 3 pages
   // with a near-empty 3rd page.
@@ -16143,7 +16143,7 @@ function rptPageASHRAE36Executive(n, d) {
   // was the flex box's own 34px minimum plus 5px+5px of td padding. At the 10pt printed-text floor
   // that assumption is dead: the Status cell ("Partially Covered · 2658/4032 sensors") and the
   // building name both wrap to more lines at the larger size, and headless print-media measurement
-  // of all 27 JOCO rows returned 65px for 25 of them (45-47px for the two shortest). Budgeting 44
+  // of all 27 Client D rows returned 65px for 25 of them (45-47px for the two shortest). Budgeting 44
   // against a real 65 under-counted the readiness table by ~21px PER ROW — 231px on an 11-row page
   // — which is the arithmetic behind D-04's Audit p2/p3 footer collisions. Now stated as its own
   // measured constant rather than derived from an unrelated CSS minimum that no longer binds.
@@ -16151,7 +16151,7 @@ function rptPageASHRAE36Executive(n, d) {
   // Density pass (Matt's review, 2026-08-03): when row content renders through the 'rpt-mp-dense'
   // table (tableOpenHead below), it floors to RPT_MULTIPAGE_TABLE_MIN_PX (12px) instead of
   // RPT_MIN_TEXT_PX (13.34px). Headless print-media measurement (getBoundingClientRect on every
-  // real rendered row, all 27 JOCO buildings): max 59.6px. Gated on RPT_MP_DENSE_ACTIVE so
+  // real rendered row, all 27 Client D buildings): max 59.6px. Gated on RPT_MP_DENSE_ACTIVE so
   // RPT_MULTIPAGE_TABLE_FONT_REDUCTION_PT=0 falls back to the original EXEC_ROW_EST_H exactly.
   var EXEC_ROW_EST_H_DENSE = RPT_MP_DENSE_ACTIVE ? 46 : EXEC_ROW_EST_H; // DOM-measured max 59.6px at the dense floor; +1
   var allBuildings = d.buildings;
@@ -16239,7 +16239,7 @@ function rptPageASHRAE36Executive(n, d) {
     // the cap (same guarantee the greedy NOFOOT+refit path above already enforces, just choosing
     // a different -- more even -- split point), so this cannot introduce overflow, and every chunk
     // already reserves the footnote's room, so the LAST chunk needs no further refit. On the real
-    // JOCO portfolio this turned a 12/12/3-row split (the last page ~90% blank) into an even split
+    // Client D portfolio this turned a 12/12/3-row split (the last page ~90% blank) into an even split
     // across the SAME page count -- see that function's own header comment for the "MedAct 53
     // Gardner alone on a mostly-empty page" case it originally fixed. Only takes effect when it
     // does not increase the page count above what the greedy NOFOOT+refit split above achieved.
@@ -16493,7 +16493,7 @@ function rptPageASHRAE36CostEstimate(n, d) {
         '</tr>';
       // U2 / RC-A (2026-08-02, D-04): estH was a two-bucket guess (82px with a "Requires:"
       // sub-line, 60px without). At the 10pt printed-text floor the real rows measured 75-153px
-      // in a headless print render of the JOCO Audit — every single one taller than 82 — so the
+      // in a headless print render of the Client D Audit — every single one taller than 82 — so the
       // paginator packed 8 rows onto a page that could hold 6 and the last rows printed over the
       // footer wave. A flat constant cannot work here: row height is driven by how many lines the
       // sequence NAME (26% column), its "Requires:" list, and the plain-language DESCRIPTION each
@@ -16685,7 +16685,7 @@ function rptPageASHRAE36CostEstimate(n, d) {
   // its cells read "Section 5.16.2" rather than "ASHRAE 36 §5.16.2" — "spec" is an abbreviation,
   // and the header already names the standard, so the cell no longer repeats it on every row.
   // 'rpt-mp-dense' (Matt's review, 2026-08-03): the Control Sequences table is a real multi-page
-  // table on the JOCO portfolio (measured 4 printed pages before this change) -- see
+  // table on the Client D portfolio (measured 4 printed pages before this change) -- see
   // RPT_MULTIPAGE_TABLE_FONT_REDUCTION_PT's header comment for the mechanism. Everything inside
   // this <table> (head + rows + totals row) floors to RPT_MULTIPAGE_TABLE_MIN_PX instead of
   // RPT_MIN_TEXT_PX; the section title (RATIONALE_TITLE_H) and the intro sentence
@@ -16835,7 +16835,7 @@ function _a36BuildingContent(d, building, showBuildingInfra) {
   // rows missing BOTH coolSP and htgSP are dropped entirely, before any row is generated),
   // ioOnly exclusion ($0/no-install existing-controller-I/O points), and oat/oaWetBulb/damper/
   // co2+zoneTemp combo dedup that the raw per-equipment accumulators never see. Measured
-  // 2026-07-29 on real JOCO data: NC Adult Detention Center's VAV Terminals row alone was
+  // 2026-07-29 on real Client D data: NC Adult Detention Center's VAV Terminals row alone was
   // printing 255 raw sensor gaps — 60 of its 62 VAV units are monitoring-only detention cells
   // wired for temperature monitoring only, by design (feedback_absence_is_not_always_a_
   // deficiency.md) — while only 4 were ever priced. Cached on `d` (memoized once per report
@@ -17471,7 +17471,7 @@ function rptPageASHRAE36Building(n, d, building, showBuildingInfra) {
   // fix/report-content-pagination (2026-07-28): derived from _rptContentBudget() instead of
   // standalone literals — BUILDING_*_BASE_ADJUSTMENT constants preserve these exact numeric
   // values (904 - 174 = 730, 904 - 74 = 830), no visual/page-count change.
-  // U2 / RC-A (2026-08-02): re-measured in a headless PRINT render of the JOCO Audit with EVERY
+  // U2 / RC-A (2026-08-02): re-measured in a headless PRINT render of the Client D Audit with EVERY
   // optional section switched on, at the 10pt printed-text floor. The old adjustments (174/74)
   // budgeted a 100px gauge strip, a 35px intro and a 30px table head; measured, the gauge strip is
   // 184px, the intro runs to ~120px on buildings with many equipment categories, the head is 31px
@@ -17669,7 +17669,7 @@ function _a36BuildingBlockToken(d, building, showBuildingInfra) {
   // estH: the same chrome constants rptPageASHRAE36Building's ROWS_BUDGET_FIRST derivation uses,
   // so the two renderers of the same building content cannot disagree about how tall it is.
   // U2 / RC-A (2026-08-02): re-measured at the 10pt printed-text floor and cross-checked against
-  // two real blocks packed onto one page (JOCO Audit, all sections on): this model predicted 550px
+  // two real blocks packed onto one page (Client D Audit, all sections on): this model predicted 550px
   // and 459px against measured 550px and 459px.
   var BLOCK_GAUGES_H = 190; // measured 184
   var BLOCK_INTRO_H = 120; // measured 43-107
@@ -18271,7 +18271,7 @@ function rptPageASHRAE36SetpointReview(n, d) {
     '</div>';
 
   // ── Pagination (Issue 6 + Fix B correction 2026-06-18) ───────────────────
-  // DOM-measured heights (JOCO headless run 2026-06-18):
+  // DOM-measured heights (Client D headless run 2026-06-18):
   //   preamble actual=70px (budget had 60 — underestimate)
   //   totalsCallout: not present / negligible
   //   thead actual=36px (budget had 32)
@@ -18284,14 +18284,14 @@ function rptPageASHRAE36SetpointReview(n, d) {
   // standalone literals — SETPOINT_*_BASE_ADJUSTMENT constants preserve these exact numeric
   // values (904 - 146 = 758, 904 - 101 = 803), no visual/page-count change.
   // U2 / RC-A (2026-08-02): re-measured at the 10pt printed-text floor (headless print render,
-  // JOCO Audit with every optional section on). Preamble 70px -> 107px, table head 36px -> 63px
+  // Client D Audit with every optional section on). Preamble 70px -> 107px, table head 36px -> 63px
   // (the six column headers now wrap), rows 44px -> 49px, or 69px where the Status cell needs a
   // third line. The row estimate below is the measured MAXIMUM rather than an average: this
   // table's rows are near-uniform, so a max-based estimate costs almost no density and cannot
   // overflow.
   // Item 5aj (2026-09-23): table widened from 6 to 9 columns (unoccupied setpoints, existing
   // and recommended schedule, recommended setpoints) and the preamble grew a clause — every
-  // budget below re-measured (headless print render, Woodland Audit) and raised accordingly;
+  // budget below re-measured (headless print render, Client B Audit) and raised accordingly;
   // still deliberately the measured MAXIMUM, never an average, so pagination can only ever
   // under-fill a page, never overflow one.
   var SETPOINT_PREAMBLE_H = 148; // measured 128 preamble (4-sentence, wraps to more lines) + 20px caption block
@@ -18734,7 +18734,7 @@ _RPT_US_STATE_ABBR.forEach(function (s) {
 /**
  * _rptProposalDisplayClientName — Service-Proposal-only prose display name. Strips a trailing
  * ", <US state>" suffix (full name OR 2-letter abbreviation, matched against the explicit lists
- * above) from a stored client name, e.g. "Johnson County, Kansas" -> "Johnson County". Does NOT
+ * above) from a stored client name, e.g. "Client D, Kansas" -> "Client D". Does NOT
  * touch the stored project/client name anywhere else — this is purely a rendering choice for the
  * handful of mid-sentence prose lines in the Proposal (title, Executive Summary, Recommended
  * Energy Management Services, Long-Term Program Vision) that read awkwardly with the full legal name
@@ -18805,7 +18805,7 @@ function rptPageASHRAE36ProposalCover(n, d) {
   var p = d.portfolio;
   // Rule 2.3: reportDate drives the footer date; label is empty (no period range for ASHRAE reports).
   var fakeData = { project: { client: d.project.name }, period: { label: '', reportDate: d.rawDate } };
-  // Prose-only display name (e.g. "Johnson County, Kansas" -> "Johnson County") — see
+  // Prose-only display name (e.g. "Client D, Kansas" -> "Client D") — see
   // _rptProposalDisplayClientName above. d.project.name (the stored client/project name) itself
   // is untouched; only the mid-sentence renders on this page use the shortened form.
   var displayClient = _rptProposalDisplayClientName(d.project.name);
@@ -18819,7 +18819,7 @@ function rptPageASHRAE36ProposalCover(n, d) {
   // against the SMALLER pre-fix size and had not been re-verified at 14px.
   //
   // 2026-07-29 (re-verified at 14px, fix/report-typography-and-pagination-merge): headless
-  // re-measurement against real JOCO data found this page 159.7px past the 1056px design height
+  // re-measurement against real Client D data found this page 159.7px past the 1056px design height
   // with "Why This Approach" still on it. Moving that section to rptPageASHRAE36ProposalPhaseTable
   // (see that function + rptPageASHRAE36ProposalCover's own header comment) closed most of the
   // gap; the remaining ~35px is closed here by tightening HEAD margin (7/3 -> 5/2) and
@@ -18843,7 +18843,7 @@ function rptPageASHRAE36ProposalCover(n, d) {
     // subtitle. Reversed to mirror the Audit cover exactly (rptPageASHRAE36Cover ~line 14351):
     // TITLE = "Service Proposal" (RPT_DOC_TITLE_PX = 18pt tier, bold, var(--rpt-blue), centered),
     // SUBTITLE = the client/project name (15px = 11.25pt printed, bold, near-black, centered) —
-    // same treatment as "ASHRAE 36 Audit Report" / "Johnson County, Kansas". The
+    // same treatment as "ASHRAE 36 Audit Report" / "Client D, Kansas". The
     // "Building Automation System" text is deleted entirely. Full d.project.name here (not
     // displayClient) because the Audit cover's subtitle uses d.project.name — the shortened
     // prose form stays mid-sentence only.
@@ -18943,7 +18943,7 @@ function rptPageASHRAE36ProposalCover(n, d) {
   // 07-29 density pass above (and the 07-26 pass before it) both tuned this page's spacing to
   // "0px overflow" measured against the BROWSER PREVIEW (Chromium) render only. A real Word
   // export/render round-trip (verify-docx-proposal-merge, 2026-08-02) found the live 27-building
-  // JOCO portfolio's real content actually needs the page's DESIGN height PLUS ~76px more than a
+  // Client D portfolio's real content actually needs the page's DESIGN height PLUS ~76px more than a
   // single physical Word page provides -- only 2 of the 6 "Recommended Energy Management Services"
   // bullets fit before Word's own pagination kicked in, orphaning the remaining 4 alone on an
   // otherwise-blank page 2. Root cause: Word's real per-line metrics for this Arial-rendered body
@@ -19194,7 +19194,7 @@ function _rptA36PhaseImprovementsText(rows, idx) {
   // lowercase mid-sentence fragments (e.g. 'expanded DCV deployments', 'final DCV sensor
   // deployment') meant to be joined with others, but whichever bucket flag fires FIRST (in the
   // fixed dcv/sat/sensor/fan/bas check order above) becomes the sentence's actual first word --
-  // for JOCO's real data that's almost always the dcv bucket, rendering "expanded DCV..."/"final
+  // for Client D's real data that's almost always the dcv bucket, rendering "expanded DCV..."/"final
   // DCV..." lowercase at the start of the Phase 2/3 "Included Improvements" cell. Capitalizing
   // here (on the assembled sentence, not a hardcoded bucket string) fixes the first word
   // regardless of which bucket ends up first, so it can never regress if the bucket order above
@@ -19375,7 +19375,7 @@ function _rptA36PhaseSeqCategoryDetails(rows) {
   }
   return details;
 }
-// _rptA36FutureWorkInnerHTML DELETED (Matt, 2026-08-03: no Future Work shown in the JOCO Service
+// _rptA36FutureWorkInnerHTML DELETED (Matt, 2026-08-03: no Future Work shown in the Client D Service
 // Proposal). The whole Future Work render path is gone — the standalone section, the inline
 // Phase-table row (futureWorkInline mode), and the Vision-page fallback. futurePhases itself
 // (_pricingProposalTermAndFuture) still exists and still feeds the opt-in Cost Estimate page's
@@ -19597,7 +19597,7 @@ function _rptA36MonthSequenceSentence(groups) {
  * fallbacks. Extracted 2026-08-04 (pages 2+3 re-merge) from _rptA36PhaseTableDerive's inline
  * table probe so the page renderer's chrome/notes budgets use the SAME "measure, don't model"
  * mechanism: the fixed HEAD_CHROME_FIRST/TAIL_H constants had drifted safe-side far past reality
- * (421 budgeted vs 316 measured chrome; 150 vs 84 measured notes on real JOCO data) and were
+ * (421 budgeted vs 316 measured chrome; 150 vs 84 measured notes on real Client D data) and were
  * blocking a page merge that genuinely fits.
  */
 function _rptA36MeasureContentH(html) {
@@ -19635,9 +19635,9 @@ function _rptA36MeasureContentH(html) {
  *   - rptPageASHRAE36ProposalPhaseTable(startN, d, opts) further below -- the LIVE default-path
  *     renderer, which paginates der.rowsHTMLArr across multiple .rpt-page elements via
  *     _rptPaginateTokens (the same shared paginator _buildItemizedPages() already uses) instead
- *     of forcing a variable 13-row (Johnson County) matrix onto one fixed-height page. See that
+ *     of forcing a variable 13-row (Client D) matrix onto one fixed-height page. See that
  *     function's own header comment for why: the un-paginated single page overflowed 1056px by
- *     roughly 30% under real JOCO data, corrupting the printed page count and page-number
+ *     roughly 30% under real Client D data, corrupting the printed page count and page-number
  *     footers (measured via page.pdf() print-path render, not just the on-screen preview).
  */
 function _rptA36PhaseTableDerive(d, opts) {
@@ -19725,7 +19725,7 @@ function _rptA36PhaseTableDerive(d, opts) {
   // contingency. It never is: the shipped ranking (PRICING_NO_HW_SCORE_BONUS, pricing-estimator.js)
   // biases no-hardware units ahead of hardware units in the sort, so Phase 1 (the whole term —
   // PRICING_PROPOSAL_TERM_PHASE_COUNT=1) is 100% programming on equipment that already has the
-  // sensors it needs, by construction, regardless of budget headroom. Confirmed against real JOCO
+  // sensors it needs, by construction, regardless of budget headroom. Confirmed against real Client D
   // data (project 1779664753271) at render time: 0 of the term phase's rows carry a hardware
   // install; every row is a programming-only sequence. Rewritten below to say what actually
   // happens — sequencing driven by existing instrumentation, hardware following once programming
@@ -19949,10 +19949,10 @@ function _rptA36PhaseTableDerive(d, opts) {
   }
 
   // futureRowHTML (the "Future Work" inline table row) DELETED along with the whole Future Work
-  // render path (Matt, 2026-08-03: no Future Work shown in the JOCO Service Proposal).
+  // render path (Matt, 2026-08-03: no Future Work shown in the Client D Service Proposal).
 
   // colgroup (2026-08-03 side-by-side rebuild): equal-width month columns, one per calendar
-  // month of the term (5 for the JOCO term), table-layout:fixed so widths are deterministic.
+  // month of the term (5 for the Client D term), table-layout:fixed so widths are deterministic.
   var _monthColPct = Math.floor((100 / Math.max(monthCount, 1)) * 100) / 100;
   var colgroup =
     '<colgroup>' +
@@ -19981,7 +19981,7 @@ function _rptA36PhaseTableDerive(d, opts) {
   // CPL recalibrated 2026-08-03 (verification-first month, deploy/months-returnline): the prior
   // 6.9px/char divisor (~18 CPL at 5 columns) modeled average glyph width only and ignored
   // word-wrap waste, which dominates at ~128px-wide columns filled with long words
-  // ("Occupancy-Based", "Ventilation", "programming"). Measured against the real JOCO render
+  // ("Occupancy-Based", "Ventilation", "programming"). Measured against the real Client D render
   // (project 1779664753271, headless print-path, this date): the tallest cell wrapped 240 chars
   // into 20 lines => ~12 real chars/line, while the old estimate said 18 CPL/317px for a cell
   // that really rendered 387px — the "safe-side" claim had inverted, the paginator kept a
@@ -20045,7 +20045,7 @@ function _rptA36PhaseTableDerive(d, opts) {
     '</div>';
   var termNotesHTML = expectedResultsHTML + ongoingServicesHTML;
 
-  // standaloneFutureWorkHTML DELETED (Matt, 2026-08-03: no Future Work shown in the JOCO Service
+  // standaloneFutureWorkHTML DELETED (Matt, 2026-08-03: no Future Work shown in the Client D Service
   // Proposal) — the schedule page now ends on termNotesHTML (Expected Results + the
   // ongoing-service paragraph), both explicitly KEPT.
 
@@ -20084,8 +20084,8 @@ function _rptA36PhaseTableInnerHTML(d, opts) {
  * pageNum++ })`), so callers must spread/increment pageNum the same way.
  *
  * WHY THIS EXISTS (2026-08-02): the 2026-07-31 rows-as-term-units matrix rebuild replaced a fixed
- * 2-row table with a variable one-row-per-term-unit table (13 rows for Johnson County) but added
- * no page-height handling. Measured against real JOCO data (project 1779664753271) under the
+ * 2-row table with a variable one-row-per-term-unit table (13 rows for Client D) but added
+ * no page-height handling. Measured against real Client D data (project 1779664753271) under the
  * app's DEFAULT proposal section selection: the unpaginated page's content stood 1366-1378px tall
  * against the fixed 1056px page box (roughly 30% overflow), and the real print path
  * (page.emulateMedia('print') + page.pdf(), the same mechanism exportReportToPDF()'s
@@ -20151,7 +20151,7 @@ function rptPageASHRAE36ProposalPhaseTable(startN, d, opts) {
   var g = _rptContentBudget('flush');
   // MEASURED budgets (2026-08-04, pages 2+3 re-merge, deploy/months-returnline): the fixed
   // chrome/tail constants this page used (HEAD_CHROME_FIRST = 251 + 170, TAIL_H = 150) had
-  // drifted safe-side far past reality — measured against real JOCO data (project 1779664753271,
+  // drifted safe-side far past reality — measured against real Client D data (project 1779664753271,
   // headless, 720px content width): chrome (Recommended Services + Why This Approach + intro)
   // 316px real vs 421 budgeted, term notes 84px real vs 150 budgeted — and that inflation alone
   // pushed the notes (and previously the table) onto their own mostly-blank pages when the whole
@@ -20180,7 +20180,7 @@ function rptPageASHRAE36ProposalPhaseTable(startN, d, opts) {
   // der.tableEstH is now the REAL measured table height (see its derivation), and _rptPaginateTokens
   // ALWAYS force-includes the first token on the first page ("always include at least one token per
   // chunk"), so an indivisible months table taller than the first page's post-chrome budget used to
-  // stay on the merged chrome page anyway and overflow it — measured on real JOCO data this date:
+  // stay on the merged chrome page anyway and overflow it — measured on real Client D data this date:
   // 421px merged chrome + 590px table = ~99px past the .rpt-body budget on screen, and the PRINT
   // path split that one numbered page across TWO physical sheets (19 PDF sheets vs 18 "Page N of
   // 18" footers — the exact corrupted-footer defect this paginated renderer exists to prevent).
@@ -20334,7 +20334,7 @@ function _rptA36VisionInnerHTML(d, opts) {
       'priced for this project.</div>';
   }
 
-  // futureWorkFallbackHTML DELETED (Matt, 2026-08-03: no Future Work shown in the JOCO Service
+  // futureWorkFallbackHTML DELETED (Matt, 2026-08-03: no Future Work shown in the Client D Service
   // Proposal — the whole Future Work render path is gone, including this Phase-Table-off fallback).
 
   var longTermVision =
@@ -20389,7 +20389,7 @@ function _rptA36VisionInnerHTML(d, opts) {
  * pages ~24-50% full. generateASHRAE36ProposalHTML now flows these blocks (together with the
  * ASHRAE 36 Compliance / Full Scope sections when selected) onto shared pages via
  * _rptPaginateTokens, filling each page before breaking. estH values are safe-side estimates
- * (headless-verified against real JOCO data at the 10pt floor) for the shared paginator; the
+ * (headless-verified against real Client D data at the 10pt floor) for the shared paginator; the
  * full token-refactor pagination rework remains deferred, per the same decision.
  */
 function _rptA36VisionBlocks(d, opts) {
@@ -21286,7 +21286,7 @@ function _rptA36TierDetailPanelHTML(key, tt, summaryData, estimateState, wantIte
  * internal planning tool and keeps its phase envelope/measures-total/labor breakdown columns).
  * Guarded/silent (returns '') when the computation isn't available or returns null (nothing priced
  * yet), same convention as discBlock/svcBlock.
- * "Facilities Included" column REMOVED (2026-07-29, overflow fix): on the real JOCO portfolio (27
+ * "Facilities Included" column REMOVED (2026-07-29, overflow fix): on the real Client D portfolio (27
  * buildings) this column's per-phase "(continues in Phase X, Y, Z...)" text pushed the table
  * ~276px past the page footer, cutting the Phase 3 row into the footer wave graphic. Same
  * treatment as commit 3062dcd, which removed the identical "Facilities Included" row from the
@@ -21689,7 +21689,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
   // total cannot overflow one 8.5x11 sheet" — see this function's header comment) that predates
   // the 2026-07-19 click-to-expand panel and the 2026-07-22 itemized qty x unit price additions.
   // exportReportToPDF()/exportReportToWord() force EVERY tier's panel open (display:block)
-  // before capture — for a large portfolio (e.g. JOCO's Full Scope tier: 80+ distinct
+  // before capture — for a large portfolio (e.g. Client D's Full Scope tier: 80+ distinct
   // hardware/programming items) that blew the page's real height to several times 1056px.
   // .rpt-page itself never clips (min-height + overflow:visible), but exportReportToPDF()'s
   // html2canvas->jsPDF step draws one image per PDF page sized to the page's full scrollHeight
@@ -21712,7 +21712,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
   // per-page image would actually start clipping against the physical PDF page edge (see the
   // comment above the detailRow/detailNoteRow branch below for that derivation). Small/medium
   // real portfolios (a handful of buildings) stay on the original interactive inline path;
-  // large multi-building portfolios (JOCO's Full Scope tier: 80+ items) still correctly move to
+  // large multi-building portfolios (Client D's Full Scope tier: 80+ items) still correctly move to
   // _buildTierDetailPages() continuation pages.
   // 24 combined Hardware-category-rows + Programming-sequence-rows still considered safe inline.
   // Hardware now counts CATEGORIES (+1 for the ioOnly summary line when present), not one row per
@@ -22020,7 +22020,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
         );
       }
 
-      // estH values measured via real headless render against JOCO (27-building portfolio): plain
+      // estH values measured via real headless render against Client D (27-building portfolio): plain
       // item/qty/price rows averaged ~24.5px (not 20 — that 4.5px/row underestimate accumulated
       // across a 38-row Full Scope continuation page into an 86px page overflow), and rows with a
       // clientSummary sub-line averaged ~48.9px (not 34). 30 / 60 below keep a safety margin for
@@ -22030,7 +22030,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
       // continuation pages, so there was never a reason for the two to differ.
       //
       // 2026-08-02 (fix/docx-proposal-pagination-orphans): clientSummary estH bumped 60 -> 68.
-      // A real Word round-trip render of the live JOCO "Recommended" tier found the 60px estimate
+      // A real Word round-trip render of the live Client D "Recommended" tier found the 60px estimate
       // still UNDER Word's real per-row height: a chunk of 8 plain + 9 clientSummary rows summed to
       // EXACTLY 780 (8*30 + 9*60) under this estimate — i.e. the old 60 left this chunk with ZERO
       // margin at the budget ceiling, so ANY understatement guaranteed overflow. Measuring the same
@@ -22255,7 +22255,7 @@ function rptPageASHRAE36ProposalPricing(n, d, opts) {
         });
       }
       // 2026-08-02 (fix/docx-proposal-pagination-orphans): bullet/section-title estH bumped
-      // 15 -> 30 and 24 -> 30. A real Word round-trip render of the live JOCO "Full Scope" tier
+      // 15 -> 30 and 24 -> 30. A real Word round-trip render of the live Client D "Full Scope" tier
       // found this WHOLE 28-token list (2 section titles + 26 bullets) estimated at only 438px
       // under the OLD 15/24 constants — comfortably under the 900px _scopeBudget, so
       // _rptPaginateTokens never even split it into multiple chunks (numChunks stayed 1). But the
@@ -22546,7 +22546,7 @@ function rptPageASHRAE36PointInventory(n, d) {
   // narrative 107px, table head 73px (five headers, all wrapping), footnote ~90px. The flat 30px
   // row estimate was the larger error: rows measure 31px, 51px or 71px depending purely on how
   // many lines the building name wraps to in the 144px name column, so the estimate below counts
-  // those lines (17 chars per line, fitted against all 28 JOCO rows) instead of assuming one.
+  // those lines (17 chars per line, fitted against all 28 Client D rows) instead of assuming one.
   var INV_SUMMARY_H = 129; // measured
   var INV_NARRATIVE_H = 107; // measured
   var INV_THEAD_H = 73; // measured
@@ -22693,7 +22693,7 @@ function generateASHRAE36AuditHTML(data, selectedSections) {
 
     // Density fix (feat/audit-report-reframe-density, 2026-07-09), Finding 4: this used to be
     // `data.buildings.forEach` calling rptPageASHRAE36Building once per building, which forces
-    // EVERY building onto its own full 1056px page regardless of content size — 26 of JOCO's
+    // EVERY building onto its own full 1056px page regardless of content size — 26 of Client D's
     // 39 total report pages, many holding a single equipment category row on an otherwise
     // blank page (see stages/joco-audit-density-2026-07-09/investigation.md Finding 4).
     // Now: each building becomes an atomic block token (_a36BuildingBlockToken); small
@@ -22701,7 +22701,7 @@ function generateASHRAE36AuditHTML(data, selectedSections) {
     // for the Executive Summary table. A building whose own content is too tall for one page
     // (estH over the budget) falls back to rptPageASHRAE36Building's existing dedicated
     // multi-page treatment, unchanged, so no building's content is ever clipped.
-    // Verified via headless render against live JOCO data (2026-07-09): 860px let a handful
+    // Verified via headless render against live Client D data (2026-07-09): 860px let a handful
     // of packed pages grow to ~1160-1224px actual scrollHeight (still auto-scaled to fit one
     // PDF page per Fix A2 above, not clipped, but denser than intended) — tightened to 700px
     // for a larger safety margin against the estH approximation in _a36BuildingBlockToken.
@@ -22851,7 +22851,7 @@ function generateASHRAE36ProposalHTML(data, selectedSections) {
   // proposalPhaseTableOn tells _rptA36VisionInnerHTML whether the Phase Table page ran, steering
   // the Implementation Plan's cross-reference wording (don't point at a schedule that isn't in
   // the document). The futureWorkInline flag that used to ride here was removed 2026-08-03 with
-  // the whole Future Work render path (Matt: no Future Work shown in the JOCO Service Proposal).
+  // the whole Future Work render path (Matt: no Future Work shown in the Client D Service Proposal).
   var phaseOpts = {
     proposalPhaseTableOn: _phaseTableOn,
     // 2026-08-03 (combine pages 2+3): the trimmed Recommended Energy Management Services block —
@@ -22874,7 +22874,7 @@ function generateASHRAE36ProposalHTML(data, selectedSections) {
   // schedule and BEFORE the scope sections. Because that page ends with the Disclaimer, every
   // opt-in content section that followed it ("ASHRAE 36 Compliance", "Full Scope", "Scope of Work",
   // the priced Cost Estimate) printed AFTER the disclaimer that is supposed to close the document.
-  // On the live 2026-08-02 Johnson County export that put a whole scope section on page 6, after
+  // On the live 2026-08-02 Client D export that put a whole scope section on page 6, after
   // the page-5 disclaimer, where it reads as an appendix mistake. A disclaimer ends a document, so
   // this page is now pushed LAST (see below, after the costEstimate branch) — which also puts the
   // proposal in story order: what was assessed, what is recommended, when each improvement happens,
@@ -22886,7 +22886,7 @@ function generateASHRAE36ProposalHTML(data, selectedSections) {
   // ── Trailing-section page flow (Matt, 2026-08-03, item 14 — INTERIM fix) ──────────────────
   // The short trailing sections (ASHRAE 36 Compliance, Full Scope, Implementation Plan,
   // Long-Term Vision) used to each render on their own fixed-height page, leaving big blank
-  // gaps (the Compliance page measured ~24% full on the live JOCO export). They now flow as
+  // gaps (the Compliance page measured ~24% full on the live Client D export). They now flow as
   // blocks through _rptPaginateTokens so they SHARE pages and fill down before breaking.
   // Deliberately interim: section-level blocks only, no token-refactor of every section builder
   // (that full pagination rework is logged and deferred). The legacy standalone page functions
@@ -22921,7 +22921,7 @@ function generateASHRAE36ProposalHTML(data, selectedSections) {
   // default OFF (strict === true opt-in, matching the costEstimate/proposalScope precedent below)
   // — see ASHRAE36_SECTIONS.proposal and _rptA36ComplianceScopeInnerHTML/_rptA36FullScopeInnerHTML.
   // estH values are safe-side estimates for the section-block flow above (headless-verified
-  // against real JOCO data at the 10pt floor).
+  // against real Client D data at the 10pt floor).
   if (s.complianceScope === true)
     _trailTokens.push({
       type: 'block',
