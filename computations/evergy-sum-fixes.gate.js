@@ -200,7 +200,6 @@ async function check(name, fn) {
     console.log('FAIL  ' + name + ' -- ' + e.message);
   }
 }
-const num = (v) => parseFloat(String(v).replace(/,/g, ''));
 
 (async () => {
   await check('taxed bill: On-Peak keeps its printed value', async () => {
