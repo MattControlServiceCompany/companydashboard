@@ -336,6 +336,15 @@ function getMeterSavings(m, bills, incl, projId, bldgId, opts) {
     });
   }
 
+  // The ONE baseline-usage rule for a month: baseline calendar-month map, else regression
+  // baseline, else the baseline average. Used by every row, including pinned rows below.
+  const expectedUsageFor = (calMo, regrBaseline) =>
+    hasBlCalMap && blByCalMo[calMo] != null
+      ? blByCalMo[calMo]
+      : hasRegrP && regrBaseline != null
+        ? regrBaseline
+        : blAvg;
+
   // 2026-09-11 (FIX 3, propane zeroFill savings booking): carry-forward propane rate -
   // updated to the most recent real all-in $/gal seen as postRows (sorted ascending by ym)
   // are walked, so a zeroFill month (no delivery yet) can book real savings using the last
@@ -363,12 +372,7 @@ function getMeterSavings(m, bills, incl, projId, bldgId, opts) {
       moKwRate = 0,
       kwCostSav = 0;
 
-    const expUsage =
-      hasBlCalMap && blByCalMo[calMo] != null
-        ? blByCalMo[calMo]
-        : hasRegrP && r.regrBaseline != null
-          ? r.regrBaseline
-          : blAvg;
+    const expUsage = expectedUsageFor(calMo, r.regrBaseline);
     const actUsage = rawUsageByYm[r.ym] != null ? rawUsageByYm[r.ym] : r.usage;
 
     if (isElec) {
@@ -559,11 +563,43 @@ function getMeterSavings(m, bills, incl, projId, bldgId, opts) {
   if (hasContract) {
     const _allOverrides = bl.costSavOverrides || {};
     Object.entries(_allOverrides).forEach(([ym, val]) => {
-      if (val == null || ym <= blEnd || byYM[ym] != null) return;
+      if (val == null || ym <= blEnd) return;
       const calMo = parseInt(ym.split("-")[1]) - 1;
-      byYM[ym] = val;
-      byCalMo[calMo] = (byCalMo[calMo] || 0) + val;
+      if (byYM[ym] == null) {
+        byYM[ym] = val;
+        byCalMo[calMo] = (byCalMo[calMo] || 0) + val;
+      }
+      // A pinned (presented) month always has a table row, even when the bills give it no
+      // usage (propane spread puts 0 gal in it, or no bill falls in it). Its usage is the real
+      // value from the data: propane 0 when the spread gives it nothing, null (shown as a dash)
+      // when there is no bill. Never invented usage. Pinned dollars are the override.
+      if (!rowsOut.some((o) => o.ym === ym)) {
+        const _hasUsage = rawUsageByYm[ym] != null;
+        rowsOut.push({
+          ym: ym,
+          normDays: null,
+          expUsage: expectedUsageFor(calMo, null),
+          actUsage: _hasUsage ? rawUsageByYm[ym] : isPropane ? 0 : null,
+          kwhRate: 0,
+          kwhCostSav: 0,
+          unitRate: 0,
+          unitCostSav: 0,
+          blExpKW: 0,
+          demKW: 0,
+          bilKW: 0,
+          kwRate: 0,
+          kwCostSav: 0,
+          savings: val,
+          pinned: true,
+          rateIncomplete: false,
+          rateReason: "",
+        });
+        if (!unitsByYM[ym]) unitsByYM[ym] = { kwh: 0, kw: 0, therms: 0, gallons: 0 };
+        if (!unitsByCalMo[calMo])
+          unitsByCalMo[calMo] = { kwh: 0, kw: 0, therms: 0, gallons: 0 };
+      }
     });
+    rowsOut.sort((a, b) => (a.ym < b.ym ? -1 : a.ym > b.ym ? 1 : 0));
   }
 
   const result = {
