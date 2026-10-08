@@ -6009,7 +6009,7 @@ function formatRateWarning(rr, label, unitLabel) {
 
 function _lbg_tokens(line) {
   if (!line) return [];
-  return [...line.matchAll(/-?[\d,]+\.\d+|-?[\d,]+-\d{2}|-?[\d,]+/g)]
+  return [...line.matchAll(/-?\.\d+|-?[\d,]+\.\d+|-?[\d,]+-\d{2}|-?[\d,]+/g)]
     .map((m) => m[0])
     .map((s) => (/^-?\d+-\d{2}$/.test(s) ? s.replace('-', '.') : s))
     .map((s) => parseFloat(s.replace(/,/g, '')))
@@ -7058,20 +7058,25 @@ const UTILITY_RULES = [
         // text before site N's "Service for" line — i.e., at the END of siteChunks[N-1].
         // Prepending invoiceHeader (which has site 1's Customer ID) to all chunks
         // causes extract() to always return site 1's Customer ID for sites 2-14.
-        // Fix: for each chunk i, prepend the LAST 600 chars of chunk i-1 (which has
-        // the correct Customer ID) PLUS the invoice header (for Invoice Date / BG Account).
+        // Fix: for each chunk i, the identity window runs from the end of the last
+        // "Total Current Site Charges" line before chunk i up to the start of chunk i.
+        // A normal invoice has one section per site, so this is the previous site's tail.
+        // A correction invoice has many sections per site and one id header before them all,
+        // so a fixed 600-char tail missed it (15 bills read ID-UNREAD, 2026-10-08).
+        // The previous site's Total line still bounds the window, so a site with no id of
+        // its own stays unread and never borrows the previous site's id (item 62a38985).
+        let _prefixLen = 0; // chars of invText before chunk i
         for (let i = 1; i < siteChunks.length; i++) {
-          const prevTail = siteChunks[i - 1].slice(-600);
-          // identityPortion is invoiceHeader + prevTail ONLY — this is where site i's
-          // OWN identity block (Customer ID, LDC Account, address) lives. siteChunks[i]
-          // itself must never be searched for identity fields: its own trailing text
-          // holds site (i+1)'s leaked identity header, not site i's (2026-09-16 fix,
-          // item 62a38985 — identity fields were resolving one site ahead of the money).
-          const identityPortion = invoiceHeader + '\n' + prevTail;
+          _prefixLen += siteChunks[i - 1].length;
+          const prefix = invText.slice(0, _prefixLen);
+          let blockStart = 0;
+          for (const s of prefix.matchAll(/Total\s+Current\s+Site\s+Charges[^\n]*/gi)) blockStart = s.index + s[0].length;
+          // The window starts inside the invoice header only for the first block; later blocks
+          // get the header prepended (Invoice Date / BG Account) and the id search skips it.
+          const inHeader = blockStart < invoiceHeader.length;
+          const identityPortion = inHeader ? prefix.slice(blockStart) : invoiceHeader + '\n' + prefix.slice(blockStart);
+          const idFrom = inHeader ? 0 : invoiceHeader.length + 1;
           const siteText = identityPortion + '\n' + siteChunks[i];
-          // Site 1's id is at the end of the invoice header (chunk 0). For every later site the
-          // header id is site 1's, so the id search must start AFTER the header (idFrom).
-          const idFrom = i === 1 ? 0 : invoiceHeader.length + 1;
           const bill = this.extract(siteText, identityPortion.length, {
             knownIds: _knownIds,
             idFrom,
@@ -7640,6 +7645,52 @@ const UTILITY_RULES = [
       // re-run against ALTERNATE OCR passes below to recover sites the PRIMARY
       // (highest-scoring) pass garbled. See the consensus merge step after
       // `siteBlocks` is built. Behavior against `t` alone is unchanged.
+      // Fix (2026-10-08, WRE scanned-invoice sites): scanned invoices (Sep/Oct 2025) lose
+      // the right-hand $ columns, so a site has Mmbtu + Fuel but no charge. WRE prints its
+      // own formula: charge = (Mmbtu + Fuel) x Rate (verified on the Jan 2026 invoice, see
+      // the Trigger-line comments). The Index rate is one price for the whole invoice, so
+      // the most common Index rate across the sites (at least 2 agree) is used - one
+      // misread rate ("$3.1800" for 3.19) cannot change a site. Only sites with Index and
+      // no Trigger/Special Weather row are rebuilt, only from a Mmbtu and Fuel pair (Sub-Total
+      // row first, then Index row) where Fuel is 0.5% to 4% of Mmbtu (a misread digit fails this). Marked
+      // _chargeRebuilt so it is never shown as a printed value.
+      function _wreRebuildMissingCharges(blocks) {
+        const _cnt = {};
+        for (const b of blocks) {
+          const r = b.indexRate != null ? parseFloat(b.indexRate) : NaN;
+          if (r > 0 && r < 100) _cnt[r.toFixed(4)] = (_cnt[r.toFixed(4)] || 0) + 1;
+        }
+        const _top = Object.entries(_cnt).sort((a, b) => b[1] - a[1])[0];
+        if (!_top || _top[1] < 2) return;
+        const _rate = parseFloat(_top[0]);
+        for (const b of blocks) {
+          if (b.dollar != null || b.indexCharge != null) continue;
+          if (b.triggerCharge != null || b.triggerMMbtu != null || b.sweCharge != null || b.sweMMbtu != null) continue;
+          let m = null;
+          let f = null;
+          for (const _m of [b.mmbtu, b.indexMMbtu]) {
+            for (const _f of [b.subFuel, b.indexFuelMMbtu]) {
+              if (m == null && _m != null && _f != null && _m > 0 && _f >= _m * 0.005 && _f <= _m * 0.04) {
+                m = _m;
+                f = _f;
+              }
+            }
+          }
+          if (m == null) continue;
+          // The Index row and the Sub-Total row print the same Mmbtu. If both were read and
+          // they disagree (other than a dropped decimal point), one is a misread digit and
+          // nothing here says which: leave the site to the existing manual-review checks.
+          // (A printed Mmbtu always has 2 decimals; an Index value with 3 is a misread, ignored.)
+          const _idxPrinted = b.indexMMbtu != null && Math.abs(b.indexMMbtu * 100 - Math.round(b.indexMMbtu * 100)) < 1e-6;
+          if (_idxPrinted && Math.abs(b.indexMMbtu - m) > 0.005 && Math.abs(b.indexMMbtu - m * 100) > 0.5) continue;
+          b.indexMMbtu = m;
+          b.indexFuelMMbtu = f;
+          b.indexRate = _top[0];
+          b.indexCharge = Math.round((m + f) * _rate * 100) / 100;
+          b._chargeRebuilt = true;
+        }
+      }
+
       function _parseWRESiteBlocks(text) {
         const _lines = text.split(/\r?\n/);
         const blocks = []; // [{ServiceAddress, AccountNumber, MeterNumber, mmbtu, dollar}]
@@ -7995,6 +8046,23 @@ const UTILITY_RULES = [
           // strict pattern, 8/10 matched once punctuation was tolerated. Widened to accept
           // any of :;,. as the closing punctuation (or none) and 0-2 chars (space/dash/
           // period) between "Sub" and "Total".
+          // Fix (2026-10-08, WRE scanned-invoice sites): on low-quality scans the Sub-Total
+          // LABEL is often unreadable ("b-Total:", "Sas Teal:", "E  -", a lone "3") while
+          // its two number columns (Mmbtu, Fuel) are intact. A line that is ONLY a short
+          // junk prefix + "n.nn  n.nn" (+ optional "$charge") inside an open block that has
+          // no Sub-Total yet is that same row. Same figures, label garbled; nothing invented.
+          const _wreUnlabeledSub =
+            _inSites && _cur && _cur.mmbtu == null && _cur.dollar == null && !/^\s*Sub[\s.\-]{0,2}Total/i.test(ln)
+              ? ln.match(/^\s*(?:\d\s+)?[^\d$£]{0,60}?\s*(\d[\d,]*\.\d{2})\s+(\d+\.\d{2}|\d{3})(?:\s+(?:[$£S]\s?(\d[\d,]*\.\d{2})|\S{1,8}))?\s*$/)
+              : null;
+          if (_wreUnlabeledSub) {
+            _cur.mmbtu = parseFloat(_wreUnlabeledSub[1].replace(/,/g, ''));
+            _cur.subFuel = parseFloat(
+              _wreUnlabeledSub[2].indexOf('.') < 0 ? _wreUnlabeledSub[2][0] + '.' + _wreUnlabeledSub[2].slice(1) : _wreUnlabeledSub[2],
+            );
+            if (_wreUnlabeledSub[3]) _cur.dollar = _wreFixOcrDollar(_wreUnlabeledSub[3]);
+            continue;
+          }
           if (_cur && /^\s*Sub[\s.\-]{0,2}Total\s*[:;,.]?/i.test(ln)) {
             // First number after the colon = MMbtu
             // Fix (2026-09-18, WRE usage-capture sweep): the old pattern required the
@@ -8005,7 +8073,9 @@ const UTILITY_RULES = [
             // the MMbtu capture the same tolerance via a short, lazy, non-digit skip
             // (0-3 chars) so it can step over one stray glyph without being loose
             // enough to jump ahead to an unrelated later number.
-            const _mmbtuM = ln.match(/Sub[\s.\-]{0,2}Total\s*[:;,.]?\s*[^\d]{0,3}?([\d,]+\.?\d*)/i);
+            // Fix (2026-10-08): a stray glyph can sit AFTER the spaces that follow the
+            // colon ("Sub-Total: _      17.40"); allow it before the digits.
+            const _mmbtuM = ln.match(/Sub[\s.\-]{0,2}Total\s*[:;,.]?\s*(?:[^\d\s]{1,3}\s*)?([\d,]+\.?\d*)/i);
             // Last dollar value on the line = site charge.
             // Accept both clean form ($1,425.42) and OCR-corrupted form ($1.425.42).
             // Fix (2026-09-15, WRE OCR-tolerance sweep): same £-for-$ OCR-misread
@@ -8014,6 +8084,12 @@ const UTILITY_RULES = [
             const _dollarM = ln.match(/[$£](\d{1,3}\.\d{3}\.\d{2})\s*$/) || ln.match(/[$£]([\d,]+\.\d{2})\s*$/);
             if (_mmbtuM) _cur.mmbtu = parseFloat(_mmbtuM[1].replace(/,/g, ''));
             if (_dollarM) _cur.dollar = _wreFixOcrDollar(_dollarM[1]);
+            // Fix (2026-10-08): Fuel column of the Sub-Total row (second number), used to
+            // rebuild a charge the scan cut off (see _wreRebuildMissingCharges).
+            if (_mmbtuM) {
+              const _fuelM = ln.slice(_mmbtuM.index + _mmbtuM[0].length).match(/^\s+(\d+\.\d+|\d{3})(?=\s|$)/);
+              if (_fuelM) _cur.subFuel = parseFloat(_fuelM[1].indexOf('.') < 0 ? _fuelM[1][0] + '.' + _fuelM[1].slice(1) : _fuelM[1]);
+            }
             // Fix (2026-09-18, WRE usage-capture sweep, TASK 5): a Sub-Total MMbtu
             // captured as a bare digit run with NO decimal point at all (e.g.
             // "14614") is a well-documented Tesseract failure mode (the decimal
@@ -8120,6 +8196,7 @@ const UTILITY_RULES = [
         // defined as the sum of the component charge lines printed directly above it on
         // every invoice on file — this is not a guessed value, it's the same figure
         // already correctly read from a different row of the same site block.
+        _wreRebuildMissingCharges(blocks);
         for (const b of blocks) {
           if (b.dollar == null) {
             const parts = [b.triggerCharge, b.indexCharge, b.sweCharge].filter((v) => v != null);
@@ -8284,8 +8361,8 @@ const UTILITY_RULES = [
             BillDate,
             ProductionMonth,
             NaturalGasMMbtu: null,
-            TotalCurrentCharges: blk.dollar || null,
-            TotalAmountDue: blk.dollar || null,
+            TotalCurrentCharges: parseBillNumber(blk.dollar),
+            TotalAmountDue: parseBillNumber(blk.dollar),
             parseError: true,
             _manualReview: true,
             _manualReviewLabel:
@@ -8566,10 +8643,10 @@ const UTILITY_RULES = [
           NaturalGasMMbtu: _mmbtuRateMismatch ? null : blk.mmbtu != null ? String(blk.mmbtu) : null,
           NaturalGasTherms: null,
           NaturalGasCCF: null,
-          GasCharge: blk.dollar || null,
+          GasCharge: parseBillNumber(blk.dollar),
           CustomerCharge: null,
-          TotalCurrentCharges: blk.dollar || null,
-          TotalAmountDue: blk.dollar || null,
+          TotalCurrentCharges: parseBillNumber(blk.dollar),
+          TotalAmountDue: parseBillNumber(blk.dollar),
           // Per-site charge components (Fix 1 — a84458f0 defect 1)
           _wreTriggerCharge: blk.triggerCharge != null ? String(blk.triggerCharge) : null,
           _wreIndexCharge: blk.indexCharge != null ? String(blk.indexCharge) : null,
@@ -8653,10 +8730,7 @@ const UTILITY_RULES = [
 
       // ── Cross-check: sum of per-site SubTotals vs invoice summary ──
       if (results.length > 0 && summaryTotalCC) {
-        const siteSum = results.reduce(
-          (acc, r) => acc + (parseFloat((r.TotalCurrentCharges || '').replace(/,/g, '')) || 0),
-          0,
-        );
+        const siteSum = results.reduce((acc, r) => acc + parseBillNumberOrZero(r.TotalCurrentCharges), 0);
         const invTotal = parseFloat((summaryTotalCC || '').replace(/,/g, ''));
         const diff = Math.abs(siteSum - invTotal);
         if (diff > 0.5) {
@@ -8931,7 +9005,10 @@ const UTILITY_RULES = [
           // Multiple Account Numbers survived into extract() — anchor to only the FIRST one.
           // (extractAll should have prevented this via _splitAccountBlocks, but defence in depth.)
           // Use the region from the first Account Number to just before the second.
-          activeT = t.slice(_acctMatches[0].index, _acctMatches[1].index);
+          // Start at the line start (same as the single-account branch) so the customer name printed
+          // left of "Account Number" stays in the slice; else CustomerName reads "Account Number".
+          const _firstLineStart = t.lastIndexOf('\n', _acctMatches[0].index - 1) + 1;
+          activeT = t.slice(_firstLineStart, _acctMatches[1].index);
         }
 
         // === HEADER BLOCK ===
@@ -8989,14 +9066,15 @@ const UTILITY_RULES = [
         // Extract the street address from the beginning of that line, stopping before "Active".
         // Example: "305 6TH ST # 306          Active Deposit    NONE | Statement Date   11-18-25"
         // Uses activeT to avoid capturing another account's address.
-        const addrM = activeT.match(/([A-Z0-9#][A-Z0-9# ]{4,49?})\s{2,}Active\s+D/i);
+        const addrM = activeT.match(/([A-Z0-9#][A-Z0-9# ]{4,49})\s{2,}Active\s+D/i);
         // Fallback: if the primary pattern fails (OCR collision zone garbles "Active D"),
         // look for the street address in the mailing stub above "BALDWIN CITY, KS" in the
         // full text (t). The stub is outside activeT when "Account Number" is mid-page.
         // Pattern: a line of all-caps street text followed by 3+ spaces then BALDWIN CITY, KS.
+        // The match must start at a line start; mid-line it takes label text ("Statement Date").
         let ServiceAddress = addrM ? addrM[1].trim() : null;
         if (!ServiceAddress) {
-          const _stub = t.match(/([A-Z0-9][A-Z0-9 #]{4,49}?)\s{3,}[^\n]{0,20}\n\s*BALDWIN\s+CITY,?\s+KS/i);
+          const _stub = t.match(/(?:^|\n)[ \t]*([A-Z0-9][A-Z0-9 #]{4,49}?)\s{3,}[^\n]{0,20}\n\s*BALDWIN\s+CITY,?\s+KS/i);
           if (_stub) ServiceAddress = _stub[1].trim();
         }
 
@@ -9627,7 +9705,7 @@ const UTILITY_RULES = [
         if (!line) return { usage: null, charge: null, prevRead: null, currRead: null };
         const nums = _lbg_tokens(line);
         if (!nums.length) return { usage: null, charge: null, prevRead: null, currRead: null };
-        const rawTokens = [...line.matchAll(/-?[\d,]+(?:\.\d+|-\d{2})?/g)].map((m) => m[0]);
+        const rawTokens = [...line.matchAll(/-?\.\d+|-?[\d,]+(?:\.\d+|-\d{2})?/g)].map((m) => m[0]);
         const charge = _lbg_cleanCents(rawTokens[rawTokens.length - 1]);
         if (charge != null && charge > 0 && charge < 1 && rawTokens.length > 1) {
           console.warn('[Louisburg parseLine] Very low charge $' + charge + ' from line:', line);
@@ -11586,56 +11664,67 @@ const UTILITY_RULES = [
         return /\.\d{3,4}$/.test(s) ? Math.round(n * 100) / 100 : n;
       };
 
-      // Extract numeric tokens from a line (meter reads, usage, charge).
-      // Returns array of floats; filters out page-number-sized ints < 10.
-      const _tokens = (s) => {
+      // ONE token reader for metered lines (meter reads, usage, charge).
+      // Returns [{n, cents, frag}]: n = value, cents = printed with cents, frag = cut ".93" fragment.
+      // "1460-87" -> 1460.87 (OCR cents encoding). "104,03" -> 104.03 (comma IS the decimal:
+      // 1-4 digits, 2 decimals, no period; "44,576.64" is a real thousands value).
+      const _readTokens = (s) => {
         if (!s) return [];
-        return [...s.matchAll(/-?[\d,]+(?:\.\d+)?(?:-\d{2})?/g)]
+        return [...s.matchAll(/(\.?)(-?[\d,]+(?:\.\d+)?(?:-\d{2})?)/g)]
           .map((m) => {
-            let v = m[0];
-            // "1460-87" → 1460.87 (OCR cents encoding)
+            let v = m[2];
+            let cents = /\.\d/.test(v) || /^\d+-\d{2}$/.test(v);
             if (/^\d+-\d{2}$/.test(v)) v = v.replace(/-(\d{2})$/, '.$1');
-            // European decimal: "104,03" or "10,00" — comma IS the decimal separator.
-            // Detect: 1-4 integer digits, comma, exactly 2 decimal digits, no period.
-            // Exclude real thousands like "44,576.64" (has a period) or "1,234,567" (>4 pre-comma).
-            if (/^\d{1,4},\d{2}$/.test(v)) return parseFloat(v.replace(',', '.'));
-            return parseBillNumber(v);
+            let n;
+            if (/^\d{1,4},\d{2}$/.test(v)) {
+              n = parseFloat(v.replace(',', '.'));
+              cents = true;
+            } else n = parseBillNumber(v);
+            return { n, cents, frag: m[1] === '.' && !cents };
           })
-          .filter((n) => n !== null);
+          .filter((x) => x.n !== null && !isNaN(x.n));
       };
+      const _tokens = (s) => _readTokens(s).map((x) => x.n);
 
       // Parse a metered charge line that has prev/curr/usage/charge cols.
-      // Returns {prevRead, currRead, usage, charge} or nulls.
-      const _parseMeteredLine = (line) => {
-        if (!line) return { prevRead: null, currRead: null, usage: null, charge: null };
-        const toks = _tokens(line);
-        if (toks.length < 2) return { prevRead: null, currRead: null, usage: null, charge: null };
-        // Last token should be the charge (decimal with .XX).
-        // Preceding integers are meter reads and/or usage.
-        let charge = toks[toks.length - 1];
-        if (isNaN(charge)) return { prevRead: null, currRead: null, usage: null, charge: null };
-        // Guard: if the candidate "charge" is an integer with no decimal part AND
-        // equals one of the other tokens (i.e. a meter read), the line has no valid
-        // charge (OCR garble like "271200 271200 -.Co" loses the real amount and
-        // leaves only the meter reads). Real charges always have a decimal component.
-        // Note: Number.isInteger() is true for e.g. 271200 but false for 44576.64.
-        if (Number.isInteger(charge) && toks.slice(0, -1).includes(charge)) {
-          return { prevRead: null, currRead: null, usage: null, charge: null };
-        }
-        // Filter to integer-valued tokens (meter reads and usage are whole numbers).
-        const intToks = toks.slice(0, -1).filter((n) => Number.isInteger(n) && n >= 0);
+      // Returns {prevRead, currRead, usage, charge, _chargeMissing}.
+      // FIX(2026-10-08): a charge is accepted ONLY from the LAST token of the line when that
+      // token is printed with cents ("12.34", "1460-87", "104,03"). A trailing whole number is
+      // usage or a meter read whose charge column OCR lost. A cut fragment (".93" from
+      // "6&7 .93") is never a charge. Usage is the token after the two reads, so a lost charge
+      // can no longer be read as usage or charge. _chargeMissing=true flags a metered row
+      // (has reads or usage) whose charge could not be read; the caller must flag it.
+      // opts.singleIsUsage: split-column data rows print "usage charge" with no reads.
+      const _parseMeteredLine = (line, opts) => {
+        const none = { prevRead: null, currRead: null, usage: null, charge: null };
+        if (!line) return none;
+        const info = _readTokens(line);
+        if (info.length < 2 && !(opts && opts.singleIsUsage && info.length === 1)) return none;
+        // The charge is the last token printed with cents. Whole numbers of one digit after it
+        // are column noise (the "|" at the page edge OCRs as "1"); any larger whole number after
+        // it means the charge column was lost.
+        let ci = info.length - 1;
+        while (ci > 0 && !info[ci].cents && !info[ci].frag && Number.isInteger(info[ci].n) && Math.abs(info[ci].n) < 10) ci--;
+        const hasCharge = info[ci].cents && !info[ci].frag && ci >= 1;
+        const charge = hasCharge ? info[ci].n : null;
+        // Whole-number tokens before the charge position: meter reads and usage.
+        const ints = (hasCharge ? info.slice(0, ci) : info).filter((x) => !x.cents && Number.isInteger(x.n) && x.n >= 0 && !x.frag).map((x) => x.n);
         let prevRead = null,
           currRead = null,
           usage = null;
-        if (intToks.length >= 3) {
-          // prev, curr, usage layout
-          prevRead = intToks[intToks.length - 3];
-          currRead = intToks[intToks.length - 2];
-          usage = intToks[intToks.length - 1];
-        } else if (intToks.length === 2) {
-          prevRead = intToks[0];
-          currRead = intToks[1];
+        if (ints.length >= 3) {
+          // prev, curr, usage. With a charge the last three before it; without one the first
+          // three (anything after is column noise such as "6&7").
+          const k = hasCharge ? ints.length - 3 : 0;
+          prevRead = ints[k];
+          currRead = ints[k + 1];
+          usage = ints[k + 2];
+        } else if (ints.length === 2) {
+          prevRead = ints[0];
+          currRead = ints[1];
           usage = Math.abs(currRead - prevRead);
+        } else if (ints.length === 1 && opts && opts.singleIsUsage) {
+          usage = ints[0];
         }
         // Ensure prevRead <= currRead
         if (prevRead != null && currRead != null && prevRead > currRead) {
@@ -11643,22 +11732,19 @@ const UTILITY_RULES = [
           prevRead = currRead;
           currRead = tmp;
         }
-        // ── FIX(2026-06-19): Bug A — integer-charge-equals-usage guard ──
-        // When OCR drops the decimal charge column on an EL-ELECTRIC (or any
-        // metered) line, the last token on the line is the usage integer, not a
-        // dollar amount.  The existing guard at the top of this function only
-        // catches duplicates of the METER READ tokens; it misses the case where
-        // the "charge" equals the COMPUTED usage.  Real utility charges always
-        // have a cents component (e.g. $195.07), so a value that is:
-        //   (a) a whole-number integer with no decimal part, AND
-        //   (b) exactly equal to the computed usage
-        // is a mis-parse — null it out.  A real charge like $140.00 parses to
-        // 140 (integer) but will differ from the usage in gallons or kWh, so
-        // legitimate integer-valued charges are NOT affected by this guard.
-        if (Number.isInteger(charge) && usage != null && charge === usage) {
-          return { prevRead, currRead, usage, charge: null };
+        if (charge == null) {
+          // Reads or usage printed but no readable charge: caller flags the row.
+          // A zero-use row (equal reads) is not a missing charge.
+          return usage > 0 ? { prevRead, currRead, usage, charge: null, _chargeMissing: true } : none;
         }
         return { prevRead, currRead, usage, charge };
+      };
+
+      // Metered rows whose charge could not be read. Never skipped silently: each one is
+      // emitted as a flagged row (or flags the bill of that commodity) after the line loops.
+      const _missingCharge = []; // {commodity:'Electric'|'Sewer'|'Water', prevRead, currRead, usage}
+      const _noteMissing = (commodity, m) => {
+        if (m && m._chargeMissing) _missingCharge.push({ commodity, prevRead: m.prevRead, currRead: m.currRead, usage: m.usage });
       };
 
       // -----------------------------------------------------------------
@@ -11702,6 +11788,7 @@ const UTILITY_RULES = [
         if (/^EL[\s\xa0\xE2—–~=|\-]{1,6}H?ELECTRIC/i.test(ln) && !/FRANCHISE/i.test(ln)) {
           const m = _parseMeteredLine(ln.replace(/^EL[\s\xa0\xE2—–~=|\-]{1,6}H?ELECTRIC\s*/i, ''));
           if (m.charge != null) elMeters.push(m);
+          else _noteMissing('Electric', m);
           continue;
         }
 
@@ -11770,7 +11857,7 @@ const UTILITY_RULES = [
             }
             swUsage = (swUsage || 0) + (parsed.usage || 0);
             swCharge = (swCharge || 0) + parsed.charge;
-          }
+          } else _noteMissing('Sewer', parsed);
           continue;
         }
 
@@ -11803,7 +11890,7 @@ const UTILITY_RULES = [
             }
             waUsage = (waUsage || 0) + (parsed.usage || 0);
             waCharge = (waCharge || 0) + parsed.charge;
-          }
+          } else _noteMissing('Water', parsed);
           continue;
         }
 
@@ -11873,6 +11960,7 @@ const UTILITY_RULES = [
               const body = rest.replace(/^ELECTRIC\s*/i, '');
               const m = _parseMeteredLine(body);
               if (m.charge != null) elMeters.push(m);
+              else _noteMissing('Electric', m);
             } else if (/^FUEL\s+ADJ/i.test(rest) && fuelAdjCharge === null) {
               const body = rest
                 .replace(/^FUEL\s+ADJ(?:USTMENT)?\s*/i, '')
@@ -11932,7 +12020,7 @@ const UTILITY_RULES = [
                 }
                 swUsage = (swUsage || 0) + (m.usage || 0);
                 swCharge = (swCharge || 0) + m.charge;
-              }
+              } else _noteMissing('Sewer', m);
             } else if (/^WATER/i.test(rest) && !/DEBT|METER|FRANCHISE/i.test(rest)) {
               const body = rest.replace(/^WATER\s*/i, '');
               const m = _parseMeteredLine(body);
@@ -11943,7 +12031,7 @@ const UTILITY_RULES = [
                 }
                 waUsage = (waUsage || 0) + (m.usage || 0);
                 waCharge = (waCharge || 0) + m.charge;
-              }
+              } else _noteMissing('Water', m);
             }
           }
         }
@@ -12031,23 +12119,15 @@ const UTILITY_RULES = [
           for (let idx = 0; idx < _meteredLabels.length && idx < _meteredDataLines.length; idx++) {
             const label = _meteredLabels[idx];
             const dline = _meteredDataLines[idx];
-            const toks = _tokens(dline);
-            if (toks.length < 1) continue;
-            const charge = toks[toks.length - 1];
-            const intToks = toks.slice(0, -1).filter((n) => Number.isInteger(n) && n >= 0);
-            let prevR = null,
-              currR = null,
-              usageV = null;
-            if (intToks.length >= 3) {
-              prevR = intToks[intToks.length - 3];
-              currR = intToks[intToks.length - 2];
-              usageV = intToks[intToks.length - 1];
-            } else if (intToks.length === 2) {
-              prevR = intToks[0];
-              currR = intToks[1];
-              usageV = Math.abs(currR - prevR);
-            } else if (intToks.length === 1) {
-              usageV = intToks[0];
+            // Same parser as the main loop (one rule for "which token is the charge").
+            const m = _parseMeteredLine(dline, { singleIsUsage: true });
+            const prevR = m.prevRead,
+              currR = m.currRead,
+              usageV = m.usage,
+              charge = m.charge;
+            if (charge == null) {
+              _noteMissing(label === 'EL' ? 'Electric' : label === 'SW' ? 'Sewer' : 'Water', m);
+              continue;
             }
 
             if (label === 'EL') {
@@ -12120,7 +12200,7 @@ const UTILITY_RULES = [
               swCurrRead = _m.currRead;
               swUsage = _m.usage;
               swCharge = _m.charge;
-            }
+            } else _noteMissing('Sewer', _m);
             break;
           }
         }
@@ -12134,7 +12214,7 @@ const UTILITY_RULES = [
       const elCurrRead = elMeters[0]?.currRead || null;
 
       // ── Guard: no charge data at all means we couldn't parse the page ──
-      if (elMeters.length === 0 && swCharge === null && waCharge === null) return null;
+      if (elMeters.length === 0 && swCharge === null && waCharge === null && _missingCharge.length === 0) return null;
 
       // ── Build shared account fields ──
       // If P5 normalized a garbled OCR account number, stamp the flag so the
@@ -12278,6 +12358,34 @@ const UTILITY_RULES = [
           SewerFranchiseFee: swFranchiseFee || null,
           TotalCurrentCharges: Math.round(swTotal * 100) / 100,
           TotalAmountDue: TotalAmountDue || null,
+        });
+      }
+
+      // FIX(2026-10-08): a metered row whose charge could not be read is never dropped
+      // silently. If the commodity has a bill, flag it; otherwise emit a flagged row with
+      // the reads/usage and a null charge so the user sees it and confirms it from the PDF.
+      for (const mc of _missingCharge) {
+        const _label = mc.commodity + ' charge not readable on this page - verify against the bill';
+        const _have = bills.find((b) => b.Commodity === mc.commodity);
+        if (_have) {
+          _have._manualReview = true;
+          _have._manualReviewLabel = _label;
+          continue;
+        }
+        const _usageKey = { Electric: 'kWh', Sewer: 'SewerUsage', Water: 'WaterUsage' }[mc.commodity];
+        const _chargeKey = { Electric: 'ElectricCharge', Sewer: 'SewerCharge', Water: 'WaterCharge' }[mc.commodity];
+        bills.push({
+          ...shared,
+          Commodity: mc.commodity,
+          StartRead: mc.prevRead,
+          EndRead: mc.currRead,
+          [_usageKey]: mc.usage || null,
+          [_chargeKey]: null,
+          TotalCurrentCharges: null,
+          TotalAmountDue: TotalAmountDue || null,
+          _chargeMissing: true,
+          _manualReview: true,
+          _manualReviewLabel: _label,
         });
       }
 
