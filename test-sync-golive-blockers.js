@@ -922,7 +922,7 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     assert.strictEqual(run({ backendMode: () => 'off', isSyncHost: () => true }), true, 'signed out on sync host');
     assert.strictEqual(run({ backendMode: () => 'on', isSyncHost: () => true }), true, 'signed in');
     assert.strictEqual(run({ backendMode: () => 'off', isSyncHost: () => false }), false, 'GitHub Pages: never');
-    const store = src.match(/async function pdfStore\(id, base64\) \{[\s\S]*?\n\}/)[0];
+    const store = src.match(/async function pdfStore\(id, base64, opts\) \{[\s\S]*?\n\}/)[0];
     assert.ok(/_pdfShouldQueueUpload\(\)/.test(store) && !/backendMode\(\)/.test(store));
     assert.ok(
       /addEventListener\('chAuthStateChanged'[\s\S]{0,80}_pdfDrainQueueOnce/.test(src),

@@ -11459,7 +11459,11 @@ function _restoreQueueState() {
 
 async function _storeExtractionPdf(b64) {
   try {
-    const blob = await bpaStoreBlob(b64, { hash: _bpaSha256Hex, load: pdfLoad, store: pdfStore });
+    const blob = await bpaStoreBlob(b64, {
+      hash: _bpaSha256Hex,
+      load: pdfLoad,
+      store: (k, v) => pdfStore(k, v, { localOnly: true }),
+    });
     return blob ? blob.key : null;
   } catch (e) {
     console.warn('[Extraction] Could not store the source PDF:', e.message);

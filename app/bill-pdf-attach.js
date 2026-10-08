@@ -17,6 +17,9 @@ async function bpaStoreBlob(b64, deps) {
   if (!(await deps.load(key))) {
     if (!(await deps.store(key, b64))) return null;
     stored = true;
+  } else if (deps.ensureUploaded) {
+    // The blob may be a local-only extraction copy: this save must upload it.
+    deps.ensureUploaded(key);
   }
   return { key, stored };
 }
@@ -287,7 +290,7 @@ async function bpaSave() {
     jobs.push({ row, bills, ps, pe });
   }
   if (!jobs.length) return;
-  const deps = { hash: _bpaSha256Hex, load: pdfLoad, store: pdfStore };
+  const deps = { hash: _bpaSha256Hex, load: pdfLoad, store: pdfStore, ensureUploaded: pdfEnsureUploaded };
   // Ask before replacing a PDF that is already on a bill.
   let replaced = 0;
   for (const j of jobs) {
