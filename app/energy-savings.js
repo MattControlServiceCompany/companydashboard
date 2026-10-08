@@ -11664,23 +11664,27 @@ const UTILITY_RULES = [
         return /\.\d{3,4}$/.test(s) ? Math.round(n * 100) / 100 : n;
       };
 
-      // Extract numeric tokens from a line (meter reads, usage, charge).
-      // Returns array of floats; filters out page-number-sized ints < 10.
-      const _tokens = (s) => {
+      // ONE token reader for metered lines (meter reads, usage, charge).
+      // Returns [{n, cents, frag}]: n = value, cents = printed with cents, frag = cut ".93" fragment.
+      // "1460-87" -> 1460.87 (OCR cents encoding). "104,03" -> 104.03 (comma IS the decimal:
+      // 1-4 digits, 2 decimals, no period; "44,576.64" is a real thousands value).
+      const _readTokens = (s) => {
         if (!s) return [];
-        return [...s.matchAll(/-?[\d,]+(?:\.\d+)?(?:-\d{2})?/g)]
+        return [...s.matchAll(/(\.?)(-?[\d,]+(?:\.\d+)?(?:-\d{2})?)/g)]
           .map((m) => {
-            let v = m[0];
-            // "1460-87" → 1460.87 (OCR cents encoding)
+            let v = m[2];
+            let cents = /\.\d/.test(v) || /^\d+-\d{2}$/.test(v);
             if (/^\d+-\d{2}$/.test(v)) v = v.replace(/-(\d{2})$/, '.$1');
-            // European decimal: "104,03" or "10,00" — comma IS the decimal separator.
-            // Detect: 1-4 integer digits, comma, exactly 2 decimal digits, no period.
-            // Exclude real thousands like "44,576.64" (has a period) or "1,234,567" (>4 pre-comma).
-            if (/^\d{1,4},\d{2}$/.test(v)) return parseFloat(v.replace(',', '.'));
-            return parseBillNumber(v);
+            let n;
+            if (/^\d{1,4},\d{2}$/.test(v)) {
+              n = parseFloat(v.replace(',', '.'));
+              cents = true;
+            } else n = parseBillNumber(v);
+            return { n, cents, frag: m[1] === '.' && !cents };
           })
-          .filter((n) => n !== null);
+          .filter((x) => x.n !== null && !isNaN(x.n));
       };
+      const _tokens = (s) => _readTokens(s).map((x) => x.n);
 
       // Parse a metered charge line that has prev/curr/usage/charge cols.
       // Returns {prevRead, currRead, usage, charge, _chargeMissing}.
@@ -11694,20 +11698,7 @@ const UTILITY_RULES = [
       const _parseMeteredLine = (line, opts) => {
         const none = { prevRead: null, currRead: null, usage: null, charge: null };
         if (!line) return none;
-        const info = [...line.matchAll(/(\.?)(-?[\d,]+(?:\.\d+)?(?:-\d{2})?)/g)]
-          .map((m) => {
-            let v = m[2];
-            let cents = /\.\d/.test(v) || /^\d+-\d{2}$/.test(v);
-            if (/^\d+-\d{2}$/.test(v)) v = v.replace(/-(\d{2})$/, '.$1');
-            let n;
-            // European decimal: "104,03" - comma IS the decimal separator (1-4 digits, 2 decimals).
-            if (/^\d{1,4},\d{2}$/.test(v)) {
-              n = parseFloat(v.replace(',', '.'));
-              cents = true;
-            } else n = parseBillNumber(v);
-            return { n, cents, frag: m[1] === '.' && !cents };
-          })
-          .filter((x) => x.n !== null && !isNaN(x.n));
+        const info = _readTokens(line);
         if (info.length < 2 && !(opts && opts.singleIsUsage && info.length === 1)) return none;
         // The charge is the last token printed with cents. Whole numbers of one digit after it
         // are column noise (the "|" at the page edge OCRs as "1"); any larger whole number after
