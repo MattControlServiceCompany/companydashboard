@@ -900,6 +900,54 @@ async function processPdfImportFiles(fileList) {
 //   6. Only once every remap verifies: persist the remaps, then delete every
 //      non-canonical key.
 // Idempotent — a second run finds everything already canonical and no-ops.
+// Single source of truth for "which stored PDF keys does a record still use".
+// Scans EVERY stored record (DB.getAll(), the same source backup uses) plus the
+// live in-memory utilityData, loaded or not: any pdfKey field, any string that
+// is an en_pdf_shared_/en_pdf_file_ key, and en_pdf_file_<pdfBillId||id> for a
+// hasPDF record that has no pdfKey. Throws when the scan cannot be complete.
+function collectReferencedPdfKeys() {
+  if (typeof DB === 'undefined' || !DB.isReady() || DB.isFallback() || DB.isLoadFailed()) {
+    throw new Error('stored records are not fully loaded');
+  }
+  const keys = new Set();
+  const seen = new Set();
+  const KEY_RE = /^en_pdf_(shared|file)_/;
+  function walk(v, depth) {
+    if (v == null || depth > 40) return;
+    if (typeof v === 'string') {
+      if (KEY_RE.test(v)) keys.add(v);
+      else if (v.length > 1 && (v[0] === '{' || v[0] === '[')) {
+        try {
+          walk(JSON.parse(v), depth + 1);
+        } catch (e) {
+          /* plain text, not JSON */
+        }
+      }
+      return;
+    }
+    if (typeof v !== 'object') return;
+    if (seen.has(v)) return;
+    seen.add(v);
+    if (Array.isArray(v)) {
+      v.forEach(function (x) {
+        walk(x, depth + 1);
+      });
+      return;
+    }
+    if (typeof v.pdfKey === 'string' && v.pdfKey) keys.add(v.pdfKey);
+    else if (v.hasPDF && (v.pdfBillId || v.id)) keys.add('en_pdf_file_' + (v.pdfBillId || v.id));
+    Object.keys(v).forEach(function (k) {
+      walk(v[k], depth + 1);
+    });
+  }
+  const all = DB.getAll();
+  Object.keys(all).forEach(function (k) {
+    walk(all[k], 0);
+  });
+  if (typeof utilityData !== 'undefined') walk(utilityData, 0);
+  return keys;
+}
+
 async function compactPdfStorage(onProgress) {
   const progress = typeof onProgress === 'function' ? onProgress : function () {};
   const result = {
@@ -908,6 +956,8 @@ async function compactPdfStorage(onProgress) {
     unique: 0,
     remapped: 0,
     deleted: 0,
+    keptReferenced: 0,
+    scanFailed: false,
     alreadyBroken: [],
     failedVerify: [],
   };
@@ -997,11 +1047,29 @@ async function compactPdfStorage(onProgress) {
   await walk.commit();
   result.remapped = walk.remappedCount;
 
+  // Scan AFTER commit: remapped records now point at canonical keys, so their
+  // old keys are free. Any key a record still uses (presented report, building
+  // the walk never saw) is kept. If the scan fails, delete nothing.
+  let referenced;
+  try {
+    referenced = collectReferencedPdfKeys();
+  } catch (e) {
+    console.warn('[compactPdfStorage] reference scan failed, deleting nothing:', e);
+    result.scanFailed = true;
+    progress('done', result);
+    return result;
+  }
+
   progress('deleting', { total: keys.length, done: 0 });
   let deleted = 0;
   for (let i = 0; i < keys.length; i++) {
     const key = keys[i];
     if (oldKeyToCanonical[key] && oldKeyToCanonical[key] !== key) {
+      if (referenced.has(key)) {
+        result.keptReferenced++;
+        progress('deleting', { total: keys.length, done: i + 1 });
+        continue;
+      }
       try {
         await pdfDelete(key);
         deleted++;
@@ -1068,6 +1136,12 @@ async function compactPdfStorageUI() {
     console.warn('[compactPdfStorageUI] aborted, failed verify:', result.failedVerify);
     return;
   }
+  if (result.scanFailed) {
+    if (typeof showToast === 'function') {
+      showToast('Compact PDF Storage could not check which PDFs are still in use. No PDFs were deleted.', 'error');
+    }
+    return;
+  }
   let summary =
     'Compact PDF Storage done — hashed ' +
     result.hashed +
@@ -1078,6 +1152,7 @@ async function compactPdfStorageUI() {
     ' bill(s), deleted ' +
     result.deleted +
     ' redundant copies.';
+  if (result.keptReferenced) summary += ' Kept ' + result.keptReferenced + ' copies that a record still uses.';
   if (result.alreadyBroken.length) {
     summary += ' ' + result.alreadyBroken.length + ' bill(s) already had a missing PDF (unrelated, left as-is).';
   }

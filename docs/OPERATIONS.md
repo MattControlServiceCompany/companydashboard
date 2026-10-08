@@ -305,3 +305,8 @@ Any commit that changes these facts must update this file in the same commit.
 This includes a new or changed function, schedule, env var name, timer, host, or sign-in rule.
 
 - Evergy bill reading (PDF/OCR import; no schedule, no env var). Account number: `_evgAccountsIn` / `_evgPickAccount` (app/energy-savings.js, near `_EVG_ADDR`) are the one reader used by `extractAll`, `extract`, `_acctForIdx` and `_pageOwnAccts`. They keep only the candidates of the longest digit length, so an OCR-damaged first digit (9 digits) loses to the clean 10-digit line. A candidate is one unbroken digit string (6 to 20 digits); a digit group after a space is not merged. On/Off-Peak kWh: `_decideOnOffPeakKWh` (app/bill-analysis.js, about line 1688) defers to the kWhConsumed-derived path when a leg has no readable rate line, kWhConsumed is not held, it agrees with the charge-basis total within 0.05 kWh, and exactly one leg self-verifies and also passes the strict half-cent check. How to check: `node test-kwh-corroboration.mjs` (expect all assertions pass).
+
+## Compact PDF Storage keeps referenced PDFs (2026-10-08)
+- What: `collectReferencedPdfKeys()` in app/site-functions.js scans all stored records (DB.getAll() and live utilityData) for PDF keys. `compactPdfStorage()` runs it after the remap commit. It deletes a non-canonical key only when no record uses it. If the scan throws, it deletes nothing (`scanFailed`).
+- When: only when the user clicks the sidebar button "Compact PDF Storage". No timer. No env var.
+- Check: run `node tools/test-compact-keeps-referenced-pdfs.js` (gate runs it). It must print 5 PASS.
