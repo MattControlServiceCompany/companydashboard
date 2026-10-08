@@ -206,34 +206,34 @@ const num = (v) => parseFloat(String(v).replace(/,/g, ''));
   await check('taxed bill: On-Peak keeps its printed value', async () => {
     const t = taxedBill();
     const b = await run(t.text);
-    assert.strictEqual(num(b.EnergyOnPeakCharge), t.ch.on, 'On-Peak is ' + b.EnergyOnPeakCharge);
-    assert.strictEqual(num(b.TotalCurrentCharges), t.total, 'total is ' + b.TotalCurrentCharges);
+    assert.strictEqual(ctx.parseBillNumber(b.EnergyOnPeakCharge), t.ch.on, 'On-Peak is ' + b.EnergyOnPeakCharge);
+    assert.strictEqual(ctx.parseBillNumber(b.TotalCurrentCharges), t.total, 'total is ' + b.TotalCurrentCharges);
     assert.ok(!b._auto_corrected_EnergyOnPeakCharge, 'On-Peak was auto-corrected');
   });
   await check('two-part ECA with OCR extra digit: qty x rate value wins', async () => {
     const t = ecaBill(100.0, 1100.0, '5,000.0000', '0.02000');
     const b = await run(t.text);
-    assert.strictEqual(num(b.ECACharge), 115.0, 'ECACharge is ' + b.ECACharge);
-    assert.strictEqual(num(b.TotalCurrentCharges), t.total, 'total is ' + b.TotalCurrentCharges);
+    assert.strictEqual(ctx.parseBillNumber(b.ECACharge), 115.0, 'ECACharge is ' + b.ECACharge);
+    assert.strictEqual(ctx.parseBillNumber(b.TotalCurrentCharges), t.total, 'total is ' + b.TotalCurrentCharges);
     assert.ok(!b._sum_mismatch, 'sum mismatch flag set');
   });
   await check('control: correct two-part ECA bill is unchanged', async () => {
     const t = ecaBill(100.0, 100.0, '5,000.0000', '0.02000');
     const b = await run(t.text);
-    assert.strictEqual(num(b.ECACharge), 115.0, 'ECACharge is ' + b.ECACharge);
+    assert.strictEqual(ctx.parseBillNumber(b.ECACharge), 115.0, 'ECACharge is ' + b.ECACharge);
     assert.ok(!b._auto_corrected_ECACharge, 'ECA was auto-corrected');
   });
   await check('control: rounding drift keeps the printed ECA value', async () => {
     // qty x rate = 100.04 but the bill prints 100.00 (and the printed total agrees with 100.00).
     const t = ecaBill(100.0, 100.0, '5,002.0000', '0.02000');
     const b = await run(t.text);
-    assert.strictEqual(num(b.ECACharge), 115.0, 'ECACharge is ' + b.ECACharge);
+    assert.strictEqual(ctx.parseBillNumber(b.ECACharge), 115.0, 'ECACharge is ' + b.ECACharge);
   });
   await check('control: 10x quantity garble is rejected', async () => {
     // OCR reads qty 50,000 instead of 5,000: qty x rate = 1000.00 against a printed 100.00.
     const t = ecaBill(100.0, 100.0, '50,000.0000', '0.02000');
     const b = await run(t.text);
-    assert.strictEqual(num(b.ECACharge), 115.0, 'ECACharge is ' + b.ECACharge);
+    assert.strictEqual(ctx.parseBillNumber(b.ECACharge), 115.0, 'ECACharge is ' + b.ECACharge);
   });
   if (failures) {
     console.log(failures + ' failure(s)');
