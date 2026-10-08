@@ -305,7 +305,8 @@ Nothing is deleted by this restore. On a record in both, the backup value wins; 
   Compact PDF Storage keeps these blobs: the key is already the canonical hash key. Same file = same key, so no duplicate copy.
 - After a reload, `_reloadExtractionPdf()` loads the PDF from the key (called from initUtilityTool in app/report-engine.js). A missing PDF drops the key: values show, no View PDF button.
 - `_showExtractionToolbar()` is the ONE function that shows View PDF, Raw Text, Save Debug and Side by side.
-  How to check: node tools/test-pdf-view-after-reload.js (exit 0).
+- A batch (2+ files) saves BOTH `ch_queue_state` and `ch_extraction_state`. Restore (initUtilityTool) takes the queue first; `_restoreQueueState` then drops the extraction copy. Each batch result has its own pdfKey. `ch_queue_state` queueRows keep only resultIdx, billIdx, checked, _saved, _held (renderQueueResults rebuilds bill/result), so the state is small.
+  How to check: node tools/test-pdf-view-after-reload.js (exit 0). It uses the real file input, one file and a 2-file batch, and reloads twice.
 
 ## 7. How to keep this file current
 

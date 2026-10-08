@@ -11381,7 +11381,12 @@ function _saveExtractionState() {
           status: window._pdfQueue.status,
           batchProjId: window._pdfQueue.batchProjId,
           _activeFileIdx: window._pdfQueue._activeFileIdx,
-          queueRows: window._pdfQueueRows || null,
+          // Rows keep only the user's choices. renderQueueResults rebuilds bill/result from the results.
+          queueRows: window._pdfQueueRows
+            ? window._pdfQueueRows.map(function (r) {
+                return { resultIdx: r.resultIdx, billIdx: r.billIdx, checked: r.checked, _saved: r._saved, _held: r._held };
+              })
+            : null,
           timestamp: Date.now(),
         }),
       );
@@ -11438,6 +11443,8 @@ function _restoreQueueState() {
     };
     window._pdfQueueRows = state.queueRows || null;
     sessionStorage.removeItem('ch_queue_state');
+    // A batch also saves ch_extraction_state (the active file). The queue state holds all files, so it wins.
+    sessionStorage.removeItem('ch_extraction_state');
     return true;
   } catch (e) {
     return false;
