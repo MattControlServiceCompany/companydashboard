@@ -2564,7 +2564,17 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
               // overwrite. Only let xRate's computed value win when xChg found STRICTLY FEWER
               // parts than xRate — the original working case where xChg missed a garbled line
               // that xRate still parsed the rate/qty for.
-              if (xChgParts && xChgParts.length >= xRateParts.length) continue;
+              // Exception: when the xRate value makes the corrected component sum close the
+              // gap to the printed total within $0.02, the printed total verifies the xRate
+              // value, so it wins (OCR read an extra digit in one printed part amount). Every xRate
+              // part must have its own qty and rate (a part without them is not verified).
+              if (xChgParts && xChgParts.length >= xRateParts.length) {
+                const _xRateCloses =
+                  sameDirection &&
+                  xRateParts.every((p) => p.qty > 0 && p.rate > 0) &&
+                  Math.abs(_sumCharges() - parseBillNumber(b[field]) + ri.computed - ocrTotal) <= 0.02;
+                if (!_xRateCloses) continue;
+              }
               if (sameDirection) {
                 b['_auto_corrected_' + field] = {
                   original: b[field],
@@ -16264,22 +16274,7 @@ async function processPDF(file) {
               }
               for (const b of billsWithMismatch) {
                 if (!b._sum_mismatch) continue; // may have been resolved by rate correction
-                const CHARGE_CHECK = [
-                  'CustomerCharge',
-                  'FacilitiesCharge',
-                  'BilledKWCharge',
-                  'EnergyOnPeakCharge',
-                  'EnergyOffPeakCharge',
-                  'ECACharge',
-                  'EERCharge',
-                  'PTSCharge',
-                  'TDCCharge',
-                  'RkVACharge',
-                  'TaxExemptDelivery',
-                  'BillOffset',
-                  'FranchiseFee',
-                  'MiscellaneousCharge',
-                ];
+                const CHARGE_CHECK = EVERGY_COMPONENT_CHARGE_FIELDS;
                 const total = parseBillNumberOrZero(b.TotalCurrentCharges);
                 const currentSum = CHARGE_CHECK.reduce((s, f) => s + parseBillNumber(b[f]), 0);
                 const currentDiff = currentSum - total;

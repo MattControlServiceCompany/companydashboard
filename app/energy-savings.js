@@ -2710,7 +2710,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
         }
         const _ocrChargeVal = _lineOcrCharge || 0;
         const _computedCheck = qty * adjRate;
-        const _qtyChargeRatioOk = !_ocrChargeVal || _ocrChargeVal < 1 || _computedCheck / _ocrChargeVal > 0.1;
+        const _qtyChargeRatioOk = !_ocrChargeVal || _ocrChargeVal < 1 || _computedCheck / _ocrChargeVal > 0.01;
         if (
           !isNaN(qty) &&
           !isNaN(adjRate) &&
