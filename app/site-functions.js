@@ -2477,6 +2477,14 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.08.97', date: '2026-10-08', title: 'Bill reading fixes',
+    items: [
+      { type: 'fix', text: 'Bill Analysis, propane: a delivery day is now counted once, so the day counts and monthly figures near a delivery are correct.' },
+      { type: 'fix', text: 'Bill Analysis, electric bills: the sum of charges no longer counts a miscellaneous charge twice, and the sales tax on ball field bills now adds up.' },
+      { type: 'fix', text: 'Bill Analysis, bill reading: the service address and the service dates are read more reliably, including dates written with a bar.' },
+      { type: 'fix', text: 'Bill Analysis, gas supplier bills: totals, scanned sites, account IDs and the sewer charge are read correctly.' }
+    ]
+  },
   { v: 'v2026.10.08.96', date: '2026-10-08', title: 'Bill PDFs stay next to their values',
     items: [
       { type: 'fix', text: 'PDF / OCR: after a page reload, the bill PDF is still next to the extracted values, and the View PDF button still works. This includes bills from a batch.' },
