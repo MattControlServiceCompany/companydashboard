@@ -59,8 +59,9 @@ function run(wre, fixtureFile) {
 
 // Expected per-site results. mmbtu/charge are `null` sentinel-compared as
 // strict equality against the string/number the parser actually returns
-// (NaturalGasMMbtu is stored as a String; GasCharge/TotalCurrentCharges as
-// the raw captured string, e.g. "109.00" or "1,425.42").
+// (NaturalGasMMbtu is stored as a String; GasCharge/TotalCurrentCharges are
+// numbers since 2026-10-08 (shared parseBillNumber), so charge strings below are
+// compared as parseFloat(charge)).
 const EXPECTED = {
   'wre-synth-clean.txt': [
     { addr: 'Site One - 1 Alpha St', mmbtu: '13', charge: '54.52' },
@@ -108,9 +109,10 @@ for (const [fixtureFile, expected] of Object.entries(EXPECTED)) {
   for (let i = 0; i < expected.length; i++) {
     const exp = expected[i];
     const act = results[i];
+    const expCharge = exp.charge === null ? null : parseFloat(exp.charge);
     const checks = [
       ['mmbtu', eq(act.NaturalGasMMbtu, exp.mmbtu)],
-      ['charge', eq(act.GasCharge, exp.charge) && eq(act.TotalCurrentCharges, exp.charge)],
+      ['charge', eq(act.GasCharge, expCharge) && eq(act.TotalCurrentCharges, expCharge)],
       ['manualReview', !!act._manualReview === !!(exp.manualReview || false)],
       ['mmbtuRateMismatch', !!act._mmbtuRateMismatch === !!(exp.mmbtuRateMismatch || false)],
     ];
