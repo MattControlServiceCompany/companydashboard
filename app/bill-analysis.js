@@ -4,6 +4,29 @@
 // outliers by comparing against historical bills for the same account/meter.
 // ══════════════════════════════════════════════════════════════════════════════
 
+// Single list of Evergy electric component charge fields that add up to
+// TotalCurrentCharges. Used by validateBillData, the Gate C/D line-item check
+// and the Stage 3 charge reconciliation. Add a new charge field here only.
+const EVERGY_COMPONENT_CHARGE_FIELDS = [
+  'CustomerCharge',
+  'FacilitiesCharge',
+  'BilledKWCharge',
+  'EnergyOnPeakCharge',
+  'EnergyOffPeakCharge',
+  'ECACharge',
+  'EERCharge',
+  'PTSCharge',
+  'TDCCharge',
+  'RkVACharge',
+  'TaxExemptDelivery',
+  'BillOffset',
+  'FranchiseFee',
+  'SalesTax',
+  'SolarCredit',
+  'RenewableCharge',
+  'MiscellaneousCharge',
+];
+
 // Expected fields per utility type — fields that should almost always have values
 const EXPECTED_FIELDS = {
   Evergy: {
@@ -142,27 +165,7 @@ function validateBillData(extracted, utilityName) {
     if (total > 0) {
       const compSum =
         Math.round(
-          (parseBillNumber(extracted.CustomerCharge) +
-            parseBillNumber(extracted.FacilitiesCharge) +
-            parseBillNumber(extracted.BilledKWCharge) +
-            parseBillNumber(extracted.EnergyOnPeakCharge) +
-            parseBillNumber(extracted.EnergyOffPeakCharge) +
-            parseBillNumber(extracted.ECACharge) +
-            parseBillNumber(extracted.EERCharge) +
-            parseBillNumber(extracted.PTSCharge) +
-            parseBillNumber(extracted.TDCCharge) +
-            parseBillNumber(extracted.RkVACharge) +
-            parseBillNumber(extracted.TaxExemptDelivery) +
-            parseBillNumber(extracted.BillOffset) +
-            parseBillNumber(extracted.FranchiseFee) +
-            parseBillNumber(extracted.SolarCredit) +
-            parseBillNumber(extracted.RenewableCharge) +
-            // Fix B (ballfields-cluster): SalesTax is extracted (municipal
-            // sales-tax lines on Utility E bills) but was missing from this sum,
-            // leaving every taxed bill's compSum short by its tax total and
-            // false-warning a mismatch. Null/absent on non-taxed bills, so
-            // this term is +0 there and does not affect their reconciliation.
-            parseBillNumber(extracted.SalesTax)) *
+          EVERGY_COMPONENT_CHARGE_FIELDS.reduce((sum, f) => sum + parseBillNumber(extracted[f]), 0) *
             100,
         ) / 100;
       const diff = Math.abs(compSum - total);
@@ -2483,24 +2486,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
       //       NEVER silently clobber ocrTotal when there's evidence of per-charge
       //       contamination.
       if (utilityName === 'Evergy') {
-        const CHARGE_FIELDS = [
-          'CustomerCharge',
-          'FacilitiesCharge',
-          'BilledKWCharge',
-          'EnergyOnPeakCharge',
-          'EnergyOffPeakCharge',
-          'ECACharge',
-          'EERCharge',
-          'PTSCharge',
-          'TDCCharge',
-          'RkVACharge',
-          'TaxExemptDelivery',
-          'BillOffset',
-          'FranchiseFee',
-          'SolarCredit',
-          'RenewableCharge',
-          'MiscellaneousCharge',
-        ];
+        const CHARGE_FIELDS = EVERGY_COMPONENT_CHARGE_FIELDS;
         // Round to cents to prevent floating-point accumulation errors
         // across 15 addends from producing phantom ±$0.01 mismatches.
         const _sumCharges = () => Math.round(CHARGE_FIELDS.reduce((s, f) => s + parseBillNumber(b[f]), 0) * 100) / 100;
@@ -2578,7 +2564,17 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
               // overwrite. Only let xRate's computed value win when xChg found STRICTLY FEWER
               // parts than xRate — the original working case where xChg missed a garbled line
               // that xRate still parsed the rate/qty for.
-              if (xChgParts && xChgParts.length >= xRateParts.length) continue;
+              // Exception: when the xRate value makes the corrected component sum close the
+              // gap to the printed total within $0.02, the printed total verifies the xRate
+              // value, so it wins (OCR read an extra digit in one printed part amount). Every xRate
+              // part must have its own qty and rate (a part without them is not verified).
+              if (xChgParts && xChgParts.length >= xRateParts.length) {
+                const _xRateCloses =
+                  sameDirection &&
+                  xRateParts.every((p) => p.qty > 0 && p.rate > 0) &&
+                  Math.abs(_sumCharges() - parseBillNumber(b[field]) + ri.computed - ocrTotal) <= 0.02;
+                if (!_xRateCloses) continue;
+              }
               if (sameDirection) {
                 b['_auto_corrected_' + field] = {
                   original: b[field],
@@ -4961,24 +4957,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
       Sewer: ['SewerCharge', 'SewerFranchiseFee'],
       Stormwater: ['StormWaterCharge'],
       Propane: ['PropaneCharge'],
-      Electric: [
-        'CustomerCharge',
-        'FacilitiesCharge',
-        'BilledKWCharge',
-        'EnergyOnPeakCharge',
-        'EnergyOffPeakCharge',
-        'ECACharge',
-        'EERCharge',
-        'PTSCharge',
-        'TDCCharge',
-        'RkVACharge',
-        'TaxExemptDelivery',
-        'BillOffset',
-        'FranchiseFee',
-        'SolarCredit',
-        'RenewableCharge',
-        'MiscellaneousCharge',
-      ],
+      Electric: EVERGY_COMPONENT_CHARGE_FIELDS,
     };
     const ALL_CHARGE_FIELDS = [...new Set(Object.values(COMMODITY_CHARGE_FIELDS).flat())];
 
@@ -16295,22 +16274,7 @@ async function processPDF(file) {
               }
               for (const b of billsWithMismatch) {
                 if (!b._sum_mismatch) continue; // may have been resolved by rate correction
-                const CHARGE_CHECK = [
-                  'CustomerCharge',
-                  'FacilitiesCharge',
-                  'BilledKWCharge',
-                  'EnergyOnPeakCharge',
-                  'EnergyOffPeakCharge',
-                  'ECACharge',
-                  'EERCharge',
-                  'PTSCharge',
-                  'TDCCharge',
-                  'RkVACharge',
-                  'TaxExemptDelivery',
-                  'BillOffset',
-                  'FranchiseFee',
-                  'MiscellaneousCharge',
-                ];
+                const CHARGE_CHECK = EVERGY_COMPONENT_CHARGE_FIELDS;
                 const total = parseBillNumberOrZero(b.TotalCurrentCharges);
                 const currentSum = CHARGE_CHECK.reduce((s, f) => s + parseBillNumber(b[f]), 0);
                 const currentDiff = currentSum - total;
