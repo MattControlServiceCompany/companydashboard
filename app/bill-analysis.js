@@ -9185,6 +9185,7 @@ function addExtractedField() {
 
 function clearPDFOCR() {
   pdfB64 = null;
+  window._pdfSrcKey = null;
   window._pdfMultiBills = null;
   window._pdfMultiIdx = 0;
   window._pdfRawText = null;
@@ -9720,6 +9721,7 @@ async function _extractSingleFileForQueue(file, fileIdx) {
           fileName: file.name,
           bills: finalBills,
           pdfB64: b64,
+          pdfKey: await _storeExtractionPdf(b64),
           rawText: text,
           status: 'ok',
           error: null,
@@ -10054,13 +10056,8 @@ function renderQueueResults() {
   document.getElementById('pdfRightCol').style.display = '';
   document.getElementById('pdfTypeSection').style.display = 'none';
   document.getElementById('pdfSaveRow').style.display = 'none';
-  // Show debug buttons
-  const dbgBtn = document.getElementById('pdfDebugBtn');
-  if (dbgBtn) dbgBtn.style.display = '';
-  const saveDbgBtn = document.getElementById('pdfSaveDebugBtn');
-  if (saveDbgBtn) saveDbgBtn.style.display = '';
-  const queueViewBtn = document.getElementById('pdfViewBtn');
-  if (queueViewBtn) queueViewBtn.style.display = '';
+  // Show debug buttons and View PDF only when a PDF is kept for this batch
+  if (q.results.some((r) => r.pdfB64 || r.pdfKey)) _showExtractionToolbar();
 
   if (q._activeFileIdx == null) q._activeFileIdx = 0;
 
@@ -11355,6 +11352,7 @@ function _saveExtractionState() {
           commTab: window._pdfCommTab || null,
           passScores: window._pdfPassScores || [],
           billsSaved: window._pdfBillsSaved || false,
+          pdfKey: window._pdfSrcKey || null,
           timestamp: Date.now(),
         }),
       );
@@ -11373,6 +11371,7 @@ function _saveExtractionState() {
           bills: r.bills,
           status: r.status,
           error: r.error || null,
+          pdfKey: r.pdfKey || null,
         };
       });
       sessionStorage.setItem(
@@ -11408,6 +11407,7 @@ function _restoreExtractionState() {
     window._pdfCommTab = state.commTab;
     window._pdfPassScores = state.passScores;
     window._pdfBillsSaved = state.billsSaved || false;
+    window._pdfSrcKey = state.pdfKey || null;
     sessionStorage.removeItem('ch_extraction_state');
     return true;
   } catch (e) {
@@ -11442,6 +11442,52 @@ function _restoreQueueState() {
   } catch (e) {
     return false;
   }
+}
+
+// The source PDF of an extraction is kept ONCE in the bill PDF store (bpaStoreBlob, key
+// en_pdf_shared_<hash16>). Only the key goes to sessionStorage. Returns the key or null.
+async function _storeExtractionPdf(b64) {
+  try {
+    const blob = await bpaStoreBlob(b64, { hash: _bpaSha256Hex, load: pdfLoad, store: pdfStore });
+    return blob ? blob.key : null;
+  } catch (e) {
+    console.warn('[Extraction] Could not store the source PDF:', e.message);
+    return null;
+  }
+}
+
+// After a reload: load the PDF back from the stored key(s). A key whose PDF is gone is dropped,
+// so no viewer is shown for it. Returns true when at least one PDF is back in memory.
+async function _reloadExtractionPdf() {
+  let found = false;
+  if (window._pdfSrcKey) {
+    const b64 = await pdfLoad(window._pdfSrcKey);
+    if (b64) {
+      pdfB64 = b64;
+      found = true;
+    } else window._pdfSrcKey = null;
+  }
+  const q = window._pdfQueue;
+  if (q && q.results) {
+    for (const r of q.results) {
+      if (!r.pdfKey) continue;
+      const b64 = await pdfLoad(r.pdfKey);
+      if (b64) {
+        r.pdfB64 = b64;
+        found = true;
+      } else r.pdfKey = null;
+    }
+  }
+  return found;
+}
+
+// The ONE place that shows the extraction output buttons (View PDF, Raw Text, Save Debug, Side by side).
+function _showExtractionToolbar() {
+  ['pdfDebugBtn', 'pdfSaveDebugBtn', 'pdfViewBtn'].forEach(function (id) {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'inline-block';
+  });
+  _syncPdfDockVisibility();
 }
 
 function _clearExtractionState() {
@@ -15691,6 +15737,7 @@ async function processPDF(file) {
   const reader = new FileReader();
   const _processPDFOnload = async (ev) => {
     pdfB64 = ev.target.result.split(',')[1];
+    window._pdfSrcKey = await _storeExtractionPdf(pdfB64);
     // pdf.js transfers ownership of the ArrayBuffer to its worker and detaches it,
     // so a single buffer cannot be reused across calls. Decode fresh bytes for each
     // pdf.js invocation via this helper.
@@ -15729,10 +15776,7 @@ async function processPDF(file) {
       }
       if (text && text.trim().length > 100) {
         window._pdfRawText = text;
-        document.getElementById('pdfDebugBtn').style.display = 'inline-block';
-        document.getElementById('pdfSaveDebugBtn').style.display = 'inline-block';
-        const _singleViewBtn = document.getElementById('pdfViewBtn');
-        if (_singleViewBtn) _singleViewBtn.style.display = 'inline-block';
+        _showExtractionToolbar();
         let rule = UTILITY_RULES.find((r) => r.name && /Louisburg/i.test(r.name) && r.detect(text));
         if (!rule) rule = UTILITY_RULES.find((r) => r.detect(text));
         if (rule) {

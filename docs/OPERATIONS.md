@@ -299,6 +299,14 @@ Nothing is deleted by this restore. On a record in both, the backup value wins; 
   The two Word XML escapers (_docxEscapeXml in app/docx-writer.js, _sooXmlEsc in app/soo-generator.js) write XML, not HTML, and stay.
   How to check: node tools/test-single-html-escape.js (exit 0). It fails on a private copy or a page that does not load the module.
 
+## 6e. PDF viewer after reload (2026-10-08, branch 2026-10-08-pdf-view-after-reload)
+
+- At extraction, `_storeExtractionPdf(b64)` (app/bill-analysis.js) keeps the source PDF ONCE in the bill PDF store with `bpaStoreBlob` (key en_pdf_shared_<hash16>, same store as attached bill PDFs). Only the key goes into sessionStorage `ch_extraction_state` (pdfKey) and `ch_queue_state` (results[].pdfKey). The base64 never goes into sessionStorage.
+  Compact PDF Storage keeps these blobs: the key is already the canonical hash key. Same file = same key, so no duplicate copy.
+- After a reload, `_reloadExtractionPdf()` loads the PDF from the key (called from initUtilityTool in app/report-engine.js). A missing PDF drops the key: values show, no View PDF button.
+- `_showExtractionToolbar()` is the ONE function that shows View PDF, Raw Text, Save Debug and Side by side.
+  How to check: node tools/test-pdf-view-after-reload.js (exit 0).
+
 ## 7. How to keep this file current
 
 Any commit that changes these facts must update this file in the same commit.
