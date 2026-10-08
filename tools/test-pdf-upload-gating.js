@@ -148,7 +148,7 @@ async function extractOnly(page, url, files, syncOn) {
       e = await enq(page);
       if (srcKey) {
         ok(att.key === srcKey, w + ': attach uses the extraction key');
-        ok(e.length === one && (!syncOn || e[0] === 'upload:' + srcKey), w + ': attach of an extracted PDF, twice, enqueues ' + one + ' upload (' + e.join(',') + ')');
+        ok(e.length === 0, w + ': attach of a PDF the save already uploaded, twice, enqueues 0 more (' + e.join(',') + ')');
       } else {
         ok(e.length === one, w + ': (main) attach of a new PDF, twice, enqueues ' + one + ' upload (' + e.join(',') + ')');
       }

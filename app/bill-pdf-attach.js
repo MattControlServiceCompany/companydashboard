@@ -10,9 +10,12 @@
 // Returns { key, stored, count } or null when the file could not be stored.
 // Store one PDF blob once, under en_pdf_shared_<sha256 first 16>. Returns { key, stored } or null.
 // Also used by the presented-report PDF (app/presented-savings.js): one store path for both.
+async function bpaPdfKey(b64, hash) {
+  return 'en_pdf_shared_' + (await hash(b64)).slice(0, 16);
+}
+
 async function bpaStoreBlob(b64, deps) {
-  const hex = await deps.hash(b64);
-  const key = 'en_pdf_shared_' + hex.slice(0, 16);
+  const key = await bpaPdfKey(b64, deps.hash);
   let stored = false;
   if (!(await deps.load(key))) {
     if (!(await deps.store(key, b64))) return null;
@@ -46,7 +49,7 @@ function bpaFindConflicts(bills, key) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { bpaAttachFile, bpaFindConflicts, bpaStoreBlob };
+  module.exports = { bpaAttachFile, bpaFindConflicts, bpaStoreBlob, bpaPdfKey };
 }
 
 /* ── UI (browser only) ── */
@@ -294,7 +297,7 @@ async function bpaSave() {
   // Ask before replacing a PDF that is already on a bill.
   let replaced = 0;
   for (const j of jobs) {
-    const key = 'en_pdf_shared_' + (await _bpaSha256Hex(j.row.b64)).slice(0, 16);
+    const key = await bpaPdfKey(j.row.b64, _bpaSha256Hex);
     replaced += bpaFindConflicts(j.bills, key).length;
   }
   if (replaced) {

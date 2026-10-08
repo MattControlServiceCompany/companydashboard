@@ -8636,10 +8636,17 @@ async function _ensureBatchPdfStored(bills) {
   // Retry-promote anything stranded from a previous IndexedDB outage before
   // possibly adding a new fallback entry.
   _sweepPdfLsFallback();
-  const key = 'en_pdf_shared_' + Date.now();
+  // Same content-hash key as every other PDF save (bpaPdfKey): equal PDFs share one key, different PDFs never do.
+  const key = await bpaPdfKey(pdfB64, _bpaSha256Hex);
   let stored = false;
   try {
-    stored = await pdfStore(key, pdfB64);
+    const blob = await bpaStoreBlob(pdfB64, {
+      hash: _bpaSha256Hex,
+      load: pdfLoad,
+      store: pdfStore,
+      ensureUploaded: pdfEnsureUploaded,
+    });
+    stored = !!blob;
   } catch (e) {
     console.warn('[_ensureBatchPdfStored] pdfStore threw:', e);
     stored = false;
