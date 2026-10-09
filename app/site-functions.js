@@ -2477,6 +2477,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.09.103', date: '2026-10-09', title: 'Bill Analysis sum check uses one shared rule',
+    items: [
+      { type: 'fix', text: 'Bill Analysis, electric bills: the sum check, the sum pills and the sum banner now add up the same charge lines from one shared rule, so they always agree on whether a bill adds up.' }
+    ]
+  },
   { v: 'v2026.10.09.102', date: '2026-10-09', title: 'Bill Analysis number and date fixes',
     items: [
       { type: 'fix', text: 'Bill Analysis: the total cost and usage of a bill are now saved as numbers, so a value with a thousands comma is no longer kept as text.' },
