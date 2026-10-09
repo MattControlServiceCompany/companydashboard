@@ -738,6 +738,13 @@ async function main() {
     }
   }
 
+  // ---- real-id gate: no real account or meter id in any tracked file. List path from env CH_REAL_IDS_FILE
+  // (private, never committed); unset or missing = SKIP. Output has file names and counts only. ----
+  {
+    const r = require('./gate-real-ids.js').checkRealIds();
+    add('leak-guard', 'no real account/meter ids in tracked files', r.status === 'SKIP' ? 'INFO' : r.status, r.detail);
+  }
+
   // ---- report ----
   const groups = {};
   results.forEach((r) => {
