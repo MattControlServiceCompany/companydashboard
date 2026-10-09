@@ -3116,6 +3116,24 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         if (kwhWitnesses.length) {
           const curKwh0 = parseBillNumber(b.kWhConsumed);
           const kwhDecision = _decideQuantityCorrection('kWhConsumed', curKwh0, kwhWitnesses);
+          // A multi-meter sum that includes a repaired row (restored decimal point, or a product
+          // that replaced a misread column) is derived, not printed. When the value is in the
+          // same bucket as the self-verified printed charge-line total, that printed total wins.
+          // The 0.5% bucket would otherwise keep the derived sum and hide a repair error.
+          if (
+            !kwhDecision.apply &&
+            !kwhDecision.hold &&
+            b._meterInfo &&
+            b._meterInfo.kwhRepaired &&
+            curKwh0 > 0 &&
+            kwhDecision.buckets[0] &&
+            kwhDecision.buckets[0].strongCount > 0 &&
+            kwhDecision.buckets[0].representative > 0 &&
+            Math.abs(kwhDecision.buckets[0].representative - curKwh0) > 0.0005
+          ) {
+            kwhDecision.apply = true;
+            kwhDecision.corrected = kwhDecision.buckets[0].representative;
+          }
           b._kwhConsumedLocked = true; // nothing downstream may overwrite kWhConsumed after this
           // FIX (fix/bill-review-gate-lifecycle, item f359edaa): never let a
           // witness-derived value come back over a value the user already

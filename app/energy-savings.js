@@ -3208,10 +3208,10 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // fields, Meter1_/Meter2_, the kWh candidate list, _digitCorrections diagnostics) picks
   // this up with no additional wiring.
   for (const row of _meterRows) {
-    const _insertDecimal4 = (s) => {
+    const _insertDecimal4 = (s, minDigits = 7) => {
       if (!s || s.includes('.')) return null;
       const digits = s.replace(/,/g, '');
-      if (!/^\d+$/.test(digits) || digits.length < 7 || digits.length > 9) return null;
+      if (!/^\d+$/.test(digits) || digits.length < minDigits || digits.length > 9) return null;
       return digits.slice(0, -4) + '.' + digits.slice(-4);
     };
     // Difference is End-Start, so its integer part is almost always 1-4 digits (vs
@@ -3226,7 +3226,9 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       return digits.slice(0, -4) + '.' + digits.slice(-4);
     };
     const endCand = _insertDecimal4(row[4]);
-    const startCand = _insertDecimal4(row[5]);
+    // A StartRead that is a bare 5 or 6 digit run next to an EndRead that lost its point has a
+    // short integer part (a new meter reads a single digit before the point). Only the gap check below can adopt it.
+    const startCand = _insertDecimal4(row[5], endCand ? 5 : 7);
     const diffCand = _insertDecimal4Diff(row[6]);
     if (!endCand && !startCand) continue;
     const rawEnd = parseBillNumber(row[4]),
@@ -3488,24 +3490,36 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       }
     }
   }
-  // kWh Used for one meter row, for the multi-meter sum and the per-meter fields. When EndRead -
-  // StartRead agrees with Difference, those two columns are independent witnesses. If Difference
-  // x Multiplier then differs from the kWh Used column by a plausible digit misread, the kWh
-  // Used column is the misread one and the product is used. In every other case the column is
-  // used as printed. Single-meter bills do not use this: they keep the column and the existing
-  // witness comparison decides.
+  // kWh Used for one meter row, for the multi-meter sum and the per-meter fields. The kWh Used
+  // column is used as printed unless Difference x Multiplier differs from it by a plausible digit
+  // misread. Then the column is replaced by the product only when the row proves it:
+  //  - EndRead - StartRead agrees with Difference (two independent witnesses), or
+  //  - a read is misprinted, but one confusable-digit repair of a read explains Difference and no
+  //    such repair explains the kWh column (the reads then back Difference, not the column).
+  // Any other case keeps the column as printed. Single-meter bills do not use this: they keep the
+  // column and the existing witness comparison decides.
   const _rowKwhUsed = (r) => {
     const kwh = parseBillNumber(r[8]);
-    const end = parseBillNumber(r._fixedEndRead || r[4]);
-    const start = parseBillNumber(r._fixedStartRead || r[5]);
+    const endTxt = r._fixedEndRead || r[4];
+    const startTxt = r._fixedStartRead || r[5];
+    const end = parseBillNumber(endTxt);
+    const start = parseBillNumber(startTxt);
     const diff = parseBillNumber(r._fixedDifference || r[6]);
     const mult = parseBillNumber(r[7]);
-    if (!(kwh > 0 && end > start && start > 0 && diff > 0 && mult > 0)) return kwh;
-    if (Math.abs(parseFloat((end - start).toFixed(4)) - diff) >= 0.001) return kwh;
+    if (!(kwh > 0 && end > 0 && start > 0 && diff > 0 && mult > 0)) return kwh;
     const product = parseFloat((diff * mult).toFixed(4));
     if (Math.abs(product - kwh) < 0.01) return kwh;
-    return _reconcileNumber(r[8], product, 3) ? product : kwh;
+    if (!_reconcileNumber(r[8], product, 3)) return kwh;
+    if (Math.abs(parseFloat((end - start).toFixed(4)) - diff) < 0.001) return product;
+    const readsExplain = (d) =>
+      _reconcileNumber(startTxt, parseFloat((end - d).toFixed(4)), 1) !== null ||
+      _reconcileNumber(endTxt, parseFloat((start + d).toFixed(4)), 1) !== null;
+    return readsExplain(diff) && !readsExplain(parseFloat((kwh / mult).toFixed(4))) ? product : kwh;
   };
+  // True when the row's kWh is not the column as printed: a lost decimal point was restored, or
+  // the product replaced a misread column. A bill-level sum that includes such a row is derived,
+  // so the bill-level step prefers a self-verified printed charge-line total that agrees with it.
+  const _rowKwhRepaired = (r) => !!r._kwhUsedOriginal || _rowKwhUsed(r) !== parseBillNumber(r[8]);
   const _rowKwhUsedText = (r) => {
     const v = _rowKwhUsed(r);
     return v === parseBillNumber(r[8]) ? (r[8] || '').replace(/,/g, '') : v.toFixed(4);
@@ -3622,6 +3636,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       readDifference: parseFloat(totalDiff.toFixed(4)),
       multiplier: first[7]?.replace(/,/g, ''),
       kwh: parseFloat(totalKwh.toFixed(4)),
+      kwhRepaired: _meterGroup.some(_rowKwhRepaired),
       kw: maxKw.toFixed(4),
       // Only emit an RKVA figure when at least one meter row actually printed
       // one — an MGA-schedule bill with no RKVA column on any row is a
@@ -4307,6 +4322,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     result._meterInfo = { type: _meterCombined.type, rows: _meterCombined.rows };
     if (_meterCombined.type === 'meter_change') {
       result._meterInfo.note = 'Meter change: ' + _meterCombined.rows + ' meter lines summed for kWh, max KW/RKVA used';
+      if (_meterCombined.kwhRepaired) result._meterInfo.kwhRepaired = true;
       const _mrClean = (s) => (s || '').replace(/,/g, '');
       if (_meterGroup.length >= 2) {
         const m1 = _meterGroup[0],
@@ -5555,8 +5571,12 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     const er = parseFloat(erStr),
       sr = parseFloat(srStr);
     if (er > 0 && sr > 0) {
-      // Skip sanity checks for confirmed rollovers — the small EndRead is legitimate
-      const _isRollover = !!result._meterRollover;
+      // Skip sanity checks for confirmed rollovers — the small EndRead is legitimate. The same
+      // holds when the printed ReadDifference agrees with EndRead - StartRead: a new meter starts
+      // near zero (a one-digit read to a four-digit read), and the difference column proves both reads.
+      const _printedDiff = parseFloat(result.ReadDifference);
+      const _readsProveDiff = _printedDiff > 0 && Math.abs(er - sr - _printedDiff) < 0.01;
+      const _isRollover = !!result._meterRollover || _readsProveDiff;
       // Check for missing decimal (one has it, the other doesn't)
       const erDec = erStr.includes('.'),
         srDec = srStr.includes('.');

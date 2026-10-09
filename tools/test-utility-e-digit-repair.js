@@ -300,6 +300,55 @@ async function run(rows, extra) {
     ) === 1,
   );
 
+  console.log('Case 16: a read is misprinted; one digit repair explains Difference, none explains the kWh column');
+  b = await run([
+    '01/09  02/09  31  20,000.5000  10,000.0000  10,000.5000  1.0000  10,000.5000  5.0000  1.0000',
+    '01/09  02/09  31  58,695.4010  65,533.0010  3,162.4000  1.0000  3,152.4000  9.3140  1.0000',
+  ]);
+  check('Meter2_kWh is Difference x Multiplier', eq(b.Meter2_kWh, 3162.4), 'Meter2_kWh=' + b.Meter2_kWh);
+  check('kWhConsumed sums it', eq(b.kWhConsumed, 13162.9), 'kWh=' + b.kWhConsumed);
+
+  console.log('Case 17 (control): a read is misprinted and no digit repair explains Difference: column stays');
+  b = await run([
+    '01/09  02/09  31  20,000.5000  10,000.0000  10,000.5000  1.0000  10,000.5000  5.0000  1.0000',
+    '01/09  02/09  31  48,695.4010  80,000.0000  3,162.4000  1.0000  3,152.4000  9.3140  1.0000',
+  ]);
+  check('Meter2_kWh stays as printed', eq(b.Meter2_kWh, 3152.4), 'Meter2_kWh=' + b.Meter2_kWh);
+
+  console.log('Case 18: new meter, End, Start, Difference and kWh all lose the point; Start has 5 digits');
+  // Printed End - Start = 2740.9770, printed Difference = 2740.9800 (the bill is off by 0.0030).
+  b = await run(['04/22  06/01  40  27483920  74150  27409800  1.0000  27409800  68.2500  0.6500']);
+  check('StartRead keeps its point position', eq(b.StartRead, 7.415), 'StartRead=' + b.StartRead);
+  check('EndRead', eq(b.EndRead, 2748.392), 'EndRead=' + b.EndRead);
+  check('ReadDifference', eq(b.ReadDifference, 2740.98), 'diff=' + b.ReadDifference);
+
+  const CHG = (on, off, tot) =>
+    'Energy Chg On Pk Win ' + on[0] + ' kWh at\n   $0.03723 per kWh ........  $' + on[1] + '\n' +
+    'Energy Chg Off Pk Win ' + off[0] + ' kWh at\n   $0.03266 per kWh ........  $' + off[1] + '\n' +
+    'EER Chg 01-09-2030-02-09-2030 for\n   ' + tot[0] + ' kWh at $0.00056 per kWh ........  $' + tot[1] + '\n' +
+    'PTS Chg 01-09-2030-02-09-2030 for\n   ' + tot[0] + ' kWh at $0.00103 per kWh ........  $' + tot[2] + '\n';
+  const CHG_TEXT = CHG(['2,165.0000', '80.60'], ['900.0000', '29.39'], ['3,065.0000', '1.72', '3.16']);
+  console.log('Case 19: a sum with a repaired row defers to the printed charge-line total that agrees');
+  b = await run(
+    [
+      '01/09  02/09  31  11,600.0000  10,000.0000  1,600.0000  1.0000  1,600.0000  5.0000  1.0000',
+      '01/09  02/09  31  11,465.2000  10,000.0000  1,465.2000  1.0000  1,455.2000  9.3140  1.0000',
+    ],
+    CHG_TEXT,
+  );
+  check('kWhConsumed is the charge-line total', eq(b.kWhConsumed, 3065), 'kWh=' + b.kWhConsumed);
+  check('Meter2_kWh keeps the repaired row', eq(b.Meter2_kWh, 1465.2), 'Meter2_kWh=' + b.Meter2_kWh);
+
+  console.log('Case 20 (control): a sum of rows read as printed is not replaced by the charge-line total');
+  b = await run(
+    [
+      '01/09  02/09  31  11,600.0000  10,000.0000  1,600.0000  1.0000  1,600.0000  5.0000  1.0000',
+      '01/09  02/09  31  11,465.2000  10,000.0000  1,465.2000  1.0000  1,465.2000  9.3140  1.0000',
+    ],
+    CHG_TEXT,
+  );
+  check('kWhConsumed is the meter sum', eq(b.kWhConsumed, 3065.2), 'kWh=' + b.kWhConsumed);
+
   console.log(fail ? '\n' + fail + ' FAILED' : '\nALL PASSED');
   process.exit(fail ? 1 : 0);
 })();
