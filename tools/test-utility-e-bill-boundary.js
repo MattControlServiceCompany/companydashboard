@@ -30,6 +30,8 @@ function loadRule(scriptPath) {
   for (const lib of ['date-helpers.js', 'formatting.js', 'unit-conversion.js']) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'lib', lib), 'utf8'), sandbox, { filename: lib });
   }
+  // energy-savings.js calls sumElectricEnergyCharges from computations/rates.js (loaded before it in production).
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'computations', 'rates.js'), 'utf8'), sandbox, { filename: 'rates.js' });
   vm.runInContext(fs.readFileSync(scriptPath, 'utf8'), sandbox, { filename: path.basename(scriptPath) });
   const rules = vm.runInContext('typeof UTILITY_RULES !== "undefined" ? UTILITY_RULES : null', sandbox);
   const rule = rules && rules.find((r) => r.name === 'Evergy');
