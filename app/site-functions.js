@@ -2477,6 +2477,13 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.09.99', date: '2026-10-09', title: 'Bill reading and bill matching fixes',
+    items: [
+      { type: 'fix', text: 'Bill Analysis, electric bills with several meters: meter table numbers that lost a digit or a decimal point are repaired, and a repaired total is checked against the printed charge lines.' },
+      { type: 'fix', text: 'Bill Analysis, gas bills: one unreadable charge line is now rebuilt from the printed total, and the sum check runs on every gas bill.' },
+      { type: 'fix', text: 'Bill Analysis, saving and importing bills: saving a bill, the duplicate check, bill history and Auto-Assign now use one matching rule, so they agree on which bill belongs to which meter.' }
+    ]
+  },
   { v: 'v2026.10.09.98', date: '2026-10-09', title: 'Bill reading for city utility and gas supplier bills',
     items: [
       { type: 'fix', text: 'Bill Analysis, city utility bills: each page now checks that its printed lines add up to the printed Current Bill. A page that does not add up is held for review, and a lost decimal point or a misread Stormwater amount is repaired when the repair makes the page add up.' },
