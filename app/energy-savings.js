@@ -5588,6 +5588,95 @@ function _lbg_cleanCents(raw) {
   }
   return parseBillNumber(s);
 }
+// ONE reader for a labeled dollar amount on a Client A page ("Total Amount Due", "Current Bill").
+// Exact label + clean cents first; then a loose pass that tolerates OCR putting a colon for the
+// decimal point ("4,014:28" -> 4014.28) and stray marks between the label and the figure.
+// Returns the amount as a string with no thousands commas, or null.
+function _lbg_labeledAmount(text, labelRe, sameLineOnly) {
+  if (!text) return null;
+  const src = labelRe.source;
+  const exact = text.match(new RegExp(src + '\\s*\\$?\\s*([\\d,]+\\.\\d{2})', 'i'));
+  if (exact) return exact[1].replace(/,/g, '');
+  // The loose pass of Total Amount Due may reach the next line (the page header prints the label
+  // above the figure). Current Bill must not: with no legible figure of its own it would borrow the
+  // Total Amount Due below it, which also holds any balance carried forward.
+  const gap = sameLineOnly ? '[ \\t]*' : '\\s*';
+  const loose = text.match(new RegExp(src + gap + '[^$\\n]*?\\$?\\s*([\\d,]+[.:]\\d{2})', 'i'));
+  return loose ? loose[1].replace(/,/g, '').replace(':', '.') : null;
+}
+// Label shapes for the two page totals. The Current Bill label is matched fuzzily because ink
+// marks and scan noise turn "Bill" into "Bin", "Bil" or "Bi1"; the label must end at a word edge so
+// "Current Billing" never matches.
+const _LBG_TOTAL_AMOUNT_DUE_LABEL = /Total\s*Amount\s*Due/i;
+const _LBG_CURRENT_BILL_LABEL = /Cur+ent\s*B[i1l|!][lnm1i]{1,2}(?![a-z])/i;
+// ONE sum of the printed line items on a Client A page. Used by the sign guard and by the final
+// page-total check, so both ask the same question: do the lines add up to the printed Current Bill?
+// gasWithFuelAdj is the Gas line (including the customer charge) plus the Fuel Adjustment, or null
+// when the Gas line is held or absent. Cents are rounded so the compare is exact to the cent.
+function _lbg_pageLineSum(p) {
+  const n = (v) => (v == null || isNaN(v) ? 0 : +v);
+  return Math.round((n(p.gasWithFuelAdj) + n(p.water) + n(p.wpf) + n(p.sewer) + n(p.storm)) * 100) / 100;
+}
+// Tolerance for the page-total check: one cent. The printed lines add up to the printed Current
+// Bill to the cent (checked on the saved scans), and a wider band would let a one-digit cents
+// error through (a Stormwater "4.06" for "4.00" is only $0.06).
+const _LBG_PAGE_TOTAL_TOLERANCE = 0.01;
+// Holds every bill split from a page whose printed lines do not add up to the printed Current
+// Bill. A commodity line that OCR dropped or misread is then flagged, never silently omitted
+// (backlogs 90ec94e3, 166ee5bf). The reason names the dollar gap and its direction.
+function _lbg_flagPageTotalMismatch(bills, check) {
+  const gap = Math.abs(check.diff).toFixed(2);
+  const reason =
+    'Lines on this page add up to $' +
+    check.summed.toFixed(2) +
+    ', but the printed Current Bill is $' +
+    check.printed.toFixed(2) +
+    (check.diff < 0
+      ? ' - a charge line worth $' + gap + ' may be missing or misread.'
+      : ' - a charge is $' + gap + ' too high or a credit was missed.') +
+    ' Verify against the bill.';
+  for (const b of bills) {
+    b._pageTotalMismatch = { printed: check.printed, summed: check.summed, diff: check.diff };
+    b._gateTripped = true;
+    b._gateReasons = (b._gateReasons || []).concat([reason]);
+    if (!b._manualReview) {
+      b._manualReview = true;
+      b._manualReviewLabel = 'Page lines do not add up to the printed Current Bill - held for manual confirmation';
+    }
+  }
+}
+// Compares the line sum with the printed Current Bill. Returns null when the page cannot be
+// checked (no printed total, or the Gas line is held), else { printed, summed, diff, ok }.
+function _lbg_pageTotalCheck(currentBillTotal, parts) {
+  if (currentBillTotal == null || parts.gasHeld) return null;
+  const summed = _lbg_pageLineSum(parts);
+  const diff = Math.round((summed - currentBillTotal) * 100) / 100;
+  return { printed: currentBillTotal, summed, diff, ok: Math.abs(diff) <= _LBG_PAGE_TOTAL_TOLERANCE };
+}
+// Flat fees (Stormwater) print the same amount on every account and month. When one page reads a
+// different amount, the other pages in the same file are a witness. Returns the amount that most
+// Stormwater bills agree on (at least 3 bills and more than half), else null.
+// _lbg_commoditiesByAccount lists, per account number, the commodities any page of the file
+// printed for it.
+function _lbg_commoditiesByAccount(bills) {
+  const out = {};
+  for (const b of bills) {
+    if (!b.AccountNumber || !b.Commodity) continue;
+    (out[b.AccountNumber] = out[b.AccountNumber] || new Set()).add(b.Commodity);
+  }
+  return out;
+}
+function _lbg_peerStormCharge(bills) {
+  const counts = {};
+  let total = 0;
+  for (const b of bills) {
+    if (b.Commodity !== 'Stormwater' || b.StormWaterCharge == null) continue;
+    total++;
+    counts[b.StormWaterCharge] = (counts[b.StormWaterCharge] || 0) + 1;
+  }
+  const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+  return top && top[1] >= 3 && top[1] * 2 > total ? parseFloat(top[0]) : null;
+}
 const _LBG_GAS_RATES = [{ effectiveDate: '2000-01-01', rate: 0.798062, baseCharge: 23.33 }];
 function _lbg_gasRate(billDate) {
   let rate = _LBG_GAS_RATES[0];
@@ -5615,7 +5704,15 @@ function _lbg_gasRate(billDate) {
 // report), else { usage, printedGasLine, gasVariable, gasTotal, confident,
 // reconciledReason } (confident=false and reconciledReason set when the
 // Current Bill supplied the printed value).
-function _lbg_resolveGasLine(printedGasLine, usage, billDate, currentBillTotal, otherCommoditySum, signedFuelAdj) {
+function _lbg_resolveGasLine(
+  printedGasLine,
+  usage,
+  billDate,
+  currentBillTotal,
+  otherCommoditySum,
+  signedFuelAdj,
+  usageLeadGarble,
+) {
   const r = _lbg_gasRate(billDate);
   const variable = Math.round(Math.max(0, printedGasLine - r.baseCharge) * 100) / 100;
   if ((!usage || usage === 0) && variable > 0 && r.rate > 0) usage = Math.round(variable / r.rate);
@@ -5661,7 +5758,12 @@ function _lbg_resolveGasLine(printedGasLine, usage, billDate, currentBillTotal, 
       ') does not match usage x rate ($' +
       (expected + r.baseCharge).toFixed(2) +
       ') - verify. ' +
-      recon.reason,
+      recon.reason +
+      (usageLeadGarble
+        ? ' The therms figure (' +
+          usage +
+          ') sits right against a stray mark on the scan, so its first digit may be missing - check the printed therms.'
+        : ''),
   };
 }
 
@@ -5892,7 +5994,9 @@ function _lbg_buildGasBill(
     };
   };
 
-  if (gas.charge == null) {
+  // A $0 charge beside real usage is a misread cell, not "no gas": it takes the same
+  // reconcile-or-hold path as a missing charge (backlog 584491c2).
+  if (gas.charge == null || (gas.charge === 0 && gas.usage > 0)) {
     if (!gasLineSeen) return null; // no Gas section on this page — nothing to report
     // Gas label matched but OCR dropped/reordered the charge token so none
     // could be parsed after it. Never silently drop the commodity.
@@ -5943,6 +6047,7 @@ function _lbg_buildGasBill(
     currentBillTotal,
     otherCommoditySum,
     signedFuelAdj,
+    gas.usageLeadGarble,
   );
   if (gasLine.skip) {
     console.warn(
@@ -7091,7 +7196,8 @@ const UTILITY_RULES = [
           _prefixLen += siteChunks[i - 1].length;
           const prefix = invText.slice(0, _prefixLen);
           let blockStart = 0;
-          for (const s of prefix.matchAll(/Total\s+Current\s+Site\s+Charges[^\n]*/gi)) blockStart = s.index + s[0].length;
+          for (const s of prefix.matchAll(/Total\s+Current\s+Site\s+Charges[^\n]*/gi))
+            blockStart = s.index + s[0].length;
           // The window starts inside the invoice header only for the first block; later blocks
           // get the header prepended (Invoice Date / BG Account) and the id search skips it.
           const inHeader = blockStart < invoiceHeader.length;
@@ -7702,7 +7808,8 @@ const UTILITY_RULES = [
           // they disagree (other than a dropped decimal point), one is a misread digit and
           // nothing here says which: leave the site to the existing manual-review checks.
           // (A printed Mmbtu always has 2 decimals; an Index value with 3 is a misread, ignored.)
-          const _idxPrinted = b.indexMMbtu != null && Math.abs(b.indexMMbtu * 100 - Math.round(b.indexMMbtu * 100)) < 1e-6;
+          const _idxPrinted =
+            b.indexMMbtu != null && Math.abs(b.indexMMbtu * 100 - Math.round(b.indexMMbtu * 100)) < 1e-6;
           if (_idxPrinted && Math.abs(b.indexMMbtu - m) > 0.005 && Math.abs(b.indexMMbtu - m * 100) > 0.5) continue;
           b.indexMMbtu = m;
           b.indexFuelMMbtu = f;
@@ -8074,12 +8181,16 @@ const UTILITY_RULES = [
           // no Sub-Total yet is that same row. Same figures, label garbled; nothing invented.
           const _wreUnlabeledSub =
             _inSites && _cur && _cur.mmbtu == null && _cur.dollar == null && !/^\s*Sub[\s.\-]{0,2}Total/i.test(ln)
-              ? ln.match(/^\s*(?:\d\s+)?[^\d$£]{0,60}?\s*(\d[\d,]*\.\d{2})\s+(\d+\.\d{2}|\d{3})(?:\s+(?:[$£S]\s?(\d[\d,]*\.\d{2})|\S{1,8}))?\s*$/)
+              ? ln.match(
+                  /^\s*(?:\d\s+)?[^\d$£]{0,60}?\s*(\d[\d,]*\.\d{2})\s+(\d+\.\d{2}|\d{3})(?:\s+(?:[$£S]\s?(\d[\d,]*\.\d{2})|\S{1,8}))?\s*$/,
+                )
               : null;
           if (_wreUnlabeledSub) {
             _cur.mmbtu = parseFloat(_wreUnlabeledSub[1].replace(/,/g, ''));
             _cur.subFuel = parseFloat(
-              _wreUnlabeledSub[2].indexOf('.') < 0 ? _wreUnlabeledSub[2][0] + '.' + _wreUnlabeledSub[2].slice(1) : _wreUnlabeledSub[2],
+              _wreUnlabeledSub[2].indexOf('.') < 0
+                ? _wreUnlabeledSub[2][0] + '.' + _wreUnlabeledSub[2].slice(1)
+                : _wreUnlabeledSub[2],
             );
             if (_wreUnlabeledSub[3]) _cur.dollar = _wreFixOcrDollar(_wreUnlabeledSub[3]);
             continue;
@@ -8109,7 +8220,10 @@ const UTILITY_RULES = [
             // rebuild a charge the scan cut off (see _wreRebuildMissingCharges).
             if (_mmbtuM) {
               const _fuelM = ln.slice(_mmbtuM.index + _mmbtuM[0].length).match(/^\s+(\d+\.\d+|\d{3})(?=\s|$)/);
-              if (_fuelM) _cur.subFuel = parseFloat(_fuelM[1].indexOf('.') < 0 ? _fuelM[1][0] + '.' + _fuelM[1].slice(1) : _fuelM[1]);
+              if (_fuelM)
+                _cur.subFuel = parseFloat(
+                  _fuelM[1].indexOf('.') < 0 ? _fuelM[1][0] + '.' + _fuelM[1].slice(1) : _fuelM[1],
+                );
             }
             // Fix (2026-09-18, WRE usage-capture sweep, TASK 5): a Sub-Total MMbtu
             // captured as a bare digit run with NO decimal point at all (e.g.
@@ -9381,8 +9495,12 @@ const UTILITY_RULES = [
       // (Update 81). flatMap flattens, and _pageIndex stamps the same
       // index on every commodity split from the same page.
       const _unmatchedPages = [];
-      const bills = pages.flatMap((p, i) => {
-        const r = this.extract(p);
+      // Per-page extraction with the whole file's flat-fee witness (backlog 913c02a9): a first pass
+      // reads every page alone; the amount most Stormwater lines agree on is then given to the
+      // pages whose lines did not add up to their printed Current Bill, and each is read again. A
+      // re-read replaces the first read only when it clears the mismatch.
+      const _readPage = (p, i, opts) => {
+        const r = this.extract(p, opts);
         if (!r) {
           if (p.trim().length > 50) {
             const pageNums = [...p.matchAll(/%%PAGE_(\d+)%%/g)].map((m) => parseInt(m[1]));
@@ -9402,7 +9520,29 @@ const UTILITY_RULES = [
         const arr = Array.isArray(r) ? r : [r];
         for (const b of arr) b._pageIndex = i + 1;
         return arr;
+      };
+      let _perPage = pages.map((p, i) => _readPage(p, i));
+      const _firstPass = _perPage.flat();
+      const _peerStorm = _lbg_peerStormCharge(_firstPass);
+      const _commoditiesByAcct = _lbg_commoditiesByAccount(_firstPass);
+      _perPage = _perPage.map((arr, i) => {
+        if (!arr.length) return arr;
+        const opts = {};
+        if (_peerStorm != null && arr.some((b) => b._pageTotalMismatch)) opts.peerStorm = _peerStorm;
+        // Backlog b4a4a7b9: a Fuel Adjustment worked out as a residual trusts that every other
+        // commodity was read. A commodity whose label OCR'd to noise leaves no trace on its own
+        // page, but the same account prints it on its other pages in this file.
+        const acct = arr[0].AccountNumber;
+        if (arr.some((b) => b._auto_derived_FuelAdjustment) && acct && _commoditiesByAcct[acct]) {
+          const have = new Set(arr.map((b) => b.Commodity));
+          const missing = [..._commoditiesByAcct[acct]].filter((c) => c !== 'Gas' && !have.has(c));
+          if (missing.length) opts.missingSlots = missing;
+        }
+        if (opts.peerStorm == null && !opts.missingSlots) return arr;
+        const again = _readPage(pages[i], i, opts);
+        return again.length ? again : arr;
       });
+      const bills = _perPage.flat();
       if (_unmatchedPages.length) bills._unmatchedPages = _unmatchedPages;
       // Backfill missing billing periods from neighbor bills sharing the
       // same BillDate — all bills printed on the same day cover the same
@@ -9563,13 +9703,13 @@ const UTILITY_RULES = [
 
       return bills;
     },
-    extract: function (page) {
+    extract: function (page, opts) {
       const isNewFormat = /Customer\s*Account\s*Information/i.test(page) || /Previous\s*Balance:/i.test(page);
       const isOldFormat =
         !isNewFormat &&
         /ACCOUNT\s*SUMMARY/i.test(page) &&
         /Amount\s*due\s*(?:on\s*or\s*before|Enclosed|after)/i.test(page);
-      if (isNewFormat) return this._extractNew(page);
+      if (isNewFormat) return this._extractNew(page, opts);
       if (isOldFormat) return this._extractOld(page);
       // LGS (Large Gas Service) billing detail — gas-only page with
       // rate schedule like "LGS Primary Voltage - 2LGSF"
@@ -9902,7 +10042,8 @@ const UTILITY_RULES = [
       }
       return bills;
     },
-    _extractNew: function (page) {
+    _extractNew: function (page, opts) {
+      opts = opts || {};
       // Strip the Client A targeted-crop OCR fallback block (backlog
       // 37d5fb0e-fueladj follow-up, 2026-09-14 — bill-analysis.js
       // _lbgNeedsCropFallback / the page-processing loop's crop-fallback
@@ -10166,6 +10307,16 @@ const UTILITY_RULES = [
         const allBefore = [...beforeFixed.matchAll(/-?[\d,]+(?:\.\d+)?/g)].map((x) =>
           parseFloat(x[0].replace(/,/g, '')),
         );
+        // Backlog 8fe95f92: a mark on the scan can hide the first digit of the gas therms (printed
+        // "1,086.18", read "T086.18" and then 86.18). The tell is a letter or bar glued to the front
+        // of the last number before the label. The figure is kept, but flagged so a failed rate check
+        // says why instead of blaming the charge. Gas only: it is the one usage column with decimals.
+        let usageLeadGarble = false;
+        if (allowDecimalUsage) {
+          const _lastTok = [...beforeFixed.matchAll(/-?[\d,]+(?:\.\d+)?/g)].pop();
+          if (_lastTok && _lastTok.index > 0 && /[A-Za-z|!]/.test(beforeFixed[_lastTok.index - 1]))
+            usageLeadGarble = true;
+        }
         const integerTokens = allBefore.filter((n) => Number.isInteger(n) && n >= 100);
         let usage = 0;
         // Tracks whether Case A below matched (3+ tokens, last ≈ diff of the
@@ -10314,7 +10465,7 @@ const UTILITY_RULES = [
           prevRead = Math.min(r1, r2);
           currRead = Math.max(r1, r2);
         }
-        return { usage, charge, prevRead, currRead };
+        return { usage, charge, prevRead, currRead, usageLeadGarble };
       };
 
       let gas = null,
@@ -10322,6 +10473,9 @@ const UTILITY_RULES = [
         storm = null,
         sewer = null,
         wpf = null;
+      // Each WATER PROTECTION line's own charge, kept so a dropped decimal point on one line can be
+      // repaired alone (the wpf total above is the sum of these).
+      const wpfParts = [];
       // Tracks whether a "GAS" label was ever matched on the page, even if no
       // charge token could be parsed after it (OCR reordered/garbled the
       // charge — see backlog 37f76621). Distinguishes "Gas section exists but
@@ -10401,6 +10555,7 @@ const UTILITY_RULES = [
         if (/W[A4]TER\s*PROT[E3]CTION/i.test(ln)) {
           wpfLineSeen = true;
           const wp2 = parseMetered(ln, /W[A4]TER\s*PROT[E3]CTION/i);
+          wpfParts.push(wp2.charge);
           if (wpf === null) {
             wpf = wp2;
           } else {
@@ -10503,13 +10658,10 @@ const UTILITY_RULES = [
         }
       }
 
-      // Total Amount Due — try the clean pattern first, then a loose
-      // variant that tolerates colon-for-dot OCR ("4,014:28" → 4014.28).
-      let TotalAmountDue = page.match(/Total\s*Amount\s*Due\s*\$?\s*([\d,]+\.\d{2})/i)?.[1]?.replace(/,/g, '') || null;
-      if (!TotalAmountDue) {
-        const loose = page.match(/Total\s*Amount\s*Due\s*[^$\n]*?\$?\s*([\d,]+[.:]\d{2})/i);
-        if (loose) TotalAmountDue = loose[1].replace(/,/g, '').replace(':', '.');
-      }
+      // Total Amount Due and Current Bill both go through _lbg_labeledAmount: clean pattern first,
+      // then a loose pass that tolerates colon-for-dot OCR ("4,014:28" → 4014.28). The Current Bill
+      // label is fuzzy (backlog fe61fac7): an ink mark turned "Bill" into "Bin" on a real scan.
+      let TotalAmountDue = _lbg_labeledAmount(page, _LBG_TOTAL_AMOUNT_DUE_LABEL);
 
       // Current Bill — the page's CURRENT-PERIOD commodity total (this
       // period's Water + Gas + Sewer + Stormwater only). Unlike Total Amount
@@ -10519,7 +10671,7 @@ const UTILITY_RULES = [
       // _lbg_reconcileGasFromCurrentBill / backlog 5884be3d, 37f76621).
       // Reconciling against Total Amount Due instead would false-flag any
       // account carrying a balance forward.
-      const _currentBillRaw = page.match(/Current\s*Bill\s*\$?\s*([\d,]+\.\d{2})/i)?.[1]?.replace(/,/g, '') || null;
+      const _currentBillRaw = _lbg_labeledAmount(page, _LBG_CURRENT_BILL_LABEL, true);
       let CurrentBillTotal = _currentBillRaw != null ? parseFloat(_currentBillRaw) : null;
 
       // ── Client A targeted-crop OCR fallback merge (backlog 37d5fb0e-fueladj
@@ -10595,16 +10747,16 @@ const UTILITY_RULES = [
           }
         }
         if (CurrentBillTotal == null) {
-          const _cbm = _lbgCropFallbackText.match(/Current\s*Bill\s*\$?\s*([\d,]+\.\d{2})/i);
+          const _cbm = _lbg_labeledAmount(_lbgCropFallbackText, _LBG_CURRENT_BILL_LABEL, true);
           if (_cbm) {
-            CurrentBillTotal = parseFloat(_cbm[1].replace(/,/g, ''));
+            CurrentBillTotal = parseFloat(_cbm);
             _lbgCropRecoveredFields.push('CurrentBillTotal');
           }
         }
         if (!TotalAmountDue) {
-          const _tadm = _lbgCropFallbackText.match(/Total\s*Amount\s*Due\s*\$?\s*([\d,]+\.\d{2})/i);
+          const _tadm = _lbg_labeledAmount(_lbgCropFallbackText, _LBG_TOTAL_AMOUNT_DUE_LABEL);
           if (_tadm) {
-            TotalAmountDue = _tadm[1].replace(/,/g, '');
+            TotalAmountDue = _tadm;
             _lbgCropRecoveredFields.push('TotalAmountDue');
           }
         }
@@ -10669,14 +10821,61 @@ const UTILITY_RULES = [
       // printed total; if flipping either field (or neither) reconciles,
       // leaves both alone rather than guess.
       let _faSignCorrected = false;
+      // Flat-fee peer check (backlog 913c02a9): Stormwater prints the same amount on every
+      // account, and OCR can change one digit ("4.00" read as "4.06"). extractAll passes the amount
+      // the other pages agree on as opts.peerStorm. It replaces this page's amount ONLY when doing
+      // so makes the printed lines add up to the printed Current Bill exactly. Runs before the
+      // sign guard so a one-digit Stormwater error cannot hide a sign error.
+      let _stormPeerCorrectedFrom = null;
+      if (
+        opts.peerStorm != null &&
+        CurrentBillTotal != null &&
+        storm.charge != null &&
+        storm.charge !== opts.peerStorm
+      ) {
+        const _peerSum = _lbg_pageLineSum({
+          gasWithFuelAdj: (gas.charge || 0) + (signedFuelAdj || 0),
+          water: water.charge,
+          wpf: wpf.charge,
+          sewer: sewer.charge,
+          storm: opts.peerStorm,
+        });
+        if (Math.abs(_peerSum - CurrentBillTotal) < 0.005) {
+          _stormPeerCorrectedFrom = storm.charge;
+          storm.charge = opts.peerStorm;
+        }
+      }
+      // Dropped decimal point on a Water Protection line (backlog 90ec94e3): a printed "3.43" read
+      // as "343" makes the page $339.57 too high. One line is repaired only when it is the UNIQUE
+      // line whose /100 value makes the page add up to the printed Current Bill to the cent.
+      let _wpfDecimalRepair = null;
+      if (CurrentBillTotal != null && wpf.charge != null) {
+        const _sumWith = (wpfCharge) =>
+          _lbg_pageLineSum({
+            gasWithFuelAdj: (gas.charge || 0) + (signedFuelAdj || 0),
+            water: water.charge,
+            wpf: wpfCharge,
+            sewer: sewer.charge,
+            storm: storm.charge,
+          });
+        if (Math.abs(_sumWith(wpf.charge) - CurrentBillTotal) > 0.005) {
+          const _fits = wpfParts
+            .filter((c) => c != null && Number.isInteger(c) && c >= 100)
+            .filter((c) => Math.abs(_sumWith(wpf.charge - c + c / 100) - CurrentBillTotal) < 0.005);
+          if (_fits.length === 1) {
+            _wpfDecimalRepair = { original: _fits[0], corrected: _fits[0] / 100 };
+            wpf.charge = Math.round((wpf.charge - _fits[0] + _fits[0] / 100) * 100) / 100;
+          }
+        }
+      }
       if (CurrentBillTotal != null) {
-        const _rawSum =
-          (gas.charge || 0) +
-          (signedFuelAdj || 0) +
-          (water.charge || 0) +
-          (wpf.charge || 0) +
-          (sewer.charge || 0) +
-          (storm.charge || 0);
+        const _rawSum = _lbg_pageLineSum({
+          gasWithFuelAdj: (gas.charge || 0) + (signedFuelAdj || 0),
+          water: water.charge,
+          wpf: wpf.charge,
+          sewer: sewer.charge,
+          storm: storm.charge,
+        });
         if (Math.abs(_rawSum - CurrentBillTotal) > 0.01) {
           const _wpfFlipSum = wpf.charge ? _rawSum - 2 * wpf.charge : null;
           const _faFlipSum = signedFuelAdj ? _rawSum - 2 * signedFuelAdj : null;
@@ -10725,6 +10924,11 @@ const UTILITY_RULES = [
       if (wpfLineSeen && wpf.charge == null) _faUnresolvedCommodities.push('Water Protection');
       if (sewerLineSeen && sewer.charge == null) _faUnresolvedCommodities.push('Sewer');
       if (stormLineSeen && storm.charge == null) _faUnresolvedCommodities.push('Stormwater');
+      // Commodities the same account prints on other pages of this file but that left no trace on
+      // this page (backlog b4a4a7b9): their charge may be inside the residual.
+      for (const slot of opts.missingSlots || []) {
+        if (!_faUnresolvedCommodities.includes(slot)) _faUnresolvedCommodities.push(slot);
+      }
       const _fuelAdjMeta = {
         lineSeen: fuelAdjLineSeen,
         otherCommoditiesConfident: _faUnresolvedCommodities.length === 0,
@@ -10785,6 +10989,17 @@ const UTILITY_RULES = [
             reason:
               'Sign flipped to negative — reconciled against printed Current Bill total (OCR dropped the credit minus sign).',
           };
+        if (_wpfDecimalRepair)
+          waterBill._auto_corrected_WaterProtectionFee = {
+            original: _wpfDecimalRepair.original,
+            corrected: _wpfDecimalRepair.corrected,
+            reason:
+              'Read as $' +
+              _wpfDecimalRepair.original +
+              ' (decimal point lost); $' +
+              _wpfDecimalRepair.corrected.toFixed(2) +
+              ' is the only value that makes the page lines add up to the printed Current Bill.',
+          };
         const _waterCropFields = _lbgCropRecoveredFields.filter((f) => f === 'Water' || f === 'Water Protection');
         if (_waterCropFields.length) {
           waterBill._auto_recovered_via_crop = _lbgCropNote(_waterCropFields);
@@ -10818,8 +11033,32 @@ const UTILITY_RULES = [
         if (_lbgCropRecoveredFields.includes('Stormwater')) {
           stormBill._auto_recovered_via_crop = _lbgCropNote(['Stormwater']);
         }
+        if (_stormPeerCorrectedFrom != null) {
+          stormBill._auto_corrected_StormWaterCharge = {
+            original: _stormPeerCorrectedFrom,
+            corrected: storm.charge,
+            reason:
+              'Read as $' +
+              _stormPeerCorrectedFrom.toFixed(2) +
+              ', but every other Stormwater line in this file is $' +
+              storm.charge.toFixed(2) +
+              ' and only that amount makes the page lines add up to the printed Current Bill.',
+          };
+        }
         bills.push(stormBill);
       }
+      // Page-total check (backlogs 90ec94e3, 166ee5bf): the lines must add up to the printed Current
+      // Bill. A Water, Sewer or Stormwater line whose label OCR'd to noise never sets a *LineSeen
+      // flag, so only this sum can see it. Skipped when the Gas line is held (its amount is unknown).
+      const _pageCheck = _lbg_pageTotalCheck(CurrentBillTotal, {
+        gasHeld: !!(gasBill && gasBill._manualReview),
+        gasWithFuelAdj: gasBill && !gasBill._manualReview ? parseFloat(gasBill.TotalCurrentCharges) : 0,
+        water: water.charge,
+        wpf: wpf.charge,
+        sewer: sewer.charge,
+        storm: storm.charge,
+      });
+      if (_pageCheck && !_pageCheck.ok && bills.length) _lbg_flagPageTotalMismatch(bills, _pageCheck);
       // If nothing parsed cleanly but the bill has a Total Amount Due,
       // emit a single "Other" bill so the user sees SOMETHING rather than
       // losing the row entirely. Rare — usually only hit on heavily
@@ -10849,11 +11088,15 @@ const UTILITY_RULES = [
         return digits.slice(0, 2) + '/' + digits.slice(2) + '/' + yr;
       };
       const _findDate = (label) => {
-        const re = new RegExp(label + '[:[ \\t\\n\\r]]*' + _dt.source, 'i');
+        // Separator between label and date: any run of colon, bracket, space or newline. The class
+        // was written as `[:[ \t\n\r]]*`, which is one character then a literal "]*", so
+        // "Bill Date: 05/01/2025" (colon plus space) never matched (backlog ceec5979).
+        const _sep = '[:\\[ \\t\\n\\r]*';
+        const re = new RegExp(label + _sep + _dt.source, 'i');
         const m = page.match(re);
         if (m) return fixDate(m[1]);
         // Try merged format (OCR drops slash: 501-2025 instead of 5/01/2025)
-        const re3 = new RegExp(label + '[:[ \\t\\n\\r]]*' + _dtMerged.source, 'i');
+        const re3 = new RegExp(label + _sep + _dtMerged.source, 'i');
         const m3 = page.match(re3);
         if (m3) return _splitMerged(m3[1] + '-' + m3[2]);
         // Try multi-line: label on one line, date on next
@@ -10907,7 +11150,10 @@ const UTILITY_RULES = [
       if (!serviceFrom && !serviceTo) {
         const datePat = /(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4})/g;
         const allDates = [...page.matchAll(datePat)].map((x) => fixDate(x[1]));
-        const serviceDates = allDates.filter((d) => d && d !== billDate && !/^1[12]\/|^0?[789]\//.test(d));
+        // Service dates are the dates that are not the bill, due or penalty date. A month filter
+        // here dropped every July-September and November-December period (backlog ceec5979).
+        const _notService = [billDate, _findDate('Due[ \\t\\n\\r]*Date'), _findDate('Penalty[ \\t\\n\\r]*Date')];
+        const serviceDates = allDates.filter((d) => d && !_notService.includes(d));
         if (serviceDates.length >= 2) {
           serviceFrom = serviceFrom || serviceDates[0];
           serviceTo = serviceTo || serviceDates[1];
@@ -11727,11 +11973,14 @@ const UTILITY_RULES = [
         // are column noise (the "|" at the page edge OCRs as "1"); any larger whole number after
         // it means the charge column was lost.
         let ci = info.length - 1;
-        while (ci > 0 && !info[ci].cents && !info[ci].frag && Number.isInteger(info[ci].n) && Math.abs(info[ci].n) < 10) ci--;
+        while (ci > 0 && !info[ci].cents && !info[ci].frag && Number.isInteger(info[ci].n) && Math.abs(info[ci].n) < 10)
+          ci--;
         const hasCharge = info[ci].cents && !info[ci].frag && ci >= 1;
         const charge = hasCharge ? info[ci].n : null;
         // Whole-number tokens before the charge position: meter reads and usage.
-        const ints = (hasCharge ? info.slice(0, ci) : info).filter((x) => !x.cents && Number.isInteger(x.n) && x.n >= 0 && !x.frag).map((x) => x.n);
+        const ints = (hasCharge ? info.slice(0, ci) : info)
+          .filter((x) => !x.cents && Number.isInteger(x.n) && x.n >= 0 && !x.frag)
+          .map((x) => x.n);
         let prevRead = null,
           currRead = null,
           usage = null;
@@ -11767,7 +12016,8 @@ const UTILITY_RULES = [
       // emitted as a flagged row (or flags the bill of that commodity) after the line loops.
       const _missingCharge = []; // {commodity:'Electric'|'Sewer'|'Water', prevRead, currRead, usage}
       const _noteMissing = (commodity, m) => {
-        if (m && m._chargeMissing) _missingCharge.push({ commodity, prevRead: m.prevRead, currRead: m.currRead, usage: m.usage });
+        if (m && m._chargeMissing)
+          _missingCharge.push({ commodity, prevRead: m.prevRead, currRead: m.currRead, usage: m.usage });
       };
 
       // -----------------------------------------------------------------
