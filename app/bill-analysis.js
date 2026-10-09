@@ -1932,6 +1932,82 @@ function _decideOnOffPeakKWh(b, kwhConsumed, kwhHeld) {
   return result;
 }
 
+// ── KGS charge-line sum and single-line recovery ──
+// Charge components that add up to Total Current Charges on a Kansas Gas Service bill. EXCLUDES
+// PreviousBalance, PaymentsReceived, BalanceForward. One function for the sum: the Pass B2 check
+// and the suspect-line recovery below both call it.
+function _kgsComponentSum(b) {
+  return (
+    Math.round(
+      (parseBillNumber(b.CustomerCharge) +
+        parseBillNumber(b.DeliveryCharge) +
+        parseBillNumber(b.GasSystemReliability) +
+        parseBillNumber(b.WeatherNormalization) +
+        parseBillNumber(b.GasCharge) +
+        parseBillNumber(b.FranchiseFee) +
+        parseBillNumber(b.WinterEventCost) +
+        parseBillNumber(b.DelayedPaymentCharge)) *
+        100,
+    ) / 100
+  );
+}
+
+// The extractor lists charge lines whose label printed but whose value was unreadable or lost its
+// decimal point (b._kgsSuspectLines). When EXACTLY ONE line is suspect and the sum of the other lines
+// plus that line does not reach the printed Total Current Charges, the line is the difference
+// between the total and the other lines. Never guesses: more than one suspect line, an
+// unreconcilable value, or a bare-digit read that differs from the difference by more than one
+// digit changes nothing. Sets _auto_recovered_B2_<field> so the review screen shows the change.
+function _kgsRecoverSuspectLine(b) {
+  const sus = b._kgsSuspectLines;
+  if (!Array.isArray(sus) || sus.length !== 1) return;
+  const total = parseBillNumberOrZero(b.TotalCurrentCharges);
+  if (!(total > 0)) return;
+  const s = sus[0];
+  const isFF = s.field === 'FranchiseFee';
+  const items = isFF && Array.isArray(b.FranchiseFeeItems) ? b.FranchiseFeeItems : null;
+  if (isFF && (!items || items[s.item] === undefined)) return;
+  const current = parseBillNumberOrZero(isFF ? items[s.item] : b[s.field]);
+  const probe = Object.assign({}, b);
+  if (isFF) {
+    probe.FranchiseFee = String(items.reduce((sum, v, i) => (i === s.item ? sum : sum + parseBillNumberOrZero(v)), 0));
+  } else {
+    probe[s.field] = null;
+  }
+  const value = Math.round((total - _kgsComponentSum(probe)) * 100) / 100;
+  if (Math.abs(value - current) < 0.02) return; // the read already reconciles
+  const mayBeCredit = s.field === 'GasSystemReliability' || s.field === 'WeatherNormalization';
+  if (!(mayBeCredit ? value !== 0 : value > 0) || Math.abs(value) >= total) return;
+  if (s.raw !== null) {
+    const want = String(Math.round(Math.abs(value) * 100));
+    const got = String(parseInt(String(s.raw).replace(/\D/g, ''), 10));
+    let diff = 0;
+    for (let i = 0; i < want.length; i++) if (want[i] !== got[i]) diff++;
+    if (want.length !== got.length || diff > 1) return;
+  }
+  if (isFF) {
+    items[s.item] = value.toFixed(2);
+    Object.assign(b, _kgsFranchiseTotals(items));
+  } else {
+    b[s.field] = value.toFixed(2);
+  }
+  b['_auto_recovered_B2_' + s.field] = {
+    passB_value: current,
+    corrected_to: value,
+    original_ocr: s.raw === null ? '(unreadable)' : String(s.raw),
+    reason:
+      'Suspect line recovery: ' +
+      s.field +
+      (s.raw === null ? ' printed but unreadable' : ' read as digits without a decimal point (' + s.raw + ')') +
+      '; all other lines read clean. Total Current Charges $' +
+      total.toFixed(2) +
+      ' minus the other lines = $' +
+      value.toFixed(2) +
+      '.',
+  };
+  delete b._kgsSuspectLines;
+}
+
 // ── POST-EXTRACTION VERIFICATION ──
 // Uses historical meter data + logical rules to fix extraction errors
 async function _postExtractionVerify(bills, utilityName, rawText) {
@@ -4703,11 +4779,21 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
       // DIGIT_LO/DIGIT_HI per-Mcf band. If unambiguous and in-band: applies correction and sets
       // _auto_recovered_B2_* flag. If ambiguous or out-of-band: sets _sum_mismatch_kgs backstop.
       // Never guesses. Never mutates on ambiguity.
-      // Scoped strictly to KGS — no other provider is affected.
-      if (utilityName === 'Kansas Gas Service') {
+      // Scoped strictly to KGS bills — no other provider is affected. The scope is each bill's own
+      // provider name: the file-level rule name is 'Gas Utility (Spire / Kansas Gas Service / ...)', which
+      // never equals 'Kansas Gas Service', so a rule-name test here left this pass unreachable.
+      const kgsBills = bills.filter(
+        (b) => b._utilityName === 'Kansas Gas Service' || b.UtilityCompany === 'Kansas Gas Service',
+      );
+      if (kgsBills.length > 0) {
         const B2_TOLERANCE = 0.02; // $0.02 — allows for floating-point rounding across addends
 
-        for (const b of bills) {
+        // Suspect-line recovery runs first so a bill with one unreadable line reconciles before B2.
+        for (const b of kgsBills) {
+          if ((b.Commodity || b.commodity || '').toLowerCase() === 'gas') _kgsRecoverSuspectLine(b);
+        }
+
+        for (const b of kgsBills) {
           const comm = (b.Commodity || b.commodity || '').toLowerCase();
           if (comm !== 'gas') continue;
 
@@ -4719,18 +4805,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
 
           // Component sum — EXCLUDES PreviousBalance, PaymentsReceived, BalanceForward.
           // TotalCurrentCharges is the correct reconciliation target (not TotalAmountDue).
-          const kgsSum =
-            Math.round(
-              (parseBillNumber(b.CustomerCharge) +
-                parseBillNumber(b.DeliveryCharge) +
-                parseBillNumber(b.GasSystemReliability) +
-                parseBillNumber(b.WeatherNormalization) +
-                parseBillNumber(b.GasCharge) +
-                parseBillNumber(b.FranchiseFee) +
-                parseBillNumber(b.WinterEventCost) +
-                parseBillNumber(b.DelayedPaymentCharge)) *
-                100,
-            ) / 100;
+          const kgsSum = _kgsComponentSum(b);
 
           const residual = Math.round((total - kgsSum) * 100) / 100;
 

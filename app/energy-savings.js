@@ -6387,6 +6387,40 @@ const _constNormCustId = (raw, known, addr) => {
   return 'RG' + (near.length === 1 ? near[0] : digits);
 };
 
+// ── KGS charge-line helpers (shared by the Gas Utility rule here and the KGS sum check in bill-analysis.js) ──
+// A printed charge line is "suspect" when its label printed but OCR gave no number (null) or a bare
+// digit string. KGS prints every dollar amount with 2 decimals, so a bare digit string lost its point.
+// How many labelled lines have no readable number after them? Counts only short, number-free line
+// tails (for example "fad"), so running text that mentions the label is not counted.
+function _kgsUnreadableLabelCount(text, labelRe) {
+  let n = 0;
+  for (const m of text.matchAll(labelRe)) {
+    const rest = (text.slice(m.index + m[0].length).split('\n')[0] || '').trim();
+    if (rest.length <= 6 && !/\d/.test(rest)) n++;
+  }
+  return n;
+}
+// Suspect lines for the single-value charge fields. specs = [{ field, label, raw }], raw = captured text or null.
+function _kgsSuspectLines(text, specs) {
+  const out = [];
+  for (const sp of specs) {
+    if (sp.raw === null) {
+      if (_kgsUnreadableLabelCount(text, sp.label) > 0) out.push({ field: sp.field, raw: null });
+    } else if (!/[.:]/.test(sp.raw)) {
+      out.push({ field: sp.field, raw: sp.raw });
+    }
+  }
+  return out;
+}
+// Franchise Fee total and the two display values from the list of line items. One unreadable line
+// (null) makes the total unknown (null), never a smaller sum. Single source for extractor and recovery.
+function _kgsFranchiseTotals(items) {
+  if (!items || !items.length) return { FranchiseFee: null, FranchiseFee1: null, FranchiseFee2: null };
+  const nums = items.map(parseBillNumber);
+  const FranchiseFee = nums.every((n) => n !== null) ? String(nums.reduce((sum, n) => sum + n, 0).toFixed(2)) : null;
+  return { FranchiseFee, FranchiseFee1: items[0] || null, FranchiseFee2: items[1] || null };
+}
+
 const UTILITY_RULES = [
   {
     name: 'Evergy',
@@ -9625,16 +9659,13 @@ const UTILITY_RULES = [
         // FranchiseFee = numeric SUM (kept as-is — downstream gas sanity sum and
         // taxCost both use this total).  FranchiseFee1/2 = individual line values
         // for the two-row display in _LAYOUT_KGS.
-        const franchiseMs = [...activeT.matchAll(/Franchise\s+Fee\s+\$?_*?([\d,.:]+)/gi)];
-        const FranchiseFeeItems = franchiseMs.length > 0 ? franchiseMs.map((m) => fixNum(m[1])) : null;
-        // One unreadable line makes the sum unknown (null), not a smaller sum.
-        const _ffNums = FranchiseFeeItems !== null ? FranchiseFeeItems.map(parseBillNumber) : null;
-        const FranchiseFee =
-          _ffNums !== null && _ffNums.every((n) => n !== null)
-            ? String(_ffNums.reduce((sum, n) => sum + n, 0).toFixed(2))
-            : null;
-        const FranchiseFee1 = FranchiseFeeItems ? FranchiseFeeItems[0] || null : null;
-        const FranchiseFee2 = FranchiseFeeItems ? FranchiseFeeItems[1] || null : null;
+        // A line whose label prints but whose value OCR could not read stays in the list as null
+        // (see _kgsUnreadableLabelCount), so the sum is unknown rather than a smaller wrong sum.
+        const franchiseMs = [...activeT.matchAll(/Franchise\s+Fee[\s$_]+([\d,.:]+)/gi)];
+        const _ffRaw = franchiseMs.map((m) => m[1]);
+        for (let i = _kgsUnreadableLabelCount(activeT, /Franchise\s+Fee/gi); i > 0; i--) _ffRaw.push(null);
+        const FranchiseFeeItems = _ffRaw.length > 0 ? _ffRaw.map(fixNum) : null;
+        const { FranchiseFee, FranchiseFee1, FranchiseFee2 } = _kgsFranchiseTotals(FranchiseFeeItems);
 
         // Delayed Payment Charge — late-fee line that appears on some KGS bills.
         // Stored as a positive value (it adds to the total, like all other charges).
@@ -9655,6 +9686,28 @@ const UTILITY_RULES = [
         // Uses activeT to avoid another account's amount-due line.
         const amtDueM = activeT.match(/Amount\s+Due[^0-9\n]*(\d[\d,.:]*)/i);
         const TotalAmountDue = fixNum(amtDueM ? amtDueM[1] : null);
+
+        // Lines that printed but were not read cleanly (see _kgsSuspectLines). The post-extraction
+        // check may rebuild exactly one of them from Total Current Charges.
+        const _kgsSuspects = _kgsSuspectLines(activeT, [
+          { field: 'CustomerCharge', label: /Service\s+Charge/gi, raw: serviceChargeM ? serviceChargeM[1] : null },
+          { field: 'DeliveryCharge', label: /Delivery\s+Charge/gi, raw: deliveryM ? deliveryM[1] : null },
+          {
+            field: 'GasSystemReliability',
+            label: /Gas\s+System\s+Reliability\s+Surcharge/gi,
+            raw: gsrsM ? gsrsM[1] : null,
+          },
+          { field: 'WeatherNormalization', label: /Weather\s+Normalization/gi, raw: wnaM ? wnaM[1] : null },
+          { field: 'GasCharge', label: /Cost\s+of\s+Gas(?!\s*\/)/gi, raw: costGasM ? costGasM[1] : null },
+          {
+            field: 'WinterEventCost',
+            label: /Winter\s+Event\s+Securitized\s+Cost/gi,
+            raw: winterM ? winterM[1] : null,
+          },
+        ]);
+        _ffRaw.forEach((raw, item) => {
+          if (raw === null || !/[.:]/.test(raw)) _kgsSuspects.push({ field: 'FranchiseFee', item, raw });
+        });
 
         return {
           UtilityCompany: 'Kansas Gas Service',
@@ -9700,6 +9753,7 @@ const UTILITY_RULES = [
           RateSchedule,
           commodity: 'gas',
           _utilityName: 'Kansas Gas Service',
+          ...(_kgsSuspects.length ? { _kgsSuspectLines: _kgsSuspects } : {}),
         };
       }
       // ── end KGS path ───────────────────────────────────────────────────────
