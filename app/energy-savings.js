@@ -7638,6 +7638,14 @@ const UTILITY_RULES = [
             break;
           }
         }
+        // Item 985847a7: the first pattern above needs 4 or more characters after the
+        // decimal point, so a clean total with the usual 2 decimals ("$5,475.06") never matched
+        // it. Last resort, after the two-line scan: when nothing else found the total, take the
+        // plain 2-decimal value after the label (never replaces a value already found).
+        if (!summaryTotalCC) {
+          const plainCC = t.match(/Total\s+Current\s+Charges[\s:$£]*([\d,]+\.\d{2})(?!\d)/i);
+          if (plainCC) summaryTotalCC = plainCC[1].replace(/,/g, '');
+        }
       }
 
       // ── Block-based per-site extraction ──
@@ -7715,7 +7723,42 @@ const UTILITY_RULES = [
       function _parseWRESiteBlocks(text) {
         const _lines = text.split(/\r?\n/);
         const blocks = []; // [{ServiceAddress, AccountNumber, MeterNumber, mmbtu, dollar}]
+        // Item 5a5973d4: a site block is opened by its "Service Address:" line. When that
+        // line is missing from the OCR text (page-1 footer, garbled), the site's component and
+        // Sub-Total lines would otherwise be written INTO THE PREVIOUS site's block, which
+        // overwrites its values and shifts every later site by one. A component or Sub-Total
+        // line that arrives while the open block already has its Sub-Total belongs to a new
+        // site: open an empty block for it (no address, no account, nothing guessed) so every
+        // later site keeps its position.
+        const _newBlock = (addr, acct, meter) => ({
+          ServiceAddress: addr,
+          AccountNumber: acct,
+          MeterNumber: meter,
+          mmbtu: null,
+          dollar: null,
+          triggerCharge: null,
+          indexCharge: null,
+          sweCharge: null,
+          triggerMMbtu: null,
+          indexMMbtu: null,
+          sweMMbtu: null,
+          // Fix (2026-09-23, WRE invoice-fields fix): "Fuel" column volumes,
+          // captured alongside triggerMMbtu/indexMMbtu above (see the Trigger/
+          // Index line parsers) so charge = (Mmbtu+Fuel) x Rate can be checked
+          // using WRE's own printed formula instead of Mmbtu alone.
+          triggerFuelMMbtu: null,
+          indexFuelMMbtu: null,
+          triggerRate: null,
+          indexRate: null,
+        });
         let _cur = null; // the currently-open site block object
+        const _openStubIfClosed = () => {
+          if (_cur && (_cur.mmbtu != null || _cur.dollar != null)) {
+            _cur = _newBlock(null, null, null);
+            _cur._stubBlock = true;
+            blocks.push(_cur);
+          }
+        };
         let _inSites = false; // true once we pass the header section
 
         for (let i = 0; i < _lines.length; i++) {
@@ -7813,27 +7856,7 @@ const UTILITY_RULES = [
             // (breaking any positional cross-pass comparison) and (b) meant the site's
             // charge was just gone with no trace, rather than present-but-null and
             // recoverable via the fallbacks below / the consensus merge that follows.
-            _cur = {
-              ServiceAddress: _addr,
-              AccountNumber: _acct,
-              MeterNumber: _meter,
-              mmbtu: null,
-              dollar: null,
-              triggerCharge: null,
-              indexCharge: null,
-              sweCharge: null,
-              triggerMMbtu: null,
-              indexMMbtu: null,
-              sweMMbtu: null,
-              // Fix (2026-09-23, WRE invoice-fields fix): "Fuel" column volumes,
-              // captured alongside triggerMMbtu/indexMMbtu above (see the Trigger/
-              // Index line parsers) so charge = (Mmbtu+Fuel) x Rate can be checked
-              // using WRE's own printed formula instead of Mmbtu alone.
-              triggerFuelMMbtu: null,
-              indexFuelMMbtu: null,
-              triggerRate: null,
-              indexRate: null,
-            };
+            _cur = _newBlock(_addr, _acct, _meter);
             blocks.push(_cur);
             continue;
           }
@@ -7871,6 +7894,7 @@ const UTILITY_RULES = [
           // First number after label = per-component MMBtu; last dollar amount = charge.
           // Rate column ($5.2650) appears between fuel column and the final $ charge.
           if (_inSites && _cur && /Trigger\s*-?\s*Fixed/i.test(ln)) {
+            _openStubIfClosed();
             // Fix (2026-07-22): accept OCR comma→period corrupted form ($1.337.90) the
             // same way the Sub-Total line already does, and restore it via _wreFixOcrDollar.
             // Without this, any Trigger charge >= $1,000 silently parsed as null, causing
@@ -7917,6 +7941,7 @@ const UTILITY_RULES = [
           // First number after label = per-component MMBtu; last dollar amount = charge.
           // Rate column ($5.0550) appears between fuel column and the final $ charge.
           if (_inSites && _cur && /Index[\s(b]*(?:FOM|0M|OM)/i.test(ln)) {
+            _openStubIfClosed();
             // Fix (2026-07-22): same OCR comma→period corruption fix as the Trigger line
             // above — Index charges are frequently >= $1,000 (e.g. "$1,337.90" misread as
             // "$1.337.90"), which the old plain-comma regex silently failed to match.
@@ -7963,6 +7988,7 @@ const UTILITY_RULES = [
           // Format: "Special Weather Event  -2.98  -0.03  $-20.8065  $62.63"
           // The dollar charge is POSITIVE (surcharge), despite negative MMbtu/rate columns.
           if (_inSites && _cur && /Special\s+Weather\s+Event/i.test(ln)) {
+            _openStubIfClosed();
             // Fix (2026-07-22): same OCR comma→period corruption fix as Trigger/Index above,
             // applied here too since SWE surcharges can also exceed $1,000 (e.g. JAN 26 invoice).
             // Fix (2026-09-15, WRE OCR-tolerance sweep): same £-for-$ OCR-misread
@@ -8085,6 +8111,7 @@ const UTILITY_RULES = [
             continue;
           }
           if (_cur && /^\s*Sub[\s.\-]{0,2}Total\s*[:;,.]?/i.test(ln)) {
+            _openStubIfClosed();
             // First number after the colon = MMbtu
             // Fix (2026-09-18, WRE usage-capture sweep): the old pattern required the
             // digit group to start IMMEDIATELY after the label — verified failure:
@@ -8123,7 +8150,7 @@ const UTILITY_RULES = [
             // captured on this block, or the repaired value doesn't line up), flag
             // for manual review instead of silently keeping the implausible
             // 5-digit reading as fact.
-            if (_mmbtuM && _cur.mmbtu != null && !/\./.test(_mmbtuM[1]) && _cur.mmbtu > 999) {
+            if (_mmbtuM && _cur.mmbtu != null && !/\./.test(_mmbtuM[1]) && _cur.mmbtu >= 100) {
               const _digits = _mmbtuM[1].replace(/[^\d]/g, '');
               let _repaired = null;
               if (_digits.length > 2) {
@@ -8327,7 +8354,33 @@ const UTILITY_RULES = [
               if (!_cand) continue;
               siteBlocks[_idx].dollar = _cand.dollar;
               siteBlocks[_idx]._consensusRecovered = true;
-              if (siteBlocks[_idx].mmbtu == null) siteBlocks[_idx].mmbtu = _cand.mmbtu;
+              // Item 29ecdb43: a value taken from another pass must meet the SAME checks as a
+              // primary-pass value. The checks read the rate, the component lines and the review
+              // flags of the block, so those travel with the value. Fields the primary pass read
+              // are never replaced.
+              if (siteBlocks[_idx].mmbtu == null && _cand.mmbtu != null) {
+                siteBlocks[_idx].mmbtu = _cand.mmbtu;
+                for (const _flag of [
+                  '_mmbtuDecimalRepaired',
+                  '_mmbtuNoDecimalUnverified',
+                  '_tolUnverifiedMMbtu',
+                  '_mmbtuFromComponentFallback',
+                ]) {
+                  if (_cand[_flag]) siteBlocks[_idx][_flag] = _cand[_flag];
+                }
+              }
+              for (const _fld of [
+                'triggerRate',
+                'indexRate',
+                'triggerMMbtu',
+                'indexMMbtu',
+                'sweMMbtu',
+                'triggerFuelMMbtu',
+                'indexFuelMMbtu',
+                'subFuel',
+              ]) {
+                if (siteBlocks[_idx][_fld] == null && _cand[_fld] != null) siteBlocks[_idx][_fld] = _cand[_fld];
+              }
               if (siteBlocks[_idx].indexCharge == null) siteBlocks[_idx].indexCharge = _cand.indexCharge;
               if (siteBlocks[_idx].triggerCharge == null) siteBlocks[_idx].triggerCharge = _cand.triggerCharge;
               if (siteBlocks[_idx].sweCharge == null) siteBlocks[_idx].sweCharge = _cand.sweCharge;
@@ -8343,6 +8396,141 @@ const UTILITY_RULES = [
         }
       }
 
+      // Shared checks (hoisted out of the per-site loop so every path uses ONE copy).
+      // Fix (2026-07-28, gas-bill-ocr-extraction TASK 3): rate-based sanity cross-
+      // check. Tesseract can misread a digit in MMbtu (real 4.74 read as 174) or in
+      // an account number, but the DOLLAR charge on this invoice format extracts
+      // correctly even on the worst real bill tested (verified exact on Inv A:
+      // $22.92/$182.02/$417.16/$604.41). Each per-site block prints its own MMbtu,
+      // rate, AND resulting charge for both the Trigger and Index components, so
+      // MMbtu*rate can be checked against the printed charge without any external
+      // data. Tolerance chosen from real observed data, not a guess: probed all 10
+      // sites' Trigger AND Index components (20 checks) on Inv C (Nov 2025) —
+      // the one Client C invoice with a real digital text layer (no OCR involved,
+      // so every discrepancy here is legitimate bill-rounding, not misread digits).
+      // Every single check came back within -0.89% to -0.97% of the printed charge
+      // (the bill's printed MMbtu/rate are rounded to fewer decimals than its own
+      // internal billing math) — a tight, consistent band under 1%. 5% is >5x that
+      // natural rounding floor, so it will never false-flag a correctly-read site,
+      // while a genuine digit misread (e.g. 174 vs 4.74 MMbtu is a ~3570% swing)
+      // blows past it by orders of magnitude. The $1 floor (AND, not OR) additionally
+      // guards the smallest real sites (e.g. a $0.47 total bill) from being flagged
+      // purely on cents-level rounding noise inflating a % check at tiny scale.
+      const _wreRateMismatch = (mmbtu, rate, charge) => {
+        if (mmbtu == null || rate == null || charge == null || charge === 0) return false;
+        const computed = mmbtu * rate;
+        const deltaPct = (Math.abs(computed - charge) / Math.abs(charge)) * 100;
+        const deltaDollar = Math.abs(computed - charge);
+        return deltaPct > 5 && deltaDollar > 1;
+      };
+      // Second, rate-INDEPENDENT identity check: the Sub-Total line's own printed
+      // MMbtu must equal Trigger MMbtu + Index MMbtu — they are literally the same
+      // number, printed twice on the same invoice (once as two line items, once as
+      // their sum). Needed because the rate-based check above goes blind whenever
+      // the RATE column itself is OCR-unreadable (confirmed on Inv A site #1:
+      // Sub-Total read as 174 MMbtu, but Index alone read as 424 MMbtu with the rate
+      // column unreadable — the rate check had nothing to compare, but 424 MMbtu
+      // from ONE component can never fit inside a 174 MMbtu total, which this check
+      // catches without needing any rate at all). Empirically verified on the same
+      // 478203 clean-text sample used above: Sub-Total MMbtu equals
+      // TriggerMMbtu+IndexMMbtu on 10/10 sites, within 0.01 MMbtu (2-decimal
+      // print-rounding). Tolerance set to max(0.1 MMbtu, 3% of the sub-total) — 10x
+      // that observed 0.01 rounding floor — so it won't false-flag a clean bill.
+      // Fix (2026-09-21, WRE SWE-omitted-from-validation fix): accept a third,
+      // optional sweMmbtu param and fold it into the sum. The Special Weather
+      // Event line is a real third component (verified negative on the Jan 2026
+      // invoice: -56.89 MMbtu) that used to be silently excluded from this
+      // identity check, so a site WITH an SWE line always failed here even
+      // though Trigger+Index+SWE == Sub-Total exactly (169.55 + 508.49 +
+      // (-56.89) = 621.15 ≈ Sub-Total 621.14).
+      // Tolerance of the Sub-Total identity: the one definition, used by the
+      // mismatch check and by the decimal repair below.
+      const _wreSumTolerance = (subTotal) => Math.max(0.1, subTotal * 0.03);
+      const _wreComponentSumMismatch = (subTotal, trigMmbtu, idxMmbtu, sweMmbtu) => {
+        if (subTotal == null || (trigMmbtu == null && idxMmbtu == null)) return false;
+        const sum =
+          (trigMmbtu != null ? trigMmbtu : 0) + (idxMmbtu != null ? idxMmbtu : 0) + (sweMmbtu != null ? sweMmbtu : 0);
+        const tolerance = _wreSumTolerance(subTotal);
+        if (trigMmbtu != null && idxMmbtu != null) {
+          return Math.abs(sum - subTotal) > tolerance;
+        }
+        // Only one component legible: a non-negative component can never exceed the total.
+        // (A component whose decimal point was lost, "6557" for "65.57", is repaired by
+        // _wreRepairComponentDecimals BEFORE this check runs, so it never reaches here.)
+        return sum > subTotal + tolerance;
+      };
+      // Item 971c60d2: OCR can drop the decimal point of a component line ("6003" for
+      // "60.03", "10474" for "104.74"). Every printed component has 2 decimals, so a
+      // whole-number reading of 100 or more that does not fit the printed Sub-Total, but
+      // does fit it when divided by 100, is that known shape. The repair is confirmed by
+      // the Sub-Total (a second, independent printed number) and by nothing else, so it
+      // is applied only when the Sub-Total line itself was read (not rebuilt from the
+      // components). The component is changed in place so the rate checks, the sum check
+      // and the shipped _wreIndexMMbtu/_wreTriggerMMbtu all see the same value.
+      const _wreRepairComponentDecimals = (blk) => {
+        if (blk.mmbtu == null || blk._mmbtuFromComponentFallback) return;
+        for (const key of ['triggerMMbtu', 'indexMMbtu']) {
+          const v = blk[key];
+          if (v == null || !Number.isInteger(v) || v < 100) continue;
+          const others = (key === 'triggerMMbtu' ? blk.indexMMbtu : blk.triggerMMbtu) || 0;
+          const fits = (x) => Math.abs(x + others + (blk.sweMMbtu || 0) - blk.mmbtu) <= _wreSumTolerance(blk.mmbtu);
+          if (!fits(v) && fits(v / 100)) {
+            blk[key] = v / 100;
+            blk._wreComponentDecimalRepaired = key;
+          }
+        }
+      };
+      // Item 3f7873d6: the Sub-Total MMbtu is confirmed when the printed Sub-Total charge
+      // divided by (Sub-Total MMbtu + Fuel) falls inside the band of printed rates
+      // (5% each side; the same 5% the component rate check uses). It is a rate check that
+      // needs no component line, so a garbled Trigger/Index line cannot discredit a
+      // Sub-Total that reads cleanly. Not used for a site with a Special Weather Event line
+      // (its charge is not rate x quantity), for a Sub-Total rebuilt from the components
+      // (circular), or for one whose decimal point was repaired without math.
+      const _wreSubTotalConfirmed = (blk, invoiceRates) => {
+        if (blk.mmbtu == null || blk.dollar == null) return false;
+        if (blk._mmbtuFromComponentFallback || blk._mmbtuNoDecimalUnverified || blk._tolUnverifiedMMbtu) return false;
+        if (blk.sweCharge != null || blk.sweMMbtu != null) return false;
+        const charge = parseBillNumber(blk.dollar);
+        // A site whose own rate column was not readable uses the rate(s) the other sites
+        // of the SAME invoice print (one invoice, one price per component).
+        const own = [blk.triggerRate, blk.indexRate].filter((r) => r != null);
+        const rates = (own.length ? own : invoiceRates)
+          .map((r) => parseFloat(r))
+          .filter((r) => r > 0);
+        const qty = blk.mmbtu + (blk.subFuel || 0);
+        if (!charge || !rates.length || qty <= 0) return false;
+        const blended = charge / qty;
+        return blended >= Math.min(...rates) * 0.95 && blended <= Math.max(...rates) * 1.05;
+      };
+      // Item 899011fd: when the Sub-Total MMbtu cannot be confirmed, the usage can still
+      // be rebuilt from the component lines IF every component present has its own rate
+      // and charge, each passes the rate check, and the component charges add up to the
+      // printed Sub-Total charge (so no component line is missing). Returns the usage or null.
+      const _wreComponentsUsage = (blk) => {
+        const comps = [
+          [blk.triggerMMbtu, blk.triggerFuelMMbtu, blk.triggerRate, blk.triggerCharge],
+          [blk.indexMMbtu, blk.indexFuelMMbtu, blk.indexRate, blk.indexCharge],
+        ].filter((c) => c[0] != null || c[2] != null || c[3] != null);
+        if (!comps.length || blk.dollar == null) return null;
+        for (const [m, f, r, c] of comps) {
+          if (m == null || r == null || c == null) return null;
+          if (_wreRateMismatch(m + (f || 0), parseFloat(r), c)) return null;
+        }
+        const chargeSum = comps.reduce((acc, c) => acc + c[3], 0) + (blk.sweCharge || 0);
+        if (Math.abs(chargeSum - parseBillNumber(blk.dollar)) > 0.05) return null;
+        const usage = comps.reduce((acc, c) => acc + c[0], 0) + (blk.sweMMbtu || 0);
+        return Math.round(usage * 100) / 100;
+      };
+      // The Trigger and Index rates this invoice prints: a rate that at least two sites agree on.
+      const _wreInvoiceRates = ['triggerRate', 'indexRate']
+        .map((key) => {
+          const counts = {};
+          for (const b of siteBlocks) if (b[key] != null) counts[b[key]] = (counts[b[key]] || 0) + 1;
+          const best = Object.keys(counts).sort((x, y) => counts[y] - counts[x])[0];
+          return best != null && counts[best] >= 2 ? best : null;
+        })
+        .filter((r) => r != null);
       const results = [];
       for (let i = 0; i < siteBlocks.length; i++) {
         const blk = siteBlocks[i];
@@ -8395,37 +8583,12 @@ const UTILITY_RULES = [
           continue;
         }
 
-        // Fix (2026-07-28, gas-bill-ocr-extraction TASK 3): rate-based sanity cross-
-        // check. Tesseract can misread a digit in MMbtu (real 4.74 read as 174) or in
-        // an account number, but the DOLLAR charge on this invoice format extracts
-        // correctly even on the worst real bill tested (verified exact on Inv A:
-        // $22.92/$182.02/$417.16/$604.41). Each per-site block prints its own MMbtu,
-        // rate, AND resulting charge for both the Trigger and Index components, so
-        // MMbtu*rate can be checked against the printed charge without any external
-        // data. Tolerance chosen from real observed data, not a guess: probed all 10
-        // sites' Trigger AND Index components (20 checks) on Inv C (Nov 2025) —
-        // the one Client C invoice with a real digital text layer (no OCR involved,
-        // so every discrepancy here is legitimate bill-rounding, not misread digits).
-        // Every single check came back within -0.89% to -0.97% of the printed charge
-        // (the bill's printed MMbtu/rate are rounded to fewer decimals than its own
-        // internal billing math) — a tight, consistent band under 1%. 5% is >5x that
-        // natural rounding floor, so it will never false-flag a correctly-read site,
-        // while a genuine digit misread (e.g. 174 vs 4.74 MMbtu is a ~3570% swing)
-        // blows past it by orders of magnitude. The $1 floor (AND, not OR) additionally
-        // guards the smallest real sites (e.g. a $0.47 total bill) from being flagged
-        // purely on cents-level rounding noise inflating a % check at tiny scale.
-        const _wreRateMismatch = (mmbtu, rate, charge) => {
-          if (mmbtu == null || rate == null || charge == null || charge === 0) return false;
-          const computed = mmbtu * rate;
-          const deltaPct = (Math.abs(computed - charge) / Math.abs(charge)) * 100;
-          const deltaDollar = Math.abs(computed - charge);
-          return deltaPct > 5 && deltaDollar > 1;
-        };
         // Fix (2026-09-23, WRE invoice-fields fix): include the captured Fuel
         // column in the computed side of the check — WRE's own printed formula is
         // charge = (Mmbtu+Fuel) x Rate, not Mmbtu x Rate alone. Falls back to +0
         // when Fuel wasn't captured (small, ~1-2% column; OCR sometimes drops it),
         // so this never makes the check MORE likely to flag a site than before.
+        _wreRepairComponentDecimals(blk);
         const _trigMismatch = _wreRateMismatch(
           blk.triggerMMbtu != null ? blk.triggerMMbtu + (blk.triggerFuelMMbtu || 0) : blk.triggerMMbtu,
           blk.triggerRate != null ? parseFloat(blk.triggerRate) : null,
@@ -8436,52 +8599,6 @@ const UTILITY_RULES = [
           blk.indexRate != null ? parseFloat(blk.indexRate) : null,
           blk.indexCharge,
         );
-        // Second, rate-INDEPENDENT identity check: the Sub-Total line's own printed
-        // MMbtu must equal Trigger MMbtu + Index MMbtu — they are literally the same
-        // number, printed twice on the same invoice (once as two line items, once as
-        // their sum). Needed because the rate-based check above goes blind whenever
-        // the RATE column itself is OCR-unreadable (confirmed on Inv A site #1:
-        // Sub-Total read as 174 MMbtu, but Index alone read as 424 MMbtu with the rate
-        // column unreadable — the rate check had nothing to compare, but 424 MMbtu
-        // from ONE component can never fit inside a 174 MMbtu total, which this check
-        // catches without needing any rate at all). Empirically verified on the same
-        // 478203 clean-text sample used above: Sub-Total MMbtu equals
-        // TriggerMMbtu+IndexMMbtu on 10/10 sites, within 0.01 MMbtu (2-decimal
-        // print-rounding). Tolerance set to max(0.1 MMbtu, 3% of the sub-total) — 10x
-        // that observed 0.01 rounding floor — so it won't false-flag a clean bill.
-        // Fix (2026-09-21, WRE SWE-omitted-from-validation fix): accept a third,
-        // optional sweMmbtu param and fold it into the sum. The Special Weather
-        // Event line is a real third component (verified negative on the Jan 2026
-        // invoice: -56.89 MMbtu) that used to be silently excluded from this
-        // identity check, so a site WITH an SWE line always failed here even
-        // though Trigger+Index+SWE == Sub-Total exactly (169.55 + 508.49 +
-        // (-56.89) = 621.15 ≈ Sub-Total 621.14).
-        const _wreComponentSumMismatch = (subTotal, trigMmbtu, idxMmbtu, sweMmbtu) => {
-          if (subTotal == null || (trigMmbtu == null && idxMmbtu == null)) return false;
-          const sum =
-            (trigMmbtu != null ? trigMmbtu : 0) + (idxMmbtu != null ? idxMmbtu : 0) + (sweMmbtu != null ? sweMmbtu : 0);
-          const tolerance = Math.max(0.1, subTotal * 0.03);
-          if (trigMmbtu != null && idxMmbtu != null) {
-            return Math.abs(sum - subTotal) > tolerance;
-          }
-          // Only one component legible: a non-negative component can never exceed the total.
-          // Fix (2026-09-21, WRE decimal-dropout fix): before flagging, check
-          // whether the offending sum is a decimal-point OCR dropout — the
-          // component line reads e.g. "10474" for "104.74" while the Sub-Total's
-          // OWN line already parsed correctly WITH its decimal (verified: Inv
-          // 474908/Oct 2025 site #10, Index "10474" vs correct Sub-Total 104.74;
-          // Inv E/Sep 2025 site #10, Index "6557" vs correct Sub-Total
-          // 65.57). If sum/100 reconciles with the Sub-Total within the same
-          // tolerance, this is that known shape, not a real mismatch — do not
-          // flag. This mirrors the bare-digit repair heuristic already trusted
-          // for the Sub-Total itself (~7441-7521), applied here at the
-          // comparison point; it does not change blk.mmbtu (already correct),
-          // only suppresses the false-positive flag.
-          if (sum > subTotal + tolerance && Math.abs(sum / 100 - subTotal) <= tolerance) {
-            return false;
-          }
-          return sum > subTotal + tolerance;
-        };
         // Fix (2026-09-18, WRE usage-capture sweep, TASK 4): when blk.mmbtu was
         // ITSELF filled by the post-loop component-sum fallback (see
         // _mmbtuFromComponentFallback above), running this identity check against
@@ -8603,7 +8720,7 @@ const UTILITY_RULES = [
         // independent math check like _trigMismatch/_idxMismatch, just using
         // blk.mmbtu/blk.dollar directly instead of requiring a per-component
         // charge.
-        const _mmbtuRateMismatch =
+        const _mmbtuRateMismatchRaw =
           _trigMismatch ||
           _idxMismatch ||
           _sumMismatch ||
@@ -8611,6 +8728,34 @@ const UTILITY_RULES = [
           _circularUnverified ||
           !!blk._mmbtuNoDecimalUnverified ||
           _subTotalMismatch;
+        // Items 3f7873d6 and 899011fd: a failed cross-check no longer nulls the usage when
+        // the evidence says which side is right. (1) The Sub-Total MMbtu is confirmed by its
+        // own printed rate band: a garbled component line cannot discredit it, so the
+        // Sub-Total ships and the site is only marked "component line garbled". (2) Else the
+        // component lines, if each is rate-confirmed and together they explain the whole
+        // Sub-Total charge, give the usage. (3) Else the usage stays null and flagged. A site
+        // whose own Sub-Total digits were never confirmed (no-decimal, unverified low-
+        // confidence read, circular rebuild) is never recovered here.
+        let _mmbtuRateMismatch = _mmbtuRateMismatchRaw;
+        let _shipMmbtu = blk.mmbtu;
+        if (
+          _mmbtuRateMismatchRaw &&
+          !blk._tolUnverifiedMMbtu &&
+          !blk._mmbtuNoDecimalUnverified &&
+          !_circularUnverified
+        ) {
+          if (_wreSubTotalConfirmed(blk, _wreInvoiceRates)) {
+            _mmbtuRateMismatch = false;
+            blk._wreComponentLineGarbled = true;
+          } else {
+            const _fromComps = _wreComponentsUsage(blk);
+            if (_fromComps != null) {
+              _mmbtuRateMismatch = false;
+              _shipMmbtu = _fromComps;
+              blk._wreUsageFromComponents = true;
+            }
+          }
+        }
         if (_mmbtuRateMismatch) {
           console.log(
             '[WRE] Rate/sum cross-check FAILED for site #' +
@@ -8661,7 +8806,7 @@ const UTILITY_RULES = [
           BillingPeriodEnd,
           BillDate,
           ProductionMonth,
-          NaturalGasMMbtu: _mmbtuRateMismatch ? null : blk.mmbtu != null ? String(blk.mmbtu) : null,
+          NaturalGasMMbtu: _mmbtuRateMismatch ? null : _shipMmbtu != null ? String(_shipMmbtu) : null,
           NaturalGasTherms: null,
           NaturalGasCCF: null,
           GasCharge: parseBillNumber(blk.dollar),
@@ -8702,6 +8847,9 @@ const UTILITY_RULES = [
           // mechanism rather than inventing a second one; never silently "correct"
           // the number toward what the math implies, only flag it.
           _mmbtuRateMismatch: _mmbtuRateMismatch || undefined,
+          _wreComponentLineGarbled: blk._wreComponentLineGarbled || undefined,
+          _wreUsageFromComponents: blk._wreUsageFromComponents || undefined,
+          _wreComponentDecimalRepaired: blk._wreComponentDecimalRepaired || undefined,
           // Fix (2026-09-23, WRE invoice-fields fix, item 2): _mmbtuMissingWithCharge
           // (computed above) folds into the SAME manual-review flag/label mechanism
           // — see comment above _mmbtuMissingWithCharge for why this is needed in

@@ -919,33 +919,59 @@ function _gateB_billCountCheck(rawText, billCount, providerName) {
   };
 }
 
-// GATE WRE — known per-invoice site-count baseline for WRE.
-// (18b33d9f gap 2, 2026-09-16.) `_parseWRESiteBlocks` (energy-savings.js)
-// can fail to open a site block at all when OCR garbles the "Service
-// Address:" line badly enough that even its tolerant regex misses it — in
-// that case the anchor never appears in the raw text either, so GATE B's
-// matchAll anchor count above (which counts the SAME anchor) cannot catch
-// it. WRE / Client C invoices are ALWAYS exactly 10 per-site
-// sub-totals (AI/_context/reference/known-good-values/spring-hill.md,
-// invoice #478203 Nov 2025 ground truth) — this is a fixed, known baseline
-// for this provider, not a guess. Any invoice whose parsed site-block count
-// comes in under that baseline must HOLD for review via the existing gate
-// mechanism, not silently auto-save.
-const _WRE_EXPECTED_SITE_COUNT = 10;
-function _gateWRE_siteCountCheck(providerName, wreSiteBlockCount, billCount) {
+// GATE WRE — known per-invoice site-count baseline for WRE, kept PER CUSTOMER.
+// (18b33d9f gap 2, 2026-09-16; per-customer 0a852285, 2026-10-09.)
+// `_parseWRESiteBlocks` (energy-savings.js) can fail to open a site block at
+// all when OCR garbles the "Service Address:" line badly enough that even its
+// tolerant regex misses it. In that case the anchor never appears in the raw
+// text either, so GATE B's matchAll anchor count above (which counts the SAME
+// anchor) cannot catch it. One WRE customer always prints the same number of
+// per-site sub-totals, but a second WRE customer can have a different count.
+// The expected count is read at run time from the user's own saved meters for
+// the printed Customer # (read from the invoice by the WRE extractor), never
+// from the provider name and never from a hardcoded table. A customer with no
+// saved meters has no count baseline and is never held by this gate (a
+// per-site problem is still flagged on its own row).
+// The single place that turns a printed Customer # into its expected site
+// count: the number of distinct saved gas meters whose account is that
+// Customer # (WRE sets each site's AccountNumber to the Customer #). Returns
+// null when the customer is unreadable or has no saved meters.
+function _wreExpectedSiteCount(customerNumber) {
+  if (customerNumber == null) return null;
+  const key = String(customerNumber).replace(/\D/g, '');
+  if (!key) return null;
+  if (typeof projects === 'undefined' || typeof forEachCustomerBuilding !== 'function') return null;
+  const ids = new Set();
+  forEachCustomerBuilding(projects, (bldg) => {
+    for (const m of bldg.meters || []) {
+      if (String(m.account || '').replace(/\D/g, '') !== key) continue;
+      if ((m.commodity || '').toLowerCase() !== 'gas') continue;
+      ids.add(m.id);
+    }
+  });
+  return ids.size > 0 ? ids.size : null;
+}
+// The Customer # of an extracted file: the first non-empty one on its bills.
+function _wreCustomerNumberOf(bills) {
+  const b = (bills || []).find((x) => x && x.CustomerNumber);
+  return b ? b.CustomerNumber : null;
+}
+function _gateWRE_siteCountCheck(providerName, wreSiteBlockCount, billCount, customerNumber) {
   if (providerName !== 'Wood River Energy') return null;
   if (wreSiteBlockCount == null) return null;
-  if (wreSiteBlockCount >= _WRE_EXPECTED_SITE_COUNT) return null;
+  const expected = _wreExpectedSiteCount(customerNumber);
+  if (expected == null) return null;
+  if (wreSiteBlockCount >= expected) return null;
   return {
     gate: 'WRE',
-    expected: _WRE_EXPECTED_SITE_COUNT,
+    expected,
     actual: wreSiteBlockCount,
     message:
       'This file yielded ' +
       wreSiteBlockCount +
       ' of the ' +
-      _WRE_EXPECTED_SITE_COUNT +
-      ' sites Wood River / Spring Hill invoices always have (' +
+      expected +
+      ' sites every invoice of this customer has (' +
       billCount +
       ' bill' +
       (billCount === 1 ? '' : 's') +
@@ -9603,14 +9629,7 @@ async function _extractSingleFileForQueue(file, fileIdx) {
         // Bug b5951068: Instead of silently dropping bills that fail the key-field
         // filter, flag them with parseError:true so the user sees every billing
         // period from the PDF — even ones the parser couldn't understand.
-        const _hasKeyField = (b) =>
-          b.BillingPeriodStart ||
-          b.kWhConsumed ||
-          b.NaturalGasTherms ||
-          b.NaturalGasCCF ||
-          b.WaterUsage ||
-          b.GasCharge ||
-          b.TotalCurrentCharges;
+        const _hasKeyField = _billHasKeyField;
         let validBills = bills.filter((b) => _hasKeyField(b));
         const _droppedBills = bills.filter((b) => !_hasKeyField(b) && !b._manualReview);
         _droppedBills.forEach((b) => {
@@ -9640,7 +9659,7 @@ async function _extractSingleFileForQueue(file, fileIdx) {
         // (e.g. Utility E) recovered. Comparing against pre-recovery bills.length
         // stamped a stale mismatch onto every individually-correct bill.
         const _gateBResult = _gateB_billCountCheck(text, finalBills.length, rule.name); // GATE B
-        const _gateWREResult = _gateWRE_siteCountCheck(rule.name, _queueWreSiteBlockCount, finalBills.length); // GATE WRE
+        const _gateWREResult = _gateWRE_siteCountCheck(rule.name, _queueWreSiteBlockCount, finalBills.length, _wreCustomerNumberOf(finalBills)); // GATE WRE
 
         if (
           finalBills.length === 0 ||
@@ -15628,19 +15647,15 @@ function globalTaskGoTo() {
 // _extractSingleFileForQueue / processPDF) so an empty/near-empty extraction
 // (e.g. the Generic Utility catch-all's all-null object on a blank cover
 // page) can never masquerade as a recovered bill.
+// One list of the fields that make a parsed bill row real data (item 1ac41b84:
+// NaturalGasMMbtu was missing, so gas supplier rows with usage but no charge were
+// labelled "billing period unreadable"). Used by the queue, single-file and
+// unmatched-page recovery paths.
+function _billHasKeyField(b) {
+  return !!(b && (b.BillingPeriodStart || b.kWhConsumed || b.NaturalGasTherms || b.NaturalGasCCF || b.NaturalGasMMbtu || b.WaterUsage || b.GasCharge || b.TotalCurrentCharges));
+}
 function _unmatchedRecoveryHasKeyField(b) {
-  return !!(
-    b &&
-    (b.AccountNumber ||
-      b.BillingPeriodStart ||
-      b.kWhConsumed ||
-      b.NaturalGasTherms ||
-      b.NaturalGasCCF ||
-      b.WaterUsage ||
-      b.GasCharge ||
-      b.TotalCurrentCharges ||
-      b.TotalAmountDue)
-  );
+  return !!(b && (b.AccountNumber || b.TotalAmountDue || _billHasKeyField(b)));
 }
 function _unmatchedToSyntheticBills(unmatchedPages) {
   if (!unmatchedPages || !unmatchedPages.length) return [];
@@ -15799,14 +15814,7 @@ async function processPDF(file) {
           // Bug b5951068: Flag bills that fail the key-field filter instead of
           // silently dropping them. Unparseable billing periods surface as
           // parseError:true rows so the user can see and manually assign them.
-          const _singleHasKeyField = (b) =>
-            b.BillingPeriodStart ||
-            b.kWhConsumed ||
-            b.NaturalGasTherms ||
-            b.NaturalGasCCF ||
-            b.WaterUsage ||
-            b.GasCharge ||
-            b.TotalCurrentCharges;
+          const _singleHasKeyField = _billHasKeyField;
           // Fix (code review of 0440be6, should-fix): factored out so the retry-accept
           // branch below can recompute this AFTER `bills` is wholesale-replaced by
           // `retryBills2`, instead of leaving a stale pre-retry snapshot in place.
@@ -16800,7 +16808,7 @@ async function processPDF(file) {
           // reference here (post any OCR-retry reassignment) so a retried
           // WRE extraction is checked against its OWN fresh site-block
           // count, not a stale pre-retry snapshot.
-          const _gateWREResult = _gateWRE_siteCountCheck(rule.name, bills._wreSiteBlockCount, finalBills.length); // GATE WRE
+          const _gateWREResult = _gateWRE_siteCountCheck(rule.name, bills._wreSiteBlockCount, finalBills.length, _wreCustomerNumberOf(finalBills)); // GATE WRE
 
           // GATE A/B/WRE/C wiring (18b33d9f): stamp every bill from this file with
           // _gateTripped/_gateReasons so the single-file save path can hold flagged
