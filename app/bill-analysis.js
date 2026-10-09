@@ -30,6 +30,10 @@ const UTILITY_E_COMPONENT_CHARGE_FIELDS = [
 // Single lists of the non-electric charge fields that add up to TotalCurrentCharges.
 // Every per-commodity map in this file (line-item check, sum pills, sum banner) points
 // here. Add a new gas, water, sewer, stormwater or propane charge field here only.
+// Electric: Utility E component fields plus the Baldwin-style ElectricCharge and
+// FuelAdjustment (null on Utility E bills, so they add 0). The sum banner and both
+// sum pills use this one list, so they agree on every bill.
+const CHARGE_FIELDS_ELECTRIC_SUM = [...UTILITY_E_COMPONENT_CHARGE_FIELDS, 'ElectricCharge', 'FuelAdjustment'];
 const CHARGE_FIELDS_GAS = [
   'CustomerCharge',
   'GasCharge',
@@ -17541,22 +17545,7 @@ function renderMultiBillUI(bills, box) {
           ? 'Gas'
           : 'Electric');
     const _pillChargeKeys = {
-      Electric: [
-        'CustomerCharge',
-        'FacilitiesCharge',
-        'BilledKWCharge',
-        'EnergyOnPeakCharge',
-        'EnergyOffPeakCharge',
-        'ECACharge',
-        'EERCharge',
-        'PTSCharge',
-        'TDCCharge',
-        'RkVACharge',
-        'TaxExemptDelivery',
-        'BillOffset',
-        'FranchiseFee',
-        'MiscellaneousCharge',
-      ],
+      Electric: CHARGE_FIELDS_ELECTRIC_SUM,
       Gas: CHARGE_FIELDS_GAS,
       Water: CHARGE_FIELDS_WATER,
       Sewer: CHARGE_FIELDS_SEWER,
@@ -17895,22 +17884,7 @@ function renderMultiBillUI(bills, box) {
   if (_hasMultiComm) {
     const tabs = _uniqueComms;
     const _pillChgKeys2 = {
-      Electric: [
-        'CustomerCharge',
-        'FacilitiesCharge',
-        'BilledKWCharge',
-        'EnergyOnPeakCharge',
-        'EnergyOffPeakCharge',
-        'ECACharge',
-        'EERCharge',
-        'PTSCharge',
-        'TDCCharge',
-        'RkVACharge',
-        'TaxExemptDelivery',
-        'BillOffset',
-        'MiscellaneousCharge',
-        'FranchiseFee',
-      ],
+      Electric: CHARGE_FIELDS_ELECTRIC_SUM,
       Gas: CHARGE_FIELDS_GAS,
       Water: CHARGE_FIELDS_WATER,
       Sewer: CHARGE_FIELDS_SEWER,
@@ -19775,7 +19749,7 @@ function renderPDFFields(parsed, warnings) {
     // Baldwin City electric bills use ElectricCharge + FuelAdjustment instead of
     // Utility E-style per-charge fields. These are null on Utility E bills so they
     // contribute 0 and do not affect Utility E validation.
-    Electric: [...UTILITY_E_COMPONENT_CHARGE_FIELDS, 'ElectricCharge', 'FuelAdjustment'],
+    Electric: CHARGE_FIELDS_ELECTRIC_SUM,
     Gas: CHARGE_FIELDS_GAS,
     // 2026-07-08 (537c4e5e): _detectCommodity (~line 11053) returns 'kgs' for KGS bills
     // (keyed off UtilityCompany/_utilityName, checked BEFORE the Commodity field is even
