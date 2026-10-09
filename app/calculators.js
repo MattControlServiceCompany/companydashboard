@@ -3093,7 +3093,7 @@ function _solarGetBaselineBills(p, meterFilter) {
         ? bills.filter((bill) => {
             // Get year-month from bill end date to match baseline month format
             if (!bill.end) return false;
-            const d = new Date(bill.end);
+            const d = parseLocalISODate(bill.end) || new Date(bill.end);
             if (isNaN(d)) return false;
             const ym = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
             return blMonths.includes(ym);
@@ -3104,11 +3104,11 @@ function _solarGetBaselineBills(p, meterFilter) {
       use.forEach((bill) => {
         let mi = -1;
         if (bill.end) {
-          const d = new Date(bill.end);
+          const d = parseLocalISODate(bill.end) || new Date(bill.end);
           if (!isNaN(d)) mi = d.getMonth();
         }
         if (mi < 0 && bill.start) {
-          const d = new Date(bill.start);
+          const d = parseLocalISODate(bill.start) || new Date(bill.start);
           if (!isNaN(d)) mi = d.getMonth();
         }
         if (mi < 0) return;

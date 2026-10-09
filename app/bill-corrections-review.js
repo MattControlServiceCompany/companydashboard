@@ -724,7 +724,7 @@ async function _bcrScanKGSMeterBills(pid, proj, bldgs, ctl) {
       if (
         !out ||
         !out._auto_corrected_TotalCurrentCharges ||
-        String(out.TotalCurrentCharges) === String(bill.totalCost)
+        parseBillNumber(out.TotalCurrentCharges) === parseBillNumber(bill.totalCost)
       ) {
         await _bcrUpsertResult(bill.id, scanId, fieldKey, {
           status: 'ok',

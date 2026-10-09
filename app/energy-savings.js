@@ -4781,7 +4781,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     // If we have a billing period date, check proximity (within 5 days)
     if (billingDateStr) {
       try {
-        const bp = new Date(billingDateStr);
+        const bp = (parseLocalISODate(billingDateStr) || new Date(billingDateStr));
         if (!isNaN(bp)) {
           // Build a full date using billing period's year
           const mrd = new Date(bp.getFullYear(), mo - 1, dy);
@@ -4802,14 +4802,14 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // Fallback from billing period dates (meter read = billing +1 day)
   if (!result.MeterReadStart && result.BillingPeriodStart) {
     try {
-      const d = new Date(result.BillingPeriodStart);
+      const d = (parseLocalISODate(result.BillingPeriodStart) || new Date(result.BillingPeriodStart));
       d.setDate(d.getDate() + 1);
       result.MeterReadStart = String(d.getMonth() + 1).padStart(2, '0') + '/' + String(d.getDate()).padStart(2, '0');
     } catch (e) {}
   }
   if (!result.MeterReadEnd && result.BillingPeriodEnd) {
     try {
-      const d = new Date(result.BillingPeriodEnd);
+      const d = (parseLocalISODate(result.BillingPeriodEnd) || new Date(result.BillingPeriodEnd));
       d.setDate(d.getDate() + 1);
       result.MeterReadEnd = String(d.getMonth() + 1).padStart(2, '0') + '/' + String(d.getDate()).padStart(2, '0');
     } catch (e) {}
@@ -6448,50 +6448,6 @@ function _kgsFranchiseTotals(items) {
   const nums = items.map(parseBillNumber);
   const FranchiseFee = nums.every((n) => n !== null) ? String(nums.reduce((sum, n) => sum + n, 0).toFixed(2)) : null;
   return { FranchiseFee, FranchiseFee1: items[0] || null, FranchiseFee2: items[1] || null };
-}
-
-// 228e6da0: OCR can change digits of one account number, so one real account shows up under two
-// numbers on two pages. Two pages are the SAME account only when a second witness proves it:
-// the same plausible service address AND the same bill date AND, for one commodity, the same
-// pair of meter reads. Then the number read straight from the page (not repaired from letters,
-// _accountOCRNormalized) is the right one. With no such proof, or no single straight number,
-// every record is left as read. Returns the list of merges (for tests).
-function _reconcileBaldwinAccounts(bills) {
-  const norm = (a) => String(a || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-  const pageOf = new Map();
-  for (const b of bills) {
-    if (!b.AccountNumber || !b._addressPlausible || !b.BillDate || !b.ServiceAddress) continue;
-    if (!pageOf.has(b._pageIndex)) pageOf.set(b._pageIndex, []);
-    pageOf.get(b._pageIndex).push(b);
-  }
-  const pages = [...pageOf.keys()];
-  const merges = [];
-  for (let i = 0; i < pages.length; i++) {
-    for (let j = i + 1; j < pages.length; j++) {
-      const A = pageOf.get(pages[i]);
-      const B = pageOf.get(pages[j]);
-      if (A[0].AccountNumber === B[0].AccountNumber) continue;
-      if (norm(A[0].ServiceAddress) !== norm(B[0].ServiceAddress) || A[0].BillDate !== B[0].BillDate) continue;
-      const sameReads = A.some(
-        (x) =>
-          x.StartRead != null &&
-          x.EndRead != null &&
-          B.some((y) => y.Commodity === x.Commodity && y.StartRead === x.StartRead && y.EndRead === x.EndRead),
-      );
-      if (!sameReads) continue;
-      const aStraight = !A[0]._accountOCRNormalized;
-      const bStraight = !B[0]._accountOCRNormalized;
-      if (aStraight === bStraight) continue; // no single straight reading: leave as read
-      const keep = aStraight ? A[0].AccountNumber : B[0].AccountNumber;
-      for (const b of aStraight ? B : A) {
-        merges.push({ page: b._pageIndex, from: b.AccountNumber, to: keep });
-        b._accountReconciledFrom = b.AccountNumber;
-        b.AccountNumber = keep;
-        delete b._accountOCRNormalized;
-      }
-    }
-  }
-  return merges;
 }
 
 const UTILITY_RULES = [
@@ -12031,7 +11987,6 @@ const UTILITY_RULES = [
         }
       }
 
-      _reconcileBaldwinAccounts(bills);
       return bills;
     },
     _extractPage: function (page) {

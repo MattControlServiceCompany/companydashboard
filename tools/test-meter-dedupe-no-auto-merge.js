@@ -20,6 +20,7 @@ if (!blk) {
 }
 const sb = { console: { info() {}, warn() {}, log() {}, table() {} } };
 vm.createContext(sb);
+vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'lib', 'formatting.js'), 'utf8'), sb);
 vm.runInContext(blk[0] + '\nthis.api={seed:_seedMeterBillCounts,collect:_collectDuplicateCandidates};', sb);
 const api = sb.api;
 

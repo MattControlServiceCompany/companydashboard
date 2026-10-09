@@ -180,6 +180,12 @@ function _selfHealCustomersAndScope() {
 //    alone is never enough. Blank values never match each other.
 let _meterBillCounts = null; // null until seeded at end of load: saves during load never run the check
 const _dupNorm = (s) => (s == null ? '' : String(s)).replace(/[\s\-]/g, '').toLowerCase();
+// 775f3d5f: cost and usage are saved as numbers now, older rows hold text ("306.50", "1,200.50").
+// Compare them through the shared parseBillNumber so both forms give one key.
+const _dupNum = (v) => {
+  const n = parseBillNumber(v);
+  return n === null ? _dupNorm(v) : String(n);
+};
 function _seedMeterBillCounts(data) {
   _meterBillCounts = {};
   for (const cid of Object.keys(data || {}))
@@ -203,8 +209,8 @@ function _sameMeterIdentity(a, b) {
 function _dupBillKeys(bl) {
   const keys = [];
   if (bl.pdfKey && bl.pdfPageStart) keys.push('pdf|' + bl.pdfKey + '|' + bl.pdfPageStart);
-  if (bl.start && bl.end && _dupNorm(bl.totalCost) !== '')
-    keys.push(['p', bl.start, bl.end, _dupNorm(bl.totalCost), _dupNorm(bl.kwh), _dupNorm(bl.naturalGasTherms)].join('|'));
+  if (bl.start && bl.end && _dupNum(bl.totalCost) !== '')
+    keys.push(['p', bl.start, bl.end, _dupNum(bl.totalCost), _dupNum(bl.kwh), _dupNum(bl.naturalGasTherms)].join('|'));
   return keys;
 }
 // Returns report lines for meters whose bill count grew in this customer's data. Updates counts.
