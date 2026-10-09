@@ -2477,6 +2477,13 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.09.98', date: '2026-10-09', title: 'Bill reading for city utility and gas supplier bills',
+    items: [
+      { type: 'fix', text: 'Bill Analysis, city utility bills: each page now checks that its printed lines add up to the printed Current Bill. A page that does not add up is held for review, and a lost decimal point or a misread Stormwater amount is repaired when the repair makes the page add up.' },
+      { type: 'fix', text: 'Bill Analysis, gas supplier bills: usage and charges are cross-checked against the printed Sub-Total, lost decimal points are repaired, and a site with a missing address line no longer shifts the sites after it.' },
+      { type: 'fix', text: 'Bill Analysis, gas supplier bills: the expected number of sites on an invoice now comes from the gas meters you saved for that customer.' }
+    ]
+  },
   { v: 'v2026.10.08.97', date: '2026-10-08', title: 'Bill reading fixes',
     items: [
       { type: 'fix', text: 'Bill Analysis, propane: a delivery day is now counted once, so the day counts and monthly figures near a delivery are correct.' },
