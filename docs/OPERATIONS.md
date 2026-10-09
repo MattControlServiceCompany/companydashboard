@@ -382,3 +382,10 @@ This includes a new or changed function, schedule, env var name, timer, host, or
 - `_isPlausibleAddressAlias` (6479): Import Building List (`_bldgImportAliasFor`, csv-import.js:5026) adds a service address as an alias only when it is the same street or at least 0.60 alike.
 - `_mergeCsvRowIntoBill` (csv-import.js:505): a CSV re-import keeps a value the user corrected by hand (`_userCorrected`); only the typed ERASE clears it.
 - Check: `node tools/test-match-save-paths.js` (expect ALL PASS; synthetic).
+
+## Charge-field lists, kWh rate sum and OCR canvas ceiling (2026-10-09, branch 2026-10-09-g11-tests-dedupe)
+
+- One list per non-electric commodity: `CHARGE_FIELDS_GAS`, `_WATER`, `_SEWER`, `_STORMWATER`, `_PROPANE_SUM` (app/bill-analysis.js:33-47). The line-item check, both sum pills and the sum banner use them. Electric uses `UTILITY_E_COMPONENT_CHARGE_FIELDS` (app/bill-analysis.js:10). The sum banner adds `ElectricCharge` and `FuelAdjustment` for Baldwin City electric bills. The pill maps for electric are still their own shorter lists (left as is; they differ from the banner list).
+- The effective kWh rate in the electric extractor (app/energy-savings.js:4626) calls `sumElectricEnergyCharges` (computations/rates.js:285). Any page or test that loads app/energy-savings.js must load computations/rates.js first.
+- `_clampOcrSuperScale` (app/bill-analysis.js:14069) keeps the OCR supersample canvas under 36 million pixels and 16384 pixels a side (`OCR_MAX_CANVAS_PIXELS`, `OCR_MAX_CANVAS_SIDE`). `_renderPageHQ` calls it. A letter page at the highest pass is about 19.9 million pixels, so normal pages do not change. The scale never goes below the requested scale.
+- Check: `node tools/test-ocr-canvas-ceiling.js` and `node tools/test-provider-synthetic-bills.js` (expect all passed; synthetic).
