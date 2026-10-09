@@ -1,17 +1,17 @@
 /**
- * test-evergy-line-parser.js
+ * test-utility-e-line-parser.js
  *
- * Standalone regression test for the Evergy charge-line reader (group G2):
+ * Standalone regression test for the Utility E charge-line reader (group G2):
  *  - f260c39f: a 2-line energy charge where OCR reads "at" as "al" must not return the rate cut to
  *    2 decimals as the charge; a 1-decimal figure in bill prose is not a charge.
  *  - fdc85759: a rate whose digit 3 was read as 8 or 9 (or got an extra digit) is repaired only when
  *    the one-digit repair makes qty x rate equal the line's own charge.
- *  - b8123c92: the Evergy extractor sets Commodity 'Electric'.
+ *  - b8123c92: the Utility E extractor sets Commodity 'Electric'.
  *
  * SYNTHETIC text only: invented lines and small invented amounts. No real bill data.
  * Loads the REAL extractor (app/energy-savings.js) with Node's vm module.
  *
- * Usage: node tools/test-evergy-line-parser.js
+ * Usage: node tools/test-utility-e-line-parser.js
  */
 const fs = require('fs');
 const vm = require('vm');
@@ -19,10 +19,12 @@ const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
 const sandbox = {
-  window: {},
+  window: { addEventListener: () => {}, removeEventListener: () => {}, location: { href: '', search: '' } },
   document: { getElementById: () => null, addEventListener: () => {} },
   console: { log: () => {}, warn: () => {}, error: () => {} },
   navigator: { userAgent: 'node' },
+  TextEncoder,
+  TextDecoder,
   localStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
   setInterval: () => 0,
   clearInterval: () => {},
@@ -33,11 +35,11 @@ const sandbox = {
   fetch: () => Promise.reject(new Error('no fetch in test sandbox')),
 };
 vm.createContext(sandbox);
-for (const rel of ['lib/formatting.js', 'computations/rates.js', 'app/energy-savings.js']) {
+for (const rel of ['lib/date-helpers.js', 'lib/formatting.js', 'computations/rates.js', 'app/utility-data.js', 'app/energy-savings.js']) {
   vm.runInContext(fs.readFileSync(path.join(ROOT, rel), 'utf8'), sandbox, { filename: rel });
 }
 const api = vm.runInContext(
-  '({ amounts: _evergyChargeAmounts, repair: _evergyRateDigitRepair, extract: _extractEvergy })',
+  '({ amounts: _evgChargeAmounts, repair: _evgRateDigitRepair, rules: UTILITY_RULES })',
   sandbox,
 );
 
@@ -80,8 +82,9 @@ const text = [
   'Subtotal .................................. $48.88',
   'Current Charges ........................... $48.88',
 ].join('\n');
-const bill = api.extract(text, null, null);
-eq(bill.Commodity, 'Electric', 'Evergy extractor sets Commodity');
+const rule = api.rules.find((r) => r.detect(text));
+const bill = rule ? [].concat(rule.extractAll ? rule.extractAll(text) : rule.extract(text))[0] : {};
+eq(bill.Commodity, 'Electric', 'Utility E extractor sets Commodity');
 eq(String(bill.EnergyOffPeakCharge), '38.88', '2-line "al" layout: full charge, not the cut rate');
 eq(String(bill.CustomerCharge), '10.00', 'customer charge');
 

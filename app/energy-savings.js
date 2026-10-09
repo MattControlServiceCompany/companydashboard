@@ -2319,13 +2319,13 @@ function parseEvergyPreviouslyBilled(t) {
   const m = String(t || '').match(/Previously\s+Billed[.\s\u00b7\u2026]*\$?\s*([\d,]+\.\d{2})\b/i);
   return m ? m[1].replace(/,/g, '') : null;
 }
-// The ONE reader for dollar amounts on an Evergy charge line (used by getAmt and the
-// missing-charge scan in _extractEvergy). Returns the charge amounts on the line in order and
+// The ONE reader for dollar amounts on a Utility E charge line (used by getAmt and the
+// missing-charge scan of the Utility E extractor). Returns the charge amounts on the line in order and
 // skips per-unit rates: a "$" amount that follows "at" (OCR also gives "al"), or is followed by
 // "per kW", or is under $1 with 3 or more decimals ("$0.03888"). The pattern takes ALL the
 // decimals (2 or more) so a rate is never cut to 2 decimals and read as a charge ("$0.03"); a
 // 1-decimal figure in bill prose ("$32.9 million") is not a charge.
-function _evergyChargeAmounts(line) {
+function _evgChargeAmounts(line) {
   const out = [];
   for (const m of String(line).matchAll(/\$([\d,]+)\.(\d{2,})/g)) {
     const before = line.slice(Math.max(0, m.index - 4), m.index);
@@ -2342,7 +2342,7 @@ function _evergyChargeAmounts(line) {
 // digit. Returns the repaired rate when changing ONE digit of the read rate (8 or 9 to 3) or dropping ONE
 // digit makes qty x rate equal the line's own charge (cent tolerance plus the 5-decimal rate rounding),
 // else null. Only the one reconciling repair is taken; two reconciling repairs mean "do not guess".
-function _evergyRateDigitRepair(rate, qty, charge) {
+function _evgRateDigitRepair(rate, qty, charge) {
   const str = String(rate);
   const dot = str.indexOf('.');
   if (dot < 0 || !(qty > 0) || !(charge > 0)) return null;
@@ -2450,7 +2450,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   const NEXT_CHG_LINE =
     /(?:Cust(?:omer)?|Fac(?:ilities)?|Demand|Energy|ECA|EER|PTS|TD[CG]|R[kK]VA|Subtotal|Current\s+Charges)[\s.]+(?:Ch[gaq9]|C[HhNn][Gg]|Gh[gq9])/i;
   const getAmt = (line) => {
-    const amts = _evergyChargeAmounts(line);
+    const amts = _evgChargeAmounts(line);
     return amts.length ? amts[amts.length - 1] : null;
   };
   const _xChgParts = {};
@@ -4257,7 +4257,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   const _isMultiMeterChange = !!(_meterCombined && _meterCombined.type === 'meter_change');
   const result = {
     UtilityCompany: 'Evergy',
-    // b8123c92: Evergy bills only electric service. Set here, once, so every consumer (Gate C log,
+    // b8123c92: Utility E bills only electric service. Set here, once, so every consumer (Gate C log,
     // synthetic recovery, matching) sees the commodity; no caller adds its own 'Electric' default.
     Commodity: 'Electric',
     CustomerName:
@@ -4935,7 +4935,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
         const _repairedRate =
           _pctDiff > 0.05 || (_pr.prorationNum && _pr.prorationDen)
             ? null
-            : _evergyRateDigitRepair(_ocr_rate, _pr.qty, chargeVal);
+            : _evgRateDigitRepair(_ocr_rate, _pr.qty, chargeVal);
         if (_pctDiff > 0.05 || _repairedRate !== null) {
           const _newRate = _repairedRate !== null ? _repairedRate : _derived_rate;
           // Replace the stale rate in _rates so downstream consumers use the correct value
@@ -5422,7 +5422,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       const allAmts = [];
       const lines2 = section.split('\n');
       for (const line of lines2) {
-        for (const val of _evergyChargeAmounts(line)) allAmts.push({ val, line: line.trim() });
+        for (const val of _evgChargeAmounts(line)) allAmts.push({ val, line: line.trim() });
       }
       // Find amounts not already captured
       const capturedVals = Object.values(result)

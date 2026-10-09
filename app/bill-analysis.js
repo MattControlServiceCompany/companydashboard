@@ -16051,7 +16051,7 @@ function _unmatchedToSyntheticBills(unmatchedPages) {
           recoveredBill = first;
           recoveredBill.UtilityCompany = recoveredBill.UtilityCompany || recoveredBill._utilityName || r.name || null;
           recoveredBill._recoveredFromFallbackRule = r.name || true;
-          // Commodity is stamped at the source: _extractEvergy sets 'Electric' (b8123c92); the Client A
+          // Commodity is stamped at the source: the Utility E extractor sets 'Electric' (b8123c92); the Client A
           // rule stamps its own per bill.
           break;
         }
