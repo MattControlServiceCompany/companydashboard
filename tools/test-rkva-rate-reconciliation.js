@@ -55,6 +55,10 @@ function loadExtractEvergy(scriptPath) {
   vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'lib', 'formatting.js'), 'utf8'), sandbox, {
     filename: 'formatting.js',
   });
+  // energy-savings.js calls sumElectricEnergyCharges from computations/rates.js (loaded before it in production).
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'computations', 'rates.js'), 'utf8'), sandbox, {
+    filename: 'rates.js',
+  });
   vm.runInContext(src, sandbox, { filename: path.basename(scriptPath) });
   const fn = vm.runInContext('typeof _extractEvergy !== "undefined" ? _extractEvergy : null', sandbox);
   if (!fn) throw new Error('_extractEvergy not found in ' + scriptPath);

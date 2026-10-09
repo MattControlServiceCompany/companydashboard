@@ -4654,12 +4654,8 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   result.EERRate = _rateOrNull('EERCharge', _wavg('EERCharge'));
   result.PTSRate = _rateOrNull('PTSCharge', _wavg('PTSCharge'));
   // Total rates: total charges / total quantity (effective rate)
-  const _kwhChargeSum =
-    parseBillNumber(result.EnergyOnPeakCharge) +
-    parseBillNumber(result.EnergyOffPeakCharge) +
-    parseBillNumber(result.ECACharge) +
-    parseBillNumber(result.EERCharge) +
-    parseBillNumber(result.PTSCharge);
+  // Canonical 5-charge sum (computations/rates.js sumElectricEnergyCharges), loaded before this file.
+  const _kwhChargeSum = sumElectricEnergyCharges(result);
   const _totalKwh = parseBillNumber(result.kWhConsumed);
   result.TotalKWhRate = _totalKwh > 0 && _kwhChargeSum > 0 ? _kwhChargeSum / _totalKwh : null;
   const _kwChargeSum =
