@@ -21,11 +21,30 @@ const UTILITY_E_COMPONENT_CHARGE_FIELDS = [
   'TaxExemptDelivery',
   'BillOffset',
   'FranchiseFee',
-  'SalesTax',
   'SolarCredit',
   'RenewableCharge',
   'MiscellaneousCharge',
+  'SalesTax',
 ];
+
+// Single lists of the non-electric charge fields that add up to TotalCurrentCharges.
+// Every per-commodity map in this file (line-item check, sum pills, sum banner) points
+// here. Add a new gas, water, sewer, stormwater or propane charge field here only.
+const CHARGE_FIELDS_GAS = [
+  'CustomerCharge',
+  'GasCharge',
+  'FuelAdjustment',
+  'DeliveryCharge',
+  'GasSystemReliability',
+  'WeatherNormalization',
+  'WinterEventCost',
+  'FranchiseFee',
+  'DelayedPaymentCharge',
+];
+const CHARGE_FIELDS_WATER = ['WaterCharge', 'WaterProtectionFee', 'WaterDebtPayment', 'WaterFranchiseFee'];
+const CHARGE_FIELDS_SEWER = ['SewerCharge', 'SewerFranchiseFee'];
+const CHARGE_FIELDS_STORMWATER = ['StormWaterCharge'];
+const CHARGE_FIELDS_PROPANE_SUM = ['Subtotal', 'Tax'];
 
 // Expected fields per utility type — fields that should almost always have values
 const EXPECTED_FIELDS = {
@@ -5163,20 +5182,10 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
     // the total from charge components when possible; only warn when data is
     // genuinely missing and can't be computed.
     const COMMODITY_CHARGE_FIELDS = {
-      Gas: [
-        'CustomerCharge',
-        'GasCharge',
-        'FuelAdjustment',
-        'DeliveryCharge',
-        'GasSystemReliability',
-        'WeatherNormalization',
-        'WinterEventCost',
-        'FranchiseFee',
-        'DelayedPaymentCharge',
-      ],
-      Water: ['WaterCharge', 'WaterProtectionFee', 'WaterDebtPayment', 'WaterFranchiseFee'],
-      Sewer: ['SewerCharge', 'SewerFranchiseFee'],
-      Stormwater: ['StormWaterCharge'],
+      Gas: CHARGE_FIELDS_GAS,
+      Water: CHARGE_FIELDS_WATER,
+      Sewer: CHARGE_FIELDS_SEWER,
+      Stormwater: CHARGE_FIELDS_STORMWATER,
       Propane: ['PropaneCharge'],
       Electric: UTILITY_E_COMPONENT_CHARGE_FIELDS,
     };
@@ -17527,21 +17536,11 @@ function renderMultiBillUI(bills, box) {
         'FranchiseFee',
         'MiscellaneousCharge',
       ],
-      Gas: [
-        'CustomerCharge',
-        'GasCharge',
-        'FuelAdjustment',
-        'DeliveryCharge',
-        'GasSystemReliability',
-        'WeatherNormalization',
-        'WinterEventCost',
-        'FranchiseFee',
-        'DelayedPaymentCharge',
-      ],
-      Water: ['WaterCharge', 'WaterProtectionFee', 'WaterDebtPayment', 'WaterFranchiseFee'],
-      Sewer: ['SewerCharge', 'SewerFranchiseFee'],
-      Stormwater: ['StormWaterCharge'],
-      Propane: ['Subtotal', 'Tax'],
+      Gas: CHARGE_FIELDS_GAS,
+      Water: CHARGE_FIELDS_WATER,
+      Sewer: CHARGE_FIELDS_SEWER,
+      Stormwater: CHARGE_FIELDS_STORMWATER,
+      Propane: CHARGE_FIELDS_PROPANE_SUM,
     };
     const _pillKeys = _pillChargeKeys[_pillComm] || _pillChargeKeys.Electric;
     // Round each component to 2 decimal places before summing to prevent
@@ -17891,21 +17890,11 @@ function renderMultiBillUI(bills, box) {
         'MiscellaneousCharge',
         'FranchiseFee',
       ],
-      Gas: [
-        'CustomerCharge',
-        'GasCharge',
-        'FuelAdjustment',
-        'DeliveryCharge',
-        'GasSystemReliability',
-        'WeatherNormalization',
-        'WinterEventCost',
-        'FranchiseFee',
-        'DelayedPaymentCharge',
-      ],
-      Water: ['WaterCharge', 'WaterProtectionFee', 'WaterDebtPayment', 'WaterFranchiseFee'],
-      Sewer: ['SewerCharge', 'SewerFranchiseFee'],
-      Stormwater: ['StormWaterCharge'],
-      Propane: ['Subtotal', 'Tax'],
+      Gas: CHARGE_FIELDS_GAS,
+      Water: CHARGE_FIELDS_WATER,
+      Sewer: CHARGE_FIELDS_SEWER,
+      Stormwater: CHARGE_FIELDS_STORMWATER,
+      Propane: CHARGE_FIELDS_PROPANE_SUM,
     };
     commTabsHtml =
       '<div style="display:flex;gap:4px;margin-bottom:8px;flex-wrap:wrap">' +
@@ -19762,45 +19751,11 @@ function renderPDFFields(parsed, warnings) {
   // even when a small residual diff remains, but the pill and banner should reflect
   // what's actually in the data right now.
   const _CHARGE_SUM_KEYS_BY_COMMODITY = {
-    Electric: [
-      'CustomerCharge',
-      'FacilitiesCharge',
-      'BilledKWCharge',
-      'EnergyOnPeakCharge',
-      'EnergyOffPeakCharge',
-      'ECACharge',
-      'EERCharge',
-      'PTSCharge',
-      'TDCCharge',
-      'RkVACharge',
-      'TaxExemptDelivery',
-      'BillOffset',
-      'FranchiseFee',
-      'SolarCredit',
-      'RenewableCharge',
-      'MiscellaneousCharge',
-      // Fix B (ballfields-cluster): SalesTax is extracted (municipal sales-tax
-      // lines on Utility E bills) but was missing here, so the printed total was
-      // reported as under-summed by exactly the tax amount on every taxed
-      // bill. Null/absent on non-taxed bills, so this contributes 0 there.
-      'SalesTax',
-      // Baldwin City electric bills use ElectricCharge + FuelAdjustment instead of
-      // Utility E-style per-charge fields. These are null on Utility E bills so they
-      // contribute 0 and do not affect Utility E validation.
-      'ElectricCharge',
-      'FuelAdjustment',
-    ],
-    Gas: [
-      'CustomerCharge',
-      'GasCharge',
-      'FuelAdjustment',
-      'DeliveryCharge',
-      'GasSystemReliability',
-      'WeatherNormalization',
-      'WinterEventCost',
-      'FranchiseFee',
-      'DelayedPaymentCharge',
-    ],
+    // Baldwin City electric bills use ElectricCharge + FuelAdjustment instead of
+    // Utility E-style per-charge fields. These are null on Utility E bills so they
+    // contribute 0 and do not affect Utility E validation.
+    Electric: [...UTILITY_E_COMPONENT_CHARGE_FIELDS, 'ElectricCharge', 'FuelAdjustment'],
+    Gas: CHARGE_FIELDS_GAS,
     // 2026-07-08 (537c4e5e): _detectCommodity (~line 11053) returns 'kgs' for KGS bills
     // (keyed off UtilityCompany/_utilityName, checked BEFORE the Commodity field is even
     // consulted), and _DETECT_TO_SUM_KEY (~line 11578) maps that to 'Kgs' — but this map
@@ -19813,21 +19768,11 @@ function renderPDFFields(parsed, warnings) {
     // analyzeBillExtraction's expectedTotal (~3609-3627) already use this exact 9-field
     // list correctly for KGS; only THIS map (renderPDFFields's own, independent copy)
     // lacked the entry.
-    Kgs: [
-      'CustomerCharge',
-      'GasCharge',
-      'FuelAdjustment',
-      'DeliveryCharge',
-      'GasSystemReliability',
-      'WeatherNormalization',
-      'WinterEventCost',
-      'FranchiseFee',
-      'DelayedPaymentCharge',
-    ],
-    Water: ['WaterCharge', 'WaterProtectionFee', 'WaterDebtPayment', 'WaterFranchiseFee'],
-    Sewer: ['SewerCharge', 'SewerFranchiseFee'],
-    Stormwater: ['StormWaterCharge'],
-    Propane: ['Subtotal', 'Tax'],
+    Kgs: CHARGE_FIELDS_GAS,
+    Water: CHARGE_FIELDS_WATER,
+    Sewer: CHARGE_FIELDS_SEWER,
+    Stormwater: CHARGE_FIELDS_STORMWATER,
+    Propane: CHARGE_FIELDS_PROPANE_SUM,
     // WRE per-site charge components (Fix 1 — a84458f0).
     Wre: ['_wreTriggerCharge', '_wreIndexCharge', '_wreSWECharge'],
   };
