@@ -285,6 +285,11 @@ Nothing is deleted by this restore. On a record in both, the backup value wins; 
   (`C:/Temp/<tag>-<task>-profile-...`) and `ctx.close()` there also deletes the profile. The gate's own work folder is `<tag>-work`.
   After the tests the gate lists `C:/Temp`: a new entry whose name starts with the tag is a FAIL and the gate deletes it. Any other
   new entry (for example a profile of another agent that ran at the same time) is shown as INFO and is never deleted and never a FAIL.
+  Real-id gate (scripts/gate-real-ids.js, called from the gate's leak-guard group; run alone: `node scripts/gate-real-ids.js`).
+  It runs `git grep -IcwF -f <list>` over all tracked files. Any hit = FAIL, printed as file name and line count only (never the
+  value). The private list (one real account or meter id per line, never committed) is read from the env var `CH_REAL_IDS_FILE`.
+  It is set as a Windows user environment variable on the work machine (`[Environment]::SetEnvironmentVariable('CH_REAL_IDS_FILE', <path in _context/reference/private>, 'User')`), like the other gate settings.
+  Unset or missing file = SKIP (INFO, exit 0). A new shell is needed to see a new user variable.
   Browser tests must use `launchBrowser`. Tests that use `os.tmpdir()` (AppData, not `C:/Temp`) are outside the guard.
 - Bill CSV header matching (app/csv-import.js `ci()` inside `parseBillCsv`). One rule for every column: exact header first,
   then whole-word match. A header with a cost, id or date word is claimed only by an alias of the same class, so
