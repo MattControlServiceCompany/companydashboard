@@ -2319,6 +2319,46 @@ function parseEvergyPreviouslyBilled(t) {
   const m = String(t || '').match(/Previously\s+Billed[.\s\u00b7\u2026]*\$?\s*([\d,]+\.\d{2})\b/i);
   return m ? m[1].replace(/,/g, '') : null;
 }
+// The ONE reader for dollar amounts on an Evergy charge line (used by getAmt and the
+// missing-charge scan in _extractEvergy). Returns the charge amounts on the line in order and
+// skips per-unit rates: a "$" amount that follows "at" (OCR also gives "al"), or is followed by
+// "per kW", or is under $1 with 3 or more decimals ("$0.03888"). The pattern takes ALL the
+// decimals (2 or more) so a rate is never cut to 2 decimals and read as a charge ("$0.03"); a
+// 1-decimal figure in bill prose ("$32.9 million") is not a charge.
+function _evergyChargeAmounts(line) {
+  const out = [];
+  for (const m of String(line).matchAll(/\$([\d,]+)\.(\d{2,})/g)) {
+    const before = line.slice(Math.max(0, m.index - 4), m.index);
+    const after = line.slice(m.index + m[0].length, m.index + m[0].length + 10);
+    if (/(?:at|(?:^|[^A-Za-z])al)\s*$/.test(before)) continue; // rate: "kWh at $0.06407" / OCR "kWh al $0.03888"
+    if (/\s*[Pp][eo]r\s+k/i.test(after)) continue; // rate: "$2.577 per kW" / OCR "Por kW"
+    const whole = m[1].replace(/,/g, '');
+    if (parseFloat(whole) === 0 && m[2].length >= 3) continue; // rate under $1, e.g. $0.03288, $0.00085
+    out.push(parseFloat(whole + '.' + m[2].slice(0, 2)));
+  }
+  return out;
+}
+// fdc85759: Tesseract reads the digit 3 as 8 or 9 inside the printed per-kWh rate, and sometimes adds a
+// digit. Returns the repaired rate when changing ONE digit of the read rate (8 or 9 to 3) or dropping ONE
+// digit makes qty x rate equal the line's own charge (cent tolerance plus the 5-decimal rate rounding),
+// else null. Only the one reconciling repair is taken; two reconciling repairs mean "do not guess".
+function _evergyRateDigitRepair(rate, qty, charge) {
+  const str = String(rate);
+  const dot = str.indexOf('.');
+  if (dot < 0 || !(qty > 0) || !(charge > 0)) return null;
+  const tol = 0.05 + qty * 0.00001;
+  if (Math.abs(qty * rate - charge) <= tol) return null; // the read rate already reconciles
+  const found = new Set();
+  const tryCand = (cand) => {
+    const v = parseFloat(cand);
+    if (v > 0 && v !== rate && Math.abs(qty * v - charge) <= tol) found.add(v);
+  };
+  for (let i = dot + 1; i < str.length; i++) {
+    if (str[i] === '8' || str[i] === '9') tryCand(str.slice(0, i) + '3' + str.slice(i + 1));
+    tryCand(str.slice(0, i) + str.slice(i + 1));
+  }
+  return found.size === 1 ? [...found][0] : null;
+}
 // Utility E per-section extractor
 function _extractEvergy(t, acctOverride, addrOverride) {
   // ── OCR digit cleanup: replace 'o'/'O' with '0' in numeric contexts ──
@@ -2410,19 +2450,8 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   const NEXT_CHG_LINE =
     /(?:Cust(?:omer)?|Fac(?:ilities)?|Demand|Energy|ECA|EER|PTS|TD[CG]|R[kK]VA|Subtotal|Current\s+Charges)[\s.]+(?:Ch[gaq9]|C[HhNn][Gg]|Gh[gq9])/i;
   const getAmt = (line) => {
-    const ms = [...line.matchAll(/\$([\d,]+\.\d{2})/g)];
-    let best = null;
-    for (const m of ms) {
-      const before = line.slice(Math.max(0, m.index - 4), m.index);
-      const after = line.slice(m.index + m[0].length, m.index + m[0].length + 10);
-      if (/at\s*$/.test(before)) continue; // skip rate: "kWh at $0.06407"
-      if (/\s*[Pp][eo]r\s+k/i.test(after)) continue; // skip rate: "$2.577 per kW" / OCR "Por kW"
-      // Skip small values that look like rates (under $1, with 4+ decimal digits in original)
-      const val = parseFloat(m[1].replace(/,/g, ''));
-      if (val < 1 && /\.\d{3,}/.test(m[1])) continue; // skip rates like $0.03288, $0.00085
-      best = parseFloat(m[1].replace(/,/g, ''));
-    }
-    return best;
+    const amts = _evergyChargeAmounts(line);
+    return amts.length ? amts[amts.length - 1] : null;
   };
   const _xChgParts = {};
   const xChg = (keyword, excludeRe, _partsKey) => {
@@ -4228,6 +4257,9 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   const _isMultiMeterChange = !!(_meterCombined && _meterCombined.type === 'meter_change');
   const result = {
     UtilityCompany: 'Evergy',
+    // b8123c92: Evergy bills only electric service. Set here, once, so every consumer (Gate C log,
+    // synthetic recovery, matching) sees the commodity; no caller adds its own 'Electric' default.
+    Commodity: 'Electric',
     CustomerName:
       // Relaxed: allow mixed-case letters so OCR producing "Site G Elem" or
       // "CIRCLE GROVE" both match. The strict uppercase-only pattern missed bills
@@ -4895,25 +4927,35 @@ function _extractEvergy(t, acctOverride, addrOverride) {
         const _ocr_rate = parts[0].rate;
         const _derived_rate = chargeVal / parts[0].qty;
         const _pctDiff = _derived_rate > 0 ? Math.abs(_ocr_rate - _derived_rate) / _derived_rate : Infinity;
-        if (_pctDiff > 0.05) {
+        // fdc85759: a digit-3 misread can sit inside the 5% band (printed 0.03723 read as 0.038723 is
+        // 4% off), so the % test alone leaves the wrong rate on the bill. There the charge is NOT
+        // assumed to be right: the rate is changed only if a one-digit repair of the printed rate
+        // (8 or 9 read for 3, or one extra digit) makes qty x rate equal the line's own charge.
+        const _pr = parts[0];
+        const _repairedRate =
+          _pctDiff > 0.05 || (_pr.prorationNum && _pr.prorationDen)
+            ? null
+            : _evergyRateDigitRepair(_ocr_rate, _pr.qty, chargeVal);
+        if (_pctDiff > 0.05 || _repairedRate !== null) {
+          const _newRate = _repairedRate !== null ? _repairedRate : _derived_rate;
           // Replace the stale rate in _rates so downstream consumers use the correct value
           result._rates[chargeField] = Object.assign({}, ri, {
-            rate: _derived_rate,
-            parts: [Object.assign({}, parts[0], { rate: _derived_rate, computed: chargeVal })],
+            rate: _newRate,
+            parts: [Object.assign({}, parts[0], { rate: _newRate, computed: chargeVal })],
           });
           result['_auto_corrected_rate_' + chargeField] = {
             ocrRate: _ocr_rate,
-            derivedRate: _derived_rate,
+            derivedRate: _newRate,
             charge: chargeVal,
             qty: parts[0].qty,
-            reason: 'charge_div_qty',
+            reason: _repairedRate !== null ? 'digit_repair' : 'charge_div_qty',
           };
           // ade32899: the top-level result.<X>Rate field was already snapshotted
           // from the pre-correction _rates entry earlier in this function (~line
           // 4231) — push the corrected value there too, or it silently keeps
           // feeding the OCR-misread rate into saved bills and downstream math.
           const _rateField = RATE_FIELD_MAP[chargeField];
-          if (_rateField) result[_rateField] = _derived_rate;
+          if (_rateField) result[_rateField] = _newRate;
           // Clear the mismatch flags — the correction resolves them
           delete result['_rate_mismatch_' + chargeField];
           delete result['_part_mismatches_' + chargeField];
@@ -5380,16 +5422,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       const allAmts = [];
       const lines2 = section.split('\n');
       for (const line of lines2) {
-        const ms = [...line.matchAll(/\$([\d,]+\.\d{2})/g)];
-        for (const m of ms) {
-          const before = line.slice(Math.max(0, m.index - 4), m.index);
-          const after = line.slice(m.index + m[0].length, m.index + m[0].length + 10);
-          if (/at\s*$/.test(before)) continue;
-          if (/\s*[Pp][eo]r\s+k/i.test(after)) continue;
-          const val = parseFloat(m[1].replace(/,/g, ''));
-          if (val < 1 && /\.\d{3,}/.test(m[1])) continue;
-          allAmts.push({ val, line: line.trim() });
-        }
+        for (const val of _evergyChargeAmounts(line)) allAmts.push({ val, line: line.trim() });
       }
       // Find amounts not already captured
       const capturedVals = Object.values(result)
