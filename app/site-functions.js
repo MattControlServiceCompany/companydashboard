@@ -2477,6 +2477,13 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.09.100', date: '2026-10-09', title: 'Bill Analysis reading fixes',
+    items: [
+      { type: 'fix', text: 'Bill Analysis, electric bills: charge lines are now read by one shared reader, so a rate with a lost digit is repaired and the commodity is set when the bill is read.' },
+      { type: 'fix', text: 'Bill Analysis, sum checks: the sum pills and the sum banner now use the same list of charges for each type of bill, so they always agree.' },
+      { type: 'fix', text: 'Bill Analysis, scanned bills: very large pages no longer crash the text reader when a bill is scanned at high detail.' }
+    ]
+  },
   { v: 'v2026.10.09.99', date: '2026-10-09', title: 'Bill reading and bill matching fixes',
     items: [
       { type: 'fix', text: 'Bill Analysis, electric bills with several meters: meter table numbers that lost a digit or a decimal point are repaired, and a repaired total is checked against the printed charge lines.' },
