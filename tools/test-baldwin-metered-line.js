@@ -98,5 +98,35 @@ console.log('6. garbled water "+13" / ".37" lines');
   check('water charge is not 37', !w || w.WaterCharge !== 37, w && w.WaterCharge);
   check('both rows flagged', s && w && s._manualReview && w._manualReview);
 }
+console.log('7. zero usage stays 0 (92e2f54d)');
+{
+  const b = run(page(['WA - WATER 500 500 10.00', 'SW - SEWER 700 700 0 5.00']));
+  const w = bill(b, 'Water');
+  const s = bill(b, 'Sewer');
+  check('water usage is 0, not null', w && w.WaterUsage === 0, w && w.WaterUsage);
+  check('sewer usage is 0, not water usage', s && s.SewerUsage === 0, s && s.SewerUsage);
+}
+console.log('8. one account read two ways: merge only with a second witness (228e6da0)');
+{
+  const recon = vm.runInContext('_reconcileBaldwinAccounts', sandbox);
+  const rec = (pg, acct, over) =>
+    Object.assign(
+      { _pageIndex: pg, AccountNumber: acct, ServiceAddress: '100 TEST ST', _addressPlausible: true, BillDate: '4/10/25', Commodity: 'Water', StartRead: 500, EndRead: 600 },
+      over || {},
+    );
+  let bills = [rec(2, '900123'), rec(3, '900456', { _accountOCRNormalized: true })];
+  let m = recon(bills);
+  check('witnesses match, one straight reading: merged to the straight number', bills[1].AccountNumber === '900123' && m.length === 1, JSON.stringify(m));
+  check('merge is recorded and the repair flag is cleared', bills[1]._accountReconciledFrom === '900456' && !bills[1]._accountOCRNormalized);
+  bills = [rec(2, '900123'), rec(3, '900456', { _accountOCRNormalized: true, EndRead: 700 })];
+  recon(bills);
+  check('different reads: not merged', bills[1].AccountNumber === '900456');
+  bills = [rec(2, '900123'), rec(3, '900456', { ServiceAddress: '200 TEST ST' })];
+  recon(bills);
+  check('different address: not merged', bills[1].AccountNumber === '900456');
+  bills = [rec(2, '900123'), rec(3, '900456')];
+  recon(bills);
+  check('both straight readings: left as read', bills[0].AccountNumber === '900123' && bills[1].AccountNumber === '900456');
+}
 console.log(fail ? 'FAILED ' + fail : 'ALL PASS');
 process.exit(fail ? 1 : 0);

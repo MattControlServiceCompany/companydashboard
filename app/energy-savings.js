@@ -6421,6 +6421,50 @@ function _kgsFranchiseTotals(items) {
   return { FranchiseFee, FranchiseFee1: items[0] || null, FranchiseFee2: items[1] || null };
 }
 
+// 228e6da0: OCR can change digits of one account number, so one real account shows up under two
+// numbers on two pages. Two pages are the SAME account only when a second witness proves it:
+// the same plausible service address AND the same bill date AND, for one commodity, the same
+// pair of meter reads. Then the number read straight from the page (not repaired from letters,
+// _accountOCRNormalized) is the right one. With no such proof, or no single straight number,
+// every record is left as read. Returns the list of merges (for tests).
+function _reconcileBaldwinAccounts(bills) {
+  const norm = (a) => String(a || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const pageOf = new Map();
+  for (const b of bills) {
+    if (!b.AccountNumber || !b._addressPlausible || !b.BillDate || !b.ServiceAddress) continue;
+    if (!pageOf.has(b._pageIndex)) pageOf.set(b._pageIndex, []);
+    pageOf.get(b._pageIndex).push(b);
+  }
+  const pages = [...pageOf.keys()];
+  const merges = [];
+  for (let i = 0; i < pages.length; i++) {
+    for (let j = i + 1; j < pages.length; j++) {
+      const A = pageOf.get(pages[i]);
+      const B = pageOf.get(pages[j]);
+      if (A[0].AccountNumber === B[0].AccountNumber) continue;
+      if (norm(A[0].ServiceAddress) !== norm(B[0].ServiceAddress) || A[0].BillDate !== B[0].BillDate) continue;
+      const sameReads = A.some(
+        (x) =>
+          x.StartRead != null &&
+          x.EndRead != null &&
+          B.some((y) => y.Commodity === x.Commodity && y.StartRead === x.StartRead && y.EndRead === x.EndRead),
+      );
+      if (!sameReads) continue;
+      const aStraight = !A[0]._accountOCRNormalized;
+      const bStraight = !B[0]._accountOCRNormalized;
+      if (aStraight === bStraight) continue; // no single straight reading: leave as read
+      const keep = aStraight ? A[0].AccountNumber : B[0].AccountNumber;
+      for (const b of aStraight ? B : A) {
+        merges.push({ page: b._pageIndex, from: b.AccountNumber, to: keep });
+        b._accountReconciledFrom = b.AccountNumber;
+        b.AccountNumber = keep;
+        delete b._accountOCRNormalized;
+      }
+    }
+  }
+  return merges;
+}
+
 const UTILITY_RULES = [
   {
     name: 'Evergy',
@@ -11958,6 +12002,7 @@ const UTILITY_RULES = [
         }
       }
 
+      _reconcileBaldwinAccounts(bills);
       return bills;
     },
     _extractPage: function (page) {
@@ -12914,7 +12959,7 @@ const UTILITY_RULES = [
           Commodity: 'Electric',
           StartRead: elPrevRead,
           EndRead: elCurrRead,
-          kWh: totalKwh || null,
+          kWh: billValueOrNull(totalKwh),
           kW: null,
           ElectricCharge: Math.round(totalElCharge * 100) / 100,
           FranchiseFee: elFranchiseFee || null,
@@ -12990,7 +13035,7 @@ const UTILITY_RULES = [
           Commodity: 'Water',
           StartRead: waPrevRead,
           EndRead: waCurrRead,
-          WaterUsage: waUsage || null,
+          WaterUsage: billValueOrNull(waUsage), // 92e2f54d: a real 0 stays 0
           ...(_waUsageSuspect ? { _usageSuspect: true } : {}),
           WaterCharge: waCharge,
           WaterDebtPayment: waDebtPmt || null,
@@ -13004,14 +13049,14 @@ const UTILITY_RULES = [
       if (swCharge != null && swCharge !== 0) {
         // If sewer usage didn't parse but water did, share the water reads
         // (they share the same physical meter).
-        if (!swUsage && waUsage) swUsage = waUsage;
+        if (billValueOrNull(swUsage) === null && billValueOrNull(waUsage) !== null) swUsage = waUsage;
         const swTotal = swCharge + (swFranchiseFee || 0);
         bills.push({
           ...shared,
           Commodity: 'Sewer',
           StartRead: swPrevRead || waPrevRead,
           EndRead: swCurrRead || waCurrRead,
-          SewerUsage: swUsage || null,
+          SewerUsage: billValueOrNull(swUsage), // 92e2f54d: a real 0 stays 0
           ...(_swUsageSuspect ? { _usageSuspect: true } : {}),
           ...(_swUsageFromWater ? { _sewerUsageFromWater: true } : {}),
           SewerCharge: swCharge,

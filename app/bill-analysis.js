@@ -7395,12 +7395,15 @@ function _extractedToBillRowCosts(bill) {
   const kwCost = _capToAcceptedTotal(kwCostRaw).toFixed(2);
   const otherCost = _capToAcceptedTotal(otherCostRaw).toFixed(2);
   const taxCost = _capToAcceptedTotal(taxCostRaw).toFixed(2);
-  const totalCost = bill.TotalCurrentCharges || bill.TotalAmountDue || '';
+  // 775f3d5f: store a parsed number (never the raw printed string with a thousands comma).
+  // Unreadable text stores blank. The fall-through order is unchanged.
+  const _blankIfNull = (v) => (v === null ? '' : v);
+  const totalCost = _blankIfNull(parseBillNumber(bill.TotalCurrentCharges || bill.TotalAmountDue));
   // Usage quantity: electric kWh (incl. Baldwin's `kWh` field) or propane gallons.
   // Gas usage is NOT stored in `kwh` any more (2026-10-05 duplicate-bill-fields audit step 4):
   // a gas bill carries `therms` (gasBillSaveTherms) and every gas reader goes through
   // resolveGasUsageTherms. Old gas bills keep their stored `kwh`; nothing deletes it.
-  const kwh = bill.kWhConsumed || bill.kWh || bill.GallonsDelivered || '';
+  const kwh = _blankIfNull(parseBillNumber(bill.kWhConsumed || bill.kWh || bill.GallonsDelivered));
   return { kwh, kwCost, kwhCost, otherCost, taxCost, totalCost };
 }
 
@@ -11094,7 +11097,10 @@ function selectQueueGroup(key) {
 
 function _fmtShortDate(dateStr) {
   if (!dateStr) return '—';
-  const d = new Date(dateStr);
+  // a5cfe2a6: a bare ISO date ("2025-01-01") must be read as a LOCAL date. new Date(str) reads it
+  // as UTC, which shows one day early in time zones behind UTC.
+  const iso = /^(\d{4})-(\d{2})-(\d{2})(?:$|T)/.exec(String(dateStr));
+  const d = iso ? new Date(+iso[1], +iso[2] - 1, +iso[3]) : new Date(dateStr);
   if (isNaN(d.getTime())) return dateStr;
   return d.getMonth() + 1 + '/' + d.getDate();
 }
