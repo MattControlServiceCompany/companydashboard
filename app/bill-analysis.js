@@ -14058,6 +14058,20 @@ async function _lanczosResize(srcCanvas, dstW, dstH, a) {
 // ~34-megapixel/600 DPI danger zone profiled during this fix (see dashboardlogic.md
 // 2026-08-17 entry for full render/OCR timing at 2.5x and 4.0x).
 const OCR_SUPERSAMPLE_FACTOR = 1.6;
+// Canvas ceiling for the supersample canvas in _renderPageHQ. A letter page at the highest OCR pass
+// (6.4x) is about 19.9 megapixels, so normal pages are never changed. Side limit is the smallest
+// per-side canvas limit of the browsers we run on.
+const OCR_MAX_CANVAS_PIXELS = 36000000;
+const OCR_MAX_CANVAS_SIDE = 16384;
+// Returns the supersample scale to use: `superScale`, or a smaller scale (not below `targetScale`)
+// so that a canvas of the page size (widthAtSuper x heightAtSuper pixels at `superScale`) stays
+// inside the ceiling.
+function _clampOcrSuperScale(superScale, targetScale, widthAtSuper, heightAtSuper) {
+  const w = Math.max(1, widthAtSuper);
+  const h = Math.max(1, heightAtSuper);
+  const k = Math.min(1, Math.sqrt(OCR_MAX_CANVAS_PIXELS / (w * h)), OCR_MAX_CANVAS_SIDE / Math.max(w, h));
+  return Math.max(targetScale, superScale * k);
+}
 // FIX (b35c9b09, 2026-08-31, Step 1 instrumentation): optional 3rd arg `_timing`
 // (a plain object, mutated in place) — when provided, splits this function's
 // wall time into `.decodeMs` (the pdf.js page.render() call — CCITT/JBIG2 JS
@@ -14067,8 +14081,15 @@ const OCR_SUPERSAMPLE_FACTOR = 1.6;
 // per-pass logging call sites) are never conflated again. Purely additive —
 // omitting `_timing` reproduces the prior behavior exactly.
 async function _renderPageHQ(pg, targetScale, _timing) {
-  const superScale = targetScale * OCR_SUPERSAMPLE_FACTOR;
-  const vpHi = pg.getViewport({ scale: superScale });
+  let superScale = targetScale * OCR_SUPERSAMPLE_FACTOR;
+  let vpHi = pg.getViewport({ scale: superScale });
+  // Canvas ceiling (item 60ebfd0c): an oversized or rotated page must not ask the browser for a
+  // canvas above its limits. Lower the supersample scale, never below targetScale.
+  const _clampedScale = _clampOcrSuperScale(superScale, targetScale, vpHi.width, vpHi.height);
+  if (_clampedScale < superScale) {
+    superScale = _clampedScale;
+    vpHi = pg.getViewport({ scale: superScale });
+  }
   const rawCanvas = document.createElement('canvas');
   rawCanvas.width = Math.max(1, Math.round(vpHi.width));
   rawCanvas.height = Math.max(1, Math.round(vpHi.height));
