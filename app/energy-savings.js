@@ -5387,27 +5387,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // per-unit rate text; nothing to recompute here.
 
   // ── CHARGE RECONCILIATION: if sum doesn't match total, try to recover missing charges ──
-  const _compSum =
-    Math.round(
-      (parseBillNumber(result.CustomerCharge) +
-        parseBillNumber(result.FacilitiesCharge) +
-        parseBillNumber(result.BilledKWCharge) +
-        parseBillNumber(result.EnergyOnPeakCharge) +
-        parseBillNumber(result.EnergyOffPeakCharge) +
-        parseBillNumber(result.ECACharge) +
-        parseBillNumber(result.EERCharge) +
-        parseBillNumber(result.PTSCharge) +
-        parseBillNumber(result.TDCCharge) +
-        parseBillNumber(result.RkVACharge) +
-        parseBillNumber(result.TaxExemptDelivery) +
-        parseBillNumber(result.BillOffset) +
-        parseBillNumber(result.FranchiseFee) +
-        parseBillNumber(result.SalesTax) +
-        parseBillNumber(result.SolarCredit) +
-        parseBillNumber(result.RenewableCharge) +
-        parseBillNumber(result.MiscellaneousCharge)) *
-        100,
-    ) / 100;
+  const _compSum = sumElectricComponentCharges(result);
   const _total = parseBillNumber(result.TotalCurrentCharges);
   if (_total > 0 && Math.abs(_compSum - _total) > 1) {
     // Try to find missing charges by scanning ALL dollar amounts between "Billing Details" and "Subtotal"

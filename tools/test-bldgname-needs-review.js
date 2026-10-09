@@ -87,6 +87,7 @@ function setup() {
     'lib/formatting.js',
     'lib/date-helpers.js',
     'computations/normalization.js',
+    'computations/rates.js',
     'app/energy-savings.js',
     'app/bill-analysis.js',
   ]) {
