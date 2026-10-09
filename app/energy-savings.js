@@ -2831,7 +2831,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // one line — prevents the regex from chaining numeric tokens across lines and matching things
   // like the barcode digits at the bottom of each bill page. Unambiguous quantifiers also avoid
   // Firefox "too much recursion" from catastrophic backtracking.
-  const _meterT = t.replace(/[^\d\s+\-./,:\n]/g, ' ').replace(/:/g, ',');
+  const _meterT = _evgRepairMeterDecimals(t.replace(/[^\d\s+\-./,:\n]/g, ' ').replace(/:/g, ','));
   // Date pattern supports MM/DD (with optional slash) and 3-5 digit OCR garble like "12001" → "12/01"
   // PER-COLUMN TOLERANCE (cef419c0): groups 4-10 (EndRead, StartRead, Difference, Mult, kWhUsed,
   // KWUsed, RKVAUsed) each use `(?:(CLEAN_NUMBER)|\S+)` instead of a bare mandatory numeric group.
@@ -2863,7 +2863,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // to match starting at the right position. The two dates (groups 1-2) remain the strict/required
   // anchor.
   const _meterRe =
-    /(\d{1,2}\/?\d{1,3})[^\S\n]+(\d{1,2}\/?\d{1,3})[^\S\n]+(?:(\d+)|\S{1,4})?[^\S\n]+[-+]?[^\S\n]*(?:([\d,]+(?:\.\d+)?)|\S+)[^\S\n]+[-+]?[^\S\n]*(?:([\d,]+(?:\.\d+)?)|\S+)[^\S\n]+[-+]?[^\S\n]*(?:([\d,]+(?:\.\d+)?)|\S+)[^\S\n]+[-+]?[^\S\n]*(?:([\d,.]+)|\S+)[^\S\n]+[-+]?[^\S\n]*(?:([\d,]+(?:\.\d+)?)|\S+)[^\S\n]+(?:([\d,.]+)|\S+)(?:[^\S\n]+(?:([\d,.]+)|\S+))?/g;
+    /(?<![\d/.,])(\d{1,2}\/?\d{1,3})[^\S\n]+(\d{1,2}\/?\d{1,3})[^\S\n]+(?:(\d+)|\S{1,4})?[^\S\n]+[-+]?[^\S\n]*(?:([\d,]+(?:\.\d+)?)|\S+)[^\S\n]+[-+]?[^\S\n]*(?:([\d,]+(?:\.\d+)?)|\S+)[^\S\n]+[-+]?[^\S\n]*(?:([\d,]+(?:\.\d+)?)|\S+)[^\S\n]+[-+]?[^\S\n]*(?:([\d,.]+)|\S+)[^\S\n]+[-+]?[^\S\n]*(?:([\d,]+(?:\.\d+)?)|\S+)[^\S\n]+(?:([\d,.]+)|\S+)(?:[^\S\n]+(?:([\d,.]+)|\S+))?/g;
   // ── TABLE-BLEED GUARD (perf fix, 020084cb) ──
   // _meterRe chains 7 consecutive `(?:(NUM)|\S+)` alternations to parse one clean meter-
   // read row. On some bills (confirmed: LHS acct 1000001 09/28-10/27/2025; bes-mb-
@@ -3107,6 +3107,19 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     }
     return fixed;
   }
+  // Number of digit positions where the OCR string differs from a target number written with the
+  // same decimals. Returns Infinity when the digit counts differ (not a plain digit misread).
+  function _digitsDiffering(ocrStr, targetVal) {
+    if (ocrStr == null || !isFinite(targetVal)) return Infinity;
+    const digitsOnly = String(ocrStr).replace(/,/g, '');
+    const dotIdx = digitsOnly.indexOf('.');
+    const decimals = dotIdx === -1 ? 0 : digitsOnly.length - dotIdx - 1;
+    const targetStr = decimals > 0 ? targetVal.toFixed(decimals) : String(Math.round(targetVal));
+    if (targetStr.length !== digitsOnly.length) return Infinity;
+    let n = 0;
+    for (let i = 0; i < digitsOnly.length; i++) if (digitsOnly[i] !== targetStr[i]) n++;
+    return n;
+  }
   // Enumerates every SINGLE plausible confusable-digit substitution of `ocrStr` (added
   // 2026-08-24, Client A visual audit bug #8, for the joint EndRead/StartRead recovery tier
   // below). Unlike _reconcileNumber, this does not test against one arithmetic target — it
@@ -3144,6 +3157,36 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   for (const row of _meterRows) {
     for (let gi = 4; gi <= 10; gi++) {
       if (row[gi]) row[gi] = row[gi].replace(/:/g, ',');
+    }
+    // MISSING-DECIMAL RECOVERY for the KW, RKVA, Difference and kWh columns (backlog 10fc8706,
+    // 22db073c). Every value in this table prints with 4 decimals, so a bare run of digits means
+    // OCR lost the point (and any comma) and the last 4 digits are the decimals. KW and RKVA
+    // have no checksum, so a bare run of 5 to 7 digits is repaired by this rule alone.
+    // Difference and kWh have one: Difference x Multiplier = kWh. Their repairs are adopted
+    // together, and only when the repaired pair satisfies that product, so a wrong repair cannot
+    // pass. (Reads are repaired by the structural recovery below.)
+    const _lostPoint = (s, min, max) =>
+      /^\d+$/.test(s || '') && s.length >= min && s.length <= max ? s.slice(0, -4) + '.' + s.slice(-4) : null;
+    for (const gi of [9, 10]) {
+      const fixed = _lostPoint(row[gi], 5, 7);
+      if (fixed) row[gi] = fixed;
+    }
+    const _diffFixed = _lostPoint(row[6], 5, 8);
+    const _kwhFixed = _lostPoint(row[8], 5, 9);
+    if (_diffFixed || _kwhFixed) {
+      const dNum = parseBillNumber(_diffFixed || row[6]);
+      const kNum = parseBillNumber(_kwhFixed || row[8]);
+      if (Math.abs(dNum * parseBillNumber(row[7]) - kNum) < 0.01) {
+        if (_diffFixed) {
+          row._differenceOriginal = row[6];
+          row._fixedDifference = _diffFixed;
+          row[6] = _diffFixed;
+        }
+        if (_kwhFixed) {
+          row._kwhUsedOriginal = row[8];
+          row[8] = _kwhFixed;
+        }
+      }
     }
   }
   // ── MISSING-DECIMAL RECOVERY (groups 4/5: EndRead/StartRead) ──
@@ -3344,7 +3387,19 @@ function _extractEvergy(t, acctOverride, addrOverride) {
 
     if (!tier1Fixed && kwhUsed > 0) {
       const diffFromKwh = parseFloat((kwhUsed / mult).toFixed(4));
-      if (Math.abs(diff - diffFromKwh) > 0.0005) {
+      // Ambiguity guard (backlog 3c56032b). Difference and kWh/Multiplier disagree, so one of the
+      // two is misread. Replacing Difference with the kWh value, and then rewriting a read to
+      // match it, is only safe when the opposite explanation is NOT also plausible. The opposite
+      // explanation: Difference is right, kWh is misread, and one read is misread. It is plausible
+      // when kWh differs from Difference x Multiplier in one digit and one read differs from the
+      // value Difference implies in one digit. Both explanations then need the same number of
+      // one-digit misreads and no column proves which one is true. A read OCR printed correctly
+      // must not be rewritten on a guess, so the row stays as printed.
+      const _oppositePlausible =
+        _digitsDiffering(row[8], parseFloat((diff * mult).toFixed(4))) === 1 &&
+        (_digitsDiffering(row[4], parseFloat((startR + diff).toFixed(4))) === 1 ||
+          _digitsDiffering(row[5], parseFloat((endR - diff).toFixed(4))) === 1);
+      if (Math.abs(diff - diffFromKwh) > 0.0005 && !_oppositePlausible) {
         const fixedDiff = _reconcileNumber(row[6], diffFromKwh, 3);
         if (fixedDiff) {
           row._fixedDifference = fixedDiff;
@@ -3392,7 +3447,17 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     if (!row._fixedEndRead && !row._fixedStartRead) {
       const trustedDiffFinal = row._fixedDifference ? parseFloat(row._fixedDifference) : diff;
       const stillOff = trustedDiffFinal > 0 && Math.abs(endR - startR - trustedDiffFinal) > 0.001;
-      if (stillOff) {
+      // Simpler-explanation guard (backlog 3c56032b): if ONE read alone differs from the value the
+      // other read and the trusted Difference imply, in one digit (any digit, not only a known OCR
+      // confusion), that single misread explains the row with fewer assumptions than two
+      // separate misreads. Searching for a pair would then rewrite a read that OCR printed
+      // correctly (for example EndRead, to chase a StartRead whose digit swap is not a known
+      // confusion). Leave the row as printed.
+      const _singleReadExplains =
+        stillOff &&
+        (_digitsDiffering(row[4], parseFloat((startR + trustedDiffFinal).toFixed(4))) === 1 ||
+          _digitsDiffering(row[5], parseFloat((endR - trustedDiffFinal).toFixed(4))) === 1);
+      if (stillOff && !_singleReadExplains) {
         const endCands = _singleDigitCandidates(row[4]);
         const pairMatches = [];
         for (const ec of endCands) {
@@ -3407,8 +3472,44 @@ function _extractEvergy(t, acctOverride, addrOverride) {
           row._startReadOriginal = row[5].replace(/,/g, '');
         }
       }
+      // One read explains the row. Repair it only when it is a known OCR confusion AND the other
+      // read could not be repaired the same way. If both could, or neither, the row is ambiguous
+      // and stays as printed (a StartRead that differs by a non-confusable digit is left alone).
+      if (stillOff && _singleReadExplains) {
+        const fixE = _reconcileNumber(row[4], parseFloat((startR + trustedDiffFinal).toFixed(4)), 1);
+        const fixS = _reconcileNumber(row[5], parseFloat((endR - trustedDiffFinal).toFixed(4)), 1);
+        if (fixE && !fixS) {
+          row._fixedEndRead = fixE;
+          row._endReadOriginal = row[4].replace(/,/g, '');
+        } else if (fixS && !fixE) {
+          row._fixedStartRead = fixS;
+          row._startReadOriginal = row[5].replace(/,/g, '');
+        }
+      }
     }
   }
+  // kWh Used for one meter row, for the multi-meter sum and the per-meter fields. When EndRead -
+  // StartRead agrees with Difference, those two columns are independent witnesses. If Difference
+  // x Multiplier then differs from the kWh Used column by a plausible digit misread, the kWh
+  // Used column is the misread one and the product is used. In every other case the column is
+  // used as printed. Single-meter bills do not use this: they keep the column and the existing
+  // witness comparison decides.
+  const _rowKwhUsed = (r) => {
+    const kwh = parseBillNumber(r[8]);
+    const end = parseBillNumber(r._fixedEndRead || r[4]);
+    const start = parseBillNumber(r._fixedStartRead || r[5]);
+    const diff = parseBillNumber(r._fixedDifference || r[6]);
+    const mult = parseBillNumber(r[7]);
+    if (!(kwh > 0 && end > start && start > 0 && diff > 0 && mult > 0)) return kwh;
+    if (Math.abs(parseFloat((end - start).toFixed(4)) - diff) >= 0.001) return kwh;
+    const product = parseFloat((diff * mult).toFixed(4));
+    if (Math.abs(product - kwh) < 0.01) return kwh;
+    return _reconcileNumber(r[8], product, 3) ? product : kwh;
+  };
+  const _rowKwhUsedText = (r) => {
+    const v = _rowKwhUsed(r);
+    return v === parseBillNumber(r[8]) ? (r[8] || '').replace(/,/g, '') : v.toFixed(4);
+  };
   // Check for Delivered/Received labels near meter table (solar net metering indicator)
   // Also accept "Net Meter" label (used by Utility E parallel-generation 2LGAEP bills).
   // "Net Meter" appears on the page continuation note after the table — use a wider
@@ -3503,7 +3604,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       maxRkva = 0,
       hasRkva = false;
     for (const r of _meterGroup) {
-      totalKwh += parseBillNumber(r[8]);
+      totalKwh += _rowKwhUsed(r);
       totalDiff += parseBillNumber(r._fixedDifference || r[6]);
       maxKw = Math.max(maxKw, parseBillNumber(r[9]));
       if (r[10] != null && String(r[10]).trim() !== '') {
@@ -4216,7 +4317,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
         result.Meter1_EndRead = m1._fixedEndRead || _mrClean(m1[4]) || null;
         result.Meter1_ReadDiff = m1._fixedDifference || _mrClean(m1[6]) || null;
         result.Meter1_Multiplier = _mrClean(m1[7]) || null;
-        result.Meter1_kWh = _mrClean(m1[8]) || null;
+        result.Meter1_kWh = _rowKwhUsedText(m1) || null;
         result.Meter1_KW = _mrClean(m1[9]) || null;
         result.Meter1_RKVA = _mrClean(m1[10]) || null;
         result.Meter2_ReadStart = m2[1] || null;
@@ -4225,7 +4326,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
         result.Meter2_EndRead = m2._fixedEndRead || _mrClean(m2[4]) || null;
         result.Meter2_ReadDiff = m2._fixedDifference || _mrClean(m2[6]) || null;
         result.Meter2_Multiplier = _mrClean(m2[7]) || null;
-        result.Meter2_kWh = _mrClean(m2[8]) || null;
+        result.Meter2_kWh = _rowKwhUsedText(m2) || null;
         result.Meter2_KW = _mrClean(m2[9]) || null;
         result.Meter2_RKVA = _mrClean(m2[10]) || null;
       }
@@ -4264,6 +4365,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       _digitFixes.push({ field: 'StartRead', original: row._startReadOriginal, corrected: row._fixedStartRead });
     if (row._fixedDifference)
       _digitFixes.push({ field: 'Difference', original: row._differenceOriginal, corrected: row._fixedDifference });
+    if (row._kwhUsedOriginal) _digitFixes.push({ field: 'KwhUsed', original: row._kwhUsedOriginal, corrected: row[8] });
   }
   if (_digitFixes.length) {
     result._digitCorrections = _digitFixes;
@@ -5559,6 +5661,69 @@ const _EVG_ADDR =
 
 // ONE address normalizer. _evgAddrNorm is the readable form (shown, stored). _evgAddrKey is the compare form:
 // OCR splits or joins words and swaps "," "." and space, so equal addresses must ignore spaces, commas and periods.
+// Meter-table rows print every read column with exactly 4 decimals. OCR damages that decimal
+// point in two ways. This is the ONE place that repairs both. Each repair swaps one character
+// for one character, so the text keeps its length (row.index offsets stay valid).
+//  (1) The point becomes a comma ("27,0460" for "27.0460"). A thousands group has 3 digits, so
+//      a final group of exactly 4 digits after a comma can only be a decimal point. Only the
+//      Multiplier, kWh, KW and RKVA columns are repaired here. EndRead, StartRead and
+//      Difference have their own structural repair (MISSING-DECIMAL RECOVERY), which also marks
+//      them as repaired so the digit-guessing tiers leave them alone.
+//  (2) The point becomes a space ("21,506 4170" for "21,506.4170"). That splits one column into
+//      two tokens and shifts every later column one place right (Difference lands in
+//      Multiplier, kWh in KW Used, and so on). Rule: after an optional Days token, if exactly
+//      one adjacent pair is (digits without a decimal, 4 digits) and every other value token
+//      has 4 decimals, and removing the split leaves 6 or 7 value tokens, join the pair.
+// A meter row is a line with two date tokens. The text before the first date (the meter id) is
+// never touched.
+function _evgRepairMeterDecimals(text) {
+  const rowStart = /(?<![\d/.,])\d{1,2}\/?\d{1,3}[^\S\n]+\d{1,2}\/?\d{1,3}(?=[^\S\n])/;
+  const tokensAfter = (line, from) => {
+    const toks = [];
+    const re = /\S+/g;
+    re.lastIndex = from;
+    let m;
+    while ((m = re.exec(line)) !== null) toks.push({ s: m[0], i: m.index });
+    if (toks.length && /^\d{1,3}$/.test(toks[0].s)) toks.shift(); // Days column
+    return toks;
+  };
+  return text
+    .split('\n')
+    .map((line0) => {
+      const head = rowStart.exec(line0);
+      if (!head) return line0;
+      const from = head.index + head[0].length;
+      let line = line0;
+      // (2) split decimal point
+      const toks = tokensAfter(line, from);
+      const pairs = [];
+      for (let k = 0; k + 1 < toks.length; k++) {
+        const a = toks[k];
+        const b = toks[k + 1];
+        if (/^[\d,]*\d$/.test(a.s) && /^\d{4}$/.test(b.s) && b.i - (a.i + a.s.length) === 1) pairs.push(k);
+      }
+      if (pairs.length === 1) {
+        const k = pairs[0];
+        const rest = toks.filter((_, j) => j !== k && j !== k + 1);
+        const isDec4 = (x) => /^[\d,]*\.\d{4}$/.test(x);
+        if (rest.length + 1 >= 6 && rest.length + 1 <= 7 && rest.every((x) => isDec4(x.s))) {
+          const at = toks[k].i + toks[k].s.length;
+          line = line.slice(0, at) + '.' + line.slice(at + 1);
+        }
+      }
+      // (1) comma used as decimal point, columns 4 and later
+      const vt = tokensAfter(line, from);
+      if (vt.length < 6 || vt.length > 7) return line;
+      for (const t of vt.slice(3)) {
+        if (/^\d{1,3}(?:,\d{3})*,\d{4}$/.test(t.s)) {
+          const at = t.i + t.s.length - 5;
+          line = line.slice(0, at) + '.' + line.slice(at + 1);
+        }
+      }
+      return line;
+    })
+    .join('\n');
+}
 const _evgAddrNorm = (a) => (a || '').replace(/\s+/g, ' ').trim().toUpperCase();
 const _evgAddrKey = (a) => _evgAddrNorm(a).replace(/[\s,.]+/g, '');
 

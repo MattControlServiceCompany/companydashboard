@@ -96,6 +96,80 @@ const EXPECTED_FIELDS = {
 // the safe default.
 const EVERGY_NO_DEMAND_SCHEDULES = new Set(['2SGSE']);
 
+// ONE rule for "which critical fields does this bill lack". The flat EXPECTED_FIELDS list names one
+// total field per provider, but a bill carries its total as Total Amount Due or as Total Current
+// Charges (a city utility bill prints the first, and the reader may fill only the second). Either
+// field satisfies a critical total. Without this, a bill that already has its total is flagged as
+// "Missing Total Amount Due", and the false flag starts a long OCR retry (backlog 06fc5cc8).
+const _TOTAL_FIELDS = ['TotalAmountDue', 'TotalCurrentCharges'];
+function _missingCriticalFields(extracted, spec) {
+  const has = (f) => {
+    const v = extracted[f];
+    return !(v === null || v === undefined || v === '');
+  };
+  return spec.critical.filter((f) => (_TOTAL_FIELDS.includes(f) ? !_TOTAL_FIELDS.some(has) : !has(f)));
+}
+
+// Read-chain witness (backlog 446b569b): on one meter, a bill's StartRead equals the previous
+// bill's EndRead. That lets a neighbor fill a missing read. A fill is only safe when the
+// neighbor's own reads are proven. A neighbor read that OCR misread would otherwise pass into a
+// field that is empty now and look confident. A neighbor is a usable witness when:
+//  - its own table proves its reads: EndRead - StartRead = ReadDifference and
+//    ReadDifference x MeterMultiplier = kWhConsumed, both at print precision;
+//  - no digit guess rewrote its EndRead, StartRead or Difference (_digitCorrections);
+//  - it is the same meter: same service address when both bills print one.
+// The account and the 5-day period gate are checked by the caller.
+function _readsSelfCorroborated(b) {
+  if (!b || _isMultiMeterBill(b)) return false;
+  const e = parseBillNumberOrZero(b.EndRead);
+  const s = parseBillNumberOrZero(b.StartRead);
+  const d = parseBillNumberOrZero(b.ReadDifference);
+  const m = parseBillNumberOrZero(b.MeterMultiplier);
+  const k = parseBillNumberOrZero(b.kWhConsumed);
+  if (!(e > 0 && s > 0 && d > 0 && m > 0 && k > 0)) return false;
+  if (
+    Array.isArray(b._digitCorrections) &&
+    b._digitCorrections.some((c) => c.field === 'EndRead' || c.field === 'StartRead' || c.field === 'Difference')
+  )
+    return false;
+  return Math.abs(e - s - d) <= 0.001 && Math.abs(d * m - k) <= 0.01;
+}
+function _canWitnessRead(witness, target) {
+  if (!_readsSelfCorroborated(witness)) return false;
+  if (witness.ServiceAddress && target.ServiceAddress) {
+    return _normalizeAddr(witness.ServiceAddress) === _normalizeAddr(target.ServiceAddress);
+  }
+  return true;
+}
+
+// ONE rule for matching a bill to its twin in an alternate OCR pass: same account AND same
+// billing period. Two accounts on one multi-account page often share a period, so a period-only
+// match, or "the first bill" fallback, can adopt another account's value (backlog af0b7fe6).
+// A bill with no account number matches nothing: an unverifiable twin is never guessed.
+function _billAcctKey(v) {
+  return (v || '').replace(/[\s\-]/g, '').toLowerCase();
+}
+function _findAltPassBill(altBills, b) {
+  const key = _billAcctKey(b && b.AccountNumber);
+  if (!key) return null;
+  return (
+    altBills.find(
+      (ab) =>
+        ab &&
+        ab.BillingPeriodStart === b.BillingPeriodStart &&
+        ab.BillingPeriodEnd === b.BillingPeriodEnd &&
+        _billAcctKey(ab.AccountNumber) === key,
+    ) || null
+  );
+}
+
+// ONE rule for "this bill sums 2+ physical meter rows" (a meter change or two live meters on one
+// account). energy-savings.js sets _meterInfo; every check below asks this function. Such a bill
+// has StartRead, EndRead and ReadDifference left null on purpose, and its kWhConsumed is a sum.
+function _isMultiMeterBill(bill) {
+  return !!(bill && bill._meterInfo && bill._meterInfo.type === 'meter_change' && bill._meterInfo.rows >= 2);
+}
+
 // Validate a single extracted bill — returns array of {level, field, message}
 function validateBillData(extracted, utilityName) {
   const warnings = [];
@@ -103,15 +177,12 @@ function validateBillData(extracted, utilityName) {
   const spec = EXPECTED_FIELDS[utilityName] || EXPECTED_FIELDS._default;
 
   // Check critical fields
-  for (const f of spec.critical) {
-    const v = extracted[f];
-    if (v === null || v === undefined || v === '') {
-      warnings.push({
-        level: 'error',
-        field: f,
-        message: 'Missing — this field is normally present on ' + utilityName + ' bills',
-      });
-    }
+  for (const f of _missingCriticalFields(extracted, spec)) {
+    warnings.push({
+      level: 'error',
+      field: f,
+      message: 'Missing — this field is normally present on ' + utilityName + ' bills',
+    });
   }
   // Check important fields
   for (const f of spec.important) {
@@ -3376,7 +3447,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         // represent a single valid physical reading. Reuse the same guard the Step 2
         // cascade below uses so the kWh/multiplier fallback a few lines down can't
         // silently refill ReadDifference from kWhConsumed the instant it's nulled.
-        const _isMultiMeterKwh0 = !!(b._meterInfo && b._meterInfo.type === 'meter_change' && b._meterInfo.rows >= 2);
+        const _isMultiMeterKwh0 = _isMultiMeterBill(b);
 
         // kWh QUANTITY CORROBORATION GUARD: once kWhConsumed has been locked
         // by the witness corroboration above, a ReadDifference recompute that
@@ -3502,7 +3573,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         // Used column, summed). A single meter row's ReadDifference × Multiplier is not a
         // valid cross-check against that sum — it's at best one of the N components — so
         // the cascade must not run at all for these bills, not merely be ratio-guarded.
-        const _isMultiMeterKwh = !!(b._meterInfo && b._meterInfo.type === 'meter_change' && b._meterInfo.rows >= 2);
+        const _isMultiMeterKwh = _isMultiMeterBill(b);
         const cascadeDiff = parseBillNumberOrZero(b.ReadDifference);
         // GATE (2026-07-14 kWh corroboration fix): kWhConsumed was already
         // decided once, with weighted evidence, by the witness corroboration
@@ -3644,7 +3715,8 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         }
         // ── FINAL ActualKW consensus: BilledKW == TDCkW → ActualKW must match ──
         // Runs after all other kW corrections. If BilledKW and TDCkW agree
-        // (within 0.01) and ActualKW differs by any amount, correct it.
+        // (within 0.01) and ActualKW differs at all (more than 0.00005, the 4-decimal print
+        // precision), correct it.
         const _fAct = parseBillNumber(b.ActualKW),
           _fBil = parseBillNumberOrZero(b.BilledKW),
           _fTdc = parseBillNumberOrZero(b.TDCkW);
@@ -3654,7 +3726,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           _fTdc > 0 &&
           Math.abs(_fBil - _fTdc) < 0.01 &&
           _fBil % 1 !== 0 &&
-          Math.abs(_fAct - _fBil) > 0.001
+          Math.abs(_fAct - _fBil) > 0.00005
         ) {
           b['_auto_corrected_ActualKW'] = {
             original: b.ActualKW,
@@ -3691,12 +3763,12 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         if (ca && cb && ca !== cb) return false;
         return true;
       };
+      // Day count comes from calcDays, the one date-difference function. The former local copy
+      // parsed "MM/DD/YYYY" as an invalid date, so every slash-dated bill read as infinitely far
+      // apart and the neighbor-read fills below never ran (backlog 446b569b).
       const dayDiff = (d1, d2) => {
-        if (!d1 || !d2) return Infinity;
-        const p1 = new Date(d1 + 'T12:00:00');
-        const p2 = new Date(d2 + 'T12:00:00');
-        if (isNaN(p1) || isNaN(p2)) return Infinity;
-        return Math.abs((p1 - p2) / 86400000);
+        const n = calcDays(d1, d2, false);
+        return n === '' || isNaN(n) ? Infinity : Math.abs(n);
       };
       // 1. Sequential-read mismatch flags — with meter-change / rollover
       //    auto-detection. When next.StartRead is near-zero while
@@ -3750,15 +3822,16 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
       //    reading spanning two physical meters isn't real. Adjacent monthly bills on the
       //    same account almost always abut within 5 days, so without this guard this pass
       //    silently refills the nulled fields from an unrelated neighbor bill every time.
-      const _isMultiMeterBill = (bill) =>
-        !!(bill && bill._meterInfo && bill._meterInfo.type === 'meter_change' && bill._meterInfo.rows >= 2);
       for (let i = 0; i < bills.length; i++) {
         const curr = bills[i];
         const prev = i > 0 ? bills[i - 1] : null;
         const next = i < bills.length - 1 ? bills[i + 1] : null;
         if (_isMultiMeterBill(curr)) continue;
         if (!curr.StartRead && prev && sameAcct(curr, prev) && prev.EndRead) {
-          if (dayDiff(prev.BillingPeriodEnd, curr.BillingPeriodStart) <= 5) {
+          if (
+            dayDiff(prev.BillingPeriodEnd, curr.BillingPeriodStart) <= 5 &&
+            _canWitnessRead(prev, curr)
+          ) {
             curr.StartRead = prev.EndRead;
             curr._auto_recovered_StartRead = {
               original: null,
@@ -3773,7 +3846,10 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           }
         }
         if (!curr.EndRead && next && sameAcct(curr, next) && next.StartRead) {
-          if (dayDiff(curr.BillingPeriodEnd, next.BillingPeriodStart) <= 5) {
+          if (
+            dayDiff(curr.BillingPeriodEnd, next.BillingPeriodStart) <= 5 &&
+            _canWitnessRead(next, curr)
+          ) {
             curr.EndRead = next.StartRead;
             curr._auto_recovered_EndRead = {
               original: null,
@@ -3840,7 +3916,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           // against that sum, so this pass must not touch kWhConsumed for these bills — same
           // guard as Step 2's cascade above, applied here so this sibling pass can't
           // reintroduce the same clobber bug (398.5586 overwriting the correct 958.4676).
-          const _isMultiMeterKwh2 = !!(b._meterInfo && b._meterInfo.type === 'meter_change' && b._meterInfo.rows >= 2);
+          const _isMultiMeterKwh2 = _isMultiMeterBill(b);
           if (!_isGasOrPropane && !_isMultiMeterKwh2 && dR > 0 && mM > 0 && !kC) {
             const v = dR * mM;
             if (v > 0 && v < 2000000) {
@@ -4341,16 +4417,19 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
       const comm = (b.Commodity || '').toLowerCase();
       if (comm && comm !== 'electric') continue;
       const _kwhVal = parseBillNumber(b.kWhConsumed);
-      if (_kwhVal > 500000) {
+      // The ceiling guards against one garbled number. A multi-meter bill is a SUM of N meter rows,
+      // so its ceiling grows with N (backlog 3cdf53ff). Its reads are null, so no recompute applies.
+      const _kwhCeiling = 500000 * (_isMultiMeterBill(b) ? b._meterInfo.rows : 1);
+      if (_kwhVal > _kwhCeiling) {
         const _eR = parseBillNumber(b.EndRead),
           _sR = parseBillNumber(b.StartRead),
           _mM = parseBillNumber(b.MeterMultiplier);
         const _recomputed = _eR > 0 && _sR > 0 && _eR > _sR && _mM > 0 ? (_eR - _sR) * _mM : 0;
         const _crossCheck = b._kwhCrossCheck ? b._kwhCrossCheck.calculated : 0;
         const _recovery =
-          _recomputed > 0 && _recomputed < 500000
+          _recomputed > 0 && _recomputed < _kwhCeiling
             ? _recomputed
-            : _crossCheck > 0 && _crossCheck < 500000
+            : _crossCheck > 0 && _crossCheck < _kwhCeiling
               ? _crossCheck
               : 0;
         if (_recovery > 0) {
@@ -4360,7 +4439,9 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
             reason:
               'Value ' +
               _kwhVal +
-              ' exceeded 500k ceiling; recovered from ' +
+              ' exceeded the ' +
+              _kwhCeiling +
+              ' kWh ceiling; recovered from ' +
               (_recomputed > 0 ? 'EndRead-StartRead×Mult' : 'charge-line cross-check'),
           };
           b.kWhConsumed = _recovery.toFixed(4);
@@ -5269,12 +5350,7 @@ async function analyzeBillExtraction(bills, utilityName, historicalCache, status
 // Count critical missing fields that OCR retry might fix
 function countCriticalMissing(extracted, utilityName) {
   const spec = EXPECTED_FIELDS[utilityName] || EXPECTED_FIELDS._default;
-  let count = 0;
-  for (const f of spec.critical) {
-    const v = extracted[f];
-    if (v === null || v === undefined || v === '') count++;
-  }
-  return count;
+  return _missingCriticalFields(extracted, spec).length;
 }
 
 // ── Auto-assign: scan all meters across all projects/buildings for account or meter number match ──
@@ -16296,11 +16372,8 @@ async function processPDF(file) {
                     const altBills = Array.isArray(altResult) ? altResult : altResult ? [altResult] : [];
                     if (!altBills.length) continue;
                     // Find the alt bill matching this bill's period
-                    const altBill =
-                      altBills.find(
-                        (ab) =>
-                          ab.BillingPeriodStart === b.BillingPeriodStart && ab.BillingPeriodEnd === b.BillingPeriodEnd,
-                      ) || altBills[0];
+                    const altBill = _findAltPassBill(altBills, b);
+                    if (!altBill) continue; // not this bill's account and period: never adopt another account's value
                     // Check each charge field: if alt has a different value that reduces the mismatch
                     for (const field of CHARGE_CHECK) {
                       const altVal = parseBillNumberOrZero(altBill[field]);
@@ -16420,12 +16493,8 @@ async function processPDF(file) {
                       const altResult = rule.extract(altText);
                       const altBills = Array.isArray(altResult) ? altResult : altResult ? [altResult] : [];
                       if (!altBills.length) continue;
-                      const altBill =
-                        altBills.find(
-                          (ab) =>
-                            ab.BillingPeriodStart === b.BillingPeriodStart &&
-                            ab.BillingPeriodEnd === b.BillingPeriodEnd,
-                        ) || altBills[0];
+                      const altBill = _findAltPassBill(altBills, b);
+                      if (!altBill) continue; // not this bill's account and period: never adopt another account's value
                       // Only adopt when the alt pass read this field DIRECTLY (no
                       // fallback flag of its own) AND recovered the paired rate —
                       // otherwise this would trade one degraded reading for
@@ -16530,7 +16599,7 @@ async function processPDF(file) {
           // there is no reliable signal to pick a winner for them — left untouched
           // rather than guessed.
           if (hasAltPasses && rule.name === 'Evergy') {
-            const acctKey = (v) => (v || '').replace(/[\s\-]/g, '').toLowerCase();
+            const acctKey = _billAcctKey;
             const IDENTITY_TOL = 0.02; // OCR hundredths-place rounding slack
             const ALL_METER_FIELDS = ['StartRead', 'EndRead', 'ReadDifference', 'MeterMultiplier', 'kWhConsumed'];
             // Two independent physical identities, checked and reconciled
@@ -16589,12 +16658,7 @@ async function processPDF(file) {
                     const altResult = rule.extract(p.text);
                     const altBills = Array.isArray(altResult) ? altResult : altResult ? [altResult] : [];
                     if (!altBills.length) continue;
-                    const altBill = altBills.find(
-                      (ab) =>
-                        ab.BillingPeriodStart === b.BillingPeriodStart &&
-                        ab.BillingPeriodEnd === b.BillingPeriodEnd &&
-                        acctKey(ab.AccountNumber) === bAcct,
-                    );
+                    const altBill = _findAltPassBill(altBills, b);
                     if (!altBill) continue; // this pass's text isn't this bill's account/page — skip, don't guess
                     matchedReadings.push({ scale: p.scale, label: p.label, altBill });
                   } catch (e) {
@@ -16706,13 +16770,8 @@ async function processPDF(file) {
                     const altResult = recoverRule.extract(altText);
                     const altBills = Array.isArray(altResult) ? altResult : altResult ? [altResult] : [];
                     if (!altBills.length) continue;
-                    const altBill =
-                      altBills.find(
-                        (ab) =>
-                          ab &&
-                          ab.BillingPeriodStart === b.BillingPeriodStart &&
-                          ab.BillingPeriodEnd === b.BillingPeriodEnd,
-                      ) || altBills[0];
+                    const altBill = _findAltPassBill(altBills, b);
+                    if (!altBill) continue; // not this bill's account and period: never adopt another account's value
                     // Same adoption guard as the block above: only take the alt
                     // pass's reading when it read the charge line DIRECTLY (no
                     // fallback flag of its own) AND recovered the paired rate —
