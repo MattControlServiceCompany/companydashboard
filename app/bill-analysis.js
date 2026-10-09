@@ -4,28 +4,8 @@
 // outliers by comparing against historical bills for the same account/meter.
 // ══════════════════════════════════════════════════════════════════════════════
 
-// Single list of Utility E electric component charge fields that add up to
-// TotalCurrentCharges. Used by validateBillData, the Gate C/D line-item check
-// and the Stage 3 charge reconciliation. Add a new charge field here only.
-const UTILITY_E_COMPONENT_CHARGE_FIELDS = [
-  'CustomerCharge',
-  'FacilitiesCharge',
-  'BilledKWCharge',
-  'EnergyOnPeakCharge',
-  'EnergyOffPeakCharge',
-  'ECACharge',
-  'EERCharge',
-  'PTSCharge',
-  'TDCCharge',
-  'RkVACharge',
-  'TaxExemptDelivery',
-  'BillOffset',
-  'FranchiseFee',
-  'SolarCredit',
-  'RenewableCharge',
-  'MiscellaneousCharge',
-  'SalesTax',
-];
+// UTILITY_E_COMPONENT_CHARGE_FIELDS (the Utility E electric component charge list) lives in
+// computations/rates.js, loaded before this file, so app/energy-savings.js can use it too.
 
 // Single lists of the non-electric charge fields that add up to TotalCurrentCharges.
 // Every per-commodity map in this file (line-item check, sum pills, sum banner) points

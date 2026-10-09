@@ -276,6 +276,40 @@ function toKBtu(kwh, therms, gallons) {
   return (parseFloat(kwh) || 0) * 3.412 + (parseFloat(therms) || 0) * 100 + (parseFloat(gallons) || 0) * 91.5;
 }
 
+// Single list of Utility E electric component charge fields that add up to
+// TotalCurrentCharges. Used by validateBillData, the Gate C/D line-item check
+// and the Stage 3 charge reconciliation. Add a new charge field here only.
+var UTILITY_E_COMPONENT_CHARGE_FIELDS = [
+  'CustomerCharge',
+  'FacilitiesCharge',
+  'BilledKWCharge',
+  'EnergyOnPeakCharge',
+  'EnergyOffPeakCharge',
+  'ECACharge',
+  'EERCharge',
+  'PTSCharge',
+  'TDCCharge',
+  'RkVACharge',
+  'TaxExemptDelivery',
+  'BillOffset',
+  'FranchiseFee',
+  'SolarCredit',
+  'RenewableCharge',
+  'MiscellaneousCharge',
+  'SalesTax',
+];
+
+// Sum of the Utility E component charges, rounded to cents. The extractor's charge
+// reconciliation (app/energy-savings.js) compares this with TotalCurrentCharges.
+function sumElectricComponentCharges(parsed) {
+  parsed = parsed || {};
+  var total = 0;
+  for (var i = 0; i < UTILITY_E_COMPONENT_CHARGE_FIELDS.length; i++) {
+    total += parseBillNumber(parsed[UTILITY_E_COMPONENT_CHARGE_FIELDS[i]]);
+  }
+  return Math.round(total * 100) / 100;
+}
+
 // Canonical electric energy-charge sum — the 5 charge fields that make up the
 // implied $/kWh rate (OnPeak + OffPeak + ECA + EER + PTS). SSOT for
 // getExtractedRate('kwh'), validateBillData's electric branch, and
