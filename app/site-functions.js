@@ -2477,6 +2477,14 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.09.102', date: '2026-10-09', title: 'Bill Analysis number and date fixes',
+    items: [
+      { type: 'fix', text: 'Bill Analysis: the total cost and usage of a bill are now saved as numbers, so a value with a thousands comma is no longer kept as text.' },
+      { type: 'fix', text: 'Bill Analysis: a real zero for usage or cost is now kept as zero and is no longer shown as blank.' },
+      { type: 'fix', text: 'Bill Analysis and Utility Data: billing dates in the form year-month-day are now read as local dates, so a bill no longer lands in the wrong month.' },
+      { type: 'fix', text: 'Utility Data: the duplicate-bill check now treats a number saved as text and the same number saved as a number as one value.' }
+    ]
+  },
   { v: 'v2026.10.09.101', date: '2026-10-09', title: 'Bill Analysis sum check fix',
     items: [
       { type: 'fix', text: 'Bill Analysis, electric bills: the sum check now counts the same charge lines as the sum pills and the sum banner, so a bill that adds up is no longer flagged as a mismatch.' }
