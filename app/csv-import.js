@@ -499,16 +499,25 @@ function _isEraseCell(raw) {
 
 // Copies the CSV row onto the stored bill. Blank cells keep the stored value; only the typed
 // ERASE marker clears a field. The stored bill id is kept.
+// Item c-b6665a0f: a value the user corrected by hand (bill._userCorrected[field])
+// is kept when the CSV carries a different value for it. Only the typed ERASE
+// marker clears such a value. Returns how many hand-corrected values were kept.
 function _mergeCsvRowIntoBill(bill, r) {
+  let keptCorrected = 0;
   Object.keys(r).forEach((k) => {
     if (k === 'id' || k === '_erase') return;
     const v = r[k];
     if (v === null || v === undefined || v === '') return;
+    if (bill._userCorrected && bill._userCorrected[k] && String(bill[k]) !== String(v)) {
+      keptCorrected++;
+      return;
+    }
     bill[k] = v;
   });
   (r._erase || []).forEach((k) => {
     bill[k] = null;
   });
+  return keptCorrected;
 }
 
 function splitCsvLine(line) {
@@ -677,13 +686,14 @@ function importBillCsvRows() {
   // Merge on exact start date — split-month bills (e.g. 2/1 and 2/15) are distinct rows
   const existing = new Set(m.bills.map((r) => r.start));
   let added = 0,
-    updated = 0;
+    updated = 0,
+    keptCorrected = 0;
   _csvImportRows.forEach((r) => {
     const key = r.start;
     if (existing.has(key)) {
       const idx = m.bills.findIndex((b) => b.start === key);
       if (idx >= 0) {
-        _mergeCsvRowIntoBill(m.bills[idx], r);
+        keptCorrected += _mergeCsvRowIntoBill(m.bills[idx], r);
         updated++;
       }
     } else {
@@ -713,7 +723,11 @@ function importBillCsvRows() {
   closeBillCsvModal();
   udActiveTab = 'bills';
   renderMeterWorkspace();
-  showToast('Imported: ' + added + ' new, ' + updated + ' updated ✓');
+  showToast(
+    'Imported: ' + added + ' new, ' + updated + ' updated' +
+      (keptCorrected ? ', ' + keptCorrected + ' hand-corrected value' + (keptCorrected !== 1 ? 's' : '') + ' kept' : '') +
+      ' ✓',
+  );
   addNotif(
     'Bills Imported',
     'Added ' + added + ' new billing period' + (added !== 1 ? 's' : '') + ' to ' + m.commodity + ' meter',
@@ -5005,6 +5019,14 @@ function bldgImportRowCheck(idx, checked) {
 }
 window.bldgImportRowCheck = bldgImportRowCheck;
 
+// Item 9837d726: the service address a Building List row may add as an alias of
+// its building, or '' when there is none. It must differ from the building's own
+// address and pass the shared plausibility rule (_isPlausibleAddressAlias), so an
+// address that belongs to another building is never stored on this one.
+function _bldgImportAliasFor(r) {
+  if (!r || !r.kgsSvcAddr || r.kgsSvcAddr === r.addr) return '';
+  return _isPlausibleAddressAlias(r.addr, r.kgsSvcAddr) ? r.kgsSvcAddr : '';
+}
 function importBuildingList() {
   var _biProj = projects.find(function (p) {
     return p.id == udSelProjId;
@@ -5064,9 +5086,8 @@ function importBuildingList() {
         });
       });
       // Push KGS service address as alias so address-based bill routing works
-      if (r.kgsSvcAddr && r.kgsSvcAddr !== r.addr) {
-        bldg.addrAliases.push(r.kgsSvcAddr);
-      }
+      const _alias = _bldgImportAliasFor(r);
+      if (_alias) bldg.addrAliases.push(_alias);
     }
 
     addUDBldg(_biCustomerId, bldg);

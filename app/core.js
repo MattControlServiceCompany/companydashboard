@@ -3868,12 +3868,19 @@ async function autoAssignAllSavedBills(projId) {
     return;
   }
   let assigned = 0,
-    skipped = 0;
+    skipped = 0,
+    alreadyThere = 0;
+  const skipReasons = new Set(); // plain reasons shown in the toast
   const touchedPids = new Set(); // bills in this batch can land in different projects (findMeterMatch searches all)
   for (const sb of unassigned) {
     const match = findMeterMatch(sb);
-    if (!match) {
+    // Item f8f58343: same rule as every other save path (_resolveBillDestination):
+    // only an account/meter-number hit or the unambiguous building+commodity
+    // fallback is assigned with no confirmation. An address-only guess or an
+    // ambiguous result stays in Saved Bills for a manual pick.
+    if (!_isAutoRoutableMatch(match)) {
       skipped++;
+      if (match && match.matchType === 'ambiguous' && match.reason) skipReasons.add(match.reason);
       continue;
     }
     // Build bill record (same shape as assignSavedBillFromProj)
@@ -3911,6 +3918,11 @@ async function autoAssignAllSavedBills(projId) {
       continue;
     }
     if (!meter.bills) meter.bills = [];
+    // A billing period already on this meter is never added a second time.
+    if (meter.bills.some((r) => r.start === bill.start && r.end === bill.end)) {
+      alreadyThere++;
+      continue;
+    }
     meter.bills.push(bill);
     sb.projId = match.projId;
     sb.bldgId = match.bldgId;
@@ -3922,7 +3934,19 @@ async function autoAssignAllSavedBills(projId) {
     saveUtilityData(Array.from(touchedPids)); // only the specific projects bills actually landed in
     await sset('en_pdf_bills', allBills);
   }
-  showToast(assigned + ' bill(s) auto-assigned' + (skipped ? ', ' + skipped + ' skipped (no meter match)' : '') + ' ✓');
+  showToast(
+    assigned +
+      ' bill(s) auto-assigned' +
+      (skipped
+        ? ', ' +
+          skipped +
+          ' skipped (' +
+          (skipReasons.size ? Array.from(skipReasons).join('; ') : 'no confirmed meter match') +
+          ')'
+        : '') +
+      (alreadyThere ? ', ' + alreadyThere + ' already on the meter' : '') +
+      ' ✓',
+  );
   renderProjSavedBills(projId);
 }
 

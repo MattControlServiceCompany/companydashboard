@@ -370,3 +370,15 @@ This includes a new or changed function, schedule, env var name, timer, host, or
 - Pass B2 scope: before this change Pass B2 ran only when the file-level rule name equalled the provider name. The rule name is the shared gas rule name, so Pass B2 never ran. It now runs for each bill whose own provider is Kansas Gas Service.
 - When: whenever a Kansas Gas Service PDF is read (browser, no schedule). Needs: no env var.
 - Check: `node tools/test-kgs-suspect-line.js` (synthetic, 14 checks) and `node tools/test-kgs-total-decimal-drop.js`.
+
+## Bill matching and save path (2026-10-09, branch 2026-10-09-match-save)
+- Where: app/bill-analysis.js, app/core.js, app/csv-import.js. All run in the browser when a bill is read, saved, checked for duplicates or imported. No schedule. No env var.
+- One match result: `findMeterMatch` (bill-analysis.js) now gives every account-number hit a `customerId` (`_stampCustomerId`). Before, an account hit had none, so `autoAssignAllSavedBills` (core.js:3863) found no building and skipped every identity-matched bill (0 of 65 assigned).
+- One auto-route rule: `_isAutoRoutableMatch` (bill-analysis.js:9142) = account/meter-number hit or the unambiguous building+commodity fallback, with a real meter. `_resolveBillDestination` and `autoAssignAllSavedBills` both call it. An address-only guess stays in Saved Bills. A period already on the meter is not added twice (Auto-Assign All).
+- One address score: `_scoreIdentityCandidates` (5693) scores each same-account meter against the bill service address; `_pickIdentityCandidate` (5721) uses it and returns `matchType: 'ambiguous'` when two scores are within `_IDENTITY_TIE_MARGIN` (0.03) and none is an exact match. `_identityAddressScore` reads a split ("BALL FIELDS") or singular ("BALLFIELD") site tag as the stored one (`_addrTailKeys`).
+- Shared by the save path: `_chooseAmongIdentityHits` (5765) is used by `_autoCreateMeterAndSaveBill` (21176) so two meters on one account are told apart by address, not "first found". If address cannot decide it returns null and the bill stays in Saved Bills. `_meterLosesAddressContest` (5774) is used by `_checkDuplicates` (11831): a bill whose address fits a sibling meter better is not a duplicate of this meter's stored bill.
+- History: `_historyBillIsSameSite` (491) and `_historyForBill` (504) keep out of a bill's history any saved bill whose meter number or service address differs. Used by `detectStatisticalOutliers` and by the verify loop.
+- `_inferBillCommodity` (8841): `_saveBillToMatchedMeter` returns null (held) when a bill with no commodity label has gas, propane or kWh fields that name another commodity than the target meter.
+- `_isPlausibleAddressAlias` (6479): Import Building List (`_bldgImportAliasFor`, csv-import.js:5026) adds a service address as an alias only when it is the same street or at least 0.60 alike.
+- `_mergeCsvRowIntoBill` (csv-import.js:505): a CSV re-import keeps a value the user corrected by hand (`_userCorrected`); only the typed ERASE clears it.
+- Check: `node tools/test-match-save-paths.js` (expect ALL PASS; synthetic).

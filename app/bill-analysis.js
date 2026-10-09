@@ -548,6 +548,35 @@ function validateBillData(extracted, utilityName) {
   return warnings;
 }
 
+// Item 06e549cf (and 1a505f4e): the one rule for "is this saved bill from the same
+// physical site as the bill being checked". Two meters can share one account
+// number (a main meter and a site-tagged sibling), so history is never pooled by
+// account alone. A saved bill is left out when BOTH sides carry a meter number
+// and the numbers differ, or when BOTH sides carry a service address and the
+// addresses are not alike (below _HIST_ADDR_SIMILARITY_THRESHOLD). Missing data
+// on either side never excludes. The threshold sits above the measured
+// similarity of two different sites on one account and below any OCR-noise
+// variant of the same address. Used by detectStatisticalOutliers and by the
+// verify loop's history lookup (_historyForBill).
+const _HIST_ADDR_SIMILARITY_THRESHOLD = 0.85;
+function _historyBillIsSameSite(extracted, histBill) {
+  if (!extracted || !histBill) return true;
+  const norm = (v) => String(v || '').replace(/[\s\-]/g, '').toLowerCase();
+  const em = norm(extracted.MeterNumber);
+  const hm = norm(histBill.MeterNumber || histBill.meterNumber);
+  if (em && hm && em !== hm) return false;
+  if (!_normalizeAddr(extracted.ServiceAddress)) return true;
+  const ha = histBill.ServiceAddress || histBill.serviceAddress || '';
+  if (!_normalizeAddr(ha)) return true;
+  return _addressSimilarity(extracted.ServiceAddress, ha) >= _HIST_ADDR_SIMILARITY_THRESHOLD;
+}
+// The saved bills a new bill may be compared against: those on the same account
+// (historicalCache is keyed by normalized account) that are from the same site.
+function _historyForBill(bill, historicalCache) {
+  const key = ((bill && bill.AccountNumber) || '').replace(/[\s\-]/g, '').toLowerCase();
+  return ((historicalCache && historicalCache[key]) || []).filter((h) => _historyBillIsSameSite(bill, h));
+}
+
 // Statistical outlier detection — compare against historical bills for same account/meter
 // historicalCache (optional): pre-built { [normalizedAccountNumber]: bill[] } map from _postExtractionVerify.
 // When provided, skips the redundant project walk; falls back to walking projects if absent.
@@ -634,14 +663,7 @@ function detectStatisticalOutliers(extracted, historicalCache, pdfBillsIndex) {
   // discipline. If filtering leaves too few candidates for meaningful
   // stats, the length<3 guard below simply skips flagging — it must never
   // fall back to the unfiltered, cross-address pool.
-  const ADDR_SIMILARITY_THRESHOLD = 0.85;
-  const billAddrHas = !!_normalizeAddr(extracted.ServiceAddress);
-  const filteredPairs = billAddrHas
-    ? historicalPairs.filter((p) => {
-        if (!_normalizeAddr(p.addr)) return true; // no data on the candidate side -- never excludes
-        return _addressSimilarity(extracted.ServiceAddress, p.addr) >= ADDR_SIMILARITY_THRESHOLD;
-      })
-    : historicalPairs;
+  const filteredPairs = historicalPairs.filter((p) => _historyBillIsSameSite(extracted, p.bill));
   const historicalBills = filteredPairs.map((p) => p.bill);
 
   if (historicalBills.length < 3) return warnings; // Need at least 3 historical bills for meaningful stats
@@ -2408,8 +2430,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         await new Promise((resolve) => setTimeout(resolve, 0));
       }
 
-      const _acctKey = (b.AccountNumber || '').replace(/[\s\-]/g, '').toLowerCase();
-      const hist = _historicalCache[_acctKey] || [];
+      const hist = _historyForBill(b, _historicalCache);
 
       // 1. Auto-recover missing fields using raw text structure + historical data
       //    These fields are 100% present on every bill — if null, it's an OCR garble, not a missing field.
@@ -5802,18 +5823,60 @@ function _streetNameTokensFuzzyMatch(aToks, bToks) {
   }
   return matched / aToks.length >= 0.6;
 }
+// Item 9cffee30: tail words made comparable across OCR spacing and plural
+// noise. A plural "s" is dropped from words longer than 3 letters, and each
+// pair of adjacent words is also kept joined, so "ball fields" (split) and
+// "ballfield" (singular) still meet a stored "ballfields".
+function _addrTailKeys(tokens) {
+  const base = tokens.map((t) => (t.length > 3 ? t.replace(/s$/, '') : t));
+  const keys = new Set(base);
+  for (let i = 0; i + 1 < base.length; i++) keys.add(base[i] + base[i + 1]);
+  return keys;
+}
+function _jaccard(a, b) {
+  const sa = a instanceof Set ? a : new Set(a);
+  const sb = b instanceof Set ? b : new Set(b);
+  const union = new Set([...sa, ...sb]).size;
+  if (union === 0) return 0.5;
+  let inter = 0;
+  for (const x of sa) if (sb.has(x)) inter++;
+  return inter / union;
+}
 function _identityAddressScore(billAddr, candidateAddr) {
   const streetScore = _addressSimilarity(_addrStreetPart(billAddr), _addrStreetPart(candidateAddr));
   const billTail = _addrTailTokens(billAddr);
   const candTail = _addrTailTokens(candidateAddr);
   let tailScore = 0.5; // neutral -- no site-tag/city/state text to compare on one side
   if (billTail.length && candTail.length) {
-    const tailSet = new Set(candTail);
-    const inter = billTail.filter((w) => tailSet.has(w)).length;
-    const union = new Set([...billTail, ...candTail]).size;
-    tailScore = union === 0 ? 0.5 : inter / union;
+    // The better of the plain word overlap and the OCR-tolerant overlap, so the
+    // tolerant read can only raise a score the plain read already gave.
+    tailScore = Math.max(_jaccard(billTail, candTail), _jaccard(_addrTailKeys(billTail), _addrTailKeys(candTail)));
   }
   return streetScore * 0.6 + tailScore * 0.4;
+}
+// One score per candidate for a bill ServiceAddress. The single place that
+// decides how well a meter's recorded address fits a bill: 1 for an exact
+// street-normalized match, the identity score otherwise, -1 when either side
+// has no address (absence is never a signal). Used by _pickIdentityCandidate
+// (routing), _checkDuplicates (duplicate check) and _autoCreateMeterAndSaveBill.
+function _scoreIdentityCandidates(candidates, billServiceAddress) {
+  const billAddrNorm = _normalizeAddr(billServiceAddress);
+  return candidates.map((c) => {
+    const mAddrNorm = _normalizeAddr(c.meter && c.meter.maddr);
+    if (!billAddrNorm || !mAddrNorm) return -1;
+    return billAddrNorm === mAddrNorm ? 1 : _identityAddressScore(billServiceAddress, c.meter.maddr);
+  });
+}
+// A call this close is not a call (same margin as the cross-building tie in
+// findMeterMatch).
+const _IDENTITY_TIE_MARGIN = 0.03;
+// Lowest address score that counts as "the bill's address fits this place". One
+// rule for the building address fallback in findMeterMatch and for choosing
+// between customers in _pickIdentityCandidate.
+const _ADDR_MATCH_MIN = 0.6;
+// Customer id of a project (deterministic 'cust_' + id when none is stored).
+function _projCustomerId(proj) {
+  return proj.customerId || 'cust_' + proj.id;
 }
 // Fix D (issue #1 v2, ground-truth review): disambiguates among 2+ meters that
 // all matched a bill by account+commodity alone (a SHARED Utility E account with
@@ -5834,21 +5897,92 @@ function _identityAddressScore(billAddr, candidateAddr) {
 // — matches the pre-782 behavior instead of ever returning null.
 function _pickIdentityCandidate(candidates, billServiceAddress) {
   if (candidates.length <= 1) return candidates[0] || null;
-  const billAddrNorm = _normalizeAddr(billServiceAddress);
+  const scores = _scoreIdentityCandidates(candidates, billServiceAddress);
   let best = candidates[0];
   let bestScore = -1;
-  for (const c of candidates) {
-    const mAddrNorm = _normalizeAddr(c.meter && c.meter.maddr);
-    let score = -1;
-    if (billAddrNorm && mAddrNorm) {
-      score = billAddrNorm === mAddrNorm ? 1 : _identityAddressScore(billServiceAddress, c.meter.maddr);
-    }
+  let bestIdx = 0;
+  scores.forEach((score, i) => {
     if (score > bestScore) {
       bestScore = score;
-      best = c;
+      best = candidates[i];
+      bestIdx = i;
+    }
+  });
+  // The one place that decides whether an account hit names exactly one customer.
+  // Two or more customers on the same account, with no address score that
+  // separates them (all blank, or equal exact matches), is not a call: the bill
+  // goes to the review list and Auto-Assign All skips it.
+  const toAmbiguous = (list, why) => ({
+    proj: list[0].proj,
+    bldg: list[0].bldg,
+    projId: list[0].projId,
+    bldgId: list[0].bldgId,
+    fuzzyScore: bestScore,
+    matchType: 'ambiguous',
+    reason: why,
+    candidates: list.map((c) => ({
+      proj: c.proj,
+      bldg: c.bldg,
+      projId: c.projId,
+      bldgId: c.bldgId,
+      meterId: c.meter ? c.meter.id : null,
+      meter: c.meter || null,
+    })),
+  });
+  const custOf = (c) => (c.proj ? _projCustomerId(c.proj) : null);
+  const allCustomers = new Set(candidates.filter((c) => c.proj).map(custOf));
+  if (allCustomers.size > 1) {
+    // Bill account names one customer while only a meter-number hit names
+    // another: the identities conflict unless account and meter agree.
+    const acctCusts = new Set(candidates.filter((c) => c.proj && c.identityBy && c.identityBy !== 'meter').map(custOf));
+    const meterOnlyCusts = candidates.filter((c) => c.proj && c.identityBy === 'meter').map(custOf);
+    if (acctCusts.size && meterOnlyCusts.some((id) => !acctCusts.has(id)))
+      return toAmbiguous(candidates, 'account number and meter number point to different customers');
+    // Assign across customers only on a strong address fit that clears the best
+    // candidate of every other customer. A blank, weak or contradicting address
+    // is not a call.
+    const bestCust = custOf(best);
+    let rival = -2;
+    scores.forEach((sc, i) => {
+      if (custOf(candidates[i]) !== bestCust && sc > rival) rival = sc;
+    });
+    if (bestScore < _ADDR_MATCH_MIN || bestScore - rival <= _IDENTITY_TIE_MARGIN) {
+      const reason =
+        bestScore < _ADDR_MATCH_MIN && bestScore !== rival
+          ? 'bill address does not clearly fit one customer'
+          : 'account number is on more than one customer';
+      return toAmbiguous(candidates, reason);
     }
   }
+  // Item 9cffee30: a close call between two candidates that both have an address
+  // signal, with no exact address match, is returned as 'ambiguous' so the bill
+  // goes to the review list instead of silently routing to the nearer one. Equal
+  // exact matches (score 1) and all-blank addresses keep the first-found rule
+  // inside one customer.
+  if (bestScore >= 0 && bestScore < 1) {
+    const close = candidates.filter((c, i) => i !== bestIdx && scores[i] >= 0 && bestScore - scores[i] <= _IDENTITY_TIE_MARGIN);
+    if (close.length) return toAmbiguous([best, ...close], 'addresses are too close to tell apart');
+  }
   return best;
+}
+// Chooses one meter among 2+ that all matched a bill by account, or null when
+// address cannot tell them apart. Shares _pickIdentityCandidate so the save
+// path never takes "the first one found".
+function _chooseAmongIdentityHits(hits, billServiceAddress) {
+  if (hits.length <= 1) return hits[0] || null;
+  const pick = _pickIdentityCandidate(hits, billServiceAddress);
+  return pick && pick.matchType !== 'ambiguous' ? pick : null;
+}
+// Item 3287933a: true when the bill's address clearly belongs to a SIBLING meter
+// on the same account, so the stored bill on `meter` is not its duplicate.
+// Both sides must have an address; a meter with no recorded address is never
+// judged here (no data is not a contradiction).
+function _meterLosesAddressContest(billServiceAddress, meter, rivalMeters) {
+  if (!rivalMeters.length || !_normalizeAddr(billServiceAddress)) return false;
+  const scores = _scoreIdentityCandidates([{ meter }, ...rivalMeters.map((m) => ({ meter: m }))], billServiceAddress);
+  const own = scores[0];
+  if (own < 0) return false;
+  return Math.max(...scores.slice(1)) - own > _IDENTITY_TIE_MARGIN;
 }
 // Fix (fix/wre-building-name-match, 2026-09-15): building-NAME match path for
 // WRE (and any other provider) consolidated invoices whose
@@ -6220,7 +6354,9 @@ function findMeterMatch(extracted) {
         const mAliasHit = (m.accountAliases || []).some((a) =>
           _acctFuzzyMatch(acct, (a || '').replace(/[\s\-]/g, '').toLowerCase()),
         );
-        if (_acctFuzzyMatch(acct, mAcct) || mAliasHit || (meterNum && mMeter && meterNum === mMeter)) {
+        const acctHit = _acctFuzzyMatch(acct, mAcct) || mAliasHit;
+        const meterHit = !!(meterNum && mMeter && meterNum === mMeter);
+        if (acctHit || meterHit) {
           const mComm = (m.commodity || '').toLowerCase();
           // Fix (item 1c98be9c): an existing meter with a blank/empty
           // commodity is a WILDCARD on an identity (account/meter-number)
@@ -6254,6 +6390,7 @@ function findMeterMatch(extracted) {
               bldgId: bldg.id,
               meterId: m.id,
               matchType: 'identity',
+              identityBy: acctHit && meterHit ? 'both' : acctHit ? 'account' : 'meter',
               _wildcardAdopt: wildcardMatch,
             });
           } else if (!bestMatch && !billComm)
@@ -6319,7 +6456,7 @@ function findMeterMatch(extracted) {
           isAlias = false;
         }
         const candidateScore = exactHit ? 1.0 : bestScore;
-        if (exactHit || bestScore >= 0.6) {
+        if (exactHit || bestScore >= _ADDR_MATCH_MIN) {
           const sameCommMeters = billComm
             ? (bldg.meters || []).filter((m) => (m.commodity || '').toLowerCase() === billComm)
             : [];
@@ -6377,9 +6514,18 @@ function findMeterMatch(extracted) {
     if (cand && cand._wildcardAdopt && cand.meter) cand.meter.commodity = extracted.Commodity || billComm;
     return cand;
   };
-  if (identityCandidates.length === 1) return _adoptIfWildcard(identityCandidates[0]);
+  // Item f8f58343: every returned match carries customerId (see the final
+  // return below). These two early identity returns used to skip that step, so
+  // an account-number hit came back without customerId and the callers that look
+  // up the building by customer (autoAssignAllSavedBills) found no meter and
+  // skipped every identity-matched bill.
+  const _stampCustomerId = (r) => {
+    if (r && r.proj && !r.customerId) r.customerId = _projCustomerId(r.proj);
+    return r;
+  };
+  if (identityCandidates.length === 1) return _stampCustomerId(_adoptIfWildcard(identityCandidates[0]));
   if (identityCandidates.length > 1)
-    return _adoptIfWildcard(_pickIdentityCandidate(identityCandidates, extracted.ServiceAddress));
+    return _stampCustomerId(_adoptIfWildcard(_pickIdentityCandidate(identityCandidates, extracted.ServiceAddress)));
   let addrMatch = null;
   if (addrCandidates.length) {
     addrCandidates.sort((a, b) => b.candidateScore - a.candidateScore);
@@ -6530,6 +6676,20 @@ function findMeterMatch(extracted) {
     _result.customerId = _result.proj.customerId || 'cust_' + _result.proj.id;
   }
   return _result;
+}
+// Item 9837d726: may `alias` be stored as another address of the building whose
+// own address is `primaryAddr`? Yes when it names the same street number and
+// street (_streetIdentityMatch) or is as alike as the 0.60 bar findMeterMatch
+// uses to call two addresses the same place. An address of some other building
+// (or an OCR error) is refused, so a building never collects the addresses of
+// unrelated buildings. With no primary address there is nothing to compare, so
+// a non-empty alias is accepted.
+const _ALIAS_MIN_SIMILARITY = 0.6;
+function _isPlausibleAddressAlias(primaryAddr, alias) {
+  if (!_normalizeAddr(alias)) return false;
+  if (!_normalizeAddr(primaryAddr)) return true;
+  if (_streetIdentityMatch(primaryAddr, alias)) return true;
+  return _addressSimilarity(primaryAddr, alias) >= _ALIAS_MIN_SIMILARITY;
 }
 // Save a new address alias to a building (called after fuzzy match).
 // Adds aliasString to bldg.addrAliases if not already present, then persists.
@@ -8884,6 +9044,16 @@ function _applyCommodityAccountAdopt(match) {
 // whenever a bill has a global meter match by account/meter number, so the user
 // never needs to pick a project just for the code to put the bill in the right
 // place.
+// What the bill's own fields say its commodity is, or '' when they do not say.
+// Used when the extractor left Commodity blank, so a gas bill is not written to
+// an electric meter just because the label is missing.
+function _inferBillCommodity(extracted) {
+  if (!extracted) return '';
+  if (extracted.NaturalGasTherms || extracted.NaturalGasCCF || extracted.NaturalGasMMbtu || extracted.GasCharge) return 'Gas';
+  if (extracted.GallonsDelivered || extracted.FuelType) return 'Propane';
+  if (extracted.kWhConsumed) return 'Electric';
+  return '';
+}
 function _saveBillToMatchedMeter(extracted, match) {
   if (!extracted || !match || !match.proj || !match.bldg || !match.meter) return null;
   // Requirement 5 (2026-09-02): adopt a renumbered account BEFORE the
@@ -8908,6 +9078,13 @@ function _saveBillToMatchedMeter(extracted, match) {
     match.meter.commodity = extracted.Commodity;
     meterComm = billComm;
   }
+  // Item 409830ae: with no Commodity label on the bill, the bill's own fields
+  // still say what it is. A bill that is plainly another commodity than the
+  // target meter is not written there; null sends it to the caller's review path.
+  if (!billComm && meterComm) {
+    const inferred = _inferBillCommodity(extracted).toLowerCase();
+    if (inferred && inferred !== meterComm) return null;
+  }
   if (billComm && meterComm && billComm !== meterComm) {
     const existingMeter = (match.bldg.meters || []).find((m) => (m.commodity || '').toLowerCase() === billComm);
     if (existingMeter) {
@@ -8915,13 +9092,7 @@ function _saveBillToMatchedMeter(extracted, match) {
     } else {
       const newMeter = {
         id: 'm' + Date.now() + '_' + Math.random().toString(36).slice(2, 5),
-        commodity:
-          extracted.Commodity ||
-          (extracted.NaturalGasTherms || extracted.NaturalGasCCF || extracted.GasCharge
-            ? 'Gas'
-            : extracted.GallonsDelivered || extracted.FuelType
-              ? 'Propane'
-              : 'Electric'),
+        commodity: extracted.Commodity || _inferBillCommodity(extracted) || 'Electric',
         provider: extracted.UtilityCompany || match.meter.provider || '',
         account: extracted.AccountNumber || match.meter.account || '',
         meter: '',
@@ -9172,6 +9343,14 @@ function _dropHeldSavedBillRecord(bill) {
 //   { method: 'match', destination: string }  // bill matches a meter globally
 //   { method: 'project', destination: string }  // user picked a project
 //   { method: 'unassigned' }  // no known home
+// The one rule for "may this match save a bill with no further confirmation":
+// an account/meter-number hit ('identity') or the unambiguous building+commodity
+// fallback ('commodity'), and it names a real meter. An address-only guess, an
+// 'ambiguous' result and a no-match are never auto-routed. Used by
+// _resolveBillDestination and autoAssignAllSavedBills (core.js).
+function _isAutoRoutableMatch(match) {
+  return !!(match && (match.matchType === 'identity' || match.matchType === 'commodity') && match.meter);
+}
 function _resolveBillDestination(bill, dup, projId) {
   if (dup && dup.locationType === 'assigned') {
     return { method: 'dup', destination: dup.location || 'existing meter', dup };
@@ -9202,7 +9381,7 @@ function _resolveBillDestination(bill, dup, projId) {
   // _applyCommodityAccountAdopt) before its own mismatch guard runs, so this
   // routes the same way a manual pick would instead of falling through to the
   // weaker project-scoped/unassigned path below.
-  if (match && (match.matchType === 'identity' || match.matchType === 'commodity')) {
+  if (_isAutoRoutableMatch(match)) {
     return {
       method: 'match',
       destination:
@@ -11878,6 +12057,7 @@ async function _checkDuplicates(bills, statusCb) {
   // service addresses on its saved bills) — the sibling set _sameSiteAddress
   // uses to refuse an ambiguous address-only match (review round 3).
   const projMeterAddrs = Object.create(null); // { projId -> [{ meter, addrs: [] }] }
+  const metersByAcct = Object.create(null); // { normalizedAccount -> meter[] } (item 3287933a)
   // BLOCKER C fix: customer-deduplicated walk (see forEachCustomerBuilding) so a
   // building shared by 2+ projects contributes its bills to the duplicate-detection
   // index ONCE, not once per sharing project (which would report the same physical
@@ -11890,6 +12070,7 @@ async function _checkDuplicates(bills, statusCb) {
       if (!projMeterAddrs[p.id]) projMeterAddrs[p.id] = [];
       projMeterAddrs[p.id].push({ meter: m, comm: (m.commodity || '').toLowerCase(), addrs: [..._addrSet] });
       const acctKey = normAcct(m.account || '');
+      if (acctKey) (metersByAcct[acctKey] || (metersByAcct[acctKey] = [])).push(m);
       for (const bill of m.bills || []) {
         const entry = {
           bill,
@@ -11980,6 +12161,22 @@ async function _checkDuplicates(bills, statusCb) {
       // bill's own serviceAddress or the meter's address). A present-and-
       // different account is a hard veto regardless of address.
       const acctContradicts = !!(extAcct && existAcct && !acctMatch);
+      // Item 3287933a: two meters on one account and commodity (a main meter and a
+      // site-tagged sibling) share the account number, so the account cannot decide
+      // which one this bill belongs to. When the bill's service address clearly
+      // fits a sibling meter better (the same scoring that routes the bill), the
+      // stored bill on this meter is not its duplicate. A meter-number agreement
+      // is a stronger signal and skips this check.
+      if (acctMatch && !meterMatch && extAcct) {
+        const _abComm0 = (ab.meter.commodity || '').toLowerCase();
+        const _rivals = (metersByAcct[normAcct(ab.meter.account || '')] || []).filter(
+          (rm) =>
+            rm !== ab.meter &&
+            (!extComm || !(rm.commodity || '') || (rm.commodity || '').toLowerCase() === extComm) &&
+            (!_abComm0 || !(rm.commodity || '') || (rm.commodity || '').toLowerCase() === _abComm0),
+        );
+        if (_meterLosesAddressContest(ext.ServiceAddress, ab.meter, _rivals)) continue;
+      }
       // Round 3: the OTHER meters' addresses in this project — a site match is
       // refused when any of them is OCR-confusable with the incoming address
       // (see _sameSiteAddress), so the bill is never bound to one of two
@@ -21186,6 +21383,12 @@ function _autoCreateMeterAndSaveBill(extracted, projId, billRow, preferBldgId) {
   const billComm = (extracted.Commodity || '').toLowerCase();
   const acctClean = acctNum.replace(/[\s\-]/g, '').toLowerCase();
   const meterClean = meterNum.replace(/[\s\-]/g, '').toLowerCase();
+  // Items 63e43cab / a3271d04: every same-account meter in the project is a hit, not
+  // just the first one found. Two or more hits (a main meter and a site-tagged
+  // sibling on one account) are told apart by the bill's service address through
+  // the shared _chooseAmongIdentityHits; if address cannot decide, nothing is
+  // saved or created here (null), so the caller keeps the bill for review.
+  const _step1Hits = [];
   for (const b of projBldgs) {
     for (const m of b.meters || []) {
       const ma = (m.account || '').replace(/[\s\-]/g, '').toLowerCase();
@@ -21197,22 +21400,30 @@ function _autoCreateMeterAndSaveBill(extracted, projId, billRow, preferBldgId) {
       // spawned a duplicate via Step 4 below instead of landing here.
       const _commOK = mComm === billComm || (!mComm && billComm);
       if ((_acctFuzzyMatch(acctClean, ma) || (meterClean && mm && meterClean === mm)) && _commOK) {
-        if (!mComm && billComm) m.commodity = extracted.Commodity || billComm; // adopt, label going forward
-        // Already exists — save bill to the existing meter instead of creating a duplicate
-        m.bills = m.bills || [];
-        const dup = m.bills.find((r) => r.start === billRow.start && r.end === billRow.end);
-        if (dup) {
-          Object.assign(dup, billRow);
-        } else {
-          m.bills.push(billRow);
-          m.bills.sort((a, b) => _parseISO(a.start) - _parseISO(b.start));
-        }
-        saveUtilityData(projId);
-        const bldgLabel = b.name || b.addr || b.id;
-        showToast('Bill saved to existing meter ' + (acctNum || meterNum) + ' on ' + bldgLabel);
-        return { bldg: b, meter: m };
+        _step1Hits.push({ bldg: b, meter: m });
       }
     }
+  }
+  if (_step1Hits.length) {
+    const _hit = _chooseAmongIdentityHits(_step1Hits, extracted.ServiceAddress);
+    if (!_hit) return null;
+    const b = _hit.bldg;
+    const m = _hit.meter;
+    const mComm = (m.commodity || '').toLowerCase();
+    if (!mComm && billComm) m.commodity = extracted.Commodity || billComm; // adopt, label going forward
+    // Already exists — save bill to the existing meter instead of creating a duplicate
+    m.bills = m.bills || [];
+    const dup = m.bills.find((r) => r.start === billRow.start && r.end === billRow.end);
+    if (dup) {
+      Object.assign(dup, billRow);
+    } else {
+      m.bills.push(billRow);
+      m.bills.sort((a, b) => _parseISO(a.start) - _parseISO(b.start));
+    }
+    saveUtilityData(projId);
+    const bldgLabel = b.name || b.addr || b.id;
+    showToast('Bill saved to existing meter ' + (acctNum || meterNum) + ' on ' + bldgLabel);
+    return { bldg: b, meter: m };
   }
 
   // Step 2: Find the best building match by service address similarity (threshold 0.60).
@@ -21297,6 +21508,7 @@ function _autoCreateMeterAndSaveBill(extracted, projId, billRow, preferBldgId) {
   // Step 3: Check if a meter with this account/commodity already exists on the target building
   // (in case the duplicate guard above missed a same-building re-upload scenario).
   targetBldg.meters = targetBldg.meters || [];
+  const _step3Hits = [];
   for (const m of targetBldg.meters) {
     const ma = (m.account || '').replace(/[\s\-]/g, '').toLowerCase();
     const mm = (m.meter || '').replace(/[\s\-]/g, '').toLowerCase();
@@ -21304,32 +21516,33 @@ function _autoCreateMeterAndSaveBill(extracted, projId, billRow, preferBldgId) {
     // Fix (item 1c98be9c): same blank-commodity wildcard rule as Step 1 above.
     const _commOK2 = mComm === billComm || (!mComm && billComm);
     if ((_acctFuzzyMatch(acctClean, ma) || (meterClean && mm && meterClean === mm)) && _commOK2) {
-      if (!mComm && billComm) m.commodity = extracted.Commodity || billComm; // adopt, label going forward
-      m.bills = m.bills || [];
-      const dup = m.bills.find((r) => r.start === billRow.start && r.end === billRow.end);
-      if (dup) {
-        Object.assign(dup, billRow);
-      } else {
-        m.bills.push(billRow);
-        m.bills.sort((a, b) => _parseISO(a.start) - _parseISO(b.start));
-      }
-      saveUtilityData(projId);
-      const bldgLabel = targetBldg.name || targetBldg.addr || targetBldg.id;
-      showToast('Bill saved to existing meter ' + (acctNum || meterNum) + ' on ' + bldgLabel);
-      return { bldg: targetBldg, meter: m };
+      _step3Hits.push({ bldg: targetBldg, meter: m });
     }
+  }
+  if (_step3Hits.length) {
+    const _hit3 = _chooseAmongIdentityHits(_step3Hits, extracted.ServiceAddress);
+    if (!_hit3) return null;
+    const m = _hit3.meter;
+    const mComm = (m.commodity || '').toLowerCase();
+    if (!mComm && billComm) m.commodity = extracted.Commodity || billComm; // adopt, label going forward
+    m.bills = m.bills || [];
+    const dup = m.bills.find((r) => r.start === billRow.start && r.end === billRow.end);
+    if (dup) {
+      Object.assign(dup, billRow);
+    } else {
+      m.bills.push(billRow);
+      m.bills.sort((a, b) => _parseISO(a.start) - _parseISO(b.start));
+    }
+    saveUtilityData(projId);
+    const bldgLabel = targetBldg.name || targetBldg.addr || targetBldg.id;
+    showToast('Bill saved to existing meter ' + (acctNum || meterNum) + ' on ' + bldgLabel);
+    return { bldg: targetBldg, meter: m };
   }
 
   // Step 4: Create the new meter
   const newMeter = {
     id: 'm' + Date.now() + '_' + Math.random().toString(36).slice(2, 5),
-    commodity:
-      extracted.Commodity ||
-      (extracted.NaturalGasTherms || extracted.NaturalGasCCF || extracted.GasCharge
-        ? 'Gas'
-        : extracted.GallonsDelivered || extracted.FuelType
-          ? 'Propane'
-          : 'Electric'),
+    commodity: extracted.Commodity || _inferBillCommodity(extracted) || 'Electric',
     provider: extracted.UtilityCompany || '',
     account: acctNum,
     meter: meterNum,
@@ -21580,13 +21793,7 @@ async function _saveSinglePDFBill(extracted, projId) {
             } else {
               const newM = {
                 id: 'm' + Date.now() + '_' + Math.random().toString(36).slice(2, 5),
-                commodity:
-                  extracted.Commodity ||
-                  (extracted.NaturalGasTherms || extracted.NaturalGasCCF || extracted.GasCharge
-                    ? 'Gas'
-                    : extracted.GallonsDelivered || extracted.FuelType
-                      ? 'Propane'
-                      : 'Electric'),
+                commodity: extracted.Commodity || _inferBillCommodity(extracted) || 'Electric',
                 provider: extracted.UtilityCompany || targetMeter.provider || '',
                 account: extracted.AccountNumber || targetMeter.account || '',
                 meter: '',
