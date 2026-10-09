@@ -5191,7 +5191,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
       Sewer: CHARGE_FIELDS_SEWER,
       Stormwater: CHARGE_FIELDS_STORMWATER,
       Propane: ['PropaneCharge'],
-      Electric: UTILITY_E_COMPONENT_CHARGE_FIELDS,
+      Electric: CHARGE_FIELDS_ELECTRIC_SUM,
     };
     const ALL_CHARGE_FIELDS = [...new Set(Object.values(COMMODITY_CHARGE_FIELDS).flat())];
 
@@ -5380,8 +5380,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
     // other post-extraction fixes. Recalculate from final charge values.
     if (utilityName === 'Evergy') {
       for (const b of bills) {
-        const kwhChargeSum =
-          parseBillNumber(b.EnergyOnPeakCharge) + parseBillNumber(b.EnergyOffPeakCharge) + parseBillNumber(b.ECACharge) + parseBillNumber(b.EERCharge) + parseBillNumber(b.PTSCharge);
+        const kwhChargeSum = sumElectricEnergyCharges(b);
         const totalKwh = parseBillNumber(b.kWhConsumed);
         b.TotalKWhRate = totalKwh > 0 && kwhChargeSum > 0 ? kwhChargeSum / totalKwh : null;
         b._rateCalcTrace = {
@@ -7368,11 +7367,7 @@ function _extractedToBillRowCosts(bill) {
     hasVal(bill.EERCharge) ||
     hasVal(bill.PTSCharge);
   const kwhCostRaw = hasEvergyEnergy
-    ? parseBillNumber(bill.EnergyOnPeakCharge) +
-      parseBillNumber(bill.EnergyOffPeakCharge) +
-      parseBillNumber(bill.ECACharge) +
-      parseBillNumber(bill.EERCharge) +
-      parseBillNumber(bill.PTSCharge)
+    ? sumElectricEnergyCharges(bill)
     : parseBillNumber(bill.ElectricCharge) + parseBillNumber(bill.FuelAdjustment);
   const kwCostRaw = parseBillNumberOrZero(bill.BilledKWCharge) + parseBillNumberOrZero(bill.TDCCharge);
   // otherCost folds in the RkVA reactive-power charge because it has no dedicated
