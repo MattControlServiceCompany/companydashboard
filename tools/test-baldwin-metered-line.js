@@ -98,5 +98,13 @@ console.log('6. garbled water "+13" / ".37" lines');
   check('water charge is not 37', !w || w.WaterCharge !== 37, w && w.WaterCharge);
   check('both rows flagged', s && w && s._manualReview && w._manualReview);
 }
+console.log('7. zero usage stays 0 (92e2f54d)');
+{
+  const b = run(page(['WA - WATER 500 500 10.00', 'SW - SEWER 700 700 0 5.00']));
+  const w = bill(b, 'Water');
+  const s = bill(b, 'Sewer');
+  check('water usage is 0, not null', w && w.WaterUsage === 0, w && w.WaterUsage);
+  check('sewer usage is 0, not water usage', s && s.SewerUsage === 0, s && s.SewerUsage);
+}
 console.log(fail ? 'FAILED ' + fail : 'ALL PASS');
 process.exit(fail ? 1 : 0);

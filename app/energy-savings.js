@@ -4781,7 +4781,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     // If we have a billing period date, check proximity (within 5 days)
     if (billingDateStr) {
       try {
-        const bp = new Date(billingDateStr);
+        const bp = (parseLocalISODate(billingDateStr) || new Date(billingDateStr));
         if (!isNaN(bp)) {
           // Build a full date using billing period's year
           const mrd = new Date(bp.getFullYear(), mo - 1, dy);
@@ -4802,14 +4802,14 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // Fallback from billing period dates (meter read = billing +1 day)
   if (!result.MeterReadStart && result.BillingPeriodStart) {
     try {
-      const d = new Date(result.BillingPeriodStart);
+      const d = (parseLocalISODate(result.BillingPeriodStart) || new Date(result.BillingPeriodStart));
       d.setDate(d.getDate() + 1);
       result.MeterReadStart = String(d.getMonth() + 1).padStart(2, '0') + '/' + String(d.getDate()).padStart(2, '0');
     } catch (e) {}
   }
   if (!result.MeterReadEnd && result.BillingPeriodEnd) {
     try {
-      const d = new Date(result.BillingPeriodEnd);
+      const d = (parseLocalISODate(result.BillingPeriodEnd) || new Date(result.BillingPeriodEnd));
       d.setDate(d.getDate() + 1);
       result.MeterReadEnd = String(d.getMonth() + 1).padStart(2, '0') + '/' + String(d.getDate()).padStart(2, '0');
     } catch (e) {}
@@ -12943,7 +12943,7 @@ const UTILITY_RULES = [
           Commodity: 'Electric',
           StartRead: elPrevRead,
           EndRead: elCurrRead,
-          kWh: totalKwh || null,
+          kWh: billValueOrNull(totalKwh),
           kW: null,
           ElectricCharge: Math.round(totalElCharge * 100) / 100,
           FranchiseFee: elFranchiseFee || null,
@@ -13019,7 +13019,7 @@ const UTILITY_RULES = [
           Commodity: 'Water',
           StartRead: waPrevRead,
           EndRead: waCurrRead,
-          WaterUsage: waUsage || null,
+          WaterUsage: billValueOrNull(waUsage), // 92e2f54d: a real 0 stays 0
           ...(_waUsageSuspect ? { _usageSuspect: true } : {}),
           WaterCharge: waCharge,
           WaterDebtPayment: waDebtPmt || null,
@@ -13033,14 +13033,14 @@ const UTILITY_RULES = [
       if (swCharge != null && swCharge !== 0) {
         // If sewer usage didn't parse but water did, share the water reads
         // (they share the same physical meter).
-        if (!swUsage && waUsage) swUsage = waUsage;
+        if (billValueOrNull(swUsage) === null && billValueOrNull(waUsage) !== null) swUsage = waUsage;
         const swTotal = swCharge + (swFranchiseFee || 0);
         bills.push({
           ...shared,
           Commodity: 'Sewer',
           StartRead: swPrevRead || waPrevRead,
           EndRead: swCurrRead || waCurrRead,
-          SewerUsage: swUsage || null,
+          SewerUsage: billValueOrNull(swUsage), // 92e2f54d: a real 0 stays 0
           ...(_swUsageSuspect ? { _usageSuspect: true } : {}),
           ...(_swUsageFromWater ? { _sewerUsageFromWater: true } : {}),
           SewerCharge: swCharge,

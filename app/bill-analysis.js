@@ -7403,12 +7403,16 @@ function _extractedToBillRowCosts(bill) {
   const kwCost = _capToAcceptedTotal(kwCostRaw).toFixed(2);
   const otherCost = _capToAcceptedTotal(otherCostRaw).toFixed(2);
   const taxCost = _capToAcceptedTotal(taxCostRaw).toFixed(2);
-  const totalCost = bill.TotalCurrentCharges || bill.TotalAmountDue || '';
+  // 775f3d5f: store a parsed number (never the raw printed string with a thousands comma).
+  // Unreadable text stores blank. The fall-through order is unchanged.
+  // 92e2f54d: billValueOrBlank picks the first readable value, so a real 0 stays 0 and a missing value stays blank.
+  const _blankIfNull = (v) => (v === null ? '' : v);
+  const totalCost = _blankIfNull(parseBillNumber(billValueOrBlank(bill.TotalCurrentCharges, bill.TotalAmountDue)));
   // Usage quantity: electric kWh (incl. Baldwin's `kWh` field) or propane gallons.
   // Gas usage is NOT stored in `kwh` any more (2026-10-05 duplicate-bill-fields audit step 4):
   // a gas bill carries `therms` (gasBillSaveTherms) and every gas reader goes through
   // resolveGasUsageTherms. Old gas bills keep their stored `kwh`; nothing deletes it.
-  const kwh = bill.kWhConsumed || bill.kWh || bill.GallonsDelivered || '';
+  const kwh = _blankIfNull(parseBillNumber(billValueOrBlank(bill.kWhConsumed, bill.kWh, bill.GallonsDelivered)));
   return { kwh, kwCost, kwhCost, otherCost, taxCost, totalCost };
 }
 
@@ -11102,7 +11106,8 @@ function selectQueueGroup(key) {
 
 function _fmtShortDate(dateStr) {
   if (!dateStr) return '—';
-  const d = new Date(dateStr);
+  // a5cfe2a6: an ISO date ("2025-01-01") is read as a LOCAL date by the shared parseLocalISODate.
+  const d = parseLocalISODate(dateStr) || new Date(dateStr);
   if (isNaN(d.getTime())) return dateStr;
   return d.getMonth() + 1 + '/' + d.getDate();
 }
