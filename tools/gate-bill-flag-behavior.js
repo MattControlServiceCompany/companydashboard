@@ -75,7 +75,10 @@ fixture['en_utility_' + PID] = udData;
 fixture['en_utility_cust_' + PID] = udData;
 
 async function main() {
-  const { chromium } = require(path.join(REPO, 'node_modules', 'playwright'));
+  const PW_MODULES =
+    process.env.CH_PLAYWRIGHT_NODE_MODULES ||
+    path.join(process.env.CH_CONTEXT_DIR || path.join(require('os').homedir(), 'AI', '_context'), 'tools', 'playwright-runtime', 'node_modules');
+  const { chromium } = require(path.join(PW_MODULES, 'playwright'));
   const mime = {
     '.html': 'text/html',
     '.js': 'application/javascript',

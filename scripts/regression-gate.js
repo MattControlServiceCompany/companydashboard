@@ -601,8 +601,8 @@ async function main() {
   }
 
   // ---- static gates: tools/gate-*.js listed here run on every gate run (exit 0 = PASS) ----
-  ['gate-single-number-parser.js'].forEach((g) => {
-    const r = spawnSync(process.execPath, [path.join(REPO_ROOT, 'tools', g)], { cwd: REPO_ROOT, encoding: 'utf8' });
+  ['tools/gate-single-number-parser.js', 'tools/gate-no-baselineinclude-token.js', 'tools/gate-project-scope-unchanged.js', 'tools/gate-single-day-count.js', 'tools/gate-utility-data-single-accessor.js', 'tools/gate-single-baseload-source.js', 'tools/gate-single-bill-flag-count.js', 'computations/bill-save-fields.gate.js', 'computations/gas-rate-save-paths.gate.js', 'computations/rates.cascade.gate.js'].forEach((g) => {
+    const r = spawnSync(process.execPath, [path.join(REPO_ROOT, g)], { cwd: REPO_ROOT, encoding: 'utf8' });
     add('static-gates', g, r.status === 0 ? 'PASS' : 'FAIL', r.status === 0 ? '' : (r.stdout || r.stderr || '').slice(0, 300));
   });
 

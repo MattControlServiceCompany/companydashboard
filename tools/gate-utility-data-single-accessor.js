@@ -47,6 +47,7 @@ function isAllowlisted(relPath) {
   if (relPath === 'computations/rates.cascade.gate.js') return true;
   if (relPath === 'test-verification.js') return true;
   if (relPath === 'test-backlog-runner.js') return true;
+  if (relPath === 'test-assign-bill-create-meter-dom.js') return true; // exact file: test seeds the raw storage key on purpose; no other file is exempt here
   return false;
 }
 
@@ -88,7 +89,15 @@ function collectFiles() {
   for (const ent of fs.readdirSync(REPO, { withFileTypes: true })) {
     if (ent.isFile() && /\.js$/i.test(ent.name)) files.push(path.join(REPO, ent.name));
   }
-  return files;
+  // Tracked files only: untracked or gitignored local files are not part of the repo.
+  const tracked = new Set(
+    require('child_process')
+      .execSync('git ls-files', { cwd: REPO, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .map((f) => path.join(REPO, f)),
+  );
+  return files.filter((f) => tracked.has(f));
 }
 
 function scanFile(absPath) {

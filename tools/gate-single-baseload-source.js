@@ -39,7 +39,7 @@ const CANONICAL_FILE = 'computations/hvac-enduse.js';
 const SELF = path.relative(REPO, __filename).split(path.sep).join('/');
 
 const SCAN_EXT = new Set(['.js', '.mjs', '.html']);
-const SKIP_DIR_NAMES = new Set(['node_modules', '.git']);
+const SKIP_DIR_NAMES = new Set(['node_modules', '.git', '.claude']);
 
 // Files that are EXPECTED to independently hand-recompute the formula as a
 // test oracle (per repo convention: tools/test-*.js, root test-*.js/.mjs,

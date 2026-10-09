@@ -638,10 +638,10 @@ const RestoreMerge = (() => {
     const projItem = byKey.get('en_projects');
     const projects = parseMaybe(projItem && projItem.changed ? projItem.value : getCurrent('en_projects'));
     const projList = Array.isArray(projects) ? projects : [];
-    // Added buildings that no project scope shows. The key is
-    // 'en_utility_' + customer id and the customer id is 'cust_<project id>'
-    // (utility-data.js: customerId = P.customerId || 'cust_' + P.id), so the
-    // key en_utility_cust_<N> belongs to the customer row with id cust_<N>.
+    // Added buildings that no project scope shows. The utility storage key is
+    // the prefix en_utility_ followed by the customer id. The customer id is
+    // 'cust_<project id>' (see utility-data.js), so the key en_utility_cust_<N>
+    // belongs to the customer row with id cust_<N>.
     for (const it of items) {
       const m = /^en_utility_(cust_.+)$/.exec(it.key);
       if (!m || !it.changed) continue;
