@@ -2477,6 +2477,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.09.101', date: '2026-10-09', title: 'Bill Analysis sum check fix',
+    items: [
+      { type: 'fix', text: 'Bill Analysis, electric bills: the sum check now counts the same charge lines as the sum pills and the sum banner, so a bill that adds up is no longer flagged as a mismatch.' }
+    ]
+  },
   { v: 'v2026.10.09.100', date: '2026-10-09', title: 'Bill Analysis reading fixes',
     items: [
       { type: 'fix', text: 'Bill Analysis, electric bills: charge lines are now read by one shared reader, so a rate with a lost digit is repaired and the commodity is set when the bill is read.' },
