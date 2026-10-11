@@ -2477,6 +2477,13 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.11.104', date: '2026-10-11', title: 'Bill Analysis reads each page of a mixed PDF correctly',
+    items: [
+      { type: 'fix', text: 'Bill Analysis: a PDF that holds bills from more than one utility is now read page by page, and each page is read by the utility it belongs to.' },
+      { type: 'fix', text: 'Bill Analysis: pages for other gas companies are now read with the gas checks, and a continuation page is no longer dropped.' },
+      { type: 'change', text: 'Bill Analysis: scanned pages now get the same extra reading passes for every utility, so a poor scan is retried the same way each time.' }
+    ]
+  },
   { v: 'v2026.10.09.103', date: '2026-10-09', title: 'Bill Analysis sum check uses one shared rule',
     items: [
       { type: 'fix', text: 'Bill Analysis, electric bills: the sum check, the sum pills and the sum banner now add up the same charge lines from one shared rule, so they always agree on whether a bill adds up.' }
