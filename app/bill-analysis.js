@@ -238,10 +238,8 @@ function validateBillData(extracted, utilityName) {
     const total = parseBillNumberOrZero(extracted.TotalCurrentCharges);
     if (total > 0) {
       const compSum =
-        Math.round(
-          UTILITY_E_COMPONENT_CHARGE_FIELDS.reduce((sum, f) => sum + parseBillNumber(extracted[f]), 0) *
-            100,
-        ) / 100;
+        Math.round(UTILITY_E_COMPONENT_CHARGE_FIELDS.reduce((sum, f) => sum + parseBillNumber(extracted[f]), 0) * 100) /
+        100;
       const diff = Math.abs(compSum - total);
       if (diff > 1.0) {
         warnings.push({
@@ -265,7 +263,11 @@ function validateBillData(extracted, utilityName) {
         if (_chargeNum === 0) {
           warnings.push({ level: 'info', field: f, message: 'Value is $0.00 — verify this is correct' });
         } else if (_chargeNum === null) {
-          warnings.push({ level: 'info', field: f, message: 'Value could not be read as a number — verify this is correct' });
+          warnings.push({
+            level: 'info',
+            field: f,
+            message: 'Value could not be read as a number — verify this is correct',
+          });
         }
       }
     }
@@ -449,7 +451,10 @@ function validateBillData(extracted, utilityName) {
   }
 
   // Gas: usage > 0 should have charge > 0 — attempt recovery from total
-  const gasUsage = parseBillNumberOrZero(extracted.NaturalGasTherms) || parseBillNumber(extracted.NaturalGasCCF) || parseBillNumber(extracted.NaturalGasMMbtu);
+  const gasUsage =
+    parseBillNumberOrZero(extracted.NaturalGasTherms) ||
+    parseBillNumber(extracted.NaturalGasCCF) ||
+    parseBillNumber(extracted.NaturalGasMMbtu);
   const gasCharge = parseBillNumber(extracted.GasCharge);
   if (gasUsage > 0 && gasCharge <= 0) {
     const total = parseBillNumberOrZero(extracted.TotalCurrentCharges) || parseBillNumber(extracted.TotalAmountDue);
@@ -564,7 +569,10 @@ function validateBillData(extracted, utilityName) {
 const _HIST_ADDR_SIMILARITY_THRESHOLD = 0.85;
 function _historyBillIsSameSite(extracted, histBill) {
   if (!extracted || !histBill) return true;
-  const norm = (v) => String(v || '').replace(/[\s\-]/g, '').toLowerCase();
+  const norm = (v) =>
+    String(v || '')
+      .replace(/[\s\-]/g, '')
+      .toLowerCase();
   const em = norm(extracted.MeterNumber);
   const hm = norm(histBill.MeterNumber || histBill.meterNumber);
   if (em && hm && em !== hm) return false;
@@ -726,7 +734,9 @@ function detectStatisticalOutliers(extracted, historicalCache, pdfBillsIndex) {
   // Check total charges
   const totalVal = parseBillNumberOrZero(extracted.TotalCurrentCharges || extracted.TotalAmountDue);
   if (totalVal > 0) {
-    const totalStats = getStats(historicalBills, (b) => parseBillNumber(b.totalCost || b.TotalCurrentCharges || b.TotalAmountDue));
+    const totalStats = getStats(historicalBills, (b) =>
+      parseBillNumber(b.totalCost || b.TotalCurrentCharges || b.TotalAmountDue),
+    );
     if (totalStats) {
       const zScore = totalStats.stddev > 0 ? Math.abs(totalVal - totalStats.mean) / totalStats.stddev : 0;
       if (zScore > 3) {
@@ -763,7 +773,9 @@ function detectStatisticalOutliers(extracted, historicalCache, pdfBillsIndex) {
   // Check demand kW (electric only)
   const demandVal = parseBillNumber(extracted.ActualKW || extracted.BilledKW);
   if (demandVal > 0) {
-    const demStats = getStats(historicalBills, (b) => parseBillNumber(b.demandKW || b.ActualKW || b.billedKW || b.BilledKW));
+    const demStats = getStats(historicalBills, (b) =>
+      parseBillNumber(b.demandKW || b.ActualKW || b.billedKW || b.BilledKW),
+    );
     if (demStats) {
       const zScore = demStats.stddev > 0 ? Math.abs(demandVal - demStats.mean) / demStats.stddev : 0;
       if (zScore > 3) {
@@ -1188,7 +1200,11 @@ function _applyExtractionGates(bills, gateA, gateB, gateWRE) {
     if (gateWRE) _pushGateReason(b, gateWRE.message, null);
     // Constellation extractor could not read this site's account id and did not guess (item 62a38985).
     if (b._acctIdUnread)
-      _pushGateReason(b, 'Account id could not be read from the scan; not guessed. Verify against the source PDF', null);
+      _pushGateReason(
+        b,
+        'Account id could not be read from the scan; not guessed. Verify against the source PDF',
+        null,
+      );
     const gc = b._correction_pending_TotalCurrentCharges;
     if (gc) {
       // REVIEW FIX (18b33d9f round 3, BLOCKING 1): gc is set ONLY when the
@@ -1590,7 +1606,9 @@ function _decideOnOffPeakKWh(b, kwhConsumed, kwhHeld) {
   // spuriously fails on a genuine multi-tier changeover bill even when
   // onQty/offQty are correct.
   const onVerified = !!(onR && _chargeSelfVerifies(_chargeComputedTotal(onR), parseBillNumber(b.EnergyOnPeakCharge)));
-  const offVerified = !!(offR && _chargeSelfVerifies(_chargeComputedTotal(offR), parseBillNumber(b.EnergyOffPeakCharge)));
+  const offVerified = !!(
+    offR && _chargeSelfVerifies(_chargeComputedTotal(offR), parseBillNumber(b.EnergyOffPeakCharge))
+  );
   const result = { onCorrection: null, offCorrection: null, gate: null };
 
   // ── STRUCTURAL GUARD: a synthetic qty:null placeholder means the dollar side
@@ -1752,8 +1770,10 @@ function _decideOnOffPeakKWh(b, kwhConsumed, kwhHeld) {
     // leg, which would otherwise make BOTH legs look "verified".
     const basisTotal = _chargeBasisTotal(b);
     if (basisTotal && Math.abs(onQty + offQty - basisTotal) > _BASIS_TIGHT) {
-      const onStrict = onR && Math.abs(_chargeComputedTotal(onR) - parseBillNumber(b.EnergyOnPeakCharge)) <= _STRICT_LEG_CENTS;
-      const offStrict = offR && Math.abs(_chargeComputedTotal(offR) - parseBillNumber(b.EnergyOffPeakCharge)) <= _STRICT_LEG_CENTS;
+      const onStrict =
+        onR && Math.abs(_chargeComputedTotal(onR) - parseBillNumber(b.EnergyOnPeakCharge)) <= _STRICT_LEG_CENTS;
+      const offStrict =
+        offR && Math.abs(_chargeComputedTotal(offR) - parseBillNumber(b.EnergyOffPeakCharge)) <= _STRICT_LEG_CENTS;
       const onIsSuspect = !onStrict && offStrict;
       const offIsSuspect = !offStrict && onStrict;
       let applied = false;
@@ -3524,7 +3544,9 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           parseBillNumber(b.ReadDifference) > 0 &&
           b._kwhConsumedLocked &&
           parseBillNumber(b.kWhConsumed) > 0 &&
-          Math.abs(curMult * parseBillNumber(b.ReadDifference) - parseBillNumber(b.kWhConsumed)) / parseBillNumber(b.kWhConsumed) <= _Q_BUCKET_TOL;
+          Math.abs(curMult * parseBillNumber(b.ReadDifference) - parseBillNumber(b.kWhConsumed)) /
+            parseBillNumber(b.kWhConsumed) <=
+            _Q_BUCKET_TOL;
         // Correct an obviously-garbled multiplier (> 10k or way off neighbor consensus)
         if (_multSelfReconciles) {
           // Bill's own arithmetic already reconciles — leave MeterMultiplier alone.
@@ -3946,10 +3968,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         const next = i < bills.length - 1 ? bills[i + 1] : null;
         if (_isMultiMeterBill(curr)) continue;
         if (!curr.StartRead && prev && sameAcct(curr, prev) && prev.EndRead) {
-          if (
-            dayDiff(prev.BillingPeriodEnd, curr.BillingPeriodStart) <= 5 &&
-            _canWitnessRead(prev, curr)
-          ) {
+          if (dayDiff(prev.BillingPeriodEnd, curr.BillingPeriodStart) <= 5 && _canWitnessRead(prev, curr)) {
             curr.StartRead = prev.EndRead;
             curr._auto_recovered_StartRead = {
               original: null,
@@ -3964,10 +3983,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           }
         }
         if (!curr.EndRead && next && sameAcct(curr, next) && next.StartRead) {
-          if (
-            dayDiff(curr.BillingPeriodEnd, next.BillingPeriodStart) <= 5 &&
-            _canWitnessRead(next, curr)
-          ) {
+          if (dayDiff(curr.BillingPeriodEnd, next.BillingPeriodStart) <= 5 && _canWitnessRead(next, curr)) {
             curr.EndRead = next.StartRead;
             curr._auto_recovered_EndRead = {
               original: null,
@@ -4317,7 +4333,8 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           // against its own rate, it's not an OCR error — leave it alone (e.g. Circle
           // Grove: 57.872 kW × $2.854 = $165.17, self-consistent).
           const _nbRate = nb._rates?.FacilitiesCharge?.rate || 0;
-          const _nbSelfReconciles = _nbRate > 0 && Math.abs(nbFacKW * _nbRate - parseBillNumber(nb.FacilitiesCharge)) <= 0.02;
+          const _nbSelfReconciles =
+            _nbRate > 0 && Math.abs(nbFacKW * _nbRate - parseBillNumber(nb.FacilitiesCharge)) <= 0.02;
           // If a subsequent bill's FacilitiesKW is less than the new peak, it's wrong
           if (!_nbSelfReconciles && nbFacKW > 0 && nbFacKW < newPeak) {
             const nbOriginal = nb._auto_corrected_FacilitiesKW?.original || nb.FacilitiesKW;
@@ -5273,7 +5290,14 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         const origTotal = b.TotalCurrentCharges;
         const violationText = violations
           .map(function (vi) {
-            return vi.field + ' ($' + vi.value.toFixed(2) + ') exceeded total ($' + parseBillNumberOrZero(origTotal).toFixed(2) + ')';
+            return (
+              vi.field +
+              ' ($' +
+              vi.value.toFixed(2) +
+              ') exceeded total ($' +
+              parseBillNumberOrZero(origTotal).toFixed(2) +
+              ')'
+            );
           })
           .join('; ');
         // GATE C/D — correction magnitude + provenance (18b33d9f). Site H:
@@ -5373,7 +5397,8 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           kWh: totalKwh,
           rate: b.TotalKWhRate,
         };
-        const kwChargeSum = parseBillNumber(b.FacilitiesCharge) + parseBillNumber(b.BilledKWCharge) + parseBillNumber(b.TDCCharge);
+        const kwChargeSum =
+          parseBillNumber(b.FacilitiesCharge) + parseBillNumber(b.BilledKWCharge) + parseBillNumber(b.TDCCharge);
         const totalKw = parseBillNumber(b.BilledKW) || parseBillNumber(b.ActualKW) || parseBillNumber(b.FacilitiesKW);
         b.TotalKWRate = totalKw > 0 && kwChargeSum > 0 ? kwChargeSum / totalKw : null;
       }
@@ -5649,7 +5674,14 @@ function _isPlausibleAccountNumber(raw) {
   const digitsOnly = /^[0-9]+$/;
   if (tokens.length > 1) return tokens.every((t) => digitsOnly.test(t));
   const t = tokens[0];
-  return digitsOnly.test(t) || (/^[0-9]+(?:-[0-9]+)+$/.test(t) && !/^[0-9]{1,2}-[0-9]{1,2}-[0-9]{2,4}$/.test(t) && !/^[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}$/.test(t) && !/^[0-9]{3}-[0-9]{3}-[0-9]{4}$/.test(t)) || /^[A-Za-z]{1,3}-?[0-9]{4,}$/.test(t);
+  return (
+    digitsOnly.test(t) ||
+    (/^[0-9]+(?:-[0-9]+)+$/.test(t) &&
+      !/^[0-9]{1,2}-[0-9]{1,2}-[0-9]{2,4}$/.test(t) &&
+      !/^[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}$/.test(t) &&
+      !/^[0-9]{3}-[0-9]{3}-[0-9]{4}$/.test(t)) ||
+    /^[A-Za-z]{1,3}-?[0-9]{4,}$/.test(t)
+  );
 }
 // Fix 2 (ballfields-match-gates, 2026-08-31): _addressSimilarity's normalized-
 // Levenshtein metric divides by the LONGER of the two candidate strings' length,
@@ -5952,7 +5984,9 @@ function _pickIdentityCandidate(candidates, billServiceAddress) {
   // exact matches (score 1) and all-blank addresses keep the first-found rule
   // inside one customer.
   if (bestScore >= 0 && bestScore < 1) {
-    const close = candidates.filter((c, i) => i !== bestIdx && scores[i] >= 0 && bestScore - scores[i] <= _IDENTITY_TIE_MARGIN);
+    const close = candidates.filter(
+      (c, i) => i !== bestIdx && scores[i] >= 0 && bestScore - scores[i] <= _IDENTITY_TIE_MARGIN,
+    );
     if (close.length) return toAmbiguous([best, ...close], 'addresses are too close to tell apart');
   }
   return best;
@@ -9041,7 +9075,8 @@ function _applyCommodityAccountAdopt(match) {
 // an electric meter just because the label is missing.
 function _inferBillCommodity(extracted) {
   if (!extracted) return '';
-  if (extracted.NaturalGasTherms || extracted.NaturalGasCCF || extracted.NaturalGasMMbtu || extracted.GasCharge) return 'Gas';
+  if (extracted.NaturalGasTherms || extracted.NaturalGasCCF || extracted.NaturalGasMMbtu || extracted.GasCharge)
+    return 'Gas';
   if (extracted.GallonsDelivered || extracted.FuelType) return 'Propane';
   if (extracted.kWhConsumed) return 'Electric';
   return '';
@@ -9953,14 +9988,13 @@ async function _extractSingleFileForQueue(file, fileIdx) {
         // Check specific local utilities first — their bills often appear in
         // multi-utility PDFs alongside Utility E, and Utility E's broader detection
         // would otherwise claim the entire file.
-        let rule = UTILITY_RULES.find((r) => r.name && /Louisburg/i.test(r.name) && r.detect(text));
-        if (!rule) rule = UTILITY_RULES.find((r) => r.detect(text));
+        let rule = _pickFileRule(text);
         if (!rule) {
           reject(new Error('Unrecognized utility format'));
           return;
         }
 
-        let bills = rule.extractAll ? rule.extractAll(text) : [rule.extract(text)];
+        let bills = _extractFileBills(text, rule);
         const _queueUnmatchedPages = bills._unmatchedPages || [];
         // GATE WRE input (18b33d9f gap 2): captured from the raw extractAll()
         // return before any downstream reassignment (_postExtractionVerify,
@@ -9999,7 +10033,12 @@ async function _extractSingleFileForQueue(file, fileIdx) {
         // (e.g. Utility E) recovered. Comparing against pre-recovery bills.length
         // stamped a stale mismatch onto every individually-correct bill.
         const _gateBResult = _gateB_billCountCheck(text, finalBills.length, rule.name); // GATE B
-        const _gateWREResult = _gateWRE_siteCountCheck(rule.name, _queueWreSiteBlockCount, finalBills.length, _wreCustomerNumberOf(finalBills)); // GATE WRE
+        const _gateWREResult = _gateWRE_siteCountCheck(
+          rule.name,
+          _queueWreSiteBlockCount,
+          finalBills.length,
+          _wreCustomerNumberOf(finalBills),
+        ); // GATE WRE
 
         if (
           finalBills.length === 0 ||
@@ -11734,7 +11773,13 @@ function _saveExtractionState() {
           // Rows keep only the user's choices. renderQueueResults rebuilds bill/result from the results.
           queueRows: window._pdfQueueRows
             ? window._pdfQueueRows.map(function (r) {
-                return { resultIdx: r.resultIdx, billIdx: r.billIdx, checked: r.checked, _saved: r._saved, _held: r._held };
+                return {
+                  resultIdx: r.resultIdx,
+                  billIdx: r.billIdx,
+                  checked: r.checked,
+                  _saved: r._saved,
+                  _held: r._held,
+                };
               })
             : null,
           timestamp: Date.now(),
@@ -14086,7 +14131,11 @@ async function _renderPageHQ(pg, targetScale, _timing) {
   // intent 'print': pdf.js 3.11 schedules 'display' render steps with requestAnimationFrame,
   // which never fires in a hidden tab. 'print' uses a microtask instead. Same pixels on a
   // synthetic PDF (tools/test-ocr-hidden-tab.js).
-  await _withTimeout(pg.render({ canvasContext: rawCtx, viewport: vpHi, intent: 'print' }).promise, PDFJS_AWAIT_TIMEOUT_MS, 'decode');
+  await _withTimeout(
+    pg.render({ canvasContext: rawCtx, viewport: vpHi, intent: 'print' }).promise,
+    PDFJS_AWAIT_TIMEOUT_MS,
+    'decode',
+  );
   if (_timing) _timing.decodeMs = Math.round(performance.now() - _decodeT0);
   const targetVp = pg.getViewport({ scale: targetScale });
   const dstW = Math.max(1, Math.round(targetVp.width));
@@ -14304,6 +14353,173 @@ const recognizeWithTimeout = async (w, canvas, params, budgetDeadlineMs) => {
     throw err;
   }
 };
+// Provider-aware scoring: per-provider signal sets + generic bonuses.
+// Utility E signals are the original BILL_SIGNALS verbatim — behavior unchanged.
+// Unknown providers fall through to generic-only scoring (never worse than before).
+const PROVIDER_SIGNALS = {
+  evergy: [
+    { rx: /service\s+from[:\s]\s*\d{2}\/\d{2}/i, w: 1 },
+    { rx: /Current\s+Charges/i, w: 1 },
+    { rx: /kWh/i, w: 1 },
+    { rx: /Demand\s+Ch/i, w: 1 },
+    { rx: /Customer\s+Ch/i, w: 1 },
+    { rx: /Account\s+Number/i, w: 1 },
+    { rx: /Billing\s+Date/i, w: 1 },
+  ],
+  // Fix (2026-07-22): WRE invoices previously had NO entry here,
+  // so every OCR pass scored ~0 under generic-only signals (WRE bills have no
+  // "Account Number"/"Billing Date" text) — the multi-pass "best score" picker
+  // could not tell an accurately-OCR'd pass from a garbled one and effectively
+  // chose at random among near-tied low scores. Added real WRE-specific signals
+  // so scorePage can actually reward passes that read the per-site table cleanly.
+  woodriver: [
+    { rx: /woodriverenergy\.com/i, w: 2 },
+    { rx: /Production\s+Month/i, w: 1 },
+    { rx: /Service\s+Address/i, w: 1 },
+    { rx: /Sub-?Total/i, w: 1 },
+    { rx: /Acct\/?Meter/i, w: 1 },
+    { rx: /Index\s*\(?\s*F?[O0]M\s*\)?/i, w: 1 },
+    { rx: /Total\s+Current\s+Charges/i, w: 1 },
+  ],
+  constellation: [
+    { rx: /constellation/i, w: 1 },
+    { rx: /account\s*id:\s*bg-\d+/i, w: 2 },
+    { rx: /Invoice\s+Number:\s*\d+/i, w: 1 },
+    { rx: /Service\s+for\s+[A-Za-z]+-\d{4}/i, w: 2 },
+    { rx: /Total\s+Current\s+Site\s+Charges/i, w: 2 },
+    { rx: /MMBtu/i, w: 1 },
+    { rx: /Invoice\s+Date:/i, w: 1 },
+  ],
+  kgs: [
+    { rx: /kansas\s+gas\s+service/i, w: 2 },
+    { rx: /Statement\s+Date\s+\d{2}-\d{2}-\d{2}/i, w: 2 },
+    { rx: /\d{2}-\d{2}-\d{2}\s+\d{2}-\d{2}-\d{2}/, w: 2 },
+    { rx: /Account\s+Number/i, w: 1 },
+    { rx: /\bMcf\b/i, w: 1 },
+    { rx: /Total\s+Current\s+Charges/i, w: 1 },
+    { rx: /Service\s+Charge/i, w: 1 },
+  ],
+  louisburg: [
+    { rx: /louisburgkansas\.gov|City\s*of\s*Louisburg/i, w: 2 },
+    { rx: /ACCOUNT\s*SUMMARY|Customer\s*Account\s*Information/i, w: 2 },
+    { rx: /DETACH\s*AND\s*RETURN/i, w: 1 },
+    { rx: /Amount\s*Due\s*After/i, w: 1 },
+  ],
+  baldwin: [
+    { rx: /baldwin\s*city|baldwincitygov?/i, w: 2 },
+    { rx: /FRANCHISE\s+FEE/i, w: 1 },
+    { rx: /EL\s*-\s*ELECTRIC|WA\s*-?\s*WATER|SW\s*-?\s*SEWER/i, w: 2 },
+    { rx: /ACCOUNT\s+NUMBER/i, w: 1 },
+  ],
+  // Spire, Atmos, Black Hills, Laclede and other gas utilities (backlog 402ff7f2). The Kansas Gas Service
+  // set above is specific to that bill; these are the signs common to a gas utility bill.
+  gas: [
+    // Read at test time: _GAS_BRAND_RE lives in energy-savings.js.
+    { rx: { test: (t) => _GAS_BRAND_RE.test(t) }, w: 2 },
+    { rx: /\btherms?\b|\bccf\b|\bmcf\b/i, w: 2 },
+    { rx: /Account\s+(?:Number|No\b)/i, w: 1 },
+    { rx: /(?:Total\s+)?Amount\s+Due/i, w: 1 },
+    { rx: /Meter\s+(?:Number|No\b|Read)/i, w: 1 },
+    { rx: /Service\s+(?:Charge|Period|Address)/i, w: 1 },
+  ],
+  propane: [
+    { rx: /\bpropane\b|\blp\s*gas\b|\bfuel\s*oil\b|\bmfa\s*oil\b/i, w: 2 },
+    { rx: /net\s*(?:due|delivery)|invoice/i, w: 1 },
+    { rx: /Invoice\s*#/i, w: 1 },
+  ],
+};
+// Auto-detect provider from OCR text. `strong` is true when the text carries a signal that belongs to
+// that provider alone. "FRANCHISE FEE" (Baldwin; Kansas Gas Service prints it too) and a bare "MMBtu"
+// (another provider prints it too) are weak: they pick a scoring set but prove nothing.
+const _detectProviderEx = (txt) => {
+  if (/service\s+from[:\s]\s*\d{2}\/\d{2}/i.test(txt) || (/Customer\s+Ch/i.test(txt) && /ECA\s+Ch/i.test(txt)))
+    return { name: 'evergy', strong: true };
+  // Fix (2026-07-22): must be checked BEFORE constellation — constellation's
+  // /MMBtu/i signal alone would otherwise misclassify every WRE
+  // page (WRE's "Mmbtu" column header also matches that regex case-insensitively),
+  // permanently locking WRE pages onto the wrong (near-zero-signal) scoring set.
+  if (
+    /woodriverenergy\.com/i.test(txt) ||
+    /WoodRiver\s*Energy/i.test(txt) ||
+    (/Production\s+Month/i.test(txt) && /Sub-?Total/i.test(txt))
+  )
+    return { name: 'woodriver', strong: true };
+  if (/constellation/i.test(txt) || /account\s*id:\s*bg-\d+/i.test(txt)) return { name: 'constellation', strong: true };
+  if (/MMBtu/i.test(txt)) return { name: 'constellation', strong: false };
+  if (/kansas\s+gas\s+service/i.test(txt) || /Statement\s+Date\s+\d{2}-\d{2}-\d{2}/i.test(txt))
+    return { name: 'kgs', strong: true };
+  // Other gas utilities (402ff7f2): the brand list is the one the Gas Utility rule uses.
+  if (_GAS_BRAND_RE.test(txt)) return { name: 'gas', strong: true };
+  if (/louisburgkansas\.gov|City\s*of\s*Louisburg/i.test(txt)) return { name: 'louisburg', strong: true };
+  if (/baldwin\s*city|baldwincitygov/i.test(txt)) return { name: 'baldwin', strong: true };
+  if (/FRANCHISE\s+FEE/i.test(txt)) return { name: 'baldwin', strong: false };
+  if (/\bpropane\b|\blp\s*gas\b|\bmfa\s*oil\b/i.test(txt)) return { name: 'propane', strong: true };
+  return { name: 'generic', strong: false };
+};
+const _detectProvider = (txt) => _detectProviderEx(txt).name;
+// Generic signals — always score regardless of provider (floor for unknown formats)
+const GENERIC_SIGNALS = [
+  { rx: /Account\s+Number/i, w: 1 },
+  { rx: /Billing\s+Date/i, w: 1 },
+];
+// Generic bonuses — dollar amounts, kWh values, date patterns (preserved from original scorePage)
+const _genericBonuses = (txt) => {
+  let s = 0;
+  const dollarAmts = (txt.match(/\$[\d,]+\.\d{2}/g) || []).length;
+  s += Math.min(dollarAmts / 5, 2); // up to 2 bonus points (same as original)
+  const kwhVals = (txt.match(/[\d,]+\.\d{4}\s*kWh/gi) || []).length;
+  s += Math.min(kwhVals / 3, 1); // up to 1 bonus point (same as original)
+  const datePatterns = (txt.match(/\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/g) || []).length;
+  s += Math.min(datePatterns / 4, 1); // up to 1 bonus for generic date signals
+  return s;
+};
+// makeScorePage(docProvider) — factory that returns a scorePage function for ONE page (backlog 6e907ea6).
+// The page's provider is detected from its own first non-trivial pass (>100 chars) and locked for the
+// rest of that page's passes. Until the page shows a provider of its own, it scores with the last
+// provider seen on an earlier page (`docProvider.name`), so a garbled first pass does not drop the
+// signal set. A page that shows a different provider switches to that provider's signals.
+// Utility E: max keyword score = 7 + up to 3 bonuses = 10+, early-exit threshold >=10 unchanged.
+const makeScorePage = (docProvider) => {
+  let detectedProvider = null;
+  const fn = (txt) => {
+    if (!detectedProvider && txt.length > 100) {
+      const d = _detectProvider(txt);
+      if (d !== 'generic') {
+        detectedProvider = d;
+        if (docProvider) docProvider.name = d;
+      }
+    }
+    const signals = PROVIDER_SIGNALS[detectedProvider || (docProvider && docProvider.name)] || [];
+    let s = 0;
+    for (const sig of signals) {
+      if (sig.rx.test(txt)) s += sig.w;
+    }
+    for (const sig of GENERIC_SIGNALS) {
+      if (sig.rx.test(txt)) s += sig.w;
+    }
+    s += _genericBonuses(txt);
+    return s;
+  };
+  return fn;
+};
+// Does this page's OCR text still lack a basic bill read? A page is read well enough when it shows an
+// account label, a money amount with cents, and a date. Some bills print no period range, so one date is
+// enough; a field still missing is caught later by the missing-field retry in processPDF.
+// A continuation page is the exception: a kWh and meter table, or a "(Continued)" page, with no "service from"
+// line and no total-charges line (meter reads, adjustments) shows one amount and one date with unread digits, and
+// those digits are what the retry passes improve, so it retries.
+// Retry passes run only for a page that fails this test. Replaces three tests that each knew one
+// provider (Utility E "service from", KGS meter dates, Baldwin charge codes).
+const _ocrPageNeedsRetry = (text) => {
+  const hasAccount = /Account\s*(?:Number|No\b|#|ID)|\bAcct\b/i.test(text);
+  const hasAmount = /\b\d{1,3}(?:,\d{3})*\.\d{2}\b/.test(text);
+  const hasDate = /\b\d{1,2}[\/-]\d{1,2}(?:[\/-]\d{2,4})?\b/.test(text);
+  const isNumericContinuation =
+    !/service\s+from/i.test(text) &&
+    !/Total\s+(?:Current\s+)?(?:Site\s+)?Charges/i.test(text) &&
+    ((/kWh/i.test(text) && /meter/i.test(text)) || /\(Continued\)/i.test(text));
+  return !(hasAccount && hasAmount && hasDate) || isNumericContinuation;
+};
 // opts (additive 3rd param, 2026-09-25 Review Bill Corrections rebuild — every existing
 // 2-arg call site keeps working unchanged, opts defaults to {}):
 //   opts.cachedPages   - map of 0-based pageIndex -> already-known page text. That page is
@@ -14505,131 +14721,9 @@ async function extractPDFText(ab, statusCb, opts) {
       }
       // F5: ensure every pool worker's WASM heap is freed even if the OCR loop throws
       try {
-        // Provider-aware scoring: per-provider signal sets + generic bonuses.
-        // Utility E signals are the original BILL_SIGNALS verbatim — behavior unchanged.
-        // Unknown providers fall through to generic-only scoring (never worse than before).
-        const PROVIDER_SIGNALS = {
-          evergy: [
-            { rx: /service\s+from[:\s]\s*\d{2}\/\d{2}/i, w: 1 },
-            { rx: /Current\s+Charges/i, w: 1 },
-            { rx: /kWh/i, w: 1 },
-            { rx: /Demand\s+Ch/i, w: 1 },
-            { rx: /Customer\s+Ch/i, w: 1 },
-            { rx: /Account\s+Number/i, w: 1 },
-            { rx: /Billing\s+Date/i, w: 1 },
-          ],
-          // Fix (2026-07-22): WRE invoices previously had NO entry here,
-          // so every OCR pass scored ~0 under generic-only signals (WRE bills have no
-          // "Account Number"/"Billing Date" text) — the multi-pass "best score" picker
-          // could not tell an accurately-OCR'd pass from a garbled one and effectively
-          // chose at random among near-tied low scores. Added real WRE-specific signals
-          // so scorePage can actually reward passes that read the per-site table cleanly.
-          woodriver: [
-            { rx: /woodriverenergy\.com/i, w: 2 },
-            { rx: /Production\s+Month/i, w: 1 },
-            { rx: /Service\s+Address/i, w: 1 },
-            { rx: /Sub-?Total/i, w: 1 },
-            { rx: /Acct\/?Meter/i, w: 1 },
-            { rx: /Index\s*\(?\s*F?[O0]M\s*\)?/i, w: 1 },
-            { rx: /Total\s+Current\s+Charges/i, w: 1 },
-          ],
-          constellation: [
-            { rx: /constellation/i, w: 1 },
-            { rx: /account\s*id:\s*bg-\d+/i, w: 2 },
-            { rx: /Invoice\s+Number:\s*\d+/i, w: 1 },
-            { rx: /Service\s+for\s+[A-Za-z]+-\d{4}/i, w: 2 },
-            { rx: /Total\s+Current\s+Site\s+Charges/i, w: 2 },
-            { rx: /MMBtu/i, w: 1 },
-            { rx: /Invoice\s+Date:/i, w: 1 },
-          ],
-          kgs: [
-            { rx: /kansas\s+gas\s+service/i, w: 2 },
-            { rx: /Statement\s+Date\s+\d{2}-\d{2}-\d{2}/i, w: 2 },
-            { rx: /\d{2}-\d{2}-\d{2}\s+\d{2}-\d{2}-\d{2}/, w: 2 },
-            { rx: /Account\s+Number/i, w: 1 },
-            { rx: /\bMcf\b/i, w: 1 },
-            { rx: /Total\s+Current\s+Charges/i, w: 1 },
-            { rx: /Service\s+Charge/i, w: 1 },
-          ],
-          louisburg: [
-            { rx: /louisburgkansas\.gov|City\s*of\s*Louisburg/i, w: 2 },
-            { rx: /ACCOUNT\s*SUMMARY|Customer\s*Account\s*Information/i, w: 2 },
-            { rx: /DETACH\s*AND\s*RETURN/i, w: 1 },
-            { rx: /Amount\s*Due\s*After/i, w: 1 },
-          ],
-          baldwin: [
-            { rx: /baldwin\s*city|baldwincitygov?/i, w: 2 },
-            { rx: /FRANCHISE\s+FEE/i, w: 1 },
-            { rx: /EL\s*-\s*ELECTRIC|WA\s*-?\s*WATER|SW\s*-?\s*SEWER/i, w: 2 },
-            { rx: /ACCOUNT\s+NUMBER/i, w: 1 },
-          ],
-          propane: [
-            { rx: /\bpropane\b|\blp\s*gas\b|\bfuel\s*oil\b|\bmfa\s*oil\b/i, w: 2 },
-            { rx: /net\s*(?:due|delivery)|invoice/i, w: 1 },
-            { rx: /Invoice\s*#/i, w: 1 },
-          ],
-        };
-        // Auto-detect provider from OCR text (same regexes as UTILITY_RULES.detect() in energy-savings.js)
-        const _detectProvider = (txt) => {
-          if (/service\s+from[:\s]\s*\d{2}\/\d{2}/i.test(txt) || (/Customer\s+Ch/i.test(txt) && /ECA\s+Ch/i.test(txt)))
-            return 'evergy';
-          // Fix (2026-07-22): must be checked BEFORE constellation — constellation's
-          // /MMBtu/i signal alone would otherwise misclassify every WRE
-          // page (WRE's "Mmbtu" column header also matches that regex case-insensitively),
-          // permanently locking WRE pages onto the wrong (near-zero-signal) scoring set.
-          if (
-            /woodriverenergy\.com/i.test(txt) ||
-            /WoodRiver\s*Energy/i.test(txt) ||
-            (/Production\s+Month/i.test(txt) && /Sub-?Total/i.test(txt))
-          )
-            return 'woodriver';
-          if (/constellation/i.test(txt) || /account\s*id:\s*bg-\d+/i.test(txt) || /MMBtu/i.test(txt))
-            return 'constellation';
-          if (/kansas\s+gas\s+service/i.test(txt) || /Statement\s+Date\s+\d{2}-\d{2}-\d{2}/i.test(txt)) return 'kgs';
-          if (/louisburgkansas\.gov|City\s*of\s*Louisburg/i.test(txt)) return 'louisburg';
-          if (/baldwin\s*city|baldwincitygov/i.test(txt) || /FRANCHISE\s+FEE/i.test(txt)) return 'baldwin';
-          if (/\bpropane\b|\blp\s*gas\b|\bmfa\s*oil\b/i.test(txt)) return 'propane';
-          return 'generic';
-        };
-        // Generic signals — always score regardless of provider (floor for unknown formats)
-        const GENERIC_SIGNALS = [
-          { rx: /Account\s+Number/i, w: 1 },
-          { rx: /Billing\s+Date/i, w: 1 },
-        ];
-        // Generic bonuses — dollar amounts, kWh values, date patterns (preserved from original scorePage)
-        const _genericBonuses = (txt) => {
-          let s = 0;
-          const dollarAmts = (txt.match(/\$[\d,]+\.\d{2}/g) || []).length;
-          s += Math.min(dollarAmts / 5, 2); // up to 2 bonus points (same as original)
-          const kwhVals = (txt.match(/[\d,]+\.\d{4}\s*kWh/gi) || []).length;
-          s += Math.min(kwhVals / 3, 1); // up to 1 bonus point (same as original)
-          const datePatterns = (txt.match(/\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/g) || []).length;
-          s += Math.min(datePatterns / 4, 1); // up to 1 bonus for generic date signals
-          return s;
-        };
-        // makeScorePage() — factory that returns a scorePage function.
-        // Provider is auto-detected from the first non-trivial pass (>100 chars) and locked
-        // for all subsequent passes of the same page, so pass-0 text drives scoring for passes 1–6.
-        // Utility E: max keyword score = 7 + up to 3 bonuses = 10+, early-exit threshold >=10 unchanged.
-        const makeScorePage = () => {
-          let detectedProvider = null;
-          return (txt) => {
-            if (!detectedProvider && txt.length > 100) {
-              detectedProvider = _detectProvider(txt);
-            }
-            const signals = PROVIDER_SIGNALS[detectedProvider] || [];
-            let s = 0;
-            for (const sig of signals) {
-              if (sig.rx.test(txt)) s += sig.w;
-            }
-            for (const sig of GENERIC_SIGNALS) {
-              if (sig.rx.test(txt)) s += sig.w;
-            }
-            s += _genericBonuses(txt);
-            return s;
-          };
-        };
-        const scorePage = makeScorePage();
+        // Page scoring (PROVIDER_SIGNALS, _detectProvider, makeScorePage) is module-level, above extractPDFText.
+        // Each page gets its own scorePage inside the page loop (backlog 6e907ea6).
+        const _ocrDocProvider = { name: null };
         // Detect Utility E bill cover page by unique layout signals. Cover pages only
         // need the 2.5x pass — they contain no meter/charge data worth reprocessing.
         const isCoverPage = (txt) => {
@@ -14820,6 +14914,7 @@ async function extractPDFText(ab, statusCb, opts) {
           if (_ocrBudgetExceeded) return;
           let bestText = '',
             bestScore = 0;
+          const scorePage = makeScorePage(_ocrDocProvider);
           // Winning orientation label ('90'/'180'/'270'/null) from the
           // CHANGE-4 probe below — captured here (outer page scope) so the
           // Client A targeted-crop fallback near the end of this page's
@@ -15044,28 +15139,9 @@ async function extractPDFText(ab, statusCb, opts) {
             )
               break;
           }
-          // Run retry passes if primary results have issues (low score or missing key patterns)
-          // KGS bills never have a "service from" pattern — don't require it for retry decision
-          const isKGSText =
-            /kansas\s+gas\s+service/i.test(bestText) || /Statement\s+Date\s+\d{2}-\d{2}-\d{2}/i.test(bestText);
-          const kgsScore = isKGSText
-            ? (/Account\s+Number/i.test(bestText) ? 2 : 0) +
-              (/\$\d+\.\d{2}/.test(bestText) ? 2 : 0) +
-              (/\d{2}-\d{2}-\d{2}\s+\d{2}-\d{2}-\d{2}/.test(bestText) ? 2 : 0)
-            : 0;
-          // Baldwin bills never have a "service from MM/DD" pattern — don't require it for retry decision
-          // Use a content-quality score instead: account number + dollar amounts + charge-line codes
-          const isBaldwinText = /baldwin\s*city|baldwincitygov/i.test(bestText) || /FRANCHISE\s+FEE/i.test(bestText);
-          const baldwinScore = isBaldwinText
-            ? (/ACCOUNT\s+NUMBER/i.test(bestText) ? 2 : 0) +
-              ((bestText.match(/\$[\d,]+\.\d{2}/g) || []).length >= 3 ? 2 : 0) +
-              (/EL\s*-\s*ELECTRIC|WA\s*-?\s*WATER|SW\s*-?\s*SEWER/i.test(bestText) ? 2 : 0)
-            : 0;
-          const needsRetry = isKGSText
-            ? kgsScore < 4 // KGS: retry only if account+dollar+meter dates all missing
-            : isBaldwinText
-              ? baldwinScore < 4 // Baldwin: retry only if account+dollar amounts+charge codes all missing
-              : bestScore < 5 || !/service\s+from[:\s]\s*\d/i.test(bestText) || !/\$[\d,]+\.\d{2}/g.test(bestText);
+          // Run retry passes only when the page text lacks a basic bill read (f567e91d): one test for every
+          // provider, no per-provider exception list.
+          const needsRetry = _ocrPageNeedsRetry(bestText);
           if (needsRetry) {
             for (let pass = 0; pass < OCR_RETRY_PASSES.length; pass++) {
               if (window._pdfAbort) break; // Bug #134: honour cancel inside retry pass loop
@@ -15490,11 +15566,9 @@ async function extractPDFText(ab, statusCb, opts) {
                   // so the bill fell through to parseError:true with every field null,
                   // instead of correctly detecting City of Client A the way the
                   // pre-multiscale single-pass code did. scorePage's own
-                  // detectedProvider LOCK (see makeScorePage above) is shared across
-                  // this page's WHOLE pass cascade (upright + rotated) and is
-                  // deliberately left untouched here — that lock is a separate,
-                  // cross-provider concern (Utility E/KGS/Constellation/WoodRiver/
-                  // Baldwin/Propane all rely on it) needing its own review. Instead,
+                  // detectedProvider LOCK (see makeScorePage above) is per page and is shared across
+                  // this page's WHOLE pass cascade (upright + rotated); it is
+                  // deliberately left untouched here. Instead,
                   // re-run the SAME pure, standalone _detectProvider() the lock itself
                   // calls against only the rotated-orientation candidates gathered by
                   // THIS block, and — only when the currently-selected bestText no
@@ -15553,7 +15627,12 @@ async function extractPDFText(ab, statusCb, opts) {
                       for (const _p of allPassTexts[pgNum]) {
                         if (_p === _bestRealProviderPass) continue;
                         if (!_p.label || _p.label.indexOf(_rotLabelSuffix) === -1) continue;
-                        if (_detectProvider(_p.text) === _chosenProvider) {
+                        // 0c5f8dc5: these passes are the SAME image read again, so their errors are
+                        // not independent. Agreement counts only when the other pass carries a signal
+                        // that belongs to this provider alone (see _detectProviderEx); a shared line
+                        // such as FRANCHISE FEE on two passes proves nothing.
+                        const _other = _detectProviderEx(_p.text);
+                        if (_other.name === _chosenProvider && _other.strong) {
                           _agreed = true;
                           break;
                         }
@@ -16032,7 +16111,17 @@ function globalTaskGoTo() {
 // labelled "billing period unreadable"). Used by the queue, single-file and
 // unmatched-page recovery paths.
 function _billHasKeyField(b) {
-  return !!(b && (b.BillingPeriodStart || b.kWhConsumed || b.NaturalGasTherms || b.NaturalGasCCF || b.NaturalGasMMbtu || b.WaterUsage || b.GasCharge || b.TotalCurrentCharges));
+  return !!(
+    b &&
+    (b.BillingPeriodStart ||
+      b.kWhConsumed ||
+      b.NaturalGasTherms ||
+      b.NaturalGasCCF ||
+      b.NaturalGasMMbtu ||
+      b.WaterUsage ||
+      b.GasCharge ||
+      b.TotalCurrentCharges)
+  );
 }
 function _unmatchedRecoveryHasKeyField(b) {
   return !!(b && (b.AccountNumber || b.TotalAmountDue || _billHasKeyField(b)));
@@ -16044,9 +16133,9 @@ function _unmatchedToSyntheticBills(unmatchedPages) {
   for (const u of unmatchedPages) {
     let recoveredBill = null;
     if (u.pageText && typeof UTILITY_RULES !== 'undefined') {
-      for (const r of UTILITY_RULES) {
-        if (!r || r.name === 'Generic Utility') continue; // catch-all: detect() is always true, extract() never returns null — never a valid "recovery"
-        if (typeof r.detect !== 'function' || !r.detect(u.pageText)) continue;
+      // One page-to-rule choice: _pageRule (energy-savings.js), the same one _extractFileBills uses.
+      const r = _pageRule(u.pageText);
+      if (r) {
         let extracted = null;
         try {
           if (typeof r.extract === 'function') {
@@ -16058,16 +16147,12 @@ function _unmatchedToSyntheticBills(unmatchedPages) {
         } catch (e) {
           extracted = null;
         }
-        if (!extracted) continue;
-        const arr = Array.isArray(extracted) ? extracted : [extracted];
+        const arr = extracted ? (Array.isArray(extracted) ? extracted : [extracted]) : [];
         const first = arr.find((b) => b && !b._skipRecord && _unmatchedRecoveryHasKeyField(b)) || null;
         if (first) {
           recoveredBill = first;
           recoveredBill.UtilityCompany = recoveredBill.UtilityCompany || recoveredBill._utilityName || r.name || null;
-          recoveredBill._recoveredFromFallbackRule = r.name || true;
-          // Commodity is stamped at the source: the Utility E extractor sets 'Electric' (b8123c92); the Client A
-          // rule stamps its own per bill.
-          break;
+          recoveredBill._recoveredFromFallbackRule = r.name;
         }
       }
     }
@@ -16164,11 +16249,10 @@ async function processPDF(file) {
       if (text && text.trim().length > 100) {
         window._pdfRawText = text;
         _showExtractionToolbar();
-        let rule = UTILITY_RULES.find((r) => r.name && /Louisburg/i.test(r.name) && r.detect(text));
-        if (!rule) rule = UTILITY_RULES.find((r) => r.detect(text));
+        let rule = _pickFileRule(text);
         if (rule) {
-          // Use extractAll if available (multi-bill PDF support)
-          let bills = rule.extractAll ? rule.extractAll(text) : [rule.extract(text)];
+          // One reader for the whole file: each page goes to its own provider (_extractFileBills).
+          let bills = _extractFileBills(text, rule);
           const _extractUnmatchedPages = bills._unmatchedPages || [];
           // Guard (2322a12f): a non-empty _unmatchedPages means `rule` already
           // split this file correctly — some pages matched `rule` (e.g. a
@@ -16177,7 +16261,7 @@ async function processPDF(file) {
           // _unmatchedToSyntheticBills). That marks this file as a genuine
           // multi-provider/multi-commodity document. See the OCR-retry guard
           // below (search this comment ID) for why that matters.
-          const _fileHasMultiProviderSplit = _extractUnmatchedPages.length > 0;
+          const _fileHasMultiProviderSplit = _extractUnmatchedPages.length > 0 || bills._mixedProvider === true;
           // Bug b5951068: Flag bills that fail the key-field filter instead of
           // silently dropping them. Unparseable billing periods surface as
           // parseError:true rows so the user can see and manually assign them.
@@ -16358,11 +16442,9 @@ async function processPDF(file) {
                     ? rule.detect(candidateFull)
                       ? rule
                       : null
-                    : UTILITY_RULES.find((r) => r.detect(candidateFull));
+                    : _pickFileRule(candidateFull);
                   if (!retryRule) return false;
-                  const retryBills2 = retryRule.extractAll
-                    ? retryRule.extractAll(candidateFull)
-                    : [retryRule.extract(candidateFull)];
+                  const retryBills2 = _extractFileBills(candidateFull, retryRule);
                   const retryValid = retryBills2.filter((b) => b.BillingPeriodStart || b.kWhConsumed);
                   const retryCheck = retryValid.length ? retryValid : retryBills2;
                   const retryMissing = Math.max(...retryCheck.map((b) => countCriticalMissing(b, retryRule.name)));
@@ -17008,6 +17090,9 @@ async function processPDF(file) {
           // ── Inject unmatched pages as "Manual Review" entries so they are visible ──
           // Without this, pages that couldn't be parsed are silently dropped.
           const _syntheticReviewBills = _unmatchedToSyntheticBills(_extractUnmatchedPages);
+          // Bills read by a rule other than the file rule (split pages and recovered pages) carry that rule's name
+          // in _recoveredFromFallbackRule; the alt-pass recovery below reads them with their own rule.
+          const _foreignRuleBills = finalBills.filter((b) => b && b._recoveredFromFallbackRule).concat(_syntheticReviewBills);
 
           // ── MULTI-PASS OCR CONSENSUS FOR RECOVERED UNMATCHED PAGES ──
           // Fix (2026-08-24, Client A synthetic-recovery defect): the kWh-identity
@@ -17029,7 +17114,7 @@ async function processPDF(file) {
           // `.extract()` return to an array the same way _unmatchedToSyntheticBills
           // already does (Utility E's `.extract()` returns a single bill object, not
           // an array — calling `.length` on it directly is always undefined).
-          if (hasAltPasses && _syntheticReviewBills.length) {
+          if (hasAltPasses && _foreignRuleBills.length) {
             const KWH_FALLBACK_PAIRS_RECOVERED = [
               {
                 kwhField: 'OnPeakKWh',
@@ -17050,7 +17135,7 @@ async function processPDF(file) {
                 if (!altTextsRecovered.includes(p.text) && p.text !== text) altTextsRecovered.push(p.text);
               }
             }
-            for (const b of _syntheticReviewBills) {
+            for (const b of _foreignRuleBills) {
               const recoverRule =
                 b._recoveredFromFallbackRule && UTILITY_RULES.find((r) => r.name === b._recoveredFromFallbackRule);
               if (!recoverRule || typeof recoverRule.extract !== 'function') continue;
@@ -17158,7 +17243,12 @@ async function processPDF(file) {
           // reference here (post any OCR-retry reassignment) so a retried
           // WRE extraction is checked against its OWN fresh site-block
           // count, not a stale pre-retry snapshot.
-          const _gateWREResult = _gateWRE_siteCountCheck(rule.name, bills._wreSiteBlockCount, finalBills.length, _wreCustomerNumberOf(finalBills)); // GATE WRE
+          const _gateWREResult = _gateWRE_siteCountCheck(
+            rule.name,
+            bills._wreSiteBlockCount,
+            finalBills.length,
+            _wreCustomerNumberOf(finalBills),
+          ); // GATE WRE
 
           // GATE A/B/WRE/C wiring (18b33d9f): stamp every bill from this file with
           // _gateTripped/_gateReasons so the single-file save path can hold flagged
@@ -17367,7 +17457,9 @@ function renderMultiBillUI(bills, box) {
     return null;
   };
   const _isoOf = (d) =>
-    d ? d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0') : null;
+    d
+      ? d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')
+      : null;
   const _ymLabel = (ym) => {
     const [y, mo] = ym.split('-').map(Number);
     return new Date(y, mo - 1, 1).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
@@ -17400,9 +17492,7 @@ function renderMultiBillUI(bills, box) {
       e: _parseDt(bills[i].BillingPeriodEnd),
       dd: _parseDt(bills[i].DeliveryDate),
     }));
-    const periodBills = items
-      .filter((it) => it.s && it.e)
-      .map((it) => ({ start: _isoOf(it.s), end: _isoOf(it.e) }));
+    const periodBills = items.filter((it) => it.s && it.e).map((it) => ({ start: _isoOf(it.s), end: _isoOf(it.e) }));
     for (const item of items) {
       let ym = null;
       if (item.dd && !item.s) {
@@ -17522,7 +17612,8 @@ function renderMultiBillUI(bills, box) {
     const _pillKeys = _pillChargeKeys[_pillComm] || _pillChargeKeys.Electric;
     // Round each component to 2 decimal places before summing to prevent
     // floating-point accumulation across many addends (e.g. 9 KGS line items).
-    const _chargeSum = Math.round(_pillKeys.reduce((s, f) => s + Math.round(parseBillNumber(bill[f]) * 100) / 100, 0) * 100) / 100;
+    const _chargeSum =
+      Math.round(_pillKeys.reduce((s, f) => s + Math.round(parseBillNumber(bill[f]) * 100) / 100, 0) * 100) / 100;
     const _totalVal = parseBillNumber(bill.TotalCurrentCharges);
     // Allow 1¢ per component of accumulated rounding before flagging a mismatch.
     // Flat 0.02 was too tight for multi-line KGS bills where rounding adds up across 9 fields.
@@ -19763,7 +19854,8 @@ function renderPDFFields(parsed, warnings) {
   // Round each component to 2 decimal places before summing to prevent floating-point
   // accumulation across many addends (e.g. 9 KGS line items each rounded to the cent).
   const _currentChargeSum =
-    Math.round(_CHARGE_SUM_KEYS_RPF.reduce((s, f) => s + Math.round(parseBillNumber(parsed[f]) * 100) / 100, 0) * 100) / 100;
+    Math.round(_CHARGE_SUM_KEYS_RPF.reduce((s, f) => s + Math.round(parseBillNumber(parsed[f]) * 100) / 100, 0) * 100) /
+    100;
   // Identify which charge fields are blank — the sum mismatch is usually caused by
   // one of these not being extracted, so we surface them in the banner.
   const _missingChargeFields = _CHARGE_SUM_KEYS_RPF.filter((f) => {
@@ -20889,7 +20981,12 @@ function confirmAssignBill() {
     if (Object.keys(cp).length) billRow._chargeParts = cp;
   }
   // Validation
-  const componentSum = parseBillNumberOrZero(bill.FacilitiesCharge) + parseBillNumber(kwCost) + parseBillNumber(kwhCost) + parseBillNumber(otherCost) + parseBillNumber(taxCost);
+  const componentSum =
+    parseBillNumberOrZero(bill.FacilitiesCharge) +
+    parseBillNumber(kwCost) +
+    parseBillNumber(kwhCost) +
+    parseBillNumber(otherCost) +
+    parseBillNumber(taxCost);
   const diff = Math.abs(componentSum - totalCost);
   if (totalCost > 0 && diff >= 0.1) {
     const vEl = document.getElementById('abm-validation');
@@ -20921,34 +21018,34 @@ function confirmAssignBill() {
     }
     meter = created.meter;
   } else {
-  // Check for duplicate — merge new data with existing if found
-  meter.bills = meter.bills || [];
-  dup = meter.bills.find((r) => r.start === billRow.start && r.end === billRow.end);
-  if (dup) {
-    // Merge: keep existing data, fill in any new non-empty fields
-    for (const [key, val] of Object.entries(billRow)) {
-      if (key === 'id') continue; // keep existing ID
-      const existing = dup[key];
-      const newVal = val;
-      // Update if existing is empty/null but new has data
-      if (
-        (!existing || existing === '' || existing === '0' || existing === '0.00') &&
-        newVal &&
-        newVal !== '' &&
-        newVal !== '0' &&
-        newVal !== '0.00'
-      ) {
-        dup[key] = newVal;
+    // Check for duplicate — merge new data with existing if found
+    meter.bills = meter.bills || [];
+    dup = meter.bills.find((r) => r.start === billRow.start && r.end === billRow.end);
+    if (dup) {
+      // Merge: keep existing data, fill in any new non-empty fields
+      for (const [key, val] of Object.entries(billRow)) {
+        if (key === 'id') continue; // keep existing ID
+        const existing = dup[key];
+        const newVal = val;
+        // Update if existing is empty/null but new has data
+        if (
+          (!existing || existing === '' || existing === '0' || existing === '0.00') &&
+          newVal &&
+          newVal !== '' &&
+          newVal !== '0' &&
+          newVal !== '0.00'
+        ) {
+          dup[key] = newVal;
+        }
+        // Also update if new value is different: this row comes from a fresh OCR extraction.
+        if (newVal && newVal !== '' && existing !== newVal) {
+          dup[key] = newVal;
+        }
       }
-      // Also update if new value is different: this row comes from a fresh OCR extraction.
-      if (newVal && newVal !== '' && existing !== newVal) {
-        dup[key] = newVal;
-      }
+    } else {
+      meter.bills.push(billRow);
+      meter.bills.sort((a, b) => _parseISO(a.start) - _parseISO(b.start));
     }
-  } else {
-    meter.bills.push(billRow);
-    meter.bills.sort((a, b) => _parseISO(a.start) - _parseISO(b.start));
-  }
   }
   // Remove from Saved Bills after assignment — it's now in Utility Data
   const updatedBills = bills.filter((b) => b.id !== _assignBillId);
@@ -21530,12 +21627,14 @@ async function _saveSinglePDFBill(extracted, projId) {
   // totalCostRaw feeds billRow.totalCost (string, matches PDF); totalCost below
   // stays numeric — the rest of this function (componentSum/diff validation,
   // .toFixed further down) expects a number, same as before this fix.
-  const {
-    kwh: usageQty,
-    totalCost: totalCostRaw,
-  } = _extractedToBillRowCosts(extracted);
+  const { kwh: usageQty, totalCost: totalCostRaw } = _extractedToBillRowCosts(extracted);
   const totalCost = parseBillNumber(totalCostRaw);
-  const componentSum = parseBillNumber(extracted.FacilitiesCharge) + parseBillNumber(kwCost) + parseBillNumber(kwhCost) + parseBillNumber(otherCost) + parseBillNumber(taxCost);
+  const componentSum =
+    parseBillNumber(extracted.FacilitiesCharge) +
+    parseBillNumber(kwCost) +
+    parseBillNumber(kwhCost) +
+    parseBillNumber(otherCost) +
+    parseBillNumber(taxCost);
   const diff = Math.abs(componentSum - totalCost);
   const billRow = {
     id: 'r' + Date.now(),

@@ -6430,6 +6430,11 @@ function _kgsFranchiseTotals(items) {
   return { FranchiseFee, FranchiseFee1: items[0] || null, FranchiseFee2: items[1] || null };
 }
 
+// ONE list of the gas-utility brands. The Gas Utility rule's detect, its page-claim test and the
+// OCR provider scoring (bill-analysis.js `_detectProvider`) all read this list. "Spire" needs a word
+// edge so "expire" or "inspire" in any bill text does not count as a gas brand.
+const _GAS_BRAND_RE =
+  /\bspire(?:\s*energy)?\b|\blaclede\b|kansas\s+gas\s+service|atmos\s+energy|black\s+hills\s+energy/i;
 const UTILITY_RULES = [
   {
     name: 'Evergy',
@@ -9340,12 +9345,11 @@ const UTILITY_RULES = [
     // Broadened detector — accepts any common gas-bill signature so multi-bill PDFs
     // from various gas providers route through this extractor instead of Generic.
     detect: (t) =>
-      /spire|laclede/i.test(t) ||
-      /kansas\s+gas\s+service/i.test(t) ||
-      /atmos\s+energy/i.test(t) ||
-      /black\s+hills\s+energy/i.test(t) ||
+      _GAS_BRAND_RE.test(t) ||
       (/\bnatural\s+gas\b|\btherms?\b|\bccf\b/i.test(t) && /(?:bill|invoice|statement)/i.test(t)) ||
       (/gas\s+(?:charge|service|meter)/i.test(t) && /(?:amount\s*due|total\s*charges?)/i.test(t)),
+    // A page belongs to this rule on a brand name only; the wider detect() above (therms + "bill") is for whole files.
+    detectPage: (t) => _GAS_BRAND_RE.test(t),
     _detectCompany: (t) => {
       if (/spire/i.test(t)) return 'Spire Energy';
       if (/laclede/i.test(t)) return 'Laclede Gas';
@@ -9875,6 +9879,7 @@ const UTILITY_RULES = [
   },
   {
     name: 'City of Louisburg',
+    fileFirst: true, // read before the other rules when a file holds its pages (see _pickFileRule)
     // Handles BOTH the pre-Dec-2025 "ACCOUNT SUMMARY" detach-stub format
     // AND the Dec-2025+ "Customer Account Information" layout the city
     // adopted when migrating billing software. Mixed utility bills
@@ -13233,6 +13238,74 @@ const UTILITY_RULES = [
     }),
   },
 ];
+// ── One file-level rule pick and one page-level provider split (backlog 7c0cde2a) ──
+// The rule that owns a whole file: a rule marked `fileFirst` (the city rule; its bills often sit in a PDF
+// next to Utility E bills), then the first rule whose detect() accepts the text.
+function _pickFileRule(text) {
+  return (
+    UTILITY_RULES.find((r) => r.fileFirst && r.detect(text)) ||
+    UTILITY_RULES.find((r) => r.detect(text))
+  );
+}
+// The rule that claims one page as its own, or null. Same order as _pickFileRule. A rule may carry a
+// narrower detectPage() when its detect() is too wide for a single page. Generic never claims a page.
+function _pageRule(page) {
+  const claims = (r) => r.name !== 'Generic Utility' && (r.detectPage || r.detect)(page);
+  return (
+    UTILITY_RULES.find((r) => r.fileFirst && claims(r)) || UTILITY_RULES.find(claims) || null
+  );
+}
+// Read every bill in a file. `rule` is the file rule from _pickFileRule. A page that `rule` does not
+// detect but another rule claims is read by that other rule, so a mixed-provider PDF gives each page
+// to its own provider. A page nobody claims (a continuation page) stays with `rule`. A file with no
+// such page is read exactly as before: rule.extractAll(text). The returned array carries the
+// array-attached extras of `rule` (_unmatchedPages, _wreSiteBlockCount) and `_mixedProvider` when
+// the split happened.
+function _extractFileBills(text, rule) {
+  const readAll = (r, t) => {
+    const out = r.extractAll ? r.extractAll(t) : [r.extract(t)];
+    return Array.isArray(out) ? out : [out];
+  };
+  const pages = _lbg_splitPages(text);
+  if (pages.length > 1) {
+    const foreign = new Map();
+    const home = [];
+    pages.forEach((p, i) => {
+      const r = rule.detect(p) ? null : _pageRule(p);
+      if (r && r !== rule) {
+        if (!foreign.has(r)) foreign.set(r, []);
+        foreign.get(r).push(i);
+      } else home.push(i);
+    });
+    if (foreign.size && home.length) {
+      const first = text.indexOf('%%PAGE_');
+      const preamble = first > 0 ? text.slice(0, first) : '';
+      // A rule numbers pages inside the text it is given. Map that number back to the page's place in the file.
+      const readPages = (r, idxs, lead) => {
+        const bills = readAll(r, lead + idxs.map((i) => pages[i]).join(''));
+        for (const b of bills) {
+          if (b && typeof b._pageIndex === 'number' && idxs[b._pageIndex - 1] != null) b._pageIndex = idxs[b._pageIndex - 1] + 1;
+        }
+        return bills;
+      };
+      const bills = readPages(rule, home, preamble);
+      const unmatched = bills._unmatchedPages ? bills._unmatchedPages.slice() : [];
+      for (const [r, idxs] of foreign) {
+        const more = readPages(r, idxs, '');
+        for (const b of more) {
+          if (!b) continue;
+          b._recoveredFromFallbackRule = r.name; // the one stamp: validation and OCR alt-pass use this bill's own rule
+          bills.push(b);
+        }
+        if (more._unmatchedPages) unmatched.push(...more._unmatchedPages);
+      }
+      if (unmatched.length) bills._unmatchedPages = unmatched;
+      bills._mixedProvider = true;
+      return bills;
+    }
+  }
+  return readAll(rule, text);
+}
 function scoreExtraction(d) {
   return Object.values(d).filter((v) => v !== null && v !== '').length;
 }
