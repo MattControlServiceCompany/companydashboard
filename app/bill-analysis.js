@@ -14502,17 +14502,23 @@ const makeScorePage = (docProvider) => {
   };
   return fn;
 };
-// Does this page's final OCR text still lack a basic bill read? A page is read well enough when it
-// shows an account label, a money amount with cents, and a date. Some bills print no period range, so
-// one date is enough; a field still missing is caught later by the missing-field retry in processPDF.
+// Does this page's OCR text still lack a basic bill read? A page is read well enough when it shows an
+// account label, a money amount with cents, and a date. Some bills print no period range, so one date is
+// enough; a field still missing is caught later by the missing-field retry in processPDF.
+// A continuation page is the exception: a kWh and meter table, or a "(Continued)" page, with no "service from"
+// line and no total-charges line (meter reads, adjustments) shows one amount and one date with unread digits, and
+// those digits are what the retry passes improve, so it retries.
 // Retry passes run only for a page that fails this test. Replaces three tests that each knew one
-// provider (Utility E "service from", KGS meter dates, Baldwin charge codes); a provider that prints
-// none of those shapes retried on every page.
+// provider (Utility E "service from", KGS meter dates, Baldwin charge codes).
 const _ocrPageNeedsRetry = (text) => {
   const hasAccount = /Account\s*(?:Number|No\b|#|ID)|\bAcct\b/i.test(text);
   const hasAmount = /\b\d{1,3}(?:,\d{3})*\.\d{2}\b/.test(text);
   const hasDate = /\b\d{1,2}[\/-]\d{1,2}(?:[\/-]\d{2,4})?\b/.test(text);
-  return !(hasAccount && hasAmount && hasDate);
+  const isNumericContinuation =
+    !/service\s+from/i.test(text) &&
+    !/Total\s+(?:Current\s+)?(?:Site\s+)?Charges/i.test(text) &&
+    ((/kWh/i.test(text) && /meter/i.test(text)) || /\(Continued\)/i.test(text));
+  return !(hasAccount && hasAmount && hasDate) || isNumericContinuation;
 };
 // opts (additive 3rd param, 2026-09-25 Review Bill Corrections rebuild — every existing
 // 2-arg call site keeps working unchanged, opts defaults to {}):
@@ -16127,9 +16133,9 @@ function _unmatchedToSyntheticBills(unmatchedPages) {
   for (const u of unmatchedPages) {
     let recoveredBill = null;
     if (u.pageText && typeof UTILITY_RULES !== 'undefined') {
-      for (const r of UTILITY_RULES) {
-        if (!r || r.name === 'Generic Utility') continue; // catch-all: detect() is always true, extract() never returns null — never a valid "recovery"
-        if (typeof r.detect !== 'function' || !r.detect(u.pageText)) continue;
+      // One page-to-rule choice: _pageRule (energy-savings.js), the same one _extractFileBills uses.
+      const r = _pageRule(u.pageText);
+      if (r) {
         let extracted = null;
         try {
           if (typeof r.extract === 'function') {
@@ -16141,16 +16147,12 @@ function _unmatchedToSyntheticBills(unmatchedPages) {
         } catch (e) {
           extracted = null;
         }
-        if (!extracted) continue;
-        const arr = Array.isArray(extracted) ? extracted : [extracted];
+        const arr = extracted ? (Array.isArray(extracted) ? extracted : [extracted]) : [];
         const first = arr.find((b) => b && !b._skipRecord && _unmatchedRecoveryHasKeyField(b)) || null;
         if (first) {
           recoveredBill = first;
           recoveredBill.UtilityCompany = recoveredBill.UtilityCompany || recoveredBill._utilityName || r.name || null;
-          recoveredBill._recoveredFromFallbackRule = r.name || true;
-          // Commodity is stamped at the source: the Utility E extractor sets 'Electric' (b8123c92); the Client A
-          // rule stamps its own per bill.
-          break;
+          recoveredBill._recoveredFromFallbackRule = r.name;
         }
       }
     }
@@ -17088,6 +17090,9 @@ async function processPDF(file) {
           // ── Inject unmatched pages as "Manual Review" entries so they are visible ──
           // Without this, pages that couldn't be parsed are silently dropped.
           const _syntheticReviewBills = _unmatchedToSyntheticBills(_extractUnmatchedPages);
+          // Bills read by a rule other than the file rule (split pages and recovered pages) carry that rule's name
+          // in _recoveredFromFallbackRule; the alt-pass recovery below reads them with their own rule.
+          const _foreignRuleBills = finalBills.filter((b) => b && b._recoveredFromFallbackRule).concat(_syntheticReviewBills);
 
           // ── MULTI-PASS OCR CONSENSUS FOR RECOVERED UNMATCHED PAGES ──
           // Fix (2026-08-24, Client A synthetic-recovery defect): the kWh-identity
@@ -17109,7 +17114,7 @@ async function processPDF(file) {
           // `.extract()` return to an array the same way _unmatchedToSyntheticBills
           // already does (Utility E's `.extract()` returns a single bill object, not
           // an array — calling `.length` on it directly is always undefined).
-          if (hasAltPasses && _syntheticReviewBills.length) {
+          if (hasAltPasses && _foreignRuleBills.length) {
             const KWH_FALLBACK_PAIRS_RECOVERED = [
               {
                 kwhField: 'OnPeakKWh',
@@ -17130,7 +17135,7 @@ async function processPDF(file) {
                 if (!altTextsRecovered.includes(p.text) && p.text !== text) altTextsRecovered.push(p.text);
               }
             }
-            for (const b of _syntheticReviewBills) {
+            for (const b of _foreignRuleBills) {
               const recoverRule =
                 b._recoveredFromFallbackRule && UTILITY_RULES.find((r) => r.name === b._recoveredFromFallbackRule);
               if (!recoverRule || typeof recoverRule.extract !== 'function') continue;

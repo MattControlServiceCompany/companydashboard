@@ -13292,7 +13292,11 @@ function _extractFileBills(text, rule) {
       const unmatched = bills._unmatchedPages ? bills._unmatchedPages.slice() : [];
       for (const [r, idxs] of foreign) {
         const more = readPages(r, idxs, '');
-        for (const b of more) if (b) bills.push(b);
+        for (const b of more) {
+          if (!b) continue;
+          b._recoveredFromFallbackRule = r.name; // the one stamp: validation and OCR alt-pass use this bill's own rule
+          bills.push(b);
+        }
         if (more._unmatchedPages) unmatched.push(...more._unmatchedPages);
       }
       if (unmatched.length) bills._unmatchedPages = unmatched;
