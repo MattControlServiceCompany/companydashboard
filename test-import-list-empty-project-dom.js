@@ -32,7 +32,6 @@ const eq = (a, e, l) => ok(a === e, l + ': expected ' + JSON.stringify(e) + ', g
           scope: { buildingIds: [], meterExcludeIds: [] }, savingsData: { measures: [] } },
       ],
       en_customers: [{ id: CID, name: 'Synth Customer' }],
-      ['en_utility_' + CID]: { buildings: [] },
       ch_qs_seen: 1,
       ch_theme: 'dark',
       ch_activeView: 'projects',
