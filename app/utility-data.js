@@ -1515,10 +1515,7 @@ function renderUDProjList() {
                 </div>`;
         });
       }
-      html += `<div style="padding:5px 14px 8px 30px;display:flex;gap:6px">
-                <button class="btn btn-ghost btn-sm" style="font-size:11px;flex:1" onclick="openBldgModal(null)" title="Add one building by hand">+ Add Building</button>
-                <button class="btn btn-ghost btn-sm" style="font-size:11px;flex:1" onclick="openBldgImportModal()" title="Import buildings from a CSV or Excel list (name, sq ft, address)">⬆ Import List</button>
-              </div>`;
+      html += bldgAddImportButtonsHTML(p.id);
     }
   });
   el.innerHTML = html;

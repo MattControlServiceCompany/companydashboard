@@ -12672,9 +12672,27 @@ function _restorePageStateAfterVersionUpdate() {
 }
 
 /* Open building modal pre-selected to a specific project (from Projects tool) */
+function _selectUDProjById(projId) {
+  const p = projects.find((x) => x.id == projId);
+  udSelProjId = p ? p.id : projId; // keep the stored id type: utility-data.js compares with ===
+}
 function openBldgModalForProj(projId, editId) {
-  udSelProjId = projId; // sync selection so saveBuilding knows which project
+  _selectUDProjById(projId); // sync selection so saveBuilding knows which project
   openBldgModal(editId || null);
+}
+/* Open the building-list importer for a specific project: buildings land in THAT project. */
+function openBldgImportModalForProj(projId) {
+  _selectUDProjById(projId);
+  openBldgImportModal();
+}
+/* The one "+ Add Building" / "Import List" button row. Used by the sidebar Utility Data page and
+   by the project's own Utility Data tab (empty and non-empty). Do not copy this markup. */
+function bldgAddImportButtonsHTML(projId, rowStyle) {
+  const id = JSON.stringify(projId).replace(/"/g, '&quot;');
+  return `<div class="ud-add-import-row" style="${rowStyle || 'padding:5px 14px 8px 30px'};display:flex;gap:6px">
+                <button class="btn btn-ghost btn-sm" style="font-size:11px;flex:1" onclick="openBldgModalForProj(${id})" title="Add one building by hand">+ Add Building</button>
+                <button class="btn btn-ghost btn-sm" style="font-size:11px;flex:1" onclick="openBldgImportModalForProj(${id})" title="Import buildings from a CSV or Excel list (name, sq ft, address)">⬆ Import List</button>
+              </div>`;
 }
 
 /* -- CLIENT CONTACTS -- */

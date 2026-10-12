@@ -2921,6 +2921,10 @@ function saveBuilding() {
   renderUDDetail();
   renderProjTable();
   renderSidebarFolders();
+  refreshOpenProjDetail();
+}
+/* Rebuild the open project page (its embedded Utility Data tab) for the selected project. */
+function refreshOpenProjDetail() {
   const ap = projects.find((p) => p.id == udSelProjId);
   if (ap && document.getElementById('projDetailView')?.style.display !== 'none') renderDetail(ap);
 }
@@ -2943,8 +2947,7 @@ async function deleteBuilding(bid) {
   renderUDDetail();
   renderProjTable();
   renderSidebarFolders();
-  const ap2 = projects.find((p) => p.id == udSelProjId);
-  if (ap2 && document.getElementById('projDetailView')?.style.display !== 'none') renderDetail(ap2);
+  refreshOpenProjDetail();
   showToast('Building deleted');
 }
 
@@ -3145,8 +3148,7 @@ function saveMeter() {
   setTimeout(renderSidebarFolders, 100);
   if (isEmbed) {
     renderProjTable();
-    const ap3 = projects.find((p) => p.id == udSelProjId);
-    if (ap3 && document.getElementById('projDetailView')?.style.display !== 'none') renderDetail(ap3);
+    refreshOpenProjDetail();
   }
 }
 
@@ -5098,6 +5100,7 @@ function importBuildingList() {
   saveUtilityData();
   renderUDProjList();
   if (typeof renderUDDetail === 'function') renderUDDetail();
+  refreshOpenProjDetail();
   showToast('Imported ' + selected.length + ' building' + (selected.length !== 1 ? 's' : '') + ' ✓');
   closeBldgImportModal();
 }

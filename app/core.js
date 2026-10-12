@@ -1289,13 +1289,7 @@ function openDetail(id) {
   } else {
     window._activeProjTab = _dfltTab;
   }
-  renderDetail(p);
-  // If the active tab is not dashboard, activate the correct content pane now.
-  // renderDetail() only renders ptab-dashboard with active; other panes need sPTab().
-  if (window._activeProjTab && window._activeProjTab !== 'dashboard') {
-    const _tabBtn = document.querySelector(`.pdt[data-tab="${window._activeProjTab}"]`);
-    if (_tabBtn) sPTab(window._activeProjTab, _tabBtn);
-  }
+  renderDetail(p); // renderDetail also activates the current tab pane
   document.querySelectorAll('.spfi').forEach((c) => c.classList.remove('active'));
   document.querySelectorAll(`.spfi[data-pid="${id}"]`).forEach((c) => c.classList.add('active'));
   document.querySelector('.ptab.active')?.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1471,7 +1465,6 @@ function renderDetail(p) {
                     <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--text3)">Buildings</span>
                     <div style="display:flex;gap:4px;align-items:center">
                       <button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 7px" onclick="toggleSavedBillsPanel(${JSON.stringify(p.id)})" id="saved-bills-btn-${p.id}" title="View saved PDF bills">🗄️ Bills</button>
-                      <button class="btn btn-em btn-sm" style="font-size:10px;padding:2px 7px" onclick="openBldgModalForProj(${p.id})">+ Add</button>
                     </div>
                     <!-- Saved Bills dropdown panel — hidden by default. Uses position:fixed so it
                          ESCAPES the 240px Buildings rail's overflow:hidden (which previously clipped
@@ -1811,6 +1804,12 @@ function renderDetail(p) {
     initDashboardTab(p.id);
     _updateCompactHdrBaseline(p.id);
   });
+  // renderDetail rebuilds every pane with only the dashboard pane active. Re-activate the
+  // current tab here so every caller keeps the open tab (a rebuild after "Building added" blanked it).
+  if (window._activeProjId == p.id && window._activeProjTab && window._activeProjTab !== 'dashboard') {
+    const _tabBtn = document.querySelector(`.pdt[data-tab="${window._activeProjTab}"]`);
+    if (_tabBtn) sPTab(window._activeProjTab, _tabBtn);
+  }
 }
 
 function _updateCompactHdrBaseline(projId) {
@@ -3235,9 +3234,9 @@ function initProjUDTab(projId) {
     const body = document.getElementById('proj-ud-body-' + projId);
     if (body)
       body.innerHTML =
-        '<div class="ud-empty"><div class="ud-empty-ico">🏢</div><div>No buildings yet.<br><button class="btn btn-em btn-sm" style="margin-top:10px" onclick="openBldgModalForProj(' +
-        projId +
-        ')">+ Add Building</button></div></div>';
+        '<div class="ud-empty"><div class="ud-empty-ico">🏢</div><div>No buildings yet.</div>' +
+        bldgAddImportButtonsHTML(projId, 'padding:10px 0 0;width:300px') +
+        '</div>';
   }
 }
 
@@ -3279,7 +3278,7 @@ function renderProjUDBldgNav(projId) {
             </div>
           </div>`;
     })
-    .join('');
+    .join('') + bldgAddImportButtonsHTML(projId, 'padding:8px 14px');
 }
 
 function projUDSelectBldg(projId, bldgId) {
