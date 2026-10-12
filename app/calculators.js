@@ -70,7 +70,7 @@ function initHvacLoadTab(projId) {
     .map((b) => {
       const active = b.id === selBid;
       return `<button class="ptpill${active ? ' sel' : ''}" onclick="_hvlSelectBldg(${projId},'${b.id}')" style="${active ? 'background:var(--accent-dim);border-color:var(--accent);color:var(--accent)' : ''}">
-            ${b.name || 'Building'} ${b.sqft ? '<span style=\"font-size:10px;opacity:.7\">(' + Number(b.sqft).toLocaleString() + ' sf)</span>' : ''}
+            ${_escHtml(b.name || 'Building')} ${b.sqft ? '<span style=\"font-size:10px;opacity:.7\">(' + Number(b.sqft).toLocaleString() + ' sf)</span>' : ''}
           </button>`;
     })
     .join('');
@@ -472,7 +472,7 @@ function _buildBaselineDataHtml(b, projId) {
   const $c = (n) =>
     n > 0 ? '$' + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
   return `<div class="card">
-          <div class="card-hdr"><span class="card-title">📊 Baseline Data — ${b.name || 'Building'}</span>
+          <div class="card-hdr"><span class="card-title">📊 Baseline Data — ${_escHtml(b.name || 'Building')}</span>
             <span style="font-size:11px;color:var(--text3);margin-left:auto">${sqft ? Number(sqft).toLocaleString() + ' sq ft' : 'No sq ft set'}</span>
           </div>
           <div style="overflow-x:auto">

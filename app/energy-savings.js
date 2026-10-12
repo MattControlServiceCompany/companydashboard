@@ -116,7 +116,7 @@ function renderProjBaselineRates(projId) {
     .map((b) => {
       const r = sd.blRates[b.id] || {};
       return `<tr>
-            <td style="font-weight:600;font-size:13px;white-space:nowrap">${b.name}</td>
+            <td style="font-weight:600;font-size:13px;white-space:nowrap">${_escHtml(b.name)}</td>
             <td style="border-left:2px solid var(--border2)"><input class="bl-rate-inp" type="number" step="0.0001" placeholder="0.0681" value="${r.kwhSummer || ''}" id="blr-kwhs-${projId}-${b.id}"></td>
             <td><input class="bl-rate-inp" type="number" step="0.0001" placeholder="0.0582" value="${r.kwhWinter || ''}" id="blr-kwhw-${projId}-${b.id}"></td>
             <td style="border-left:2px solid var(--border2)"><input class="bl-rate-inp" type="number" step="0.01" placeholder="16.997" value="${r.kwSummer || ''}" id="blr-kws-${projId}-${b.id}"></td>
@@ -222,7 +222,7 @@ function renderSavingsMatrix(projId) {
   // 2026-09-21 (SA-gate scope fix): estimated/projected measure-based $ display regardless of
   // Service Agreement status — the SA gate applies only to actual/bill-based savings
   // (getMeterSavings). See computations/savings.js getBldgMeasureSavingsByMo for the same rule.
-  const bldgOpts = bldgs.map((b) => `<option value="${b.id}">${b.name}</option>`).join('');
+  const bldgOpts = bldgs.map((b) => `<option value="${b.id}">${_escHtml(b.name)}</option>`).join('');
   if (!sd.measures.length) {
     tbody.innerHTML = `<tr><td colspan="200" style="text-align:center;color:var(--text2);padding:18px;font-size:13px">
             No measures yet — click "+ Add Measure" to start building your savings projection.
@@ -953,7 +953,7 @@ function _renderSavingsContent(wrap, projId) {
     `<td><input class="sv-num-inp sv-rate-inp" type="number" step="${step}" value="${r[field] || ''}" placeholder="0" style="width:52px;font-size:10px" onchange="svUpdateMsrRate('${mid}','${field}',parseFloat(this.value)||0)" onfocusout="svAutoSave()"></td>`;
 
   // ── Measure rows ──
-  const bldgOpts = bldgs.map((b) => `<option value="${b.id}">${b.name}</option>`).join('');
+  const bldgOpts = bldgs.map((b) => `<option value="${b.id}">${_escHtml(b.name)}</option>`).join('');
   const hasMeasures = sd.measures.length > 0;
   const emptyStateHtml = hasMeasures
     ? ''

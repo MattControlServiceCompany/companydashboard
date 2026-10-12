@@ -362,15 +362,15 @@ async function main() {
       );
       check(
         '9837d726 import row with unrelated address adds no alias',
-        sb._bldgImportAliasFor({ addr: '100 Sample Dr', kgsSvcAddr: '7 Different Way, Elsewhere, KS 00001' }) === '',
+        sb._bldgImportAliasFor({ addr: '100 Sample Dr', svcAlias: '7 Different Way, Elsewhere, KS 00001' }) === '',
       );
       check(
         '9837d726 import row with the same place adds the alias',
-        sb._bldgImportAliasFor({ addr: '100 Sample Dr', kgsSvcAddr: '100 Sample Dr Annex' }) === '100 Sample Dr Annex',
+        sb._bldgImportAliasFor({ addr: '100 Sample Dr', svcAlias: '100 Sample Dr Annex' }) === '100 Sample Dr Annex',
       );
       check(
         '9837d726 import row with the identical address adds none',
-        sb._bldgImportAliasFor({ addr: '100 Sample Dr', kgsSvcAddr: '100 Sample Dr' }) === '',
+        sb._bldgImportAliasFor({ addr: '100 Sample Dr', svcAlias: '100 Sample Dr' }) === '',
       );
     }
   });

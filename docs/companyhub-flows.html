@@ -290,6 +290,16 @@ var FLOWS = [
     ]
   },
   {
+    id: 'ud-import', name: 'Utility Data: import buildings, meters and bills', desc: 'Import List makes buildings and meters of any commodity from one CSV. Import Bills sends several bill CSV files to their meters. Both show a preview first.',
+    path: ['user','energy','ls'],
+    steps: [
+      { from:'user', to:'energy', label:'User clicks Import List and chooses a CSV (Building Name, Building SQFT, Address, Commodity, Provider, Account #, Meter #, Bill file)', detail:'bldgAddImportButtonsHTML() row on the sidebar Utility Data page and the project Utility Data tab. parseBuildingListTable() reads it; _bldgImportAnnotate() marks each row (building exists, meter already there, problem).' },
+      { from:'energy', to:'ls', label:'importBuildingList() joins the building of the same name or creates it, then adds the new meters', detail:'addUDBldg() and saveUtilityData(). A meter already on the building (udMeterMatchesIdentity) is skipped. Meter numbers stay text.' },
+      { from:'user', to:'energy', label:'User clicks Import Bills and chooses several bill CSV files', detail:'planBillFiles() sends each file to ONE meter by its Bill file name, or each row by Account # and Meter # columns. A file that fits no meter is listed and not imported.' },
+      { from:'energy', to:'ls', label:'importBillsMulti() saves every matched file with applyBillRowsToMeter()', detail:'Same reader (parseBillCsvText) and same save step as the one-meter dialog. A start date already stored is updated, so a second import adds 0 bills.' },
+    ]
+  },
+  {
     id: 'backup', name: 'Backup / Restore', desc: 'Export all data as JSON (data-only, no bill PDFs). Restore compares the file with the current data per key family (app/restore-merge.js), previews Add missing only / Merge (fills blanks) / Replace, downloads a safety copy, then writes (server CAS with explicitOverwrite when sync is on)',
     path: ['user','energy','siteui','ls'],
     steps: [

@@ -2506,6 +2506,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.12.110', date: '2026-10-12', title: 'Utility Data: import meters and bills from files',
+    items: [
+      { type: 'feature', text: 'Utility Data (sidebar page and project tab): Import List now adds meters of any type from a CSV file.' },
+      { type: 'feature', text: 'Utility Data (sidebar page and project tab): the new Import Bills button imports several bill files at once and matches each one to its meter. A preview lists any file that cannot be matched.' }
+    ]
+  },
   { v: 'v2026.10.12.109', date: '2026-10-12', title: 'Add Building and Import List on the project Utility Data tab',
     items: [
       { type: 'fix', text: 'Project Utility Data tab: + Add Building and Import List now show inside the project, with or without buildings, and Import List loads the buildings into that project.' },

@@ -1505,7 +1505,7 @@ function renderUDProjList() {
           const bldgActive = b.id === udSelBldgId ? ' active' : '';
           html += `<div class="ud-nav-bldg-item${bldgActive}" onclick="udSelectBldg('${b.id}')">
                   <div style="flex:1;min-width:0">
-                    <div class="ud-nav-bldg-name" title="${b.name}">${b.name}</div>
+                    <div class="ud-nav-bldg-name" title="${_escHtml(b.name)}">${_escHtml(b.name)}</div>
                     <div class="ud-nav-bldg-meta">${b.sqft ? Number(b.sqft).toLocaleString() + ' sf · ' : ''}${_totalMCount} meter${_totalMCount !== 1 ? 's' : ''} ${blBadge}${flagBadge ? ' ' + flagBadge : ''}</div>
                   </div>
                   <div class="ud-nav-bldg-actions">
@@ -2870,7 +2870,7 @@ function renderUtilityAuditPanel(content, bldgs, projName, projId) {
       if (!b.hasSqft) flags.push('No Sq Ft');
       if (noMeter) flags.push('No Meter Data');
       return `<tr>
-              <td style="padding:6px 10px;font-size:12px;font-weight:600;border:1px solid var(--border);background:var(--s2)">${b.name}</td>
+              <td style="padding:6px 10px;font-size:12px;font-weight:600;border:1px solid var(--border);background:var(--s2)">${_escHtml(b.name)}</td>
               <td style="${tdS()}">${b.hasSqft ? $n(b.sqft) : '— (no sqft)'}</td>
               <td style="${tdS('var(--em2)')}">${noMeter ? '— (no meter)' : `${$n(e.kwh, 0)} / ${$f(e.cost, 0)}`}</td>
               <td style="${tdS('var(--warn)')}">${noMeter ? '— (no meter)' : `${$n(g.therms, 0)} / ${$f(g.cost, 0)}`}</td>
@@ -3009,8 +3009,8 @@ function renderUDDetail(targetWrap) {
   }
   if (hdrSub) {
     const parts = [];
-    if (b.addr) parts.push('<span>📍 ' + b.addr + '</span>');
-    if (b.zip) parts.push('<span>📮 ' + b.zip + '</span>');
+    if (b.addr) parts.push('<span>📍 ' + _escHtml(b.addr) + '</span>');
+    if (b.zip) parts.push('<span>📮 ' + _escHtml(b.zip) + '</span>');
     if (b.sqft) parts.push('<span>📐 ' + Number(b.sqft).toLocaleString() + ' sq ft</span>');
     const meters = b.meters || [];
     parts.push('<span>⚡ ' + meters.length + ' meter' + (meters.length !== 1 ? 's' : '') + '</span>');
@@ -3160,7 +3160,7 @@ function renderUDDetail(targetWrap) {
           commodityPill(m.commodity) +
           (m.provider
             ? '<span style="font-size:9px;color:var(--text3);max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
-              m.provider.replace(/City of /i, '').replace(/ Company$/i, '') +
+              _escHtml(m.provider.replace(/City of /i, '').replace(/ Company$/i, '')) +
               '</span>'
             : '') +
           '<span style="font-size:11px;color:var(--text3)">' +
@@ -4348,13 +4348,13 @@ function renderBillsPane(pane, m, bills, incl) {
     (bills.length ? ' · ' + getDateRange(bills) : '') +
     ' </div>' +
     '<div class="bills-sticky-sub" title="Account: ' +
-    (m.account || '—') +
+    _escHtml(m.account || '—') +
     ' · Meter: ' +
-    (_bfMeterNo || '—') +
+    _escHtml(_bfMeterNo || '—') +
     '">Account: ' +
-    (m.account || '—') +
+    _escHtml(m.account || '—') +
     ' · Meter: ' +
-    (_bfMeterNo || '—') +
+    _escHtml(_bfMeterNo || '—') +
     '</div>' +
     '</div>' +
     '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">' +
@@ -6116,14 +6116,14 @@ function renderNormPane(pane, m, bills, incl) {
       m.id +
       '\')">' +
       '🌡️ Upload Weather CSV' +
-      (bldgZip ? ' — ZIP ' + bldgZip : '') +
+      (bldgZip ? ' — ZIP ' + _escHtml(bldgZip) : '') +
       '</button>' +
       (!bldgZip
         ? '<span style="font-size:11px;color:var(--warn)">Add ZIP in Edit Building to enable weather data</span>'
         : '') +
       '<span style="font-size:11px;color:var(--em);flex:1;min-width:0">' +
       (wddCacheArr.length
-        ? '✓ ' + wddCacheArr.length + ' months loaded from ZIP ' + bldgZip + ' — applied to all meters'
+        ? '✓ ' + wddCacheArr.length + ' months loaded from ZIP ' + _escHtml(bldgZip) + ' — applied to all meters'
         : bldgZip
           ? '<span style="color:var(--text3)">No weather data yet — upload CSV to enable regression normalization</span>'
           : '') +
@@ -8191,9 +8191,9 @@ function renderBuildingStatsPane(pane, b) {
               <!-- Providers -->
               <div>
                 <div style="font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Utility Providers</div>
-                ${elecM ? `<div style="font-size:11.5px;margin-bottom:3px;color:var(--text2)">Electric Company: <span style="color:var(--text);font-weight:700">${elecM.provider || elecM.name || '—'}</span></div>` : ''}
-                ${gasM ? `<div style="font-size:11.5px;margin-bottom:3px;color:var(--text2)">Heating Fuel Company: <span style="color:var(--text);font-weight:700">${gasM.provider || gasM.name || '—'}</span></div>` : ''}
-                ${waterM ? `<div style="font-size:11.5px;color:var(--text2)">Water Company: <span style="color:var(--text);font-weight:700">${waterM.provider || waterM.name || '—'}</span></div>` : ''}
+                ${elecM ? `<div style="font-size:11.5px;margin-bottom:3px;color:var(--text2)">Electric Company: <span style="color:var(--text);font-weight:700">${_escHtml(elecM.provider || elecM.name || '—')}</span></div>` : ''}
+                ${gasM ? `<div style="font-size:11.5px;margin-bottom:3px;color:var(--text2)">Heating Fuel Company: <span style="color:var(--text);font-weight:700">${_escHtml(gasM.provider || gasM.name || '—')}</span></div>` : ''}
+                ${waterM ? `<div style="font-size:11.5px;color:var(--text2)">Water Company: <span style="color:var(--text);font-weight:700">${_escHtml(waterM.provider || waterM.name || '—')}</span></div>` : ''}
               </div>
               <!-- Units -->
               <div>
@@ -8844,7 +8844,7 @@ function renderMeterDataPane(pane, m, bills, incl) {
               </div>
               <div>
                 <div style="font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Utility Provider</div>
-                <div style="font-size:11.5px;color:var(--text2)">${isElec ? 'Electric' : isGas ? 'Heating Fuel' : isPropane ? 'Propane' : 'Water'} Company <span style="color:var(--text);font-weight:700">${m.provider || m.name || '—'}</span></div>
+                <div style="font-size:11.5px;color:var(--text2)">${isElec ? 'Electric' : isGas ? 'Heating Fuel' : isPropane ? 'Propane' : 'Water'} Company <span style="color:var(--text);font-weight:700">${_escHtml(m.provider || m.name || '—')}</span></div>
               </div>
               <div>
                 <div style="font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Utility Units</div>
@@ -9352,7 +9352,7 @@ function renderBldgPerfPane(pane, b) {
 
   pane.innerHTML = `
           <div style="margin-bottom:14px">
-            <div style="font-size:16px;font-weight:800;font-family:var(--head);letter-spacing:-.01em">💡 ${b.name} — Building Performance</div>
+            <div style="font-size:16px;font-weight:800;font-family:var(--head);letter-spacing:-.01em">💡 ${_escHtml(b.name)} — Building Performance</div>
             <div style="font-size:12px;color:var(--text2);margin-top:3px">Baseline from Meter Data · projected values from Building Savings Projection settings</div>
             ${_bpSourceLabel}
           </div>
@@ -9984,7 +9984,7 @@ function renderBldgSavProjPane(pane, b) {
   pane.innerHTML = `
           <div style="margin-bottom:16px;display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">
             <div>
-              <div style="font-size:16px;font-weight:800;font-family:var(--head);letter-spacing:-.01em">📈 ${b.name} — Building Savings Projection</div>
+              <div style="font-size:16px;font-weight:800;font-family:var(--head);letter-spacing:-.01em">📈 ${_escHtml(b.name)} — Building Savings Projection</div>
               <div style="font-size:12px;color:var(--text2);margin-top:3px">Baseline from Meter Data · adjust percentages and years below</div>
               ${_bspSourceLabel}
             </div>

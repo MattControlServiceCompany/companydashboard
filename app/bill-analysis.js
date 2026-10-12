@@ -20824,7 +20824,7 @@ function populateAssignBuildings() {
   const bldgs = getUDBldgs(pid) || [];
   bldgSel.innerHTML =
     '<option value="">— Select Building —</option>' +
-    bldgs.map((b) => `<option value="${b.id}">${b.name}</option>`).join('');
+    bldgs.map((b) => `<option value="${b.id}">${_escHtml(b.name)}</option>`).join('');
   populateAssignMeters();
 }
 // Value of the "Create new meter" choice in the Assign modal's meter list.
@@ -20850,7 +20850,7 @@ function populateAssignMeters() {
     meters
       .map(
         (m) =>
-          `<option value="${m.id}">${[m.commodity, m.provider, m.account ? '#' + m.account : '', m.maddr].filter(Boolean).join(' ')}</option>`,
+          `<option value="${m.id}">${_escHtml([m.commodity, m.provider, m.account ? '#' + m.account : '', m.maddr].filter(Boolean).join(' '))}</option>`,
       )
       .join('') + createOpt;
   toggleAssignCreate();
@@ -21113,7 +21113,7 @@ function mam_populateBuildings() {
   const bldgs = getUDBldgs(parseInt(pid)) || [];
   bldgSel.innerHTML =
     '<option value="">— Select Building —</option>' +
-    bldgs.map((b) => `<option value="${b.id}">${b.name}</option>`).join('');
+    bldgs.map((b) => `<option value="${b.id}">${_escHtml(b.name)}</option>`).join('');
   if (bldgs.length === 1) bldgSel.value = bldgs[0].id;
   mam_populateMeters();
 }

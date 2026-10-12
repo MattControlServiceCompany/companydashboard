@@ -163,25 +163,44 @@ function resolveUDMeter(mid) {
   return b && m ? { b, m } : null;
 }
 
+// Single-meter dialog: parse one file for the open meter and show its preview.
 function parseBillCsv(text, fname) {
   const ctx = resolveUDMeter(_csvImportMid);
   if (!ctx) {
     showToast('Meter not found — close and re-open the import dialog for this meter', 'warn');
     return;
   }
-  const { b, m } = ctx;
+  const { m } = ctx;
+  const res = parseBillCsvText(text, m);
+  if (res.error) {
+    showToast(res.error, 'warn');
+    return;
+  }
+  _csvImportRows = res.rows;
+  showBillCsvPreview(_csvImportRows, m, fname, res.warnings);
+}
+
+// THE CSV line splitter (one rule for the bill reader, the building / meter list reader and the many-file
+// bill planner): drops a leading byte-order mark, splits on line breaks, trims, ignores blank lines.
+// A line break inside a quoted cell is not supported (splitCsvLine flips quote state on every quote
+// mark, so one stray quote mark such as 5" would swallow the rest of the file if lines were joined).
+function _csvTextLines(text) {
+  return String(text == null ? '' : text)
+    .replace(/^\uFEFF/, '')
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l);
+}
+
+// THE bill CSV reader (one rule for the one-meter dialog and the many-file import). Pure: reads the
+// text for meter m's commodity, writes nothing. Returns {rows, warnings} or {error}.
+function parseBillCsvText(text, m) {
   const isElec = m.commodity === 'Electric',
     isGas = m.commodity === 'Gas';
 
   // Split lines, ignore blanks
-  const lines = text
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter((l) => l);
-  if (lines.length < 2) {
-    showToast('CSV appears empty — file has no data rows', 'warn');
-    return;
-  }
+  const lines = _csvTextLines(text);
+  if (lines.length < 2) return { error: 'CSV appears empty — file has no data rows' };
 
   // Detect header row
   const first = lines[0].toLowerCase();
@@ -463,12 +482,11 @@ function parseBillCsv(text, fname) {
   });
 
   if (!parsed.length) {
-    showToast(
-      'No valid rows found in CSV — could not find a usable start date column' +
+    return {
+      error:
+        'No valid rows found in CSV — could not find a usable start date column' +
         (hasHeader ? ' (checked header: "' + hdr.join(', ') + '")' : ' (no header row detected)'),
-      'warn',
-    );
-    return;
+    };
   }
 
   // Deduplicate: collapse exact duplicate start dates only (same bill entered twice).
@@ -485,10 +503,7 @@ function parseBillCsv(text, fname) {
       if (newScore > exScore) byStart[key] = r;
     }
   });
-  _csvImportRows = Object.values(byStart).sort((a, b) => _parseISO(a.start) - _parseISO(b.start));
-
-  // Show preview
-  showBillCsvPreview(_csvImportRows, m, fname, warnings);
+  return { rows: Object.values(byStart).sort((a, b) => _parseISO(a.start) - _parseISO(b.start)), warnings };
 }
 
 // Typed marker that erases one stored value on re-import. A blank cell keeps the stored value.
@@ -611,7 +626,7 @@ function showBillCsvPreview(rows, m, fname, warnings) {
               : r.stormWaterCharge != null
                 ? r.stormWaterCharge
                 : r.cost;
-        cells = '<td>' + (usageVal != null ? usageVal : '—') + '</td><td>' + _dc(costVal) + '</td>';
+        cells = '<td>' + (usageVal != null ? _escHtml(usageVal) : '—') + '</td><td>' + _dc(costVal) + '</td>';
       }
       const isUpdate = _storedStarts.has(r.start);
       if (isUpdate) _nUpdate++;
@@ -661,7 +676,7 @@ function showBillCsvPreview(rows, m, fname, warnings) {
   const warnEl = document.getElementById('billCsvWarnings');
   if (warnings.length) {
     warnEl.style.display = '';
-    warnEl.innerHTML = '⚠️ ' + warnings.join('<br>');
+    warnEl.innerHTML = '⚠️ ' + warnings.map(_escHtml).join('<br>'); // a warning quotes CSV text
   } else {
     warnEl.style.display = 'none';
   }
@@ -680,7 +695,28 @@ function importBillCsvRows() {
     showToast('Meter not found — close and re-open the import dialog for this meter', 'warn');
     return;
   }
-  const { b, m } = ctx;
+  const { m } = ctx;
+  const { added, updated, keptCorrected } = applyBillRowsToMeter(m, _csvImportRows);
+  saveUtilityData();
+  closeBillCsvModal();
+  udActiveTab = 'bills';
+  renderMeterWorkspace();
+  showToast(
+    'Imported: ' + added + ' new, ' + updated + ' updated' +
+      (keptCorrected ? ', ' + keptCorrected + ' hand-corrected value' + (keptCorrected !== 1 ? 's' : '') + ' kept' : '') +
+      ' ✓',
+  );
+  addNotif(
+    'Bills Imported',
+    'Added ' + added + ' new billing period' + (added !== 1 ? 's' : '') + ' to ' + m.commodity + ' meter',
+    '📥',
+  );
+}
+
+// THE bill CSV commit (one rule for the one-meter dialog and the many-file import): merges parsed rows
+// into meter m. A row whose start date is already stored updates that bill (so the same file twice adds
+// nothing). Does not save or draw. Returns {added, updated, keptCorrected}.
+function applyBillRowsToMeter(m, rows) {
   m.bills = m.bills || [];
 
   // Merge on exact start date — split-month bills (e.g. 2/1 and 2/15) are distinct rows
@@ -688,7 +724,7 @@ function importBillCsvRows() {
   let added = 0,
     updated = 0,
     keptCorrected = 0;
-  _csvImportRows.forEach((r) => {
+  rows.forEach((r) => {
     const key = r.start;
     if (existing.has(key)) {
       const idx = m.bills.findIndex((b) => b.start === key);
@@ -719,20 +755,7 @@ function importBillCsvRows() {
   // Convert the facilities-kW marker left by _backfillCsvFacilitiesKW into a persistent, site-UI-only flag
   // (see _flagFacKWMissingBills below). Other bill flags are live: computeMeterFlagSummary.
   _flagFacKWMissingBills(m);
-  saveUtilityData();
-  closeBillCsvModal();
-  udActiveTab = 'bills';
-  renderMeterWorkspace();
-  showToast(
-    'Imported: ' + added + ' new, ' + updated + ' updated' +
-      (keptCorrected ? ', ' + keptCorrected + ' hand-corrected value' + (keptCorrected !== 1 ? 's' : '') + ' kept' : '') +
-      ' ✓',
-  );
-  addNotif(
-    'Bills Imported',
-    'Added ' + added + ' new billing period' + (added !== 1 ? 's' : '') + ' to ' + m.commodity + ' meter',
-    '📥',
-  );
+  return { added, updated, keptCorrected };
 }
 
 // backfillFacilitiesKW(billsForMeter) — shared Facilities kW derivation core for ONE meter's
@@ -1090,14 +1113,14 @@ function renderBillRow(row, m, incl, allBills, cols, rowNum) {
     ) {
       raw = convertBillValue(parseFloat(raw), m);
     }
-    const formatted = _billFormatValue(raw, c.entry, colDp);
+    const formatted = _escHtml(_billFormatValue(raw, c.entry, colDp)); // a text cell comes from a CSV or a PDF: show it as text
     const cls = c.entry.key === 'totalCost' ? 'td-total' : c.a || '';
     const rightCls = c.rightSticky ? ' sticky-col-right' : '';
     const rightAttr = c.rightSticky ? ' data-sticky-right="' + i + '"' : '';
     const finalCls = (cls + rightCls).trim();
     const warn = _fieldWarningsEarly[c.entry.key];
     const warnAttr = warn
-      ? ' title="' + warn.replace(/"/g, '&quot;') + '" style="background:rgba(245,158,11,.12)"'
+      ? ' title="' + _escHtml(warn) + '" style="background:rgba(245,158,11,.12)"'
       : '';
     // VCM: add data attributes on numeric/currency/rate cells so click handler can target them (Update a3a423eb)
     const _vcmEligible = c.entry.type === 'currency' || c.entry.type === 'number' || c.entry.type === 'rate';
@@ -1108,7 +1131,7 @@ function renderBillRow(row, m, incl, allBills, cols, rowNum) {
     const _corr = row._userCorrected && row._userCorrected[c.entry.key];
     const _displayVal = _corr
       ? '<span class="vcm-corrected" title="Corrected from ' +
-        _corr.original +
+        _escHtml(_corr.original) +
         ' on ' +
         (_corr.at ? _corr.at.slice(0, 10) : '?') +
         '">&#9733; ' +
@@ -2457,7 +2480,7 @@ function openBillModal(mid, editRowId) {
       (bl.meters || []).forEach((mt) => {
         if (mt.id === mid) return;
         const label = (bl.name || 'Building') + ' — ' + (mt.name || mt.commodity || 'Meter');
-        moveOpts += '<option value="' + bl.id + '|' + mt.id + '">' + label + '</option>';
+        moveOpts += '<option value="' + _escHtml(bl.id + '|' + mt.id) + '">' + _escHtml(label) + '</option>';
       });
     });
     if (moveOpts) {
@@ -2794,7 +2817,7 @@ function _bmRenderAliasTags(aliases) {
       (a, i) =>
         '<span style="display:inline-flex;align-items:center;gap:4px;background:var(--s2);border:1px solid var(--border);border-radius:4px;padding:2px 7px;font-size:12px">' +
         '<span>' +
-        a.replace(/</g, '&lt;') +
+        _escHtml(a) +
         '</span>' +
         '<button type="button" onclick="bmRemoveAlias(' +
         i +
@@ -3038,7 +3061,7 @@ function openMeterModal(editId, projId, bldgId) {
           '<option value="">— Keep on current building —</option>' +
           bldgs
             .filter((bb) => bb.id !== _bid)
-            .map((bb) => '<option value="' + bb.id + '">' + (bb.name || 'Unnamed') + '</option>')
+            .map((bb) => '<option value="' + bb.id + '">' + _escHtml(bb.name || 'Unnamed') + '</option>')
             .join('');
         moveWrap.style.display = '';
       }
@@ -4815,9 +4838,132 @@ function collectWeatherData(allBldgMeters, reportYMs) {
 }
 
 /* ══════════════════════════════════════════
-       BUILDING LIST IMPORT (Excel / CSV)
+       BUILDING + METER LIST IMPORT (Excel / CSV)
    ══════════════════════════════════════════ */
-let _bldgImportRows = []; // parsed preview rows [{name, sqft, addr, zip}]
+// One row per building, or one row per METER when the file has meter columns (a building with
+// 2 meters is 2 rows). Row: {name, sqft, addr, zip, svcAlias, meter: {commodity, provider, account,
+// meter, billFile} | null, _checked, _problem, _bExists, _bSeen, _dup}.
+let _bldgImportRows = [];
+
+// Header names the importer knows (compared after lower-casing and dropping punctuation).
+const _BLDG_IMPORT_HEADERS = {
+  name: ['building name', 'building', 'name'],
+  sqft: ['building sqft', 'sqft', 'sq ft', 'square feet', 'square footage'],
+  addr: ['address', 'building address'],
+  commodity: ['commodity', 'commodity type'],
+  provider: ['provider', 'utility', 'utility company'],
+  account: ['account #', 'account', 'account number', 'account no', 'accountnumber'],
+  meter: ['meter #', 'meter', 'meter number', 'meter no', 'meternumber'],
+  billFile: ['bill file', 'bill file name'],
+};
+function _bldgImportHeaderKey(h) {
+  return String(h == null ? '' : h)
+    .toLowerCase()
+    .replace(/[^a-z0-9#]+/g, ' ')
+    .trim();
+}
+// Which column holds what. A file with any meter column (commodity, provider, account, meter,
+// bill file) is read by header name. A file without them is the older Building List template:
+// A name, B sq ft, C address, F gas service address, G gas account #, H gas meter # (Kansas Gas Service).
+function _bldgImportColumns(headerRow) {
+  const keys = (headerRow || []).map(_bldgImportHeaderKey);
+  const col = {};
+  Object.keys(_BLDG_IMPORT_HEADERS).forEach((k) => {
+    const i = keys.findIndex((h) => _BLDG_IMPORT_HEADERS[k].includes(h));
+    if (i >= 0) col[k] = i;
+  });
+  if (['commodity', 'provider', 'account', 'meter', 'billFile'].some((k) => k in col)) return col;
+  return { name: 0, sqft: 1, addr: 2, kgsSvc: 5, kgsAcct: 6, kgsMeter: 7 };
+}
+// Cell to text. A number cell never turns into scientific notation. Text cells stay as typed.
+function _bldgImportCell(v) {
+  if (v == null) return '';
+  if (typeof v === 'number') return Number.isInteger(v) && Math.abs(v) < 1e21 ? v.toFixed(0) : String(v);
+  return String(v).trim();
+}
+function _bldgImportKey(name) {
+  return String(name || '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+function _bldgImportCommodity(s) {
+  const t = String(s || '')
+    .trim()
+    .toLowerCase();
+  return ALL_COMMODITIES.find((c) => c.toLowerCase() === t) || '';
+}
+
+// Pure: header row + data rows (arrays of cells) -> {rows, error}.
+function parseBuildingListTable(table) {
+  const col = _bldgImportColumns((table && table[0]) || []);
+  if (col.name === undefined) return { rows: [], error: 'The first row needs a "Building Name" column' };
+  const rows = [];
+  for (let i = 1; i < table.length; i++) {
+    const r = table[i] || [];
+    const cell = (k) => (col[k] === undefined ? '' : _bldgImportCell(r[col[k]]));
+    const name = cell('name');
+    if (!name) continue;
+    const addr = cell('addr');
+    // Strip non-numeric chars from sqft (handles $, ¢, commas); drop a decimal part first.
+    const sqft =
+      parseInt(
+        cell('sqft')
+          .replace(/\.\d+$/, '')
+          .replace(/[^0-9]/g, ''),
+        10,
+      ) || 0;
+    const zipMatch = addr.match(/\d{5}(?:-\d{4})?$/);
+    const base = {
+      name: name,
+      sqft: sqft,
+      addr: addr,
+      zip: zipMatch ? zipMatch[0] : '',
+      _checked: true,
+    };
+    const meters = [];
+    if (col.kgsAcct !== undefined) {
+      // Older template: slash-separated account / meter pairs in columns G / H are separate gas meters.
+      const split = (s) =>
+        cell(s)
+          .split('/')
+          .map((x) => x.trim())
+          .filter(Boolean);
+      const accts = split('kgsAcct');
+      const nums = cell('kgsMeter')
+        ? cell('kgsMeter')
+            .split('/')
+            .map((x) => x.trim())
+        : [];
+      accts.forEach((a, mi) =>
+        meters.push({
+          commodity: 'Gas',
+          provider: 'Kansas Gas Service',
+          account: a,
+          meter: nums[mi] || '',
+          billFile: '',
+        }),
+      );
+      // The service address becomes an alias of the building so address-based bill routing works.
+      if (accts.length) base.svcAlias = cell('kgsSvc');
+    } else if (['commodity', 'provider', 'account', 'meter', 'billFile'].some((k) => col[k] !== undefined)) {
+      const m = {
+        commodity: cell('commodity'),
+        provider: cell('provider'),
+        account: cell('account'),
+        meter: cell('meter'),
+        billFile: cell('billFile'),
+      };
+      if (m.commodity || m.provider || m.account || m.meter) meters.push(m);
+    }
+    if (!meters.length) rows.push(base);
+    else meters.forEach((m) => rows.push(Object.assign({}, base, { meter: m })));
+  }
+  return {
+    rows: rows,
+    error: rows.length ? '' : 'No buildings with names found',
+  };
+}
 
 function openBldgImportModal() {
   _bldgImportRows = [];
@@ -4842,33 +4988,13 @@ function handleBldgImportFile(input) {
   const reader = new FileReader();
   reader.onload = function (e) {
     try {
-      let rows = [];
+      let table = [];
       const name = file.name.toLowerCase();
       if (name.endsWith('.csv') || name.endsWith('.txt')) {
-        // CSV path — split on newlines, skip header
-        const lines = e.target.result
-          .split(/\r?\n/)
-          .map(function (l) {
-            return l.trim();
-          })
-          .filter(function (l) {
-            return l.length > 0;
-          });
-        if (lines.length < 2) {
+        table = _csvTextLines(e.target.result).map(splitCsvLine);
+        if (table.length < 2) {
           showToast('File appears empty', 'warn');
           return;
-        }
-        // Skip the header row (index 0)
-        for (var i = 1; i < lines.length; i++) {
-          var cols = splitCsvLine(lines[i]);
-          rows.push([
-            cols[0] || '',
-            cols[1] || '',
-            cols[2] || '',
-            cols[5] !== undefined ? cols[5] : '', // F: KGS Service Address
-            cols[6] !== undefined ? cols[6] : '', // G: KGS Account #
-            cols[7] !== undefined ? cols[7] : '', // H: KGS Meter #
-          ]);
         }
       } else {
         // Excel path — use SheetJS
@@ -4876,65 +5002,26 @@ function handleBldgImportFile(input) {
           showToast('Excel library not loaded — try a CSV export instead', 'warn');
           return;
         }
-        var data = new Uint8Array(e.target.result);
-        var wb = XLSX.read(data, { type: 'array' });
+        var wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
         var ws = wb.Sheets[wb.SheetNames[0]];
-        // Convert to 2D array, raw so numbers stay as numbers
-        var arr = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' });
-        if (!arr || arr.length < 2) {
+        // Raw, so numbers stay numbers (_bldgImportCell turns them into plain digits)
+        table = XLSX.utils.sheet_to_json(ws, {
+          header: 1,
+          raw: true,
+          defval: '',
+        });
+        if (!table || table.length < 2) {
           showToast('Sheet appears empty', 'warn');
           return;
         }
-        // Skip header row
-        for (var j = 1; j < arr.length; j++) {
-          var r = arr[j];
-          // Skip fully blank rows
-          if (!r[0] && !r[1] && !r[2]) continue;
-          rows.push([
-            r[0] || '',
-            r[1] || '',
-            r[2] || '',
-            r[5] !== undefined ? String(r[5]) : '', // F: KGS Service Address
-            r[6] !== undefined ? String(r[6]) : '', // G: KGS Account #
-            r[7] !== undefined ? String(r[7]) : '', // H: KGS Meter #
-          ]);
-        }
       }
-
-      if (!rows.length) {
-        showToast('No data rows found in file', 'warn');
+      const parsed = parseBuildingListTable(table);
+      if (parsed.error) {
+        showToast(parsed.error, 'warn');
         return;
       }
-
-      // Parse into structured objects
-      _bldgImportRows = rows
-        .map(function (r) {
-          var rawName = String(r[0]).trim();
-          var rawSqft = String(r[1]).trim();
-          var rawAddr = String(r[2]).trim();
-          // Strip non-numeric chars from sqft (handles $, ¢, commas)
-          var sqft = parseInt(rawSqft.replace(/[^0-9]/g, ''), 10) || 0;
-          // Extract ZIP from end of address
-          var zipMatch = rawAddr.match(/\d{5}(?:-\d{4})?$/);
-          var zip = zipMatch ? zipMatch[0] : '';
-          var kgsSvcAddr = String(r[3] || '').trim();
-          var kgsAcct = String(r[4] || '').trim();
-          var kgsMeter = String(r[5] || '').trim();
-          var obj = { name: rawName, sqft: sqft, addr: rawAddr, zip: zip, _checked: true };
-          if (kgsAcct) obj.kgsAcct = kgsAcct;
-          if (kgsMeter) obj.kgsMeter = kgsMeter;
-          if (kgsSvcAddr) obj.kgsSvcAddr = kgsSvcAddr;
-          return obj;
-        })
-        .filter(function (r) {
-          return r.name.length > 0;
-        });
-
-      if (!_bldgImportRows.length) {
-        showToast('No buildings with names found', 'warn');
-        return;
-      }
-
+      _bldgImportRows = parsed.rows;
+      _bldgImportAnnotate();
       _renderBldgImportPreview(file.name);
     } catch (err) {
       showToast('Error reading file: ' + (err.message || err), 'warn');
@@ -4949,40 +5036,146 @@ function handleBldgImportFile(input) {
 }
 window.handleBldgImportFile = handleBldgImportFile;
 
+// ONE rule for "is this the meter with this account / meter number". Used by Import List (skip a meter
+// that is already there) and by the multi-file bill import (route a bill file). Account and meter
+// numbers compare as text with spaces and dashes ignored (same normaliser as the meter roster,
+// _macNormAcct). id = {commodity?, account?, meter?}. A blank id part is not compared; a stored meter
+// with a blank part never matches an id that names that part.
+function udMeterMatchesIdentity(m, id) {
+  if (id.commodity && String(m.commodity || '').toLowerCase() !== String(id.commodity).toLowerCase()) return false;
+  const a = _macNormAcct(id.account);
+  const n = _macNormAcct(id.meter);
+  if (!a && !n) return false;
+  if (a && _macNormAcct(m.account) !== a) return false;
+  if (n && _macNormAcct(m.meter) !== n) return false;
+  return true;
+}
+// Every meter of project pid that matches id -> [{b, m}]. Reads buildings only through getUDBldgs.
+function findUDMetersByIdentity(pid, id) {
+  const out = [];
+  (getUDBldgs(pid) || []).forEach((b) =>
+    (b.meters || []).forEach((m) => {
+      if (udMeterMatchesIdentity(m, id)) out.push({ b: b, m: m });
+    }),
+  );
+  return out;
+}
+
+// Marks each preview row against what the project has now: building exists, meter already there,
+// or a problem that stops the row. Nothing is written.
+function _bldgImportAnnotate() {
+  const existing = new Map();
+  (getUDBldgs(udSelProjId) || []).forEach((b) => existing.set(_bldgImportKey(b.name), b));
+  const seenB = new Set();
+  const seenM = new Set();
+  _bldgImportRows.forEach((r) => {
+    const k = _bldgImportKey(r.name);
+    r._bExists = existing.has(k);
+    r._bSeen = seenB.has(k);
+    seenB.add(k);
+    r._dup = false;
+    r._problem = '';
+    if (!r.meter) return;
+    const comm = _bldgImportCommodity(r.meter.commodity);
+    if (!comm) {
+      r._problem = r.meter.commodity
+        ? 'Commodity "' + r.meter.commodity + '" is not one CompanyHub has'
+        : 'Commodity is blank';
+    } else if (!r.meter.account && !r.meter.meter) {
+      r._problem = 'No account # and no meter #';
+    } else {
+      r.meter.commodity = comm;
+      const id = {
+        commodity: comm,
+        account: r.meter.account,
+        meter: r.meter.meter,
+      };
+      const b = existing.get(k);
+      const mk = k + '|' + comm + '|' + _macNormAcct(r.meter.account) + '|' + _macNormAcct(r.meter.meter);
+      r._dup = seenM.has(mk) || !!(b && (b.meters || []).some((m) => udMeterMatchesIdentity(m, id)));
+      seenM.add(mk);
+    }
+    if (r._problem || r._dup) r._checked = false;
+  });
+}
+
+function _bldgImportStatusText(r) {
+  if (r._problem) return 'Not imported: ' + r._problem;
+  const parts = [r._bExists ? 'Building is in the project' : r._bSeen ? 'Same building as above' : 'New building'];
+  if (r.meter) parts.push(r._dup ? 'meter is already there' : 'new meter');
+  return parts.join(' · ');
+}
+
+// Text cell of an import preview table (both Import List and Import Bills): left-aligned, cut with "…"
+// when long, full text on hover. extra = more inline style.
+function _importPreviewTd(text, extra) {
+  return (
+    '<td title="' +
+    _escHtml(text) +
+    '" style="text-align:left;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;' +
+    (extra || '') +
+    '">' +
+    _escHtml(text) +
+    '</td>'
+  );
+}
 function _renderBldgImportPreview(fname) {
   document.getElementById('bldgImportDropLabel').textContent = '✓ ' + fname + ' — click to change';
-  document.getElementById('bldgImportCount').textContent = _bldgImportRows.length;
+  const nB = new Set(
+    _bldgImportRows.map(function (r) {
+      return _bldgImportKey(r.name);
+    }),
+  ).size;
+  const nM = _bldgImportRows.filter(function (r) {
+    return r.meter;
+  }).length;
+  document.getElementById('bldgImportCount').textContent = nB;
+  const note = document.getElementById('bldgImportMeterNote');
+  if (note) note.textContent = nM ? ' · ' + nM + ' meter' + (nM !== 1 ? 's' : '') + ' found' : '';
 
+  var hasMeters = nM > 0;
   var thead =
     '<tr>' +
-    '<th style="width:32px"><input type="checkbox" id="bldgImportSelectAll" checked onchange="bldgImportToggleAll(this.checked)"></th>' +
+    '<th style="width:32px"><input type="checkbox" id="bldgImportSelectAll" ' +
+    (_bldgImportRows.every(function (r) {
+      return r._checked;
+    })
+      ? 'checked '
+      : '') +
+    'onchange="bldgImportToggleAll(this.checked)"></th>' +
     '<th>Building Name</th>' +
     '<th>Square Feet</th>' +
     '<th>Address</th>' +
     '<th>ZIP</th>' +
+    (hasMeters ? '<th>Commodity</th><th>Provider</th><th>Account #</th><th>Meter #</th><th>Bill file</th>' : '') +
+    '<th>What happens</th>' +
     '</tr>';
 
   var tbody = _bldgImportRows
     .map(function (r, i) {
+      var m = r.meter || {};
       return (
-        '<tr>' +
-        '<td><input type="checkbox" data-bldg-idx="' +
+        '<tr><td><input type="checkbox" data-bldg-idx="' +
         i +
-        '" checked onchange="bldgImportRowCheck(' +
+        '"' +
+        (r._checked ? ' checked' : '') +
+        ' onchange="bldgImportRowCheck(' +
         i +
         ',this.checked)"></td>' +
-        '<td>' +
-        _escHtml(r.name) +
-        '</td>' +
+        _importPreviewTd(r.name) +
         '<td style="text-align:right">' +
         (r.sqft ? r.sqft.toLocaleString() : '—') +
         '</td>' +
-        '<td>' +
-        _escHtml(r.addr) +
-        '</td>' +
-        '<td>' +
-        _escHtml(r.zip) +
-        '</td>' +
+        _importPreviewTd(r.addr) +
+        _importPreviewTd(r.zip) +
+        (hasMeters
+          ? _importPreviewTd(m.commodity || '') +
+            _importPreviewTd(m.provider || '') +
+            _importPreviewTd(m.account || '') +
+            _importPreviewTd(m.meter || '') +
+            _importPreviewTd(m.billFile || '')
+          : '') +
+        _importPreviewTd(_bldgImportStatusText(r), 'max-width:340px' + (r._problem ? ';color:var(--warn)' : '')) +
         '</tr>'
       );
     })
@@ -4992,15 +5185,38 @@ function _renderBldgImportPreview(fname) {
     '<thead>' + thead + '</thead><tbody>' + tbody + '</tbody>';
   document.getElementById('bldgImportPreviewWrap').style.display = '';
   document.getElementById('bldgImportBtn').style.display = '';
+  _bldgImportUpdateButton();
+}
+
+// What the import button will do, counted from the ticked rows.
+function _bldgImportPlanCounts() {
+  var newB = new Set();
+  var nMeters = 0;
+  _bldgImportRows.forEach(function (r) {
+    if (!r._checked || r._problem) return;
+    if (!r._bExists) newB.add(_bldgImportKey(r.name));
+    if (r.meter && !r._dup) nMeters++;
+  });
+  return { buildings: newB.size, meters: nMeters };
+}
+function _bldgImportUpdateButton() {
+  var c = _bldgImportPlanCounts();
+  var parts = [];
+  if (c.buildings) parts.push(c.buildings + ' Building' + (c.buildings !== 1 ? 's' : ''));
+  if (c.meters) parts.push(c.meters + ' Meter' + (c.meters !== 1 ? 's' : ''));
+  var btn = document.getElementById('bldgImportBtn');
+  btn.textContent = parts.length ? 'Import ' + parts.join(' + ') : 'Nothing new to import';
+  btn.disabled = !parts.length;
 }
 
 function bldgImportToggleAll(checked) {
   _bldgImportRows.forEach(function (r) {
-    r._checked = checked;
+    r._checked = checked && !r._problem && !r._dup;
   });
   document.querySelectorAll('[data-bldg-idx]').forEach(function (cb) {
-    cb.checked = checked;
+    cb.checked = !!_bldgImportRows[+cb.getAttribute('data-bldg-idx')]._checked;
   });
+  _bldgImportUpdateButton();
 }
 window.bldgImportToggleAll = bldgImportToggleAll;
 
@@ -5018,6 +5234,7 @@ function bldgImportRowCheck(idx, checked) {
     sa.checked = allChecked;
     sa.indeterminate = !allChecked && anyChecked;
   }
+  _bldgImportUpdateButton();
 }
 window.bldgImportRowCheck = bldgImportRowCheck;
 
@@ -5026,8 +5243,8 @@ window.bldgImportRowCheck = bldgImportRowCheck;
 // address and pass the shared plausibility rule (_isPlausibleAddressAlias), so an
 // address that belongs to another building is never stored on this one.
 function _bldgImportAliasFor(r) {
-  if (!r || !r.kgsSvcAddr || r.kgsSvcAddr === r.addr) return '';
-  return _isPlausibleAddressAlias(r.addr, r.kgsSvcAddr) ? r.kgsSvcAddr : '';
+  if (!r || !r.svcAlias || r.svcAlias === r.addr) return '';
+  return _isPlausibleAddressAlias(r.addr, r.svcAlias) ? r.svcAlias : '';
 }
 function importBuildingList() {
   var _biProj = projects.find(function (p) {
@@ -5042,7 +5259,7 @@ function importBuildingList() {
   // scope.buildingIds so the import is visible here immediately.
   var _biCustomerId = _biProj.customerId || 'cust_' + _biProj.id;
   var selected = _bldgImportRows.filter(function (r) {
-    return r._checked && r.name;
+    return r._checked && r.name && !r._problem;
   });
   if (!selected.length) {
     showToast('No buildings selected', 'warn');
@@ -5052,59 +5269,461 @@ function importBuildingList() {
   _biProj.scope = _biProj.scope || { buildingIds: [], meterExcludeIds: [] };
   if (!Array.isArray(_biProj.scope.buildingIds)) _biProj.scope.buildingIds = [];
 
+  // A row joins the building of the same name in THIS project (also one made earlier in this
+  // import). No such building: it creates one.
+  var byName = new Map();
+  (getUDBldgs(_biProj.id) || []).forEach(function (b) {
+    byName.set(_bldgImportKey(b.name), b);
+  });
   var now = Date.now();
-  selected.forEach(function (r, i) {
-    var bldg = {
-      id: 'b' + (now + i),
-      name: r.name,
-      addr: r.addr,
-      sqft: r.sqft || 0,
-      zip: r.zip || '',
-      addrAliases: [],
-      meters: [],
-    };
-
-    // KGS meter creation: split slash-separated account/meter pairs into separate meters
-    if (r.kgsAcct) {
-      var accts = r.kgsAcct
-        .split('/')
-        .map(function (s) {
-          return s.trim();
-        })
-        .filter(Boolean);
-      var meterNums = r.kgsMeter
-        ? r.kgsMeter.split('/').map(function (s) {
-            return s.trim();
-          })
-        : [];
-      accts.forEach(function (acct, mi) {
-        bldg.meters.push({
-          id: 'm' + (now + i) + '_' + mi,
-          commodity: 'Gas',
-          provider: 'Kansas Gas Service',
-          account: acct,
-          meter: meterNums[mi] ? meterNums[mi].trim() : '',
-          bills: [],
-        });
-      });
-      // Push KGS service address as alias so address-based bill routing works
-      const _alias = _bldgImportAliasFor(r);
-      if (_alias) bldg.addrAliases.push(_alias);
+  var nBuildings = 0;
+  var nMeters = 0;
+  selected.forEach(function (r) {
+    var key = _bldgImportKey(r.name);
+    var bldg = byName.get(key);
+    if (!bldg) {
+      bldg = {
+        id: 'b' + (now + nBuildings),
+        name: r.name,
+        addr: r.addr,
+        sqft: r.sqft || 0,
+        zip: r.zip || '',
+        addrAliases: [],
+        meters: [],
+      };
+      addUDBldg(_biCustomerId, bldg);
+      _biProj.scope.buildingIds.push(bldg.id);
+      byName.set(key, bldg);
+      nBuildings++;
+    } else {
+      // An existing building only fills blanks (never overwrites what the user typed).
+      if (!bldg.sqft && r.sqft) bldg.sqft = r.sqft;
+      if (!bldg.addr && r.addr) {
+        bldg.addr = r.addr;
+        bldg.zip = bldg.zip || r.zip || '';
+      }
     }
+    var _alias = _bldgImportAliasFor(r);
+    bldg.addrAliases = bldg.addrAliases || [];
+    if (_alias && bldg.addrAliases.indexOf(_alias) < 0) bldg.addrAliases.push(_alias);
 
-    addUDBldg(_biCustomerId, bldg);
-    _biProj.scope.buildingIds.push(bldg.id);
+    if (r.meter) {
+      var id = {
+        commodity: r.meter.commodity,
+        account: r.meter.account,
+        meter: r.meter.meter,
+      };
+      bldg.meters = bldg.meters || [];
+      if (
+        !bldg.meters.some(function (m) {
+          return udMeterMatchesIdentity(m, id);
+        })
+      ) {
+        var nm = {
+          id: 'm' + now + '_' + nMeters,
+          commodity: r.meter.commodity,
+          provider: r.meter.provider,
+          account: r.meter.account,
+          meter: r.meter.meter,
+          bills: [],
+        };
+        // No billUnit / displayUnit here: getMeterBillUnit and getMeterDisplayUnit (utility-data.js) derive the
+        // default from the commodity, the same way they do for a meter made by the meter roster import.
+        // The bill file name from the list lets "Import Bills" send that file to this meter.
+        if (r.meter.billFile) nm.billFile = r.meter.billFile;
+        bldg.meters.push(nm);
+        nMeters++;
+      }
+    }
   });
 
   sset('en_projects', projects);
-  saveUtilityData();
+  saveUtilityData(_biProj.id);
   renderUDProjList();
   if (typeof renderUDDetail === 'function') renderUDDetail();
   refreshOpenProjDetail();
-  showToast('Imported ' + selected.length + ' building' + (selected.length !== 1 ? 's' : '') + ' ✓');
+  showToast(
+    nBuildings || nMeters
+      ? 'Imported ' +
+          nBuildings +
+          ' building' +
+          (nBuildings !== 1 ? 's' : '') +
+          (nMeters ? ', ' + nMeters + ' meter' + (nMeters !== 1 ? 's' : '') : '') +
+          ' ✓'
+      : 'Nothing new to import',
+  );
   closeBldgImportModal();
 }
-window.importBuildingList = importBuildingList;
+window.importBuildingList = importBuildingList; /* ══════════════════════════════════════════
+       BILLS FOR MANY METERS AT ONCE (CSV files)
+   ══════════════════════════════════════════ */
+// The project's "Import Bills" button. The user picks several bill CSV files (or one CSV with Account #
+// and Meter # columns). Each file or row goes to ONE meter of the project:
+//   - a file with Account # / Meter # columns: by those numbers (udMeterMatchesIdentity);
+//   - any other file: by its file name, which must equal the meter's "Bill file" name from the meter list.
+// Nothing is guessed. A file or row that fits no meter, or more than one, is listed and not imported.
+// Rows are read by parseBillCsvText and stored by applyBillRowsToMeter, the same two functions the
+// one-meter dialog uses, so a bill row means the same thing on both paths.
+let _bmPlan = null; // {projId, items: [...], done}
+
+function openBillsMultiImportForProj(projId) {
+  _selectUDProjById(projId);
+  _bmPlan = { projId: udSelProjId, items: [], done: false };
+  document.getElementById('billsMultiDropLabel').textContent =
+    'Drop the bill CSV files here, or click to choose several';
+  document.getElementById('billsMultiInput').value = '';
+  document.getElementById('billsMultiPreviewWrap').style.display = 'none';
+  document.getElementById('billsMultiBtn').style.display = 'none';
+  document.getElementById('billsMultiModal').classList.add('open');
+}
+window.openBillsMultiImportForProj = openBillsMultiImportForProj;
+
+function closeBillsMultiModal() {
+  document.getElementById('billsMultiModal').classList.remove('open');
+  _bmPlan = null;
+}
+window.closeBillsMultiModal = closeBillsMultiModal;
+
+function handleBillsMultiFiles(fileList) {
+  const files = Array.prototype.slice.call(fileList || []);
+  if (!files.length || !_bmPlan) return;
+  document.getElementById('billsMultiDropLabel').textContent = '⏳ Reading ' + files.length + ' file(s)…';
+  Promise.all(
+    files.map(function (f) {
+      return new Promise(function (resolve) {
+        const rd = new FileReader();
+        rd.onload = function () {
+          resolve({ name: f.name, text: String(rd.result) });
+        };
+        rd.onerror = function () {
+          resolve({ name: f.name, text: null });
+        };
+        rd.readAsText(f);
+      });
+    }),
+  ).then(function (read) {
+    try {
+      _bmPlan.items = planBillFiles(_bmPlan.projId, read);
+      _bmPlan.nFiles = read.length;
+      _bmPlan.done = false;
+      _renderBillsMultiPreview();
+    } catch (err) {
+      showToast('Error reading files: ' + (err.message || err), 'warn');
+      console.error('billsMulti error:', err);
+    }
+  });
+}
+window.handleBillsMultiFiles = handleBillsMultiFiles;
+
+function _bmItemStats(m, rows) {
+  const stored = new Set((m.bills || []).map((b) => b.start));
+  let usage = 0;
+  let cost = 0;
+  let nUsage = 0; // rows that carry a usage value for this meter's commodity
+  rows.forEach((r) => {
+    if (m.commodity === 'Electric') {
+      usage += Number(r.kwh) || 0;
+      if (r.kwh != null) nUsage++;
+    } else if (m.commodity === 'Gas') {
+      const th = resolveGasUsageThermsOrNull(r);
+      usage += Number(th) || 0;
+      if (th != null) nUsage++;
+    }
+    cost += Number(r.totalCost) || 0;
+  });
+  const nUpd = rows.filter((r) => stored.has(r.start)).length;
+  return {
+    periods: rows.length,
+    nNew: rows.length - nUpd,
+    nUpd: nUpd,
+    first: rows[0].start,
+    last: rows[rows.length - 1].end,
+    usage: usage,
+    nUsage: nUsage,
+    unit: m.commodity === 'Electric' ? 'kWh' : m.commodity === 'Gas' ? 'therms' : '',
+    cost: cost,
+  };
+}
+
+// Pure planner: files [{name, text}] -> one item per file, or per meter group inside a file that has
+// Account # / Meter # columns. Item: {file, meter: {b, m} | null, rows, warnings, stats, reason}.
+function planBillFiles(projId, files) {
+  const items = [];
+  const hasCol = (hdr, k) => hdr.findIndex((h) => _BLDG_IMPORT_HEADERS[k].includes(h));
+  // opts.byNumbers: the meter was picked by Account # / Meter # cells (not by a file name the user listed), so a
+  // file with no usage value for that meter's commodity (an electric file whose account number is also a gas
+  // account) is refused rather than stored as cost-only bills on the wrong meter.
+  const route = (name, ident, text, matches, none, opts) => {
+    if (matches.length !== 1) {
+      items.push({
+        file: name,
+        ident: ident,
+        meter: null,
+        reason: matches.length
+          ? 'More than one meter fits (' + matches.length + ')' + ((opts && opts.moreHint) || '')
+          : none,
+      });
+      return;
+    }
+    const res = parseBillCsvText(text, matches[0].m);
+    if (res.error) {
+      items.push({ file: name, ident: ident, meter: null, reason: res.error });
+      return;
+    }
+    const stats = _bmItemStats(matches[0].m, res.rows);
+    if (opts && opts.byNumbers && stats.unit && stats.nUsage === 0) {
+      items.push({
+        file: name,
+        ident: ident,
+        meter: null,
+        reason: 'The rows have no ' + stats.unit + ' values, so they do not fit this ' + matches[0].m.commodity + ' meter',
+      });
+      return;
+    }
+    items.push({
+      file: name,
+      meter: matches[0],
+      rows: res.rows,
+      warnings: res.warnings,
+      stats: stats,
+    });
+  };
+  files.forEach((f) => {
+    if (f.text == null) {
+      items.push({
+        file: f.name,
+        meter: null,
+        reason: 'The file could not be read',
+      });
+      return;
+    }
+    const lines = _csvTextLines(f.text);
+    if (lines.length < 2) {
+      items.push({
+        file: f.name,
+        meter: null,
+        reason: 'The file has no data rows',
+      });
+      return;
+    }
+    const hdr = splitCsvLine(lines[0]).map(_bldgImportHeaderKey);
+    const iAcct = hasCol(hdr, 'account');
+    const iMeter = hasCol(hdr, 'meter');
+    const iComm = hasCol(hdr, 'commodity');
+    if (iAcct >= 0 || iMeter >= 0) {
+      // One file, many meters: group the rows by their Account # + Meter # (+ Commodity) cells.
+      const groups = new Map();
+      lines.slice(1).forEach((line) => {
+        const c = splitCsvLine(line);
+        const acct = iAcct >= 0 ? (c[iAcct] || '').trim() : '';
+        const mtr = iMeter >= 0 ? (c[iMeter] || '').trim() : '';
+        const comm = iComm >= 0 ? (c[iComm] || '').trim() : '';
+        const k = acct + '\u0001' + mtr + '\u0001' + comm.toLowerCase();
+        if (!groups.has(k)) groups.set(k, { acct: acct, mtr: mtr, comm: comm, lines: [] });
+        groups.get(k).lines.push(line);
+      });
+      groups.forEach((g) => {
+        const ident =
+          'account ' + (g.acct || '—') + (g.mtr ? ' · meter ' + g.mtr : '') + (g.comm ? ' · ' + g.comm : '');
+        // A Commodity column (optional) tells an electric account from a gas account with the same number.
+        const comm = g.comm ? _bldgImportCommodity(g.comm) : '';
+        if (g.comm && !comm) {
+          items.push({
+            file: f.name,
+            ident: ident,
+            meter: null,
+            reason: 'Commodity "' + g.comm + '" is not one CompanyHub has',
+          });
+          return;
+        }
+        const matches =
+          g.acct || g.mtr ? findUDMetersByIdentity(projId, { commodity: comm, account: g.acct, meter: g.mtr }) : [];
+        route(
+          f.name,
+          ident,
+          lines[0] + '\n' + g.lines.join('\n'),
+          matches,
+          'No meter in this project has this account # and meter #',
+          { byNumbers: true, moreHint: '. Add a Meter # or a Commodity column to the file.' },
+        );
+      });
+    } else {
+      const want = f.name.toLowerCase();
+      const matches = [];
+      (getUDBldgs(projId) || []).forEach((b) =>
+        (b.meters || []).forEach((m) => {
+          if (m.billFile && String(m.billFile).toLowerCase() === want) matches.push({ b: b, m: m });
+        }),
+      );
+      route(
+        f.name,
+        '',
+        f.text,
+        matches,
+        'No meter lists this file name as its Bill file, and the file has no Account # / Meter # columns',
+      );
+    }
+  });
+  return items;
+}
+window.planBillFiles = planBillFiles;
+
+function _renderBillsMultiPreview() {
+  const items = _bmPlan.items;
+  const ok = items.filter((i) => i.meter);
+  const bad = items.filter((i) => !i.meter);
+  const fmtN = (n) => Math.round(n).toLocaleString('en-US');
+  const fmtC = (n) =>
+    '$' +
+    n.toLocaleString('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  const sum = (arr, f) => arr.reduce((s, i) => s + f(i), 0);
+  document.getElementById('billsMultiDropLabel').textContent =
+    '✓ ' + _bmPlan.nFiles + ' file(s) read — click to choose others';
+  document.getElementById('billsMultiPreviewLabel').textContent =
+    'Preview — ' + ok.length + ' file(s) matched to a meter' + (bad.length ? ', ' + bad.length + ' not matched' : '');
+
+  // Cells: text left (shared helper), numbers right.
+  const tdText = _importPreviewTd;
+  const tdNum = (t) => '<td style="text-align:right;white-space:nowrap">' + _escHtml(t) + '</td>';
+  const thead =
+    '<tr><th>File</th><th>Building</th><th>Meter</th><th>Periods</th><th>From</th><th>To</th><th>Usage</th>' +
+    '<th>Total $</th><th>What happens</th></tr>';
+  const row = (i) => {
+    if (!i.meter) {
+      return (
+        '<tr>' +
+        tdText(i.file) +
+        tdText('—') +
+        tdText(i.ident || '—') +
+        '<td></td><td></td><td></td><td></td><td></td>' +
+        tdText('Not imported: ' + i.reason, 'color:var(--warn);max-width:340px') +
+        '</tr>'
+      );
+    }
+    const s = i.stats;
+    const m = i.meter.m;
+    const status = i.imported
+      ? 'Imported: ' + i.res.added + ' new, ' + i.res.updated + ' updated'
+      : s.nNew + ' new' + (s.nUpd ? ', ' + s.nUpd + ' will update stored bills' : '');
+    return (
+      '<tr>' +
+      tdText(i.file) +
+      tdText(i.meter.b.name) +
+      tdText([m.commodity, m.account, m.meter].filter(Boolean).join(' · ')) +
+      tdNum(s.periods) +
+      tdNum(fmtDate(s.first)) +
+      tdNum(fmtDate(s.last)) +
+      tdNum(s.unit ? fmtN(s.usage) + ' ' + s.unit : '—') +
+      tdNum(fmtC(s.cost)) +
+      tdText(status, 'max-width:340px') +
+      '</tr>'
+    );
+  };
+  const kwh = sum(
+    ok.filter((i) => i.stats.unit === 'kWh'),
+    (i) => i.stats.usage,
+  );
+  // Totals row (site table standard): sticky at the bottom of the scroll box, header-depth background.
+  const tf = (t, align) =>
+    '<td style="position:sticky;bottom:0;background:var(--s1);font-weight:700;border-top:2px solid var(--border2);text-align:' +
+    (align || 'right') +
+    '">' +
+    t +
+    '</td>';
+  const tfoot = ok.length
+    ? '<tfoot><tr>' +
+      tf('Total (' + ok.length + ' file' + (ok.length !== 1 ? 's' : '') + ')', 'left') +
+      tf('') +
+      tf('') +
+      tf(sum(ok, (i) => i.stats.periods)) +
+      tf('') +
+      tf('') +
+      tf(kwh ? fmtN(kwh) + ' kWh' : '—') +
+      tf(fmtC(sum(ok, (i) => i.stats.cost))) +
+      tf('') +
+      '</tr></tfoot>'
+    : '';
+  // Unmatched rows first, so they cannot be missed.
+  document.getElementById('billsMultiPreviewTable').innerHTML =
+    '<thead>' + thead + '</thead><tbody>' + bad.concat(ok).map(row).join('') + '</tbody>' + tfoot;
+  const sumEl = document.getElementById('billsMultiSummary');
+  sumEl.textContent = _bmPlan.done
+    ? 'Done. ' + (bad.length ? bad.length + ' file(s) were not imported (listed above).' : 'Every file was imported.')
+    : bad.length
+      ? bad.length +
+        ' file(s) fit no meter and will NOT be imported. Fix the Bill file name or the Account # / Meter # and choose the files again.'
+      : '';
+  document.getElementById('billsMultiPreviewWrap').style.display = '';
+  const btn = document.getElementById('billsMultiBtn');
+  btn.style.display = _bmPlan.done ? 'none' : '';
+  btn.disabled = !ok.length;
+  btn.textContent = ok.length
+    ? 'Import ' +
+      sum(ok, (i) => i.stats.periods) +
+      ' Periods for ' +
+      new Set(ok.map((i) => i.meter.m.id)).size +
+      ' Meter(s)'
+    : 'Nothing to import';
+}
+
+function importBillsMulti() {
+  const plan = _bmPlan;
+  const todo = plan ? plan.items.filter((i) => i.meter && i.rows && !i.imported) : [];
+  if (!todo.length) {
+    showToast('Nothing to import', 'warn');
+    return;
+  }
+  let added = 0;
+  let updated = 0;
+  let kept = 0;
+  todo.forEach((i) => {
+    // The meter object was found when the preview was made. Find it again now, so a project reload while the
+    // window was open (a sync) cannot send the bills to an object that is no longer stored.
+    const curB = getUDBldg(plan.projId, i.meter.b.id);
+    const cur = getUDMeter(plan.projId, i.meter.b.id, i.meter.m.id);
+    if (!cur) {
+      i.reason = 'The meter is no longer in the project';
+      i.meter = null;
+      return;
+    }
+    i.meter = { b: curB, m: cur };
+    i.res = applyBillRowsToMeter(cur, i.rows);
+    i.imported = true;
+    added += i.res.added;
+    updated += i.res.updated;
+    kept += i.res.keptCorrected;
+  });
+  plan.done = true;
+  saveUtilityData(plan.projId);
+  renderUDProjList();
+  if (typeof renderUDDetail === 'function') renderUDDetail();
+  refreshOpenProjDetail();
+  const nMeters = new Set(todo.filter((i) => i.imported).map((i) => i.meter.m.id)).size;
+  const nBad = plan.items.filter((i) => !i.meter).length;
+  showToast(
+    'Imported: ' +
+      added +
+      ' new, ' +
+      updated +
+      ' updated for ' +
+      nMeters +
+      ' meter' +
+      (nMeters !== 1 ? 's' : '') +
+      (kept ? ', ' + kept + ' hand-corrected value' + (kept !== 1 ? 's' : '') + ' kept' : '') +
+      (nBad ? ' · ' + nBad + ' file(s) NOT imported' : '') +
+      ' ✓',
+  );
+  addNotif(
+    'Bills Imported',
+    'Added ' + added + ' new billing period' + (added !== 1 ? 's' : '') + ' to ' + nMeters + ' meter(s)',
+    '📥',
+  );
+  _renderBillsMultiPreview();
+}
+window.importBillsMulti = importBillsMulti;
 
 // #113575be: Open PDF import flow from the Bills tab.
 // Resolves embed context, navigates to the PDF/OCR view, pre-selects the project,

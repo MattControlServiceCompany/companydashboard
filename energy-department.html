@@ -33,7 +33,7 @@
       href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
-    <link href="lib/quill.snow.css?v=109" rel="stylesheet" />
+    <link href="lib/quill.snow.css?v=110" rel="stylesheet" />
     <script src="app/ch-auth.js"></script>
 
     <style id="site-ui-styles">
@@ -8449,7 +8449,7 @@
         }
       }
     </style>
-    <link rel="stylesheet" href="feedback-widget.css?v=109" />
+    <link rel="stylesheet" href="feedback-widget.css?v=110" />
     <style>
       /* -- Quill rich text editor — dark theme overrides -- */
       .ql-toolbar.ql-snow {
@@ -14712,9 +14712,9 @@
 
       <!-- BUILDING LIST IMPORT MODAL -->
       <div class="modal-bg" id="bldgImportModal">
-        <div class="modal" style="width: 720px; max-width: 96vw">
+        <div class="modal" style="width: 1400px; max-width: 96vw">
           <div class="modal-hdr">
-            <span class="modal-title">⬆ Import Building List</span>
+            <span class="modal-title">⬆ Import Buildings and Meters</span>
             <button class="modal-x" onclick="closeBldgImportModal()">✕</button>
           </div>
           <div class="modal-body">
@@ -14733,10 +14733,16 @@
                 Expected columns (Excel or CSV):
               </div>
               <div style="font-family: var(--mono); font-size: 11px; color: var(--em)">
-                Building Name, Building SQFT, Address
+                Building Name, Building SQFT, Address, Commodity, Provider, Account #, Meter #, Bill file
               </div>
               <div style="margin-top: 6px; color: var(--text2)">
-                Header row required. SQFT column may contain $ or ¢ characters — they will be stripped.
+                Header row required. Building Name is the only column you must have. To add meters, add the
+                Commodity, Provider, Account # and Meter # columns: one row for each meter, so a building with two
+                meters has two rows. A row joins the building with the same name in this project, or makes the
+                building if it is not there. A meter that is already on the building is skipped. Keep a meter number
+                such as "123 | 456" as it is. Bill file (optional) is the name of the bill CSV for that meter, so
+                Import Bills can send the file to the right meter. A file with columns A to C and gas columns F to H
+                (the older building list) still works. SQFT may contain $ or ¢ characters — they will be stripped.
               </div>
             </div>
             <div
@@ -14759,7 +14765,9 @@
               <div class="dz-title" id="bldgImportDropLabel" style="font-size: 13px">
                 Drop .xlsx or .csv file, or click to browse
               </div>
-              <div class="dz-sub" style="font-size: 11px">One row per building · Header row required</div>
+              <div class="dz-sub" style="font-size: 11px">
+                One row per building, or one row per meter · Header row required
+              </div>
               <input
                 type="file"
                 id="bldgImportInput"
@@ -14779,7 +14787,7 @@
                     color: var(--em);
                   "
                 >
-                  Preview — <span id="bldgImportCount">0</span> buildings found
+                  Preview — <span id="bldgImportCount">0</span> buildings found<span id="bldgImportMeterNote"></span>
                 </div>
                 <label style="font-size: 11px; color: var(--text2); cursor: pointer; user-select: none">
                   <input
@@ -14812,7 +14820,107 @@
           <div class="modal-ftr">
             <button class="btn btn-ghost" onclick="closeBldgImportModal()">Cancel</button>
             <button class="btn btn-em" id="bldgImportBtn" style="display: none" onclick="importBuildingList()">
-              Import Selected Buildings
+              Import Selected
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- BILLS FOR MANY METERS AT ONCE (several bill CSV files, or one CSV with Account # and Meter # columns) -->
+      <div class="modal-bg" id="billsMultiModal">
+        <div class="modal" style="width: 1400px; max-width: 96vw">
+          <div class="modal-hdr">
+            <span class="modal-title">📥 Import Bills for Many Meters</span>
+            <button class="modal-x" onclick="closeBillsMultiModal()">✕</button>
+          </div>
+          <div class="modal-body">
+            <div
+              style="
+                background: var(--s3);
+                border: 1px solid var(--border);
+                border-radius: 8px;
+                padding: 12px 14px;
+                margin-bottom: 14px;
+                font-size: 12px;
+                line-height: 1.7;
+              "
+            >
+              <div style="font-weight: 700; margin-bottom: 4px; color: var(--text)">How the files find their meter:</div>
+              <div style="color: var(--text2)">
+                Choose all the bill CSV files at once. Each file goes to the meter in this project whose Bill file name
+                is the same as the file name (the Bill file column of the meter list). Or use one CSV that has
+                Account # and Meter # columns: each row goes to the meter with those numbers. Columns inside each
+                file are the same as for one meter: start_date, end_date, kwh, and so on. A file that fits no meter is
+                shown and is not imported. Choosing a file again does not add its bills twice: it updates them.
+              </div>
+            </div>
+            <div
+              class="drop-zone"
+              id="billsMultiDrop"
+              style="padding: 20px; margin-bottom: 12px"
+              onclick="document.getElementById('billsMultiInput').click()"
+              ondragover="
+                event.preventDefault();
+                this.classList.add('drag');
+              "
+              ondragleave="this.classList.remove('drag')"
+              ondrop="
+                event.preventDefault();
+                this.classList.remove('drag');
+                handleBillsMultiFiles(event.dataTransfer.files);
+              "
+            >
+              <span class="dz-ico" style="font-size: 26px">📄</span>
+              <div class="dz-title" id="billsMultiDropLabel" style="font-size: 13px">
+                Drop the bill CSV files here, or click to choose several
+              </div>
+              <div class="dz-sub" style="font-size: 11px">One CSV file for each meter · Header row required</div>
+              <input
+                type="file"
+                id="billsMultiInput"
+                accept=".csv,.txt"
+                multiple
+                style="display: none"
+                onchange="handleBillsMultiFiles(this.files)"
+              />
+            </div>
+            <div id="billsMultiPreviewWrap" style="display: none">
+              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px">
+                <div
+                  style="
+                    font-size: 11px;
+                    font-weight: 700;
+                    text-transform: uppercase;
+                    letter-spacing: 0.6px;
+                    color: var(--em);
+                  "
+                  id="billsMultiPreviewLabel"
+                >
+                  Preview
+                </div>
+              </div>
+              <div
+                style="
+                  overflow-x: auto;
+                  border: 1px solid var(--border);
+                  border-radius: 7px;
+                  max-height: min(420px, 36vh);
+                  overflow-y: auto;
+                "
+              >
+                <table
+                  class="ud-bill-tbl"
+                  id="billsMultiPreviewTable"
+                  style="min-width: unset; font-size: 12px"
+                ></table>
+              </div>
+              <div id="billsMultiSummary" style="margin-top: 8px; font-size: 12px; color: var(--warn)"></div>
+            </div>
+          </div>
+          <div class="modal-ftr">
+            <button class="btn btn-ghost" onclick="closeBillsMultiModal()">Close</button>
+            <button class="btn btn-em" id="billsMultiBtn" style="display: none" onclick="importBillsMulti()">
+              Import
             </button>
           </div>
         </div>
@@ -15789,41 +15897,41 @@
       crossorigin="anonymous"
     ></script>
     <!-- CompanyHub computation modules -->
-    <script src="lib/date-helpers.js?v=109"></script>
-    <script src="lib/formatting.js?v=109"></script>
-    <script src="lib/unit-conversion.js?v=109"></script>
-    <script src="lib/csv-parser.js?v=109"></script>
-    <script src="computations/rates.js?v=109"></script>
-    <script src="computations/regression.js?v=109"></script>
-    <script src="computations/normalization.js?v=109"></script>
-    <script src="computations/eui.js?v=109"></script>
-    <script src="computations/hvac-enduse.js?v=109"></script>
-    <script src="computations/pollution.js?v=109"></script>
-    <script src="computations/csc.js?v=109"></script>
-    <script src="computations/savings.js?v=109"></script>
-    <script src="computations/bill-flags.js?v=109"></script>
-    <script src="computations/anomaly-detection.js?v=109"></script>
-    <script src="lib/perf-table.js?v=109"></script>
-    <script src="lib/shared-charts.js?v=109"></script>
-    <script src="computations/report-data.js?v=109"></script>
-    <script src="computations/data-quality.js?v=109"></script>
-    <script src="extraction/pdf-engine.js?v=109"></script>
-    <script src="app/sync-classification.js?v=109"></script>
-    <script src="app/db.js?v=109"></script>
-    <script src="app/sync-ui.js?v=109"></script>
-    <script src="app/ems-leads-store.js?v=109"></script>
-    <script src="app/core.js?v=109"></script>
-    <script src="app/energy-savings.js?v=109"></script>
-    <script src="app/bill-analysis.js?v=109"></script>
-    <script src="extraction/bill-validation.js?v=109"></script>
-    <script src="app/district-calendar.js?v=109"></script>
-    <script src="app/scope-tree.js?v=109"></script>
-    <script src="app/utility-data.js?v=109"></script>
-    <script src="app/pipeline-diagram.js?v=109"></script>
-    <script src="app/csv-import.js?v=109"></script>
-    <script src="app/bill-pdf-attach.js?v=109"></script>
-    <script src="app/meter-autocreate.js?v=109"></script>
-    <script src="app/bill-corrections-review.js?v=109"></script>
+    <script src="lib/date-helpers.js?v=110"></script>
+    <script src="lib/formatting.js?v=110"></script>
+    <script src="lib/unit-conversion.js?v=110"></script>
+    <script src="lib/csv-parser.js?v=110"></script>
+    <script src="computations/rates.js?v=110"></script>
+    <script src="computations/regression.js?v=110"></script>
+    <script src="computations/normalization.js?v=110"></script>
+    <script src="computations/eui.js?v=110"></script>
+    <script src="computations/hvac-enduse.js?v=110"></script>
+    <script src="computations/pollution.js?v=110"></script>
+    <script src="computations/csc.js?v=110"></script>
+    <script src="computations/savings.js?v=110"></script>
+    <script src="computations/bill-flags.js?v=110"></script>
+    <script src="computations/anomaly-detection.js?v=110"></script>
+    <script src="lib/perf-table.js?v=110"></script>
+    <script src="lib/shared-charts.js?v=110"></script>
+    <script src="computations/report-data.js?v=110"></script>
+    <script src="computations/data-quality.js?v=110"></script>
+    <script src="extraction/pdf-engine.js?v=110"></script>
+    <script src="app/sync-classification.js?v=110"></script>
+    <script src="app/db.js?v=110"></script>
+    <script src="app/sync-ui.js?v=110"></script>
+    <script src="app/ems-leads-store.js?v=110"></script>
+    <script src="app/core.js?v=110"></script>
+    <script src="app/energy-savings.js?v=110"></script>
+    <script src="app/bill-analysis.js?v=110"></script>
+    <script src="extraction/bill-validation.js?v=110"></script>
+    <script src="app/district-calendar.js?v=110"></script>
+    <script src="app/scope-tree.js?v=110"></script>
+    <script src="app/utility-data.js?v=110"></script>
+    <script src="app/pipeline-diagram.js?v=110"></script>
+    <script src="app/csv-import.js?v=110"></script>
+    <script src="app/bill-pdf-attach.js?v=110"></script>
+    <script src="app/meter-autocreate.js?v=110"></script>
+    <script src="app/bill-corrections-review.js?v=110"></script>
     <!-- Word Export Rebuild plan Steps 1/3 (app/docx-skeleton.js, app/docx-writer.js) were never
          wired into this page's script list -- exportReportToDocx() (report-engine.js) calls
          _docxTranslatePages()/_docxAssemble() (docx-writer.js) and CSC_DOCX_SKELETON_B64
@@ -15833,40 +15941,40 @@
          the gap was never exercised end-to-end). Formal button wiring is plan Step 11; these two
          tags are the load-order prerequisite that step (and every step since 6) actually needs
          to function through the live app at all, not new report content. -->
-    <script src="app/docx-skeleton.js?v=109"></script>
-    <script src="app/docx-writer.js?v=109"></script>
-    <script src="app/report-engine.js?v=109"></script>
-    <script src="app/report-printed.js?v=109"></script>
-    <script src="app/report-engine-woodland.js?v=109"></script>
-    <script src="app/report-preview.js?v=109"></script>
-    <script src="app/presented-savings.js?v=109"></script>
-    <script src="app/data/bas-weather-bins.js?v=109"></script>
-    <script src="app/calc-autofill.js?v=109"></script>
-    <script src="app/calculators.js?v=109"></script>
-    <script src="app/ecm-calculators.js?v=109"></script>
-    <script src="app/equipment-matrix.js?v=109"></script>
+    <script src="app/docx-skeleton.js?v=110"></script>
+    <script src="app/docx-writer.js?v=110"></script>
+    <script src="app/report-engine.js?v=110"></script>
+    <script src="app/report-printed.js?v=110"></script>
+    <script src="app/report-engine-woodland.js?v=110"></script>
+    <script src="app/report-preview.js?v=110"></script>
+    <script src="app/presented-savings.js?v=110"></script>
+    <script src="app/data/bas-weather-bins.js?v=110"></script>
+    <script src="app/calc-autofill.js?v=110"></script>
+    <script src="app/calculators.js?v=110"></script>
+    <script src="app/ecm-calculators.js?v=110"></script>
+    <script src="app/equipment-matrix.js?v=110"></script>
     <!-- soo-generator.js (SOO Phase 1, item 3f1415af): reads points/config flags via the
          EXISTING emGetNormalizedPoints/emComputeCompliance/emLoadEquipConfigFlags (equipment-
          matrix.js, loaded above). Format-correction pass (2026-09-13): renders the MASTER
          SEQUENCES OF OPERATION document's own Word format directly (Heading 1/Normal/bold-label
          runs), NOT the report-engine .rpt-page shell — soo-docx-skeleton.js supplies the
          master-doc-derived skeleton its own Word export splices into. -->
-    <script src="app/soo-docx-skeleton.js?v=109"></script>
-    <script src="app/soo-generator.js?v=109"></script>
-    <script src="app/graphics-setpoints.js?v=109"></script>
-    <script src="app/budget.js?v=109"></script>
-    <script src="app/hours.js?v=109"></script>
-    <script src="app/scorecard.js?v=109"></script>
-    <script src="app/bas-trends.js?v=109"></script>
-    <script src="app/bas-alarms.js?v=109"></script>
-    <script src="app/pricing-estimator.js?v=109"></script>
-    <script src="app/estimate-workbook.js?v=109"></script>
-    <script src="app/estimate-workbook-export.js?v=109"></script>
-    <script src="app/audit-estimate.js?v=109"></script>
-    <script src="app/agreement-engine.js?v=109"></script>
+    <script src="app/soo-docx-skeleton.js?v=110"></script>
+    <script src="app/soo-generator.js?v=110"></script>
+    <script src="app/graphics-setpoints.js?v=110"></script>
+    <script src="app/budget.js?v=110"></script>
+    <script src="app/hours.js?v=110"></script>
+    <script src="app/scorecard.js?v=110"></script>
+    <script src="app/bas-trends.js?v=110"></script>
+    <script src="app/bas-alarms.js?v=110"></script>
+    <script src="app/pricing-estimator.js?v=110"></script>
+    <script src="app/estimate-workbook.js?v=110"></script>
+    <script src="app/estimate-workbook-export.js?v=110"></script>
+    <script src="app/audit-estimate.js?v=110"></script>
+    <script src="app/agreement-engine.js?v=110"></script>
 
-    <script src="app/restore-merge.js?v=109"></script>
-    <script src="app/site-functions.js?v=109"></script>
+    <script src="app/restore-merge.js?v=110"></script>
+    <script src="app/site-functions.js?v=110"></script>
     <script>
       /* -- DRAG-TO-RESIZE PANELS -- */
       (function () {
@@ -16037,14 +16145,14 @@
       </div>
     </div>
 
-    <script src="app/tooltips-help.js?v=109"></script>
-    <script src="feedback-widget.js?v=109"></script>
+    <script src="app/tooltips-help.js?v=110"></script>
+    <script src="feedback-widget.js?v=110"></script>
     <script
       src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.min.js"
       integrity="sha384-reiVBUvj2HgLgCZalqLFSMBVD9LdtiwGyybRGCq2AfP8Rgebz5DxEnwKp4FpagKV"
       crossorigin="anonymous"
     ></script>
-    <script src="lib/rich-text.js?v=109"></script>
+    <script src="lib/rich-text.js?v=110"></script>
     <script>
       /* Handle ?openProject=... URL params — opened by _rptV2GoEdit() popup window */
       (function _handleEditRedirect() {

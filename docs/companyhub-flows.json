@@ -89,6 +89,14 @@
           "fields": ["Facility Name (required)", "Facility Address", "Square Footage", "ZIP Code"]
         },
         {
+          "id": "meter-import",
+          "name": "Import buildings, meters and bills from CSV",
+          "description": "Import List (+ Add Building / Import List / Import Bills row, same on the sidebar Utility Data page and the project Utility Data tab) makes buildings and meters of any commodity from one CSV, one row per meter. A row joins the building of the same name in the project or creates it; a meter already on the building is skipped. Import Bills takes several bill CSV files (or one CSV with Account # and Meter # columns), shows a per-meter preview and lists any file that fits no meter without importing it.",
+          "functions": ["openBldgImportModalForProj()", "parseBuildingListTable()", "importBuildingList()", "udMeterMatchesIdentity()", "findUDMetersByIdentity()", "openBillsMultiImportForProj()", "planBillFiles()", "importBillsMulti()", "parseBillCsvText()", "applyBillRowsToMeter()"],
+          "modalIds": ["#bldgImportModal", "#billsMultiModal"],
+          "fields": ["Building Name", "Building SQFT", "Address", "Commodity", "Provider", "Account #", "Meter #", "Bill file"]
+        },
+        {
           "id": "meter-mgmt",
           "name": "Meter Management",
           "description": "Multiple meters per building. Commodity types determine available units. Meters hold bills and optional baseline regressions.",

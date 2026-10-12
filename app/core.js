@@ -2401,16 +2401,18 @@ function initDashboardTab(projId) {
                     const blTip = r.meterDetails
                       .map(
                         (d) =>
-                          d.name +
-                          ' (' +
-                          d.commodity +
-                          '): ' +
-                          (d.included ? (d.hasBaseline ? '✓ included' : '… no baseline') : '✗ excluded'),
+                          _escHtml(
+                            d.name +
+                              ' (' +
+                              d.commodity +
+                              '): ' +
+                              (d.included ? (d.hasBaseline ? '✓ included' : '… no baseline') : '✗ excluded'),
+                          ),
                       )
                       .join('&#10;');
                     return `<tr>
                   <td style="font-family:var(--mono);font-size:10px;color:var(--text3);text-align:center">${_ri + 1}</td>
-                  <td style="font-weight:600">${r.name || '—'}</td>
+                  <td style="font-weight:600">${_escHtml(r.name || '—')}</td>
                   <td style="text-align:right;font-size:11px;color:var(--text2)">${r.sqft ? Number(r.sqft).toLocaleString() : '—'}</td>
                   <td style="text-align:center;cursor:help" title="${blTip}"><span style="color:${blColor};font-size:13px">${blIcon}</span> <span style="font-size:10px;color:var(--text2)">${r.meterIncl}/${r.meterTotal}</span></td>
                   <td style="text-align:right;font-size:11px;color:var(--text2)">${r.blPeriod || '—'}</td>
@@ -3270,7 +3272,7 @@ function renderProjUDBldgNav(projId) {
       return `<div class="ud-nav-bldg-item${isActive ? ' active' : ''}" onclick="projUDSelectBldg('${projId}','${b.id}')">
             <span style="font-size:14px">${getFacilityIcon?.(b.type) || '🏢'}</span>
             <div style="flex:1;min-width:0">
-              <div class="ud-nav-bldg-name">${b.name || 'Building'}</div>
+              <div class="ud-nav-bldg-name">${_escHtml(b.name || 'Building')}</div>
               <div class="ud-nav-bldg-meta">${totalMCount} meter${totalMCount !== 1 ? 's' : ''} ${blBadge}</div>
             </div>
             <div class="ud-nav-bldg-actions">
@@ -3596,13 +3598,13 @@ function renderProjSavedBills(projId) {
     }
     const bldgOpts = buildings
       .map(
-        (bl) => `<option value="${bl.id}"${bl.id === bestBldgId ? ' selected' : ''}>${bl.name || 'Building'}</option>`,
+        (bl) => `<option value="${bl.id}"${bl.id === bestBldgId ? ' selected' : ''}>${_escHtml(bl.name || 'Building')}</option>`,
       )
       .join('');
     const meterOpts = (buildings.find((x) => x.id === bestBldgId)?.meters || [])
       .map(
         (m) =>
-          `<option value="${m.id}"${m.id === bestMeterId ? ' selected' : ''}>${m.provider || m.commodity || 'Meter'} ${m.account ? '· ' + m.account : ''}</option>`,
+          `<option value="${m.id}"${m.id === bestMeterId ? ' selected' : ''}>${_escHtml((m.provider || m.commodity || 'Meter') + (m.account ? ' · ' + m.account : ''))}</option>`,
       )
       .join('');
     return `<div style="display:flex;gap:3px;align-items:center;flex-wrap:nowrap">
