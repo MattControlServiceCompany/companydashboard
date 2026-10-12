@@ -19,7 +19,8 @@
 // ── Merge rule (single source of truth) ─────────────────────────────────────
 // Each key is merged with app/restore-merge.js mergeValue(key, server, backup, 'newer-wins'),
 // the SAME function the app's Restore "Merge, keep whichever copy is newer" uses. There is no
-// second merge in this file. Result: a record only on the server stays; a record in both takes
+// second merge in this file (this importer alone passes { replaceWhole: true }; app Restore keeps every
+// field the backup lacks). Result: a record only on the server stays; a record in both takes
 // the backup record WHOLE (a field only the server record has, such as a stale updatedAt, is dropped; the
 // nested list and the derived meter cache fields are kept), and a record only in the backup is added.
 // The old server value goes to kv_history, so nothing is lost. "Newer updated-at wins" is a
@@ -1310,6 +1311,7 @@ function planKey(key, serverRow, backupValue, backupKeys, opts) {
     backupValue,
     "newer-wins",
     backupKeys,
+    { replaceWhole: true },
   );
   const detail = diffRecords(
     pol,

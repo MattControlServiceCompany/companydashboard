@@ -307,21 +307,33 @@ const RestoreMerge = (() => {
     });
   }
 
-  // Backup-wins on one matched record: the backup record REPLACES the current record whole, as the
-  // plain-key and map entries already do. A field only the current record holds is dropped (its name is
-  // listed in the overwrote event, and the caller keeps the old value in history). `keep` names the fields
-  // that are not the backup's to replace: the nested list (merged on its own) and the derived cache fields.
+  // Backup-wins on one matched record. App Restore (default): every field the backup record holds replaces
+  // the current value; fields only the current record holds stay. Go-live importer (st.replaceWhole, set by
+  // mergeValue option replaceWhole): the backup record REPLACES the current record whole, so a field only the
+  // current record holds is dropped (named in the overwrote event; the caller keeps the old value in history).
+  // `keep` (replaceWhole only) names the fields that are not the backup's to replace: the nested list
+  // (merged on its own) and the derived cache fields.
   function win(cur, bak, st, keep) {
     if (!isRec(cur) || !isRec(bak)) return cur;
-    const out = Object.assign({}, bak);
-    Object.keys(out).forEach((k) => {
-      if (out[k] === undefined) delete out[k];
-    });
-    (keep || []).forEach((k) => {
-      if (k in cur) out[k] = cur[k];
-    });
-    if (same(cur, out)) return cur;
-    st.updated += 1;
+    if (st.replaceWhole) {
+      const out = Object.assign({}, bak);
+      Object.keys(out).forEach((k) => {
+        if (out[k] === undefined) delete out[k];
+      });
+      (keep || []).forEach((k) => {
+        if (k in cur) out[k] = cur[k];
+      });
+      if (same(cur, out)) return cur;
+      st.updated += 1;
+      return out;
+    }
+    let out = cur;
+    for (const k of Object.keys(bak)) {
+      if (bak[k] === undefined || same(cur[k], bak[k])) continue;
+      if (out === cur) out = Object.assign({}, cur);
+      out[k] = bak[k];
+    }
+    if (out !== cur) st.updated += 1;
     return out;
   }
 
@@ -380,7 +392,7 @@ const RestoreMerge = (() => {
           const keep = (child ? [child] : []).concat(pol.strip && pol.stripLevel === level ? pol.strip : []);
           next = win(c, own, st, keep);
           if (next !== c) {
-            st.events.push(Object.assign({ kind: 'overwrote', fields: diffFields(c, next) }, ev));
+            st.events.push(Object.assign({ kind: 'overwrote', fields: diffFields(c, st.replaceWhole ? next : own) }, ev));
             if (mode === 'backup-wins' && curIsNewer(c, own)) {
               st.overwroteNewer += 1;
               st.overwroteNewerNames.push(describe(c, pol, level) || null); // never a raw id: the summary shows the label
@@ -492,14 +504,14 @@ const RestoreMerge = (() => {
     return isCont(value) ? value : backupRaw;
   }
 
-  // mergeValue(key, current, backup, mode, backupKeys)
+  // mergeValue(key, current, backup, mode, backupKeys, opts)  opts.replaceWhole (default false): importer only, see win()
   //   -> { value, changed, added, updated, kept, removed, names, policy }
   // `current` undefined = key absent.
-  function mergeValue(key, currentRaw, backupRaw, mode, backupKeys) {
+  function mergeValue(key, currentRaw, backupRaw, mode, backupKeys, opts) {
     const pol = policyFor(key, backupKeys);
     const cur = parseMaybe(currentRaw);
     const bak = parseMaybe(backupRaw);
-    const st = { added: 0, updated: 0, kept: 0, removed: 0, names: [], keptNewer: 0, overwroteNewer: 0, overwroteNewerNames: [], events: [], fields: null };
+    const st = { added: 0, updated: 0, kept: 0, removed: 0, names: [], keptNewer: 0, overwroteNewer: 0, overwroteNewerNames: [], events: [], fields: null, replaceWhole: !!(opts && opts.replaceWhole) };
     const done = (value, changed) =>
       Object.assign(
         { value: changed ? represent(value, currentRaw, cur, backupRaw, bak) : currentRaw, changed, policy: pol.kind },

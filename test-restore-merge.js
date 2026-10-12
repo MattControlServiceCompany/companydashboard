@@ -1419,12 +1419,56 @@ t(
       );
       assert.strictEqual(r.removed, 0, key);
     }
-    // a matched record is replaced whole: a field only the server record holds is dropped and is named as lost
-    const w = mv('en_projects', [{ id: 'p1', name: 'A', extra: 'srv' }], [{ id: 'p1', name: 'B' }], 'backup-wins');
-    assert.strictEqual(w.value[0].extra, undefined);
-    assert.deepStrictEqual(w.events.find((e) => e.kind === 'overwrote').fields.lost, ['extra']);
+    // a field only the server record holds stays (union per field)
+    assert.strictEqual(
+      mv('en_projects', [{ id: 'p1', name: 'A', extra: 'srv' }], [{ id: 'p1', name: 'B' }], 'backup-wins').value[0]
+        .extra,
+      'srv',
+    );
   },
 );
+// Restore keeps every field the backup lacks (nested lists outside the policy path, notes, file refs). Only the
+// go-live importer passes replaceWhole and drops them. Synthetic fixtures only.
+const keepCases = () => {
+  const util = (withExtra) => ({
+    buildings: [
+      {
+        id: 'b1',
+        name: 'B',
+        meters: [
+          {
+            id: 'm1',
+            label: 'M',
+            ...(withExtra ? { billFile: 'f.pdf' } : {}),
+            bills: [{ id: 'x', kwh: 1, ...(withExtra ? { pdfRef: 'p' } : {}) }],
+          },
+        ],
+      },
+    ],
+  });
+  return [
+    ['en_projects', [{ id: 'p1', name: 'A', measures: [{ id: 1 }] }], [{ id: 'p1', name: 'A2' }], (v) => v[0].measures, 'measures'],
+    ['en_customers', [{ id: 'c1', name: 'A', contacts: [{ n: 1 }] }], [{ id: 'c1', name: 'A2' }], (v) => v[0].contacts, 'contacts'],
+    ['en_utility_cust_1', util(true), util(false), (v) => v.buildings[0].meters[0].billFile, 'billFile'],
+    ['en_utility_cust_1', util(true), util(false), (v) => v.buildings[0].meters[0].bills[0].pdfRef, 'pdfRef'],
+  ];
+};
+for (const mode of ['backup-wins', 'newer-wins']) {
+  t('app Restore ' + mode + ': fields the backup lacks stay (measures, contacts, billFile, pdfRef)', () => {
+    for (const [key, c, b, get, name] of keepCases()) {
+      const r = mv(key, c, b, mode);
+      assert.ok(get(r.value) !== undefined, mode + ' ' + key + ' ' + name + ' kept');
+    }
+  });
+}
+t('importer replaceWhole: fields the backup lacks are dropped and named as lost', () => {
+  for (const [key, c, b, get, name] of keepCases()) {
+    const r = RM.mergeValue(key, c, b, 'newer-wins', [key], { replaceWhole: true });
+    assert.strictEqual(get(r.value), undefined, key + ' ' + name + ' dropped');
+    const lost = [].concat(...r.events.filter((e) => e.kind === 'overwrote').map((e) => e.fields.lost));
+    assert.ok(lost.includes(name), key + ' ' + name + ' named as lost');
+  }
+});
 t('backup-wins (c1): en_presented_savings (frozen client figures) stays add-only', () => {
   const k = (v) => ({ projectId: 'p', periodStart: '2026-01-01', periodEnd: '2026-03-31', v });
   const r = mv('en_presented_savings', [k('frozen')], [k('changed')], 'backup-wins');
