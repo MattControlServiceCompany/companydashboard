@@ -2477,6 +2477,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.11.105', date: '2026-10-11', title: 'Cost Estimate audit estimate counts all equipment',
+    items: [
+      { type: 'fix', text: 'Cost Estimate, audit estimate: the unit count now includes every piece of equipment, such as VRF, air conditioning, plumbing, controls, elevator, heating and plant equipment.' },
+      { type: 'change', text: 'Cost Estimate, audit estimate: monitors, detectors and meters are not counted as units. Pricing is unchanged.' }
+    ]
+  },
   { v: 'v2026.10.11.104', date: '2026-10-11', title: 'Bill Analysis reads each page of a mixed PDF correctly',
     items: [
       { type: 'fix', text: 'Bill Analysis: a PDF that holds bills from more than one utility is now read page by page, and each page is read by the utility it belongs to.' },
