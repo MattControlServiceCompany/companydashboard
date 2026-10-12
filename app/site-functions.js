@@ -2506,6 +2506,13 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.12.106', date: '2026-10-12', title: 'Restore from backup: new merge choice',
+    items: [
+      { type: 'feature', text: 'Restore from backup (in the sidebar) has a new choice: Merge, keep whichever copy is newer. Every value takes the backup value, except a record that was changed on the server after the backup was made.' },
+      { type: 'change', text: 'Restore from backup: "Make this backup the server copy" replaces everything again, and now lists the records it overwrites that had a newer server copy.' },
+      { type: 'change', text: 'Restore from backup: the wording in the dialog is shorter and plainer.' }
+    ]
+  },
   { v: 'v2026.10.11.105', date: '2026-10-11', title: 'Cost Estimate audit estimate counts all equipment',
     items: [
       { type: 'fix', text: 'Cost Estimate, audit estimate: the unit count now includes every piece of equipment, such as VRF, air conditioning, plumbing, controls, elevator, heating and plant equipment.' },

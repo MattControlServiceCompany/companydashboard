@@ -205,6 +205,8 @@ credits a call, from that figure). It is removed.
   check: node test-sync-golive-blockers.js, the "(a):" test; `SyncClassification.classifyKey('ch_sb_session')` is
   `local-only`.
 
+- Restore has 5 modes. "Merge, keep whichever copy is newer" (`'newer-wins'`) is the same as backup-wins but keeps a strictly newer server record. The next paragraph describes backup-wins.
+
 - Restore mode "Make this backup the server copy" (`'backup-wins'`, app/restore-merge.js `mergeValue` and `plan`, dialog in
   app/site-functions.js `_restoreDialog`). It reuses `_restoreApply` and `DB.restorePush` (no second upload path): a key that
   is absent on the server is inserted at version 1 (`baseVersion` null); a key that differs is replaced at the server version
@@ -266,11 +268,11 @@ Nothing is deleted by this restore. On a record in both, the backup value wins, 
 What it is: a Node script (scripts/migrate-seed.js) that loads a backup file into the Supabase `kv` table and the `pdf_blobs`
 bucket. It talks to Supabase directly, so it costs 0 Netlify credits and works while Netlify has no deploy credits.
 The old whole-key `--force`, `--live` and `--dry-run` flags are gone. Merge rule: it calls `RestoreMerge.mergeValue(key,
-server, backup, 'backup-wins')` (app/restore-merge.js), the same function as Restore "Make this backup the server copy". A
+server, backup, 'newer-wins')` (app/restore-merge.js), the same function as Restore "Merge, keep whichever copy is newer". A
 record only on the server stays. A record in both takes the backup fields. On top: a backup record is dropped when the server
 copy has a strictly newer `updatedAt`/`updated_at`/`modifiedAt`/`lastModified`. No timestamp = the backup wins. This
-"newer wins" rule lives INSIDE `mergeValue` (app/restore-merge.js, `recordTime`/`curIsNewer`, 'backup-wins' mode only). It runs at
-every level (building, meter, bill, pricing entry, plain-key object). The app Restore "Make this backup the server copy" uses the
+"newer wins" rule lives INSIDE `mergeValue` (app/restore-merge.js, `recordTime`/`curIsNewer`, 'newer-wins' mode only; 'backup-wins' is an unconditional overwrite that lists the newer server records it overwrites). It runs at
+every level (building, meter, bill, pricing entry, plain-key object). The app Restore "Merge, keep whichever copy is newer" uses the
 same function, so the app and the importer give the same result. A key is HELD (no write, listed in the diff file) when the
 server has something the backup lacks: a list item, a nested object, or a plain field of any type. Name it in `--allow-removal`
 to write it.
