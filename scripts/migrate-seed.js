@@ -744,12 +744,12 @@ function isStorageNotFoundBody(text) {
 }
 
 async function pdfStorageStat(key, creds) {
-  const res = await fetch(pdfObjectUrl(creds, key), { headers: storageHeaders(creds, { Range: 'bytes=0-0' }) });
-  if (res.status === 404) return null;
-  if (res.status !== 200 && res.status !== 206) {
-    const text = await safeText(res);
-    if (res.status === 400 && isStorageNotFoundBody(text)) return null;
-    throw new Error('Storage stat failed (' + res.status + '): ' + text.slice(0, 300));
+  const r = await getWithRetry(pdfObjectUrl(creds, key), storageHeaders(creds, { Range: 'bytes=0-0' }));
+  const res = r.res;
+  if (r.status === 404) return null;
+  if (r.status !== 200 && r.status !== 206) {
+    if (r.status === 400 && isStorageNotFoundBody(r.body)) return null;
+    throw new Error('Storage stat failed (' + (r.networkError || r.status) + '): ' + scrubServerText(r.body));
   }
   const cr = res.headers.get('content-range');
   const m = /\/(\d+)\s*$/.exec(cr || '');
@@ -771,10 +771,10 @@ async function pdfStorageUpload(key, buffer, upsert, creds) {
 }
 
 async function pdfStorageDownload(key, creds) {
-  const res = await fetch(pdfObjectUrl(creds, key), { headers: storageHeaders(creds) });
-  if (res.status === 404) return null;
-  if (!res.ok) throw new Error('Storage download failed (' + res.status + ')');
-  return Buffer.from(await res.arrayBuffer());
+  const r = await getWithRetry(pdfObjectUrl(creds, key), storageHeaders(creds));
+  if (r.status === 404) return null;
+  if (r.status < 200 || r.status >= 300) throw new Error(describeFailedRead('Storage download', r));
+  return Buffer.from(await r.res.arrayBuffer());
 }
 
 // Mirrors netlify/functions/pdf-sync.js commitObject()/resolveAgainstExisting()
@@ -789,7 +789,7 @@ async function commitPdfObject(key, buffer, hash, creds) {
       const raced = await pdfStorageStat(key, creds);
       if (raced) return resolvePdfAgainstExisting(key, buffer, hash, raced, creds);
     }
-    return { key, status: 'error', httpStatus: up.status, error: up.networkError || up.body || '' };
+    return { key, status: 'error', httpStatus: up.status, error: up.networkError || scrubServerText(up.body) };
   }
   return resolvePdfAgainstExisting(key, buffer, hash, existing, creds);
 }
@@ -848,8 +848,27 @@ async function safeText(res) {
   }
 }
 
+// L3: a server error text can quote a fragment of the row value (for example a JSON parse error).
+// Only the error code and a short message are kept for the logs and the failure list.
+function scrubServerText(text) {
+  const t = String(text || '');
+  try {
+    const b = JSON.parse(t);
+    if (b && typeof b === 'object') {
+      const parts = [];
+      if (b.code) parts.push('code=' + String(b.code).slice(0, 20));
+      const m = b.message || b.error;
+      if (m) parts.push(String(m).slice(0, 80));
+      return parts.join(' ');
+    }
+  } catch (e) {
+    /* not JSON: fall through */
+  }
+  return t.slice(0, 80);
+}
+
 // ── Retry for writes ─────────────────────────────────────────────────────────
-// A write is tried up to RETRY.attempts times. Retried: a network error, a timeout, HTTP 408, 429 and 5xx.
+// A request is tried up to RETRY.attempts times. Retried: a network error, a timeout, HTTP 408, 429, 500, 502, 503, 504 and 520-524.
 // Not retried: any other status (a 4xx is a real answer). Waits baseMs, 2x, 4x between tries.
 // Tests set RETRY.baseMs = 0.
 const RETRY = { attempts: 4, baseMs: 1000, timeoutMs: 180000 };
@@ -857,13 +876,17 @@ const RETRY = { attempts: 4, baseMs: 1000, timeoutMs: 180000 };
 // This is NOT a documented Supabase number: a value above it is flagged in the dry run and not sent.
 const KV_VALUE_MAX_BYTES = 25 * 1024 * 1024;
 
+// Transient statuses only. 501 and 505 are not transient, so they are not retried.
 function isRetryableStatus(st) {
-  return st === 408 || st === 429 || st >= 500;
+  return st === 408 || st === 429 || st === 500 || st === 502 || st === 503 || st === 504 || (st >= 520 && st <= 524);
 }
 
 // fn(signal) -> fetch Response. Returns { status, body, attempts, networkError, res } of the LAST try. Never throws.
+// alreadyDone (optional): async () => boolean, called before every RETRY (not the first try). If it returns true, an
+// earlier try was applied and its answer was lost, so the request is not sent again: the result has status 200,
+// res null and alreadyDone true. A throw inside it counts as "not done".
 // body = first 300 chars of the response text of a failed answer (a server error message; never the key, never the request).
-async function fetchWithRetry(fn) {
+async function fetchWithRetry(fn, alreadyDone) {
   let last = { status: 0, body: '', attempts: 0, networkError: null, res: null };
   for (let i = 1; i <= RETRY.attempts; i++) {
     let res = null;
@@ -878,6 +901,15 @@ async function fetchWithRetry(fn) {
     if (!retry || i === RETRY.attempts) break;
     if (res) await safeText(res); // drain
     await new Promise((r) => setTimeout(r, RETRY.baseMs * Math.pow(2, i - 1)));
+    if (alreadyDone) {
+      let done = false;
+      try {
+        done = await alreadyDone();
+      } catch (e) {
+        done = false;
+      }
+      if (done) return { status: 200, body: '', attempts: i, networkError: null, res: null, alreadyDone: true };
+    }
   }
   if (last.res && !(last.status >= 200 && last.status < 300)) last.body = (await safeText(last.res)).slice(0, 300);
   return last;
@@ -887,20 +919,27 @@ function kvValueBytes(value) {
   return Buffer.byteLength(JSON.stringify(value), 'utf8');
 }
 
+// A GET with the same timeout and retry as a write. Returns the final fetchWithRetry result; never throws.
+function getWithRetry(url, headers) {
+  return fetchWithRetry((signal) => fetch(url, { headers, signal }));
+}
+
+function describeFailedRead(what, r) {
+  return what + ' failed (' + (r.networkError ? r.networkError : 'HTTP ' + r.status + (r.body ? ' ' + scrubServerText(r.body) : '')) + ')';
+}
+
 async function fetchKvRow(key, creds) {
-  const res = await fetch(creds.url + '/rest/v1/kv?key=eq.' + encodeURIComponent(key) + '&select=*', {
-    headers: pgHeaders(creds),
-  });
-  if (!res.ok) throw new Error('Server read failed (HTTP ' + res.status + ')');
-  const rows = await res.json();
+  const r = await getWithRetry(creds.url + '/rest/v1/kv?key=eq.' + encodeURIComponent(key) + '&select=*', pgHeaders(creds));
+  if (r.status < 200 || r.status >= 300) throw new Error(describeFailedRead('Server read', r));
+  const rows = await r.res.json();
   return Array.isArray(rows) && rows.length ? rows[0] : null;
 }
 
 // Every key on the server (names and flags only, no values).
 async function listServerKeys(creds) {
-  const res = await fetch(creds.url + '/rest/v1/kv?select=key,deleted&limit=100000', { headers: pgHeaders(creds) });
-  if (!res.ok) throw new Error('Server key list failed (HTTP ' + res.status + ')');
-  return await res.json();
+  const r = await getWithRetry(creds.url + '/rest/v1/kv?select=key,deleted&limit=100000', pgHeaders(creds));
+  if (r.status < 200 || r.status >= 300) throw new Error(describeFailedRead('Server key list', r));
+  return await r.res.json();
 }
 
 // Returns { status, body, attempts, networkError }. status 201 inserted, 409 key exists, 0 = no answer.
@@ -947,14 +986,47 @@ async function patchKvRow(row, expectedVersion, creds, operator) {
     }),
   );
   if (r.status < 200 || r.status >= 300) return { ok: false, status: r.status, body: r.body, networkError: r.networkError };
+  let rows = null;
+  let malformed = false;
+  try {
+    rows = await r.res.json();
+  } catch (e) {
+    malformed = true; // L4: a 2xx with a body that is not JSON. The write may have been applied.
+  }
+  if (!malformed && Array.isArray(rows) && rows.length === 1) return { ok: true, status: r.status, body: '', networkError: null };
+  // M1: 0 rows matched (or no readable answer). An earlier try may have been applied and its answer lost, so the
+  // version has moved on. If the stored hash is ours, the data is written.
+  try {
+    const now = await fetchKvRow(row.key, creds);
+    if (now && now.hash === row.hash) return { ok: true, status: r.status, body: '', networkError: null };
+  } catch (e) {
+    /* fall through to the failure */
+  }
+  if (malformed) return { ok: false, status: 0, body: '', networkError: 'HTTP ' + r.status + ' answer was not valid JSON' };
+  return { ok: false, status: r.status, body: 'no row matched the expected version', networkError: null };
+}
+
+// True if kv_history already holds a row for this key and version (one snapshot per version).
+async function historyRowExists(before, creds) {
+  const r = await getWithRetry(
+    creds.url + '/rest/v1/kv_history?key=eq.' + encodeURIComponent(before.key) + '&version=eq.' + before.version + '&select=id&limit=1',
+    pgHeaders(creds),
+  );
+  if (r.status < 200 || r.status >= 300) throw new Error(describeFailedRead('History read', r));
   const rows = await r.res.json();
-  const ok = Array.isArray(rows) && rows.length === 1;
-  return { ok, status: r.status, body: ok ? '' : 'no row matched the expected version', networkError: null };
+  return Array.isArray(rows) && rows.length > 0;
 }
 
 // Same row shape as netlify/functions/kv-sync.js snapshotHistory().
+// M2: idempotent. kv_history has no unique constraint, so the importer checks for the key+version row before the
+// first write and before every retry. A row that exists counts as written.
 // Returns { ok, status, body, networkError }.
 async function insertHistoryRow(before, creds) {
+  try {
+    if (await historyRowExists(before, creds)) return { ok: true, status: 200, body: '', networkError: null };
+  } catch (e) {
+    /* cannot tell: write it, as before */
+  }
   const body = JSON.stringify([
     {
       key: before.key,
@@ -971,6 +1043,7 @@ async function insertHistoryRow(before, creds) {
       body,
       signal,
     }),
+    () => historyRowExists(before, creds),
   );
   return { ok: r.status >= 200 && r.status < 300, status: r.status, body: r.body, networkError: r.networkError };
 }
@@ -1315,6 +1388,7 @@ function countPlan(plan) {
   for (const p of plan.keys) {
     if ((p.action === 'insert' || p.action === 'update') && p.value !== undefined) {
       const bytes = kvValueBytes(p.value);
+      p.valueBytes = bytes; // N2: measured once, applyPlan reuses it
       if (bytes > KV_VALUE_MAX_BYTES) c.oversize.push({ key: p.key, bytes });
     }
     if (p.action === 'insert') c.keys.insert++;
@@ -1422,7 +1496,7 @@ async function applyPlan(plan, serverImage, creds, opts) {
   const todo = plan.keys.filter((p) => p.action === 'insert' || p.action === 'update');
   const results = await mapWithConcurrency(todo, opts.concurrency, async (p) => {
     const row = { key: p.key, value: p.value, hash: p.hash };
-    const bytes = kvValueBytes(p.value);
+    const bytes = p.valueBytes !== undefined ? p.valueBytes : kvValueBytes(p.value);
     if (bytes > KV_VALUE_MAX_BYTES)
       return { key: p.key, status: 'error', reason: 'value is ' + bytes + ' bytes, over the importer limit of ' + KV_VALUE_MAX_BYTES + ' (not sent)' };
     if (p.action === 'insert') {
@@ -1430,22 +1504,23 @@ async function applyPlan(plan, serverImage, creds, opts) {
       if (r.status === 201) return { key: p.key, status: 'inserted', attempts: r.attempts };
       if (r.status === 409) {
         // After a retry, the first try may have written the row and lost the answer. Same hash = ours.
+        let readFailed = '';
         if (r.attempts > 1) {
           try {
             const now = await fetchKvRow(p.key, creds);
             if (now && now.hash === p.hash) return { key: p.key, status: 'inserted', attempts: r.attempts };
           } catch (e) {
-            /* fall through to conflict */
+            readFailed = ' (the re-read to compare failed: ' + String((e && e.message) || e).slice(0, 120) + ')';
           }
         }
-        return { key: p.key, status: 'conflict-appeared', httpStatus: 409, reason: 'the key already exists on the server' };
+        return { key: p.key, status: 'conflict-appeared', httpStatus: 409, reason: 'the key already exists on the server' + readFailed };
       }
-      return { key: p.key, status: 'error', httpStatus: r.status, reason: r.networkError || r.body, attempts: r.attempts };
+      return { key: p.key, status: 'error', httpStatus: r.status, reason: r.networkError || scrubServerText(r.body), attempts: r.attempts };
     }
     const before = serverImage.rows.get(p.key);
     // History first: if it cannot be written, the key is not touched.
     const h = await insertHistoryRow(before, creds);
-    if (!h.ok) return { key: p.key, status: 'history-failed', httpStatus: h.status, reason: h.networkError || h.body };
+    if (!h.ok) return { key: p.key, status: 'history-failed', httpStatus: h.status, reason: h.networkError || scrubServerText(h.body) };
     const pr = await patchKvRow(row, before.version, creds, opts.operator);
     if (pr.ok) return { key: p.key, status: 'updated' };
     const versionChanged = pr.status >= 200 && pr.status < 300;
@@ -1453,7 +1528,7 @@ async function applyPlan(plan, serverImage, creds, opts) {
       key: p.key,
       status: versionChanged ? 'conflict-version-changed' : 'error',
       httpStatus: pr.status,
-      reason: pr.networkError || pr.body,
+      reason: pr.networkError || scrubServerText(pr.body),
     };
   });
   const summary = {
@@ -1707,7 +1782,13 @@ async function runImport(args, deps) {
     log('APPLY INCOMPLETE: ' + failures.length + ' failed. Fix the cause and run the same command again: it writes only what is missing.');
     return result;
   }
-  log('APPLY COMPLETE. Run the same command without --apply: it must show 0 new, 0 changed.');
+  const heldCount = plan && counts ? counts.keys.held : 0;
+  result.held = heldCount;
+  if (heldCount)
+    log(
+      'APPLY COMPLETE WITH ' + heldCount + ' HELD key(s) NOT WRITTEN. Run the same command without --apply: it will still show those keys as changed until you review the diff file and pass --allow-removal.',
+    );
+  else log('APPLY COMPLETE. Run the same command without --apply: it must show 0 new, 0 changed.');
   return result;
 }
 
@@ -1835,6 +1916,9 @@ module.exports = {
   resolveCreds,
   normalizeSupabaseUrl,
   pdfStorageStat,
+  fetchKvRow,
+  listServerKeys,
+  isRetryableStatus,
   readCredentialManager,
   loadServerFile,
   planKey,

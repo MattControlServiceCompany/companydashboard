@@ -65,6 +65,11 @@ function makeFake() {
       fake.kv.set(key, next);
       return res(200, [next]);
     }
+    if (u.pathname === '/rest/v1/kv_history' && method === 'GET') {
+      const k = u.searchParams.get('key').replace(/^eq\./, '');
+      const v = Number(u.searchParams.get('version').replace(/^eq\./, ''));
+      return res(200, fake.history.filter((h) => h.key === k && h.version === v).map((h, i) => ({ id: i + 1 })));
+    }
     if (u.pathname === '/rest/v1/kv_history' && method === 'POST') {
       fake.writes++;
       fake.history.push(JSON.parse(opts.body)[0]);
@@ -907,6 +912,294 @@ await t(
     assert(!(run.stdout + run.stderr).includes(SECRET));
   });
 
+// ---- review-fix tests (M1, M2, L1-L5, N2) ----
+const updBackup = writeBackup(tmp('upd'), {
+  en_projects: [{ id: "P1", name: "new name" }],
+});
+const updArgs = () =>
+  makeArgs({
+    file: updBackup,
+    target: "staging",
+    apply: true,
+    reportDir,
+    snapshotDir: snapDir,
+  });
+const seedUpd = (fake) =>
+  fake.kv.set(
+    "en_projects",
+    mkRow("en_projects", [{ id: "P1", name: "old name" }], 3),
+  );
+const mkRes = (status, text) => ({
+  status,
+  ok: status >= 200 && status < 300,
+  headers: { get: () => null },
+  json: async () => JSON.parse(text),
+  text: async () => text,
+  arrayBuffer: async () => new ArrayBuffer(0),
+});
+const isPatch = (opts) => opts && opts.method === "PATCH";
+const isHistPost = (url, opts) =>
+  opts &&
+  opts.method === "POST" &&
+  new URL(url).pathname === "/rest/v1/kv_history";
+
+await t(
+  "M1: a PATCH applied with a lost answer, then retried (0 rows), counts as updated",
+  async () => {
+    const fake = makeFake();
+    seedUpd(fake);
+    const realF = fake.fetch;
+    let n = 0;
+    global.fetch = async (url, opts) => {
+      if (isPatch(opts) && ++n === 1) {
+        await realF(url, opts); // the server applies it
+        throw new Error("timeout");
+      }
+      return realF(url, opts);
+    };
+    const out = silent();
+    const r = await M.runImport(updArgs(), { env, log: out.log });
+    global.fetch = realFetch;
+    assert.strictEqual(n, 2, "PATCH was not retried");
+    assert.strictEqual(r.failed, 0, out.lines.join("\n"));
+    assert.strictEqual(r.applied.summary.updated, 1);
+    assert.strictEqual(r.applied.summary.conflict, 0);
+    assert.strictEqual(fake.kv.get("en_projects").version, 4);
+    assert(/APPLY COMPLETE/.test(out.lines.join("\n")));
+  },
+);
+
+await t(
+  "M1: a PATCH that matches 0 rows because someone else changed the key is still a conflict",
+  async () => {
+    const fake = makeFake();
+    seedUpd(fake);
+    const realF = fake.fetch;
+    global.fetch = async (url, opts) => {
+      if (isPatch(opts)) {
+        fake.kv.get("en_projects").version = 9; // a different writer moved the version
+        fake.kv.get("en_projects").hash = "someone-elses";
+      }
+      return realF(url, opts);
+    };
+    const r = await M.runImport(updArgs(), { env, log: silent().log });
+    global.fetch = realFetch;
+    assert.strictEqual(r.failed, 1);
+    assert.strictEqual(r.applied.results[0].status, "conflict-version-changed");
+  },
+);
+
+await t(
+  "M2: a history POST applied with a lost answer, then retried, leaves one history row",
+  async () => {
+    const fake = makeFake();
+    seedUpd(fake);
+    const realF = fake.fetch;
+    let n = 0;
+    global.fetch = async (url, opts) => {
+      if (isHistPost(url, opts) && ++n === 1) {
+        await realF(url, opts);
+        throw new Error("timeout");
+      }
+      return realF(url, opts);
+    };
+    const r = await M.runImport(updArgs(), { env, log: silent().log });
+    global.fetch = realFetch;
+    assert.strictEqual(r.failed, 0);
+    assert.strictEqual(
+      n,
+      1,
+      "the history POST was sent again after it was applied",
+    );
+    assert.strictEqual(fake.history.length, 1);
+  },
+);
+
+await t(
+  "M2: a re-run after a failed PATCH does not add a second history row for the same version",
+  async () => {
+    const fake = makeFake();
+    seedUpd(fake);
+    const realF = fake.fetch;
+    global.fetch = async (url, opts) =>
+      isPatch(opts) ? mkRes(400, '{"message":"bad"}') : realF(url, opts);
+    const r1 = await M.runImport(updArgs(), { env, log: silent().log });
+    assert.strictEqual(r1.failed, 1);
+    assert.strictEqual(fake.history.length, 1);
+    global.fetch = realF;
+    const r2 = await M.runImport(updArgs(), { env, log: silent().log });
+    global.fetch = realFetch;
+    assert.strictEqual(r2.failed, 0);
+    assert.strictEqual(fake.history.length, 1, "duplicate history row");
+    assert.strictEqual(fake.kv.get("en_projects").version, 4);
+  },
+);
+
+await t(
+  "L1: key read, key list and Storage stat retry a 503 and a network error",
+  async () => {
+    const fake = makeFake();
+    fake.kv.set("en_projects", mkRow("en_projects", [], 2));
+    const realF = fake.fetch;
+    let n = 0;
+    global.fetch = async (url, opts) => {
+      if (++n <= 2) {
+        if (n === 1) throw new Error("socket hang up");
+        return mkRes(503, '{"message":"busy"}');
+      }
+      return realF(url, opts);
+    };
+    const creds = { url: "https://mock.invalid", secretKey: SECRET };
+    const row = await M.fetchKvRow("en_projects", creds);
+    assert.strictEqual(row.version, 2);
+    n = 0;
+    assert.strictEqual((await M.listServerKeys(creds)).length, 1);
+    n = 0;
+    assert.strictEqual(await M.pdfStorageStat("nothing", creds), null);
+    global.fetch = async () => mkRes(503, '{"message":"busy"}');
+    await assert.rejects(
+      () => M.fetchKvRow("en_projects", creds),
+      /Server read failed \(HTTP 503/,
+    );
+    global.fetch = realFetch;
+  },
+);
+
+await t("L1: the 409 fallback names why the re-read failed", async () => {
+  const fake = makeFake();
+  const realF = fake.fetch;
+  let posts = 0;
+  global.fetch = async (url, opts) => {
+    if (
+      opts &&
+      opts.method === "POST" &&
+      new URL(url).pathname === "/rest/v1/kv"
+    )
+      return ++posts === 1 ? mkRes(503, "{}") : mkRes(409, "{}");
+    if (posts >= 1 && new URL(url).searchParams.get("key") === "eq.en_tasks")
+      return mkRes(500, '{"message":"down"}');
+    return realF(url, opts);
+  };
+  const f = writeBackup(work, { en_tasks: [{ id: "T1", text: "b" }] });
+  const out = silent();
+  const r = await M.runImport(
+    makeArgs({
+      file: f,
+      target: "staging",
+      apply: true,
+      reportDir,
+      snapshotDir: snapDir,
+    }),
+    { env, log: out.log },
+  );
+  global.fetch = realFetch;
+  assert.strictEqual(r.applied.results[0].status, "conflict-appeared");
+  assert(
+    /re-read to compare failed/.test(out.lines.join("\n")),
+    out.lines.join("\n"),
+  );
+});
+
+await t(
+  "L2: only transient statuses are retried (501 and 505 are not)",
+  async () => {
+    for (const s of [408, 429, 500, 502, 503, 504, 520, 524])
+      assert.strictEqual(M.isRetryableStatus(s), true, String(s));
+    for (const s of [400, 401, 404, 409, 413, 422, 501, 505, 519, 525])
+      assert.strictEqual(M.isRetryableStatus(s), false, String(s));
+  },
+);
+
+await t(
+  "L3: a server error that quotes the row value is cut to a code and a short message",
+  async () => {
+    const fake = makeFake();
+    seedUpd(fake);
+    const realF = fake.fetch;
+    const leak = "ROWFRAGMENT" + "x".repeat(200);
+    global.fetch = async (url, opts) =>
+      isPatch(opts)
+        ? mkRes(
+            400,
+            JSON.stringify({
+              code: "22P02",
+              message: 'invalid input syntax, near "' + leak + '"',
+            }),
+          )
+        : realF(url, opts);
+    const out = silent();
+    const r = await M.runImport(updArgs(), { env, log: out.log });
+    global.fetch = realFetch;
+    assert.strictEqual(r.failed, 1);
+    const text = out.lines.join("\n");
+    assert(/code=22P02/.test(text), text);
+    assert(!text.includes("x".repeat(100)), "long fragment reached the log");
+    assert(r.failures[0].reason.length <= 110, "reason not shortened");
+  },
+);
+
+await t(
+  "L4: a 2xx PATCH answer that is not JSON is named as a failure; no throw, summary still printed",
+  async () => {
+    const fake = makeFake();
+    seedUpd(fake);
+    const realF = fake.fetch;
+    global.fetch = async (url, opts) =>
+      isPatch(opts) ? mkRes(200, "<html>gateway</html>") : realF(url, opts);
+    const out = silent();
+    const r = await M.runImport(updArgs(), { env, log: out.log });
+    global.fetch = realFetch;
+    assert.strictEqual(r.failed, 1);
+    const text = out.lines.join("\n");
+    assert(/not valid JSON/.test(text), text);
+    assert(/Data written:/.test(text));
+    assert(/APPLY INCOMPLETE: 1 failed/.test(text));
+  },
+);
+
+await t(
+  "L5: a run with only HELD keys does not say a plain APPLY COMPLETE",
+  async () => {
+    const fake = makeFake();
+    fake.kv.set(
+      "en_eqmatrix_abc",
+      mkRow("en_eqmatrix_abc", { a: 1, extra: [1, 2, 3] }, 2),
+    );
+    global.fetch = fake.fetch;
+    const out = silent();
+    const r = await M.runImport(
+      makeArgs({
+        file: writeBackup(tmp("held2"), { en_eqmatrix_abc: { a: 2 } }),
+        target: "staging",
+        apply: true,
+        reportDir,
+        snapshotDir: snapDir,
+      }),
+      { env, log: out.log },
+    );
+    global.fetch = realFetch;
+    assert.strictEqual(r.failed, 0);
+    assert.strictEqual(r.held, 1);
+    const text = out.lines.join("\n");
+    assert(/APPLY COMPLETE WITH 1 HELD key\(s\) NOT WRITTEN/.test(text), text);
+    assert(!/must show 0 new, 0 changed/.test(text));
+  },
+);
+
+await t(
+  "N2: the value size is measured once in the plan and reused by apply",
+  async () => {
+    const plan = {
+      serverOnlyKeys: [],
+      keys: [{ key: "k", action: "insert", value: { a: 1 } }],
+    };
+    M.countPlan(plan);
+    assert.strictEqual(
+      plan.keys[0].valueBytes,
+      Buffer.byteLength(JSON.stringify({ a: 1 })),
+    );
+  },
+);
   fs.rmSync(work, { recursive: true, force: true });
   console.log('\n' + pass + ' tests passed');
 })().catch((e) => {
