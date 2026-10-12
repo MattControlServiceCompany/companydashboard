@@ -378,7 +378,7 @@ const RestoreMerge = (() => {
             st.events.push(Object.assign({ kind: 'overwrote', fields: diffFields(c, own) }, ev));
             if (mode === 'backup-wins' && curIsNewer(c, own)) {
               st.overwroteNewer += 1;
-              st.overwroteNewerNames.push(describe(c, pol, level) || at2.join(' / '));
+              st.overwroteNewerNames.push(describe(c, pol, level) || null); // never a raw id: the summary shows the label
               st.events.push(Object.assign({ kind: 'overwroteNewer' }, ev));
             }
           }
@@ -594,7 +594,7 @@ const RestoreMerge = (() => {
             next[k] = bak[k];
             if (k in cur && !same(cur[k], bak[k]) && curIsNewer(cur[k], bak[k])) {
               st.overwroteNewer += 1;
-              st.overwroteNewerNames.push(k);
+              st.overwroteNewerNames.push((pol.name && isRec(cur[k]) && pol.name(cur[k], 1)) || null); // never a raw key
               st.events.push({ kind: 'overwroteNewer', level: 1, trail: [k] });
             }
             if (k in cur && !same(cur[k], bak[k]))
@@ -818,7 +818,7 @@ const RestoreMerge = (() => {
       g.removed += it.removed || 0;
       g.keptNewer += it.keptNewer || 0;
       g.overwroteNewer += it.overwroteNewer || 0;
-      if (it.overwroteNewer) g.overwroteNewerNames = g.overwroteNewerNames.concat((it.overwroteNewerNames || []).map((n) => n || it.label));
+      if (it.overwroteNewer) g.overwroteNewerNames = g.overwroteNewerNames.concat((it.overwroteNewerNames || []).map((n) => (n ? it.label + ': ' + n : it.label)));
       if (it.changed) g.names = g.names.concat(it.names || []);
       if (it.tombstoned) g.tombstoned += 1;
       if (it.unreadable) g.unreadable += 1;

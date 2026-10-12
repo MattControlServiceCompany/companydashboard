@@ -1657,7 +1657,7 @@ t('backup-wins (g): overwrites a strictly newer server record at every level and
   );
   assert.strictEqual(m.value.x.v, 2);
   assert.strictEqual(m.overwroteNewer, 1);
-  assert.deepStrictEqual(m.overwroteNewerNames, ['x']);
+  assert.deepStrictEqual(m.overwroteNewerNames, [null], 'a map entry never lists its raw key');
   // plain key level
   const k = mv('some_plain_key', { a: 1, updatedAt: NEW }, { a: 2, updatedAt: OLD }, 'backup-wins');
   assert.strictEqual(k.value.a, 2);
@@ -1680,6 +1680,16 @@ t('backup-wins (h): plan() and summarize() carry the overwritten-newer names; ne
   const n = RM.summarize(RM.plan(backup, (k) => server[k], 'newer-wins').items)[0];
   assert.strictEqual(n.overwroteNewer, 0);
   assert.strictEqual(n.keptNewer, 1);
+});
+t('backup-wins (i): the overwritten list shows label and name, never a raw key or id', () => {
+  const server = { en_tasks: [{ id: 'zz-raw-id-9', text: 'Fix pump', updatedAt: NEW }] };
+  const backup = { en_tasks: [{ id: 'zz-raw-id-9', text: 'Old text', updatedAt: OLD }] };
+  const g = RM.summarize(RM.plan(backup, (k) => server[k], 'backup-wins').items)[0];
+  assert.strictEqual(g.label, 'Tasks');
+  assert.strictEqual(g.overwroteNewerNames.length, 1);
+  assert.ok(/^Tasks(: .+)?$/.test(g.overwroteNewerNames[0]), g.overwroteNewerNames[0]);
+  assert.ok(!g.overwroteNewerNames[0].includes('zz-raw-id-9'), 'raw id must not show');
+  assert.ok(!g.overwroteNewerNames[0].includes('en_tasks'), 'raw key must not show');
 });
 t('newer-wins (g): keeps the newer server copy at record, map entry and plain-key level; backup-wins does not', () => {
   const rec = mv(

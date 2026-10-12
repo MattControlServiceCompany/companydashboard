@@ -1723,7 +1723,7 @@ function _restoreDialog(ctx) {
       opt(
         'merge',
         'Merge (backup fills in blanks)',
-        'Adds missing data. In records with the same ID, empty fields take the backup value. A value that is already filled in never changes. Nothing is removed.',
+        'Adds missing data. In a record that is in both, empty fields take the backup value. A value that is already filled in never changes. Nothing is removed.',
       ) +
       opt(
         'replace',
@@ -1735,13 +1735,13 @@ function _restoreDialog(ctx) {
       opt(
         'backup-wins',
         'Make this backup the server copy',
-        'Every value that differs takes the backup value, even if the server copy is newer. Customer, project and task lists are merged: a record in both takes the backup value, a record only on the server stays, none removed. Old values stay in the server history. A key that would remove data waits for your tick.',
+        'Every value that differs takes the backup value, even if the server copy is newer. Customer, project and task lists are merged: a record in both takes the backup value, and a record only on the server stays. Old values are kept. A data set that would lose records waits for your tick.',
       ) +
       opt(
         'newer-wins',
         'Merge, keep whichever copy is newer',
         'Every value that differs takes the backup value, except a record that was changed on the server after the backup was made. That record keeps the server copy. Nothing is removed.',
-        'Compares the last-changed date on each record. The newer copy stays. A record with no date takes the backup value. Old values stay in the server history.',
+        'Compares the last-changed date on each record. The newer copy stays. A record with no date takes the backup value. Old values are kept.',
       ) +
       '<div class="rst-tbl-outer"><table class="rst-tbl"><thead><tr><th>Data</th><th>Added</th><th>Updated</th><th>Kept</th>' +
       (mode === 'replace' ? '<th>Removed</th>' : '') +
@@ -1792,7 +1792,7 @@ function _restoreDialog(ctx) {
         html +=
           '<p class="rst-note">' +
           newerKept +
-          ' record(s) kept as they are: the server copy has a newer updated-at than the backup copy.</p>';
+          (newerKept === 1 ? ' record is' : ' records are') + ' kept as it is: the server copy is newer than the backup copy.</p>';
       var overNames = [];
       rows.forEach(function (r) {
         overNames = overNames.concat(r.overwroteNewerNames || []);
@@ -1801,7 +1801,7 @@ function _restoreDialog(ctx) {
         html +=
           '<p class="rst-note rst-rm-note"><b>' +
           overNames.length +
-          ' record(s) have a newer server copy and will be overwritten by the backup:</b></p><ul class="rst-list">' +
+          (overNames.length === 1 ? ' record has' : ' records have') + ' a newer server copy and will be overwritten by the backup:</b></p><ul class="rst-list">' +
           namesHtml(overNames, 30) +
           '</ul>';
     }
