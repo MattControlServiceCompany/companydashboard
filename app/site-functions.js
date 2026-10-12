@@ -2506,6 +2506,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.12.111', date: '2026-10-12', title: 'Backup & Restore: safer restores',
+    items: [
+      { type: 'fix', text: 'Backup & Restore: added checks that keep every field of a record when you restore a backup.' }
+    ]
+  },
   { v: 'v2026.10.12.110', date: '2026-10-12', title: 'Utility Data: import meters and bills from files',
     items: [
       { type: 'feature', text: 'Utility Data (sidebar page and project tab): Import List now adds meters of any type from a CSV file.' },
