@@ -68,6 +68,9 @@ const eq = (a, e, l) => ok(a === e, l + ': expected ' + JSON.stringify(e) + ', g
     await page.waitForTimeout(800);
     eq(await page.evaluate(() => getComputedStyle(document.getElementById('ptab-utility')).display !== 'none'), true, 'Utility Data tab still visible after first building saved');
     eq(JSON.stringify(await tab.locator('.ud-nav-bldg-name').allTextContents()), JSON.stringify(['Synth First']), 'tab lists the first building');
+    ok(/(^|[^0-9])1 building /.test(await page.evaluate(() => document.querySelector('[id^="dash-hdr-"]').textContent)), 'project header count reads 1 building right after the first save');
+    eq(await page.evaluate(() => [document.getElementById('mp-pm').placeholder, document.getElementById('mp-tech').placeholder].join('|')), 'e.g. Jane Smith|e.g. John Doe', 'New Energy Project form examples are neutral');
+    ok(!/REDACTED/.test(await page.evaluate(() => document.body.innerHTML.replace(/<script[\s\S]*?<\/script>/g, ''))), 'no REDACTED text in the page markup');
     eq(await impBtn().count(), 1, 'Import List shown with 1 building');
     eq(await addBtn().count(), 1, '+ Add Building shown with 1 building');
     if (SHOT) await page.screenshot({ path: path.join(SHOT, 'fix-2-embedded-after-first-building.png') });

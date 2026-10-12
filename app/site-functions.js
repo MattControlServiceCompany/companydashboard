@@ -2506,6 +2506,13 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.12.109', date: '2026-10-12', title: 'Add Building and Import List on the project Utility Data tab',
+    items: [
+      { type: 'fix', text: 'Project Utility Data tab: + Add Building and Import List now show inside the project, with or without buildings, and Import List loads the buildings into that project.' },
+      { type: 'fix', text: 'Project Utility Data tab: the tab stays open and shows the building list after you save the first building. Before, it went blank.' },
+      { type: 'change', text: 'New Energy Project form: the Project Manager and Field Technician examples now read "e.g. Jane Smith" and "e.g. John Doe".' }
+    ]
+  },
   { v: 'v2026.10.12.108', date: '2026-10-12', title: 'Projects button and Project Address',
     items: [
       { type: 'fix', text: 'Projects page: the Projects button in the sidebar now opens the Projects list, even when a project is open. Before, it re-opened the last project.' },
