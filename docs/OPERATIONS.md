@@ -261,6 +261,42 @@ Matt's steps, in this order:
 Nothing is deleted by this restore. On a record in both, the backup value wins; a record only on the server stays. A key the backup lacks is not touched. Old server values are in `kv_history`
 (kv-sync.js `snapshotHistory`). To undo one key, read its row in `kv_history` in the Supabase dashboard.
 
+## 6d. Backup importer: scripts/migrate-seed.js (Matt runs it; agents never hold the key)
+
+What it is: a Node script (scripts/migrate-seed.js) that loads a backup file into the Supabase `kv` table and the `pdf_blobs`
+bucket. It talks to Supabase directly, so it costs 0 Netlify credits and works while Netlify has no deploy credits.
+The old whole-key `--force`, `--live` and `--dry-run` flags are gone. Merge rule: it calls `RestoreMerge.mergeValue(key,
+server, backup, 'backup-wins')` (app/restore-merge.js), the same function as Restore "Make this backup the server copy". A
+record only on the server stays. A record in both takes the backup fields. On top: a backup record is dropped when the server
+copy has a strictly newer `updatedAt`/`updated_at`/`modifiedAt`/`lastModified`. No timestamp = the backup wins. A plain key
+(no record ids) that would drop nested items is HELD unless named in `--allow-removal`.
+
+Modes:
+- Default = dry run. No write. Console shows counts only (keys and records: new / changed / server-only / identical). The full
+  diff (record ids, every record the backup overwrites) goes to `<report-dir>/YYYY-MM-DD-HHMM-supabase-import-diff.json`
+  (default `AI/_context/temp/2026-10-12-golive-readiness/`). The script refuses any report or snapshot folder inside the repo.
+- Server for the diff: `--server-file <image.json>` (offline, no key) or `--target prod|staging` (GET only).
+- `--apply --target prod|staging` writes. Order: read server rows, save them to
+  `AI/_context/live-data/snapshots/YYYY-MM-DD-HHMM-supabase-snapshot.json` (stop if that fails), then per key one `kv_history`
+  row (the old server row) and a version-checked PATCH (a key that changed on the server meanwhile is reported as a conflict,
+  never overwritten), then new keys at version 1, then PDFs (write-once, same-hash re-run is a no-op).
+- Needs: the project URL (`--url`, or env `SUPABASE_URL_PROD` / `SUPABASE_URL_STAGING` / `SUPABASE_URL`; there is no default) and
+  the key from env `SUPABASE_SECRET_KEY` or the Windows Credential Manager generic credential
+  `companyhub-supabase-<target>-key` (`--cred-target` renames it). No prompt. The key is never printed or stored.
+- `kv_history` rows written here are not trimmed (kv-sync.js trims on its own writes: 20 rows or 30 days a key).
+How to check: `node test-migrate-seed.js` (11 tests, in-memory fake Supabase, no network). Then the same command without
+`--apply` must show 0 new and 0 changed.
+
+Nov 2 runbook, data step (after the Netlify deploy and the live acceptance run):
+1. On the GitHub site: Backup. Do not edit there after that. The newest PDF export also (a PDF export newer than 20260930 does not exist yet).
+2. Check out the exact commit that is deployed. Run the dry run: `node scripts/migrate-seed.js --file <backup> --pdf-dir <pdf folder> --target prod`. Read the counts. Open the diff file. Held keys: compare each, then decide.
+3. Run it with `--apply`. The snapshot file name is printed; keep it. Rows written: see the "Data written" line.
+4. Run the dry run again. It must show new=0 and changed=0 (PDFs: to upload=0).
+5. In the Netlify app: Restore the same file in "Make this backup the server copy" mode. The button must say "Nothing to change" (6c step 8).
+Rehearse the same steps on a staging project first (a second free Supabase project with netlify/db/schema.sql applied and a private
+`pdf_blobs` bucket). Undo one key: read its row in `kv_history`, or copy it from the snapshot file.
+The app Restore path (6c) is on main only, not in stable (v87), until the Nov 2 deploy.
+
 ## 6b. Bill fields (merged 2026-10-06, fix/2026-10-05-hidden-fields)
 
 - Retired stored bill fields. Bill rows no longer store copies or roll-ups next to the real fields (thermCost, kwCost,

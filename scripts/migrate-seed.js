@@ -1,203 +1,89 @@
 #!/usr/bin/env node
-// scripts/migrate-seed.js
+// scripts/migrate-seed.js -- CompanyHub backup importer (backup file -> Supabase `kv` table + `pdf_blobs` bucket).
 //
-// Phase 3 migration-seed script referenced by app/sync-classification.js's own
-// header comment ("Phase 3 — migrate-seed.js's skip list when classifying keys
-// out of a siteBackup()/DB.getAll() export"). Originally shipped dry-run-only
-// (2e2d6da); this revision adds the actual --live write path (data -> the
-// `kv` table, PDFs -> the `pdf_blobs` Storage bucket) that the migration was
-// always meant to end with. --dry-run remains fully supported and is still
-// the safe default to reach for.
+// Matt runs this, not an agent. It talks straight to Supabase REST and Storage with the
+// service-role key and bypasses Netlify (0 Netlify credits).
 //
-// ── Input shape (verified against real exports 2026-07-27/2026-07-29) ──────
-// DATA export: `CompanyHub-localdatafile-YYYYMMDD.json`, produced by
-// app/site-functions.js siteBackup() (index.html has a matching sibling). A
-// FLAT object: { [localStorageOrKvKey]: <value>, ... } plus one positive
-// marker key `_companyHubBackup: true` (site-functions.js siteBackup(),
-// ~line 901). There is no other wrapper (no {version, data} envelope). This
-// export is DATA-ONLY BY DESIGN (site-functions.js:892-898) -- it never
-// contains PDF bytes, so there is no "_pdfStoreMeta.ok" flag to check on it;
-// PDFs are a completely separate export (below).
+// ── Modes ───────────────────────────────────────────────────────────────────
+//   DRY RUN (the default). Makes no write. With --server-file (offline) or --target/--url
+//   (read-only GETs) it diffs the backup against the server, per key and per record:
+//   new / changed / server-only / identical. The console shows COUNTS only. The full diff
+//   (record ids, which records the backup overwrites) goes to a local file under
+//   --report-dir (default AI/_context/temp/2026-10-12-golive-readiness/). Never into the repo.
+//   APPLY (--apply). Needs --target prod|staging, the URL and the key. Order of work:
+//     1. read the server rows of every key the import touches
+//     2. save them to <snapshot-dir>/YYYY-MM-DD-HHMM-supabase-snapshot.json (stops if that fails)
+//     3. per key: write one kv_history row (the old server row), then a version-checked write
+//     4. PDFs: write-once upload
 //
-// Per-key value shape is NOT uniform, because siteBackup() merges two
-// sources with `Object.assign({}, lsData, dbData)` (DB data wins):
-//   - Keys hydrated through IndexedDB (app/db.js DB.getAll()) arrive as their
-//     real parsed JS value (object/array/number/boolean) already.
-//   - Keys that only ever lived in raw localStorage (e.g. ems_leads_v1, which
-//     sync-classification.js documents as bypassing the sset()/DB.set()
-//     choke point entirely) arrive as a STRING, because siteBackup() reads
-//     them with `localStorage.getItem()` and something upstream already
-//     called `JSON.stringify()` before `setItem()` (see app/core.js sset()).
-//   - A few keys (ch_theme, etc.) are genuinely plain strings written with a
-//     bare `localStorage.setItem(key, 'dark')` -- no JSON.stringify involved.
-// normalizeValue() below disambiguates the last two cases the only safe way:
-// try JSON.parse, and if it throws, keep the raw string.
+// ── Merge rule (single source of truth) ─────────────────────────────────────
+// Each key is merged with app/restore-merge.js mergeValue(key, server, backup, 'backup-wins'),
+// the SAME function the app's Restore "Make this backup the server copy" uses. There is no
+// second merge in this file. Result: a record only on the server stays; a record in both takes
+// the backup field values; a record only in the backup is added. One rule is added on top, to
+// honour "newer updated-at wins": a backup record is dropped from the merge when the server
+// copy of the same id carries an updatedAt (updatedAt/updated_at/modifiedAt/lastModified) that is
+// STRICTLY newer than the backup copy's. No timestamp on either side = the backup wins, and the
+// diff file lists every overwritten record. A key whose policy is "plain key" (no record ids) is
+// replaced whole by the backup; if that would drop nested items the key is HELD (not written)
+// unless named in --allow-removal, same as the app.
+// There is no whole-key --force path any more.
 //
-// PDF export: `CompanyHub-PDFs-YYYYMMDD-partNNN.json`, produced by
-// app/site-functions.js sitePdfExport() (~line 707), shape
-// `{_companyHubPdfExport:true, part, count, items: {<pdfKey>: <base64>, ...}}`.
-// Batched by app/site-functions.js's own PDF_EXPORT_BATCH_CHARS (~8MB base64
-// per file, site-functions.js:631) specifically so nothing downstream (this
-// script included) ever needs to hold more than one batch in memory at once
-// -- confirmed real corpus 2026-07-27: 906 part files. `items` keys are the
-// same opaque pdfKey strings bill-analysis.js/core.js's _pdfDB uses
-// (en_pdf_file_*/en_pdf_shared_*), and netlify/functions/pdf-sync.js's
-// objectPath(key) maps a pdfKey straight onto a Storage object path with no
-// other transform -- this script does the identical mapping when uploading.
+// ── Input shape ─────────────────────────────────────────────────────────────
+// DATA export: `CompanyHub-localdatafile-YYYYMMDD.json` from app/site-functions.js siteBackup():
+// a flat { key: value } object plus `_companyHubBackup: true`. Some values are JSON text
+// (normalizeValue() parses them). PDF export: `CompanyHub-PDFs-YYYYMMDD-partNNN.json`
+// `{_companyHubPdfExport:true, part, count, items:{<pdfKey>: <base64>}}`, read ONE part file at a
+// time (never one giant in-memory object, backlog ed645bbd).
 //
-// ── Key-namespacing correctness fix (this revision) ─────────────────────────
-// The original dry-run script classified every key with
-// SyncClassification.shouldReplicate(), which is TRUE for both 'synced' AND
-// 'per-user' keys (app/sync-classification.js classifyKey()) and reported
-// them together as one "SYNCED" bucket. Measured against the real
-// 2026-07-29 export: 151 keys were reported "synced", but 52 of those
-// (~34%) are actually 'per-user' (ch_theme, en_bills_zoom_*, bldgperf_cfg_*,
-// etc.) -- app/db.js's _wireKey() (db.js:219-224) namespaces a per-user key
-// as `${userId}::${key}` on the wire, and _resolveManifestKey()
-// (db.js:244-254) explicitly SKIPS any bare (unprefixed) per-user key it
-// finds in the manifest ("bare per-user key, no owner prefix at all -- skip
-// defensively"). Seeding those 52 keys under their bare names would write
-// rows the app can never read back -- silently pointless, not corrupting,
-// but wrong. This revision classifies into FOUR buckets (synced / per-user /
-// local-only / unclassified) and seeds ONLY the true 'synced' bucket into
-// `kv`. Per-user keys are reported (count + keys) but never written here --
-// they are one user's own UI prefs, out of scope for a SHARED-data seed, and
-// will get created lazily by the sync engine itself once each user signs in
-// and touches a per-user key for real (db.js's normal per-user replication
-// path, unrelated to this script).
+// Only 'synced' keys are written, under their bare names. Per-user keys are never seeded (they
+// need `${userId}::key` wire names, app/db.js _wireKey). Local-only keys are never written.
 //
-// ── Live write path (this revision) ─────────────────────────────────────────
-// Talks DIRECTLY to Supabase's REST API (PostgREST for `kv`, Storage API for
-// `pdf_blobs`) with the service_role key -- NOT through netlify/functions/
-// kv-sync.js or pdf-sync.js. This is deliberate and matches those two
-// files' own documented design: pdf-sync.js's header states "[t]he one-time
-// bulk PDF seed migration (Phase 3) bypasses this Function entirely
-// (direct-to-Storage from home with the service key)" -- the Functions
-// enforce Entra JWT auth (verifyAuth()) that a one-time Node migration
-// script run from Matt's own machine has no reason to hold. Because this
-// script bypasses the Function, Netlify's ~4-6MB synchronous-Function body
-// cap and pdf-sync.js's chunk-upload protocol (SINGLE_SHOT_LIMIT_BYTES/
-// CHUNK_SIZE) do NOT apply to it -- a single POST straight to Supabase
-// Storage can carry a whole PDF (measured up to ~50.6MB raw / 64.33MB
-// base64 for Client E's largest combined gas bill) in one request. What DOES
-// still apply, and is respected here, is the KB rule that crashed the app
-// once already (backlog ed645bbd): never assemble a monolithic multi-
-// hundred-MB object in memory. PDFs are migrated ONE FILE, ONE ITEM AT A
-// TIME -- a part file's `items` object is read, iterated, uploaded, and
-// discarded before the next part file is opened; nothing accumulates
-// across files. Data (kv) rows, by contrast, are small enough in aggregate
-// (the whole structured export is ~16-23MB, see file-size samples above)
-// that holding the parsed export in memory is the same tradeoff the app's
-// own siteBackup()/processRestoreFile() already makes -- not a new risk.
+// ── PDFs ────────────────────────────────────────────────────────────────────
+// Content-hash dedup to `en_pdf_shared_<hash16>`; bill pdfKey fields are remapped to it
+// (remapPdfReferences, run BEFORE the diff so the diff sees the remapped values). Write-once as in
+// netlify/functions/pdf-sync.js commitObject(): absent -> upload; same size and sha256 -> no-op;
+// different content -> conflict, reported, never overwritten. A bill that claims a PDF with no
+// blob in the PDF export stops the run before any write.
 //
-// kv row write semantics mirror netlify/functions/kv-sync.js's own
-// baseVersion===null insert path exactly (same canonical-JSON hash
-// algorithm, same version=1 initial row) so a seeded row is
-// indistinguishable from one a real client wrote as its first-ever PUT:
-//   - key absent  -> INSERT at version 1 (kv-sync.js:279-303 mirrored).
-//   - key present, SAME hash -> idempotent no-op (safe re-run of this
-//     script, e.g. after a network blip mid-migration).
-//   - key present, DIFFERENT hash -> CONFLICT, reported and skipped by
-//     default (never silently overwritten -- the same invariant kv-sync.js
-//     itself never breaks). Only proceeds to a CAS PATCH overwrite if the
-//     operator passes --force, and even then it goes through the identical
-//     version-checked UPDATE ... WHERE version=$1 kv-sync.js uses, never a
-//     blind write.
-// PDF blob writes mirror netlify/functions/pdf-sync.js's commitObject()/
-// resolveAgainstExisting() write-once policy exactly: absent -> upload;
-// present + identical content (same size AND sha256) -> idempotent no-op;
-// present + different content -> conflict, reported, NEVER overwritten
-// (there is no --force path for PDFs -- write-once means write-once).
+// ── Credentials ─────────────────────────────────────────────────────────────
+// The URL comes from --url or env SUPABASE_URL_<TARGET> or SUPABASE_URL. There is NO built-in
+// default URL. The key comes ONLY from env SUPABASE_SECRET_KEY or Windows Credential Manager
+// (generic credential `companyhub-supabase-<target>-key`, password = the key; --cred-target
+// overrides the name). No prompt. The key is never printed, logged or written to a file.
 //
-// ── Usage ──
-//   Dry run (default, safe, no network calls, no credentials needed):
-//     node scripts/migrate-seed.js --file <data-export.json> --dry-run
-//     node scripts/migrate-seed.js --file <data-export.json> --pdf-dir <dir> --dry-run
-//     node scripts/migrate-seed.js --file <data-export.json> --dry-run --json
-//
-//   Live seed (writes to the REAL Supabase project -- Matt runs this, not an
-//   agent). Requires SUPABASE_URL and SUPABASE_SECRET_KEY in the environment,
-//   or the script prompts for whichever is missing (secret input is masked,
-//   never echoed, never logged):
-//     SUPABASE_URL="https://rrdugvwxtddjywqykphf.supabase.co" \
-//     SUPABASE_SECRET_KEY="..." \
-//     node scripts/migrate-seed.js --file <data-export.json> --pdf-dir <dir> --live
-//
-// See printUsage() below for the full flag list.
-//
-// ── PDF content-hash dedup + reference remap (this revision) ────────────────
-// Real corpus 2026-08-17: 929 blob keys, ALL named `en_pdf_file_<pdfBillId>`
-// (the _saveSinglePDFBill legacy per-bill save path, app/bill-analysis.js
-// ~line 15741: `pdfStore('en_pdf_file_' + billId, pdfB64)`), but only 69
-// UNIQUE by SHA-256 content (13.5x duplication -- the same source PDF was
-// re-saved once per bill period it contained). Uploading all 929 as separate
-// Storage objects would waste ~13.5x the space for zero benefit. Instead:
-//   1. scanPdfPartFilesForDedup() streams every part file (one file's items
-//      in memory at a time, matching this file's existing one-file-at-a-time
-//      discipline) and groups blobs by SHA-256 of their raw bytes.
-//   2. Each unique hash gets ONE canonical key: `en_pdf_shared_<hash16>`.
-//      This is the SAME naming FORM the app already mints itself
-//      (bill-analysis.js lines 5525/5860/6323: `'en_pdf_shared_' + <suffix>`)
-//      -- the suffix is a fully opaque string to every layer that touches it
-//      (core.js pdfStore/pdfLoad key IndexedDB by it verbatim; netlify/
-//      functions/pdf-sync.js objectPath(), ~line 247-253, maps it straight
-//      onto a Storage path with zero parsing), so a hash-derived suffix
-//      resolves exactly as well as a Date.now()-derived one.
-//   3. remapPdfReferences() rewrites every bill record's `pdfKey` field
-//      (both `en_pdf_bills[]` unassigned-bill records, keyed by `.id`, and
-//      `en_utility_<projId>.buildings[].meters[].bills[]` assigned-bill
-//      rows, keyed by `.pdfBillId`) to the canonical key for its content
-//      hash. It tries the SAME two steps, in the SAME order, that
-//      viewSavedPDF() itself tries (app/bill-analysis.js ~line 14806-14837):
-//        (a) legacy per-bill key `en_pdf_file_<pdfBillId||id>` (viewSavedPDF
-//            step 1, ~line 14814) -- this is where the real 929 blobs
-//            actually live in this export, confirmed against the real
-//            2026-08-17 corpus (every item key matches `en_pdf_file_pb*`).
-//        (b) the record's own pre-existing `pdfKey` (viewSavedPDF step 2,
-//            ~line 14815) -- covers the batch shared-key save path. Also
-//            confirmed present in the real export: some meter bill rows
-//            carry a `pdfKey` like `en_pdf_shared_1777324325880` that does
-//            NOT correspond to any blob in the PDF export (stale/unrelated
-//            value from a different code path) -- which is exactly why (a)
-//            is tried FIRST, matching viewSavedPDF's own priority order.
-//      Whichever step resolves, the record's `pdfKey` is overwritten to the
-//      canonical key -- from then on every real client's viewSavedPDF step 2
-//      finds the shared, deduped object, regardless of which step used to
-//      resolve it.
-//   4. Live upload (liveSeedPdfFiles) uploads each unique hash's blob to its
-//      canonical key exactly ONCE per script run (an in-run Map keyed by
-//      hash short-circuits duplicate items without a second network call);
-//      commitPdfObject()'s existing write-once/idempotent-retry semantics
-//      (pdf-sync.js commitObject() mirror, see below) still apply across
-//      separate runs.
-// SAFETY (non-negotiable): remapPdfReferences() is run BEFORE buildDataReport()
-// so the kv rows/report it produces already reflect the remapped pdfKey
-// values. If ANY PDF-claiming bill record (hasPDF/pdfKey/pdfBillId truthy)
-// fails BOTH resolution steps above, main() prints the full diagnostic report
-// and then THROWS -- dry-run reports this as a failure (not a silent 100%),
-// and --live never reaches a write. No bill is ever silently dropped.
-// Orphan blobs (a unique hash with zero referencing bill record) are still
-// uploaded -- this script never deletes or skips content, only dedupes
-// identical bytes onto one shared object (orphan CLEANUP is a separate,
-// later, out-of-scope task, item 00a07fef).
+// ── Usage ───────────────────────────────────────────────────────────────────
+//   Offline diff (no network, no key):
+//     node scripts/migrate-seed.js --file <backup.json> --server-file <server-image.json>
+//   Read-only diff against a project (GET only):
+//     node scripts/migrate-seed.js --file <backup.json> --pdf-dir <dir> --target staging
+//   Real write:
+//     node scripts/migrate-seed.js --file <backup.json> --pdf-dir <dir> --target prod --apply
+// See printUsage() for the flag list.
 
 'use strict';
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
-const readline = require('readline');
+const { execFileSync } = require('child_process');
 
 const REPO_ROOT = path.join(__dirname, '..');
 const SyncClassification = require(path.join(REPO_ROOT, 'app', 'sync-classification.js'));
+// restore-merge.js reads the global DB (DB.DERIVED_METER_FIELDS) when it loads. The real app/db.js
+// is loaded in a Node vm by the same helper the unit tests use.
+if (typeof global.DB === 'undefined') global.DB = require(path.join(REPO_ROOT, 'tools', 'load-db-for-test.js'));
+const RestoreMerge = require(path.join(REPO_ROOT, 'app', 'restore-merge.js'));
 
 const SUPABASE_FREE_DB_BYTES = 500 * 1024 * 1024; // 500 MB free-tier Postgres database cap
 const SUPABASE_FREE_STORAGE_BYTES = 1 * 1024 * 1024 * 1024; // 1 GB free-tier Storage cap
-const KNOWN_PROJECT_URL = 'https://rrdugvwxtddjywqykphf.supabase.co'; // project ref rrdugvwxtddjywqykphf -- used only as the DEFAULT if SUPABASE_URL is unset; env var always wins (also lets a local mock override it for testing).
-// pdf-sync.js's own single-shot/chunk thresholds, mirrored here in NAME only
-// for informational reporting (see file header -- this script's uploads are
-// NOT chunked, it bypasses the Function that owns that limit).
+// pdf-sync.js's single-shot threshold, for informational reporting only (this script uploads direct to Storage).
 const FUNCTION_SINGLE_SHOT_LIMIT_BYTES = 4 * 1024 * 1024;
+const AI_ROOT = path.join(os.homedir(), 'AI');
+const DEFAULT_SNAPSHOT_DIR = path.join(AI_ROOT, '_context', 'live-data', 'snapshots');
+const DEFAULT_REPORT_DIR = path.join(AI_ROOT, '_context', 'temp', '2026-10-12-golive-readiness');
+const TARGETS = ['prod', 'staging'];
 
 // ── CLI ──────────────────────────────────────────────────────────────────────
 
@@ -206,11 +92,16 @@ function parseArgs(argv) {
     file: null,
     pdfFiles: [],
     pdfDir: null,
-    dryRun: false,
-    live: false,
+    apply: false,
     json: false,
     allowUnclassified: false,
-    force: false,
+    allowRemoval: [],
+    target: null,
+    url: null,
+    credTarget: null,
+    serverFile: null,
+    snapshotDir: DEFAULT_SNAPSHOT_DIR,
+    reportDir: DEFAULT_REPORT_DIR,
     operator: 'migration-seed',
     concurrency: 4,
   };
@@ -219,16 +110,25 @@ function parseArgs(argv) {
     if (a === '--file') args.file = argv[++i];
     else if (a === '--pdf-file') args.pdfFiles.push(argv[++i]);
     else if (a === '--pdf-dir') args.pdfDir = argv[++i];
-    else if (a === '--dry-run') args.dryRun = true;
-    else if (a === '--live') args.live = true;
+    else if (a === '--apply') args.apply = true;
     else if (a === '--json') args.json = true;
     else if (a === '--allow-unclassified') args.allowUnclassified = true;
-    else if (a === '--force') args.force = true;
+    else if (a === '--allow-removal')
+      args.allowRemoval = String(argv[++i] || '')
+        .split(',')
+        .filter(Boolean);
+    else if (a === '--target') args.target = argv[++i];
+    else if (a === '--url') args.url = argv[++i];
+    else if (a === '--cred-target') args.credTarget = argv[++i];
+    else if (a === '--server-file') args.serverFile = argv[++i];
+    else if (a === '--snapshot-dir') args.snapshotDir = argv[++i];
+    else if (a === '--report-dir') args.reportDir = argv[++i];
     else if (a === '--operator') args.operator = argv[++i];
     else if (a === '--concurrency') args.concurrency = Math.max(1, Number(argv[++i]) || 4);
     else if (a === '--help' || a === '-h') args.help = true;
     else throw new Error('Unrecognized argument: ' + a);
   }
+  if (args.target !== null && !TARGETS.includes(args.target)) throw new Error('--target must be prod or staging.');
   return args;
 }
 
@@ -236,28 +136,35 @@ function printUsage() {
   console.log(
     [
       'Usage:',
-      '  node scripts/migrate-seed.js --file <data-export.json> [--pdf-dir <dir> | --pdf-file <p.json>]... (--dry-run | --live) [options]',
+      '  node scripts/migrate-seed.js --file <backup.json> [--pdf-dir <dir> | --pdf-file <p.json>]... [options]',
+      '',
+      'Default is a DRY RUN: no write, counts only on screen, full diff in a local file.',
       '',
       'Input:',
-      '  --file <path>           CompanyHub-localdatafile-YYYYMMDD.json structured-data export.',
-      '  --pdf-dir <dir>         Directory containing CompanyHub-PDFs-YYYYMMDD-partNNN.json files (all matching files in the dir are used, sorted by part number).',
-      '  --pdf-file <path>       A single PDF part file. Repeatable. Combine with --pdf-dir if useful; duplicates are de-duped.',
-      '  At least one of --file / --pdf-dir / --pdf-file is required.',
+      '  --file <path>           CompanyHub-localdatafile-YYYYMMDD.json data export.',
+      '  --pdf-dir <dir>         Folder with CompanyHub-PDFs-YYYYMMDD-partNNN.json files.',
+      '  --pdf-file <path>       One PDF part file. Repeatable.',
       '',
-      'Mode (exactly one required):',
-      '  --dry-run               Report what WOULD be written. No network calls, no credentials read. Always safe.',
-      '  --live                  Actually write to Supabase. Requires SUPABASE_URL + SUPABASE_SECRET_KEY (env or prompt). NEVER run this as an agent -- Matt runs this.',
+      'Server side (pick one for a diff):',
+      '  --server-file <path>    Offline server image: {rows:{key:{value,version,...}}, pdfKeys?:[...]} (a snapshot file works).',
+      '  --target prod|staging   Read the server by GET. Needs the URL and the key (see below).',
+      '  --url <https://...>     Project URL. Else env SUPABASE_URL_PROD / SUPABASE_URL_STAGING / SUPABASE_URL. No built-in default.',
+      '  Key: env SUPABASE_SECRET_KEY, else Windows Credential Manager "companyhub-supabase-<target>-key" (--cred-target to rename).',
       '',
-      'Options:',
-      '  --json                  Emit the report/summary as machine-readable JSON instead of human-readable text.',
-      '  --allow-unclassified    Downgrade an unclassified-key failure to a warning (NOT recommended).',
-      '  --force                 On a kv-row hash conflict, overwrite via a version-checked CAS PATCH instead of skipping. Never applies to PDFs (write-once, no force path).',
-      '  --operator <email>      Value stored in kv.updated_by for seeded rows. Default "migration-seed".',
-      '  --concurrency <n>       Max in-flight requests during --live writes. Default 4.',
+      'Write:',
+      '  --apply                 Really write: snapshot, kv_history, merge, PDFs. Needs --target. Matt runs this.',
+      '  --allow-removal k1,k2   Write these held keys although the backup replaces nested items the server has.',
+      '  --operator <email>      kv.updated_by value. Default "migration-seed".',
+      '  --snapshot-dir <dir>    Default AI/_context/live-data/snapshots. Must be outside the repo.',
+      '  --report-dir <dir>      Where the diff file goes. Default AI/_context/temp/2026-10-12-golive-readiness. Must be outside the repo.',
+      '',
+      'Other:',
+      '  --json                  Machine-readable counts.',
+      '  --allow-unclassified    Downgrade an unclassified-key failure to a warning (not recommended).',
+      '  --concurrency <n>       Max requests in flight. Default 4.',
     ].join('\n'),
   );
 }
-
 // ── Loading + validating the DATA export ────────────────────────────────────
 
 function loadExport(filePath) {
@@ -569,7 +476,7 @@ function canonicalPdfKeyForHash(hash) {
 // stats (fileCount/totalItems/totalRawBytes/etc, unchanged shape from the
 // pre-dedup report) AND the content-hash dedup index
 // (blobKeyToHash/hashToInfo/hashToCanonicalKey) that remapPdfReferences()
-// and the --live upload path consume. One pass, not two -- hashing already
+// and the --apply upload path consume. One pass, not two -- hashing already
 // requires decoding every item's base64 into a Buffer, so the exact
 // buffer.length is used for byte accounting here (more precise than the old
 // base64-length estimate, not just cheaper).
@@ -648,7 +555,7 @@ function buildPdfDryRunReport(pdfFilePaths) {
       duplicationFactor: uniqueBlobs ? scan.totalItems / uniqueBlobs : 0,
       percentOfSupabaseFreeTierStorageCapUniqueOnly: (uniqueBytes / SUPABASE_FREE_STORAGE_BYTES) * 100,
     },
-    _scan: scan, // internal use only (data-reference remap + --live upload) -- stripped before any --json print, same convention as dataReport._rows
+    _scan: scan, // internal use only (data-reference remap + --apply upload) -- stripped before any --json print, same convention as dataReport._rows
   };
 }
 
@@ -747,7 +654,7 @@ function fmtBytes(n) {
 }
 
 function printHumanDataReport(report) {
-  console.log('CompanyHub migration-seed dry run -- DATA (kv table)');
+  console.log('CompanyHub importer -- DATA (kv table)');
   console.log('=====================================================');
   console.log('File:                     ' + report.file);
   console.log('File size on disk:        ' + fmtBytes(report.fileSizeBytes));
@@ -766,7 +673,7 @@ function printHumanDataReport(report) {
     console.log('    -> ' + report.meta.keys.join(', '));
   }
   console.log('');
-  console.log('Projected seed (SYNCED keys only):');
+  console.log('Backup content (SYNCED keys only):');
   console.log('  Rows that would be written to public.kv: ' + report.synced.count);
   console.log('  Total value bytes (canonical JSON):      ' + fmtBytes(report.synced.totalBytes));
   console.log(
@@ -776,7 +683,7 @@ function printHumanDataReport(report) {
 
 function printHumanPdfReport(report) {
   console.log('');
-  console.log('CompanyHub migration-seed dry run -- PDFs (pdf_blobs bucket)');
+  console.log('CompanyHub importer -- PDFs (pdf_blobs bucket)');
   console.log('==============================================================');
   console.log('Part files:               ' + report.fileCount);
   console.log('Total PDFs (items):       ' + report.totalItems);
@@ -819,104 +726,6 @@ function printHumanPdfRemapReport(stats) {
     console.log('  ' + JSON.stringify(stats.broken, null, 2).split('\n').join('\n  '));
   }
 }
-
-// ── Live: Supabase REST client (no @supabase/supabase-js dependency -- same ──
-// bare-fetch pattern netlify/functions/kv-sync.js and pdf-sync.js already use) ─
-
-function pgHeaders(creds, extra) {
-  // Never log this object or spread it into console output.
-  return Object.assign(
-    { apikey: creds.secretKey, Authorization: 'Bearer ' + creds.secretKey, 'Content-Type': 'application/json' },
-    extra || {},
-  );
-}
-
-function storageHeaders(creds, extra) {
-  return Object.assign({ apikey: creds.secretKey, Authorization: 'Bearer ' + creds.secretKey }, extra || {});
-}
-
-async function safeText(res) {
-  try {
-    return await res.text();
-  } catch (e) {
-    return '';
-  }
-}
-
-async function fetchKvRow(key, creds) {
-  const res = await fetch(creds.url + '/rest/v1/kv?key=eq.' + encodeURIComponent(key) + '&select=*', {
-    headers: pgHeaders(creds),
-  });
-  const rows = await res.json();
-  return Array.isArray(rows) && rows.length ? rows[0] : null;
-}
-
-// Mirrors netlify/functions/kv-sync.js handlePut()'s baseVersion===null
-// insert branch (kv-sync.js:279-303) exactly, plus a bounded conflict
-// resolution (never in kv-sync.js, because kv-sync.js's caller always has a
-// real baseVersion once a key exists -- this script's callers never do,
-// since it is establishing the row for the first time).
-async function commitKvRow(row, creds, opts) {
-  const nowIso = new Date().toISOString();
-  const insertRes = await fetch(creds.url + '/rest/v1/kv', {
-    method: 'POST',
-    headers: pgHeaders(creds, { Prefer: 'return=representation' }),
-    body: JSON.stringify([
-      {
-        key: row.key,
-        value: row.value,
-        version: 1,
-        hash: row.hash,
-        deleted: false,
-        updated_by: opts.operator,
-        updated_at: nowIso,
-      },
-    ]),
-  });
-  if (insertRes.status === 201) return { key: row.key, status: 'inserted', version: 1 };
-
-  if (insertRes.status === 409) {
-    const current = await fetchKvRow(row.key, creds);
-    if (current && current.hash === row.hash) {
-      return { key: row.key, status: 'noop-identical', version: current.version };
-    }
-    if (!opts.force) {
-      return {
-        key: row.key,
-        status: 'conflict-skipped',
-        serverVersion: current ? current.version : null,
-        serverUpdatedBy: current ? current.updated_by : null,
-      };
-    }
-    if (!current) return { key: row.key, status: 'error', error: 'conflict reported but row unreadable on refetch' };
-    const patchRes = await fetch(
-      creds.url + '/rest/v1/kv?key=eq.' + encodeURIComponent(row.key) + '&version=eq.' + current.version,
-      {
-        method: 'PATCH',
-        headers: pgHeaders(creds, { Prefer: 'return=representation' }),
-        body: JSON.stringify({
-          value: row.value,
-          hash: row.hash,
-          deleted: false,
-          version: current.version + 1,
-          updated_by: opts.operator,
-          updated_at: nowIso,
-        }),
-      },
-    );
-    if (patchRes.ok) {
-      const patched = await patchRes.json();
-      if (Array.isArray(patched) && patched.length === 1) {
-        return { key: row.key, status: 'force-overwritten', version: current.version + 1 };
-      }
-    }
-    return { key: row.key, status: 'force-overwrite-failed', httpStatus: patchRes.status };
-  }
-
-  const errText = await safeText(insertRes);
-  return { key: row.key, status: 'error', httpStatus: insertRes.status, error: errText.slice(0, 300) };
-}
-
 // ── Live: Storage (pdf_blobs bucket) client ─────────────────────────────────
 
 const PDF_BUCKET = 'pdf_blobs';
@@ -999,124 +808,568 @@ async function mapWithConcurrency(items, limit, fn) {
   await Promise.all(workers);
   return results;
 }
+// ── Supabase REST client (bare fetch, same pattern as netlify/functions/kv-sync.js) ──
+// Every network function uses the global fetch, so a test can replace it with an in-memory fake.
 
-// ── Credentials (env or masked prompt -- NEVER logged, NEVER hardcoded) ─────
+function pgHeaders(creds, extra) {
+  // Never log this object or spread it into console output.
+  return Object.assign(
+    {
+      apikey: creds.secretKey,
+      Authorization: 'Bearer ' + creds.secretKey,
+      'Content-Type': 'application/json',
+    },
+    extra || {},
+  );
+}
 
-function promptHidden(question) {
-  return new Promise((resolve) => {
-    const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true });
-    const stdin = process.stdin;
-    process.stdout.write(question);
-    let value = '';
-    const onData = (char) => {
-      char = char.toString('utf8');
-      if (char === '\u0003') {
-        // Ctrl+C -> abort, never resolve with a partial secret.
-        process.stdout.write('\n');
-        process.exit(130);
-        return;
-      }
-      if (char === '\n' || char === '\r' || char === '\u0004') {
-        // Enter, or Ctrl+D (EOF, e.g. piped input) -> done.
-        stdin.removeListener('data', onData);
-        stdin.setRawMode && stdin.setRawMode(false);
-        process.stdout.write('\n');
-        rl.close();
-        resolve(value);
-        return;
-      }
-      if (char === '\u007f' || char === '\b') {
-        // Backspace/DEL.
-        value = value.slice(0, -1);
-        return;
-      }
-      value += char;
-    };
-    if (stdin.isTTY) stdin.setRawMode(true);
-    stdin.resume();
-    stdin.setEncoding('utf8');
-    stdin.on('data', onData);
+function storageHeaders(creds, extra) {
+  return Object.assign({ apikey: creds.secretKey, Authorization: 'Bearer ' + creds.secretKey }, extra || {});
+}
+
+async function safeText(res) {
+  try {
+    return await res.text();
+  } catch (e) {
+    return '';
+  }
+}
+
+async function fetchKvRow(key, creds) {
+  const res = await fetch(creds.url + '/rest/v1/kv?key=eq.' + encodeURIComponent(key) + '&select=*', {
+    headers: pgHeaders(creds),
+  });
+  if (!res.ok) throw new Error('Server read failed (HTTP ' + res.status + ')');
+  const rows = await res.json();
+  return Array.isArray(rows) && rows.length ? rows[0] : null;
+}
+
+// Every key on the server (names and flags only, no values).
+async function listServerKeys(creds) {
+  const res = await fetch(creds.url + '/rest/v1/kv?select=key,deleted&limit=100000', { headers: pgHeaders(creds) });
+  if (!res.ok) throw new Error('Server key list failed (HTTP ' + res.status + ')');
+  return await res.json();
+}
+
+async function insertKvRow(row, creds, operator) {
+  const res = await fetch(creds.url + '/rest/v1/kv', {
+    method: 'POST',
+    headers: pgHeaders(creds, { Prefer: 'return=minimal' }),
+    body: JSON.stringify([
+      {
+        key: row.key,
+        value: row.value,
+        version: 1,
+        hash: row.hash,
+        deleted: false,
+        updated_by: operator,
+        updated_at: new Date().toISOString(),
+      },
+    ]),
+  });
+  return res.status; // 201 inserted, 409 key exists
+}
+
+// Version-checked write: PATCH ... WHERE version = expected. true only if exactly one row matched.
+async function patchKvRow(row, expectedVersion, creds, operator) {
+  const res = await fetch(
+    creds.url + '/rest/v1/kv?key=eq.' + encodeURIComponent(row.key) + '&version=eq.' + expectedVersion,
+    {
+      method: 'PATCH',
+      headers: pgHeaders(creds, { Prefer: 'return=representation' }),
+      body: JSON.stringify({
+        value: row.value,
+        hash: row.hash,
+        deleted: false,
+        version: expectedVersion + 1,
+        updated_by: operator,
+        updated_at: new Date().toISOString(),
+      }),
+    },
+  );
+  if (!res.ok) return false;
+  const rows = await res.json();
+  return Array.isArray(rows) && rows.length === 1;
+}
+
+// Same row shape as netlify/functions/kv-sync.js snapshotHistory().
+async function insertHistoryRow(before, creds) {
+  const res = await fetch(creds.url + '/rest/v1/kv_history', {
+    method: 'POST',
+    headers: pgHeaders(creds, { Prefer: 'return=minimal' }),
+    body: JSON.stringify([
+      {
+        key: before.key,
+        value: before.value,
+        version: before.version,
+        updated_by: before.updated_by,
+        replaced_at: new Date().toISOString(),
+      },
+    ]),
+  });
+  return res.ok;
+}
+
+// ── Credentials: env or Windows Credential Manager ONLY. Never printed, never logged. ──
+
+// Reads one generic credential's password from Windows Credential Manager (CredRead). The target name
+// goes in through an env var, not into the script text. The secret travels only through the child's
+// stdout pipe into the returned string.
+function readCredentialManager(target) {
+  const script = [
+    "$ErrorActionPreference='Stop'",
+    "Add-Type -TypeDefinition @'",
+    'using System; using System.Runtime.InteropServices;',
+    'public class ChCred {',
+    '  [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)]',
+    '  public struct CRED { public int Flags; public int Type; public string TargetName; public string Comment;',
+    '    public long LastWritten; public int BlobSize; public IntPtr Blob; public int Persist; public int AttrCount;',
+    '    public IntPtr Attrs; public string Alias; public string User; }',
+    '  [DllImport("advapi32.dll", CharSet=CharSet.Unicode, SetLastError=true)]',
+    '  static extern bool CredRead(string t, int type, int flags, out IntPtr p);',
+    '  [DllImport("advapi32.dll")] static extern void CredFree(IntPtr p);',
+    '  public static string Get(string t) {',
+    '    IntPtr p; if (!CredRead(t, 1, 0, out p)) return null;',
+    '    try { CRED c = (CRED)Marshal.PtrToStructure(p, typeof(CRED));',
+    '      return Marshal.PtrToStringUni(c.Blob, c.BlobSize / 2); } finally { CredFree(p); }',
+    '  }',
+    '}',
+    "'@",
+    '$v = [ChCred]::Get($env:CH_CRED_TARGET)',
+    'if ($v) { [Console]::Out.Write($v) }',
+  ].join('\n');
+  try {
+    const out = execFileSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', script], {
+      env: Object.assign({}, process.env, { CH_CRED_TARGET: target }),
+      stdio: ['ignore', 'pipe', 'ignore'],
+      encoding: 'utf8',
+    });
+    return out && out.trim() ? out.trim() : null;
+  } catch (e) {
+    return null; // never include the child output in an error
+  }
+}
+
+function resolveCreds(args, env, readCred) {
+  const target = args.target;
+  if (!target) throw new Error('--target prod|staging is required to reach a server.');
+  const url = args.url || env['SUPABASE_URL_' + target.toUpperCase()] || env.SUPABASE_URL;
+  if (!url) {
+    throw new Error('No project URL. Pass --url or set SUPABASE_URL_' + target.toUpperCase() + ' (or SUPABASE_URL).');
+  }
+  const credName = args.credTarget || 'companyhub-supabase-' + target + '-key';
+  const secretKey = env.SUPABASE_SECRET_KEY || (readCred || readCredentialManager)(credName);
+  if (!secretKey) {
+    throw new Error(
+      'No service key. Set env SUPABASE_SECRET_KEY or store Windows Credential Manager entry "' + credName + '".',
+    );
+  }
+  return { url: String(url).replace(/\/+$/, ''), secretKey };
+}
+
+// ── Server image (offline file or live read) ────────────────────────────────
+
+// Offline server image: { rows: { key: {value, version, deleted?, updated_by?, updated_at?} }, pdfKeys?: [..] }.
+// A snapshot file this script wrote has the same shape (rows may hold null for a key that was absent).
+function loadServerFile(filePath) {
+  const abs = path.resolve(filePath);
+  if (!fs.existsSync(abs)) throw new Error('Server file not found: ' + abs);
+  let parsed;
+  try {
+    parsed = JSON.parse(fs.readFileSync(abs, 'utf8'));
+  } catch (e) {
+    throw new Error('Server file is not valid JSON: ' + abs);
+  }
+  if (!parsed || typeof parsed.rows !== 'object' || parsed.rows === null) {
+    throw new Error('Server file needs a top-level "rows" object: ' + abs);
+  }
+  const rows = new Map();
+  for (const k of Object.keys(parsed.rows)) {
+    const r = parsed.rows[k];
+    if (r) rows.set(k, Object.assign({ key: k, version: 1, deleted: false }, r));
+  }
+  return {
+    rows,
+    allKeys: Array.from(rows.keys()),
+    pdfKeys: Array.isArray(parsed.pdfKeys) ? parsed.pdfKeys : null,
+  };
+}
+
+async function readServerImage(creds, keys, concurrency) {
+  const list = await listServerKeys(creds);
+  const rows = new Map();
+  const wanted = new Set(keys);
+  const toRead = list.filter((r) => wanted.has(r.key));
+  const got = await mapWithConcurrency(toRead, concurrency, (r) => fetchKvRow(r.key, creds));
+  got.forEach((row) => {
+    if (row) rows.set(row.key, row);
+  });
+  return { rows, allKeys: list.map((r) => r.key), pdfKeys: null };
+}
+
+// ── Merge plan (pure: no network, no file writes) ───────────────────────────
+
+const TIME_FIELDS = ['updatedAt', 'updated_at', 'modifiedAt', 'lastModified'];
+
+function recordTime(rec) {
+  if (!rec || typeof rec !== 'object') return null;
+  for (const f of TIME_FIELDS) {
+    if (rec[f] !== undefined && rec[f] !== null && rec[f] !== '') {
+      const t = typeof rec[f] === 'number' ? rec[f] : Date.parse(rec[f]);
+      if (Number.isFinite(t)) return t;
+    }
+  }
+  return null;
+}
+
+// The record list a policy holds: the value itself, or value[path[0]], or a map's entries.
+function topList(pol, v) {
+  if (pol.kind === 'map') return null;
+  if (pol.path.length) return v && typeof v === 'object' && !Array.isArray(v) ? v[pol.path[0]] : undefined;
+  return v;
+}
+
+// Record id of each top-level record: Map(String(id) -> record). Map policy: entries by key.
+function recordIndex(pol, v) {
+  const out = new Map();
+  if (pol.kind === 'map') {
+    if (v && typeof v === 'object' && !Array.isArray(v)) Object.keys(v).forEach((k) => out.set(k, v[k]));
+    return { index: out, unidentified: 0 };
+  }
+  let unidentified = 0;
+  const list = topList(pol, v);
+  if (Array.isArray(list)) {
+    for (const r of list) {
+      const id = r && typeof r === 'object' && !Array.isArray(r) ? pol.idOf(r) : undefined;
+      if (id === undefined || id === null || id === '') unidentified++;
+      else if (!out.has(String(id))) out.set(String(id), r);
+    }
+  }
+  return { index: out, unidentified };
+}
+
+// "Newer updated-at wins": remove from the BACKUP value every top-level record whose server copy is
+// strictly newer. mergeValue() then leaves that server record untouched (a matched id absent from the
+// backup is never removed or changed). Returns the (possibly new) backup value and the dropped ids.
+function dropBackupRecordsOlderThanServer(pol, serverVal, backupVal) {
+  const kept = [];
+  if (pol.kind !== 'records' || serverVal === undefined || serverVal === null) return { backup: backupVal, kept };
+  const srv = recordIndex(pol, serverVal).index;
+  const bakList = topList(pol, backupVal);
+  if (!Array.isArray(bakList)) return { backup: backupVal, kept };
+  const filtered = bakList.filter((r) => {
+    const id = r && typeof r === 'object' && !Array.isArray(r) ? pol.idOf(r) : undefined;
+    if (id === undefined || id === null || id === '') return true;
+    const sRec = srv.get(String(id));
+    if (!sRec) return true;
+    const ts = recordTime(sRec);
+    const tb = recordTime(r);
+    if (ts !== null && tb !== null && ts > tb) {
+      kept.push(String(id));
+      return false;
+    }
+    return true;
+  });
+  if (!kept.length) return { backup: backupVal, kept };
+  const next = pol.path.length ? Object.assign({}, backupVal, { [pol.path[0]]: filtered }) : filtered;
+  return { backup: next, kept };
+}
+
+// Per-record classification of one key: server value vs the merge RESULT vs the backup.
+//   new: in the result, not on the server.   serverOnly: on the server, not in the backup (kept).
+//   changed: result differs from the server copy; each carries why the backup won.
+//   identical: result equals the server copy.   serverNewerKept: backup copy dropped, server is newer.
+function diffRecords(pol, serverVal, mergedVal, backupVal, serverNewerKept) {
+  const canon = RestoreMerge.canon;
+  const out = {
+    new: [],
+    changed: [],
+    serverOnly: [],
+    identical: 0,
+    serverNewerKept: serverNewerKept || [],
+    unidentifiedBackup: 0,
+  };
+  if (pol.kind === 'key') {
+    if (serverVal === undefined || serverVal === null) out.new.push('(whole key)');
+    else if (canon(serverVal) === canon(mergedVal)) out.identical = 1;
+    else
+      out.changed.push({
+        id: '(whole key)',
+        why: 'plain key: backup value replaces the server value',
+      });
+    return out;
+  }
+  const srv = recordIndex(pol, serverVal === undefined ? null : serverVal).index;
+  const mer = recordIndex(pol, mergedVal).index;
+  const bak = recordIndex(pol, backupVal);
+  out.unidentifiedBackup = bak.unidentified;
+  for (const [id, rec] of mer) {
+    if (!srv.has(id)) out.new.push(id);
+    else if (canon(srv.get(id)) === canon(rec)) out.identical++;
+    else {
+      const both = recordTime(srv.get(id)) !== null && recordTime(bak.index.get(id)) !== null;
+      out.changed.push({
+        id,
+        why: both ? 'backup newer or same updated-at' : 'no updated-at on one side: backup wins',
+      });
+    }
+  }
+  for (const id of srv.keys()) if (!bak.index.has(id)) out.serverOnly.push(id);
+  return out;
+}
+
+// Plan one key. serverRow is null when the key is absent. Never writes.
+function planKey(key, serverRow, backupValue, backupKeys, opts) {
+  const pol = RestoreMerge.policyFor(key, backupKeys);
+  if (pol.kind === 'never') return { key, action: 'skipped-never', why: pol.why };
+  if (serverRow && serverRow.deleted) return { key, action: 'tombstoned-skipped' };
+  const serverVal = serverRow ? serverRow.value : undefined;
+  const cut = dropBackupRecordsOlderThanServer(pol, serverVal, backupValue);
+  const m = RestoreMerge.mergeValue(key, serverVal, cut.backup, 'backup-wins', backupKeys);
+  const detail = diffRecords(pol, serverVal, m.changed ? m.value : serverVal, backupValue, cut.kept);
+  const base = {
+    key,
+    policy: pol.kind,
+    label: RestoreMerge.labelFor(key),
+    detail,
+    removed: m.removed,
+  };
+  if (!serverRow) {
+    if (!m.changed) return Object.assign(base, { action: 'empty-skipped' });
+    return Object.assign(base, { action: 'insert', value: m.value });
+  }
+  if (!m.changed) return Object.assign(base, { action: 'identical' });
+  const allowed = new Set((opts && opts.allowRemoval) || []);
+  if (m.removed > 0 && !allowed.has(key)) return Object.assign(base, { action: 'held', value: m.value });
+  return Object.assign(base, { action: 'update', value: m.value });
+}
+
+// Plan all synced keys. rows = prepareSyncedRows() output (backup side).
+function buildMergePlan(rows, serverImage, opts) {
+  const backupKeys = rows.map((r) => r.key);
+  const keys = rows.map((r) => {
+    const p = planKey(r.key, serverImage.rows.get(r.key) || null, r.value, backupKeys, opts);
+    if (p.value !== undefined) {
+      const json = canonicalStringify(p.value);
+      p.hash = sha256(json);
+      p.bytes = Buffer.byteLength(json, 'utf8');
+    }
+    return p;
+  });
+  const backupSet = new Set(backupKeys);
+  const serverOnlyKeys = serverImage.allKeys.filter((k) => !backupSet.has(k));
+  return { keys, serverOnlyKeys };
+}
+
+function countPlan(plan) {
+  const c = {
+    keys: {
+      insert: 0,
+      update: 0,
+      identical: 0,
+      held: 0,
+      skippedNever: 0,
+      tombstonedSkipped: 0,
+      emptySkipped: 0,
+      serverOnly: plan.serverOnlyKeys.length,
+    },
+    records: {
+      new: 0,
+      changed: 0,
+      serverOnly: 0,
+      identical: 0,
+      serverNewerKept: 0,
+    },
+  };
+  for (const p of plan.keys) {
+    if (p.action === 'insert') c.keys.insert++;
+    else if (p.action === 'update') c.keys.update++;
+    else if (p.action === 'identical') c.keys.identical++;
+    else if (p.action === 'held') c.keys.held++;
+    else if (p.action === 'skipped-never') c.keys.skippedNever++;
+    else if (p.action === 'tombstoned-skipped') c.keys.tombstonedSkipped++;
+    else if (p.action === 'empty-skipped') c.keys.emptySkipped++;
+    if (p.detail) {
+      c.records.new += p.detail.new.length;
+      c.records.changed += p.detail.changed.length;
+      c.records.serverOnly += p.detail.serverOnly.length;
+      c.records.identical += p.detail.identical;
+      c.records.serverNewerKept += p.detail.serverNewerKept.length;
+    }
+  }
+  return c;
+}
+
+// The full diff, for the local file. Holds record ids (never record values).
+function buildDiffFile(plan, counts, meta) {
+  return {
+    createdAt: new Date().toISOString(),
+    mode: meta.mode,
+    counts,
+    serverOnlyKeys: plan.serverOnlyKeys,
+    keys: plan.keys.map((p) => ({
+      key: p.key,
+      action: p.action,
+      why: p.why,
+      policy: p.policy,
+      removedIfWritten: p.removed,
+      new: p.detail ? p.detail.new : undefined,
+      overwrittenByBackup: p.detail ? p.detail.changed : undefined,
+      serverOnlyKept: p.detail ? p.detail.serverOnly : undefined,
+      serverNewerKept: p.detail ? p.detail.serverNewerKept : undefined,
+      identical: p.detail ? p.detail.identical : undefined,
+      unidentifiedBackupRecords: p.detail ? p.detail.unidentifiedBackup : undefined,
+    })),
+    pdf: meta.pdf || null,
+  };
+}
+
+// ── Files: diff + snapshot. Both stay OUTSIDE the repo. ─────────────────────
+
+function assertOutsideRepo(dir) {
+  const abs = path.resolve(dir);
+  const rel = path.relative(REPO_ROOT, abs);
+  if (rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel))) {
+    throw new Error('Refusing to write inside the repo: ' + abs + ' (diff and snapshot files hold client data).');
+  }
+  return abs;
+}
+
+function stamp(d) {
+  const p = (n) => String(n).padStart(2, '0');
+  const dd = d || new Date();
+  return (
+    dd.getFullYear() + '-' + p(dd.getMonth() + 1) + '-' + p(dd.getDate()) + '-' + p(dd.getHours()) + p(dd.getMinutes())
+  );
+}
+
+function writeLocalJson(dir, name, obj) {
+  const abs = assertOutsideRepo(dir);
+  fs.mkdirSync(abs, { recursive: true });
+  const ext = path.extname(name);
+  const stem = name.slice(0, name.length - ext.length);
+  for (let n = 1; n < 100; n++) {
+    const file = path.join(abs, n === 1 ? name : stem + '-' + n + ext);
+    try {
+      fs.writeFileSync(file, JSON.stringify(obj, null, 1), { flag: 'wx' }); // never overwrite an older file
+      return file;
+    } catch (e) {
+      if (e.code !== 'EEXIST') throw e;
+    }
+  }
+  throw new Error('Too many files with the name ' + name);
+}
+
+// The server rows of every key the import will touch (null = key absent). Written BEFORE any write.
+function writeSnapshot(plan, serverImage, dir, now) {
+  const rows = {};
+  for (const p of plan.keys) {
+    if (p.action === 'insert') rows[p.key] = null;
+    else if (p.action === 'update') rows[p.key] = serverImage.rows.get(p.key) || null;
+  }
+  return writeLocalJson(dir, stamp(now) + '-supabase-snapshot.json', {
+    createdAt: new Date().toISOString(),
+    note: 'Server rows before the import. null = key was absent. Same shape as --server-file.',
+    rows,
   });
 }
 
-async function getSupabaseCreds() {
-  let url = process.env.SUPABASE_URL || KNOWN_PROJECT_URL;
-  let secretKey = process.env.SUPABASE_SECRET_KEY;
-  if (!process.env.SUPABASE_URL) {
-    console.log('SUPABASE_URL not set in env -- defaulting to the known project URL: ' + url);
-  }
-  if (!secretKey) {
-    secretKey = await promptHidden('SUPABASE_SECRET_KEY not set in env. Paste it now (input hidden): ');
-  }
-  if (!secretKey) {
-    throw new Error('No SUPABASE_SECRET_KEY provided (env var or prompt). Aborting -- cannot write live without it.');
-  }
-  return { url: url.replace(/\/+$/, ''), secretKey };
-}
+// ── Apply (the only place that writes kv) ───────────────────────────────────
 
-// ── Live orchestration ───────────────────────────────────────────────────────
-
-async function liveSeedData(rows, creds, opts) {
-  const results = await mapWithConcurrency(rows, opts.concurrency, (row) => commitKvRow(row, creds, opts));
-  const summary = { inserted: 0, noop: 0, conflictSkipped: 0, forceOverwritten: 0, error: 0 };
+async function applyPlan(plan, serverImage, creds, opts) {
+  const todo = plan.keys.filter((p) => p.action === 'insert' || p.action === 'update');
+  const results = await mapWithConcurrency(todo, opts.concurrency, async (p) => {
+    const row = { key: p.key, value: p.value, hash: p.hash };
+    if (p.action === 'insert') {
+      const st = await insertKvRow(row, creds, opts.operator);
+      return {
+        key: p.key,
+        status: st === 201 ? 'inserted' : st === 409 ? 'conflict-appeared' : 'error',
+      };
+    }
+    const before = serverImage.rows.get(p.key);
+    // History first: if it cannot be written, the key is not touched.
+    if (!(await insertHistoryRow(before, creds))) return { key: p.key, status: 'history-failed' };
+    const ok = await patchKvRow(row, before.version, creds, opts.operator);
+    return {
+      key: p.key,
+      status: ok ? 'updated' : 'conflict-version-changed',
+    };
+  });
+  const summary = {
+    inserted: 0,
+    updated: 0,
+    historyWritten: 0,
+    conflict: 0,
+    historyFailed: 0,
+    error: 0,
+  };
   for (const r of results) {
     if (r.status === 'inserted') summary.inserted++;
-    else if (r.status === 'noop-identical') summary.noop++;
-    else if (r.status === 'conflict-skipped') summary.conflictSkipped++;
-    else if (r.status === 'force-overwritten') summary.forceOverwritten++;
+    else if (r.status === 'updated') {
+      summary.updated++;
+      summary.historyWritten++;
+    } else if (r.status === 'conflict-version-changed') {
+      summary.conflict++;
+      summary.historyWritten++;
+    } else if (r.status === 'conflict-appeared') summary.conflict++;
+    else if (r.status === 'history-failed') summary.historyFailed++;
     else summary.error++;
   }
   return { results, summary };
 }
 
-// Uploads only the UNIQUE-by-content-hash blobs, to their canonical
-// `en_pdf_shared_<hash16>` key -- NOT the original 929 per-bill
-// `en_pdf_file_<id>` keys. An in-run Map (hash -> settled result) makes sure
-// a given unique blob is uploaded to Supabase Storage at most ONCE per
-// script invocation even though up to ~13.5x as many bill items reference
-// it; commitPdfObject()'s own write-once/idempotent-retry semantics still
-// apply across SEPARATE script runs (a re-run sees the object already
-// exists and no-ops). See file header "PDF content-hash dedup" section.
-async function liveSeedPdfFiles(pdfFilePaths, creds, opts) {
+// ── PDFs: report + write-once upload ────────────────────────────────────────
+
+// Which unique PDFs are on the server. Uses the offline pdfKeys list or a Storage stat per hash.
+async function pdfPresence(scan, serverImage, creds, concurrency) {
+  const infos = Array.from(scan.hashToInfo.values());
+  const offline = serverImage && serverImage.pdfKeys ? new Set(serverImage.pdfKeys) : null;
+  if (!offline && !creds)
+    return {
+      known: false,
+      unique: infos.length,
+      toUpload: null,
+      present: null,
+      sizeDiffers: null,
+    };
+  const states = await mapWithConcurrency(infos, concurrency, async (info) => {
+    if (offline) return offline.has(info.canonicalKey) ? 'present' : 'upload';
+    const st = await pdfStorageStat(info.canonicalKey, creds);
+    if (!st) return 'upload';
+    return st.size === info.bytes ? 'present' : 'size-differs';
+  });
+  const n = (s) => states.filter((x) => x === s).length;
+  return {
+    known: true,
+    unique: infos.length,
+    toUpload: n('upload'),
+    present: n('present'),
+    sizeDiffers: n('size-differs'),
+  };
+}
+
+async function applyPdfFiles(pdfFilePaths, creds, opts) {
   const summary = {
     uploaded: 0,
     noop: 0,
     conflict: 0,
     error: 0,
     skippedDuplicateInRun: 0,
-    totalFiles: pdfFilePaths.length,
     totalItems: 0,
     uniqueBlobs: 0,
   };
-  const perFileResults = [];
-  const hashResultCache = new Map(); // hash -> settled commitPdfObject()-shaped result for this run
+  const hashResultCache = new Map();
   for (const filePath of pdfFilePaths) {
-    // ONE part file's items live in memory at a time -- discarded (out of
-    // scope, eligible for GC) before the next file is read. See file header.
-    const parsed = readPdfPartFile(filePath, true);
+    const parsed = readPdfPartFile(filePath, true); // one part file in memory at a time
     const ids = Object.keys(parsed.items);
     const fileResults = await mapWithConcurrency(ids, opts.concurrency, async (sourceKey) => {
-      const base64 = parsed.items[sourceKey];
-      let buffer;
-      try {
-        buffer = Buffer.from(base64, 'base64');
-      } catch (e) {
-        return { key: sourceKey, sourceKey, status: 'error', error: 'invalid base64' };
-      }
+      const buffer = Buffer.from(parsed.items[sourceKey], 'base64');
       const hash = sha256Buf(buffer);
       const canonicalKey = canonicalPdfKeyForHash(hash);
-      if (hashResultCache.has(hash)) {
-        const cached = hashResultCache.get(hash);
-        return {
-          key: canonicalKey,
-          sourceKey,
-          status: 'skipped-duplicate-in-run',
-          dedupedAgainst: cached.status,
-        };
-      }
-      const result = await commitPdfObject(canonicalKey, buffer, hash, creds);
-      hashResultCache.set(hash, result);
-      return Object.assign({ sourceKey }, result);
+      if (hashResultCache.has(hash)) return { status: 'skipped-duplicate-in-run' };
+      hashResultCache.set(hash, true); // set BEFORE the await: a same-content item in flight is skipped
+      return commitPdfObject(canonicalKey, buffer, hash, creds);
     });
     for (const r of fileResults) {
       summary.totalItems++;
@@ -1126,173 +1379,225 @@ async function liveSeedPdfFiles(pdfFilePaths, creds, opts) {
       else if (r.status === 'skipped-duplicate-in-run') summary.skippedDuplicateInRun++;
       else summary.error++;
     }
-    perFileResults.push({ file: filePath, part: parsed.part, count: parsed.count, results: fileResults });
-    console.log(
-      '  [pdf] ' +
-        path.basename(filePath) +
-        ' (part ' +
-        parsed.part +
-        ', ' +
-        parsed.count +
-        ' items) done -- running totals: uploaded=' +
-        summary.uploaded +
-        ' noop=' +
-        summary.noop +
-        ' conflict=' +
-        summary.conflict +
-        ' skipped-dup-in-run=' +
-        summary.skippedDuplicateInRun +
-        ' error=' +
-        summary.error,
-    );
-    // parsed.items goes out of scope here; nothing from this file is retained.
+    if (opts.log)
+      opts.log('  [pdf] ' + path.basename(filePath) + ' done: uploaded=' + summary.uploaded + ' noop=' + summary.noop);
   }
   summary.uniqueBlobs = hashResultCache.size;
-  return { perFile: perFileResults, summary };
+  return summary;
 }
 
-// ── Entry point ──────────────────────────────────────────────────────────────
+// ── Orchestration ────────────────────────────────────────────────────────────
+
+// deps (tests): { env, readCred, log, now }
+async function runImport(args, deps) {
+  deps = deps || {};
+  const env = deps.env || process.env;
+  const log = deps.log || ((s) => console.log(s));
+  const result = { apply: !!args.apply };
+
+  const pdfFilePaths = resolvePdfFiles(args);
+  if (!args.file && !pdfFilePaths.length) throw new Error('Nothing to do -- pass --file and/or --pdf-dir/--pdf-file.');
+  if (args.apply && !args.target) throw new Error('--apply needs --target prod|staging.');
+  if (args.apply && args.serverFile)
+    throw new Error('--apply reads the live server. Do not combine it with --server-file.');
+  if (args.apply && !args.file && !pdfFilePaths.length) throw new Error('Nothing to apply.');
+
+  const dataLoaded = args.file ? loadExport(args.file) : null;
+  const pdfReport = pdfFilePaths.length ? buildPdfDryRunReport(pdfFilePaths) : null;
+  const pdfRemapStats = dataLoaded && pdfReport ? remapPdfReferences(dataLoaded.data, pdfReport._scan) : null;
+  if (pdfRemapStats && pdfRemapStats.broken.length) {
+    throw new Error(
+      pdfRemapStats.broken.length +
+        ' PDF-claiming bill record(s) match no blob in the PDF export -- refusing to proceed. Investigate before re-running.',
+    );
+  }
+  const dataReport = dataLoaded ? buildDataReport(dataLoaded, args) : null;
+  result.dataReport = dataReport;
+  result.pdfReport = pdfReport;
+  result.pdfRemap = pdfRemapStats;
+
+  // Server side: offline file, or live (read-only until the write step).
+  let creds = null;
+  let serverImage = null;
+  if (args.serverFile) serverImage = loadServerFile(args.serverFile);
+  else if (args.target) creds = resolveCreds(args, env, deps.readCred);
+  if (creds && dataReport) {
+    serverImage = await readServerImage(creds, dataReport.synced.keys, args.concurrency);
+  }
+
+  let plan = null;
+  let counts = null;
+  if (dataReport && serverImage) {
+    plan = buildMergePlan(dataReport._rows, serverImage, {
+      allowRemoval: args.allowRemoval,
+    });
+    counts = countPlan(plan);
+    result.plan = plan;
+    result.counts = counts;
+  }
+
+  let pdfPresenceReport = null;
+  if (pdfReport) {
+    pdfPresenceReport = await pdfPresence(pdfReport._scan, serverImage, creds, args.concurrency);
+    result.pdfPresence = pdfPresenceReport;
+  }
+
+  // Diff file (local, outside the repo). Always written when there is a plan.
+  if (plan) {
+    const diff = buildDiffFile(plan, counts, {
+      mode: args.apply ? 'apply' : 'dry-run',
+      pdf: pdfPresenceReport,
+    });
+    result.diffFile = writeLocalJson(args.reportDir, stamp(deps.now) + '-supabase-import-diff.json', diff);
+  }
+
+  printRunReport(result, args, log);
+
+  if (!args.apply) {
+    log('');
+    log('DRY RUN -- nothing was written. Add --apply (with --target) to write.');
+    return result;
+  }
+
+  // ---- APPLY ----
+  if (plan) {
+    result.snapshotFile = writeSnapshot(plan, serverImage, args.snapshotDir, deps.now); // throws -> no write
+    log('Snapshot saved (before any write): ' + result.snapshotFile);
+    const applied = await applyPlan(plan, serverImage, creds, {
+      concurrency: args.concurrency,
+      operator: args.operator,
+    });
+    result.applied = applied;
+    const s = applied.summary;
+    log(
+      'Data written: inserted=' +
+        s.inserted +
+        ' updated=' +
+        s.updated +
+        ' history-rows=' +
+        s.historyWritten +
+        ' conflict=' +
+        s.conflict +
+        ' history-failed=' +
+        s.historyFailed +
+        ' error=' +
+        s.error,
+    );
+    if (counts.keys.held)
+      log(
+        '  ' +
+          counts.keys.held +
+          ' key(s) HELD (would remove items). See the diff file. Use --allow-removal to write one.',
+      );
+  }
+  if (pdfFilePaths.length) {
+    result.pdfApplied = await applyPdfFiles(pdfFilePaths, creds, {
+      concurrency: args.concurrency,
+      log,
+    });
+    const s = result.pdfApplied;
+    log(
+      'PDFs: uploaded=' +
+        s.uploaded +
+        ' already-present=' +
+        s.noop +
+        ' conflict=' +
+        s.conflict +
+        ' error=' +
+        s.error +
+        ' (unique blobs ' +
+        s.uniqueBlobs +
+        ')',
+    );
+  }
+  log('');
+  log('APPLY COMPLETE. Run the same command without --apply: it must show 0 new, 0 changed.');
+  return result;
+}
+
+function printRunReport(result, args, log) {
+  if (args.json) {
+    const out = {};
+    if (result.dataReport) {
+      const { _rows, ...pub } = result.dataReport;
+      out.data = pub;
+    }
+    if (result.pdfReport) {
+      const { _scan, ...pub } = result.pdfReport;
+      out.pdf = pub;
+    }
+    if (result.counts) out.diff = result.counts;
+    if (result.pdfPresence) out.pdfPresence = result.pdfPresence;
+    if (result.diffFile) out.diffFile = result.diffFile;
+    log(JSON.stringify(out, null, 2));
+    return;
+  }
+  if (result.dataReport) printHumanDataReport(result.dataReport);
+  if (result.pdfReport) printHumanPdfReport(result.pdfReport);
+  if (result.counts) {
+    const c = result.counts;
+    log('');
+    log('DIFF against the server (counts only; ids are in the diff file)');
+    log('====================================================================');
+    log(
+      'Keys:    new=' +
+        c.keys.insert +
+        ' changed=' +
+        c.keys.update +
+        ' identical=' +
+        c.keys.identical +
+        ' held=' +
+        c.keys.held +
+        ' never-written=' +
+        c.keys.skippedNever +
+        ' tombstoned=' +
+        c.keys.tombstonedSkipped +
+        ' server-only=' +
+        c.keys.serverOnly,
+    );
+    log(
+      'Records: new=' +
+        c.records.new +
+        ' changed=' +
+        c.records.changed +
+        ' server-only(kept)=' +
+        c.records.serverOnly +
+        ' identical=' +
+        c.records.identical +
+        ' server-newer(kept)=' +
+        c.records.serverNewerKept,
+    );
+    log('Diff file: ' + result.diffFile);
+  } else if (result.dataReport) {
+    log('');
+    log('No server to compare with (pass --server-file or --target). Local report only.');
+  }
+  if (result.pdfPresence) {
+    const p = result.pdfPresence;
+    log('');
+    log(
+      p.known
+        ? 'PDFs on server: ' +
+            p.unique +
+            ' unique; to upload=' +
+            p.toUpload +
+            ' already present=' +
+            p.present +
+            ' size-differs=' +
+            p.sizeDiffers
+        : 'PDFs: ' + p.unique + ' unique. Server presence unknown (no server given).',
+    );
+  }
+  if (result.pdfRemap) printHumanPdfRemapReport(result.pdfRemap);
+}
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.help) {
     printUsage();
-    process.exit(0);
     return;
   }
-
-  const pdfFilePaths = resolvePdfFiles(args);
-  if (!args.file && !pdfFilePaths.length) {
-    printUsage();
-    throw new Error('Nothing to do -- pass --file and/or --pdf-dir/--pdf-file.');
-  }
-  if (args.dryRun === args.live) {
-    throw new Error('Pass exactly one of --dry-run or --live.');
-  }
-
-  const dataLoaded = args.file ? loadExport(args.file) : null;
-  // PDF dedup scan runs BEFORE buildDataReport() -- and the reference remap
-  // runs BEFORE buildDataReport() too -- so the kv rows/report it produces
-  // already reflect the REMAPPED, deduped pdfKey values, not the original
-  // per-bill en_pdf_file_<id> references. See file header "PDF content-hash
-  // dedup + reference remap" section.
-  const pdfReport = pdfFilePaths.length ? buildPdfDryRunReport(pdfFilePaths) : null;
-  const pdfRemapStats = dataLoaded && pdfReport ? remapPdfReferences(dataLoaded.data, pdfReport._scan) : null;
-  const dataReport = dataLoaded ? buildDataReport(dataLoaded, args) : null;
-
-  function printFullReport() {
-    if (args.json) {
-      const out = {};
-      if (dataReport) {
-        const { _rows, ...publicReport } = dataReport;
-        out.data = publicReport;
-      }
-      if (pdfReport) {
-        const { _scan, ...publicPdfReport } = pdfReport;
-        out.pdf = publicPdfReport;
-      }
-      if (pdfRemapStats) out.pdfRemap = pdfRemapStats;
-      console.log(JSON.stringify(out, null, 2));
-    } else {
-      if (dataReport) printHumanDataReport(dataReport);
-      if (pdfReport) printHumanPdfReport(pdfReport);
-      if (pdfRemapStats) printHumanPdfRemapReport(pdfRemapStats);
-    }
-  }
-
-  // SAFETY (non-negotiable, see file header): if ANY PDF-claiming bill
-  // record fails to resolve to an uploaded canonical blob, print the full
-  // diagnostic report (dry-run OR live) and hard-stop BEFORE any Supabase
-  // connection is made. Never a silent partial-integrity seed.
-  if (pdfRemapStats && pdfRemapStats.broken.length) {
-    printFullReport();
-    throw new Error(
-      pdfRemapStats.broken.length +
-        ' PDF-claiming bill record(s) do not resolve to any blob in the provided PDF export ' +
-        '(see the pdfRemap.broken list printed above) -- refusing to proceed. Investigate before re-running.',
-    );
-  }
-
-  if (args.dryRun) {
-    printFullReport();
-    if (!args.json) {
-      console.log('');
-      console.log('DRY RUN ONLY -- no data was written anywhere. No Supabase connection was made.');
-    }
-    return;
-  }
-
-  // --live from here down.
-  console.log('LIVE MODE -- this will write to the real Supabase project. Ctrl+C now to abort.');
-  const creds = await getSupabaseCreds();
-
-  if (dataReport) {
-    console.log('');
-    console.log('Seeding ' + dataReport.synced.count + ' data row(s) to public.kv ...');
-    const { summary } = await liveSeedData(dataReport._rows, creds, {
-      operator: args.operator,
-      force: args.force,
-      concurrency: args.concurrency,
-    });
-    console.log(
-      'Data seed done -- inserted=' +
-        summary.inserted +
-        ' noop(identical)=' +
-        summary.noop +
-        ' conflict-skipped=' +
-        summary.conflictSkipped +
-        ' force-overwritten=' +
-        summary.forceOverwritten +
-        ' error=' +
-        summary.error,
-    );
-    if (summary.conflictSkipped) {
-      console.log(
-        '  ' +
-          summary.conflictSkipped +
-          ' key(s) already existed server-side with DIFFERENT content and were left untouched ' +
-          '(re-run with --force to overwrite via a version-checked CAS PATCH, or investigate first).',
-      );
-    }
-    if (summary.error) {
-      console.log('  ' + summary.error + ' key(s) failed outright -- see full JSON output (--json) for details.');
-    }
-  }
-
-  if (pdfFilePaths.length) {
-    console.log('');
-    console.log('Seeding PDFs from ' + pdfFilePaths.length + ' part file(s) to the "' + PDF_BUCKET + '" bucket ...');
-    const { summary } = await liveSeedPdfFiles(pdfFilePaths, creds, { concurrency: args.concurrency });
-    console.log(
-      'PDF seed done -- uploaded=' +
-        summary.uploaded +
-        ' noop(identical)=' +
-        summary.noop +
-        ' conflict=' +
-        summary.conflict +
-        ' skipped-dup-in-run=' +
-        summary.skippedDuplicateInRun +
-        ' error=' +
-        summary.error +
-        ' / ' +
-        summary.totalItems +
-        ' total bill references, ' +
-        summary.uniqueBlobs +
-        ' unique blob(s) actually uploaded to "' +
-        PDF_BUCKET +
-        '"',
-    );
-    if (summary.conflict) {
-      console.log(
-        '  ' +
-          summary.conflict +
-          ' PDF key(s) already existed with DIFFERENT content -- left untouched (no --force path for PDFs, investigate manually).',
-      );
-    }
-  }
-
-  console.log('');
-  console.log('LIVE SEED COMPLETE.');
+  await runImport(args);
 }
 
 if (require.main === module) {
@@ -1303,6 +1608,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  parseArgs,
   loadExport,
   normalizeValue,
   canonicalStringify,
@@ -1316,7 +1622,12 @@ module.exports = {
   remapPdfReferences,
   readPdfPartFile,
   resolvePdfFiles,
-  parseArgs,
-  commitKvRow,
   commitPdfObject,
+  resolveCreds,
+  readCredentialManager,
+  loadServerFile,
+  planKey,
+  buildMergePlan,
+  countPlan,
+  runImport,
 };
