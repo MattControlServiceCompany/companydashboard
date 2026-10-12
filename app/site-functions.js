@@ -1603,7 +1603,7 @@ async function _restoreStart(backup, opts) {
     throw new Error('restoreData: opts.safetyCopy must be true or false when confirm is true');
   }
   var mode = opts.mode || 'add';
-  if (['add', 'merge', 'replace', 'backup-wins'].indexOf(mode) === -1) throw new Error('restoreData: unknown mode ' + mode);
+  if (['add', 'merge', 'replace', 'backup-wins', 'newer-wins'].indexOf(mode) === -1) throw new Error('restoreData: unknown mode ' + mode);
   var p = RestoreMerge.plan(backup, ctx.getCurrent, mode, {
     isDeleted: ctx.isDeleted,
     isUnreadable: ctx.isUnreadable,
@@ -1680,9 +1680,11 @@ function _restoreDialog(ctx) {
     );
   }
   var where = syncOn ? 'the shared server data' : 'this device';
-  function opt(v, title, sub) {
+  function opt(v, title, sub, hover) {
     return (
-      '<label class="rst-opt"><input type="radio" name="rstMode" value="' +
+      '<label class="rst-opt"' +
+      (hover ? ' title="' + _escHtml(hover) + '"' : '') +
+      '><input type="radio" name="rstMode" value="' +
       v +
       '"' +
       (mode === v ? ' checked' : '') +
@@ -1712,7 +1714,7 @@ function _restoreDialog(ctx) {
       (syncOn
         ? 'Sync is on. Restore compares the backup with the current server data. Both users share the server data.'
         : 'Sync is off. Restore compares the backup with the data on this device.') +
-      ' Add, Merge and Make this backup the server copy never remove a record. Replace removes records that are not in the backup. A copy of the current data downloads before anything is written.</p>' +
+      ' Add, Merge, Merge keep newer and Make this backup the server copy never remove a record. Replace removes records that are not in the backup. A copy of the current data downloads before anything is written.</p>' +
       opt(
         'add',
         'Add missing only (recommended)',
@@ -1721,7 +1723,7 @@ function _restoreDialog(ctx) {
       opt(
         'merge',
         'Merge (backup fills in blanks)',
-        'Adds missing data. In records with the same ID, empty fields take the backup value. A value that is already filled in never changes. Nothing is removed.',
+        'Adds missing data. In a record that is in both, empty fields take the backup value. A value that is already filled in never changes. Nothing is removed.',
       ) +
       opt(
         'replace',
@@ -1733,7 +1735,13 @@ function _restoreDialog(ctx) {
       opt(
         'backup-wins',
         'Make this backup the server copy',
-        'Every value that differs takes the backup value. Customer, project and task lists are merged: a record in both takes the backup value, a record only on the server stays, none removed. Old values stay in the server history. A key that would remove data waits for your tick.',
+        'Every value that differs takes the backup value, even if the server copy is newer. Customer, project and task lists are merged: a record in both takes the backup value, and a record only on the server stays. Old values are kept. A data set that would lose records waits for your tick.',
+      ) +
+      opt(
+        'newer-wins',
+        'Merge, keep whichever copy is newer',
+        'Every value that differs takes the backup value, except a record that was changed on the server after the backup was made. That record keeps the server copy. Nothing is removed.',
+        'Compares the last-changed date on each record. The newer copy stays. A record with no date takes the backup value. Old values are kept.',
       ) +
       '<div class="rst-tbl-outer"><table class="rst-tbl"><thead><tr><th>Data</th><th>Added</th><th>Updated</th><th>Kept</th>' +
       (mode === 'replace' ? '<th>Removed</th>' : '') +
@@ -1776,9 +1784,30 @@ function _restoreDialog(ctx) {
     p.notes.forEach(function (note) {
       html += '<p class="rst-note rst-rm-note">' + _escHtml(note) + '</p>';
     });
+    if (mode === 'backup-wins' || mode === 'newer-wins') {
+      var newerKept = rows.reduce(function (n, r) {
+        return n + (r.keptNewer || 0);
+      }, 0);
+      if (newerKept)
+        html +=
+          '<p class="rst-note">' +
+          newerKept +
+          (newerKept === 1 ? ' record is' : ' records are') + ' kept as it is: the server copy is newer than the backup copy.</p>';
+      var overNames = [];
+      rows.forEach(function (r) {
+        overNames = overNames.concat(r.overwroteNewerNames || []);
+      });
+      if (overNames.length)
+        html +=
+          '<p class="rst-note rst-rm-note"><b>' +
+          overNames.length +
+          (overNames.length === 1 ? ' record has' : ' records have') + ' a newer server copy and will be overwritten by the backup:</b></p><ul class="rst-list">' +
+          namesHtml(overNames, 30) +
+          '</ul>';
+    }
     html += _restoreUnreadableHtml(p);
     var held = p.items.filter(function (i) {
-      return i.held || (mode === 'backup-wins' && allowRemoval[i.key]);
+      return i.held || ((mode === 'backup-wins' || mode === 'newer-wins') && allowRemoval[i.key]);
     });
     if (held.length) {
       html +=
