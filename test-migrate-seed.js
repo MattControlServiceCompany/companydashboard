@@ -728,6 +728,185 @@ await t(
     assert.strictEqual(M.readCredentialManager('companyhub-test-no-such-entry-' + Date.now()), null);
   });
 
+  // ---- failure handling (apply must never say COMPLETE when a write failed) ----
+  M.RETRY.baseMs = 0;
+  const failBackup = writeBackup(work, { en_projects: [{ id: 'P1', name: 'a' }], en_tasks: [{ id: 'T1', text: 'b' }] });
+  // wraps the fake: POST to /rest/v1/kv for key `failKey` answers failFn(attempt) -> status | 'net' | null (pass through)
+  const failingFetch = (fake, failKey, failFn) => {
+    const counts = { attempts: 0 };
+    return {
+      counts,
+      fetch: async (url, opts) => {
+        if (opts && opts.method === 'POST' && new URL(url).pathname === '/rest/v1/kv' && JSON.parse(opts.body)[0].key === failKey) {
+          counts.attempts++;
+          const r = failFn(counts.attempts);
+          if (r === 'net') throw new Error('socket hang up');
+          if (r)
+            return {
+              status: r,
+              ok: false,
+              headers: { get: () => null },
+              json: async () => ({}),
+              text: async () => '{"message":"statement timeout"}',
+              arrayBuffer: async () => new ArrayBuffer(0),
+            };
+        }
+        return fake.fetch(url, opts);
+      },
+    };
+  };
+
+  await t('apply: a write that keeps failing names the key and status, says APPLY INCOMPLETE, counts failed', async () => {
+    const fake = makeFake();
+    const f = failingFetch(fake, 'en_tasks', () => 500);
+    global.fetch = f.fetch;
+    const out = silent();
+    const r = await M.runImport(makeArgs({ file: failBackup, target: 'staging', apply: true, reportDir, snapshotDir: snapDir }), {
+      env,
+      log: out.log,
+    });
+    global.fetch = realFetch;
+    const text = out.lines.join('\n');
+    assert.strictEqual(f.counts.attempts, M.RETRY.attempts, 'retried the wrong number of times');
+    assert.strictEqual(r.failed, 1);
+    assert(/FAILED key en_tasks status=error http=500 reason=.*statement timeout/.test(text), text);
+    assert(/APPLY INCOMPLETE: 1 failed/.test(text));
+    assert(!/APPLY COMPLETE/.test(text));
+    assert(!text.includes(SECRET));
+    assert(fake.kv.has('en_projects') && !fake.kv.has('en_tasks'));
+  });
+
+  await t('apply: a network error that never recovers is a named failure', async () => {
+    const fake = makeFake();
+    global.fetch = failingFetch(fake, 'en_tasks', () => 'net').fetch;
+    const out = silent();
+    const r = await M.runImport(makeArgs({ file: failBackup, target: 'staging', apply: true, reportDir, snapshotDir: snapDir }), {
+      env,
+      log: out.log,
+    });
+    global.fetch = realFetch;
+    assert.strictEqual(r.failed, 1);
+    assert(/FAILED key en_tasks status=error http=0 reason=.*socket hang up/.test(out.lines.join('\n')));
+  });
+
+  await t('apply: a 5xx then success is a complete apply (retry), and a 400 is not retried', async () => {
+    const fake = makeFake();
+    const f = failingFetch(fake, 'en_tasks', (n) => (n < 3 ? 504 : null));
+    global.fetch = f.fetch;
+    const out = silent();
+    const r = await M.runImport(makeArgs({ file: failBackup, target: 'staging', apply: true, reportDir, snapshotDir: snapDir }), {
+      env,
+      log: out.log,
+    });
+    assert.strictEqual(f.counts.attempts, 3);
+    assert.strictEqual(r.failed, 0);
+    assert.strictEqual(r.applied.summary.inserted, 2);
+    assert(/APPLY COMPLETE/.test(out.lines.join('\n')));
+    assert(fake.kv.has('en_tasks'));
+    const fake2 = makeFake();
+    const f2 = failingFetch(fake2, 'en_tasks', () => 400);
+    global.fetch = f2.fetch;
+    const r2 = await M.runImport(makeArgs({ file: failBackup, target: 'staging', apply: true, reportDir, snapshotDir: snapDir }), {
+      env,
+      log: silent().log,
+    });
+    global.fetch = realFetch;
+    assert.strictEqual(f2.counts.attempts, 1);
+    assert.strictEqual(r2.failed, 1);
+  });
+
+  await t('apply: first try wrote the row but lost the answer; the retry sees 409 with our hash = inserted', async () => {
+    const fake = makeFake();
+    const realF = fake.fetch;
+    let n = 0;
+    global.fetch = async (url, opts) => {
+      const isTarget = opts && opts.method === 'POST' && new URL(url).pathname === '/rest/v1/kv' && JSON.parse(opts.body)[0].key === 'en_tasks';
+      if (isTarget && ++n === 1) {
+        await realF(url, opts); // the server stores it
+        throw new Error('timeout');
+      }
+      return realF(url, opts);
+    };
+    const r = await M.runImport(makeArgs({ file: failBackup, target: 'staging', apply: true, reportDir, snapshotDir: snapDir }), {
+      env,
+      log: silent().log,
+    });
+    global.fetch = realFetch;
+    assert.strictEqual(r.failed, 0);
+    assert.strictEqual(r.applied.summary.inserted, 2);
+  });
+
+  await t('apply: a PDF upload that keeps failing is named by key and fails the apply', async () => {
+    const fake = makeFake();
+    const pdfFile = path.join(work, 'CompanyHub-PDFs-20990101-part001.json');
+    fs.writeFileSync(pdfFile, JSON.stringify({ _companyHubPdfExport: true, part: 1, count: 1, items: { 'pdf_1': Buffer.from('%PDF-synthetic-1').toString('base64') } }));
+    const realF = fake.fetch;
+    global.fetch = async (url, opts) =>
+      opts && opts.method === 'POST' && new URL(url).pathname.startsWith('/storage/v1/')
+        ? { status: 503, ok: false, headers: { get: () => null }, json: async () => ({}), text: async () => 'upstream down', arrayBuffer: async () => new ArrayBuffer(0) }
+        : realF(url, opts);
+    const out = silent();
+    let r;
+    try {
+      r = await M.runImport(makeArgs({ pdfFiles: [pdfFile], target: 'staging', apply: true, reportDir, snapshotDir: snapDir }), { env, log: out.log });
+    } finally {
+      global.fetch = realFetch;
+    }
+    assert.strictEqual(r.failed, 1);
+    assert(/FAILED pdf \S+ status=error http=503 reason=upstream down/.test(out.lines.join('\n')), out.lines.join('\n'));
+    assert(/APPLY INCOMPLETE: 1 failed/.test(out.lines.join('\n')));
+  });
+
+  await t('dry run flags a value over the size limit; apply does not send it and names it', async () => {
+    const fake = makeFake();
+    const big = writeBackup(work, { en_tasks: [{ id: 'T1', text: 'x'.repeat(M.KV_VALUE_MAX_BYTES + 10) }] });
+    global.fetch = fake.fetch;
+    const out = silent();
+    const r = await M.runImport(makeArgs({ file: big, target: 'staging', reportDir, snapshotDir: snapDir }), { env, log: out.log });
+    assert.strictEqual(r.counts.oversize.length, 1);
+    assert(/OVERSIZE: key en_tasks is \d+ bytes/.test(out.lines.join('\n')));
+    const out2 = silent();
+    const r2 = await M.runImport(makeArgs({ file: big, target: 'staging', apply: true, reportDir, snapshotDir: snapDir }), { env, log: out2.log });
+    global.fetch = realFetch;
+    assert.strictEqual(fake.writes, 0);
+    assert.strictEqual(r2.failed, 1);
+    assert(/FAILED key en_tasks .*over the importer limit/.test(out2.lines.join('\n')));
+  });
+
+  await t('an empty collection counts 0 new records, in the report and the diff file', async () => {
+    const fake = makeFake();
+    global.fetch = fake.fetch;
+    const emptyFile = writeBackup(work, { en_projects: [{ id: 'P1', name: 'a' }], en_pdf_bills: {}, en_tasks: [] });
+    const r = await M.runImport(makeArgs({ file: emptyFile, target: 'staging', reportDir, snapshotDir: snapDir }), { env, log: silent().log });
+    global.fetch = realFetch;
+    assert.strictEqual(r.counts.keys.emptySkipped, 2);
+    assert.strictEqual(r.counts.records.new, 1, 'only P1 is new');
+    const diff = JSON.parse(fs.readFileSync(r.diffFile, 'utf8'));
+    assert(diff.keys.filter((k) => k.action === 'empty-skipped').every((k) => !k.detail || !k.detail.new || !k.detail.new.length));
+  });
+
+  await t('main exits non-zero when an apply has a failed write (child process, fake fetch)', async () => {
+    const child = path.join(work, 'child.js');
+    fs.writeFileSync(
+      child,
+      "const M = require(" + JSON.stringify(path.resolve('scripts/migrate-seed.js')) + ");\n" +
+        "M.RETRY.baseMs = 0; M.RETRY.attempts = 2;\n" +
+        "global.fetch = async (u, o) => { const m = (o && o.method) || 'GET';\n" +
+        "  const mk = (s, b) => ({ status: s, ok: s < 300, headers: { get: () => null }, json: async () => b, text: async () => JSON.stringify(b), arrayBuffer: async () => new ArrayBuffer(0) });\n" +
+        "  return m === 'POST' ? mk(500, { message: 'boom' }) : mk(200, []); };\n" +
+        "M.main().catch((e) => { console.error(e.message); process.exit(1); });\n",
+    );
+    const cp = require('child_process');
+    const run = cp.spawnSync(
+      process.execPath,
+      [child, '--file', writeBackup(tmp('child'), { en_projects: [{ id: 'P1', name: 'a' }], en_tasks: [{ id: 'T1', text: 'b' }] }), '--target', 'staging', '--apply', '--report-dir', reportDir, '--snapshot-dir', snapDir],
+      { env: Object.assign({}, process.env, { SUPABASE_URL_STAGING: 'https://mock.invalid', SUPABASE_SECRET_KEY_STAGING: SECRET }), encoding: 'utf8' },
+    );
+    assert.strictEqual(run.status, 1, run.stdout + run.stderr);
+    assert(/APPLY INCOMPLETE: 2 failed/.test(run.stdout), run.stdout);
+    assert(!(run.stdout + run.stderr).includes(SECRET));
+  });
+
   fs.rmSync(work, { recursive: true, force: true });
   console.log('\n' + pass + ' tests passed');
 })().catch((e) => {

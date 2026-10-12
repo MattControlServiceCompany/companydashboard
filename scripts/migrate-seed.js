@@ -758,12 +758,16 @@ async function pdfStorageStat(key, creds) {
   return { size: buf.length };
 }
 
+// Returns { status, body, networkError } after retries.
 async function pdfStorageUpload(key, buffer, upsert, creds) {
-  return fetch(pdfObjectUrl(creds, key), {
-    method: 'POST',
-    headers: storageHeaders(creds, { 'Content-Type': 'application/pdf', 'x-upsert': upsert ? 'true' : 'false' }),
-    body: buffer,
-  });
+  return fetchWithRetry((signal) =>
+    fetch(pdfObjectUrl(creds, key), {
+      method: 'POST',
+      headers: storageHeaders(creds, { 'Content-Type': 'application/pdf', 'x-upsert': upsert ? 'true' : 'false' }),
+      body: buffer,
+      signal,
+    }),
+  );
 }
 
 async function pdfStorageDownload(key, creds) {
@@ -785,8 +789,7 @@ async function commitPdfObject(key, buffer, hash, creds) {
       const raced = await pdfStorageStat(key, creds);
       if (raced) return resolvePdfAgainstExisting(key, buffer, hash, raced, creds);
     }
-    const errText = await safeText(up);
-    return { key, status: 'error', httpStatus: up.status, error: errText.slice(0, 300) };
+    return { key, status: 'error', httpStatus: up.status, error: up.networkError || up.body || '' };
   }
   return resolvePdfAgainstExisting(key, buffer, hash, existing, creds);
 }
@@ -845,6 +848,45 @@ async function safeText(res) {
   }
 }
 
+// ── Retry for writes ─────────────────────────────────────────────────────────
+// A write is tried up to RETRY.attempts times. Retried: a network error, a timeout, HTTP 408, 429 and 5xx.
+// Not retried: any other status (a 4xx is a real answer). Waits baseMs, 2x, 4x between tries.
+// Tests set RETRY.baseMs = 0.
+const RETRY = { attempts: 4, baseMs: 1000, timeoutMs: 180000 };
+// Importer guard for one kv value (JSON bytes). 9 MB (the Equipment Matrix) is the largest value proven to write.
+// This is NOT a documented Supabase number: a value above it is flagged in the dry run and not sent.
+const KV_VALUE_MAX_BYTES = 25 * 1024 * 1024;
+
+function isRetryableStatus(st) {
+  return st === 408 || st === 429 || st >= 500;
+}
+
+// fn(signal) -> fetch Response. Returns { status, body, attempts, networkError, res } of the LAST try. Never throws.
+// body = first 300 chars of the response text of a failed answer (a server error message; never the key, never the request).
+async function fetchWithRetry(fn) {
+  let last = { status: 0, body: '', attempts: 0, networkError: null, res: null };
+  for (let i = 1; i <= RETRY.attempts; i++) {
+    let res = null;
+    try {
+      res = await fn(AbortSignal.timeout(RETRY.timeoutMs));
+      last = { status: res.status, body: '', attempts: i, networkError: null, res };
+    } catch (e) {
+      const code = e && e.cause && e.cause.code ? e.cause.code : e && e.name;
+      last = { status: 0, body: '', attempts: i, networkError: String(code || 'network error') + ' ' + String((e && e.message) || '').slice(0, 120), res: null };
+    }
+    const retry = last.status === 0 || isRetryableStatus(last.status);
+    if (!retry || i === RETRY.attempts) break;
+    if (res) await safeText(res); // drain
+    await new Promise((r) => setTimeout(r, RETRY.baseMs * Math.pow(2, i - 1)));
+  }
+  if (last.res && !(last.status >= 200 && last.status < 300)) last.body = (await safeText(last.res)).slice(0, 300);
+  return last;
+}
+
+function kvValueBytes(value) {
+  return Buffer.byteLength(JSON.stringify(value), 'utf8');
+}
+
 async function fetchKvRow(key, creds) {
   const res = await fetch(creds.url + '/rest/v1/kv?key=eq.' + encodeURIComponent(key) + '&select=*', {
     headers: pgHeaders(creds),
@@ -861,63 +903,76 @@ async function listServerKeys(creds) {
   return await res.json();
 }
 
+// Returns { status, body, attempts, networkError }. status 201 inserted, 409 key exists, 0 = no answer.
 async function insertKvRow(row, creds, operator) {
-  const res = await fetch(creds.url + '/rest/v1/kv', {
-    method: 'POST',
-    headers: pgHeaders(creds, { Prefer: 'return=minimal' }),
-    body: JSON.stringify([
-      {
-        key: row.key,
-        value: row.value,
-        version: 1,
-        hash: row.hash,
-        deleted: false,
-        updated_by: operator,
-        updated_at: new Date().toISOString(),
-      },
-    ]),
-  });
-  return res.status; // 201 inserted, 409 key exists
+  const body = JSON.stringify([
+    {
+      key: row.key,
+      value: row.value,
+      version: 1,
+      hash: row.hash,
+      deleted: false,
+      updated_by: operator,
+      updated_at: new Date().toISOString(),
+    },
+  ]);
+  const r = await fetchWithRetry((signal) =>
+    fetch(creds.url + '/rest/v1/kv', {
+      method: 'POST',
+      headers: pgHeaders(creds, { Prefer: 'return=minimal' }),
+      body,
+      signal,
+    }),
+  );
+  delete r.res;
+  return r;
 }
 
 // Version-checked write: PATCH ... WHERE version = expected. true only if exactly one row matched.
 async function patchKvRow(row, expectedVersion, creds, operator) {
-  const res = await fetch(
-    creds.url + '/rest/v1/kv?key=eq.' + encodeURIComponent(row.key) + '&version=eq.' + expectedVersion,
-    {
+  const body = JSON.stringify({
+    value: row.value,
+    hash: row.hash,
+    deleted: false,
+    version: expectedVersion + 1,
+    updated_by: operator,
+    updated_at: new Date().toISOString(),
+  });
+  const r = await fetchWithRetry((signal) =>
+    fetch(creds.url + '/rest/v1/kv?key=eq.' + encodeURIComponent(row.key) + '&version=eq.' + expectedVersion, {
       method: 'PATCH',
       headers: pgHeaders(creds, { Prefer: 'return=representation' }),
-      body: JSON.stringify({
-        value: row.value,
-        hash: row.hash,
-        deleted: false,
-        version: expectedVersion + 1,
-        updated_by: operator,
-        updated_at: new Date().toISOString(),
-      }),
-    },
+      body,
+      signal,
+    }),
   );
-  if (!res.ok) return false;
-  const rows = await res.json();
-  return Array.isArray(rows) && rows.length === 1;
+  if (r.status < 200 || r.status >= 300) return { ok: false, status: r.status, body: r.body, networkError: r.networkError };
+  const rows = await r.res.json();
+  const ok = Array.isArray(rows) && rows.length === 1;
+  return { ok, status: r.status, body: ok ? '' : 'no row matched the expected version', networkError: null };
 }
 
 // Same row shape as netlify/functions/kv-sync.js snapshotHistory().
+// Returns { ok, status, body, networkError }.
 async function insertHistoryRow(before, creds) {
-  const res = await fetch(creds.url + '/rest/v1/kv_history', {
-    method: 'POST',
-    headers: pgHeaders(creds, { Prefer: 'return=minimal' }),
-    body: JSON.stringify([
-      {
-        key: before.key,
-        value: before.value,
-        version: before.version,
-        updated_by: before.updated_by,
-        replaced_at: new Date().toISOString(),
-      },
-    ]),
-  });
-  return res.ok;
+  const body = JSON.stringify([
+    {
+      key: before.key,
+      value: before.value,
+      version: before.version,
+      updated_by: before.updated_by,
+      replaced_at: new Date().toISOString(),
+    },
+  ]);
+  const r = await fetchWithRetry((signal) =>
+    fetch(creds.url + '/rest/v1/kv_history', {
+      method: 'POST',
+      headers: pgHeaders(creds, { Prefer: 'return=minimal' }),
+      body,
+      signal,
+    }),
+  );
+  return { ok: r.status >= 200 && r.status < 300, status: r.status, body: r.body, networkError: r.networkError };
 }
 
 // ── Credentials: env or Windows Credential Manager ONLY. Never printed, never logged. ──
@@ -1195,7 +1250,10 @@ function planKey(key, serverRow, backupValue, backupKeys, opts) {
     keptNewer: m.keptNewer,
   };
   if (!serverRow) {
-    if (!m.changed) return Object.assign(base, { action: "empty-skipped" });
+    if (!m.changed) {
+      detail.new = []; // an empty backup value adds nothing: it must not count as a new record
+      return Object.assign(base, { action: "empty-skipped" });
+    }
     return Object.assign(base, { action: "insert", value: m.value });
   }
   if (!m.changed)
@@ -1252,8 +1310,13 @@ function countPlan(plan) {
       nestedChanged: 0,
       heldFieldNames: 0,
     },
+    oversize: [],
   };
   for (const p of plan.keys) {
+    if ((p.action === 'insert' || p.action === 'update') && p.value !== undefined) {
+      const bytes = kvValueBytes(p.value);
+      if (bytes > KV_VALUE_MAX_BYTES) c.oversize.push({ key: p.key, bytes });
+    }
     if (p.action === 'insert') c.keys.insert++;
     else if (p.action === 'update') c.keys.update++;
     else if (p.action === 'identical') c.keys.identical++;
@@ -1359,20 +1422,38 @@ async function applyPlan(plan, serverImage, creds, opts) {
   const todo = plan.keys.filter((p) => p.action === 'insert' || p.action === 'update');
   const results = await mapWithConcurrency(todo, opts.concurrency, async (p) => {
     const row = { key: p.key, value: p.value, hash: p.hash };
+    const bytes = kvValueBytes(p.value);
+    if (bytes > KV_VALUE_MAX_BYTES)
+      return { key: p.key, status: 'error', reason: 'value is ' + bytes + ' bytes, over the importer limit of ' + KV_VALUE_MAX_BYTES + ' (not sent)' };
     if (p.action === 'insert') {
-      const st = await insertKvRow(row, creds, opts.operator);
-      return {
-        key: p.key,
-        status: st === 201 ? 'inserted' : st === 409 ? 'conflict-appeared' : 'error',
-      };
+      const r = await insertKvRow(row, creds, opts.operator);
+      if (r.status === 201) return { key: p.key, status: 'inserted', attempts: r.attempts };
+      if (r.status === 409) {
+        // After a retry, the first try may have written the row and lost the answer. Same hash = ours.
+        if (r.attempts > 1) {
+          try {
+            const now = await fetchKvRow(p.key, creds);
+            if (now && now.hash === p.hash) return { key: p.key, status: 'inserted', attempts: r.attempts };
+          } catch (e) {
+            /* fall through to conflict */
+          }
+        }
+        return { key: p.key, status: 'conflict-appeared', httpStatus: 409, reason: 'the key already exists on the server' };
+      }
+      return { key: p.key, status: 'error', httpStatus: r.status, reason: r.networkError || r.body, attempts: r.attempts };
     }
     const before = serverImage.rows.get(p.key);
     // History first: if it cannot be written, the key is not touched.
-    if (!(await insertHistoryRow(before, creds))) return { key: p.key, status: 'history-failed' };
-    const ok = await patchKvRow(row, before.version, creds, opts.operator);
+    const h = await insertHistoryRow(before, creds);
+    if (!h.ok) return { key: p.key, status: 'history-failed', httpStatus: h.status, reason: h.networkError || h.body };
+    const pr = await patchKvRow(row, before.version, creds, opts.operator);
+    if (pr.ok) return { key: p.key, status: 'updated' };
+    const versionChanged = pr.status >= 200 && pr.status < 300;
     return {
       key: p.key,
-      status: ok ? 'updated' : 'conflict-version-changed',
+      status: versionChanged ? 'conflict-version-changed' : 'error',
+      httpStatus: pr.status,
+      reason: pr.networkError || pr.body,
     };
   });
   const summary = {
@@ -1395,7 +1476,16 @@ async function applyPlan(plan, serverImage, creds, opts) {
     else if (r.status === 'history-failed') summary.historyFailed++;
     else summary.error++;
   }
-  return { results, summary };
+  const failures = results
+    .filter((r) => r.status !== 'inserted' && r.status !== 'updated')
+    .map((r) => ({
+      what: 'key',
+      name: r.key,
+      status: r.status,
+      http: r.httpStatus === undefined ? '' : r.httpStatus,
+      reason: String(r.reason || '').slice(0, 300),
+    }));
+  return { results, summary, failures };
 }
 
 // ── PDFs: report + write-once upload ────────────────────────────────────────
@@ -1437,6 +1527,7 @@ async function applyPdfFiles(pdfFilePaths, creds, opts) {
     skippedDuplicateInRun: 0,
     totalItems: 0,
     uniqueBlobs: 0,
+    failures: [],
   };
   const hashResultCache = new Map();
   for (const filePath of pdfFilePaths) {
@@ -1448,15 +1539,24 @@ async function applyPdfFiles(pdfFilePaths, creds, opts) {
       const canonicalKey = canonicalPdfKeyForHash(hash);
       if (hashResultCache.has(hash)) return { status: 'skipped-duplicate-in-run' };
       hashResultCache.set(hash, true); // set BEFORE the await: a same-content item in flight is skipped
-      return commitPdfObject(canonicalKey, buffer, hash, creds);
+      try {
+        return await commitPdfObject(canonicalKey, buffer, hash, creds);
+      } catch (e) {
+        return { key: canonicalKey, status: 'error', error: String((e && e.message) || e).slice(0, 300) };
+      }
     });
     for (const r of fileResults) {
       summary.totalItems++;
       if (r.status === 'uploaded') summary.uploaded++;
       else if (r.status === 'noop-identical') summary.noop++;
-      else if (r.status === 'conflict-size-mismatch' || r.status === 'conflict-hash-mismatch') summary.conflict++;
-      else if (r.status === 'skipped-duplicate-in-run') summary.skippedDuplicateInRun++;
-      else summary.error++;
+      else if (r.status === 'conflict-size-mismatch' || r.status === 'conflict-hash-mismatch') {
+        summary.conflict++;
+        summary.failures.push({ what: 'pdf', name: r.key, status: r.status, http: '', reason: 'a different file is already stored under this key' });
+      } else if (r.status === 'skipped-duplicate-in-run') summary.skippedDuplicateInRun++;
+      else {
+        summary.error++;
+        summary.failures.push({ what: 'pdf', name: r.key, status: 'error', http: r.httpStatus === undefined ? '' : r.httpStatus, reason: String(r.error || '').slice(0, 300) });
+      }
     }
     if (opts.log)
       opts.log('  [pdf] ' + path.basename(filePath) + ' done: uploaded=' + summary.uploaded + ' noop=' + summary.noop);
@@ -1594,7 +1694,19 @@ async function runImport(args, deps) {
         ')',
     );
   }
+  const failures = [].concat(
+    result.applied ? result.applied.failures : [],
+    result.pdfApplied ? result.pdfApplied.failures : [],
+  );
+  result.failures = failures;
+  result.failed = failures.length;
   log('');
+  if (failures.length) {
+    for (const f of failures)
+      log('  FAILED ' + f.what + ' ' + f.name + ' status=' + f.status + (f.http !== '' ? ' http=' + f.http : '') + (f.reason ? ' reason=' + f.reason : ''));
+    log('APPLY INCOMPLETE: ' + failures.length + ' failed. Fix the cause and run the same command again: it writes only what is missing.');
+    return result;
+  }
   log('APPLY COMPLETE. Run the same command without --apply: it must show 0 new, 0 changed.');
   return result;
 }
@@ -1661,6 +1773,8 @@ function printRunReport(result, args, log) {
           c.records.heldFieldNames +
           ' server-only plain field name(s)). Not written. See the diff file.',
       );
+    for (const o of c.oversize)
+      log('OVERSIZE: key ' + o.key + ' is ' + o.bytes + ' bytes, over the importer limit of ' + KV_VALUE_MAX_BYTES + '. --apply will not send it.');
     log('Diff file: ' + result.diffFile);
   } else if (result.dataReport) {
     log('');
@@ -1691,7 +1805,8 @@ async function main() {
     printUsage();
     return;
   }
-  await runImport(args);
+  const result = await runImport(args);
+  if (result && result.failed > 0) process.exitCode = 1;
 }
 
 if (require.main === module) {
@@ -1726,4 +1841,7 @@ module.exports = {
   buildMergePlan,
   countPlan,
   runImport,
+  main,
+  RETRY,
+  KV_VALUE_MAX_BYTES,
 };
