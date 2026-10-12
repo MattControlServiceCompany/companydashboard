@@ -1200,6 +1200,51 @@ await t(
     );
   },
 );
+await t('A1-1: a backup record that wins replaces the server record whole (stale server-only field dropped, reported changed)', async () => {
+  const key = 'en_projects';
+  const server = [
+    { id: 'S1', name: 'Alpha', updatedAt: '2026-10-01T00:00:00Z', note: 'server note' },
+    { id: 'S2', name: 'Server only' },
+  ];
+  const bak = [{ id: 'S1', name: 'Alpha', note: 'server note' }]; // no stamp: backup wins; lacks updatedAt
+  const f = writeBackup(tmp('a1whole'), { [key]: bak });
+  const r = await M.runImport(
+    makeArgs({ file: f, serverFile: oneKeyServer('a1whole.json', key, server), reportDir }),
+    { log: silent().log },
+  );
+  const plan = r.plan.keys.find((p) => p.key === key);
+  assert.strictEqual(plan.action, 'update', 'the dry run must call the key changed, not identical');
+  const s1 = plan.value.find((x) => x.id === 'S1');
+  assert.strictEqual(s1.updatedAt, undefined, 'stale server-only field must not survive');
+  assert.strictEqual(s1.note, 'server note');
+  assert(plan.value.some((x) => x.id === 'S2'), 'server-only record kept');
+  assert.strictEqual(r.counts.records.changed, 1);
+  assert.strictEqual(r.counts.keys.identical, 0);
+  assert(JSON.stringify(diffOf(r, key)).includes('updatedAt'), 'the diff file names the lost field');
+});
+
+await t('A1-2: header and code agree: a field lost inside a matched record is not a hold; a lost plain field of a plain key is', async () => {
+  const recKey = 'en_projects';
+  const f1 = writeBackup(tmp('a1h1'), { [recKey]: [{ id: 'S1', name: 'Alpha' }] });
+  const r1 = await M.runImport(
+    makeArgs({
+      file: f1,
+      serverFile: oneKeyServer('a1h1.json', recKey, [{ id: 'S1', name: 'Alpha', extra: 'x' }]),
+      reportDir,
+    }),
+    { log: silent().log },
+  );
+  assert.strictEqual(r1.plan.keys.find((p) => p.key === recKey).action, 'update');
+  assert.strictEqual(r1.counts.keys.held, 0);
+  const plainKey = 'en_eqmatrix_abc';
+  const f2 = writeBackup(tmp('a1h2'), { [plainKey]: { a: 1 } });
+  const r2 = await M.runImport(
+    makeArgs({ file: f2, serverFile: oneKeyServer('a1h2.json', plainKey, { a: 1, b: 2 }), reportDir }),
+    { log: silent().log },
+  );
+  assert.strictEqual(r2.plan.keys.find((p) => p.key === plainKey).action, 'held');
+  assert.strictEqual(r2.counts.keys.held, 1);
+});
   fs.rmSync(work, { recursive: true, force: true });
   console.log('\n' + pass + ' tests passed');
 })().catch((e) => {

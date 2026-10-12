@@ -20,14 +20,18 @@
 // Each key is merged with app/restore-merge.js mergeValue(key, server, backup, 'newer-wins'),
 // the SAME function the app's Restore "Merge, keep whichever copy is newer" uses. There is no
 // second merge in this file. Result: a record only on the server stays; a record in both takes
-// the backup field values; a record only in the backup is added. "Newer updated-at wins" is a
+// the backup record WHOLE (a field only the server record has, such as a stale updatedAt, is dropped; the
+// nested list and the derived meter cache fields are kept), and a record only in the backup is added.
+// The old server value goes to kv_history, so nothing is lost. "Newer updated-at wins" is a
 // rule INSIDE mergeValue (RestoreMerge.recordTime), applied at every nesting level (building,
 // meter, bill, map entry, plain-key object): a server copy with a strictly newer
-// updatedAt/updated_at/modifiedAt/lastModified keeps its own fields. No stamp on either side =
+// updatedAt/updated_at/modifiedAt/lastModified is kept whole. No stamp on either side =
 // the backup wins. The diff file names every overwritten or kept record (level + id path) and the
 // fields that changed, were added or were lost (field names only, never values).
-// A key is HELD (not written, listed in the diff file) when the merge would remove anything the
-// server has: a list item, a nested object, or a plain field (any type) the backup lacks. Name it in
+// A key is HELD (not written, listed in the diff file) when the merge would remove a whole item
+// the server has: a list item, a map entry, or a plain field (any type) of a plain-key object that the
+// backup lacks. A field lost inside a matched record is NOT a hold: that record is replaced whole, the diff
+// file lists the lost field names, and kv_history keeps the old value. Name a held key in
 // --allow-removal to write it. There is no whole-key --force path.
 //
 // ── Input shape ─────────────────────────────────────────────────────────────

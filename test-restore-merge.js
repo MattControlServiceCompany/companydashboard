@@ -1419,12 +1419,10 @@ t(
       );
       assert.strictEqual(r.removed, 0, key);
     }
-    // a field only the server record holds stays (union per field)
-    assert.strictEqual(
-      mv('en_projects', [{ id: 'p1', name: 'A', extra: 'srv' }], [{ id: 'p1', name: 'B' }], 'backup-wins').value[0]
-        .extra,
-      'srv',
-    );
+    // a matched record is replaced whole: a field only the server record holds is dropped and is named as lost
+    const w = mv('en_projects', [{ id: 'p1', name: 'A', extra: 'srv' }], [{ id: 'p1', name: 'B' }], 'backup-wins');
+    assert.strictEqual(w.value[0].extra, undefined);
+    assert.deepStrictEqual(w.events.find((e) => e.kind === 'overwrote').fields.lost, ['extra']);
   },
 );
 t('backup-wins (c1): en_presented_savings (frozen client figures) stays add-only', () => {

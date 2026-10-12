@@ -269,12 +269,12 @@ What it is: a Node script (scripts/migrate-seed.js) that loads a backup file int
 bucket. It talks to Supabase directly, so it costs 0 Netlify credits and works while Netlify has no deploy credits.
 The old whole-key `--force`, `--live` and `--dry-run` flags are gone. Merge rule: it calls `RestoreMerge.mergeValue(key,
 server, backup, 'newer-wins')` (app/restore-merge.js), the same function as Restore "Merge, keep whichever copy is newer". A
-record only on the server stays. A record in both takes the backup fields. On top: a backup record is dropped when the server
+record only on the server stays. A record in both is replaced by the backup record whole (a field only the server record has, such as a stale `updatedAt`, is dropped; the nested list and the derived meter cache fields are kept; the old value goes to `kv_history`; the dry run counts it as changed and the diff file names the lost fields). On top: a backup record is dropped when the server
 copy has a strictly newer `updatedAt`/`updated_at`/`modifiedAt`/`lastModified`. No timestamp = the backup wins. This
 "newer wins" rule lives INSIDE `mergeValue` (app/restore-merge.js, `recordTime`/`curIsNewer`, 'newer-wins' mode only; 'backup-wins' is an unconditional overwrite that lists the newer server records it overwrites). It runs at
 every level (building, meter, bill, pricing entry, plain-key object). The app Restore "Merge, keep whichever copy is newer" uses the
 same function, so the app and the importer give the same result. A key is HELD (no write, listed in the diff file) when the
-server has something the backup lacks: a list item, a nested object, or a plain field of any type. Name it in `--allow-removal`
+server has a whole item the backup lacks: a list item, a map entry, or a plain field of any type in a plain-key object. A field lost inside a matched record is not a hold (see above). Name a held key in `--allow-removal`
 to write it.
 
 Modes:
