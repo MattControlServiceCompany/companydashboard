@@ -3,6 +3,7 @@
 // T1..T19 = test cases 1-19 from 2026-10-01-research-data-shapes.md section 6
 // (T14 and T19 live in the e2e script; T20 = the gate scripts themselves).
 const assert = require('assert');
+const fs = require('fs');
 global.DB = require('./tools/load-db-for-test.js');
 const RM = require('./app/restore-merge.js');
 
@@ -1306,7 +1307,9 @@ console.log('property cases: ' + J(COUNTS));
 console.log('\n' + pass + ' tests passed');
 
 t('18ac9ed0 merge: newer backup lead fills empty fields only, never drops local fields', () => {
-  const cur = [{ id: 1, name: 'A', notes: 'local notes', phone: '111', updatedAt: '2026-01-01', extra: 'x', email: '' }];
+  const cur = [
+    { id: 1, name: 'A', notes: 'local notes', phone: '111', updatedAt: '2026-01-01', extra: 'x', email: '' },
+  ];
   const bak = [{ id: 1, name: 'A-old', email: 'a@x.test', updatedAt: '2026-05-01' }];
   const r = mv('ems_leads_v1', J(cur), J(bak), 'merge');
   const v = JSON.parse(r.value)[0];
@@ -1333,7 +1336,8 @@ t('ab7631eb absent key: JSON-text backup value is parsed; null current counts as
 });
 t('absent key: scalar strings keep their type; objects and arrays are parsed', () => {
   for (const raw of ['123', 'true', '2026', '06107']) {
-    for (const mode of MODES) assert.strictEqual(mv('some_plain_key', undefined, raw, mode).value, raw, raw + ' ' + mode);
+    for (const mode of MODES)
+      assert.strictEqual(mv('some_plain_key', undefined, raw, mode).value, raw, raw + ' ' + mode);
   }
   assert.deepStrictEqual(mv('some_plain_key', undefined, '{"a":1}', 'add').value, { a: 1 });
   assert.deepStrictEqual(mv('some_plain_key', undefined, '[1,2]', 'add').value, [1, 2]);
@@ -1352,9 +1356,11 @@ t('restore keeps weather (en_wdd_<zip>): written when absent in add, merge and r
 });
 // ---------------------------------------------------------------- mode 'backup-wins' (Make this backup the server copy)
 const bwUtil = (extra) => ({
-  buildings: [{ id: 'b1', name: 'Main', meters: [{ id: 'm1', label: 'Meter 1', bills: [{ id: 'x1', total: 10 }] }] }].concat(extra || []),
+  buildings: [
+    { id: 'b1', name: 'Main', meters: [{ id: 'm1', label: 'Meter 1', bills: [{ id: 'x1', total: 10 }] }] },
+  ].concat(extra || []),
 });
-t("backup-wins (a): a differing plain key takes the backup value; changed", () => {
+t('backup-wins (a): a differing plain key takes the backup value; changed', () => {
   const r = mv('some_plain_key', J({ a: 1 }), J({ a: 2 }), 'backup-wins');
   assert.strictEqual(r.changed, true);
   assert.deepStrictEqual(RM.parseMaybe(r.value), { a: 2 });
@@ -1366,52 +1372,92 @@ t('backup-wins (b): an equal key is unchanged (no PUT)', () => {
   const n = mv('some_plain_key', { n: 1 }, { n: '1' }, 'backup-wins');
   assert.strictEqual(n.changed, false, 'number text equals the number');
 });
-t('backup-wins (c): every collection key = union; matched id takes the backup value; server-only kept; 0 removed', () => {
-  const mk = {
-    en_projects: [(n) => ({ id: 'p1', name: n, extra: 'srv' }), { id: 'srv', name: 'Server only' }, { id: 'new', name: 'Backup only' }],
-    en_tasks: [(n) => ({ id: 'p1', text: n }), { id: 'srv', text: 'Server only' }, { id: 'new', text: 'Backup only' }],
-    en_customers: [(n) => ({ id: 'p1', name: n }), { id: 'srv', name: 'Server only' }, { id: 'new', name: 'Backup only' }],
-    ems_leads_v1: [(n) => ({ id: 'p1', name: n }), { id: 'srv', name: 'Server only' }, { id: 'new', name: 'Backup only' }],
-    en_report_history: [(n) => ({ id: 'p1', title: n }), { id: 'srv', title: 'Server only' }, { id: 'new', title: 'Backup only' }],
-  };
-  for (const key of Object.keys(mk)) {
-    const [f, srvOnly, bakOnly] = mk[key];
-    const r = mv(key, [f('August value'), srvOnly], [f('Backup value'), bakOnly], 'backup-wins');
-    assert.strictEqual(r.changed, true, key);
-    assert.deepStrictEqual(ids(r.value).sort(), ['new', 'p1', 'srv'], key + ' = union');
-    const m = r.value.find((x) => x.id === 'p1');
-    assert.ok(JSON.stringify(m).includes('Backup value') && !JSON.stringify(m).includes('August value'), key + ' matched = backup');
-    assert.deepStrictEqual(r.value.find((x) => x.id === 'srv'), srvOnly, key + ' server-only kept');
-    assert.strictEqual(r.removed, 0, key);
-  }
-  // a field only the server record holds stays (union per field)
-  assert.strictEqual(mv('en_projects', [{ id: 'p1', name: 'A', extra: 'srv' }], [{ id: 'p1', name: 'B' }], 'backup-wins').value[0].extra, 'srv');
-});
+t(
+  'backup-wins (c): every collection key = union; matched id takes the backup value; server-only kept; 0 removed',
+  () => {
+    const mk = {
+      en_projects: [
+        (n) => ({ id: 'p1', name: n, extra: 'srv' }),
+        { id: 'srv', name: 'Server only' },
+        { id: 'new', name: 'Backup only' },
+      ],
+      en_tasks: [
+        (n) => ({ id: 'p1', text: n }),
+        { id: 'srv', text: 'Server only' },
+        { id: 'new', text: 'Backup only' },
+      ],
+      en_customers: [
+        (n) => ({ id: 'p1', name: n }),
+        { id: 'srv', name: 'Server only' },
+        { id: 'new', name: 'Backup only' },
+      ],
+      ems_leads_v1: [
+        (n) => ({ id: 'p1', name: n }),
+        { id: 'srv', name: 'Server only' },
+        { id: 'new', name: 'Backup only' },
+      ],
+      en_report_history: [
+        (n) => ({ id: 'p1', title: n }),
+        { id: 'srv', title: 'Server only' },
+        { id: 'new', title: 'Backup only' },
+      ],
+    };
+    for (const key of Object.keys(mk)) {
+      const [f, srvOnly, bakOnly] = mk[key];
+      const r = mv(key, [f('August value'), srvOnly], [f('Backup value'), bakOnly], 'backup-wins');
+      assert.strictEqual(r.changed, true, key);
+      assert.deepStrictEqual(ids(r.value).sort(), ['new', 'p1', 'srv'], key + ' = union');
+      const m = r.value.find((x) => x.id === 'p1');
+      assert.ok(
+        JSON.stringify(m).includes('Backup value') && !JSON.stringify(m).includes('August value'),
+        key + ' matched = backup',
+      );
+      assert.deepStrictEqual(
+        r.value.find((x) => x.id === 'srv'),
+        srvOnly,
+        key + ' server-only kept',
+      );
+      assert.strictEqual(r.removed, 0, key);
+    }
+    // a field only the server record holds stays (union per field)
+    assert.strictEqual(
+      mv('en_projects', [{ id: 'p1', name: 'A', extra: 'srv' }], [{ id: 'p1', name: 'B' }], 'backup-wins').value[0]
+        .extra,
+      'srv',
+    );
+  },
+);
 t('backup-wins (c1): en_presented_savings (frozen client figures) stays add-only', () => {
   const k = (v) => ({ projectId: 'p', periodStart: '2026-01-01', periodEnd: '2026-03-31', v });
   const r = mv('en_presented_savings', [k('frozen')], [k('changed')], 'backup-wins');
   assert.strictEqual(r.changed, false);
 });
-t('backup-wins (c2): per-customer utility data = union; a matched record takes the backup value; server-only records stay', () => {
-  const cur = bwUtil([{ id: 'srvB', name: 'Server building', meters: [] }]);
-  cur.buildings[0].meters[0].label = 'August label';
-  cur.buildings[0].meters[0].bills.push({ id: 'srvBill', total: 5 });
-  const bak = bwUtil();
-  bak.buildings[0].meters[0].label = 'Newest label';
-  bak.buildings[0].meters[0].bills[0].total = 11;
-  const r = mv('en_utility_cust_c1', cur, bak, 'backup-wins');
-  assert.strictEqual(r.changed, true);
-  const b = r.value.buildings;
-  assert.deepStrictEqual(ids(b).sort(), ['b1', 'srvB']);
-  assert.strictEqual(b[0].meters[0].label, 'Newest label');
-  assert.deepStrictEqual(ids(b[0].meters[0].bills).sort(), ['srvBill', 'x1']);
-  assert.strictEqual(b[0].meters[0].bills.find((x) => x.id === 'x1').total, 11);
-  assert.strictEqual(r.removed, 0);
-});
+t(
+  'backup-wins (c2): per-customer utility data = union; a matched record takes the backup value; server-only records stay',
+  () => {
+    const cur = bwUtil([{ id: 'srvB', name: 'Server building', meters: [] }]);
+    cur.buildings[0].meters[0].label = 'August label';
+    cur.buildings[0].meters[0].bills.push({ id: 'srvBill', total: 5 });
+    const bak = bwUtil();
+    bak.buildings[0].meters[0].label = 'Newest label';
+    bak.buildings[0].meters[0].bills[0].total = 11;
+    const r = mv('en_utility_cust_c1', cur, bak, 'backup-wins');
+    assert.strictEqual(r.changed, true);
+    const b = r.value.buildings;
+    assert.deepStrictEqual(ids(b).sort(), ['b1', 'srvB']);
+    assert.strictEqual(b[0].meters[0].label, 'Newest label');
+    assert.deepStrictEqual(ids(b[0].meters[0].bills).sort(), ['srvBill', 'x1']);
+    assert.strictEqual(b[0].meters[0].bills.find((x) => x.id === 'x1').total, 11);
+    assert.strictEqual(r.removed, 0);
+  },
+);
 t('backup-wins (d): a legacy en_utility_<id> key is skipped when the backup holds en_utility_cust_ keys', () => {
   const backup = { en_utility_123: J(bwUtil()), en_utility_cust_c1: J(bwUtil()) };
   const p = RM.plan(backup, () => J({ buildings: [] }), 'backup-wins');
-  assert.deepStrictEqual(p.skipped.map((x) => x.key), ['en_utility_123']);
+  assert.deepStrictEqual(
+    p.skipped.map((x) => x.key),
+    ['en_utility_123'],
+  );
   assert.ok(!p.items.some((i) => i.key === 'en_utility_123'));
 });
 t('backup-wins (e): a key that would remove server records is held (unticked) with the count; a tick sends it', () => {
@@ -1429,13 +1475,19 @@ t('backup-wins (e): a key that would remove server records is held (unticked) wi
 t('backup-wins (f): idempotent - a plan on the post-apply state has 0 changes', () => {
   const backup = {
     some_plain_key: { a: 2 },
-    en_projects: [{ id: 'p1', name: 'P' }, { id: 'new', name: 'N' }],
+    en_projects: [
+      { id: 'p1', name: 'P' },
+      { id: 'new', name: 'N' },
+    ],
     en_utility_cust_c1: bwUtil(),
     brand_new_key: 'x',
   };
   const server = {
     some_plain_key: { a: 1 },
-    en_projects: [{ id: 'p1', name: 'P' }, { id: 'srv', name: 'S' }],
+    en_projects: [
+      { id: 'p1', name: 'P' },
+      { id: 'srv', name: 'S' },
+    ],
     en_utility_cust_c1: bwUtil([{ id: 'srvB', name: 'S', meters: [] }]),
   };
   const first = RM.plan(backup, (k) => server[k], 'backup-wins');
@@ -1445,205 +1497,214 @@ t('backup-wins (f): idempotent - a plan on the post-apply state has 0 changes', 
   const second = RM.plan(backup, (k) => server[k], 'backup-wins');
   assert.strictEqual(second.items.filter((i) => i.changed).length, 0, 'second run: 0 changes');
 });
-// ---------------------------------------------------------------- newer updated-at wins (2026-10-12), 'backup-wins' only
-const OLD = "2026-01-01T00:00:00Z";
-const NEW = "2026-10-01T00:00:00Z";
-t(
-  "newer-wins (a): a top-level record the server has newer keeps its own fields; unstamped record: backup wins",
-  () => {
-    const cur = [
-      { id: "a", text: "srv", updatedAt: NEW },
-      { id: "b", text: "srv" },
-    ];
-    const bak = [
-      { id: "a", text: "bak", updatedAt: OLD },
-      { id: "b", text: "bak" },
-    ];
-    const r = mv("en_tasks", cur, bak, "backup-wins");
-    assert.strictEqual(r.value.find((x) => x.id === "a").text, "srv");
-    assert.strictEqual(r.value.find((x) => x.id === "b").text, "bak");
-    assert.strictEqual(r.keptNewer, 1);
-    assert.deepStrictEqual(
-      r.events.filter((e) => e.kind === "keptNewer").map((e) => e.trail),
-      [["a"]],
-    );
-    // same stamp or backup newer: backup wins
-    assert.strictEqual(
-      mv(
-        "en_tasks",
-        [{ id: "a", text: "srv", updatedAt: OLD }],
-        [{ id: "a", text: "bak", updatedAt: OLD }],
-        "backup-wins",
-      ).value[0].text,
-      "bak",
-    );
-    assert.strictEqual(
-      mv(
-        "en_tasks",
-        [{ id: "a", text: "srv", updatedAt: OLD }],
-        [{ id: "a", text: "bak", updatedAt: NEW }],
-        "backup-wins",
-      ).value[0].text,
-      "bak",
-    );
-  },
-);
-t(
-  "newer-wins (b): at every nesting level (building > meter > bill), each level decided on its own stamp",
-  () => {
-    const mk = (bill, mtr, bld) => ({
-      buildings: [
-        Object.assign(
-          {
-            id: "b1",
-            name: "B",
-            meters: [
-              Object.assign(
-                { id: "m1", label: "M", bills: [bill, { id: "x2", total: 5 }] },
-                mtr,
-              ),
-            ],
-          },
-          bld,
-        ),
-      ],
-    });
-    // server bill newer inside an older (unstamped) building and meter
-    let r = mv(
-      "en_utility_cust_c1",
-      mk({ id: "x1", total: 99, updatedAt: NEW }),
-      mk(
-        { id: "x1", total: 1, updatedAt: OLD },
-        { label: "M2" },
-        { name: "B2" },
+// ---------------------------------------------------------------- newer updated-at wins (2026-10-12), newer-wins mode
+const OLD = '2026-01-01T00:00:00Z';
+const NEW = '2026-10-01T00:00:00Z';
+t('newer-wins (a): a top-level record the server has newer keeps its own fields; unstamped record: backup wins', () => {
+  const cur = [
+    { id: 'a', text: 'srv', updatedAt: NEW },
+    { id: 'b', text: 'srv' },
+  ];
+  const bak = [
+    { id: 'a', text: 'bak', updatedAt: OLD },
+    { id: 'b', text: 'bak' },
+  ];
+  const r = mv('en_tasks', cur, bak, 'newer-wins');
+  assert.strictEqual(r.value.find((x) => x.id === 'a').text, 'srv');
+  assert.strictEqual(r.value.find((x) => x.id === 'b').text, 'bak');
+  assert.strictEqual(r.keptNewer, 1);
+  assert.deepStrictEqual(
+    r.events.filter((e) => e.kind === 'keptNewer').map((e) => e.trail),
+    [['a']],
+  );
+  // same stamp or backup newer: backup wins
+  assert.strictEqual(
+    mv('en_tasks', [{ id: 'a', text: 'srv', updatedAt: OLD }], [{ id: 'a', text: 'bak', updatedAt: OLD }], 'newer-wins')
+      .value[0].text,
+    'bak',
+  );
+  assert.strictEqual(
+    mv('en_tasks', [{ id: 'a', text: 'srv', updatedAt: OLD }], [{ id: 'a', text: 'bak', updatedAt: NEW }], 'newer-wins')
+      .value[0].text,
+    'bak',
+  );
+});
+t('newer-wins (b): at every nesting level (building > meter > bill), each level decided on its own stamp', () => {
+  const mk = (bill, mtr, bld) => ({
+    buildings: [
+      Object.assign(
+        {
+          id: 'b1',
+          name: 'B',
+          meters: [Object.assign({ id: 'm1', label: 'M', bills: [bill, { id: 'x2', total: 5 }] }, mtr)],
+        },
+        bld,
       ),
-      "backup-wins",
-    );
-    let b = r.value.buildings[0];
-    assert.strictEqual(b.name, "B2");
-    assert.strictEqual(b.meters[0].label, "M2");
-    assert.strictEqual(
-      b.meters[0].bills[0].total,
-      99,
-      "newer server bill kept",
-    );
-    assert.deepStrictEqual(
-      r.events.filter((e) => e.kind === "keptNewer").map((e) => e.trail),
-      [["b1", "m1", "x1"]],
-    );
-    // server meter newer: its own label stays, its older bill still takes the backup
-    r = mv(
-      "en_utility_cust_c1",
-      mk(
-        { id: "x1", total: 99, updatedAt: OLD },
-        { label: "SRV", updatedAt: NEW },
-      ),
-      mk(
-        { id: "x1", total: 1, updatedAt: NEW },
-        { label: "BAK", updatedAt: OLD },
-      ),
-      "backup-wins",
-    );
-    b = r.value.buildings[0];
-    assert.strictEqual(b.meters[0].label, "SRV");
-    assert.strictEqual(
-      b.meters[0].bills[0].total,
-      1,
-      "newer backup bill wins inside a newer server meter",
-    );
-    // server building newer: building fields stay
-    r = mv(
-      "en_utility_cust_c1",
-      mk({ id: "x1", total: 1 }, {}, { name: "SRV", updatedAt: NEW }),
-      mk({ id: "x1", total: 2 }, {}, { name: "BAK", updatedAt: OLD }),
-      "backup-wins",
-    );
-    assert.strictEqual(r.value.buildings[0].name, "SRV");
-    assert.strictEqual(r.value.buildings[0].meters[0].bills[0].total, 2);
-  },
-);
-t("newer-wins (c): map entry and plain-key object follow the same rule", () => {
+    ],
+  });
+  // server bill newer inside an older (unstamped) building and meter
+  let r = mv(
+    'en_utility_cust_c1',
+    mk({ id: 'x1', total: 99, updatedAt: NEW }),
+    mk({ id: 'x1', total: 1, updatedAt: OLD }, { label: 'M2' }, { name: 'B2' }),
+    'newer-wins',
+  );
+  let b = r.value.buildings[0];
+  assert.strictEqual(b.name, 'B2');
+  assert.strictEqual(b.meters[0].label, 'M2');
+  assert.strictEqual(b.meters[0].bills[0].total, 99, 'newer server bill kept');
+  assert.deepStrictEqual(
+    r.events.filter((e) => e.kind === 'keptNewer').map((e) => e.trail),
+    [['b1', 'm1', 'x1']],
+  );
+  // server meter newer: its own label stays, its older bill still takes the backup
+  r = mv(
+    'en_utility_cust_c1',
+    mk({ id: 'x1', total: 99, updatedAt: OLD }, { label: 'SRV', updatedAt: NEW }),
+    mk({ id: 'x1', total: 1, updatedAt: NEW }, { label: 'BAK', updatedAt: OLD }),
+    'newer-wins',
+  );
+  b = r.value.buildings[0];
+  assert.strictEqual(b.meters[0].label, 'SRV');
+  assert.strictEqual(b.meters[0].bills[0].total, 1, 'newer backup bill wins inside a newer server meter');
+  // server building newer: building fields stay
+  r = mv(
+    'en_utility_cust_c1',
+    mk({ id: 'x1', total: 1 }, {}, { name: 'SRV', updatedAt: NEW }),
+    mk({ id: 'x1', total: 2 }, {}, { name: 'BAK', updatedAt: OLD }),
+    'newer-wins',
+  );
+  assert.strictEqual(r.value.buildings[0].name, 'SRV');
+  assert.strictEqual(r.value.buildings[0].meters[0].bills[0].total, 2);
+});
+t('newer-wins (c): map entry and plain-key object follow the same rule', () => {
   const r = mv(
-    "en_pricing_catalog",
+    'en_pricing_catalog',
     { a: { v: 1, updatedAt: NEW }, b: { v: 1 } },
     { a: { v: 2, updatedAt: OLD }, b: { v: 2 } },
-    "backup-wins",
+    'newer-wins',
   );
   assert.strictEqual(r.value.a.v, 1);
   assert.strictEqual(r.value.b.v, 2);
   assert.strictEqual(r.keptNewer, 1);
-  const k = mv(
-    "some_plain_key",
-    { a: 1, updatedAt: NEW },
-    { a: 2, updatedAt: OLD },
-    "backup-wins",
-  );
+  const k = mv('some_plain_key', { a: 1, updatedAt: NEW }, { a: 2, updatedAt: OLD }, 'newer-wins');
   assert.strictEqual(k.changed, false);
   assert.strictEqual(k.keptNewer, 1);
 });
+t('newer-wins (d): Add, Merge and Replace are unchanged (rule is newer-wins only)', () => {
+  const cur = [{ id: 'a', text: 'srv', updatedAt: NEW }];
+  const bak = [{ id: 'a', text: 'bak', updatedAt: OLD }];
+  assert.strictEqual(mv('en_tasks', cur, bak, 'replace').value[0].text, 'bak', 'Replace is the explicit overwrite');
+  assert.strictEqual(mv('en_tasks', cur, bak, 'merge').value[0].text, 'srv');
+  assert.strictEqual(mv('en_tasks', cur, bak, 'add').changed, false);
+});
 t(
-  "newer-wins (d): Add, Merge and Replace are unchanged (rule is backup-wins only)",
+  'newer-wins (e): a plain key where the server holds a field the backup lacks is held (any field type); lists the names',
   () => {
-    const cur = [{ id: "a", text: "srv", updatedAt: NEW }];
-    const bak = [{ id: "a", text: "bak", updatedAt: OLD }];
-    assert.strictEqual(
-      mv("en_tasks", cur, bak, "replace").value[0].text,
-      "bak",
-      "Replace is the explicit overwrite",
-    );
-    assert.strictEqual(mv("en_tasks", cur, bak, "merge").value[0].text, "srv");
-    assert.strictEqual(mv("en_tasks", cur, bak, "add").changed, false);
-  },
-);
-t(
-  "newer-wins (e): a plain key where the server holds a field the backup lacks is held (any field type); lists the names",
-  () => {
-    const p = RM.plan(
-      { some_plain_key: { a: 2 } },
-      () => ({ a: 1, flag: true }),
-      "backup-wins",
-    );
+    const p = RM.plan({ some_plain_key: { a: 2 } }, () => ({ a: 1, flag: true }), 'newer-wins');
     assert.strictEqual(p.items[0].held, true);
     assert.strictEqual(p.items[0].removed, 1);
     assert.deepStrictEqual(p.items[0].fields, {
-      changed: ["a"],
+      changed: ['a'],
       added: [],
-      lost: ["flag"],
+      lost: ['flag'],
     });
-    const q = RM.plan(
-      { some_plain_key: { a: 2 } },
-      () => ({ a: 1, flag: true }),
-      "backup-wins",
-      { allowRemoval: ["some_plain_key"] },
-    );
+    const q = RM.plan({ some_plain_key: { a: 2 } }, () => ({ a: 1, flag: true }), 'newer-wins', {
+      allowRemoval: ['some_plain_key'],
+    });
     assert.strictEqual(q.items[0].changed, true);
     // Replace mode count is unchanged by the new rule
-    assert.strictEqual(
-      mv("some_plain_key", { a: 1, flag: true }, { a: 2 }, "replace").removed,
-      0,
-    );
+    assert.strictEqual(mv('some_plain_key', { a: 1, flag: true }, { a: 2 }, 'replace').removed, 0);
   },
 );
-t(
-  "newer-wins (f): plan() carries keptNewer and summarize() totals it; idempotent on the result",
-  () => {
-    const server = {
-      en_tasks: [
-        { id: "a", text: "srv", updatedAt: NEW },
-        { id: "b", text: "srv" },
-      ],
-    };
-    const backup = {
-      en_tasks: [
-        { id: "a", text: "bak", updatedAt: OLD },
-        { id: "b", text: "bak" },
-      ],
-    };
-    const p = RM.plan(backup, (k) => server[k], "backup-wins");
-    assert.strictEqual(RM.summarize(p.items)[0].keptNewer, 1);
-    server.en_tasks = p.items[0].value;
-    const again = RM.plan(backup, (k) => server[k], "backup-wins");
-    assert.strictEqual(again.items.filter((i) => i.changed).length, 0);
-  },
-);
+t('newer-wins (f): plan() carries keptNewer and summarize() totals it; idempotent on the result', () => {
+  const server = {
+    en_tasks: [
+      { id: 'a', text: 'srv', updatedAt: NEW },
+      { id: 'b', text: 'srv' },
+    ],
+  };
+  const backup = {
+    en_tasks: [
+      { id: 'a', text: 'bak', updatedAt: OLD },
+      { id: 'b', text: 'bak' },
+    ],
+  };
+  const p = RM.plan(backup, (k) => server[k], 'newer-wins');
+  assert.strictEqual(RM.summarize(p.items)[0].keptNewer, 1);
+  server.en_tasks = p.items[0].value;
+  const again = RM.plan(backup, (k) => server[k], 'newer-wins');
+  assert.strictEqual(again.items.filter((i) => i.changed).length, 0);
+});
+// ---------------------------------------------------------------- backup-wins = unconditional overwrite (2026-10-12)
+t('backup-wins (g): overwrites a strictly newer server record at every level and lists each one', () => {
+  const cur = [{ id: 'a', text: 'srv', updatedAt: NEW }];
+  const bak = [{ id: 'a', text: 'bak', updatedAt: OLD }];
+  const r = mv('en_tasks', cur, bak, 'backup-wins');
+  assert.strictEqual(r.value[0].text, 'bak');
+  assert.strictEqual(r.keptNewer, 0);
+  assert.strictEqual(r.overwroteNewer, 1);
+  assert.deepStrictEqual(
+    r.events.filter((e) => e.kind === 'overwroteNewer').map((e) => e.trail),
+    [['a']],
+  );
+  // map entry level
+  const m = mv(
+    'en_pricing_catalog',
+    { x: { v: 1, updatedAt: NEW }, y: { v: 1 } },
+    { x: { v: 2, updatedAt: OLD }, y: { v: 2 } },
+    'backup-wins',
+  );
+  assert.strictEqual(m.value.x.v, 2);
+  assert.strictEqual(m.overwroteNewer, 1);
+  assert.deepStrictEqual(m.overwroteNewerNames, ['x']);
+  // plain key level
+  const k = mv('some_plain_key', { a: 1, updatedAt: NEW }, { a: 2, updatedAt: OLD }, 'backup-wins');
+  assert.strictEqual(k.value.a, 2);
+  assert.strictEqual(k.overwroteNewer, 1);
+  // nested record under a customer-style list
+  const same = mv(
+    'en_tasks',
+    [{ id: 'a', text: 'same', updatedAt: NEW }],
+    [{ id: 'a', text: 'same', updatedAt: NEW }],
+    'backup-wins',
+  );
+  assert.strictEqual(same.overwroteNewer, 0, 'an identical record is not an overwrite (equal stamp is not newer)');
+});
+t('backup-wins (h): plan() and summarize() carry the overwritten-newer names; newer-wins lists none', () => {
+  const server = { en_tasks: [{ id: 'a', text: 'srv', updatedAt: NEW }] };
+  const backup = { en_tasks: [{ id: 'a', text: 'bak', updatedAt: OLD }] };
+  const g = RM.summarize(RM.plan(backup, (k) => server[k], 'backup-wins').items)[0];
+  assert.strictEqual(g.overwroteNewer, 1);
+  assert.strictEqual(g.overwroteNewerNames.length, 1);
+  const n = RM.summarize(RM.plan(backup, (k) => server[k], 'newer-wins').items)[0];
+  assert.strictEqual(n.overwroteNewer, 0);
+  assert.strictEqual(n.keptNewer, 1);
+});
+t('newer-wins (g): keeps the newer server copy at record, map entry and plain-key level; backup-wins does not', () => {
+  const rec = mv(
+    'en_tasks',
+    [{ id: 'a', text: 'srv', updatedAt: NEW }],
+    [{ id: 'a', text: 'bak', updatedAt: OLD }],
+    'newer-wins',
+  );
+  assert.strictEqual(rec.value[0].text, 'srv');
+  const map = mv('en_pricing_catalog', { x: { v: 1, updatedAt: NEW } }, { x: { v: 2, updatedAt: OLD } }, 'newer-wins');
+  assert.strictEqual(map.value.x.v, 1);
+  const key = mv('some_plain_key', { a: 1, updatedAt: NEW }, { a: 2, updatedAt: OLD }, 'newer-wins');
+  assert.strictEqual(key.value.a, 1);
+});
+t('restore dialog offers 5 options, importer calls newer-wins', () => {
+  const sf = fs.readFileSync(__dirname + '/app/site-functions.js', 'utf8');
+  const a = sf.indexOf('function _restoreDialog');
+  assert.ok(a > 0);
+  const body = sf.slice(a, a + 40000);
+  const modes = [...body.matchAll(/\bopt\(\s*'([a-z-]+)'/g)].map((x) => x[1]);
+  assert.deepStrictEqual(modes, ['add', 'merge', 'replace', 'backup-wins', 'newer-wins']);
+  assert.ok(/Merge, keep whichever copy is newer/.test(body));
+  const ms = fs.readFileSync(__dirname + '/scripts/migrate-seed.js', 'utf8');
+  assert.ok(/"newer-wins",\s*backupKeys/.test(ms));
+  assert.ok(!/"backup-wins",\s*backupKeys/.test(ms));
+});
+
 console.log(pass + ' tests passed (final)');

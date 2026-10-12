@@ -678,7 +678,7 @@ await t(
         log: silent().log,
       },
     );
-    const app = RMg.plan({ [key]: bak }, () => server, "backup-wins").items[0];
+    const app = RMg.plan({ [key]: bak }, () => server, "newer-wins").items[0];
     assert.deepStrictEqual(r.plan.keys[0].value, app.value);
     assert.strictEqual(
       r.plan.keys[0].value.find((x) => x.id === "T1").text,

@@ -17,8 +17,8 @@
 //     4. PDFs: write-once upload
 //
 // ── Merge rule (single source of truth) ─────────────────────────────────────
-// Each key is merged with app/restore-merge.js mergeValue(key, server, backup, 'backup-wins'),
-// the SAME function the app's Restore "Make this backup the server copy" uses. There is no
+// Each key is merged with app/restore-merge.js mergeValue(key, server, backup, 'newer-wins'),
+// the SAME function the app's Restore "Merge, keep whichever copy is newer" uses. There is no
 // second merge in this file. Result: a record only on the server stays; a record in both takes
 // the backup field values; a record only in the backup is added. "Newer updated-at wins" is a
 // rule INSIDE mergeValue (RestoreMerge.recordTime), applied at every nesting level (building,
@@ -1158,7 +1158,7 @@ function planKey(key, serverRow, backupValue, backupKeys, opts) {
     key,
     serverVal,
     backupValue,
-    "backup-wins",
+    "newer-wins",
     backupKeys,
   );
   const detail = diffRecords(
