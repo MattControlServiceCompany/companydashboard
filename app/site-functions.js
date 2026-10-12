@@ -2506,6 +2506,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.12.107', date: '2026-10-12', title: 'Utility Data: Import List on a new project',
+    items: [
+      { type: 'fix', text: 'Utility Data: Import List now shows on a project with no buildings yet, next to + Add Building, so you can load a building list into a new project.' }
+    ]
+  },
   { v: 'v2026.10.12.106', date: '2026-10-12', title: 'Restore from backup: new merge choice',
     items: [
       { type: 'feature', text: 'Restore from backup (in the sidebar) has a new choice: Merge, keep whichever copy is newer. Every value takes the backup value, except a record that was changed on the server after the backup was made.' },
