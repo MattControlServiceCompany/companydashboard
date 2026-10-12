@@ -29,6 +29,12 @@
 //   - Output keeps the representation of the current value (JSON text stays
 //     text, object stays object); an absent (or null) key takes the parsed backup value.
 //   - Derived meter caches are stripped from restored utility data.
+//   - 'backup-wins' only: NEWER UPDATED-AT WINS at every level (record, nested
+//     record, map entry, plain-key object). When both copies carry a stamp
+//     (updatedAt/updated_at/modifiedAt/lastModified) and the current copy is
+//     STRICTLY newer, the current copy's own fields stay; its nested records
+//     are still compared one by one. No stamp on either side = the backup wins.
+//     The result lists these in st.events (kind 'keptNewer') and st.keptNewer.
 //   - A tombstoned key (deleted on the server on purpose) is skipped unless
 //     the caller lists it in opts.restoreDeleted.
 const RestoreMerge = (() => {
@@ -129,6 +135,41 @@ const RestoreMerge = (() => {
     }
   }
   const isJsonText = (raw, parsed) => typeof raw === 'string' && typeof parsed !== 'string';
+
+  // Updated-at stamp of a record, as milliseconds, or null. The ONE definition
+  // (the backup importer scripts/migrate-seed.js calls RestoreMerge.recordTime).
+  const TIME_FIELDS = ['updatedAt', 'updated_at', 'modifiedAt', 'lastModified'];
+  function recordTime(rec) {
+    if (!isRec(rec)) return null;
+    for (const f of TIME_FIELDS) {
+      if (rec[f] !== undefined && rec[f] !== null && rec[f] !== '') {
+        const t = typeof rec[f] === 'number' ? rec[f] : Date.parse(rec[f]);
+        if (Number.isFinite(t)) return t;
+      }
+    }
+    return null;
+  }
+  // True when `cur` is STRICTLY newer than `bak` and both carry a stamp.
+  function curIsNewer(cur, bak) {
+    const tc = recordTime(cur);
+    const tb = recordTime(bak);
+    return tc !== null && tb !== null && tc > tb;
+  }
+  // Names of the fields that differ between two records (names only, never values).
+  function diffFields(cur, bak) {
+    const changed = [];
+    const added = [];
+    const lost = [];
+    Object.keys(bak).forEach((k) => {
+      if (bak[k] === undefined) return;
+      if (!(k in cur)) added.push(k);
+      else if (!same(cur[k], bak[k])) changed.push(k);
+    });
+    Object.keys(cur).forEach((k) => {
+      if (!(k in bak) || bak[k] === undefined) lost.push(k);
+    });
+    return { changed, added, lost };
+  }
 
   const ID = (r) => r.id;
   // Calendar event: a string date (the {events:[...]} wrapper has none).
@@ -277,7 +318,8 @@ const RestoreMerge = (() => {
 
   // Add/merge/backup-wins one list level. Current items are never removed or reordered
   // (sortBy only orders the result when the policy says the list is ordered).
-  function mergeLevel(cur, bak, pol, level, mode, st) {
+  function mergeLevel(cur, bak, pol, level, mode, st, trail) {
+    trail = trail || [];
     const bakArr = Array.isArray(bak) ? bak : [];
     const out = cur.slice();
     const at = new Map();
@@ -318,11 +360,21 @@ const RestoreMerge = (() => {
       if (mode === 'merge' || mode === 'backup-wins') {
         const own = pol.strip && pol.stripLevel === level ? stripFields(b, pol.strip) : Object.assign({}, b);
         if (child) delete own[child];
-        next = mode === 'merge' ? fill(c, own, st) : win(c, own, st);
+        const at2 = trail.concat([String(k)]);
+        const ev = { level, trail: at2 };
+        if (mode === 'backup-wins' && curIsNewer(c, own)) {
+          // newer updated-at wins: this record's own fields stay; nested records are compared on their own
+          st.keptNewer += 1;
+          st.events.push(Object.assign({ kind: 'keptNewer' }, ev));
+        } else if (mode === 'merge') next = fill(c, own, st);
+        else {
+          next = win(c, own, st);
+          if (next !== c) st.events.push(Object.assign({ kind: 'overwrote', fields: diffFields(c, own) }, ev));
+        }
       }
       if (child && Array.isArray(b[child])) {
         const cc = Array.isArray(c[child]) ? c[child] : [];
-        const sub = mergeLevel(cc, b[child], pol, level + 1, mode, st);
+        const sub = mergeLevel(cc, b[child], pol, level + 1, mode, st, trail.concat([String(k)]));
         if (sub !== cc) next = Object.assign({}, next, { [child]: sub });
       }
       if (next === c) st.kept += 1;
@@ -430,7 +482,7 @@ const RestoreMerge = (() => {
     const pol = policyFor(key, backupKeys);
     const cur = parseMaybe(currentRaw);
     const bak = parseMaybe(backupRaw);
-    const st = { added: 0, updated: 0, kept: 0, removed: 0, names: [] };
+    const st = { added: 0, updated: 0, kept: 0, removed: 0, names: [], keptNewer: 0, events: [], fields: null };
     const done = (value, changed) =>
       Object.assign(
         { value: changed ? represent(value, currentRaw, cur, backupRaw, bak) : currentRaw, changed, policy: pol.kind },
@@ -489,8 +541,22 @@ const RestoreMerge = (() => {
         st.kept = 1;
         return done(cur, false);
       }
+      if (mode === 'backup-wins' && curIsNewer(cur, bak)) {
+        st.kept = 1;
+        st.keptNewer = 1;
+        st.events.push({ kind: 'keptNewer', level: 0, trail: [] });
+        return done(cur, false);
+      }
       st.updated = 1;
       st.removed = removedLoose(cur, bak);
+      if (isRec(cur) && isRec(bak)) {
+        st.fields = diffFields(cur, bak);
+        // 'backup-wins': a field the server holds and the backup lacks (any type) holds the key.
+        if (mode === 'backup-wins') {
+          const lostPlain = st.fields.lost.filter((f) => !isCont(cur[f])).length;
+          st.removed += lostPlain;
+        }
+      }
       return done(bak, true);
     }
 
@@ -499,7 +565,32 @@ const RestoreMerge = (() => {
         st.kept = 1;
         return done(cur, false);
       }
-      if (mode === 'replace' || mode === 'backup-wins') {
+      if (mode === 'backup-wins') {
+        // per entry: backup value, except an entry the server holds with a strictly newer stamp
+        const next = {};
+        Object.keys(bak).forEach((k) => {
+          if (k in cur && curIsNewer(cur[k], bak[k])) {
+            next[k] = cur[k];
+            st.keptNewer += 1;
+            st.events.push({ kind: 'keptNewer', level: 1, trail: [k] });
+          } else {
+            next[k] = bak[k];
+            if (k in cur && !same(cur[k], bak[k]))
+              st.events.push({
+                kind: 'overwrote',
+                level: 1,
+                trail: [k],
+                fields: isRec(cur[k]) && isRec(bak[k]) ? diffFields(cur[k], bak[k]) : null,
+              });
+          }
+        });
+        st.removed = Object.keys(cur).filter((k) => !(k in bak)).length;
+        st.added = Object.keys(bak).filter((k) => !(k in cur)).length;
+        st.updated = Object.keys(bak).filter((k) => k in cur && !same(cur[k], next[k])).length;
+        st.kept = Object.keys(bak).filter((k) => k in cur && same(cur[k], next[k])).length;
+        return done(next, Object.keys(next).some((k) => !(k in cur) || !same(cur[k], next[k])) || st.removed > 0);
+      }
+      if (mode === 'replace') {
         st.removed = Object.keys(cur).filter((k) => !(k in bak)).length;
         st.added = Object.keys(bak).filter((k) => !(k in cur)).length;
         st.updated = Object.keys(bak).filter((k) => k in cur && !same(cur[k], bak[k])).length;
@@ -692,6 +783,7 @@ const RestoreMerge = (() => {
         updated: 0,
         kept: 0,
         removed: 0,
+        keptNewer: 0,
         names: [],
         tombstoned: 0,
         unreadable: 0,
@@ -700,6 +792,7 @@ const RestoreMerge = (() => {
       g.updated += it.updated;
       g.kept += it.kept;
       g.removed += it.removed || 0;
+      g.keptNewer += it.keptNewer || 0;
       if (it.changed) g.names = g.names.concat(it.names || []);
       if (it.tombstoned) g.tombstoned += 1;
       if (it.unreadable) g.unreadable += 1;
@@ -738,6 +831,7 @@ const RestoreMerge = (() => {
     canon,
     parseMaybe,
     mergeValue,
+    recordTime,
     plan,
     summarize,
     dependsOn,

@@ -5,11 +5,11 @@
 // service-role key and bypasses Netlify (0 Netlify credits).
 //
 // ── Modes ───────────────────────────────────────────────────────────────────
-//   DRY RUN (the default). Makes no write. With --server-file (offline) or --target/--url
+//   DRY RUN (the default). Makes no write. With --server-file (offline) or --target
 //   (read-only GETs) it diffs the backup against the server, per key and per record:
 //   new / changed / server-only / identical. The console shows COUNTS only. The full diff
 //   (record ids, which records the backup overwrites) goes to a local file under
-//   --report-dir (default AI/_context/temp/2026-10-12-golive-readiness/). Never into the repo.
+//   --report-dir (default AI/_context/live-data/diffs/). Never into the repo.
 //   APPLY (--apply). Needs --target prod|staging, the URL and the key. Order of work:
 //     1. read the server rows of every key the import touches
 //     2. save them to <snapshot-dir>/YYYY-MM-DD-HHMM-supabase-snapshot.json (stops if that fails)
@@ -20,14 +20,15 @@
 // Each key is merged with app/restore-merge.js mergeValue(key, server, backup, 'backup-wins'),
 // the SAME function the app's Restore "Make this backup the server copy" uses. There is no
 // second merge in this file. Result: a record only on the server stays; a record in both takes
-// the backup field values; a record only in the backup is added. One rule is added on top, to
-// honour "newer updated-at wins": a backup record is dropped from the merge when the server
-// copy of the same id carries an updatedAt (updatedAt/updated_at/modifiedAt/lastModified) that is
-// STRICTLY newer than the backup copy's. No timestamp on either side = the backup wins, and the
-// diff file lists every overwritten record. A key whose policy is "plain key" (no record ids) is
-// replaced whole by the backup; if that would drop nested items the key is HELD (not written)
-// unless named in --allow-removal, same as the app.
-// There is no whole-key --force path any more.
+// the backup field values; a record only in the backup is added. "Newer updated-at wins" is a
+// rule INSIDE mergeValue (RestoreMerge.recordTime), applied at every nesting level (building,
+// meter, bill, map entry, plain-key object): a server copy with a strictly newer
+// updatedAt/updated_at/modifiedAt/lastModified keeps its own fields. No stamp on either side =
+// the backup wins. The diff file names every overwritten or kept record (level + id path) and the
+// fields that changed, were added or were lost (field names only, never values).
+// A key is HELD (not written, listed in the diff file) when the merge would remove anything the
+// server has: a list item, a nested object, or a plain field (any type) the backup lacks. Name it in
+// --allow-removal to write it. There is no whole-key --force path.
 //
 // ── Input shape ─────────────────────────────────────────────────────────────
 // DATA export: `CompanyHub-localdatafile-YYYYMMDD.json` from app/site-functions.js siteBackup():
@@ -47,10 +48,11 @@
 // blob in the PDF export stops the run before any write.
 //
 // ── Credentials ─────────────────────────────────────────────────────────────
-// The URL comes from --url or env SUPABASE_URL_<TARGET> or SUPABASE_URL. There is NO built-in
-// default URL. The key comes ONLY from env SUPABASE_SECRET_KEY or Windows Credential Manager
-// (generic credential `companyhub-supabase-<target>-key`, password = the key; --cred-target
-// overrides the name). No prompt. The key is never printed, logged or written to a file.
+// Target safety: the URL comes ONLY from env SUPABASE_URL_<TARGET> (SUPABASE_URL_PROD or
+// SUPABASE_URL_STAGING). The key comes ONLY from env SUPABASE_SECRET_KEY_<TARGET> or the Windows
+// Credential Manager generic credential `companyhub-supabase-<target>-key`. The generic
+// SUPABASE_URL and SUPABASE_SECRET_KEY are NEVER read. A missing value stops the run. The run
+// prints the host it reads from or writes to, never the key. No built-in default URL, no prompt.
 //
 // ── Usage ───────────────────────────────────────────────────────────────────
 //   Offline diff (no network, no key):
@@ -82,7 +84,7 @@ const SUPABASE_FREE_STORAGE_BYTES = 1 * 1024 * 1024 * 1024; // 1 GB free-tier St
 const FUNCTION_SINGLE_SHOT_LIMIT_BYTES = 4 * 1024 * 1024;
 const AI_ROOT = path.join(os.homedir(), 'AI');
 const DEFAULT_SNAPSHOT_DIR = path.join(AI_ROOT, '_context', 'live-data', 'snapshots');
-const DEFAULT_REPORT_DIR = path.join(AI_ROOT, '_context', 'temp', '2026-10-12-golive-readiness');
+const DEFAULT_REPORT_DIR = path.join(AI_ROOT, '_context', 'live-data', 'diffs');
 const TARGETS = ['prod', 'staging'];
 
 // ── CLI ──────────────────────────────────────────────────────────────────────
@@ -97,8 +99,6 @@ function parseArgs(argv) {
     allowUnclassified: false,
     allowRemoval: [],
     target: null,
-    url: null,
-    credTarget: null,
     serverFile: null,
     snapshotDir: DEFAULT_SNAPSHOT_DIR,
     reportDir: DEFAULT_REPORT_DIR,
@@ -118,8 +118,6 @@ function parseArgs(argv) {
         .split(',')
         .filter(Boolean);
     else if (a === '--target') args.target = argv[++i];
-    else if (a === '--url') args.url = argv[++i];
-    else if (a === '--cred-target') args.credTarget = argv[++i];
     else if (a === '--server-file') args.serverFile = argv[++i];
     else if (a === '--snapshot-dir') args.snapshotDir = argv[++i];
     else if (a === '--report-dir') args.reportDir = argv[++i];
@@ -147,16 +145,15 @@ function printUsage() {
       '',
       'Server side (pick one for a diff):',
       '  --server-file <path>    Offline server image: {rows:{key:{value,version,...}}, pdfKeys?:[...]} (a snapshot file works).',
-      '  --target prod|staging   Read the server by GET. Needs the URL and the key (see below).',
-      '  --url <https://...>     Project URL. Else env SUPABASE_URL_PROD / SUPABASE_URL_STAGING / SUPABASE_URL. No built-in default.',
-      '  Key: env SUPABASE_SECRET_KEY, else Windows Credential Manager "companyhub-supabase-<target>-key" (--cred-target to rename).',
+      '  --target prod|staging   Read the server by GET. URL: env SUPABASE_URL_<TARGET> only. No built-in default.',
+      '  Key: env SUPABASE_SECRET_KEY_<TARGET>, else Windows Credential Manager "companyhub-supabase-<target>-key". The generic SUPABASE_URL / SUPABASE_SECRET_KEY are never used.',
       '',
       'Write:',
       '  --apply                 Really write: snapshot, kv_history, merge, PDFs. Needs --target. Matt runs this.',
       '  --allow-removal k1,k2   Write these held keys although the backup replaces nested items the server has.',
       '  --operator <email>      kv.updated_by value. Default "migration-seed".',
       '  --snapshot-dir <dir>    Default AI/_context/live-data/snapshots. Must be outside the repo.',
-      '  --report-dir <dir>      Where the diff file goes. Default AI/_context/temp/2026-10-12-golive-readiness. Must be outside the repo.',
+      '  --report-dir <dir>      Where the diff file goes. Default AI/_context/live-data/diffs. Must be outside the repo.',
       '',
       'Other:',
       '  --json                  Machine-readable counts.',
@@ -950,21 +947,36 @@ function readCredentialManager(target) {
   }
 }
 
+// Target-specific values ONLY. The generic SUPABASE_URL / SUPABASE_SECRET_KEY are never read, so a
+// prod pair left in the environment cannot be used for a staging run (or the other way round).
 function resolveCreds(args, env, readCred) {
   const target = args.target;
   if (!target) throw new Error('--target prod|staging is required to reach a server.');
-  const url = args.url || env['SUPABASE_URL_' + target.toUpperCase()] || env.SUPABASE_URL;
-  if (!url) {
-    throw new Error('No project URL. Pass --url or set SUPABASE_URL_' + target.toUpperCase() + ' (or SUPABASE_URL).');
-  }
-  const credName = args.credTarget || 'companyhub-supabase-' + target + '-key';
-  const secretKey = env.SUPABASE_SECRET_KEY || (readCred || readCredentialManager)(credName);
+  if (!TARGETS.includes(target)) throw new Error('--target must be prod or staging.');
+  const T = target.toUpperCase();
+  const url = env['SUPABASE_URL_' + T];
+  if (!url) throw new Error('No project URL for ' + target + '. Set env SUPABASE_URL_' + T + '. Stopping.');
+  const credName = 'companyhub-supabase-' + target + '-key';
+  const secretKey = env['SUPABASE_SECRET_KEY_' + T] || (readCred || readCredentialManager)(credName);
   if (!secretKey) {
     throw new Error(
-      'No service key. Set env SUPABASE_SECRET_KEY or store Windows Credential Manager entry "' + credName + '".',
+      'No service key for ' +
+        target +
+        '. Set env SUPABASE_SECRET_KEY_' +
+        T +
+        ' or store Windows Credential Manager entry "' +
+        credName +
+        '". Stopping.',
     );
   }
-  return { url: String(url).replace(/\/+$/, ''), secretKey };
+  const clean = String(url).replace(/\/+$/, '');
+  let host;
+  try {
+    host = new URL(clean).host;
+  } catch (e) {
+    throw new Error('SUPABASE_URL_' + T + ' is not a valid URL. Stopping.');
+  }
+  return { url: clean, host, target, secretKey };
 }
 
 // ── Server image (offline file or live read) ────────────────────────────────
@@ -1009,141 +1021,180 @@ async function readServerImage(creds, keys, concurrency) {
 
 // ── Merge plan (pure: no network, no file writes) ───────────────────────────
 
-const TIME_FIELDS = ['updatedAt', 'updated_at', 'modifiedAt', 'lastModified'];
-
-function recordTime(rec) {
-  if (!rec || typeof rec !== 'object') return null;
-  for (const f of TIME_FIELDS) {
-    if (rec[f] !== undefined && rec[f] !== null && rec[f] !== '') {
-      const t = typeof rec[f] === 'number' ? rec[f] : Date.parse(rec[f]);
-      if (Number.isFinite(t)) return t;
-    }
-  }
-  return null;
-}
-
 // The record list a policy holds: the value itself, or value[path[0]], or a map's entries.
 function topList(pol, v) {
-  if (pol.kind === 'map') return null;
-  if (pol.path.length) return v && typeof v === 'object' && !Array.isArray(v) ? v[pol.path[0]] : undefined;
+  if (pol.kind === "map") return null;
+  if (pol.path.length)
+    return v && typeof v === "object" && !Array.isArray(v)
+      ? v[pol.path[0]]
+      : undefined;
   return v;
 }
 
 // Record id of each top-level record: Map(String(id) -> record). Map policy: entries by key.
 function recordIndex(pol, v) {
   const out = new Map();
-  if (pol.kind === 'map') {
-    if (v && typeof v === 'object' && !Array.isArray(v)) Object.keys(v).forEach((k) => out.set(k, v[k]));
+  if (pol.kind === "map") {
+    if (v && typeof v === "object" && !Array.isArray(v))
+      Object.keys(v).forEach((k) => out.set(k, v[k]));
     return { index: out, unidentified: 0 };
   }
   let unidentified = 0;
   const list = topList(pol, v);
   if (Array.isArray(list)) {
     for (const r of list) {
-      const id = r && typeof r === 'object' && !Array.isArray(r) ? pol.idOf(r) : undefined;
-      if (id === undefined || id === null || id === '') unidentified++;
+      const id =
+        r && typeof r === "object" && !Array.isArray(r)
+          ? pol.idOf(r)
+          : undefined;
+      if (id === undefined || id === null || id === "") unidentified++;
       else if (!out.has(String(id))) out.set(String(id), r);
     }
   }
   return { index: out, unidentified };
 }
 
-// "Newer updated-at wins": remove from the BACKUP value every top-level record whose server copy is
-// strictly newer. mergeValue() then leaves that server record untouched (a matched id absent from the
-// backup is never removed or changed). Returns the (possibly new) backup value and the dropped ids.
-function dropBackupRecordsOlderThanServer(pol, serverVal, backupVal) {
-  const kept = [];
-  if (pol.kind !== 'records' || serverVal === undefined || serverVal === null) return { backup: backupVal, kept };
-  const srv = recordIndex(pol, serverVal).index;
-  const bakList = topList(pol, backupVal);
-  if (!Array.isArray(bakList)) return { backup: backupVal, kept };
-  const filtered = bakList.filter((r) => {
-    const id = r && typeof r === 'object' && !Array.isArray(r) ? pol.idOf(r) : undefined;
-    if (id === undefined || id === null || id === '') return true;
-    const sRec = srv.get(String(id));
-    if (!sRec) return true;
-    const ts = recordTime(sRec);
-    const tb = recordTime(r);
-    if (ts !== null && tb !== null && ts > tb) {
-      kept.push(String(id));
-      return false;
-    }
-    return true;
-  });
-  if (!kept.length) return { backup: backupVal, kept };
-  const next = pol.path.length ? Object.assign({}, backupVal, { [pol.path[0]]: filtered }) : filtered;
-  return { backup: next, kept };
+// Level name of a nested record from the length of its id path (building > meter > bill).
+function levelName(pol, depth) {
+  if (pol.kind === "map") return "entry";
+  return pol.path[depth - 1] || "record";
 }
 
 // Per-record classification of one key: server value vs the merge RESULT vs the backup.
 //   new: in the result, not on the server.   serverOnly: on the server, not in the backup (kept).
-//   changed: result differs from the server copy; each carries why the backup won.
-//   identical: result equals the server copy.   serverNewerKept: backup copy dropped, server is newer.
-function diffRecords(pol, serverVal, mergedVal, backupVal, serverNewerKept) {
+//   changed: top-level records whose result differs from the server copy.
+//   nested: every record below the top level that the merge overwrote or kept because the server copy
+//     is newer, named by level and id path, with the field NAMES that changed, were added or were lost
+//     (never values). The events come from RestoreMerge.mergeValue (m.events): the diff does not
+//     re-decide who wins.
+//   fieldChanges: plain key holding an object: field names that change, are added or are lost.
+//   identical: result equals the server copy.   serverNewerKept: records (any level) the server keeps.
+function diffRecords(pol, serverVal, mergedVal, backupVal, m) {
   const canon = RestoreMerge.canon;
+  const events = (m && m.events) || [];
   const out = {
     new: [],
     changed: [],
     serverOnly: [],
     identical: 0,
-    serverNewerKept: serverNewerKept || [],
+    serverNewerKept: events
+      .filter((e) => e.kind === "keptNewer")
+      .map((e) => e.trail.join(" > ") || "(whole key)"),
+    nested: [],
+    fieldChanges: m && m.fields ? m.fields : null,
+    heldBecause: null,
     unidentifiedBackup: 0,
   };
-  if (pol.kind === 'key') {
-    if (serverVal === undefined || serverVal === null) out.new.push('(whole key)');
+  if (pol.kind === "key") {
+    if (serverVal === undefined || serverVal === null)
+      out.new.push("(whole key)");
     else if (canon(serverVal) === canon(mergedVal)) out.identical = 1;
     else
       out.changed.push({
-        id: '(whole key)',
-        why: 'plain key: backup value replaces the server value',
+        id: "(whole key)",
+        why: out.fieldChanges
+          ? "plain key: the backup object replaces the server object (field names in fieldChanges)"
+          : "plain key: scalar value replaced by the backup value",
       });
     return out;
   }
-  const srv = recordIndex(pol, serverVal === undefined ? null : serverVal).index;
+  const srv = recordIndex(
+    pol,
+    serverVal === undefined ? null : serverVal,
+  ).index;
   const mer = recordIndex(pol, mergedVal).index;
   const bak = recordIndex(pol, backupVal);
   out.unidentifiedBackup = bak.unidentified;
+  const fieldsOf = (id) => {
+    const e = events.find(
+      (x) =>
+        x.kind === "overwrote" && x.trail.length === 1 && x.trail[0] === id,
+    );
+    return e && e.fields ? e.fields : undefined;
+  };
   for (const [id, rec] of mer) {
     if (!srv.has(id)) out.new.push(id);
     else if (canon(srv.get(id)) === canon(rec)) out.identical++;
     else {
-      const both = recordTime(srv.get(id)) !== null && recordTime(bak.index.get(id)) !== null;
-      out.changed.push({
+      const both =
+        RestoreMerge.recordTime(srv.get(id)) !== null &&
+        RestoreMerge.recordTime(bak.index.get(id)) !== null;
+      const entry = {
         id,
-        why: both ? 'backup newer or same updated-at' : 'no updated-at on one side: backup wins',
-      });
+        why: both
+          ? "backup newer or same updated-at"
+          : "no updated-at on one side: backup wins",
+      };
+      const f = fieldsOf(id);
+      if (f) entry.fields = f;
+      out.changed.push(entry);
     }
   }
   for (const id of srv.keys()) if (!bak.index.has(id)) out.serverOnly.push(id);
+  for (const e of events) {
+    if (e.trail.length <= 1) continue;
+    out.nested.push({
+      level: levelName(pol, e.trail.length),
+      path: e.trail,
+      kind:
+        e.kind === "keptNewer"
+          ? "kept: server copy is newer"
+          : "overwritten by the backup",
+      fields: e.fields,
+    });
+  }
   return out;
 }
 
 // Plan one key. serverRow is null when the key is absent. Never writes.
 function planKey(key, serverRow, backupValue, backupKeys, opts) {
   const pol = RestoreMerge.policyFor(key, backupKeys);
-  if (pol.kind === 'never') return { key, action: 'skipped-never', why: pol.why };
-  if (serverRow && serverRow.deleted) return { key, action: 'tombstoned-skipped' };
+  if (pol.kind === "never")
+    return { key, action: "skipped-never", why: pol.why };
+  if (serverRow && serverRow.deleted)
+    return { key, action: "tombstoned-skipped" };
   const serverVal = serverRow ? serverRow.value : undefined;
-  const cut = dropBackupRecordsOlderThanServer(pol, serverVal, backupValue);
-  const m = RestoreMerge.mergeValue(key, serverVal, cut.backup, 'backup-wins', backupKeys);
-  const detail = diffRecords(pol, serverVal, m.changed ? m.value : serverVal, backupValue, cut.kept);
+  const m = RestoreMerge.mergeValue(
+    key,
+    serverVal,
+    backupValue,
+    "backup-wins",
+    backupKeys,
+  );
+  const detail = diffRecords(
+    pol,
+    serverVal,
+    m.changed ? m.value : serverVal,
+    backupValue,
+    m,
+  );
   const base = {
     key,
     policy: pol.kind,
     label: RestoreMerge.labelFor(key),
     detail,
     removed: m.removed,
+    keptNewer: m.keptNewer,
   };
   if (!serverRow) {
-    if (!m.changed) return Object.assign(base, { action: 'empty-skipped' });
-    return Object.assign(base, { action: 'insert', value: m.value });
+    if (!m.changed) return Object.assign(base, { action: "empty-skipped" });
+    return Object.assign(base, { action: "insert", value: m.value });
   }
-  if (!m.changed) return Object.assign(base, { action: 'identical' });
+  if (!m.changed)
+    return Object.assign(base, {
+      action: m.keptNewer > 0 ? "server-newer-kept" : "identical",
+    });
   const allowed = new Set((opts && opts.allowRemoval) || []);
-  if (m.removed > 0 && !allowed.has(key)) return Object.assign(base, { action: 'held', value: m.value });
-  return Object.assign(base, { action: 'update', value: m.value });
+  if (m.removed > 0 && !allowed.has(key)) {
+    // HOLD: the server has something the backup lacks. No write. The diff file says what.
+    detail.heldBecause = {
+      serverItemsOrFieldsTheBackupLacks: m.removed,
+      lostFieldNames: m.fields ? m.fields.lost : undefined,
+    };
+    return Object.assign(base, { action: "held", value: m.value });
+  }
+  return Object.assign(base, { action: "update", value: m.value });
 }
-
 // Plan all synced keys. rows = prepareSyncedRows() output (backup side).
 function buildMergePlan(rows, serverImage, opts) {
   const backupKeys = rows.map((r) => r.key);
@@ -1168,6 +1219,7 @@ function countPlan(plan) {
       update: 0,
       identical: 0,
       held: 0,
+      serverNewerKept: 0,
       skippedNever: 0,
       tombstonedSkipped: 0,
       emptySkipped: 0,
@@ -1179,6 +1231,8 @@ function countPlan(plan) {
       serverOnly: 0,
       identical: 0,
       serverNewerKept: 0,
+      nestedChanged: 0,
+      heldFieldNames: 0,
     },
   };
   for (const p of plan.keys) {
@@ -1186,6 +1240,7 @@ function countPlan(plan) {
     else if (p.action === 'update') c.keys.update++;
     else if (p.action === 'identical') c.keys.identical++;
     else if (p.action === 'held') c.keys.held++;
+    else if (p.action === 'server-newer-kept') c.keys.serverNewerKept++;
     else if (p.action === 'skipped-never') c.keys.skippedNever++;
     else if (p.action === 'tombstoned-skipped') c.keys.tombstonedSkipped++;
     else if (p.action === 'empty-skipped') c.keys.emptySkipped++;
@@ -1195,6 +1250,9 @@ function countPlan(plan) {
       c.records.serverOnly += p.detail.serverOnly.length;
       c.records.identical += p.detail.identical;
       c.records.serverNewerKept += p.detail.serverNewerKept.length;
+      c.records.nestedChanged += p.detail.nested.filter((n) => n.kind === 'overwritten by the backup').length;
+      if (p.detail.heldBecause && p.detail.heldBecause.lostFieldNames)
+        c.records.heldFieldNames += p.detail.heldBecause.lostFieldNames.length;
     }
   }
   return c;
@@ -1217,6 +1275,9 @@ function buildDiffFile(plan, counts, meta) {
       overwrittenByBackup: p.detail ? p.detail.changed : undefined,
       serverOnlyKept: p.detail ? p.detail.serverOnly : undefined,
       serverNewerKept: p.detail ? p.detail.serverNewerKept : undefined,
+      nestedRecords: p.detail ? p.detail.nested : undefined,
+      fieldChanges: p.detail ? p.detail.fieldChanges : undefined,
+      heldBecause: p.detail ? p.detail.heldBecause : undefined,
       identical: p.detail ? p.detail.identical : undefined,
       unidentifiedBackupRecords: p.detail ? p.detail.unidentifiedBackup : undefined,
     })),
@@ -1420,7 +1481,12 @@ async function runImport(args, deps) {
   let creds = null;
   let serverImage = null;
   if (args.serverFile) serverImage = loadServerFile(args.serverFile);
-  else if (args.target) creds = resolveCreds(args, env, deps.readCred);
+  else if (args.target) {
+    creds = resolveCreds(args, env, deps.readCred);
+    log(
+      'Server: ' + (args.apply ? 'WRITING to' : 'reading (GET only) from') + ' target=' + creds.target + ' host=' + creds.host,
+    );
+  }
   if (creds && dataReport) {
     serverImage = await readServerImage(creds, dataReport.synced.keys, args.concurrency);
   }
@@ -1565,8 +1631,18 @@ function printRunReport(result, args, log) {
         ' identical=' +
         c.records.identical +
         ' server-newer(kept)=' +
-        c.records.serverNewerKept,
+        c.records.serverNewerKept +
+        ' nested-overwritten=' +
+        c.records.nestedChanged,
     );
+    if (c.keys.held)
+      log(
+        'HELD keys: ' +
+          c.keys.held +
+          ' (' +
+          c.records.heldFieldNames +
+          ' server-only plain field name(s)). Not written. See the diff file.',
+      );
     log('Diff file: ' + result.diffFile);
   } else if (result.dataReport) {
     log('');

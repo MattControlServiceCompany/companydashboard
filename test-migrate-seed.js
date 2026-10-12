@@ -125,7 +125,7 @@ function silent() {
   const work = tmp('work');
   const reportDir = path.join(work, 'reports');
   const snapDir = path.join(work, 'snaps');
-  const env = { SUPABASE_URL_STAGING: 'https://mock.invalid', SUPABASE_SECRET_KEY: SECRET };
+  const env = { SUPABASE_URL_STAGING: 'https://mock.invalid', SUPABASE_SECRET_KEY_STAGING: SECRET };
 
   // Backup: projects P1(changed) P2(new) ; tasks T1 identical, T2 conflict, T3 server newer; en_customers absent on server.
   const backup = {
@@ -382,14 +382,13 @@ function silent() {
         /inside the repo/,
       );
       assert.throws(() => M.resolveCreds({ target: 'prod' }, {}, () => 'k'), /No project URL/);
-      assert.throws(
-        () => M.resolveCreds({ target: 'prod', url: 'https://x.invalid' }, {}, () => null),
-        /No service key/,
-      );
-      const c = M.resolveCreds({ target: 'prod', url: 'https://x.invalid/' }, {}, (name) =>
+      const pe = { SUPABASE_URL_PROD: 'https://x.invalid/' };
+      assert.throws(() => M.resolveCreds({ target: 'prod' }, pe, () => null), /No service key/);
+      const c = M.resolveCreds({ target: 'prod' }, pe, (name) =>
         name === 'companyhub-supabase-prod-key' ? SECRET : null,
       );
       assert.strictEqual(c.url, 'https://x.invalid');
+      assert.strictEqual(c.host, 'x.invalid');
       assert.throws(() => M.parseArgs(['--force']), /Unrecognized/);
       assert.throws(() => M.parseArgs(['--live']), /Unrecognized/);
       const src = fs.readFileSync(path.join(__dirname, 'scripts', 'migrate-seed.js'), 'utf8');
@@ -398,6 +397,296 @@ function silent() {
     },
   );
 
+// ---- v2 review fixes ---------------------------------------------------------------------------
+const diffOf = (r, key) =>
+  JSON.parse(fs.readFileSync(r.diffFile, "utf8")).keys.find(
+    (x) => x.key === key,
+  );
+const oneKeyServer = (name, key, value) => {
+  const f = path.join(work, name);
+  fs.writeFileSync(
+    f,
+    JSON.stringify({ rows: { [key]: mkRow(key, value, 2) } }),
+  );
+  return f;
+};
+
+await t(
+  "wrong or generic target: generic env is never used; missing target value stops; host printed, key never",
+  async () => {
+    const generic = {
+      SUPABASE_URL: "https://generic.invalid",
+      SUPABASE_SECRET_KEY: SECRET,
+    };
+    assert.throws(
+      () => M.resolveCreds({ target: "staging" }, generic, () => null),
+      /No project URL for staging/,
+    );
+    // URL present but only the generic key: no key; the Credential Manager read gets the staging name
+    const seen = [];
+    assert.throws(
+      () =>
+        M.resolveCreds(
+          { target: "staging" },
+          Object.assign({ SUPABASE_URL_STAGING: "https://s.invalid" }, generic),
+          (n) => {
+            seen.push(n);
+            return null;
+          },
+        ),
+      /No service key for staging/,
+    );
+    assert.deepStrictEqual(seen, ["companyhub-supabase-staging-key"]);
+    // staging variables never serve a prod run
+    const stagingOnly = {
+      SUPABASE_URL_STAGING: "https://s.invalid",
+      SUPABASE_SECRET_KEY_STAGING: SECRET,
+    };
+    assert.throws(
+      () => M.resolveCreds({ target: "prod" }, stagingOnly, () => null),
+      /No project URL for prod/,
+    );
+    // --url and --cred-target no longer exist
+    assert.throws(
+      () => M.parseArgs(["--url", "https://x.invalid"]),
+      /Unrecognized/,
+    );
+    assert.throws(() => M.parseArgs(["--cred-target", "x"]), /Unrecognized/);
+    // a real run with only the generic pair stops before any network call
+    global.fetch = () => {
+      throw new Error("network call with a generic target");
+    };
+    await assert.rejects(
+      () =>
+        M.runImport(
+          makeArgs({
+            file: backupFile,
+            target: "staging",
+            apply: true,
+            reportDir,
+            snapshotDir: snapDir,
+          }),
+          {
+            env: generic,
+            log: silent().log,
+          },
+        ),
+      /No project URL for staging/,
+    );
+    global.fetch = realFetch;
+    // the log names the host and never the key
+    const fake = makeFake();
+    seed(fake);
+    global.fetch = fake.fetch;
+    const out = silent();
+    await M.runImport(
+      makeArgs({ file: backupFile, target: "staging", reportDir }),
+      {
+        env: {
+          SUPABASE_URL_STAGING: "https://mock.invalid/",
+          SUPABASE_SECRET_KEY_STAGING: SECRET,
+        },
+        log: out.log,
+      },
+    );
+    global.fetch = realFetch;
+    const text = out.lines.join("\n");
+    assert(/target=staging host=mock\.invalid/.test(text), "host line missing");
+    assert(!text.includes(SECRET), "key printed");
+    assert(
+      fake.sawKey.has(SECRET) && fake.sawKey.size === 1,
+      "staging key was used",
+    );
+  },
+);
+
+await t(
+  "nested newer-wins: a newer server bill inside an older (unstamped) building is kept; names in the diff",
+  async () => {
+    const mk = (b1, b2) => ({
+      buildings: [
+        {
+          id: "B1",
+          name: "Bldg",
+          meters: [{ id: "M1", label: "m", bills: [b1, b2] }],
+        },
+        { id: "B2", name: "Other", meters: [] },
+      ],
+    });
+    const server = mk(
+      { id: "X1", total: 99, updatedAt: "2026-10-01T00:00:00Z" },
+      { id: "X2", total: 5 },
+    );
+    const bak = mk(
+      { id: "X1", total: 1, updatedAt: "2026-01-01T00:00:00Z" },
+      { id: "X2", total: 6 },
+    );
+    bak.buildings[0].name = "Bldg renamed";
+    const key = "en_utility_cust_c1";
+    const f = writeBackup(tmp("nest"), { [key]: bak });
+    const r = await M.runImport(
+      makeArgs({
+        file: f,
+        serverFile: oneKeyServer("nest.json", key, server),
+        reportDir,
+      }),
+      {
+        log: silent().log,
+      },
+    );
+    const plan = r.plan.keys.find((p) => p.key === key);
+    assert.strictEqual(plan.action, "update");
+    const bills = plan.value.buildings[0].meters[0].bills;
+    assert.strictEqual(
+      bills.find((b) => b.id === "X1").total,
+      99,
+      "newer server bill kept",
+    );
+    assert.strictEqual(
+      bills.find((b) => b.id === "X2").total,
+      6,
+      "unstamped bill: backup wins",
+    );
+    assert.strictEqual(plan.value.buildings[0].name, "Bldg renamed");
+    const d = diffOf(r, key);
+    const kept = d.nestedRecords.find((n) => n.kind.startsWith("kept"));
+    assert.deepStrictEqual(
+      [kept.level, kept.path],
+      ["bills", ["B1", "M1", "X1"]],
+    );
+    const over = d.nestedRecords.find(
+      (n) => n.kind.startsWith("overwritten") && n.level === "bills",
+    );
+    assert.deepStrictEqual(over.path, ["B1", "M1", "X2"]);
+    assert.deepStrictEqual(over.fields.changed, ["total"]);
+    assert.deepStrictEqual(d.serverNewerKept, ["B1 > M1 > X1"]);
+  },
+);
+
+await t(
+  "plain key with a server-only scalar field is HELD: no write, field name in the diff file",
+  async () => {
+    const fake = makeFake();
+    fake.kv.set(
+      "en_eqmatrix_abc",
+      mkRow("en_eqmatrix_abc", { a: 1, flag: true, keep: "x" }, 2),
+    );
+    global.fetch = fake.fetch;
+    const f = writeBackup(tmp("scalarheld"), {
+      en_eqmatrix_abc: { a: 2, keep: "x" },
+    });
+    const base = {
+      file: f,
+      target: "staging",
+      apply: true,
+      reportDir,
+      snapshotDir: path.join(work, "snaps7"),
+    };
+    const out = silent();
+    const r = await M.runImport(makeArgs(base), { env, log: out.log });
+    assert.strictEqual(r.counts.keys.held, 1);
+    assert.strictEqual(fake.writes, 0, "held key was written");
+    assert.strictEqual(fake.history.length, 0);
+    const d = diffOf(r, "en_eqmatrix_abc");
+    assert.strictEqual(d.action, "held");
+    assert.deepStrictEqual(d.heldBecause.lostFieldNames, ["flag"]);
+    assert.deepStrictEqual(d.fieldChanges.changed, ["a"]);
+    assert(
+      !out.lines.join("\n").includes("flag"),
+      "a field name reached the console",
+    );
+    await M.runImport(
+      makeArgs(Object.assign({}, base, { allowRemoval: ["en_eqmatrix_abc"] })),
+      { env, log: silent().log },
+    );
+    global.fetch = realFetch;
+    assert.deepStrictEqual(fake.kv.get("en_eqmatrix_abc").value, {
+      a: 2,
+      keep: "x",
+    });
+  },
+);
+
+await t(
+  "scalar overwrite listing: changed, added and lost field names; whole-key scalar noted; no values in the file",
+  async () => {
+    const key = "en_eqmatrix_abc";
+    const f = writeBackup(tmp("scalar"), { [key]: { a: 2, c: 3, same: 1 } });
+    const r = await M.runImport(
+      makeArgs({
+        file: f,
+        serverFile: oneKeyServer("scalar.json", key, {
+          a: "SECRET-VAL-1",
+          same: 1,
+          gone: { x: 1 },
+        }),
+        reportDir,
+      }),
+      { log: silent().log },
+    );
+    const d = diffOf(r, key);
+    assert.deepStrictEqual(d.fieldChanges, {
+      changed: ["a"],
+      added: ["c"],
+      lost: ["gone"],
+    });
+    assert.strictEqual(
+      d.action,
+      "held",
+      "a server-only object field also holds",
+    );
+    assert(
+      !fs.readFileSync(r.diffFile, "utf8").includes("SECRET-VAL-1"),
+      "a value reached the diff file",
+    );
+    const r2 = await M.runImport(
+      makeArgs({
+        file: writeBackup(tmp("scalar2"), { [key]: "new text" }),
+        serverFile: oneKeyServer("scalar2.json", key, "old text"),
+        reportDir,
+      }),
+      { log: silent().log },
+    );
+    const d2 = diffOf(r2, key);
+    assert.strictEqual(d2.action, "update");
+    assert(/scalar value replaced/.test(d2.overwrittenByBackup[0].why));
+  },
+);
+
+await t(
+  "importer result equals the app Restore plan (one merge function, same newer-wins rule)",
+  async () => {
+    const RMg = require("./app/restore-merge.js");
+    const key = "en_tasks";
+    const server = [
+      { id: "T1", text: "s1", updatedAt: "2026-10-01T00:00:00Z" },
+      { id: "T2", text: "s2" },
+      { id: "T9", text: "only server" },
+    ];
+    const bak = [
+      { id: "T1", text: "b1", updatedAt: "2026-01-01T00:00:00Z" },
+      { id: "T2", text: "b2" },
+    ];
+    const f = writeBackup(tmp("same"), { [key]: bak });
+    const r = await M.runImport(
+      makeArgs({
+        file: f,
+        serverFile: oneKeyServer("same.json", key, server),
+        reportDir,
+      }),
+      {
+        log: silent().log,
+      },
+    );
+    const app = RMg.plan({ [key]: bak }, () => server, "backup-wins").items[0];
+    assert.deepStrictEqual(r.plan.keys[0].value, app.value);
+    assert.strictEqual(
+      r.plan.keys[0].value.find((x) => x.id === "T1").text,
+      "s1",
+    );
+    assert.strictEqual(app.keptNewer, 1);
+  },
+);
   await t('Credential Manager read returns null for a missing entry (no throw, no output)', async () => {
     if (process.platform !== 'win32') return;
     assert.strictEqual(M.readCredentialManager('companyhub-test-no-such-entry-' + Date.now()), null);
