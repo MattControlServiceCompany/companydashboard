@@ -5,7 +5,7 @@ function make(rows) {
   const ctx = {
     window: {}, console, EstimateWorkbook: require('./app/estimate-workbook.js'),
     sget: (k, d) => d, sset: () => {},
-    emLoadMatrix: () => ({ rows }), emIsPhantomRow: () => false, emPointOrMeterKind: require('./test-em-point-kind-helper.js'),
+    emLoadMatrix: () => ({ rows }), emIsPhantomRow: () => false, emAuditUnitCategory: require('./test-em-point-kind-helper.js'),
     emGetNormalizedPoints: (r) => r.pts || {}, _pricingGetConfig: () => ({ hourlyRate: 100 }),
   };
   vm.createContext(ctx);

@@ -7,15 +7,23 @@ let i = src.indexOf('{', start), depth = 0, end = i;
 for (; end < src.length; end++) { if (src[end] === '{') depth++; else if (src[end] === '}' && --depth === 0) break; }
 const ctx = {}; vm.createContext(ctx); vm.runInContext(src.slice(start, end + 1), ctx);
 const cat = (n) => ctx.emParseEquipBaseName(n);
-// equipment
-assert.strictEqual(cat('Baseboard Heaters Zone 1-1'), 'heater');
-assert.strictEqual(cat('Book Drop Heaters'), 'heater');
-assert.strictEqual(cat('First Floor Perimeter Heat'), 'heater');
-assert.strictEqual(cat('Aerco Integration'), 'hwp');
-assert.strictEqual(cat('Hot Water - Site 1'), 'plumbing');
-assert.strictEqual(cat('Hot Water Plant A Boiler 1'), null); // real plant keeps its own rule
+// the stored category rule must NOT move these rows (pricing = origin/main)
+['Baseboard Heaters Zone 1-1', 'Book Drop Heaters', 'First Floor Perimeter Heat', 'Aerco Integration', 'Hot Water - Site 1']
+  .forEach((n) => assert.strictEqual(cat(n), null, n));
+// audit-only unit rule: heating / plant rows are counted with the closest category
+const unit = require('./test-em-point-kind-helper.js');
+assert.strictEqual(unit('Baseboard Heaters Zone 1-1', 'monitoring'), 'heater');
+assert.strictEqual(unit('Book Drop Heaters', 'monitoring'), 'heater');
+assert.strictEqual(unit('First Floor Perimeter Heat', 'other'), 'heater');
+assert.strictEqual(unit('Aerco Integration', 'other'), 'hwp');
+assert.strictEqual(unit('Glycol Feeder', 'other'), 'plumbing');
+assert.strictEqual(unit('Hot Water - Site 1', 'other'), 'plumbing');
+assert.strictEqual(unit('Hot Water Plant A Boiler 1', 'boiler'), 'boiler');
+assert.strictEqual(unit('Glycol Feeder Monitor', 'plumbing'), 'monitoring');
+assert.strictEqual(unit('VRF-02 CO2 Monitoring', 'vrf'), 'monitoring');
+assert.strictEqual(unit('AHU-1', 'ahu'), 'ahu');
 // points and meters on a unit: one rule, emPointOrMeterKind (does not change the stored category)
-const kind = require('./test-em-point-kind-helper.js');
+const kind = require('./test-em-point-kind-helper.js').kind;
 assert.strictEqual(kind('VRF-02 CO2 Monitoring'), 'monitoring');
 assert.strictEqual(kind('AC-1A Monitor'), 'monitoring');
 assert.strictEqual(kind('Glycol Feeder Monitor'), 'monitoring');

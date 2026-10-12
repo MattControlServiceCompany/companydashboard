@@ -97,7 +97,7 @@ function auditFixture() {
 function auditBox(store, srcs) {
   return makeSandbox(store, srcs || [read('app/estimate-workbook.js'), read('app/audit-estimate.js')], {
     emLoadMatrix: () => ({ rows: auditFixture() }),
-    emIsPhantomRow: () => false, emPointOrMeterKind: require('../test-em-point-kind-helper.js'),
+    emIsPhantomRow: () => false, emAuditUnitCategory: require('../test-em-point-kind-helper.js'),
     emGetNormalizedPoints: (r) => r.pts || {},
     _pricingGetConfig: () => ({ hourlyRate: 170 }),
   });

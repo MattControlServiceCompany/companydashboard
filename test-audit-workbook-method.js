@@ -23,7 +23,7 @@ function make(src, rows, store, rate) {
       store[k] = JSON.parse(JSON.stringify(v));
     },
     emLoadMatrix: () => ({ rows }),
-    emIsPhantomRow: () => false, emPointOrMeterKind: require('./test-em-point-kind-helper.js'),
+    emIsPhantomRow: () => false, emAuditUnitCategory: require('./test-em-point-kind-helper.js'),
     emGetNormalizedPoints: (r) => r.pts || {},
     _pricingGetConfig: () => ({ hourlyRate: rate == null ? 170 : rate }),
   };

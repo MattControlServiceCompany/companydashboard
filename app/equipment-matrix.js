@@ -2361,6 +2361,24 @@ function emPointOrMeterKind(nameStr) {
   return null;
 }
 
+/* ── emAuditUnitCategory ────────────────────────────────────────────────────
+   2026-10-11: AUDIT-ONLY category for one matrix row (the audit counts every piece of equipment).
+   Never stored, never shown in the matrix, never used by Cost Estimate pricing. Order: a point or
+   meter (emPointOrMeterKind) is 'monitoring' / 'meter', so it adds no unit. Then heating and plant
+   equipment that the matrix files under monitoring / other is counted with the closest audit
+   category: baseboard, book drop and perimeter heat -> heater; Aerco boiler integration -> hwp;
+   glycol feeder and a "Hot Water ..." system -> plumbing. Anything else keeps its stored category. */
+function emAuditUnitCategory(nameStr, storedCat) {
+  var kind = emPointOrMeterKind(nameStr);
+  if (kind) return kind;
+  var n = String(nameStr || '').trim();
+  if (/\b(?:baseboard|book\s*drop|perimeter)\s+heat/i.test(n)) return 'heater';
+  if (/\baerco\b/i.test(n)) return 'hwp';
+  if (/\bglycol\s+feeder\b/i.test(n)) return 'plumbing';
+  if (/^hot\s+water\b(?!.*\b(?:plant|boiler|pump|meter|monitor|monitoring|detector|detection)\b)/i.test(n)) return 'plumbing';
+  return storedCat;
+}
+
 /* ── emParseEquipBaseName ────────────────────────────────────────────────────
    Parses an equipment NAME (not type-string) and returns a base category key
    if a clear HVAC type token is present.  Returns null if no clear token is
@@ -2393,12 +2411,6 @@ function emParseEquipBaseName(nameStr) {
   // "Air Handling Unit 1B - Return Duct" must NOT classify as 'ahu' — it is a duct branch sub-program.
   if (/\bvfd\s+integration\d*\b/i.test(n)) return 'controls';
   if (/ - (?:\S+\s+)*(?:supply|return)\s+duct\d*$/i.test(n)) return null; // falls to emClassifyEquipType → 'other'
-  // Heating and plant equipment that was filed under monitoring / other (2026-10-11, audit counts
-  // every piece of equipment): baseboard, book drop and perimeter heat are heaters; an Aerco unit is
-  // a boiler (hwp); a "Hot Water ..." system (not a plant, boiler, pump, meter or monitor) is plumbing equipment.
-  if (/\b(?:baseboard|book\s*drop|perimeter)\s+heat/i.test(n)) return 'heater';
-  if (/\baerco\b/i.test(n)) return 'hwp';
-  if (/^hot\s+water\b(?!.*\b(?:plant|boiler|pump|meter|monitor|monitoring|detector|detection)\b)/i.test(n)) return 'plumbing';
   // Priority 1: DOAS (before RTU/AHU to catch "DOAS-AHU-1")
   if (/\bdoas\b/i.test(n)) return 'doas';
   // Priority 2: ERV (energy recovery ventilator — own category per user)
