@@ -731,11 +731,24 @@ function pdfObjectUrl(creds, key) {
   return creds.url + '/storage/v1/object/' + PDF_BUCKET + '/' + String(key).replace(/^\/+/, '');
 }
 
+// Supabase Storage answers a missing object with HTTP 400 and a JSON body
+// {"statusCode":"404","error":"not_found","message":"Object not found"}. Only that body means missing.
+function isStorageNotFoundBody(text) {
+  let b;
+  try {
+    b = JSON.parse(text);
+  } catch (e) {
+    return false;
+  }
+  return !!b && String(b.statusCode) === '404' && (b.error === 'not_found' || /NoSuchKey/.test(String(b.code || '') + String(b.message || '')));
+}
+
 async function pdfStorageStat(key, creds) {
   const res = await fetch(pdfObjectUrl(creds, key), { headers: storageHeaders(creds, { Range: 'bytes=0-0' }) });
   if (res.status === 404) return null;
   if (res.status !== 200 && res.status !== 206) {
     const text = await safeText(res);
+    if (res.status === 400 && isStorageNotFoundBody(text)) return null;
     throw new Error('Storage stat failed (' + res.status + '): ' + text.slice(0, 300));
   }
   const cr = res.headers.get('content-range');
@@ -949,6 +962,11 @@ function readCredentialManager(target) {
 
 // Target-specific values ONLY. The generic SUPABASE_URL / SUPABASE_SECRET_KEY are never read, so a
 // prod pair left in the environment cannot be used for a staging run (or the other way round).
+// The target URL may end in /rest/v1/ ; every caller appends its own path, so keep the bare origin.
+function normalizeSupabaseUrl(url) {
+  return String(url).trim().replace(/\/+$/, '').replace(/\/rest\/v1$/, '').replace(/\/+$/, '');
+}
+
 function resolveCreds(args, env, readCred) {
   const target = args.target;
   if (!target) throw new Error('--target prod|staging is required to reach a server.');
@@ -969,7 +987,7 @@ function resolveCreds(args, env, readCred) {
         '". Stopping.',
     );
   }
-  const clean = String(url).replace(/\/+$/, '');
+  const clean = normalizeSupabaseUrl(url);
   let host;
   try {
     host = new URL(clean).host;
@@ -1700,6 +1718,8 @@ module.exports = {
   resolvePdfFiles,
   commitPdfObject,
   resolveCreds,
+  normalizeSupabaseUrl,
+  pdfStorageStat,
   readCredentialManager,
   loadServerFile,
   planKey,

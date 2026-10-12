@@ -290,10 +290,10 @@ Modes:
 - Target safety. Needs ONLY the target-specific values: URL = env `SUPABASE_URL_PROD` or `SUPABASE_URL_STAGING`; key = env
   `SUPABASE_SECRET_KEY_PROD` / `SUPABASE_SECRET_KEY_STAGING`, else the Windows Credential Manager generic credential
   `companyhub-supabase-<target>-key`. The generic `SUPABASE_URL` and `SUPABASE_SECRET_KEY` are NEVER read. There is no `--url` and no
-  `--cred-target`. A missing value stops the run (resolveCreds, scripts/migrate-seed.js). The log prints the target name and the host
+  `--cred-target`. A missing value stops the run (resolveCreds, scripts/migrate-seed.js). A URL ending in `/rest/v1/` is cut to the bare origin (normalizeSupabaseUrl). The PDF stat treats HTTP 404, and HTTP 400 with a Storage body of statusCode 404 (NoSuchKey), as missing; any other 400 stops the run (pdfStorageStat). The log prints the target name and the host
   (`Server: WRITING to target=prod host=<host>`), never the key. No prompt. The key is never printed or stored.
 - `kv_history` rows written here are not trimmed (kv-sync.js trims on its own writes: 20 rows or 30 days a key).
-How to check: `node test-migrate-seed.js` (16 tests, in-memory fake Supabase, no network). Then the same command without
+How to check: `node test-migrate-seed.js` (19 tests, in-memory fake Supabase, no network). Then the same command without
 `--apply` must show 0 new and 0 changed.
 
 Nov 2 runbook, data step (after the Netlify deploy and the live acceptance run):

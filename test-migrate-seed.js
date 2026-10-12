@@ -687,6 +687,42 @@ await t(
     assert.strictEqual(app.keptNewer, 1);
   },
 );
+  await t('URL ending in /rest/v1/ normalizes to the bare origin in resolveCreds', async () => {
+    const mk = (u) => M.resolveCreds({ target: 'staging' }, { SUPABASE_URL_STAGING: u }, () => 'k');
+    for (const u of ['https://abcd.supabase.co/rest/v1/', 'https://abcd.supabase.co/rest/v1', 'https://abcd.supabase.co/', 'https://abcd.supabase.co']) {
+      assert.strictEqual(mk(u).url, 'https://abcd.supabase.co');
+    }
+    assert.strictEqual(mk('https://abcd.supabase.co/rest/v1/').host, 'abcd.supabase.co');
+  });
+
+  const statWith = async (status, body) => {
+    const realFetch = global.fetch;
+    global.fetch = async () => ({
+      status,
+      ok: status >= 200 && status < 300,
+      headers: { get: () => null },
+      text: async () => body,
+      arrayBuffer: async () => new ArrayBuffer(0),
+    });
+    try {
+      return await M.pdfStorageStat('k/x.pdf', { url: 'https://abcd.supabase.co', secretKey: 'synthetic' });
+    } finally {
+      global.fetch = realFetch;
+    }
+  };
+  await t('Storage stat: HTTP 400 with NoSuchKey / statusCode 404 body = missing (null)', async () => {
+    assert.strictEqual(
+      await statWith(400, '{"statusCode":"404","error":"not_found","message":"Object not found","code":"NoSuchKey"}'),
+      null,
+    );
+    assert.strictEqual(await statWith(404, ''), null);
+  });
+  await t('Storage stat: any other HTTP 400 still throws', async () => {
+    await assert.rejects(() => statWith(400, '{"statusCode":"400","error":"invalid_request","message":"Bad"}'), /Storage stat failed \(400\)/);
+    await assert.rejects(() => statWith(400, 'not json'), /Storage stat failed \(400\)/);
+    await assert.rejects(() => statWith(500, '{"statusCode":"404","error":"not_found"}'), /Storage stat failed \(500\)/);
+  });
+
   await t('Credential Manager read returns null for a missing entry (no throw, no output)', async () => {
     if (process.platform !== 'win32') return;
     assert.strictEqual(M.readCredentialManager('companyhub-test-no-such-entry-' + Date.now()), null);
