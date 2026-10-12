@@ -8,7 +8,7 @@ function make(rows, cfg) {
     sget: (k, d) => (store[k] != null ? store[k] : d),
     sset: (k, v) => { store[k] = v; },
     emLoadMatrix: () => ({ rows }),
-    emIsPhantomRow: () => false,
+    emIsPhantomRow: () => false, emPointOrMeterKind: require('./test-em-point-kind-helper.js'),
     emGetNormalizedPoints: (r) => r.pts,
     _pricingGetConfig: () => ({ hourlyRate: 100 }),
   };
@@ -134,7 +134,7 @@ console.log('PASS hours override tests');
   // make() has its own store; rebuild a context with a shared, inspectable store
   const vm = require('vm');
   const c2 = { window: {}, console, EstimateWorkbook: require('./app/estimate-workbook.js'), sget: (k, d) => (store[k] != null ? store[k] : d), sset: (k, v) => { store[k] = JSON.parse(JSON.stringify(v)); },
-    emLoadMatrix: () => ({ rows }), emIsPhantomRow: () => false, emGetNormalizedPoints: (r) => r.pts, _pricingGetConfig: () => ({ hourlyRate: 100 }) };
+    emLoadMatrix: () => ({ rows }), emIsPhantomRow: () => false, emPointOrMeterKind: require('./test-em-point-kind-helper.js'), emGetNormalizedPoints: (r) => r.pts, _pricingGetConfig: () => ({ hourlyRate: 100 }) };
   vm.createContext(c2); vm.runInContext(src, c2);
   const vav = () => c2.auditEstComputeBreakdown('p', 'bas').rows[0];
   assert.strictEqual(vav().hoursEach, 1.12); assert.strictEqual(vav().defaultSource, 'built-in');

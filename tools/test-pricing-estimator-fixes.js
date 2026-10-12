@@ -178,6 +178,7 @@ add('Bldg B', 'ahu', 2);
 add('Bldg C', 'lighting', 4);
 ctx.emLoadMatrix = () => ({ rows });
 ctx.emIsPhantomRow = () => false;
+ctx.emPointOrMeterKind = require('../test-em-point-kind-helper.js');
 ctx.emGetNormalizedPoints = (r) => r.points;
 let b = run(ctx, "auditEstComputeBreakdown(1,'bas')");
 check('audit priced building count = 2 (not 3)', b.buildingCount === 2 && b.buildingList.length === 2, b.buildingCount);

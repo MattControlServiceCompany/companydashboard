@@ -351,6 +351,10 @@ function auditEstGetEquipmentSummary(projId) {
   rows.forEach(function (r) {
     var bName = r.building || 'Unknown Building';
     var cat = r.category || 'other';
+    // A monitor, detector or water-meter row is a point or meter on a unit, not a unit (the one rule:
+    // emPointOrMeterKind, app/equipment-matrix.js). It is listed as not equipment, never counted.
+    var pointKind = emPointOrMeterKind(r.equipName || r.equipType || r.name);
+    if (pointKind) cat = pointKind;
     var pts = r.points ? Object.keys(r.points).length : 0;
     allBuildings[bName] = true; // every project building, also ones with no auditable equipment
     if (AUDIT_EST_CATEGORIES.indexOf(cat) !== -1) {

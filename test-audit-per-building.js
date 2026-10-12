@@ -8,7 +8,7 @@ function make(rows, cfgOver, rate, mbuildings) {
     sget: (k, d) => (store[k] != null ? store[k] : d),
     sset: (k, v) => { store[k] = v; },
     emLoadMatrix: () => ({ rows, buildings: mbuildings }),
-    emIsPhantomRow: () => false,
+    emIsPhantomRow: () => false, emPointOrMeterKind: require('./test-em-point-kind-helper.js'),
     emGetNormalizedPoints: (r) => r.pts || {},
     _pricingGetConfig: () => ({ hourlyRate: rate == null ? 120 : rate }),
   };
