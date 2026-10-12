@@ -36,9 +36,13 @@
    ────────────────────────────────────────────────────────────────────────────────────────── */
 
 /* ── Equipment categories counted per-unit for audit hours ──────────────────────────────────
-   Same set report-engine.js's collectASHRAE36Data() already treats as "Auditable equipment
-   categories (excludes 'other')" for ASHRAE 36 scoring — reused here so the Audit Estimate and
-   the ASHRAE 36 Audit Report agree on what counts as inspectable BAS equipment. */
+   Matt, 2026-10-11: "the audit should count every piece of equipment." Every Equipment Matrix
+   row whose category is a piece of equipment is counted (HVAC, plant, plumbing, power, fire,
+   security, life safety, elevator, controls, VRF, standalone A/C). There is NO exclusion list.
+   Categories that are NOT equipment are the ones the Equipment Matrix keeps for points and
+   records: lighting (control zones and circuits), sensor (weather / environment indexes),
+   monitoring (leak and water detectors, room monitors), meter (utility meters) and other
+   (unclassified). They are listed in the estimate as "not equipment", never priced. */
 var AUDIT_EST_CATEGORIES = [
   'ahu',
   'rtu',
@@ -49,11 +53,22 @@ var AUDIT_EST_CATEGORIES = [
   'chwp',
   'ct',
   'doas',
+  'mau',
+  'erv',
   'fcu',
   'zone',
   'furnace',
   'heater',
   'ef',
+  'vrf',
+  'ac',
+  'plumbing',
+  'controls',
+  'power',
+  'fire',
+  'lifesafety',
+  'security',
+  'elevator',
 ];
 
 var AUDIT_EST_CAT_LABELS = {
@@ -71,29 +86,18 @@ var AUDIT_EST_CAT_LABELS = {
   furnace: 'Furnace',
   heater: 'Unit Heater',
   ef: 'Exhaust Fan',
+  mau: 'Makeup Air Unit',
+  erv: 'Energy Recovery Unit',
+  vrf: 'Variable Refrigerant Flow Unit',
+  ac: 'Air Conditioning Unit',
+  plumbing: 'Plumbing Equipment',
+  controls: 'Controls / Drive Equipment',
+  power: 'Power / Generator',
+  fire: 'Fire / Smoke Equipment',
+  lifesafety: 'Life Safety Equipment',
+  security: 'Security Equipment',
+  elevator: 'Elevator Equipment',
 };
-
-// Equipment Matrix categories EXCLUDED from per-equipment audit hours in BOTH audit types —
-// building-level systems (lighting circuits, fire/life-safety, plumbing, power metering,
-// weather sensors, VFD/controls wrappers, standalone A/C, VRF outdoor units, elevator,
-// monitoring, security) rather than individually-inspected HVAC control equipment. Full
-// Facility Audit covers lighting/envelope/utility review as flat PER-BUILDING line items
-// instead (see AUDIT_EST_DEFAULTS.fullFacility below) — never priced twice.
-var AUDIT_EST_EXCLUDED_CATEGORIES = [
-  'lighting',
-  'fire',
-  'plumbing',
-  'power',
-  'sensor',
-  'controls',
-  'vrf',
-  'ac',
-  'elevator',
-  'monitoring',
-  'security',
-  'lifesafety',
-  'other',
-];
 
 /* ── Hours per equipment type, "time it takes to go through" one unit during an audit walk-
    through. SOURCE: Optimization Strategy Sheet - Client A SD 2026.01.09.xlsx, sheet
@@ -117,6 +121,19 @@ var AUDIT_EST_HOURS_PER_EQUIP_DEFAULT = {
   zone: 1.0, // estimate — similar scale to a VAV terminal
   furnace: 2.1, // estimate — matched to Unit Heater (same class of single-zone heating equipment)
   ef: 0.5, // estimate — simple equipment
+  // Categories added 2026-10-11 (count every piece of equipment) have no sheet row. Each takes
+  // the hours of the closest existing category (assumption, adjustable in the UI):
+  mau: 2.5, // = doas (outdoor-air handling unit)
+  erv: 2.5, // = doas (energy recovery / outdoor-air unit)
+  vrf: 2.0, // = fcu (Equipment Matrix labels fcu "Fan Coil / Variable Refrigerant Flow")
+  ac: 5.37, // = rtu (standalone DX cooling unit)
+  plumbing: 4.0, // = hwp (hot water systems and pumps)
+  controls: 4.0, // = chwp (chiller / plant integration controls)
+  power: 2.0, // = ct (central plant equipment)
+  fire: 1.0, // = zone (small single-purpose equipment)
+  lifesafety: 1.0, // = zone
+  security: 1.0, // = zone
+  elevator: 0.5, // = ef (simple equipment)
 };
 
 // The labor rate is NOT stored here: auditEstGetHourlyRate() reads the one rate,
@@ -325,7 +342,7 @@ function auditEstGetEquipmentSummary(projId) {
   var buildings = {};
   var allBuildings = {};
   var byCat = {};
-  var excluded = {};
+  var notEquipment = {};
 
   // Buildings the matrix lists that have no rows yet still get a line in Cost by Building.
   (matData.buildings || []).forEach(function (n) {
@@ -361,13 +378,13 @@ function auditEstGetEquipmentSummary(projId) {
       }
       byCat[cat].groups[g.sig].count++;
     } else {
-      if (!excluded[cat])
-        excluded[cat] = {
+      if (!notEquipment[cat])
+        notEquipment[cat] = {
           category: cat,
           label: typeof EM_CATEGORY_LABELS !== 'undefined' && EM_CATEGORY_LABELS[cat] ? EM_CATEGORY_LABELS[cat] : cat,
           count: 0,
         };
-      excluded[cat].count++;
+      notEquipment[cat].count++;
     }
   });
 
@@ -388,8 +405,8 @@ function auditEstGetEquipmentSummary(projId) {
     buildingList: Object.keys(buildings).sort(),
     allBuildingList: Object.keys(allBuildings).sort(),
     equipTypes: equipTypes,
-    excluded: Object.keys(excluded).map(function (c) {
-      return excluded[c];
+    notEquipment: Object.keys(notEquipment).map(function (c) {
+      return notEquipment[c];
     }),
   };
 }
@@ -1065,7 +1082,7 @@ function auditEstComputeBreakdown(projId, auditType) {
     byBuilding: byBuilding,
     buildingCount: summary.buildingCount,
     buildingList: summary.buildingList,
-    excluded: summary.excluded,
+    notEquipment: summary.notEquipment,
     rows: rows,
     buildingLineHours: buildingLineHours,
     buildingLineCost: siteCost,
@@ -1925,11 +1942,11 @@ function auditEstRenderHTML(projId, auditType) {
   var isFull = auditType === 'full';
   var typeName = isFull ? 'Full Facility Audit' : 'Building Automation System Audit';
   var b = auditEstComputeBreakdown(projId, isFull ? 'full' : 'bas');
-  var excludedNote = '';
-  if (b && b.excluded && b.excluded.length) {
-    excludedNote =
-      '<div style="font-size:11px;color:var(--text3);margin-top:6px">Not counted per unit (covered as building-level items, or out of scope): ' +
-      b.excluded
+  var notEquipmentNote = '';
+  if (b && b.notEquipment && b.notEquipment.length) {
+    notEquipmentNote =
+      '<div style="font-size:11px;color:var(--text3);margin-top:6px">Not counted (not equipment: points, meters and records): ' +
+      b.notEquipment
         .map(function (x) {
           return _escHtml(x.label) + ' (' + x.count + ')';
         })
@@ -1956,7 +1973,7 @@ function auditEstRenderHTML(projId, auditType) {
     '<div style="display:flex;gap:20px;flex-wrap:wrap;margin-top:14px">' +
     _auditEstBreakdownTableHTML(b, typeName) +
     '</div>' +
-    excludedNote +
+    notEquipmentNote +
     (b
       ? '<div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">' +
         '<button onclick="auditEstGenerateProposal(\'' +

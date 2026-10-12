@@ -28,7 +28,7 @@ function fixture() {
   add('Alpha Hall', 'vav', 23); add('Beta  Annex', 'vav', 9); add('Gamma', 'vav', 4);
   add('Alpha Hall', 'ahu', 2); add('Gamma', 'ahu', 1);
   add('Beta  Annex', 'rtu', 7); add('Delta', 'rtu', 1);
-  add('Epsilon Empty', 'lighting', 3); // building with only excluded equipment
+  add('Epsilon Empty', 'lighting', 3); // building with only non-equipment rows
   add('Gamma', 'ef', 1);
   return rows;
 }

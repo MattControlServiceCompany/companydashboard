@@ -23169,7 +23169,7 @@ window.generateASHRAE36Preview = generateASHRAE36Preview;
 // today's date, the ONE full price (from auditEstComputeBreakdown — no pricing math here), and
 // a per-building equipment-count table (real equipment quantities per feedback_equipment_
 // counts_not_buildings.md, not a bare building list) built from the SAME Equipment Matrix rows
-// and the SAME auditable-category filter (AUDIT_EST_CATEGORIES, app/audit-estimate.js) the
+// and the SAME equipment count (auditEstGetEquipmentSummary, app/audit-estimate.js) the
 // estimate itself uses, so the proposal's facility table always agrees with the estimate.
 function collectAuditProposalData(projId, auditType) {
   if (typeof auditEstComputeBreakdown !== 'function') return null;
@@ -23183,16 +23183,15 @@ function collectAuditProposalData(projId, auditType) {
   var dateObj = new Date();
   var dateStr = dateObj.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
 
-  var matData = typeof emLoadMatrix === 'function' ? emLoadMatrix(projId) : null;
+  // Per-building counts come from the ONE equipment count (auditEstGetEquipmentSummary), so the
+  // facility table cannot disagree with the estimate.
+  var summary = typeof auditEstGetEquipmentSummary === 'function' ? auditEstGetEquipmentSummary(projId) : null;
   var perBuilding = {};
-  if (matData && matData.rows) {
-    matData.rows.forEach(function (r) {
-      if (typeof emIsPhantomRow === 'function' && emIsPhantomRow(r)) return;
-      if (typeof AUDIT_EST_CATEGORIES === 'undefined' || AUDIT_EST_CATEGORIES.indexOf(r.category) === -1) return;
-      var b = r.building || 'Unknown Building';
-      perBuilding[b] = (perBuilding[b] || 0) + 1;
+  (summary ? summary.equipTypes : []).forEach(function (e) {
+    Object.keys(e.byBuilding).forEach(function (b) {
+      perBuilding[b] = (perBuilding[b] || 0) + e.byBuilding[b];
     });
-  }
+  });
   var buildingRows = Object.keys(perBuilding)
     .sort()
     .map(function (b) {
