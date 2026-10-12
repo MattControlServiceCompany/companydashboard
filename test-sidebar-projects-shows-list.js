@@ -82,6 +82,10 @@ const sess = () => JSON.parse(sessionStorage.getItem('ch_proj') || '{}').view;
     await page.reload();
     await page.waitForTimeout(2500);
     eq(await page.evaluate(view), 'detail', 'reload in project: project re-opened');
+    // 4. New Energy Project form: the address field label says "Project Address" (not "Building Address")
+    await page.evaluate(() => openProjModal());
+    const lbl = await page.evaluate(() => document.getElementById('mp-addr').parentElement.querySelector('label').textContent.trim());
+    eq(lbl, 'Project Address', 'new project form address label');
     if (process.argv[2]) await page.screenshot({ path: process.argv[2] });
     eq(errs.length, 0, 'no page errors: ' + errs.join(' | '));
   } finally {

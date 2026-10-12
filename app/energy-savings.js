@@ -1622,7 +1622,7 @@ function _mpChecklistChanged() {
 const MP_AUTOFILL_FIELDS = [
   { key: 'customer', label: 'Customer', kind: 'customer' },
   { key: 'buildings', label: 'Buildings and Meters', kind: 'buildings' },
-  { key: 'addr', label: 'Building Address', elId: 'mp-addr', kind: 'text' },
+  { key: 'addr', label: 'Project Address', elId: 'mp-addr', kind: 'text' },
   { key: 'zip', label: 'Default Weather ZIP', elId: 'mp-zip', kind: 'text' },
   { key: 'type', label: 'Project Type', elId: 'mp-type', kind: 'select' },
   { key: 'status', label: 'Status', elId: 'mp-status', kind: 'select' },
