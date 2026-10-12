@@ -882,42 +882,8 @@ function sv(id, btn) {
     });
   }
   if (id === 'projects') {
-    const _savedProj = sessionStorage.getItem('ch_proj');
-    let _restored = false;
-    if (_savedProj) {
-      try {
-        const _s = JSON.parse(_savedProj);
-        if (_s.view === 'detail' && _s.projId != null) {
-          const _p = projects.find((p) => p.id == _s.projId);
-          if (_p) {
-            document.getElementById('projListView').style.display = 'none';
-            document.getElementById('projDetailView').style.display = 'flex';
-            window._activeProjId = _p.id;
-            // SECONDARY FIX (087dba92): Sanitize stored tab against PROJ_TABS_DEFAULT.
-            // If the stored tab id no longer exists (e.g. 'equipment' was removed), fall back to
-            // 'dashboard' so renderDetail() generates the correct active button.
-            const _rawSvTab = _s.tab || 'dashboard';
-            const _validSvTabIds = new Set(PROJ_TABS_DEFAULT.map((t) => t.id));
-            window._activeProjTab = _validSvTabIds.has(_rawSvTab) ? _rawSvTab : 'dashboard';
-            renderDetail(_p);
-            document.querySelectorAll('.spfi').forEach((c) => c.classList.remove('active'));
-            document.querySelectorAll(`.spfi[data-pid="${_p.id}"]`).forEach((c) => c.classList.add('active'));
-            // Use the sanitized tab value (falls back to 'dashboard' for invalid stored tabs).
-            if (window._activeProjTab !== 'dashboard') {
-              const _btn = document.querySelector(`.pdt[data-tab="${window._activeProjTab}"]`);
-              if (_btn) sPTab(window._activeProjTab, _btn);
-            }
-            _restored = true;
-          }
-        }
-      } catch (e) {}
-    }
-    if (!_restored) {
-      showList();
-      renderProjTable();
-    } else {
-      renderProjTable();
-    }
+    showList();
+    renderProjTable();
   }
   if (id === 'district' && dcEvents.length) {
     dcRenderAll();
