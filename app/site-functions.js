@@ -2506,6 +2506,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.12.108', date: '2026-10-12', title: 'Projects button and Project Address',
+    items: [
+      { type: 'fix', text: 'Projects page: the Projects button in the sidebar now opens the Projects list, even when a project is open. Before, it re-opened the last project.' },
+      { type: 'change', text: 'Projects page: the New Energy Project form now says "Project Address" instead of "Building Address".' }
+    ]
+  },
   { v: 'v2026.10.12.107', date: '2026-10-12', title: 'Utility Data: Import List on a new project',
     items: [
       { type: 'fix', text: 'Utility Data: Import List now shows on a project with no buildings yet, next to + Add Building, so you can load a building list into a new project.' }
