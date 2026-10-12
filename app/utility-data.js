@@ -1478,8 +1478,7 @@ function renderUDProjList() {
     // If this project is selected, show its buildings inline underneath
     if (p.id === udSelProjId) {
       if (!bldgs.length) {
-        html += `<div style="padding:6px 14px 6px 30px;font-size:11px;color:var(--text3)">No buildings —
-                <button class="btn btn-ghost btn-sm" style="font-size:10px;padding:1px 6px" onclick="openBldgModal(null)">+ Add</button></div>`;
+        html += `<div style="padding:6px 14px 0 30px;font-size:11px;color:var(--text3)">No buildings</div>`;
       } else {
         bldgs.forEach((b) => {
           const _allMeters = b.meters || [];
@@ -1515,11 +1514,11 @@ function renderUDProjList() {
                   </div>
                 </div>`;
         });
-        html += `<div style="padding:5px 14px 8px 30px;display:flex;gap:6px">
-                <button class="btn btn-ghost btn-sm" style="font-size:11px;flex:1" onclick="openBldgModal(null)">+ Add Building</button>
-                <button class="btn btn-ghost btn-sm" style="font-size:11px;flex:1" onclick="openBldgImportModal()">⬆ Import List</button>
-              </div>`;
       }
+      html += `<div style="padding:5px 14px 8px 30px;display:flex;gap:6px">
+                <button class="btn btn-ghost btn-sm" style="font-size:11px;flex:1" onclick="openBldgModal(null)" title="Add one building by hand">+ Add Building</button>
+                <button class="btn btn-ghost btn-sm" style="font-size:11px;flex:1" onclick="openBldgImportModal()" title="Import buildings from a CSV or Excel list (name, sq ft, address)">⬆ Import List</button>
+              </div>`;
     }
   });
   el.innerHTML = html;
