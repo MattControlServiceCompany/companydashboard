@@ -1864,7 +1864,7 @@ function hvacLoadCalc(projId, opts) {
 // %-reduction boxes. Savings are now COMPUTED from the occupied setpoint/schedule change saved
 // in the Baseline + BAS Savings Report Inputs (project.savingsData.basSetpoint[bldgId], options
 // A/B/C) by calling the SAME engine that report uses (app/report-engine-woodland.js —
-// wdComputeSetpointOptions / wdApplySetpointOptions / wdOptionDollarByMonth). No second formula.
+// wdComputeSetpointOptions / wdApplySetpointOptions / calcMeasureDollars). No second formula.
 // If those inputs are missing, this shows exactly what's missing and a button to the Inputs
 // dialog — it never invents a savings percentage.
 // -----------------------------------------------------------------------
@@ -1935,17 +1935,16 @@ function _hvlRenderMsr(projId) {
   const cfg = _wdGetCfg(p, selBid);
   const bls = _wdBldgBaselines(b);
   const res = wdComputeSetpointOptions(cfg, bls.elecBL, bls.gasBL);
-  // Normalized rates (_wdSeasonalRates shape) + wdOptionDollarByMonth — the report's OWN $
+  // calcMeasureDollars with {cents:true} — the report's OWN $
   // rounding convention (round every month to the cent, then sum) so this preview always equals
   // the printed Baseline + BAS Savings Report, not the separate sum-then-round total the Energy
   // Savings matrix's m.totalDollar uses.
-  const ratesForOpt = typeof _wdSeasonalRates === 'function' ? _wdSeasonalRates(cfg.rates) : cfg.rates;
   const rows = res.options.map((o) => {
     const annualKwh = o.kwh.reduce((s, v) => s + v, 0);
     const annualKw = o.kw.reduce((s, v) => s + v, 0);
     const annualGas = o.gas.reduce((s, v) => s + v, 0);
-    const d = typeof wdOptionDollarByMonth === 'function' ? wdOptionDollarByMonth(o, ratesForOpt) : null;
-    return Object.assign({}, o, { annualKwh, annualKw, annualGas, dollar: d ? d.annualTotal$ : 0 });
+    const dollar = calcMeasureDollars(o, cfg.rates, { cents: true }).total;
+    return Object.assign({}, o, { annualKwh, annualKw, annualGas, dollar });
   });
 
   container.innerHTML = `<div class="card"><div class="card-hdr"><span class="card-title">💡 Create Savings Measure from HVAC Load</span></div>
@@ -2101,9 +2100,7 @@ function _hvlBuildExportData(projId) {
       const cfg = _wdGetCfg(p, bldgId);
       const bls = _wdBldgBaselines(b);
       const res = wdComputeSetpointOptions(cfg, bls.elecBL, bls.gasBL);
-      const ratesForOpt = typeof _wdSeasonalRates === 'function' ? _wdSeasonalRates(cfg.rates) : cfg.rates;
       options = res.options.map((o) => {
-        const d = typeof wdOptionDollarByMonth === 'function' ? wdOptionDollarByMonth(o, ratesForOpt) : null;
         return {
           letter: o.letter,
           heatSP: o.heatSP,
@@ -2111,7 +2108,7 @@ function _hvlBuildExportData(projId) {
           annualKwh: o.kwh.reduce((s, v) => s + v, 0),
           annualKw: o.kw.reduce((s, v) => s + v, 0),
           annualGas: o.gas.reduce((s, v) => s + v, 0),
-          dollar: d ? d.annualTotal$ : 0,
+          dollar: calcMeasureDollars(o, cfg.rates, { cents: true }).total,
         };
       });
     } else {
@@ -3879,15 +3876,7 @@ function solarApplyToMeasure(projId) {
   // (computations/rates.js computeSeasonalBldgRates) so this
   // never silently zeroes out when the Baseline Rates table hasn't been saved (2026-09-23,
   // item 2026-09-23-rate-source).
-  const rates = _svRatesOrCanonical(sd, projId, m.bldgId);
-  let total = 0;
-  for (let mo = 0; mo < 12; mo++) {
-    const isSummer = SUMMER_MOS.includes(mo);
-    total += (m.kwh[mo] || 0) * (isSummer ? rates.kwhSummer || 0 : rates.kwhWinter || 0);
-    total += (m.kw[mo] || 0) * (isSummer ? rates.kwSummer || 0 : rates.kwWinter || 0);
-    total += (m.gas[mo] || 0) * (rates.thermRate || 0);
-  }
-  m.totalDollar = total;
+  m.totalDollar = calcMeasureDollars(m, _svRatesOrCanonical(sd, projId, m.bldgId)).total;
   sset('en_projects', projects);
   const msrNum = m.msrNum;
   closeCalcTemplate();
@@ -5125,15 +5114,7 @@ function bcApplyToMeasure(projId) {
   const cityName = BAS_CITIES.find((c) => c.id === (p.basCalc?.city || 4))?.name || 'Unknown';
   if (!m.desc || m.desc.trim() === '') m.desc = 'BAS HVAC Optimization — ' + cityName;
   // Same fallback as solarApplyToMeasure above — see comment there (2026-09-23-rate-source).
-  const rates = _svRatesOrCanonical(sd, projId, m.bldgId);
-  let total = 0;
-  for (let mo = 0; mo < 12; mo++) {
-    const isSummer = SUMMER_MOS.includes(mo);
-    total += (m.kwh[mo] || 0) * (isSummer ? rates.kwhSummer || 0 : rates.kwhWinter || 0);
-    total += (m.kw[mo] || 0) * (isSummer ? rates.kwSummer || 0 : rates.kwWinter || 0);
-    total += (m.gas[mo] || 0) * (rates.thermRate || 0);
-  }
-  m.totalDollar = total;
+  m.totalDollar = calcMeasureDollars(m, _svRatesOrCanonical(sd, projId, m.bldgId)).total;
   sset('en_projects', projects);
   const msrNum = m.msrNum;
   closeCalcTemplate();

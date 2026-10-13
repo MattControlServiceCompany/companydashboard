@@ -14,6 +14,17 @@ const RULES = [
   [/(?:elecRate|elec_rate|rate)\s*(?::|=)\s*[^;\n]*\|\|\s*0\.1\b/, 'invented 0.1 fallback rate'],
   [/default:\s*0\.085\b/, 'invented 0.085 default rate'],
   [/totalCost\s*\/\s*total(?:Kwh|Usage)\b/, 'private totalCost / kWh rate loop'],
+  [
+    /\b_wdSeasonalRates\b|\bwdOptionAnnualDollar\b|\bwdOptionDollarByMonth\b|\b_?(?:kwh|kw|gas|prop)RateFn\b/,
+    'deleted monthly pricing copy came back',
+  ],
+  // Monthly pricing has ONE owner path: measureRateAt / calcMeasureDollars (app/energy-savings.js).
+  // A season test or a multiply by a stored rate field anywhere else is a second copy of the rule.
+  [/\bSUMMER_MOS\.includes\(/, 'second season test for monthly pricing (use measureRateAt / calcMeasureDollars)'],
+  [
+    /\*\s*\(?\s*[\w.]*\b(?:rates?|r)\.(?:kwhSummer|kwhWinter|kwSummer|kwWinter|gasSummer|gasWinter|thermRate|gallonRate)\b/,
+    'quantity x stored rate multiplied outside the owner path (use calcMeasureDollars)',
+  ],
 ];
 // Multi-line: a gas_rate or demand_rate input must not carry a number default (use null; bills prefill it).
 const INPUT_DEFAULT = /id:\s*'(?:gas_rate|demand_rate)'[^{}]*?default:\s*(?!null\b)[-\d.]+/g;
@@ -23,7 +34,9 @@ const files = [];
 );
 const bad = [];
 files.forEach((f) => {
-  const text = fs.readFileSync(path.join(root, f), 'utf8');
+  let text = fs.readFileSync(path.join(root, f), 'utf8');
+  // The owner of the season rule is exempt: blank measureRateAt (keeps line numbers).
+  text = text.replace(/function measureRateAt\b[\s\S]*?\r?\n\}\r?\n/, (m) => m.replace(/[^\r\n]/g, ' '));
   let m;
   INPUT_DEFAULT.lastIndex = 0;
   while ((m = INPUT_DEFAULT.exec(text))) {

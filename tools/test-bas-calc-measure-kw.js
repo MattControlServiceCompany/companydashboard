@@ -73,6 +73,7 @@ const CALC = REPO + '/app/calculators.js',
   AUTO = REPO + '/app/calc-autofill.js',
   UD = REPO + '/app/utility-data.js',
   EM = REPO + '/app/equipment-matrix.js',
+  ES = REPO + '/app/energy-savings.js',
   WEATHER = REPO + '/app/data/bas-weather-bins.js';
 
 const src = [
@@ -101,6 +102,8 @@ const src = [
   loadFn(CALC, '_bcMeasureArrays'),
   loadFn(CALC, 'bcAddAsMeasure'),
   loadFn(CALC, 'bcApplyToMeasure'),
+  loadFn(ES, 'measureRateAt'),
+  loadFn(ES, 'calcMeasureDollars'),
 ]
   .join('\n\n')
   .replace(/\bconst\s+/g, 'var ');

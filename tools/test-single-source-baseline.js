@@ -317,10 +317,10 @@ const wdOption = {
   rates: {
     gasSummer: 0.5,
     gasWinter: 0.5,
-    elecEnergySummer: 0.09,
-    elecEnergyWinter: 0.08,
-    demandSummer: 12,
-    demandWinter: 8,
+    kwhSummer: 0.09,
+    kwhWinter: 0.08,
+    kwSummer: 12,
+    kwWinter: 8,
   },
   monthly: (() => {
     const arr = new Array(12);

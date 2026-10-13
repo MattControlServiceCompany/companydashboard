@@ -384,16 +384,16 @@ if (target) {
         '/' +
         r.gasWinter.toFixed(4) +
         ' kWh ' +
-        r.elecEnergySummer +
+        r.kwhSummer +
         '/' +
-        r.elecEnergyWinter +
+        r.kwhWinter +
         ' kW ' +
-        r.demandSummer +
+        r.kwSummer +
         '/' +
-        r.demandWinter,
+        r.kwWinter,
     );
     assert(
-      r.elecEnergySummer > 0 && r.demandSummer > 0,
+      r.kwhSummer > 0 && r.kwSummer > 0,
       'Option ' + o.letter + ': electric rates come from m.rates (non-zero)',
     );
     assert(

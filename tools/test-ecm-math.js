@@ -30,7 +30,7 @@ const cut = (rel, startMark, endMark) => { const t = fs.readFileSync(path.join(r
 vm.runInContext(cut('app/utility-data.js', 'function _fixISO', '// The ONE day-count function'), sb);
 vm.runInContext(cut('app/core.js', 'function _dashGetBaselineBills', 'function initDashboardTab'), sb);
 vm.runInContext(cut('app/utility-data.js', 'function _udProjBaselineMonthsFallback', '// Per-meter baseline totals'), sb);
-vm.runInContext('const SUMMER_MOS = [5, 6, 7, 8];' + cut('app/energy-savings.js', 'function calcMeasureDollars', 'function getProjMatrixSavingsTotal'), sb);
+vm.runInContext('const SUMMER_MOS = [5, 6, 7, 8];' + cut('app/energy-savings.js', 'function measureRateAt', 'function getProjMatrixSavingsTotal'), sb);
 vm.runInContext(src, sb);
 const T = sb.ECM_TEMPLATES;
 // Rate inputs have no default (blank until Utility Data fills them); the test supplies a manual value.

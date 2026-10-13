@@ -225,10 +225,6 @@ function renderSavingsMatrix(projId) {
   if (_msrDataChanged) sset('en_projects', projects);
 
   // ── Rate functions for cost calc ──
-  const _kwhRateFn = (r) => (mo) => (SUMMER_MOS.includes(mo) ? r.kwhSummer || 0 : r.kwhWinter || 0);
-  const _kwRateFn = (r) => (mo) => (SUMMER_MOS.includes(mo) ? r.kwSummer || 0 : r.kwWinter || 0);
-  const _gasRateFn = (r) => () => r.thermRate || 0;
-  const _propRateFn = (r) => () => r.gallonRate || 0;
 
   // ── Usage cells helper (12 monthly inputs + total) ──
   const _usageCells = (arr, cls, grp, bgColor, pId, mId) => {
@@ -248,13 +244,13 @@ function renderSavingsMatrix(projId) {
   };
 
   // ── Cost cells helper (12 monthly read-only + total) ──
-  const _costCells = (arr, grp, bgColor, rateFn) => {
+  const _costCells = (arr, grp, bgColor, r, field) => {
     const isOpen = !!_svColGroupState[grp];
     const vals = arr || Array(12).fill(0);
     let total = 0;
     const moCells = vals
       .map((v, i) => {
-        const cost = (parseFloat(v) || 0) * rateFn(i);
+        const cost = (parseFloat(v) || 0) * measureRateAt(r, i)[field];
         total += cost;
         return `<td class="sv-cg-${grp}" style="display:${isOpen ? '' : 'none'};border-left:${i === 0 ? '2px' : '1px'} solid var(--border${i === 0 ? '2' : ''});padding:2px 1px;background:${bgColor};font-family:var(--mono);font-size:10px;text-align:right;color:var(--text2)">${cost ? '$' + Math.round(cost).toLocaleString() : ''}</td>`;
       })
@@ -276,13 +272,7 @@ function renderSavingsMatrix(projId) {
       const annMsrKwh = m.kwh.reduce((a, b) => a + (parseFloat(b) || 0), 0);
 
       // Compute projected savings $ for this measure (estimated — always shown, no SA gate)
-      let projSavings = 0;
-      for (let mo = 0; mo < 12; mo++) {
-        projSavings += (parseFloat(m.kwh[mo]) || 0) * _kwhRateFn(r)(mo);
-        projSavings += (parseFloat(m.kw[mo]) || 0) * _kwRateFn(r)(mo);
-        projSavings += (parseFloat(m.gas[mo]) || 0) * _gasRateFn(r)();
-        projSavings += (parseFloat(m.propane[mo]) || 0) * _propRateFn(r)();
-      }
+      const projSavings = calcMeasureDollars(m, r).total;
       const _msrDollar = m.totalDollar || 0;
 
       const dollarStr = projSavings > 0 ? '$' + Math.round(projSavings).toLocaleString() : '—';
@@ -300,10 +290,10 @@ function renderSavingsMatrix(projId) {
             ${_usageCells(m.kw, 'kw-col', 'kw', 'rgba(245,158,11,0.03)', projId, m.id)}
             ${_usageCells(m.gas, 'gas-col', 'gas', 'rgba(20,184,166,0.03)', projId, m.id)}
             ${_usageCells(m.propane, 'propane-col', 'propane', 'rgba(168,85,247,0.03)', projId, m.id)}
-            ${_costCells(m.kwh, 'kwhCost', 'rgba(59,130,246,0.02)', _kwhRateFn(r))}
-            ${_costCells(m.kw, 'kwCost', 'rgba(245,158,11,0.02)', _kwRateFn(r))}
-            ${_costCells(m.gas, 'gasCost', 'rgba(20,184,166,0.02)', _gasRateFn(r))}
-            ${_costCells(m.propane, 'propaneCost', 'rgba(168,85,247,0.02)', _propRateFn(r))}
+            ${_costCells(m.kwh, 'kwhCost', 'rgba(59,130,246,0.02)', r, 'kwh')}
+            ${_costCells(m.kw, 'kwCost', 'rgba(245,158,11,0.02)', r, 'kw')}
+            ${_costCells(m.gas, 'gasCost', 'rgba(20,184,166,0.02)', r, 'gas')}
+            ${_costCells(m.propane, 'propaneCost', 'rgba(168,85,247,0.02)', r, 'propane')}
             <td class="sv-total-cell" style="border-left:2px solid var(--border2)" id="sv-msr-total-${projId}-${m.id}">${dollarStr}</td>
             <td style="text-align:center"><button class="btn-del" onclick="removeSavingsMeasure(${projId},'${m.id}')">✕</button></td>
           </tr>
@@ -451,15 +441,7 @@ function renderSavingsSummary(projId, sd, totKwh, totKw, totGas, totPropane, gra
   // Compute quarterly savings totals (Q1=Jan-Mar, Q2=Apr-Jun, Q3=Jul-Sep, Q4=Oct-Dec)
   const qtrs = [0, 0, 0, 0];
   selMsrs.forEach((m) => {
-    const r = m.rates || {};
-    for (let mo = 0; mo < 12; mo++) {
-      const qi = Math.floor(mo / 3);
-      const s = SUMMER_MOS.includes(mo);
-      qtrs[qi] += (parseFloat(m.kwh[mo]) || 0) * (s ? r.kwhSummer || 0 : r.kwhWinter || 0);
-      qtrs[qi] += (parseFloat(m.kw[mo]) || 0) * (s ? r.kwSummer || 0 : r.kwWinter || 0);
-      qtrs[qi] += (parseFloat(m.gas[mo]) || 0) * (r.thermRate || 0);
-      qtrs[qi] += (parseFloat((m.propane || [])[mo]) || 0) * (r.gallonRate || 0);
-    }
+    calcMeasureDollars(m, m.rates || {}).monthly.forEach((d, mo) => (qtrs[Math.floor(mo / 3)] += d.total));
   });
   const qtrLabels = ['Q1 (Jan–Mar)', 'Q2 (Apr–Jun)', 'Q3 (Jul–Sep)', 'Q4 (Oct–Dec)'];
   const qtrHtml =
@@ -527,29 +509,54 @@ function autoSaveMsr(projId) {
   sset('en_projects', projects);
 }
 
-// calcMeasureDollars(m, rates) - the ONE pricing rule for a savings-matrix measure:
-// each month's quantity saved x that month's seasonal rate, summed over the 12 months
-// ((Baseline - Actual) x Rate, never a dollar delta). Rates come from computeSeasonalBldgRates (baseline-period summer and winter).
-function calcMeasureDollars(m, rates) {
+// measureRateAt(rates, mo) - the ONE season rule for a savings-matrix measure: the $ per unit that
+// applies in calendar month `mo` (0-11). Jun-Sep (SUMMER_MOS) use the summer rate, Oct-May the winter
+// rate. Gas uses gasSummer / gasWinter; a rate set that has neither (saved before seasonal gas) falls
+// back to its flat thermRate, so existing saved measures price exactly as saved.
+function measureRateAt(rates, mo) {
   rates = rates || {};
+  const r = (k) => parseFloat(rates[k]) || 0;
+  const s = SUMMER_MOS.includes(mo);
+  const gasSeasonal = r(s ? 'gasSummer' : 'gasWinter');
+  return {
+    kwh: r(s ? 'kwhSummer' : 'kwhWinter'),
+    kw: r(s ? 'kwSummer' : 'kwWinter'),
+    gas: gasSeasonal > 0 ? gasSeasonal : r('thermRate'),
+    propane: r('gallonRate'),
+    summer: s,
+  };
+}
+
+// calcMeasureDollars(m, rates, opts) - the ONE pricing rule for a savings-matrix measure:
+// each month's quantity saved x that month's seasonal rate (measureRateAt), summed over the 12 months
+// ((Baseline - Actual) x Rate, never a dollar delta). Rates come from computeSeasonalBldgRates (baseline-period summer and winter).
+// Returns the annual { kwh, kw, gas, propane, total } and monthly[12] of the same fields plus `summer`.
+// opts.cents: round every monthly component to the cent (half up) and build every larger figure by summing
+// those rounded cents. The Baseline + BAS Savings Report prints that way, so a hand sum of its cells matches.
+function calcMeasureDollars(m, rates, opts) {
+  const cents = !!(opts && opts.cents);
+  const rd = (x) => (cents ? (Math.sign(x) || 1) * Math.round(Math.abs(x) * 100 + 1e-9) / 100 : x);
+  const monthly = [];
   let kwh = 0,
     kw = 0,
     gas = 0,
     propane = 0,
     total = 0;
   for (let mo = 0; mo < 12; mo++) {
-    const s = SUMMER_MOS.includes(mo);
-    const kwhAmt = (parseFloat((m.kwh || [])[mo]) || 0) * (s ? rates.kwhSummer || 0 : rates.kwhWinter || 0);
-    const kwAmt = (parseFloat((m.kw || [])[mo]) || 0) * (s ? rates.kwSummer || 0 : rates.kwWinter || 0);
-    const gasAmt = (parseFloat((m.gas || [])[mo]) || 0) * (rates.thermRate || 0);
-    const propaneAmt = (parseFloat((m.propane || [])[mo]) || 0) * (rates.gallonRate || 0);
+    const rt = measureRateAt(rates, mo);
+    const kwhAmt = rd((parseFloat((m.kwh || [])[mo]) || 0) * rt.kwh);
+    const kwAmt = rd((parseFloat((m.kw || [])[mo]) || 0) * rt.kw);
+    const gasAmt = rd((parseFloat((m.gas || [])[mo]) || 0) * rt.gas);
+    const propaneAmt = rd((parseFloat((m.propane || [])[mo]) || 0) * rt.propane);
+    const moTotal = rd(kwhAmt + kwAmt + gasAmt + propaneAmt);
+    monthly.push({ kwh: kwhAmt, kw: kwAmt, gas: gasAmt, propane: propaneAmt, total: moTotal, summer: rt.summer });
     kwh += kwhAmt;
     kw += kwAmt;
     gas += gasAmt;
     propane += propaneAmt;
-    total += kwhAmt + kwAmt + gasAmt + propaneAmt;
+    total += cents ? moTotal : kwhAmt + kwAmt + gasAmt + propaneAmt;
   }
-  return { kwh, kw, gas, propane, total };
+  return { kwh: rd(kwh), kw: rd(kw), gas: rd(gas), propane: rd(propane), total: rd(total), monthly };
 }
 
 // getProjMatrixSavingsTotal(projId) - the project's projected annual savings in dollars: the sum of
@@ -914,10 +921,6 @@ function _renderSavingsContent(wrap, projId) {
   // Service Agreement status — same rule as renderSavingsMatrix.
 
   // ── Rate functions for cost calc ──
-  const kwhRateFn = (r) => (mo) => (SUMMER_MOS.includes(mo) ? r.kwhSummer || 0 : r.kwhWinter || 0);
-  const kwRateFn = (r) => (mo) => (SUMMER_MOS.includes(mo) ? r.kwSummer || 0 : r.kwWinter || 0);
-  const gasRateFn = (r) => () => r.thermRate || 0;
-  const propRateFn = (r) => () => r.gallonRate || 0;
 
   // ── Usage cells helper (12 monthly inputs + total) ──
   const usageCells = (arr, cls, grp, bgColor, mid) => {
@@ -937,13 +940,13 @@ function _renderSavingsContent(wrap, projId) {
   };
 
   // ── Cost cells helper (12 monthly read-only + total) ──
-  const costCells = (arr, grp, bgColor, rateFn) => {
+  const costCells = (arr, grp, bgColor, r, field) => {
     const isOpen = !!_svColGroupState[grp];
     const vals = arr || Array(12).fill(0);
     let total = 0;
     const moCells = vals
       .map((v, i) => {
-        const cost = (parseFloat(v) || 0) * rateFn(i);
+        const cost = (parseFloat(v) || 0) * measureRateAt(r, i)[field];
         total += cost;
         return `<td class="sv-cg-${grp}" style="display:${isOpen ? '' : 'none'};border-left:${i === 0 ? '2px' : '1px'} solid var(--border${i === 0 ? '2' : ''});padding:2px 1px;background:${bgColor};font-family:var(--mono);font-size:10px;text-align:right;color:var(--text2)">${cost ? '$' + Math.round(cost).toLocaleString() : ''}</td>`;
       })
@@ -979,13 +982,7 @@ function _renderSavingsContent(wrap, projId) {
         const annMsrKwh = m.kwh.reduce((a, b) => a + (parseFloat(b) || 0), 0);
 
         // Compute projected savings $ for this measure (estimated — always shown, no SA gate)
-        let projSavings = 0;
-        for (let mo = 0; mo < 12; mo++) {
-          projSavings += (parseFloat(m.kwh[mo]) || 0) * kwhRateFn(r)(mo);
-          projSavings += (parseFloat(m.kw[mo]) || 0) * kwRateFn(r)(mo);
-          projSavings += (parseFloat(m.gas[mo]) || 0) * gasRateFn(r)();
-          projSavings += (parseFloat(m.propane[mo]) || 0) * propRateFn(r)();
-        }
+        const projSavings = calcMeasureDollars(m, r).total;
         const _msrDollar = m.totalDollar || 0;
 
         const dollar = projSavings > 0 ? '$' + Math.round(projSavings).toLocaleString() : '—';
@@ -1008,10 +1005,10 @@ function _renderSavingsContent(wrap, projId) {
               ${usageCells(m.kw, 'kw-col', 'kw', 'rgba(245,158,11,0.03)', mid)}
               ${usageCells(m.gas, 'gas-col', 'gas', 'rgba(20,184,166,0.03)', mid)}
               ${usageCells(m.propane, 'propane-col', 'propane', 'rgba(168,85,247,0.03)', mid)}
-              ${costCells(m.kwh, 'kwhCost', 'rgba(59,130,246,0.02)', kwhRateFn(r))}
-              ${costCells(m.kw, 'kwCost', 'rgba(245,158,11,0.02)', kwRateFn(r))}
-              ${costCells(m.gas, 'gasCost', 'rgba(20,184,166,0.02)', gasRateFn(r))}
-              ${costCells(m.propane, 'propaneCost', 'rgba(168,85,247,0.02)', propRateFn(r))}
+              ${costCells(m.kwh, 'kwhCost', 'rgba(59,130,246,0.02)', r, 'kwh')}
+              ${costCells(m.kw, 'kwCost', 'rgba(245,158,11,0.02)', r, 'kw')}
+              ${costCells(m.gas, 'gasCost', 'rgba(20,184,166,0.02)', r, 'gas')}
+              ${costCells(m.propane, 'propaneCost', 'rgba(168,85,247,0.02)', r, 'propane')}
               <td class="sv-total-cell" style="border-left:2px solid var(--border2)" id="sv-pg-total-${mid}">${dollar}</td>
               <td style="text-align:center"><button class="btn-del" onclick="svRemoveMeasure(${pid},'${mid}')">✕</button></td>
             </tr>
@@ -1081,21 +1078,13 @@ function _renderSavingsContent(wrap, projId) {
     m.kw.forEach((v, i) => (totKw[i] += parseFloat(v) || 0));
     m.gas.forEach((v, i) => (totGas[i] += parseFloat(v) || 0));
     (m.propane || []).forEach((v, i) => (totPropane[i] += parseFloat(v) || 0));
-    const rates = m.rates || (sd.blRates || {})[m.bldgId] || {};
-    for (let mo = 0; mo < 12; mo++) {
-      const s = SUMMER_MOS.includes(mo);
-      const kwhAmt = (parseFloat(m.kwh[mo]) || 0) * (s ? rates.kwhSummer || 0 : rates.kwhWinter || 0);
-      const kwAmt = (parseFloat(m.kw[mo]) || 0) * (s ? rates.kwSummer || 0 : rates.kwWinter || 0);
-      const gasAmt = (parseFloat(m.gas[mo]) || 0) * (rates.thermRate || 0);
-      const propaneAmt = (parseFloat((m.propane || [])[mo]) || 0) * (rates.gallonRate || 0);
-      const moTotal = kwhAmt + kwAmt + gasAmt + propaneAmt;
-      grandTotal += moTotal;
-      svQtrs[Math.floor(mo / 3)] += moTotal;
-      totKwhCost += kwhAmt;
-      totKwCost += kwAmt;
-      totGasCost += gasAmt;
-      totPropaneCost += propaneAmt;
-    }
+    const d = calcMeasureDollars(m, m.rates || (sd.blRates || {})[m.bldgId] || {});
+    d.monthly.forEach((mo, i) => (svQtrs[Math.floor(i / 3)] += mo.total));
+    grandTotal += d.total;
+    totKwhCost += d.kwh;
+    totKwCost += d.kw;
+    totGasCost += d.gas;
+    totPropaneCost += d.propane;
   });
   const fmtN = (v) => (v ? v.toLocaleString(undefined, { maximumFractionDigits: 0 }) : '');
   const fmtD = (v) => (v > 0 ? '$' + Math.round(v).toLocaleString() : '');
@@ -1330,6 +1319,11 @@ function svUpdateMsrRate(msrId, field, val) {
   if (!m) return;
   if (!m.rates) m.rates = {};
   m.rates[field] = val;
+  // A flat gas rate typed here replaces the summer / winter split, or the split would still price the gas.
+  if (field === 'thermRate') {
+    delete m.rates.gasSummer;
+    delete m.rates.gasWinter;
+  }
   sset('en_projects', projects);
 }
 
@@ -1363,16 +1357,7 @@ function svRecalc() {
   });
   // Recalculate dollar totals using baseline rates
   sd.measures.forEach((m) => {
-    const rates = m.rates || sd.blRates[m.bldgId] || {};
-    let total = 0;
-    for (let mo = 0; mo < 12; mo++) {
-      const s = SUMMER_MOS.includes(mo);
-      total += (m.kwh[mo] || 0) * (s ? rates.kwhSummer || 0 : rates.kwhWinter || 0);
-      total += (m.kw[mo] || 0) * (s ? rates.kwSummer || 0 : rates.kwWinter || 0);
-      total += (m.gas[mo] || 0) * (rates.thermRate || 0);
-      total += ((m.propane || [])[mo] || 0) * (rates.gallonRate || 0);
-    }
-    m.totalDollar = total;
+    m.totalDollar = calcMeasureDollars(m, m.rates || sd.blRates[m.bldgId] || {}).total;
   });
   sset('en_projects', projects);
   renderSvDetail();
