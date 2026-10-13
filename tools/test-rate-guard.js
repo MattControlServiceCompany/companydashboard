@@ -105,7 +105,8 @@ const code = [
     'writeRateField',
     'initMeasureRates',
     'ensureMeasureRates',
-    'refreshImportedMeasureRates',
+    'measureRateSource',
+    'followOwnerMeasureRates',
     'svUpdateMsrRate',
     'svResetMsrRates',
   ].map((n) => fnSrc(ES, n)),
@@ -239,7 +240,7 @@ confirmAsked.length = 0;
   await sb.svUpdateMsrRate('mY', 'thermRate', 0.8, el);
   assert(mY.rates.thermRate === 0.8, 'a normal therm rate saves');
 
-  console.log('=== 5. one-time refresh ===');
+  console.log('=== 5. rates follow the owner unless typed ===');
   const old = {
     id: 'm_csv_b1',
     bldgId: 'b1',
@@ -249,21 +250,38 @@ confirmAsked.length = 0;
     gas: Array(12).fill(50),
     totalDollar: 22557,
   };
-  const other = { id: 'm123', bldgId: 'b1', rates: { kwSummer: 99 }, kwh: [], kw: [], gas: [] };
-  const sd = { measures: [old, other], blRates: {} };
+  const typed = { id: 'm123', bldgId: 'b1', rates: { kwSummer: 99 }, rateSource: 'manual', kwh: [], kw: [], gas: [] };
+  const unmarked = { id: 'm456', bldgId: 'b1', rates: { kwSummer: 98 }, kwh: [], kw: [], gas: [] };
+  const sd = { measures: [old, typed, unmarked], blRates: {} };
   const kwhKeep = old.kwh.join(',');
-  assert(sb.refreshImportedMeasureRates('p1', sd) === true, 'refresh ran');
+  assert(sb.followOwnerMeasureRates('p1', sd) === true, 'follow changed the imported measure');
   assert(
     old.rates.kwSummer === 16.92 && old.rates.kwWinter === 11.56 && old.rates.kwhSummer === 0.0666,
     'imported measure got the baseline rates',
   );
+  assert(old.rateSource === 'owner', 'imported measure is marked owner');
   assert(old.kwh.join(',') === kwhKeep && old.kw.length === 12, 'imported measure keeps its saved quantities');
   assert(
     Math.abs(old.totalDollar - sb.calcMeasureDollars(old, old.rates).total) < 1e-9 && old.totalDollar < 22557,
     'totalDollar recomputed from the new rates',
   );
-  assert(other.rates.kwSummer === 99, 'a measure that was not imported is untouched');
-  assert(sb.refreshImportedMeasureRates('p1', sd) === false, 'refresh runs once per project');
+  assert(typed.rates.kwSummer === 99 && typed.rateSource === 'manual', 'a typed (manual) measure is untouched');
+  assert(unmarked.rates.kwSummer === 98, 'a measure with no marker that was not imported is untouched');
+  assert(sb.followOwnerMeasureRates('p1', sd) === false, 'nothing changes when the rates already match the owner');
+  // the owner changes: an owner-sourced measure moves with it, with no flag involved
+  const baseBefore = { ...BASE };
+  sb.computeSeasonalBldgRates = () => ({ ...BASE, kwSummer: 17.5, months: {} });
+  assert(sb.followOwnerMeasureRates('p1', sd) === true && old.rates.kwSummer === 17.5, 'owner rate change is followed');
+  assert(typed.rates.kwSummer === 99, 'owner rate change leaves the manual measure alone');
+  // a rate typed on an owner measure turns it manual
+  sb.getProjSavingsData = () => sd;
+  confirmAnswer = true;
+  await sb.svUpdateMsrRate('m_csv_b1', 'kwSummer', 17.2, el);
+  assert(old.rateSource === 'manual' && old.rates.kwSummer === 17.2, 'typing a rate marks the measure manual');
+  assert(sb.followOwnerMeasureRates('p1', sd) === false && old.rates.kwSummer === 17.2, 'manual rate stays as typed');
+  sb.svResetMsrRates('m_csv_b1');
+  assert(old.rateSource === 'owner' && old.rates.kwSummer === 17.5, 'Reset returns the measure to the owner');
+  sb.computeSeasonalBldgRates = () => ({ ...baseBefore, months: {} });
 
   console.log('=== 6. gate fails when a new rate write path skips the validator ===');
   const tmp = fs.mkdtempSync(path.join('C:/Temp', 'rate-gate-test-'));

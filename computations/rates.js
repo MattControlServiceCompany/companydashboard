@@ -735,51 +735,89 @@ function resolveMeterRate(projId, meter, ym, opts) {
   return null;
 }
 
-// _billSeasonRates(bill, kind, days) -> { summer, winter } rates from the bill's OWN split charge lines
-// (bill._chargeParts), or null when the bill has no usable split. A seasonal charge on a bill that crosses
-// a season edge has two lines (one rate each); the higher rate is the summer one (true for every published
-// Utility E summer vs winter energy and demand rate). The pair is accepted only when its quantity split agrees
-// with the day split within 0.1; a mismatch means the roles are unsure, so the caller prorates by days.
+// _billSeasonRates(bill, kind, days, provider) -> { summer, winter, how } rates from the bill's OWN split
+// charge lines (bill._chargeParts), or null when the bill has no usable split (the caller then prorates the
+// bill's blended rate by days). A seasonal charge on a bill that crosses a season edge has two printed lines.
+// Which line is summer comes from evidence on the lines, never from which rate is higher:
+//   1. the line's own printed date range (part.from / part.to, saved by the extractor): the season of those
+//      dates by SEASON_TABLE. how = 'label'.
+//   2. the line's quantity against the day split: kW lines carry charge / rate (kW for the days of the line),
+//      kWh lines carry their kWh. The assignment whose quantity share matches the share of summer days
+//      (within 0.1) wins, and only when the other assignment is more than 0.1 worse. how = 'qty'.
+// Either way the chosen assignment must pass the quantity check. A bill that fails both is not split.
 //   kwh: on-peak + off-peak energy lines of the season, plus the non-seasonal energy charges (ECA, EER, PTS)
 //        spread by the season's share of kWh, over the season's kWh.
 //   kw : the season's demand line rate, plus the other demand-side charges (TDC, facilities) per billed kW.
-function _billSeasonRates(bill, kind, days) {
+function _billSeasonRates(bill, kind, days, provider) {
   var parts = bill && bill._chargeParts;
   if (!parts || !days || !days.total) return null;
-  function pair(key) {
+  var dayShare = days.summer / days.total;
+  var TOL = 0.1;
+  function line(key) {
     var l = parts[key];
     if (!l || l.length !== 2) return null;
-    var a = { rate: parseFloat(l[0].rate), qty: parseFloat(l[0].qty), charge: parseFloat(l[0].charge) };
-    var b = { rate: parseFloat(l[1].rate), qty: parseFloat(l[1].qty), charge: parseFloat(l[1].charge) };
-    if (![a.rate, a.qty, a.charge, b.rate, b.qty, b.charge].every(isFinite) || a.rate === b.rate) return null;
-    return a.rate > b.rate ? { summer: a, winter: b } : { summer: b, winter: a };
+    var out = l.map(function (x) {
+      return { rate: parseFloat(x.rate), qty: parseFloat(x.qty), charge: parseFloat(x.charge), from: x.from, to: x.to };
+    });
+    var ok = out.every(function (x) {
+      return isFinite(x.rate) && isFinite(x.qty) && isFinite(x.charge) && x.rate > 0;
+    });
+    return ok ? out : null;
   }
-  var dayShare = days.summer / days.total;
+  // Index (0 or 1) of the summer line of a pair, or -1. q = the two quantities that must match the day split.
+  function summerIdx(l, q) {
+    var tot = q[0] + q[1];
+    if (!(tot > 0)) return { idx: -1 };
+    var share0 = q[0] / tot;
+    var errA = Math.abs(share0 - dayShare); // line 1 is summer
+    var errB = Math.abs(share0 - (1 - dayShare)); // line 1 is winter
+    var s0 = l[0].from ? seasonOfDate(provider, l[0].from) : '';
+    var s1 = l[1].from ? seasonOfDate(provider, l[1].from) : '';
+    if ((s0 === 'summer' && s1 === 'winter') || (s0 === 'winter' && s1 === 'summer')) {
+      var i = s0 === 'summer' ? 0 : 1;
+      return (i === 0 ? errA : errB) <= TOL ? { idx: i, how: 'label' } : { idx: -1 };
+    }
+    if (Math.min(errA, errB) > TOL || Math.abs(errA - errB) <= TOL) return { idx: -1 };
+    return { idx: errA < errB ? 0 : 1, how: 'qty' };
+  }
+  function kwEq(x) {
+    return x.charge / x.rate;
+  }
   if (kind === 'kw') {
-    var d = pair('BilledKWCharge');
+    var d = line('BilledKWCharge');
     var billedKW = parseBillNumber(bill.billedKW) || parseBillNumber(bill.demandKW) || 0;
     if (!d || !(billedKW > 0)) return null;
-    var eqS = d.summer.charge / d.summer.rate;
-    var eqW = d.winter.charge / d.winter.rate;
-    if (!(eqS + eqW > 0) || Math.abs(eqS / (eqS + eqW) - dayShare) > 0.1) return null;
-    var otherKw = getBillKwCost(bill) + getBillFacKWCost(bill) - d.summer.charge - d.winter.charge;
+    var pk = summerIdx(d, [kwEq(d[0]), kwEq(d[1])]);
+    if (pk.idx < 0) return null;
+    var dS = d[pk.idx];
+    var dW = d[1 - pk.idx];
+    var otherKw = getBillKwCost(bill) + getBillFacKWCost(bill) - dS.charge - dW.charge;
     if (otherKw < -0.5) return null;
-    return { summer: d.summer.rate + otherKw / billedKW, winter: d.winter.rate + otherKw / billedKW };
+    return { summer: dS.rate + otherKw / billedKW, winter: dW.rate + otherKw / billedKW, how: pk.how };
   }
   if (kind === 'kwh') {
-    var on = pair('EnergyOnPeakCharge');
-    var off = pair('EnergyOffPeakCharge');
+    var on = line('EnergyOnPeakCharge');
+    var off = line('EnergyOffPeakCharge');
     if (!on || !off) return null;
-    var kwhS = on.summer.qty + off.summer.qty;
-    var kwhW = on.winter.qty + off.winter.qty;
+    // The on-peak and off-peak lines must sit in the same order: line 1 is the same season for both.
+    if (on[0].rate > on[1].rate !== off[0].rate > off[1].rate) return null;
+    var pe = summerIdx(on, [on[0].qty + off[0].qty, on[1].qty + off[1].qty]);
+    if (pe.idx < 0) return null;
+    var onS = on[pe.idx];
+    var onW = on[1 - pe.idx];
+    var offS = off[pe.idx];
+    var offW = off[1 - pe.idx];
+    var kwhS = onS.qty + offS.qty;
+    var kwhW = onW.qty + offW.qty;
     var kwhAll = kwhS + kwhW;
-    if (!(kwhS > 0) || !(kwhW > 0) || Math.abs(kwhS / kwhAll - dayShare) > 0.1) return null;
-    var seasonal = on.summer.charge + on.winter.charge + off.summer.charge + off.winter.charge;
+    if (!(kwhS > 0) || !(kwhW > 0)) return null;
+    var seasonal = onS.charge + onW.charge + offS.charge + offW.charge;
     var other = getBillKwhCost(bill) - seasonal;
     if (other < -0.5) return null;
     return {
-      summer: (on.summer.charge + off.summer.charge + (other * kwhS) / kwhAll) / kwhS,
-      winter: (on.winter.charge + off.winter.charge + (other * kwhW) / kwhAll) / kwhW,
+      summer: (onS.charge + offS.charge + (other * kwhS) / kwhAll) / kwhS,
+      winter: (onW.charge + offW.charge + (other * kwhW) / kwhAll) / kwhW,
+      how: pe.how,
     };
   }
   return null;
@@ -809,7 +847,8 @@ function _billSeasonRates(bill, kind, days) {
    Season: SEASON_TABLE (above) by meter.provider, applied to the SERVICE DATES of each day: summer Jun 1 -
    Sep 30, winter Oct 1 - May 31 (Utility E bill definitions). A bill that crosses a season edge counts in BOTH
    seasons, weighted by its days in each. For electric kWh and kW the seasons come from the bill's own split
-   charge lines (bill._chargeParts: two lines per charge, the higher rate is summer, checked against the day
+   charge lines (bill._chargeParts: two lines per charge; the line printed date range, else the line quantities
+   against the day split, say which is summer; never the higher rate. Checked against the day
    split); a bill without usable split lines gives its one blended rate to both seasons, weighted by days. A
    provider with no seasonal tariff (the gas providers) gets ONE annual rate: summer = winter = the baseline mean.
 
@@ -894,7 +933,9 @@ function computeSeasonalBldgRates(projId, bldgId) {
       baseline: { months: fallbackMonths },
     });
   }
-  var straddle = { bills: 0, byLines: 0, byDays: 0 };
+  // Straddling bills by how their two seasons were set, per kind: label (printed date range), qty (line
+  // quantities match the day split), days (no usable split: the bill's blended rate prorated by days).
+  var straddle = { kwh: { bills: 0, label: 0, qty: 0, days: 0 }, kw: { bills: 0, label: 0, qty: 0, days: 0 } };
   // One BASELINE-PERIOD bill -> rows { ym, season, rate, w } for every bill with a positive rate from `rateFn`.
   // kind 'kwh' | 'kw' asks _billSeasonRates for the bill's own split lines. Weight w = share of the bill's days.
   function billRates(meterList, rateFn, kind) {
@@ -915,11 +956,10 @@ function computeSeasonalBldgRates(projId, bldgId) {
           out.push({ ym: ym, season: days.summer ? 'summer' : 'winter', rate: rate, w: 1 });
           return;
         }
-        var split = kind ? _billSeasonRates(bill, kind, days) : null;
-        if (kind === 'kwh') {
-          straddle.bills++;
-          if (split) straddle.byLines++;
-          else straddle.byDays++;
+        var split = kind ? _billSeasonRates(bill, kind, days, meter.provider) : null;
+        if (kind) {
+          straddle[kind].bills++;
+          straddle[kind][split ? split.how : 'days']++;
         }
         ['summer', 'winter'].forEach(function (sn) {
           out.push({ ym: ym, season: sn, rate: split ? split[sn] : rate, w: days[sn] / days.total });

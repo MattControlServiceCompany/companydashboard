@@ -610,6 +610,7 @@ function writeRateSet(holder, prop, rates, projId, bldgId, source, accepted) {
     if (rates[k] !== undefined) out[k] = rates[k];
   });
   holder[prop] = out;
+  if (prop === 'rates') holder.rateSource = accepted ? 'manual' : 'owner';
   return true;
 }
 
@@ -617,6 +618,7 @@ function writeRateSet(holder, prop, rates, projId, bldgId, source, accepted) {
 function writeRateField(holder, prop, field, val) {
   if (!holder[prop]) holder[prop] = {};
   holder[prop][field] = val;
+  if (prop === 'rates') holder.rateSource = 'manual';
   // A flat gas rate typed here replaces the summer / winter split, or the split would still price the gas.
   if (field === 'thermRate') {
     delete holder[prop].gasSummer;
@@ -632,7 +634,9 @@ function writeRateField(holder, prop, field, val) {
 // (computeSeasonalBldgRates). Baseline rates that fail the guard are blocked and logged; the measure keeps {}.
 function initMeasureRates(m, projId, bldgId, source) {
   writeRateSet(m, 'rates', {}, projId, bldgId, source, true);
-  return writeRateSet(m, 'rates', bldgId ? computeSeasonalBldgRates(projId, bldgId) : {}, projId, bldgId, source);
+  const ok = writeRateSet(m, 'rates', bldgId ? computeSeasonalBldgRates(projId, bldgId) : {}, projId, bldgId, source);
+  m.rateSource = 'owner'; // even when the guard blocked the write: the measure still takes the owner's rate later
+  return ok;
 }
 
 // ensureMeasureRates(m, projId, source) - the rates a calculator apply prices with. The measure's own
@@ -649,38 +653,35 @@ function ensureMeasureRates(m, projId, source) {
   return false;
 }
 
-// One-time data fix (2026-10-13): measures made by the old CSV measure import (id m_csv_...) carry $/kW
-// rates that are dollars per BILL (for example 6019.81), saved before the old rate function was fixed.
-// This sets their rates to the baseline rates of their building (computeSeasonalBldgRates), once per project.
-// Each measure is refreshed on its own. A measure whose building has no baseline rate yet (bills not loaded),
-// or whose new rates the guard blocks, keeps its rates, is logged and named in a toast, and is tried again on
-// the next render. sd.importedRatesRefreshed is set only when every measure is done. Returns true if data changed.
-function refreshImportedMeasureRates(projId, sd) {
-  if (sd.importedRatesRefreshed) return false;
+// Where a measure's rates came from (m.rateSource): 'owner' = written by the program from the building's
+// baseline rates (computeSeasonalBldgRates), 'manual' = typed by the user (writeRateField) or accepted
+// from a calculator / report form (writeRateSet with accepted = true). A measure made by the old CSV
+// measure import (id m_csv_...) had its rates set from the owner and has no marker: it counts as 'owner'.
+function measureRateSource(m) {
+  return m.rateSource || (String(m.id).indexOf('m_csv_') === 0 ? 'owner' : 'manual');
+}
+
+// followOwnerMeasureRates(projId, sd) - a measure whose rates came from the owner always holds the owner's
+// current rates. When the baseline bills or the season rule change, its rates and saved dollars move with
+// them; a typed (manual) rate is never touched. A measure whose building has no baseline rate yet (bills not
+// loaded) keeps its rates. New rates the rate guard blocks are logged and toasted (writeRateSet) and the old
+// rates stay. Returns true when a measure changed (the caller saves en_projects).
+function followOwnerMeasureRates(projId, sd) {
   let changed = false;
-  const unrefreshed = [];
   sd.measures.forEach((m) => {
-    if (String(m.id).indexOf('m_csv_') !== 0 || m.importedRatesRefreshed) return;
+    if (!m.bldgId || !m.rates || measureRateSource(m) !== 'owner') return;
     const base = computeSeasonalBldgRates(projId, m.bldgId);
-    const label = m.desc || m.id;
-    if (!RATE_WRITE_FIELDS.some((k) => base[k] > 0)) {
-      rateGuardLog('one-time rate refresh', [{ field: 'no baseline rate', value: 0 }], projId, m.bldgId);
-      unrefreshed.push(label);
-      return;
-    }
-    if (writeRateSet(m, 'rates', base, projId, m.bldgId, 'one-time rate refresh')) {
+    if (!RATE_WRITE_FIELDS.some((k) => base[k] > 0)) return;
+    const next = {};
+    RATE_WRITE_FIELDS.forEach((k) => {
+      if (base[k] !== undefined) next[k] = base[k];
+    });
+    if (JSON.stringify(next) === JSON.stringify(m.rates) && m.rateSource === 'owner') return;
+    if (writeRateSet(m, 'rates', base, projId, m.bldgId, 'owner rate follow')) {
       m.totalDollar = calcMeasureDollars(m, m.rates).total;
-      m.importedRatesRefreshed = true;
       changed = true;
-    } else unrefreshed.push(label);
+    }
   });
-  if (unrefreshed.length) {
-    if (typeof showToast === 'function')
-      showToast('Rates not refreshed for: ' + unrefreshed.join(', ') + '. Tried again on next load.', 'error');
-  } else {
-    sd.importedRatesRefreshed = true;
-    changed = true;
-  }
   return changed;
 }
 
@@ -745,6 +746,7 @@ function getProjMatrixSavingsTotal(projId) {
   const proj = projects.find((x) => String(x.id) === String(projId));
   if (!proj) return null;
   const sd = getProjSavingsData(proj.id);
+  if (followOwnerMeasureRates(proj.id, sd)) sset('en_projects', projects);
   const sel = ((sd && sd.measures) || []).filter((m) => m.selected !== false);
   if (!sel.length) return null;
   let total = 0;
@@ -899,7 +901,7 @@ function _renderSavingsContent(wrap, projId) {
   }
   const sd = getProjSavingsData(projId);
   const bldgs = getUDBldgs(projId);
-  let _migrated = refreshImportedMeasureRates(projId, sd);
+  let _migrated = followOwnerMeasureRates(projId, sd);
   sd.measures.forEach((m) => {
     if (!m.rates) _migrated = initMeasureRates(m, projId, m.bldgId, 'matrix render') || _migrated;
     // Migrate missing selected field (undefined → true)
@@ -2844,6 +2846,13 @@ function _extractEvergy(t, acctOverride, addrOverride) {
           if (prorationNum !== null) {
             entry.prorationNum = prorationNum;
             entry.prorationDen = prorationDen;
+          }
+          // The line's own printed date range (MM-DD-YYYY-MM-DD-YYYY), kept as ISO: the label that sets the
+          // line's season on a bill that crosses a season edge (_billSeasonRates, computations/rates.js).
+          const lineRangeM = block.match(/\b(\d{2})-(\d{2})-(\d{4})-(\d{2})-(\d{2})-(\d{4})\b/);
+          if (lineRangeM) {
+            entry.from = lineRangeM[3] + '-' + lineRangeM[1] + '-' + lineRangeM[2];
+            entry.to = lineRangeM[6] + '-' + lineRangeM[4] + '-' + lineRangeM[5];
           }
           results.push(entry);
         }

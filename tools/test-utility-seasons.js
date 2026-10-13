@@ -83,14 +83,41 @@ function elecBill(start, end, withParts) {
 const dayShare = S.seasonDaysOfPeriod(P, '2025-05-29', '2025-06-29', true);
 const sS = dayShare.summer / dayShare.total;
 const withLines = elecBill('2025-05-29', '2025-06-29', true);
-const sp = S._billSeasonRates(withLines, 'kwh', dayShare);
+const sp = S._billSeasonRates(withLines, 'kwh', dayShare, P);
 assert(sp && near(sp.summer, 0.1 + 0.02, 1e-9) && near(sp.winter, 0.04 + 0.02, 1e-9), 'kWh: season rate = printed line rate + ECA');
-const spk = S._billSeasonRates(withLines, 'kw', dayShare);
+const spk = S._billSeasonRates(withLines, 'kw', dayShare, P);
 assert(spk && near(spk.summer, 10 + 2, 1e-9) && near(spk.winter, 5 + 2, 1e-9), 'kW: season line rate + other demand charges per kW');
 const bad = elecBill('2025-05-29', '2025-06-29', true);
 bad._chargeParts.BilledKWCharge[0].charge = 100; // quantity split no longer matches the day split
-assert(S._billSeasonRates(bad, 'kw', dayShare) === null, 'kW split that disagrees with the days is not used');
-assert(S._billSeasonRates(elecBill('2025-05-29', '2025-06-29', false), 'kwh', dayShare) === null, 'no _chargeParts: null');
+assert(S._billSeasonRates(bad, 'kw', dayShare, P) === null, 'kW split that disagrees with the days is not used');
+assert(S._billSeasonRates(elecBill('2025-05-29', '2025-06-29', false), 'kwh', dayShare, P) === null, 'no _chargeParts: null');
+
+
+// Evidence for which line is summer: the printed date range, else the quantities. Never the higher rate.
+const swapped = elecBill('2025-05-29', '2025-06-29', true); // summer line is the LOWER rate (a rate guess would be wrong)
+const ep = swapped._chargeParts;
+ep.EnergyOnPeakCharge = ep.EnergyOnPeakCharge.map((l) => ({ ...l, rate: l.rate === 0.1 ? 0.03 : 0.09 }));
+ep.EnergyOffPeakCharge = ep.EnergyOffPeakCharge.map((l) => ({ ...l, rate: l.rate === 0.09 ? 0.02 : 0.08 }));
+ep.EnergyOnPeakCharge.forEach((l) => (l.charge = l.qty * l.rate));
+ep.BilledKWCharge = [
+  { qty: 100, rate: 4, unit: 'kW', charge: 400 * sS },
+  { qty: 100, rate: 9, unit: 'kW', charge: 900 * (1 - sS) },
+];
+swapped.kwCost = String(400 * sS + 900 * (1 - sS) + 200);
+const sw = S._billSeasonRates(swapped, 'kw', dayShare, P);
+assert(sw && sw.how === 'qty' && near(sw.summer, 4 + 2, 1e-9) && near(sw.winter, 9 + 2, 1e-9), 'kW: summer line with the lower rate is still summer (quantities)');
+const lbl = elecBill('2025-05-29', '2025-06-29', true);
+const lk = lbl._chargeParts.BilledKWCharge; // line 1 = the rate 10 line with the summer share of the kW
+[lk[0].from, lk[0].to, lk[1].from, lk[1].to] = ['2025-06-01', '2025-06-29', '2025-05-29', '2025-05-31'];
+const lb = S._billSeasonRates(lbl, 'kw', dayShare, P);
+assert(lb && lb.how === 'label' && near(lb.summer, 12, 1e-9), 'kW: printed date range sets the season (label)');
+const lblBad = elecBill('2025-05-29', '2025-06-29', true);
+const lq = lblBad._chargeParts.BilledKWCharge; // labels say line 1 is winter, but its quantity is the summer share
+[lq[0].from, lq[0].to, lq[1].from, lq[1].to] = ['2025-05-29', '2025-05-31', '2025-06-01', '2025-06-29'];
+assert(S._billSeasonRates(lblBad, 'kw', dayShare, P) === null, 'a label that disagrees with the quantity split is not used');
+const half = S.seasonDaysOfPeriod(P, '2025-05-17', '2025-06-15', true); // 15 winter + 15 summer
+const hb = elecBill('2025-05-17', '2025-06-15', true);
+assert(S._billSeasonRates(hb, 'kw', half, P) === null, 'a 50/50 day split cannot tell the lines apart: prorate by days');
 
 function building(provider, bills) {
   const meter = { id: 'm1', commodity: 'Electric', provider, inclusive: true, bills, baseline: { months: ['x'] } };
@@ -108,11 +135,12 @@ function run(bld, gasBld) {
 const wholeS = elecBill('2025-07-01', '2025-07-31', false);
 const wholeW = elecBill('2025-01-01', '2025-01-31', false);
 const r = run(building(P, [wholeW, wholeS, withLines]));
-assert(r.straddle.bills === 1 && r.straddle.byLines === 1 && r.straddle.byDays === 0, 'straddle count (1 by lines)');
+assert(r.straddle.kwh.bills === 1 && r.straddle.kwh.qty === 1 && r.straddle.kwh.days === 0, 'straddle count kWh (1 by quantities)');
+assert(r.straddle.kw.bills === 1 && r.straddle.kw.qty === 1 && r.straddle.kw.label === 0, 'straddle count kW (1 by quantities)');
 assert(r.kwhSummer > 0 && r.kwhWinter > 0, 'summer and winter rates exist');
 const noLines = elecBill('2025-05-29', '2025-06-29', false);
 const r2 = run(building(P, [noLines]));
-assert(r2.straddle.byDays === 1 && r2.kwhSummer > 0 && near(r2.kwhSummer, r2.kwhWinter, 1e-9), 'no lines: one blended rate in both seasons');
+assert(r2.straddle.kwh.days === 1 && r2.straddle.kw.days === 1 && r2.kwhSummer > 0 && near(r2.kwhSummer, r2.kwhWinter, 1e-9), 'no lines: one blended rate in both seasons');
 assert(r.kwhSummer > r.kwhWinter, 'summer energy rate is above winter');
 
 console.log('3. provider with no seasonal tariff');

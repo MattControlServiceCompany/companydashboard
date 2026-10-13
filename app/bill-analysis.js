@@ -1258,6 +1258,31 @@ const _QTY_CORRECTION_PCT_THRESHOLD = 5; // tighter than the $ gates' 15% — kW
 // corrections are smaller-magnitude (Client A bill 4 was a 7.7% silent
 // corruption the dollar gates' thresholds would never have caught).
 
+// billChargePartsOf(rates) -> { chargeKey: [ { qty, rate, unit, charge, from, to } ] } for every charge the bill
+// printed on two or more lines (a season change), or null. The ONE builder of bill._chargeParts. from / to are
+// the printed date range of the line (ISO) when the bill printed one: the label that sets the line's season.
+function billChargePartsOf(rates) {
+  const cp = {};
+  for (const [k, v] of Object.entries(rates || {})) {
+    if (v.parts && v.parts.length > 1) {
+      cp[k] = v.parts.map((p) => {
+        const o = {
+          qty: p.qty || null,
+          rate: billValueOrNull(p.rate),
+          unit: p.unit || null,
+          charge: p.ocrCharge != null ? p.ocrCharge : p.computed,
+        };
+        if (p.from && p.to) {
+          o.from = p.from;
+          o.to = p.to;
+        }
+        return o;
+      });
+    }
+  }
+  return Object.keys(cp).length ? cp : null;
+}
+
 function _qtySelfVerifies(qty, rate, ocrCharge) {
   return qty > 0 && rate > 0 && ocrCharge > 0 && Math.abs(qty * rate - ocrCharge) <= _Q_SELFVERIFY_CENTS;
 }
@@ -7649,20 +7674,8 @@ async function confirmAutoAssign() {
       ptsRate: billValueOrBlank(bill.PTSRate),
       rkvaRate: billValueOrBlank(bill.RkVARate),
     };
-    if (bill._rates) {
-      const cp = {};
-      for (const [k, v] of Object.entries(bill._rates)) {
-        if (v.parts && v.parts.length > 1) {
-          cp[k] = v.parts.map((p) => ({
-            qty: p.qty || null,
-            rate: billValueOrNull(p.rate),
-            unit: p.unit || null,
-            charge: p.ocrCharge != null ? p.ocrCharge : p.computed,
-          }));
-        }
-      }
-      if (Object.keys(cp).length) billRow._chargeParts = cp;
-    }
+    const cp = billChargePartsOf(bill._rates);
+    if (cp) billRow._chargeParts = cp;
     let billMatch = findMeterMatch(bill);
     // Fix 1 (review of 1e99a20, closes 62ec935c): a per-bill re-match can come
     // back truthy-but-not-identity — 'ambiguous' (no .meter at all, crashes the
@@ -8067,22 +8080,8 @@ async function _mbSaveOneBill(bi, action) {
     rkvaRate: billValueOrBlank(bill.RkVARate),
   };
 
-  if (bill._rates) {
-    const cp = {};
-    for (const [k, v] of Object.entries(bill._rates)) {
-      if (v.parts && v.parts.length > 1) {
-        cp[k] = v.parts.map(function (p) {
-          return {
-            qty: p.qty || null,
-            rate: billValueOrNull(p.rate),
-            unit: p.unit || null,
-            charge: p.ocrCharge != null ? p.ocrCharge : p.computed,
-          };
-        });
-      }
-    }
-    if (Object.keys(cp).length) billRow._chargeParts = cp;
-  }
+  const cp = billChargePartsOf(bill._rates);
+  if (cp) billRow._chargeParts = cp;
 
   // b-46a984a0: explicit "create new meter/building" target from the picker.
   // A create is a deliberate user action (authoritative like a manual pick),
@@ -9294,20 +9293,8 @@ function _saveBillToMatchedMeter(extracted, match) {
     paymentsReceived: extracted.PaymentsReceived || null,
     statementDate: toISO(extracted.StatementDate) || null,
   };
-  if (extracted._rates) {
-    const cp = {};
-    for (const [k, v] of Object.entries(extracted._rates)) {
-      if (v.parts && v.parts.length > 1) {
-        cp[k] = v.parts.map((p) => ({
-          qty: p.qty || null,
-          rate: billValueOrNull(p.rate),
-          unit: p.unit || null,
-          charge: p.ocrCharge != null ? p.ocrCharge : p.computed,
-        }));
-      }
-    }
-    if (Object.keys(cp).length) billRow._chargeParts = cp;
-  }
+  const cp = billChargePartsOf(extracted._rates);
+  if (cp) billRow._chargeParts = cp;
   // Re-fetch the live meter reference from the store — the match object may hold
   // a stale snapshot if projects were mutated between findMeterMatch and now.
   const liveProj = projects.find((p) => p.id === match.projId);
@@ -20966,20 +20953,8 @@ function confirmAssignBill() {
     winterEventCost: bill.WinterEventCost || null,
     previouslyBilled: bill.PreviouslyBilled || null,
   };
-  if (bill._rates) {
-    const cp = {};
-    for (const [k, v] of Object.entries(bill._rates)) {
-      if (v.parts && v.parts.length > 1) {
-        cp[k] = v.parts.map((p) => ({
-          qty: p.qty || null,
-          rate: billValueOrNull(p.rate),
-          unit: p.unit || null,
-          charge: p.ocrCharge != null ? p.ocrCharge : p.computed,
-        }));
-      }
-    }
-    if (Object.keys(cp).length) billRow._chargeParts = cp;
-  }
+  const cp = billChargePartsOf(bill._rates);
+  if (cp) billRow._chargeParts = cp;
   // Validation
   const componentSum =
     parseBillNumberOrZero(bill.FacilitiesCharge) +
