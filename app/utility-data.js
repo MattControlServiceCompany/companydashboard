@@ -6710,30 +6710,26 @@ function wddApplyParsed() {
 /* ══════════════════════════════════════════
          BASELINE TAB
       ══════════════════════════════════════════ */
-// _udSeasonRateMeans(provider, incl, items) - summer and winter mean of item rates for the Baseline stat pills.
-// items: { start, end, rate } (a bill: its days in each season weight the rate, seasonDaysOfPeriod) or
-// { ym, rate } (a month: seasonOfMonth). The season rule is SEASON_TABLE (computations/rates.js) only.
-// A provider with no seasonal tariff has no summer or winter rate: both are null (no invented seasons).
-function _udSeasonRateMeans(provider, incl, items) {
-  const acc = { summer: [0, 0], winter: [0, 0] };
-  items.forEach((it) => {
-    if (it.ym) {
-      const sn = seasonOfMonth(provider, it.ym);
-      if (acc[sn]) {
-        acc[sn][0] += it.rate;
-        acc[sn][1] += 1;
-      }
-      return;
-    }
-    const d = seasonDaysOfPeriod(provider, it.start, it.end, incl);
-    if (!d) return;
-    ['summer', 'winter'].forEach((sn) => {
-      acc[sn][0] += it.rate * (d[sn] / d.total);
-      acc[sn][1] += d[sn] / d.total;
-    });
-  });
-  const mean = (a) => (a[1] > 0 ? a[0] / a[1] : null);
-  return { summer: mean(acc.summer), winter: mean(acc.winter) };
+// _udBaselineRatePills(m): the Baseline stat pill rates. No rate math here: they are the values of the ONE owner
+// (computeSeasonalBldgRates, computations/rates.js) for this meter. Commodities the owner does not price get none.
+function _udBaselineRatePills(m) {
+  const own = computeSeasonalBldgRates(udSelProjId, udSelBldgId, m.id);
+  const sets = {
+    Electric: { unit: 'kWh', all: own.kwhRate, summer: own.kwhSummer, winter: own.kwhWinter },
+    Gas: { unit: 'Therm', all: own.thermRate },
+    Propane: { unit: 'gal', all: own.gallonRate },
+  };
+  const c = sets[m.commodity];
+  if (!c) return { unit: '', all: null, summer: null, winter: null, kwSummer: null, kwWinter: null };
+  const pos = (v) => (v > 0 ? v : null);
+  return {
+    unit: c.unit,
+    all: pos(c.all),
+    summer: pos(c.summer),
+    winter: pos(c.winter),
+    kwSummer: m.commodity === 'Electric' ? pos(own.kwSummer) : null,
+    kwWinter: m.commodity === 'Electric' ? pos(own.kwWinter) : null,
+  };
 }
 
 function renderBaselinePane(pane, m, bills, incl) {
@@ -6772,45 +6768,16 @@ function renderBaselinePane(pane, m, bills, incl) {
     const regrBlRows = blRows.filter((r) => r.regrBaseline != null);
     const avgRegrBl = regrBlRows.length ? regrBlRows.reduce((s, r) => s + r.regrBaseline, 0) / regrBlRows.length : null;
 
-    // ── Rate calculations using energyCost (totalCost - kwCost) to match Meter Data $/kWh column ──
-    // Build energyCost per norm-month from baseline bills
-    const blBillsForRate = bills.filter((b) => {
-      const ym = normMonth(b.start, b.end, incl, bills);
-      return blMonths.includes(ym);
-    });
-    const energyCostByYm = {};
-    blBillsForRate.forEach((b) => {
-      const ym = normMonth(b.start, b.end, incl, bills);
-      if (!ym) return;
-      // getBillFacKWCost (computations/rates.js) — the ONE accessor for Facilities kW Cost
-      // (2026-09-23 single-source fix); never read b.facKWCost/facilitiesCharge directly.
-      const kwC = getBillKwCost(b) + getBillFacKWCost(b);
-      const ec = parseFloat(b.totalCost || 0) - kwC;
-      energyCostByYm[ym] = (energyCostByYm[ym] || 0) + ec;
-    });
-    const costRows = blRows.filter((r) => r.usage > 0 && energyCostByYm[r.ym] > 0);
-    const avgRatePerUnit = costRows.length
-      ? costRows.reduce((s, r) => s + energyCostByYm[r.ym] / r.usage, 0) / costRows.length
-      : null;
+    // Rates: the owner's values for this meter (no rate math in the pill).
+    const rp = _udBaselineRatePills(m);
+    const summerRate = rp.summer;
+    const winterRate = rp.winter;
+    const avgRatePerUnit = rp.all;
+    const summerKwRate = rp.kwSummer;
+    const winterKwRate = rp.kwWinter;
 
-    // Summer/Winter $/kW demand — electric only, split by season
-    let summerKwRate = null,
-      winterKwRate = null;
-    if (m.commodity === 'Electric') {
-      const demandBills = blBillsForRate.filter((b) => (b.demandKW || 0) > 0 && getBillKwCost(b) > 0);
-      const kwMeans = _udSeasonRateMeans(m.provider, incl, demandBills.map((b) => ({ start: b.start, end: b.end, rate: getBillKwCost(b) / b.demandKW })));
-      summerKwRate = kwMeans.summer;
-      winterKwRate = kwMeans.winter;
-    }
-
-    // Summer / winter $/unit rates using energyCost. The season of each month comes from the one season table.
-    const unitMeans = _udSeasonRateMeans(m.provider, incl, costRows.map((r) => ({ ym: r.ym, rate: energyCostByYm[r.ym] / r.usage })));
-    const summerRate = unitMeans.summer;
-    const winterRate = unitMeans.winter;
-
-    const fmtRate = (v) =>
-      v != null ? '$' + v.toLocaleString('en-US', { minimumFractionDigits: 5, maximumFractionDigits: 5 }) : null;
-    const fmtKw = (v) => (v != null ? '$' + v.toFixed(3) : null);
+    const fmtRate = (v) => (v != null ? '$' + v.toFixed(4) : null);
+    const fmtKw = (v) => (v != null ? '$' + v.toFixed(2) : null);
 
     // Build compact pill strip
     const pills = [
@@ -6830,14 +6797,14 @@ function renderBaselinePane(pane, m, bills, incl) {
         : null,
       blEUI != null ? { v: blEUI.toFixed(1) + ' kBtu/sf/yr', lbl: 'Site Energy Use Intensity' } : null,
       avgRatePerUnit != null
-        ? { v: fmtRate(avgRatePerUnit) + '/' + unit, lbl: 'Blended Rate', color: 'var(--em2)' }
+        ? { v: fmtRate(avgRatePerUnit) + '/' + rp.unit, lbl: 'Blended Rate', color: 'var(--em2)' }
         : null,
       // #96: Propane has no seasonal pricing — skip summer/winter rate pills
       summerRate != null && m.commodity !== 'Propane'
-        ? { v: fmtRate(summerRate) + '/' + unit, lbl: '☀️ Summer Rate', color: 'var(--warn)' }
+        ? { v: fmtRate(summerRate) + '/' + rp.unit, lbl: '☀️ Summer Rate', color: 'var(--warn)' }
         : null,
       winterRate != null && m.commodity !== 'Propane'
-        ? { v: fmtRate(winterRate) + '/' + unit, lbl: '❄️ Winter Rate', color: 'var(--em)' }
+        ? { v: fmtRate(winterRate) + '/' + rp.unit, lbl: '❄️ Winter Rate', color: 'var(--em)' }
         : null,
       summerKwRate != null ? { v: fmtKw(summerKwRate) + '/kW', lbl: '☀️ Summer $/kW', color: 'var(--warn)' } : null,
       winterKwRate != null ? { v: fmtKw(winterKwRate) + '/kW', lbl: '❄️ Winter $/kW', color: 'var(--em)' } : null,
@@ -7333,33 +7300,13 @@ function refreshBaselineStats(mid) {
     const regrBlR = blRows.filter((r) => r.regrBaseline != null);
     const avgRegrBl = regrBlR.length ? regrBlR.reduce((s, r) => s + r.regrBaseline, 0) / regrBlR.length : null;
 
-    // Rate calculations using energyCost (totalCost - kwCost) to match Meter Data $/kWh column
-    const inclFlag = m.inclusive !== false;
-    const blBillsR = bills.filter((b) => blMonths2.includes(normMonth(b.start, b.end, inclFlag, bills)));
-    const eCostByYm2 = {};
-    blBillsR.forEach((b) => {
-      const ym = normMonth(b.start, b.end, inclFlag, bills);
-      if (!ym) return;
-      // getBillFacKWCost (computations/rates.js) — the ONE accessor for Facilities kW Cost
-      // (2026-09-23 single-source fix); never read b.facKWCost/facilitiesCharge directly.
-      const kwC = getBillKwCost(b) + getBillFacKWCost(b);
-      eCostByYm2[ym] = (eCostByYm2[ym] || 0) + parseFloat(b.totalCost || 0) - kwC;
-    });
-    const costRows = blRows.filter((r) => r.usage > 0 && eCostByYm2[r.ym] > 0);
-    const avgRatePerUnit = costRows.length
-      ? costRows.reduce((s, r) => s + eCostByYm2[r.ym] / r.usage, 0) / costRows.length
-      : null;
-    let summerKwRate = null,
-      winterKwRate = null;
-    if (m.commodity === 'Electric') {
-      const dBills = blBillsR.filter((b) => (b.demandKW || 0) > 0 && getBillKwCost(b) > 0);
-      const kwMeans = _udSeasonRateMeans(m.provider, inclFlag, dBills.map((b) => ({ start: b.start, end: b.end, rate: getBillKwCost(b) / b.demandKW })));
-      summerKwRate = kwMeans.summer;
-      winterKwRate = kwMeans.winter;
-    }
-    const unitMeans = _udSeasonRateMeans(m.provider, inclFlag, costRows.map((r) => ({ ym: r.ym, rate: eCostByYm2[r.ym] / r.usage })));
-    const summerRate = unitMeans.summer;
-    const winterRate = unitMeans.winter;
+    // Rates: the owner's values for this meter (no rate math in the pill).
+    const rp2 = _udBaselineRatePills(m);
+    const summerRate = rp2.summer;
+    const winterRate = rp2.winter;
+    const avgRatePerUnit = rp2.all;
+    const summerKwRate = rp2.kwSummer;
+    const winterKwRate = rp2.kwWinter;
     const fmtRate = (v) => (v != null ? '$' + v.toFixed(4) : null);
     const fmtKw = (v) => (v != null ? '$' + v.toFixed(2) : null);
     const unit2 = getMeterDisplayUnit(m);
@@ -7381,14 +7328,14 @@ function refreshBaselineStats(mid) {
         : null,
       blEUI != null ? { v: blEUI.toFixed(1) + ' kBtu/sf/yr', lbl: 'Site Energy Use Intensity' } : null,
       avgRatePerUnit != null
-        ? { v: fmtRate(avgRatePerUnit) + '/' + unit2, lbl: 'Blended Rate', color: 'var(--em2)' }
+        ? { v: fmtRate(avgRatePerUnit) + '/' + rp2.unit, lbl: 'Blended Rate', color: 'var(--em2)' }
         : null,
       // #96: Propane has no seasonal pricing — skip summer/winter rate pills
       summerRate != null && m.commodity !== 'Propane'
-        ? { v: fmtRate(summerRate) + '/' + unit2, lbl: '☀️ Summer Rate', color: 'var(--warn)' }
+        ? { v: fmtRate(summerRate) + '/' + rp2.unit, lbl: '☀️ Summer Rate', color: 'var(--warn)' }
         : null,
       winterRate != null && m.commodity !== 'Propane'
-        ? { v: fmtRate(winterRate) + '/' + unit2, lbl: '❄️ Winter Rate', color: 'var(--em)' }
+        ? { v: fmtRate(winterRate) + '/' + rp2.unit, lbl: '❄️ Winter Rate', color: 'var(--em)' }
         : null,
       summerKwRate != null ? { v: fmtKw(summerKwRate) + '/kW', lbl: '☀️ Summer $/kW', color: 'var(--warn)' } : null,
       winterKwRate != null ? { v: fmtKw(winterKwRate) + '/kW', lbl: '❄️ Winter $/kW', color: 'var(--em)' } : null,

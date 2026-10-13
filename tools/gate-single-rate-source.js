@@ -51,6 +51,17 @@ const RULES = [
     /\*\s*\(?\s*[\w.]*\b(?:rates?|r)\.(?:kwhSummer|kwhWinter|kwSummer|kwWinter|gasSummer|gasWinter|thermRate|gallonRate)\b/,
     'quantity x stored rate multiplied outside the owner path (use calcMeasureDollars)',
   ],
+  // Display-side rate formula: a pill, card or table shows the owner's value; it never divides a cost by a usage or demand.
+  [/\b_udSeasonRateMeans\b/, 'deleted Baseline-pill rate copy came back (read computeSeasonalBldgRates)'],
+  [
+    /\bget(?:Bill)?(?:Kw|Kwh|Gas|Fac\w*)Cost\([^)]*\)\s*\/\s*[\w.]*(?:demandKW|billedKW|kwh|usage|therms)\b/i,
+    'rate formula: bill cost divided by usage or demand (read computeSeasonalBldgRates)',
+  ],
+  [
+    /\b(?:energyCost|eCost|ecost)\w*\[[^\]]*\]\s*\/\s*\w+\.usage\b/,
+    'rate formula: month cost divided by usage (read computeSeasonalBldgRates)',
+  ],
+  [/\brate\s*:\s*[^,}]*\w\s*\/\s*[\w.]*(?:demandKW|usage|kwh)\b/i, 'rate field computed as cost / usage'],
 ];
 // Multi-line: a gas_rate or demand_rate input must not carry a number default (use null; bills prefill it).
 const INPUT_DEFAULT = /id:\s*'(?:gas_rate|demand_rate)'[^{}]*?default:\s*(?!null\b)[-\d.]+/g;

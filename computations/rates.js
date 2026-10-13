@@ -823,7 +823,7 @@ function _billSeasonRates(bill, kind, days, provider) {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
-   computeSeasonalBldgRates(projId, bldgId) — the ONE canonical seasonal
+   computeSeasonalBldgRates(projId, bldgId[, meterId]) — the ONE canonical seasonal
    marginal rate function for a building.
    Item: 2026-09-23-rate-source (single source of truth for utility rates).
 
@@ -880,7 +880,7 @@ function _billSeasonRates(bill, kind, days, provider) {
        },
      }
 ───────────────────────────────────────────────────────────────────────── */
-function computeSeasonalBldgRates(projId, bldgId) {
+function computeSeasonalBldgRates(projId, bldgId, onlyMeterId) {
   var empty = {
     kwhSummer: 0,
     kwhWinter: 0,
@@ -900,7 +900,10 @@ function computeSeasonalBldgRates(projId, bldgId) {
   };
   var b = typeof getUDBldg === 'function' ? getUDBldg(projId, bldgId) : null;
   if (!b) return empty;
-  var meters = b.meters || [];
+  // onlyMeterId (optional): the same rule for one meter (the Baseline tab pills of that meter).
+  var meters = (b.meters || []).filter(function (m) {
+    return onlyMeterId == null || m.id === onlyMeterId;
+  });
   // Every meter of a commodity feeds that commodity's rate (WP-04, math-02 M14), not only the first.
   var elecMeters = meters.filter(function (m) {
     return m.commodity === 'Electric';
