@@ -2506,6 +2506,16 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.13.113', date: '2026-10-13', title: 'One rate per season for savings and costs',
+    items: [
+      { type: 'change', text: 'Energy Savings matrix, ECM templates: projected savings are now priced at each building\'s baseline-period summer (Jun-Sep) and winter (Oct-May) rates, month by month. Gas has summer and winter rates too.' },
+      { type: 'fix', text: 'Energy Savings matrix, ECM templates: Louisburg imported measures were refreshed to the baseline rates, and bad saved kW rates were removed.' },
+      { type: 'feature', text: 'Rate check: a rate far outside the building\'s baseline or normal bill range now asks before it saves.' },
+      { type: 'change', text: 'Pricing Estimator and Cost Estimate: these pages now show cost only. The energy % assumptions and the $ chip are removed, and the footer shows the Energy Savings matrix total.' },
+      { type: 'change', text: 'BAS Trends: fault savings are now priced at the energy-only rate, so those dollar amounts are lower.' },
+      { type: 'change', text: 'Utility Data: the Baseline Data rate cards now use the same Jun-Sep and Oct-May seasons.' }
+    ]
+  },
   { v: 'v2026.10.12.112', date: '2026-10-12', title: 'Sync conflict dialog: Keep theirs saves your version',
     items: [
       { type: 'fix', text: 'Sync conflict dialog: when you choose Keep theirs, your own version is now saved in the conflict history (Sync status, Conflict history).' }
