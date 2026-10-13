@@ -51,6 +51,11 @@ const RULES = [
     /\*\s*\(?\s*[\w.]*\b(?:rates?|r)\.(?:kwhSummer|kwhWinter|kwSummer|kwWinter|gasSummer|gasWinter|thermRate|gallonRate)\b/,
     'quantity x stored rate multiplied outside the owner path (use calcMeasureDollars)',
   ],
+  // A measure is priced with measureRatesNow(projId, m), never with its stored m.rates (two answers for one value).
+  [
+    /\b(?:calcMeasureDollars|measureRateAt)\(\s*(?:\w+\s*,\s*)?m\.rates\b/,
+    'measure priced from stored m.rates (use measureRatesNow(projId, m))',
+  ],
   // Display-side rate formula: a pill, card or table shows the owner's value; it never divides a cost by a usage or demand.
   [/\b_udSeasonRateMeans\b/, 'deleted Baseline-pill rate copy came back (read computeSeasonalBldgRates)'],
   [

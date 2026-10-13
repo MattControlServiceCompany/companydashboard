@@ -263,7 +263,7 @@ function renderSavingsMatrix(projId) {
 
   tbody.innerHTML = sd.measures
     .map((m) => {
-      const r = m.rates || {};
+      const r = measureRatesNow(projId, m, {});
       if (!m.propane) m.propane = Array(12).fill(0);
       const annMsrKwh = m.kwh.reduce((a, b) => a + (parseFloat(b) || 0), 0);
 
@@ -362,7 +362,7 @@ function renderSavingsFooter(projId, sd) {
     m.kw.forEach((v, i) => (totKw[i] += parseFloat(v) || 0));
     m.gas.forEach((v, i) => (totGas[i] += parseFloat(v) || 0));
     (m.propane || []).forEach((v, i) => (totPropane[i] += parseFloat(v) || 0));
-    const d = calcMeasureDollars(m, m.rates || (sd.blRates || {})[m.bldgId] || {});
+    const d = calcMeasureDollars(m, measureRatesNow(projId, m, (sd.blRates || {})[m.bldgId]));
     grandTotal += d.total;
     totKwhCost += d.kwh;
     totKwCost += d.kw;
@@ -437,7 +437,7 @@ function renderSavingsSummary(projId, sd, totKwh, totKw, totGas, totPropane, gra
   // Compute quarterly savings totals (Q1=Jan-Mar, Q2=Apr-Jun, Q3=Jul-Sep, Q4=Oct-Dec)
   const qtrs = [0, 0, 0, 0];
   selMsrs.forEach((m) => {
-    calcMeasureDollars(m, m.rates || {}).monthly.forEach((d, mo) => (qtrs[Math.floor(mo / 3)] += d.total));
+    calcMeasureDollars(m, measureRatesNow(projId, m, {})).monthly.forEach((d, mo) => (qtrs[Math.floor(mo / 3)] += d.total));
   });
   const qtrLabels = ['Q1 (Jan–Mar)', 'Q2 (Apr–Jun)', 'Q3 (Jul–Sep)', 'Q4 (Oct–Dec)'];
   const qtrHtml =
@@ -673,38 +673,11 @@ function ensureMeasureRates(m, projId, source) {
 // baseline rates (computeSeasonalBldgRates), 'manual' = typed by the user (writeRateField) or accepted
 // from a calculator / report form (writeRateSet with accepted = true). Code reads only rateSource === 'owner'.
 
-// fixMeasureRateSources(proj) - one-time data fix on load (core.js init): sets rateSource on every saved
-// measure that has rates and no marker, by evidence. 'owner' when the stored rates came from a program write:
-//   - a measure made by the old CSV measure import (id m_csv_...): the import set its rates from the owner;
-//   - an EMPTY measure (no description, every quantity 0) that holds the old six-field default-rates shape
-//     (thermRate and gallonRate stored as 0, no gas split): nobody types that, the program wrote it.
-// Every other measure is 'manual' (its rates stay as saved). Idempotent: a marked measure is never touched.
-// Returns true when a measure changed (the caller saves en_projects).
-function fixMeasureRateSources(proj) {
-  const measures = (proj && proj.savingsData && proj.savingsData.measures) || [];
-  let changed = false;
-  measures.forEach((m) => {
-    if (!m.rates || m.rateSource) return;
-    const empty =
-      !m.desc && ['kwh', 'kw', 'gas', 'propane'].every((k) => (m[k] || []).every((v) => !(parseFloat(v) > 0)));
-    const r = m.rates;
-    const legacyDefault =
-      empty &&
-      ['kwhSummer', 'kwhWinter', 'kwSummer', 'kwWinter', 'thermRate', 'gallonRate'].every((k) => k in r) &&
-      r.thermRate === 0 &&
-      r.gallonRate === 0 &&
-      !('gasSummer' in r);
-    m.rateSource = String(m.id).indexOf('m_csv_') === 0 || legacyDefault ? 'owner' : 'manual';
-    changed = true;
-  });
-  return changed;
-}
-
-// ownerMeasureRates(projId, m) - the rates an owner-sourced measure should hold now: the owner's current
+// ownerMeasureRates(projId, m) - the rates a measure that follows the owner should hold now: the owner's current
 // baseline rates (computeSeasonalBldgRates). null for a typed (manual) measure, a measure with no building,
 // or a building with no baseline rate yet (bills not loaded). A pure read: nothing is written.
 function ownerMeasureRates(projId, m) {
-  if (!m.bldgId || !m.rates || m.rateSource !== 'owner') return null;
+  if (!m.bldgId || !m.rates || m.rateSource === 'manual') return null;
   const base = computeSeasonalBldgRates(projId, m.bldgId);
   if (!RATE_WRITE_FIELDS.some((k) => base[k] > 0)) return null;
   const next = {};
@@ -735,7 +708,7 @@ function followOwnerMeasureRates(projId, sd) {
     if (!next || JSON.stringify(next) === JSON.stringify(m.rates)) return;
     const flagBefore = JSON.stringify(m.rateFlag || null);
     if (writeRateSet(m, 'rates', next, projId, m.bldgId, 'owner rate follow')) {
-      m.totalDollar = calcMeasureDollars(m, m.rates).total;
+      m.totalDollar = calcMeasureDollars(m, measureRatesNow(projId, m)).total;
       changed = true;
     } else if (JSON.stringify(m.rateFlag || null) !== flagBefore) changed = true;
   });
@@ -829,8 +802,7 @@ function calcProjSavingsMatrix(projId) {
   });
   // Recalculate $ per measure using seasonal rates
   sd.measures.forEach((m) => {
-    const rates = m.rates || sd.blRates[m.bldgId] || {};
-    const total = calcMeasureDollars(m, rates).total;
+    const total = calcMeasureDollars(m, measureRatesNow(projId, m, (sd.blRates || {})[m.bldgId])).total;
     m.totalDollar = total;
     const cell =
       document.getElementById('sv-msr-total-' + projId + '-' + m.id) || document.getElementById('sv-pg-total-' + m.id);
@@ -1062,7 +1034,7 @@ function _renderSavingsContent(wrap, projId) {
       .map((m) => {
         const pid = projId,
           mid = m.id;
-        const r = m.rates || {};
+        const r = measureRatesNow(projId, m, {});
         if (!m.propane) m.propane = Array(12).fill(0);
         const annMsrKwh = m.kwh.reduce((a, b) => a + (parseFloat(b) || 0), 0);
 
@@ -1163,7 +1135,7 @@ function _renderSavingsContent(wrap, projId) {
     m.kw.forEach((v, i) => (totKw[i] += parseFloat(v) || 0));
     m.gas.forEach((v, i) => (totGas[i] += parseFloat(v) || 0));
     (m.propane || []).forEach((v, i) => (totPropane[i] += parseFloat(v) || 0));
-    const d = calcMeasureDollars(m, m.rates || (sd.blRates || {})[m.bldgId] || {});
+    const d = calcMeasureDollars(m, measureRatesNow(projId, m, (sd.blRates || {})[m.bldgId]));
     d.monthly.forEach((mo, i) => (svQtrs[Math.floor(i / 3)] += mo.total));
     grandTotal += d.total;
     totKwhCost += d.kwh;
@@ -1452,7 +1424,7 @@ function svRecalc() {
   });
   // Recalculate dollar totals using baseline rates
   sd.measures.forEach((m) => {
-    m.totalDollar = calcMeasureDollars(m, m.rates || sd.blRates[m.bldgId] || {}).total;
+    m.totalDollar = calcMeasureDollars(m, measureRatesNow(svSelProjId, m, (sd.blRates || {})[m.bldgId])).total;
   });
   sset('en_projects', projects);
   renderSvDetail();

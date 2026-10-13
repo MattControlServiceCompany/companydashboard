@@ -3864,7 +3864,7 @@ function solarApplyToMeasure(projId) {
   m.source = 'solar';
   if (!m.desc || m.desc.trim() === '') m.desc = `Solar PV — ${sc.arrayKw} kW Array`;
   // Dollar savings use the measure's own rates, the same rates the matrix prices it with.
-  m.totalDollar = calcMeasureDollars(m, m.rates).total;
+  m.totalDollar = calcMeasureDollars(m, measureRatesNow(projId, m)).total;
   sset('en_projects', projects);
   const msrNum = m.msrNum;
   closeCalcTemplate();
@@ -5106,7 +5106,7 @@ function bcApplyToMeasure(projId) {
   const cityName = BAS_CITIES.find((c) => c.id === (p.basCalc?.city || 4))?.name || 'Unknown';
   if (!m.desc || m.desc.trim() === '') m.desc = 'BAS HVAC Optimization — ' + cityName;
   // The measure's own rates, the same rates the matrix prices it with (see solarApplyToMeasure).
-  m.totalDollar = calcMeasureDollars(m, m.rates).total;
+  m.totalDollar = calcMeasureDollars(m, measureRatesNow(projId, m)).total;
   sset('en_projects', projects);
   const msrNum = m.msrNum;
   closeCalcTemplate();

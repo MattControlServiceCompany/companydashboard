@@ -860,7 +860,7 @@ function wdApplySetpointOptions(projId, bldgId, cfg) {
     if (!(parseFloat(optRates.thermRate) > 0)) optRates.thermRate = cfg.rates.gasWinter;
     // rate-guard accepted upstream: cfg.rates only holds rates the rate guard passed or the user accepted in the inputs form.
     writeRateSet(m, 'rates', optRates, projId, bldgId, 'setpoint options apply', true);
-    m.totalDollar = calcMeasureDollars(o, m.rates).total;
+    m.totalDollar = calcMeasureDollars(o, measureRatesNow(projId, m)).total;
     keep[m.id] = true;
   });
   sd.measures = sd.measures.filter(function (x) {
@@ -1041,7 +1041,7 @@ function _wdRenderInputs() {
       });
       var dollars = '';
       if (m) {
-        dollars = _wdC(calcMeasureDollars(m, m.rates, { cents: true }).total) + ' / yr';
+        dollars = _wdC(calcMeasureDollars(m, measureRatesNow(p.id, m), { cents: true }).total) + ' / yr';
       } else dollars = '<span style="color:var(--text3)">not computed</span>';
       return (
         '<tr><td><input class="fi" style="width:48px;text-align:center" maxlength="1" value="' +
@@ -1239,12 +1239,12 @@ function collectWoodlandReportData(projId, buildingId) {
         // the measure's OWN stored rates (Energy Savings matrix), read per season through measureRateAt
         // (June = summer, January = winter); gas falls back to its flat thermRate there.
         rates: {
-          kwhSummer: measureRateAt(m.rates, 5).kwh,
-          kwhWinter: measureRateAt(m.rates, 0).kwh,
-          kwSummer: measureRateAt(m.rates, 5).kw,
-          kwWinter: measureRateAt(m.rates, 0).kw,
-          gasSummer: measureRateAt(m.rates, 5).gas,
-          gasWinter: measureRateAt(m.rates, 0).gas,
+          kwhSummer: measureRateAt(measureRatesNow(p.id, m), 5).kwh,
+          kwhWinter: measureRateAt(measureRatesNow(p.id, m), 0).kwh,
+          kwSummer: measureRateAt(measureRatesNow(p.id, m), 5).kw,
+          kwWinter: measureRateAt(measureRatesNow(p.id, m), 0).kw,
+          gasSummer: measureRateAt(measureRatesNow(p.id, m), 5).gas,
+          gasWinter: measureRateAt(measureRatesNow(p.id, m), 0).gas,
         },
         implCost: parseFloat(m.implCost) || 0, // the measure's OWN Implementation Cost field
       };

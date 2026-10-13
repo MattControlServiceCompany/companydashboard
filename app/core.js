@@ -620,8 +620,6 @@ function init() {
     if (!p.meetings) p.meetings = [];
     if (!p.recurringMeetings) p.recurringMeetings = [];
     if (!p.approvedChanges) p.approvedChanges = [];
-    // One-time data fix: mark which measures hold program (owner) rates and which hold typed rates.
-    if (fixMeasureRateSources(p)) sset('en_projects', projects);
     // Migrate activeCommodities → shownCommodities + calcCommodities
     if (Array.isArray(p.activeCommodities) && !p.calcCommodities) {
       p.shownCommodities = [...ALL_COMMODITIES];

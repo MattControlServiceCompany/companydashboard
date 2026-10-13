@@ -132,6 +132,7 @@ sb.initMeasureRates = (m) => {
   return true;
 };
 sb.ensureMeasureRates = sb.initMeasureRates;
+sb.measureRatesNow = (projId, m) => m.rates;
 sb.showToast = () => {};
 sb.sset = () => {};
 sb.closeCalcTemplate = () => {};

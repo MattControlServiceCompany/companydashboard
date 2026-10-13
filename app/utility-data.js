@@ -6710,6 +6710,23 @@ function wddApplyParsed() {
 /* ══════════════════════════════════════════
          BASELINE TAB
       ══════════════════════════════════════════ */
+// _udBaselinePillsHtml(pills): the ONE template for the Baseline stat pills. Every pill label and value is
+// bill, meter or user text (units, excluded-bill labels), so both go through _escHtml.
+function _udBaselinePillsHtml(pills) {
+  return (
+    '<div style="display:flex;flex-wrap:wrap;gap:6px;padding:8px 0">' +
+    pills
+      .map(
+        (p) => `<div style="display:flex;flex-direction:column;background:var(--s3);border:1px solid var(--border);border-radius:6px;padding:5px 10px;min-width:0${p.wrap ? ';max-width:100%' : ''}">
+              <span style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;white-space:nowrap">${_escHtml(p.lbl)}</span>
+              <span style="font-size:12px;font-weight:700;color:${p.color || 'var(--text)'};white-space:${p.wrap ? 'normal' : 'nowrap'}">${_escHtml(p.v)}</span>
+            </div>`,
+      )
+      .join('') +
+    '</div>'
+  );
+}
+
 // _udBaselineRatePills(m): the Baseline stat pill rates. No rate math here: they are the values of the ONE owner
 // (computeSeasonalBldgRates, computations/rates.js) for this meter. Commodities the owner does not price get none.
 function _udBaselineRatePills(m) {
@@ -6859,18 +6876,7 @@ function renderBaselinePane(pane, m, bills, incl) {
     ].filter(Boolean);
 
     blStatsInner =
-      '<div style="display:flex;flex-wrap:wrap;gap:6px;padding:8px 0">' +
-      pills
-        .map(
-          (
-            p,
-          ) => `<div style="display:flex;flex-direction:column;background:var(--s3);border:1px solid var(--border);border-radius:6px;padding:5px 10px;min-width:0${p.wrap ? ';max-width:100%' : ''}">
-              <span style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;white-space:nowrap">${p.lbl}</span>
-              <span style="font-size:12px;font-weight:700;color:${p.color || 'var(--text)'};white-space:${p.wrap ? 'normal' : 'nowrap'}">${p.v}</span>
-            </div>`,
-        )
-        .join('') +
-      '</div>';
+      _udBaselinePillsHtml(pills);
   } else {
     // Fix the dead "no baseline" state: previously this whole block (blStatsInner)
     // stayed '' and the pill strip never rendered at all for a meter with no
@@ -7349,18 +7355,7 @@ function refreshBaselineStats(mid) {
     ].filter(Boolean);
 
     statsEl.innerHTML =
-      '<div style="display:flex;flex-wrap:wrap;gap:6px;padding:8px 0">' +
-      pills
-        .map(
-          (
-            p,
-          ) => `<div style="display:flex;flex-direction:column;background:var(--s3);border:1px solid var(--border);border-radius:6px;padding:5px 10px;min-width:0${p.wrap ? ';max-width:100%' : ''}">
-              <span style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;white-space:nowrap">${p.lbl}</span>
-              <span style="font-size:12px;font-weight:700;color:${p.color || 'var(--text)'};white-space:${p.wrap ? 'normal' : 'nowrap'}">${p.v}</span>
-            </div>`,
-        )
-        .join('') +
-      '</div>';
+      _udBaselinePillsHtml(pills);
   }
 
   // Redraw chart with current metric/overlay state

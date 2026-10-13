@@ -105,7 +105,6 @@ const code = [
     'writeRateField',
     'initMeasureRates',
     'ensureMeasureRates',
-    'fixMeasureRateSources',
     'ownerMeasureRates',
     'measureRatesNow',
     'followOwnerMeasureRates',
@@ -253,17 +252,8 @@ confirmAsked.length = 0;
     totalDollar: 22557,
   };
   const typed = { id: 'm123', bldgId: 'b1', rates: { kwSummer: 99 }, rateSource: 'manual', kwh: [], kw: [], gas: [] };
-  const unmarked = { id: 'm456', bldgId: 'b1', rates: { kwSummer: 98 }, kwh: [], kw: [], gas: [] };
-  const sd = { measures: [old, typed, unmarked], blRates: {} };
-  // one-time data fix by evidence: m_csv_ = owner, everything else unmarked = manual; a marked one is not touched
-  assert(sb.followOwnerMeasureRates('p1', sd) === false && old.rates.kwSummer === stale.kwSummer, 'an unmarked measure is not owner: code reads only rateSource owner');
-  const legacy = { id: 'm999', bldgId: 'b1', desc: '', rates: { kwhSummer: 0.0694, kwhWinter: 0.0597, kwSummer: 13.51, kwWinter: 8.96, thermRate: 0, gallonRate: 0 }, kwh: Array(12).fill(0), kw: Array(12).fill(0), gas: Array(12).fill(0), propane: Array(12).fill(0) };
-  const legacyTyped = { ...legacy, id: 'm998', desc: 'typed measure', kw: Array(12).fill(5), rates: { ...legacy.rates } };
-  const projFix = { savingsData: { measures: [old, typed, unmarked, legacy, legacyTyped] } };
-  assert(sb.fixMeasureRateSources(projFix) === true, 'data fix changed measures');
-  assert(old.rateSource === 'owner' && unmarked.rateSource === 'manual' && typed.rateSource === 'manual', 'data fix: m_csv_ owner, unmarked manual, marked untouched');
-  assert(legacy.rateSource === 'owner' && legacyTyped.rateSource === 'manual', 'data fix: empty legacy default-shape measure owner, a measure with quantities manual');
-  assert(sb.fixMeasureRateSources(projFix) === false, 'data fix is idempotent');
+  const sd = { measures: [old, typed], blRates: {} };
+  // a measure follows the owner unless rateSource is 'manual'; an unmarked measure follows
   const kwhKeep = old.kwh.join(',');
   assert(sb.followOwnerMeasureRates('p1', sd) === true, 'follow changed the imported measure');
   assert(
@@ -277,7 +267,6 @@ confirmAsked.length = 0;
     'totalDollar recomputed from the new rates',
   );
   assert(typed.rates.kwSummer === 99 && typed.rateSource === 'manual', 'a typed (manual) measure is untouched');
-  assert(unmarked.rates.kwSummer === 98, 'a manual measure that was never imported is untouched');
   assert(sb.followOwnerMeasureRates('p1', sd) === false, 'nothing changes when the rates already match the owner');
   // the owner changes: an owner-sourced measure moves with it, with no flag involved
   const baseBefore = { ...BASE };
