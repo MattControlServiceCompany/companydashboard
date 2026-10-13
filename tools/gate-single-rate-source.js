@@ -6,7 +6,11 @@ const fs = require('fs');
 const path = require('path');
 const root = path.join(__dirname, '..');
 const RULES = [
-  [/\bgetProjectRates\b|\bbtGetBlendedRate\b|\b_pricingGetProjectAnnualElec\b/, 'deleted rate copy came back'],
+  [
+    /\bgetProjectRates\b|\bbtGetBlendedRate\b|\b_pricingGetProjectAnnualElec\b|\bcalcBldgDefaultRates\b/,
+    'deleted rate copy came back',
+  ],
+  [/\*\s*inp\.(?:elec|gas|demand)_rate\b/, 'ECM template prices a flat rate outside ecmPrice'],
   [/(?:elecRate|elec_rate|rate)\s*(?::|=)\s*[^;\n]*\|\|\s*0\.1\b/, 'invented 0.1 fallback rate'],
   [/default:\s*0\.085\b/, 'invented 0.085 default rate'],
   [/totalCost\s*\/\s*total(?:Kwh|Usage)\b/, 'private totalCost / kWh rate loop'],
@@ -27,7 +31,9 @@ files.forEach((f) => {
     bad.push(f + ':' + ln + ' invented gas or demand default rate: ' + m[0].replace(/\s+/g, ' ').slice(0, 100));
   }
   text.split(/\r?\n/).forEach((line, i) => {
-    RULES.forEach(([re, why]) => re.test(line) && bad.push(f + ':' + (i + 1) + ' ' + why + ': ' + line.trim().slice(0, 100)));
+    RULES.forEach(
+      ([re, why]) => re.test(line) && bad.push(f + ':' + (i + 1) + ' ' + why + ': ' + line.trim().slice(0, 100)),
+    );
   });
 });
 if (bad.length) {

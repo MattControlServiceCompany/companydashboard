@@ -144,28 +144,6 @@ function saveProjBaselineRates(projId) {
   calcProjSavingsMatrix(projId);
 }
 
-// calcBldgDefaultRates(projId, bldgId) — thin wrapper around the ONE canonical
-// seasonal rate function (computations/rates.js computeSeasonalBldgRates).
-// Item 2026-09-23-rate-source: every surface that shows or uses a building's
-// seasonal marginal rate (this Energy Savings measure table, the Baseline +
-// BAS Savings Report Inputs prefill in app/report-engine-woodland.js, the BAS
-// Savings Calc / solar "Apply to Measure" fallback in app/calculators.js)
-// calls calcBldgDefaultRates so they all resolve the identical numbers off
-// the identical bill data — no per-surface re-derivation.
-function calcBldgDefaultRates(projId, bldgId) {
-  if (typeof computeSeasonalBldgRates === 'function') return computeSeasonalBldgRates(projId, bldgId);
-  return {
-    kwhSummer: 0,
-    kwhWinter: 0,
-    kwSummer: 0,
-    kwWinter: 0,
-    thermRate: 0,
-    gasSummer: 0,
-    gasWinter: 0,
-    gallonRate: 0,
-  };
-}
-
 // getBldgMeasureSavingsByMo → computations/savings.js
 
 function addSavingsMeasure(projId) {
@@ -183,7 +161,7 @@ function addSavingsMeasure(projId) {
     implCost: 0,
     incentive: 0,
     rates: firstBldg
-      ? calcBldgDefaultRates(projId, firstBldg.id)
+      ? computeSeasonalBldgRates(projId, firstBldg.id)
       : {
           kwhSummer: 0,
           kwhWinter: 0,
@@ -528,7 +506,7 @@ function updateMsrField(projId, msrId, field, val) {
     const bldg = getUDBldg(projId, val);
     if (bldg) {
       m.sqft = parseFloat(bldg.sqft) || 0;
-      m.rates = calcBldgDefaultRates(projId, val);
+      m.rates = computeSeasonalBldgRates(projId, val);
       const sqftInp = document.querySelector(
         `#sv-msr-row-${projId}-${msrId} .sv-sqft-inp, #sv-pg-msr-row-${msrId} .sv-sqft-inp`,
       );
@@ -551,7 +529,7 @@ function autoSaveMsr(projId) {
 
 // calcMeasureDollars(m, rates) - the ONE pricing rule for a savings-matrix measure:
 // each month's quantity saved x that month's seasonal rate, summed over the 12 months
-// ((Baseline - Actual) x Rate, never a dollar delta). Rates come from calcBldgDefaultRates.
+// ((Baseline - Actual) x Rate, never a dollar delta). Rates come from computeSeasonalBldgRates (baseline-period summer and winter).
 function calcMeasureDollars(m, rates) {
   rates = rates || {};
   let kwh = 0,
@@ -743,7 +721,7 @@ function _renderSavingsContent(wrap, projId) {
       m.rates = { ...sd.blRates[m.bldgId] };
       _migrated = true;
     }
-    if (!m.rates) m.rates = calcBldgDefaultRates(projId, m.bldgId);
+    if (!m.rates) m.rates = computeSeasonalBldgRates(projId, m.bldgId);
     // Migrate wrong rate field names (rates.gas → rates.thermRate, rates.propane → rates.gallonRate)
     if (m.rates && 'gas' in m.rates && !('thermRate' in m.rates)) {
       m.rates.thermRate = m.rates.gas;
@@ -1361,7 +1339,7 @@ function svResetMsrRates(msrId) {
   const sd = getProjSavingsData(pid);
   const m = sd.measures.find((x) => x.id === msrId);
   if (!m) return;
-  m.rates = calcBldgDefaultRates(pid, m.bldgId);
+  m.rates = computeSeasonalBldgRates(pid, m.bldgId);
   sset('en_projects', projects);
   if (document.getElementById('ptab-savings')?.offsetParent !== null) initSavingsTab(pid);
   else renderSvDetail();

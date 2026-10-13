@@ -1039,14 +1039,14 @@ console.log('\n--- 11. Gas $/Therm prefill non-zero on naturalGasTherms-only bil
     ],
   };
   const ctx11 = buildCtx({ en_projects: projects.concat([gasProj]), ['en_utility_' + GID]: gasUd });
-  const rates11 = run(ctx11, 'calcBldgDefaultRates(' + GID + ',' + JSON.stringify(GBID) + ')');
+  const rates11 = run(ctx11, 'computeSeasonalBldgRates(' + GID + ',' + JSON.stringify(GBID) + ')');
   assert(
     rates11.gasSummer > 0,
-    'calcBldgDefaultRates: gasSummer prefill is non-zero on naturalGasTherms-only bills (' + rates11.gasSummer + ')',
+    'computeSeasonalBldgRates: gasSummer prefill is non-zero on naturalGasTherms-only bills (' + rates11.gasSummer + ')',
   );
   assert(
     rates11.gasWinter > 0,
-    'calcBldgDefaultRates: gasWinter prefill is non-zero on naturalGasTherms-only bills (' + rates11.gasWinter + ')',
+    'computeSeasonalBldgRates: gasWinter prefill is non-zero on naturalGasTherms-only bills (' + rates11.gasWinter + ')',
   );
   const expSummerRate = SUMMER_THERMS.reduce((s, v) => s + v * 0.6, 0) / SUMMER_THERMS.reduce((s, v) => s + v, 0);
   const expWinterRate = WINTER_THERMS.reduce((s, v) => s + v * 0.6, 0) / WINTER_THERMS.reduce((s, v) => s + v, 0);

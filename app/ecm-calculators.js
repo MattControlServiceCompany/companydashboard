@@ -190,8 +190,8 @@ const ECM_TEMPLATES = {
       const cool_btu_total = 1.08 * excess_cfm * inp.avg_delta_t_cooling * inp.unocc_cooling_hrs;
       const kwh_saved = cool_btu_total / (cop * 3412);
 
-      const gas_savings_dollar = therms_saved * inp.gas_rate;
-      const elec_savings_dollar = kwh_saved * inp.elec_rate;
+      const gas_savings_dollar = ecmPrice(inp, 'gas', therms_saved);
+      const elec_savings_dollar = ecmPrice(inp, 'elec', kwh_saved);
       const total_savings_dollar = gas_savings_dollar + elec_savings_dollar;
       const simple_payback = total_savings_dollar > 0 ? inp.repair_cost / total_savings_dollar : Infinity;
 
@@ -374,8 +374,8 @@ const ECM_TEMPLATES = {
         );
       }
 
-      const cooling_savings_dollar = Math.max(0, cooling_kwh_saved) * inp.elec_rate;
-      const heating_savings_dollar = heating_therms_saved * inp.gas_rate;
+      const cooling_savings_dollar = ecmPrice(inp, 'elec', Math.max(0, cooling_kwh_saved));
+      const heating_savings_dollar = ecmPrice(inp, 'gas', heating_therms_saved);
       const total_savings_dollar = cooling_savings_dollar + heating_savings_dollar;
       const simple_payback = total_savings_dollar > 0 ? inp.equipment_cost / total_savings_dollar : Infinity;
 
@@ -487,7 +487,7 @@ const ECM_TEMPLATES = {
       }
 
       const savings_kwh = baseline_kwh - post_vfd_kwh;
-      const annual_savings_dollar = savings_kwh * inp.elec_rate;
+      const annual_savings_dollar = ecmPrice(inp, 'elec', savings_kwh);
       const simple_payback = annual_savings_dollar > 0 ? inp.vfd_cost / annual_savings_dollar : Infinity;
 
       return {
@@ -629,8 +629,8 @@ const ECM_TEMPLATES = {
       // Peak demand savings at average load
       const peak_kw_savings = Math.max(0, existing_kw_full - proposed_kw_full) * avgLoad;
 
-      const energy_savings_dollar = savings_kwh * inp.elec_rate;
-      const demand_savings_dollar = peak_kw_savings * inp.demand_rate * 12;
+      const energy_savings_dollar = ecmPrice(inp, 'elec', savings_kwh);
+      const demand_savings_dollar = ecmPrice(inp, 'demand', peak_kw_savings);
       const total_savings_dollar = energy_savings_dollar + demand_savings_dollar;
       const simple_payback = total_savings_dollar > 0 ? inp.installed_cost / total_savings_dollar : Infinity;
 
@@ -852,8 +852,8 @@ const ECM_TEMPLATES = {
 
       const useGas = inp.heating_fuel < 0.5;
       const heating_savings_dollar = useGas
-        ? heating_savings_therms * inp.gas_rate
-        : heating_savings_kwh * inp.elec_rate;
+        ? ecmPrice(inp, 'gas', heating_savings_therms)
+        : ecmPrice(inp, 'elec', heating_savings_kwh);
 
       // ── Cooling savings ──
       // Total heat formula: Q [BTU/hr] = 4.5 × CFM × Δenthalpy
@@ -864,7 +864,7 @@ const ECM_TEMPLATES = {
 
       // EER is Btu/h per watt, so kW = Btu/h / (EER × 1000) and kWh = Btu_yr / (EER × 1000)
       const cooling_savings_kwh = cool_btu_yr / (inp.eer * 1000);
-      const cooling_savings_dollar = cooling_savings_kwh * inp.elec_rate;
+      const cooling_savings_dollar = ecmPrice(inp, 'elec', cooling_savings_kwh);
 
       const total_savings_dollar = heating_savings_dollar + cooling_savings_dollar;
       const simple_payback = total_savings_dollar > 0 ? inp.installed_cost / total_savings_dollar : Infinity;
@@ -1026,8 +1026,9 @@ const ECM_TEMPLATES = {
       // Year-1 production: array_kW × kWh/kW_ratio × system_derate
       const year1_kwh = inp.array_kw_dc * inp.production_ratio * (inp.system_derate / 100);
 
-      const rate = inp.use_net_metering >= 0.5 ? inp.nm_rate : inp.btm_rate;
-      const year1_savings_dollar = year1_kwh * rate;
+      const useNm = inp.use_net_metering >= 0.5;
+      const year1_savings_dollar = useNm ? year1_kwh * inp.nm_rate : ecmPrice(inp, 'elec', year1_kwh, 'btm_rate');
+      const rate = year1_kwh > 0 ? year1_savings_dollar / year1_kwh : useNm ? inp.nm_rate : inp.btm_rate;
 
       // Cost and ITC (Solar Calc §6.1: P5 = C2 × array_kW × 1000; Q5 = P5 × (1 − ITC))
       const gross_cost = inp.array_kw_dc * 1000 * inp.cost_per_watt;
@@ -1203,8 +1204,8 @@ const ECM_TEMPLATES = {
       const demand_savings_kw =
         ((Math.max(0, inp.existing_watts - inp.proposed_watts) * inp.quantity) / 1000) * (inp.coincidence_factor / 100);
 
-      const energy_dollar = total_savings_kwh * inp.elec_rate;
-      const demand_dollar = demand_savings_kw * inp.demand_rate * 12;
+      const energy_dollar = ecmPrice(inp, 'elec', total_savings_kwh);
+      const demand_dollar = ecmPrice(inp, 'demand', demand_savings_kw);
       const total_savings_dollar = energy_dollar + demand_dollar;
       const simple_payback = total_savings_dollar > 0 ? inp.installed_cost / total_savings_dollar : Infinity;
 
@@ -1377,8 +1378,8 @@ const ECM_TEMPLATES = {
       // (lights cycle on/off based on motion, not all off simultaneously at peak)
       const demand_savings_kw = total_kw * vacancy_pct * control_factor * 0.5;
 
-      const energy_dollar = savings_kwh * inp.elec_rate;
-      const demand_dollar = demand_savings_kw * inp.demand_rate * 12;
+      const energy_dollar = ecmPrice(inp, 'elec', savings_kwh);
+      const demand_dollar = ecmPrice(inp, 'demand', demand_savings_kw);
       const total_savings_dollar = energy_dollar + demand_dollar;
       const simple_payback = total_savings_dollar > 0 ? inp.installed_cost / total_savings_dollar : Infinity;
 
@@ -1461,7 +1462,7 @@ const ECM_TEMPLATES = {
       const kwh_existing = kw_design * inp.op_hours;
       const kwh_new = kw_design * Math.pow(sr, 3) * inp.op_hours;
       const savings_kwh = kwh_existing - kwh_new;
-      const annual_savings_dollar = savings_kwh * inp.elec_rate;
+      const annual_savings_dollar = ecmPrice(inp, 'elec', savings_kwh);
       const simple_payback = annual_savings_dollar > 0 ? inp.install_cost / annual_savings_dollar : Infinity;
       return {
         bhp_design: Math.round(bhp_design * 100) / 100,
@@ -1565,7 +1566,7 @@ const ECM_TEMPLATES = {
       const kw_old = (shaft_hp * 0.746) / eo;
       const kw_new = (shaft_hp * 0.746) / en;
       const savings_kwh = (kw_old - kw_new) * inp.op_hours;
-      const annual_savings_dollar = savings_kwh * inp.elec_rate;
+      const annual_savings_dollar = ecmPrice(inp, 'elec', savings_kwh);
       const payback_full = annual_savings_dollar > 0 ? inp.total_cost / annual_savings_dollar : Infinity;
       const payback_incr = annual_savings_dollar > 0 ? inp.incr_cost / annual_savings_dollar : Infinity;
       return {
@@ -1722,10 +1723,10 @@ const ECM_TEMPLATES = {
       const cfm_saved = inp.oa_cfm_design * avgOaReduction;
       const heat_btu = 1.08 * cfm_saved * inp.avg_dt_heat * inp.heat_hours;
       const therms_saved = heat_btu / (100000 * afue);
-      const gas_savings_dollar = therms_saved * inp.gas_rate;
+      const gas_savings_dollar = ecmPrice(inp, 'gas', therms_saved);
       const cool_btu = 1.08 * cfm_saved * inp.avg_dt_cool * inp.cool_hours;
       const cool_kwh_saved = cool_btu / (inp.chiller_cop * 3412);
-      const cool_savings_dollar = cool_kwh_saved * inp.elec_rate;
+      const cool_savings_dollar = ecmPrice(inp, 'elec', cool_kwh_saved);
       const total_savings_dollar = gas_savings_dollar + cool_savings_dollar;
       const simple_payback = total_savings_dollar > 0 ? inp.install_cost / total_savings_dollar : Infinity;
       return {
@@ -1911,19 +1912,19 @@ const ECM_TEMPLATES = {
       let reheat_saved_qty, reheat_savings_dollar;
       if (isElec) {
         reheat_saved_qty = Math.round(reheat_btu_total / 3412);
-        reheat_savings_dollar = Math.round(reheat_saved_qty * inp.elec_rate);
+        reheat_savings_dollar = Math.round(ecmPrice(inp, 'elec', reheat_saved_qty));
       } else {
         reheat_saved_qty = Math.round(reheat_btu_total / (100000 * afue));
-        reheat_savings_dollar = Math.round(reheat_saved_qty * inp.gas_rate);
+        reheat_savings_dollar = Math.round(ecmPrice(inp, 'gas', reheat_saved_qty));
       }
       const cool_btu = 1.08 * inp.system_cfm * inp.avg_dt_reheat * inp.season_hours * 0.3;
       const cool_kwh_saved = Math.round(cool_btu / (inp.cooling_cop * 3412));
-      const cool_dollar = Math.round(cool_kwh_saved * inp.elec_rate);
+      const cool_dollar = Math.round(ecmPrice(inp, 'elec', cool_kwh_saved));
       const fan_kwh_saved = Math.max(
         0,
         Math.round(inp.fan_kw_design * (Math.pow(mfOld, 3) - Math.pow(mfNew, 3)) * inp.unocc_hours),
       );
-      const fan_dollar = Math.round(fan_kwh_saved * inp.elec_rate);
+      const fan_dollar = Math.round(ecmPrice(inp, 'elec', fan_kwh_saved));
       const total_savings_dollar = reheat_savings_dollar + cool_dollar + fan_dollar;
       const simple_payback = total_savings_dollar > 0 ? inp.install_cost / total_savings_dollar : Infinity;
       return {
@@ -2084,7 +2085,7 @@ const ECM_TEMPLATES = {
       const therms_saved_base = existing_therms - new_therms;
       const therms_saved = therms_saved_base * (1 + standby_factor);
       const pct_savings = Math.round((1 - eo / en) * 1000) / 10;
-      const annual_savings_dollar = therms_saved * inp.gas_rate;
+      const annual_savings_dollar = ecmPrice(inp, 'gas', therms_saved);
       const payback_full = annual_savings_dollar > 0 ? inp.install_cost / annual_savings_dollar : Infinity;
       const payback_incr = annual_savings_dollar > 0 ? inp.incr_cost / annual_savings_dollar : Infinity;
       return {
@@ -2173,14 +2174,14 @@ const ECM_TEMPLATES = {
       let heat_qty, heat_savings_dollar;
       if (isElecHeat) {
         heat_qty = Math.round(heat_btu_yr / (he * 3412));
-        heat_savings_dollar = Math.round(heat_qty * inp.elec_rate);
+        heat_savings_dollar = Math.round(ecmPrice(inp, 'elec', heat_qty));
       } else {
         heat_qty = Math.round(heat_btu_yr / (100000 * he));
-        heat_savings_dollar = Math.round(heat_qty * inp.gas_rate);
+        heat_savings_dollar = Math.round(ecmPrice(inp, 'gas', heat_qty));
       }
       const cool_btu_yr = delta_u * inp.area * inp.cdd * 24;
       const cool_kwh_saved = Math.round(cool_btu_yr / (inp.cooling_cop * 3412));
-      const cool_savings_dollar = Math.round(cool_kwh_saved * inp.elec_rate);
+      const cool_savings_dollar = Math.round(ecmPrice(inp, 'elec', cool_kwh_saved));
       const total_savings_dollar = heat_savings_dollar + cool_savings_dollar;
       const simple_payback = total_savings_dollar > 0 ? inp.install_cost / total_savings_dollar : Infinity;
       return {
@@ -2344,7 +2345,7 @@ const ECM_TEMPLATES = {
       const kwh_old = kw_old_design * power_ratio * inp.op_hours;
       const kwh_new = kw_new_design * power_ratio * inp.op_hours;
       const savings_kwh = kwh_old - kwh_new;
-      const annual_savings_dollar = savings_kwh * inp.elec_rate;
+      const annual_savings_dollar = ecmPrice(inp, 'elec', savings_kwh);
       const pct_improvement = kw_old_design > 0 ? ((kw_old_design - kw_new_design) / kw_old_design) * 100 : 0;
       const simple_payback = annual_savings_dollar > 0 ? inp.install_cost / annual_savings_dollar : Infinity;
       return {
@@ -2572,10 +2573,9 @@ function ecmAddAsMeasure(projId, bldgId, templateId, inputs, results) {
     msrNum: sd.measures.length + 1 + '',
     bldgId: bldgId || '',
     sqft: bldg ? parseFloat(bldg.sqft) || 0 : 0,
-    rates:
-      bldgId && typeof calcBldgDefaultRates === 'function'
-        ? calcBldgDefaultRates(projId, bldgId)
-        : { kwhSummer: 0, kwhWinter: 0, kwSummer: 0, kwWinter: 0, thermRate: 0 },
+    rates: bldgId
+      ? computeSeasonalBldgRates(projId, bldgId)
+      : { kwhSummer: 0, kwhWinter: 0, kwSummer: 0, kwWinter: 0, thermRate: 0 },
     desc: tmpl.name + (bldg ? ' — ' + bldg.name : ''),
     kwh: kwhMonthly,
     kw: kwMonthly,
@@ -2591,13 +2591,29 @@ function ecmAddAsMeasure(projId, bldgId, templateId, inputs, results) {
 
 /* ─── Calculate API ──────────────────────────────────── */
 
+// Dollars for an annual quantity (kWh, therms, or average kW) in a template. Every template calls this.
+// The quantity is spread evenly over the 12 months and priced by calcMeasureDollars (app/energy-savings.js),
+// the same monthly x summer/winter-rate sum the Energy Savings matrix uses, when the rate input still holds
+// the baseline-bill value (inp.__seasonal[field]). Otherwise: quantity x the typed flat rate.
+// kind: 'elec' ($/kWh), 'gas' ($/therm), 'demand' ($/kW, qty is the kW reduction in every month).
+const ECM_RATE_FIELD = { elec: 'elec_rate', gas: 'gas_rate', demand: 'demand_rate' };
+function ecmPrice(inp, kind, qty, field) {
+  const f = field || ECM_RATE_FIELD[kind];
+  const seasonal = inp.__seasonal && inp.__seasonal[f];
+  if (!seasonal) return kind === 'demand' ? qty * inp[f] * 12 : qty * inp[f];
+  const arr = Array(12).fill(kind === 'demand' ? qty : qty / 12);
+  const m = { kwh: [], kw: [], gas: [] };
+  m[{ elec: 'kwh', gas: 'gas', demand: 'kw' }[kind]] = arr;
+  return calcMeasureDollars(m, seasonal).total;
+}
+
 /**
  * Run a template's calculate() function after coercing all inputs to numbers.
  * @param {string} templateId
  * @param {Object} inputs — key/value map from the form
  * @returns {Object} results object
  */
-function calculateEcm(templateId, inputs) {
+function calculateEcm(templateId, inputs, seasonalByField) {
   const tmpl = ECM_TEMPLATES[templateId];
   if (!tmpl) throw new Error('Unknown ECM template: ' + templateId);
 
@@ -2612,6 +2628,9 @@ function calculateEcm(templateId, inputs) {
     }
   });
 
+  // seasonalByField: { <rate input id>: seasonal rates object } for each rate input the user left at the
+  // value filled from the baseline bills. ecmPrice prices those monthly, then sums. Null: flat typed rate.
+  coerced.__seasonal = seasonalByField || null;
   return tmpl.calculate(coerced);
 }
 
@@ -2636,13 +2655,22 @@ function renderEcmCalculator(templateId, container, savedValues, onBack, onCalcu
   // Auto-populate rates from the building's Utility Data. The ONE rate function is
   // computeSeasonalBldgRates (computations/rates.js); nothing here derives a rate itself.
   let autoRates = null;
-  if (ctx && ctx.projId && ctx.buildingId && typeof computeSeasonalBldgRates === 'function') {
+  let seasonalRates = null;
+  if (ctx && ctx.projId && ctx.buildingId) {
     try {
-      const r = computeSeasonalBldgRates(ctx.projId, ctx.buildingId);
+      seasonalRates = computeSeasonalBldgRates(ctx.projId, ctx.buildingId);
+      const r = seasonalRates;
+      // Field value = the rate that, times the annual quantity, equals the monthly summer/winter sum
+      // (calcMeasureDollars). A unit quantity per year is spread over 12 months, so the total is that rate.
+      const eff = (key, per) => calcMeasureDollars({ [key]: Array(12).fill(per) }, r).total;
+      const round = (v, d) => Math.round(v * Math.pow(10, d)) / Math.pow(10, d);
+      const el = round(eff('kwh', 1 / 12), 4);
+      const gs = round(eff('gas', 1 / 12), 3);
+      const dm = round(eff('kw', 1) / 12, 2);
       autoRates = {
-        electric_rate: r.kwhRate > 0 ? r.kwhRate : null,
-        gas_rate: r.thermRate > 0 ? r.thermRate : null,
-        demand_rate: r.kwRate > 0 ? r.kwRate : null,
+        electric_rate: el > 0 ? el : null,
+        gas_rate: gs > 0 ? gs : null,
+        demand_rate: dm > 0 ? dm : null,
         sourceLabels: {
           electric: formatBillMonthsLabel(r.months.kwhSummer.concat(r.months.kwhWinter)),
           gas: formatBillMonthsLabel(r.months.gas),
@@ -2651,6 +2679,7 @@ function renderEcmCalculator(templateId, container, savedValues, onBack, onCalcu
       };
     } catch (e) {
       autoRates = null;
+      seasonalRates = null;
     }
   }
 
@@ -2700,7 +2729,7 @@ function renderEcmCalculator(templateId, container, savedValues, onBack, onCalcu
       const autoStyle = isAuto ? 'color:#60a5fa;border-color:rgba(96,165,250,0.4)' : '';
       const autoTag = isAuto
         ? `<span id="${id}-autotag" style="font-size:10px;color:#60a5fa;margin-top:3px;display:block">
-             from bills (${autoRates.sourceLabels[inp.id === 'gas_rate' ? 'gas' : inp.id === 'demand_rate' ? 'demand' : 'electric']}) — <button type="button" style="font-size:10px;color:var(--text3);background:none;border:none;cursor:pointer;padding:0;text-decoration:underline" onclick="document.getElementById('${id}').style.color='';document.getElementById('${id}').style.borderColor='';document.getElementById('${id}-autotag').style.display='none'">override</button>
+             from baseline bills (${autoRates.sourceLabels[inp.id === 'gas_rate' ? 'gas' : inp.id === 'demand_rate' ? 'demand' : 'electric']}) — <button type="button" style="font-size:10px;color:var(--text3);background:none;border:none;cursor:pointer;padding:0;text-decoration:underline" onclick="document.getElementById('${id}').style.color='';document.getElementById('${id}').style.borderColor='';document.getElementById('${id}-autotag').style.display='none'">override</button>
            </span>`
         : '';
 
@@ -2792,7 +2821,14 @@ function renderEcmCalculator(templateId, container, savedValues, onBack, onCalcu
     });
     if (!valid) return;
 
-    const results = calculateEcm(templateId, inputs);
+    // A rate input still at its baseline-bill value is priced by season, month by month (ecmPrice).
+    const seasonalByField = {};
+    if (autoRates && seasonalRates) {
+      Object.keys(AUTO_FIELDS).forEach((fid) => {
+        if (AUTO_FIELDS[fid] != null && inputs[fid] === AUTO_FIELDS[fid]) seasonalByField[fid] = seasonalRates;
+      });
+    }
+    const results = calculateEcm(templateId, inputs, seasonalByField);
     renderEcmResults(templateId, results, container.querySelector('#ecm-results-wrap'), ctx, inputs);
 
     if (typeof onCalculate === 'function') onCalculate(templateId, inputs, results);

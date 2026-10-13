@@ -3850,14 +3850,14 @@ function solarAddAsMeasure(projId) {
 
 // _svRatesOrCanonical(sd, projId, bldgId) — the user-saved Baseline Rates table
 // (Energy Savings tab, sd.blRates[bldgId]) if it has at least one nonzero rate, else the
-// ONE canonical seasonal rate function (calcBldgDefaultRates -> computeSeasonalBldgRates).
+// ONE canonical baseline-period seasonal rate function (computeSeasonalBldgRates).
 // 2026-09-23-rate-source: calculators that write measures (solarApplyToMeasure,
 // bcApplyToMeasure) must never fall back to an empty {} and silently zero the $ savings.
 function _svRatesOrCanonical(sd, projId, bldgId) {
   const saved = sd.blRates && sd.blRates[bldgId];
   const savedHasRate =
     saved && (saved.kwhSummer || saved.kwhWinter || saved.kwSummer || saved.kwWinter || saved.thermRate);
-  return savedHasRate ? saved : typeof calcBldgDefaultRates === 'function' ? calcBldgDefaultRates(projId, bldgId) : {};
+  return savedHasRate ? saved : computeSeasonalBldgRates(projId, bldgId);
 }
 
 function solarApplyToMeasure(projId) {
@@ -3876,7 +3876,7 @@ function solarApplyToMeasure(projId) {
   if (!m.desc || m.desc.trim() === '') m.desc = `Solar PV — ${sc.arrayKw} kW Array`;
   // Recalc dollar savings using baseline rates — the user-saved Baseline Rates table
   // (Energy Savings tab) if set, else the ONE canonical seasonal rate function
-  // (computations/rates.js computeSeasonalBldgRates, via calcBldgDefaultRates) so this
+  // (computations/rates.js computeSeasonalBldgRates) so this
   // never silently zeroes out when the Baseline Rates table hasn't been saved (2026-09-23,
   // item 2026-09-23-rate-source).
   const rates = _svRatesOrCanonical(sd, projId, m.bldgId);

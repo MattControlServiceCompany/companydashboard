@@ -680,9 +680,14 @@ function resolveMeterRate(projId, meter, ym, opts) {
    marginal rate function for a building.
    Item: 2026-09-23-rate-source (single source of truth for utility rates).
 
+   BASELINE-PERIOD rates only: the bills are each meter's baseline bills
+   (m.baseline.months; project fallback months when the meter has none), never
+   all history. Used for PROJECTED / estimated savings (measures, matrix, ECM
+   templates). Measured (M&V) savings do NOT use this: they use each bill's own
+   rate (getStoredRate / resolveMeterRate).
+
    Every surface that shows or uses a building's seasonal marginal utility
-   rate — the Energy Savings measure table (calcBldgDefaultRates, a thin
-   wrapper around this function), the Baseline & BAS Savings Report Inputs
+   rate — the Energy Savings measure table, the Baseline & BAS Savings Report Inputs
    dialog prefill, the BAS Savings Calc rate-card autofill, and the ECM
    calculators' "Add as Measure" default — MUST call this function and MUST
    NOT re-derive its own copy. Savings dollars are always (quantity saved) x
@@ -706,11 +711,11 @@ function resolveMeterRate(projId, meter, ym, opts) {
      {
        kwhSummer, kwhWinter,   // $/kWh, electric energy, mean of per-bill
                                 // getStoredRate(bill,'kwh') for bills in season
-       kwhRate, kwRate,        // $/kWh and $/kW, mean of per-bill rates across ALL
-                                // bills (one number for surfaces with a single rate field)
+       kwhRate, kwRate,        // $/kWh and $/kW, mean of per-bill rates across the
+                                // baseline bills (BAS Trends display lookup only)
        kwSummer, kwWinter,     // $/kW, electric demand, mean of per-bill
                                 // getStoredKwRate(bill) for bills in season
-       thermRate,              // $/Therm, gas — flat mean across all months
+       thermRate,              // $/Therm, gas — flat mean across baseline months
                                 // (gas has no confirmed seasonal tariff split
                                 // for the providers in use; gasSummer/
                                 // gasWinter below are additive detail only)
@@ -757,16 +762,36 @@ function computeSeasonalBldgRates(projId, bldgId) {
     return m.commodity === 'Propane';
   });
 
-  // One bill -> { ym, season, rate } for every bill with a positive rate from `rateFn`.
+  // One BASELINE-PERIOD bill -> { ym, season, rate } for every bill with a positive rate from `rateFn`.
+  // The bills are the meter's baseline bills only (_dashGetBaselineBills, app/core.js: bills whose
+  // normMonth is in m.baseline.months). A meter with no baseline months of its own uses the project's
+  // fallback months (_udProjBaselineMonthsFallback, app/utility-data.js), the same rule the All
+  // Buildings baseline table uses. No baseline anywhere -> no rows -> rate 0.
+  var fallbackMonths = null;
+  var fallbackLoaded = false;
+  function baselineBillsOf(meter) {
+    if (meter.baseline && meter.baseline.months && meter.baseline.months.length) return _dashGetBaselineBills(meter);
+    if (!fallbackLoaded) {
+      fallbackLoaded = true;
+      fallbackMonths = _udProjBaselineMonthsFallback(getUDBldgs(projId));
+    }
+    if (!fallbackMonths) return [];
+    return _dashGetBaselineBills({
+      bills: meter.bills,
+      inclusive: meter.inclusive,
+      baseline: { months: fallbackMonths },
+    });
+  }
   function billRates(meterList, rateFn) {
     var out = [];
     meterList.forEach(function (meter) {
-      (meter.bills || []).forEach(function (bill) {
+      var incl = meter.inclusive !== false;
+      var all = meter.bills || [];
+      baselineBillsOf(meter).forEach(function (bill) {
         var rate = rateFn(bill);
         if (!(rate > 0)) return;
-        var ym = typeof normMonth === 'function' ? normMonth(bill.start, bill.end, {}, meter.bills) : null;
-        var season = ym ? _evergyMetroSeason(ym) : 'winter';
-        out.push({ ym: ym, season: season, rate: rate });
+        var ym = normMonth(bill.start, bill.end, incl, all);
+        out.push({ ym: ym, season: _evergyMetroSeason(ym), rate: rate });
       });
     });
     return out;

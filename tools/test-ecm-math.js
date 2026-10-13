@@ -24,6 +24,13 @@ const sb = {
 vm.createContext(sb);
 vm.runInContext(fs.readFileSync(path.join(root, 'lib/formatting.js'), 'utf8'), sb);
 vm.runInContext(fs.readFileSync(path.join(root, 'computations/rates.js'), 'utf8'), sb);
+vm.runInContext(fs.readFileSync(path.join(root, 'computations/normalization.js'), 'utf8'), sb);
+// Real functions, cut out of their files: the baseline-bill filter, the project baseline fallback, the matrix pricing.
+const cut = (rel, startMark, endMark) => { const t = fs.readFileSync(path.join(root, rel), 'utf8'); const a = t.indexOf(startMark); return t.slice(a, t.indexOf(endMark, a)); };
+vm.runInContext(cut('app/utility-data.js', 'function _fixISO', '// The ONE day-count function'), sb);
+vm.runInContext(cut('app/core.js', 'function _dashGetBaselineBills', 'function initDashboardTab'), sb);
+vm.runInContext(cut('app/utility-data.js', 'function _udProjBaselineMonthsFallback', '// Per-meter baseline totals'), sb);
+vm.runInContext('const SUMMER_MOS = [5, 6, 7, 8];' + cut('app/energy-savings.js', 'function calcMeasureDollars', 'function getProjMatrixSavingsTotal'), sb);
 vm.runInContext(src, sb);
 const T = sb.ECM_TEMPLATES;
 // Rate inputs have no default (blank until Utility Data fills them); the test supplies a manual value.
@@ -53,12 +60,29 @@ const ok = (name, cond, info) => { console.log((cond ? 'PASS ' : 'FAIL ') + name
   ok('measure demand $ equals calc demand $', Math.abs(demand - calc) < 0.5, demand.toFixed(0) + ' vs ' + calc.toFixed(0));
   ok('measure kWh sums to annual', Math.abs(sum(m.kwh) - r.total_savings_kwh) < 0.001, sum(m.kwh)); }
 // 4. Rate autofill: the ONE rate function (computeSeasonalBldgRates) supplies the single kWh/kW rate
-{ sb.getUDBldg = () => ({ id: 'b1', meters: [{ commodity: 'Electric', bills: elecBills }] });
+{ const baselineMeter = { commodity: 'Electric', bills: elecBills, baseline: { months: ['2025-01', '2025-02', '2025-03', '2025-04', '2025-05', '2025-06', '2025-07', '2025-08', '2025-09', '2025-10', '2025-11', '2025-12'] } };
+  sb.getUDBldgs = () => [{ id: 'b1', meters: [baselineMeter] }];
+  sb.getUDBldg = () => ({ id: 'b1', meters: [baselineMeter] });
   const r = sb.computeSeasonalBldgRates('p1', 'b1');
   ok('building kWh rate from the one rate function > 0', r.kwhRate > 0 && r.kwhRate < 0.2, r.kwhRate);
   ok('kwhRate lies between seasonal rates', r.kwhRate >= Math.min(r.kwhSummer, r.kwhWinter) - 1e-9 && r.kwhRate <= Math.max(r.kwhSummer, r.kwhWinter) + 1e-9, r.kwhRate);
   ok('getProjectRates copy is gone', typeof sb.getProjectRates === 'undefined');
   ok('elec rate inputs have no invented default', T.lighting_replacement.inputs.find((i) => i.id === 'elec_rate').default === null); }
+// 4b. Baseline period only: a 2026 bill outside the baseline months does not move the rate
+{ const meter = sb.getUDBldg().meters[0]; const before = sb.computeSeasonalBldgRates('p1', 'b1');
+  const extra = elecBills.slice(); extra.push({ start: '2026-04-01', end: '2026-04-30', kwh: 100000, kwhCost: 90000, kwCost: 2000, billedKW: 250, otherCost: 500, taxCost: 200 });
+  meter.bills = extra; const after = sb.computeSeasonalBldgRates('p1', 'b1'); meter.bills = elecBills;
+  ok('bill outside the baseline months does not change the rates', after.kwhWinter === before.kwhWinter && after.kwhRate === before.kwhRate, before.kwhWinter + ' vs ' + after.kwhWinter);
+  ok('summer and winter kWh rates differ (Jan-Mar bills cost more)', before.kwhWinter > before.kwhSummer, before.kwhWinter + ' / ' + before.kwhSummer);
+  const keep = meter.baseline; meter.baseline = { months: [] };
+  ok('no baseline anywhere -> rate 0, not all-history', sb.computeSeasonalBldgRates('p1', 'b1').kwhRate === 0);
+  meter.baseline = keep; }
+// 4c. ecmPrice: seasonal rate on an even 12-month profile equals the matrix sum; typed rate stays flat
+{ const r = sb.computeSeasonalBldgRates('p1', 'b1'); const q = 120000;
+  const exp = sb.calcMeasureDollars({ kwh: Array(12).fill(q / 12) }, r).total;
+  ok('ecmPrice seasonal == calcMeasureDollars monthly sum', Math.abs(sb.ecmPrice({ __seasonal: { elec_rate: r }, elec_rate: 0.5 }, 'elec', q) - exp) < 1e-6, exp.toFixed(2));
+  ok('ecmPrice typed rate is flat', sb.ecmPrice({ __seasonal: null, elec_rate: 0.5 }, 'elec', q) === q * 0.5);
+  ok('ecmPrice demand typed = kW x rate x 12', sb.ecmPrice({ demand_rate: 10 }, 'demand', 5) === 600); }
 // 5. 0.3 VAV factor is labelled in plain words
 { const f = T.vav_reheat;
   const o = f.outputs.find((x) => x.id === 'cool_kwh_saved');

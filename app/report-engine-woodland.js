@@ -323,7 +323,7 @@ function _wdDefaultCfg(projId, bldgId) {
     ],
   };
   var b = typeof getUDBldg === 'function' ? getUDBldg(projId, bldgId) : null;
-  var def = typeof calcBldgDefaultRates === 'function' ? calcBldgDefaultRates(projId, bldgId) : {};
+  var def = computeSeasonalBldgRates(projId, bldgId);
   WD_RATE_FIELDS.forEach(function (f) {
     cfg.rates[f.key] = parseFloat(def[f.key]) || 0;
   });
