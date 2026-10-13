@@ -706,6 +706,8 @@ function resolveMeterRate(projId, meter, ym, opts) {
      {
        kwhSummer, kwhWinter,   // $/kWh, electric energy, mean of per-bill
                                 // getStoredRate(bill,'kwh') for bills in season
+       kwhRate, kwRate,        // $/kWh and $/kW, mean of per-bill rates across ALL
+                                // bills (one number for surfaces with a single rate field)
        kwSummer, kwWinter,     // $/kW, electric demand, mean of per-bill
                                 // getStoredKwRate(bill) for bills in season
        thermRate,              // $/Therm, gas — flat mean across all months
@@ -731,8 +733,10 @@ function computeSeasonalBldgRates(projId, bldgId) {
   var empty = {
     kwhSummer: 0,
     kwhWinter: 0,
+    kwhRate: 0,
     kwSummer: 0,
     kwWinter: 0,
+    kwRate: 0,
     thermRate: 0,
     gasSummer: 0,
     gasWinter: 0,
@@ -809,6 +813,9 @@ function computeSeasonalBldgRates(projId, bldgId) {
     out.kwhWinter = Math.round(mean(kwhSplit.winter) * 10000) / 10000;
     out.kwSummer = Math.round(mean(kwSplit.summer) * 100) / 100;
     out.kwWinter = Math.round(mean(kwSplit.winter) * 100) / 100;
+    // Single all-season $/kWh and $/kW for surfaces that show ONE rate (ECM form, BAS Trends).
+    out.kwhRate = Math.round(mean(kwhRows) * 10000) / 10000;
+    out.kwRate = Math.round(mean(kwRows) * 100) / 100;
     out.months.kwhSummer = yms(kwhSplit.summer);
     out.months.kwhWinter = yms(kwhSplit.winter);
     out.months.kwSummer = yms(kwSplit.summer);

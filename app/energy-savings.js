@@ -398,19 +398,12 @@ function renderSavingsFooter(projId, sd) {
     m.kw.forEach((v, i) => (totKw[i] += parseFloat(v) || 0));
     m.gas.forEach((v, i) => (totGas[i] += parseFloat(v) || 0));
     (m.propane || []).forEach((v, i) => (totPropane[i] += parseFloat(v) || 0));
-    const rates = m.rates || (sd.blRates || {})[m.bldgId] || {};
-    for (let mo = 0; mo < 12; mo++) {
-      const s = SUMMER_MOS.includes(mo);
-      const kwhAmt = (parseFloat(m.kwh[mo]) || 0) * (s ? rates.kwhSummer || 0 : rates.kwhWinter || 0);
-      const kwAmt = (parseFloat(m.kw[mo]) || 0) * (s ? rates.kwSummer || 0 : rates.kwWinter || 0);
-      const gasAmt = (parseFloat(m.gas[mo]) || 0) * (rates.thermRate || 0);
-      const propaneAmt = (parseFloat((m.propane || [])[mo]) || 0) * (rates.gallonRate || 0);
-      grandTotal += kwhAmt + kwAmt + gasAmt + propaneAmt;
-      totKwhCost += kwhAmt;
-      totKwCost += kwAmt;
-      totGasCost += gasAmt;
-      totPropaneCost += propaneAmt;
-    }
+    const d = calcMeasureDollars(m, m.rates || (sd.blRates || {})[m.bldgId] || {});
+    grandTotal += d.total;
+    totKwhCost += d.kwh;
+    totKwCost += d.kw;
+    totGasCost += d.gas;
+    totPropaneCost += d.propane;
   });
   const fmtN = (v) => (v ? v.toLocaleString(undefined, { maximumFractionDigits: 0 }) : '');
   const fmtD = (v) => (v > 0 ? '$' + Math.round(v).toLocaleString() : '');
@@ -556,6 +549,48 @@ function autoSaveMsr(projId) {
   sset('en_projects', projects);
 }
 
+// calcMeasureDollars(m, rates) - the ONE pricing rule for a savings-matrix measure:
+// each month's quantity saved x that month's seasonal rate, summed over the 12 months
+// ((Baseline - Actual) x Rate, never a dollar delta). Rates come from calcBldgDefaultRates.
+function calcMeasureDollars(m, rates) {
+  rates = rates || {};
+  let kwh = 0,
+    kw = 0,
+    gas = 0,
+    propane = 0,
+    total = 0;
+  for (let mo = 0; mo < 12; mo++) {
+    const s = SUMMER_MOS.includes(mo);
+    const kwhAmt = (parseFloat((m.kwh || [])[mo]) || 0) * (s ? rates.kwhSummer || 0 : rates.kwhWinter || 0);
+    const kwAmt = (parseFloat((m.kw || [])[mo]) || 0) * (s ? rates.kwSummer || 0 : rates.kwWinter || 0);
+    const gasAmt = (parseFloat((m.gas || [])[mo]) || 0) * (rates.thermRate || 0);
+    const propaneAmt = (parseFloat((m.propane || [])[mo]) || 0) * (rates.gallonRate || 0);
+    kwh += kwhAmt;
+    kw += kwAmt;
+    gas += gasAmt;
+    propane += propaneAmt;
+    total += kwhAmt + kwAmt + gasAmt + propaneAmt;
+  }
+  return { kwh, kw, gas, propane, total };
+}
+
+// getProjMatrixSavingsTotal(projId) - the project's projected annual savings in dollars: the sum of
+// calcMeasureDollars over the SELECTED measures. Same number the matrix footer shows.
+// Returns null when no measure is selected (callers show "No savings estimate yet").
+function getProjMatrixSavingsTotal(projId) {
+  // Callers pass the id as a number or a string (Cost Estimate tab); match either.
+  const proj = projects.find((x) => String(x.id) === String(projId));
+  if (!proj) return null;
+  const sd = getProjSavingsData(proj.id);
+  const sel = ((sd && sd.measures) || []).filter((m) => m.selected !== false);
+  if (!sel.length) return null;
+  let total = 0;
+  sel.forEach((m) => {
+    total += calcMeasureDollars(m, m.rates || (sd.blRates || {})[m.bldgId] || {}).total;
+  });
+  return total > 0 ? total : null;
+}
+
 function calcProjSavingsMatrix(projId) {
   const sd = getProjSavingsData(projId);
   // Read live DOM values back into data (check both project-tab and sidebar row IDs)
@@ -574,14 +609,7 @@ function calcProjSavingsMatrix(projId) {
   // Recalculate $ per measure using seasonal rates
   sd.measures.forEach((m) => {
     const rates = m.rates || sd.blRates[m.bldgId] || {};
-    let total = 0;
-    for (let mo = 0; mo < 12; mo++) {
-      const isSummer = SUMMER_MOS.includes(mo);
-      total += (m.kwh[mo] || 0) * (isSummer ? rates.kwhSummer || 0 : rates.kwhWinter || 0);
-      total += (m.kw[mo] || 0) * (isSummer ? rates.kwSummer || 0 : rates.kwWinter || 0);
-      total += (m.gas[mo] || 0) * (rates.thermRate || 0);
-      total += ((m.propane || [])[mo] || 0) * (rates.gallonRate || 0);
-    }
+    const total = calcMeasureDollars(m, rates).total;
     m.totalDollar = total;
     const cell =
       document.getElementById('sv-msr-total-' + projId + '-' + m.id) || document.getElementById('sv-pg-total-' + m.id);

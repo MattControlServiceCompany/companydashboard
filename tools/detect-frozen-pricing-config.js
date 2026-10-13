@@ -72,7 +72,7 @@ Object.keys(data)
   .forEach((k) => {
     const st = val(data[k]);
     if (!st || typeof st !== 'object') return;
-    ['netMultiplier', 'hourlyRate', 'priceBasis', 'fanFraction'].forEach((f) => {
+    ['netMultiplier', 'hourlyRate', 'priceBasis'].forEach((f) => {
       if (f in st && st[f] !== live[f])
         add(
           k,

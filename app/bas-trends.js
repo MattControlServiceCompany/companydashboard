@@ -3075,7 +3075,7 @@ function btSelectHealthMonth(month) {
  */
 function btGatherFaultRows(bldg, projId) {
   // Get blended rate from utility bills if available
-  var blendedRate = btGetBlendedRate(projId, _btSelBldg, 'Electric');
+  var blendedRate = btBldgRate(projId, _btSelBldg, 'Electric');
 
   var rows = [];
   var equipment = bldg.equipment || {};
@@ -3172,39 +3172,15 @@ function btGatherFaultRows(bldg, projId) {
 }
 
 /**
- * Get the blended rate for a building from the saved bills of its meters of one commodity
- * ('Electric' = $/kWh, 'Gas' = $/therm). Returns null when there are no priced bills of
- * that commodity (callers show "rate unavailable").
+ * Display lookup of the building's $/kWh ('Electric') or $/therm ('Gas') from the ONE rate function
+ * (computeSeasonalBldgRates, computations/rates.js). No rate math here. Returns null when that
+ * function has no rate (callers show "rate unavailable").
  */
-function btGetBlendedRate(projId, bldgId, commodity) {
+function btBldgRate(projId, bldgId, commodity) {
   try {
-    var bldgs = getUDBldgs(projId) || [];
-    if (!bldgs.length) return null;
-    var bldg = null;
-    for (var i = 0; i < bldgs.length; i++) {
-      if (bldgs[i].id === bldgId || bldgs[i].name === bldgId) {
-        bldg = bldgs[i];
-        break;
-      }
-    }
-    if (!bldg) bldg = bldgs[0]; // fallback: first building
-    var meters = (bldg && bldg.meters) || [];
-    var totalCost = 0,
-      totalKwh = 0;
-    for (var mi = 0; mi < meters.length; mi++) {
-      if (meters[mi].commodity !== commodity) continue;
-      var bills = meters[mi].bills || [];
-      for (var bi = 0; bi < bills.length; bi++) {
-        var b = bills[bi];
-        var cost = parseFloat(b.totalCost) || 0;
-        var kwh = parseFloat(commodity === 'Gas' ? b.therms : b.kwh || b.kWh) || 0;
-        if (cost > 0 && kwh > 0) {
-          totalCost += cost;
-          totalKwh += kwh;
-        }
-      }
-    }
-    return totalKwh > 0 ? btRound(totalCost / totalKwh, 4) : null;
+    var r = computeSeasonalBldgRates(projId, bldgId);
+    var v = commodity === 'Gas' ? r.thermRate : r.kwhRate;
+    return v > 0 ? v : null;
   } catch (e) {
     return null;
   }
@@ -4827,8 +4803,8 @@ function btMatchBehaviorToRow(behaviorSummary, row) {
  */
 function btEstimateSavings(projId, bldgId, opts) {
   opts = opts || {};
-  var elecRate = opts.elecRate || btGetBlendedRate(projId, bldgId, 'Electric'); // null = rate unavailable
-  var gasRate = opts.gasRate || btGetBlendedRate(projId, bldgId, 'Gas'); // null = rate unavailable
+  var elecRate = opts.elecRate || btBldgRate(projId, bldgId, 'Electric'); // null = rate unavailable
+  var gasRate = opts.gasRate || btBldgRate(projId, bldgId, 'Gas'); // null = rate unavailable
   var fanHpPerAhu = opts.fanHpPerAhu || 5; // HP — conservative default for medium AHU
   var cfmPerAhu = opts.cfmPerAhu || 10000; // CFM — conservative default
 
@@ -5081,12 +5057,12 @@ function btRenderSavingsPanel(projId, bldgId) {
     (rateKnown ? '$' + totalDollars.toLocaleString() + '/yr' : 'rate unavailable') +
     ' &nbsp;|&nbsp; ' +
     'Based on measured fault data from BAS trends. Rates: ' +
-    (btGetBlendedRate(projId, bldgId, 'Electric') !== null
-      ? '$' + btGetBlendedRate(projId, bldgId, 'Electric').toFixed(3) + '/kWh'
+    (btBldgRate(projId, bldgId, 'Electric') !== null
+      ? '$' + btBldgRate(projId, bldgId, 'Electric').toFixed(3) + '/kWh'
       : 'electric rate unavailable (no priced electric bills)') +
     ', ' +
-    (btGetBlendedRate(projId, bldgId, 'Gas') !== null
-      ? '$' + btGetBlendedRate(projId, bldgId, 'Gas').toFixed(3) + '/therm'
+    (btBldgRate(projId, bldgId, 'Gas') !== null
+      ? '$' + btBldgRate(projId, bldgId, 'Gas').toFixed(3) + '/therm'
       : 'gas rate unavailable (no priced gas bills)') +
     '.' +
     '</div>' +
@@ -5265,7 +5241,7 @@ function btGetBASForBillPeriod(projId, bldgId, billStart, billEnd, billCost, bil
   if (commodity === 'Electric' && billCost && billUsage && billUsage > 0) {
     blendedRate = btRound(billCost / billUsage, 5);
   } else {
-    blendedRate = btGetBlendedRate(projId, bldgId, 'Electric');
+    blendedRate = btBldgRate(projId, bldgId, 'Electric');
   }
 
   var result = {

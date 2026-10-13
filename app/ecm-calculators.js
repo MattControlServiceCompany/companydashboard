@@ -115,7 +115,7 @@ const ECM_TEMPLATES = {
         max: 8,
       },
       { id: 'gas_rate', label: 'Gas Rate', unit: '$/therm', type: 'number', default: 0.8, min: 0.1, max: 5.0 },
-      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: 0.085, min: 0.01, max: 1.0 },
+      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null, min: 0.01, max: 1.0 },
       {
         id: 'repair_cost',
         label: 'Repair / Replacement Cost',
@@ -286,7 +286,7 @@ const ECM_TEMPLATES = {
         min: 1,
         max: 100,
       },
-      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: 0.085, min: 0.01, max: 1.0 },
+      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null, min: 0.01, max: 1.0 },
       { id: 'gas_rate', label: 'Gas Rate', unit: '$/therm', type: 'number', default: 0.8, min: 0.1, max: 5.0 },
       {
         id: 'equipment_cost',
@@ -441,7 +441,7 @@ const ECM_TEMPLATES = {
         ],
         default: 'affinity',
       },
-      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: 0.085, min: 0.01, max: 1.0 },
+      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null, min: 0.01, max: 1.0 },
       {
         id: 'vfd_cost',
         label: 'VFD Purchase & Install Cost',
@@ -546,7 +546,7 @@ const ECM_TEMPLATES = {
         min: 10,
         max: 100,
       },
-      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: 0.085, min: 0.01, max: 1.0 },
+      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null, min: 0.01, max: 1.0 },
       {
         id: 'demand_rate',
         label: 'Demand Rate',
@@ -777,7 +777,7 @@ const ECM_TEMPLATES = {
         max: 1,
       },
       { id: 'gas_rate', label: 'Gas Rate', unit: '$/therm', type: 'number', default: 0.85, min: 0.1, max: 5.0 },
-      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: 0.085, min: 0.01, max: 1.0 },
+      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null, min: 0.01, max: 1.0 },
       {
         id: 'installed_cost',
         label: 'Installed Cost',
@@ -932,7 +932,7 @@ const ECM_TEMPLATES = {
         label: 'Blended Rate (BTM scenario)',
         unit: '$/kWh',
         type: 'number',
-        default: 0.085,
+        default: null,
         min: 0.01,
         max: 0.5,
       },
@@ -1101,7 +1101,7 @@ const ECM_TEMPLATES = {
         min: 100,
         max: 8760,
       },
-      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: 0.085, min: 0.01, max: 1.0 },
+      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null, min: 0.01, max: 1.0 },
       {
         id: 'demand_rate',
         label: 'Demand Rate',
@@ -1292,7 +1292,7 @@ const ECM_TEMPLATES = {
         min: 50,
         max: 100,
       },
-      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: 0.085, min: 0.01, max: 1.0 },
+      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null, min: 0.01, max: 1.0 },
       {
         id: 'demand_rate',
         label: 'Demand Rate',
@@ -1425,7 +1425,7 @@ const ECM_TEMPLATES = {
         min: 100,
         max: 8760,
       },
-      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: 0.085, min: 0.01, max: 1.0 },
+      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null, min: 0.01, max: 1.0 },
       { id: 'install_cost', label: 'VFD Install Cost', unit: '$', type: 'number', default: 8000, min: 0, max: 500000 },
     ],
     outputs: [
@@ -1513,7 +1513,7 @@ const ECM_TEMPLATES = {
         min: 100,
         max: 8760,
       },
-      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: 0.085, min: 0.01, max: 1.0 },
+      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null, min: 0.01, max: 1.0 },
       {
         id: 'total_cost',
         label: 'Total Replacement Cost',
@@ -1675,7 +1675,7 @@ const ECM_TEMPLATES = {
         min: 1,
         max: 8,
       },
-      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: 0.085, min: 0.01, max: 1.0 },
+      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null, min: 0.01, max: 1.0 },
       {
         id: 'install_cost',
         label: 'CO2 Sensor Install Cost',
@@ -1818,7 +1818,7 @@ const ECM_TEMPLATES = {
         max: 8,
       },
       { id: 'gas_rate', label: 'Gas Rate', unit: '$/therm', type: 'number', default: 0.8, min: 0.1, max: 5.0 },
-      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: 0.085, min: 0.01, max: 1.0 },
+      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null, min: 0.01, max: 1.0 },
       {
         id: 'min_flow_old',
         label: 'Current Min Airflow Setpoint',
@@ -2128,7 +2128,7 @@ const ECM_TEMPLATES = {
       },
       { id: 'cooling_cop', label: 'Cooling System Coefficient of Performance', unit: 'COP', type: 'number', default: 3.5, min: 1, max: 8 },
       { id: 'gas_rate', label: 'Gas Rate', unit: '$/therm', type: 'number', default: 0.8, min: 0.1, max: 5.0 },
-      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: 0.085, min: 0.01, max: 1.0 },
+      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null, min: 0.01, max: 1.0 },
       { id: 'install_cost', label: 'Install Cost', unit: '$', type: 'number', default: 25000, min: 0, max: 5000000 },
     ],
     outputs: [
@@ -2277,7 +2277,7 @@ const ECM_TEMPLATES = {
         min: 100,
         max: 8760,
       },
-      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: 0.085, min: 0.01, max: 1.0 },
+      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null, min: 0.01, max: 1.0 },
       {
         id: 'install_cost',
         label: 'Fan Wall Install Cost',
@@ -2381,124 +2381,6 @@ const ECM_TEMPLATES = {
     custom: true, // launchCalcTemplate opens the dedicated full-page view, not the generic ECM input form
   },
 };
-
-/* ─── Project Rate Helper ────────────────────────────── */
-
-/**
- * Compute energy-only electric rate, gas rate and demand rate from the 12 months ending at the newest bill.
- * Returns an object with electric_rate, gas_rate, demand_rate, and source labels.
- * Reads from the runtime utilityData object populated by loadUtilityData().
- * @param {string|number} projId
- * @returns {{ electric_rate: number|null, gas_rate: number|null, demand_rate: number|null, sourceLabel: string, billCount: number }}
- */
-function getProjectRates(projId) {
-  const result = {
-    electric_rate: null,
-    gas_rate: null,
-    demand_rate: null,
-    sourceLabel: "",
-    billCount: 0,
-  };
-
-  // Scope-filtered buildings for this project (app/utility-data.js accessor).
-  const buildings =
-    typeof getUDBldgs === "function" ? getUDBldgs(projId) : null;
-  if (!buildings || !buildings.length) return result;
-
-  const billDate = (bill) =>
-    bill.end ? new Date(bill.end + "T12:00:00") : null;
-
-  // 12-month window ending at the NEWEST bill in the project (not today's date).
-  let newest = null;
-  for (const bldg of buildings) {
-    for (const meter of bldg.meters || []) {
-      for (const bill of meter.bills || []) {
-        const d = billDate(bill);
-        if (d && !isNaN(d) && (!newest || d > newest)) newest = d;
-      }
-    }
-  }
-  if (!newest) return result;
-  const cutoff = new Date(newest.getFullYear(), newest.getMonth() - 11, 1);
-
-  let elecEnergyCost = 0,
-    elecKwh = 0,
-    elecBills = 0;
-  let gasCost = 0,
-    gasTherms = 0;
-  let demandCharge = 0,
-    demandKw = 0;
-
-  for (const bldg of buildings) {
-    for (const meter of bldg.meters || []) {
-      const commodity = (meter.commodity || "").toLowerCase();
-      const isElec = commodity === "electric";
-      const isGas = commodity === "gas" || commodity === "natural gas";
-
-      for (const bill of meter.bills || []) {
-        const billEnd = billDate(bill);
-        if (!billEnd || billEnd < cutoff) continue;
-
-        result.billCount++;
-
-        if (isElec) {
-          // Energy-only $/kWh, weighted by kWh. Demand is priced separately below,
-          // so it is not part of this rate.
-          const kwh = parseFloat(bill.kwh || bill.kWhConsumed) || 0;
-          const energyRate = getStoredRate(bill, "kwh");
-          if (kwh > 0 && energyRate > 0) {
-            elecEnergyCost += energyRate * kwh;
-            elecKwh += kwh;
-            elecBills++;
-          }
-          const dc = getBillKwCost(bill); // BilledKWCharge + TDCCharge
-          const bkw = parseFloat(bill.billedKW || bill.BilledKW) || 0;
-          if (dc > 0 && bkw > 0) {
-            demandCharge += dc;
-            demandKw += bkw;
-          }
-        }
-
-        if (isGas) {
-          // Gas bills store total cost in totalCost; therms via resolveGasUsageTherms() (therms/
-          // naturalGasTherms/naturalGasMMbtu/naturalGasCCF/usage chain), with bill.units/bill.kwh
-          // as a last-resort generic-field fallback for older records that used neither.
-          const _gasTotalCost = parseFloat(bill.totalCost) || 0;
-          const _gasLineCost = getBillKwhCost(bill) + getBillOtherCost(bill) + getBillTaxCost(bill);
-          const cost = _gasTotalCost > 0 ? _gasTotalCost : _gasLineCost;
-          const therms =
-            resolveGasUsageTherms(bill) ||
-            parseFloat(bill.units) ||
-            parseFloat(bill.kwh) ||
-            0;
-          if (cost > 0 && therms > 0) {
-            gasCost += cost;
-            gasTherms += therms;
-          }
-        }
-      }
-    }
-  }
-
-  if (elecKwh > 0) {
-    result.electric_rate =
-      Math.round((elecEnergyCost / elecKwh) * 10000) / 10000;
-    result.sourceLabel =
-      elecBills +
-      " bill" +
-      (elecBills !== 1 ? "s" : "") +
-      " (12 months to newest bill, energy charge only)";
-  }
-  if (gasTherms > 0) {
-    result.gas_rate = Math.round((gasCost / gasTherms) * 10000) / 10000;
-  }
-  if (demandKw > 0) {
-    // $/kW/month = total demand charges / total billed kW
-    result.demand_rate = Math.round((demandCharge / demandKw) * 100) / 100;
-  }
-
-  return result;
-}
 
 /* ─── ECM Project Storage ────────────────────────────── */
 
@@ -2751,11 +2633,18 @@ function renderEcmCalculator(templateId, container, savedValues, onBack, onCalcu
   const sv = savedValues || {};
   const ctx = projectContext || null;
 
-  // Auto-populate rates from project bill data when context is provided
+  // Auto-populate rates from the building's Utility Data. The ONE rate function is
+  // computeSeasonalBldgRates (computations/rates.js); nothing here derives a rate itself.
   let autoRates = null;
-  if (ctx && ctx.projId) {
+  if (ctx && ctx.projId && ctx.buildingId && typeof computeSeasonalBldgRates === 'function') {
     try {
-      autoRates = getProjectRates(ctx.projId);
+      const r = computeSeasonalBldgRates(ctx.projId, ctx.buildingId);
+      autoRates = {
+        electric_rate: r.kwhRate > 0 ? r.kwhRate : null,
+        gas_rate: r.thermRate > 0 ? r.thermRate : null,
+        demand_rate: r.kwRate > 0 ? r.kwRate : null,
+        sourceLabel: formatBillMonthsLabel(r.months.kwhSummer.concat(r.months.kwhWinter)),
+      };
     } catch (e) {
       autoRates = null;
     }
@@ -2765,6 +2654,7 @@ function renderEcmCalculator(templateId, container, savedValues, onBack, onCalcu
   const AUTO_FIELDS = {
     elec_rate: autoRates && autoRates.electric_rate != null ? autoRates.electric_rate : null,
     electric_rate: autoRates && autoRates.electric_rate != null ? autoRates.electric_rate : null,
+    btm_rate: autoRates && autoRates.electric_rate != null ? autoRates.electric_rate : null,
     gas_rate: autoRates && autoRates.gas_rate != null ? autoRates.gas_rate : null,
     demand_rate: autoRates && autoRates.demand_rate != null ? autoRates.demand_rate : null,
   };
@@ -2774,7 +2664,7 @@ function renderEcmCalculator(templateId, container, savedValues, onBack, onCalcu
 
   const fields = tmpl.inputs
     .map((inp) => {
-      let val = sv[inp.id] != null ? sv[inp.id] : inp.default;
+      let val = sv[inp.id] != null ? sv[inp.id] : inp.default == null ? '' : inp.default;
       const id = 'ecm-inp-' + inp.id;
 
       // Check for auto-population
@@ -2816,7 +2706,7 @@ function renderEcmCalculator(templateId, container, savedValues, onBack, onCalcu
         <div style="flex:1;min-width:160px">
           <input id="${id}" class="fi ecm-input" type="number" data-inp="${inp.id}"
             value="${val}" min="${inp.min}" max="${inp.max}"
-            step="${inp.type === 'number' && val < 1 ? '0.001' : '1'}"
+            step="${inp.type === 'number' && (val === '' || val < 1) ? '0.001' : '1'}"
             style="width:100%;font-size:13px;${autoStyle}"
             oninput="_ecmValidateInput(this,${inp.min},${inp.max})" />
           ${autoTag}
@@ -2872,7 +2762,7 @@ function renderEcmCalculator(templateId, container, savedValues, onBack, onCalcu
     tmpl.inputs.forEach((inp) => {
       const el = container.querySelector('#ecm-inp-' + inp.id);
       if (el) {
-        el.value = inp.default;
+        el.value = inp.default == null ? '' : inp.default;
         el.style.color = '';
         el.style.borderColor = '';
       }

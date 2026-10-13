@@ -79,34 +79,14 @@ load(ctx, 'app/audit-estimate.js');
 const pSrc = fs.readFileSync(path.join(ROOT, 'app/pricing-estimator.js'), 'utf8');
 const aSrc = fs.readFileSync(path.join(ROOT, 'app/audit-estimate.js'), 'utf8');
 
-// 1. Electric commodity + newest 12 months
-function mkBills(n, startY, startM) {
-  const b = [];
-  for (let i = 0; i < n; i++) {
-    const m = startM + i,
-      y = startY + Math.floor((m - 1) / 12),
-      mm = ((m - 1) % 12) + 1;
-    const s = y + '-' + String(mm).padStart(2, '0') + '-01';
-    b.push({ start: s, end: s, kwh: 1000, totalCost: 100 });
-  }
-  return b;
-}
-ctx.getUDBldgs = () => [
-  {
-    meters: [
-      { commodity: 'Electric', bills: mkBills(24, 2024, 1) },
-      { commodity: 'Electric', bills: mkBills(24, 2024, 1) },
-    ],
-  },
-];
-let r = run(ctx, '_pricingGetProjectAnnualElec(1)');
-check('Electric meters are read (hasBillData)', r.hasBillData === true && r.annualKwh !== null, JSON.stringify(r));
-check('24 months x 2 meters -> newest 12 months = 24000 kWh (not 12 bills)', r.annualKwh === 24000, r.annualKwh);
-ctx.getUDBldgs = () => [{ meters: [{ commodity: 'Electric', bills: mkBills(6, 2025, 1) }] }];
-r = run(ctx, '_pricingGetProjectAnnualElec(1)');
-check('6 months of data annualized x12/6 = 12000', r.annualKwh === 12000, r.annualKwh);
-ctx.getUDBldgs = () => [{ meters: [{ commodity: 'Gas', bills: mkBills(12, 2025, 1) }] }];
-check('Gas meter is not counted as electric', run(ctx, '_pricingGetProjectAnnualElec(1)').hasBillData === false);
+// 1. The pricing estimator owns cost only: no energy-savings rule or invented rate remains
+check('no fan fraction / savings range map in pricing estimator',
+  !/FAN_FRACTION_DEFAULT|SAVINGS_RANGE_MAP|_pricingGetProjectAnnualElec|_pricingComputeSavingsRange|fanFraction/.test(pSrc));
+store.en_projects = [{ id: 1 }];
+ctx.getProjMatrixSavingsTotal = () => null;
+check('no matrix total -> plain message', /No savings estimate yet/.test(run(ctx, '_pricingSavingsLineHTML(1)')));
+ctx.getProjMatrixSavingsTotal = () => 12345;
+check('matrix total is shown as read', /\$12,345/.test(run(ctx, '_pricingSavingsLineHTML(1)')), run(ctx, '_pricingSavingsLineHTML(1)'));
 
 // 2. Saved config: new save stores only changed fields; stored values always win
 delete store.en_pricing_config;

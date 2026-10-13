@@ -573,107 +573,6 @@ function _hwRowKeyMatchesBlocking(hwPointKey, blockingKeys) {
   return false;
 }
 
-/* ── Step 5: $ savings range data per sequence (2026-06-19)
-   energyBasis: 'fan' = annualElec × fanFraction × [low..high]
-                'elec' = annualElec × [low..high]
-                'elecPct' = annualElec × constant% (tight range around known study value)
-                null = qualitative only — engineering estimate, show prompt not $
-   Sequences without a published-study % basis are set to null (show qualitative only).
-   DCV: 2.6% total site energy ≈ total elec (approximation; gas savings shown qualitatively).
-   ─────────────────────────────────────────────────────────────────────────── */
-const SAVINGS_RANGE_MAP = {
-  ahu_dsp_reset: { lowPct: 0.22, highPct: 0.65, energyBasis: 'fan', citation: '[NLR-DSP-2026]' },
-  ahu_sat_reset: { lowPct: 0.22, highPct: 0.42, energyBasis: 'fan', citation: '[LBNL-ASHRAE36-2022 / ORNL-ASHRAE36-2024]' },
-  demandCtrl: { lowPct: 0.022, highPct: 0.03, energyBasis: 'elec', citation: '[NREL-DCV-2023]' },
-  vav_dcv: { lowPct: 0.022, highPct: 0.03, energyBasis: 'elec', citation: '[NREL-DCV-2023]' },
-  // All others: qualitative only (no fabricated % from engineering-only sources)
-};
-const FAN_FRACTION_DEFAULT = 0.12; // CBECS VAV 10–20%; user-editable
-
-/* ── Get project annual electricity (kWh) from en_utility_<projId> bill data ──
-   Returns { annualKwh: number|null, hasBillData: boolean, elecRate: number }.
-   annualKwh: sum of kWh on all electric meters over the newest 12 calendar
-   months of bill data (annualized from the months present if fewer than 12).
-   elecRate: weighted average $/kWh across all elec bills; fallback 0.10.
-   Returns hasBillData=false if the project has no electricity bills.
-   Data source: en_utility_<projId> → { buildings: [{ meters: [{ bills: [] }] }] }
-   ─────────────────────────────────────────────────────────────────────────── */
-function _pricingGetProjectAnnualElec(projId) {
-  var _peBldgs = typeof getUDBldgs === 'function' ? getUDBldgs(projId) : null;
-  if (!_peBldgs || !_peBldgs.length) return { annualKwh: null, hasBillData: false, elecRate: 0.1 };
-
-  var allElecBills = [];
-  var totalCost = 0,
-    totalKwh = 0;
-  _peBldgs.forEach(function (b) {
-    (b.meters || []).forEach(function (m) {
-      if (m.commodity && m.commodity !== 'Electric') return;
-      (m.bills || []).forEach(function (bill) {
-        var kwh = parseFloat(bill.kwh) || parseFloat(bill.usage) || 0;
-        if (kwh > 0) {
-          var _dt = bill.end || bill.start || bill.date || '';
-          if (!_dt) return; // an undated bill cannot be placed in a 12-month window
-          allElecBills.push({ kwh: kwh, month: String(_dt).slice(0, 7) });
-          totalKwh += kwh;
-          totalCost += parseFloat(bill.totalCost) || parseFloat(bill.amount) || 0;
-        }
-      });
-    });
-  });
-
-  if (!allElecBills.length) return { annualKwh: null, hasBillData: false, elecRate: 0.1 };
-
-  // Newest 12 calendar months of bill data (all meters), by bill end month. Fewer than 12
-  // months of data: annualize by 12 / months-with-data.
-  var _months = {};
-  allElecBills.forEach(function (b) {
-    _months[b.month] = true;
-  });
-  var _recentMonths = Object.keys(_months).sort().reverse().slice(0, 12);
-  var _inWindow = {};
-  _recentMonths.forEach(function (mo) {
-    _inWindow[mo] = true;
-  });
-  var annualKwh = allElecBills.reduce(function (s, b) {
-    return _inWindow[b.month] ? s + b.kwh : s;
-  }, 0);
-  if (_recentMonths.length < 12) annualKwh = (annualKwh / _recentMonths.length) * 12;
-  var elecRate = totalKwh > 0 && totalCost > 0 ? totalCost / totalKwh : 0.1;
-  return { annualKwh: Math.round(annualKwh), hasBillData: true, elecRate: elecRate };
-}
-
-/* ── Format savings range as "$X,XXX–$Y,YYY/yr" ───────────────────────────── */
-function _pricingFmtSavingsRange(low, high) {
-  function fmt(n) {
-    return '$' + Math.round(n).toLocaleString('en-US');
-  }
-  if (low === high) return fmt(low) + '/yr';
-  return fmt(low) + '–' + fmt(high) + '/yr';
-}
-
-/* ── Compute savings range for a row given annual energy data ───────────────
-   Returns { low, high, label } or null if not computable.
-   The 3 must-validate sequences (hwp_supply_reset, vav_reheat, demandCtrl/vav_dcv)
-   keep their existing persistent warnings from savingsRationale — no $ suppression here
-   beyond what SAVINGS_RANGE_MAP already handles (demandCtrl/vav_dcv ARE in the map).
-   ─────────────────────────────────────────────────────────────────────────── */
-function _pricingComputeSavingsRange(row, annualKwh, fanFraction, elecRate) {
-  var rmap = SAVINGS_RANGE_MAP[row.seqKey];
-  if (!rmap) return null;
-  if (!annualKwh) return null;
-  // elecRate fallback: $0.10/kWh if not available
-  var rate = elecRate || 0.1;
-  var appEnergy;
-  if (rmap.energyBasis === 'fan') {
-    appEnergy = annualKwh * (fanFraction || FAN_FRACTION_DEFAULT);
-  } else {
-    appEnergy = annualKwh;
-  }
-  var low = Math.round(appEnergy * rmap.lowPct * rate);
-  var high = Math.round(appEnergy * rmap.highPct * rate);
-  return { low: low, high: high, citation: rmap.citation };
-}
-
 /* ── 45ceb14f: shared footer-string builders ─────────────────────────────────
    Extracted so the full-render footer (initCostEstimateTab) and the partial-
    refresh footer (_pricingRefreshFooter, patched below) render byte-identical
@@ -694,12 +593,16 @@ function _pricingTierLabelHTML(tier) {
   );
 }
 
-function _pricingAdvisoryLineHTML(anySavingsShown) {
+// Savings are NOT computed here. The pricing estimator owns cost only. The projected annual
+// savings total is read from the Energy Savings matrix (getProjMatrixSavingsTotal, app/energy-savings.js),
+// which prices every measure monthly at Utility Data rates. No matrix total = plain message.
+function _pricingSavingsLineHTML(projId) {
+  var total = typeof getProjMatrixSavingsTotal === 'function' ? getProjMatrixSavingsTotal(projId) : null;
   return (
     '<div style="width:100%;margin-top:6px;font-size:10px;color:var(--text3);font-style:italic">' +
-    (anySavingsShown
-      ? 'Savings estimates shown below in the Impact column.'
-      : 'Import utility bills (Utility Data tab) to see estimated annual $ savings ranges.') +
+    (total !== null
+      ? 'Projected annual savings from the Energy Savings matrix: ' + _pricingFmt(total) + '/yr.'
+      : 'No savings estimate yet.') +
     '</div>'
   );
 }
@@ -812,7 +715,7 @@ function _pricingComputeMonthlyService(projId) {
    work every month regardless of what's currently loaded into this project's database. Left intact
    as a general-purpose utility in case another caller needs it.) ──────────────────────────────────
    Utility bill data lives per-project at en_utility_{projId} → {buildings:[{meters:[{bills:[]}]}]}
-   (same source _pricingGetProjectAnnualElec reads, above) — NOT en_pdf_bills, which is the
+   (same source getUDBldgs reads) — NOT en_pdf_bills, which is the
    global PDF-import staging array keyed by bill.projId before a bill is committed to a meter.
    ─────────────────────────────────────────────────────────────────────────── */
 function _pricingProjectHasUtilityBills(projId) {
@@ -1434,7 +1337,7 @@ function _pricingLaborBreakdownHTML(projId) {
    project that hasn't used this feature sees zero change to its footer. Shared by
    the main tier footer, _pricingRefreshFooter's partial-refresh footer, and the
    Summary sub-tab footer so all three always agree on the wording — same reason
-   _pricingTierLabelHTML/_pricingAdvisoryLineHTML above are shared, not copied.
+   _pricingTierLabelHTML/_pricingSavingsLineHTML above are shared, not copied.
    contextLabel (optional) prefixes the mode label — used by Compare/Summary where
    more than one total is visible in the same footer (e.g. "vs Recommended").
 
@@ -1493,51 +1396,6 @@ function _pricingBudgetVsTotalHTML(budget, grandTotal, contextLabel, ceilingOver
     '</span>' +
     '</div>'
   );
-}
-
-// 45ceb14f: re-derives the full-render path's `_anySavingsShown` boolean from a cached row array,
-// without re-rendering any row. Mirrors the two places the full render sets that flag:
-//   1. Per-row $/% savings chip (_savingsRangeChipHTML, ~line 3709) — called unconditionally for
-//      every row regardless of estimate.rowToggles, so this does NOT need row-toggle state.
-//   2. Portfolio-savings rollup (footer step, ~line 4784) — also independent of rowToggles.
-// Only meaningful for tier === 'recommended' (the only tier _pricingRefreshFooter still handles
-// inline; 'both' and 'full-scope' already delegate to a full initCostEstimateTab re-render, see
-// the guard at the top of the patched _pricingRefreshFooter below).
-function _pricingComputeAnySavingsShown(rows, annualElecData, fanFraction, elecRate) {
-  var hasBills = annualElecData.hasBillData;
-  var annKwh = annualElecData.annualKwh;
-  var any = false;
-
-  // Mirrors _savingsRangeChipHTML's two branches (lit-range-no-bill-data / $-range-with-bill-data).
-  rows.forEach(function (row) {
-    if (!(row.seqKey && row.savingsImpact && row.savingsImpact !== 'enabler' && row.savingsImpact !== 'safety')) {
-      return;
-    }
-    if (!hasBills) {
-      if (SAVINGS_RANGE_MAP[row.seqKey]) any = true;
-      return;
-    }
-    if (annKwh && SAVINGS_RANGE_MAP[row.seqKey]) {
-      var range = _pricingComputeSavingsRange(row, annKwh, fanFraction, elecRate);
-      if (range && range.high > 0) any = true;
-    }
-  });
-
-  // Mirrors the portfolio-rollup loop (footer step, ~line 4784-4794).
-  if (hasBills && annKwh) {
-    var seenSeqKeys = {};
-    rows.forEach(function (r) {
-      if (r.phase !== 2 || !r.seqKey || seenSeqKeys[r.seqKey]) return;
-      if (!r.savingsImpact || r.savingsImpact === 'enabler' || r.savingsImpact === 'safety') return;
-      var pr = _pricingComputeSavingsRange(r, annKwh, fanFraction, elecRate);
-      if (pr && pr.high > 0) {
-        seenSeqKeys[r.seqKey] = true;
-        any = true;
-      }
-    });
-  }
-
-  return any;
 }
 
 /* ── Impact badge chip renderer (Recommended tier only) ─────────────────────
@@ -2370,7 +2228,6 @@ function _pricingGetConfig() {
     hourlyRate: COST_LABOR_RATE_DEFAULT,
     priceBasis: 'contract',
     perSequenceHours: Object.assign({}, COST_PER_SEQ_HOURS_DEFAULT),
-    fanFraction: FAN_FRACTION_DEFAULT, // Step 5: fan energy as % of total elec (CBECS 10–20%)
     // installLaborRate removed (2026-07-28, unified labor rate) — install labor now reads the
     // same hourlyRate above as programming labor. A stale installLaborRate key left over in an
     // existing project's stored en_pricing_config from before this change is harmless — nothing
@@ -6621,23 +6478,6 @@ function _pricingOpenSettingsPopover(projId, btn) {
     projId +
     ",'hourlyRate',parseFloat(this.value))\">" +
     '</label>';
-  if (tier === 'recommended' || tier === 'both') {
-    html +=
-      '<label style="display:flex;align-items:center;justify-content:space-between;gap:6px;color:var(--text2);margin-bottom:6px" ' +
-      'title="Fan energy as % of total electricity (CBECS VAV typical range 10–20%); used for duct pressure/supply air temperature reset savings estimates">' +
-      'Fan energy %:' +
-      '<input type="number" id="pricing-fanfrac-' +
-      projId +
-      '" min="1" max="50" step="1" value="' +
-      Math.round((cfg.fanFraction !== undefined ? cfg.fanFraction : FAN_FRACTION_DEFAULT) * 100) +
-      '"' +
-      ' style="width:44px;font-size:11px;padding:2px 6px;background:var(--s3);color:var(--text);border:1px solid var(--accent);border-radius:4px"' +
-      ' onchange="updatePricingConfig(' +
-      projId +
-      ",'fanFraction',parseFloat(this.value)/100)\">" +
-      '</label>';
-  }
-
   // Section 1b (174ad49a): Budget input — dual mode (Mode A "Project Financing" spreads a
   // one-time total over a term; Mode B "Recurring Services Budget" is a periodic ceiling the
   // measure list must fit inside), lump/annual/quarterly/monthly denominations, per Matt's
@@ -8928,100 +8768,6 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   // ── 5. Sort data rows (only within their phase group; group headers stay in place)
   //       Sort is applied at render time per phase group, building group intact.
 
-  // ── 5b. Step 5: Annual energy data for $ savings range (Recommended tier only)
-  var _annualElecData =
-    tier === 'recommended' || tier === 'both'
-      ? _pricingGetProjectAnnualElec(projId)
-      : { annualKwh: null, hasBillData: false, elecRate: 0.1 };
-  var _fanFraction = cfg.fanFraction !== undefined && cfg.fanFraction !== null ? cfg.fanFraction : FAN_FRACTION_DEFAULT;
-  // Avg electricity rate ($/kWh) — derived from en_utility_<projId> bills in _pricingGetProjectAnnualElec
-  var _elecRate = _annualElecData.elecRate || 0.1;
-
-  // 0ae36950: single-line $-savings-range chip, rendered in the Impact column (Recommended tier
-  // phase-2 rows only). Replaces the old wrapping <div> that was appended below the Notes-cell
-  // input — at narrow Notes-column widths that div's white-space:normal text wrapped into many
-  // lines, driving individual rows up to 233px tall (b771dec6 column-width-invest root cause).
-  // Full detail text now lives entirely in the title tooltip (ui-standards single-line + hover
-  // convention), matching the existing _a36ImpactChip pattern it now sits next to. Shared by
-  // renderRow and renderMergedRow (called with whichever row carries the seqKey — for a merged
-  // row that's the sequence half, since only phase-2 rows have savings data).
-  function _savingsRangeChipHTML(seqLikeRow) {
-    if (
-      !(
-        (tier === 'recommended' || tier === 'both') &&
-        seqLikeRow.seqKey &&
-        seqLikeRow.savingsImpact &&
-        seqLikeRow.savingsImpact !== 'enabler' &&
-        seqLikeRow.savingsImpact !== 'safety'
-      )
-    ) {
-      return '';
-    }
-    var _hasBills = _annualElecData.hasBillData;
-    var _annKwh = _annualElecData.annualKwh;
-    var _chipBase =
-      'display:inline-block;font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;' +
-      'white-space:nowrap;max-width:120px;overflow:hidden;text-overflow:ellipsis;vertical-align:middle;margin-left:4px;';
-    if (!_hasBills) {
-      // No bill data — show literature % range if available, otherwise a plain-language note
-      var _litRange = SAVINGS_RANGE_MAP[seqLikeRow.seqKey];
-      if (_litRange) {
-        var _basisLabel = _litRange.energyBasis === 'fan' ? 'fan energy' : 'site electricity';
-        _anySavingsShown = true;
-        return (
-          '<span title="' +
-          _escHtml(
-            'Literature range: ' +
-              Math.round(_litRange.lowPct * 100) +
-              '–' +
-              Math.round(_litRange.highPct * 100) +
-              '% of ' +
-              _basisLabel +
-              ' \xb7 ' +
-              _litRange.citation +
-              ' — import utility bills for a dollar estimate',
-          ) +
-          '" style="' +
-          _chipBase +
-          'background:var(--s3);color:var(--text2)">Est. ' +
-          Math.round(_litRange.lowPct * 100) +
-          '–' +
-          Math.round(_litRange.highPct * 100) +
-          '%</span>'
-        );
-      }
-      return (
-        '<span title="Import utility bills to see an estimated dollar savings" style="' +
-        _chipBase +
-        'color:var(--text3);font-style:italic;font-weight:400">Needs bill data</span>'
-      );
-    }
-    if (_annKwh && SAVINGS_RANGE_MAP[seqLikeRow.seqKey]) {
-      var _range = _pricingComputeSavingsRange(seqLikeRow, _annKwh, _fanFraction, _elecRate);
-      if (_range && _range.high > 0) {
-        _anySavingsShown = true;
-        return (
-          '<span title="' +
-          _escHtml('Literature range — M&V required \xb7 ' + _range.citation) +
-          '" style="' +
-          _chipBase +
-          'background:rgba(134,239,172,0.12);color:#86efac">Est. ' +
-          _pricingFmtSavingsRange(_range.low, _range.high) +
-          '</span>'
-        );
-      }
-      return '';
-    }
-    if (_annKwh) {
-      return (
-        '<span title="Site-specific calculation needed for a dollar estimate" style="' +
-        _chipBase +
-        'color:var(--text3);font-style:italic;font-weight:400">Needs site calc</span>'
-      );
-    }
-    return '';
-  }
-
   // d5286981: toolbar HTML assembly now delegates to the shared _pricingBuildToolbarHTML
   // (defined above initCostEstimateTab) so every Cost Estimate view — including the (removed)
   // Summary sub-tab — renders the toolbar's shared controls (Import CSV, Table Settings, Legend,
@@ -9409,14 +9155,12 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     }
     cells.push(lineTotalContent);
 
-    // col 13: Impact — savings-tier badge (correction #4 / Phase 5) + (0ae36950) the $-savings-range
-    // chip, moved here from the Notes column. Both are single-line inline-block spans so this cell
-    // never grows the row taller than any other row's baseline height — see _savingsRangeChipHTML.
+    // col 13: Impact — savings-tier badge (correction #4 / Phase 5). Single-line inline-block span,
+    // so this cell never grows the row taller than any other row's baseline height.
     var impactCellContent = '';
     if (tier === 'recommended' && row.phase === 2 && row.savingsImpact) {
       impactCellContent = _a36ImpactChip(row);
     }
-    impactCellContent += _savingsRangeChipHTML(row);
     // Phase 8 (3ee6b754): a standalone $0 ioOnly row (renderRow only ever sees ioOnly rows that
     // were NOT claimed by _pricingPairHwSeq — claimed ones render via renderMergedRow instead,
     // which already shows the paired sequence's real Impact chip) never gets savingsImpact
@@ -9819,13 +9563,11 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     cells.push(_lineTotalContent);
 
     // col 13: Impact — same rule as renderRow (Recommended tier phase-2 only), sourced from the
-    // sequence half of the pair. (0ae36950: $-savings-range chip also moved here from Notes,
-    // same as renderRow — see _savingsRangeChipHTML.)
+    // sequence half of the pair.
     var _impactCellContent = '';
     if (tier === 'recommended' && seqRow.savingsImpact) {
       _impactCellContent = _a36ImpactChip(seqRow);
     }
-    _impactCellContent += _savingsRangeChipHTML(seqRow);
     cells.push(_impactCellContent);
 
     // col 14: Notes — combined tooltip (5d): sensor whyNeeded + sequence clientSummary, no info
@@ -9931,9 +9673,6 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   }
 
   // ── 9. Build table body HTML
-  // _anySavingsShown is set true by renderRow when a $ or % savings range is rendered.
-  // Used to gate the M&V disclaimer — only shown when there IS something to disclaim.
-  var _anySavingsShown = false;
   var tableBodyHTML = '';
   if (filteredRows.length === 0) {
     tableBodyHTML =
@@ -10153,57 +9892,9 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   );
   // (Tier: label now rendered at the front of footerParts, see Phase 3 comment above.)
 
-  // Step 5: Portfolio savings rollup (Recommended tier, when bill data available)
-  if ((tier === 'recommended' || tier === 'both') && _annualElecData.hasBillData && _annualElecData.annualKwh) {
-    // Collect unique seqKeys with a range (de-dup: one per seqKey across buildings)
-    var _portfolioRows = tier === 'recommended' ? filteredRows : recRows || [];
-    var _seenSeqKeys = {};
-    var _portfolioLow = 0,
-      _portfolioHigh = 0,
-      _portfolioCount = 0;
-    _portfolioRows.forEach(function (r) {
-      if (r.phase !== 2 || !r.seqKey || _seenSeqKeys[r.seqKey]) return;
-      if (!r.savingsImpact || r.savingsImpact === 'enabler' || r.savingsImpact === 'safety') return;
-      var _pr = _pricingComputeSavingsRange(r, _annualElecData.annualKwh, _fanFraction, _elecRate);
-      if (_pr && _pr.high > 0) {
-        _seenSeqKeys[r.seqKey] = true;
-        _portfolioLow += _pr.low;
-        _portfolioHigh += _pr.high;
-        _portfolioCount++;
-      }
-    });
-    if (_portfolioCount > 0) {
-      _anySavingsShown = true;
-      footerParts.push(
-        '<div style="width:100%;margin-top:6px;padding:6px 10px;background:rgba(134,239,172,0.06);' +
-          'border:1px solid rgba(134,239,172,0.2);border-radius:4px">' +
-          '<span style="font-size:11px;font-weight:700;color:#86efac">Portfolio Est. Annual Savings: ' +
-          _pricingFmtSavingsRange(_portfolioLow, _portfolioHigh) +
-          '</span>' +
-          '<span style="font-size:10px;color:var(--text3);margin-left:8px">across ' +
-          _portfolioCount +
-          ' lit.-range sequence' +
-          (_portfolioCount !== 1 ? 's' : '') +
-          ' · literature range — M&amp;V required · based on ' +
-          (_annualElecData.annualKwh / 1000).toFixed(0) +
-          'k kWh/yr · fan % = ' +
-          Math.round(_fanFraction * 100) +
-          '%</span>' +
-          '</div>',
-      );
-    }
-  }
-
-  // Phase 3 (32521b08): advisory line always reserves its slot for Recommended/Compare tiers —
-  // previously this line only rendered when there was no bill data AND no per-row savings chip
-  // had shown (`!_anySavingsShown`, old `else if` branch above), so footer height/content jumped
-  // between projects/tiers for reasons the user couldn't see (the investigation's root-cause
-  // finding). Now it's unconditionally present in these two tiers, with text depending on
-  // whether ANY savings info (the portfolio rollup above or a per-row chip) ended up visible.
+  // Savings line: read from the Energy Savings matrix (single owner), never computed here.
   if (tier === 'recommended' || tier === 'both') {
-    // 45ceb14f: extracted to _pricingAdvisoryLineHTML (byte-identical output) so
-    // _pricingRefreshFooter's partial-refresh path can render the identical advisory line.
-    footerParts.push(_pricingAdvisoryLineHTML(_anySavingsShown));
+    footerParts.push(_pricingSavingsLineHTML(projId));
   }
 
   // b771dec6 3b: M&V disclaimer moved from here into the Top ROI card
@@ -10348,9 +10039,8 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   var topRoiCallout = '';
   if (tier === 'recommended' || tier === 'both') {
     var _allRecRows = tier === 'both' ? recRows || [] : baseRows;
-    // b771dec6 3b: _anySavingsShown reaches its final value in the footer step (step 10)
-    // above, which runs before this call — verified after Batches 1-2 land.
-    topRoiCallout = _pricingTopRoiCallout(projId, _allRecRows, _anySavingsShown);
+    // M&V disclaimer shows only when the Energy Savings matrix holds a savings total.
+    topRoiCallout = _pricingTopRoiCallout(projId, _allRecRows, getProjMatrixSavingsTotal(projId) !== null);
   }
 
   // Recommended tier: budget-state prompt + "no substitutions" notice + empty-state guard
@@ -10827,22 +10517,6 @@ function _pricingComputeSummaryData(projId, estimate) {
     var totals = _pricingComputeFilteredTotals(_pricingRowCache[projId + '_all'], rows, est, projId);
     var filterBldg = _pricingBldgFilter[projId] || '';
 
-    // 45ceb14f: re-derive the Tier-label + advisory-line state the same way the full render
-    // does, WITHOUT re-rendering rows. tier is always 'compliance' or 'recommended' here (see
-    // the 'both'/'full-scope' delegation guard above), so this mirrors the full render's
-    // _annualElecData/_fanFraction/_elecRate derivation (app/pricing-estimator.js:3684-3690)
-    // narrowed to that same two-tier domain — 'compliance' never has bill data pulled (matches
-    // the full path, where _annualElecData is only computed for 'recommended'/'both').
-    var _annualElecData =
-      tier === 'recommended'
-        ? _pricingGetProjectAnnualElec(projId)
-        : { annualKwh: null, hasBillData: false, elecRate: 0.1 };
-    var _fanFraction =
-      cfg.fanFraction !== undefined && cfg.fanFraction !== null ? cfg.fanFraction : FAN_FRACTION_DEFAULT;
-    var _elecRate = _annualElecData.elecRate || 0.1;
-    var _anySavingsShown =
-      tier === 'recommended' ? _pricingComputeAnySavingsShown(rows, _annualElecData, _fanFraction, _elecRate) : false;
-
     var _rfCaveatParts = [];
     if (totals.noCatalog) _rfCaveatParts.push('Hardware pending — import pricing CSV');
     if (totals.pendingPriceCount > 0)
@@ -10877,7 +10551,7 @@ function _pricingComputeSummaryData(projId, estimate) {
       '<span style="flex:1"></span>',
       '<span style="font-size:11px;color:var(--text3)">' + totals.included + ' of ' + totals.total + ' items</span>',
       '<span style="font-size:11px;color:var(--text3)">' + _rfCaveatParts.join(' · ') + '</span>',
-      tier === 'recommended' ? _pricingAdvisoryLineHTML(_anySavingsShown) : '', // 45ceb14f: was missing entirely
+      tier === 'recommended' ? _pricingSavingsLineHTML(projId) : '',
       // 2026-07-28 (fix/pricing-phases-and-sensor-hours, backlog 8d7911c1): Compliance/Full-Scope
       // only, same as the full-render footer above — the program-wide net-of-labor ceiling
       // Recommended used to compare against is REMOVED (Recommended is now an unbounded,

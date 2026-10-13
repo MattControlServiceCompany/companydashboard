@@ -26,7 +26,8 @@ vm.runInContext(fs.readFileSync(path.join(root, 'lib/formatting.js'), 'utf8'), s
 vm.runInContext(fs.readFileSync(path.join(root, 'computations/rates.js'), 'utf8'), sb);
 vm.runInContext(src, sb);
 const T = sb.ECM_TEMPLATES;
-const defs = (id) => { const o = {}; T[id].inputs.forEach((i) => (o[i.id] = i.default)); return o; };
+// Rate inputs have no default (blank until Utility Data fills them); the test supplies a manual value.
+const defs = (id) => { const o = {}; T[id].inputs.forEach((i) => (o[i.id] = i.default)); if (o.elec_rate === null) o.elec_rate = 0.085; if (o.btm_rate === null) o.btm_rate = 0.085; return o; };
 let fail = 0;
 const ok = (name, cond, info) => { console.log((cond ? 'PASS ' : 'FAIL ') + name + (info !== undefined ? '  [' + info + ']' : '')); if (!cond) fail++; };
 
@@ -51,12 +52,13 @@ const ok = (name, cond, info) => { console.log((cond ? 'PASS ' : 'FAIL ') + name
   const demand = sum(m.kw) * d.demand_rate; const calc = r.demand_savings_kw * d.demand_rate * 12;
   ok('measure demand $ equals calc demand $', Math.abs(demand - calc) < 0.5, demand.toFixed(0) + ' vs ' + calc.toFixed(0));
   ok('measure kWh sums to annual', Math.abs(sum(m.kwh) - r.total_savings_kwh) < 0.001, sum(m.kwh)); }
-// 4. Rates: energy-only, 12-month window ending at newest bill
-{ const r = sb.getProjectRates('p1');
-  // newest bill Mar 2026; window Apr 2025..Mar 2026 -> all bills at 6000/100000 = 0.06
-  ok('electric rate is energy-only 0.06', Math.abs(r.electric_rate - 0.06) < 1e-9, r.electric_rate);
-  ok('demand rate = charge / kW = 8', Math.abs(r.demand_rate - 8) < 1e-9, r.demand_rate);
-  ok('window counts 12 electric bills', r.billCount === 12, r.billCount); }
+// 4. Rate autofill: the ONE rate function (computeSeasonalBldgRates) supplies the single kWh/kW rate
+{ sb.getUDBldg = () => ({ id: 'b1', meters: [{ commodity: 'Electric', bills: elecBills }] });
+  const r = sb.computeSeasonalBldgRates('p1', 'b1');
+  ok('building kWh rate from the one rate function > 0', r.kwhRate > 0 && r.kwhRate < 0.2, r.kwhRate);
+  ok('kwhRate lies between seasonal rates', r.kwhRate >= Math.min(r.kwhSummer, r.kwhWinter) - 1e-9 && r.kwhRate <= Math.max(r.kwhSummer, r.kwhWinter) + 1e-9, r.kwhRate);
+  ok('getProjectRates copy is gone', typeof sb.getProjectRates === 'undefined');
+  ok('elec rate inputs have no invented default', T.lighting_replacement.inputs.find((i) => i.id === 'elec_rate').default === null); }
 // 5. 0.3 VAV factor is labelled in plain words
 { const f = T.vav_reheat;
   const o = f.outputs.find((x) => x.id === 'cool_kwh_saved');

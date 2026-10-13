@@ -99,7 +99,7 @@ const code = [
   loadVar('BT_FAULT_KW'),
   loadFn('btFaultKwh'),
   loadFn('btAssumeText'),
-  loadFn('btGetBlendedRate'),
+  loadFn('btBldgRate'),
   loadFn('btGetBASForBillPeriod'),
   loadFn('btEstimateSavings'),
   loadFn('btMonthsCovered'),
@@ -107,6 +107,18 @@ const code = [
 ].join('\n');
 const ctx = {
   getUDBldgs: () => activeBldgs,
+  // Stand-in for the ONE rate function (computations/rates.js): cost / usage per commodity from the fixture.
+  computeSeasonalBldgRates: () => {
+    const rate = (com, uf) => {
+      let c = 0,
+        u = 0;
+      activeBldgs[0].meters.forEach((m) => {
+        if (m.commodity === com) m.bills.forEach((b) => ((c += b.totalCost || 0), (u += uf(b) || 0)));
+      });
+      return u > 0 ? c / u : 0;
+    };
+    return { kwhRate: rate('Electric', (b) => b.kwh || b.kWh), thermRate: rate('Gas', (b) => b.therms) };
+  },
   btGetData: () => basData,
   btRunBehavioralChecks: () => ({ satReset: null, dspReset: null, economizer: null }),
   console,
@@ -121,13 +133,13 @@ const has = (n) => typeof ctx[n] === 'function';
 
 // E-BT-3: rate reads meters[].bills and 'Electric'
 assert(
-  has('btGetBlendedRate') && ctx.btGetBlendedRate('P', 'B1', 'Electric') === 0.12,
+  has('btBldgRate') && ctx.btBldgRate('P', 'B1', 'Electric') === 0.12,
   'blended rate reads meters[].bills Electric = 0.12, got ' +
-    (has('btGetBlendedRate') && ctx.btGetBlendedRate('P', 'B1', 'Electric')),
+    (has('btBldgRate') && ctx.btBldgRate('P', 'B1', 'Electric')),
 );
 activeBldgs = gasOnly;
 assert(
-  has('btGetBlendedRate') && ctx.btGetBlendedRate('P', 'B1', 'Electric') === null,
+  has('btBldgRate') && ctx.btBldgRate('P', 'B1', 'Electric') === null,
   'no electric bills -> null (no 0.10 fallback)',
 );
 activeBldgs = bldgs;
@@ -205,7 +217,7 @@ assert(
 );
 
 // Follow-up 1: gas rate from the gas meters' bills through the same helper; no $0.80 default
-assert(has('btGetBlendedRate') && ctx.btGetBlendedRate('P', 'B1', 'Gas') === 6, 'gas rate = 600 / 100 therms = 6');
+assert(has('btBldgRate') && ctx.btBldgRate('P', 'B1', 'Gas') === 6, 'gas rate = 600 / 100 therms = 6');
 assert(
   !SRC.slice(SRC.indexOf('function btEstimateSavings('), SRC.indexOf('function btRenderSavingsPanel(')).includes(
     '0.8;',
