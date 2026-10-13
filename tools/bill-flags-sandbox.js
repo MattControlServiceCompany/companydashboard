@@ -34,12 +34,10 @@ function constSource(file, name) {
   return src.slice(s, e + 3);
 }
 
-function makeContext() {
-  const ctx = { console: { log() {}, warn() {}, error() {} } };
-  vm.createContext(ctx);
-  vm.runInContext(read('lib/formatting.js'), ctx);
-  vm.runInContext(read('lib/date-helpers.js'), ctx);
-  vm.runInContext(read('computations/normalization.js'), ctx);
+// Adds the bill-flag engine to a context that already holds lib/formatting.js, lib/date-helpers.js,
+// computations/normalization.js, computations/rates.js and computations/savings.js: the day-count and date helpers cut
+// from app/utility-data.js, then computations/bill-flags.js. computeSeasonalBldgRates needs it (computeMeterRateExclusions).
+function addBillFlagEngine(ctx) {
   const ud = 'app/utility-data.js';
   vm.runInContext(
     [
@@ -49,6 +47,16 @@ function makeContext() {
     ].join('\n'),
     ctx,
   );
+  vm.runInContext(read('computations/bill-flags.js'), ctx);
+  return ctx;
+}
+
+function makeContext() {
+  const ctx = { console: { log() {}, warn() {}, error() {} } };
+  vm.createContext(ctx);
+  vm.runInContext(read('lib/formatting.js'), ctx);
+  vm.runInContext(read('lib/date-helpers.js'), ctx);
+  vm.runInContext(read('computations/normalization.js'), ctx);
   const sv = 'computations/savings.js';
   vm.runInContext(
     ['resolveGasUsageThermsOrNull', 'resolveGasUsageTherms', 'getBillUsageOrNull']
@@ -56,13 +64,7 @@ function makeContext() {
       .join('\n'),
     ctx,
   );
-  vm.runInContext(
-    ['getBillUsageCharge', 'getStoredRate']
-      .map((n) => fnSource('computations/rates.js', n))
-      .join('\n'),
-    ctx,
-  );
-  vm.runInContext(read('computations/bill-flags.js'), ctx);
-  return ctx;
+  vm.runInContext(read('computations/rates.js'), ctx);
+  return addBillFlagEngine(ctx);
 }
-module.exports = { makeContext, fnSource, constSource, REPO };
+module.exports = { makeContext, addBillFlagEngine, fnSource, constSource, REPO };

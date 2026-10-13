@@ -56,6 +56,7 @@ function build(projects) {
     loadFn(REPO + '/app/utility-data.js', '_fixISO'),
     loadFn(REPO + '/app/utility-data.js', '_parseISO'),
     loadFn(REPO + '/app/utility-data.js', 'calcDays'),
+    loadFn(REPO + '/app/utility-data.js', 'fmtDate'),
     loadFn(REPO + '/app/core.js', '_dashGetBaselineBills'),
     loadFn(REPO + '/app/utility-data.js', '_udProjBaselineMonthsFallback'),
     'function getUDBldgs(){ return [_bldg]; }',
@@ -67,6 +68,7 @@ function build(projects) {
     'computations/rates.js',
     'computations/normalization.js',
     'computations/savings.js',
+    'computations/bill-flags.js',
     'lib/perf-table.js',
   ];
   vm.runInContext([pre].concat(files.map(rd)).join('\n\n'), sb);

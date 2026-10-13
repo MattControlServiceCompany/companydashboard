@@ -6723,7 +6723,7 @@ function _udBaselineRatePills(m) {
     Stormwater: { unit: own.stormwaterUnit, all: own.stormwaterRate },
   };
   const c = sets[m.commodity];
-  if (!c) return { unit: '', all: null, summer: null, winter: null, kwSummer: null, kwWinter: null };
+  if (!c) return { unit: '', all: null, summer: null, winter: null, kwSummer: null, kwWinter: null, excluded: '' };
   const pos = (v) => (v > 0 && c.unit ? v : null);
   return {
     unit: c.unit,
@@ -6732,6 +6732,8 @@ function _udBaselineRatePills(m) {
     winter: pos(c.winter),
     kwSummer: m.commodity === 'Electric' ? pos(own.kwSummer) : null,
     kwWinter: m.commodity === 'Electric' ? pos(own.kwWinter) : null,
+    // The baseline bills the owner left out of these rates (a usage / charge mismatch): '2 bills excluded: Nov 2025, Dec 2025'.
+    excluded: formatExcludedBillsLabel(own.excluded),
   };
 }
 
@@ -6811,6 +6813,7 @@ function renderBaselinePane(pane, m, bills, incl) {
         : null,
       summerKwRate != null ? { v: fmtKw(summerKwRate) + '/kW', lbl: '☀️ Summer $/kW', color: 'var(--warn)' } : null,
       winterKwRate != null ? { v: fmtKw(winterKwRate) + '/kW', lbl: '❄️ Winter $/kW', color: 'var(--em)' } : null,
+      rp.excluded ? { v: rp.excluded, lbl: 'Left out of the rates above', wrap: true } : null,
       // #101 / P0 35105124(a): Regression model type indicator. Uses the shared
       // getBaselineTrustState() classifier (built on isBaselineFrozen()) so this
       // pill can never disagree with the meter-chip badge or the building header
@@ -6861,9 +6864,9 @@ function renderBaselinePane(pane, m, bills, incl) {
         .map(
           (
             p,
-          ) => `<div style="display:flex;flex-direction:column;background:var(--s3);border:1px solid var(--border);border-radius:6px;padding:5px 10px;min-width:0">
+          ) => `<div style="display:flex;flex-direction:column;background:var(--s3);border:1px solid var(--border);border-radius:6px;padding:5px 10px;min-width:0${p.wrap ? ';max-width:100%' : ''}">
               <span style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;white-space:nowrap">${p.lbl}</span>
-              <span style="font-size:12px;font-weight:700;color:${p.color || 'var(--text)'};white-space:nowrap">${p.v}</span>
+              <span style="font-size:12px;font-weight:700;color:${p.color || 'var(--text)'};white-space:${p.wrap ? 'normal' : 'nowrap'}">${p.v}</span>
             </div>`,
         )
         .join('') +
@@ -7342,6 +7345,7 @@ function refreshBaselineStats(mid) {
         : null,
       summerKwRate != null ? { v: fmtKw(summerKwRate) + '/kW', lbl: '☀️ Summer $/kW', color: 'var(--warn)' } : null,
       winterKwRate != null ? { v: fmtKw(winterKwRate) + '/kW', lbl: '❄️ Winter $/kW', color: 'var(--em)' } : null,
+      rp2.excluded ? { v: rp2.excluded, lbl: 'Left out of the rates above', wrap: true } : null,
     ].filter(Boolean);
 
     statsEl.innerHTML =
@@ -7350,9 +7354,9 @@ function refreshBaselineStats(mid) {
         .map(
           (
             p,
-          ) => `<div style="display:flex;flex-direction:column;background:var(--s3);border:1px solid var(--border);border-radius:6px;padding:5px 10px;min-width:0">
+          ) => `<div style="display:flex;flex-direction:column;background:var(--s3);border:1px solid var(--border);border-radius:6px;padding:5px 10px;min-width:0${p.wrap ? ';max-width:100%' : ''}">
               <span style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;white-space:nowrap">${p.lbl}</span>
-              <span style="font-size:12px;font-weight:700;color:${p.color || 'var(--text)'};white-space:nowrap">${p.v}</span>
+              <span style="font-size:12px;font-weight:700;color:${p.color || 'var(--text)'};white-space:${p.wrap ? 'normal' : 'nowrap'}">${p.v}</span>
             </div>`,
         )
         .join('') +

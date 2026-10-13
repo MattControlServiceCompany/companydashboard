@@ -815,6 +815,23 @@ function computeBuildingFlagSummary(building) {
   });
   return out;
 }
+// The flag rules that say a bill's usage and its charge do not belong together (charge_vs_usage: total vs usage x the
+// meter's usual rate; usage_charge_mismatch: water and sewer usage charge vs usage). A bill carrying one of them (not
+// dismissed) gives a $/unit that is not a price, so the baseline rates leave it out. Thresholds stay in
+// BILL_FLAG_THRESHOLDS (RATE_MULT, USAGE_CHARGE_MULT); nothing is copied from them.
+const BILL_RATE_EXCLUDE_RULES = ['charge_vs_usage', 'usage_charge_mismatch'];
+// computeMeterRateExclusions(meter, building) -> { [billId]: [{ rule, message }] } for the bills computeMeterFlagSummary
+// flags with a BILL_RATE_EXCLUDE_RULES rule. The ONE predicate "is this bill left out of the baseline rates".
+// Caller: computeSeasonalBldgRates (computations/rates.js). Bill data is never changed.
+function computeMeterRateExclusions(meter, building) {
+  const perBill = computeMeterFlagSummary(meter, building).perBill;
+  const out = {};
+  Object.keys(perBill).forEach((id) => {
+    const hit = perBill[id].filter((f) => BILL_RATE_EXCLUDE_RULES.includes(f.rule));
+    if (hit.length) out[id] = hit.map((f) => ({ rule: f.rule, message: f.message }));
+  });
+  return out;
+}
 // Text for the hover on every badge and pill. The number shown is flagged BILLS; flags only appear here.
 function billFlagHoverText(summary) {
   return (

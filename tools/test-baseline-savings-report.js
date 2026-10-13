@@ -217,6 +217,7 @@ function buildCtx(extraKeys) {
     'lib/formatting.js',
     'computations/regression.js',
     'computations/rates.js',
+    'computations/bill-flags.js',
     'computations/normalization.js',
     'computations/savings.js',
     'computations/eui.js',

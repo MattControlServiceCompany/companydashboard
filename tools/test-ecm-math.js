@@ -26,6 +26,8 @@ vm.runInContext(fs.readFileSync(path.join(root, 'lib/date-helpers.js'), 'utf8'),
 vm.runInContext(fs.readFileSync(path.join(root, 'lib/formatting.js'), 'utf8'), sb);
 vm.runInContext(fs.readFileSync(path.join(root, 'computations/rates.js'), 'utf8'), sb);
 vm.runInContext(fs.readFileSync(path.join(root, 'computations/normalization.js'), 'utf8'), sb);
+vm.runInContext(fs.readFileSync(path.join(root, 'computations/savings.js'), 'utf8'), sb);
+require('./bill-flags-sandbox.js').addBillFlagEngine(sb); // computeSeasonalBldgRates asks the flag engine which bills to leave out
 // Real functions, cut out of their files: the baseline-bill filter, the project baseline fallback, the matrix pricing.
 const cut = (rel, startMark, endMark) => { const t = fs.readFileSync(path.join(root, rel), 'utf8'); const a = t.indexOf(startMark); return t.slice(a, t.indexOf(endMark, a)); };
 vm.runInContext(cut('app/utility-data.js', 'function _fixISO', '// The ONE day-count function'), sb);

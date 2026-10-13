@@ -143,91 +143,97 @@ function getBillGasCost(bill) {
   return v === null ? 0 : v;
 }
 
-// getStoredRate(bill, type) — the ONE $/unit rate for a bill ('kwh' | 'gas' | 'propane' | 'water' |
-// 'sewer' | 'stormwater'). It is COMPUTED from the bill's own dollars and usage through the one
-// cost accessors above and the one usage resolver (resolveGasUsageTherms), so the rate can never
-// disagree with the cost and usage the Bills table shows. The old stored copies (totalKwhRate,
-// totalGasRate, totalWaterRate, totalSewerRate, totalPropaneRate, totalStormwaterRate — written by
-// the PDF save paths, the CSV import and ensureBillRates until 2026-10-05, and stale after any edit)
-// are read ONLY when the bill has no cost or no usage to compute from. Nothing writes them any more.
-// Propane is the all-in rate (whole delivered cost / gallons), the same rule the savings engine
-// uses (computations/savings.js D-9), not the printed unit price.
-function getStoredRate(bill, type) {
-  if (!bill) return 0;
-  var computed = 0;
-  var stored = 0;
+// getBillRateParts(bill, type) — the ONE answer to "which dollars and which quantity make this bill's rate".
+// type 'kwh' | 'kw' | 'gas' | 'propane' | 'water' | 'sewer' | 'stormwater'. Returns { charge, usage }, 0 for a missing
+// part. getStoredRate and getStoredKwRate divide them; computeSeasonalBldgRates weights each bill by `usage`.
+// Propane is the all-in rate (whole delivered cost / gallons), the same rule the savings engine uses
+// (computations/savings.js D-9), not the printed unit price. Stormwater has no usage: the charge is the whole
+// "rate" and the quantity is one bill. The electric energy part is the kWh dollars only (getBillKwhCost); the
+// demand part is demand + facilities dollars over billed kW. Gas goes through the one cost accessor and
+// resolveGasUsageTherms (CCF / MMBtu become Therms).
+function getBillRateParts(bill, type) {
+  if (!bill) return { charge: 0, usage: 0 };
   switch (type) {
-    case 'kwh': {
-      var kwh = parseBillNumber(bill.kWhConsumed) || parseBillNumber(bill.totalKwh) || parseBillNumber(bill.kwh) || 0;
-      var kwhCost = getBillKwhCost(bill);
-      computed = kwh > 0 && kwhCost > 0 ? kwhCost / kwh : 0;
-      stored = parseBillNumber(bill.totalKwhRate);
-      break;
-    }
-    case 'gas': {
-      var gasCost = getBillGasCost(bill);
-      // resolveGasUsageTherms (computations/savings.js) converts CCF / MMBtu to Therms, so this is
-      // always $/Therm whichever usage field the bill carries.
-      var therms = typeof resolveGasUsageTherms === 'function' ? resolveGasUsageTherms(bill) : 0;
-      computed = therms > 0 && gasCost > 0 ? gasCost / therms : 0;
-      stored = parseBillNumber(bill.totalGasRate);
-      break;
-    }
-    case 'propane': {
-      var gal = parseBillNumber(bill.gallonsDelivered) || parseBillNumber(bill.GallonsDelivered) || 0;
-      var propCost =
-        parseBillNumber(bill.totalCost) || parseBillNumber(bill.TotalCurrentCharges) || parseBillNumber(bill.TotalAmountDue) || 0;
-      computed = gal > 0 && propCost > 0 ? propCost / gal : 0;
-      stored = parseBillNumber(bill.totalPropaneRate);
-      break;
-    }
-    case 'water': {
+    case 'kwh':
+      return {
+        charge: getBillKwhCost(bill),
+        usage: parseBillNumber(bill.kWhConsumed) || parseBillNumber(bill.totalKwh) || parseBillNumber(bill.kwh) || 0,
+      };
+    case 'kw':
+      return {
+        charge: getBillKwCost(bill) + getBillFacKWCost(bill),
+        usage:
+          parseBillNumber(bill.billedKW) ||
+          parseBillNumber(bill.demandKW) ||
+          parseBillNumber(bill.BilledKW) ||
+          parseBillNumber(bill.ActualKW) ||
+          parseBillNumber(bill.FacilitiesKW) ||
+          0,
+      };
+    case 'gas':
+      return {
+        charge: getBillGasCost(bill),
+        usage: typeof resolveGasUsageTherms === 'function' ? resolveGasUsageTherms(bill) : 0,
+      };
+    case 'propane':
+      return {
+        charge:
+          parseBillNumber(bill.totalCost) || parseBillNumber(bill.TotalCurrentCharges) || parseBillNumber(bill.TotalAmountDue) || 0,
+        usage: parseBillNumber(bill.gallonsDelivered) || parseBillNumber(bill.GallonsDelivered) || 0,
+      };
+    case 'water':
       // getBillUsageCharge = the bill's own water charge line; with no charge line, the bill total.
-      var wUsage = getBillUsageOrNull(bill, 'Water') || 0;
-      var wCost =
-        getBillUsageCharge(bill, 'water') || parseBillNumber(bill.totalCost) || parseBillNumber(bill.TotalCurrentCharges) || 0;
-      computed = wUsage > 0 && wCost > 0 ? wCost / wUsage : 0;
-      stored = parseBillNumber(bill.totalWaterRate);
-      break;
-    }
-    case 'sewer': {
-      var sUsage = getBillUsageOrNull(bill, 'Sewer') || 0;
-      var sCost = getBillUsageCharge(bill, 'sewer');
-      computed = sUsage > 0 && sCost > 0 ? sCost / sUsage : 0;
-      stored = parseBillNumber(bill.totalSewerRate);
-      break;
-    }
+      return {
+        charge:
+          getBillUsageCharge(bill, 'water') || parseBillNumber(bill.totalCost) || parseBillNumber(bill.TotalCurrentCharges) || 0,
+        usage: getBillUsageOrNull(bill, 'Water') || 0,
+      };
+    case 'sewer':
+      return { charge: getBillUsageCharge(bill, 'sewer'), usage: getBillUsageOrNull(bill, 'Sewer') || 0 };
     case 'stormwater': {
-      // Stormwater has no usage: the "rate" column is the charge itself.
-      computed = parseBillNumber(bill.stormWaterCharge) || parseBillNumber(bill.StormWaterCharge) || 0;
-      stored = parseBillNumber(bill.totalStormwaterRate);
-      break;
+      var sw = parseBillNumber(bill.stormWaterCharge) || parseBillNumber(bill.StormWaterCharge) || 0;
+      return { charge: sw, usage: sw > 0 ? 1 : 0 };
     }
     default:
-      return 0;
+      return { charge: 0, usage: 0 };
   }
+}
+
+// getStoredRate(bill, type) — the ONE $/unit rate for a bill ('kwh' | 'gas' | 'propane' | 'water' |
+// 'sewer' | 'stormwater'). It is COMPUTED from the bill's own dollars and usage (getBillRateParts: the one cost
+// accessors above and the one usage resolver), so the rate can never disagree with the cost and usage the Bills
+// table shows. The old stored copies (totalKwhRate, totalGasRate, totalWaterRate, totalSewerRate,
+// totalPropaneRate, totalStormwaterRate — written by the PDF save paths, the CSV import and ensureBillRates
+// until 2026-10-05, and stale after any edit) are read ONLY when the bill has no cost or no usage to compute from.
+// Nothing writes them any more.
+var _STORED_RATE_FIELD = {
+  kwh: 'totalKwhRate',
+  gas: 'totalGasRate',
+  propane: 'totalPropaneRate',
+  water: 'totalWaterRate',
+  sewer: 'totalSewerRate',
+  stormwater: 'totalStormwaterRate',
+};
+function getStoredRate(bill, type) {
+  if (!bill || !_STORED_RATE_FIELD[type]) return 0;
+  var p = getBillRateParts(bill, type);
+  var computed = p.usage > 0 && p.charge > 0 ? p.charge / p.usage : 0;
   if (computed > 0) return computed;
+  var stored = parseBillNumber(bill[_STORED_RATE_FIELD[type]]);
   return stored > 0 ? stored : 0;
 }
 
 // getStoredKwRate(bill) - the ONE $/kW (demand) rate for a bill.
 // SSOT for the Bills table, Meter Performance, the savings engine and the missing-rate cascade.
-// Computed: demand dollars (getBillKwCost: demandCharge + tdcCharge, or the legacy kwCost) plus the
-// Facilities kW cost (getBillFacKWCost), divided by billed kW. Older bills that hold only kwCost and
-// facKWCost therefore give the same rate as newer bills that hold the same dollars under demandCharge
+// Computed from getBillRateParts(bill, 'kw'): demand dollars (getBillKwCost: demandCharge + tdcCharge, or the legacy
+// kwCost) plus the Facilities kW cost (getBillFacKWCost), divided by billed kW. Older bills that hold only kwCost
+// and facKWCost therefore give the same rate as newer bills that hold the same dollars under demandCharge
 // and facilitiesCharge (WP-04, math-02 H12/D6). The stored totalKwRate is read only when the bill has
 // no dollars or no kW to compute from (same rule as getStoredRate).
 function getStoredKwRate(bill) {
   if (!bill) return 0;
-  var billedKW =
-    parseBillNumber(bill.billedKW) ||
-    parseBillNumber(bill.demandKW) ||
-    parseBillNumber(bill.BilledKW) ||
-    parseBillNumber(bill.ActualKW) ||
-    parseBillNumber(bill.FacilitiesKW) ||
-    0;
-  var cost = getBillKwCost(bill) + getBillFacKWCost(bill);
-  if (billedKW > 0 && cost > 0) return cost / billedKW;
+  var p = getBillRateParts(bill, 'kw');
+  if (p.usage > 0 && p.charge > 0) return p.charge / p.usage;
   var stored = parseBillNumber(bill.totalKwRate);
   return stored > 0 ? stored : 0;
 }
@@ -734,7 +740,7 @@ function resolveMeterRate(projId, meter, ym, opts) {
   return null;
 }
 
-// _billSeasonRates(bill, kind, days, provider) -> { summer, winter, how } rates from the bill's OWN split
+// _billSeasonRates(bill, kind, days, provider) -> { summer, winter, summerQty, winterQty, how } rates from the bill's OWN split
 // charge lines (bill._chargeParts), or null when the bill has no usable split (the caller then prorates the
 // bill's blended rate by days). A seasonal charge on a bill that crosses a season edge has two printed lines.
 // Which line is summer comes from evidence on the lines, never from which rate is higher:
@@ -792,7 +798,13 @@ function _billSeasonRates(bill, kind, days, provider) {
     var dW = d[1 - pk.idx];
     var otherKw = getBillKwCost(bill) + getBillFacKWCost(bill) - dS.charge - dW.charge;
     if (otherKw < -0.5) return null;
-    return { summer: dS.rate + otherKw / billedKW, winter: dW.rate + otherKw / billedKW, how: pk.how };
+    return {
+      summer: dS.rate + otherKw / billedKW,
+      winter: dW.rate + otherKw / billedKW,
+      summerQty: kwEq(dS),
+      winterQty: kwEq(dW),
+      how: pk.how,
+    };
   }
   if (kind === 'kwh') {
     var on = line('EnergyOnPeakCharge');
@@ -816,6 +828,8 @@ function _billSeasonRates(bill, kind, days, provider) {
     return {
       summer: (onS.charge + offS.charge + (other * kwhS) / kwhAll) / kwhS,
       winter: (onW.charge + offW.charge + (other * kwhW) / kwhAll) / kwhW,
+      summerQty: kwhS,
+      winterQty: kwhW,
       how: pe.how,
     };
   }
@@ -838,10 +852,18 @@ function _billSeasonRates(bill, kind, days, provider) {
    dialog prefill, the BAS Savings Calc rate-card autofill, and the ECM
    calculators' "Add as Measure" default — MUST call this function and MUST
    NOT re-derive its own copy. Savings dollars are always (quantity saved) x
-   SEASONAL MARGINAL rate, monthly then summed, so the rate here is the same
-   per-bill implied rate (cost / usage, the exact charge fields) that
-   getStoredRate/getStoredKwRate already use everywhere else in the app —
-   never a different charge-field subset.
+   SEASONAL MARGINAL rate, monthly then summed, so the charge and usage behind
+   the rate are the same per-bill dollars and quantity (getBillRateParts, the
+   exact charge fields) that getStoredRate/getStoredKwRate divide everywhere
+   else in the app — never a different charge-field subset.
+
+   USAGE-WEIGHTED (2026-10-13): every rate here (kWh, kW, Therm, gallon, water, sewer, stormwater; per season, per
+   calendar month, annual) = sum of the charges / sum of the usage over the bills in that bucket, never the plain
+   mean of per-bill rates (one bill with tiny usage or a wrong usage must not outweigh the rest). Where a straddling
+   Evergy bill gives printed split lines, each season takes its line rate and is weighted by that line's quantity;
+   a straddling bill without split lines gives its usage prorated by its days in each season.
+   LEFT-OUT BILLS: a baseline bill that computeMeterRateExclusions (computations/bill-flags.js) flags as a usage /
+   charge mismatch gives no rate; each is listed in `excluded`. Bill data is never changed.
 
    Season: SEASON_TABLE (above) by meter.provider, applied to the SERVICE DATES of each day: summer Jun 1 -
    Sep 30, winter Oct 1 - May 31 (Utility E bill definitions). A bill that crosses a season edge counts in BOTH
@@ -853,25 +875,23 @@ function _billSeasonRates(bill, kind, days, provider) {
 
    Returns (0, never null, so every existing `|| 0` guard keeps working):
      {
-       kwhSummer, kwhWinter,   // $/kWh, electric energy, mean of per-bill
-                                // getStoredRate(bill,'kwh') for bills in season
-       kwhRate, kwRate,        // $/kWh and $/kW, mean of per-bill rates across the
+       kwhSummer, kwhWinter,   // $/kWh, electric energy, usage-weighted over the bills in season
+       kwhRate, kwRate,        // $/kWh and $/kW, usage-weighted across the
                                 // baseline bills (BAS Trends display lookup only)
-       kwSummer, kwWinter,     // $/kW, electric demand, mean of per-bill
-                                // getStoredKwRate(bill) for bills in season
-       thermRate,              // $/Therm, gas — flat mean across baseline months
+       kwSummer, kwWinter,     // $/kW, electric demand, usage-weighted (billed kW) over the bills in season
+       thermRate,              // $/Therm, gas — usage-weighted across baseline months
                                 // (gas has no confirmed seasonal tariff split
                                 // for the providers in use; gasSummer/
                                 // gasWinter below are additive detail only)
-       gasSummer, gasWinter,   // $/Therm, gas — seasonal mean, same bills as
+       gasSummer, gasWinter,   // $/Therm, gas — seasonal weighted rate, same bills as
                                 // thermRate, bucketed by season (0 when a
                                 // season has no gas bills)
        kwhMonthly, kwMonthly,  // [12] $ per unit by calendar month, only for a provider with no
        gasMonthly,             // seasonal tariff (gas, propane, a blank provider name): that month's
-       gallonMonthly,          // baseline mean, else the annual mean. [] when the provider has seasons.
-       waterRate, sewerRate,   // $ per bill unit (waterUnit / sewerUnit = the meter's own bill unit), baseline mean;
+       gallonMonthly,          // weighted rate, else the annual rate. [] when the provider has seasons.
+       waterRate, sewerRate,   // $ per bill unit (waterUnit / sewerUnit = the meter's own bill unit), usage-weighted;
        stormwaterRate,         // $ per bill (mean monthly charge); *Monthly = month-by-month like gas
-       gallonRate,             // $/Gallon, propane — flat mean (gallonMonthly is the month-by-month rate)
+       gallonRate,             // $/Gallon, propane — usage-weighted (gallonMonthly is the month-by-month rate)
        months: {                // which bill months fed each bucket, for the
          kwhSummer: [...ym],    // "which bill months it came from" label
          kwhWinter: [...ym],    // every surface must show (plan step 3)
@@ -880,6 +900,8 @@ function _billSeasonRates(bill, kind, days, provider) {
          gas: [...ym],
          propane: [...ym],
        },
+       excluded: [{ meterId, commodity, billId, start, end, ym, usage, charge, rules, reason }]
+                                // baseline bills left out of every rate above (see LEFT-OUT BILLS)
      }
 ───────────────────────────────────────────────────────────────────────── */
 function computeSeasonalBldgRates(projId, bldgId, onlyMeterId) {
@@ -908,6 +930,7 @@ function computeSeasonalBldgRates(projId, bldgId, onlyMeterId) {
     gasMonthly: [],
     gallonMonthly: [],
     months: { kwhSummer: [], kwhWinter: [], kwSummer: [], kwWinter: [], gas: [], propane: [], water: [], sewer: [], stormwater: [] },
+    excluded: [],
   };
   var b = typeof getUDBldg === 'function' ? getUDBldg(projId, bldgId) : null;
   if (!b) return empty;
@@ -946,27 +969,71 @@ function computeSeasonalBldgRates(projId, bldgId, onlyMeterId) {
       baseline: { months: fallbackMonths },
     });
   }
+  // Baseline bills left out of every rate: the bills computeMeterRateExclusions (computations/bill-flags.js, the one
+  // predicate) flags as a usage / charge mismatch. One record per bill, listed in out.excluded. Bill data is not changed.
+  var exclusionsByMeter = {};
+  var excludedLog = [];
+  var excludedSeen = {};
+  function exclusionsOf(meter) {
+    if (!exclusionsByMeter[meter.id]) exclusionsByMeter[meter.id] = computeMeterRateExclusions(meter, b);
+    return exclusionsByMeter[meter.id];
+  }
+  var commodityKey = { Electric: 'kwh', Gas: 'gas', Propane: 'propane', Water: 'water', Sewer: 'sewer', Stormwater: 'stormwater' };
+  function noteExcluded(meter, bill, ym, hit) {
+    var id = meter.id + '|' + bill.id;
+    if (excludedSeen[id]) return;
+    excludedSeen[id] = true;
+    var key = commodityKey[meter.commodity];
+    var parts = getBillRateParts(bill, key);
+    excludedLog.push({
+      meterId: meter.id,
+      commodity: meter.commodity,
+      billId: bill.id,
+      start: bill.start,
+      end: bill.end,
+      ym: ym,
+      usage: parts.usage,
+      charge: meter.commodity === 'Water' || meter.commodity === 'Sewer' ? parts.charge : parseBillNumber(bill.totalCost) || 0,
+      rules: hit.map(function (h) {
+        return h.rule;
+      }),
+      reason: hit
+        .map(function (h) {
+          return h.message;
+        })
+        .join(' '),
+    });
+  }
   // Straddling bills by how their two seasons were set, per kind: label (printed date range), qty (line
   // quantities match the day split), days (no usable split: the bill's blended rate prorated by days).
   var straddle = { kwh: { bills: 0, label: 0, qty: 0, days: 0 }, kw: { bills: 0, label: 0, qty: 0, days: 0 } };
-  // One BASELINE-PERIOD bill -> rows { ym, season, rate, w } for every bill with a positive rate from `rateFn`.
-  // kind 'kwh' | 'kw' asks _billSeasonRates for the bill's own split lines. Weight w = share of the bill's days.
-  function billRates(meterList, rateFn, kind) {
+  // One BASELINE-PERIOD bill -> rows { ym, season, rate, q } for every bill with a positive rate. `type` is the
+  // getBillRateParts type; rate = charge / usage of the bill, q = the usage the row stands for (its weight). A bill
+  // on the exclusion list gives no row. kind 'kwh' | 'kw' asks _billSeasonRates for the bill's own split lines: each
+  // season then carries its own line rate and the quantity of that line. A bill without split lines, or in one season,
+  // carries its usage (prorated by its days in each season when it straddles).
+  function billRates(meterList, type, kind) {
     var out = [];
     meterList.forEach(function (meter) {
       var incl = meter.inclusive !== false;
       var all = meter.bills || [];
       baselineBillsOf(meter).forEach(function (bill) {
-        var rate = rateFn(bill);
-        if (!(rate > 0)) return;
+        var parts = getBillRateParts(bill, type);
+        if (!(parts.usage > 0 && parts.charge > 0)) return;
+        var rate = parts.charge / parts.usage;
         var ym = normMonth(bill.start, bill.end, incl, all);
+        var hit = exclusionsOf(meter)[bill.id];
+        if (hit) {
+          noteExcluded(meter, bill, ym, hit);
+          return;
+        }
         var days = seasonDaysOfPeriod(meter.provider, bill.start, bill.end, incl);
         if (!days) {
-          out.push({ ym: ym, season: 'none', rate: rate, w: 1 });
+          out.push({ ym: ym, season: 'none', rate: rate, q: parts.usage });
           return;
         }
         if (!days.summer || !days.winter) {
-          out.push({ ym: ym, season: days.summer ? 'summer' : 'winter', rate: rate, w: 1 });
+          out.push({ ym: ym, season: days.summer ? 'summer' : 'winter', rate: rate, q: parts.usage });
           return;
         }
         var split = kind ? _billSeasonRates(bill, kind, days, meter.provider) : null;
@@ -975,19 +1042,25 @@ function computeSeasonalBldgRates(projId, bldgId, onlyMeterId) {
           straddle[kind][split ? split.how : 'days']++;
         }
         ['summer', 'winter'].forEach(function (sn) {
-          out.push({ ym: ym, season: sn, rate: split ? split[sn] : rate, w: days[sn] / days.total });
+          out.push({
+            ym: ym,
+            season: sn,
+            rate: split ? split[sn] : rate,
+            q: split ? split[sn + 'Qty'] : (parts.usage * days[sn]) / days.total,
+          });
         });
       });
     });
     return out;
   }
 
+  // Usage-weighted: sum of (rate x quantity) / sum of quantity = sum of charges / sum of usage over the rows.
   function mean(rows) {
     var sw = 0;
     var sum = 0;
     rows.forEach(function (r) {
-      sw += r.w;
-      sum += r.rate * r.w;
+      sw += r.q;
+      sum += r.rate * r.q;
     });
     return sw > 0 ? sum / sw : 0;
   }
@@ -1044,10 +1117,8 @@ function computeSeasonalBldgRates(projId, bldgId, onlyMeterId) {
   out.months = { kwhSummer: [], kwhWinter: [], kwSummer: [], kwWinter: [], gas: [], propane: [], water: [], sewer: [], stormwater: [] };
 
   if (elecMeters.length) {
-    var kwhRows = billRates(elecMeters, function (bill) {
-      return getStoredRate(bill, 'kwh');
-    }, 'kwh');
-    var kwRows = billRates(elecMeters, getStoredKwRate, 'kw');
+    var kwhRows = billRates(elecMeters, 'kwh', 'kwh');
+    var kwRows = billRates(elecMeters, 'kw', 'kw');
     var kwhSplit = seasonSplit(kwhRows);
     var kwSplit = seasonSplit(kwRows);
     out.kwhSummer = Math.round(mean(kwhSplit.summer) * 10000) / 10000;
@@ -1066,11 +1137,8 @@ function computeSeasonalBldgRates(projId, bldgId, onlyMeterId) {
   }
 
   if (gasMeters.length) {
-    // Gas rate per bill: getStoredRate(bill, 'gas') — the one $/Therm rate (gas cost accessor /
-    // resolveGasUsageTherms). Nothing stores a rate any more (2026-10-05 audit step 5).
-    var gasRows = billRates(gasMeters, function (bill) {
-      return getStoredRate(bill, 'gas');
-    });
+    // Gas: cost and Therms of each bill from getBillRateParts(bill, 'gas') (gas cost accessor / resolveGasUsageTherms).
+    var gasRows = billRates(gasMeters, 'gas');
     var gasSplit = seasonSplit(gasRows);
     out.gasSummer = Math.round(mean(gasSplit.summer) * 1000) / 1000;
     out.gasWinter = Math.round(mean(gasSplit.winter) * 1000) / 1000;
@@ -1080,9 +1148,7 @@ function computeSeasonalBldgRates(projId, bldgId, onlyMeterId) {
   }
 
   if (propaneMeters.length) {
-    var propaneRows = billRates(propaneMeters, function (bill) {
-      return getStoredRate(bill, 'propane');
-    });
+    var propaneRows = billRates(propaneMeters, 'propane');
     out.gallonRate = Math.round(mean(propaneRows) * 1000) / 1000;
     out.gallonMonthly = monthlyMeans(propaneRows, 3);
     out.months.propane = yms(propaneRows);
@@ -1105,15 +1171,14 @@ function computeSeasonalBldgRates(projId, bldgId, onlyMeterId) {
       units[c[1] === 'stormwater' ? 'bill' : getMeterBillUnit(m)] = 1;
     });
     if (Object.keys(units).length !== 1) return;
-    var rows = billRates(ms, function (bill) {
-      return getStoredRate(bill, c[1]);
-    });
+    var rows = billRates(ms, c[1]);
     out[c[2]] = Math.round(mean(rows) * 100000) / 100000;
     out[c[3]] = Object.keys(units)[0];
     out[c[4]] = monthlyMeans(rows, 5);
     out.months[c[1]] = yms(rows);
   });
 
+  out.excluded = excludedLog;
   out.straddle = straddle;
   return out;
 }
@@ -1196,16 +1261,34 @@ function rateGuardCheck(field, value, baselineRates, bldgName) {
 // "which bill months this came from" label every rate surface must show (plan step 3).
 // e.g. ['2025-06','2025-07','2025-08','2025-09'] -> 'Jun 2025 – Sep 2025 (4 bills)'.
 var _RATE_MO_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function _rateMonthLabel(ym) {
+  var parts = ym.split('-');
+  var mo = parseInt(parts[1], 10) - 1;
+  return (_RATE_MO_ABBR[mo] || ym) + ' ' + parts[0];
+}
 function formatBillMonthsLabel(ymList) {
   var list = (ymList || []).filter(Boolean).slice().sort();
   if (!list.length) return 'no bills';
-  function label(ym) {
-    var parts = ym.split('-');
-    var mo = parseInt(parts[1], 10) - 1;
-    return (_RATE_MO_ABBR[mo] || ym) + ' ' + parts[0];
-  }
-  var first = label(list[0]);
-  var last = label(list[list.length - 1]);
+  var first = _rateMonthLabel(list[0]);
+  var last = _rateMonthLabel(list[list.length - 1]);
   var countLabel = list.length + (list.length === 1 ? ' bill' : ' bills');
   return first === last ? first + ' (' + countLabel + ')' : first + ' – ' + last + ' (' + countLabel + ')';
+}
+// formatExcludedBillsLabel(excluded) — "2 bills excluded: Nov 2025, Dec 2025" for the owner's `excluded` list
+// (computeSeasonalBldgRates), '' when none. The text every rate surface shows next to a rate.
+function formatExcludedBillsLabel(excluded) {
+  var list = (excluded || []).slice().sort(function (x, y) {
+    return String(x.ym).localeCompare(String(y.ym));
+  });
+  if (!list.length) return '';
+  return (
+    list.length +
+    (list.length === 1 ? ' bill' : ' bills') +
+    ' excluded: ' +
+    list
+      .map(function (e) {
+        return e.ym ? _rateMonthLabel(e.ym) : e.start;
+      })
+      .join(', ')
+  );
 }
