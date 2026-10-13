@@ -324,9 +324,11 @@ function _wdDefaultCfg(projId, bldgId) {
   };
   var b = typeof getUDBldg === 'function' ? getUDBldg(projId, bldgId) : null;
   var def = computeSeasonalBldgRates(projId, bldgId);
+  var defRates = {};
   WD_RATE_FIELDS.forEach(function (f) {
-    cfg.rates[f.key] = parseFloat(def[f.key]) || 0;
+    defRates[f.key] = parseFloat(def[f.key]) || 0;
   });
+  writeRateSet(cfg, 'rates', defRates, projId, bldgId, 'setpoint report default rates');
   if (b) {
     var elecM = (b.meters || []).find(function (m) {
       return m.commodity === 'Electric';
@@ -851,11 +853,13 @@ function wdApplySetpointOptions(projId, bldgId, cfg) {
     m.kwh = o.kwh;
     m.kw = o.kw;
     m.gas = o.gas;
-    m.rates = m.rates || {};
+    var optRates = Object.assign({}, m.rates);
     WD_RATE_FIELDS.forEach(function (f) {
-      m.rates[f.key] = cfg.rates[f.key];
+      optRates[f.key] = cfg.rates[f.key];
     });
-    if (!(parseFloat(m.rates.thermRate) > 0)) m.rates.thermRate = cfg.rates.gasWinter;
+    if (!(parseFloat(optRates.thermRate) > 0)) optRates.thermRate = cfg.rates.gasWinter;
+    // rate-guard accepted upstream: cfg.rates only holds rates the rate guard passed or the user accepted in the inputs form.
+    writeRateSet(m, 'rates', optRates, projId, bldgId, 'setpoint options apply', true);
     m.totalDollar = calcMeasureDollars(o, m.rates).total;
     keep[m.id] = true;
   });
@@ -1084,7 +1088,7 @@ function _wdRenderInputs() {
     '</div></div>' +
     '<div><div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Seasonal Marginal Rates (applied to every option)</div><div class="sv-rate-group">' +
     WD_RATE_FIELDS.map(function (f) {
-      return field(f, cfg.rates[f.key], "wdInputsSetRate('" + f.key + "',this.value)");
+      return field(f, cfg.rates[f.key], "wdInputsSetRate('" + f.key + "',this.value,this)");
     }).join('') +
     '</div></div>' +
     '<div style="font-size:11px;color:var(--text3)">Save & Compute stores these inputs with the building and writes each option\'s monthly kWh, kW, and Therms saved to the Energy Savings measures for this building (Option A/B/C). The report values those quantities at the seasonal rates, month by month.</div>' +
@@ -1111,8 +1115,16 @@ function _wdNumOrNull(v) {
 function wdInputsSet(key, val) {
   if (_wdInputsCtx) _wdInputsCtx.cfg[key] = _wdNumOrNull(val);
 }
-function wdInputsSetRate(key, val) {
-  if (_wdInputsCtx) _wdInputsCtx.cfg.rates[key] = _wdNumOrNull(val);
+// A seasonal rate typed in the report inputs: the rate guard asks first. "No" puts the saved value back.
+async function wdInputsSetRate(key, val, el) {
+  if (!_wdInputsCtx) return;
+  var n = _wdNumOrNull(val);
+  var ctx = _wdInputsCtx;
+  if (n !== null && !(await rateGuardAccept(key, n, ctx.projId, ctx.bldgId))) {
+    if (el) el.value = ctx.cfg.rates[key] === null || ctx.cfg.rates[key] === undefined ? '' : ctx.cfg.rates[key];
+    return;
+  }
+  writeRateField(ctx.cfg, 'rates', key, n);
 }
 function wdInputsSetOpt(i, key, val) {
   if (!_wdInputsCtx || !_wdInputsCtx.cfg.options[i]) return;

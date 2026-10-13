@@ -127,18 +127,26 @@ function renderProjBaselineRates(projId) {
     .join('');
 }
 
-function saveProjBaselineRates(projId) {
+async function saveProjBaselineRates(projId) {
   const bldgs = getUDBldgs(projId);
   const sd = getProjSavingsData(projId);
-  bldgs.forEach((b) => {
-    sd.blRates[b.id] = {
+  const rows = bldgs.map((b) => ({
+    b,
+    rates: {
       kwhSummer: parseFloat(document.getElementById('blr-kwhs-' + projId + '-' + b.id)?.value) || 0,
       kwhWinter: parseFloat(document.getElementById('blr-kwhw-' + projId + '-' + b.id)?.value) || 0,
       kwSummer: parseFloat(document.getElementById('blr-kws-' + projId + '-' + b.id)?.value) || 0,
       kwWinter: parseFloat(document.getElementById('blr-kww-' + projId + '-' + b.id)?.value) || 0,
       thermRate: parseFloat(document.getElementById('blr-therm-' + projId + '-' + b.id)?.value) || 0,
-    };
-  });
+    },
+  }));
+  for (const row of rows) {
+    if (!(await rateGuardAcceptAll(row.rates, projId, row.b.id))) {
+      showToast('Baseline rates not saved');
+      return;
+    }
+  }
+  rows.forEach((row) => writeRateSet(sd.blRates, row.b.id, row.rates, projId, row.b.id, 'baseline rates table', true));
   sset('en_projects', projects);
   showToast('Baseline rates saved ✓');
   calcProjSavingsMatrix(projId);
@@ -150,7 +158,7 @@ function addSavingsMeasure(projId) {
   const sd = getProjSavingsData(projId);
   const bldgs = getUDBldgs(projId);
   const firstBldg = bldgs[0];
-  sd.measures.push({
+  const m = {
     id: 'm' + Date.now(),
     selected: true,
     msrNum: sd.measures.length + 1 + '',
@@ -160,24 +168,14 @@ function addSavingsMeasure(projId) {
     sqft: firstBldg ? parseFloat(firstBldg.sqft) || 0 : 0,
     implCost: 0,
     incentive: 0,
-    rates: firstBldg
-      ? computeSeasonalBldgRates(projId, firstBldg.id)
-      : {
-          kwhSummer: 0,
-          kwhWinter: 0,
-          kwSummer: 0,
-          kwWinter: 0,
-          thermRate: 0,
-          gasSummer: 0,
-          gasWinter: 0,
-          gallonRate: 0,
-        },
     kwh: Array(12).fill(0),
     kw: Array(12).fill(0),
     gas: Array(12).fill(0),
     propane: Array(12).fill(0),
     totalDollar: 0,
-  });
+  };
+  initMeasureRates(m, projId, m.bldgId, 'add measure');
+  sd.measures.push(m);
   sset('en_projects', projects);
   renderSavingsMatrix(projId);
 }
@@ -263,7 +261,7 @@ function renderSavingsMatrix(projId) {
 
   // ── Rate cell helper ──
   const _rateCell = (mId, field, step, r) =>
-    `<td><input class="sv-num-inp sv-rate-inp" type="number" step="${step}" value="${r[field] || ''}" placeholder="0" style="width:52px;font-size:10px" onchange="svUpdateMsrRate('${mId}','${field}',parseFloat(this.value)||0)" onfocusout="autoSaveMsr('${projId}')"></td>`;
+    `<td><input class="sv-num-inp sv-rate-inp" type="number" step="${step}" value="${r[field] || ''}" placeholder="0" style="width:52px;font-size:10px" onchange="svUpdateMsrRate('${mId}','${field}',parseFloat(this.value)||0,this)" onfocusout="autoSaveMsr('${projId}')"></td>`;
 
   tbody.innerHTML = sd.measures
     .map((m) => {
@@ -303,14 +301,14 @@ function renderSavingsMatrix(projId) {
                 <div>
                   <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Utility Rates</div>
                   <div class="sv-rate-group">
-                    <div class="sv-rate-field"><label>kWh $/Summer</label><input class="fi" type="number" step="0.0001" value="${r.kwhSummer || ''}" onchange="svUpdateMsrRate('${m.id}','kwhSummer',parseFloat(this.value)||0)"></div>
-                    <div class="sv-rate-field"><label>kWh $/Winter</label><input class="fi" type="number" step="0.0001" value="${r.kwhWinter || ''}" onchange="svUpdateMsrRate('${m.id}','kwhWinter',parseFloat(this.value)||0)"></div>
-                    <div class="sv-rate-field"><label>kW $/Summer</label><input class="fi" type="number" step="0.01" value="${r.kwSummer || ''}" onchange="svUpdateMsrRate('${m.id}','kwSummer',parseFloat(this.value)||0)"></div>
-                    <div class="sv-rate-field"><label>kW $/Winter</label><input class="fi" type="number" step="0.01" value="${r.kwWinter || ''}" onchange="svUpdateMsrRate('${m.id}','kwWinter',parseFloat(this.value)||0)"></div>
-                    <div class="sv-rate-field"><label>Gas $/Therm</label><input class="fi" type="number" step="0.001" value="${r.thermRate || ''}" onchange="svUpdateMsrRate('${m.id}','thermRate',parseFloat(this.value)||0)"></div>
-                    <div class="sv-rate-field"><label>Gas $/Therm — Summer (Jun–Sep)</label><input class="fi" type="number" step="0.001" value="${r.gasSummer || ''}" placeholder="uses Gas $/Therm" onchange="svUpdateMsrRate('${m.id}','gasSummer',parseFloat(this.value)||0)"></div>
-                    <div class="sv-rate-field"><label>Gas $/Therm — Winter (Oct–May)</label><input class="fi" type="number" step="0.001" value="${r.gasWinter || ''}" placeholder="uses Gas $/Therm" onchange="svUpdateMsrRate('${m.id}','gasWinter',parseFloat(this.value)||0)"></div>
-                    <div class="sv-rate-field"><label>Propane $/Gallon</label><input class="fi" type="number" step="0.001" value="${r.gallonRate || ''}" onchange="svUpdateMsrRate('${m.id}','gallonRate',parseFloat(this.value)||0)"></div>
+                    <div class="sv-rate-field"><label>kWh $/Summer</label><input class="fi" type="number" step="0.0001" value="${r.kwhSummer || ''}" onchange="svUpdateMsrRate('${m.id}','kwhSummer',parseFloat(this.value)||0,this)"></div>
+                    <div class="sv-rate-field"><label>kWh $/Winter</label><input class="fi" type="number" step="0.0001" value="${r.kwhWinter || ''}" onchange="svUpdateMsrRate('${m.id}','kwhWinter',parseFloat(this.value)||0,this)"></div>
+                    <div class="sv-rate-field"><label>kW $/Summer</label><input class="fi" type="number" step="0.01" value="${r.kwSummer || ''}" onchange="svUpdateMsrRate('${m.id}','kwSummer',parseFloat(this.value)||0,this)"></div>
+                    <div class="sv-rate-field"><label>kW $/Winter</label><input class="fi" type="number" step="0.01" value="${r.kwWinter || ''}" onchange="svUpdateMsrRate('${m.id}','kwWinter',parseFloat(this.value)||0,this)"></div>
+                    <div class="sv-rate-field"><label>Gas $/Therm</label><input class="fi" type="number" step="0.001" value="${r.thermRate || ''}" onchange="svUpdateMsrRate('${m.id}','thermRate',parseFloat(this.value)||0,this)"></div>
+                    <div class="sv-rate-field"><label>Gas $/Therm — Summer (Jun–Sep)</label><input class="fi" type="number" step="0.001" value="${r.gasSummer || ''}" placeholder="uses Gas $/Therm" onchange="svUpdateMsrRate('${m.id}','gasSummer',parseFloat(this.value)||0,this)"></div>
+                    <div class="sv-rate-field"><label>Gas $/Therm — Winter (Oct–May)</label><input class="fi" type="number" step="0.001" value="${r.gasWinter || ''}" placeholder="uses Gas $/Therm" onchange="svUpdateMsrRate('${m.id}','gasWinter',parseFloat(this.value)||0,this)"></div>
+                    <div class="sv-rate-field"><label>Propane $/Gallon</label><input class="fi" type="number" step="0.001" value="${r.gallonRate || ''}" onchange="svUpdateMsrRate('${m.id}','gallonRate',parseFloat(this.value)||0,this)"></div>
                   </div>
                   <button class="btn btn-ghost btn-sm" style="margin-top:8px;font-size:11px" onclick="svResetMsrRates('${m.id}')">Reset to Building Defaults</button>
                 </div>
@@ -488,7 +486,7 @@ function updateMsrField(projId, msrId, field, val) {
     const bldg = getUDBldg(projId, val);
     if (bldg) {
       m.sqft = parseFloat(bldg.sqft) || 0;
-      m.rates = computeSeasonalBldgRates(projId, val);
+      writeRateSet(m, 'rates', computeSeasonalBldgRates(projId, val), projId, val, 'measure building change');
       const sqftInp = document.querySelector(
         `#sv-msr-row-${projId}-${msrId} .sv-sqft-inp, #sv-pg-msr-row-${msrId} .sv-sqft-inp`,
       );
@@ -507,6 +505,154 @@ function updateMsrSel(projId, msrId, checked) {
 }
 function autoSaveMsr(projId) {
   sset('en_projects', projects);
+}
+
+// ── Rate write paths: the ONE place a rate is written (rate guard) ─────────────────────────────
+// Every write of a $/kWh, $/kW, $/therm or $/gallon rate to a measure, a Baseline Rates row or a
+// report config goes through writeRateSet / writeRateField below. Both rely on the ONE check,
+// rateGuardCheck (computations/rates.js): the building's baseline rate from computeSeasonalBldgRates
+// and fixed plausibility bounds.
+//   - A user types or accepts a rate: rateGuardAccept / rateGuardAcceptAll ask first (confirm popup),
+//     then writeRateField / writeRateSet(..., accepted = true) save only after the user said yes.
+//   - A program writes a rate (calculator apply, add measure, reset, one-time refresh): writeRateSet
+//     checks it; an out-of-range rate is NOT saved. It is logged (console + window._rateGuardLog)
+//     and shown in a toast.
+// tools/gate-rate-write-guard.js fails when any other code writes a rate.
+const RATE_WRITE_FIELDS = [
+  'kwhSummer',
+  'kwhWinter',
+  'kwSummer',
+  'kwWinter',
+  'thermRate',
+  'gasSummer',
+  'gasWinter',
+  'gallonRate',
+];
+
+// rateGuardCheckSet(rates, projId, bldgId) -> array of failed checks (empty = every rate passes).
+function rateGuardCheckSet(rates, projId, bldgId) {
+  const bldg = bldgId ? getUDBldg(projId, bldgId) : null;
+  const base = bldg ? computeSeasonalBldgRates(projId, bldgId) : null;
+  const fails = [];
+  Object.keys(rates || {}).forEach((field) => {
+    if (!rateGuardKnowsField(field)) return;
+    const r = rateGuardCheck(field, rates[field], base, bldg && bldg.name);
+    if (!r.ok) fails.push(r);
+  });
+  return fails;
+}
+
+function rateGuardLog(source, fails, projId, bldgId) {
+  window._rateGuardLog = window._rateGuardLog || [];
+  fails.forEach((f) => {
+    const entry = {
+      at: new Date().toISOString(),
+      source,
+      projId,
+      bldgId,
+      field: f.field,
+      value: f.value,
+      baseline: f.baseline,
+      min: f.min,
+      max: f.max,
+    };
+    window._rateGuardLog.push(entry);
+    console.warn('[rate-guard] write blocked', entry);
+  });
+}
+
+// The failed-check message without its closing question, for a toast that has no buttons.
+function _rateGuardToastText(f) {
+  return f.message.replace(/ Keep this value\?$/, '');
+}
+
+// The user typed one rate. Resolves true when it passes or the user accepts the confirm popup.
+async function rateGuardAccept(field, value, projId, bldgId) {
+  const fails = rateGuardCheckSet({ [field]: value }, projId, bldgId);
+  return fails.length ? confirmAsync(fails[0].message) : true;
+}
+
+// Several rates (a Baseline Rates row). Asks once per rate that fails; one "no" stops the save.
+async function rateGuardAcceptAll(rates, projId, bldgId) {
+  const fails = rateGuardCheckSet(rates, projId, bldgId);
+  for (const f of fails) {
+    if (!(await confirmAsync(f.message))) return false;
+  }
+  return true;
+}
+
+// writeRateSet(holder, prop, rates, projId, bldgId, source, accepted) - holder[prop] = the rate fields of
+// `rates`. accepted = true only after rateGuardAccept / rateGuardAcceptAll said yes. Otherwise an
+// out-of-range rate is blocked and logged and holder[prop] stays as it was. Returns true when written.
+function writeRateSet(holder, prop, rates, projId, bldgId, source, accepted) {
+  if (!accepted) {
+    const fails = rateGuardCheckSet(rates, projId, bldgId);
+    if (fails.length) {
+      rateGuardLog(source, fails, projId, bldgId);
+      if (typeof showToast === 'function') showToast('Rates not saved: ' + _rateGuardToastText(fails[0]), 'error');
+      return false;
+    }
+  }
+  const out = {};
+  RATE_WRITE_FIELDS.forEach((k) => {
+    if (rates[k] !== undefined) out[k] = rates[k];
+  });
+  holder[prop] = out;
+  return true;
+}
+
+// writeRateField(holder, prop, field, val) - one rate the user typed AND accepted (rateGuardAccept).
+function writeRateField(holder, prop, field, val) {
+  if (!holder[prop]) holder[prop] = {};
+  holder[prop][field] = val;
+  // A flat gas rate typed here replaces the summer / winter split, or the split would still price the gas.
+  if (field === 'thermRate') {
+    delete holder[prop].gasSummer;
+    delete holder[prop].gasWinter;
+  }
+}
+
+// initMeasureRates(m, projId, bldgId, source) - a new measure gets the building's baseline rates
+// (computeSeasonalBldgRates). Baseline rates that fail the guard are blocked and logged; the measure keeps {}.
+function initMeasureRates(m, projId, bldgId, source) {
+  writeRateSet(m, 'rates', {}, projId, bldgId, source, true);
+  return writeRateSet(m, 'rates', bldgId ? computeSeasonalBldgRates(projId, bldgId) : {}, projId, bldgId, source);
+}
+
+// ensureMeasureRates(m, projId, source) - the rates a calculator apply prices with. The measure's own
+// rates when it has any and they pass the guard; a measure with none gets the baseline rates. Returns
+// false (blocked and logged) when the rates are out of range, so a bad rate never prices a calculator result.
+function ensureMeasureRates(m, projId, source) {
+  const has = m.rates && RATE_WRITE_FIELDS.some((k) => parseFloat(m.rates[k]) > 0);
+  if (!has) return initMeasureRates(m, projId, m.bldgId, source);
+  const fails = rateGuardCheckSet(m.rates, projId, m.bldgId);
+  if (!fails.length) return true;
+  rateGuardLog(source, fails, projId, m.bldgId);
+  if (typeof showToast === 'function')
+    showToast('Not applied: ' + _rateGuardToastText(fails[0]) + ' Reset the measure rates first.', 'error');
+  return false;
+}
+
+// One-time data fix (2026-10-13): measures made by the old CSV measure import (id m_csv_...) carry $/kW
+// rates that are dollars per BILL (for example 6019.81), saved before the old rate function was fixed.
+// This sets their rates to the baseline rates of their building (computeSeasonalBldgRates), once per project.
+// It waits while a building has no baseline rate (bills not loaded yet) and then runs on the next render.
+function refreshImportedMeasureRates(projId, sd) {
+  if (sd.importedRatesRefreshed) return false;
+  const todo = sd.measures.filter((m) => String(m.id).indexOf('m_csv_') === 0);
+  if (
+    todo.some((m) => {
+      const base = computeSeasonalBldgRates(projId, m.bldgId);
+      return !RATE_WRITE_FIELDS.some((k) => base[k] > 0);
+    })
+  )
+    return false;
+  todo.forEach((m) => {
+    if (writeRateSet(m, 'rates', computeSeasonalBldgRates(projId, m.bldgId), projId, m.bldgId, 'one-time rate refresh'))
+      m.totalDollar = calcMeasureDollars(m, m.rates).total;
+  });
+  sd.importedRatesRefreshed = true;
+  return true;
 }
 
 // measureRateAt(rates, mo) - the ONE season rule for a savings-matrix measure: the $ per unit that
@@ -721,25 +867,9 @@ function _renderSavingsContent(wrap, projId) {
   }
   const sd = getProjSavingsData(projId);
   const bldgs = getUDBldgs(projId);
-  // Migrate old per-building rates to per-measure rates
-  let _migrated = false;
+  let _migrated = refreshImportedMeasureRates(projId, sd);
   sd.measures.forEach((m) => {
-    if (!m.rates && sd.blRates && sd.blRates[m.bldgId]) {
-      m.rates = { ...sd.blRates[m.bldgId] };
-      _migrated = true;
-    }
-    if (!m.rates) m.rates = computeSeasonalBldgRates(projId, m.bldgId);
-    // Migrate wrong rate field names (rates.gas → rates.thermRate, rates.propane → rates.gallonRate)
-    if (m.rates && 'gas' in m.rates && !('thermRate' in m.rates)) {
-      m.rates.thermRate = m.rates.gas;
-      delete m.rates.gas;
-      _migrated = true;
-    }
-    if (m.rates && 'propane' in m.rates && !('gallonRate' in m.rates)) {
-      m.rates.gallonRate = m.rates.propane;
-      delete m.rates.propane;
-      _migrated = true;
-    }
+    if (!m.rates) _migrated = initMeasureRates(m, projId, m.bldgId, 'matrix render') || _migrated;
     // Migrate missing selected field (undefined → true)
     if (m.selected === undefined) {
       m.selected = true;
@@ -747,141 +877,6 @@ function _renderSavingsContent(wrap, projId) {
     }
   });
   if (_migrated) sset('en_projects', projects);
-  // Idempotent restore: Site F Elementary (bldgId b1776962504464) in Client A project.
-  // Runs on every render — only mutates if measure is missing or has wrong data. Safe no-op otherwise.
-  // Skips restore if user explicitly deleted this measure (tracked in sd._userDeletedIds).
-  if (p.name && p.name.indexOf('Louisburg') !== -1) {
-    const _bmId = 'm_csv_b1776962504464';
-    const _bmUserDeleted = Array.isArray(sd._userDeletedIds) && sd._userDeletedIds.includes(_bmId);
-    if (!_bmUserDeleted) {
-      const _bmCorrect = {
-        id: _bmId,
-        bldgId: 'b1776962504464',
-        desc: 'BAS Savings',
-        selected: true,
-        source: 'bas',
-        sqft: 0,
-        totalDollar: 8129.792025,
-        rates: {
-          kwhSummer: 0.0711,
-          kwhWinter: 0.0553,
-          kwSummer: 3190.1,
-          kwWinter: 2332.98,
-          thermRate: 0.798,
-        },
-        kwh: [
-          5298.44, 4374.63, 3722.75, 1483.52, 8364.24, 18323.82, 29494.55, 20370.85, 10319.94, 5719.57, 3741.26,
-          4842.72,
-        ],
-        gas: [133.41, 110.15, 93.73, 37.35, 0, 0, 0, 0, 0, 0, 94.2, 121.93],
-        kw: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        propane: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      };
-      const bmIdx = sd.measures.findIndex((m) => m.bldgId === 'b1776962504464');
-      let _bmChanged = false;
-      if (bmIdx === -1) {
-        // Measure is missing — push it
-        sd.measures.push(_bmCorrect);
-        _bmChanged = true;
-      } else {
-        const bm = sd.measures[bmIdx];
-        // Check if totalDollar or critical rates are wrong
-        if (
-          bm.totalDollar !== _bmCorrect.totalDollar ||
-          !bm.rates ||
-          bm.rates.kwhSummer !== _bmCorrect.rates.kwhSummer ||
-          bm.rates.kwhWinter !== _bmCorrect.rates.kwhWinter ||
-          bm.rates.thermRate !== _bmCorrect.rates.thermRate
-        ) {
-          sd.measures[bmIdx] = _bmCorrect;
-          _bmChanged = true;
-        }
-        // If present and correct but unchecked, re-enable it
-        if (!_bmChanged && sd.measures[bmIdx].selected === false) {
-          sd.measures[bmIdx].selected = true;
-          _bmChanged = true;
-        }
-      }
-      if (_bmChanged) {
-        // Restore associated per-building config keys if not already set
-        const bspKey = 'bldgsavproj_cfg_b1776962504464';
-        const bpKey = 'bldgperf_cfg_b1776962504464';
-        if (!DB.get(bspKey, null)) {
-          DB.set(bspKey, { escPct: 3.5, savingsPct: 6.7 });
-        }
-        if (!DB.get(bpKey, null)) {
-          DB.set(bpKey, {
-            cscMode: 'pct',
-            cscFixed: 0,
-            years: 3,
-            escPct: 3.5,
-            _customEsc: true,
-            view: 'monthly',
-          });
-        }
-        sset('en_projects', projects);
-      }
-    } // end if (!_bmUserDeleted)
-  }
-  // Idempotent restore: Site G Elementary (bldgId b1776962484232) in Client A project.
-  // Runs on every render — only mutates if measure is missing, has wrong data, or is unchecked.
-  // Skips restore if user explicitly deleted this measure (tracked in sd._userDeletedIds).
-  if (p.name && p.name.indexOf('Louisburg') !== -1) {
-    const _cgId = 'm_csv_b1776962484232';
-    const _cgUserDeleted = Array.isArray(sd._userDeletedIds) && sd._userDeletedIds.includes(_cgId);
-    if (!_cgUserDeleted) {
-      const _cgCorrect = {
-        id: _cgId,
-        bldgId: 'b1776962484232',
-        desc: 'BAS Savings',
-        msrNum: '',
-        sqft: 0,
-        selected: true,
-        source: 'bas',
-        totalDollar: 2167.0283010000003,
-        rates: {
-          kwhSummer: 0.1025,
-          kwhWinter: 0.0837,
-          kwSummer: 542.71,
-          kwWinter: 226.34,
-          thermRate: 0,
-          gallonRate: 1.6,
-        },
-        kwh: [731.14, 450.78, 280.63, 70.84, 1235.96, 2652.89, 3889.82, 2880.23, 1541.63, 806.71, 217.57, 487.85],
-        kw: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        gas: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-        propane: [124, 100, 56, 13, 0, 0, 0, 0, 0, 0, 40, 95],
-      };
-      const cgIdx = sd.measures.findIndex((m) => m.bldgId === 'b1776962484232');
-      let _cgChanged = false;
-      if (cgIdx === -1) {
-        // Measure is missing — push it (handles the case Site G was deleted)
-        sd.measures.push(_cgCorrect);
-        _cgChanged = true;
-      } else {
-        const cg = sd.measures[cgIdx];
-        // Check if fuel type is wrong (no gallonRate means propane field is corrupt) or rates are wrong
-        if (
-          cg.totalDollar !== _cgCorrect.totalDollar ||
-          !cg.rates ||
-          cg.rates.gallonRate !== _cgCorrect.rates.gallonRate ||
-          cg.rates.kwhSummer !== _cgCorrect.rates.kwhSummer ||
-          cg.rates.thermRate !== _cgCorrect.rates.thermRate
-        ) {
-          sd.measures[cgIdx] = _cgCorrect;
-          _cgChanged = true;
-        }
-        // If present and correct but unchecked, re-enable it
-        if (!_cgChanged && sd.measures[cgIdx].selected === false) {
-          sd.measures[cgIdx].selected = true;
-          _cgChanged = true;
-        }
-      }
-      if (_cgChanged) {
-        sset('en_projects', projects);
-      }
-    } // end if (!_cgUserDeleted)
-  }
   // Auto-sync SQFT from current building data if measure has a building assigned
   let _sqftChanged = false;
   sd.measures.forEach((m) => {
@@ -959,7 +954,7 @@ function _renderSavingsContent(wrap, projId) {
 
   // ── Rate cell helper ──
   const rateCell = (mid, field, step, r) =>
-    `<td><input class="sv-num-inp sv-rate-inp" type="number" step="${step}" value="${r[field] || ''}" placeholder="0" style="width:52px;font-size:10px" onchange="svUpdateMsrRate('${mid}','${field}',parseFloat(this.value)||0)" onfocusout="svAutoSave()"></td>`;
+    `<td><input class="sv-num-inp sv-rate-inp" type="number" step="${step}" value="${r[field] || ''}" placeholder="0" style="width:52px;font-size:10px" onchange="svUpdateMsrRate('${mid}','${field}',parseFloat(this.value)||0,this)" onfocusout="svAutoSave()"></td>`;
 
   // ── Measure rows ──
   const bldgOpts = bldgs.map((b) => `<option value="${b.id}">${_escHtml(b.name)}</option>`).join('');
@@ -1018,14 +1013,14 @@ function _renderSavingsContent(wrap, projId) {
                   <div>
                     <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Utility Rates</div>
                     <div class="sv-rate-group">
-                      <div class="sv-rate-field"><label>kWh $/Summer</label><input class="fi" type="number" step="0.0001" value="${r.kwhSummer || ''}" onchange="svUpdateMsrRate('${mid}','kwhSummer',parseFloat(this.value)||0)"></div>
-                      <div class="sv-rate-field"><label>kWh $/Winter</label><input class="fi" type="number" step="0.0001" value="${r.kwhWinter || ''}" onchange="svUpdateMsrRate('${mid}','kwhWinter',parseFloat(this.value)||0)"></div>
-                      <div class="sv-rate-field"><label>kW $/Summer</label><input class="fi" type="number" step="0.01" value="${r.kwSummer || ''}" onchange="svUpdateMsrRate('${mid}','kwSummer',parseFloat(this.value)||0)"></div>
-                      <div class="sv-rate-field"><label>kW $/Winter</label><input class="fi" type="number" step="0.01" value="${r.kwWinter || ''}" onchange="svUpdateMsrRate('${mid}','kwWinter',parseFloat(this.value)||0)"></div>
-                      <div class="sv-rate-field"><label>Gas $/Therm</label><input class="fi" type="number" step="0.001" value="${r.thermRate || ''}" onchange="svUpdateMsrRate('${mid}','thermRate',parseFloat(this.value)||0)"></div>
-                      <div class="sv-rate-field"><label>Gas $/Therm — Summer (Jun–Sep)</label><input class="fi" type="number" step="0.001" value="${r.gasSummer || ''}" placeholder="uses Gas $/Therm" onchange="svUpdateMsrRate('${mid}','gasSummer',parseFloat(this.value)||0)"></div>
-                      <div class="sv-rate-field"><label>Gas $/Therm — Winter (Oct–May)</label><input class="fi" type="number" step="0.001" value="${r.gasWinter || ''}" placeholder="uses Gas $/Therm" onchange="svUpdateMsrRate('${mid}','gasWinter',parseFloat(this.value)||0)"></div>
-                      <div class="sv-rate-field"><label>Propane $/Gallon</label><input class="fi" type="number" step="0.001" value="${r.gallonRate || ''}" onchange="svUpdateMsrRate('${mid}','gallonRate',parseFloat(this.value)||0)"></div>
+                      <div class="sv-rate-field"><label>kWh $/Summer</label><input class="fi" type="number" step="0.0001" value="${r.kwhSummer || ''}" onchange="svUpdateMsrRate('${mid}','kwhSummer',parseFloat(this.value)||0,this)"></div>
+                      <div class="sv-rate-field"><label>kWh $/Winter</label><input class="fi" type="number" step="0.0001" value="${r.kwhWinter || ''}" onchange="svUpdateMsrRate('${mid}','kwhWinter',parseFloat(this.value)||0,this)"></div>
+                      <div class="sv-rate-field"><label>kW $/Summer</label><input class="fi" type="number" step="0.01" value="${r.kwSummer || ''}" onchange="svUpdateMsrRate('${mid}','kwSummer',parseFloat(this.value)||0,this)"></div>
+                      <div class="sv-rate-field"><label>kW $/Winter</label><input class="fi" type="number" step="0.01" value="${r.kwWinter || ''}" onchange="svUpdateMsrRate('${mid}','kwWinter',parseFloat(this.value)||0,this)"></div>
+                      <div class="sv-rate-field"><label>Gas $/Therm</label><input class="fi" type="number" step="0.001" value="${r.thermRate || ''}" onchange="svUpdateMsrRate('${mid}','thermRate',parseFloat(this.value)||0,this)"></div>
+                      <div class="sv-rate-field"><label>Gas $/Therm — Summer (Jun–Sep)</label><input class="fi" type="number" step="0.001" value="${r.gasSummer || ''}" placeholder="uses Gas $/Therm" onchange="svUpdateMsrRate('${mid}','gasSummer',parseFloat(this.value)||0,this)"></div>
+                      <div class="sv-rate-field"><label>Gas $/Therm — Winter (Oct–May)</label><input class="fi" type="number" step="0.001" value="${r.gasWinter || ''}" placeholder="uses Gas $/Therm" onchange="svUpdateMsrRate('${mid}','gasWinter',parseFloat(this.value)||0,this)"></div>
+                      <div class="sv-rate-field"><label>Propane $/Gallon</label><input class="fi" type="number" step="0.001" value="${r.gallonRate || ''}" onchange="svUpdateMsrRate('${mid}','gallonRate',parseFloat(this.value)||0,this)"></div>
                     </div>
                     <button class="btn btn-ghost btn-sm" style="margin-top:8px;font-size:11px" onclick="svResetMsrRates('${mid}')">Reset to Building Defaults</button>
                   </div>
@@ -1231,20 +1226,30 @@ function svSaveProjBaselineRates() {
   _svSaveRatesFrom(svSelProjId);
 }
 
-function _svSaveRatesFrom(pid) {
+async function _svSaveRatesFrom(pid) {
   const bldgs = getUDBldgs(pid);
   const sd = getProjSavingsData(pid);
-  bldgs.forEach((b) => {
+  const rows = bldgs.map((b) => {
     const bid = b.id;
-    sd.blRates[bid] = {
-      kwhSummer: parseFloat(document.getElementById('sv-blr-kwhs-' + pid + '-' + bid)?.value) || 0,
-      kwhWinter: parseFloat(document.getElementById('sv-blr-kwhw-' + pid + '-' + bid)?.value) || 0,
-      kwSummer: parseFloat(document.getElementById('sv-blr-kws-' + pid + '-' + bid)?.value) || 0,
-      kwWinter: parseFloat(document.getElementById('sv-blr-kww-' + pid + '-' + bid)?.value) || 0,
-      thermRate: parseFloat(document.getElementById('sv-blr-therm-' + pid + '-' + bid)?.value) || 0,
-      gallonRate: parseFloat(document.getElementById('sv-blr-gallon-' + pid + '-' + bid)?.value) || 0,
+    return {
+      b,
+      rates: {
+        kwhSummer: parseFloat(document.getElementById('sv-blr-kwhs-' + pid + '-' + bid)?.value) || 0,
+        kwhWinter: parseFloat(document.getElementById('sv-blr-kwhw-' + pid + '-' + bid)?.value) || 0,
+        kwSummer: parseFloat(document.getElementById('sv-blr-kws-' + pid + '-' + bid)?.value) || 0,
+        kwWinter: parseFloat(document.getElementById('sv-blr-kww-' + pid + '-' + bid)?.value) || 0,
+        thermRate: parseFloat(document.getElementById('sv-blr-therm-' + pid + '-' + bid)?.value) || 0,
+        gallonRate: parseFloat(document.getElementById('sv-blr-gallon-' + pid + '-' + bid)?.value) || 0,
+      },
     };
   });
+  for (const row of rows) {
+    if (!(await rateGuardAcceptAll(row.rates, pid, row.b.id))) {
+      showToast('Baseline rates not saved');
+      return;
+    }
+  }
+  rows.forEach((row) => writeRateSet(sd.blRates, row.b.id, row.rates, pid, row.b.id, 'baseline rates table', true));
   sset('en_projects', projects);
   showToast('Baseline rates saved ✓');
   _svRecalcFrom(pid);
@@ -1311,19 +1316,19 @@ function svToggleDetail(msrId) {
   if (tog) tog.classList.toggle('open', !open);
 }
 
-function svUpdateMsrRate(msrId, field, val) {
+// A rate typed into a measure's rate cell. `el` is the input: when the rate fails the check and the user
+// says no in the confirm popup, nothing is saved and the input shows the saved value again.
+async function svUpdateMsrRate(msrId, field, val, el) {
   const pid = svSelProjId || window._activeProjId;
   if (!pid) return;
   const sd = getProjSavingsData(pid);
   const m = sd.measures.find((x) => x.id === msrId);
   if (!m) return;
-  if (!m.rates) m.rates = {};
-  m.rates[field] = val;
-  // A flat gas rate typed here replaces the summer / winter split, or the split would still price the gas.
-  if (field === 'thermRate') {
-    delete m.rates.gasSummer;
-    delete m.rates.gasWinter;
+  if (!(await rateGuardAccept(field, val, pid, m.bldgId))) {
+    if (el) el.value = (m.rates && m.rates[field]) || '';
+    return;
   }
+  writeRateField(m, 'rates', field, val);
   sset('en_projects', projects);
 }
 
@@ -1333,7 +1338,7 @@ function svResetMsrRates(msrId) {
   const sd = getProjSavingsData(pid);
   const m = sd.measures.find((x) => x.id === msrId);
   if (!m) return;
-  m.rates = computeSeasonalBldgRates(pid, m.bldgId);
+  if (!writeRateSet(m, 'rates', computeSeasonalBldgRates(pid, m.bldgId), pid, m.bldgId, 'reset rates')) return;
   sset('en_projects', projects);
   if (document.getElementById('ptab-savings')?.offsetParent !== null) initSavingsTab(pid);
   else renderSvDetail();

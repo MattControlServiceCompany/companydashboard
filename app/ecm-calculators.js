@@ -114,8 +114,8 @@ const ECM_TEMPLATES = {
         min: 1,
         max: 8,
       },
-      { id: 'gas_rate', label: 'Gas Rate', unit: '$/therm', type: 'number', default: null, min: 0.1, max: 5.0 },
-      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null, min: 0.01, max: 1.0 },
+      { id: 'gas_rate', label: 'Gas Rate', unit: '$/therm', type: 'number', default: null },
+      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null },
       {
         id: 'repair_cost',
         label: 'Repair / Replacement Cost',
@@ -286,8 +286,8 @@ const ECM_TEMPLATES = {
         min: 1,
         max: 100,
       },
-      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null, min: 0.01, max: 1.0 },
-      { id: 'gas_rate', label: 'Gas Rate', unit: '$/therm', type: 'number', default: null, min: 0.1, max: 5.0 },
+      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null },
+      { id: 'gas_rate', label: 'Gas Rate', unit: '$/therm', type: 'number', default: null },
       {
         id: 'equipment_cost',
         label: 'Total Equipment & Install Cost',
@@ -441,7 +441,7 @@ const ECM_TEMPLATES = {
         ],
         default: 'affinity',
       },
-      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null, min: 0.01, max: 1.0 },
+      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null },
       {
         id: 'vfd_cost',
         label: 'VFD Purchase & Install Cost',
@@ -546,15 +546,13 @@ const ECM_TEMPLATES = {
         min: 10,
         max: 100,
       },
-      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null, min: 0.01, max: 1.0 },
+      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null },
       {
         id: 'demand_rate',
         label: 'Demand Rate',
         unit: '$/kW/mo',
         type: 'number',
         default: null,
-        min: 0,
-        max: 30,
       },
       {
         id: 'installed_cost',
@@ -776,8 +774,8 @@ const ECM_TEMPLATES = {
         min: 0,
         max: 1,
       },
-      { id: 'gas_rate', label: 'Gas Rate', unit: '$/therm', type: 'number', default: null, min: 0.1, max: 5.0 },
-      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null, min: 0.01, max: 1.0 },
+      { id: 'gas_rate', label: 'Gas Rate', unit: '$/therm', type: 'number', default: null },
+      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null },
       {
         id: 'installed_cost',
         label: 'Installed Cost',
@@ -933,8 +931,6 @@ const ECM_TEMPLATES = {
         unit: '$/kWh',
         type: 'number',
         default: null,
-        min: 0.01,
-        max: 0.5,
       },
       {
         id: 'nm_rate',
@@ -1102,15 +1098,13 @@ const ECM_TEMPLATES = {
         min: 100,
         max: 8760,
       },
-      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null, min: 0.01, max: 1.0 },
+      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null },
       {
         id: 'demand_rate',
         label: 'Demand Rate',
         unit: '$/kW/mo',
         type: 'number',
         default: null,
-        min: 0,
-        max: 30,
       },
       {
         id: 'coincidence_factor',
@@ -1293,15 +1287,13 @@ const ECM_TEMPLATES = {
         min: 50,
         max: 100,
       },
-      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null, min: 0.01, max: 1.0 },
+      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null },
       {
         id: 'demand_rate',
         label: 'Demand Rate',
         unit: '$/kW/mo',
         type: 'number',
         default: null,
-        min: 0,
-        max: 30,
       },
       {
         id: 'installed_cost',
@@ -1426,7 +1418,7 @@ const ECM_TEMPLATES = {
         min: 100,
         max: 8760,
       },
-      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null, min: 0.01, max: 1.0 },
+      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null },
       { id: 'install_cost', label: 'VFD Install Cost', unit: '$', type: 'number', default: 8000, min: 0, max: 500000 },
     ],
     outputs: [
@@ -1514,7 +1506,7 @@ const ECM_TEMPLATES = {
         min: 100,
         max: 8760,
       },
-      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null, min: 0.01, max: 1.0 },
+      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null },
       {
         id: 'total_cost',
         label: 'Total Replacement Cost',
@@ -1646,7 +1638,7 @@ const ECM_TEMPLATES = {
         min: 60,
         max: 99,
       },
-      { id: 'gas_rate', label: 'Gas Rate', unit: '$/therm', type: 'number', default: null, min: 0.1, max: 5.0 },
+      { id: 'gas_rate', label: 'Gas Rate', unit: '$/therm', type: 'number', default: null },
       {
         id: 'cool_hours',
         label: 'Occupied Cooling Season Hours',
@@ -1676,7 +1668,7 @@ const ECM_TEMPLATES = {
         min: 1,
         max: 8,
       },
-      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null, min: 0.01, max: 1.0 },
+      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null },
       {
         id: 'install_cost',
         label: 'CO2 Sensor Install Cost',
@@ -1818,8 +1810,8 @@ const ECM_TEMPLATES = {
         min: 1,
         max: 8,
       },
-      { id: 'gas_rate', label: 'Gas Rate', unit: '$/therm', type: 'number', default: null, min: 0.1, max: 5.0 },
-      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null, min: 0.01, max: 1.0 },
+      { id: 'gas_rate', label: 'Gas Rate', unit: '$/therm', type: 'number', default: null },
+      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null },
       {
         id: 'min_flow_old',
         label: 'Current Min Airflow Setpoint',
@@ -2015,7 +2007,7 @@ const ECM_TEMPLATES = {
         ],
         default: 'cast_iron',
       },
-      { id: 'gas_rate', label: 'Gas Rate', unit: '$/therm', type: 'number', default: null, min: 0.1, max: 5.0 },
+      { id: 'gas_rate', label: 'Gas Rate', unit: '$/therm', type: 'number', default: null },
       {
         id: 'install_cost',
         label: 'Boiler Install Cost (full)',
@@ -2128,8 +2120,8 @@ const ECM_TEMPLATES = {
         default: 'gas',
       },
       { id: 'cooling_cop', label: 'Cooling System Coefficient of Performance', unit: 'COP', type: 'number', default: 3.5, min: 1, max: 8 },
-      { id: 'gas_rate', label: 'Gas Rate', unit: '$/therm', type: 'number', default: null, min: 0.1, max: 5.0 },
-      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null, min: 0.01, max: 1.0 },
+      { id: 'gas_rate', label: 'Gas Rate', unit: '$/therm', type: 'number', default: null },
+      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null },
       { id: 'install_cost', label: 'Install Cost', unit: '$', type: 'number', default: 25000, min: 0, max: 5000000 },
     ],
     outputs: [
@@ -2278,7 +2270,7 @@ const ECM_TEMPLATES = {
         min: 100,
         max: 8760,
       },
-      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null, min: 0.01, max: 1.0 },
+      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null },
       {
         id: 'install_cost',
         label: 'Fan Wall Install Cost',
@@ -2567,22 +2559,21 @@ function ecmAddAsMeasure(projId, bldgId, templateId, inputs, results) {
   if (!sd) return false;
   const bldg = bldgId && typeof getUDBldg === 'function' ? getUDBldg(projId, bldgId) : null;
 
-  sd.measures.push({
+  const measure = {
     id: 'm' + Date.now(),
     selected: true,
     msrNum: sd.measures.length + 1 + '',
     bldgId: bldgId || '',
     sqft: bldg ? parseFloat(bldg.sqft) || 0 : 0,
-    rates: bldgId
-      ? computeSeasonalBldgRates(projId, bldgId)
-      : { kwhSummer: 0, kwhWinter: 0, kwSummer: 0, kwWinter: 0, thermRate: 0 },
     desc: tmpl.name + (bldg ? ' — ' + bldg.name : ''),
     kwh: kwhMonthly,
     kw: kwMonthly,
     gas: gasMonthly,
     totalDollar: 0, // recalculated by calcProjSavingsMatrix
     source: 'ecm_' + templateId,
-  });
+  };
+  initMeasureRates(measure, projId, bldgId, 'ECM add measure');
+  sd.measures.push(measure);
   sset('en_projects', projects);
   if (typeof _svRecalcFrom === 'function') _svRecalcFrom(projId);
   if (typeof showToast === 'function') showToast(`Measure "${tmpl.name}" added to savings matrix`);
@@ -2738,10 +2729,11 @@ function renderEcmCalculator(templateId, container, savedValues, onBack, onCalcu
         <label for="${id}"${helpTitle} style="flex:0 0 280px;font-size:12px;font-weight:600;color:var(--text2);padding-top:6px${helpCursor}">${inp.label}${inp.unit ? ' <span style="opacity:.6;font-weight:400">(' + inp.unit + ')</span>' : ''}</label>
         <div style="flex:1;min-width:160px">
           <input id="${id}" class="fi ecm-input" type="number" data-inp="${inp.id}"
-            value="${val}" min="${inp.min}" max="${inp.max}"
+            value="${val}"${inp.min != null ? ` min="${inp.min}"` : ''}${inp.max != null ? ` max="${inp.max}"` : ''}
+            ${rateGuardKnowsField(inp.id) ? `data-accepted="${val}"` : ''}
             step="${inp.type === 'number' && (val === '' || val < 1) ? '0.001' : '1'}"
             style="width:100%;font-size:13px;${autoStyle}"
-            oninput="_ecmValidateInput(this,${inp.min},${inp.max})" />
+            oninput="_ecmValidateInput(this,${inp.min != null ? inp.min : 'null'},${inp.max != null ? inp.max : 'null'})" />
           ${autoTag}
           <div id="${id}-err" style="font-size:11px;color:var(--red,#e55);margin-top:2px;display:none"></div>
         </div>
@@ -2796,6 +2788,7 @@ function renderEcmCalculator(templateId, container, savedValues, onBack, onCalcu
       const el = container.querySelector('#ecm-inp-' + inp.id);
       if (el) {
         el.value = inp.default == null ? '' : inp.default;
+        if (el.dataset.accepted !== undefined) el.dataset.accepted = el.value;
         el.style.color = '';
         el.style.borderColor = '';
       }
@@ -2812,6 +2805,10 @@ function renderEcmCalculator(templateId, container, savedValues, onBack, onCalcu
     tmpl.inputs.forEach((inp) => {
       const el = container.querySelector('#ecm-inp-' + inp.id);
       if (el) {
+        if (rateGuardKnowsField(inp.id) && el.dataset.accepted !== el.value) {
+          _ecmShowFieldError(el, 'Confirm this rate first');
+          valid = false;
+        }
         inputs[inp.id] = inp.type === 'number' ? parseFloat(el.value) : el.value;
         if (inp.type === 'number' && isNaN(inputs[inp.id])) {
           _ecmShowFieldError(el, 'Required');
@@ -2838,7 +2835,10 @@ function renderEcmCalculator(templateId, container, savedValues, onBack, onCalcu
   tmpl.inputs.forEach((inp) => {
     const el = container.querySelector('#ecm-inp-' + inp.id);
     if (el) {
-      el.addEventListener('change', () => _ecmValidateInput(el, inp.min, inp.max));
+      el.addEventListener('change', () => {
+        _ecmValidateInput(el, inp.min, inp.max);
+        if (rateGuardKnowsField(inp.id)) _ecmGuardRateInput(el, inp.id, ctx);
+      });
     }
   });
 }
@@ -3015,6 +3015,26 @@ function renderEcmResults(templateId, results, container, projectContext, inputs
 }
 
 /* ─── Input Validation Helpers ───────────────────────── */
+
+// A rate typed into an ECM form is checked by the rate guard (computations/rates.js). Out of range: the
+// confirm popup. "No" puts the last accepted value back; "Yes" accepts it (the form runs on accepted rates only).
+async function _ecmGuardRateInput(el, fieldId, ctx) {
+  const val = parseFloat(el.value);
+  const ok =
+    !isFinite(val) ||
+    (await rateGuardAccept(fieldId, val, ctx && ctx.projId, ctx && ctx.buildingId));
+  if (ok) {
+    el.dataset.accepted = el.value;
+    return;
+  }
+  el.value = el.dataset.accepted || '';
+  el.style.borderColor = '';
+  const errEl = document.getElementById(el.id + '-err');
+  if (errEl) {
+    errEl.style.display = 'none';
+    errEl.textContent = '';
+  }
+}
 
 function _ecmValidateInput(el, min, max) {
   const errEl = document.getElementById(el.id + '-err');

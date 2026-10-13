@@ -871,6 +871,80 @@ function computeSeasonalBldgRates(projId, bldgId) {
   return out;
 }
 
+/* ── Rate guard: the ONE check every rate write path runs ─────────────────────
+   A rate typed, imported or applied by a calculator is checked two ways:
+   1. Against the building's own baseline rate (computeSeasonalBldgRates), when that rate exists:
+      the value must be between 0.5x and 2x of it.
+   2. Against fixed plausibility bounds for the unit. The bounds come from the real bills in the
+      2026-10-12 backup (all 5 projects): $/kWh 0.0200 to 0.1056 over 264 bills, $/kW 6.60 to 22.50
+      over 262 bills, $/therm 0.318 to 0.900 over 520 bills, $/gallon 1.60 to 1.94 over 3 bills.
+      Each bound is half the lowest and twice the highest bill rate seen, rounded outward.
+   A blank or 0 value is not a rate and always passes (it clears the field).
+   rateGuardCheck is pure. The write paths in app/energy-savings.js call it through
+   rateGuardFieldCheck and ask the user, or block and log when no user is present. */
+var RATE_GUARD_BOUNDS = {
+  kwh: { min: 0.01, max: 0.25, unit: '$/kWh', digits: 4 },
+  kw: { min: 3, max: 45, unit: '$/kW', digits: 2 },
+  therm: { min: 0.15, max: 2, unit: '$/therm', digits: 3 },
+  gallon: { min: 0.8, max: 4, unit: '$/gallon', digits: 3 },
+};
+var RATE_GUARD_BASELINE_RATIO = { low: 0.5, high: 2 };
+// field name (savings matrix, baseline table or ECM template input) -> unit kind, label and the
+// key of computeSeasonalBldgRates that is that field's baseline rate.
+var RATE_GUARD_FIELDS = {
+  kwhSummer: { kind: 'kwh', label: 'kWh summer', base: 'kwhSummer' },
+  kwhWinter: { kind: 'kwh', label: 'kWh winter', base: 'kwhWinter' },
+  kwSummer: { kind: 'kw', label: 'kW summer', base: 'kwSummer' },
+  kwWinter: { kind: 'kw', label: 'kW winter', base: 'kwWinter' },
+  thermRate: { kind: 'therm', label: 'gas', base: 'thermRate' },
+  gasSummer: { kind: 'therm', label: 'gas summer', base: 'gasSummer' },
+  gasWinter: { kind: 'therm', label: 'gas winter', base: 'gasWinter' },
+  gallonRate: { kind: 'gallon', label: 'propane', base: 'gallonRate' },
+  elec_rate: { kind: 'kwh', label: 'electric', base: 'kwhRate' },
+  btm_rate: { kind: 'kwh', label: 'blended electric', base: 'kwhRate' },
+  gas_rate: { kind: 'therm', label: 'gas', base: 'thermRate' },
+  demand_rate: { kind: 'kw', label: 'demand', base: 'kwRate' },
+};
+function rateGuardKnowsField(field) {
+  return Object.prototype.hasOwnProperty.call(RATE_GUARD_FIELDS, field);
+}
+// rateGuardCheck(field, value, baselineRates, bldgName) -> { ok:true } or
+// { ok:false, field, value, baseline, min, max, unit, message }.
+function rateGuardCheck(field, value, baselineRates, bldgName) {
+  var f = RATE_GUARD_FIELDS[field];
+  var v = typeof value === 'number' ? value : parseFloat(value);
+  if (!f || !isFinite(v) || v === 0) return { ok: true };
+  var b = RATE_GUARD_BOUNDS[f.kind];
+  var base = baselineRates && parseFloat(baselineRates[f.base]);
+  var hasBase = isFinite(base) && base > 0;
+  var outAbs = v < b.min || v > b.max;
+  var outBase = hasBase && (v < base * RATE_GUARD_BASELINE_RATIO.low || v > base * RATE_GUARD_BASELINE_RATIO.high);
+  if (!outAbs && !outBase) return { ok: true };
+  var money = function (n) {
+    return '$' + n.toFixed(b.digits);
+  };
+  var msg =
+    'The ' + f.label + ' rate ' + money(v) + ' per ' + b.unit.slice(2) + ' looks wrong. ' +
+    (hasBase
+      ? 'The baseline rate' + (bldgName ? ' for ' + bldgName : '') + ' is ' + money(base) + '. '
+      : 'This building has no baseline rate. ') +
+    'The normal range is ' + money(b.min) + ' to ' + money(b.max) + ' per ' + b.unit.slice(2) +
+    (hasBase
+      ? ', and within ' + RATE_GUARD_BASELINE_RATIO.low + ' to ' + RATE_GUARD_BASELINE_RATIO.high + ' times the baseline rate'
+      : '') +
+    '. Keep this value?';
+  return {
+    ok: false,
+    field: field,
+    value: v,
+    baseline: hasBase ? base : null,
+    min: b.min,
+    max: b.max,
+    unit: b.unit,
+    message: msg,
+  };
+}
+
 // formatBillMonthsLabel(yms) — turns a list of 'YYYY-MM' strings into the plain-words
 // "which bill months this came from" label every rate surface must show (plan step 3).
 // e.g. ['2025-06','2025-07','2025-08','2025-09'] -> 'Jun 2025 – Sep 2025 (4 bills)'.

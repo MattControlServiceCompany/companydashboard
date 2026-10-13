@@ -125,7 +125,13 @@ const measures = [];
 sb.getProjSavingsData = () => ({ measures });
 sb.getUDBldgs = () => [{ id: 'b1' }];
 sb._calcTemplateContext = { bldgId: 'b1', targetMeasureId: 'mT' };
-sb._svRatesOrCanonical = () => ({ kwhSummer: 0.1, kwhWinter: 0.1, kwSummer: 10, kwWinter: 8, thermRate: 1 });
+// The rate writers live in app/energy-savings.js (tools/test-rate-guard.js tests them); here they hand the measure fixed rates.
+const _fixedRates = { kwhSummer: 0.1, kwhWinter: 0.1, kwSummer: 10, kwWinter: 8, thermRate: 1 };
+sb.initMeasureRates = (m) => {
+  m.rates = { ..._fixedRates };
+  return true;
+};
+sb.ensureMeasureRates = sb.initMeasureRates;
 sb.SUMMER_MOS = [5, 6, 7, 8];
 sb.showToast = () => {};
 sb.sset = () => {};

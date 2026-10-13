@@ -3828,7 +3828,7 @@ function solarAddAsMeasure(projId) {
   const sc = p.solarCalc;
   const sd = getProjSavingsData(projId);
   const bldgs = typeof getUDBldgs === 'function' ? getUDBldgs(projId) : p.buildings || [];
-  sd.measures.push({
+  const m = {
     id: 'm' + Date.now(),
     selected: true,
     msrNum: sd.measures.length + 1 + '',
@@ -3839,22 +3839,12 @@ function solarAddAsMeasure(projId) {
     gas: Array(12).fill(0),
     totalDollar: 0,
     source: 'solar',
-  });
+  };
+  initMeasureRates(m, projId, m.bldgId, 'solar add measure');
+  sd.measures.push(m);
   sset('en_projects', projects);
   closeCalcTemplate();
   showToast('Solar measure added to savings matrix ✓');
-}
-
-// _svRatesOrCanonical(sd, projId, bldgId) — the user-saved Baseline Rates table
-// (Energy Savings tab, sd.blRates[bldgId]) if it has at least one nonzero rate, else the
-// ONE canonical baseline-period seasonal rate function (computeSeasonalBldgRates).
-// 2026-09-23-rate-source: calculators that write measures (solarApplyToMeasure,
-// bcApplyToMeasure) must never fall back to an empty {} and silently zero the $ savings.
-function _svRatesOrCanonical(sd, projId, bldgId) {
-  const saved = sd.blRates && sd.blRates[bldgId];
-  const savedHasRate =
-    saved && (saved.kwhSummer || saved.kwhWinter || saved.kwSummer || saved.kwWinter || saved.thermRate);
-  return savedHasRate ? saved : computeSeasonalBldgRates(projId, bldgId);
 }
 
 function solarApplyToMeasure(projId) {
@@ -3867,16 +3857,14 @@ function solarApplyToMeasure(projId) {
     showToast('Measure not found');
     return;
   }
+  // Rates that fail the rate guard block the apply (ensureMeasureRates logs it); nothing is written.
+  if (!ensureMeasureRates(m, projId, 'solar apply')) return;
   // Apply solar production as kWh savings
   m.kwh = (sc.production || []).map((k) => Math.round(k));
   m.source = 'solar';
   if (!m.desc || m.desc.trim() === '') m.desc = `Solar PV — ${sc.arrayKw} kW Array`;
-  // Recalc dollar savings using baseline rates — the user-saved Baseline Rates table
-  // (Energy Savings tab) if set, else the ONE canonical seasonal rate function
-  // (computations/rates.js computeSeasonalBldgRates) so this
-  // never silently zeroes out when the Baseline Rates table hasn't been saved (2026-09-23,
-  // item 2026-09-23-rate-source).
-  m.totalDollar = calcMeasureDollars(m, _svRatesOrCanonical(sd, projId, m.bldgId)).total;
+  // Dollar savings use the measure's own rates, the same rates the matrix prices it with.
+  m.totalDollar = calcMeasureDollars(m, m.rates).total;
   sset('en_projects', projects);
   const msrNum = m.msrNum;
   closeCalcTemplate();
@@ -5081,7 +5069,7 @@ function bcAddAsMeasure(projId) {
   const bldgs = typeof getUDBldgs === 'function' ? getUDBldgs(projId) : p.buildings || [];
   const cityName = BAS_CITIES.find((c) => c.id === (p.basCalc?.city || 4))?.name || 'Unknown';
   const arrays = _bcMeasureArrays(r);
-  sd.measures.push({
+  const m = {
     id: 'm' + Date.now(),
     selected: true,
     msrNum: sd.measures.length + 1 + '',
@@ -5090,7 +5078,9 @@ function bcAddAsMeasure(projId) {
     ...arrays,
     totalDollar: 0, // recalculated live by calcProjSavingsMatrix (includes kW)
     source: 'bas',
-  });
+  };
+  initMeasureRates(m, projId, m.bldgId, 'BAS add measure');
+  sd.measures.push(m);
   sset('en_projects', projects);
   closeCalcTemplate();
   showToast('BAS measure added to savings matrix ✓');
@@ -5109,12 +5099,14 @@ function bcApplyToMeasure(projId) {
     showToast('Measure not found');
     return;
   }
+  // Rates that fail the rate guard block the apply (ensureMeasureRates logs it); nothing is written.
+  if (!ensureMeasureRates(m, projId, 'BAS apply')) return;
   Object.assign(m, _bcMeasureArrays(r));
   m.source = 'bas';
   const cityName = BAS_CITIES.find((c) => c.id === (p.basCalc?.city || 4))?.name || 'Unknown';
   if (!m.desc || m.desc.trim() === '') m.desc = 'BAS HVAC Optimization — ' + cityName;
-  // Same fallback as solarApplyToMeasure above — see comment there (2026-09-23-rate-source).
-  m.totalDollar = calcMeasureDollars(m, _svRatesOrCanonical(sd, projId, m.bldgId)).total;
+  // The measure's own rates, the same rates the matrix prices it with (see solarApplyToMeasure).
+  m.totalDollar = calcMeasureDollars(m, m.rates).total;
   sset('en_projects', projects);
   const msrNum = m.msrNum;
   closeCalcTemplate();
