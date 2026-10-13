@@ -1,8 +1,6 @@
 ﻿// ══════════════════════════════════════════════════════
 //  ENERGY SAVINGS MATRIX — per-project measure table
 // ══════════════════════════════════════════════════════
-const SUMMER_MOS = [5, 6, 7, 8]; // Jun–Sep (0-indexed)
-
 // FIX(2026-07-02, item 219e6828): Shared address plausibility check.
 // Extractors that fall back to a printed "ADDRESS:" stub as a bill's identity
 // label (e.g. City of Baldwin, energy-savings.js:7676) have no guarantee that
@@ -527,7 +525,13 @@ const RATE_WRITE_FIELDS = [
   'gasSummer',
   'gasWinter',
   'gallonRate',
+  'kwhMonthly',
+  'kwMonthly',
+  'gasMonthly',
 ];
+
+// monthly rate array -> the flat field whose guard check each month uses
+const RATE_MONTHLY_FIELD = { kwhMonthly: 'kwhSummer', kwMonthly: 'kwSummer', gasMonthly: 'thermRate' };
 
 // rateGuardCheckSet(rates, projId, bldgId) -> array of failed checks (empty = every rate passes).
 function rateGuardCheckSet(rates, projId, bldgId) {
@@ -538,6 +542,14 @@ function rateGuardCheckSet(rates, projId, bldgId) {
     if (!rateGuardKnowsField(field)) return;
     const r = rateGuardCheck(field, rates[field], base, bldg && bldg.name);
     if (!r.ok) fails.push(r);
+  });
+  // Monthly rate arrays (provider with no seasonal tariff): every month passes the same check as its flat field.
+  Object.keys(RATE_MONTHLY_FIELD).forEach((arr) => {
+    ((rates || {})[arr] || []).forEach((v) => {
+      const f = RATE_MONTHLY_FIELD[arr];
+      const r = rateGuardCheck(f, v, base, bldg && bldg.name);
+      if (!r.ok) fails.push(r);
+    });
   });
   return fails;
 }
@@ -610,6 +622,10 @@ function writeRateField(holder, prop, field, val) {
     delete holder[prop].gasSummer;
     delete holder[prop].gasWinter;
   }
+  // A typed rate also replaces the month-by-month rate of the same kind, or that array would still price.
+  if (/^kwh/.test(field)) delete holder[prop].kwhMonthly;
+  else if (/^kw/.test(field)) delete holder[prop].kwMonthly;
+  else if (field === 'thermRate' || /^gas/.test(field)) delete holder[prop].gasMonthly;
 }
 
 // initMeasureRates(m, projId, bldgId, source) - a new measure gets the building's baseline rates
@@ -669,18 +685,21 @@ function refreshImportedMeasureRates(projId, sd) {
 }
 
 // measureRateAt(rates, mo) - the ONE season rule for a savings-matrix measure: the $ per unit that
-// applies in calendar month `mo` (0-11). Jun-Sep (SUMMER_MOS) use the summer rate, Oct-May the winter
+// applies in calendar month `mo` (0-11). Summer months (seasonOfMonth, from SEASON_TABLE: Jun-Sep) use the summer rate, the rest the winter
 // rate. Gas uses gasSummer / gasWinter; a rate set that has neither (saved before seasonal gas) falls
-// back to its flat thermRate, so existing saved measures price exactly as saved.
+// back to its flat thermRate, so existing saved measures price exactly as saved. A rate set with a
+// kwhMonthly / kwMonthly / gasMonthly array (a provider with no seasonal tariff) prices each month at its own rate.
 function measureRateAt(rates, mo) {
   rates = rates || {};
   const r = (k) => parseFloat(rates[k]) || 0;
-  const s = SUMMER_MOS.includes(mo);
+  const s = seasonOfMonth(SEASON_DEFAULT_PROVIDER, mo) === 'summer';
+  // A provider with no seasonal tariff carries a month-by-month rate array (computeSeasonalBldgRates); it wins.
+  const monthly = (k) => (Array.isArray(rates[k]) ? parseFloat(rates[k][mo]) || 0 : 0);
   const gasSeasonal = r(s ? 'gasSummer' : 'gasWinter');
   return {
-    kwh: r(s ? 'kwhSummer' : 'kwhWinter'),
-    kw: r(s ? 'kwSummer' : 'kwWinter'),
-    gas: gasSeasonal > 0 ? gasSeasonal : r('thermRate'),
+    kwh: monthly('kwhMonthly') || r(s ? 'kwhSummer' : 'kwhWinter'),
+    kw: monthly('kwMonthly') || r(s ? 'kwSummer' : 'kwWinter'),
+    gas: monthly('gasMonthly') || (gasSeasonal > 0 ? gasSeasonal : r('thermRate')),
     propane: r('gallonRate'),
     summer: s,
   };

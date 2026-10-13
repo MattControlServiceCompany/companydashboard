@@ -18,10 +18,11 @@ const sb = {
   console, window: {},
   document: { getElementById: () => ({}), createElement: () => ({ style: {} }), head: { appendChild() {} }, addEventListener() {}, readyState: 'complete', body: { appendChild() {} } },
   projects: [{ id: 'p1' }], getProjSavingsData: () => ({ measures }), getUDBldg: () => null, sset() {}, showToast() {}, _svRecalcFrom() {},
-  getUDBldgs: () => [{ id: 'b1', meters: [{ commodity: 'Electric', bills: elecBills }] }],
+  getUDBldgs: () => [{ id: 'b1', meters: [{ commodity: 'Electric', provider: sb.SEASON_UTILITY, bills: elecBills }] }],
   resolveGasUsageTherms: () => 0,
 };
 vm.createContext(sb);
+vm.runInContext(fs.readFileSync(path.join(root, 'lib/date-helpers.js'), 'utf8'), sb);
 vm.runInContext(fs.readFileSync(path.join(root, 'lib/formatting.js'), 'utf8'), sb);
 vm.runInContext(fs.readFileSync(path.join(root, 'computations/rates.js'), 'utf8'), sb);
 vm.runInContext(fs.readFileSync(path.join(root, 'computations/normalization.js'), 'utf8'), sb);
@@ -30,7 +31,7 @@ const cut = (rel, startMark, endMark) => { const t = fs.readFileSync(path.join(r
 vm.runInContext(cut('app/utility-data.js', 'function _fixISO', '// The ONE day-count function'), sb);
 vm.runInContext(cut('app/core.js', 'function _dashGetBaselineBills', 'function initDashboardTab'), sb);
 vm.runInContext(cut('app/utility-data.js', 'function _udProjBaselineMonthsFallback', '// Per-meter baseline totals'), sb);
-vm.runInContext('const SUMMER_MOS = [5, 6, 7, 8];' + cut('app/energy-savings.js', 'const RATE_WRITE_FIELDS', 'function getProjMatrixSavingsTotal'), sb);
+vm.runInContext(cut('app/energy-savings.js', 'const RATE_WRITE_FIELDS', 'function getProjMatrixSavingsTotal'), sb);
 vm.runInContext(src, sb);
 const T = sb.ECM_TEMPLATES;
 // Rate inputs have no default (blank until Utility Data fills them); the test supplies a manual value.
@@ -60,7 +61,7 @@ const ok = (name, cond, info) => { console.log((cond ? 'PASS ' : 'FAIL ') + name
   ok('measure demand $ equals calc demand $', Math.abs(demand - calc) < 0.5, demand.toFixed(0) + ' vs ' + calc.toFixed(0));
   ok('measure kWh sums to annual', Math.abs(sum(m.kwh) - r.total_savings_kwh) < 0.001, sum(m.kwh)); }
 // 4. Rate autofill: the ONE rate function (computeSeasonalBldgRates) supplies the single kWh/kW rate
-{ const baselineMeter = { commodity: 'Electric', bills: elecBills, baseline: { months: ['2025-01', '2025-02', '2025-03', '2025-04', '2025-05', '2025-06', '2025-07', '2025-08', '2025-09', '2025-10', '2025-11', '2025-12'] } };
+{ const baselineMeter = { commodity: 'Electric', provider: sb.SEASON_UTILITY, bills: elecBills, baseline: { months: ['2025-01', '2025-02', '2025-03', '2025-04', '2025-05', '2025-06', '2025-07', '2025-08', '2025-09', '2025-10', '2025-11', '2025-12'] } };
   sb.getUDBldgs = () => [{ id: 'b1', meters: [baselineMeter] }];
   sb.getUDBldg = () => ({ id: 'b1', meters: [baselineMeter] });
   const r = sb.computeSeasonalBldgRates('p1', 'b1');

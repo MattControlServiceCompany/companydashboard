@@ -400,9 +400,74 @@ function getExtractedRate(parsed, type) {
    be called standalone, e.g. by the gate test).
    ══════════════════════════════════════════════════════════════════════════ */
 
-// Utility E Metro tariff season: Summer = Jun-Sep, Winter = Oct-May (Docket
-// 23-EKCE-775-RTS + bill cross-check — NOT the May-Sep initial assumption).
-var _EVERGY_METRO_SUMMER_MONTHS = [6, 7, 8, 9];
+/* ── SEASON TABLE (SSOT) ── the ONE definition of summer and winter, keyed by utility + territory.
+   Every Utility E general service schedule says: summer = the four monthly billing periods June-September,
+   winter = the eight billing periods October-May, and "Customer bills for meter reading periods including one
+   or more days in both seasons will reflect the number of days in each season." The Utility E bill definitions:
+   summer June 1 - September 30 in all territories. So the season follows the SERVICE DATES of each day and a
+   bill can change season in the middle. Tariff sheets (Utility E rate books):
+     Kansas Metro   : SGS p29, SGA p35, MGS p41, MGA p48, LGS p56, LGA p65
+     Kansas Central : general service schedules (Kansas Central rate book)
+     Missouri Metro : SGS p33, MGS p39, LGS p45
+     Missouri West  : general service schedules (Missouri West rate book)
+   (Kansas Metro Schedule 12 uses May 16 - Sep 15; it is not a general service schedule and is not used.)
+   SEASON_UTILITY is tested against meter.provider; `territory` picks the row, and the last row (any territory)
+   is used when the meter says only the utility name (the dates are the same in every territory).
+   A provider that is not SEASON_UTILITY has NO seasonal tariff: Kansas Gas Service (cost of gas changes every
+   billing month), the gas marketer (monthly price), a city gas utility (flat), the propane supplier (per
+   delivery). Its projected rate is the baseline mean of each calendar month (computeSeasonalBldgRates
+   kwhMonthly / kwMonthly / gasMonthly).
+   from / to are 'MM-DD', inclusive. Rows must start on the first day and end on the last day of a month. */
+var SEASON_UTILITY = 'Evergy';
+var SEASON_TABLE = [
+  { name: 'Utility E Missouri Metro', territory: /missouri.*metro/i, summer: { from: '06-01', to: '09-30' } },
+  { name: 'Utility E Missouri West', territory: /missouri.*west/i, summer: { from: '06-01', to: '09-30' } },
+  { name: 'Utility E Kansas Central', territory: /central/i, summer: { from: '06-01', to: '09-30' } },
+  { name: 'Utility E Kansas Metro', territory: /metro/i, summer: { from: '06-01', to: '09-30' } },
+  { name: 'Utility E (territory not stated)', territory: /[\s\S]*/, summer: { from: '06-01', to: '09-30' } },
+];
+var SEASON_DEFAULT_PROVIDER = SEASON_UTILITY;
+
+function seasonRowForProvider(provider) {
+  if (!new RegExp(SEASON_UTILITY, 'i').test(provider || '')) return null;
+  for (var i = 0; i < SEASON_TABLE.length; i++) {
+    if (SEASON_TABLE[i].territory.test(provider)) return SEASON_TABLE[i];
+  }
+  return null;
+}
+
+// 'summer' | 'winter' for a service date 'YYYY-MM-DD' or 'YYYY-MM-..'; 'none' when the provider has no seasonal tariff.
+function seasonOfDate(provider, iso) {
+  var row = seasonRowForProvider(provider);
+  if (!row) return 'none';
+  var md = String(iso || '').slice(5, 10);
+  return md >= row.summer.from && md <= row.summer.to ? 'summer' : 'winter';
+}
+
+// Season of a whole calendar month ('YYYY-MM' or month index 0-11): the season of its first day.
+function seasonOfMonth(provider, ymOrIdx) {
+  var mo = typeof ymOrIdx === 'number' ? ymOrIdx + 1 : parseInt(String(ymOrIdx || '').split('-')[1], 10);
+  return seasonOfDate(provider, '0000-' + String(mo).padStart(2, '0') + '-01');
+}
+
+// Days of a service period in each season: { summer, winter, total } (the period's first and last day count
+// when incl, the last day is left out when not). null when the provider has no seasonal tariff or dates are bad.
+function seasonDaysOfPeriod(provider, start, end, incl) {
+  if (!seasonRowForProvider(provider)) return null;
+  var s = parseLocalISODate(start);
+  var e = parseLocalISODate(end);
+  if (!s || !e || s > e) return null;
+  var out = { summer: 0, winter: 0, total: 0 };
+  var cur = new Date(s);
+  var n = 0;
+  while ((incl === false ? cur < e : cur <= e) && n++ < 400) {
+    var iso = cur.getFullYear() + '-' + String(cur.getMonth() + 1).padStart(2, '0') + '-' + String(cur.getDate()).padStart(2, '0');
+    out[seasonOfDate(provider, iso)]++;
+    out.total++;
+    cur.setDate(cur.getDate() + 1);
+  }
+  return out.total ? out : null;
+}
 
 // Published rates ($/kWh energy on/off-peak, $/kW demand, $/kW facilities).
 // Building -> code: High School=2LGSF, Middle School & Site H=2LGSE,
@@ -445,18 +510,13 @@ var PUBLISHED_ELECTRIC_ENERGY_ALIAS = { '2LGAE': '2LGSE', '2MGAE': '2MGSE' };
 // City of Client A municipal gas: flat, non-seasonal.
 var PUBLISHED_GAS_FLAT_RATES = { louisburg: 0.798062 };
 
-function _evergyMetroSeason(ym) {
-  var mo = parseInt((ym || '').split('-')[1], 10);
-  return _EVERGY_METRO_SUMMER_MONTHS.indexOf(mo) >= 0 ? 'summer' : 'winter';
-}
-
 // Season for a given electric rate schedule + month. 'none' = no known seasonal
 // split for this schedule (whole year is one season) — the safe default for a
 // schedule this cascade doesn't recognize.
 function _seasonForSchedule(rateSchedule, ym) {
   var code = rateSchedule || '';
   if (PUBLISHED_ELECTRIC_RATES[code] || PUBLISHED_ELECTRIC_ENERGY_ALIAS[code]) {
-    return _evergyMetroSeason(ym);
+    return seasonOfMonth(SEASON_DEFAULT_PROVIDER, ym);
   }
   return 'none';
 }
@@ -495,7 +555,7 @@ function _cascadePublishedRate(meter, ym) {
       var energyCode = PUBLISHED_ELECTRIC_RATES[code] ? code : PUBLISHED_ELECTRIC_ENERGY_ALIAS[code];
       if (!energyCode) return null;
       var t = PUBLISHED_ELECTRIC_RATES[energyCode];
-      var season = _evergyMetroSeason(ym);
+      var season = seasonOfMonth(SEASON_DEFAULT_PROVIDER, ym);
       if (component === 'kwh') {
         var onPk = season === 'summer' ? t.onPkSu : t.onPkWi;
         var offPk = season === 'summer' ? t.offPkSu : t.offPkWi;
@@ -675,6 +735,56 @@ function resolveMeterRate(projId, meter, ym, opts) {
   return null;
 }
 
+// _billSeasonRates(bill, kind, days) -> { summer, winter } rates from the bill's OWN split charge lines
+// (bill._chargeParts), or null when the bill has no usable split. A seasonal charge on a bill that crosses
+// a season edge has two lines (one rate each); the higher rate is the summer one (true for every published
+// Utility E summer vs winter energy and demand rate). The pair is accepted only when its quantity split agrees
+// with the day split within 0.1; a mismatch means the roles are unsure, so the caller prorates by days.
+//   kwh: on-peak + off-peak energy lines of the season, plus the non-seasonal energy charges (ECA, EER, PTS)
+//        spread by the season's share of kWh, over the season's kWh.
+//   kw : the season's demand line rate, plus the other demand-side charges (TDC, facilities) per billed kW.
+function _billSeasonRates(bill, kind, days) {
+  var parts = bill && bill._chargeParts;
+  if (!parts || !days || !days.total) return null;
+  function pair(key) {
+    var l = parts[key];
+    if (!l || l.length !== 2) return null;
+    var a = { rate: parseFloat(l[0].rate), qty: parseFloat(l[0].qty), charge: parseFloat(l[0].charge) };
+    var b = { rate: parseFloat(l[1].rate), qty: parseFloat(l[1].qty), charge: parseFloat(l[1].charge) };
+    if (![a.rate, a.qty, a.charge, b.rate, b.qty, b.charge].every(isFinite) || a.rate === b.rate) return null;
+    return a.rate > b.rate ? { summer: a, winter: b } : { summer: b, winter: a };
+  }
+  var dayShare = days.summer / days.total;
+  if (kind === 'kw') {
+    var d = pair('BilledKWCharge');
+    var billedKW = parseBillNumber(bill.billedKW) || parseBillNumber(bill.demandKW) || 0;
+    if (!d || !(billedKW > 0)) return null;
+    var eqS = d.summer.charge / d.summer.rate;
+    var eqW = d.winter.charge / d.winter.rate;
+    if (!(eqS + eqW > 0) || Math.abs(eqS / (eqS + eqW) - dayShare) > 0.1) return null;
+    var otherKw = getBillKwCost(bill) + getBillFacKWCost(bill) - d.summer.charge - d.winter.charge;
+    if (otherKw < -0.5) return null;
+    return { summer: d.summer.rate + otherKw / billedKW, winter: d.winter.rate + otherKw / billedKW };
+  }
+  if (kind === 'kwh') {
+    var on = pair('EnergyOnPeakCharge');
+    var off = pair('EnergyOffPeakCharge');
+    if (!on || !off) return null;
+    var kwhS = on.summer.qty + off.summer.qty;
+    var kwhW = on.winter.qty + off.winter.qty;
+    var kwhAll = kwhS + kwhW;
+    if (!(kwhS > 0) || !(kwhW > 0) || Math.abs(kwhS / kwhAll - dayShare) > 0.1) return null;
+    var seasonal = on.summer.charge + on.winter.charge + off.summer.charge + off.winter.charge;
+    var other = getBillKwhCost(bill) - seasonal;
+    if (other < -0.5) return null;
+    return {
+      summer: (on.summer.charge + off.summer.charge + (other * kwhS) / kwhAll) / kwhS,
+      winter: (on.winter.charge + off.winter.charge + (other * kwhW) / kwhAll) / kwhW,
+    };
+  }
+  return null;
+}
+
 /* ══════════════════════════════════════════════════════════════════════════
    computeSeasonalBldgRates(projId, bldgId) — the ONE canonical seasonal
    marginal rate function for a building.
@@ -696,16 +806,12 @@ function resolveMeterRate(projId, meter, ym, opts) {
    getStoredRate/getStoredKwRate already use everywhere else in the app —
    never a different charge-field subset.
 
-   Season: Utility E Metro Jun-Sep = summer, Oct-May = winter (docket
-   23-EKCE-775-RTS + bill cross-check — see _EVERGY_METRO_SUMMER_MONTHS
-   above). A bill's calendar month is resolved with normMonth() — the same
-   majority-days-in-month resolver the missing-rate cascade and every
-   baseline table use — NOT a naive `new Date(bill.start).getMonth()`, which
-   misclassifies billing periods that straddle the season boundary (e.g. a
-   bill starting May 20 and ending June 19 is mostly June, but a naive
-   start-month read calls it May/winter — see the Client B Spring Middle
-   2025-05-20 bill, which the utility itself bills at the SUMMER demand
-   rate).
+   Season: SEASON_TABLE (above) by meter.provider, applied to the SERVICE DATES of each day: summer Jun 1 -
+   Sep 30, winter Oct 1 - May 31 (Utility E bill definitions). A bill that crosses a season edge counts in BOTH
+   seasons, weighted by its days in each. For electric kWh and kW the seasons come from the bill's own split
+   charge lines (bill._chargeParts: two lines per charge, the higher rate is summer, checked against the day
+   split); a bill without usable split lines gives its one blended rate to both seasons, weighted by days. A
+   provider with no seasonal tariff (the gas providers) gets ONE annual rate: summer = winter = the baseline mean.
 
    Returns (0, never null, so every existing `|| 0` guard keeps working):
      {
@@ -722,6 +828,9 @@ function resolveMeterRate(projId, meter, ym, opts) {
        gasSummer, gasWinter,   // $/Therm, gas — seasonal mean, same bills as
                                 // thermRate, bucketed by season (0 when a
                                 // season has no gas bills)
+       kwhMonthly, kwMonthly,  // [12] $ per unit by calendar month, only for a provider with no
+       gasMonthly,             // seasonal tariff (gas): that month's baseline mean, else the annual
+                                // mean. [] when the provider has seasons.
        gallonRate,             // $/Gallon, propane — flat mean, no seasonal
                                 // tariff for propane
        months: {                // which bill months fed each bucket, for the
@@ -746,6 +855,9 @@ function computeSeasonalBldgRates(projId, bldgId) {
     gasSummer: 0,
     gasWinter: 0,
     gallonRate: 0,
+    kwhMonthly: [],
+    kwMonthly: [],
+    gasMonthly: [],
     months: { kwhSummer: [], kwhWinter: [], kwSummer: [], kwWinter: [], gas: [], propane: [] },
   };
   var b = typeof getUDBldg === 'function' ? getUDBldg(projId, bldgId) : null;
@@ -782,7 +894,10 @@ function computeSeasonalBldgRates(projId, bldgId) {
       baseline: { months: fallbackMonths },
     });
   }
-  function billRates(meterList, rateFn) {
+  var straddle = { bills: 0, byLines: 0, byDays: 0 };
+  // One BASELINE-PERIOD bill -> rows { ym, season, rate, w } for every bill with a positive rate from `rateFn`.
+  // kind 'kwh' | 'kw' asks _billSeasonRates for the bill's own split lines. Weight w = share of the bill's days.
+  function billRates(meterList, rateFn, kind) {
     var out = [];
     meterList.forEach(function (meter) {
       var incl = meter.inclusive !== false;
@@ -791,27 +906,47 @@ function computeSeasonalBldgRates(projId, bldgId) {
         var rate = rateFn(bill);
         if (!(rate > 0)) return;
         var ym = normMonth(bill.start, bill.end, incl, all);
-        out.push({ ym: ym, season: _evergyMetroSeason(ym), rate: rate });
+        var days = seasonDaysOfPeriod(meter.provider, bill.start, bill.end, incl);
+        if (!days) {
+          out.push({ ym: ym, season: 'none', rate: rate, w: 1 });
+          return;
+        }
+        if (!days.summer || !days.winter) {
+          out.push({ ym: ym, season: days.summer ? 'summer' : 'winter', rate: rate, w: 1 });
+          return;
+        }
+        var split = kind ? _billSeasonRates(bill, kind, days) : null;
+        if (kind === 'kwh') {
+          straddle.bills++;
+          if (split) straddle.byLines++;
+          else straddle.byDays++;
+        }
+        ['summer', 'winter'].forEach(function (sn) {
+          out.push({ ym: ym, season: sn, rate: split ? split[sn] : rate, w: days[sn] / days.total });
+        });
       });
     });
     return out;
   }
 
   function mean(rows) {
-    if (!rows.length) return 0;
-    var sum = rows.reduce(function (s, r) {
-      return s + r.rate;
-    }, 0);
-    return sum / rows.length;
+    var sw = 0;
+    var sum = 0;
+    rows.forEach(function (r) {
+      sw += r.w;
+      sum += r.rate * r.w;
+    });
+    return sw > 0 ? sum / sw : 0;
   }
 
+  // A 'none' row (provider with no seasons) counts in both seasons: one annual rate.
   function seasonSplit(rows) {
     return {
       summer: rows.filter(function (r) {
-        return r.season === 'summer';
+        return r.season === 'summer' || r.season === 'none';
       }),
       winter: rows.filter(function (r) {
-        return r.season === 'winter';
+        return r.season === 'winter' || r.season === 'none';
       }),
     };
   }
@@ -824,14 +959,34 @@ function computeSeasonalBldgRates(projId, bldgId) {
       .filter(Boolean);
   }
 
+  // Provider with no seasonal tariff: the rate of each CALENDAR month = the mean of the baseline bills
+  // in that month (the monthly cost of gas is captured); a month with no baseline bill takes the annual mean.
+  // [] when no row is of such a provider (the seasonal summer / winter rates price instead).
+  function monthlyMeans(rows, digits) {
+    var flat = rows.filter(function (r) {
+      return r.season === 'none';
+    });
+    if (!flat.length) return [];
+    var annual = mean(flat);
+    var scale = Math.pow(10, digits);
+    var arr = [];
+    for (var mo = 1; mo <= 12; mo++) {
+      var inMo = flat.filter(function (r) {
+        return parseInt(String(r.ym || '').split('-')[1], 10) === mo;
+      });
+      arr.push(Math.round((inMo.length ? mean(inMo) : annual) * scale) / scale);
+    }
+    return arr;
+  }
+
   var out = empty;
   out.months = { kwhSummer: [], kwhWinter: [], kwSummer: [], kwWinter: [], gas: [], propane: [] };
 
   if (elecMeters.length) {
     var kwhRows = billRates(elecMeters, function (bill) {
       return getStoredRate(bill, 'kwh');
-    });
-    var kwRows = billRates(elecMeters, getStoredKwRate);
+    }, 'kwh');
+    var kwRows = billRates(elecMeters, getStoredKwRate, 'kw');
     var kwhSplit = seasonSplit(kwhRows);
     var kwSplit = seasonSplit(kwRows);
     out.kwhSummer = Math.round(mean(kwhSplit.summer) * 10000) / 10000;
@@ -841,6 +996,8 @@ function computeSeasonalBldgRates(projId, bldgId) {
     // Single all-season $/kWh and $/kW for surfaces that show ONE rate (ECM form, BAS Trends).
     out.kwhRate = Math.round(mean(kwhRows) * 10000) / 10000;
     out.kwRate = Math.round(mean(kwRows) * 100) / 100;
+    out.kwhMonthly = monthlyMeans(kwhRows, 4);
+    out.kwMonthly = monthlyMeans(kwRows, 2);
     out.months.kwhSummer = yms(kwhSplit.summer);
     out.months.kwhWinter = yms(kwhSplit.winter);
     out.months.kwSummer = yms(kwSplit.summer);
@@ -857,6 +1014,7 @@ function computeSeasonalBldgRates(projId, bldgId) {
     out.gasSummer = Math.round(mean(gasSplit.summer) * 1000) / 1000;
     out.gasWinter = Math.round(mean(gasSplit.winter) * 1000) / 1000;
     out.thermRate = Math.round(mean(gasRows) * 1000) / 1000;
+    out.gasMonthly = monthlyMeans(gasRows, 3);
     out.months.gas = yms(gasRows);
   }
 
@@ -868,6 +1026,7 @@ function computeSeasonalBldgRates(projId, bldgId) {
     out.months.propane = yms(propaneRows);
   }
 
+  out.straddle = straddle;
   return out;
 }
 

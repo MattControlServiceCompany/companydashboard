@@ -34,7 +34,7 @@
 //  - Zone setpoints:  en_eqmatrix_<projId> rows whose building name matches (case-insensitive)
 //
 // Savings dollar formula (per Coordinator's audit): (quantity saved) x SEASONAL MARGINAL rate,
-// monthly, then summed — never a blended rate, never a raw dollar delta. Summer = SUMMER_MOS
+// monthly, then summed — never a blended rate, never a raw dollar delta. Summer = seasonOfMonth (SEASON_TABLE)
 // (Jun-Sep, app/energy-savings.js), the same bucket the Energy Savings matrix uses.
 // -----------------------------------------------------------------------
 
@@ -439,7 +439,7 @@ function _wdC(v) {
   );
 }
 function _wdIsSummer(moIdx) {
-  return SUMMER_MOS.indexOf(moIdx) !== -1;
+  return seasonOfMonth(SEASON_DEFAULT_PROVIDER, moIdx) === 'summer';
 }
 // "May 2025" for a baseline's i-th month (the guard guarantees 12 months before rendering).
 function _wdMonthLabel(bl, i) {
@@ -752,7 +752,7 @@ function _wdFullYear(bl) {
 // the building's OWN baseline bills and the stored inputs. Per calendar month:
 //   heating Therms  = max(0, billed Therms − gas baseload)      baseload = mean of the 3 lowest months
 //   cooling kWh     = max(0, billed kWh − electric baseload)     (same rule)
-//   cooling demand  = max(0, billed kW − demand floor)           summer months (SUMMER_MOS) only
+//   cooling demand  = max(0, billed kW − demand floor)           summer months (seasonOfMonth) only
 //   cool%  = occCoolShare × (zonesActive/zonesTotal) × pctPerDegF × (coolSP − curOccCool)
 //   heat%  = occHeatShare × (zonesActive/zonesTotal) × pctPerDegF × (heatSP − curOccHeat)
 //   kWh saved   = cooling kWh × cool%

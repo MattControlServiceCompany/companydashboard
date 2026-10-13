@@ -132,11 +132,11 @@ sb.initMeasureRates = (m) => {
   return true;
 };
 sb.ensureMeasureRates = sb.initMeasureRates;
-sb.SUMMER_MOS = [5, 6, 7, 8];
 sb.showToast = () => {};
 sb.sset = () => {};
 sb.closeCalcTemplate = () => {};
 vm.createContext(sb);
+vm.runInContext(fs.readFileSync(path.join(REPO, 'computations/rates.js'), 'utf8'), sb, { filename: 'rates.js' });
 vm.runInContext(src, sb, { filename: 'bas-measure-kw-extracted.js' });
 const project = { id: 'p1', basCalc: {} };
 sb.projects = [project];

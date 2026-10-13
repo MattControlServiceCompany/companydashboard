@@ -475,6 +475,16 @@ This includes a new or changed function, schedule, env var name, timer, host, or
 - Gate: `tools/gate-single-rate-source.js` also fails on `SUMMER_MOS.includes(` or a `* rates.<rate field>` multiply outside `measureRateAt`, and on the deleted names above.
 - Check: node tools/gate-single-rate-source.js (PASS); node tools/test-ecm-math.js; node tools/test-bas-trends-math.js; node tools/test-pricing-estimator-fixes.js; node tools/test-rate-single-source.js. The gate also fails on `calcBldgDefaultRates` and on any `* inp.elec_rate / gas_rate / demand_rate` outside `ecmPrice`. On a local backup, matrix total and Project Performance total per project are identical before and after.
 
+## Utility E seasons by service date: one season table (2026-10-13)
+
+- Browser only. No schedule, no timer, no env var, no server call.
+- ONE season definition: `SEASON_TABLE` (computations/rates.js), keyed by utility + territory (Missouri Metro, Missouri West, Kansas Central, Kansas Metro, and a last row used when the meter names no territory); `SEASON_UTILITY` is the one provider name it tests. Summer = Jun 1 - Sep 30, winter = Oct 1 - May 31. Source: every Utility E general service schedule ("meter reading periods including one or more days in both seasons will reflect the number of days in each season") and the Utility E bill definitions. Readers: `seasonOfDate`, `seasonOfMonth`, `seasonDaysOfPeriod` (same file). A provider with no row has no seasonal tariff (gas).
+- `computeSeasonalBldgRates` (rates.js) classifies by SERVICE DATE, not by the bill's month (`normMonth`). A bill that crosses a season edge counts in both seasons, weighted by its days in each. For kWh and kW the season rates come from the bill's own split charge lines (`bill._chargeParts`, `_billSeasonRates`); a bill without usable lines gives its one blended rate to both seasons, weighted by days. The result has `straddle: { bills, byLines, byDays }`.
+- A provider with no seasonal tariff gets `kwhMonthly`, `kwMonthly`, `gasMonthly` (12 values: each calendar month's baseline mean, annual mean for a month with no bill); `gasSummer` = `gasWinter` = the annual mean. `measureRateAt` (app/energy-savings.js) uses the month value when the array is present. `SUMMER_MOS` is deleted; `measureRateAt` and the report engine ask `seasonOfMonth`. `RATE_WRITE_FIELDS` carries the three arrays; a typed flat rate clears the matching array (`writeRateField`).
+- Project Performance / Meter Performance is not changed (`resolveMeterRate` uses `seasonOfMonth`, same Jun-Sep result).
+- Gate: `node tools/gate-single-rate-source.js` fails on a second `SEASON_TABLE`, a `SUMMER_MOS = [` list, a Jun-Sep month-number list, or a season edge date ('06-01', '09-30', '10-01', '05-31') outside rates.js. Test: `node tools/test-utility-seasons.js` (25 checks, synthetic).
+- Not confirmed from a live source: the Kansas Central and Missouri West sheet page numbers. Saved measure rates are not refreshed.
+
 ## Rate guard: one check for every rate write (2026-10-13, branch 2026-10-13-phase1-one-rate-cost-only-pricing)
 
 - Browser only. No schedule, no timer, no env var, no server call.

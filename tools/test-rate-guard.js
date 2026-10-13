@@ -91,8 +91,8 @@ const sb = {
 };
 const code = [
   fs.readFileSync(RATES, 'utf8'),
-  'const SUMMER_MOS = [5, 6, 7, 8];',
   constSrc(ES, 'RATE_WRITE_FIELDS'),
+  constSrc(ES, 'RATE_MONTHLY_FIELD'),
   ...[
     'measureRateAt',
     'calcMeasureDollars',

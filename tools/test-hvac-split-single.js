@@ -149,7 +149,6 @@ const EXCLUDED = { gExcl: true };
 const sandbox = {
   console,
   isBaselineExcluded: (pid, id) => !!EXCLUDED[id],
-  SUMMER_MOS: [5, 6, 7, 8],
   resolveGasUsageTherms: (bill) => bill.therms || 0,
   getUDBldg: (pid, id) => (id === 'b2' ? bldg2 : bldg),
   getWeatherForBuilding: () => ({ byYm: {} }),
@@ -175,6 +174,7 @@ const sandbox = {
   _parseISO: () => 0,
 };
 vm.createContext(sandbox);
+vm.runInContext(fs.readFileSync(path.join(REPO, 'computations/rates.js'), 'utf8'), sandbox, { filename: 'rates.js' });
 vm.runInContext(src, sandbox, { filename: 'hvac-split-single.js' });
 
 // ---------------------------------------------------------------------------
