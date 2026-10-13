@@ -18,6 +18,9 @@ const RULES = [
     /\b_wdSeasonalRates\b|\bwdOptionAnnualDollar\b|\bwdOptionDollarByMonth\b|\b_?(?:kwh|kw|gas|prop)RateFn\b/,
     'deleted monthly pricing copy came back',
   ],
+  // The summer / winter month lists live ONLY in the season owners (SUMMER_MOS, _evergyMetroSeason).
+  // A private month list such as sumMos / winMos is a second season rule (the old one used Dec-Mar for winter).
+  [/\b(?:sumMos|winMos|summerMonths|winterMonths)\s*=\s*\[/, 'second season definition (use computeSeasonalBldgRates / measureRateAt)'],
   // Monthly pricing has ONE owner path: measureRateAt / calcMeasureDollars (app/energy-savings.js).
   // A season test or a multiply by a stored rate field anywhere else is a second copy of the rule.
   [/\bSUMMER_MOS\.includes\(/, 'second season test for monthly pricing (use measureRateAt / calcMeasureDollars)'],

@@ -7945,28 +7945,12 @@ function renderBuildingStatsPane(pane, b) {
   const totalKbtuPerSf = sqft > 0 ? toKBtu(totE.kwh, totG.therms, totP.gallons) / sqft : null;
   const utilityCostPerYear = totUtility;
 
-  // Seasonal rates
-  const sumMos = [5, 6, 7, 8]; // Jun-Sep (0-indexed)
-  const winMos = [11, 0, 1, 2]; // Dec-Mar
-  function avgRateForMos(moArr, field) {
-    const rows = moArr.filter((mo) => elecByMo[mo] && elecByMo[mo].kwh > 0);
-    if (!rows.length) return null;
-    return rows.reduce((s, mo) => s + (elecByMo[mo][field] || 0) / elecByMo[mo].kwh, 0) / rows.length;
-  }
-  function avgKwRateForMos(moArr) {
-    const rows = moArr.filter(
-      (mo) => elecByMo[mo] && (elecByMo[mo].billedKW || elecByMo[mo].demandKW) > 0 && elecByMo[mo].kwCost > 0,
-    );
-    if (!rows.length) return null;
-    return (
-      rows.reduce((s, mo) => s + elecByMo[mo].kwCost / (elecByMo[mo].billedKW || elecByMo[mo].demandKW), 0) /
-      rows.length
-    );
-  }
-  const sumKwhRate = avgRateForMos(sumMos, 'energyCost');
-  const winKwhRate = avgRateForMos(winMos, 'energyCost');
-  const sumKwRate = avgKwRateForMos(sumMos);
-  const winKwRate = avgKwRateForMos(winMos);
+  // Seasonal rates: the ONE owner (computeSeasonalBldgRates: baseline-period bills, Jun-Sep summer, Oct-May winter)
+  const _seasonRates = computeSeasonalBldgRates(udSelProjId, b.id);
+  const sumKwhRate = _seasonRates.kwhSummer || null;
+  const winKwhRate = _seasonRates.kwhWinter || null;
+  const sumKwRate = _seasonRates.kwSummer || null;
+  const winKwRate = _seasonRates.kwWinter || null;
   const gasPerTherm = totG.therms > 0 ? totG.cost / totG.therms : null;
 
   // Hours operated (from building field or blank)
@@ -8576,28 +8560,12 @@ function renderMeterDataPane(pane, m, bills, incl) {
   const kbtuPerSf = sqft > 0 ? toKBtu(totE.kwh, totG.therms, totP.gallons) / sqft : null;
   const hoursOperated = parseInt(bldg?.hoursOperated) || null;
 
-  // Seasonal rates — electric only
-  const sumMos = [5, 6, 7, 8],
-    winMos = [11, 0, 1, 2];
-  function avgRateForMos(moArr, field) {
-    const rows = moArr.filter((mo) => elecByMo[mo] && elecByMo[mo].kwh > 0);
-    if (!rows.length) return null;
-    return rows.reduce((s, mo) => s + (elecByMo[mo][field] || 0) / elecByMo[mo].kwh, 0) / rows.length;
-  }
-  function avgKwRateForMos(moArr) {
-    const rows = moArr.filter(
-      (mo) => elecByMo[mo] && (elecByMo[mo].billedKW || elecByMo[mo].demandKW) > 0 && elecByMo[mo].kwCost > 0,
-    );
-    if (!rows.length) return null;
-    return (
-      rows.reduce((s, mo) => s + elecByMo[mo].kwCost / (elecByMo[mo].billedKW || elecByMo[mo].demandKW), 0) /
-      rows.length
-    );
-  }
-  const sumKwhRate = isElec ? avgRateForMos(sumMos, 'energyCost') : null;
-  const winKwhRate = isElec ? avgRateForMos(winMos, 'energyCost') : null;
-  const sumKwRate = isElec ? avgKwRateForMos(sumMos) : null;
-  const winKwRate = isElec ? avgKwRateForMos(winMos) : null;
+  // Seasonal rates (electric only): the ONE owner (computeSeasonalBldgRates: baseline-period bills, Jun-Sep summer, Oct-May winter)
+  const _seasonRates = isElec ? computeSeasonalBldgRates(udSelProjId, udSelBldgId) : null;
+  const sumKwhRate = _seasonRates ? _seasonRates.kwhSummer || null : null;
+  const winKwhRate = _seasonRates ? _seasonRates.kwhWinter || null : null;
+  const sumKwRate = _seasonRates ? _seasonRates.kwSummer || null : null;
+  const winKwRate = _seasonRates ? _seasonRates.kwWinter || null : null;
   const gasPerTherm = isGas && totG.therms > 0 ? totG.cost / totG.therms : null;
 
   // ── Row builder (same logic as Baseline Data moRow) ──

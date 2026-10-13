@@ -683,7 +683,7 @@ function resolveMeterRate(projId, meter, ym, opts) {
    BASELINE-PERIOD rates only: the bills are each meter's baseline bills
    (m.baseline.months; project fallback months when the meter has none), never
    all history. Used for PROJECTED / estimated savings (measures, matrix, ECM
-   templates). Measured (M&V) savings do NOT use this: they use each bill's own
+   templates). Bill-based actual savings (Project Performance / Meter Performance) do NOT use this: they use each bill's own
    rate (getStoredRate / resolveMeterRate).
 
    Every surface that shows or uses a building's seasonal marginal utility
@@ -881,7 +881,7 @@ function computeSeasonalBldgRates(projId, bldgId) {
       Each bound is half the lowest and twice the highest bill rate seen, rounded outward.
    A blank or 0 value is not a rate and always passes (it clears the field).
    rateGuardCheck is pure. The write paths in app/energy-savings.js call it through
-   rateGuardFieldCheck and ask the user, or block and log when no user is present. */
+   rateGuardCheckSet (app/energy-savings.js) and ask the user, or block and log when no user is present. */
 var RATE_GUARD_BOUNDS = {
   kwh: { min: 0.01, max: 0.25, unit: '$/kWh', digits: 4 },
   kw: { min: 3, max: 45, unit: '$/kW', digits: 2 },

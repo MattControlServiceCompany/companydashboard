@@ -636,23 +636,36 @@ function ensureMeasureRates(m, projId, source) {
 // One-time data fix (2026-10-13): measures made by the old CSV measure import (id m_csv_...) carry $/kW
 // rates that are dollars per BILL (for example 6019.81), saved before the old rate function was fixed.
 // This sets their rates to the baseline rates of their building (computeSeasonalBldgRates), once per project.
-// It waits while a building has no baseline rate (bills not loaded yet) and then runs on the next render.
+// Each measure is refreshed on its own. A measure whose building has no baseline rate yet (bills not loaded),
+// or whose new rates the guard blocks, keeps its rates, is logged and named in a toast, and is tried again on
+// the next render. sd.importedRatesRefreshed is set only when every measure is done. Returns true if data changed.
 function refreshImportedMeasureRates(projId, sd) {
   if (sd.importedRatesRefreshed) return false;
-  const todo = sd.measures.filter((m) => String(m.id).indexOf('m_csv_') === 0);
-  if (
-    todo.some((m) => {
-      const base = computeSeasonalBldgRates(projId, m.bldgId);
-      return !RATE_WRITE_FIELDS.some((k) => base[k] > 0);
-    })
-  )
-    return false;
-  todo.forEach((m) => {
-    if (writeRateSet(m, 'rates', computeSeasonalBldgRates(projId, m.bldgId), projId, m.bldgId, 'one-time rate refresh'))
+  let changed = false;
+  const unrefreshed = [];
+  sd.measures.forEach((m) => {
+    if (String(m.id).indexOf('m_csv_') !== 0 || m.importedRatesRefreshed) return;
+    const base = computeSeasonalBldgRates(projId, m.bldgId);
+    const label = m.desc || m.id;
+    if (!RATE_WRITE_FIELDS.some((k) => base[k] > 0)) {
+      rateGuardLog('one-time rate refresh', [{ field: 'no baseline rate', value: 0 }], projId, m.bldgId);
+      unrefreshed.push(label);
+      return;
+    }
+    if (writeRateSet(m, 'rates', base, projId, m.bldgId, 'one-time rate refresh')) {
       m.totalDollar = calcMeasureDollars(m, m.rates).total;
+      m.importedRatesRefreshed = true;
+      changed = true;
+    } else unrefreshed.push(label);
   });
-  sd.importedRatesRefreshed = true;
-  return true;
+  if (unrefreshed.length) {
+    if (typeof showToast === 'function')
+      showToast('Rates not refreshed for: ' + unrefreshed.join(', ') + '. Tried again on next load.', 'error');
+  } else {
+    sd.importedRatesRefreshed = true;
+    changed = true;
+  }
+  return changed;
 }
 
 // measureRateAt(rates, mo) - the ONE season rule for a savings-matrix measure: the $ per unit that
