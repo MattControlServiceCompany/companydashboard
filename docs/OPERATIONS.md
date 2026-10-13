@@ -169,7 +169,7 @@ credits a call, from that figure). It is removed.
   version stamp is dropped so the next load compares the local copy with the server. How to check: after one load the
   "N unsynced changes" bar is gone and Sync status, Conflict history lists the entries.
 - Conflict history (`en_conflict_archive`, local only) is one list per browser. Every entry carries an owner tag
-  (`_appendConflictArchive`, same shape as a queue entry). The one visibility rule is `_archiveEntryVisible`, applied by
+  (`_appendConflictArchive`, same shape as a queue entry; it stores a COPY of the losing value, so the merge that follows cannot change an archived version). The one visibility rule is `_archiveEntryVisible`, applied by
   `DB.getConflictArchive` (the one reader: the viewer, the export button and Reset all call it): an entry for a shared
   key is shown to everyone on this browser; an entry for a per-user key (`ch_*` prefs, zoom levels) only to its owner.
   Another user's per-user entry, or one saved by a build before owner tags, stays in storage, is never shown and is never

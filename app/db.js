@@ -612,7 +612,14 @@ const DB = (() => {
   let _archivedLocalThisRun = 0; // hydration entries whose local side lost (drives the toast)
   // Written IMMEDIATELY (before the caller overwrites the local value): the
   // IDB put is issued first, and same-store transactions commit in order.
+  // The losing value is COPIED here, once, for every caller. It is often a live
+  // object of the cache, and _adoptCollection copies the winning fields INTO that
+  // same object a moment later (Keep theirs), which would turn the archived
+  // loser into the winner.
   function _appendConflictArchive(entry) {
+    if (entry && entry.losingValue !== undefined && entry.losingValue !== null) {
+      entry = Object.assign({}, entry, { losingValue: JSON.parse(JSON.stringify(entry.losingValue)) });
+    }
     // Owner tag = the same shape and rule as a queue entry (_queueOwner /
     // _entryBelongsTo): the verified user signed in now, or the signed-out hint.
     const full = Object.assign(

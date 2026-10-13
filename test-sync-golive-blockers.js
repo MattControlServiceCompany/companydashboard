@@ -659,6 +659,59 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
       assert.strictEqual(L.DB.getQueueDepth(), 1, 'local edit kept in the queue');
     },
   );
+  // Same field of the same record changed by both users: the user answers per record.
+  // The discarded version must be in the conflict history, whichever side is kept.
+  const projects0 = () => [
+    { id: 'p1', name: 'Alpha', note: 'base' },
+    { id: 'p2', name: 'Beta', note: 'base' },
+  ];
+  async function sameFieldConflict(choice) {
+    const KEY = 'en_projects';
+    const srv = makeServer({ [KEY]: projects0() });
+    const asked = [];
+    const L = load({
+      mode: 'on',
+      syncHost: true,
+      classify: false,
+      fetchImpl: srv.fetchImpl,
+      modal: async (d) => {
+        asked.push(d);
+        const choices = {};
+        d.records.forEach((r) => (choices[String(r.id)] = choice));
+        return { action: 'records', choices };
+      },
+    });
+    await L.DB.warmCache();
+    await L.DB.__t._hydrate();
+    const theirs = projects0();
+    theirs[0].note = 'THEIRS';
+    srv.rows[KEY] = { value: theirs, version: 2, hash: 'h2' };
+    // Like a page: edit the object the cache holds, then save the same reference.
+    const A = L.DB.get(KEY);
+    A[0].note = 'MINE';
+    await L.DB.set(KEY, A);
+    await settle();
+    const entries = L.DB.getConflictArchive().filter((e) => e.reason === 'record-conflict');
+    return { srv, L, asked, entries, KEY };
+  }
+  const noteOf = (v) => v[0].note;
+  await t('M2 same field, Keep theirs: the discarded local edit is in the conflict history; server value kept', async () => {
+    const { srv, L, asked, entries, KEY } = await sameFieldConflict('theirs');
+    assert.strictEqual(asked.length, 1, 'dialog opened once');
+    assert.strictEqual(entries.length, 1);
+    assert.strictEqual(entries[0].losingSide, 'local');
+    assert.strictEqual(entries[0].losingValue.note, 'MINE', 'archive holds MY edit');
+    assert.strictEqual(noteOf(srv.rows[KEY].value), 'THEIRS', 'server keeps theirs');
+    assert.strictEqual(noteOf(L.DB.get(KEY)), 'THEIRS', 'local takes theirs');
+  });
+  await t('M2 same field, Keep mine: the discarded server version is in the conflict history; my value kept', async () => {
+    const { srv, L, entries, KEY } = await sameFieldConflict('mine');
+    assert.strictEqual(entries.length, 1);
+    assert.strictEqual(entries[0].losingSide, 'server');
+    assert.strictEqual(entries[0].losingValue.note, 'THEIRS', 'archive holds THEIR version');
+    assert.strictEqual(noteOf(srv.rows[KEY].value), 'MINE', 'server takes mine');
+    assert.strictEqual(noteOf(L.DB.get(KEY)), 'MINE', 'local keeps mine');
+  });
   await t('M2 utility data: a removed building on one side and a rename on the other both apply', async () => {
     const KEY = 'en_utility_cust_1';
     const srv = makeServer({ [KEY]: util0() });
