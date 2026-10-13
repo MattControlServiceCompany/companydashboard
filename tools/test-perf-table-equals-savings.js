@@ -56,6 +56,9 @@ function build(projects) {
     loadFn(REPO + '/app/utility-data.js', '_fixISO'),
     loadFn(REPO + '/app/utility-data.js', '_parseISO'),
     loadFn(REPO + '/app/utility-data.js', 'calcDays'),
+    loadFn(REPO + '/app/core.js', '_dashGetBaselineBills'),
+    loadFn(REPO + '/app/utility-data.js', '_udProjBaselineMonthsFallback'),
+    'function getUDBldgs(){ return [_bldg]; }',
   ].join('\n');
   const files = [
     'lib/formatting.js',
@@ -408,6 +411,7 @@ const sumOf = (o) => Object.values(o).reduce((a, b) => a + b, 0);
   const mk = (id, rate) => ({
     id,
     commodity: 'Electric',
+    baseline: { months: ['2025-01', '2025-02', '2025-03'] },
     bills: [1, 2, 3].map((m) => mb(2025, m, { kwh: '1000', kwhCost: String(1000 * rate), totalKwhRate: String(rate) })),
   });
   sb.bl = { id: 'b1', meters: [mk('a', 0.06), mk('b', 0.1)] };
