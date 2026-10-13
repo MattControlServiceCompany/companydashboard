@@ -159,9 +159,9 @@ const INSTALL_HOURS_BY_POINT_DEFAULT = (function () {
 /* ── ROI Savings Impact Model — Phase 5 (2026-06-19)
    Sources:
      [NLR-DSP-2026]  Allen, NLR/TP-5500-98345, OSTI 3022261 (fan SP reset)
-     [LBNL-ASHRAE36-2022] Zhang/Blum/Granderson, J.Bldg.Perf.Sim. 15(2), OSTI 1842567 (31% avg HVAC)
-     [ORNL-ASHRAE36-2024] Energy & Buildings, DOI:10.1016/j.enbuild.2024.115005 (42% research facility)
-     [NREL-DCV-2023] OSTI 2284042 (DCV 2.6% site energy)
+     [LBNL-ASHRAE36-2022] Zhang/Blum/Granderson, J.Bldg.Perf.Sim. 15(2), OSTI 1842567
+     [ORNL-ASHRAE36-2024] Energy & Buildings, DOI:10.1016/j.enbuild.2024.115005
+     [NREL-DCV-2023] OSTI 2284042
      [NLR-VSP-2025]  OSTI 3021527 (variable-speed pumps; proxy for DP reset)
      [ASHRAE36-2021]      ASHRAE 36-2021
      [CSC-BAS-CALC]  CSC BAS Savings Calculator (internal)
@@ -170,11 +170,6 @@ const INSTALL_HOURS_BY_POINT_DEFAULT = (function () {
 /* Source-type labels (correction #15) */
 const SAVINGS_SOURCE_LITERATURE = 'literature'; // "Literature range — verify with M&V"
 const SAVINGS_SOURCE_ENGINEERING = 'engineering'; // "Engineering estimate — site-specific calc needed"
-
-/* ORNL context sentence — must accompany every citation of 42% (correction #2) */
-const ORNL_CONTEXT_SENTENCE =
-  '42% measured at a single research test facility with rooftop unit (ORNL 2024); ' +
-  'multizone-VAV simulation (LBNL 2022) shows 31% avg — more representative of a multi-building VAV portfolio.';
 
 /* M&V disclaimer (correction #11) */
 const SAVINGS_DISCLAIMER_TEXT =
@@ -202,8 +197,7 @@ const SEQUENCE_SAVINGS_IMPACT = {
     nominalCostTier: 2,
     savingsRationale:
       'Trim-and-respond duct pressure reset reduces supply fan speed during part-load hours, ' +
-      'cutting fan energy 22–65% in applicable systems; field studies show 22–25% in real buildings. ' +
-      '[NLR-DSP-2026, OSTI 3022261]',
+      'cutting fan energy in applicable systems. [NLR-DSP-2026, OSTI 3022261]',
     // clientSummary: client-facing 1-sentence benefit statement (2026-06-30 report defect fix).
     // No citations, warnings, tool names, or portfolio-specific counts — see savingsRationale above for internal use.
     clientSummary:
@@ -219,9 +213,7 @@ const SEQUENCE_SAVINGS_IMPACT = {
     nominalCostTier: 1,
     savingsRationale:
       'Supply air temperature trim-and-respond reset eliminates over-cooling and simultaneous heating, ' +
-      'reducing chiller and reheat energy. Multizone-VAV simulation: ASHRAE 36 controls cut HVAC energy 31% avg ' +
-      '(LBNL 2022). ' +
-      ORNL_CONTEXT_SENTENCE,
+      'reducing chiller and reheat energy. [LBNL-ASHRAE36-2022]',
     clientSummary:
       'Adjusts supply air temperature to match real-time building demand, reducing simultaneous heating and ' +
       'cooling and lowering overall heating and cooling energy use.',
@@ -235,8 +227,7 @@ const SEQUENCE_SAVINGS_IMPACT = {
     nominalCostTier: 1,
     savingsRationale:
       'Modulating economizer provides free cooling when outdoor conditions are favorable, directly displacing ' +
-      'compressor energy. Applicable in Climate Zone 4A approximately 20–40% of cooling hours annually ' +
-      '(engineering estimate; site-specific simulation needed for $ projection).',
+      'compressor energy. Site-specific analysis is needed for a $ projection.',
     clientSummary:
       'Uses outdoor air for free cooling whenever conditions allow, reducing mechanical cooling run time and ' +
       'compressor energy.',
@@ -296,9 +287,8 @@ const SEQUENCE_SAVINGS_IMPACT = {
     nominalCostTier: 2,
     savingsRationale:
       'CO2-based demand-controlled ventilation (AHU duct level) reduces outdoor air delivery during ' +
-      'lower-occupancy periods, cutting heating and cooling energy. National average: 2.6% total site ' +
-      'energy savings; 8.8% heating gas savings in applicable commercial buildings. [NREL-DCV-2023, OSTI 2284042]. ' +
-      'Note: 2.6% is a commercial-office stock average; verify applicability to institutional/detention occupancy.',
+      'lower-occupancy periods, cutting heating and cooling energy. [NREL-DCV-2023, OSTI 2284042]. ' +
+      'Verify applicability to institutional/detention occupancy.',
     clientSummary:
       'Reduces outdoor air intake during lower-occupancy periods, cutting the heating and cooling energy needed ' +
       'to condition unnecessary ventilation air.',
@@ -317,8 +307,7 @@ const SEQUENCE_SAVINGS_IMPACT = {
     nominalCostTier: 2,
     savingsRationale:
       'CO2-based demand-controlled ventilation (zone level — needs zone CO2 sensors) reduces outdoor air ' +
-      'per zone during lower-occupancy periods. Same national average basis as AHU-level DCV: 2.6% total site ' +
-      'energy savings in applicable buildings. [NREL-DCV-2023, OSTI 2284042]. ' +
+      'per zone during lower-occupancy periods. Same basis as AHU-level DCV. [NREL-DCV-2023, OSTI 2284042]. ' +
       'Note: verify applicability to institutional/detention occupancy patterns.',
     clientSummary:
       'Reduces outdoor air delivered to each zone based on real-time occupancy, avoiding the energy cost of ' +
@@ -333,7 +322,7 @@ const SEQUENCE_SAVINGS_IMPACT = {
     nominalCostTier: 1,
     savingsRationale:
       'Hot water supply temperature trim-and-respond reset reduces boiler firing rate during mild weather ' +
-      'and can push condensing boilers into higher-efficiency operation (up to ~11 AFUE points on condensing-range hours), ' +
+      'and can push condensing boilers into higher-efficiency operation ' +
       'reducing heating gas consumption. Savings depend on boiler type — consult BAS Savings Calc for site-specific estimate. ' +
       '⚠ Verify boiler type: MED (non-condensing) / MED-HIGH (condensing).',
     clientSummary:
@@ -348,8 +337,7 @@ const SEQUENCE_SAVINGS_IMPACT = {
     nominalCostTier: 1,
     savingsRationale:
       'Chilled water supply temperature trim-and-respond reset raises the CHWST setpoint under light loads, ' +
-      'reducing chiller lift. Every 1°F increase in CHWST improves chiller COP approximately 1–2% ' +
-      '(rule of thumb from manufacturer performance curves). ' +
+      'reducing chiller lift. A higher CHWST improves chiller COP. ' +
       'Centrifugal chillers most sensitive to CHWST; scroll/recip see smaller gains. ' +
       'Requires site-specific calculation for $ savings.',
     clientSummary: 'Raises chilled water temperature under light cooling loads, reducing chiller energy use.',
@@ -363,7 +351,7 @@ const SEQUENCE_SAVINGS_IMPACT = {
     nominalCostTier: 2,
     savingsRationale:
       'Pump differential pressure reset reduces HW pump speed during lower-load periods. ' +
-      'Pump power follows the cube law — a 20% speed reduction cuts pump power by nearly 50%. ' +
+      'Pump power follows the cube law, so a small speed reduction cuts pump power by much more. ' +
       'Requires differential pressure sensor installation; programming change is low-cost once sensor is in place. ' +
       '(Qualitative only — no single-measure study for controls-only savings; drop $ estimate.)',
     clientSummary: 'Reduces hot water pump speed during lower-load periods, cutting pump energy use.',
@@ -377,7 +365,7 @@ const SEQUENCE_SAVINGS_IMPACT = {
     nominalCostTier: 2,
     savingsRationale:
       'Pump differential pressure reset reduces CHW pump speed during lower-load periods. ' +
-      'Pump power follows the cube law — a 20% speed reduction cuts pump power by nearly 50%. ' +
+      'Pump power follows the cube law, so a small speed reduction cuts pump power by much more. ' +
       'CHW pump is typically larger than HW side, so absolute savings may be higher. ' +
       '(Qualitative only — no single-measure study for controls-only savings; drop $ estimate.)',
     clientSummary: 'Reduces chilled water pump speed during lower-load periods, cutting pump energy use.',
@@ -421,9 +409,8 @@ const SEQUENCE_SAVINGS_IMPACT = {
     nominalCostTier: 1,
     savingsRationale:
       'ASHRAE 36 reheat sequencing prevents simultaneous heating and cooling by releasing reheat only after the ' +
-      'cooling damper reaches minimum. Correct implementation can eliminate 5–15% of building energy waste ' +
-      'in systems with misconfigured VAV reheat (rule of thumb from audit practice; no published study — ' +
-      'confirm via BAS trend data before citing in a contract).',
+      'cooling damper reaches minimum. Correct implementation reduces energy waste ' +
+      'in systems with misconfigured VAV reheat.',
     clientSummary:
       'Sequences reheat to activate only after the cooling damper reaches minimum position, preventing ' +
       'simultaneous heating and cooling energy waste.',
@@ -1701,7 +1688,7 @@ const PRICE_POINT_MAP = {
     flags: ['engReview'],
     note: 'Low-range duct static pressure — verify range',
     whyNeeded:
-      'Enables fan speed control based on actual demand; fan energy drops 15–30% versus fixed-speed operation.',
+      'Enables fan speed control based on actual demand; fan energy drops versus fixed-speed operation.',
     g36Section: '§5.16.5',
   },
   co2_ahu: {
@@ -1710,7 +1697,7 @@ const PRICE_POINT_MAP = {
     flags: [],
     note: 'AHU duct CO2 sensor',
     whyNeeded:
-      'Reduces outdoor air intake to match actual occupancy, cutting fan and cooling energy by 5–10% when rooms are empty.',
+      'Reduces outdoor air intake to match actual occupancy, cutting fan and cooling energy when rooms are empty.',
     g36Section: '§5.16.7',
   },
   /* ── VAV/FPB sensors ── */

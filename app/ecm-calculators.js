@@ -114,7 +114,7 @@ const ECM_TEMPLATES = {
         min: 1,
         max: 8,
       },
-      { id: 'gas_rate', label: 'Gas Rate', unit: '$/therm', type: 'number', default: 0.8, min: 0.1, max: 5.0 },
+      { id: 'gas_rate', label: 'Gas Rate', unit: '$/therm', type: 'number', default: null, min: 0.1, max: 5.0 },
       { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null, min: 0.01, max: 1.0 },
       {
         id: 'repair_cost',
@@ -287,7 +287,7 @@ const ECM_TEMPLATES = {
         max: 100,
       },
       { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null, min: 0.01, max: 1.0 },
-      { id: 'gas_rate', label: 'Gas Rate', unit: '$/therm', type: 'number', default: 0.8, min: 0.1, max: 5.0 },
+      { id: 'gas_rate', label: 'Gas Rate', unit: '$/therm', type: 'number', default: null, min: 0.1, max: 5.0 },
       {
         id: 'equipment_cost',
         label: 'Total Equipment & Install Cost',
@@ -552,7 +552,7 @@ const ECM_TEMPLATES = {
         label: 'Demand Rate',
         unit: '$/kW/mo',
         type: 'number',
-        default: 0,
+        default: null,
         min: 0,
         max: 30,
       },
@@ -776,7 +776,7 @@ const ECM_TEMPLATES = {
         min: 0,
         max: 1,
       },
-      { id: 'gas_rate', label: 'Gas Rate', unit: '$/therm', type: 'number', default: 0.85, min: 0.1, max: 5.0 },
+      { id: 'gas_rate', label: 'Gas Rate', unit: '$/therm', type: 'number', default: null, min: 0.1, max: 5.0 },
       { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null, min: 0.01, max: 1.0 },
       {
         id: 'installed_cost',
@@ -1107,7 +1107,7 @@ const ECM_TEMPLATES = {
         label: 'Demand Rate',
         unit: '$/kW/mo',
         type: 'number',
-        default: 8.0,
+        default: null,
         min: 0,
         max: 30,
       },
@@ -1298,7 +1298,7 @@ const ECM_TEMPLATES = {
         label: 'Demand Rate',
         unit: '$/kW/mo',
         type: 'number',
-        default: 8.0,
+        default: null,
         min: 0,
         max: 30,
       },
@@ -1645,7 +1645,7 @@ const ECM_TEMPLATES = {
         min: 60,
         max: 99,
       },
-      { id: 'gas_rate', label: 'Gas Rate', unit: '$/therm', type: 'number', default: 0.8, min: 0.1, max: 5.0 },
+      { id: 'gas_rate', label: 'Gas Rate', unit: '$/therm', type: 'number', default: null, min: 0.1, max: 5.0 },
       {
         id: 'cool_hours',
         label: 'Occupied Cooling Season Hours',
@@ -1817,7 +1817,7 @@ const ECM_TEMPLATES = {
         min: 1,
         max: 8,
       },
-      { id: 'gas_rate', label: 'Gas Rate', unit: '$/therm', type: 'number', default: 0.8, min: 0.1, max: 5.0 },
+      { id: 'gas_rate', label: 'Gas Rate', unit: '$/therm', type: 'number', default: null, min: 0.1, max: 5.0 },
       { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null, min: 0.01, max: 1.0 },
       {
         id: 'min_flow_old',
@@ -2014,7 +2014,7 @@ const ECM_TEMPLATES = {
         ],
         default: 'cast_iron',
       },
-      { id: 'gas_rate', label: 'Gas Rate', unit: '$/therm', type: 'number', default: 0.8, min: 0.1, max: 5.0 },
+      { id: 'gas_rate', label: 'Gas Rate', unit: '$/therm', type: 'number', default: null, min: 0.1, max: 5.0 },
       {
         id: 'install_cost',
         label: 'Boiler Install Cost (full)',
@@ -2127,7 +2127,7 @@ const ECM_TEMPLATES = {
         default: 'gas',
       },
       { id: 'cooling_cop', label: 'Cooling System Coefficient of Performance', unit: 'COP', type: 'number', default: 3.5, min: 1, max: 8 },
-      { id: 'gas_rate', label: 'Gas Rate', unit: '$/therm', type: 'number', default: 0.8, min: 0.1, max: 5.0 },
+      { id: 'gas_rate', label: 'Gas Rate', unit: '$/therm', type: 'number', default: null, min: 0.1, max: 5.0 },
       { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null, min: 0.01, max: 1.0 },
       { id: 'install_cost', label: 'Install Cost', unit: '$', type: 'number', default: 25000, min: 0, max: 5000000 },
     ],
@@ -2643,7 +2643,11 @@ function renderEcmCalculator(templateId, container, savedValues, onBack, onCalcu
         electric_rate: r.kwhRate > 0 ? r.kwhRate : null,
         gas_rate: r.thermRate > 0 ? r.thermRate : null,
         demand_rate: r.kwRate > 0 ? r.kwRate : null,
-        sourceLabel: formatBillMonthsLabel(r.months.kwhSummer.concat(r.months.kwhWinter)),
+        sourceLabels: {
+          electric: formatBillMonthsLabel(r.months.kwhSummer.concat(r.months.kwhWinter)),
+          gas: formatBillMonthsLabel(r.months.gas),
+          demand: formatBillMonthsLabel(r.months.kwSummer.concat(r.months.kwWinter)),
+        },
       };
     } catch (e) {
       autoRates = null;
@@ -2696,7 +2700,7 @@ function renderEcmCalculator(templateId, container, savedValues, onBack, onCalcu
       const autoStyle = isAuto ? 'color:#60a5fa;border-color:rgba(96,165,250,0.4)' : '';
       const autoTag = isAuto
         ? `<span id="${id}-autotag" style="font-size:10px;color:#60a5fa;margin-top:3px;display:block">
-             from bills (${autoRates.sourceLabel}) — <button type="button" style="font-size:10px;color:var(--text3);background:none;border:none;cursor:pointer;padding:0;text-decoration:underline" onclick="document.getElementById('${id}').style.color='';document.getElementById('${id}').style.borderColor='';document.getElementById('${id}-autotag').style.display='none'">override</button>
+             from bills (${autoRates.sourceLabels[inp.id === 'gas_rate' ? 'gas' : inp.id === 'demand_rate' ? 'demand' : 'electric']}) — <button type="button" style="font-size:10px;color:var(--text3);background:none;border:none;cursor:pointer;padding:0;text-decoration:underline" onclick="document.getElementById('${id}').style.color='';document.getElementById('${id}').style.borderColor='';document.getElementById('${id}-autotag').style.display='none'">override</button>
            </span>`
         : '';
 
