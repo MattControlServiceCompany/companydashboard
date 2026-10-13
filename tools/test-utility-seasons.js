@@ -275,5 +275,24 @@ assert(
   'a 3 year period is counted in full: ' + JSON.stringify(longD),
 );
 
+// Water, sewer, stormwater: baseline mean in the bill's own unit, monthly like gas (synthetic bills).
+S.getMeterBillUnit = (m) => m.billUnit || 'gal';
+const wm = (id, commodity, unit, bills) => ({ id, commodity, provider: 'City Water', billUnit: unit, inclusive: true, bills, baseline: { months: ['x'] } });
+const wb = (s, e, use, chg) => ({ start: s, end: e, waterUsage: String(use), waterCharge: String(chg) });
+const sb = (s, e, use, chg) => ({ start: s, end: e, sewerUsage: String(use), sewerCharge: String(chg) });
+const rw = run({
+  meters: [
+    wm('w', 'Water', 'kgal', [wb('2025-01-01', '2025-01-31', 10, 80), wb('2025-07-01', '2025-07-31', 10, 40)]),
+    wm('s', 'Sewer', 'gal', [sb('2025-01-01', '2025-01-31', 1000, 5)]),
+    wm('t', 'Stormwater', null, [{ start: '2025-01-01', end: '2025-01-31', stormWaterCharge: '12' }]),
+  ],
+});
+assert(rw.waterUnit === 'kgal' && near(rw.waterRate, 6, 1e-6), 'water: 6 per kgal, own unit: ' + rw.waterRate + ' ' + rw.waterUnit);
+assert(rw.waterMonthly.length === 12 && near(rw.waterMonthly[0], 8) && near(rw.waterMonthly[6], 4) && near(rw.waterMonthly[3], 6), 'water monthly: Jan 8, Jul 4, annual mean elsewhere');
+assert(rw.sewerUnit === 'gal' && near(rw.sewerRate, 0.005, 1e-9), 'sewer: 0.005 per gal');
+assert(rw.stormwaterUnit === 'bill' && near(rw.stormwaterRate, 12), 'stormwater: 12 per bill');
+const rmix = run({ meters: [wm('a', 'Water', 'gal', [wb('2025-01-01', '2025-01-31', 1000, 9)]), wm('b', 'Water', 'kgal', [wb('2025-02-01', '2025-02-28', 1, 9)])] });
+assert(rmix.waterRate === 0 && rmix.waterUnit === '', 'two bill units: no silent mix');
+
 console.log(failed ? 'FAIL ' + failed + ' (passed ' + passed + ')' : 'PASS ' + passed);
 process.exit(failed ? 1 : 0);

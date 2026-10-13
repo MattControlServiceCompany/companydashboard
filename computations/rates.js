@@ -869,6 +869,8 @@ function _billSeasonRates(bill, kind, days, provider) {
        kwhMonthly, kwMonthly,  // [12] $ per unit by calendar month, only for a provider with no
        gasMonthly,             // seasonal tariff (gas, propane, a blank provider name): that month's
        gallonMonthly,          // baseline mean, else the annual mean. [] when the provider has seasons.
+       waterRate, sewerRate,   // $ per bill unit (waterUnit / sewerUnit = the meter's own bill unit), baseline mean;
+       stormwaterRate,         // $ per bill (mean monthly charge); *Monthly = month-by-month like gas
        gallonRate,             // $/Gallon, propane — flat mean (gallonMonthly is the month-by-month rate)
        months: {                // which bill months fed each bucket, for the
          kwhSummer: [...ym],    // "which bill months it came from" label
@@ -892,11 +894,20 @@ function computeSeasonalBldgRates(projId, bldgId, onlyMeterId) {
     gasSummer: 0,
     gasWinter: 0,
     gallonRate: 0,
+    waterRate: 0,
+    sewerRate: 0,
+    stormwaterRate: 0,
+    waterUnit: '',
+    sewerUnit: '',
+    stormwaterUnit: '',
+    waterMonthly: [],
+    sewerMonthly: [],
+    stormwaterMonthly: [],
     kwhMonthly: [],
     kwMonthly: [],
     gasMonthly: [],
     gallonMonthly: [],
-    months: { kwhSummer: [], kwhWinter: [], kwSummer: [], kwWinter: [], gas: [], propane: [] },
+    months: { kwhSummer: [], kwhWinter: [], kwSummer: [], kwWinter: [], gas: [], propane: [], water: [], sewer: [], stormwater: [] },
   };
   var b = typeof getUDBldg === 'function' ? getUDBldg(projId, bldgId) : null;
   if (!b) return empty;
@@ -1030,7 +1041,7 @@ function computeSeasonalBldgRates(projId, bldgId, onlyMeterId) {
   }
 
   var out = empty;
-  out.months = { kwhSummer: [], kwhWinter: [], kwSummer: [], kwWinter: [], gas: [], propane: [] };
+  out.months = { kwhSummer: [], kwhWinter: [], kwSummer: [], kwWinter: [], gas: [], propane: [], water: [], sewer: [], stormwater: [] };
 
   if (elecMeters.length) {
     var kwhRows = billRates(elecMeters, function (bill) {
@@ -1076,6 +1087,32 @@ function computeSeasonalBldgRates(projId, bldgId, onlyMeterId) {
     out.gallonMonthly = monthlyMeans(propaneRows, 3);
     out.months.propane = yms(propaneRows);
   }
+
+  // Water, sewer, stormwater: the bill's own unit (meter.billUnit: gal, kgal, ccf ...), never converted. Water and
+  // sewer are $/unit; stormwater has no usage, its rate is the mean monthly charge ($/bill). Meters of one commodity
+  // with different bill units cannot be averaged: no rate (0) and no unit. Monthly array like gas.
+  [
+    ['Water', 'water', 'waterRate', 'waterUnit', 'waterMonthly'],
+    ['Sewer', 'sewer', 'sewerRate', 'sewerUnit', 'sewerMonthly'],
+    ['Stormwater', 'stormwater', 'stormwaterRate', 'stormwaterUnit', 'stormwaterMonthly'],
+  ].forEach(function (c) {
+    var ms = meters.filter(function (m) {
+      return m.commodity === c[0];
+    });
+    if (!ms.length) return;
+    var units = {};
+    ms.forEach(function (m) {
+      units[c[1] === 'stormwater' ? 'bill' : getMeterBillUnit(m)] = 1;
+    });
+    if (Object.keys(units).length !== 1) return;
+    var rows = billRates(ms, function (bill) {
+      return getStoredRate(bill, c[1]);
+    });
+    out[c[2]] = Math.round(mean(rows) * 100000) / 100000;
+    out[c[3]] = Object.keys(units)[0];
+    out[c[4]] = monthlyMeans(rows, 5);
+    out.months[c[1]] = yms(rows);
+  });
 
   out.straddle = straddle;
   return out;

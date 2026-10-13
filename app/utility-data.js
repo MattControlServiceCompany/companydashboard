@@ -6718,10 +6718,13 @@ function _udBaselineRatePills(m) {
     Electric: { unit: 'kWh', all: own.kwhRate, summer: own.kwhSummer, winter: own.kwhWinter },
     Gas: { unit: 'Therm', all: own.thermRate },
     Propane: { unit: 'gal', all: own.gallonRate },
+    Water: { unit: own.waterUnit, all: own.waterRate },
+    Sewer: { unit: own.sewerUnit, all: own.sewerRate },
+    Stormwater: { unit: own.stormwaterUnit, all: own.stormwaterRate },
   };
   const c = sets[m.commodity];
   if (!c) return { unit: '', all: null, summer: null, winter: null, kwSummer: null, kwWinter: null };
-  const pos = (v) => (v > 0 ? v : null);
+  const pos = (v) => (v > 0 && c.unit ? v : null);
   return {
     unit: c.unit,
     all: pos(c.all),
@@ -6776,7 +6779,7 @@ function renderBaselinePane(pane, m, bills, incl) {
     const summerKwRate = rp.kwSummer;
     const winterKwRate = rp.kwWinter;
 
-    const fmtRate = (v) => (v != null ? '$' + v.toFixed(4) : null);
+    const fmtRate = (v) => (v != null ? '$' + v.toFixed(v < 0.1 ? 5 : 4) : null);
     const fmtKw = (v) => (v != null ? '$' + v.toFixed(2) : null);
 
     // Build compact pill strip
@@ -7307,7 +7310,7 @@ function refreshBaselineStats(mid) {
     const avgRatePerUnit = rp2.all;
     const summerKwRate = rp2.kwSummer;
     const winterKwRate = rp2.kwWinter;
-    const fmtRate = (v) => (v != null ? '$' + v.toFixed(4) : null);
+    const fmtRate = (v) => (v != null ? '$' + v.toFixed(v < 0.1 ? 5 : 4) : null);
     const fmtKw = (v) => (v != null ? '$' + v.toFixed(2) : null);
     const unit2 = getMeterDisplayUnit(m);
 
