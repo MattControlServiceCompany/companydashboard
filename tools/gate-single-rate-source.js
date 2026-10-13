@@ -21,9 +21,29 @@ const RULES = [
   // The summer / winter definition lives ONLY in SEASON_TABLE (computations/rates.js, keyed by provider).
   // Every reader asks seasonOfMonth / seasonOfDate. A month-number list for summer is a second table.
   // A private month list such as sumMos / winMos is a second season rule (the old one used Dec-Mar for winter).
-  [/\b(?:sumMos|winMos|summerMonths|winterMonths)\s*=\s*\[/, 'second season definition (use computeSeasonalBldgRates / measureRateAt)'],
+  [
+    /\b(?:sumMos|winMos|summerMonths|winterMonths)\s*=\s*\[/,
+    'second season definition (use computeSeasonalBldgRates / measureRateAt)',
+  ],
   [/\bSUMMER_MOS\s*=\s*\[/, 'second season table (ask seasonOfMonth / seasonOfDate in computations/rates.js)'],
-  [/\[\s*(?:5\s*,\s*6\s*,\s*7\s*,\s*8|6\s*,\s*7\s*,\s*8\s*,\s*9)\s*\]/, 'summer month list (Jun-Sep) outside SEASON_TABLE'],
+  [
+    /\[\s*(?:5\s*,\s*6\s*,\s*7\s*,\s*8|6\s*,\s*7\s*,\s*8\s*,\s*9)\s*\]/,
+    'summer month list (Jun-Sep) outside SEASON_TABLE',
+  ],
+  // A month-number range test for summer or winter (bill start month, calendar month 1-12 or index 0-11) is a second
+  // season rule. Ask seasonOfMonth / seasonOfDate / seasonDaysOfPeriod instead.
+  [
+    /\b[\w.()]+\s*>=\s*[56]\s*&&\s*[\w.()]+\s*<=\s*[89]\b/,
+    'month-range summer test (use seasonOfMonth / seasonOfDate)',
+  ],
+  [
+    /\b[\w.()]+\s*===?\s*1[12]\s*\|\|\s*[\w.()]+\s*<=\s*[1-5]\b/,
+    'month-range winter test (use seasonOfMonth / seasonOfDate)',
+  ],
+  [
+    /\b[\w.()]+\s*>=\s*(?:9|10)\s*\|\|\s*[\w.()]+\s*<=\s*[1-5]\b/,
+    'month-range winter test (use seasonOfMonth / seasonOfDate)',
+  ],
   // Monthly pricing has ONE owner path: measureRateAt / calcMeasureDollars (app/energy-savings.js).
   // A season test or a multiply by a stored rate field anywhere else is a second copy of the rule.
   [/\bSUMMER_MOS\.includes\(/, 'second season test for monthly pricing (use measureRateAt / calcMeasureDollars)'],
@@ -50,7 +70,8 @@ files.forEach((f) => {
   tableDefs += (text.match(/\b(?:var|let|const)\s+SEASON_TABLE\b/g) || []).length;
   if (f !== path.join('computations', 'rates.js'))
     text.split(/\r?\n/).forEach((line, i) => {
-      if (SEASON_EDGE.test(line)) bad.push(f + ':' + (i + 1) + ' season edge date outside SEASON_TABLE: ' + line.trim().slice(0, 100));
+      if (SEASON_EDGE.test(line))
+        bad.push(f + ':' + (i + 1) + ' season edge date outside SEASON_TABLE: ' + line.trim().slice(0, 100));
     });
   let m;
   INPUT_DEFAULT.lastIndex = 0;
@@ -64,7 +85,8 @@ files.forEach((f) => {
     );
   });
 });
-if (tableDefs !== 1) bad.push('SEASON_TABLE must be defined exactly once in app/ + computations/ (found ' + tableDefs + ')');
+if (tableDefs !== 1)
+  bad.push('SEASON_TABLE must be defined exactly once in app/ + computations/ (found ' + tableDefs + ')');
 if (bad.length) {
   console.log('FAIL single rate source gate\n' + bad.join('\n'));
   process.exit(1);

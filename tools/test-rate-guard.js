@@ -105,7 +105,9 @@ const code = [
     'writeRateField',
     'initMeasureRates',
     'ensureMeasureRates',
-    'measureRateSource',
+    'fixMeasureRateSources',
+    'ownerMeasureRates',
+    'measureRatesNow',
     'followOwnerMeasureRates',
     'svUpdateMsrRate',
     'svResetMsrRates',
@@ -253,6 +255,15 @@ confirmAsked.length = 0;
   const typed = { id: 'm123', bldgId: 'b1', rates: { kwSummer: 99 }, rateSource: 'manual', kwh: [], kw: [], gas: [] };
   const unmarked = { id: 'm456', bldgId: 'b1', rates: { kwSummer: 98 }, kwh: [], kw: [], gas: [] };
   const sd = { measures: [old, typed, unmarked], blRates: {} };
+  // one-time data fix by evidence: m_csv_ = owner, everything else unmarked = manual; a marked one is not touched
+  assert(sb.followOwnerMeasureRates('p1', sd) === false && old.rates.kwSummer === stale.kwSummer, 'an unmarked measure is not owner: code reads only rateSource owner');
+  const legacy = { id: 'm999', bldgId: 'b1', desc: '', rates: { kwhSummer: 0.0694, kwhWinter: 0.0597, kwSummer: 13.51, kwWinter: 8.96, thermRate: 0, gallonRate: 0 }, kwh: Array(12).fill(0), kw: Array(12).fill(0), gas: Array(12).fill(0), propane: Array(12).fill(0) };
+  const legacyTyped = { ...legacy, id: 'm998', desc: 'typed measure', kw: Array(12).fill(5), rates: { ...legacy.rates } };
+  const projFix = { savingsData: { measures: [old, typed, unmarked, legacy, legacyTyped] } };
+  assert(sb.fixMeasureRateSources(projFix) === true, 'data fix changed measures');
+  assert(old.rateSource === 'owner' && unmarked.rateSource === 'manual' && typed.rateSource === 'manual', 'data fix: m_csv_ owner, unmarked manual, marked untouched');
+  assert(legacy.rateSource === 'owner' && legacyTyped.rateSource === 'manual', 'data fix: empty legacy default-shape measure owner, a measure with quantities manual');
+  assert(sb.fixMeasureRateSources(projFix) === false, 'data fix is idempotent');
   const kwhKeep = old.kwh.join(',');
   assert(sb.followOwnerMeasureRates('p1', sd) === true, 'follow changed the imported measure');
   assert(
@@ -266,7 +277,7 @@ confirmAsked.length = 0;
     'totalDollar recomputed from the new rates',
   );
   assert(typed.rates.kwSummer === 99 && typed.rateSource === 'manual', 'a typed (manual) measure is untouched');
-  assert(unmarked.rates.kwSummer === 98, 'a measure with no marker that was not imported is untouched');
+  assert(unmarked.rates.kwSummer === 98, 'a manual measure that was never imported is untouched');
   assert(sb.followOwnerMeasureRates('p1', sd) === false, 'nothing changes when the rates already match the owner');
   // the owner changes: an owner-sourced measure moves with it, with no flag involved
   const baseBefore = { ...BASE };
@@ -282,6 +293,32 @@ confirmAsked.length = 0;
   sb.svResetMsrRates('m_csv_b1');
   assert(old.rateSource === 'owner' && old.rates.kwSummer === 17.5, 'Reset returns the measure to the owner');
   sb.computeSeasonalBldgRates = () => ({ ...baseBefore, months: {} });
+
+  console.log('=== 5b. owner rates: fixed bounds only; one flag, one toast; the total getter writes nothing ===');
+  // monthly gas that swings 3x inside the year is real, and the owner write must pass
+  const swing = [0.3, 0.3, 0.4, 0.5, 0.6, 0.9, 0.9, 0.9, 0.6, 0.5, 0.4, 0.3];
+  sb.computeSeasonalBldgRates = () => ({ ...BASE, thermRate: 0.4, gasMonthly: swing, months: {} });
+  assert(sb.rateGuardCheckSet({ gasMonthly: swing }, 'p1', 'b1', true).length === 0, 'owner write: a month 2.25x the annual mean passes (fixed bounds only)');
+  assert(sb.rateGuardCheckSet({ gasMonthly: swing }, 'p1', 'b1').length > 0, 'a typed or calculator rate set keeps the full 0.5x-2x check');
+  const mo1 = { id: 'mo1', bldgId: 'b1', rateSource: 'owner', rates: { thermRate: 0.5 }, kwh: [], kw: [], gas: Array(12).fill(10), propane: [] };
+  sb.followOwnerMeasureRates('p1', { measures: [mo1], blRates: {} });
+  assert(mo1.rates.gasMonthly && mo1.rates.gasMonthly.join() === swing.join() && !mo1.rateFlag, 'owner measure took the monthly gas rates');
+  // an owner rate outside the fixed bounds: not saved, flagged once, toasted once, logged once, over many calls
+  sb.computeSeasonalBldgRates = () => ({ ...BASE, kwSummer: 6019.81, months: {} });
+  const mo2 = { id: 'mo2', desc: 'Synthetic measure', bldgId: 'b1', rateSource: 'owner', rates: { kwSummer: 16 }, kwh: [], kw: Array(12).fill(1), gas: [], propane: [] };
+  const sd2 = { measures: [mo2], blRates: {} };
+  const t0 = toasts.length, l0 = sb.window._rateGuardLog.length;
+  for (let i = 0; i < 20; i++) sb.followOwnerMeasureRates('p1', sd2);
+  assert(mo2.rates.kwSummer === 16, 'blocked owner rate: measure keeps its rates');
+  assert(mo2.rateFlag && mo2.rateFlag.field === 'kwSummer' && mo2.rateFlag.value === 6019.81, 'blocked owner rate: stored flag names the rate');
+  assert(toasts.length === t0 + 1 && /Synthetic measure/.test(toasts[t0]), 'toast shown once and names the measure: ' + (toasts.length - t0));
+  assert(sb.window._rateGuardLog.length === l0 + 1, 'logged once over 20 calls: ' + (sb.window._rateGuardLog.length - l0));
+  // the total getter path prices from saved rates without writing or toasting
+  const snap = JSON.stringify(mo2), t1 = toasts.length;
+  for (let i = 0; i < 20; i++) sb.measureRatesNow('p1', mo2);
+  assert(JSON.stringify(mo2) === snap && toasts.length === t1, 'measureRatesNow writes nothing and toasts nothing');
+  sb.computeSeasonalBldgRates = () => ({ ...baseBefore, months: {} });
+  assert(sb.measureRatesNow('p1', mo2).kwSummer === baseBefore.kwSummer && mo2.rates.kwSummer === 16, 'measureRatesNow returns the owner rates without saving them');
 
   console.log('=== 6. gate fails when a new rate write path skips the validator ===');
   const tmp = fs.mkdtempSync(path.join('C:/Temp', 'rate-gate-test-'));

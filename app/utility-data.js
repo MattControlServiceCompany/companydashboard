@@ -6710,6 +6710,32 @@ function wddApplyParsed() {
 /* ══════════════════════════════════════════
          BASELINE TAB
       ══════════════════════════════════════════ */
+// _udSeasonRateMeans(provider, incl, items) - summer and winter mean of item rates for the Baseline stat pills.
+// items: { start, end, rate } (a bill: its days in each season weight the rate, seasonDaysOfPeriod) or
+// { ym, rate } (a month: seasonOfMonth). The season rule is SEASON_TABLE (computations/rates.js) only.
+// A provider with no seasonal tariff has no summer or winter rate: both are null (no invented seasons).
+function _udSeasonRateMeans(provider, incl, items) {
+  const acc = { summer: [0, 0], winter: [0, 0] };
+  items.forEach((it) => {
+    if (it.ym) {
+      const sn = seasonOfMonth(provider, it.ym);
+      if (acc[sn]) {
+        acc[sn][0] += it.rate;
+        acc[sn][1] += 1;
+      }
+      return;
+    }
+    const d = seasonDaysOfPeriod(provider, it.start, it.end, incl);
+    if (!d) return;
+    ['summer', 'winter'].forEach((sn) => {
+      acc[sn][0] += it.rate * (d[sn] / d.total);
+      acc[sn][1] += d[sn] / d.total;
+    });
+  });
+  const mean = (a) => (a[1] > 0 ? a[0] / a[1] : null);
+  return { summer: mean(acc.summer), winter: mean(acc.winter) };
+}
+
 function renderBaselinePane(pane, m, bills, incl) {
   if (bills.length < 3) {
     pane.innerHTML =
@@ -6772,33 +6798,15 @@ function renderBaselinePane(pane, m, bills, incl) {
       winterKwRate = null;
     if (m.commodity === 'Electric') {
       const demandBills = blBillsForRate.filter((b) => (b.demandKW || 0) > 0 && getBillKwCost(b) > 0);
-      const sumDem = demandBills.filter((b) => {
-        const mo = _parseISO(b.start).getMonth() + 1;
-        return mo >= 6 && mo <= 9;
-      });
-      const winDem = demandBills.filter((b) => {
-        const mo = _parseISO(b.start).getMonth() + 1;
-        return mo === 12 || mo <= 3;
-      });
-      summerKwRate = sumDem.length ? sumDem.reduce((s, b) => s + getBillKwCost(b) / b.demandKW, 0) / sumDem.length : null;
-      winterKwRate = winDem.length ? winDem.reduce((s, b) => s + getBillKwCost(b) / b.demandKW, 0) / winDem.length : null;
+      const kwMeans = _udSeasonRateMeans(m.provider, incl, demandBills.map((b) => ({ start: b.start, end: b.end, rate: getBillKwCost(b) / b.demandKW })));
+      summerKwRate = kwMeans.summer;
+      winterKwRate = kwMeans.winter;
     }
 
-    // Summer (Jun–Sep) vs Winter (Dec–Mar) $/unit rates using energyCost
-    const summerRows = costRows.filter((r) => {
-      const mo = parseInt(r.ym.split('-')[1]);
-      return mo >= 6 && mo <= 9;
-    });
-    const winterRows = costRows.filter((r) => {
-      const mo = parseInt(r.ym.split('-')[1]);
-      return mo === 12 || mo <= 3;
-    });
-    const summerRate = summerRows.length
-      ? summerRows.reduce((s, r) => s + energyCostByYm[r.ym] / r.usage, 0) / summerRows.length
-      : null;
-    const winterRate = winterRows.length
-      ? winterRows.reduce((s, r) => s + energyCostByYm[r.ym] / r.usage, 0) / winterRows.length
-      : null;
+    // Summer / winter $/unit rates using energyCost. The season of each month comes from the one season table.
+    const unitMeans = _udSeasonRateMeans(m.provider, incl, costRows.map((r) => ({ ym: r.ym, rate: energyCostByYm[r.ym] / r.usage })));
+    const summerRate = unitMeans.summer;
+    const winterRate = unitMeans.winter;
 
     const fmtRate = (v) =>
       v != null ? '$' + v.toLocaleString('en-US', { minimumFractionDigits: 5, maximumFractionDigits: 5 }) : null;
@@ -7345,27 +7353,13 @@ function refreshBaselineStats(mid) {
       winterKwRate = null;
     if (m.commodity === 'Electric') {
       const dBills = blBillsR.filter((b) => (b.demandKW || 0) > 0 && getBillKwCost(b) > 0);
-      const sumDem = dBills.filter((b) => {
-        const mo = _parseISO(b.start).getMonth() + 1;
-        return mo >= 6 && mo <= 9;
-      });
-      const winDem = dBills.filter((b) => {
-        const mo = _parseISO(b.start).getMonth() + 1;
-        return mo === 12 || mo <= 3;
-      });
-      summerKwRate = sumDem.length ? sumDem.reduce((s, b) => s + getBillKwCost(b) / b.demandKW, 0) / sumDem.length : null;
-      winterKwRate = winDem.length ? winDem.reduce((s, b) => s + getBillKwCost(b) / b.demandKW, 0) / winDem.length : null;
+      const kwMeans = _udSeasonRateMeans(m.provider, inclFlag, dBills.map((b) => ({ start: b.start, end: b.end, rate: getBillKwCost(b) / b.demandKW })));
+      summerKwRate = kwMeans.summer;
+      winterKwRate = kwMeans.winter;
     }
-    const sumR = costRows.filter((r) => {
-      const mo = parseInt(r.ym.split('-')[1]);
-      return mo >= 6 && mo <= 9;
-    });
-    const winR = costRows.filter((r) => {
-      const mo = parseInt(r.ym.split('-')[1]);
-      return mo === 12 || mo <= 3;
-    });
-    const summerRate = sumR.length ? sumR.reduce((s, r) => s + eCostByYm2[r.ym] / r.usage, 0) / sumR.length : null;
-    const winterRate = winR.length ? winR.reduce((s, r) => s + eCostByYm2[r.ym] / r.usage, 0) / winR.length : null;
+    const unitMeans = _udSeasonRateMeans(m.provider, inclFlag, costRows.map((r) => ({ ym: r.ym, rate: eCostByYm2[r.ym] / r.usage })));
+    const summerRate = unitMeans.summer;
+    const winterRate = unitMeans.winter;
     const fmtRate = (v) => (v != null ? '$' + v.toFixed(4) : null);
     const fmtKw = (v) => (v != null ? '$' + v.toFixed(2) : null);
     const unit2 = getMeterDisplayUnit(m);

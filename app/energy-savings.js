@@ -528,15 +528,18 @@ const RATE_WRITE_FIELDS = [
   'kwhMonthly',
   'kwMonthly',
   'gasMonthly',
+  'gallonMonthly',
 ];
 
 // monthly rate array -> the flat field whose guard check each month uses
-const RATE_MONTHLY_FIELD = { kwhMonthly: 'kwhSummer', kwMonthly: 'kwSummer', gasMonthly: 'thermRate' };
+const RATE_MONTHLY_FIELD = { kwhMonthly: 'kwhSummer', kwMonthly: 'kwSummer', gasMonthly: 'thermRate', gallonMonthly: 'gallonRate' };
 
-// rateGuardCheckSet(rates, projId, bldgId) -> array of failed checks (empty = every rate passes).
-function rateGuardCheckSet(rates, projId, bldgId) {
+// rateGuardCheckSet(rates, projId, bldgId, absoluteOnly) -> array of failed checks (empty = every rate passes).
+// absoluteOnly = true for rates the program took straight from the bills (the owner): only the fixed
+// plausibility bounds apply, not the 0.5x-2x ratio to the annual mean (monthly gas legitimately swings).
+function rateGuardCheckSet(rates, projId, bldgId, absoluteOnly) {
   const bldg = bldgId ? getUDBldg(projId, bldgId) : null;
-  const base = bldg ? computeSeasonalBldgRates(projId, bldgId) : null;
+  const base = bldg && !absoluteOnly ? computeSeasonalBldgRates(projId, bldgId) : null;
   const fails = [];
   Object.keys(rates || {}).forEach((field) => {
     if (!rateGuardKnowsField(field)) return;
@@ -594,16 +597,28 @@ async function rateGuardAcceptAll(rates, projId, bldgId) {
 }
 
 // writeRateSet(holder, prop, rates, projId, bldgId, source, accepted) - holder[prop] = the rate fields of
-// `rates`. accepted = true only after rateGuardAccept / rateGuardAcceptAll said yes. Otherwise an
-// out-of-range rate is blocked and logged and holder[prop] stays as it was. Returns true when written.
+// `rates`. accepted = true only after rateGuardAccept / rateGuardAcceptAll said yes. Otherwise the rates are
+// owner rates (the program took them from the bills): only the fixed bounds apply. A rate outside them is
+// not saved; holder[prop] stays as it was and (for a measure) holder.rateFlag names the rate. The flag is
+// logged and toasted ONCE: the same blocked rate on a later call is silent. Returns true when written.
 function writeRateSet(holder, prop, rates, projId, bldgId, source, accepted) {
   if (!accepted) {
-    const fails = rateGuardCheckSet(rates, projId, bldgId);
+    const fails = rateGuardCheckSet(rates, projId, bldgId, true);
     if (fails.length) {
-      rateGuardLog(source, fails, projId, bldgId);
-      if (typeof showToast === 'function') showToast('Rates not saved: ' + _rateGuardToastText(fails[0]), 'error');
+      const f = fails[0];
+      const prev = prop === 'rates' ? holder.rateFlag : null;
+      if (!(prev && prev.field === f.field && prev.value === f.value)) {
+        if (prop === 'rates') holder.rateFlag = { field: f.field, value: f.value, source };
+        rateGuardLog(source, fails, projId, bldgId);
+        if (typeof showToast === 'function')
+          showToast(
+            (holder.desc ? 'Measure "' + holder.desc + '": ' : '') + 'rates not saved: ' + _rateGuardToastText(f),
+            'error',
+          );
+      }
       return false;
     }
+    if (prop === 'rates') delete holder.rateFlag;
   }
   const out = {};
   RATE_WRITE_FIELDS.forEach((k) => {
@@ -628,6 +643,7 @@ function writeRateField(holder, prop, field, val) {
   if (/^kwh/.test(field)) delete holder[prop].kwhMonthly;
   else if (/^kw/.test(field)) delete holder[prop].kwMonthly;
   else if (field === 'thermRate' || /^gas/.test(field)) delete holder[prop].gasMonthly;
+  else if (field === 'gallonRate') delete holder[prop].gallonMonthly;
 }
 
 // initMeasureRates(m, projId, bldgId, source) - a new measure gets the building's baseline rates
@@ -655,32 +671,73 @@ function ensureMeasureRates(m, projId, source) {
 
 // Where a measure's rates came from (m.rateSource): 'owner' = written by the program from the building's
 // baseline rates (computeSeasonalBldgRates), 'manual' = typed by the user (writeRateField) or accepted
-// from a calculator / report form (writeRateSet with accepted = true). A measure made by the old CSV
-// measure import (id m_csv_...) had its rates set from the owner and has no marker: it counts as 'owner'.
-function measureRateSource(m) {
-  return m.rateSource || (String(m.id).indexOf('m_csv_') === 0 ? 'owner' : 'manual');
+// from a calculator / report form (writeRateSet with accepted = true). Code reads only rateSource === 'owner'.
+
+// fixMeasureRateSources(proj) - one-time data fix on load (core.js init): sets rateSource on every saved
+// measure that has rates and no marker, by evidence. 'owner' when the stored rates came from a program write:
+//   - a measure made by the old CSV measure import (id m_csv_...): the import set its rates from the owner;
+//   - an EMPTY measure (no description, every quantity 0) that holds the old six-field default-rates shape
+//     (thermRate and gallonRate stored as 0, no gas split): nobody types that, the program wrote it.
+// Every other measure is 'manual' (its rates stay as saved). Idempotent: a marked measure is never touched.
+// Returns true when a measure changed (the caller saves en_projects).
+function fixMeasureRateSources(proj) {
+  const measures = (proj && proj.savingsData && proj.savingsData.measures) || [];
+  let changed = false;
+  measures.forEach((m) => {
+    if (!m.rates || m.rateSource) return;
+    const empty =
+      !m.desc && ['kwh', 'kw', 'gas', 'propane'].every((k) => (m[k] || []).every((v) => !(parseFloat(v) > 0)));
+    const r = m.rates;
+    const legacyDefault =
+      empty &&
+      ['kwhSummer', 'kwhWinter', 'kwSummer', 'kwWinter', 'thermRate', 'gallonRate'].every((k) => k in r) &&
+      r.thermRate === 0 &&
+      r.gallonRate === 0 &&
+      !('gasSummer' in r);
+    m.rateSource = String(m.id).indexOf('m_csv_') === 0 || legacyDefault ? 'owner' : 'manual';
+    changed = true;
+  });
+  return changed;
+}
+
+// ownerMeasureRates(projId, m) - the rates an owner-sourced measure should hold now: the owner's current
+// baseline rates (computeSeasonalBldgRates). null for a typed (manual) measure, a measure with no building,
+// or a building with no baseline rate yet (bills not loaded). A pure read: nothing is written.
+function ownerMeasureRates(projId, m) {
+  if (!m.bldgId || !m.rates || m.rateSource !== 'owner') return null;
+  const base = computeSeasonalBldgRates(projId, m.bldgId);
+  if (!RATE_WRITE_FIELDS.some((k) => base[k] > 0)) return null;
+  const next = {};
+  RATE_WRITE_FIELDS.forEach((k) => {
+    if (base[k] !== undefined) next[k] = base[k];
+  });
+  return next;
+}
+
+// measureRatesNow(projId, m, fallback) - the rates to price a measure with right now, without writing: the
+// owner's current rates for an owner-sourced measure (when they pass the fixed bounds), else the saved rates.
+function measureRatesNow(projId, m, fallback) {
+  const own = ownerMeasureRates(projId, m);
+  if (own && !rateGuardCheckSet(own, projId, m.bldgId, true).length) return own;
+  return m.rates || fallback || {};
 }
 
 // followOwnerMeasureRates(projId, sd) - a measure whose rates came from the owner always holds the owner's
 // current rates. When the baseline bills or the season rule change, its rates and saved dollars move with
-// them; a typed (manual) rate is never touched. A measure whose building has no baseline rate yet (bills not
-// loaded) keeps its rates. New rates the rate guard blocks are logged and toasted (writeRateSet) and the old
-// rates stay. Returns true when a measure changed (the caller saves en_projects).
+// them; a typed (manual) rate is never touched. A measure whose building has no baseline rate yet keeps its
+// rates. New rates outside the fixed bounds are not saved: the measure is flagged once (writeRateSet) and
+// the old rates stay. Called when the matrix renders, never from a total getter. Returns true when a
+// measure or its flag changed (the caller saves en_projects).
 function followOwnerMeasureRates(projId, sd) {
   let changed = false;
   sd.measures.forEach((m) => {
-    if (!m.bldgId || !m.rates || measureRateSource(m) !== 'owner') return;
-    const base = computeSeasonalBldgRates(projId, m.bldgId);
-    if (!RATE_WRITE_FIELDS.some((k) => base[k] > 0)) return;
-    const next = {};
-    RATE_WRITE_FIELDS.forEach((k) => {
-      if (base[k] !== undefined) next[k] = base[k];
-    });
-    if (JSON.stringify(next) === JSON.stringify(m.rates) && m.rateSource === 'owner') return;
-    if (writeRateSet(m, 'rates', base, projId, m.bldgId, 'owner rate follow')) {
+    const next = ownerMeasureRates(projId, m);
+    if (!next || JSON.stringify(next) === JSON.stringify(m.rates)) return;
+    const flagBefore = JSON.stringify(m.rateFlag || null);
+    if (writeRateSet(m, 'rates', next, projId, m.bldgId, 'owner rate follow')) {
       m.totalDollar = calcMeasureDollars(m, m.rates).total;
       changed = true;
-    }
+    } else if (JSON.stringify(m.rateFlag || null) !== flagBefore) changed = true;
   });
   return changed;
 }
@@ -689,7 +746,7 @@ function followOwnerMeasureRates(projId, sd) {
 // applies in calendar month `mo` (0-11). Summer months (seasonOfMonth, from SEASON_TABLE: Jun-Sep) use the summer rate, the rest the winter
 // rate. Gas uses gasSummer / gasWinter; a rate set that has neither (saved before seasonal gas) falls
 // back to its flat thermRate, so existing saved measures price exactly as saved. A rate set with a
-// kwhMonthly / kwMonthly / gasMonthly array (a provider with no seasonal tariff) prices each month at its own rate.
+// kwhMonthly / kwMonthly / gasMonthly / gallonMonthly array (a provider with no seasonal tariff) prices each month at its own rate.
 function measureRateAt(rates, mo) {
   rates = rates || {};
   const r = (k) => parseFloat(rates[k]) || 0;
@@ -701,7 +758,7 @@ function measureRateAt(rates, mo) {
     kwh: monthly('kwhMonthly') || r(s ? 'kwhSummer' : 'kwhWinter'),
     kw: monthly('kwMonthly') || r(s ? 'kwSummer' : 'kwWinter'),
     gas: monthly('gasMonthly') || (gasSeasonal > 0 ? gasSeasonal : r('thermRate')),
-    propane: r('gallonRate'),
+    propane: monthly('gallonMonthly') || r('gallonRate'),
     summer: s,
   };
 }
@@ -746,12 +803,11 @@ function getProjMatrixSavingsTotal(projId) {
   const proj = projects.find((x) => String(x.id) === String(projId));
   if (!proj) return null;
   const sd = getProjSavingsData(proj.id);
-  if (followOwnerMeasureRates(proj.id, sd)) sset('en_projects', projects);
   const sel = ((sd && sd.measures) || []).filter((m) => m.selected !== false);
   if (!sel.length) return null;
   let total = 0;
   sel.forEach((m) => {
-    total += calcMeasureDollars(m, m.rates || (sd.blRates || {})[m.bldgId] || {}).total;
+    total += calcMeasureDollars(m, measureRatesNow(proj.id, m, (sd.blRates || {})[m.bldgId])).total;
   });
   return total > 0 ? total : null;
 }

@@ -459,8 +459,7 @@ function seasonDaysOfPeriod(provider, start, end, incl) {
   if (!s || !e || s > e) return null;
   var out = { summer: 0, winter: 0, total: 0 };
   var cur = new Date(s);
-  var n = 0;
-  while ((incl === false ? cur < e : cur <= e) && n++ < 400) {
+  while (incl === false ? cur < e : cur <= e) {
     var iso = cur.getFullYear() + '-' + String(cur.getMonth() + 1).padStart(2, '0') + '-' + String(cur.getDate()).padStart(2, '0');
     out[seasonOfDate(provider, iso)]++;
     out.total++;
@@ -868,10 +867,9 @@ function _billSeasonRates(bill, kind, days, provider) {
                                 // thermRate, bucketed by season (0 when a
                                 // season has no gas bills)
        kwhMonthly, kwMonthly,  // [12] $ per unit by calendar month, only for a provider with no
-       gasMonthly,             // seasonal tariff (gas): that month's baseline mean, else the annual
-                                // mean. [] when the provider has seasons.
-       gallonRate,             // $/Gallon, propane — flat mean, no seasonal
-                                // tariff for propane
+       gasMonthly,             // seasonal tariff (gas, propane, a blank provider name): that month's
+       gallonMonthly,          // baseline mean, else the annual mean. [] when the provider has seasons.
+       gallonRate,             // $/Gallon, propane — flat mean (gallonMonthly is the month-by-month rate)
        months: {                // which bill months fed each bucket, for the
          kwhSummer: [...ym],    // "which bill months it came from" label
          kwhWinter: [...ym],    // every surface must show (plan step 3)
@@ -897,6 +895,7 @@ function computeSeasonalBldgRates(projId, bldgId) {
     kwhMonthly: [],
     kwMonthly: [],
     gasMonthly: [],
+    gallonMonthly: [],
     months: { kwhSummer: [], kwhWinter: [], kwSummer: [], kwWinter: [], gas: [], propane: [] },
   };
   var b = typeof getUDBldg === 'function' ? getUDBldg(projId, bldgId) : null;
@@ -999,20 +998,28 @@ function computeSeasonalBldgRates(projId, bldgId) {
       .filter(Boolean);
   }
 
-  // Provider with no seasonal tariff: the rate of each CALENDAR month = the mean of the baseline bills
-  // in that month (the monthly cost of gas is captured); a month with no baseline bill takes the annual mean.
+  // A provider with no seasonal tariff (gas, propane, or a blank / other provider name): the rate of each
+  // CALENDAR month = the mean of the baseline bills in that month (the monthly cost is captured, no season is
+  // invented); a month with no baseline bill takes the annual mean. When a building mixes such a meter with a
+  // seasonal-tariff meter, the seasonal meter's bills count in the months of their own season (the array wins
+  // over the flat summer / winter rates in measureRateAt, so it must carry both).
   // [] when no row is of such a provider (the seasonal summer / winter rates price instead).
   function monthlyMeans(rows, digits) {
-    var flat = rows.filter(function (r) {
-      return r.season === 'none';
-    });
-    if (!flat.length) return [];
-    var annual = mean(flat);
+    if (
+      !rows.some(function (r) {
+        return r.season === 'none';
+      })
+    )
+      return [];
+    var annual = mean(rows);
     var scale = Math.pow(10, digits);
     var arr = [];
     for (var mo = 1; mo <= 12; mo++) {
-      var inMo = flat.filter(function (r) {
-        return parseInt(String(r.ym || '').split('-')[1], 10) === mo;
+      var moSeason = seasonOfMonth(SEASON_DEFAULT_PROVIDER, mo - 1);
+      var inMo = rows.filter(function (r) {
+        return (
+          parseInt(String(r.ym || '').split('-')[1], 10) === mo && (r.season === 'none' || r.season === moSeason)
+        );
       });
       arr.push(Math.round((inMo.length ? mean(inMo) : annual) * scale) / scale);
     }
@@ -1063,6 +1070,7 @@ function computeSeasonalBldgRates(projId, bldgId) {
       return getStoredRate(bill, 'propane');
     });
     out.gallonRate = Math.round(mean(propaneRows) * 1000) / 1000;
+    out.gallonMonthly = monthlyMeans(propaneRows, 3);
     out.months.propane = yms(propaneRows);
   }
 

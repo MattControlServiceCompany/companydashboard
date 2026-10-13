@@ -30,10 +30,7 @@ for (const rel of ['lib/date-helpers.js', 'lib/formatting.js', 'computations/rat
 }
 const P = S.SEASON_UTILITY; // the one utility name the season table tests
 const es = fs.readFileSync(path.join(REPO, 'app/energy-savings.js'), 'utf8');
-vm.runInContext(
-  es.slice(es.indexOf('function measureRateAt'), es.indexOf('// calcMeasureDollars(m, rates, opts)')),
-  S,
-);
+vm.runInContext(es.slice(es.indexOf('function measureRateAt'), es.indexOf('// calcMeasureDollars(m, rates, opts)')), S);
 
 console.log('1. the table');
 assert(S.seasonOfDate(P, '2025-05-31') === 'winter', 'May 31 winter');
@@ -41,7 +38,10 @@ assert(S.seasonOfDate(P, '2025-06-01') === 'summer', 'Jun 1 summer');
 assert(S.seasonOfDate(P + ' Missouri West', '2025-09-30') === 'summer', 'Sep 30 summer (MO West)');
 assert(S.seasonOfDate(P + ' Kansas Central', '2025-10-01') === 'winter', 'Oct 1 winter');
 assert(S.seasonOfDate('Kansas Gas Service', '2025-07-01') === 'none', 'gas provider has no season');
-assert([4, 5, 8, 9].map((i) => S.seasonOfMonth(P, i)).join() === 'winter,summer,summer,winter', 'month indexes May, Jun, Sep, Oct');
+assert(
+  [4, 5, 8, 9].map((i) => S.seasonOfMonth(P, i)).join() === 'winter,summer,summer,winter',
+  'month indexes May, Jun, Sep, Oct',
+);
 const d = S.seasonDaysOfPeriod(P, '2025-05-29', '2025-06-29', true);
 assert(d.winter === 3 && d.summer === 29 && d.total === 32, 'May 29 - Jun 29 inclusive = 3 winter + 29 summer');
 const dx = S.seasonDaysOfPeriod(P, '2025-05-29', '2025-06-29', false);
@@ -84,14 +84,22 @@ const dayShare = S.seasonDaysOfPeriod(P, '2025-05-29', '2025-06-29', true);
 const sS = dayShare.summer / dayShare.total;
 const withLines = elecBill('2025-05-29', '2025-06-29', true);
 const sp = S._billSeasonRates(withLines, 'kwh', dayShare, P);
-assert(sp && near(sp.summer, 0.1 + 0.02, 1e-9) && near(sp.winter, 0.04 + 0.02, 1e-9), 'kWh: season rate = printed line rate + ECA');
+assert(
+  sp && near(sp.summer, 0.1 + 0.02, 1e-9) && near(sp.winter, 0.04 + 0.02, 1e-9),
+  'kWh: season rate = printed line rate + ECA',
+);
 const spk = S._billSeasonRates(withLines, 'kw', dayShare, P);
-assert(spk && near(spk.summer, 10 + 2, 1e-9) && near(spk.winter, 5 + 2, 1e-9), 'kW: season line rate + other demand charges per kW');
+assert(
+  spk && near(spk.summer, 10 + 2, 1e-9) && near(spk.winter, 5 + 2, 1e-9),
+  'kW: season line rate + other demand charges per kW',
+);
 const bad = elecBill('2025-05-29', '2025-06-29', true);
 bad._chargeParts.BilledKWCharge[0].charge = 100; // quantity split no longer matches the day split
 assert(S._billSeasonRates(bad, 'kw', dayShare, P) === null, 'kW split that disagrees with the days is not used');
-assert(S._billSeasonRates(elecBill('2025-05-29', '2025-06-29', false), 'kwh', dayShare, P) === null, 'no _chargeParts: null');
-
+assert(
+  S._billSeasonRates(elecBill('2025-05-29', '2025-06-29', false), 'kwh', dayShare, P) === null,
+  'no _chargeParts: null',
+);
 
 // Evidence for which line is summer: the printed date range, else the quantities. Never the higher rate.
 const swapped = elecBill('2025-05-29', '2025-06-29', true); // summer line is the LOWER rate (a rate guess would be wrong)
@@ -105,7 +113,10 @@ ep.BilledKWCharge = [
 ];
 swapped.kwCost = String(400 * sS + 900 * (1 - sS) + 200);
 const sw = S._billSeasonRates(swapped, 'kw', dayShare, P);
-assert(sw && sw.how === 'qty' && near(sw.summer, 4 + 2, 1e-9) && near(sw.winter, 9 + 2, 1e-9), 'kW: summer line with the lower rate is still summer (quantities)');
+assert(
+  sw && sw.how === 'qty' && near(sw.summer, 4 + 2, 1e-9) && near(sw.winter, 9 + 2, 1e-9),
+  'kW: summer line with the lower rate is still summer (quantities)',
+);
 const lbl = elecBill('2025-05-29', '2025-06-29', true);
 const lk = lbl._chargeParts.BilledKWCharge; // line 1 = the rate 10 line with the summer share of the kW
 [lk[0].from, lk[0].to, lk[1].from, lk[1].to] = ['2025-06-01', '2025-06-29', '2025-05-29', '2025-05-31'];
@@ -114,10 +125,16 @@ assert(lb && lb.how === 'label' && near(lb.summer, 12, 1e-9), 'kW: printed date 
 const lblBad = elecBill('2025-05-29', '2025-06-29', true);
 const lq = lblBad._chargeParts.BilledKWCharge; // labels say line 1 is winter, but its quantity is the summer share
 [lq[0].from, lq[0].to, lq[1].from, lq[1].to] = ['2025-05-29', '2025-05-31', '2025-06-01', '2025-06-29'];
-assert(S._billSeasonRates(lblBad, 'kw', dayShare, P) === null, 'a label that disagrees with the quantity split is not used');
+assert(
+  S._billSeasonRates(lblBad, 'kw', dayShare, P) === null,
+  'a label that disagrees with the quantity split is not used',
+);
 const half = S.seasonDaysOfPeriod(P, '2025-05-17', '2025-06-15', true); // 15 winter + 15 summer
 const hb = elecBill('2025-05-17', '2025-06-15', true);
-assert(S._billSeasonRates(hb, 'kw', half, P) === null, 'a 50/50 day split cannot tell the lines apart: prorate by days');
+assert(
+  S._billSeasonRates(hb, 'kw', half, P) === null,
+  'a 50/50 day split cannot tell the lines apart: prorate by days',
+);
 
 function building(provider, bills) {
   const meter = { id: 'm1', commodity: 'Electric', provider, inclusive: true, bills, baseline: { months: ['x'] } };
@@ -135,12 +152,21 @@ function run(bld, gasBld) {
 const wholeS = elecBill('2025-07-01', '2025-07-31', false);
 const wholeW = elecBill('2025-01-01', '2025-01-31', false);
 const r = run(building(P, [wholeW, wholeS, withLines]));
-assert(r.straddle.kwh.bills === 1 && r.straddle.kwh.qty === 1 && r.straddle.kwh.days === 0, 'straddle count kWh (1 by quantities)');
-assert(r.straddle.kw.bills === 1 && r.straddle.kw.qty === 1 && r.straddle.kw.label === 0, 'straddle count kW (1 by quantities)');
+assert(
+  r.straddle.kwh.bills === 1 && r.straddle.kwh.qty === 1 && r.straddle.kwh.days === 0,
+  'straddle count kWh (1 by quantities)',
+);
+assert(
+  r.straddle.kw.bills === 1 && r.straddle.kw.qty === 1 && r.straddle.kw.label === 0,
+  'straddle count kW (1 by quantities)',
+);
 assert(r.kwhSummer > 0 && r.kwhWinter > 0, 'summer and winter rates exist');
 const noLines = elecBill('2025-05-29', '2025-06-29', false);
 const r2 = run(building(P, [noLines]));
-assert(r2.straddle.kwh.days === 1 && r2.straddle.kw.days === 1 && r2.kwhSummer > 0 && near(r2.kwhSummer, r2.kwhWinter, 1e-9), 'no lines: one blended rate in both seasons');
+assert(
+  r2.straddle.kwh.days === 1 && r2.straddle.kw.days === 1 && r2.kwhSummer > 0 && near(r2.kwhSummer, r2.kwhWinter, 1e-9),
+  'no lines: one blended rate in both seasons',
+);
 assert(r.kwhSummer > r.kwhWinter, 'summer energy rate is above winter');
 
 console.log('3. provider with no seasonal tariff');
@@ -156,18 +182,98 @@ const gasMeter = {
   baseline: { months: ['x'] },
 };
 const rg = run({ meters: [gasMeter] });
-assert(near(rg.thermRate, 0.6, 1e-3) && near(rg.gasSummer, 0.6, 1e-3) && near(rg.gasWinter, 0.6, 1e-3), 'gas: summer = winter = annual mean');
-assert(rg.gasMonthly.length === 12 && near(rg.gasMonthly[0], 0.8, 1e-9) && near(rg.gasMonthly[6], 0.4, 1e-9), 'gas: January 0.80, July 0.40');
+assert(
+  near(rg.thermRate, 0.6, 1e-3) && near(rg.gasSummer, 0.6, 1e-3) && near(rg.gasWinter, 0.6, 1e-3),
+  'gas: summer = winter = annual mean',
+);
+assert(
+  rg.gasMonthly.length === 12 && near(rg.gasMonthly[0], 0.8, 1e-9) && near(rg.gasMonthly[6], 0.4, 1e-9),
+  'gas: January 0.80, July 0.40',
+);
 assert(near(rg.gasMonthly[3], 0.6, 1e-9), 'gas: a month with no baseline bill takes the annual mean');
 assert(r.gasMonthly.length === 0 && r.kwhMonthly.length === 0, 'seasonal utility: no monthly arrays');
 
 console.log('4. measureRateAt');
 const rt = (rates, mo) => S.measureRateAt(rates, mo);
-assert(rt({ kwhSummer: 0.1, kwhWinter: 0.05 }, 5).kwh === 0.1 && rt({ kwhSummer: 0.1, kwhWinter: 0.05 }, 4).kwh === 0.05, 'June summer, May winter');
-assert(rt({ kwhSummer: 0.1, kwhWinter: 0.05 }, 8).summer && !rt({ kwhSummer: 0.1, kwhWinter: 0.05 }, 9).summer, 'Sep summer, Oct winter');
+assert(
+  rt({ kwhSummer: 0.1, kwhWinter: 0.05 }, 5).kwh === 0.1 && rt({ kwhSummer: 0.1, kwhWinter: 0.05 }, 4).kwh === 0.05,
+  'June summer, May winter',
+);
+assert(
+  rt({ kwhSummer: 0.1, kwhWinter: 0.05 }, 8).summer && !rt({ kwhSummer: 0.1, kwhWinter: 0.05 }, 9).summer,
+  'Sep summer, Oct winter',
+);
 const mr = { gasSummer: 0.6, gasWinter: 0.6, gasMonthly: rg.gasMonthly };
 assert(near(rt(mr, 0).gas, 0.8) && near(rt(mr, 6).gas, 0.4), 'gas priced at its own month');
 assert(near(rt({ gasSummer: 0.3, gasWinter: 0.5 }, 0).gas, 0.5), 'no monthly array: seasonal rate');
+
+console.log('5. propane, blank provider, mixed building, long bill');
+const propMeter = {
+  id: 'p1',
+  commodity: 'Propane',
+  provider: 'Synthetic Propane Supplier',
+  inclusive: true,
+  bills: [
+    { start: '2025-01-05', end: '2025-01-05', gallonsDelivered: '100', totalCost: '180' },
+    { start: '2025-07-05', end: '2025-07-05', gallonsDelivered: '100', totalCost: '160' },
+  ],
+  baseline: { months: ['x'] },
+};
+const rp = run({ meters: [propMeter] });
+assert(near(rp.gallonRate, 1.7, 1e-3), 'propane: flat rate is the annual mean');
+assert(
+  rp.gallonMonthly.length === 12 && near(rp.gallonMonthly[0], 1.8, 1e-9) && near(rp.gallonMonthly[6], 1.6, 1e-9),
+  'propane: January 1.80, July 1.60',
+);
+assert(near(rp.gallonMonthly[3], 1.7, 1e-9), 'propane: a month with no baseline bill takes the annual mean');
+assert(
+  near(rt({ gallonRate: 1.7, gallonMonthly: rp.gallonMonthly }, 0).propane, 1.8),
+  'propane priced at its own month',
+);
+assert(near(rt({ gallonRate: 1.7 }, 0).propane, 1.7), 'no propane array: the flat rate');
+
+// A blank provider name has no seasonal tariff: each calendar month takes its own baseline rate, no invented seasons.
+const blank = building('', [wholeW, wholeS]);
+const rb = run(blank);
+assert(rb.kwhMonthly.length === 12 && rb.kwMonthly.length === 12, 'blank provider: month-by-month rates');
+assert(near(rb.kwhSummer, rb.kwhWinter, 1e-9), 'blank provider: summer = winter = annual mean (no season)');
+assert(rb.kwhMonthly[0] !== rb.kwhMonthly[6], 'blank provider: January and July carry their own rates');
+
+// Mixed building: a seasonal meter plus a no-season electric meter. The month array must carry the seasonal meter too.
+const mixed = {
+  meters: [
+    {
+      id: 'e1',
+      commodity: 'Electric',
+      provider: P,
+      inclusive: true,
+      bills: [wholeS, wholeW],
+      baseline: { months: ['x'] },
+    },
+    {
+      id: 'e2',
+      commodity: 'Electric',
+      provider: '',
+      inclusive: true,
+      bills: [wholeS, wholeW],
+      baseline: { months: ['x'] },
+    },
+  ],
+};
+const rm = run(mixed);
+assert(rm.kwhMonthly.length === 12, 'mixed building: month array exists');
+const onlySeasonal = run(building(P, [wholeS, wholeW]));
+assert(
+  near(rm.kwhMonthly[6], onlySeasonal.kwhSummer, 1e-4) && near(rm.kwhMonthly[0], onlySeasonal.kwhWinter, 1e-4),
+  'mixed building: month array carries the seasonal meter season rates (same data on both meters)',
+);
+
+// A bill of any length is split by day (no 400 day stop).
+const longD = S.seasonDaysOfPeriod(P, '2023-01-01', '2025-12-31', true);
+assert(
+  longD.total === 1096 && longD.summer === 122 * 3 && longD.winter === 1096 - 122 * 3,
+  'a 3 year period is counted in full: ' + JSON.stringify(longD),
+);
 
 console.log(failed ? 'FAIL ' + failed + ' (passed ' + passed + ')' : 'PASS ' + passed);
 process.exit(failed ? 1 : 0);
