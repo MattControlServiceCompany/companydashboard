@@ -2506,6 +2506,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.12.112', date: '2026-10-12', title: 'Sync conflict dialog: Keep theirs saves your version',
+    items: [
+      { type: 'fix', text: 'Sync conflict dialog: when you choose Keep theirs, your own version is now saved in the conflict history (Sync status, Conflict history).' }
+    ]
+  },
   { v: 'v2026.10.12.111', date: '2026-10-12', title: 'Backup & Restore: safer restores',
     items: [
       { type: 'fix', text: 'Backup & Restore: added checks that keep every field of a record when you restore a backup.' }
