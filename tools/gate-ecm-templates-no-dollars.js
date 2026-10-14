@@ -42,7 +42,7 @@ function check(files) {
         'a template prices (ecmPrice / calcMeasureDollars); the matrix prices',
       ],
       [/_dollar\b/, 'a template has a dollar value (*_dollar); the matrix prices'],
-      [/payback/i, 'a template computes a payback (comes in phase 7, from one owner)'],
+      [/payback/i, 'a template computes a payback (the only payback is simplePayback, computations/cost-lines.js)'],
       [/\bid:\s*'[a-z_]*_(?:rate|cost)'/, 'a template has a rate or cost input'],
       [/\binp\.[a-z_]*_(?:rate|cost)\b/, 'a template reads a rate or cost input'],
       [/\/\s*12\b(?!\d)/, 'a template divides by 12 (months come from getEndUse, not quantity / 12)'],

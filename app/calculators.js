@@ -3206,9 +3206,8 @@ function openSolarCalc(projId) {
             <div class="card" style="margin-bottom:16px">
               <div class="card-hdr"><span class="card-title">System Configuration</span></div>
               <div style="padding:16px">
-                <div class="f2"><div class="fg"><label class="fl">Total Array Size (kW DC)</label><input class="fi sc-inp" id="sc-arrayKw" type="number" value="${sv.arrayKw || arrays.reduce((a, ar) => a + (ar.kw || 0), 0) || 115}"></div>
-                  <div class="fg"><label class="fl">Array Cost ($/Watt)</label><input class="fi sc-inp" id="sc-costPerWatt" type="number" value="${sv.costPerWatt || 2.5}"></div></div>
-                <div class="f3"><div class="fg"><label class="fl">Tax Credit %</label><input class="fi sc-inp" id="sc-taxCredit" type="number" value="${sv.taxCredit || 30}"></div>
+                <div class="f2"><div class="fg"><label class="fl">Total Array Size (kW DC)</label><input class="fi sc-inp" id="sc-arrayKw" type="number" value="${sv.arrayKw || arrays.reduce((a, ar) => a + (ar.kw || 0), 0) || 115}"></div></div>
+                <div class="f3">
                   <div class="fg"><label class="fl">Net Metering Max kW</label><input class="fi sc-inp" id="sc-netMeterMax" type="number" value="${sv.netMeterMax || 150}"></div>
                   <div class="fg"><label class="fl">Savings % (pre-solar)</label><input class="fi sc-inp" id="sc-savingsPct" type="number" value="${sv.savingsPct || 0}" placeholder="0"><div class="fhint">BAS/other savings applied before solar (Section E)</div></div></div>
                 <div class="f2"><div class="fg"><label class="fl">Billing kW Override</label><input class="fi sc-inp" id="sc-billingKw" type="number" value="${sv.billingKw || ''}" placeholder="Auto from baseline"></div>
@@ -3671,8 +3670,6 @@ function solarSaveInputs(projId) {
   p.solarCalc = {
     ...(p.solarCalc || {}),
     arrayKw: gv('sc-arrayKw'),
-    costPerWatt: gv('sc-costPerWatt'),
-    taxCredit: gv('sc-taxCredit'),
     netMeterMax: gv('sc-netMeterMax'),
     billingKw: gv('sc-billingKw'),
     savingsPct: gv('sc-savingsPct'),
@@ -3735,9 +3732,7 @@ function _scDoCalc(projId) {
     return el ? parseFloat(el.value) || 0 : 0;
   };
   const MO = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
-  const arrayKw = gv('sc-arrayKw'),
-    costPerWatt = gv('sc-costPerWatt'),
-    taxCredit = gv('sc-taxCredit');
+  const arrayKw = gv('sc-arrayKw');
   const ffDec = gv('sc-franchiseFeeDecimal') || gv('sc-franchisePct') / 100;
   const savPct = gv('sc-savingsPct') / 100;
   const ecaThresh = gv('sc-ecaThreshold') || 18813.204;
@@ -4124,11 +4119,7 @@ function _scDoCalc(projId) {
     });
   }
   const nmTot = eA - fA,
-    btmTot = eA - gA,
-    best = Math.max(nmTot, btmTot);
-  const totCost = arrayKw * 1000 * costPerWatt,
-    costAT = totCost * (1 - taxCredit / 100);
-  const payback = best > 0 ? costAT / best : 0;
+    btmTot = eA - gA;
 
   // Formatters
   const fn = (n) => Math.round(n).toLocaleString();
@@ -4144,7 +4135,7 @@ function _scDoCalc(projId) {
     const noData = bKwh.every((k) => k === 0) && !manKw;
     const kpi = (lbl, val, col) =>
       `<div class="card" style="background:var(--s1);padding:10px 12px;text-align:center"><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">${lbl}</div><div style="font-size:17px;font-weight:800;font-family:var(--mono);color:var(--${col})">${val}</div></div>`;
-    sumEl.innerHTML = `${noData ? '<div style="background:var(--warn-dim);border:1px solid var(--warn);border-radius:8px;padding:8px 12px;font-size:12px;color:var(--warn);margin-bottom:12px">⚠️ No baseline data — populate Section A for accurate results.</div>' : ''}<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(115px,1fr));gap:8px">${kpi('Array', arrayKw + ' kW', 'accent')}${kpi('Production', fn(totProd) + ' kWh', 'em')}${kpi('Baseline $/yr', fd(dA), 'text')}${kpi('NM $/yr', fd(fA), 'teal')}${kpi('BTM $/yr', fd(gA), 'violet')}${kpi('NM Savings', fd(nmTot), 'green')}${kpi('BTM Savings', fd(btmTot), 'green')}${kpi('System Cost', fd(totCost), 'text')}${kpi('After Credit', fd(costAT), 'teal')}${kpi('Payback', payback.toFixed(1) + ' yrs', 'amber')}</div>`;
+    sumEl.innerHTML = `${noData ? '<div style="background:var(--warn-dim);border:1px solid var(--warn);border-radius:8px;padding:8px 12px;font-size:12px;color:var(--warn);margin-bottom:12px">⚠️ No baseline data — populate Section A for accurate results.</div>' : ''}<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(115px,1fr));gap:8px">${kpi('Array', arrayKw + ' kW', 'accent')}${kpi('Production', fn(totProd) + ' kWh', 'em')}${kpi('Baseline $/yr', fd(dA), 'text')}${kpi('NM $/yr', fd(fA), 'teal')}${kpi('BTM $/yr', fd(gA), 'violet')}${kpi('NM Savings', fd(nmTot), 'green')}${kpi('BTM Savings', fd(btmTot), 'green')}</div>`;
   }
 
   // Table builders — exact Excel match

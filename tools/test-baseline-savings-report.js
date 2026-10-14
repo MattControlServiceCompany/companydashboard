@@ -565,8 +565,8 @@ if (target) {
   // ─── 5. Payback null when the measure carries no implementation cost ───────────
   console.log('\n--- 5. Install cost / payback come from the measure (never rendered) ---');
   assert(
-    d.options.every((o) => o.installCost > 0 === (o.paybackYrs != null)),
-    'payback present only with an implementation cost',
+    d.options.every((o) => !('installCost' in o) && !('implCost' in o) && !('paybackYrs' in o)),
+    'report options carry no cost or payback field (the only payback is simplePayback, computations/cost-lines.js)',
   );
   assert(
     !html.includes('Install Cost') && !html.includes('Simple payback'),

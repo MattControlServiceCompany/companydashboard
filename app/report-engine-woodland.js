@@ -21,7 +21,7 @@
 //    emGetNormalizedPoints) as a dense per-zone table; documented one-sentence fallback when the
 //    project has no Equipment Matrix rows for the building.
 //  - Rates / install cost = the source savings measure's own m.rates (kwhSummer/kwhWinter,
-//    kwSummer/kwWinter, gasSummer/gasWinter with thermRate fallback) and m.implCost.
+//    kwSummer/kwWinter, gasSummer/gasWinter with thermRate fallback).
 //
 // Data sources (read-only, one source feeds all 4 surfaces):
 //  - Raw bills:       building.meters[].bills[]   (Electric + Gas meters)
@@ -827,8 +827,7 @@ function wdApplySetpointOptions(projId, bldgId, cfg) {
         bldgId: bldgId,
         notes: '',
         sqft: parseFloat(b.sqft) || 0,
-        implCost: 0,
-        incentive: 0,
+        costLines: [],
         rates: {},
         propane: Array(12).fill(0),
         totalDollar: 0,
@@ -1233,7 +1232,6 @@ function collectWoodlandReportData(projId, buildingId) {
           gasSummer: measureRateAt(measureRatesNow(p.id, m), 5).gas,
           gasWinter: measureRateAt(measureRatesNow(p.id, m), 0).gas,
         },
-        implCost: parseFloat(m.implCost) || 0, // the measure's OWN Implementation Cost field
       };
     })
     .sort(function (a, c) {
@@ -1262,11 +1260,6 @@ function collectWoodlandReportData(projId, buildingId) {
     o.annualElec$ = d.kwh;
     o.annualDem$ = d.kw;
     o.annualTotal$ = d.total;
-    o.installCost = o.implCost;
-    // Payback only when the measure carries an Implementation Cost — never invented. Kept on
-    // the record (implCost stays a measure field for other deal types) but NOT rendered by this
-    // report — see cfg.clientSharePct / clientShare$ / cscShare$ below.
-    o.paybackYrs = o.installCost > 0 && o.annualTotal$ > 0 ? _wdRoundHalfUp(o.installCost / o.annualTotal$, 2) : null;
     // Shared-savings split (the building's stored clientSharePct) — client share rounds to the
     // cent, CSC share is the remainder so the two always cross-foot to annualTotal$ exactly
     // (never two independent roundings). Null until the input is saved; the guard blocks the

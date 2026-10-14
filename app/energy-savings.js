@@ -92,7 +92,8 @@ function _setUDLayoutHeight(viewId) {
 }
 
 function getProjSavingsData(projId) {
-  const p = projects.find((x) => x.id === projId);
+  // The id comes as a number or as text (a data attribute, the Cost Estimate tab): match either.
+  const p = projects.find((x) => String(x.id) === String(projId));
   if (!p) return { measures: [], blRates: {} };
   if (!p.savingsData) p.savingsData = { measures: [], blRates: {} };
   return p.savingsData;
@@ -164,8 +165,7 @@ function addSavingsMeasure(projId) {
     desc: '',
     notes: '',
     sqft: firstBldg ? parseFloat(firstBldg.sqft) || 0 : 0,
-    implCost: 0,
-    incentive: 0,
+    costLines: [],
     kwh: Array(12).fill(0),
     kw: Array(12).fill(0),
     gas: Array(12).fill(0),
@@ -175,7 +175,6 @@ function addSavingsMeasure(projId) {
   initMeasureRates(m, projId, m.bldgId, 'add measure');
   sd.measures.push(m);
   sset('en_projects', projects);
-  renderSavingsMatrix(projId);
 }
 
 function removeSavingsMeasure(projId, msrId) {
@@ -185,286 +184,6 @@ function removeSavingsMeasure(projId, msrId) {
   if (!Array.isArray(sd._userDeletedIds)) sd._userDeletedIds = [];
   if (!sd._userDeletedIds.includes(msrId)) sd._userDeletedIds.push(msrId);
   sset('en_projects', projects);
-  renderSavingsMatrix(projId);
-}
-
-function renderSavingsMatrix(projId) {
-  const sd = getProjSavingsData(projId);
-  const bldgs = getUDBldgs(projId);
-  const tbody = document.getElementById('sv-matrix-body-' + projId);
-  if (!tbody) return;
-  // 2026-09-21 (SA-gate scope fix): estimated/projected measure-based $ display regardless of
-  // Service Agreement status — the SA gate applies only to actual/bill-based savings
-  // (getMeterSavings). See computations/savings.js getBldgMeasureSavingsByMo for the same rule.
-  const bldgOpts = bldgs.map((b) => `<option value="${b.id}">${_escHtml(b.name)}</option>`).join('');
-  if (!sd.measures.length) {
-    tbody.innerHTML = `<tr><td colspan="200" style="text-align:center;color:var(--text2);padding:18px;font-size:13px">
-            No measures yet — click "+ Add Measure" to start building your savings projection.
-          </td></tr>`;
-    renderSavingsFooter(projId, sd);
-    return;
-  }
-  // Auto-sync SQFT from current building data if measure has a building assigned
-  let _msrDataChanged = false;
-  sd.measures.forEach((m) => {
-    if (m.bldgId) {
-      const bldg = getUDBldg(projId, m.bldgId);
-      if (bldg) {
-        const bldgSqft = parseFloat(bldg.sqft) || 0;
-        if (bldgSqft > 0 && (m.sqft || 0) !== bldgSqft) {
-          m.sqft = bldgSqft;
-          _msrDataChanged = true;
-        }
-      }
-    }
-  });
-  if (_msrDataChanged) sset('en_projects', projects);
-
-  // ── Rate functions for cost calc ──
-
-  // ── Usage cells helper (12 monthly inputs + total) ──
-  const _usageCells = (arr, cls, grp, bgColor, pId, mId) => {
-    const isOpen = !!_svColGroupState[grp];
-    const vals = arr || Array(12).fill(0);
-    const total = vals.reduce((a, b) => a + (parseFloat(b) || 0), 0);
-    const moCells = vals
-      .map(
-        (v, i) =>
-          `<td class="sv-cg-${grp}" style="display:${isOpen ? '' : 'none'};border-left:${i === 0 ? '2px' : '1px'} solid var(--border${i === 0 ? '2' : ''});padding:2px 1px;background:${bgColor}"><input class="sv-num-inp ${cls}" type="number" step="any" value="${v || ''}" placeholder="0" style="width:54px" onchange="updateMsrVal('${pId}','${mId}','${cls.replace('-col', '')}',${i},this.value)" onfocusout="autoSaveMsr('${pId}')"></td>`,
-      )
-      .join('');
-    return (
-      moCells +
-      `<td style="border-left:1px solid var(--border);font-family:var(--mono);font-size:11px;font-weight:700;text-align:right;padding:4px 4px;white-space:nowrap">${total ? Math.round(total).toLocaleString() : ''}</td>`
-    );
-  };
-
-  // ── Cost cells helper (12 monthly read-only + total) ──
-  const _costCells = (arr, grp, bgColor, r, field) => {
-    const isOpen = !!_svColGroupState[grp];
-    const vals = arr || Array(12).fill(0);
-    let total = 0;
-    const moCells = vals
-      .map((v, i) => {
-        const cost = (parseFloat(v) || 0) * measureRateAt(r, i)[field];
-        total += cost;
-        return `<td class="sv-cg-${grp}" style="display:${isOpen ? '' : 'none'};border-left:${i === 0 ? '2px' : '1px'} solid var(--border${i === 0 ? '2' : ''});padding:2px 1px;background:${bgColor};font-family:var(--mono);font-size:10px;text-align:right;color:var(--text2)">${cost ? '$' + Math.round(cost).toLocaleString() : ''}</td>`;
-      })
-      .join('');
-    return (
-      moCells +
-      `<td style="border-left:1px solid var(--border);font-family:var(--mono);font-size:11px;font-weight:700;text-align:right;padding:4px 4px;white-space:nowrap">${total ? '$' + Math.round(total).toLocaleString() : ''}</td>`
-    );
-  };
-
-  // ── Rate cell helper ──
-  const _rateCell = (mId, field, step, r) =>
-    `<td><input class="sv-num-inp sv-rate-inp" type="number" step="${step}" value="${r[field] || ''}" placeholder="0" style="width:52px;font-size:10px" onchange="svUpdateMsrRate('${mId}','${field}',parseFloat(this.value)||0,this)" onfocusout="autoSaveMsr('${projId}')"></td>`;
-
-  tbody.innerHTML = sd.measures
-    .map((m) => {
-      const r = measureRatesNow(projId, m, {});
-      if (!m.propane) m.propane = Array(12).fill(0);
-      const annMsrKwh = m.kwh.reduce((a, b) => a + (parseFloat(b) || 0), 0);
-
-      // Compute projected savings $ for this measure (estimated — always shown, no SA gate)
-      const projSavings = calcMeasureDollars(m, r).total;
-      const _msrDollar = m.totalDollar || 0;
-
-      const dollarStr = projSavings > 0 ? '$' + Math.round(projSavings).toLocaleString() : '—';
-      return `<tr id="sv-msr-row-${projId}-${m.id}">
-            <td style="text-align:center;vertical-align:top;padding-top:6px"><span class="sv-detail-toggle" id="sv-dtog-${m.id}" onclick="svToggleDetail('${m.id}')">▶</span></td>
-            <td style="text-align:center"><input type="checkbox" class="sv-sel-cb" ${m.selected ? 'checked' : ''} onchange="updateMsrSel('${projId}','${m.id}',this.checked)"></td>
-            <td><input class="sv-msr-txt" style="width:44px;text-align:center" placeholder="#" value="${m.msrNum || ''}" onchange="updateMsrField('${projId}','${m.id}','msrNum',this.value)"></td>
-            <td><select class="sv-msr-sel" onchange="updateMsrField('${projId}','${m.id}','bldgId',this.value)">${bldgOpts.replace(`value="${m.bldgId}"`, `value="${m.bldgId}" selected`)}</select></td>
-            <td><input class="sv-num-inp sv-sqft-inp" type="number" style="width:68px" placeholder="0" value="${m.sqft || ''}" onchange="updateMsrField('${projId}','${m.id}','sqft',parseFloat(this.value)||0)"></td>
-            <td><input class="sv-msr-txt" style="width:100%;min-width:160px" placeholder="e.g. BAS Setpoint Optimization 74/70°F" value="${m.desc || ''}" onchange="updateMsrField('${projId}','${m.id}','desc',this.value)"></td>
-            ${_rateCell(m.id, 'kwhSummer', '0.0001', r)}${_rateCell(m.id, 'kwhWinter', '0.0001', r)}
-            ${_rateCell(m.id, 'kwSummer', '0.01', r)}${_rateCell(m.id, 'kwWinter', '0.01', r)}
-            ${_rateCell(m.id, 'thermRate', '0.001', r)}${_rateCell(m.id, 'gallonRate', '0.001', r)}
-            ${_usageCells(m.kwh, 'kwh-col', 'kwh', 'rgba(59,130,246,0.03)', projId, m.id)}
-            ${_usageCells(m.kw, 'kw-col', 'kw', 'rgba(245,158,11,0.03)', projId, m.id)}
-            ${_usageCells(m.gas, 'gas-col', 'gas', 'rgba(20,184,166,0.03)', projId, m.id)}
-            ${_usageCells(m.propane, 'propane-col', 'propane', 'rgba(168,85,247,0.03)', projId, m.id)}
-            ${_costCells(m.kwh, 'kwhCost', 'rgba(59,130,246,0.02)', r, 'kwh')}
-            ${_costCells(m.kw, 'kwCost', 'rgba(245,158,11,0.02)', r, 'kw')}
-            ${_costCells(m.gas, 'gasCost', 'rgba(20,184,166,0.02)', r, 'gas')}
-            ${_costCells(m.propane, 'propaneCost', 'rgba(168,85,247,0.02)', r, 'propane')}
-            <td class="sv-total-cell" style="border-left:2px solid var(--border2)" id="sv-msr-total-${projId}-${m.id}">${dollarStr}</td>
-            <td style="text-align:center"><button class="btn-del" onclick="removeSavingsMeasure(${projId},'${m.id}')">✕</button></td>
-          </tr>
-          <tr id="sv-detail-${m.id}" class="sv-detail-row" style="display:none">
-            <td colspan="200" style="padding:12px 16px">
-              <div class="sv-detail-grid">
-                <div>
-                  <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Utility Rates</div>
-                  <div class="sv-rate-group">
-                    <div class="sv-rate-field"><label>kWh $/Summer</label><input class="fi" type="number" step="0.0001" value="${r.kwhSummer || ''}" onchange="svUpdateMsrRate('${m.id}','kwhSummer',parseFloat(this.value)||0,this)"></div>
-                    <div class="sv-rate-field"><label>kWh $/Winter</label><input class="fi" type="number" step="0.0001" value="${r.kwhWinter || ''}" onchange="svUpdateMsrRate('${m.id}','kwhWinter',parseFloat(this.value)||0,this)"></div>
-                    <div class="sv-rate-field"><label>kW $/Summer</label><input class="fi" type="number" step="0.01" value="${r.kwSummer || ''}" onchange="svUpdateMsrRate('${m.id}','kwSummer',parseFloat(this.value)||0,this)"></div>
-                    <div class="sv-rate-field"><label>kW $/Winter</label><input class="fi" type="number" step="0.01" value="${r.kwWinter || ''}" onchange="svUpdateMsrRate('${m.id}','kwWinter',parseFloat(this.value)||0,this)"></div>
-                    <div class="sv-rate-field"><label>Gas $/Therm</label><input class="fi" type="number" step="0.001" value="${r.thermRate || ''}" onchange="svUpdateMsrRate('${m.id}','thermRate',parseFloat(this.value)||0,this)"></div>
-                    <div class="sv-rate-field"><label>Gas $/Therm — Summer (Jun–Sep)</label><input class="fi" type="number" step="0.001" value="${r.gasSummer || ''}" placeholder="uses Gas $/Therm" onchange="svUpdateMsrRate('${m.id}','gasSummer',parseFloat(this.value)||0,this)"></div>
-                    <div class="sv-rate-field"><label>Gas $/Therm — Winter (Oct–May)</label><input class="fi" type="number" step="0.001" value="${r.gasWinter || ''}" placeholder="uses Gas $/Therm" onchange="svUpdateMsrRate('${m.id}','gasWinter',parseFloat(this.value)||0,this)"></div>
-                    <div class="sv-rate-field"><label>Propane $/Gallon</label><input class="fi" type="number" step="0.001" value="${r.gallonRate || ''}" onchange="svUpdateMsrRate('${m.id}','gallonRate',parseFloat(this.value)||0,this)"></div>
-                  </div>
-                  <button class="btn btn-ghost btn-sm" style="margin-top:8px;font-size:11px" onclick="svResetMsrRates('${m.id}')">Reset to Building Defaults</button>
-                </div>
-                <div>
-                  <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Financials</div>
-                  <div class="sv-rate-group">
-                    <div class="sv-rate-field"><label>Implementation Cost</label><input class="fi" type="number" step="1" value="${m.implCost || ''}" placeholder="$0" onchange="updateMsrField('${projId}','${m.id}','implCost',parseFloat(this.value)||0)"></div>
-                    <div class="sv-rate-field"><label>Incentive / Rebate</label><input class="fi" type="number" step="1" value="${m.incentive || ''}" placeholder="$0" onchange="updateMsrField('${projId}','${m.id}','incentive',parseFloat(this.value)||0)"></div>
-                  </div>
-                  <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">
-                    <div>Net Cost: <span class="sv-intensity" style="color:var(--text);font-weight:700">${(m.implCost || 0) - (m.incentive || 0) > 0 ? '$' + Math.round((m.implCost || 0) - (m.incentive || 0)).toLocaleString() : '—'}</span></div>
-                    <div>Simple Payback: <span class="sv-intensity" style="color:var(--accent);font-weight:700">${_msrDollar > 0 && (m.implCost || 0) > 0 ? (((m.implCost || 0) - (m.incentive || 0)) / _msrDollar).toFixed(1) + ' yrs' : '—'}</span></div>
-                  </div>
-                </div>
-                <div>
-                  <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Intensity Metrics</div>
-                  <div style="display:flex;flex-direction:column;gap:6px">
-                    <div>Sq Ft: <span class="sv-intensity" style="color:var(--text)">${m.sqft ? Number(m.sqft).toLocaleString() : '—'}</span></div>
-                    <div>kWh/sf saved: <span class="sv-intensity" style="color:var(--accent)">${m.sqft > 0 && annMsrKwh > 0 ? (annMsrKwh / m.sqft).toFixed(1) : '—'}</span></div>
-                    <div>$/sf saved: <span class="sv-intensity" style="color:var(--green)">${m.sqft > 0 && _msrDollar > 0 ? '$' + (_msrDollar / m.sqft).toFixed(2) : '—'}</span></div>
-                  </div>
-                </div>
-              </div>
-              <div style="margin-top:10px">
-                <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Notes</div>
-                <textarea class="fi" style="width:100%;min-height:48px;resize:vertical;font-size:12px" placeholder="Measure notes..." onchange="updateMsrField('${projId}','${m.id}','notes',this.value)">${m.notes || ''}</textarea>
-              </div>
-            </td>
-          </tr>`;
-    })
-    .join('');
-  renderSavingsFooter(projId, sd);
-}
-
-function renderSavingsFooter(projId, sd) {
-  const tfoot = document.getElementById('sv-matrix-foot-' + projId);
-  if (!tfoot) return;
-  // 2026-09-21 (SA-gate scope fix): estimated $ totals always sum — no SA gate on measure-based savings.
-  const selMsrs = sd.measures.filter((m) => m.selected !== false);
-  const totKwh = Array(12).fill(0),
-    totKw = Array(12).fill(0),
-    totGas = Array(12).fill(0),
-    totPropane = Array(12).fill(0);
-  let grandTotal = 0,
-    totSqft = 0,
-    totKwhCost = 0,
-    totKwCost = 0,
-    totGasCost = 0,
-    totPropaneCost = 0;
-  selMsrs.forEach((m) => {
-    totSqft += parseFloat(m.sqft) || 0;
-    m.kwh.forEach((v, i) => (totKwh[i] += parseFloat(v) || 0));
-    m.kw.forEach((v, i) => (totKw[i] += parseFloat(v) || 0));
-    m.gas.forEach((v, i) => (totGas[i] += parseFloat(v) || 0));
-    (m.propane || []).forEach((v, i) => (totPropane[i] += parseFloat(v) || 0));
-    const d = calcMeasureDollars(m, measureRatesNow(projId, m, (sd.blRates || {})[m.bldgId]));
-    grandTotal += d.total;
-    totKwhCost += d.kwh;
-    totKwCost += d.kw;
-    totGasCost += d.gas;
-    totPropaneCost += d.propane;
-  });
-  const fmtN = (v) => (v ? v.toLocaleString(undefined, { maximumFractionDigits: 0 }) : '');
-  const fmtD = (v) => (v > 0 ? '$' + Math.round(v).toLocaleString() : '');
-  // Footer usage cells (collapsible months + total)
-  const _footUsage = (totArr, grp, color) => {
-    const isOpen = !!_svColGroupState[grp];
-    const annTotal = totArr.reduce((a, b) => a + b, 0);
-    return (
-      totArr
-        .map(
-          (v, i) =>
-            `<td class="sv-cg-${grp}" style="display:${isOpen ? '' : 'none'};border-left:${i === 0 ? '2px' : '1px'} solid var(--border${i === 0 ? '2' : ''});font-family:var(--mono);font-size:11px;font-weight:700;color:${color};text-align:right;padding:5px 3px">${fmtN(v)}</td>`,
-        )
-        .join('') +
-      `<td style="border-left:1px solid var(--border);font-family:var(--mono);font-size:11px;font-weight:700;color:${color};text-align:right;padding:5px 3px">${fmtN(annTotal)}</td>`
-    );
-  };
-  const _footCost = (grp, totCost) => {
-    const isOpen = !!_svColGroupState[grp];
-    return (
-      Array(12)
-        .fill(0)
-        .map(
-          (_, i) =>
-            `<td class="sv-cg-${grp}" style="display:${isOpen ? '' : 'none'};border-left:${i === 0 ? '2px' : '1px'} solid var(--border${i === 0 ? '2' : ''});padding:5px 3px"></td>`,
-        )
-        .join('') +
-      `<td style="border-left:1px solid var(--border);font-family:var(--mono);font-size:11px;font-weight:700;text-align:right;padding:5px 3px;color:var(--green)">${fmtD(totCost)}</td>`
-    );
-  };
-  tfoot.innerHTML = `<tr class="sv-foot-row">
-          <td></td><td></td><td></td>
-          <td style="font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text2)">SELECTED TOTALS</td>
-          <td style="font-family:var(--mono);font-size:11px;font-weight:700;text-align:right;padding:5px 4px">${totSqft ? totSqft.toLocaleString(undefined, { maximumFractionDigits: 0 }) : ''}</td>
-          <td colspan="7"></td>
-          ${_footUsage(totKwh, 'kwh', 'var(--accent)')}
-          ${_footUsage(totKw, 'kw', 'var(--amber)')}
-          ${_footUsage(totGas, 'gas', 'var(--teal)')}
-          ${_footUsage(totPropane, 'propane', 'var(--purple,#a855f7)')}
-          ${_footCost('kwhCost', totKwhCost)}${_footCost('kwCost', totKwCost)}${_footCost('gasCost', totGasCost)}${_footCost('propaneCost', totPropaneCost)}
-          <td class="sv-total-cell sv-foot-total" style="border-left:2px solid var(--border2)">${grandTotal > 0 ? '$' + Math.round(grandTotal).toLocaleString() : '—'}</td>
-          <td></td>
-        </tr>`;
-  renderSavingsSummary(projId, sd, totKwh, totKw, totGas, totPropane, grandTotal);
-  // Keep the compact header banner in sync with the computed grand total
-  if (typeof _updateCompactHdrSavings === 'function') _updateCompactHdrSavings(projId);
-}
-
-function renderSavingsSummary(projId, sd, totKwh, totKw, totGas, totPropane, grandTotal) {
-  const el = document.getElementById('sv-summary-' + projId);
-  if (!el) return;
-  // 2026-09-21 (SA-gate scope fix): Projected Savings $ is estimated/measure-based — always shown.
-  const annKwh = totKwh.reduce((a, b) => a + b, 0);
-  const annKwAvg = totKw.reduce((a, b) => a + b, 0) / 12;
-  const annGas = totGas.reduce((a, b) => a + b, 0);
-  const annPropane = (totPropane || []).reduce((a, b) => a + b, 0);
-  const selCount = (sd.measures || []).filter((m) => m.selected !== false).length;
-  if (!selCount) {
-    el.innerHTML = '';
-    return;
-  }
-  const selMsrs = (sd.measures || []).filter((m) => m.selected !== false);
-  const totImpl = selMsrs.reduce((s, m) => s + (parseFloat(m.implCost) || 0), 0);
-  const totIncent = selMsrs.reduce((s, m) => s + (parseFloat(m.incentive) || 0), 0);
-  const netCost = totImpl - totIncent;
-  const payback = grandTotal > 0 && netCost > 0 ? (netCost / grandTotal).toFixed(1) : null;
-  // Compute quarterly savings totals (Q1=Jan-Mar, Q2=Apr-Jun, Q3=Jul-Sep, Q4=Oct-Dec)
-  const qtrs = [0, 0, 0, 0];
-  selMsrs.forEach((m) => {
-    calcMeasureDollars(m, measureRatesNow(projId, m, {})).monthly.forEach((d, mo) => (qtrs[Math.floor(mo / 3)] += d.total));
-  });
-  const qtrLabels = ['Q1 (Jan–Mar)', 'Q2 (Apr–Jun)', 'Q3 (Jul–Sep)', 'Q4 (Oct–Dec)'];
-  const qtrHtml =
-    grandTotal > 0
-      ? qtrLabels
-          .map(
-            (lbl, i) =>
-              `<div class="bl-qtr-item"><span class="bl-qtr-lbl">${lbl}</span><span class="bl-qtr-val">${qtrs[i] > 0 ? '$' + Math.round(qtrs[i]).toLocaleString() : '—'}</span></div>`,
-          )
-          .join('')
-      : '';
-  el.innerHTML = `<div class="bl-result" style="margin-top:0">
-          <div class="bl-title">💡 Selected Measures Summary (${selCount} measure${selCount !== 1 ? 's' : ''})</div>
-          <div class="bl-grid">
-            <div class="bl-item"><div class="bl-lbl">Annual kWh Savings</div><div class="bl-val" style="color:var(--accent)">${Math.round(annKwh).toLocaleString()}<span class="bl-unit"> kWh/yr</span></div></div>
-            <div class="bl-item"><div class="bl-lbl">Avg kW Reduction</div><div class="bl-val" style="color:var(--amber)">${annKwAvg.toFixed(1)}<span class="bl-unit"> kW avg</span></div></div>
-            <div class="bl-item"><div class="bl-lbl">Annual Gas Savings</div><div class="bl-val" style="color:var(--teal)">${Math.round(annGas).toLocaleString()}<span class="bl-unit"> Therms/yr</span></div></div>
-            <div class="bl-item"><div class="bl-lbl">Annual Propane Savings</div><div class="bl-val" style="color:var(--purple,#a855f7)">${Math.round(annPropane).toLocaleString()}<span class="bl-unit"> Gal/yr</span></div></div>
-            <div class="bl-item" style="grid-column:1/-1">
-              <div class="bl-lbl">Projected Savings $</div>
-              <div class="bl-val" style="color:var(--green)">${grandTotal > 0 ? '$' + Math.round(grandTotal).toLocaleString() : '—'}</div>
-              ${qtrHtml ? `<div class="bl-qtrs">${qtrHtml}</div>` : ''}
-            </div>
-            ${totImpl > 0 ? `<div class="bl-item"><div class="bl-lbl">Total Impl. Cost</div><div class="bl-val" style="color:var(--text)">$${Math.round(netCost).toLocaleString()}<span class="bl-unit">${totIncent > 0 ? ' (net of $' + Math.round(totIncent).toLocaleString() + ' incentive)' : ''}</span></div></div>` : ''}
-            ${payback ? `<div class="bl-item"><div class="bl-lbl">Simple Payback</div><div class="bl-val" style="color:var(--accent)">${payback}<span class="bl-unit"> years</span></div></div>` : ''}
-          </div>
-        </div>`;
 }
 
 function updateMsrVal(projId, msrId, type, moIdx, val) {
@@ -499,7 +218,6 @@ function updateMsrSel(projId, msrId, checked) {
   if (!m) return;
   m.selected = checked;
   sset('en_projects', projects);
-  renderSavingsFooter(projId, sd);
 }
 function autoSaveMsr(projId) {
   sset('en_projects', projects);
@@ -780,9 +498,153 @@ function getProjMatrixSavingsTotal(projId) {
   if (!sel.length) return null;
   let total = 0;
   sel.forEach((m) => {
-    total += calcMeasureDollars(m, measureRatesNow(proj.id, m, (sd.blRates || {})[m.bldgId])).total;
+    total += msrAnnualSavings(proj.id, m);
   });
   return total > 0 ? total : null;
+}
+
+// ── Cost lines and payback (Phase 7, 2026-10-14). Totals and the payback formula: computations/cost-lines.js. ──
+// Annual savings $ of one measure from the matrix: each month's quantity x that month's seasonal rate (calcMeasureDollars).
+function msrAnnualSavings(projId, m) {
+  const sd = getProjSavingsData(projId);
+  return calcMeasureDollars(m, measureRatesNow(projId, m, ((sd && sd.blRates) || {})[m.bldgId])).total;
+}
+
+// Internal labor $/hr: the pricing estimator's shared hourly rate (Cost Estimate tab, app/pricing-estimator.js). Never copied.
+function msrLaborRate() {
+  return _pricingGetConfig().hourlyRate;
+}
+
+// Cost, incentive, net cost, matrix savings and simple payback of one measure: { thirdParty, labor, parts, gross, incentive, laborHours, lineCount, net, annual, years }.
+function msrCostSummary(projId, m) {
+  const t = measureCostTotals(m, msrLaborRate());
+  return Object.assign({}, t, simplePayback(t.gross, t.incentive, msrAnnualSavings(projId, m)));
+}
+
+// The same for a list of measures of one project (a roll-up). The payback divides by the matrix savings of the measures that HAVE a cost
+// (a measure with no cost line adds savings but no cost, which would make the project payback too short). annualAll = the matrix savings of
+// every measure in the list; costedCount = the measures with a cost.
+function projCostSummary(projId, measures) {
+  const rate = msrLaborRate();
+  const per = measures.map((m) => ({ m, t: measureCostTotals(m, rate) }));
+  const t = sumCostTotals(per.map((x) => x.t));
+  const costed = per.filter((x) => x.t.gross > 0);
+  const annual = costed.reduce((s, x) => s + msrAnnualSavings(projId, x.m), 0);
+  const annualAll = per.reduce((s, x) => s + msrAnnualSavings(projId, x.m), 0);
+  return Object.assign({}, t, simplePayback(t.gross, t.incentive, annual), { annualAll, costedCount: costed.length });
+}
+
+function _clMoney(n) {
+  return n > 0 ? '$' + Math.round(n).toLocaleString() : '—';
+}
+
+// The Financials block of one measure: cost lines (edit here), totals, net cost, matrix savings, payback.
+// Drawn by both Energy Savings views; the host div is redrawn by msrCostRefresh after every edit.
+function msrFinancialsHtml(projId, m) {
+  return `<div class="sv-fin-host" data-proj="${_escHtml(String(projId))}" data-msr="${_escHtml(m.id)}">${_msrFinancialsInner(projId, m)}</div>`;
+}
+
+function _msrFinancialsInner(projId, m) {
+  const s = msrCostSummary(projId, m);
+  const rate = msrLaborRate();
+  const kindLabel = (k) => (COST_LINE_KINDS.find((x) => x.key === k) || { label: k }).label;
+  const call = (field) => `msrCostLineSet(this,'${field}')`;
+  const rows = (m.costLines || [])
+    .map((l) => {
+      const isLabor = l.kind === 'labor';
+      const isThird = l.kind === 'thirdParty';
+      const amt = costLineAmount(l, rate);
+      return `<tr data-line="${_escHtml(l.id)}">
+          <td>${_escHtml(kindLabel(l.kind))}</td>
+          <td><input class="fi" type="text" value="${_escHtml(l.label)}" placeholder="Description" onchange="${call('label')}"></td>
+          <td><input class="fi" type="text" value="${isThird ? _escHtml(l.vendor) : ''}" placeholder="${isThird ? 'Vendor (optional)' : ''}" ${isThird ? '' : 'disabled'} onchange="${call('vendor')}"></td>
+          <td class="sv-cl-num">${isLabor ? `<input class="fi" type="number" min="0" step="0.25" value="${_escHtml(l.hours == null ? '' : l.hours)}" placeholder="Hours" onchange="${call('hours')}">` : ''}</td>
+          <td class="sv-cl-num">${isLabor ? `<span title="Hours x the shared hourly rate of the Cost Estimate tab">${_clMoney(amt)}<br><span class="sv-cl-hint">at $${_escHtml(rate)}/hr</span></span>` : `<input class="fi" type="number" min="0" step="1" value="${_escHtml(l.amount == null ? '' : l.amount)}" placeholder="$0" onchange="${call('amount')}">`}</td>
+          <td><input class="fi" type="text" value="${_escHtml(l.note)}" placeholder="Note" onchange="${call('note')}"></td>
+          <td style="text-align:center"><button class="btn-del" title="Remove this cost line" onclick="msrCostLineDel(this)">✕</button></td>
+        </tr>`;
+    })
+    .join('');
+  const addBtns = COST_LINE_KINDS.map(
+    (k) =>
+      `<button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="msrCostLineAdd(this,'${k.key}')">+ ${_escHtml(k.label)}</button>`,
+  ).join('');
+  const stat = (lbl, val, color) =>
+    `<div class="sv-cl-stat"><span>${lbl}</span><span class="sv-intensity" style="color:var(--${color})">${val}</span></div>`;
+  return `<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Financials: cost lines</div>
+    <div class="ch-tbl-outer" style="border:1px solid var(--border);border-radius:6px;overflow:hidden"><div class="sv-cl-scroll">
+      <table class="sv-cl-tbl">
+        <thead><tr><th>Type</th><th>Description</th><th>Vendor</th><th>Hours</th><th>Amount</th><th>Note</th><th></th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="7" style="text-align:center;color:var(--text3)">No cost lines yet. Add one below.</td></tr>'}</tbody>
+        <tfoot><tr><td colspan="4">Total cost</td><td class="sv-cl-num">${_clMoney(s.gross)}</td><td colspan="2"></td></tr></tfoot>
+      </table>
+    </div></div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">${addBtns}</div>
+    <div class="sv-cl-stats">
+      ${stat('Total cost', _clMoney(s.gross), 'text')}
+      ${stat('Incentive / rebate', _clMoney(s.incentive), 'text')}
+      ${stat('Net cost', _clMoney(s.net), 'text')}
+      ${stat('Matrix savings per year', _clMoney(s.annual), 'green')}
+      ${stat('Simple payback', s.years == null ? '—' : s.years.toFixed(1) + ' yrs', 'accent')}
+    </div>`;
+}
+
+// Net cost and simple payback of the selected measures: two items of the Selected Measures card.
+function _svCostItemsHtml(projId, selMsrs) {
+  const cost = projCostSummary(projId, selMsrs);
+  return `${cost.gross > 0 ? `<div class="bl-item"><div class="bl-lbl">Net Cost</div><div class="bl-val" style="color:var(--text)">$${Math.round(cost.net).toLocaleString()}<span class="bl-unit">${cost.incentive > 0 ? ' ($' + Math.round(cost.gross).toLocaleString() + ' cost less $' + Math.round(cost.incentive).toLocaleString() + ' incentive)' : ''}</span></div></div>` : ''}
+            ${cost.years != null ? `<div class="bl-item"><div class="bl-lbl">Simple Payback</div><div class="bl-val" style="color:var(--accent)">${cost.years.toFixed(1)}<span class="bl-unit"> years (${cost.costedCount} measure${cost.costedCount !== 1 ? 's' : ''} with cost lines)</span></div></div>` : ''}`;
+}
+
+function msrCostRefresh(projId, msrId) {
+  const sd = getProjSavingsData(projId);
+  const m = sd.measures.find((x) => x.id === msrId);
+  if (!m) return;
+  document.querySelectorAll('.sv-fin-host').forEach((h) => {
+    if (h.dataset.msr === msrId) h.innerHTML = _msrFinancialsInner(projId, m);
+  });
+  const items = document.getElementById('sv-cost-items-' + projId);
+  if (items) items.innerHTML = _svCostItemsHtml(projId, sd.measures.filter((x) => x.selected !== false));
+}
+
+// The handlers read the measure and the line from the element (data-proj, data-msr on the host, data-line on the row), so no id is put into a script string.
+function _msrCostCtx(el) {
+  const host = el.closest('.sv-fin-host');
+  const projId = host.dataset.proj;
+  const m = getProjSavingsData(projId).measures.find((x) => x.id === host.dataset.msr);
+  const row = el.closest('tr');
+  return { projId, m, lineId: row ? row.dataset.line : null };
+}
+
+function msrCostLineAdd(el, kind) {
+  const c = _msrCostCtx(el);
+  if (!c.m) return;
+  if (!Array.isArray(c.m.costLines)) c.m.costLines = [];
+  c.m.costLines.push(newCostLine(kind));
+  sset('en_projects', projects);
+  msrCostRefresh(c.projId, c.m.id);
+}
+
+function msrCostLineSet(el, field) {
+  const c = _msrCostCtx(el);
+  const line = c.m && (c.m.costLines || []).find((l) => l.id === c.lineId);
+  if (!line) return;
+  if (field === 'hours' || field === 'amount') {
+    const n = parseFloat(el.value);
+    line[field] = Number.isFinite(n) && n >= 0 ? n : null;
+  } else {
+    line[field] = String(el.value);
+  }
+  sset('en_projects', projects);
+  msrCostRefresh(c.projId, c.m.id);
+}
+
+function msrCostLineDel(el) {
+  const c = _msrCostCtx(el);
+  if (!c.m) return;
+  c.m.costLines = (c.m.costLines || []).filter((l) => l.id !== c.lineId);
+  sset('en_projects', projects);
+  msrCostRefresh(c.projId, c.m.id);
 }
 
 function calcProjSavingsMatrix(projId) {
@@ -810,7 +672,6 @@ function calcProjSavingsMatrix(projId) {
     if (cell) cell.textContent = total > 0 ? '$' + Math.round(total).toLocaleString() : '—';
   });
   sset('en_projects', projects);
-  renderSavingsFooter(projId, sd);
   showToast('Savings recalculated ✓');
 }
 
@@ -975,7 +836,7 @@ function _renderSavingsContent(wrap, projId) {
   };
 
   // 2026-09-21 (SA-gate scope fix): estimated/projected measure-based $ display regardless of
-  // Service Agreement status — same rule as renderSavingsMatrix.
+  // Service Agreement status.
 
   // ── Rate functions for cost calc ──
 
@@ -1051,10 +912,10 @@ function _renderSavingsContent(wrap, projId) {
               <td style="text-align:center;vertical-align:top;padding-top:6px"><span class="sv-detail-toggle" id="sv-dtog-${mid}" onclick="svToggleDetail('${mid}')">▶</span></td>
               <td></td>
               <td style="text-align:center"><input type="checkbox" class="sv-sel-cb" ${m.selected ? 'checked' : ''} onchange="svUpdateMsrSel('${mid}',this.checked)"></td>
-              <td><input class="sv-msr-txt" style="width:44px;text-align:center" placeholder="#" value="${m.msrNum || ''}" onchange="svUpdateMsrField('${mid}','msrNum',this.value)" onfocusout="svAutoSave()"></td>
+              <td><input class="sv-msr-txt" style="width:44px;text-align:center" placeholder="#" value="${_escHtml(m.msrNum)}" onchange="svUpdateMsrField('${mid}','msrNum',this.value)" onfocusout="svAutoSave()"></td>
               <td><select class="sv-msr-sel" onchange="svUpdateMsrField('${mid}','bldgId',this.value)">${selOpts}</select></td>
               <td><input class="sv-num-inp sv-sqft-inp" type="number" style="width:68px" placeholder="0" value="${m.sqft || ''}" onchange="svUpdateMsrField('${mid}','sqft',parseFloat(this.value)||0)" onfocusout="svAutoSave()"></td>
-              <td><div style="display:flex;align-items:center;gap:4px"><input class="sv-msr-txt" style="flex:1;min-width:130px" placeholder="e.g. BAS Setpoint Optimization 74/70°F" value="${m.desc || ''}" onchange="svUpdateMsrField('${mid}','desc',this.value)" onfocusout="svAutoSave()"><button class="btn btn-ghost btn-sm" style="padding:3px 6px;font-size:11px;flex-shrink:0" onclick="openCalcForMeasure(${pid},'${mid}','${wrap.id === 'ptab-savings' ? 'ptab' : 'sv'}')" title="Open calc template for this measure">📐</button>${srcBadge}</div></td>
+              <td><div style="display:flex;align-items:center;gap:4px"><input class="sv-msr-txt" style="flex:1;min-width:130px" placeholder="e.g. BAS Setpoint Optimization 74/70°F" value="${_escHtml(m.desc)}" onchange="svUpdateMsrField('${mid}','desc',this.value)" onfocusout="svAutoSave()"><button class="btn btn-ghost btn-sm" style="padding:3px 6px;font-size:11px;flex-shrink:0" onclick="openCalcForMeasure(${pid},'${mid}','${wrap.id === 'ptab-savings' ? 'ptab' : 'sv'}')" title="Open calc template for this measure">📐</button>${srcBadge}</div></td>
               ${rateCell(mid, 'kwhSummer', '0.0001', r)}${rateCell(mid, 'kwhWinter', '0.0001', r)}
               ${rateCell(mid, 'kwSummer', '0.01', r)}${rateCell(mid, 'kwWinter', '0.01', r)}
               ${rateCell(mid, 'thermRate', '0.001', r)}${rateCell(mid, 'gallonRate', '0.001', r)}
@@ -1087,17 +948,6 @@ function _renderSavingsContent(wrap, projId) {
                     <button class="btn btn-ghost btn-sm" style="margin-top:8px;font-size:11px" onclick="svResetMsrRates('${mid}')">Reset to Building Defaults</button>
                   </div>
                   <div>
-                    <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Financials</div>
-                    <div class="sv-rate-group">
-                      <div class="sv-rate-field"><label>Implementation Cost</label><input class="fi" type="number" step="1" value="${m.implCost || ''}" placeholder="$0" onchange="svUpdateMsrField('${mid}','implCost',parseFloat(this.value)||0)"></div>
-                      <div class="sv-rate-field"><label>Incentive / Rebate</label><input class="fi" type="number" step="1" value="${m.incentive || ''}" placeholder="$0" onchange="svUpdateMsrField('${mid}','incentive',parseFloat(this.value)||0)"></div>
-                    </div>
-                    <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">
-                      <div>Net Cost: <span class="sv-intensity" style="color:var(--text);font-weight:700">${(m.implCost || 0) - (m.incentive || 0) > 0 ? '$' + Math.round((m.implCost || 0) - (m.incentive || 0)).toLocaleString() : '—'}</span></div>
-                      <div>Simple Payback: <span class="sv-intensity" style="color:var(--accent);font-weight:700">${_msrDollar > 0 && (m.implCost || 0) > 0 ? (((m.implCost || 0) - (m.incentive || 0)) / _msrDollar).toFixed(1) + ' yrs' : '—'}</span></div>
-                    </div>
-                  </div>
-                  <div>
                     <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Intensity Metrics</div>
                     <div style="display:flex;flex-direction:column;gap:6px">
                       <div>Sq Ft: <span class="sv-intensity" style="color:var(--text)">${m.sqft ? Number(m.sqft).toLocaleString() : '—'}</span></div>
@@ -1106,9 +956,10 @@ function _renderSavingsContent(wrap, projId) {
                     </div>
                   </div>
                 </div>
+                <div style="margin-top:12px">${msrFinancialsHtml(pid, m)}</div>
                 <div style="margin-top:10px">
                   <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Notes</div>
-                  <textarea class="fi" style="width:100%;min-height:48px;resize:vertical;font-size:12px" placeholder="Measure notes..." onchange="svUpdateMsrField('${mid}','notes',this.value)" onfocusout="svAutoSave()">${m.notes || ''}</textarea>
+                  <textarea class="fi" style="width:100%;min-height:48px;resize:vertical;font-size:12px" placeholder="Measure notes..." onchange="svUpdateMsrField('${mid}','notes',this.value)" onfocusout="svAutoSave()">${_escHtml(m.notes)}</textarea>
                 </div>
               </td>
             </tr>`;
@@ -1218,6 +1069,7 @@ function _renderSavingsContent(wrap, projId) {
               <div class="bl-val" style="color:var(--green)">${grandTotal > 0 ? '$' + Math.round(grandTotal).toLocaleString() : '—'}</div>
               ${svQtrHtml ? `<div class="bl-qtrs">${svQtrHtml}</div>` : ''}
             </div>
+            <div id="sv-cost-items-${projId}" style="display:contents">${_svCostItemsHtml(projId, selMsrs)}</div>
           </div>
         </div>`
     : '';

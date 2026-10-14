@@ -3969,6 +3969,92 @@
         font-family: var(--mono);
         font-size: 12px;
       }
+      .sv-fin-host {
+        position: sticky;
+        left: 12px;
+        width: min(1000px, calc(100vw - 380px));
+        min-width: 300px;
+      }
+      .sv-cl-scroll {
+        overflow-x: auto;
+      }
+      .sv-cl-tbl {
+        min-width: 760px;
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+        font-size: 12px;
+      }
+      .sv-cl-tbl th {
+        background: var(--s1);
+        color: var(--text2);
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        padding: 6px 8px;
+        text-align: left;
+        border-right: 1px solid var(--border);
+        border-bottom: 1px solid var(--border2);
+        white-space: nowrap;
+      }
+      .sv-cl-tbl td {
+        padding: 4px 8px;
+        border-right: 1px solid var(--border);
+        border-bottom: 1px solid var(--border);
+        vertical-align: middle;
+        color: var(--text);
+      }
+      .sv-cl-tbl th:last-child,
+      .sv-cl-tbl td:last-child {
+        border-right: none;
+      }
+      .sv-cl-tbl tbody tr:last-child td {
+        border-bottom: none;
+      }
+      .sv-cl-tbl td:nth-child(2) .fi {
+        min-width: 220px;
+      }
+      .sv-cl-tbl td:nth-child(6) .fi {
+        min-width: 180px;
+      }
+      .sv-cl-tbl .fi {
+        width: 100%;
+        min-width: 80px;
+        font-size: 12px;
+      }
+      .sv-cl-tbl .sv-cl-num {
+        text-align: right;
+        font-family: var(--mono);
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+        width: 110px;
+      }
+      .sv-cl-tbl tfoot td {
+        background: var(--s1);
+        font-weight: 700;
+        border-top: 2px solid var(--border2);
+        border-bottom: none;
+      }
+      .sv-cl-hint {
+        font-size: 10px;
+        color: var(--text3);
+      }
+      .sv-cl-stats {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 24px;
+        margin-top: 10px;
+      }
+      .sv-cl-stat {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        font-size: 10px;
+        color: var(--text3);
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+      }
       .sv-intensity {
         font-family: var(--mono);
         font-size: 13px;
@@ -15903,6 +15989,7 @@
     <script src="lib/csv-parser.js?v=119"></script>
     <script src="computations/physics.js?v=119"></script>
     <script src="computations/fan-savings.js?v=119"></script>
+    <script src="computations/cost-lines.js?v=119"></script>
     <script src="computations/rates.js?v=119"></script>
     <script src="computations/regression.js?v=119"></script>
     <script src="computations/normalization.js?v=119"></script>

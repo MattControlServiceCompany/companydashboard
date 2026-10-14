@@ -585,12 +585,85 @@ function _pricingTierLabelHTML(tier) {
 // which prices every measure monthly at Utility Data rates. No matrix total = plain message.
 function _pricingSavingsLineHTML(projId) {
   var total = typeof getProjMatrixSavingsTotal === 'function' ? getProjMatrixSavingsTotal(projId) : null;
+  // Net cost and simple payback of the measure cost lines: one payback function (simplePayback, computations/cost-lines.js).
+  var msrs = _pricingSelectedMeasures(projId);
+  var cost = msrs.length ? projCostSummary(projId, msrs) : null;
   return (
     '<div style="width:100%;margin-top:6px;font-size:10px;color:var(--text3);font-style:italic">' +
     (total !== null
       ? 'Projected annual savings from the Energy Savings matrix: ' + _pricingFmt(total) + '/yr.'
       : 'No savings estimate yet.') +
+    (cost && cost.gross > 0
+      ? ' Measure cost lines: net cost ' +
+        _pricingFmt(cost.net) +
+        (cost.years !== null ? ', simple payback ' + cost.years.toFixed(1) + ' years (measures with cost lines).' : '.')
+      : '') +
     '</div>'
+  );
+}
+
+// The selected measures of the Energy Savings matrix (the same set getProjMatrixSavingsTotal adds up).
+function _pricingSelectedMeasures(projId) {
+  var sd = typeof getProjSavingsData === 'function' ? getProjSavingsData(projId) : null;
+  return ((sd && sd.measures) || []).filter(function (m) {
+    return m.selected !== false;
+  });
+}
+
+// Cost lines of each Energy Savings measure, rolled up for the project, with the matrix savings beside them.
+// Cost only: the savings come from the matrix (msrAnnualSavings / calcMeasureDollars) and the payback from simplePayback.
+// Cost lines are entered on the Energy Savings page (measure detail, Financials).
+function _pricingMeasureCostRollupHTML(projId) {
+  var msrs = _pricingSelectedMeasures(projId);
+  if (!msrs.length) return '';
+  var th = 'background:var(--s1);color:var(--text2);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;padding:8px 10px;white-space:nowrap;border-right:1px solid var(--border);border-bottom:1px solid var(--border2);';
+  var td = 'padding:6px 10px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+  var num = td + 'text-align:right;';
+  // Label columns wrap (the standard allows it for text columns): nothing is cut off.
+  var lbl = 'padding:6px 10px;border-right:1px solid var(--border);border-bottom:1px solid var(--border);white-space:normal;word-break:break-word;min-width:140px;';
+  var money = function (n) {
+    return n > 0 ? _pricingFmt(n) : '—';
+  };
+  var heads = ['Measure', 'Building', 'Third-party price', 'Internal labor', 'Parts', 'Total cost', 'Incentive / rebate', 'Net cost', 'Matrix savings per year', 'Simple payback'];
+  var rows = msrs
+    .map(function (m) {
+      var c = msrCostSummary(projId, m);
+      var b = typeof getUDBldg === 'function' ? getUDBldg(projId, m.bldgId) : null;
+      return (
+        '<tr><td style="' + lbl + '">' + _escHtml(m.desc || 'Measure ' + (m.msrNum || '')) + '</td>' +
+        '<td style="' + lbl + '">' + _escHtml(b ? b.name : '') + '</td>' +
+        '<td style="' + num + '">' + money(c.thirdParty) + '</td>' +
+        '<td style="' + num + '">' + money(c.labor) + '</td>' +
+        '<td style="' + num + '">' + money(c.parts) + '</td>' +
+        '<td style="' + num + '">' + money(c.gross) + '</td>' +
+        '<td style="' + num + '">' + money(c.incentive) + '</td>' +
+        '<td style="' + num + '">' + (c.gross > 0 ? _pricingFmt(c.net) : '—') + '</td>' +
+        '<td style="' + num + '">' + money(c.annual) + '</td>' +
+        '<td style="' + num + '">' + (c.years === null ? '—' : c.years.toFixed(1) + ' yrs') + '</td></tr>'
+      );
+    })
+    .join('');
+  var t = projCostSummary(projId, msrs);
+  var tf = 'padding:6px 10px;background:var(--s1);font-weight:700;border-top:2px solid var(--border2);border-right:1px solid var(--border);font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right;';
+  return (
+    '<div id="pricing-measure-cost-' + projId + '" style="flex-shrink:0;padding:10px 14px">' +
+    '<div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Measure cost lines (entered on the Energy Savings page)</div>' +
+    '<div class="ch-tbl-outer" style="border:1px solid var(--border);border-radius:6px;overflow:hidden"><div class="ch-tbl-scroll" style="overflow-x:auto">' +
+    '<table class="ch-tbl" style="border-collapse:separate;border-spacing:0;width:100%;font-size:12px;color:var(--text)">' +
+    '<thead><tr>' +
+    heads.map(function (h, i) { return '<th style="' + th + (i < 2 ? 'text-align:left' : 'text-align:center') + '">' + h + '</th>'; }).join('') +
+    '</tr></thead><tbody>' + rows + '</tbody><tfoot><tr>' +
+    '<td style="' + tf + 'text-align:left" colspan="2">Project total</td>' +
+    '<td style="' + tf + '">' + money(t.thirdParty) + '</td>' +
+    '<td style="' + tf + '">' + money(t.labor) + '</td>' +
+    '<td style="' + tf + '">' + money(t.parts) + '</td>' +
+    '<td style="' + tf + '">' + money(t.gross) + '</td>' +
+    '<td style="' + tf + '">' + money(t.incentive) + '</td>' +
+    '<td style="' + tf + '">' + (t.gross > 0 ? _pricingFmt(t.net) : '—') + '</td>' +
+    '<td style="' + tf + '">' + money(t.annualAll) + '</td>' +
+    '<td style="' + tf + 'border-right:none">' + (t.years === null ? '—' : t.years.toFixed(1) + ' yrs') + '</td>' +
+    '</tr></tfoot></table></div></div>' +
+    '<div style="font-size:10px;color:var(--text3);margin-top:4px">The project payback counts only the ' + t.costedCount + ' measure' + (t.costedCount === 1 ? '' : 's') + ' that ' + (t.costedCount === 1 ? 'has' : 'have') + ' cost lines.</div></div>'
   );
 }
 
@@ -10379,13 +10452,15 @@ function pricingExportExcel(projId) {
     var el = document.getElementById('ptab-cost-estimate-body-' + projId);
     if (!el) return;
     var type = _pricingGetEstimateType(projId);
+    var costRollup = _pricingMeasureCostRollupHTML(projId);
     if (type === 'retrofit' || typeof auditEstRenderHTML !== 'function') {
       _origInitCostEstimateTab(projId);
       type = 'retrofit';
-      el.insertAdjacentHTML('afterbegin', _pricingEstimateTypeBarHTML(projId, type));
+      el.insertAdjacentHTML('afterbegin', _pricingEstimateTypeBarHTML(projId, type) + costRollup);
     } else {
       el.innerHTML =
         _pricingEstimateTypeBarHTML(projId, type) +
+        costRollup +
         '<div id="auditEstWrap-' +
         projId +
         '" style="flex-shrink:0;padding:0 14px 128px">' +

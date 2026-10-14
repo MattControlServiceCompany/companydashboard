@@ -2384,6 +2384,7 @@ function ecmAddAsMeasure(projId, bldgId, templateId, inputs, results) {
   const measure = built.measure;
   measure.id = "m" + Date.now();
   measure.msrNum = sd.measures.length + 1 + "";
+  measure.costLines = defaultCostLinesFor(templateId); // the cost lines a template brings (Fan Savings: reprogram BAS for variable speed)
   initMeasureRates(measure, projId, bldgId, "ECM add measure");
   sd.measures.push(measure);
   sset("en_projects", projects);
@@ -2794,7 +2795,7 @@ function renderEcmResults(templateId, results, container, projectContext, inputs
     .join('');
 
   // The dollar value of the result: the Energy Savings matrix pricing of the monthly measure (ecmMeasureDollars).
-  // A template computes no dollars and no payback of its own (payback and cost lines come in phase 7).
+  // A template computes no dollars and no payback of its own (cost lines and the payback are on the measure: computations/cost-lines.js).
   const built = ctx && ctx.projId ? ecmBuildMeasure(ctx.projId, ctx.buildingId, templateId, inputs || {}, results) : null;
   const seenShapes = new Set();
   const shapeLines = built && built.ok

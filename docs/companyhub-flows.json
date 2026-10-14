@@ -208,6 +208,14 @@
           "formula": "monthly measure = yearly template quantity x the building's monthly end-use profile; dollars = calcMeasureDollars(measure, measureRatesNow(projId, measure))"
         },
         {
+          "id": "measure-cost-lines-payback",
+          "name": "Measure Cost Lines and One Payback",
+          "description": "Each Energy Savings matrix measure holds cost lines (third-party price, internal labor hours x the pricing estimator hourly rate, parts, incentive). simplePayback = (total cost - incentive) / annual matrix savings is the only payback formula. The Energy Savings tab (measure detail and Selected Measures card) and the Cost Estimate tab (roll-up table and footer line) all call it. The pricing estimator does no energy math.",
+          "functions": ["simplePayback(gross, incentive, annual)", "measureCostTotals(m, laborRate)", "sumCostTotals(list)", "msrAnnualSavings(projId, m)", "msrCostSummary(projId, m)", "projCostSummary(projId, measures)", "msrFinancialsHtml(projId, m)", "_pricingMeasureCostRollupHTML(projId)", "defaultCostLinesFor(templateId)"],
+          "files": ["computations/cost-lines.js", "app/energy-savings.js", "app/pricing-estimator.js", "app/ecm-calculators.js"],
+          "formula": "payback years = (sum of third-party, labor and parts lines - incentive lines) / calcMeasureDollars annual total; labor line = hours x _pricingGetConfig().hourlyRate"
+        },
+        {
           "id": "report-generation",
           "name": "Report Generation",
           "description": "Generate quarterly, annual, cumulative, or custom reports with selectable sections and a building -> meter scope tree (shared component app/scope-tree.js, also used by the ASHRAE 36 report modal's building filter and the Export Utility Data modal). Output as HTML pages with charts and tables. Export to PDF / Word available.",
