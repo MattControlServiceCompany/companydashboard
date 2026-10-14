@@ -1484,6 +1484,7 @@ function udFlagBadgeHtml(summary, goto) {
       JSON.stringify(goto.bldgId).replace(/"/g, '&quot;') +
       ',' +
       JSON.stringify(goto.meterId).replace(/"/g, '&quot;') +
+      (goto.embed ? ',true' : '') +
       ')"'
     : '';
   return (
@@ -1499,8 +1500,24 @@ function udFlagBadgeHtml(summary, goto) {
   );
 }
 // Click on a building or project badge: open the first flagged meter on its Bills tab (the banner lists the reasons).
-function udGoToFlagged(evt, pid, bldgId, meterId) {
+// embed=true: the badge is in the sidebar Projects list or the project's Utility Data tab; open it inside that project.
+function udGoToFlagged(evt, pid, bldgId, meterId, embed) {
   if (evt) evt.stopPropagation();
+  if (embed) {
+    if (String(window._activeProjId) !== String(pid) || !document.getElementById('proj-ud-body-' + pid)) {
+      openDetail(pid);
+    }
+    const tabBtn = document.querySelector('.pdt[data-tab="utility"]');
+    if (!document.getElementById('proj-ud-body-' + pid) || !document.getElementById('ptab-utility').classList.contains('active')) sPTab('utility', tabBtn);
+    projUDSelectBldg(pid, bldgId);
+    const body = document.getElementById('proj-ud-body-' + pid);
+    if (body) {
+      const prevProj = udSelProjId;
+      udSelectMeter(meterId, body);
+      udSelProjId = prevProj;
+    }
+    return;
+  }
   if (udSelProjId !== pid) udSelectProj(pid);
   udSelectBldg(bldgId);
   udSelectMeter(meterId);
@@ -1512,6 +1529,10 @@ function udScheduleBadgeRefresh() {
   _udBadgeRefreshTimer = setTimeout(() => {
     _udBadgeRefreshTimer = null;
     if (document.getElementById('udNavList') && typeof renderUDProjList === 'function') renderUDProjList();
+    if (typeof renderSidebarFolders === 'function') renderSidebarFolders();
+    if (typeof renderProjUDBldgNav === 'function') {
+      document.querySelectorAll('[id^="proj-ud-bldg-nav-"]').forEach((n) => renderProjUDBldgNav(n.id.replace('proj-ud-bldg-nav-', '')));
+    }
   }, 0);
 }
 

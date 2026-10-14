@@ -727,6 +727,7 @@ function init() {
       year: 'numeric',
     });
   initUtilityTool();
+  renderSidebarFolders(); // utility data is loaded now: draw the flagged-bill badges
   updateHomeStats(); // Must run after initUtilityTool() so utilityData is populated
   // Restore last active view from session
   const lastView = localStorage.getItem('ch_activeView') || sessionStorage.getItem('ch_activeView');
@@ -3267,13 +3268,19 @@ function renderProjUDBldgNav(projId) {
               ? `<span style="color:var(--amber);font-size:10px" title="${mWithBl} of ${blMCount} baseline meters have baselines set">⚠ ${mWithBl}/${blMCount} BL</span>`
               : `<span style="color:var(--text3);font-size:10px" title="No baselines set">— 0/${blMCount} BL</span>`
           : '';
+      // Flagged BILLS in this building: the ONE shared flag function (computations/bill-flags.js).
+      const bFlags = computeBuildingFlagSummary(b);
+      const flagBadge = udFlagBadgeHtml(
+        bFlags,
+        bFlags.firstFlaggedMeterId !== null && { pid: projId, bldgId: b.id, meterId: bFlags.firstFlaggedMeterId, embed: true },
+      );
       const bCount = (b.bills || []).length + allMeters.reduce((s, m) => s + (m.bills || []).length, 0);
       const isActive = projUDSelBldg[projId] === b.id;
       return `<div class="ud-nav-bldg-item${isActive ? ' active' : ''}" onclick="projUDSelectBldg('${projId}','${b.id}')">
             <span style="font-size:14px">${getFacilityIcon?.(b.type) || '🏢'}</span>
             <div style="flex:1;min-width:0">
               <div class="ud-nav-bldg-name">${_escHtml(b.name || 'Building')}</div>
-              <div class="ud-nav-bldg-meta">${totalMCount} meter${totalMCount !== 1 ? 's' : ''} ${blBadge}</div>
+              <div class="ud-nav-bldg-meta">${totalMCount} meter${totalMCount !== 1 ? 's' : ''} ${blBadge}${flagBadge ? ' ' + flagBadge : ''}</div>
             </div>
             <div class="ud-nav-bldg-actions">
               <button class="btn btn-ghost btn-sm" style="padding:1px 5px;font-size:11px" onclick="event.stopPropagation();openBldgModalForProj('${projId}','${b.id}')" title="Edit">✏️</button>
