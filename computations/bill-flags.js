@@ -59,6 +59,7 @@ const BILL_FLAG_RULES = {
   read_usage_mismatch: { label: 'Usage', severity: 'error' },
   read_continuity: { label: 'Start Read', severity: 'warn' },
   read_rollback: { label: 'Read Difference', severity: 'error' },
+  printed_read_mismatch: { label: 'Usage', severity: 'warn' },
   usage_missing: { label: 'Usage', severity: 'warn' },
   usage_negative: { label: 'Usage', severity: 'warn' },
   cost_missing: { label: 'Total Cost', severity: 'warn' },
@@ -600,6 +601,26 @@ function _computeMeterFlagSummaryFresh(meter, building) {
           'usage',
         );
     }
+    if (c === 'Electric' && b._printedReadCheck && b._printedReadCheck.kwhComputed) {
+      // The ONLY visible flag from the printed read check: the PDF printed no kWh, the kWh was computed from the reads,
+      // and the printed read difference disagrees with those reads, so the usage itself is in doubt. Every other
+      // mismatch stays data on the bill (b._printedReadCheck) and shows no warning. The check runs again on the
+      // stored values, so a corrected or edited read clears the flag.
+      const hit = computePrintedReadMismatch({
+        start: b.startRead,
+        end: b.endRead,
+        diff: b.readDifference,
+        mult: b.meterMultiplier,
+        usage: null,
+      }).find((m) => m.field === 'readDifference');
+      if (hit)
+        add(
+          b,
+          'printed_read_mismatch',
+          hit.message + ' The bill printed no kWh, so the kWh shown was computed from the reads and may be wrong.',
+          'usage',
+        );
+    }
     if (c === 'Electric' && rd !== null && rd < 0)
       add(
         b,
@@ -891,6 +912,66 @@ function billFlagHoverText(summary) {
 function billFlagReasonList(flags) {
   return (flags || []).map((f) => f.message);
 }
+/* PRINTED READ CHECK (2026-10-14). The ONE rule that compares the bill's printed read difference and printed usage with
+   their own arithmetic. The PDF reader no longer rewrites a printed read difference to end read - start read or a
+   printed kWh to read difference x multiplier (app/bill-analysis.js): the arithmetic is a CHECK, not a replacement,
+   so a misread start or end read cannot make a bad bill look consistent. A value that was absent on the PDF is still
+   computed by the reader, so it agrees with its inputs and never reports.
+   A mismatch is DATA on the bill (b._printedReadCheck, written by readCorrectionMarkers), not a warning. The one visible
+   flag (rule printed_read_mismatch) is a bill with NO printed kWh whose computed kWh rests on reads that disagree with
+   the printed read difference: only then is the usage itself in doubt.
+   Tolerance is the print precision. Reads and the difference each print rounded to their last digit, so end - start may
+   differ from the difference by ONE unit of the coarsest of those digits (the same unit computeReadCorrection uses).
+   The usage may differ from difference x multiplier by half a unit of the usage's last digit plus half a unit of the
+   difference's last digit times the multiplier (the rounding of the difference, scaled).
+   x = { start, end, diff, mult, usage } (raw text or numbers; null or '' when absent; usage null skips the kWh check).
+   Returns [{ field: 'readDifference' | 'usage', message }]. A rollover (end under start) is never checked here. */
+function computePrintedReadMismatch(x) {
+  const n = parseBillNumber;
+  const S = n(x.start),
+    E = n(x.end),
+    D = n(x.diff),
+    M = n(x.mult),
+    U = n(x.usage);
+  const EPS = 1e-6; // floating-point slack only
+  const out = [];
+  const dDec = _rcDecimals(x.diff);
+  if (S !== null && E !== null && D !== null && E >= S) {
+    const tol = Math.pow(10, -Math.min(_rcDecimals(x.start), _rcDecimals(x.end), dDec)) + EPS;
+    if (Math.abs(E - S - D) > tol)
+      out.push({
+        field: 'readDifference',
+        message:
+          'Printed read difference does not match end minus start read: the bill prints ' +
+          _rcText(x.diff) +
+          ', but end read ' +
+          _rcText(x.end) +
+          ' minus start read ' +
+          _rcText(x.start) +
+          ' is ' +
+          (E - S).toFixed(Math.max(_rcDecimals(x.start), _rcDecimals(x.end))) +
+          '. A start read or end read may be misread.',
+      });
+  }
+  if (D !== null && M !== null && M > 0 && U !== null) {
+    const tol = 0.5 * Math.pow(10, -Math.min(_rcDecimals(x.usage), 4)) + 0.5 * Math.pow(10, -dDec) * M + EPS;
+    if (Math.abs(D * M - U) > tol)
+      out.push({
+        field: 'usage',
+        message:
+          'Printed kWh does not match read difference times multiplier: the bill prints ' +
+          _rcText(x.usage) +
+          ' kWh, but ' +
+          _rcText(x.diff) +
+          ' x ' +
+          _rcText(x.mult) +
+          ' is ' +
+          (D * M).toFixed(Math.min(_rcDecimals(x.usage), 4)) +
+          '. The read difference or the kWh may be misread.',
+      });
+  }
+  return out;
+}
 /* ── READ-CHAIN CORRECTION (2026-10-14) ───────────────────────────────────────────────────────────
    The ONE rule that repairs a start read, end read or read difference the PDF reader misread, using the meter
    chain (the previous bill's end read E_prev, the next bill's start read N) and the bill's own usage U. Callers:
@@ -1124,6 +1205,7 @@ function _rcUserEdited(bill, keys) {
 // Editing ANY read field of a bill clears and stamps ALL of that bill's read-correction records together: the user now
 // owns the bill's reads, so no other record (e.g. a provisional a0 record on the field not edited) stays behind.
 function clearReadCorrectionRecords(row, fields) {
+  if (row && (!fields || fields.includes('kwh'))) delete row._printedReadCheck; // an edited kWh is no longer computed
   const READ = ['startRead', 'endRead', 'readDifference'];
   if (fields && !fields.some((k) => READ.includes(k))) return; // only non-read fields were edited
   READ.forEach((k) => {
@@ -1298,5 +1380,20 @@ function readCorrectionMarkers(extracted) {
     const r = extracted && extracted['_auto_corrected_' + p[0]];
     if (_rcIsReadChainRecord(r)) out['_auto_corrected_' + p[1]] = r;
   });
+  // printed read check (data only): mismatching fields, and whether the kWh was computed because the PDF printed none
+  if (extracted) {
+    const rec = extracted._auto_recovered_kWhConsumed || extracted._auto_corrected_kWhConsumed;
+    const kwhComputed = !!rec && !parseBillNumber(rec.original);
+    const found = computePrintedReadMismatch({
+      start: extracted.StartRead,
+      end: extracted.EndRead,
+      diff: extracted.ReadDifference,
+      mult: extracted.MeterMultiplier,
+      usage: kwhComputed ? null : extracted.kWhConsumed,
+    });
+    if (found.length)
+      out._printedReadCheck = { fields: found.map((m) => m.field), messages: found.map((m) => m.message), kwhComputed };
+    else if (extracted._printedReadCheck) out._printedReadCheck = extracted._printedReadCheck; // already stored
+  }
   return out;
 }

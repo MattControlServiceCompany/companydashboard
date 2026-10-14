@@ -3633,7 +3633,9 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           multNow > 0 &&
           Math.abs(diffVal * multNow - _lockedKwhForDiff) / _lockedKwhForDiff > _Q_BUCKET_TOL;
 
-        // Step 1: ReadDifference = EndRead - StartRead (authoritative)
+        // Step 1: ReadDifference = EndRead - StartRead, ONLY when the PDF printed no read difference. A printed
+        // read difference is kept as extracted: end - start is a CHECK (computePrintedReadMismatch in
+        // computations/bill-flags.js flags a disagreement), never a replacement, so a misread read cannot hide.
         // For meter rollovers (endR < startR but near a boundary), compute the
         // wrap-around usage: boundary + 1 - startR + endR (Feature 0de6c188).
         if (endR > 0 && startR > 0 && endR < startR) {
@@ -3678,7 +3680,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         } else if (endR > 0 && startR > 0 && endR > startR) {
           const computedDiff = endR - startR;
           if (computedDiff > 0 && computedDiff < 1000000) {
-            if (!curDiff || Math.abs(curDiff - computedDiff) > 0.005) {
+            if (!curDiff) {
               if (_diffConflictsWithLocked(computedDiff)) {
                 b['_meterReadDiscrepancy_ReadDifference'] = {
                   current: b.ReadDifference,
@@ -3723,7 +3725,8 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           b.ReadDifference = null;
         }
 
-        // Step 2: kWhConsumed = ReadDifference × MeterMultiplier (cascade)
+        // Step 2: kWhConsumed = ReadDifference × MeterMultiplier, ONLY when the PDF printed no kWh. A printed kWh is
+        // kept as extracted; the product is a CHECK (computePrintedReadMismatch), never a replacement.
         // Guard: don't cascade if the result is outside commercial range (0–2M kWh)
         // or if the current value is reasonable and the cascade would change it by 10x+
         // in EITHER direction. A 10x SHRINK destroys data just as badly as a 10x
@@ -3803,7 +3806,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           const _kwhSane = expectedKwh > 0 && expectedKwh < 2000000;
           const _wouldClobber =
             curKwhForChain > 0 && (expectedKwh / curKwhForChain > 10 || curKwhForChain / expectedKwh > 10);
-          if (_kwhSane && !_wouldClobber && (!curKwhForChain || Math.abs(curKwhForChain - expectedKwh) > 1)) {
+          if (_kwhSane && !_wouldClobber && !curKwhForChain) {
             b['_auto_corrected_kWhConsumed'] = {
               original: b.kWhConsumed,
               corrected: expectedKwh.toFixed(4),
@@ -4101,10 +4104,6 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
             const expected = dR * mM;
             const mismatch = Math.abs(kC - expected);
             const _expectedSane = expected > 0 && expected < 2000000;
-            // Symmetric guard — a 10x SHRINK destroys data just as badly as a 10x inflation.
-            // Matches Step 2's _wouldClobber above; the original one-sided version only
-            // blocked growth, which is exactly how the multi-meter clobber bug shipped.
-            const _wouldClobber2 = kC > 0 && (expected / kC > 10 || kC / expected > 10);
             // GATE (2026-07-14 kWh corroboration fix): this sibling arithmetic-
             // recovery pass ran the SAME ReadDifference×Multiplier cascade as
             // Step 2 above, just scoped to multi-bill PDFs — and reintroduced
@@ -4121,14 +4120,9 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
                     'Cross-bill meter-table arithmetic disagrees with the corroborated kWhConsumed — flagged, not applied.',
                 };
               }
-            } else if (_expectedSane && !_wouldClobber2 && mismatch > 1 && mismatch / expected > 0.001) {
-              b['_auto_corrected_kWhConsumed'] = {
-                original: b.kWhConsumed,
-                corrected: expected.toFixed(4),
-                reason: `ReadDifference (${dR}) × MeterMultiplier (${mM}) = ${expected.toFixed(4)}. OCR value ${kC.toFixed(4)} differs by ${mismatch.toFixed(4)}.`,
-              };
-              b.kWhConsumed = expected.toFixed(4);
             }
+            // A printed kWh that disagrees with ReadDifference × MeterMultiplier is KEPT: the Bills table flags it
+            // (computePrintedReadMismatch in computations/bill-flags.js). It is no longer overwritten here.
           } else if (!_isMultiMeterKwh2 && kC > 0 && mM > 0 && !dR && !b._meterReadDiscrepancy_ReadDifferenceRejected) {
             // Multi-meter bills have ReadDifference intentionally nulled (not a single
             // valid physical reading — see Fix 3 in energy-savings.js). Without this guard
