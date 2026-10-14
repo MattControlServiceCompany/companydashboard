@@ -36,6 +36,13 @@ var THERMS_PER_HR_PER_BHP = BTU_PER_HR_PER_BHP / BTU_PER_THERM; // 0.33475 therm
 var LB_STEAM_PER_HR_PER_BHP = 34.5; // lb/h of steam per boiler hp, from and at 212 F
 var BTU_PER_LB_STEAM = BTU_PER_HR_PER_BHP / LB_STEAM_PER_HR_PER_BHP; // 970.29 Btu per lb of steam
 var THERMS_PER_LB_STEAM = BTU_PER_LB_STEAM / BTU_PER_THERM; // 0.0097029 therm per lb of steam (output, no efficiency)
+// District steam METERED energy (what a utility bill delivers) uses a different factor from the boiler OUTPUT
+// factor above (970.3 Btu/lb latent heat, used by _gasMaxThermHr). ENERGY STAR Portfolio Manager Thermal Energy
+// Conversions: District Steam 1 lb = 1.194 kBtu (1,194 Btu/lb); kLbs = 1,194 kBtu; MLbs (million lb) = 1,194,000 kBtu.
+// https://portfoliomanager.energystar.gov/pdf/reference/Thermal%20Conversions.pdf
+// Keep both: boiler output is steam leaving the boiler; this one is benchmark energy of delivered district steam.
+var BTU_PER_LB_DISTRICT_STEAM = 1194; // Btu per lb of district steam
+var THERMS_PER_THOUSAND_LB_DISTRICT_STEAM = (BTU_PER_LB_DISTRICT_STEAM * 1000) / BTU_PER_THERM; // 11.94 therms per thousand lb (Mlb)
 
 // ---- fan and pump power ----
 var FAN_AFFINITY_EXPONENT = 3; // fan/pump power varies as speed to this power (affinity law)

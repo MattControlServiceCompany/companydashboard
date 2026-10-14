@@ -1285,19 +1285,25 @@ const UNIT_REGISTRY = {
     defaultDemand: null,
   },
   Steam: {
-    usage: ['Therms', 'MLbs', 'BTU', 'MMBtu'],
+    usage: ['Therms', 'Mlb', 'BTU', 'MMBtu'],
     demand: [],
     defaultUsage: 'Therms',
     defaultDemand: null,
   },
 };
 
+// Menu text for units whose short name is ambiguous. Steam bills write Mlb for THOUSAND pounds (M = 1,000, as in MCF).
+const UNIT_LABELS = { Mlb: 'thousand lb (Mlb)' };
+function unitLabel(u) {
+  return UNIT_LABELS[u] || u;
+}
+
 const UNIT_TO_BASE = {
   Therms: { base: 'Therms', factor: 1 },
   CCF: { base: 'Therms', factor: 1.037 },
   MCF: { base: 'Therms', factor: 10.37 },
   DTh: { base: 'Therms', factor: THERMS_PER_MMBTU },
-  MLbs: { base: 'Therms', factor: 10 },
+  Mlb: { base: 'Therms', factor: THERMS_PER_THOUSAND_LB_DISTRICT_STEAM }, // thousand lb of district steam (computations/physics.js)
   kWh: { base: 'kWh', factor: 1 },
   MWh: { base: 'kWh', factor: 1000 },
   kW: { base: 'kW', factor: 1 },

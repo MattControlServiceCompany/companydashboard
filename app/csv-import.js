@@ -2990,8 +2990,8 @@ function _updateMeterUnitDropdowns() {
   const units = reg.usage;
   const prevBill = billSel.value;
   const prevDisp = dispSel.value;
-  billSel.innerHTML = units.map((u) => '<option value="' + u + '">' + u + '</option>').join('');
-  dispSel.innerHTML = units.map((u) => '<option value="' + u + '">' + u + '</option>').join('');
+  billSel.innerHTML = units.map((u) => '<option value="' + u + '">' + unitLabel(u) + '</option>').join('');
+  dispSel.innerHTML = units.map((u) => '<option value="' + u + '">' + unitLabel(u) + '</option>').join('');
   billSel.value = units.includes(prevBill) ? prevBill : reg.defaultUsage;
   dispSel.value = units.includes(prevDisp) ? prevDisp : reg.defaultUsage;
   _updateUnitPreview();

@@ -1785,7 +1785,7 @@ function renderDetail(p) {
                         <span style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.5px">${comm} Usage Unit</span>
                         <select class="fi" style="width:140px;font-family:var(--mono)" onchange="updateProjPerfSetting(${p.id},'defaultDisplayUnits',Object.assign({},(projects.find(x=>x.id===${p.id})||{}).defaultDisplayUnits||{},{${comm}:this.value}))">
                           <option value=""${!cur ? ' selected' : ''}>Default</option>
-                          ${reg.usage.map((u) => `<option value="${u}"${cur === u ? ' selected' : ''}>${u}</option>`).join('')}
+                          ${reg.usage.map((u) => `<option value="${u}"${cur === u ? ' selected' : ''}>${unitLabel(u)}</option>`).join('')}
                         </select>
                       </label>`;
                       })
