@@ -243,14 +243,18 @@ function _fanRowHasFanPoint(row, pts) {
  * (a two-speed motor), wind or air speed, a diagnostic message, and a point of another fan or machine (exhaust, return, relief,
  * condenser, compressor, pump, energy recovery wheel).
  * @param {string[]} names - point names of one Equipment Matrix row
+ * @param {string} [equipName] - the equipment name; a VRF or condenser unit has no supply fan drive
  * @returns {string|null}
  */
-function fanDrivePointName(names) {
+function fanDrivePointName(names, equipName) {
+  if (/\b(vrf|vrv|condenser|condensing)\b/i.test(String(equipName || ''))) return null;
   // a camelCase key (supplyFanSpeed) or an underscore key (auto_sf_vfd) is read as words
   var drive = /\b(vfd|vsd|drive|inverter|hz|frequency|speed)\b/i;
-  var notDrive = /\b(wind|air\s*speed|exhaust|return|relief|condenser|compressor|pump|chiller|boiler|tower|wheel|diagnostic)\b|\b(high|hi|low|lo)\s*speed\b|\bspeed\s*(high|hi|low|lo)\b/i;
+  var notDrive = /\b(wind|air\s*speed|exhaust|return|relief|condenser|compressors?|comp|pump|chiller|boiler|tower|wheel|diagnostic)\b|\b(high|hi|low|lo)\s*(fan\s*)?speed\b|\bspeed\s*(high|hi|low|lo)\b|\bconstant\s*speed\b|\bspeed\s*enable\b|\bbox\s*drive\b/i;
   for (var i = 0; i < names.length; i++) {
     var words = String(names[i]).replace(/([a-z])([A-Z])/g, '$1 $2').replace(/_/g, ' ');
+    // an inverter with no fan word is a compressor inverter
+    if (/\binverter\b/i.test(words) && !/\bfan\b/i.test(words)) continue;
     if (drive.test(words) && !notDrive.test(words)) return names[i];
   }
   return null;
@@ -293,7 +297,7 @@ function fanReadUnits(projId, bldgId) {
         return emGetCellValByDef(row, { key: key }, edits);
       };
       var pointNames = Object.keys(row.pointsRaw && !Array.isArray(row.pointsRaw) ? row.pointsRaw : row.points || {});
-      var drivePoint = fanDrivePointName(pointNames);
+      var drivePoint = fanDrivePointName(pointNames, row.equipName);
       if (!drivePoint && pts.supplyFanSpeed != null && pts.supplyFanSpeed !== '') drivePoint = 'Supply Fan Speed';
       out.units.push({
         id: String(row.id),

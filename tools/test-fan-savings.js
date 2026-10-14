@@ -872,7 +872,7 @@ async function main() {
       d0.vfdHow,
     );
     // the one drive-name rule: VFD, drive, speed, Hz, frequency, inverter count; two-speed enables, wind and other fans do not
-    const nm = (a) => sb.fanDrivePointName(a);
+    const nm = (a, e) => sb.fanDrivePointName(a, e);
     ok(
       nm(['Supply Fan Status', 'Supply Fan VFD Signal']) === 'Supply Fan VFD Signal' &&
         nm(['Supply Fan Drive Fault']) === 'Supply Fan Drive Fault' &&
@@ -890,6 +890,37 @@ async function main() {
         nm(['Supply Fan Status', 'Zone Temperature']) === null,
       'not drive names: Hi/Lo speed enables, wind, air speed, other fans, no match',
     );
+    // review 2: false-positive names are not drives; true drive names still are
+    ok(
+      nm(['High Fan Speed', 'Low Fan Speed']) === null &&
+        nm(['Rotation Frequency: DX Compressors']) === null &&
+        nm(['Comp 1 Speed', 'Compressor Speed']) === null &&
+        nm(['Inverter Discharge Temperature', 'Inverter Oil Sensor']) === null &&
+        nm(['EF/SF Constant Speed Setpoint']) === null &&
+        nm(['Supply Fan 2/3 Speed Enable']) === null &&
+        nm(['VAV Box Drive Open Command']) === null &&
+        nm(['Current Fan Frequency'], 'VRF Condenser HP-1') === null,
+      'not drive names (review 2): High/Low Fan Speed, Comp, Inverter on a compressor, Constant Speed, Speed Enable, Box Drive, VRF condenser',
+    );
+    ok(
+      nm(['Supply Fan VFD Speed']) === 'Supply Fan VFD Speed' &&
+        nm(['SF VFD Status']) === 'SF VFD Status' &&
+        nm(['Fan Wall Speed']) === 'Fan Wall Speed' &&
+        nm(['Current Fan Frequency'], 'AHU-1') === 'Current Fan Frequency',
+      'true drive names still match (review 2): Supply Fan VFD Speed, SF VFD Status, Fan Wall Speed',
+    );
+    // a hostile point name shown as drive evidence is escaped in the real render
+    {
+      const hostileRow = spd({ id: 'hp1', equipName: 'AHU-H', pts: { supplyFanCFM: '5000' }, pointsRaw: { [HOSTILE + ' VFD Speed']: '1' } });
+      const hs2 = makeSandbox({ rows: [hostileRow], hvacKwh: 900000 });
+      hs2.getUDBldg = (p, b) => (b === 'b1' ? { id: 'b1', name: BLDG } : null);
+      const u = hs2.getEndUse('p', 'b1', 'fans').units[0];
+      ok(u && String(u.vfdHow).indexOf('onerror') >= 0, 'hostile point name reaches the drive evidence text', u && u.vfdHow);
+      const cell = hs2.ecmFanLevelCell(u.vfd, u.vfdLevel, u.vfdHow);
+      ok(cell.indexOf('<img') < 0 && cell.indexOf('&lt;img') >= 0, 'hostile point name as drive evidence is escaped in the rendered cell', cell.slice(0, 120));
+      const field2 = hs2.ecmFanUnitsFieldHtml({ projId: 'p', buildingId: 'b1' });
+      ok(field2.indexOf('<img') < 0 && field2.indexOf('onerror') >= 0 && field2.indexOf('&lt;img') >= 0, 'hostile point name is escaped in the real picker render', field2.length);
+    }
     const d1 = firstUnit({ rows: [spd()], edits: { 'v1::hasVfd': 'no' } });
     ok(d1.vfd === 'no' && d1.driveStatus === 'none' && d1.vfdLevel === 'matrix' && d1.hasVfd === 'no', 'the user sets No: constant speed, Equipment Matrix level', d1.vfdHow);
     const d2 = firstUnit({ rows: [spd({ pts: { supplyFanCFM: '5000' } })], edits: { 'v1::hasVfd': 'yes' } });
