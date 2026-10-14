@@ -499,8 +499,8 @@ function resolveHvacLoadData(projId, b) {
 
 // Company-standard "Space Heating % of Total Gas" default for the Rules-of-Thumb method's
 // gasPct input (hvl-t-gasPct) — ONE place, shared by _hvlRenderTraditional's shown default/hint
-// text and hvacComputeGasThermsForBuilding's headless BAS Savings Calc autofill (2026-09-23), so
-// both always agree — no second copy of "15 vs 80" anywhere else.
+// text and _hvlThumbDefaults (the start values getEndUse calculates with), so both always agree —
+// no second copy of "15 vs 80" anywhere else.
 // 2026-09-23 (heating-type classifier fix): gasHeat added as a second signal. A building with
 // BOTH known gas/hydronic heat (e.g. a central gas boiler + VAV hot-water reheat) AND a small
 // amount of known electric heat (e.g. a few standalone electric vestibule unit heaters) is still
@@ -560,8 +560,8 @@ function _hvlBuildingHasElectricHeat(projId, bldgId) {
 
 // _hvlGasHeatShare — the ONE computation of a building's gas heating share, used by BOTH the
 // HVAC Load Estimation "Rules of Thumb" tab's "Space Heating % of Total Gas" default
-// (_hvlRenderTraditional) and the BAS Savings Calc's Existing Heating Gas Therms autofill
-// (hvacComputeGasThermsForBuilding). Prefers the real, data-driven 3-lowest-month baseload
+// (_hvlRenderTraditional) and the Rules of Thumb start values (_hvlThumbDefaults) that getEndUse
+// calculates an unsaved building's end uses with. Prefers the real, data-driven 3-lowest-month baseload
 // subtraction method (computeHvacEnduse, computations/hvac-enduse.js — the SAME canonical
 // function the Energy Graphics tab's HVAC End-Use Estimate card already uses) computed from this
 // building's own monthly gas (+ propane, gallon-equivalent) bills via _hvlMonthlyBaseline (the
@@ -586,43 +586,6 @@ function _hvlGasHeatShare(projId, bldgId) {
     };
   }
   return { pct: fallbackPct, source: 'default', totalGas, heatingTherms: totalGas * (fallbackPct / 100) };
-}
-
-// Existing Heating Gas Therms for the BAS Savings Calc (calHeatGas), computed directly from this
-// building's own gas (plus propane, gallon-equivalent) bills via the shared _hvlGasHeatShare
-// (2026-09-23) — so this fills the BAS Savings Calc's calibration field without requiring a user
-// to have opened the HVAC Load Estimation tab first. Returns null when the building has no
-// gas/propane bills at all — never invents a number. A real SAVED HVAC Load Estimation for this
-// building (its stored estimate, hvacLoadStoredFor, with a saved time) is preferred over this fresh estimate by
-// the caller (openBASCalc) — this is only the fallback for a building nobody has reviewed in that tab yet.
-function hvacComputeGasThermsForBuilding(projId, bldgId) {
-  const b = typeof getUDBldg === 'function' ? getUDBldg(projId, bldgId) : null;
-  if (!b) return null;
-  const share = _hvlGasHeatShare(projId, bldgId);
-  if (share.totalGas <= 0) return null;
-  return { totalGas: share.totalGas, hvacGasPct: share.pct, hvacGasT: share.heatingTherms, source: share.source };
-}
-
-// Existing Cooling kWh for the BAS Savings Calc (calCoolKwh), computed directly from this
-// building's own electric bills via computeHvacEnduse (computations/hvac-enduse.js — the SAME
-// 3-lowest-month baseload subtraction method _hvlGasHeatShare already uses for gas, and the SAME
-// function the Energy Graphics HVAC End-Use Estimate card uses) — so this fills the BAS Savings
-// Calc's calibration field without requiring a user to have opened the HVAC Load Estimation tab
-// and clicked Save first (2026-09-24 fix; mirrors hvacComputeGasThermsForBuilding, which already
-// got this same treatment on 2026-09-23 — this field had no fresh-compute fallback at all until
-// now, so it always showed "Default value (not from building data)" for a building nobody had
-// reviewed in that tab yet, even when the building has a full year of its own electric bills, as
-// reported for Client C Schools / Client B Spring Middle). Returns null when the building has
-// fewer than 6 populated calendar months of electric bill history — never invents a number. A
-// real SAVED HVAC Load Estimation for this building (hvacLoadStoredFor) is
-// preferred over this fresh estimate by the caller (openBASCalc), same precedence as the gas
-// fallback.
-function hvacComputeElecCoolKwhForBuilding(projId, bldgId) {
-  const b = typeof getUDBldg === 'function' ? getUDBldg(projId, bldgId) : null;
-  if (!b) return null;
-  const { enduse } = resolveHvacLoadData(projId, b);
-  if (!enduse || !enduse.elecValid || !(enduse.coolingKwh > 0)) return null;
-  return { coolingKwh: enduse.coolingKwh, source: 'baseload' };
 }
 
 function _buildBaselineDataHtml(b, projId) {
@@ -2898,12 +2861,8 @@ function openEcmCalcInline(templateId, projId) {
     function onCalculate(tid, inputs, results) {
       // Results are rendered inline by renderEcmResults (Save to Project + Add as Measure buttons)
     },
-    { projId, buildingId: bldgId, buildingName: bldg?.name || null },
+    { projId, buildingId: bldgId, buildingName: bldg?.name || null, backLabel: '← Templates' },
   );
-  // renderEcmCalculator's own "← Back" button just fires onBack; make the label
-  // consistent with the rest of the calc-templates flow.
-  const backBtn = container.querySelector('#ecm-back-btn');
-  if (backBtn) backBtn.textContent = '← Templates';
 }
 
 /* ══════════════════════════════════════════════════════
@@ -4374,77 +4333,23 @@ function openBASCalc(projId) {
     }
   }
 
-  // Calibration (Section D): the stored HVAC Load Estimate of THIS building (b.hvacLoad, hvacLoadStoredFor).
-  // With no building chosen (a project-level calc) it is the project roll-up of the buildings' estimates
-  // (hvacLoadProjectRollup, computed, never stored). The roll-up has no single saved time, so `savedEst`
-  // below carries { est, saved } for both cases.
+  // Calibration (Section D): the baseline of THIS building's cooling, electric heating and gas heating, from
+  // getEndUse (computations/end-use.js), the one reader of the building's HVAC Load Estimate. One rule for all
+  // three fields (a typed value still wins in _bcResolve below). The load estimate is per building, so with no
+  // building chosen nothing is filled. A zero end use (for example no electric heating) fills nothing.
   let autoCalCool = null,
     autoCalHeat = null,
     autoCalGas = null;
-  const savedEst = bldgId
-    ? (() => {
-        const st = hvacLoadStoredFor(projId, bldgId);
-        return st ? { est: st.est, saved: !!st.savedAt } : null;
-      })()
-    : (() => {
-        const ru = hvacLoadProjectRollup(projId);
-        return ru.buildings ? { est: ru, saved: ru.saved > 0 } : null;
-      })();
-  // ONE rule for cooling kWh, heating kWh and gas therms: a SAVED estimate (a user reviewed and saved it) wins;
-  // an unsaved one (savedAt null, e.g. a migrated Rules-of-Thumb estimate) is never used, so the bill-based fill
-  // below runs instead.
-  const useSavedEst = !!(savedEst && savedEst.saved);
-  if (useSavedEst) {
-    if (savedEst.est.coolKwhTotal)
-      autoCalCool = { value: Math.round(savedEst.est.coolKwhTotal), source: 'HVAC Load Estimation' };
-    if (savedEst.est.heatKwhTotal)
-      autoCalHeat = { value: Math.round(savedEst.est.heatKwhTotal), source: 'HVAC Load Estimation' };
-  }
-  // Existing Heating kWh: electric heating is NOT separable by the 3-lowest-month baseload method
-  // (Matt 2026-09-20: no regression HVAC split anywhere), so there is no fresh-compute fill. Only a
-  // real SAVED HVAC Load Estimation (above) or the user's own value fills it; otherwise the field
-  // shows the plain label set below. The v2026.09.28.21 regression fill is deleted.
-  // Existing Cooling kWh (2026-09-24 fix): same precedence as the calHeatGas fix below — a real
-  // SAVED HVAC Load Estimation for this project wins when one exists (checked above). Otherwise,
-  // compute it fresh directly from THIS building's own electric bills via
-  // hvacComputeElecCoolKwhForBuilding (computeHvacEnduse's 3-lowest-month baseload method — the
-  // SAME function calHeatGas already uses for gas) so calCoolKwh fills without requiring a user to
-  // open the HVAC Load Estimation tab and click Save first. Previously calCoolKwh had NO
-  // fresh-compute fallback at all (unlike calHeatGas, which got one 2026-09-23), so it stayed
-  // "Default value (not from building data)" for any building nobody had saved that tab for — the
-  // Client C Schools / Client B Spring Middle failure mode reported 2026-09-24.
-  if (!autoCalCool && bldgId && typeof hvacComputeElecCoolKwhForBuilding === 'function') {
-    const computedCool = hvacComputeElecCoolKwhForBuilding(projId, bldgId);
-    if (computedCool && computedCool.coolingKwh)
-      autoCalCool = {
-        value: Math.round(computedCool.coolingKwh),
-        source: 'electric bills (3-lowest-month baseload method — same as the Energy Graphics HVAC End-Use Estimate)',
-      };
-  }
-  // Existing Heating Gas Therms (2026-09-23 fix): a real SAVED HVAC Load Estimation for this
-  // building (its stored estimate with a saved time — a user actually reviewed and clicked
-  // Save on that tab) wins when one exists. Otherwise, compute it fresh directly from THIS
-  // building's own gas/propane bills via hvacComputeGasThermsForBuilding — the SAME bill reader
-  // and the SAME Rules-of-Thumb gas-heating-share default the HVAC Load Estimation tab itself
-  // uses — so calHeatGas fills without requiring a user to open that tab first. Previously this
-  // only ever read the saved snapshot, which stays empty (and calHeatGas empty) for any building
-  // nobody has opened that tab for — the Client C Schools / Client B Spring Middle failure
-  // mode reported 2026-09-23.
-  if (useSavedEst && savedEst.est.hvacGasT) {
-    autoCalGas = {
-      value: Math.round(savedEst.est.hvacGasT),
-      source: 'HVAC Load Estimation (heating share of gas bills)',
+  if (bldgId) {
+    const euFill = (endUse) => {
+      const eu = getEndUse(projId, bldgId, endUse);
+      return eu.modeled && eu.source !== 'none' && eu.annual > 0
+        ? { value: Math.round(eu.annual), source: eu.sourceLabel }
+        : null;
     };
-  } else if (bldgId && typeof hvacComputeGasThermsForBuilding === 'function') {
-    const computedGas = hvacComputeGasThermsForBuilding(projId, bldgId);
-    if (computedGas && computedGas.hvacGasT)
-      autoCalGas = {
-        value: Math.round(computedGas.hvacGasT),
-        source:
-          computedGas.source === 'baseload'
-            ? 'gas bills (3-lowest-month baseload heating-share method — same as the Energy Graphics HVAC End-Use Estimate)'
-            : 'gas bills (Rules of Thumb heating share estimate, not enough bill history to compute a baseload split — review in HVAC Load Estimation)',
-      };
+    autoCalCool = euFill('cooling');
+    autoCalHeat = euFill('heatingElectric');
+    autoCalGas = euFill('heatingGas');
   }
 
   // A saved basCalc that exactly matches the old BAS Savings Calc Excel template's 22-value

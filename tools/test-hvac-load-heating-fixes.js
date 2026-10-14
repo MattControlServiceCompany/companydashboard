@@ -1,21 +1,21 @@
 // tools/test-hvac-load-heating-fixes.js — SYNTHETIC-fixture regression gate for the 2026-09-23
 // BAS Savings Calc / HVAC Load Estimation heating fixes (items 1 and 2), plus the 2026-09-23
 // single-source heating-share fix (item 3):
-//   1. hvacComputeGasThermsForBuilding — Existing Heating Gas Therms for the BAS Savings Calc,
+//   1. gasThermsFor — Existing Heating Gas Therms for the BAS Savings Calc,
 //      computed directly from a building's own gas/propane bills WITHOUT requiring the HVAC Load
 //      Estimation tab to have been opened first.
 //   2. _hvlBuildingHasElectricHeat / _hvlDefaultGasPct — the Equipment Matrix-sourced
 //      electric-heat detection that replaced the old p.heatType (project-level, essentially never
 //      set) signal, so the "Heating % of HVAC kWh (electric heat only)" default is never 0 when a
 //      real electric-heat unit is classified for the building.
-//   3. _hvlGasHeatShare — the ONE computation (shared by hvacComputeGasThermsForBuilding and the
+//   3. _hvlGasHeatShare — the ONE computation (shared by gasThermsFor and the
 //      HVAC Load Estimation "Rules of Thumb" tab) that prefers the real, data-driven 3-lowest-
 //      month baseload subtraction method (computeHvacEnduse, computations/hvac-enduse.js) over
 //      the fixed 80%/15% Rules-of-Thumb percentage default, falling back to that default only
 //      when there isn't enough bill history (<6 populated calendar months) to compute a split.
 //
 // Loads the REAL functions (app/calculators.js _hvlMonthlyBaseline/_hvlDefaultGasPct/
-// _hvlBuildingHasElectricHeat/_hvlGasHeatShare/hvacComputeGasThermsForBuilding, and
+// _hvlBuildingHasElectricHeat/_hvlGasHeatShare/gasThermsFor, and
 // computations/hvac-enduse.js computeHvacEnduse — extracted verbatim, not reimplemented) into a
 // Node vm sandbox. getNormRows/buildMoMap (computations/normalization.js — weather normalization,
 // that module's own domain/coverage) are duck-typed stand-ins here, same technique
@@ -88,16 +88,15 @@ const src = [
   loadFn(CALC, '_hvlBuildingHeatingSignals'),
   loadFn(CALC, '_hvlBuildingHasElectricHeat'),
   loadFn(CALC, '_hvlGasHeatShare'),
-  loadFn(CALC, 'hvacComputeGasThermsForBuilding'),
 ].join('\n\n');
 
 // Fixture: a building with 12 months of gas bills — either a flat {therms} figure applied to
 // every month (used for the <6-populated-months fallback-path tests, where only a handful of
 // months are populated so no seasonal shape is possible anyway) or a seasonal {byMo:[12 values]}
 // array (used to exercise the real 3-lowest-month baseload computation path) — and one propane
-// bill equivalent (per the 0.91452 gal->therms factor hvacLoadCalc/hvacComputeGasThermsForBuilding
+// bill equivalent (per the 0.91452 gal->therms factor hvacLoadCalc/gasThermsFor
 // both use). getNormRows/buildMoMap are stubbed to hand back a fixed monthly map — this test is
-// about hvacComputeGasThermsForBuilding's/_hvlGasHeatShare's OWN gathering + selection logic, not
+// about gasThermsFor's/_hvlGasHeatShare's OWN gathering + selection logic, not
 // normalization.js's weather-normalization math (that module's own coverage).
 function makeSandbox(opts) {
   opts = opts || {};
@@ -214,7 +213,14 @@ console.log('--- 2. _hvlBuildingHasElectricHeat — sourced from Equipment Matri
   assert(sb._hvlBuildingHasElectricHeat(1, 'b1') === false, 'no Equipment Matrix hooks at all -> false, no throw');
 }
 
-console.log('--- 3. hvacComputeGasThermsForBuilding — FALLBACK path, <6 populated months (item 1) ---');
+// The old BAS gas reader (hvacCompute...ForBuilding) was removed in phase 5 (getEndUse reads the HVAC Load Estimate);
+// the shared share function _hvlGasHeatShare it wrapped stays, and this helper gives the same shape for the cases below.
+function gasThermsFor(sb, p, b) {
+  const s = sb._hvlGasHeatShare(p, b);
+  return s.totalGas > 0 ? { totalGas: s.totalGas, hvacGasPct: s.pct, hvacGasT: s.heatingTherms, source: s.source } : null;
+}
+
+console.log('--- 3. _hvlGasHeatShare (gas heating share) — FALLBACK path, <6 populated months (item 1) ---');
 {
   // Gas-heat building (no known electric-heat EM rows), only 5 populated calendar months — not
   // enough bill history (MIN_POPULATED_MONTHS=6) for computeHvacEnduse to compute a real baseload
@@ -223,7 +229,7 @@ console.log('--- 3. hvacComputeGasThermsForBuilding — FALLBACK path, <6 popula
     gasMonthly: { therms: 100, months: 5 },
     emHeatTypeRows: [{ building: 'Synthetic Elementary', key: 'hydronic', known: true }],
   });
-  let r = sb.hvacComputeGasThermsForBuilding(1, 'b1');
+  let r = gasThermsFor(sb, 1, 'b1');
   assert(!!r, 'returns a result when gas bills exist');
   assert(r.totalGas === 500, `totalGas gathered from bills: got ${r && r.totalGas}, want 500`);
   assert(r.source === 'default', 'fewer than 6 populated months -> falls back to the percentage default');
@@ -241,7 +247,7 @@ console.log('--- 3. hvacComputeGasThermsForBuilding — FALLBACK path, <6 popula
       { building: 'Synthetic Elementary', key: 'electric', known: true },
     ],
   });
-  r = sb.hvacComputeGasThermsForBuilding(1, 'b1');
+  r = gasThermsFor(sb, 1, 'b1');
   assert(r.hvacGasPct === 80, 'mixed gas+electric building stays at the 80% gas-dominant default');
   assert(near(r.hvacGasT, 400, 0.01), `hvacGasT for mixed building: got ${r && r.hvacGasT}, want 400`);
 
@@ -252,13 +258,13 @@ console.log('--- 3. hvacComputeGasThermsForBuilding — FALLBACK path, <6 popula
     gasMonthly: { therms: 100, months: 5 },
     emHeatTypeRows: [{ building: 'Synthetic Elementary', key: 'electricReheat', known: true }],
   });
-  r = sb.hvacComputeGasThermsForBuilding(1, 'b1');
+  r = gasThermsFor(sb, 1, 'b1');
   assert(r.hvacGasPct === 15, 'all-electric building (no known hydronic rows) uses the 15% default');
   assert(near(r.hvacGasT, 75, 0.01), `hvacGasT for all-electric building: got ${r && r.hvacGasT}, want 75`);
 
   // No gas bills at all -> null, never invents a number.
   sb = makeSandbox({});
-  r = sb.hvacComputeGasThermsForBuilding(1, 'b1');
+  r = gasThermsFor(sb, 1, 'b1');
   assert(r === null, 'no gas/propane bills -> null, never invented');
 
   // Propane-only building, <6 months: gallons -> therms via the SAME 0.91452 factor hvacLoadCalc uses.
@@ -266,23 +272,23 @@ console.log('--- 3. hvacComputeGasThermsForBuilding — FALLBACK path, <6 popula
   // propaneByMo fixture above always fills all 12 months, so this exercises the COMPUTED baseload
   // path (see section 4) rather than the fallback — kept here only to prove totalGas gathering
   // (gal->therms conversion) is correct regardless of which pct-source is chosen.
-  r = sb.hvacComputeGasThermsForBuilding(1, 'b1');
+  r = gasThermsFor(sb, 1, 'b1');
   assert(near(r.totalGas, 12 * 50 * 0.91452, 0.01), `propane gal->therms conversion: got ${r && r.totalGas}`);
 
   // No bldgId at all -> getUDBldg stub still resolves the fixture building in this harness, but
-  // hvacComputeGasThermsForBuilding's own `if (!b) return null;` guard (real getUDBldg returns
+  // gasThermsFor's own `if (!b) return null;` guard (real getUDBldg returns
   // null for an unmatched id — already covered by chCalcAutofillFields's own test) means an
   // unknown building never throws or invents a number in the real app.
 }
 
 console.log(
-  '--- 4. _hvlGasHeatShare — COMPUTED baseload path, single source with hvacComputeGasThermsForBuilding (item 3) ---',
+  '--- 4. _hvlGasHeatShare — COMPUTED baseload path, single source with gasThermsFor (item 3) ---',
 );
 {
   // Seasonal 12-month gas fixture (Jan..Dec): a real heating-season shape, 3 lowest summer months
   // (Jun/Jul/Aug = 20/20/25) are the DHW/kitchen-only baseload. This is the SAME 3-lowest-month
   // subtraction method computeHvacEnduse implements for the Energy Graphics HVAC End-Use Estimate
-  // card — proving hvacComputeGasThermsForBuilding/_hvlGasHeatShare route through that ONE
+  // card — proving gasThermsFor/_hvlGasHeatShare route through that ONE
   // function instead of the fixed 80%/15% Rules-of-Thumb default whenever real bill history exists.
   const byMo = [300, 280, 200, 120, 60, 20, 20, 25, 60, 120, 220, 290];
   const totalGas = byMo.reduce((s, v) => s + v, 0); // 1715
@@ -293,7 +299,7 @@ console.log(
     gasMonthly: { byMo },
     emHeatTypeRows: [{ building: 'Synthetic Elementary', key: 'hydronic', known: true }],
   });
-  let r = sb.hvacComputeGasThermsForBuilding(1, 'b1');
+  let r = gasThermsFor(sb, 1, 'b1');
   assert(!!r, 'returns a result for a full seasonal 12-month gas fixture');
   assert(r.totalGas === totalGas, `totalGas gathered from bills: got ${r && r.totalGas}, want ${totalGas}`);
   assert(r.source === 'baseload', '>=6 populated months -> computed baseload path, not the percentage default');
@@ -306,12 +312,12 @@ console.log(
     `hvacGasPct matches heatingTherms/totalGas: got ${r && r.hvacGasPct}`,
   );
 
-  // _hvlGasHeatShare is the SAME function hvacComputeGasThermsForBuilding calls — direct check
+  // _hvlGasHeatShare is the SAME function gasThermsFor calls — direct check
   // confirms there is only one computation, not two independent ones reaching the same number.
   const share = sb._hvlGasHeatShare(1, 'b1');
   assert(
     share.source === 'baseload' && near(share.heatingTherms, heatingTherms, 1),
-    '_hvlGasHeatShare agrees with hvacComputeGasThermsForBuilding exactly',
+    '_hvlGasHeatShare agrees with gasThermsFor exactly',
   );
 
   // Fewer than 6 populated months even with a seasonal shape supplied -> still falls back (not
@@ -321,7 +327,7 @@ console.log(
     gasMonthly: { byMo: byMo.map((v, i) => (i < 4 ? v : null)) }, // only Jan-Apr populated
     emHeatTypeRows: [{ building: 'Synthetic Elementary', key: 'hydronic', known: true }],
   });
-  r = sb.hvacComputeGasThermsForBuilding(1, 'b1');
+  r = gasThermsFor(sb, 1, 'b1');
   assert(r.source === 'default', '<6 populated months, even seasonal -> falls back to the percentage default');
 }
 

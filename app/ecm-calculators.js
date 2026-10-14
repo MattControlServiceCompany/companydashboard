@@ -1,6 +1,9 @@
 /* ══════════════════════════════════════════════════════
-   ECM CALCULATOR LIBRARY — Framework + 3 Templates
-   Templates: OA Dampers, RTU Replacement, VFD Savings
+   ECM CALCULATOR LIBRARY — the calc templates of the Energy Savings page
+   A template turns its inputs into yearly QUANTITIES (kWh, Therms, kW) only. It never prices them and never
+   spreads them over the year: the monthly shape comes from the building's HVAC Load Estimate (getEndUse,
+   computations/end-use.js) and the dollars from the Energy Savings matrix pricing (calcMeasureDollars).
+   tools/gate-ecm-templates-no-dollars.js fails on a dollar, a payback or a divide-by-12 inside a template.
    ══════════════════════════════════════════════════════ */
 
 /* ─── Template Registry ──────────────────────────────── */
@@ -118,17 +121,6 @@ const ECM_TEMPLATES = {
         min: 1,
         max: 8,
       },
-      { id: 'gas_rate', label: 'Gas Rate', unit: '$/therm', type: 'number', default: null },
-      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null },
-      {
-        id: 'repair_cost',
-        label: 'Repair / Replacement Cost',
-        unit: '$',
-        type: 'number',
-        default: 1500,
-        min: 0,
-        max: 100000,
-      },
     ],
     outputs: [
       {
@@ -151,20 +143,6 @@ const ECM_TEMPLATES = {
         unit: 'kWh/yr',
         formula: 'kWh = 1.08 × excess_cfm × avg_dT_cooling × unocc_cooling_hrs / (COP × ' + KWH_LABEL + ')',
       },
-      { id: 'gas_savings_dollar', label: 'Annual Gas Savings ($)', unit: '$/yr', formula: 'therms_saved × gas_rate' },
-      {
-        id: 'elec_savings_dollar',
-        label: 'Annual Electric Savings ($)',
-        unit: '$/yr',
-        formula: 'kwh_saved × elec_rate',
-      },
-      {
-        id: 'total_savings_dollar',
-        label: 'Total Annual Savings',
-        unit: '$/yr',
-        formula: 'gas_savings + elec_savings',
-      },
-      { id: 'simple_payback', label: 'Simple Payback', unit: 'years', formula: 'repair_cost / total_annual_savings' },
     ],
     calculate(inp) {
       const afue = inp.boiler_afue / 100;
@@ -194,19 +172,10 @@ const ECM_TEMPLATES = {
       const cool_btu_total = 1.08 * excess_cfm * inp.avg_delta_t_cooling * inp.unocc_cooling_hrs;
       const kwh_saved = cool_btu_total / (cop * BTU_PER_KWH);
 
-      const gas_savings_dollar = ecmPrice(inp, 'gas', therms_saved);
-      const elec_savings_dollar = ecmPrice(inp, 'elec', kwh_saved);
-      const total_savings_dollar = gas_savings_dollar + elec_savings_dollar;
-      const simple_payback = total_savings_dollar > 0 ? inp.repair_cost / total_savings_dollar : Infinity;
-
       return {
         excess_cfm: Math.round(excess_cfm),
         therms_saved: Math.round(therms_saved),
         kwh_saved: Math.round(kwh_saved),
-        gas_savings_dollar: Math.round(gas_savings_dollar),
-        elec_savings_dollar: Math.round(elec_savings_dollar),
-        total_savings_dollar: Math.round(total_savings_dollar),
-        simple_payback: simple_payback === Infinity ? null : Math.round(simple_payback * 10) / 10,
       };
     },
   },
@@ -235,7 +204,8 @@ const ECM_TEMPLATES = {
       { id: 'new_seer', label: 'New SEER', unit: '', type: 'number', default: 16.0, min: 13, max: 30 },
       {
         id: 'existing_cooling_kwh',
-        label: 'Existing Annual Cooling kWh (from utility analysis)',
+        label: 'Existing Annual Cooling kWh (from the HVAC Load Estimate)',
+        endUse: 'cooling',
         unit: 'kWh/yr',
         type: 'number',
         default: 40000,
@@ -274,7 +244,8 @@ const ECM_TEMPLATES = {
       },
       {
         id: 'existing_heating_therms',
-        label: 'Existing Annual Heating Gas (from UA)',
+        label: 'Existing Annual Heating Gas (from the HVAC Load Estimate)',
+        endUse: 'heatingGas',
         unit: 'therms/yr',
         type: 'number',
         default: 2000,
@@ -289,17 +260,6 @@ const ECM_TEMPLATES = {
         default: 100,
         min: 1,
         max: 100,
-      },
-      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null },
-      { id: 'gas_rate', label: 'Gas Rate', unit: '$/therm', type: 'number', default: null },
-      {
-        id: 'equipment_cost',
-        label: 'Total Equipment & Install Cost',
-        unit: '$',
-        type: 'number',
-        default: 25000,
-        min: 0,
-        max: 5000000,
       },
     ],
     outputs: [
@@ -326,25 +286,6 @@ const ECM_TEMPLATES = {
         label: 'Annual Heating Gas Saved',
         unit: 'therms/yr',
         formula: 'existing_therms × pct_replaced × (1 − existing_eff / new_eff)',
-      },
-      {
-        id: 'cooling_savings_dollar',
-        label: 'Annual Cooling Savings ($)',
-        unit: '$/yr',
-        formula: 'cooling_kwh_saved × elec_rate',
-      },
-      {
-        id: 'heating_savings_dollar',
-        label: 'Annual Heating Savings ($)',
-        unit: '$/yr',
-        formula: 'heating_therms_saved × gas_rate',
-      },
-      { id: 'total_savings_dollar', label: 'Total Annual Savings', unit: '$/yr', formula: 'cooling + heating savings' },
-      {
-        id: 'simple_payback',
-        label: 'Simple Payback',
-        unit: 'years',
-        formula: 'equipment_cost / total_annual_savings',
       },
     ],
     calculate(inp) {
@@ -378,20 +319,11 @@ const ECM_TEMPLATES = {
         );
       }
 
-      const cooling_savings_dollar = ecmPrice(inp, 'elec', Math.max(0, cooling_kwh_saved));
-      const heating_savings_dollar = ecmPrice(inp, 'gas', heating_therms_saved);
-      const total_savings_dollar = cooling_savings_dollar + heating_savings_dollar;
-      const simple_payback = total_savings_dollar > 0 ? inp.equipment_cost / total_savings_dollar : Infinity;
-
       return {
         existing_kw_ton: Math.round(existingCurve.ari * 1000) / 1000,
         new_kw_ton: Math.round(newCurve.ari * 1000) / 1000,
         cooling_kwh_saved: Math.round(Math.max(0, cooling_kwh_saved)),
         heating_therms_saved: Math.round(heating_therms_saved),
-        cooling_savings_dollar: Math.round(cooling_savings_dollar),
-        heating_savings_dollar: Math.round(heating_savings_dollar),
-        total_savings_dollar: Math.round(total_savings_dollar),
-        simple_payback: simple_payback === Infinity ? null : Math.round(simple_payback * 10) / 10,
       };
     },
   },
@@ -445,16 +377,6 @@ const ECM_TEMPLATES = {
         ],
         default: 'affinity',
       },
-      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null },
-      {
-        id: 'vfd_cost',
-        label: 'VFD Purchase & Install Cost',
-        unit: '$',
-        type: 'number',
-        default: 5000,
-        min: 0,
-        max: 500000,
-      },
     ],
     outputs: [
       {
@@ -471,8 +393,6 @@ const ECM_TEMPLATES = {
           'Affinity: baseline × (load_after/load_before)³  |  Linear: HP × ' + KW_PER_HP + ' × (load_after/100) × hours / (eff/100)',
       },
       { id: 'savings_kwh', label: 'Annual kWh Saved', unit: 'kWh/yr', formula: 'baseline_kWh − post_vfd_kWh' },
-      { id: 'annual_savings_dollar', label: 'Annual Savings ($)', unit: '$/yr', formula: 'savings_kWh × elec_rate' },
-      { id: 'simple_payback', label: 'Simple Payback', unit: 'years', formula: 'vfd_cost / annual_savings_dollar' },
     ],
     calculate(inp) {
       const eff = inp.motor_eff / 100;
@@ -491,15 +411,11 @@ const ECM_TEMPLATES = {
       }
 
       const savings_kwh = baseline_kwh - post_vfd_kwh;
-      const annual_savings_dollar = ecmPrice(inp, 'elec', savings_kwh);
-      const simple_payback = annual_savings_dollar > 0 ? inp.vfd_cost / annual_savings_dollar : Infinity;
 
       return {
         baseline_kwh: Math.round(baseline_kwh),
         post_vfd_kwh: Math.round(post_vfd_kwh),
         savings_kwh: Math.round(savings_kwh),
-        annual_savings_dollar: Math.round(annual_savings_dollar),
-        simple_payback: simple_payback === Infinity ? null : Math.round(simple_payback * 10) / 10,
       };
     },
   },
@@ -550,23 +466,6 @@ const ECM_TEMPLATES = {
         min: 10,
         max: 100,
       },
-      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null },
-      {
-        id: 'demand_rate',
-        label: 'Demand Rate',
-        unit: '$/kW/mo',
-        type: 'number',
-        default: null,
-      },
-      {
-        id: 'installed_cost',
-        label: 'Installed Cost',
-        unit: '$',
-        type: 'number',
-        default: 250000,
-        min: 0,
-        max: 5000000,
-      },
     ],
     outputs: [
       {
@@ -593,30 +492,6 @@ const ECM_TEMPLATES = {
         unit: 'kW',
         formula: '(existing_kW_full − proposed_kW_full) × avg_load_pct',
       },
-      {
-        id: 'energy_savings_dollar',
-        label: 'Energy Cost Savings',
-        unit: '$/yr',
-        formula: 'savings_kWh × elec_rate',
-      },
-      {
-        id: 'demand_savings_dollar',
-        label: 'Demand Cost Savings',
-        unit: '$/yr',
-        formula: 'peak_kW_savings × demand_rate × 12',
-      },
-      {
-        id: 'total_savings_dollar',
-        label: 'Total Annual Savings',
-        unit: '$/yr',
-        formula: 'energy_savings + demand_savings',
-      },
-      {
-        id: 'simple_payback',
-        label: 'Simple Payback',
-        unit: 'years',
-        formula: 'installed_cost / total_annual_savings',
-      },
     ],
     calculate(inp) {
       const avgLoad = inp.avg_load_pct / 100;
@@ -631,20 +506,11 @@ const ECM_TEMPLATES = {
       // Peak demand savings at average load
       const peak_kw_savings = Math.max(0, existing_kw_full - proposed_kw_full) * avgLoad;
 
-      const energy_savings_dollar = ecmPrice(inp, 'elec', savings_kwh);
-      const demand_savings_dollar = ecmPrice(inp, 'demand', peak_kw_savings);
-      const total_savings_dollar = energy_savings_dollar + demand_savings_dollar;
-      const simple_payback = total_savings_dollar > 0 ? inp.installed_cost / total_savings_dollar : Infinity;
-
       return {
         existing_kw_full: Math.round(existing_kw_full * 10) / 10,
         proposed_kw_full: Math.round(proposed_kw_full * 10) / 10,
         savings_kwh: Math.round(savings_kwh),
         peak_kw_savings: Math.round(peak_kw_savings * 10) / 10,
-        energy_savings_dollar: Math.round(energy_savings_dollar),
-        demand_savings_dollar: Math.round(demand_savings_dollar),
-        total_savings_dollar: Math.round(total_savings_dollar),
-        simple_payback: simple_payback === Infinity ? null : Math.round(simple_payback * 10) / 10,
       };
     },
   },
@@ -778,17 +644,6 @@ const ECM_TEMPLATES = {
         min: 0,
         max: 1,
       },
-      { id: 'gas_rate', label: 'Gas Rate', unit: '$/therm', type: 'number', default: null },
-      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null },
-      {
-        id: 'installed_cost',
-        label: 'Installed Cost',
-        unit: '$',
-        type: 'number',
-        default: 30000,
-        min: 0,
-        max: 2000000,
-      },
     ],
     outputs: [
       {
@@ -807,32 +662,19 @@ const ECM_TEMPLATES = {
         id: 'heating_savings_therms',
         label: 'Annual Heating Gas Savings',
         unit: 'therms/yr',
-        formula: '1.08 × CFM × ΔT_recovered × heating_hours / (' + THERM_LABEL + ' × AFUE); ΔT_recovered = ΔT × ERW_eff',
+        formula: '1.08 × CFM × ΔT_recovered × heating_hours / (' + THERM_LABEL + ' × AFUE); ΔT_recovered = ΔT × ERW_eff; gas only (Heating Fuel = 0)',
+      },
+      {
+        id: 'heating_savings_kwh',
+        label: 'Annual Heating Electric Savings',
+        unit: 'kWh/yr',
+        formula: '1.08 × CFM × ΔT_recovered × heating_hours / (AFUE × ' + KWH_LABEL + ') when Heating Fuel = 1 (electric)',
       },
       {
         id: 'cooling_savings_kwh',
         label: 'Annual Cooling Electric Savings',
         unit: 'kWh/yr',
         formula: '4.5 × CFM × Δenthalpy_recovered × cooling_hours / (EER × 1000); Δh_recovered = Δh × ERW_eff',
-      },
-      {
-        id: 'heating_savings_dollar',
-        label: 'Heating Cost Savings',
-        unit: '$/yr',
-        formula: 'heating_therms × gas_rate  (or heating_kWh × elec_rate if electric)',
-      },
-      {
-        id: 'cooling_savings_dollar',
-        label: 'Cooling Cost Savings',
-        unit: '$/yr',
-        formula: 'cooling_kWh × elec_rate',
-      },
-      { id: 'total_savings_dollar', label: 'Total Annual Savings', unit: '$/yr', formula: 'heating + cooling savings' },
-      {
-        id: 'simple_payback',
-        label: 'Simple Payback',
-        unit: 'years',
-        formula: 'installed_cost / total_annual_savings',
       },
     ],
     calculate(inp) {
@@ -849,13 +691,9 @@ const ECM_TEMPLATES = {
       const heat_btu_yr = 1.08 * inp.oa_cfm * delta_t_recovered * inp.heating_hours;
 
       // Convert to therms: BTU / (BTU_PER_THERM × AFUE)
-      const heating_savings_therms = heat_btu_yr / (BTU_PER_THERM * inp.afue);
-      const heating_savings_kwh = heat_btu_yr / (inp.afue * BTU_PER_KWH); // for electric
-
       const useGas = inp.heating_fuel < 0.5;
-      const heating_savings_dollar = useGas
-        ? ecmPrice(inp, 'gas', heating_savings_therms)
-        : ecmPrice(inp, 'elec', heating_savings_kwh);
+      const heating_savings_therms = useGas ? heat_btu_yr / (BTU_PER_THERM * inp.afue) : 0;
+      const heating_savings_kwh = useGas ? 0 : heat_btu_yr / (inp.afue * BTU_PER_KWH);
 
       // ── Cooling savings ──
       // Total heat formula: Q [BTU/hr] = 4.5 × CFM × Δenthalpy
@@ -866,20 +704,13 @@ const ECM_TEMPLATES = {
 
       // EER is Btu/h per watt, so kW = Btu/h / (EER × 1000) and kWh = Btu_yr / (EER × 1000)
       const cooling_savings_kwh = cool_btu_yr / (inp.eer * 1000);
-      const cooling_savings_dollar = ecmPrice(inp, 'elec', cooling_savings_kwh);
-
-      const total_savings_dollar = heating_savings_dollar + cooling_savings_dollar;
-      const simple_payback = total_savings_dollar > 0 ? inp.installed_cost / total_savings_dollar : Infinity;
 
       return {
         erw_winter_eff_derated: Math.round(erw_winter * 1000) / 10,
         erw_summer_eff_derated: Math.round(erw_summer * 1000) / 10,
         heating_savings_therms: Math.round(heating_savings_therms),
+        heating_savings_kwh: Math.round(heating_savings_kwh),
         cooling_savings_kwh: Math.round(cooling_savings_kwh),
-        heating_savings_dollar: Math.round(heating_savings_dollar),
-        cooling_savings_dollar: Math.round(cooling_savings_dollar),
-        total_savings_dollar: Math.round(total_savings_dollar),
-        simple_payback: simple_payback === Infinity ? null : Math.round(simple_payback * 10) / 10,
       };
     },
   },
@@ -890,7 +721,7 @@ const ECM_TEMPLATES = {
     name: 'Solar Production',
     category: 'Renewables',
     description:
-      'Estimate annual savings from a rooftop or ground-mounted solar array. Supports both behind-the-meter (retail rate) and net metering (avoided cost) scenarios. Includes ITC credit and lifetime degradation.',
+      'Estimate annual production from a rooftop or ground-mounted solar array, with lifetime degradation. The Solar calculator holds the month-by-month production needed to add it to the savings matrix.',
     icon: '☀️',
     inputs: [
       {
@@ -929,49 +760,7 @@ const ECM_TEMPLATES = {
         min: 0,
         max: 2,
       },
-      {
-        id: 'btm_rate',
-        label: 'Blended Rate (BTM scenario)',
-        unit: '$/kWh',
-        type: 'number',
-        default: null,
-      },
-      {
-        id: 'nm_rate',
-        label: 'Net Metering Export Rate',
-        unit: '$/kWh',
-        type: 'number',
-        default: 0.045,
-        min: 0.01,
-        max: 0.3,
-      },
-      {
-        id: 'use_net_metering',
-        label: 'Use Net Metering rate? (0=BTM, 1=NM)',
-        unit: '',
-        type: 'number',
-        default: 0,
-        min: 0,
-        max: 1,
-      },
-      {
-        id: 'cost_per_watt',
-        label: 'Installed Cost per Watt',
-        unit: '$/W DC',
-        type: 'number',
-        default: 2.5,
-        min: 1.0,
-        max: 6.0,
-      },
-      {
-        id: 'itc_rate',
-        label: 'Federal ITC Rate',
-        unit: '%',
-        type: 'number',
-        default: 30,
-        min: 0,
-        max: 30,
-      },
+
       {
         id: 'analysis_years',
         label: 'Analysis Period',
@@ -989,70 +778,26 @@ const ECM_TEMPLATES = {
         unit: 'kWh/yr',
         formula: 'array_kW × production_ratio × (system_derate / 100)',
       },
-      {
-        id: 'year1_savings_dollar',
-        label: 'Year 1 Savings',
-        unit: '$/yr',
-        formula: 'year1_kWh × rate  (BTM: blended_rate; NM: nm_rate)',
-      },
-      {
-        id: 'gross_cost',
-        label: 'Gross System Cost',
-        unit: '$',
-        formula: 'array_kW × 1,000 × cost_per_watt',
-      },
-      { id: 'itc_credit', label: 'Federal ITC Credit', unit: '$', formula: 'gross_cost × itc_rate' },
-      { id: 'net_cost', label: 'Net Cost (after ITC)', unit: '$', formula: 'gross_cost − ITC_credit' },
-      {
-        id: 'simple_payback',
-        label: 'Simple Payback (post-ITC)',
-        unit: 'years',
-        formula: 'net_cost / year1_savings',
-      },
+
       {
         id: 'lifetime_kwh',
         label: 'Lifetime Production',
         unit: 'kWh',
         formula: 'geometric series: year1_kWh × (1 − (1−degradation)^years) / degradation',
       },
-      {
-        id: 'lifetime_savings_dollar',
-        label: 'Lifetime Savings',
-        unit: '$',
-        formula: 'lifetime_kWh × rate',
-      },
     ],
     calculate(inp) {
       // Year-1 production: array_kW × kWh/kW_ratio × system_derate
       const year1_kwh = inp.array_kw_dc * inp.production_ratio * (inp.system_derate / 100);
 
-      const useNm = inp.use_net_metering >= 0.5;
-      const year1_savings_dollar = useNm ? year1_kwh * inp.nm_rate : ecmPrice(inp, 'elec', year1_kwh, 'btm_rate');
-      const rate = year1_kwh > 0 ? year1_savings_dollar / year1_kwh : useNm ? inp.nm_rate : inp.btm_rate;
-
-      // Cost and ITC (Solar Calc §6.1: P5 = C2 × array_kW × 1000; Q5 = P5 × (1 − ITC))
-      const gross_cost = inp.array_kw_dc * 1000 * inp.cost_per_watt;
-      const itc_credit = gross_cost * (inp.itc_rate / 100);
-      const net_cost = gross_cost - itc_credit;
-
-      // Simple payback post-ITC
-      const simple_payback = year1_savings_dollar > 0 ? net_cost / year1_savings_dollar : Infinity;
-
       // Lifetime production with annual degradation (geometric series)
       const d = inp.annual_degradation / 100;
       const years = inp.analysis_years;
       const lifetime_kwh = d > 0 ? (year1_kwh * (1 - Math.pow(1 - d, years))) / d : year1_kwh * years;
-      const lifetime_savings_dollar = lifetime_kwh * rate;
 
       return {
         year1_kwh: Math.round(year1_kwh),
-        year1_savings_dollar: Math.round(year1_savings_dollar),
-        gross_cost: Math.round(gross_cost),
-        itc_credit: Math.round(itc_credit),
-        net_cost: Math.round(net_cost),
-        simple_payback: simple_payback === Infinity ? null : Math.round(simple_payback * 10) / 10,
         lifetime_kwh: Math.round(lifetime_kwh),
-        lifetime_savings_dollar: Math.round(lifetime_savings_dollar),
       };
     },
   },
@@ -1102,14 +847,7 @@ const ECM_TEMPLATES = {
         min: 100,
         max: 8760,
       },
-      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null },
-      {
-        id: 'demand_rate',
-        label: 'Demand Rate',
-        unit: '$/kW/mo',
-        type: 'number',
-        default: null,
-      },
+
       {
         id: 'coincidence_factor',
         label: 'Peak Demand Coincidence Factor',
@@ -1127,15 +865,6 @@ const ECM_TEMPLATES = {
         default: 0,
         min: 0,
         max: 60,
-      },
-      {
-        id: 'installed_cost',
-        label: 'Installed Cost',
-        unit: '$',
-        type: 'number',
-        default: 50000,
-        min: 0,
-        max: 5000000,
       },
     ],
     outputs: [
@@ -1175,18 +904,6 @@ const ECM_TEMPLATES = {
         unit: 'kW',
         formula: '(existing_W − proposed_W) × qty / 1,000 × coincidence_factor  [LxL: S4 = Q4−R4]',
       },
-      {
-        id: 'total_savings_dollar',
-        label: 'Total Annual Savings',
-        unit: '$/yr',
-        formula: 'total_kWh × elec_rate + demand_kW × demand_rate × 12',
-      },
-      {
-        id: 'simple_payback',
-        label: 'Simple Payback',
-        unit: 'years',
-        formula: 'installed_cost / total_annual_savings',
-      },
     ],
     calculate(inp) {
       // Base energy savings [LxL: T4, U4, V4]
@@ -1202,11 +919,6 @@ const ECM_TEMPLATES = {
       const demand_savings_kw =
         ((Math.max(0, inp.existing_watts - inp.proposed_watts) * inp.quantity) / 1000) * (inp.coincidence_factor / 100);
 
-      const energy_dollar = ecmPrice(inp, 'elec', total_savings_kwh);
-      const demand_dollar = ecmPrice(inp, 'demand', demand_savings_kw);
-      const total_savings_dollar = energy_dollar + demand_dollar;
-      const simple_payback = total_savings_dollar > 0 ? inp.installed_cost / total_savings_dollar : Infinity;
-
       return {
         existing_kwh: Math.round(existing_kwh),
         proposed_kwh: Math.round(proposed_kwh),
@@ -1214,8 +926,6 @@ const ECM_TEMPLATES = {
         sensor_savings_kwh: Math.round(sensor_savings_kwh),
         total_savings_kwh: Math.round(total_savings_kwh),
         demand_savings_kw: Math.round(demand_savings_kw * 10) / 10,
-        total_savings_dollar: Math.round(total_savings_dollar),
-        simple_payback: simple_payback === Infinity ? null : Math.round(simple_payback * 10) / 10,
       };
     },
   },
@@ -1291,23 +1001,6 @@ const ECM_TEMPLATES = {
         min: 50,
         max: 100,
       },
-      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null },
-      {
-        id: 'demand_rate',
-        label: 'Demand Rate',
-        unit: '$/kW/mo',
-        type: 'number',
-        default: null,
-      },
-      {
-        id: 'installed_cost',
-        label: 'Installed Cost (all sensors)',
-        unit: '$',
-        type: 'number',
-        default: 15000,
-        min: 0,
-        max: 2000000,
-      },
     ],
     outputs: [
       {
@@ -1340,13 +1033,6 @@ const ECM_TEMPLATES = {
         unit: 'kW',
         formula: 'total_kW × vacancy_pct × control_factor × 0.50 coincidence',
       },
-      { id: 'total_savings_dollar', label: 'Total Annual Savings', unit: '$/yr', formula: 'energy + demand savings' },
-      {
-        id: 'simple_payback',
-        label: 'Simple Payback',
-        unit: 'years',
-        formula: 'installed_cost / total_annual_savings',
-      },
     ],
     // TRM vacancy % midpoints by space type
     // Source: missing-ecm-research-2026-05-16.md §ECM2 Table 1 (ComEd/Utility E TRM)
@@ -1374,19 +1060,12 @@ const ECM_TEMPLATES = {
       // (lights cycle on/off based on motion, not all off simultaneously at peak)
       const demand_savings_kw = total_kw * vacancy_pct * control_factor * 0.5;
 
-      const energy_dollar = ecmPrice(inp, 'elec', savings_kwh);
-      const demand_dollar = ecmPrice(inp, 'demand', demand_savings_kw);
-      const total_savings_dollar = energy_dollar + demand_dollar;
-      const simple_payback = total_savings_dollar > 0 ? inp.installed_cost / total_savings_dollar : Infinity;
-
       return {
         vacancy_pct_used: Math.round(vacancy_pct * 100),
         total_kw: Math.round(total_kw * 10) / 10,
         vacancy_hours: Math.round(vacancy_hours),
         savings_kwh: Math.round(savings_kwh),
         demand_savings_kw: Math.round(demand_savings_kw * 10) / 10,
-        total_savings_dollar: Math.round(total_savings_dollar),
-        simple_payback: simple_payback === Infinity ? null : Math.round(simple_payback * 10) / 10,
       };
     },
   },
@@ -1422,8 +1101,6 @@ const ECM_TEMPLATES = {
         min: 100,
         max: 8760,
       },
-      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null },
-      { id: 'install_cost', label: 'VFD Install Cost', unit: '$', type: 'number', default: 8000, min: 0, max: 500000 },
     ],
     outputs: [
       {
@@ -1446,8 +1123,6 @@ const ECM_TEMPLATES = {
         formula: 'kWh = kW_design × avg_speed_ratio³ × op_hours  (cube law: power ∝ speed³)',
       },
       { id: 'savings_kwh', label: 'Annual kWh Savings', unit: 'kWh/yr', formula: 'savings = kwh_existing − kwh_new' },
-      { id: 'annual_savings_dollar', label: 'Annual Cost Savings', unit: '$/yr', formula: 'savings_kwh × elec_rate' },
-      { id: 'simple_payback', label: 'Simple Payback', unit: 'years', formula: 'install_cost / annual_cost_savings' },
     ],
     calculate(inp) {
       const pe = inp.pump_eff / 100;
@@ -1458,16 +1133,12 @@ const ECM_TEMPLATES = {
       const kwh_existing = kw_design * inp.op_hours;
       const kwh_new = kw_design * fanPowerFraction(sr) * inp.op_hours;
       const savings_kwh = kwh_existing - kwh_new;
-      const annual_savings_dollar = ecmPrice(inp, 'elec', savings_kwh);
-      const simple_payback = annual_savings_dollar > 0 ? inp.install_cost / annual_savings_dollar : Infinity;
       return {
         bhp_design: Math.round(bhp_design * 100) / 100,
         kw_design: Math.round(kw_design * 100) / 100,
         kwh_existing: Math.round(kwh_existing),
         kwh_new: Math.round(kwh_new),
         savings_kwh: Math.round(savings_kwh),
-        annual_savings_dollar: Math.round(annual_savings_dollar),
-        simple_payback: simple_payback === Infinity ? null : Math.round(simple_payback * 10) / 10,
       };
     },
   },
@@ -1478,7 +1149,7 @@ const ECM_TEMPLATES = {
     name: 'Premium Efficiency Motor',
     category: 'Motors & Drives',
     description:
-      'Calculates energy savings from replacing a standard-efficiency motor with a NEMA Premium (IE3) motor. Savings formula: HP × ' + KW_PER_HP + ' × load_factor × hours × (1/eff_old − 1/eff_new) × rate. Supports full-replacement and incremental-cost payback (premium vs. standard motor at failure).',
+      'Calculates energy savings from replacing a standard-efficiency motor with a NEMA Premium (IE3) motor. Savings formula: HP × ' + KW_PER_HP + ' × load_factor × hours × (1/eff_old − 1/eff_new).',
     icon: '⚙️',
     inputs: [
       { id: 'hp', label: 'Motor Horsepower', unit: 'HP', type: 'number', default: 20, min: 0.5, max: 1000 },
@@ -1510,25 +1181,6 @@ const ECM_TEMPLATES = {
         min: 100,
         max: 8760,
       },
-      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null },
-      {
-        id: 'total_cost',
-        label: 'Total Replacement Cost',
-        unit: '$',
-        type: 'number',
-        default: 1000,
-        min: 0,
-        max: 500000,
-      },
-      {
-        id: 'incr_cost',
-        label: 'Incremental Cost (premium vs. standard at failure)',
-        unit: '$',
-        type: 'number',
-        default: 200,
-        min: 0,
-        max: 50000,
-      },
     ],
     outputs: [
       { id: 'shaft_hp', label: 'Shaft HP', unit: 'HP', formula: 'shaft_hp = nameplate_HP × load_factor' },
@@ -1540,20 +1192,6 @@ const ECM_TEMPLATES = {
         unit: 'kWh/yr',
         formula: '(kW_old − kW_new) × op_hours  — same shaft load, fewer input watts',
       },
-      { id: 'annual_savings_dollar', label: 'Annual Cost Savings', unit: '$/yr', formula: 'savings_kwh × elec_rate' },
-      {
-        id: 'payback_full',
-        label: 'Payback — Full Cost',
-        unit: 'years',
-        formula: 'total_cost / annual_savings_dollar',
-      },
-      {
-        id: 'payback_incr',
-        label: 'Payback — Incremental Cost',
-        unit: 'years',
-        formula:
-          'incr_cost / annual_savings_dollar  (motor replaced anyway at failure — only the premium delta matters)',
-      },
     ],
     calculate(inp) {
       const eo = inp.eff_old / 100;
@@ -1562,17 +1200,11 @@ const ECM_TEMPLATES = {
       const kw_old = hpToKw(shaft_hp, eo);
       const kw_new = hpToKw(shaft_hp, en);
       const savings_kwh = (kw_old - kw_new) * inp.op_hours;
-      const annual_savings_dollar = ecmPrice(inp, 'elec', savings_kwh);
-      const payback_full = annual_savings_dollar > 0 ? inp.total_cost / annual_savings_dollar : Infinity;
-      const payback_incr = annual_savings_dollar > 0 ? inp.incr_cost / annual_savings_dollar : Infinity;
       return {
         shaft_hp: Math.round(shaft_hp * 100) / 100,
         kw_old: Math.round(kw_old * 1000) / 1000,
         kw_new: Math.round(kw_new * 1000) / 1000,
         savings_kwh: Math.round(savings_kwh),
-        annual_savings_dollar: Math.round(annual_savings_dollar),
-        payback_full: payback_full === Infinity ? null : Math.round(payback_full * 10) / 10,
-        payback_incr: payback_incr === Infinity ? null : Math.round(payback_incr * 10) / 10,
       };
     },
   },
@@ -1642,7 +1274,7 @@ const ECM_TEMPLATES = {
         min: 60,
         max: 99,
       },
-      { id: 'gas_rate', label: 'Gas Rate', unit: '$/therm', type: 'number', default: null },
+
       {
         id: 'cool_hours',
         label: 'Occupied Cooling Season Hours',
@@ -1672,16 +1304,6 @@ const ECM_TEMPLATES = {
         min: 1,
         max: 8,
       },
-      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null },
-      {
-        id: 'install_cost',
-        label: 'CO2 Sensor Install Cost',
-        unit: '$',
-        type: 'number',
-        default: 3750,
-        min: 0,
-        max: 500000,
-      },
     ],
     outputs: [
       {
@@ -1697,21 +1319,13 @@ const ECM_TEMPLATES = {
         unit: 'therms/yr',
         formula: '1.08 × cfm_saved × avg_dt_heat × heat_hours / (' + THERM_LABEL + ' × AFUE)',
       },
-      { id: 'gas_savings_dollar', label: 'Heating Cost Savings', unit: '$/yr', formula: 'therms_saved × gas_rate' },
+
       {
         id: 'cool_kwh_saved',
         label: 'Cooling kWh Saved',
         unit: 'kWh/yr',
         formula: '1.08 × cfm_saved × avg_dt_cool × cool_hours / (COP × ' + KWH_LABEL + ')',
       },
-      { id: 'cool_savings_dollar', label: 'Cooling Cost Savings', unit: '$/yr', formula: 'cool_kwh_saved × elec_rate' },
-      {
-        id: 'total_savings_dollar',
-        label: 'Total Annual Savings',
-        unit: '$/yr',
-        formula: 'gas_savings + cooling_savings',
-      },
-      { id: 'simple_payback', label: 'Simple Payback', unit: 'years', formula: 'install_cost / total_annual_savings' },
     ],
     calculate(inp) {
       const afue = inp.boiler_afue / 100;
@@ -1719,21 +1333,13 @@ const ECM_TEMPLATES = {
       const cfm_saved = inp.oa_cfm_design * avgOaReduction;
       const heat_btu = 1.08 * cfm_saved * inp.avg_dt_heat * inp.heat_hours;
       const therms_saved = heat_btu / (BTU_PER_THERM * afue);
-      const gas_savings_dollar = ecmPrice(inp, 'gas', therms_saved);
       const cool_btu = 1.08 * cfm_saved * inp.avg_dt_cool * inp.cool_hours;
       const cool_kwh_saved = cool_btu / (inp.chiller_cop * BTU_PER_KWH);
-      const cool_savings_dollar = ecmPrice(inp, 'elec', cool_kwh_saved);
-      const total_savings_dollar = gas_savings_dollar + cool_savings_dollar;
-      const simple_payback = total_savings_dollar > 0 ? inp.install_cost / total_savings_dollar : Infinity;
       return {
         oa_reduction_pct: Math.round(avgOaReduction * 1000) / 10,
         cfm_saved: Math.round(cfm_saved),
         therms_saved: Math.round(therms_saved),
-        gas_savings_dollar: Math.round(gas_savings_dollar),
         cool_kwh_saved: Math.round(cool_kwh_saved),
-        cool_savings_dollar: Math.round(cool_savings_dollar),
-        total_savings_dollar: Math.round(total_savings_dollar),
-        simple_payback: simple_payback === Infinity ? null : Math.round(simple_payback * 10) / 10,
       };
     },
   },
@@ -1814,8 +1420,7 @@ const ECM_TEMPLATES = {
         min: 1,
         max: 8,
       },
-      { id: 'gas_rate', label: 'Gas Rate', unit: '$/therm', type: 'number', default: null },
-      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null },
+
       {
         id: 'min_flow_old',
         label: 'Current Min Airflow Setpoint',
@@ -1852,15 +1457,6 @@ const ECM_TEMPLATES = {
         min: 0,
         max: 5000,
       },
-      {
-        id: 'install_cost',
-        label: 'Controls Install Cost',
-        unit: '$',
-        type: 'number',
-        default: 5000,
-        min: 0,
-        max: 500000,
-      },
     ],
     outputs: [
       {
@@ -1869,12 +1465,7 @@ const ECM_TEMPLATES = {
         unit: 'therms or kWh/yr',
         formula: '1.08 × (system_cfm × pct_zones) × avg_dT × season_hours → ÷ (' + THERM_LABEL + '×AFUE) gas, ÷ ' + KWH_LABEL + ' electric',
       },
-      {
-        id: 'reheat_savings_dollar',
-        label: 'Reheat Energy Cost Savings',
-        unit: '$/yr',
-        formula: 'reheat_qty × gas_rate or elec_rate',
-      },
+
       {
         id: 'cool_kwh_saved',
         label: 'Cooling kWh Saved (Supply Air Temperature Reset)',
@@ -1889,13 +1480,6 @@ const ECM_TEMPLATES = {
         unit: 'kWh/yr',
         formula: 'fan_kW × (min_old_ratio³ − min_new_ratio³) × unocc_hours  — cube law on airflow fraction',
       },
-      {
-        id: 'total_savings_dollar',
-        label: 'Total Annual Savings',
-        unit: '$/yr',
-        formula: 'reheat_cost + cooling_cost + fan_cost',
-      },
-      { id: 'simple_payback', label: 'Simple Payback', unit: 'years', formula: 'install_cost / total_annual_savings' },
     ],
     calculate(inp) {
       const pct = inp.pct_zones_heat / 100;
@@ -1905,31 +1489,19 @@ const ECM_TEMPLATES = {
       const isElec = inp.reheat_type === 'electric';
       const zones_cfm = inp.system_cfm * pct;
       const reheat_btu_total = 1.08 * zones_cfm * inp.avg_dt_reheat * inp.season_hours;
-      let reheat_saved_qty, reheat_savings_dollar;
-      if (isElec) {
-        reheat_saved_qty = Math.round(reheat_btu_total / BTU_PER_KWH);
-        reheat_savings_dollar = Math.round(ecmPrice(inp, 'elec', reheat_saved_qty));
-      } else {
-        reheat_saved_qty = Math.round(reheat_btu_total / (BTU_PER_THERM * afue));
-        reheat_savings_dollar = Math.round(ecmPrice(inp, 'gas', reheat_saved_qty));
-      }
+      const reheat_saved_qty = isElec
+        ? Math.round(reheat_btu_total / BTU_PER_KWH)
+        : Math.round(reheat_btu_total / (BTU_PER_THERM * afue));
       const cool_btu = 1.08 * inp.system_cfm * inp.avg_dt_reheat * inp.season_hours * 0.3;
       const cool_kwh_saved = Math.round(cool_btu / (inp.cooling_cop * BTU_PER_KWH));
-      const cool_dollar = Math.round(ecmPrice(inp, 'elec', cool_kwh_saved));
       const fan_kwh_saved = Math.max(
         0,
         Math.round(inp.fan_kw_design * (fanPowerFraction(mfOld) - fanPowerFraction(mfNew)) * inp.unocc_hours),
       );
-      const fan_dollar = Math.round(ecmPrice(inp, 'elec', fan_kwh_saved));
-      const total_savings_dollar = reheat_savings_dollar + cool_dollar + fan_dollar;
-      const simple_payback = total_savings_dollar > 0 ? inp.install_cost / total_savings_dollar : Infinity;
       return {
         reheat_saved_qty: reheat_saved_qty,
-        reheat_savings_dollar: reheat_savings_dollar,
         cool_kwh_saved: cool_kwh_saved,
         fan_kwh_saved: fan_kwh_saved,
-        total_savings_dollar: total_savings_dollar,
-        simple_payback: simple_payback === Infinity ? null : Math.round(simple_payback * 10) / 10,
       };
     },
   },
@@ -1940,7 +1512,7 @@ const ECM_TEMPLATES = {
     name: 'Hot Water Boiler Replacement',
     category: 'HVAC Equipment',
     description:
-      'Calculates gas savings from replacing an aging hot water boiler with a high-efficiency condensing unit. Uses HDD-based annual load: peak_load × HDD × 24 / design_ΔT. Includes standby loss adjustment for cast iron boilers (+10%) vs. standard (+3%). Supports full and incremental (end-of-life) payback.',
+      'Calculates gas savings from replacing an aging hot water boiler with a high-efficiency condensing unit. Uses HDD-based annual load: peak_load × HDD × 24 / design_ΔT. Includes standby loss adjustment for cast iron boilers (+10%) vs. standard (+3%).',
     icon: '🔥',
     inputs: [
       {
@@ -2011,25 +1583,6 @@ const ECM_TEMPLATES = {
         ],
         default: 'cast_iron',
       },
-      { id: 'gas_rate', label: 'Gas Rate', unit: '$/therm', type: 'number', default: null },
-      {
-        id: 'install_cost',
-        label: 'Boiler Install Cost (full)',
-        unit: '$',
-        type: 'number',
-        default: 55000,
-        min: 0,
-        max: 5000000,
-      },
-      {
-        id: 'incr_cost',
-        label: 'Incremental Cost vs. Standard',
-        unit: '$',
-        type: 'number',
-        default: 15000,
-        min: 0,
-        max: 2000000,
-      },
     ],
     outputs: [
       {
@@ -2059,14 +1612,6 @@ const ECM_TEMPLATES = {
         unit: 'therms/yr',
         formula: '(existing − new) × (1 + standby_factor)  — cast iron: +10%, standard: +3%',
       },
-      { id: 'annual_savings_dollar', label: 'Annual Gas Savings', unit: '$/yr', formula: 'therms_saved × gas_rate' },
-      { id: 'payback_full', label: 'Payback — Full Cost', unit: 'years', formula: 'install_cost / annual_savings' },
-      {
-        id: 'payback_incr',
-        label: 'Payback — Incremental',
-        unit: 'years',
-        formula: 'incr_cost / annual_savings  (if replacing at end-of-life anyway — only delta to condensing matters)',
-      },
     ],
     calculate(inp) {
       const eo = inp.eff_old / 100;
@@ -2081,18 +1626,12 @@ const ECM_TEMPLATES = {
       const therms_saved_base = existing_therms - new_therms;
       const therms_saved = therms_saved_base * (1 + standby_factor);
       const pct_savings = Math.round((1 - eo / en) * 1000) / 10;
-      const annual_savings_dollar = ecmPrice(inp, 'gas', therms_saved);
-      const payback_full = annual_savings_dollar > 0 ? inp.install_cost / annual_savings_dollar : Infinity;
-      const payback_incr = annual_savings_dollar > 0 ? inp.incr_cost / annual_savings_dollar : Infinity;
       return {
         annual_heating_mmbtu: annual_heating_mmbtu,
         existing_therms: Math.round(existing_therms),
         new_therms: Math.round(new_therms),
         pct_savings: pct_savings,
         therms_saved: Math.round(therms_saved),
-        annual_savings_dollar: Math.round(annual_savings_dollar),
-        payback_full: payback_full === Infinity ? null : Math.round(payback_full * 10) / 10,
-        payback_incr: payback_incr === Infinity ? null : Math.round(payback_incr * 10) / 10,
       };
     },
   },
@@ -2124,9 +1663,6 @@ const ECM_TEMPLATES = {
         default: 'gas',
       },
       { id: 'cooling_cop', label: 'Cooling System Coefficient of Performance', unit: 'COP', type: 'number', default: 3.5, min: 1, max: 8 },
-      { id: 'gas_rate', label: 'Gas Rate', unit: '$/therm', type: 'number', default: null },
-      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null },
-      { id: 'install_cost', label: 'Install Cost', unit: '$', type: 'number', default: 25000, min: 0, max: 5000000 },
     ],
     outputs: [
       {
@@ -2141,53 +1677,28 @@ const ECM_TEMPLATES = {
         unit: 'therms or kWh/yr',
         formula: 'area × ΔU × HDD × 24 → ÷ ' + THERM_LABEL + ' for therms (gas), ÷ ' + KWH_LABEL + ' for kWh (electric), both ÷ efficiency',
       },
-      {
-        id: 'heat_savings_dollar',
-        label: 'Heating Cost Savings',
-        unit: '$/yr',
-        formula: 'heat_qty × rate (gas_rate for therms, elec_rate for kWh)',
-      },
+
       {
         id: 'cool_kwh_saved',
         label: 'Cooling kWh Saved',
         unit: 'kWh/yr',
         formula: 'area × ΔU × CDD × 24 / (COP × ' + KWH_LABEL + ')',
       },
-      { id: 'cool_savings_dollar', label: 'Cooling Cost Savings', unit: '$/yr', formula: 'cool_kwh_saved × elec_rate' },
-      {
-        id: 'total_savings_dollar',
-        label: 'Total Annual Savings',
-        unit: '$/yr',
-        formula: 'heat_savings + cooling_savings',
-      },
-      { id: 'simple_payback', label: 'Simple Payback', unit: 'years', formula: 'install_cost / total_annual_savings' },
     ],
     calculate(inp) {
       const he = inp.heat_eff / 100;
       const isElecHeat = inp.heat_fuel === 'electric';
       const delta_u = 1 / inp.r_old - 1 / inp.r_new;
       const heat_btu_yr = delta_u * inp.area * inp.hdd * 24;
-      let heat_qty, heat_savings_dollar;
-      if (isElecHeat) {
-        heat_qty = Math.round(heat_btu_yr / (he * BTU_PER_KWH));
-        heat_savings_dollar = Math.round(ecmPrice(inp, 'elec', heat_qty));
-      } else {
-        heat_qty = Math.round(heat_btu_yr / (BTU_PER_THERM * he));
-        heat_savings_dollar = Math.round(ecmPrice(inp, 'gas', heat_qty));
-      }
+      const heat_qty = isElecHeat
+        ? Math.round(heat_btu_yr / (he * BTU_PER_KWH))
+        : Math.round(heat_btu_yr / (BTU_PER_THERM * he));
       const cool_btu_yr = delta_u * inp.area * inp.cdd * 24;
       const cool_kwh_saved = Math.round(cool_btu_yr / (inp.cooling_cop * BTU_PER_KWH));
-      const cool_savings_dollar = Math.round(ecmPrice(inp, 'elec', cool_kwh_saved));
-      const total_savings_dollar = heat_savings_dollar + cool_savings_dollar;
-      const simple_payback = total_savings_dollar > 0 ? inp.install_cost / total_savings_dollar : Infinity;
       return {
         delta_u: Math.round(delta_u * 10000) / 10000,
         heat_qty: heat_qty,
-        heat_savings_dollar: heat_savings_dollar,
         cool_kwh_saved: cool_kwh_saved,
-        cool_savings_dollar: cool_savings_dollar,
-        total_savings_dollar: total_savings_dollar,
-        simple_payback: simple_payback === Infinity ? null : Math.round(simple_payback * 10) / 10,
       };
     },
   },
@@ -2274,16 +1785,6 @@ const ECM_TEMPLATES = {
         min: 100,
         max: 8760,
       },
-      { id: 'elec_rate', label: 'Electric Rate', unit: '$/kWh', type: 'number', default: null },
-      {
-        id: 'install_cost',
-        label: 'Fan Wall Install Cost',
-        unit: '$',
-        type: 'number',
-        default: 45000,
-        min: 0,
-        max: 5000000,
-      },
     ],
     outputs: [
       {
@@ -2317,14 +1818,6 @@ const ECM_TEMPLATES = {
         unit: 'kWh/yr',
         formula: '(kW_old − kW_new) × avg_speed_ratio³ × op_hours  — cube law at avg operating speed',
       },
-      { id: 'annual_savings_dollar', label: 'Annual Cost Savings', unit: '$/yr', formula: 'savings_kwh × elec_rate' },
-      {
-        id: 'simple_payback',
-        label: 'Simple Payback',
-        unit: 'years',
-        formula:
-          'install_cost / annual_savings  (note: energy-only payback typically 10–25 yrs; fan walls often justified by maintenance savings + AHU replacement decision)',
-      },
     ],
     calculate(inp) {
       const feo = inp.fan_eff_old / 100;
@@ -2341,9 +1834,7 @@ const ECM_TEMPLATES = {
       const kwh_old = kw_old_design * power_ratio * inp.op_hours;
       const kwh_new = kw_new_design * power_ratio * inp.op_hours;
       const savings_kwh = kwh_old - kwh_new;
-      const annual_savings_dollar = ecmPrice(inp, 'elec', savings_kwh);
       const pct_improvement = kw_old_design > 0 ? ((kw_old_design - kw_new_design) / kw_old_design) * 100 : 0;
-      const simple_payback = annual_savings_dollar > 0 ? inp.install_cost / annual_savings_dollar : Infinity;
       return {
         bhp_old: Math.round(bhp_old * 100) / 100,
         kw_old_design: Math.round(kw_old_design * 100) / 100,
@@ -2351,8 +1842,6 @@ const ECM_TEMPLATES = {
         kw_new_design: Math.round(kw_new_design * 100) / 100,
         pct_improvement: Math.round(pct_improvement * 10) / 10,
         savings_kwh: Math.round(savings_kwh),
-        annual_savings_dollar: Math.round(annual_savings_dollar),
-        simple_payback: simple_payback === Infinity ? null : Math.round(simple_payback * 10) / 10,
       };
     },
   },
@@ -2393,9 +1882,10 @@ function getProjectEcms(projId) {
 }
 
 /**
- * Sum ECM annual savings across all saved ECMs for a project.
- * Looks for outputs.annual_savings_dollars, outputs.total_savings_dollar,
- * or outputs.annual_cost_saved — whichever field the template produced.
+ * Sum the yearly value of all saved ECMs of a project. A saved ECM keeps its yearly QUANTITIES (outputs); the
+ * dollars are priced now, the same way the Energy Savings matrix prices a measure (ecmBuildMeasure +
+ * ecmMeasureDollars: monthly shape from the building's HVAC Load Estimate, baseline-period rates). A saved ECM
+ * that has no building, or whose building has no monthly profile, is not priced and adds nothing to the total.
  * @param {string|number} projId
  * @returns {{ total: number, count: number, ecms: Array }}
  */
@@ -2403,10 +1893,21 @@ function getProjectEcmTotal(projId) {
   const ecms = getProjectEcms(projId);
   let total = 0;
   for (const ecm of ecms) {
-    const out = ecm.outputs || {};
-    const sav =
-      out.annual_savings_dollars || out.total_savings_dollar || out.annual_cost_saved || out.annual_savings_dollar || 0;
-    total += parseFloat(sav) || 0;
+    const inputs = {};
+    Object.keys(ecm.inputs || {}).forEach((k) => {
+      const v = ecm.inputs[k];
+      inputs[k] = v && typeof v === "object" && "value" in v ? v.value : v;
+    });
+    const built = ecm.buildingId
+      ? ecmBuildMeasure(
+          projId,
+          ecm.buildingId,
+          ecm.templateId,
+          inputs,
+          ecm.outputs || {},
+        )
+      : null;
+    if (built && built.ok) total += ecmMeasureDollars(projId, built.measure);
   }
   return { total: Math.round(total), count: ecms.length, ecms };
 }
@@ -2468,249 +1969,324 @@ function saveEcmToProject(projId, buildingId, buildingName, templateId, inputs, 
 }
 
 /**
- * Per-template map of which calculate() output ids feed the Energy Savings
- * measure row's annual kWh / kW / gas(therms) / dollar totals.
- * Verified against each template's outputs[] array (2026-09-22 consolidation).
- * `fuelSwitch` covers templates where one output field is gas OR electric
- * depending on a select input (vav_reheat.reheat_type, weatherization.heat_fuel).
+ * Per-template map from a calculate() result field to a savings-matrix column and to the building end use that
+ * shapes it over the year (Phase 5, 2026-10-14).
+ *   field   - the result id that holds the yearly quantity
+ *   kind    - 'kwh' | 'gas' (Therms) | 'kw' (average kW reduction, laid over the months by the same profile)
+ *   endUse  - ordered end-use keys for getEndUseWeights (computations/end-use.js): the first one that has a
+ *             monthly profile in the building's HVAC Load Estimate shapes the field
+ *   by      - a field that is gas OR electric depending on a select input: { input, electric: {kind, endUse}, otherwise: {...} }
+ * The end use is the best one the load estimate models today. Fans, lighting and plug loads are not modeled
+ * separately yet: fan and motor templates use the HVAC electric profile, lighting templates the non-HVAC
+ * electric profile (lighting, plug and other together). A template mapped to null has no month-by-month source.
  */
 const ECM_MEASURE_FIELD_MAP = {
-  oa_dampers: { kwh: 'kwh_saved', gas: 'therms_saved', dollar: 'total_savings_dollar' },
-  rtu_replacement: { kwh: 'cooling_kwh_saved', gas: 'heating_therms_saved', dollar: 'total_savings_dollar' },
-  vfd_savings: { kwh: 'savings_kwh', dollar: 'annual_savings_dollar' },
-  chiller_replacement: { kwh: 'savings_kwh', kw: 'peak_kw_savings', dollar: 'total_savings_dollar' },
-  oa_erw: { kwh: 'cooling_savings_kwh', gas: 'heating_savings_therms', dollar: 'total_savings_dollar' },
-  solar_production: { kwh: 'year1_kwh', dollar: 'year1_savings_dollar' },
-  lighting_replacement: { kwh: 'total_savings_kwh', kw: 'demand_savings_kw', dollar: 'total_savings_dollar' },
-  occupancy_sensors: { kwh: 'savings_kwh', kw: 'demand_savings_kw', dollar: 'total_savings_dollar' },
-  pump_vfd: { kwh: 'savings_kwh', dollar: 'annual_savings_dollar' },
-  motor_premium: { kwh: 'savings_kwh', dollar: 'annual_savings_dollar' },
-  dcv: { kwh: 'cool_kwh_saved', gas: 'therms_saved', dollar: 'total_savings_dollar' },
-  vav_reheat: {
-    kwh: ['cool_kwh_saved', 'fan_kwh_saved'],
-    fuelSwitch: { input: 'reheat_type', field: 'reheat_saved_qty', gasWhen: 'gas', kwhWhen: 'electric' },
-    dollar: 'total_savings_dollar',
-  },
-  boiler_replacement: { gas: 'therms_saved', dollar: 'annual_savings_dollar' },
-  weatherization: {
-    kwh: 'cool_kwh_saved',
-    fuelSwitch: { input: 'heat_fuel', field: 'heat_qty', gasWhen: 'gas', kwhWhen: 'electric' },
-    dollar: 'total_savings_dollar',
-  },
-  fan_wall: { kwh: 'savings_kwh', dollar: 'annual_savings_dollar' },
+  oa_dampers: [
+    { field: "kwh_saved", kind: "kwh", endUse: ["cooling"] },
+    { field: "therms_saved", kind: "gas", endUse: ["heatingGas"] },
+  ],
+  rtu_replacement: [
+    { field: "cooling_kwh_saved", kind: "kwh", endUse: ["cooling"] },
+    { field: "heating_therms_saved", kind: "gas", endUse: ["heatingGas"] },
+  ],
+  vfd_savings: [
+    { field: "savings_kwh", kind: "kwh", endUse: ["hvacElectric"] },
+  ],
+  chiller_replacement: [
+    { field: "savings_kwh", kind: "kwh", endUse: ["cooling"] },
+    { field: "peak_kw_savings", kind: "kw", endUse: ["cooling"] },
+  ],
+  oa_erw: [
+    { field: "cooling_savings_kwh", kind: "kwh", endUse: ["cooling"] },
+    { field: "heating_savings_therms", kind: "gas", endUse: ["heatingGas"] },
+    {
+      field: "heating_savings_kwh",
+      kind: "kwh",
+      endUse: ["heatingElectric", "heatingGas"],
+    },
+  ],
+  solar_production: null,
+  lighting_replacement: [
+    { field: "total_savings_kwh", kind: "kwh", endUse: ["nonHvacElectric"] },
+    { field: "demand_savings_kw", kind: "kw", endUse: ["nonHvacElectric"] },
+  ],
+  occupancy_sensors: [
+    { field: "savings_kwh", kind: "kwh", endUse: ["nonHvacElectric"] },
+    { field: "demand_savings_kw", kind: "kw", endUse: ["nonHvacElectric"] },
+  ],
+  pump_vfd: [{ field: "savings_kwh", kind: "kwh", endUse: ["hvacElectric"] }],
+  motor_premium: [
+    { field: "savings_kwh", kind: "kwh", endUse: ["hvacElectric"] },
+  ],
+  dcv: [
+    { field: "cool_kwh_saved", kind: "kwh", endUse: ["cooling"] },
+    { field: "therms_saved", kind: "gas", endUse: ["heatingGas"] },
+  ],
+  vav_reheat: [
+    { field: "cool_kwh_saved", kind: "kwh", endUse: ["cooling"] },
+    { field: "fan_kwh_saved", kind: "kwh", endUse: ["hvacElectric"] },
+    {
+      field: "reheat_saved_qty",
+      by: {
+        input: "reheat_type",
+        electric: { kind: "kwh", endUse: ["heatingElectric", "heatingGas"] },
+        otherwise: { kind: "gas", endUse: ["heatingGas"] },
+      },
+    },
+  ],
+  boiler_replacement: [
+    { field: "therms_saved", kind: "gas", endUse: ["heatingGas"] },
+  ],
+  weatherization: [
+    { field: "cool_kwh_saved", kind: "kwh", endUse: ["cooling"] },
+    {
+      field: "heat_qty",
+      by: {
+        input: "heat_fuel",
+        electric: { kind: "kwh", endUse: ["heatingElectric", "heatingGas"] },
+        otherwise: { kind: "gas", endUse: ["heatingGas"] },
+      },
+    },
+  ],
+  fan_wall: [{ field: "savings_kwh", kind: "kwh", endUse: ["hvacElectric"] }],
 };
 
-/**
- * Reduce one ECM calc's annual-total results into {kwhAnnual, kwAnnual, gasAnnual, dollarAnnual}
- * using ECM_MEASURE_FIELD_MAP for the given template.
- */
-function ecmResultsToAnnualTotals(templateId, inputs, results) {
+// The map entries of one template with the gas-or-electric choice resolved from the inputs. null = no month-by-month source.
+function _ecmMapEntries(templateId, inputs) {
   const map = ECM_MEASURE_FIELD_MAP[templateId];
-  let kwhAnnual = 0,
-    kwAnnual = 0,
-    gasAnnual = 0,
-    dollarAnnual = 0;
-  if (!map) return { kwhAnnual, kwAnnual, gasAnnual, dollarAnnual };
-
-  const kwhFields = Array.isArray(map.kwh) ? map.kwh : map.kwh ? [map.kwh] : [];
-  kwhFields.forEach((f) => {
-    kwhAnnual += parseFloat(results[f]) || 0;
+  if (!map) return null;
+  return map.map((e) => {
+    if (!e.by) return e;
+    const pick =
+      (inputs || {})[e.by.input] === "electric"
+        ? e.by.electric
+        : e.by.otherwise;
+    return { field: e.field, kind: pick.kind, endUse: pick.endUse };
   });
-  if (map.kw) kwAnnual += parseFloat(results[map.kw]) || 0;
-  if (map.gas) gasAnnual += parseFloat(results[map.gas]) || 0;
-  if (map.fuelSwitch) {
-    const fs = map.fuelSwitch;
-    const val = parseFloat(results[fs.field]) || 0;
-    if ((inputs || {})[fs.input] === fs.gasWhen) gasAnnual += val;
-    else kwhAnnual += val;
-  }
-  if (map.dollar) dollarAnnual += parseFloat(results[map.dollar]) || 0;
-
-  return { kwhAnnual, kwAnnual, gasAnnual, dollarAnnual };
 }
 
 /**
- * "Add as Measure" — converts a completed ECM calc's annual totals into a flat
- * monthly measure row (kwh[12]/gas[12] = annual/12, kw[12] = the full average kW every month — same
- * technique as hvacLoadCreateMeasure) and pushes it into the project's savings
- * matrix, so the 15 ECM calcs behave like the BAS/Solar "Add as Measure" flow
- * instead of only writing to the separate project.ecms array.
+ * Build the Energy Savings matrix measure of one calculated template: the yearly quantities of the result laid
+ * over the 12 months with the monthly profile of the end use that drives them (getEndUseWeights), never
+ * quantity / 12. The measure carries no dollars: ecmMeasureDollars prices it like every matrix row.
+ * @returns {{ok:true, measure:Object, shapes:Array}|{ok:false, reason:string}}
+ */
+function ecmBuildMeasure(projId, bldgId, templateId, inputs, results) {
+  const tmpl = ECM_TEMPLATES[templateId];
+  if (!tmpl) return { ok: false, reason: "Unknown template" };
+  if (!bldgId)
+    return {
+      ok: false,
+      reason:
+        "Choose a building: the monthly shape of the savings comes from that building's HVAC Load Estimate.",
+    };
+  const entries = _ecmMapEntries(templateId, inputs);
+  if (!entries)
+    return {
+      ok: false,
+      reason:
+        tmpl.name +
+        " has no month-by-month source yet, so it cannot be added to the savings matrix from here.",
+    };
+  const bldg =
+    typeof getUDBldg === "function" ? getUDBldg(projId, bldgId) : null;
+  const measure = {
+    id: "preview",
+    selected: true,
+    msrNum: "",
+    bldgId: bldgId,
+    sqft: bldg ? parseFloat(bldg.sqft) || 0 : 0,
+    desc: tmpl.name + (bldg ? " — " + bldg.name : ""),
+    kwh: Array(12).fill(0),
+    kw: Array(12).fill(0),
+    gas: Array(12).fill(0),
+    totalDollar: 0,
+    rates: {},
+    rateSource: "owner",
+    source: "ecm_" + templateId,
+  };
+  const shapes = [];
+  for (const e of entries) {
+    const qty = parseFloat((results || {})[e.field]) || 0;
+    if (!qty) continue;
+    const w = getEndUseWeights(projId, bldgId, e.endUse);
+    if (!w.ok)
+      return {
+        ok: false,
+        reason: "No monthly profile for this building. " + w.reason,
+      };
+    const spread =
+      e.kind === "kw"
+        ? spreadDemandByWeights(w.weights, qty)
+        : spreadEnergyByWeights(w.weights, qty);
+    spread.forEach((v, mo) => {
+      measure[e.kind][mo] += v;
+    });
+    shapes.push({
+      field: e.field,
+      kind: e.kind,
+      endUse: w.endUse,
+      label: w.eu.label,
+      sourceLabel: w.eu.sourceLabel,
+    });
+  }
+  if (!shapes.length)
+    return { ok: false, reason: "No savings to add — check inputs" };
+  return { ok: true, measure, shapes };
+}
+
+// The yearly dollars of a built measure: the Energy Savings matrix pricing (measureRatesNow + calcMeasureDollars,
+// baseline-period rates, month by month). The only dollar a template shows.
+function ecmMeasureDollars(projId, measure) {
+  return calcMeasureDollars(measure, measureRatesNow(projId, measure)).total;
+}
+
+/**
+ * "Add as Measure" — pushes the built measure (monthly kWh / kW / Therms shaped by the end use) into the project's
+ * Energy Savings matrix, which prices it.
  * @param {string|number} projId
- * @param {string} bldgId — building to attribute the measure to
+ * @param {string} bldgId — building to attribute the measure to (required: its load estimate gives the monthly shape)
  * @param {string} templateId
  * @param {Object} inputs
  * @param {Object} results — from calculateEcm()
  * @returns {boolean} success
  */
 function ecmAddAsMeasure(projId, bldgId, templateId, inputs, results) {
-  const tmpl = ECM_TEMPLATES[templateId];
   const p = projects.find((x) => String(x.id) === String(projId));
-  if (!tmpl || !p) return false;
-
-  const { kwhAnnual, kwAnnual, gasAnnual } = ecmResultsToAnnualTotals(templateId, inputs, results);
-  if (kwhAnnual === 0 && kwAnnual === 0 && gasAnnual === 0) {
-    if (typeof showToast === 'function') showToast('No savings to add — check inputs');
+  if (!ECM_TEMPLATES[templateId] || !p) return false;
+  const built = ecmBuildMeasure(projId, bldgId, templateId, inputs, results);
+  if (!built.ok) {
+    if (typeof showToast === "function") showToast(built.reason);
     return false;
   }
-
-  const kwhMonthly = Array(12).fill(kwhAnnual / 12);
-  // kW is a rate, not a yearly total: the matrix prices kw[mo] x demand rate for each of 12 months,
-  // so every month carries the full average kW reduction.
-  const kwMonthly = Array(12).fill(kwAnnual);
-  const gasMonthly = Array(12).fill(gasAnnual / 12);
-
-  const sd = typeof getProjSavingsData === 'function' ? getProjSavingsData(projId) : null;
+  const sd =
+    typeof getProjSavingsData === "function"
+      ? getProjSavingsData(projId)
+      : null;
   if (!sd) return false;
-  const bldg = bldgId && typeof getUDBldg === 'function' ? getUDBldg(projId, bldgId) : null;
-
-  const measure = {
-    id: 'm' + Date.now(),
-    selected: true,
-    msrNum: sd.measures.length + 1 + '',
-    bldgId: bldgId || '',
-    sqft: bldg ? parseFloat(bldg.sqft) || 0 : 0,
-    desc: tmpl.name + (bldg ? ' — ' + bldg.name : ''),
-    kwh: kwhMonthly,
-    kw: kwMonthly,
-    gas: gasMonthly,
-    totalDollar: 0, // recalculated by calcProjSavingsMatrix
-    source: 'ecm_' + templateId,
-  };
-  initMeasureRates(measure, projId, bldgId, 'ECM add measure');
+  const measure = built.measure;
+  measure.id = "m" + Date.now();
+  measure.msrNum = sd.measures.length + 1 + "";
+  initMeasureRates(measure, projId, bldgId, "ECM add measure");
   sd.measures.push(measure);
-  sset('en_projects', projects);
-  if (typeof _svRecalcFrom === 'function') _svRecalcFrom(projId);
-  if (typeof showToast === 'function') showToast(`Measure "${tmpl.name}" added to savings matrix`);
+  sset("en_projects", projects);
+  if (typeof _svRecalcFrom === "function") _svRecalcFrom(projId);
+  if (typeof showToast === "function")
+    showToast(
+      `Measure "${ECM_TEMPLATES[templateId].name}" added to savings matrix`,
+    );
   return true;
 }
 
 /* ─── Calculate API ──────────────────────────────────── */
 
-// Dollars for an annual quantity (kWh, therms, or average kW) in a template. Every template calls this.
-// The quantity is spread evenly over the 12 months and priced by calcMeasureDollars (app/energy-savings.js),
-// the same monthly x summer/winter-rate sum the Energy Savings matrix uses, when the rate input still holds
-// the baseline-bill value (inp.__seasonal[field]). Otherwise: quantity x the typed flat rate.
-// kind: 'elec' ($/kWh), 'gas' ($/therm), 'demand' ($/kW, qty is the kW reduction in every month).
-const ECM_RATE_FIELD = { elec: 'elec_rate', gas: 'gas_rate', demand: 'demand_rate' };
-function ecmPrice(inp, kind, qty, field) {
-  const f = field || ECM_RATE_FIELD[kind];
-  const seasonal = inp.__seasonal && inp.__seasonal[f];
-  if (!seasonal) return kind === 'demand' ? qty * inp[f] * 12 : qty * inp[f];
-  const arr = Array(12).fill(kind === 'demand' ? qty : qty / 12);
-  const m = { kwh: [], kw: [], gas: [] };
-  m[{ elec: 'kwh', gas: 'gas', demand: 'kw' }[kind]] = arr;
-  return calcMeasureDollars(m, seasonal).total;
-}
-
 /**
- * Run a template's calculate() function after coercing all inputs to numbers.
+ * Run a template's calculate() function after coercing all inputs to numbers. Returns yearly quantities only.
  * @param {string} templateId
  * @param {Object} inputs — key/value map from the form
  * @returns {Object} results object
  */
-function calculateEcm(templateId, inputs, seasonalByField) {
+function calculateEcm(templateId, inputs) {
   const tmpl = ECM_TEMPLATES[templateId];
-  if (!tmpl) throw new Error('Unknown ECM template: ' + templateId);
+  if (!tmpl) throw new Error("Unknown ECM template: " + templateId);
 
   // Coerce inputs to correct types
   const coerced = {};
   tmpl.inputs.forEach((inp) => {
     const raw = inputs[inp.id];
-    if (inp.type === 'number') {
+    if (inp.type === "number") {
       coerced[inp.id] = parseFloat(raw) || 0;
     } else {
       coerced[inp.id] = raw != null ? raw : inp.default;
     }
   });
-
-  // seasonalByField: { <rate input id>: seasonal rates object } for each rate input the user left at the
-  // value filled from the baseline bills. ecmPrice prices those monthly, then sums. Null: flat typed rate.
-  coerced.__seasonal = seasonalByField || null;
   return tmpl.calculate(coerced);
 }
-
 /* ─── Render API ─────────────────────────────────────── */
 
 /**
  * Render the input form for a template into a container element.
+ * An input that is a building end-use quantity (inp.endUse, e.g. existing cooling kWh) is prefilled from the
+ * building's HVAC Load Estimate through getEndUse and labelled with its source. The precedence is the shared
+ * chResolveCalcField rule (app/calc-autofill.js): a typed value stays typed, then the load estimate, then the
+ * shipped default flagged as "not from building data".
  * @param {string} templateId
  * @param {HTMLElement} container
- * @param {Object|null} savedValues — previously entered values (optional)
+ * @param {Object|null} savedValues — values to keep (typed by the person); the rest is prefilled
  * @param {Function} onBack — called when Back is clicked
  * @param {Function} onCalculate — called with (templateId, inputs, results) when Calculate is clicked
- * @param {Object|null} projectContext — { projId, buildingId, buildingName } when opened from a project
+ * @param {Object|null} projectContext — { projId, buildingId, buildingName, backLabel } when opened from a project
+ * @param {Array<string>} [typedIds] — ids of the inputs a person typed (kept when the building changes)
  */
-function renderEcmCalculator(templateId, container, savedValues, onBack, onCalculate, projectContext) {
+function renderEcmCalculator(
+  templateId,
+  container,
+  savedValues,
+  onBack,
+  onCalculate,
+  projectContext,
+  typedIds,
+) {
   const tmpl = ECM_TEMPLATES[templateId];
   if (!tmpl || !container) return;
 
   const sv = savedValues || {};
   const ctx = projectContext || null;
+  const touched = new Set(typedIds || []);
+  const bldgs =
+    ctx && ctx.projId && typeof getUDBldgs === "function"
+      ? getUDBldgs(ctx.projId)
+      : [];
 
-  // Auto-populate rates from the building's Utility Data. The ONE rate function is
-  // computeSeasonalBldgRates (computations/rates.js); nothing here derives a rate itself.
-  let autoRates = null;
-  let seasonalRates = null;
-  if (ctx && ctx.projId && ctx.buildingId) {
-    try {
-      seasonalRates = computeSeasonalBldgRates(ctx.projId, ctx.buildingId);
-      const r = seasonalRates;
-      // Field value = the rate that, times the annual quantity, equals the monthly summer/winter sum
-      // (calcMeasureDollars). A unit quantity per year is spread over 12 months, so the total is that rate.
-      const eff = (key, per) => calcMeasureDollars({ [key]: Array(12).fill(per) }, r).total;
-      const round = (v, d) => Math.round(v * Math.pow(10, d)) / Math.pow(10, d);
-      const el = round(eff('kwh', 1 / 12), 4);
-      const gs = round(eff('gas', 1 / 12), 3);
-      const dm = round(eff('kw', 1) / 12, 2);
-      autoRates = {
-        electric_rate: el > 0 ? el : null,
-        gas_rate: gs > 0 ? gs : null,
-        demand_rate: dm > 0 ? dm : null,
-        sourceLabels: {
-          electric: formatBillMonthsLabel(r.months.kwhSummer.concat(r.months.kwhWinter)),
-          gas: formatBillMonthsLabel(r.months.gas),
-          demand: formatBillMonthsLabel(r.months.kwSummer.concat(r.months.kwWinter)),
-        },
-      };
-    } catch (e) {
-      autoRates = null;
-      seasonalRates = null;
-    }
-  }
-
-  // Map of input IDs that can be auto-populated from bills
-  const AUTO_FIELDS = {
-    elec_rate: autoRates && autoRates.electric_rate != null ? autoRates.electric_rate : null,
-    electric_rate: autoRates && autoRates.electric_rate != null ? autoRates.electric_rate : null,
-    btm_rate: autoRates && autoRates.electric_rate != null ? autoRates.electric_rate : null,
-    gas_rate: autoRates && autoRates.gas_rate != null ? autoRates.gas_rate : null,
-    demand_rate: autoRates && autoRates.demand_rate != null ? autoRates.demand_rate : null,
-  };
-
-  // Track which fields were auto-populated (for styling and source display)
-  const autoPopulated = {};
-
+  let endUseInputs = 0;
+  let endUseFilled = 0;
   const fields = tmpl.inputs
     .map((inp) => {
-      let val = sv[inp.id] != null ? sv[inp.id] : inp.default == null ? '' : inp.default;
-      const id = 'ecm-inp-' + inp.id;
+      let val =
+        sv[inp.id] != null
+          ? sv[inp.id]
+          : inp.default == null
+            ? ""
+            : inp.default;
+      let hint = null;
+      const id = "ecm-inp-" + inp.id;
 
-      // Check for auto-population
-      const autoVal = AUTO_FIELDS[inp.id];
-      let isAuto = false;
-      if (autoVal != null && sv[inp.id] == null) {
-        val = autoVal;
-        isAuto = true;
-        autoPopulated[inp.id] = true;
+      if (inp.endUse) {
+        endUseInputs++;
+        const eu =
+          ctx && ctx.buildingId
+            ? getEndUse(ctx.projId, ctx.buildingId, inp.endUse)
+            : null;
+        const auto =
+          eu && eu.modeled && eu.source !== "none" && eu.annual != null
+            ? { value: Math.round(eu.annual), source: eu.sourceLabel }
+            : null;
+        const r = chResolveCalcField(
+          sv[inp.id],
+          inp.default,
+          auto,
+          touched,
+          inp.id,
+        );
+        val = r.value == null ? "" : r.value;
+        hint = r.hint;
+        if (hint && hint.indexOf("from ") === 0) endUseFilled++;
+        else if (hint && eu)
+          hint = hint.replace(")", ": " + eu.sourceLabel + ")");
       }
 
-      const helpTitle = inp.help ? ` title="${inp.help.replace(/"/g, '&quot;')}"` : '';
-      const helpCursor = inp.help ? ';cursor:help' : '';
+      const helpTitle = inp.help
+        ? ` title="${inp.help.replace(/"/g, "&quot;")}"`
+        : "";
+      const helpCursor = inp.help ? ";cursor:help" : "";
 
-      if (inp.type === 'select') {
+      if (inp.type === "select") {
         const opts = inp.options
-          .map((o) => `<option value="${o.value}" ${o.value === val ? 'selected' : ''}>${o.label}</option>`)
-          .join('');
+          .map(
+            (o) =>
+              `<option value="${o.value}" ${o.value === val ? "selected" : ""}>${o.label}</option>`,
+          )
+          .join("");
         return `
         <div class="ecm-field-row" style="display:flex;align-items:flex-start;gap:8px;margin-bottom:12px;flex-wrap:wrap">
           <label${helpTitle} style="flex:0 0 280px;font-size:12px;font-weight:600;color:var(--text2);padding-top:4px${helpCursor}">${inp.label}</label>
@@ -2720,45 +2296,53 @@ function renderEcmCalculator(templateId, container, savedValues, onBack, onCalcu
         </div>`;
       }
 
-      // Auto-populated inputs shown in blue with a source tag; override clears the tag
-      const autoStyle = isAuto ? 'color:#60a5fa;border-color:rgba(96,165,250,0.4)' : '';
-      const autoTag = isAuto
-        ? `<span id="${id}-autotag" style="font-size:10px;color:#60a5fa;margin-top:3px;display:block">
-             from baseline bills (${autoRates.sourceLabels[inp.id === 'gas_rate' ? 'gas' : inp.id === 'demand_rate' ? 'demand' : 'electric']}) — <button type="button" style="font-size:10px;color:var(--text3);background:none;border:none;cursor:pointer;padding:0;text-decoration:underline" onclick="document.getElementById('${id}').style.color='';document.getElementById('${id}').style.borderColor='';document.getElementById('${id}-autotag').style.display='none'">override</button>
-           </span>`
-        : '';
-
       return `
       <div class="ecm-field-row" style="display:flex;align-items:flex-start;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-        <label for="${id}"${helpTitle} style="flex:0 0 280px;font-size:12px;font-weight:600;color:var(--text2);padding-top:6px${helpCursor}">${inp.label}${inp.unit ? ' <span style="opacity:.6;font-weight:400">(' + inp.unit + ')</span>' : ''}</label>
+        <label for="${id}"${helpTitle} style="flex:0 0 280px;font-size:12px;font-weight:600;color:var(--text2);padding-top:6px${helpCursor}">${inp.label}${inp.unit ? ' <span style="opacity:.6;font-weight:400">(' + inp.unit + ")</span>" : ""}</label>
         <div style="flex:1;min-width:160px">
           <input id="${id}" class="fi ecm-input" type="number" data-inp="${inp.id}"
-            value="${val}"${inp.min != null ? ` min="${inp.min}"` : ''}${inp.max != null ? ` max="${inp.max}"` : ''}
-            ${rateGuardKnowsField(inp.id) ? `data-accepted="${val}"` : ''}
-            step="${inp.type === 'number' && (val === '' || val < 1) ? '0.001' : '1'}"
-            style="width:100%;font-size:13px;${autoStyle}"
-            oninput="_ecmValidateInput(this,${inp.min != null ? inp.min : 'null'},${inp.max != null ? inp.max : 'null'})" />
-          ${autoTag}
+            value="${val}"${inp.min != null ? ` min="${inp.min}"` : ""}${inp.max != null ? ` max="${inp.max}"` : ""}
+            step="${inp.type === "number" && (val === "" || val < 1) ? "0.001" : "1"}"
+            style="width:100%;font-size:13px"
+            oninput="_ecmValidateInput(this,${inp.min != null ? inp.min : "null"},${inp.max != null ? inp.max : "null"})" />
+          <div id="${id}-hint">${chCalcFieldHintHTML(hint)}</div>
           <div id="${id}-err" style="font-size:11px;color:var(--red,#e55);margin-top:2px;display:none"></div>
         </div>
       </div>`;
     })
-    .join('');
+    .join("");
 
-  // Build context banner if opened from a project
-  const autoCount = Object.keys(autoPopulated).length;
+  // Building row: the building's HVAC Load Estimate is the baseline and the monthly shape of the savings.
+  const bldgOpts = bldgs
+    .map(
+      (b) =>
+        `<option value="${_escHtml(String(b.id))}" ${String(b.id) === String(ctx.buildingId) ? "selected" : ""}>${_escHtml(b.name || "Building")}</option>`,
+    )
+    .join("");
   const contextBanner =
-    ctx && ctx.buildingName
-      ? `<div style="background:rgba(96,165,250,0.12);border:1px solid rgba(96,165,250,0.3);border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#93c5fd;display:flex;align-items:center;gap:8px">
-           <span style="font-size:16px">📌</span>
-           <span>Auto-populated from <strong>${ctx.buildingName}</strong> data${autoCount > 0 ? ' — ' + autoCount + ' rate' + (autoCount !== 1 ? 's' : '') + ' filled from bills' : ' — no bill data found'}</span>
+    ctx && ctx.projId
+      ? `<div id="ecm-bldg-row" style="background:var(--s1);border:1px solid var(--border);border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:var(--text2);display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+           <label for="ecm-bldg-select" style="font-weight:600;color:var(--text)">Building</label>
+           <select id="ecm-bldg-select" class="fs" style="min-width:220px;font-size:13px">
+             <option value="">Choose a building</option>${bldgOpts}
+           </select>
+           <span id="ecm-bldg-note">${
+             ctx.buildingId
+               ? endUseInputs
+                 ? endUseFilled +
+                   " of " +
+                   endUseInputs +
+                   " baseline inputs filled from the HVAC Load Estimate"
+                 : "The monthly shape of the savings comes from this building’s HVAC Load Estimate"
+               : "Choose a building to fill the baseline from its HVAC Load Estimate and to see the dollar value"
+           }</span>
          </div>`
-      : '';
+      : "";
 
   container.innerHTML = `
     <div style="padding:20px;overflow-y:auto;flex:1" id="ecm-calc-form-wrap">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap">
-        <button class="btn btn-ghost btn-sm" id="ecm-back-btn">← Back</button>
+        <button class="btn btn-ghost btn-sm" id="ecm-back-btn">${(ctx && ctx.backLabel) || "← Back"}</button>
         <span style="font-size:20px">${tmpl.icon}</span>
         <h2 style="font-size:18px;font-weight:700;margin:0;color:var(--text)">${tmpl.name}</h2>
         <span style="font-size:11px;color:var(--accent);font-weight:600;text-transform:uppercase;letter-spacing:.5px;padding:2px 8px;border:1px solid var(--accent);border-radius:10px">${tmpl.category}</span>
@@ -2774,7 +2358,7 @@ function renderEcmCalculator(templateId, container, savedValues, onBack, onCalcu
       </div>
 
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-bottom:16px">
-        <button class="btn btn-ghost btn-sm" id="ecm-reset-btn">Reset Defaults</button>
+        <button class="btn btn-ghost btn-sm" id="ecm-reset-btn">Reset Inputs</button>
         <button class="btn btn-em" id="ecm-calc-btn" style="min-width:120px">Calculate</button>
       </div>
 
@@ -2782,71 +2366,92 @@ function renderEcmCalculator(templateId, container, savedValues, onBack, onCalcu
     </div>`;
 
   // Wire back button
-  container.querySelector('#ecm-back-btn').addEventListener('click', () => {
-    if (typeof onBack === 'function') onBack();
+  container.querySelector("#ecm-back-btn").addEventListener("click", () => {
+    if (typeof onBack === "function") onBack();
   });
 
-  // Wire reset button
-  container.querySelector('#ecm-reset-btn').addEventListener('click', () => {
-    tmpl.inputs.forEach((inp) => {
-      const el = container.querySelector('#ecm-inp-' + inp.id);
-      if (el) {
-        el.value = inp.default == null ? '' : inp.default;
-        if (el.dataset.accepted !== undefined) el.dataset.accepted = el.value;
-        el.style.color = '';
-        el.style.borderColor = '';
-      }
-      const tag = container.querySelector('#ecm-inp-' + inp.id + '-autotag');
-      if (tag) tag.style.display = 'none';
+  // Wire the building choice: the baseline and the monthly shape follow the building. Typed values stay.
+  const bldgSel = container.querySelector("#ecm-bldg-select");
+  if (bldgSel)
+    bldgSel.addEventListener("change", () => {
+      const typed = {};
+      touched.forEach((tid) => {
+        const el = container.querySelector("#ecm-inp-" + tid);
+        if (el) typed[tid] = el.value;
+      });
+      const b = bldgs.find((x) => String(x.id) === bldgSel.value);
+      renderEcmCalculator(
+        templateId,
+        container,
+        typed,
+        onBack,
+        onCalculate,
+        Object.assign({}, ctx, {
+          buildingId: b ? b.id : null,
+          buildingName: b ? b.name : null,
+        }),
+        Array.from(touched),
+      );
     });
-    container.querySelector('#ecm-results-wrap').innerHTML = '';
+
+  // Wire reset button: typed values go, the building's values come back.
+  container.querySelector("#ecm-reset-btn").addEventListener("click", () => {
+    renderEcmCalculator(
+      templateId,
+      container,
+      null,
+      onBack,
+      onCalculate,
+      ctx,
+      [],
+    );
   });
 
   // Wire calculate button
-  container.querySelector('#ecm-calc-btn').addEventListener('click', () => {
+  container.querySelector("#ecm-calc-btn").addEventListener("click", () => {
     const inputs = {};
     let valid = true;
     tmpl.inputs.forEach((inp) => {
-      const el = container.querySelector('#ecm-inp-' + inp.id);
+      const el = container.querySelector("#ecm-inp-" + inp.id);
       if (el) {
-        if (rateGuardKnowsField(inp.id) && el.dataset.accepted !== el.value) {
-          _ecmShowFieldError(el, 'Confirm this rate first');
-          valid = false;
-        }
-        inputs[inp.id] = inp.type === 'number' ? parseFloat(el.value) : el.value;
-        if (inp.type === 'number' && isNaN(inputs[inp.id])) {
-          _ecmShowFieldError(el, 'Required');
+        inputs[inp.id] =
+          inp.type === "number" ? parseFloat(el.value) : el.value;
+        if (inp.type === "number" && isNaN(inputs[inp.id])) {
+          _ecmShowFieldError(el, "Required");
           valid = false;
         }
       }
     });
     if (!valid) return;
 
-    // A rate input still at its baseline-bill value is priced by season, month by month (ecmPrice).
-    const seasonalByField = {};
-    if (autoRates && seasonalRates) {
-      Object.keys(AUTO_FIELDS).forEach((fid) => {
-        if (AUTO_FIELDS[fid] != null && inputs[fid] === AUTO_FIELDS[fid]) seasonalByField[fid] = seasonalRates;
-      });
-    }
-    const results = calculateEcm(templateId, inputs, seasonalByField);
-    renderEcmResults(templateId, results, container.querySelector('#ecm-results-wrap'), ctx, inputs);
+    const results = calculateEcm(templateId, inputs);
+    renderEcmResults(
+      templateId,
+      results,
+      container.querySelector("#ecm-results-wrap"),
+      ctx,
+      inputs,
+    );
 
-    if (typeof onCalculate === 'function') onCalculate(templateId, inputs, results);
+    if (typeof onCalculate === "function")
+      onCalculate(templateId, inputs, results);
   });
 
-  // Wire live formula hints on focus
+  // A typed value stays typed: the source marker goes away and the building change keeps the value.
   tmpl.inputs.forEach((inp) => {
-    const el = container.querySelector('#ecm-inp-' + inp.id);
+    const el = container.querySelector("#ecm-inp-" + inp.id);
     if (el) {
-      el.addEventListener('change', () => {
-        _ecmValidateInput(el, inp.min, inp.max);
-        if (rateGuardKnowsField(inp.id)) _ecmGuardRateInput(el, inp.id, ctx);
+      el.addEventListener("input", () => {
+        touched.add(inp.id);
+        const hintEl = container.querySelector("#ecm-inp-" + inp.id + "-hint");
+        if (hintEl) hintEl.innerHTML = "";
       });
+      el.addEventListener("change", () =>
+        _ecmValidateInput(el, inp.min, inp.max),
+      );
     }
   });
 }
-
 /**
  * Render calculation results into a container element.
  * Each output value is clickable and shows the formula that produced it.
@@ -2882,25 +2487,15 @@ function renderEcmResults(templateId, results, container, projectContext, inputs
       const display =
         val === null || val === undefined
           ? '—'
-          : out.id === 'simple_payback'
-            ? val === null
-              ? '—'
-              : val + ' yrs'
-            : out.unit === 'kWh/yr' || out.unit === 'CFM' || out.unit === 'therms/yr'
-              ? typeof val === 'number'
-                ? val.toLocaleString()
-                : val
-              : out.unit.startsWith('$/yr') || out.unit === '$'
-                ? '$' + (typeof val === 'number' ? val.toLocaleString() : val)
-                : typeof val === 'number' && !Number.isInteger(val)
-                  ? val.toFixed(3)
-                  : val;
+          : out.unit === 'kWh/yr' || out.unit === 'CFM' || out.unit === 'therms/yr'
+            ? typeof val === 'number'
+              ? val.toLocaleString()
+              : val
+            : typeof val === 'number' && !Number.isInteger(val)
+              ? val.toFixed(3)
+              : val;
 
-      const isMajor =
-        out.id === 'total_savings_dollar' ||
-        out.id === 'simple_payback' ||
-        out.id === 'savings_kwh' ||
-        out.id === 'annual_savings_dollar';
+      const isMajor = out.id === 'savings_kwh';
 
       return `
       <tr class="ecm-result-row" style="border-bottom:1px solid var(--border)">
@@ -2929,6 +2524,36 @@ function renderEcmResults(templateId, results, container, projectContext, inputs
     })
     .join('');
 
+  // The dollar value of the result: the Energy Savings matrix pricing of the monthly measure (ecmMeasureDollars).
+  // A template computes no dollars and no payback of its own (payback and cost lines come in phase 7).
+  const built = ctx && ctx.projId ? ecmBuildMeasure(ctx.projId, ctx.buildingId, templateId, inputs || {}, results) : null;
+  const seenShapes = new Set();
+  const shapeLines = built && built.ok
+    ? built.shapes
+        .filter((s) => {
+          const k = s.endUse + '|' + s.sourceLabel;
+          if (seenShapes.has(k)) return false;
+          seenShapes.add(k);
+          return true;
+        })
+        .map((s) => _escHtml(s.label) + ' profile from ' + _escHtml(s.sourceLabel))
+        .join('; ')
+    : '';
+  const valueHtml = built
+    ? built.ok
+      ? (() => {
+          const dollars = ecmMeasureDollars(ctx.projId, built.measure);
+          return `<div style="padding:12px 16px;border-top:1px solid var(--border)">
+            <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
+              <span style="font-size:13px;font-weight:700;color:var(--text)">Savings value</span>
+              <span id="ecm-savings-value" style="font-size:15px;font-weight:700;font-family:var(--mono);color:var(--em)">${dollars > 0 ? '$' + Math.round(dollars).toLocaleString() + '/yr' : 'No baseline bill rates yet'}</span>
+            </div>
+            <div style="font-size:11px;color:var(--text2);margin-top:4px">Priced month by month at this building's baseline-period rates, the same way the Energy Savings matrix prices a measure. Monthly shape: ${shapeLines}.</div>
+          </div>`;
+        })()
+      : `<div id="ecm-savings-value" style="padding:12px 16px;border-top:1px solid var(--border);font-size:12px;color:var(--text2)">${_escHtml(built.reason)}</div>`
+    : '';
+
   // Build the "Save to Project" + "Add as Measure" footer if a project context is available
   const saveBtnHtml =
     ctx && ctx.projId
@@ -2940,7 +2565,7 @@ function renderEcmResults(templateId, results, container, projectContext, inputs
            Save to ${ctx.buildingName ? ctx.buildingName : 'Project'}
          </button>
          <span id="ecm-save-status" style="font-size:11px;color:var(--green);display:none">Saved!</span>
-         <button class="btn btn-em btn-sm" id="ecm-add-measure-btn" style="white-space:nowrap">+ Add as Savings Measure</button>
+         <button class="btn btn-em btn-sm" id="ecm-add-measure-btn" style="white-space:nowrap"${built && built.ok ? '' : ' disabled'}>+ Add as Savings Measure</button>
        </div>`
       : '';
 
@@ -2964,6 +2589,7 @@ function renderEcmResults(templateId, results, container, projectContext, inputs
           </tbody>
         </table>
       </div>
+      ${valueHtml}
       ${saveBtnHtml}
     </div>`;
 
@@ -3019,26 +2645,6 @@ function renderEcmResults(templateId, results, container, projectContext, inputs
 }
 
 /* ─── Input Validation Helpers ───────────────────────── */
-
-// A rate typed into an ECM form is checked by the rate guard (computations/rates.js). Out of range: the
-// confirm popup. "No" puts the last accepted value back; "Yes" accepts it (the form runs on accepted rates only).
-async function _ecmGuardRateInput(el, fieldId, ctx) {
-  const val = parseFloat(el.value);
-  const ok =
-    !isFinite(val) ||
-    (await rateGuardAccept(fieldId, val, ctx && ctx.projId, ctx && ctx.buildingId));
-  if (ok) {
-    el.dataset.accepted = el.value;
-    return;
-  }
-  el.value = el.dataset.accepted || '';
-  el.style.borderColor = '';
-  const errEl = document.getElementById(el.id + '-err');
-  if (errEl) {
-    errEl.style.display = 'none';
-    errEl.textContent = '';
-  }
-}
 
 function _ecmValidateInput(el, min, max) {
   const errEl = document.getElementById(el.id + '-err');

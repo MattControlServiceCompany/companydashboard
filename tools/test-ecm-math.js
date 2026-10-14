@@ -14,10 +14,23 @@ for (let m = 1; m <= 15; m++) {
   elecBills.push({ start: iso(new Date(s.getTime() + 43200000)), end: iso(new Date(d.getTime() + 43200000)),
     kwh: 100000, kwhCost: m <= 3 ? 9000 : 6000, kwCost: 2000, billedKW: 250, otherCost: 500, taxCost: 200 });
 }
+// Monthly profiles (Jan..Dec) of the synthetic estimate: cooling peaks in July, lighting/other is nearly flat.
+const COOL = [0, 0, 1000, 3000, 8000, 15000, 22000, 20000, 12000, 4000, 1000, 0];
+const OTHER = [9000, 9000, 9000, 8500, 8000, 6000, 5500, 5500, 8000, 9000, 9000, 9000];
+const GAS = [9000, 7000, 4000, 1500, 400, 0, 0, 0, 300, 2000, 5000, 8000];
+const sumArr = (a) => a.reduce((x, y) => x + y, 0);
+const SYN_EST = {
+  dataSource: 'bills', dataSourceLabel: 'From 12 months of baseline bills', monthly: true,
+  coolKwhTotal: sumArr(COOL), monthlyCoolKwh: COOL, heatKwhTotal: 0, monthlyHeatKwh: Array(12).fill(0),
+  hvacKwh: sumArr(COOL), monthlyHvacKwh: COOL, nonHvacKwh: sumArr(OTHER), monthlyNonHvacKwh: OTHER,
+  hvacGasT: sumArr(GAS), monthlyHvacGas: GAS, hvacKw: 300, monthlyHvacKw: COOL.map((v) => v / 100), nonHvacKw: 100, monthlyNonHvacKw: OTHER.map((v) => v / 100),
+};
 const sb = {
   console, window: {},
   document: { getElementById: () => ({}), createElement: () => ({ style: {} }), head: { appendChild() {} }, addEventListener() {}, readyState: 'complete', body: { appendChild() {} } },
-  projects: [{ id: 'p1' }], getProjSavingsData: () => ({ measures }), getUDBldg: () => null, sset() {}, showToast() {}, _svRecalcFrom() {},
+  projects: [{ id: 'p1' }], getProjSavingsData: () => ({ measures }), getUDBldg: (p, b) => (b === 'b1' ? { id: 'b1', name: 'Synthetic Building', sqft: 1000 } : null), sset() {}, showToast() {}, _svRecalcFrom() {},
+  // Synthetic stored HVAC Load Estimate of building b1 (the owner of the end-use split), saved by a person.
+  hvacLoadStoredFor: (p, b) => (b === 'b1' ? { savedAt: 1790000000000, est: SYN_EST } : null),
   getUDBldgs: () => [{ id: 'b1', meters: [{ commodity: 'Electric', provider: sb.SEASON_UTILITY, bills: elecBills }] }],
   resolveGasUsageTherms: () => 0,
 };
@@ -35,10 +48,11 @@ vm.runInContext(cut('app/utility-data.js', 'function _fixISO', '// The ONE day-c
 vm.runInContext(cut('app/core.js', 'function _dashGetBaselineBills', 'function initDashboardTab'), sb);
 vm.runInContext(cut('app/utility-data.js', 'function _udProjBaselineMonthsFallback', '// Per-meter baseline totals'), sb);
 vm.runInContext(cut('app/energy-savings.js', 'const RATE_WRITE_FIELDS', 'function getProjMatrixSavingsTotal'), sb);
+vm.runInContext(fs.readFileSync(path.join(root, 'computations/end-use.js'), 'utf8'), sb);
 vm.runInContext(src, sb);
 const T = sb.ECM_TEMPLATES;
 // Rate inputs have no default (blank until Utility Data fills them); the test supplies a manual value.
-const defs = (id) => { const o = {}; T[id].inputs.forEach((i) => (o[i.id] = i.default)); if (o.elec_rate === null) o.elec_rate = 0.085; if (o.btm_rate === null) o.btm_rate = 0.085; return o; };
+const defs = (id) => { const o = {}; T[id].inputs.forEach((i) => (o[i.id] = i.default)); return o; };
 let fail = 0;
 const ok = (name, cond, info) => { console.log((cond ? 'PASS ' : 'FAIL ') + name + (info !== undefined ? '  [' + info + ']' : '')); if (!cond) fail++; };
 
@@ -56,13 +70,35 @@ const ok = (name, cond, info) => { console.log((cond ? 'PASS ' : 'FAIL ') + name
   const expT = Math.round((1.08 * d.oa_cfm * dt * 0.7 * d.heating_hours) / (100000 * d.afue));
   ok('ERW heating therms = recovered fraction', r.heating_savings_therms === expT, r.heating_savings_therms + ' vs ' + expT);
   d.erw_winter_eff = 80; ok('better wheel saves more', T.oa_erw.calculate(d).heating_savings_therms > r.heating_savings_therms); }
-// 3. Add as measure: kW per month = full kW reduction (matrix sums 12 months)
+// 3. Add as measure: MONTHLY quantities shaped by the end use's profile from the load estimate (not annual / 12)
 { const d = defs('lighting_replacement'); const r = sb.calculateEcm('lighting_replacement', d);
-  sb.ecmAddAsMeasure('p1', '', 'lighting_replacement', d, r);
-  const m = measures[0]; const sum = (a) => a.reduce((x, y) => x + y, 0);
-  const demand = sum(m.kw) * d.demand_rate; const calc = r.demand_savings_kw * d.demand_rate * 12;
-  ok('measure demand $ equals calc demand $', Math.abs(demand - calc) < 0.5, demand.toFixed(0) + ' vs ' + calc.toFixed(0));
-  ok('measure kWh sums to annual', Math.abs(sum(m.kwh) - r.total_savings_kwh) < 0.001, sum(m.kwh)); }
+  ok('no building -> measure is not added', sb.ecmAddAsMeasure('p1', '', 'lighting_replacement', d, r) === false && measures.length === 0);
+  ok('lighting add as measure succeeds with a building', sb.ecmAddAsMeasure('p1', 'b1', 'lighting_replacement', d, r) === true);
+  const m = measures[0]; const sum = sumArr;
+  ok('measure kWh sums to the yearly quantity', Math.abs(sum(m.kwh) - r.total_savings_kwh) < 0.001, sum(m.kwh));
+  const w = OTHER.map((v) => v / sumArr(OTHER));
+  ok('measure kWh follows the non-HVAC electric profile, month by month', m.kwh.every((v, i) => Math.abs(v - r.total_savings_kwh * w[i]) < 1e-6));
+  ok('measure kWh is not annual / 12', Math.abs(m.kwh[0] - r.total_savings_kwh / 12) > 1 && Math.abs(m.kwh[5] - r.total_savings_kwh / 12) > 1);
+  ok('kW reduction is the full reduction in the peak month, lower in the others', Math.abs(Math.max(...m.kw) - r.demand_savings_kw) < 1e-9 && Math.min(...m.kw) < r.demand_savings_kw);
+  ok('measure carries no dollars of its own before the matrix prices it', m.totalDollar === 0 && m.rateSource === 'owner');
+  measures.length = 0; }
+// 3b. A cooling template is shaped by the cooling profile (zero in the months the estimate has no cooling)
+{ const d = defs('chiller_replacement'); const r = sb.calculateEcm('chiller_replacement', d);
+  const built = sb.ecmBuildMeasure('p1', 'b1', 'chiller_replacement', d, r);
+  ok('chiller build ok', built.ok === true, built.reason);
+  const m = built.measure; const w = COOL.map((v) => v / sumArr(COOL));
+  ok('chiller kWh follows the cooling profile', m.kwh.every((v, i) => Math.abs(v - r.savings_kwh * w[i]) < 1e-6));
+  ok('chiller kWh is 0 in January', m.kwh[0] === 0);
+  ok('chiller kW is 0 in January and full in July', m.kw[0] === 0 && Math.abs(m.kw[6] - r.peak_kw_savings) < 1e-9); }
+// 3c. Gas-or-electric choice picks the end use; a template with no month-by-month source is refused
+{ const d = defs('vav_reheat'); d.reheat_type = 'gas'; const r = sb.calculateEcm('vav_reheat', d);
+  const g = sb.ecmBuildMeasure('p1', 'b1', 'vav_reheat', d, r);
+  ok('VAV gas reheat lands in the gas column on the gas-heating profile', g.ok && sumArr(g.measure.gas) > 0 && g.measure.gas[5] === 0 && g.measure.gas[0] > g.measure.gas[3]);
+  d.reheat_type = 'electric'; const re = sb.calculateEcm('vav_reheat', d);
+  const e = sb.ecmBuildMeasure('p1', 'b1', 'vav_reheat', d, re);
+  ok('VAV electric reheat lands in the kWh column (heating profile when the estimate has no electric heating)', e.ok && sumArr(e.measure.gas) === 0);
+  const s = sb.ecmBuildMeasure('p1', 'b1', 'solar_production', defs('solar_production'), sb.calculateEcm('solar_production', defs('solar_production')));
+  ok('solar production has no month-by-month source and is refused', s.ok === false && /month-by-month/.test(s.reason), s.reason); }
 // 4. Rate autofill: the ONE rate function (computeSeasonalBldgRates) supplies the single kWh/kW rate
 { const baselineMeter = { commodity: 'Electric', provider: sb.SEASON_UTILITY, bills: elecBills, baseline: { months: ['2025-01', '2025-02', '2025-03', '2025-04', '2025-05', '2025-06', '2025-07', '2025-08', '2025-09', '2025-10', '2025-11', '2025-12'] } };
   sb.getUDBldgs = () => [{ id: 'b1', meters: [baselineMeter] }];
@@ -71,7 +107,7 @@ const ok = (name, cond, info) => { console.log((cond ? 'PASS ' : 'FAIL ') + name
   ok('building kWh rate from the one rate function > 0', r.kwhRate > 0 && r.kwhRate < 0.2, r.kwhRate);
   ok('kwhRate lies between seasonal rates', r.kwhRate >= Math.min(r.kwhSummer, r.kwhWinter) - 1e-9 && r.kwhRate <= Math.max(r.kwhSummer, r.kwhWinter) + 1e-9, r.kwhRate);
   ok('getProjectRates copy is gone', typeof sb.getProjectRates === 'undefined');
-  ok('elec rate inputs have no invented default', T.lighting_replacement.inputs.find((i) => i.id === 'elec_rate').default === null); }
+  ok('no template has a rate or cost input', Object.values(T).every((t) => (t.inputs || []).every((i) => !/_(rate|cost)$/.test(i.id)))); }
 // 4b. Baseline period only: a 2026 bill outside the baseline months does not move the rate
 { const meter = sb.getUDBldg().meters[0]; const before = sb.computeSeasonalBldgRates('p1', 'b1');
   const extra = elecBills.slice(); extra.push({ start: '2026-04-01', end: '2026-04-30', kwh: 100000, kwhCost: 90000, kwCost: 2000, billedKW: 250, otherCost: 500, taxCost: 200 });
@@ -81,12 +117,16 @@ const ok = (name, cond, info) => { console.log((cond ? 'PASS ' : 'FAIL ') + name
   const keep = meter.baseline; meter.baseline = { months: [] };
   ok('no baseline anywhere -> rate 0, not all-history', sb.computeSeasonalBldgRates('p1', 'b1').kwhRate === 0);
   meter.baseline = keep; }
-// 4c. ecmPrice: seasonal rate on an even 12-month profile equals the matrix sum; typed rate stays flat
-{ const r = sb.computeSeasonalBldgRates('p1', 'b1'); const q = 120000;
-  const exp = sb.calcMeasureDollars({ kwh: Array(12).fill(q / 12) }, r).total;
-  ok('ecmPrice seasonal == calcMeasureDollars monthly sum', Math.abs(sb.ecmPrice({ __seasonal: { elec_rate: r }, elec_rate: 0.5 }, 'elec', q) - exp) < 1e-6, exp.toFixed(2));
-  ok('ecmPrice typed rate is flat', sb.ecmPrice({ __seasonal: null, elec_rate: 0.5 }, 'elec', q) === q * 0.5);
-  ok('ecmPrice demand typed = kW x rate x 12', sb.ecmPrice({ demand_rate: 10 }, 'demand', 5) === 600); }
+// 4c. The dollars of a template are the matrix pricing of its monthly measure (calcMeasureDollars + measureRatesNow)
+{ const d = defs('chiller_replacement'); const r = sb.calculateEcm('chiller_replacement', d);
+  const built = sb.ecmBuildMeasure('p1', 'b1', 'chiller_replacement', d, r);
+  const dollars = sb.ecmMeasureDollars('p1', built.measure);
+  const rates = sb.computeSeasonalBldgRates('p1', 'b1');
+  const hand = sb.calcMeasureDollars(built.measure, rates).total;
+  ok('template dollars == calcMeasureDollars of the monthly measure at the baseline rates', dollars > 0 && Math.abs(dollars - hand) < 1e-6, dollars.toFixed(2));
+  ok('results hold no dollar or payback field', !Object.keys(r).some((k) => /dollar|payback/.test(k)), Object.keys(r).join(','));
+  const flat = { kwh: Array(12).fill(r.savings_kwh / 12), kw: Array(12).fill(r.peak_kw_savings), gas: [] };
+  ok('shaped dollars differ from the old flat annual / 12 spread', Math.abs(sb.calcMeasureDollars(flat, rates).total - dollars) > 1, sb.calcMeasureDollars(flat, rates).total.toFixed(2)); }
 // 5. 0.3 VAV factor is labelled in plain words
 { const f = T.vav_reheat;
   const o = f.outputs.find((x) => x.id === 'cool_kwh_saved');

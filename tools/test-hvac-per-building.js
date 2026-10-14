@@ -463,10 +463,6 @@ console.log('--- 5. static gates ---');
     '_hvlGasHeatShare reads through resolveHvacLoadData',
   );
   assert(
-    /resolveHvacLoadData\(/.test(fnSource(CALC, 'hvacComputeElecCoolKwhForBuilding')),
-    'BAS cooling autofill reads through resolveHvacLoadData',
-  );
-  assert(
     /resolveHvacLoadData\(/.test(read('app/graphics-setpoints.js')),
     'Energy Graphics HVAC card reads through resolveHvacLoadData',
   );
@@ -484,13 +480,16 @@ console.log('--- 5. static gates ---');
   );
   assert(!/Math\.max/.test(fnSource(wd, '_wdBaselineHvac')), '_wdBaselineHvac takes no private max of kW');
 
-  // 5e. D1: the BAS Calc cooling / heating kWh / gas autofill share ONE saved-estimate rule
+  // 5e. Phase 5: the BAS Calc Section D baseline (cooling kWh, heating kWh, gas therms) is read through getEndUse only
   const bas = strip(fnSource(CALC, 'openBASCalc'));
-  assert(/const useSavedEst = /.test(bas), 'openBASCalc defines the one saved-estimate rule (useSavedEst)');
-  assert(!/if \(savedEst\) \{/.test(bas), 'openBASCalc does not fill cooling / heating kWh from an unsaved estimate');
+  assert(/getEndUse\(/.test(bas), 'openBASCalc reads its calibration baseline through getEndUse');
   assert(
-    (bas.match(/useSavedEst/g) || []).length >= 3,
-    'cooling / heating kWh and gas therms all use useSavedEst',
+    !/useSavedEst|hvacLoadStoredFor|hvacLoadProjectRollup|hvacCompute/.test(bas),
+    'openBASCalc has no saved-versus-measured fork',
+  );
+  assert(
+    /resolveHvacLoadData\(/.test(read('computations/end-use.js')),
+    'getEndUse reads the data through resolveHvacLoadData',
   );
 
   // 5f. D2: the resolver path owns no month rule of its own

@@ -200,6 +200,14 @@
           "keyFields": ["project.baselineComparison", "project.estimatedSavings", "project.utilityEscalation", "project.cscCompensation"]
         },
         {
+          "id": "calc-templates-end-use",
+          "name": "Calc Templates Read the Building's End-Use Baseline",
+          "description": "Chain: Utility Data baseline (or quick annual entry) -> HVAC Load Estimate (per building, owns the end-use split) -> one calc template per replaced item takes its baseline from the load estimate -> monthly quantities to the Energy Savings matrix, priced at baseline-period rates. A template computes quantities only (no dollars, no payback, no rate or cost input). End-use inputs (RTU cooling kWh and heating Therms, the BAS Calc Section D baseline) are prefilled from the load estimate and labelled with its source; a typed value stays typed. Fans, lighting and plug loads are not modeled yet.",
+          "functions": ["getEndUse(projId, bldgId, endUse)", "getEndUseWeights(projId, bldgId, endUses)", "spreadEnergyByWeights(weights, annual)", "spreadDemandByWeights(weights, kw)", "ecmBuildMeasure(projId, bldgId, templateId, inputs, results)", "ecmMeasureDollars(projId, measure)", "ecmAddAsMeasure(projId, bldgId, templateId, inputs, results)"],
+          "files": ["computations/end-use.js", "app/ecm-calculators.js", "app/calculators.js"],
+          "formula": "monthly measure = yearly template quantity x the building's monthly end-use profile; dollars = calcMeasureDollars(measure, measureRatesNow(projId, measure))"
+        },
+        {
           "id": "report-generation",
           "name": "Report Generation",
           "description": "Generate quarterly, annual, cumulative, or custom reports with selectable sections and a building -> meter scope tree (shared component app/scope-tree.js, also used by the ASHRAE 36 report modal's building filter and the Export Utility Data modal). Output as HTML pages with charts and tables. Export to PDF / Word available.",

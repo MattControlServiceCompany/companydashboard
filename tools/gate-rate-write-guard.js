@@ -112,13 +112,12 @@ const es = texts['app/energy-savings.js'];
   else if (es.slice(sp[0], sp[1]).indexOf(needs) < 0)
     bad.push('app/energy-savings.js ' + fn + ' does not call ' + needs);
 });
-// ECM form: rate inputs go through the guard
+// ECM form: since phase 5 (2026-10-14) a calc template has no rate input at all: the matrix prices a template
+// result with the measure's own rates (initMeasureRates / measureRatesNow). A rate input there would be a
+// second rate entry point outside the guard.
 const ecm = texts['app/ecm-calculators.js'];
-if (!/_ecmGuardRateInput\(el, inp\.id, ctx\)/.test(ecm))
-  bad.push('app/ecm-calculators.js: ECM rate inputs skip _ecmGuardRateInput');
-const ecmFn = funcSpan(ecm, '_ecmGuardRateInput');
-if (!ecmFn || ecm.slice(ecmFn[0], ecmFn[1]).indexOf('rateGuardAccept(') < 0)
-  bad.push('app/ecm-calculators.js: _ecmGuardRateInput does not call rateGuardAccept');
+if (/\bid:\s*'[a-z_]*_rate'/.test(ecm)) bad.push('app/ecm-calculators.js: an ECM template has a rate input again');
+if (/_ecmGuardRateInput/.test(ecm)) bad.push('app/ecm-calculators.js: the ECM rate-input guard helper came back');
 
 if (bad.length) {
   console.log('FAIL rate write guard gate\n' + bad.join('\n'));

@@ -126,8 +126,6 @@ const src = [
   loadFn(CALC, '_hvlBuildingHeatingSignals'),
   loadFn(CALC, '_hvlDefaultGasPct'),
   loadFn(CALC, '_hvlGasHeatShare'),
-  loadFn(CALC, 'hvacComputeGasThermsForBuilding'),
-  loadFn(CALC, 'hvacComputeElecCoolKwhForBuilding'),
 ].join('\n\n');
 const EXCLUDED = { gExcl: true };
 const sandbox = {
@@ -198,14 +196,23 @@ assert(
 assert(near(so.baseline.sumCool, h.coolKwh, 0.5), 'page 4 and setpoint options read the same cooling kWh');
 
 // ---------------------------------------------------------------------------
-// 3. BAS Calc autofill reads the same numbers
+// 3. The end-use numbers under the HVAC Load Estimate (getEndUse reads the estimate built on them) are the same
+//    baseload numbers. coolOf / gasOf read them through the one resolver and the one gas-share function.
 // ---------------------------------------------------------------------------
-const cool = sandbox.hvacComputeElecCoolKwhForBuilding('p1', 'b1');
+const coolOf = (pid, bid) => {
+  const e = sandbox.resolveHvacLoadData(pid, sandbox.getUDBldg(pid, bid)).enduse;
+  return e.elecValid && e.coolingKwh > 0 ? { coolingKwh: e.coolingKwh } : null;
+};
+const gasOf = (pid, bid) => {
+  const s = sandbox._hvlGasHeatShare(pid, bid);
+  return s.totalGas > 0 ? { hvacGasT: s.heatingTherms } : null;
+};
+const cool = coolOf('p1', 'b1');
 assert(
   cool && near(cool.coolingKwh, EXP_COOL, 0.5),
   'BAS Calc cooling kWh = ' + EXP_COOL + ', got ' + (cool && cool.coolingKwh),
 );
-const gas = sandbox.hvacComputeGasThermsForBuilding('p1', 'b1');
+const gas = gasOf('p1', 'b1');
 assert(
   gas && near(gas.hvacGasT, EXP_HEAT, 0.5),
   'BAS Calc gas heating Therms = ' + EXP_HEAT + ', got ' + (gas && gas.hvacGasT),
@@ -219,9 +226,9 @@ const expGas = sumArr(G1, G2);
 const expElec = sumArr(E1, E2);
 const expMultiHeat = expGas.reduce((s, v) => s + Math.max(0, v - lowest3Avg(expGas)), 0);
 const expMultiCool = expElec.reduce((s, v) => s + Math.max(0, v - lowest3Avg(expElec)), 0);
-const mgas = sandbox.hvacComputeGasThermsForBuilding('p1', 'b2');
+const mgas = gasOf('p1', 'b2');
 assert(mgas && near(mgas.hvacGasT, expMultiHeat, 0.5), 'multi-meter gas heating sums included meters (' + expMultiHeat + '), got ' + (mgas && mgas.hvacGasT));
-const mcool = sandbox.hvacComputeElecCoolKwhForBuilding('p1', 'b2');
+const mcool = coolOf('p1', 'b2');
 assert(mcool && near(mcool.coolingKwh, expMultiCool, 0.5), 'multi-meter cooling kWh sums both electric meters (' + expMultiCool + '), got ' + (mcool && mcool.coolingKwh));
 
 // ---------------------------------------------------------------------------
