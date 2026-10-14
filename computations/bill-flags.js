@@ -186,7 +186,32 @@ function _bfProvenZeroUsage(b, c, total) {
   return false;
 }
 
+// Cache of the summaries, one entry per meter object. An entry is used only when the signature of everything the
+// summary reads is unchanged: the meter's commodity, inclusive flag and bills (every field, dismissed flags too), and
+// for water and sewer the bills of the partner meters in the same building. So a cached count can never differ from a
+// fresh one, and no bill write path needs to clear it. Callers must not change the returned object.
+const _bfSummaryCache = new WeakMap();
+function _bfMeterSignature(meter, building) {
+  let sig = JSON.stringify([meter.commodity, meter.inclusive, meter.bills || []]);
+  if ((meter.commodity === 'Water' || meter.commodity === 'Sewer') && building) {
+    (building.meters || []).forEach((x) => {
+      if (x !== meter && (x.commodity === 'Water' || x.commodity === 'Sewer')) {
+        sig += '|' + JSON.stringify([x.commodity, x.inclusive, x.bills || []]);
+      }
+    });
+  }
+  return sig;
+}
 function computeMeterFlagSummary(meter, building) {
+  if (!meter || typeof meter !== 'object') return _computeMeterFlagSummaryFresh(meter, building);
+  const sig = _bfMeterSignature(meter, building);
+  const hit = _bfSummaryCache.get(meter);
+  if (hit && hit.sig === sig) return hit.summary;
+  const summary = _computeMeterFlagSummaryFresh(meter, building);
+  _bfSummaryCache.set(meter, { sig, summary });
+  return summary;
+}
+function _computeMeterFlagSummaryFresh(meter, building) {
   const T = BILL_FLAG_THRESHOLDS;
   const num = parseBillNumber;
   const c = meter.commodity;

@@ -130,7 +130,7 @@ async function main() {
     await page.waitForTimeout(4000);
     const res = await page.evaluate(async (pid) => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-      const out = { meters: [], bldg: null, panel: null };
+      const out = { meters: [], bldg: null, panel: null, refresh: null };
       sv('utility');
       await sleep(800);
       udSelectProj(pid);
@@ -156,10 +156,32 @@ async function main() {
           rows: pane.querySelectorAll('tr.bill-flagged').length,
         });
       }
+      // A bill change (saveUtilityData) must redraw the meter pills, and the summary cache must match a fresh run.
+      const gasM = b.meters.find((m) => m.commodity === 'Gas');
+      udSelectMeter(gasM.id);
+      await sleep(400);
+      const before = computeMeterFlagSummary(gasM, b).flaggedBills;
+      const badBill = gasM.bills.find((x) => x.id === 'g20');
+      badBill.thermCost = badBill.totalCost;
+      saveUtilityData(pid);
+      await sleep(600);
+      const bs2 = computeBuildingFlagSummary(b);
+      const pillNums = [...document.querySelectorAll('.ma-meter-pill:not(.ma-add-meter-pill)')].map((e) =>
+        +((e.innerText.match(/⚠\s*(\d+)/) || [])[1] || 0),
+      );
+      out.refresh = {
+        before,
+        after: computeMeterFlagSummary(gasM, b).flaggedBills,
+        pillSum: pillNums.reduce((a, c) => a + c, 0),
+        want: bs2.flaggedBills,
+        stale: b.meters.filter(
+          (m) => JSON.stringify(computeMeterFlagSummary(m, b)) !== JSON.stringify(_computeMeterFlagSummaryFresh(m, b)),
+        ).length,
+      };
       await openBillCorrectionsReviewModal();
       await sleep(3000);
       const g = document.querySelector('[data-groupkey="__flagged__"]');
-      out.panel = { want: bs.flaggedBills, rows: g ? g.querySelectorAll('tbody tr').length : 0 };
+      out.panel = { want: bs2.flaggedBills, rows: g ? g.querySelectorAll('tbody tr').length : 0 };
       return out;
     }, PID);
     if (errs.length) problems.push('page errors: ' + errs.slice(0, 2).join(' | '));
@@ -179,6 +201,13 @@ async function main() {
             m.rows,
         );
     });
+    if (!(res.refresh.after < res.refresh.before))
+      problems.push('the bill fix did not lower the flag count (' + res.refresh.before + ' -> ' + res.refresh.after + ')');
+    if (res.refresh.pillSum !== res.refresh.want)
+      problems.push(
+        'after saveUtilityData the meter pills add up to ' + res.refresh.pillSum + ' but shared function ' + res.refresh.want,
+      );
+    if (res.refresh.stale) problems.push(res.refresh.stale + ' meter(s) have a cached flag summary that differs from a fresh one');
     if (res.bldg.want !== res.bldg.badge)
       problems.push('building badge ' + res.bldg.badge + ' but shared function ' + res.bldg.want);
     if (res.panel.want !== res.panel.rows)

@@ -2464,12 +2464,8 @@ function openBillModal(mid, editRowId) {
     const chargeId = 'bl-' + chargeEntry.key;
     const chargeRaw = readVal(r.chargeField);
     const chargeVal = _escHtml(chargeRaw != null && chargeRaw !== '' ? _billFmtCurrency(chargeRaw) : '');
-    // When the user types in the Total field directly, mark it as manually edited
-    // so auto-calculation stops overriding their value.
-    const recalc = `onchange="_billRecalcRow('${r.chargeField}')" oninput="_billTotalManualEdit(this);_billRecalcRow('${r.chargeField}')"`;
-    // If there's already a value loaded (editing existing bill), mark as manual so we don't overwrite
-    const manualAttr = chargeRaw != null && chargeRaw !== '' ? ' data-manual-total="1"' : '';
-    return `<div style="border-top:2px solid var(--border);margin-top:4px;padding-top:4px"><div class="ef-charge-row" data-charge-key="${r.chargeField}"${manualAttr}><div></div><div></div><div class="ef-item center"><div class="ef-key" style="font-weight:700">Total Current Charges</div><input class="ef-input bl-charge-input" id="${chargeId}" type="text" inputmode="decimal" placeholder="$0.00" value="${chargeVal}" ${recalc} style="font-weight:700;font-size:14px;text-align:center" onfocus="_billModalFocus(this)" onblur="_billModalBlur(this,true)" autocomplete="off"></div><div class="ef-running" style="font-weight:700">$0.00</div></div></div>`;
+    const recalc = `onchange="_billRecalcRow('${r.chargeField}')" oninput="_billRecalcRow('${r.chargeField}')"`;
+    return `<div style="border-top:2px solid var(--border);margin-top:4px;padding-top:4px"><div class="ef-charge-row" data-charge-key="${r.chargeField}"><div></div><div></div><div class="ef-item center"><div class="ef-key" style="font-weight:700">Total Current Charges</div><input class="ef-input bl-charge-input" id="${chargeId}" type="text" inputmode="decimal" placeholder="$0.00" value="${chargeVal}" ${recalc} style="font-weight:700;font-size:14px;text-align:center" onfocus="_billModalFocus(this)" onblur="_billModalBlur(this,true)" autocomplete="off"></div><div class="ef-running" style="font-weight:700">$0.00</div></div></div>`;
   };
   // Assemble the body
   let body = '';

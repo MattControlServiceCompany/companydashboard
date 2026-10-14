@@ -1530,10 +1530,43 @@ function udScheduleBadgeRefresh() {
     _udBadgeRefreshTimer = null;
     if (document.getElementById('udNavList') && typeof renderUDProjList === 'function') renderUDProjList();
     if (typeof renderSidebarFolders === 'function') renderSidebarFolders();
+    udRefreshMeterPills();
     if (typeof renderProjUDBldgNav === 'function') {
       document.querySelectorAll('[id^="proj-ud-bldg-nav-"]').forEach((n) => renderProjUDBldgNav(n.id.replace('proj-ud-bldg-nav-', '')));
     }
   }, 0);
+}
+
+// Draw the meter pills again in every open Utility Data view (standalone and project tab) for its selected building.
+function udRefreshMeterPills() {
+  const prevProj = udSelProjId;
+  const prevBldg = udSelBldgId;
+  const prevWrap = window._udActiveWrap;
+  try {
+    document.querySelectorAll('.ma-meter-pills').forEach((el) => {
+      const wrap = el.closest('[id^="proj-ud-body-"]') || el.closest('#udDetailWrap');
+      if (!wrap) return;
+      const em = wrap.id.match(/^proj-ud-body-(\d+)$/);
+      if (em) {
+        udSelProjId = Number(em[1]);
+        udSelBldgId = projUDSelBldg[udSelProjId] || udSelBldgId;
+      } else {
+        udSelProjId = prevProj;
+        udSelBldgId = prevBldg;
+      }
+      const b = getUDBldg(udSelProjId, udSelBldgId);
+      if (!b) return;
+      const meters = (b.meters || []).filter((m) => isShownCommodity(udSelProjId, m.commodity));
+      const curMid = _getActiveMid(wrap);
+      if (!meters.length || !meters.find((m) => m.id === curMid)) return; // renderUDDetail handles these cases
+      window._udActiveWrap = wrap;
+      el.innerHTML = udMeterPillsHtml(meters, b, curMid);
+    });
+  } finally {
+    udSelProjId = prevProj;
+    udSelBldgId = prevBldg;
+    window._udActiveWrap = prevWrap;
+  }
 }
 
 function renderUDProjList() {
@@ -1555,7 +1588,7 @@ function renderUDProjList() {
     );
     html += `<div class="ud-nav-proj-item${projActive}" onclick="udSelectProj(${p.id})">
             <span style="font-size:14px;flex-shrink:0">${getFacilityIcon(p.type)}</span>
-            <span class="ud-nav-proj-name" title="${p.name}">${p.name}</span>
+            <span class="ud-nav-proj-name" title="${_escHtml(p.name)}">${_escHtml(p.name)}</span>
             ${_pBadge}
             ${bldgs.length ? `<span class="ud-nav-proj-count">${bldgs.length}</span>` : ''}
           </div>`;
@@ -3043,6 +3076,114 @@ let _perfWeatherMode = 'actual'; // 'actual' | 'normal' — weather mode for exp
 let _regressionPanelVis = false; // show/hide regression coefficients panel in Norm tab
 let _maCharts = {};
 
+// The meter pills (one per meter, with the flagged-bill badge) and the Add Meter pill. renderUDDetail draws them;
+// udRefreshMeterPills draws them again when bills change, so a pill never shows an old count.
+function udMeterPillsHtml(meters, b, _curMid) {
+  return (
+    meters
+      .map((m) => {
+        const active = m.id === _curMid;
+        const bcount = (m.bills || []).length;
+        // Flagged BILLS on this meter: the ONE shared flag function (computations/bill-flags.js).
+        const _mFlags = computeMeterFlagSummary(m, b);
+        const _pClsMap = {
+          Electric: ' elec-pill',
+          Gas: ' gas-pill',
+          Water: ' water-pill',
+          Sewer: ' sewer-pill',
+          Stormwater: ' storm-pill',
+        };
+        const _pCls = _pClsMap[m.commodity] || '';
+        const _pTxtMap = {
+          Electric: '#7dd8ff',
+          Gas: '#ffb040',
+          Water: '#38bdf8',
+          Sewer: '#a78bfa',
+          Stormwater: '#9ca3af',
+        };
+        const _pTxt = _pTxtMap[m.commodity] || 'var(--text2)';
+        const _exclTag = isBaselineExcluded(udSelProjId, m.id)
+          ? '<span style="font-size:8px;font-weight:700;color:var(--danger,#ef4444);background:rgba(239,68,68,.15);padding:1px 4px;border-radius:3px;margin-left:2px" title="Excluded from baseline &amp; performance">excl</span>'
+          : '';
+        // P0 35105124(a): trust indicator distinguishes THREE states (not the
+        // old binary lock/warning) via getBaselineTrustState() so a saved-but-
+        // no-weather baseline no longer looks identical to a silently
+        // auto-inherited one — each has a different fix. All three call sites
+        // (this chip, the building header, the Baseline-tab pill) share the
+        // same classifier so they can never disagree with each other.
+        const _blState = getBaselineTrustState(m);
+        const _blTag =
+          _blState === 'frozen'
+            ? '<span style="font-size:8px;font-weight:700;color:var(--violet);background:rgba(139,92,246,.15);padding:1px 4px;border-radius:3px;margin-left:2px" title="Baseline frozen — locked regression, immune to new bills">🔒 BL</span>'
+            : _blState === 'no-weather'
+              ? '<span style="font-size:8px;font-weight:700;color:var(--warn);background:rgba(245,158,11,.15);padding:1px 4px;border-radius:3px;margin-left:2px" title="Saved without weather data — re-save after uploading weather. Baseline months were saved, but no HDD/CDD data was available for this building\'s ZIP at save time, so no regression could be computed.">⚠ BL</span>'
+              : _blState === 'inherited'
+                ? '<span style="font-size:8px;font-weight:700;color:var(--em2);background:rgba(56,189,248,.15);padding:1px 4px;border-radius:3px;margin-left:2px" title="No valid saved regression — open Baseline and Save to freeze.">🔗 BL</span>'
+                : '';
+        const _flagTag = udFlagBadgeHtml(_mFlags);
+        // Fix 67cb827d (secondary): ensure m._reg is populated for R² scoring
+        // in the pill badge — same root cause as renderMeterDataPane fix.
+        // getNormRows sets m._reg transiently; without it, computeMeterQualityScore
+        // scores R² as 0/25 for meters with inherited baselines (m.baseline.reg = null).
+        if (typeof getNormRows === 'function' && typeof getWeatherForBuilding === 'function') {
+          const { byYm: _pillWeather } = getWeatherForBuilding();
+          const _pillBills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
+          if (_pillBills.length) getNormRows(m, _pillBills, m.inclusive !== false, _pillWeather);
+        }
+        var _dq = typeof computeMeterQualityScore === 'function' ? computeMeterQualityScore(m, b) : null;
+        var _dqBadge = _dq ? getMeterQualityBadge(_dq.score) : null;
+        var _dqTag = _dqBadge
+          ? '<span style="background:' +
+            _dqBadge.bgColor +
+            ';color:' +
+            _dqBadge.textColor +
+            ';padding:1px 6px;border-radius:8px;font-size:11px;font-weight:700;margin-left:4px" title="Data Quality: ' +
+            _dq.score +
+            '/100 — ' +
+            qualityBreakdownTooltip(_dq) +
+            '">' +
+            _dqBadge.label +
+            '</span>'
+          : '';
+        return (
+          '<button class="ma-meter-pill' +
+          _pCls +
+          (active ? ' active' : '') +
+          '" onclick="udSelectMeter(\'' +
+          m.id +
+          '\',this)">' +
+          commodityPill(m.commodity) +
+          (m.provider
+            ? '<span style="font-size:9px;color:var(--text3);max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
+              _escHtml(m.provider.replace(/City of /i, '').replace(/ Company$/i, '')) +
+              '</span>'
+            : '') +
+          '<span style="font-size:11px;color:var(--text3)">' +
+          bcount +
+          ' bill' +
+          (bcount !== 1 ? 's' : '') +
+          '</span>' +
+          _exclTag +
+          _blTag +
+          _flagTag +
+          _dqTag +
+          '</button>'
+        );
+      })
+      .join('') +
+    // Add Meter pill sits directly after the existing meter pills so users don't
+    // have to hunt for the add button in the header bar.
+    '<button class="ma-meter-pill ma-add-meter-pill" onclick="openMeterModal(null,\'' +
+    udSelProjId +
+    "','" +
+    udSelBldgId +
+    '\')" title="Add a new meter to this building">' +
+    '<span style="font-size:14px;font-weight:700;color:var(--em)">+</span>' +
+    '<span style="font-size:12px;font-weight:600;color:var(--em)">Add Meter</span>' +
+    '</button>'
+  );
+}
+
 function renderUDDetail(targetWrap) {
   const wrap = targetWrap || document.getElementById('udDetailWrap');
   window._udActiveWrap = wrap; // always track which wrap is being rendered into
@@ -3161,108 +3302,7 @@ function renderUDDetail(targetWrap) {
   if (wrap === document.getElementById('udDetailWrap')) udActiveMid = _curMid;
   else udActiveMid = _curMid; // temporarily set global so renderMeterWorkspace works
 
-  const pills =
-    meters
-      .map((m) => {
-        const active = m.id === _curMid;
-        const bcount = (m.bills || []).length;
-        // Flagged BILLS on this meter: the ONE shared flag function (computations/bill-flags.js).
-        const _mFlags = computeMeterFlagSummary(m, b);
-        const _pClsMap = {
-          Electric: ' elec-pill',
-          Gas: ' gas-pill',
-          Water: ' water-pill',
-          Sewer: ' sewer-pill',
-          Stormwater: ' storm-pill',
-        };
-        const _pCls = _pClsMap[m.commodity] || '';
-        const _pTxtMap = {
-          Electric: '#7dd8ff',
-          Gas: '#ffb040',
-          Water: '#38bdf8',
-          Sewer: '#a78bfa',
-          Stormwater: '#9ca3af',
-        };
-        const _pTxt = _pTxtMap[m.commodity] || 'var(--text2)';
-        const _exclTag = isBaselineExcluded(udSelProjId, m.id)
-          ? '<span style="font-size:8px;font-weight:700;color:var(--danger,#ef4444);background:rgba(239,68,68,.15);padding:1px 4px;border-radius:3px;margin-left:2px" title="Excluded from baseline &amp; performance">excl</span>'
-          : '';
-        // P0 35105124(a): trust indicator distinguishes THREE states (not the
-        // old binary lock/warning) via getBaselineTrustState() so a saved-but-
-        // no-weather baseline no longer looks identical to a silently
-        // auto-inherited one — each has a different fix. All three call sites
-        // (this chip, the building header, the Baseline-tab pill) share the
-        // same classifier so they can never disagree with each other.
-        const _blState = getBaselineTrustState(m);
-        const _blTag =
-          _blState === 'frozen'
-            ? '<span style="font-size:8px;font-weight:700;color:var(--violet);background:rgba(139,92,246,.15);padding:1px 4px;border-radius:3px;margin-left:2px" title="Baseline frozen — locked regression, immune to new bills">🔒 BL</span>'
-            : _blState === 'no-weather'
-              ? '<span style="font-size:8px;font-weight:700;color:var(--warn);background:rgba(245,158,11,.15);padding:1px 4px;border-radius:3px;margin-left:2px" title="Saved without weather data — re-save after uploading weather. Baseline months were saved, but no HDD/CDD data was available for this building\'s ZIP at save time, so no regression could be computed.">⚠ BL</span>'
-              : _blState === 'inherited'
-                ? '<span style="font-size:8px;font-weight:700;color:var(--em2);background:rgba(56,189,248,.15);padding:1px 4px;border-radius:3px;margin-left:2px" title="No valid saved regression — open Baseline and Save to freeze.">🔗 BL</span>'
-                : '';
-        const _flagTag = udFlagBadgeHtml(_mFlags);
-        // Fix 67cb827d (secondary): ensure m._reg is populated for R² scoring
-        // in the pill badge — same root cause as renderMeterDataPane fix.
-        // getNormRows sets m._reg transiently; without it, computeMeterQualityScore
-        // scores R² as 0/25 for meters with inherited baselines (m.baseline.reg = null).
-        if (typeof getNormRows === 'function' && typeof getWeatherForBuilding === 'function') {
-          const { byYm: _pillWeather } = getWeatherForBuilding();
-          const _pillBills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
-          if (_pillBills.length) getNormRows(m, _pillBills, m.inclusive !== false, _pillWeather);
-        }
-        var _dq = typeof computeMeterQualityScore === 'function' ? computeMeterQualityScore(m, b) : null;
-        var _dqBadge = _dq ? getMeterQualityBadge(_dq.score) : null;
-        var _dqTag = _dqBadge
-          ? '<span style="background:' +
-            _dqBadge.bgColor +
-            ';color:' +
-            _dqBadge.textColor +
-            ';padding:1px 6px;border-radius:8px;font-size:11px;font-weight:700;margin-left:4px" title="Data Quality: ' +
-            _dq.score +
-            '/100 — ' +
-            qualityBreakdownTooltip(_dq) +
-            '">' +
-            _dqBadge.label +
-            '</span>'
-          : '';
-        return (
-          '<button class="ma-meter-pill' +
-          _pCls +
-          (active ? ' active' : '') +
-          '" onclick="udSelectMeter(\'' +
-          m.id +
-          '\',this)">' +
-          commodityPill(m.commodity) +
-          (m.provider
-            ? '<span style="font-size:9px;color:var(--text3);max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
-              _escHtml(m.provider.replace(/City of /i, '').replace(/ Company$/i, '')) +
-              '</span>'
-            : '') +
-          '<span style="font-size:11px;color:var(--text3)">' +
-          bcount +
-          ' bill' +
-          (bcount !== 1 ? 's' : '') +
-          '</span>' +
-          _exclTag +
-          _blTag +
-          _flagTag +
-          _dqTag +
-          '</button>'
-        );
-      })
-      .join('') +
-    // Add Meter pill sits directly after the existing meter pills so users don't
-    // have to hunt for the add button in the header bar.
-    '<button class="ma-meter-pill ma-add-meter-pill" onclick="openMeterModal(null,\'' +
-    udSelProjId +
-    "','" +
-    udSelBldgId +
-    '\')" title="Add a new meter to this building">' +
-    '<span style="font-size:14px;font-weight:700;color:var(--em)">+</span>' +
-    '<span style="font-size:12px;font-weight:600;color:var(--em)">Add Meter</span>' +
-    '</button>';
+  const pills = udMeterPillsHtml(meters, b, _curMid);
 
   wrap.innerHTML =
     '<div class="ma-meter-bar">' +

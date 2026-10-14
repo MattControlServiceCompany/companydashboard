@@ -2140,7 +2140,7 @@ function renderSidebarFolders() {
       const act = String(window._activeProjId) === String(p.id) && document.getElementById('projDetailView')?.style.display === 'flex' ? ' active' : '';
       return `<button class="spfi${act}" data-pid="${p.id}" onclick="openDetail(${p.id})">
             <span class="spfi-icon">${icon}</span>
-            <span class="spfi-name" title="${p.name}">${nm}</span>
+            <span class="spfi-name" title="${_escHtml(p.name)}">${_escHtml(nm)}</span>
             ${flagBadge}
             ${pt > 0 ? `<span class="spfi-badge">${pt}</span>` : ''}
           </button>`;
