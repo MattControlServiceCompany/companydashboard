@@ -4270,7 +4270,7 @@ function renderBillsPane(pane, m, bills, incl) {
           ? attrs.replace(/style="([^"]*)"/, (m0, st) => 'style="' + st + ';' + tint + '"')
           : attrs + ' style="' + tint + '"';
         const tip = 'Corrected. PDF reader value: ' + rc.rec.original + '. Usage not changed.';
-        attrs = /title="/.test(attrs) ? attrs.replace(/title="[^"]*"/, 'title="' + _escHtml(tip) + '"') : attrs + ' title="' + _escHtml(tip) + '"';
+        attrs = /\btitle="/.test(attrs) ? attrs.replace(/\btitle="[^"]*"/, () => 'title="' + _escHtml(tip) + '"') : attrs + ' title="' + _escHtml(tip) + '"';
         return `<td${attrs}>`;
       });
     });

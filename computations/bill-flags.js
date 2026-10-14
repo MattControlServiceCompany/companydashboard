@@ -1244,7 +1244,8 @@ function _rcUserEdited(bill, keys) {
 }
 // The stored printed read check (data only, written by readCorrectionMarkers) must match the stored values. After a read
 // is repaired (_rcApply) or edited (clearReadCorrectionRecords) it is computed again from the bill's current values and
-// dropped when nothing disagrees any more. The computed-kWh marker and the dial limit stay as they were.
+// dropped when nothing disagrees any more. The whole record goes with it, including the computed-kWh marker and the
+// dial limit. While a disagreement remains, the marker and the limit stay as they were.
 function _rcRefreshPrintedCheck(bill, keys) {
   const rec = bill && bill._printedReadCheck;
   if (!rec) return;
@@ -1462,8 +1463,7 @@ function readCorrectionMarkers(extracted) {
       out._printedReadCheck = { fields: found.map((m) => m.field), messages: found.map((m) => m.message), kwhComputed };
       if (extracted._meterRollover && extracted._meterRollover.boundary)
         out._printedReadCheck.limit = extracted._meterRollover.boundary;
-    }
-    else if (extracted._printedReadCheck) out._printedReadCheck = extracted._printedReadCheck; // already stored
+    } else if (extracted._printedReadCheck) out._printedReadCheck = extracted._printedReadCheck; // already stored
   }
   return out;
 }

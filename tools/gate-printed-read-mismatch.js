@@ -326,6 +326,23 @@ async function behavior() {
   ok(sameNum(b.kWhConsumed, 1050) && !!b._auto_recovered_kWhConsumed, 'missing kWh not computed');
   ok(markers(b)._printedReadCheck === undefined, 'computed kWh with agreeing reads recorded a mismatch');
 
+  // missing kWh on a bill from the default utility with a read difference x multiplier witness: the reader must not throw, the
+  // verification must complete, and kWh is computed (Step 2 of the read chain for one bill, the recovery pass for a PDF
+  // with 2 or more bills)
+  for (const withPrior of [false, true]) {
+    let threw = null;
+    try {
+      b = await extract({ kWhConsumed: '' }, undefined, withPrior);
+    } catch (e) {
+      threw = e;
+    }
+    ok(!threw, 'missing kWh on a default-utility bill made the reader throw: ' + (threw && threw.message));
+    if (!threw) {
+      ok(sameNum(b.kWhConsumed, 1050), 'missing kWh on a default-utility bill not computed (withPrior=' + withPrior + ')');
+      ok(!b._verificationIncomplete && !(b._gateReasons || []).length, 'missing kWh left a verification reason');
+    }
+  }
+
   // 8a. the stored record follows a repaired read and an edited read (stored bill shape)
   const rec = {
     fields: ['readDifference'],

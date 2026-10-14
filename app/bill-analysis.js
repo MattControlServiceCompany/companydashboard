@@ -1372,6 +1372,14 @@ function _decideQuantityCorrection(fieldName, currentValue, witnesses) {
   winner.representative = strongInWinner.length
     ? strongInWinner.reduce((a, w) => a + w.value, 0) / strongInWinner.length
     : winner.value;
+  // A missing current value (null/NaN: the PDF printed no figure) has nothing to compare or print.
+  // A self-verified winner fills it; weak witnesses alone change nothing here, so the read-chain
+  // Step 2 and the recovery pass fill it from ReadDifference x Multiplier as for any other bill.
+  if (!(currentValue > 0)) {
+    return winner.strongCount > 0
+      ? { hold: false, apply: true, corrected: winner.representative, buckets, pctChange: null, reason: null }
+      : { hold: false, apply: false, corrected: null, reason: null, buckets };
+  }
   const curInWinner = currentValue > 0 && Math.abs(winner.value - currentValue) / winner.value < _Q_BUCKET_TOL;
   if (curInWinner) {
     // Current value already belongs to the strongest cluster — nothing to do.
@@ -3279,7 +3287,9 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
             kwhDecision.apply = true;
             kwhDecision.corrected = kwhDecision.buckets[0].representative;
           }
-          b._kwhConsumedLocked = true; // nothing downstream may overwrite kWhConsumed after this
+          // A missing kWh the witnesses did not fill stays open: the read-chain Step 2 computes it from the printed
+          // difference x multiplier (a printed value is never replaced; a missing one is computed).
+          if (curKwh0 > 0 || kwhDecision.apply) b._kwhConsumedLocked = true; // nothing downstream may overwrite kWhConsumed after this
           // FIX (fix/bill-review-gate-lifecycle, item f359edaa): never let a
           // witness-derived value come back over a value the user already
           // hand-corrected on this exact bill.
