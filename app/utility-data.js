@@ -299,6 +299,19 @@ function loadUtilityData() {
     saveUtilityData(SAVE_ALL_PROJECTS); // heal touches multiple projects' meters
     console.log('[commodity heal] Restored commodity on ' + _commodityHealed + ' meter(s) from bill row evidence');
   }
+  // Read-chain correction (2026-10-14): repair start/end reads the PDF reader misread, by the one rule
+  // correctMeterReadChain (computations/bill-flags.js). Self-deactivating: a repaired bill matches its chain, so a
+  // second load changes nothing. The original value stays on the bill in _auto_corrected_<field>.
+  let _readChainFixed = 0;
+  for (const pid of Object.keys(utilityData)) {
+    for (const b of utilityData[pid].buildings || []) {
+      for (const mt of b.meters || []) _readChainFixed += correctMeterReadChain(mt);
+    }
+  }
+  if (_readChainFixed > 0) {
+    saveUtilityData(SAVE_ALL_PROJECTS); // only customers whose bills changed are rewritten (dirty check)
+    console.log('[read-chain correction] Repaired the meter reads of ' + _readChainFixed + ' bill(s)');
+  }
   // One-time migration: fix 2-digit year ISO dates (e.g. "24-03-15" → "2024-03-15")
   // produced by the old toISO function. Without this, date comparisons, sorting,
   // billMonth, and duplicate detection all break.
@@ -3931,6 +3944,25 @@ function resetBillsColumnWidths(mid) {
   if (typeof renderMeterWorkspace === 'function') renderMeterWorkspace();
 }
 
+// Read-chain corrections still in effect on a bill: the record (_auto_corrected_<field>, written by
+// computations/bill-flags.js) whose corrected value is the value now in the cell. One list for the cell marks and the banner.
+const _READ_CORRECTION_LABELS = { startRead: 'Start Read', endRead: 'End Read', readDifference: 'Read Difference' };
+function _readCorrectionRecords(row) {
+  return Object.keys(_READ_CORRECTION_LABELS)
+    .map((k) => ({ key: k, label: _READ_CORRECTION_LABELS[k], rec: row['_auto_corrected_' + k] }))
+    .filter((x) => _rcIsReadChainRecord(x.rec) && String(x.rec.corrected) === String(row[x.key]));
+}
+// The mark in a corrected cell calls this: scroll the banner into view and outline it for a moment.
+function showReadCorrectionDetails() {
+  const el = document.getElementById('billReadCorrectionBanner');
+  if (!el) return;
+  el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  el.style.outline = '2px solid var(--accent)';
+  setTimeout(() => {
+    el.style.outline = '';
+  }, 1600);
+}
+window.showReadCorrectionDetails = showReadCorrectionDetails;
 function renderBillsPane(pane, m, bills, incl) {
   // Restore right column in case batch extraction left it hidden
   const _rc = document.getElementById('pdfRightCol');
@@ -4232,6 +4264,23 @@ function renderBillsPane(pane, m, bills, incl) {
         });
       });
     }
+    // Read-chain correction marker (2026-10-14): a start read, end read or read difference the shared rule repaired
+    // gets a tinted cell and a mark. The mark opens the "Auto-corrected" banner above the table (click or tap), which
+    // lists the PDF reader value and the reason. The record counts only while it still matches the cell
+    // (_readCorrectionRecords): a value the user typed afterwards is not marked.
+    _readCorrectionRecords(row).forEach((rc) => {
+      if (fieldColMap[rc.key] == null) return;
+      let tdN = 0;
+      rowHtml = rowHtml.replace(/<td([^>]*)>/g, (match, attrs) => {
+        tdN++;
+        if (tdN !== fieldColMap[rc.key] + 1) return match;
+        const tint = 'background:var(--accent-dim);box-shadow:inset 0 0 0 1px var(--accent);';
+        attrs = /style="/.test(attrs)
+          ? attrs.replace(/style="([^"]*)"/, (m0, st) => 'style="' + st + ';' + tint + '"')
+          : attrs + ' style="' + tint + '"';
+        return `<td${attrs}><span class="read-corrected-mark" role="button" tabindex="0" title="${_escHtml(rc.label + ' auto-corrected. Click for details.')}" onclick="event.stopPropagation();showReadCorrectionDetails();return false;" style="cursor:pointer;color:var(--accent);font-size:13px;margin-right:4px;user-select:none">◆</span>`;
+      });
+    });
     // BAS Analysis button — shown when BAS trend data exists for this building
     // during the bill's date range.  Calls btOpenBillCorrelation in bas-trends.js.
     if (
@@ -4533,6 +4582,33 @@ function renderBillsPane(pane, m, bills, incl) {
           )
           .join('')
       : '';
+  // Auto-corrected reads, listed in plain words so no hover is needed (same records as the cell marks).
+  const readCorrLines = bills
+    .map((r) =>
+      _readCorrectionRecords(r)
+        .map(
+          (rc) =>
+            '<div class="read-correction-line" style="padding:2px 0 2px 22px;color:var(--text);font-weight:400"><strong>' +
+            _escHtml(billMonthLabel(r, bills)) +
+            '</strong>: Auto-corrected ' +
+            _escHtml(rc.label) +
+            ' ' +
+            _escHtml(rc.rec.original) +
+            ' &rarr; ' +
+            _escHtml(rc.rec.corrected) +
+            ' (' +
+            _escHtml(rc.rec.reason) +
+            ')</div>',
+        )
+        .join(''),
+    )
+    .join('');
+  const readCorrBanner = readCorrLines
+    ? '<div id="billReadCorrectionBanner" style="padding:8px 14px;background:var(--accent-dim);border:1px solid var(--accent);border-radius:6px;margin:8px 14px;font-size:12px;color:var(--text);font-weight:500"><div style="display:flex;align-items:center;gap:8px"><span style="color:var(--accent)">◆</span><span>Meter reads the PDF reader misread were corrected from the meter chain and the usage. The cells are tinted. The reader value is kept.</span></div>' +
+      '<div class="bill-banner-list">' +
+      readCorrLines +
+      '</div></div>'
+    : '';
   const flagBanner =
     billFlagSummary.flaggedBills > 0
       ? '<div id="billFlagBanner" style="padding:8px 14px;background:var(--amber-dim);border:1px solid rgba(245,158,11,.25);border-radius:6px;margin:8px 14px;font-size:12px;color:var(--amber);font-weight:500" title="' +
@@ -4543,7 +4619,7 @@ function renderBillsPane(pane, m, bills, incl) {
         ' bill' +
         (billFlagSummary.flaggedBills !== 1 ? 's' : '') +
         ' flagged for review. The reason is listed below; hover a flagged row for the same text.</span></div>' +
-        '<div class="bill-flag-reasons">' +
+        '<div class="bill-banner-list">' +
         flagReasonLines +
         '</div></div>'
       : '';
@@ -4570,6 +4646,7 @@ function renderBillsPane(pane, m, bills, incl) {
     stickyHdrInner +
     '</div>' +
     flagBanner +
+    readCorrBanner +
     '<div class="bills-thead-wrap" id="billsTheadWrap" style="overflow-x:auto;flex-shrink:0;">' +
     '<table class="ud-bill-tbl" id="billsHdrTbl" style="width:auto">' +
     tblHead +

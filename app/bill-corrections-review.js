@@ -1633,6 +1633,7 @@ async function _bcrApplyRow(row) {
     if (String(liveVal) !== String(row.currentValue))
       return { ok: false, reason: 'value changed since review was opened' };
     rec[row.fieldKey] = row.correctedValue;
+    clearReadCorrectionRecords(rec, [row.fieldKey]); // the reviewed value replaces an auto-correction
     if (!rec._userCorrected) rec._userCorrected = {};
     rec._userCorrected[row.fieldKey] = {
       original: liveVal,
@@ -1661,6 +1662,7 @@ async function _bcrApplyRow(row) {
   const _same = (a, b) => (a == null || a === '' ? '' : String(a)) === (b == null || b === '' ? '' : String(b));
   if (!_same(liveVal, row.currentValue)) return { ok: false, reason: 'value changed since review was opened' };
   bill[row.fieldKey] = row.correctedValue;
+  clearReadCorrectionRecords(bill, [row.fieldKey]); // the reviewed value replaces an auto-correction
   if (!bill._userCorrected) bill._userCorrected = {};
   bill._userCorrected[row.fieldKey] = {
     original: liveVal,

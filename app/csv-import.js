@@ -1151,6 +1151,7 @@ function updateBillField(mid, rowId, field, val) {
   const row = m?.bills?.find((r) => r.id === rowId);
   if (!row) return;
   row[field] = val;
+  clearReadCorrectionRecords(row, [field]); // the user's value replaces an auto-correction
   if (field === 'start' || field === 'end') {
     let days = calcDays(row.start, row.end, m.inclusive !== false);
     if (days === 0 && row.start && row.start === row.end && m.commodity === 'Propane') days = 1;
@@ -1183,6 +1184,7 @@ function submitValueCorrection(mid, rowId, field, correctedValue, note) {
   }
   var originalValue = row[field];
   row[field] = correctedValue;
+  clearReadCorrectionRecords(row, [field]); // the user's value replaces an auto-correction
   if (!row._userCorrected) row._userCorrected = {};
   row._userCorrected[field] = { original: originalValue, at: new Date().toISOString() };
   // Audit log entry
@@ -2773,6 +2775,8 @@ function saveBillRow() {
     const _before = { ...row };
     const _editDiffs = _auditDiffBillFields(_before, data);
     Object.assign(row, data);
+    // A start/end read or read difference the user changed is the user's value: its auto-correction record goes.
+    clearReadCorrectionRecords(row, (_editDiffs || []).map((d) => d.field));
     // Mark every field that actually changed as user-corrected so it gets the
     // same gold-star indicator as a Value Correction Mode edit (see
     // submitValueCorrection's identical row._userCorrected write, and the

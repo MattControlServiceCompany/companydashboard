@@ -3935,6 +3935,17 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         const n = calcDays(d1, d2, false);
         return n === '' || isNaN(n) ? Infinity : Math.abs(n);
       };
+      // 0. Misread repair (2026-10-14): the one rule correctExtractedReadChain (computations/bill-flags.js) fixes a
+      //    start or end read the reader misread, from the neighbor bill's read and the bill's own proven numbers.
+      //    It writes _auto_corrected_StartRead / _auto_corrected_EndRead, the record the extraction screen shows.
+      //    The mismatch flags in step 1 then see the repaired reads.
+      correctExtractedReadChain(
+        bills,
+        sameAcct,
+        (a, b) => dayDiff(a.BillingPeriodEnd, b.BillingPeriodStart),
+        (b) => (/gas/i.test(b.Commodity || '') ? b.NaturalGasTherms : b.kWhConsumed), // raw text: the rule parses it and reads its printed precision
+        (b) => _isMultiMeterBill(b),
+      );
       // 1. Sequential-read mismatch flags — with meter-change / rollover
       //    auto-detection. When next.StartRead is near-zero while
       //    curr.EndRead is large, that's a new meter install or a
@@ -7608,6 +7619,7 @@ async function confirmAutoAssign() {
       billDate: bill.BillDate || '',
       commodity: bill.Commodity || '',
       startRead: bill.StartRead || '',
+      ...readCorrectionMarkers(bill),
       endRead: bill.EndRead || '',
       readDifference: billValueOrBlank(bill.ReadDifference),
       meterMultiplier: billValueOrBlank(bill.MeterMultiplier),
@@ -8017,6 +8029,7 @@ async function _mbSaveOneBill(bi, action) {
     billDate: bill.BillDate || '',
     commodity: bill.Commodity || '',
     startRead: bill.StartRead || '',
+    ...readCorrectionMarkers(bill),
     endRead: bill.EndRead || '',
     readDifference: billValueOrBlank(bill.ReadDifference),
     meterMultiplier: billValueOrBlank(bill.MeterMultiplier),
@@ -9166,6 +9179,7 @@ function _saveBillToMatchedMeter(extracted, match) {
     meterReadStart: extracted.MeterReadStart || '',
     meterReadEnd: extracted.MeterReadEnd || '',
     startRead: extracted.StartRead || '',
+    ...readCorrectionMarkers(extracted),
     endRead: extracted.EndRead || '',
     readDifference: billValueOrBlank(extracted.ReadDifference),
     meterMultiplier: billValueOrBlank(extracted.MeterMultiplier),
@@ -17079,7 +17093,9 @@ async function processPDF(file) {
           const _syntheticReviewBills = _unmatchedToSyntheticBills(_extractUnmatchedPages);
           // Bills read by a rule other than the file rule (split pages and recovered pages) carry that rule's name
           // in _recoveredFromFallbackRule; the alt-pass recovery below reads them with their own rule.
-          const _foreignRuleBills = finalBills.filter((b) => b && b._recoveredFromFallbackRule).concat(_syntheticReviewBills);
+          const _foreignRuleBills = finalBills
+            .filter((b) => b && b._recoveredFromFallbackRule)
+            .concat(_syntheticReviewBills);
 
           // ── MULTI-PASS OCR CONSENSUS FOR RECOVERED UNMATCHED PAGES ──
           // Fix (2026-08-24, Client A synthetic-recovery defect): the kWh-identity
@@ -21229,6 +21245,7 @@ function confirmManualAssign() {
     meterReadStart: extracted.MeterReadStart || '',
     meterReadEnd: extracted.MeterReadEnd || '',
     startRead: extracted.StartRead || '',
+    ...readCorrectionMarkers(extracted),
     endRead: extracted.EndRead || '',
     readDifference: billValueOrBlank(extracted.ReadDifference),
     meterMultiplier: billValueOrBlank(extracted.MeterMultiplier),
@@ -21625,6 +21642,7 @@ async function _saveSinglePDFBill(extracted, projId) {
     meterReadStart: extracted.MeterReadStart || '',
     meterReadEnd: extracted.MeterReadEnd || '',
     startRead: extracted.StartRead || '',
+    ...readCorrectionMarkers(extracted),
     endRead: extracted.EndRead || '',
     readDifference: billValueOrBlank(extracted.ReadDifference),
     meterMultiplier: billValueOrBlank(extracted.MeterMultiplier),

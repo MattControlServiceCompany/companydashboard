@@ -891,3 +891,412 @@ function billFlagHoverText(summary) {
 function billFlagReasonList(flags) {
   return (flags || []).map((f) => f.message);
 }
+/* ── READ-CHAIN CORRECTION (2026-10-14) ───────────────────────────────────────────────────────────
+   The ONE rule that repairs a start read, end read or read difference the PDF reader misread, using the meter
+   chain (the previous bill's end read E_prev, the next bill's start read N) and the bill's own usage U. Callers:
+     - correctMeterReadChain(meter)       stored bills (bill loader, app/utility-data.js loadUtilityData, every meter)
+     - correctExtractedReadChain(bills)   PDF extraction output (app/bill-analysis.js, read-chain step)
+   Both reach computeReadCorrection. The read_continuity flag above is not changed: a bill this rule
+   repairs now matches its chain, so it no longer flags. A bill this rule declines keeps its flag.
+
+   EVIDENCE PRINCIPLE. A value is evidence only when the check that confirms it would FAIL for every 1- or 2-digit
+   misread of that value. A check whose tolerance is wider than one step of the value's last printed digit cannot
+   tell the value from a misread of itself, so it proves nothing. Two earlier versions broke this: a tolerance on
+   D x M = U wider than one misread step of D made a misread D "trusted", and the rule then rewrote a CORRECT end read.
+     - Reads compare to the printed digit, within ONE unit of the coarsest last printed digit (print rounding can make
+       two printed values that should agree differ by one unit): S = E_prev confirms S; E = N confirms E; E - S = D.
+       The read_continuity tolerance (1 unit or 0.1 percent) is NOT used here: it is wider than a misread step.
+       A change of one unit is never made: one unit is print rounding, not evidence of a misread.
+     - A read difference printed coarser than the reads is never evidence (nothing is corrected).
+     - D is trusted (D x M = U is evidence for D) only when BOTH hold:
+         |D x M - U| <= half a unit of U's last printed digit        (the printed usage agrees with D)
+         |D x M - U| + half a unit of U < (one unit of D's last printed digit) x M
+       The second line says: a D one step away would already fail the first line, so every misread of D fails it.
+       Example that fails: reads to 4 decimals, multiplier 1, usage printed in whole kWh. Half a kWh covers 5,000
+       misread steps of D, so D is not evidence and only rules that do not use D may run.
+   Cases (S, E, D are the bill's own values; "exact" means equal to the printed digit):
+     D trusted:
+       a  S != E_prev, E - S = D exact: both reads off by the same amount.
+          With the next bill: N = E_prev + D exact -> start = E_prev, end = E_prev + D.
+          Without the next bill (the newest bill, where a fresh reader error always lands) -> a0, PROVISIONAL. The
+          same corrections as a, when ALL of these hold:
+            - S - E_prev and E - (E_prev + D) are the IDENTICAL offset (no print rounding between them), each read is
+              a 1- or 2-digit misread of its chain value, and the offset is larger than print rounding;
+            - S >= 10 x D and D > 0: a replaced meter starts near zero, so a start read that small is never changed;
+            - the previous bill is itself clean: E_prev - S_prev = D_prev exact and D_prev is proven by its own usage;
+            - the OTHER explanation is impossible. The chain break could also mean the PREVIOUS bill's end read is the
+              misread and this bill is right. The PDF reader makes a bill with a misread end read look clean (it
+              rewrites D = E - S and U = D x M), so that explanation cannot be ruled out by consistency. It can be
+              ruled out by physics: it would give the previous bill a read difference of D_prev + (S - E_prev). When
+              that is zero or negative the previous meter would have run backwards, so this bill IS the misread one.
+              Hence a0 needs S < S_prev (this start read below the previous bill's START read). A shift upward, or a
+              shift smaller than the previous bill's read difference, waits for the next bill.
+       b  S != E_prev, E - E_prev = D exact: only the start is wrong      -> start = E_prev   (N, if present, = E)
+       c  S = E_prev exact, E - S != D, N = S + D exact: only the end is wrong -> end = S + D. NEEDS the next bill.
+     D not trusted (U cannot tell a misread D from the printed one):
+       d  S = E_prev exact, N = E exact, E - S != D: the reads are pinned by both neighbors, so the READ DIFFERENCE is
+          the misread -> difference = E - S. (E - S) x M must still agree with U within half a usage unit.
+          NEEDS the next bill.
+     Any other mix (two fields could be wrong, or the data cannot tell which): nothing changes, the flag stays.
+     A missed correction is acceptable; a wrong one is not.
+   D AND U ARE NOT INDEPENDENT. The stored usage can be the read difference times the multiplier (a misread can store
+   D and U both misread, consistently: D x M = U to the digit while the PDF printed another D and another U). So
+   "D x M = U" cannot decide E against D or D against E on its own: a change of the END READ (c) or of the READ
+   DIFFERENCE (d) needs evidence from OUTSIDE this bill's D/U pair, and the only such evidence is the next bill's start
+   read. Without it, c and d decline. The separately printed on-peak and off-peak kWh are NOT evidence: on actual bills
+   their sum differs from the billed kWh by up to about 0.8 kWh, while one D-step is 0.016 kWh at multiplier 160.
+   Case a is not in this trap: the reads, not D, are in question, and E - S = D ties the two reads to D with S != E_prev.
+   SELF-CHECK of a provisional correction (a0; the reason text names it): on every walk, when the bill now has a
+   linked next bill whose start read is present, that start read must equal the bill's corrected end read. If it
+   does, the correction stays and its records become rule-a records. If it does not, the bill goes back to the reader
+   values kept in the _auto_corrected_ records, the records are removed, and the read_continuity flag is on again
+   (_rcRevertProvisional).
+   What the data cannot tell: a replaced meter whose new reads are within 2 digits of the chain values AND start at ten
+   read differences or more (a refurbished meter). tools/gate-read-chain-correction.js counts those coincidences; the
+   self-check undoes any of them as soon as the next bill arrives.
+   Guard: a value changes only when the new and old text have the same length and differ in at most 2
+   characters (an OCR digit misread). A meter change, a rollover or a big jump never matches, so it keeps its flag.
+   User wins: a bill with a field whose correction record holds a value other than the field's current value
+   (the user typed a new one) is skipped, and editing a corrected field clears its record (clearReadCorrectionRecords).
+   The original text is kept on the bill in the existing correction record _auto_corrected_<field>
+   = { original, corrected, reason } (startRead / endRead / readDifference on stored bills, StartRead / EndRead /
+   ReadDifference on extracted bills; the extraction screen already shows those records).
+   Proof: tools/gate-read-chain-correction.js runs every 1- and 2-digit substitution of every field over multipliers,
+   read precisions and usage precisions, and asserts a correct field is never changed and a changed field is right. */
+const READ_CHAIN_FIELDS = {
+  stored: {
+    start: 'startRead',
+    end: 'endRead',
+    diff: 'readDifference',
+    mult: 'meterMultiplier',
+  },
+  pdf: {
+    start: 'StartRead',
+    end: 'EndRead',
+    diff: 'ReadDifference',
+    mult: 'MeterMultiplier',
+  },
+};
+function _rcText(v) {
+  return v === null || v === undefined ? '' : String(v).replace(/[,\s]/g, '');
+}
+function _rcDecimals(v) {
+  const p = _rcText(v).split('.');
+  return p.length > 1 ? p[1].length : 0;
+}
+// OCR digit misread: same length, differs in 1 or 2 positions.
+function _rcIsMisread(oldV, newV) {
+  const a = _rcText(oldV),
+    b = _rcText(newV);
+  if (!a || a.length !== b.length || a === b) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) diff++;
+  return diff >= 1 && diff <= 2;
+}
+// x = { prevEnd, start, end, diff, mult, usage, nextStart } (raw text or numbers; null or '' when absent).
+// Returns null (nothing to correct, or not safe) or { rule: 'a'|'b'|'c'|'d', start?, end?, diff?: text }.
+// Evidence for a read difference d (text) from a usage u (text) at multiplier m: the usage agrees with d within half a
+// unit of the usage's last printed digit AND a d one step of its own last digit away would already disagree. Only then
+// does "d x m = u" prove d; a wider check cannot tell d from a misread of itself.
+function _rcUsageProves(dText, mText, uText) {
+  const D = parseBillNumber(dText),
+    M = parseBillNumber(mText),
+    U = parseBillNumber(uText);
+  if (D === null || M === null || U === null || M === 0) return false;
+  const EPS = 1e-6;
+  const dUnit = Math.pow(10, -_rcDecimals(dText));
+  const uHalf = 0.5 * Math.pow(10, -Math.min(_rcDecimals(uText), 4));
+  const resid = Math.abs(D * M - U);
+  return resid <= uHalf + EPS && resid + uHalf + EPS < dUnit * Math.abs(M);
+}
+// x = { prevEnd, start, end, diff, mult, usage, nextStart, prevStart, prevDiff, prevMult, prevUsage } (raw text or
+// numbers; null or '' when absent; the prev* fields other than prevEnd are needed only by a0).
+// Returns null (nothing to correct, or not safe) or { rule: 'a'|'a0'|'b'|'c'|'d', start?, end?, diff?: text }.
+function computeReadCorrection(x) {
+  const n = parseBillNumber;
+  const Ep = n(x.prevEnd),
+    S = n(x.start),
+    E = n(x.end),
+    D = n(x.diff),
+    M = n(x.mult),
+    U = n(x.usage),
+    Nx = n(x.nextStart);
+  if ([Ep, S, E, D, M, U].some((v) => v === null) || M === 0) return null;
+  const EPS = 1e-6; // floating-point slack only
+  const sDec = _rcDecimals(x.start),
+    eDec = _rcDecimals(x.end),
+    dDec = _rcDecimals(x.diff);
+  if (dDec < Math.max(sDec, eDec)) return null; // a coarser difference cannot pin a read
+  // Print rounding: a utility prints each read rounded to its last digit, so two printed values that should agree may
+  // differ by ONE unit of that digit (end - start vs difference; this start vs the previous end). One unit is therefore
+  // not evidence of a misread: reads compare within one unit of the coarsest printed digit, and a correction must move a
+  // field by MORE than that. A misread of one unit is never corrected (declined); larger misreads break exactly one check.
+  const tol = Math.pow(10, -Math.min(sDec, eDec, dDec, _rcDecimals(x.prevEnd))) + EPS;
+  const eq = (a, b) => Math.abs(a - b) <= tol;
+  const uHalf = 0.5 * Math.pow(10, -Math.min(_rcDecimals(x.usage), 4)); // half a unit of U's last printed digit
+  const usageAgrees = (d) => Math.abs(d * M - U) <= uHalf + EPS;
+  const diffTrusted = _rcUsageProves(x.diff, x.mult, x.usage);
+  const startMatches = eq(S, Ep);
+  const spanOk = eq(E - S, D);
+  let rule = null,
+    newStart = null,
+    newEnd = null,
+    newDiff = null,
+    endNum = E;
+  if (diffTrusted) {
+    if (!startMatches && spanOk) {
+      // a: both reads off by the same amount; the next bill tells this from a real jump
+      if (Nx !== null) {
+        if (!eq(Nx, Ep + D)) return null;
+        rule = 'a';
+      } else {
+        // a0 (no next bill, provisional): see the block comment
+        if (Math.abs(E - S - D) > EPS) return null; // identical offset in both reads
+        if (!(D > 0) || S < 10 * D) return null; // a start read this small looks like a replaced meter
+        const Sp = n(x.prevStart),
+          Dp = n(x.prevDiff);
+        if (Sp === null || Dp === null) return null;
+        if (!eq(Ep - Sp, Dp) || !_rcUsageProves(x.prevDiff, x.prevMult, x.prevUsage)) return null; // previous bill clean
+        if (S >= Sp - tol) return null; // the previous bill's end could be the misread instead: wait for the next bill
+        rule = 'a0';
+      }
+      newStart = _rcText(x.prevEnd);
+      endNum = Ep + D;
+      newEnd = endNum.toFixed(eDec);
+    } else if (!startMatches && eq(E - Ep, D)) {
+      if (Nx !== null && !eq(Nx, E)) return null;
+      rule = 'b';
+      newStart = _rcText(x.prevEnd);
+    } else if (startMatches && !spanOk) {
+      // c: only the end is wrong. D x M = U alone cannot decide E against D (D and U can be jointly wrong), so the
+      // next bill must start at S + D
+      if (Nx === null) return null;
+      rule = 'c';
+      endNum = S + D;
+      newEnd = endNum.toFixed(eDec);
+    }
+  } else if (startMatches && !spanOk && Nx !== null && eq(Nx, E)) {
+    // d: both reads are pinned by the neighbors, so the difference is the misread
+    const d2 = E - S;
+    if (!usageAgrees(d2)) return null;
+    rule = 'd';
+    newDiff = d2.toFixed(dDec);
+  }
+  if (!rule) return null;
+  if (newStart !== null && !_rcIsMisread(x.start, newStart)) return null;
+  if (newEnd !== null && !_rcIsMisread(x.end, newEnd)) return null;
+  if (newDiff !== null && !_rcIsMisread(x.diff, newDiff)) return null;
+  // the next bill, when present, must start where the corrected end read is
+  if (newEnd !== null && Nx !== null && !eq(Nx, endNum)) return null;
+  // every change must be larger than print rounding (one unit of the last printed digit)
+  if (newStart !== null && Math.abs(n(newStart) - S) <= tol) return null;
+  if (newEnd !== null && Math.abs(n(newEnd) - E) <= tol) return null;
+  if (newDiff !== null && Math.abs(n(newDiff) - D) <= tol) return null;
+  const out = { rule };
+  if (newStart !== null) out.start = newStart;
+  if (newEnd !== null) out.end = newEnd;
+  if (newDiff !== null) out.diff = newDiff;
+  return out;
+}
+const READ_CHAIN_REASON = {
+  a: "The PDF reader's start read and end read were both off by the same amount, and the next bill starts at the corrected end read. Start read set to the previous bill's end read; end read set to start read + read difference.",
+  a0: "The PDF reader's start read and end read were both off by the same amount (a 1- or 2-digit misread in each), the usage proves the read difference, and the previous bill's reads cannot be the error (its meter would have run backwards). No later bill exists yet. Start read set to the previous bill's end read; end read set to start read + read difference. If the next bill does not start at this end read, the reader values come back.",
+  b: "The PDF reader's start read did not match the previous bill's end read. End read minus the previous end read equals the read difference, so start read was set to the previous bill's end read.",
+  c: "The PDF reader's end read minus start read did not equal the read difference, while the usage agrees with the read difference and the next bill starts at start read + read difference. End read set to start read + read difference.",
+  d: "The PDF reader's read difference did not equal end read minus start read, while the start read matches the previous bill's end read and the next bill starts at this end read. Read difference set to end read minus start read.",
+};
+const READ_CHAIN_PROVISIONAL = [READ_CHAIN_REASON.a0];
+function _rcIsReadChainRecord(rec) {
+  return !!rec && Object.values(READ_CHAIN_REASON).includes(rec.reason);
+}
+// True when the user owns a read field of this bill: they typed a new value into a field this rule corrected (the
+// record's corrected value no longer matches), or an edit path already stamped the field in _userCorrected. User wins:
+// the rule leaves the whole bill alone.
+function _rcUserEdited(bill, keys) {
+  return [keys.start, keys.end, keys.diff].some((k) => {
+    const rec = bill['_auto_corrected_' + k];
+    if (bill._userCorrected && bill._userCorrected[k]) return true;
+    return _rcIsReadChainRecord(rec) && _rcText(rec.corrected) !== _rcText(bill[k]);
+  });
+}
+// Called by every bill edit path: an edited field is the user's value. Its auto-correction record goes and the field is
+// stamped in _userCorrected (the existing "user changed this" record), so the rule never overwrites it on a later load.
+// Editing ANY read field of a bill clears and stamps ALL of that bill's read-correction records together: the user now
+// owns the bill's reads, so no other record (e.g. a provisional a0 record on the field not edited) stays behind.
+function clearReadCorrectionRecords(row, fields) {
+  const READ = ['startRead', 'endRead', 'readDifference'];
+  if (fields && !fields.some((k) => READ.includes(k))) return; // only non-read fields were edited
+  READ.forEach((k) => {
+    const rec = row && row['_auto_corrected_' + k];
+    if (!_rcIsReadChainRecord(rec)) return;
+    delete row['_auto_corrected_' + k];
+    if (!row._userCorrected) row._userCorrected = {};
+    if (!row._userCorrected[k])
+      row._userCorrected[k] = { original: rec.corrected, at: new Date().toISOString(), source: 'read_chain_user_edit' };
+  });
+}
+// Apply one correction to a bill and keep the original in the existing record.
+function _rcApply(bill, keys, fix) {
+  const set = (k, v) => {
+    if (v === undefined) return;
+    const prior = bill['_auto_corrected_' + k];
+    bill['_auto_corrected_' + k] = {
+      original: _rcIsReadChainRecord(prior) ? prior.original : bill[k],
+      corrected: v,
+      reason: READ_CHAIN_REASON[fix.rule],
+    };
+    bill[k] = v;
+  };
+  set(keys.start, fix.start);
+  set(keys.end, fix.end);
+  set(keys.diff, fix.diff);
+}
+// Self-check of a provisional correction (a0) once the next bill's start read N is present: N must equal the
+// bill's corrected end read. If it does, the records become plain rule-a records (the next bill now confirms them).
+// If it does not, the reader values come back from the records, the records go, and the read_continuity flag is on
+// again. Returns true when the bill changed.
+function _rcRevertProvisional(bill, keys, nextStart) {
+  const Nx = parseBillNumber(nextStart);
+  if (Nx === null) return false;
+  const recs = [keys.start, keys.end, keys.diff]
+    .map((k) => ({ k, rec: bill['_auto_corrected_' + k] }))
+    .filter((r) => r.rec && READ_CHAIN_PROVISIONAL.includes(r.rec.reason));
+  if (!recs.length) return false;
+  const E = parseBillNumber(bill[keys.end]);
+  const tol = Math.pow(10, -Math.min(_rcDecimals(bill[keys.end]), _rcDecimals(nextStart))) + 1e-6;
+  if (E !== null && Math.abs(Nx - E) <= tol) {
+    recs.forEach((r) => (r.rec.reason = READ_CHAIN_REASON.a)); // confirmed: same correction as rule a
+    return true;
+  }
+  recs.forEach((r) => {
+    bill[r.k] = r.rec.original;
+    delete bill['_auto_corrected_' + r.k];
+  });
+  return true;
+}
+// Walk bills in chain order. getUsage(bill) -> usage; link(prev, cur) -> true when cur follows prev in the chain.
+// Fast path: a bill with no read-correction record whose start read equals the previous end read and whose end - start
+// equals its read difference (all within print rounding, the same tolerance computeReadCorrection uses) cannot need a
+// correction: every rule in computeReadCorrection needs the start read or the span to be off. Reads are parsed once per
+// bill per walk (cache), so a clean chain costs one parse of each read, not a full evaluation of every bill.
+function _rcReads(bill, keys, cache, i) {
+  let r = cache[i];
+  if (r === undefined) {
+    r = cache[i] = {
+      S: parseBillNumber(bill[keys.start]),
+      E: parseBillNumber(bill[keys.end]),
+      D: parseBillNumber(bill[keys.diff]),
+      sd: _rcDecimals(bill[keys.start]),
+      ed: _rcDecimals(bill[keys.end]),
+      dd: _rcDecimals(bill[keys.diff]),
+    };
+  }
+  return r;
+}
+function _rcCleanLink(prev, cur, keys, cache, i) {
+  if (cur['_auto_corrected_' + keys.start] || cur['_auto_corrected_' + keys.end] || cur['_auto_corrected_' + keys.diff])
+    return false;
+  const p = _rcReads(prev, keys, cache, i - 1),
+    c = _rcReads(cur, keys, cache, i);
+  if (p.E === null || c.S === null || c.E === null || c.D === null) return false;
+  const tol = Math.pow(10, -Math.min(c.sd, c.ed, c.dd, p.ed)) + 1e-6; // as computeReadCorrection (p.ed = decimals of the previous end read)
+  return Math.abs(c.S - p.E) <= tol && Math.abs(c.E - c.S - c.D) <= tol;
+}
+function _rcWalk(ordered, keys, getUsage, link, skip) {
+  let changed = 0;
+  const cache = [];
+  for (let i = 1; i < ordered.length; i++) {
+    const prev = ordered[i - 1],
+      cur = ordered[i],
+      next = ordered[i + 1] || null;
+    if (_rcCleanLink(prev, cur, keys, cache, i)) continue;
+    if (skip(prev) || skip(cur) || !link(prev, cur) || _rcUserEdited(cur, keys)) continue;
+    const nextStart = next && !skip(next) && link(cur, next) ? next[keys.start] : null;
+    if (_rcRevertProvisional(cur, keys, nextStart)) {
+      changed++;
+      cache[i] = undefined; // reads changed: parse again when the next bill uses them
+    }
+    const fix = computeReadCorrection({
+      prevEnd: prev[keys.end],
+      prevStart: prev[keys.start],
+      prevDiff: prev[keys.diff],
+      prevMult: prev[keys.mult],
+      prevUsage: getUsage(prev),
+      start: cur[keys.start],
+      end: cur[keys.end],
+      diff: cur[keys.diff],
+      mult: cur[keys.mult],
+      usage: getUsage(cur),
+      nextStart,
+    });
+    if (!fix) continue;
+    _rcApply(cur, keys, fix);
+    cache[i] = undefined;
+    changed++;
+  }
+  return changed;
+}
+// The usage VALUE is the shared getBillUsageOrNull. For its printed precision the raw text is passed when it parses to
+// the same number: a number drops trailing zeros ('100000.4000' becomes 100000.4, one decimal), which makes the usage
+// look coarser than the bill printed it and declines a safe correction.
+function _rcUsageForBill(b, commodity) {
+  const n = getBillUsageOrNull(b, commodity);
+  if (n === null) return null;
+  const raw = commodity === 'Electric' ? b.kwh : null;
+  return raw !== null && raw !== undefined && parseBillNumber(raw) === n ? raw : n;
+}
+// Stored bills of one meter. Returns the number of bills corrected (0 when the meter is already clean).
+function correctMeterReadChain(meter) {
+  if (!meter || !Array.isArray(meter.bills)) return 0;
+  const T = BILL_FLAG_THRESHOLDS;
+  const ordered = _bfSortByStart(meter.bills).filter((b) => !b.estimated);
+  return _rcWalk(
+    ordered,
+    READ_CHAIN_FIELDS.stored,
+    (b) => _rcUsageForBill(b, meter.commodity),
+    // b follows a: b starts on or after a's end (a duplicate or overlapping bill starts earlier and is never linked)
+    (a, b) => {
+      const g = a.end && b.start ? calcDays(a.end, b.start, false) : '';
+      return g !== '' && g >= 0 && g <= T.GAP_DAYS;
+    },
+    (b) => !!(b.Meter1_ReadDiff || b.Meter1_StartRead || b.Meter2_ReadDiff),
+  );
+}
+// PDF extraction output, keys StartRead / EndRead / ReadDifference / MeterMultiplier. The bills are walked in date
+// order (BillingPeriodStart), whatever order the PDF printed them in. sameMeter(a, b), dayGap(a, b), getUsage(b) and
+// skip(b) come from the caller (account match, days between bills).
+function correctExtractedReadChain(bills, sameMeter, dayGap, getUsage, skip) {
+  const T = BILL_FLAG_THRESHOLDS;
+  const dayKey = (b) => {
+    const d = b && b.BillingPeriodStart ? calcDays('2000-01-01', b.BillingPeriodStart, false) : '';
+    return d === '' || isNaN(d) ? Infinity : d;
+  };
+  const ordered = bills
+    .map((b, i) => ({ b, i, k: dayKey(b) }))
+    .sort((p, q) => p.k - q.k || p.i - q.i)
+    .map((p) => p.b);
+  return _rcWalk(
+    ordered,
+    READ_CHAIN_FIELDS.pdf,
+    getUsage,
+    (a, b) => {
+      const g = sameMeter(a, b) ? dayGap(a, b) : '';
+      return g !== '' && !isNaN(g) && g >= 0 && g <= T.GAP_DAYS + 2;
+    },
+    skip,
+  );
+}
+// The correction records an extracted bill carries for its start and end read, in stored-bill field names, so a
+// bill saved from a PDF keeps the original reader value. Used by every saved-bill builder in app/bill-analysis.js.
+function readCorrectionMarkers(extracted) {
+  const out = {};
+  [
+    ['StartRead', 'startRead'],
+    ['EndRead', 'endRead'],
+    ['ReadDifference', 'readDifference'],
+  ].forEach((p) => {
+    const r = extracted && extracted['_auto_corrected_' + p[0]];
+    if (_rcIsReadChainRecord(r)) out['_auto_corrected_' + p[1]] = r;
+  });
+  return out;
+}
