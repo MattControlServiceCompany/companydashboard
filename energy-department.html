@@ -6876,6 +6876,11 @@
         left: 0;
         z-index: 5;
       }
+      /* Bills flag banner reason list: capped so many flagged bills cannot push the Bills table off screen. */
+      #billFlagBanner .bill-flag-reasons {
+        max-height: 120px;
+        overflow-y: auto;
+      }
       tr.bill-flagged td {
         background: var(--amber-dim) !important;
       }

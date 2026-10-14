@@ -4437,8 +4437,9 @@ function renderBillsPane(pane, m, bills, incl) {
         ' bill' +
         (billFlagSummary.flaggedBills !== 1 ? 's' : '') +
         ' flagged for review. The reason is listed below; hover a flagged row for the same text.</span></div>' +
+        '<div class="bill-flag-reasons">' +
         flagReasonLines +
-        '</div>'
+        '</div></div>'
       : '';
 
   // Layout: info bar (fixed) + header table (fixed) + scrolling body table
