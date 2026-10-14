@@ -118,8 +118,8 @@ function fanKwFromCfm(cfm, wPerCfm) {
  * @param {number} [powerFactor] - default MOTOR_DEFAULT_POWER_FACTOR
  */
 function motorKwFromAmps(amps, volts, phase, powerFactor) {
-  var pf = powerFactor == null ? MOTOR_DEFAULT_POWER_FACTOR : powerFactor;
-  return ((phase === 3 ? Math.sqrt(3) : 1) * volts * amps * pf) / 1000;
+  var factor = powerFactor == null ? MOTOR_DEFAULT_POWER_FACTOR : powerFactor;
+  return ((phase === 3 ? Math.sqrt(3) : 1) * volts * amps * factor) / 1000;
 }
 
 /**
