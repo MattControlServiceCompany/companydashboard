@@ -98,8 +98,33 @@ function simplePayback(gross, incentive, annual) {
   return { gross: g, incentive: inc, net: net, annual: a, years: g > 0 && a > 0 ? Math.max(0, net) / a : null };
 }
 
+// One-time DATA MOVE (2026-10-14), not a reader: a measure saved before the cost lines had two typed fields, implCost (implementation
+// cost) and incentive (rebate). This moves them onto the measure as cost lines, then deletes the two old fields. A measure that already has
+// cost lines keeps them (the old value is dropped with the field, as the cost lines are the newer entry). Idempotent: with the old fields
+// gone, a second run changes nothing. Returns true when it changed the measure. The keys are text so no code reads the retired names.
+function moveOldCostFieldsToLines(m) {
+  if (!m || typeof m !== 'object') return false;
+  const OLD_COST = 'implCost';
+  const OLD_INCENTIVE = 'incentive';
+  const hasOld = OLD_COST in m || OLD_INCENTIVE in m;
+  if (!hasOld) return false;
+  const cost = _costNum(m[OLD_COST]);
+  const inc = _costNum(m[OLD_INCENTIVE]);
+  const hasLines = Array.isArray(m.costLines) && m.costLines.length > 0;
+  if (!hasLines) {
+    const lines = [];
+    if (cost > 0) lines.push(newCostLine('thirdParty', { label: 'Implementation cost (moved from old field)', amount: cost }));
+    if (inc > 0) lines.push(newCostLine('incentive', { label: 'Incentive / rebate (moved from old field)', amount: inc }));
+    if (lines.length) m.costLines = lines;
+  }
+  delete m[OLD_COST];
+  delete m[OLD_INCENTIVE];
+  return true;
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
+    moveOldCostFieldsToLines,
     COST_LINE_KINDS,
     newCostLine,
     defaultCostLinesFor,

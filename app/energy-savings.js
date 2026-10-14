@@ -510,6 +510,23 @@ function msrAnnualSavings(projId, m) {
   return calcMeasureDollars(m, measureRatesNow(projId, m, ((sd && sd.blRates) || {})[m.bldgId])).total;
 }
 
+// One-time data move on load (computations/cost-lines.js moveOldCostFieldsToLines): the old implementation-cost and incentive fields of every
+// saved measure become cost lines and are deleted. Saves only when a measure changed. Returns the number of measures moved.
+function migrateOldCostFieldsToLines() {
+  const ps = sget('en_projects', []) || [];
+  let moved = 0;
+  ps.forEach((p) => {
+    ((p.savingsData && p.savingsData.measures) || []).forEach((m) => {
+      if (moveOldCostFieldsToLines(m)) moved++;
+    });
+  });
+  if (moved) {
+    sset('en_projects', ps);
+    console.info('[cost field move] ' + moved + ' measure(s) moved to cost lines');
+  }
+  return moved;
+}
+
 // Internal labor $/hr: the pricing estimator's shared hourly rate (Cost Estimate tab, app/pricing-estimator.js). Never copied.
 function msrLaborRate() {
   return _pricingGetConfig().hourlyRate;
