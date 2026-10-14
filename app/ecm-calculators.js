@@ -721,7 +721,7 @@ const ECM_TEMPLATES = {
     name: 'Solar Production',
     category: 'Renewables',
     description:
-      'Estimate annual production from a rooftop or ground-mounted solar array, with lifetime degradation. The Solar calculator holds the month-by-month production needed to add it to the savings matrix.',
+      'Estimate annual production from a rooftop or ground-mounted solar array, with lifetime degradation. When added to the savings matrix, the months follow the production by month in the Solar calculator.',
     icon: '☀️',
     inputs: [
       {
@@ -1978,7 +1978,8 @@ function saveEcmToProject(projId, buildingId, buildingName, templateId, inputs, 
  *   by      - a field that is gas OR electric depending on a select input: { input, electric: {kind, endUse}, otherwise: {...} }
  * The end use is the best one the load estimate models today. Fans, lighting and plug loads are not modeled
  * separately yet: fan and motor templates use the HVAC electric profile, lighting templates the non-HVAC
- * electric profile (lighting, plug and other together). A template mapped to null has no month-by-month source.
+ * electric profile (lighting, plug and other together). monthlyFrom:'solar' takes the months from the Solar calculator
+ * (solarMonthlyWeights). A template mapped to null has no month-by-month source.
  */
 const ECM_MEASURE_FIELD_MAP = {
   oa_dampers: [
@@ -2005,7 +2006,10 @@ const ECM_MEASURE_FIELD_MAP = {
       endUse: ["heatingElectric", "heatingGas"],
     },
   ],
-  solar_production: null,
+  // Production has no building end use: its months come from the Solar calculator (solarMonthlyWeights, one owner).
+  solar_production: [
+    { field: "year1_kwh", kind: "kwh", monthlyFrom: "solar" },
+  ],
   lighting_replacement: [
     { field: "total_savings_kwh", kind: "kwh", endUse: ["nonHvacElectric"] },
     { field: "demand_savings_kw", kind: "kw", endUse: ["nonHvacElectric"] },
@@ -2109,11 +2113,17 @@ function ecmBuildMeasure(projId, bldgId, templateId, inputs, results) {
   for (const e of entries) {
     const qty = parseFloat((results || {})[e.field]) || 0;
     if (!qty) continue;
-    const w = getEndUseWeights(projId, bldgId, e.endUse);
+    const w =
+      e.monthlyFrom === "solar"
+        ? solarMonthlyWeights(projId)
+        : getEndUseWeights(projId, bldgId, e.endUse);
     if (!w.ok)
       return {
         ok: false,
-        reason: "No monthly profile for this building. " + w.reason,
+        reason:
+          e.monthlyFrom === "solar"
+            ? w.reason
+            : "No monthly profile for this building. " + w.reason,
       };
     const spread =
       e.kind === "kw"
@@ -2276,7 +2286,7 @@ function renderEcmCalculator(
       }
 
       const helpTitle = inp.help
-        ? ` title="${inp.help.replace(/"/g, "&quot;")}"`
+        ? ` title="${_escHtml(inp.help)}"`
         : "";
       const helpCursor = inp.help ? ";cursor:help" : "";
 
@@ -2284,13 +2294,13 @@ function renderEcmCalculator(
         const opts = inp.options
           .map(
             (o) =>
-              `<option value="${o.value}" ${o.value === val ? "selected" : ""}>${o.label}</option>`,
+              `<option value="${_escHtml(o.value)}" ${o.value === val ? "selected" : ""}>${_escHtml(o.label)}</option>`,
           )
           .join("");
         return `
         <div class="ecm-field-row" style="display:flex;align-items:flex-start;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-          <label${helpTitle} style="flex:0 0 280px;font-size:12px;font-weight:600;color:var(--text2);padding-top:4px${helpCursor}">${inp.label}</label>
-          <select id="${id}" class="fs ecm-input" data-inp="${inp.id}" style="flex:1;min-width:200px;font-size:13px">
+          <label${helpTitle} style="flex:0 0 280px;font-size:12px;font-weight:600;color:var(--text2);padding-top:4px${helpCursor}">${_escHtml(inp.label)}</label>
+          <select id="${id}" class="fs ecm-input" data-inp="${_escHtml(inp.id)}" style="flex:1;min-width:200px;font-size:13px">
             ${opts}
           </select>
         </div>`;
@@ -2298,10 +2308,10 @@ function renderEcmCalculator(
 
       return `
       <div class="ecm-field-row" style="display:flex;align-items:flex-start;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-        <label for="${id}"${helpTitle} style="flex:0 0 280px;font-size:12px;font-weight:600;color:var(--text2);padding-top:6px${helpCursor}">${inp.label}${inp.unit ? ' <span style="opacity:.6;font-weight:400">(' + inp.unit + ")</span>" : ""}</label>
+        <label for="${id}"${helpTitle} style="flex:0 0 280px;font-size:12px;font-weight:600;color:var(--text2);padding-top:6px${helpCursor}">${_escHtml(inp.label)}${inp.unit ? ' <span style="opacity:.6;font-weight:400">(' + _escHtml(inp.unit) + ")</span>" : ""}</label>
         <div style="flex:1;min-width:160px">
-          <input id="${id}" class="fi ecm-input" type="number" data-inp="${inp.id}"
-            value="${val}"${inp.min != null ? ` min="${inp.min}"` : ""}${inp.max != null ? ` max="${inp.max}"` : ""}
+          <input id="${id}" class="fi ecm-input" type="number" data-inp="${_escHtml(inp.id)}"
+            value="${_escHtml(val)}"${inp.min != null ? ` min="${inp.min}"` : ""}${inp.max != null ? ` max="${inp.max}"` : ""}
             step="${inp.type === "number" && (val === "" || val < 1) ? "0.001" : "1"}"
             style="width:100%;font-size:13px"
             oninput="_ecmValidateInput(this,${inp.min != null ? inp.min : "null"},${inp.max != null ? inp.max : "null"})" />
@@ -2342,13 +2352,13 @@ function renderEcmCalculator(
   container.innerHTML = `
     <div style="padding:20px;overflow-y:auto;flex:1" id="ecm-calc-form-wrap">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap">
-        <button class="btn btn-ghost btn-sm" id="ecm-back-btn">${(ctx && ctx.backLabel) || "← Back"}</button>
-        <span style="font-size:20px">${tmpl.icon}</span>
-        <h2 style="font-size:18px;font-weight:700;margin:0;color:var(--text)">${tmpl.name}</h2>
-        <span style="font-size:11px;color:var(--accent);font-weight:600;text-transform:uppercase;letter-spacing:.5px;padding:2px 8px;border:1px solid var(--accent);border-radius:10px">${tmpl.category}</span>
+        <button class="btn btn-ghost btn-sm" id="ecm-back-btn">${_escHtml((ctx && ctx.backLabel) || "← Back")}</button>
+        <span style="font-size:20px">${_escHtml(tmpl.icon)}</span>
+        <h2 style="font-size:18px;font-weight:700;margin:0;color:var(--text)">${_escHtml(tmpl.name)}</h2>
+        <span style="font-size:11px;color:var(--accent);font-weight:600;text-transform:uppercase;letter-spacing:.5px;padding:2px 8px;border:1px solid var(--accent);border-radius:10px">${_escHtml(tmpl.category)}</span>
       </div>
       ${contextBanner}
-      <p style="font-size:13px;color:var(--text2);margin:0 0 20px;line-height:1.6">${tmpl.description}</p>
+      <p style="font-size:13px;color:var(--text2);margin:0 0 20px;line-height:1.6">${_escHtml(tmpl.description)}</p>
 
       <div class="card" style="padding:16px 20px;margin-bottom:16px">
         <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:14px">Inputs</div>
@@ -2500,25 +2510,25 @@ function renderEcmResults(templateId, results, container, projectContext, inputs
       return `
       <tr class="ecm-result-row" style="border-bottom:1px solid var(--border)">
         <td class="ecm-result-cell" style="font-weight:${isMajor ? '700' : '400'};color:${isMajor ? 'var(--text)' : 'var(--text2)'}">
-          ${out.label}
-          ${out.unit ? `<span style="font-size:11px;font-weight:400;color:var(--text3);margin-left:4px">${out.unit}</span>` : ''}
-          ${out.assumption ? `<div style="font-size:11px;font-weight:400;color:var(--text2);margin-top:3px">${out.assumption}</div>` : ''}
+          ${_escHtml(out.label)}
+          ${out.unit ? `<span style="font-size:11px;font-weight:400;color:var(--text3);margin-left:4px">${_escHtml(out.unit)}</span>` : ''}
+          ${out.assumption ? `<div style="font-size:11px;font-weight:400;color:var(--text2);margin-top:3px">${_escHtml(out.assumption)}</div>` : ''}
         </td>
         <td class="${isMajor ? 'ecm-result-cell--major' : 'ecm-result-cell'}" style="text-align:right;font-weight:${isMajor ? '700' : '400'};color:${isMajor ? 'var(--em)' : 'var(--text)'};font-family:var(--mono)">
-          ${display}
+          ${_escHtml(display)}
         </td>
         <td class="ecm-result-cell" style="text-align:right;width:32px">
           <button class="btn btn-ghost btn-sm"
             style="font-size:10px;padding:2px 6px;opacity:.6"
             title="Show formula"
-            onclick="_ecmToggleFormula(this,'${out.id}')">
+            onclick="_ecmToggleFormula(this,'${_escHtml(out.id)}')">
             ƒ
           </button>
         </td>
       </tr>
-      <tr class="ecm-formula-row" id="ecm-formula-${out.id}" style="display:none">
+      <tr class="ecm-formula-row" id="ecm-formula-${_escHtml(out.id)}" style="display:none">
         <td colspan="3" class="ecm-formula-cell" style="color:var(--text3);font-family:var(--mono);background:var(--s2);border-bottom:1px solid var(--border)">
-          ${out.formula || 'No formula trace available.'}
+          ${_escHtml(out.formula || 'No formula trace available.')}
         </td>
       </tr>`;
     })
@@ -2562,7 +2572,7 @@ function renderEcmResults(templateId, results, container, projectContext, inputs
            <input type="text" id="ecm-save-notes" class="fi" placeholder="Notes (optional — e.g. 'RTU-3 and RTU-4')" style="width:100%;font-size:12px" />
          </div>
          <button class="btn btn-ghost btn-sm" id="ecm-save-to-proj-btn" style="white-space:nowrap">
-           Save to ${ctx.buildingName ? ctx.buildingName : 'Project'}
+           Save to ${ctx.buildingName ? _escHtml(ctx.buildingName) : 'Project'}
          </button>
          <span id="ecm-save-status" style="font-size:11px;color:var(--green);display:none">Saved!</span>
          <button class="btn btn-em btn-sm" id="ecm-add-measure-btn" style="white-space:nowrap"${built && built.ok ? '' : ' disabled'}>+ Add as Savings Measure</button>

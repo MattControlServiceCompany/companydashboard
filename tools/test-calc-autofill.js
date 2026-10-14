@@ -69,6 +69,7 @@ function makeSandbox(projectsArr, opts) {
     sandbox._emNormBldgNameForJoin = (name) => (name || '').toLowerCase().trim();
   }
   vm.createContext(sandbox);
+  vm.runInContext(fs.readFileSync(REPO + '/lib/formatting.js', 'utf8'), sandbox, { filename: 'formatting.js' });
   vm.runInContext(src, sandbox, { filename: 'calc-autofill.js' });
   // Top-level `const`/`let` in a vm-executed script are lexical bindings, not properties of the
   // context/global object — a plain `sandbox.CH_LEGACY_CALC_PLACEHOLDERS` read would see
@@ -220,6 +221,8 @@ console.log('--- 4. chCalcFieldHintHTML ---');
     /Default value \(not from building data\)/.test(sb.chCalcFieldHintHTML('Default value (not from building data)')),
     'default hint renders',
   );
+  const evil = sb.chCalcFieldHintHTML('from <img src=x onerror=alert(1)> source');
+  assert(!/<img/.test(evil) && /&lt;img/.test(evil), 'a hostile source label is escaped, never markup');
 }
 
 console.log('--- 5. Proposed Conditions always company-standard, even with zero building data ---');

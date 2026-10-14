@@ -114,7 +114,7 @@ function initHvacLoadTab(projId) {
 
   // Project total of the buildings' saved estimates (computed, never stored)
   _hvlRenderRollup(projId);
-  // Render the Data Source box (which data the estimate uses + the annual-totals entry)
+  // Render the "Where these numbers come from" box (which data the estimate uses + the annual-totals entry)
   _hvlRenderSourceCard(projId, selBldg);
   // Render baseline summary for selected building
   _hvlRenderBaselineSummary(projId, selBldg);
@@ -156,8 +156,46 @@ function hvacLoadStoredFor(projId, bldgId) {
   return b && b.hvacLoad && b.hvacLoad.est ? b.hvacLoad : null;
 }
 
-// Project roll-up of the stored estimates, computed from the buildings every time and never stored.
-// Sums the annual totals of every in-scope building that has an estimate; `saved` counts the ones a person
+// hvacEstimateForBuilding - the ONE estimate of a building that every end-use reader uses (getEndUse, the project
+// roll-up). It is calculated now from the building's data (resolveHvacLoadData) and the building's saved method
+// inputs (b.hvacLoad.inputs), never read back from a stored snapshot: b.hvacLoad.est is a copy of an old
+// calculation (or a moved-over project estimate) and must not hold a split over the bills. With monthly bills the
+// end-use split is the measured baseload split (computeHvacLoadEstimate, est.basis); a percentage replaces it only
+// when a person typed it (inputs.<field>Override), and Rules of Thumb applies to annual-only data.
+// Returns null when the building has no utility data, else { est, resolved, estimate, savedAt, method }.
+//   estimate = 'saved' when a person saved inputs for this building, else 'default' (nobody saved anything yet).
+function hvacEstimateForBuilding(projId, bldgId) {
+  const b = typeof getUDBldg === 'function' ? getUDBldg(projId, bldgId) : null;
+  if (!b) return null;
+  const resolved = resolveHvacLoadData(projId, b);
+  if (resolved.source === 'none') return null;
+  const stored = b.hvacLoad || null;
+  const byMethod = (stored && stored.inputs) || {};
+  const storedMethod = stored && stored.est && stored.est.method;
+  const method = storedMethod && byMethod[storedMethod] ? storedMethod : 'thumb';
+  let inputs = byMethod[method];
+  if (method === 'thumb') {
+    // The three percentages that default from the bills are used only when a person overrode them.
+    const d = _hvlThumbDefaults(projId, bldgId);
+    const saved = byMethod.thumb || {};
+    inputs = Object.assign({}, d);
+    ['coolKwhPct', 'heatKwhPct'].forEach((f) => {
+      if (saved[f] != null) inputs[f] = saved[f];
+    });
+    ['kwhPct', 'kwPct', 'gasPct'].forEach((f) => {
+      if (saved[f + 'Override'] === true) {
+        inputs[f] = saved[f];
+        inputs[f + 'Override'] = true;
+      }
+    });
+  }
+  const est = computeHvacLoadEstimate(method, resolved, inputs, parseInt(b.sqft) || 0);
+  const savedAt = (stored && stored.savedAt) || null;
+  return { est, resolved, estimate: savedAt ? 'saved' : 'default', savedAt, method };
+}
+
+// Project roll-up of the buildings' estimates (hvacEstimateForBuilding), computed every time and never stored.
+// Sums the annual totals of every building that has utility data; `saved` counts the ones a person
 // actually saved (savedAt set).
 const _HVL_ROLLUP_FIELDS = [
   'totalKwh',
@@ -178,11 +216,11 @@ function hvacLoadProjectRollup(projId) {
   const bldgs = typeof getUDBldgs === 'function' ? getUDBldgs(projId) : [];
   out.of = bldgs.length;
   bldgs.forEach((b) => {
-    const s = b.hvacLoad && b.hvacLoad.est;
-    if (!s) return;
+    const r = hvacEstimateForBuilding(projId, b.id);
+    if (!r) return;
     out.buildings++;
-    if (b.hvacLoad.savedAt) out.saved++;
-    _HVL_ROLLUP_FIELDS.forEach((f) => (out[f] += s[f] || 0));
+    if (r.savedAt) out.saved++;
+    _HVL_ROLLUP_FIELDS.forEach((f) => (out[f] += r.est[f] || 0));
   });
   return out;
 }
@@ -239,7 +277,11 @@ function _hvlCaptureInputs(projId, method) {
   const out = {};
   _hvlFieldsFor(method).forEach((f) => {
     const el = document.getElementById(`${prefix}${f}-${projId}`);
-    if (el) out[f] = el.value;
+    if (el) {
+      out[f] = el.value;
+      // A percentage a person typed over the shown default is an explicit override; the shown default is not.
+      if (el.dataset.default !== undefined) out[f + 'Override'] = el.value !== el.dataset.default;
+    }
   });
   return out;
 }
@@ -263,7 +305,8 @@ function _hvlRestoreInputs(projId, bldgId, method) {
     if (f === 'type' || f === 'climate') return;
     if (saved[f] == null) return;
     const el = document.getElementById(`${prefix}${f}-${projId}`);
-    if (el) el.value = saved[f];
+    // A saved value that was only the shown default is not restored: the default follows the bills now.
+    if (el && (el.dataset.default === undefined || saved[f + 'Override'] === true)) el.value = saved[f];
   });
 }
 
@@ -805,7 +848,7 @@ function _buildBaselineDataHtml(b, projId) {
         </div>`;
 }
 
-// Data Source box (Phase 3, 2026-10-13): shows which data the estimate uses (from the single resolver
+// "Where these numbers come from" box (Phase 3, 2026-10-13): shows which data the estimate uses (from the single resolver
 // resolveHvacLoadData) and holds the annual-totals entry. The entry is stored on the building as
 // b.quickAnnual and is shown as "not used" once the building has baseline bills.
 function _hvlRenderSourceCard(projId, b) {
@@ -823,7 +866,7 @@ function _hvlRenderSourceCard(projId, b) {
   const field = (id, label, v, hint) =>
     `<div class="fg"><label class="fl">${label}</label><input class="fi" id="hvl-q-${id}-${projId}" type="number" min="0" step="any" value="${val(v)}"><div class="fhint">${hint}</div></div>`;
   wrap.innerHTML = `<div class="card">
-            <div class="card-hdr"><span class="card-title">Data Source</span></div>
+            <div class="card-hdr"><span class="card-title" id="hvl-source-title-${projId}">Where these numbers come from</span></div>
             <div style="padding:16px">
               <div style="font-size:13px;color:var(--text)">Using: <strong id="hvl-source-label-${projId}">${_escHtml(r.label)}</strong></div>
               ${note}
@@ -872,6 +915,18 @@ function hvacQuickAnnualClear(projId) {
   initHvacLoadTab(projId);
 }
 
+// Plain words for est.basis (computeHvacLoadEstimate): which method produced a number.
+function hvlBasisLabel(basis) {
+  return (
+    {
+      measured: 'Measured from your bills (the 3 lowest months set the base load)',
+      rule: 'Rule of thumb',
+      override: 'Your own percentage',
+      method: 'From the method you chose',
+    }[basis] || ''
+  );
+}
+
 // One line under the results header: which data the numbers came from and, for the annual path, which
 // method and percentages were applied to those annual totals.
 function _hvlSourceStripHtml(resolved, method, pcts) {
@@ -883,7 +938,7 @@ function _hvlSourceStripHtml(resolved, method, pcts) {
         ? `Method: ${m} applied to the annual totals. HVAC is ${pcts.hvacKwhPct.toFixed(0)}% of kWh, ${pcts.hvacKwPct.toFixed(0)}% of peak kW and ${pcts.hvacGasPct.toFixed(0)}% of Therms. Change the percentages above.`
         : `Method: ${m} applied to the annual totals.`;
   }
-  return `<div style="background:var(--s1);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--text2);margin-bottom:14px"><strong style="color:var(--text)">Data source: <span id="hvl-result-source">${_escHtml(resolved.label)}</span></strong>${detail ? '<div style="margin-top:4px">' + _escHtml(detail) + '</div>' : ''}</div>`;
+  return `<div style="background:var(--s1);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--text2);margin-bottom:14px"><strong style="color:var(--text)">Where these numbers come from: <span id="hvl-result-source">${_escHtml(resolved.label)}</span></strong>${detail ? '<div style="margin-top:4px">' + _escHtml(detail) + '</div>' : ''}</div>`;
 }
 
 function _hvlRenderBaselineSummary(projId, b) {
@@ -911,8 +966,12 @@ function _hvlRenderMethod(projId, bldgId, method) {
 function _hvlThumbDefaults(projId, bldgId) {
   const sig = _hvlBuildingHeatingSignals(projId, bldgId);
   const gasShare = _hvlGasHeatShare(projId, bldgId);
+  const b = typeof getUDBldg === 'function' ? getUDBldg(projId, bldgId) : null;
+  const eu = b ? resolveHvacLoadData(projId, b) : null;
+  const elecMeasured = !!(eu && eu.source === 'bills' && eu.enduse.elecValid);
   return {
-    kwhPct: 45,
+    kwhPct: elecMeasured ? Math.round(eu.enduse.coolingPct * 1000) / 10 : 45,
+    kwhPctMeasured: elecMeasured,
     coolKwhPct: 65,
     heatKwhPct: sig.hasElectric ? 35 : 0,
     kwPct: 55,
@@ -955,15 +1014,15 @@ function _hvlRenderTraditional(projId, bldgId, method) {
               <div class="g2" style="gap:12px">
                 <div class="card" style="background:var(--s1);padding:14px">
                   <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);margin-bottom:10px">⚡ Electric (kWh) Breakdown</div>
-                  <div class="fg"><label class="fl">HVAC % of Total kWh</label><input class="fi hvl-in" id="hvl-t-kwhPct-${projId}" type="number" value="${_hvlDef.kwhPct}" min="0" max="100" step="1"><div class="fhint">Typical: 30-60% depending on climate & building type</div></div>
+                  <div class="fg"><label class="fl">HVAC % of Total kWh</label><input class="fi hvl-in" id="hvl-t-kwhPct-${projId}" type="number" value="${_hvlDef.kwhPct}" data-default="${_hvlDef.kwhPct}" min="0" max="100" step="any"><div class="fhint">${_hvlDef.kwhPctMeasured ? 'Measured from the electric bills (the 3 lowest months set the base load; the rest is heating and cooling). Type a number only to replace it.' : 'Rule of thumb (no monthly electric bills to measure): 30-60% depending on climate & building type'}</div></div>
                   <div class="fg"><label class="fl">Cooling % of HVAC kWh</label><input class="fi hvl-in" id="hvl-t-coolKwhPct-${projId}" type="number" value="${_hvlDef.coolKwhPct}" min="0" max="100"><div class="fhint">Typical: 55-75%</div></div>
                   <div class="fg"><label class="fl">Heating % of HVAC kWh (electric heat only)</label><input class="fi hvl-in" id="hvl-t-heatKwhPct-${projId}" type="number" value="${_hvlDef.heatKwhPct}" min="0" max="100"><div class="fhint">${_hvlElecHeat ? 'Typical: 25-45% if electric/heat pump' : "0% — this building's heat is not electric, so electric heating kWh saved is 0"}</div></div>
                 </div>
                 <div class="card" style="background:var(--s1);padding:14px">
                   <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);margin-bottom:10px">⚡ Electric Demand (kW) Breakdown</div>
-                  <div class="fg"><label class="fl">HVAC % of Electric Demand (kW)</label><input class="fi hvl-in" id="hvl-t-kwPct-${projId}" type="number" value="${_hvlDef.kwPct}" min="0" max="100"><div class="fhint">Typical: 40-65% — HVAC is usually the largest demand driver. Applied to each month's billed kW, so it holds for the sum and the highest month alike.</div></div>
+                  <div class="fg"><label class="fl">HVAC % of Electric Demand (kW)</label><input class="fi hvl-in" id="hvl-t-kwPct-${projId}" type="number" value="${_hvlDef.kwPct}" data-default="${_hvlDef.kwPct}" min="0" max="100"><div class="fhint">Typical: 40-65% — HVAC is usually the largest demand driver. Applied to each month's billed kW, so it holds for the sum and the highest month alike.</div></div>
                   <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text3);margin:14px 0 10px">🔥 Gas (Therms) Breakdown</div>
-                  <div class="fg"><label class="fl">Space Heating % of Total Gas</label><input class="fi hvl-in" id="hvl-t-gasPct-${projId}" type="number" value="${_hvlDef.gasPct}" min="0" max="100"><div class="fhint">${_hvlGasShare.source === 'baseload' ? `✓ computed from gas bills (3-lowest-month baseload method, ${Math.round(_hvlGasShare.totalGas).toLocaleString()} total Therms/yr) — same method as the Energy Graphics HVAC End-Use Estimate` : _hvlGasPctIsLow ? "Rules-of-Thumb default (not enough bill history to compute) — 0-20% typical for DHW/kitchen only, this building's heat is electric" : 'Rules-of-Thumb default (not enough bill history to compute) — 70-95% typical for gas-heated buildings'}</div></div>
+                  <div class="fg"><label class="fl">Space Heating % of Total Gas</label><input class="fi hvl-in" id="hvl-t-gasPct-${projId}" type="number" value="${_hvlDef.gasPct}" data-default="${_hvlDef.gasPct}" min="0" max="100" step="any"><div class="fhint">${_hvlGasShare.source === 'baseload' ? `✓ computed from gas bills (3-lowest-month baseload method, ${Math.round(_hvlGasShare.totalGas).toLocaleString()} total Therms/yr) — same method as the Energy Graphics HVAC End-Use Estimate` : _hvlGasPctIsLow ? "Rules-of-Thumb default (not enough bill history to compute) — 0-20% typical for DHW/kitchen only, this building's heat is electric" : 'Rules-of-Thumb default (not enough bill history to compute) — 70-95% typical for gas-heated buildings'}</div></div>
                 </div>
               </div>
             </div>
@@ -1804,14 +1863,27 @@ function computeHvacLoadEstimate(method, resolved, inputs, sqft) {
     estimatedTotalKw = totalKw,
     estimatedTotalGas = totalGas;
 
+  // Where each number comes from (est.basis): 'measured' = the 3-lowest-month baseload split of the building's
+  // baseline bills (computeHvacEnduse, through resolveHvacLoadData); 'rule' = a Rules of Thumb percentage;
+  // 'override' = a percentage a person typed over the default; 'method' = the Benchmark or Nameplate method the
+  // person chose. Real bills always beat the rule: Rules of Thumb applies to annual-only data or an override.
+  const eu = resolved.enduse;
+  const measuredElec = method === 'thumb' && resolved.source === 'bills' && !!(eu && eu.elecValid) && !inputs.kwhPctOverride;
+  const measuredGas = method === 'thumb' && resolved.source === 'bills' && !!(eu && eu.gasValid) && !inputs.gasPctOverride;
+  const typed = (flag) => (flag ? 'override' : 'rule');
+  const basis = {};
   if (method === 'thumb') {
-    hvacKwhPct = parseFloat(inputs.kwhPct) || 0;
+    hvacKwhPct = measuredElec ? eu.coolingPct * 100 : parseFloat(inputs.kwhPct) || 0;
     hvacKwPct = parseFloat(inputs.kwPct) || 0;
-    hvacGasPct = parseFloat(inputs.gasPct) || 0;
+    hvacGasPct = measuredGas ? eu.heatingPct * 100 : parseFloat(inputs.gasPct) || 0;
+    basis.hvacKwh = measuredElec ? 'measured' : typed(inputs.kwhPctOverride);
+    basis.hvacKw = typed(inputs.kwPctOverride);
+    basis.hvacGas = measuredGas ? 'measured' : typed(inputs.gasPctOverride);
   } else if (method === 'benchmark') {
     hvacKwhPct = parseFloat(inputs.kwhPct) || 0;
     hvacKwPct = parseFloat(inputs.kwPct) || 0;
     hvacGasPct = parseFloat(inputs.gasPct) || 0;
+    basis.hvacKwh = basis.hvacKw = basis.hvacGas = 'method';
   } else {
     // nameplate
     const coolTons = parseFloat(inputs.coolTons) || 0;
@@ -1849,18 +1921,23 @@ function computeHvacLoadEstimate(method, resolved, inputs, sqft) {
     if (estimatedTotalGas > 0) {
       hvacGasPct = (heatGas / estimatedTotalGas) * 100;
     } else hvacGasPct = 0;
+    basis.hvacKwh = basis.hvacKw = basis.hvacGas = 'method';
     // Use utility data if available
     if (totalKwh > 0) estimatedTotalKwh = totalKwh;
     if (totalKw > 0) estimatedTotalKw = totalKw;
     if (totalGas > 0) estimatedTotalGas = totalGas;
   }
 
-  const hvacKwh = estimatedTotalKwh * (hvacKwhPct / 100);
+  // Measured numbers are the baseload split itself, not a rounded percentage of the total.
+  const hvacKwh = measuredElec ? eu.coolingKwh : estimatedTotalKwh * (hvacKwhPct / 100);
   const nonHvacKwh = estimatedTotalKwh - hvacKwh;
   const hvacKw = estimatedTotalKw * (hvacKwPct / 100);
   const nonHvacKw = estimatedTotalKw - hvacKw;
-  const hvacGasT = estimatedTotalGas * (hvacGasPct / 100);
+  const hvacGasT = measuredGas ? eu.heatingTherms : estimatedTotalGas * (hvacGasPct / 100);
   const nonHvacGas = estimatedTotalGas - hvacGasT;
+  basis.nonHvacKwh = basis.hvacKwh;
+  basis.nonHvacGas = basis.hvacGas;
+  basis.nonHvacKw = basis.hvacKw;
 
   // Monthly distribution (simplified — cooling peaks summer, heating peaks winter)
   const coolDist = [0.02, 0.02, 0.04, 0.06, 0.12, 0.17, 0.2, 0.18, 0.12, 0.05, 0.01, 0.01]; // KC cooling shape
@@ -1878,6 +1955,9 @@ function computeHvacLoadEstimate(method, resolved, inputs, sqft) {
     const heatKwhPct = (parseFloat(inputs.heatKwhPct) || 0) / 100;
     heatKwhTotal = hvacKwh * heatKwhPct;
     coolKwhTotal = hvacKwh - heatKwhTotal;
+    // Electric heating is not separated by the baseload method: with no electric heat in the Equipment Matrix
+    // the share is a true 0 and cooling is the whole measured number; otherwise the split is a rule.
+    basis.coolKwh = basis.heatKwh = heatKwhPct > 0 ? 'rule' : basis.hvacKwh;
   } else {
     // WP-15: no fixed 0.65/0.35 guess. Nameplate: cooling vs electric-heating share of the entered
     // equipment kWh (coolKwh / heatKwhElec above). Benchmark has no heating input and electric
@@ -1886,6 +1966,7 @@ function computeHvacLoadEstimate(method, resolved, inputs, sqft) {
     const coolShareOfHvac = method === 'nameplate' && nameplateHvacKwh > 0 ? coolKwh / nameplateHvacKwh : 1;
     coolKwhTotal = hvacKwh * coolShareOfHvac;
     heatKwhTotal = hvacKwh - coolKwhTotal;
+    basis.coolKwh = basis.heatKwh = 'method';
   }
 
   // Save to project — include monthly breakdowns so savings calcs can use them
@@ -1923,6 +2004,18 @@ function computeHvacLoadEstimate(method, resolved, inputs, sqft) {
         }
       }
     }
+    if (measuredElec) {
+      // Measured months: HVAC kWh of a month = the bill above the baseload, so the 12 months add up to the annual
+      // number exactly. A month with no bill has no value (0), never a made-up one.
+      const share = hvacKwh > 0 ? heatKwhTotal / hvacKwh : 0;
+      for (let i = 0; i < 12; i++) {
+        const bill = resolved.kwhArr[i];
+        const hv = bill === null ? 0 : Math.max(0, bill - eu.baseloadElec);
+        monthlyHeatKwh[i] = hv * share;
+        monthlyCoolKwh[i] = hv - monthlyHeatKwh[i];
+        monthlyNonHvacKwh[i] = bill === null ? 0 : bill - hv;
+      }
+    }
     monthlyHvacKwh = months.map((_, i) => monthlyCoolKwh[i] + monthlyHeatKwh[i]);
     const _rawGasHvac = heatDist.map((d) => hvacGasT * d);
     const _rawGasNon = flatDist.map((d) => nonHvacGas * d);
@@ -1940,6 +2033,14 @@ function computeHvacLoadEstimate(method, resolved, inputs, sqft) {
         } else if (actual > 0) {
           monthlyNonHvacGas[i] = actual;
         }
+      }
+    }
+    if (measuredGas) {
+      for (let i = 0; i < 12; i++) {
+        const bill = resolved.gasArr[i];
+        const hv = bill === null ? 0 : Math.max(0, bill - eu.baseloadGas);
+        monthlyHvacGas[i] = hv;
+        monthlyNonHvacGas[i] = bill === null ? 0 : bill - hv;
       }
     }
     // Monthly kW (2026-09-22 fix): when billed-kW baseline data exists, split each month's ACTUAL
@@ -1963,6 +2064,7 @@ function computeHvacLoadEstimate(method, resolved, inputs, sqft) {
     method,
     dataSource: resolved.source,
     dataSourceLabel: resolved.label,
+    basis,
     monthly: !isAnnual,
     hvacKwhPct,
     hvacKwPct,
@@ -2058,7 +2160,7 @@ function hvacLoadCalc(projId) {
             </div>
             <div style="padding:16px">
               ${_hvlSourceStripHtml(resolved, method, { hvacKwhPct, hvacKwPct, hvacGasPct })}
-              ${totalKwh === 0 && method !== 'nameplate' ? '<div style="background:var(--warn-dim);border:1px solid var(--warn);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--warn);margin-bottom:14px">⚠️ No utility data found for this building. Add utility bills, or type the annual kWh and Therms in the Data Source box above. Showing percentage-based estimates only.</div>' : ''}
+              ${totalKwh === 0 && method !== 'nameplate' ? '<div style="background:var(--warn-dim);border:1px solid var(--warn);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--warn);margin-bottom:14px">⚠️ No utility data found for this building. Add utility bills, or type the annual kWh and Therms in the box above. Showing percentage-based estimates only.</div>' : ''}
               <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-bottom:20px">
                 <div class="card" style="background:var(--s1);padding:14px;text-align:center">
                   <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Total kWh/yr</div>
@@ -2067,6 +2169,7 @@ function hvacLoadCalc(projId) {
                     <div><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--accent);margin-right:4px"></span><span style="font-size:11px;color:var(--text2)">HVAC ${pct(hvacKwhPct)} (${fmt(hvacKwh)} kWh)</span></div>
                     <div><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--teal);margin-right:4px"></span><span style="font-size:11px;color:var(--text2)">Other ${pct(100 - hvacKwhPct)} (${fmt(nonHvacKwh)} kWh)</span></div>
                   </div>
+                  <div class="hvl-basis" data-basis="hvacKwh" style="font-size:11px;color:var(--text3);margin-top:6px">${_escHtml(hvlBasisLabel(est.basis.hvacKwh))}</div>
                 </div>
                 <div class="card" style="background:var(--s1);padding:14px;text-align:center">
                   <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">${isAnnual ? 'Peak kW (entered)' : 'Total kW (Billed, sum of months)'}</div>
@@ -2075,6 +2178,7 @@ function hvacLoadCalc(projId) {
                     <div><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--accent);margin-right:4px"></span><span style="font-size:11px;color:var(--text2)">HVAC ${pct(hvacKwPct)} (${fmt(hvacKw)} kW)</span></div>
                     <div><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--teal);margin-right:4px"></span><span style="font-size:11px;color:var(--text2)">Other ${pct(100 - hvacKwPct)} (${fmt(nonHvacKw)} kW)</span></div>
                   </div>
+                  <div class="hvl-basis" data-basis="hvacKw" style="font-size:11px;color:var(--text3);margin-top:6px">${_escHtml(hvlBasisLabel(est.basis.hvacKw))}</div>
                 </div>
                 <div class="card" style="background:var(--s1);padding:14px;text-align:center">
                   <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Gas Therms/yr</div>
@@ -2083,6 +2187,7 @@ function hvacLoadCalc(projId) {
                     <div><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--accent);margin-right:4px"></span><span style="font-size:11px;color:var(--text2)">HVAC ${pct(hvacGasPct)}</span></div>
                     <div><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--teal);margin-right:4px"></span><span style="font-size:11px;color:var(--text2)">Other ${pct(100 - hvacGasPct)}</span></div>
                   </div>
+                  <div class="hvl-basis" data-basis="hvacGas" style="font-size:11px;color:var(--text3);margin-top:6px">${_escHtml(hvlBasisLabel(est.basis.hvacGas))}</div>
                 </div>
               </div>
               ${_hvlDemandHtml(resolved)}
@@ -2459,6 +2564,11 @@ function _hvlBuildExportData(projId) {
     optionsMissing,
     billed,
     sourceLabel: est.dataSourceLabel || '',
+    basisLabel: {
+      kwh: hvlBasisLabel(est.basis.hvacKwh),
+      kw: hvlBasisLabel(est.basis.hvacKw),
+      gas: hvlBasisLabel(est.basis.hvacGas),
+    },
   };
 }
 
@@ -2485,7 +2595,10 @@ function hvacLoadExportXlsx(projId) {
     ['HVAC Load Estimation'],
     ['Building', data.buildingName],
     ['Method', data.method],
-    ['Data source', data.sourceLabel],
+    ['Where the numbers come from', data.sourceLabel],
+    ['How heating and cooling electricity was found', data.basisLabel.kwh],
+    ['How heating and cooling demand was found', data.basisLabel.kw],
+    ['How heating gas was found', data.basisLabel.gas],
     ['Generated', data.generatedAt.toLocaleString()],
     ['Last Saved', data.savedAt ? data.savedAt.toLocaleString() : 'Not saved yet'],
     [],
@@ -2591,7 +2704,10 @@ function _hvlExportBodyHtml(data) {
   h += `<h1>HVAC Load Estimation</h1>`;
   h += `<table class="hvl-x-meta"><tr><td>Building</td><td>${_escHtml(data.buildingName)}</td></tr>`;
   h += `<tr><td>Method</td><td>${_escHtml(data.method)}</td></tr>`;
-  h += `<tr><td>Data source</td><td>${_escHtml(data.sourceLabel)}</td></tr>`;
+  h += `<tr><td>Where the numbers come from</td><td>${_escHtml(data.sourceLabel)}</td></tr>`;
+  h += `<tr><td>How heating and cooling electricity was found</td><td>${_escHtml(data.basisLabel.kwh)}</td></tr>`;
+  h += `<tr><td>How heating and cooling demand was found</td><td>${_escHtml(data.basisLabel.kw)}</td></tr>`;
+  h += `<tr><td>How heating gas was found</td><td>${_escHtml(data.basisLabel.gas)}</td></tr>`;
   h += `<tr><td>Generated</td><td>${_escHtml(data.generatedAt.toLocaleString())}</td></tr>`;
   h += `<tr><td>Last Saved</td><td>${_escHtml(data.savedAt ? data.savedAt.toLocaleString() : 'Not saved yet')}</td></tr></table>`;
 
@@ -3613,21 +3729,16 @@ function _scDoCalc(projId) {
   };
   // Production
   const arrays = _solarReadArraysFromDOM(p);
-  let prod = Array(12).fill(0),
-    solKw = Array(12).fill(0);
-  if (arrays.length > 0) {
-    arrays.forEach((a) => {
-      (a.production || []).forEach((v, i) => {
-        prod[i] += v;
-      });
-      const kw = a.kw || 0;
-      (a.capFactor || []).forEach((cf, i) => {
-        solKw[i] += kw * cf;
-      });
+  let solKw = Array(12).fill(0);
+  const manualProd = [];
+  for (let i = 0; i < 12; i++) manualProd.push(parseFloat(document.getElementById(`sc-prod-${i}`)?.value) || 0);
+  const prod = solarMonthlyProduction(p, manualProd);
+  arrays.forEach((a) => {
+    const kw = a.kw || 0;
+    (a.capFactor || []).forEach((cf, i) => {
+      solKw[i] += kw * cf;
     });
-  } else {
-    for (let i = 0; i < 12; i++) prod[i] = parseFloat(document.getElementById(`sc-prod-${i}`)?.value) || 0;
-  }
+  });
   const totProd = prod.reduce((a, b) => a + b, 0);
   // Baseline
   const bKwh = [],
@@ -4130,6 +4241,46 @@ function _scDoCalc(projId) {
     effTbl();
 }
 
+// solarMonthlyProduction - the ONE owner of the Solar calculator's month-by-month production (kWh, Jan..Dec):
+// the sum of the array rows when the project has arrays, else the manual production row (`manual` when the page is
+// open and passes what is on screen, else the saved p.solarCalc.production). Everything that needs the monthly solar
+// production (the calculation, Add as Measure, Apply to Measure, the Solar Production template) calls this.
+function solarMonthlyProduction(p, manual) {
+  const arrays = (p && p.solarArrays) || [];
+  if (arrays.length > 0) {
+    const prod = Array(12).fill(0);
+    arrays.forEach((a) => {
+      (a.production || []).forEach((v, i) => {
+        prod[i] += v;
+      });
+    });
+    return prod;
+  }
+  const m = manual || (p && p.solarCalc && p.solarCalc.production) || [];
+  return Array.from({ length: 12 }, (_, i) => parseFloat(m[i]) || 0);
+}
+
+// Month weights of the Solar calculator's production, in the shape ecmBuildMeasure takes from getEndUseWeights.
+function solarMonthlyWeights(projId) {
+  const p = projects.find((x) => String(x.id) === String(projId));
+  const prod = solarMonthlyProduction(p);
+  const total = prod.reduce((a, v) => a + v, 0);
+  if (!(total > 0))
+    return {
+      ok: false,
+      reason: 'The Solar calculator has no monthly production yet. Open it and enter the production by month.',
+    };
+  return {
+    ok: true,
+    weights: prod.map((v) => v / total),
+    endUse: 'solar',
+    eu: {
+      label: 'Solar calculator monthly production',
+      sourceLabel: 'Solar calculator monthly production (' + Math.round(total).toLocaleString() + ' kWh per year)',
+    },
+  };
+}
+
 function solarAddAsMeasure(projId) {
   const p = projects.find((x) => x.id === projId);
   if (!p || !p.solarCalc) return;
@@ -4142,7 +4293,7 @@ function solarAddAsMeasure(projId) {
     msrNum: sd.measures.length + 1 + '',
     bldgId: bldgs[0]?.id || '',
     desc: `Solar PV — ${sc.arrayKw} kW Array`,
-    kwh: (sc.production || []).map((k) => Math.round(k)),
+    kwh: solarMonthlyProduction(p).map((k) => Math.round(k)),
     kw: Array(12).fill(0),
     gas: Array(12).fill(0),
     totalDollar: 0,
@@ -4168,7 +4319,7 @@ function solarApplyToMeasure(projId) {
   // Rates that fail the rate guard block the apply (ensureMeasureRates logs it); nothing is written.
   if (!ensureMeasureRates(m, projId, 'solar apply')) return;
   // Apply solar production as kWh savings
-  m.kwh = (sc.production || []).map((k) => Math.round(k));
+  m.kwh = solarMonthlyProduction(p).map((k) => Math.round(k));
   m.source = 'solar';
   if (!m.desc || m.desc.trim() === '') m.desc = `Solar PV — ${sc.arrayKw} kW Array`;
   // Dollar savings use the measure's own rates, the same rates the matrix prices it with.

@@ -70,22 +70,25 @@ const estAnnual = () => ({
   monthlyNonHvacKw: null,
 });
 
+const BASIS = { hvacKwh: 'measured', coolKwh: 'measured', heatKwh: 'measured', hvacGas: 'measured', nonHvacKwh: 'measured', hvacKw: 'rule', nonHvacKw: 'rule' };
+const calcOf = (est, source, label, over) =>
+  Object.assign(
+    { est, resolved: { source, label }, estimate: 'default', savedAt: null, method: 'thumb' },
+    over || {},
+  );
+
 function makeSandbox(world) {
-  const calls = { compute: [] };
   const sb = {
     console,
     getUDBldg: (p, b) => (world.bldgs && world.bldgs[b]) || null,
-    hvacLoadStoredFor: (p, b) => (world.stored && world.stored[b]) || null,
+    hvacEstimateForBuilding: (p, b) => (world.calc && world.calc[b]) || null,
     resolveHvacLoadData: (p, b) => world.resolved[b.id],
-    _hvlThumbDefaults: () => ({ kwhPct: 45 }),
-    computeHvacLoadEstimate: (method, resolved, inputs, sqft) => {
-      calls.compute.push({ method, source: resolved.source, inputs, sqft });
-      return world.computed[resolved.source]();
-    },
   };
   vm.createContext(sb);
+  const calcSrc = fs.readFileSync(path.join(root, 'app/calculators.js'), 'utf8');
+  const a = calcSrc.indexOf('function hvlBasisLabel');
+  vm.runInContext(calcSrc.slice(a, calcSrc.indexOf('// One line under', a)), sb);
   vm.runInContext(fs.readFileSync(path.join(root, 'computations/end-use.js'), 'utf8'), sb);
-  sb.__calls = calls;
   return sb;
 }
 
@@ -98,29 +101,34 @@ const bldgs = {
 // ---------------- 1. getEndUse ----------------
 console.log('--- 1. getEndUse ---');
 {
+  const withBasis = (e) => Object.assign(e, { basis: BASIS });
   const sb = makeSandbox({
     bldgs,
-    stored: { b1: { savedAt: 1790000000000, est: estMonthly(), inputs: {} } },
-    resolved: {
-      b1: { source: 'bills', label: 'From 12 months of baseline bills' },
-      b2: { source: 'bills', label: 'From 12 months of baseline bills' },
-      b3: { source: 'none', label: 'No utility data yet' },
+    calc: {
+      b1: calcOf(withBasis(estMonthly()), 'bills', 'From 12 months of baseline bills', {
+        estimate: 'saved',
+        savedAt: 1790000000000,
+      }),
+      b2: calcOf(withBasis(estMonthly()), 'bills', 'From 12 months of baseline bills'),
     },
-    computed: { bills: estMonthly, annual: estAnnual },
+    resolved: { b3: { source: 'none', label: 'No utility data yet' } },
   });
   const cool = sb.getEndUse('p', 'b1', 'cooling');
   ok(
     cool.modeled && cool.unit === 'kWh' && cool.source === 'bills' && cool.estimate === 'saved',
-    'saved estimate: modeled kWh from bills',
+    'saved inputs: modeled kWh from bills',
     JSON.stringify(cool).slice(0, 120),
   );
+  ok(cool.basis === 'measured', 'the end use says which method produced it: measured');
   ok(
     near(cool.annual, sum(COOL)) && near(sum(cool.monthly), cool.annual),
-    'saved estimate: annual = sum of the 12 monthly values',
+    'annual = sum of the 12 monthly values',
   );
   ok(
-    /HVAC Load Estimate \(saved .*\), From 12 months of baseline bills/.test(cool.sourceLabel),
-    'saved estimate: source label names the estimate, its save state and the data',
+    /HVAC Load Estimate \(saved .*\), Measured from your bills .*, From 12 months of baseline bills/.test(
+      cool.sourceLabel,
+    ),
+    'source label names the estimate, its save state, the method and the data',
     cool.sourceLabel,
   );
   ok(
@@ -133,36 +141,27 @@ console.log('--- 1. getEndUse ---');
   ok(he.annual === 0 && sum(he.monthly) === 0, 'electric heating: a real 0 when the building has none');
   const nh = sb.getEndUse('p', 'b1', 'nonHvacElectric');
   ok(near(nh.annual, sum(OTHER)) && near(nh.kw.annual, 100), 'non-HVAC electric: lighting, plug and other together');
-  ok(sb.__calls.compute.length === 0, 'a stored estimate is read, nothing is calculated again');
-
-  const notSaved = makeSandbox({
-    bldgs,
-    stored: { b1: { savedAt: null, est: estMonthly(), inputs: {} } },
-    resolved: {},
-    computed: {},
-  });
-  const ns = notSaved.getEndUse('p', 'b1', 'cooling');
-  ok(
-    ns.estimate === 'calculated' && /calculated, not saved yet/.test(ns.sourceLabel),
-    'moved (unsaved) estimate is labelled calculated, not saved yet',
-    ns.sourceLabel,
-  );
 
   const fresh = sb.getEndUse('p', 'b2', 'cooling');
   ok(
     fresh.estimate === 'default' && fresh.source === 'bills' && near(fresh.annual, sum(COOL)),
-    'no stored estimate: calculated now from the building data',
+    'nobody saved anything: calculated now from the building data',
   );
   ok(
-    sb.__calls.compute.length === 1 && sb.__calls.compute[0].method === 'thumb' && sb.__calls.compute[0].sqft === 0,
-    'calculated now with the Rules of Thumb start values',
-    JSON.stringify(sb.__calls.compute),
-  );
-  ok(
-    /Rules of Thumb start values, not saved yet\), From 12 months of baseline bills/.test(fresh.sourceLabel),
-    'calculated-now label',
+    /HVAC Load Estimate \(not saved yet\), Measured from your bills .*, From 12 months of baseline bills/.test(
+      fresh.sourceLabel,
+    ),
+    'not-saved label',
     fresh.sourceLabel,
   );
+
+  const rule = makeSandbox({
+    bldgs,
+    calc: { b1: calcOf(Object.assign(estMonthly(), { basis: Object.assign({}, BASIS, { coolKwh: 'rule' }) }), 'bills', 'x') },
+    resolved: {},
+  });
+  const rc = rule.getEndUse('p', 'b1', 'cooling');
+  ok(rc.basis === 'rule' && /Rule of thumb/.test(rc.sourceLabel), 'a rule-of-thumb number is labelled as one', rc.sourceLabel);
 
   const none = sb.getEndUse('p', 'b3', 'cooling');
   ok(
@@ -192,14 +191,19 @@ console.log('--- 1. getEndUse ---');
 {
   const sb = makeSandbox({
     bldgs,
-    stored: { b1: { savedAt: 1790000000000, est: estAnnual(), inputs: {} } },
+    calc: {
+      b1: calcOf(
+        Object.assign(estAnnual(), { basis: { hvacKwh: 'rule', coolKwh: 'rule', hvacGas: 'rule', hvacKw: 'rule' } }),
+        'annual',
+        'From annual totals you entered (2025)',
+      ),
+    },
     resolved: {},
-    computed: {},
   });
   const c = sb.getEndUse('p', 'b1', 'cooling');
   ok(
-    c.source === 'annual' && c.annual === 90000 && c.monthly === null,
-    'annual entry: annual value, NO monthly values made up',
+    c.source === 'annual' && c.annual === 90000 && c.monthly === null && c.basis === 'rule',
+    'annual entry: annual value, rule of thumb, NO monthly values made up',
     JSON.stringify(c).slice(0, 140),
   );
   ok(c.kw.monthly === null && near(c.kw.annual, 80), 'annual entry: kW annual only');
@@ -216,9 +220,8 @@ console.log('--- 2. weights and spreads ---');
 {
   const sb = makeSandbox({
     bldgs,
-    stored: { b1: { savedAt: 1, est: estMonthly(), inputs: {} } },
+    calc: { b1: calcOf(Object.assign(estMonthly(), { basis: BASIS }), 'bills', 'x') },
     resolved: {},
-    computed: {},
   });
   const w = sb.getEndUseWeights('p', 'b1', ['cooling']);
   ok(w.ok && near(sum(w.weights), 1) && w.endUse === 'cooling', 'weights add up to 1');
@@ -311,6 +314,7 @@ console.log('--- 3. template inputs and measure map ---');
 console.log('--- 4. the gate ---');
 {
   const files = gate.loadFiles();
+  Object.keys(files).forEach((k) => (files[k] = files[k].split(String.fromCharCode(13) + String.fromCharCode(10)).join(String.fromCharCode(10)))); // the patches below use LF
   const clean = gate.check(files);
   ok(clean.length === 0, 'gate passes on the tree', clean.join(' | '));
   const mut = (file, fn) => {

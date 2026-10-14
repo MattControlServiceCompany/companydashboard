@@ -11,6 +11,9 @@
  *   3. Baseline pill template (utility-data.js _udBaselinePillsHtml) leaves a hostile unit or excluded-bill label
  *      escaped, and no pill template prints ${p.lbl} / ${p.v} raw.
  *   4. A page that loads app scripts does not load lib/formatting.js before app/sync-ui.js.
+ *   5. app/ecm-calculators.js: user-data text in the two render functions goes through _escHtml, and a hostile
+ *      building name, source label and typed value (<img onerror>, attribute break-out) are escaped by the real
+ *      renderEcmCalculator and renderEcmResults.
  *
  * Usage: node tools/test-single-html-escape.js [repo-root]
  */
@@ -97,6 +100,73 @@ for (const page of ['index.html', 'energy-department.html', 'ems-leads.html']) {
   const b = html.indexOf('app/sync-ui.js');
   if (a < 0 || b < 0 || a > b) problems.push(page + ': lib/formatting.js must load before app/sync-ui.js');
 }
+
+// 5. ECM calculator pages (app/ecm-calculators.js): building, source and measure text never reaches the DOM as markup.
+//    a) static: in the two render functions, every ${} that prints user-data text goes through _escHtml
+//    b) hostile input through the REAL renderEcmCalculator and renderEcmResults
+{
+  const noCr = (t) => t.split(String.fromCharCode(13)).join('');
+  const ecmSrc = noCr(fs.readFileSync(path.join(REPO, 'app', 'ecm-calculators.js'), 'utf8'));
+  const autofill = noCr(fs.readFileSync(path.join(REPO, 'app', 'calc-autofill.js'), 'utf8'));
+  const region = ecmSrc.slice(ecmSrc.indexOf('function renderEcmCalculator('), ecmSrc.indexOf('/* ─── Input Validation Helpers'));
+  if (!region || region.length < 1000) problems.push('app/ecm-calculators.js: render functions not found');
+  const USER_TEXT = /buildingName|backLabel|\bb\.name|\.reason|sourceLabel|\.label\b|\.help\b|\.unit\b|\.formula|\.assumption|\.description|\btmpl\.name|\btmpl\.category|\btmpl\.icon|\.desc\b/;
+  let i = 0;
+  while ((i = region.indexOf('${', i)) >= 0) {
+    let depth = 1;
+    let j = i + 2;
+    while (j < region.length && depth > 0) {
+      if (region[j] === '{') depth++;
+      else if (region[j] === '}') depth--;
+      j++;
+    }
+    const expr = region.slice(i + 2, j - 1);
+    const line = ecmSrc.slice(0, ecmSrc.indexOf(region) + i).split('\n').length;
+    if (USER_TEXT.test(expr) && !/_escHtml\(|chCalcFieldHintHTML\(/.test(expr))
+      problems.push('app/ecm-calculators.js:' + line + '  ${' + expr.slice(0, 60) + '} prints user-data text without _escHtml');
+    i = j;
+  }
+
+  const evil = '<img src=x onerror=alert(1)>';
+  const attackAttr = '" onfocus="alert(1)';
+  const stub = () => ({ addEventListener() {}, value: '' });
+  const out = { html: '' };
+  const container = {
+    set innerHTML(v) { out.html += v; },
+    get innerHTML() { return out.html; },
+    querySelector: stub,
+  };
+  const ctxSb = {
+    console,
+    document: { getElementById: () => null, createElement: () => ({ style: {} }), head: { appendChild() {} } },
+    requestAnimationFrame() {},
+    projects: [{ id: 'p1' }],
+    getUDBldgs: () => [{ id: evil, name: evil }, { id: 'b2', name: attackAttr }],
+    getUDBldg: (pid, id) => ({ id, name: evil, sqft: 1000 }),
+    ecmMeasureDollars: () => 0,
+    calcMeasureDollars: () => ({ total: 0 }),
+    measureRatesNow: () => ({}),
+  };
+  vm.createContext(ctxSb);
+  vm.runInContext(noCr(fs.readFileSync(path.join(REPO, 'lib', 'formatting.js'), 'utf8')), ctxSb);
+  vm.runInContext(noCr(fs.readFileSync(path.join(REPO, 'computations', 'physics.js'), 'utf8')), ctxSb);
+  vm.runInContext(autofill, ctxSb);
+  vm.runInContext(noCr(fs.readFileSync(path.join(REPO, 'computations', 'end-use.js'), 'utf8')), ctxSb);
+  vm.runInContext(ecmSrc.replace(/\bconst\s+(ECM_TEMPLATES|ECM_MEASURE_FIELD_MAP)\b/g, 'var $1'), ctxSb);
+  // the two readers of the load estimate answer with hostile labels (a building or source name is user data)
+  ctxSb.getEndUse = () => ({ modeled: true, source: 'bills', annual: 1000, sourceLabel: evil, label: evil });
+  ctxSb.getEndUseWeights = () => ({ ok: true, weights: Array(12).fill(1 / 12), endUse: 'cooling', eu: { label: evil, sourceLabel: evil } });
+  const ctx = { projId: 'p1', buildingId: 'b2', buildingName: evil, backLabel: evil };
+  ctxSb.renderEcmCalculator('rtu_replacement', container, { existing_cooling_kwh: attackAttr + evil }, null, null, ctx, ['existing_cooling_kwh']);
+  const results = ctxSb.calculateEcm('rtu_replacement', Object.fromEntries(ctxSb.ECM_TEMPLATES.rtu_replacement.inputs.map((x) => [x.id, x.default])));
+  ctxSb.renderEcmResults('rtu_replacement', results, container, ctx, {});
+  const html = out.html;
+  if (html.length < 500) problems.push('ECM render test: the real render functions printed almost nothing');
+  if (/<img/i.test(html)) problems.push('ECM calculator HTML prints a hostile building or source label as markup');
+  if (!html.includes('&lt;img src=x onerror=alert(1)&gt;')) problems.push('ECM render test: the hostile text did not reach the page as text');
+  if (/onfocus="alert/.test(html)) problems.push('ECM calculator HTML lets a typed value or building name break out of an attribute');
+}
+
 
 if (problems.length) {
   console.log('FAIL: single HTML escape gate - ' + problems.length + ' problem(s)');

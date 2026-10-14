@@ -80,6 +80,13 @@ function check(files) {
       bad.push(p + ': reads the load estimate end-use field ' + m[0] + ' (ask getEndUse, computations/end-use.js)');
   });
 
+  // 3b. getEndUse never reads the stored snapshot (b.hvacLoad.est): it asks hvacEstimateForBuilding, which calculates
+  // from the bills (measured split) so a moved-over snapshot can never freeze a rule-of-thumb split.
+  const eu = stripComments(files['computations/end-use.js']);
+  if (/hvacLoadStoredFor|hvacLoad\.est|computeHvacLoadEstimate|_hvlThumbDefaults/.test(eu))
+    bad.push('computations/end-use.js: reads a stored estimate or calculates one itself (use hvacEstimateForBuilding)');
+  if (!/\bhvacEstimateForBuilding\(/.test(eu)) bad.push('computations/end-use.js: getEndUse does not use hvacEstimateForBuilding');
+
   // 4. BAS Section D
   const calc = files['app/calculators.js'];
   const bas = slice(calc, 'function openBASCalc(', '\nfunction ');

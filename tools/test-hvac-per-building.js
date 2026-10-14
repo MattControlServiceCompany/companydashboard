@@ -78,6 +78,8 @@ const code = [
   fnSource(CALC, 'resolveHvacLoadData'),
   fnSource(CALC, 'computeHvacLoadEstimate'),
   fnSource(CALC, 'hvacLoadStoredFor'),
+  fnSource(CALC, 'hvacEstimateForBuilding'),
+  fnSource(CALC, 'hvlBasisLabel'),
   fnSource(CALC, 'hvacLoadProjectRollup'),
   'const _HVL_ROLLUP_FIELDS = ' + /const _HVL_ROLLUP_FIELDS = (\[[\s\S]*?\]);/.exec(CALC)[1] + ';',
   fnSource(CALC, '_hvlFieldsFor'),
@@ -144,6 +146,7 @@ function makeEnv() {
     flags,
     calls,
     fields,
+    shown: {},
     bldgs,
     getUDBldgs: () => bldgs,
     getUDBldg: (pid, id) => bldgs.find((b) => b.id === id),
@@ -181,7 +184,9 @@ function makeEnv() {
     document: {
       getElementById: (id) => {
         const m = /^hvl-t-(\w+)-7$/.exec(id);
-        return m && sb.fields[m[1]] != null ? { value: String(sb.fields[m[1]]) } : null;
+        return m && sb.fields[m[1]] != null
+          ? { value: String(sb.fields[m[1]]), dataset: { default: String(sb.shown[m[1]] != null ? sb.shown[m[1]] : sb.fields[m[1]]) } }
+          : null;
       },
     },
     emLoadMatrix: undefined,
@@ -332,8 +337,35 @@ console.log('--- 3. two buildings calculated in turn each keep their own estimat
   assert(near(ru.totalKwh, A.est.totalKwh + B.est.totalKwh), 'roll-up totalKwh = sum of the buildings');
   assert(near(ru.hvacKwh, A.est.hvacKwh + B.est.hvacKwh), 'roll-up hvacKwh = sum of the buildings');
   // roll-up is computed: change one building and it follows, no stored copy
+  // a stored snapshot is not a source of truth: the roll-up calculates from the bills
+  const wantRoll = A.est.hvacKwh + B.est.hvacKwh;
   sb.bldgs[0].hvacLoad.est.hvacKwh = 1;
-  assert(near(sb.hvacLoadProjectRollup(7).hvacKwh, 1 + B.est.hvacKwh), 'roll-up follows the buildings (never stored)');
+  assert(
+    near(sb.hvacLoadProjectRollup(7).hvacKwh, wantRoll),
+    'roll-up ignores a stale stored estimate and calculates from the bills',
+  );
+  // measured method: cooling = bills above the 3-lowest-month base load
+  {
+    const base = [...E_A].sort((a, c) => a - c).slice(0, 3).reduce((x, y) => x + y, 0) / 3;
+    const cool = E_A.reduce((x, v) => x + Math.max(0, v - base), 0);
+    const calc = sb.hvacEstimateForBuilding(7, 'bA');
+    assert(near(calc.est.hvacKwh, cool, 1e-6), 'measured HVAC kWh = bills above the base load, not 45% of the total');
+    assert(calc.est.basis.hvacKwh === 'measured' && calc.est.basis.hvacGas === 'measured', 'basis says measured');
+    assert(calc.est.basis.hvacKw === 'rule', 'demand split is labelled a rule of thumb');
+    assert(near(calc.est.monthlyHvacKwh.reduce((x, v) => x + v, 0), cool, 1e-6), 'measured months add up to the annual number');
+    assert(near(calc.est.monthlyHvacKwh[0], Math.max(0, E_A[0] - base), 1e-6), 'a measured month is the bill above the base load');
+    assert(near(calc.est.hvacKwh + calc.est.nonHvacKwh, calc.est.totalKwh, 1e-6), 'HVAC + non-HVAC = total');
+    assert(calc.estimate === 'saved' && calc.method === 'thumb', 'saved building uses its saved method');
+    // a typed percentage is an explicit override and wins; the same value as shown is not
+    sb.shown.kwhPct = 30; // screen showed 30, person left 45 typed
+    sb._hvlSelBldg[7] = 'bA';
+    sb.hvacLoadSave(7);
+    const ov = sb.hvacEstimateForBuilding(7, 'bA');
+    assert(ov.est.basis.hvacKwh === 'override' && near(ov.est.hvacKwh, 0.45 * ov.est.totalKwh, 1e-6), 'typed percentage overrides the measured split');
+    sb.shown.kwhPct = 45;
+    sb.hvacLoadSave(7);
+    assert(sb.hvacEstimateForBuilding(7, 'bA').est.basis.hvacKwh === 'measured', 'a value left at the shown default is not an override');
+  }
   // live calc without Save stores nothing
   sb.bldgs[2].meters = [meter('eC', 'Electric', { e: E_B, kw: E_B.map((v) => v / 30) })];
   sb._hvlSelBldg[7] = 'bC';
@@ -359,14 +391,14 @@ console.log('--- 4. one-time data move ---');
   const A = sb.bldgs[0].hvacLoad;
   const B = sb.bldgs[1].hvacLoad;
   assert(
-    A && A.est && near(A.est.hvacKwhPct, 50) && near(A.est.hvacGasPct, 70),
-    'building A recalculated with its own saved inputs',
+    A && A.est && A.est.basis.hvacKwh === 'measured' && A.est.basis.hvacGas === 'measured',
+    'building A: moved inputs without an override flag do not freeze a split over the bills',
   );
   assert(A.savedAt === 1700000000000, 'saved time carried over');
   assert(A.inputs.thumb.kwhPct === '50', 'saved inputs moved onto the building');
   assert(
-    B && B.est && near(B.est.hvacKwhPct, 45) && B.savedAt === 1700000000000,
-    'building B recalculated from the Rules of Thumb start values',
+    B && B.est && B.est.basis.hvacKwh === 'measured' && B.savedAt === 1700000000000,
+    'building B recalculated from the bills (measured split)',
   );
   assert(near(B.est.totalKwh, 2 * E_B.reduce((s, v) => s + v, 0)), 'building B estimate uses its own resolver data');
   assert(sb.bldgs[2].hvacLoad === undefined, 'building with no utility data gets no estimate');

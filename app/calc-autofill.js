@@ -392,5 +392,5 @@ function chResolveCalcField(savedValue, shippedDefault, autoResult, touchedField
 function chCalcFieldHintHTML(hint) {
   if (!hint) return '';
   const isAuto = hint.indexOf('from ') === 0;
-  return `<div style="font-size:9px;color:${isAuto ? 'var(--em)' : 'var(--text3)'};margin-top:2px">${isAuto ? '✓ ' : ''}${hint}</div>`;
+  return `<div style="font-size:9px;color:${isAuto ? 'var(--em)' : 'var(--text3)'};margin-top:2px">${isAuto ? '✓ ' : ''}${_escHtml(hint)}</div>`;
 }

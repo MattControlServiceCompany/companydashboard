@@ -6,13 +6,13 @@
 // cooling kWh / heating Therms / HVAC kWh does this building use". Nothing else may read b.hvacLoad.est for an
 // end-use quantity (tools/gate-ecm-templates-no-dollars.js checks this).
 //
-// Where the numbers come from (never a second estimate):
-//   1. the building's stored HVAC Load Estimate, b.hvacLoad.est (hvacLoadStoredFor, app/calculators.js), saved by a
-//      person or moved over from the old project estimate; else
-//   2. the same estimate calculated now (computeHvacLoadEstimate) from the building's data (resolveHvacLoadData)
-//      with the Rules of Thumb start values (_hvlThumbDefaults) - exactly what the HVAC Load Estimate tab shows
-//      for a building nobody has saved yet; else
-//   3. nothing: source 'none'.
+// Where the numbers come from (never a second estimate): hvacEstimateForBuilding (app/calculators.js) calculates the
+// building's estimate now from its data (resolveHvacLoadData). It never reads a stored snapshot (b.hvacLoad.est):
+//   - monthly bills: the split is the measured 3-lowest-month baseload split (computations/hvac-enduse.js), unless
+//     a person typed a percentage over it (an explicit override saved with the building);
+//   - annual totals only (quick entry): Rules of Thumb percentages;
+//   - no data: nothing, source 'none'.
+// result.basis says which one produced the number ('measured', 'rule', 'override', 'method').
 // The data under the estimate is bills (monthly) or the quick annual entry (annual only, no monthly values are made up).
 //
 // End uses the estimate models today: cooling, heatingElectric, heatingGas, hvacElectric (cooling + electric
@@ -22,20 +22,29 @@
 // Monthly arrays are indexed by calendar month, Jan(0)..Dec(11), the same indexing the Energy Savings matrix uses.
 
 var END_USES = {
-  cooling: { unit: 'kWh', label: 'Cooling', annual: 'coolKwhTotal', monthly: 'monthlyCoolKwh', kw: 'hvac' },
+  cooling: {
+    unit: 'kWh',
+    label: 'Cooling',
+    annual: 'coolKwhTotal',
+    monthly: 'monthlyCoolKwh',
+    basis: 'coolKwh',
+    kw: 'hvac',
+  },
   heatingElectric: {
     unit: 'kWh',
     label: 'Electric heating',
     annual: 'heatKwhTotal',
     monthly: 'monthlyHeatKwh',
+    basis: 'heatKwh',
     kw: 'hvac',
   },
-  heatingGas: { unit: 'Therms', label: 'Gas heating', annual: 'hvacGasT', monthly: 'monthlyHvacGas', kw: null },
+  heatingGas: { unit: 'Therms', label: 'Gas heating', annual: 'hvacGasT', monthly: 'monthlyHvacGas', basis: 'hvacGas', kw: null },
   hvacElectric: {
     unit: 'kWh',
     label: 'HVAC electric (cooling, electric heating, fans and pumps)',
     annual: 'hvacKwh',
     monthly: 'monthlyHvacKwh',
+    basis: 'hvacKwh',
     kw: 'hvac',
   },
   nonHvacElectric: {
@@ -43,6 +52,7 @@ var END_USES = {
     label: 'Non-HVAC electric (lighting, plug loads and other, not split)',
     annual: 'nonHvacKwh',
     monthly: 'monthlyNonHvacKwh',
+    basis: 'nonHvacKwh',
     kw: 'nonHvac',
   },
 };
@@ -57,6 +67,7 @@ function _euNotAvailable(endUse, label, unit, modeled, sourceLabel) {
     source: 'none',
     sourceLabel: sourceLabel,
     estimate: null,
+    basis: null,
     annual: null,
     monthly: null,
     kw: null,
@@ -76,7 +87,7 @@ function _euMonthlyOrNull(arr) {
  * @param {string} bldgId
  * @param {string} endUse - a key of END_USES (cooling, heatingElectric, heatingGas, hvacElectric, nonHvacElectric)
  * @returns {{endUse:string, label:string, modeled:boolean, unit:string|null,
- *   source:'bills'|'annual'|'none', sourceLabel:string, estimate:'saved'|'calculated'|'default'|null,
+ *   source:'bills'|'annual'|'none', sourceLabel:string, estimate:'saved'|'default'|null, basis:'measured'|'rule'|'override'|'method'|null,
  *   annual:number|null, monthly:number[]|null,
  *   kw:{annual:number, monthly:number[]|null, peak:number|null}|null}}
  *   annual = quantity per year in `unit`; monthly = 12 calendar-month values that add up to annual, or null
@@ -98,28 +109,22 @@ function getEndUse(projId, bldgId, endUse) {
   var b = bldgId && typeof getUDBldg === 'function' ? getUDBldg(projId, bldgId) : null;
   if (!b) return _euNotAvailable(endUse, def.label, def.unit, true, 'No building chosen');
 
-  var stored = typeof hvacLoadStoredFor === 'function' ? hvacLoadStoredFor(projId, bldgId) : null;
-  var est = null;
-  var estimate = null;
-  var sourceLabel = '';
-  var source = 'none';
-  if (stored) {
-    est = stored.est;
-    estimate = stored.savedAt ? 'saved' : 'calculated';
-    source = est.dataSource || 'none';
-    sourceLabel =
-      'HVAC Load Estimate (' +
-      (stored.savedAt ? 'saved ' + new Date(stored.savedAt).toLocaleDateString() : 'calculated, not saved yet') +
-      '), ' +
-      (est.dataSourceLabel || source);
-  } else {
-    var resolved = resolveHvacLoadData(projId, b);
-    if (resolved.source === 'none') return _euNotAvailable(endUse, def.label, def.unit, true, resolved.label);
-    est = computeHvacLoadEstimate('thumb', resolved, _hvlThumbDefaults(projId, bldgId), parseInt(b.sqft) || 0);
-    estimate = 'default';
-    source = resolved.source;
-    sourceLabel = 'HVAC Load Estimate (Rules of Thumb start values, not saved yet), ' + resolved.label;
+  var calc = hvacEstimateForBuilding(projId, bldgId);
+  if (!calc) {
+    var none = resolveHvacLoadData(projId, b);
+    return _euNotAvailable(endUse, def.label, def.unit, true, none.label);
   }
+  var est = calc.est;
+  var basis = est.basis[def.basis] || '';
+  var source = calc.resolved.source;
+  var sourceLabel =
+    'HVAC Load Estimate (' +
+    (calc.savedAt ? 'saved ' + new Date(calc.savedAt).toLocaleDateString() : 'not saved yet') +
+    '), ' +
+    hvlBasisLabel(basis) +
+    ', ' +
+    calc.resolved.label;
+  var estimate = calc.estimate;
 
   var annual = parseFloat(est[def.annual]);
   var monthly = _euMonthlyOrNull(est[def.monthly]);
@@ -141,6 +146,7 @@ function getEndUse(projId, bldgId, endUse) {
     source: source,
     sourceLabel: sourceLabel,
     estimate: estimate,
+    basis: basis,
     annual: isFinite(annual) ? annual : null,
     monthly: monthly,
     kw: kw,
