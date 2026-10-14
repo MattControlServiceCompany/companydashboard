@@ -119,7 +119,7 @@ const src = [
   loadFn(WD, 'wdComputeSetpointOptions'),
   loadFn(CALC, '_hvlMonthlyBaseline'),
   loadFn(CALC, '_hvlMeterMoMap'),
-  require('fs').readdirSync(require('path').join(__dirname, '..', 'app')).filter((f) => /^report-engine-.*\.js$/.test(f)).map((f) => require('fs').readFileSync(require('path').join(__dirname, '..', 'app', f), 'utf8')).map((s) => /function _wdAssignedYm[\s\S]*?\r?\n}/.exec(s)).filter(Boolean)[0][0],
+  require('./month-rule-src.js')(),
   loadFn(CALC, '_hvlMergeMoMaps'),
   loadFn(CALC, 'getHvacQuickAnnual'),
   loadFn(CALC, 'resolveHvacLoadData'),

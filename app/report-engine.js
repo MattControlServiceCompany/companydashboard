@@ -892,8 +892,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
   const rawBills = [];
   allBldgMeters.forEach(({ b, m, bills }) => {
     (bills || []).forEach((bill) => {
-      var _billYm =
-        normMonth(bill.start, bill.end, m.inclusive !== false, bills) || (bill.start ? bill.start.substring(0, 7) : '');
+      var _billYm = billMonth(bill, bills);
       if (!reportYMs.includes(_billYm)) return;
       rawBills.push({
         // Month of THIS bill within its own meter's bill chain. Appendix D groups by this value and never

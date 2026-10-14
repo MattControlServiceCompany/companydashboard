@@ -528,24 +528,15 @@ function egfxRefresh(projId) {
       // treating every bill as baseline so graphics still render against stored data.
       const blSet = Array.isArray(bl.months) && bl.months.length ? new Set(bl.months) : null;
 
-      const _mIncl = m.inclusive !== false;
       const _mBills = m.bills || [];
       _mBills.forEach((bill) => {
-        // Use normMonth for consistent month assignment across all views
-        let ym = normMonth(bill.start, bill.end, _mIncl, _mBills);
+        // billMonth: the one month rule across all views
+        const ym = billMonth(bill, _mBills);
         let yr = null,
           mi = -1;
-        if (ym && /^\d{4}-\d{2}/.test(ym)) {
+        if (/^\d{4}-\d{2}/.test(ym)) {
           yr = parseInt(ym.slice(0, 4));
           mi = parseInt(ym.slice(5, 7)) - 1;
-        } else {
-          // Fallback for bills without valid dates
-          const ymSrc = bill.end || bill.start || '';
-          if (ymSrc && /^\d{4}-\d{2}/.test(ymSrc)) {
-            yr = parseInt(ymSrc.slice(0, 4));
-            mi = parseInt(ymSrc.slice(5, 7)) - 1;
-            ym = ymSrc.slice(0, 7);
-          }
         }
         if (mi < 0) return;
 

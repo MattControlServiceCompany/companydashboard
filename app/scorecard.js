@@ -356,7 +356,7 @@ function renderBuildingScorecardPane(pane, b, projId) {
       propLast = 0;
     (b.meters || []).forEach(function (m) {
       (m.bills || []).forEach(function (bill) {
-        var ym = (bill.start || '').substring(0, 7);
+        var ym = billMonth(bill, m.bills);
         if (!last12YM.length || last12YM.includes(ym) || ymKeys.length === 0) {
           if (m.commodity === 'Electric') kwhLast += parseFloat(bill.kwh || bill.kWh) || 0;
           else if (m.commodity === 'Gas') thermsLast += resolveGasUsageTherms(bill);

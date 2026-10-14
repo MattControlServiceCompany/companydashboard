@@ -411,10 +411,6 @@ function _wdBillDays(bill) {
   var n = parseFloat(bill && bill.numberOfDays);
   return n > 0 ? n : null;
 }
-function _wdAssignedYm(bill) {
-  var d = bill.end || bill.start || '';
-  return (d + '').slice(0, 7);
-}
 // _wdRoundHalfUp — the ONE rounding convention for every displayed value in this report
 // (Calc re-audit, 2026-09-22, defect #3/#8). Plain Math.round()/toFixed() are NOT safe here:
 // toFixed() can round a true .xx5 boundary the wrong way when the value's binary float
@@ -661,7 +657,7 @@ function _wdBuildMeterBaseline(m) {
   var months = m.baseline.months.slice().sort();
   var rows = [];
   (m.bills || []).forEach(function (bill) {
-    var ym = _wdAssignedYm(bill);
+    var ym = billMonth(bill, m.bills);
     if (months.indexOf(ym) === -1) return;
     rows.push({ ym: ym, bill: bill });
   });
@@ -727,7 +723,7 @@ function _wdRawBillMeters(b) {
   };
 }
 // _wdHvacFullYear — { elec, gas }: true when the building's baseline has bills in all 12 calendar months, read
-// through resolveHvacLoadData (every included meter, exclusions honored; a month no bill ends in is null).
+// through resolveHvacLoadData (every included meter, exclusions honored; a month no bill falls in is null).
 // The setpoint-report gate and the model (_wdBaselineHvac) use this same data, so they can never disagree.
 function _wdHvacFullYear(projId, b) {
   var r = resolveHvacLoadData(projId, b);

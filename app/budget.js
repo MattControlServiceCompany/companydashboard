@@ -82,7 +82,7 @@ function getBudgetForMonth(budgetLine, yearMonth) {
 
 /* ── Actual cost from bill tree ── */
 // Returns actual $ for a commodity + optional buildingId for a given YYYY-MM
-// Uses bill.end date to assign month (consistent with rest of app)
+// Assigns each bill to a month with billMonth, the one month rule used by every page.
 function getActualForMonth(projId, commodity, buildingId, yearMonth) {
   const bldgs = getUDBldgs(projId) || [];
   if (!bldgs.length) return null;
@@ -94,11 +94,7 @@ function getActualForMonth(projId, commodity, buildingId, yearMonth) {
     for (const m of b.meters || []) {
       if (commodityMatch && m.commodity !== commodityMatch) continue;
       for (const bill of m.bills || []) {
-        // Assign bill to month of its end date
-        const endDate = bill.end || bill.start || '';
-        if (!endDate) continue;
-        const billYM = endDate.substring(0, 7); // 'YYYY-MM'
-        if (billYM === yearMonth) {
+        if (billMonth(bill, m.bills) === yearMonth) {
           const cost =
             parseFloat(bill.totalCost) ||
             getBillGasCost(bill) ||

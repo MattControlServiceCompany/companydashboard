@@ -70,7 +70,7 @@ const code = [
   'const SAVE_ALL_PROJECTS = Symbol("all");',
   fnSource(CALC, '_hvlKey'),
   fnSource(CALC, '_hvlMeterMoMap'),
-  require('fs').readdirSync(require('path').join(__dirname, '..', 'app')).filter((f) => /^report-engine-.*\.js$/.test(f)).map((f) => require('fs').readFileSync(require('path').join(__dirname, '..', 'app', f), 'utf8')).map((s) => /function _wdAssignedYm[\s\S]*?\r?\n}/.exec(s)).filter(Boolean)[0][0],
+  require('./month-rule-src.js')(),
   fnSource(CALC, '_hvlMergeMoMaps'),
   fnSource(CALC, '_hvlMonthlyBaseline'),
   fnSource(CALC, 'getHvacQuickAnnual'),
@@ -290,15 +290,15 @@ console.log('--- 2. resolver: included meters summed, excluded meter ignored, no
   r = sb.resolveHvacLoadData(7, onlyExcluded);
   assert(r.source === 'none' && /excluded/.test(r.label), 'a building whose meters are all excluded says so, got: ' + r.label);
 
-  // A month no bill ends in stays null: the Feb bill ends in March, so Feb has no bill.
+  // A month no bill falls in stays null: the Feb bill is missing (one billMonth rule, the chain), so Feb has no bill.
   const feb = sb.bldgs[1];
-  const shifted = billsFor(YMS).map((x, i) => (i === 1 ? { start: '2026-02-01', end: '2026-03-02' } : x));
+  const shifted = billsFor(YMS).filter((x, i) => i !== 1);
   feb.meters[0].bills = shifted;
   feb.meters[1].bills = shifted;
   feb.meters[2].bills = shifted;
   r = sb.resolveHvacLoadData(7, feb);
-  assert(r.kwhArr[1] === null, 'a month no bill ends in is null, not 0');
-  assert(r.kwhArr[2] !== null, 'the month the bill ends in is populated');
+  assert(r.kwhArr[1] === null, 'a month no bill falls in is null, not 0');
+  assert(r.kwhArr[2] !== null, 'the month a bill falls in is populated');
   assert(r.billMonths === 11, '11 populated months, got ' + r.billMonths);
   assert(r.enduse.elecValid, '11 populated months still give a valid baseload');
 }
@@ -496,7 +496,7 @@ console.log('--- 5. static gates ---');
   // 5f. D2: the resolver path owns no month rule of its own
   const mm = strip(fnSource(CALC, '_hvlMeterMoMap'));
   assert(!/slice\(0, ?7\)/.test(mm), '_hvlMeterMoMap has no private end-month slice');
-  assert(/_wdAssignedYm\(/.test(mm), '_hvlMeterMoMap uses the one end-month function _wdAssignedYm');
+  assert(/billMonth\(/.test(mm) && !/normMonth\(/.test(mm), '_hvlMeterMoMap uses the one month function billMonth');
 
   // 5g. D3: no HVAC / report baseline code reads bills outside the resolver. Every function of a report engine
   // file or the Energy Graphics file whose name says HVAC, baseline, setpoint or report-gate is checked.

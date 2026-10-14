@@ -275,11 +275,11 @@ function _hvlSelectBldg(projId, bldgId) {
 // _hvlMeterMoMap — one meter's baseline-month data (getNormRows + buildMoMap). Returns
 // { map, billMo, kwRecords }:
 //  map      = the buildMoMap output (elecByMo / gasByMo / propaneByMo, keyed by calendar month 0-11);
-//  billMo   = billMo[mo] is true when a bill ENDING in a baseline month of that calendar month exists.
-//             buildMoMap puts a whole bill in the month it ends in, so a month no bill ends in reads 0 in
-//             the map and must stay "no data" (null), never a real 0 (computeHvacEnduse rule);
-//  kwRecords = every bill of an Electric meter (any year) with its billed kW and its month (normMonth, the
-//             month buildMoMap uses for kW), so computeHvacDemand can name the bill that set Facilities kW.
+//  billMo   = billMo[mo] is true when a bill that billMonth puts in a baseline month of that calendar month
+//             exists. A month with no such bill reads 0 in the map and must stay "no data" (null), never a
+//             real 0 (computeHvacEnduse rule);
+//  kwRecords = every bill of an Electric meter (any year) with its billed kW and its month (billMonth, the
+//             month buildMoMap uses for every field), so computeHvacDemand can name the bill that set Facilities kW.
 function _hvlMeterMoMap(meter, wxByYm) {
   const out = { map: {}, billMo: Array(12).fill(false), kwRecords: [] };
   if (!meter) return out;
@@ -291,13 +291,13 @@ function _hvlMeterMoMap(meter, wxByYm) {
   const blRows = blMonths.length >= 3 ? allRows.filter((r) => blMonths.includes(r.ym)) : allRows.slice(-12);
   if (!blRows.length || typeof buildMoMap !== 'function') return out;
   out.map = buildMoMap(meter, blRows, bills, incl);
-  // billMo uses the one existing end-month rule, _wdAssignedYm (buildMoMap puts a whole bill in this month).
+  // billMo uses billMonth, the one month rule (buildMoMap puts a whole bill in this month).
   blRows.forEach((r) => {
-    if (bills.some((x) => _wdAssignedYm(x) === r.ym)) out.billMo[parseInt(r.ym.split('-')[1], 10) - 1] = true;
+    if (bills.some((x) => billMonth(x, bills) === r.ym)) out.billMo[parseInt(r.ym.split('-')[1], 10) - 1] = true;
   });
-  if (meter.commodity === 'Electric' && typeof normMonth === 'function') {
+  if (meter.commodity === 'Electric') {
     out.kwRecords = bills.map((x) => ({
-      ym: normMonth(x.start, x.end, incl, bills),
+      ym: billMonth(x, bills),
       kw: parseFloat(x.billedKW || x.demandKW) || 0,
     }));
   }
@@ -3450,28 +3450,14 @@ function _solarGetBaselineBills(p, meterFilter) {
       const bills = m.bills || [];
       // Filter to baseline-selected months only; if no baseline set, use all bills
       const use = blMonths.length
-        ? bills.filter((bill) => {
-            // Get year-month from bill end date to match baseline month format
-            if (!bill.end) return false;
-            const d = parseLocalISODate(bill.end) || new Date(bill.end);
-            if (isNaN(d)) return false;
-            const ym = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
-            return blMonths.includes(ym);
-          })
+        ? bills.filter((bill) => blMonths.includes(billMonth(bill, bills)))
         : bills;
-      // Accumulate raw bill data by calendar month (from end date)
+      // Accumulate raw bill data by calendar month (billMonth, the one month rule)
       const moCount = Array(12).fill(0); // track count for averaging if >12 baseline months
       use.forEach((bill) => {
-        let mi = -1;
-        if (bill.end) {
-          const d = parseLocalISODate(bill.end) || new Date(bill.end);
-          if (!isNaN(d)) mi = d.getMonth();
-        }
-        if (mi < 0 && bill.start) {
-          const d = parseLocalISODate(bill.start) || new Date(bill.start);
-          if (!isNaN(d)) mi = d.getMonth();
-        }
-        if (mi < 0) return;
+        const billYm = billMonth(bill, bills);
+        if (!billYm) return;
+        const mi = parseInt(billYm.slice(5, 7), 10) - 1;
         moCount[mi]++;
         R.kwh[mi] += parseBillNumber(bill.kwh) || parseBillNumber(bill.usage);
         R.billedKw[mi] = Math.max(R.billedKw[mi], parseBillNumber(bill.billedKW) || parseBillNumber(bill.demandKW) || parseBillNumber(bill.kw));

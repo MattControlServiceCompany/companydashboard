@@ -14,10 +14,8 @@ function computeMeterQualityScore(m, building) {
   // ── 1. dataMonths (max 25) ──
   var ymSet = {};
   bills.forEach(function (b) {
-    if (b.start) {
-      var ym = String(b.start).slice(0, 7); // "YYYY-MM"
-      ymSet[ym] = true;
-    }
+    var ym = billMonth(b, bills); // "YYYY-MM", '' when the bill has no date
+    if (ym) ymSet[ym] = true;
   });
   var uniqueMonths = Object.keys(ymSet).length;
   var dataMonthsPts = uniqueMonths >= 24 ? 25 : Math.min(25, Math.round((uniqueMonths / 24) * 25));
