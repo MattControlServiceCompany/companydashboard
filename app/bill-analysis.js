@@ -17428,7 +17428,7 @@ function renderMultiBillUI(bills, box) {
     const yy = m[3].length === 4 ? m[3].slice(2) : m[3];
     return mm + '/' + dd + '/' + yy;
   };
-  // Month assignment goes through the ONE keeper, normMonth (computations/normalization.js):
+  // Month assignment goes through the ONE keeper, billMonth (computations/normalization.js):
   // majority-days month for one bill, plus the Dec/Jan/Feb continuity chain across a group.
   // Dates here are MM/DD/YYYY (Utility E) or YYYY-MM-DD, so they are turned into ISO first.
   const _parseDt = (str) => {
@@ -17461,7 +17461,7 @@ function renderMultiBillUI(bills, box) {
     const s = _parseDt(bill.BillingPeriodStart);
     const e = _parseDt(bill.BillingPeriodEnd);
     if (!s || !e || s > e) return '';
-    return _ymLabel(normMonth(_isoOf(s), _isoOf(e), true));
+    return _ymLabel(billMonth({ start: _isoOf(s), end: _isoOf(e) }));
   };
   // Consecutive-aware month labels per commodity group so bills like 12/15-1/14 (majority Dec)
   // and 1/14-2/20 (majority Feb) do not skip January.
@@ -17485,7 +17485,7 @@ function renderMultiBillUI(bills, box) {
       if (item.dd && !item.s) {
         ym = _isoOf(item.dd).slice(0, 7);
       } else if (item.s && item.e) {
-        ym = normMonth(_isoOf(item.s), _isoOf(item.e), true, periodBills);
+        ym = billMonth({ start: _isoOf(item.s), end: _isoOf(item.e) }, periodBills);
       }
       _monthLabelMap[item.i] = ym ? _ymLabel(ym) : '';
     }

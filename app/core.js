@@ -1882,7 +1882,7 @@ function _dashGetBaselineBills(m) {
   if (!blMonths.length) return [];
   const incl = m.inclusive !== false;
   return bills.filter((b) => {
-    const ym = normMonth(b.start, b.end, incl, bills);
+    const ym = billMonth(b, bills);
     return blMonths.includes(ym);
   });
 }
@@ -2057,7 +2057,7 @@ function initDashboardTab(projId) {
         // Usage for EUI
         const _blEndYM = bl.months.slice().sort().pop();
         const _curBills = bills.filter((bill) => {
-          const ym = normMonth(bill.start, bill.end, incl, bills);
+          const ym = billMonth(bill, bills);
           return ym && ym > _blEndYM;
         });
         if (m.commodity === 'Gas') {
@@ -2204,7 +2204,7 @@ function initDashboardTab(projId) {
     meters.forEach((m) => {
       const incl2 = m.inclusive !== false;
       (m.bills || []).forEach((bill) => {
-        const ym = normMonth(bill.start, bill.end, incl2, m.bills || []);
+        const ym = billMonth(bill, m.bills || []);
         if (ym && ym > (m.baseline && m.baseline.months ? m.baseline.months.slice().sort().pop() : ''))
           _curMoSet.add(ym);
       });

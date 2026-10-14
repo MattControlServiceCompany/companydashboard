@@ -42,7 +42,7 @@ function rates(commodity, bills, provider) {
   S.getUDBldgs = () => [bld];
   S._dashGetBaselineBills = (m) => m.bills;
   S._udProjBaselineMonthsFallback = () => null;
-  S.normMonth = (s, e) => e.slice(0, 7);
+  S.billMonth = (b) => b.end.slice(0, 7);
   S.getMeterBillUnit = () => 'gal';
   return S.computeSeasonalBldgRates(1, 'b');
 }

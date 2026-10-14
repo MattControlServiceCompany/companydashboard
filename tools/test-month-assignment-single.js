@@ -66,10 +66,10 @@ for (const [file, fn] of [
     { start: '2026-02-20', end: '2026-03-20' },
     { start: '2026-03-20', end: '2026-04-19' },
   ];
-  const chain = bills.map((b) => ctx.normMonth(b.start, b.end, true, bills));
+  const chain = bills.map((b) => ctx.billMonth(b, bills));
   assert(chain.join() === '2025-12,2026-01,2026-02,2026-03', 'keeper chain Dec/Jan/Feb/Mar, got ' + chain.join());
   const flagSrc = read('computations/bill-flags.js');
-  assert(/normMonth\(b\.start, b\.end, incl, sortedAll\)/.test(flagSrc), 'P2a the flag engine month is the keeper normMonth over the meter bills');
+  assert(/billMonth\(b, sortedAll\)/.test(flagSrc), 'P2a the flag engine month is the keeper billMonth over the meter bills');
   assert(!/function _billNormMonth|_monthToSeason/.test(read('app/bill-analysis.js')), 'P2a no second month rule in bill-analysis.js');
 }
 
@@ -145,8 +145,8 @@ for (const [file, fn] of [
   }
   const re = read('app/report-engine.js');
   assert(
-    !/normMonth\(bill\.start, bill\.end, true, d\.rawBills/.test(re),
-    'G Appendix D does not re-run normMonth on pooled bills',
+    !/billMonth\(bill, d\.rawBills/.test(re),
+    'G Appendix D does not re-run billMonth on pooled bills',
   );
 }
 

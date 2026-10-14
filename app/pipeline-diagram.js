@@ -378,7 +378,7 @@ function _pdNodeDetail(nodeId, m, bills, incl) {
         }
         // Estimate rate from baseline bills
         const blBills = bills.filter((b) => {
-          const ym = normMonth ? normMonth(b.start, b.end, incl, bills) : null;
+          const ym = billMonth(b, bills);
           return ym && bl.months.includes(ym);
         });
         const avgRate = blBills.length
@@ -491,7 +491,7 @@ function _pdNodeDetail(nodeId, m, bills, incl) {
         // This is used only for display — detection residuals still use the day-prorated getNormRows() values.
         const rawUsageByYm = {};
         bills.forEach((b) => {
-          const ym = normMonth ? normMonth(b.start, b.end, incl, bills) : null;
+          const ym = billMonth(b, bills);
           if (!ym) return;
           const val = isElec ? parseFloat(b.kwh || 0) : parseFloat(b.therms || b.usage || b.kwh || 0);
           rawUsageByYm[ym] = (rawUsageByYm[ym] || 0) + val;

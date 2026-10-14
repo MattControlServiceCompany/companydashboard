@@ -301,7 +301,7 @@ function loadUtilityData() {
   }
   // One-time migration: fix 2-digit year ISO dates (e.g. "24-03-15" → "2024-03-15")
   // produced by the old toISO function. Without this, date comparisons, sorting,
-  // normMonth, and duplicate detection all break.
+  // billMonth, and duplicate detection all break.
   const _migratedKey = 'en_utility_dates_migrated_v1';
   if (!DB.get(_migratedKey)) {
     let fixed = 0;
@@ -2544,7 +2544,7 @@ function renderBldgComparisonPanel(content, bldgs, projName, projId) {
         if (isElec) {
           kwh12 += r.usage || 0;
           // load factor: kWh / (demandKW × 24 × days)
-          const rowBills = bills.filter((b2) => normMonth(b2.start, b2.end, incl, bills) === r.ym);
+          const rowBills = bills.filter((b2) => billMonth(b2, bills) === r.ym);
           rowBills.forEach((bill) => {
             const kw = parseFloat(bill.demandKW || 0);
             const days = parseFloat(bill.days || 30);
@@ -3448,7 +3448,7 @@ function renderMeterWorkspace() {
 /* ══════════════════════════════════════════
          BILLS TAB
       ══════════════════════════════════════════ */
-// normMonth, detectGap → moved to computations/normalization.js
+// billMonth, detectGap → moved to computations/normalization.js
 
 // ── CONDENSED VIEW CATEGORIES (Update 90) ──
 // In condensed view, the Bills data table collapses the per-line charge
@@ -6364,7 +6364,7 @@ function drawNormChart(canvasId, rows, unit, metric, weatherDDLabel, bills, incl
       const billByYm = {};
       bills.forEach((b) => {
         if (!b.start || !b.end) return;
-        const ym = normMonth(b.start, b.end, incl, bills);
+        const ym = billMonth(b, bills);
         const usage = isElec
           ? parseFloat(b.kwh) || 0
           : isGasU
@@ -7025,7 +7025,7 @@ function renderBaselinePane(pane, m, bills, incl) {
   const _blKwNormByYm = {};
   if (isElecBl && hasBl) {
     blRows.forEach((r) => {
-      const bfr = bills.filter((b) => normMonth(b.start, b.end, incl, bills) === r.ym);
+      const bfr = bills.filter((b) => billMonth(b, bills) === r.ym);
       const demKW = bfr.reduce((s, b) => s + parseFloat(b.demandKW || 0), 0) / Math.max(1, bfr.length);
       const bilKW = bfr.reduce((s, b) => s + parseFloat(b.billedKW || b.demandKW || 0), 0) / Math.max(1, bfr.length);
       if (demKW > 0 || bilKW > 0) kwByYm[r.ym] = { label: r.label, demKW, bilKW };
@@ -7642,7 +7642,7 @@ function drawBlChart(canvasId, rows, unit, bills, incl, showOverlay, metric) {
     const billByYm = {};
     bills.forEach((b) => {
       if (!b.start || !b.end) return;
-      const ym = normMonth(b.start, b.end, incl, bills);
+      const ym = billMonth(b, bills);
       const usage = isElec
         ? parseFloat(b.kwh) || 0
         : isGasU
@@ -10429,7 +10429,7 @@ function renderPerfPane(pane, m, bills, incl) {
     });
   } else {
     bills.forEach((b) => {
-      const ym = normMonth(b.start, b.end, incl, bills);
+      const ym = billMonth(b, bills);
       if (!ym) return;
       const val = isElec ? parseFloat(b.kwh || 0) : parseFloat(b.therms || b.usage || b.kwh || 0);
       rawUsageByYm[ym] = (rawUsageByYm[ym] || 0) + val;
@@ -10616,7 +10616,7 @@ function renderPerfPane(pane, m, bills, incl) {
   const perfDemByYm = {};
   if (isElec) {
     filteredPostRows.forEach((r) => {
-      const bfr = bills.filter((b) => normMonth(b.start, b.end, incl, bills) === r.ym);
+      const bfr = bills.filter((b) => billMonth(b, bills) === r.ym);
       if (!bfr.length) return;
       const n = bfr.length;
       const actualKwh = bfr.reduce((s, b) => s + parseFloat(b.kwh || 0), 0);
@@ -10651,7 +10651,7 @@ function renderPerfPane(pane, m, bills, incl) {
   if (!isElec) {
     if (isPropane_p) {
       filteredPostRows.forEach((r) => {
-        const bfr = bills.filter((b) => normMonth(b.start, b.end, incl, bills) === r.ym);
+        const bfr = bills.filter((b) => billMonth(b, bills) === r.ym);
         const actGallons = r.usage;
         const actCost = r.cost;
         const _storedRate = bfr.length ? getStoredRate(bfr[0], 'propane') : 0;
@@ -10664,7 +10664,7 @@ function renderPerfPane(pane, m, bills, incl) {
       });
     } else {
       filteredPostRows.forEach((r) => {
-        const bfr = bills.filter((b) => normMonth(b.start, b.end, incl, bills) === r.ym);
+        const bfr = bills.filter((b) => billMonth(b, bills) === r.ym);
         if (!bfr.length) return;
         const actualTherms = bfr.reduce((s, b) => s + resolveGasUsageTherms(b), 0);
         // getBillGasCost (computations/rates.js) — the ONE gas cost accessor (visible Gas Charge).
@@ -10691,7 +10691,7 @@ function renderPerfPane(pane, m, bills, incl) {
     const sortedBills = (bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
     const byYm = {};
     sortedBills.forEach((b) => {
-      const ym = normMonth(b.start, b.end, incl, sortedBills);
+      const ym = billMonth(b, sortedBills);
       if (!ym) return;
       if (!byYm[ym]) {
         byYm[ym] = {
@@ -11008,7 +11008,7 @@ function renderPerfPane(pane, m, bills, incl) {
   const perfKwByYm = {};
   if (isElec) {
     chartRows.forEach((r) => {
-      const bfr = bills.filter((b) => normMonth(b.start, b.end, incl, bills) === r.ym);
+      const bfr = bills.filter((b) => billMonth(b, bills) === r.ym);
       const demKW = bfr.reduce((s, b) => s + parseFloat(b.demandKW || 0), 0) / Math.max(1, bfr.length);
       const bilKW = bfr.reduce((s, b) => s + parseFloat(b.billedKW || b.demandKW || 0), 0) / Math.max(1, bfr.length);
       if (demKW > 0 || bilKW > 0) perfKwByYm[r.ym] = { demKW, bilKW, era: r.era };
@@ -11401,7 +11401,7 @@ function drawPerfChart(canvasId, rows, blAvgDay, blAvgMo, colors, unit, bills, i
   if (bills && bills.length) {
     bills.forEach((b) => {
       if (!b.start || !b.end) return;
-      const ym = normMonth(b.start, b.end, incl, bills);
+      const ym = billMonth(b, bills);
       const usage = isElecB
         ? parseFloat(b.kwh) || 0
         : isGasB

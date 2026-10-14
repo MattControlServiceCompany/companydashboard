@@ -996,7 +996,7 @@ function renderBillRow(row, m, incl, allBills, cols, rowNum) {
   let html =
     `<tr ${row.estimated ? 'class="ud-bill-estimated-row"' : `style="cursor:pointer" onclick="showBillSplitPanel('${m.id}','${row.id}',event)"${_missingDates ? ' class="ud-bill-missing-dates"' : ''}`}>` +
     `<td class="sticky-col" data-sticky="0" style="text-align:center;color:var(--text3);font-size:11px;padding:0 4px">${rowNum != null ? rowNum : ''}</td>` +
-    `<td class="norm-mon-cell sticky-col" data-sticky="1">${normMonthLabel(row.start, row.end, incl, allBills || m.bills || [])}${_estBadge}${_hasRowWarning || _missingDates ? ` <span title="${_warnTip}" style="color:var(--amber);cursor:help">⚠</span>` : ''}</td>` +
+    `<td class="norm-mon-cell sticky-col" data-sticky="1">${billMonthLabel(row, allBills || m.bills || [])}${_estBadge}${_hasRowWarning || _missingDates ? ` <span title="${_warnTip}" style="color:var(--amber);cursor:help">⚠</span>` : ''}</td>` +
     `<td class="lbl sticky-col" data-sticky="2">${fmtD(row.start)}</td>` +
     `<td class="lbl sticky-col" data-sticky="3">${fmtD(row.end)}</td>` +
     `<td class="td-days">${days}</td>`;

@@ -48,7 +48,7 @@ function computeAnomalyScores(m, allRows, blRows, bills, incl) {
     });
   } else {
     bills.forEach((b) => {
-      const ym = normMonth(b.start, b.end, incl, bills);
+      const ym = billMonth(b, bills);
       if (!ym) return;
       const val = isElec ? parseFloat(b.kwh || 0) : parseFloat(b.therms || b.usage || b.kwh || 0);
       rawUsageByYm[ym] = (rawUsageByYm[ym] || 0) + val;
@@ -199,7 +199,7 @@ function detectRateChanges(m, bills, incl) {
   // Build implied rate per norm-month from raw bills
   const rateByYm = {};
   bills.forEach((b) => {
-    const ym = normMonth(b.start, b.end, incl, bills);
+    const ym = billMonth(b, bills);
     if (!ym) return;
     let usage = 0;
     let cost = 0;

@@ -454,7 +454,7 @@ const sumOf = (o) => Object.values(o).reduce((a, b) => a + b, 0);
     reg = rd('computations/regression.js'),
     rates = rd('computations/rates.js');
   assert(
-    !/getNormRows|buildMoMap|normMonth\(|getStoredRate|getStoredKwRate|resolveMeterRate/.test(perf),
+    !/getNormRows|buildMoMap|billMonth\(|getStoredRate|getStoredKwRate|resolveMeterRate/.test(perf),
     '11: perf-table.js has no money math of its own',
   );
   assert(!/ssxx/.test(perf) && !/ssxx/.test(sav), '11: kW regression fit is not copied in perf-table.js or savings.js');

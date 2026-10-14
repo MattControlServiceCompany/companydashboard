@@ -1,5 +1,5 @@
 // computations/savings.js — Unified savings computation (canonical source)
-// Depends on: normalization.js (getNormRows, buildMoMap, normMonth), regression.js (computeKwCddRegression),
+// Depends on: normalization.js (getNormRows, buildMoMap, billMonth), regression.js (computeKwCddRegression),
 //             rates.js (getStoredRate, getStoredKwRate), and getWeatherForBuilding() (still in energy-department.html)
 
 // SAVINGS_CALC_VERSION — bump this any time the savings math in this file changes.
@@ -325,7 +325,7 @@ function getMeterSavings(m, bills, incl, projId, bldgId, opts) {
     });
   } else {
     bills.forEach((b) => {
-      const ym = normMonth(b.start, b.end, incl, bills);
+      const ym = billMonth(b, bills);
       if (!ym) return;
       const actUsage = isElec
         ? parseBillNumberOrZero(b.kwh) || parseBillNumberOrZero(b.usage)
@@ -354,7 +354,7 @@ function getMeterSavings(m, bills, incl, projId, bldgId, opts) {
     const calMo = parseInt(r.ym.split("-")[1]) - 1;
     const bfr = isPropane
       ? []
-      : bills.filter((b) => normMonth(b.start, b.end, incl, bills) === r.ym);
+      : bills.filter((b) => billMonth(b, bills) === r.ym);
     if (!isPropane && !bfr.length) return;
 
     let totalCostSav = 0;

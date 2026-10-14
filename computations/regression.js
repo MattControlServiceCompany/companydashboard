@@ -253,14 +253,14 @@ function regressionBaseline(row, reg, commodity, normBasis) {
 // blRows: baseline rows used for the fit (must have .ym and .cdd)
 // allRows: rows to predict for (must have .ym and .cdd)
 // bills: the meter's bills array
-// incl: the inclusion setting for normMonth
+// incl: the inclusion setting for billMonth
 // Returns: {ym: predictedKW} for all months in allRows, or {} if there are fewer than 3 usable points.
 function computeKwCddRegression(blRows, allRows, bills, incl) {
   var result = {};
   var pts = blRows
     .map(function (r) {
       var bfr = bills.filter(function (b) {
-        return normMonth(b.start, b.end, incl, bills) === r.ym;
+        return billMonth(b, bills) === r.ym;
       });
       var kw = bfr.length
         ? bfr.reduce(function (s, b) {

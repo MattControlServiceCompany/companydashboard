@@ -551,7 +551,7 @@ function _seasonForSchedule(rateSchedule, ym) {
 function _cascadeOwnBillRate(bills, incl, ym, component) {
   if (!bills || !bills.length || !ym) return null;
   var bfr = bills.filter(function (b) {
-    return normMonth(b.start, b.end, incl, bills) === ym;
+    return billMonth(b, bills) === ym;
   });
   if (!bfr.length) return null;
   var rates = bfr
@@ -627,7 +627,7 @@ function _cascadeSameSeasonCarry(bills, incl, ym, component, meter) {
     new Set(
       bills
         .map(function (b) {
-          return normMonth(b.start, b.end, incl, bills);
+          return billMonth(b, bills);
         })
         .filter(Boolean),
     ),
@@ -662,7 +662,7 @@ function _cascadeEscalationEstimate(bills, incl, ym, component, meter) {
     new Set(
       bills
         .map(function (b) {
-          return normMonth(b.start, b.end, incl, bills);
+          return billMonth(b, bills);
         })
         .filter(Boolean),
     ),
@@ -725,7 +725,7 @@ function _cascadeEscalationEstimate(bills, incl, ym, component, meter) {
 // resolveMeterRate(projId, meter, ym, opts) — the canonical entry point.
 // opts: { bills, incl, allMeters, component }
 //   bills:      meter.bills (or an override — e.g. a synthetic gap-test copy)
-//   incl:       proj.inclMonths (normMonth's inclusive/exclusive setting)
+//   incl:       proj.inclMonths (billMonth's inclusive/exclusive setting)
 //   allMeters:  sibling meters in the same building (step 3 peer lookup) — pass
 //               the building's full meters array (any commodity; filtered internally)
 //   component:  'kwh' | 'kw' | 'gas' | 'propane' | 'water' | 'sewer' (required)
@@ -970,7 +970,7 @@ function computeSeasonalBldgRates(projId, bldgId, onlyMeterId) {
 
   // One BASELINE-PERIOD bill -> { ym, season, rate } for every bill with a positive rate from `rateFn`.
   // The bills are the meter's baseline bills only (_dashGetBaselineBills, app/core.js: bills whose
-  // normMonth is in m.baseline.months). A meter with no baseline months of its own uses the project's
+  // billMonth is in m.baseline.months). A meter with no baseline months of its own uses the project's
   // fallback months (_udProjBaselineMonthsFallback, app/utility-data.js), the same rule the All
   // Buildings baseline table uses. No baseline anywhere -> no rows -> rate 0.
   var fallbackMonths = null;
@@ -1040,7 +1040,7 @@ function computeSeasonalBldgRates(projId, bldgId, onlyMeterId) {
         var parts = getBillRateParts(bill, type);
         if (!(parts.usage > 0 && parts.charge > 0)) return;
         var rate = parts.charge / parts.usage;
-        var ym = normMonth(bill.start, bill.end, incl, all);
+        var ym = billMonth(bill, all);
         var hit = exclusionsOf(meter)[bill.id];
         if (hit) {
           noteExcluded(meter, bill, ym, hit);

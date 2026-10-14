@@ -7,7 +7,7 @@
 // the Review Bill Corrections panel and the data-quality score. A flag means "look at this bill":
 // a billing error or a big usage change. Normal weather and normal rate changes never flag.
 //
-// Shared helpers used (never copied here): calcDays and fmtDate (app/utility-data.js), normMonth and
+// Shared helpers used (never copied here): calcDays and fmtDate (app/utility-data.js), billMonth and
 // detectGap (computations/normalization.js), parseBillNumber (lib/formatting.js), getBillUsageOrNull
 // (computations/savings.js), getBillUsageCharge and getStoredRate (computations/rates.js).
 // A blank value is null (missing); a real 0 is 0.
@@ -126,10 +126,10 @@ function _bfDays(start, end, incl) {
 function _bfSortByStart(bills) {
   return bills.slice().sort((a, b) => (a.start || '9999').localeCompare(b.start || '9999'));
 }
-// Month index 0-11 and year of a bill from the ONE month rule (normMonth chain across the meter's bills).
+// Month index 0-11 and year of a bill from the ONE month rule (billMonth chain across the meter's bills).
 function _bfChainMonth(b, incl, sortedAll) {
   if (!b.start || !b.end) return null;
-  const ym = normMonth(b.start, b.end, incl, sortedAll);
+  const ym = billMonth(b, sortedAll);
   const m = /^(\d{4})-(\d{2})/.exec(ym || '');
   return m ? { yr: +m[1], mo: +m[2] - 1 } : null;
 }

@@ -146,7 +146,7 @@ function run(bld, gasBld) {
   S.getUDBldgs = () => [bld];
   S._dashGetBaselineBills = (m) => m.bills;
   S._udProjBaselineMonthsFallback = () => null;
-  S.normMonth = (s, e) => e.slice(0, 7);
+  S.billMonth = (b) => b.end.slice(0, 7);
   return S.computeSeasonalBldgRates(1, 'b');
 }
 // Whole-summer bill + whole-winter bill + one straddling bill with split lines.

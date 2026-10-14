@@ -331,12 +331,12 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
       const rawUsageByYm = {};
       if (isElec) {
         bills.forEach((b2) => {
-          const ym = normMonth(b2.start, b2.end, incl, bills);
+          const ym = billMonth(b2, bills);
           if (ym) rawUsageByYm[ym] = (rawUsageByYm[ym] || 0) + (parseFloat(b2.kwh) || parseFloat(b2.usage) || 0);
         });
       } else if (!isPropane) {
         bills.forEach((b2) => {
-          const ym = normMonth(b2.start, b2.end, incl, bills);
+          const ym = billMonth(b2, bills);
           if (!ym) return;
           const actUsage =
             m.commodity === 'Gas'
@@ -375,7 +375,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
       // Process post-baseline rows within the reporting period
       postRows.forEach((r) => {
         const calMo = parseInt(r.ym.split('-')[1]) - 1;
-        const bfr = isPropane ? [] : bills.filter((b2) => normMonth(b2.start, b2.end, incl, bills) === r.ym);
+        const bfr = isPropane ? [] : bills.filter((b2) => billMonth(b2, bills) === r.ym);
         if (!isPropane && !bfr.length) return;
 
         const expUsage =
@@ -11825,7 +11825,7 @@ function _rptV2QuarterYMs(year, quarter) {
 // case just after a billing lag), that produced an all-$0/all-"On Track" report by default.
 //
 // FIRST attempt (kept in history, replaced here) re-derived "has bills" locally from each
-// meter's raw bill dates via normMonth(), independent of the meter's baseline. That is WRONG:
+// meter's raw bill dates via billMonth(), independent of the meter's baseline. That is WRONG:
 // a bill that falls inside a meter's OWN baseline window is baseline data, not a reportable
 // post-baseline actual — collectReportData()'s real per-building status (bldgHasBillsInPeriod,
 // this same file, ~line 380) only counts a month once it is past that meter's blEnd. Verified on
@@ -11892,7 +11892,7 @@ function _rptV2QuarterCoverage(projId, bldgs, bldgIds, year, quarter) {
       });
       var incl = m.inclusive !== false;
       bills.forEach(function (bl) {
-        var ym = normMonth(bl.start, bl.end, incl, bills);
+        var ym = billMonth(bl, bills);
         if (ym && ym > blEnd) have[ym] = true;
       });
     });

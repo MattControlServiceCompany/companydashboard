@@ -271,14 +271,14 @@ console.log('=== 5. month comes from normMonth ===');
     }
   const meter = { id: 'm15', commodity: 'Gas', bills };
   const sorted = bills.slice();
-  const chain = sorted.map((b) => ctx.normMonth(b.start, b.end, true, sorted));
+  const chain = sorted.map((b) => ctx.billMonth(b, sorted));
   const target = bills.find((b) => b.id === 'p20259');
   target.therms = String(5000);
   target.gasCharge = '5000';
   target.totalCost = '5023.33';
   const s = ctx.computeMeterFlagSummary(meter, null);
   const f = (s.perBill.p20259 || []).find((x) => x.rule === 'usage_vs_same_month');
-  const ym = ctx.normMonth(target.start, target.end, true, sorted);
+  const ym = ctx.billMonth(target, sorted);
   const label =
     ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][+ym.slice(5) - 1] +
     ' ' +

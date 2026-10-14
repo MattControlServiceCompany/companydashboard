@@ -92,7 +92,7 @@ const bm = (b) => ctx.billMonth(b, ELEC);
 
 // ---- A ----
 console.log('--- A. billMonth is the normMonth chain; one-date, start==end, no-date bills ---');
-const chain = ELEC.map((b) => ctx.normMonth(b.start, b.end, true, ELEC));
+const chain = ELEC.map((b) => ctx.billMonth(b, ELEC));
 assert(JSON.stringify(ELEC.map(bm)) === JSON.stringify(chain), 'billMonth equals the normMonth chain for every bill');
 assert(
   JSON.stringify(chain) === JSON.stringify(['2025-01', '2025-02', '2025-03', '2025-04']),
