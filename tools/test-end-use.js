@@ -83,6 +83,7 @@ function makeSandbox(world) {
     getUDBldg: (p, b) => (world.bldgs && world.bldgs[b]) || null,
     hvacEstimateForBuilding: (p, b) => (world.calc && world.calc[b]) || null,
     resolveHvacLoadData: (p, b) => world.resolved[b.id],
+    fanReadUnits: () => ({ units: [], note: 'No supply-fan rows' }), // no Equipment Matrix rows in this test: the fan end use is none
   };
   vm.createContext(sb);
   const calcSrc = fs.readFileSync(path.join(root, 'app/calculators.js'), 'utf8');

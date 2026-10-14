@@ -42,8 +42,6 @@ var FAN_TWO_SPEED_VFD_STEPS = 8; // steps across Low to High when a drive replac
 var FAN_MONTH_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]; // a fan runs all year: its month profile is days in month
 var FAN_DAYS_PER_YEAR = 365;
 
-var FAN_HVAC_ELECTRIC_FAN_SHARE = 0.25; // share of a building's HVAC electric end use that the supply fans use (stated assumption; the last step of the unsized-fan estimate)
-
 var FAN_LEVEL_LABEL = { trend: 'Measured trend', matrix: 'Equipment Matrix value', default: 'Default' };
 
 function _fanNum(v) {
@@ -246,6 +244,7 @@ function fanReadUnits(projId, bldgId) {
         volts: _fanNum(asset('voltage')),
         phase: _fanPhase(asset('phase')),
         hp: FAN_HP_CATEGORIES.indexOf(row.category) >= 0 ? _fanNum(asset('hpTons')) : null,
+        tons: FAN_HP_CATEGORIES.indexOf(row.category) >= 0 ? null : _fanNum(asset('hpTons')), // size hint only (an RTU is sized in tons)
         speedPoint: speedPoint,
         hasVfd: _fanYesNo(asset('hasVfd')),
         status: _fanOn(pts.supplyFanStatus),
@@ -455,16 +454,18 @@ function _fanRound1(v) {
  *   (a) the median fan kW of the sized units of the same equipment type in this building
  *   (b) the median fan kW of the sized units of the same equipment type in the other buildings of the project
  *   (c) the airflow implied by the served VAV boxes: NOT available, the Equipment Matrix has no link from a box to its AHU
- *   (d) a share (FAN_HVAC_ELECTRIC_FAN_SHARE) of the building's HVAC electric end use, less the fans already sized, split equally
- *       across the units still unsized (kWh per sq ft is shown); needs the HVAC electric kWh
- * A sibling is a unit with its own data (not an estimate). The end use caps the sum by the HVAC electric end use.
+ *   (d) the national average ventilation share of total building electricity (fanVentilationShare, physics.js: EIA CBECS 2018
+ *       Table E5; Education for a school, else All buildings) x the building's total baseline electricity, less the fans
+ *       already sized, split across the units still unsized by the tons of the unit when the matrix has it (a unit without
+ *       tons takes the mean of the others), else equally (kWh per sq ft is shown); needs the total baseline electricity kWh
+ * A sibling is a unit with its own data (not an estimate). The end use caps the sum (total electricity less measured cooling and electric heating).
  * @param {string|number} projId
  * @param {string} bldgId
  * @param {{units:Array<Object>}} read - fanReadUnits result of the building
- * @param {number|null} hvacAnnual - the building's HVAC electric kWh per year, or null
+ * @param {number|null} totalAnnual - the building's total baseline electricity kWh per year, or null
  * @returns {Array<Object>} fanUnitModel results, in the order of read.units
  */
-function fanModelUnits(projId, bldgId, read, hvacAnnual) {
+function fanModelUnits(projId, bldgId, read, totalAnnual) {
   var models = read.units.map(function (u) {
     return fanUnitModel(u);
   });
@@ -537,33 +538,53 @@ function fanModelUnits(projId, bldgId, read, hvacAnnual) {
     if (est) models[i] = fanUnitModel(read.units[i], est);
     else unresolved.push(i);
   });
-  if (unresolved.length && hvacAnnual > 0) {
+  if (unresolved.length && totalAnnual > 0) {
     var have = models.reduce(function (s, m) {
       return s + (m.ok ? m.kwh : 0);
     }, 0);
-    var each = Math.max(0, FAN_HVAC_ELECTRIC_FAN_SHARE * hvacAnnual - have) / unresolved.length;
     var b = typeof getUDBldg === 'function' ? getUDBldg(projId, bldgId) : null;
+    var projs = typeof sget === 'function' ? sget('en_projects', []) : [];
+    var proj = projs.find(function (x) {
+      return String(x.id) === String(projId);
+    });
+    var vs = fanVentilationShare((b && b.type) || (proj && proj.type) || '');
+    var target = vs.share * totalAnnual;
+    var pool = Math.max(0, target - have);
     var sqft = b ? parseFloat(b.sqft) || 0 : 0;
-    if (each > 0)
-      unresolved.forEach(function (i) {
+    var tons = unresolved.map(function (i) {
+      return read.units[i].tons > 0 ? read.units[i].tons : 0;
+    });
+    var known = tons.filter(function (t) {
+      return t > 0;
+    });
+    var fill = known.length ? known.reduce(function (a, c) { return a + c; }, 0) / known.length : 1;
+    var weights = tons.map(function (t) {
+      return t > 0 ? t : fill;
+    });
+    var wSum = weights.reduce(function (a, c) { return a + c; }, 0);
+    if (pool > 0)
+      unresolved.forEach(function (i, k) {
+        var each = (pool * weights[k]) / wSum;
         models[i] = fanUnitModel(read.units[i], {
           rule: 'area',
           annualKwh: each,
           how:
-            Math.round(FAN_HVAC_ELECTRIC_FAN_SHARE * 100) +
-            '% of the building HVAC electric end use (' +
-            Math.round(hvacAnnual).toLocaleString() +
+            'Default: national average ventilation share for ' +
+            vs.label +
+            ' buildings (EIA CBECS 2018): ' +
+            Math.round(vs.share * 1000) / 10 +
+            '% of the building total baseline electricity (' +
+            Math.round(totalAnnual).toLocaleString() +
             ' kWh' +
-            (sqft > 0
-              ? ', ' + Math.round((FAN_HVAC_ELECTRIC_FAN_SHARE * hvacAnnual * 100) / sqft) / 100 + ' kWh per sq ft'
-              : '') +
+            (sqft > 0 ? ', ' + Math.round((target * 100) / sqft) / 100 + ' kWh per sq ft of fans' : '') +
             '), less the fans already sized, split across ' +
             unresolved.length +
             ' unsized unit' +
             (unresolved.length === 1 ? '' : 's') +
+            (known.length ? ' by tons' : ' equally') +
             ': ' +
             Math.round(each).toLocaleString() +
-            ' kWh each (Default)',
+            ' kWh (Default)',
         });
       });
   }

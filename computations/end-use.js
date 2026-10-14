@@ -16,10 +16,13 @@
 // The data under the estimate is bills (monthly) or the quick annual entry (annual only, no monthly values are made up).
 //
 // End uses the estimate models today: cooling, heatingElectric, heatingGas, hvacElectric (cooling + electric
-// heating, fans and pumps are inside it) and nonHvacElectric (lighting + plug + other, not split). Fans,
-// lighting and plug loads are NOT modeled separately yet: getEndUse answers them with modeled:false.
+// heating above baseload) and nonHvacElectric (lighting + plug + other, not split, less the supply fans). Lighting and
+// plug loads are NOT modeled separately yet: getEndUse answers them with modeled:false.
 // Fans (Phase 6, 2026-10-14) are modeled from the Equipment Matrix supply-fan rows of the building, not from the load
-// estimate: see _fanEndUse below. They sit inside hvacElectric, so the measured HVAC electric end use caps them.
+// estimate: see _fanEndUse below. Fans run all year, so they sit in the baseload of the bills, not in hvacElectric.
+// DOUBLE-COUNT RULE: total building electricity = cooling + electric heating + (everything else). The cap of the fan end use
+// is that "everything else" (total less measured cooling and electric heating). getEndUse 'nonHvacElectric' is that same
+// remainder LESS the fans, so fans + nonHvacElectric + cooling + electric heating never add up to more than the total.
 //
 // Monthly arrays are indexed by calendar month, Jan(0)..Dec(11), the same indexing the Energy Savings matrix uses.
 
@@ -43,7 +46,7 @@ var END_USES = {
   heatingGas: { unit: 'Therms', label: 'Gas heating', annual: 'hvacGasT', monthly: 'monthlyHvacGas', basis: 'hvacGas', kw: null },
   hvacElectric: {
     unit: 'kWh',
-    label: 'HVAC electric (cooling, electric heating, fans and pumps)',
+    label: 'HVAC electric (cooling and electric heating above baseload)',
     annual: 'hvacKwh',
     monthly: 'monthlyHvacKwh',
     basis: 'hvacKwh',
@@ -98,6 +101,12 @@ function _euMonthlyOrNull(arr) {
  */
 function getEndUse(projId, bldgId, endUse) {
   if (endUse === 'fans') return _fanEndUse(projId, bldgId);
+  if (endUse === 'nonHvacElectric') return _nonHvacLessFans(projId, bldgId, _readEndUse(projId, bldgId, endUse));
+  return _readEndUse(projId, bldgId, endUse);
+}
+
+/** One end use read from the HVAC Load Estimate (no fan step). getEndUse is the only caller. */
+function _readEndUse(projId, bldgId, endUse) {
   var def = END_USES[endUse];
   if (!def) {
     var known = END_USES_NOT_MODELED.indexOf(endUse) >= 0;
@@ -157,13 +166,57 @@ function getEndUse(projId, bldgId, endUse) {
 }
 
 /**
+ * The building's total baseline electricity (kWh per year) from its HVAC Load Estimate, or null when there is none.
+ * The ONE place the fan default and the fan cap read the total.
+ */
+function _euTotalElectric(projId, bldgId) {
+  var calc = hvacEstimateForBuilding(projId, bldgId);
+  var t = calc ? parseFloat(calc.est.totalKwh) : NaN;
+  return t > 0 ? t : null;
+}
+
+/**
+ * nonHvacElectric less the supply fans: fans run all year, so their kWh sits in this baseload remainder; taking them out
+ * here keeps cooling + electric heating + fans + non-HVAC from adding up to more than the building total.
+ * Annual, the 12 months and the kW series each go down by the fans (never below 0). No fan end use: unchanged.
+ */
+function _nonHvacLessFans(projId, bldgId, nh) {
+  if (!nh.modeled || nh.source === 'none' || !(nh.annual > 0)) return nh;
+  var fans = _fanEndUse(projId, bldgId);
+  if (fans.source === 'none' || !(fans.annual > 0)) return nh;
+  var less = function (arr, sub) {
+    return arr.map(function (v, i) {
+      return Math.max(0, v - sub[i]);
+    });
+  };
+  var total = function (arr) {
+    return arr.reduce(function (s, v) {
+      return s + v;
+    }, 0);
+  };
+  var monthly = nh.monthly ? less(nh.monthly, fans.monthly) : null;
+  var kw = nh.kw;
+  if (kw && kw.monthly) {
+    var kwMonthly = less(kw.monthly, fans.kw.monthly);
+    kw = { annual: total(kwMonthly), monthly: kwMonthly, peak: Math.max.apply(null, kwMonthly) };
+  }
+  return Object.assign({}, nh, {
+    annual: monthly ? total(monthly) : Math.max(0, nh.annual - fans.annual),
+    monthly: monthly,
+    kw: kw,
+    sourceLabel:
+      nh.sourceLabel + ', less the ' + Math.round(fans.annual).toLocaleString() + ' kWh of supply fans (they run all year, inside the baseload)',
+  });
+}
+
+/**
  * The fan end use of one building (Phase 6): the supply fans of its Equipment Matrix rows, each unit sized by
  * fanModelUnits (computations/fan-savings.js: kW from amps, else cfm, else HP, else a Default estimate; hours from the BAS trend, else the
- * matrix, else a stated default), added up and capped by the building's HVAC electric end use (the fans are inside it).
+ * matrix, else a stated default), added up and capped by the building's total baseline electricity less its measured cooling and electric heating (fans run all year: they sit in the baseload).
  * The result has the same shape as every other end use, plus:
  *   units       - the sized units (fanModelUnits results, kWh before the cap; a unit with no amps, airflow or horsepower is a Default estimate, see fanModelUnits) and the units that could not be sized (ok:false, missing)
- *   capFactor   - 1, or capAnnual / sum when the units add up to more than the HVAC electric end use
- *   capAnnual   - the HVAC electric kWh used as the cap (null: no HVAC electric data, so no cap)
+ *   capFactor   - 1, or capAnnual / sum when the units add up to more than the cap
+ *   capAnnual   - total baseline electricity less cooling and electric heating, kWh (null: no total electricity, so no cap)
  *   levels      - count of units by data level for kW and for hours ({kw:{trend,matrix,default}, hours:{...}})
  * Monthly = the annual quantity by days in the month (a fan runs all year); the kW of each month is the running kW of the units.
  */
@@ -173,9 +226,11 @@ function _fanEndUse(projId, bldgId) {
   if (!b) return _euNotAvailable('fans', label, 'kWh', true, 'No building chosen');
   var read = fanReadUnits(projId, bldgId);
   if (!read.units.length) return _euNotAvailable('fans', label, 'kWh', true, read.note);
-  var hv = getEndUse(projId, bldgId, 'hvacElectric');
-  var capAnnual = hv.modeled && hv.source !== 'none' && hv.annual > 0 ? hv.annual : null;
-  var units = fanModelUnits(projId, bldgId, read, capAnnual);
+  var total = _euTotalElectric(projId, bldgId);
+  var coolAnnual = _readEndUse(projId, bldgId, 'cooling').annual || 0;
+  var heatAnnual = _readEndUse(projId, bldgId, 'heatingElectric').annual || 0;
+  var capAnnual = total && total - coolAnnual - heatAnnual > 0 ? total - coolAnnual - heatAnnual : null;
+  var units = fanModelUnits(projId, bldgId, read, total);
   var sized = units.filter(function (u) {
     return u.ok;
   });
@@ -229,17 +284,17 @@ function _fanEndUse(projId, bldgId) {
     ' of ' +
     units.length +
     ' rows sized' +
-    (nEst ? ' (' + nEst + ' of them a Default estimate from siblings or the HVAC electric end use)' : '') +
+    (nEst ? ' (' + nEst + ' of them a Default estimate from siblings or the national average ventilation share)' : '') +
     ' (kW: ' +
     lv(levels.kw) +
     '; run hours: ' +
     lv(levels.hours) +
     ')' +
     (factor < 1
-      ? ', scaled down (x' + Math.round(factor * 100) / 100 + ') to fit the HVAC electric end use'
+      ? ', scaled down (x' + Math.round(factor * 100) / 100 + ') to fit the building total electricity less cooling and electric heating'
       : capAnnual
-        ? ', within the HVAC electric end use'
-        : ', no HVAC electric end use to check against');
+        ? ', within the building total electricity less cooling and electric heating'
+        : ', no total electricity to check against');
   return {
     endUse: 'fans',
     label: label,

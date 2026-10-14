@@ -95,6 +95,30 @@ function ductStaticResetPowerSavings(spReductionFraction, opts) {
  */
 var FAN_W_PER_CFM = { low: 0.774, mid: 0.851, high: 0.928 };
 
+/**
+ * Ventilation (fan) electricity as a share of the TOTAL electricity of a building, by building type. Source: US EIA,
+ * Commercial Buildings Energy Consumption Survey (CBECS) 2018, Table E5 "Electricity consumption (kWh) by end use, 2018"
+ * (https://www.eia.gov/consumption/commercial/data/2018/ce/xls/e5.xlsx), billion kWh. Education: ventilation 19 of 128 total
+ * (14.8 percent). All buildings: ventilation 213 of 1,196 total (17.8 percent). The default for a supply fan with no amps,
+ * airflow or horsepower (computations/fan-savings.js, fanModelUnits). Fans run all year, so most of this energy sits in the
+ * baseload of the bills, not in the HVAC electric above baseload.
+ */
+var FAN_VENTILATION_SHARE_CBECS = {
+  education: { label: 'education', ventilationBillionKwh: 19, totalBillionKwh: 128 },
+  all: { label: 'all', ventilationBillionKwh: 213, totalBillionKwh: 1196 },
+};
+
+/**
+ * The ventilation share of total building electricity for a building type text (Education when it names a school, else All buildings).
+ * @param {string} typeText - the building type, else the project type
+ * @returns {{key:string, label:string, share:number}}
+ */
+function fanVentilationShare(typeText) {
+  var key = /school|education|k-12/i.test(String(typeText || '')) ? 'education' : 'all';
+  var row = FAN_VENTILATION_SHARE_CBECS[key];
+  return { key: key, label: row.label, share: row.ventilationBillionKwh / row.totalBillionKwh };
+}
+
 /** Share of fan power that does not fall with speed (bearing, drive and motor losses). The default for fanPowerFraction callers that model a drive. */
 var FAN_FIXED_POWER_SHARE = 0.1;
 

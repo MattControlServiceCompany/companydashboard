@@ -3,7 +3,7 @@
 //   1. physics: motorKwFromAmps, fanKwFromCfm, fanMeanPowerFraction
 //   2. trend import: the new fan point types are detected, summarised per day (no raw rows) and read back by fanTrendSummary
 //   3. fanUnitModel: each input shows its data level; a better level replaces a worse one
-//   4. getEndUse(.., 'fans'): sum, HVAC electric cap, monthly profile, data levels, no-data answers
+//   4. getEndUse(.., 'fans'): sum, cap (total electricity less cooling and electric heating), monthly profile, data levels, no-data answers
 //   5. fanSavingsForUnits and the template: three measures, lever switches, selection, quantities only
 //   6. the measure map and ecmBuildMeasure: the savings are shaped by the fan end use, not divided by 12
 //   7. hostile input: unit names and building names with HTML are escaped in the picker and the result table
@@ -32,7 +32,8 @@ const read = (rel) => fs.readFileSync(path.join(root, rel), 'utf8');
 const BLDG = 'Synthetic Hall';
 const HOSTILE = '<img src=x onerror=alert(1)>';
 const COOL = [0, 0, 1000, 3000, 8000, 15000, 22000, 20000, 12000, 4000, 1000, 0];
-const SYN_EST = (hvacKwh) => {
+// hvacKwh = cooling above baseload; capKwh = the rest of the building total (total = hvacKwh + capKwh), which is the fan cap.
+const SYN_EST = (hvacKwh, capKwh) => {
   const scale = hvacKwh / sum(COOL);
   const monthly = COOL.map((v) => v * scale);
   return {
@@ -53,8 +54,9 @@ const SYN_EST = (hvacKwh) => {
     monthlyHeatKwh: Array(12).fill(0),
     hvacKwh: hvacKwh,
     monthlyHvacKwh: monthly,
-    nonHvacKwh: 1,
-    monthlyNonHvacKwh: Array(12).fill(1 / 12),
+    nonHvacKwh: capKwh,
+    monthlyNonHvacKwh: Array(12).fill(capKwh / 12),
+    totalKwh: hvacKwh + capKwh,
     hvacGasT: 0,
     monthlyHvacGas: Array(12).fill(0),
     hvacKw: 100,
@@ -122,7 +124,7 @@ function makeSandbox(opts) {
     hvacEstimateForBuilding: (p, b) =>
       b === 'b1' && opts.hvacKwh
         ? {
-            est: SYN_EST(opts.hvacKwh),
+            est: SYN_EST(opts.hvacKwh, opts.capKwh || opts.hvacKwh),
             resolved: { source: 'bills', label: 'From 12 months of baseline bills' },
             estimate: 'saved',
             savedAt: 1790000000000,
@@ -141,6 +143,7 @@ function makeSandbox(opts) {
     _emNormBldgNameForJoin: (n) => String(n).toLowerCase().trim(),
   };
   sb.btGetData = (p) => sb.sget('en_bas_' + p, { buildings: {} });
+  if (opts.projType) store['en_projects'] = [{ id: 'p', type: opts.projType }];
   vm.createContext(sb);
   ['lib/formatting.js', 'computations/physics.js', 'computations/fan-savings.js', 'computations/end-use.js'].forEach(
     (f) => vm.runInContext(read(f).replace(/\r\n/g, '\n'), sb, { filename: f }),
@@ -386,10 +389,10 @@ async function main() {
   );
   const sized = eu.units.filter((u) => u.ok);
   const rawSum = sum(sized.map((u) => u.kwh));
-  ok(rawSum > 90000, 'the synthetic units add up to more than the HVAC electric end use (cap test)', rawSum);
+  ok(rawSum > 90000, 'the synthetic units add up to more than the cap', rawSum);
   ok(
     near(eu.annual, 90000, 1e-6) && near(eu.capFactor, 90000 / rawSum),
-    'capped by the HVAC electric end use',
+    'capped by total electricity less cooling and electric heating',
     JSON.stringify([eu.annual, eu.capFactor]),
   );
   ok(eu.capAnnual === 90000, 'cap reported');
@@ -422,13 +425,13 @@ async function main() {
   const euBig = sbBig.getEndUse('p', 'b1', 'fans');
   ok(
     euBig.capFactor === 1 && near(euBig.annual, sum(euBig.units.filter((u) => u.ok).map((u) => u.kwh))),
-    'inside the HVAC electric end use: no scaling',
+    'inside the cap: no scaling',
   );
-  // no HVAC electric end use at all: no cap, said so
+  // no total electricity at all: no cap, said so
   const sbNo = makeSandbox({});
   const euNo = sbNo.getEndUse('p', 'b1', 'fans');
   ok(
-    euNo.capAnnual === null && euNo.capFactor === 1 && /no HVAC electric end use/.test(euNo.sourceLabel),
+    euNo.capAnnual === null && euNo.capFactor === 1 && /no total electricity to check against/.test(euNo.sourceLabel),
     'no bills: no cap, labelled',
     euNo.sourceLabel,
   );
@@ -674,32 +677,79 @@ async function main() {
       'project estimate: median of the same type in the other buildings',
       xB.kwHow,
     );
-    // (d) area share: nothing of the type anywhere; a share of the HVAC electric end use, split over the unsized units
-    const sbD = makeSandbox({ rows: [ahu('e1', 'AHU-X', 0), ahu('e2', 'AHU-Y', 0)], hvacKwh: 100000 });
+    // (d) national ventilation share: nothing of the type anywhere; the CBECS share of the building total electricity, split over the unsized units
+    const sbD = makeSandbox({ rows: [ahu('e1', 'AHU-X', 0), ahu('e2', 'AHU-Y', 0)], hvacKwh: 100000, capKwh: 900000 });
     const euD = sbD.getEndUse('p', 'b1', 'fans');
     const xD = unitX(euD);
+    const totalD = 1000000;
     ok(xD.estimate === 'area' && xD.kwLevel === 'default', 'area estimate when no sibling exists');
     ok(
-      near(xD.kwh, (100000 * sbD.FAN_HVAC_ELECTRIC_FAN_SHARE) / 2, 1e-6) &&
-        near(euD.annual, 100000 * sbD.FAN_HVAC_ELECTRIC_FAN_SHARE, 1e-6),
-      'the two unsized units split the share of the HVAC electric end use',
+      near(sbD.fanVentilationShare('Office').share, 213 / 1196, 1e-12) &&
+        near(sbD.fanVentilationShare('K-12 School').share, 19 / 128, 1e-12) &&
+        sbD.fanVentilationShare('Education').key === 'education',
+      'CBECS 2018 Table E5 shares: All buildings 213/1196, Education 19/128',
+    );
+    ok(
+      near(xD.kwh, (totalD * 213) / 1196 / 2, 1e-6) && near(euD.annual, (totalD * 213) / 1196, 1e-6),
+      'no building type: the All buildings share of the total electricity, split equally',
       JSON.stringify([xD.kwh, euD.annual]),
     );
     ok(
-      /kWh per sq ft/.test(xD.kwHow) && /split across 2 unsized units/.test(xD.kwHow),
-      'area basis shows kWh per sq ft and the split',
+      /^Default: national average ventilation share for all buildings \(EIA CBECS 2018\)/.test(xD.kwHow) &&
+        /kWh per sq ft/.test(xD.kwHow) &&
+        /split across 2 unsized units equally/.test(xD.kwHow),
+      'area basis names the source, shows kWh per sq ft and the split',
       xD.kwHow,
     );
-    // no sibling and no HVAC electric end use: no number is invented, the answer says so
+    // a school takes the Education share
+    const sbSch = makeSandbox({ rows: [ahu('e1', 'AHU-X', 0), ahu('e2', 'AHU-Y', 0)], hvacKwh: 100000, capKwh: 900000, projType: 'K-12 School' });
+    const euSch = sbSch.getEndUse('p', 'b1', 'fans');
+    ok(
+      near(euSch.annual, (totalD * 19) / 128, 1e-6) && /ventilation share for education buildings/.test(unitX(euSch).kwHow),
+      'a school takes the Education share',
+      JSON.stringify([euSch.annual, unitX(euSch).kwHow]),
+    );
+    // sized fans come out of the target; tons set the split
+    const rtu = (id, name, tons) => ({ id: id, building: BLDG, equipName: name, category: 'rtu', pts: {}, pointsRaw: {}, hpTons: tons });
+    const sbT = makeSandbox({
+      rows: [ahu('g1', 'AHU-S', 8000), rtu('g2', 'RTU-A', '10'), rtu('g3', 'RTU-B', '30')],
+      hvacKwh: 100000,
+      capKwh: 900000,
+    });
+    const euT = sbT.getEndUse('p', 'b1', 'fans');
+    const sizedT = euT.units.find((u) => u.name === 'AHU-S');
+    const ra = euT.units.find((u) => u.name === 'RTU-A');
+    const rb = euT.units.find((u) => u.name === 'RTU-B');
+    ok(
+      near(ra.kwh + rb.kwh, (totalD * 213) / 1196 - sizedT.kwh, 1e-6) && near(rb.kwh, ra.kwh * 3, 1e-6),
+      'sized fans come out of the target; the unsized units split it by tons',
+      JSON.stringify([ra.kwh, rb.kwh, sizedT.kwh]),
+    );
+    // double count: fans come out of the non-HVAC remainder
+    const nhT = sbT.getEndUse('p', 'b1', 'nonHvacElectric');
+    ok(
+      near(nhT.annual + euT.annual, 900000, 1e-6) && near(sum(nhT.monthly), nhT.annual, 1e-6) && /less the .* kWh of supply fans/.test(nhT.sourceLabel),
+      'non-HVAC electric = total less cooling and electric heating, less the fans (no double count)',
+      JSON.stringify([nhT.annual, euT.annual]),
+    );
+    ok(
+      near(
+        sbT.getEndUse('p', 'b1', 'cooling').annual + sbT.getEndUse('p', 'b1', 'heatingElectric').annual + nhT.annual + euT.annual,
+        1000000,
+        1e-6,
+      ),
+      'cooling + electric heating + non-HVAC + fans = building total',
+    );
+    // no sibling and no total electricity: no number is invented, the answer says so
     const euNoHv = makeSandbox({ rows: [ahu('f1', 'AHU-X', 0)] }).getEndUse('p', 'b1', 'fans');
     ok(
       euNoHv.source === 'none' && /None of the 1 supply-fan rows/.test(euNoHv.sourceLabel),
-      'no sibling and no HVAC electric end use: not sized, said so',
+      'no sibling and no total electricity: not sized, said so',
       euNoHv.sourceLabel,
     );
     // the cap still holds
-    const euCap = makeSandbox({ rows: rowsA, hvacKwh: 10000 }).getEndUse('p', 'b1', 'fans');
-    ok(near(euCap.annual, 10000, 1e-6) && euCap.capFactor < 1, 'the fan end use stays capped by the HVAC electric end use');
+    const euCap = makeSandbox({ rows: rowsA, hvacKwh: 100000, capKwh: 10000 }).getEndUse('p', 'b1', 'fans');
+    ok(near(euCap.annual, 10000, 1e-6) && euCap.capFactor < 1, 'the fan end use stays capped by total electricity less cooling and electric heating');
 
     // drive: a speed point alone is a Default; the unit field decides; unknown falls back to the assumption
     const spd = (more) =>

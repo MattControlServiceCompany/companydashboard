@@ -1903,7 +1903,7 @@ const ECM_TEMPLATES = {
         id: 'baseline_kwh',
         label: 'Baseline Fan Energy of the Chosen Fans',
         unit: 'kWh/yr',
-        formula: "Each unit's share of the building's fan end use (getEndUse 'fans'): fan kW x run hours, scaled to fit the HVAC electric end use.",
+        formula: "Each unit's share of the building's fan end use (getEndUse 'fans'): fan kW x run hours, scaled to fit the building total electricity less cooling and electric heating.",
       },
       {
         id: 'savings_vfd_kwh',
@@ -2906,7 +2906,7 @@ function ecmFanRefineHints(units) {
     hints.push(
       "Fill the amps, a supply fan airflow or a horsepower in the Equipment Matrix for " +
         plural(estimated, "unit", "units") +
-        " now estimated from siblings or the building HVAC electric end use.",
+        " now estimated from siblings or the national average ventilation share of the building total electricity.",
     );
   const noAmps = count((u) => u.kwLevel !== "trend" && !u.estimate);
   if (noAmps)
@@ -3062,7 +3062,7 @@ function ecmFanUnitsFieldHtml(ctx) {
           unsized.length +
           ")</strong>: " +
           unsized.map((u) => _escHtml(u.name || "Unit")).join(", ") +
-          ". Each needs amps, a supply fan airflow or a horsepower in the Equipment Matrix, and no sibling or HVAC electric end use gives an estimate.</div>"
+          ". Each needs amps, a supply fan airflow or a horsepower in the Equipment Matrix, and no sibling or building total electricity gives an estimate.</div>"
         : "") +
       (hints.length
         ? '<div id="ecm-fan-hints" style="font-size:12px;color:var(--text2);margin-top:8px"><strong style="color:var(--text)">What would refine this estimate</strong><ul style="margin:4px 0 0 18px;padding:0">' +
