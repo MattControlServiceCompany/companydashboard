@@ -680,7 +680,7 @@ function getBldgMeasureSavingsByMo(projId, bldgId) {
   // Pricing is calcMeasureDollars (app/energy-savings.js), the one owner; this only sums its months.
   const monthlySavings = Array(12).fill(0);
   measures.forEach((m) => {
-    const r = m.rates || (p.savingsData.blRates || {})[bldgId] || {};
+    const r = measureRatesNow(p.id, m, (p.savingsData.blRates || {})[bldgId]);
     calcMeasureDollars(m, r).monthly.forEach((d, mo) => (monthlySavings[mo] += d.total));
   });
   return monthlySavings;

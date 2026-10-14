@@ -70,6 +70,30 @@ const RULES = [
 ];
 // Multi-line: a gas_rate or demand_rate input must not carry a number default (use null; bills prefill it).
 const INPUT_DEFAULT = /id:\s*'(?:gas_rate|demand_rate)'[^{}]*?default:\s*(?!null\b)[-\d.]+/g;
+// A measure's stored rates (m.rates) are read for pricing ONLY through measureRatesNow (app/energy-savings.js) and
+// written only through writeRateSet / writeRateField. Any other read of `.rates`, a destructured `rates`, an
+// indexed ['rates'] or a 'rates' property name is a second pricing source (the stored copy goes stale when the
+// baseline bills change). Report option / form objects are named cfg, o, optA, row, d: those hold form rates,
+// not a measure. A line that only seeds a write carries the marker  // rates-ok .
+const RATE_OWNER_FUNCS = [
+  'writeRateSet',
+  'writeRateField',
+  'measureRatesNow',
+  'ownerMeasureRates',
+  'initMeasureRates',
+  'ensureMeasureRates',
+  'followOwnerMeasureRates',
+  'rateGuardCheckSet',
+];
+const MEASURE_RATES_RULES = [
+  [
+    /(?<=[\w\])])(?<!\b(?:cfg|o|optA|row|d))\.rates\b/,
+    'measure .rates read outside measureRatesNow (price with measureRatesNow(projId, m, fallback))',
+  ],
+  [/\{[^}\n]*\brates\b[^}\n]*\}\s*=[^=>]/, 'destructured rates (read the measure through measureRatesNow)'],
+  [/\[\s*['"]rates['"]\s*\]/, "indexed ['rates'] read (read the measure through measureRatesNow)"],
+  [/(?:,|\()\s*['"]rates['"]\s*[,)]/, "'rates' property name passed outside writeRateSet / writeRateField"],
+];
 const files = [];
 ['app', 'computations'].forEach((d) =>
   fs.readdirSync(path.join(root, d)).forEach((f) => /\.js$/.test(f) && files.push(path.join(d, f))),
@@ -95,6 +119,20 @@ files.forEach((f) => {
     const ln = text.slice(0, m.index).split('\n').length;
     bad.push(f + ':' + ln + ' invented gas or demand default rate: ' + m[0].replace(/\s+/g, ' ').slice(0, 100));
   }
+  // The owner functions of the measure rates are exempt: blank their bodies (keeps line numbers).
+  let ratesText = text;
+  RATE_OWNER_FUNCS.forEach((fn) => {
+    ratesText = ratesText.replace(new RegExp('function ' + fn + '\\b[\\s\\S]*?\\r?\\n\\}\\r?\\n'), (m) =>
+      m.replace(/[^\r\n]/g, ' '),
+    );
+  });
+  ratesText.split(/\r?\n/).forEach((line, i) => {
+    if (/^\s*(?:\/\/|\*|\/\*)/.test(line) || /\/\/ rates-ok/.test(line)) return;
+    line = line.replace(/\bwrite(?:RateSet|RateField)\([^;]*/, '');
+    MEASURE_RATES_RULES.forEach(
+      ([re, why]) => re.test(line) && bad.push(f + ':' + (i + 1) + ' ' + why + ': ' + line.trim().slice(0, 100)),
+    );
+  });
   text.split(/\r?\n/).forEach((line, i) => {
     RULES.forEach(
       ([re, why]) => re.test(line) && bad.push(f + ':' + (i + 1) + ' ' + why + ': ' + line.trim().slice(0, 100)),

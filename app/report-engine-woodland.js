@@ -853,7 +853,7 @@ function wdApplySetpointOptions(projId, bldgId, cfg) {
     m.kwh = o.kwh;
     m.kw = o.kw;
     m.gas = o.gas;
-    var optRates = Object.assign({}, m.rates);
+    var optRates = Object.assign({}, m.rates); // rates-ok: seed for the writeRateSet below
     WD_RATE_FIELDS.forEach(function (f) {
       optRates[f.key] = cfg.rates[f.key];
     });

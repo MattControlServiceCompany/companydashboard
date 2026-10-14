@@ -931,7 +931,7 @@ function _renderSavingsContent(wrap, projId) {
   const bldgs = getUDBldgs(projId);
   let _migrated = followOwnerMeasureRates(projId, sd);
   sd.measures.forEach((m) => {
-    if (!m.rates) _migrated = initMeasureRates(m, projId, m.bldgId, 'matrix render') || _migrated;
+    if (!m.rates) _migrated = initMeasureRates(m, projId, m.bldgId, 'matrix render') || _migrated; // rates-ok: existence check, init writes through writeRateSet
     // Migrate missing selected field (undefined → true)
     if (m.selected === undefined) {
       m.selected = true;
@@ -1387,7 +1387,7 @@ async function svUpdateMsrRate(msrId, field, val, el) {
   const m = sd.measures.find((x) => x.id === msrId);
   if (!m) return;
   if (!(await rateGuardAccept(field, val, pid, m.bldgId))) {
-    if (el) el.value = (m.rates && m.rates[field]) || '';
+    if (el) el.value = (m.rates && m.rates[field]) || ''; // rates-ok: shows the typed field value
     return;
   }
   writeRateField(m, 'rates', field, val);
