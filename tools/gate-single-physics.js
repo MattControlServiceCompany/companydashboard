@@ -54,13 +54,19 @@ const REQUIRED = [
   'BTU_PER_LB_DISTRICT_STEAM',
   'THERMS_PER_THOUSAND_LB_DISTRICT_STEAM',
   'FAN_AFFINITY_EXPONENT',
+  'FAN_W_PER_CFM',
+  'FAN_FIXED_POWER_SHARE',
+  'MOTOR_DEFAULT_POWER_FACTOR',
 ];
-const REQUIRED_FUNCS = ['hpToKw', 'fanPowerFraction', 'ductStaticResetPowerSavings'];
+const REQUIRED_FUNCS = ['hpToKw', 'fanPowerFraction', 'ductStaticResetPowerSavings', 'fanKwFromCfm', 'motorKwFromAmps', 'fanMeanPowerFraction'];
 
 // Constants as numeric tokens. A digit or dot on either side means a longer number, not this one.
 const NUM = (s) => new RegExp('(?<![\\w.])' + s.replace(/\./g, '\\.') + '(?![\\w]|\\.\\d)');
 const CONSTANT_RULES = [
   [NUM('0.746'), 'kW per hp (KW_PER_HP)'],
+  [NUM('0.774'), 'fan W per cfm (FAN_W_PER_CFM.low)'],
+  [NUM('0.851'), 'fan W per cfm (FAN_W_PER_CFM.mid)'],
+  [NUM('0.928'), 'fan W per cfm (FAN_W_PER_CFM.high)'],
   [NUM('0.7457'), 'kW per hp (KW_PER_HP)'],
   [NUM('3412'), 'Btu per kWh (BTU_PER_KWH)'],
   [NUM('3412.14'), 'Btu per kWh (BTU_PER_KWH)'],
@@ -105,7 +111,10 @@ const AFFINITY_RULES = [
   [/\*\*\s*3(\.0*)?(?![\w.])/, 'x ** 3 fan affinity law'],
   [/(?<![\w.])([A-Za-z_$][\w.$]*)\s*\*\s*\1\s*\*\s*\1(?![\w.$])/, 'x * x * x fan affinity law'],
 ];
-const STATIC_RULES = [[/Math\.sqrt\(\s*1\s*-/, 'Math.sqrt(1 - pressure reduction) static reset speed']];
+const STATIC_RULES = [
+  [/Math\.sqrt\(\s*1\s*-/, 'Math.sqrt(1 - pressure reduction) static reset speed'],
+  [/Math\.sqrt\(\s*3\s*\)/, 'Math.sqrt(3) three-phase motor kW (use motorKwFromAmps)'],
+];
 
 function isTestFile(rel) {
   const b = path.basename(rel);

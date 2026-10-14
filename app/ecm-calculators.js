@@ -1846,6 +1846,150 @@ const ECM_TEMPLATES = {
     },
   },
 
+  /* ── 18. FAN SAVINGS (from the Equipment Matrix supply fans and the BAS trends) ── */
+  fan_savings: {
+    id: 'fan_savings',
+    name: 'Fan Savings',
+    category: 'HVAC Equipment',
+    description:
+      'Supply fans of the chosen Equipment Matrix units: a variable-speed drive or efficient motor on a constant-speed fan, a drive in place of a two-speed motor, and a duct static pressure reset where a drive exists. Each unit uses the best data on hand and the form shows which: a measured trend, an Equipment Matrix value or a default. Add fan amps, run hours and speed trends and the estimate refines itself. A projected estimate, not measured and verified savings.',
+    icon: '🌀',
+    inputs: [
+      // Drawn by renderEcmCalculator (ecmFanUnitsFieldHtml): the building's supply-fan units with their data levels.
+      { id: 'fan_units', label: 'Fans to include', type: 'fan_units', default: [] },
+      {
+        id: 'lever_vfd',
+        label: 'Variable-speed drive or efficient motor on a constant-speed fan',
+        type: 'select',
+        options: [
+          { value: 'yes', label: 'Include' },
+          { value: 'no', label: 'Leave out' },
+        ],
+        default: 'yes',
+      },
+      {
+        id: 'lever_twospeed',
+        label: 'Variable-speed drive in place of a two-speed motor',
+        type: 'select',
+        options: [
+          { value: 'yes', label: 'Include' },
+          { value: 'no', label: 'Leave out' },
+        ],
+        default: 'yes',
+      },
+      {
+        id: 'lever_reset',
+        label: 'Duct static pressure reset on a fan that has a drive',
+        type: 'select',
+        options: [
+          { value: 'yes', label: 'Include' },
+          { value: 'no', label: 'Leave out' },
+        ],
+        default: 'yes',
+      },
+      {
+        id: 'reset_cut_pct',
+        label: 'Duct static pressure cut the reset reaches',
+        help: 'Default 20%, a stated assumption. A 20% pressure cut lowers fan power by about 26% (fan law, with a share of fixed losses).',
+        unit: '%',
+        type: 'number',
+        default: Math.round(FAN_RESET_DEFAULT_PRESSURE_CUT * 100),
+        min: 5,
+        max: 40,
+      },
+    ],
+    outputs: [
+      {
+        id: 'baseline_kwh',
+        label: 'Baseline Fan Energy of the Chosen Fans',
+        unit: 'kWh/yr',
+        formula: "Each unit's share of the building's fan end use (getEndUse 'fans'): fan kW x run hours, scaled to fit the HVAC electric end use.",
+      },
+      {
+        id: 'savings_vfd_kwh',
+        label: 'Drive on Constant-Speed Fans',
+        unit: 'kWh/yr',
+        formula: 'kW x hours x (1 - mean power fraction of the speed profile). Profile: the unit trend if it has one, else the default.',
+      },
+      {
+        id: 'savings_twospeed_kwh',
+        label: 'Drive in Place of a Two-Speed Motor',
+        unit: 'kWh/yr',
+        formula: 'High-speed kW x High hours x (1 - mean power fraction over Low to High). Low hours stay at Low speed. High/Low split: the enable trend if it has one, else the default.',
+      },
+      {
+        id: 'savings_reset_kwh',
+        label: 'Duct Static Pressure Reset',
+        unit: 'kWh/yr',
+        formula: 'Baseline kWh x ductStaticResetPowerSavings(pressure cut) x share of fans the reset works on (setpoint trend: flat = 1, moving = 0; else the default).',
+      },
+      { id: 'savings_kwh', label: 'Annual kWh Saved', unit: 'kWh/yr', formula: 'Drive + two-speed drive + reset' },
+      {
+        id: 'savings_kw',
+        label: 'Average Demand Reduction While the Fans Run',
+        unit: 'kW',
+        formula: "Sum over the units of (kWh saved / run hours). Laid over the months by the fan end use's profile when added as a measure.",
+      },
+    ],
+    // The per-unit table under the results (ecmFanDetailHtml).
+    detailHtml: (results) => ecmFanDetailHtml(results),
+    calculate(inp, ctx) {
+      const none = (note) => ({
+        baseline_kwh: 0,
+        savings_vfd_kwh: 0,
+        savings_twospeed_kwh: 0,
+        savings_reset_kwh: 0,
+        savings_kwh: 0,
+        savings_kw: 0,
+        units: [],
+        note: note,
+      });
+      if (!ctx || !ctx.projId || !ctx.buildingId) return none('Choose a building to list its supply fans.');
+      const eu = getEndUse(ctx.projId, ctx.buildingId, 'fans');
+      if (eu.source === 'none') return none(eu.sourceLabel);
+      const chosen = new Set(inp.fan_units || []);
+      const models = eu.units.filter((m) => chosen.has(m.id));
+      if (!models.some((m) => m.ok)) return none('Choose at least one fan that has data to size it.');
+      const r = fanSavingsForUnits(
+        models,
+        {
+          vfd: inp.lever_vfd !== 'no',
+          twoSpeed: inp.lever_twospeed !== 'no',
+          reset: inp.lever_reset !== 'no',
+          resetCut: inp.reset_cut_pct / 100,
+        },
+        eu.capFactor,
+      );
+      // The lines are sums of the rounded unit values, so the table under the results adds up to the headline.
+      const units = r.units.map((u) => {
+        const vfd = Math.round(u.vfd);
+        const twoSpeed = Math.round(u.twoSpeed);
+        const reset = Math.round(u.reset);
+        return {
+          id: u.id,
+          name: u.name,
+          baselineKwh: Math.round(u.baselineKwh),
+          vfd: vfd,
+          twoSpeed: twoSpeed,
+          reset: reset,
+          total: vfd + twoSpeed + reset,
+          why: u.why,
+        };
+      });
+      const sumOf = (k) => units.reduce((t, u) => t + u[k], 0);
+      return {
+        baseline_kwh: sumOf('baselineKwh'),
+        savings_vfd_kwh: sumOf('vfd'),
+        savings_twospeed_kwh: sumOf('twoSpeed'),
+        savings_reset_kwh: sumOf('reset'),
+        savings_kwh: sumOf('total'),
+        savings_kw: Math.round(r.savingsKw * 10) / 10,
+        units: units,
+        note: '',
+      };
+    },
+  },
+
   /* ── 16. SOLAR (custom full-page calc, no inputs[]/calculate() — routes to openSolarCalc) ── */
   solar: {
     id: 'solar',
@@ -2053,6 +2197,11 @@ const ECM_MEASURE_FIELD_MAP = {
     },
   ],
   fan_wall: [{ field: "savings_kwh", kind: "kwh", endUse: ["hvacElectric"] }],
+  // The fan end use (getEndUse 'fans', the Equipment Matrix supply fans) shapes both: a fan runs all year.
+  fan_savings: [
+    { field: "savings_kwh", kind: "kwh", endUse: ["fans"] },
+    { field: "savings_kw", kind: "kw", endUse: ["fans"] },
+  ],
 };
 
 // The map entries of one template with the gas-or-electric choice resolved from the inputs. null = no month-by-month source.
@@ -2194,9 +2343,10 @@ function ecmAddAsMeasure(projId, bldgId, templateId, inputs, results) {
  * Run a template's calculate() function after coercing all inputs to numbers. Returns yearly quantities only.
  * @param {string} templateId
  * @param {Object} inputs — key/value map from the form
+ * @param {Object} [ctx] — { projId, buildingId } for a template that reads the building's data (Fan Savings)
  * @returns {Object} results object
  */
-function calculateEcm(templateId, inputs) {
+function calculateEcm(templateId, inputs, ctx) {
   const tmpl = ECM_TEMPLATES[templateId];
   if (!tmpl) throw new Error("Unknown ECM template: " + templateId);
 
@@ -2210,7 +2360,7 @@ function calculateEcm(templateId, inputs) {
       coerced[inp.id] = raw != null ? raw : inp.default;
     }
   });
-  return tmpl.calculate(coerced);
+  return tmpl.calculate(coerced, ctx || null);
 }
 /* ─── Render API ─────────────────────────────────────── */
 
@@ -2281,6 +2431,8 @@ function renderEcmCalculator(
         else if (hint && eu)
           hint = hint.replace(")", ": " + eu.sourceLabel + ")");
       }
+
+      if (inp.type === "fan_units") return ecmFanUnitsFieldHtml(ctx);
 
       const helpTitle = inp.help
         ? ` title="${_escHtml(inp.help)}"`
@@ -2419,6 +2571,12 @@ function renderEcmCalculator(
     const inputs = {};
     let valid = true;
     tmpl.inputs.forEach((inp) => {
+      if (inp.type === "fan_units") {
+        inputs[inp.id] = Array.from(
+          container.querySelectorAll(".fan-unit-pick:checked"),
+        ).map((c) => c.getAttribute("data-fan-id"));
+        return;
+      }
       const el = container.querySelector("#ecm-inp-" + inp.id);
       if (el) {
         inputs[inp.id] =
@@ -2431,7 +2589,13 @@ function renderEcmCalculator(
     });
     if (!valid) return;
 
-    const results = calculateEcm(templateId, inputs);
+    const results = calculateEcm(
+      templateId,
+      inputs,
+      ctx && ctx.projId
+        ? { projId: ctx.projId, buildingId: ctx.buildingId }
+        : null,
+    );
     renderEcmResults(
       templateId,
       results,
@@ -2561,6 +2725,8 @@ function renderEcmResults(templateId, results, container, projectContext, inputs
       : `<div id="ecm-savings-value" style="padding:12px 16px;border-top:1px solid var(--border);font-size:12px;color:var(--text2)">${_escHtml(built.reason)}</div>`
     : '';
 
+  const detailHtml = tmpl.detailHtml ? tmpl.detailHtml(results) : '';
+
   // Build the "Save to Project" + "Add as Measure" footer if a project context is available
   const saveBtnHtml =
     ctx && ctx.projId
@@ -2596,6 +2762,7 @@ function renderEcmResults(templateId, results, container, projectContext, inputs
           </tbody>
         </table>
       </div>
+      ${detailHtml}
       ${valueHtml}
       ${saveBtnHtml}
     </div>`;
@@ -2651,6 +2818,270 @@ function renderEcmResults(templateId, results, container, projectContext, inputs
   }
 }
 
+/* ─── Fan Savings: the unit picker with data levels, and the per-unit result table ─────────────── */
+
+(function _injectFanTableCSS() {
+  if (
+    typeof document === "undefined" ||
+    document.getElementById("ecm-fan-table-styles")
+  )
+    return;
+  var s = document.createElement("style");
+  s.id = "ecm-fan-table-styles";
+  s.textContent =
+    ".fan-tbl-outer { border:1px solid var(--border); border-radius:6px; overflow:hidden; overflow-x:auto; }" +
+    ".fan-tbl { width:100%; border-collapse:separate; border-spacing:0; font-size:12px; }" +
+    ".fan-tbl th { background:var(--s1); color:var(--text2); font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; padding:8px 10px; text-align:left; border-right:1px solid var(--border); border-bottom:1px solid var(--border2); }" +
+    ".fan-tbl td { padding:6px 10px; color:var(--text); border-right:1px solid var(--border); border-bottom:1px solid var(--border); vertical-align:top; font-variant-numeric:tabular-nums; }" +
+    ".fan-tbl th:last-child, .fan-tbl td:last-child { border-right:none; }" +
+    ".fan-tbl tbody tr:last-child td { border-bottom:none; }" +
+    ".fan-tbl td.fan-num, .fan-tbl th.fan-num { text-align:right; }" +
+    ".fan-tbl tfoot td { background:var(--s1); font-weight:700; border-top:2px solid var(--border2); border-bottom:none; }" +
+    ".fan-lvl { display:inline-block; font-size:10px; font-weight:700; padding:1px 6px; border-radius:8px; border:1px solid var(--border2); margin-top:2px; }" +
+    ".fan-lvl-trend { color:var(--green); border-color:var(--green); }" +
+    ".fan-lvl-matrix { color:var(--accent); border-color:var(--accent); }" +
+    ".fan-lvl-default { color:var(--text2); }" +
+    ".fan-how { font-size:10px; color:var(--text2); }";
+  document.head.appendChild(s);
+})();
+
+// One value with its data level: the value, a level tag in words (colour is never the only cue) and how it was found.
+function ecmFanLevelCell(valueText, level, how) {
+  const lv = FAN_LEVEL_LABEL[level] || "";
+  return (
+    (valueText ? "<div>" + _escHtml(valueText) + "</div>" : "") +
+    (lv
+      ? '<span class="fan-lvl fan-lvl-' +
+        _escHtml(level) +
+        '">' +
+        _escHtml(lv) +
+        "</span>"
+      : "") +
+    (how ? '<div class="fan-how">' + _escHtml(how) + "</div>" : "")
+  );
+}
+
+// What would refine the estimate, in plain words, from the units that are not yet at a measured trend.
+function ecmFanRefineHints(units) {
+  const sized = units.filter((u) => u.ok);
+  const hints = [];
+  const plural = (c, one, many) => c + " " + (c === 1 ? one : many);
+  const count = (f) => sized.filter(f).length;
+  const noHours = count((u) => u.hoursLevel !== "trend");
+  if (noHours)
+    hints.push(
+      "Import a fan status (or fan enable) trend for " +
+        plural(noHours, "unit", "units") +
+        " to replace the default run hours.",
+    );
+  const noAmps = count((u) => u.kwLevel !== "trend");
+  if (noAmps)
+    hints.push(
+      "Import a fan amps trend, and fill the voltage and phase in the Equipment Matrix, for " +
+        plural(noAmps, "unit", "units") +
+        " to replace the fan power estimated from airflow, horsepower or amps with an assumed voltage.",
+    );
+  const noSpeed = count((u) => u.vfd === "yes" && u.profile.level !== "trend");
+  if (noSpeed)
+    hints.push(
+      "Import a fan speed trend for " +
+        plural(noSpeed, "unit", "units") +
+        " that already have a drive.",
+    );
+  const twoNoTrend = count((u) => u.twoSpeed && u.twoSpeed.level !== "trend");
+  if (twoNoTrend)
+    hints.push(
+      "Import the High and Low fan enable trends for " +
+        plural(twoNoTrend, "two-speed unit", "two-speed units") +
+        ".",
+    );
+  const noSet = count(
+    (u) => u.vfd === "yes" && !u.twoSpeed && u.reset.level !== "trend",
+  );
+  if (noSet)
+    hints.push(
+      "Import a duct static pressure setpoint trend for " +
+        plural(noSet, "unit", "units") +
+        " with a drive.",
+    );
+  return hints;
+}
+
+// The unit picker of the Fan Savings form: one row per sized supply-fan unit of the building, each input with its data
+// level. Units that cannot be sized are named in one line under the table.
+function ecmFanUnitsFieldHtml(ctx) {
+  const wrap = (inner) =>
+    '<div id="ecm-fanunits" style="margin-bottom:12px"><div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:6px">Fans to include</div>' +
+    inner +
+    "</div>";
+  if (!ctx || !ctx.buildingId)
+    return wrap(
+      '<div style="font-size:12px;color:var(--text2)">Choose a building to list its supply fans from the Equipment Matrix.</div>',
+    );
+  const eu = getEndUse(ctx.projId, ctx.buildingId, "fans");
+  if (!eu.units)
+    return wrap(
+      '<div id="ecm-fanunits-none" style="font-size:12px;color:var(--text2)">' +
+        _escHtml(eu.sourceLabel) +
+        "</div>",
+    );
+  const byName = (x, y) =>
+    String(x.name).localeCompare(String(y.name), undefined, { numeric: true });
+  const rows = eu.units
+    .filter((u) => u.ok)
+    .sort(byName)
+    .map((u) => {
+      const kwText =
+        Math.round(u.kw * 10) / 10 +
+        " kW" +
+        (u.kwBasis === "full" ? " at full speed" : " while running");
+      const hasDrive = u.vfd === "yes";
+      const resetApplies = hasDrive && !u.twoSpeed;
+      const resetText =
+        u.reset.pass === 0
+          ? "Already running"
+          : u.reset.pass === 1
+            ? "None today"
+            : Math.round(u.reset.pass * 100) + "% of fans assumed to lack one";
+      return (
+        "<tr>" +
+        '<td><input type="checkbox" class="fan-unit-pick" data-fan-id="' +
+        _escHtml(u.id) +
+        '" checked aria-label="Include ' +
+        _escHtml(u.name) +
+        '"></td>' +
+        "<td>" +
+        _escHtml(u.name || "Unit") +
+        '<div class="fan-how">' +
+        _escHtml(u.category) +
+        "</div></td>" +
+        '<td class="fan-num">' +
+        ecmFanLevelCell(kwText, u.kwLevel, u.kwHow) +
+        "</td>" +
+        '<td class="fan-num">' +
+        ecmFanLevelCell(
+          Math.round(u.hours).toLocaleString() + " h/yr",
+          u.hoursLevel,
+          u.hoursHow,
+        ) +
+        "</td>" +
+        "<td>" +
+        ecmFanLevelCell(
+          hasDrive ? "Has a drive" : "Constant speed",
+          u.vfdLevel,
+          u.vfdHow,
+        ) +
+        (u.twoSpeed
+          ? ""
+          : '<div class="fan-how">Speed profile:</div>' +
+            ecmFanLevelCell("", u.profile.level, u.profile.how)) +
+        "</td>" +
+        "<td>" +
+        (u.twoSpeed
+          ? ecmFanLevelCell(
+              Math.round(u.twoSpeed.lowShare * 100) + "% of hours on Low",
+              u.twoSpeed.level,
+              u.twoSpeed.how,
+            )
+          : "No") +
+        "</td>" +
+        "<td>" +
+        (resetApplies
+          ? ecmFanLevelCell(resetText, u.reset.level, u.reset.how)
+          : "Not applicable") +
+        "</td>" +
+        "</tr>"
+      );
+    })
+    .join("");
+  const unsized = eu.units.filter((u) => !u.ok).sort(byName);
+  const hints = ecmFanRefineHints(eu.units);
+  return wrap(
+    '<div id="ecm-fan-enduse" style="font-size:12px;color:var(--text2);margin-bottom:8px">Fan end use of this building: <strong style="color:var(--text)">' +
+      Math.round(eu.annual).toLocaleString() +
+      " kWh/yr</strong>. " +
+      _escHtml(eu.sourceLabel) +
+      ".</div>" +
+      '<div class="fan-tbl-outer"><table class="fan-tbl"><thead><tr><th></th><th>Unit</th><th class="fan-num">Fan power</th><th class="fan-num">Run hours</th><th>Speed drive</th><th>Two-speed fan</th><th>Static pressure reset</th></tr></thead><tbody>' +
+      rows +
+      "</tbody></table></div>" +
+      (unsized.length
+        ? '<div id="ecm-fan-unsized" style="font-size:12px;color:var(--text2);margin-top:8px"><strong style="color:var(--text)">Not sized (' +
+          unsized.length +
+          ")</strong>: " +
+          unsized.map((u) => _escHtml(u.name || "Unit")).join(", ") +
+          ". Each needs amps, a supply fan airflow or a horsepower in the Equipment Matrix.</div>"
+        : "") +
+      (hints.length
+        ? '<div id="ecm-fan-hints" style="font-size:12px;color:var(--text2);margin-top:8px"><strong style="color:var(--text)">What would refine this estimate</strong><ul style="margin:4px 0 0 18px;padding:0">' +
+          hints.map((h) => "<li>" + _escHtml(h) + "</li>").join("") +
+          "</ul></div>"
+        : ""),
+  );
+}
+// The per-unit result table under the Fan Savings results, with a totals row.
+function ecmFanDetailHtml(results) {
+  if (!results) return "";
+  if (!results.units || !results.units.length)
+    return results.note
+      ? '<div id="ecm-fan-note" style="padding:12px 16px;border-top:1px solid var(--border);font-size:12px;color:var(--text2)">' +
+          _escHtml(results.note) +
+          "</div>"
+      : "";
+  const n = (v) => (v ? Math.round(v).toLocaleString() : "0");
+  const tot = results.units.reduce(
+    (a, u) => ({
+      b: a.b + u.baselineKwh,
+      v: a.v + u.vfd,
+      t: a.t + u.twoSpeed,
+      r: a.r + u.reset,
+      s: a.s + u.total,
+    }),
+    { b: 0, v: 0, t: 0, r: 0, s: 0 },
+  );
+  const names = { vfd: "Drive", twoSpeed: "Two-speed drive", reset: "Reset" };
+  const why = (u) =>
+    Object.keys(u.why || {})
+      .map((k) => names[k] + ": " + u.why[k])
+      .join("; ");
+  const body = results.units
+    .map(
+      (u) =>
+        "<tr><td>" +
+        _escHtml(u.name || "Unit") +
+        "</td>" +
+        '<td class="fan-num">' +
+        n(u.baselineKwh) +
+        '</td><td class="fan-num">' +
+        n(u.vfd) +
+        '</td><td class="fan-num">' +
+        n(u.twoSpeed) +
+        '</td><td class="fan-num">' +
+        n(u.reset) +
+        '</td><td class="fan-num">' +
+        n(u.total) +
+        '</td><td class="fan-how">' +
+        _escHtml(why(u)) +
+        "</td></tr>",
+    )
+    .join("");
+  return (
+    '<div style="padding:12px 16px;border-top:1px solid var(--border)"><div class="fan-tbl-outer"><table class="fan-tbl" id="ecm-fan-result-tbl"><thead><tr><th>Unit</th><th class="fan-num">Baseline kWh</th><th class="fan-num">Drive kWh saved</th><th class="fan-num">Two-speed drive kWh saved</th><th class="fan-num">Reset kWh saved</th><th class="fan-num">Total kWh saved</th><th>Not applied because</th></tr></thead><tbody>' +
+    body +
+    '</tbody><tfoot><tr><td>Total</td><td class="fan-num">' +
+    n(tot.b) +
+    '</td><td class="fan-num">' +
+    n(tot.v) +
+    '</td><td class="fan-num">' +
+    n(tot.t) +
+    '</td><td class="fan-num">' +
+    n(tot.r) +
+    '</td><td class="fan-num">' +
+    n(tot.s) +
+    "</td><td></td></tr></tfoot></table></div>" +
+    '<div class="fan-how" style="margin-top:6px">Projected from the data on hand (a measured trend, an Equipment Matrix value or a default, shown for each input above). Not measured and verified savings.</div></div>'
+  );
+}
 /* ─── Input Validation Helpers ───────────────────────── */
 
 function _ecmValidateInput(el, min, max) {

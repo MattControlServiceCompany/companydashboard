@@ -177,7 +177,7 @@ console.log('--- 1. getEndUse ---');
   const nob = sb.getEndUse('p', null, 'cooling');
   ok(nob.source === 'none', 'no building chosen: nothing');
 
-  ['fans', 'lighting', 'plug'].forEach((k) => {
+  ['lighting', 'plug'].forEach((k) => {
     const r = sb.getEndUse('p', 'b1', k);
     ok(
       r.modeled === false && r.source === 'none' && r.annual === null && /Not modeled yet/.test(r.sourceLabel),
@@ -261,11 +261,12 @@ console.log('--- 3. template inputs and measure map ---');
   };
   vm.createContext(sb);
   vm.runInContext(fs.readFileSync(path.join(root, 'computations/physics.js'), 'utf8'), sb);
+  vm.runInContext(fs.readFileSync(path.join(root, 'computations/fan-savings.js'), 'utf8'), sb);
   vm.runInContext(fs.readFileSync(path.join(root, 'computations/end-use.js'), 'utf8'), sb);
   vm.runInContext(ecmSrc, sb);
   const T = sb.ECM_TEMPLATES;
   const MAP = sb.ECM_MEASURE_FIELD_MAP;
-  const euKeys = Object.keys(sb.END_USES);
+  const euKeys = Object.keys(sb.END_USES).concat(['fans']); // fans: from the Equipment Matrix, tools/test-fan-savings.js
   const lines = [];
   Object.keys(T).forEach((id) => {
     const t = T[id];

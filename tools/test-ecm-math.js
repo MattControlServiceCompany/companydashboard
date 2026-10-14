@@ -40,6 +40,7 @@ vm.createContext(sb);
 vm.runInContext(fs.readFileSync(path.join(root, 'lib/date-helpers.js'), 'utf8'), sb);
 vm.runInContext(fs.readFileSync(path.join(root, 'lib/formatting.js'), 'utf8'), sb);
 vm.runInContext(fs.readFileSync(path.join(root, 'computations/physics.js'), 'utf8'), sb);
+vm.runInContext(fs.readFileSync(path.join(root, 'computations/fan-savings.js'), 'utf8'), sb);
 vm.runInContext(fs.readFileSync(path.join(root, 'computations/rates.js'), 'utf8'), sb);
 vm.runInContext(fs.readFileSync(path.join(root, 'computations/normalization.js'), 'utf8'), sb);
 vm.runInContext(fs.readFileSync(path.join(root, 'computations/savings.js'), 'utf8'), sb);

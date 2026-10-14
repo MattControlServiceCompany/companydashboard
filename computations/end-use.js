@@ -18,6 +18,8 @@
 // End uses the estimate models today: cooling, heatingElectric, heatingGas, hvacElectric (cooling + electric
 // heating, fans and pumps are inside it) and nonHvacElectric (lighting + plug + other, not split). Fans,
 // lighting and plug loads are NOT modeled separately yet: getEndUse answers them with modeled:false.
+// Fans (Phase 6, 2026-10-14) are modeled from the Equipment Matrix supply-fan rows of the building, not from the load
+// estimate: see _fanEndUse below. They sit inside hvacElectric, so the measured HVAC electric end use caps them.
 //
 // Monthly arrays are indexed by calendar month, Jan(0)..Dec(11), the same indexing the Energy Savings matrix uses.
 
@@ -56,7 +58,7 @@ var END_USES = {
     kw: 'nonHvac',
   },
 };
-var END_USES_NOT_MODELED = ['fans', 'lighting', 'plug'];
+var END_USES_NOT_MODELED = ['lighting', 'plug'];
 
 function _euNotAvailable(endUse, label, unit, modeled, sourceLabel) {
   return {
@@ -85,9 +87,9 @@ function _euMonthlyOrNull(arr) {
  * The building's annual and monthly baseline of one end use, from its HVAC Load Estimate.
  * @param {string|number} projId
  * @param {string} bldgId
- * @param {string} endUse - a key of END_USES (cooling, heatingElectric, heatingGas, hvacElectric, nonHvacElectric)
+ * @param {string} endUse - a key of END_USES (cooling, heatingElectric, heatingGas, hvacElectric, nonHvacElectric) or 'fans'
  * @returns {{endUse:string, label:string, modeled:boolean, unit:string|null,
- *   source:'bills'|'annual'|'none', sourceLabel:string, estimate:'saved'|'default'|null, basis:'measured'|'rule'|'override'|'method'|null,
+ *   source:'bills'|'annual'|'matrix'|'none', sourceLabel:string, estimate:'saved'|'default'|null, basis:'measured'|'rule'|'override'|'method'|null,
  *   annual:number|null, monthly:number[]|null,
  *   kw:{annual:number, monthly:number[]|null, peak:number|null}|null}}
  *   annual = quantity per year in `unit`; monthly = 12 calendar-month values that add up to annual, or null
@@ -95,6 +97,7 @@ function _euMonthlyOrNull(arr) {
  *   same end use (annual = sum of the 12 monthly kW, or the entered peak share for annual-only data).
  */
 function getEndUse(projId, bldgId, endUse) {
+  if (endUse === 'fans') return _fanEndUse(projId, bldgId);
   var def = END_USES[endUse];
   if (!def) {
     var known = END_USES_NOT_MODELED.indexOf(endUse) >= 0;
@@ -150,6 +153,104 @@ function getEndUse(projId, bldgId, endUse) {
     annual: isFinite(annual) ? annual : null,
     monthly: monthly,
     kw: kw,
+  };
+}
+
+/**
+ * The fan end use of one building (Phase 6): the supply fans of its Equipment Matrix rows, each unit sized by
+ * fanUnitModel (computations/fan-savings.js: kW from amps, else cfm, else HP; hours from the BAS trend, else the
+ * matrix, else a stated default), added up and capped by the building's HVAC electric end use (the fans are inside it).
+ * The result has the same shape as every other end use, plus:
+ *   units       - the sized units (fanUnitModel results, kWh before the cap) and the units that could not be sized (ok:false, missing)
+ *   capFactor   - 1, or capAnnual / sum when the units add up to more than the HVAC electric end use
+ *   capAnnual   - the HVAC electric kWh used as the cap (null: no HVAC electric data, so no cap)
+ *   levels      - count of units by data level for kW and for hours ({kw:{trend,matrix,default}, hours:{...}})
+ * Monthly = the annual quantity by days in the month (a fan runs all year); the kW of each month is the running kW of the units.
+ */
+function _fanEndUse(projId, bldgId) {
+  var label = 'Fans';
+  var b = bldgId && typeof getUDBldg === 'function' ? getUDBldg(projId, bldgId) : null;
+  if (!b) return _euNotAvailable('fans', label, 'kWh', true, 'No building chosen');
+  var read = fanReadUnits(projId, bldgId);
+  if (!read.units.length) return _euNotAvailable('fans', label, 'kWh', true, read.note);
+  var units = read.units.map(fanUnitModel);
+  var sized = units.filter(function (u) {
+    return u.ok;
+  });
+  if (!sized.length)
+    return _euNotAvailable(
+      'fans',
+      label,
+      'kWh',
+      true,
+      'None of the ' +
+        units.length +
+        ' supply-fan rows has the data to size a fan (needs amps, a supply fan airflow, or a horsepower)',
+    );
+  var raw = sized.reduce(function (s, u) {
+    return s + u.kwh;
+  }, 0);
+  var hv = getEndUse(projId, bldgId, 'hvacElectric');
+  var capAnnual = hv.modeled && hv.source !== 'none' && hv.annual > 0 ? hv.annual : null;
+  var factor = capAnnual && raw > capAnnual ? capAnnual / raw : 1;
+  var annual = raw * factor;
+  var weights = fanMonthWeights();
+  var monthly = weights.map(function (w) {
+    return annual * w;
+  });
+  var runKw =
+    sized.reduce(function (s, u) {
+      return s + u.kwh / u.hours;
+    }, 0) * factor;
+  var kwMonthly = weights.map(function () {
+    return runKw;
+  });
+  var levels = { kw: { trend: 0, matrix: 0, default: 0 }, hours: { trend: 0, matrix: 0, default: 0 } };
+  sized.forEach(function (u) {
+    levels.kw[u.kwLevel]++;
+    levels.hours[u.hoursLevel]++;
+  });
+  var lv = function (o) {
+    return ['trend', 'matrix', 'default']
+      .filter(function (k) {
+        return o[k];
+      })
+      .map(function (k) {
+        return o[k] + ' ' + FAN_LEVEL_LABEL[k].toLowerCase();
+      })
+      .join(', ');
+  };
+  var sourceLabel =
+    'Equipment Matrix supply fans: ' +
+    sized.length +
+    ' of ' +
+    units.length +
+    ' rows sized (kW: ' +
+    lv(levels.kw) +
+    '; run hours: ' +
+    lv(levels.hours) +
+    ')' +
+    (factor < 1
+      ? ', scaled down (x' + Math.round(factor * 100) / 100 + ') to fit the HVAC electric end use'
+      : capAnnual
+        ? ', within the HVAC electric end use'
+        : ', no HVAC electric end use to check against');
+  return {
+    endUse: 'fans',
+    label: label,
+    modeled: true,
+    unit: 'kWh',
+    source: 'matrix',
+    sourceLabel: sourceLabel,
+    estimate: null,
+    basis: 'method',
+    annual: annual,
+    monthly: monthly,
+    kw: { annual: runKw * 12, monthly: kwMonthly, peak: runKw },
+    units: units,
+    capFactor: factor,
+    capAnnual: capAnnual,
+    levels: levels,
   };
 }
 

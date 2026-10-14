@@ -137,6 +137,33 @@ var BT_POINT_PATTERNS = {
     'supply fan enabled',
   ],
   fanspeed: ['fan speed', 'vfd speed', 'fan hz', 'supply fan vfd', 'sf vfd', 'supply vfd', 'fan vfd speed'],
+  // Fan phase 6 (2026-10-14): the fan points the fan savings template reads (computations/fan-savings.js).
+  // Hi/Lo enable = a two-speed fan; amps = the motor current; the Hi/Lo names are longer than 'supply fan' (fanstatus), so they win.
+  fanhienable: [
+    'supply fan high enable',
+    'supply fan hi enable',
+    'fan high enable',
+    'fan hi enable',
+    'sf high enable',
+    'fan high speed',
+  ],
+  fanloenable: [
+    'supply fan low enable',
+    'supply fan lo enable',
+    'fan low enable',
+    'fan lo enable',
+    'sf low enable',
+    'fan low speed',
+  ],
+  fanamps: [
+    'supply fan amps',
+    'supply fan amperage',
+    'supply fan vfd amps',
+    'fan amps',
+    'fan amperage',
+    'sf amps',
+    'fan current',
+  ],
   staticp: ['duct static', 'static pressure', 'duct pressure', 'dsp', 'supply static', 'duct sp', 'static pr'],
   staticpsp: [
     'static pressure setpoint',
@@ -244,6 +271,9 @@ var BT_POINT_LABELS = {
   heatvalve: 'Heating Valve %',
   fanstatus: 'Fan Status',
   fanspeed: 'Fan Speed / VFD %',
+  fanhienable: 'Fan High Speed Enable',
+  fanloenable: 'Fan Low Speed Enable',
+  fanamps: 'Fan Amps',
   staticp: 'Duct Static Pressure',
   staticpsp: 'Duct Static Setpoint',
   zonetemp: 'Zone Temperature',
@@ -801,6 +831,64 @@ function btComputeDailySummaries(rows, columns, schedule) {
   return summaries;
 }
 
+/* ── FAN POINT DAILY EXTRAS (fan phase 6, 2026-10-14) ─────────────────────────
+ * What the fan savings template reads (computations/fan-savings.js, fanTrendSummary). Per day and per fan point type,
+ * small numbers only (no raw rows):
+ *   fanhienable / fanloenable : runtimeHours (hours the enable was on)
+ *   fanamps                   : runtimeHours and runAvg (mean amps while the motor draws current)
+ *   fanspeed                  : runtimeHours, binHours[4] and binSpeed[4] (hours in each speed bin and the mean speed
+ *                               in it, as a fraction of full speed; bins end at BT_FAN_SPEED_BIN_EDGES, the last is open)
+ * fanstatus keeps its existing runtimeHours. Speed above 1.5 is read as percent. */
+var BT_FAN_SPEED_BIN_EDGES = [0.4, 0.6, 0.8]; // fraction of full speed
+var BT_FAN_ON_SPEED = 0.05; // fraction of full speed: below this the fan counts as off
+var BT_FAN_ON_AMPS = 0.5; // amps: below this the motor counts as off
+
+function btFanPointExtras(pt, vals, intervalHrs) {
+  var i;
+  if (pt === 'fanhienable' || pt === 'fanloenable') {
+    var on = 0;
+    for (i = 0; i < vals.length; i++) if (vals[i] > 0.5) on++;
+    return { runtimeHours: btRound(on * intervalHrs, 2) };
+  }
+  if (pt === 'fanamps') {
+    var n = 0;
+    var sum = 0;
+    for (i = 0; i < vals.length; i++)
+      if (vals[i] > BT_FAN_ON_AMPS) {
+        n++;
+        sum += vals[i];
+      }
+    return { runtimeHours: btRound(n * intervalHrs, 2), runAvg: n ? btRound(sum / n, 2) : null };
+  }
+  if (pt === 'fanspeed') {
+    var max = 0;
+    for (i = 0; i < vals.length; i++) if (vals[i] > max) max = vals[i];
+    var scale = max > 1.5 ? 0.01 : 1;
+    var binN = [0, 0, 0, 0];
+    var binSum = [0, 0, 0, 0];
+    var run = 0;
+    for (i = 0; i < vals.length; i++) {
+      var f = vals[i] * scale;
+      if (!(f > BT_FAN_ON_SPEED)) continue;
+      run++;
+      var b = 0;
+      while (b < BT_FAN_SPEED_BIN_EDGES.length && f >= BT_FAN_SPEED_BIN_EDGES[b]) b++;
+      binN[b]++;
+      binSum[b] += f;
+    }
+    return {
+      runtimeHours: btRound(run * intervalHrs, 2),
+      binHours: binN.map(function (c) {
+        return btRound(c * intervalHrs, 2);
+      }),
+      binSpeed: binN.map(function (c, k) {
+        return c ? btRound(binSum[k] / c, 3) : null;
+      }),
+    };
+  }
+  return null;
+}
+
 /**
  * Compute the DailySummary for a single day's worth of rows.
  * Internal helper called by btComputeDailySummaries.
@@ -930,6 +1018,8 @@ function btComputeOneDaySummary(dateKey, rows, pointMap, sch) {
       ptSummaries[pt3].occupiedHours = btRound(a.occRuntimeHrs, 2);
       ptSummaries[pt3].unoccupiedHours = btRound(a.unoccRuntimeHrs, 2);
     }
+    var fanExtras = btFanPointExtras(pt3, a.allVals, intervalHrs);
+    if (fanExtras) Object.assign(ptSummaries[pt3], fanExtras);
   }
 
   // Compute OAT stats for the day
@@ -1577,12 +1667,22 @@ function btSaveRaw(bldgKey, equipTag, rows) {
   sset('en_bas_raw_' + bldgKey + '_' + equipTag, rows);
 }
 
-/** Merge new daily summaries into existing, without overwriting existing dates */
+/** Merge new daily summaries into existing: new dates are added, old dates only gain point types they lack (nothing is overwritten) */
 function btMergeSummaries(existing, incoming) {
   var merged = Object.assign({}, existing);
   for (var dk in incoming) {
     if (!incoming.hasOwnProperty(dk)) continue;
-    if (!merged[dk]) merged[dk] = incoming[dk]; // only add new dates
+    if (!merged[dk]) {
+      merged[dk] = incoming[dk]; // a new date
+      continue;
+    }
+    // An old date keeps what it has. A point type it does not have yet (a file with more points for the same days,
+    // for example the fan points) is added, so later files refine the same days.
+    var day = Object.assign({}, merged[dk]);
+    for (var k in incoming[dk]) {
+      if (incoming[dk].hasOwnProperty(k) && BT_POINT_PATTERNS.hasOwnProperty(k) && !day[k]) day[k] = incoming[dk][k];
+    }
+    merged[dk] = day;
   }
   return merged;
 }
@@ -1730,26 +1830,8 @@ function btImportCSV(csvText, projId, bldgId, bldgName, equipTag, schedule, colu
         var dayRows = byDate[dk].slice().sort(function (a, b) {
           return a.ts - b.ts;
         });
-        summaries[dk] = btComputeOneDaySummary(
-          dk,
-          dayRows.map(function (row) {
-            var typed = { ts: row.ts, occ: btIsOccupied(row.ts, sch) };
-            for (var pt in pointMap) {
-              if (!pointMap.hasOwnProperty(pt)) continue;
-              var cols = pointMap[pt];
-              for (var ci = 0; ci < cols.length; ci++) {
-                var v = row.values[cols[ci]];
-                if (v !== undefined) {
-                  typed[pt] = v;
-                  break;
-                }
-              }
-            }
-            return typed;
-          }),
-          pointMap,
-          sch,
-        );
+        // btComputeOneDaySummary types the raw rows itself (row.values by column), as btComputeDailySummaries does.
+        summaries[dk] = btComputeOneDaySummary(dk, dayRows, pointMap, sch);
       }
       sumIdx = end;
 
@@ -2297,6 +2379,9 @@ function btPreviewColumns(csvText) {
     'chwstemp',
     'chwrtemp',
     'bldgpressure',
+    'fanhienable',
+    'fanloenable',
+    'fanamps',
   ];
 
   // Fix A (backlog 7687ce58): auto-fill Building from the CSV "Site:" header

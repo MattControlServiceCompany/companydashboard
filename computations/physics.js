@@ -87,3 +87,54 @@ function fanPowerFraction(speedFraction, opts) {
 function ductStaticResetPowerSavings(spReductionFraction, opts) {
   return 1 - fanPowerFraction(Math.sqrt(1 - spReductionFraction), opts);
 }
+
+/**
+ * Fan power per unit of air, W per cfm at full speed: the range from the fan opportunity method (15 air handlers
+ * calibrated, R squared 0.92). low = the cube-law fit, high = the free fit at full speed, mid = their middle.
+ * A quick estimate for a fan with a cfm and no motor data. Use the mid figure unless a person picks another.
+ */
+var FAN_W_PER_CFM = { low: 0.774, mid: 0.851, high: 0.928 };
+
+/** Share of fan power that does not fall with speed (bearing, drive and motor losses). The default for fanPowerFraction callers that model a drive. */
+var FAN_FIXED_POWER_SHARE = 0.1;
+
+/** Power factor used to turn motor amps into kW when no power factor is known. */
+var MOTOR_DEFAULT_POWER_FACTOR = 0.85;
+
+/**
+ * Fan input kW from airflow.
+ * @param {number} cfm - airflow at full speed
+ * @param {number} [wPerCfm] - W per cfm; default FAN_W_PER_CFM.mid
+ */
+function fanKwFromCfm(cfm, wPerCfm) {
+  return (cfm * (wPerCfm == null ? FAN_W_PER_CFM.mid : wPerCfm)) / 1000;
+}
+
+/**
+ * Motor input kW from a measured current. Three phase: sqrt(3) x volts x amps x power factor. Single phase: volts x amps x power factor.
+ * @param {number} amps - line current
+ * @param {number} volts - line voltage
+ * @param {number} phase - 1 or 3
+ * @param {number} [powerFactor] - default MOTOR_DEFAULT_POWER_FACTOR
+ */
+function motorKwFromAmps(amps, volts, phase, powerFactor) {
+  var pf = powerFactor == null ? MOTOR_DEFAULT_POWER_FACTOR : powerFactor;
+  return ((phase === 3 ? Math.sqrt(3) : 1) * volts * amps * pf) / 1000;
+}
+
+/**
+ * Mean fan power as a fraction of full-speed power over a speed profile (hours or share by speed).
+ * Every speed goes through fanPowerFraction. The shares need not add up to 1: the result is the share-weighted mean.
+ * @param {Array<{speed:number, share:number}>} bins - speed (fraction of full speed) and its share of run time
+ * @param {object} [opts] - passed to fanPowerFraction
+ * @returns {number|null} null when the shares add up to 0
+ */
+function fanMeanPowerFraction(bins, opts) {
+  var sum = 0;
+  var acc = 0;
+  for (var i = 0; i < bins.length; i++) {
+    sum += bins[i].share;
+    acc += bins[i].share * fanPowerFraction(bins[i].speed, opts);
+  }
+  return sum > 0 ? acc / sum : null;
+}

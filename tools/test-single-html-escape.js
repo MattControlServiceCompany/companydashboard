@@ -150,6 +150,7 @@ for (const page of ['index.html', 'energy-department.html', 'ems-leads.html']) {
   vm.createContext(ctxSb);
   vm.runInContext(noCr(fs.readFileSync(path.join(REPO, 'lib', 'formatting.js'), 'utf8')), ctxSb);
   vm.runInContext(noCr(fs.readFileSync(path.join(REPO, 'computations', 'physics.js'), 'utf8')), ctxSb);
+  vm.runInContext(noCr(fs.readFileSync(path.join(REPO, 'computations', 'fan-savings.js'), 'utf8')), ctxSb);
   vm.runInContext(autofill, ctxSb);
   vm.runInContext(noCr(fs.readFileSync(path.join(REPO, 'computations', 'end-use.js'), 'utf8')), ctxSb);
   vm.runInContext(ecmSrc.replace(/\bconst\s+(ECM_TEMPLATES|ECM_MEASURE_FIELD_MAP)\b/g, 'var $1'), ctxSb);
