@@ -58,7 +58,14 @@ const REQUIRED = [
   'FAN_FIXED_POWER_SHARE',
   'MOTOR_DEFAULT_POWER_FACTOR',
 ];
-const REQUIRED_FUNCS = ['hpToKw', 'fanPowerFraction', 'ductStaticResetPowerSavings', 'fanKwFromCfm', 'motorKwFromAmps', 'fanMeanPowerFraction'];
+const REQUIRED_FUNCS = [
+  'hpToKw',
+  'fanPowerFraction',
+  'ductStaticResetPowerSavings',
+  'fanKwFromCfm',
+  'motorKwFromAmps',
+  'fanMeanPowerFraction',
+];
 
 // Constants as numeric tokens. A digit or dot on either side means a longer number, not this one.
 const NUM = (s) => new RegExp('(?<![\\w.])' + s.replace(/\./g, '\\.') + '(?![\\w]|\\.\\d)');
@@ -82,10 +89,16 @@ const CONSTANT_RULES = [
   [NUM('3,412'), 'Btu per kWh in a label string (build it from BTU_PER_KWH)'],
   [NUM('3,412.14'), 'Btu per kWh in a label string (build it from BTU_PER_KWH)'],
   [NUM('3412.14'), 'Btu per kWh in a label string (build it from BTU_PER_KWH)'],
-  [/\b(DTh|MMBtu|BTU|Btu)\s*:\s*\{[^}]*\bfactor:\s*[\d.]+\s*\}/, 'UNIT_TO_BASE energy factor typed as a number (derive it from physics.js)'],
+  [
+    /\b(DTh|MMBtu|BTU|Btu)\s*:\s*\{[^}]*\bfactor:\s*[\d.]+\s*\}/,
+    'UNIT_TO_BASE energy factor typed as a number (derive it from physics.js)',
+  ],
   [NUM('33,475'), 'Btu/h per boiler hp (BTU_PER_HR_PER_BHP)'],
   [NUM('0.33475'), 'therm/h per boiler hp (THERMS_PER_HR_PER_BHP)'],
-  [/\b(Mlb|MLbs|kLbs|MLb)\s*:\s*\{[^}]*\bfactor:\s*[\d.,]+\s*\}/, 'UNIT_TO_BASE steam factor typed as a number (derive it from BTU_PER_LB_DISTRICT_STEAM)'],
+  [
+    /\b(Mlb|MLbs|kLbs|MLb)\s*:\s*\{[^}]*\bfactor:\s*[\d.,]+\s*\}/,
+    'UNIT_TO_BASE steam factor typed as a number (derive it from BTU_PER_LB_DISTRICT_STEAM)',
+  ],
   [NUM('1194'), 'Btu per lb of district steam (BTU_PER_LB_DISTRICT_STEAM)'],
   [NUM('1,194'), 'Btu per lb of district steam (BTU_PER_LB_DISTRICT_STEAM)'],
   [NUM('11.94'), 'therms per thousand lb district steam (THERMS_PER_THOUSAND_LB_DISTRICT_STEAM)'],
@@ -176,9 +189,10 @@ function check(files) {
   const ecm = files['app/ecm-calculators.js'];
   if (ecm != null && !/\bfanPowerFraction\(/.test(ecm))
     bad.push('app/ecm-calculators.js does not call fanPowerFraction');
-  const bt = files['app/bas-trends.js'];
-  if (bt != null && !/\bductStaticResetPowerSavings\(/.test(bt))
-    bad.push('app/bas-trends.js does not call ductStaticResetPowerSavings');
+  // The BAS report asks the fan owner (fanResetSavingsFraction), which calls the physics function (gate-single-fan-model.js).
+  const fanOwner = files['computations/fan-savings.js'];
+  if (fanOwner != null && !/\bductStaticResetPowerSavings\(/.test(fanOwner))
+    bad.push('computations/fan-savings.js does not call ductStaticResetPowerSavings');
   return bad;
 }
 

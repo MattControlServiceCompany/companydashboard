@@ -89,7 +89,9 @@ function makeRows(extra) {
       { voltage: '208', phase: '1' },
     ),
     row('r4', 'AHU-3', 'ahu', { supplyFanCFM: '8000', supplyFanSpeed: '55' }),
-    row('r5', 'DOAS-1', 'doas', {}),
+    row('r5', 'DOAS-1', 'doas', {}, { pointsRaw: { 'Supply Fan VFD Fault': '0' } }),
+    row('r8', 'AHU-1 Supply Duct', 'ahu', {}, { pointsRaw: { 'Duct Static Pressure': '1.1' } }),
+    row('r9', 'AHU-1 Smoke Damper', 'ahu', {}, { pointsRaw: { 'Damper Status': 'Open' } }),
     row('r6', 'AHU-9', 'ahu', { supplyFanCFM: '9000' }, { building: 'Other Hall' }),
     row('r7', 'VAV-1', 'vav', { supplyFanCFM: '500' }),
   ].concat(extra || []);
@@ -110,7 +112,7 @@ function makeSandbox(opts) {
     DB: { get: (k, d) => d },
     getUDBldg: (p, b) =>
       b === 'b1'
-        ? { id: 'b1', name: BLDG, sqft: 50000 }
+        ? { id: 'b1', name: BLDG, sqft: 50000, type: opts.bldgType || '' }
         : b === 'b2'
           ? { id: 'b2', name: 'Empty Hall' }
           : b === 'b3'
@@ -215,7 +217,8 @@ async function main() {
 
   // ---------------- 2. trend import ----------------
   console.log('--- 2. trend import ---');
-  const sb = makeSandbox({ hvacKwh: 90000 });
+  // RTU-1 (r3) is a known no-drive unit (Has variable speed: No), so the counted total is not zero; AHU-1 and AHU-2 stay unknown.
+  const sb = makeSandbox({ hvacKwh: 90000, edits: { 'r3::hasVfd': 'no' } });
   // detection of the new point names
   const det = (n) => sb.btDetectPointType(n);
   ok(
@@ -310,7 +313,7 @@ async function main() {
   const units = sb.fanReadUnits('p', 'b1');
   ok(
     units.units.length === 5,
-    'five supply-fan rows of this building (other building and VAV left out)',
+    'five fan rows of this building (other building, VAV, duct and damper rows left out)',
     units.units.map((u) => u.name).join(),
   );
   const U = {};
@@ -325,7 +328,11 @@ async function main() {
     'AHU-1: run hours from the trend',
     U['AHU-1'].hours,
   );
-  ok(U['AHU-1'].vfd === 'no' && U['AHU-1'].vfdLevel === 'default', 'AHU-1: no speed point or trend: constant speed by default');
+  ok(
+    U['AHU-1'].vfd === null && U['AHU-1'].driveStatus === 'unknown' && U['AHU-1'].vfdLevel === 'default',
+    'AHU-1: no speed point, no trend, no field: drive status unknown (not assumed constant speed)',
+    U['AHU-1'].vfdHow,
+  );
   ok(U['AHU-1'].reset.level === 'trend', 'AHU-1: setpoint trend present');
   ok(
     U['AHU-2'].kwLevel === 'matrix' && near(U['AHU-2'].kw, sb.fanKwFromCfm(10000)) && U['AHU-2'].kwBasis === 'full',
@@ -453,29 +460,80 @@ async function main() {
   const R = {};
   r.units.forEach((u) => (R[u.name] = u));
   const fs0 = { fixedShare: sb.FAN_FIXED_POWER_SHARE };
-  // a constant-speed fan with no speed trend: default profile
-  const cs = sb.fanUnitModel({ id: 'c', name: 'C', category: 'ahu', cfm: 12000, trend: null });
+  const fsG = { fixedShare: sb.FAN_FIXED_POWER_SHARE, curve: 'ashraeG' };
+  // a constant-speed fan (Has variable speed: No) with a measured monthly HVAC load: the load profile, the Appendix G curve
+  const cs = sb.fanUnitModel({ id: 'c', name: 'C', category: 'ahu', cfm: 12000, hasVfd: 'no', trend: null }, null, COOL);
   const rc = sb.fanSavingsForUnits([cs], ALL, f);
-  const prof = sb.fanMeanPowerFraction(sb.FAN_DEFAULT_SPEED_BINS, fs0);
+  const profBins = sb.fanSpeedProfile(COOL, 0.3);
+  const prof = sb.fanMeanPowerFraction(profBins, fsG);
   ok(
-    near(rc.units[0].vfd, cs.kw * cs.hours * (1 - prof) * f, 1e-6) && rc.units[0].vfd > 0,
-    'constant-speed fan: kW x hours x (1 - profile fraction) x cap',
+    cs.driveStatus === 'none' &&
+      near(rc.units[0].vfd, cs.kw * cs.hours * (1 - prof) * f, 1e-6) &&
+      rc.units[0].vfd > 0 &&
+      rc.units[0].possible === 0,
+    'known no-drive fan: kW x hours x (1 - profile fraction) x cap, counted',
     rc.units[0].vfd,
   );
   ok(rc.units[0].twoSpeed === 0 && rc.units[0].reset === 0, 'constant-speed fan: no two-speed and no reset saving');
-  ok(R['AHU-1'].vfd > 0 && U['AHU-1'].profile.level === 'default', 'AHU-1 has no speed trend: the default profile saves something');
+  // the profile: month load over the peak month, floored at the minimum airflow, share = days
+  ok(
+    profBins.length === 12 &&
+      near(profBins[6].speed, 1) &&
+      near(profBins[0].speed, 0.3) &&
+      near(profBins[4].speed, 8000 / 22000) &&
+      near(sum(profBins.map((b) => b.share)), 365),
+    'speed profile: load / peak month, floored at 30%, days as share',
+    JSON.stringify(profBins.slice(0, 3)),
+  );
+  ok(
+    near(sb.fanSpeedProfile(COOL, 0.5)[0].speed, 0.5) && sb.fanSpeedProfile(null, 0.3) === null && sb.fanSpeedProfile(Array(12).fill(0), 0.3) === null,
+    'speed profile: the floor is an input; no load, no profile',
+  );
+  // a unit with no monthly load profile has no drive saving, says why
+  const noLoad = sb.fanUnitModel({ id: 'c', name: 'C', category: 'ahu', cfm: 12000, hasVfd: 'no', trend: null }, null, null);
+  const rNoLoad = sb.fanSavingsForUnits([noLoad], ALL, 1);
+  ok(noLoad.profile.bins === null && rNoLoad.units[0].vfd === 0 && /no monthly HVAC load/.test(rNoLoad.units[0].why.vfd), 'no monthly load: no profile and no drive saving');
+  // the fan model's baseline load: getEndUse hands the building's monthly cooling + heating to the units
+  ok(
+    U['AHU-1'].loadMonthly === null && eu.units.find((u) => u.name === 'AHU-1').loadMonthly.length === 12,
+    'getEndUse passes the monthly HVAC load to the unit models',
+  );
+  // UNKNOWN DRIVE STATUS IS NOT COUNTED: AHU-1 (no field, no speed point) shows its potential on the possible line only
+  ok(
+    R['AHU-1'].vfd === 0 && R['AHU-1'].possible > 0 && R['AHU-1'].possibleKind === 'drive' && /drive status unknown/.test(R['AHU-1'].why.vfd),
+    'unknown drive status: potential on the possible line, not in the total',
+    JSON.stringify([R['AHU-1'].vfd, R['AHU-1'].possible, R['AHU-1'].why.vfd]),
+  );
+  ok(r.possible.drive > 0 && near(r.possible.total, r.possible.drive + r.possible.size), 'possible totals are returned');
+  ok(
+    near(r.savingsKwh.total, sum(r.units.map((u) => u.total))) && r.units.every((u) => u.total === u.vfd + u.twoSpeed + u.reset),
+    'the counted total holds only counted lines',
+  );
+  // the user sets No: the same unit is counted
+  const ahu1No = sb.fanSavingsForUnits([sb.fanUnitModel(Object.assign({}, units.units[0], { hasVfd: 'no' }), null, COOL)], ALL, 1);
+  ok(ahu1No.units[0].vfd > 0 && ahu1No.units[0].possible === 0, 'Has variable speed: No makes the drive saving count');
+  // Has variable speed: Yes -> no drive saving at all
+  const ahu1Yes = sb.fanSavingsForUnits([sb.fanUnitModel(Object.assign({}, units.units[0], { hasVfd: 'yes' }), null, COOL)], ALL, 1);
+  ok(ahu1Yes.units[0].vfd === 0 && ahu1Yes.units[0].possible === 0, 'Has variable speed: Yes -> the drive is already there');
   // AHU-2: two-speed
   const hi = sb.fanMeanPowerFraction(
     Array.from({ length: sb.FAN_TWO_SPEED_VFD_STEPS }, (_, i) => ({
       speed: 0.58 + (0.42 * (i + 0.5)) / sb.FAN_TWO_SPEED_VFD_STEPS,
       share: 1,
     })),
-    fs0,
+    fsG,
   );
+  // AHU-2 has Hi/Lo points but no drive field: not counted, on the possible line
   ok(
-    near(R['AHU-2'].twoSpeed, U['AHU-2'].kw * U['AHU-2'].hours * 0.25 * (1 - hi) * f, 1e-6),
-    'two-speed fan: High hours only',
-    R['AHU-2'].twoSpeed,
+    R['AHU-2'].twoSpeed === 0 && R['AHU-2'].possibleKind === 'drive' &&
+      near(R['AHU-2'].possible, U['AHU-2'].kw * U['AHU-2'].hours * 0.25 * (1 - hi) * f, 1e-6),
+    'two-speed fan, drive status unknown: High hours only, on the possible line',
+    JSON.stringify([R['AHU-2'].twoSpeed, R['AHU-2'].possible]),
+  );
+  const two = sb.fanSavingsForUnits([sb.fanUnitModel(Object.assign({}, units.units[1], { hasVfd: 'no' }), null, COOL)], ALL, f);
+  ok(
+    near(two.units[0].twoSpeed, R['AHU-2'].possible, 1e-6) && two.units[0].possible === 0,
+    'two-speed fan with Has variable speed: No: counted',
   );
   ok(hi > 0.4 && hi < 0.7, 'mean power over Low to High is near the hand value 0.5', hi);
   ok(R['AHU-2'].vfd === 0 && R['AHU-2'].reset === 0, 'two-speed fan: no constant-speed drive or reset measure');
@@ -486,7 +544,7 @@ async function main() {
     R['AHU-3'].why.reset,
   );
   // reset on a drive fan without a setpoint trend: default pass
-  const drv = sb.fanUnitModel({ id: 'd', name: 'D', category: 'ahu', cfm: 10000, speedPoint: true, trend: null });
+  const drv = sb.fanUnitModel({ id: 'd', name: 'D', category: 'ahu', cfm: 10000, speedPoint: true, trend: null }, null, COOL);
   const rr = sb.fanSavingsForUnits([drv], ALL, 1);
   const saveFrac = sb.ductStaticResetPowerSavings(0.2, fs0);
   ok(
@@ -495,9 +553,10 @@ async function main() {
     rr.units[0].reset,
   );
   ok(
-    near(drv.kwh, drv.kw * drv.hours * sb.fanMeanPowerFraction(sb.FAN_DEFAULT_SPEED_BINS, fs0)),
-    'a fan with a drive and no trend: baseline uses the default speed profile',
+    near(drv.kwh, drv.kw * drv.hours * sb.fanMeanPowerFraction(sb.fanSpeedProfile(COOL, 0.3), fsG)) && drv.driveStatus === 'assumed',
+    'a fan with a drive and no speed trend: baseline runs at the monthly-load profile on the Appendix G curve',
   );
+  ok(near(sb.fanResetSavingsFraction(0.2), saveFrac) && near(saveFrac, 0.2563, 1e-3), 'the one reset answer for a 20% cut: 25.6%', saveFrac);
   // levers off
   const off = sb.fanSavingsForUnits(models, { vfd: false, twoSpeed: false, reset: false, resetCut: 0.2 }, f);
   ok(off.savingsKwh.total === 0, 'all measures off: nothing saved');
@@ -534,6 +593,22 @@ async function main() {
     'result lines and the unit table add up exactly',
   );
   ok(res.savings_kw > 0, 'average demand reduction while running', res.savings_kw);
+  ok(
+    res.possible_drive_kwh > 0 &&
+      res.possible_drive_kwh === res.units.reduce((t, u) => t + (u.possibleKind === 'drive' ? u.possible : 0), 0) &&
+      T.outputs.some((o) => o.id === 'possible_drive_kwh' && /Possible if no drive is installed/.test(o.label)),
+    'template: a separate possible line, outside savings_kwh',
+    JSON.stringify([res.possible_drive_kwh, res.savings_kwh]),
+  );
+  ok(
+    /Possible if no drive is installed: [\d,]+ kWh \u2014 confirm drive status to include/.test(sb.ecmFanDetailHtml(res)),
+    'result table names the possible line and what to confirm',
+  );
+  ok(
+    near(sb.ECM_MEASURE_FIELD_MAP.fan_savings.length, 2) &&
+      sb.ECM_MEASURE_FIELD_MAP.fan_savings.every((e) => e.field === 'savings_kwh' || e.field === 'savings_kw'),
+    'Add as Measure carries the counted total and kW only (not the possible lines)',
+  );
   ok(
     Object.keys(res).every((k) => !/dollar|payback|cost|rate/i.test(k)),
     'quantities only: no dollar, payback, cost or rate in the result',
@@ -634,7 +709,7 @@ async function main() {
       equipName: name,
       category: 'ahu',
       pts: cfm ? { supplyFanCFM: String(cfm) } : {},
-      pointsRaw: {},
+      pointsRaw: { 'Supply Fan Alarm': '0' },
     });
     const unitX = (eu) => eu.units.find((u) => u.name === 'AHU-X');
     // (a) sibling: three sized AHUs (4000, 8000, 12000 cfm) and one unsized AHU in the same building
@@ -668,7 +743,7 @@ async function main() {
       equipName: name,
       category: 'doas',
       pts: cfm ? { supplyFanCFM: String(cfm) } : {},
-      pointsRaw: {},
+      pointsRaw: { 'Supply Fan Alarm': '0' },
     });
     const sbB = makeSandbox({ rows: [doas('d1', 'AHU-X', BLDG, 0), doas('d2', 'DOAS-F', 'Other Hall', 3000)], hvacKwh: 900000 });
     const xB = unitX(sbB.getEndUse('p', 'b1', 'fans'));
@@ -695,7 +770,7 @@ async function main() {
       JSON.stringify([xD.kwh, euD.annual]),
     );
     ok(
-      /^Default: national average ventilation share for all buildings \(EIA CBECS 2018\)/.test(xD.kwHow) &&
+      /^Default: national average ventilation share for all buildings, from no type set \(all buildings\) \(EIA CBECS 2018\)/.test(xD.kwHow) &&
         /kWh per sq ft/.test(xD.kwHow) &&
         /split across 2 unsized units equally/.test(xD.kwHow),
       'area basis names the source, shows kWh per sq ft and the split',
@@ -705,12 +780,34 @@ async function main() {
     const sbSch = makeSandbox({ rows: [ahu('e1', 'AHU-X', 0), ahu('e2', 'AHU-Y', 0)], hvacKwh: 100000, capKwh: 900000, projType: 'K-12 School' });
     const euSch = sbSch.getEndUse('p', 'b1', 'fans');
     ok(
-      near(euSch.annual, (totalD * 19) / 128, 1e-6) && /ventilation share for education buildings/.test(unitX(euSch).kwHow),
-      'a school takes the Education share',
+      near(euSch.annual, (totalD * 19) / 128, 1e-6) &&
+        /ventilation share for education buildings, from the project type 'K-12 School' \(the building has no type\)/.test(unitX(euSch).kwHow),
+      'a school takes the Education share; the label says the project type was used',
       JSON.stringify([euSch.annual, unitX(euSch).kwHow]),
     );
+    // the building's own type wins over the project type, and the label says so
+    const euOwn = makeSandbox({ rows: [ahu('e1', 'AHU-X', 0), ahu('e2', 'AHU-Y', 0)], hvacKwh: 100000, capKwh: 900000, projType: 'K-12 School', bldgType: 'Library' }).getEndUse('p', 'b1', 'fans');
+    ok(
+      near(euOwn.annual, (totalD * 213) / 1196, 1e-6) && /from the building's own type 'Library'/.test(unitX(euOwn).kwHow),
+      "the building's own type wins over the project type",
+      unitX(euOwn).kwHow,
+    );
+    // a national-average unit is NOT counted until the user confirms it
+    const mNat = unitX(euD);
+    ok(mNat.sizeBasis === 'national', 'a unit sized by the national average is marked');
+    const natCounted = sbD.fanSavingsForUnits([sbD.fanUnitModel(Object.assign({}, sbD.fanReadUnits('p', 'b1').units[0], { hasVfd: 'no' }), { rule: 'area', annualKwh: 20000, how: 'x' }, COOL)], ALL, 1);
+    const natModel = sbD.fanUnitModel(Object.assign({}, sbD.fanReadUnits('p', 'b1').units[0], { hasVfd: 'no' }), { rule: 'area', annualKwh: 20000, how: 'x' }, COOL);
+    const natOff = sbD.fanSavingsForUnits([natModel], ALL, 1);
+    const natOn = sbD.fanSavingsForUnits([natModel], Object.assign({ confirmedSizes: [natModel.id] }, ALL), 1);
+    ok(
+      natOff.savingsKwh.total === 0 && natOff.possible.size > 0 && natOff.units[0].possibleKind === 'size' &&
+        near(natOn.savingsKwh.total, natOff.possible.size, 1e-6) && natOn.possible.total === 0,
+      'national-average unit: possible until confirmed, counted after',
+      JSON.stringify([natOff.possible, natOn.savingsKwh.total]),
+    );
+    ok(natCounted.savingsKwh.total === 0, 'unconfirmed national-average unit adds nothing to the total');
     // sized fans come out of the target; tons set the split
-    const rtu = (id, name, tons) => ({ id: id, building: BLDG, equipName: name, category: 'rtu', pts: {}, pointsRaw: {}, hpTons: tons });
+    const rtu = (id, name, tons) => ({ id: id, building: BLDG, equipName: name, category: 'rtu', pts: {}, pointsRaw: { 'Supply Fan Alarm': '0' }, hpTons: tons });
     const sbT = makeSandbox({
       rows: [ahu('g1', 'AHU-S', 8000), rtu('g2', 'RTU-A', '10'), rtu('g3', 'RTU-B', '30')],
       hvacKwh: 100000,
@@ -724,6 +821,28 @@ async function main() {
       near(ra.kwh + rb.kwh, (totalD * 213) / 1196 - sizedT.kwh, 1e-6) && near(rb.kwh, ra.kwh * 3, 1e-6),
       'sized fans come out of the target; the unsized units split it by tons',
       JSON.stringify([ra.kwh, rb.kwh, sizedT.kwh]),
+    );
+    // the national average pool: a sized fan WITH a drive comes out at its part-load power, not at full speed
+    const rowsV = [
+      Object.assign(ahu('v1', 'AHU-V', 8000), { category: 'doas' }),
+      Object.assign(ahu('v2', 'AHU-U', 0), { pts: { supplyFanSpeed: '60' } }),
+    ];
+    const euV = makeSandbox({ rows: rowsV, hvacKwh: 100000, capKwh: 900000, edits: { 'v1::hasVfd': 'yes' } }).getEndUse('p', 'b1', 'fans');
+    const vSized = euV.units.find((u) => u.name === 'AHU-V');
+    const vUn = euV.units.find((u) => u.name === 'AHU-U');
+    ok(
+      vSized.driveStatus === 'has' && near(vSized.kwh, vSized.kw * vSized.hours * vSized.profileFraction, 1e-6) && vSized.kwh < vSized.kw * vSized.hours * 0.5,
+      'a sized fan with a drive is held at part-load power',
+      JSON.stringify([vSized.kwh, vSized.kw * vSized.hours]),
+    );
+    ok(
+      near(vSized.kwh + vUn.kwh, (totalD * 213) / 1196, 1e-6),
+      'the national average total holds: sized fan at part-load power plus the pool',
+      JSON.stringify([vSized.kwh, vUn.kwh]),
+    );
+    ok(
+      vUn.sizeBasis === 'national' && vUn.driveStatus === 'assumed' && near(vUn.kwh, vUn.kw * vUn.hours * vUn.profileFraction, 1e-6) && vUn.kw * vUn.hours > vUn.kwh,
+      'a pool-sized fan with a drive (assumed) is part-load: its full-speed kW is higher than its mean kW',
     );
     // double count: fans come out of the non-HVAC remainder
     const nhT = sbT.getEndUse('p', 'b1', 'nonHvacElectric');
@@ -765,11 +884,73 @@ async function main() {
       d0.vfdHow,
     );
     const d1 = firstUnit({ rows: [spd()], edits: { 'v1::hasVfd': 'no' } });
-    ok(d1.vfd === 'no' && d1.vfdLevel === 'matrix' && d1.hasVfd === 'no', 'the user sets No: constant speed, Equipment Matrix level', d1.vfdHow);
+    ok(d1.vfd === 'no' && d1.driveStatus === 'none' && d1.vfdLevel === 'matrix' && d1.hasVfd === 'no', 'the user sets No: constant speed, Equipment Matrix level', d1.vfdHow);
     const d2 = firstUnit({ rows: [spd({ pts: { supplyFanCFM: '5000' } })], edits: { 'v1::hasVfd': 'yes' } });
     ok(d2.vfd === 'yes' && d2.vfdLevel === 'matrix', 'the user sets Yes with no speed point: has a drive');
     const d3 = firstUnit({ rows: [spd()], edits: { 'v1::hasVfd': 'unknown' } });
     ok(d3.vfd === 'yes' && d3.vfdLevel === 'default' && d3.hasVfd === null, 'Unknown: back to the assumption');
+  }
+
+  // ---------------- 7c. physics curves, the BAS report answer, the merge, the storage size ----------------
+  console.log('--- 7c. curves, BAS report, merge, storage ---');
+  {
+    const pc = (s, o) => sb.fanPowerFraction(s, o);
+    // ASHRAE 90.1 Appendix G VAV curve, hand values: 0.0013 + 0.1470 x + 0.9506 x^2 - 0.0998 x^3
+    ok(near(pc(0.5, { curve: 'ashraeG' }), 0.0013 + 0.147 * 0.5 + 0.9506 * 0.25 - 0.0998 * 0.125, 1e-12), 'Appendix G curve at 50% flow', pc(0.5, { curve: 'ashraeG' }));
+    ok(near(pc(1, { curve: 'ashraeG' }), 0.9991, 1e-9), 'Appendix G curve at full flow is 0.9991');
+    ok(near(pc(0.1, { curve: 'ashraeG', minSpeed: 0.3 }), pc(0.3, { curve: 'ashraeG' })), 'the speed floor holds on the Appendix G curve');
+    ok(near(pc(0.5, { fixedShare: 0.1 }), 0.1 + 0.9 * 0.125), 'the default curve of fanPowerFraction is still the affinity law');
+    ok(sb.FAN_DEFAULT_PART_LOAD_CURVE === 'ashraeG', 'the fan model default is the Appendix G curve');
+    // the Appendix G curve is the more conservative on the 30..100% range (higher power, lower savings)
+    let moreConservative = true;
+    for (let s = 0.3; s <= 0.99; s += 0.01) if (pc(s, { curve: 'ashraeG' }) < pc(s, { fixedShare: 0.1 }) - 1e-12) moreConservative = false;
+    ok(moreConservative, 'Appendix G power >= affinity power with 10% fixed share on 30..99% flow (default is the conservative curve)');
+
+    // the BAS report: one answer for a 20% duct static cut, from the fan owner
+    const bs = makeSandbox({ hvacKwh: 90000 });
+    await importTrend(bs, 'AHU-1', trendCsv(['AHU-1 Supply Fan Status'], (c, run) => (run ? 1 : 0)));
+    bs.btRunBehavioralChecks = () => ({ satReset: null, dspReset: { verdict: 'FAIL' }, economizer: null });
+    const est = bs.btEstimateSavings('p', 'b1', { elecRate: 0.1, gasRate: 1, fanHpPerAhu: 5 });
+    const dsp = est.find((e) => e.type === 'dspReset');
+    const frac = bs.fanResetSavingsFraction(0.2);
+    ok(
+      dsp && near(dsp.annualKwh, bs.fanKwFromHp(5, 0.91) * bs.fanDefaultRunHours() * 1 * frac, 1),
+      'BAS report duct static reset kWh = fan owner kW x fan owner hours x one reset fraction',
+      JSON.stringify(dsp && dsp.annualKwh),
+    );
+    ok(dsp && /20% SP reduction .* 25\.6% fan power savings/.test(dsp.basis), 'BAS report shows the same 25.6% for a 20% cut', dsp && dsp.basis);
+    const tmplReset = bs.ECM_TEMPLATES.fan_savings.inputs.find((i) => i.id === 'reset_cut_pct');
+    ok(/25\.6%/.test(tmplReset.help) && near(frac, bs.ductStaticResetPowerSavings(0.2, { fixedShare: bs.FAN_FIXED_POWER_SHARE })), 'template help shows the same 25.6%');
+
+    // btMergeSummaries adds speed bins to an old day that already has fanspeed
+    const oldDay = { fanspeed: { avg: 70, min: 40, max: 100 }, faults: { shc: 1 } };
+    const newDay = { fanspeed: { avg: 99, runtimeHours: 12, binHours: [0, 4, 4, 4], binSpeed: [null, 0.5, 0.7, 1] }, fanamps: { runtimeHours: 12, runAvg: 9 } };
+    const mg = bs.btMergeSummaries({ '2026-02-01': oldDay }, { '2026-02-01': newDay });
+    const md = mg['2026-02-01'];
+    ok(
+      md.fanspeed.binHours.join() === '0,4,4,4' && md.fanspeed.runtimeHours === 12 && md.fanspeed.avg === 70 && md.fanamps.runAvg === 9 && md.faults.shc === 1,
+      'merge: an old fanspeed day gains bins and run hours, keeps its own stats',
+      JSON.stringify(md),
+    );
+    ok(oldDay.fanspeed.binHours === undefined, 'merge: the existing object is not changed in place');
+
+    // storage: the stored size of one unit, a full year, all the fan points (measured, synthetic)
+    const ss = makeSandbox({ hvacKwh: 90000 });
+    const cols = ['U-1 Supply Fan Status', 'U-1 Supply Fan Amps', 'U-1 Supply Fan VFD Speed', 'U-1 Duct Static Pressure Setpoint', 'U-1 Supply Fan High Enable', 'U-1 Supply Fan Low Enable'];
+    let csvY = 'Date/Time,' + cols.join(',') + '\n';
+    for (let d = 0; d < 365; d++) {
+      const dt = new Date(Date.UTC(2026, 0, 1 + d));
+      const ds = dt.toISOString().slice(0, 10);
+      for (let h = 0; h < 24; h++) {
+        const run = h >= 6 && h < 18;
+        csvY += ds + ' ' + String(h).padStart(2, '0') + ':00,' + [run ? 1 : 0, run ? 9.5 : 0, run ? 55 + ((h * 7 + d) % 40) : 0, 0.8 + (h % 3) * 0.2, run && h < 9 ? 1 : 0, run && h >= 9 ? 1 : 0].join(',') + '\n';
+      }
+    }
+    await importTrend(ss, 'U-1', csvY);
+    const stored = JSON.stringify(ss.sget('en_bas_p', null));
+    const perUnitYear = stored.length;
+    console.log('  measured: one unit, 365 days, 6 fan points -> stored summary ' + perUnitYear + ' bytes (' + Math.round(perUnitYear / 1024) + ' KB)');
+    ok(perUnitYear > 50000 && perUnitYear < 400000, 'storage: measured size of one unit-year of fan summaries is stated in OPERATIONS.md', perUnitYear);
   }
 
   // ---------------- 8. the gate ----------------
@@ -788,6 +969,22 @@ async function main() {
         /fan run hours of its own/.test(b),
       ),
       'gate fails on a fan with its own 8760 hours',
+    );
+    ok(
+      mut('app/bas-trends.js', (t) => t + '\nvar fanKwX = hpToKw(5, 0.91);\n').some((b) => /fan kW from HP of its own/.test(b)),
+      'gate fails on a second fan kW from HP',
+    );
+    ok(
+      mut('app/bas-trends.js', (t) => t + '\nvar s = ductStaticResetPowerSavings(0.2);\n').some((b) => /duct static reset savings of its own/.test(b)),
+      'gate fails on a second duct static reset answer (the BAS report formula)',
+    );
+    ok(
+      mut('app/bas-trends.js', (t) => t + '\nvar fanHrsPerYear = 2400;\n').some((b) => /fan run hours of its own/.test(b)),
+      'gate fails on a fan run-hours number of its own',
+    );
+    ok(
+      mut('app/bas-trends.js', (t) => t.replace('fanResetSavingsFraction(spReductionFraction)', '0.28')).some((b) => /does not call fanResetSavingsFraction/.test(b)),
+      'gate fails when the BAS report stops calling the fan owner',
     );
     ok(
       mut('app/audit-estimate.js', (t) => t + '\nfunction fanUnitModel(r) {}\n').some((b) =>

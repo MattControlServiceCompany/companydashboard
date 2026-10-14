@@ -94,8 +94,10 @@ const basData = {
 };
 
 const physicsSrc = fs.readFileSync(path.join(__dirname, '..', 'computations', 'physics.js'), 'utf8');
+const fanSrc = fs.readFileSync(path.join(__dirname, '..', 'computations', 'fan-savings.js'), 'utf8');
 const code = [
   physicsSrc,
+  fanSrc, // the fan owner: btEstimateSavings asks it for fan kW, run hours and the duct static reset answer
   loadFn('btRound'),
   loadVar('BT_HVAC_KW_PER_AHU'),
   loadVar('BT_FAULT_KW'),
@@ -240,9 +242,9 @@ activeBldgs = bldgs;
 const shc4 = (has('btEstimateSavings') ? ctx.btEstimateSavings('P', 'B1') : []).find((e) => e.type === 'shc');
 assert(shc4 && shc4.annualDollars > 0, 'with gas bills SHC is priced');
 
-// Follow-up 2: the 4.9 kW fan model is shown as a labeled assumption
+// Follow-up 2: the 3.9 kW fan model (5 HP, motor efficiency 0.91, load 0.8: fanKwFromHp 3.28 kW x 1.2) is shown as a labeled assumption
 assert(
-  ah2 && ah2.assumption === 'Assumes 4.9 kW per air handler fan — not measured.',
+  ah2 && ah2.assumption === 'Assumes 3.9 kW per air handler fan — not measured.',
   'after-hours assumption label, got ' + (ah2 && ah2.assumption),
 );
 

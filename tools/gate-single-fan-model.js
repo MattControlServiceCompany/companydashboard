@@ -13,6 +13,9 @@
 //   5. The Fan Savings template (ECM_TEMPLATES.fan_savings) does fan math itself (Math.pow, fanPowerFraction, hpToKw,
 //      motorKwFromAmps, fanKwFromCfm, 8760) or does not call getEndUse(.., 'fans') and fanSavingsForUnits.
 //   6. _fanEndUse does not call fanModelUnits, fanReadUnits and fanMonthWeights, or the end-use file reads a stored estimate.
+//   7. Another file computes a fan kW from HP (hpToKw on a "fan" line), calls ductStaticResetPowerSavings, or sets its own fan run
+//      hours (a fan*Hrs / fan*Hours variable set to a number). The BAS report (app/bas-trends.js) must call fanKwFromHp,
+//      fanResetSavingsFraction and fanDefaultRunHours (one answer for a duct static pressure cut).
 // Run: node tools/gate-single-fan-model.js [repo-root]   (exit 0 = pass)
 'use strict';
 const fs = require('fs');
@@ -32,6 +35,10 @@ const FAN_OWNED_FUNCS = [
   'fanSavingsForUnits',
   'fanTrendSummary',
   'fanMonthWeights',
+  'fanSpeedProfile',
+  'fanResetSavingsFraction',
+  'fanKwFromHp',
+  'fanDefaultRunHours',
   '_fanEndUse',
 ];
 const PHYSICS_FAN_FUNCS = ['fanKwFromCfm', 'motorKwFromAmps', 'fanMeanPowerFraction'];
@@ -97,6 +104,12 @@ function check(files) {
         bad.push(at + 'fan run hours of its own (8760): the rule is in ' + FAN);
       const c = line.match(FAN_CONSTANTS);
       if (c) bad.push(at + 'uses ' + c[0] + ' outside its owner (' + FAN + ' / ' + PHYSICS + ')');
+      if (/fan/i.test(line) && /\bhpToKw\s*\(/.test(line))
+        bad.push(at + 'fan kW from HP of its own (hpToKw): call fanKwFromHp in ' + FAN);
+      if (/\bductStaticResetPowerSavings\s*\(/.test(line))
+        bad.push(at + 'duct static reset savings of its own: call fanResetSavingsFraction in ' + FAN);
+      if (/\bfan\w*(Hrs|Hours)\w*\s*=\s*\d/i.test(line))
+        bad.push(at + 'fan run hours of its own (a number): call fanDefaultRunHours in ' + FAN);
     });
   });
 
@@ -119,6 +132,17 @@ function check(files) {
       if (!/\bfanSavingsForUnits\(/.test(code))
         bad.push(ECM + ' fan_savings template does not call fanSavingsForUnits');
     }
+  }
+
+  // 7. the BAS report uses the fan owners
+  const bas = files['app/bas-trends.js'];
+  if (bas != null) {
+    const body = slice(stripComments(bas), 'function btEstimateSavings(', 'function btRenderSavingsPanel(');
+    if (!body) bad.push('app/bas-trends.js: btEstimateSavings was not found');
+    else
+      ['fanKwFromHp', 'fanResetSavingsFraction', 'fanDefaultRunHours'].forEach((n) => {
+        if (!new RegExp('\\b' + n + '\\s*\\(').test(body)) bad.push('app/bas-trends.js btEstimateSavings does not call ' + n);
+      });
   }
 
   // 6. the end use

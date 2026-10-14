@@ -1667,7 +1667,10 @@ function btSaveRaw(bldgKey, equipTag, rows) {
   sset('en_bas_raw_' + bldgKey + '_' + equipTag, rows);
 }
 
-/** Merge new daily summaries into existing: new dates are added, old dates only gain point types they lack (nothing is overwritten) */
+var BT_FAN_EXTRA_FIELDS = ['runtimeHours', 'runAvg', 'binHours', 'binSpeed']; // the fan facts btFanPointExtras adds to a fan point type
+
+/** Merge new daily summaries into existing: new dates are added, old dates only gain point types they lack and, on a fan point type
+ * they already have, the fan facts (run hours, mean amps, speed bins) they lack (nothing is overwritten) */
 function btMergeSummaries(existing, incoming) {
   var merged = Object.assign({}, existing);
   for (var dk in incoming) {
@@ -1680,7 +1683,19 @@ function btMergeSummaries(existing, incoming) {
     // for example the fan points) is added, so later files refine the same days.
     var day = Object.assign({}, merged[dk]);
     for (var k in incoming[dk]) {
-      if (incoming[dk].hasOwnProperty(k) && BT_POINT_PATTERNS.hasOwnProperty(k) && !day[k]) day[k] = incoming[dk][k];
+      if (!incoming[dk].hasOwnProperty(k) || !BT_POINT_PATTERNS.hasOwnProperty(k)) continue;
+      if (!day[k]) {
+        day[k] = incoming[dk][k];
+      } else if (/^fan/.test(k)) {
+        var upgraded = null;
+        BT_FAN_EXTRA_FIELDS.forEach(function (f) {
+          if (day[k][f] === undefined && incoming[dk][k][f] !== undefined) {
+            upgraded = upgraded || Object.assign({}, day[k]);
+            upgraded[f] = incoming[dk][k][f];
+          }
+        });
+        if (upgraded) day[k] = upgraded;
+      }
     }
     merged[dk] = day;
   }
@@ -4962,7 +4977,7 @@ function btEstimateSavings(projId, bldgId, opts) {
   if (satEquipCount > 0 && (satFails > 0 || satWarns > 0)) {
     var satAhuCount = satFails + Math.round(satWarns * 0.5); // warns count half
     var coolingHrsPerYear = 1800;
-    var fanKw = hpToKw(fanHpPerAhu, fanMotorEff); // HP × kW/HP / motor efficiency
+    var fanKw = fanKwFromHp(fanHpPerAhu, fanMotorEff); // computations/fan-savings.js: the one HP-to-fan-kW rule
     // SAT reset saves cooling energy (reheat + chiller) — use 12% of AHU cooling energy
     var satCoolingKwh = fanKw * coolingHrsPerYear * satAhuCount * 0.12;
     // Also saves reheat gas: Delta_SAT = 5°F avg, CFM × 1.08 BTU/hr/cfm/°F → therms
@@ -4987,10 +5002,10 @@ function btEstimateSavings(projId, bldgId, opts) {
   // Conservative: assume 20% SP reduction achievable for FAILing AHUs
   if (dspEquipCount > 0 && (dspFails > 0 || dspWarns > 0)) {
     var dspAhuCount = dspFails + Math.round(dspWarns * 0.5);
-    var fanHrsPerYear = 2400; // occupied hours + some override
-    var fanKwDsp = hpToKw(fanHpPerAhu, fanMotorEff);
-    var spReductionFraction = 0.2; // 20% SP reduction
-    var savingsFraction = ductStaticResetPowerSavings(spReductionFraction); // computations/physics.js
+    var fanHrsPerYear = fanDefaultRunHours(); // computations/fan-savings.js: the one run-hours default
+    var fanKwDsp = fanKwFromHp(fanHpPerAhu, fanMotorEff);
+    var spReductionFraction = FAN_RESET_DEFAULT_PRESSURE_CUT; // computations/fan-savings.js: 20% SP reduction
+    var savingsFraction = fanResetSavingsFraction(spReductionFraction); // computations/fan-savings.js: the one reset answer (fan law, fixed losses)
     var dspKwh = fanKwDsp * fanHrsPerYear * dspAhuCount * savingsFraction;
     var dspDollars = elecRate ? dspKwh * elecRate : null;
     estimates.push({
@@ -5000,7 +5015,12 @@ function btEstimateSavings(projId, bldgId, opts) {
       annualTherms: 0,
       annualDollars: dspDollars === null ? null : Math.round(dspDollars),
       detail: dspFails + ' of ' + dspEquipCount + ' AHUs show fixed duct static pressure (ASHRAE 36 §5.16.4 not running)',
-      basis: 'Fan affinity laws — 20% SP reduction → ' + Math.round(savingsFraction * 100) + '% fan power savings',
+      basis:
+        'Fan affinity laws — ' +
+        Math.round(spReductionFraction * 100) +
+        '% SP reduction → ' +
+        Math.round(savingsFraction * 1000) / 10 +
+        '% fan power savings',
       assumption: btAssumeText(fanKwDsp),
     });
   }
@@ -5010,7 +5030,7 @@ function btEstimateSavings(projId, bldgId, opts) {
   if (totalAftHrs > 0) {
     var annualAftHrs = totalAftHrs * scaleFactor;
     // Estimate HVAC kW per AHU: fan + some conditioning
-    var hvacKwPerAhu = hpToKw(fanHpPerAhu, fanMotorEff) * 1.2; // fan + 20% for conditioning
+    var hvacKwPerAhu = fanKwFromHp(fanHpPerAhu, fanMotorEff) * 1.2; // fan + 20% for conditioning
     var aftKwh = hvacKwPerAhu * annualAftHrs;
     var aftDollars = elecRate ? aftKwh * elecRate : null;
     estimates.push({

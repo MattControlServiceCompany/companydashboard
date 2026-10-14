@@ -1857,6 +1857,8 @@ const ECM_TEMPLATES = {
     inputs: [
       // Drawn by renderEcmCalculator (ecmFanUnitsFieldHtml): the building's supply-fan units with their data levels.
       { id: 'fan_units', label: 'Fans to include', type: 'fan_units', default: [] },
+      // Drawn inside the fan_units table (a checkbox on each unit sized by the national average): the ids the user confirmed.
+      { id: 'fan_confirmed', label: 'Sizes confirmed', type: 'fan_confirm', default: [] },
       {
         id: 'lever_vfd',
         label: 'Variable-speed drive or efficient motor on a constant-speed fan',
@@ -1888,9 +1890,30 @@ const ECM_TEMPLATES = {
         default: 'yes',
       },
       {
+        id: 'min_airflow_pct',
+        label: 'Lowest airflow a fan reaches with a drive',
+        help: 'Default: typical VAV minimum airflow (30%). Each month the fan runs at the measured HVAC load of that month (cooling + heating from the bills) divided by the load of the peak month, and never below this airflow.',
+        unit: '%',
+        type: 'number',
+        default: Math.round(FAN_DEFAULT_MIN_AIRFLOW * 100),
+        min: 10,
+        max: 100,
+      },
+      {
+        id: 'fan_curve',
+        label: 'Fan power curve of a fan with a drive',
+        help: 'ASHRAE 90.1 Appendix G part-load curve of a variable-air-volume fan (default, the more conservative on the 30 to 100% speed range), or the fan law with a share of fixed losses.',
+        type: 'select',
+        options: [
+          { value: 'ashraeG', label: 'ASHRAE 90.1 Appendix G variable-air-volume curve' },
+          { value: 'affinity', label: 'Fan law (speed cubed) with fixed losses' },
+        ],
+        default: FAN_DEFAULT_PART_LOAD_CURVE,
+      },
+      {
         id: 'reset_cut_pct',
         label: 'Duct static pressure cut the reset reaches',
-        help: 'Default 20%, a stated assumption. A 20% pressure cut lowers fan power by about 26% (fan law, with a share of fixed losses).',
+        help: 'Default 20%, a stated assumption. A 20% pressure cut lowers fan power by 25.6% (fan law, with a share of fixed losses; fanResetSavingsFraction).',
         unit: '%',
         type: 'number',
         default: Math.round(FAN_RESET_DEFAULT_PRESSURE_CUT * 100),
@@ -1909,7 +1932,7 @@ const ECM_TEMPLATES = {
         id: 'savings_vfd_kwh',
         label: 'Drive on Constant-Speed Fans',
         unit: 'kWh/yr',
-        formula: 'kW x hours x (1 - mean power fraction of the speed profile). Profile: the unit trend if it has one, else the default.',
+        formula: 'kW x hours x (1 - mean power fraction of the speed profile). Profile (fanSpeedProfile): each month the measured HVAC load over the peak month, floored at the lowest airflow; power from fanPowerFraction (the chosen curve). Counted only on a unit whose drive status is known: no drive.',
       },
       {
         id: 'savings_twospeed_kwh',
@@ -1921,9 +1944,23 @@ const ECM_TEMPLATES = {
         id: 'savings_reset_kwh',
         label: 'Duct Static Pressure Reset',
         unit: 'kWh/yr',
-        formula: 'Baseline kWh x ductStaticResetPowerSavings(pressure cut) x share of fans the reset works on (setpoint trend: flat = 1, moving = 0; else the default).',
+        formula: 'Baseline kWh x fanResetSavingsFraction(pressure cut) x share of fans the reset works on (setpoint trend: flat = 1, moving = 0; else the default).',
       },
-      { id: 'savings_kwh', label: 'Annual kWh Saved', unit: 'kWh/yr', formula: 'Drive + two-speed drive + reset' },
+      { id: 'savings_kwh', label: 'Annual kWh Saved', unit: 'kWh/yr', formula: 'Drive + two-speed drive + reset, on the units whose drive status and size are known. The possible lines below are not in it.' },
+      {
+        id: 'possible_drive_kwh',
+        label: 'Possible if no drive is installed',
+        unit: 'kWh/yr',
+        assumption: 'Not in the total. Confirm drive status (Has variable speed) of each unit to include it.',
+        formula: 'The drive and two-speed drive measures on units whose drive status is unknown.',
+      },
+      {
+        id: 'possible_size_kwh',
+        label: 'Possible if the national-average size is confirmed',
+        unit: 'kWh/yr',
+        assumption: 'Not in the total. Tick "Size is right" on a unit sized by the national average to include it.',
+        formula: 'All measures on units sized by the national average ventilation share and not yet confirmed.',
+      },
       {
         id: 'savings_kw',
         label: 'Average Demand Reduction While the Fans Run',
@@ -1940,6 +1977,8 @@ const ECM_TEMPLATES = {
         savings_twospeed_kwh: 0,
         savings_reset_kwh: 0,
         savings_kwh: 0,
+        possible_drive_kwh: 0,
+        possible_size_kwh: 0,
         savings_kw: 0,
         units: [],
         note: note,
@@ -1957,6 +1996,9 @@ const ECM_TEMPLATES = {
           twoSpeed: inp.lever_twospeed !== 'no',
           reset: inp.lever_reset !== 'no',
           resetCut: inp.reset_cut_pct / 100,
+          minAirflow: inp.min_airflow_pct > 0 ? inp.min_airflow_pct / 100 : undefined,
+          curve: inp.fan_curve,
+          confirmedSizes: inp.fan_confirmed || [],
         },
         eu.capFactor,
       );
@@ -1973,6 +2015,8 @@ const ECM_TEMPLATES = {
           twoSpeed: twoSpeed,
           reset: reset,
           total: vfd + twoSpeed + reset,
+          possible: Math.round(u.possible),
+          possibleKind: u.possibleKind,
           why: u.why,
         };
       });
@@ -1983,6 +2027,8 @@ const ECM_TEMPLATES = {
         savings_twospeed_kwh: sumOf('twoSpeed'),
         savings_reset_kwh: sumOf('reset'),
         savings_kwh: sumOf('total'),
+        possible_drive_kwh: units.reduce((t, u) => t + (u.possibleKind === 'drive' ? u.possible : 0), 0),
+        possible_size_kwh: units.reduce((t, u) => t + (u.possibleKind === 'size' ? u.possible : 0), 0),
         savings_kw: Math.round(r.savingsKw * 10) / 10,
         units: units,
         note: '',
@@ -2433,6 +2479,7 @@ function renderEcmCalculator(
       }
 
       if (inp.type === "fan_units") return ecmFanUnitsFieldHtml(ctx);
+      if (inp.type === "fan_confirm") return "";
 
       const helpTitle = inp.help
         ? ` title="${_escHtml(inp.help)}"`
@@ -2579,15 +2626,21 @@ function renderEcmCalculator(
         "hasVfd",
         sel.value,
       ).then(() => {
-        const keep = new Set(
-          Array.from(container.querySelectorAll(".fan-unit-pick"))
-            .filter((c) => c.checked)
-            .map((c) => c.getAttribute("data-fan-id")),
-        );
+        const keepOf = (cls) =>
+          new Set(
+            Array.from(container.querySelectorAll(cls))
+              .filter((c) => c.checked)
+              .map((c) => c.getAttribute("data-fan-id")),
+          );
+        const keep = keepOf(".fan-unit-pick");
+        const keepSize = keepOf(".fan-size-confirm");
         const old = container.querySelector("#ecm-fanunits");
         old.outerHTML = ecmFanUnitsFieldHtml(ctx);
         container.querySelectorAll(".fan-unit-pick").forEach((c) => {
           c.checked = keep.has(c.getAttribute("data-fan-id"));
+        });
+        container.querySelectorAll(".fan-size-confirm").forEach((c) => {
+          c.checked = keepSize.has(c.getAttribute("data-fan-id"));
         });
         container.querySelector("#ecm-results-wrap").innerHTML = "";
       });
@@ -2601,6 +2654,12 @@ function renderEcmCalculator(
       if (inp.type === "fan_units") {
         inputs[inp.id] = Array.from(
           container.querySelectorAll(".fan-unit-pick:checked"),
+        ).map((c) => c.getAttribute("data-fan-id"));
+        return;
+      }
+      if (inp.type === "fan_confirm") {
+        inputs[inp.id] = Array.from(
+          container.querySelectorAll(".fan-size-confirm:checked"),
         ).map((c) => c.getAttribute("data-fan-id"));
         return;
       }
@@ -2915,6 +2974,19 @@ function ecmFanRefineHints(units) {
         plural(noAmps, "unit", "units") +
         " to replace the fan power estimated from airflow, horsepower or amps with an assumed voltage.",
     );
+  const unknownDrive = count((u) => u.driveStatus === "unknown" || (u.twoSpeed && u.driveStatus !== "none" && u.driveStatus !== "has"));
+  if (unknownDrive)
+    hints.push(
+      "Set Has variable speed (Yes or No) for " +
+        plural(unknownDrive, "unit", "units") +
+        " whose drive status is unknown. A drive is counted in the savings total only for a unit set to No.",
+    );
+  const national = count((u) => u.sizeBasis === "national");
+  if (national)
+    hints.push(
+      plural(national, "unit", "units") +
+        " sized by the national average are not in the savings total until you tick Size is right, or the real amps, airflow or horsepower are in the Equipment Matrix.",
+    );
   const noSpeed = count((u) => u.vfd === "yes" && u.profile.level !== "trend");
   if (noSpeed)
     hints.push(
@@ -2971,6 +3043,11 @@ function ecmFanUnitsFieldHtml(ctx) {
         (u.kwBasis === "full" ? " at full speed" : " while running");
       const hasDrive = u.vfd === "yes";
       const resetApplies = hasDrive && !u.twoSpeed;
+      const driveText = hasDrive
+        ? "Has a drive"
+        : u.driveStatus === "none"
+          ? "Constant speed"
+          : "Drive status unknown";
       const resetText =
         u.reset.pass === 0
           ? "Already running"
@@ -2991,6 +3068,13 @@ function ecmFanUnitsFieldHtml(ctx) {
         "</div></td>" +
         '<td class="fan-num">' +
         ecmFanLevelCell(kwText, u.kwLevel, u.kwHow) +
+        (u.sizeBasis === "national"
+          ? '<div class="fan-how"><label><input type="checkbox" class="fan-size-confirm" data-fan-id="' +
+            _escHtml(u.id) +
+            '" aria-label="Size is right: ' +
+            _escHtml(u.name) +
+            '"> Size is right (national average: not counted until ticked)</label></div>'
+          : "") +
         "</td>" +
         '<td class="fan-num">' +
         ecmFanLevelCell(
@@ -3000,11 +3084,7 @@ function ecmFanUnitsFieldHtml(ctx) {
         ) +
         "</td>" +
         "<td>" +
-        ecmFanLevelCell(
-          hasDrive ? "Has a drive" : "Constant speed",
-          u.vfdLevel,
-          u.vfdHow,
-        ) +
+        ecmFanLevelCell(driveText, u.vfdLevel, u.vfdHow) +
         '<div class="fan-how"><label>Has variable speed <select class="fan-hasvfd" data-fan-id="' +
         _escHtml(u.id) +
         '" aria-label="Has variable speed: ' +
@@ -3088,8 +3168,9 @@ function ecmFanDetailHtml(results) {
       t: a.t + u.twoSpeed,
       r: a.r + u.reset,
       s: a.s + u.total,
+      p: a.p + (u.possible || 0),
     }),
-    { b: 0, v: 0, t: 0, r: 0, s: 0 },
+    { b: 0, v: 0, t: 0, r: 0, s: 0, p: 0 },
   );
   const names = { vfd: "Drive", twoSpeed: "Two-speed drive", reset: "Reset" };
   const why = (u) =>
@@ -3112,13 +3193,15 @@ function ecmFanDetailHtml(results) {
         n(u.reset) +
         '</td><td class="fan-num">' +
         n(u.total) +
+        '</td><td class="fan-num">' +
+        n(u.possible) +
         '</td><td class="fan-how">' +
         _escHtml(why(u)) +
         "</td></tr>",
     )
     .join("");
   return (
-    '<div style="padding:12px 16px;border-top:1px solid var(--border)"><div class="fan-tbl-outer"><table class="fan-tbl" id="ecm-fan-result-tbl"><thead><tr><th>Unit</th><th class="fan-num">Baseline kWh</th><th class="fan-num">Drive kWh saved</th><th class="fan-num">Two-speed drive kWh saved</th><th class="fan-num">Reset kWh saved</th><th class="fan-num">Total kWh saved</th><th>Not applied because</th></tr></thead><tbody>' +
+    '<div style="padding:12px 16px;border-top:1px solid var(--border)"><div class="fan-tbl-outer"><table class="fan-tbl" id="ecm-fan-result-tbl"><thead><tr><th>Unit</th><th class="fan-num">Baseline kWh</th><th class="fan-num">Drive kWh saved</th><th class="fan-num">Two-speed drive kWh saved</th><th class="fan-num">Reset kWh saved</th><th class="fan-num">Total kWh saved</th><th class="fan-num">Possible kWh (not counted)</th><th>Not counted because</th></tr></thead><tbody>' +
     body +
     '</tbody><tfoot><tr><td>Total</td><td class="fan-num">' +
     n(tot.b) +
@@ -3130,7 +3213,21 @@ function ecmFanDetailHtml(results) {
     n(tot.r) +
     '</td><td class="fan-num">' +
     n(tot.s) +
+    '</td><td class="fan-num">' +
+    n(tot.p) +
     "</td><td></td></tr></tfoot></table></div>" +
+    (tot.p
+      ? '<div id="ecm-fan-possible" class="fan-how" style="margin-top:6px">' +
+        (results.possible_drive_kwh
+          ? "Possible if no drive is installed: " +
+            n(results.possible_drive_kwh) +
+            " kWh — confirm drive status to include. "
+          : "") +
+        (results.possible_size_kwh
+          ? "Possible if the national-average size is confirmed: " + n(results.possible_size_kwh) + " kWh. "
+          : "") +
+        "These are not in the total above.</div>"
+      : "") +
     '<div class="fan-how" style="margin-top:6px">Projected from the data on hand (a measured trend, an Equipment Matrix value or a default, shown for each input above). Not measured and verified savings.</div></div>'
   );
 }

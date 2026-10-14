@@ -56,15 +56,31 @@ function hpToKw(hp, motorEff) {
   return (hp * KW_PER_HP) / (motorEff == null ? 1 : motorEff);
 }
 
+// ---- part-load fan power curves (selected with opts.curve of fanPowerFraction) ----
+// 'affinity'  fixedShare + (1 - fixedShare) * speed^3: the ideal fan law with a share of fixed losses.
+// 'ashraeG'   the ASHRAE 90.1 Appendix G part-load fan power curve of a variable-air-volume fan with a variable-speed drive and a
+//             fixed duct static pressure setpoint (the baseline curve of 90.1-2016 Appendix G):
+//             power fraction = 0.0013 + 0.1470 x PLR + 0.9506 x PLR^2 - 0.0998 x PLR^3, PLR = flow fraction.
+//             Source: NREL openstudio-standards, lib/openstudio-standards/hvac/components/fan.rb, fan_variable_volume_set_control_type,
+//             case 'Multi Zone VAV with Fixed Static Pressure Setpoint' ("Appendix G baseline from ANSI/ASHRAE/IES Standard 90.1-2016"),
+//             https://github.com/NatLabRockies/openstudio-standards. Read 2026-10-14. It already holds the fixed losses: fixedShare is not used.
+//             (The same file holds a lower, static-pressure-reset curve; it is not added because it would count the reset twice.)
+var FAN_CURVE_ASHRAE_G = { c0: 0.0013, c1: 0.147, c2: 0.9506, c3: -0.0998 };
+// The curve the fan model uses for a speed profile: the more conservative (higher power, lower savings) of the two on the speed range
+// a VAV fan works in (30 to 100 percent): ashraeG is above the affinity law with 10 percent fixed share from 30 percent speed up.
+var FAN_DEFAULT_PART_LOAD_CURVE = 'ashraeG';
+
 /**
- * Fan or pump power as a fraction of full-speed power. The ONE affinity-law rule.
- *   fraction = fixedShare + (1 - fixedShare) * max(speed, minSpeed) ^ exponent
+ * Fan or pump power as a fraction of full-speed power. The ONE part-load rule.
+ *   curve 'affinity' (default): fraction = fixedShare + (1 - fixedShare) * max(speed, minSpeed) ^ exponent
+ *   curve 'ashraeG':            fraction = FAN_CURVE_ASHRAE_G polynomial of max(speed, minSpeed)
  * @param {number} speedFraction - speed (or flow) as a fraction of full speed, 0 to 1
  * @param {object} [opts]
- * @param {number} [opts.exponent=FAN_AFFINITY_EXPONENT] - power exponent; 3 is the ideal cube law
+ * @param {string} [opts.curve='affinity'] - 'affinity' or 'ashraeG'
+ * @param {number} [opts.exponent=FAN_AFFINITY_EXPONENT] - power exponent of the affinity curve; 3 is the ideal cube law
  * @param {number} [opts.minSpeed=0] - lowest speed the drive allows; speeds below it run at it
- * @param {number} [opts.fixedShare=0] - share of full power that does not fall with speed
- *   (bearing, drive and motor losses). 0 is the ideal law. Every caller today uses 0.
+ * @param {number} [opts.fixedShare=0] - share of full power that does not fall with speed (affinity curve only)
+ *   (bearing, drive and motor losses). 0 is the ideal law.
  * @returns {number} power fraction; multiply by full-speed kW
  */
 function fanPowerFraction(speedFraction, opts) {
@@ -73,6 +89,10 @@ function fanPowerFraction(speedFraction, opts) {
   var minSpeed = o.minSpeed == null ? 0 : o.minSpeed;
   var fixedShare = o.fixedShare == null ? 0 : o.fixedShare;
   var s = speedFraction < minSpeed ? minSpeed : speedFraction;
+  if (o.curve === 'ashraeG') {
+    var c = FAN_CURVE_ASHRAE_G;
+    return c.c0 + c.c1 * s + c.c2 * s * s + c.c3 * s * s * s;
+  }
   return fixedShare + (1 - fixedShare) * Math.pow(s, exponent);
 }
 
