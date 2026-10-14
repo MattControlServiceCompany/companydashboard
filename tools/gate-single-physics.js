@@ -15,6 +15,7 @@
  *      293.071 / 0.000293071 (kWh per MMBtu / per Btu), 0.9153 / 0.91452 (therms per propane gallon),
  *      91.5 / 91.452 / 91452 (propane kBtu or Btu per gallon), 33475 / 0.33475 / 0.03346 (boiler hp),
  *      or 100000 as a Btu-per-therm divisor.
+ *   5a. Steam: 34.5 lb/h per boiler hp, 970.3 Btu per lb, 0.0097 therm per lb. One chain in physics.js.
  *   5b. physics.js derives every propane, electric and boiler hp figure from ONE base constant
  *      (BTU_PER_GAL_PROPANE 91452, BTU_PER_KWH 3412.14, BTU_PER_HR_PER_BHP 33475).
  *   5c. One site-energy sum: computeKBtu in computations/eui.js. A second definition or any use of toKBtu fails.
@@ -45,6 +46,9 @@ const REQUIRED = [
   'KWH_PER_MMBTU',
   'BTU_PER_HR_PER_BHP',
   'THERMS_PER_HR_PER_BHP',
+  'LB_STEAM_PER_HR_PER_BHP',
+  'BTU_PER_LB_STEAM',
+  'THERMS_PER_LB_STEAM',
   'FAN_AFFINITY_EXPONENT',
 ];
 const REQUIRED_FUNCS = ['hpToKw', 'fanPowerFraction', 'ductStaticResetPowerSavings'];
@@ -66,6 +70,11 @@ const CONSTANT_RULES = [
   [NUM('33475'), 'Btu/h per boiler hp (BTU_PER_HR_PER_BHP)'],
   [NUM('33,475'), 'Btu/h per boiler hp (BTU_PER_HR_PER_BHP)'],
   [NUM('0.33475'), 'therm/h per boiler hp (THERMS_PER_HR_PER_BHP)'],
+  [NUM('970.3'), 'Btu per lb of steam (BTU_PER_LB_STEAM)'],
+  [NUM('970'), 'Btu per lb of steam (BTU_PER_LB_STEAM)'],
+  [NUM('0.0097'), 'therm per lb of steam (THERMS_PER_LB_STEAM)'],
+  [NUM('0.00970'), 'therm per lb of steam (THERMS_PER_LB_STEAM)'],
+  [NUM('34.5'), 'lb/h steam per boiler hp (LB_STEAM_PER_HR_PER_BHP)'],
   [NUM('0.03346'), 'therm/h per boiler hp (old wrong factor; use THERMS_PER_HR_PER_BHP)'],
   [NUM('0.03347'), 'therm/h per boiler hp (use THERMS_PER_HR_PER_BHP)'],
   [NUM('3413'), 'Btu per kWh (BTU_PER_KWH)'],

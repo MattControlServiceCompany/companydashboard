@@ -87,6 +87,9 @@ mustFail('a second computeKBtu', withLine('app/calculators.js', 'function comput
 mustFail('0.03413', withLine('app/calculators.js', 'var t = kwh * 0.03413;'));
 mustFail('91.5', withLine('computations/eui.js', 'var k = gal * 91.5;'));
 mustFail('100000 as Btu per therm', withLine('app/ecm-calculators.js', 'var th = btu / (100000 * afue);'));
+mustFail('a literal steam factor', withLine('app/calculators.js', 'return qty * size * 0.0097;'));
+mustFail('a literal Btu per lb steam', withLine('app/calculators.js', 'var h = 970.3;'));
+mustFail('a literal lb/h per boiler hp', withLine('app/calculators.js', 'var l = size * 34.5;'));
 mustFail('a second fanPowerFraction', withLine('app/bas-trends.js', 'function fanPowerFraction(s) { return s; }'));
 const noPhys = Object.assign({}, clean);
 delete noPhys['computations/physics.js'];

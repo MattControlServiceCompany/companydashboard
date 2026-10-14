@@ -30,6 +30,12 @@ var KBTU_PER_GAL_PROPANE = BTU_PER_GAL_PROPANE / 1000; // 91.452 kBtu per gallon
 // Boiler horsepower: 1 boiler hp = 33,475 Btu/h (ASME PTC 4; 34.5 lb/h steam from and at 212 F)
 var BTU_PER_HR_PER_BHP = 33475; // Btu per hour per boiler horsepower
 var THERMS_PER_HR_PER_BHP = BTU_PER_HR_PER_BHP / BTU_PER_THERM; // 0.33475 therm/h per boiler hp
+// Steam: 1 boiler hp evaporates 34.5 lb/h of water from and at 212 F (ASME PTC 4; DOE AMO steam tip sheets).
+// 33,475 / 34.5 = 970.3 Btu per lb, the latent heat of steam at 14.696 psia (ASHRAE Fundamentals steam tables;
+// IAPWS 2256.9 kJ/kg). Both sources agree, so the Btu per lb derives from the boiler hp figure, never a second literal.
+var LB_STEAM_PER_HR_PER_BHP = 34.5; // lb/h of steam per boiler hp, from and at 212 F
+var BTU_PER_LB_STEAM = BTU_PER_HR_PER_BHP / LB_STEAM_PER_HR_PER_BHP; // 970.29 Btu per lb of steam
+var THERMS_PER_LB_STEAM = BTU_PER_LB_STEAM / BTU_PER_THERM; // 0.0097029 therm per lb of steam (output, no efficiency)
 
 // ---- fan and pump power ----
 var FAN_AFFINITY_EXPONENT = 3; // fan/pump power varies as speed to this power (affinity law)

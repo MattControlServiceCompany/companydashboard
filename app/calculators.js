@@ -1327,8 +1327,8 @@ function _gasMaxThermHr(eq) {
   const qty = eq.qty || 1;
   const size = eq.size || 0;
   if (eq.units === 'BHp') return qty * size * THERMS_PER_HR_PER_BHP;
-  if (eq.units === 'lbs/hr') return qty * size * 0.001;
-  if (eq.units === 'MMBtu/hr') return qty * size * 10;
+  if (eq.units === 'lbs/hr') return qty * size * THERMS_PER_LB_STEAM; // steam output lb/h, from and at 212 F
+  if (eq.units === 'MMBtu/hr') return qty * size * THERMS_PER_MMBTU;
   return (qty * size) / BTU_PER_THERM; // Btu/hr → Therm/hr
 }
 
