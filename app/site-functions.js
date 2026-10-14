@@ -2506,6 +2506,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.14.121', date: '2026-10-14', title: 'Settings windows keep Save and Cancel in view',
+    items: [
+      { type: 'fix', text: 'Energy Department > Utility Data: Save and Cancel now always show at the bottom of settings windows (Bills Table Settings and others).' },
+      { type: 'change', text: 'Energy Department > Utility Data: the flagged-bill banner now lists each flagged bill and its reason without hover.' }
+    ]
+  },
   { v: 'v2026.10.14.120', date: '2026-10-14', title: 'Measure cost lines and one payback',
     items: [
       { type: 'feature', text: 'Energy Savings: each measure now has cost lines - consultant price, our labor (hours at the Cost Estimate hourly rate), parts, and rebates - with net cost and simple payback. Fan Savings measures start with a "Reprogram BAS for variable speed" labor line. Any old implementation cost or rebate value is moved into these lines automatically.' },
