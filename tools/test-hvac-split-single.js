@@ -79,28 +79,8 @@ const EXP_COOL = KWH.reduce((s, v) => s + Math.max(0, v - E_BASE), 0);
 const EXP_HEAT = THERMS.reduce((s, v) => s + Math.max(0, v - G_BASE), 0);
 
 const yms = KWH.map((_, i) => '2025-' + String(i + 1).padStart(2, '0'));
-const elecBL = {
-  months: yms,
-  rows: yms.map((ym, i) => ({ ym, bill: { kwh: KWH[i], billedKW: KW[i], demandKW: KW[i] } })),
-  // A regression with strong HDD and CDD terms: the old page 4 built cooling and electric heating from it.
-  regrCoeffs: { type: 'dual', intercept: 20000, slopeHDD: 25.5, slopeCDD: 40.25 },
-  regrType: 'dual',
-  r2: 0.9,
-};
-const gasBL = {
-  months: yms,
-  rows: yms.map((ym, i) => ({ ym, bill: { therms: THERMS[i] } })),
-  regrCoeffs: null,
-  regrType: '-',
-  r2: null,
-};
-const wxByYm = {};
-yms.forEach((ym, i) => {
-  wxByYm[ym] = {
-    hdd: [900, 780, 600, 300, 100, 10, 0, 0, 40, 250, 550, 800][i],
-    cdd: [0, 0, 0, 10, 60, 250, 380, 340, 150, 20, 0, 0][i],
-  };
-});
+// One bill per month, ending inside the month: a month is populated only when a bill ends in it.
+const BILLS = yms.map((ym) => ({ start: ym + '-01', end: ym + '-28' }));
 
 // ---------------------------------------------------------------------------
 // Sandbox with the REAL functions (extracted verbatim).
@@ -109,8 +89,8 @@ const bldg = {
   id: 'b1',
   name: 'Synthetic School',
   meters: [
-    { commodity: 'Electric', bills: [{}], baseline: { months: yms } },
-    { commodity: 'Gas', bills: [{}], baseline: { months: yms } },
+    { id: 'e0', commodity: 'Electric', bills: BILLS, baseline: { months: yms } },
+    { id: 'g0', commodity: 'Gas', bills: BILLS, baseline: { months: yms } },
   ],
 };
 // Multi-meter building: two gas meters + one EXCLUDED gas meter, two electric meters.
@@ -119,7 +99,7 @@ const G2 = [90, 80, 50, 25, 12, 6, 5, 5, 9, 25, 55, 85];
 const GX = [5000, 5000, 5000, 5000, 5000, 5000, 5000, 5000, 5000, 5000, 5000, 5000];
 const E1 = [30000, 29000, 28000, 31000, 36000, 46000, 55000, 53000, 42000, 32000, 27000, 29000];
 const E2 = [3000, 2900, 2800, 3100, 3600, 4600, 5500, 5300, 4200, 3200, 2700, 2900];
-const mm = (id, commodity, data) => ({ id, commodity, bills: [{}], data, baseline: { months: ['2025-01'] } });
+const mm = (id, commodity, data) => ({ id, commodity, bills: BILLS, data, baseline: { months: yms } });
 const bldg2 = {
   id: 'b2',
   name: 'Synthetic Multi',
@@ -130,15 +110,18 @@ const src = [
   loadFn(HV, '_hvacLowestNAvg'),
   loadFn(HV, '_hvacPopulatedCount'),
   loadFn(HV, 'computeHvacEnduse'),
+  loadFn(HV, '_hvacPeakOf'),
+  loadFn(HV, 'computeHvacDemand'),
   loadFn(WD, '_wdRoundHalfUp'),
   loadFn(WD, '_wdIsSummer'),
-  loadFn(WD, '_wdBillTherms'),
-  loadFn(WD, '_wdBaselineHvac', true),
+  loadFn(WD, '_wdBaselineHvac'),
   loadFn(WD, '_wdComputeHvacSplit'),
   loadFn(WD, 'wdComputeSetpointOptions'),
   loadFn(CALC, '_hvlMonthlyBaseline'),
-  loadFn(CALC, '_hvlMeterMoMap', true),
-  loadFn(CALC, '_hvlEnduseForBuilding', true),
+  loadFn(CALC, '_hvlMeterMoMap'),
+  loadFn(CALC, '_hvlMergeMoMaps'),
+  loadFn(CALC, 'getHvacQuickAnnual'),
+  loadFn(CALC, 'resolveHvacLoadData'),
   loadFn(CALC, '_hvlBuildingHeatingSignals'),
   loadFn(CALC, '_hvlDefaultGasPct'),
   loadFn(CALC, '_hvlGasHeatShare'),
@@ -149,10 +132,9 @@ const EXCLUDED = { gExcl: true };
 const sandbox = {
   console,
   isBaselineExcluded: (pid, id) => !!EXCLUDED[id],
-  resolveGasUsageTherms: (bill) => bill.therms || 0,
   getUDBldg: (pid, id) => (id === 'b2' ? bldg2 : bldg),
   getWeatherForBuilding: () => ({ byYm: {} }),
-  getNormRows: () => [{ ym: '2025-01' }],
+  getNormRows: () => yms.map((ym) => ({ ym })),
   buildMoMap: (meter) => {
     if (meter.data) {
       const e = {},
@@ -171,7 +153,7 @@ const sandbox = {
     }
     return { elecByMo, gasByMo };
   },
-  _parseISO: () => 0,
+  _parseISO: (s) => new Date(s),
 };
 vm.createContext(sandbox);
 vm.runInContext(fs.readFileSync(path.join(REPO, 'computations/physics.js'), 'utf8'), sandbox, { filename: 'physics.js' });
@@ -181,7 +163,7 @@ vm.runInContext(src, sandbox, { filename: 'hvac-split-single.js' });
 // ---------------------------------------------------------------------------
 // 1. Report page 4 = baseload method (not regression)
 // ---------------------------------------------------------------------------
-const h = sandbox._wdComputeHvacSplit(elecBL, gasBL, wxByYm);
+const h = sandbox._wdComputeHvacSplit('p1', bldg);
 assert(near(h.coolKwh, EXP_COOL, 0.5), 'page 4 cooling kWh = baseload method ' + EXP_COOL + ', got ' + h.coolKwh);
 assert(near(h.gasHeatTherms, EXP_HEAT, 0.5), 'page 4 gas heating Therms = ' + EXP_HEAT + ', got ' + h.gasHeatTherms);
 assert(h.heatKwh == null, 'page 4 electric heating kWh is not separated (null), got ' + h.heatKwh);
@@ -203,7 +185,7 @@ const cfg = {
   demandFloorKw: 100,
   options: [{ letter: 'A', heatSP: 70, coolSP: 76 }],
 };
-const so = sandbox.wdComputeSetpointOptions(cfg, elecBL, gasBL);
+const so = sandbox.wdComputeSetpointOptions(cfg, 'p1', bldg);
 assert(
   near(so.baseline.sumCool, EXP_COOL, 0.5),
   'setpoint options cooling kWh = page 4 (' + EXP_COOL + '), got ' + so.baseline.sumCool,
@@ -242,22 +224,18 @@ const mcool = sandbox.hvacComputeElecCoolKwhForBuilding('p1', 'b2');
 assert(mcool && near(mcool.coolingKwh, expMultiCool, 0.5), 'multi-meter cooling kWh sums both electric meters (' + expMultiCool + '), got ' + (mcool && mcool.coolingKwh));
 
 // ---------------------------------------------------------------------------
-// 3c. 24-month baseline: Page 4 and setpoint options average the two years (one 12-month year)
+// 3c. Every reader goes through ONE data path: the HVAC split and the setpoint options read bills only via
+//     resolveHvacLoadData (no private bill reader, no private month sums)
 // ---------------------------------------------------------------------------
-const yms24 = [];
-[2024, 2025].forEach((y) => KWH.forEach((_, i) => yms24.push(y + '-' + String(i + 1).padStart(2, '0'))));
-const elec24 = {
-  months: yms24,
-  rows: yms24.map((ym, i) => ({ ym, bill: { kwh: KWH[i % 12] * (i < 12 ? 0.9 : 1.1), billedKW: 100 } })),
-  regrCoeffs: null,
-};
-const gas24 = { months: yms24, rows: yms24.map((ym, i) => ({ ym, bill: { therms: THERMS[i % 12] * (i < 12 ? 0.9 : 1.1) } })), regrCoeffs: null };
-const h24 = sandbox._wdComputeHvacSplit(elec24, gas24);
-assert(near(h24.coolKwh, EXP_COOL, 1), '24-month Page 4 cooling = one averaged year (' + EXP_COOL + '), got ' + h24.coolKwh);
-assert(near(h24.elecKwh, KWH.reduce((s, v) => s + v, 0), 1), '24-month Page 4 annual kWh is one year, got ' + h24.elecKwh);
-assert(near(h24.gasHeatTherms, EXP_HEAT, 1), '24-month Page 4 gas heating = one averaged year (' + EXP_HEAT + '), got ' + h24.gasHeatTherms);
-const so24 = sandbox.wdComputeSetpointOptions(cfg, elec24, gas24);
-assert(near(so24.baseline.sumCool, EXP_COOL, 1), '24-month setpoint cooling = one averaged year, got ' + so24.baseline.sumCool);
+{
+  const bh = loadFn(WD, '_wdBaselineHvac');
+  assert(/resolveHvacLoadData\(/.test(bh), '_wdBaselineHvac reads through resolveHvacLoadData');
+  assert(!/\.rows|\.bills|bill\./.test(bh), '_wdBaselineHvac reads no bill rows');
+  assert(!/_hvlEnduseForBuilding/.test(calcSrcAll()), '_hvlEnduseForBuilding is gone (one resolver)');
+}
+function calcSrcAll() {
+  return read('app/calculators.js') + read('app/graphics-setpoints.js') + fs.readFileSync(WD, 'utf8');
+}
 
 // ---------------------------------------------------------------------------
 // 4. Obsolete regression HVAC paths are gone (static)

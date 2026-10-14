@@ -44,6 +44,9 @@ function assert(cond, msg) {
   }
 }
 const near = (a, b, tol) => Math.abs(a - b) <= tol;
+// 12 baseline months with one bill each (a bill ends inside each month), so a month is "populated".
+const YMS12 = Array.from({ length: 12 }, (_, i) => '2026-' + String(i + 1).padStart(2, '0'));
+const BILLS12 = YMS12.map((ym) => ({ start: ym + '-01', end: ym + '-28' }));
 
 function loadFn(file, fnName) {
   const src = fs.readFileSync(file, 'utf8');
@@ -79,9 +82,13 @@ const src = [
   loadFn(HVAC_ENDUSE, '_hvacLowestNAvg'),
   loadFn(HVAC_ENDUSE, '_hvacPopulatedCount'),
   loadFn(HVAC_ENDUSE, 'computeHvacEnduse'),
+  loadFn(HVAC_ENDUSE, '_hvacPeakOf'),
+  loadFn(HVAC_ENDUSE, 'computeHvacDemand'),
   loadFn(CALC, '_hvlMonthlyBaseline'),
   loadFn(CALC, '_hvlMeterMoMap'),
-  loadFn(CALC, '_hvlEnduseForBuilding'),
+  loadFn(CALC, '_hvlMergeMoMaps'),
+  loadFn(CALC, 'getHvacQuickAnnual'),
+  loadFn(CALC, 'resolveHvacLoadData'),
   loadFn(CALC, 'hvacComputeElecCoolKwhForBuilding'),
 ].join('\n\n');
 
@@ -98,13 +105,14 @@ function makeSandbox(opts) {
   const bldg = {
     id: 'b1',
     name: opts.bldgName || 'Synthetic Elementary',
-    meters: [...(elecMonthly ? [{ commodity: 'Electric', bills: [{}], baseline: { months: ['2026-01'] } }] : [])],
+    meters: [...(elecMonthly ? [{ id: 'e1', commodity: 'Electric', bills: BILLS12, baseline: { months: YMS12 } }] : [])],
   };
   const sandbox = {
     console,
     getUDBldg: () => bldg,
     getWeatherForBuilding: () => ({ byYm: {} }),
-    getNormRows: () => [{ ym: '2026-01' }],
+    getNormRows: () => YMS12.map((ym) => ({ ym })),
+    _parseISO: (s) => new Date(s),
     buildMoMap: (meter) => {
       if (meter.commodity !== 'Electric') return {};
       const elecByMo = {};

@@ -47,6 +47,25 @@ function _hvacPopulatedCount(arr) {
 }
 
 /**
+ * Highest populated value in a 12-month array and its calendar-month index (0 = Jan).
+ * The ONE place the "peak month" is decided (computeHvacEnduse and computeHvacDemand both call it).
+ * @param {Array<number|null>} arr
+ * @returns {{value:number|null, month:number|null}}
+ */
+function _hvacPeakOf(arr) {
+  var best = null;
+  var mo = null;
+  (arr || []).forEach(function (v, i) {
+    if (v === null || v === undefined) return;
+    if (best === null || v > best) {
+      best = v;
+      mo = i;
+    }
+  });
+  return { value: best, month: mo };
+}
+
+/**
  * Compute the HVAC end-use estimate for one building over its 12 baseline calendar months.
  * Method (matches Excel "HVAC End-Use Estimate" sheet):
  *   baseloadElec = avg of 3 lowest monthly kWh (among populated months)
@@ -131,7 +150,7 @@ function computeHvacEnduse(kwhArr12, kwArr12, gasArr12) {
         winterVals.reduce(function (s, v) {
           return s + v;
         }, 0) / winterVals.length;
-      out.peakKw = Math.max.apply(null, peakVals);
+      out.peakKw = _hvacPeakOf(kw).value;
       out.demandValid = true;
       out.coolingDemandKw = out.peakKw - out.winterDemandBase;
       out.coolingDemandPct = out.peakKw > 0 ? out.coolingDemandKw / out.peakKw : 0;
@@ -139,4 +158,62 @@ function computeHvacEnduse(kwhArr12, kwArr12, gasArr12) {
   }
 
   return out;
+}
+
+/**
+ * computeHvacDemand - the ONE place a building's electric demand is analyzed (Phase 4 foundation,
+ * 2026-10-13). Two bases, never mixed:
+ *   SUM  = the 12 monthly billed kW added together = the demand-charge baseline (kW-months). Savings
+ *          in kW are priced once per month, so a month-by-month saving adds up on this basis.
+ *   PEAK = the highest single month. Sizing and "cooling demand = peak - winter base" use this.
+ * Facilities kW is printed on the bill ("Facilities Demand (kW)"). It follows the highest billed kW of
+ * the last 12 months (confirmed on the real data: app/csv-import.js backfillFacilitiesKW uses the same
+ * rule), so it can sit above the current billed kW for months after a peak.
+ *
+ * @param {Array<number|null>} billedKw12 - billed kW per calendar month, null = no reading
+ * @param {Array<number|null>} facKw12 - Facilities kW per calendar month, null = none printed
+ * @param {Array<{ym:string, kw:number}>} billKwRecords - every electric bill of the building (any year):
+ *   its month ('YYYY-MM', the same month the monthly kW uses) and billed kW. Only used to name the month
+ *   that set the highest Facilities kW.
+ * @returns {{billedKw:Array, billedSum:number, billedPeak:number|null, billedPeakMonth:number|null,
+ *   facKw:Array, facSum:number, facPeak:number|null, facPeakMonth:number|null, facSetYm:string|null,
+ *   hasBilled:boolean, hasFac:boolean}}
+ */
+function computeHvacDemand(billedKw12, facKw12, billKwRecords) {
+  var norm = function (a) {
+    var o = (a || []).slice(0, 12);
+    while (o.length < 12) o.push(null);
+    return o.map(function (v) {
+      return v === undefined || v === null || !(v > 0) ? null : v;
+    });
+  };
+  var sum = function (a) {
+    return a.reduce(function (s, v) {
+      return v === null ? s : s + v;
+    }, 0);
+  };
+  var billed = norm(billedKw12);
+  var fac = norm(facKw12);
+  var bPeak = _hvacPeakOf(billed);
+  var fPeak = _hvacPeakOf(fac);
+  var setYm = null;
+  if (fPeak.value !== null) {
+    (billKwRecords || []).forEach(function (r) {
+      if (!r || !r.ym || !(r.kw > 0)) return;
+      if (Math.abs(r.kw - fPeak.value) <= 0.005 && (setYm === null || r.ym > setYm)) setYm = r.ym;
+    });
+  }
+  return {
+    billedKw: billed,
+    billedSum: sum(billed),
+    billedPeak: bPeak.value,
+    billedPeakMonth: bPeak.month,
+    facKw: fac,
+    facSum: sum(fac),
+    facPeak: fPeak.value,
+    facPeakMonth: fPeak.month,
+    facSetYm: setYm,
+    hasBilled: bPeak.value !== null,
+    hasFac: fPeak.value !== null,
+  };
 }

@@ -37,6 +37,9 @@ function assert(cond, msg) {
   }
 }
 const near = (a, b, tol) => Math.abs(a - b) <= tol;
+// 12 baseline months with one bill each (a bill ends inside each month), so a month is "populated".
+const YMS12 = Array.from({ length: 12 }, (_, i) => '2026-' + String(i + 1).padStart(2, '0'));
+const BILLS12 = YMS12.map((ym) => ({ start: ym + '-01', end: ym + '-28' }));
 
 function loadFn(file, fnName) {
   const src = fs.readFileSync(file, 'utf8');
@@ -73,9 +76,13 @@ const src = [
   loadFn(HVAC_ENDUSE, '_hvacLowestNAvg'),
   loadFn(HVAC_ENDUSE, '_hvacPopulatedCount'),
   loadFn(HVAC_ENDUSE, 'computeHvacEnduse'),
+  loadFn(HVAC_ENDUSE, '_hvacPeakOf'),
+  loadFn(HVAC_ENDUSE, 'computeHvacDemand'),
   loadFn(CALC, '_hvlMonthlyBaseline'),
   loadFn(CALC, '_hvlMeterMoMap'),
-  loadFn(CALC, '_hvlEnduseForBuilding'),
+  loadFn(CALC, '_hvlMergeMoMaps'),
+  loadFn(CALC, 'getHvacQuickAnnual'),
+  loadFn(CALC, 'resolveHvacLoadData'),
   loadFn(CALC, '_hvlDefaultGasPct'),
   loadFn(CALC, '_hvlBuildingHeatingSignals'),
   loadFn(CALC, '_hvlBuildingHasElectricHeat'),
@@ -100,15 +107,16 @@ function makeSandbox(opts) {
     id: 'b1',
     name: opts.bldgName || 'Synthetic Elementary',
     meters: [
-      ...(gasMonthly ? [{ commodity: 'Gas', bills: [{}], baseline: { months: ['2026-01'] } }] : []),
-      ...(propaneMonthly ? [{ commodity: 'Propane', bills: [{}], baseline: { months: ['2026-01'] } }] : []),
+      ...(gasMonthly ? [{ id: 'g1', commodity: 'Gas', bills: BILLS12, baseline: { months: YMS12 } }] : []),
+      ...(propaneMonthly ? [{ id: 'p1', commodity: 'Propane', bills: BILLS12, baseline: { months: YMS12 } }] : []),
     ],
   };
   const sandbox = {
     console,
     getUDBldg: () => bldg,
     getWeatherForBuilding: () => ({ byYm: {} }),
-    getNormRows: () => [{ ym: '2026-01' }], // any non-empty array; buildMoMap stub below ignores it
+    getNormRows: () => YMS12.map((ym) => ({ ym })), // 12 baseline months; buildMoMap stub below ignores them
+    _parseISO: (s) => new Date(s),
     buildMoMap: (meter) => {
       if (meter.commodity === 'Gas') {
         const gasByMo = {};

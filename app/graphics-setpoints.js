@@ -504,7 +504,7 @@ function egfxRefresh(projId) {
   let yearData = {}; // {year: {kwh:[12], kw:[12], gas:[12], cost:[12]}}
   let blYears = new Set();
   let bldgYearData = {}; // {bldgName: {year: {kwh:[12], kw:[12], gas:[12], cost:[12]}}}
-  // The HVAC End-Use Estimate cards read _hvlEnduseForBuilding (app/calculators.js) — the one
+  // The HVAC End-Use Estimate cards read resolveHvacLoadData (app/calculators.js) — the one
   // per-building monthly reader for the 3-lowest-month baseload split (WP-15). No private sums here.
 
   // getBillFacKWCost (computations/rates.js) — the ONE accessor for Facilities kW Cost
@@ -1412,14 +1412,12 @@ function egfxRefresh(projId) {
   // HVAC End-Use Estimate — one card per building, weather-independent 3-lowest-month
   // baseload subtraction method (matches the Excel "HVAC End-Use Estimate" deliverable).
   function _hvacEnduseCardsHtml() {
-    if (typeof computeHvacEnduse !== 'function' || typeof _hvlEnduseForBuilding !== 'function') return '';
+    if (typeof computeHvacEnduse !== 'function' || typeof resolveHvacLoadData !== 'function') return '';
     if (!bldgs.length) return '';
     const cards = bldgs
       .map((b) => {
-        const eu = _hvlEnduseForBuilding(projId, b);
-        if (!eu) return '';
         const bh = { name: b.name || 'Unknown' };
-        const r = eu.enduse;
+        const r = resolveHvacLoadData(projId, b).enduse;
         if (!r.elecValid && !r.gasValid) return '';
         const pct1 = (v) => (v * 100).toFixed(1) + '%';
         const rows = [];

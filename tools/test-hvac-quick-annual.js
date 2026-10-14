@@ -3,10 +3,10 @@
 //   1. resolveHvacLoadData order: baseline bills (full year) -> annual entry -> nothing; fewer than 6
 //      bill months still use the bills unless the user entered annual totals; the annual entry is
 //      reported as not used when bills win.
-//   2. Annual path in hvacLoadCalc: Rules of Thumb on the annual totals, NO monthly arrays (never
+//   2. Annual path in computeHvacLoadEstimate: Rules of Thumb on the annual totals, NO monthly arrays (never
 //      faked), propane gallons rolled into Therms, entered peak kW used as-is.
-//   3. Static gate: hvacLoadCalc reads data only through resolveHvacLoadData (no direct
-//      _hvlMonthlyBaseline / quickAnnual / bill reads); b.quickAnnual is touched only by the
+//   3. Static gate: hvacLoadCalc / computeHvacLoadEstimate read data only through resolveHvacLoadData (no
+//      direct _hvlMonthlyBaseline / quickAnnual / bill reads); b.quickAnnual is touched only by the
 //      resolver, its reader, and the entry-box functions.
 // Real functions are extracted verbatim from app/calculators.js into a Node vm. Fixtures are synthetic.
 'use strict';
@@ -25,6 +25,9 @@ function assert(cond, msg) {
   }
 }
 const near = (a, b, tol) => Math.abs(a - b) <= (tol == null ? 1e-6 : tol);
+// 12 baseline months with one bill each (a bill ends inside each month), so a month is "populated".
+const YMS12 = Array.from({ length: 12 }, (_, i) => '2026-' + String(i + 1).padStart(2, '0'));
+const BILLS12 = YMS12.map((ym) => ({ start: ym + '-01', end: ym + '-28' }));
 
 function fnSource(src, fnName) {
   const m = new RegExp('function ' + fnName + '\\s*\\(').exec(src);
@@ -53,13 +56,15 @@ const code = [
   fnSource(ENDUSE_SRC, '_hvacLowestNAvg'),
   fnSource(ENDUSE_SRC, '_hvacPopulatedCount'),
   fnSource(ENDUSE_SRC, 'computeHvacEnduse'),
-  'var _hvlSelBldg = {}; var _hvlMethod = {};',
-  fnSource(CALC_SRC, '_hvlKey'),
+  fnSource(ENDUSE_SRC, '_hvacPeakOf'),
+  fnSource(ENDUSE_SRC, 'computeHvacDemand'),
   fnSource(CALC_SRC, '_hvlMonthlyBaseline'),
   fnSource(CALC_SRC, '_hvlMeterMoMap'),
+  fnSource(CALC_SRC, '_hvlMergeMoMaps'),
   fnSource(CALC_SRC, 'getHvacQuickAnnual'),
   fnSource(CALC_SRC, 'resolveHvacLoadData'),
-  fnSource(CALC_SRC, 'hvacLoadCalc'),
+  fnSource(CALC_SRC, 'computeHvacLoadEstimate'),
+  'var MO_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];',
 ].join('\n\n');
 
 // Synthetic building: elecMonths / gasMonths bill months populated (kWh 10,000 and Therms 500 each).
@@ -70,8 +75,8 @@ function makeSandbox(bldgOverrides, elecMonths, gasMonths, fields) {
       name: 'Synthetic Test Building',
       sqft: 50000,
       meters: [
-        ...(elecMonths ? [{ commodity: 'Electric', bills: [{}], baseline: { months: ['2026-01'] } }] : []),
-        ...(gasMonths ? [{ commodity: 'Gas', bills: [{}], baseline: { months: ['2026-01'] } }] : []),
+        ...(elecMonths ? [{ id: 'e1', commodity: 'Electric', bills: BILLS12, baseline: { months: YMS12 } }] : []),
+        ...(gasMonths ? [{ id: 'g1', commodity: 'Gas', bills: BILLS12, baseline: { months: YMS12 } }] : []),
       ],
     },
     bldgOverrides || {},
@@ -84,7 +89,8 @@ function makeSandbox(bldgOverrides, elecMonths, gasMonths, fields) {
     getUDBldg: () => bldg,
     getUDBldgs: () => [bldg],
     getWeatherForBuilding: () => ({ byYm: {} }),
-    getNormRows: () => [{ ym: '2026-01' }],
+    getNormRows: () => YMS12.map((ym) => ({ ym })),
+    _parseISO: (s) => new Date(s),
     sset: () => {},
     buildMoMap: (meter) => {
       if (meter.commodity === 'Electric') {
@@ -96,13 +102,8 @@ function makeSandbox(bldgOverrides, elecMonths, gasMonths, fields) {
       for (let mo = 0; mo < gasMonths; mo++) gasByMo[mo] = { therms: 500 };
       return { gasByMo };
     },
-    document: {
-      getElementById: (id) => {
-        const m = /^hvl-t-(\w+)-7$/.exec(id);
-        return m && f[m[1]] != null ? { value: String(f[m[1]]) } : null;
-      },
-    },
   };
+  sb._fields = f;
   vm.createContext(sb);
   vm.runInContext(code, sb, { filename: 'hvac-quick-annual.js' });
   sb._bldg = bldg;
@@ -115,7 +116,7 @@ console.log('--- 1. resolver order ---');
   let sb = makeSandbox({ quickAnnual: quick }, 12, 12);
   let r = sb.resolveHvacLoadData(7, sb._bldg);
   assert(r.source === 'bills', 'bills + annual entry -> bills win');
-  assert(r.label === 'From 12 baseline bills', 'bills label: ' + r.label);
+  assert(r.label === 'From 12 months of baseline bills', 'bills label: ' + r.label);
   assert(near(r.kwh, 120000) && near(r.therms, 6000) && near(r.kw, 1200), 'bills totals are the monthly sums');
   assert(r.quickUsed === false && r.quick && r.quick.kwh === 600000, 'annual entry kept but reported not used');
 
@@ -149,13 +150,12 @@ console.log('--- 1. resolver order ---');
   assert(near(r.therms, 100 + 100 * sb.THERMS_PER_GAL_PROPANE), 'propane gallons added as Therms (shared factor)');
 }
 
-console.log('--- 2. annual path in hvacLoadCalc ---');
+console.log('--- 2. annual path in computeHvacLoadEstimate ---');
 {
   const quick = { year: '2025', kwh: 600000, therms: 20000, propaneGal: 0, peakKw: 250 };
   let sb = makeSandbox({ quickAnnual: quick }, 0, 0);
-  sb._hvlSelBldg[7] = 'b1';
-  sb.hvacLoadCalc(7, { persist: false });
-  let e = sb.projects[0].hvacLoadEst;
+  const est = () => sb.computeHvacLoadEstimate('thumb', sb.resolveHvacLoadData(7, sb._bldg), sb._fields, 50000);
+  let e = est();
   assert(
     e && e.dataSource === 'annual' && e.monthly === false,
     'estimate stored with dataSource annual, monthly false',
@@ -171,9 +171,7 @@ console.log('--- 2. annual path in hvacLoadCalc ---');
   );
 
   sb = makeSandbox({ quickAnnual: quick }, 12, 12);
-  sb._hvlSelBldg[7] = 'b1';
-  sb.hvacLoadCalc(7, { persist: false });
-  e = sb.projects[0].hvacLoadEst;
+  e = est();
   assert(e.dataSource === 'bills' && e.monthly === true, 'with 12 bills the estimate switches to bills');
   assert(near(e.totalKwh, 120000) && near(e.totalGas, 6000), 'bills totals replace the annual entry');
   assert(Array.isArray(e.monthlyCoolKwh) && e.monthlyCoolKwh.length === 12, 'bills path keeps monthly arrays');
@@ -188,8 +186,8 @@ console.log('--- 2. annual path in hvacLoadCalc ---');
 
 console.log('--- 3. static gate: HVAC Load Estimate reads data only through the resolver ---');
 {
-  const calc = fnSource(CALC_SRC, 'hvacLoadCalc');
-  assert(/resolveHvacLoadData\(/.test(calc), 'hvacLoadCalc calls resolveHvacLoadData');
+  const calc = fnSource(CALC_SRC, 'hvacLoadCalc') + fnSource(CALC_SRC, 'computeHvacLoadEstimate');
+  assert(/resolveHvacLoadData\(/.test(fnSource(CALC_SRC, 'hvacLoadCalc')), 'hvacLoadCalc calls resolveHvacLoadData');
   assert(!/_hvlMonthlyBaseline\(/.test(calc), 'hvacLoadCalc does not call _hvlMonthlyBaseline');
   assert(!/quickAnnual/.test(calc), 'hvacLoadCalc does not touch quickAnnual');
   assert(

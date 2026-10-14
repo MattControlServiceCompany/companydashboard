@@ -649,6 +649,9 @@ function loadUtilityData() {
   // Estimate missing period (feat/estimate-missing-period, 2026-09-25): drop any estimated bill
   // whose period is now also covered by a real bill (see _replaceEstimatesWithRealBills, app/csv-import.js).
   if (typeof _replaceEstimatesWithRealBills === 'function') _replaceEstimatesWithRealBills();
+  // One-time move of the HVAC Load Estimate from the project to each building (app/calculators.js). Needs the
+  // buildings and baselines loaded above, so it runs last.
+  if (typeof migrateHvacLoadToBuildings === 'function') migrateHvacLoadToBuildings();
 }
 
 function saveUtilityData(pid) {

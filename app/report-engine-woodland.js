@@ -514,60 +514,31 @@ function _rptTotalAvgRow(cols, labelText, nMonths) {
 }
 
 // -----------------------------------------------------------------------
-// _wdBaselineHvac(elecBL, gasBL) — the ONE Client B reader of a building's baseline months for the
-// HVAC split. Page 4 (_wdComputeHvacSplit) and the setpoint options (wdComputeSetpointOptions) both
-// call it, so they can never disagree. The split is the 3-lowest-month baseload method
-// (computeHvacEnduse, computations/hvac-enduse.js; Matt 2026-09-20) — the same function the BAS Calc
-// autofill, the HVAC Load Estimate and the Energy Graphics card use. No regression split anywhere.
+// _wdBaselineHvac(projId, b) — the ONE Client B reader of a building's baseline months for the HVAC split.
+// Page 4 (_wdComputeHvacSplit) and the setpoint options (wdComputeSetpointOptions) both call it, so they can
+// never disagree, and it reads bills ONLY through resolveHvacLoadData (app/calculators.js) — the same data
+// path as the HVAC Load Estimate, the BAS Calc autofill and the Energy Graphics card. The split is the
+// 3-lowest-month baseload method (computeHvacEnduse, computations/hvac-enduse.js; Matt 2026-09-20). No
+// regression split anywhere. Multi-year baselines are already one 12-month year in the resolver.
+// kwByMo is the MONTHLY billed kW series from computeHvacDemand (the sum basis): the setpoint model prices a
+// kW saving month by month, so it needs each month's value, never the single highest month.
 // -----------------------------------------------------------------------
-function _wdBaselineHvac(elecBL, gasBL) {
-  var kwhByMo = Array(12).fill(0),
-    kwByMo = Array(12).fill(0),
-    thermsByMo = Array(12).fill(0),
-    haveE = Array(12).fill(false),
-    haveG = Array(12).fill(false);
-  // A baseline can span 12-36 months. Sum bills per year-month, then AVERAGE over the years present
-  // for that calendar month, so the result is one 12-month year (computeHvacEnduse input).
-  var eYm = {},
-    gYm = {};
-  (elecBL ? elecBL.rows : []).forEach(function (r) {
-    var mo = parseInt(r.ym.split('-')[1], 10) - 1;
-    eYm[mo] = eYm[mo] || {};
-    eYm[mo][r.ym] = (eYm[mo][r.ym] || 0) + (parseFloat(r.bill.kwh) || 0);
-    kwByMo[mo] = Math.max(kwByMo[mo], parseFloat(r.bill.billedKW || r.bill.demandKW) || 0);
-    haveE[mo] = true;
-  });
-  (gasBL ? gasBL.rows : []).forEach(function (r) {
-    var mo = parseInt(r.ym.split('-')[1], 10) - 1;
-    gYm[mo] = gYm[mo] || {};
-    gYm[mo][r.ym] = (gYm[mo][r.ym] || 0) + _wdBillTherms(r.bill);
-    haveG[mo] = true;
-  });
-  function avgYears(map) {
-    var ks = Object.keys(map);
-    return ks.reduce(function (s, k) { return s + map[k]; }, 0) / ks.length;
-  }
-  for (var m = 0; m < 12; m++) {
-    if (haveE[m]) kwhByMo[m] = avgYears(eYm[m]);
-    if (haveG[m]) thermsByMo[m] = avgYears(gYm[m]);
-  }
-  // A baseload needs >=6 populated calendar months (computeHvacEnduse elecValid/gasValid); below
-  // that the baseload is 0 and no split is claimed.
-  var enduse = computeHvacEnduse(
-    kwhByMo.map(function (v, i) {
-      return haveE[i] ? v : null;
-    }),
-    null,
-    thermsByMo.map(function (v, i) {
-      return haveG[i] ? v : null;
-    }),
-  );
+function _wdBaselineHvac(projId, b) {
+  var r = resolveHvacLoadData(projId, b);
+  var orZero = function (v) {
+    return v === null ? 0 : v;
+  };
+  var enduse = r.enduse;
   return {
-    kwhByMo: kwhByMo,
-    kwByMo: kwByMo,
-    thermsByMo: thermsByMo,
-    haveE: haveE,
-    haveG: haveG,
+    kwhByMo: r.kwhArr.map(orZero),
+    kwByMo: r.demand.billedKw.map(orZero),
+    thermsByMo: r.gasArr.map(orZero),
+    haveE: r.kwhArr.map(function (v) {
+      return v !== null;
+    }),
+    haveG: r.gasArr.map(function (v) {
+      return v !== null;
+    }),
     enduse: enduse,
     eBase: enduse.elecValid ? enduse.baseloadElec : 0,
     gBase: enduse.gasValid ? enduse.baseloadGas : 0,
@@ -582,7 +553,7 @@ function _wdBaselineHvac(elecBL, gasBL) {
 // (heatKwh stays null; the page says so) — it is never filled from a regression.
 // coolKwh is null when fewer than 6 electric months exist: no numbers are invented.
 // -----------------------------------------------------------------------
-function _wdComputeHvacSplit(elecBL, gasBL) {
+function _wdComputeHvacSplit(projId, b) {
   var out = {
     elecKwh: 0,
     gasTherms: 0,
@@ -597,7 +568,7 @@ function _wdComputeHvacSplit(elecBL, gasBL) {
     heatKwhPct: null,
     months: [],
   };
-  var bh = _wdBaselineHvac(elecBL, gasBL);
+  var bh = _wdBaselineHvac(projId, b);
   bh.haveE.forEach(function (has, i) {
     if (has) out.elecKwh += bh.kwhByMo[i];
     if (bh.haveG[i]) out.gasTherms += bh.thermsByMo[i];
@@ -756,7 +727,7 @@ function _wdFullYear(bl) {
 }
 
 // -----------------------------------------------------------------------
-// wdComputeSetpointOptions(cfg, elecBL, gasBL) — the BAS setpoint savings model, computed from
+// wdComputeSetpointOptions(cfg, projId, b) — the BAS setpoint savings model, computed from
 // the building's OWN baseline bills and the stored inputs. Per calendar month:
 //   heating Therms  = max(0, billed Therms − gas baseload)      baseload = mean of the 3 lowest months
 //   cooling kWh     = max(0, billed kWh − electric baseload)     (same rule)
@@ -771,10 +742,10 @@ function _wdFullYear(bl) {
 // Dollars are never computed here — the report values quantity × seasonal rate, monthly then
 // summed (the client-B report data collector).
 // -----------------------------------------------------------------------
-function wdComputeSetpointOptions(cfg, elecBL, gasBL) {
+function wdComputeSetpointOptions(cfg, projId, b) {
   // The baseload split is read ONE way, site-wide: _wdBaselineHvac -> computeHvacEnduse (same
   // numbers as Page 4, the BAS Calc autofill and the HVAC Load Estimate).
-  var bh = _wdBaselineHvac(elecBL, gasBL);
+  var bh = _wdBaselineHvac(projId, b);
   var kwhByMo = bh.kwhByMo,
     kwByMo = bh.kwByMo,
     thermsByMo = bh.thermsByMo,
@@ -832,8 +803,7 @@ function wdApplySetpointOptions(projId, bldgId, cfg) {
   var b = getUDBldg(projId, bldgId);
   if (!p || !b) return null;
   var sd = getProjSavingsData(projId);
-  var bls = _wdBldgBaselines(b);
-  var res = wdComputeSetpointOptions(cfg, bls.elecBL, bls.gasBL);
+  var res = wdComputeSetpointOptions(cfg, projId, b);
   var keep = {};
   res.options.forEach(function (o) {
     var m = sd.measures.find(function (x) {
@@ -1338,7 +1308,7 @@ function collectWoodlandReportData(projId, buildingId) {
   };
 
   // ---- Page 4 / Page 5 inputs ----
-  var hvac = _wdComputeHvacSplit(elecBL, gasBL);
+  var hvac = _wdComputeHvacSplit(projId, b);
   var zones = _wdLoadZoneSetpoints(projId, b.name);
 
   // Every page's header (.rpt-info, via rptPage()) reads data.project.client — the building
