@@ -2506,6 +2506,14 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.13.116', date: '2026-10-13', title: 'One shared calculation for fan and duct static savings, sourced energy constants',
+    items: [
+      { type: 'change', text: 'ECM templates, BAS Trends: fan affinity and duct static reset savings now come from one shared calculation. No estimates changed.' },
+      { type: 'change', text: 'Energy conversions now use one set of sourced constants (EIA values for electricity and propane, ENERGY STAR value for district steam). EUI moves by about 0.001.' },
+      { type: 'fix', text: 'HVAC Load Estimate > Reverse Analysis > Gas tab: boiler horsepower and steam lb/hr sizes now convert to therms/hour correctly (they were about 10x low).' },
+      { type: 'change', text: 'Utility Data: the steam unit is now labelled "thousand lb (Mlb)".' }
+    ]
+  },
   { v: 'v2026.10.13.115', date: '2026-10-13', title: 'Month rate with several bills is usage-weighted',
     items: [
       { type: 'change', text: 'Project Performance and Meter Performance: when a month has more than one bill, the month\'s rate is now total charges / total usage instead of a plain average of the bills\' rates. No current totals change.' }
