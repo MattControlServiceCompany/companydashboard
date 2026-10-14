@@ -3773,12 +3773,12 @@ function openBillsTableSettings(mid) {
                   <div class="modal-body bts-modal-body" data-meter-id="${mid}">
                     ${viewToggle}
                     <div class="bts-rows-wrap">${rowsHtml}</div>
-                    <div style="display:flex;gap:8px;align-items:center;margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
-                      <button class="btn btn-ghost" onclick="resetBillsColumnWidths('${mid}')" title="Clear saved column widths so columns auto-fit to content">Reset Column Widths</button>
-                      <div style="margin-left:auto;display:flex;gap:8px">
-                        <button class="btn btn-ghost" onclick="closeBillsTableSettings()">Cancel</button>
-                        <button class="btn btn-em" onclick="saveBillsTableSettings('${mid}')">Save</button>
-                      </div>
+                  </div>
+                  <div class="modal-ftr" style="align-items:center">
+                    <button class="btn btn-ghost" onclick="resetBillsColumnWidths('${mid}')" title="Clear saved column widths so columns auto-fit to content">Reset Column Widths</button>
+                    <div style="margin-left:auto;display:flex;gap:8px">
+                      <button class="btn btn-ghost" onclick="closeBillsTableSettings()">Cancel</button>
+                      <button class="btn btn-em" onclick="saveBillsTableSettings('${mid}')">Save</button>
                     </div>
                   </div>
                 </div>`;
@@ -4099,10 +4099,7 @@ function renderBillsPane(pane, m, bills, incl) {
     // is still accessible via the row click → split panel.
     // Add amber background and colored flag badges for flagged rows
     if (flags.length) {
-      const _flagTitle = flags
-        .map((f) => f.message)
-        .join('&#10;')
-        .replace(/"/g, '&quot;');
+      const _flagTitle = billFlagReasonList(flags).map(_escHtml).join('&#10;');
       // If the <tr> already has a class attribute, append to it; otherwise insert a new one
       if (/(<tr[^>]*)\sclass="/.test(rowHtml)) {
         rowHtml = rowHtml.replace(/(<tr[^>]*\sclass=")/, '$1bill-flagged ');
@@ -4414,16 +4411,33 @@ function renderBillsPane(pane, m, bills, incl) {
   // bottom edge of #maMeterWorkspace's clip boundary (only reachable by scrolling
   // the workspace itself). Fixed by switching that calc to a getBoundingClientRect
   // measurement, which accounts for this banner automatically — no class hook needed.
+  // Each flagged bill's month and plain-language reason, listed inside the banner so no hover is needed. The reason
+  // text comes from billFlagReasonList (computations/bill-flags.js), the same list the row hover uses.
+  const flagReasonLines =
+    billFlagSummary.flaggedBills > 0
+      ? bills
+          .filter((r) => billFlags[r.id])
+          .map(
+            (r) =>
+              '<div class="bill-flag-reason" style="padding:2px 0 2px 22px;color:var(--text);font-weight:400"><strong>' +
+              _escHtml(billMonthLabel(r, bills)) +
+              '</strong>: ' +
+              billFlagReasonList(billFlags[r.id]).map(_escHtml).join(' | ') +
+              '</div>',
+          )
+          .join('')
+      : '';
   const flagBanner =
     billFlagSummary.flaggedBills > 0
-      ? '<div style="padding:8px 14px;background:var(--amber-dim);border:1px solid rgba(245,158,11,.25);border-radius:6px;margin:8px 14px;font-size:12px;color:var(--amber);font-weight:500;display:flex;align-items:center;gap:8px" title="' +
+      ? '<div id="billFlagBanner" style="padding:8px 14px;background:var(--amber-dim);border:1px solid rgba(245,158,11,.25);border-radius:6px;margin:8px 14px;font-size:12px;color:var(--amber);font-weight:500" title="' +
         billFlagHoverText(billFlagSummary) +
         '">' +
-        '<span>⚠</span><span>' +
+        '<div style="display:flex;align-items:center;gap:8px"><span>⚠</span><span>' +
         billFlagSummary.flaggedBills +
         ' bill' +
         (billFlagSummary.flaggedBills !== 1 ? 's' : '') +
-        ' flagged for review. Hover a flagged row to see what to check.</span>' +
+        ' flagged for review. The reason is listed below; hover a flagged row for the same text.</span></div>' +
+        flagReasonLines +
         '</div>'
       : '';
 
@@ -4987,11 +5001,11 @@ function _buildExportModalDOM() {
     '</div>' +
     '</div>' +
     // Footer
-    '<div style="display:flex;gap:8px;justify-content:flex-end;border-top:1px solid var(--border);padding-top:14px">' +
+    '</div>' + // modal-body
+    '<div class="modal-ftr">' +
     '<button class="btn btn-ghost btn-sm" onclick="closeExportModal()">Cancel</button>' +
     '<button class="btn btn-em btn-sm" id="exportDoBtn" onclick="_doExport()">💾 Download</button>' +
     '</div>' +
-    '</div>' + // modal-body
     '</div>'; // modal
   document.body.appendChild(el);
 }

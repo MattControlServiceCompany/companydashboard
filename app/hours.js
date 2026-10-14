@@ -579,13 +579,10 @@ function _hoursOpenEditModal(projId, entry) {
   ).join('');
 
   const modalHtml = `
-    <div id="hours-modal-overlay" style="position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9000;display:flex;align-items:center;justify-content:center;padding:16px" onclick="if(event.target===this)_hoursCloseModal()">
-      <div style="background:var(--s1);border:1px solid var(--border);border-radius:10px;padding:24px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-          <div style="font-size:15px;font-weight:700;color:var(--text)">Edit Hours Entry</div>
-          <button style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px;padding:0 4px" onclick="_hoursCloseModal()">✕</button>
-        </div>
-        <div style="display:flex;flex-direction:column;gap:12px">
+    <div id="hours-modal-overlay" class="modal-bg open" style="z-index:9000" onclick="if(event.target===this)_hoursCloseModal()">
+      <div class="modal" style="width:480px">
+        <div class="modal-hdr"><span class="modal-title">Edit Hours Entry</span><button class="modal-x" onclick="_hoursCloseModal()">✕</button></div>
+        <div class="modal-body"><div style="display:flex;flex-direction:column;gap:12px">
           <div>
             <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px">Date <span style="color:var(--danger)">*</span></label>
             <input class="fi" type="date" id="hm-date" value="${entry.date || ''}" style="width:100%">
@@ -602,8 +599,8 @@ function _hoursOpenEditModal(projId, entry) {
             <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px">Note <span style="color:var(--text3);font-weight:400">(optional)</span></label>
             <input class="fi" type="text" id="hm-note" value="${(entry.note || '').replace(/"/g, '&quot;')}" placeholder="Brief description..." style="width:100%">
           </div>
-        </div>
-        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:20px">
+        </div></div>
+        <div class="modal-ftr">
           <button class="btn btn-ghost" onclick="_hoursCloseModal()">Cancel</button>
           <button class="btn btn-em" onclick="_hoursUpdateEntry(${projId},${entry.id})">Save Changes</button>
         </div>

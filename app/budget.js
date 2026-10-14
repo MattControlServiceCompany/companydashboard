@@ -755,13 +755,10 @@ function _budgetShowModal(projId, line) {
     : '';
 
   const modalHtml = `
-    <div id="budget-modal-overlay" style="position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9000;display:flex;align-items:center;justify-content:center;padding:16px" onclick="if(event.target===this)_budgetCloseModal()">
-      <div style="background:var(--s1);border:1px solid var(--border);border-radius:10px;padding:24px;width:100%;max-width:560px;max-height:90vh;overflow-y:auto">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-          <div style="font-size:15px;font-weight:700;color:var(--text)">${line ? 'Edit' : 'Add'} Budget Line</div>
-          <button style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px;padding:0 4px" onclick="_budgetCloseModal()">✕</button>
-        </div>
-        <div style="display:flex;flex-direction:column;gap:12px">
+    <div id="budget-modal-overlay" class="modal-bg open" style="z-index:9000" onclick="if(event.target===this)_budgetCloseModal()">
+      <div class="modal" style="width:560px">
+        <div class="modal-hdr"><span class="modal-title">${line ? 'Edit' : 'Add'} Budget Line</span><button class="modal-x" onclick="_budgetCloseModal()">✕</button></div>
+        <div class="modal-body"><div style="display:flex;flex-direction:column;gap:12px">
           <div>
             <label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px">Fiscal Year</label>
             <select class="fi" id="bm-year" style="width:100%">${yearOptions}</select>
@@ -797,8 +794,8 @@ function _budgetShowModal(projId, line) {
             <input class="fi" type="text" id="bm-notes" style="width:100%" placeholder="Board approved 8/12/2025..." value="${line ? _escHtml(line.notes || '') : ''}">
           </div>
           ${copyOption}
-        </div>
-        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:20px">
+        </div></div>
+        <div class="modal-ftr">
           <button class="btn btn-ghost" onclick="_budgetCloseModal()">Cancel</button>
           <button class="btn btn-em" onclick="_budgetSaveLine(${projId})">Save Budget Line</button>
         </div>

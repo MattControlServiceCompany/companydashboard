@@ -845,3 +845,8 @@ function billFlagHoverText(summary) {
     ')'
   );
 }
+// The ONE plain-language reason list for a bill's flags (one string per flag, dismissed flags are already removed).
+// The Bills table row hover and the flag banner both call it. Callers must escape the text before putting it in HTML.
+function billFlagReasonList(flags) {
+  return (flags || []).map((f) => f.message);
+}

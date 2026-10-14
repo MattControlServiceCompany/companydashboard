@@ -2059,13 +2059,11 @@ function btOpenImportModal() {
   }
 
   var html = [
-    '<div id="bt-modal-overlay" style="position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:2000;display:flex;align-items:center;justify-content:center;" onclick="btCloseImportModal(event)">',
-    '<div id="bt-modal" style="background:var(--s2);border:1px solid var(--border);border-radius:12px;width:640px;max-width:95vw;max-height:90vh;overflow-y:auto;padding:24px;" onclick="event.stopPropagation()">',
+    '<div id="bt-modal-overlay" class="modal-bg open" style="z-index:2000" onclick="btCloseImportModal(event)">',
+    '<div id="bt-modal" class="modal" style="width:640px" onclick="event.stopPropagation()">',
 
-    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">',
-    '<h2 style="font-size:17px;font-weight:600;color:var(--text);">Import BAS Trend Data</h2>',
-    '<button onclick="btCloseImportModal()" style="background:none;border:none;color:var(--text3);font-size:20px;cursor:pointer;line-height:1;">&#x2715;</button>',
-    '</div>',
+    '<div class="modal-hdr"><span class="modal-title">Import BAS Trend Data</span><button class="modal-x" onclick="btCloseImportModal()">&#x2715;</button></div>',
+    '<div class="modal-body">',
 
     step1Html,
 
@@ -2135,8 +2133,8 @@ function btOpenImportModal() {
     // Result (hidden until done)
     '<div id="bt-import-result" style="display:none;"></div>',
 
-    // Footer buttons
-    '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:20px;border-top:1px solid var(--border);padding-top:16px;">',
+    '</div>',
+    '<div class="modal-ftr">',
     '<button onclick="btCloseImportModal()" style="background:var(--s3);border:1px solid var(--border);color:var(--text2);padding:8px 18px;border-radius:6px;cursor:pointer;font-size:13px;">Cancel</button>',
     '<button id="bt-import-btn" onclick="btRunImport()" disabled style="background:var(--accent);color:#fff;border:none;padding:8px 18px;border-radius:6px;cursor:pointer;font-size:13px;opacity:0.5;">Import</button>',
     '</div>',
