@@ -62,7 +62,7 @@ jobs:
           echo "Repo CH_VERSION: $REPO_VERSION"
 
           LIVE_URL="https://mattcontrolservicecompany.github.io/companydashboard/site-ui.js"
-          MAX_ATTEMPTS=18   # ~18 * 10s = 3 min, covers Pages' async build lag
+          MAX_ATTEMPTS=60   # ~60 * 10s = 10 min, covers Pages' async build lag
           ATTEMPT=1
 
           while [ "$ATTEMPT" -le "$MAX_ATTEMPTS" ]; do
