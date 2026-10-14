@@ -86,6 +86,7 @@ const src = [
   loadFn(HVAC_ENDUSE, 'computeHvacDemand'),
   loadFn(CALC, '_hvlMonthlyBaseline'),
   loadFn(CALC, '_hvlMeterMoMap'),
+  /function _wdAssignedYm[\s\S]*?\r?\n}/.exec(require('fs').readFileSync(require('path').join(__dirname, '..', 'app', 'report-engine-woodland.js'), 'utf8'))[0],
   loadFn(CALC, '_hvlMergeMoMaps'),
   loadFn(CALC, 'getHvacQuickAnnual'),
   loadFn(CALC, 'resolveHvacLoadData'),

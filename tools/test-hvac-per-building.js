@@ -51,6 +51,12 @@ function fnSource(src, fnName) {
 const read = (rel) => fs.readFileSync(path.join(REPO, rel), 'utf8');
 const CALC = read('app/calculators.js');
 const ENDUSE = read('computations/hvac-enduse.js');
+// the report engine file that defines _wdBaselineHvac (found by content, not by a client-named path)
+const WD = fs
+  .readdirSync(path.join(REPO, 'app'))
+  .filter((f) => /^report-engine-.*\.js$/.test(f))
+  .map((f) => read('app/' + f))
+  .find((s) => /function _wdBaselineHvac\s*\(/.test(s));
 
 const code = [
   read('computations/physics.js'),
@@ -64,9 +70,11 @@ const code = [
   'const SAVE_ALL_PROJECTS = Symbol("all");',
   fnSource(CALC, '_hvlKey'),
   fnSource(CALC, '_hvlMeterMoMap'),
+  /function _wdAssignedYm[\s\S]*?\r?\n}/.exec(require('fs').readFileSync(require('path').join(__dirname, '..', 'app', 'report-engine-woodland.js'), 'utf8'))[0],
   fnSource(CALC, '_hvlMergeMoMaps'),
   fnSource(CALC, '_hvlMonthlyBaseline'),
   fnSource(CALC, 'getHvacQuickAnnual'),
+  fnSource(WD, '_wdHvacFullYear'),
   fnSource(CALC, 'resolveHvacLoadData'),
   fnSource(CALC, 'computeHvacLoadEstimate'),
   fnSource(CALC, 'hvacLoadStoredFor'),
@@ -153,6 +161,10 @@ function makeEnv() {
       } else if (m.commodity === 'Gas') {
         out.gasByMo = {};
         for (let mo = 0; mo < 12; mo++) out.gasByMo[mo] = { therms: d.g[mo] };
+      } else if (m.commodity === 'Propane') {
+        // like the real buildMoMap: an entry for EVERY baseline month, 0 gallons when no delivery ended there
+        out.propaneByMo = {};
+        for (let mo = 0; mo < 12; mo++) out.propaneByMo[mo] = { gallons: d.p[mo] };
       }
       return out;
     },
@@ -369,6 +381,29 @@ console.log('--- 4. one-time data move ---');
 }
 
 // -------------------------------------------------------------------------------------------------
+console.log('--- 4b. propane: a month with no delivery is null, not a fake 0 ---');
+{
+  const sb = makeEnv();
+  // propane only, with deliveries in 3 months: the other 9 months have NO delivery
+  sb.bldgs.push(
+    { id: 'bD', name: 'Synthetic Propane Building', sqft: 8000, meters: [
+      meter('pD', 'Propane', { p: [0, 0, 300, 0, 0, 0, 0, 0, 200, 0, 0, 250] }, { bills: billsFor([YMS[2], YMS[8], YMS[11]]) }),
+    ] },
+  );
+  const r = sb.resolveHvacLoadData(7, sb.bldgs[3]);
+  const k = sb.THERMS_PER_GAL_PROPANE;
+  assert(r.gasArr.filter((v) => v === null).length === 9, 'propane: 9 months without a delivery are null, got ' + JSON.stringify(r.gasArr));
+  assert(near(r.gasArr[2], 300 * k) && near(r.gasArr[8], 200 * k), 'propane months with a delivery carry gallons x therms per gallon');
+  assert(near(r.billTherms, 750 * k), 'propane total therms = deliveries only');
+  // 3 populated months only: the 3-lowest-month baseload cannot be built (needs 6) and no zero enters it
+  assert(!r.enduse.gasValid, 'fewer than 6 populated months -> gas split not valid');
+  // the report gate reads the same nulls
+  assert(sb._wdHvacFullYear(7, sb.bldgs[3]).gas === false, 'propane building with 3 delivery months is not a full year');
+  assert(sb._wdHvacFullYear(7, sb.bldgs[0]).elec === true && sb._wdHvacFullYear(7, sb.bldgs[0]).gas === true, 'a building with 12 bill months is a full year');
+  assert(sb._wdHvacFullYear(7, sb.bldgs[2]).elec === false, 'a building with no meters is not a full year');
+}
+
+// -------------------------------------------------------------------------------------------------
 console.log('--- 5. static gates ---');
 {
   const strip = (s) => s.replace(/^\s*\/\/.*$/gm, '');
@@ -448,6 +483,56 @@ console.log('--- 5. static gates ---');
     'the resolver gets demand from computeHvacDemand',
   );
   assert(!/Math\.max/.test(fnSource(wd, '_wdBaselineHvac')), '_wdBaselineHvac takes no private max of kW');
+
+  // 5e. D1: the BAS Calc cooling / heating kWh / gas autofill share ONE saved-estimate rule
+  const bas = strip(fnSource(CALC, 'openBASCalc'));
+  assert(/const useSavedEst = /.test(bas), 'openBASCalc defines the one saved-estimate rule (useSavedEst)');
+  assert(!/if \(savedEst\) \{/.test(bas), 'openBASCalc does not fill cooling / heating kWh from an unsaved estimate');
+  assert(
+    (bas.match(/useSavedEst/g) || []).length >= 3,
+    'cooling / heating kWh and gas therms all use useSavedEst',
+  );
+
+  // 5f. D2: the resolver path owns no month rule of its own
+  const mm = strip(fnSource(CALC, '_hvlMeterMoMap'));
+  assert(!/slice\(0, ?7\)/.test(mm), '_hvlMeterMoMap has no private end-month slice');
+  assert(/_wdAssignedYm\(/.test(mm), '_hvlMeterMoMap uses the one end-month function _wdAssignedYm');
+
+  // 5g. D3: no HVAC / report baseline code reads bills outside the resolver. Every function of a report engine
+  // file or the Energy Graphics file whose name says HVAC, baseline, setpoint or report-gate is checked.
+  // Listed exceptions (each reads bills for a reason that is not a baseline number):
+  //  - _wdBuildMeterBaseline / _wdRawBillMeters / collectWoodlandReportData: the report's RAW BILL pages print one
+  //    account's bills as they are on paper; no HVAC or baseline value is computed from them.
+  //  - _buildBaselineDataHtml (calculators.js): the Baseline Data table shows the NORMALIZED kWh/Therms
+  //    (kwhPredicted, weather-regressed), a different number from the billed values by design; it reads the
+  //    same month maps through _hvlMonthlyBaseline, so its months can not differ from the resolver's.
+  const rawOk = new Set(['_wdBuildMeterBaseline', '_wdRawBillMeters', 'collectWoodlandReportData']);
+  const scan = [{ f: 'report engine', src: WD }, { f: 'graphics-setpoints.js', src: read('app/graphics-setpoints.js') }];
+  scan.forEach((o) => {
+    const names = [];
+    const rg = /^\s*function (\w+)\s*\(/gm;
+    let mt;
+    while ((mt = rg.exec(o.src))) names.push(mt[1]);
+    let checked = 0;
+    names.forEach((name) => {
+      if (!/hvac|baseline|setpoint|CheckReportInputs|UpdateReportButton/i.test(name) || rawOk.has(name)) return;
+      checked++;
+      const body = strip(fnSource(o.src, name));
+      const x = { name };
+      assert(
+        !/\.bills|getNormRows|buildMoMap\(|_wdBuildMeterBaseline|_wdRawBillMeters/.test(body),
+        o.f + ': ' + x.name + ' reads bills directly (use resolveHvacLoadData)',
+      );
+    });
+    assert(checked > 0, o.f + ': the bill-read gate checked at least one function');
+  });
+  assert(!/_wdBldgBaselines|_wdFullYear/.test(WD), 'the first-meter baseline reader is gone from the report engine');
+  assert(
+    /resolveHvacLoadData\(/.test(fnSource(WD, '_wdHvacFullYear')) &&
+      /_wdHvacFullYear\(/.test(fnSource(WD, 'wdCheckReportInputs')) &&
+      /_wdHvacFullYear\(/.test(fnSource(WD, 'wdUpdateReportButton')),
+    'the setpoint report gate reads the resolver (_wdHvacFullYear)',
+  );
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

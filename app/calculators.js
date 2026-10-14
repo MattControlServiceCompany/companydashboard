@@ -291,9 +291,9 @@ function _hvlMeterMoMap(meter, wxByYm) {
   const blRows = blMonths.length >= 3 ? allRows.filter((r) => blMonths.includes(r.ym)) : allRows.slice(-12);
   if (!blRows.length || typeof buildMoMap !== 'function') return out;
   out.map = buildMoMap(meter, blRows, bills, incl);
-  const endYms = new Set(bills.map((x) => String(x.end || x.start || '').slice(0, 7)));
+  // billMo uses the one existing end-month rule, _wdAssignedYm (buildMoMap puts a whole bill in this month).
   blRows.forEach((r) => {
-    if (endYms.has(r.ym)) out.billMo[parseInt(r.ym.split('-')[1], 10) - 1] = true;
+    if (bills.some((x) => _wdAssignedYm(x) === r.ym)) out.billMo[parseInt(r.ym.split('-')[1], 10) - 1] = true;
   });
   if (meter.commodity === 'Electric' && typeof normMonth === 'function') {
     out.kwRecords = bills.map((x) => ({
@@ -458,7 +458,10 @@ function resolveHvacLoadData(projId, b) {
       out.gasArr[mo] = (out.gasArr[mo] || 0) + (gb.therms || 0);
     }
     const pb = pByMo[mo];
-    if (pb) {
+    // Propane gallons per month are the delivery-normalized use (buildMoMap spreads a delivery over the days it
+    // covers), so a month with no use attributed to it (0 gallons) has no data: null, never a real 0 that would
+    // enter the 3-lowest-month baseload (same rule as kWh and gas).
+    if (pb && pb.gallons > 0) {
       // gallons -> therms (THERMS_PER_GAL_PROPANE) so propane rolls up into the same gas total
       const thermsEq = (pb.gallons || 0) * THERMS_PER_GAL_PROPANE;
       bills.therms += thermsEq;
@@ -4401,7 +4404,11 @@ function openBASCalc(projId) {
         const ru = hvacLoadProjectRollup(projId);
         return ru.buildings ? { est: ru, saved: ru.saved > 0 } : null;
       })();
-  if (savedEst) {
+  // ONE rule for cooling kWh, heating kWh and gas therms: a SAVED estimate (a user reviewed and saved it) wins;
+  // an unsaved one (savedAt null, e.g. a migrated Rules-of-Thumb estimate) is never used, so the bill-based fill
+  // below runs instead.
+  const useSavedEst = !!(savedEst && savedEst.saved);
+  if (useSavedEst) {
     if (savedEst.est.coolKwhTotal)
       autoCalCool = { value: Math.round(savedEst.est.coolKwhTotal), source: 'HVAC Load Estimation' };
     if (savedEst.est.heatKwhTotal)
@@ -4437,7 +4444,7 @@ function openBASCalc(projId) {
   // only ever read the saved snapshot, which stays empty (and calHeatGas empty) for any building
   // nobody has opened that tab for — the Client C Schools / Client B Spring Middle failure
   // mode reported 2026-09-23.
-  if (savedEst && savedEst.saved && savedEst.est.hvacGasT) {
+  if (useSavedEst && savedEst.est.hvacGasT) {
     autoCalGas = {
       value: Math.round(savedEst.est.hvacGasT),
       source: 'HVAC Load Estimation (heating share of gas bills)',

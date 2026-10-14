@@ -708,7 +708,11 @@ function _wdBuildMeterBaseline(m) {
     r2: r2,
   };
 }
-function _wdBldgBaselines(b) {
+// _wdRawBillMeters — ONLY for the report's raw bill pages (page 1 and the xlsx bill sheets), which print ONE
+// account's bills as they are on paper (first Electric and first Gas meter). It computes no baseline value.
+// Whether the setpoint report may run, and every baseline number, come from resolveHvacLoadData (see
+// _wdHvacFullYear and _wdBaselineHvac).
+function _wdRawBillMeters(b) {
   var elecMeter = (b.meters || []).find(function (m) {
     return m.commodity === 'Electric';
   });
@@ -722,8 +726,17 @@ function _wdBldgBaselines(b) {
     gasBL: _wdBuildMeterBaseline(gasMeter),
   };
 }
-function _wdFullYear(bl) {
-  return !!(bl && bl.months.length === 12 && bl.rows.length >= 12);
+// _wdHvacFullYear — { elec, gas }: true when the building's baseline has bills in all 12 calendar months, read
+// through resolveHvacLoadData (every included meter, exclusions honored; a month no bill ends in is null).
+// The setpoint-report gate and the model (_wdBaselineHvac) use this same data, so they can never disagree.
+function _wdHvacFullYear(projId, b) {
+  var r = resolveHvacLoadData(projId, b);
+  var full = function (arr) {
+    return arr.every(function (v) {
+      return v !== null;
+    });
+  };
+  return { elec: r.source === 'bills' && full(r.kwhArr), gas: r.source === 'bills' && full(r.gasArr) };
 }
 
 // -----------------------------------------------------------------------
@@ -863,10 +876,10 @@ function wdCheckReportInputs(projId, bldgId) {
   });
   var b = p ? getUDBldg(projId, bldgId) : null;
   if (!p || !b) return { ok: false, missing: [{ label: 'Building', where: 'Utility Data' }], cfg: null };
-  var bls = _wdBldgBaselines(b);
-  if (!_wdFullYear(bls.elecBL))
+  var full = _wdHvacFullYear(projId, b);
+  if (!full.elec)
     missing.push({ label: 'Electric meter with a 12-month baseline', where: 'Utility Data → meter → Baseline' });
-  if (!_wdFullYear(bls.gasBL))
+  if (!full.gas)
     missing.push({ label: 'Gas meter with a 12-month baseline', where: 'Utility Data → meter → Baseline' });
   var cfg = _wdGetCfg(p, bldgId);
   if (!cfg) {
@@ -935,8 +948,8 @@ function wdUpdateReportButton(projId, bldgId) {
     btn.style.display = 'none';
     return;
   }
-  var bls = _wdBldgBaselines(b);
-  var candidate = _wdFullYear(bls.elecBL) || _wdFullYear(bls.gasBL) || _wdOptionMeasures(p, bldgId).length > 0;
+  var full = _wdHvacFullYear(projId, b);
+  var candidate = full.elec || full.gas || _wdOptionMeasures(p, bldgId).length > 0;
   btn.style.display = candidate ? '' : 'none';
   if (!candidate) return;
   var chk = wdCheckReportInputs(projId, bldgId);
@@ -1190,7 +1203,7 @@ function collectWoodlandReportData(projId, buildingId) {
   var b = getUDBldg(projId, buildingId);
   if (!b) return null;
 
-  var bls = _wdBldgBaselines(b);
+  var bls = _wdRawBillMeters(b);
   var elecMeter = bls.elecMeter,
     gasMeter = bls.gasMeter,
     elecBL = bls.elecBL,

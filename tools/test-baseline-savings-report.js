@@ -607,7 +607,7 @@ if (target) {
     ctx.__cfg = AUDITED.cfg;
     const calc = run(
       ctx,
-      `(function(){ var b = getUDBldg(${JSON.stringify(target.projId)}, ${JSON.stringify(target.bldgId)}); var bls = _wdBldgBaselines(b); return wdComputeSetpointOptions(__cfg, bls.elecBL, bls.gasBL); })()`,
+      `(function(){ var b = getUDBldg(${JSON.stringify(target.projId)}, ${JSON.stringify(target.bldgId)}); return wdComputeSetpointOptions(__cfg, ${JSON.stringify(target.projId)}, b); })()`,
     );
     let maxRel = 0;
     calc.options.forEach((o) => {
