@@ -194,5 +194,20 @@ console.log('6. one parts function behind getStoredRate');
   assert(S.getStoredRate({ totalWaterRate: '0.5' }, 'water') === 0.5, 'stored copy only when nothing can be computed');
 }
 
+// getMonthBillRate: the month rate of several bills is sum charge / sum usage, never the mean of the bill rates.
+{
+  const a = { naturalGasTherms: '100', gasCharge: '100' }; // 1.00 per therm
+  const b = { naturalGasTherms: '900', gasCharge: '450' }; // 0.50 per therm
+  assert(near(S.getMonthBillRate([a, b], 'gas'), 550 / 1000), 'month gas rate is usage-weighted (0.55, not the mean 0.75)');
+  assert(near(S.getMonthBillRate([a], 'gas'), S.getStoredRate(a, 'gas')), 'one bill: month rate equals the bill rate');
+  assert(near(S.getMonthBillRate([a, { naturalGasTherms: '50' }], 'gas'), 1), 'a bill with no charge is left out, not counted as 0');
+  const e1 = { kwh: '1000', kwhCost: '100', billedKW: '10', demandCharge: '100' };
+  const e2 = { kwh: '9000', kwhCost: '450', billedKW: '90', demandCharge: '450' };
+  assert(near(S.getMonthBillRate([e1, e2], 'kwh'), 550 / 10000), 'month kWh rate is usage-weighted');
+  assert(near(S.getMonthBillRate([e1, e2], 'kw'), 550 / 100), 'month kW rate is usage-weighted');
+  assert(S.getMonthBillRate([{ totalGasRate: '0.7' }], 'gas') === 0.7, 'stored rate only when no bill can be computed');
+  assert(S.getMonthBillRate([], 'gas') === 0, 'no bills gives 0');
+}
+
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);

@@ -238,6 +238,29 @@ function getStoredKwRate(bill) {
   return stored > 0 ? stored : 0;
 }
 
+// getMonthBillRate(bills, type) - the ONE rate of a calendar month that holds one or several bills
+// (type 'kwh' | 'kw' | 'gas'). It is the usage-weighted rate: sum of the bills' charges / sum of their usage, each
+// from getBillRateParts. It is never a plain mean of the per-bill rates (a small bill would then count as much as a
+// large one). A bill with no charge or no usage is left out, never counted as 0. When no bill has both, the first
+// bill's stored rate (getStoredRate / getStoredKwRate) is returned, else 0. With one bill it equals that bill's own rate.
+function getMonthBillRate(bills, type) {
+  var charge = 0,
+    usage = 0;
+  (bills || []).forEach(function (b) {
+    var p = getBillRateParts(b, type);
+    if (p.usage > 0 && p.charge > 0) {
+      charge += p.charge;
+      usage += p.usage;
+    }
+  });
+  if (usage > 0) return charge / usage;
+  for (var i = 0; i < (bills || []).length; i++) {
+    var r = type === 'kw' ? getStoredKwRate(bills[i]) : getStoredRate(bills[i], type);
+    if (r > 0) return r;
+  }
+  return 0;
+}
+
 function validateImpliedRate(commodity, usage, charge, utilityName) {
   if (!usage || !charge || usage === 0) return null;
   const implied = Math.abs(charge / usage);

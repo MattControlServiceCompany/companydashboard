@@ -377,14 +377,9 @@ function getMeterSavings(m, bills, incl, projId, bldgId, opts) {
 
     if (isElec) {
       const actKwh = actUsage;
-      // Blend of the bills in this month: mean of each bill's resolved $/kWh. A bill with no
-      // resolvable rate is left out of the mean, never counted as 0 (math-02 M1).
-      const _kwhRates = bfr
-        .map((b) => getStoredRate(b, "kwh"))
-        .filter((rt) => rt > 0);
-      const _sKwhRate = _kwhRates.length
-        ? _kwhRates.reduce((s, rt) => s + rt, 0) / _kwhRates.length
-        : 0;
+      // Rate of this month's bill(s): getMonthBillRate (computations/rates.js), usage-weighted over
+      // the month's bills; a bill with no resolvable rate is left out, never counted as 0 (math-02 M1).
+      const _sKwhRate = getMonthBillRate(bfr, "kwh");
       const kwhCostAmt = bfr.reduce(
         (s, b) => s + getBillKwhCost(b),
         0,
@@ -403,12 +398,7 @@ function getMeterSavings(m, bills, incl, projId, bldgId, opts) {
       actDemKW = Math.max(...bfr.map((b) => parseBillNumberOrZero(b.demandKW)));
       // getStoredKwRate() (computations/rates.js) is the ONE $/kW rate: stored totalKwRate,
       // else demand dollars / billed kW (see its header).
-      const _kwRates = bfr
-        .map((b) => getStoredKwRate(b))
-        .filter((rt) => rt > 0);
-      moKwRate = _kwRates.length
-        ? _kwRates.reduce((s, rt) => s + rt, 0) / _kwRates.length
-        : 0;
+      moKwRate = getMonthBillRate(bfr, "kw");
       // Missing-rate cascade (steps 2-5, computations/rates.js resolveMeterRate): only when
       // the own-bill rate above is genuinely absent AND there is real billed kW that month
       // (a savings-feeding month) - see _context/plans/2026-09-10-missing-rate-resolution-cascade.md.
@@ -470,15 +460,10 @@ function getMeterSavings(m, bills, incl, projId, bldgId, opts) {
       const actTherms = actUsage;
       // getBillGasCost (computations/rates.js) — the ONE gas cost accessor (visible Gas Charge).
       const actThermCost = bfr.reduce((s, b) => s + getBillGasCost(b), 0);
-      // Blend of the bills in this month: mean of each bill's resolved $/therm (blank bills
-      // left out, not counted as 0 - math-02 M1). Only a Gas meter derives a rate from the
+      // Rate of this month's bill(s): getMonthBillRate (computations/rates.js), usage-weighted; blank
+      // bills left out, not counted as 0 - math-02 M1. Only a Gas meter derives a rate from the
       // bill's gas fields; this branch also runs for Water/Sewer/Stormwater/Steam meters.
-      const _gasRates = bfr
-        .map((b) => (isGas ? getStoredRate(b, "gas") : 0))
-        .filter((rt) => rt > 0);
-      const _sGasRate = _gasRates.length
-        ? _gasRates.reduce((s, rt) => s + rt, 0) / _gasRates.length
-        : 0;
+      const _sGasRate = isGas ? getMonthBillRate(bfr, "gas") : 0;
       const thermRate =
         _sGasRate ||
         (actTherms > 0 && actThermCost > 0 ? actThermCost / actTherms : 0);

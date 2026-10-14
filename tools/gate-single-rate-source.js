@@ -67,6 +67,16 @@ const RULES = [
     'rate formula: month cost divided by usage (read computeSeasonalBldgRates)',
   ],
   [/\brate\s*:\s*[^,}]*\w\s*\/\s*[\w.]*(?:demandKW|usage|kwh)\b/i, 'rate field computed as cost / usage'],
+  // A month or season rate from several bills is the usage-weighted rate (getMonthBillRate / computeSeasonalBldgRates), never
+  // the mean of the per-bill rates: a reduce that sums per-bill rates and divides by their count is that mean.
+  [
+    /\.reduce\(\s*\(\s*\w+\s*,\s*(\w*[rR]t|\w*[rR]ate)\s*\)\s*=>\s*\w+\s*\+\s*\1\s*,\s*0\s*\)\s*\/\s*[\w.]+\.length\b/,
+    'unweighted mean of per-bill rates (use getMonthBillRate / computeSeasonalBldgRates)',
+  ],
+  [
+    /\b\w*[rR]ates?\w*\.reduce\([^)]*\)\s*\/\s*\w*[rR]ates?\w*\.length\b/,
+    'unweighted mean of per-bill rates (use getMonthBillRate / computeSeasonalBldgRates)',
+  ],
 ];
 // Multi-line: a gas_rate or demand_rate input must not carry a number default (use null; bills prefill it).
 const INPUT_DEFAULT = /id:\s*'(?:gas_rate|demand_rate)'[^{}]*?default:\s*(?!null\b)[-\d.]+/g;

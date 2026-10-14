@@ -10620,12 +10620,9 @@ function renderPerfPane(pane, m, bills, incl) {
       const totalBillCost = bfr.reduce((s, b) => s + parseFloat(b.totalCost || 0), 0);
       const energyCostAmt = totalBillCost - kwCostAmt - facKWCostAmt;
       const bilKW = bfr.length ? Math.max(...bfr.map((b) => parseFloat(b.billedKW || b.demandKW || 0))) : 0;
-      // Blend of the bills in this month through the one rate functions (computations/rates.js);
-      // a bill with no resolvable rate is left out of the mean, never counted as 0.
-      const _billKwhRates = bfr.map((b) => getStoredRate(b, 'kwh')).filter((rt) => rt > 0);
-      const _storedKwhRate = _billKwhRates.length ? _billKwhRates.reduce((s, rt) => s + rt, 0) / _billKwhRates.length : 0;
-      const _billKwRates = bfr.map((b) => getStoredKwRate(b)).filter((rt) => rt > 0);
-      const _storedKwRate = _billKwRates.length ? _billKwRates.reduce((s, rt) => s + rt, 0) / _billKwRates.length : 0;
+      // Rate of this month's bill(s): getMonthBillRate (computations/rates.js), the same value the savings use.
+      const _storedKwhRate = getMonthBillRate(bfr, 'kwh');
+      const _storedKwRate = getMonthBillRate(bfr, 'kw');
       perfDemByYm[r.ym] = {
         demKW: bfr.length ? Math.max(...bfr.map((b) => parseFloat(b.demandKW || 0))) : 0,
         bilKW,
@@ -10664,8 +10661,7 @@ function renderPerfPane(pane, m, bills, incl) {
         // getBillGasCost (computations/rates.js) — the ONE gas cost accessor (visible Gas Charge).
         const thermCostAmt = bfr.reduce((s, b) => s + getBillGasCost(b), 0);
         const totalGasCost = thermCostAmt;
-        const _billGasRates = bfr.map((b) => getStoredRate(b, 'gas')).filter((rt) => rt > 0);
-        const _storedGasRate = _billGasRates.length ? _billGasRates.reduce((s, rt) => s + rt, 0) / _billGasRates.length : 0;
+        const _storedGasRate = getMonthBillRate(bfr, 'gas');
         if (actualTherms > 0)
           gasCostByYm[r.ym] = {
             thermCostAmt,
