@@ -3350,8 +3350,8 @@ function rptPageSavingsPerformance(n, d) {
   // both dimensionally comparable to their own consumption columns AND to each other.
   const _periodMonths = (d.period && d.period.months) || (d.period && d.period.type === 'quarterly' ? 3 : 12);
   const _periodSqft = d.project.sqft || 0;
-  const _blKBtuPeriod = toKBtu(d.totals.kwhBl, d.totals.thermsBl, d.totals.propaneBl);
-  const _curKBtuPeriod = toKBtu(d.totals.kwhCur, d.totals.thermsCur, d.totals.propaneCur);
+  const _blKBtuPeriod = computeKBtu(d.totals.kwhBl, d.totals.thermsBl, d.totals.propaneBl);
+  const _curKBtuPeriod = computeKBtu(d.totals.kwhCur, d.totals.thermsCur, d.totals.propaneCur);
   const _blEuiPeriod = _rptPVn(
     d,
     'usage summary',
@@ -6062,7 +6062,7 @@ function rptBuildBaselineDataTable(b, d, opts) {
           (_tGasCost / _tTherms).toFixed(4) +
           '</div></div>',
       );
-    var _totalKbtu = toKBtu(_tKwh, _tTherms, _tGal);
+    var _totalKbtu = computeKBtu(_tKwh, _tTherms, _tGal);
     if (b.sqft > 0 && _totalKbtu > 0)
       _statItems.push(
         '<div><div class="bl-stat-label">Site Energy Use Intensity (kBtu/SF)</div><div class="bl-stat-val">' +
@@ -6581,8 +6581,8 @@ function rptPageBuildingSummary(n, d, b) {
     var _gaFull = buildFullYear(b.gas && b.gas.monthly, _bm.gasByMo, 'therms');
     var _prFull = buildFullYear(b.propane && b.propane.monthly, _bm.propaneByMo, 'gallons');
     for (var _ei = 0; _ei < 12; _ei++) {
-      var _blKBtu = toKBtu(_elFull[_ei].bl || 0, _gaFull[_ei].bl || 0, _prFull[_ei].bl || 0);
-      var _curKBtu = toKBtu(_elFull[_ei].cur || 0, _gaFull[_ei].cur || 0, _prFull[_ei].cur || 0);
+      var _blKBtu = computeKBtu(_elFull[_ei].bl || 0, _gaFull[_ei].bl || 0, _prFull[_ei].bl || 0);
+      var _curKBtu = computeKBtu(_elFull[_ei].cur || 0, _gaFull[_ei].cur || 0, _prFull[_ei].cur || 0);
       euiMonthly.push({ month: _elFull[_ei].month, bl: _blKBtu / b.sqft, cur: _curKBtu / b.sqft });
     }
     var _euiPeriodYMs = (d && d.period && d.period.yearMonths) || null;

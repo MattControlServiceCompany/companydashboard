@@ -301,12 +301,6 @@ function validateImpliedRate(commodity, usage, charge, utilityName) {
   };
 }
 
-function toKBtu(kwh, therms, gallons) {
-  return (parseFloat(kwh) || 0) * KBTU_PER_KWH +
-    (parseFloat(therms) || 0) * KBTU_PER_THERM +
-    (parseFloat(gallons) || 0) * KBTU_PER_GAL_PROPANE;
-}
-
 // Single list of Utility E electric component charge fields that add up to
 // TotalCurrentCharges. Used by validateBillData, the Gate C/D line-item check
 // and the Stage 3 charge reconciliation. Add a new charge field here only.

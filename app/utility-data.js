@@ -1308,16 +1308,16 @@ const UNIT_TO_BASE = {
 
 const UNIT_TO_BASE_BY_COMMODITY = {
   BTU: {
-    Gas: { base: 'Therms', factor: 0.00001 },
-    Electric: { base: 'kWh', factor: 0.000293071 },
-    Propane: { base: 'Therms', factor: 0.00001 },
-    Steam: { base: 'Therms', factor: 0.00001 },
+    Gas: { base: 'Therms', factor: THERMS_PER_BTU },
+    Electric: { base: 'kWh', factor: KWH_PER_BTU },
+    Propane: { base: 'Therms', factor: THERMS_PER_BTU },
+    Steam: { base: 'Therms', factor: THERMS_PER_BTU },
   },
   MMBtu: {
-    Gas: { base: 'Therms', factor: 10 },
-    Electric: { base: 'kWh', factor: 293.071 },
-    Propane: { base: 'Therms', factor: 10 },
-    Steam: { base: 'Therms', factor: 10 },
+    Gas: { base: 'Therms', factor: THERMS_PER_MMBTU },
+    Electric: { base: 'kWh', factor: KWH_PER_MMBTU },
+    Propane: { base: 'Therms', factor: THERMS_PER_MMBTU },
+    Steam: { base: 'Therms', factor: THERMS_PER_MMBTU },
   },
   CCF: { Water: { base: 'Gallons', factor: 748.05 } },
   Gallons: { Propane: { base: 'Therms', factor: THERMS_PER_GAL_PROPANE } }, // computations/physics.js
@@ -1763,7 +1763,7 @@ function _udBuildingAllBaseline(b, projectMonths) {
   const gallons = meterDetails.filter(isProp).reduce((s, d) => s + (d.totals.gallons || 0), 0);
   const cost = meterDetails.reduce((s, d) => s + (d.totals.cost || 0), 0);
   const monthCount = meterDetails.reduce((mx, d) => Math.max(mx, d.totals.months || 0), 0) || 12;
-  const kBtu = toKBtu(kwh, therms, gallons);
+  const kBtu = computeKBtu(kwh, therms, gallons);
   const sqft = parseFloat(b.sqft) || 0;
   const eui = sqft > 0 && kBtu > 0 ? computeBaselineEUI(kBtu, monthCount, sqft) : 0;
   return {
@@ -2037,7 +2037,7 @@ function renderUDProjAggPanel(content) {
     const annTotal = annElecCost + annGasCost + annPropCost;
     const kwhRate = annKwh > 0 ? annElecCost / annKwh : 0;
     const thermRate = annTherms > 0 ? annGasCost / annTherms : 0;
-    const annKbtu = toKBtu(annKwh, annTherms, annPropGal);
+    const annKbtu = computeKBtu(annKwh, annTherms, annPropGal);
     const eui = totalSqft > 0 ? annKbtu / totalSqft : 0;
     const tdS = (color = 'var(--text)') =>
       `padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:${color};border:1px solid var(--border);white-space:nowrap`;
@@ -5722,7 +5722,7 @@ function renderNormPane(pane, m, bills, incl) {
     const avgEuiPerMo = hasEUI ? avgMonthly / sqft : null;
     const last12 = statRows.slice(-12);
     const rolling12kWh = last12.reduce((s, r) => s + r.usage, 0);
-    const rolling12EUI = hasEUI && last12.length === 12 ? toKBtu(rolling12kWh, 0, 0) / sqft : null;
+    const rolling12EUI = hasEUI && last12.length === 12 ? computeKBtu(rolling12kWh, 0, 0) / sqft : null;
     // Avg regression baseline
     const rRows = rows.filter((r) => r.regrBaseline != null);
     const avgRegrBl = rRows.length ? rRows.reduce((s, r) => s + r.regrBaseline, 0) / rRows.length : null;
@@ -6786,7 +6786,7 @@ function renderBaselinePane(pane, m, bills, incl) {
     const avgHDD = hddBlRows.length
       ? hddBlRows.reduce((s, r) => s + (isElec ? r.cdd : r.hdd), 0) / hddBlRows.length
       : null;
-    const blEUI = hasEUI_bl ? (toKBtu(total / blRows.length, 0, 0) * 12) / sqftBl : null;
+    const blEUI = hasEUI_bl ? (computeKBtu(total / blRows.length, 0, 0) * 12) / sqftBl : null;
     const regrBlRows = blRows.filter((r) => r.regrBaseline != null);
     const avgRegrBl = regrBlRows.length ? regrBlRows.reduce((s, r) => s + r.regrBaseline, 0) / regrBlRows.length : null;
 
@@ -7308,7 +7308,7 @@ function refreshBaselineStats(mid) {
     const cost = blRows.reduce((s, r) => s + r.cost, 0);
     const hddBlR = blRows.filter((r) => (isElec ? r.cdd : r.hdd) != null && (isElec ? r.cdd : r.hdd) > 0);
     const avgHDD = hddBlR.length ? hddBlR.reduce((s, r) => s + (isElec ? r.cdd : r.hdd), 0) / hddBlR.length : null;
-    const blEUI = hasEUI_r ? (toKBtu(total / blRows.length, 0, 0) * 12) / sqftR : null;
+    const blEUI = hasEUI_r ? (computeKBtu(total / blRows.length, 0, 0) * 12) / sqftR : null;
     const regrBlR = blRows.filter((r) => r.regrBaseline != null);
     const avgRegrBl = regrBlR.length ? regrBlR.reduce((s, r) => s + r.regrBaseline, 0) / regrBlR.length : null;
 
@@ -7885,7 +7885,7 @@ function renderBuildingStatsPane(pane, b) {
   const avgWattsPerSf = sqft > 0 && totE.avgDemandKW > 0 ? (totE.avgDemandKW * 1000) / sqft : null;
   const elecDolPerSf = sqft > 0 && totE.energyCost > 0 ? totE.energyCost / sqft : null;
   const thermPerSf = sqft > 0 && totG.therms > 0 ? totG.therms / sqft : null;
-  const totalKbtuPerSf = sqft > 0 ? toKBtu(totE.kwh, totG.therms, totP.gallons) / sqft : null;
+  const totalKbtuPerSf = sqft > 0 ? computeKBtu(totE.kwh, totG.therms, totP.gallons) / sqft : null;
   const utilityCostPerYear = totUtility;
 
   // Seasonal rates: the ONE owner (computeSeasonalBldgRates: baseline-period bills, Jun-Sep summer, Oct-May winter)
@@ -8500,7 +8500,7 @@ function renderMeterDataPane(pane, m, bills, incl) {
   const avgWattsPerSf = isElec && sqft > 0 && totE.avgDemandKW > 0 ? (totE.avgDemandKW * 1000) / sqft : null;
   const elecDolPerSf = isElec && sqft > 0 ? totE.energyCost / sqft : null;
   const thermPerSf = isGas && sqft > 0 && totG.therms > 0 ? totG.therms / sqft : null;
-  const kbtuPerSf = sqft > 0 ? toKBtu(totE.kwh, totG.therms, totP.gallons) / sqft : null;
+  const kbtuPerSf = sqft > 0 ? computeKBtu(totE.kwh, totG.therms, totP.gallons) / sqft : null;
   const hoursOperated = parseInt(bldg?.hoursOperated) || null;
 
   // Seasonal rates (electric only): the ONE owner (computeSeasonalBldgRates: baseline-period bills, Jun-Sep summer, Oct-May winter)
@@ -10467,8 +10467,8 @@ function renderPerfPane(pane, m, bills, incl) {
 
   const last12post = truePostRows.filter((r) => !r.zeroFill).slice(-12);
   const rolling12kWh = last12post.reduce((s, r) => s + (rawUsageByYm[r.ym] != null ? rawUsageByYm[r.ym] : r.usage), 0);
-  const rolling12EUI = hasEUI_p && last12post.length === 12 ? toKBtu(rolling12kWh, 0, 0) / sqft5 : null;
-  const blEUI = hasEUI_p && blRows.length ? (toKBtu(blAvgMo, 0, 0) * 12) / sqft5 : null;
+  const rolling12EUI = hasEUI_p && last12post.length === 12 ? computeKBtu(rolling12kWh, 0, 0) / sqft5 : null;
+  const blEUI = hasEUI_p && blRows.length ? (computeKBtu(blAvgMo, 0, 0) * 12) / sqft5 : null;
 
   // Avg regression baseline for baseline period (for display)
   const blRegrRows = blRows.filter((r) => r.regrBaseline != null);

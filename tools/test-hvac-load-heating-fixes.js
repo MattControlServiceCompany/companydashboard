@@ -87,7 +87,7 @@ const src = [
 // every month (used for the <6-populated-months fallback-path tests, where only a handful of
 // months are populated so no seasonal shape is possible anyway) or a seasonal {byMo:[12 values]}
 // array (used to exercise the real 3-lowest-month baseload computation path) — and one propane
-// bill equivalent (per the 0.9153 gal->therms factor hvacLoadCalc/hvacComputeGasThermsForBuilding
+// bill equivalent (per the 0.91452 gal->therms factor hvacLoadCalc/hvacComputeGasThermsForBuilding
 // both use). getNormRows/buildMoMap are stubbed to hand back a fixed monthly map — this test is
 // about hvacComputeGasThermsForBuilding's/_hvlGasHeatShare's OWN gathering + selection logic, not
 // normalization.js's weather-normalization math (that module's own coverage).
@@ -252,13 +252,13 @@ console.log('--- 3. hvacComputeGasThermsForBuilding — FALLBACK path, <6 popula
   r = sb.hvacComputeGasThermsForBuilding(1, 'b1');
   assert(r === null, 'no gas/propane bills -> null, never invented');
 
-  // Propane-only building, <6 months: gallons -> therms via the SAME 0.9153 factor hvacLoadCalc uses.
+  // Propane-only building, <6 months: gallons -> therms via the SAME 0.91452 factor hvacLoadCalc uses.
   sb = makeSandbox({ propaneMonthly: { gallons: 50 } });
   // propaneByMo fixture above always fills all 12 months, so this exercises the COMPUTED baseload
   // path (see section 4) rather than the fallback — kept here only to prove totalGas gathering
   // (gal->therms conversion) is correct regardless of which pct-source is chosen.
   r = sb.hvacComputeGasThermsForBuilding(1, 'b1');
-  assert(near(r.totalGas, 12 * 50 * 0.9153, 0.01), `propane gal->therms conversion: got ${r && r.totalGas}`);
+  assert(near(r.totalGas, 12 * 50 * 0.91452, 0.01), `propane gal->therms conversion: got ${r && r.totalGas}`);
 
   // No bldgId at all -> getUDBldg stub still resolves the fixture building in this harness, but
   // hvacComputeGasThermsForBuilding's own `if (!b) return null;` guard (real getUDBldg returns

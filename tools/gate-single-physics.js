@@ -10,9 +10,14 @@
  *      in code outside physics.js. Power versus speed goes through fanPowerFraction.
  *   4. A second duct static pressure reset formula: Math.sqrt(1 - ...) (speed from pressure) outside physics.js.
  *      Reset savings go through ductStaticResetPowerSavings.
- *   5. A hardcoded copy of a physical constant outside physics.js: 0.746 / 0.7457 (kW per hp), 3412 / 3413 /
- *      3.412 / 3.413 (Btu or kBtu per kWh), 0.9153 (therms per propane gallon), 0.03412 / 0.03413
- *      (therms per kWh), 91.5 (kBtu per propane gallon), or 100000 as a Btu-per-therm divisor.
+ *   5. A hardcoded copy of a physical constant outside physics.js: 0.746 / 0.7457 (kW per hp), 3412 / 3412.14 /
+ *      3413 / 3.412 / 3.41214 / 3.413 (Btu or kBtu per kWh), 0.03412 / 0.0341214 / 0.03413 (therms per kWh),
+ *      293.071 / 0.000293071 (kWh per MMBtu / per Btu), 0.9153 / 0.91452 (therms per propane gallon),
+ *      91.5 / 91.452 / 91452 (propane kBtu or Btu per gallon), 33475 / 0.33475 / 0.03346 (boiler hp),
+ *      or 100000 as a Btu-per-therm divisor.
+ *   5b. physics.js derives every propane, electric and boiler hp figure from ONE base constant
+ *      (BTU_PER_GAL_PROPANE 91452, BTU_PER_KWH 3412.14, BTU_PER_HR_PER_BHP 33475).
+ *   5c. One site-energy sum: computeKBtu in computations/eui.js. A second definition or any use of toKBtu fails.
  *   6. The calc template file app/ecm-calculators.js or the BAS Trends estimate does not call the shared functions.
  *
  * Test files (test-*.js, *.gate.js) are exempt: they hold the expected numbers.
@@ -33,9 +38,13 @@ const REQUIRED = [
   'BTU_PER_THERM',
   'KBTU_PER_KWH',
   'KBTU_PER_THERM',
+  'BTU_PER_GAL_PROPANE',
   'KBTU_PER_GAL_PROPANE',
   'THERMS_PER_GAL_PROPANE',
   'THERMS_PER_KWH',
+  'KWH_PER_MMBTU',
+  'BTU_PER_HR_PER_BHP',
+  'THERMS_PER_HR_PER_BHP',
   'FAN_AFFINITY_EXPONENT',
 ];
 const REQUIRED_FUNCS = ['hpToKw', 'fanPowerFraction', 'ductStaticResetPowerSavings'];
@@ -46,6 +55,19 @@ const CONSTANT_RULES = [
   [NUM('0.746'), 'kW per hp (KW_PER_HP)'],
   [NUM('0.7457'), 'kW per hp (KW_PER_HP)'],
   [NUM('3412'), 'Btu per kWh (BTU_PER_KWH)'],
+  [NUM('3412.14'), 'Btu per kWh (BTU_PER_KWH)'],
+  [NUM('3.41214'), 'kBtu per kWh (KBTU_PER_KWH)'],
+  [NUM('0.0341214'), 'therms per kWh (THERMS_PER_KWH)'],
+  [NUM('293.071'), 'kWh per MMBtu (KWH_PER_MMBTU)'],
+  [NUM('0.000293071'), 'kWh per Btu (KWH_PER_BTU)'],
+  [NUM('0.91452'), 'therms per propane gallon (THERMS_PER_GAL_PROPANE)'],
+  [NUM('91.452'), 'kBtu per propane gallon (KBTU_PER_GAL_PROPANE)'],
+  [NUM('91452'), 'Btu per propane gallon (BTU_PER_GAL_PROPANE)'],
+  [NUM('33475'), 'Btu/h per boiler hp (BTU_PER_HR_PER_BHP)'],
+  [NUM('33,475'), 'Btu/h per boiler hp (BTU_PER_HR_PER_BHP)'],
+  [NUM('0.33475'), 'therm/h per boiler hp (THERMS_PER_HR_PER_BHP)'],
+  [NUM('0.03346'), 'therm/h per boiler hp (old wrong factor; use THERMS_PER_HR_PER_BHP)'],
+  [NUM('0.03347'), 'therm/h per boiler hp (use THERMS_PER_HR_PER_BHP)'],
   [NUM('3413'), 'Btu per kWh (BTU_PER_KWH)'],
   [NUM('3.412'), 'kBtu per kWh (KBTU_PER_KWH)'],
   [NUM('3.413'), 'kBtu per kWh (KBTU_PER_KWH)'],
@@ -81,12 +103,32 @@ function check(files) {
     REQUIRED_FUNCS.forEach((n) => {
       if (!new RegExp('\\bfunction\\s+' + n + '\\s*\\(').test(phys)) bad.push(PHYSICS + ' does not define ' + n);
     });
+    // each figure is derived from its ONE base constant, never a second literal
+    [
+      ['BTU_PER_KWH', /\bvar\s+BTU_PER_KWH\s*=\s*3412\.14\s*;/],
+      ['BTU_PER_GAL_PROPANE', /\bvar\s+BTU_PER_GAL_PROPANE\s*=\s*91452\s*;/],
+      ['BTU_PER_HR_PER_BHP', /\bvar\s+BTU_PER_HR_PER_BHP\s*=\s*33475\s*;/],
+      ['THERMS_PER_GAL_PROPANE', /\bvar\s+THERMS_PER_GAL_PROPANE\s*=\s*BTU_PER_GAL_PROPANE\s*\//],
+      ['KBTU_PER_GAL_PROPANE', /\bvar\s+KBTU_PER_GAL_PROPANE\s*=\s*BTU_PER_GAL_PROPANE\s*\//],
+      ['KBTU_PER_KWH', /\bvar\s+KBTU_PER_KWH\s*=\s*BTU_PER_KWH\s*\//],
+      ['THERMS_PER_KWH', /\bvar\s+THERMS_PER_KWH\s*=\s*BTU_PER_KWH\s*\//],
+      ['KWH_PER_MMBTU', /\bvar\s+KWH_PER_MMBTU\s*=\s*[\w.]+\s*\/\s*BTU_PER_KWH\s*;/],
+      ['THERMS_PER_HR_PER_BHP', /\bvar\s+THERMS_PER_HR_PER_BHP\s*=\s*BTU_PER_HR_PER_BHP\s*\//],
+    ].forEach(([n, re]) => {
+      if (!re.test(phys)) bad.push(PHYSICS + ': ' + n + ' is not derived from its one base constant');
+    });
   }
+  const eui = files['computations/eui.js'];
+  if (eui == null || !/\bfunction\s+computeKBtu\s*\(/.test(eui))
+    bad.push('computations/eui.js does not define computeKBtu');
   Object.keys(files).forEach((rel) => {
     if (rel === PHYSICS || isTestFile(rel)) return;
     const lines = files[rel].split(/\r?\n/);
     lines.forEach((line, i) => {
       const at = rel + ':' + (i + 1) + ' ';
+      if (/\btoKBtu\b/.test(line)) bad.push(at + 'toKBtu is deleted; use computeKBtu (computations/eui.js)');
+      if (rel !== 'computations/eui.js' && /\bfunction\s+computeKBtu\s*\(|\bcomputeKBtu\s*=\s*function/.test(line))
+        bad.push(at + 'second definition of computeKBtu (the one is in computations/eui.js)');
       REQUIRED_FUNCS.forEach((n) => {
         if (new RegExp('\\bfunction\\s+' + n + '\\s*\\(|\\b' + n + '\\s*=\\s*function').test(line))
           bad.push(at + 'second definition of ' + n + ' (the one is in ' + PHYSICS + ')');

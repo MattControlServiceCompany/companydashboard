@@ -788,7 +788,7 @@ function egfxRefresh(projId) {
   const totalBlKwh = blKwhAvg.reduce((a, b) => a + b, 0);
   const totalBlGas = blGasAvg.reduce((a, b) => a + b, 0);
   const totalBlPropane = blPropaneAvg.reduce((a, b) => a + b, 0);
-  const blKbtu = toKBtu(totalBlKwh, totalBlGas, totalBlPropane);
+  const blKbtu = computeKBtu(totalBlKwh, totalBlGas, totalBlPropane);
   const blEui = sqft > 0 ? blKbtu / sqft : 0;
   const cbecsEui = CBECS_EUI[p.type] || 48.5;
 
@@ -796,7 +796,7 @@ function egfxRefresh(projId) {
   const latestYear = sortedYears.length > 0 ? sortedYears[sortedYears.length - 1] : null;
 
   // Build baseline kBtu per calendar month for completeness checks
-  const blKbtuPerMo = blKwhAvg.map((v, mi) => toKBtu(v, blGasAvg[mi], blPropaneAvg[mi]));
+  const blKbtuPerMo = blKwhAvg.map((v, mi) => computeKBtu(v, blGasAvg[mi], blPropaneAvg[mi]));
 
   // Build a flat list of year-months with complete data, sorted chronologically.
   // A month is "complete" if its kBtu is at least 25% of the baseline average
@@ -806,7 +806,7 @@ function egfxRefresh(projId) {
     const yd = yearData[y];
     for (let mi = 0; mi < 12; mi++) {
       if (yd.kwh[mi] > 0 || yd.gas[mi] > 0 || yd.propane[mi] > 0) {
-        const moKbtu = toKBtu(yd.kwh[mi], yd.gas[mi], yd.propane[mi]);
+        const moKbtu = computeKBtu(yd.kwh[mi], yd.gas[mi], yd.propane[mi]);
         const blRef = blKbtuPerMo[mi];
         if (blRef > 0 && moKbtu < blRef * 0.25) continue;
         allYms.push({ y, mi, kwh: yd.kwh[mi], gas: yd.gas[mi], propane: yd.propane[mi], cost: yd.cost[mi] });
@@ -820,7 +820,7 @@ function egfxRefresh(projId) {
   let r12Kbtu = 0,
     r12Cost = 0;
   r12.forEach((m) => {
-    r12Kbtu += toKBtu(m.kwh, m.gas, m.propane || 0);
+    r12Kbtu += computeKBtu(m.kwh, m.gas, m.propane || 0);
     r12Cost += m.cost;
   });
   const r12Eui = sqft > 0 && r12.length > 0 ? ((r12Kbtu / r12.length) * 12) / sqft : 0;
@@ -844,14 +844,14 @@ function egfxRefresh(projId) {
       const ms = qMonthRanges[qi];
       const hasAll = ms.every((mi) => {
         if (yd.kwh[mi] <= 0 && yd.gas[mi] <= 0 && yd.propane[mi] <= 0) return false;
-        const moKbtu = toKBtu(yd.kwh[mi], yd.gas[mi], yd.propane[mi]);
+        const moKbtu = computeKBtu(yd.kwh[mi], yd.gas[mi], yd.propane[mi]);
         return blKbtuPerMo[mi] <= 0 || moKbtu >= blKbtuPerMo[mi] * 0.25;
       });
       if (hasAll) {
         let qKbtu = 0,
           qBlKbtu = 0;
         ms.forEach((mi) => {
-          qKbtu += toKBtu(yd.kwh[mi], yd.gas[mi], yd.propane[mi]);
+          qKbtu += computeKBtu(yd.kwh[mi], yd.gas[mi], yd.propane[mi]);
           qBlKbtu += blKbtuPerMo[mi];
         });
         qEui = sqft > 0 ? ((qKbtu / 3) * 12) / sqft : 0;
@@ -868,7 +868,7 @@ function egfxRefresh(projId) {
     moBlEui = 0,
     moLabel = '';
   if (latestMo) {
-    const moKbtu = toKBtu(latestMo.kwh, latestMo.gas, latestMo.propane || 0);
+    const moKbtu = computeKBtu(latestMo.kwh, latestMo.gas, latestMo.propane || 0);
     moEui = sqft > 0 ? (moKbtu * 12) / sqft : 0;
     moBlEui = sqft > 0 && blKbtuPerMo[latestMo.mi] > 0 ? (blKbtuPerMo[latestMo.mi] * 12) / sqft : 0;
     const moNamesFull = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -1308,7 +1308,7 @@ function egfxRefresh(projId) {
       if (!bd) continue;
       for (let mi = 0; mi < 12; mi++) {
         if (bd.kwh[mi] > 0 || bd.gas[mi] > 0 || bd.propane[mi] > 0) {
-          bBlKbtu[mi] += toKBtu(bd.kwh[mi], bd.gas[mi], bd.propane[mi]);
+          bBlKbtu[mi] += computeKBtu(bd.kwh[mi], bd.gas[mi], bd.propane[mi]);
           bBlCount[mi]++;
         }
       }
@@ -1320,7 +1320,7 @@ function egfxRefresh(projId) {
       if (!bd) continue;
       for (let mi = 0; mi < 12; mi++) {
         if (bd.kwh[mi] > 0 || bd.gas[mi] > 0 || bd.propane[mi] > 0) {
-          const moKbtu = toKBtu(bd.kwh[mi], bd.gas[mi], bd.propane[mi]);
+          const moKbtu = computeKBtu(bd.kwh[mi], bd.gas[mi], bd.propane[mi]);
           if (bBlAvg[mi] > 0 && moKbtu < bBlAvg[mi] * 0.25) continue;
           bYms.push({ kwh: bd.kwh[mi], gas: bd.gas[mi], propane: bd.propane[mi], cost: bd.cost[mi] });
         }
@@ -1334,7 +1334,7 @@ function egfxRefresh(projId) {
       sumGas = 0,
       sumPropane = 0;
     last12.forEach((m) => {
-      kbtu += toKBtu(m.kwh, m.gas, m.propane || 0);
+      kbtu += computeKBtu(m.kwh, m.gas, m.propane || 0);
       cost += m.cost;
       sumKwh += m.kwh || 0;
       sumGas += m.gas || 0;
@@ -1523,7 +1523,7 @@ function egfxRefresh(projId) {
                       let moCount = 0;
                       for (let mi = 0; mi < 12; mi++) {
                         if (yd.kwh[mi] > 0 || yd.gas[mi] > 0 || yd.propane[mi] > 0) {
-                          const mk = toKBtu(yd.kwh[mi], yd.gas[mi], yd.propane[mi]);
+                          const mk = computeKBtu(yd.kwh[mi], yd.gas[mi], yd.propane[mi]);
                           if (blKbtuPerMo[mi] <= 0 || mk >= blKbtuPerMo[mi] * 0.25) moCount++;
                         }
                       }
@@ -1532,7 +1532,7 @@ function egfxRefresh(projId) {
                       const ykwh = ykwhRaw * annF;
                       const ygas = ygasRaw * annF;
                       const ypropane = ypropaneRaw * annF;
-                      const ykbtu = toKBtu(ykwh, ygas, ypropane);
+                      const ykbtu = computeKBtu(ykwh, ygas, ypropane);
                       const yeui = sqft > 0 && moCount > 0 ? ykbtu / sqft : 0;
                       const diff = blEui > 0 ? ((yeui - blEui) / blEui) * 100 : 0;
                       const isBl = blYears.has(y);
@@ -1590,7 +1590,7 @@ function egfxRefresh(projId) {
                             const bgas = bgasRaw * bAnnF;
                             const bpropane = bpropaneRaw * bAnnF;
                             const bcost = bcostRaw * bAnnF;
-                            const bkbtu = toKBtu(bkwh, bgas, bpropane);
+                            const bkbtu = computeKBtu(bkwh, bgas, bpropane);
                             const beui = bSqft > 0 && moCount > 0 ? bkbtu / bSqft : 0;
                             return { y, bkwh, bkw, bgas, bpropane, bcost, beui, moCount, bPartial };
                           })
@@ -1726,7 +1726,7 @@ function egfxRefresh(projId) {
               totKbtu = 0,
               totCost = 0;
             for (let mi = 0; mi < 12; mi++) {
-              const mkbtu = toKBtu(blKwhAvg[mi], blGasAvg[mi], blPropaneAvg[mi]);
+              const mkbtu = computeKBtu(blKwhAvg[mi], blGasAvg[mi], blPropaneAvg[mi]);
               const mcost = blCostAvg2[mi];
               const mkw = _blKwFromMap[mi];
               totKwh += blKwhAvg[mi];
@@ -1817,7 +1817,7 @@ function egfxRefresh(projId) {
             const bgas = bd.gas.reduce((a, v) => a + v, 0);
             const bprop = bd.propane ? bd.propane.reduce((a, v) => a + v, 0) : 0;
             if (bkwh > 0 || bgas > 0 || bprop > 0) {
-              totalBlKbtu += toKBtu(bkwh, bgas, bprop);
+              totalBlKbtu += computeKBtu(bkwh, bgas, bprop);
               for (let mi = 0; mi < 12; mi++) {
                 if (bd.kwh[mi] > 0 || bd.gas[mi] > 0 || (bd.propane && bd.propane[mi] > 0)) totalBlMoCount++;
               }
@@ -1964,7 +1964,7 @@ function egfxRefresh(projId) {
             const bgas = bd.gas.reduce((a, v) => a + v, 0);
             const bprop = bd.propane ? bd.propane.reduce((a, v) => a + v, 0) : 0;
             if (bkwh > 0 || bgas > 0 || bprop > 0) {
-              totalBlKbtu += toKBtu(bkwh, bgas, bprop);
+              totalBlKbtu += computeKBtu(bkwh, bgas, bprop);
               for (let mi = 0; mi < 12; mi++) {
                 if (bd.kwh[mi] > 0 || bd.gas[mi] > 0 || (bd.propane && bd.propane[mi] > 0)) totalBlMoCount++;
               }
@@ -2146,7 +2146,7 @@ function egfxRefresh(projId) {
             qActPropane += yd.propane[mi];
             qActCost += yd.cost[mi];
             if (yd.kwh[mi] > 0 || yd.gas[mi] > 0 || yd.propane[mi] > 0) {
-              const actKbtu = toKBtu(yd.kwh[mi], yd.gas[mi], yd.propane[mi]);
+              const actKbtu = computeKBtu(yd.kwh[mi], yd.gas[mi], yd.propane[mi]);
               const blRef = blKbtuPerMo[mi];
               if (blRef > 0 && actKbtu < blRef * 0.25) continue;
               hasActualData = true;

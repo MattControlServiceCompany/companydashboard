@@ -24,12 +24,16 @@ vm.runInContext(fs.readFileSync(path.join(REPO, 'computations/physics.js'), 'utf
 
 // ---- constants ----
 ok(sb.KW_PER_HP === 0.746, 'KW_PER_HP');
-ok(sb.BTU_PER_KWH === 3412, 'BTU_PER_KWH');
+ok(sb.BTU_PER_KWH === 3412.14, 'BTU_PER_KWH is the EIA 3412.14');
 ok(sb.BTU_PER_THERM === 100000, 'BTU_PER_THERM');
-ok(sb.KBTU_PER_KWH === 3.412 && sb.KBTU_PER_THERM === 100, 'kBtu factors equal the old literals bit for bit');
-ok(sb.KBTU_PER_GAL_PROPANE === 91.5, 'KBTU_PER_GAL_PROPANE');
-ok(sb.THERMS_PER_GAL_PROPANE === 0.9153, 'THERMS_PER_GAL_PROPANE');
-ok(near(sb.THERMS_PER_KWH, 0.03412), 'THERMS_PER_KWH');
+ok(sb.KBTU_PER_KWH === 3412.14 / 1000 && sb.KBTU_PER_THERM === 100, 'kBtu factors derive from the Btu constants');
+ok(near(sb.THERMS_PER_KWH, 0.0341214), 'THERMS_PER_KWH derives from BTU_PER_KWH');
+ok(near(sb.KWH_PER_MMBTU, 293.071, 0.001), 'KWH_PER_MMBTU derives from BTU_PER_KWH: ' + sb.KWH_PER_MMBTU);
+ok(near(sb.KWH_PER_BTU, 1 / 3412.14) && sb.THERMS_PER_MMBTU === 10 && sb.THERMS_PER_BTU === 0.00001, 'Btu factors');
+ok(sb.BTU_PER_GAL_PROPANE === 91452, 'BTU_PER_GAL_PROPANE is the EIA 91,452');
+ok(sb.THERMS_PER_GAL_PROPANE === 91452 / 100000 && near(sb.THERMS_PER_GAL_PROPANE, 0.91452), 'THERMS_PER_GAL_PROPANE');
+ok(sb.KBTU_PER_GAL_PROPANE === 91452 / 1000 && near(sb.KBTU_PER_GAL_PROPANE, 91.452), 'KBTU_PER_GAL_PROPANE');
+ok(sb.BTU_PER_HR_PER_BHP === 33475 && near(sb.THERMS_PER_HR_PER_BHP, 0.33475), 'boiler hp is 33,475 Btu/h = 0.33475 therm/h');
 
 // ---- fanPowerFraction ----
 ok(sb.fanPowerFraction(1) === 1, 'full speed is full power');
@@ -69,6 +73,17 @@ mustFail('0.746', withLine('app/calculators.js', 'var kw = hp * 0.746;'));
 mustFail('3412', withLine('app/ecm-calculators.js', 'var k = btu / 3412;'));
 mustFail('3.412', withLine('app/report-engine.js', 'var k = kwh * 3.412;'));
 mustFail('0.9153', withLine('app/utility-data.js', 'var t = gal * 0.9153;'));
+mustFail('0.91452', withLine('app/utility-data.js', 'var t = gal * 0.91452;'));
+mustFail('91452', withLine('app/calculators.js', 'var b = gal * 91452;'));
+mustFail('3412.14', withLine('app/calculators.js', 'var b = kwh * 3412.14;'));
+mustFail('293.071', withLine('app/utility-data.js', 'var f = 293.071;'));
+mustFail('0.03346 boiler hp', withLine('app/calculators.js', 'var t = bhp * 0.03346;'));
+mustFail('33475', withLine('app/calculators.js', 'var t = bhp * 33475;'));
+mustFail('a propane figure not derived', Object.assign({}, clean, {
+  'computations/physics.js': clean['computations/physics.js'].replace('BTU_PER_GAL_PROPANE / BTU_PER_THERM', '0.9153'),
+}));
+mustFail('toKBtu returning', withLine('computations/rates.js', 'function toKBtu(a, b, c) { return a; }'));
+mustFail('a second computeKBtu', withLine('app/calculators.js', 'function computeKBtu(a, b, c) { return a; }'));
 mustFail('0.03413', withLine('app/calculators.js', 'var t = kwh * 0.03413;'));
 mustFail('91.5', withLine('computations/eui.js', 'var k = gal * 91.5;'));
 mustFail('100000 as Btu per therm', withLine('app/ecm-calculators.js', 'var th = btu / (100000 * afue);'));

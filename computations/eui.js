@@ -61,9 +61,12 @@ function estimateEnergyStarScore(sourceEUI, percentileTable) {
   return 0;
 }
 
+// The ONE site-energy sum. Accepts numbers or numeric strings; a blank or non-number counts as 0.
 function computeKBtu(kwh, therms, propaneGal) {
   return (
-    (kwh || 0) * KBTU_FACTORS.electric + (therms || 0) * KBTU_FACTORS.gas + (propaneGal || 0) * KBTU_FACTORS.propane
+    (parseFloat(kwh) || 0) * KBTU_FACTORS.electric +
+    (parseFloat(therms) || 0) * KBTU_FACTORS.gas +
+    (parseFloat(propaneGal) || 0) * KBTU_FACTORS.propane
   );
 }
 

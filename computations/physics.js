@@ -7,16 +7,29 @@
 
 // ---- unit constants ----
 var KW_PER_HP = 0.746; // kW per mechanical horsepower (NEMA 746 W/hp)
-var BTU_PER_KWH = 3412; // Btu per kWh
+// Electric: EIA, 1 kWh = 3,412.14 Btu
+// https://www.eia.gov/energyexplained/units-and-calculators/british-thermal-units.php
+var BTU_PER_KWH = 3412.14; // Btu per kWh. Every other electric factor below comes from this one.
 var BTU_PER_THERM = 100000; // Btu per therm of natural gas
-var KBTU_PER_KWH = BTU_PER_KWH / 1000; // 3.412 kBtu per kWh (site energy)
+var KBTU_PER_KWH = BTU_PER_KWH / 1000; // kBtu per kWh (site energy)
 var KBTU_PER_THERM = BTU_PER_THERM / 1000; // 100 kBtu per therm
-var KBTU_PER_GAL_PROPANE = 91.5; // kBtu per gallon of propane, EPA Portfolio Manager site factor
-// Therms per gallon of propane for BILL conversion (gallons -> therms, 91,530 Btu/gal).
-// It is not the same figure as KBTU_PER_GAL_PROPANE (91.5, 0.03 percent lower): that one is the
-// energy-use-intensity factor. Two sources, two names. Do not derive one from the other.
-var THERMS_PER_GAL_PROPANE = 0.9153;
-var THERMS_PER_KWH = BTU_PER_KWH / BTU_PER_THERM; // 0.03412 therms per kWh
+var THERMS_PER_KWH = BTU_PER_KWH / BTU_PER_THERM; // therms per kWh
+var KWH_PER_MMBTU = 1000000 / BTU_PER_KWH; // 293.071 kWh per MMBtu
+var THERMS_PER_MMBTU = 1000000 / BTU_PER_THERM; // 10 therms per MMBtu
+var KWH_PER_BTU = 1 / BTU_PER_KWH; // kWh per Btu
+var THERMS_PER_BTU = 1 / BTU_PER_THERM; // therms per Btu
+
+// Propane: EIA, 1 gallon of propane = 91,452 Btu
+// https://www.eia.gov/energyexplained/units-and-calculators/british-thermal-units.php
+// ONE figure. The bill conversion (gallons -> therms) and the energy-use-intensity factor (kBtu per gallon)
+// both come from it. Do not write a second propane figure.
+var BTU_PER_GAL_PROPANE = 91452; // Btu per gallon of propane
+var THERMS_PER_GAL_PROPANE = BTU_PER_GAL_PROPANE / BTU_PER_THERM; // 0.91452 therms per gallon
+var KBTU_PER_GAL_PROPANE = BTU_PER_GAL_PROPANE / 1000; // 91.452 kBtu per gallon
+
+// Boiler horsepower: 1 boiler hp = 33,475 Btu/h (ASME PTC 4; 34.5 lb/h steam from and at 212 F)
+var BTU_PER_HR_PER_BHP = 33475; // Btu per hour per boiler horsepower
+var THERMS_PER_HR_PER_BHP = BTU_PER_HR_PER_BHP / BTU_PER_THERM; // 0.33475 therm/h per boiler hp
 
 // ---- fan and pump power ----
 var FAN_AFFINITY_EXPONENT = 3; // fan/pump power varies as speed to this power (affinity law)

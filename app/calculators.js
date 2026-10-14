@@ -616,7 +616,7 @@ function _buildBaselineDataHtml(b, projId) {
                     '</strong></span>'
                   : '') +
                 '<span>kBtu/sf: <strong style="color:var(--em)">' +
-                (toKBtu(totKwh, totTherms, totPropGal) / sqft).toFixed(1) +
+                (computeKBtu(totKwh, totTherms, totPropGal) / sqft).toFixed(1) +
                 '</strong></span>' +
                 '<span>$/sf: <strong style="color:var(--green)">' +
                 (totElecCost + totGasCost + totPropCost > 0
@@ -1326,7 +1326,7 @@ function _eqMaxKw(eq) {
 function _gasMaxThermHr(eq) {
   const qty = eq.qty || 1;
   const size = eq.size || 0;
-  if (eq.units === 'BHp') return qty * size * 0.03346;
+  if (eq.units === 'BHp') return qty * size * THERMS_PER_HR_PER_BHP;
   if (eq.units === 'lbs/hr') return qty * size * 0.001;
   if (eq.units === 'MMBtu/hr') return qty * size * 10;
   return (qty * size) / BTU_PER_THERM; // Btu/hr → Therm/hr
