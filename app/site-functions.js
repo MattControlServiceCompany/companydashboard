@@ -2506,6 +2506,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.14.123', date: '2026-10-14', title: 'Security fix for flagged-bill count badges',
+    items: [
+      { type: 'fix', text: 'Energy Department > Utility Data: security fix for the ⚠ count badges.' }
+    ]
+  },
   { v: 'v2026.10.14.122', date: '2026-10-14', title: 'Flagged-bill counts on projects, buildings and meters',
     items: [
       { type: 'feature', text: 'Energy Department > Projects sidebar and Utility Data: a ⚠ count now shows how many bills need review for each project, building and meter. Click it to open the first flagged bill.' },
