@@ -8,6 +8,9 @@
  * Corrections panel shows one row per flagged bill. A second copy of the flag logic under ANY name would
  * count differently somewhere and fail here (a name list cannot catch that).
  *
+ * Counted types only (BILL_COUNTED_FLAG_RULES): a bill with only an outlier or read note flag counts 0, a meter excluded
+ * from the baseline adds nothing to the building or project count, and an auto-corrected read draws no banner.
+ *
  * Usage: node tools/gate-bill-flag-behavior.js [repo-root]
  */
 const fs = require('fs');
@@ -21,7 +24,8 @@ const PID = 990001;
 const mk = (n, fn) => Array.from({ length: n }, (_, i) => fn(i));
 const ymd = (y, m) => y + '-' + String(m).padStart(2, '0') + '-01';
 const month = (i) => [2024 + Math.floor(i / 12), (i % 12) + 1];
-// gas: a wrong cost column (bill 20) and a printed day count that does not match the dates (bill 22)
+// gas: a blank total cost (bill 10, counted), a wrong cost column (bill 20) and a printed day count that does not match
+// the dates (bill 22): the last two are NOT counted types, so they show on the bill row only
 let reads = 1000;
 const gas = mk(24, (i) => {
   const [y, m] = month(i);
@@ -37,7 +41,7 @@ const gas = mk(24, (i) => {
     customerCharge: '23.33',
     fuelAdjustment: '0',
     thermCost: i === 20 ? '9999.00' : cost,
-    totalCost: cost,
+    totalCost: i === 10 ? '' : cost,
     numberOfDays: i === 22 ? '60' : '',
     startRead: String(reads),
     endRead: String((reads += th)),
@@ -56,6 +60,23 @@ const wat = (kind) =>
     else Object.assign(b, { sewerUsage: String(i === 3 ? gal * 5 : gal), sewerCharge: charge });
     return b;
   });
+// a second gas meter that will be excluded from the baseline: its blank total cost must not reach the building count
+const xgas = mk(12, (i) => {
+  const [y, m] = month(i);
+  const [ny, nm] = m === 12 ? [y + 1, 1] : [y, m + 1];
+  const cost = (60 + 23.33).toFixed(2);
+  return {
+    id: 'x' + i,
+    start: ymd(y, m),
+    end: ymd(ny, nm),
+    therms: '60',
+    gasCharge: '60',
+    customerCharge: '23.33',
+    fuelAdjustment: '0',
+    thermCost: cost,
+    totalCost: i === 4 ? '' : cost,
+  };
+});
 const udData = {
   buildings: [
     {
@@ -66,6 +87,7 @@ const udData = {
         { id: 'fm1', commodity: 'Gas', provider: 'Test', bills: gas },
         { id: 'fm2', commodity: 'Water', provider: 'Test', bills: wat('water') },
         { id: 'fm3', commodity: 'Sewer', provider: 'Test', bills: wat('sewer') },
+        { id: 'fm4', commodity: 'Gas', provider: 'Test', bills: xgas },
       ],
     },
   ],
@@ -130,7 +152,8 @@ async function main() {
     await page.waitForTimeout(4000);
     const res = await page.evaluate(async (pid) => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-      const out = { meters: [], bldg: null, panel: null, refresh: null };
+      const out = { meters: [], bldg: null, panel: null, refresh: null, excl: null, corr: null };
+      setBaselineExcluded(pid, 'fm4', true);
       sv('utility');
       await sleep(800);
       udSelectProj(pid);
@@ -139,7 +162,8 @@ async function main() {
       udSelectBldg(b.id);
       await sleep(400);
       const nav = [...document.querySelectorAll('.ud-nav-bldg-item')].find((e) => e.innerText.includes(b.name));
-      const bs = computeBuildingFlagSummary(b);
+      const isExcl = (m) => isBaselineExcluded(pid, m.id);
+      const bs = computeBuildingFlagSummary(b, isExcl);
       out.bldg = { want: bs.flaggedBills, badge: nav ? +((nav.querySelector('.ud-flag-badge') || { innerText: '' }).innerText.replace(/\D/g, '') || 0) : -1 };
       for (const m of b.meters) {
         udSelectMeter(m.id);
@@ -152,8 +176,9 @@ async function main() {
           commodity: m.commodity,
           want: s.flaggedBills,
           pill: +((pill.innerText.match(/⚠\s*(\d+)/) || [])[1] || 0),
-          banner: +((pane.innerText.match(/(\d+) bills? flagged/) || [])[1] || 0),
+          banner: +((pane.innerText.match(/(\d+) bills? (?:have|has) a problem/) || [])[1] || 0),
           rows: pane.querySelectorAll('tr.bill-flagged').length,
+          wantRows: Object.keys(s.perBill).length,
         });
       }
       // A bill change (saveUtilityData) must redraw the meter pills, and the summary cache must match a fresh run.
@@ -161,11 +186,11 @@ async function main() {
       udSelectMeter(gasM.id);
       await sleep(400);
       const before = computeMeterFlagSummary(gasM, b).flaggedBills;
-      const badBill = gasM.bills.find((x) => x.id === 'g20');
-      badBill.thermCost = badBill.totalCost;
+      const badBill = gasM.bills.find((x) => x.id === 'g10');
+      badBill.totalCost = badBill.thermCost; // the cost copy equals the bill's own total
       saveUtilityData(pid);
       await sleep(600);
-      const bs2 = computeBuildingFlagSummary(b);
+      const bs2 = computeBuildingFlagSummary(b, isExcl);
       const pillNums = [...document.querySelectorAll('.ma-meter-pill:not(.ma-add-meter-pill)')].map((e) =>
         +((e.innerText.match(/⚠\s*(\d+)/) || [])[1] || 0),
       );
@@ -173,22 +198,49 @@ async function main() {
         before,
         after: computeMeterFlagSummary(gasM, b).flaggedBills,
         pillSum: pillNums.reduce((a, c) => a + c, 0),
-        want: bs2.flaggedBills,
+        want: b.meters.reduce((a, m) => a + computeMeterFlagSummary(m, b).flaggedBills, 0),
         stale: b.meters.filter(
           (m) => JSON.stringify(computeMeterFlagSummary(m, b)) !== JSON.stringify(_computeMeterFlagSummaryFresh(m, b)),
         ).length,
       };
+      // Excluded meter: its flagged bills are in its own pill, not in the building or project count.
+      const fm4 = b.meters.find((m) => m.id === 'fm4');
+      const proj = computeProjectFlagSummary([b], isExcl);
+      const projAll = computeProjectFlagSummary([b]);
+      out.excl = {
+        ownFlagged: computeMeterFlagSummary(fm4, b).flaggedBills,
+        building: bs2.flaggedBills,
+        project: proj.flaggedBills,
+        sumIncluded: b.meters.filter((m) => !isExcl(m)).reduce((a, m) => a + computeMeterFlagSummary(m, b).flaggedBills, 0),
+        withExcluded: projAll.flaggedBills,
+      };
+      // Auto-corrected read: tinted cell with a hover, no banner, count unchanged.
+      const cb = gasM.bills.find((x) => x.id === 'g5');
+      cb._auto_corrected_startRead = { original: '999999', corrected: cb.startRead, reason: READ_CHAIN_REASON.a };
+      const countBefore = computeMeterFlagSummary(gasM, b).flaggedBills;
+      udSelectMeter(gasM.id);
+      await sleep(600);
+      out.corr = {
+        banner: !!document.getElementById('billReadCorrectionBanner'),
+        diamond: !!document.querySelector('#maPane .read-corrected-mark'),
+        hoverCells: document.querySelectorAll('#maPane td[title^="Corrected. PDF reader value: 999999"]').length,
+        countBefore,
+        countAfter: computeMeterFlagSummary(gasM, b).flaggedBills,
+      };
       await openBillCorrectionsReviewModal();
       await sleep(3000);
       const g = document.querySelector('[data-groupkey="__flagged__"]');
-      out.panel = { want: bs2.flaggedBills, rows: g ? g.querySelectorAll('tbody tr').length : 0 };
+      out.panel = {
+        want: b.meters.reduce((a, m) => a + Object.keys(computeMeterFlagSummary(m, b).perBill).length, 0),
+        rows: g ? g.querySelectorAll('tbody tr').length : 0,
+      };
       return out;
     }, PID);
     if (errs.length) problems.push('page errors: ' + errs.slice(0, 2).join(' | '));
     if (!res.meters.length || res.meters.every((m) => m.want === 0))
       problems.push('the fixture produced no flags, so the check proves nothing');
     res.meters.forEach((m) => {
-      if (!(m.want === m.pill && m.want === m.banner && m.want === m.rows))
+      if (!(m.want === m.pill && m.want === m.banner && m.rows === m.wantRows))
         problems.push(
           m.commodity +
             ' meter: shared function ' +
@@ -210,10 +262,29 @@ async function main() {
     if (res.refresh.stale) problems.push(res.refresh.stale + ' meter(s) have a cached flag summary that differs from a fresh one');
     if (res.bldg.want !== res.bldg.badge)
       problems.push('building badge ' + res.bldg.badge + ' but shared function ' + res.bldg.want);
+    // the Review Bill Corrections panel is the full review list: one row per bill with ANY flag (counted or not)
     if (res.panel.want !== res.panel.rows)
       problems.push(
-        'Review Bill Corrections panel has ' + res.panel.rows + ' rows but shared function ' + res.panel.want,
+        'Review Bill Corrections panel has ' + res.panel.rows + ' rows but ' + res.panel.want + ' bills have a flag',
       );
+    const gasRes = res.meters.find((m) => m.commodity === 'Gas');
+    // bills with only a not-counted flag (a wrong gas cost copy, a printed day count): on the row, not in the count
+    if (!gasRes || !(gasRes.wantRows > gasRes.want))
+      problems.push('fixture: the gas meter must hold flagged bills that are not counted');
+    if (!res.excl || res.excl.ownFlagged < 1) problems.push('fixture: the excluded meter has no counted flag');
+    else {
+      if (res.excl.building !== res.excl.sumIncluded)
+        problems.push('building count ' + res.excl.building + ' includes the excluded meter (want ' + res.excl.sumIncluded + ')');
+      if (res.excl.project !== res.excl.building)
+        problems.push('project count ' + res.excl.project + ' differs from building ' + res.excl.building);
+      if (res.excl.withExcluded <= res.excl.project) problems.push('fixture: the excluded meter does not change the count');
+    }
+    if (!res.corr || res.corr.banner || res.corr.diamond)
+      problems.push('an auto-corrected read still draws a banner or diamond');
+    else if (res.corr.hoverCells !== 1)
+      problems.push('the auto-corrected read cell has no hover text (' + res.corr.hoverCells + ')');
+    if (res.corr && res.corr.countBefore !== res.corr.countAfter)
+      problems.push('an auto-corrected read changed the flag count');
     console.log('behavior: ' + JSON.stringify(res));
   } finally {
     await ctx.close();

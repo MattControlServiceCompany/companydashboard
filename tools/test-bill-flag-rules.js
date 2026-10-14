@@ -456,18 +456,31 @@ console.log('=== 7. summary ===');
 {
   const m = gasMeter([2023, 2024], (bills) => {
     const b = find({ bills }, 'g2024-11');
-    b.gasCharge = '4080.99';
-    b.customerCharge = '23.34';
-    b.totalCost = '4104.33';
-    b.thermCost = '16716.39';
+    b.thermCost = '9999.00'; // legacy gas cost copy matches nothing
     b.numberOfDays = '40'; // dates span 30 days
   });
   const s = run(m);
+  // days_mismatch and cost_field_mismatch are not counted types (BILL_COUNTED_FLAG_RULES): the bill has 2+ flags of its
+  // own, and none is counted.
   assert(
-    s.flaggedBills === 1 && s.flagCount >= 2,
-    'a bill with 2 flags counts as 1 flagged bill and 2+ flags: ' + s.flaggedBills + '/' + s.flagCount,
+    s.flaggedBills === 0 && s.flagCount === 0 && s.perBill['g2024-11'].length >= 2,
+    'a bill with only uncounted flags keeps them in perBill and counts 0: ' + s.flaggedBills + '/' + s.flagCount,
   );
-  assert(ctx.billFlagHoverText(s).startsWith('1 bill flagged for review ('), 'hover text: ' + ctx.billFlagHoverText(s));
+  {
+    const mc = gasMeter([2023, 2024], (bills) => {
+      find({ bills }, 'g2024-11').totalCost = '9999.00'; // parts no longer add to the total: a counted type
+    });
+    const sc = run(mc);
+    assert(
+      sc.flaggedBills === 1 && sc.flagCount >= 1 && sc.countedPerBill['g2024-11'].every((f) => require('vm').runInContext('BILL_COUNTED_FLAG_RULES', ctx).includes(f.rule)),
+      'a counted flag counts 1 bill: ' + sc.flaggedBills + '/' + sc.flagCount,
+    );
+    assert(
+      ctx.billFlagHoverText({ flaggedBills: 1 }) === '1 bill with a problem that changes usage, cost or dates' &&
+        ctx.billFlagHoverText({ flaggedBills: 3 }) === '3 bills with problems that change usage, cost or dates',
+      'hover text: ' + ctx.billFlagHoverText({ flaggedBills: 3 }),
+    );
+  }
   // dismissing one rule leaves the other flags on the same field
   const before = s.perBill['g2024-11'].length;
   find(m, 'g2024-11')._flags = [{ id: 'days_mismatch', dismissed: true }];

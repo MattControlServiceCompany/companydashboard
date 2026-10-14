@@ -1484,6 +1484,58 @@ function viewProjectFromUtility() {
   }, 100);
 }
 
+// The ONE baseline chip of a meter pill: one plain chip per state, each with a one-sentence hover. Never a warning symbol.
+// States: excluded by the user (isBaselineExcluded) -> not in baseline; else getBaselineTrustState (locked, live regression,
+// saved without weather, nothing saved).
+function udMeterBaselineChipHtml(projId, m) {
+  let text, hover, color, bg;
+  if (isBaselineExcluded(projId, m.id)) {
+    text = 'Not in baseline';
+    hover = 'This meter is left out of the baseline and of performance and savings totals. You set this on the meter.';
+    color = 'var(--text3)';
+    bg = 'var(--s3)';
+  } else {
+    const st = getBaselineTrustState(m);
+    if (st === 'frozen') {
+      text = 'Baseline locked';
+      hover = 'The baseline is saved and locked. New bills do not change it.';
+      color = 'var(--violet)';
+      bg = 'rgba(139,92,246,.15)';
+    } else if (st === 'inherited') {
+      text = 'Baseline not locked';
+      hover = 'The baseline months are saved but not locked. New bills can change the result. Open Baseline and click Save to lock it.';
+      color = 'var(--em2)';
+      bg = 'rgba(56,189,248,.15)';
+    } else if (st === 'no-weather') {
+      text = 'No weather in baseline';
+      hover = 'The baseline months are saved, but no weather data was available, so weather is not used. Upload weather data and save the baseline again.';
+      color = 'var(--text2)';
+      bg = 'var(--s3)';
+    } else {
+      text = 'Baseline not set';
+      hover = 'This meter counts in the baseline, but no baseline months are saved yet.';
+      color = 'var(--text2)';
+      bg = 'var(--s3)';
+    }
+  }
+  return (
+    '<span class="ud-bl-chip" style="font-size:9px;font-weight:600;color:' + color + ';background:' + bg +
+    ';padding:1px 4px;border-radius:3px;margin-left:2px;white-space:nowrap" title="' + _escHtml(hover) + '">' +
+    _escHtml(text) + '</span>'
+  );
+}
+// The ONE building-row baseline count: meters that count in the baseline (not excluded) and have baseline months saved.
+// Used by the Utility Data list (renderUDProjList) and the project tab (renderProjUDBldgNav in app/core.js).
+function udBuildingBaselineChipHtml(projId, b) {
+  const blMeters = (b.meters || []).filter((m) => !isBaselineExcluded(projId, m.id));
+  const n = blMeters.length;
+  if (!n) return '';
+  const set = blMeters.filter((m) => m.baseline && Array.isArray(m.baseline.months) && m.baseline.months.length).length;
+  const color = set === n ? 'var(--green)' : set > 0 ? 'var(--amber)' : 'var(--text3)';
+  const hover =
+    set + ' of ' + n + ' meter' + (n === 1 ? ' that counts' : 's that count') + ' in the baseline ' + (set === 1 ? 'has' : 'have') + ' baseline months saved.';
+  return '<span class="ud-bl-count" style="color:' + color + ';font-size:10px" title="' + _escHtml(hover) + '">' + set + ' of ' + n + ' baselined</span>';
+}
 // The ONE flagged-bill badge (meter pill, building row, project row). summary = a computeMeterFlagSummary /
 // computeBuildingFlagSummary / computeProjectFlagSummary result; so every badge shows the banner's count.
 // goto = optional { pid, bldgId, meterId }: the badge then opens that meter on the Bills tab when clicked.
@@ -1594,7 +1646,7 @@ function renderUDProjList() {
     const bldgs = getUDBldgs(p.id);
     const projActive = p.id === udSelProjId ? ' active' : '';
     // Flagged BILLS in this project: the ONE shared flag function (computations/bill-flags.js).
-    const _pFlags = computeProjectFlagSummary(bldgs);
+    const _pFlags = computeProjectFlagSummary(bldgs, (m) => isBaselineExcluded(p.id, m.id));
     const _pBadge = udFlagBadgeHtml(
       _pFlags,
       _pFlags.firstFlagged && { pid: p.id, bldgId: _pFlags.firstFlagged.bldgId, meterId: _pFlags.firstFlagged.meterId },
@@ -1603,7 +1655,7 @@ function renderUDProjList() {
             <span style="font-size:14px;flex-shrink:0">${getFacilityIcon(p.type)}</span>
             <span class="ud-nav-proj-name" title="${_escHtml(p.name)}">${_escHtml(p.name)}</span>
             ${_pBadge}
-            ${bldgs.length ? `<span class="ud-nav-proj-count">${bldgs.length}</span>` : ''}
+            ${bldgs.length ? `<span class="ud-nav-proj-count" title="${bldgs.length} building${bldgs.length === 1 ? '' : 's'}">${bldgs.length}</span>` : ''}
           </div>`;
     // If this project is selected, show its buildings inline underneath
     if (p.id === udSelProjId) {
@@ -1611,21 +1663,8 @@ function renderUDProjList() {
         html += `<div style="padding:6px 14px 0 30px;font-size:11px;color:var(--text3)">No buildings</div>`;
       } else {
         bldgs.forEach((b) => {
-          const _allMeters = b.meters || [];
-          const _totalMCount = _allMeters.length;
-          const _blMeters = _allMeters.filter((m) => !isBaselineExcluded(p.id, m.id));
-          const mCount = _blMeters.length;
-          const mWithBl = _blMeters.filter(
-            (m) => m.baseline && Array.isArray(m.baseline.months) && m.baseline.months.length,
-          ).length;
-          const blBadge =
-            mCount > 0
-              ? mWithBl === mCount
-                ? `<span style="color:var(--green);font-size:10px" title="All baseline meters have baselines set">✓ ${mWithBl}/${mCount} BL</span>`
-                : mWithBl > 0
-                  ? `<span style="color:var(--amber);font-size:10px" title="${mWithBl} of ${mCount} baseline meters have baselines set">⚠ ${mWithBl}/${mCount} BL</span>`
-                  : `<span style="color:var(--text3);font-size:10px" title="No baselines set">— 0/${mCount} BL</span>`
-              : '';
+          const _totalMCount = (b.meters || []).length;
+          const blBadge = udBuildingBaselineChipHtml(p.id, b);
           // Flagged BILLS in this building: the ONE shared flag function (computations/bill-flags.js).
           const _bFlags = _pFlags.byBuilding[b.id]; // computeProjectFlagSummary above ran computeBuildingFlagSummary(b)
           const flagBadge = udFlagBadgeHtml(
@@ -3115,49 +3154,8 @@ function udMeterPillsHtml(meters, b, _curMid) {
           Stormwater: '#9ca3af',
         };
         const _pTxt = _pTxtMap[m.commodity] || 'var(--text2)';
-        const _exclTag = isBaselineExcluded(udSelProjId, m.id)
-          ? '<span style="font-size:8px;font-weight:700;color:var(--danger,#ef4444);background:rgba(239,68,68,.15);padding:1px 4px;border-radius:3px;margin-left:2px" title="Excluded from baseline &amp; performance">excl</span>'
-          : '';
-        // P0 35105124(a): trust indicator distinguishes THREE states (not the
-        // old binary lock/warning) via getBaselineTrustState() so a saved-but-
-        // no-weather baseline no longer looks identical to a silently
-        // auto-inherited one — each has a different fix. All three call sites
-        // (this chip, the building header, the Baseline-tab pill) share the
-        // same classifier so they can never disagree with each other.
-        const _blState = getBaselineTrustState(m);
-        const _blTag =
-          _blState === 'frozen'
-            ? '<span style="font-size:8px;font-weight:700;color:var(--violet);background:rgba(139,92,246,.15);padding:1px 4px;border-radius:3px;margin-left:2px" title="Baseline frozen — locked regression, immune to new bills">🔒 BL</span>'
-            : _blState === 'no-weather'
-              ? '<span style="font-size:8px;font-weight:700;color:var(--warn);background:rgba(245,158,11,.15);padding:1px 4px;border-radius:3px;margin-left:2px" title="Saved without weather data — re-save after uploading weather. Baseline months were saved, but no HDD/CDD data was available for this building\'s ZIP at save time, so no regression could be computed.">⚠ BL</span>'
-              : _blState === 'inherited'
-                ? '<span style="font-size:8px;font-weight:700;color:var(--em2);background:rgba(56,189,248,.15);padding:1px 4px;border-radius:3px;margin-left:2px" title="No valid saved regression — open Baseline and Save to freeze.">🔗 BL</span>'
-                : '';
+        const _blTag = udMeterBaselineChipHtml(udSelProjId, m);
         const _flagTag = udFlagBadgeHtml(_mFlags);
-        // Fix 67cb827d (secondary): ensure m._reg is populated for R² scoring
-        // in the pill badge — same root cause as renderMeterDataPane fix.
-        // getNormRows sets m._reg transiently; without it, computeMeterQualityScore
-        // scores R² as 0/25 for meters with inherited baselines (m.baseline.reg = null).
-        if (typeof getNormRows === 'function' && typeof getWeatherForBuilding === 'function') {
-          const { byYm: _pillWeather } = getWeatherForBuilding();
-          const _pillBills = (m.bills || []).slice().sort((a, c) => _parseISO(a.start) - _parseISO(c.start));
-          if (_pillBills.length) getNormRows(m, _pillBills, m.inclusive !== false, _pillWeather);
-        }
-        var _dq = typeof computeMeterQualityScore === 'function' ? computeMeterQualityScore(m, b) : null;
-        var _dqBadge = _dq ? getMeterQualityBadge(_dq.score) : null;
-        var _dqTag = _dqBadge
-          ? '<span style="background:' +
-            _dqBadge.bgColor +
-            ';color:' +
-            _dqBadge.textColor +
-            ';padding:1px 6px;border-radius:8px;font-size:11px;font-weight:700;margin-left:4px" title="Data Quality: ' +
-            _dq.score +
-            '/100 — ' +
-            qualityBreakdownTooltip(_dq) +
-            '">' +
-            _dqBadge.label +
-            '</span>'
-          : '';
         return (
           '<button class="ma-meter-pill' +
           _pCls +
@@ -3176,10 +3174,8 @@ function udMeterPillsHtml(meters, b, _curMid) {
           ' bill' +
           (bcount !== 1 ? 's' : '') +
           '</span>' +
-          _exclTag +
           _blTag +
           _flagTag +
-          _dqTag +
           '</button>'
         );
       })
@@ -3952,17 +3948,6 @@ function _readCorrectionRecords(row) {
     .map((k) => ({ key: k, label: _READ_CORRECTION_LABELS[k], rec: row['_auto_corrected_' + k] }))
     .filter((x) => _rcIsReadChainRecord(x.rec) && String(x.rec.corrected) === String(row[x.key]));
 }
-// The mark in a corrected cell calls this: scroll the banner into view and outline it for a moment.
-function showReadCorrectionDetails() {
-  const el = document.getElementById('billReadCorrectionBanner');
-  if (!el) return;
-  el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-  el.style.outline = '2px solid var(--accent)';
-  setTimeout(() => {
-    el.style.outline = '';
-  }, 1600);
-}
-window.showReadCorrectionDetails = showReadCorrectionDetails;
 function renderBillsPane(pane, m, bills, incl) {
   // Restore right column in case batch extraction left it hidden
   const _rc = document.getElementById('pdfRightCol');
@@ -4264,10 +4249,9 @@ function renderBillsPane(pane, m, bills, incl) {
         });
       });
     }
-    // Read-chain correction marker (2026-10-14): a start read, end read or read difference the shared rule repaired
-    // gets a tinted cell and a mark. The mark opens the "Auto-corrected" banner above the table (click or tap), which
-    // lists the PDF reader value and the reason. The record counts only while it still matches the cell
-    // (_readCorrectionRecords): a value the user typed afterwards is not marked.
+    // Read-chain correction (2026-10-14): a start read, end read or read difference the shared rule repaired gets a tinted
+    // cell. The hover says the PDF reader value; no banner, no mark. The record counts only while it still matches the cell
+    // (_readCorrectionRecords): a value the user typed afterwards is not marked. No number changes: the reads are not usage.
     _readCorrectionRecords(row).forEach((rc) => {
       if (fieldColMap[rc.key] == null) return;
       let tdN = 0;
@@ -4278,7 +4262,9 @@ function renderBillsPane(pane, m, bills, incl) {
         attrs = /style="/.test(attrs)
           ? attrs.replace(/style="([^"]*)"/, (m0, st) => 'style="' + st + ';' + tint + '"')
           : attrs + ' style="' + tint + '"';
-        return `<td${attrs}><span class="read-corrected-mark" role="button" tabindex="0" title="${_escHtml(rc.label + ' auto-corrected. Click for details.')}" onclick="event.stopPropagation();showReadCorrectionDetails();return false;" style="cursor:pointer;color:var(--accent);font-size:13px;margin-right:4px;user-select:none">◆</span>`;
+        const tip = 'Corrected. PDF reader value: ' + rc.rec.original + '. Usage not changed.';
+        attrs = /title="/.test(attrs) ? attrs.replace(/title="[^"]*"/, 'title="' + _escHtml(tip) + '"') : attrs + ' title="' + _escHtml(tip) + '"';
+        return `<td${attrs}>`;
       });
     });
     // BAS Analysis button — shown when BAS trend data exists for this building
@@ -4571,44 +4557,17 @@ function renderBillsPane(pane, m, bills, incl) {
   const flagReasonLines =
     billFlagSummary.flaggedBills > 0
       ? bills
-          .filter((r) => billFlags[r.id])
+          .filter((r) => billFlagSummary.countedPerBill[r.id])
           .map(
             (r) =>
               '<div class="bill-flag-reason" style="padding:2px 0 2px 22px;color:var(--text);font-weight:400"><strong>' +
               _escHtml(billMonthLabel(r, bills)) +
               '</strong>: ' +
-              billFlagReasonList(billFlags[r.id]).map(_escHtml).join(' | ') +
+              billFlagReasonList(billFlagSummary.countedPerBill[r.id]).map(_escHtml).join(' | ') +
               '</div>',
           )
           .join('')
       : '';
-  // Auto-corrected reads, listed in plain words so no hover is needed (same records as the cell marks).
-  const readCorrLines = bills
-    .map((r) =>
-      _readCorrectionRecords(r)
-        .map(
-          (rc) =>
-            '<div class="read-correction-line" style="padding:2px 0 2px 22px;color:var(--text);font-weight:400"><strong>' +
-            _escHtml(billMonthLabel(r, bills)) +
-            '</strong>: Auto-corrected ' +
-            _escHtml(rc.label) +
-            ' ' +
-            _escHtml(rc.rec.original) +
-            ' &rarr; ' +
-            _escHtml(rc.rec.corrected) +
-            ' (' +
-            _escHtml(rc.rec.reason) +
-            ')</div>',
-        )
-        .join(''),
-    )
-    .join('');
-  const readCorrBanner = readCorrLines
-    ? '<div id="billReadCorrectionBanner" style="padding:8px 14px;background:var(--accent-dim);border:1px solid var(--accent);border-radius:6px;margin:8px 14px;font-size:12px;color:var(--text);font-weight:500"><div style="display:flex;align-items:center;gap:8px"><span style="color:var(--accent)">◆</span><span>Meter reads the PDF reader misread were corrected from the meter chain and the usage. The cells are tinted. The reader value is kept.</span></div>' +
-      '<div class="bill-banner-list">' +
-      readCorrLines +
-      '</div></div>'
-    : '';
   const flagBanner =
     billFlagSummary.flaggedBills > 0
       ? '<div id="billFlagBanner" style="padding:8px 14px;background:var(--amber-dim);border:1px solid rgba(245,158,11,.25);border-radius:6px;margin:8px 14px;font-size:12px;color:var(--amber);font-weight:500" title="' +
@@ -4618,7 +4577,7 @@ function renderBillsPane(pane, m, bills, incl) {
         billFlagSummary.flaggedBills +
         ' bill' +
         (billFlagSummary.flaggedBills !== 1 ? 's' : '') +
-        ' flagged for review. The reason is listed below; hover a flagged row for the same text.</span></div>' +
+        (billFlagSummary.flaggedBills !== 1 ? ' have' : ' has') + ' a problem that changes usage, cost or dates. The reason is listed below; hover a flagged row for the same text.</span></div>' +
         '<div class="bill-banner-list">' +
         flagReasonLines +
         '</div></div>'
@@ -4646,7 +4605,6 @@ function renderBillsPane(pane, m, bills, incl) {
     stickyHdrInner +
     '</div>' +
     flagBanner +
-    readCorrBanner +
     '<div class="bills-thead-wrap" id="billsTheadWrap" style="overflow-x:auto;flex-shrink:0;">' +
     '<table class="ud-bill-tbl" id="billsHdrTbl" style="width:auto">' +
     tblHead +

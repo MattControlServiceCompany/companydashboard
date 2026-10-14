@@ -77,8 +77,22 @@ if (!/computeMeterFlagSummary\(m, getUDBldg\(/.test(ud))
   problems.push('app/utility-data.js: the Bills tab banner does not call computeMeterFlagSummary');
 if (!/const _mFlags = computeMeterFlagSummary\(/.test(ud))
   problems.push('app/utility-data.js: the meter pill does not call computeMeterFlagSummary');
-if (!/computeProjectFlagSummary\(bldgs\)/.test(ud))
-  problems.push('app/utility-data.js: the building and project badges do not call computeProjectFlagSummary');
+if (!/computeProjectFlagSummary\(bldgs, \(m\) => isBaselineExcluded\(/.test(ud))
+  problems.push('app/utility-data.js: the building and project badges do not call computeProjectFlagSummary with the baseline exclusion test');
+// one list of counted types, and every summary level skips a meter excluded from the baseline
+if ((keeper.match(/const BILL_COUNTED_FLAG_RULES\s*=/g) || []).length !== 1)
+  problems.push('computations/bill-flags.js must define BILL_COUNTED_FLAG_RULES exactly once');
+['usage_vs_same_month', 'read_continuity', 'cost_field_mismatch', 'water_sewer_parity', 'days_mismatch'].forEach((r) => {
+  const list = (keeper.match(/const BILL_COUNTED_FLAG_RULES\s*=\s*\[([^\]]*)\]/) || [])[1] || '';
+  if (list.includes("'" + r + "'")) problems.push('BILL_COUNTED_FLAG_RULES must not count ' + r);
+});
+if (!/computeBuildingFlagSummary\(b, \(m\) => isBaselineExcluded\(projId/.test(read('app/core.js')))
+  problems.push('app/core.js: the building row does not skip baseline-excluded meters');
+if (!/computeProjectFlagSummary\(getUDBldgs\(p\.id\), \(m\) => isBaselineExcluded\(/.test(read('app/energy-savings.js')))
+  problems.push('app/energy-savings.js: the sidebar project row does not skip baseline-excluded meters');
+// the building baseline count is built in one place (udBuildingBaselineChipHtml)
+if (/baselined|BL<\/span>/.test(read('app/core.js')))
+  problems.push('app/core.js: the building baseline chip must come from udBuildingBaselineChipHtml');
 if (!/function\s+computeProjectFlagSummary\s*\(/.test(keeper))
   problems.push('computations/bill-flags.js does not define computeProjectFlagSummary');
 if ((ud.match(/class="ud-flag-badge"/g) || []).length !== 1)

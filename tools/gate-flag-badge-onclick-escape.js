@@ -48,6 +48,9 @@ const cases = IDS.map((v) => ({ pid: v, bldgId: v, meterId: v }));
 cases.push({ pid: 'p', bldgId: 'x&quot;);window.__x=1;//', meterId: 'm', embed: true });
 for (const g of cases) {
   const html = vm.runInContext('udFlagBadgeHtml', ctx)({ flaggedBills: 1 }, g);
+  // a summary with zero counted bills draws no badge at all (an outlier-only bill counts 0)
+  if (vm.runInContext('udFlagBadgeHtml', ctx)({ flaggedBills: 0, flagCount: 0, perBill: { b1: [{}] } }, g) !== '')
+    problems.push('a summary with 0 counted bills must draw no badge');
   const m = /onclick="([^"]*)"/.exec(html);
   if (!m) { problems.push('no onclick attribute for ' + JSON.stringify(g)); continue; }
   const code = decodeOnce(m[1]);

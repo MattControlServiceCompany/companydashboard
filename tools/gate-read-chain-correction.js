@@ -1040,25 +1040,20 @@ ok(
   'a saved-bill builder in app/bill-analysis.js does not keep the read correction record',
 );
 const ud = read('app/utility-data.js');
-ok(/read-corrected-mark/.test(ud), 'the Bills table does not draw the correction marker');
+ok(/Corrected\. PDF reader value: /.test(ud), 'the Bills table does not give the corrected cell its hover text');
 ok(
-  /billReadCorrectionBanner/.test(ud) && /showReadCorrectionDetails/.test(ud),
-  'the Bills table has no Auto-corrected banner reachable by click',
+  !/billReadCorrectionBanner|read-corrected-mark|showReadCorrectionDetails/.test(ud) &&
+    !/billReadCorrectionBanner/.test(read('energy-department.html')),
+  'the Auto-corrected banner and its diamond mark must be gone (a corrected read changes no number)',
 );
-// the banner lists scroll inside a capped box: the correction list and the flag reason list share one class and one CSS rule
-ok(
-  /id="billReadCorrectionBanner"[^]*?<div class="bill-banner-list">/.test(ud),
-  'the Auto-corrected banner list is not wrapped in .bill-banner-list',
-);
+// the flag reason list scrolls inside a capped box
 ok(
   /id="billFlagBanner"[^]*?<div class="bill-banner-list">/.test(ud),
   'the flag banner list is not wrapped in .bill-banner-list',
 );
 ok(
-  /#billFlagBanner \.bill-banner-list,\s*#billReadCorrectionBanner \.bill-banner-list\s*\{[^}]*max-height:\s*120px;[^}]*overflow-y:\s*auto/.test(
-    read('energy-department.html'),
-  ),
-  'energy-department.html has no shared max-height/overflow rule for both banner lists',
+  /#billFlagBanner \.bill-banner-list\s*\{[^}]*max-height:\s*120px;[^}]*overflow-y:\s*auto/.test(read('energy-department.html')),
+  'energy-department.html has no max-height/overflow rule for the flag banner list',
 );
 ['app/csv-import.js', 'app/bill-corrections-review.js'].forEach((f) => {
   ok(/clearReadCorrectionRecords\(/.test(read(f)), f + ' edit path does not clear the read correction record');

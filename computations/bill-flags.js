@@ -1,8 +1,10 @@
 // computations/bill-flags.js - the ONE bill-flag engine (pure, no DOM).
 //
-// computeMeterFlagSummary(meter, building) -> { flaggedBills, flagCount, perBill }
-// computeBuildingFlagSummary(building)     -> { flaggedBills, flagCount, byMeter, firstFlaggedMeterId }
-// computeProjectFlagSummary(buildings)     -> { flaggedBills, flagCount, byBuilding, firstFlagged }
+// computeMeterFlagSummary(meter, building) -> { flaggedBills, flagCount, perBill, countedPerBill }
+//   perBill = every flag; countedPerBill / flaggedBills / flagCount = only BILL_COUNTED_FLAG_RULES.
+// computeBuildingFlagSummary(building, isExcluded) -> { flaggedBills, flagCount, byMeter, firstFlaggedMeterId }
+// computeProjectFlagSummary(buildings, isExcluded) -> { flaggedBills, flagCount, byBuilding, firstFlagged }
+//   isExcluded(meter): a baseline-excluded meter adds nothing to the building or project count.
 //
 // Every flag count on the site calls these: the Bills tab banner, the meter pill, the building badge,
 // the Review Bill Corrections panel and the data-quality score. A flag means "look at this bill":
@@ -69,6 +71,27 @@ const BILL_FLAG_RULES = {
   usage_vs_same_month: { label: 'Usage', severity: 'warn' },
   fac_kw_missing: { label: 'Facilities kW', severity: 'warn' },
 };
+// The ONE list of flag types that are counted (sidebar, building row, meter pill, Bills banner). A type is here only when
+// the problem changes usage, kW, cost, billing dates or a missing bill, or the baseline rate (charge_vs_usage and
+// usage_charge_mismatch drop the bill from the baseline rates). Left out: usage_vs_same_month and water_sewer_parity
+// (statistical), days_mismatch, cost_field_mismatch (dead copy of a gas field) and the read notes read_continuity,
+// read_rollback and read_usage_mismatch. A left-out flag still shows in that bill row's own hover. printed_read_mismatch is
+// counted: the rule emits it only when the kWh was computed from reads that disagree (the usage is in doubt).
+const BILL_COUNTED_FLAG_RULES = [
+  'dates_missing',
+  'period_length',
+  'period_overlap',
+  'period_gap',
+  'duplicate_bill',
+  'charge_sum_mismatch',
+  'printed_read_mismatch',
+  'usage_missing',
+  'usage_negative',
+  'cost_missing',
+  'charge_vs_usage',
+  'usage_charge_mismatch',
+  'fac_kw_missing',
+];
 // Persisted by the facilities-kW backfill (app/csv-import.js); the only flag still stored on the bill.
 const FAC_KW_MISSING_STORED_ID = 'facKWMissing_warn';
 
@@ -843,18 +866,28 @@ function _computeMeterFlagSummaryFresh(meter, building) {
     perBill[id] = perBill[id].filter((f) => !dismissed.has(f.dismissId));
     if (!perBill[id].length) delete perBill[id];
   });
-  const ids = Object.keys(perBill);
+  // perBill keeps EVERY flag (the bill row's own hover and dots). The counts and the banner use only the counted types.
+  const countedPerBill = {};
+  Object.keys(perBill).forEach((id) => {
+    const hit = perBill[id].filter((f) => BILL_COUNTED_FLAG_RULES.includes(f.rule));
+    if (hit.length) countedPerBill[id] = hit;
+  });
+  const ids = Object.keys(countedPerBill);
   return {
     flaggedBills: ids.length,
-    flagCount: ids.reduce((s, k) => s + perBill[k].length, 0),
+    flagCount: ids.reduce((s, k) => s + countedPerBill[k].length, 0),
     perBill,
+    countedPerBill,
   };
 }
 
 // The only loop over a building's meters.
-function computeBuildingFlagSummary(building) {
+// isExcluded(meter) -> true for a meter left out of the baseline (the caller passes isBaselineExcluded for its project);
+// such a meter adds nothing to the building or project count. byMeter still holds its own summary.
+function computeBuildingFlagSummary(building, isExcluded) {
   const out = { flaggedBills: 0, flagCount: 0, byMeter: {}, firstFlaggedMeterId: null };
   (building.meters || []).forEach((m) => {
+    if (typeof isExcluded === 'function' && isExcluded(m)) return;
     const s = computeMeterFlagSummary(m, building);
     out.byMeter[m.id] = s;
     out.flaggedBills += s.flaggedBills;
@@ -865,10 +898,10 @@ function computeBuildingFlagSummary(building) {
 }
 // The only loop over a project's buildings. Sums computeBuildingFlagSummary, so the project badge, the building badge,
 // the meter pill and the Bills banner always agree. firstFlagged = { bldgId, meterId } of the first flagged meter.
-function computeProjectFlagSummary(buildings) {
+function computeProjectFlagSummary(buildings, isExcluded) {
   const out = { flaggedBills: 0, flagCount: 0, byBuilding: {}, firstFlagged: null };
   (buildings || []).forEach((b) => {
-    const s = computeBuildingFlagSummary(b);
+    const s = computeBuildingFlagSummary(b, isExcluded);
     out.byBuilding[b.id] = s;
     out.flaggedBills += s.flaggedBills;
     out.flagCount += s.flagCount;
@@ -894,17 +927,12 @@ function computeMeterRateExclusions(meter, building) {
   });
   return out;
 }
-// Text for the hover on every badge and pill. The number shown is flagged BILLS; flags only appear here.
+// Text for the hover on every flag badge and pill. The number shown is counted BILLS (BILL_COUNTED_FLAG_RULES).
 function billFlagHoverText(summary) {
   return (
     summary.flaggedBills +
-    ' bill' +
-    (summary.flaggedBills === 1 ? '' : 's') +
-    ' flagged for review (' +
-    summary.flagCount +
-    ' flag' +
-    (summary.flagCount === 1 ? '' : 's') +
-    ')'
+    (summary.flaggedBills === 1 ? ' bill with a problem that changes' : ' bills with problems that change') +
+    ' usage, cost or dates'
   );
 }
 // The ONE plain-language reason list for a bill's flags (one string per flag, dismissed flags are already removed).

@@ -3255,21 +3255,9 @@ function renderProjUDBldgNav(projId) {
     .map((b) => {
       const allMeters = b.meters || [];
       const totalMCount = allMeters.length;
-      const blMeters = allMeters.filter((m) => !isBaselineExcluded(projId, m.id));
-      const blMCount = blMeters.length;
-      const mWithBl = blMeters.filter(
-        (m) => m.baseline && Array.isArray(m.baseline.months) && m.baseline.months.length,
-      ).length;
-      const blBadge =
-        blMCount > 0
-          ? mWithBl === blMCount
-            ? `<span style="color:var(--green);font-size:10px" title="All baseline meters have baselines set">✓ ${mWithBl}/${blMCount} BL</span>`
-            : mWithBl > 0
-              ? `<span style="color:var(--amber);font-size:10px" title="${mWithBl} of ${blMCount} baseline meters have baselines set">⚠ ${mWithBl}/${blMCount} BL</span>`
-              : `<span style="color:var(--text3);font-size:10px" title="No baselines set">— 0/${blMCount} BL</span>`
-          : '';
+      const blBadge = udBuildingBaselineChipHtml(projId, b);
       // Flagged BILLS in this building: the ONE shared flag function (computations/bill-flags.js).
-      const bFlags = computeBuildingFlagSummary(b);
+      const bFlags = computeBuildingFlagSummary(b, (m) => isBaselineExcluded(projId, m.id));
       const flagBadge = udFlagBadgeHtml(
         bFlags,
         bFlags.firstFlaggedMeterId !== null && { pid: projId, bldgId: b.id, meterId: bFlags.firstFlaggedMeterId, embed: true },

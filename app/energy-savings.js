@@ -2132,7 +2132,7 @@ function renderSidebarFolders() {
       const icon = getFacilityIcon(p.type);
       // Flagged BILLS in this project: the ONE shared flag function (computations/bill-flags.js).
       // The orange .spfi-badge is the open task count; this amber warning badge is a different thing.
-      const fl = computeProjectFlagSummary(getUDBldgs(p.id));
+      const fl = computeProjectFlagSummary(getUDBldgs(p.id), (m) => isBaselineExcluded(p.id, m.id));
       const flagBadge = udFlagBadgeHtml(
         fl,
         fl.firstFlagged && { pid: p.id, bldgId: fl.firstFlagged.bldgId, meterId: fl.firstFlagged.meterId, embed: true },
@@ -2142,7 +2142,7 @@ function renderSidebarFolders() {
             <span class="spfi-icon">${icon}</span>
             <span class="spfi-name" title="${_escHtml(p.name)}">${_escHtml(nm)}</span>
             ${flagBadge}
-            ${pt > 0 ? `<span class="spfi-badge">${pt}</span>` : ''}
+            ${pt > 0 ? `<span class="spfi-badge" title="${pt} open task${pt === 1 ? '' : 's'}">${pt}</span>` : ''}
           </button>`;
     })
     .join('');
