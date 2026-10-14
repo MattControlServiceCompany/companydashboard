@@ -2506,6 +2506,15 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.14.119', date: '2026-10-14', title: 'Fan Savings template and fans as their own end use',
+    items: [
+      { type: 'feature', text: 'ECM templates: new Fan Savings template. Pick Equipment Matrix units. It estimates adding variable speed to constant-speed fans, replacing two-speed motors, and duct static pressure reset. Every input shows where it came from (trend, Equipment Matrix, or default). Savings count in the total only when a unit\'s drive status and size are confirmed. The rest show as "possible".' },
+      { type: 'feature', text: 'HVAC Load Estimate: fans are now their own end use, taken from the Equipment Matrix, with no double counting.' },
+      { type: 'feature', text: 'Equipment Matrix: new "Has variable speed" setting for each unit. Drives are also found from point names.' },
+      { type: 'fix', text: 'BAS Trends: the trend import accepts fan High/Low enable and fan amps, and no longer stops on some files.' },
+      { type: 'change', text: 'BAS Trends: the duct static reset, after-hours and supply air reset estimates now use the same fan calculation as the Fan Savings template. Some estimates are lower.' }
+    ]
+  },
   { v: 'v2026.10.14.118', date: '2026-10-14', title: 'ECM templates and BAS Calc use the measured HVAC Load Estimate',
     items: [
       { type: 'feature', text: 'ECM templates and BAS Calc: existing cooling and heating amounts now fill from each building\'s HVAC Load Estimate, measured from the bills, with the source shown. A value you type stays.' },
