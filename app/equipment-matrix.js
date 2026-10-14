@@ -5348,6 +5348,8 @@ function emGetColDefs(projId) {
   defs.push({ key: 'phase', label: 'Phase', group: 'physical', width: 70 });
   defs.push({ key: 'amps', label: 'Amps', group: 'physical', width: 70 });
   defs.push({ key: 'hpTons', label: 'Horsepower/Tons', group: 'physical', width: 80 });
+  // yes / no / unknown. The Fan Savings template reads it (computations/fan-savings.js) and writes it (emSetAssetEdit).
+  defs.push({ key: 'hasVfd', label: 'Has variable speed', group: 'physical', width: 90 });
 
   // Lifecycle
   defs.push({ key: 'installDate', label: 'Install Date', group: 'lifecycle', width: 100 });
@@ -10584,14 +10586,19 @@ function emHandleSort(colIdx) {
   emRenderTable(data, _emFilters);
 }
 
-function emHandleCellEdit(rowId, fieldKey, newValue) {
-  var pid = window._emActivePid;
-  if (!pid) return;
-  var data = emLoadMatrix(pid);
+// The ONE writer of a unit field the user sets (data.edits['<rowId>::<field>']): the table cell edit and the Fan Savings
+// template's "Has variable speed" choice both come here, so the value is stored once.
+function emSetAssetEdit(projId, rowId, fieldKey, newValue) {
+  if (!projId) return Promise.resolve();
+  var data = emLoadMatrix(projId);
+  if (!data) return Promise.resolve();
   if (!data.edits) data.edits = {};
-  var editKey = rowId + '::' + fieldKey;
-  data.edits[editKey] = newValue.trim();
-  emSaveMatrix(pid, data).catch(() => {});
+  data.edits[rowId + '::' + fieldKey] = String(newValue).trim();
+  return emSaveMatrix(projId, data).catch(() => {});
+}
+
+function emHandleCellEdit(rowId, fieldKey, newValue) {
+  emSetAssetEdit(window._emActivePid, rowId, fieldKey, newValue);
 }
 
 function emHandleSaveEdits() {

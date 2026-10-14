@@ -106,7 +106,19 @@ function makeSandbox(opts) {
       store[k] = JSON.parse(JSON.stringify(v));
     },
     DB: { get: (k, d) => d },
-    getUDBldg: (p, b) => (b === 'b1' ? { id: 'b1', name: BLDG } : b === 'b2' ? { id: 'b2', name: 'Empty Hall' } : null),
+    getUDBldg: (p, b) =>
+      b === 'b1'
+        ? { id: 'b1', name: BLDG, sqft: 50000 }
+        : b === 'b2'
+          ? { id: 'b2', name: 'Empty Hall' }
+          : b === 'b3'
+            ? { id: 'b3', name: 'Other Hall' }
+            : null,
+    getUDBldgs: () => [
+      { id: 'b1', name: BLDG },
+      { id: 'b2', name: 'Empty Hall' },
+      { id: 'b3', name: 'Other Hall' },
+    ],
     hvacEstimateForBuilding: (p, b) =>
       b === 'b1' && opts.hvacKwh
         ? {
@@ -118,9 +130,14 @@ function makeSandbox(opts) {
         : null,
     resolveHvacLoadData: () => ({ source: 'none', label: 'No utility data yet' }),
     hvlBasisLabel: () => 'Measured',
-    emLoadMatrix: () => ({ rows: opts.rows || makeRows() }),
+    emLoadMatrix: () => ({ rows: opts.rows || makeRows(), edits: opts.edits || {} }),
     emGetNormalizedPoints: (row) => row.pts || {},
-    emGetCellValByDef: (row, def) => (row[def.key] != null ? row[def.key] : ''),
+    emGetCellValByDef: (row, def, edits) =>
+      edits && edits[row.id + '::' + def.key] !== undefined
+        ? edits[row.id + '::' + def.key]
+        : row[def.key] != null
+          ? row[def.key]
+          : '',
     _emNormBldgNameForJoin: (n) => String(n).toLowerCase().trim(),
   };
   sb.btGetData = (p) => sb.sget('en_bas_' + p, { buildings: {} });
@@ -603,6 +620,106 @@ async function main() {
       /Measured trend|Equipment Matrix value|Default/.test(field) && /What would refine this estimate/.test(field),
       'picker names data levels and what would refine the estimate',
     );
+  }
+
+  // ---------------- 7b. unsized fans get a stated Default estimate; the drive is a Default unless the user sets it ----------------
+  console.log('--- 7b. unsized fans and the drive field ---');
+  {
+    const ahu = (id, name, cfm, bldg) => ({
+      id: id,
+      building: bldg || BLDG,
+      equipName: name,
+      category: 'ahu',
+      pts: cfm ? { supplyFanCFM: String(cfm) } : {},
+      pointsRaw: {},
+    });
+    const unitX = (eu) => eu.units.find((u) => u.name === 'AHU-X');
+    // (a) sibling: three sized AHUs (4000, 8000, 12000 cfm) and one unsized AHU in the same building
+    const rowsA = [ahu('a1', 'AHU-A', 4000), ahu('a2', 'AHU-B', 8000), ahu('a3', 'AHU-C', 12000), ahu('a4', 'AHU-X', 0)];
+    const sbA = makeSandbox({ rows: rowsA, hvacKwh: 900000 });
+    const euA = sbA.getEndUse('p', 'b1', 'fans');
+    const xA = unitX(euA);
+    ok(
+      xA.ok && xA.estimate === 'sibling' && xA.kwLevel === 'default',
+      'unsized AHU: sibling estimate, tagged Default',
+      JSON.stringify([xA.ok, xA.estimate, xA.kwLevel]),
+    );
+    ok(near(xA.kw, sbA.fanKwFromCfm(8000)), 'sibling estimate is the median kW of the sized AHUs', xA.kw);
+    ok(
+      /median of 3 sized AHU units in this building/.test(xA.kwHow) && /Default/.test(xA.kwHow),
+      'sibling basis is shown',
+      xA.kwHow,
+    );
+    ok(/1 of them a Default estimate/.test(euA.sourceLabel), 'the end use label counts the estimated units', euA.sourceLabel);
+    const euA2 = makeSandbox({ rows: rowsA.concat([ahu('a5', 'AHU-Y', 0)]), hvacKwh: 900000 }).getEndUse('p', 'b1', 'fans');
+    ok(near(euA2.units.find((u) => u.name === 'AHU-Y').kw, xA.kw), 'two unsized AHUs get the same sibling median');
+    const euA3 = makeSandbox({
+      rows: [ahu('a1', 'AHU-A', 4000), ahu('a2', 'AHU-B', 8000), ahu('a3', 'AHU-C', 12000), ahu('a4', 'AHU-X', 20000)],
+      hvacKwh: 900000,
+    }).getEndUse('p', 'b1', 'fans');
+    ok(!unitX(euA3).estimate && unitX(euA3).kwLevel === 'matrix', 'with its own airflow the unit leaves the estimate');
+    // (b) project: no sized DOAS here, one in another building
+    const doas = (id, name, bldg, cfm) => ({
+      id: id,
+      building: bldg,
+      equipName: name,
+      category: 'doas',
+      pts: cfm ? { supplyFanCFM: String(cfm) } : {},
+      pointsRaw: {},
+    });
+    const sbB = makeSandbox({ rows: [doas('d1', 'AHU-X', BLDG, 0), doas('d2', 'DOAS-F', 'Other Hall', 3000)], hvacKwh: 900000 });
+    const xB = unitX(sbB.getEndUse('p', 'b1', 'fans'));
+    ok(
+      xB.estimate === 'project' && near(xB.kw, sbB.fanKwFromCfm(3000)) && /other buildings of the project/.test(xB.kwHow),
+      'project estimate: median of the same type in the other buildings',
+      xB.kwHow,
+    );
+    // (d) area share: nothing of the type anywhere; a share of the HVAC electric end use, split over the unsized units
+    const sbD = makeSandbox({ rows: [ahu('e1', 'AHU-X', 0), ahu('e2', 'AHU-Y', 0)], hvacKwh: 100000 });
+    const euD = sbD.getEndUse('p', 'b1', 'fans');
+    const xD = unitX(euD);
+    ok(xD.estimate === 'area' && xD.kwLevel === 'default', 'area estimate when no sibling exists');
+    ok(
+      near(xD.kwh, (100000 * sbD.FAN_HVAC_ELECTRIC_FAN_SHARE) / 2, 1e-6) &&
+        near(euD.annual, 100000 * sbD.FAN_HVAC_ELECTRIC_FAN_SHARE, 1e-6),
+      'the two unsized units split the share of the HVAC electric end use',
+      JSON.stringify([xD.kwh, euD.annual]),
+    );
+    ok(
+      /kWh per sq ft/.test(xD.kwHow) && /split across 2 unsized units/.test(xD.kwHow),
+      'area basis shows kWh per sq ft and the split',
+      xD.kwHow,
+    );
+    // no sibling and no HVAC electric end use: no number is invented, the answer says so
+    const euNoHv = makeSandbox({ rows: [ahu('f1', 'AHU-X', 0)] }).getEndUse('p', 'b1', 'fans');
+    ok(
+      euNoHv.source === 'none' && /None of the 1 supply-fan rows/.test(euNoHv.sourceLabel),
+      'no sibling and no HVAC electric end use: not sized, said so',
+      euNoHv.sourceLabel,
+    );
+    // the cap still holds
+    const euCap = makeSandbox({ rows: rowsA, hvacKwh: 10000 }).getEndUse('p', 'b1', 'fans');
+    ok(near(euCap.annual, 10000, 1e-6) && euCap.capFactor < 1, 'the fan end use stays capped by the HVAC electric end use');
+
+    // drive: a speed point alone is a Default; the unit field decides; unknown falls back to the assumption
+    const spd = (more) =>
+      Object.assign(
+        { id: 'v1', building: BLDG, equipName: 'AHU-S', category: 'ahu', pts: { supplyFanCFM: '5000', supplyFanSpeed: '60' }, pointsRaw: {} },
+        more || {},
+      );
+    const firstUnit = (o) => makeSandbox(Object.assign({ hvacKwh: 900000 }, o)).getEndUse('p', 'b1', 'fans').units[0];
+    const d0 = firstUnit({ rows: [spd()] });
+    ok(
+      d0.vfd === 'yes' && d0.vfdLevel === 'default' && /Drive assumed from speed point/.test(d0.vfdHow),
+      'speed point alone: drive assumed, tagged Default',
+      d0.vfdHow,
+    );
+    const d1 = firstUnit({ rows: [spd()], edits: { 'v1::hasVfd': 'no' } });
+    ok(d1.vfd === 'no' && d1.vfdLevel === 'matrix' && d1.hasVfd === 'no', 'the user sets No: constant speed, Equipment Matrix level', d1.vfdHow);
+    const d2 = firstUnit({ rows: [spd({ pts: { supplyFanCFM: '5000' } })], edits: { 'v1::hasVfd': 'yes' } });
+    ok(d2.vfd === 'yes' && d2.vfdLevel === 'matrix', 'the user sets Yes with no speed point: has a drive');
+    const d3 = firstUnit({ rows: [spd()], edits: { 'v1::hasVfd': 'unknown' } });
+    ok(d3.vfd === 'yes' && d3.vfdLevel === 'default' && d3.hasVfd === null, 'Unknown: back to the assumption');
   }
 
   // ---------------- 8. the gate ----------------

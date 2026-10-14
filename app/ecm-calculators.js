@@ -2566,6 +2566,33 @@ function renderEcmCalculator(
     );
   });
 
+  // Fan Savings: "Has variable speed" of a unit is stored once in the Equipment Matrix (emSetAssetEdit); the rows redraw
+  // from the stored value and the results shown for the old value go away.
+  const fanForm = container.querySelector("#ecm-calc-form-wrap");
+  if (fanForm && tmpl.id === "fan_savings")
+    fanForm.addEventListener("change", (ev) => {
+      const sel = ev.target;
+      if (!sel || !sel.classList || !sel.classList.contains("fan-hasvfd")) return;
+      emSetAssetEdit(
+        ctx.projId,
+        sel.getAttribute("data-fan-id"),
+        "hasVfd",
+        sel.value,
+      ).then(() => {
+        const keep = new Set(
+          Array.from(container.querySelectorAll(".fan-unit-pick"))
+            .filter((c) => c.checked)
+            .map((c) => c.getAttribute("data-fan-id")),
+        );
+        const old = container.querySelector("#ecm-fanunits");
+        old.outerHTML = ecmFanUnitsFieldHtml(ctx);
+        container.querySelectorAll(".fan-unit-pick").forEach((c) => {
+          c.checked = keep.has(c.getAttribute("data-fan-id"));
+        });
+        container.querySelector("#ecm-results-wrap").innerHTML = "";
+      });
+    });
+
   // Wire calculate button
   container.querySelector("#ecm-calc-btn").addEventListener("click", () => {
     const inputs = {};
@@ -2874,7 +2901,14 @@ function ecmFanRefineHints(units) {
         plural(noHours, "unit", "units") +
         " to replace the default run hours.",
     );
-  const noAmps = count((u) => u.kwLevel !== "trend");
+  const estimated = count((u) => u.estimate);
+  if (estimated)
+    hints.push(
+      "Fill the amps, a supply fan airflow or a horsepower in the Equipment Matrix for " +
+        plural(estimated, "unit", "units") +
+        " now estimated from siblings or the building HVAC electric end use.",
+    );
+  const noAmps = count((u) => u.kwLevel !== "trend" && !u.estimate);
   if (noAmps)
     hints.push(
       "Import a fan amps trend, and fill the voltage and phase in the Equipment Matrix, for " +
@@ -2971,6 +3005,24 @@ function ecmFanUnitsFieldHtml(ctx) {
           u.vfdLevel,
           u.vfdHow,
         ) +
+        '<div class="fan-how"><label>Has variable speed <select class="fan-hasvfd" data-fan-id="' +
+        _escHtml(u.id) +
+        '" aria-label="Has variable speed: ' +
+        _escHtml(u.name) +
+        '">' +
+        [["", "Unknown"], ["yes", "Yes"], ["no", "No"]]
+          .map(
+            (o) =>
+              '<option value="' +
+              o[0] +
+              '"' +
+              ((u.hasVfd || "") === o[0] ? " selected" : "") +
+              ">" +
+              o[1] +
+              "</option>",
+          )
+          .join("") +
+        "</select></label></div>" +
         (u.twoSpeed
           ? ""
           : '<div class="fan-how">Speed profile:</div>' +
@@ -3010,7 +3062,7 @@ function ecmFanUnitsFieldHtml(ctx) {
           unsized.length +
           ")</strong>: " +
           unsized.map((u) => _escHtml(u.name || "Unit")).join(", ") +
-          ". Each needs amps, a supply fan airflow or a horsepower in the Equipment Matrix.</div>"
+          ". Each needs amps, a supply fan airflow or a horsepower in the Equipment Matrix, and no sibling or HVAC electric end use gives an estimate.</div>"
         : "") +
       (hints.length
         ? '<div id="ecm-fan-hints" style="font-size:12px;color:var(--text2);margin-top:8px"><strong style="color:var(--text)">What would refine this estimate</strong><ul style="margin:4px 0 0 18px;padding:0">' +

@@ -4,6 +4,8 @@
 // baseline-period rates. This file holds the fan rules both ends share:
 //   fanReadUnits      reads the building's supply-fan rows from the Equipment Matrix and the BAS Trends daily summaries
 //   fanUnitModel      one unit: fan kW, run hours, speed drive, speed profile, two-speed split, each with its data level
+//   fanModelUnits     every unit of a building: fanUnitModel, plus a stated Default estimate for a unit with no amps, airflow
+//                     or horsepower (never a silent 0)
 //   fanSavingsForUnits the three savings measures of the template, per unit
 // getEndUse (computations/end-use.js) adds the units up into the fan end use. The template (app/ecm-calculators.js)
 // calls getEndUse and fanSavingsForUnits. tools/gate-single-fan-model.js fails when another file keeps its own fan kW
@@ -40,6 +42,8 @@ var FAN_TWO_SPEED_VFD_STEPS = 8; // steps across Low to High when a drive replac
 var FAN_MONTH_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]; // a fan runs all year: its month profile is days in month
 var FAN_DAYS_PER_YEAR = 365;
 
+var FAN_HVAC_ELECTRIC_FAN_SHARE = 0.25; // share of a building's HVAC electric end use that the supply fans use (stated assumption; the last step of the unsized-fan estimate)
+
 var FAN_LEVEL_LABEL = { trend: 'Measured trend', matrix: 'Equipment Matrix value', default: 'Default' };
 
 function _fanNum(v) {
@@ -57,6 +61,16 @@ function _fanOn(v) {
   if (/^(off|inactive|stop|stopped|false|no|disabled|unoccupied|unocc)$/i.test(s)) return false;
   var n = parseFloat(s);
   return isFinite(n) ? n > 0.5 : null;
+}
+
+// 'yes' / 'no' / null (unknown or blank) for the unit field "Has variable speed"
+function _fanYesNo(v) {
+  var s = String(v == null ? '' : v)
+    .trim()
+    .toLowerCase();
+  if (s === 'yes' || s === 'y' || s === 'true') return 'yes';
+  if (s === 'no' || s === 'n' || s === 'false') return 'no';
+  return null;
 }
 
 function _fanPhase(v) {
@@ -207,7 +221,7 @@ function fanReadUnits(projId, bldgId) {
     out.note = 'No Equipment Matrix rows for this project';
     return out;
   }
-  var edits = typeof DB !== 'undefined' && DB.get ? DB.get('en_eqmatrix_edits_' + projId, {}) : {};
+  var edits = data.edits || {};
   var wantName = _emNormBldgNameForJoin(b.name);
   var trends = _fanTrendByTag(projId, bldgId);
   var hasWin = typeof window !== 'undefined';
@@ -233,6 +247,7 @@ function fanReadUnits(projId, bldgId) {
         phase: _fanPhase(asset('phase')),
         hp: FAN_HP_CATEGORIES.indexOf(row.category) >= 0 ? _fanNum(asset('hpTons')) : null,
         speedPoint: speedPoint,
+        hasVfd: _fanYesNo(asset('hasVfd')),
         status: _fanOn(pts.supplyFanStatus),
         occupied: _fanOn(pts.scheduledOccupied),
         hiLoPoints: _fanRowHasHiLo(row),
@@ -252,12 +267,15 @@ function fanReadUnits(projId, bldgId) {
  * kW:     measured amps x volts x phase (trend amps first, then the matrix amps), else cfm x W per cfm, else nameplate HP.
  * Hours:  BAS trend run hours (status, enable, amps or speed), else a fan the matrix read running while unoccupied
  *         (runs all the time), else the stated default.
- * Drive:  a speed trend that moves, or a speed point in the matrix, means a variable-speed drive.
+ * Drive:  a speed trend that moves means a variable-speed drive; else the unit field "Has variable speed" (yes or no)
+ *         the user set; else a speed point in the matrix is taken as a drive (a Default: a speed point may be soft-start only).
+ * Estimate: `est` ({kw, how, rule} or {annualKwh, how, rule}, from fanModelUnits) sizes a unit that has no amps, airflow
+ *         or horsepower. The model carries `estimate` (the rule) and its power is tagged Default with the basis in kwHow.
  * @returns {Object} model; ok:false (with `missing`) when the unit cannot be sized
  */
-function fanUnitModel(raw) {
+function fanUnitModel(raw, est) {
   var t = raw.trend;
-  var m = { id: raw.id, name: raw.name, category: raw.category, ok: false, missing: '' };
+  var m = { id: raw.id, name: raw.name, category: raw.category, hasVfd: raw.hasVfd || null, ok: false, missing: '' };
 
   // ---- fan kW ----
   var ampsRun = t && t.runAmps ? { v: t.runAmps, level: 'trend', how: 'trend running amps' } : null;
@@ -309,6 +327,12 @@ function fanUnitModel(raw) {
       ', power factor ' +
       MOTOR_DEFAULT_POWER_FACTOR +
       ' (default)';
+  } else if (est) {
+    m.estimate = est.rule;
+    m.kw = est.kw != null ? est.kw : 1; // an annual-energy estimate gets its kW once the hours are known (below)
+    m.kwBasis = 'operating';
+    m.kwLevel = 'default';
+    m.kwHow = est.how;
   } else {
     m.kw = null;
     m.kwBasis = null;
@@ -340,10 +364,14 @@ function fanUnitModel(raw) {
     m.vfd = 'yes';
     m.vfdLevel = 'trend';
     m.vfdHow = 'trend fan speed moves';
+  } else if (raw.hasVfd) {
+    m.vfd = raw.hasVfd;
+    m.vfdLevel = 'matrix';
+    m.vfdHow = 'Has variable speed: ' + raw.hasVfd + ' (set for this unit in the Equipment Matrix)';
   } else if (raw.speedPoint) {
     m.vfd = 'yes';
-    m.vfdLevel = 'matrix';
-    m.vfdHow = 'the matrix has a fan speed point';
+    m.vfdLevel = 'default';
+    m.vfdHow = 'Drive assumed from speed point (a speed point may be soft-start only; set Has variable speed to change it)';
   } else if (tSpeed) {
     m.vfd = 'no';
     m.vfdLevel = 'trend';
@@ -402,9 +430,144 @@ function fanUnitModel(raw) {
   if (m.twoSpeed) f = m.twoSpeed.lowShare * fanPowerFraction(m.twoSpeed.ratio, opts) + (1 - m.twoSpeed.lowShare);
   else if (m.vfd === 'yes' && m.kwBasis === 'full') f = m.profileFraction;
   m.baselineFraction = f;
+  if (est && est.annualKwh != null) m.kw = est.annualKwh / (m.hours * f);
   m.kwh = m.kw * m.hours * f;
   m.ok = m.kw > 0 && m.hours > 0;
   return m;
+}
+
+function _fanMedian(a) {
+  var s = a.slice().sort(function (x, y) {
+    return x - y;
+  });
+  var n = s.length;
+  return n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2;
+}
+
+function _fanRound1(v) {
+  return Math.round(v * 10) / 10;
+}
+
+/**
+ * Every unit of one building, modelled. A unit with amps, airflow or horsepower is sized by fanUnitModel alone. A unit
+ * with none of them is NOT left at 0: it gets a stated Default estimate, the first rule that applies (v10 criteria matrix,
+ * sibling rule), and the estimate refines itself when the real data arrives:
+ *   (a) the median fan kW of the sized units of the same equipment type in this building
+ *   (b) the median fan kW of the sized units of the same equipment type in the other buildings of the project
+ *   (c) the airflow implied by the served VAV boxes: NOT available, the Equipment Matrix has no link from a box to its AHU
+ *   (d) a share (FAN_HVAC_ELECTRIC_FAN_SHARE) of the building's HVAC electric end use, less the fans already sized, split equally
+ *       across the units still unsized (kWh per sq ft is shown); needs the HVAC electric kWh
+ * A sibling is a unit with its own data (not an estimate). The end use caps the sum by the HVAC electric end use.
+ * @param {string|number} projId
+ * @param {string} bldgId
+ * @param {{units:Array<Object>}} read - fanReadUnits result of the building
+ * @param {number|null} hvacAnnual - the building's HVAC electric kWh per year, or null
+ * @returns {Array<Object>} fanUnitModel results, in the order of read.units
+ */
+function fanModelUnits(projId, bldgId, read, hvacAnnual) {
+  var models = read.units.map(function (u) {
+    return fanUnitModel(u);
+  });
+  var pending = [];
+  models.forEach(function (m, i) {
+    if (m.kw == null) pending.push(i);
+  });
+  if (!pending.length) return models;
+  var kwOf = function (list, category) {
+    return list
+      .filter(function (m) {
+        return m.ok && m.category === category;
+      })
+      .map(function (m) {
+        return m.kw;
+      });
+  };
+  var other = null; // sized models of the other buildings, read once
+  var otherModels = function () {
+    if (other) return other;
+    other = [];
+    var all = typeof getUDBldgs === 'function' ? getUDBldgs(projId) : [];
+    all.forEach(function (ob) {
+      if (String(ob.id) === String(bldgId)) return;
+      fanReadUnits(projId, ob.id).units.forEach(function (ru) {
+        other.push(fanUnitModel(ru));
+      });
+    });
+    return other;
+  };
+  var unresolved = [];
+  var here = {}; // sibling kW lists by category: own-data units only, so one estimate never feeds another
+  pending.forEach(function (i) {
+    var cat = models[i].category;
+    var est = null;
+    if (!here[cat]) here[cat] = kwOf(models, cat);
+    if (here[cat].length) {
+      est = {
+        rule: 'sibling',
+        kw: _fanMedian(here[cat]),
+        how:
+          'median of ' +
+          here[cat].length +
+          ' sized ' +
+          cat.toUpperCase() +
+          ' unit' +
+          (here[cat].length === 1 ? '' : 's') +
+          ' in this building: ' +
+          _fanRound1(_fanMedian(here[cat])) +
+          ' kW (Default)',
+      };
+    } else {
+      var far = kwOf(otherModels(), cat);
+      if (far.length)
+        est = {
+          rule: 'project',
+          kw: _fanMedian(far),
+          how:
+            'median of ' +
+            far.length +
+            ' sized ' +
+            cat.toUpperCase() +
+            ' unit' +
+            (far.length === 1 ? '' : 's') +
+            ' in the other buildings of the project: ' +
+            _fanRound1(_fanMedian(far)) +
+            ' kW (Default)',
+        };
+    }
+    if (est) models[i] = fanUnitModel(read.units[i], est);
+    else unresolved.push(i);
+  });
+  if (unresolved.length && hvacAnnual > 0) {
+    var have = models.reduce(function (s, m) {
+      return s + (m.ok ? m.kwh : 0);
+    }, 0);
+    var each = Math.max(0, FAN_HVAC_ELECTRIC_FAN_SHARE * hvacAnnual - have) / unresolved.length;
+    var b = typeof getUDBldg === 'function' ? getUDBldg(projId, bldgId) : null;
+    var sqft = b ? parseFloat(b.sqft) || 0 : 0;
+    if (each > 0)
+      unresolved.forEach(function (i) {
+        models[i] = fanUnitModel(read.units[i], {
+          rule: 'area',
+          annualKwh: each,
+          how:
+            Math.round(FAN_HVAC_ELECTRIC_FAN_SHARE * 100) +
+            '% of the building HVAC electric end use (' +
+            Math.round(hvacAnnual).toLocaleString() +
+            ' kWh' +
+            (sqft > 0
+              ? ', ' + Math.round((FAN_HVAC_ELECTRIC_FAN_SHARE * hvacAnnual * 100) / sqft) / 100 + ' kWh per sq ft'
+              : '') +
+            '), less the fans already sized, split across ' +
+            unresolved.length +
+            ' unsized unit' +
+            (unresolved.length === 1 ? '' : 's') +
+            ': ' +
+            Math.round(each).toLocaleString() +
+            ' kWh each (Default)',
+        });
+      });
+  }
+  return models;
 }
 
 /** The days-in-month weights of a fan's year (a fan runs all year; the month profile is the month length). Jan..Dec, add up to 1. */

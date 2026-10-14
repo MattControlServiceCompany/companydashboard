@@ -158,10 +158,10 @@ function getEndUse(projId, bldgId, endUse) {
 
 /**
  * The fan end use of one building (Phase 6): the supply fans of its Equipment Matrix rows, each unit sized by
- * fanUnitModel (computations/fan-savings.js: kW from amps, else cfm, else HP; hours from the BAS trend, else the
+ * fanModelUnits (computations/fan-savings.js: kW from amps, else cfm, else HP, else a Default estimate; hours from the BAS trend, else the
  * matrix, else a stated default), added up and capped by the building's HVAC electric end use (the fans are inside it).
  * The result has the same shape as every other end use, plus:
- *   units       - the sized units (fanUnitModel results, kWh before the cap) and the units that could not be sized (ok:false, missing)
+ *   units       - the sized units (fanModelUnits results, kWh before the cap; a unit with no amps, airflow or horsepower is a Default estimate, see fanModelUnits) and the units that could not be sized (ok:false, missing)
  *   capFactor   - 1, or capAnnual / sum when the units add up to more than the HVAC electric end use
  *   capAnnual   - the HVAC electric kWh used as the cap (null: no HVAC electric data, so no cap)
  *   levels      - count of units by data level for kW and for hours ({kw:{trend,matrix,default}, hours:{...}})
@@ -173,7 +173,9 @@ function _fanEndUse(projId, bldgId) {
   if (!b) return _euNotAvailable('fans', label, 'kWh', true, 'No building chosen');
   var read = fanReadUnits(projId, bldgId);
   if (!read.units.length) return _euNotAvailable('fans', label, 'kWh', true, read.note);
-  var units = read.units.map(fanUnitModel);
+  var hv = getEndUse(projId, bldgId, 'hvacElectric');
+  var capAnnual = hv.modeled && hv.source !== 'none' && hv.annual > 0 ? hv.annual : null;
+  var units = fanModelUnits(projId, bldgId, read, capAnnual);
   var sized = units.filter(function (u) {
     return u.ok;
   });
@@ -190,8 +192,6 @@ function _fanEndUse(projId, bldgId) {
   var raw = sized.reduce(function (s, u) {
     return s + u.kwh;
   }, 0);
-  var hv = getEndUse(projId, bldgId, 'hvacElectric');
-  var capAnnual = hv.modeled && hv.source !== 'none' && hv.annual > 0 ? hv.annual : null;
   var factor = capAnnual && raw > capAnnual ? capAnnual / raw : 1;
   var annual = raw * factor;
   var weights = fanMonthWeights();
@@ -210,6 +210,9 @@ function _fanEndUse(projId, bldgId) {
     levels.kw[u.kwLevel]++;
     levels.hours[u.hoursLevel]++;
   });
+  var nEst = sized.filter(function (u) {
+    return u.estimate;
+  }).length;
   var lv = function (o) {
     return ['trend', 'matrix', 'default']
       .filter(function (k) {
@@ -225,7 +228,9 @@ function _fanEndUse(projId, bldgId) {
     sized.length +
     ' of ' +
     units.length +
-    ' rows sized (kW: ' +
+    ' rows sized' +
+    (nEst ? ' (' + nEst + ' of them a Default estimate from siblings or the HVAC electric end use)' : '') +
+    ' (kW: ' +
     lv(levels.kw) +
     '; run hours: ' +
     lv(levels.hours) +

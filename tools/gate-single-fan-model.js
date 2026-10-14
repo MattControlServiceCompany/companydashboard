@@ -7,12 +7,12 @@
 // Fails when:
 //   1. An owner is missing a function it must define.
 //   2. Another file defines a function with an owner's name (a second copy of the rule).
-//   3. Another file calls fanReadUnits or fanUnitModel (a template or report asks getEndUse(.., 'fans')).
+//   3. Another file calls fanReadUnits, fanUnitModel or fanModelUnits (a template or report asks getEndUse(.., 'fans')).
 //   4. Another file keeps its own fan run hours: a line with "fan" and 8760, or the fan constants (FAN_W_PER_CFM,
 //      FAN_DEFAULT_ANNUAL_HOURS, FAN_CONTINUOUS_HOURS, FAN_DAYS_PER_YEAR, FAN_MONTH_DAYS) used outside the owners.
 //   5. The Fan Savings template (ECM_TEMPLATES.fan_savings) does fan math itself (Math.pow, fanPowerFraction, hpToKw,
 //      motorKwFromAmps, fanKwFromCfm, 8760) or does not call getEndUse(.., 'fans') and fanSavingsForUnits.
-//   6. _fanEndUse does not call fanUnitModel, fanReadUnits and fanMonthWeights, or the end-use file reads a stored estimate.
+//   6. _fanEndUse does not call fanModelUnits, fanReadUnits and fanMonthWeights, or the end-use file reads a stored estimate.
 // Run: node tools/gate-single-fan-model.js [repo-root]   (exit 0 = pass)
 'use strict';
 const fs = require('fs');
@@ -28,6 +28,7 @@ const SKIP_DIR = new Set(['node_modules', '.git', '.claude', 'data']);
 const FAN_OWNED_FUNCS = [
   'fanReadUnits',
   'fanUnitModel',
+  'fanModelUnits',
   'fanSavingsForUnits',
   'fanTrendSummary',
   'fanMonthWeights',
@@ -35,7 +36,7 @@ const FAN_OWNED_FUNCS = [
 ];
 const PHYSICS_FAN_FUNCS = ['fanKwFromCfm', 'motorKwFromAmps', 'fanMeanPowerFraction'];
 const FAN_CONSTANTS =
-  /\b(FAN_W_PER_CFM|FAN_DEFAULT_ANNUAL_HOURS|FAN_CONTINUOUS_HOURS|FAN_DAYS_PER_YEAR|FAN_MONTH_DAYS|FAN_HP_LOAD_FACTOR|FAN_HP_MOTOR_EFF)\b/;
+  /\b(FAN_W_PER_CFM|FAN_DEFAULT_ANNUAL_HOURS|FAN_CONTINUOUS_HOURS|FAN_DAYS_PER_YEAR|FAN_MONTH_DAYS|FAN_HP_LOAD_FACTOR|FAN_HP_MOTOR_EFF|FAN_HVAC_ELECTRIC_FAN_SHARE)\b/;
 
 function isTestFile(rel) {
   const b = path.basename(rel);
@@ -90,7 +91,7 @@ function check(files) {
             at + 'second definition of ' + n + ' (the one is in ' + FAN + ', ' + END_USE + ' or ' + PHYSICS + ')',
           );
       });
-      if (/\b(fanReadUnits|fanUnitModel)\s*\(/.test(line))
+      if (/\b(fanReadUnits|fanUnitModel|fanModelUnits)\s*\(/.test(line))
         bad.push(at + 'reads the fan units directly (ask getEndUse(projId, bldgId, "fans"))');
       if (/fan/i.test(line) && /(?<![\w.])8760(?![\w.])/.test(line))
         bad.push(at + 'fan run hours of its own (8760): the rule is in ' + FAN);
@@ -125,7 +126,7 @@ function check(files) {
     const body = slice(eu, 'function _fanEndUse', '/**\n * endUseFill');
     if (!body) bad.push(END_USE + ': _fanEndUse body not found');
     else
-      ['fanUnitModel', 'fanReadUnits', 'fanMonthWeights'].forEach((n) => {
+      ['fanModelUnits', 'fanReadUnits', 'fanMonthWeights'].forEach((n) => {
         if (!new RegExp('\\b' + n + '\\b').test(body)) bad.push(END_USE + ' _fanEndUse does not use ' + n);
       });
     if (/\.hvacLoad\.est\b/.test(stripComments(eu))) bad.push(END_USE + ': reads a stored estimate (b.hvacLoad.est)');
