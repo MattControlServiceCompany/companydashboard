@@ -392,10 +392,10 @@ function getHvacQuickAnnual(b) {
 // quick annual entry -> (3) nothing. No other function in HVAC code may read bills or b.quickAnnual
 // (tools/test-hvac-per-building.js gate).
 // Returns { source: 'bills'|'annual'|'none', label, kwh, kw, therms, elecByMo, gasByMo, kwByMo, billMonths,
-// quick, quickUsed, kwhArr, kwArr, facArr, gasArr, rates, billTherms, enduse, demand }.
+// quick, quickUsed, kwhArr, kwArr, facArr, gasArr, billRates, billTherms, enduse, demand }.
 //  - kwhArr / kwArr / facArr / gasArr are the 12 calendar-month BILL values (null = no bill that month,
 //    never a fake 0); gasArr is gas Therms plus propane gallons at THERMS_PER_GAL_PROPANE.
-//  - rates = { kwh, kw, gas }: the 12 monthly $/kWh, $/kW and $/Therm (0 = none), from buildMoMap.
+//  - billRates = { kwh, kw, gas }: the 12 monthly $/kWh, $/kW and $/Therm (0 = none), from buildMoMap.
 //  - enduse = computeHvacEnduse over those arrays (3-lowest-month baseload) and demand = computeHvacDemand;
 //    both are always the BILL view, whichever source was picked. billTherms is the bills' Therms total.
 //  - For source 'annual' the by-month maps are empty on purpose: annual totals are never spread into fake
@@ -418,7 +418,7 @@ function resolveHvacLoadData(projId, b) {
     kwArr: nulls(),
     facArr: nulls(),
     gasArr: nulls(),
-    rates: { kwh: Array(12).fill(0), kw: Array(12).fill(0), gas: Array(12).fill(0) },
+    billRates: { kwh: Array(12).fill(0), kw: Array(12).fill(0), gas: Array(12).fill(0) },
     billTherms: 0,
     enduse: computeHvacEnduse(nulls(), nulls(), nulls()),
     demand: computeHvacDemand(nulls(), nulls(), []),
@@ -447,11 +447,11 @@ function resolveHvacLoadData(projId, b) {
     }
     if (eb && eb.facKW > 0) out.facArr[mo] = eb.facKW;
     if (eb) {
-      out.rates.kwh[mo] = eb.kwhRate || 0;
-      out.rates.kw[mo] = eb.kwRate || 0;
+      out.billRates.kwh[mo] = eb.kwhRate || 0;
+      out.billRates.kw[mo] = eb.kwRate || 0;
     }
     const gb = gByMo[mo];
-    if (gb) out.rates.gas[mo] = gb.rate || 0;
+    if (gb) out.billRates.gas[mo] = gb.rate || 0;
     if (gb && gasBillMo[mo]) {
       bills.therms += gb.therms || 0;
       bills.gasByMo[mo] = (bills.gasByMo[mo] || 0) + (gb.therms || 0);
@@ -1090,9 +1090,9 @@ function _hvlRenderReverse(projId, bldgId) {
   const actualKw = orZero(rv.kwArr),
     actualKwh = orZero(rv.kwhArr),
     actualTherms = orZero(rv.gasArr);
-  const avgKwhRate = rv.rates.kwh,
-    avgKwRate = rv.rates.kw,
-    avgThermRate = rv.rates.gas;
+  const avgKwhRate = rv.billRates.kwh,
+    avgKwRate = rv.billRates.kw,
+    avgThermRate = rv.billRates.gas;
 
   // Sub-tab state
   const revTab = rd._activeTab || 'kw';

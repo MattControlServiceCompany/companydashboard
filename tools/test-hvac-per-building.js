@@ -70,7 +70,7 @@ const code = [
   'const SAVE_ALL_PROJECTS = Symbol("all");',
   fnSource(CALC, '_hvlKey'),
   fnSource(CALC, '_hvlMeterMoMap'),
-  /function _wdAssignedYm[\s\S]*?\r?\n}/.exec(require('fs').readFileSync(require('path').join(__dirname, '..', 'app', 'report-engine-woodland.js'), 'utf8'))[0],
+  require('fs').readdirSync(require('path').join(__dirname, '..', 'app')).filter((f) => /^report-engine-.*\.js$/.test(f)).map((f) => require('fs').readFileSync(require('path').join(__dirname, '..', 'app', f), 'utf8')).map((s) => /function _wdAssignedYm[\s\S]*?\r?\n}/.exec(s)).filter(Boolean)[0][0],
   fnSource(CALC, '_hvlMergeMoMaps'),
   fnSource(CALC, '_hvlMonthlyBaseline'),
   fnSource(CALC, 'getHvacQuickAnnual'),
@@ -501,12 +501,12 @@ console.log('--- 5. static gates ---');
   // 5g. D3: no HVAC / report baseline code reads bills outside the resolver. Every function of a report engine
   // file or the Energy Graphics file whose name says HVAC, baseline, setpoint or report-gate is checked.
   // Listed exceptions (each reads bills for a reason that is not a baseline number):
-  //  - _wdBuildMeterBaseline / _wdRawBillMeters / collectWoodlandReportData: the report's RAW BILL pages print one
+  //  - _wdBuildMeterBaseline / _wdRawBillMeters / collect*ReportData: the report's RAW BILL pages print one
   //    account's bills as they are on paper; no HVAC or baseline value is computed from them.
   //  - _buildBaselineDataHtml (calculators.js): the Baseline Data table shows the NORMALIZED kWh/Therms
   //    (kwhPredicted, weather-regressed), a different number from the billed values by design; it reads the
   //    same month maps through _hvlMonthlyBaseline, so its months can not differ from the resolver's.
-  const rawOk = new Set(['_wdBuildMeterBaseline', '_wdRawBillMeters', 'collectWoodlandReportData']);
+  const rawOk = (n) => n === '_wdBuildMeterBaseline' || n === '_wdRawBillMeters' || /^collect\w*ReportData$/.test(n);
   const scan = [{ f: 'report engine', src: WD }, { f: 'graphics-setpoints.js', src: read('app/graphics-setpoints.js') }];
   scan.forEach((o) => {
     const names = [];
@@ -515,7 +515,7 @@ console.log('--- 5. static gates ---');
     while ((mt = rg.exec(o.src))) names.push(mt[1]);
     let checked = 0;
     names.forEach((name) => {
-      if (!/hvac|baseline|setpoint|CheckReportInputs|UpdateReportButton/i.test(name) || rawOk.has(name)) return;
+      if (!/hvac|baseline|setpoint|CheckReportInputs|UpdateReportButton/i.test(name) || rawOk(name)) return;
       checked++;
       const body = strip(fnSource(o.src, name));
       const x = { name };

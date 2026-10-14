@@ -60,7 +60,7 @@ const code = [
   fnSource(ENDUSE_SRC, 'computeHvacDemand'),
   fnSource(CALC_SRC, '_hvlMonthlyBaseline'),
   fnSource(CALC_SRC, '_hvlMeterMoMap'),
-  /function _wdAssignedYm[\s\S]*?\r?\n}/.exec(require('fs').readFileSync(require('path').join(__dirname, '..', 'app', 'report-engine-woodland.js'), 'utf8'))[0],
+  require('fs').readdirSync(require('path').join(__dirname, '..', 'app')).filter((f) => /^report-engine-.*\.js$/.test(f)).map((f) => require('fs').readFileSync(require('path').join(__dirname, '..', 'app', f), 'utf8')).map((s) => /function _wdAssignedYm[\s\S]*?\r?\n}/.exec(s)).filter(Boolean)[0][0],
   fnSource(CALC_SRC, '_hvlMergeMoMaps'),
   fnSource(CALC_SRC, 'getHvacQuickAnnual'),
   fnSource(CALC_SRC, 'resolveHvacLoadData'),

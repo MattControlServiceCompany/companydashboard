@@ -80,7 +80,7 @@ const src = [
   loadFn(HVAC_ENDUSE, 'computeHvacDemand'),
   loadFn(CALC, '_hvlMonthlyBaseline'),
   loadFn(CALC, '_hvlMeterMoMap'),
-  /function _wdAssignedYm[\s\S]*?\r?\n}/.exec(require('fs').readFileSync(require('path').join(__dirname, '..', 'app', 'report-engine-woodland.js'), 'utf8'))[0],
+  require('fs').readdirSync(require('path').join(__dirname, '..', 'app')).filter((f) => /^report-engine-.*\.js$/.test(f)).map((f) => require('fs').readFileSync(require('path').join(__dirname, '..', 'app', f), 'utf8')).map((s) => /function _wdAssignedYm[\s\S]*?\r?\n}/.exec(s)).filter(Boolean)[0][0],
   loadFn(CALC, '_hvlMergeMoMaps'),
   loadFn(CALC, 'getHvacQuickAnnual'),
   loadFn(CALC, 'resolveHvacLoadData'),
