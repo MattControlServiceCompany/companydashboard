@@ -2506,6 +2506,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.14.126', date: '2026-10-14', title: 'Utility Data: missing kWh filled in, original PDF values on hover',
+    items: [
+      { type: 'fix', text: 'Utility Data: bills whose PDF prints no kWh now get kWh filled from the read difference and multiplier, and corrected reads show their original PDF value on hover.' }
+    ]
+  },
   { v: 'v2026.10.14.125', date: '2026-10-14', title: 'Utility Data: cleaner warnings and printed read values kept',
     items: [
       { type: 'change', text: 'Utility Data: warning counts now show only bill problems that change usage, cost or dates; meter chips use plain labels; the PDF reader keeps the read difference and kWh printed on the bill.' }
