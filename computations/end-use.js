@@ -154,6 +154,20 @@ function getEndUse(projId, bldgId, endUse) {
 }
 
 /**
+ * endUseFill - the ONE prefill rule for a calculator input that is a building end-use quantity (the BAS Calc
+ * calibration fields and the ECM template inputs both call it). Returns { value, source } for chResolveCalcField
+ * when the end use is modeled, has data, and its annual quantity is above 0; else null (a zero end use, for example
+ * no electric heating, fills nothing).
+ * @param {Object} eu - the result of getEndUse
+ * @returns {{value:number, source:string}|null}
+ */
+function endUseFill(eu) {
+  return eu && eu.modeled && eu.source !== 'none' && eu.annual > 0
+    ? { value: Math.round(eu.annual), source: eu.sourceLabel }
+    : null;
+}
+
+/**
  * The month weights that shape a yearly savings quantity: the monthly profile of the first end use in `endUses`
  * that has a monthly profile with a positive total. weights[mo] = monthly[mo] / sum(monthly), so they add up to 1.
  * @returns {{ok:true, weights:number[], endUse:string, eu:Object}|{ok:false, reason:string}}

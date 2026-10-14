@@ -78,6 +78,7 @@ const src = [
   loadFn(HVAC_ENDUSE, 'computeHvacEnduse'),
   loadFn(HVAC_ENDUSE, '_hvacPeakOf'),
   loadFn(HVAC_ENDUSE, 'computeHvacDemand'),
+  loadFn(HVAC_ENDUSE, 'computeHvacMonthlyProfiles'),
   loadFn(CALC, '_hvlMonthlyBaseline'),
   loadFn(CALC, '_hvlMeterMoMap'),
   require('./month-rule-src.js')(),

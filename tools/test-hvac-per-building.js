@@ -65,6 +65,7 @@ const code = [
   fnSource(ENDUSE, '_hvacPeakOf'),
   fnSource(ENDUSE, 'computeHvacEnduse'),
   fnSource(ENDUSE, 'computeHvacDemand'),
+  fnSource(ENDUSE, 'computeHvacMonthlyProfiles'),
   'var MO_SHORT = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];',
   'var _hvlSelBldg = {}; var _hvlMethod = {}; var _hvlDirty = {}; const _hvlLive = {};',
   'const SAVE_ALL_PROJECTS = Symbol("all");',
@@ -95,6 +96,7 @@ const code = [
   fnSource(CALC, '_hvlBuildingHeatingSignals'),
   fnSource(CALC, '_hvlGasHeatShare'),
   fnSource(CALC, '_hvlThumbDefaults'),
+  fnSource(CALC, '_hvlKeepTypedPercents'),
   fnSource(CALC, 'migrateHvacLoadToBuildings'),
 ].join('\n\n');
 
@@ -380,7 +382,7 @@ console.log('--- 4. one-time data move ---');
   sb.store.en_projects[0].hvacLoadEst = { method: 'thumb', totalKwh: 123, hvacGasPct: 80 };
   sb.store.en_projects[0].hvacLoadSavedAt = 1700000000000;
   sb.store.en_projects[0].hvacLoadInputs = {
-    bA: { thumb: { kwhPct: '50', kwPct: '55', gasPct: '70', coolKwhPct: '65', heatKwhPct: '0' } },
+    bA: { thumb: { kwhPct: '30', kwPct: '55', gasPct: '70', coolKwhPct: '65', heatKwhPct: '0' } },
   };
   const rows = sb.migrateHvacLoadToBuildings();
   const p = sb.store.en_projects[0];
@@ -391,25 +393,88 @@ console.log('--- 4. one-time data move ---');
   const A = sb.bldgs[0].hvacLoad;
   const B = sb.bldgs[1].hvacLoad;
   assert(
-    A && A.est && A.est.basis.hvacKwh === 'measured' && A.est.basis.hvacGas === 'measured',
-    'building A: moved inputs without an override flag do not freeze a split over the bills',
+    A && A.est && A.est.basis.hvacKwh === 'override' && near(A.est.hvacKwhPct, 30),
+    'building A: a typed 30% (different from the default, no flag before the move) stays 30% as an override',
+  );
+  assert(
+    A.inputs.thumb.kwhPctOverride === true && A.inputs.thumb.kwPctOverride === false,
+    'the move sets the override flag only for the value that differs from the default (kWh yes, kW 55 = default no)',
   );
   assert(A.savedAt === 1700000000000, 'saved time carried over');
-  assert(A.inputs.thumb.kwhPct === '50', 'saved inputs moved onto the building');
+  assert(A.inputs.thumb.kwhPct === '30', 'saved inputs moved onto the building');
   assert(
     B && B.est && B.est.basis.hvacKwh === 'measured' && B.savedAt === 1700000000000,
     'building B recalculated from the bills (measured split)',
   );
   assert(near(B.est.totalKwh, 2 * E_B.reduce((s, v) => s + v, 0)), 'building B estimate uses its own resolver data');
   assert(sb.bldgs[2].hvacLoad === undefined, 'building with no utility data gets no estimate');
-  assert(rows.length === 3 && rows.some((x) => /no utility data/.test(x.result)), 'report has one row per building');
+  assert(
+    rows.filter((x) => !/typed percentage kept/.test(x.result)).length === 3 && rows.some((x) => /no utility data/.test(x.result)),
+    'report has one row per building',
+  );
+  assert(rows.some((x) => /typed percentage kept: kwhPct/.test(x.result)), 'report names the typed percentage that was kept');
+  // Save on the tab after the move: the screen shows the saved 30, the default is the measured value; 30 stays
+  {
+    const d = sb._hvlThumbDefaults(7, 'bA');
+    Object.assign(sb.fields, { kwhPct: 30, kwPct: 55, gasPct: d.gasPct, coolKwhPct: 65, heatKwhPct: 0 });
+    Object.assign(sb.shown, { kwhPct: d.kwhPct, kwPct: d.kwPct, gasPct: d.gasPct });
+    sb._hvlSelBldg[7] = 'bA';
+    sb.hvacLoadSave(7);
+    const after = sb.hvacEstimateForBuilding(7, 'bA');
+    assert(
+      after.est.basis.hvacKwh === 'override' && near(after.est.hvacKwhPct, 30),
+      'typed 30% stays 30% after Save on the tab',
+    );
+  }
   const again = sb.migrateHvacLoadToBuildings();
   assert(again.length === 0, 'second run does nothing');
+
+  // a building an earlier version already moved holds a typed value without a flag: marked once, then left alone
+  {
+    const sb3 = makeEnv();
+    sb3.bldgs[0].hvacLoad = { savedAt: 1700000000000, est: null, inputs: { thumb: { kwhPct: '30', kwPct: '55', gasPct: '70' } } };
+    const r1 = sb3.migrateHvacLoadToBuildings();
+    const t = sb3.bldgs[0].hvacLoad.inputs.thumb;
+    assert(t.kwhPctOverride === true && t.kwPctOverride === false, 'unflagged typed value of an already-moved building is flagged');
+    assert(r1.some((x) => /typed percentage kept: kwhPct/.test(x.result)), 'already-moved building reported');
+    assert(sb3.migrateHvacLoadToBuildings().length === 0, 'second run does nothing');
+  }
 
   // a project without any old data is left alone
   const sb2 = makeEnv();
   const none = sb2.migrateHvacLoadToBuildings();
   assert(none.length === 0 && sb2.bldgs.every((b) => b.hvacLoad === undefined), 'no old estimate -> nothing created');
+}
+
+// -------------------------------------------------------------------------------------------------
+console.log('--- 4a. cooling and electric heating each have their own measured monthly profile ---');
+{
+  const sb = makeEnv();
+  const b = sb.bldgs[0];
+  const resolved = sb.resolveHvacLoadData(7, b);
+  const base = resolved.enduse.baseloadElec;
+  const hv = E_A.map((v) => Math.max(0, v - base));
+  const run = (heatPct) =>
+    sb.computeHvacLoadEstimate('thumb', resolved, { kwhPct: 45, kwPct: 55, gasPct: 70, coolKwhPct: 65, heatKwhPct: heatPct }, 60000);
+  const sum = (a) => a.reduce((x, v) => x + v, 0);
+  // gas heat (electric heating 0): cooling has no January, total stays the measured HVAC kWh
+  let est = run(0);
+  assert(est.monthlyCoolKwh[0] === 0 && est.monthlyCoolKwh[11] === 0, 'no cooling in January or December');
+  assert(est.monthlyCoolKwh[6] > hv[6] - 1e-9, 'July cooling is at least the measured July HVAC kWh');
+  assert(near(sum(est.monthlyCoolKwh), est.coolKwhTotal, 1e-6) && near(est.coolKwhTotal, est.hvacKwh, 1e-6), 'cooling months add up to the cooling total');
+  assert(sum(est.monthlyHeatKwh) === 0, 'no electric heating when the heating share is 0');
+  assert(near(sum(est.monthlyHvacKwh), est.hvacKwh, 1e-6) && near(est.monthlyHvacKwh[0], hv[0], 1e-6), 'all electric HVAC of a month stays the measured bill above the base load');
+  // electric heat: heating sits in the heating months, cooling in the cooling months, each adds up to its total
+  est = run(35);
+  assert(est.monthlyHeatKwh[6] === 0 && est.monthlyHeatKwh[7] === 0, 'no electric heating in July or August');
+  assert(est.monthlyCoolKwh[0] === 0 && est.monthlyCoolKwh[11] === 0, 'no cooling in January or December with electric heat');
+  assert(near(sum(est.monthlyHeatKwh), est.heatKwhTotal, 1e-6) && near(sum(est.monthlyCoolKwh), est.coolKwhTotal, 1e-6), 'each profile adds up to its annual total');
+  assert(est.monthlyHeatKwh[0] > 0, 'January carries electric heating');
+  // weather decides the season when it exists: a hot February (cooling degree days above heating) is a cooling month
+  const wx = Array(12).fill(null);
+  const prof = sb.computeHvacMonthlyProfiles(resolved.kwhArr, base, wx.map((_, i) => (i === 1 ? 1 : i <= 3 || i >= 9 ? 500 : 5)), wx.map((_, i) => (i === 1 ? 300 : i <= 3 || i >= 9 ? 10 : 400)));
+  assert(prof.heating[1] === 0 && near(prof.cooling[1], hv[1], 1e-9) && prof.seasonBy[1] === 'weather', 'weather decides the season of a month');
+  assert(prof.seasonBy[0] === 'weather' || prof.seasonBy[0] === 'calendar', 'season source is named');
 }
 
 // -------------------------------------------------------------------------------------------------

@@ -1972,7 +1972,7 @@ function saveEcmToProject(projId, buildingId, buildingName, templateId, inputs, 
  * Per-template map from a calculate() result field to a savings-matrix column and to the building end use that
  * shapes it over the year (Phase 5, 2026-10-14).
  *   field   - the result id that holds the yearly quantity
- *   kind    - 'kwh' | 'gas' (Therms) | 'kw' (average kW reduction, laid over the months by the same profile)
+ *   kind    - 'kwh' | 'gas' (Therms) | 'kw' (peak kW reduction, laid over the months by the same profile: month kW = peak kW x month weight / highest month weight)
  *   endUse  - ordered end-use keys for getEndUseWeights (computations/end-use.js): the first one that has a
  *             monthly profile in the building's HVAC Load Estimate shapes the field
  *   by      - a field that is gas OR electric depending on a select input: { input, electric: {kind, endUse}, otherwise: {...} }
@@ -2267,10 +2267,7 @@ function renderEcmCalculator(
           ctx && ctx.buildingId
             ? getEndUse(ctx.projId, ctx.buildingId, inp.endUse)
             : null;
-        const auto =
-          eu && eu.modeled && eu.source !== "none" && eu.annual != null
-            ? { value: Math.round(eu.annual), source: eu.sourceLabel }
-            : null;
+        const auto = endUseFill(eu);
         const r = chResolveCalcField(
           sv[inp.id],
           inp.default,

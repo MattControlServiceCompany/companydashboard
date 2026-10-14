@@ -112,6 +112,7 @@ const src = [
   loadFn(HV, 'computeHvacEnduse'),
   loadFn(HV, '_hvacPeakOf'),
   loadFn(HV, 'computeHvacDemand'),
+  loadFn(HV, 'computeHvacMonthlyProfiles'),
   loadFn(WD, '_wdRoundHalfUp'),
   loadFn(WD, '_wdIsSummer'),
   loadFn(WD, '_wdBaselineHvac'),

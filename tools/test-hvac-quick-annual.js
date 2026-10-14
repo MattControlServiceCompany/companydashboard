@@ -58,6 +58,7 @@ const code = [
   fnSource(ENDUSE_SRC, 'computeHvacEnduse'),
   fnSource(ENDUSE_SRC, '_hvacPeakOf'),
   fnSource(ENDUSE_SRC, 'computeHvacDemand'),
+  fnSource(ENDUSE_SRC, 'computeHvacMonthlyProfiles'),
   fnSource(CALC_SRC, '_hvlMonthlyBaseline'),
   fnSource(CALC_SRC, '_hvlMeterMoMap'),
   require('./month-rule-src.js')(),

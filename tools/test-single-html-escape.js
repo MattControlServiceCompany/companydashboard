@@ -168,6 +168,46 @@ for (const page of ['index.html', 'energy-department.html', 'ems-leads.html']) {
 }
 
 
+// 6. BAS Calc (app/calculators.js openBASCalc): saved values and building data never reach the page as markup.
+//    A hostile string saved in a BAS Calc field, plus a hostile end-use source label, goes through the REAL openBASCalc.
+{
+  const noCr = (t) => t.split(String.fromCharCode(13)).join('');
+  const out = { html: '' };
+  const wrap = { set innerHTML(v) { out.html += v; }, get innerHTML() { return out.html; }, querySelector() { return null; }, querySelectorAll() { return []; }, style: {} };
+  const evil = '<img src=x onerror=alert(1)>';
+  const attack = '" onfocus="alert(1)';
+  const fields = ['sqft', 'vrfPct', 'coolEff', 'afue', 'elecCOP', 'humRatioSP', 'exCoolOcc', 'exMfOn', 'newCoolOcc', 'newSunOff', 'calCoolKwh', 'calHeatKwh', 'calHeatGas'];
+  const bc = { heatSrc: 3, __userTouched: fields.slice() };
+  fields.forEach((f, i) => (bc[f] = i % 2 ? evil : attack + evil));
+  const bsb = {
+    console,
+    projects: [{ id: 1, name: 'P', basCalc: bc }],
+    document: { getElementById: (id) => (id === 'svDetailWrap' ? wrap : null), createElement: () => ({ style: {} }), head: { appendChild() {} }, querySelectorAll: () => [] },
+    requestAnimationFrame() {}, setTimeout() {}, clearTimeout() {},
+    BAS_WEATHER_BINS: { bins: [], cities: { 1: { name: 'Test City, KS' } } },
+    EM_SP_DEFAULTS: { unocc: { hydronic: { heat: 55, cool: 85 }, electricReheat: { heat: 60, cool: 85 } } },
+  };
+  vm.createContext(bsb);
+  ['lib/formatting.js', 'computations/physics.js', 'app/calc-autofill.js', 'computations/end-use.js', 'app/calculators.js'].forEach((f) => {
+    try {
+      vm.runInContext(noCr(fs.readFileSync(path.join(REPO, f), 'utf8')).replace(/const\s+/g, 'var ').replace(/let\s+/g, 'var '), bsb, { filename: f });
+    } catch (e) {
+      problems.push('BAS Calc escape test: could not load ' + f + ': ' + e.message);
+    }
+  });
+  bsb.getEndUse = () => ({ modeled: true, source: 'bills', annual: 1000, sourceLabel: evil });
+  try {
+    bsb.openBASCalc(1);
+  } catch (e) {
+    problems.push('BAS Calc escape test: openBASCalc threw ' + e.message);
+  }
+  const html = out.html;
+  if (html.length < 2000) problems.push('BAS Calc escape test: the real openBASCalc printed almost nothing');
+  if (/<img/i.test(html)) problems.push('BAS Calc HTML prints a saved value or source label as markup');
+  if (!html.includes('&lt;img src=x onerror=alert(1)&gt;')) problems.push('BAS Calc escape test: the hostile text did not reach the page as text');
+  if (/onfocus="alert/.test(html)) problems.push('BAS Calc HTML lets a saved value break out of an attribute');
+}
+
 if (problems.length) {
   console.log('FAIL: single HTML escape gate - ' + problems.length + ' problem(s)');
   for (const p of problems) console.log('  ' + p);

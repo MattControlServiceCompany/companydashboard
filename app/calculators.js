@@ -460,6 +460,8 @@ function resolveHvacLoadData(projId, b) {
     kwhArr: nulls(),
     kwArr: nulls(),
     facArr: nulls(),
+    hddArr: nulls(),
+    cddArr: nulls(),
     gasArr: nulls(),
     billRates: { kwh: Array(12).fill(0), kw: Array(12).fill(0), gas: Array(12).fill(0) },
     billTherms: 0,
@@ -489,6 +491,8 @@ function resolveHvacLoadData(projId, b) {
       out.kwArr[mo] = eb.billedKW;
     }
     if (eb && eb.facKW > 0) out.facArr[mo] = eb.facKW;
+    if (eb && eb.hdd != null) out.hddArr[mo] = eb.hdd;
+    if (eb && eb.cdd != null) out.cddArr[mo] = eb.cdd;
     if (eb) {
       out.billRates.kwh[mo] = eb.kwhRate || 0;
       out.billRates.kw[mo] = eb.kwRate || 0;
@@ -1983,6 +1987,7 @@ function computeHvacLoadEstimate(method, resolved, inputs, sqft) {
     monthlyHvacKw = null,
     monthlyNonHvacKw = null;
   if (!isAnnual) {
+    let measuredHvacKwh = null;
     const _rawCool = coolDist.map((d) => coolKwhTotal * d);
     const _rawHeat = heatDist.map((d) => heatKwhTotal * d);
     const _rawNonH = flatDist.map((d) => nonHvacKwh * d);
@@ -2007,16 +2012,30 @@ function computeHvacLoadEstimate(method, resolved, inputs, sqft) {
     if (measuredElec) {
       // Measured months: HVAC kWh of a month = the bill above the baseload, so the 12 months add up to the annual
       // number exactly. A month with no bill has no value (0), never a made-up one.
-      const share = hvacKwh > 0 ? heatKwhTotal / hvacKwh : 0;
+      // Cooling and electric heating each get their own measured profile (computeHvacMonthlyProfiles: the bill above
+      // the baseload in the cooling months / in the heating months), scaled to that end use's annual total. A
+      // total with no measured month in its season is spread over the bill months of that season.
+      const prof = computeHvacMonthlyProfiles(resolved.kwhArr, eu.baseloadElec, resolved.hddArr, resolved.cddArr);
+      const shaped = (measured, wantHeating, total) => {
+        let w = measured;
+        let sum = w.reduce((a, v) => a + v, 0);
+        if (!(sum > 0)) {
+          w = prof.heatingMonth.map((h, i) => (h === wantHeating && resolved.kwhArr[i] !== null ? 1 : 0));
+          sum = w.reduce((a, v) => a + v, 0);
+        }
+        return w.map((v) => (sum > 0 ? (total * v) / sum : 0));
+      };
+      monthlyHeatKwh = shaped(prof.heating, true, heatKwhTotal);
+      monthlyCoolKwh = shaped(prof.cooling, false, coolKwhTotal);
+      // All electric HVAC of a month stays the measured bill above the baseload (cooling plus heating can differ
+      // from it in a month when the electric-heating total is a rule, for example 0 for a gas-heated building).
+      measuredHvacKwh = resolved.kwhArr.map((bill) => (bill === null ? 0 : Math.max(0, bill - eu.baseloadElec)));
       for (let i = 0; i < 12; i++) {
         const bill = resolved.kwhArr[i];
-        const hv = bill === null ? 0 : Math.max(0, bill - eu.baseloadElec);
-        monthlyHeatKwh[i] = hv * share;
-        monthlyCoolKwh[i] = hv - monthlyHeatKwh[i];
-        monthlyNonHvacKwh[i] = bill === null ? 0 : bill - hv;
+        monthlyNonHvacKwh[i] = bill === null ? 0 : bill - measuredHvacKwh[i];
       }
     }
-    monthlyHvacKwh = months.map((_, i) => monthlyCoolKwh[i] + monthlyHeatKwh[i]);
+    monthlyHvacKwh = measuredHvacKwh || months.map((_, i) => monthlyCoolKwh[i] + monthlyHeatKwh[i]);
     const _rawGasHvac = heatDist.map((d) => hvacGasT * d);
     const _rawGasNon = flatDist.map((d) => nonHvacGas * d);
     monthlyHvacGas = _rawGasHvac.slice();
@@ -2391,6 +2410,24 @@ function hvacLoadSave(projId) {
   showToast('HVAC load estimate saved ✓');
 }
 
+// _hvlKeepTypedPercents - a saved Rules of Thumb percentage (kwhPct, kwPct, gasPct) that differs from the value the
+// tab shows by default now was typed by a person, so it is marked as an override (<field>Override) and kept.
+// Inputs saved before the override flags existed carry no flag, and without one the value is dropped on the next
+// Save. Only a field that has a saved value and no flag is looked at (so it never changes a flag that exists).
+// Returns the names of the fields it marked.
+function _hvlKeepTypedPercents(projId, bldgId, thumbInputs) {
+  const kept = [];
+  if (!thumbInputs) return kept;
+  const d = _hvlThumbDefaults(projId, bldgId);
+  ['kwhPct', 'kwPct', 'gasPct'].forEach((f) => {
+    if (thumbInputs[f] == null || thumbInputs[f] === '' || thumbInputs[f + 'Override'] !== undefined) return;
+    const typed = Math.abs((parseFloat(thumbInputs[f]) || 0) - d[f]) > 1e-9;
+    thumbInputs[f + 'Override'] = typed;
+    if (typed) kept.push(f);
+  });
+  return kept;
+}
+
 // One-time data move (2026-10-13): the HVAC Load Estimate used to live on the PROJECT (p.hvacLoadEst,
 // p.hvacLoadSavedAt, p.hvacLoadInputs[bldgId]), so the last building calculated overwrote the others. It now
 // lives on each building (b.hvacLoad). The old project estimate never recorded which building it was for, so for
@@ -2398,19 +2435,30 @@ function hvacLoadSave(projId) {
 // (computeHvacLoadEstimate) with that building's own saved inputs when it has some, else the Rules of Thumb
 // starting values (_hvlThumbDefaults). Saved inputs move onto the building. The old project fields are removed.
 // No reader of the old fields remains. Self-deactivating, no flag: it only acts on a project that still has an
-// old field, and removes them, so a second run (or a project with no old data) does nothing. Returns the report rows.
+// old field, and removes them, so a second run (or a project with no old data) does nothing.
+// It also marks typed percentages (_hvlKeepTypedPercents) of buildings an earlier version already moved, which hold them
+// without the override flag; a building with no unflagged value is not touched. Returns the report rows.
 function migrateHvacLoadToBuildings() {
   const ps = sget('en_projects', []) || [];
   const report = [];
   let projectsChanged = false;
   let bldgsChanged = false;
   ps.forEach((p) => {
+    getUDBldgs(p.id).forEach((b) => {
+      const kept = _hvlKeepTypedPercents(p.id, b.id, b.hvacLoad && b.hvacLoad.inputs && b.hvacLoad.inputs.thumb);
+      if (kept.length) {
+        bldgsChanged = true;
+        report.push({ project: p.name, building: b.name, result: 'typed percentage kept: ' + kept.join(', ') });
+      }
+    });
     if (!p.hvacLoadEst && p.hvacLoadSavedAt === undefined && !p.hvacLoadInputs) return;
     const oldEst = p.hvacLoadEst;
     const oldInputs = p.hvacLoadInputs || {};
     const oldSavedAt = p.hvacLoadSavedAt || null;
     getUDBldgs(p.id).forEach((b) => {
       const inputsByMethod = oldInputs[b.id] || {};
+      const keptTyped = _hvlKeepTypedPercents(p.id, b.id, inputsByMethod.thumb);
+      if (keptTyped.length) report.push({ project: p.name, building: b.name, result: 'typed percentage kept: ' + keptTyped.join(', ') });
       if (b.hvacLoad && b.hvacLoad.est) {
         report.push({ project: p.name, building: b.name, result: 'kept (building already has an estimate)' });
         return;
@@ -4492,12 +4540,7 @@ function openBASCalc(projId) {
     autoCalHeat = null,
     autoCalGas = null;
   if (bldgId) {
-    const euFill = (endUse) => {
-      const eu = getEndUse(projId, bldgId, endUse);
-      return eu.modeled && eu.source !== 'none' && eu.annual > 0
-        ? { value: Math.round(eu.annual), source: eu.sourceLabel }
-        : null;
-    };
+    const euFill = (endUse) => endUseFill(getEndUse(projId, bldgId, endUse));
     autoCalCool = euFill('cooling');
     autoCalHeat = euFill('heatingElectric');
     autoCalGas = euFill('heatingGas');
@@ -4638,20 +4681,20 @@ function openBASCalc(projId) {
             <div class="card-hdr"><span class="card-title">A — Building &amp; Equipment</span></div>
             <div style="padding:14px">
               <div class="f3">
-                <div class="fg"><label class="fl">Building Square Feet</label><input class="fi bc-inp" id="bc-sqft" type="number" value="${sqft}" placeholder="e.g. 50000">${_bcHintSpan(rSqft.hint)}</div>
+                <div class="fg"><label class="fl">Building Square Feet</label><input class="fi bc-inp" id="bc-sqft" type="number" value="${_escHtml(sqft)}" placeholder="e.g. 50000">${_bcHintSpan(rSqft.hint)}</div>
                 <div class="fg"><label class="fl">Heating Source</label><select class="fs bc-inp" id="bc-heatSrc">
                   <option value="1" ${rHeatSrc.value == 1 ? 'selected' : ''}>1 — Gas (Thousand Cubic Feet)</option>
                   <option value="2" ${rHeatSrc.value == 2 ? 'selected' : ''}>2 — Electric (kWh)</option>
                   <option value="3" ${rHeatSrc.value == 3 ? 'selected' : ''}>3 — Gas (Therms)</option>
                   <option value="4" ${rHeatSrc.value == 4 ? 'selected' : ''}>4 — Both (Electric + Gas)</option>
                 </select>${_bcHintSpan(rHeatSrc.hint)}</div>
-                <div class="fg"><label class="fl">Percent of Variable Refrigerant Flow kWh</label><input class="fi bc-inp" id="bc-vrfPct" type="number" value="${bc.vrfPct || 0}" min="0" max="100" step="1"></div>
+                <div class="fg"><label class="fl">Percent of Variable Refrigerant Flow kWh</label><input class="fi bc-inp" id="bc-vrfPct" type="number" value="${_escHtml(bc.vrfPct || 0)}" min="0" max="100" step="1"></div>
               </div>
               <div style="display:grid;grid-template-columns:repeat(3,1fr) repeat(3,auto);gap:10px;margin-top:8px;align-items:end">
-                <div class="fg"><label class="fl">Cooling Efficiency (kW per Ton)</label><input class="fi bc-inp" id="bc-coolEff" type="number" step="0.01" value="${bc.coolEff || 0.86}"></div>
-                <div class="fg"><label class="fl">Gas Furnace Efficiency (Annual Fuel Utilization Efficiency)</label><input class="fi bc-inp" id="bc-afue" type="number" step="0.01" value="${bc.afue || 0.8}"></div>
-                <div class="fg"><label class="fl">Electric Heating Efficiency (Coefficient of Performance)</label><input class="fi bc-inp" id="bc-elecCOP" type="number" step="0.1" value="${bc.elecCOP || 1.0}"></div>
-                <div class="fg"><label class="fl">Humidity Setpoint (pounds of water per pound of dry air)</label><input class="fi bc-inp" id="bc-humRatioSP" type="number" step="0.0001" value="${bc.humRatioSP || 0.0082}"></div>
+                <div class="fg"><label class="fl">Cooling Efficiency (kW per Ton)</label><input class="fi bc-inp" id="bc-coolEff" type="number" step="0.01" value="${_escHtml(bc.coolEff || 0.86)}"></div>
+                <div class="fg"><label class="fl">Gas Furnace Efficiency (Annual Fuel Utilization Efficiency)</label><input class="fi bc-inp" id="bc-afue" type="number" step="0.01" value="${_escHtml(bc.afue || 0.8)}"></div>
+                <div class="fg"><label class="fl">Electric Heating Efficiency (Coefficient of Performance)</label><input class="fi bc-inp" id="bc-elecCOP" type="number" step="0.1" value="${_escHtml(bc.elecCOP || 1.0)}"></div>
+                <div class="fg"><label class="fl">Humidity Setpoint (pounds of water per pound of dry air)</label><input class="fi bc-inp" id="bc-humRatioSP" type="number" step="0.0001" value="${_escHtml(bc.humRatioSP || 0.0082)}"></div>
                 <div style="text-align:center;padding:6px 10px;background:var(--s3);border-radius:7px;border:1px solid var(--border)">
                   <div style="font-size:9px;color:var(--text3);text-transform:uppercase">Maximum Tons</div>
                   <div style="font-size:14px;font-weight:700;font-family:var(--mono);color:var(--em2)" id="bc-dispTons">—</div>
@@ -4698,12 +4741,12 @@ function openBASCalc(projId) {
               <div class="card-hdr"><span class="card-title" style="color:var(--amber)">Existing Conditions</span></div>
               <div style="padding:14px">
                 <div class="f2">
-                  <div class="fg"><label class="fl">Occupied Cooling Setpoint (°F)</label><input class="fi bc-inp" id="bc-exCoolOcc" type="number" value="${rExCoolOcc.value}">${_bcHintSpan(rExCoolOcc.hint)}</div>
-                  <div class="fg"><label class="fl">Unoccupied Cooling Setpoint (°F)</label><input class="fi bc-inp" id="bc-exCoolUnocc" type="number" value="${rExCoolUnocc.value}">${_bcHintSpan(rExCoolUnocc.hint)}</div>
+                  <div class="fg"><label class="fl">Occupied Cooling Setpoint (°F)</label><input class="fi bc-inp" id="bc-exCoolOcc" type="number" value="${_escHtml(rExCoolOcc.value)}">${_bcHintSpan(rExCoolOcc.hint)}</div>
+                  <div class="fg"><label class="fl">Unoccupied Cooling Setpoint (°F)</label><input class="fi bc-inp" id="bc-exCoolUnocc" type="number" value="${_escHtml(rExCoolUnocc.value)}">${_bcHintSpan(rExCoolUnocc.hint)}</div>
                 </div>
                 <div class="f2">
-                  <div class="fg"><label class="fl">Occupied Heating Setpoint (°F)</label><input class="fi bc-inp" id="bc-exHeatOcc" type="number" value="${rExHeatOcc.value}">${_bcHintSpan(rExHeatOcc.hint)}</div>
-                  <div class="fg"><label class="fl">Unoccupied Heating Setpoint (°F)</label><input class="fi bc-inp" id="bc-exHeatUnocc" type="number" value="${rExHeatUnocc.value}">${_bcHintSpan(rExHeatUnocc.hint)}</div>
+                  <div class="fg"><label class="fl">Occupied Heating Setpoint (°F)</label><input class="fi bc-inp" id="bc-exHeatOcc" type="number" value="${_escHtml(rExHeatOcc.value)}">${_bcHintSpan(rExHeatOcc.hint)}</div>
+                  <div class="fg"><label class="fl">Unoccupied Heating Setpoint (°F)</label><input class="fi bc-inp" id="bc-exHeatUnocc" type="number" value="${_escHtml(rExHeatUnocc.value)}">${_bcHintSpan(rExHeatUnocc.hint)}</div>
                 </div>
                 <div class="fg"><label class="fl">Outside Air Shut Off When Unoccupied?</label><select class="fs bc-inp" id="bc-exOAShutoff">
                   <option value="no" ${(rExOAShutoff.value || 'no') === 'no' ? 'selected' : ''}>No</option>
@@ -4711,16 +4754,16 @@ function openBASCalc(projId) {
                 </select>${_bcHintSpan(rExOAShutoff.hint)}</div>
                 <div style="font-size:11px;font-weight:600;color:var(--text2);margin:10px 0 6px;text-transform:uppercase;letter-spacing:1px">Schedule (24-Hour)</div>
                 <div class="f2">
-                  <div class="fg"><label class="fl">Monday–Friday Start</label><input class="fi bc-inp" id="bc-exMfOn" type="number" min="0" max="24" value="${rExMfOn.value}">${_bcHintSpan(rExMfOn.hint)}</div>
-                  <div class="fg"><label class="fl">Monday–Friday Stop</label><input class="fi bc-inp" id="bc-exMfOff" type="number" min="0" max="24" value="${rExMfOff.value}">${_bcHintSpan(rExMfOff.hint)}</div>
+                  <div class="fg"><label class="fl">Monday–Friday Start</label><input class="fi bc-inp" id="bc-exMfOn" type="number" min="0" max="24" value="${_escHtml(rExMfOn.value)}">${_bcHintSpan(rExMfOn.hint)}</div>
+                  <div class="fg"><label class="fl">Monday–Friday Stop</label><input class="fi bc-inp" id="bc-exMfOff" type="number" min="0" max="24" value="${_escHtml(rExMfOff.value)}">${_bcHintSpan(rExMfOff.hint)}</div>
                 </div>
                 <div class="f2">
-                  <div class="fg"><label class="fl">Saturday Start</label><input class="fi bc-inp" id="bc-exSatOn" type="number" min="0" max="24" value="${rExSatOn.value}">${_bcHintSpan(rExSatOn.hint)}</div>
-                  <div class="fg"><label class="fl">Saturday Stop</label><input class="fi bc-inp" id="bc-exSatOff" type="number" min="0" max="24" value="${rExSatOff.value}">${_bcHintSpan(rExSatOff.hint)}</div>
+                  <div class="fg"><label class="fl">Saturday Start</label><input class="fi bc-inp" id="bc-exSatOn" type="number" min="0" max="24" value="${_escHtml(rExSatOn.value)}">${_bcHintSpan(rExSatOn.hint)}</div>
+                  <div class="fg"><label class="fl">Saturday Stop</label><input class="fi bc-inp" id="bc-exSatOff" type="number" min="0" max="24" value="${_escHtml(rExSatOff.value)}">${_bcHintSpan(rExSatOff.hint)}</div>
                 </div>
                 <div class="f2">
-                  <div class="fg"><label class="fl">Sunday Start</label><input class="fi bc-inp" id="bc-exSunOn" type="number" min="0" max="24" value="${rExSunOn.value}">${_bcHintSpan(rExSunOn.hint)}</div>
-                  <div class="fg"><label class="fl">Sunday Stop</label><input class="fi bc-inp" id="bc-exSunOff" type="number" min="0" max="24" value="${rExSunOff.value}">${_bcHintSpan(rExSunOff.hint)}</div>
+                  <div class="fg"><label class="fl">Sunday Start</label><input class="fi bc-inp" id="bc-exSunOn" type="number" min="0" max="24" value="${_escHtml(rExSunOn.value)}">${_bcHintSpan(rExSunOn.hint)}</div>
+                  <div class="fg"><label class="fl">Sunday Stop</label><input class="fi bc-inp" id="bc-exSunOff" type="number" min="0" max="24" value="${_escHtml(rExSunOff.value)}">${_bcHintSpan(rExSunOff.hint)}</div>
                 </div>
               </div>
             </div>
@@ -4729,12 +4772,12 @@ function openBASCalc(projId) {
               <div class="card-hdr"><span class="card-title" style="color:var(--em)">New (Proposed) Conditions</span></div>
               <div style="padding:14px">
                 <div class="f2">
-                  <div class="fg"><label class="fl">Occupied Cooling Setpoint (°F)</label><input class="fi bc-inp" id="bc-newCoolOcc" type="number" value="${rNewCoolOcc.value}">${_bcHintSpan(rNewCoolOcc.hint)}</div>
-                  <div class="fg"><label class="fl">Unoccupied Cooling Setpoint (°F)</label><input class="fi bc-inp" id="bc-newCoolUnocc" type="number" value="${rNewCoolUnocc.value}">${_bcHintSpan(rNewCoolUnocc.hint)}</div>
+                  <div class="fg"><label class="fl">Occupied Cooling Setpoint (°F)</label><input class="fi bc-inp" id="bc-newCoolOcc" type="number" value="${_escHtml(rNewCoolOcc.value)}">${_bcHintSpan(rNewCoolOcc.hint)}</div>
+                  <div class="fg"><label class="fl">Unoccupied Cooling Setpoint (°F)</label><input class="fi bc-inp" id="bc-newCoolUnocc" type="number" value="${_escHtml(rNewCoolUnocc.value)}">${_bcHintSpan(rNewCoolUnocc.hint)}</div>
                 </div>
                 <div class="f2">
-                  <div class="fg"><label class="fl">Occupied Heating Setpoint (°F)</label><input class="fi bc-inp" id="bc-newHeatOcc" type="number" value="${rNewHeatOcc.value}">${_bcHintSpan(rNewHeatOcc.hint)}</div>
-                  <div class="fg"><label class="fl">Unoccupied Heating Setpoint (°F)</label><input class="fi bc-inp" id="bc-newHeatUnocc" type="number" value="${rNewHeatUnocc.value}">${_bcHintSpan(rNewHeatUnocc.hint)}</div>
+                  <div class="fg"><label class="fl">Occupied Heating Setpoint (°F)</label><input class="fi bc-inp" id="bc-newHeatOcc" type="number" value="${_escHtml(rNewHeatOcc.value)}">${_bcHintSpan(rNewHeatOcc.hint)}</div>
+                  <div class="fg"><label class="fl">Unoccupied Heating Setpoint (°F)</label><input class="fi bc-inp" id="bc-newHeatUnocc" type="number" value="${_escHtml(rNewHeatUnocc.value)}">${_bcHintSpan(rNewHeatUnocc.hint)}</div>
                 </div>
                 <div class="fg"><label class="fl">Outside Air Shut Off When Unoccupied?</label><select class="fs bc-inp" id="bc-newOAShutoff">
                   <option value="no" ${(rNewOAShutoff.value || 'yes') === 'no' ? 'selected' : ''}>No</option>
@@ -4742,16 +4785,16 @@ function openBASCalc(projId) {
                 </select>${_bcHintSpan(rNewOAShutoff.hint)}</div>
                 <div style="font-size:11px;font-weight:600;color:var(--text2);margin:10px 0 6px;text-transform:uppercase;letter-spacing:1px">Schedule (24-Hour)</div>
                 <div class="f2">
-                  <div class="fg"><label class="fl">Monday–Friday Start</label><input class="fi bc-inp" id="bc-newMfOn" type="number" min="0" max="24" value="${rNewMfOn.value}">${_bcHintSpan(rNewMfOn.hint)}</div>
-                  <div class="fg"><label class="fl">Monday–Friday Stop</label><input class="fi bc-inp" id="bc-newMfOff" type="number" min="0" max="24" value="${rNewMfOff.value}">${_bcHintSpan(rNewMfOff.hint)}</div>
+                  <div class="fg"><label class="fl">Monday–Friday Start</label><input class="fi bc-inp" id="bc-newMfOn" type="number" min="0" max="24" value="${_escHtml(rNewMfOn.value)}">${_bcHintSpan(rNewMfOn.hint)}</div>
+                  <div class="fg"><label class="fl">Monday–Friday Stop</label><input class="fi bc-inp" id="bc-newMfOff" type="number" min="0" max="24" value="${_escHtml(rNewMfOff.value)}">${_bcHintSpan(rNewMfOff.hint)}</div>
                 </div>
                 <div class="f2">
-                  <div class="fg"><label class="fl">Saturday Start</label><input class="fi bc-inp" id="bc-newSatOn" type="number" min="0" max="24" value="${rNewSatOn.value}">${_bcHintSpan(rNewSatOn.hint)}</div>
-                  <div class="fg"><label class="fl">Saturday Stop</label><input class="fi bc-inp" id="bc-newSatOff" type="number" min="0" max="24" value="${rNewSatOff.value}">${_bcHintSpan(rNewSatOff.hint)}</div>
+                  <div class="fg"><label class="fl">Saturday Start</label><input class="fi bc-inp" id="bc-newSatOn" type="number" min="0" max="24" value="${_escHtml(rNewSatOn.value)}">${_bcHintSpan(rNewSatOn.hint)}</div>
+                  <div class="fg"><label class="fl">Saturday Stop</label><input class="fi bc-inp" id="bc-newSatOff" type="number" min="0" max="24" value="${_escHtml(rNewSatOff.value)}">${_bcHintSpan(rNewSatOff.hint)}</div>
                 </div>
                 <div class="f2">
-                  <div class="fg"><label class="fl">Sunday Start</label><input class="fi bc-inp" id="bc-newSunOn" type="number" min="0" max="24" value="${rNewSunOn.value}">${_bcHintSpan(rNewSunOn.hint)}</div>
-                  <div class="fg"><label class="fl">Sunday Stop</label><input class="fi bc-inp" id="bc-newSunOff" type="number" min="0" max="24" value="${rNewSunOff.value}">${_bcHintSpan(rNewSunOff.hint)}</div>
+                  <div class="fg"><label class="fl">Sunday Start</label><input class="fi bc-inp" id="bc-newSunOn" type="number" min="0" max="24" value="${_escHtml(rNewSunOn.value)}">${_bcHintSpan(rNewSunOn.hint)}</div>
+                  <div class="fg"><label class="fl">Sunday Stop</label><input class="fi bc-inp" id="bc-newSunOff" type="number" min="0" max="24" value="${_escHtml(rNewSunOff.value)}">${_bcHintSpan(rNewSunOff.hint)}</div>
                 </div>
               </div>
             </div>
@@ -4763,11 +4806,11 @@ function openBASCalc(projId) {
             <div style="padding:14px">
               <div style="font-size:11px;color:var(--text2);margin-bottom:10px">Enter actual annual energy from utility analysis. Leave blank to skip calibration (factor = 1.0).</div>
               <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;align-items:end">
-                <div class="fg"><label class="fl">Existing Cooling kWh (from Utility Analysis)</label><input class="fi bc-inp" id="bc-calCoolKwh" type="number" value="${rCalCoolKwh.value}">${_bcHintSpan(rCalCoolKwh.hint)}</div>
-                <div class="fg"><label class="fl">Existing Heating kWh (from Utility Analysis)</label><input class="fi bc-inp" id="bc-calHeatKwh" type="number" value="${rCalHeatKwh.value}">${_bcHintSpan(rCalHeatKwh.hint)}</div>
+                <div class="fg"><label class="fl">Existing Cooling kWh (from Utility Analysis)</label><input class="fi bc-inp" id="bc-calCoolKwh" type="number" value="${_escHtml(rCalCoolKwh.value)}">${_bcHintSpan(rCalCoolKwh.hint)}</div>
+                <div class="fg"><label class="fl">Existing Heating kWh (from Utility Analysis)</label><input class="fi bc-inp" id="bc-calHeatKwh" type="number" value="${_escHtml(rCalHeatKwh.value)}">${_bcHintSpan(rCalHeatKwh.hint)}</div>
                 ${
                   parseInt(rHeatSrc.value) === 1 || parseInt(rHeatSrc.value) === 3 || parseInt(rHeatSrc.value) === 4
-                    ? `<div class="fg"><label class="fl">Existing Heating Gas — ${parseInt(rHeatSrc.value) === 1 ? 'Thousand Cubic Feet' : 'Therms'} (from Utility Analysis)</label><input class="fi bc-inp" id="bc-calHeatGas" type="number" value="${rCalHeatGas.value}">${_bcHintSpan(rCalHeatGas.hint)}<div style="font-size:9px;color:var(--text3);margin-top:2px">${parseInt(rHeatSrc.value) === 4 ? 'Splits combined "Both" heating between kWh and gas by share of load' : 'Calibrates the existing gas heating estimate to match utility analysis'}</div></div>`
+                    ? `<div class="fg"><label class="fl">Existing Heating Gas — ${parseInt(rHeatSrc.value) === 1 ? 'Thousand Cubic Feet' : 'Therms'} (from Utility Analysis)</label><input class="fi bc-inp" id="bc-calHeatGas" type="number" value="${_escHtml(rCalHeatGas.value)}">${_bcHintSpan(rCalHeatGas.hint)}<div style="font-size:9px;color:var(--text3);margin-top:2px">${parseInt(rHeatSrc.value) === 4 ? 'Splits combined "Both" heating between kWh and gas by share of load' : 'Calibrates the existing gas heating estimate to match utility analysis'}</div></div>`
                     : ''
                 }
                 <div style="text-align:center;padding:8px;background:var(--s3);border-radius:7px;border:1px solid var(--border)">

@@ -161,6 +161,41 @@ function computeHvacEnduse(kwhArr12, kwArr12, gasArr12) {
 }
 
 /**
+ * computeHvacMonthlyProfiles - the ONE place the measured electric HVAC of each month is split into a cooling
+ * profile and an electric-heating profile. It uses the same measured method as computeHvacEnduse: the HVAC kWh of a
+ * month is the bill above the baseload, max(0, bill - baseloadElec), so the 12 values add up to coolingKwh. Each
+ * month is then given to ONE end use by season: a heating month (heating degree days above cooling degree days)
+ * is heating, any other month is cooling. When a month has no weather, the calendar decides (Oct to Apr is
+ * heating, as in the Kansas City shapes the estimate already uses). A month with no bill has no value (0).
+ * @param {Array<number|null>} kwhArr12 - monthly electric kWh, Jan(0)..Dec(11), null = no bill
+ * @param {number} baseloadElec - the baseload from computeHvacEnduse
+ * @param {Array<number|null>} [hddArr12] - heating degree days per calendar month, null = no weather
+ * @param {Array<number|null>} [cddArr12] - cooling degree days per calendar month, null = no weather
+ * @returns {{cooling:number[], heating:number[], heatingMonth:boolean[], seasonBy:string[]}}
+ *   cooling[mo] / heating[mo] = measured HVAC kWh of that month if the month is a cooling / heating month, else 0.
+ *   seasonBy[mo] = 'weather' | 'calendar'.
+ */
+function computeHvacMonthlyProfiles(kwhArr12, baseloadElec, hddArr12, cddArr12) {
+  var out = { cooling: [], heating: [], heatingMonth: [], seasonBy: [] };
+  var isNum = function (v) {
+    return v !== null && v !== undefined && isFinite(v);
+  };
+  for (var i = 0; i < 12; i++) {
+    var bill = kwhArr12 ? kwhArr12[i] : null;
+    var hv = isNum(bill) ? Math.max(0, bill - baseloadElec) : 0;
+    var hdd = hddArr12 ? hddArr12[i] : null;
+    var cdd = cddArr12 ? cddArr12[i] : null;
+    var byWeather = isNum(hdd) && isNum(cdd);
+    var heat = byWeather ? hdd > cdd : i <= 3 || i >= 9;
+    out.heatingMonth.push(heat);
+    out.seasonBy.push(byWeather ? 'weather' : 'calendar');
+    out.heating.push(heat ? hv : 0);
+    out.cooling.push(heat ? 0 : hv);
+  }
+  return out;
+}
+
+/**
  * computeHvacDemand - the ONE place a building's electric demand is analyzed (Phase 4 foundation,
  * 2026-10-13). Two bases, never mixed:
  *   SUM  = the 12 monthly billed kW added together = the demand-charge baseline (kW-months). Savings
