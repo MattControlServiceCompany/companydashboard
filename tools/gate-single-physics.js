@@ -15,6 +15,7 @@
  *      293.071 / 0.000293071 (kWh per MMBtu / per Btu), 0.9153 / 0.91452 (therms per propane gallon),
  *      91.5 / 91.452 / 91452 (propane kBtu or Btu per gallon), 33475 / 0.33475 / 0.03346 (boiler hp),
  *      or 100000 as a Btu-per-therm divisor.
+ *   5d. Label strings ("100,000", "3,412", "3,412.14") and UNIT_TO_BASE energy factors typed as numbers.
  *   5a. Steam: 34.5 lb/h per boiler hp, 970.3 Btu per lb, 0.0097 therm per lb. One chain in physics.js.
  *   5b. physics.js derives every propane, electric and boiler hp figure from ONE base constant
  *      (BTU_PER_GAL_PROPANE 91452, BTU_PER_KWH 3412.14, BTU_PER_HR_PER_BHP 33475).
@@ -68,6 +69,11 @@ const CONSTANT_RULES = [
   [NUM('91.452'), 'kBtu per propane gallon (KBTU_PER_GAL_PROPANE)'],
   [NUM('91452'), 'Btu per propane gallon (BTU_PER_GAL_PROPANE)'],
   [NUM('33475'), 'Btu/h per boiler hp (BTU_PER_HR_PER_BHP)'],
+  [/[(÷\/]\s*100,000(?![\d,])/, 'Btu per therm in a label string (build it from BTU_PER_THERM)'],
+  [NUM('3,412'), 'Btu per kWh in a label string (build it from BTU_PER_KWH)'],
+  [NUM('3,412.14'), 'Btu per kWh in a label string (build it from BTU_PER_KWH)'],
+  [NUM('3412.14'), 'Btu per kWh in a label string (build it from BTU_PER_KWH)'],
+  [/\b(DTh|MMBtu|BTU|Btu)\s*:\s*\{[^}]*\bfactor:\s*[\d.]+\s*\}/, 'UNIT_TO_BASE energy factor typed as a number (derive it from physics.js)'],
   [NUM('33,475'), 'Btu/h per boiler hp (BTU_PER_HR_PER_BHP)'],
   [NUM('0.33475'), 'therm/h per boiler hp (THERMS_PER_HR_PER_BHP)'],
   [NUM('970.3'), 'Btu per lb of steam (BTU_PER_LB_STEAM)'],

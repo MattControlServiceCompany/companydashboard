@@ -1296,7 +1296,7 @@ const UNIT_TO_BASE = {
   Therms: { base: 'Therms', factor: 1 },
   CCF: { base: 'Therms', factor: 1.037 },
   MCF: { base: 'Therms', factor: 10.37 },
-  DTh: { base: 'Therms', factor: 10 },
+  DTh: { base: 'Therms', factor: THERMS_PER_MMBTU },
   MLbs: { base: 'Therms', factor: 10 },
   kWh: { base: 'kWh', factor: 1 },
   MWh: { base: 'kWh', factor: 1000 },

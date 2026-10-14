@@ -5,6 +5,10 @@
 
 /* ─── Template Registry ──────────────────────────────── */
 
+// Formula labels print the physics constants (computations/physics.js), never a typed copy.
+const THERM_LABEL = BTU_PER_THERM.toLocaleString('en-US');
+const KWH_LABEL = BTU_PER_KWH.toLocaleString('en-US', { maximumFractionDigits: 2 });
+
 const ECM_TEMPLATES = {
   /* ── 1. OA DAMPERS ──────────────────────────────────── */
   oa_dampers: {
@@ -139,13 +143,13 @@ const ECM_TEMPLATES = {
         id: 'therms_saved',
         label: 'Annual Gas Savings',
         unit: 'therms/yr',
-        formula: 'therms = 1.08 × excess_cfm × avg_dT_heating × unocc_heating_hrs / (100,000 × AFUE)',
+        formula: 'therms = 1.08 × excess_cfm × avg_dT_heating × unocc_heating_hrs / (' + THERM_LABEL + ' × AFUE)',
       },
       {
         id: 'kwh_saved',
         label: 'Annual Cooling Savings',
         unit: 'kWh/yr',
-        formula: 'kWh = 1.08 × excess_cfm × avg_dT_cooling × unocc_cooling_hrs / (COP × 3,412)',
+        formula: 'kWh = 1.08 × excess_cfm × avg_dT_cooling × unocc_cooling_hrs / (COP × ' + KWH_LABEL + ')',
       },
       { id: 'gas_savings_dollar', label: 'Annual Gas Savings ($)', unit: '$/yr', formula: 'therms_saved × gas_rate' },
       {
@@ -803,7 +807,7 @@ const ECM_TEMPLATES = {
         id: 'heating_savings_therms',
         label: 'Annual Heating Gas Savings',
         unit: 'therms/yr',
-        formula: '1.08 × CFM × ΔT_recovered × heating_hours / (100,000 × AFUE); ΔT_recovered = ΔT × ERW_eff',
+        formula: '1.08 × CFM × ΔT_recovered × heating_hours / (' + THERM_LABEL + ' × AFUE); ΔT_recovered = ΔT × ERW_eff',
       },
       {
         id: 'cooling_savings_kwh',
@@ -844,7 +848,7 @@ const ECM_TEMPLATES = {
       const delta_t_recovered = delta_t_raw * erw_winter;
       const heat_btu_yr = 1.08 * inp.oa_cfm * delta_t_recovered * inp.heating_hours;
 
-      // Convert to therms: BTU / (100,000 BTU/therm × AFUE)
+      // Convert to therms: BTU / (BTU_PER_THERM × AFUE)
       const heating_savings_therms = heat_btu_yr / (BTU_PER_THERM * inp.afue);
       const heating_savings_kwh = heat_btu_yr / (inp.afue * BTU_PER_KWH); // for electric
 
@@ -1691,14 +1695,14 @@ const ECM_TEMPLATES = {
         id: 'therms_saved',
         label: 'Heating Therms Saved',
         unit: 'therms/yr',
-        formula: '1.08 × cfm_saved × avg_dt_heat × heat_hours / (100,000 × AFUE)',
+        formula: '1.08 × cfm_saved × avg_dt_heat × heat_hours / (' + THERM_LABEL + ' × AFUE)',
       },
       { id: 'gas_savings_dollar', label: 'Heating Cost Savings', unit: '$/yr', formula: 'therms_saved × gas_rate' },
       {
         id: 'cool_kwh_saved',
         label: 'Cooling kWh Saved',
         unit: 'kWh/yr',
-        formula: '1.08 × cfm_saved × avg_dt_cool × cool_hours / (COP × 3,412)',
+        formula: '1.08 × cfm_saved × avg_dt_cool × cool_hours / (COP × ' + KWH_LABEL + ')',
       },
       { id: 'cool_savings_dollar', label: 'Cooling Cost Savings', unit: '$/yr', formula: 'cool_kwh_saved × elec_rate' },
       {
@@ -1863,7 +1867,7 @@ const ECM_TEMPLATES = {
         id: 'reheat_saved_qty',
         label: 'Reheat Savings (therms or kWh)',
         unit: 'therms or kWh/yr',
-        formula: '1.08 × (system_cfm × pct_zones) × avg_dT × season_hours → ÷ (100,000×AFUE) gas, ÷ ' + BTU_PER_KWH + ' electric',
+        formula: '1.08 × (system_cfm × pct_zones) × avg_dT × season_hours → ÷ (' + THERM_LABEL + '×AFUE) gas, ÷ ' + KWH_LABEL + ' electric',
       },
       {
         id: 'reheat_savings_dollar',
@@ -1875,7 +1879,7 @@ const ECM_TEMPLATES = {
         id: 'cool_kwh_saved',
         label: 'Cooling kWh Saved (Supply Air Temperature Reset)',
         unit: 'kWh/yr',
-        formula: '1.08 × system_cfm × avg_dT × season_hours × 0.30 / (COP × 3,412)',
+        formula: '1.08 × system_cfm × avg_dT × season_hours × 0.30 / (COP × ' + KWH_LABEL + ')',
         assumption:
           'Assumption, not measured: 30% of the airflow is taken to benefit from the supply air temperature reset (the 0.30 factor).',
       },
@@ -2135,7 +2139,7 @@ const ECM_TEMPLATES = {
         id: 'heat_qty',
         label: 'Heating Energy Saved',
         unit: 'therms or kWh/yr',
-        formula: 'area × ΔU × HDD × 24 → ÷ 100,000 for therms (gas), ÷ 3,412 for kWh (electric), both ÷ efficiency',
+        formula: 'area × ΔU × HDD × 24 → ÷ ' + THERM_LABEL + ' for therms (gas), ÷ ' + KWH_LABEL + ' for kWh (electric), both ÷ efficiency',
       },
       {
         id: 'heat_savings_dollar',
@@ -2147,7 +2151,7 @@ const ECM_TEMPLATES = {
         id: 'cool_kwh_saved',
         label: 'Cooling kWh Saved',
         unit: 'kWh/yr',
-        formula: 'area × ΔU × CDD × 24 / (COP × 3,412)',
+        formula: 'area × ΔU × CDD × 24 / (COP × ' + KWH_LABEL + ')',
       },
       { id: 'cool_savings_dollar', label: 'Cooling Cost Savings', unit: '$/yr', formula: 'cool_kwh_saved × elec_rate' },
       {
