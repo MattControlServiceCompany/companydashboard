@@ -3206,8 +3206,9 @@ function openSolarCalc(projId) {
             <div class="card" style="margin-bottom:16px">
               <div class="card-hdr"><span class="card-title">System Configuration</span></div>
               <div style="padding:16px">
-                <div class="f2"><div class="fg"><label class="fl">Total Array Size (kW DC)</label><input class="fi sc-inp" id="sc-arrayKw" type="number" value="${sv.arrayKw || arrays.reduce((a, ar) => a + (ar.kw || 0), 0) || 115}"></div></div>
-                <div class="f3">
+                <div class="f2"><div class="fg"><label class="fl">Total Array Size (kW DC)</label><input class="fi sc-inp" id="sc-arrayKw" type="number" value="${sv.arrayKw || arrays.reduce((a, ar) => a + (ar.kw || 0), 0) || 115}"></div>
+                  <div class="fg"><label class="fl">Array Cost ($/Watt)</label><input class="fi sc-inp" id="sc-costPerWatt" type="number" value="${sv.costPerWatt || 2.5}"></div></div>
+                <div class="f3"><div class="fg"><label class="fl">Tax Credit %</label><input class="fi sc-inp" id="sc-taxCredit" type="number" value="${sv.taxCredit || 30}"></div>
                   <div class="fg"><label class="fl">Net Metering Max kW</label><input class="fi sc-inp" id="sc-netMeterMax" type="number" value="${sv.netMeterMax || 150}"></div>
                   <div class="fg"><label class="fl">Savings % (pre-solar)</label><input class="fi sc-inp" id="sc-savingsPct" type="number" value="${sv.savingsPct || 0}" placeholder="0"><div class="fhint">BAS/other savings applied before solar (Section E)</div></div></div>
                 <div class="f2"><div class="fg"><label class="fl">Billing kW Override</label><input class="fi sc-inp" id="sc-billingKw" type="number" value="${sv.billingKw || ''}" placeholder="Auto from baseline"></div>
@@ -3670,6 +3671,8 @@ function solarSaveInputs(projId) {
   p.solarCalc = {
     ...(p.solarCalc || {}),
     arrayKw: gv('sc-arrayKw'),
+    costPerWatt: gv('sc-costPerWatt'),
+    taxCredit: gv('sc-taxCredit'),
     netMeterMax: gv('sc-netMeterMax'),
     billingKw: gv('sc-billingKw'),
     savingsPct: gv('sc-savingsPct'),
@@ -3732,7 +3735,9 @@ function _scDoCalc(projId) {
     return el ? parseFloat(el.value) || 0 : 0;
   };
   const MO = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
-  const arrayKw = gv('sc-arrayKw');
+  const arrayKw = gv('sc-arrayKw'),
+    costPerWatt = gv('sc-costPerWatt'),
+    taxCredit = gv('sc-taxCredit');
   const ffDec = gv('sc-franchiseFeeDecimal') || gv('sc-franchisePct') / 100;
   const savPct = gv('sc-savingsPct') / 100;
   const ecaThresh = gv('sc-ecaThreshold') || 18813.204;
@@ -4120,6 +4125,12 @@ function _scDoCalc(projId) {
   }
   const nmTot = eA - fA,
     btmTot = eA - gA;
+  // Cost, incentive, net cost and payback come from the shared cost-lines functions (computations/cost-lines.js); no payback formula here.
+  const cost = measureCostTotals({ costLines: solarCostLines(arrayKw, costPerWatt, taxCredit) }, 0);
+  const totCost = cost.gross,
+    taxCreditDollars = cost.incentive,
+    costAT = totCost - taxCreditDollars,
+    solarYears = simplePayback(cost.gross, cost.incentive, Math.max(nmTot, btmTot)).years;
 
   // Formatters
   const fn = (n) => Math.round(n).toLocaleString();
@@ -4135,7 +4146,7 @@ function _scDoCalc(projId) {
     const noData = bKwh.every((k) => k === 0) && !manKw;
     const kpi = (lbl, val, col) =>
       `<div class="card" style="background:var(--s1);padding:10px 12px;text-align:center"><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">${lbl}</div><div style="font-size:17px;font-weight:800;font-family:var(--mono);color:var(--${col})">${val}</div></div>`;
-    sumEl.innerHTML = `${noData ? '<div style="background:var(--warn-dim);border:1px solid var(--warn);border-radius:8px;padding:8px 12px;font-size:12px;color:var(--warn);margin-bottom:12px">⚠️ No baseline data — populate Section A for accurate results.</div>' : ''}<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(115px,1fr));gap:8px">${kpi('Array', arrayKw + ' kW', 'accent')}${kpi('Production', fn(totProd) + ' kWh', 'em')}${kpi('Baseline $/yr', fd(dA), 'text')}${kpi('NM $/yr', fd(fA), 'teal')}${kpi('BTM $/yr', fd(gA), 'violet')}${kpi('NM Savings', fd(nmTot), 'green')}${kpi('BTM Savings', fd(btmTot), 'green')}</div>`;
+    sumEl.innerHTML = `${noData ? '<div style="background:var(--warn-dim);border:1px solid var(--warn);border-radius:8px;padding:8px 12px;font-size:12px;color:var(--warn);margin-bottom:12px">⚠️ No baseline data — populate Section A for accurate results.</div>' : ''}<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(115px,1fr));gap:8px">${kpi('Array', arrayKw + ' kW', 'accent')}${kpi('Production', fn(totProd) + ' kWh', 'em')}${kpi('Baseline $/yr', fd(dA), 'text')}${kpi('NM $/yr', fd(fA), 'teal')}${kpi('BTM $/yr', fd(gA), 'violet')}${kpi('NM Savings', fd(nmTot), 'green')}${kpi('BTM Savings', fd(btmTot), 'green')}${kpi('System Cost', fd(totCost), 'text')}${kpi('Tax Credit', fd(taxCreditDollars), 'teal')}${kpi('After Credit', fd(costAT), 'teal')}${kpi('Payback', solarYears == null ? '—' : solarYears.toFixed(1) + ' yrs', 'amber')}</div>`;
   }
 
   // Table builders — exact Excel match
@@ -4320,6 +4331,30 @@ function solarMonthlyWeights(projId) {
   };
 }
 
+// solarCostLines - the ONE owner of the cost lines the Solar calculator puts on its measure: the system cost (kW x $/W) as a
+// third-party line and the tax credit (% of the system cost) as an incentive line. The calculator cards and Add as Measure both call it.
+function solarCostLines(arrayKw, costPerWatt, taxCreditPct) {
+  const cost = (parseFloat(arrayKw) || 0) * 1000 * (parseFloat(costPerWatt) || 0);
+  const pct = parseFloat(taxCreditPct) || 0;
+  if (!(cost > 0)) return [];
+  const lines = [
+    newCostLine('thirdParty', {
+      label: `Solar PV array, ${arrayKw} kW at $${costPerWatt}/W`,
+      amount: cost,
+      note: `System cost = ${arrayKw} kW x 1,000 x $${costPerWatt} per Watt`,
+    }),
+  ];
+  if (pct > 0)
+    lines.push(
+      newCostLine('incentive', {
+        label: 'Solar tax credit',
+        amount: cost * (pct / 100),
+        note: `${pct}% tax credit on the system cost ($${Math.round(cost).toLocaleString()})`,
+      }),
+    );
+  return lines;
+}
+
 function solarAddAsMeasure(projId) {
   const p = projects.find((x) => x.id === projId);
   if (!p || !p.solarCalc) return;
@@ -4337,6 +4372,7 @@ function solarAddAsMeasure(projId) {
     gas: Array(12).fill(0),
     totalDollar: 0,
     source: 'solar',
+    costLines: solarCostLines(sc.arrayKw, sc.costPerWatt, sc.taxCredit),
   };
   initMeasureRates(m, projId, m.bldgId, 'solar add measure');
   sd.measures.push(m);
