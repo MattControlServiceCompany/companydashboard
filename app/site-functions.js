@@ -2506,6 +2506,14 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.13.114', date: '2026-10-13', title: 'Savings use utility-season rates from the baseline bills',
+    items: [
+      { type: 'change', text: 'Energy Savings matrix, ECM templates, Energy Graphics, reports: projected savings use utility-season rates from the baseline bills. Evergy: summer Jun 1-Sep 30 per tariff, and a bill that crosses a season is split by days (printed summer and winter lines are used). Gas, propane and water: each month is priced at that baseline rate for that month.' },
+      { type: 'change', text: 'Baseline rates are now usage-weighted (total charges divided by total usage). Bills flagged for a usage and charge mismatch are left out and listed next to the rate.' },
+      { type: 'fix', text: 'Utility Data: the Baseline pills now match the rate cards. Water, sewer and stormwater rates show in the own unit of the bill.' },
+      { type: 'change', text: 'Energy Savings matrix, Energy Graphics, reports: the rates of a measure follow the baseline rates unless you typed them by hand. Every view (matrix, rows, quarters, Energy Graphics, reports) shows the same number.' }
+    ]
+  },
   { v: 'v2026.10.13.113', date: '2026-10-13', title: 'One rate per season for savings and costs',
     items: [
       { type: 'change', text: 'Energy Savings matrix, ECM templates: projected savings are now priced at each building\'s baseline-period summer (Jun-Sep) and winter (Oct-May) rates, month by month. Gas has summer and winter rates too.' },
