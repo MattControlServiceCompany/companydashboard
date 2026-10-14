@@ -6,7 +6,6 @@
 //   fanUnitModel      one unit: fan kW, run hours, speed drive, speed profile, two-speed split, each with its data level
 //   fanModelUnits     every unit of a building: fanUnitModel, plus a stated Default estimate for a unit with no amps, airflow
 //                     or horsepower (never a silent 0)
-//   fanSpeedProfile   the speed profile of a variable-flow fan from the building's measured monthly HVAC load
 //   fanSavingsForUnits the three savings measures of the template, per unit: COUNTED (drive status known) and POSSIBLE (not counted)
 //   fanResetSavingsFraction, fanKwFromHp, fanDefaultRunHours  the fan rules the BAS report calls (app/bas-trends.js)
 // getEndUse (computations/end-use.js) adds the units up into the fan end use. The template (app/ecm-calculators.js)
@@ -33,7 +32,12 @@ var FAN_DEFAULT_VOLTS = 208; // line voltage when the matrix has amps and no vol
 var FAN_DEFAULT_PHASE = 3; // phase when the matrix has amps and no phase
 var FAN_HP_MOTOR_EFF = 0.9; // motor efficiency for a nameplate HP
 var FAN_HP_LOAD_FACTOR = 0.8; // share of nameplate HP the fan draws
-var FAN_DEFAULT_MIN_AIRFLOW = 0.3; // lowest airflow of a variable-flow fan, as a fraction of full flow (Default: typical VAV minimum airflow)
+// Default saving of adding a drive to a constant-speed fan when no fan speed trend exists: a published range, counted at its mid.
+// Source: the CSC fan retrofit range "about 30 to 60%" of fan energy (knowledge base outputs, 2026-10-13 fan audit request email v5).
+// Support in the knowledge base: ComEd/Slipstream RTU field study, 61% +/- 9% of supply fan energy (fan retrofit deck notes, 2026-10-11).
+var FAN_VFD_SAVINGS_RANGE = { low: 0.3, mid: 0.45, high: 0.6 };
+var FAN_VFD_SAVINGS_SOURCE = 'CSC fan retrofit range, about 30 to 60 percent of fan energy; knowledge base output 2026-10-13 fan audit request email v5';
+var FAN_VFD_SAVINGS_LABEL = 'Default: published savings range for adding a drive to a constant-speed fan (' + FAN_VFD_SAVINGS_SOURCE + ')';
 var FAN_TWO_SPEED_RATIO = 0.58; // Low speed as a fraction of High (4/6 pole common case; read the motor tag)
 var FAN_TWO_SPEED_DEFAULT_LOW_SHARE = 0.55; // share of run hours on Low when no Hi/Lo enable trend exists
 var FAN_RESET_DEFAULT_PRESSURE_CUT = 0.2; // duct static pressure cut a reset reaches (a 20 percent cut saves 25.6 percent of fan power: fan law with the fixed-loss share)
@@ -87,24 +91,6 @@ function _fanPowerOpts(curve) {
 // The affinity law with the fixed-loss share: a two-speed motor at Low speed and a duct static pressure reset follow it (not a VAV flow curve).
 function _fanAffinityOpts() {
   return { fixedShare: FAN_FIXED_POWER_SHARE };
-}
-
-/**
- * The speed profile of a variable-flow fan, from the building's measured monthly HVAC load. Each month's airflow fraction is that
- * month's load (cooling + heating end use, getEndUse) divided by the peak month's, floored at the minimum airflow. The share of a
- * month is its days. A fan trend with speed bins wins over this (fanUnitModel). No monthly load: null (no profile, no drive savings).
- * @param {number[]|null} loadMonthly - 12 monthly HVAC load values, Jan..Dec, one unit
- * @param {number} [minAirflow] - fraction of full flow; default FAN_DEFAULT_MIN_AIRFLOW
- * @returns {Array<{speed:number, share:number}>|null}
- */
-function fanSpeedProfile(loadMonthly, minAirflow) {
-  if (!loadMonthly || loadMonthly.length !== 12) return null;
-  var peak = Math.max.apply(null, loadMonthly);
-  if (!(peak > 0)) return null;
-  var min = minAirflow == null ? FAN_DEFAULT_MIN_AIRFLOW : minAirflow;
-  return loadMonthly.map(function (v, i) {
-    return { speed: Math.min(1, Math.max(min, v / peak)), share: FAN_MONTH_DAYS[i] };
-  });
 }
 
 /** Fan power saved by a duct static pressure reset, as a fraction of fan power (the one answer; the BAS report calls it too). */
@@ -253,6 +239,23 @@ function _fanRowHasFanPoint(row, pts) {
 }
 
 /**
+ * The first point name of a unit that shows its supply fan has a variable-speed drive (the one drive-name rule), or null.
+ * A name shows a drive when it holds VFD, VSD, drive, inverter, Hz, frequency or speed. Not a drive: a High/Low speed enable or status
+ * (a two-speed motor), wind or air speed, a diagnostic message, and a point of another fan or machine (exhaust, return, relief,
+ * condenser, compressor, pump, energy recovery wheel).
+ * @param {string[]} names - point names of one Equipment Matrix row
+ * @returns {string|null}
+ */
+function fanDrivePointName(names) {
+  var drive = /\b(vfd|vsd|drive|inverter|hz|frequency|speed)\b/i;
+  var notDrive = /\b(wind|air\s*speed|exhaust|return|relief|condenser|compressor|pump|chiller|boiler|tower|wheel|diagnostic)\b|\b(high|hi|low|lo)\s*speed\b|\bspeed\s*(high|hi|low|lo)\b/i;
+  for (var i = 0; i < names.length; i++) {
+    if (drive.test(names[i]) && !notDrive.test(names[i])) return names[i];
+  }
+  return null;
+}
+
+/**
  * The supply-fan rows of one building, as raw facts (no math). Equipment Matrix rows of the fan equipment types (AHU, RTU, DOAS,
  * MAU, fan) that have a fan point, joined to the BAS Trends equipment with the same tag (building + equipment name).
  * @returns {{units:Array<Object>, note:string}}
@@ -288,7 +291,9 @@ function fanReadUnits(projId, bldgId) {
       var asset = function (key) {
         return emGetCellValByDef(row, { key: key }, edits);
       };
-      var speedPoint = pts.supplyFanSpeed != null && pts.supplyFanSpeed !== '';
+      var pointNames = Object.keys(row.pointsRaw && !Array.isArray(row.pointsRaw) ? row.pointsRaw : row.points || {});
+      var drivePoint = fanDrivePointName(pointNames);
+      if (!drivePoint && pts.supplyFanSpeed != null && pts.supplyFanSpeed !== '') drivePoint = 'Supply Fan Speed';
       out.units.push({
         id: String(row.id),
         name: row.equipName || '',
@@ -300,7 +305,7 @@ function fanReadUnits(projId, bldgId) {
         phase: _fanPhase(asset('phase')),
         hp: FAN_HP_CATEGORIES.indexOf(row.category) >= 0 ? _fanNum(asset('hpTons')) : null,
         tons: FAN_HP_CATEGORIES.indexOf(row.category) >= 0 ? null : _fanNum(asset('hpTons')), // size hint only (an RTU is sized in tons)
-        speedPoint: speedPoint,
+        drivePoint: drivePoint,
         hasVfd: _fanYesNo(asset('hasVfd')),
         status: _fanOn(pts.supplyFanStatus),
         occupied: _fanOn(pts.scheduledOccupied),
@@ -321,19 +326,20 @@ function fanReadUnits(projId, bldgId) {
  * kW:     measured amps x volts x phase (trend amps first, then the matrix amps), else cfm x W per cfm, else nameplate HP.
  * Hours:  BAS trend run hours (status, enable, amps or speed), else a fan the matrix read running while unoccupied
  *         (runs all the time), else the stated default.
- * Drive:  driveStatus 'has' (a speed trend that moves, or Has variable speed: yes), 'none' (Has variable speed: no, or a speed trend
- *         that stays in one range), 'assumed' (a speed point in the matrix; a Default: it may be soft-start only) or 'unknown'
- *         (nothing says). Only 'none' lets the savings template COUNT a drive or two-speed replacement.
- * Speed profile: a speed trend that moves wins; else the monthly HVAC load profile (fanSpeedProfile) when `loadMonthly` is given.
+ * Drive:  driveStatus 'none' (Has variable speed: no, set by the user, wins over every other evidence), 'has' (a speed trend that
+ *         moves, Has variable speed: yes, or a point of the unit named like a drive: fanDrivePointName, "Drive found from point:
+ *         <name>"), 'none' also when a speed trend stays in one range, else 'unknown' (nothing says).
+ *         Only 'none' lets the savings template COUNT a drive or two-speed replacement.
+ * Speed profile: only a speed trend that moves (fan speed bins by hours). Without it there is no profile; the drive saving then
+ *         comes from the published range in fanSavingsForUnits (FAN_VFD_SAVINGS_RANGE).
  * Estimate: `est` ({kw, how, rule} or {annualKwh, how, rule}, from fanModelUnits) sizes a unit that has no amps, airflow
  *         or horsepower. The model carries `estimate` (the rule) and its power is tagged Default with the basis in kwHow.
  *         sizeBasis 'national' marks a unit sized by the national average (rule 'area'): the template counts it only when confirmed.
  * @param {Object} raw - fanReadUnits unit
  * @param {Object|null} est
- * @param {number[]|null} [loadMonthly] - 12 monthly HVAC load values of the building (fanSpeedProfile)
  * @returns {Object} model; ok:false (with `missing`) when the unit cannot be sized
  */
-function fanUnitModel(raw, est, loadMonthly) {
+function fanUnitModel(raw, est) {
   var t = raw.trend;
   var m = { id: raw.id, name: raw.name, category: raw.category, hasVfd: raw.hasVfd || null, ok: false, missing: '' };
 
@@ -431,11 +437,11 @@ function fanUnitModel(raw, est, loadMonthly) {
     m.driveStatus = raw.hasVfd === 'yes' ? 'has' : 'none';
     m.vfdLevel = 'matrix';
     m.vfdHow = 'Has variable speed: ' + raw.hasVfd + ' (a value in the Equipment Matrix: set by a person or read from a drawing flag)';
-  } else if (raw.speedPoint) {
+  } else if (raw.drivePoint) {
     m.vfd = 'yes';
-    m.driveStatus = 'assumed';
-    m.vfdLevel = 'default';
-    m.vfdHow = 'Drive assumed from speed point (a speed point may be soft-start only; set Has variable speed to change it)';
+    m.driveStatus = 'has';
+    m.vfdLevel = 'matrix';
+    m.vfdHow = 'Drive found from point: ' + raw.drivePoint + ' (set Has variable speed to No to override)';
   } else if (tSpeed) {
     m.vfd = 'no';
     m.driveStatus = 'none';
@@ -447,23 +453,11 @@ function fanUnitModel(raw, est, loadMonthly) {
     m.vfdLevel = 'default';
     m.vfdHow = 'Drive status unknown: no fan speed point and Has variable speed is not set (set it to count a drive)';
   }
-  // ---- speed profile: a moving speed trend, else the measured monthly HVAC load ----
-  m.loadMonthly = loadMonthly || null;
-  if (tSpeed && tSpeed.varies) {
-    m.profile = { bins: tSpeed.bins, level: 'trend', how: 'trend fan speed by hours' };
-  } else {
-    var loadBins = fanSpeedProfile(m.loadMonthly, FAN_DEFAULT_MIN_AIRFLOW);
-    m.profile = loadBins
-      ? {
-          bins: loadBins,
-          level: 'default',
-          how:
-            'monthly HVAC load of the building (cooling + heating from the bills) over the peak month, floored at ' +
-            Math.round(FAN_DEFAULT_MIN_AIRFLOW * 100) +
-            '% airflow (Default: typical VAV minimum airflow)',
-        }
-      : { bins: null, level: 'default', how: 'no monthly HVAC load for this building: no speed profile, so no drive savings' };
-  }
+  // ---- speed profile: only a moving speed trend (hours by speed bin); no trend, no profile ----
+  m.profile =
+    tSpeed && tSpeed.varies
+      ? { bins: tSpeed.bins, level: 'trend', how: 'trend fan speed by hours' }
+      : { bins: null, level: 'default', how: 'no fan speed trend: no speed profile' };
   m.profileFraction = m.profile.bins ? fanMeanPowerFraction(m.profile.bins, _fanPowerOpts()) : null;
 
   // ---- two-speed fan ----
@@ -542,19 +536,18 @@ function _fanRound1(v) {
  *       tons takes the mean of the others), else equally (kWh per sq ft is shown); needs the total baseline electricity kWh
  * The national average is a mean of fans with and without drives. The units already sized are taken out of it at their own
  * power (a fan with a drive at its part-load power, fanUnitModel baseline fraction), and a unit sized by it that has a drive
- * (known or assumed) is held at part-load power too, so the pool is never read as all constant speed.
+ * is held at part-load power too, so the pool is never read as all constant speed.
  * The building type decides the share (the building's own type when set; else the project type; the label says which).
  * A sibling is a unit with its own data (not an estimate). The end use caps the sum (total electricity less measured cooling and electric heating).
  * @param {string|number} projId
  * @param {string} bldgId
  * @param {{units:Array<Object>}} read - fanReadUnits result of the building
  * @param {number|null} totalAnnual - the building's total baseline electricity kWh per year, or null
- * @param {number[]|null} [loadMonthly] - 12 monthly HVAC load values (cooling + heating) of the building, for the speed profile
  * @returns {Array<Object>} fanUnitModel results, in the order of read.units
  */
-function fanModelUnits(projId, bldgId, read, totalAnnual, loadMonthly) {
+function fanModelUnits(projId, bldgId, read, totalAnnual) {
   var models = read.units.map(function (u) {
-    return fanUnitModel(u, null, loadMonthly);
+    return fanUnitModel(u, null);
   });
   var pending = [];
   models.forEach(function (m, i) {
@@ -622,7 +615,7 @@ function fanModelUnits(projId, bldgId, read, totalAnnual, loadMonthly) {
             ' kW (Default)',
         };
     }
-    if (est) models[i] = fanUnitModel(read.units[i], est, loadMonthly);
+    if (est) models[i] = fanUnitModel(read.units[i], est);
     else unresolved.push(i);
   });
   if (unresolved.length && totalAnnual > 0) {
@@ -681,7 +674,7 @@ function fanModelUnits(projId, bldgId, read, totalAnnual, loadMonthly) {
             ': ' +
             Math.round(each).toLocaleString() +
             ' kWh (Default)',
-        }, loadMonthly);
+        });
       });
   }
   return models;
@@ -696,7 +689,8 @@ function fanMonthWeights() {
 
 /**
  * The three savings measures of the fan template for the chosen units. Quantities only (kWh and kW).
- *   vfd      a variable-speed drive or EC motor on a constant-speed fan (speed profile: fanSpeedProfile, the monthly HVAC load)
+ *   vfd      a variable-speed drive or EC motor on a constant-speed fan: the published range FAN_VFD_SAVINGS_RANGE (low, mid, high) of the
+ *            fan energy, the mid counted (savingsKwh.vfd; low and high in savingsKwh.vfdLow and vfdHigh)
  *   twoSpeed a drive in place of a two-speed motor: Low hours stay at Low speed, High hours modulate (Low share from the enable trend)
  *   reset    duct static pressure reset on a fan that has a drive
  * COUNTED vs POSSIBLE. A drive or two-speed replacement is counted only when the unit's drive status is known "no drive"
@@ -707,10 +701,10 @@ function fanMonthWeights() {
  * Each unit's energy is scaled by `factor` (its share of the fan end use after the HVAC electric cap).
  * @param {Array<Object>} models - fanUnitModel results of the chosen units
  * @param {Object} P - { vfd:boolean, twoSpeed:boolean, reset:boolean, resetCut:number (0.2 = 20 percent),
- *   minAirflow:number (fraction, default FAN_DEFAULT_MIN_AIRFLOW), curve:string ('affinity' | 'ashraeG', default FAN_DEFAULT_PART_LOAD_CURVE),
+ *   curve:string ('affinity' | 'ashraeG', default FAN_DEFAULT_PART_LOAD_CURVE),
  *   confirmedSizes:string[] (ids of national-average units the user confirmed) }
  * @param {number} factor - cap factor, 0..1
- * @returns {{units:Array<Object>, baselineKwh:number, savingsKwh:{vfd:number,twoSpeed:number,reset:number,total:number},
+ * @returns {{units:Array<Object>, baselineKwh:number, savingsKwh:{vfd:number,vfdLow:number,vfdHigh:number,twoSpeed:number,reset:number,total:number},
  *   possible:{drive:number,size:number,total:number}, savingsKw:number}}
  */
 function fanSavingsForUnits(models, P, factor) {
@@ -727,7 +721,7 @@ function fanSavingsForUnits(models, P, factor) {
   var out = {
     units: [],
     baselineKwh: 0,
-    savingsKwh: { vfd: 0, twoSpeed: 0, reset: 0, total: 0 },
+    savingsKwh: { vfd: 0, vfdLow: 0, vfdHigh: 0, twoSpeed: 0, reset: 0, total: 0 },
     possible: { drive: 0, size: 0, total: 0 },
     savingsKw: 0,
   };
@@ -741,6 +735,7 @@ function fanSavingsForUnits(models, P, factor) {
       vfd: 0,
       twoSpeed: 0,
       reset: 0,
+      vfdRange: { low: 0, mid: 0, high: 0 },
       possible: 0,
       possibleKind: null,
       why: {},
@@ -757,11 +752,6 @@ function fanSavingsForUnits(models, P, factor) {
       u.possibleKind = driveGap ? 'drive' : u.possibleKind || 'size';
     };
     var sizeWhy = 'national-average size: not counted until you confirm it';
-    var newFrac = null; // power fraction of the new drive on this unit's speed profile
-    if (m.driveStatus !== 'has') {
-      var bins = fanSpeedProfile(m.loadMonthly, P.minAirflow);
-      newFrac = bins ? Math.min(1, fanMeanPowerFraction(bins, curveOpts)) : null;
-    }
     if (m.twoSpeed) {
       u.why.vfd = 'a two-speed fan: see the two-speed drive measure';
       u.why.reset = 'a two-speed fan: no reset measure';
@@ -775,8 +765,8 @@ function fanSavingsForUnits(models, P, factor) {
       }
     } else {
       u.why.twoSpeed = 'not a two-speed fan';
-      if (m.driveStatus === 'has' || m.driveStatus === 'assumed') {
-        u.why.vfd = m.driveStatus === 'has' ? 'already has a variable-speed drive' : 'a drive is assumed from a speed point';
+      if (m.driveStatus === 'has') {
+        u.why.vfd = 'already has a variable-speed drive';
         if (!P.reset) u.why.reset = 'measure not chosen';
         else {
           put('reset', m.kwh * resetSave * m.reset.pass * factor, false);
@@ -788,19 +778,28 @@ function fanSavingsForUnits(models, P, factor) {
         var driveGap = m.driveStatus !== 'none';
         u.why.reset = driveGap ? 'drive status unknown: a reset needs a drive' : 'no drive today: a reset needs one';
         if (!P.vfd) u.why.vfd = 'measure not chosen';
-        else if (newFrac == null) u.why.vfd = 'no monthly HVAC load for this building: no speed profile';
         else {
-          put('vfd', m.kw * m.hours * (1 - newFrac) * factor, driveGap);
-          if (driveGap) u.why.vfd = DRIVE_GAP;
-          else if (sizeGap) u.why.vfd = sizeWhy;
+          // no fan speed trend (a moving one would make the status 'has'): the published range, counted at its mid
+          var base = m.kw * m.hours * factor;
+          put('vfd', base * FAN_VFD_SAVINGS_RANGE.mid, driveGap);
+          if (!driveGap && !sizeGap) {
+            u.vfdRange.low += base * FAN_VFD_SAVINGS_RANGE.low;
+            u.vfdRange.high += base * FAN_VFD_SAVINGS_RANGE.high;
+          }
+          u.why.vfd = FAN_VFD_SAVINGS_LABEL;
+          if (driveGap) u.why.vfd = DRIVE_GAP + '. ' + u.why.vfd;
+          else if (sizeGap) u.why.vfd = sizeWhy + '. ' + u.why.vfd;
         }
       }
     }
+    u.vfdRange.mid = u.vfd;
     u.total = u.vfd + u.twoSpeed + u.reset;
     u.kw = m.hours > 0 ? u.total / m.hours : 0;
     out.units.push(u);
     out.baselineKwh += u.baselineKwh;
     out.savingsKwh.vfd += u.vfd;
+    out.savingsKwh.vfdLow += u.vfdRange.low;
+    out.savingsKwh.vfdHigh += u.vfdRange.high;
     out.savingsKwh.twoSpeed += u.twoSpeed;
     out.savingsKwh.reset += u.reset;
     out.savingsKw += u.kw;

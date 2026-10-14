@@ -461,43 +461,29 @@ async function main() {
   r.units.forEach((u) => (R[u.name] = u));
   const fs0 = { fixedShare: sb.FAN_FIXED_POWER_SHARE };
   const fsG = { fixedShare: sb.FAN_FIXED_POWER_SHARE, curve: 'ashraeG' };
-  // a constant-speed fan (Has variable speed: No) with a measured monthly HVAC load: the load profile, the Appendix G curve
-  const cs = sb.fanUnitModel({ id: 'c', name: 'C', category: 'ahu', cfm: 12000, hasVfd: 'no', trend: null }, null, COOL);
+  // a constant-speed fan (Has variable speed: No), no speed trend: the published range, the mid counted
+  const cs = sb.fanUnitModel({ id: 'c', name: 'C', category: 'ahu', cfm: 12000, hasVfd: 'no', trend: null }, null);
   const rc = sb.fanSavingsForUnits([cs], ALL, f);
-  const profBins = sb.fanSpeedProfile(COOL, 0.3);
-  const prof = sb.fanMeanPowerFraction(profBins, fsG);
+  const RNG = sb.FAN_VFD_SAVINGS_RANGE;
   ok(
     cs.driveStatus === 'none' &&
-      near(rc.units[0].vfd, cs.kw * cs.hours * (1 - prof) * f, 1e-6) &&
-      rc.units[0].vfd > 0 &&
+      near(rc.units[0].vfd, cs.kw * cs.hours * RNG.mid * f, 1e-6) &&
+      near(rc.units[0].vfdRange.low, cs.kw * cs.hours * RNG.low * f, 1e-6) &&
+      near(rc.units[0].vfdRange.high, cs.kw * cs.hours * RNG.high * f, 1e-6) &&
+      near(rc.savingsKwh.vfdLow, rc.units[0].vfdRange.low) &&
       rc.units[0].possible === 0,
-    'known no-drive fan: kW x hours x (1 - profile fraction) x cap, counted',
+    'known no-drive fan: kW x hours x the mid of the published range counted; low and high returned',
     rc.units[0].vfd,
   );
+  ok(RNG.low === 0.3 && RNG.mid === 0.45 && RNG.high === 0.6, 'published range 30 / 45 / 60 percent');
+  ok(
+    rc.units[0].why.vfd.indexOf('Default: published savings range for adding a drive to a constant-speed fan (') === 0 &&
+      /fan audit request email v5/.test(rc.units[0].why.vfd),
+    'the drive line carries the Default label and the source file',
+    rc.units[0].why.vfd,
+  );
   ok(rc.units[0].twoSpeed === 0 && rc.units[0].reset === 0, 'constant-speed fan: no two-speed and no reset saving');
-  // the profile: month load over the peak month, floored at the minimum airflow, share = days
-  ok(
-    profBins.length === 12 &&
-      near(profBins[6].speed, 1) &&
-      near(profBins[0].speed, 0.3) &&
-      near(profBins[4].speed, 8000 / 22000) &&
-      near(sum(profBins.map((b) => b.share)), 365),
-    'speed profile: load / peak month, floored at 30%, days as share',
-    JSON.stringify(profBins.slice(0, 3)),
-  );
-  ok(
-    near(sb.fanSpeedProfile(COOL, 0.5)[0].speed, 0.5) && sb.fanSpeedProfile(null, 0.3) === null && sb.fanSpeedProfile(Array(12).fill(0), 0.3) === null,
-    'speed profile: the floor is an input; no load, no profile',
-  );
-  // a unit with no monthly load profile has no drive saving, says why
-  const noLoad = sb.fanUnitModel({ id: 'c', name: 'C', category: 'ahu', cfm: 12000, hasVfd: 'no', trend: null }, null, null);
-  const rNoLoad = sb.fanSavingsForUnits([noLoad], ALL, 1);
-  ok(noLoad.profile.bins === null && rNoLoad.units[0].vfd === 0 && /no monthly HVAC load/.test(rNoLoad.units[0].why.vfd), 'no monthly load: no profile and no drive saving');
-  // the fan model's baseline load: getEndUse hands the building's monthly cooling + heating to the units
-  ok(
-    U['AHU-1'].loadMonthly === null && eu.units.find((u) => u.name === 'AHU-1').loadMonthly.length === 12,
-    'getEndUse passes the monthly HVAC load to the unit models',
-  );
+  ok(typeof sb.fanSpeedProfile === 'undefined', 'no unsourced load profile function remains');
   // UNKNOWN DRIVE STATUS IS NOT COUNTED: AHU-1 (no field, no speed point) shows its potential on the possible line only
   ok(
     R['AHU-1'].vfd === 0 && R['AHU-1'].possible > 0 && R['AHU-1'].possibleKind === 'drive' && /drive status unknown/.test(R['AHU-1'].why.vfd),
@@ -510,10 +496,10 @@ async function main() {
     'the counted total holds only counted lines',
   );
   // the user sets No: the same unit is counted
-  const ahu1No = sb.fanSavingsForUnits([sb.fanUnitModel(Object.assign({}, units.units[0], { hasVfd: 'no' }), null, COOL)], ALL, 1);
+  const ahu1No = sb.fanSavingsForUnits([sb.fanUnitModel(Object.assign({}, units.units[0], { hasVfd: 'no' }), null)], ALL, 1);
   ok(ahu1No.units[0].vfd > 0 && ahu1No.units[0].possible === 0, 'Has variable speed: No makes the drive saving count');
   // Has variable speed: Yes -> no drive saving at all
-  const ahu1Yes = sb.fanSavingsForUnits([sb.fanUnitModel(Object.assign({}, units.units[0], { hasVfd: 'yes' }), null, COOL)], ALL, 1);
+  const ahu1Yes = sb.fanSavingsForUnits([sb.fanUnitModel(Object.assign({}, units.units[0], { hasVfd: 'yes' }), null)], ALL, 1);
   ok(ahu1Yes.units[0].vfd === 0 && ahu1Yes.units[0].possible === 0, 'Has variable speed: Yes -> the drive is already there');
   // AHU-2: two-speed
   const hi = sb.fanMeanPowerFraction(
@@ -530,7 +516,7 @@ async function main() {
     'two-speed fan, drive status unknown: High hours only, on the possible line',
     JSON.stringify([R['AHU-2'].twoSpeed, R['AHU-2'].possible]),
   );
-  const two = sb.fanSavingsForUnits([sb.fanUnitModel(Object.assign({}, units.units[1], { hasVfd: 'no' }), null, COOL)], ALL, f);
+  const two = sb.fanSavingsForUnits([sb.fanUnitModel(Object.assign({}, units.units[1], { hasVfd: 'no' }), null)], ALL, f);
   ok(
     near(two.units[0].twoSpeed, R['AHU-2'].possible, 1e-6) && two.units[0].possible === 0,
     'two-speed fan with Has variable speed: No: counted',
@@ -544,7 +530,7 @@ async function main() {
     R['AHU-3'].why.reset,
   );
   // reset on a drive fan without a setpoint trend: default pass
-  const drv = sb.fanUnitModel({ id: 'd', name: 'D', category: 'ahu', cfm: 10000, speedPoint: true, trend: null }, null, COOL);
+  const drv = sb.fanUnitModel({ id: 'd', name: 'D', category: 'ahu', cfm: 10000, drivePoint: 'Supply Fan VFD Signal', trend: null }, null);
   const rr = sb.fanSavingsForUnits([drv], ALL, 1);
   const saveFrac = sb.ductStaticResetPowerSavings(0.2, fs0);
   ok(
@@ -553,8 +539,9 @@ async function main() {
     rr.units[0].reset,
   );
   ok(
-    near(drv.kwh, drv.kw * drv.hours * sb.fanMeanPowerFraction(sb.fanSpeedProfile(COOL, 0.3), fsG)) && drv.driveStatus === 'assumed',
-    'a fan with a drive and no speed trend: baseline runs at the monthly-load profile on the Appendix G curve',
+    near(drv.kwh, drv.kw * drv.hours) && drv.driveStatus === 'has' && drv.vfdHow === 'Drive found from point: Supply Fan VFD Signal (set Has variable speed to No to override)',
+    'a drive found from a point name: has a drive, says which point; no speed trend: baseline at full speed',
+    drv.vfdHow,
   );
   ok(near(sb.fanResetSavingsFraction(0.2), saveFrac) && near(saveFrac, 0.2563, 1e-3), 'the one reset answer for a 20% cut: 25.6%', saveFrac);
   // levers off
@@ -831,8 +818,8 @@ async function main() {
     const vSized = euV.units.find((u) => u.name === 'AHU-V');
     const vUn = euV.units.find((u) => u.name === 'AHU-U');
     ok(
-      vSized.driveStatus === 'has' && near(vSized.kwh, vSized.kw * vSized.hours * vSized.profileFraction, 1e-6) && vSized.kwh < vSized.kw * vSized.hours * 0.5,
-      'a sized fan with a drive is held at part-load power',
+      vSized.driveStatus === 'has' && vSized.profileFraction === null && near(vSized.kwh, vSized.kw * vSized.hours, 1e-6),
+      'a sized fan with a drive and no speed trend has no profile: full-speed power (no unsourced part-load profile)',
       JSON.stringify([vSized.kwh, vSized.kw * vSized.hours]),
     );
     ok(
@@ -841,8 +828,8 @@ async function main() {
       JSON.stringify([vSized.kwh, vUn.kwh]),
     );
     ok(
-      vUn.sizeBasis === 'national' && vUn.driveStatus === 'assumed' && near(vUn.kwh, vUn.kw * vUn.hours * vUn.profileFraction, 1e-6) && vUn.kw * vUn.hours > vUn.kwh,
-      'a pool-sized fan with a drive (assumed) is part-load: its full-speed kW is higher than its mean kW',
+      vUn.sizeBasis === 'national' && vUn.driveStatus === 'has' && near(vUn.kwh, vUn.kw * vUn.hours, 1e-6),
+      'a pool-sized fan with a drive found from a point: no trend, no profile',
     );
     // double count: fans come out of the non-HVAC remainder
     const nhT = sbT.getEndUse('p', 'b1', 'nonHvacElectric');
@@ -870,7 +857,7 @@ async function main() {
     const euCap = makeSandbox({ rows: rowsA, hvacKwh: 100000, capKwh: 10000 }).getEndUse('p', 'b1', 'fans');
     ok(near(euCap.annual, 10000, 1e-6) && euCap.capFactor < 1, 'the fan end use stays capped by total electricity less cooling and electric heating');
 
-    // drive: a speed point alone is a Default; the unit field decides; unknown falls back to the assumption
+    // drive: a point named like a drive is evidence; the unit field No overrides it; unknown falls back to the point evidence
     const spd = (more) =>
       Object.assign(
         { id: 'v1', building: BLDG, equipName: 'AHU-S', category: 'ahu', pts: { supplyFanCFM: '5000', supplyFanSpeed: '60' }, pointsRaw: {} },
@@ -879,16 +866,35 @@ async function main() {
     const firstUnit = (o) => makeSandbox(Object.assign({ hvacKwh: 900000 }, o)).getEndUse('p', 'b1', 'fans').units[0];
     const d0 = firstUnit({ rows: [spd()] });
     ok(
-      d0.vfd === 'yes' && d0.vfdLevel === 'default' && /Drive assumed from speed point/.test(d0.vfdHow),
-      'speed point alone: drive assumed, tagged Default',
+      d0.vfd === 'yes' && d0.driveStatus === 'has' && d0.vfdLevel === 'matrix' && /^Drive found from point: Supply Fan Speed/.test(d0.vfdHow),
+      'speed point alone: drive found from the point, says which',
       d0.vfdHow,
+    );
+    // the one drive-name rule: VFD, drive, speed, Hz, frequency, inverter count; two-speed enables, wind and other fans do not
+    const nm = (a) => sb.fanDrivePointName(a);
+    ok(
+      nm(['Supply Fan Status', 'Supply Fan VFD Signal']) === 'Supply Fan VFD Signal' &&
+        nm(['Supply Fan Drive Fault']) === 'Supply Fan Drive Fault' &&
+        nm(['Fan Output Hz']) === 'Fan Output Hz' &&
+        nm(['Fan Frequency']) === 'Fan Frequency' &&
+        nm(['Fan Inverter Status']) === 'Fan Inverter Status' &&
+        nm(['Supply Fan Speed']) === 'Supply Fan Speed',
+      'drive names: VFD, Drive, Hz, Frequency, Inverter, Speed',
+    );
+    ok(
+      nm(['Fan High Speed Enable', 'Fan Low Speed Enable']) === null &&
+        nm(['Wind Speed', 'Air Speed']) === null &&
+        nm(['Exhaust Fan VFD Status', 'Return Fan Speed']) === null &&
+        nm(['Enthalpy Wheel VFD Speed', 'Diagnostic: DCV Min Position at Minimum Fan Speed Fail']) === null &&
+        nm(['Supply Fan Status', 'Zone Temperature']) === null,
+      'not drive names: Hi/Lo speed enables, wind, air speed, other fans, no match',
     );
     const d1 = firstUnit({ rows: [spd()], edits: { 'v1::hasVfd': 'no' } });
     ok(d1.vfd === 'no' && d1.driveStatus === 'none' && d1.vfdLevel === 'matrix' && d1.hasVfd === 'no', 'the user sets No: constant speed, Equipment Matrix level', d1.vfdHow);
     const d2 = firstUnit({ rows: [spd({ pts: { supplyFanCFM: '5000' } })], edits: { 'v1::hasVfd': 'yes' } });
     ok(d2.vfd === 'yes' && d2.vfdLevel === 'matrix', 'the user sets Yes with no speed point: has a drive');
     const d3 = firstUnit({ rows: [spd()], edits: { 'v1::hasVfd': 'unknown' } });
-    ok(d3.vfd === 'yes' && d3.vfdLevel === 'default' && d3.hasVfd === null, 'Unknown: back to the assumption');
+    ok(d3.vfd === 'yes' && d3.vfdLevel === 'matrix' && d3.hasVfd === null && /^Drive found from point/.test(d3.vfdHow), 'Unknown: back to the point evidence');
   }
 
   // ---------------- 7c. physics curves, the BAS report answer, the merge, the storage size ----------------

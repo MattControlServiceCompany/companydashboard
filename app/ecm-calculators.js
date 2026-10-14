@@ -1890,16 +1890,6 @@ const ECM_TEMPLATES = {
         default: 'yes',
       },
       {
-        id: 'min_airflow_pct',
-        label: 'Lowest airflow a fan reaches with a drive',
-        help: 'Default: typical VAV minimum airflow (30%). Each month the fan runs at the measured HVAC load of that month (cooling + heating from the bills) divided by the load of the peak month, and never below this airflow.',
-        unit: '%',
-        type: 'number',
-        default: Math.round(FAN_DEFAULT_MIN_AIRFLOW * 100),
-        min: 10,
-        max: 100,
-      },
-      {
         id: 'fan_curve',
         label: 'Fan power curve of a fan with a drive',
         help: 'ASHRAE 90.1 Appendix G part-load curve of a variable-air-volume fan (default, the more conservative on the 30 to 100% speed range), or the fan law with a share of fixed losses.',
@@ -1932,7 +1922,22 @@ const ECM_TEMPLATES = {
         id: 'savings_vfd_kwh',
         label: 'Drive on Constant-Speed Fans',
         unit: 'kWh/yr',
-        formula: 'kW x hours x (1 - mean power fraction of the speed profile). Profile (fanSpeedProfile): each month the measured HVAC load over the peak month, floored at the lowest airflow; power from fanPowerFraction (the chosen curve). Counted only on a unit whose drive status is known: no drive.',
+        assumption: FAN_VFD_SAVINGS_LABEL,
+        formula: 'Fan kW x hours x the mid of the published range (FAN_VFD_SAVINGS_RANGE: low 30, mid 45, high 60 percent), no fan speed trend needed. Counted only on a unit whose drive status is known: no drive. A unit with a drive is left out.',
+      },
+      {
+        id: 'savings_vfd_low_kwh',
+        label: 'Drive on Constant-Speed Fans: Low End',
+        unit: 'kWh/yr',
+        assumption: 'Not in the total. The counted line above is the mid.',
+        formula: 'The same units at the low end of the published range (30 percent).',
+      },
+      {
+        id: 'savings_vfd_high_kwh',
+        label: 'Drive on Constant-Speed Fans: High End',
+        unit: 'kWh/yr',
+        assumption: 'Not in the total. The counted line above is the mid.',
+        formula: 'The same units at the high end of the published range (60 percent).',
       },
       {
         id: 'savings_twospeed_kwh',
@@ -1974,6 +1979,8 @@ const ECM_TEMPLATES = {
       const none = (note) => ({
         baseline_kwh: 0,
         savings_vfd_kwh: 0,
+        savings_vfd_low_kwh: 0,
+        savings_vfd_high_kwh: 0,
         savings_twospeed_kwh: 0,
         savings_reset_kwh: 0,
         savings_kwh: 0,
@@ -1996,7 +2003,6 @@ const ECM_TEMPLATES = {
           twoSpeed: inp.lever_twospeed !== 'no',
           reset: inp.lever_reset !== 'no',
           resetCut: inp.reset_cut_pct / 100,
-          minAirflow: inp.min_airflow_pct > 0 ? inp.min_airflow_pct / 100 : undefined,
           curve: inp.fan_curve,
           confirmedSizes: inp.fan_confirmed || [],
         },
@@ -2005,6 +2011,8 @@ const ECM_TEMPLATES = {
       // The lines are sums of the rounded unit values, so the table under the results adds up to the headline.
       const units = r.units.map((u) => {
         const vfd = Math.round(u.vfd);
+        const vfdLow = Math.round(u.vfdRange.low);
+        const vfdHigh = Math.round(u.vfdRange.high);
         const twoSpeed = Math.round(u.twoSpeed);
         const reset = Math.round(u.reset);
         return {
@@ -2012,6 +2020,8 @@ const ECM_TEMPLATES = {
           name: u.name,
           baselineKwh: Math.round(u.baselineKwh),
           vfd: vfd,
+          vfdLow: vfdLow,
+          vfdHigh: vfdHigh,
           twoSpeed: twoSpeed,
           reset: reset,
           total: vfd + twoSpeed + reset,
@@ -2024,6 +2034,8 @@ const ECM_TEMPLATES = {
       return {
         baseline_kwh: sumOf('baselineKwh'),
         savings_vfd_kwh: sumOf('vfd'),
+        savings_vfd_low_kwh: sumOf('vfdLow'),
+        savings_vfd_high_kwh: sumOf('vfdHigh'),
         savings_twospeed_kwh: sumOf('twoSpeed'),
         savings_reset_kwh: sumOf('reset'),
         savings_kwh: sumOf('total'),
@@ -2992,7 +3004,7 @@ function ecmFanRefineHints(units) {
     hints.push(
       "Import a fan speed trend for " +
         plural(noSpeed, "unit", "units") +
-        " that already have a drive.",
+        " that already have a drive (it replaces the default fan power of a unit sized at full speed).",
     );
   const twoNoTrend = count((u) => u.twoSpeed && u.twoSpeed.level !== "trend");
   if (twoNoTrend)

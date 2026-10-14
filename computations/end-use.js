@@ -210,33 +210,6 @@ function _nonHvacLessFans(projId, bldgId, nh) {
 }
 
 /**
- * The building's measured HVAC load by calendar month (Jan..Dec), for the fan speed profile: the cooling end use plus the heating
- * end use, each read from getEndUse's reader (_readEndUse). Electric kWh add as they are; gas therms become kWh by THERMS_PER_KWH
- * (site energy, no boiler efficiency: a profile shape only). null when a modeled end use above 0 has no monthly values (annual-only
- * data), or the load is 0: the fan model then has no speed profile (fanSpeedProfile).
- */
-function _euHvacLoadMonthly(projId, bldgId) {
-  var load = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-  var ok = true;
-  [
-    ['cooling', 1],
-    ['heatingElectric', 1],
-    ['heatingGas', 1 / THERMS_PER_KWH],
-  ].forEach(function (e) {
-    var eu = _readEndUse(projId, bldgId, e[0]);
-    if (!(eu.annual > 0)) return;
-    if (!eu.monthly) {
-      ok = false;
-      return;
-    }
-    eu.monthly.forEach(function (v, i) {
-      load[i] += v * e[1];
-    });
-  });
-  return ok && Math.max.apply(null, load) > 0 ? load : null;
-}
-
-/**
  * The fan end use of one building (Phase 6): the supply fans of its Equipment Matrix rows, each unit sized by
  * fanModelUnits (computations/fan-savings.js: kW from amps, else cfm, else HP, else a Default estimate; hours from the BAS trend, else the
  * matrix, else a stated default), added up and capped by the building's total baseline electricity less its measured cooling and electric heating (fans run all year: they sit in the baseload).
@@ -257,7 +230,7 @@ function _fanEndUse(projId, bldgId) {
   var coolAnnual = _readEndUse(projId, bldgId, 'cooling').annual || 0;
   var heatAnnual = _readEndUse(projId, bldgId, 'heatingElectric').annual || 0;
   var capAnnual = total && total - coolAnnual - heatAnnual > 0 ? total - coolAnnual - heatAnnual : null;
-  var units = fanModelUnits(projId, bldgId, read, total, _euHvacLoadMonthly(projId, bldgId));
+  var units = fanModelUnits(projId, bldgId, read, total);
   var sized = units.filter(function (u) {
     return u.ok;
   });
