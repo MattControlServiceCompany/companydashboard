@@ -2506,6 +2506,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.13.115', date: '2026-10-13', title: 'Month rate with several bills is usage-weighted',
+    items: [
+      { type: 'change', text: 'Project Performance and Meter Performance: when a month has more than one bill, the month\'s rate is now total charges / total usage instead of a plain average of the bills\' rates. No current totals change.' }
+    ]
+  },
   { v: 'v2026.10.13.114', date: '2026-10-13', title: 'Savings use utility-season rates from the baseline bills',
     items: [
       { type: 'change', text: 'Energy Savings matrix, ECM templates, Energy Graphics, reports: projected savings use utility-season rates from the baseline bills. Evergy: summer Jun 1-Sep 30 per tariff, and a bill that crosses a season is split by days (printed summer and winter lines are used). Gas, propane and water: each month is priced at that baseline rate for that month.' },
