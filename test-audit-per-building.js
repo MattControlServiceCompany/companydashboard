@@ -13,6 +13,7 @@ function make(rows, cfgOver, rate, mbuildings) {
     _pricingGetConfig: () => ({ hourlyRate: rate == null ? 120 : rate }),
   };
   vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(__dirname + '/computations/fan-savings.js', 'utf8'), ctx); // the one drive-name rule used by auditEstPointSetSignature
   vm.runInContext(src, ctx);
   return ctx;
 }

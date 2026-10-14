@@ -13,6 +13,7 @@ function make(rows, cfg) {
     _pricingGetConfig: () => ({ hourlyRate: 100 }),
   };
   vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(__dirname + '/computations/fan-savings.js', 'utf8'), ctx); // the one drive-name rule used by auditEstPointSetSignature
   vm.runInContext(src, ctx);
   return ctx;
 }
@@ -135,7 +136,7 @@ console.log('PASS hours override tests');
   const vm = require('vm');
   const c2 = { window: {}, console, EstimateWorkbook: require('./app/estimate-workbook.js'), sget: (k, d) => (store[k] != null ? store[k] : d), sset: (k, v) => { store[k] = JSON.parse(JSON.stringify(v)); },
     emLoadMatrix: () => ({ rows }), emIsPhantomRow: () => false, emAuditUnitCategory: require('./test-em-point-kind-helper.js'), emGetNormalizedPoints: (r) => r.pts, _pricingGetConfig: () => ({ hourlyRate: 100 }) };
-  vm.createContext(c2); vm.runInContext(src, c2);
+  vm.createContext(c2); vm.runInContext(fs.readFileSync(__dirname + '/computations/fan-savings.js', 'utf8'), c2); vm.runInContext(src, c2);
   const vav = () => c2.auditEstComputeBreakdown('p', 'bas').rows[0];
   assert.strictEqual(vav().hoursEach, 1.12); assert.strictEqual(vav().defaultSource, 'built-in');
   // company edit
