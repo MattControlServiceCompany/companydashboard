@@ -140,7 +140,7 @@ async function main() {
       await sleep(400);
       const nav = [...document.querySelectorAll('.ud-nav-bldg-item')].find((e) => e.innerText.includes(b.name));
       const bs = computeBuildingFlagSummary(b);
-      out.bldg = { want: bs.flaggedBills, badge: nav ? +((nav.innerText.match(/(\d+) review/) || [])[1] || 0) : -1 };
+      out.bldg = { want: bs.flaggedBills, badge: nav ? +((nav.querySelector('.ud-flag-badge') || { innerText: '' }).innerText.replace(/\D/g, '') || 0) : -1 };
       for (const m of b.meters) {
         udSelectMeter(m.id);
         await sleep(500);

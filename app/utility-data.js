@@ -705,6 +705,7 @@ function saveUtilityData(pid) {
   });
   if (_dupLines.length) console.info('[duplicate check] ' + _dupLines.join('; ') + ' (nothing merged or deleted)');
   _refreshBldgPerfIfVisible();
+  udScheduleBadgeRefresh();
 }
 
 function _inheritBaselinesForProject(projId) {
@@ -1470,6 +1471,50 @@ function viewProjectFromUtility() {
   }, 100);
 }
 
+// The ONE flagged-bill badge (meter pill, building row, project row). summary = a computeMeterFlagSummary /
+// computeBuildingFlagSummary / computeProjectFlagSummary result; so every badge shows the banner's count.
+// goto = optional { pid, bldgId, meterId }: the badge then opens that meter on the Bills tab when clicked.
+function udFlagBadgeHtml(summary, goto) {
+  if (!summary || !(summary.flaggedBills > 0)) return '';
+  const hover = billFlagHoverText(summary) + (goto ? '. Click to open the first flagged bill.' : '');
+  const click = goto
+    ? ' onclick="udGoToFlagged(event,' +
+      JSON.stringify(goto.pid).replace(/"/g, '&quot;') +
+      ',' +
+      JSON.stringify(goto.bldgId).replace(/"/g, '&quot;') +
+      ',' +
+      JSON.stringify(goto.meterId).replace(/"/g, '&quot;') +
+      ')"'
+    : '';
+  return (
+    '<span class="ud-flag-badge" style="font-size:8px;font-weight:700;color:var(--amber);background:rgba(245,158,11,.12);padding:1px 4px;border-radius:3px;margin-left:2px;flex-shrink:0;white-space:nowrap' +
+    (goto ? ';cursor:pointer' : '') +
+    '" title="' +
+    _escHtml(hover) +
+    '"' +
+    click +
+    '>⚠ ' +
+    summary.flaggedBills +
+    '</span>'
+  );
+}
+// Click on a building or project badge: open the first flagged meter on its Bills tab (the banner lists the reasons).
+function udGoToFlagged(evt, pid, bldgId, meterId) {
+  if (evt) evt.stopPropagation();
+  if (udSelProjId !== pid) udSelectProj(pid);
+  udSelectBldg(bldgId);
+  udSelectMeter(meterId);
+}
+// Bills change (edit, import, delete) -> saveUtilityData -> the badges in the left list are drawn again.
+let _udBadgeRefreshTimer = null;
+function udScheduleBadgeRefresh() {
+  if (_udBadgeRefreshTimer || typeof document === 'undefined') return;
+  _udBadgeRefreshTimer = setTimeout(() => {
+    _udBadgeRefreshTimer = null;
+    if (document.getElementById('udNavList') && typeof renderUDProjList === 'function') renderUDProjList();
+  }, 0);
+}
+
 function renderUDProjList() {
   const el = document.getElementById('udNavList');
   if (!el) return;
@@ -1481,9 +1526,16 @@ function renderUDProjList() {
   projects.forEach((p) => {
     const bldgs = getUDBldgs(p.id);
     const projActive = p.id === udSelProjId ? ' active' : '';
+    // Flagged BILLS in this project: the ONE shared flag function (computations/bill-flags.js).
+    const _pFlags = computeProjectFlagSummary(bldgs);
+    const _pBadge = udFlagBadgeHtml(
+      _pFlags,
+      _pFlags.firstFlagged && { pid: p.id, bldgId: _pFlags.firstFlagged.bldgId, meterId: _pFlags.firstFlagged.meterId },
+    );
     html += `<div class="ud-nav-proj-item${projActive}" onclick="udSelectProj(${p.id})">
             <span style="font-size:14px;flex-shrink:0">${getFacilityIcon(p.type)}</span>
             <span class="ud-nav-proj-name" title="${p.name}">${p.name}</span>
+            ${_pBadge}
             ${bldgs.length ? `<span class="ud-nav-proj-count">${bldgs.length}</span>` : ''}
           </div>`;
     // If this project is selected, show its buildings inline underneath
@@ -1508,11 +1560,11 @@ function renderUDProjList() {
                   : `<span style="color:var(--text3);font-size:10px" title="No baselines set">— 0/${mCount} BL</span>`
               : '';
           // Flagged BILLS in this building: the ONE shared flag function (computations/bill-flags.js).
-          const _bFlags = computeBuildingFlagSummary(b);
-          const flagBadge =
-            _bFlags.flaggedBills > 0
-              ? `<span style="color:var(--amber);font-size:10px" title="${billFlagHoverText(_bFlags)}">⚠ ${_bFlags.flaggedBills} review</span>`
-              : '';
+          const _bFlags = _pFlags.byBuilding[b.id]; // computeProjectFlagSummary above ran computeBuildingFlagSummary(b)
+          const flagBadge = udFlagBadgeHtml(
+            _bFlags,
+            _bFlags.firstFlaggedMeterId !== null && { pid: p.id, bldgId: b.id, meterId: _bFlags.firstFlaggedMeterId },
+          );
           const bldgActive = b.id === udSelBldgId ? ' active' : '';
           html += `<div class="ud-nav-bldg-item${bldgActive}" onclick="udSelectBldg('${b.id}')">
                   <div style="flex:1;min-width:0">
@@ -3129,14 +3181,7 @@ function renderUDDetail(targetWrap) {
               : _blState === 'inherited'
                 ? '<span style="font-size:8px;font-weight:700;color:var(--em2);background:rgba(56,189,248,.15);padding:1px 4px;border-radius:3px;margin-left:2px" title="No valid saved regression — open Baseline and Save to freeze.">🔗 BL</span>'
                 : '';
-        const _flagTag =
-          _mFlags.flaggedBills > 0
-            ? '<span style="font-size:8px;font-weight:700;color:var(--amber);background:rgba(245,158,11,.12);padding:1px 4px;border-radius:3px;margin-left:2px" title="' +
-              billFlagHoverText(_mFlags) +
-              '">⚠ ' +
-              _mFlags.flaggedBills +
-              '</span>'
-            : '';
+        const _flagTag = udFlagBadgeHtml(_mFlags);
         // Fix 67cb827d (secondary): ensure m._reg is populated for R² scoring
         // in the pill badge — same root cause as renderMeterDataPane fix.
         // getNormRows sets m._reg transiently; without it, computeMeterQualityScore

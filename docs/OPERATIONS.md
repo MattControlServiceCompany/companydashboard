@@ -577,3 +577,10 @@ This includes a new or changed function, schedule, env var name, timer, host, or
 
 - Shared modal structure: a window uses `.modal` > `.modal-hdr` + `.modal-body` + `.modal-ftr` (energy-department.html CSS, `.modal` is a flex column, only `.modal-body` scrolls). A footer inside the body scrolls out of view, so do not put one there. Bills Table Settings, Export Utility Data (app/utility-data.js), Budget line and Hours entry (app/budget.js, app/hours.js), BAS alarm and trend import (app/bas-alarms.js, app/bas-trends.js) now use it.
 - `billFlagReasonList(flags)` (computations/bill-flags.js) is the one list of flag reason texts. The Bills table row hover and the banner (`#billFlagBanner`, `renderBillsPane` in app/utility-data.js) both call it. The banner names each flagged bill's month with `billMonthLabel`. How to check: open a meter with a flagged bill on the Bills tab; the banner lists the month and reason.
+
+## Flagged-bill badges (2026-10-14)
+
+- One count, three levels: `computeMeterFlagSummary` -> `computeBuildingFlagSummary` -> `computeProjectFlagSummary(buildings)` (computations/bill-flags.js). The Bills banner, the meter pill, the building row and the project row in the Utility Data list (left) all show `flaggedBills` from them. `udFlagBadgeHtml(summary, goto)` (app/utility-data.js) is the one badge builder (hover text from `billFlagHoverText`). Shown only when the count is above 0.
+- Click on a building or project badge calls `udGoToFlagged` (app/utility-data.js): opens the first flagged meter on the Bills tab. No timer, no env var, no server call.
+- Live update: `saveUtilityData` ends with `udScheduleBadgeRefresh` (one `setTimeout(0)`, drawn again with `renderUDProjList`), so edit, import and delete change the badges without a reload.
+- Check: `node tools/gate-single-bill-flag-count.js` (runs `tools/gate-bill-flag-behavior.js`); open a project with flagged bills, fix one, watch the numbers drop.

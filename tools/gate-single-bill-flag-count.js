@@ -77,8 +77,12 @@ if (!/computeMeterFlagSummary\(m, getUDBldg\(/.test(ud))
   problems.push('app/utility-data.js: the Bills tab banner does not call computeMeterFlagSummary');
 if (!/const _mFlags = computeMeterFlagSummary\(/.test(ud))
   problems.push('app/utility-data.js: the meter pill does not call computeMeterFlagSummary');
-if (!/computeBuildingFlagSummary\(b\)/.test(ud))
-  problems.push('app/utility-data.js: the building badge does not call computeBuildingFlagSummary');
+if (!/computeProjectFlagSummary\(bldgs\)/.test(ud))
+  problems.push('app/utility-data.js: the building and project badges do not call computeProjectFlagSummary');
+if (!/function\s+computeProjectFlagSummary\s*\(/.test(keeper))
+  problems.push('computations/bill-flags.js does not define computeProjectFlagSummary');
+if ((ud.match(/class="ud-flag-badge"/g) || []).length !== 1)
+  problems.push('app/utility-data.js: the flagged-bill badge must be built in one place (udFlagBadgeHtml)');
 if (!/computeMeterFlagSummary\(/.test(read('app/bill-corrections-review.js')))
   problems.push('app/bill-corrections-review.js does not call computeMeterFlagSummary');
 if (!/computeMeterFlagSummary\(/.test(read('computations/data-quality.js')))

@@ -1,7 +1,8 @@
 // computations/bill-flags.js - the ONE bill-flag engine (pure, no DOM).
 //
 // computeMeterFlagSummary(meter, building) -> { flaggedBills, flagCount, perBill }
-// computeBuildingFlagSummary(building)     -> { flaggedBills, flagCount, byMeter }
+// computeBuildingFlagSummary(building)     -> { flaggedBills, flagCount, byMeter, firstFlaggedMeterId }
+// computeProjectFlagSummary(buildings)     -> { flaggedBills, flagCount, byBuilding, firstFlagged }
 //
 // Every flag count on the site calls these: the Bills tab banner, the meter pill, the building badge,
 // the Review Bill Corrections panel and the data-quality score. A flag means "look at this bill":
@@ -806,12 +807,27 @@ function computeMeterFlagSummary(meter, building) {
 
 // The only loop over a building's meters.
 function computeBuildingFlagSummary(building) {
-  const out = { flaggedBills: 0, flagCount: 0, byMeter: {} };
+  const out = { flaggedBills: 0, flagCount: 0, byMeter: {}, firstFlaggedMeterId: null };
   (building.meters || []).forEach((m) => {
     const s = computeMeterFlagSummary(m, building);
     out.byMeter[m.id] = s;
     out.flaggedBills += s.flaggedBills;
     out.flagCount += s.flagCount;
+    if (out.firstFlaggedMeterId === null && s.flaggedBills > 0) out.firstFlaggedMeterId = m.id;
+  });
+  return out;
+}
+// The only loop over a project's buildings. Sums computeBuildingFlagSummary, so the project badge, the building badge,
+// the meter pill and the Bills banner always agree. firstFlagged = { bldgId, meterId } of the first flagged meter.
+function computeProjectFlagSummary(buildings) {
+  const out = { flaggedBills: 0, flagCount: 0, byBuilding: {}, firstFlagged: null };
+  (buildings || []).forEach((b) => {
+    const s = computeBuildingFlagSummary(b);
+    out.byBuilding[b.id] = s;
+    out.flaggedBills += s.flaggedBills;
+    out.flagCount += s.flagCount;
+    if (out.firstFlagged === null && s.firstFlaggedMeterId !== null)
+      out.firstFlagged = { bldgId: b.id, meterId: s.firstFlaggedMeterId };
   });
   return out;
 }
