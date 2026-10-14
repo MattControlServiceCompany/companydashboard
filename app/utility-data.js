@@ -4221,7 +4221,14 @@ function renderBillsPane(pane, m, bills, incl) {
     // the dollar-sign icon was misleading in a date column. Charge-parts detail
     // is still accessible via the row click → split panel.
     // Add amber background and colored flag badges for flagged rows
-    if (flags.length) {
+    // Only a bill with a COUNTED flag (BILL_COUNTED_FLAG_RULES: what changes usage, cost or dates) gets the amber tint
+    // and the dots. A bill whose flags are all outside that list shows its reasons in the row hover only.
+    const _rowCounted = flags.some((f) => BILL_COUNTED_FLAG_RULES.includes(f.rule));
+    if (flags.length && !_rowCounted) {
+      const _noteTitle = billFlagReasonList(flags).map(_escHtml).join('&#10;');
+      rowHtml = rowHtml.replace(/(<tr)([ >])/, (m0, t, sp) => t + ' title="' + _noteTitle + '"' + sp);
+    }
+    if (_rowCounted) {
       const _flagTitle = billFlagReasonList(flags).map(_escHtml).join('&#10;');
       // If the <tr> already has a class attribute, append to it; otherwise insert a new one
       if (/(<tr[^>]*)\sclass="/.test(rowHtml)) {

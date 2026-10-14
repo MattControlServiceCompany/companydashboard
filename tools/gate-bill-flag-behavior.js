@@ -8,6 +8,8 @@
  * Corrections panel shows one row per flagged bill. A second copy of the flag logic under ANY name would
  * count differently somewhere and fail here (a name list cannot catch that).
  *
+ * A table row is tinted (class bill-flagged) only when the bill has a counted flag (BILL_COUNTED_FLAG_RULES); a bill whose
+ * flags are all outside that list shows its reasons in the row hover only.
  * Counted types only (BILL_COUNTED_FLAG_RULES): a bill with only an outlier or read note flag counts 0, a meter excluded
  * from the baseline adds nothing to the building or project count, and an auto-corrected read draws no banner.
  *
@@ -240,7 +242,7 @@ async function main() {
     if (!res.meters.length || res.meters.every((m) => m.want === 0))
       problems.push('the fixture produced no flags, so the check proves nothing');
     res.meters.forEach((m) => {
-      if (!(m.want === m.pill && m.want === m.banner && m.rows === m.wantRows))
+      if (!(m.want === m.pill && m.want === m.banner && m.rows === m.want))
         problems.push(
           m.commodity +
             ' meter: shared function ' +

@@ -634,6 +634,7 @@ function _computeMeterFlagSummaryFresh(meter, building) {
         end: b.endRead,
         diff: b.readDifference,
         mult: b.meterMultiplier,
+        limit: b._printedReadCheck.limit,
         usage: null,
       }).find((m) => m.field === 'readDifference');
       if (hit)
@@ -964,25 +965,37 @@ function computePrintedReadMismatch(x) {
   const EPS = 1e-6; // floating-point slack only
   const out = [];
   const dDec = _rcDecimals(x.diff);
-  if (S !== null && E !== null && D !== null && E >= S) {
+  const L = n(x.limit); // the meter's dial limit (99999, 999999, ...) when the reader saw a rollover, else null
+  const rollover = S !== null && E !== null && E < S && L !== null && L > 0;
+  if (S !== null && E !== null && D !== null && (E >= S || rollover)) {
+    const span = rollover ? L + 1 - S + E : E - S; // across a rollover the meter counts up to the limit, then wraps
     const tol = Math.pow(10, -Math.min(_rcDecimals(x.start), _rcDecimals(x.end), dDec)) + EPS;
-    if (Math.abs(E - S - D) > tol)
+    if (Math.abs(span - D) > tol)
       out.push({
         field: 'readDifference',
         message:
-          'Printed read difference does not match end minus start read: the bill prints ' +
+          'Printed read difference does not match ' +
+          (rollover ? 'the meter rollover from start read to end read' : 'end minus start read') +
+          ': the bill prints ' +
           _rcText(x.diff) +
           ', but end read ' +
           _rcText(x.end) +
-          ' minus start read ' +
+          (rollover ? ' after start read ' : ' minus start read ') +
           _rcText(x.start) +
           ' is ' +
-          (E - S).toFixed(Math.max(_rcDecimals(x.start), _rcDecimals(x.end))) +
+          span.toFixed(Math.max(_rcDecimals(x.start), _rcDecimals(x.end))) +
           '. A start read or end read may be misread.',
       });
   }
   if (D !== null && M !== null && M > 0 && U !== null) {
-    const tol = 0.5 * Math.pow(10, -Math.min(_rcDecimals(x.usage), 4)) + 0.5 * Math.pow(10, -dDec) * M + EPS;
+    // half a unit of the kWh digit, plus the difference's rounding times the multiplier, plus the multiplier's own
+    // rounding (a multiplier printed with decimals, e.g. 1.5) times the difference
+    const mDec = _rcDecimals(x.mult);
+    const tol =
+      0.5 * Math.pow(10, -Math.min(_rcDecimals(x.usage), 4)) +
+      0.5 * Math.pow(10, -dDec) * M +
+      (mDec > 0 ? 0.5 * Math.pow(10, -mDec) * D : 0) +
+      EPS;
     if (Math.abs(D * M - U) > tol)
       out.push({
         field: 'usage',
@@ -1089,9 +1102,10 @@ const READ_CHAIN_FIELDS = {
 function _rcText(v) {
   return v === null || v === undefined ? '' : String(v).replace(/[,\s]/g, '');
 }
+// Decimals of the NUMBER in the text only: "12.00CR", "(12.00)", "$12.00" and "12.00 kWh" all have 2.
 function _rcDecimals(v) {
-  const p = _rcText(v).split('.');
-  return p.length > 1 ? p[1].length : 0;
+  const m = _rcText(v).match(/\d*\.(\d+)/);
+  return m ? m[1].length : 0;
 }
 // OCR digit misread: same length, differs in 1 or 2 positions.
 function _rcIsMisread(oldV, newV) {
@@ -1228,6 +1242,28 @@ function _rcUserEdited(bill, keys) {
     return _rcIsReadChainRecord(rec) && _rcText(rec.corrected) !== _rcText(bill[k]);
   });
 }
+// The stored printed read check (data only, written by readCorrectionMarkers) must match the stored values. After a read
+// is repaired (_rcApply) or edited (clearReadCorrectionRecords) it is computed again from the bill's current values and
+// dropped when nothing disagrees any more. The computed-kWh marker and the dial limit stay as they were.
+function _rcRefreshPrintedCheck(bill, keys) {
+  const rec = bill && bill._printedReadCheck;
+  if (!rec) return;
+  const found = computePrintedReadMismatch({
+    start: bill[keys.start],
+    end: bill[keys.end],
+    diff: bill[keys.diff],
+    mult: bill[keys.mult],
+    limit: rec.limit,
+    usage: rec.kwhComputed ? null : bill[keys.start === 'startRead' ? 'kwh' : 'kWhConsumed'],
+  });
+  if (!found.length) delete bill._printedReadCheck;
+  else
+    bill._printedReadCheck = {
+      ...rec,
+      fields: found.map((m) => m.field),
+      messages: found.map((m) => m.message),
+    };
+}
 // Called by every bill edit path: an edited field is the user's value. Its auto-correction record goes and the field is
 // stamped in _userCorrected (the existing "user changed this" record), so the rule never overwrites it on a later load.
 // Editing ANY read field of a bill clears and stamps ALL of that bill's read-correction records together: the user now
@@ -1236,6 +1272,7 @@ function clearReadCorrectionRecords(row, fields) {
   if (row && (!fields || fields.includes('kwh'))) delete row._printedReadCheck; // an edited kWh is no longer computed
   const READ = ['startRead', 'endRead', 'readDifference'];
   if (fields && !fields.some((k) => READ.includes(k))) return; // only non-read fields were edited
+  _rcRefreshPrintedCheck(row, READ_CHAIN_FIELDS.stored); // an edited read changes what the stored record must say
   READ.forEach((k) => {
     const rec = row && row['_auto_corrected_' + k];
     if (!_rcIsReadChainRecord(rec)) return;
@@ -1260,6 +1297,7 @@ function _rcApply(bill, keys, fix) {
   set(keys.start, fix.start);
   set(keys.end, fix.end);
   set(keys.diff, fix.diff);
+  _rcRefreshPrintedCheck(bill, keys);
 }
 // Self-check of a provisional correction (a0) once the next bill's start read N is present: N must equal the
 // bill's corrected end read. If it does, the records become plain rule-a records (the next bill now confirms them).
@@ -1417,10 +1455,14 @@ function readCorrectionMarkers(extracted) {
       end: extracted.EndRead,
       diff: extracted.ReadDifference,
       mult: extracted.MeterMultiplier,
+      limit: extracted._meterRollover && extracted._meterRollover.boundary,
       usage: kwhComputed ? null : extracted.kWhConsumed,
     });
-    if (found.length)
+    if (found.length) {
       out._printedReadCheck = { fields: found.map((m) => m.field), messages: found.map((m) => m.message), kwhComputed };
+      if (extracted._meterRollover && extracted._meterRollover.boundary)
+        out._printedReadCheck.limit = extracted._meterRollover.boundary;
+    }
     else if (extracted._printedReadCheck) out._printedReadCheck = extracted._printedReadCheck; // already stored
   }
   return out;

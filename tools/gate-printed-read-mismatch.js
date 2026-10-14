@@ -7,15 +7,18 @@
  * SYNTHETIC numbers only.
  *
  * Fails when:
- *   1. printed values agree                        -> a flag is raised
- *   2. printed read difference wrong vs the reads  -> no flag
- *   3. printed kWh differs from difference x mult  -> no flag
- *   4. a printed value is absent                   -> a flag is raised (the computed value is used, it agrees)
+ *   1. printed values agree                        -> the check reports a mismatch
+ *   2. printed read difference wrong vs the reads  -> the check does NOT report it
+ *   3. printed kWh differs from difference x mult  -> the check does NOT report it
+ *   4. a printed value is absent                   -> the check reports a mismatch (nothing to check)
  *   5. a difference at print rounding (one unit of the coarsest read digit; half a unit of the kWh digit plus
- *      half a unit of the difference digit x multiplier) -> a flag is raised
- *   6. the visible flag is raised for anything but a bill with no printed kWh whose reads disagree with the printed difference, or readCorrectionMarkers does not store the data record (_printedReadCheck)
- *   7. app/bill-analysis.js overwrites a printed read difference or kWh again (the old tolerance tests are back), or
- *      computePrintedReadMismatch is defined more than once, or the flag engine does not call it
+ *      half a unit of the difference digit x multiplier, plus the multiplier's own rounding) -> the check reports it
+ *   6. the visible flag is raised for anything but a bill with no printed kWh whose reads disagree with the printed
+ *      difference, or readCorrectionMarkers does not store the data record (_printedReadCheck)
+ *   7. the reader (_postExtractionVerify, run on synthetic extracted bills) changes a printed read difference or a
+ *      printed kWh (also across a meter rollover), does not compute a missing one, or does not record a rollover
+ *      disagreement; computePrintedReadMismatch is defined more than once, or the flag engine does not call it
+ *   8. the stored record does not follow a repaired or edited read; a number with a suffix (12.00CR) miscounts decimals
  *
  * Usage: node tools/gate-printed-read-mismatch.js [repo-root]
  */
@@ -105,7 +108,17 @@ ok(
 // printed read difference. A printed-kWh mismatch and a read mismatch with a printed kWh are DATA only (no flag, no badge).
 const bill = (id, start, end, o) =>
   Object.assign(
-    { id, start, end, startRead: '', endRead: '', readDifference: '', meterMultiplier: '100', kwh: '', totalCost: '100' },
+    {
+      id,
+      start,
+      end,
+      startRead: '',
+      endRead: '',
+      readDifference: '',
+      meterMultiplier: '100',
+      kwh: '',
+      totalCost: '100',
+    },
     o,
   );
 const meterOf = (second) => ({
@@ -126,11 +139,23 @@ const okReads = { startRead: '1010.5000', endRead: '1021.0000', readDifference: 
 const badReads = { startRead: '1010.5000', endRead: '1021.0010', readDifference: '10.5000', kwh: '1050' };
 const cases = [
   ['agree, kWh computed', { ...okReads, _printedReadCheck: { fields: [], kwhComputed: true } }, 0],
-  ['reads wrong, kWh printed (data only)', { ...badReads, _printedReadCheck: { fields: ['readDifference'], kwhComputed: false } }, 0],
+  [
+    'reads wrong, kWh printed (data only)',
+    { ...badReads, _printedReadCheck: { fields: ['readDifference'], kwhComputed: false } },
+    0,
+  ],
   ['reads wrong, no marker (data only)', { ...badReads }, 0],
   ['printed kWh wrong (data only)', { ...okReads, kwh: '1062' }, 0],
-  ['reads wrong, kWh computed (the one flag)', { ...badReads, _printedReadCheck: { fields: ['readDifference'], kwhComputed: true } }, 1],
-  ['rounding, kWh computed', { ...okReads, readDifference: '10.5001', _printedReadCheck: { fields: [], kwhComputed: true } }, 0],
+  [
+    'reads wrong, kWh computed (the one flag)',
+    { ...badReads, _printedReadCheck: { fields: ['readDifference'], kwhComputed: true } },
+    1,
+  ],
+  [
+    'rounding, kWh computed',
+    { ...okReads, readDifference: '10.5001', _printedReadCheck: { fields: [], kwhComputed: true } },
+    0,
+  ],
 ];
 for (const [name, second, want] of cases) {
   const res = vm.runInContext(
@@ -142,44 +167,250 @@ for (const [name, second, want] of cases) {
   );
   const r = JSON.parse(res);
   ok(r.n === want, 'engine case "' + name + '": expected ' + want + ' printed_read_mismatch flag(s), got ' + r.n);
-  if (want) ok(r.reasons.length === want && /^Printed read difference does not match/.test(r.reasons[0]), 'engine case "' + name + '": reason text missing');
-  if (!want) ok(r.all === 0, 'engine case "' + name + '": a warning showed for a data-only mismatch (flagged bills ' + r.all + ')');
+  if (want)
+    ok(
+      r.reasons.length === want && /^Printed read difference does not match/.test(r.reasons[0]),
+      'engine case "' + name + '": reason text missing',
+    );
+  if (!want)
+    ok(
+      r.all === 0,
+      'engine case "' + name + '": a warning showed for a data-only mismatch (flagged bills ' + r.all + ')',
+    );
 }
 // the stored data record: written for every mismatch, with the computed-kWh marker
 const mk = (x) => JSON.parse(vm.runInContext('JSON.stringify(readCorrectionMarkers(' + JSON.stringify(x) + '))', ctx));
-const ex = { StartRead: '1000.0000', EndRead: '1010.5010', ReadDifference: '10.5000', MeterMultiplier: '100', kWhConsumed: '1050' };
-ok(mk(ex)._printedReadCheck && mk(ex)._printedReadCheck.fields.join() === 'readDifference' && mk(ex)._printedReadCheck.kwhComputed === false, 'marker: printed kWh case wrong');
+const ex = {
+  StartRead: '1000.0000',
+  EndRead: '1010.5010',
+  ReadDifference: '10.5000',
+  MeterMultiplier: '100',
+  kWhConsumed: '1050',
+};
 ok(
-  mk({ ...ex, kWhConsumed: '1050.0000', _auto_corrected_kWhConsumed: { original: null, corrected: '1050.0000', reason: 'x' } })._printedReadCheck
-    .kwhComputed === true,
+  mk(ex)._printedReadCheck &&
+    mk(ex)._printedReadCheck.fields.join() === 'readDifference' &&
+    mk(ex)._printedReadCheck.kwhComputed === false,
+  'marker: printed kWh case wrong',
+);
+ok(
+  mk({
+    ...ex,
+    kWhConsumed: '1050.0000',
+    _auto_corrected_kWhConsumed: { original: null, corrected: '1050.0000', reason: 'x' },
+  })._printedReadCheck.kwhComputed === true,
   'marker: computed kWh not recorded',
 );
 ok(!mk({ ...ex, EndRead: '1010.5000' })._printedReadCheck, 'marker written for a clean bill');
-ok(mk({ ...ex, EndRead: '1010.5000', kWhConsumed: '1062' })._printedReadCheck.fields.join() === 'usage', 'marker: kWh mismatch not recorded');
+ok(
+  mk({ ...ex, EndRead: '1010.5000', kWhConsumed: '1062' })._printedReadCheck.fields.join() === 'usage',
+  'marker: kWh mismatch not recorded',
+);
 
-// 7. source checks
+// 7. the reader itself: run _postExtractionVerify (app/bill-analysis.js) on synthetic extracted bills
+const rctx = makeContext();
+Object.assign(rctx, {
+  window: {},
+  document: { getElementById: () => null, addEventListener: () => {} },
+  navigator: { userAgent: 'node' },
+  localStorage: {
+    getItem: () => null,
+    setItem: () => {},
+    removeItem: () => {},
+  },
+  setInterval: () => 0,
+  clearInterval() {},
+  setTimeout: () => 0,
+  clearTimeout() {},
+  requestAnimationFrame: () => 0,
+  addEventListener() {},
+  fetch: () => Promise.reject(new Error('no network in gate')),
+  forEachCustomerBuilding: () => {},
+});
+for (const f of ['app/energy-savings.js', 'app/bill-analysis.js'])
+  vm.runInContext(fs.readFileSync(path.join(REPO, f), 'utf8'), rctx, {
+    filename: f,
+  });
+const extract = async (over, utility, withPrior) => {
+  rctx.__bill = Object.assign(
+    {
+      UtilityName: 'Evergy',
+      AccountNumber: '111',
+      MeterNumber: 'M1',
+      BillingPeriodStart: '2024-01-01',
+      BillingPeriodEnd: '2024-02-01',
+      StartRead: '1000.0000',
+      EndRead: '1010.5000',
+      ReadDifference: '10.5000',
+      MeterMultiplier: '100',
+      kWhConsumed: '1050',
+      TotalCurrentCharges: '100.00',
+      _rates: {}, // the validation chain runs for a bill that carries parsed rate lines
+    },
+    over,
+  );
+  // the recovery pass runs for a PDF with 2 or more bills: withPrior adds the clean bill of the month before
+  rctx.__bills = withPrior
+    ? [
+        {
+          ...rctx.__bill,
+          BillingPeriodStart: '2023-12-01',
+          BillingPeriodEnd: '2024-01-01',
+          StartRead: '989.5000',
+          EndRead: '1000.0000',
+          ReadDifference: '10.5000',
+        },
+        rctx.__bill,
+      ]
+    : [rctx.__bill];
+  const r = await vm.runInContext(
+    '_postExtractionVerify(__bills, ' + JSON.stringify(utility || 'Evergy') + ', "")',
+    rctx,
+  );
+  return r.bills[r.bills.length - 1];
+};
+const sameNum = (a, b) => Math.abs(parseFloat(a) - parseFloat(b)) < 1e-9;
+const markers = (b) =>
+  JSON.parse(vm.runInContext('JSON.stringify(readCorrectionMarkers(' + JSON.stringify(b) + '))', rctx));
+
+async function behavior() {
+  // reads disagree with the printed difference: printed D and printed kWh stay
+  let b = await extract({ EndRead: '1010.5010' });
+  ok(
+    sameNum(b.ReadDifference, 10.5) && !b._auto_corrected_ReadDifference,
+    'reader replaced a printed read difference that disagrees with the reads',
+  );
+  ok(sameNum(b.kWhConsumed, 1050) && !b._auto_corrected_kWhConsumed, 'reader replaced a printed kWh');
+  // printed kWh disagrees with difference x multiplier: printed kWh stays
+  b = await extract({ kWhConsumed: '1062' });
+  ok(
+    sameNum(b.kWhConsumed, 1062) && !b._auto_corrected_kWhConsumed,
+    'reader replaced a printed kWh that disagrees with difference x multiplier',
+  );
+  // rollover with a printed difference that disagrees: printed D stays, dial limit and disagreement are recorded
+  const ro = {
+    StartRead: '99990',
+    EndRead: '12',
+    ReadDifference: '25',
+    MeterMultiplier: '1',
+    kWhConsumed: '25',
+  };
+  b = await extract(ro);
+  ok(
+    sameNum(b.ReadDifference, 25) && !b._auto_corrected_ReadDifference,
+    'reader replaced a printed read difference across a rollover',
+  );
+  ok(b._meterRollover && b._meterRollover.boundary === 99999, 'rollover dial limit not recorded');
+  const rm = markers(b)._printedReadCheck;
+  ok(
+    rm && rm.fields.join() === 'readDifference' && rm.limit === 99999,
+    'rollover disagreement not recorded in _printedReadCheck',
+  );
+  // rollover with a printed difference that agrees: kept, no record
+  b = await extract({ ...ro, ReadDifference: '22', kWhConsumed: '22' });
+  ok(
+    sameNum(b.ReadDifference, 22) && !markers(b)._printedReadCheck,
+    'agreeing rollover difference changed or recorded',
+  );
+  // rollover with no printed difference: computed
+  b = await extract({ ...ro, ReadDifference: '', kWhConsumed: '22' });
+  ok(
+    sameNum(b.ReadDifference, 22) && !!b._auto_corrected_ReadDifference,
+    'missing difference across a rollover not computed',
+  );
+  // missing difference: computed from the reads
+  b = await extract({ ReadDifference: '' });
+  ok(sameNum(b.ReadDifference, 10.5), 'missing read difference not computed');
+  // missing kWh: computed from difference x multiplier by the recovery pass (any utility)
+  b = await extract({ kWhConsumed: '' }, 'Other Utility', true);
+  ok(sameNum(b.kWhConsumed, 1050) && !!b._auto_recovered_kWhConsumed, 'missing kWh not computed');
+  ok(markers(b)._printedReadCheck === undefined, 'computed kWh with agreeing reads recorded a mismatch');
+
+  // 8a. the stored record follows a repaired read and an edited read (stored bill shape)
+  const rec = {
+    fields: ['readDifference'],
+    messages: ['x'],
+    kwhComputed: true,
+  };
+  const run = (js, o) =>
+    JSON.parse(
+      vm.runInContext(
+        '(function(){var r=' +
+          JSON.stringify(
+            Object.assign(
+              {
+                startRead: '1000.0000',
+                endRead: '1010.5010',
+                readDifference: '10.5000',
+                meterMultiplier: '100',
+                kwh: '1050',
+                _printedReadCheck: rec,
+              },
+              o,
+            ),
+          ) +
+          ';' +
+          js +
+          ';return JSON.stringify(r)})()',
+        ctx,
+      ),
+    );
+  ok(
+    !run('r.endRead="1010.5000";clearReadCorrectionRecords(r,["endRead"])')._printedReadCheck,
+    'edited read: stale record kept',
+  );
+  const e2 = run('r.endRead="1010.7000";clearReadCorrectionRecords(r,["endRead"])');
+  ok(e2._printedReadCheck && /1010\.7000/.test(e2._printedReadCheck.messages[0]), 'edited read: record not recomputed');
+  ok(
+    !run('_rcApply(r,READ_CHAIN_FIELDS.stored,{end:"1010.5000"})')._printedReadCheck,
+    'repaired read: stale record kept',
+  );
+
+  // 8b. decimals of the number only; multiplier decimals widen the kWh tolerance
+  const dec = (t) => vm.runInContext('_rcDecimals(' + JSON.stringify(t) + ')', ctx);
+  ok(
+    dec('12.00CR') === 2 && dec('(12.00)') === 2 && dec('$1,234.5') === 1 && dec('12.00 kWh') === 2 && dec('12') === 0,
+    'decimals counted on the suffix',
+  );
+  ok(
+    fields({
+      start: '1000.0',
+      end: '1010.5',
+      diff: '10.5',
+      mult: '1.5',
+      usage: '16.2',
+    }) === '',
+    'multiplier rounding not in tolerance',
+  );
+  ok(
+    fields({
+      start: '1000.0',
+      end: '1010.5',
+      diff: '10.5',
+      mult: '1.5',
+      usage: '17.5',
+    }) === 'usage',
+    'far kWh not reported',
+  );
+}
+
+// single owner of the check
 const src = (f) => fs.readFileSync(path.join(REPO, f), 'utf8');
 const flags = src('computations/bill-flags.js');
-const ba = src('app/bill-analysis.js');
 ok(
   (flags.match(/function computePrintedReadMismatch\s*\(/g) || []).length === 1,
   'computePrintedReadMismatch not defined exactly once',
 );
 ok(/computePrintedReadMismatch\(\{/.test(flags), 'flag engine does not call computePrintedReadMismatch');
-ok(
-  !/Math\.abs\(curDiff - computedDiff\) > 0\.005/.test(ba),
-  'bill-analysis overwrites a printed read difference again',
-);
-ok(!/Math\.abs\(curKwhForChain - expectedKwh\) > 1/.test(ba), 'bill-analysis overwrites a printed kWh again (Step 2)');
-ok(
-  !/OCR value \$\{kC\.toFixed\(4\)\} differs by/.test(ba),
-  'bill-analysis overwrites a printed kWh again (recovery pass)',
-);
 for (const f of fs.readdirSync(path.join(REPO, 'app')).filter((n) => /\.js$/.test(n)))
   ok(!/function computePrintedReadMismatch/.test(src('app/' + f)), 'second copy of the check in app/' + f);
 
-if (problems.length) {
-  console.error('FAIL gate-printed-read-mismatch:\n - ' + problems.join('\n - '));
-  process.exit(1);
-}
-console.log('PASS gate-printed-read-mismatch');
+behavior()
+  .catch((e) => problems.push('gate error: ' + ((e && e.stack) || e)))
+  .then(() => {
+    if (problems.length) {
+      console.error('FAIL gate-printed-read-mismatch:\n - ' + problems.join('\n - '));
+      process.exit(1);
+    }
+    console.log('PASS gate-printed-read-mismatch');
+  });

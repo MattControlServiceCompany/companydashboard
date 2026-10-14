@@ -3644,7 +3644,15 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
             if (startR > _rvB * 0.9 && endR < _rvB * 0.1) {
               const rolloverDiff = _rvB + 1 - startR + endR;
               if (rolloverDiff > 0 && rolloverDiff < _rvB) {
-                if (!curDiff || Math.abs(curDiff - rolloverDiff) > 0.005) {
+                // The dial limit is recorded either way: computePrintedReadMismatch uses it to check a PRINTED
+                // difference across the rollover. A printed difference is kept; it is computed only when missing.
+                b._meterRollover = {
+                  boundary: _rvB,
+                  startRead: startR,
+                  endRead: endR,
+                  rolloverUsage: rolloverDiff,
+                };
+                if (!curDiff) {
                   if (_diffConflictsWithLocked(rolloverDiff)) {
                     b['_meterReadDiscrepancy_ReadDifference'] = {
                       current: b.ReadDifference,
@@ -3666,12 +3674,6 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
                       rolloverDiff.toFixed(4),
                   };
                   b.ReadDifference = rolloverDiff.toFixed(4);
-                  b._meterRollover = {
-                    boundary: _rvB,
-                    startRead: startR,
-                    endRead: endR,
-                    rolloverUsage: rolloverDiff,
-                  };
                 }
               }
               break;
