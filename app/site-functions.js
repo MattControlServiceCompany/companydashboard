@@ -2506,6 +2506,13 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.14.118', date: '2026-10-14', title: 'ECM templates and BAS Calc use the measured HVAC Load Estimate',
+    items: [
+      { type: 'feature', text: 'ECM templates and BAS Calc: existing cooling and heating amounts now fill from each building\'s HVAC Load Estimate, measured from the bills, with the source shown. A value you type stays.' },
+      { type: 'feature', text: 'ECM templates: results show yearly savings amounts and a savings value. Add as Measure sends month-by-month amounts that follow the building\'s real cooling and heating pattern. Solar Production can now be added as a measure from the Solar calculator\'s monthly production.' },
+      { type: 'change', text: 'HVAC Load Estimate: the split between cooling, heating and other uses comes from the bills when you have them. Rule-of-thumb percentages are used only for annual totals or when you type them, and every number says how it was made. The box is now called "Where these numbers come from".' }
+    ]
+  },
   { v: 'v2026.10.13.117', date: '2026-10-13', title: 'Quick annual entry, per-building load estimate and demand, one month rule for bills',
     items: [
       { type: 'feature', text: 'HVAC Load Estimate: new annual-usage box. Enter a building\'s annual kWh and Therms for a quick estimate. Baseline bills replace it automatically when present. Each building now keeps its own estimate, with a project total.' },
