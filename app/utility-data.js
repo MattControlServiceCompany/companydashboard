@@ -1479,11 +1479,11 @@ function udFlagBadgeHtml(summary, goto) {
   const hover = billFlagHoverText(summary) + (goto ? '. Click to open the first flagged bill.' : '');
   const click = goto
     ? ' onclick="udGoToFlagged(event,' +
-      JSON.stringify(goto.pid).replace(/"/g, '&quot;') +
+      _escHtml(JSON.stringify(goto.pid)) +
       ',' +
-      JSON.stringify(goto.bldgId).replace(/"/g, '&quot;') +
+      _escHtml(JSON.stringify(goto.bldgId)) +
       ',' +
-      JSON.stringify(goto.meterId).replace(/"/g, '&quot;') +
+      _escHtml(JSON.stringify(goto.meterId)) +
       (goto.embed ? ',true' : '') +
       ')"'
     : '';

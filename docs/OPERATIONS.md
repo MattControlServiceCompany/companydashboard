@@ -331,6 +331,7 @@ The app Restore path (6c) is on main only, not in stable (v87), until the Nov 2 
   (`C:/Temp/<tag>-<task>-profile-...`) and `ctx.close()` there also deletes the profile. The gate's own work folder is `<tag>-work`.
   After the tests the gate lists `C:/Temp`: a new entry whose name starts with the tag is a FAIL and the gate deletes it. Any other
   new entry (for example a profile of another agent that ran at the same time) is shown as INFO and is never deleted and never a FAIL.
+  Flag-badge onclick gate (tools/gate-flag-badge-onclick-escape.js, in the gate's static list; run alone: `node tools/gate-flag-badge-onclick-escape.js`). Loads `udFlagBadgeHtml` (app/utility-data.js), feeds ids with `&quot;`, quotes and ampersands, decodes the onclick like a browser and fails if script runs or the decoded arguments differ from the ids. `udFlagBadgeHtml` builds each id with `_escHtml(JSON.stringify(id))`.
   Real-id gate (scripts/gate-real-ids.js, called from the gate's leak-guard group; run alone: `node scripts/gate-real-ids.js`).
   It runs `git grep -IcwF -f <list>` over all tracked files. Any hit = FAIL, printed as file name and line count only (never the
   value). The private list (one real account or meter id per line, never committed) is read from the env var `CH_REAL_IDS_FILE`.
