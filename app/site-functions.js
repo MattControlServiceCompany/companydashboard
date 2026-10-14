@@ -2506,6 +2506,13 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.14.120', date: '2026-10-14', title: 'Measure cost lines and one payback',
+    items: [
+      { type: 'feature', text: 'Energy Savings: each measure now has cost lines - consultant price, our labor (hours at the Cost Estimate hourly rate), parts, and rebates - with net cost and simple payback. Fan Savings measures start with a "Reprogram BAS for variable speed" labor line. Any old implementation cost or rebate value is moved into these lines automatically.' },
+      { type: 'change', text: 'Cost Estimate: shows the measure costs of each project with the Energy Savings totals beside them. Payback is now worked out one way everywhere.' },
+      { type: 'change', text: 'Solar calculator: system cost and tax credit now become cost and rebate lines on the measure.' }
+    ]
+  },
   { v: 'v2026.10.14.119', date: '2026-10-14', title: 'Fan Savings template and fans as their own end use',
     items: [
       { type: 'feature', text: 'ECM templates: new Fan Savings template. Pick Equipment Matrix units. It estimates adding variable speed to constant-speed fans, replacing two-speed motors, and duct static pressure reset. Every input shows where it came from (trend, Equipment Matrix, or default). Savings count in the total only when a unit\'s drive status and size are confirmed. The rest show as "possible".' },
