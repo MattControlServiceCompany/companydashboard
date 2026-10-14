@@ -81,7 +81,7 @@ function buildSandbox() {
   const sandbox = { console };
   sandbox.window = sandbox;
   vm.createContext(sandbox);
-  for (const rel of ['lib/formatting.js', 'computations/rates.js', 'computations/savings.js']) {
+  for (const rel of ['lib/formatting.js', 'computations/physics.js', 'computations/rates.js', 'computations/savings.js']) {
     vm.runInContext(fs.readFileSync(path.join(REPO, rel), 'utf8'), sandbox, { filename: rel });
   }
   loadUnitTable(sandbox);

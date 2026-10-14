@@ -118,6 +118,8 @@ const savingsSrc = fs.readFileSync(REPO + '/computations/savings.js', 'utf8');
 vm.runInContext(
   stubs +
     '\n' +
+    fs.readFileSync(REPO + '/computations/physics.js', 'utf8') +
+    '\n' +
     'document = { querySelectorAll: function () { return []; } };\n' +
     mnMatch[0] +
     '\n\n' +

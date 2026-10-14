@@ -35,7 +35,7 @@ const sandbox = {
   fetch: () => Promise.reject(new Error('no fetch in test sandbox')),
 };
 vm.createContext(sandbox);
-for (const rel of ['lib/date-helpers.js', 'lib/formatting.js', 'computations/rates.js', 'app/utility-data.js', 'app/energy-savings.js']) {
+for (const rel of ['lib/date-helpers.js', 'lib/formatting.js', 'computations/physics.js', 'computations/rates.js', 'app/utility-data.js', 'app/energy-savings.js']) {
   vm.runInContext(fs.readFileSync(path.join(ROOT, rel), 'utf8'), sandbox, { filename: rel });
 }
 const api = vm.runInContext(

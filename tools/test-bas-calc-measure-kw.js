@@ -77,6 +77,7 @@ const CALC = REPO + '/app/calculators.js',
   WEATHER = REPO + '/app/data/bas-weather-bins.js';
 
 const src = [
+  fs.readFileSync(REPO + '/computations/physics.js', 'utf8'),
   fs.readFileSync(WEATHER, 'utf8'),
   loadConst(EM, 'EM_SP_DEFAULTS'),
   loadConst(UD, 'UNIT_TO_BASE'),
@@ -137,6 +138,7 @@ sb.showToast = () => {};
 sb.sset = () => {};
 sb.closeCalcTemplate = () => {};
 vm.createContext(sb);
+vm.runInContext(fs.readFileSync(path.join(REPO, 'computations/physics.js'), 'utf8'), sb, { filename: 'physics.js' });
 vm.runInContext(fs.readFileSync(path.join(REPO, 'computations/rates.js'), 'utf8'), sb, { filename: 'rates.js' });
 vm.runInContext(src, sb, { filename: 'bas-measure-kw-extracted.js' });
 const project = { id: 'p1', basCalc: {} };

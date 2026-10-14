@@ -174,6 +174,7 @@ const sandbox = {
   _parseISO: () => 0,
 };
 vm.createContext(sandbox);
+vm.runInContext(fs.readFileSync(path.join(REPO, 'computations/physics.js'), 'utf8'), sandbox, { filename: 'physics.js' });
 vm.runInContext(fs.readFileSync(path.join(REPO, 'computations/rates.js'), 'utf8'), sandbox, { filename: 'rates.js' });
 vm.runInContext(src, sandbox, { filename: 'hvac-split-single.js' });
 

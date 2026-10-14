@@ -112,6 +112,8 @@ const savingsSrc = fs.readFileSync(REPO + '/computations/savings.js', 'utf8');
 vm.runInContext(
   stubs +
     '\n' +
+    fs.readFileSync(REPO + '/computations/physics.js', 'utf8') +
+    '\n' +
     fs.readFileSync(REPO + '/lib/date-helpers.js', 'utf8') +
     '\n' +
     fns.join('\n\n') +

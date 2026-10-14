@@ -138,7 +138,7 @@ check('parseBillNumberOrZero: junk -> 0, value kept', orZero('N/A') === 0 && orZ
 const sb = makeSandbox();
 loadInto(sb, [
   'lib/formatting.js',
-  'computations/rates.js',
+  'computations/physics.js', 'computations/rates.js',
   'computations/savings.js',
   'app/energy-savings.js',
   'app/bill-analysis.js',

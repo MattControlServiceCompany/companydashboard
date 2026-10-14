@@ -320,7 +320,7 @@ function _hvlBuildingHasElectricHeat(projId, bldgId) {
 // autofill, the HVAC Load Estimation gas share, the Energy Graphics HVAC End-Use card — calls this
 // and so reads the SAME computeHvacEnduse result (3-lowest-month baseload; Matt 2026-09-20). Months
 // come from _hvlMonthlyBaseline (buildMoMap): kWh, billed kW (the SUM-of-billed-kW basis), and gas
-// Therms plus propane gallons at 0.9153 Therms/gal. A month with no bill stays null (not a real 0).
+// Therms plus propane gallons at THERMS_PER_GAL_PROPANE. A month with no bill stays null (not a real 0).
 // Returns { enduse, totalGas }; null when the building is missing.
 function _hvlEnduseForBuilding(projId, b) {
   if (!b) return null;
@@ -347,8 +347,8 @@ function _hvlEnduseForBuilding(projId, b) {
   let totalGas = 0;
   for (let mo = 0; mo < 12; mo++) {
     let v = null;
-    // gal -> therms, same 0.9153 factor hvacLoadCalc uses
-    if (therms[mo] != null || gallons[mo] != null) v = (therms[mo] || 0) + (gallons[mo] || 0) * 0.9153;
+    // gal -> therms, same THERMS_PER_GAL_PROPANE (computations/physics.js) factor hvacLoadCalc uses
+    if (therms[mo] != null || gallons[mo] != null) v = (therms[mo] || 0) + (gallons[mo] || 0) * THERMS_PER_GAL_PROPANE;
     gasArr.push(v);
     if (v != null) totalGas += v;
   }
@@ -1318,7 +1318,7 @@ function _hvlRevGasCostBreakdown(gasEq, avgThermRate) {
 function _eqMaxKw(eq) {
   const qty = eq.qty || 1;
   const size = eq.size || 0;
-  if (eq.units === 'Hp') return qty * size * 0.746;
+  if (eq.units === 'Hp') return qty * size * KW_PER_HP;
   if (eq.units === 'Watts') return (qty * size) / 1000;
   return qty * size; // kW
 }
@@ -1329,7 +1329,7 @@ function _gasMaxThermHr(eq) {
   if (eq.units === 'BHp') return qty * size * 0.03346;
   if (eq.units === 'lbs/hr') return qty * size * 0.001;
   if (eq.units === 'MMBtu/hr') return qty * size * 10;
-  return (qty * size) / 100000; // Btu/hr → Therm/hr
+  return (qty * size) / BTU_PER_THERM; // Btu/hr → Therm/hr
 }
 
 /* ── CRUD for reverse analysis equipment ── */
@@ -1586,9 +1586,9 @@ function hvacLoadCalc(projId, opts) {
       }
       const pb = pByMo[mo];
       if (pb) {
-        // Convert gallons to therms (0.9153 therms/gal) so propane rolls up into the same gas
+        // Convert gallons to therms (THERMS_PER_GAL_PROPANE therms/gal) so propane rolls up into the same gas
         // total used by HVAC Load Est.
-        const thermsEq = (pb.gallons || 0) * 0.9153;
+        const thermsEq = (pb.gallons || 0) * THERMS_PER_GAL_PROPANE;
         totalGas += thermsEq;
         _hvlGasByMo[mo] = (_hvlGasByMo[mo] || 0) + thermsEq;
       }
@@ -1638,9 +1638,9 @@ function hvacLoadCalc(projId, opts) {
 
     coolKwh = coolTons * coolKwTon * coolEFLH;
     if (heatFuel === 'electric') {
-      heatKwhElec = ((heatMBH * 1000) / 3412 / (heatEff || 1)) * heatEFLH; // MBH→kW then * hours
+      heatKwhElec = ((heatMBH * 1000) / BTU_PER_KWH / (heatEff || 1)) * heatEFLH; // MBH→kW then * hours
     } else {
-      heatGas = ((heatMBH * 1000) / 100000 / (heatEff || 1)) * heatEFLH; // MBH→therms then * hours
+      heatGas = ((heatMBH * 1000) / BTU_PER_THERM / (heatEff || 1)) * heatEFLH; // MBH→therms then * hours
     }
     lightKwh = ((lightW * sqft) / 1000) * lightHrs;
     plugKwh = ((plugW * sqft) / 1000) * plugHrs;
@@ -2126,7 +2126,7 @@ function _hvlBuildExportData(projId) {
         billed.kw += eByMo[mo].billedKW || 0;
       }
       if (gByMo[mo]) billed.gas += gByMo[mo].therms || 0;
-      if (pByMo[mo]) billed.gas += (pByMo[mo].gallons || 0) * 0.9153;
+      if (pByMo[mo]) billed.gas += (pByMo[mo].gallons || 0) * THERMS_PER_GAL_PROPANE;
     }
   }
 
@@ -4525,10 +4525,10 @@ function _bcDoCalc(projId) {
   // K42 is the existing electric-heating calibration kWh and K43 is the existing gas-heating
   // calibration input in Therms) — 2026-09-22 parity audit finding #1, previously the site routed
   // 100% of "Both" heating into kWh and never produced a gas savings number for that heat source.
-  // 0.03413 converts the kWh calibration figure to the same MMBtu-scale basis as the Therms input
+  // THERMS_PER_KWH (computations/physics.js) converts the kWh calibration figure to the same therm basis as the Therms input
   // before taking the gas share of the combined total; falls back to 0 (all-kWh, today's
   // behavior) when no gas calibration figure has been entered.
-  const pctGasHeat = heatSrc === 4 && calHeatGas > 0 ? calHeatGas / (calHeatKwh * 0.03413 + calHeatGas) : 0;
+  const pctGasHeat = heatSrc === 4 && calHeatGas > 0 ? calHeatGas / (calHeatKwh * THERMS_PER_KWH + calHeatGas) : 0;
 
   const maxTons = sqft / 300;
   const maxMbtu = (sqft * 30) / 1000;

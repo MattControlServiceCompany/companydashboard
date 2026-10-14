@@ -113,6 +113,7 @@ const EM = path.join(REPO, 'app', 'equipment-matrix.js');
 // to become `var` for the test to reach them afterward (e.g. sandbox.BAS_WEATHER_BINS). Harmless
 // for the const declarations inside function bodies too (looser scoping only, same behavior).
 const src = [
+  fs.readFileSync(path.join(REPO, 'computations', 'physics.js'), 'utf8'),
   fs.readFileSync(WEATHER, 'utf8'),
   loadConst(EM, 'EM_SP_DEFAULTS'),
   loadConst(CALC, 'BAS_COOL_CURVE'),

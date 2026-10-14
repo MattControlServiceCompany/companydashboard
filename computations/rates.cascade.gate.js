@@ -57,7 +57,7 @@ function buildSandbox() {
     'lib/formatting.js',
     'computations/regression.js',
     'computations/normalization.js',
-    'computations/rates.js',
+    'computations/physics.js', 'computations/rates.js',
     // resolveGasUsageTherms (used by getStoredRate('gas') and ensureBillRates as of the
     // 2026-09-23-gas-rate-fix item) lives in savings.js — load it so the gas-rate regression
     // checks below exercise the REAL function, not a typeof-guard no-op.

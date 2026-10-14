@@ -187,7 +187,7 @@ function buildCtx() {
     'lib/date-helpers.js',
     'lib/formatting.js',
     'computations/regression.js',
-    'computations/rates.js',
+    'computations/physics.js', 'computations/rates.js',
     'computations/normalization.js',
     'computations/savings.js',
     'computations/eui.js',

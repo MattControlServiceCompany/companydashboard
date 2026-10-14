@@ -73,7 +73,7 @@ function makeSandbox() {
 const ctx = makeSandbox();
 for (const rel of [
   'lib/formatting.js',
-  'computations/rates.js',
+  'computations/physics.js', 'computations/rates.js',
   'computations/savings.js',
   'app/utility-data.js',
   'app/csv-import.js',

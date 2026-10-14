@@ -29,7 +29,7 @@ function assert(cond, msg) {
 const S = { console };
 S.window = S;
 vm.createContext(S);
-for (const rel of ['lib/formatting.js', 'computations/rates.js', 'computations/savings.js']) {
+for (const rel of ['lib/formatting.js', 'computations/physics.js', 'computations/rates.js', 'computations/savings.js']) {
   vm.runInContext(fs.readFileSync(path.join(REPO, rel), 'utf8'), S, { filename: rel });
 }
 {

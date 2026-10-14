@@ -58,6 +58,7 @@ function buildSandbox(store) {
   // this gate exercises (_selfHealCustomersAndScope, getUDBldgs/getUDProj/
   // getCustomerBuildings/isBaselineExcluded/setBaselineExcluded) depend only on
   // sget/sset, defined above.
+  vm.runInContext(fs.readFileSync(path.join(REPO, 'computations/physics.js'), 'utf8'), sandbox, { filename: 'computations/physics.js' });
   vm.runInContext(fs.readFileSync(path.join(REPO, 'app/utility-data.js'), 'utf8'), sandbox, {
     filename: 'app/utility-data.js',
   });

@@ -1320,7 +1320,7 @@ const UNIT_TO_BASE_BY_COMMODITY = {
     Steam: { base: 'Therms', factor: 10 },
   },
   CCF: { Water: { base: 'Gallons', factor: 748.05 } },
-  Gallons: { Propane: { base: 'Therms', factor: 0.9153 } },
+  Gallons: { Propane: { base: 'Therms', factor: THERMS_PER_GAL_PROPANE } }, // computations/physics.js
 };
 
 function _unitInfo(unit, commodity) {

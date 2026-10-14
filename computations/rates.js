@@ -302,7 +302,9 @@ function validateImpliedRate(commodity, usage, charge, utilityName) {
 }
 
 function toKBtu(kwh, therms, gallons) {
-  return (parseFloat(kwh) || 0) * 3.412 + (parseFloat(therms) || 0) * 100 + (parseFloat(gallons) || 0) * 91.5;
+  return (parseFloat(kwh) || 0) * KBTU_PER_KWH +
+    (parseFloat(therms) || 0) * KBTU_PER_THERM +
+    (parseFloat(gallons) || 0) * KBTU_PER_GAL_PROPANE;
 }
 
 // Single list of Utility E electric component charge fields that add up to

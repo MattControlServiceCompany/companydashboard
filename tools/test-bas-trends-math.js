@@ -93,7 +93,9 @@ const basData = {
   },
 };
 
+const physicsSrc = fs.readFileSync(path.join(__dirname, '..', 'computations', 'physics.js'), 'utf8');
 const code = [
+  physicsSrc,
   loadFn('btRound'),
   loadVar('BT_HVAC_KW_PER_AHU'),
   loadVar('BT_FAULT_KW'),

@@ -1,7 +1,7 @@
 // computations/eui.js — EUI calculations (canonical source)
 // No DOM dependencies. All EUI displays call these functions.
 
-var KBTU_FACTORS = { electric: 3.412, gas: 100, propane: 91.5 };
+var KBTU_FACTORS = { electric: KBTU_PER_KWH, gas: KBTU_PER_THERM, propane: KBTU_PER_GAL_PROPANE }; // constants: computations/physics.js
 
 // Site-to-source multipliers (EPA Portfolio Manager standard values)
 var SOURCE_SITE_RATIOS = { electric: 3.14, gas: 1.05, propane: 1.01 };

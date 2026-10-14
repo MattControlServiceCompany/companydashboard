@@ -62,7 +62,7 @@ const files = [
   'lib/formatting.js',
   'lib/date-helpers.js',
   'computations/regression.js',
-  'computations/rates.js',
+  'computations/physics.js', 'computations/rates.js',
   'computations/normalization.js',
   'computations/csc.js',
   'computations/eui.js',

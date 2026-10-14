@@ -40,7 +40,7 @@ const LOAD_ORDER = [
   'lib/formatting.js',
   'lib/unit-conversion.js',
   'lib/csv-parser.js',
-  'computations/rates.js',
+  'computations/physics.js', 'computations/rates.js',
   'computations/regression.js',
   'computations/normalization.js',
   'computations/eui.js',

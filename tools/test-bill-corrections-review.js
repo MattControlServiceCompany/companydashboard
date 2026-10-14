@@ -93,7 +93,7 @@ function setup() {
   // (computeMeterFlagSummary) needs normalization.js and savings.js.
   for (const p of [
     'lib/formatting.js',
-    'computations/rates.js',
+    'computations/physics.js', 'computations/rates.js',
     'lib/date-helpers.js',
     'computations/normalization.js',
     'computations/savings.js',

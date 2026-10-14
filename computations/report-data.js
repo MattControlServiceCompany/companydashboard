@@ -11,7 +11,7 @@
  *   - getNormRows(m, bills, incl, null) (computations/normalization.js) — prorates
  *     each bill's usage/cost across the calendar months it spans.
  *   - computeKBtu(kwh, therms, propaneGal) (computations/eui.js) — canonical
- *     kBtu conversion factors (electric 3.412, gas 100, propane 91.5).
+ *     kBtu conversion factors (electric, gas, propane: computations/physics.js).
  *
  * Trust rule (per commodity row from getNormRows): `cost` is trustworthy for every
  * commodity. `usage` is only trustworthy for Electric/Gas/Propane — other commodities'

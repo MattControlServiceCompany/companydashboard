@@ -26,7 +26,7 @@ vm.createContext(S);
 for (const rel of [
   'lib/date-helpers.js',
   'lib/formatting.js',
-  'computations/rates.js',
+  'computations/physics.js', 'computations/rates.js',
   'computations/savings.js',
   'computations/normalization.js',
 ]) {

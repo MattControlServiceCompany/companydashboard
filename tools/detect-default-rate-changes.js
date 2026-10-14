@@ -19,7 +19,7 @@ const FILES = [
   'lib/formatting.js',
   'lib/date-helpers.js',
   'computations/normalization.js',
-  'computations/rates.js',
+  'computations/physics.js', 'computations/rates.js',
   'computations/savings.js',
 ];
 // Cut one top-level function verbatim out of app/utility-data.js (same technique as the other tools).

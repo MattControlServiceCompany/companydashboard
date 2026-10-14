@@ -35,6 +35,7 @@ function buildSandbox() {
   vm.createContext(sandbox);
   const run = (rel) => vm.runInContext(fs.readFileSync(path.join(REPO, rel), 'utf8'), sandbox, { filename: rel });
   run('lib/formatting.js');
+  run('computations/physics.js');
   run('computations/rates.js');
   run('computations/savings.js');
   // resolveGasUsageTherms reads UNIT_TO_BASE + convertUnit from app/utility-data.js.

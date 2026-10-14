@@ -39,6 +39,7 @@ function constSource(file, name) {
 // from app/utility-data.js, then computations/bill-flags.js. computeSeasonalBldgRates needs it (computeMeterRateExclusions).
 function addBillFlagEngine(ctx) {
   const ud = 'app/utility-data.js';
+  vm.runInContext(read('computations/physics.js'), ctx); // UNIT_TO_BASE needs THERMS_PER_GAL_PROPANE
   vm.runInContext(
     [
       ...['_fixISO', '_parseISO', 'calcDays', 'fmtDate', '_unitInfo', 'convertUnit'].map((n) => fnSource(ud, n)),

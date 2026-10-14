@@ -43,7 +43,7 @@ const sb = {
 sb.window = sb;
 sb.globalThis = sb;
 vm.createContext(sb);
-for (const rel of ['lib/formatting.js', 'lib/date-helpers.js', 'computations/rates.js', 'computations/savings.js', 'app/utility-data.js', 'app/csv-import.js']) {
+for (const rel of ['lib/formatting.js', 'lib/date-helpers.js', 'computations/physics.js', 'computations/rates.js', 'computations/savings.js', 'app/utility-data.js', 'app/csv-import.js']) {
   try {
     vm.runInContext(fs.readFileSync(path.join(REPO, rel), 'utf8'), sb, { filename: rel });
   } catch (e) {

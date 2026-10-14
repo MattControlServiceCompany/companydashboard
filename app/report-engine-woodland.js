@@ -104,12 +104,12 @@ var WD_TEXT = {
     return (
       'Square footage (' +
       _wdN(sqft, 0) +
-      ' SF) is the figure on file for this building. Metered kW is the actual peak demand recorded by the meter each month; Billed kW is the demand the utility charged for that month. Site Energy Use Intensity (kBtu/SF) = annual energy in kBtu (electric kWh × 3.412 + gas Therms × 100) ÷ square feet; Electric Use / SF (kWh) = annual electric kWh ÷ square feet; Utility Cost / SF = annual total utility cost ÷ square feet. The Energy $/kWh figures above are the energy charge only; Blended Electric Rate ($/kWh) combines energy and demand charges into one figure and is higher than the energy-only rate — the two are different measures of electric cost and are not interchangeable.'
+      ' SF) is the figure on file for this building. Metered kW is the actual peak demand recorded by the meter each month; Billed kW is the demand the utility charged for that month. Site Energy Use Intensity (kBtu/SF) = annual energy in kBtu (electric kWh × ' + KBTU_PER_KWH + ' + gas Therms × ' + KBTU_PER_THERM + ') ÷ square feet; Electric Use / SF (kWh) = annual electric kWh ÷ square feet; Utility Cost / SF = annual total utility cost ÷ square feet. The Energy $/kWh figures above are the energy charge only; Blended Electric Rate ($/kWh) combines energy and demand charges into one figure and is higher than the energy-only rate — the two are different measures of electric cost and are not interchangeable.'
     );
   },
   hvacTitle: 'HVAC Cooling & Heating Load',
   hvacIntro:
-    "The building's heating and cooling loads, derived from a full year of billing by the baseload method. The baseload is the average of the three lowest months. Electric use above it is cooling; gas use above the gas baseload is heating. Heating and cooling are compared on one common energy scale (kBtu: Therms × 100, kWh × 3.412) so their relative shares of the building's HVAC load can be seen side by side.",
+    "The building's heating and cooling loads, derived from a full year of billing by the baseload method. The baseload is the average of the three lowest months. Electric use above it is cooling; gas use above the gas baseload is heating. Heating and cooling are compared on one common energy scale (kBtu: Therms × " + KBTU_PER_THERM + ", kWh × " + KBTU_PER_KWH + ") so their relative shares of the building's HVAC load can be seen side by side.",
   hvacElecHeatNote: 'Electric heating is not separated by the baseload method.',
   hvacNoSplit:
     "Cooling load could not be separated from this building's overall electric use by the baseload method (it needs at least six months of billing), so no cooling / heating split is shown below. The annual totals above are this building's billed baseline values.",
@@ -237,14 +237,22 @@ var WD_TEXT = {
           _wdN(h.baseloadGas, 1) +
           ' Therms per month, the average of the three lowest months). '
         : '') +
-      'HVAC load shares are on one kBtu basis (Therms × 100, kWh × 3.412), each divided by gas heating + cooling energy: gas heating ' +
+      'HVAC load shares are on one kBtu basis (Therms × ' +
+      KBTU_PER_THERM +
+      ', kWh × ' +
+      KBTU_PER_KWH +
+      '), each divided by gas heating + cooling energy: gas heating ' +
       _wdN(h.gasHeatTherms, 1) +
-      ' Therms × 100 = ' +
-      _wdN(h.gasHeatTherms * 100) +
+      ' Therms × ' +
+      KBTU_PER_THERM +
+      ' = ' +
+      _wdN(h.gasHeatTherms * KBTU_PER_THERM) +
       ' kBtu; cooling ' +
       _wdN(h.coolKwh) +
-      ' kWh × 3.412 = ' +
-      _wdN(h.coolKwh * 3.412) +
+      ' kWh × ' +
+      KBTU_PER_KWH +
+      ' = ' +
+      _wdN(h.coolKwh * KBTU_PER_KWH) +
       ' kBtu — gas heating share ' +
       h.heatPct.toFixed(1) +
       '%, cooling share ' +
@@ -570,7 +578,7 @@ function _wdBaselineHvac(elecBL, gasBL) {
 // _wdComputeHvacSplit — Page 4 inputs from the building's OWN baseline data, by the baseload
 // method: cooling kWh = sum of (billed kWh − electric baseload) over the months above it; gas
 // heating Therms = sum of (billed Therms − gas baseload). Heating share is on a common kBtu basis:
-// gasHeatKbtu / (gasHeatKbtu + coolKwh x 3.412). Electric heating is NOT separated by this method
+// gasHeatKbtu / (gasHeatKbtu + coolKwh x KBTU_PER_KWH). Electric heating is NOT separated by this method
 // (heatKwh stays null; the page says so) — it is never filled from a regression.
 // coolKwh is null when fewer than 6 electric months exist: no numbers are invented.
 // -----------------------------------------------------------------------
@@ -619,8 +627,8 @@ function _wdComputeHvacSplit(elecBL, gasBL) {
   out.coolKwh = cool;
   out.gasHeatTherms = gasHeat;
   out.coolPct = out.elecKwh > 0 ? _wdRoundHalfUp((cool / out.elecKwh) * 100, 1) : null;
-  var gasKbtu = gasHeat * 100;
-  var coolKbtu = cool * 3.412;
+  var gasKbtu = gasHeat * KBTU_PER_THERM;
+  var coolKbtu = cool * KBTU_PER_KWH;
   var totalHvacKbtu = gasKbtu + coolKbtu;
   out.heatPct = totalHvacKbtu > 0 ? _wdRoundHalfUp((gasKbtu / totalHvacKbtu) * 100, 1) : null;
   out.coolSharePct = totalHvacKbtu > 0 ? _wdRoundHalfUp((coolKbtu / totalHvacKbtu) * 100, 1) : null;
@@ -3080,7 +3088,7 @@ async function exportWoodlandReportToXlsx(data) {
     ws3.addRow(['Avg Gas Rate ($/Therm)', { formula: 'O' + A }]);
     var euiRow = ws3.addRow([
       'Site Energy Use Intensity (kBtu/SF)',
-      sqft > 0 ? { formula: '(D' + A + '*3.412+M' + A + '*100)/' + sqft } : null,
+      sqft > 0 ? { formula: '(D' + A + '*' + KBTU_PER_KWH + '+M' + A + '*' + KBTU_PER_THERM + ')/' + sqft } : null,
     ]);
     styleTotalRow(euiRow);
     ws3.addRow(['Total Annual Utility Cost', { formula: 'P' + A }]);
@@ -3167,7 +3175,8 @@ async function exportWoodlandReportToXlsx(data) {
     var heatPctRow = ws4.addRow([
       'Gas heating share of HVAC load',
       {
-        formula: '(F' + totH.number + '*100)/((F' + totH.number + '*100)+(C' + totH.number + '*3.412))',
+        formula:
+          '(F' + totH.number + '*' + KBTU_PER_THERM + ')/((F' + totH.number + '*' + KBTU_PER_THERM + ')+(C' + totH.number + '*' + KBTU_PER_KWH + '))',
       },
     ]);
     ws4.getCell('B' + heatPctRow.number).numFmt = '0.0%';

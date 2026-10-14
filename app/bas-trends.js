@@ -4806,6 +4806,7 @@ function btEstimateSavings(projId, bldgId, opts) {
   var elecRate = opts.elecRate || btBldgRate(projId, bldgId, 'Electric'); // null = rate unavailable
   var gasRate = opts.gasRate || btBldgRate(projId, bldgId, 'Gas'); // null = rate unavailable
   var fanHpPerAhu = opts.fanHpPerAhu || 5; // HP — conservative default for medium AHU
+  var fanMotorEff = 0.91; // assumed AHU fan motor efficiency
   var cfmPerAhu = opts.cfmPerAhu || 10000; // CFM — conservative default
 
   var basData = btGetData(projId);
@@ -4876,12 +4877,12 @@ function btEstimateSavings(projId, bldgId, opts) {
   if (satEquipCount > 0 && (satFails > 0 || satWarns > 0)) {
     var satAhuCount = satFails + Math.round(satWarns * 0.5); // warns count half
     var coolingHrsPerYear = 1800;
-    var fanKw = (fanHpPerAhu * 0.746) / 0.91; // HP × kW/HP / motor efficiency
+    var fanKw = hpToKw(fanHpPerAhu, fanMotorEff); // HP × kW/HP / motor efficiency
     // SAT reset saves cooling energy (reheat + chiller) — use 12% of AHU cooling energy
     var satCoolingKwh = fanKw * coolingHrsPerYear * satAhuCount * 0.12;
     // Also saves reheat gas: Delta_SAT = 5°F avg, CFM × 1.08 BTU/hr/cfm/°F → therms
     var reheatBtuPerHr = cfmPerAhu * 1.08 * 5; // BTU/hr per AHU
-    var reheatThermsSaved = (reheatBtuPerHr * coolingHrsPerYear * satAhuCount) / 100000;
+    var reheatThermsSaved = (reheatBtuPerHr * coolingHrsPerYear * satAhuCount) / BTU_PER_THERM;
     var satDollars = elecRate && gasRate ? satCoolingKwh * elecRate + reheatThermsSaved * gasRate : null;
     estimates.push({
       type: 'satReset',
@@ -4902,11 +4903,9 @@ function btEstimateSavings(projId, bldgId, opts) {
   if (dspEquipCount > 0 && (dspFails > 0 || dspWarns > 0)) {
     var dspAhuCount = dspFails + Math.round(dspWarns * 0.5);
     var fanHrsPerYear = 2400; // occupied hours + some override
-    var fanKwDsp = (fanHpPerAhu * 0.746) / 0.91;
+    var fanKwDsp = hpToKw(fanHpPerAhu, fanMotorEff);
     var spReductionFraction = 0.2; // 20% SP reduction
-    var speedRatio = Math.sqrt(1 - spReductionFraction);
-    var powerRatio = Math.pow(speedRatio, 3);
-    var savingsFraction = 1 - powerRatio;
+    var savingsFraction = ductStaticResetPowerSavings(spReductionFraction); // computations/physics.js
     var dspKwh = fanKwDsp * fanHrsPerYear * dspAhuCount * savingsFraction;
     var dspDollars = elecRate ? dspKwh * elecRate : null;
     estimates.push({
@@ -4926,7 +4925,7 @@ function btEstimateSavings(projId, bldgId, opts) {
   if (totalAftHrs > 0) {
     var annualAftHrs = totalAftHrs * scaleFactor;
     // Estimate HVAC kW per AHU: fan + some conditioning
-    var hvacKwPerAhu = ((fanHpPerAhu * 0.746) / 0.91) * 1.2; // fan + 20% for conditioning
+    var hvacKwPerAhu = hpToKw(fanHpPerAhu, fanMotorEff) * 1.2; // fan + 20% for conditioning
     var aftKwh = hvacKwPerAhu * annualAftHrs;
     var aftDollars = elecRate ? aftKwh * elecRate : null;
     estimates.push({
@@ -4952,9 +4951,9 @@ function btEstimateSavings(projId, bldgId, opts) {
     // Estimate heating waste: 40% of coil capacity wasted during SHC
     var maxHeatBtuHr = cfmPerAhu * 1.08 * 20; // 20°F temperature rise at full heat
     var shcWasteBtu = maxHeatBtuHr * annualShcHrs * 0.4;
-    var shcTherms = shcWasteBtu / 100000;
+    var shcTherms = shcWasteBtu / BTU_PER_THERM;
     // Cooling waste overhead (compressor working against heating)
-    var shcKwh = (shcWasteBtu * 1.3) / 3412;
+    var shcKwh = (shcWasteBtu * 1.3) / BTU_PER_KWH;
     var shcDollars = elecRate && gasRate ? shcTherms * gasRate + shcKwh * elecRate : null;
     estimates.push({
       type: 'shc',

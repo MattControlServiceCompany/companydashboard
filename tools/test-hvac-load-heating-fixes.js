@@ -69,6 +69,7 @@ function loadFn(file, fnName) {
 const CALC = path.join(REPO, 'app', 'calculators.js');
 const HVAC_ENDUSE = path.join(REPO, 'computations', 'hvac-enduse.js');
 const src = [
+  fs.readFileSync(path.join(REPO, 'computations', 'physics.js'), 'utf8'),
   loadFn(HVAC_ENDUSE, '_hvacLowestNAvg'),
   loadFn(HVAC_ENDUSE, '_hvacPopulatedCount'),
   loadFn(HVAC_ENDUSE, 'computeHvacEnduse'),

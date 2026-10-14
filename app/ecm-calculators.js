@@ -184,11 +184,11 @@ const ECM_TEMPLATES = {
       // Heating energy saved (sensible OA load)
       // Formula: Q [Btu/hr] = 1.08 × CFM × ΔT
       const heat_btu_total = 1.08 * excess_cfm * inp.avg_delta_t_heating * inp.unocc_heating_hrs;
-      const therms_saved = heat_btu_total / (100000 * afue);
+      const therms_saved = heat_btu_total / (BTU_PER_THERM * afue);
 
       // Cooling energy saved
       const cool_btu_total = 1.08 * excess_cfm * inp.avg_delta_t_cooling * inp.unocc_cooling_hrs;
-      const kwh_saved = cool_btu_total / (cop * 3412);
+      const kwh_saved = cool_btu_total / (cop * BTU_PER_KWH);
 
       const gas_savings_dollar = ecmPrice(inp, 'gas', therms_saved);
       const elec_savings_dollar = ecmPrice(inp, 'elec', kwh_saved);
@@ -457,14 +457,14 @@ const ECM_TEMPLATES = {
         id: 'baseline_kwh',
         label: 'Baseline Energy (before VFD)',
         unit: 'kWh/yr',
-        formula: 'HP × 0.746 × (load_before/100) × hours / (eff/100)',
+        formula: 'HP × ' + KW_PER_HP + ' × (load_before/100) × hours / (eff/100)',
       },
       {
         id: 'post_vfd_kwh',
         label: 'Post-VFD Energy',
         unit: 'kWh/yr',
         formula:
-          'Affinity: baseline × (load_after/load_before)³  |  Linear: HP × 0.746 × (load_after/100) × hours / (eff/100)',
+          'Affinity: baseline × (load_after/load_before)³  |  Linear: HP × ' + KW_PER_HP + ' × (load_after/100) × hours / (eff/100)',
       },
       { id: 'savings_kwh', label: 'Annual kWh Saved', unit: 'kWh/yr', formula: 'baseline_kWh − post_vfd_kWh' },
       { id: 'annual_savings_dollar', label: 'Annual Savings ($)', unit: '$/yr', formula: 'savings_kWh × elec_rate' },
@@ -474,16 +474,16 @@ const ECM_TEMPLATES = {
       const eff = inp.motor_eff / 100;
 
       // Baseline (always linear — motor is running at constant speed)
-      const baseline_kwh = (inp.hp * 0.746 * (inp.load_before / 100) * inp.hours) / eff;
+      const baseline_kwh = (hpToKw(inp.hp) * (inp.load_before / 100) * inp.hours) / eff;
 
       let post_vfd_kwh;
       if (inp.use_affinity === 'affinity') {
         // Affinity law: power ∝ speed³, speed ∝ flow/load
         const speed_ratio = inp.load_after / inp.load_before;
-        post_vfd_kwh = baseline_kwh * Math.pow(speed_ratio, 3);
+        post_vfd_kwh = baseline_kwh * fanPowerFraction(speed_ratio);
       } else {
         // Linear model (matches Excel template exactly)
-        post_vfd_kwh = (inp.hp * 0.746 * (inp.load_after / 100) * inp.hours) / eff;
+        post_vfd_kwh = (hpToKw(inp.hp) * (inp.load_after / 100) * inp.hours) / eff;
       }
 
       const savings_kwh = baseline_kwh - post_vfd_kwh;
@@ -845,8 +845,8 @@ const ECM_TEMPLATES = {
       const heat_btu_yr = 1.08 * inp.oa_cfm * delta_t_recovered * inp.heating_hours;
 
       // Convert to therms: BTU / (100,000 BTU/therm × AFUE)
-      const heating_savings_therms = heat_btu_yr / (100000 * inp.afue);
-      const heating_savings_kwh = heat_btu_yr / (inp.afue * 3412); // for electric
+      const heating_savings_therms = heat_btu_yr / (BTU_PER_THERM * inp.afue);
+      const heating_savings_kwh = heat_btu_yr / (inp.afue * BTU_PER_KWH); // for electric
 
       const useGas = inp.heating_fuel < 0.5;
       const heating_savings_dollar = useGas
@@ -1428,7 +1428,7 @@ const ECM_TEMPLATES = {
         unit: 'BHP',
         formula: 'BHP = (GPM × head_ft) / (3960 × pump_eff)  [pump affinity law — 3960 is unit constant for GPM/ft/HP]',
       },
-      { id: 'kw_design', label: 'Design kW', unit: 'kW', formula: 'kW = BHP × 0.746 / motor_eff' },
+      { id: 'kw_design', label: 'Design kW', unit: 'kW', formula: 'kW = BHP × ' + KW_PER_HP + ' / motor_eff' },
       {
         id: 'kwh_existing',
         label: 'Existing Annual Energy',
@@ -1450,9 +1450,9 @@ const ECM_TEMPLATES = {
       const me = inp.motor_eff / 100;
       const sr = inp.avg_speed_ratio;
       const bhp_design = (inp.gpm * inp.head_ft) / (3960 * pe);
-      const kw_design = (bhp_design * 0.746) / me;
+      const kw_design = hpToKw(bhp_design, me);
       const kwh_existing = kw_design * inp.op_hours;
-      const kwh_new = kw_design * Math.pow(sr, 3) * inp.op_hours;
+      const kwh_new = kw_design * fanPowerFraction(sr) * inp.op_hours;
       const savings_kwh = kwh_existing - kwh_new;
       const annual_savings_dollar = ecmPrice(inp, 'elec', savings_kwh);
       const simple_payback = annual_savings_dollar > 0 ? inp.install_cost / annual_savings_dollar : Infinity;
@@ -1474,7 +1474,7 @@ const ECM_TEMPLATES = {
     name: 'Premium Efficiency Motor',
     category: 'Motors & Drives',
     description:
-      'Calculates energy savings from replacing a standard-efficiency motor with a NEMA Premium (IE3) motor. Savings formula: HP × 0.746 × load_factor × hours × (1/eff_old − 1/eff_new) × rate. Supports full-replacement and incremental-cost payback (premium vs. standard motor at failure).',
+      'Calculates energy savings from replacing a standard-efficiency motor with a NEMA Premium (IE3) motor. Savings formula: HP × ' + KW_PER_HP + ' × load_factor × hours × (1/eff_old − 1/eff_new) × rate. Supports full-replacement and incremental-cost payback (premium vs. standard motor at failure).',
     icon: '⚙️',
     inputs: [
       { id: 'hp', label: 'Motor Horsepower', unit: 'HP', type: 'number', default: 20, min: 0.5, max: 1000 },
@@ -1528,8 +1528,8 @@ const ECM_TEMPLATES = {
     ],
     outputs: [
       { id: 'shaft_hp', label: 'Shaft HP', unit: 'HP', formula: 'shaft_hp = nameplate_HP × load_factor' },
-      { id: 'kw_old', label: 'Existing Motor kW', unit: 'kW', formula: 'kW = shaft_hp × 0.746 / eff_old' },
-      { id: 'kw_new', label: 'New Motor kW', unit: 'kW', formula: 'kW = shaft_hp × 0.746 / eff_new' },
+      { id: 'kw_old', label: 'Existing Motor kW', unit: 'kW', formula: 'kW = shaft_hp × ' + KW_PER_HP + ' / eff_old' },
+      { id: 'kw_new', label: 'New Motor kW', unit: 'kW', formula: 'kW = shaft_hp × ' + KW_PER_HP + ' / eff_new' },
       {
         id: 'savings_kwh',
         label: 'Annual kWh Savings',
@@ -1555,8 +1555,8 @@ const ECM_TEMPLATES = {
       const eo = inp.eff_old / 100;
       const en = inp.eff_new / 100;
       const shaft_hp = inp.hp * inp.load_factor;
-      const kw_old = (shaft_hp * 0.746) / eo;
-      const kw_new = (shaft_hp * 0.746) / en;
+      const kw_old = hpToKw(shaft_hp, eo);
+      const kw_new = hpToKw(shaft_hp, en);
       const savings_kwh = (kw_old - kw_new) * inp.op_hours;
       const annual_savings_dollar = ecmPrice(inp, 'elec', savings_kwh);
       const payback_full = annual_savings_dollar > 0 ? inp.total_cost / annual_savings_dollar : Infinity;
@@ -1714,10 +1714,10 @@ const ECM_TEMPLATES = {
       const avgOaReduction = inp.per_person_frac * (1 - inp.avg_occ_frac);
       const cfm_saved = inp.oa_cfm_design * avgOaReduction;
       const heat_btu = 1.08 * cfm_saved * inp.avg_dt_heat * inp.heat_hours;
-      const therms_saved = heat_btu / (100000 * afue);
+      const therms_saved = heat_btu / (BTU_PER_THERM * afue);
       const gas_savings_dollar = ecmPrice(inp, 'gas', therms_saved);
       const cool_btu = 1.08 * cfm_saved * inp.avg_dt_cool * inp.cool_hours;
-      const cool_kwh_saved = cool_btu / (inp.chiller_cop * 3412);
+      const cool_kwh_saved = cool_btu / (inp.chiller_cop * BTU_PER_KWH);
       const cool_savings_dollar = ecmPrice(inp, 'elec', cool_kwh_saved);
       const total_savings_dollar = gas_savings_dollar + cool_savings_dollar;
       const simple_payback = total_savings_dollar > 0 ? inp.install_cost / total_savings_dollar : Infinity;
@@ -1863,7 +1863,7 @@ const ECM_TEMPLATES = {
         id: 'reheat_saved_qty',
         label: 'Reheat Savings (therms or kWh)',
         unit: 'therms or kWh/yr',
-        formula: '1.08 × (system_cfm × pct_zones) × avg_dT × season_hours → ÷ (100,000×AFUE) gas, ÷ 3412 electric',
+        formula: '1.08 × (system_cfm × pct_zones) × avg_dT × season_hours → ÷ (100,000×AFUE) gas, ÷ ' + BTU_PER_KWH + ' electric',
       },
       {
         id: 'reheat_savings_dollar',
@@ -1903,18 +1903,18 @@ const ECM_TEMPLATES = {
       const reheat_btu_total = 1.08 * zones_cfm * inp.avg_dt_reheat * inp.season_hours;
       let reheat_saved_qty, reheat_savings_dollar;
       if (isElec) {
-        reheat_saved_qty = Math.round(reheat_btu_total / 3412);
+        reheat_saved_qty = Math.round(reheat_btu_total / BTU_PER_KWH);
         reheat_savings_dollar = Math.round(ecmPrice(inp, 'elec', reheat_saved_qty));
       } else {
-        reheat_saved_qty = Math.round(reheat_btu_total / (100000 * afue));
+        reheat_saved_qty = Math.round(reheat_btu_total / (BTU_PER_THERM * afue));
         reheat_savings_dollar = Math.round(ecmPrice(inp, 'gas', reheat_saved_qty));
       }
       const cool_btu = 1.08 * inp.system_cfm * inp.avg_dt_reheat * inp.season_hours * 0.3;
-      const cool_kwh_saved = Math.round(cool_btu / (inp.cooling_cop * 3412));
+      const cool_kwh_saved = Math.round(cool_btu / (inp.cooling_cop * BTU_PER_KWH));
       const cool_dollar = Math.round(ecmPrice(inp, 'elec', cool_kwh_saved));
       const fan_kwh_saved = Math.max(
         0,
-        Math.round(inp.fan_kw_design * (Math.pow(mfOld, 3) - Math.pow(mfNew, 3)) * inp.unocc_hours),
+        Math.round(inp.fan_kw_design * (fanPowerFraction(mfOld) - fanPowerFraction(mfNew)) * inp.unocc_hours),
       );
       const fan_dollar = Math.round(ecmPrice(inp, 'elec', fan_kwh_saved));
       const total_savings_dollar = reheat_savings_dollar + cool_dollar + fan_dollar;
@@ -2072,8 +2072,8 @@ const ECM_TEMPLATES = {
       const peak_load_btu_hr = inp.boiler_cap_btuh * inp.oversize_factor;
       const annual_heating_btu = (peak_load_btu_hr * inp.hdd * 24) / inp.design_delta_t;
       const annual_heating_mmbtu = Math.round(annual_heating_btu / 1e6);
-      const existing_therms = annual_heating_btu / (100000 * eo);
-      const new_therms = annual_heating_btu / (100000 * en);
+      const existing_therms = annual_heating_btu / (BTU_PER_THERM * eo);
+      const new_therms = annual_heating_btu / (BTU_PER_THERM * en);
       const therms_saved_base = existing_therms - new_therms;
       const therms_saved = therms_saved_base * (1 + standby_factor);
       const pct_savings = Math.round((1 - eo / en) * 1000) / 10;
@@ -2165,14 +2165,14 @@ const ECM_TEMPLATES = {
       const heat_btu_yr = delta_u * inp.area * inp.hdd * 24;
       let heat_qty, heat_savings_dollar;
       if (isElecHeat) {
-        heat_qty = Math.round(heat_btu_yr / (he * 3412));
+        heat_qty = Math.round(heat_btu_yr / (he * BTU_PER_KWH));
         heat_savings_dollar = Math.round(ecmPrice(inp, 'elec', heat_qty));
       } else {
-        heat_qty = Math.round(heat_btu_yr / (100000 * he));
+        heat_qty = Math.round(heat_btu_yr / (BTU_PER_THERM * he));
         heat_savings_dollar = Math.round(ecmPrice(inp, 'gas', heat_qty));
       }
       const cool_btu_yr = delta_u * inp.area * inp.cdd * 24;
-      const cool_kwh_saved = Math.round(cool_btu_yr / (inp.cooling_cop * 3412));
+      const cool_kwh_saved = Math.round(cool_btu_yr / (inp.cooling_cop * BTU_PER_KWH));
       const cool_savings_dollar = Math.round(ecmPrice(inp, 'elec', cool_kwh_saved));
       const total_savings_dollar = heat_savings_dollar + cool_savings_dollar;
       const simple_payback = total_savings_dollar > 0 ? inp.install_cost / total_savings_dollar : Infinity;
@@ -2288,7 +2288,7 @@ const ECM_TEMPLATES = {
         unit: 'BHP',
         formula: 'BHP = (CFM × SP) / (6356 × fan_eff × belt_eff)  [6356 = unit constant for CFM/in.wg/HP]',
       },
-      { id: 'kw_old_design', label: 'Existing kW at Design', unit: 'kW', formula: 'kW = BHP × 0.746 / motor_eff_old' },
+      { id: 'kw_old_design', label: 'Existing kW at Design', unit: 'kW', formula: 'kW = BHP × ' + KW_PER_HP + ' / motor_eff_old' },
       {
         id: 'bhp_new',
         label: 'New EC Fan BHP',
@@ -2299,7 +2299,7 @@ const ECM_TEMPLATES = {
         id: 'kw_new_design',
         label: 'New kW at Design',
         unit: 'kW',
-        formula: 'kW = BHP × 0.746 / ec_motor_eff  — EC motor+drive is 92–95%',
+        formula: 'kW = BHP × ' + KW_PER_HP + ' / ec_motor_eff  — EC motor+drive is 92–95%',
       },
       {
         id: 'pct_improvement',
@@ -2329,11 +2329,11 @@ const ECM_TEMPLATES = {
       const fen = inp.fan_eff_new / 100;
       const men = inp.motor_eff_new / 100;
       const sr = inp.avg_speed_ratio;
-      const power_ratio = Math.pow(sr, 3);
+      const power_ratio = fanPowerFraction(sr);
       const bhp_old = (inp.cfm * inp.static_pressure) / (6356 * feo * be);
-      const kw_old_design = (bhp_old * 0.746) / meo;
+      const kw_old_design = hpToKw(bhp_old, meo);
       const bhp_new = (inp.cfm * inp.static_pressure) / (6356 * fen);
-      const kw_new_design = (bhp_new * 0.746) / men;
+      const kw_new_design = hpToKw(bhp_new, men);
       const kwh_old = kw_old_design * power_ratio * inp.op_hours;
       const kwh_new = kw_new_design * power_ratio * inp.op_hours;
       const savings_kwh = kwh_old - kwh_new;

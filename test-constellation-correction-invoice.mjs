@@ -14,7 +14,7 @@ import { fileURLToPath } from 'url';
 const REPO = path.dirname(fileURLToPath(import.meta.url));
 const LOAD_ORDER = [
   'lib/date-helpers.js', 'lib/formatting.js', 'lib/unit-conversion.js', 'lib/csv-parser.js',
-  'computations/rates.js', 'computations/regression.js', 'computations/normalization.js',
+  'computations/physics.js', 'computations/rates.js', 'computations/regression.js', 'computations/normalization.js',
   'computations/eui.js', 'computations/pollution.js', 'computations/csc.js', 'computations/savings.js',
   'computations/anomaly-detection.js', 'lib/perf-table.js', 'lib/shared-charts.js',
   'computations/report-data.js', 'computations/data-quality.js', 'app/db.js', 'app/core.js', 'app/utility-data.js',

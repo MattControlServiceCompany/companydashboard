@@ -1,11 +1,4 @@
-﻿// Local fallback — only defined if computations/rates.js hasn't already defined it
-if (typeof toKBtu === 'undefined') {
-  function toKBtu(kwh, therms, gallons) {
-    return (parseFloat(kwh) || 0) * 3.412 + (parseFloat(therms) || 0) * 100 + (parseFloat(gallons) || 0) * 91.5;
-  }
-}
-
-// -----------------------------------------------------------------------
+﻿// -----------------------------------------------------------------------
 // _rptMeterEligible(projId, m) — the ONE eligibility rule for a meter to enter a report.
 // Returns '' when eligible, else a short user-facing reason. Used by collectReportData()
 // (the filter) AND the Generate Report picker (default-checked / disabled rows), so the two

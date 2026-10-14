@@ -25,7 +25,7 @@ const near = (a, b, t) => Math.abs(a - b) <= (t || 1e-6);
 const S = { console };
 S.window = S;
 vm.createContext(S);
-for (const rel of ['lib/date-helpers.js', 'lib/formatting.js', 'computations/rates.js', 'computations/savings.js', 'computations/normalization.js']) {
+for (const rel of ['lib/date-helpers.js', 'lib/formatting.js', 'computations/physics.js', 'computations/rates.js', 'computations/savings.js', 'computations/normalization.js']) {
   vm.runInContext(fs.readFileSync(path.join(REPO, rel), 'utf8'), S, { filename: rel });
 }
 require('./bill-flags-sandbox.js').addBillFlagEngine(S); // computeSeasonalBldgRates asks the flag engine which bills to leave out
