@@ -2506,6 +2506,14 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.13.117', date: '2026-10-13', title: 'Quick annual entry, per-building load estimate and demand, one month rule for bills',
+    items: [
+      { type: 'feature', text: 'HVAC Load Estimate: new annual-usage box. Enter a building\'s annual kWh and Therms for a quick estimate. Baseline bills replace it automatically when present. Each building now keeps its own estimate, with a project total.' },
+      { type: 'feature', text: 'HVAC Load Estimate: new demand section with billed kW (each month and total), peak kW and its month, and Facilities kW and the bill that set it.' },
+      { type: 'fix', text: 'All pages: every bill now counts in the month that holds most of its service days (one rule for usage, demand and cost). February no longer shows 0 with March doubled. Baselines, budget actuals and scorecard EUI are corrected. Savings totals are unchanged.' },
+      { type: 'fix', text: 'BAS Calc: existing cooling and heating kWh now fill from the bills. Setpoint report: baselines now read all included meters.' }
+    ]
+  },
   { v: 'v2026.10.13.116', date: '2026-10-13', title: 'One shared calculation for fan and duct static savings, sourced energy constants',
     items: [
       { type: 'change', text: 'ECM templates, BAS Trends: fan affinity and duct static reset savings now come from one shared calculation. No estimates changed.' },
