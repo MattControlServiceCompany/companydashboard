@@ -475,11 +475,12 @@ async function main() {
     'known no-drive fan: kW x hours x the mid of the published range counted; low and high returned',
     rc.units[0].vfd,
   );
-  ok(RNG.low === 0.3 && RNG.mid === 0.45 && RNG.high === 0.6, 'published range 30 / 45 / 60 percent');
+  ok(RNG.low === 0.25 && RNG.mid === 0.35 && RNG.high === 0.45, 'sourced range 25 / 35 / 45 percent');
   ok(
-    rc.units[0].why.vfd.indexOf('Default: published savings range for adding a drive to a constant-speed fan (') === 0 &&
-      /fan audit request email v5/.test(rc.units[0].why.vfd),
-    'the drive line carries the Default label and the source file',
+    rc.units[0].why.vfd ===
+      'Default: typical savings range for adding variable speed to a constant-volume fan, 25–45% (ASHRAE Handbook fan chapter; PNNL plug fan study)' &&
+      !/email/i.test(rc.units[0].why.vfd),
+    'the drive line carries the Default label with the published sources and no email',
     rc.units[0].why.vfd,
   );
   ok(rc.units[0].twoSpeed === 0 && rc.units[0].reset === 0, 'constant-speed fan: no two-speed and no reset saving');

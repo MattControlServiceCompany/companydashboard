@@ -33,11 +33,10 @@ var FAN_DEFAULT_PHASE = 3; // phase when the matrix has amps and no phase
 var FAN_HP_MOTOR_EFF = 0.9; // motor efficiency for a nameplate HP
 var FAN_HP_LOAD_FACTOR = 0.8; // share of nameplate HP the fan draws
 // Default saving of adding a drive to a constant-speed fan when no fan speed trend exists: a published range, counted at its mid.
-// Source: the CSC fan retrofit range "about 30 to 60%" of fan energy (knowledge base outputs, 2026-10-13 fan audit request email v5).
-// Support in the knowledge base: ComEd/Slipstream RTU field study, 61% +/- 9% of supply fan energy (fan retrofit deck notes, 2026-10-11).
-var FAN_VFD_SAVINGS_RANGE = { low: 0.3, mid: 0.45, high: 0.6 };
-var FAN_VFD_SAVINGS_SOURCE = 'CSC fan retrofit range, about 30 to 60 percent of fan energy; knowledge base output 2026-10-13 fan audit request email v5';
-var FAN_VFD_SAVINGS_LABEL = 'Default: published savings range for adding a drive to a constant-speed fan (' + FAN_VFD_SAVINGS_SOURCE + ')';
+// Source: "25-45% reduction compared to constant-volume belt-drive systems": ASHRAE Handbook HVAC Systems and Equipment (fan chapter);
+// PNNL "Energy Savings Potential of Plug Fans in Commercial HVAC Systems"; ENERGY STAR fan guidance (CSC research file missing-ecm-research-2026-05-16).
+var FAN_VFD_SAVINGS_RANGE = { low: 0.25, mid: 0.35, high: 0.45 };
+var FAN_VFD_SAVINGS_LABEL = 'Default: typical savings range for adding variable speed to a constant-volume fan, 25–45% (ASHRAE Handbook fan chapter; PNNL plug fan study)';
 var FAN_TWO_SPEED_RATIO = 0.58; // Low speed as a fraction of High (4/6 pole common case; read the motor tag)
 var FAN_TWO_SPEED_DEFAULT_LOW_SHARE = 0.55; // share of run hours on Low when no Hi/Lo enable trend exists
 var FAN_RESET_DEFAULT_PRESSURE_CUT = 0.2; // duct static pressure cut a reset reaches (a 20 percent cut saves 25.6 percent of fan power: fan law with the fixed-loss share)
@@ -247,10 +246,12 @@ function _fanRowHasFanPoint(row, pts) {
  * @returns {string|null}
  */
 function fanDrivePointName(names) {
+  // a camelCase key (supplyFanSpeed) or an underscore key (auto_sf_vfd) is read as words
   var drive = /\b(vfd|vsd|drive|inverter|hz|frequency|speed)\b/i;
   var notDrive = /\b(wind|air\s*speed|exhaust|return|relief|condenser|compressor|pump|chiller|boiler|tower|wheel|diagnostic)\b|\b(high|hi|low|lo)\s*speed\b|\bspeed\s*(high|hi|low|lo)\b/i;
   for (var i = 0; i < names.length; i++) {
-    if (drive.test(names[i]) && !notDrive.test(names[i])) return names[i];
+    var words = String(names[i]).replace(/([a-z])([A-Z])/g, '$1 $2').replace(/_/g, ' ');
+    if (drive.test(words) && !notDrive.test(words)) return names[i];
   }
   return null;
 }

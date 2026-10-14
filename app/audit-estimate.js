@@ -281,7 +281,7 @@ function auditEstClearHourOverrides(projId) {
 // (scr, circuit, baseboard, vfd). Validated on real BAS data 2026-10-01 for air-side equipment.
 var AUDIT_EST_CONCEPTS = [
   ['Economizer', /econom|^oaDamperPosition$|returnAirDamper|reliefDamper|mixedAirTemp|returnAirEnthalpy|exhaustAirDamper/i],
-  ['Fan speed/VFD', /vfd|^supplyFanSpeed$|^returnFanSpeed$|^exhaustFanSpeed$|fanSpeedCommand/i],
+  ['Fan speed/VFD', { test: function (k) { return fanDrivePointName([k]) !== null; } }], // the one drive-name rule (computations/fan-savings.js)
   ['Electric heat', /(?<!de)scr|baseboard|electricHeat|unitHeater/i],
   ['Hot-water heat', /^heatingValve$|^reheatValve$|heatingCoil|heatSourceSupplyTemp|hotDeck|preheat/i],
   ['DX cooling', /circuit|condensing|compressor|cuStage|cuEnable/i],

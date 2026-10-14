@@ -1923,7 +1923,7 @@ const ECM_TEMPLATES = {
         label: 'Drive on Constant-Speed Fans',
         unit: 'kWh/yr',
         assumption: FAN_VFD_SAVINGS_LABEL,
-        formula: 'Fan kW x hours x the mid of the published range (FAN_VFD_SAVINGS_RANGE: low 30, mid 45, high 60 percent), no fan speed trend needed. Counted only on a unit whose drive status is known: no drive. A unit with a drive is left out.',
+        formula: 'Fan kW x hours x the mid of the published range (FAN_VFD_SAVINGS_RANGE: low 25, mid 35, high 45 percent), no fan speed trend needed. Counted only on a unit whose drive status is known: no drive. A unit with a drive is left out.',
       },
       {
         id: 'savings_vfd_low_kwh',

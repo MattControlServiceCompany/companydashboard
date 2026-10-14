@@ -16,6 +16,7 @@
 //   7. Another file computes a fan kW from HP (hpToKw on a "fan" line), calls ductStaticResetPowerSavings, or sets its own fan run
 //      hours (a fan*Hrs / fan*Hours variable set to a number). The BAS report (app/bas-trends.js) must call fanKwFromHp,
 //      fanResetSavingsFraction and fanDefaultRunHours (one answer for a duct static pressure cut).
+//   8. Another file has its own drive-name regex (a regex literal holding vfd and speed; the Equipment Matrix column mapping is exempt): call fanDrivePointName in fan-savings.js.
 // Run: node tools/gate-single-fan-model.js [repo-root]   (exit 0 = pass)
 'use strict';
 const fs = require('fs');
@@ -25,6 +26,7 @@ const FAN = 'computations/fan-savings.js';
 const END_USE = 'computations/end-use.js';
 const PHYSICS = 'computations/physics.js';
 const ECM = 'app/ecm-calculators.js';
+const MATRIX = 'app/equipment-matrix.js'; // maps raw point names to matrix columns (its own job), not the has-a-drive decision
 const DIRS = ['app', 'computations', 'extraction', 'lib', 'netlify'];
 const SKIP_DIR = new Set(['node_modules', '.git', '.claude', 'data']);
 
@@ -104,6 +106,8 @@ function check(files) {
         bad.push(at + 'fan run hours of its own (8760): the rule is in ' + FAN);
       const c = line.match(FAN_CONSTANTS);
       if (c) bad.push(at + 'uses ' + c[0] + ' outside its owner (' + FAN + ' / ' + PHYSICS + ')');
+      if (rel !== MATRIX && /(?:^|[(,=:!&|[\s])\/(?![\/*])(?=[^\/\n]*vfd)(?=[^\/\n]*speed)[^\/\n]*\/[a-z]*/i.test(line))
+        bad.push(at + 'its own drive-name regex (vfd and speed): call fanDrivePointName in ' + FAN);
       if (/fan/i.test(line) && /\bhpToKw\s*\(/.test(line))
         bad.push(at + 'fan kW from HP of its own (hpToKw): call fanKwFromHp in ' + FAN);
       if (/\bductStaticResetPowerSavings\s*\(/.test(line))
@@ -141,7 +145,8 @@ function check(files) {
     if (!body) bad.push('app/bas-trends.js: btEstimateSavings was not found');
     else
       ['fanKwFromHp', 'fanResetSavingsFraction', 'fanDefaultRunHours'].forEach((n) => {
-        if (!new RegExp('\\b' + n + '\\s*\\(').test(body)) bad.push('app/bas-trends.js btEstimateSavings does not call ' + n);
+        if (!new RegExp('\\b' + n + '\\s*\\(').test(body))
+          bad.push('app/bas-trends.js btEstimateSavings does not call ' + n);
       });
   }
 
