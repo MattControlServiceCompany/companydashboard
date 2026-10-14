@@ -2506,6 +2506,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.14.125', date: '2026-10-14', title: 'Utility Data: cleaner warnings and printed read values kept',
+    items: [
+      { type: 'change', text: 'Utility Data: warning counts now show only bill problems that change usage, cost or dates; meter chips use plain labels; the PDF reader keeps the read difference and kWh printed on the bill.' }
+    ]
+  },
   { v: 'v2026.10.14.124', date: '2026-10-14', title: 'Misread meter reads are corrected automatically',
     items: [
       { type: 'feature', text: 'Utility Data: misread meter reads from the PDF reader are now corrected automatically when the previous and next bills prove the right value. Corrected cells are shaded, and a banner above the bills table lists each change with the old value and the reason. Values you type yourself are never overwritten.' }
