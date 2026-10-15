@@ -1729,7 +1729,9 @@ function _bcrEditFlaggedRow(rowId) {
   const row = ctl.flagged.find((r) => r._rowId === rowId);
   if (!row) return;
   closeBillCorrectionsReviewModal();
+  udSelProjId = _bcrOpenProjId;
   udSelBldgId = row.bldgId;
+  if (typeof projUDSelBldg !== 'undefined' && projUDSelBldg[_bcrOpenProjId]) projUDSelBldg[_bcrOpenProjId] = row.bldgId;
   if (typeof openBillModal === 'function') {
     try {
       openBillModal(row.meterId, row.billId);

@@ -2322,6 +2322,7 @@ function _loadPdfIntoFrame(frame, pdfId, pageStart, pageEnd, pdfKey) {
 }
 
 function openBillModal(mid, editRowId) {
+  _syncEmbedUDContext(); // embed render restores udSelProjId/udSelBldgId to null
   udSelMeterId = mid;
   udBillEditId = editRowId || null;
   const b = getUDBldg(udSelProjId, udSelBldgId);
