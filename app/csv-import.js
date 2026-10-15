@@ -1109,9 +1109,9 @@ function renderBillRow(row, m, incl, allBills, cols, rowNum) {
       raw !== undefined &&
       raw !== null &&
       raw !== '' &&
-      !isNaN(raw)
+      parseBillNumber(raw) !== null
     ) {
-      raw = convertBillValue(parseFloat(raw), m);
+      raw = convertBillValue(parseBillNumber(raw), m);
     }
     const formatted = _escHtml(_billFormatValue(raw, c.entry, colDp)); // a text cell comes from a CSV or a PDF: show it as text
     const cls = c.entry.key === 'totalCost' ? 'td-total' : c.a || '';
@@ -1876,10 +1876,11 @@ function _billReadValue(row, entry) {
 // IMPORTANT: 0 is valid data. Only null/undefined/''/'null' mean "no data" (show —).
 function _billFormatValue(val, entry, colDp) {
   const isMissing = val === undefined || val === null || val === '' || val === 'null';
-  const hasVal = !isMissing && !isNaN(val);
+  const num = isMissing ? null : parseBillNumber(val); // the ONE bill number parser: "7,398.79" reads as 7398.79
+  const hasVal = num !== null;
   if (entry.type === 'currency') {
     if (!hasVal) return '—';
-    return '$' + (+val).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return '$' + num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
   if (entry.type === 'number') {
     if (!hasVal) return isMissing ? '—' : val;
@@ -1918,22 +1919,22 @@ function _billFormatValue(val, entry, colDp) {
       /read$|multiplier|difference/i.test(entry.key)
     ) {
       // Bug #18: Read Difference must always display positive (current - previous read)
-      const dispVal = /difference/i.test(entry.key) ? Math.abs(+val) : +val;
+      const dispVal = /difference/i.test(entry.key) ? Math.abs(num) : num;
       const fixedDp = colDp ? colDp(entry.key) : null;
       if (fixedDp != null)
         return dispVal.toLocaleString('en-US', { minimumFractionDigits: fixedDp, maximumFractionDigits: fixedDp });
       return dispVal.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 4 });
     }
     // Default numeric fields (e.g. numberOfDays) — integer display.
-    return (+val).toLocaleString('en-US');
+    return num.toLocaleString('en-US');
   }
   if (entry.type === 'rate5') {
     if (!hasVal) return '—';
-    return '$' + (+val).toFixed(5);
+    return '$' + num.toFixed(5);
   }
   if (entry.type === 'rate3') {
     if (!hasVal) return '—';
-    return '$' + (+val).toFixed(3);
+    return '$' + num.toFixed(3);
   }
   if (entry.type === 'date') return val ? fmtDate(val) : '—';
   return isMissing ? '—' : val;
