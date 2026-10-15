@@ -9609,7 +9609,7 @@ function clearPDFOCR() {
   document.getElementById('pdfInput').value = '';
   document.getElementById('extractedFieldsHdr').innerHTML = '';
   document.getElementById('extractedFieldsGrid').innerHTML = '';
-  document.getElementById('pdfPillsHdr').innerHTML = '';
+  document.getElementById('pdfStripPills').innerHTML = '';
   document.getElementById('pdfSaveRow').style.display = 'none';
   document.getElementById('pdfClearBtn').style.display = 'none';
   document.getElementById('dropZone').classList.remove('collapsed');
@@ -13209,6 +13209,8 @@ function savePDFDebug(isManualSave) {
 // viewSavedPDF (Saved Bills, csv-import) has its own page-range logic and is
 // not changed.
 const PDF_DOCK_LS_ON = 'ch_pdf_side_by_side';
+const PDF_OUT_LS = 'ch_pdf_output_panel';
+const PDF_OUT_WIDE_PX = 1600;
 const PDF_DOCK_LS_W = 'ch_pdf_dock_width';
 let _pdfDock = { open: false, b64: null, url: null, total: null, page: null, token: 0, shownKey: null };
 
@@ -13312,7 +13314,33 @@ function closePdfDock() {
   _syncPdfDockVisibility();
 }
 // The dock follows #pdfRightCol: hidden with it (batch mode).
+// Extraction output panel: the viewer's saved choice wins; with none, the panel shows only at 1600 px or wider.
+function _pdfOutputShown() {
+  const saved = _pdfDockLsGet(PDF_OUT_LS);
+  if (saved === '1') return true;
+  if (saved === '0') return false;
+  const pb = document.getElementById('pdfBody');
+  const w = pb && pb.clientWidth ? pb.clientWidth : window.innerWidth;
+  return w >= PDF_OUT_WIDE_PX;
+}
+function _applyPdfOutputPanel() {
+  const pb = document.getElementById('pdfBody');
+  if (!pb) return;
+  const shown = _pdfOutputShown();
+  pb.classList.toggle('pdf-out-hidden', !shown);
+  const tb = document.getElementById('pdfOutToggleBtn');
+  if (tb) tb.textContent = shown ? 'Hide extraction output' : 'Show extraction output';
+}
+function togglePdfOutputPanel() {
+  _pdfDockLsSet(PDF_OUT_LS, _pdfOutputShown() ? '0' : '1');
+  _syncPdfDockVisibility();
+}
 function _syncPdfDockVisibility() {
+  _applyPdfOutputPanel();
+  const strip = document.getElementById('pdfPeriodStrip');
+  const vb = document.getElementById('pdfViewBtn');
+  const rcol = document.getElementById('pdfRightCol');
+  if (strip) strip.style.display = vb && vb.style.display !== 'none' && rcol && rcol.style.display !== 'none' ? '' : 'none';
   const dock = document.getElementById('pdfDockCol');
   if (!dock) return;
   const rc = document.getElementById('pdfRightCol');
@@ -13392,6 +13420,7 @@ function _initPdfDock() {
   const handle = document.getElementById('pdfDockResize');
   if (!tog || !rc || !btn || !handle) return;
   tog.checked = _pdfSideBySideOn();
+  _applyPdfOutputPanel();
   const mo = new MutationObserver(_syncPdfDockVisibility);
   mo.observe(rc, { attributes: true, attributeFilter: ['style'] });
   mo.observe(btn, { attributes: true, attributeFilter: ['style'] });
@@ -13416,6 +13445,7 @@ function _initPdfDock() {
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _initPdfDock);
 else _initPdfDock();
 function togglePDFRawText() {
+  if (!_pdfOutputShown()) togglePdfOutputPanel();
   const box = document.getElementById('pdfAIBox');
   const btn = document.getElementById('pdfDebugBtn');
   if (box._showingRaw) {
@@ -17652,7 +17682,7 @@ function renderMultiBillUI(bills, box) {
         : '';
     const gapInfo = bill._billing_gap;
     const gapRow = gapInfo
-      ? `<div style="padding:2px 8px;margin:2px 0;font-size:10px;color:var(--amber);text-align:center;font-weight:600">&#9888; ${gapInfo.days}-day gap (after ${gapInfo.afterPeriod || ''})</div>`
+      ? `<div class="pdf-strip-gap" style="padding:2px 8px;margin:2px 0;font-size:10px;color:var(--amber);text-align:center;font-weight:600">&#9888; ${gapInfo.days}-day gap (after ${gapInfo.afterPeriod || ''})</div>`
       : '';
     return (
       `<div class="ef-pill-row"><div class="ef-pill-month">${p.monthLbl || ''}</div>${pillBtn}${savePillBtn}</div>` +
@@ -17796,7 +17826,7 @@ function renderMultiBillUI(bills, box) {
       bldgBar = document.createElement('div');
       bldgBar.id = 'pdfBldgTabsBar';
       bldgBar.style.cssText = 'position:sticky;top:0;z-index:12;background:var(--bg);padding-bottom:4px';
-      const hdr = document.getElementById('extractedFieldsHdr');
+      const hdr = document.getElementById('pdfPeriodStrip') || document.getElementById('extractedFieldsHdr');
       if (hdr) hdr.parentNode.insertBefore(bldgBar, hdr);
     }
     if (bldgBar) bldgBar.innerHTML = _bldgTabsHtml;
@@ -17932,21 +17962,6 @@ function renderMultiBillUI(bills, box) {
     }
     bottomBarEl.innerHTML = `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${btns}${gateNotice}</div>`;
   }
-  // The Month / Billing Periods header + duplicate banner are written to the frozen
-  // #pdfPillsHdr (outside the scroll area) so they stay pinned at the top. The pills
-  // rows + JSON output go into pdfAIBox which lives in the scrollable body. Since the
-  // frozen grid and the scroll grid both use .g-6040 with identical column widths,
-  // the pills column aligns with the header column above it, and the JSON aligns with
-  // the empty space to the right of the header.
-  const pillsHdrEl = document.getElementById('pdfPillsHdr');
-  if (pillsHdrEl) {
-    pillsHdrEl.innerHTML = `${dupBannerHtml}<div style="display:flex;gap:10px">
-        <div style="flex:0 0 auto;min-width:260px;display:flex;gap:8px;align-items:flex-end">
-          <div class="ef-pill-sticky-month">Month</div>
-          <div class="ef-pill-sticky-label">Billing Periods</div>
-        </div>
-      </div>`;
-  }
   let commTabsHtml = '';
   if (_hasMultiComm) {
     const tabs = _uniqueComms;
@@ -17986,10 +18001,15 @@ function renderMultiBillUI(bills, box) {
         .join('') +
       '</div>';
   }
-  box.innerHTML = `<div style="display:flex;gap:10px;align-items:flex-start">
-        <div class="ef-pill-col" style="flex:0 0 auto;min-width:260px">${commTabsHtml}${nav}</div>
-        <pre style="flex:1;min-width:0;font-size:11px;color:var(--text);white-space:pre-wrap;word-break:break-word;margin:0">${JSON.stringify(b, null, 2)}</pre>
-      </div>`;
+  // The duplicate banner, commodity tabs and billing-period pills live in the strip at the top of the left column.
+  const stripPillsEl = document.getElementById('pdfStripPills');
+  if (stripPillsEl) {
+    stripPillsEl.innerHTML =
+      (dupBannerHtml ? `<div class="pdf-strip-banner">${dupBannerHtml}</div>` : '') +
+      (commTabsHtml ? `<div class="pdf-strip-comm">${commTabsHtml}</div>` : '') +
+      nav;
+  }
+  box.innerHTML = `<pre style="font-size:11px;color:var(--text);white-space:pre-wrap;word-break:break-word;margin:0">${JSON.stringify(b, null, 2)}</pre>`;
 }
 function selectCommTab(tab) {
   window._pdfCommTab = tab;
