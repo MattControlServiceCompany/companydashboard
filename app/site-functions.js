@@ -2575,12 +2575,10 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
-  { v: 'v2026.10.15.131', date: '2026-10-15', title: 'Sidebar: one Data button',
-    gateOverride: true,
-    gateOverrideReason: 'The word storage is the exact label of the Compact PDF Storage button.',
+  { v: 'v2026.10.15.131', date: '2026-10-15', title: 'City bill dates and one Data button',
     items: [
-      { type: 'change', text: 'Sidebar (on every page): Backup, Restore, Export PDFs, Import PDFs, Compact PDF Storage, Export Buildings and Export Meters are now in one menu. Click the Data button to open it.' },
-      { type: 'change', text: 'Sidebar (on every page): the Reset Data button is removed, so no one can erase all data by mistake.' }
+      { type: 'fix', text: 'Utility Data / PDF upload: city utility bill dates are read correctly even when the scan garbles a date; a bill whose date cannot be read is held for review instead of getting a wrong date.' },
+      { type: 'change', text: 'Sidebar: Backup, Restore, the PDF tools and the CSV exports are now in one Data button, and the Reset Data button is removed.' }
     ]
   },
   { v: 'v2026.10.15.130', date: '2026-10-15', title: 'Utility Data: clearer bill warnings',
