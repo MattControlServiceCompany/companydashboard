@@ -355,5 +355,34 @@ bills = rule.extractAll(page(1, { gas: '6.029 16154 1] GAS 821.39', cb: 'Current
 gas = byCommodity(bills, 'Gas');
 check('F page does not prove the charge: held as before', gas && gas.GasCharge === null && gas._manualReview === true, j(gas && gas.GasCharge));
 
+// G. Fuel Adjustment sign and residual (Matt, 2026-10-15: never fill a value that is not printed).
+// G1. A positive fuel adjustment with no Current Bill to prove its sign (blank, and the balance
+// lines too short to derive it): the bill is held with a plain reason, not saved.
+bills = rule.extractAll(
+  page(1, { fa: 'FUEL ADJUSTMENT 30.00', cb: 'Current Bill', tad: 'Total Amount Due 1027.39', balance: BAL.slice(0, 3) }),
+);
+gas = byCommodity(bills, 'Gas');
+check(
+  'G1 positive fuel adjustment, no Current Bill: held, sign reason',
+  gas && gas._manualReview === true && /sign could not be confirmed/i.test((gas._gateReasons || []).join(' ')),
+  j(gas && [gas._manualReview, gas._gateReasons]),
+);
+// G2. No fuel adjustment line on the page and the lines add up without one: null, nothing derived.
+bills = rule.extractAll(page(1, { fa: 'NOTE: PLEASE PAY BY THE DUE DATE', cb: 'Current Bill 1006.39', tad: 'Total Amount Due 1006.39' }));
+gas = byCommodity(bills, 'Gas');
+check(
+  'G2 no fuel adjustment line: null, not derived, not held',
+  gas && gas.FuelAdjustment === null && !gas._auto_derived_FuelAdjustment && !held(bills),
+  j(gas && [gas.FuelAdjustment, gas._auto_derived_FuelAdjustment, held(bills)]),
+);
+// G3. A positive read whose sign the page sum proves stays (flipped to -30), not held.
+bills = rule.extractAll(page(1, { fa: 'FUEL ADJUSTMENT 30.00' }));
+gas = byCommodity(bills, 'Gas');
+check(
+  'G3 sign proven by the page sum: kept, not held',
+  gas && gas.FuelAdjustment === -30 && !held(bills),
+  j(gas && [gas.FuelAdjustment, held(bills)]),
+);
+
 console.log(fails ? '\n' + fails + ' FAILED' : '\nALL PASSED');
 process.exit(fails ? 1 : 0);

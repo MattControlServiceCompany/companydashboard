@@ -6295,6 +6295,20 @@ function _lbg_buildGasBill(
     if (signedFuelAdj != null || !fuelAdjMeta.lineSeen) {
       return { value: signedFuelAdj, held: null };
     }
+    // No Fuel Adjustment label anywhere on the page and the page lines already add up to the printed
+    // Current Bill without one: nothing is printed and nothing is missing, so the value stays null
+    // (Matt, 2026-10-15: never fill a value that is not printed). A non-zero residual (the label
+    // lost to noise, a real line with a gap the page sum proves to the cent) still goes below.
+    if (!fuelAdjMeta.faLabelSeen) {
+      const noLine = _lbg_resolveFuelAdj(
+        preAdjGasTotal,
+        otherCommoditySum,
+        currentBillTotal,
+        fuelAdjMeta.otherCommoditiesConfident,
+        gasTotalConfident,
+      );
+      if (noLine.resolved && noLine.value === 0) return { value: null, held: null };
+    }
     const faResolve = _lbg_resolveFuelAdj(
       preAdjGasTotal,
       otherCommoditySum,
@@ -11502,6 +11516,7 @@ const UTILITY_RULES = [
       }
       const _fuelAdjMeta = {
         lineSeen: fuelAdjLineSeen,
+        faLabelSeen: _LBG_FUEL_ADJ_LABEL.test(page),
         otherCommoditiesConfident: _faUnresolvedCommodities.length === 0,
         unresolvedCommodities: _faUnresolvedCommodities,
       };
@@ -11527,6 +11542,19 @@ const UTILITY_RULES = [
           '(high-zoom charges-column crop, backlog 37d5fb0e-fueladj follow-up).',
       });
       if (gasBill) {
+        // A positive Fuel Adjustment (a credit that lost its minus sign reads positive) is proven only
+        // by the page sum. With no Current Bill to sum against, the sign is unproven: hold.
+        if (gasBill.FuelAdjustment > 0 && !_faSignCorrected && CurrentBillTotal == null) {
+          const _signReason =
+            'Fuel adjustment sign could not be confirmed: no Current Bill is printed or derivable to check it against - verify the sign on the bill.';
+          gasBill._gateTripped = true;
+          gasBill._gateReasons = (gasBill._gateReasons || []).concat([_signReason]);
+          if (!gasBill._manualReview) {
+            gasBill._manualReview = true;
+            gasBill._manualReviewLabel = 'Fuel adjustment sign could not be confirmed - verify';
+          }
+          gasBill._correction_pending_FuelAdjustment = { original: gasBill.FuelAdjustment, reason: _signReason };
+        }
         if (_faSignCorrected)
           gasBill._auto_corrected_FuelAdjustment = {
             reason:
