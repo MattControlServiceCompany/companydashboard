@@ -8791,62 +8791,7 @@
             <div class="sb-divider"></div>
             <div class="sb-clock" id="sb-clock">--:-- --</div>
             <div class="sb-date" id="sb-date">Loading...</div>
-            <div class="sb-btn-row">
-              <button class="sb-btn" onclick="window.__siteUI.backupData()" title="Backup all data">Backup</button>
-              <button class="sb-btn" onclick="window.__siteUI.restoreData()" title="Restore from backup">
-                Restore
-              </button>
-            </div>
-            <div class="sb-btn-row">
-              <button
-                class="sb-btn"
-                onclick="window.__siteUI.exportPdfs()"
-                title="Separate, optional export of your bill PDFs, downloaded in batches (Backup above does not include PDFs)"
-              >
-                Export PDFs
-              </button>
-              <button
-                class="sb-btn"
-                onclick="window.__siteUI.importPdfs()"
-                title="Restore bill PDFs from files created by Export PDFs"
-              >
-                Import PDFs
-              </button>
-            </div>
-            <div class="sb-btn-row">
-              <button
-                class="sb-btn"
-                style="width: 100%"
-                onclick="compactPdfStorageUI()"
-                title="Collapse duplicate stored bill PDFs down to one copy each — frees local storage space"
-              >
-                Compact PDF Storage
-              </button>
-            </div>
-            <div class="sb-btn-row">
-              <button
-                class="sb-btn"
-                onclick="exportAllBuildingsCSV()"
-                title="Download a CSV of every building across all projects"
-              >
-                Export Buildings (CSV)
-              </button>
-              <button
-                class="sb-btn"
-                onclick="exportAllMetersCSV()"
-                title="Download a CSV of every meter across all projects"
-              >
-                Export Meters (CSV)
-              </button>
-            </div>
-            <button
-              class="sb-btn danger"
-              style="width: 100%"
-              onclick="window.__siteUI.resetData()"
-              title="WARNING: Permanently deletes ALL projects, buildings, meters, and bills. Cannot be undone."
-            >
-              Reset Data
-            </button>
+            <button class="sb-settings-btn" id="siteDataBtn" onclick="siteDataMenuToggle(this)">&#128450; Data</button>
             <div
               class="sb-version"
               id="en-sb-version"

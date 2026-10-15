@@ -1988,35 +1988,104 @@ function siteRestore(data, opts) {
   inp.click();
 }
 // Drag-and-drop restore removed — restore is button-only now
-async function siteResetData() {
-  if (
-    !confirm(
-      'This permanently erases ALL CompanyHub data on this device — projects, bills, utility data, and the Equipment Matrix database. This cannot be undone. Continue?',
-    )
-  )
+/* Data menu: ONE sidebar button ("Data") that opens a small menu of the seven data tools.
+   Single builder: every page's sidebar calls siteDataMenuToggle(this). Items call the existing handlers. */
+var SITE_DATA_MENU_ITEMS = [
+  { label: 'Backup', title: 'Backup all data', fn: function () { return window.__siteUI.backupData(); } },
+  { label: 'Restore', title: 'Restore from backup', fn: function () { return window.__siteUI.restoreData(); } },
+  { label: 'Export PDFs', title: 'Separate, optional export of your bill PDFs, downloaded in batches (Backup does not include PDFs)', fn: function () { return window.__siteUI.exportPdfs(); } },
+  { label: 'Import PDFs', title: 'Restore bill PDFs from files created by Export PDFs', fn: function () { return window.__siteUI.importPdfs(); } },
+  { label: 'Compact PDF Storage', title: 'Collapse duplicate stored bill PDFs down to one copy each - frees local storage space', fn: function () { return compactPdfStorageUI(); } },
+  { label: 'Export Buildings (CSV)', title: 'Download a CSV of every building across all projects', fn: function () { return exportAllBuildingsCSV(); } },
+  { label: 'Export Meters (CSV)', title: 'Download a CSV of every meter across all projects', fn: function () { return exportAllMetersCSV(); } },
+];
+function siteDataMenuClose(focusBtn) {
+  var m = document.getElementById('siteDataMenu');
+  if (!m) return;
+  var btn = document.getElementById('siteDataBtn');
+  m.remove();
+  document.removeEventListener('mousedown', siteDataMenuOutside, true);
+  document.removeEventListener('keydown', siteDataMenuKey, true);
+  if (btn) {
+    btn.setAttribute('aria-expanded', 'false');
+    if (focusBtn) btn.focus();
+  }
+}
+function siteDataMenuOutside(e) {
+  var m = document.getElementById('siteDataMenu');
+  var btn = document.getElementById('siteDataBtn');
+  if (m && !m.contains(e.target) && !(btn && btn.contains(e.target))) siteDataMenuClose(false);
+}
+function siteDataMenuKey(e) {
+  var m = document.getElementById('siteDataMenu');
+  if (!m) return;
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    e.stopPropagation();
+    siteDataMenuClose(true);
     return;
-  // M8: the conflict archive holds the only copy of values a sync did not keep.
-  // It is erased with everything else, so save it to a file first.
-  // Only the entries this user may see (DB.getConflictArchive) go into the file. Another user's
-  // entries are NOT exported and NOT deleted: they are written back after the wipe.
-  const _archive = window.DB && window.DB.getConflictArchive ? window.DB.getConflictArchive() : [];
-  const _keptOthers = window.DB && window.DB.getConflictArchiveOthers ? window.DB.getConflictArchiveOthers() : [];
-  if (_archive.length) {
-    _downloadJSON(_archive, 'CompanyHub-conflict-archive-' + new Date().toISOString().slice(0, 10) + '.json');
   }
-  localStorage.clear();
-  sessionStorage.clear();
-  if (window.DB && window.DB.clear) {
-    await window.DB.clear();
-    if (_keptOthers.length) window.DB.set('en_conflict_archive', _keptOthers);
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    var items = Array.prototype.slice.call(m.querySelectorAll('[role=menuitem]'));
+    var i = items.indexOf(document.activeElement);
+    i = e.key === 'ArrowDown' ? (i + 1) % items.length : (i - 1 + items.length) % items.length;
+    items[i].focus();
   }
-  if (typeof pdfClearAll === 'function') {
-    await pdfClearAll();
+}
+function siteDataMenuToggle(btn) {
+  if (document.getElementById('siteDataMenu')) {
+    siteDataMenuClose(true);
+    return;
   }
-  if (typeof showToast === 'function') showToast('Reset — reloading...');
-  setTimeout(function () {
-    location.reload();
-  }, 1200);
+  btn = btn || document.getElementById('siteDataBtn');
+  if (!btn) return;
+  if (!document.getElementById('siteDataMenuStyle')) {
+    var st = document.createElement('style');
+    st.id = 'siteDataMenuStyle';
+    st.textContent =
+      '#siteDataMenu{position:fixed;z-index:var(--z-modal,800);display:flex;flex-direction:column;gap:2px;padding:4px;' +
+      'background:var(--s2);border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 18px rgba(0,0,0,.35);' +
+      'max-height:calc(100vh - 16px);overflow-y:auto;box-sizing:border-box}' +
+      '#siteDataMenu button{display:block;width:100%;text-align:left;padding:8px 10px;border:0;border-radius:6px;' +
+      'background:transparent;color:var(--text);font-family:var(--font);font-size:12px;cursor:pointer;min-height:32px}' +
+      '#siteDataMenu button:hover,#siteDataMenu button:focus{background:var(--s3);color:var(--accent);outline:none}';
+    document.head.appendChild(st);
+  }
+  btn.id = 'siteDataBtn';
+  var m = document.createElement('div');
+  m.id = 'siteDataMenu';
+  m.setAttribute('role', 'menu');
+  SITE_DATA_MENU_ITEMS.forEach(function (it) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.setAttribute('role', 'menuitem');
+    b.textContent = it.label;
+    b.title = it.title;
+    b.onclick = function () {
+      siteDataMenuClose(false);
+      it.fn();
+    };
+    m.appendChild(b);
+  });
+  document.body.appendChild(m);
+  var r = btn.getBoundingClientRect();
+  var w = Math.min(Math.max(r.width, 210), window.innerWidth - 16);
+  m.style.width = w + 'px';
+  m.style.left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8)) + 'px';
+  var h = m.offsetHeight;
+  if (r.top - h - 4 >= 8) {
+    m.style.top = r.top - h - 4 + 'px';
+  } else if (r.bottom + h + 4 <= window.innerHeight - 8) {
+    m.style.top = r.bottom + 4 + 'px';
+  } else {
+    m.style.top = '8px';
+  }
+  btn.setAttribute('aria-haspopup', 'menu');
+  btn.setAttribute('aria-expanded', 'true');
+  document.addEventListener('mousedown', siteDataMenuOutside, true);
+  document.addEventListener('keydown', siteDataMenuKey, true);
+  m.querySelector('[role=menuitem]').focus();
 }
 
 /* Mobile sidebar hamburger toggle */
@@ -2506,6 +2575,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.15.131', date: '2026-10-15', title: 'Sidebar: one Data button',
+    items: [
+      { type: 'change', text: 'Sidebar (on every page): Backup, Restore, Export PDFs, Import PDFs, Compact PDF Space, Export Buildings and Export Meters are now in one menu. Click the Data button to open it.' },
+      { type: 'change', text: 'Sidebar (on every page): the Reset Data button is removed, so no one can erase all data by mistake.' }
+    ]
+  },
   { v: 'v2026.10.15.130', date: '2026-10-15', title: 'Utility Data: clearer bill warnings',
     items: [
       { type: 'change', text: 'Utility Data > Bills: each warning now says in plain words which bill it is, what is wrong and what to do about it.' },
@@ -12631,7 +12706,6 @@ window.__siteUI = {
   closeSettings: siteCloseSettings,
   backupData: siteBackup,
   restoreData: siteRestore,
-  resetData: siteResetData,
   exportPdfs: sitePdfExport,
   importPdfs: sitePdfImportPick,
   applyAccentColor: siteApplyAccent,
