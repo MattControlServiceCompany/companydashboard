@@ -5740,8 +5740,9 @@ function _lbg_labeledAmount(text, labelRe, sameLineOnly) {
   const gap = sameLineOnly ? '[ \\t]*' : '\\s*';
   const loose = text.match(new RegExp(src + gap + '[^$\\n]*?\\$?\\s*([\\d,]+[.:]\\d{2})', 'i'));
   if (loose) return loose[1].replace(/,/g, '').replace(':', '.');
-  // Last pass: OCR read the decimal point as a comma ("$2,584,70" -> 2584.70). Only a figure with a
-  // thousands group and exactly 2 digits after its LAST comma is re-read this way.
+  // Last pass: OCR read the decimal point as a comma ("$2,584,70" -> 2584.70). Only a figure whose
+  // LAST comma is followed by exactly 2 digits is re-read this way ("$45,00" reads 45.00; "$2,584"
+  // has 3 digits after its comma, so it is a thousands figure and stays unread here).
   const comma = text.match(new RegExp(src + gap + '[^$\\n]*?\\$?\\s*(\\d{1,3}(?:,\\d{3})*,\\d{2})(?![\\d,])', 'i'));
   if (comma) {
     const s = comma[1];
@@ -5755,6 +5756,7 @@ function _lbg_labeledAmount(text, labelRe, sameLineOnly) {
 // a token OCR garbled stays in its own column and never shifts the others (backlog d178c906).
 // A slash that OCR read as the digit 1 ("711512026" for 7/15/2026) is repaired only when exactly
 // one split gives a real calendar date and the row order holds (start < end <= bill date).
+// With only 4 date-like tokens a column is assigned only when its place is proven (see below).
 // Returns null when the line is not a date row (fewer than 4 date-like tokens), else
 // { start, end, bill, note } with null for a column that could not be read. note is a plain-words
 // reason when a column was repaired or left unread, else null.
@@ -5769,7 +5771,7 @@ function _lbg_readDateRow(raw) {
       : null;
   };
   const fmt = (dt) => dt.getMonth() + 1 + '/' + dt.getDate() + '/' + dt.getFullYear();
-  const cols = dateLike.slice(0, 5).map((t) => {
+  const parseTok = (t) => {
     const p = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
     if (p) return { dt: mk(p[1], p[2], p[3]), cands: [] };
     // slash-as-1: M1DD1YYYY, MM1DD1YYYY and the 1-digit-day forms; keep every calendar-valid split
@@ -5781,7 +5783,23 @@ function _lbg_readDateRow(raw) {
         if (dt) cands.push(dt);
       }
     return { dt: null, cands };
-  });
+  };
+  let cols = dateLike.slice(0, 5).map(parseTok);
+  // Only 4 date-like tokens: one column has no readable date. A column is assigned only when its
+  // place is PROVEN: the 5 raw tokens from the first to the last date hold exactly one unreadable
+  // token, and that token's place is the missing column. Otherwise (a column vanished or the missing
+  // one is at an edge) the position is unknown, so all three columns stay unread - never guessed.
+  let unprovable = false;
+  if (dateLike.length === 4) {
+    const first = toks.indexOf(dateLike[0]);
+    const last = toks.lastIndexOf(dateLike[3]);
+    const span = toks.slice(first, last + 1);
+    const gap = span.findIndex((t) => !dateLike.includes(t));
+    if (span.length === 5 && span.filter((t) => !dateLike.includes(t)).length === 1) {
+      const parsed = dateLike.map(parseTok);
+      cols = [0, 1, 2, 3, 4].map((i) => (i === gap ? { dt: null, cands: [] } : parsed[i < gap ? i : i - 1]));
+    } else unprovable = true;
+  }
   const notes = [];
   for (let i = 0; i < 3 && i < cols.length; i++) {
     const c = cols[i];
@@ -5795,12 +5813,7 @@ function _lbg_readDateRow(raw) {
     }
   }
   const out = [0, 1, 2].map((i) => (cols[i] && cols[i].dt ? fmt(cols[i].dt) : null));
-  // Only 4 date-like tokens: one column vanished and we cannot tell which. Trust the first three
-  // only when they make a month-long period; otherwise leave all three unread (never shift).
-  if (cols.length < 5 && cols[0].dt && cols[1].dt) {
-    const d = calcDays(fmt(cols[0].dt), fmt(cols[1].dt), false);
-    if (d < 25 || d > 35) out[0] = out[1] = out[2] = null;
-  }
+  if (unprovable) out[0] = out[1] = out[2] = null;
   const unread = ['Service From', 'Service To', 'Bill Date'].filter((n, i) => !out[i]);
   if (unread.length) notes.push(unread.join(', ') + ' could not be read from the date row');
   return { start: out[0], end: out[1], bill: out[2], note: notes.length ? notes.join('; ') : null };
@@ -10144,6 +10157,19 @@ const UTILITY_RULES = [
             b._manualReview = true;
             b._manualReviewLabel = 'Billing period dates look wrong - held for manual confirmation';
           }
+        }
+      }
+
+      // A bill with no start or end (a column was left unread) has no period to check, but it is
+      // still held: the unread column is the reason.
+      for (const b of bills) {
+        if (b.BillingPeriodStart && b.BillingPeriodEnd && b.BillDate) continue;
+        if (!b._dateRowNote || !/could not be read/.test(b._dateRowNote) || (b._gateReasons || []).some((r) => r.indexOf(b._dateRowNote) === 0)) continue;
+        b._gateTripped = true;
+        b._gateReasons = (b._gateReasons || []).concat([b._dateRowNote + '. Verify against the bill.']);
+        if (!b._manualReview) {
+          b._manualReview = true;
+          b._manualReviewLabel = 'Billing period dates look wrong - held for manual confirmation';
         }
       }
 

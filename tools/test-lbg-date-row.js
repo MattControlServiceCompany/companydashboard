@@ -114,6 +114,28 @@ eq('MM1DD1YYYY start', b.BillingPeriodStart, '10/15/2026');
 b = one(rule, '7/1 5/2026x 8/15/2026 8/21/2026 9/11/2026 9/10/2026', '$45.67');
 eq('unreadable column does not shift: end', b.BillingPeriodEnd, null);
 eq('unreadable column: start', b.BillingPeriodStart, null);
+// 4 date-like tokens: the missing column is assigned only when its place is proven.
+// Garbled bill date in the middle (5 raw tokens, 1 unreadable): the other columns keep their places.
+b = one(rule, '7/15/2026 8/15/2026 8/2l/2026 9/11/2026 9/10/2026', '$45.67');
+eq('4-token garbled bill: start', b.BillingPeriodStart, '7/15/2026');
+eq('4-token garbled bill: end', b.BillingPeriodEnd, '8/15/2026');
+eq('4-token garbled bill: bill date not guessed', b.BillDate === '9/11/2026' ? 'WRONG' : b.BillDate, null);
+eq('4-token garbled bill: held', heldAll('7/15/2026 8/15/2026 8/2l/2026 9/11/2026 9/10/2026'), true);
+// Garbled end with a 34-day span to the wrong neighbor: nothing assigned by position.
+b = one(rule, '2/15/2026 8x#q 3/21/2026 4/11/2026 4/10/2026', '$45.67');
+eq('4-token garbled end: end not guessed', b.BillingPeriodEnd === '3/21/2026' ? 'WRONG' : b.BillingPeriodEnd, null);
+eq('4-token garbled end: bill date', b.BillDate, '3/21/2026');
+// A column that vanished (position unknown): all three stay empty and the bill is held.
+b = one(rule, '2/15/2026 3/21/2026 4/11/2026 4/10/2026', '$45.67');
+eq('4-token vanished: start empty', b.BillingPeriodStart, null);
+eq('4-token vanished: end empty', b.BillingPeriodEnd, null);
+eq('4-token vanished: bill empty', b.BillDate, null);
+eq('4-token vanished: held', heldAll('2/15/2026 3/21/2026 4/11/2026 4/10/2026'), true);
+eq('amount reader, comma before 2 digits', loadFn('_lbg_labeledAmount')('Total Amount Due $45,00', /Total\s*Amount\s*Due/i), '45.00');
+function heldAll(row) {
+  const all = rule.extractAll(page(row, '$45.67'));
+  return all.length > 0 && all.every((x) => x._manualReview);
+}
 function calcDaysOf(x) {
   return Math.round((new Date(x.BillingPeriodEnd) - new Date(x.BillingPeriodStart)) / 86400000);
 }
