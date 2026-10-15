@@ -2506,6 +2506,14 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.15.130', date: '2026-10-15', title: 'Utility Data: clearer bill warnings',
+    items: [
+      { type: 'change', text: 'Utility Data > Bills: each warning now says in plain words which bill it is, what is wrong and what to do about it.' },
+      { type: 'fix', text: 'Utility Data > Bills: charges with commas, like 7,398.79, now show in the table and match the warning.' },
+      { type: 'fix', text: 'Utility Data > Bills: the text when you hover a row now matches the banner above the table.' },
+      { type: 'change', text: 'Utility Data > Bills: the Facilities kW missing warning is removed, because a blank value changes no cost.' }
+    ]
+  },
   { v: 'v2026.10.15.129', date: '2026-10-15', title: 'Utility Data: Import List fills the Bill file on existing meters',
     items: [
       { type: 'fix', text: 'Utility Data > Import List: a meter that is already in the project now gets its Bill file filled in or updated from the list. Before, these meters were skipped. The preview and the message after import say "Bill file updated".' },
