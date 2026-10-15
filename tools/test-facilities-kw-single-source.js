@@ -3,7 +3,7 @@
 // Run: node tools/test-facilities-kw-single-source.js
 //
 // Loads the REAL app functions — getBillFacKWCost (computations/rates.js) and
-// backfillFacilitiesKW/_flagFacKWMissingBills (app/csv-import.js) — extracted verbatim into a
+// backfillFacilitiesKW (app/csv-import.js) — extracted verbatim into a
 // Node vm sandbox, and proves against SYNTHETIC fixtures only (never real client data in the
 // repo — see tools/test-single-source-baseline.js's same convention):
 //   1. getBillFacKWCost resolves facilitiesCharge OR facKWCost, whichever is present, and is
@@ -13,8 +13,7 @@
 //        a. never overwrites a real facKW already on the bill
 //        b. derives facKW from the bill's own charge / a known per-kW rate from sibling bills
 //        c. falls back to a 12-month rolling peak ONLY when a full prior year of bills exists
-//        d. otherwise leaves facKW blank and marks bill._facKWMissing (site-UI flag, never a
-//           client report)
+//        d. otherwise leaves facKW blank (no warning)
 'use strict';
 
 const fs = require('fs');
@@ -71,7 +70,6 @@ const fns = [
   loadFn(REPO + '/app/utility-data.js', '_parseISO'),
   loadFn(REPO + '/computations/rates.js', 'getBillFacKWCost'),
   loadFn(REPO + '/app/csv-import.js', 'backfillFacilitiesKW'),
-  loadFn(REPO + '/app/csv-import.js', '_flagFacKWMissingBills'),
 ];
 vm.runInContext(fns.join('\n\n'), sandbox);
 
@@ -146,7 +144,6 @@ console.log('=== 2. backfillFacilitiesKW — fill order ===');
     near(bills[1].facKW, 300, 0.5),
     '2b: derives facKW from charge / known sibling rate (got ' + bills[1].facKW + ')',
   );
-  assert(!bills[1]._facKWMissing, '2b: no missing-flag when derived successfully');
 }
 
 // 2c. Rolling 12-month peak — only fires when a full prior year of bills exists; never on a
@@ -159,7 +156,6 @@ console.log('=== 2. backfillFacilitiesKW — fill order ===');
   ];
   sandbox.backfillFacilitiesKW(bills);
   assert(bills[0].facKW == null, '2c: first bill — no full prior year, stays blank (never a guess)');
-  assert(bills[0]._facKWMissing === true, '2c: first bill flagged missing');
   assert(near(bills[1].facKW, 400, 0.01), '2c: second bill — full prior year exists, rolling peak fires');
 }
 
@@ -176,23 +172,7 @@ console.log('=== 2. backfillFacilitiesKW — fill order ===');
   assert(filled === 0, '2d: nothing filled — no known rate, no full year');
   bills.forEach((b, i) => {
     assert(b.facKW == null, '2d: bill ' + i + ' left blank, not fabricated as 289.8/333.0');
-    assert(b._facKWMissing === true, '2d: bill ' + i + ' flagged missing');
   });
-}
-
-console.log('=== 3. _flagFacKWMissingBills — persists a site-UI-only flag ===');
-{
-  const meter = { bills: [{ id: 'b1', start: '2025-01-01', facKW: null, _facKWMissing: true }] };
-  sandbox._flagFacKWMissingBills(meter);
-  const bill = meter.bills[0];
-  assert(
-    Array.isArray(bill._flags) && bill._flags.some((f) => f.id === 'facKWMissing_warn'),
-    'flag persisted to bill._flags',
-  );
-  assert(!bill._facKWMissing, 'transient marker cleared after flagging');
-  // Idempotent — running twice does not duplicate the flag.
-  sandbox._flagFacKWMissingBills(meter);
-  assert(bill._flags.filter((f) => f.id === 'facKWMissing_warn').length === 1, 'flag not duplicated on a second pass');
 }
 
 console.log('=== Results: ' + passed + ' passed, ' + failed + ' failed ===');

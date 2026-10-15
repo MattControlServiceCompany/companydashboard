@@ -512,7 +512,7 @@ console.log('=== 7. summary ===');
     bs.flaggedBills === sNow.flaggedBills && bs.flagCount === sNow.flagCount,
     'building summary equals the sum of its meters',
   );
-  // the stored facilities-kW flag still counts, and dismissing it works
+  // a stale stored facilities-kW entry gives no flag: facilities kW changes no cost (synthetic data)
   const fk = {
     id: 'mk',
     commodity: 'Electric',
@@ -523,13 +523,24 @@ console.log('=== 7. summary ===');
         end: '2024-02-01',
         kwh: '100',
         totalCost: '10',
+        facKW: 411.84,
         _flags: [{ id: 'facKWMissing_warn', label: 'Facilities kW is missing.', dismissed: false }],
       },
     ],
   };
-  assert(run(fk).flaggedBills === 1, 'stored facilities-kW flag counts');
-  fk.bills[0]._flags[0].dismissed = true;
-  assert(run(fk).flaggedBills === 0, 'dismissed facilities-kW flag does not count');
+  assert(run(fk).flaggedBills === 0, 'stale facKWMissing_warn entry with facKW filled: no counted flag');
+  assert(!(run(fk).perBill.k1 || []).some((f) => f.rule === 'fac_kw_missing'), 'no fac_kw_missing flag at all');
+  fk.bills[0].facKW = null;
+  assert(run(fk).flaggedBills === 0, 'blank facKW with a stored entry: still no counted flag');
+  // a gas bill with blank usage and a read difference: the message holds no read-difference number
+  const gas = {
+    id: 'mg',
+    commodity: 'Gas',
+    bills: [{ id: 'g1', start: '2025-07-01', end: '2025-08-01', therms: '', readDifference: '9021', totalCost: '100' }],
+  };
+  const gf = (run(gas).perBill.g1 || []).filter((f) => f.rule === 'usage_missing');
+  assert(gf.length > 0, 'gas blank usage with a read difference is flagged');
+  gf.forEach((f) => assert(!/9,?021/.test(f.message + (f.evidence || '')), 'message has no read-difference number: ' + f.message));
   // stale stored flags from the old engine are ignored
   fk.bills[0]._flags = [{ id: 'therms_warn', label: 'old', dismissed: false }];
   assert(run(fk).flaggedBills === 0, 'old stored flags are not read');

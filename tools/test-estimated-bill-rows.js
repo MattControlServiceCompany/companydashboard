@@ -104,7 +104,7 @@ console.log('=== 1. computeMeterFlagSummary — an estimated bill is never flagg
 {
   const realBill = { id: 'realBill1', _flags: [{ id: 'facKWMissing_warn', label: 'x', dismissed: false }] };
   const sum = flagCtx.computeMeterFlagSummary({ commodity: 'Electric', bills: [realBill] }, null);
-  assert(sum.perBill.realBill1.some((f) => f.rule === 'fac_kw_missing'), 'non-estimated bill with the same stored flag is flagged');
+  assert(!(sum.perBill.realBill1 || []).some((f) => f.rule === 'fac_kw_missing'), 'a stored facilities-kW entry gives no flag on a real bill');
 }
 
 console.log("=== 1b. computeMeterFlagSummary — an estimated bill must not shift a REAL bill's flag ===");

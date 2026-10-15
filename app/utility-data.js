@@ -385,7 +385,6 @@ function loadUtilityData() {
           if (typeof backfillFacilitiesKW === 'function') {
             facKWFilled += backfillFacilitiesKW(mt.bills);
           }
-          if (typeof _flagFacKWMissingBills === 'function') _flagFacKWMissingBills(mt);
         }
       }
     }

@@ -752,9 +752,6 @@ function applyBillRowsToMeter(m, rows) {
   // the missing quantity, computed from this meter's own billed/demand kW history — never a
   // fabricated constant — and never overwrites a real facKW value already on the row.
   _backfillCsvFacilitiesKW(m);
-  // Convert the facilities-kW marker left by _backfillCsvFacilitiesKW into a persistent, site-UI-only flag
-  // (see _flagFacKWMissingBills below). Other bill flags are live: computeMeterFlagSummary.
-  _flagFacKWMissingBills(m);
   return { added, updated, keptCorrected };
 }
 
@@ -777,10 +774,8 @@ function applyBillRowsToMeter(m, rows) {
 //      when this meter's bill history actually reaches back a full 12 months before this bill
 //      (the earliest bill on file for this meter starts on/before this bill's date minus one
 //      year). A short history is never extrapolated into a guess.
-//   4. None of the above worked — leave bill.facKW unset and mark bill._facKWMissing = true so
-//      the caller can turn that into a site-UI-only flag (see _flagFacKWMissingBills below) —
-//      never invented, and never surfaced in a client report (reports read the stored field
-//      directly and never render _flags).
+//   4. None of the above worked — leave bill.facKW blank. Never invented. A blank facKW gives no
+//      warning: it changes no cost (cost uses the printed Facilities Charge).
 // Returns the count of bills whose facKW was actually filled.
 function backfillFacilitiesKW(billsForMeter) {
   if (!billsForMeter || !billsForMeter.length) return 0;
@@ -801,7 +796,6 @@ function backfillFacilitiesKW(billsForMeter) {
 
   sorted.forEach((bill, i) => {
     if (parseBillNumber(bill.facKW) > 0) {
-      delete bill._facKWMissing; // real value present — clear any stale missing-flag marker
       return; // never overwrite
     }
 
@@ -809,7 +803,6 @@ function backfillFacilitiesKW(billsForMeter) {
     const chg = facCost(bill);
     if (chg > 0 && knownRate > 0) {
       bill.facKW = Math.round((chg / knownRate) * 100) / 100;
-      delete bill._facKWMissing;
       filled++;
       return;
     }
@@ -826,42 +819,14 @@ function backfillFacilitiesKW(billsForMeter) {
       }
       if (peak > 0) {
         bill.facKW = peak;
-        delete bill._facKWMissing;
         filled++;
         return;
       }
     }
 
-    // 4) Neither worked — leave blank, flag for the site UI only.
-    bill._facKWMissing = true;
+    // 4) Neither worked — leave blank (no warning).
   });
   return filled;
-}
-
-// _flagFacKWMissingBills(m) — converts any bill._facKWMissing marker left by
-// backfillFacilitiesKW() into a persistent bill._flags entry (id 'facKWMissing_warn') the
-// Bills tab already knows how to render. Site UI only — reports read the stored bill fields
-// directly and never render _flags, so this never reaches a client deliverable. All other bill flags are live
-// (computations/bill-flags.js) and never stored.
-function _flagFacKWMissingBills(m) {
-  if (!m || !m.bills) return;
-  const today = new Date().toISOString().slice(0, 10);
-  m.bills.forEach((bill) => {
-    if (!bill._facKWMissing) return;
-    bill._flags = Array.isArray(bill._flags) ? bill._flags : [];
-    if (!bill._flags.some((f) => f.id === 'facKWMissing_warn')) {
-      bill._flags.push({
-        id: 'facKWMissing_warn',
-        label:
-          'Facilities kW is missing from this bill and could not be derived from a known rate or a full 12-month history — enter it from the source bill.',
-        severity: 'warning',
-        firedAt: today,
-        dismissed: false,
-        dismissNote: '',
-      });
-    }
-    delete bill._facKWMissing;
-  });
 }
 
 // CSV-import entry point: thin wrapper around backfillFacilitiesKW for a single meter — see

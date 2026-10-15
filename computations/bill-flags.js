@@ -145,11 +145,6 @@ const BILL_FLAG_RULES = {
     severity: 'warn',
     rule: "Flag when usage per day is USAGE_MULT x or more away from the other years in the same month (USAGE_MULT_ONE_PEER with one other year).",
   },
-  fac_kw_missing: {
-    label: 'Facilities kW',
-    severity: 'warn',
-    rule: "Flag a bill whose facilities kW is missing (stored flag).",
-  },
 };
 // The ONE list of flag types that are counted (sidebar, building row, meter pill, Bills banner). A type is here only when
 // the problem changes usage, kW, cost, billing dates or a missing bill, or the baseline rate (charge_vs_usage and
@@ -170,10 +165,7 @@ const BILL_COUNTED_FLAG_RULES = [
   'cost_missing',
   'charge_vs_usage',
   'usage_charge_mismatch',
-  'fac_kw_missing',
 ];
-// Persisted by the facilities-kW backfill (app/csv-import.js); the only flag still stored on the bill.
-const FAC_KW_MISSING_STORED_ID = 'facKWMissing_warn';
 
 // The Bills table column that holds a commodity's usage (where the flag dot is drawn).
 const _BF_USAGE_COLUMN = {
@@ -330,7 +322,7 @@ function _computeMeterFlagSummaryFresh(meter, building) {
       label: BILL_FLAG_RULES[rule].label,
       severity: BILL_FLAG_RULES[rule].severity,
       message,
-      dismissId: rule === 'fac_kw_missing' ? FAC_KW_MISSING_STORED_ID : rule,
+      dismissId: rule,
     });
   };
 
@@ -721,14 +713,14 @@ function _computeMeterFlagSummaryFresh(meter, building) {
           b,
           'usage_missing',
           'Usage is blank, but the bill shows ' +
-            (evidenceCharge ? 'a charge of ' + _bfMoney(vc) : 'a meter read difference of ' + _bfFmt(rd, 2)) +
+            (evidenceCharge ? 'a charge of ' + _bfMoney(vc) : 'a meter read difference') +
             '.',
           'usage',
           {
             blankUsage: true,
             evidence: evidenceCharge
               ? 'it has a ' + _bfMoney(vc) + ' ' + String(c).toLowerCase() + ' charge'
-              : 'the meter read difference is ' + _bfFmt(rd, 2),
+              : 'it has a meter read difference',
           },
         );
       if (r.u !== null && r.u < 0)
@@ -868,10 +860,6 @@ function _computeMeterFlagSummaryFresh(meter, building) {
         );
       }
     }
-    if (Array.isArray(b._flags) && b._flags.some((f) => f.id === FAC_KW_MISSING_STORED_ID && !f.dismissed)) {
-      const f = b._flags.find((x) => x.id === FAC_KW_MISSING_STORED_ID && !x.dismissed);
-      add(b, 'fac_kw_missing', f.label || 'Facilities kW is missing on this bill.', 'facKW');
-    }
   });
   later.forEach((fn) => fn());
 
@@ -1001,7 +989,6 @@ const _BF_ACTION_BY_RULE = {
   dates_missing: _BF_ACTION_MISSING,
   usage_missing: _BF_ACTION_MISSING,
   cost_missing: _BF_ACTION_MISSING,
-  fac_kw_missing: _BF_ACTION_MISSING,
 };
 function _bfLowerFirst(t) {
   return /^[A-Z][a-z]/.test(t) ? t.charAt(0).toLowerCase() + t.slice(1) : t;
