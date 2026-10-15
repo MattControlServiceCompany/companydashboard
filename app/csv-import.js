@@ -2126,6 +2126,23 @@ function _billFmtNumber(v) {
   if (n === null) return v == null ? '' : String(v).trim();
   return n.toLocaleString('en-US', { maximumFractionDigits: 4 });
 }
+// Change history section of the Edit Billing Period window; '' when the bill has no records. Numbers are formatted like the form fields.
+function _billChangeHistoryHtml(row, commodity) {
+  const hist = row ? _billChangeHistory(row, commodity) : [];
+  if (!hist.length) return '';
+  const fmt = (h, v) => (v == null || v === '' ? 'blank' : _escHtml(h.type === 'currency' ? _billFmtCurrency(v) : _billFmtNumber(v)));
+  return (
+    '<div class="ef-section">Change history</div><div style="font-size:12px;color:var(--text)">' +
+    hist
+      .map(
+        (h) =>
+          '<div style="margin-bottom:6px"><b>' + _escHtml(h.label) + '</b>: original value ' + fmt(h, h.original) +
+          ', changed to ' + fmt(h, h.corrected) + (h.note ? '. ' + _escHtml(h.note) : '') + '</div>',
+      )
+      .join('') +
+    '</div>'
+  );
+}
 function _billModalFocus(el) {
   el.value = _billStripCurrency(el.value);
   el.select();
@@ -2510,6 +2527,8 @@ function openBillModal(mid, editRowId) {
   // No hidden inputs (2026-10-05 duplicate-bill-fields audit step 8): the modal shows exactly the
   // BILL_SCHEMA fields and saves exactly those. An edit merges into the existing row
   // (Object.assign in saveBillRow), so a field this modal does not show is never lost.
+  // Change history (bottom of the window): automatic read corrections and values a user changed. Hidden when there are none.
+  body += _billChangeHistoryHtml(row, m.commodity);
   document.getElementById('billModalBody').innerHTML = body;
   // Auto-populate End Date when Start Date changes (only if End Date is empty)
   const _blStartInp = document.getElementById('bl-start');

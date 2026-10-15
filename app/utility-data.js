@@ -3941,12 +3941,48 @@ function resetBillsColumnWidths(mid) {
 }
 
 // Read-chain corrections still in effect on a bill: the record (_auto_corrected_<field>, written by
-// computations/bill-flags.js) whose corrected value is the value now in the cell. One list for the cell marks and the banner.
+// computations/bill-flags.js) whose corrected value is the value now in the cell. One list for the change history in the Edit Billing Period window.
 const _READ_CORRECTION_LABELS = { startRead: 'Start Read', endRead: 'End Read', readDifference: 'Read Difference' };
 function _readCorrectionRecords(row) {
   return Object.keys(_READ_CORRECTION_LABELS)
     .map((k) => ({ key: k, label: _READ_CORRECTION_LABELS[k], rec: row['_auto_corrected_' + k] }))
     .filter((x) => _rcIsReadChainRecord(x.rec) && String(x.rec.corrected) === String(row[x.key]));
+}
+// Change history of one bill for the Edit Billing Period window: each automatic read correction (_readCorrectionRecords)
+// and each value a user changed (_userCorrected_<field> or _userCorrected[field]). Returns [{type, label, original, corrected, note}].
+function _billChangeHistory(row, commodity) {
+  const schema = typeof _billSchemaFor === 'function' ? _billSchemaFor(commodity) : [];
+  const entryOf = (f) => schema.find((x) => x.key === f || x.pdfKey === f);
+  const labelOf = (f) => {
+    const e = entryOf(f);
+    return e ? e.label : String(f).replace(/^_+/, '').replace(/([a-z])([A-Z])/g, '$1 $2');
+  };
+  const typeOf = (f) => (entryOf(f) || {}).type || '';
+  const dateOf = (v) => {
+    const d = v ? new Date(v) : null;
+    return d && !isNaN(d) ? d.toISOString().slice(0, 10) : '';
+  };
+  const out = [];
+  _readCorrectionRecords(row).forEach((rc) => {
+    out.push({ type: 'number', label: rc.label, original: rc.rec.original, corrected: rc.rec.corrected, note: rc.rec.reason || '' });
+  });
+  const seen = {};
+  Object.keys(row).forEach((k) => {
+    const m = /^_userCorrected_(.+)$/.exec(k);
+    const rec = m && row[k];
+    if (!rec || typeof rec !== 'object' || rec.original === undefined || rec.corrected === undefined) return;
+    seen[m[1]] = 1;
+    out.push({ type: typeOf(m[1]), label: labelOf(m[1]), original: rec.original, corrected: rec.corrected, note: dateOf(rec.ts ? Number(rec.ts) : rec.at) });
+  });
+  const uc = row._userCorrected;
+  if (uc && typeof uc === 'object') {
+    Object.keys(uc).forEach((f) => {
+      const rec = uc[f];
+      if (seen[f] || !rec || typeof rec !== 'object' || rec.original === undefined) return;
+      out.push({ type: typeOf(f), label: labelOf(f), original: rec.original, corrected: row[f], note: dateOf(rec.at || rec.ts) });
+    });
+  }
+  return out;
 }
 function renderBillsPane(pane, m, bills, incl) {
   // Restore right column in case batch extraction left it hidden
@@ -4256,24 +4292,6 @@ function renderBillsPane(pane, m, bills, incl) {
         });
       });
     }
-    // Read-chain correction (2026-10-14): a start read, end read or read difference the shared rule repaired gets a tinted
-    // cell. The hover says the PDF reader value; no banner, no mark. The record counts only while it still matches the cell
-    // (_readCorrectionRecords): a value the user typed afterwards is not marked. No number changes: the reads are not usage.
-    _readCorrectionRecords(row).forEach((rc) => {
-      if (fieldColMap[rc.key] == null) return;
-      let tdN = 0;
-      rowHtml = rowHtml.replace(/<td([^>]*)>/g, (match, attrs) => {
-        tdN++;
-        if (tdN !== fieldColMap[rc.key] + 1) return match;
-        const tint = 'background:var(--accent-dim);box-shadow:inset 0 0 0 1px var(--accent);';
-        attrs = /style="/.test(attrs)
-          ? attrs.replace(/style="([^"]*)"/, (m0, st) => 'style="' + st + ';' + tint + '"')
-          : attrs + ' style="' + tint + '"';
-        const tip = 'Corrected. PDF reader value: ' + rc.rec.original + '. Usage not changed.';
-        attrs = /\btitle="/.test(attrs) ? attrs.replace(/\btitle="[^"]*"/, () => 'title="' + _escHtml(tip) + '"') : attrs + ' title="' + _escHtml(tip) + '"';
-        return `<td${attrs}>`;
-      });
-    });
     // BAS Analysis button — shown when BAS trend data exists for this building
     // during the bill's date range.  Calls btOpenBillCorrelation in bas-trends.js.
     if (

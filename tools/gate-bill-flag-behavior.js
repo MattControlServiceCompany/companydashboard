@@ -216,7 +216,7 @@ async function main() {
         sumIncluded: b.meters.filter((m) => !isExcl(m)).reduce((a, m) => a + computeMeterFlagSummary(m, b).flaggedBills, 0),
         withExcluded: projAll.flaggedBills,
       };
-      // Auto-corrected read: tinted cell with a hover, no banner, count unchanged.
+      // Auto-corrected read: no cell mark, no banner, count unchanged.
       const cb = gasM.bills.find((x) => x.id === 'g5');
       cb._auto_corrected_startRead = { original: '999999', corrected: cb.startRead, reason: READ_CHAIN_REASON.a };
       const countBefore = computeMeterFlagSummary(gasM, b).flaggedBills;
@@ -283,8 +283,8 @@ async function main() {
     }
     if (!res.corr || res.corr.banner || res.corr.diamond)
       problems.push('an auto-corrected read still draws a banner or diamond');
-    else if (res.corr.hoverCells !== 1)
-      problems.push('the auto-corrected read cell has no hover text (' + res.corr.hoverCells + ')');
+    else if (res.corr.hoverCells !== 0)
+      problems.push('the auto-corrected read cell must not be marked (' + res.corr.hoverCells + ')');
     if (res.corr && res.corr.countBefore !== res.corr.countAfter)
       problems.push('an auto-corrected read changed the flag count');
     console.log('behavior: ' + JSON.stringify(res));

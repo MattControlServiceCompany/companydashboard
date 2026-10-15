@@ -2506,6 +2506,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.14.127', date: '2026-10-14', title: 'Utility Data: Change history in Edit Billing Period',
+    items: [
+      { type: 'change', text: 'Utility Data: corrected meter reads no longer show a mark in the bills table. The Edit Billing Period window now lists each change in a Change history section.' }
+    ]
+  },
   { v: 'v2026.10.14.126', date: '2026-10-14', title: 'Utility Data: missing kWh filled in, original PDF values on hover',
     items: [
       { type: 'fix', text: 'Utility Data: bills whose PDF prints no kWh now get kWh filled from the read difference and multiplier, and corrected reads show their original PDF value on hover.' }

@@ -1040,7 +1040,7 @@ ok(
   'a saved-bill builder in app/bill-analysis.js does not keep the read correction record',
 );
 const ud = read('app/utility-data.js');
-ok(/Corrected\. PDF reader value: /.test(ud), 'the Bills table does not give the corrected cell its hover text');
+ok(!/Corrected\. PDF reader value: /.test(ud), 'the Bills table must not mark a corrected cell (the history lives in the Edit Billing Period window)');
 ok(
   !/billReadCorrectionBanner|read-corrected-mark|showReadCorrectionDetails/.test(ud) &&
     !/billReadCorrectionBanner/.test(read('energy-department.html')),
