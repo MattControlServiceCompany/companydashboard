@@ -1031,6 +1031,10 @@ function billFlagLine(label, flags) {
   const tail = clauses.length ? (head ? ' Also: ' : label + ': ') + clauses.join('; ') + '.' : '';
   return head + tail + ' ' + action;
 }
+// The ONE row hover text: the same counted flags and the same sentence as the banner. A bill with no counted flag has no text.
+function billRowHoverText(label, flags) {
+  return billFlagLine(label, (flags || []).filter((f) => BILL_COUNTED_FLAG_RULES.includes(f.rule)));
+}
 /* PRINTED READ CHECK (2026-10-14). The ONE rule that compares the bill's printed read difference and printed usage with
    their own arithmetic. The PDF reader no longer rewrites a printed read difference to end read - start read or a
    printed kWh to read difference x multiplier (app/bill-analysis.js): the arithmetic is a CHECK, not a replacement,

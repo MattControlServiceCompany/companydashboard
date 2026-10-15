@@ -4258,14 +4258,10 @@ function renderBillsPane(pane, m, bills, incl) {
     // is still accessible via the row click → split panel.
     // Add amber background and colored flag badges for flagged rows
     // Only a bill with a COUNTED flag (BILL_COUNTED_FLAG_RULES: what changes usage, cost or dates) gets the amber tint
-    // and the dots. A bill whose flags are all outside that list shows its reasons in the row hover only.
+    // and the dots. A bill whose flags are all outside that list shows no warning text.
     const _rowCounted = flags.some((f) => BILL_COUNTED_FLAG_RULES.includes(f.rule));
-    if (flags.length && !_rowCounted) {
-      const _noteTitle = _escHtml(billFlagLine(billFlagLabel(row, bills, idx), flags));
-      rowHtml = rowHtml.replace(/(<tr)([ >])/, (m0, t, sp) => t + ' title="' + _noteTitle + '"' + sp);
-    }
     if (_rowCounted) {
-      const _flagTitle = _escHtml(billFlagLine(billFlagLabel(row, bills, idx), flags));
+      const _flagTitle = _escHtml(billRowHoverText(billFlagLabel(row, bills, idx), flags)); // same text as the banner
       // If the <tr> already has a class attribute, append to it; otherwise insert a new one
       if (/(<tr[^>]*)\sclass="/.test(rowHtml)) {
         rowHtml = rowHtml.replace(/(<tr[^>]*\sclass=")/, '$1bill-flagged ');
