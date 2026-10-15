@@ -34,8 +34,7 @@ const eq = (a, e, l) => { if (a !== e) failures.push(l + ': expected ' + JSON.st
     await page.waitForTimeout(600);
     // one building, ONE gas meter, one dated bill
     await page.evaluate((pid) => {
-      const p = getUDProj(pid);
-      p.buildings.push({ id: 'synb1', name: 'Synth Hall', sqft: 1000, meters: [{ id: 'synm1', commodity: 'Gas', bills: [
+      addUDBldg('cust_' + pid, { id: 'synb1', name: 'Synth Hall', sqft: 1000, meters: [{ id: 'synm1', commodity: 'Gas', bills: [
         { id: 'synr1', start: '2025-01-01', end: '2025-01-31', commodity: 'Gas', naturalGasTherms: '500', gasCharge: '400.00', totalCost: '400.00', utilityCompany: 'Synth Gas' } ] }] });
       projects.find((x) => x.id === pid).scope.buildingIds.push('synb1');
       projUDSelectBldg(pid, 'synb1');
