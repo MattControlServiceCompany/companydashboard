@@ -5094,6 +5094,7 @@ function _bldgImportAnnotate() {
     r._bSeen = seenB.has(k);
     seenB.add(k);
     r._dup = false;
+    r._billUpd = false;
     r._problem = '';
     if (!r.meter) return;
     const comm = _bldgImportCommodity(r.meter.commodity);
@@ -5114,15 +5115,21 @@ function _bldgImportAnnotate() {
       const mk = k + '|' + comm + '|' + _macNormAcct(r.meter.account) + '|' + _macNormAcct(r.meter.meter);
       r._dup = seenM.has(mk) || !!(b && (b.meters || []).some((m) => udMeterMatchesIdentity(m, id)));
       seenM.add(mk);
+      // A meter already there still takes a new Bill file from the list (never a blank one).
+      const newBf = String(r.meter.billFile || '').trim();
+      if (newBf && b) {
+        r._billUpd = (b.meters || []).some((m) => udMeterMatchesIdentity(m, id) && String(m.billFile || '') !== newBf);
+      }
     }
-    if (r._problem || r._dup) r._checked = false;
+    if (r._problem || (r._dup && !r._billUpd)) r._checked = false;
   });
 }
 
 function _bldgImportStatusText(r) {
   if (r._problem) return 'Not imported: ' + r._problem;
   const parts = [r._bExists ? 'Building is in the project' : r._bSeen ? 'Same building as above' : 'New building'];
-  if (r.meter) parts.push(r._dup ? 'meter is already there' : 'new meter');
+  if (r.meter)
+    parts.push(r._dup ? (r._billUpd ? 'meter is already there · Bill file updated' : 'meter is already there') : 'new meter');
   return parts.join(' · ');
 }
 
@@ -5212,18 +5219,21 @@ function _renderBldgImportPreview(fname) {
 function _bldgImportPlanCounts() {
   var newB = new Set();
   var nMeters = 0;
+  var nUpd = 0;
   _bldgImportRows.forEach(function (r) {
     if (!r._checked || r._problem) return;
     if (!r._bExists) newB.add(_bldgImportKey(r.name));
     if (r.meter && !r._dup) nMeters++;
+    if (r.meter && r._dup && r._billUpd) nUpd++;
   });
-  return { buildings: newB.size, meters: nMeters };
+  return { buildings: newB.size, meters: nMeters, billFiles: nUpd };
 }
 function _bldgImportUpdateButton() {
   var c = _bldgImportPlanCounts();
   var parts = [];
   if (c.buildings) parts.push(c.buildings + ' Building' + (c.buildings !== 1 ? 's' : ''));
   if (c.meters) parts.push(c.meters + ' Meter' + (c.meters !== 1 ? 's' : ''));
+  if (c.billFiles) parts.push(c.billFiles + ' Bill file update' + (c.billFiles !== 1 ? 's' : ''));
   var btn = document.getElementById('bldgImportBtn');
   btn.textContent = parts.length ? 'Import ' + parts.join(' + ') : 'Nothing new to import';
   btn.disabled = !parts.length;
@@ -5231,7 +5241,7 @@ function _bldgImportUpdateButton() {
 
 function bldgImportToggleAll(checked) {
   _bldgImportRows.forEach(function (r) {
-    r._checked = checked && !r._problem && !r._dup;
+    r._checked = checked && !r._problem && (!r._dup || r._billUpd);
   });
   document.querySelectorAll('[data-bldg-idx]').forEach(function (cb) {
     cb.checked = !!_bldgImportRows[+cb.getAttribute('data-bldg-idx')]._checked;
@@ -5298,6 +5308,7 @@ function importBuildingList() {
   var now = Date.now();
   var nBuildings = 0;
   var nMeters = 0;
+  var nBillFiles = 0;
   selected.forEach(function (r) {
     var key = _bldgImportKey(r.name);
     var bldg = byName.get(key);
@@ -5353,6 +5364,15 @@ function importBuildingList() {
         if (r.meter.billFile) nm.billFile = r.meter.billFile;
         bldg.meters.push(nm);
         nMeters++;
+      } else if (r.meter.billFile && String(r.meter.billFile).trim()) {
+        // Meter already there: only its Bill file may change, and a blank list value never clears it.
+        var newBf = String(r.meter.billFile).trim();
+        bldg.meters.forEach(function (m) {
+          if (udMeterMatchesIdentity(m, id) && m.billFile !== newBf) {
+            m.billFile = newBf;
+            nBillFiles++;
+          }
+        });
       }
     }
   });
@@ -5363,12 +5383,13 @@ function importBuildingList() {
   if (typeof renderUDDetail === 'function') renderUDDetail();
   refreshOpenProjDetail();
   showToast(
-    nBuildings || nMeters
+    nBuildings || nMeters || nBillFiles
       ? 'Imported ' +
           nBuildings +
           ' building' +
           (nBuildings !== 1 ? 's' : '') +
           (nMeters ? ', ' + nMeters + ' meter' + (nMeters !== 1 ? 's' : '') : '') +
+          (nBillFiles ? ', Bill file updated on ' + nBillFiles + ' meter' + (nBillFiles !== 1 ? 's' : '') : '') +
           ' ✓'
       : 'Nothing new to import',
   );
