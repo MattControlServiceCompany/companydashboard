@@ -49,15 +49,15 @@ function page(n, o) {
     'Customer Account Information - Retain for your records',
     'SD 999 TEST SCHOOL        1 TEST ST        ' + (o.acct || ACCT_A),
     o.dates || '5/15/2026   6/15/2026   31   6/23/2026   7/13/2026   7/10/2026',
-    'Previous Balance: 0.00',
+    ...(o.balance || ['Previous Balance: 0.00']),
     o.water === undefined ? '4,000 4,500 500 WATER 100.00' : o.water,
     o.gas === undefined ? '2,000 3,000 1,000.00 GAS 821.39' : o.gas,
     o.fa === undefined ? 'FUEL ADJUSTMENT -30.00' : o.fa,
-    'WATER PROTECTION 1.00',
+    o.wpf === undefined ? 'WATER PROTECTION 1.00' : o.wpf,
     'SEWER 80.00',
     o.storm === undefined ? 'STORMWATER 4.00' : o.storm,
     o.cb === undefined ? 'Current Bill 976.39' : o.cb,
-    'Total Amount Due 976.39',
+    o.tad === undefined ? 'Total Amount Due 976.39' : o.tad,
   ].join('\n');
 }
 const byCommodity = (bills, c) => (bills || []).find((b) => b.Commodity === c);
@@ -224,6 +224,136 @@ check(
   d && d[0] && d[0].BillingPeriodStart === '11/01/2025' && d[0].BillingPeriodEnd === '11/30/2025',
   j(d && d[0] && [d[0].BillingPeriodStart, d[0].BillingPeriodEnd]),
 );
+
+// ── 2026-10-15 reader-label fixes (synthetic) ──────────────────────────────────────────────────
+// A. Gas charge printed without its point and a stray mark before it: "9] To 82139" is 821.39.
+bills = rule.extractAll(page(1, { gas: '2,000 3,000 1,000.00 / GAS 9] To 82139' }));
+gas = byCommodity(bills, 'Gas');
+check(
+  'A bare cents token after a stray mark reads 821.39',
+  gas && gas.PrintedGasLine === 821.39 && gas.GasCharge === 798.06 && !held(bills),
+  j(gas && [gas.PrintedGasLine, gas.GasCharge, held(bills)]),
+);
+// B. Fuel label read "FUEL ADR" with a stray mark before the amount; the lost minus is restored
+// from the page total.
+bills = rule.extractAll(page(1, { fa: 'J FUEL ADR ¢ 30.00' }));
+gas = byCommodity(bills, 'Gas');
+check(
+  'B "FUEL ADR" label read, sign restored',
+  gas && gas.FuelAdjustment === -30 && !!gas._auto_corrected_FuelAdjustment && !held(bills),
+  j(gas && [gas.FuelAdjustment, held(bills)]),
+);
+// B. Water label noise: "WATE!" and "AVATER" are the WATER line.
+for (const lbl of ['WATE!', 'AVATER', '/WATER']) {
+  bills = rule.extractAll(page(1, { water: '4,000 4,500 500 ' + lbl + ' 100.00' }));
+  const w = byCommodity(bills, 'Water');
+  check(
+    'B water label "' + lbl + '" read',
+    w && w.WaterCharge === 100 && w.WaterUsage === 500 && !held(bills),
+    j(w && [w.WaterCharge, w.WaterUsage, held(bills)]),
+  );
+}
+// C. Equal reads with a noise token before them: a zero-usage meter, not 13,296 therms.
+bills = rule.extractAll(
+  page(1, {
+    gas: '| 1 1 Il [148 il 13,444 13,444 ~~ 0/ GAS 2333',
+    fa: 'FUEL ADJUSTMENT -0.17',
+    cb: 'Current Bill 208.16',
+    tad: 'Total Amount Due 208.16',
+  }),
+);
+gas = byCommodity(bills, 'Gas');
+check(
+  'C equal reads beside a noise token give 0 therms and the base charge',
+  gas && gas.NaturalGasTherms === 0 && gas.PrintedGasLine === 23.33 && !held(bills),
+  j(gas && [gas.NaturalGasTherms, gas.PrintedGasLine, held(bills)]),
+);
+// D. "Current Bill" has no figure; the balance lines and Total Amount Due give it:
+// 1027.39 - (500.00 - 450.00 + 0.00 + 1.00) = 976.39. A misread Gas cell is then recovered and a
+// lost fuel-adjustment minus is restored, exactly as with a printed Current Bill.
+const BAL = ['Previous Balance: $500.00', 'Payments: ($450.00)', 'Adjustments: $0.00', 'Penalty: $1.00'];
+bills = rule.extractAll(
+  page(1, { gas: '2,000 3,000 1,000.00 GAS 45.00', cb: 'Current Bill', tad: 'Total Amount Due 1027.39', balance: BAL }),
+);
+gas = byCommodity(bills, 'Gas');
+check(
+  'D Current Bill derived from the balance lines recovers the gas cell',
+  gas && gas.GasCharge === 798.06 && !held(bills),
+  j(gas && [gas.GasCharge, gas._gateReasons]),
+);
+bills = rule.extractAll(
+  page(1, { fa: 'FUEL ADJUSTMENT 30.00', cb: 'Current Bill', tad: 'Total Amount Due 1027.39', balance: BAL }),
+);
+gas = byCommodity(bills, 'Gas');
+check('D derived Current Bill checks the fuel adjustment sign', gas && gas.FuelAdjustment === -30, j(gas && gas.FuelAdjustment));
+// D. A negative adjustment in parentheses counts as a credit: 1027.39 - (960.00 - 450.00 - 460.00 + 1.00).
+bills = rule.extractAll(
+  page(1, {
+    gas: '2,000 3,000 1,000.00 GAS 45.00',
+    cb: 'Current Bill',
+    tad: 'Total Amount Due 1027.39',
+    balance: ['Previous Balance: $960.00', 'Payments: ($450.00)', 'Adjustments: ($460.00)', 'Penalty: $1.00'],
+  }),
+);
+check('D parenthesised adjustment is negative', byCommodity(bills, 'Gas').GasCharge === 798.06, j(byCommodity(bills, 'Gas').GasCharge));
+// D. One balance line missing: nothing is derived; the page is not checked against a partial sum.
+bills = rule.extractAll(
+  page(1, { gas: '2,000 3,000 1,000.00 GAS 45.00', cb: 'Current Bill', tad: 'Total Amount Due 1027.39', balance: BAL.slice(0, 3) }),
+);
+gas = byCommodity(bills, 'Gas');
+check('D missing balance line: gas held, nothing derived', gas && gas._manualReview === true && gas.GasCharge === null, j(gas && gas.GasCharge));
+// D. The mismatch reason says the Current Bill was derived.
+bills = rule.extractAll(page(1, { storm: '5T0RMWATFR 4.00', cb: 'Current Bill', tad: 'Total Amount Due 1027.39', balance: BAL }));
+check(
+  'D mismatch reason names the derived Current Bill',
+  held(bills) && /less the balance carried forward/.test((bills[0]._gateReasons || []).join(' ')),
+  j(bills[0] && bills[0]._gateReasons),
+);
+// E. A second WATER line with no meter reads is the Water Protection fee whose label lost its second word.
+bills = rule.extractAll(page(1, { wpf: 'WATER ust 7 1.00' }));
+let water = byCommodity(bills, 'Water');
+check(
+  'E second WATER line without reads is the Water Protection fee',
+  water && water.WaterCharge === 100 && water.WaterProtectionFee === 1 && !held(bills),
+  j(water && [water.WaterCharge, water.WaterProtectionFee, held(bills)]),
+);
+// A broken charge token (",254.80") on the WATER line: the Water row is kept and held with the
+// reads and the fee that were read; the charge is null, never filled from the page total.
+bills = rule.extractAll(page(1, { water: '4,000 4,500 500 WATER Sz _ 12 ,254.80' }));
+water = byCommodity(bills, 'Water');
+check(
+  'broken water charge token: row held, charge null, usage and fee kept',
+  water && water.WaterCharge === null && water.WaterUsage === 500 && water.WaterProtectionFee === 1 && water._manualReview === true,
+  j(water && [water.WaterCharge, water.WaterUsage, water.WaterProtectionFee, water._manualReview]),
+);
+check('broken water charge never residual-filled', !/1,?254\.80|1254\.8/.test(j(water)), j(water));
+// Fuel adjustment amount printed without its point after noise tokens: "7 4, 0 3000" is 30.00,
+// and the lost minus is restored from the page total.
+bills = rule.extractAll(page(1, { fa: '/ FUEL ADJUSTMENT    7 4,  0        3000' }));
+gas = byCommodity(bills, 'Gas');
+check('fuel adjustment with lost point read from the page', gas && gas.FuelAdjustment === -30 && !held(bills), j(gas && [gas.FuelAdjustment, held(bills)]));
+// Pen noise alone on the fuel line ("At 28") is NOT an amount: nothing is read from it.
+bills = rule.extractAll(page(1, { fa: 'FUEL ADJUSTMENT At 28', cb: 'Current Bill', water: '4,000 4,500 500 WA1FR 100.00' }));
+gas = byCommodity(bills, 'Gas');
+check('pen noise on the fuel line reads nothing', gas && gas.FuelAdjustment === null, j(gas && gas.FuelAdjustment));
+// F. Printed Gas charge proven by the page total while the therms are garbled: the charge stands,
+// the therms are null and flagged, never charge / rate. Reads "6.029 16154" give 10,125 therms,
+// which cannot be 821.39; the page total (976.39 - 185.00 + 30.00) proves the printed 821.39.
+bills = rule.extractAll(page(1, { gas: '6.029 16154 1] GAS 821.39' }));
+gas = byCommodity(bills, 'Gas');
+check(
+  'F garbled therms, charge proven by the page: charge kept, therms null',
+  gas && gas.GasCharge === 798.06 && gas.TotalCurrentCharges === '791.39' && gas.NaturalGasTherms === null,
+  j(gas && [gas.GasCharge, gas.TotalCurrentCharges, gas.NaturalGasTherms]),
+);
+check(
+  'F therms flagged by name, page not flagged',
+  gas && /therms/i.test(gas._manualReviewLabel || '') && !!gas._correction_pending_NaturalGasTherms && !gas._pageTotalMismatch,
+  j(gas && [gas._manualReviewLabel, gas._pageTotalMismatch]),
+);
+bills = rule.extractAll(page(1, { gas: '6.029 16154 1] GAS 821.39', cb: 'Current Bill 980.39' }));
+gas = byCommodity(bills, 'Gas');
+check('F page does not prove the charge: held as before', gas && gas.GasCharge === null && gas._manualReview === true, j(gas && gas.GasCharge));
 
 console.log(fails ? '\n' + fails + ' FAILED' : '\nALL PASSED');
 process.exit(fails ? 1 : 0);

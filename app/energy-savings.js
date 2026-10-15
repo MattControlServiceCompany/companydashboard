@@ -5751,6 +5751,27 @@ function _lbg_labeledAmount(text, labelRe, sameLineOnly) {
   }
   return null;
 }
+// ONE reader for a signed balance line ("Payments: ($2,541.03)", "Adjustments: $0.00"). Parentheses
+// or a minus right after the label make the amount negative. Same line only.
+function _lbg_balanceLine(page, labelRe) {
+  const raw = _lbg_labeledAmount(page, labelRe, true);
+  if (raw == null) return null;
+  const v = parseFloat(raw);
+  const neg = new RegExp(labelRe.source + '[ \\t]*(?:\\(|-)', 'i').test(page);
+  return neg ? -v : v;
+}
+// Current Bill from the printed balance lines when its own figure is not legible:
+// Current Bill = Total Amount Due - (Previous Balance - Payments + Adjustments + Penalty).
+// Every term must be printed and read; otherwise null (never a partial sum).
+function _lbg_currentBillFromBalance(page, totalAmountDue) {
+  if (totalAmountDue == null) return null;
+  const prev = _lbg_balanceLine(page, /Previous\s*Balance\s*:/i);
+  const pay = _lbg_balanceLine(page, /Payments\s*:/i);
+  const adj = _lbg_balanceLine(page, /Adjustments\s*:/i);
+  const pen = _lbg_balanceLine(page, /Penalty\s*:/i);
+  if (prev == null || pay == null || adj == null || pen == null) return null;
+  return Math.round((totalAmountDue - (prev - Math.abs(pay) + adj + pen)) * 100) / 100;
+}
 // ONE reader for the 5-date period row on a Client A new-format bill. The row prints, left to
 // right: Service From, Service To, Bill Date, then the Due and Penalty dates. It is read BY COLUMN:
 // a token OCR garbled stays in its own column and never shifts the others (backlog d178c906).
@@ -5823,6 +5844,57 @@ function _lbg_readDateRow(raw) {
 // "Current Billing" never matches.
 const _LBG_TOTAL_AMOUNT_DUE_LABEL = /Total\s*Amount\s*Due/i;
 const _LBG_CURRENT_BILL_LABEL = /Cur+ent\s*B[i1l|!][lnm1i]{1,2}(?![a-z])/i;
+// ONE label for the WATER line on a new-format page. Tolerates a dropped or garbled first letter
+// ("ATER", "MWATER", "/WAIER"), a letter pair read as "AV" ("AVATER") and an R read as "!", "1" or
+// "I" ("WATE!"). Each position allows only the confusable OCR gives for it, so no other word fits.
+// Callers still exclude a WATER PROTECTION line themselves (see _extractNew).
+const _LBG_WATER_LABEL = /\b(?:M?W?|AV)[A4][TI][E3F](?:[RB1I]\b|!|(?![A-Za-z]))/i;
+// ONE label for the FUEL ADJUSTMENT line. "ADJ" is also accepted as "ADR" (J read as R on a scan).
+const _LBG_FUEL_ADJ_LABEL = /(?:FUEL\s*ADJUST|[FE][UO][EL][LA]\s*AD[JR])/i;
+// Label followed by its printed amount: "-$385.93", "-385.93", "30.15-" (trailing minus; the caller
+// reads the sign), "($385.93)". No digit may sit between the label and the amount.
+const _LBG_FUEL_ADJ_AMOUNT_RE = new RegExp(_LBG_FUEL_ADJ_LABEL.source + '[^\\d\\n-]*(-?\\$?-?[\\d,]+\\.\\d{2})\\s*-?', 'i');
+// ONE pick of the charge token among the numeric tokens printed after a commodity label.
+// 1. The last token with a cents marker (".dd", ":dd" or "-dd"): the charge column always prints
+//    cents, and any bare number before it is a read or scan noise. A cents token that does not start
+//    with a digit (",254.80") is a broken read of the charge: the charge is then unreadable (null),
+//    never the bare number beside it.
+// 2. Else the last bare run of 4+ digits: the point was lost ("99233" is 992.33, see _lbg_cleanCents).
+// 3. Else the first token (kept for the degraded lines read that way before), or null when
+//    firstIfNone is false (a Fuel Adjustment line, where a lone small integer is pen noise).
+function _lbg_pickChargeToken(toks, firstIfNone) {
+  for (let i = toks.length - 1; i >= 0; i--) {
+    if (/(?:[.:]|-)\d{2}$/.test(toks[i])) return /^-?\d[\d,]*(?:[.:]\d{2}|-\d{2})$/.test(toks[i]) ? toks[i] : null;
+  }
+  for (let i = toks.length - 1; i >= 0; i--) {
+    if (/^-?\d{4,}$/.test(toks[i])) return toks[i];
+  }
+  return firstIfNone === false ? null : toks[0] || null;
+}
+// ONE reader of the Fuel Adjustment line on a new-format page. Returns the signed amount, or null
+// when the line is absent or its amount cannot be read. The sign comes from a leading or trailing
+// minus or from parentheses; a positive read is checked against the page total by the caller.
+function _lbg_readFuelAdj(page) {
+  const m = page.match(_LBG_FUEL_ADJ_AMOUNT_RE);
+  if (m) {
+    let v = parseFloat(m[1].replace(/[\$,]/g, ''));
+    const trailingMinus = new RegExp(_LBG_FUEL_ADJ_LABEL.source + '[^\\n]*[\\d,]+\\.\\d{2}\\s*-', 'i').test(page);
+    const parens = new RegExp(_LBG_FUEL_ADJ_LABEL.source + '[^\\n]*\\(\\s*\\$?[\\d,]+\\.\\d{2}\\s*\\)', 'i').test(page);
+    if (v > 0 && (trailingMinus || parens)) v = -v;
+    return v;
+  }
+  // A digit run sits between the label and the amount (pen noise "At 28 -0.05"), or the point was
+  // lost ("4032" for 40.32). Tokenize the rest of the line and pick as parseMetered does.
+  const line = page.match(new RegExp(_LBG_FUEL_ADJ_LABEL.source + '([^\\n]*)', 'i'));
+  if (!line) return null;
+  const toks = [...line[1].matchAll(/-?[\d,]+(?:[.:]\d+|-\d{2})?-?/g)].map((x) => x[0]);
+  const tok = _lbg_pickChargeToken(toks.map((t) => t.replace(/-$/, '')), false);
+  if (tok == null) return null;
+  let v = _lbg_cleanCents(tok.replace(':', '.'));
+  if (v == null) return null;
+  if (v > 0 && toks.some((t) => t.replace(/-$/, '') === tok && t.endsWith('-'))) v = -v;
+  return v;
+}
 // ONE sum of the printed line items on a Client A page. Used by the sign guard and by the final
 // page-total check, so both ask the same question: do the lines add up to the printed Current Bill?
 // gasWithFuelAdj is the Gas line (including the customer charge) plus the Fuel Adjustment, or null
@@ -5843,7 +5915,9 @@ function _lbg_flagPageTotalMismatch(bills, check) {
   const reason =
     'Lines on this page add up to $' +
     check.summed.toFixed(2) +
-    ', but the printed Current Bill is $' +
+    (check.derived
+      ? ', but the Current Bill (Total Amount Due less the balance carried forward) is $'
+      : ', but the printed Current Bill is $') +
     check.printed.toFixed(2) +
     (check.diff < 0
       ? ' - a charge line worth $' + gap + ' may be missing or misread.'
@@ -5962,6 +6036,40 @@ function _lbg_resolveGasLine(
       confident: false,
       reconciledReason: recon.reason,
     };
+  }
+  // The page proves the printed GAS line to the cent (Current Bill - other lines - Fuel Adjustment
+  // = printed GAS) although the therms failed the rate check: the therms were misread, not the
+  // charge. The charge is kept; the therms are NOT replaced by charge / rate - they stay null and
+  // the caller flags them (a value that is not printed stays null).
+  if (currentBillTotal != null && signedFuelAdj != null && variable > 0) {
+    const fromPage = Math.round((currentBillTotal - otherCommoditySum - signedFuelAdj) * 100) / 100;
+    if (Math.abs(fromPage - printedGasLine) < 0.005) {
+      return {
+        usage: null,
+        printedGasLine,
+        gasVariable: variable,
+        gasTotal: printedGasLine,
+        confident: true,
+        reconciledReason: null,
+        usageUnproven: {
+          original: usage,
+          reason:
+            'Gas therms read as ' +
+            usage +
+            ', which does not match the printed Gas charge ($' +
+            printedGasLine.toFixed(2) +
+            ' = $' +
+            (expected + r.baseCharge).toFixed(2) +
+            ' expected). The charge is proven by the page total (Current Bill $' +
+            currentBillTotal.toFixed(2) +
+            ' - other lines $' +
+            otherCommoditySum.toFixed(2) +
+            ' - Fuel Adjustment $' +
+            signedFuelAdj.toFixed(2) +
+            '); the therms are not - read them from the bill.',
+        },
+      };
+    }
   }
   return {
     held: true,
@@ -6309,6 +6417,15 @@ function _lbg_buildGasBill(
   }
   if (_fa2.derivedReason) {
     gasBill._auto_derived_FuelAdjustment = { original: null, corrected: resolvedFuelAdj2, reason: _fa2.derivedReason };
+  }
+  // Charge proven by the page, therms not (see _lbg_resolveGasLine): the dollar fields stand, the
+  // therms are null and the bill waits for the printed figure.
+  if (gasLine.usageUnproven) {
+    gasBill._gateTripped = true;
+    gasBill._gateReasons = [gasLine.usageUnproven.reason];
+    gasBill._manualReview = true;
+    gasBill._manualReviewLabel = 'Gas therms could not be read — verify';
+    gasBill._correction_pending_NaturalGasTherms = gasLine.usageUnproven;
   }
   return gasBill;
 }
@@ -10327,7 +10444,7 @@ const UTILITY_RULES = [
         const trim = ln.trim();
         if (/^\d{3}\s*-\s*(water|gas|sewer|storm)/i.test(trim)) continue;
         if (/Previous\s*Balance/i.test(trim)) continue;
-        if (/[FE][UO][EL][LA]\s*ADJ|FUELADJ|FUEL\s*ADJ|FUEL\s*ADJUSTMENT/i.test(trim) && !fuelAdjLine)
+        if (_LBG_FUEL_ADJ_LABEL.test(trim) && !fuelAdjLine)
           fuelAdjLine = trim;
         else if (/\bG[A4]S\b/i.test(trim) && !/[FE][UO][EL]|ADJ/i.test(trim) && !gasLine) gasLine = trim;
         else if (/\bSTORM\s*W[A4]TER\b/i.test(trim) && !stormLine) stormLine = trim;
@@ -10395,8 +10512,7 @@ const UTILITY_RULES = [
       const fuelAdj = parseLine(fuelAdjLine);
       let signedFuelAdj = fuelAdj.charge;
       if (signedFuelAdj == null) {
-        const _faRe = /(?:FUEL\s*ADJUST|[FE][UO][EL][LA]\s*ADJ)[^\d\n-]*(-?\$?-?[\d,]+\.\d{2})\s*-?/i;
-        const faMatch = cleaned.match(_faRe);
+        const faMatch = cleaned.match(_LBG_FUEL_ADJ_AMOUNT_RE);
         if (faMatch) {
           signedFuelAdj = parseFloat(faMatch[1].replace(/[\$,]/g, ''));
           if (signedFuelAdj > 0 && /[\d,]+\.\d{2}\s*-/i.test(faMatch[0])) signedFuelAdj = -signedFuelAdj;
@@ -10690,19 +10806,11 @@ const UTILITY_RULES = [
         // spurious integer sitting between the label and the real charge —
         // e.g. real bill text "GAS   248-%>   321.33" where "248" is OCR
         // noise from handwriting and "321.33" is the printed charge — and
-        // afterToks[0] silently picked up the noise instead. Falls back to
-        // afterToks[0] when no token is cents-shaped (preserves the existing
-        // degraded-OCR path where _lbg_cleanCents infers cents from a bare
-        // 4+-digit run with no decimal marker at all).
-        const _currencyShaped = (s) => /^-?[\d,]+(?:[.:]\d{2}|-\d{2})$/.test(s);
-        let chargeTok = null;
-        for (let i = afterToks.length - 1; i >= 0; i--) {
-          if (_currencyShaped(afterToks[i])) {
-            chargeTok = afterToks[i];
-            break;
-          }
-        }
-        if (!chargeTok) chargeTok = afterToks[0] || null;
+        // afterToks[0] silently picked up the noise instead. With no
+        // cents-shaped token the LAST bare run of 4+ digits is the charge with
+        // its point lost ("9] To 99233" is 992.33 - the first token "9" was a
+        // stray mark); only then the first token. ONE picker, _lbg_pickChargeToken.
+        const chargeTok = _lbg_pickChargeToken(afterToks);
         const charge = _lbg_cleanCents(chargeTok ? chargeTok.replace(':', '.') : null);
         // FIX (2026-08-25, backlog 964b13e2): Tesseract frequently misreads
         // the thousands-comma in a multi-digit meter read as a decimal point
@@ -10812,7 +10920,10 @@ const UTILITY_RULES = [
           const b = integerTokens[integerTokens.length - 2];
           const c = integerTokens[integerTokens.length - 1];
           const diffAB = Math.abs(b - a);
-          if (diffAB > 0 && Math.abs(c - diffAB) <= Math.max(2, diffAB * 0.05)) {
+          // c !== b: when the two last tokens are equal they are the reads of a zero-usage meter
+          // ("148 13,444 13,444", "148" is scan noise), not "prev curr usage" (a real Gas line
+          // read as 13,296 therms for a printed 0).
+          if (diffAB > 0 && c !== b && Math.abs(c - diffAB) <= Math.max(2, diffAB * 0.05)) {
             // FIX (2026-08-25, backlog 964b13e2): use the cross-validated
             // diff (a and b are two independently-OCR'd readings) rather than
             // the printed usage token c itself. Real bill: a diagonal QR-code
@@ -11004,12 +11115,23 @@ const UTILITY_RULES = [
         // positions (T↔I, E↔3/F, R↔B) — the same confusable pairs already
         // tolerated elsewhere in this file (S[E3]W[E3]R, PROT[E3]CTION) —
         // so this can't drift into matching an unrelated 5-letter word.
-        if (/\bM?W?[A4][TI][E3F][RB]\b/i.test(ln) && !/PROTECTION/i.test(ln)) {
-          waterLineSeen = true;
-          const wp = parseMetered(ln, /\bM?W?[A4][TI][E3F][RB]\b/i);
-          if (water === null) {
+        // ONE label, _LBG_WATER_LABEL ("WATE!", "AVATER" included).
+        if (_LBG_WATER_LABEL.test(ln) && !/PROTECTION/i.test(ln)) {
+          const wp = parseMetered(ln, _LBG_WATER_LABEL);
+          // A second WATER line with no meter reads before the label is the WATER PROTECTION fee
+          // whose second word OCR lost ("WATER ust 7 4.44"): a metered line always prints its reads.
+          if (water !== null && wp.prevRead == null && wp.currRead == null && !wp.usage) {
+            wpfLineSeen = true;
+            wpfParts.push(wp.charge);
+            wpf =
+              wpf === null
+                ? wp
+                : { ...wpf, charge: wpf.charge != null ? wpf.charge + (wp.charge || 0) : wp.charge };
+          } else if (water === null) {
+            waterLineSeen = true;
             water = wp;
           } else {
+            waterLineSeen = true;
             water = {
               usage: (water.usage || 0) + (wp.usage || 0),
               charge: water.charge != null ? water.charge + (wp.charge || 0) : wp.charge,
@@ -11086,51 +11208,11 @@ const UTILITY_RULES = [
         }
       }
 
-      // Fuel Adjustment — line item on gas bills. Typically negative.
-      // Formats seen: "-$385.93", "-385.93", "30.15-" (trailing minus),
-      // "($385.93)" (parens). The regex captures the number; trailing
-      // minus is detected separately and flips the sign.
-      const _faRe = /(?:FUEL\s*ADJUST|[FE][UO][EL][LA]\s*ADJ)[^\d\n-]*(-?\$?-?[\d,]+\.\d{2})\s*-?/i;
-      const fuelAdjMatch = page.match(_faRe);
-      let signedFuelAdj = null;
-      if (fuelAdjMatch) {
-        signedFuelAdj = parseFloat(fuelAdjMatch[1].replace(/[\$,]/g, ''));
-        const trailingMinus = /(?:FUEL\s*ADJUST|[FE][UO][EL][LA]\s*ADJ)[^\n]*[\d,]+\.\d{2}\s*-/i.test(page);
-        if (signedFuelAdj > 0 && trailingMinus) {
-          signedFuelAdj = -signedFuelAdj;
-        }
-        if (
-          signedFuelAdj > 0 &&
-          /(?:FUEL\s*ADJUST|[FE][UO][EL][LA]\s*ADJ)[^\n]*\(\s*\$?[\d,]+\.\d{2}\s*\)/i.test(page)
-        ) {
-          signedFuelAdj = -signedFuelAdj;
-        }
-      } else {
-        // FALLBACK (backlog eea98fd5): a handwritten annotation sitting
-        // between the "FUEL ADJUSTMENT" label and its printed charge (real
-        // bill: "FUEL ADJUSTMENT  At  28            -0.05" — the "28" is
-        // pen noise, "-0.05" is the printed charge) breaks the primary
-        // regex above, which assumes no digit run intervenes before the
-        // charge. Tokenize the whole FUEL ADJUST... line and take the LAST
-        // cents-shaped (X.XX) token — mirrors the same handwriting-noise
-        // tolerance already applied to parseMetered's charge token
-        // (backlog 964b13e2) — instead of the first digit run encountered.
-        const _faLineMatch = page.match(/(?:FUEL\s*ADJUST|[FE][UO][EL][LA]\s*ADJ)[^\n]*/i);
-        if (_faLineMatch) {
-          const _faToks = [...(_faLineMatch[0].matchAll(/-?[\d,]+\.\d{2}-?/g) || [])].map((m) => m[0]);
-          const _faTok = _faToks.length ? _faToks[_faToks.length - 1] : null;
-          if (_faTok) {
-            let s = _faTok;
-            let trailingMinus = false;
-            if (s.endsWith('-')) {
-              trailingMinus = true;
-              s = s.slice(0, -1);
-            }
-            signedFuelAdj = parseFloat(s.replace(/[\$,]/g, ''));
-            if (signedFuelAdj > 0 && trailingMinus) signedFuelAdj = -signedFuelAdj;
-          }
-        }
-      }
+      // Fuel Adjustment — line item on gas bills. Typically negative. ONE reader, _lbg_readFuelAdj:
+      // label + amount first; else the line's tokens picked as parseMetered picks a charge (pen
+      // noise between label and amount, backlog eea98fd5; a lost decimal point, "4032" for 40.32).
+      // A positive read is checked against the page total below (sign guard).
+      let signedFuelAdj = _lbg_readFuelAdj(page);
 
       // Total Amount Due and Current Bill both go through _lbg_labeledAmount: clean pattern first,
       // then a loose pass that tolerates colon-for-dot OCR ("4,014:28" → 4014.28). The Current Bill
@@ -11170,8 +11252,8 @@ const UTILITY_RULES = [
         const _lbgCropLines = _lbgCropFallbackText.split(/\r?\n/);
         if (!waterLineSeen) {
           for (const ln of _lbgCropLines) {
-            if (/\bM?W?[A4][TI][E3F][RB]\b/i.test(ln) && !/PROTECTION/i.test(ln)) {
-              const _wp = parseMetered(ln, /\bM?W?[A4][TI][E3F][RB]\b/i);
+            if (_LBG_WATER_LABEL.test(ln) && !/PROTECTION/i.test(ln)) {
+              const _wp = parseMetered(ln, _LBG_WATER_LABEL);
               if (_wp && _wp.charge != null) {
                 waterLineSeen = true;
                 water = _wp;
@@ -11277,6 +11359,20 @@ const UTILITY_RULES = [
             gas.usage = parseFloat(_gum[1].replace(/,/g, ''));
             _lbgCropRecoveredFields.push('GasUsage');
           }
+        }
+      }
+      // Current Bill with no legible figure of its own: the page prints its parts. Total Amount Due
+      // = Current Bill + Previous Balance - Payments + Adjustments + Penalty, each on its own labeled
+      // line, so Current Bill = Total Amount Due - (Previous Balance - Payments + Adjustments +
+      // Penalty). Derived ONLY when all four balance lines and Total Amount Due were read; it is
+      // the anchor the sign guard and the page-total check below need (ONE reader,
+      // _lbg_currentBillFromBalance).
+      let _currentBillDerived = false;
+      if (CurrentBillTotal == null && TotalAmountDue) {
+        const _cbd = _lbg_currentBillFromBalance(page, parseBillNumber(TotalAmountDue));
+        if (_cbd != null) {
+          CurrentBillTotal = _cbd;
+          _currentBillDerived = true;
         }
       }
 
@@ -11480,6 +11576,30 @@ const UTILITY_RULES = [
           waterBill._auto_recovered_via_crop = _lbgCropNote(_waterCropFields);
         }
         bills.push(waterBill);
+      } else if (waterLineSeen && water.charge == null && (wpf.charge != null || water.usage > 0)) {
+        // The WATER line is on the page but its charge could not be read (a broken token such as
+        // ",254.80"). The row is kept and held, with the reads and the Water Protection fee that
+        // were read, instead of vanishing with them. Never filled from the page total.
+        const _reason =
+          'Water charge could not be read from the WATER line' +
+          (water.usage > 0 ? ' (usage ' + water.usage + ' read)' : '') +
+          ' - enter it from the bill.';
+        bills.push({
+          ...shared,
+          Commodity: 'Water',
+          StartRead: water.prevRead || null,
+          EndRead: water.currRead || null,
+          WaterUsage: water.usage != null ? water.usage : null,
+          WaterCharge: null,
+          WaterProtectionFee: wpf.charge,
+          TotalCurrentCharges: null,
+          TotalAmountDue: null,
+          _gateTripped: true,
+          _gateReasons: [_reason],
+          _manualReview: true,
+          _manualReviewLabel: 'Water charge could not be read — held for manual confirmation',
+          _correction_pending_WaterCharge: { original: null, reason: _reason },
+        });
       }
       if (sewer.charge != null && sewer.charge !== 0) {
         const sewerTotal = sewer.charge.toFixed(2);
@@ -11525,14 +11645,18 @@ const UTILITY_RULES = [
       // Page-total check (backlogs 90ec94e3, 166ee5bf): the lines must add up to the printed Current
       // Bill. A Water, Sewer or Stormwater line whose label OCR'd to noise never sets a *LineSeen
       // flag, so only this sum can see it. Skipped when the Gas line is held (its amount is unknown).
+      // A Gas bill is "held" for this check when its amount is unknown (TotalCurrentCharges null), not
+      // when only its therms are flagged.
+      const _gasAmountUnknown = !!(gasBill && gasBill.TotalCurrentCharges == null);
       const _pageCheck = _lbg_pageTotalCheck(CurrentBillTotal, {
-        gasHeld: !!(gasBill && gasBill._manualReview),
-        gasWithFuelAdj: gasBill && !gasBill._manualReview ? parseFloat(gasBill.TotalCurrentCharges) : 0,
+        gasHeld: _gasAmountUnknown,
+        gasWithFuelAdj: gasBill && !_gasAmountUnknown ? parseFloat(gasBill.TotalCurrentCharges) : 0,
         water: water.charge,
         wpf: wpf.charge,
         sewer: sewer.charge,
         storm: storm.charge,
       });
+      if (_pageCheck) _pageCheck.derived = _currentBillDerived;
       if (_pageCheck && !_pageCheck.ok && bills.length) _lbg_flagPageTotalMismatch(bills, _pageCheck);
       // If nothing parsed cleanly but the bill has a Total Amount Due,
       // emit a single "Other" bill so the user sees SOMETHING rather than
@@ -11670,8 +11794,7 @@ const UTILITY_RULES = [
       // Bug #137: Fallback FA detection when code-based loop didn't match
       // (e.g. negative amounts or OCR spacing variants that foil the regex).
       if (fuelAdj == null) {
-        const _faRe = /(?:FUEL\s*ADJUST|[FE][UO][EL][LA]\s*ADJ)[^\d\n-]*(-?\$?-?[\d,]+\.\d{2})\s*-?/i;
-        const faMatch = page.match(_faRe);
+        const faMatch = page.match(_LBG_FUEL_ADJ_AMOUNT_RE);
         if (faMatch) {
           fuelAdj = parseFloat(faMatch[1].replace(/[\$,]/g, ''));
           if (fuelAdj > 0) fuelAdj = -Math.abs(fuelAdj);
@@ -13318,7 +13441,7 @@ const UTILITY_RULES = [
 // The version of the PDF reader's rules. The stored-bill repair pass (app/auto-repair.js) reads each bill's PDF page once per
 // version and marks the bill (_pdfRepair.v). Add 1 whenever a rule in UTILITY_RULES (or the post-extraction checks) changes
 // what it reads, so every bill is read again with the new rules.
-const EXTRACTOR_RULES_VERSION = 1;
+const EXTRACTOR_RULES_VERSION = 2;
 function _pickFileRule(text) {
   return (
     UTILITY_RULES.find((r) => r.fileFirst && r.detect(text)) ||

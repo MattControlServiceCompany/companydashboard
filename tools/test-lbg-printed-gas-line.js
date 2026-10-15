@@ -56,6 +56,40 @@ check('3 held', b && b._gateTripped === true && b._manualReview === true, JSON.s
 check('3 GasCharge null (never 968.98)', b && b.GasCharge === null, JSON.stringify(b && b.GasCharge));
 check('3 reason plain', b && b._gateReasons && /Gas charge on the bill \(\$934\.33\) does not match usage x rate \(\$\d+\.\d\d\) - verify/.test(b._gateReasons[0]), b && b._gateReasons && b._gateReasons[0]);
 
+// 5. (2026-10-15) ONE charge-token picker: last cents token; else last bare 4+ digits (point lost);
+// else first token. A cents token that does not start with a digit is a broken read -> null.
+const pick = vm.runInContext('_lbg_pickChargeToken', sandbox);
+const pickCases = [
+  [['9', '99233'], undefined, '99233'],
+  [['248', '321.33'], undefined, '321.33'],
+  [['335:33'], undefined, '335:33'],
+  [['1460-87'], undefined, '1460-87'],
+  [['12', ',254.80'], undefined, null],
+  [['2333'], undefined, '2333'],
+  [['1', '1'], undefined, '1'],
+  [['7', '4,', '0', '4032'], false, '4032'],
+  [['28'], false, null],
+  [[], undefined, null],
+];
+for (const [toks, firstIfNone, want] of pickCases) {
+  const got = pick(toks, firstIfNone);
+  check('5 pick ' + JSON.stringify(toks) + ' -> ' + JSON.stringify(want), got === want, JSON.stringify(got));
+}
+
+// 6. (2026-10-15) Therms garbled, printed Gas proven by the page to the cent: charge kept, therms
+// null and flagged. Printed 100.00; Current Bill 180.00 - others 90.00 - fuel adj (-10.00) = 100.00.
+const runUsage = (printedGas, usage, currentBill, others, fa) =>
+  build(shared, { charge: printedGas, usage, prevRead: 1, currRead: 2 }, true, others, currentBill, fa, DATE, META);
+b = runUsage(100.0, 9999, 180.0, 90.0, -10.0);
+check('6 charge kept: 100.00 - 23.33 = 76.67', b && b.GasCharge === 76.67, JSON.stringify(b && b.GasCharge));
+check('6 total = printed + fuel adjustment', b && b.TotalCurrentCharges === '90.00', b && b.TotalCurrentCharges);
+check('6 therms null, never charge / rate', b && b.NaturalGasTherms === null, JSON.stringify(b && b.NaturalGasTherms));
+check('6 flagged for therms by name', b && b._gateTripped === true && /therms/i.test(b._manualReviewLabel) && !!b._correction_pending_NaturalGasTherms, JSON.stringify(b && b._manualReviewLabel));
+b = runUsage(100.0, 9999, 181.0, 90.0, -10.0);
+check('6 page off by a cent: held, charge null', b && b._manualReview === true && b.GasCharge === null, JSON.stringify(b && b.GasCharge));
+b = runUsage(100.0, 9999, 180.0, 90.0, null);
+check('6 fuel adjustment unread: not proven, held', b && b._manualReview === true && b.GasCharge === null, JSON.stringify(b && b.GasCharge));
+
 // 4. Source shape: overwrite function gone, no therms x rate substitution left.
 check('4 _lbg_correctGasCharge removed', !/_lbg_correctGasCharge\s*\(/.test(src), '');
 check('4 one resolver, three call sites', (src.match(/_lbg_resolveGasLine\(/g) || []).length === 4, String((src.match(/_lbg_resolveGasLine\(/g) || []).length)); // 1 def + 3 calls
