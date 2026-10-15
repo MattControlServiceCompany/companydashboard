@@ -3,8 +3,8 @@
  * A new-format City bill whose OCR date row had one garbled token ("711512026" for 7/15/2026)
  * shifted every date column: the period read 8/15 to 8/21 (6 days) and the bill date 9/11.
  * Also checks "Total Amount Due $2,584,70" (comma for the decimal point) reads 2584.70.
- * SYNTHETIC fixture only: fake district, name, address, account and amounts.
- * Loads the real city utility-bill rule via vm, same as tools/test-newformat-billdate.js.
+ * SYNTHETIC fixture only: fake name, address, account and amounts.
+ * Loads the real city utility-bill rule via vm, found by the date-row reader it calls, same as tools/test-newformat-billdate.js.
  * Usage: node tools/test-lbg-date-row.js [path-to-energy-savings.js]
  */
 const fs = require('fs');
@@ -25,9 +25,6 @@ function loadSharedDayFns(sandbox) {
   }
 }
 
-// Town token the rule matches on, kept in one place (the fixture text is synthetic).
-const CITY = ['Lou', 'isburg'].join('');
-
 function loadCityRule(scriptPath) {
   const src = fs.readFileSync(scriptPath, 'utf8');
   const sandbox = { window: {}, console: { log: () => {}, warn: () => {}, error: () => {} } };
@@ -39,7 +36,8 @@ function loadCityRule(scriptPath) {
   vm.runInContext(src, sandbox, { filename: path.basename(scriptPath) });
   const rules = vm.runInContext('typeof UTILITY_RULES !== "undefined" ? UTILITY_RULES : null', sandbox);
   if (!rules) throw new Error('UTILITY_RULES not found in ' + scriptPath);
-  const rule = rules.find((r) => r.name === 'City of ' + CITY);
+  // Find the rule by the date-row reader its new-format reader calls, not by its display name.
+  const rule = rules.find((r) => typeof r._extractNew === 'function' && r._extractNew.toString().includes('_lbg_readDateRow('));
   if (!rule) throw new Error('city bill rule not found in ' + scriptPath);
   return rule;
 }
@@ -47,14 +45,13 @@ function loadCityRule(scriptPath) {
 function page(row, total) {
   return [
     '%%PAGE_1%%',
-    'City of ' + CITY + ' Utility Bill',
-    '215 S. Broadway 09-999999-99',
-    CITY + ', KS 66053 Total Amount Due',
-    CITY.toLowerCase() + 'kansas.gov Amount Due After 9/10/2026 $1.00',
+    'City Utility Bill',
+    '100 TEST ST 00-000000-00',
+    'TEST TOWN, KS 00000 Total Amount Due',
+    'Amount Due After 9/10/2026 $1.00',
     'Please return this portion with your payment.',
-    'City of ' + CITY,
     'Customer Account Information - Retain for your records',
-    'US' + 'D 999 TEST BUILDING 100 TEST ST 09-999999-99',
+    'TEST SCHOOL 100 TEST ST 00-000000-00',
     row,
     '100- Water Utility Bill Previous Balance: $45.00',
     'Payments: ($45.00)',

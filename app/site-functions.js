@@ -2575,6 +2575,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.15.132', date: '2026-10-15', title: 'Behind the scenes cleanup',
+    items: [
+      { type: 'change', text: 'Behind the scenes: a test was cleaned up. Nothing changes on the site.' }
+    ]
+  },
   { v: 'v2026.10.15.131', date: '2026-10-15', title: 'City bill dates and one Data button',
     items: [
       { type: 'fix', text: 'Utility Data / PDF upload: city utility bill dates are read correctly even when the scan garbles a date; a bill whose date cannot be read is held for review instead of getting a wrong date.' },
