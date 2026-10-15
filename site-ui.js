@@ -153,25 +153,6 @@
     if (typeof showToast === 'function') showToast('Backup downloaded');
   }
 
-  /* ── RESET DATA ── */
-  async function resetData() {
-    if (
-      !confirm(
-        'This permanently erases ALL CompanyHub data on this device — projects, bills, utility data, and the Equipment Matrix database. This cannot be undone. Continue?',
-      )
-    )
-      return;
-    localStorage.clear();
-    sessionStorage.clear();
-    if (window.DB && window.DB.clear) {
-      await window.DB.clear();
-    }
-    if (typeof showToast === 'function') showToast('Reset — reloading...');
-    setTimeout(function () {
-      location.reload();
-    }, 1200);
-  }
-
   /* ── BUILD SIDEBAR BOTTOM ── */
   function buildSidebarBottom() {
     var sidebar = document.querySelector('.sidebar');
@@ -189,10 +170,7 @@
       '<div class="sb-divider"></div>' +
       '<div class="sb-clock" id="sb-clock">--:-- --</div>' +
       '<div class="sb-date" id="sb-date">Loading...</div>' +
-      '<div class="sb-btn-row">' +
-      '<button class="sb-btn" onclick="window.__siteUI.backupData()" title="Backup all data">Backup</button>' +
-      '</div>' +
-      '<button class="sb-btn danger" style="width:100%" onclick="window.__siteUI.resetData()" title="WARNING: Permanently deletes ALL projects, buildings, meters, and bills. Cannot be undone.">Reset Data</button>' +
+      '<button class="sb-settings-btn" id="siteDataBtn" onclick="siteDataMenuToggle(this)">&#128450; Data</button>' +
       '<div class="sb-version" style="text-align:center;font-size:10px;color:var(--text3);margin-top:8px;font-family:var(--mono);letter-spacing:0.5px">' +
       CH_VERSION +
       '</div>';
@@ -794,7 +772,6 @@
     openHelp: openHelp,
     closeHelp: closeHelp,
     backupData: backupData,
-    resetData: resetData,
     checkDefaultLogin: checkDefaultLogin,
     applyAccentColor: applyAccentColor,
     applyTheme: applyTheme,

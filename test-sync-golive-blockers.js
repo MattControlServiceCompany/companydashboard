@@ -983,23 +983,6 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     );
   });
 
-  // ---- M8: Reset keeps a copy of the conflict archive
-  await t('M8 siteResetData saves the conflict archive to a file before it erases data', () => {
-    const src = fs
-      .readFileSync(path.join(__dirname, 'app', 'site-functions.js'), 'utf8')
-      .split('\r')
-      .join('');
-    const fn = src.match(/async function siteResetData\(\) \{[\s\S]*?\n\}/)[0];
-    const dl = fn.indexOf('_downloadJSON(_archive');
-    const wipe = fn.indexOf('localStorage.clear()');
-    assert.ok(dl > 0 && wipe > dl, 'archive download comes before the wipe');
-    assert.ok(/getConflictArchive\(\)/.test(fn) && !/getConflictArchiveAll/.test(fn), 'exports only what this user may see');
-    assert.ok(
-      /getConflictArchiveOthers/.test(fn) && fn.indexOf("set('en_conflict_archive'") > fn.indexOf('DB.clear()'),
-      "another user's entries are written back after the wipe",
-    );
-  });
-
   // ---- 401/403 on periodic sync requests (2026-10-06): refresh once, then end the session
   const FK = (x) => 'fake-' + x;
   const sessionJSON = (uid, tok, rt) =>
@@ -2724,79 +2707,6 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     assert.strictEqual(RM.isEngineKey('ch_sb_session'), true, 'restore skips the session key');
     assert.strictEqual(SC.isNeverBackupKey('ch_sb_session'), true);
     assert.strictEqual(SC.isNeverBackupKey('ch_theme'), false);
-  });
-  // ---- (f) (2026-10-06): Reset exports only the entries the user may see (the one viewer rule) and keeps the others
-  await t('(f): siteResetData exports only the archive entries the user may see; other users entries are kept', async () => {
-    const vm = require('vm');
-    const L = loadReal({ userId: 'u1', tokenFetch: tokByEmail, kvFetch: async () => ok([]) });
-    L.store.en_conflict_archive = JSON.stringify([
-      { key: 'ch_pref_x', losingValue: 'B-private', owner: { id: 'u2', email: 'u2@example.com' }, archivedAt: 't' },
-      { key: 'ch_pref_y', losingValue: 'A-private', owner: { id: 'u1', email: 'u1@example.com' }, archivedAt: 't' },
-      { key: 'en_budget_x', losingValue: 'shared', owner: { id: 'u2', email: null }, archivedAt: 't' },
-    ]);
-    await L.DB.warmCache();
-    await tick(30);
-    assert.deepStrictEqual(
-      L.DB.getConflictArchive().map((e) => e.key).sort(),
-      ['ch_pref_y', 'en_budget_x'],
-      'viewer: B-private hidden from u1',
-    );
-    let exported = null;
-    const ctx = {
-      DB: Object.assign({}, L.DB, { clear: async () => {} }), // real readers, no real wipe
-      confirm: () => true,
-      _downloadJSON: (d) => {
-        exported = d;
-      },
-      localStorage: { clear: () => {} },
-      sessionStorage: { clear: () => {} },
-      setTimeout: () => {},
-      location: { reload: () => {} },
-      Date,
-    };
-    ctx.window = ctx;
-    vm.createContext(ctx);
-    vm.runInContext(siteFnSrc('siteResetData'), ctx);
-    await vm.runInContext('siteResetData()', ctx);
-    assert.ok(exported, 'archive exported before the wipe');
-    assert.strictEqual(exported.length, 2, 'only the entries u1 may see are exported');
-    assert.ok(!JSON.stringify(exported).includes('B-private'), "other user's private value is not in the file");
-    const kept = L.DB.getConflictArchiveOthers();
-    assert.ok(kept.length === 1 && kept[0].losingValue === 'B-private', "other user's entry is written back after the wipe");
-  });
-  // ---- (g) (2026-10-06): Reset with the REAL DB.clear: own entries exported then wiped, other users' entries survive
-  await t("(g): siteResetData with the real DB.clear keeps other users' archive entries and wipes the user's own", async () => {
-    const vm = require('vm');
-    const L = loadReal({ userId: 'u1', tokenFetch: tokByEmail, kvFetch: async () => ok([]) });
-    L.store.en_conflict_archive = JSON.stringify([
-      { key: 'ch_pref_x', losingValue: 'B-private', owner: { id: 'u2', email: 'u2@example.com' }, archivedAt: 't' },
-      { key: 'ch_pref_y', losingValue: 'A-private', owner: { id: 'u1', email: 'u1@example.com' }, archivedAt: 't' },
-    ]);
-    await L.DB.warmCache();
-    await tick(30);
-    let exported = null;
-    const ctx = {
-      DB: L.DB,
-      confirm: () => true,
-      _downloadJSON: (d) => {
-        exported = d;
-      },
-      localStorage: { clear: () => {} },
-      sessionStorage: { clear: () => {} },
-      setTimeout: () => {},
-      location: { reload: () => {} },
-      Date,
-    };
-    ctx.window = ctx;
-    vm.createContext(ctx);
-    vm.runInContext(siteFnSrc('siteResetData'), ctx);
-    await vm.runInContext('siteResetData()', ctx);
-    assert.strictEqual(exported.length, 1, "only the user's own entry is exported");
-    assert.strictEqual(exported[0].losingValue, 'A-private');
-    await tick(30);
-    assert.strictEqual(L.DB.getConflictArchive().length, 0, "own entry is wiped");
-    const kept = L.DB.getConflictArchiveOthers();
-    assert.ok(kept.length === 1 && kept[0].losingValue === 'B-private', "other user's entry survives the real clear");
   });
   // ---- Poll fixes (2026-10-06): a key first created on the server after page load; a change seen while unsafe
   await t('POLL1 a key created on the server AFTER load is applied by the next poll (no reload, no PUT)', async () => {

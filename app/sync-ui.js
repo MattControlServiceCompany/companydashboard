@@ -105,7 +105,7 @@
       // Stacked in the SAME bottom-right corner as the pill (bottom:16) and the
       // archive link (bottom:52), one more slot up (bottom:88) — a bottom-left
       // resting position was tried first and rejected: it sat on top of the
-      // existing sidebar's Settings/Backup/Restore/Reset Data controls (found
+      // existing sidebar's Settings/Data controls (found
       // during this implementer's own visual verification screenshot).
       '#ch-sync-status-btn{position:fixed;bottom:88px;right:16px;z-index:9998;' +
       'background:var(--s3,#333);color:var(--text,#fff);border:1px solid var(--border,#555);' +
