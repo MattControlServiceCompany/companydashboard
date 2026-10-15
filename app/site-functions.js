@@ -2506,6 +2506,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.15.128', date: '2026-10-15', title: 'Utility Data: edit button on bills works again',
+    items: [
+      { type: 'fix', text: 'Projects > Utility Data: the edit (pencil) button on a bill row now opens Edit Billing Period. Before, it showed "Could not find building" and did not open.' }
+    ]
+  },
   { v: 'v2026.10.14.127', date: '2026-10-14', title: 'Utility Data: Change history in Edit Billing Period',
     items: [
       { type: 'change', text: 'Utility Data: corrected meter reads no longer show a mark in the bills table. The Edit Billing Period window now lists each change in a Change history section.' }
