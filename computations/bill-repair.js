@@ -5,37 +5,26 @@
    (tools/gate-auto-repair.js) runs the real functions.
 
    Rules for every write (each is tested by the gate):
-     - A field the user corrected (row._userCorrected[field]) never changes.
-     - A value is never blanked. The extracted value must have text.
+     - A field the user owns (billFieldUserOwned, computations/bill-flags.js: _userCorrected[field],
+       _userCorrected_<Field>, or a value retyped over an automatic correction) never changes.
+     - A value is never blanked, and an extracted 0 never replaces a stored value that is not 0 (repairValueAllowed,
+       applied where the value is built AND where it is written).
+     - A bill is matched to a PDF page by page, commodity and account; when both sides carry a meter number they must
+       agree, for any number of candidates (a shared account holds several meters).
      - A printed value is never replaced by a computed one: a read difference changes only when the stored reads
        do not confirm it; a kWh changes only when its read difference changed in the same repair.
      - Do no harm: the repair runs on a copy of the meter; it is kept only when no bill of the meter gains a flag
        (computeMeterFlagSummary before and after).
-     - A duplicate row is recorded in the audit log by the caller and never deleted.
-     - Every changed field is written to row._autoRepairHistory (shown in Edit Billing Period, _billChangeHistory).
+     - Nothing is added and nothing is deleted. A PDF page with no row on the meter is reported (repairMissingBillCandidates)
+       for the audit log; a duplicate row is reported and marked dup.
+     - Every changed field is written to the existing automatic-correction record row._auto_corrected_<field>
+       ({ original, corrected, reason, source: PDF_REREAD_SOURCE, at, page, ruleVersion }); Edit Billing Period shows it
+       through _billChangeHistory (app/utility-data.js), and every edit path drops it (clearReadCorrectionRecords).
    The extractor's own mapping is reused: _extractedToBillRowCosts and gasBillSaveTherms (no second field map).
    ══════════════════════════════════════════════════════════════════════════════════════════════ */
 
 // Read-family rules: they are not counted in the badges, but a bill with one of them has a read that may be wrong.
 const REPAIR_READ_RULES = ['read_continuity', 'read_rollback', 'read_usage_mismatch'];
-
-// Plain label and type of each stored field this repair can write (used by Edit Billing Period).
-const REPAIR_FIELD_LABELS = {
-  start: { label: 'Start Date', type: 'text' },
-  end: { label: 'End Date', type: 'text' },
-  totalCost: { label: 'Total Cost', type: 'currency' },
-  kwh: { label: 'kWh Consumed', type: 'number' },
-  startRead: { label: 'Start Read', type: 'number' },
-  endRead: { label: 'End Read', type: 'number' },
-  readDifference: { label: 'Read Difference', type: 'number' },
-  therms: { label: 'Therms', type: 'number' },
-  naturalGasTherms: { label: 'Therms (printed)', type: 'number' },
-  waterUsage: { label: 'Water Usage', type: 'number' },
-  waterCharge: { label: 'Water Charge', type: 'currency' },
-  sewerUsage: { label: 'Sewer Usage', type: 'number' },
-  sewerCharge: { label: 'Sewer Charge', type: 'currency' },
-  stormWaterCharge: { label: 'Stormwater Charge', type: 'currency' },
-};
 
 // "MM/DD/YYYY" or "MM-DD-YY" (the extractor's text) -> "YYYY-MM-DD". An ISO date passes through; anything else is returned
 // unchanged. The ONE converter for extracted dates (the duplicate check and the repair both call it).
@@ -78,8 +67,11 @@ function matchExtractedToBill(ext, bill, meter) {
   return {
     extAcct,
     existAcct,
+    extMeter,
+    existMeter,
     acctMatch: _acctFuzzyMatch(extAcct, existAcct),
     meterMatch: !!extMeter && !!existMeter && extMeter === existMeter,
+    meterConflict: !!extMeter && !!existMeter && extMeter !== existMeter, // both sides carry a number and they differ
     commMatch: !extComm || !existComm || extComm === existComm,
     periodMatch,
     fuzzyPeriod: !periodMatch && billPeriodClose(extStart, extEnd, bill.start, bill.end),
@@ -88,12 +80,14 @@ function matchExtractedToBill(ext, bill, meter) {
   };
 }
 
-// The one extracted bill that is THIS stored bill's page. Page, commodity and account must agree; when a page holds more
-// than one such bill the meter number, then the start date, must pick one. Returns { ext } or { declined: reason }.
+// The one extracted bill that is THIS stored bill's page. Page, commodity and account must agree, and a meter number on
+// both sides must agree (for one candidate as for many); when a page still holds more than one such bill the meter
+// number, then the start date, must pick one. Returns { ext } or { declined: reason }.
 function findRepairMatch(exts, row, meter) {
   const page = row.pdfPageStart == null || row.pdfPageStart === '' ? null : Number(row.pdfPageStart);
   const pageOf = (e) => Number(e._pageStart != null ? e._pageStart : e._pageIndex);
   const pageEnd = (e) => Number(e._pageEnd != null ? e._pageEnd : pageOf(e));
+  let otherMeter = false;
   let cands = (exts || []).filter((e) => {
     if (!e || e._manualReview || e.parseError) return false;
     const m = matchExtractedToBill(e, row, meter);
@@ -101,8 +95,14 @@ function findRepairMatch(exts, row, meter) {
     // the account on the bill row counts as well as the meter's (a bill can carry the number the utility printed on it)
     const rowAcct = (row.accountNumber || '').replace(/[\s\-]/g, '').toLowerCase();
     if (m.extAcct && m.existAcct && !m.acctMatch && !_acctFuzzyMatch(m.extAcct, rowAcct)) return false;
-    if (page === null) return m.meterMatch && m.extStart === row.start; // no page stored: meter and period must agree
-    return page >= pageOf(e) && page <= pageEnd(e);
+    const onPage = page === null ? m.extStart === row.start : page >= pageOf(e) && page <= pageEnd(e);
+    if (!onPage) return false;
+    if (m.meterConflict) {
+      otherMeter = true; // the page holds another meter of the same account: never this bill's page
+      return false;
+    }
+    if (page === null) return m.meterMatch; // no page stored: meter and period must agree
+    return true;
   });
   if (cands.length > 1) {
     const byMeter = cands.filter((e) => matchExtractedToBill(e, row, meter).meterMatch);
@@ -113,6 +113,7 @@ function findRepairMatch(exts, row, meter) {
     if (byStart.length) cands = byStart;
   }
   if (cands.length === 0) {
+    if (otherMeter) return { declined: 'the PDF page holds another meter number' };
     const held = (exts || []).some((e) => e && e._manualReview && matchExtractedToBill(e, row, meter).commMatch && page !== null && page >= pageOf(e) && page <= pageEnd(e));
     return { declined: held ? 'the reader holds this page for review' : 'no bill on the PDF page matches this bill' };
   }
@@ -132,6 +133,21 @@ const _brSameNumber = (a, b, tol) => {
   const y = parseBillNumber(b);
   return x !== null && y !== null && Math.abs(x - y) <= tol;
 };
+
+// The ONE test of a value the repair may write over a stored one: never blank (no text, null, NaN, infinite), and
+// never 0 over a stored value that is a number other than 0 (a failed read of a printed figure parses as 0).
+// Used where the candidate value is built (repairFieldsFromExtracted), where the trial applies it (planMeterRepair)
+// and where the live bill is written (applyRepairChanges).
+function repairValueAllowed(from, to) {
+  if (to === undefined || to === null || String(to).trim() === '') return false;
+  if (typeof to === 'number' && !isFinite(to)) return false;
+  const toN = typeof to === 'number' ? to : parseBillNumber(String(to));
+  if (toN === 0) {
+    const fromN = parseBillNumber(from);
+    if (fromN !== null && fromN !== 0) return false;
+  }
+  return true;
+}
 
 // The read group of an electric bill. Returns { field: to } for the fields to change (start/end reads, difference, kWh).
 // ext = the fresh read; prev/next = the neighbor bills on the meter (their reads can confirm an extracted read).
@@ -177,10 +193,10 @@ function _repairReads(ext, row, prev, next, userOwned) {
   return out;
 }
 
-// Fields to change on `row` from the fresh read `ext`: { field: { from, to } }. Never blank, never a user-corrected field.
-// commodity = the meter's. prev/next = neighbor rows (electric reads only).
+// Fields to change on `row` from the fresh read `ext`: { field: { from, to } }. Never blank, never 0 over a value,
+// never a field the user owns. commodity = the meter's. prev/next = neighbor rows (electric reads only).
 function repairFieldsFromExtracted(ext, row, commodity, prev, next) {
-  const userOwned = (k) => !!(row._userCorrected && row._userCorrected[k]);
+  const userOwned = (k) => billFieldUserOwned(row, k);
   const cand = {};
   const sd = extractedDateToISO(ext.BillingPeriodStart);
   const ed = extractedDateToISO(ext.BillingPeriodEnd);
@@ -190,11 +206,11 @@ function repairFieldsFromExtracted(ext, row, commodity, prev, next) {
   }
   const costs = _extractedToBillRowCosts(ext);
   const money = (k, v) => {
-    if (v === '' || v === null || v === undefined || !isFinite(Number(v))) return;
+    if (v === '' || v === null || v === undefined || !isFinite(Number(v)) || !repairValueAllowed(row[k], Number(v))) return;
     if (!_brHas(row[k]) || Math.abs(parseBillNumber(row[k]) - Number(v)) > 0.005) cand[k] = Number(v);
   };
   const usage = (k, v) => {
-    if (v === '' || v === null || v === undefined || !isFinite(Number(v))) return;
+    if (v === '' || v === null || v === undefined || !isFinite(Number(v)) || !repairValueAllowed(row[k], Number(v))) return;
     if (!_brHas(row[k]) || Math.abs(parseBillNumber(row[k]) - Number(v)) >= 1) cand[k] = Number(v);
   };
   if (commodity === 'Electric') {
@@ -218,7 +234,7 @@ function repairFieldsFromExtracted(ext, row, commodity, prev, next) {
   const out = {};
   Object.keys(cand).forEach((k) => {
     if (userOwned(k)) return;
-    if (!_brHas(cand[k]) || (typeof cand[k] === 'number' && !isFinite(cand[k]))) return; // never blank a value
+    if (!repairValueAllowed(row[k], cand[k])) return; // never blank a value, never 0 over a value
     if (String(row[k]) === String(cand[k])) return;
     out[k] = { from: row[k] === undefined ? '' : row[k], to: cand[k] };
   });
@@ -228,7 +244,8 @@ function repairFieldsFromExtracted(ext, row, commodity, prev, next) {
 // ── eligibility ──────────────────────────────────────────────────────────────────────────────
 
 // Bills of this meter that the repair pass may read again: a bill with a defect, and the bill before and after it (a gap or
-// overlap flag comes from the neighbor). A bill needs a stored PDF (pdfKey) and no marker for this extractor version.
+// overlap flag comes from the neighbor). A bill needs a stored PDF (pdfKey) and no marker for this extractor version
+// (a marker without a version, e.g. waiting for the PDF or a read error that may be tried again, keeps the bill eligible).
 // Returns [{ row, why }] in date order.
 function repairEligibleBills(meter, building, version) {
   if (!meter || !Array.isArray(meter.bills) || !meter.bills.length) return [];
@@ -284,19 +301,18 @@ function _repairFlagGain(before, after) {
   }
   return null;
 }
+// The trial applies exactly what applyRepairChanges will write (same value test), so the flag check judges the real write.
 function _repairApplyItem(meter, item) {
-  if (item.add) {
-    meter.bills.push(JSON.parse(JSON.stringify(item.add)));
-    return;
-  }
   const row = meter.bills.find((b) => b.id === item.row.id);
   if (!row) return;
-  Object.keys(item.changes).forEach((k) => (row[k] = item.changes[k].to));
+  Object.keys(item.changes).forEach((k) => {
+    if (repairValueAllowed(row[k], item.changes[k].to)) row[k] = item.changes[k].to;
+  });
 }
 
-// Choose which candidate repairs to keep. items = [{ row, changes }] or [{ add }]. Each is tried on a copy of the meter;
-// it is kept only when no bill of the meter gains a flag. Candidates that fail alone are tried together once (a date
-// repair of a bill and its neighbor clear a gap only as a pair). Returns { accepted: [item], rejected: [{ item, reason }] }.
+// Choose which candidate repairs to keep. items = [{ row, changes }]. Each is tried on a copy of the meter; it is kept
+// only when no bill of the meter gains a flag. Candidates that fail alone are tried together once (a date repair of a
+// bill and its neighbor clear a gap only as a pair). Returns { accepted: [item], rejected: [{ item, reason }] }.
 function planMeterRepair(meter, building, items) {
   const clone = (m) => JSON.parse(JSON.stringify(m));
   const bldgOf = (m) => Object.assign({}, building, { meters: (building.meters || []).map((x) => (x === meter ? m : x)) });
@@ -347,32 +363,30 @@ function planMeterRepair(meter, building, items) {
 
 // ── history and apply ────────────────────────────────────────────────────────────────────────
 
-// Write the accepted changes onto the live bill and record each one. meta = { at, version }.
+// Write the accepted changes onto the live bill and record each one in the existing automatic-correction record
+// row._auto_corrected_<field> (the one change history; the read-chain rule writes the same record for its reads). A
+// value that repairValueAllowed refuses (blank, or 0 over a value) is not written and not recorded, whatever the
+// caller passed. An earlier record's original text is kept. meta = { at, version }. Returns the fields written.
 function applyRepairChanges(row, changes, meta) {
-  const hist = Array.isArray(row._autoRepairHistory) ? row._autoRepairHistory : [];
-  Object.keys(changes).forEach((k) => {
-    const L = REPAIR_FIELD_LABELS[k] || { label: k, type: 'text' };
-    hist.push({
-      field: k,
-      label: L.label,
-      type: L.type,
-      original: changes[k].from,
-      corrected: changes[k].to,
+  const written = [];
+  Object.keys(changes || {}).forEach((k) => {
+    const to = changes[k].to;
+    if (!repairValueAllowed(row[k], to)) return;
+    const prior = row['_auto_corrected_' + k];
+    const page = row.pdfPageStart || null;
+    row['_auto_corrected_' + k] = {
+      original: prior && typeof prior === 'object' && prior.original !== undefined ? prior.original : row[k] === undefined ? '' : row[k],
+      corrected: to,
+      reason: 'Re-read from the PDF' + (page ? ', page ' + page : ''),
+      source: PDF_REREAD_SOURCE,
       at: meta.at,
-      page: row.pdfPageStart || null,
+      page,
       ruleVersion: meta.version,
-    });
-    row[k] = changes[k].to;
+    };
+    row[k] = to;
+    written.push(k);
   });
-  row._autoRepairHistory = hist;
-}
-
-// Editing a repaired field removes its history entry (the user's value replaces the repair). fields = edited field names;
-// no list = every field.
-function clearAutoRepairHistory(row, fields) {
-  if (!row || !Array.isArray(row._autoRepairHistory)) return;
-  row._autoRepairHistory = row._autoRepairHistory.filter((h) => fields && !fields.includes(h.field));
-  if (!row._autoRepairHistory.length) delete row._autoRepairHistory;
+  return written;
 }
 
 // Rows of one meter that hold the same PDF page with the same total: the same bill stored twice. The repair never
@@ -389,62 +403,41 @@ function findDuplicateRowGroups(meter) {
     .filter((rows) => rows.length > 1);
 }
 
-// New bill rows for pages of `exts` that this meter has no row for: same commodity and account as the meter, a valid
-// period that is not stored, not a bill the reader holds for review. Built with the shared mapper, marked fromPDF.
-// Returns [{ add: row }].
-function repairMissingBillRows(exts, meter, pdfKey, meta) {
-  const have = new Set((meter.bills || []).map((b) => b.start + '|' + b.end));
-  const pages = new Set((meter.bills || []).filter((b) => b.pdfKey === pdfKey).map((b) => Number(b.pdfPageStart)));
+// Pages of `exts` (one PDF) that this meter has no row for: same commodity and account as the meter, the SAME meter
+// number on both sides (a page without one, or a meter without one, is never claimed: the account alone can hold several
+// meters), a valid period that no row holds or lies within 5 days of, a page no row holds, not a bill the reader holds
+// for review. When a row of this meter points at the PDF without a page number, the stored pages are unknown and
+// nothing is reported. Nothing is added to the meter (a deleted bill is recorded only in the audit log, so an added
+// row could bring back a bill the user removed): the caller writes each candidate to the audit log.
+// Returns [{ page, pageEnd, start, end, totalCost, meterNumber }].
+function repairMissingBillCandidates(exts, meter, pdfKey) {
+  const rows = meter.bills || [];
+  const linked = rows.filter((b) => b.pdfKey === pdfKey);
+  if (linked.some((b) => b.pdfPageStart == null || b.pdfPageStart === '' || isNaN(Number(b.pdfPageStart)))) return [];
+  if (!(meter.meter || '').replace(/[\s\-]/g, '')) return [];
+  const pages = new Set(linked.map((b) => Number(b.pdfPageStart)));
   const out = [];
-  (exts || []).forEach((e, i) => {
+  (exts || []).forEach((e) => {
     if (!e || e._manualReview || e.parseError) return;
     const m = matchExtractedToBill(e, { commodity: meter.commodity, start: '', end: '' }, meter);
-    const rowAccts = (meter.bills || []).map((b) => (b.accountNumber || '').replace(/[\s\-]/g, '').toLowerCase());
+    const rowAccts = rows.map((b) => (b.accountNumber || '').replace(/[\s\-]/g, '').toLowerCase());
     if (!m.commMatch || !(e.Commodity || '') || !(m.acctMatch || rowAccts.some((a) => a && _acctFuzzyMatch(m.extAcct, a)))) return;
-    if (e.MeterNumber && meter.meter && !m.meterMatch) return; // a meter number on both sides must agree: the account alone can hold several meters
+    if (!m.meterMatch) return;
     const pg = Number(e._pageStart != null ? e._pageStart : e._pageIndex);
-    if (pages.has(pg)) return;
+    if (isNaN(pg) || pages.has(pg)) return;
     const sd = extractedDateToISO(e.BillingPeriodStart);
     const ed = extractedDateToISO(e.BillingPeriodEnd);
-    if (!_brIsIso(sd) || !_brIsIso(ed) || have.has(sd + '|' + ed)) return;
-    const blank = { id: '', start: '', end: '' };
-    const c = _extractedToBillRowCosts(e);
-    const row = {
-      id: 'ar' + Date.parse(meta.at) + '_' + i,
+    if (!_brIsIso(sd) || !_brIsIso(ed)) return;
+    if (rows.some((b) => (b.start === sd && b.end === ed) || billPeriodClose(sd, ed, b.start, b.end))) return;
+    pages.add(pg);
+    out.push({
+      page: pg,
+      pageEnd: Number(e._pageEnd != null ? e._pageEnd : pg),
       start: sd,
       end: ed,
-      fromPDF: true,
-      hasPDF: true,
-      pdfKey,
-      pdfPageStart: pg,
-      pdfPageEnd: Number(e._pageEnd != null ? e._pageEnd : pg),
-      accountNumber: e.AccountNumber || '',
-      commodity: meter.commodity,
-      kwh: meter.commodity === 'Electric' ? c.kwh : '',
-      kwCost: c.kwCost,
-      kwhCost: c.kwhCost,
-      otherCost: c.otherCost,
-      taxCost: c.taxCost,
-      totalCost: c.totalCost,
-    };
-    const f = repairFieldsFromExtracted(e, Object.assign({}, blank, row), meter.commodity, null, null);
-    Object.keys(f).forEach((k) => (row[k] = f[k].to));
-    row._pdfRepair = { v: meta.version, at: meta.at, status: 'repaired', reason: 'added from the PDF page', added: true };
-    row._autoRepairHistory = ['start', 'end', 'totalCost']
-      .filter((k) => _brHas(row[k]))
-      .map((k) => ({
-        field: k,
-        label: REPAIR_FIELD_LABELS[k].label,
-        type: REPAIR_FIELD_LABELS[k].type,
-        original: '',
-        corrected: row[k],
-        at: meta.at,
-        page: pg,
-        ruleVersion: meta.version,
-      }));
-    have.add(sd + '|' + ed);
-    pages.add(pg);
-    out.push({ add: row });
+      totalCost: _extractedToBillRowCosts(e).totalCost,
+      meterNumber: e.MeterNumber || '',
+    });
   });
   return out;
 }
@@ -453,11 +446,11 @@ function repairMissingBillRows(exts, meter, pdfKey, meta) {
 
 // Repair the eligible bills of `meter` that point at `pdfKey`, from `exts` (the extractor's bills for that PDF). Writes the
 // accepted changes, the history and the marker row._pdfRepair on the live bills. meta = { at, version }.
-// Returns { read, repaired: [{ row, changes }], added: [row], declined: [{ row, reason }], nochange: [row], duplicates: [[row]] }.
-// The caller logs, runs the read-chain pass and saves.
+// Returns { read, repaired: [{ row, changes }], missing: [candidate], declined: [{ row, reason }], nochange: [row],
+// duplicates: [[row]] }. The caller logs, runs the read-chain pass and saves.
 function repairMeterFromPdf(meter, building, pdfKey, exts, meta) {
   const eligible = repairEligibleBills(meter, building, meta.version).filter((r) => r.row.pdfKey === pdfKey);
-  const res = { read: eligible.length, repaired: [], added: [], declined: [], nochange: [], duplicates: [] };
+  const res = { read: eligible.length, repaired: [], missing: [], declined: [], nochange: [], duplicates: [] };
   if (!eligible.length) return res;
   const mark = (row, status, reason) => {
     const dup = row._pdfRepair && row._pdfRepair.dup;
@@ -481,28 +474,28 @@ function repairMeterFromPdf(meter, building, pdfKey, exts, meta) {
       res.nochange.push(row);
     }
   });
-  repairMissingBillRows(exts, meter, pdfKey, meta).forEach((a) => items.push(a));
   const plan = planMeterRepair(meter, building, items);
   plan.accepted.forEach((it) => {
-    if (it.add) {
-      meter.bills.push(it.add);
-      res.added.push(it.add);
-      return;
+    const written = applyRepairChanges(it.row, it.changes, meta);
+    if (written.length) {
+      mark(it.row, 'repaired', '');
+      res.repaired.push({ row: it.row, changes: it.changes });
+    } else {
+      mark(it.row, 'nochange', '');
+      res.nochange.push(it.row);
     }
-    applyRepairChanges(it.row, it.changes, meta);
-    mark(it.row, 'repaired', '');
-    res.repaired.push({ row: it.row, changes: it.changes });
   });
   plan.rejected.forEach((r) => {
-    if (r.item.add) return;
     mark(r.item.row, 'declined', r.reason);
     res.declined.push({ row: r.item.row, reason: r.reason });
   });
-  // The same bill stored twice: reported once, never deleted.
+  res.missing = repairMissingBillCandidates(exts, meter, pdfKey);
+  // The same bill stored twice: reported once, never deleted. Only the dup mark is set: a row that was not read in this
+  // run gets no version, so it is still read when it needs a repair.
   findDuplicateRowGroups(meter).forEach((g) => {
     if (g.every((r) => r._pdfRepair && r._pdfRepair.dup)) return;
     g.forEach((r) => {
-      r._pdfRepair = Object.assign({}, r._pdfRepair || { v: meta.version, at: meta.at, status: 'nochange', reason: '' }, { dup: true });
+      r._pdfRepair = Object.assign({}, r._pdfRepair || {}, { dup: true });
     });
     res.duplicates.push(g);
   });

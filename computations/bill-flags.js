@@ -1313,15 +1313,43 @@ const READ_CHAIN_PROVISIONAL = [READ_CHAIN_REASON.a0];
 function _rcIsReadChainRecord(rec) {
   return !!rec && Object.values(READ_CHAIN_REASON).includes(rec.reason);
 }
-// True when the user owns a read field of this bill: they typed a new value into a field this rule corrected (the
-// record's corrected value no longer matches), or an edit path already stamped the field in _userCorrected. User wins:
-// the rule leaves the whole bill alone.
-function _rcUserEdited(bill, keys) {
-  return [keys.start, keys.end, keys.diff].some((k) => {
-    const rec = bill['_auto_corrected_' + k];
-    if (bill._userCorrected && bill._userCorrected[k]) return true;
-    return _rcIsReadChainRecord(rec) && _rcText(rec.corrected) !== _rcText(bill[k]);
+// Source marker of an automatic correction record (_auto_corrected_<field>) written by the PDF re-read
+// (computations/bill-repair.js). The read-chain rule marks its records by reason (READ_CHAIN_REASON) instead.
+const PDF_REREAD_SOURCE = 'pdf_reread';
+// An automatic correction record written by a rule that keeps `corrected` equal to the field while the rule's value
+// stands: the read chain (by reason) or the PDF re-read (by source). A field whose record no longer matches was retyped.
+function _rcIsAutoRecord(rec) {
+  return !!rec && typeof rec === 'object' && (_rcIsReadChainRecord(rec) || rec.source === PDF_REREAD_SOURCE);
+}
+// The ONE "the user owns this field" test (Matt 2026-10-05, one rule per value). True when any edit path marked the
+// field: Edit Billing Period and the value-correction popover (row._userCorrected[field]), the extraction screen
+// (_userCorrected_<Field>, in the PDF field name or any spelling of the stored name, and _userCorrected__chg_<field>_<i>
+// for a multi-part charge), or the field holds a value other than the one an automatic rule wrote (the user retyped it
+// before the stamps existed). No automatic rule changes a field this returns true for.
+function billFieldUserOwned(bill, field) {
+  if (!bill || !field) return false;
+  if (bill._userCorrected && bill._userCorrected[field]) return true;
+  const names = [field];
+  if (typeof _billSchemaFor === 'function') {
+    (_billSchemaFor(bill.commodity || '') || []).forEach((e) => {
+      if (e && e.key === field && e.pdfKey) names.push(e.pdfKey);
+      if (e && e.pdfKey === field && e.key) names.push(e.key);
+    });
+  }
+  const lower = names.map((n) => String(n).toLowerCase());
+  const stamped = Object.keys(bill).some((k) => {
+    if (k.indexOf('_userCorrected_') !== 0 || !bill[k]) return false;
+    const x = k.slice('_userCorrected_'.length);
+    return lower.includes(x.toLowerCase()) || names.some((n) => x.indexOf('_chg_' + n + '_') === 0);
   });
+  if (stamped) return true;
+  const rec = bill['_auto_corrected_' + field];
+  return _rcIsAutoRecord(rec) && _rcText(rec.corrected) !== _rcText(bill[field]);
+}
+// True when the user owns a read field of this bill (billFieldUserOwned on the start read, end read or read
+// difference). User wins: the rule leaves the whole bill alone.
+function _rcUserEdited(bill, keys) {
+  return [keys.start, keys.end, keys.diff].some((k) => billFieldUserOwned(bill, k));
 }
 // The stored printed read check (data only, written by readCorrectionMarkers) must match the stored values. After a read
 // is repaired (_rcApply) or edited (clearReadCorrectionRecords) it is computed again from the bill's current values and
@@ -1351,8 +1379,16 @@ function _rcRefreshPrintedCheck(bill, keys) {
 // Editing ANY read field of a bill clears and stamps ALL of that bill's read-correction records together: the user now
 // owns the bill's reads, so no other record (e.g. a provisional a0 record on the field not edited) stays behind.
 function clearReadCorrectionRecords(row, fields) {
-  if (typeof clearAutoRepairHistory === 'function') clearAutoRepairHistory(row, fields); // an edited field is the user's value, not the repair
-  if (row && (!fields || fields.includes('kwh'))) delete row._printedReadCheck; // an edited kWh is no longer computed
+  if (!row) return;
+  // An edited field is the user's value, not the PDF re-read's: its re-read record goes (the user's edit path stamps
+  // _userCorrected itself). The read-chain records of the read fields are handled below.
+  Object.keys(row).forEach((k) => {
+    if (k.indexOf('_auto_corrected_') !== 0) return;
+    const f = k.slice('_auto_corrected_'.length);
+    if (fields && !fields.includes(f)) return;
+    if (row[k] && row[k].source === PDF_REREAD_SOURCE) delete row[k];
+  });
+  if (!fields || fields.includes('kwh')) delete row._printedReadCheck; // an edited kWh is no longer computed
   const READ = ['startRead', 'endRead', 'readDifference'];
   if (fields && !fields.some((k) => READ.includes(k))) return; // only non-read fields were edited
   _rcRefreshPrintedCheck(row, READ_CHAIN_FIELDS.stored); // an edited read changes what the stored record must say

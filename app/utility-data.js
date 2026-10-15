@@ -3942,16 +3942,21 @@ function resetBillsColumnWidths(mid) {
   if (typeof renderMeterWorkspace === 'function') renderMeterWorkspace();
 }
 
-// Read-chain corrections still in effect on a bill: the record (_auto_corrected_<field>, written by
-// computations/bill-flags.js) whose corrected value is the value now in the cell. One list for the change history in the Edit Billing Period window.
+// Automatic corrections still in effect on a bill: every record _auto_corrected_<field> (written by the read-chain rule,
+// computations/bill-flags.js, and by the PDF re-read, computations/bill-repair.js) whose corrected value is the value now
+// in the cell. The ONE list of automatic changes for the change history in the Edit Billing Period window.
 const _READ_CORRECTION_LABELS = { startRead: 'Start Read', endRead: 'End Read', readDifference: 'Read Difference' };
 function _readCorrectionRecords(row) {
-  return Object.keys(_READ_CORRECTION_LABELS)
-    .map((k) => ({ key: k, label: _READ_CORRECTION_LABELS[k], rec: row['_auto_corrected_' + k] }))
-    .filter((x) => _rcIsReadChainRecord(x.rec) && String(x.rec.corrected) === String(row[x.key]));
+  return Object.keys(row || {})
+    .filter((k) => k.indexOf('_auto_corrected_') === 0)
+    .map((k) => ({ key: k.slice('_auto_corrected_'.length), rec: row[k] }))
+    .filter((x) => x.rec && typeof x.rec === 'object' && x.rec.original !== undefined && x.rec.corrected !== undefined)
+    .filter((x) => String(x.rec.corrected) === String(row[x.key]))
+    .map((x) => Object.assign(x, { label: _READ_CORRECTION_LABELS[x.key] || '' }));
 }
-// Change history of one bill for the Edit Billing Period window: each automatic read correction (_readCorrectionRecords)
-// and each value a user changed (_userCorrected_<field> or _userCorrected[field]). Returns [{type, label, original, corrected, note}].
+// Change history of one bill for the Edit Billing Period window: each automatic correction (_readCorrectionRecords: the
+// read chain and the PDF re-read) and each value a user changed (_userCorrected_<field> or _userCorrected[field]).
+// Returns [{type, label, original, corrected, note}].
 function _billChangeHistory(row, commodity) {
   const schema = typeof _billSchemaFor === 'function' ? _billSchemaFor(commodity) : [];
   const entryOf = (f) => schema.find((x) => x.key === f || x.pdfKey === f);
@@ -3966,12 +3971,8 @@ function _billChangeHistory(row, commodity) {
   };
   const out = [];
   _readCorrectionRecords(row).forEach((rc) => {
-    out.push({ type: 'number', label: rc.label, original: rc.rec.original, corrected: rc.rec.corrected, note: rc.rec.reason || '' });
-  });
-  // Values the automatic re-read of the stored PDF page changed (computations/bill-repair.js). Shown while the cell still holds the value.
-  (Array.isArray(row._autoRepairHistory) ? row._autoRepairHistory : []).forEach((h) => {
-    if (!h || String(row[h.field]) !== String(h.corrected)) return;
-    out.push({ type: h.type === 'currency' || h.type === 'number' ? h.type : '', label: h.label || labelOf(h.field), original: h.original, corrected: h.corrected, note: 'Re-read from the PDF' + (h.page ? ', page ' + h.page : '') });
+    const t = _READ_CORRECTION_LABELS[rc.key] ? 'number' : typeOf(rc.key);
+    out.push({ type: t === 'currency' || t === 'number' ? t : '', label: rc.label || labelOf(rc.key), original: rc.rec.original, corrected: rc.rec.corrected, note: rc.rec.reason || '' });
   });
   const seen = {};
   Object.keys(row).forEach((k) => {
