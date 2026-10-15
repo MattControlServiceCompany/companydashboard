@@ -2070,7 +2070,7 @@ function siteDataMenuToggle(btn) {
   });
   document.body.appendChild(m);
   var r = btn.getBoundingClientRect();
-  var w = Math.min(r.width, window.innerWidth - 16);
+  var w = Math.min(Math.max(r.width, 160), window.innerWidth - 16); // 160 px minimum: the Data button is narrow in the sidebar icon rail
   m.style.width = w + 'px';
   m.style.left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8)) + 'px';
   var h = m.offsetHeight;
