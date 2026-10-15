@@ -13315,6 +13315,10 @@ const UTILITY_RULES = [
 // ── One file-level rule pick and one page-level provider split (backlog 7c0cde2a) ──
 // The rule that owns a whole file: a rule marked `fileFirst` (the city rule; its bills often sit in a PDF
 // next to Utility E bills), then the first rule whose detect() accepts the text.
+// The version of the PDF reader's rules. The stored-bill repair pass (app/auto-repair.js) reads each bill's PDF page once per
+// version and marks the bill (_pdfRepair.v). Add 1 whenever a rule in UTILITY_RULES (or the post-extraction checks) changes
+// what it reads, so every bill is read again with the new rules.
+const EXTRACTOR_RULES_VERSION = 1;
 function _pickFileRule(text) {
   return (
     UTILITY_RULES.find((r) => r.fileFirst && r.detect(text)) ||

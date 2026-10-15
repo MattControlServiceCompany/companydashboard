@@ -173,6 +173,19 @@
           }
         },
         {
+          "id": "bill-auto-repair",
+          "name": "Automatic repair of stored bills from their PDF page",
+          "description": "After the Utility Data load (app/utility-data.js loadUtilityData -> scheduleAutoRepair, app/auto-repair.js), a background pass re-reads the stored PDF page of each bill that has a flag or a misread (and the bills next to it), one PDF at a time, once per EXTRACTOR_RULES_VERSION (marker row._pdfRepair). It reads page text from the shared cache (_bcrLoadPdfText), extracts with the one pipeline (extractBillsFromText, the same one the upload queue uses) and decides in computations/bill-repair.js: findRepairMatch, repairFieldsFromExtracted (uses _extractedToBillRowCosts and gasBillSaveTherms), planMeterRepair (a repair is kept only when no counted flag is added on the meter), applyRepairChanges (row._autoRepairHistory, shown in Edit Billing Period). A user-corrected field, a blank value and a printed value inside the print rounding never change. A bill stored twice is recorded in the audit log and never deleted. Then correctMeterReadChain runs and saveUtilityData saves after each PDF.",
+          "steps": [
+            "scheduleAutoRepair waits for first paint and an idle browser",
+            "repairEligibleBills: flagged or misread bills and their two neighbors that have a stored PDF and no marker for this version",
+            "_bcrLoadPdfText + extractBillsFromText for one PDF",
+            "repairMeterFromPdf per meter: match by page, commodity and account, map fields, keep only repairs that add no flag, write history and marker",
+            "correctMeterReadChain, logUtilityAudit, saveUtilityData"
+          ],
+          "keyFiles": ["app/auto-repair.js", "computations/bill-repair.js", "app/bill-analysis.js (extractBillsFromText)", "tools/gate-auto-repair.js"]
+        },
+        {
           "id": "weather-normalization",
           "name": "Weather Normalization",
           "description": "Upload weather data CSV by ZIP code. Used in ASHRAE Guideline 14 baseline calculations to adjust consumption for weather variations.",

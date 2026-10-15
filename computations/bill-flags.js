@@ -1351,6 +1351,7 @@ function _rcRefreshPrintedCheck(bill, keys) {
 // Editing ANY read field of a bill clears and stamps ALL of that bill's read-correction records together: the user now
 // owns the bill's reads, so no other record (e.g. a provisional a0 record on the field not edited) stays behind.
 function clearReadCorrectionRecords(row, fields) {
+  if (typeof clearAutoRepairHistory === 'function') clearAutoRepairHistory(row, fields); // an edited field is the user's value, not the repair
   if (row && (!fields || fields.includes('kwh'))) delete row._printedReadCheck; // an edited kWh is no longer computed
   const READ = ['startRead', 'endRead', 'readDifference'];
   if (fields && !fields.some((k) => READ.includes(k))) return; // only non-read fields were edited

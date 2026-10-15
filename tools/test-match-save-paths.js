@@ -70,6 +70,7 @@ function makeSandbox() {
     path.join(root, 'computations', 'rates.js'),
     path.join(root, 'computations', 'savings.js'),
     path.join(root, 'computations', 'bill-flags.js'),
+    path.join(root, 'computations', 'bill-repair.js'),
     path.join(appDir, 'energy-savings.js'),
     path.join(appDir, 'bill-analysis.js'),
     path.join(appDir, 'csv-import.js'),

@@ -9963,166 +9963,176 @@ async function _runExtractionFrom(startIdx) {
   }, 600);
 }
 
+// ONE extraction pipeline (2026-10-15, auto-repair): extracted text -> bills. Used by the upload queue
+// (_extractSingleFileForQueue, with the review gates and the analysis warnings) and by the stored-bill repair pass
+// (app/auto-repair.js, no gates, no analysis). opts: { gates, budgetHit, gateA, analyze, statusCb }.
+// Throws Error('Unrecognized utility format') / Error('No bills found') as the queue always did.
+async function extractBillsFromText(text, opts) {
+  opts = opts || {};
+  const gates = !!opts.gates;
+  const _budgetHit = gates ? opts.budgetHit : null;
+  const _gateAResult = gates ? opts.gateA : null;
+
+  // Check specific local utilities first — their bills often appear in
+  // multi-utility PDFs alongside Utility E, and Utility E's broader detection
+  // would otherwise claim the entire file.
+  let rule = _pickFileRule(text);
+  if (!rule) throw new Error('Unrecognized utility format');
+
+  let bills = _extractFileBills(text, rule);
+  const _queueUnmatchedPages = bills._unmatchedPages || [];
+  // GATE WRE input (18b33d9f gap 2): captured from the raw extractAll()
+  // return before any downstream reassignment (_postExtractionVerify,
+  // etc.) can drop the array-attached property.
+  const _queueWreSiteBlockCount = bills._wreSiteBlockCount;
+  // Bug b5951068: Instead of silently dropping bills that fail the key-field
+  // filter, flag them with parseError:true so the user sees every billing
+  // period from the PDF — even ones the parser couldn't understand.
+  const _hasKeyField = _billHasKeyField;
+  let validBills = bills.filter((b) => _hasKeyField(b));
+  const _droppedBills = bills.filter((b) => !_hasKeyField(b) && !b._manualReview);
+  _droppedBills.forEach((b) => {
+    b.parseError = true;
+    b._manualReview = true;
+    const _pg = b._pageStart != null ? b._pageStart : b._pageIndex != null ? b._pageIndex : null;
+    const _pageLabel = _pg != null ? 'p.' + _pg : '?';
+    b._manualReviewLabel = 'Parse error — billing period unreadable (' + _pageLabel + ')';
+    b.UtilityCompany = b.UtilityCompany || (rule && rule.name) || 'Unknown';
+  });
+
+  let finalBills = validBills.length > 0 ? validBills.concat(_droppedBills) : bills;
+
+  // ── Inject unmatched pages as "Manual Review" entries ──
+  // If some pages couldn't be parsed, surface them so the user can see
+  // them instead of silently dropping them. If ALL pages were unmatched
+  // (no valid bills at all), the synthetics become the result so the
+  // queue shows "Manual Review" rows instead of a generic FAILED row.
+  const _queueSynthetics = _unmatchedToSyntheticBills(_queueUnmatchedPages);
+  if (_queueSynthetics.length) {
+    finalBills = finalBills.concat(_queueSynthetics);
+  }
+
+  // GATE B (61bed8f8): compare against the file's TRUE final bill/record
+  // count — after cross-rule recovery has absorbed every page a local-
+  // utility rule (e.g. City of Client A) couldn't parse but another rule
+  // (e.g. Utility E) recovered. Comparing against pre-recovery bills.length
+  // stamped a stale mismatch onto every individually-correct bill.
+  const _gateBResult = gates ? _gateB_billCountCheck(text, finalBills.length, rule.name) : null; // GATE B
+  const _gateWREResult = gates
+    ? _gateWRE_siteCountCheck(rule.name, _queueWreSiteBlockCount, finalBills.length, _wreCustomerNumberOf(finalBills))
+    : null; // GATE WRE
+
+  if (
+    finalBills.length === 0 ||
+    (!finalBills[0].BillingPeriodStart && !finalBills[0].TotalCurrentCharges && !finalBills[0]._manualReview)
+  ) {
+    throw new Error('No bills found');
+  }
+
+  // Convert _pageIndex to _pageStart/_pageEnd for extractors that
+  // set per-page indices (Client A) instead of page ranges (Utility E)
+  finalBills.forEach((b) => {
+    if (b._pageIndex && !b._pageStart) {
+      b._pageStart = b._pageIndex;
+      b._pageEnd = b._pageIndex;
+    }
+  });
+
+  // ── POST-EXTRACTION VERIFICATION ──
+  // Brings queue path to parity with single-file path (processPDF ~line 9226).
+  // Runs Strategy B (rate×qty OCR correction) and Strategy C (subtraction
+  // inference) before analysis so that _warnings reflect corrected values,
+  // not raw OCR-inflated charges. Fix for batch "Sum Mismatch" false positives.
+  try {
+    const _qPevResult = await _postExtractionVerify(finalBills, rule.name, text);
+    finalBills = _qPevResult.bills;
+  } catch (pev_err) {
+    console.warn('[queue] _postExtractionVerify failed, continuing without verification:', pev_err);
+  }
+
+  // ── OCR budget-exceeded: loud failure, not a silent spinner (subtask 4) ──
+  // Only flag bills that STILL fail the key-field check after everything else
+  // has run — a bill that already recovered before the budget tripped should
+  // not be punished with a label it doesn't need.
+  if (_budgetHit) {
+    finalBills.forEach((b) => {
+      if (!_hasKeyField(b) && !b._manualReview) {
+        b._manualReview = true;
+        b._manualReviewLabel =
+          'Could not fully extract — OCR budget exceeded (' +
+          _budgetHit.pagesRead +
+          ' of ' +
+          _budgetHit.pagesTotal +
+          ' pages read); manual entry required';
+      }
+    });
+  }
+
+  // GATE A/B/WRE/C wiring (18b33d9f): stamp every bill from this file with
+  // _gateTripped/_gateReasons so the save queue can default flagged rows
+  // to unchecked instead of relying on the user to notice a badge.
+  if (gates) _applyExtractionGates(finalBills, _gateAResult, _gateBResult, _gateWREResult);
+
+  // Run analysis for warnings (stored on each bill as _warnings)
+  if (opts.analyze) {
+    const analysisResults = await analyzeBillExtraction(finalBills, rule.name, undefined, opts.statusCb);
+    finalBills.forEach((b, bi) => {
+      b._warnings = analysisResults[bi]?.warnings || [];
+    });
+  }
+  return { rule, bills: finalBills };
+}
+
+// Read a PDF (bytes) to text with extractPDFText, then extractBillsFromText. Same two calls the queue always made,
+// now shared. extractPDFText may detach the buffer it is given, so every call gets its own copy of `bytes`.
+// opts as extractBillsFromText, plus the extractPDFText options (cachedPages, onPageText). Returns
+// { rule, bills, rawText }.
+async function extractBillsFromPdfBytes(bytes, opts) {
+  opts = opts || {};
+  const readOpts = { cachedPages: opts.cachedPages, onPageText: opts.onPageText };
+  let text = await extractPDFText(bytes.slice(), opts.statusCb, readOpts);
+  if (!text || text.trim().length <= 100) {
+    // Retry once with fresh read
+    text = await extractPDFText(bytes.slice(), opts.statusCb, readOpts);
+    if (!text || text.trim().length <= 100) throw new Error('No readable text found');
+  }
+  const budgetHit = window._pdfOcrBudgetExceeded;
+  window._pdfOcrBudgetExceeded = null; // consume once
+  const gateA = opts.gates ? _gateA_evaluateCoverage() : null; // GATE A — consumes window._pdfPageCoverage once
+  const out = await extractBillsFromText(text, Object.assign({}, opts, { budgetHit, gateA }));
+  return { rule: out.rule, bills: out.bills, rawText: text };
+}
+
 async function _extractSingleFileForQueue(file, fileIdx) {
-  return new Promise((resolve, reject) => {
+  const b64 = await new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error('Could not read file'));
-    reader.onload = async (ev) => {
-      try {
-        const b64 = ev.target.result.split(',')[1];
-        const freshBytes = () => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-
-        const statusCb = (msg) => {
-          const q = window._pdfQueue;
-          if (q) {
-            q._fileStatus = msg;
-            renderQueueProgress();
-          }
-        };
-        let text = await extractPDFText(freshBytes(), statusCb);
-        if (!text || text.trim().length <= 100) {
-          // Retry once with fresh read
-          text = await extractPDFText(freshBytes(), statusCb);
-          if (!text || text.trim().length <= 100) {
-            reject(new Error('No readable text found'));
-            return;
-          }
-        }
-        const _budgetHit = window._pdfOcrBudgetExceeded;
-        window._pdfOcrBudgetExceeded = null; // consume once
-        const _gateAResult = _gateA_evaluateCoverage(); // GATE A — consumes window._pdfPageCoverage once
-
-        // Check specific local utilities first — their bills often appear in
-        // multi-utility PDFs alongside Utility E, and Utility E's broader detection
-        // would otherwise claim the entire file.
-        let rule = _pickFileRule(text);
-        if (!rule) {
-          reject(new Error('Unrecognized utility format'));
-          return;
-        }
-
-        let bills = _extractFileBills(text, rule);
-        const _queueUnmatchedPages = bills._unmatchedPages || [];
-        // GATE WRE input (18b33d9f gap 2): captured from the raw extractAll()
-        // return before any downstream reassignment (_postExtractionVerify,
-        // etc.) can drop the array-attached property.
-        const _queueWreSiteBlockCount = bills._wreSiteBlockCount;
-        // Bug b5951068: Instead of silently dropping bills that fail the key-field
-        // filter, flag them with parseError:true so the user sees every billing
-        // period from the PDF — even ones the parser couldn't understand.
-        const _hasKeyField = _billHasKeyField;
-        let validBills = bills.filter((b) => _hasKeyField(b));
-        const _droppedBills = bills.filter((b) => !_hasKeyField(b) && !b._manualReview);
-        _droppedBills.forEach((b) => {
-          b.parseError = true;
-          b._manualReview = true;
-          const _pg = b._pageStart != null ? b._pageStart : b._pageIndex != null ? b._pageIndex : null;
-          const _pageLabel = _pg != null ? 'p.' + _pg : '?';
-          b._manualReviewLabel = 'Parse error — billing period unreadable (' + _pageLabel + ')';
-          b.UtilityCompany = b.UtilityCompany || (rule && rule.name) || 'Unknown';
-        });
-
-        let finalBills = validBills.length > 0 ? validBills.concat(_droppedBills) : bills;
-
-        // ── Inject unmatched pages as "Manual Review" entries ──
-        // If some pages couldn't be parsed, surface them so the user can see
-        // them instead of silently dropping them. If ALL pages were unmatched
-        // (no valid bills at all), the synthetics become the result so the
-        // queue shows "Manual Review" rows instead of a generic FAILED row.
-        const _queueSynthetics = _unmatchedToSyntheticBills(_queueUnmatchedPages);
-        if (_queueSynthetics.length) {
-          finalBills = finalBills.concat(_queueSynthetics);
-        }
-
-        // GATE B (61bed8f8): compare against the file's TRUE final bill/record
-        // count — after cross-rule recovery has absorbed every page a local-
-        // utility rule (e.g. City of Client A) couldn't parse but another rule
-        // (e.g. Utility E) recovered. Comparing against pre-recovery bills.length
-        // stamped a stale mismatch onto every individually-correct bill.
-        const _gateBResult = _gateB_billCountCheck(text, finalBills.length, rule.name); // GATE B
-        const _gateWREResult = _gateWRE_siteCountCheck(
-          rule.name,
-          _queueWreSiteBlockCount,
-          finalBills.length,
-          _wreCustomerNumberOf(finalBills),
-        ); // GATE WRE
-
-        if (
-          finalBills.length === 0 ||
-          (!finalBills[0].BillingPeriodStart && !finalBills[0].TotalCurrentCharges && !finalBills[0]._manualReview)
-        ) {
-          reject(new Error('No bills found'));
-          return;
-        }
-
-        // Convert _pageIndex to _pageStart/_pageEnd for extractors that
-        // set per-page indices (Client A) instead of page ranges (Utility E)
-        finalBills.forEach((b) => {
-          if (b._pageIndex && !b._pageStart) {
-            b._pageStart = b._pageIndex;
-            b._pageEnd = b._pageIndex;
-          }
-        });
-
-        // ── POST-EXTRACTION VERIFICATION ──
-        // Brings queue path to parity with single-file path (processPDF ~line 9226).
-        // Runs Strategy B (rate×qty OCR correction) and Strategy C (subtraction
-        // inference) before analysis so that _warnings reflect corrected values,
-        // not raw OCR-inflated charges. Fix for batch "Sum Mismatch" false positives.
-        try {
-          const _qPevResult = await _postExtractionVerify(finalBills, rule.name, text);
-          finalBills = _qPevResult.bills;
-        } catch (pev_err) {
-          console.warn('[queue] _postExtractionVerify failed, continuing without verification:', pev_err);
-        }
-
-        // ── OCR budget-exceeded: loud failure, not a silent spinner (subtask 4) ──
-        // Only flag bills that STILL fail the key-field check after everything else
-        // has run — a bill that already recovered before the budget tripped should
-        // not be punished with a label it doesn't need.
-        if (_budgetHit) {
-          finalBills.forEach((b) => {
-            if (!_hasKeyField(b) && !b._manualReview) {
-              b._manualReview = true;
-              b._manualReviewLabel =
-                'Could not fully extract — OCR budget exceeded (' +
-                _budgetHit.pagesRead +
-                ' of ' +
-                _budgetHit.pagesTotal +
-                ' pages read); manual entry required';
-            }
-          });
-        }
-
-        // GATE A/B/WRE/C wiring (18b33d9f): stamp every bill from this file with
-        // _gateTripped/_gateReasons so the save queue can default flagged rows
-        // to unchecked instead of relying on the user to notice a badge.
-        _applyExtractionGates(finalBills, _gateAResult, _gateBResult, _gateWREResult);
-
-        // Run analysis for warnings (stored on each bill as _warnings)
-        const analysisResults = await analyzeBillExtraction(finalBills, rule.name, undefined, statusCb);
-        finalBills.forEach((b, bi) => {
-          b._warnings = analysisResults[bi]?.warnings || [];
-          b._sourceFile = file.name;
-          b._queueFileIdx = fileIdx;
-        });
-
-        resolve({
-          fileIdx: fileIdx,
-          fileName: file.name,
-          bills: finalBills,
-          pdfB64: b64,
-          pdfKey: await _storeExtractionPdf(b64),
-          rawText: text,
-          status: 'ok',
-          error: null,
-        });
-      } catch (err) {
-        reject(err);
-      }
-    };
+    reader.onload = (ev) => resolve(ev.target.result.split(',')[1]);
     reader.readAsDataURL(file);
   });
+  const statusCb = (msg) => {
+    const q = window._pdfQueue;
+    if (q) {
+      q._fileStatus = msg;
+      renderQueueProgress();
+    }
+  };
+  const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+  const out = await extractBillsFromPdfBytes(bytes, { statusCb, gates: true, analyze: true });
+  out.bills.forEach((b) => {
+    b._sourceFile = file.name;
+    b._queueFileIdx = fileIdx;
+  });
+  return {
+    fileIdx: fileIdx,
+    fileName: file.name,
+    bills: out.bills,
+    pdfB64: b64,
+    pdfKey: await _storeExtractionPdf(b64),
+    rawText: out.rawText,
+    status: 'ok',
+    error: null,
+  };
 }
 
 // ── Queue grouping state (Plan 7e0b9d15 §1) ──
@@ -12141,26 +12151,10 @@ async function _checkDuplicates(bills, statusCb) {
   // the start and end dates are within 5 days of each other. Previously this used
   // "same Month YYYY of the end date" which false-matched any two bills ending in
   // the same calendar month (e.g. 02/01–03/03 vs 03/02–03/27 both ended in March).
-  const FUZZY_DAY_TOLERANCE = 5;
-  const dayDiff = (a, b) => {
-    if (!a || !b) return Infinity;
-    const da = new Date(a);
-    const db = new Date(b);
-    if (isNaN(da) || isNaN(db)) return Infinity;
-    return Math.abs((da - db) / 86400000);
-  };
-  const periodClose = (s1, e1, s2, e2) =>
-    !!s1 && !!e1 && !!s2 && !!e2 && dayDiff(s1, s2) <= FUZZY_DAY_TOLERANCE && dayDiff(e1, e2) <= FUZZY_DAY_TOLERANCE;
-  // Convert extracted date (MM/DD/YYYY or MM-DD-YY) to ISO (YYYY-MM-DD) for comparison
-  const toISO = (d) => {
-    if (!d) return '';
-    if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
-    let p = d.split('/');
-    if (p.length !== 3) p = d.split('-');
-    if (p.length !== 3) return d;
-    const yr = p[2].length === 2 ? '20' + p[2] : p[2];
-    return yr + '-' + p[0].padStart(2, '0') + '-' + p[1].padStart(2, '0');
-  };
+  // The period test, the date converter and the identity test are shared with the stored-bill repair
+  // (computations/bill-repair.js): billPeriodClose, extractedDateToISO, matchExtractedToBill.
+  const periodClose = billPeriodClose;
+  const toISO = extractedDateToISO;
 
   for (let i = 0; i < bills.length; i++) {
     if (i > 0 && i % 5 === 0) {
@@ -12182,10 +12176,10 @@ async function _checkDuplicates(bills, statusCb) {
     const extAcctKey = normAcct(ext.AccountNumber);
     const acctCandidates = extAcctKey && assignedByAcct[extAcctKey] ? assignedByAcct[extAcctKey] : assignedBills; // fallback: full scan (worst case = original O(N), only when no key match)
     for (const ab of acctCandidates) {
-      const existAcct = norm(ab.meter.account);
-      const existMeter = norm(ab.meter.meter);
-      const acctMatch = _acctFuzzyMatch(extAcct, existAcct);
-      const meterMatch = extMeter && existMeter && extMeter === existMeter;
+      const idm = matchExtractedToBill(ext, ab.bill, ab.meter);
+      const existAcct = idm.existAcct;
+      const acctMatch = idm.acctMatch;
+      const meterMatch = idm.meterMatch;
       const extInv = norm(ext.InvoiceNumber || ext.SaleNumber);
       const existInv = norm(ab.bill.invoiceNumber || ab.bill.saleNumber);
       const invoiceMatch = extInv && existInv && extInv === existInv;
@@ -12237,10 +12231,9 @@ async function _checkDuplicates(bills, statusCb) {
         !acctContradicts &&
         (_sameSiteAddress(ext.ServiceAddress, ab.bill.serviceAddress, _siblings) ||
           _sameSiteAddress(ext.ServiceAddress, ab.meter.maddr, _siblings));
-      const existComm = (ab.bill.commodity || ab.meter.commodity || '').toLowerCase();
-      const commMatch = !extComm || !existComm || extComm === existComm;
-      const periodMatch = extStart && ab.bill.start === extStart && extEnd && ab.bill.end === extEnd;
-      const fuzzyPeriod = !periodMatch && periodClose(extStart, extEnd, ab.bill.start, ab.bill.end);
+      const commMatch = idm.commMatch;
+      const periodMatch = idm.periodMatch;
+      const fuzzyPeriod = idm.fuzzyPeriod;
       if ((acctMatch || meterMatch || siteMatch) && (periodMatch || fuzzyPeriod) && commMatch) {
         // Build diff fields
         const diffFields = _buildDiffFields(ext, ab.bill);

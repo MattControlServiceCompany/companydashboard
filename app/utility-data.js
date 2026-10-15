@@ -312,6 +312,9 @@ function loadUtilityData() {
     saveUtilityData(SAVE_ALL_PROJECTS); // only customers whose bills changed are rewritten (dirty check)
     console.log('[read-chain correction] Repaired the meter reads of ' + _readChainFixed + ' bill(s)');
   }
+  // Stored-bill repair from the bill's own PDF page (app/auto-repair.js, 2026-10-15). Never inline: it starts after the
+  // page has painted, reads one PDF at a time and saves after each one.
+  if (typeof scheduleAutoRepair === 'function') scheduleAutoRepair();
   // One-time migration: fix 2-digit year ISO dates (e.g. "24-03-15" → "2024-03-15")
   // produced by the old toISO function. Without this, date comparisons, sorting,
   // billMonth, and duplicate detection all break.
@@ -3964,6 +3967,11 @@ function _billChangeHistory(row, commodity) {
   const out = [];
   _readCorrectionRecords(row).forEach((rc) => {
     out.push({ type: 'number', label: rc.label, original: rc.rec.original, corrected: rc.rec.corrected, note: rc.rec.reason || '' });
+  });
+  // Values the automatic re-read of the stored PDF page changed (computations/bill-repair.js). Shown while the cell still holds the value.
+  (Array.isArray(row._autoRepairHistory) ? row._autoRepairHistory : []).forEach((h) => {
+    if (!h || String(row[h.field]) !== String(h.corrected)) return;
+    out.push({ type: h.type === 'currency' || h.type === 'number' ? h.type : '', label: h.label || labelOf(h.field), original: h.original, corrected: h.corrected, note: 'Re-read from the PDF' + (h.page ? ', page ' + h.page : '') });
   });
   const seen = {};
   Object.keys(row).forEach((k) => {

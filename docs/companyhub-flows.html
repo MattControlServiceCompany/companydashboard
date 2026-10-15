@@ -300,6 +300,15 @@ var FLOWS = [
     ]
   },
   {
+    id: 'bill-auto-repair', name: 'Utility Data: automatic repair of stored bills from their PDF page', desc: 'A background pass re-reads the stored PDF page of each flagged or misread bill, one PDF at a time, once per reader version. A repair is kept only when it adds no flag. Nothing is deleted.',
+    path: ['energy','ls'],
+    steps: [
+      { from:'energy', to:'energy', label:'loadUtilityData calls scheduleAutoRepair(); it waits for first paint and an idle browser', detail:'app/auto-repair.js. repairEligibleBills() lists flagged or misread bills and their neighbors with a stored PDF and no _pdfRepair marker for EXTRACTOR_RULES_VERSION.' },
+      { from:'energy', to:'ls', label:'One PDF: _bcrLoadPdfText() reads the page text from the shared cache, extractBillsFromText() extracts', detail:'The same extraction the upload queue uses (_extractSingleFileForQueue -> extractBillsFromPdfBytes -> extractBillsFromText).' },
+      { from:'energy', to:'ls', label:'repairMeterFromPdf() matches, maps, checks and saves', detail:'computations/bill-repair.js. findRepairMatch, repairFieldsFromExtracted, planMeterRepair (no counted flag may be added), applyRepairChanges (history shown in Edit Billing Period), then correctMeterReadChain and saveUtilityData.' },
+    ]
+  },
+  {
     id: 'backup', name: 'Backup / Restore', desc: 'Export all data as JSON (data-only, no bill PDFs). Restore compares the file with the current data per key family (app/restore-merge.js), previews Add missing only / Merge (fills blanks) / Replace, downloads a safety copy, then writes (server CAS with explicitOverwrite when sync is on)',
     path: ['user','energy','siteui','ls'],
     steps: [
