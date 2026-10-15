@@ -2506,6 +2506,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.15.129', date: '2026-10-15', title: 'Utility Data: Import List fills the Bill file on existing meters',
+    items: [
+      { type: 'fix', text: 'Utility Data > Import List: a meter that is already in the project now gets its Bill file filled in or updated from the list. Before, these meters were skipped. The preview and the message after import say "Bill file updated".' },
+      { type: 'fix', text: 'Utility Data > Import Bills for Many Meters: bills now match their files for meters added earlier, because the Bill file on those meters can be set by Import List.' }
+    ]
+  },
   { v: 'v2026.10.15.128', date: '2026-10-15', title: 'Utility Data: edit button on bills works again',
     items: [
       { type: 'fix', text: 'Projects > Utility Data: the edit (pencil) button on a bill row now opens Edit Billing Period. Before, it showed "Could not find building" and did not open.' }
