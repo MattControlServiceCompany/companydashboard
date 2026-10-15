@@ -5739,7 +5739,71 @@ function _lbg_labeledAmount(text, labelRe, sameLineOnly) {
   // Total Amount Due below it, which also holds any balance carried forward.
   const gap = sameLineOnly ? '[ \\t]*' : '\\s*';
   const loose = text.match(new RegExp(src + gap + '[^$\\n]*?\\$?\\s*([\\d,]+[.:]\\d{2})', 'i'));
-  return loose ? loose[1].replace(/,/g, '').replace(':', '.') : null;
+  if (loose) return loose[1].replace(/,/g, '').replace(':', '.');
+  // Last pass: OCR read the decimal point as a comma ("$2,584,70" -> 2584.70). Only a figure with a
+  // thousands group and exactly 2 digits after its LAST comma is re-read this way.
+  const comma = text.match(new RegExp(src + gap + '[^$\\n]*?\\$?\\s*(\\d{1,3}(?:,\\d{3})*,\\d{2})(?![\\d,])', 'i'));
+  if (comma) {
+    const s = comma[1];
+    const i = s.lastIndexOf(',');
+    return (s.slice(0, i) + '.' + s.slice(i + 1)).replace(/,/g, '');
+  }
+  return null;
+}
+// ONE reader for the 5-date period row on a Client A new-format bill. The row prints, left to
+// right: Service From, Service To, Bill Date, then the Due and Penalty dates. It is read BY COLUMN:
+// a token OCR garbled stays in its own column and never shifts the others (backlog d178c906).
+// A slash that OCR read as the digit 1 ("711512026" for 7/15/2026) is repaired only when exactly
+// one split gives a real calendar date and the row order holds (start < end <= bill date).
+// Returns null when the line is not a date row (fewer than 4 date-like tokens), else
+// { start, end, bill, note } with null for a column that could not be read. note is a plain-words
+// reason when a column was repaired or left unread, else null.
+function _lbg_readDateRow(raw) {
+  const toks = String(raw).split(/\s+/).filter(Boolean);
+  const dateLike = toks.filter((t) => /^[\d/]{8,10}$/.test(t) && /\d{4}/.test(t));
+  if (dateLike.length < 4) return null;
+  const mk = (m, d, y) => {
+    const dt = new Date(+y, +m - 1, +d);
+    return dt.getFullYear() === +y && dt.getMonth() === +m - 1 && dt.getDate() === +d && +y >= 2000 && +y <= 2099
+      ? dt
+      : null;
+  };
+  const fmt = (dt) => dt.getMonth() + 1 + '/' + dt.getDate() + '/' + dt.getFullYear();
+  const cols = dateLike.slice(0, 5).map((t) => {
+    const p = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (p) return { dt: mk(p[1], p[2], p[3]), cands: [] };
+    // slash-as-1: M1DD1YYYY, MM1DD1YYYY and the 1-digit-day forms; keep every calendar-valid split
+    const cands = [];
+    for (let ml = 1; ml <= 2; ml++)
+      for (let dl = 1; dl <= 2; dl++) {
+        if (ml + dl + 2 + 4 !== t.length || t[ml] !== '1' || t[ml + 1 + dl] !== '1') continue;
+        const dt = mk(t.slice(0, ml), t.slice(ml + 1, ml + 1 + dl), t.slice(ml + 2 + dl));
+        if (dt) cands.push(dt);
+      }
+    return { dt: null, cands };
+  });
+  const notes = [];
+  for (let i = 0; i < 3 && i < cols.length; i++) {
+    const c = cols[i];
+    if (c.dt || !c.cands.length) continue;
+    const prev = i > 0 ? cols[i - 1].dt : null;
+    const next = cols.slice(i + 1, 3).find((x) => x.dt);
+    const fit = c.cands.filter((d) => (!prev || d > prev) && (!next || (i === 1 ? d <= next.dt : d < next.dt)));
+    if (fit.length === 1) {
+      c.dt = fit[0];
+      notes.push('column ' + (i + 1) + ' repaired from OCR slash misread');
+    }
+  }
+  const out = [0, 1, 2].map((i) => (cols[i] && cols[i].dt ? fmt(cols[i].dt) : null));
+  // Only 4 date-like tokens: one column vanished and we cannot tell which. Trust the first three
+  // only when they make a month-long period; otherwise leave all three unread (never shift).
+  if (cols.length < 5 && cols[0].dt && cols[1].dt) {
+    const d = calcDays(fmt(cols[0].dt), fmt(cols[1].dt), false);
+    if (d < 25 || d > 35) out[0] = out[1] = out[2] = null;
+  }
+  const unread = ['Service From', 'Service To', 'Bill Date'].filter((n, i) => !out[i]);
+  if (unread.length) notes.push(unread.join(', ') + ' could not be read from the date row');
+  return { start: out[0], end: out[1], bill: out[2], note: notes.length ? notes.join('; ') : null };
 }
 // Label shapes for the two page totals. The Current Bill label is matched fuzzily because ink
 // marks and scan noise turn "Bill" into "Bin", "Bil" or "Bi1"; the label must end at a word edge so
@@ -10045,6 +10109,44 @@ const UTILITY_RULES = [
         }
       }
 
+      // ── PERIOD CROSS-CHECK (backlog d178c906) ──
+      // A monthly City bill covers 25 to 35 days, and each period starts on the day the last one
+      // ended. A bill that breaks either rule, or whose date row had an unreadable column, is held
+      // for review. It is never moved to a new date silently.
+      const _pcByAcct = {};
+      for (const b of bills) {
+        if (!b.AccountNumber || !b.BillingPeriodStart || !b.BillingPeriodEnd) continue;
+        (_pcByAcct[b.AccountNumber] = _pcByAcct[b.AccountNumber] || []).push(b);
+      }
+      for (const list of Object.values(_pcByAcct)) {
+        const ends = [...new Set(list.map((b) => b.BillingPeriodEnd))].map((e) => ({ e, t: _parseDt(e).getTime() }));
+        for (const b of list) {
+          const reasons = [];
+          const days = calcDays(b.BillingPeriodStart, b.BillingPeriodEnd, false);
+          if (days < 25 || days > 35)
+            reasons.push(
+              'Billing period ' + b.BillingPeriodStart + ' to ' + b.BillingPeriodEnd + ' is ' + days +
+                ' days. A monthly bill should be 25 to 35 days. The date row may be misread. Verify against the bill.',
+            );
+          const st = _parseDt(b.BillingPeriodStart).getTime();
+          const prev = ends.filter((x) => x.t < st && calcDays(x.e, b.BillingPeriodStart, false) < 45).sort((x, y) => y.t - x.t)[0];
+          const prevSame = ends.some((x) => x.t === st);
+          if (!prevSame && prev)
+            reasons.push(
+              'Billing period starts ' + b.BillingPeriodStart + ', but this account\'s earlier bill ended ' + prev.e +
+                '. Verify the start date against the bill.',
+            );
+          if (b._dateRowNote && /could not be read/.test(b._dateRowNote)) reasons.push(b._dateRowNote + '. Verify against the bill.');
+          if (!reasons.length) continue;
+          b._gateTripped = true;
+          b._gateReasons = (b._gateReasons || []).concat(reasons);
+          if (!b._manualReview) {
+            b._manualReview = true;
+            b._manualReviewLabel = 'Billing period dates look wrong - held for manual confirmation';
+          }
+        }
+      }
+
       return bills;
     },
     extract: function (page, opts) {
@@ -10525,12 +10627,14 @@ const UTILITY_RULES = [
       let BillingPeriodStart = null;
       let BillingPeriodEnd = null;
       let BillDate = null;
+      let _dateRowNote = null;
       for (const raw of page.split(/\r?\n/)) {
-        const dates = [...raw.matchAll(/\d{1,2}\/\d{1,2}\/\d{4}/g)].map((m) => m[0]);
-        if (dates.length >= 4) {
-          BillingPeriodStart = dates[0];
-          BillingPeriodEnd = dates[1];
-          BillDate = dates[2] || dates[3] || null;
+        const row = _lbg_readDateRow(raw);
+        if (row) {
+          BillingPeriodStart = row.start;
+          BillingPeriodEnd = row.end;
+          BillDate = row.bill;
+          _dateRowNote = row.note;
           break;
         }
       }
@@ -11250,6 +11354,7 @@ const UTILITY_RULES = [
         BillDate,
         BillingPeriodStart,
         BillingPeriodEnd,
+        _dateRowNote,
         NumberOfDays: null,
         RateSchedule: null,
         MeterNumber: null,
