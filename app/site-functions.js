@@ -2070,7 +2070,7 @@ function siteDataMenuToggle(btn) {
   });
   document.body.appendChild(m);
   var r = btn.getBoundingClientRect();
-  var w = Math.min(Math.max(r.width, 210), window.innerWidth - 16);
+  var w = Math.min(r.width, window.innerWidth - 16);
   m.style.width = w + 'px';
   m.style.left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8)) + 'px';
   var h = m.offsetHeight;
@@ -2576,8 +2576,10 @@ async function siteResetAllMeterTableSettings() {
 */
 var RELEASE_NOTES = [
   { v: 'v2026.10.15.131', date: '2026-10-15', title: 'Sidebar: one Data button',
+    gateOverride: true,
+    gateOverrideReason: 'The word storage is the exact label of the Compact PDF Storage button.',
     items: [
-      { type: 'change', text: 'Sidebar (on every page): Backup, Restore, Export PDFs, Import PDFs, Compact PDF Space, Export Buildings and Export Meters are now in one menu. Click the Data button to open it.' },
+      { type: 'change', text: 'Sidebar (on every page): Backup, Restore, Export PDFs, Import PDFs, Compact PDF Storage, Export Buildings and Export Meters are now in one menu. Click the Data button to open it.' },
       { type: 'change', text: 'Sidebar (on every page): the Reset Data button is removed, so no one can erase all data by mistake.' }
     ]
   },

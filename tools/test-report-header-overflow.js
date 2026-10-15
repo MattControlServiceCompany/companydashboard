@@ -208,6 +208,7 @@ async function scanHeaders(page, containerSel, label, results) {
 
     // Restore via the real Restore button + file chooser (COPY of the backup, never
     // localStorage.setItem).
+    if (await page.$('#siteDataBtn')) await page.click('#siteDataBtn'); // Restore lives in the sidebar Data menu
     const restoreBtn = page.locator('button:has-text("Restore")').first();
     assert((await restoreBtn.count()) > 0, 'Restore button present');
     const [chooser] = await Promise.all([
