@@ -4261,11 +4261,11 @@ function renderBillsPane(pane, m, bills, incl) {
     // and the dots. A bill whose flags are all outside that list shows its reasons in the row hover only.
     const _rowCounted = flags.some((f) => BILL_COUNTED_FLAG_RULES.includes(f.rule));
     if (flags.length && !_rowCounted) {
-      const _noteTitle = billFlagReasonList(flags).map(_escHtml).join('&#10;');
+      const _noteTitle = _escHtml(billFlagLine(billFlagLabel(row, bills, idx), flags));
       rowHtml = rowHtml.replace(/(<tr)([ >])/, (m0, t, sp) => t + ' title="' + _noteTitle + '"' + sp);
     }
     if (_rowCounted) {
-      const _flagTitle = billFlagReasonList(flags).map(_escHtml).join('&#10;');
+      const _flagTitle = _escHtml(billFlagLine(billFlagLabel(row, bills, idx), flags));
       // If the <tr> already has a class attribute, append to it; otherwise insert a new one
       if (/(<tr[^>]*)\sclass="/.test(rowHtml)) {
         rowHtml = rowHtml.replace(/(<tr[^>]*\sclass=")/, '$1bill-flagged ');
@@ -4577,18 +4577,17 @@ function renderBillsPane(pane, m, bills, incl) {
   // bottom edge of #maMeterWorkspace's clip boundary (only reachable by scrolling
   // the workspace itself). Fixed by switching that calc to a getBoundingClientRect
   // measurement, which accounts for this banner automatically — no class hook needed.
-  // Each flagged bill's month and plain-language reason, listed inside the banner so no hover is needed. The reason
-  // text comes from billFlagReasonList (computations/bill-flags.js), the same list the row hover uses.
+  // Each flagged bill's label and plain-language reason, listed inside the banner so no hover is needed. The text
+  // comes from billFlagLine (computations/bill-flags.js), the same function the row hover uses.
   const flagReasonLines =
     billFlagSummary.flaggedBills > 0
       ? bills
-          .filter((r) => billFlagSummary.countedPerBill[r.id])
+          .map((r, i) => ({ r, i }))
+          .filter((x) => billFlagSummary.countedPerBill[x.r.id])
           .map(
-            (r) =>
-              '<div class="bill-flag-reason" style="padding:2px 0 2px 22px;color:var(--text);font-weight:400"><strong>' +
-              _escHtml(billMonthLabel(r, bills)) +
-              '</strong>: ' +
-              billFlagReasonList(billFlagSummary.countedPerBill[r.id]).map(_escHtml).join(' | ') +
+            (x) =>
+              '<div class="bill-flag-reason" style="padding:2px 0 2px 22px;color:var(--text);font-weight:400">' +
+              _escHtml(billFlagLine(billFlagLabel(x.r, bills, x.i), billFlagSummary.countedPerBill[x.r.id])) +
               '</div>',
           )
           .join('')

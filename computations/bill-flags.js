@@ -50,26 +50,106 @@ const BILL_FLAG_THRESHOLDS = {
 
 // Rule id -> column label shown on the flagged cell. The dismissal id of a flag is its rule id.
 const BILL_FLAG_RULES = {
-  dates_missing: { label: 'Billing Dates', severity: 'error' },
-  period_length: { label: 'Billing Days', severity: 'warn' },
-  days_mismatch: { label: 'Billing Days', severity: 'warn' },
-  period_overlap: { label: 'Start Date', severity: 'error' },
-  period_gap: { label: 'Start Date', severity: 'warn' },
-  duplicate_bill: { label: 'Start Date', severity: 'error' },
-  charge_sum_mismatch: { label: 'Total Cost', severity: 'error' },
-  cost_field_mismatch: { label: 'Gas Charge', severity: 'error' },
-  read_usage_mismatch: { label: 'Usage', severity: 'error' },
-  read_continuity: { label: 'Start Read', severity: 'warn' },
-  read_rollback: { label: 'Read Difference', severity: 'error' },
-  printed_read_mismatch: { label: 'Usage', severity: 'warn' },
-  usage_missing: { label: 'Usage', severity: 'warn' },
-  usage_negative: { label: 'Usage', severity: 'warn' },
-  cost_missing: { label: 'Total Cost', severity: 'warn' },
-  charge_vs_usage: { label: 'Total Cost', severity: 'warn' },
-  usage_charge_mismatch: { label: 'Usage', severity: 'warn' },
-  water_sewer_parity: { label: 'Usage', severity: 'warn' },
-  usage_vs_same_month: { label: 'Usage', severity: 'warn' },
-  fac_kw_missing: { label: 'Facilities kW', severity: 'warn' },
+  dates_missing: {
+    label: 'Billing Dates',
+    severity: 'error',
+    rule: "Flag a bill with a blank start date or end date. Every bill needs both dates.",
+  },
+  period_length: {
+    label: 'Billing Days',
+    severity: 'warn',
+    rule: "Flag a bill whose days are under PERIOD_LO x or over PERIOD_HI x the meter's middle days, or whose end date is not after its start date.",
+  },
+  days_mismatch: {
+    label: 'Billing Days',
+    severity: 'warn',
+    rule: "Flag when the printed days differ from the dates by more than DAYS_PRINTED_TOL day.",
+  },
+  period_overlap: {
+    label: 'Start Date',
+    severity: 'error',
+    rule: "Flag when a bill overlaps an earlier bill by more than OVERLAP_DAYS days.",
+  },
+  period_gap: {
+    label: 'Start Date',
+    severity: 'warn',
+    rule: "Flag when the days between the previous bill's end and this start are more than GAP_DAYS.",
+  },
+  duplicate_bill: {
+    label: 'Start Date',
+    severity: 'error',
+    rule: "Flag when an earlier bill has the same dates, or the same start date and total.",
+  },
+  charge_sum_mismatch: {
+    label: 'Total Cost',
+    severity: 'error',
+    rule: "Flag when the charge parts differ from the total by more than SUM_ABS dollars or SUM_REL of the total.",
+  },
+  cost_field_mismatch: {
+    label: 'Gas Charge',
+    severity: 'error',
+    rule: "Flag when the gas cost column matches none of the bill's own parts within GAS_COST_FIELD_TOL dollars.",
+  },
+  read_usage_mismatch: {
+    label: 'Usage',
+    severity: 'error',
+    rule: "Electric: flag when read difference x multiplier differs from the kWh by more than READ_REL or READ_ABS. Gas: flag when the therms per read unit is more than GAS_READ_RATIO_TOL off the meter's usual ratio.",
+  },
+  read_continuity: {
+    label: 'Start Read',
+    severity: 'warn',
+    rule: "Flag when the start read differs from the previous end read by more than READ_CONTINUITY_REL or READ_CONTINUITY_ABS.",
+  },
+  read_rollback: {
+    label: 'Read Difference',
+    severity: 'error',
+    rule: "Flag an electric read difference below 0.",
+  },
+  printed_read_mismatch: {
+    label: 'Usage',
+    severity: 'warn',
+    rule: "Flag when the PDF printed no kWh and the computed kWh rests on reads that disagree with the printed read difference.",
+  },
+  usage_missing: {
+    label: 'Usage',
+    severity: 'warn',
+    rule: "Flag when usage is blank and a charge or a read difference shows use. Also flag usage of 0 when the charge is more than ZERO_CHARGE_MULT x the meter's smallest usual bill.",
+  },
+  usage_negative: {
+    label: 'Usage',
+    severity: 'warn',
+    rule: "Flag usage below 0.",
+  },
+  cost_missing: {
+    label: 'Total Cost',
+    severity: 'warn',
+    rule: "Flag a blank total cost.",
+  },
+  charge_vs_usage: {
+    label: 'Total Cost',
+    severity: 'warn',
+    rule: "Flag when the charge is RATE_MULT x or more away from usage x the meter's usual rate (or its smallest usual bill).",
+  },
+  usage_charge_mismatch: {
+    label: 'Usage',
+    severity: 'warn',
+    rule: "Flag when the usage charge is USAGE_CHARGE_MULT x or more away from usage x the meter's usual own rate.",
+  },
+  water_sewer_parity: {
+    label: 'Usage',
+    severity: 'warn',
+    rule: "Flag when water and sewer gallons in the same month differ by PARITY_MULT x or more.",
+  },
+  usage_vs_same_month: {
+    label: 'Usage',
+    severity: 'warn',
+    rule: "Flag when usage per day is USAGE_MULT x or more away from the other years in the same month (USAGE_MULT_ONE_PEER with one other year).",
+  },
+  fac_kw_missing: {
+    label: 'Facilities kW',
+    severity: 'warn',
+    rule: "Flag a bill whose facilities kW is missing (stored flag).",
+  },
 };
 // The ONE list of flag types that are counted (sidebar, building row, meter pill, Bills banner). A type is here only when
 // the problem changes usage, kW, cost, billing dates or a missing bill, or the baseline rate (charge_vs_usage and
@@ -242,8 +322,9 @@ function _computeMeterFlagSummaryFresh(meter, building) {
   const incl = meter.inclusive !== false;
   const sortedAll = _bfSortByStart(meter.bills || []); // chain months use every bill, as the Bills table does
   const perBill = {};
-  const add = (b, rule, message, field) => {
+  const add = (b, rule, message, field, extra) => {
     (perBill[b.id] = perBill[b.id] || []).push({
+      ...extra,
       rule,
       field: (field === 'usage' ? _BF_USAGE_COLUMN[c] : field) || rule,
       label: BILL_FLAG_RULES[rule].label,
@@ -357,9 +438,7 @@ function _computeMeterFlagSummaryFresh(meter, building) {
               other.toLowerCase() +
               ' bill ' +
               _bfPeriod(pb) +
-              '). Flag at ' +
-              T.PARITY_MULT +
-              'x or more.';
+              ').';
         }
       });
     }
@@ -384,11 +463,7 @@ function _computeMeterFlagSummaryFresh(meter, building) {
       add(
         b,
         'dates_missing',
-        'Billing dates are missing: start date is ' +
-          (b.start ? _bfDate(b.start) : 'blank') +
-          ', end date is ' +
-          (b.end ? _bfDate(b.end) : 'blank') +
-          '. Every bill needs both dates.',
+        !b.start && !b.end ? 'The start date and end date are missing.' : !b.start ? 'The start date is missing.' : 'The end date is missing.',
         'start',
       );
     } else if (c !== 'Propane') {
@@ -410,11 +485,7 @@ function _computeMeterFlagSummaryFresh(meter, building) {
             _bfFmt(medDays, 0) +
             ' days (middle value of ' +
             okDays.length +
-            ' bills). Flag under ' +
-            T.PERIOD_LO +
-            'x or over ' +
-            T.PERIOD_HI +
-            'x.',
+            ' bills).',
           'days',
         );
       const nd = num(b.numberOfDays);
@@ -429,9 +500,7 @@ function _computeMeterFlagSummaryFresh(meter, building) {
             _bfPeriod(b) +
             ') span ' +
             excl +
-            ' days. Flag when they differ by more than ' +
-            T.DAYS_PRINTED_TOL +
-            ' day.',
+            ' days.',
           'days',
         );
       // overlap with any earlier bill (estimated bills count as neighbours)
@@ -454,8 +523,6 @@ function _computeMeterFlagSummaryFresh(meter, building) {
             _bfPeriod(ov.o) +
             ' by ' +
             ov.od +
-            ' days. Flag at more than ' +
-            T.OVERLAP_DAYS +
             ' days.',
           'start',
         );
@@ -481,9 +548,7 @@ function _computeMeterFlagSummaryFresh(meter, building) {
             _bfDate(prev.end) +
             ' and this bill starts ' +
             _bfDate(b.start) +
-            '. Flag at more than ' +
-            T.GAP_DAYS +
-            ' days.',
+            '.',
           'start',
         );
       }
@@ -524,11 +589,7 @@ function _computeMeterFlagSummaryFresh(meter, building) {
             _bfMoney(r.cost) +
             ' (difference ' +
             _bfMoney(Math.abs(diff)) +
-            '). Flag at more than ' +
-            _bfMoney(T.SUM_ABS) +
-            ' or ' +
-            T.SUM_REL * 100 +
-            '%.',
+            ').',
           'totalCost',
         );
     }
@@ -554,9 +615,7 @@ function _computeMeterFlagSummaryFresh(meter, building) {
               _bfMoney(g + (cu || 0)) +
               ' (bill total ' +
               _bfMoney(r.cost) +
-              '). Flag when the column matches neither within ' +
-              _bfMoney(T.GAS_COST_FIELD_TOL) +
-              '.',
+              ').',
             'thermCost',
           );
       }
@@ -580,10 +639,6 @@ function _computeMeterFlagSummaryFresh(meter, building) {
             _bfFmt(exp) +
             ' kWh, but the bill shows ' +
             _bfFmt(r.u) +
-            ' kWh. Flag at more than ' +
-            T.READ_REL * 100 +
-            '% or ' +
-            T.READ_ABS +
             ' kWh.',
           'kwh',
         );
@@ -604,9 +659,7 @@ function _computeMeterFlagSummaryFresh(meter, building) {
               gasRatio.toFixed(2) +
               ' therms per read unit), but the bill shows ' +
               _bfFmt(r.u) +
-              ' therms. Flag when the ratio is more than ' +
-              T.GAS_READ_RATIO_TOL * 100 +
-              '% off.',
+              ' therms.',
             'usage',
           );
       } else if (exp === 0 && r.u > T.READ_ABS)
@@ -667,10 +720,16 @@ function _computeMeterFlagSummaryFresh(meter, building) {
         add(
           b,
           'usage_missing',
-          'Usage is blank (not 0), but the bill shows ' +
+          'Usage is blank, but the bill shows ' +
             (evidenceCharge ? 'a charge of ' + _bfMoney(vc) : 'a meter read difference of ' + _bfFmt(rd, 2)) +
-            '. Flag when usage is blank and a charge or a read difference shows use.',
+            '.',
           'usage',
+          {
+            blankUsage: true,
+            evidence: evidenceCharge
+              ? 'it has a ' + _bfMoney(vc) + ' ' + String(c).toLowerCase() + ' charge'
+              : 'the meter read difference is ' + _bfFmt(rd, 2),
+          },
         );
       if (r.u !== null && r.u < 0)
         add(b, 'usage_negative', 'Usage is negative (' + _bfFmt(r.u) + ' ' + _bfUnit(c) + ').', 'usage');
@@ -730,11 +789,7 @@ function _computeMeterFlagSummaryFresh(meter, building) {
               mname +
               's (' +
               list +
-              '). Flag at ' +
-              need +
-              'x or more (' +
-              (peers.length >= 2 ? 'two or more other years' : 'only one other year') +
-              ' to compare).',
+              ').',
             'usage',
           );
       } else if (me > 0)
@@ -778,9 +833,7 @@ function _computeMeterFlagSummaryFresh(meter, building) {
             _bfMoney(minCharge) +
             ', whichever is more), which gives about ' +
             _bfMoney(expected) +
-            '. Flag at ' +
-            T.RATE_MULT +
-            'x or more.',
+            '.',
           'totalCost',
         );
     }
@@ -810,9 +863,7 @@ function _computeMeterFlagSummaryFresh(meter, building) {
             _bfMoney(charge) +
             ' (' +
             (ratio >= 1 ? _bfFmt(ratio) + 'x higher' : _bfFmt(1 / ratio) + 'x lower') +
-            '). Flag at ' +
-            T.USAGE_CHARGE_MULT +
-            'x or more.',
+            ').',
           'usage',
         );
       }
@@ -848,11 +899,7 @@ function _computeMeterFlagSummaryFresh(meter, building) {
           _bfFmt(ae, 2) +
           ' (difference ' +
           _bfFmt(Math.min(fwd, rev), 2) +
-          '). Flag at more than ' +
-          T.READ_CONTINUITY_REL * 100 +
-          '% or ' +
-          T.READ_CONTINUITY_ABS +
-          ' unit.',
+          ').',
         'startRead',
       );
   }
@@ -940,6 +987,49 @@ function billFlagHoverText(summary) {
 // The Bills table row hover and the flag banner both call it. Callers must escape the text before putting it in HTML.
 function billFlagReasonList(flags) {
   return (flags || []).map((f) => f.message);
+}
+// The ONE label for a bill in a warning: its month, or "Bill N" (N = the # column row number, 1-based) when the bill
+// has no dates. index0 = the bill's 0-based position in the Bills table.
+function billFlagLabel(bill, allBills, index0) {
+  const m = typeof billMonthLabel === 'function' ? billMonthLabel(bill, allBills) : '—';
+  return m && m !== '—' ? m : 'Bill ' + (index0 + 1);
+}
+// What to do about a bill's problems, by rule. Plain words; the rule sentences stay in BILL_FLAG_RULES.
+const _BF_ACTION_MISSING = 'Open the bill to add the missing values, or delete it.';
+const _BF_ACTION_CHECK = 'Open the bill and check the values.';
+const _BF_ACTION_BY_RULE = {
+  dates_missing: _BF_ACTION_MISSING,
+  usage_missing: _BF_ACTION_MISSING,
+  cost_missing: _BF_ACTION_MISSING,
+  fac_kw_missing: _BF_ACTION_MISSING,
+};
+function _bfLowerFirst(t) {
+  return /^[A-Z][a-z]/.test(t) ? t.charAt(0).toLowerCase() + t.slice(1) : t;
+}
+// The ONE plain sentence for one bill with problems (the Bills banner line and the row hover both call it).
+// label = billFlagLabel(...). flags = the bill's flags. Several reasons become short clauses joined with "; " plus one
+// action sentence. A bill with no dates and blank usage but a charge or read gets one combined sentence.
+function billFlagLine(label, flags) {
+  const fl = (flags || []).slice();
+  if (!fl.length) return '';
+  const dm = fl.find((f) => f.rule === 'dates_missing');
+  const um = fl.find((f) => f.rule === 'usage_missing' && f.blankUsage);
+  const bothDates = dm && /start date and end date/.test(dm.message);
+  let head = '';
+  let action;
+  const rest = fl.slice();
+  if (bothDates && um) {
+    head = label + ' has no dates or usage, but ' + um.evidence + '.';
+    rest.splice(rest.indexOf(dm), 1);
+    rest.splice(rest.indexOf(um), 1);
+    action = 'Open the bill to add the dates and usage, or delete it.';
+  }
+  const clauses = rest.map((f) => _bfLowerFirst(f.message.replace(/\.$/, '')));
+  const actions = [...new Set(fl.map((f) => _BF_ACTION_BY_RULE[f.rule] || _BF_ACTION_CHECK))];
+  if (!action) action = actions.length === 1 ? actions[0] : _BF_ACTION_CHECK;
+  else if (rest.length) action = actions.length === 1 ? actions[0] : _BF_ACTION_CHECK;
+  const tail = clauses.length ? (head ? ' Also: ' : label + ': ') + clauses.join('; ') + '.' : '';
+  return head + tail + ' ' + action;
 }
 /* PRINTED READ CHECK (2026-10-14). The ONE rule that compares the bill's printed read difference and printed usage with
    their own arithmetic. The PDF reader no longer rewrites a printed read difference to end read - start read or a

@@ -675,5 +675,34 @@ console.log('=== 9. usage does not match charge ===');
   }
 }
 
+// -- 10 plain banner line (one function for the banner and the row hover; rule sentences live in BILL_FLAG_RULES) --
+console.log('=== 10. plain bill line ===');
+{
+  const m = gasMeter([2023, 2024], (bills) => {
+    bills.unshift({ id: 'blank1', start: '', end: '', gasCharge: '7398.79', naturalGasTherms: '', totalCost: '7398.79' });
+  });
+  const sm = run(m);
+  const fl = sm.perBill['blank1'] || [];
+  const line = ctx.billFlagLine(ctx.billFlagLabel(find(m, 'blank1'), m.bills, 0), fl);
+  assert(
+    line ===
+      'Bill 1 has no dates or usage, but it has a $7,398.79 gas charge. Open the bill to add the dates and usage, or delete it.',
+    'no-date blank-usage line: ' + line,
+  );
+  assert(!/Flag |Every bill|—|\|/.test(line), 'line has no rule sentence, dash label or bar');
+  const other = ctx.billFlagLine('Jan 2024', [
+    { rule: 'cost_missing', message: 'Total cost is blank.' },
+    { rule: 'usage_negative', message: 'Usage is negative (-5 therms).' },
+  ]);
+  assert(
+    other === 'Jan 2024: total cost is blank; usage is negative (-5 therms). Open the bill and check the values.',
+    'several reasons, one line: ' + other,
+  );
+  const allMsgs = Object.values(sm.perBill).flat().map((f) => f.message);
+  assert(!allMsgs.some((t) => /Flag (at|when|under)|Every bill needs/.test(t)), 'no flag message carries a rule sentence');
+  const rules = require('vm').runInContext('BILL_FLAG_RULES', ctx);
+  assert(Object.values(rules).every((r) => typeof r.rule === 'string' && r.rule.length > 10), 'every rule has its developer sentence');
+}
+
 console.log('test-bill-flag-rules: ' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);
