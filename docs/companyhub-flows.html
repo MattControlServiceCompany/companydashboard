@@ -300,12 +300,12 @@ var FLOWS = [
     ]
   },
   {
-    id: 'bill-auto-repair', name: 'Utility Data: automatic repair of stored bills from their PDF page', desc: 'A background pass re-reads the stored PDF page of each flagged or misread bill, one PDF at a time, once per reader version. A repair is kept only when it adds no flag, never blanks or zeroes a value, never touches a field the user owns and never uses a page of another meter number. Nothing is added or deleted.',
+    id: 'bill-auto-repair', name: 'Utility Data: automatic repair of stored bills from their PDF page', desc: 'A background pass re-reads the stored PDF page of each flagged or misread bill, one PDF at a time, once per reader version. A value is written only when the bill itself contradicts the stored one, the page value passes that check and the value is printed on the bill\'s own page (repairMayWrite); everything else is held with its reason. A repair is kept only when it adds no flag, never blanks or zeroes a value, never touches a field the user owns and never uses a page of another meter number. Nothing is added or deleted.',
     path: ['energy','ls'],
     steps: [
       { from:'energy', to:'energy', label:'loadUtilityData calls scheduleAutoRepair(); it waits for first paint and an idle browser', detail:'app/auto-repair.js. repairEligibleBills() lists flagged or misread bills and their neighbors with a stored PDF and no _pdfRepair marker for EXTRACTOR_RULES_VERSION.' },
       { from:'energy', to:'ls', label:'One PDF: _bcrLoadPdfText() reads the page text from the shared cache, extractBillsFromText() extracts', detail:'The same extraction the upload queue uses (_extractSingleFileForQueue -> extractBillsFromPdfBytes -> extractBillsFromText).' },
-      { from:'energy', to:'ls', label:'repairMeterFromPdf() matches, maps, checks and saves', detail:'computations/bill-repair.js. findRepairMatch (meter numbers on both sides must agree), repairFieldsFromExtracted, planMeterRepair (no counted flag may be added), applyRepairChanges (record _auto_corrected_<field>, source pdf_reread, shown in Edit Billing Period), a missing page goes to the audit log (pdf_bill_missing), then correctMeterReadChain and saveUtilityData on the meter objects looked up after the read.' },
+      { from:'energy', to:'ls', label:'repairMeterFromPdf() matches, maps, checks and saves', detail:'computations/bill-repair.js. findRepairMatch (meter numbers on both sides must agree), repairFieldsFromExtracted with repairMayWrite (contradicted stored value, page value passes, printed on the bill\'s own page; else held, audit pdf_reread_held), planMeterRepair (no counted flag may be added), applyRepairChanges (record _auto_corrected_<field>, source pdf_reread, shown in Edit Billing Period), a missing page goes to the audit log (pdf_bill_missing), then correctMeterReadChain and saveUtilityData on the meter objects looked up after the read.' },
     ]
   },
   {

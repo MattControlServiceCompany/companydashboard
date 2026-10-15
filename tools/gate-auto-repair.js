@@ -32,6 +32,12 @@
  *      pass; adds a row for a missing page instead of an audit entry; runs when the storage is not ready
  *  15. the browser pass sweeps every meter per PDF (flag summaries bounded by meters + a constant)
  *  16. (not in this gate) the run on the real backup: tools/ has no real data; the result is kept in the work notes
+ *  17. the one write decision (repairMayWrite; Matt 2026-10-15: never fill a value that is not printed, held is better
+ *      than guessed): a stored value that passes the bill's checks stays when the re-read differs (noise); a stored
+ *      value the bill contradicts is replaced by the page value that passes (alone or as a pair); a value that is only
+ *      on a neighbor page, or that the reader filled or changed (_auto_recovered_/_auto_corrected_), or a 0, is never
+ *      written; every held value is reported with its reason (res.held, audit pdf_reread_held); the decision is one
+ *      function on the one write path; a mutation run without the page test must FAIL
  *
  * Usage: node tools/gate-auto-repair.js [repo-root]
  */
@@ -168,7 +174,27 @@ function waterExt(i, o) {
   );
 }
 const waterExts = () => MONTHS.map((_, i) => waterExt(i));
-const run = (m, pdfKey, exts) => call('repairMeterFromPdf', m, bldgOf(m), pdfKey, exts, META);
+// The page text the reader saw, built from the extracted bills: every value of a bill stands on its page, as a PDF
+// prints it (dates as read, numbers with a thousands comma). An ext with _noPageText keeps its values off the page.
+const pageTextOf = (exts) =>
+  (exts || [])
+    .map((e) => {
+      const pg = e._pageStart != null ? e._pageStart : e._pageIndex;
+      const vals = e._noPageText
+        ? []
+        : Object.keys(e)
+            .filter((k) => k[0] !== '_' && e[k] !== null && e[k] !== undefined && e[k] !== '')
+            .map((k) => (isFinite(Number(e[k])) && Math.abs(Number(e[k])) >= 1000 ? Number(e[k]).toLocaleString('en-US', { maximumFractionDigits: 4 }) : String(e[k])));
+      return '%%PAGE_' + pg + '%%\n' + vals.join('   ') + (e._pageText ? '\n' + e._pageText : '');
+    })
+    .join('\n');
+const run = (m, pdfKey, exts, text) => call('repairMeterFromPdf', m, bldgOf(m), pdfKey, exts, META, text === undefined ? pageTextOf(exts) : text);
+// A water bill the bill itself contradicts: the stored water charge is 500.00 while the total is 50.00 (charge parts
+// vs total fails); the page prints 50.00.
+const misreadWater = (w, i) => {
+  w.bills[i].waterCharge = '500.00';
+  return w;
+};
 const stable = (m) => {
   const c = clone(m);
   c.bills.forEach((b) => {
@@ -220,15 +246,13 @@ function misreadMeter() {
   const before = m.bills[2].readDifference;
   run(m, 'k1', allExts());
   if (m.bills[2].readDifference !== before) fail('2', 'a user-corrected read difference was replaced');
-  const control = waterMeter();
-  control.bills[3].waterUsage = '900000';
+  const control = misreadWater(waterMeter(), 3);
   run(control, 'k2', waterExts());
-  if (control.bills[3].waterUsage === '900000') fail('2', 'control: the usage was not repaired without the user mark, so this check proves nothing');
-  const w = waterMeter();
-  w.bills[3].waterUsage = '900000';
-  w.bills[3]._userCorrected = { waterUsage: { original: '10000', at: 'x' } };
+  if (control.bills[3].waterCharge === '500.00') fail('2', 'control: the charge was not repaired without the user mark, so this check proves nothing');
+  const w = misreadWater(waterMeter(), 3);
+  w.bills[3]._userCorrected = { waterCharge: { original: '50.00', at: 'x' } };
   run(w, 'k2', waterExts());
-  if (w.bills[3].waterUsage !== '900000') fail('2', 'a user-corrected usage was replaced');
+  if (w.bills[3].waterCharge !== '500.00') fail('2', 'a user-corrected charge was replaced');
   // a user-corrected start date
   const w2 = waterMeter();
   w2.bills[1].start = '2025-02-01';
@@ -260,8 +284,7 @@ function misreadMeter() {
     exts.forEach((e) => keysE.forEach((k) => (e[k] = '')));
     run(m, 'k1', exts);
     if (stable(m) !== before) fail('3', 'blank extracted values changed an electric bill');
-    const w = waterMeter();
-    w.bills[2].waterUsage = '900000';
+    const w = misreadWater(waterMeter(), 2);
     const wb = stable(w);
     const wx = waterExts();
     wx.forEach((e) => keysW.forEach((k) => (e[k] = '')));
@@ -275,8 +298,7 @@ function misreadMeter() {
     exts.forEach((e) => keysE.forEach((k) => rnd() < 0.3 && (e[k] = rnd() < 0.5 ? '' : null)));
     run(m, 'k1', exts);
     check(before, m, 'electric run ' + t);
-    const w = waterMeter();
-    w.bills[2].waterUsage = '900000';
+    const w = misreadWater(waterMeter(), 2);
     const wb = clone(w);
     const wx = waterExts();
     wx.forEach((e) => keysW.forEach((k) => rnd() < 0.3 && (e[k] = rnd() < 0.5 ? '' : null)));
@@ -362,15 +384,16 @@ function misreadMeter() {
     const g2 = gained(eb, flagsOf(e));
     if (g2.length) fail('5', 'electric run ' + t + ' added flags: ' + g2.join(', '));
   }
-  if (!rejectedSeen) fail('5', 'no repair was rejected by the flag check in any run: the check is not exercised');
+  // a blank start date (the bill contradicts nothing else) filled from the page with a date that overlaps the bill
+  // before: the write decision lets it through (dates_missing is cleared), the plan must reject it (period_overlap)
   const w = waterMeter();
-  w.bills[2].waterUsage = '900000';
+  w.bills[2].start = '';
   const wx = waterExts();
-  wx[2].BillingPeriodStart = '03/10/2025'; // would overlap the bill before
-  const startBefore = w.bills[2].start;
-  run(w, 'k2', wx);
-  if (w.bills[2].start !== startBefore && flagsOf(w)['w2'] && flagsOf(w)['w2'].includes('period_overlap'))
-    fail('5', 'a date that creates an overlap was kept');
+  wx[2].BillingPeriodStart = '02/10/2025'; // would overlap the bill before
+  const r5 = run(w, 'k2', wx);
+  rejectedSeen += r5.declined.filter((d) => /would add the flag/.test(d.reason)).length;
+  if (w.bills[2].start !== '') fail('5', 'a date that creates an overlap was kept: ' + w.bills[2].start);
+  if (!rejectedSeen) fail('5', 'no repair was rejected by the flag check in any run: the check is not exercised');
 }
 
 // ── 6. duplicates are reported and kept; an unread duplicate gets no version ───────────────
@@ -577,27 +600,36 @@ function misreadMeter() {
 
 // ── 11. an extracted 0 never replaces a stored value ───────────────────────────────────────
 {
+  // the stored total 1234.56 fails the sum check (charge 50.00); the re-read gives 0: never written
   const w = waterMeter();
-  w.bills[3].waterUsage = '900000';
   w.bills[3].totalCost = '1234.56';
   const wx = waterExts();
   wx[3].TotalCurrentCharges = '0.00';
   wx[3].WaterCharge = '0';
-  const f = call('repairFieldsFromExtracted', wx[3], w.bills[3], 'Water', w.bills[2], w.bills[4]);
+  const f = call('repairFieldsFromExtracted', wx[3], w.bills[3], 'Water', w, bldgOf(w), pageTextOf(wx)).changes;
   if (f.totalCost || f.waterCharge) fail('11', 'repairFieldsFromExtracted offered 0 over a stored value: ' + JSON.stringify(f));
   run(w, 'k2', wx);
   if (w.bills[3].totalCost !== '1234.56' || w.bills[3].waterCharge !== '50.00') fail('11', 'an extracted 0 replaced a stored value: ' + JSON.stringify(w.bills[3]));
-  if (w.bills[3].waterUsage === '900000') fail('11', 'control: the usage on the same bill was not repaired');
-  // a real 0 may fill a blank, and a value may replace a stored 0
+  // control: the same bill with the page total 50.00 is repaired
+  const c = waterMeter();
+  c.bills[3].totalCost = '1234.56';
+  run(c, 'k2', waterExts());
+  if (c.bills[3].totalCost !== 50) fail('11', 'control: the total on the same bill was not repaired: ' + c.bills[3].totalCost);
+  // a value may replace a stored 0 the bill contradicts (total 0, charge 50.00); a 0 never fills a blank, and never
+  // replaces the charge (a 0 cannot be tied to a field on the page)
   const z = waterMeter();
-  z.bills[3].waterUsage = '900000';
-  z.bills[3].waterCharge = '';
   z.bills[3].totalCost = '0';
   const zx = waterExts();
   zx[3].WaterCharge = '0';
-  const fz = call('repairFieldsFromExtracted', zx[3], z.bills[3], 'Water', z.bills[2], z.bills[4]);
-  if (!fz.waterCharge || fz.waterCharge.to !== 0) fail('11', 'a real 0 did not fill a blank charge: ' + JSON.stringify(fz));
+  const fz = call('repairFieldsFromExtracted', zx[3], z.bills[3], 'Water', z, bldgOf(z), pageTextOf(zx)).changes;
+  if (fz.waterCharge) fail('11', 'a 0 replaced the charge: ' + JSON.stringify(fz));
   if (!fz.totalCost || fz.totalCost.to !== 50) fail('11', 'a value did not replace a stored 0: ' + JSON.stringify(fz));
+  const zb = waterMeter();
+  zb.bills[3].waterCharge = '';
+  const zbx = waterExts();
+  zbx[3].WaterCharge = '0';
+  const fzb = call('repairFieldsFromExtracted', zbx[3], zb.bills[3], 'Water', zb, bldgOf(zb), pageTextOf(zbx)).changes;
+  if (fzb.waterCharge) fail('11', 'a 0 filled a blank charge: ' + JSON.stringify(fzb));
   if (call('repairValueAllowed', '12.00', '0.00') || call('repairValueAllowed', 5, 0) || !call('repairValueAllowed', '0', 3) || !call('repairValueAllowed', '', 0))
     fail('11', 'repairValueAllowed does not apply the zero rule');
 }
@@ -605,20 +637,19 @@ function misreadMeter() {
 // ── 12. every user-owned marker protects the field ─────────────────────────────────────────
 {
   const owned = (label, mark) => {
-    const w = waterMeter();
-    w.bills[3].waterUsage = '900000';
+    const w = misreadWater(waterMeter(), 3);
     mark(w.bills[3]);
     run(w, 'k2', waterExts());
-    if (w.bills[3].waterUsage !== '900000') fail('12', label + ': a user-owned usage was replaced');
-    if (!call('billFieldUserOwned', w.bills[3], 'waterUsage')) fail('12', label + ': billFieldUserOwned is false');
+    if (w.bills[3].waterCharge !== '500.00') fail('12', label + ': a user-owned charge was replaced');
+    if (!call('billFieldUserOwned', w.bills[3], 'waterCharge')) fail('12', label + ': billFieldUserOwned is false');
   };
-  owned('_userCorrected_<Field> in the PDF spelling', (b) => (b._userCorrected_WaterUsage = { original: '1', corrected: '900000', ts: 1 }));
-  owned('_userCorrected_<field> in the stored spelling', (b) => (b._userCorrected_waterUsage = { original: '1', corrected: '900000', ts: 1 }));
-  owned('_userCorrected_<FIELD> in any spelling', (b) => (b._userCorrected_WATERUSAGE = { original: '1', corrected: '900000', ts: 1 }));
-  owned('_userCorrected__chg_<field>_<i> part marker', (b) => (b._userCorrected__chg_waterUsage_0 = { original: '1', corrected: '900000', ts: 1 }));
-  owned('a derived stamp without original/corrected', (b) => (b._userCorrected_waterUsage = { derivedFrom: 'x', value: '900000', ts: 1 }));
-  owned('a value retyped over a re-read record', (b) => (b._auto_corrected_waterUsage = { original: '1', corrected: '20000', source: 'pdf_reread', reason: 'Re-read from the PDF' }));
-  owned('a value retyped over a read-chain record', (b) => (b._auto_corrected_waterUsage = { original: '1', corrected: '20000', reason: vm.runInContext('READ_CHAIN_REASON.a', ctx) }));
+  owned('_userCorrected_<Field> in the PDF spelling', (b) => (b._userCorrected_WaterCharge = { original: '1', corrected: '500.00', ts: 1 }));
+  owned('_userCorrected_<field> in the stored spelling', (b) => (b._userCorrected_waterCharge = { original: '1', corrected: '500.00', ts: 1 }));
+  owned('_userCorrected_<FIELD> in any spelling', (b) => (b._userCorrected_WATERCHARGE = { original: '1', corrected: '500.00', ts: 1 }));
+  owned('_userCorrected__chg_<field>_<i> part marker', (b) => (b._userCorrected__chg_waterCharge_0 = { original: '1', corrected: '500.00', ts: 1 }));
+  owned('a derived stamp without original/corrected', (b) => (b._userCorrected_waterCharge = { derivedFrom: 'x', value: '500.00', ts: 1 }));
+  owned('a value retyped over a re-read record', (b) => (b._auto_corrected_waterCharge = { original: '1', corrected: '20.00', source: 'pdf_reread', reason: 'Re-read from the PDF' }));
+  owned('a value retyped over a read-chain record', (b) => (b._auto_corrected_waterCharge = { original: '1', corrected: '20.00', reason: vm.runInContext('READ_CHAIN_REASON.a', ctx) }));
   // the schema maps the stored name to the PDF name: kwh <-> kWhConsumed (the stub schema), totalCost <-> TotalCurrentCharges
   if (!call('billFieldUserOwned', { kwh: '5', _userCorrected_kWhConsumed: { original: '1', corrected: '5', ts: 1 } }, 'kwh')) fail('12', 'a PDF-name stamp from the schema is not honored');
   if (call('billFieldUserOwned', { kwh: '5', _userCorrected_TotalCurrentCharges: { original: '1', corrected: '5', ts: 1 } }, 'kwh')) fail('12', 'a stamp of another field counts as this field');
@@ -689,9 +720,9 @@ function makeOrchestrator(opts) {
     c.loads.push(k);
     if (opts.onLoad) opts.onLoad(c, k);
     if (opts.throwOn && opts.throwOn(k)) throw new Error('synthetic read error');
-    return opts.text && opts.text[k] !== undefined ? opts.text[k] : 'text:' + k;
+    return opts.text && opts.text[k] !== undefined ? opts.text[k] : 'text:' + k + '\n' + pageTextOf(opts.exts[k] || []);
   };
-  c.extractBillsFromText = async (text) => ({ bills: opts.exts[text.replace(/^text:/, '')] || [] });
+  c.extractBillsFromText = async (text) => ({ bills: opts.exts[text.split('\n')[0].replace(/^text:/, '')] || [] });
   vm.runInContext(rd('app/auto-repair.js'), c);
   return c;
 }
@@ -767,6 +798,19 @@ async function check14() {
     const a = c.audit.find((x) => x.action === 'pdf_bill_missing');
     if (!a || !/page 9|Page 9/.test(a.note) || !a.changes || a.changes[0].start !== '2025-07-01') fail('14e', 'no audit entry for the missing page: ' + JSON.stringify(c.audit));
   }
+  // g. a held value (the stored usage passes every check; the re-read differs) goes to the audit log with its reason
+  {
+    const w = misreadWater(waterMeter(), 1);
+    const ex = waterExts();
+    ex[1].WaterUsage = '10006';
+    const c = makeOrchestrator({ data: dataOf([w]), exts: { k2: ex } });
+    await callIn(c, 'runAutoRepair');
+    if (w.bills[1].waterUsage !== '10000') fail('14g', 'the browser pass wrote a value the bill does not contradict: ' + w.bills[1].waterUsage);
+    const h = c.audit.find((x) => x.action === 'pdf_reread_held');
+    if (!h || !h.changes || h.changes[0].field !== 'waterUsage' || String(h.changes[0].read) !== '10006' || !/passes every check/.test(h.changes[0].reason))
+      fail('14g', 'no audit entry for the held value: ' + JSON.stringify(c.audit.map((x) => x.action)));
+    if (!(c.window._autoRepairStats && c.window._autoRepairStats.held === 1)) fail('14g', 'stats.held wrong: ' + JSON.stringify(c.window._autoRepairStats));
+  }
   // f. storage not ready: nothing runs
   {
     const m = misreadMeter();
@@ -792,6 +836,122 @@ async function check14() {
   }
 }
 
+// ── 17. the one write decision ─────────────────────────────────────────────────────────────
+function check17(c, label) {
+  const runIn = (m, pdfKey, exts, text) => callIn(c, 'repairMeterFromPdf', m, bldgOf(m), pdfKey, exts, META, text === undefined ? pageTextOf(exts) : text);
+  const heldReason = (r, id, k) => {
+    const h = r.held.find((x) => x.row.id === id);
+    return h && h.fields[k] ? h.fields[k].reason : '';
+  };
+  // a. stored value correct, re-read noisy: unchanged, the reason recorded
+  {
+    const w = misreadWater(waterMeter(), 1); // bill 1 is eligible; bills 0 and 2 are its neighbors
+    const ex = waterExts();
+    ex[2].WaterUsage = '10006'; // OCR noise on a usage the bill does not contradict
+    ex[0].WaterCharge = '53.00'; // noise on a charge: 53 + 0 != 50, the fresh value fails the sum check
+    const r = runIn(w, 'k2', ex);
+    if (w.bills[2].waterUsage !== '10000') fail(label, 'a usage the bill does not contradict was replaced by the re-read: ' + w.bills[2].waterUsage);
+    if (!/passes every check/.test(heldReason(r, 'w2', 'waterUsage'))) fail(label, 'the held usage has no reason: ' + JSON.stringify(r.held.map((h) => h.fields)));
+    if (w.bills[0].waterCharge !== '50.00') fail(label, 'a charge the bill does not contradict was replaced: ' + w.bills[0].waterCharge);
+    if (w.bills[1].waterCharge !== 50) fail(label, 'control: the contradicted charge was not repaired: ' + w.bills[1].waterCharge);
+    const e = electricMeter();
+    e.bills[1].startRead = ''; // bills 0..2 are read
+    const ex2 = allExts();
+    ex2[2].StartRead = f4(1200.2);
+    ex2[2].EndRead = f4(1300.2); // consistent with each other, but the stored reads already prove the bill
+    const r2 = runIn(e, 'k1', ex2);
+    if (e.bills[2].startRead !== f4(1200) || e.bills[2].endRead !== f4(1300)) fail(label, 'consistent stored reads were replaced by a re-read: ' + JSON.stringify(e.bills[2]));
+    if (!/passes every check/.test(heldReason(r2, 'e2', 'startRead'))) fail(label, 'the held read has no reason');
+    if (e.bills[1].startRead !== f4(1100)) fail(label, 'control: the blank read was not filled from the page: ' + e.bills[1].startRead);
+  }
+  // b. the bill contradicts the stored value, the re-read fixes it: replaced (alone, and as a pair)
+  {
+    const m = misreadMeter();
+    runIn(m, 'k1', allExts());
+    if (m.bills[2].readDifference !== '100.0000' || Math.abs(parseFloat(m.bills[2].kwh) - 16000) > 0.001) fail(label, 'a contradicted read difference and kWh were not repaired as a pair: ' + JSON.stringify(m.bills[2]));
+    const w = waterMeter();
+    w.bills[2].waterCharge = '45.00';
+    w.bills[2].totalCost = '55.00'; // 45 != 55: both wrong, each alone still fails, together they pass
+    runIn(w, 'k2', waterExts());
+    if (w.bills[2].waterCharge !== 50 || w.bills[2].totalCost !== 50) fail(label, 'a charge and total that prove each other were not repaired as a pair: ' + JSON.stringify(w.bills[2]));
+    const s = waterMeter();
+    s.bills[2].totalCost = '550.00'; // only the total is wrong
+    runIn(s, 'k2', waterExts());
+    if (s.bills[2].totalCost !== 50) fail(label, 'a contradicted total was not repaired alone: ' + s.bills[2].totalCost);
+  }
+  // c. a value that is only on a neighbor page is declined, with the reason
+  {
+    const e = electricMeter();
+    e.bills[1].startRead = '';
+    const ex = allExts();
+    ex[1]._noPageText = true; // page 2 prints nothing the reader can point at: its StartRead came from elsewhere
+    ex[0]._pageText = '1,100.0000'; // the value stands on page 1 only
+    const r = runIn(e, 'k1', ex);
+    if (e.bills[1].startRead !== '') fail(label, 'a value printed only on a neighbor page was written: ' + e.bills[1].startRead);
+    if (!/not printed/.test(heldReason(r, 'e1', 'startRead'))) fail(label, 'the neighbor-page value has no reason: ' + JSON.stringify(r.held.map((h) => h.fields)));
+    const e2 = electricMeter();
+    e2.bills[1].startRead = '';
+    const ex2 = allExts();
+    ex2[1]._auto_recovered_StartRead = { original: null, corrected: '1100.0000', reason: "Copied from previous bill's EndRead" };
+    const r2 = runIn(e2, 'k1', ex2);
+    if (e2.bills[1].startRead !== '') fail(label, 'a read the reader copied from the neighbor bill was written: ' + e2.bills[1].startRead);
+    if (!/filled or changed StartRead/.test(heldReason(r2, 'e1', 'startRead'))) fail(label, 'the copied read has no reason');
+  }
+  // d. a derived value is never written: a computed read, a corrected charge, a 0, a converted usage
+  {
+    const e = electricMeter();
+    e.bills[2].endRead = '';
+    const ex = allExts();
+    ex[2]._auto_recovered_EndRead = { original: null, corrected: '1300.0000', reason: 'StartRead + ReadDifference' };
+    runIn(e, 'k1', ex);
+    if (e.bills[2].endRead !== '') fail(label, 'a computed end read was written: ' + e.bills[2].endRead);
+    const w = misreadWater(waterMeter(), 2);
+    const wx = waterExts();
+    wx[2]._auto_corrected_WaterCharge = { original: '500.00', corrected: '50.00', reason: 'rate x qty' };
+    runIn(w, 'k2', wx);
+    if (w.bills[2].waterCharge !== '500.00') fail(label, 'a charge the reader changed was written: ' + w.bills[2].waterCharge);
+    const z = waterMeter();
+    z.bills[2].waterUsage = '';
+    const zx = waterExts();
+    zx[2].WaterUsage = '0';
+    runIn(z, 'k2', zx);
+    if (z.bills[2].waterUsage !== '') fail(label, 'a 0 filled a blank usage: ' + z.bills[2].waterUsage);
+    const g = waterMeter();
+    g.bills[2].waterUsage = '';
+    const gx = waterExts();
+    gx[2].WaterUsage = '12161';
+    gx[2]._noPageText = true;
+    gx[2]._pageText = '1216.1'; // the page prints the value in another unit; 12161 is a conversion (not a thousands form)
+    runIn(g, 'k2', gx);
+    if (g.bills[2].waterUsage !== '') fail(label, 'a converted value that is not printed was written: ' + g.bills[2].waterUsage);
+  }
+}
+check17(ctx, '17');
+// e. one decision, one write path
+{
+  const rep = repairSource
+    .split('\n')
+    .filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l))
+    .join('\n');
+  if ((rep.match(/repairMayWrite\(/g) || []).length !== 2) fail('17e', 'repairMayWrite must be defined once and called once (in repairFieldsFromExtracted)');
+  if ((rep.match(/applyRepairChanges\(/g) || []).length !== 2) fail('17e', 'applyRepairChanges must be defined once and called once (plan.accepted in repairMeterFromPdf)');
+  if ((rep.match(/repairFieldsFromExtracted\(/g) || []).length !== 2) fail('17e', 'repairFieldsFromExtracted must be defined once and called once');
+  if (!/repairMeterFromPdf\([^)]*\btext\b/.test(rep) || !/repairPageText\(text/.test(rep)) fail('17e', 'repairMeterFromPdf does not take the page text for the page test');
+  if (!/repairMeterFromPdf\(t\.meter, t\.bldg, pdfKey, ex\.bills, meta, text\)/.test(rd('app/auto-repair.js'))) fail('17e', 'the browser pass does not pass the page text');
+}
+// f. mutation: without the page-provenance test the neighbor-page case must FAIL
+{
+  const guard = /\n(\s*)if \(provenance\) return \{ ok: false, code: 'source', reason: provenance \};\n/;
+  if (!guard.test(repairSource)) fail('17f', 'the provenance line in repairMayWrite was not found (the mutation run cannot prove the gate)');
+  else {
+    const before = problems.length;
+    check17(makeRepairContext(repairSource.replace(guard, '\n')), '17-mutation');
+    const caught = problems.length - before;
+    problems.length = before;
+    if (!caught) fail('17f', 'the neighbor-page and derived cases pass with the provenance test removed: the check does not catch it');
+  }
+}
+
 check14()
   .catch((e) => fail('14', 'the browser pass threw: ' + (e && e.stack ? e.stack : e)))
   .then(() => {
@@ -799,5 +959,5 @@ check14()
       console.error('gate-auto-repair FAIL\n  ' + problems.join('\n  '));
       process.exit(1);
     }
-    console.log('gate-auto-repair PASS (checks 0-15; check 16, the run on a real backup, is a local check and is not in this gate)');
+    console.log('gate-auto-repair PASS (checks 0-15 and 17; check 16, the run on a real backup, is a local check and is not in this gate)');
   });

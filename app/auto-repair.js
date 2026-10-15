@@ -19,6 +19,8 @@
    is not in this browser yet, and { status: 'error', reason, tries } when the read threw; after AUTO_REPAIR_MAX_TRIES
    the bill is declined for this version. A PDF page with no row on the meter is written to the audit log
    (pdf_bill_missing); nothing is added (a deleted bill exists only in the audit log, so an add could bring it back).
+   A fresh value the decision held back (the stored value passes the bill's checks, or the value is not printed on the
+   bill's own page) is written to the audit log (pdf_reread_held) with its reason; the stored value stays.
    No decision is made here: matching, field values, the flag check and the history are in computations/bill-repair.js.
    ══════════════════════════════════════════════════════════════════════════════════════════════ */
 
@@ -110,8 +112,9 @@ async function _autoRepairOnePdf(pdfKey, refs, version, stats) {
     return ts;
   };
   let ex = null;
+  let text = null;
   try {
-    const text = await _bcrLoadPdfText(pdfKey);
+    text = await _bcrLoadPdfText(pdfKey);
     if (!text) {
       // Not in this browser (yet): no version, so the bill is read on a later load once the PDF is restored.
       const reason = 'the PDF is not on this browser';
@@ -144,9 +147,25 @@ async function _autoRepairOnePdf(pdfKey, refs, version, stats) {
   const meta = { at, version };
   const targets = touched(); // looked up again: utilityData may have been replaced during the read
   for (const t of targets) {
-    const res = repairMeterFromPdf(t.meter, t.bldg, pdfKey, ex.bills, meta);
+    const res = repairMeterFromPdf(t.meter, t.bldg, pdfKey, ex.bills, meta, text);
     const periodOf = (row) => (row.start || '') + ' to ' + (row.end || '');
     res.repaired.forEach((r) => _autoRepairAudit(t, periodOf(r.row), 'pdf_reread', r.changes, 'Re-read from the stored PDF page'));
+    // A fresh value that differs from the stored one and was NOT written: the stored value stays, the reason is logged.
+    res.held.forEach((h) => {
+      const fields = Object.keys(h.fields);
+      _autoRepairAudit(
+        t,
+        periodOf(h.row),
+        'pdf_reread_held',
+        fields.map((k) => ({ field: k, stored: h.fields[k].from, read: h.fields[k].to, reason: h.fields[k].reason })),
+        'The PDF re-read gave another value; the stored value was kept. ' + fields.map((k) => k + ': ' + h.fields[k].reason).join('; '),
+      );
+      fields.forEach((k) => {
+        const reason = 'held: ' + h.fields[k].reason;
+        stats.reasons[reason] = (stats.reasons[reason] || 0) + 1;
+      });
+      stats.held += fields.length;
+    });
     res.missing.forEach((c) =>
       _autoRepairAudit(
         t,
@@ -188,7 +207,7 @@ async function runAutoRepair() {
   }
   _autoRepairRun.running = true;
   const version = EXTRACTOR_RULES_VERSION;
-  const stats = { read: 0, repaired: 0, nochange: 0, declined: 0, missing: 0, waiting: 0, errors: 0, reasons: {} };
+  const stats = { read: 0, repaired: 0, nochange: 0, declined: 0, missing: 0, waiting: 0, errors: 0, held: 0, reasons: {} };
   const seen = new Set();
   try {
     // One eligibility pass per meter, then one PDF at a time; only the meters a PDF touched are listed again.
@@ -213,7 +232,16 @@ async function runAutoRepair() {
       .map((k) => stats.reasons[k] + ' ' + k)
       .join('; ');
     const msg =
-      'Re-read ' + stats.read + ' bills from PDF: ' + stats.repaired + ' repaired, ' + stats.declined + ' cannot be repaired' + (reasons ? ' (' + reasons + ')' : '');
+      'Re-read ' +
+      stats.read +
+      ' bills from PDF: ' +
+      stats.repaired +
+      ' repaired, ' +
+      stats.declined +
+      ' cannot be repaired, ' +
+      stats.held +
+      ' values held' +
+      (reasons ? ' (' + reasons + ')' : '');
     console.log('[auto repair] ' + msg);
     if (stats.repaired > 0 && typeof showToast === 'function') showToast(msg);
   }

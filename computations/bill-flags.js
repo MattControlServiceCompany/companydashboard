@@ -242,24 +242,18 @@ function _bfVarCharge(b, c, total) {
   }
   return total;
 }
+// Returns { sum, label, fields } (fields = the stored charge parts the sum is made of; the PDF re-read uses them to
+// know which fields the charge-sum check judges) or null when the bill has no parts.
 function _bfComponents(b, c) {
   const num = parseBillNumber;
-  const s = (...k) => k.reduce((a, x) => a + (num(b[x]) || 0), 0);
+  const parts = (label, ...fields) => ({ sum: fields.reduce((a, x) => a + (num(b[x]) || 0), 0), label, fields });
   if (c === 'Electric' && num(b.kwhCost) !== null)
-    return {
-      sum: s('kwCost', 'kwhCost', 'otherCost', 'taxCost', 'facKWCost', 'solarCredit'),
-      label: 'kW cost + kWh cost + other + tax + facilities + solar credit',
-    };
+    return parts('kW cost + kWh cost + other + tax + facilities + solar credit', 'kwCost', 'kwhCost', 'otherCost', 'taxCost', 'facKWCost', 'solarCredit');
   if (c === 'Gas' && num(b.gasCharge) !== null && num(b.customerCharge) !== null && num(b.fuelAdjustment) !== null)
-    return {
-      sum: s('customerCharge', 'gasCharge', 'fuelAdjustment'),
-      label: 'customer charge + gas charge + fuel adjustment',
-    };
-  if (c === 'Water' && num(b.waterCharge) !== null)
-    return { sum: s('waterCharge', 'waterProtectionFee'), label: 'water charge + protection fee' };
-  if (c === 'Sewer' && num(b.sewerCharge) !== null) return { sum: s('sewerCharge'), label: 'sewer charge' };
-  if (c === 'Stormwater' && num(b.stormWaterCharge) !== null)
-    return { sum: s('stormWaterCharge'), label: 'stormwater charge' };
+    return parts('customer charge + gas charge + fuel adjustment', 'customerCharge', 'gasCharge', 'fuelAdjustment');
+  if (c === 'Water' && num(b.waterCharge) !== null) return parts('water charge + protection fee', 'waterCharge', 'waterProtectionFee');
+  if (c === 'Sewer' && num(b.sewerCharge) !== null) return parts('sewer charge', 'sewerCharge');
+  if (c === 'Stormwater' && num(b.stormWaterCharge) !== null) return parts('stormwater charge', 'stormWaterCharge');
   return null;
 }
 // A solar credit lowers the total; add it back before comparing a total with usage x rate.
