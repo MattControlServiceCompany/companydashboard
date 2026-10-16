@@ -2575,6 +2575,13 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.15.136', date: '2026-10-15', title: 'Fewer false usage warnings',
+    items: [
+      { type: 'fix', text: 'Utility Data page: electric utility bills show fewer false high or low usage warnings. A warning now appears only when usage is at least double or at most half the average for the same month, and only when two or more bills exist for that month. Older bills stored under a different address label now count toward that average.' },
+      { type: 'fix', text: 'PDF / OCR page: on shared-account electric bills, the second read now takes a meter row only when the address matches, so a bill no longer takes the meter row of another building.' },
+      { type: 'fix', text: 'Utility Data page: a one-digit error in the electric rate is repaired only when the cents match and the printed total agrees. The duplicate implied-rate warning is removed.' }
+    ]
+  },
   { v: 'v2026.10.15.135', date: '2026-10-15', title: 'City utility bills read as printed',
     items: [
       { type: 'fix', text: 'PDF / OCR page and Utility Data page: city utility bills now read the gas and water line amounts as printed on the bill. A value that cannot be confirmed is held for review instead of being guessed.' }
