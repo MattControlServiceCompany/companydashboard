@@ -35,6 +35,7 @@ const BILL_FLAG_THRESHOLDS = {
   USAGE_MULT: 4, // same calendar month, 2 or more other years
   USAGE_MULT_ONE_PEER: 8, // same calendar month, only 1 other year
   USAGE_MIN_PEERS: 1,
+  OUTLIER_SWING: 2, // entry check (detectStatisticalOutliers): warn at this many times above, or 1/this below, the same-month mean of 2+ other years
   MATERIAL_FRAC: 0.1, // skip dead months: larger daily use under this share of the meter's 90th percentile
   RATE_MULT: 3, // total charge vs usage x the meter's usual rate
   USAGE_CHARGE_MIN_USAGE_FRAC: 0.5, // only bills with at least this share of the meter's middle usage are tested
@@ -229,6 +230,30 @@ function _bfChainMonth(b, incl, sortedAll) {
   const ym = billMonth(b, sortedAll);
   const m = /^(\d{4})-(\d{2})/.exec(ym || '');
   return m ? { yr: +m[1], mo: +m[2] - 1 } : null;
+}
+// The ONE test for "same calendar month, a different year" (usage_vs_same_month below and the outlier check in
+// app/bill-analysis.js both call it). cm = a { yr, mo } from _bfChainMonth.
+function _bfSameMonthOtherYear(a, b) {
+  return !!a && !!b && a.mo === b.mo && a.yr !== b.yr;
+}
+// The bills in `others` that fall in the same calendar month as `target` in another year. Bills are read by their
+// start/end (or BillingPeriodStart/BillingPeriodEnd for an extracted bill); the month of each comes from the one
+// month rule (billMonth) over the chain of all of them. Used by detectStatisticalOutliers (app/bill-analysis.js).
+function billsInSameMonthOtherYears(target, others) {
+  // An extracted bill carries M/D/YYYY text; a stored bill carries ISO. billMonth reads ISO. The ONE converter for
+  // extracted dates is extractedDateToISO (computations/bill-repair.js).
+  const iso = extractedDateToISO;
+  const span = (x) => ({
+    bill: x,
+    start: iso(x.start || x.BillingPeriodStart || ''),
+    end: iso(x.end || x.BillingPeriodEnd || ''),
+  });
+  const t = span(target);
+  const rows = others.map(span);
+  const chain = _bfSortByStart(rows.concat([t]));
+  const tm = _bfChainMonth(t, true, chain);
+  if (!tm) return [];
+  return rows.filter((r) => _bfSameMonthOtherYear(_bfChainMonth(r, true, chain), tm)).map((r) => r.bill);
 }
 function _bfMonthLabel(cm) {
   return cm ? _BF_MONTHS[cm.mo] + ' ' + cm.yr : '';
@@ -741,10 +766,9 @@ function _computeMeterFlagSummaryFresh(meter, building) {
       const peers = rows.filter(
         (p, j) =>
           p !== r &&
-          p.nm === r.nm &&
+          _bfSameMonthOtherYear(p.cm, r.cm) &&
           p.u !== null &&
           p.days > 0 &&
-          p.yr !== r.yr &&
           !untrusted(p) &&
           (!medDays || (p.days >= T.PERIOD_LO * medDays && p.days <= T.PERIOD_HI * medDays)),
       );

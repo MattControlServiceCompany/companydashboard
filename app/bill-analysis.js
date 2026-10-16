@@ -146,24 +146,38 @@ function _canWitnessRead(witness, target) {
 }
 
 // ONE rule for matching a bill to its twin in an alternate OCR pass: same account AND same
-// billing period. Two accounts on one multi-account page often share a period, so a period-only
-// match, or "the first bill" fallback, can adopt another account's value (backlog af0b7fe6).
-// A bill with no account number matches nothing: an unverifiable twin is never guessed.
+// billing period AND the same service address AND, when both sides have page ranges, overlapping pages. Two accounts on one multi-account page often share a period, and so do two meters
+// on ONE account (a High School and its Ballfields meter), so account + period alone can adopt
+// another meter's value (backlog af0b7fe6; 2026-10-15 NEW HS took the Ballfields kWh).
+// A bill with no account number or no comparable address matches
+// nothing: an unverifiable twin is never guessed.
 function _billAcctKey(v) {
   return (v || '').replace(/[\s\-]/g, '').toLowerCase();
 }
+function _altPassSamePlace(a, b) {
+  if (!_normalizeAddr(a.ServiceAddress) || !_normalizeAddr(b.ServiceAddress)) return false;
+  if (_addressSimilarity(a.ServiceAddress, b.ServiceAddress) < _HIST_ADDR_SIMILARITY_THRESHOLD) return false;
+  const range = (x) => {
+    const s = x._pageStart != null ? x._pageStart : x._pageIndex != null ? x._pageIndex : null;
+    return s == null ? null : { s, e: x._pageEnd != null ? x._pageEnd : s };
+  };
+  const ra = range(a);
+  const rb = range(b);
+  return !(ra && rb) || (ra.s <= rb.e && rb.s <= ra.e); // pages are checked only when both sides have them
+}
+// More than one match is ambiguous: no twin is used (the consensus is skipped), never the first hit.
 function _findAltPassBill(altBills, b) {
   const key = _billAcctKey(b && b.AccountNumber);
   if (!key) return null;
-  return (
-    altBills.find(
-      (ab) =>
-        ab &&
-        ab.BillingPeriodStart === b.BillingPeriodStart &&
-        ab.BillingPeriodEnd === b.BillingPeriodEnd &&
-        _billAcctKey(ab.AccountNumber) === key,
-    ) || null
+  const hits = altBills.filter(
+    (ab) =>
+      ab &&
+      ab.BillingPeriodStart === b.BillingPeriodStart &&
+      ab.BillingPeriodEnd === b.BillingPeriodEnd &&
+      _billAcctKey(ab.AccountNumber) === key &&
+      _altPassSamePlace(ab, b),
   );
+  return hits.length === 1 ? hits[0] : null;
 }
 
 // ONE rule for "this bill sums 2+ physical meter rows" (a meter change or two live meters on one
@@ -581,11 +595,69 @@ function _historyBillIsSameSite(extracted, histBill) {
   if (!_normalizeAddr(ha)) return true;
   return _addressSimilarity(extracted.ServiceAddress, ha) >= _HIST_ADDR_SIMILARITY_THRESHOLD;
 }
+// Saved bill -> the stored meter that owns it, kept as { id, meter, maddr } (id = the stored meter key m.id).
+// Filled where history is gathered (the verify loop's cache and the outlier check's own walk). A bill
+// belongs to its meter by id, whatever service address text it was saved with (33 older bills
+// carry "11 LOUISBURG SCHOOL DISTRICT").
+const _histBillMeter = new WeakMap();
+function _tagHistoryMeterBills(meter) {
+  if (!meter || !meter.id) return;
+  const rec = { id: meter.id, meter: meter.meter, maddr: meter.maddr };
+  for (const b of meter.bills || []) if (b && typeof b === 'object') _histBillMeter.set(b, rec);
+}
+// ONE rule for "which stored meter is this extracted bill": the same meter number when both sides
+// have one, else the meter whose recorded address (maddr) fits the bill's address clearly best
+// (_scoreIdentityCandidates: the routing score) and above _ADDR_MATCH_MIN. A bill with no address, or a
+// meter with no address, is NOT matched (no "lone meter" fallback). No clear winner returns null.
+// Returns the meter id.
+function _historyMeterFor(extracted, meters) {
+  const em = String(extracted.MeterNumber || '')
+    .replace(/[\s\-]/g, '')
+    .toLowerCase();
+  if (em) {
+    const hit = meters.filter(
+      (m) =>
+        String(m.meter || '')
+          .replace(/[\s\-]/g, '')
+          .toLowerCase() === em,
+    );
+    if (hit.length === 1) return hit[0].id;
+  }
+  if (!_normalizeAddr(extracted.ServiceAddress)) return null;
+  const scores = _scoreIdentityCandidates(
+    meters.map((m) => ({ meter: m })),
+    extracted.ServiceAddress,
+  );
+  let bi = 0;
+  scores.forEach((sc, i) => {
+    if (sc > scores[bi]) bi = i;
+  });
+  if (scores[bi] < _ADDR_MATCH_MIN) return null;
+  if (scores.some((sc, i) => i !== bi && scores[bi] - sc <= _IDENTITY_TIE_MARGIN)) return null;
+  return meters[bi].id;
+}
+// The saved bills of `bills` that are from the same site as `extracted`: every bill of the chosen
+// meter (by id, above). A bill that belongs to a stored meter is used ONLY when that meter is reliably
+// chosen; otherwise it is left out (no history, no warning). A bill with no recorded meter (a PDF
+// candidate) uses the address/meter-number rule _historyBillIsSameSite.
+function _filterHistoryBySite(extracted, bills) {
+  const meters = [];
+  for (const b of bills) {
+    const m = _histBillMeter.get(b);
+    if (m && !meters.some((x) => x.id === m.id)) meters.push(m);
+  }
+  const chosen = meters.length ? _historyMeterFor(extracted, meters) : null;
+  return bills.filter((b) => {
+    const m = _histBillMeter.get(b);
+    if (m) return !!chosen && m.id === chosen;
+    return _historyBillIsSameSite(extracted, b);
+  });
+}
 // The saved bills a new bill may be compared against: those on the same account
 // (historicalCache is keyed by normalized account) that are from the same site.
 function _historyForBill(bill, historicalCache) {
   const key = ((bill && bill.AccountNumber) || '').replace(/[\s\-]/g, '').toLowerCase();
-  return ((historicalCache && historicalCache[key]) || []).filter((h) => _historyBillIsSameSite(bill, h));
+  return _filterHistoryBySite(bill, (historicalCache && historicalCache[key]) || []);
 }
 
 // Statistical outlier detection — compare against historical bills for same account/meter
@@ -636,6 +708,7 @@ function detectStatisticalOutliers(extracted, historicalCache, pdfBillsIndex) {
         if (acct && ma && acct === ma) {
           const mc = (m.commodity || '').toLowerCase();
           if (!extComm || !mc || extComm === mc) {
+            _tagHistoryMeterBills(m);
             for (const b of m.bills || []) {
               historicalPairs.push({ bill: b, addr: b.ServiceAddress || b.serviceAddress || '' });
             }
@@ -674,17 +747,28 @@ function detectStatisticalOutliers(extracted, historicalCache, pdfBillsIndex) {
   // discipline. If filtering leaves too few candidates for meaningful
   // stats, the length<3 guard below simply skips flagging — it must never
   // fall back to the unfiltered, cross-address pool.
-  const filteredPairs = historicalPairs.filter((p) => _historyBillIsSameSite(extracted, p.bill));
-  const historicalBills = filteredPairs.map((p) => p.bill);
+  const siteBills = _filterHistoryBySite(
+    extracted,
+    historicalPairs.map((p) => p.bill),
+  );
 
-  if (historicalBills.length < 3) return warnings; // Need at least 3 historical bills for meaningful stats
+  // Compare only with the SAME calendar month in other years: the one same-month rule
+  // (billsInSameMonthOtherYears, computations/bill-flags.js). A September peak is not an outlier against
+  // a spring average. Fewer than 2 such bills: no statistical warning.
+  const historicalBills = billsInSameMonthOtherYears(extracted, siteBills);
+  if (historicalBills.length < 2) return warnings;
+  // A same-month swing of a few percent is weather, not a misread. A value is an outlier when it is
+  // OUTLIER_SWING x (2) or more above, or that share below, the mean of the 2+ same-month bills (a doubled
+  // bill is caught). One definition: BILL_FLAG_THRESHOLDS.OUTLIER_SWING in computations/bill-flags.js.
+  const _farFromMean = (val, mean) =>
+    mean > 0 ? val / mean >= BILL_FLAG_THRESHOLDS.OUTLIER_SWING || val / mean <= 1 / BILL_FLAG_THRESHOLDS.OUTLIER_SWING : val > 0;
 
   // Helper: compute mean and stddev for a numeric field across historical bills
   function getStats(bills, fieldOrFn) {
     const vals = bills
       .map((b) => (typeof fieldOrFn === 'function' ? fieldOrFn(b) : parseBillNumber(b[fieldOrFn])))
       .filter((v) => v !== null && v !== undefined && !isNaN(v));
-    if (vals.length < 3) return null;
+    if (vals.length < 2) return null;
     const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
     const variance = vals.reduce((a, b) => a + (b - mean) ** 2, 0) / vals.length;
     const stddev = Math.sqrt(variance);
@@ -698,8 +782,8 @@ function detectStatisticalOutliers(extracted, historicalCache, pdfBillsIndex) {
   if (kwhVal > 0) {
     const kwhStats = getStats(historicalBills, (b) => parseBillNumber(b.kwh || b.kWhConsumed));
     if (kwhStats) {
-      const zScore = kwhStats.stddev > 0 ? Math.abs(kwhVal - kwhStats.mean) / kwhStats.stddev : 0;
-      if (zScore > 3) {
+      const ratio = kwhVal / kwhStats.mean;
+      if (_farFromMean(kwhVal, kwhStats.mean)) {
         warnings.push({
           level: 'warn',
           field: 'kWhConsumed',
@@ -707,8 +791,8 @@ function detectStatisticalOutliers(extracted, historicalCache, pdfBillsIndex) {
             'Statistical outlier: ' +
             kwhVal.toLocaleString() +
             ' kWh is ' +
-            zScore.toFixed(1) +
-            'σ from average ' +
+            ratio.toFixed(1) +
+            'x the same-month average ' +
             Math.round(kwhStats.mean).toLocaleString() +
             ' kWh (based on ' +
             kwhStats.count +
@@ -738,8 +822,8 @@ function detectStatisticalOutliers(extracted, historicalCache, pdfBillsIndex) {
       parseBillNumber(b.totalCost || b.TotalCurrentCharges || b.TotalAmountDue),
     );
     if (totalStats) {
-      const zScore = totalStats.stddev > 0 ? Math.abs(totalVal - totalStats.mean) / totalStats.stddev : 0;
-      if (zScore > 3) {
+      const ratio = totalVal / totalStats.mean;
+      if (_farFromMean(totalVal, totalStats.mean)) {
         warnings.push({
           level: 'warn',
           field: 'TotalCurrentCharges',
@@ -747,8 +831,8 @@ function detectStatisticalOutliers(extracted, historicalCache, pdfBillsIndex) {
             'Statistical outlier: $' +
             totalVal.toFixed(2) +
             ' is ' +
-            zScore.toFixed(1) +
-            'σ from average $' +
+            ratio.toFixed(1) +
+            'x the same-month average $' +
             totalStats.mean.toFixed(2) +
             ' (based on ' +
             totalStats.count +
@@ -777,8 +861,8 @@ function detectStatisticalOutliers(extracted, historicalCache, pdfBillsIndex) {
       parseBillNumber(b.demandKW || b.ActualKW || b.billedKW || b.BilledKW),
     );
     if (demStats) {
-      const zScore = demStats.stddev > 0 ? Math.abs(demandVal - demStats.mean) / demStats.stddev : 0;
-      if (zScore > 3) {
+      const ratio = demandVal / demStats.mean;
+      if (_farFromMean(demandVal, demStats.mean)) {
         warnings.push({
           level: 'warn',
           field: 'ActualKW',
@@ -786,8 +870,8 @@ function detectStatisticalOutliers(extracted, historicalCache, pdfBillsIndex) {
             'Statistical outlier: ' +
             demandVal +
             ' kW is ' +
-            zScore.toFixed(1) +
-            'σ from average ' +
+            ratio.toFixed(1) +
+            'x the same-month average ' +
             demStats.mean.toFixed(1) +
             ' kW',
         });
@@ -795,74 +879,7 @@ function detectStatisticalOutliers(extracted, historicalCache, pdfBillsIndex) {
     }
   }
 
-  // Implied rate check — works with 0 historical bills using KNOWN_RATES
-  const _rateChecks = [];
-  const _comm = (extracted.Commodity || '').toLowerCase();
-  if (_comm === 'gas') {
-    const gasUsage = parseBillNumber(extracted.NaturalGasTherms);
-    const gasCharge = parseBillNumber(extracted.GasCharge);
-    if (gasUsage > 0 && gasCharge > 0) {
-      const utilName = extracted._utilityName || extracted.UtilityCompany || '';
-      _rateChecks.push({
-        field: 'GasCharge',
-        usage: gasUsage,
-        charge: gasCharge,
-        label: '$/Therm',
-        comm: 'Gas',
-        utilName,
-      });
-    }
-    // Fix (2026-09-06, WRE false high-rate warning): WRE's $/MMbtu rate is
-    // NOT routed through `_rateChecks` / the generic `validateImpliedRate('Gas', ...)`
-    // below — that call compares against KNOWN_RATES.Gas.therm (typical ~$0.798/Therm)
-    // with no unit conversion, a 10x mismatch that false-flagged every WRE bill
-    // ("$5.25/MMbtu higher than typical $0.798/MMbtu"). The correct WRE-specific
-    // $1-$20/MMbtu check already lives in validateBillData (bill-analysis.js ~247-260,
-    // its own severity/warning path) and does NOT false-fire; both functions' warnings
-    // are combined per-bill in analyzeBillExtraction, so no separate check is skipped —
-    // only this redundant, wrongly-scaled duplicate is removed. Do not re-add a
-    // therm-scaled MMbtu push here.
-  } else if (_comm === 'electric' || _comm === '') {
-    const kwhUsage = parseBillNumber(extracted.kWhConsumed);
-    // Canonical 5-charge sum (rates.js sumElectricEnergyCharges) — was
-    // OnPeak+OffPeak only, which dropped ECA+EER+PTS and made the implied
-    // rate disagree with the displayed rate, false-flagging valid Utility E
-    // bills as "lower than typical" (item 377ea7f0).
-    const kwhCharge = sumElectricEnergyCharges(extracted);
-    if (kwhUsage > 0 && kwhCharge > 0) {
-      _rateChecks.push({
-        field: 'kWhConsumed',
-        usage: kwhUsage,
-        charge: kwhCharge,
-        label: '$/kWh',
-        comm: 'Electric',
-        utilName: '',
-      });
-    }
-  } else if (_comm === 'propane') {
-    const propUsage = parseBillNumber(extracted.PropaneGallons || extracted.Quantity);
-    const propCharge = parseBillNumber(extracted.Subtotal || extracted.PropaneCharge);
-    if (propUsage > 0 && propCharge > 0) {
-      _rateChecks.push({
-        field: 'PropaneGallons',
-        usage: propUsage,
-        charge: propCharge,
-        label: '$/Gal',
-        comm: 'Propane',
-        utilName: '',
-      });
-    }
-  }
-  for (const rc of _rateChecks) {
-    const rateResult = validateImpliedRate(rc.comm, rc.usage, rc.charge, rc.utilName);
-    if (rateResult && rateResult.severity) {
-      warnings.push({
-        level: rateResult.severity,
-        field: rc.field,
-        message: formatRateWarning(rateResult, 'Implied rate', rc.label),
-      });
-    }
-  }
+  // The implied-rate check is NOT here: validateBillData is the one place that produces it.
 
   return warnings;
 }
@@ -2472,6 +2489,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           const acct = (m.account || '').replace(/[\s\-]/g, '').toLowerCase();
           if (!acct) continue;
           if (!_historicalCache[acct]) _historicalCache[acct] = [];
+          _tagHistoryMeterBills(m);
           for (const b of m.bills || []) _historicalCache[acct].push(b);
         }
       });

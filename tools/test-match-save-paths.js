@@ -69,6 +69,8 @@ function makeSandbox() {
     path.join(root, 'lib', 'formatting.js'),
     path.join(root, 'computations', 'rates.js'),
     path.join(root, 'computations', 'savings.js'),
+    path.join(root, 'lib', 'date-helpers.js'),
+    path.join(root, 'computations', 'normalization.js'),
     path.join(root, 'computations', 'bill-flags.js'),
     path.join(root, 'computations', 'bill-repair.js'),
     path.join(appDir, 'energy-savings.js'),
@@ -83,6 +85,12 @@ function makeSandbox() {
       throw new Error('load failed ' + path.basename(f) + ': ' + e.message);
     }
   }
+  // The day-count helpers the bill-flag month rule (billMonth) needs, cut from app/utility-data.js.
+  const bfs = require('./bill-flags-sandbox.js');
+  vm.runInContext(
+    ['_fixISO', '_parseISO', 'calcDays', 'fmtDate'].map((n) => bfs.fnSource('app/utility-data.js', n)).join(String.fromCharCode(10)),
+    sandbox,
+  );
   // Test doubles for storage / UI. Everything under test is the real code.
   vm.runInContext(
     `
@@ -320,8 +328,11 @@ async function main() {
   await section('06e549cf: history is not pooled across meters', async () => {
     {
       const hist = [];
+      // Six Januaries (2020-2025): the outlier check compares only with the same calendar month.
       for (let i = 0; i < 6; i++) {
         hist.push({
+          start: 2020 + i + '-01-01',
+          end: 2020 + i + '-01-31',
           kwh: String(100000 + i * 10),
           totalCost: String(9000 + i),
           meterNumber: 'M-A',

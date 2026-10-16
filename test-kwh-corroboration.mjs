@@ -66,6 +66,8 @@ const LOAD_ORDER = [
   'computations/pollution.js',
   'computations/csc.js',
   'computations/savings.js',
+  'computations/bill-flags.js',
+  'computations/bill-repair.js',
   'computations/anomaly-detection.js',
   'lib/perf-table.js',
   'lib/shared-charts.js',

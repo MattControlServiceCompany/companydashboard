@@ -2278,6 +2278,22 @@ function _evgChargeAmounts(line) {
 // digit. Returns the repaired rate when changing ONE digit of the read rate (8 or 9 to 3) or dropping ONE
 // digit makes qty x rate equal the line's own charge (cent tolerance plus the 5-decimal rate rounding),
 // else null. Only the one reconciling repair is taken; two reconciling repairs mean "do not guess".
+// 2026-10-15: also any ONE misread digit of a rate with up to 5 decimals (0.01817 read for 0.01917), and ECA
+// lines with more than one part (the caller repairs each bad part). That second rule needs the whole bill to
+// agree: charge / qty rounded to 5 decimals differs from the read rate in exactly one digit, qty x repaired rate
+// equals the printed charge to the cent. The caller also checks the charges sum to the printed Current Charges.
+// Only the RATE is repaired; the printed charge and qty are never changed.
+function _evgRateOneDigitRepair(rate, qty, charge) {
+  if (!(rate > 0) || !(qty > 0) || !(charge > 0)) return null;
+  const read = rate.toFixed(5);
+  const derived = (charge / qty).toFixed(5);
+  if (read.length !== derived.length) return null;
+  let diffs = 0;
+  for (let i = 0; i < read.length; i++) if (read[i] !== derived[i]) diffs++;
+  if (diffs !== 1) return null;
+  const fixed = parseFloat(derived);
+  return Math.round(qty * fixed * 100) / 100 === Math.round(charge * 100) / 100 ? fixed : null;
+}
 function _evgRateDigitRepair(rate, qty, charge) {
   const str = String(rate);
   const dot = str.indexOf('.');
@@ -2294,6 +2310,13 @@ function _evgRateDigitRepair(rate, qty, charge) {
     tryCand(str.slice(0, i) + str.slice(i + 1));
   }
   return found.size === 1 ? [...found][0] : null;
+}
+// True when the extracted charges sum to the printed Current Charges within a cent. The gate for the
+// any-digit repair: a rate is repaired only on a bill whose printed charges all agree. One sum function
+// (sumElectricComponentCharges, computations/rates.js).
+function _evgChargesReconcile(result) {
+  const total = parseBillNumberOrZero(result.TotalCurrentCharges);
+  return total > 0 && Math.abs(sumElectricComponentCharges(result) - total) <= 0.01;
 }
 // Utility E per-section extractor
 function _extractEvergy(t, acctOverride, addrOverride) {
@@ -4871,10 +4894,12 @@ function _extractEvergy(t, acctOverride, addrOverride) {
         // assumed to be right: the rate is changed only if a one-digit repair of the printed rate
         // (8 or 9 read for 3, or one extra digit) makes qty x rate equal the line's own charge.
         const _pr = parts[0];
+        const _prorated = !!(_pr.prorationNum && _pr.prorationDen);
         const _repairedRate =
-          _pctDiff > 0.05 || (_pr.prorationNum && _pr.prorationDen)
+          _pctDiff > 0.05 || _prorated
             ? null
-            : _evgRateDigitRepair(_ocr_rate, _pr.qty, chargeVal);
+            : _evgRateDigitRepair(_ocr_rate, _pr.qty, chargeVal) ||
+              (_evgChargesReconcile(result) ? _evgRateOneDigitRepair(_ocr_rate, _pr.qty, chargeVal) : null);
         if (_pctDiff > 0.05 || _repairedRate !== null) {
           const _newRate = _repairedRate !== null ? _repairedRate : _derived_rate;
           // Replace the stale rate in _rates so downstream consumers use the correct value
@@ -4896,6 +4921,35 @@ function _extractEvergy(t, acctOverride, addrOverride) {
           const _rateField = RATE_FIELD_MAP[chargeField];
           if (_rateField) result[_rateField] = _newRate;
           // Clear the mismatch flags — the correction resolves them
+          delete result['_rate_mismatch_' + chargeField];
+          delete result['_part_mismatches_' + chargeField];
+        }
+      } else if (parts.length > 1 && badParts.length > 0 && _evgChargesReconcile(result)) {
+        // 2026-10-15: MULTI-PART one-digit rate repair (ECA split at a rate change: 2 kWh lines). Each bad
+        // line is repaired from its OWN printed charge and qty (_evgRateOneDigitRepair); every bad line must
+        // repair, lines must not be prorated, and the qty must differ per line (kWh lines add up). The
+        // printed charges and quantities are never changed; only the read rate of the bad line is.
+        const _qtyDiffers = parts.some((p) => Math.abs(p.qty - parts[0].qty) >= 0.01);
+        const _fixedParts = parts.map((p) => {
+          const ok = p.prorationNum && p.prorationDen ? false : partDetails[parts.indexOf(p)].valid;
+          if (ok) return p;
+          if (p.prorationNum && p.prorationDen) return null;
+          const nr = p.ocrCharge != null ? _evgRateOneDigitRepair(p.rate, p.qty, p.ocrCharge) : null;
+          return nr === null ? null : Object.assign({}, p, { rate: nr, computed: p.ocrCharge });
+        });
+        if (_qtyDiffers && _fixedParts.every((p) => p)) {
+          const _totQty = _fixedParts.reduce((s, p) => s + p.qty, 0);
+          const _newRate = _fixedParts.reduce((s, p) => s + p.qty * p.rate, 0) / _totQty;
+          result._rates[chargeField] = Object.assign({}, ri, { rate: _newRate, parts: _fixedParts });
+          result['_auto_corrected_rate_' + chargeField] = {
+            ocrRate: ri.rate,
+            derivedRate: _newRate,
+            charge: chargeVal,
+            qty: _totQty,
+            reason: 'digit_repair',
+          };
+          const _rateField = RATE_FIELD_MAP[chargeField];
+          if (_rateField) result[_rateField] = _newRate;
           delete result['_rate_mismatch_' + chargeField];
           delete result['_part_mismatches_' + chargeField];
         }

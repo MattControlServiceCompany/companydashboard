@@ -220,12 +220,12 @@ async function run(rows, extra) {
     !L._isMultiMeterBill({ _meterInfo: { type: 'meter_change', rows: 1 } }),
   );
 
-  console.log('Case 11 (af0b7fe6): an alternate-pass bill is matched by account AND period, never by position');
+  console.log('Case 11 (af0b7fe6): an alternate-pass bill is matched by account AND period AND address, never by position');
   const alt = [
-    { AccountNumber: '999000', BillingPeriodStart: '01/09/2030', BillingPeriodEnd: '02/09/2030' },
-    { AccountNumber: '1000001', BillingPeriodStart: '01/09/2030', BillingPeriodEnd: '02/09/2030' },
+    { AccountNumber: '999000', ServiceAddress: '10 EXAMPLE ST,TEST SCHOOL EXAMPLETON KS', BillingPeriodStart: '01/09/2030', BillingPeriodEnd: '02/09/2030' },
+    { AccountNumber: '1000001', ServiceAddress: '10 EXAMPLE ST,TEST SCHOOL EXAMPLETON KS', BillingPeriodStart: '01/09/2030', BillingPeriodEnd: '02/09/2030' },
   ];
-  const me = { AccountNumber: '1000-001', BillingPeriodStart: '01/09/2030', BillingPeriodEnd: '02/09/2030' };
+  const me = { AccountNumber: '1000-001', ServiceAddress: '10 EXAMPLE ST,TEST SCHOOL EXAMPLETON KS', BillingPeriodStart: '01/09/2030', BillingPeriodEnd: '02/09/2030' };
   check('same account is chosen over the first bill', L._findAltPassBill(alt, me) === alt[1]);
   check('no same-account bill returns null', L._findAltPassBill([alt[0]], me) === null);
   check(
