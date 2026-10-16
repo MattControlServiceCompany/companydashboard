@@ -2575,6 +2575,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.15.135', date: '2026-10-15', title: 'City utility bills read as printed',
+    items: [
+      { type: 'fix', text: 'PDF / OCR page and Utility Data page: city utility bills now read the gas and water line amounts as printed on the bill. A value that cannot be confirmed is held for review instead of being guessed.' }
+    ]
+  },
   { v: 'v2026.10.15.134', date: '2026-10-15', title: 'Stored bills re-checked against their own PDF page',
     items: [
       { type: 'feature', text: 'Utility Data page: when the site loads, it re-reads each stored bill from its own PDF page. It fixes a value only when the stored value fails a check and the right value is printed on that same page. Anything unclear is left as is and listed.' }
