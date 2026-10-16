@@ -2318,6 +2318,203 @@ function _evgChargesReconcile(result) {
   const total = parseBillNumberOrZero(result.TotalCurrentCharges);
   return total > 0 && Math.abs(sumElectricComponentCharges(result) - total) <= 0.01;
 }
+// Utility E tier qty on an energy line: "Sum 1,041.7021 kWh at" / "Win 207.8670 kWh at" (":" read for "."). Null when
+// the line has no such qty.
+function _evgTierQty(line) {
+  const m = String(line).match(/(?:^|[^A-Za-z])(Sum|Win)\s+([0-9,]+[.:][0-9]{2,})\s*k[Ww]h?\s+at/i);
+  if (!m) return null;
+  const v = parseFloat(m[2].replace(':', '.').replace(/,/g, ''));
+  return v > 0 ? { season: m[1], qty: v } : null;
+}
+// (d) Positional label repair for one unlabeled Off Pk Sum line. OCR can lose the "Energy Chg Off Pk" label of
+// the summer off-peak tier ("oy rg Sum 1,041.7021 kWh at $59.73") on a season-change bill. The line between the
+// On Pk Win line and the Off Pk Win line that carries "Sum <qty> kWh at" and no charge label IS the Off Pk Sum
+// line, accepted only when On Sum + On Win + that qty + Off Win = kWhConsumed to 0.005 kWh. Any other shape
+// (two candidates, a labeled Off Pk Sum, a tier missing, the identity open) returns null and nothing changes.
+// `kw` is the extractor's charge-label pattern map. Returns { text, info } with the repaired text.
+function _evgRepairOffPkSumLine(t, kwhConsumed, kw) {
+  const total = parseBillNumber(kwhConsumed);
+  if (!(total > 0)) return null;
+  const lines = String(t).split('\n');
+  const onRe = new RegExp(kw.EnergyOnPeakCharge, 'i');
+  const offRe = new RegExp(kw.EnergyOffPeakCharge, 'i');
+  const anyRe = new RegExp(Object.values(kw).join('|'), 'i');
+  const on = { Sum: [], Win: [] };
+  const off = { Sum: [], Win: [] };
+  for (let i = 0; i < lines.length; i++) {
+    const tq = _evgTierQty(lines[i]);
+    if (!tq) continue;
+    const season = tq.season[0].toUpperCase() + tq.season.slice(1).toLowerCase();
+    if (onRe.test(lines[i])) on[season].push({ i, qty: tq.qty });
+    else if (offRe.test(lines[i])) off[season].push({ i, qty: tq.qty });
+  }
+  if (on.Sum.length !== 1 || on.Win.length !== 1 || off.Win.length !== 1 || off.Sum.length !== 0) return null;
+  const iOnWin = on.Win[0].i;
+  const iOffWin = off.Win[0].i;
+  if (!(iOnWin < iOffWin)) return null;
+  const cands = [];
+  for (let i = iOnWin + 1; i < iOffWin; i++) {
+    if (anyRe.test(lines[i])) continue;
+    const tq = _evgTierQty(lines[i]);
+    if (tq && /^sum$/i.test(tq.season)) cands.push({ i, qty: tq.qty });
+  }
+  if (cands.length !== 1) return null;
+  const c = cands[0];
+  const sum = on.Sum[0].qty + on.Win[0].qty + c.qty + off.Win[0].qty;
+  if (Math.abs(sum - total) > 0.005) return null;
+  const original = lines[c.i];
+  const repaired = original.replace(/^[\s\S]*?(?=Sum\s+[0-9,]+[.:][0-9]{2,}\s*k[Ww]h?\s+at)/i, 'Energy Chg Off Pk ');
+  if (repaired === original) return null;
+  lines[c.i] = repaired;
+  return {
+    text: lines.join('\n'),
+    info: {
+      line: repaired,
+      original,
+      qty: c.qty,
+      identity: on.Sum[0].qty + ' + ' + on.Win[0].qty + ' + ' + c.qty + ' + ' + off.Win[0].qty + ' = ' + total,
+    },
+  };
+}
+// (c) Detached amount column reader. On a scanned page OCR can split the two columns: every charge label with its
+// "qty kW/kWh at $rate" on one side and the dollar amounts as a block of lines elsewhere. xChg finds no amount
+// for those labels. This reader matches each block amount to a charge line only by qty x rate (x the printed
+// day proration) equal to the cent, one-to-one; a charge is stored only when every one of its lines matched
+// and the page shows no more label lines than parts. kWh tiers must also add up to kWhConsumed (ECA/EER/PTS
+// segments on their own; On Pk + Off Pk together), so a label glued to another line's qty is never taken.
+// The one negative amount of the block is the Bill offset and its positive twin the Tax exempt delivery, only
+// when both labels are on the page without an amount. The Customer charge, which has no qty x rate, is the
+// first amount only when the block has exactly one amount per label and every other amount was matched.
+// Everything else stays null; the bill is then held by the usual missing-field and _proposed_ gates.
+function _evgReadDetachedAmounts(t, result, rates, xChgParts, kw, h) {
+  const lines = String(t).split('\n');
+  const amtRe = /^\s*(-)?\$\s?([\d,]+\.\d{2})\s*$/;
+  let best = [];
+  let cur = [];
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(amtRe);
+    if (m) cur.push({ val: parseFloat(m[2].replace(/,/g, '')) * (m[1] ? -1 : 1), line: i });
+    else if (lines[i].trim() !== '') {
+      if (cur.length > best.length) best = cur;
+      cur = [];
+    }
+  }
+  if (cur.length > best.length) best = cur;
+  if (best.length < 3) return;
+  const total = parseBillNumber(result.kWhConsumed);
+  const labelCount = (f) => {
+    const re = new RegExp(kw[f], 'i');
+    return lines.filter((l) => re.test(l)).length;
+  };
+  const FIELDS = [
+    'FacilitiesCharge',
+    'BilledKWCharge',
+    'EnergyOnPeakCharge',
+    'EnergyOffPeakCharge',
+    'ECACharge',
+    'EERCharge',
+    'PTSCharge',
+    'TDCCharge',
+    'RkVACharge',
+  ];
+  const SEGMENTED = ['ECACharge', 'EERCharge', 'PTSCharge'];
+  const partsQty = (f) =>
+    rates[f] && rates[f].parts && rates[f].parts.every((p) => p.qty > 0)
+      ? rates[f].parts.reduce((s, p) => s + p.qty, 0)
+      : null;
+  // Amounts already read for some other charge are not in play.
+  const taken = new Set();
+  for (const f of FIELDS.concat(['CustomerCharge', 'TaxExemptDelivery', 'BillOffset', 'FranchiseFee'])) {
+    const v = parseBillNumber(result[f]);
+    if (v) taken.add(Math.abs(v).toFixed(2));
+  }
+  const open = best.filter((a) => a.val > 0 && !taken.has(a.val.toFixed(2)));
+  const cands = [];
+  for (const f of FIELDS) {
+    if (parseBillNumber(result[f]) > 0) continue;
+    const r = rates[f];
+    if (!r || !r.parts || !r.parts.length) continue;
+    if (!r.parts.every((p) => p.qty > 0 && p.rate > 0)) continue;
+    if (labelCount(f) !== r.parts.length) continue;
+    if (SEGMENTED.includes(f) && !(total > 0 && Math.abs(partsQty(f) - total) <= 0.01)) continue;
+    r.parts.forEach((p, idx) => {
+      const ratio = p.prorationNum && p.prorationDen ? p.prorationNum / p.prorationDen : 1;
+      cands.push({ f, idx, p, expected: Math.round(p.qty * p.rate * ratio * 100) / 100 });
+    });
+  }
+  const hit = (c, a) => Math.abs(c.expected - a.val) < 0.005;
+  const matched = []; // { cand, amt }
+  for (const a of open) {
+    const cs = cands.filter((c) => hit(c, a));
+    if (cs.length !== 1) continue;
+    const as = open.filter((b) => hit(cs[0], b));
+    if (as.length !== 1) continue;
+    matched.push({ cand: cs[0], amt: a });
+  }
+  const assigned = new Set();
+  const complete = (f) =>
+    !!rates[f] && rates[f].parts.length > 0 && rates[f].parts.every((p, idx) => matched.some((m) => m.cand.f === f && m.cand.idx === idx));
+  const onOffOk = () => {
+    const onQ = partsQty('EnergyOnPeakCharge');
+    const offQ = partsQty('EnergyOffPeakCharge');
+    return onQ > 0 && offQ > 0 && total > 0 && Math.abs(onQ + offQ - total) <= 0.01;
+  };
+  for (const f of FIELDS) {
+    if (!complete(f) || parseBillNumber(result[f]) > 0) continue;
+    if (f === 'EnergyOnPeakCharge' || f === 'EnergyOffPeakCharge') {
+      const other = f === 'EnergyOnPeakCharge' ? 'EnergyOffPeakCharge' : 'EnergyOnPeakCharge';
+      if (!onOffOk()) continue;
+      if (!(parseBillNumber(result[other]) > 0 || complete(other))) continue;
+    }
+    const ms = matched.filter((m) => m.cand.f === f);
+    const amounts = ms.map((m) => m.amt.val);
+    ms.forEach((m) => {
+      m.cand.p.ocrCharge = m.amt.val;
+      m.amt.used = true;
+    });
+    result[f] = amounts.reduce((s, v) => s + v, 0).toFixed(2);
+    result['_detached_amount_' + f] = {
+      amounts,
+      parts: ms.map((m) => ({ qty: m.cand.p.qty, rate: m.cand.p.rate, expected: m.cand.expected })),
+    };
+    if (amounts.length > 1) xChgParts[f] = amounts;
+    assigned.add(f);
+  }
+  // Bill offset and its Tax exempt twin: both labels on the page without an amount, one negative in the block.
+  const labelNoAmt = (re) => lines.some((l) => re.test(l) && h.getAmt(l) === null);
+  const negs = best.filter((a) => a.val < 0);
+  if (
+    negs.length === 1 &&
+    !parseBillNumber(result.BillOffset) &&
+    !parseBillNumber(result.TaxExemptDelivery) &&
+    labelNoAmt(/Bill\s+[0O]ff/i) &&
+    labelNoAmt(h.taxExemptRe)
+  ) {
+    const twins = open.filter((a) => !a.used && Math.abs(a.val + negs[0].val) < 0.005);
+    if (twins.length === 1) {
+      result.BillOffset = negs[0].val.toFixed(2);
+      result.TaxExemptDelivery = twins[0].val.toFixed(2);
+      twins[0].used = true;
+      negs[0].used = true;
+      result._detached_amount_BillOffset = { amounts: [negs[0].val] };
+      result._detached_amount_TaxExemptDelivery = { amounts: [twins[0].val] };
+    }
+  }
+  // Customer charge: the first amount, only when the block has one amount per label and all others matched.
+  if (h.customerLabel && !parseBillNumber(result.CustomerCharge) && labelNoAmt(new RegExp(kw.CustomerCharge, 'i'))) {
+    const labels =
+      Object.keys(kw).reduce((s, f) => s + labelCount(f), 0) +
+      lines.filter((l) => /Bill\s+[0O]ff/i.test(l)).length +
+      lines.filter((l) => h.taxExemptRe.test(l)).length;
+    const first = best[0];
+    const othersUsed = best.slice(1).every((a) => a.used || taken.has(Math.abs(a.val).toFixed(2)));
+    if (labels === best.length && first.val > 0 && !first.used && othersUsed) {
+      result.CustomerCharge = first.val.toFixed(2);
+      first.used = true;
+      result._detached_amount_CustomerCharge = { amounts: [first.val] };
+    }
+  }
+}
 // Utility E per-section extractor
 function _extractEvergy(t, acctOverride, addrOverride) {
   // ── OCR digit cleanup: replace 'o'/'O' with '0' in numeric contexts ──
@@ -3778,9 +3975,11 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // ── Rate schedule ──
   // Rate schedule: code appears just before 'Billing Details' (possibly on previous line after y-split)
   // Fallback: rate schedule is always under the service address on page 2/3
+  // (e) "Billing De Details" is an OCR double-read of the header; the rate code before it is still the
+  // page's own code, so the header is read with that one optional stutter word.
   const rateMatch =
-    t.match(/[-\u2013]\s*([\dA-Z]{3,10})[^\n]*?\n?[^\n]*?Billing\s+Details/i) ||
-    t.match(/[-\u2013]\s*([\dA-Z]{3,10})\s+Billing\s+Details/i) ||
+    t.match(/[-\u2013]\s*([\dA-Z]{3,10})[^\n]*?\n?[^\n]*?Billing\s+(?:De[a-z]*\s+)?Details/i) ||
+    t.match(/[-\u2013]\s*([\dA-Z]{3,10})\s+Billing\s+(?:De[a-z]*\s+)?Details/i) ||
     t.match(/LGS[^\n]*[-\u2013]\s*([\dA-Z]{3,10})\s*$/im) ||
     t.match(/Rate\s*(?:Schedule|Code)?[\s:]*([A-Z0-9\-]{2,12})/i) ||
     (() => {
@@ -3815,33 +4014,52 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // like "Customer Chg" vs "CustomerChg" don't collide (none of these legitimately
   // run together, but we want to fail closed on the unseparated case).
   const SEP = '[ \\t\\n\\r.]+';
-  // Customer: "Customer Chg" or OCR garble like "CUSIOMET CNG", "Customar Chg", "CUSIOMER CNG"
-  const custChg = xChg('C[ua][s5][t1iI][o0][mM][eao][r1tT]' + SEP + C, null, 'CustomerCharge');
+  // The one list of charge-label patterns. xChg (dollar amount), xRate (qty and rate), the label count of
+  // the detached-amount reader and the Off Pk Sum label repair all read the same pattern per field.
+  const _EVG_KW = {
+    // Customer: "Customer Chg" or OCR garble like "CUSIOMET CNG", "Customar Chg", "CUSIOMER CNG"
+    CustomerCharge: 'C[ua][s5][t1iI][o0][mM][eao][r1tT]' + SEP + C,
+    FacilitiesCharge: 'Fac[^ \\t\\n\\r]*' + SEP + C,
+    BilledKWCharge: 'Demand' + SEP + C,
+    EnergyOnPeakCharge: 'Energy' + SEP + C + '[ \\t\\n\\r]+On[ \\t\\n\\r]+P[kK]',
+    EnergyOffPeakCharge: 'Energy' + SEP + C + '[ \\t\\n\\r]+Off[ \\t\\n\\r]+P[kK]',
+    // E[CG]A tolerates Tesseract's C↔G confusion — e.g. the second ECA
+    // part on Site K Elementary's Oct 2025 bill prints as "EGA Chg", which
+    // a strict `ECA` match silently skipped so the $121.10 part was lost.
+    ECACharge: 'E[CG]A' + SEP + C,
+    EERCharge: 'EER' + SEP + C,
+    PTSCharge: 'PTS' + SEP + C,
+    TDCCharge: 'TD[CG]' + SEP + C,
+    RkVACharge: 'R[kK]VA' + SEP + C,
+  };
+  // (d) An Off Pk Sum line whose label OCR lost ("oy rg Sum 1,041.7021 kWh at $59.73") gets its label back
+  // only when the four tier quantities then add up to kWhConsumed exactly. The readers below read the
+  // repaired text; the bill keeps a note of the repair.
+  const _offSumFix = _evgRepairOffPkSumLine(t, adjKwh, _EVG_KW);
+  if (_offSumFix) t = _offSumFix.text;
+  const custChg = xChg(_EVG_KW.CustomerCharge, null, 'CustomerCharge');
   const facKW =
     t
-      .match(new RegExp('Fac[^ \\t\\n\\r]*' + SEP + C + '[ \\t\\n\\r]+([0-9,.]+)[ \\t\\n\\r]*[kK][Ww]', 'i'))?.[1]
+      .match(new RegExp(_EVG_KW.FacilitiesCharge + '[ \\t\\n\\r]+([0-9,.]+)[ \\t\\n\\r]*[kK][Ww]', 'i'))?.[1]
       ?.replace(/,/g, '') || null;
-  const facChg = xChg('Fac[^ \\t\\n\\r]*' + SEP + C, null, 'FacilitiesCharge');
+  const facChg = xChg(_EVG_KW.FacilitiesCharge, null, 'FacilitiesCharge');
   const demKW =
     t
-      .match(new RegExp('Demand' + SEP + C + '[ \\t\\n\\r]+([0-9,.]+)[ \\t\\n\\r]*[kK][Ww]', 'i'))?.[1]
+      .match(new RegExp(_EVG_KW.BilledKWCharge + '[ \\t\\n\\r]+([0-9,.]+)[ \\t\\n\\r]*[kK][Ww]', 'i'))?.[1]
       ?.replace(/,/g, '') || null;
-  const demChg = xChg('Demand' + SEP + C, null, 'BilledKWCharge');
+  const demChg = xChg(_EVG_KW.BilledKWCharge, null, 'BilledKWCharge');
   // ── Energy charges: date-aware On/Off Peak vs 3-tier ──
   // Kansas Utility E switched from 3-tier to On/Off Peak on 12/21/2023.
   // Before that date: 3 tiers (First 180h, Next 180h, Over 360h).
   // After: On Pk Sum/Win + Off Pk Sum/Win.
   // Always extract both formats — changeover bills (spanning 12/21/2023) have both.
   // tieredChg excludes On/Off Pk lines so there's no double-counting.
-  const onPkChg = xChg('Energy' + SEP + C + '[ \\t\\n\\r]+On[ \\t\\n\\r]+P[kK]', null, 'EnergyOnPeakCharge');
-  const offPkChg = xChg('Energy' + SEP + C + '[ \\t\\n\\r]+Off[ \\t\\n\\r]+P[kK]', null, 'EnergyOffPeakCharge');
+  const onPkChg = xChg(_EVG_KW.EnergyOnPeakCharge, null, 'EnergyOnPeakCharge');
+  const offPkChg = xChg(_EVG_KW.EnergyOffPeakCharge, null, 'EnergyOffPeakCharge');
   const tieredChg = xChg('Energy' + SEP + C, /On\s+P[kK]|Off\s+P[kK]/i);
-  // E[CG]A tolerates Tesseract's C↔G confusion — e.g. the second ECA
-  // part on Site K Elementary's Oct 2025 bill prints as "EGA Chg", which
-  // a strict `ECA` match silently skipped so the $121.10 part was lost.
-  const ecaChg = xChg('E[CG]A' + SEP + C, null, 'ECACharge');
-  const eerChg = xChg('EER' + SEP + C, null, 'EERCharge');
-  const ptsChg = xChg('PTS' + SEP + C, null, 'PTSCharge');
+  const ecaChg = xChg(_EVG_KW.ECACharge, null, 'ECACharge');
+  const eerChg = xChg(_EVG_KW.EERCharge, null, 'EERCharge');
+  const ptsChg = xChg(_EVG_KW.PTSCharge, null, 'PTSCharge');
   // TDC kW qty lives on the charge line as "for <qty>" (OCR frequently splits
   // this across two lines with "KW at $rate" on the next line, and leaves stray
   // garbage characters like trailing 'i' or '(2' before the newline). Anchor the
@@ -3849,16 +4067,14 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // on the garbage characters between qty and the kW token.
   const tdcKW =
     t
-      .match(
-        new RegExp('TD[CG]' + SEP + C + '[\\u0000-\\uFFFF]{0,150}?for[ \\t\\n\\r]+([0-9,]+\\.[0-9]{2,})', 'i'),
-      )?.[1]
+      .match(new RegExp(_EVG_KW.TDCCharge + '[\\u0000-\\uFFFF]{0,150}?for[ \\t\\n\\r]+([0-9,]+\\.[0-9]{2,})', 'i'))?.[1]
       ?.replace(/,/g, '') || null;
-  const tdcChg = xChg('TD[CG]' + SEP + C, null, 'TDCCharge');
+  const tdcChg = xChg(_EVG_KW.TDCCharge, null, 'TDCCharge');
   // RkVA charge (reactive power)
   // The kVAR qty on the bill is the OVERAGE above 50% of billing kW demand, not total reactive.
   // E.g. 500 kW demand → 250 kVAR free; if reactive = 300, bill shows 50 kVAR × $0.663 = $33.15
   // The meter table RKVA Used is the full value; the charge line qty is only the excess.
-  const rkvaChg = xChg('R[kK]VA' + SEP + C, null, 'RkVACharge');
+  const rkvaChg = xChg(_EVG_KW.RkVACharge, null, 'RkVACharge');
   // Broadened: handle OCR variants "Tox exempt", "lax exempt", wrapped
   // lines, and stray punctuation like the smart quote in "Tax ‘exempt
   // delivery cost from bill" that Tesseract inserts on degraded scans.
@@ -3866,20 +4082,22 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // backticks between "Tax" and "exempt".
   const SEP_T = "[ \\t\\n\\r'`\\u2018\\u2019\\u201C\\u201D]+";
   const _taxExemptParts = [];
+  const _taxExemptRe = new RegExp('[TIl][a@o0]x' + SEP_T + 'e?xempt', 'i');
   const taxExempt = (() => {
     const lines = t.split('\n');
-    const taxRe = new RegExp('[TIl][a@o0]x' + SEP_T + 'e?xempt', 'i');
     for (let i = 0; i < lines.length; i++) {
-      if (!taxRe.test(lines[i])) continue;
-      const sameLine = lines[i].match(/\$([\d,]+\.\d{2})/);
-      if (sameLine) {
-        _taxExemptParts.push(parseFloat(sameLine[1].replace(/,/g, '')));
+      if (!_taxExemptRe.test(lines[i])) continue;
+      // _evgChargeAmounts is the one amount reader: a rate on the next line ("14,397.6017 kWh at $0.07852
+      // per kWh") is never cut to "$0.07" and taken as the charge.
+      const sameLine = _evgChargeAmounts(lines[i]);
+      if (sameLine.length) {
+        _taxExemptParts.push(sameLine[0]);
         continue;
       }
       for (let j = i + 1; j < Math.min(i + 3, lines.length); j++) {
-        const nextLine = lines[j].match(/\$([\d,]+\.\d{2})/);
-        if (nextLine) {
-          _taxExemptParts.push(parseFloat(nextLine[1].replace(/,/g, '')));
+        const nextLine = _evgChargeAmounts(lines[j]);
+        if (nextLine.length) {
+          _taxExemptParts.push(nextLine[0]);
           break;
         }
       }
@@ -3929,15 +4147,15 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       if (!franRe.test(lines[i])) continue;
       if (inAdjustments) continue;
       if (/[-–]\s*\$/.test(lines[i])) continue;
-      const sameLine = lines[i].match(/\$([\d,]+\.\d{2})/);
-      if (sameLine) {
-        _franchiseParts.push(parseFloat(sameLine[1].replace(/,/g, '')));
+      const sameLine = _evgChargeAmounts(lines[i]);
+      if (sameLine.length) {
+        _franchiseParts.push(sameLine[0]);
         continue;
       }
       for (let j = i + 1; j < Math.min(i + 3, lines.length); j++) {
-        const nextLine = lines[j].match(/\$([\d,]+\.\d{2})/);
-        if (nextLine) {
-          _franchiseParts.push(parseFloat(nextLine[1].replace(/,/g, '')));
+        const nextLine = _evgChargeAmounts(lines[j]);
+        if (nextLine.length) {
+          _franchiseParts.push(nextLine[0]);
           break;
         }
       }
@@ -3964,7 +4182,8 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       const taxM = lines[i].match(taxRe);
       if (!taxM) continue;
       const afterTax = lines[i].slice(taxM.index + taxM[0].length);
-      const sameLine = afterTax.match(/\$([\d,]+\.\d{2})/);
+      const sameLine = afterTax.match(/\$[\d,]+\.\d{2}/);
+      const sameLineAmts = _evgChargeAmounts(afterTax);
       if (sameLine) {
         // A genuine tax CHARGE line always carries a "@ <rate>%" marker between
         // the "Sales Tax" phrase and its dollar amount (e.g. "Kansas State Sales
@@ -3978,8 +4197,8 @@ function _extractEvergy(t, acctOverride, addrOverride) {
         // (skip this line entirely, do not fall through to next-line search)
         // otherwise.
         const pctIdx = afterTax.indexOf('%');
-        if (pctIdx >= 0 && pctIdx < sameLine.index) {
-          _salesTaxParts.push(parseFloat(sameLine[1].replace(/,/g, '')));
+        if (pctIdx >= 0 && pctIdx < sameLine.index && sameLineAmts.length) {
+          _salesTaxParts.push(sameLineAmts[0]);
         }
         continue;
       }
@@ -3989,9 +4208,9 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       // we've drifted off the tax line onto a different charge's total.
       for (let j = i + 1; j < Math.min(i + 3, lines.length); j++) {
         if (/Current\s+Charges|Utility|Sub[tl]?ota[l1]/i.test(lines[j])) break;
-        const nextLine = lines[j].match(/\$([\d,]+\.\d{2})/);
-        if (nextLine) {
-          _salesTaxParts.push(parseFloat(nextLine[1].replace(/,/g, '')));
+        const nextLine = _evgChargeAmounts(lines[j]);
+        if (nextLine.length) {
+          _salesTaxParts.push(nextLine[0]);
           break;
         }
       }
@@ -4053,6 +4272,8 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // of silently fabricating a total. Attached to result._miscUnreconciled after result
   // is built.
   let _miscUnreconciled = null;
+  // (b) A total that is only the sum of the read charges is never stored; it is proposed and the bill is held.
+  let _proposedTotal = null;
   const totalDue = (() => {
     // Prefer "Current Charges" in the billing detail section (page 2/3, near Subtotal)
     // Page 1 "Current Charges" may be a summary total that differs from the utility detail total.
@@ -4164,24 +4385,35 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       _stLastM = _stM;
     }
     if (_stLastM) return _stLastM[1].replace(/,/g, '');
-    // Fallback: sum all extracted charges. This may be incomplete (e.g. CustomerCharge not yet
-    // recovered by structural fallback), so _postExtractionVerify will recompute if needed.
-    const sum =
-      parseBillNumber(custChg) +
-      parseBillNumber(facChg) +
-      parseBillNumber(demChg) +
-      parseBillNumber(onPkChg) +
-      parseBillNumber(tieredChg) +
-      parseBillNumber(offPkChg) +
-      parseBillNumber(rkvaChg) +
-      parseBillNumber(ecaChg) +
-      parseBillNumber(eerChg) +
-      parseBillNumber(ptsChg) +
-      parseBillNumber(tdcChg) +
-      parseBillNumber(taxExempt) +
-      parseBillNumber(billOffset) +
-      parseBillNumber(franchise);
-    return sum > 0 ? sum.toFixed(2) : null;
+    // No printed Subtotal or Current Charges on the page: the sum of the read charges is NOT the printed
+    // total, so it is not stored. It goes to _proposed_TotalCurrentCharges (with the fields that were not
+    // read) and the bill is held for review.
+    const _readParts = {
+      CustomerCharge: custChg,
+      FacilitiesCharge: facChg,
+      BilledKWCharge: demChg,
+      EnergyOnPeakCharge: onPkChg,
+      EnergyTiered: tieredChg,
+      EnergyOffPeakCharge: offPkChg,
+      RkVACharge: rkvaChg,
+      ECACharge: ecaChg,
+      EERCharge: eerChg,
+      PTSCharge: ptsChg,
+      TDCCharge: tdcChg,
+      TaxExemptDelivery: taxExempt,
+      BillOffset: billOffset,
+      FranchiseFee: franchise,
+    };
+    const sum = Object.values(_readParts).reduce((s, v) => s + parseBillNumber(v), 0);
+    if (sum > 0) {
+      _proposedTotal = {
+        value: sum.toFixed(2),
+        reason: 'no printed Subtotal or Current Charges was read; the sum of the read charges is',
+        summed: Object.keys(_readParts).filter((k) => parseBillNumber(_readParts[k]) !== 0),
+        notRead: Object.keys(_readParts).filter((k) => _readParts[k] === null),
+      };
+    }
+    return null;
   })();
 
   // Defensive backstop (backlog de949cd8): a genuine tax line can never
@@ -4314,6 +4546,8 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // Diagnostic only (item f71c0013) — set when a Miscellaneous line was found but the
   // Front - Misc == Back identity didn't hold, so it was NOT added to TotalCurrentCharges.
   if (_miscUnreconciled) result._miscUnreconciled = _miscUnreconciled;
+  if (_proposedTotal) result._proposed_TotalCurrentCharges = _proposedTotal;
+  if (_offSumFix) result._label_repaired_EnergyOffPeakCharge = _offSumFix.info;
 
   // Flag multi-meter bills for transparency in debug output
   if (_meterCombined) {
@@ -4499,6 +4733,27 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     };
   }
   if (_rOffPkOk) _rates.EnergyOffPeakCharge = _rOffPkOk;
+  // (d) The repaired Off Pk Sum line printed its qty and its charge but OCR lost its rate text, so xRate made
+  // no part for it. The part is added from the two printed values (rate = charge / qty, marked derived) so
+  // the leg's qty is the sum of its printed tier quantities.
+  if (_offSumFix && _rOffPkOk && _rOffPkOk.parts) {
+    const ro = _rOffPkOk;
+    const has = ro.parts.some((p) => p.qty != null && Math.abs(p.qty - _offSumFix.info.qty) < 0.0001);
+    const amt = getAmt(_offSumFix.info.line);
+    if (!has && amt > 0) {
+      ro.parts.unshift({
+        qty: _offSumFix.info.qty,
+        rate: amt / _offSumFix.info.qty,
+        unit: 'kWh',
+        computed: amt,
+        ocrCharge: amt,
+        rateDerived: true,
+      });
+      ro.qty = ro.parts.reduce((s, p) => s + p.qty, 0);
+      ro.computed = ro.parts.reduce((s, p) => s + p.computed, 0);
+      ro.rate = _blendRate(ro.parts, true, ro.qty, ro.computed);
+    }
+  }
   // Flag energy format: 'on_off_peak' if On-Peak found, 'tiered' if only tiered, 'changeover' if both
   if (_rOnPkOk && _rTieredOk) result._energyFormat = 'changeover';
   else if (_rOnPkOk || _rOffPkOk) result._energyFormat = 'on_off_peak';
@@ -4577,6 +4832,12 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       );
     }
   }
+  // (c) Detached amount column: labels with qty x rate on one side, the dollar amounts as a block elsewhere.
+  _evgReadDetachedAmounts(t, result, _rates, _xChgParts, _EVG_KW, {
+    getAmt,
+    taxExemptRe: _taxExemptRe,
+    customerLabel: custChg === null,
+  });
   if (Object.keys(_rates).length) result._rates = _rates;
   if (Object.keys(_xChgParts).length) result._xChgParts = _xChgParts;
 
@@ -4635,12 +4896,25 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // Reconcile xChg totals with xRate computed totals: when xRate found
   // multi-part charges that xChg missed (e.g. EER Part 2 has no OCR dollar
   // amount so xChg only captured Part 1's $0.00), use the xRate computed sum.
+  // 2026-10-15: the sum is stored only when every part has its printed amount (a sum of ink). A sum that needs
+  // qty x rate for any part is proposed (_proposed_<field>) and the bill is held with that reason.
   for (const [chargeField, ri] of Object.entries(_rates)) {
     if (!ri || !ri.parts || ri.parts.length < 2) continue;
     const computedTotal = ri.parts.reduce((s, p) => s + (p.ocrCharge != null ? p.ocrCharge : p.computed), 0);
     const currentVal = parseBillNumberOrZero(result[chargeField]);
     if (computedTotal > currentVal + 0.01) {
-      result[chargeField] = computedTotal.toFixed(2);
+      if (ri.parts.every((p) => p.ocrCharge != null)) {
+        result[chargeField] = computedTotal.toFixed(2);
+      } else {
+        result['_proposed_' + chargeField] = {
+          value: computedTotal.toFixed(2),
+          reason:
+            'not read from the page; ' +
+            ri.parts.map((p) => (p.ocrCharge != null ? '$' + p.ocrCharge : p.qty + ' ' + (p.unit || '') + ' x $' + p.rate)).join(' + ') +
+            ' gives',
+          parts: ri.parts.map((p) => ({ qty: p.qty, rate: p.rate, unit: p.unit, computed: p.computed, ocrCharge: p.ocrCharge })),
+        };
+      }
     }
   }
 
@@ -4653,15 +4927,20 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // value even though BillOffset captured "-$790.51".
   // Guard: do NOT apply mirror rule on parallel-generation bills (SolarCredit present).
   // On those bills the credit is a Parallel Generation Credit, NOT a TaxExemptDelivery mirror.
+  // 2026-10-15: the two lines cancel, so the mirror changes no cost; the filled side is marked
+  // _mirror_filled_<field> (shown on hover, no hold). Real-data sweep: OCR drops the "Bill offset" line on
+  // about 1 bill in 6; a hold there would warn where no usage, kW or cost changes.
   const _teVal = parseBillNumber(result.TaxExemptDelivery);
   const _boVal = parseBillNumber(result.BillOffset);
   if (result.SolarCredit) {
     // Parallel-gen bill: suppress mirror derivation entirely
   } else if (_teVal && !_boVal) {
     result.BillOffset = '-' + Math.abs(_teVal).toFixed(2);
+    result._mirror_filled_BillOffset = { from: 'TaxExemptDelivery', value: result.BillOffset };
   } else if (_boVal && !_teVal) {
     // BillOffset is negative; TaxExemptDelivery is the positive mirror.
     result.TaxExemptDelivery = Math.abs(_boVal).toFixed(2);
+    result._mirror_filled_TaxExemptDelivery = { from: 'BillOffset', value: result.TaxExemptDelivery };
   } else if (_teVal && _boVal) {
     // Both extracted. The Utility E bill often prints the Bill Offset line
     // without an explicit minus sign (e.g. Bill 29 "Bill offset voices, $629.18"),
@@ -4983,10 +5262,17 @@ function _extractEvergy(t, acctOverride, addrOverride) {
         }
       }
 
-      // Missing charge — compute from parts sum
+      // Missing charge: qty x rate is not a value printed on the page, so it is never stored (2026-10-15).
+      // It is proposed with its parts and the bill is held with that reason.
       if (chargeVal <= 0 && computedTotal > 0) {
-        result[chargeField] = computedTotal.toFixed(2);
-        result['_rate_filled_' + chargeField] = true;
+        result['_proposed_' + chargeField] = {
+          value: computedTotal.toFixed(2),
+          reason:
+            'not read from the page; ' +
+            parts.map((p) => p.qty + ' ' + (p.unit || '') + ' x $' + p.rate).join(' + ') +
+            ' gives',
+          parts: parts.map((p) => ({ qty: p.qty, rate: p.rate, unit: p.unit, computed: p.computed })),
+        };
       }
       // ── MULTI-PART CHARGE RECOVERY ──
       // When xChg captured only the FIRST part of a kW-charge that was split across a
@@ -5072,8 +5358,10 @@ function _extractEvergy(t, acctOverride, addrOverride) {
         EnergyOnPeakCharge: 'OnPeakKWh',
         EnergyOffPeakCharge: 'OffPeakKWh',
       };
+      // Only a leg whose dollar charge was read from the page gives its qty (2026-10-15): a qty read from a
+      // block that reached into another line (no charge of its own) is not this leg's quantity.
       const kwhField = KWH_QTY_MAP[chargeField];
-      if (kwhField && ri.qty > 0 && ri.unit && ri.unit.toLowerCase().includes('h')) {
+      if (kwhField && ri.qty > 0 && ri.unit && ri.unit.toLowerCase().includes('h') && chargeVal > 0) {
         const existing = parseBillNumber(result[kwhField]);
         if (existing <= 0) {
           result[kwhField] = ri.qty.toFixed(4);
@@ -5648,6 +5936,11 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     }
   }
 
+  // A proposal is for a field that stayed empty. A field a later printed-value rule filled (gap closed to the
+  // cent against the printed total, detached amount) drops its proposal.
+  for (const k of Object.keys(result)) {
+    if (k.startsWith('_proposed_') && parseBillNumber(result[k.slice('_proposed_'.length)]) > 0) delete result[k];
+  }
   return result;
 }
 
