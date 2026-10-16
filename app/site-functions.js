@@ -2575,6 +2575,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.15.133', date: '2026-10-15', title: 'PDF / OCR page layout and a slimmer sidebar',
+    items: [
+      { type: 'change', text: 'PDF / OCR page: the billing period buttons and the View PDF, Raw Text and Save Debug buttons now sit above the bill; the extraction output is hidden by default on narrower windows, with a Show/Hide button to open it.' },
+      { type: 'change', text: 'Sidebar: on narrower windows it shrinks to icons and opens when you point at it.' }
+    ]
+  },
   { v: 'v2026.10.15.132', date: '2026-10-15', title: 'Behind the scenes cleanup',
     items: [
       { type: 'change', text: 'Behind the scenes: a test was cleaned up. Nothing changes on the site.' }
