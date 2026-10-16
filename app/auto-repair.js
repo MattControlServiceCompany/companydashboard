@@ -12,8 +12,9 @@
      4. findRepairMatch -> repairFieldsFromExtracted -> planMeterRepair (does no harm) -> applyRepairChanges, on the
         meter objects looked up AGAIN after the await (a reload or restore during the read replaces utilityData; a write
         to the old objects would be lost);
-     5. the existing read-chain pass (correctMeterReadChain) for the meter;
-     6. saveUtilityData for the customer, so a closed tab loses at most the PDF in progress.
+     5. saveUtilityData for the customer, so a closed tab loses at most the PDF in progress.
+   The read-chain rule (correctMeterReadChain) is NOT run here: it writes reads derived from the neighbor bills, and
+   this pass writes only a value printed on the bill's own page (repairMayWrite).
    Markers (row._pdfRepair): { v, at, status: 'repaired' | 'nochange' | 'declined', reason } ends the bill for this
    version. Two markers carry no version and are tried again on a later load: { status: 'waiting', reason } when the PDF
    is not in this browser yet, and { status: 'error', reason, tries } when the read threw; after AUTO_REPAIR_MAX_TRIES
@@ -192,8 +193,6 @@ async function _autoRepairOnePdf(pdfKey, refs, version, stats) {
     stats.missing += res.missing.length;
     stats.declined += res.declined.length;
     stats.nochange += res.nochange.length;
-    // reads after the re-read, by the existing rule
-    correctMeterReadChain(t.meter);
   }
   new Set(targets.map((t) => t.cid)).forEach((cid) => saveUtilityData(cid));
   return targets;

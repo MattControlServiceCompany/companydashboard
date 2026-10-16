@@ -15,7 +15,8 @@
  *   7. a changed field has no record in the one automatic-correction store (_auto_corrected_<field>), or the record does
  *      not hold the old and the new value, or Edit Billing Period does not show it, or editing the field does not clear it,
  *      or a second history store (_autoRepairHistory) exists
- *   8. the new code holds a second copy of a rule: a field map, a date pattern, a therm conversion; or it does not call the
+ *   8. the new code holds a second copy of a rule: a field map, a date pattern, a therm conversion; or it runs the read-chain
+ *      rule (a neighbor-derived write outside the one write decision); or it does not call the
  *      shared extraction (extractBillsFromText), the shared mapper (_extractedToBillRowCosts, gasBillSaveTherms), the
  *      shared page-text cache (_bcrLoadPdfText) and the one utility-data accessor; or the queue does not call the shared
  *      extraction
@@ -29,7 +30,8 @@
  *      and a mutation run with the guard removed must FAIL)
  *  14. the browser pass (app/auto-repair.js, run here with stubs): writes to a utilityData object replaced during the
  *      read; marks a missing PDF with a version (never retried); does not cap a PDF that throws; reads again on a second
- *      pass; adds a row for a missing page instead of an audit entry; runs when the storage is not ready
+ *      pass; adds a row for a missing page instead of an audit entry; runs when the storage is not ready; writes a read
+ *      the meter chain derives from the neighbor bills (the read-chain rule) that the bill's own page does not print
  *  15. the browser pass sweeps every meter per PDF (flag summaries bounded by meters + a constant)
  *  16. (not in this gate) the run on the real backup: tools/ has no real data; the result is kept in the work notes
  *  17. the one write decision (repairMayWrite; Matt 2026-10-15: never fill a value that is not printed, held is better
@@ -507,7 +509,7 @@ function misreadMeter() {
   if (!/_bcrLoadPdfText\(/.test(orch)) fail('8', 'the repair pass does not use the shared page-text cache');
   if (/sset\(|localStorage|indexedDB/.test(orch)) fail('8', 'the repair pass writes storage itself instead of the shared cache');
   if (!/DB\.isReady\(\)/.test(orch)) fail('8', 'the repair pass does not wait for the IndexedDB-backed store');
-  if (!/correctMeterReadChain\(/.test(orch)) fail('8', 'the repair pass does not run the existing read-chain rule');
+  if (/correctMeterReadChain\(|computeReadCorrection\(|_rcWalk\(/.test(orch)) fail('8', 'the repair pass runs the read-chain rule (a neighbor-derived write outside repairMayWrite)');
   if (/Promise\.all|Promise\.allSettled/.test(orch)) fail('8', 'the repair pass reads PDFs in parallel');
   if (!/requestIdleCallback/.test(orch)) fail('8', 'the repair pass does not wait for an idle browser');
   if (/\butilityData\s*\[/.test(orch)) fail('8', 'the repair pass indexes utilityData instead of the accessor');
@@ -810,6 +812,23 @@ async function check14() {
     if (!h || !h.changes || h.changes[0].field !== 'waterUsage' || String(h.changes[0].read) !== '10006' || !/passes every check/.test(h.changes[0].reason))
       fail('14g', 'no audit entry for the held value: ' + JSON.stringify(c.audit.map((x) => x.action)));
     if (!(c.window._autoRepairStats && c.window._autoRepairStats.held === 1)) fail('14g', 'stats.held wrong: ' + JSON.stringify(c.window._autoRepairStats));
+  }
+  // h. a read the meter chain can derive from the neighbor bills is never written by the pass: the page prints the
+  //    stored reads, so the write decision keeps them; the read-chain rule would move them to the neighbors' values
+  {
+    const m = electricMeter();
+    m.bills[2].startRead = f4(1290); // both reads 90 high: the chain (bill 1 ends 1200, bill 3 starts 1300) says 1200 / 1300
+    m.bills[2].endRead = f4(1390);
+    const ex = allExts();
+    ex[2] = electricExt(2, { StartRead: f4(1290), EndRead: f4(1390) }); // page 3 prints 1,290.0000 / 1,390.0000
+    const probe = clone(m);
+    if (callIn(ctx, 'correctMeterReadChain', probe) !== 1 || probe.bills[2].startRead !== f4(1200)) fail('14h', 'setup: the read-chain rule does not derive 1200 / 1300 for this fixture: ' + JSON.stringify(probe.bills[2]));
+    const c = makeOrchestrator({ data: dataOf([m]), exts: { k1: ex } });
+    await callIn(c, 'runAutoRepair');
+    const b = m.bills[2];
+    if (b.startRead !== f4(1290) || b.endRead !== f4(1390) || b._auto_corrected_startRead || b._auto_corrected_endRead)
+      fail('14h', 'the pass wrote a read derived from the neighbor bills (not printed on the bill page): ' + JSON.stringify(b));
+    if (!(c.window._autoRepairStats && c.window._autoRepairStats.read >= 1)) fail('14h', 'setup: the bill was not read: ' + JSON.stringify(c.window._autoRepairStats));
   }
   // f. storage not ready: nothing runs
   {
