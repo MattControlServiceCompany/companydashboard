@@ -2575,6 +2575,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.15.134', date: '2026-10-15', title: 'Stored bills re-checked against their own PDF page',
+    items: [
+      { type: 'feature', text: 'Utility Data page: when the site loads, it re-reads each stored bill from its own PDF page. It fixes a value only when the stored value fails a check and the right value is printed on that same page. Anything unclear is left as is and listed.' }
+    ]
+  },
   { v: 'v2026.10.15.133', date: '2026-10-15', title: 'PDF / OCR page layout and a slimmer sidebar',
     items: [
       { type: 'change', text: 'PDF / OCR page: the billing period buttons and the View PDF, Raw Text and Save Debug buttons now sit above the bill; the extraction output is hidden by default on narrower windows, with a Show/Hide button to open it.' },
