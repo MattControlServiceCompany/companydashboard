@@ -2575,6 +2575,14 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.19.137', date: '2026-10-19', title: 'Clearer bill warnings and PDF view',
+    items: [
+      { type: 'change', text: 'Utility Data page: a missing billing period now shows only as the red gap row, not as a warning. The warning banner shows one short line per bill with the reason.' },
+      { type: 'change', text: 'PDF / OCR page: the PDF now shows beside the extracted values. The raw extraction output is closed until you open it. View PDF now sits next to Saved Bills.' },
+      { type: 'fix', text: 'PDF / OCR page and Utility Data page: on city utility bills, Fuel Adjustment now reads as a credit, and water and stormwater amounts read as printed.' },
+      { type: 'fix', text: 'PDF / OCR page and Utility Data page: electric utility bills that print labels and amounts in separate columns now read each charge as printed.' }
+    ]
+  },
   { v: 'v2026.10.15.136', date: '2026-10-15', title: 'Fewer false usage warnings',
     items: [
       { type: 'fix', text: 'Utility Data page: electric utility bills show fewer false high or low usage warnings. A warning now appears only when usage is at least double or at most half the average for the same month, and only when two or more bills exist for that month. Older bills stored under a different address label now count toward that average.' },
