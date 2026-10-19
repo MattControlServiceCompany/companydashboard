@@ -13572,6 +13572,30 @@ function _cropCanvasRegion(srcCanvas, xRatio, yRatio, wRatio, hRatio) {
   ctx.drawImage(srcCanvas, sx, sy, sw, sh, 0, 0, sw, sh);
   return dst;
 }
+// _scaleCanvas: a copy of srcCanvas scaled by factor (smooth). Used by the box re-read to bring a
+// crop of the high-resolution page render to the engine's zoom. Returns a new canvas.
+function _scaleCanvas(srcCanvas, factor) {
+  const dst = document.createElement('canvas');
+  dst.width = Math.max(1, Math.round(srcCanvas.width * factor));
+  dst.height = Math.max(1, Math.round(srcCanvas.height * factor));
+  const ctx = dst.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(srcCanvas, 0, 0, dst.width, dst.height);
+  return dst;
+}
+// _padCanvas: srcCanvas on a white canvas with a margin of m px on every side (tesseract reads a
+// line better with a margin around it). Returns a new canvas.
+function _padCanvas(srcCanvas, m) {
+  const dst = document.createElement('canvas');
+  dst.width = srcCanvas.width + 2 * m;
+  dst.height = srcCanvas.height + 2 * m;
+  const ctx = dst.getContext('2d');
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, dst.width, dst.height);
+  ctx.drawImage(srcCanvas, m, m);
+  return dst;
+}
 // _grayscaleCanvas (backlog 37d5fb0e-fueladj follow-up, 2026-09-14): plain
 // luminance grayscale, no thresholding (unlike binarizeCanvas's Otsu B/W
 // above) — the targeted-crop research
@@ -14767,6 +14791,10 @@ async function extractPDFText(ab, statusCb, opts) {
         // After the first decode timeout in this run, the Client A crop fallback
         // (a ~19x render per page) is skipped for the remaining pages.
         let _lbgCropDecodeTimedOut = false;
+        // Render scale of the one high-resolution page image shared by the box re-read
+        // (BILL_LAYOUT.readPage) and the targeted-crop fallback (12x: the 2026-09-13 crop research
+        // found 8-12x reliable; one render per page, released at the end of the page).
+        const LBG_CROP_ZOOM = 12;
         // Hoisted above the loop (was previously declared right before its one use at
         // the bottom of the per-page block) so GATE A can stamp _pageCoverage at every
         // exit point of a page's OCR processing, not just the normal end-of-iteration one.
@@ -15815,9 +15843,79 @@ async function extractPDFText(ab, statusCb, opts) {
           // as normalized lines behind BILL_LAYOUT.MARK. The City reader (app/energy-savings.js
           // _extractNew) reads those lines instead of the raw page lines; the page sum check
           // there still proves the page. No template match: one marker line with the reason,
-          // and the text reader runs on the raw lines as before. No extra OCR call.
+          // and the text reader runs on the raw lines as before. No extra OCR call for the read
+          // itself.
+          // Box re-read (phase 3, 2026-10-19): a value cell that fails the money format, or a page
+          // whose rows do not add up to the printed Current Bill, is re-read from a crop of the
+          // page image: the page rendered once at LBG_CROP_ZOOM (the same render the targeted-crop
+          // fallback uses), rotated as the winning pass was, the one cell cropped by the engine's
+          // box (pass pixels -> fractions), grayscale, an 8 px white margin, tesseract page mode 7
+          // with the digit whitelist or without, at the engine's zoom. The engine takes the one
+          // reading that is valid money AND makes the page add up; otherwise the cell is held with
+          // the reason (BILL_LAYOUT.MARK.held lines). Measured recipe: research note
+          // _context/research/2026-10-19-ocr-accuracy-methods.md. About 0.3 s per box, only for
+          // the failing cells.
           {
-            const _posRes = BILL_LAYOUT.readBestPass(allPassTexts[pgNum]);
+            // The page render turned as the winning pass was, built ONCE per page (2026-10-19 review: it
+            // was rebuilt for every box; a 12x letter page is about 1.7 GB of pixels) and released after
+            // the read. The crop geometry and zoom scale come from BILL_LAYOUT.rereadCrop (one rule for
+            // every turn; the 180 case used the render height before).
+            let _orientedRender = null; // { canvas, own } for the page; own = not the cached render itself
+            const _orientedFor = async (pass) => {
+              if (_orientedRender) return _orientedRender.canvas;
+              const _hi = await _renderPageHQCached(LBG_CROP_ZOOM);
+              const _rot = /-rot(90|180|270)\b/.exec(pass.label || '');
+              const _canvas =
+                _rot && _rot[1] === '90'
+                  ? rotateCanvas90(_hi)
+                  : _rot && _rot[1] === '270'
+                    ? rotateCanvas270(_hi)
+                    : _rot && _rot[1] === '180'
+                      ? rotateCanvas180(_hi)
+                      : _hi;
+              _orientedRender = { canvas: _canvas, own: _canvas !== _hi };
+              return _canvas;
+            };
+            const _releaseOriented = () => {
+              if (_orientedRender && _orientedRender.own) {
+                _orientedRender.canvas.width = 0;
+                _orientedRender.canvas.height = 0;
+              }
+              _orientedRender = null;
+            };
+            const _rereadBox = async (box, cfg, pass) => {
+              const _oriented = await _orientedFor(pass);
+              const _geom = BILL_LAYOUT.rereadCrop(box, pass, _oriented, cfg.zoom);
+              const _crop = _cropCanvasRegion(_oriented, _geom.x, _geom.y, _geom.w, _geom.h);
+              const _cell = _padCanvas(_scaleCanvas(_crop, _geom.scale), 8 * cfg.zoom);
+              _crop.width = 0;
+              _crop.height = 0;
+              const _gray = _grayscaleCanvas(_cell);
+              _cell.width = 0;
+              _cell.height = 0;
+              try {
+                const { result: _r } = await recognizeWithTimeout(workerBox.current, _gray, {
+                  tessedit_pageseg_mode: String(cfg.psm),
+                  tessedit_char_whitelist: cfg.whitelist ? BILL_LAYOUT.REREAD_WHITELIST : '',
+                  rotateAuto: false,
+                });
+                return (_r.data.text || '').replace(/\s+/g, ' ').trim();
+              } catch (rereadErr) {
+                // a timeout terminated the worker and made a fresh one: adopt it, as every other
+                // recognize site does, so the terminated worker is never used again
+                if (rereadErr && rereadErr._replacementWorker) workerBox.current = rereadErr._replacementWorker;
+                throw rereadErr;
+              } finally {
+                _gray.width = 0;
+                _gray.height = 0;
+              }
+            };
+            let _posRes;
+            try {
+              _posRes = await BILL_LAYOUT.readPage(allPassTexts[pgNum], _rereadBox);
+            } finally {
+              _releaseOriented();
+            }
             bestText += _posRes.ok
               ? BILL_LAYOUT.linesBlock(_posRes.read, _posRes.pass.label)
               : BILL_LAYOUT.fallbackMarker(_posRes.reason);
@@ -15862,7 +15960,6 @@ async function extractPDFText(ab, statusCb, opts) {
               // label+value line-matching regexes (parseMetered / the Current Bill/Total
               // Amount Due matches) pick them up unchanged — no parser-side special case
               // for "this text came from a crop".
-              const LBG_CROP_ZOOM = 12;
               const _lbgHighRes = await _renderPageHQCached(LBG_CROP_ZOOM);
               const _lbgOriented =
                 _lbgOrientWinnerLabel === '90'

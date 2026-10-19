@@ -6301,14 +6301,36 @@ function _lbg_balanceLine(page, labelRe) {
 // Current Bill from the printed balance lines when its own figure is not legible:
 // Current Bill = Total Amount Due - (Previous Balance - Payments + Adjustments + Penalty).
 // Every term must be printed and read; otherwise null (never a partial sum).
-function _lbg_currentBillFromBalance(page, totalAmountDue) {
-  if (totalAmountDue == null) return null;
+// ONE reader of the carried balance on a Client A new-format page: Previous Balance - Payments +
+// Adjustments + Penalty, each on its own labeled line. null when any of the four was not read.
+function _lbg_balanceCarry(page) {
   const prev = _lbg_balanceLine(page, /Previous\s*Balance\s*:/i);
   const pay = _lbg_balanceLine(page, /Payments\s*:/i);
   const adj = _lbg_balanceLine(page, /Adjustments\s*:/i);
   const pen = _lbg_balanceLine(page, /Penalty\s*:/i);
   if (prev == null || pay == null || adj == null || pen == null) return null;
-  return Math.round((totalAmountDue - (prev - Math.abs(pay) + adj + pen)) * 100) / 100;
+  return Math.round((prev - Math.abs(pay) + adj + pen) * 100) / 100;
+}
+function _lbg_currentBillFromBalance(page, totalAmountDue) {
+  if (totalAmountDue == null) return null;
+  const carry = _lbg_balanceCarry(page);
+  if (carry == null) return null;
+  return Math.round((totalAmountDue - carry) * 100) / 100;
+}
+// ONE check of the printed Total Amount Due: it is the printed Current Bill plus the carried balance.
+// A Total Amount Due that contradicts them is an OCR digit error ("$1,620.88" read for a printed
+// $1,629.88, Sep 29 2026 scan p2) and is held, never stored. Returns null when the check cannot run
+// (a total not read, the Current Bill derived, a balance line not read), else { ok, expected }.
+function _lbg_totalDueCheck(totalAmountDue, currentBill, currentBillDerived, page) {
+  if (totalAmountDue == null || currentBill == null || currentBillDerived) return null;
+  const carry = _lbg_balanceCarry(page);
+  if (carry == null) return null;
+  // The four balance lines are trusted only when they add up to the printed Account Balance line
+  // (the page's own proof of them); a misread balance line must never hold a good total.
+  const acct = _lbg_balanceLine(page, /Account\s*Balance\b:?/i);
+  if (acct == null || Math.abs(acct - carry) > _LBG_PAGE_TOTAL_TOLERANCE + 1e-9) return null;
+  const expected = Math.round((currentBill + carry) * 100) / 100;
+  return { ok: Math.abs(expected - totalAmountDue) <= _LBG_PAGE_TOTAL_TOLERANCE + 1e-9, expected, read: totalAmountDue, carry };
 }
 // ONE reader for the 5-date period row on a Client A new-format bill. The row prints, left to
 // right: Service From, Service To, Bill Date, then the Due and Penalty dates. It is read BY COLUMN:
@@ -6518,6 +6540,19 @@ function _lbg_flagPageTotalMismatch(bills, check) {
     if (!b._manualReview) {
       b._manualReview = true;
       b._manualReviewLabel = 'Page lines do not add up to the printed Current Bill - held for manual confirmation';
+    }
+  }
+}
+// Holds every bill of a page with one named reason (a value cell the position engine could not prove,
+// a Total Amount Due that contradicts the page). The reason is added once per bill.
+function _lbg_flagHeld(bills, reason, label) {
+  for (const b of bills) {
+    if ((b._gateReasons || []).includes(reason)) continue;
+    b._gateTripped = true;
+    b._gateReasons = (b._gateReasons || []).concat([reason]);
+    if (!b._manualReview) {
+      b._manualReview = true;
+      b._manualReviewLabel = label;
     }
   }
 }
@@ -6883,6 +6918,11 @@ function _lbg_buildGasBill(
     if (signedFuelAdj != null || !fuelAdjMeta.lineSeen) {
       return { value: signedFuelAdj, held: null };
     }
+    // The position engine re-read the FUEL ADJUSTMENT cell and could not prove it: held with its
+    // reason, never derived from the page total.
+    if (fuelAdjMeta.heldReason) {
+      return { value: null, held: heldBillFuelAdj('Fuel Adjustment unreadable — verify. ' + fuelAdjMeta.heldReason, ['Fuel Adjustment'], gasChargeValue) };
+    }
     // No Fuel Adjustment label anywhere on the page and the page lines already add up to the printed
     // Current Bill without one: nothing is printed and nothing is missing, so the value stays null
     // (Matt, 2026-10-15: never fill a value that is not printed). A non-zero residual (the label
@@ -6926,6 +6966,9 @@ function _lbg_buildGasBill(
   // reconcile-or-hold path as a missing charge (backlog 584491c2).
   if (gas.charge == null || (gas.charge === 0 && gas.usage > 0)) {
     if (!gasLineSeen) return null; // no Gas section on this page — nothing to report
+    // The position engine re-read the GAS cell and could not prove it: held with its reason, never
+    // reconciled from the Current Bill.
+    if (gas.held) return heldBill('Gas charge could not be read. ' + gas.held, null);
     // Gas label matched but OCR dropped/reordered the charge token so none
     // could be parsed after it. Never silently drop the commodity.
     const recon = _lbg_reconcileGasFromCurrentBill(
@@ -11258,9 +11301,15 @@ const UTILITY_RULES = [
       // are still read from the page text.
       const _posBlock = page.match(/%%POSITION_READ%%[^\n]*\n([\s\S]*?)\n%%POSITION_READ_END%%/);
       const _posFallback = page.match(/%%POSITION_READ_FALLBACK%%[^\n]*/);
+      // A value cell the engine re-read and could not prove by the page sum: "%%POSITION_HELD%% GAS::
+      // <reason>" (one line per cell, before the block). That slot's value is null and HELD with the
+      // engine's reason: never reconciled from the Current Bill, never derived as a residual.
+      const _posHeld = {};
+      for (const _hm of page.matchAll(/%%POSITION_HELD%%\s*([^:\n]+)::\s*([^\n]*)/g)) _posHeld[_hm[1].trim().toUpperCase()] = _hm[2].trim();
       page = page
         .replace(/%%POSITION_READ%%[^\n]*\n[\s\S]*?\n%%POSITION_READ_END%%\n?/, '')
-        .replace(/%%POSITION_READ_FALLBACK%%[^\n]*\n?/, '');
+        .replace(/%%POSITION_READ_FALLBACK%%[^\n]*\n?/, '')
+        .replace(/%%POSITION_HELD%%[^\n]*\n?/g, '');
       const _rowsText = _posBlock ? _posBlock[1] : null;
       const _readMode = _rowsText != null ? 'position' : 'text';
       const _readFallbackReason =
@@ -11813,8 +11862,14 @@ const UTILITY_RULES = [
       // without risking a false hit elsewhere on the page, so its presence
       // is inferred structurally (this page has a Gas section at all) —
       // never from matching its own possibly-garbled label.
-      const fuelAdjLineSeen = gasLineSeen;
+      // With a position read the rows ARE the printed rows: a Fuel Adjustment exists only when the
+      // block has a FUEL ADJUSTMENT row (or the engine held that row's cell). A gas page that prints
+      // no Fuel Adjustment line gets none (2026-10-19: the Sep 29 scan p2 prints GAS 23.33 and no
+      // Fuel Adjustment line; the structural rule invented GasCharge 309.67 / FuelAdjustment -309.67).
+      const fuelAdjLineSeen =
+        _rowsText != null ? _LBG_FUEL_ADJ_LABEL.test(_rowsText) || _posHeld['FUEL ADJUSTMENT'] != null : gasLineSeen;
       gas = gas || { usage: null, charge: null };
+      if (_posHeld.GAS) gas.held = _posHeld.GAS;
       water = water || { usage: null, charge: null };
       sewer = sewer || { usage: null, charge: null };
       storm = storm || { usage: null, charge: null };
@@ -12008,6 +12063,24 @@ const UTILITY_RULES = [
           _currentBillDerived = true;
         }
       }
+      // Total Amount Due must be the printed Current Bill plus the carried balance (ONE check,
+      // _lbg_totalDueCheck). A contradicted Total Amount Due is an OCR digit error: held with the
+      // reason, never stored.
+      let _totalDueHeld = null;
+      const _tdc = _lbg_totalDueCheck(TotalAmountDue != null ? parseBillNumber(TotalAmountDue) : null, CurrentBillTotal, _currentBillDerived, page);
+      if (_tdc && !_tdc.ok) {
+        _totalDueHeld =
+          'Total Amount Due read as $' +
+          _tdc.read.toFixed(2) +
+          ', but the printed Current Bill $' +
+          CurrentBillTotal.toFixed(2) +
+          ' plus the balance carried forward $' +
+          _tdc.carry.toFixed(2) +
+          ' is $' +
+          _tdc.expected.toFixed(2) +
+          ' - Total Amount Due held, verify against the bill.';
+        TotalAmountDue = null;
+      }
 
       // Sign reconciliation (WaterProtectionFee, FuelAdjustment) — never a
       // guess. Tesseract can drop the leading "-" glyph off a printed
@@ -12136,6 +12209,14 @@ const UTILITY_RULES = [
         BillFormat: 'new',
         _readMode,
         _readFallbackReason,
+        // The two page totals as the reader decided them (null = not read or held), for the
+        // ground-truth gate and the debug file; the commodity bills carry their own totals.
+        _pageTotals: {
+          currentBill: CurrentBillTotal,
+          currentBillDerived: _currentBillDerived,
+          totalAmountDue: TotalAmountDue != null ? parseBillNumber(TotalAmountDue) : null,
+          totalAmountDueHeld: _totalDueHeld,
+        },
         CustomerName,
         AccountNumber,
         ServiceAddress,
@@ -12168,7 +12249,8 @@ const UTILITY_RULES = [
       }
       const _fuelAdjMeta = {
         lineSeen: fuelAdjLineSeen,
-        faLabelSeen: _LBG_FUEL_ADJ_LABEL.test(page),
+        faLabelSeen: _rowsText != null ? fuelAdjLineSeen : _LBG_FUEL_ADJ_LABEL.test(page),
+        heldReason: _posHeld['FUEL ADJUSTMENT'] || null,
         otherCommoditiesConfident: _faUnresolvedCommodities.length === 0,
         unresolvedCommodities: _faUnresolvedCommodities,
       };
@@ -12344,6 +12426,11 @@ const UTILITY_RULES = [
       });
       if (_pageCheck) _pageCheck.derived = _currentBillDerived;
       if (_pageCheck && !_pageCheck.ok && bills.length) _lbg_flagPageTotalMismatch(bills, _pageCheck);
+      // A value cell the position engine held, and a contradicted Total Amount Due, hold every bill of
+      // the page with the reason (the Gas and Fuel Adjustment holds above already name theirs).
+      for (const _slot of Object.keys(_posHeld))
+        _lbg_flagHeld(bills, _slot + ' could not be read: ' + _posHeld[_slot], _slot + ' unreadable - held for manual confirmation');
+      if (_totalDueHeld) _lbg_flagHeld(bills, _totalDueHeld, 'Total Amount Due does not match the page - held for manual confirmation');
       // If nothing parsed cleanly but the bill has a Total Amount Due,
       // emit a single "Other" bill so the user sees SOMETHING rather than
       // losing the row entirely. Rare — usually only hit on heavily

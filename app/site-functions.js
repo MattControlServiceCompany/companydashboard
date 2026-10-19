@@ -2575,6 +2575,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.19.141', date: '2026-10-19', title: 'City bills: unclear amounts re-read and checked',
+    items: [
+      { type: 'change', text: 'PDF / OCR page: when one amount on a City utility bill is unclear, the bill reader now re-reads that single amount from a close-up of the page. It accepts the new reading only when all the amounts add up to the printed page total to the exact cent.' },
+      { type: 'fix', text: 'PDF / OCR page: when the page total does not prove the re-read, the reader no longer guesses. It leaves that line empty and marks it for review, with the reason shown.' }
+    ]
+  },
   { v: 'v2026.10.19.140', date: '2026-10-19', title: 'City of Louisburg bills read by position on the page',
     items: [
       { type: 'change', text: 'PDF / OCR page: the bill reader now reads City of Louisburg bill rows by their place on the page. A misspelled label such as WALER is read as WATER because it sits where WATER sits on every other bill. The Current Bill and Total Amount Due are found under the last row. If the page cannot be matched, the reader uses the text lines as before and the bill shows the reason.' }
