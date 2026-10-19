@@ -4801,6 +4801,17 @@
         grid-row: 1 / span 2;
         min-width: 0;
       }
+      /* PDF / OCR page header: View PDF and Saved Bills stay top-right at every width; the subtitle wraps instead. */
+      #pdfPageHdr .pg-hdr {
+        flex-wrap: nowrap;
+      }
+      #pdfPageHdr .pg-hdr > div:first-child {
+        min-width: 0;
+      }
+      #pdfPageHdr .hdr-actions {
+        flex-wrap: nowrap;
+        flex-shrink: 0;
+      }
       /* Billing-period strip (top of the left column): toolbar row + wrapping period pills. */
       #pdfPeriodStrip {
         margin: 8px 0 6px;
@@ -4860,7 +4871,7 @@
           flex: none !important;
           min-width: 0 !important;
           height: auto !important;
-          max-height: 50vh;
+          max-height: 40vh;
         }
       }
       /* PDF dock open on a narrow window: the PDF sits above the values, pinned at the top; values scroll beneath it. */
@@ -4878,6 +4889,18 @@
           top: 0;
           z-index: var(--z-chrome, 10);
           margin-bottom: 8px;
+        }
+        /* Values and (when opened) the raw output stack under the PDF at natural height; the page scrolls, no column is squeezed. */
+        #pdfBody.pdf-docked #pdfLeftCol {
+          flex: none !important;
+          height: auto !important;
+          overflow-y: visible !important;
+        }
+        #pdfBody.pdf-docked #pdfRightCol {
+          flex: none !important;
+          min-width: 0 !important;
+          height: auto !important;
+          max-height: 40vh;
         }
         #pdfDockResize {
           display: none;
@@ -9224,6 +9247,20 @@
                   </p>
                 </div>
                 <div class="hdr-actions">
+                  <!-- View PDF: always here, at every width. Shown by _showExtractionToolbar() when a PDF is kept. -->
+                  <button
+                    class="btn btn-ghost"
+                    id="pdfViewBtn"
+                    style="display: none"
+                    onclick="
+                      event.stopPropagation();
+                      viewCurrentExtractionPDF(event);
+                    "
+                    title="Show or hide the source PDF. It opens at the page of the selected billing period"
+                    data-fb="energy.pdf.view-pdf-btn"
+                  >
+                    📄 View PDF
+                  </button>
                   <button
                     class="btn btn-ghost"
                     onclick="openSavedBillsModal()"
@@ -9330,27 +9367,6 @@
                       />
                       Side by side
                     </label>
-                    <button
-                      id="pdfViewBtn"
-                      style="
-                        display: none;
-                        font-size: 11px;
-                        padding: 3px 9px;
-                        border-radius: 6px;
-                        border: 1px solid var(--border2);
-                        background: transparent;
-                        color: var(--text2);
-                        cursor: pointer;
-                        font-family: var(--font);
-                      "
-                      onclick="
-                        event.stopPropagation();
-                        viewCurrentExtractionPDF(event);
-                      "
-                      title="View the source PDF. It opens at the page of the selected billing period"
-                    >
-                      📄 View PDF
-                    </button>
                     <button
                       id="pdfDebugBtn"
                       style="
@@ -9514,6 +9530,26 @@
                     </button>
                   </div>
                 </div>
+                <!-- Single save location (2026-09-02 consolidation): for a single-account
+                     multi-bill extraction, this is the ONE place Save All / Overwrite All /
+                     Merge All live — pinned at the bottom of the review area, never at the
+                     top-right of Extraction Output. Populated by renderMultiBillUI(); stays
+                     hidden for a multi-account file, where showMultiBuildingReviewPanel's own
+                     bottom bar (in pdfMultiBldgPanel) is the single save location instead. -->
+                <div
+                  id="pdfBottomSaveBar"
+                  style="
+                    display: none;
+                    flex-shrink: 0;
+                    position: sticky;
+                    bottom: 0;
+                    z-index: var(--z-sticky, 2);
+                    background: var(--s2);
+                    padding-top: 8px;
+                    margin-top: 8px;
+                    border-top: 1px solid var(--s3);
+                  "
+                ></div>
               </div>
               <!-- RIGHT COLUMN: Extraction Output label + buttons + pills stay pinned at top,
                    JSON box (pdfAIBox) fills the remainder and scrolls on its own. -->
@@ -9546,26 +9582,6 @@
                 >
                   Upload a PDF and select document type.
                 </div>
-                <!-- Single save location (2026-09-02 consolidation): for a single-account
-                     multi-bill extraction, this is the ONE place Save All / Overwrite All /
-                     Merge All live — pinned at the bottom of the review area, never at the
-                     top-right of Extraction Output. Populated by renderMultiBillUI(); stays
-                     hidden for a multi-account file, where showMultiBuildingReviewPanel's own
-                     bottom bar (in pdfMultiBldgPanel) is the single save location instead. -->
-                <div
-                  id="pdfBottomSaveBar"
-                  style="
-                    display: none;
-                    flex-shrink: 0;
-                    position: sticky;
-                    bottom: 0;
-                    z-index: var(--z-sticky, 2);
-                    background: var(--s2);
-                    padding-top: 8px;
-                    margin-top: 8px;
-                    border-top: 1px solid var(--s3);
-                  "
-                ></div>
               </div>
               <!-- DOCKED PDF VIEWER: sits beside the values and billing periods (no backdrop).
                    Shown only while the right column is visible. -->
