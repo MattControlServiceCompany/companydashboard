@@ -2575,6 +2575,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.19.138', date: '2026-10-19', title: 'Electric utility bills read more exactly',
+    items: [
+      { type: 'fix', text: 'PDF / OCR page and Utility Data page: on electric utility bills, Total Current Charges is now the Current Charges amount printed on the bill, never a sum of the charges read.' },
+      { type: 'fix', text: 'PDF / OCR page and Utility Data page: on electric utility bills, the billing period end year and Number of Days now come from the meter read dates, and the Customer Charge is read as printed.' }
+    ]
+  },
   { v: 'v2026.10.19.137', date: '2026-10-19', title: 'Clearer bill warnings and PDF view',
     items: [
       { type: 'change', text: 'Utility Data page: a missing billing period now shows only as the red gap row, not as a warning. The warning banner shows one short line per bill with the reason.' },

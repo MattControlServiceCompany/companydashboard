@@ -2757,14 +2757,12 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
       //   3c. Subtraction inference (Strategy C: a lone charge with no _rates
       //       entry absorbs the residual — OCR single-digit misread).
       //   3d. Final total decision:
-      //       - ocrTotal missing  → use compSum.
+      //       - ocrTotal missing  → compSum is proposed, the bill is held.
       //       - compSum matches ocrTotal within $0.02 → keep ocrTotal.
-      //       - compSum still > ocrTotal AND no _rate_mismatch_* flags remain
-      //         → ocrTotal was likely a page-1 summary missing detail charges;
-      //           accept compSum and mark _totalFromChargeSum with reason.
+      //       - compSum still > ocrTotal AND no _rate_mismatch_* flags remain AND the printed Subtotal does not
+      //         corroborate ocrTotal → compSum is proposed (_correction_pending_TotalCurrentCharges) and the
+      //         bill is held. A computed total is NEVER stored in place of a printed one (2026-10-19).
       //       - Residual remains → flag _sum_mismatch, keep ocrTotal for review.
-      //       NEVER silently clobber ocrTotal when there's evidence of per-charge
-      //       contamination.
       if (utilityName === 'Evergy') {
         const CHARGE_FIELDS = UTILITY_E_COMPONENT_CHARGE_FIELDS;
         // Round to cents to prevent floating-point accumulation errors
@@ -2947,14 +2945,15 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
 
           // 3d. Final decision — evidence-weighted, never blind.
           const finalDelta = compSum - ocrTotal;
-          // SUBTOTAL CORROBORATION GUARD: on Utility E tax-exempt bills the
-          // printed Subtotal and Current Charges are always equal. When
-          // both OCR'd cleanly to the same value, that pair is ground
-          // truth — a compSum disagreement points to a per-charge bug
-          // (wrong sign, missed line item), not a wrong total. Don't let
-          // compSum clobber a corroborated ocrTotal.
+          // SUBTOTAL CORROBORATION GUARD: the printed Subtotal corroborates the printed Current Charges when
+          // they are equal (tax-exempt bill with no fee) or when Subtotal + the lines printed below it (Franchise
+          // Fee, Sales Tax; one rule: checkElectricPrintedTotals) equal it to the cent. Two printed values that
+          // agree are ground truth — a compSum disagreement points to a per-charge bug (wrong sign, missed or
+          // doubled line item), not a wrong total.
           const _subVal = parseBillNumber(b._subtotal);
-          const subtotalCorroborates = _subVal > 0 && Math.abs(_subVal - ocrTotal) < 0.02;
+          const _printedCheck = checkElectricPrintedTotals(b);
+          const subtotalCorroborates =
+            (_subVal > 0 && Math.abs(_subVal - ocrTotal) < 0.02) || _printedCheck.subtotalPlusFeesMatchTotal === true;
           if (Math.abs(finalDelta) < 0.02) {
             // Reconciled. Keep ocrTotal. No flag needed.
           } else {
@@ -2982,57 +2981,50 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
                 value: parseBillNumber(b[f]),
               }));
               const decision = _decideTotalCorrection(b, b.TotalCurrentCharges, compSum, nonzeroCharges);
-              if (decision.hold) {
-                b._correction_pending_TotalCurrentCharges = {
-                  original: b.TotalCurrentCharges,
-                  proposedCorrection: compSum.toFixed(2),
-                  pctChange: decision.pctChange.toFixed(1),
-                  dollarChange: decision.dollarChange.toFixed(2),
-                  provenanceOk: decision.provenanceOk,
-                  reason:
-                    'Evergy Stage 3 reconciliation: charges sum to $' +
-                    compSum.toFixed(2) +
-                    ' vs OCR total $' +
-                    ocrTotal.toFixed(2) +
-                    ' — proposed correction to $' +
-                    compSum.toFixed(2) +
-                    (decision.provenanceOk
-                      ? ''
-                      : '. One or more charge values could not be confirmed on this bill’s own page(s) — possible cross-bill contamination.') +
-                    (decision.isLargeCorrection
-                      ? '. Correction magnitude ' +
-                        decision.pctChange.toFixed(1) +
-                        '% ($' +
-                        decision.dollarChange.toFixed(2) +
-                        ') exceeds the auto-apply threshold (' +
-                        decision.CORRECTION_PCT_THRESHOLD +
-                        '% / $' +
-                        decision.CORRECTION_DOLLAR_THRESHOLD.toFixed(2) +
-                        ') — held for manual confirmation.'
-                      : ''),
+              // The printed total is never replaced by the sum of the read charges (2026-10-19; a doubled
+              // Customer Charge once turned a printed $2,294.81 into a stored $2,411.08). The sum is proposed
+              // and the bill is held, whatever the size of the difference.
+              b._correction_pending_TotalCurrentCharges = {
+                original: b.TotalCurrentCharges,
+                proposedCorrection: compSum.toFixed(2),
+                pctChange: decision.pctChange.toFixed(1),
+                dollarChange: decision.dollarChange.toFixed(2),
+                provenanceOk: decision.provenanceOk,
+                reason:
+                  'Evergy Stage 3 reconciliation: charges sum to $' +
+                  compSum.toFixed(2) +
+                  ' vs OCR total $' +
+                  ocrTotal.toFixed(2) +
+                  ' — proposed correction to $' +
+                  compSum.toFixed(2) +
+                  (decision.provenanceOk
+                    ? ''
+                    : '. One or more charge values could not be confirmed on this bill’s own page(s) — possible cross-bill contamination.') +
+                  (decision.isLargeCorrection
+                    ? '. Correction magnitude ' +
+                      decision.pctChange.toFixed(1) +
+                      '% ($' +
+                      decision.dollarChange.toFixed(2) +
+                      ') exceeds the auto-apply threshold (' +
+                      decision.CORRECTION_PCT_THRESHOLD +
+                      '% / $' +
+                      decision.CORRECTION_DOLLAR_THRESHOLD.toFixed(2) +
+                      ') — held for manual confirmation.'
+                    : ''),
                 };
                 console.log(
-                  '[PostVerify][Gate C/D][Evergy Stage 3] Correction HELD PENDING: $' +
-                    ocrTotal.toFixed(2) +
-                    ' -> $' +
-                    compSum.toFixed(2) +
-                    ' (pct=' +
-                    decision.pctChange.toFixed(1) +
-                    '%, $=' +
-                    decision.dollarChange.toFixed(2) +
-                    ', provenanceOk=' +
-                    decision.provenanceOk +
-                    ')',
-                );
-              } else {
-                // Small, well-provenanced correction — trust compSum (unchanged prior behavior).
-                b.TotalCurrentCharges = compSum.toFixed(2);
-                b._totalFromChargeSum = true;
-                b._totalSource =
-                  'compSum (ocrTotal of $' +
+                '[PostVerify][Gate C/D][Evergy Stage 3] Correction HELD PENDING: $' +
                   ocrTotal.toFixed(2) +
-                  ' appears to be an incomplete summary; no per-charge rate mismatches remain to cast doubt on compSum)';
-              }
+                  ' -> $' +
+                  compSum.toFixed(2) +
+                  ' (pct=' +
+                  decision.pctChange.toFixed(1) +
+                  '%, $=' +
+                  decision.dollarChange.toFixed(2) +
+                  ', provenanceOk=' +
+                  decision.provenanceOk +
+                  ')',
+              );
             } else {
               // Can't confidently reconcile — flag for user, keep ocrTotal.
               b._sum_mismatch = {
@@ -4472,7 +4464,14 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         const field = key.replace('_auto_corrected_', '');
         const origVal = String(corr.original || '').replace(/,/g, '');
         const finalVal = String(b[field] || '').replace(/,/g, '');
-        if (origVal && finalVal && parseFloat(origVal).toFixed(4) === parseFloat(finalVal).toFixed(4)) {
+        // Numbers compare as numbers; anything else (a date such as "09/02/20" -> "09/02/2026") as text, so a
+        // date correction is not dropped because parseFloat reads both as 9.
+        const _isNum = (v) => /^-?\$?\d*\.?\d+$/.test(v);
+        const _same =
+          _isNum(origVal) && _isNum(finalVal)
+            ? parseFloat(origVal.replace('$', '')).toFixed(4) === parseFloat(finalVal.replace('$', '')).toFixed(4)
+            : origVal === finalVal;
+        if (origVal && finalVal && _same) {
           delete b[key]; // No net change — remove the correction warning
         }
       }
@@ -13535,8 +13534,8 @@ function togglePDFRawText() {
       );
       const raw = text.split(splitRe);
       const getDP = (s) => {
-        const m = s.match(_EVG_SERVICE_FROM);
-        return m ? m[1] + '|' + m[2] : null;
+        const m = _evgServicePeriod(s);
+        return m ? m.start + '|' + m.end : null;
       };
       const sections = [];
       for (const frag of raw) {
@@ -19436,8 +19435,15 @@ function renderPDFFields(parsed, warnings) {
       if (!_popLevel || (order[lv] || 0) > (order[_popLevel] || 0)) _popLevel = lv;
     };
     if (autoCorrect) {
-      const origFmt = _acPfx + parseFloat(autoCorrect.original).toFixed(_acDp);
-      const corrFmt = _acPfx + parseFloat(autoCorrect.corrected).toFixed(_acDp);
+      // A derived value has no read original (shown as "not read"); a date correction is shown as printed.
+      const _acFmt = (val) =>
+        val === null || val === undefined || val === ''
+          ? 'not read'
+          : /^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(String(val))
+            ? String(val)
+            : _acPfx + parseFloat(val).toFixed(_acDp);
+      const origFmt = _acFmt(autoCorrect.original);
+      const corrFmt = _acFmt(autoCorrect.corrected);
       // Detect decimal-shift corrections: original and corrected share the
       // same digit sequence once $/commas/decimals are stripped (e.g.
       // "24708945" → "2470.8945", "5787840" → "578.7840"). Those don't

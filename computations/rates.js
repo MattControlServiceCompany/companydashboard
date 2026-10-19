@@ -335,6 +335,46 @@ function sumElectricComponentCharges(parsed) {
   return Math.round(total * 100) / 100;
 }
 
+// The component charges a Utility E bill prints BELOW its Subtotal line (the rest are above it, so they add up
+// to the Subtotal). Printed Current Charges = Subtotal + these. One list; the extractor's customer-charge
+// derivation, its printed-total check and the Stage 3 corroboration all read it.
+var UTILITY_E_BELOW_SUBTOTAL_FIELDS = ['FranchiseFee', 'SalesTax', 'MiscellaneousCharge'];
+
+// Sum of the component charges printed above the Subtotal, rounded to cents.
+function sumElectricSubtotalCharges(parsed) {
+  parsed = parsed || {};
+  var total = 0;
+  for (var i = 0; i < UTILITY_E_COMPONENT_CHARGE_FIELDS.length; i++) {
+    var f = UTILITY_E_COMPONENT_CHARGE_FIELDS[i];
+    if (UTILITY_E_BELOW_SUBTOTAL_FIELDS.indexOf(f) >= 0) continue;
+    total += parseBillNumber(parsed[f]);
+  }
+  return Math.round(total * 100) / 100;
+}
+
+// The two printed-total identities of a Utility E bill, checked to the cent (tolerance $0.01):
+//   linesMatchSubtotal:    the lines above the Subtotal add up to the printed Subtotal (parsed._subtotal)
+//   subtotalPlusFeesMatchTotal: Subtotal + the lines below it = the printed Current Charges (TotalCurrentCharges)
+// A check whose printed value was not read is null (not false).
+function checkElectricPrintedTotals(parsed) {
+  parsed = parsed || {};
+  var subtotal = parseBillNumber(parsed._subtotal);
+  var total = parseBillNumber(parsed.TotalCurrentCharges);
+  var linesSum = sumElectricSubtotalCharges(parsed);
+  var below = 0;
+  for (var i = 0; i < UTILITY_E_BELOW_SUBTOTAL_FIELDS.length; i++) below += parseBillNumber(parsed[UTILITY_E_BELOW_SUBTOTAL_FIELDS[i]]);
+  below = Math.round(below * 100) / 100;
+  var subtotalPlusFees = Math.round((subtotal + below) * 100) / 100;
+  return {
+    subtotal: subtotal > 0 ? subtotal : null,
+    linesSum: linesSum,
+    belowSubtotal: below,
+    total: total > 0 ? total : null,
+    linesMatchSubtotal: subtotal > 0 ? Math.abs(linesSum - subtotal) <= 0.01 : null,
+    subtotalPlusFeesMatchTotal: subtotal > 0 && total > 0 ? Math.abs(subtotalPlusFees - total) <= 0.01 : null,
+  };
+}
+
 // Canonical electric energy-charge sum — the 5 charge fields that make up the
 // implied $/kWh rate (OnPeak + OffPeak + ECA + EER + PTS). SSOT for
 // getExtractedRate('kwh'), validateBillData's electric branch, and

@@ -2541,8 +2541,8 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     // (unchanged behavior for the legitimate rate-changeover case).
     const _sf = _EVG_SERVICE_FROM;
     const bdDates = bdMarkers.map((idx) => {
-      const dm = t.slice(idx, idx + 200).match(_sf);
-      return dm ? dm[1] + '|' + dm[2] : null;
+      const dm = _evgServicePeriodFrom(t.slice(idx, idx + 200).match(_sf));
+      return dm ? dm.start + '|' + dm.end : null;
     });
     const uniqueDates = new Set(bdDates.filter(Boolean));
     const secStarts = bdMarkers.map((idx) => {
@@ -2592,7 +2592,38 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   //   • "Facilities Ghg ... $1,394.55"            (OCR letter swap)
   // Strategy: for each keyword line, take the last $X.XX that is NOT a rate.
   // Uses very loose OCR-tolerant patterns that handle common letter swaps.
-  const CHG_STOP = /(?:Cust|Fac\S|Demand|Energy\s+C|\bECA|\bEER|\bPTS|\bTD[CG]|\bRkVA|Subtotal|Current\s+Charges)/i;
+  // OCR-tolerant charge keywords: very loose matching for OCR garble
+  // "Chg" can become: CNG, CHG, Ghg, Ch9, Cha, Chq, etc.
+  const C = '(?:Ch[gaq9]|C[HhNnRr][Gg]|Gh[gq9])[.:]?';
+  // Separator between the charge name and "Chg". OCR frequently inserts a stray
+  // period instead of a space (e.g. "TDC.Chg", "ECA.Chg"), so we allow either
+  // whitespace or a period here. Must match at least one character so keywords
+  // like "Customer Chg" vs "CustomerChg" don't collide (none of these legitimately
+  // run together, but we want to fail closed on the unseparated case).
+  const SEP = '[ \\t\\n\\r.]+';
+  // The one list of charge-label patterns. xChg (dollar amount), xRate (qty and rate), NEXT_CHG_LINE (the stop
+  // rule of every next-line amount search), the label count of the detached-amount reader and the Off Pk Sum
+  // label repair all read the same pattern per field.
+  const _EVG_KW = {
+    // Customer: "Customer Chg" or OCR garble like "CUSIOMET CNG", "Customar Chg", "CUSIOMER CNG"
+    CustomerCharge: 'C[ua][s5][t1iI][o0][mM][eao][r1tT]' + SEP + C,
+    FacilitiesCharge: 'Fac[^ \\t\\n\\r]*' + SEP + C,
+    BilledKWCharge: 'Demand' + SEP + C,
+    EnergyOnPeakCharge: 'Energy' + SEP + C + '[ \\t\\n\\r]+On[ \\t\\n\\r]+P[kK]',
+    EnergyOffPeakCharge: 'Energy' + SEP + C + '[ \\t\\n\\r]+Off[ \\t\\n\\r]+P[kK]',
+    // E[CG]A tolerates Tesseract's C↔G confusion — e.g. the second ECA
+    // part on Site K Elementary's Oct 2025 bill prints as "EGA Chg", which
+    // a strict `ECA` match silently skipped so the $121.10 part was lost.
+    ECACharge: 'E[CG]A' + SEP + C,
+    EERCharge: 'EER' + SEP + C,
+    PTSCharge: 'PTS' + SEP + C,
+    TDCCharge: 'TD[CG]' + SEP + C,
+    RkVACharge: 'R[kK]VA' + SEP + C,
+  };
+  const CHG_STOP = new RegExp(
+    '(?:Cust|Fac\\S|Demand|Energy\\s+C|\\bECA|\\bEER|\\bPTS|\\bTD[CG]|\\bRkVA|' + _EVG_SUBTOTAL_LABEL_SRC + '|Current\\s+Charges)',
+    'i',
+  );
   // Line-anchored variant of CHG_STOP — matches when a new charge starts the line
   // (after optional chart-column numbers / leading whitespace). Used to stop block
   // building without being fooled by continuation lines that merely contain "per kW".
@@ -2602,9 +2633,13 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // building the block. OCR often prepends garbage (chart Y-axis numbers, stray
   // letters) before the actual charge keyword, so we check if the charge keyword
   // pattern appears ANYWHERE in the line, not just at the start.
-  // Pattern: ChargeKeyword + separator + "Chg" variant
-  const NEXT_CHG_LINE =
-    /(?:Cust(?:omer)?|Fac(?:ilities)?|Demand|Energy|ECA|EER|PTS|TD[CG]|R[kK]VA|Subtotal|Current\s+Charges)[\s.]+(?:Ch[gaq9]|C[HhNn][Gg]|Gh[gq9])/i;
+  // Built from _EVG_KW (2026-10-19): the old private list required "Fac " or "Facilities " and did not stop at an
+  // OCR "Facilties Chg" line, so a Customer Chg line whose amount OCR lost ("$48}") took the Facilities $165.17.
+  // Plus the tiered "Energy Chg" label, Subtotal and Current Charges.
+  const NEXT_CHG_LINE = new RegExp(
+    Object.values(_EVG_KW).join('|') + '|(?:Energy|' + _EVG_SUBTOTAL_LABEL_SRC + '|Current\\s+Charges)' + SEP + C,
+    'i',
+  );
   const getAmt = (line) => {
     const amts = _evgChargeAmounts(line);
     return amts.length ? amts[amts.length - 1] : null;
@@ -3004,16 +3039,10 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   };
   // ─────────────────────────────────────────────────────────────────────────────
 
-  // ── Billing period (OCR-tolerant) ──
-  const bpMatch = t.match(_EVG_SERVICE_FROM);
-  // Calculate days from billing dates (not from meter read table which may be a sub-period)
+  // ── Billing period (OCR-tolerant) ── one reader: _evgServicePeriod (a cut end year is completed there)
+  const _svc = _evgServicePeriod(t);
+  // NumberOfDays is set below from the meter read dates (_evgNumberOfDays), once the meter row is read.
   let numDays = null;
-  if (bpMatch) {
-    try {
-      const _nd = calcDays(bpMatch[1], bpMatch[2], false); // read-to-read, like the printed Days
-      if (_nd !== '' && !isNaN(_nd)) numDays = String(_nd);
-    } catch (ex) {}
-  }
 
   // ── Meter read table (supports multi-row: meter changes and solar net metering) ──
   // Format: StartDate EndDate Days EndRead(-) StartRead(=) Diff (x)Mult (=)kWhUsed KWUsed RKVAUsed
@@ -4004,34 +4033,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       return null;
     })();
 
-  // ── Charges ──
-  // OCR-tolerant charge keywords: very loose matching for OCR garble
-  // "Chg" can become: CNG, CHG, Ghg, Ch9, Cha, Chq, etc.
-  const C = '(?:Ch[gaq9]|C[HhNnRr][Gg]|Gh[gq9])[.:]?';
-  // Separator between the charge name and "Chg". OCR frequently inserts a stray
-  // period instead of a space (e.g. "TDC.Chg", "ECA.Chg"), so we allow either
-  // whitespace or a period here. Must match at least one character so keywords
-  // like "Customer Chg" vs "CustomerChg" don't collide (none of these legitimately
-  // run together, but we want to fail closed on the unseparated case).
-  const SEP = '[ \\t\\n\\r.]+';
-  // The one list of charge-label patterns. xChg (dollar amount), xRate (qty and rate), the label count of
-  // the detached-amount reader and the Off Pk Sum label repair all read the same pattern per field.
-  const _EVG_KW = {
-    // Customer: "Customer Chg" or OCR garble like "CUSIOMET CNG", "Customar Chg", "CUSIOMER CNG"
-    CustomerCharge: 'C[ua][s5][t1iI][o0][mM][eao][r1tT]' + SEP + C,
-    FacilitiesCharge: 'Fac[^ \\t\\n\\r]*' + SEP + C,
-    BilledKWCharge: 'Demand' + SEP + C,
-    EnergyOnPeakCharge: 'Energy' + SEP + C + '[ \\t\\n\\r]+On[ \\t\\n\\r]+P[kK]',
-    EnergyOffPeakCharge: 'Energy' + SEP + C + '[ \\t\\n\\r]+Off[ \\t\\n\\r]+P[kK]',
-    // E[CG]A tolerates Tesseract's C↔G confusion — e.g. the second ECA
-    // part on Site K Elementary's Oct 2025 bill prints as "EGA Chg", which
-    // a strict `ECA` match silently skipped so the $121.10 part was lost.
-    ECACharge: 'E[CG]A' + SEP + C,
-    EERCharge: 'EER' + SEP + C,
-    PTSCharge: 'PTS' + SEP + C,
-    TDCCharge: 'TD[CG]' + SEP + C,
-    RkVACharge: 'R[kK]VA' + SEP + C,
-  };
+  // ── Charges ── (the label patterns C, SEP and _EVG_KW are defined above NEXT_CHG_LINE)
   // (d) An Off Pk Sum line whose label OCR lost ("oy rg Sum 1,041.7021 kWh at $59.73") gets its label back
   // only when the four tier quantities then add up to kWhConsumed exactly. The readers below read the
   // repaired text; the bill keeps a note of the repair.
@@ -4098,7 +4100,8 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     _taxExemptRe.test(line) ||
     _franchiseRe.test(line) ||
     _salesTaxRe.test(line) ||
-    /Bill\s+[0O]ff|Current\s+Charges|Utility|Sub[tl]?ota[l1]/i.test(line);
+    /Bill\s+[0O]ff|Current\s+Charges|Utility/i.test(line) ||
+    _EVG_SUBTOTAL_LABEL.test(line);
   const taxExempt = (() => {
     const lines = t.split('\n');
     for (let i = 0; i < lines.length; i++) {
@@ -4142,7 +4145,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     // Guard: skip lines that contain "Parallel" — those are captured as parallelGenCredit above
     const lines = t.split('\n');
     for (let i = 0; i < lines.length; i++) {
-      if (/Subtotal/i.test(lines[i])) {
+      if (_EVG_SUBTOTAL_LABEL.test(lines[i])) {
         // Check up to 3 lines before Subtotal for a negative amount
         for (let j = Math.max(0, i - 3); j < i; j++) {
           const neg = lines[j].match(/-\$?([\d,]+\.\d{2})/);
@@ -4249,7 +4252,9 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       while ((_m = re.exec(t)) !== null) last = _m.index;
       return last;
     })();
-    const _stRe = /Sub[tl]?ota[l1][\s\S]{0,30}?\$\s*([\d,]+\.\d{2})/gi;
+    // The amount is on the Subtotal line itself (the dot leader can OCR as up to 80 letters: "SUBLOLA
+    // irrreeveerresseoneses ersten essere     $2,185.53"), or within 30 characters when it wraps.
+    const _stRe = new RegExp(_EVG_SUBTOTAL_LABEL_SRC + '(?:[^\\n$]{0,80}|[\\s\\S]{0,30}?)\\$\\s*([\\d,]+\\.\\d{2})', 'gi');
     let _stLastM = null,
       _stM;
     while ((_stM = _stRe.exec(t)) !== null) {
@@ -4302,7 +4307,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       bdIdx = -1,
       lastBdIdx = -1;
     for (let i = 0; i < lines.length; i++) {
-      if (/Sub[tl]?ota[l1]/i.test(lines[i])) subtotalIdx = i;
+      if (_EVG_SUBTOTAL_LABEL.test(lines[i])) subtotalIdx = i;
       if (/Billing\s+Details/i.test(lines[i])) {
         if (bdIdx < 0) bdIdx = i;
         lastBdIdx = i;
@@ -4342,24 +4347,9 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       }
     }
     if (bestVal !== null) {
-      // Cross-validate: if extracted total is much LARGER than calculated sum, it's likely
-      // a page-1 account summary total, not the detail total. Trust the sum instead.
-      const calcSum =
-        parseBillNumber(custChg) +
-        parseBillNumber(facChg) +
-        parseBillNumber(demChg) +
-        parseBillNumber(onPkChg) +
-        parseBillNumber(tieredChg) +
-        parseBillNumber(offPkChg) +
-        parseBillNumber(rkvaChg) +
-        parseBillNumber(ecaChg) +
-        parseBillNumber(eerChg) +
-        parseBillNumber(ptsChg) +
-        parseBillNumber(tdcChg) +
-        parseBillNumber(taxExempt) +
-        parseBillNumber(billOffset) +
-        parseBillNumber(franchise);
-      let chosenTotal = calcSum > 0 && bestVal > calcSum * 1.5 ? calcSum : bestVal;
+      // The printed Current Charges is the total. It is never replaced by the sum of the read charges: a sum
+      // that falls short means a charge was not read, and checkElectricPrintedTotals holds the bill for that.
+      let chosenTotal = bestVal;
       // MiscellaneousCharge reconciliation (item f71c0013): the SECTION-BLEED GUARD
       // above correctly rejects the front-summary page's own "Current Charges (details
       // on back)" line as a candidate for bestVal (protecting against real cross-bill
@@ -4394,7 +4384,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       while ((_m = re.exec(t)) !== null) last = _m.index;
       return last;
     })();
-    const _stRe = /Sub[tl]?ota[l1][\s\S]*?\$\s*([\d,]+\.\d{2})/gi;
+    const _stRe = new RegExp(_EVG_SUBTOTAL_LABEL_SRC + '[\\s\\S]*?\\$\\s*([\\d,]+\\.\\d{2})', 'gi');
     let _stLastM = null;
     let _stM;
     while ((_stM = _stRe.exec(t)) !== null) {
@@ -4470,6 +4460,14 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // Multi-meter bill: 2+ meter rows combined under type 'meter_change' (covers both a
   // mid-cycle physical meter swap and two simultaneously-active meters on one account).
   const _isMultiMeterChange = !!(_meterCombined && _meterCombined.type === 'meter_change');
+  const _readStart = _meterCombined?.startDate || meterRow?.[1] || _mlMeter?.startDate || null;
+  const _readEnd = _meterCombined?.endDate || meterRow?.[2] || _mlMeter?.endDate || null;
+  // NumberOfDays (one rule: _evgNumberOfDays): a first value here feeds the kW-charge proration in xRate; the final
+  // value is written by _evgSetNumberOfDays at the end, after the read dates are validated. The printed Days column
+  // of the meter row is a check, never the source (OCR read "2" for 29 on one bill).
+  const _billDate = t.match(/Bill(?:ing)?\s*Date[\s:]*(\d{1,2}\/\d{1,2}\/\d{4})/i)?.[1] || null;
+  const _printedDays = meterRow?.[3] || null;
+  numDays = _evgNumberOfDays(_readStart, _readEnd, _svc?.start || null, _svc?.end || null, _billDate, _printedDays)?.days || null;
   const result = {
     UtilityCompany: 'Evergy',
     // b8123c92: Utility E bills only electric service. Set here, once, so every consumer (Gate C log,
@@ -4500,11 +4498,11 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       null,
     ServiceAddress: addrOverride || t.match(_EVG_ADDR)?.[1]?.trim() || null,
     RateSchedule: rateMatch?.[1] || null,
-    BillingPeriodStart: bpMatch?.[1] || null,
-    BillingPeriodEnd: bpMatch?.[2] || null,
+    BillingPeriodStart: _svc?.start || null,
+    BillingPeriodEnd: _svc?.end || null,
     NumberOfDays: numDays,
-    MeterReadStart: _meterCombined?.startDate || meterRow?.[1] || _mlMeter?.startDate || null,
-    MeterReadEnd: _meterCombined?.endDate || meterRow?.[2] || _mlMeter?.endDate || null,
+    MeterReadStart: _readStart,
+    MeterReadEnd: _readEnd,
     // Multi-meter (type: 'meter_change', 2+ rows): a single StartRead/EndRead spanning
     // different physical meters is not a real reading — leave null rather than mixing
     // rows into a false identity. Per-meter values live in Meter1_/Meter2_ fields below.
@@ -4565,6 +4563,60 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   if (_miscUnreconciled) result._miscUnreconciled = _miscUnreconciled;
   if (_proposedTotal) result._proposed_TotalCurrentCharges = _proposedTotal;
   if (_offSumFix) result._label_repaired_EnergyOffPeakCharge = _offSumFix.info;
+  // A cut end year ("to 09/02/20.") was completed from the start year: recorded in the one change history.
+  if (_svc && _svc.endYearFilled) {
+    result._auto_corrected_BillingPeriodEnd = {
+      original: _svc.endRead,
+      corrected: _svc.end,
+      reason: 'the end year was cut off on the page; taken from the start year (a bill covers one month)',
+      derived: true,
+    };
+  }
+  if (_billDate) result._billDate = _billDate;
+  // Customer Chg whose cents OCR lost ("Customer Chg ..... $48}"): the dollars are read from the line; the cents
+  // come ONLY from the printed Subtotal minus the other printed lines above it, and only when that result starts
+  // with the read dollars. Never from another charge line. Recorded as derived in the one change history.
+  const _custPartial = (() => {
+    if (custChg !== null) return null;
+    const re = new RegExp(_EVG_KW.CustomerCharge, 'i');
+    for (const line of t.split('\n')) {
+      if (!re.test(line)) continue;
+      if (_evgChargeAmounts(line).length) return null;
+      const m = line.match(/\$\s*(\d{1,3})(?:[.,](\d)?)?(?![\d,])/);
+      if (m) return { read: '$' + m[1] + (m[2] ? '.' + m[2] : ''), prefix: m[1] + '.' + (m[2] || '') };
+    }
+    return null;
+  })();
+  if (_custPartial && subtotalAmount !== null) {
+    const _others = sumElectricSubtotalCharges(result);
+    const _derived = Math.round((parseBillNumber(subtotalAmount) - _others) * 100) / 100;
+    if (_derived > 0 && _derived.toFixed(2).indexOf(_custPartial.prefix) === 0) {
+      result.CustomerCharge = _derived.toFixed(2);
+      result._auto_corrected_CustomerCharge = {
+        original: null,
+        corrected: result.CustomerCharge,
+        reason:
+          'Customer Chg read as "' +
+          _custPartial.read +
+          '" (cents unreadable); Subtotal $' +
+          parseBillNumber(subtotalAmount).toFixed(2) +
+          ' minus the other printed lines $' +
+          _others.toFixed(2) +
+          ' = $' +
+          result.CustomerCharge,
+        derived: true,
+      };
+    } else {
+      result._customerChargePartial = {
+        read: _custPartial.read,
+        prefix: _custPartial.prefix,
+        subtotal: subtotalAmount,
+        othersSum: _others,
+      };
+    }
+  } else if (_custPartial) {
+    result._customerChargePartial = { read: _custPartial.read, prefix: _custPartial.prefix, subtotal: null, othersSum: null };
+  }
 
   // Flag multi-meter bills for transparency in debug output
   if (_meterCombined) {
@@ -4638,12 +4690,12 @@ function _extractEvergy(t, acctOverride, addrOverride) {
 
   // ── Rate info for cross-validation (rate × qty vs OCR'd charge) ──
   const _rates = {};
-  const _rFac = xRate('Fac[^ \\t\\n\\r]*' + SEP + C);
-  const _rDem = xRate('Demand' + SEP + C);
-  const _rOnPk = xRate('Energy' + SEP + C + '[ \\t\\n\\r]+On[ \\t\\n\\r]+P[kK]');
-  const _rOffPk = xRate('Energy' + SEP + C + '[ \\t\\n\\r]+Off[ \\t\\n\\r]+P[kK]');
+  const _rFac = xRate(_EVG_KW.FacilitiesCharge);
+  const _rDem = xRate(_EVG_KW.BilledKWCharge);
+  const _rOnPk = xRate(_EVG_KW.EnergyOnPeakCharge);
+  const _rOffPk = xRate(_EVG_KW.EnergyOffPeakCharge);
   const _rTiered = xRate('Energy' + SEP + C, /On\s+P[kK]|Off\s+P[kK]/i);
-  let _rEca = xRate('E[CG]A' + SEP + C);
+  let _rEca = xRate(_EVG_KW.ECACharge);
   // ── ECA changeover segment-2 recovery (item eca-segment-split, 2026-08-27) ──
   // The base scan above deliberately leaves the table-bleed fix OFF for ECA (see the
   // enableTableBleedFix comment below, item 5129e92f) because blanket-enabling it can
@@ -4671,7 +4723,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // numbers or manufacture "verified" status from a single table-bled part the way
   // blanket-enabling the fix for ECA did.
   if (_rEca) {
-    const _rEcaBled = xRate('E[CG]A' + SEP + C, null, true);
+    const _rEcaBled = xRate(_EVG_KW.ECACharge, null, true);
     if (_rEcaBled && _rEcaBled.parts.length > _rEca.parts.length) {
       // Consume one distinct bled part per base part (not a plain .some, which would let a
       // single bled part satisfy multiple base parts) so whatever remains in the pool is the
@@ -4703,14 +4755,14 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // 3rd arg `true` opts EER into the Comparative-Usage-Information table-bleed
   // strip (see xRate's TABLE_MARKER/_cleanTableWindowLine comment above for
   // why ECA deliberately does NOT opt in). Item 5129e92f, 2026-06-30.
-  const _rEer = xRate('EER' + SEP + C, null, true);
+  const _rEer = xRate(_EVG_KW.EERCharge, null, true);
   // PTS sits immediately after EER in print order and is bled into by the
   // same Comparative-Usage-Information table on the same bills (Client A
   // acct 1000001 BALLFIELDS 06/01-06/29/2026) — opt in for the same
   // reason EER did above.
-  const _rPts = xRate('PTS' + SEP + C, null, true);
-  const _rTdc = xRate('TD[CG]' + SEP + C);
-  const _rRkva = xRate('R[kK]VA' + SEP + C);
+  const _rPts = xRate(_EVG_KW.PTSCharge, null, true);
+  const _rTdc = xRate(_EVG_KW.TDCCharge);
+  const _rRkva = xRate(_EVG_KW.RkVACharge);
   // ── UNIT-TYPE VALIDATION ──
   // xRate's GAP tolerance (40 chars including newlines) can occasionally match qty/rate
   // from the NEXT charge line when the current line's qty/rate was OCR-garbled. On
@@ -5076,6 +5128,8 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       result.MeterReadEnd = String(d.getMonth() + 1).padStart(2, '0') + '/' + String(d.getDate()).padStart(2, '0');
     } catch (e) {}
   }
+  // NumberOfDays from the validated read dates (one rule), with the printed Days column as the check.
+  _evgSetNumberOfDays(result, _printedDays, _billDate);
 
   // 4. ActualRKVA fallback from RkVA charge line kW value
   if (!result.ActualRKVA) {
@@ -5694,7 +5748,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   if (_total > 0 && Math.abs(_compSum - _total) > 1) {
     // Try to find missing charges by scanning ALL dollar amounts between "Billing Details" and "Subtotal"
     const bdIdx = t.search(/Billing\s+Details/i);
-    const stIdx = t.search(/Subtotal/i);
+    const stIdx = t.search(_EVG_SUBTOTAL_LABEL);
     if (bdIdx >= 0 && stIdx > bdIdx) {
       const section = t.substring(bdIdx, stIdx);
       const allAmts = [];
@@ -5742,21 +5796,21 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     'PTSCharge',
     'TDCCharge',
   ];
-  const _allChargeFields = [
-    ..._coreChargeFields,
-    'RkVACharge',
-    'TaxExemptDelivery',
-    'BillOffset',
-    'FranchiseFee',
-    'SalesTax',
-    'MiscellaneousCharge',
-  ];
-  const _recompSum = _allChargeFields.reduce((s, f) => s + parseBillNumber(result[f]), 0);
+  // The sum is the one component list (computations/rates.js); a private copy of it lived here until 2026-10-19.
+  const _recompSum = sumElectricComponentCharges(result);
   const _recompTotal = parseBillNumberOrZero(result.TotalCurrentCharges);
   const _recompGap = _recompTotal - _recompSum;
   if (_recompTotal > 0 && _recompGap > 0.5) {
     const nullCore = _coreChargeFields.filter((f) => result[f] === null || result[f] === undefined);
     let target = nullCore.length === 1 ? nullCore[0] : null;
+    // A Customer Chg whose dollars were read but not its cents ("$48}"): the gap may fill it only when the gap
+    // starts with the read dollars and no printed Subtotal contradicts the printed Current Charges.
+    if (target === 'CustomerCharge' && result._customerChargePartial) {
+      const _pc = checkElectricPrintedTotals(result);
+      if (_recompGap.toFixed(2).indexOf(result._customerChargePartial.prefix) !== 0 || _pc.subtotalPlusFeesMatchTotal === false) {
+        target = null;
+      }
+    }
     // GUARD (backlog #13, 2026-08-26): a demand charge is meaningless
     // without a demand quantity — never let gap-inference fabricate
     // BilledKWCharge when BilledKW (the qty field, populated from the
@@ -5958,16 +6012,132 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   for (const k of Object.keys(result)) {
     if (k.startsWith('_proposed_') && parseBillNumber(result[k.slice('_proposed_'.length)]) > 0) delete result[k];
   }
+  // The printed totals, checked to the cent: lines above the Subtotal = Subtotal; Subtotal + the lines below it =
+  // Current Charges (one rule: checkElectricPrintedTotals). TotalCurrentCharges stays the printed amount.
+  result._printedTotalCheck = checkElectricPrintedTotals(result);
   return result;
 }
 
 // OCR-tolerant patterns for Utility E bills
 // Common OCR misreads: g→q/9, l→1/I, D→O, a→o, s→5, i→l, e→c
 const _EVG_BILLING_DETAILS = /B[il1]{2}[il1]ng\s+D[ec]t[ao][il1]{1,2}[s5]?\s*[-\u2013\—]\s*[s5]erv[il1]ce\s+from/i;
-// ONE source for the "service from <date> to <date>" pair. OCR can read a "|" or ":" before a date.
+// ONE source for the "service from <date> to <date>" pair. OCR can read a "|" or ":" before a date. The end year
+// can be cut by the scan ("to 09/02/20." for 09/02/2026), so 2 to 4 digits are accepted there; _evgServicePeriodFrom
+// completes it. Every reader of the pair goes through _evgServicePeriod / _evgServicePeriodFrom.
 const _EVG_SERVICE_FROM_SRC =
-  '[s5]erv[il1]ce\\s+from[:\\s|]+(\\d{2}\\/\\d{2}\\/\\d{4})\\s+to[:\\s|]+(\\d{2}\\/\\d{2}\\/\\d{4})';
+  '[s5]erv[il1]ce\\s+from[:\\s|]+(\\d{2}\\/\\d{2}\\/\\d{4})\\s+to[:\\s|]+(\\d{2}\\/\\d{2}\\/\\d{2,4})';
 const _EVG_SERVICE_FROM = new RegExp(_EVG_SERVICE_FROM_SRC, 'i');
+// The service period from one _EVG_SERVICE_FROM match. A cut end year is taken from the start year (+1 when the
+// end month is before the start month): a Utility E bill covers about one month. endYearFilled marks the fill.
+function _evgServicePeriodFrom(m) {
+  if (!m) return null;
+  const start = m[1];
+  const endRead = m[2];
+  const ep = endRead.split('/');
+  if (ep[2].length === 4) return { start, end: endRead, endRead, endYearFilled: false };
+  const sp = start.split('/');
+  let year = parseInt(sp[2], 10);
+  if (parseInt(ep[0], 10) < parseInt(sp[0], 10)) year += 1;
+  return { start, end: ep[0] + '/' + ep[1] + '/' + year, endRead, endYearFilled: true };
+}
+function _evgServicePeriod(text) {
+  return _evgServicePeriodFrom(String(text || '').match(_EVG_SERVICE_FROM));
+}
+// ONE label pattern for the Subtotal line ("Subtotal", OCR "Sublotal", "Subtota1", "SUBLOLA").
+const _EVG_SUBTOTAL_LABEL_SRC = 'Sub[tl]?[o0][tl][ao][l1]?';
+const _EVG_SUBTOTAL_LABEL = new RegExp(_EVG_SUBTOTAL_LABEL_SRC, 'i');
+// ONE source of NumberOfDays for a Utility E bill: the meter read dates (Start Read Date to End Read Date), read to
+// read (calcDays exclusive, like the printed Days column). The read dates print without a year: the year comes from
+// the billing period, else from the bill date (+1 when the end month is before the start month).
+// Matt's rule: Number of Days is based on the meter read dates, not the billing period dates. The read-date count
+// wins. The billing-period count is used only when a valid printed Days value (an integer 1-45) contradicts the
+// read-date count AND equals the billing-period count (a misread read date); the disagreement is recorded. No printed
+// Days, or an implausible one, means the read dates. Without read dates the billing period is used. Returns
+// { days, source, readStart, readEnd, readDays, periodDays, printedDays, printedDaysAgree } or null.
+function _evgNumberOfDays(readStart, readEnd, periodStart, periodEnd, billDate, printedDays) {
+  const mmdd = /^(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?$/;
+  const rs = mmdd.exec(String(readStart || '').trim());
+  const re = mmdd.exec(String(readEnd || '').trim());
+  const yearOf = (d) => {
+    const m = /^(\d{1,2})\/\d{1,2}\/(\d{4})$/.exec(String(d || '').trim());
+    return m ? { month: parseInt(m[1], 10), year: parseInt(m[2], 10) } : null;
+  };
+  const inRange = (d) => d !== '' && !isNaN(d) && d > 0 && d < 120;
+  let readDays = null,
+    s = null,
+    e = null;
+  if (rs && re) {
+    const sm = parseInt(rs[1], 10);
+    const em = parseInt(re[1], 10);
+    const wraps = em < sm;
+    let sy = rs[3] ? parseInt(rs[3], 10) : null;
+    let ey = re[3] ? parseInt(re[3], 10) : null;
+    if (sy === null && ey === null) {
+      const ps = yearOf(periodStart);
+      const pe = yearOf(periodEnd);
+      const bd = yearOf(billDate);
+      if (ps) sy = ps.year;
+      else if (pe) ey = pe.year;
+      else if (bd) ey = em > bd.month ? bd.year - 1 : bd.year;
+    }
+    if (sy === null && ey !== null) sy = wraps ? ey - 1 : ey;
+    if (ey === null && sy !== null) ey = wraps ? sy + 1 : sy;
+    if (sy !== null) {
+      const d = calcDays(rs[1] + '/' + rs[2] + '/' + sy, re[1] + '/' + re[2] + '/' + ey, false);
+      if (inRange(d)) {
+        readDays = d;
+        s = rs[1] + '/' + rs[2] + '/' + sy;
+        e = re[1] + '/' + re[2] + '/' + ey;
+      }
+    }
+  }
+  let periodDays = null;
+  if (periodStart && periodEnd) {
+    const d = calcDays(periodStart, periodEnd, false);
+    if (inRange(d)) periodDays = d;
+  }
+  const printedN = /^\d{1,3}$/.test(String(printedDays || '').trim()) ? parseInt(printedDays, 10) : null;
+  const printed = printedN !== null && printedN >= 1 && printedN <= 45 ? printedN : null;
+  let days = null,
+    source = null;
+  if (readDays !== null && printed !== null && printed !== readDays && periodDays !== null && printed === periodDays) {
+    days = periodDays;
+    source = 'billing period (the read dates give ' + readDays + ' days; the printed Days column equals the billing period)';
+  } else if (readDays !== null) {
+    days = readDays;
+    source = 'meter read dates';
+  } else if (periodDays !== null) {
+    days = periodDays;
+    source = 'billing period';
+  }
+  if (days === null) return null;
+  return {
+    days: String(days),
+    source,
+    readStart: s,
+    readEnd: e,
+    readDays,
+    periodDays,
+    printedDays: printedDays || null,
+    printedDaysAgree: printed === null ? null : printed === days,
+  };
+}
+// The one writer of NumberOfDays and its check on a Utility E bill (the extract function at its end, and extractAll
+// after it stamps the winning service dates on a bill).
+function _evgSetNumberOfDays(result, printedDays, billDate) {
+  const n = _evgNumberOfDays(
+    result.MeterReadStart,
+    result.MeterReadEnd,
+    result.BillingPeriodStart,
+    result.BillingPeriodEnd,
+    billDate,
+    printedDays,
+  );
+  result.NumberOfDays = n ? n.days : null;
+  if (n) result._numberOfDaysCheck = n;
+  else delete result._numberOfDaysCheck;
+  return n;
+}
 const _EVG_CHG = /Ch[gaq9][.:]?/i; // matches Chg, Cha, Chq, Ch9, Chg.
 // FIX (2026-08-24, Client A visual audit bug #6): `\s+` -> `\s*` between
 // "Account" and "Number" — real OCR glues them into one token on some pages
@@ -7044,7 +7214,8 @@ const UTILITY_RULES = [
       const sfMatches = [];
       let sfM;
       while ((sfM = sfRe.exec(t)) !== null) {
-        sfMatches.push({ idx: sfM.index, start: sfM[1], end: sfM[2], length: sfM[0].length });
+        const _sp = _evgServicePeriodFrom(sfM); // a cut end year is completed here, so cover and detail pages agree
+        sfMatches.push({ idx: sfM.index, start: _sp.start, end: _sp.end, length: sfM[0].length });
       }
       // For each service-from match, find the account number on the SAME
       // PAGE only (bounded by %%PAGE_N%% markers). Crossing page boundaries
@@ -7510,8 +7681,8 @@ const UTILITY_RULES = [
         );
         const raw = t.split(splitRe);
         const getDatePair = (s) => {
-          const m = s.match(_EVG_SERVICE_FROM);
-          return m ? m[1] + '|' + m[2] : null;
+          const m = _evgServicePeriod(s);
+          return m ? m.start + '|' + m.end : null;
         };
         const sections = [];
         for (const frag of raw) {
@@ -7610,11 +7781,8 @@ const UTILITY_RULES = [
         if (winner && winner.start && winner.end) {
           r.BillingPeriodStart = winner.start;
           r.BillingPeriodEnd = winner.end;
-          // Printed NumberOfDays is read-to-read (exclusive).
-          const _nd = calcDays(winner.start, winner.end, false);
-          if (_nd !== '' && !isNaN(_nd)) {
-            r.NumberOfDays = String(_nd);
-          }
+          // NumberOfDays from the read dates with the winning period (the one rule and writer).
+          _evgSetNumberOfDays(r, r._numberOfDaysCheck ? r._numberOfDaysCheck.printedDays : null, r._billDate || null);
         }
         return r;
       });

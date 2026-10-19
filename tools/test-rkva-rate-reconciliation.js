@@ -47,8 +47,12 @@ const jsPath = process.argv[2] || path.join(__dirname, '..', 'app', 'energy-savi
 
 function loadExtractEvergy(scriptPath) {
   const src = fs.readFileSync(scriptPath, 'utf8');
+  // calcDays (app/utility-data.js in production) is read by the NumberOfDays rule; the same stub as
+  // tools/test-utility-e-addr-dates.js.
+  const calcDays = (s, e) => Math.round((new Date(e) - new Date(s)) / 864e5);
   const sandbox = {
     window: {},
+    calcDays,
     console: { log: () => {}, warn: () => {}, error: () => {} },
   };
   vm.createContext(sandbox);
