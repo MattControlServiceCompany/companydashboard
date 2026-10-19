@@ -240,6 +240,20 @@ async function main() {
       String(r.TaxExemptDelivery),
     );
     check('tax exempt: nothing mirrored into Bill offset', r.BillOffset === null, String(r.BillOffset));
+    // OCR prints "$" as "§" on the Tax exempt line; the next line is the ECA charge with its own amount.
+    const x = extractOnly(
+      HEAD('MGA Secondary Voltage Commercial - 2MGAE   Billing Details - service from 09/07/2026 to 10/06/2026') +
+        '\nCustomer Chg ....  $48.90\nTax exempt delivery cost from bill ....  §274.23\n' +
+        'ECA Chg 09-08-2026-09-30-2026 for 6,850.7609 kWh at $0.02059 per kWh .... $143.12\nBill offset\nkWh Used 2,000.0000\n',
+    );
+    check('tax exempt: "§274.23" on its own line reads 274.23', near(n(x.TaxExemptDelivery), 274.23), String(x.TaxExemptDelivery));
+    check('tax exempt: Bill offset twin is -274.23', near(n(x.BillOffset), -274.23), String(x.BillOffset));
+    const y = extractOnly(
+      HEAD('MGA Secondary Voltage Commercial - 2MGAE   Billing Details - service from 09/07/2026 to 10/06/2026') +
+        '\nCustomer Chg ....  $48.90\nTax exempt delivery cost from bill ....\n' +
+        'ECA Chg 09-08-2026-09-30-2026 for 6,850.7609 kWh at $0.02059 per kWh .... $143.12\nkWh Used 2,000.0000\n',
+    );
+    check('tax exempt: amountless label never takes the next charge line amount', y.TaxExemptDelivery === null, String(y.TaxExemptDelivery));
     const f = extractOnly(
       HEAD('MGA Secondary Voltage Commercial - 2MGAE   Billing Details - service from 09/07/2026 to 10/06/2026') +
         '\nCustomer Chg ....  $48.90\nFranchise Fee\n500.0000 kWh at $0.03288 per kWh\nkWh Used 500.0000\nSubtotal $48.90\n',

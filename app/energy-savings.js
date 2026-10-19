@@ -4083,18 +4083,37 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   const SEP_T = "[ \\t\\n\\r'`\\u2018\\u2019\\u201C\\u201D]+";
   const _taxExemptParts = [];
   const _taxExemptRe = new RegExp('[TIl][a@o0]x' + SEP_T + 'e?xempt', 'i');
+  const _franchiseRe = /Franch[il1]?[is5]?[e3]?\s+F[e3]{1,2}/i;
+  const _salesTaxRe = /Sales\s*Tax/i;
+  // The one stop rule for the three readers of a label line that carries no quantity (Tax exempt delivery,
+  // Franchise Fee, Sales Tax). Their amount may wrap to the next line, but a next line that holds a quantity
+  // ("kWh at", "kW at", "for <qty>") or any charge label belongs to a DIFFERENT charge: its amount is never
+  // taken. (2026-10-15: a Tax exempt line whose amount OCR printed as "§274.23" took the $143.12 of the ECA line
+  // under it.) The "§" for "$" fix applies on the Tax exempt
+  // line itself only (see below).
+  const _EVG_QTY_LINE = /\bk[Ww]h?\s+a[tl]\b|\bfor\s+[0-9,]*[0-9][.:][0-9]{2,}/i;
+  const _evgOtherChargeLine = (line) =>
+    _EVG_QTY_LINE.test(line) ||
+    NEXT_CHG_LINE.test(line) ||
+    _taxExemptRe.test(line) ||
+    _franchiseRe.test(line) ||
+    _salesTaxRe.test(line) ||
+    /Bill\s+[0O]ff|Current\s+Charges|Utility|Sub[tl]?ota[l1]/i.test(line);
   const taxExempt = (() => {
     const lines = t.split('\n');
     for (let i = 0; i < lines.length; i++) {
       if (!_taxExemptRe.test(lines[i])) continue;
       // _evgChargeAmounts is the one amount reader: a rate on the next line ("14,397.6017 kWh at $0.07852
       // per kWh") is never cut to "$0.07" and taken as the charge.
-      const sameLine = _evgChargeAmounts(lines[i]);
+      // OCR reads the "$" of this line's own amount as "§" ("§274.23"): accepted at the END of the Tax exempt
+      // line only, never from another line.
+      const sameLine = _evgChargeAmounts(lines[i].replace(/§(?=\s*[\d,]+\.\d{2}\s*$)/, '$'));
       if (sameLine.length) {
         _taxExemptParts.push(sameLine[0]);
         continue;
       }
       for (let j = i + 1; j < Math.min(i + 3, lines.length); j++) {
+        if (_evgOtherChargeLine(lines[j])) break;
         const nextLine = _evgChargeAmounts(lines[j]);
         if (nextLine.length) {
           _taxExemptParts.push(nextLine[0]);
@@ -4140,11 +4159,10 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   const _franchiseParts = [];
   const franchise = (() => {
     const lines = t.split('\n');
-    const franRe = /Franch[il1]?[is5]?[e3]?\s+F[e3]{1,2}/i;
     let inAdjustments = false;
     for (let i = 0; i < lines.length; i++) {
       if (/^\s*Adjustments\s*$/i.test(lines[i])) inAdjustments = true;
-      if (!franRe.test(lines[i])) continue;
+      if (!_franchiseRe.test(lines[i])) continue;
       if (inAdjustments) continue;
       if (/[-–]\s*\$/.test(lines[i])) continue;
       const sameLine = _evgChargeAmounts(lines[i]);
@@ -4153,6 +4171,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
         continue;
       }
       for (let j = i + 1; j < Math.min(i + 3, lines.length); j++) {
+        if (_evgOtherChargeLine(lines[j])) break;
         const nextLine = _evgChargeAmounts(lines[j]);
         if (nextLine.length) {
           _franchiseParts.push(nextLine[0]);
@@ -4177,9 +4196,8 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   const _salesTaxParts = [];
   let salesTax = (() => {
     const lines = t.split('\n');
-    const taxRe = /Sales\s*Tax/i;
     for (let i = 0; i < lines.length; i++) {
-      const taxM = lines[i].match(taxRe);
+      const taxM = lines[i].match(_salesTaxRe);
       if (!taxM) continue;
       const afterTax = lines[i].slice(taxM.index + taxM[0].length);
       const sameLine = afterTax.match(/\$[\d,]+\.\d{2}/);
@@ -4203,11 +4221,10 @@ function _extractEvergy(t, acctOverride, addrOverride) {
         continue;
       }
       // No dollar amount on the tax-phrase line itself — check the next
-      // couple of lines, but stop if an unrelated charge/total label
-      // ("Current Charges", "Utility", "Subtotal") appears first; that means
-      // we've drifted off the tax line onto a different charge's total.
+      // couple of lines, but stop at a line that belongs to a different charge
+      // (_evgOtherChargeLine); that means we've drifted off the tax line.
       for (let j = i + 1; j < Math.min(i + 3, lines.length); j++) {
-        if (/Current\s+Charges|Utility|Sub[tl]?ota[l1]/i.test(lines[j])) break;
+        if (_evgOtherChargeLine(lines[j])) break;
         const nextLine = _evgChargeAmounts(lines[j]);
         if (nextLine.length) {
           _salesTaxParts.push(nextLine[0]);
