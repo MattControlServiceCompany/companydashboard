@@ -82,7 +82,7 @@ if (!/computeProjectFlagSummary\(bldgs, \(m\) => isBaselineExcluded\(/.test(ud))
 // one list of counted types, and every summary level skips a meter excluded from the baseline
 if ((keeper.match(/const BILL_COUNTED_FLAG_RULES\s*=/g) || []).length !== 1)
   problems.push('computations/bill-flags.js must define BILL_COUNTED_FLAG_RULES exactly once');
-['usage_vs_same_month', 'read_continuity', 'cost_field_mismatch', 'water_sewer_parity', 'days_mismatch'].forEach((r) => {
+['usage_vs_same_month', 'read_continuity', 'cost_field_mismatch', 'water_sewer_parity', 'days_mismatch', 'period_gap'].forEach((r) => {
   const list = (keeper.match(/const BILL_COUNTED_FLAG_RULES\s*=\s*\[([^\]]*)\]/) || [])[1] || '';
   if (list.includes("'" + r + "'")) problems.push('BILL_COUNTED_FLAG_RULES must not count ' + r);
 });

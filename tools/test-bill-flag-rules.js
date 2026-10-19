@@ -304,7 +304,7 @@ console.log('=== 6. billing errors ===');
     'blank start and end: ONE dates_missing flag',
   );
 
-  // gap: 3 days no flag, 4 days flag
+  // a missing billing period is NOT a data warning: no flag at any gap size (the Bills table gap row shows it)
   const gapMeter = (gap) =>
     gasMeter([2023, 2024], (bills) => {
       const b = find({ bills }, 'g2024-4');
@@ -314,13 +314,8 @@ console.log('=== 6. billing errors ===');
     });
   assert(!anyRule(run(gapMeter(3)), 'period_gap'), 'gap of 3 days: no flag');
   const g4 = run(gapMeter(4));
-  assert(has(g4, 'g2024-4', 'period_gap'), 'gap of 4 days: flag');
-  assert(
-    /No bill covers 04\/01\/2024 to 04\/05\/2024/.test(
-      g4.perBill['g2024-4'].find((f) => f.rule === 'period_gap').message,
-    ),
-    'gap message names the missing date range',
-  );
+  assert(!anyRule(g4, 'period_gap') && !has(g4, 'g2024-4', 'period_gap'), 'gap of 4 days: still no flag (a gap is not a data warning)');
+  assert(!anyRule(run(gapMeter(40)), 'period_gap'), 'gap of 40 days: no flag');
   // overlap: 3 days no flag, 4 days flag
   const ovMeter = (n) =>
     gasMeter([2023, 2024], (bills) => {
@@ -589,9 +584,9 @@ console.log('=== 9. usage does not match charge ===');
   const hi = run(sewer(setCharge('s4', 2.3)));
   assert(has(hi, 's4', 'usage_charge_mismatch'), 'charge 2.3x what the usage costs: flag');
   const hiMsg = hi.perBill.s4.find((f) => f.rule === 'usage_charge_mismatch').message;
-  assert(/Usage does not match charge: 1\d\d,\d{3} gal/.test(hiMsg), 'message names the usage');
+  assert(/^Charge \$2,419\.60 is 2\.3x higher than usage implies \(about \$[\d,.]+\)$/.test(hiMsg), 'terse message: ' + hiMsg);
   assert(
-    /but the bill charges \$2,419\.60 \(2\.3x higher\)/.test(hiMsg),
+    /Charge \$2,419\.60 is 2\.3x higher/.test(hiMsg),
     "message shows the bill's own sewer charge (105,200 gal x 0.01 x 2.3 = $2,419.60), not a rate x usage product",
   );
   assert(
@@ -696,17 +691,16 @@ console.log('=== 10. plain bill line ===');
   const fl = sm.perBill['blank1'] || [];
   const line = ctx.billFlagLine(ctx.billFlagLabel(find(m, 'blank1'), m.bills, 0), fl);
   assert(
-    line ===
-      'Bill 1 has no dates or usage, but it has a $7,398.79 gas charge. Open the bill to add the dates and usage, or delete it.',
+    line === 'Bill 1: Missing start and end dates; Missing therms',
     'no-date blank-usage line: ' + line,
   );
   assert(!/Flag |Every bill|—|\|/.test(line), 'line has no rule sentence, dash label or bar');
   const other = ctx.billFlagLine('Jan 2024', [
-    { rule: 'cost_missing', message: 'Total cost is blank.' },
-    { rule: 'usage_negative', message: 'Usage is negative (-5 therms).' },
+    { rule: 'cost_missing', message: 'Missing total cost' },
+    { rule: 'usage_negative', message: 'Negative therms (-5)' },
   ]);
   assert(
-    other === 'Jan 2024: total cost is blank; usage is negative (-5 therms). Open the bill and check the values.',
+    other === 'Jan 2024: Missing total cost; Negative therms (-5)',
     'several reasons, one line: ' + other,
   );
   const allMsgs = Object.values(sm.perBill).flat().map((f) => f.message);

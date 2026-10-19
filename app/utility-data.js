@@ -4590,22 +4590,17 @@ function renderBillsPane(pane, m, bills, incl) {
           .filter((x) => billFlagSummary.countedPerBill[x.r.id])
           .map(
             (x) =>
-              '<div class="bill-flag-reason" style="padding:2px 0 2px 22px;color:var(--text);font-weight:400">' +
+              '<div class="bill-flag-reason" style="padding:1px 0;color:var(--text);font-weight:400">' +
               _escHtml(billFlagLine(billFlagLabel(x.r, bills, x.i), billFlagSummary.countedPerBill[x.r.id])) +
               '</div>',
           )
           .join('')
       : '';
+  // No preamble: the banner is the reason lines themselves, one per flagged bill.
   const flagBanner =
     billFlagSummary.flaggedBills > 0
-      ? '<div id="billFlagBanner" style="padding:8px 14px;background:var(--amber-dim);border:1px solid rgba(245,158,11,.25);border-radius:6px;margin:8px 14px;font-size:12px;color:var(--amber);font-weight:500" title="' +
-        billFlagHoverText(billFlagSummary) +
-        '">' +
-        '<div style="display:flex;align-items:center;gap:8px"><span>⚠</span><span>' +
-        billFlagSummary.flaggedBills +
-        ' bill' +
-        (billFlagSummary.flaggedBills !== 1 ? 's' : '') +
-        (billFlagSummary.flaggedBills !== 1 ? ' have' : ' has') + ' a problem that changes usage, cost or dates. The reason is listed below; hover a flagged row for the same text.</span></div>' +
+      ? '<div id="billFlagBanner" style="padding:8px 14px;background:var(--amber-dim);border:1px solid rgba(245,158,11,.25);border-radius:6px;margin:8px 14px;font-size:12px;color:var(--amber);font-weight:500;display:flex;align-items:flex-start;gap:8px">' +
+        '<span>⚠</span>' +
         '<div class="bill-banner-list">' +
         flagReasonLines +
         '</div></div>'
