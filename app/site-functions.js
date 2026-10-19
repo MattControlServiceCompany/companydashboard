@@ -2575,6 +2575,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.19.140', date: '2026-10-19', title: 'City of Louisburg bills read by position on the page',
+    items: [
+      { type: 'change', text: 'PDF / OCR page: the bill reader now reads City of Louisburg bill rows by their place on the page. A misspelled label such as WALER is read as WATER because it sits where WATER sits on every other bill. The Current Bill and Total Amount Due are found under the last row. If the page cannot be matched, the reader uses the text lines as before and the bill shows the reason.' }
+    ]
+  },
   { v: 'v2026.10.19.139', date: '2026-10-19', title: 'PDF / OCR page: OCR text tab and building buttons',
     items: [
       { type: 'change', text: 'PDF / OCR page: the PDF dock has an OCR text tab that shows the text read from the selected bill. It replaces the Extraction Output panel and the Raw Text button.' },

@@ -11249,6 +11249,26 @@ const UTILITY_RULES = [
       const _lbgCropFallbackText =
         page.match(/%%LBG_CROP_FALLBACK%%\n([\s\S]*?)\n%%LBG_CROP_FALLBACK_END%%/)?.[1] || null;
       page = page.replace(/%%LBG_CROP_FALLBACK%%\n[\s\S]*?\n%%LBG_CROP_FALLBACK_END%%\n?/, '');
+      // Position read (computations/bill-layout.js; appended to the page text by app/bill-analysis.js
+      // after OCR, markers BILL_LAYOUT.MARK): the charge rows and the two page totals, each label set
+      // by its slot on the page and each value taken from the amount column. When the block is present
+      // the rows loop, the Fuel Adjustment reader and the two totals read ITS lines (one path per
+      // field); the raw page lines are the fallback, and the reason is kept on every bill of the page
+      // (_readMode 'position' | 'text', _readFallbackReason). Account, address, dates and balances
+      // are still read from the page text.
+      const _posBlock = page.match(/%%POSITION_READ%%[^\n]*\n([\s\S]*?)\n%%POSITION_READ_END%%/);
+      const _posFallback = page.match(/%%POSITION_READ_FALLBACK%%[^\n]*/);
+      page = page
+        .replace(/%%POSITION_READ%%[^\n]*\n[\s\S]*?\n%%POSITION_READ_END%%\n?/, '')
+        .replace(/%%POSITION_READ_FALLBACK%%[^\n]*\n?/, '');
+      const _rowsText = _posBlock ? _posBlock[1] : null;
+      const _readMode = _rowsText != null ? 'position' : 'text';
+      const _readFallbackReason =
+        _rowsText != null
+          ? null
+          : _posFallback
+            ? _posFallback[0].replace(/^%%POSITION_READ_FALLBACK%%\s*/, '')
+            : 'no position read for this page (text layer, or OCR before the position reader)';
       // New account number shape: "NN-NNNNNN-NN". Tolerate OCR "(" or
       // "O" in place of leading zero.
       const acctRaw = page.match(/([\d(O]{2}-\d{6}-\d{2})/)?.[1] || null;
@@ -11387,8 +11407,8 @@ const UTILITY_RULES = [
 
       // The new format puts the service label MID-LINE between the meter
       // reads and the charge: "138,771 139,070 299 WATER 30.20". Parse
-      // relative to the label.
-      const lines = page.split(/\r?\n/);
+      // relative to the label. With a position read, the rows are its lines (see _rowsText above).
+      const lines = (_rowsText != null ? _rowsText : page).split(/\r?\n/);
       const parseMetered = (raw, labelRe, allowDecimalUsage) => {
         const m = raw.match(labelRe);
         if (!m) return null;
@@ -11825,12 +11845,12 @@ const UTILITY_RULES = [
       // label + amount first; else the line's tokens picked as parseMetered picks a charge (pen
       // noise between label and amount, backlog eea98fd5; a lost decimal point, "4032" for 40.32).
       // A positive read is checked against the page total below (sign guard).
-      let signedFuelAdj = _lbg_readFuelAdj(page);
+      let signedFuelAdj = _lbg_readFuelAdj(_rowsText != null ? _rowsText : page);
 
       // Total Amount Due and Current Bill both go through _lbg_labeledAmount: clean pattern first,
       // then a loose pass that tolerates colon-for-dot OCR ("4,014:28" → 4014.28). The Current Bill
       // label is fuzzy (backlog fe61fac7): an ink mark turned "Bill" into "Bin" on a real scan.
-      let TotalAmountDue = _lbg_labeledAmount(page, _LBG_TOTAL_AMOUNT_DUE_LABEL);
+      let TotalAmountDue = _lbg_labeledAmount(_rowsText != null ? _rowsText : page, _LBG_TOTAL_AMOUNT_DUE_LABEL);
 
       // Current Bill — the page's CURRENT-PERIOD commodity total (this
       // period's Water + Gas + Sewer + Stormwater only). Unlike Total Amount
@@ -11840,7 +11860,7 @@ const UTILITY_RULES = [
       // _lbg_reconcileGasFromCurrentBill / backlog 5884be3d, 37f76621).
       // Reconciling against Total Amount Due instead would false-flag any
       // account carrying a balance forward.
-      const _currentBillRaw = _lbg_labeledAmount(page, _LBG_CURRENT_BILL_LABEL, true);
+      const _currentBillRaw = _lbg_labeledAmount(_rowsText != null ? _rowsText : page, _LBG_CURRENT_BILL_LABEL, true);
       let CurrentBillTotal = _currentBillRaw != null ? parseFloat(_currentBillRaw) : null;
 
       // ── Client A targeted-crop OCR fallback merge (backlog 37d5fb0e-fueladj
@@ -12114,6 +12134,8 @@ const UTILITY_RULES = [
       const shared = {
         UtilityCompany: 'City of Louisburg',
         BillFormat: 'new',
+        _readMode,
+        _readFallbackReason,
         CustomerName,
         AccountNumber,
         ServiceAddress,

@@ -9609,6 +9609,7 @@ function clearPDFOCR() {
   window._pdfQueueRows = null;
   // F3 (clearPDFOCR path): release multi-pass OCR buffers when the user clicks Clear
   window._pdfOcrPasses = null;
+  window._pdfPositionReads = null;
   window._pdfPassScores = null;
   window._pdfOcrEmptyPages = null;
   window._pdfOcrBudgetExceeded = null;
@@ -15048,7 +15049,15 @@ async function extractPDFText(ab, statusCb, opts) {
               const text = ocrResult.data.text;
               const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
               const score = scorePage(text);
-              allPassTexts[pgNum].push({ scale: cfg.scale, label: cfg.label, text, score });
+              allPassTexts[pgNum].push({
+                scale: cfg.scale,
+                label: cfg.label,
+                text,
+                score,
+                words: BILL_LAYOUT.wordsFromOcr(ocrResult),
+                w: canvas.width,
+                h: canvas.height,
+              });
               passScoreLog.push({
                 page: pgNum,
                 pass: cfg.label,
@@ -15166,7 +15175,15 @@ async function extractPDFText(ab, statusCb, opts) {
                 const text = ocrResult.data.text;
                 const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
                 const score = scorePage(text);
-                allPassTexts[pgNum].push({ scale: cfg.scale, label: cfg.label, text, score });
+                allPassTexts[pgNum].push({
+                  scale: cfg.scale,
+                  label: cfg.label,
+                  text,
+                  score,
+                  words: BILL_LAYOUT.wordsFromOcr(ocrResult),
+                  w: canvas.width,
+                  h: canvas.height,
+                });
                 passScoreLog.push({
                   page: pgNum,
                   pass: cfg.label,
@@ -15355,6 +15372,9 @@ async function extractPDFText(ab, statusCb, opts) {
                   label: '2.5x-rot' + picked.winnerLabel,
                   text: rotText,
                   score: rotScore,
+                  words: BILL_LAYOUT.wordsFromOcr(rotResult),
+                  w: picked.winnerCanvas.width,
+                  h: picked.winnerCanvas.height,
                 });
                 passScoreLog.push({
                   page: pgNum,
@@ -15442,6 +15462,9 @@ async function extractPDFText(ab, statusCb, opts) {
                         label: rcfg.label + '-rot' + picked.winnerLabel,
                         text: rText,
                         score: rScore,
+                        words: BILL_LAYOUT.wordsFromOcr(rResult),
+                        w: rotCanvas.width,
+                        h: rotCanvas.height,
                       });
                       passScoreLog.push({
                         page: pgNum,
@@ -15505,6 +15528,9 @@ async function extractPDFText(ab, statusCb, opts) {
                           label: rcfg.label + '-rot' + picked.winnerLabel,
                           text: rText,
                           score: rScore,
+                          words: BILL_LAYOUT.wordsFromOcr(rResult),
+                          w: rotCanvas.width,
+                          h: rotCanvas.height,
                         });
                         passScoreLog.push({
                           page: pgNum,
@@ -15711,7 +15737,15 @@ async function extractPDFText(ab, statusCb, opts) {
               });
               const binText = binResult.data.text;
               const binScore = scorePage(binText);
-              allPassTexts[pgNum].push({ scale: 2.5, label: '2.5x-otsu', text: binText, score: binScore });
+              allPassTexts[pgNum].push({
+                scale: 2.5,
+                label: '2.5x-otsu',
+                text: binText,
+                score: binScore,
+                words: BILL_LAYOUT.wordsFromOcr(binResult),
+                w: binCanvas.width,
+                h: binCanvas.height,
+              });
               passScoreLog.push({
                 page: pgNum,
                 pass: '2.5x-otsu',
@@ -15773,6 +15807,23 @@ async function extractPDFText(ab, statusCb, opts) {
           // that file's merge block). This never fires on a bill that already
           // reads cleanly — _lbgNeedsCropFallback requires a missing
           // Current-Bill/Total-Amount-Due total or a missing Water line.
+          // ── Position read (computations/bill-layout.js; Matt, 2026-10-19: "If WALER sits
+          // exactly where WATER is on every other bill, it is WATER") ──────────────────
+          // Every OCR pass above kept its word boxes (words, w, h on the pass entry). The
+          // template engine finds the anchors of a known layout on the best pass, reads the
+          // charge rows by slot and the page totals from the amount column, and appends them
+          // as normalized lines behind BILL_LAYOUT.MARK. The City reader (app/energy-savings.js
+          // _extractNew) reads those lines instead of the raw page lines; the page sum check
+          // there still proves the page. No template match: one marker line with the reason,
+          // and the text reader runs on the raw lines as before. No extra OCR call.
+          {
+            const _posRes = BILL_LAYOUT.readBestPass(allPassTexts[pgNum]);
+            bestText += _posRes.ok
+              ? BILL_LAYOUT.linesBlock(_posRes.read, _posRes.pass.label)
+              : BILL_LAYOUT.fallbackMarker(_posRes.reason);
+            if (!window._pdfPositionReads) window._pdfPositionReads = {};
+            window._pdfPositionReads[pgNum] = BILL_LAYOUT.debugRecord(_posRes);
+          }
           if (!_lbgCropDecodeTimedOut && _lbgNeedsCropFallback(bestText)) {
             try {
               if (statusCb) statusCb('OCR page ' + pgNum + '/' + maxPages + ' — Louisburg targeted-crop fallback...');
@@ -15821,31 +15872,11 @@ async function extractPDFText(ab, statusCb, opts) {
                     : _lbgOrientWinnerLabel === '180'
                       ? rotateCanvas180(_lbgHighRes)
                       : _lbgHighRes;
-              const _lbgCells = [
-                { label: 'WATER', x: 0.855, y: 0.28, w: 0.145, h: 0.019 },
-                { label: 'Total Amount Due', x: 0.87, y: 0.41, w: 0.13, h: 0.021 },
-                // GASUSAGE (not a real printed label — see energy-savings.js's
-                // GasUsage merge branch for why this exists): the Gas row's
-                // PRINTED decimal usage cell (Previous/Current Reading/Usage
-                // columns, "Usage" position, same row as the GAS charge — a
-                // pressure-corrected CCF value, e.g. "647.41", NOT the raw
-                // meter-read integer difference). On the real bill this fix
-                // was verified against, the main-pass OCR never captured this
-                // decimal token, so downstream code fell back to the raw
-                // integer read-difference (616) as gas.usage — close enough
-                // to look plausible but off by ~5%, which was enough to trip
-                // energy-savings.js's rate-sanity correction into silently
-                // REPLACING the confidently-read printed Gas charge with a
-                // usage-derived one, corrupting the Fuel Adjustment residual
-                // this whole fallback exists to recover. "GASUSAGE" (one
-                // word, no space) is a synthetic sentinel label, not the real
-                // "Usage" column header — deliberately chosen so it can never
-                // collide with the real \bG[A4]S\b charge-line regex (that
-                // regex requires a word boundary right after S; "GASUSAGE"
-                // has no boundary there) while still reading unambiguously
-                // in bestText for a human reading the saved debug file.
-                { label: 'GASUSAGE', x: 0.69, y: 0.296, w: 0.11, h: 0.028 },
-              ];
+              // The three crop cells are template data: BILL_LAYOUT.CITY_NEW.cropCells
+              // (computations/bill-layout.js). WATER and Total Amount Due are the two value
+              // cells; GASUSAGE is the Gas row's printed decimal usage cell (a synthetic label,
+              // see the GasUsage merge branch in app/energy-savings.js).
+              const _lbgCells = BILL_LAYOUT.CITY_NEW.cropCells;
               const _lbgCellLines = [];
               for (const cell of _lbgCells) {
                 const _lbgCrop = _cropCanvasRegion(_lbgOriented, cell.x, cell.y, cell.w, cell.h);
