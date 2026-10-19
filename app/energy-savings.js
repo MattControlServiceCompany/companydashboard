@@ -6076,9 +6076,17 @@ function _lbg_splitPages(t) {
   return pages;
 }
 // OCR-noise-tolerant cents parser: "1460-87" → 1460.87, "2333" → 23.33.
+// A comma before the last 2 digits is the decimal point ("4,00" = 4.00, "$2,584,70" = 2584.70); a comma
+// before 3 digits ("1,254") is a thousands mark and is NOT touched. Returns the text with the point
+// restored (thousands commas kept), or null when the text does not have that shape.
+function _lbg_commaCents(text) {
+  const m = String(text).trim().match(/^(-?\d{1,3}(?:,\d{3})*),(\d{2})$/);
+  return m ? m[1] + '.' + m[2] : null;
+}
 function _lbg_cleanCents(raw) {
   if (raw == null) return null;
   let s = String(raw).trim();
+  s = _lbg_commaCents(s) || s;
   s = s.replace(/^(-?[\d,]+)-(\d{2})$/, '$1.$2');
   // Bare digits with no comma and no point: the cents were printed without the point.
   // A value with a thousands comma ("1,234") is a real amount and is NOT re-read as cents.
@@ -6108,11 +6116,7 @@ function _lbg_labeledAmount(text, labelRe, sameLineOnly) {
   // LAST comma is followed by exactly 2 digits is re-read this way ("$45,00" reads 45.00; "$2,584"
   // has 3 digits after its comma, so it is a thousands figure and stays unread here).
   const comma = text.match(new RegExp(src + gap + '[^$\\n]*?\\$?\\s*(\\d{1,3}(?:,\\d{3})*,\\d{2})(?![\\d,])', 'i'));
-  if (comma) {
-    const s = comma[1];
-    const i = s.lastIndexOf(',');
-    return (s.slice(0, i) + '.' + s.slice(i + 1)).replace(/,/g, '');
-  }
+  if (comma) return _lbg_commaCents(comma[1]).replace(/,/g, '');
   return null;
 }
 // ONE reader for a signed balance line ("Payments: ($2,541.03)", "Adjustments: $0.00"). Parentheses
@@ -6226,7 +6230,13 @@ const _LBG_FUEL_ADJ_AMOUNT_RE = new RegExp(_LBG_FUEL_ADJ_LABEL.source + '[^\\d\\
 // 2. Else the last bare run of 4+ digits: the point was lost ("99233" is 992.33, see _lbg_cleanCents).
 // 3. Else the first token (kept for the degraded lines read that way before), or null when
 //    firstIfNone is false (a Fuel Adjustment line, where a lone small integer is pen noise).
+// A money amount has 2 decimals. A token with exactly 3 ("23.337") carries one stray digit after the
+// cents (a mark on the scan): the cents are kept. The Gas line check and the page sum still prove it.
 function _lbg_pickChargeToken(toks, firstIfNone) {
+  toks = toks.map((t) => {
+    const m = /^(-?\d[\d,]*\.\d{2})\d$/.exec(t);
+    return m ? m[1] : t;
+  });
   for (let i = toks.length - 1; i >= 0; i--) {
     if (/(?:[.:]|-)\d{2}$/.test(toks[i])) return /^-?\d[\d,]*(?:[.:]\d{2}|-\d{2})$/.test(toks[i]) ? toks[i] : null;
   }
@@ -6234,6 +6244,24 @@ function _lbg_pickChargeToken(toks, firstIfNone) {
     if (/^-?\d{4,}$/.test(toks[i])) return toks[i];
   }
   return firstIfNone === false ? null : toks[0] || null;
+}
+// A charge token that lost its leading digits (",254.80" after a bare "12": printed 1,254.80). The
+// lost part cannot be read from the text, so this only LISTS the values the text allows (the lead
+// digit group as read, or its first digit alone). The caller keeps one only when it makes the page
+// lines add up to the printed Current Bill to the cent (see the Water repair in _extractNew).
+function _lbg_brokenThousandsCandidates(toks) {
+  for (let i = toks.length - 1; i >= 1; i--) {
+    if (!/(?:[.:]|-)\d{2}$/.test(toks[i])) continue;
+    if (!/^,\d{3}[.:]\d{2}$/.test(toks[i]) || !/^\d{1,2}$/.test(toks[i - 1])) return [];
+    const lead = toks[i - 1];
+    const out = [];
+    for (const l of lead.length > 1 ? [lead, lead[0]] : [lead]) {
+      const v = parseBillNumber(l + toks[i].replace(':', '.'));
+      if (v != null && !out.includes(v)) out.push(v);
+    }
+    return out;
+  }
+  return [];
 }
 // ONE reader of the Fuel Adjustment line on a new-format page. Returns the signed amount, or null
 // when the line is absent or its amount cannot be read. The sign comes from a leading or trailing
@@ -6244,7 +6272,10 @@ function _lbg_readFuelAdj(page) {
     let v = parseFloat(m[1].replace(/[\$,]/g, ''));
     const trailingMinus = new RegExp(_LBG_FUEL_ADJ_LABEL.source + '[^\\n]*[\\d,]+\\.\\d{2}\\s*-', 'i').test(page);
     const parens = new RegExp(_LBG_FUEL_ADJ_LABEL.source + '[^\\n]*\\(\\s*\\$?[\\d,]+\\.\\d{2}\\s*\\)', 'i').test(page);
-    if (v > 0 && (trailingMinus || parens)) v = -v;
+    // "¢" between the label and the amount is the printed minus sign read as a cent sign (real scan,
+    // "FUEL ADR ¢ 53.42" for a printed -53.42).
+    const centSign = new RegExp(_LBG_FUEL_ADJ_LABEL.source + '[^\\d\\n]*¢', 'i').test(page);
+    if (v > 0 && (trailingMinus || parens || centSign)) v = -v;
     return v;
   }
   // A digit run sits between the label and the amount (pen noise "At 28 -0.05"), or the point was
@@ -6266,6 +6297,29 @@ function _lbg_readFuelAdj(page) {
 function _lbg_pageLineSum(p) {
   const n = (v) => (v == null || isNaN(v) ? 0 : +v);
   return Math.round((n(p.gasWithFuelAdj) + n(p.water) + n(p.wpf) + n(p.sewer) + n(p.storm)) * 100) / 100;
+}
+// ONE sign rule for a City gas Fuel Adjustment (backlog 166ee5bf; Matt, 2026-10-19: "When has a Fuel
+// Adjustment ever been positive on this bill?"). It is a credit. A value read WITHOUT a minus sign
+// is negative, unless the page proves the positive: the page lines add up to the printed Current Bill
+// with it positive and do NOT add up with it negative. A value already negative (a printed minus, a
+// trailing minus, parentheses) is returned as read. ctx = { currentBill, gas, water, wpf, sewer, storm }
+// (the Gas line is the printed line incl. the customer charge); with no ctx the rule is the default only.
+function _lbg_fuelAdjSign(v, ctx) {
+  if (v == null || !(v > 0)) return v;
+  if (ctx && ctx.currentBill != null) {
+    const fits = (fa) =>
+      Math.abs(
+        _lbg_pageLineSum({
+          gasWithFuelAdj: (ctx.gas || 0) + fa,
+          water: ctx.water,
+          wpf: ctx.wpf,
+          sewer: ctx.sewer,
+          storm: ctx.storm,
+        }) - ctx.currentBill,
+      ) <= _LBG_PAGE_TOTAL_TOLERANCE + 1e-9;
+    if (fits(v) && !fits(-v)) return v;
+  }
+  return -v;
 }
 // Tolerance for the page-total check: one cent. The printed lines add up to the printed Current
 // Bill to the cent (checked on the saved scans), and a wider band would let a one-digit cents
@@ -6672,6 +6726,10 @@ function _lbg_buildGasBill(
         gasTotalConfident,
       );
       if (noLine.resolved && noLine.value === 0) return { value: null, held: null };
+      // The residual cannot be a Fuel Adjustment (a credit larger than the Gas line, or another line
+      // is unread) and no label is printed: nothing is derived. The gap is a misread Water, Sewer,
+      // Stormwater or Gas amount; the page-total check holds the bill and names the gap.
+      if (!noLine.resolved && currentBillTotal != null && gasTotalConfident && fuelAdjMeta.otherCommoditiesConfident) return { value: null, held: null };
     }
     const faResolve = _lbg_resolveFuelAdj(
       preAdjGasTotal,
@@ -10897,7 +10955,7 @@ const UTILITY_RULES = [
           if (signedFuelAdj > 0 && /\(\s*\$?[\d,]+\.\d{2}\s*\)/.test(faMatch[0])) signedFuelAdj = -signedFuelAdj;
         }
       }
-      if (signedFuelAdj != null && signedFuelAdj > 0) signedFuelAdj = -Math.abs(signedFuelAdj);
+      signedFuelAdj = _lbg_fuelAdjSign(signedFuelAdj);
       // Water and sewer share the same meter — usage should match.
       if ((!water.usage || water.usage === 0) && water.charge) {
         water.usage = sewer.usage || wpf.usage || 0;
@@ -11428,7 +11486,14 @@ const UTILITY_RULES = [
           prevRead = Math.min(r1, r2);
           currRead = Math.max(r1, r2);
         }
-        return { usage, charge, prevRead, currRead, usageLeadGarble };
+        return {
+          usage,
+          charge,
+          prevRead,
+          currRead,
+          usageLeadGarble,
+          thousandsCandidates: charge == null ? _lbg_brokenThousandsCandidates(afterToks) : [],
+        };
       };
 
       let gas = null,
@@ -11465,7 +11530,9 @@ const UTILITY_RULES = [
         // headers outright.
         if (/^\s*\d{3}\s*-\s*(water|gas|sewer|storm)/i.test(ln)) {
           const afterHeader = ln.replace(/^\s*\d{3}\s*-\s*\S+\s*/, '');
-          if (!/[\d,]+\.\d{2}/.test(afterHeader)) continue;
+          // A chart header ("300 - Gas") sharing a line with a real amount keeps the amount; a comma
+          // before the last 2 digits ("4,00") is that amount's decimal point (_lbg_commaCents).
+          if (!/[\d,]+\.\d{2}|(?:^|[^\d,])\d{1,3},\d{2}(?![\d,])/.test(afterHeader)) continue;
         }
         // Also reject any line that contains "Previous Balance" — even
         // if a commodity label is on it, the after-text charge will be
@@ -11769,17 +11836,53 @@ const UTILITY_RULES = [
       // printed total; if flipping either field (or neither) reconciles,
       // leaves both alone rather than guess.
       let _faSignCorrected = false;
+      // Fuel Adjustment sign: the ONE rule, _lbg_fuelAdjSign. It runs first so every proof below
+      // (Water, Stormwater, Water Protection) sums the lines with the credit sign.
+      const _faRead = signedFuelAdj;
+      signedFuelAdj = _lbg_fuelAdjSign(signedFuelAdj, {
+        currentBill: CurrentBillTotal,
+        gas: gas.charge,
+        water: water.charge,
+        wpf: wpf.charge,
+        sewer: sewer.charge,
+        storm: storm.charge,
+      });
+      if (_faRead > 0 && signedFuelAdj < 0) _faSignCorrected = true;
+      // Water line whose first digit group was broken by the scan (",254.80" after a stray "12"). One
+      // listed value is kept ONLY when it makes the page lines add up to the printed Current Bill.
+      // A Stormwater line that is present but unread takes the flat fee the other pages of the file
+      // agree on (opts.peerStorm), under the same proof: the page lines must add up to the cent.
+      const _stormPeerFill = storm.charge == null && stormLineSeen && opts.peerStorm != null;
+      let _waterThousandsRepair = null;
+      if (CurrentBillTotal != null && waterLineSeen && water.charge == null && (water.thousandsCandidates || []).length) {
+        const _waterFits = water.thousandsCandidates.filter(
+          (c) =>
+            Math.abs(
+              _lbg_pageLineSum({
+                gasWithFuelAdj: (gas.charge || 0) + (signedFuelAdj || 0),
+                water: c,
+                wpf: wpf.charge,
+                sewer: sewer.charge,
+                storm: _stormPeerFill ? opts.peerStorm : storm.charge,
+              }) - CurrentBillTotal,
+            ) <= _LBG_PAGE_TOTAL_TOLERANCE + 1e-9,
+        );
+        if (_waterFits.length === 1) {
+          _waterThousandsRepair = { corrected: _waterFits[0], read: water.thousandsCandidates.slice() };
+          water.charge = _waterFits[0];
+        }
+      }
       // Flat-fee peer check (backlog 913c02a9): Stormwater prints the same amount on every
       // account, and OCR can change one digit ("4.00" read as "4.06"). extractAll passes the amount
       // the other pages agree on as opts.peerStorm. It replaces this page's amount ONLY when doing
       // so makes the printed lines add up to the printed Current Bill exactly. Runs before the
       // sign guard so a one-digit Stormwater error cannot hide a sign error.
       let _stormPeerCorrectedFrom = null;
+      let _stormPeerFilled = false;
       if (
         opts.peerStorm != null &&
         CurrentBillTotal != null &&
-        storm.charge != null &&
-        storm.charge !== opts.peerStorm
+        (_stormPeerFill || (storm.charge != null && storm.charge !== opts.peerStorm))
       ) {
         const _peerSum = _lbg_pageLineSum({
           gasWithFuelAdj: (gas.charge || 0) + (signedFuelAdj || 0),
@@ -11789,7 +11892,8 @@ const UTILITY_RULES = [
           storm: opts.peerStorm,
         });
         if (Math.abs(_peerSum - CurrentBillTotal) < 0.005) {
-          _stormPeerCorrectedFrom = storm.charge;
+          if (storm.charge == null) _stormPeerFilled = true;
+          else _stormPeerCorrectedFrom = storm.charge;
           storm.charge = opts.peerStorm;
         }
       }
@@ -11826,15 +11930,9 @@ const UTILITY_RULES = [
         });
         if (Math.abs(_rawSum - CurrentBillTotal) > 0.01) {
           const _wpfFlipSum = wpf.charge ? _rawSum - 2 * wpf.charge : null;
-          const _faFlipSum = signedFuelAdj ? _rawSum - 2 * signedFuelAdj : null;
-          const _wpfWorks = _wpfFlipSum != null && Math.abs(_wpfFlipSum - CurrentBillTotal) < 0.01;
-          const _faWorks = _faFlipSum != null && Math.abs(_faFlipSum - CurrentBillTotal) < 0.01;
-          if (_wpfWorks && !_faWorks) {
+          if (_wpfFlipSum != null && Math.abs(_wpfFlipSum - CurrentBillTotal) < 0.01) {
             wpf.charge = -wpf.charge;
             wpf._signCorrected = true;
-          } else if (_faWorks && !_wpfWorks) {
-            signedFuelAdj = -signedFuelAdj;
-            _faSignCorrected = true;
           }
         }
       }
@@ -11906,23 +12004,10 @@ const UTILITY_RULES = [
           '(high-zoom charges-column crop, backlog 37d5fb0e-fueladj follow-up).',
       });
       if (gasBill) {
-        // A positive Fuel Adjustment (a credit that lost its minus sign reads positive) is proven only
-        // by the page sum. With no Current Bill to sum against, the sign is unproven: hold.
-        if (gasBill.FuelAdjustment > 0 && !_faSignCorrected && CurrentBillTotal == null) {
-          const _signReason =
-            'Fuel adjustment sign could not be confirmed: no Current Bill is printed or derivable to check it against - verify the sign on the bill.';
-          gasBill._gateTripped = true;
-          gasBill._gateReasons = (gasBill._gateReasons || []).concat([_signReason]);
-          if (!gasBill._manualReview) {
-            gasBill._manualReview = true;
-            gasBill._manualReviewLabel = 'Fuel adjustment sign could not be confirmed - verify';
-          }
-          gasBill._correction_pending_FuelAdjustment = { original: gasBill.FuelAdjustment, reason: _signReason };
-        }
         if (_faSignCorrected)
           gasBill._auto_corrected_FuelAdjustment = {
             reason:
-              'Sign flipped to negative — reconciled against printed Current Bill total (OCR dropped the credit minus sign).',
+              'Sign set to negative: no minus sign was read, and a Fuel Adjustment is a credit unless the page lines add up to the printed Current Bill only with it positive (OCR dropped the credit minus sign).',
           };
         if (_lbgCropRecoveredFields.length) {
           gasBill._auto_recovered_via_crop = _lbgCropNote(_lbgCropRecoveredFields.slice());
@@ -11962,6 +12047,15 @@ const UTILITY_RULES = [
               ' (decimal point lost); $' +
               _wpfDecimalRepair.corrected.toFixed(2) +
               ' is the only value that makes the page lines add up to the printed Current Bill.',
+          };
+        if (_waterThousandsRepair)
+          waterBill._auto_corrected_WaterCharge = {
+            original: null,
+            corrected: _waterThousandsRepair.corrected,
+            reason:
+              'The scan broke the first digits of the Water amount; $' +
+              _waterThousandsRepair.corrected.toFixed(2) +
+              ' is the only value the text allows that makes the page lines add up to the printed Current Bill.',
           };
         const _waterCropFields = _lbgCropRecoveredFields.filter((f) => f === 'Water' || f === 'Water Protection');
         if (_waterCropFields.length) {
@@ -12019,6 +12113,16 @@ const UTILITY_RULES = [
         };
         if (_lbgCropRecoveredFields.includes('Stormwater')) {
           stormBill._auto_recovered_via_crop = _lbgCropNote(['Stormwater']);
+        }
+        if (_stormPeerFilled) {
+          stormBill._auto_corrected_StormWaterCharge = {
+            original: null,
+            corrected: storm.charge,
+            reason:
+              'The Stormwater amount was not readable on the scan, but every other Stormwater line in this file is $' +
+              storm.charge.toFixed(2) +
+              ' and only that amount makes the page lines add up to the printed Current Bill.',
+          };
         }
         if (_stormPeerCorrectedFrom != null) {
           stormBill._auto_corrected_StormWaterCharge = {
@@ -12167,9 +12271,7 @@ const UTILITY_RULES = [
           if (consumption && consumption > 0 && consumption < 1000000) gasUsage = consumption;
         } else if (code === 'FA') {
           fuelAdj = amt;
-          if (fuelAdj != null && fuelAdj > 0) {
-            fuelAdj = -Math.abs(fuelAdj);
-          }
+          fuelAdj = _lbg_fuelAdjSign(fuelAdj);
         } else if (code === 'ST') {
           stormAmt = amt;
         } else if (code === 'SW') {
@@ -12189,7 +12291,7 @@ const UTILITY_RULES = [
         const faMatch = page.match(_LBG_FUEL_ADJ_AMOUNT_RE);
         if (faMatch) {
           fuelAdj = parseFloat(faMatch[1].replace(/[\$,]/g, ''));
-          if (fuelAdj > 0) fuelAdj = -Math.abs(fuelAdj);
+          fuelAdj = _lbg_fuelAdjSign(fuelAdj);
         }
       }
       // BillingDetail OCR sanity: positional extraction picks wrong
@@ -13833,7 +13935,7 @@ const UTILITY_RULES = [
 // The version of the PDF reader's rules. The stored-bill repair pass (app/auto-repair.js) reads each bill's PDF page once per
 // version and marks the bill (_pdfRepair.v). Add 1 whenever a rule in UTILITY_RULES (or the post-extraction checks) changes
 // what it reads, so every bill is read again with the new rules.
-const EXTRACTOR_RULES_VERSION = 2;
+const EXTRACTOR_RULES_VERSION = 3;
 function _pickFileRule(text) {
   return (
     UTILITY_RULES.find((r) => r.fileFirst && r.detect(text)) ||

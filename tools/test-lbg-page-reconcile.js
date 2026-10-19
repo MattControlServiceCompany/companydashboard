@@ -234,13 +234,12 @@ check(
   gas && gas.PrintedGasLine === 821.39 && gas.GasCharge === 798.06 && !held(bills),
   j(gas && [gas.PrintedGasLine, gas.GasCharge, held(bills)]),
 );
-// B. Fuel label read "FUEL ADR" with a stray mark before the amount; the lost minus is restored
-// from the page total.
+// B. Fuel label read "FUEL ADR" with a cent sign where the minus is printed: the cent sign is the minus.
 bills = rule.extractAll(page(1, { fa: 'J FUEL ADR ¢ 30.00' }));
 gas = byCommodity(bills, 'Gas');
 check(
   'B "FUEL ADR" label read, sign restored',
-  gas && gas.FuelAdjustment === -30 && !!gas._auto_corrected_FuelAdjustment && !held(bills),
+  gas && gas.FuelAdjustment === -30 && !held(bills),
   j(gas && [gas.FuelAdjustment, held(bills)]),
 );
 // B. Water label noise: "WATE!" and "AVATER" are the WATER line.
@@ -356,16 +355,16 @@ gas = byCommodity(bills, 'Gas');
 check('F page does not prove the charge: held as before', gas && gas.GasCharge === null && gas._manualReview === true, j(gas && gas.GasCharge));
 
 // G. Fuel Adjustment sign and residual (Matt, 2026-10-15: never fill a value that is not printed).
-// G1. A positive fuel adjustment with no Current Bill to prove its sign (blank, and the balance
-// lines too short to derive it): the bill is held with a plain reason, not saved.
+// G1. An unsigned fuel adjustment with no Current Bill to prove a positive sign (blank, and the balance
+// lines too short to derive it): it is a credit by the one sign rule (_lbg_fuelAdjSign).
 bills = rule.extractAll(
   page(1, { fa: 'FUEL ADJUSTMENT 30.00', cb: 'Current Bill', tad: 'Total Amount Due 1027.39', balance: BAL.slice(0, 3) }),
 );
 gas = byCommodity(bills, 'Gas');
 check(
-  'G1 positive fuel adjustment, no Current Bill: held, sign reason',
-  gas && gas._manualReview === true && /sign could not be confirmed/i.test((gas._gateReasons || []).join(' ')),
-  j(gas && [gas._manualReview, gas._gateReasons]),
+  'G1 unsigned fuel adjustment, no Current Bill: credit',
+  gas && gas.FuelAdjustment === -30 && !!gas._auto_corrected_FuelAdjustment,
+  j(gas && [gas.FuelAdjustment, gas._auto_corrected_FuelAdjustment]),
 );
 // G2. No fuel adjustment line on the page and the lines add up without one: null, nothing derived.
 bills = rule.extractAll(page(1, { fa: 'NOTE: PLEASE PAY BY THE DUE DATE', cb: 'Current Bill 1006.39', tad: 'Total Amount Due 1006.39' }));
