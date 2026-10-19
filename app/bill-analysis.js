@@ -11928,6 +11928,11 @@ function _showExtractionToolbar() {
     const el = document.getElementById(id);
     if (el) el.style.display = 'inline-block';
   });
+  // The PDF page opens beside (wide) or above (narrow) the values by itself, unless "Side by side" is off.
+  if (_pdfSideBySideOn() && !_pdfDock.open && _pdfCurrentB64()) {
+    _pdfDock.open = true;
+    _refreshPdfDock();
+  }
   _syncPdfDockVisibility();
 }
 
@@ -13220,8 +13225,7 @@ function savePDFDebug(isManualSave) {
 // viewSavedPDF (Saved Bills, csv-import) has its own page-range logic and is
 // not changed.
 const PDF_DOCK_LS_ON = 'ch_pdf_side_by_side';
-const PDF_OUT_LS = 'ch_pdf_output_panel';
-const PDF_OUT_WIDE_PX = 1600;
+const PDF_OUT_LS = 'ch_pdf_output_open';
 const PDF_DOCK_LS_W = 'ch_pdf_dock_width';
 let _pdfDock = { open: false, b64: null, url: null, total: null, page: null, token: 0, shownKey: null };
 
@@ -13325,14 +13329,9 @@ function closePdfDock() {
   _syncPdfDockVisibility();
 }
 // The dock follows #pdfRightCol: hidden with it (batch mode).
-// Extraction output panel: the viewer's saved choice wins; with none, the panel shows only at 1600 px or wider.
+// Extraction output panel (raw JSON): closed at every width until the viewer opens it with the small toggle; the choice is saved.
 function _pdfOutputShown() {
-  const saved = _pdfDockLsGet(PDF_OUT_LS);
-  if (saved === '1') return true;
-  if (saved === '0') return false;
-  const pb = document.getElementById('pdfBody');
-  const w = pb && pb.clientWidth ? pb.clientWidth : window.innerWidth;
-  return w >= PDF_OUT_WIDE_PX;
+  return _pdfDockLsGet(PDF_OUT_LS) === '1';
 }
 function _applyPdfOutputPanel() {
   const pb = document.getElementById('pdfBody');
@@ -20164,7 +20163,7 @@ function renderPDFFields(parsed, warnings) {
         return `<a href="#" onclick="event.preventDefault();document.querySelector('.ef-input[data-key=\\'${w.field}\\']')?.closest('.ef-item')?.scrollIntoView({behavior:'smooth',block:'center'});document.querySelector('.ef-input[data-key=\\'${w.field}\\']')?.focus()" style="color:${color};text-decoration:underline;cursor:pointer;font-size:11px">${label}</a>`;
       });
     const flagLinks = flaggedFields.length
-      ? '<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;flex-shrink:0">' +
+      ? '<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;max-width:100%;min-width:0">' +
         flaggedFields.join('') +
         '</div>'
       : '';
