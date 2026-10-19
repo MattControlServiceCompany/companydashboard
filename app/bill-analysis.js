@@ -1222,6 +1222,18 @@ function _applyExtractionGates(bills, gateA, gateB, gateWRE) {
         'Account id could not be read from the scan; not guessed. Verify against the source PDF',
         null,
       );
+    // A value the extractor did not read from the page but could compute (qty x rate, a mirror, a sum of read
+    // charges) is stored as _proposed_<field> and never in the field (2026-10-15). Hold with the proposal.
+    for (const k of Object.keys(b)) {
+      if (!k.startsWith('_proposed_') || !b[k] || typeof b[k] !== 'object') continue;
+      const f = k.slice('_proposed_'.length);
+      _pushGateReason(
+        b,
+        f + ' ' + (b[k].reason || 'not read from the page; the computed value is') + ' $' + b[k].value +
+          ' — NOT applied, verify against the source PDF',
+        [f],
+      );
+    }
     const gc = b._correction_pending_TotalCurrentCharges;
     if (gc) {
       // REVIEW FIX (18b33d9f round 3, BLOCKING 1): gc is set ONLY when the
@@ -2764,11 +2776,18 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         let compSum = _sumCharges();
 
         if (!ocrTotal) {
-          // No OCR'd total — compSum is the only evidence we have.
+          // No printed total was read (2026-10-15): the sum of the charges is not proven against a printed
+          // value, so it is never stored. It is proposed (_proposed_TotalCurrentCharges) and the bill is
+          // held with that reason by _applyExtractionGates.
           if (compSum > 0) {
-            b.TotalCurrentCharges = compSum.toFixed(2);
-            b._totalFromChargeSum = true;
-            b._totalSource = 'compSum (no OCR total available)';
+            const _prev = b._proposed_TotalCurrentCharges;
+            b._proposed_TotalCurrentCharges = {
+              value: compSum.toFixed(2),
+              reason: 'no printed Subtotal or Current Charges was read; the sum of the charges is',
+              summed: CHARGE_FIELDS.filter((f) => parseBillNumber(b[f]) !== 0),
+              notRead: CHARGE_FIELDS.filter((f) => b[f] === null || b[f] === undefined || b[f] === ''),
+              extractorSum: _prev ? _prev.value : null,
+            };
           }
         } else if (Math.abs(compSum - ocrTotal) < 0.02) {
           // 3a'. Already consistent — done, no mutation needed.
