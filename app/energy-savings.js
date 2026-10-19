@@ -12426,6 +12426,8 @@ const UTILITY_RULES = [
       });
       if (_pageCheck) _pageCheck.derived = _currentBillDerived;
       if (_pageCheck && !_pageCheck.ok && bills.length) _lbg_flagPageTotalMismatch(bills, _pageCheck);
+      // The page proves each bill's total when its lines add up to the printed Current Bill (read by _pageProvesTotal).
+      if (_pageCheck && _pageCheck.ok) for (const _pb of bills) _pb._pageTotalProved = true;
       // A value cell the position engine held, and a contradicted Total Amount Due, hold every bill of
       // the page with the reason (the Gas and Fuel Adjustment holds above already name theirs).
       for (const _slot of Object.keys(_posHeld))

@@ -2575,6 +2575,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.19.142', date: '2026-10-19', title: 'PDF / OCR page: fewer false total warnings',
+    items: [
+      { type: 'fix', text: 'PDF / OCR page: a bill whose page proves its total no longer shows the "unusual total" warning.' },
+      { type: 'fix', text: 'PDF / OCR page: the OCR text tab no longer shows internal marker lines.' }
+    ]
+  },
   { v: 'v2026.10.19.141', date: '2026-10-19', title: 'City bills: unclear amounts re-read and checked',
     items: [
       { type: 'change', text: 'PDF / OCR page: when one amount on a City utility bill is unclear, the bill reader now re-reads that single amount from a close-up of the page. It accepts the new reading only when all the amounts add up to the printed page total to the exact cent.' },

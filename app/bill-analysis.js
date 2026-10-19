@@ -663,6 +663,13 @@ function _historyForBill(bill, historicalCache) {
 // Statistical outlier detection — compare against historical bills for same account/meter
 // historicalCache (optional): pre-built { [normalizedAccountNumber]: bill[] } map from _postExtractionVerify.
 // When provided, skips the redundant project walk; falls back to walking projects if absent.
+// True when the bill's own page proves its total: the City reader's page check (printed lines add up to the
+// printed Current Bill to the cent, energy-savings.js, sets _pageTotalProved), the bill is not held, the
+// total was not edited by hand, and no charge field was auto-corrected. The ONE page-proof rule.
+function _pageProvesTotal(b) {
+  if (!b || b._pageTotalProved !== true || b._gateTripped || b._manualReview || b._userCorrected_TotalCurrentCharges) return false;
+  return !Object.keys(b).some((k) => k.startsWith('_auto_corrected_'));
+}
 function detectStatisticalOutliers(extracted, historicalCache, pdfBillsIndex) {
   const warnings = [];
   if (!extracted || !extracted.AccountNumber) return warnings;
@@ -815,9 +822,10 @@ function detectStatisticalOutliers(extracted, historicalCache, pdfBillsIndex) {
     }
   }
 
-  // Check total charges
+  // Check total charges. A total the bill's own page proves is never a misread, so it gets no outlier
+  // warning (one rule: _pageProvesTotal); a real usage swing is the Bills-table usage_vs_same_month rule.
   const totalVal = parseBillNumberOrZero(extracted.TotalCurrentCharges || extracted.TotalAmountDue);
-  if (totalVal > 0) {
+  if (totalVal > 0 && !_pageProvesTotal(extracted)) {
     const totalStats = getStats(historicalBills, (b) =>
       parseBillNumber(b.totalCost || b.TotalCurrentCharges || b.TotalAmountDue),
     );
@@ -13450,8 +13458,9 @@ function _pdfOcrTextForSelectedBill() {
     const b = shown[shown.length - 1].n;
     return {
       label: (a === b ? 'Page ' + a : 'Pages ' + a + '–' + b) + ' of ' + pages.length,
-      // The tab header already names the page, so the %%PAGE_n%% marker line is not shown.
-      text: shown.map((pg) => pg.text.replace(/^%%PAGE_\d+%%[ \t]*\r?\n?/, '')).join('\n'),
+      // The tab header already names the page, and no internal %%NAME%% marker line (%%PAGE_n%%,
+      // %%POSITION_READ%%, %%POSITION_READ_END%%, %%POSITION_HELD%%, ...) is shown: one filter.
+      text: shown.map((pg) => pg.text.replace(/^%%[A-Z0-9_]+%%.*(?:\r?\n|$)/gm, '')).join('\n'),
     };
   }
   const splitRe = new RegExp(

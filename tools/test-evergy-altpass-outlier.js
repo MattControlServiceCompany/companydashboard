@@ -279,5 +279,50 @@ function check(name, ok, detail) {
   check('rate: no stray dollar sign in the unit', !v.some((w) => /\$\/kWh\$|kWh\$/.test(w.message)));
 }
 
+// ---- 5. a total the page proves gets no outlier warning; the OCR text tab hides internal markers ----
+{
+  const mk = (year, total) => ({ id: 'g' + year, start: year + '-07-15', end: year + '-08-15', totalCost: String(total), serviceAddress: '10 EXAMPLE ST,TEST SCHOOL EXAMPLETON KS' });
+  const meter = { id: 'm-g', account: '900123', meter: '', maddr: '10 EXAMPLE ST,TEST SCHOOL EXAMPLETON KS', bills: [mk(2024, 184.8), mk(2025, 243.93)] };
+  sb.__meter = meter;
+  run('_tagHistoryMeterBills(__meter)');
+  sb.__cache = { '900123': meter.bills };
+  // Gas bill: customer charge 23.33 + gas 54.00 + fuel adjustment -3.00 = 74.33 (about 0.35x the same-month mean)
+  const gas = () => ({
+    Commodity: 'Gas',
+    AccountNumber: '900123',
+    ServiceAddress: '10 EXAMPLE ST,TEST SCHOOL EXAMPLETON KS',
+    BillingPeriodStart: '7/15/2026',
+    BillingPeriodEnd: '8/15/2026',
+    CustomerCharge: 23.33,
+    GasCharge: 54,
+    FuelAdjustment: -3,
+    TotalCurrentCharges: '74.33',
+  });
+  const warnTotal = (b) => {
+    sb.__b = b;
+    return run('detectStatisticalOutliers(__b, __cache, {})').filter((w) => w.field === 'TotalCurrentCharges');
+  };
+  check('proof: a total far from its same-month history warns when the page does not prove it', warnTotal(gas()).length === 1);
+  check('proof: a page-proved total gets no outlier warning', warnTotal(Object.assign(gas(), { _pageTotalProved: true })).length === 0);
+  check('proof: a held bill is not page-proved (still warns)', warnTotal(Object.assign(gas(), { _pageTotalProved: true, _gateTripped: true })).length === 1);
+  check(
+    'proof: an auto-corrected charge field is not page-proved (still warns)',
+    warnTotal(Object.assign(gas(), { _pageTotalProved: true, _auto_corrected_GasCharge: { original: 1, corrected: 54 } })).length === 1,
+  );
+  check('proof: a hand-edited total is not page-proved (still warns)', warnTotal(Object.assign(gas(), { _pageTotalProved: true, _userCorrected_TotalCurrentCharges: true })).length === 1);
+  // The page check itself: lines that add up to the printed Current Bill prove; a mismatch does not.
+  const pc = (printed) => run('_lbg_pageTotalCheck(' + printed + ', { gasHeld: false, gasWithFuelAdj: 74.33, water: 0, wpf: 0, sewer: 0, storm: 0 })');
+  check('proof: lines that add up to the printed Current Bill pass the page check', pc(74.33).ok === true);
+  check('proof: a page-total mismatch fails the page check', pc(80.33).ok === false);
+  // OCR text tab: no internal %%NAME%% marker line is shown
+  sb._pdfRawText = '%%PAGE_1%%\nline one\n%%POSITION_READ%% layout 1\nGAS 77.33\n%%POSITION_READ_END%%\n%%POSITION_HELD%% GAS:: reason\nline two\n';
+  sb._pdfMultiIdx = 0;
+  sb._pdfMultiBills = [{}];
+  run('_pdfSelectedBillPage = function () { return 1; }');
+  const shownText = run('_pdfOcrTextForSelectedBill()').text;
+  check('ocr tab: no %% marker line is shown', !/%%/.test(shownText), JSON.stringify(shownText));
+  check('ocr tab: the page lines are kept', /line one/.test(shownText) && /GAS 77\.33/.test(shownText) && /line two/.test(shownText));
+}
+
 console.log(failures ? failures + ' FAILED' : 'ALL PASSED');
 process.exit(failures ? 1 : 0);
