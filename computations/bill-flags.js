@@ -19,7 +19,7 @@
 // Every threshold lives here and nowhere else. Each is justified from the 2026-09-30 backup
 // (plan 2026-10-05-bill-flag-rules-redesign.md section 3.3).
 const BILL_FLAG_THRESHOLDS = {
-  GAP_DAYS: 3, // same as detectGap and the Bills table gap row
+  GAP_DAYS: 3, // same as detectGap and the Bills table gap row (read_continuity skips a bill pair with a gap)
   OVERLAP_DAYS: 3,
   PERIOD_LO: 0.5, // billing period vs the meter's usual period
   PERIOD_HI: 2.0,
@@ -70,11 +70,6 @@ const BILL_FLAG_RULES = {
     label: 'Start Date',
     severity: 'error',
     rule: "Flag when a bill overlaps an earlier bill by more than OVERLAP_DAYS days.",
-  },
-  period_gap: {
-    label: 'Start Date',
-    severity: 'warn',
-    rule: "Flag when the days between the previous bill's end and this start are more than GAP_DAYS.",
   },
   duplicate_bill: {
     label: 'Start Date',
@@ -157,7 +152,6 @@ const BILL_COUNTED_FLAG_RULES = [
   'dates_missing',
   'period_length',
   'period_overlap',
-  'period_gap',
   'duplicate_bill',
   'charge_sum_mismatch',
   'printed_read_mismatch',
@@ -474,7 +468,7 @@ function _computeMeterFlagSummaryFresh(meter, building) {
       add(
         b,
         'dates_missing',
-        !b.start && !b.end ? 'The start date and end date are missing.' : !b.start ? 'The start date is missing.' : 'The end date is missing.',
+        !b.start && !b.end ? 'Missing start and end dates' : !b.start ? 'Missing start date' : 'Missing end date',
         'start',
       );
     } else if (c !== 'Propane') {
@@ -483,20 +477,14 @@ function _computeMeterFlagSummaryFresh(meter, building) {
         add(
           b,
           'period_length',
-          'The end date ' + _bfDate(b.end) + ' is not after the start date ' + _bfDate(b.start) + '.',
+          'End date ' + _bfDate(b.end) + ' is not after start date ' + _bfDate(b.start),
           'days',
         );
       else if (medDays && r.days > 0 && (r.days / medDays < T.PERIOD_LO || r.days / medDays > T.PERIOD_HI))
         add(
           b,
           'period_length',
-          'This bill covers ' +
-            r.days +
-            ' days. This meter usually has ' +
-            _bfFmt(medDays, 0) +
-            ' days (middle value of ' +
-            okDays.length +
-            ' bills).',
+          r.days + ' days, usual ' + _bfFmt(medDays, 0),
           'days',
         );
       const nd = num(b.numberOfDays);
@@ -528,41 +516,9 @@ function _computeMeterFlagSummaryFresh(meter, building) {
         add(
           b,
           'period_overlap',
-          'This bill (' +
-            _bfPeriod(b) +
-            ') overlaps the bill ' +
-            _bfPeriod(ov.o) +
-            ' by ' +
-            ov.od +
-            ' days.',
+          'Overlaps bill ' + _bfPeriod(ov.o) + ' by ' + ov.od + ' days',
           'start',
         );
-      let prev = null;
-      for (let j = si - 1; j >= 0; j--) {
-        if (sortedAll[j].end) {
-          prev = sortedAll[j];
-          break;
-        }
-      }
-      if (prev && !ov && detectGap(prev.end, b.start)) {
-        const g = calcDays(prev.end, b.start, false);
-        add(
-          b,
-          'period_gap',
-          'No bill covers ' +
-            _bfDate(prev.end) +
-            ' to ' +
-            _bfDate(b.start) +
-            ' (' +
-            g +
-            ' days): a bill is probably missing. The previous bill ends ' +
-            _bfDate(prev.end) +
-            ' and this bill starts ' +
-            _bfDate(b.start) +
-            '.',
-          'start',
-        );
-      }
       for (let j = 0; j < si; j++) {
         const o = sortedAll[j];
         if (o.estimated || !o.start) continue;
@@ -573,11 +529,7 @@ function _computeMeterFlagSummaryFresh(meter, building) {
           add(
             b,
             'duplicate_bill',
-            'This bill has the same dates or the same start date and total as the bill ' +
-              _bfPeriod(o) +
-              ' (total ' +
-              _bfMoney(num(o.totalCost) || 0) +
-              ').',
+            'Duplicate of bill ' + _bfPeriod(o) + ' (total ' + _bfMoney(num(o.totalCost) || 0) + ')',
             'start',
           );
           break;
@@ -592,15 +544,7 @@ function _computeMeterFlagSummaryFresh(meter, building) {
         add(
           b,
           'charge_sum_mismatch',
-          'The charge parts (' +
-            comp.label +
-            ') add up to ' +
-            _bfMoney(comp.sum) +
-            ' but the bill total is ' +
-            _bfMoney(r.cost) +
-            ' (difference ' +
-            _bfMoney(Math.abs(diff)) +
-            ').',
+          'Lines add up to ' + _bfMoney(comp.sum) + ', bill prints ' + _bfMoney(r.cost),
           'totalCost',
         );
     }
@@ -705,7 +649,7 @@ function _computeMeterFlagSummaryFresh(meter, building) {
         add(
           b,
           'printed_read_mismatch',
-          hit.message + ' The bill printed no kWh, so the kWh shown was computed from the reads and may be wrong.',
+          'Printed read difference does not match the reads; kWh was computed from the reads',
           'usage',
         );
     }
@@ -731,34 +675,21 @@ function _computeMeterFlagSummaryFresh(meter, building) {
         add(
           b,
           'usage_missing',
-          'Usage is blank, but the bill shows ' +
-            (evidenceCharge ? 'a charge of ' + _bfMoney(vc) : 'a meter read difference') +
-            '.',
+          'Missing ' + _bfUnit(c),
           'usage',
-          {
-            blankUsage: true,
-            evidence: evidenceCharge
-              ? 'it has a ' + _bfMoney(vc) + ' ' + String(c).toLowerCase() + ' charge'
-              : 'it has a meter read difference',
-          },
+          { blankUsage: true },
         );
       if (r.u !== null && r.u < 0)
-        add(b, 'usage_negative', 'Usage is negative (' + _bfFmt(r.u) + ' ' + _bfUnit(c) + ').', 'usage');
+        add(b, 'usage_negative', 'Negative ' + _bfUnit(c) + ' (' + _bfFmt(r.u) + ')', 'usage');
       if (r.u === 0 && minCharge && vc > minCharge * T.ZERO_CHARGE_MULT)
         add(
           b,
           'usage_missing',
-          'Usage is 0, but the charge is ' +
-            _bfMoney(vc) +
-            ', more than ' +
-            T.ZERO_CHARGE_MULT +
-            "x this meter's smallest usual bill (" +
-            _bfMoney(minCharge) +
-            ').',
+          '0 ' + _bfUnit(c) + ' but charge ' + _bfMoney(vc) + ' (smallest usual bill ' + _bfMoney(minCharge) + ')',
           'usage',
         );
     }
-    if (r.cost === null) add(b, 'cost_missing', 'Total cost is blank.', 'totalCost');
+    if (r.cost === null) add(b, 'cost_missing', 'Missing total cost', 'totalCost');
     if (parity[b.id]) add(b, 'water_sewer_parity', parity[b.id], 'usage');
 
     later.push(() => {
@@ -827,23 +758,13 @@ function _computeMeterFlagSummaryFresh(meter, building) {
         add(
           b,
           'charge_vs_usage',
-          'The charge ' +
+          'Charge ' +
             _bfMoney(r.cost) +
-            ' for ' +
-            _bfFmt(r.u) +
-            ' ' +
-            _bfUnit(c) +
             ' is ' +
             (ratio >= 1 ? _bfFmt(ratio) + 'x higher' : _bfFmt(1 / ratio) + 'x lower') +
-            ' than expected. This meter usually pays ' +
-            medRateTot.toFixed(4) +
-            ' per ' +
-            _bfUnit(c) +
-            ' (or its smallest usual bill ' +
-            _bfMoney(minCharge) +
-            ', whichever is more), which gives about ' +
+            ' than usage implies (about ' +
             _bfMoney(expected) +
-            '.',
+            ')',
           'totalCost',
         );
     }
@@ -857,23 +778,13 @@ function _computeMeterFlagSummaryFresh(meter, building) {
         add(
           b,
           'usage_charge_mismatch',
-          'Usage does not match charge: ' +
-            _bfFmt(r.u, 0) +
-            ' ' +
-            _bfUnit(c) +
-            " at this meter's usual " +
-            medOwnRate.toFixed(4) +
-            ' per ' +
-            _bfUnit(c) +
-            ' (or its smallest usual bill ' +
-            _bfMoney(minCharge) +
-            ', whichever is more) would cost about ' +
-            _bfMoney(expected) +
-            ', but the bill charges ' +
+          'Charge ' +
             _bfMoney(charge) +
-            ' (' +
+            ' is ' +
             (ratio >= 1 ? _bfFmt(ratio) + 'x higher' : _bfFmt(1 / ratio) + 'x lower') +
-            ').',
+            ' than usage implies (about ' +
+            _bfMoney(expected) +
+            ')',
           'usage',
         );
       }
@@ -1000,41 +911,12 @@ function billFlagLabel(bill, allBills, index0) {
   const m = typeof billMonthLabel === 'function' ? billMonthLabel(bill, allBills) : '—';
   return m && m !== '—' ? m : 'Bill ' + (index0 + 1);
 }
-// What to do about a bill's problems, by rule. Plain words; the rule sentences stay in BILL_FLAG_RULES.
-const _BF_ACTION_MISSING = 'Open the bill to add the missing values, or delete it.';
-const _BF_ACTION_CHECK = 'Open the bill and check the values.';
-const _BF_ACTION_BY_RULE = {
-  dates_missing: _BF_ACTION_MISSING,
-  usage_missing: _BF_ACTION_MISSING,
-  cost_missing: _BF_ACTION_MISSING,
-};
-function _bfLowerFirst(t) {
-  return /^[A-Z][a-z]/.test(t) ? t.charAt(0).toLowerCase() + t.slice(1) : t;
-}
-// The ONE plain sentence for one bill with problems (the Bills banner line and the row hover both call it).
-// label = billFlagLabel(...). flags = the bill's flags. Several reasons become short clauses joined with "; " plus one
-// action sentence. A bill with no dates and blank usage but a charge or read gets one combined sentence.
+// The ONE line for one bill with problems (the Bills banner line and the row hover both call it):
+// "<label>: <reason>; <reason>". label = billFlagLabel(...). The reasons are the flag messages, already terse.
 function billFlagLine(label, flags) {
-  const fl = (flags || []).slice();
+  const fl = flags || [];
   if (!fl.length) return '';
-  const dm = fl.find((f) => f.rule === 'dates_missing');
-  const um = fl.find((f) => f.rule === 'usage_missing' && f.blankUsage);
-  const bothDates = dm && /start date and end date/.test(dm.message);
-  let head = '';
-  let action;
-  const rest = fl.slice();
-  if (bothDates && um) {
-    head = label + ' has no dates or usage, but ' + um.evidence + '.';
-    rest.splice(rest.indexOf(dm), 1);
-    rest.splice(rest.indexOf(um), 1);
-    action = 'Open the bill to add the dates and usage, or delete it.';
-  }
-  const clauses = rest.map((f) => _bfLowerFirst(f.message.replace(/\.$/, '')));
-  const actions = [...new Set(fl.map((f) => _BF_ACTION_BY_RULE[f.rule] || _BF_ACTION_CHECK))];
-  if (!action) action = actions.length === 1 ? actions[0] : _BF_ACTION_CHECK;
-  else if (rest.length) action = actions.length === 1 ? actions[0] : _BF_ACTION_CHECK;
-  const tail = clauses.length ? (head ? ' Also: ' : label + ': ') + clauses.join('; ') + '.' : '';
-  return head + tail + ' ' + action;
+  return label + ': ' + fl.map((f) => f.message.replace(/\.$/, '')).join('; ');
 }
 // The ONE row hover text: the same counted flags and the same sentence as the banner. A bill with no counted flag has no text.
 function billRowHoverText(label, flags) {

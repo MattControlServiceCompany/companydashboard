@@ -178,7 +178,7 @@ async function main() {
           commodity: m.commodity,
           want: s.flaggedBills,
           pill: +((pill.innerText.match(/⚠\s*(\d+)/) || [])[1] || 0),
-          banner: +((pane.innerText.match(/(\d+) bills? (?:have|has) a problem/) || [])[1] || 0),
+          banner: pane.querySelectorAll('#billFlagBanner .bill-flag-reason').length,
           rows: pane.querySelectorAll('tr.bill-flagged').length,
           wantRows: Object.keys(s.perBill).length,
         });
