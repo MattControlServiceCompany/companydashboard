@@ -3993,9 +3993,8 @@ function _billChangeHistory(row, commodity) {
   return out;
 }
 function renderBillsPane(pane, m, bills, incl) {
-  // Restore right column in case batch extraction left it hidden
-  const _rc = document.getElementById('pdfRightCol');
-  if (_rc && !window._pdfQueue) _rc.style.display = '';
+  // Show the dock and period strip again in case a batch run hid them
+  if (!window._pdfQueue) _pdfSetQueueBusy(false);
 
   const isElec = m.commodity === 'Electric';
   const isGas = m.commodity === 'Gas';

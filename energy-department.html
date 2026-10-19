@@ -33,7 +33,7 @@
       href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
-    <link href="lib/quill.snow.css?v=138" rel="stylesheet" />
+    <link href="lib/quill.snow.css?v=139" rel="stylesheet" />
     <script src="app/ch-auth.js"></script>
 
     <style id="site-ui-styles">
@@ -4781,25 +4781,38 @@
           grid-template-columns: 1fr;
         }
       }
-      /* PDF dock open: values and billing periods stack in one column beside the PDF, so no column is squeezed at any width. */
+      /* PDF dock open: the values sit in one column beside the PDF (PDF / OCR text tabs), so no column is squeezed at any width. */
       #pdfBody.pdf-docked {
         display: grid !important;
         grid-template-columns: minmax(0, 1fr) var(--pdf-dock-w, 40%);
-        grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+        grid-template-rows: minmax(0, 1fr);
       }
       #pdfBody.pdf-docked #pdfLeftCol {
         grid-column: 1;
         grid-row: 1;
       }
-      #pdfBody.pdf-docked #pdfRightCol {
-        grid-column: 1;
-        grid-row: 2;
-        min-width: 0 !important;
-      }
       #pdfBody.pdf-docked #pdfDockCol {
         grid-column: 2;
-        grid-row: 1 / span 2;
+        grid-row: 1;
         min-width: 0;
+      }
+      /* PDF dock tabs: same accent pair as the other tab buttons on this page. */
+      .pdf-dock-tab {
+        flex-shrink: 0;
+        font-size: 11px;
+        padding: 3px 10px;
+        border-radius: 4px;
+        border: 1px solid var(--border2);
+        background: transparent;
+        color: var(--text2);
+        cursor: pointer;
+        font-family: var(--font);
+      }
+      .pdf-dock-tab.sel {
+        border-color: var(--accent);
+        background: var(--accent-dim);
+        color: var(--accent);
+        font-weight: 700;
       }
       /* PDF / OCR page header: View PDF and Saved Bills stay top-right at every width; the subtitle wraps instead. */
       #pdfPageHdr .pg-hdr {
@@ -4843,18 +4856,19 @@
       #pdfStripPills .pdf-strip-gap {
         flex: 1 0 100%;
       }
-      /* Extraction output panel hidden: the left column takes the full width and the field grid uses it. */
-      #pdfBody.pdf-out-hidden #pdfRightCol {
-        display: none !important;
+      /* Progress, error and non-bill text messages: shown only while there is a message. */
+      #pdfStatusBox:empty {
+        display: none;
       }
-      #pdfBody.pdf-out-hidden #pdfLeftCol {
+      #pdfStatusBox {
+        margin: 6px 0;
+      }
+      /* The left column takes the full width and the field grid uses it. */
+      #pdfLeftCol {
         flex: 1 1 auto;
       }
-      #pdfBody.pdf-out-hidden .ef-grid {
+      #pdfBody .ef-grid {
         grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-      }
-      #pdfBody.pdf-docked.pdf-out-hidden {
-        grid-template-rows: minmax(0, 1fr);
       }
       @media (max-width: 900px) {
         #pdfBody {
@@ -4866,12 +4880,6 @@
           height: auto !important;
           max-height: none !important;
           overflow-y: visible !important;
-        }
-        #pdfRightCol {
-          flex: none !important;
-          min-width: 0 !important;
-          height: auto !important;
-          max-height: 40vh;
         }
       }
       /* PDF dock open on a narrow window: the PDF sits above the values, pinned at the top; values scroll beneath it. */
@@ -4890,25 +4898,18 @@
           z-index: var(--z-chrome, 10);
           margin-bottom: 8px;
         }
-        /* Values and (when opened) the raw output stack under the PDF at natural height; the page scrolls, no column is squeezed. */
+        /* The values sit under the PDF at natural height; the page scrolls, no column is squeezed. */
         #pdfBody.pdf-docked #pdfLeftCol {
           flex: none !important;
           height: auto !important;
           overflow-y: visible !important;
-        }
-        #pdfBody.pdf-docked #pdfRightCol {
-          flex: none !important;
-          min-width: 0 !important;
-          height: auto !important;
-          max-height: 40vh;
         }
         #pdfDockResize {
           display: none;
         }
         /* The column headers stop pinning here: the PDF is the pinned item. */
         #pdfBody.pdf-docked .drop-zone.collapsed,
-        #pdfBody.pdf-docked #extractedFieldsHdr,
-        #pdfBody.pdf-docked #pdfRightCol > div:first-child {
+        #pdfBody.pdf-docked #extractedFieldsHdr {
           position: static !important;
         }
       }
@@ -8608,8 +8609,8 @@
         }
       }
     </style>
-    <link rel="stylesheet" href="feedback-widget.css?v=138" />
-    <link rel="stylesheet" href="sidebar-rail.css?v=138" />
+    <link rel="stylesheet" href="feedback-widget.css?v=139" />
+    <link rel="stylesheet" href="sidebar-rail.css?v=139" />
     <style>
       /* -- Quill rich text editor — dark theme overrides -- */
       .ql-toolbar.ql-snow {
@@ -9285,10 +9286,7 @@
                 </div>
               </div>
             </div>
-            <!-- Two true side-by-side columns. Each column is a self-contained flex column that
-                 goes from the top of the body area to the bottom and manages its own vertical
-                 scrolling. No shared frozen header across columns — that caused the visual gap
-                 between the "Extraction Output" label and the JSON box in previous layouts. -->
+            <!-- The values column scrolls on its own; the PDF dock (PDF / OCR text tabs) sits beside it. -->
             <div
               id="pdfBody"
               style="flex: 1; display: flex; gap: 16px; padding: 0 18px 16px; min-height: 0; overflow: hidden"
@@ -9368,23 +9366,6 @@
                       Side by side
                     </label>
                     <button
-                      id="pdfDebugBtn"
-                      style="
-                        display: none;
-                        font-size: 11px;
-                        padding: 3px 9px;
-                        border-radius: 6px;
-                        border: 1px solid var(--border2);
-                        background: transparent;
-                        color: var(--text2);
-                        cursor: pointer;
-                        font-family: var(--font);
-                      "
-                      onclick="togglePDFRawText()"
-                    >
-                      🔍 Raw Text
-                    </button>
-                    <button
                       id="pdfSaveDebugBtn"
                       style="
                         display: none;
@@ -9412,16 +9393,10 @@
                         letter-spacing: 0.5px;
                       "
                     ></div>
-                    <button
-                      id="pdfOutToggleBtn"
-                      style="font-size: 11px; padding: 3px 9px; border-radius: 6px; border: 1px solid var(--border2); background: transparent; color: var(--text2); cursor: pointer; font-family: var(--font)"
-                      onclick="togglePdfOutputPanel()"
-                    >
-                      Show extraction output
-                    </button>
                   </div>
                   <div id="pdfStripPills"></div>
                 </div>
+                <div id="pdfStatusBox" class="ai-box" data-fb="energy.pdf.status-box"></div>
                 <div id="extractedFieldsHdr" data-fb="energy.pdf.extracted-fields-hdr"></div>
                 <div id="extractedFieldsGrid" data-fb="energy.pdf.extracted-fields"></div>
                 <!-- Auto-assign banner: shown when extracted AccountNumber matches a known meter -->
@@ -9533,7 +9508,7 @@
                 <!-- Single save location (2026-09-02 consolidation): for a single-account
                      multi-bill extraction, this is the ONE place Save All / Overwrite All /
                      Merge All live — pinned at the bottom of the review area, never at the
-                     top-right of Extraction Output. Populated by renderMultiBillUI(); stays
+                     top-right of the page. Populated by renderMultiBillUI(); stays
                      hidden for a multi-account file, where showMultiBuildingReviewPanel's own
                      bottom bar (in pdfMultiBldgPanel) is the single save location instead. -->
                 <div
@@ -9551,40 +9526,8 @@
                   "
                 ></div>
               </div>
-              <!-- RIGHT COLUMN: Extraction Output label + buttons + pills stay pinned at top,
-                   JSON box (pdfAIBox) fills the remainder and scrolls on its own. -->
-              <div
-                id="pdfRightCol"
-                style="flex: 2 1 0; min-width: 340px; min-height: 0; overflow-y: auto"
-                data-fb="energy.pdf.output-panel"
-              >
-                <div
-                  style="
-                    display: flex;
-                    align-items: center;
-                    justify-content: space-between;
-                    margin-bottom: 7px;
-                    flex-shrink: 0;
-                    position: sticky;
-                    top: 0;
-                    z-index: var(--z-sticky, 2);
-                    background: var(--s2);
-                    padding-bottom: 4px;
-                  "
-                >
-                  <div class="ai-label" style="margin: 0">📄 Extraction Output</div>
-                </div>
-                <div
-                  class="ai-box"
-                  id="pdfAIBox"
-                  data-fb="energy.pdf.output-box"
-                  style="flex: 1 1 0; min-height: 200px; overflow-y: auto; margin-top: 4px"
-                >
-                  Upload a PDF and select document type.
-                </div>
-              </div>
-              <!-- DOCKED PDF VIEWER: sits beside the values and billing periods (no backdrop).
-                   Shown only while the right column is visible. -->
+              <!-- DOCKED PDF VIEWER: sits beside the values and billing periods (no backdrop), with PDF and OCR text tabs.
+                   Hidden while a batch is running (data-queue-busy on #pdfBody). -->
               <div
                 id="pdfDockCol"
                 style="
@@ -9617,8 +9560,11 @@
                     border-bottom: 1px solid var(--border2);
                   "
                 >
+                  <button id="pdfDockTabPdf" class="pdf-dock-tab" onclick="setPdfDockTab('pdf')">PDF</button>
+                  <button id="pdfDockTabOcr" class="pdf-dock-tab" onclick="setPdfDockTab('ocr')">OCR text</button>
                   <span id="pdfDockStatus" style="flex: 1; min-width: 0; font-size: 12px; font-weight: 600; color: var(--text)">PDF</span>
                   <button
+                    id="pdfDockOpenTab"
                     class="btn btn-ghost btn-sm"
                     style="font-size: 11px; padding: 3px 10px; flex-shrink: 0"
                     onclick="openPdfDockInTab()"
@@ -9630,6 +9576,24 @@
                   </button>
                 </div>
                 <div id="pdfDockBody" style="flex: 1; min-height: 0"></div>
+                <pre
+                  id="pdfDockOcr"
+                  style="
+                    display: none;
+                    flex: 1;
+                    min-height: 0;
+                    margin: 0;
+                    padding: 10px 12px;
+                    overflow: auto;
+                    font-family: 'JetBrains Mono', monospace;
+                    font-size: 11px;
+                    line-height: 1.5;
+                    white-space: pre-wrap;
+                    word-break: break-word;
+                    color: var(--text);
+                    background: var(--s2);
+                  "
+                ></pre>
               </div>
             </div>
           </div>
@@ -16004,47 +15968,47 @@
       crossorigin="anonymous"
     ></script>
     <!-- CompanyHub computation modules -->
-    <script src="lib/date-helpers.js?v=138"></script>
-    <script src="lib/formatting.js?v=138"></script>
-    <script src="lib/unit-conversion.js?v=138"></script>
-    <script src="lib/csv-parser.js?v=138"></script>
-    <script src="computations/physics.js?v=138"></script>
-    <script src="computations/fan-savings.js?v=138"></script>
-    <script src="computations/cost-lines.js?v=138"></script>
-    <script src="computations/rates.js?v=138"></script>
-    <script src="computations/regression.js?v=138"></script>
-    <script src="computations/normalization.js?v=138"></script>
-    <script src="computations/eui.js?v=138"></script>
-    <script src="computations/hvac-enduse.js?v=138"></script>
-    <script src="computations/end-use.js?v=138"></script>
-    <script src="computations/pollution.js?v=138"></script>
-    <script src="computations/csc.js?v=138"></script>
-    <script src="computations/savings.js?v=138"></script>
-    <script src="computations/bill-flags.js?v=138"></script>
-    <script src="computations/bill-repair.js?v=138"></script>
-    <script src="computations/anomaly-detection.js?v=138"></script>
-    <script src="lib/perf-table.js?v=138"></script>
-    <script src="lib/shared-charts.js?v=138"></script>
-    <script src="computations/report-data.js?v=138"></script>
-    <script src="computations/data-quality.js?v=138"></script>
-    <script src="extraction/pdf-engine.js?v=138"></script>
-    <script src="app/sync-classification.js?v=138"></script>
-    <script src="app/db.js?v=138"></script>
-    <script src="app/sync-ui.js?v=138"></script>
-    <script src="app/ems-leads-store.js?v=138"></script>
-    <script src="app/core.js?v=138"></script>
-    <script src="app/energy-savings.js?v=138"></script>
-    <script src="app/bill-analysis.js?v=138"></script>
-    <script src="extraction/bill-validation.js?v=138"></script>
-    <script src="app/district-calendar.js?v=138"></script>
-    <script src="app/scope-tree.js?v=138"></script>
-    <script src="app/utility-data.js?v=138"></script>
-    <script src="app/pipeline-diagram.js?v=138"></script>
-    <script src="app/csv-import.js?v=138"></script>
-    <script src="app/bill-pdf-attach.js?v=138"></script>
-    <script src="app/meter-autocreate.js?v=138"></script>
-    <script src="app/bill-corrections-review.js?v=138"></script>
-    <script src="app/auto-repair.js?v=138"></script>
+    <script src="lib/date-helpers.js?v=139"></script>
+    <script src="lib/formatting.js?v=139"></script>
+    <script src="lib/unit-conversion.js?v=139"></script>
+    <script src="lib/csv-parser.js?v=139"></script>
+    <script src="computations/physics.js?v=139"></script>
+    <script src="computations/fan-savings.js?v=139"></script>
+    <script src="computations/cost-lines.js?v=139"></script>
+    <script src="computations/rates.js?v=139"></script>
+    <script src="computations/regression.js?v=139"></script>
+    <script src="computations/normalization.js?v=139"></script>
+    <script src="computations/eui.js?v=139"></script>
+    <script src="computations/hvac-enduse.js?v=139"></script>
+    <script src="computations/end-use.js?v=139"></script>
+    <script src="computations/pollution.js?v=139"></script>
+    <script src="computations/csc.js?v=139"></script>
+    <script src="computations/savings.js?v=139"></script>
+    <script src="computations/bill-flags.js?v=139"></script>
+    <script src="computations/bill-repair.js?v=139"></script>
+    <script src="computations/anomaly-detection.js?v=139"></script>
+    <script src="lib/perf-table.js?v=139"></script>
+    <script src="lib/shared-charts.js?v=139"></script>
+    <script src="computations/report-data.js?v=139"></script>
+    <script src="computations/data-quality.js?v=139"></script>
+    <script src="extraction/pdf-engine.js?v=139"></script>
+    <script src="app/sync-classification.js?v=139"></script>
+    <script src="app/db.js?v=139"></script>
+    <script src="app/sync-ui.js?v=139"></script>
+    <script src="app/ems-leads-store.js?v=139"></script>
+    <script src="app/core.js?v=139"></script>
+    <script src="app/energy-savings.js?v=139"></script>
+    <script src="app/bill-analysis.js?v=139"></script>
+    <script src="extraction/bill-validation.js?v=139"></script>
+    <script src="app/district-calendar.js?v=139"></script>
+    <script src="app/scope-tree.js?v=139"></script>
+    <script src="app/utility-data.js?v=139"></script>
+    <script src="app/pipeline-diagram.js?v=139"></script>
+    <script src="app/csv-import.js?v=139"></script>
+    <script src="app/bill-pdf-attach.js?v=139"></script>
+    <script src="app/meter-autocreate.js?v=139"></script>
+    <script src="app/bill-corrections-review.js?v=139"></script>
+    <script src="app/auto-repair.js?v=139"></script>
     <!-- Word Export Rebuild plan Steps 1/3 (app/docx-skeleton.js, app/docx-writer.js) were never
          wired into this page's script list -- exportReportToDocx() (report-engine.js) calls
          _docxTranslatePages()/_docxAssemble() (docx-writer.js) and CSC_DOCX_SKELETON_B64
@@ -16054,40 +16018,40 @@
          the gap was never exercised end-to-end). Formal button wiring is plan Step 11; these two
          tags are the load-order prerequisite that step (and every step since 6) actually needs
          to function through the live app at all, not new report content. -->
-    <script src="app/docx-skeleton.js?v=138"></script>
-    <script src="app/docx-writer.js?v=138"></script>
-    <script src="app/report-engine.js?v=138"></script>
-    <script src="app/report-printed.js?v=138"></script>
-    <script src="app/report-engine-woodland.js?v=138"></script>
-    <script src="app/report-preview.js?v=138"></script>
-    <script src="app/presented-savings.js?v=138"></script>
-    <script src="app/data/bas-weather-bins.js?v=138"></script>
-    <script src="app/calc-autofill.js?v=138"></script>
-    <script src="app/calculators.js?v=138"></script>
-    <script src="app/ecm-calculators.js?v=138"></script>
-    <script src="app/equipment-matrix.js?v=138"></script>
+    <script src="app/docx-skeleton.js?v=139"></script>
+    <script src="app/docx-writer.js?v=139"></script>
+    <script src="app/report-engine.js?v=139"></script>
+    <script src="app/report-printed.js?v=139"></script>
+    <script src="app/report-engine-woodland.js?v=139"></script>
+    <script src="app/report-preview.js?v=139"></script>
+    <script src="app/presented-savings.js?v=139"></script>
+    <script src="app/data/bas-weather-bins.js?v=139"></script>
+    <script src="app/calc-autofill.js?v=139"></script>
+    <script src="app/calculators.js?v=139"></script>
+    <script src="app/ecm-calculators.js?v=139"></script>
+    <script src="app/equipment-matrix.js?v=139"></script>
     <!-- soo-generator.js (SOO Phase 1, item 3f1415af): reads points/config flags via the
          EXISTING emGetNormalizedPoints/emComputeCompliance/emLoadEquipConfigFlags (equipment-
          matrix.js, loaded above). Format-correction pass (2026-09-13): renders the MASTER
          SEQUENCES OF OPERATION document's own Word format directly (Heading 1/Normal/bold-label
          runs), NOT the report-engine .rpt-page shell — soo-docx-skeleton.js supplies the
          master-doc-derived skeleton its own Word export splices into. -->
-    <script src="app/soo-docx-skeleton.js?v=138"></script>
-    <script src="app/soo-generator.js?v=138"></script>
-    <script src="app/graphics-setpoints.js?v=138"></script>
-    <script src="app/budget.js?v=138"></script>
-    <script src="app/hours.js?v=138"></script>
-    <script src="app/scorecard.js?v=138"></script>
-    <script src="app/bas-trends.js?v=138"></script>
-    <script src="app/bas-alarms.js?v=138"></script>
-    <script src="app/pricing-estimator.js?v=138"></script>
-    <script src="app/estimate-workbook.js?v=138"></script>
-    <script src="app/estimate-workbook-export.js?v=138"></script>
-    <script src="app/audit-estimate.js?v=138"></script>
-    <script src="app/agreement-engine.js?v=138"></script>
+    <script src="app/soo-docx-skeleton.js?v=139"></script>
+    <script src="app/soo-generator.js?v=139"></script>
+    <script src="app/graphics-setpoints.js?v=139"></script>
+    <script src="app/budget.js?v=139"></script>
+    <script src="app/hours.js?v=139"></script>
+    <script src="app/scorecard.js?v=139"></script>
+    <script src="app/bas-trends.js?v=139"></script>
+    <script src="app/bas-alarms.js?v=139"></script>
+    <script src="app/pricing-estimator.js?v=139"></script>
+    <script src="app/estimate-workbook.js?v=139"></script>
+    <script src="app/estimate-workbook-export.js?v=139"></script>
+    <script src="app/audit-estimate.js?v=139"></script>
+    <script src="app/agreement-engine.js?v=139"></script>
 
-    <script src="app/restore-merge.js?v=138"></script>
-    <script src="app/site-functions.js?v=138"></script>
+    <script src="app/restore-merge.js?v=139"></script>
+    <script src="app/site-functions.js?v=139"></script>
     <script>
       /* -- DRAG-TO-RESIZE PANELS -- */
       (function () {
@@ -16258,15 +16222,15 @@
       </div>
     </div>
 
-    <script src="app/tooltips-help.js?v=138"></script>
-    <script src="feedback-widget.js?v=138"></script>
-    <script src="sidebar-rail.js?v=138"></script>
+    <script src="app/tooltips-help.js?v=139"></script>
+    <script src="feedback-widget.js?v=139"></script>
+    <script src="sidebar-rail.js?v=139"></script>
     <script
       src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.min.js"
       integrity="sha384-reiVBUvj2HgLgCZalqLFSMBVD9LdtiwGyybRGCq2AfP8Rgebz5DxEnwKp4FpagKV"
       crossorigin="anonymous"
     ></script>
-    <script src="lib/rich-text.js?v=138"></script>
+    <script src="lib/rich-text.js?v=139"></script>
     <script>
       /* Handle ?openProject=... URL params — opened by _rptV2GoEdit() popup window */
       (function _handleEditRedirect() {

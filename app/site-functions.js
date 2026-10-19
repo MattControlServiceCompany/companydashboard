@@ -2575,6 +2575,14 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.19.139', date: '2026-10-19', title: 'PDF / OCR page: OCR text tab and building buttons',
+    items: [
+      { type: 'change', text: 'PDF / OCR page: the PDF dock has an OCR text tab that shows the text read from the selected bill. It replaces the Extraction Output panel and the Raw Text button.' },
+      { type: 'change', text: 'PDF / OCR page: the bill buttons are grouped by building, then by utility type. Each building shows counts only for that building and type.' },
+      { type: 'fix', text: 'PDF / OCR page: the file bar, badge, toast and batch message no longer show period and warning counts for the whole PDF. A held bill now counts as needing review in the review panel.' },
+      { type: 'fix', text: 'PDF / OCR page: View PDF opens the PDF / OCR text dock in every mode.' }
+    ]
+  },
   { v: 'v2026.10.19.138', date: '2026-10-19', title: 'Electric utility bills read more exactly',
     items: [
       { type: 'fix', text: 'PDF / OCR page and Utility Data page: on electric utility bills, Total Current Charges is now the Current Charges amount printed on the bill, never a sum of the charges read.' },

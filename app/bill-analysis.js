@@ -6932,15 +6932,6 @@ function showMultiBuildingReviewPanel() {
     _mbRowState[i] = { checked: isAutoAttach && !isGatedUnconfirmed, skipped: false };
   });
 
-  // Count unique accounts for header
-  const uniqueAccts = new Set(
-    bills
-      .map(function (b) {
-        return b.AccountNumber;
-      })
-      .filter(Boolean),
-  );
-
   const rows = bills.map(function (bill, i) {
     return _mbRowHtml(i);
   });
@@ -6948,15 +6939,7 @@ function showMultiBuildingReviewPanel() {
   const html = [
     '<div style="border:1px solid var(--s2);border-radius:6px;background:var(--s4);padding:12px;">',
     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">',
-    '<strong style="font-size:13px;color:var(--em);">Review — ' +
-      bills.length +
-      ' period' +
-      (bills.length !== 1 ? 's' : '') +
-      ' across ' +
-      uniqueAccts.size +
-      ' account' +
-      (uniqueAccts.size !== 1 ? 's' : '') +
-      '</strong>',
+    '<strong style="font-size:13px;color:var(--em);">Review</strong>',
     '</div>',
     '<div style="overflow-x:auto;">',
     '<table style="width:100%;border-collapse:collapse;font-size:12px;">',
@@ -7397,9 +7380,9 @@ function _mbUpdateSaveAllBtn() {
   const disabled = !(willSave > 0 && unaccounted === 0 && unconfirmedGated === 0);
   const blockedTitle =
     unconfirmedGated > 0
-      ? unconfirmedGated + ' billing period(s) flagged for review — click "Save Anyway" below to confirm'
+      ? 'Billing periods are flagged for review — click "Save Anyway" below to confirm'
       : unaccounted > 0
-        ? unaccounted + ' billing period(s) still need a destination or an explicit Skip'
+        ? 'Billing periods still need a destination or an explicit Skip'
         : '';
   btns.forEach(({ el, baseTitle }) => {
     el.disabled = disabled;
@@ -7414,7 +7397,7 @@ function _mbUpdateSaveAllBtn() {
         .join(', ');
       noticeEl.innerHTML =
         `<div style="width:100%;margin-top:6px;padding:8px 12px;border-radius:6px;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.35);font-size:11px;color:var(--red)">` +
-        `&#9888; ${unconfirmedGated} of ${bills.length} bill(s) flagged for review and held out of "Save All" (${_escHtml(periods)}) — verify against the source PDF. ` +
+        `&#9888; Bills flagged for review are held out of "Save All" (${_escHtml(periods)}) — verify against the source PDF. ` +
         `<button onclick="_confirmGatedBillsForSave()" class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 8px;margin-left:4px;color:var(--red);border-color:rgba(239,68,68,.4)">Save Anyway</button>` +
         `</div>`;
     } else {
@@ -9654,11 +9637,7 @@ function clearPDFOCR() {
   _badge.style.display = 'none';
   _badge.innerHTML = '';
   document.getElementById('pdfAutoAssignBanner').style.display = 'none';
-  const dbg = document.getElementById('pdfDebugBtn');
-  if (dbg) {
-    dbg.style.display = 'none';
-    dbg.textContent = '🔍 Raw Text';
-  }
+  _pdfStatus('');
   const viewBtn = document.getElementById('pdfViewBtn');
   if (viewBtn) viewBtn.style.display = 'none';
   closePdfDock();
@@ -9680,9 +9659,6 @@ function clearPDFOCR() {
   // a future Save-All on the next extraction. Matches its declared initial
   // value (`let _mbSaveAllInProgress = false;`, ~5791).
   _mbSaveAllInProgress = false;
-  const box = document.getElementById('pdfAIBox');
-  box._showingRaw = false;
-  box.textContent = 'Upload a PDF and select document type.';
   showToast('Cleared ✓');
 }
 
@@ -9704,7 +9680,7 @@ function startQueueExtraction(files) {
   document.getElementById('pdfSaveRow').style.display = 'none';
   document.getElementById('pdfClearBtn').style.display = 'none';
   document.getElementById('pdfTypeSection').style.display = 'none';
-  document.getElementById('pdfRightCol').style.display = 'none';
+  _pdfSetQueueBusy(true);
   const dz = document.getElementById('dropZone');
   dz.classList.remove('collapsed');
   dz.setAttribute('data-queue', 'true');
@@ -9725,7 +9701,7 @@ function appendToQueue(newFiles) {
   if (q.status === 'done' || q.status === 'cancelled') {
     q.status = 'running';
     window._pdfAbort = false;
-    document.getElementById('pdfRightCol').style.display = 'none';
+    _pdfSetQueueBusy(true);
     const dz = document.getElementById('dropZone');
     dz.classList.remove('collapsed');
     dz.setAttribute('data-queue', 'true');
@@ -9746,7 +9722,7 @@ function clearQueue() {
   // NOTE (18b33d9f round 3): the gate override is now per-bill
   // (_gateOverrideConfirmed on each bill object), not a global flag, so there
   // is nothing to reset here — fresh bills from the next batch never carry it.
-  document.getElementById('pdfRightCol').style.display = '';
+  _pdfSetQueueBusy(false);
   const tabsBar = document.getElementById('queueTabsBar');
   if (tabsBar) tabsBar.remove();
   const dz = document.getElementById('dropZone');
@@ -9759,7 +9735,6 @@ function clearQueue() {
   document.getElementById('dz-title').style.cssText = '';
   document.getElementById('extractedFieldsHdr').innerHTML = '';
   document.getElementById('extractedFieldsGrid').innerHTML = '';
-  document.getElementById('pdfAIBox').textContent = 'Upload a PDF and select document type.';
   clearPDFOCR();
 }
 
@@ -10298,8 +10273,7 @@ function exitPreviewMode() {
   q._previewMode = false;
   const dz = document.getElementById('dropZone');
   if (dz) dz.classList.remove('collapsed');
-  const rightCol = document.getElementById('pdfRightCol');
-  if (rightCol) rightCol.style.display = 'none';
+  _pdfSetQueueBusy(true);
   renderQueueProgress();
 }
 
@@ -10483,14 +10457,13 @@ function renderQueueResults() {
   if (!q) return;
   const dz = document.getElementById('dropZone');
   const dzTitle = document.getElementById('dz-title');
-  const box = document.getElementById('pdfAIBox');
 
   // Show normal two-column layout
   dz.classList.add('collapsed');
   dz.querySelector('.dz-ico').style.display = 'none';
   dz.querySelector('.dz-sub').style.display = 'none';
   dzTitle.style.cssText = '';
-  document.getElementById('pdfRightCol').style.display = '';
+  _pdfSetQueueBusy(false);
   document.getElementById('pdfTypeSection').style.display = 'none';
   document.getElementById('pdfSaveRow').style.display = 'none';
   // Show debug buttons and View PDF only when a PDF is kept for this batch
@@ -10535,7 +10508,7 @@ function renderQueueResults() {
 
   if (rows.length === 0) {
     dzTitle.innerHTML = '📄 Batch extraction — no bills found';
-    document.getElementById('pdfRightCol').style.display = '';
+    _pdfSetQueueBusy(false);
     document.getElementById('extractedFieldsGrid').innerHTML =
       '<div style="text-align:center;padding:40px 20px;color:var(--text)">' +
       '<div style="font-size:16px;margin-bottom:8px">No bills extracted</div>' +
@@ -11120,7 +11093,6 @@ function renderQueueResults() {
       q._activeFileIdx +
       ')">Retry</button></div></div>';
     document.getElementById('extractedFieldsGrid').innerHTML = '';
-    box.textContent = '';
     return;
   }
 
@@ -11131,15 +11103,8 @@ function renderQueueResults() {
   window._pdfBillWarnings = activeResult.bills.map((b) => ({ warnings: b._warnings || [] }));
   window._pdfRawText = activeResult.rawText || null;
 
-  // Use the existing multi-bill UI (vertical pills in right column)
-  if (activeResult.bills.length > 1) {
-    renderMultiBillUI(activeResult.bills, box);
-  } else {
-    box.innerHTML =
-      '<pre style="white-space:pre-wrap;font-size:12px;color:var(--text2)">' +
-      JSON.stringify(activeResult.bills[0], null, 2) +
-      '</pre>';
-  }
+  // Use the existing multi-bill UI (billing-period pills in the strip)
+  if (activeResult.bills.length > 1) renderMultiBillUI(activeResult.bills);
 
   // Render extracted fields for the selected bill
   const activeBill = activeResult.bills[window._pdfMultiIdx];
@@ -11430,9 +11395,8 @@ function queueDrillIn(rowIdx) {
 
   window._pdfQueueDrillIdx = rowIdx;
 
-  // Show right column for drill-in detail view
-  document.getElementById('pdfRightCol').style.display = '';
-  const box = document.getElementById('pdfAIBox');
+  // Show the values for the drill-in detail view
+  _pdfSetQueueBusy(false);
 
   const prevMultiBills = window._pdfMultiBills;
   const prevMultiIdx = window._pdfMultiIdx;
@@ -11452,11 +11416,6 @@ function queueDrillIn(rowIdx) {
 
   renderPDFFields(row.bill, row.bill._warnings || []);
 
-  box.innerHTML =
-    '<pre style="white-space:pre-wrap;font-size:12px;color:var(--text2)">' +
-    JSON.stringify(row.bill, null, 2) +
-    '</pre>';
-
   window._pdfMultiBills = prevMultiBills;
   window._pdfMultiIdx = prevMultiIdx;
   window._pdfBillWarnings = prevWarnings;
@@ -11466,7 +11425,6 @@ function exitQueueDrillIn() {
   window._pdfQueueDrillIdx = null;
   document.getElementById('extractedFieldsHdr').innerHTML = '';
   document.getElementById('extractedFieldsGrid').innerHTML = '';
-  document.getElementById('pdfAIBox').textContent = '';
   renderQueueResults();
 }
 
@@ -11940,9 +11898,9 @@ async function _reloadExtractionPdf() {
   return found;
 }
 
-// The ONE place that shows the extraction output buttons (View PDF, Raw Text, Save Debug, Side by side).
+// The ONE place that shows the extraction output buttons (View PDF, Save Debug, Side by side).
 function _showExtractionToolbar() {
-  ['pdfDebugBtn', 'pdfSaveDebugBtn', 'pdfViewBtn'].forEach(function (id) {
+  ['pdfSaveDebugBtn', 'pdfViewBtn'].forEach(function (id) {
     const el = document.getElementById(id);
     if (el) el.style.display = 'inline-block';
   });
@@ -12474,8 +12432,7 @@ async function _dupBulkAction(action) {
   console.log('[_dupBulkAction] shared PDF key:', sharedKey);
 
   const reRender = () => {
-    const box = document.getElementById('pdfAIBox');
-    if (box) renderMultiBillUI(bills, box);
+    renderMultiBillUI(bills);
     const i = window._pdfMultiIdx || 0;
     const billWarnings = (window._pdfBillWarnings || [])[i]?.warnings || [];
     if (bills[i]) renderPDFFields(bills[i], billWarnings);
@@ -12926,8 +12883,7 @@ function applyDupSelections() {
   closeDupModal();
   // Re-render pills and fields to reflect the decision
   const bills = window._pdfMultiBills;
-  const box = document.getElementById('pdfAIBox');
-  if (bills && box) renderMultiBillUI(bills, box);
+  if (bills) renderMultiBillUI(bills);
   showToast('Field selections saved for this bill');
 }
 
@@ -12938,8 +12894,7 @@ function skipDupBill() {
   dup.action = 'skip';
   closeDupModal();
   const bills = window._pdfMultiBills;
-  const box = document.getElementById('pdfAIBox');
-  if (bills && box) renderMultiBillUI(bills, box);
+  if (bills) renderMultiBillUI(bills);
   showToast('Bill will be skipped on save');
 }
 
@@ -12987,8 +12942,7 @@ async function overwriteDupBill() {
     ok = false;
   }
   if (ok) dup.action = 'processed';
-  const box = document.getElementById('pdfAIBox');
-  if (box) renderMultiBillUI(bills, box);
+  renderMultiBillUI(bills);
   const i = window._pdfMultiIdx || 0;
   const billWarnings = (window._pdfBillWarnings || [])[i]?.warnings || [];
   if (bills[i]) renderPDFFields(bills[i], billWarnings);
@@ -13026,8 +12980,7 @@ async function mergeDupBill() {
     ok = false;
   }
   if (ok) dup.action = 'processed';
-  const box = document.getElementById('pdfAIBox');
-  if (box) renderMultiBillUI(bills, box);
+  renderMultiBillUI(bills);
   const i = window._pdfMultiIdx || 0;
   const billWarnings = (window._pdfBillWarnings || [])[i]?.warnings || [];
   if (bills[i]) renderPDFFields(bills[i], billWarnings);
@@ -13061,8 +13014,7 @@ async function attachOnlyDupBill() {
     ok = false;
   }
   if (ok) dup.action = 'processed';
-  const box = document.getElementById('pdfAIBox');
-  if (box) renderMultiBillUI(bills, box);
+  renderMultiBillUI(bills);
   const i = window._pdfMultiIdx || 0;
   const billWarnings = (window._pdfBillWarnings || [])[i]?.warnings || [];
   if (bills[i]) renderPDFFields(bills[i], billWarnings);
@@ -13243,9 +13195,8 @@ function savePDFDebug(isManualSave) {
 // viewSavedPDF (Saved Bills, csv-import) has its own page-range logic and is
 // not changed.
 const PDF_DOCK_LS_ON = 'ch_pdf_side_by_side';
-const PDF_OUT_LS = 'ch_pdf_output_open';
 const PDF_DOCK_LS_W = 'ch_pdf_dock_width';
-let _pdfDock = { open: false, b64: null, url: null, total: null, page: null, token: 0, shownKey: null };
+let _pdfDock = { open: false, b64: null, url: null, total: null, page: null, token: 0, shownKey: null, tab: 'pdf', status: '' };
 
 function _pdfDockLsGet(key) {
   try {
@@ -13308,18 +13259,11 @@ async function viewCurrentExtractionPDF(event) {
       showToast('No PDF available for this extraction');
       return;
     }
-    if (_pdfSideBySideOn()) {
-      if (_pdfDock.open) closePdfDock();
-      else {
-        _pdfDock.open = true;
-        await _refreshPdfDock();
-      }
-      return;
+    if (_pdfDock.open) closePdfDock();
+    else {
+      _pdfDock.open = true;
+      await _refreshPdfDock();
     }
-    const { bytes, url } = _pdfBlobFromB64(b64);
-    const page = _pdfSelectedBillPage();
-    const total = await _pdfPageCount(bytes);
-    _showPdfModal(page ? url + '#page=' + page : url, _pdfViewerStatus(page, total));
   } catch (e) {
     console.error('[viewCurrentExtractionPDF] failed:', e);
     showToast('Could not open PDF: ' + e.message);
@@ -13346,35 +13290,26 @@ function closePdfDock() {
   _pdfDockRevoke();
   _syncPdfDockVisibility();
 }
-// The dock follows #pdfRightCol: hidden with it (batch mode).
-// Extraction output panel (raw JSON): closed at every width until the viewer opens it with the small toggle; the choice is saved.
-function _pdfOutputShown() {
-  return _pdfDockLsGet(PDF_OUT_LS) === '1';
-}
-function _applyPdfOutputPanel() {
+// A batch run hides the dock and the period strip: #pdfBody carries data-queue-busy.
+function _pdfSetQueueBusy(on) {
   const pb = document.getElementById('pdfBody');
-  if (!pb) return;
-  const shown = _pdfOutputShown();
-  pb.classList.toggle('pdf-out-hidden', !shown);
-  const tb = document.getElementById('pdfOutToggleBtn');
-  if (tb) tb.textContent = shown ? 'Hide extraction output' : 'Show extraction output';
+  if (pb) pb.toggleAttribute('data-queue-busy', !!on);
 }
-function togglePdfOutputPanel() {
-  _pdfDockLsSet(PDF_OUT_LS, _pdfOutputShown() ? '0' : '1');
-  _syncPdfDockVisibility();
+// Progress, error and non-bill text messages (the removed Extraction Output box held these too).
+function _pdfStatus(html) {
+  const el = document.getElementById('pdfStatusBox');
+  if (el) el.innerHTML = html;
 }
 function _syncPdfDockVisibility() {
-  _applyPdfOutputPanel();
+  const pb = document.getElementById('pdfBody');
+  const busy = !!pb && pb.hasAttribute('data-queue-busy');
   const strip = document.getElementById('pdfPeriodStrip');
   const vb = document.getElementById('pdfViewBtn');
-  const rcol = document.getElementById('pdfRightCol');
-  if (strip) strip.style.display = vb && vb.style.display !== 'none' && rcol && rcol.style.display !== 'none' ? '' : 'none';
+  if (strip) strip.style.display = vb && vb.style.display !== 'none' && !busy ? '' : 'none';
   const dock = document.getElementById('pdfDockCol');
   if (!dock) return;
-  const rc = document.getElementById('pdfRightCol');
-  const show = _pdfDock.open && !!rc && rc.style.display !== 'none';
+  const show = _pdfDock.open && !busy;
   dock.style.display = show ? 'flex' : 'none';
-  const pb = document.getElementById('pdfBody');
   if (pb) pb.classList.toggle('pdf-docked', show);
   if (show) _clampPdfDockWidth();
   const btn = document.getElementById('pdfViewBtn');
@@ -13411,8 +13346,8 @@ async function _refreshPdfDock() {
   }
   const page = _pdfSelectedBillPage();
   const key = _pdfDock.url + '|' + page;
-  const status = document.getElementById('pdfDockStatus');
-  if (status) status.textContent = _pdfViewerStatus(page, _pdfDock.total);
+  _pdfDock.status = _pdfViewerStatus(page, _pdfDock.total);
+  _renderPdfDockTab();
   if (key === _pdfDock.shownKey) return;
   _pdfDock.shownKey = key;
   _pdfDock.page = page;
@@ -13425,6 +13360,28 @@ async function _refreshPdfDock() {
   fr.src = page ? _pdfDock.url + '#page=' + page : _pdfDock.url;
   body.innerHTML = '';
   body.appendChild(fr);
+}
+// The dock has two tabs: the PDF, and the OCR text of the selected bill's page (the text the reader used).
+function _renderPdfDockTab() {
+  const ocr = _pdfDock.tab === 'ocr';
+  const set = (id, fn) => {
+    const el = document.getElementById(id);
+    if (el) fn(el);
+  };
+  const read = ocr ? _pdfOcrTextForSelectedBill() : null;
+  set('pdfDockTabPdf', (el) => el.classList.toggle('sel', !ocr));
+  set('pdfDockTabOcr', (el) => el.classList.toggle('sel', ocr));
+  set('pdfDockBody', (el) => (el.style.display = ocr ? 'none' : ''));
+  set('pdfDockOpenTab', (el) => (el.style.display = ocr ? 'none' : ''));
+  set('pdfDockOcr', (el) => {
+    el.style.display = ocr ? 'block' : 'none';
+    if (ocr) el.textContent = read.text;
+  });
+  set('pdfDockStatus', (el) => (el.textContent = ocr ? read.label : _pdfDock.status || 'PDF'));
+}
+function setPdfDockTab(tab) {
+  _pdfDock.tab = tab === 'ocr' ? 'ocr' : 'pdf';
+  _renderPdfDockTab();
 }
 function openPdfDockInTab() {
   if (!_pdfDock.url) return;
@@ -13443,14 +13400,12 @@ function setPdfSideBySide(on) {
 }
 function _initPdfDock() {
   const tog = document.getElementById('pdfSbsToggle');
-  const rc = document.getElementById('pdfRightCol');
   const btn = document.getElementById('pdfViewBtn');
   const handle = document.getElementById('pdfDockResize');
-  if (!tog || !rc || !btn || !handle) return;
+  if (!tog || !btn || !handle) return;
   tog.checked = _pdfSideBySideOn();
-  _applyPdfOutputPanel();
   const mo = new MutationObserver(_syncPdfDockVisibility);
-  mo.observe(rc, { attributes: true, attributeFilter: ['style'] });
+  mo.observe(document.getElementById('pdfBody'), { attributes: true, attributeFilter: ['data-queue-busy'] });
   mo.observe(btn, { attributes: true, attributeFilter: ['style'] });
   window.addEventListener('resize', _syncPdfDockVisibility);
   handle.addEventListener('pointerdown', (ev) => {
@@ -13472,97 +13427,59 @@ function _initPdfDock() {
 }
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _initPdfDock);
 else _initPdfDock();
-function togglePDFRawText() {
-  if (!_pdfOutputShown()) togglePdfOutputPanel();
-  const box = document.getElementById('pdfAIBox');
-  const btn = document.getElementById('pdfDebugBtn');
-  if (box._showingRaw) {
-    box._showingRaw = false;
-    btn.textContent = '🔍 Raw Text';
-    if (window._pdfMultiBills) renderMultiBillUI(window._pdfMultiBills, box);
-    else box.textContent = 'No extraction data.';
-  } else {
-    box._showingRaw = true;
-    btn.textContent = '← Back';
-    const text = window._pdfRawText || '(no raw text captured — try reloading the PDF)';
-    const idx = window._pdfMultiIdx || 0;
-    let validSections;
-    // Non-Utility E PDFs use %%PAGE_N%% markers — split by those instead
-    const hasPageMarkers = /%%PAGE_\d+%%/.test(text);
-    if (hasPageMarkers) {
-      const pageMarkers = [...text.matchAll(/%%PAGE_(\d+)%%/g)];
-      const pages = [];
-      for (let pi = 0; pi < pageMarkers.length; pi++) {
-        const s = pageMarkers[pi].index;
-        const e = pi + 1 < pageMarkers.length ? pageMarkers[pi + 1].index : text.length;
-        pages.push(text.slice(s, e));
-      }
-      validSections = pages;
-      // Multi-commodity pages produce multiple bills from one page.
-      // Use _pageIndex from the extracted bills to find the right page.
-      const bills = window._pdfMultiBills || [];
-      const currentBill = bills[idx];
-      var pageIdx = currentBill && currentBill._pageIndex ? currentBill._pageIndex - 1 : idx;
-      if (pageIdx >= validSections.length) pageIdx = Math.min(idx, validSections.length - 1);
-      var section = validSections[pageIdx] || validSections[0] || text;
-      // #113: If bill has _pageStart/_pageEnd (multi-page range), show "Pages X-Y"
-      // instead of "Page X of Y" for more accurate display (e.g. Client A multi-building PDFs)
-      var label;
-      if (currentBill && currentBill._pageStart != null && currentBill._pageEnd != null) {
-        if (currentBill._pageStart === currentBill._pageEnd) {
-          label = 'Page ' + currentBill._pageStart + ' of ' + validSections.length;
-        } else {
-          label =
-            'Pages ' +
-            currentBill._pageStart +
-            '–' +
-            currentBill._pageEnd +
-            ' (PDF) · section ' +
-            (pageIdx + 1) +
-            ' of ' +
-            validSections.length;
-        }
-      } else {
-        label = 'Page ' + (pageIdx + 1) + ' of ' + validSections.length;
-      }
-    } else {
-      const splitRe = new RegExp(
-        '(?=(?:' +
-          _EVG_BILLING_DETAILS.source +
-          '|Billing[ \\t\\n\\r]+Details[ \\t\\n\\r]*[-\\u2013\\-][ \\t\\n\\r]*service[ \\t\\n\\r]+from))',
-        'gi',
-      );
-      const raw = text.split(splitRe);
-      const getDP = (s) => {
-        const m = _evgServicePeriod(s);
-        return m ? m.start + '|' + m.end : null;
-      };
-      const sections = [];
-      for (const frag of raw) {
-        const dates = getDP(frag);
-        const isHdr = _EVG_BILLING_DETAILS.test(frag.trim()) || /^Billing\s+Details/i.test(frag.trim());
-        if (!isHdr || !dates) {
-          if (sections.length) sections[sections.length - 1] += frag;
-          else sections.push(frag);
-        } else if (sections.length && getDP(sections[sections.length - 1]) === dates) {
-          sections[sections.length - 1] += frag;
-        } else {
-          sections.push(frag);
-        }
-      }
-      validSections = sections.filter(
-        (s) => _EVG_SERVICE_FROM.test(s) || /service\s+from[:\s]\s*\d{2}\/\d{2}\/\d{4}/i.test(s),
-      );
-      var section = validSections[idx] || validSections[0] || text;
-      var label = 'Section ' + (idx + 1) + ' of ' + validSections.length;
-    }
-    box.innerHTML =
-      '<div style="font-size:11px;color:var(--accent);margin-bottom:8px;font-weight:600">' +
-      label +
-      '</div><pre style="font-size:10px;line-height:1.5;white-space:pre-wrap;word-break:break-all;color:var(--text2);margin:0">' +
-      _escHtml(section) +
-      '</pre>';
+// The OCR text of the selected bill: the text the reader used, cut to the bill's page(s). The ONE reader of it;
+// the OCR text tab in the PDF dock shows its result.
+function _pdfOcrTextForSelectedBill() {
+  const text = window._pdfRawText;
+  if (!text) return { label: 'No OCR text', text: 'No OCR text is kept for this file. Run the file again to read it.' };
+  const idx = window._pdfMultiIdx || 0;
+  const bill = (window._pdfMultiBills || [])[idx] || null;
+  if (/%%PAGE_\d+%%/.test(text)) {
+    const marks = [...text.matchAll(/%%PAGE_(\d+)%%/g)];
+    const pages = marks.map((m, i) => ({
+      n: parseInt(m[1], 10),
+      text: text.slice(m.index, i + 1 < marks.length ? marks[i + 1].index : text.length),
+    }));
+    // Same page rule as the PDF tab (_pdfSelectedBillPage); a range shows every page of the bill.
+    const first = _pdfSelectedBillPage();
+    const last = bill && bill._pageEnd != null && bill._pageStart != null ? parseInt(bill._pageEnd, 10) : first;
+    let shown = first ? pages.filter((pg) => pg.n >= first && pg.n <= last) : [];
+    if (!shown.length) shown = [pages[Math.min(idx, pages.length - 1)]];
+    const a = shown[0].n;
+    const b = shown[shown.length - 1].n;
+    return {
+      label: (a === b ? 'Page ' + a : 'Pages ' + a + '–' + b) + ' of ' + pages.length,
+      // The tab header already names the page, so the %%PAGE_n%% marker line is not shown.
+      text: shown.map((pg) => pg.text.replace(/^%%PAGE_\d+%%[ \t]*\r?\n?/, '')).join('\n'),
+    };
   }
+  const splitRe = new RegExp(
+    '(?=(?:' +
+      _EVG_BILLING_DETAILS.source +
+      '|Billing[ \\t\\n\\r]+Details[ \\t\\n\\r]*[-\\u2013\\-][ \\t\\n\\r]*service[ \\t\\n\\r]+from))',
+    'gi',
+  );
+  const getDP = (s) => {
+    const m = _evgServicePeriod(s);
+    return m ? m.start + '|' + m.end : null;
+  };
+  const sections = [];
+  for (const frag of text.split(splitRe)) {
+    const dates = getDP(frag);
+    const isHdr = _EVG_BILLING_DETAILS.test(frag.trim()) || /^Billing\s+Details/i.test(frag.trim());
+    if (!isHdr || !dates) {
+      if (sections.length) sections[sections.length - 1] += frag;
+      else sections.push(frag);
+    } else if (sections.length && getDP(sections[sections.length - 1]) === dates) {
+      sections[sections.length - 1] += frag;
+    } else {
+      sections.push(frag);
+    }
+  }
+  const valid = sections.filter(
+    (s) => _EVG_SERVICE_FROM.test(s) || /service\s+from[:\s]\s*\d{2}\/\d{2}\/\d{4}/i.test(s),
+  );
+  return { label: 'Section ' + (idx + 1) + ' of ' + valid.length, text: valid[idx] || valid[0] || text };
 }
 // ── OCR image-preprocessing helpers ──────────────────────────────────────────
 // rotateCanvas180: returns a new canvas that is the source rotated 180°.
@@ -15926,7 +15843,7 @@ async function extractPDFText(ab, statusCb, opts) {
                 // collide with the real \bG[A4]S\b charge-line regex (that
                 // regex requires a word boundary right after S; "GASUSAGE"
                 // has no boundary there) while still reading unambiguously
-                // in bestText for a human debugging pdfDebugBtn output.
+                // in bestText for a human reading the saved debug file.
                 { label: 'GASUSAGE', x: 0.69, y: 0.296, w: 0.11, h: 0.028 },
               ];
               const _lbgCellLines = [];
@@ -16256,8 +16173,7 @@ async function processPDF(file) {
   // prior batch's tab state (_pdfBuildingTab/_pdfCommTab/#pdfBldgTabsBar) leaked
   // into the new extraction. Reset first, before reading the file.
   clearPDFOCR();
-  const box = document.getElementById('pdfAIBox'),
-    dz = document.getElementById('dz-title');
+  const dz = document.getElementById('dz-title');
   document.getElementById('extractMethodBadge').style.display = 'none';
   window._pdfSourceFileName = file.name;
   window._pdfAbort = false;
@@ -16268,8 +16184,7 @@ async function processPDF(file) {
     '📄 ' +
     file.name +
     ' — reading... <button class="btn btn-ghost btn-sm" style="margin-left:8px;font-size:10px" onclick="event.stopPropagation();window._pdfAbort=true;clearPDFOCR();showToast(\'Extraction cancelled\')">✕ Cancel</button>';
-  box.innerHTML =
-    '<div class="ai-thinking"><div class="tdots"><span></span><span></span><span></span></div> Reading PDF...</div>';
+  _pdfStatus('<div class="ai-thinking"><div class="tdots"><span></span><span></span><span></span></div> Reading PDF...</div>');
   globalTaskShow('📄 Extracting ' + file.name + '...', 'pdf');
   const reader = new FileReader();
   const _processPDFOnload = async (ev) => {
@@ -16284,8 +16199,7 @@ async function processPDF(file) {
     if (pdfType === 'utility') {
       const statusMsg = (msg) => {
         if (window._pdfAbort) return; // cancelled: a still-running job must not repaint the panel or top-bar pill
-        box.innerHTML =
-          '<div class="ai-thinking"><div class="tdots"><span></span><span></span><span></span></div> ' + msg + '</div>';
+        _pdfStatus('<div class="ai-thinking"><div class="tdots"><span></span><span></span><span></span></div> ' + msg + '</div>');
         globalTaskUpdate('📄 ' + msg);
       };
       let text = await extractPDFText(freshBytes(), statusMsg);
@@ -17351,37 +17265,16 @@ async function processPDF(file) {
               }
             });
             window._pdfMultiIdx = newestIdx;
-            renderMultiBillUI(finalBills, box);
+            renderMultiBillUI(finalBills);
             renderPDFFields(finalBills[newestIdx], analysisResults[newestIdx]?.warnings || []);
             document.getElementById('pdfSaveRow').style.display = 'block';
             document.getElementById('pdfClearBtn').style.display = 'block';
             document.getElementById('dropZone').classList.add('collapsed');
             document.getElementById('pdfTypeSection').style.display = 'none';
             refreshProjDropdowns();
-            const warnCount = analysisResults.reduce(
-              (s, r) => s + r.warnings.filter((w) => w.level === 'error' || w.level === 'warn').length,
-              0,
-            );
-            showExtractionBadge(
-              'rules',
-              rule.name +
-                ' · ' +
-                finalBills.length +
-                ' periods' +
-                (warnCount ? ' · ' + warnCount + ' warning' + (warnCount > 1 ? 's' : '') : ''),
-            );
-            dz.textContent =
-              file.name +
-              ' ✓ (' +
-              finalBills.length +
-              ' periods' +
-              (warnCount ? ', ' + warnCount + ' warnings' : '') +
-              ')';
-            showToast(
-              finalBills.length +
-                ' billing periods extracted' +
-                (warnCount ? ' — ' + warnCount + ' warning' + (warnCount > 1 ? 's' : '') + ' found' : ''),
-            );
+            showExtractionBadge('rules', rule.name);
+            dz.textContent = file.name + ' ✓';
+            showToast('Billing periods extracted');
             var _multiBillMatch = findMeterMatch(finalBills[0]);
             if (
               _multiBillMatch &&
@@ -17401,25 +17294,15 @@ async function processPDF(file) {
             await _checkDuplicates([extracted], statusMsg);
             const billWarnings = analysisResults[0]?.warnings || [];
             renderPDFFields(extracted, billWarnings);
-            box.textContent = JSON.stringify(extracted, null, 2);
+            _pdfStatus('');
             document.getElementById('pdfSaveRow').style.display = 'block';
             document.getElementById('pdfClearBtn').style.display = 'block';
             document.getElementById('dropZone').classList.add('collapsed');
             document.getElementById('pdfTypeSection').style.display = 'none';
             refreshProjDropdowns();
-            const warnCount = billWarnings.filter((w) => w.level === 'error' || w.level === 'warn').length;
-            showExtractionBadge(
-              'rules',
-              rule.name +
-                ' · 1 period' +
-                (warnCount ? ' · ' + warnCount + ' warning' + (warnCount > 1 ? 's' : '') : ''),
-            );
-            dz.textContent = file.name + ' ✓' + (warnCount ? ' (' + warnCount + ' warnings)' : '');
-            showToast(
-              'Extracted locally — ' +
-                rule.name +
-                (warnCount ? ' — ' + warnCount + ' warning' + (warnCount > 1 ? 's' : '') : ' ✓'),
-            );
+            showExtractionBadge('rules', rule.name);
+            dz.textContent = file.name + ' ✓';
+            showToast('Extracted locally — ' + rule.name + ' ✓');
             var _singleBillMatch = findMeterMatch(extracted);
             if (
               _singleBillMatch &&
@@ -17444,14 +17327,12 @@ async function processPDF(file) {
           return;
         }
         // Utility format not yet in rules library
-        box.innerHTML =
-          '<div style="padding:14px;font-size:13px;line-height:1.7;color:var(--text2)">&#9888; <strong style="color:var(--text)">Utility format not recognized.</strong><br>This bill layout does not match any rules in the library yet.<br><br>Share a sample bill to have a rule set added for this format.</div>';
+        _pdfStatus('<div style="padding:14px;font-size:13px;line-height:1.7;color:var(--text2)">&#9888; <strong style="color:var(--text)">Utility format not recognized.</strong><br>This bill layout does not match any rules in the library yet.<br><br>Share a sample bill to have a rule set added for this format.</div>');
         dz.textContent = file.name + ' — unrecognized format';
         globalTaskDone();
         return;
       }
-      box.innerHTML =
-        '<div style="padding:14px;font-size:13px;color:var(--text2)">&#9888; Could not extract text from this PDF even after OCR. The file may be corrupted or too low resolution.</div>';
+      _pdfStatus('<div style="padding:14px;font-size:13px;color:var(--text2)">&#9888; Could not extract text from this PDF even after OCR. The file may be corrupted or too low resolution.</div>');
       dz.textContent = file.name + ' — could not read';
       globalTaskDone();
       return;
@@ -17459,17 +17340,15 @@ async function processPDF(file) {
 
     // ── NON-UTILITY TYPES: local text extraction only ──
     const text = await extractPDFText(ab, (msg) => {
-      box.innerHTML =
-        '<div class="ai-thinking"><div class="tdots"><span></span><span></span><span></span></div> ' + msg + '</div>';
+      _pdfStatus('<div class="ai-thinking"><div class="tdots"><span></span><span></span><span></span></div> ' + msg + '</div>');
       globalTaskUpdate('📄 ' + msg);
     });
     if (text) {
-      box.textContent = text;
+      _pdfStatus('<pre style="margin:0;white-space:pre-wrap;word-break:break-word">' + _escHtml(text) + '</pre>');
       dz.textContent = file.name + ' ✓';
       showToast('Text extracted ✓');
     } else {
-      box.innerHTML =
-        '<div style="padding:14px;font-size:13px;color:var(--text2)">&#9888; Could not extract text from this PDF.</div>';
+      _pdfStatus('<div style="padding:14px;font-size:13px;color:var(--text2)">&#9888; Could not extract text from this PDF.</div>');
       dz.textContent = file.name + ' — could not read';
     }
     globalTaskDone();
@@ -17483,17 +17362,126 @@ async function processPDF(file) {
       console.error('processPDF failed:', err);
       globalTaskDone();
       const msg = (err && err.message) || String(err);
-      box.innerHTML =
-        '<div style="padding:14px;font-size:13px;color:var(--red)">&#9888; <strong>Extraction failed after reading the PDF.</strong><br>' +
+      _pdfStatus('<div style="padding:14px;font-size:13px;color:var(--red)">&#9888; <strong>Extraction failed after reading the PDF.</strong><br>' +
         _escHtml(msg) +
-        '</div>';
+        '</div>');
       dz.textContent = file.name + ' — extraction failed';
       showToast('Extraction failed: ' + msg);
     }
   };
   reader.readAsDataURL(file);
 }
-function renderMultiBillUI(bills, box) {
+// ── PDF / OCR period grouping (ONE place) ─────────────────────────────────────
+// Building buttons (top row), utility type buttons (second row) and their counts all come
+// from _pdfGroupBills. Nothing else counts bills by building or type.
+const _PDF_COMM_ORDER = ['Gas', 'Water', 'Sewer', 'Stormwater', 'Electric', 'Propane', 'Other'];
+// A commodity not in the list (the 'Unknown' stamp on a Manual Review bill) ranks last.
+function _pdfCommRank(c) {
+  const i = _PDF_COMM_ORDER.indexOf(c);
+  return i === -1 ? 999 : i;
+}
+// The ONE answer to "does this bill need a look": a field warning or error, a charge sum that
+// does not match Total Current Charges, a gap before the period, or a held bill (extraction
+// flagged for review and not yet confirmed with Save Anyway, or a Manual Review bill).
+function _pdfBillIssues(bill, bw) {
+  const hasWarn = bw.some((w) => w.level === 'error' || w.level === 'warn');
+  const comm =
+    bill.Commodity ||
+    (bill.kWhConsumed
+      ? 'Electric'
+      : bill.NaturalGasTherms || bill.NaturalGasCCF || bill.GasCharge
+        ? 'Gas'
+        : 'Electric');
+  const chargeKeys =
+    {
+      Electric: CHARGE_FIELDS_ELECTRIC_SUM,
+      Gas: CHARGE_FIELDS_GAS,
+      Water: CHARGE_FIELDS_WATER,
+      Sewer: CHARGE_FIELDS_SEWER,
+      Stormwater: CHARGE_FIELDS_STORMWATER,
+      Propane: CHARGE_FIELDS_PROPANE_SUM,
+    }[comm] || CHARGE_FIELDS_ELECTRIC_SUM;
+  // Round each component to 2 decimal places before summing to prevent
+  // floating-point accumulation across many addends (e.g. 9 KGS line items).
+  const chargeSum =
+    Math.round(chargeKeys.reduce((s, f) => s + Math.round(parseBillNumber(bill[f]) * 100) / 100, 0) * 100) / 100;
+  const totalVal = parseBillNumber(bill.TotalCurrentCharges);
+  // Allow 1 cent per component of accumulated rounding before flagging a mismatch.
+  const tol = Math.max(0.02, 0.01 * chargeKeys.length);
+  const sumMismatch =
+    bw.some((w) => w.field === 'TotalCurrentCharges' && w.level === 'warn' && /sum/i.test(w.message)) ||
+    (totalVal > 0 && chargeSum > 0 && Math.abs(chargeSum - totalVal) >= tol);
+  const hasGap = !!bill._billing_gap;
+  const held = !!((bill._gateTripped && !bill._gateOverrideConfirmed) || bill._manualReview);
+  return { hasWarn, sumMismatch, hasGap, held, any: hasWarn || sumMismatch || hasGap || held };
+}
+// Plain building name for one account key. No review tag: the review count is shown beside it.
+function _pdfBuildingName(bills, acct) {
+  const fallback = acct === '_unknown' ? 'Unassigned' : acct;
+  const b = bills.find((x) => (x.AccountNumber || '_unknown') === acct);
+  if (!b) return fallback;
+  const match = typeof findMeterMatch === 'function' ? findMeterMatch(b) : null;
+  if (match && match.bldg && match.bldg.name) return match.bldg.name;
+  if (!b.ServiceAddress) return fallback;
+  // Never show OCR noise as a name (2026-07-02): strip junk, check the address is plausible.
+  const cleanAddr =
+    typeof _stripAddressTrailingJunk === 'function'
+      ? _stripAddressTrailingJunk(b.ServiceAddress) || b.ServiceAddress
+      : b.ServiceAddress;
+  const plausible =
+    b._addressPlausible !== undefined
+      ? b._addressPlausible
+      : typeof _looksLikeAddress === 'function'
+        ? _looksLikeAddress(cleanAddr)
+        : true;
+  if (!plausible) return fallback;
+  const afterComma = cleanAddr.includes(',') ? cleanAddr.split(',').slice(1).join(',').trim() : cleanAddr;
+  return (
+    afterComma.replace(/\b(LOUISBURG|KANSAS CITY|OLATHE|LENEXA|OVERLAND PARK|SHAWNEE|KS|MO)\b/gi, '').trim() || fallback
+  );
+}
+// Groups the bills of one PDF. multi=true: one group per account (the building). multi=false: one group.
+// Each group: { acct, name, total, review, types: [{ comm, total, warn, idxs }] }.
+// total = bills; review = bills that need a look; warn = same count inside one utility type.
+function _pdfGroupBills(bills, warnings, multi) {
+  const groups = [];
+  const byKey = {};
+  bills.forEach((bill, i) => {
+    const acct = multi ? bill.AccountNumber || '_unknown' : '_all';
+    let g = byKey[acct];
+    if (!g) {
+      g = byKey[acct] = {
+        acct,
+        name: multi ? _pdfBuildingName(bills, acct) : '',
+        total: 0,
+        review: 0,
+        types: [],
+      };
+      groups.push(g);
+    }
+    const comm = bill.Commodity || 'Other';
+    let t = g.types.find((x) => x.comm === comm);
+    if (!t) {
+      t = { comm, total: 0, warn: 0, idxs: [] };
+      g.types.push(t);
+    }
+    const bad = _pdfBillIssues(bill, (warnings[i] && warnings[i].warnings) || []).any;
+    g.total++;
+    t.total++;
+    t.idxs.push(i);
+    if (bad) {
+      g.review++;
+      t.warn++;
+    }
+  });
+  groups.forEach((g) => g.types.sort((a, b) => _pdfCommRank(a.comm) - _pdfCommRank(b.comm)));
+  return groups;
+}
+// "1 bill", "4 bills".
+function _pdfCountWord(n, word) {
+  return n + ' ' + word + (n === 1 ? '' : 's');
+}
+function renderMultiBillUI(bills) {
   _refreshPdfDock(); // docked PDF follows the selected period / active file
   const idx = window._pdfMultiIdx || 0;
   const b = bills[idx];
@@ -17620,29 +17608,11 @@ function renderMultiBillUI(bills, box) {
   if (_multiAcct && (!window._pdfBuildingTab || !_acctKeys.includes(window._pdfBuildingTab))) {
     window._pdfBuildingTab = bills[idx]?.AccountNumber || _acctKeys[0];
   }
-  // Commodity tabs: group pills by commodity when multiple types exist
-  const _commOrder = ['Gas', 'Water', 'Sewer', 'Stormwater', 'Electric', 'Propane', 'Other'];
-  // FIX(2026-07-02, item 219e6828): indexOf() returns -1 for any commodity not
-  // in this fixed list (e.g. the literal 'Unknown' commodity stamped on a
-  // synthetic Manual Review bill by _unmatchedToSyntheticBills when a page
-  // fails to parse) which used to sort BEFORE every real commodity (-1 < 0)
-  // and silently win the default-active-tab position below. Rank anything
-  // not in the list to the END instead so a real commodity is always default.
-  const _commRank = (c) => {
-    const i = _commOrder.indexOf(c);
-    return i === -1 ? 999 : i;
-  };
-  // F6: scope the commodity pill list to the active building for a multi-account
-  // batch, so a Water-only building never shows a Gas pill that belongs to a
-  // different building in the same batch. The single-account combined-bill path
-  // (e.g. Client A Water+Sewer+Storm on one account) keeps the global list.
-  const _commSourceBills =
-    _multiAcct && window._pdfBuildingTab
-      ? bills.filter((b) => (b.AccountNumber || '_unknown') === window._pdfBuildingTab)
-      : bills;
-  const _uniqueComms = [...new Set(_commSourceBills.map((b) => b.Commodity || 'Other'))].sort(
-    (a, b) => _commRank(a) - _commRank(b),
-  );
+  // One grouping answers every count below: building buttons, utility type buttons, period pills.
+  const _groups = _pdfGroupBills(bills, warnings, _multiAcct);
+  const _selGroup = _groups.find((g) => g.acct === (_multiAcct ? window._pdfBuildingTab : '_all')) || _groups[0];
+  // The utility type buttons show only the selected building's types (a Water-only building never shows Gas).
+  const _uniqueComms = _selGroup ? _selGroup.types.map((t) => t.comm) : [];
   const _hasMultiComm = _uniqueComms.length > 1;
   // F6: also reset when the persisted comm tab no longer belongs to the (now
   // building-scoped) list — e.g. after switching to a building that lacks it.
@@ -17659,36 +17629,10 @@ function renderMultiBillUI(bills, box) {
   const _buildPill = (p) => {
     const active = p.i === idx;
     const bw = warnings[p.i]?.warnings || [];
-    const hasIssues = bw.some((w) => w.level === 'error' || w.level === 'warn');
     const bill = bills[p.i];
-    const _pillComm =
-      bill.Commodity ||
-      (bill.kWhConsumed
-        ? 'Electric'
-        : bill.NaturalGasTherms || bill.NaturalGasCCF || bill.GasCharge
-          ? 'Gas'
-          : 'Electric');
-    const _pillChargeKeys = {
-      Electric: CHARGE_FIELDS_ELECTRIC_SUM,
-      Gas: CHARGE_FIELDS_GAS,
-      Water: CHARGE_FIELDS_WATER,
-      Sewer: CHARGE_FIELDS_SEWER,
-      Stormwater: CHARGE_FIELDS_STORMWATER,
-      Propane: CHARGE_FIELDS_PROPANE_SUM,
-    };
-    const _pillKeys = _pillChargeKeys[_pillComm] || _pillChargeKeys.Electric;
-    // Round each component to 2 decimal places before summing to prevent
-    // floating-point accumulation across many addends (e.g. 9 KGS line items).
-    const _chargeSum =
-      Math.round(_pillKeys.reduce((s, f) => s + Math.round(parseBillNumber(bill[f]) * 100) / 100, 0) * 100) / 100;
-    const _totalVal = parseBillNumber(bill.TotalCurrentCharges);
-    // Allow 1¢ per component of accumulated rounding before flagging a mismatch.
-    // Flat 0.02 was too tight for multi-line KGS bills where rounding adds up across 9 fields.
-    const _pillTol = Math.max(0.02, 0.01 * _pillKeys.length);
-    const hasSumMismatch =
-      bw.some((w) => w.field === 'TotalCurrentCharges' && w.level === 'warn' && /sum/i.test(w.message)) ||
-      (_totalVal > 0 && _chargeSum > 0 && Math.abs(_chargeSum - _totalVal) >= _pillTol);
-    const hasAnyIssue = hasIssues || hasSumMismatch;
+    const _pillIssues = _pdfBillIssues(bill, bw);
+    const hasSumMismatch = _pillIssues.sumMismatch;
+    const hasAnyIssue = _pillIssues.any;
     const issueColor = hasSumMismatch ? '--red' : '--amber';
     const pillColor = hasAnyIssue ? 'var(' + issueColor + ')' : active ? 'var(--accent)' : 'var(--text2)';
     const pillBorder = hasAnyIssue ? 'var(' + issueColor + ')' : active ? 'var(--accent)' : 'var(--border2)';
@@ -17719,116 +17663,25 @@ function renderMultiBillUI(bills, box) {
   };
   let nav;
   if (_multiAcct) {
-    // F6: _acctKeys is now computed once, earlier in this function (before
-    // _uniqueComms), so window._pdfBuildingTab is resolved before the
-    // commodity list — see the block above periods.sort().
-    const _bldgName = (acct) => {
-      // FIX(2026-07-09, item 219e6828 defect 2): '_unknown' is the internal grouping
-      // key _acctKeys uses for bills with no AccountNumber — no bill's AccountNumber
-      // is ever literally that string, so `bills.find(x => x.AccountNumber === acct)`
-      // always missed for these bills and this function fell through every branch
-      // below to `return acct`, leaking the raw sentinel as a chip label (e.g.
-      // "_unknown · Electric (4)" in Matt's screenshot). Match bills the same
-      // sentinel-normalized way _acctKeys/_bldgTabsHtml do, and use a readable
-      // fallback label instead of the internal key wherever `acct` would otherwise
-      // be shown verbatim.
-      const isUnassigned = acct === '_unknown';
-      const _fallbackLabel = isUnassigned ? 'Unassigned (needs review)' : acct;
-      const b = bills.find((x) => (x.AccountNumber || '_unknown') === acct);
-      if (!b) return _fallbackLabel;
-      // FIX(2026-09-25, wre-needs-review-all-branches): compute the field-warning
-      // check ONCE here, right after `b` resolves, and apply it to every label this
-      // function can return below — not just the address-implausible branch. Before
-      // this fix, a bill with a plausible-looking address (or no AccountNumber at
-      // all) that still had real missing critical/important fields showed a clean
-      // label with no "(needs review)" tag, because the plausible-address and
-      // isUnassigned branches never looked at `warnings` at all (see
-      // 2026-09-25-wre-needs-review findings.md, Mid Sch So case). `_tagReview`
-      // no-ops when the label already ends in "(needs review)" (isUnassigned's
-      // fallback already says so) to avoid doubling the suffix.
-      const _bwIdx = bills.indexOf(b);
-      const _bw = (warnings[_bwIdx] && warnings[_bwIdx].warnings) || [];
-      const _fieldsClean = !_bw.some((w) => w.level === 'error' || w.level === 'warn');
-      const _tagReview = (lbl) => (_fieldsClean || /\(needs review\)$/.test(lbl) ? lbl : lbl + ' (needs review)');
-      const match = typeof findMeterMatch === 'function' ? findMeterMatch(b) : null;
-      if (match && match.bldg && match.bldg.name) return _tagReview(match.bldg.name);
-      if (!b.ServiceAddress) return _tagReview(_fallbackLabel);
-      // FIX(2026-07-02, item 219e6828): don't render raw OCR garbage as a
-      // building-tab label. Extractors that key an identity fallback off a
-      // printed "ADDRESS:" stub can capture pure noise ("= == =="), boilerplate
-      // footer text, or address+junk that didn't get stripped (see
-      // energy-savings.js _looksLikeAddress / _stripAddressTrailingJunk).
-      // Bills saved BEFORE this fix shipped may still carry an unstripped
-      // ServiceAddress (e.g. "614 DEARBORN ST   as/25/2 | o9s4.58") — re-run
-      // the stripper here too so the label is clean regardless of when the
-      // bill was extracted, not just for fresh extractions. _addressPlausible
-      // is stamped by the (already-stripped) extractor output when present;
-      // fall back to stripping + re-checking live for older saved bills that
-      // predate the flag. Universal rule: never drop the underlying bill for
-      // a bad label — fall back to the account number with a visible "needs
-      // review" marker so the bill stays selectable/saveable.
-      const _cleanAddr =
-        typeof _stripAddressTrailingJunk === 'function'
-          ? _stripAddressTrailingJunk(b.ServiceAddress) || b.ServiceAddress
-          : b.ServiceAddress;
-      const _plausible =
-        b._addressPlausible !== undefined
-          ? b._addressPlausible
-          : typeof _looksLikeAddress === 'function'
-            ? _looksLikeAddress(_cleanAddr)
-            : true;
-      // Fix (2026-09-25, bill-panel-followup, case 6): this used to append
-      // "(needs review)" purely from the address heuristic above, with no
-      // regard for whether the bill's own data is actually incomplete —
-      // disagreeing with the "All expected fields present" banner
-      // (renderPDFFields' own error/warn count) whenever the heuristic
-      // false-flagged a fine bill. Reuse that SAME warning-level check here
-      // (one shared check, not two) so the tab never says "needs review" for
-      // a bill the field check calls clean.
-      // FIX(2026-09-25, wre-needs-review-all-branches): `_tagReview` (defined
-      // above, right after `b` resolves) now carries this same check into the
-      // isUnassigned and plausible-address branches too — see comment there.
-      if (!_plausible) {
-        if (isUnassigned) return _tagReview(_fallbackLabel);
-        return _tagReview(acct);
-      }
-      const addr = _cleanAddr;
-      const afterComma = addr.includes(',') ? addr.split(',').slice(1).join(',').trim() : addr;
-      return _tagReview(
-        afterComma.replace(/\b(LOUISBURG|KANSAS CITY|OLATHE|LENEXA|OVERLAND PARK|SHAWNEE|KS|MO)\b/gi, '').trim() ||
-          _fallbackLabel,
-      );
-    };
-    const _hasMultiCommsAcross = new Set(bills.map((b) => b.Commodity || 'Electric')).size > 1;
     let _bldgTabsHtml = '<div style="display:flex;gap:4px;margin:10px 0 8px;flex-wrap:wrap">';
-    for (const acct of _acctKeys) {
+    for (const g of _groups) {
+      const acct = g.acct;
       const isActive = acct === window._pdfBuildingTab;
       const bg = isActive ? 'var(--em)' : 'var(--s2)';
       const color = isActive ? '#fff' : 'var(--text)';
       const border = isActive ? 'var(--em)' : 'var(--border2)';
-      let lbl = _bldgName(acct);
-      if (_hasMultiCommsAcross) {
-        const comm = bills.find((x) => x.AccountNumber === acct)?.Commodity || 'Electric';
-        lbl += ' · ' + comm;
-      }
       const acctPeriods = filteredPeriods.filter((p) => (bills[p.i].AccountNumber || '_unknown') === acct);
-      // FIX(2026-07-02, item 219e6828): count ALL periods for this account
-      // across every commodity, not just the currently active commodity tab.
-      // A building-tab chip means "how many periods exist for this building,"
-      // independent of which commodity sub-tab happens to be selected — the
-      // old acctPeriods-based count read 0 on every chip whenever the default
-      // active commodity tab (see _commRank above) held no bills for that
-      // account (e.g. the synthetic 'Unknown' manual-review tab).
       const acctAllPeriods = periods.filter((p) => (bills[p.i].AccountNumber || '_unknown') === acct);
-      const ct = acctAllPeriods.length;
       const firstIdx = acctPeriods.length ? acctPeriods[0].i : acctAllPeriods.length ? acctAllPeriods[0].i : 0;
-      // FIX(2026-07-09, item 219e6828 defect 1): this onclick used to only set
-      // window._pdfBuildingTab, never window._pdfCommTab. If the clicked account's
-      // commodity didn't match whatever commodity tab happened to already be active,
-      // the two selectors disagreed and the "Monthly Billing Periods" pill list (which
-      // requires both to match, see bldgPeriods below) rendered empty — the click
-      // looked dead. Sync the commodity tab to this account's real commodity too.
+      // Clicking a building also moves the utility type to one that building has, so the period list is never empty.
       const _acctComm = bills[firstIdx]?.Commodity || _uniqueComms[0] || 'Electric';
+      const reviewHtml = g.review
+        ? '<span style="margin-left:8px;font-weight:700;color:' +
+          (isActive ? 'inherit' : 'var(--amber)') +
+          '">' +
+          g.review +
+          ' need review</span>'
+        : '';
       _bldgTabsHtml +=
         '<button onclick="window._pdfCommTab=\'' +
         _acctComm +
@@ -17843,10 +17696,11 @@ function renderMultiBillUI(bills, box) {
         ';color:' +
         color +
         ';cursor:pointer;font-size:12px;font-family:var(--font)">' +
-        lbl +
-        ' (' +
-        ct +
-        ')</button>';
+        _escHtml(g.name) +
+        ' &middot; ' +
+        _pdfCountWord(g.total, 'bill') +
+        reviewHtml +
+        '</button>';
     }
     _bldgTabsHtml += '</div>';
     let bldgBar = document.getElementById('pdfBldgTabsBar');
@@ -17918,7 +17772,7 @@ function renderMultiBillUI(bills, box) {
         ${legendParts.length ? `<div style="display:flex;gap:12px;flex-wrap:wrap;font-size:10px;padding-top:4px;border-top:1px solid rgba(245,158,11,.2)">${legendParts.join('')}</div>` : ''}
       </div>`;
   }
-  // extractMethodBadge (top-right of Extraction Output) is used by OTHER render
+  // extractMethodBadge (the period strip) is used by OTHER render
   // paths (single-bill display, "loaded from saved records") for a small method
   // label — but for this multi-bill review it must stay empty/hidden so there is
   // never a second save control up top. All save actions for THIS view live in
@@ -17984,7 +17838,7 @@ function renderMultiBillUI(bills, box) {
       const _gatedPeriods = _unconfirmedGated.map((b) => _billPeriodLabel(b)).join(', ');
       gateNotice =
         `<div style="width:100%;margin-top:6px;padding:8px 12px;border-radius:6px;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.35);font-size:11px;color:var(--red)">` +
-        `&#9888; ${_unconfirmedGated.length} of ${bills.length} bill(s) flagged for review and held out of "Save All" (${_escHtml(_gatedPeriods)}) — verify against the source PDF. ` +
+        `&#9888; Bills flagged for review are held out of "Save All" (${_escHtml(_gatedPeriods)}) — verify against the source PDF. ` +
         `<button onclick="_confirmGatedBillsForSave()" class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 8px;margin-left:4px;color:var(--red);border-color:rgba(239,68,68,.4)">Save Anyway</button>` +
         `</div>`;
     }
@@ -17992,39 +17846,16 @@ function renderMultiBillUI(bills, box) {
   }
   let commTabsHtml = '';
   if (_hasMultiComm) {
-    const tabs = _uniqueComms;
-    const _pillChgKeys2 = {
-      Electric: CHARGE_FIELDS_ELECTRIC_SUM,
-      Gas: CHARGE_FIELDS_GAS,
-      Water: CHARGE_FIELDS_WATER,
-      Sewer: CHARGE_FIELDS_SEWER,
-      Stormwater: CHARGE_FIELDS_STORMWATER,
-      Propane: CHARGE_FIELDS_PROPANE_SUM,
-    };
     commTabsHtml =
       '<div style="display:flex;gap:4px;margin-bottom:8px;flex-wrap:wrap">' +
-      tabs
+      _selGroup.types
         .map((t) => {
-          const commBills = bills.filter((b) => (b.Commodity || 'Other') === t);
-          const count = commBills.length;
-          const chgKeys = _pillChgKeys2[t] || _pillChgKeys2.Electric;
-          let issueCount = 0;
-          commBills.forEach((b, ci) => {
-            const bIdx = bills.indexOf(b);
-            const bw = warnings[bIdx]?.warnings || [];
-            const hasW = bw.some((w) => w.level === 'error' || w.level === 'warn');
-            const cSum = chgKeys.reduce((s, f) => s + parseBillNumber(b[f]), 0);
-            const tVal = parseBillNumber(b.TotalCurrentCharges);
-            // Use the same scaled tolerance as the pill and detail banner: 1¢ per charge field,
-            // minimum 2¢. Flat 0.02 caused false red issue-counts on multi-line KGS gas bills.
-            const hasMM = tVal > 0 && cSum > 0 && Math.abs(cSum - tVal) >= Math.max(0.02, 0.01 * chgKeys.length);
-            const hasGap = !!b._billing_gap;
-            if (hasW || hasMM || hasGap) issueCount++;
-          });
-          const sel = t === activeCommTab;
-          const issueTag =
-            issueCount > 0 ? ` <span style="color:var(--red);font-weight:700">${issueCount}!</span>` : '';
-          return `<button onclick="selectCommTab('${t}')" style="font-size:10px;padding:3px 10px;border-radius:4px;border:1px solid ${sel ? 'var(--accent)' : 'var(--border2)'};background:${sel ? 'var(--accent-dim)' : 'transparent'};color:${sel ? 'var(--accent)' : 'var(--text2)'};cursor:pointer;font-weight:${sel ? '700' : '400'}">${t === 'Stormwater' ? 'Storm' : t} (${count})${issueTag}</button>`;
+          const sel = t.comm === activeCommTab;
+          const warnTag =
+            t.warn > 0
+              ? ` <span style="margin-left:6px;color:var(--amber);font-weight:700">${_pdfCountWord(t.warn, 'warning')}</span>`
+              : '';
+          return `<button onclick="selectCommTab('${t.comm}')" style="font-size:10px;padding:3px 10px;border-radius:4px;border:1px solid ${sel ? 'var(--accent)' : 'var(--border2)'};background:${sel ? 'var(--accent-dim)' : 'transparent'};color:${sel ? 'var(--accent)' : 'var(--text2)'};cursor:pointer;font-weight:${sel ? '700' : '400'}">${t.comm === 'Stormwater' ? 'Storm' : t.comm} &middot; ${_pdfCountWord(t.total, 'bill')}${warnTag}</button>`;
         })
         .join('') +
       '</div>';
@@ -18037,7 +17868,7 @@ function renderMultiBillUI(bills, box) {
       (commTabsHtml ? `<div class="pdf-strip-comm">${commTabsHtml}</div>` : '') +
       nav;
   }
-  box.innerHTML = `<pre style="font-size:11px;color:var(--text);white-space:pre-wrap;word-break:break-word;margin:0">${JSON.stringify(b, null, 2)}</pre>`;
+  _pdfStatus('');
 }
 function selectCommTab(tab) {
   window._pdfCommTab = tab;
@@ -18063,8 +17894,7 @@ function selectCommTab(tab) {
     }
   }
   if (resolvedIdx !== -1) window._pdfMultiIdx = resolvedIdx;
-  const box = document.getElementById('pdfAIBox');
-  renderMultiBillUI(bills, box);
+  renderMultiBillUI(bills);
   const idx = window._pdfMultiIdx || 0;
   const billWarnings = (window._pdfBillWarnings || [])[idx]?.warnings || [];
   renderPDFFields(bills[idx], billWarnings);
@@ -18073,8 +17903,7 @@ function selectMultiBill(i) {
   const bills = window._pdfMultiBills;
   if (!bills) return;
   window._pdfMultiIdx = i;
-  const box = document.getElementById('pdfAIBox');
-  renderMultiBillUI(bills, box);
+  renderMultiBillUI(bills);
   const billWarnings = (window._pdfBillWarnings || [])[i]?.warnings || [];
   renderPDFFields(bills[i], billWarnings);
 }
@@ -18124,8 +17953,7 @@ function _confirmGatedBillsForSave() {
       confirmedIdx.push(i);
     }
   });
-  const box = document.getElementById('pdfAIBox');
-  if (box) renderMultiBillUI(bills, box);
+  renderMultiBillUI(bills);
   // FIX (fix/bill-review-gate-lifecycle, item 817dd434): the multi-building/
   // multi-account panel (_mbRowHtml/_mbUpdateSaveAllBtn) is a SEPARATE table
   // from the single-account pill view re-rendered above — refresh its rows and
@@ -18411,8 +18239,7 @@ async function savePDFAllBills(commodityFilter, onlyIndex) {
   // list/extraction-badge banner after saving (unlike _dupBulkAction, which
   // calls reRender() every loop iteration). Without this the held-bill banner
   // and pill statuses stay stale until the user manually navigates a pill.
-  const _pdfAIBox = document.getElementById('pdfAIBox');
-  if (_pdfAIBox) renderMultiBillUI(bills, _pdfAIBox);
+  renderMultiBillUI(bills);
 }
 
 async function _applyDupUpdate(billIdx, extracted, dup) {
@@ -20146,25 +19973,6 @@ function renderPDFFields(parsed, warnings) {
   // Sum mismatch is detected from current data (same source as the big banner above) so the
   // Data Analysis line and the big banner are always consistent.
   const hasSumIssue = hasCurrentSumMismatch;
-  // FIX(2026-07-02, item 219e6828): `warnings` above is only ever the ONE
-  // currently-displayed bill's own warning list — every call site passes a
-  // single bill's warnings (e.g. renderPDFFields(finalBills[newestIdx],
-  // analysisResults[newestIdx]?.warnings || [])). In a multi-bill batch, the
-  // selected bill can be clean while its siblings aren't, which used to let
-  // the green "All expected fields present" banner fire even when the batch
-  // as a whole had warnings (the header badge, computed from the same
-  // window._pdfBillWarnings source, would say "57 warnings" right above a
-  // green all-clear). Compute the true batch-wide count here and never allow
-  // an unqualified green banner while it's nonzero — show a batch-scoped
-  // amber notice instead so a clean-looking bill doesn't imply a clean batch.
-  const _pdfBatchBills = window._pdfMultiBills;
-  const _pdfIsBatch = Array.isArray(_pdfBatchBills) && _pdfBatchBills.length > 1;
-  const _pdfBatchWarnCount = _pdfIsBatch
-    ? (window._pdfBillWarnings || []).reduce(
-        (s, r) => s + (r?.warnings || []).filter((w) => w.level === 'error' || w.level === 'warn').length,
-        0,
-      )
-    : 0;
   let summaryHtml = '';
   if (errorCount || warnCount) {
     const parts = [];
@@ -20215,19 +20023,6 @@ function renderPDFFields(parsed, warnings) {
       '</span>' +
       flagLinks +
       '</div>';
-  } else if (_pdfIsBatch && _pdfBatchWarnCount > 0) {
-    // This bill is clean, but the batch isn't — never show the green all-clear here
-    // (see FIX comment above). FIX (fix/batch-warning-scoping): this used to reuse the
-    // same full-urgency amber banner as a real per-bill warning, which read as "this
-    // bill has a problem" even though it said otherwise. Now that the queue table's
-    // per-row WARN badge (_buildStatusBadge) shows exactly which period is affected,
-    // this note stays light-weight and clearly batch-scoped so a clean bill reads clean.
-    summaryHtml =
-      '<div style="padding:6px 12px;margin:8px 0;border-radius:6px;background:transparent;border:1px solid var(--border);font-size:11px;color:var(--text3)">This period looks clean. ' +
-      _pdfBatchWarnCount +
-      ' other warning' +
-      (_pdfBatchWarnCount > 1 ? 's' : '') +
-      ' elsewhere in this batch — see the WARN badge in the file list above.</div>';
   } else if (correctedFields.length && !errorCount && !warnCount) {
     summaryHtml =
       '<div style="padding:8px 12px;margin:8px 0;border-radius:6px;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.2);font-size:12px;color:var(--green)">✓ All expected fields present — ' +
@@ -20526,7 +20321,6 @@ function viewSavedBill(id) {
       ([k]) => !['id', 'savedAt', 'projId', 'projName', 'fromPDF', 'pdfBillId', 'hasPDF'].includes(k),
     ),
   );
-  document.getElementById('pdfAIBox').textContent = JSON.stringify(display, null, 2);
   document.getElementById('extractMethodBadge').style.display = 'inline-block';
   document.getElementById('extractMethodBadge').textContent = '📂 Loaded from saved records';
   document.getElementById('extractMethodBadge').style.background = 'rgba(14,165,233,.12)';
@@ -21404,8 +21198,7 @@ function confirmManualAssign() {
   }
 
   // Re-render to reflect the change
-  const box = document.getElementById('pdfAIBox');
-  if (box) renderMultiBillUI(bills, box);
+  renderMultiBillUI(bills);
   const updatedBill = bills && bills[billIdx] ? bills[billIdx] : null;
   if (updatedBill) {
     const bw = (window._pdfBillWarnings || [])[billIdx]?.warnings || [];

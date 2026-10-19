@@ -1,8 +1,8 @@
 /**
  * test-bldgname-needs-review.js
  *
- * Regression test for the "(needs review)" tab-label decision in
- * app/bill-analysis.js renderMultiBillUI()'s internal `_bldgName()` closure.
+ * Regression test for the building buttons of the PDF / OCR page (app/bill-analysis.js _pdfGroupBills,
+ * _pdfBuildingName): name, bill count, "N need review", counts by building and type.
  *
  * FIX(2026-09-25, wre-needs-review-all-branches): before this fix, the
  * `_fieldsClean` (missing-field) warning check ran ONLY inside the
@@ -96,18 +96,12 @@ function setup() {
   return { sandbox, bldgBarStub };
 }
 
-// Extracts { acct: label } pairs from the rendered tab-bar HTML by matching
-// each button's onclick account literal against its visible label text.
+// Extracts { acct: label text } from the rendered building button HTML. The label is the button text with tags removed.
 function extractLabels(html) {
   const out = {};
-  const re = /selectMultiBill\(\d+\)"[^>]*>([\s\S]*?)\s*\((\d+)\)<\/button>/g;
-  // The account key is embedded earlier in the onclick attribute
-  // (window._pdfBuildingTab='ACCT'); capture that too.
-  const re2 = /window\._pdfBuildingTab='([^']*)';selectMultiBill\(\d+\)"[^>]*>([\s\S]*?)\s*\(\d+\)<\/button>/g;
+  const re = /window\._pdfBuildingTab='([^']*)';selectMultiBill\(\d+\)"[^>]*>([\s\S]*?)<\/button>/g;
   let m;
-  while ((m = re2.exec(html))) {
-    out[m[1]] = m[2].trim();
-  }
+  while ((m = re.exec(html))) out[m[1]] = m[2].replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
   return out;
 }
 
@@ -165,73 +159,80 @@ function expect(name, cond, detail) {
 function main() {
   const { sandbox, bldgBarStub } = setup();
 
-  // ── Case 1: plausible address branch + missing critical field -> MUST tag ──
+  const review = (l) => /(\d+) need review/.exec(l || '');
+  const noOld = (l) => !/\(needs review\)/.test(l || '');
+  // 1. plausible address + error -> name, "1 bill", "1 need review", no old tag
   {
     const bills = [makeBill('ACCT001', '307 E Sample St', {}), makeBill('ACCT002', '999 Other St', {})];
-    const warnings = [warn('error', 'TotalCurrentCharges'), clean()];
-    const labels = runCase(sandbox, bldgBarStub, 'plausible+missing', bills, warnings);
-    expect(
-      '1. plausible address + missing critical field -> tagged',
-      /\(needs review\)$/.test(labels['ACCT001'] || ''),
-      'label=' + JSON.stringify(labels['ACCT001']),
-    );
+    const labels = runCase(sandbox, bldgBarStub, 'plausible+missing', bills, [warn('error', 'TotalCurrentCharges'), clean()]);
+    const l = labels['ACCT001'];
+    expect('1. warning -> "1 need review" and "1 bill"', review(l) && review(l)[1] === '1' && /1 bill/.test(l) && noOld(l), JSON.stringify(l));
+    expect('1b. no utility type in the label', !/Gas|Electric|Water/.test(l), JSON.stringify(l));
   }
-
-  // ── Case 2: plausible address branch + all fields clean -> NO tag ──
+  // 2. clean -> no review text
   {
     const bills = [makeBill('ACCT001', '307 E Sample St', {}), makeBill('ACCT002', '999 Other St', {})];
-    const warnings = [clean(), clean()];
-    const labels = runCase(sandbox, bldgBarStub, 'plausible+clean', bills, warnings);
-    expect(
-      '2. plausible address + clean fields -> NOT tagged',
-      !/\(needs review\)$/.test(labels['ACCT001'] || ''),
-      'label=' + JSON.stringify(labels['ACCT001']),
-    );
+    const labels = runCase(sandbox, bldgBarStub, 'plausible+clean', bills, [clean(), clean()]);
+    expect('2. clean -> no review text', !review(labels['ACCT001']) && noOld(labels['ACCT001']), JSON.stringify(labels['ACCT001']));
   }
-
-  // ── Case 3: implausible (garbled) address + missing field -> tagged
-  //    (this branch already worked before the fix — no-regression check) ──
+  // 3. garbled address -> account number as name, review text when warned
   {
     const bills = [makeBill('SE019HNGO0TE1340', '= == ==', {}), makeBill('ACCT002', '999 Other St', {})];
-    const warnings = [warn('error', 'TotalCurrentCharges'), clean()];
-    const labels = runCase(sandbox, bldgBarStub, 'implausible+missing', bills, warnings);
-    expect(
-      '3. implausible address + missing critical field -> tagged',
-      /\(needs review\)$/.test(labels['SE019HNGO0TE1340'] || ''),
-      'label=' + JSON.stringify(labels['SE019HNGO0TE1340']),
-    );
+    const labels = runCase(sandbox, bldgBarStub, 'implausible+missing', bills, [warn('error', 'TotalCurrentCharges'), clean()]);
+    const l = labels['SE019HNGO0TE1340'];
+    expect('3. garbled address -> account name + review text', /^SE019HNGO0TE1340/.test(l) && review(l) && noOld(l), JSON.stringify(l));
   }
-
-  // ── Case 3b: implausible address + clean fields -> NO tag (no-regression) ──
+  // 4. no account -> "Unassigned"
   {
-    const bills = [makeBill('SE019HNGO0TE1340', '= == ==', {}), makeBill('ACCT002', '999 Other St', {})];
-    const warnings = [clean(), clean()];
-    const labels = runCase(sandbox, bldgBarStub, 'implausible+clean', bills, warnings);
-    expect(
-      '3b. implausible address + clean fields -> NOT tagged',
-      !/\(needs review\)$/.test(labels['SE019HNGO0TE1340'] || ''),
-      'label=' + JSON.stringify(labels['SE019HNGO0TE1340']),
-    );
+    const bills = [makeBill(undefined, undefined, {}), makeBill('ACCT002', '999 Other St', {}), makeBill('ACCT003', '111 Third St', {})];
+    const labels = runCase(sandbox, bldgBarStub, 'unassigned+missing', bills, [warn('warn', 'InvoiceNumber'), clean(), clean()]);
+    const l = labels['_unknown'];
+    expect('4. no account -> Unassigned + review text', /^Unassigned/.test(l) && review(l) && noOld(l), JSON.stringify(l));
   }
-
-  // ── Case 4: isUnassigned (no AccountNumber at all) + missing field ──
-  // Already always says "(needs review)" for the missing-AccountNumber
-  // reason itself; confirm it still does (no double-suffix regression) even
-  // with the new uniform check layered on top.
+  // 5. building counts add up to the bills in the file, and types are per building
   {
     const bills = [
-      makeBill(undefined, undefined, {}),
-      makeBill('ACCT002', '999 Other St', {}),
-      makeBill('ACCT003', '111 Third St', {}),
+      makeBill('ACCT001', '307 E Sample St', { Commodity: 'Gas' }),
+      makeBill('ACCT001', '307 E Sample St', { Commodity: 'Water' }),
+      makeBill('ACCT002', '999 Other St', { Commodity: 'Gas' }),
     ];
-    const warnings = [warn('warn', 'InvoiceNumber'), clean(), clean()];
-    const labels = runCase(sandbox, bldgBarStub, 'unassigned+missing', bills, warnings);
-    const lbl = labels['_unknown'] || '';
-    expect(
-      '4. isUnassigned + missing field -> tagged, no double suffix',
-      /\(needs review\)$/.test(lbl) && !/\(needs review\).*\(needs review\)/.test(lbl),
-      'label=' + JSON.stringify(lbl),
-    );
+    const warns = [warn('error', 'TotalCurrentCharges'), clean(), clean()];
+    const labels = runCase(sandbox, bldgBarStub, 'counts', bills, warns);
+    expect('5. counts: 2 bills + 1 bill', /2 bills/.test(labels['ACCT001']) && /1 bill/.test(labels['ACCT002']), JSON.stringify(labels));
+    const grp = vm.runInContext('_pdfGroupBills', sandbox)(bills, warns, true);
+    const t = (g, c) => g.types.find((x) => x.comm === c);
+    expect('5b. warning counted only inside its own building and type', t(grp[0], 'Gas').warn === 1 && t(grp[0], 'Water').warn === 0 && t(grp[1], 'Gas').warn === 0, JSON.stringify(grp));
+    expect('5c. sum of building bills = bills in file', grp.reduce((n, g) => n + g.total, 0) === bills.length);
+  }
+
+  {
+    // No whole-PDF warning count anywhere in the PDF / OCR view (Matt, 2026-10-19).
+    const src = fs.readFileSync(path.join(__dirname, '..', 'app', 'bill-analysis.js'), 'utf8');
+    expect('6a. no "elsewhere in this batch" message', !/elsewhere in this batch/.test(src) && !/_pdfBatchWarnCount/.test(src));
+    expect('6b. file bar, badge and toast carry no period or warning count', !/' periods'|' periods, |' warnings\)'|warning found|' found'/.test(src.slice(src.indexOf("dz.textContent = file.name + ' ✓'") - 600, src.indexOf("dz.textContent = file.name + ' ✓'") + 600)));
+  }
+
+  {
+    // 7. Held bills (gate tripped and not confirmed, or Manual Review) count as need-review / warning.
+    const bills = [
+      makeBill('ACCT001', '307 E Sample St', { Commodity: 'Gas', _gateTripped: true }),
+      makeBill('ACCT001', '307 E Sample St', { Commodity: 'Gas', _gateTripped: true, _gateOverrideConfirmed: true }),
+      makeBill('ACCT001', '307 E Sample St', { Commodity: 'Water', _manualReview: true }),
+      makeBill('ACCT002', '999 Other St', { Commodity: 'Gas' }),
+    ];
+    const warns = [clean(), clean(), clean(), clean()];
+    const labels = runCase(sandbox, bldgBarStub, 'held', bills, warns);
+    const grp = vm.runInContext('_pdfGroupBills', sandbox)(bills, warns, true);
+    const t = (g, c) => g.types.find((x) => x.comm === c);
+    expect('7a. held bills counted: building 2 need review', review(labels['ACCT001']) && review(labels['ACCT001'])[1] === '2', JSON.stringify(labels));
+    expect('7b. held bills counted per type; confirmed one is not', t(grp[0], 'Gas').warn === 1 && t(grp[0], 'Water').warn === 1 && grp[1].review === 0, JSON.stringify(grp));
+    const issues = vm.runInContext('_pdfBillIssues', sandbox);
+    expect('7c. one issue rule: held bill -> any', issues(bills[0], []).any === true && issues(bills[3], []).any === false);
+    const src = fs.readFileSync(path.join(__dirname, '..', 'app', 'bill-analysis.js'), 'utf8');
+    expect('7d. period pill calls _pdfBillIssues only', /const hasAnyIssue = _pillIssues\.any;/.test(src));
+    expect('7e. no whole-PDF count text in the review panel or gate notice', !/ across ' \+|bill\(s\) flagged for review and held/.test(src));
+    const vb = src.slice(src.indexOf('async function viewCurrentExtractionPDF'), src.indexOf('function _pdfDockRevoke'));
+    expect('7f. View PDF always uses the dock (no modal path)', !/_showPdfModal|_pdfSideBySideOn/.test(vb));
   }
 
   console.log('');
@@ -239,7 +240,7 @@ function main() {
     console.error(failures + ' failure(s)');
     process.exit(1);
   } else {
-    console.log('All _bldgName "(needs review)" branch tests passed');
+    console.log('All building button tests passed');
   }
 }
 

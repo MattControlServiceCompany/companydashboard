@@ -273,8 +273,7 @@ Reference for all `data-fb` attributes used by the feedback widget. When a feedb
 | `energy.pdf.save-row` | `<div id="pdfSaveRow">` | Save row (project select + save) |
 | `energy.pdf.project-select` | `<select id="pdfProjSel">` | Project dropdown |
 | `energy.pdf.save-btn` | `<button class="btn btn-em">` | Save extracted data button |
-| `energy.pdf.output-panel` | `<div>` | OCR output panel |
-| `energy.pdf.output-box` | `<div>` | OCR raw text output box |
+| `energy.pdf.status-box` | `<div id="pdfStatusBox">` | Progress, error and non-bill text messages |
 
 ### Savings Calc View
 | data-fb | Element | Description |

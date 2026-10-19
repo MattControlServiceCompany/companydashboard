@@ -825,17 +825,14 @@ function sv(id, btn) {
         didRestore = _restoreExtractionState();
       }
       if (didRestore && window._pdfMultiBills && window._pdfMultiBills.length) {
-        var box = document.getElementById('pdfAIBox');
-        if (box) {
-          var ridx = window._pdfMultiIdx || 0;
-          renderMultiBillUI(window._pdfMultiBills, box);
-          renderPDFFields(window._pdfMultiBills[ridx], (window._pdfBillWarnings || [])[ridx]?.warnings || []);
-          document.getElementById('pdfSaveRow').style.display = 'block';
-          document.getElementById('pdfClearBtn').style.display = 'block';
-          document.getElementById('dropZone').classList.add('collapsed');
-          document.getElementById('pdfTypeSection').style.display = 'none';
-          if (!inMemory) showToast('Extraction results restored');
-        }
+        var ridx = window._pdfMultiIdx || 0;
+        renderMultiBillUI(window._pdfMultiBills);
+        renderPDFFields(window._pdfMultiBills[ridx], (window._pdfBillWarnings || [])[ridx]?.warnings || []);
+        document.getElementById('pdfSaveRow').style.display = 'block';
+        document.getElementById('pdfClearBtn').style.display = 'block';
+        document.getElementById('dropZone').classList.add('collapsed');
+        document.getElementById('pdfTypeSection').style.display = 'none';
+        if (!inMemory) showToast('Extraction results restored');
       }
     }, 100);
   }

@@ -12470,10 +12470,9 @@ function initUtilityTool() {
     }, 500);
   } else if (_restoreExtractionState()) {
     setTimeout(async () => {
-      const box = document.getElementById('pdfAIBox');
-      if (box && window._pdfMultiBills && window._pdfMultiBills.length) {
+      if (window._pdfMultiBills && window._pdfMultiBills.length) {
         const idx = window._pdfMultiIdx || 0;
-        renderMultiBillUI(window._pdfMultiBills, box);
+        renderMultiBillUI(window._pdfMultiBills);
         renderPDFFields(window._pdfMultiBills[idx], (window._pdfBillWarnings || [])[idx]?.warnings || []);
         document.getElementById('pdfSaveRow').style.display = 'block';
         document.getElementById('pdfClearBtn').style.display = 'block';
