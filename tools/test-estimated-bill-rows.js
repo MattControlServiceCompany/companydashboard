@@ -262,7 +262,7 @@ console.log('=== 3. Estimate precision + cost (synthetic; Matt 2026-09-29) ===')
   );
   const ba = fs.readFileSync(path.join(REPO, 'app/bill-analysis.js'), 'utf8');
   assert(/previouslyBilled: extracted\.PreviouslyBilled/.test(ba), 'extracted PreviouslyBilled is saved on the bill');
-  assert(/fields: \['PreviouslyBilled'\]/.test(ba), 'extraction detail shows Previously Billed (Charges section)');
+  assert(/fields: \['Commodity', 'PreviouslyBilled'\]/.test(ba), 'extraction detail shows Previously Billed (Account Info, next to Commodity)');
 }
 
 console.log('=== Results: ' + passed + ' passed, ' + failed + ' failed ===');

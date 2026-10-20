@@ -7124,7 +7124,7 @@ function _mbRowHtml(i) {
         i +
         ')"' +
         (canSave ? '' : ' disabled') +
-        (isGatedUnconfirmed ? ' title="Flagged for review — use Save Anyway below to confirm"' : '') +
+        (isGatedUnconfirmed ? ' title="Flagged for review — use Save below to confirm"' : '') +
         '>Save</button>' +
         '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 8px" onclick="_mbSkipRow(' +
         i +
@@ -7388,7 +7388,7 @@ function _mbUpdateSaveAllBtn() {
   const disabled = !(willSave > 0 && unaccounted === 0 && unconfirmedGated === 0);
   const blockedTitle =
     unconfirmedGated > 0
-      ? 'Billing periods are flagged for review — click "Save Anyway" below to confirm'
+      ? 'Billing periods are flagged for review — click Save below to confirm'
       : unaccounted > 0
         ? 'Billing periods still need a destination or an explicit Skip'
         : '';
@@ -7406,7 +7406,7 @@ function _mbUpdateSaveAllBtn() {
       noticeEl.innerHTML =
         `<div style="width:100%;margin-top:6px;padding:8px 12px;border-radius:6px;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.35);font-size:11px;color:var(--red)">` +
         `&#9888; Bills flagged for review are held out of "Save All" (${_escHtml(periods)}) — verify against the source PDF. ` +
-        `<button onclick="_confirmGatedBillsForSave()" class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 8px;margin-left:4px;color:var(--red);border-color:rgba(239,68,68,.4)">Save Anyway</button>` +
+        `<button onclick="_saveHeldBills('mb')" class="btn btn-em btn-sm" style="margin-left:4px">Save</button>` +
         `</div>`;
     } else {
       noticeEl.innerHTML = '';
@@ -8561,7 +8561,7 @@ async function confirmMultiBuildingSave(action) {
         '. ' +
         (toSave.length
           ? 'The rest of the batch is being saved now.'
-          : 'Verify against the source PDF, then click "Save Anyway" to confirm and save them.'),
+          : 'Verify against the source PDF, then click Save to confirm and save them.'),
     );
   }
   if (!toSave.length) {
@@ -9633,6 +9633,15 @@ function clearPDFOCR() {
   const _bb = document.getElementById('pdfBldgTabsBar');
   if (_bb) _bb.remove();
   _clearExtractionState();
+  const _bsb = document.getElementById('pdfBottomSaveBar');
+  if (_bsb) {
+    _bsb.style.display = 'none';
+    _bsb.innerHTML = '';
+  }
+  _pdfDock.tab = 'pdf';
+  _pdfDock.status = '';
+  const _dockOcr = document.getElementById('pdfDockOcr');
+  if (_dockOcr) _dockOcr.textContent = '';
   document.getElementById('dz-title').textContent = 'Drop PDF here or click to browse';
   document.getElementById('pdfInput').value = '';
   document.getElementById('extractedFieldsHdr').innerHTML = '';
@@ -17976,7 +17985,7 @@ function renderMultiBillUI(bills) {
       gateNotice =
         `<div style="width:100%;margin-top:6px;padding:8px 12px;border-radius:6px;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.35);font-size:11px;color:var(--red)">` +
         `&#9888; Bills flagged for review are held out of "Save All" (${_escHtml(_gatedPeriods)}) — verify against the source PDF. ` +
-        `<button onclick="_confirmGatedBillsForSave()" class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 8px;margin-left:4px;color:var(--red);border-color:rgba(239,68,68,.4)">Save Anyway</button>` +
+        `<button onclick="_saveHeldBills('bar')" class="btn btn-em btn-sm" style="margin-left:4px">Save</button>` +
         `</div>`;
     }
     bottomBarEl.innerHTML = `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${btns}${gateNotice}</div>`;
@@ -18070,23 +18079,23 @@ function revertOCRConsensus(field) {
   const billWarnings = (window._pdfBillWarnings || [])[idx]?.warnings || [];
   renderPDFFields(b, billWarnings);
 }
-// "Save Anyway" handler (18b33d9f round 3, BLOCKING 2 fix). Confirms every
-// bill that is gate-tripped RIGHT NOW in window._pdfMultiBills — stamping
-// _gateOverrideConfirmed on each one individually, not a global flag — then
-// re-renders so the blocking notice clears and the user can click their
-// original Save/Overwrite/Merge/Skip action again. Deliberately does NOT
-// re-invoke a save action itself: this button is shared by savePDFAllBills
-// and _dupBulkAction's blocking notices, and guessing which one the user
-// wanted risks firing the wrong action. Confirm, then act is unambiguous.
+// Save for held bills (replaces the red "Save Anyway"): the user has seen the values, so one click
+// confirms every bill held RIGHT NOW (per-bill _gateOverrideConfirmed, never a global flag), then runs
+// the normal Save All of the surface the button sits on ('mb' = multi-account panel, 'bar' = bottom bar).
+function _saveHeldBills(surface) {
+  _confirmGatedBillsForSave();
+  if (surface === 'mb') confirmMultiBuildingSave('save');
+  else savePDFAllBills();
+}
+window._saveHeldBills = _saveHeldBills;
+// Confirms every bill that is gate-tripped RIGHT NOW in window._pdfMultiBills, then re-renders.
 function _confirmGatedBillsForSave() {
   const bills = window._pdfMultiBills;
   if (!bills || !bills.length) return;
-  let n = 0;
   const confirmedIdx = [];
   bills.forEach((b, i) => {
     if (b._gateTripped && !b._gateOverrideConfirmed) {
       b._gateOverrideConfirmed = true;
-      n++;
       confirmedIdx.push(i);
     }
   });
@@ -18101,12 +18110,6 @@ function _confirmGatedBillsForSave() {
     confirmedIdx.forEach((i) => _mbRerenderRow(i));
     _mbUpdateSaveAllBtn();
   }
-  showToast(
-    n +
-      ' flagged bill' +
-      (n === 1 ? '' : 's') +
-      ' confirmed — click Save (or Overwrite/Merge/Skip All) again to proceed.',
-  );
 }
 
 async function savePDFAllBills(commodityFilter, onlyIndex) {
@@ -18926,7 +18929,7 @@ function renderPDFFields(parsed, warnings) {
     { type: 'wide', fields: ['CustomerName'] },
     { type: 'wide', fields: ['ServiceAddress'] },
     { type: 'pair', fields: ['AccountNumber', 'MeterNumber'] },
-    { type: 'wide', fields: ['Commodity'] },
+    { type: 'pair', fields: ['Commodity', 'PreviouslyBilled'] },
     { section: 'Billing Period & Meter' },
     { type: 'pair', fields: ['RateSchedule', 'NumberOfDays'] },
     { type: 'pair', fields: ['BillingPeriodStart', 'BillingPeriodEnd'] },
@@ -18991,7 +18994,6 @@ function renderPDFFields(parsed, warnings) {
     { type: 'charge-line', label: 'Bill Offset', chargeField: 'BillOffset', rateKey: null },
     { type: 'charge-line', label: 'Franchise Fee', chargeField: 'FranchiseFee', rateKey: null },
     { type: 'total', fields: ['TotalCurrentCharges'], chargeKey: 'TotalCurrentCharges' },
-    { type: 'pair', fields: ['PreviouslyBilled'] },
   ];
   const _LAYOUT_GAS = [
     { section: 'Account Info' },
@@ -20244,17 +20246,6 @@ function renderPDFFields(parsed, warnings) {
     : '';
   elHdr.innerHTML = `<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--em);margin:12px 0 8px">Extracted — click values to edit</div>${gateBannerHtml}${sumMismatchHtml}${sumMismatchKgsHtml}${chargeExceedsTotalHtml}${correctionPendingHtml}${gapHtml}${dupFieldBannerHtml}${summaryHtml}${correctionHtml}${manualAssignHtml}`;
   el.innerHTML = `<div class="ef-grid">${fieldHtml}${missingHtml}</div>`;
-
-  // FIX (fix/bill-review-gate-lifecycle, item f359edaa): the single-bill review
-  // screen had no VISIBLE accept control for a gated bill — savePDFData() silently
-  // armed _gateOverrideConfirmed on the first Save click and required an unlabeled
-  // second click. Surface a real "Save Anyway" button next to Save whenever THIS
-  // bill is gate-tripped and not yet confirmed, mirroring the batch path's
-  // _confirmGatedBillsForSave()/"Save Anyway" button.
-  const _saveAnywayBtn = document.getElementById('pdfSaveAnywayBtn');
-  if (_saveAnywayBtn) {
-    _saveAnywayBtn.style.display = parsed._gateTripped && !parsed._gateOverrideConfirmed ? 'inline-block' : 'none';
-  }
 
   // ── Wire up change handlers: update data + recalculate total when user edits ──
   el.querySelectorAll('.ef-input[data-key]').forEach((inp) => {
@@ -22069,23 +22060,6 @@ function pdfBannerUpdateMeterOpts() {
   }
 }
 
-// FIX (fix/bill-review-gate-lifecycle, item f359edaa): visible accept control for
-// the single-bill review screen, mirroring the batch path's
-// _confirmGatedBillsForSave(). Confirms THIS bill only (per-bill
-// _gateOverrideConfirmed, never a global flag — see savePDFData below for why),
-// re-renders so the red banner clears, then proceeds with the save immediately —
-// one visible click instead of a hidden two-click toast.
-function pdfSaveAnyway() {
-  const bills = window._pdfMultiBills;
-  const idx = window._pdfMultiIdx || 0;
-  const extracted = bills && bills[idx];
-  if (!extracted) return;
-  extracted._gateOverrideConfirmed = true;
-  const billWarnings = (window._pdfBillWarnings || [])[idx]?.warnings || [];
-  renderPDFFields(extracted, billWarnings);
-  savePDFData();
-}
-
 function savePDFData() {
   const bills = window._pdfMultiBills;
   const idx = window._pdfMultiIdx || 0;
@@ -22101,15 +22075,9 @@ function savePDFData() {
   // (extracted._gateOverrideConfirmed), not a global flag — a global flag
   // stayed true for the rest of the file after one confirmation and silently
   // waived the gate for every OTHER gated bill with zero confirmation shown.
-  if (extracted._gateTripped && !extracted._gateOverrideConfirmed) {
-    showToast(
-      'Held for review — ' +
-        (extracted._gateReasons || []).join(' · ') +
-        '. Verify against the source PDF, then click Save again to confirm.',
-    );
-    extracted._gateOverrideConfirmed = true; // next click on THIS bill only proceeds
-    return;
-  }
+  // A held bill: the hold reason stays shown above the values. The user has seen the
+  // values, so Save confirms this bill only (per-bill flag) and saves in one click.
+  if (extracted._gateTripped && !extracted._gateOverrideConfirmed) extracted._gateOverrideConfirmed = true;
   const projId = parseInt(document.getElementById('pdfProjSel').value) || null;
   // Manual building/meter override
   const manualBldgId = document.getElementById('pdfBldgSel')?.value || null;
