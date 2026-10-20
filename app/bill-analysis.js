@@ -18926,6 +18926,7 @@ function renderPDFFields(parsed, warnings) {
     { type: 'wide', fields: ['CustomerName'] },
     { type: 'wide', fields: ['ServiceAddress'] },
     { type: 'pair', fields: ['AccountNumber', 'MeterNumber'] },
+    { type: 'wide', fields: ['Commodity'] },
     { section: 'Billing Period & Meter' },
     { type: 'pair', fields: ['RateSchedule', 'NumberOfDays'] },
     { type: 'pair', fields: ['BillingPeriodStart', 'BillingPeriodEnd'] },

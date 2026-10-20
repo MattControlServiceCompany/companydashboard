@@ -944,6 +944,35 @@ const CB_Y = 1265;
     e1t ? j([e1t._readMode, e1t._readFallbackReason, e1t.TotalCurrentCharges]) : 'no bill',
   );
 
+  // M the position holds are re-checked against the FINAL values (2026-10-20): a Customer Chg the engine held ("$48}",
+  // no re-read proved) and filled later by the sum gap, with the printed Current Charges and the lines below the
+  // Subtotal adding up to the cent, drops the hold; the Subtotal "not read" hold goes with it. A hold on a field
+  // that stays empty stays.
+  const heldBlock = (omitSubtotal) =>
+    ['%%POSITION_HELD%% CustomerCharge:: CustomerCharge box read "$48}" on the page and "", "" in the re-read; no reading makes the page lines add up to the printed Subtotal']
+      .concat(omitSubtotal ? ['%%POSITION_HELD%% Subtotal:: no "Subtotal" box was found on the page (its label was not read)'] : [])
+      .join('\n') + '\n';
+  const stripLines = (blk, re) => blk.split('\n').filter((l) => !re.test(l)).join('\n');
+  const e2lines = BL.linesBlock(e2, '2.5x');
+  const mkHeld = (omitSubtotal, dropField) => {
+    let body = stripLines(e2lines, /^Customer Chg /);
+    if (omitSubtotal) body = stripLines(body, /^Subtotal /);
+    if (dropField) body = stripLines(body, new RegExp('^' + dropField));
+    return heldBlock(omitSubtotal) + body;
+  };
+  const m1 = utilityERule.extractAll('%%PAGE_1%%\n' + ePage('E2-customer-garbled').text + mkHeld(true, null))[0];
+  check(
+    'M the final values resolve the holds: Customer Chg filled by the sum gap ($48.90), lines + printed total agree to the cent, no hold left',
+    m1 && m1._readMode === 'position' && m1.CustomerCharge === '48.90' && m1.TotalCurrentCharges === '1127.90' && !m1._manualReview && !m1._gateReasons && !m1._positionHeld,
+    m1 ? j([m1.CustomerCharge, m1.TotalCurrentCharges, m1._manualReview, m1._gateReasons, m1._positionHeld]) : 'no bill',
+  );
+  const m2 = utilityERule.extractAll('%%PAGE_1%%\n' + ePage('E2-customer-garbled').text + mkHeld(true, 'ECA Chg 06'))[0];
+  check(
+    'M two cells missing: the sum gap fills no field, both holds stay, the bill stays held',
+    m2 && m2._manualReview === true && Array.isArray(m2._positionHeld) && m2._positionHeld.length === 2 && m2.CustomerCharge == null,
+    m2 ? j([m2.CustomerCharge, m2._manualReview, m2._positionHeld]) : 'no bill',
+  );
+
   console.log('\n' + passes + ' passed, ' + fails + ' failed');
   process.exit(fails ? 1 : 0);
 })();

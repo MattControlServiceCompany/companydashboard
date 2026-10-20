@@ -6039,6 +6039,42 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   for (const k of Object.keys(result)) {
     if (k.startsWith('_proposed_') && parseBillNumber(result[k.slice('_proposed_'.length)]) > 0) delete result[k];
   }
+  // FINAL RE-CHECK of the position engine's holds against the FINAL values (2026-10-20). A hold is the engine's
+  // statement about a value at the time it read it; a later step (the sum-gap fill of a Customer Chg whose
+  // dollars were read) can fill the field. When the final charge lines add up to the printed Subtotal to the cent
+  // (the Subtotal read on the page, else the printed Current Charges minus the printed lines below the Subtotal)
+  // and Subtotal + those lines = the printed Current Charges to the cent, with no negative charge other than the
+  // credits, the holds that these values resolve are dropped: the Subtotal "not read" hold and every held field
+  // that now has a value. A field still empty keeps its hold. TotalCurrentCharges is never set here.
+  if (result._positionHeld && result._positionHeld.length) {
+    const _fin = checkElectricPrintedTotals(result);
+    const _finSub = parseBillNumber(subtotalAmount) > 0 ? parseBillNumber(subtotalAmount) : _fin.total != null ? Math.round((_fin.total - _fin.belowSubtotal) * 100) / 100 : null;
+    const _finProbe = _finSub > 0 ? checkElectricPrintedTotals(Object.assign({}, result, { _subtotal: _finSub })) : null;
+    const _noNegative = UTILITY_E_COMPONENT_CHARGE_FIELDS.every((f) => f === 'BillOffset' || f === 'SolarCredit' || !(parseBillNumber(result[f]) < 0));
+    if (_finProbe && _finProbe.linesMatchSubtotal === true && _finProbe.subtotalPlusFeesMatchTotal === true && _noNegative) {
+      const _keep = result._positionHeld.filter((r) => {
+        const k = r.split(':')[0].trim();
+        if (k === 'Subtotal') return false;
+        return !(Object.prototype.hasOwnProperty.call(result, k) && !/^_/.test(k) && parseBillNumber(result[k]) > 0);
+      });
+      const _dropped = result._positionHeld.filter((r) => _keep.indexOf(r) < 0);
+      if (_dropped.length) {
+        result._gateReasons = (result._gateReasons || []).filter((r) => _dropped.indexOf(r) < 0);
+        if (_keep.length) result._positionHeld = _keep;
+        else delete result._positionHeld;
+        if (!result._gateReasons.length) {
+          delete result._gateReasons;
+          delete result._gateTripped;
+          if (result._manualReview && _dropped.indexOf(result._manualReviewLabel) >= 0) {
+            delete result._manualReview;
+            delete result._manualReviewLabel;
+          }
+        } else if (_dropped.indexOf(result._manualReviewLabel) >= 0) {
+          result._manualReviewLabel = result._gateReasons[0];
+        }
+      }
+    }
+  }
   // The printed totals, checked to the cent: lines above the Subtotal = Subtotal; Subtotal + the lines below it =
   // Current Charges (one rule: checkElectricPrintedTotals). TotalCurrentCharges stays the printed amount.
   result._printedTotalCheck = checkElectricPrintedTotals(result);
