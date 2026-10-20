@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 /**
- * gate-bill-ground-truth.js — the City bill reader against printed ground truth.
+ * gate-bill-ground-truth.js — the bill readers against printed ground truth (City and Utility E).
  *
- * Runs the REAL City rule (app/energy-savings.js, the one _extractNew rule) the two ways production runs
- * it on a scanned page: the POSITION path (computations/bill-layout.js readPage over the page's OCR word
- * boxes, box re-read included, block appended to the page text) and the TEXT path (page text alone, the
- * fallback when no template matches). Every field of every page is scored against what is printed:
+ * Runs the REAL reader of each provider (app/energy-savings.js: the one City _extractNew rule; the one
+ * Utility E extractAll rule) the two ways production runs it on a scanned page: the POSITION path
+ * (computations/bill-layout.js readPage over the page's OCR word boxes, box re-read included, block
+ * appended to the page text) and the TEXT path (page text alone, the fallback when no template matches).
+ * Every field of every page is scored against what is printed:
  *   correct  the reader's value equals the printed value (an absent line: no value)
  *   held     the reader gave no value and the page carries a named reason (never a guess)
  *   wrong    a value differs from the printed one, a value for a line the page does not print, or a
@@ -14,16 +15,20 @@
  * text). The text path is reported for every page as information.
  *
  * Inputs
- *   Committed, always: tools/synthetic-pages/bill-ground-truth-synthetic.json (SYNTHETIC pages: fake school,
- *   fake street, fake account; word boxes built from the template's own coordinates).
+ *   Committed, always: tools/synthetic-pages/bill-ground-truth-synthetic.json (SYNTHETIC pages of both
+ *   providers: fake school, fake street, fake account; word boxes built from each template's own
+ *   coordinates; `provider` 'city' (default) or 'utility-e').
  *   Local, real data (never in the repo), when both exist:
- *     BILL_GT_FILE       the ground-truth file (C:\...\_context\ground-truth\2026-10-19-city-bill-pages.json)
- *     BILL_GT_WORDS_DIR  folder with <image>.png, <image>.png.ocr.json (words, text) and the re-read
- *                        cache <image>.png.rereads.json (default: pagesDir of the ground-truth file)
+ *     BILL_GT_FILE         the City ground-truth file (C:\...\_context\ground-truth\2026-10-19-city-bill-pages.json)
+ *     BILL_GT_UTILITY_E_FILE  the Utility E ground-truth file (...\the dated Utility E file)
+ *     BILL_GT_WORDS_DIR    folder with <image>.png, <image>.png.ocr.json (words, text) and the re-read
+ *                          cache <image>.png.rereads.json (default: pagesDir of the ground-truth file)
  *     BILL_GT_OCR_MODULES  optional: a node_modules folder with tesseract.js and @napi-rs/canvas; when
- *                        set, a re-read missing from the cache is OCR'd from the page PNG and cached
- *                        (one worker, one process). Without it a missing re-read reads as "".
- *     BILL_GT_LANG_PATH  optional: folder with eng.traineddata for that worker
+ *                          set, a re-read missing from the cache is OCR'd from the page PNG and cached
+ *                          (one worker, one process). Without it a missing re-read reads as "".
+ *     BILL_GT_LANG_PATH    optional: folder with eng.traineddata for that worker
+ *     BILL_GT_OUT          optional: write the per-page results (one JSON per provider: <out> and
+ *                          <out>.utility-e.json)
  *   Absent real inputs: the real part is skipped with a clear message (CI).
  *
  * Usage: node tools/gate-bill-ground-truth.js [--root <repo dir>] [--verbose]
@@ -41,18 +46,34 @@ const ROOT = argVal('--root') || path.join(__dirname, '..');
 const VERBOSE = args.includes('--verbose');
 const BL = require(path.join(ROOT, 'computations', 'bill-layout.js'));
 
-// ── the real City rule in a vm (same loads as tools/test-bill-layout.js) ──
+// ── the real readers in a vm (same loads as tools/test-bill-layout.js) ──
 const sandbox = { window: {}, calcDays: () => 30, console: { log() {}, warn() {}, error() {} } };
 vm.createContext(sandbox);
 for (const lib of ['date-helpers.js', 'formatting.js', 'unit-conversion.js'])
   vm.runInContext(fs.readFileSync(path.join(ROOT, 'lib', lib), 'utf8'), sandbox, { filename: lib });
+// The one day-count function (app/utility-data.js calcDays with its _parseISO): the Utility E reader's
+// NumberOfDays comes from it. Loaded by source so the page module (DOM at load) is not run.
+(() => {
+  const src = fs.readFileSync(path.join(ROOT, 'app', 'utility-data.js'), 'utf8');
+  const fn = (name) => {
+    // the file has CRLF line endings
+    const m = src.match(new RegExp('\\r?\\nfunction ' + name + '\\([\\s\\S]*?\\r?\\n}\\r?\\n'));
+    return m ? m[0].replace(/\r\n/g, '\n') : '';
+  };
+  const code = fn('_fixISO') + fn('_parseISO') + fn('calcDays');
+  if (/function calcDays/.test(code)) vm.runInContext(code, sandbox, { filename: 'utility-data.js(calcDays)' });
+})();
 vm.runInContext(fs.readFileSync(path.join(ROOT, 'computations', 'rates.js'), 'utf8'), sandbox, {
   filename: 'rates.js',
 });
 vm.runInContext(fs.readFileSync(path.join(ROOT, 'app', 'energy-savings.js'), 'utf8'), sandbox, {
   filename: 'energy-savings.js',
 });
-const rule = vm.runInContext("UTILITY_RULES.find((r) => typeof r._extractNew === 'function')", sandbox);
+const cityRule = vm.runInContext("UTILITY_RULES.find((r) => typeof r._extractNew === 'function')", sandbox);
+// the Utility E rule: the first rule of UTILITY_RULES (the electric utility), never the City rule
+const utilityERule = vm.runInContext("UTILITY_RULES[0]", sandbox);
+if (!utilityERule || typeof utilityERule._extractNew === 'function' || typeof utilityERule.extractAll !== 'function')
+  throw new Error('UTILITY_RULES[0] is not the electric utility rule');
 const labeledAmount = vm.runInContext('_lbg_labeledAmount', sandbox);
 const CB_LABEL = vm.runInContext('_LBG_CURRENT_BILL_LABEL', sandbox);
 const TAD_LABEL = vm.runInContext('_LBG_TOTAL_AMOUNT_DUE_LABEL', sandbox);
@@ -66,10 +87,17 @@ const num = (s) => {
   return isNaN(v) ? null : neg ? -v : v;
 };
 const r2 = (v) => (v == null ? null : Math.round(v * 100) / 100);
-const same = (a, b) => a != null && b != null && Math.abs(a - b) < 0.005;
+const same = (a, b) => (typeof a === 'string' || typeof b === 'string' ? a === b : a != null && b != null && Math.abs(a - b) < 0.005);
+// a printed date as M/D/YYYY with two-digit month and day ("3/31/2026" and "03/31/2026" are one date)
+const dateKey = (s) => {
+  const m = String(s || '').match(/^\s*(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})\s*$/);
+  if (!m) return s == null || s === '' ? null : String(s);
+  return m[1].padStart(2, '0') + '/' + m[2].padStart(2, '0') + '/' + (m[3].length === 2 ? '20' + m[3] : m[3]);
+};
 
-// Expected fields of a page from its printed rows.
-function expected(pg) {
+// ── City ──
+// Expected fields of a City page from its printed rows.
+function cityExpected(pg) {
   const sum = (label) => {
     const rs = pg.rows.filter((r) => r.label === label);
     if (!rs.length) return { present: false, value: null };
@@ -87,7 +115,7 @@ function expected(pg) {
     TotalAmountDue: { present: true, value: num(pg.totalAmountDue) },
   };
 }
-const FIELDS = [
+const CITY_FIELDS = [
   'Water',
   'WaterProtection',
   'Gas',
@@ -97,9 +125,8 @@ const FIELDS = [
   'CurrentBill',
   'TotalAmountDue',
 ];
-
-// The reader's values from the bills it returned, and the reasons it gave.
-function readerValues(bills, totalsSrc) {
+// The City reader's values from the bills it returned, and the reasons it gave.
+function cityReaderValues(bills, totalsSrc) {
   const by = {};
   for (const b of bills || []) by[b.Commodity] = b;
   const gas = by.Gas;
@@ -142,12 +169,107 @@ function readerValues(bills, totalsSrc) {
     mode: bills && bills.length ? bills[0]._readMode : null,
   };
 }
-function score(exp, got) {
+
+// ── Utility E ──
+// Expected fields of a Utility E Billing Details page: the lines of one field add up (split Demand,
+// ECA parts, the sales tax lines); Subtotal and Current Charges as printed (null = not on this page:
+// the details continue on a page outside the scan); the service period and the printed Days of the
+// meter table (skipped when the table is not on the page).
+const UTILITY_E_FIELDS = [
+  'CustomerCharge',
+  'FacilitiesCharge',
+  'BilledKWCharge',
+  'EnergyOnPeakCharge',
+  'EnergyOffPeakCharge',
+  'RkVACharge',
+  'TaxExemptDelivery',
+  'ECACharge',
+  'EERCharge',
+  'PTSCharge',
+  'TDCCharge',
+  'BillOffset',
+  'SolarCredit',
+  'FranchiseFee',
+  'SalesTax',
+  'Subtotal',
+  'TotalCurrentCharges',
+  'BillingPeriodStart',
+  'BillingPeriodEnd',
+  'NumberOfDays',
+];
+function utilityEExpected(pg) {
+  const all = (pg.rows || []).concat(pg.belowSubtotal || []);
+  const sum = (field) => {
+    const rs = all.filter((r) => r.field === field);
+    if (!rs.length) return { present: false, value: null };
+    if (rs.some((r) => r.amount === 'unreadable')) return { present: true, value: null, unreadable: true };
+    return { present: true, value: r2(rs.reduce((s, r) => s + num(r.amount), 0)) };
+  };
+  const printed = (v) => (v == null || v === '' ? { present: false, value: null } : v === 'unreadable' ? { present: true, value: null, unreadable: true } : { present: true, value: num(v) });
   const out = {};
-  for (const f of FIELDS) {
+  for (const f of UTILITY_E_FIELDS) out[f] = sum(f);
+  out.Subtotal = printed(pg.subtotal);
+  out.TotalCurrentCharges = printed(pg.currentCharges);
+  const sp = pg.servicePeriod || {};
+  out.BillingPeriodStart = sp.start ? { present: true, value: dateKey(sp.start) } : { present: false, value: null };
+  out.BillingPeriodEnd = sp.end ? { present: true, value: dateKey(sp.end) } : { present: false, value: null };
+  out.NumberOfDays =
+    pg.printedDays == null || pg.printedDays === ''
+      ? { present: true, value: null, unreadable: true }
+      : pg.printedDays === 'unreadable'
+        ? { present: true, value: null, unreadable: true }
+        : { present: true, value: num(pg.printedDays) };
+  return out;
+}
+// The Utility E reader's values from the bill it returned (one Billing Details page gives one bill), and
+// the reasons it gave.
+function utilityEReaderValues(bills) {
+  const b = (bills || [])[0] || null;
+  const reasons = [];
+  for (const x of bills || []) {
+    (x._gateReasons || []).forEach((r) => reasons.push(r));
+    if (x._manualReviewLabel) reasons.push(x._manualReviewLabel);
+    for (const k of Object.keys(x))
+      if (/^_(proposed|correction_pending)_/.test(k) && x[k] && x[k].reason) reasons.push(k + ': ' + x[k].reason);
+    if (x._customerChargePartial) reasons.push('Customer Chg cents unreadable: ' + JSON.stringify(x._customerChargePartial));
+  }
+  if (!b) reasons.push('the reader returned no bill for the page');
+  const values = {};
+  for (const f of UTILITY_E_FIELDS) values[f] = b ? num(b[f]) : null;
+  values.Subtotal = b ? num(b._subtotal) : null;
+  values.BillingPeriodStart = b ? dateKey(b.BillingPeriodStart) : null;
+  values.BillingPeriodEnd = b ? dateKey(b.BillingPeriodEnd) : null;
+  values.NumberOfDays = b ? num(b.NumberOfDays) : null;
+  return { values, reasons, mode: b ? b._readMode : null };
+}
+
+const PROVIDERS = {
+  city: {
+    key: 'city',
+    title: 'City',
+    envFile: 'BILL_GT_FILE',
+    fields: CITY_FIELDS,
+    expected: cityExpected,
+    read: (text) => cityRule.extractAll(text),
+    values: cityReaderValues,
+  },
+  utilityE: {
+    key: 'utility-e',
+    title: 'Utility E',
+    envFile: 'BILL_GT_UTILITY_E_FILE',
+    fields: UTILITY_E_FIELDS,
+    expected: utilityEExpected,
+    read: (text) => utilityERule.extractAll(text),
+    values: utilityEReaderValues,
+  },
+};
+
+function score(exp, got, fields) {
+  const out = {};
+  for (const f of fields) {
     const e = exp[f],
       v = got.values[f];
-    if (e.unreadable) out[f] = { status: 'skip', why: 'printed value unreadable by eye' };
+    if (e.unreadable) out[f] = { status: 'skip', why: 'printed value unreadable by eye or not on the page' };
     else if (!e.present)
       out[f] =
         v == null
@@ -227,26 +349,27 @@ function makeOcrBox(pngPath, cachePath, stats) {
 }
 
 // ── one page through both paths ──
-async function runPage(pg, words, ocrBox) {
+async function runPage(prov, pg, words, ocrBox) {
   const A = '%%PAGE_1%%\n' + words.text;
-  const exp = expected(pg);
-  const textBills = rule.extractAll(A);
-  const text = readerValues(textBills, words.text);
+  const exp = prov.expected(pg);
+  const textBills = prov.read(A);
+  const text = prov.values(textBills, words.text);
   const pass = { label: '2.5x', score: 1, words: words.words, w: words.w, h: words.h };
   const res = typeof BL.readPage === 'function' ? await BL.readPage([pass], ocrBox) : BL.readBestPass([pass]);
   const B = A + (res.ok ? BL.linesBlock(res.read, pass.label) : BL.fallbackMarker(res.reason));
-  const posBills = rule.extractAll(B);
-  const pos = readerValues(posBills, res.ok ? res.read.lines.join('\n') : words.text);
+  const posBills = prov.read(B);
+  const pos = prov.values(posBills, res.ok ? res.read.lines.join('\n') : words.text);
   if (res.ok && res.read.held && res.read.held.length)
     res.read.held.forEach((h) => pos.reasons.push(h.label + ': ' + h.reason));
   return {
     id: pg.id,
     matched: res.ok,
+    template: res.ok ? res.read.template : null,
     reason: res.ok ? null : res.reason,
-    text: { values: text.values, score: score(exp, text), reasons: text.reasons },
+    text: { values: text.values, score: score(exp, text, prov.fields), reasons: text.reasons },
     position: {
       values: pos.values,
-      score: score(exp, pos),
+      score: score(exp, pos, prov.fields),
       reasons: pos.reasons,
       rereads: res.ok ? res.read.rereads : null,
       held: res.ok ? res.read.held : null,
@@ -254,22 +377,22 @@ async function runPage(pg, words, ocrBox) {
     },
   };
 }
-function tally(results, pathName) {
+function tally(results, pathName, fields) {
   const t = {};
-  for (const f of FIELDS) t[f] = { correct: 0, wrong: 0, held: 0, skip: 0 };
-  for (const r of results) for (const f of FIELDS) t[f][r[pathName].score[f].status]++;
+  for (const f of fields) t[f] = { correct: 0, wrong: 0, held: 0, skip: 0 };
+  for (const r of results) for (const f of fields) t[f][r[pathName].score[f].status]++;
   return t;
 }
-function printTally(title, t) {
+function printTally(title, t, fields) {
   console.log('\n' + title);
-  console.log('  ' + 'field'.padEnd(18) + 'correct  wrong  held');
+  console.log('  ' + 'field'.padEnd(22) + 'correct  wrong  held');
   let C = 0,
     W = 0,
     H = 0;
-  for (const f of FIELDS) {
+  for (const f of fields) {
     console.log(
       '  ' +
-        f.padEnd(18) +
+        f.padEnd(22) +
         String(t[f].correct).padStart(7) +
         String(t[f].wrong).padStart(7) +
         String(t[f].held).padStart(6),
@@ -278,23 +401,90 @@ function printTally(title, t) {
     W += t[f].wrong;
     H += t[f].held;
   }
-  console.log('  ' + 'ALL'.padEnd(18) + String(C).padStart(7) + String(W).padStart(7) + String(H).padStart(6));
+  console.log('  ' + 'ALL'.padEnd(22) + String(C).padStart(7) + String(W).padStart(7) + String(H).padStart(6));
   return { correct: C, wrong: W, held: H };
 }
-function printWrong(results, pathName, title) {
+function printWrong(results, pathName, title, fields) {
   const rows = [];
   for (const r of results)
-    for (const f of FIELDS)
+    for (const f of fields)
       if (r[pathName].score[f].status === 'wrong') rows.push('  ' + r.id + ' ' + f + ': ' + r[pathName].score[f].why);
   if (rows.length) console.log('\n' + title + ' (' + rows.length + '):\n' + rows.join('\n'));
 }
-function printHeld(results, pathName, title) {
+function printHeld(results, pathName, title, fields) {
   const rows = [];
   for (const r of results)
-    for (const f of FIELDS)
+    for (const f of fields)
       if (r[pathName].score[f].status === 'held')
         rows.push('  ' + r.id + ' ' + f + ': ' + r[pathName].score[f].why.slice(0, 200));
   if (rows.length) console.log('\n' + title + ' (' + rows.length + '):\n' + rows.join('\n'));
+}
+
+// The real ground truth of one provider: every page through both paths; FAIL on a wrong value on the
+// production path. Returns true when the part ran and failed.
+async function runReal(prov) {
+  const gtFile = process.env[prov.envFile];
+  if (!gtFile || !fs.existsSync(gtFile)) {
+    console.log('\nREAL ' + prov.title + ' ground truth: skipped (' + prov.envFile + ' not set or not found; real data stays outside the repo)');
+    return false;
+  }
+  const gt = JSON.parse(fs.readFileSync(gtFile, 'utf8'));
+  const dir = process.env.BILL_GT_WORDS_DIR || gt.pagesDir;
+  if (!dir || !fs.existsSync(dir)) {
+    console.log('\nREAL ' + prov.title + ' ground truth: skipped (words folder not found: ' + dir + ')');
+    return false;
+  }
+  const stats = { ocr: 0, cacheMiss: 0 };
+  const results = [];
+  for (const pg of gt.pages) {
+    const wp = path.join(dir, pg.image + '.ocr.json');
+    if (!fs.existsSync(wp)) {
+      console.log('  no words for ' + pg.id + ' (' + wp + '), skipped');
+      continue;
+    }
+    const words = JSON.parse(fs.readFileSync(wp, 'utf8'));
+    const ocrBox = makeOcrBox(path.join(dir, pg.image), path.join(dir, pg.image + '.rereads.json'), stats);
+    results.push(await runPage(prov, pg, words, ocrBox));
+  }
+  const matched = results.filter((r) => r.matched).length;
+  console.log(
+    '\nREAL ' +
+      prov.title +
+      ' ground truth: ' +
+      results.length +
+      ' pages, template matched ' +
+      matched +
+      ', re-read OCR calls ' +
+      stats.ocr +
+      ', re-read cache misses ' +
+      stats.cacheMiss,
+  );
+  const tp = tally(results, 'position', prov.fields);
+  const tt = tally(results, 'text', prov.fields);
+  printTally('REAL ' + prov.title + ' pages, POSITION path (production path for a matched page)', tp, prov.fields);
+  printTally('REAL ' + prov.title + ' pages, TEXT path (fallback; information)', tt, prov.fields);
+  printWrong(results, 'position', 'REAL ' + prov.title + ' position WRONG', prov.fields);
+  printHeld(results, 'position', 'REAL ' + prov.title + ' position held', prov.fields);
+  if (VERBOSE) {
+    printWrong(results, 'text', 'REAL ' + prov.title + ' text WRONG', prov.fields);
+    for (const r of results) {
+      if (r.position.rereads && r.position.rereads.length)
+        console.log('  re-read ' + r.id + ': ' + JSON.stringify(r.position.rereads));
+      if (!r.matched) console.log('  no match ' + r.id + ': ' + r.reason);
+    }
+  }
+  // production path: position where matched, else text
+  let prodWrong = 0;
+  for (const r of results) {
+    const p = r.matched ? r.position : r.text;
+    for (const f of prov.fields) if (p.score[f].status === 'wrong') prodWrong++;
+  }
+  if (prodWrong) console.log('\nFAIL: ' + prodWrong + ' wrong ' + prov.title + ' value(s) on the production path');
+  if (process.env.BILL_GT_OUT) {
+    const out = prov.key === 'city' ? process.env.BILL_GT_OUT : process.env.BILL_GT_OUT + '.' + prov.key + '.json';
+    fs.writeFileSync(out, JSON.stringify({ position: tp, text: tt, pages: results }, null, 1));
+  }
+  return prodWrong > 0;
 }
 
 (async () => {
@@ -306,104 +496,57 @@ function printHeld(results, pathName, title) {
     process.exit(1);
   }
   const fix = JSON.parse(fs.readFileSync(fixPath, 'utf8'));
-  const synth = [];
-  for (const pg of fix.pages) {
-    const cache = pg.rereads || {};
-    const ocrBox = async (box, cfg) =>
-      cache[cacheKey(box, cfg)] != null
-        ? cache[cacheKey(box, cfg)]
-        : cache[[cfg.zoom, cfg.psm, cfg.whitelist ? 'wl' : 'all'].join('|') + '|*'] || '';
-    synth.push(await runPage(pg, pg, ocrBox));
-  }
-  const ts = tally(synth, 'position');
-  const synthTotals = printTally('SYNTHETIC fixtures (' + synth.length + ' pages), position path', ts);
-  printWrong(synth, 'position', 'synthetic WRONG');
-  printHeld(synth, 'position', 'synthetic held');
-  // every synthetic page expects a status per field: check against the fixture's own expectations
-  for (const pg of fix.pages) {
-    const r = synth.find((x) => x.id === pg.id);
-    for (const f of Object.keys(pg.expectStatus || {})) {
-      if (r.position.score[f].status !== pg.expectStatus[f]) {
-        console.log(
-          'FAIL synthetic ' +
-            pg.id +
-            ' ' +
-            f +
-            ': expected ' +
-            pg.expectStatus[f] +
-            ', got ' +
-            r.position.score[f].status +
-            ' (' +
-            (r.position.score[f].why || '') +
-            ')',
-        );
+  for (const prov of [PROVIDERS.city, PROVIDERS.utilityE]) {
+    const pagesOf = fix.pages.filter((pg) => (pg.provider || 'city') === prov.key);
+    if (!pagesOf.length) continue;
+    const synth = [];
+    for (const pg of pagesOf) {
+      const cache = pg.rereads || {};
+      const ocrBox = async (box, cfg) =>
+        cache[cacheKey(box, cfg)] != null
+          ? cache[cacheKey(box, cfg)]
+          : cache[[cfg.zoom, cfg.psm, cfg.whitelist ? 'wl' : 'all'].join('|') + '|*'] || '';
+      synth.push(await runPage(prov, pg, pg, ocrBox));
+    }
+    const ts = tally(synth, 'position', prov.fields);
+    const synthTotals = printTally('SYNTHETIC ' + prov.title + ' pages (' + synth.length + '), position path', ts, prov.fields);
+    printWrong(synth, 'position', 'synthetic ' + prov.title + ' WRONG', prov.fields);
+    printHeld(synth, 'position', 'synthetic ' + prov.title + ' held', prov.fields);
+    // every synthetic page expects a status per field: check against the fixture's own expectations
+    for (const pg of pagesOf) {
+      const r = synth.find((x) => x.id === pg.id);
+      if (pg.expectMatched != null && r.matched !== pg.expectMatched) {
+        console.log('FAIL synthetic ' + pg.id + ': expected template match ' + pg.expectMatched + ', got ' + r.matched + ' (' + (r.reason || '') + ')');
         fail = true;
       }
+      for (const f of Object.keys(pg.expectStatus || {})) {
+        if (r.position.score[f].status !== pg.expectStatus[f]) {
+          console.log(
+            'FAIL synthetic ' +
+              pg.id +
+              ' ' +
+              f +
+              ': expected ' +
+              pg.expectStatus[f] +
+              ', got ' +
+              r.position.score[f].status +
+              ' (' +
+              (r.position.score[f].why || '') +
+              ')',
+          );
+          fail = true;
+        }
+      }
     }
+    if (synthTotals.wrong) fail = true;
   }
-  if (synthTotals.wrong) fail = true;
 
-  // 2. real ground truth (local only)
-  const gtFile = process.env.BILL_GT_FILE;
-  if (!gtFile || !fs.existsSync(gtFile)) {
-    console.log('\nREAL ground truth: skipped (BILL_GT_FILE not set or not found; real data stays outside the repo)');
-  } else {
-    const gt = JSON.parse(fs.readFileSync(gtFile, 'utf8'));
-    const dir = process.env.BILL_GT_WORDS_DIR || gt.pagesDir;
-    if (!dir || !fs.existsSync(dir)) {
-      console.log('\nREAL ground truth: skipped (words folder not found: ' + dir + ')');
-    } else {
-      const stats = { ocr: 0, cacheMiss: 0 };
-      const results = [];
-      for (const pg of gt.pages) {
-        const wp = path.join(dir, pg.image + '.ocr.json');
-        if (!fs.existsSync(wp)) {
-          console.log('  no words for ' + pg.id + ' (' + wp + '), skipped');
-          continue;
-        }
-        const words = JSON.parse(fs.readFileSync(wp, 'utf8'));
-        const ocrBox = makeOcrBox(path.join(dir, pg.image), path.join(dir, pg.image + '.rereads.json'), stats);
-        results.push(await runPage(pg, words, ocrBox));
-      }
-      if (ocrWorker) await ocrWorker.terminate();
-      const matched = results.filter((r) => r.matched).length;
-      console.log(
-        '\nREAL ground truth: ' +
-          results.length +
-          ' pages, template matched ' +
-          matched +
-          ', re-read OCR calls ' +
-          stats.ocr +
-          ', re-read cache misses ' +
-          stats.cacheMiss,
-      );
-      const tp = tally(results, 'position');
-      const tt = tally(results, 'text');
-      const posTotals = printTally('REAL pages, POSITION path (production path for a matched page)', tp);
-      printTally('REAL pages, TEXT path (fallback; information)', tt);
-      printWrong(results, 'position', 'REAL position WRONG');
-      printHeld(results, 'position', 'REAL position held');
-      if (VERBOSE) {
-        printWrong(results, 'text', 'REAL text WRONG');
-        for (const r of results) {
-          if (r.position.rereads && r.position.rereads.length)
-            console.log('  re-read ' + r.id + ': ' + JSON.stringify(r.position.rereads));
-        }
-      }
-      // production path: position where matched, else text
-      let prodWrong = 0;
-      for (const r of results) {
-        const p = r.matched ? r.position : r.text;
-        for (const f of FIELDS) if (p.score[f].status === 'wrong') prodWrong++;
-      }
-      if (prodWrong) {
-        console.log('\nFAIL: ' + prodWrong + ' wrong value(s) on the production path');
-        fail = true;
-      }
-      if (process.env.BILL_GT_OUT)
-        fs.writeFileSync(process.env.BILL_GT_OUT, JSON.stringify({ position: tp, text: tt, pages: results }, null, 1));
-    }
+  // 2. real ground truth (local only), one provider after the other
+  for (const prov of [PROVIDERS.city, PROVIDERS.utilityE]) {
+    if (await runReal(prov)) fail = true;
   }
+  if (ocrWorker) await ocrWorker.terminate();
+
   console.log('\n' + (fail ? 'FAIL' : 'PASS') + ' gate-bill-ground-truth');
   process.exit(fail ? 1 : 0);
 })().catch((e) => {

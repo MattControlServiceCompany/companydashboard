@@ -802,6 +802,148 @@ const CB_Y = 1265;
     '',
   );
 
+  // L. Utility E Billing Details page (template UTILITY_E_BD, rowMode 'list'), on the committed synthetic
+  //    pages of tools/synthetic-pages/bill-ground-truth-synthetic.json (provider 'utility-e'): kinds by the
+  //    band start, two-line labels, the two identities, lost total labels found by structure, a held
+  //    Current Charges, the group re-read, no match on the summary page, and the real Utility E rule
+  //    reading the block (TotalCurrentCharges only from the printed box).
+  const E = BL.UTILITY_E_BD;
+  const efix = JSON.parse(fs.readFileSync(path.join(ROOT, 'tools', 'synthetic-pages', 'bill-ground-truth-synthetic.json'), 'utf8'));
+  const ePage = (id) => efix.pages.find((p) => p.id === id);
+  const eRead = (id) => {
+    const p = ePage(id);
+    return BL.readPageByTemplate(p.words, { w: p.w, h: p.h }, E);
+  };
+  const canned = (pg) => (box, cfg) => {
+    const k = [cfg.zoom, cfg.psm, cfg.whitelist ? 'wl' : 'all', box.x0, box.y0, box.x1, box.y1].join('|');
+    return Promise.resolve(pg.rereads[k] != null ? pg.rereads[k] : '');
+  };
+  const e1 = eRead('E1-clean');
+  check('L E1 the template matches the clean page with every anchor', e1.ok && e1.anchorCount === 10, j(e1.ok ? e1.anchorCount : e1.reason));
+  check(
+    'L E1 eleven rows in print order, every kind set, every value valid',
+    e1.ok &&
+      e1.rows.length === 11 &&
+      e1.rows.map((r) => r.slot).join(',') ===
+        'CustomerCharge,FacilitiesCharge,BilledKWCharge,EnergyOnPeakCharge,EnergyOffPeakCharge,TaxExemptDelivery,ECACharge,EERCharge,PTSCharge,TDCCharge,BillOffset' &&
+      e1.rows.every((r) => r.value.ok),
+    e1.ok ? j(e1.rows.map((r) => [r.slot, r.value.text])) : '',
+  );
+  check(
+    'L E1 a two-line label is one row with its amount on the second line; the line keeps the "$"',
+    e1.ok && e1.lines[3] === 'Energy Chg On Pk Sum 1,000.0000 kWh at $0.10000 per kWh $100.00' && e1.lines[10] === 'Bill offset -$200.00',
+    e1.ok ? j(e1.lines) : '',
+  );
+  check(
+    'L E1 both identities hold (rows = Subtotal; Subtotal + below = Current Charges) and the totals lines',
+    e1.ok &&
+      BL.sumHolds(BL.pageSum(e1, E, null, 'rows')) &&
+      BL.sumHolds(BL.pageSum(e1, E, null, 'below')) &&
+      e1.lines.slice(-2).join('|') === 'Subtotal $1,127.90|Current Charges $1,127.90',
+    e1.ok ? j(e1.lines.slice(-2)) : '',
+  );
+  const e2 = eRead('E2-customer-garbled');
+  check(
+    'L E2 "CUSIOMET CRG" at the first row is Customer Chg by its slot; "$48}" is no value',
+    e2.ok && e2.rows[0].slot === 'CustomerCharge' && e2.rows[0].labelText === 'Customer Chg' && !e2.rows[0].value.ok && e2.rows[0].value.raw === '$48}',
+    e2.ok ? j(e2.rows[0]) : '',
+  );
+  await BL.rereadBoxes(e2, E, canned(ePage('E2-customer-garbled')));
+  check(
+    'L E2 the re-read "$48.90" is proved by the Subtotal and the line carries it',
+    e2.rows[0].value.text === '48.90' && e2.rows[0].value.reread === true && e2.lines[0] === 'Customer Chg $48.90' && e2.held.length === 0,
+    j([e2.rows[0].value, e2.lines[0], e2.held]),
+  );
+  const e3 = eRead('E3-cc-label-lost');
+  // without the Current Charges label the band runs to the meter table header: its "Meter" word (the line
+  // above "Multiplier") opens a kind-less, value-less row that the re-read drops as ABSENT
+  await BL.rereadBoxes(e3, E, canned(ePage('E3-cc-label-lost')));
+  check(
+    'L E3 a lost Current Charges label: the label-less amount equal to Subtotal + Franchise Fee is the total, by structure; the meter header word is no row',
+    e3.ok &&
+      e3.totals[1].found &&
+      e3.totals[1].byStructure === true &&
+      e3.totals[1].value.text === '$1,184.35' &&
+      e3.rows.filter((r) => r.below && !r.absent).length === 1 &&
+      e3.rows.find((r) => r.below && !r.absent).slot === 'FranchiseFee' &&
+      e3.rows.some((r) => r.absent && r.labelText === 'Meter') &&
+      e3.held.length === 0 &&
+      BL.sumHolds(BL.pageSum(e3, E, null, 'below')),
+    e3.ok ? j([e3.totals, e3.rows.map((r) => [r.slot, r.below, r.absent, r.labelText]), e3.held]) : '',
+  );
+  const e4 = eRead('E4-cc-unreadable');
+  await BL.rereadBoxes(e4, E, canned(ePage('E4-cc-unreadable')));
+  const e4block = BL.linesBlock(e4, '2.5x');
+  check(
+    'L E4 an unreadable Current Charges box is HELD with the reason; the rows stay proved; the block names the hold before the rows and prints no total',
+    e4.held.length === 1 &&
+      e4.held[0].label === 'Current Charges' &&
+      !e4.totals[1].value.ok &&
+      e4.rows.every((r) => r.value.ok) &&
+      /^\n%%POSITION_HELD%% Current Charges:: /.test(e4block) &&
+      !/Current Charges \$/.test(e4block),
+    j([e4.held, e4.totals[1].value]),
+  );
+  const e5 = eRead('E5-subtotal-label-garbled');
+  check(
+    'L E5 a Subtotal label OCR\'d "SUBLOLEL": the amount equal to the sum of the rows is the Subtotal, by structure',
+    e5.ok && e5.totals[0].found && e5.totals[0].byStructure === true && e5.totals[0].value.text === '$1,127.90' && e5.rows.length === 11,
+    e5.ok ? j(e5.totals[0]) : '',
+  );
+  const e6 = eRead('E6-sign-reread');
+  check('L E6 "$120.00-" fails the page format (a sign after the figure is not printed)', e6.ok && !e6.rows[6].value.ok, e6.ok ? j(e6.rows[6].value) : '');
+  await BL.rereadBoxes(e6, E, canned(ePage('E6-sign-reread')));
+  check(
+    'L E6 the group re-read proves ECA $120.00 and Bill offset -$200.00 (two changes)',
+    e6.rows[6].value.text === '120.00' && e6.rows[10].value.text === '-200.00' && e6.held.length === 0 && BL.sumHolds(BL.pageSum(e6, E, null, 'rows')),
+    j([e6.rows[6].value, e6.rows[10].value, e6.held]),
+  );
+  const e8 = BL.readPageByTemplate(ePage('E8-summary-page-no-match').words, { w: E.ref.w, h: E.ref.h }, E);
+  check('L E8 the summary page (no Billing Details header) is not this template', !e8.ok && /Billing Details/.test(e8.reason), j(e8));
+  const wsOf = (s) => s.split(' ').map((t, i) => ({ t, x0: i * 60, x1: i * 60 + 50, y0: 0, y1: 18 }));
+  check(
+    'L kinds: "ECR Chg" as close to ECA and EER is no kind; "Chg On Pk Sum" is Energy Chg On Pk (first word lost); "Chg" alone names nothing; "CUSIOMET CRG" is Customer Chg',
+    BL.kindOfBand(wsOf('ECR Chg 06-01-2026 for'), E.kinds) === null &&
+      BL.kindOfBand(wsOf('Chg On Pk Sum 14.6736 kWh at'), E.kinds).kind.field === 'EnergyOnPeakCharge' &&
+      BL.kindOfBand(wsOf('Chg 36.1680 kW at'), E.kinds) === null &&
+      BL.kindOfBand(wsOf('CUSIOMET CRG ........'), E.kinds).kind.field === 'CustomerCharge',
+    '',
+  );
+  // the Utility E rule sums its charges through computations/rates.js (loaded before the readers on the page)
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'computations', 'rates.js'), 'utf8'), sandbox, { filename: 'rates.js' });
+  const utilityERule = vm.runInContext('UTILITY_RULES[0]', sandbox); // the electric utility rule (the first rule)
+  const e4b = utilityERule.extractAll('%%PAGE_1%%\n' + ePage('E4-cc-unreadable').text + e4block)[0];
+  check(
+    'L the Utility E rule in position mode: TotalCurrentCharges null and held with the engine reason, never the Subtotal; _subtotal and the rows read',
+    e4b &&
+      e4b._readMode === 'position' &&
+      e4b.TotalCurrentCharges == null &&
+      /Current Charges/.test(e4b._manualReviewLabel || '') &&
+      e4b._subtotal === '1127.90' &&
+      e4b.CustomerCharge === '48.90' &&
+      e4b.BillOffset === '-200.00' &&
+      e4b.ECACharge === '120.00',
+    e4b ? j([e4b._readMode, e4b.TotalCurrentCharges, e4b._manualReviewLabel, e4b._subtotal, e4b.CustomerCharge, e4b.BillOffset, e4b.ECACharge]) : 'no bill',
+  );
+  const e1b = utilityERule.extractAll('%%PAGE_1%%\n' + ePage('E1-clean').text + BL.linesBlock(e1, '2.5x'))[0];
+  check(
+    'L the Utility E rule in position mode reads every charge, Subtotal and Current Charges from the block',
+    e1b &&
+      e1b._readMode === 'position' &&
+      e1b.TotalCurrentCharges === '1127.90' &&
+      e1b.EnergyOnPeakCharge === '100.00' &&
+      e1b.TDCCharge === '100.00' &&
+      e1b.TaxExemptDelivery === '200.00' &&
+      !e1b._manualReview,
+    e1b ? j([e1b._readMode, e1b.TotalCurrentCharges, e1b.EnergyOnPeakCharge, e1b.TDCCharge, e1b._manualReviewLabel]) : 'no bill',
+  );
+  const e1t = utilityERule.extractAll('%%PAGE_1%%\n' + ePage('E1-clean').text + BL.fallbackMarker('utility-e-bd: "Billing Details" not found on the page'))[0];
+  check(
+    'L without a block the Utility E rule reads the text and keeps the fallback reason',
+    e1t && e1t._readMode === 'text' && /Billing Details/.test(e1t._readFallbackReason) && e1t.TotalCurrentCharges === '1127.90',
+    e1t ? j([e1t._readMode, e1t._readFallbackReason, e1t.TotalCurrentCharges]) : 'no bill',
+  );
+
   console.log('\n' + passes + ' passed, ' + fails + ' failed');
   process.exit(fails ? 1 : 0);
 })();

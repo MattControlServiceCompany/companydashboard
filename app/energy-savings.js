@@ -2574,11 +2574,41 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     }
   }
 
-  const sum = (t, re) => {
-    const ms = [...t.matchAll(re)];
-    return ms.length ? ms.reduce((s, m) => s + parseFloat(m[1].replace(/,/g, '')), 0).toFixed(2) : null;
-  };
-  const chg = (re) => t.match(re)?.[1]?.replace(/,/g, '') || null;
+  // ── Position read (computations/bill-layout.js, template utility-e-bd) ──
+  // app/bill-analysis.js appends to each OCR'd page the rows the engine read by position, behind
+  // BILL_LAYOUT.MARK ("%%POSITION_READ%% template=utility-e-bd ..." to "%%POSITION_READ_END%%"): one line per
+  // printed charge line ("Customer Chg $102.86", "Energy Chg On Pk Win 7,283.8800 kWh at $0.04146 per kWh
+  // $301.99", "Bill offset -$863.35"), then "Subtotal $..." and "Current Charges $..." when their printed
+  // boxes were read. The kind at the start of each line is the engine's (the label slot sets the label:
+  // "CUSIOMET CRG" on the page arrives as "Customer Chg"); a value the engine could not prove by the page's
+  // own identities has no amount on its line and one "%%POSITION_HELD%% <field>:: <reason>" line before
+  // the block. When the block is present (_readMode 'position') the charge-line readers below (xChg, xRate,
+  // the kWh tier readers, Tax exempt, Bill offset, Parallel Generation Credit, Franchise Fee, Sales Tax,
+  // Subtotal, Current Charges, the Off Pk Sum label repair, the detached-amount reader, the Customer Chg
+  // cents repair) read the block lines (tc) and nothing else; the meter table, dates, account, address and
+  // the front-page lines still come from the page text (t). TotalCurrentCharges then comes ONLY from the
+  // block's "Current Charges" line: when the engine did not read that box the total is null and held with
+  // the reason (never the Subtotal, never a sum). A held field is null and the bill is held with the
+  // engine's reason. Without a block the page text is read as before (_readMode 'text') and the engine's
+  // fallback reason is kept.
+  const _posBlocks = [...t.matchAll(/%%POSITION_READ%% template=utility-e-bd[^\n]*\n([\s\S]*?)\n%%POSITION_READ_END%%/g)].map((m) => m[1]);
+  const _posHeld = {};
+  for (const _hm of t.matchAll(/%%POSITION_HELD%%\s*([^:\n]+)::\s*([^\n]*)/g)) _posHeld[_hm[1].trim()] = _hm[2].trim();
+  const _posFallbacks = [...t.matchAll(/%%POSITION_READ_FALLBACK%%\s*([^\n]*)/g)].map((m) => m[1].trim());
+  t = t
+    .replace(/%%POSITION_READ%%[^\n]*\n[\s\S]*?\n%%POSITION_READ_END%%\n?/g, '')
+    .replace(/%%POSITION_READ_FALLBACK%%[^\n]*\n?/g, '')
+    .replace(/%%POSITION_HELD%%[^\n]*\n?/g, '');
+  const _posRows = _posBlocks.length ? _posBlocks.join('\n') : null;
+  const _readMode = _posRows != null ? 'position' : 'text';
+  const _readFallbackReason =
+    _posRows != null
+      ? null
+      : _posFallbacks.find((r) => /utility-e-bd/.test(r)) ||
+        _posFallbacks[0] ||
+        'no position read for this page (text layer, or OCR before the position reader)';
+  // tc: the text the charge-line readers parse (the block lines in position mode, the page text otherwise).
+  let tc = _posRows != null ? _posRows : t;
 
   // ── Charge extractor ──────────────────────────────────────────────────────────
   // PDF.js merges left-column chart text with right-column charge lines at the same
@@ -2646,7 +2676,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   };
   const _xChgParts = {};
   const xChg = (keyword, excludeRe, _partsKey) => {
-    const lines = t.split('\n');
+    const lines = tc.split('\n');
     let total = 0,
       found = false;
     const parts = [];
@@ -2788,7 +2818,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // Returns {qty, rate, unit, computed, parts[]} or null
   // Each part: {qty, rate, unit, computed, ocrCharge}
   const xRate = (keyword, excludeRe, enableTableBleedFix) => {
-    let lines = t.split('\n');
+    let lines = tc.split('\n');
     if (enableTableBleedFix) {
       lines = lines.slice();
       for (let li = 0; li < lines.length; li++) {
@@ -2919,13 +2949,15 @@ function _extractEvergy(t, acctOverride, addrOverride) {
         // $74.35), fail the ratio, and discard an otherwise-correct rate parse.
         let _lineOcrCharge = getAmt(lines[i]);
         if (_lineOcrCharge === null) {
-          // Check next few lines for the charge amount, same as the ocrCharge
-          // capture this feeds below — stop at CHG_STOP so we never cross into
-          // the next charge's own amount.
+          // Check next few lines for the charge amount (this is the ocrCharge of the part below). A next
+          // line that starts another charge (CHG_STOP) is never this charge's amount: only the text before
+          // that label may carry it ("$3,547.44 RkVA Chg ..." merged by the text layer). 2026-10-19: the
+          // amount was taken before the stop test, so an On Pk Win line whose amount OCR lost took the
+          // $38.35 of the Off Pk Sum line under it and the two-part sum wrote 49.58 for 17.72.
           for (let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
-            _lineOcrCharge = getAmt(lines[j]);
-            if (_lineOcrCharge !== null) break;
-            if (CHG_STOP.test(lines[j])) break;
+            const _stop = lines[j].match(CHG_STOP);
+            _lineOcrCharge = getAmt(_stop ? lines[j].slice(0, _stop.index) : lines[j]);
+            if (_lineOcrCharge !== null || _stop) break;
           }
         }
         const _ocrChargeVal = _lineOcrCharge || 0;
@@ -3963,7 +3995,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
 
   // Source 2: ECA/EER/PTS line kWh (only trust values with decimals)
   const fromAdj = [
-    ...t.matchAll(/(?:ECA|EER|PTS)\s+(?:Ch[gaq9]|C[HhNn][Gg]|Gh[gq9])[\s\S]*?(?:for\s+)?([\d,]+\.\d+)\s*kWh/gi),
+    ...tc.matchAll(/(?:ECA|EER|PTS)\s+(?:Ch[gaq9]|C[HhNn][Gg]|Gh[gq9])[\s\S]*?(?:for\s+)?([\d,]+\.\d+)\s*kWh/gi),
   ]
     .map((m) => parseFloat(m[1].replace(/,/g, '')))
     .filter((v) => _validKwh(v));
@@ -3971,7 +4003,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
 
   // Source 3: Energy tier sum
   const fromEnergy = [
-    ...t.matchAll(
+    ...tc.matchAll(
       /Energy\s+(?:Ch[gaq9]|C[HhNn][Gg]|Gh[gq9])\s+(?:On\s+Pk\s+\w+\s+|Off\s+Pk\s+\w+\s+)?([\d,]+\.\d+)\s*kWh/gi,
     ),
   ]
@@ -4037,16 +4069,19 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // (d) An Off Pk Sum line whose label OCR lost ("oy rg Sum 1,041.7021 kWh at $59.73") gets its label back
   // only when the four tier quantities then add up to kWhConsumed exactly. The readers below read the
   // repaired text; the bill keeps a note of the repair.
-  const _offSumFix = _evgRepairOffPkSumLine(t, adjKwh, _EVG_KW);
-  if (_offSumFix) t = _offSumFix.text;
+  const _offSumFix = _evgRepairOffPkSumLine(tc, adjKwh, _EVG_KW);
+  if (_offSumFix) {
+    tc = _offSumFix.text;
+    if (_posRows == null) t = tc;
+  }
   const custChg = xChg(_EVG_KW.CustomerCharge, null, 'CustomerCharge');
   const facKW =
-    t
+    tc
       .match(new RegExp(_EVG_KW.FacilitiesCharge + '[ \\t\\n\\r]+([0-9,.]+)[ \\t\\n\\r]*[kK][Ww]', 'i'))?.[1]
       ?.replace(/,/g, '') || null;
   const facChg = xChg(_EVG_KW.FacilitiesCharge, null, 'FacilitiesCharge');
   const demKW =
-    t
+    tc
       .match(new RegExp(_EVG_KW.BilledKWCharge + '[ \\t\\n\\r]+([0-9,.]+)[ \\t\\n\\r]*[kK][Ww]', 'i'))?.[1]
       ?.replace(/,/g, '') || null;
   const demChg = xChg(_EVG_KW.BilledKWCharge, null, 'BilledKWCharge');
@@ -4068,7 +4103,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // qty capture off the "for" keyword instead of off "kW at" so we don't depend
   // on the garbage characters between qty and the kW token.
   const tdcKW =
-    t
+    tc
       .match(new RegExp(_EVG_KW.TDCCharge + '[\\u0000-\\uFFFF]{0,150}?for[ \\t\\n\\r]+([0-9,]+\\.[0-9]{2,})', 'i'))?.[1]
       ?.replace(/,/g, '') || null;
   const tdcChg = xChg(_EVG_KW.TDCCharge, null, 'TDCCharge');
@@ -4103,7 +4138,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     /Bill\s+[0O]ff|Current\s+Charges|Utility/i.test(line) ||
     _EVG_SUBTOTAL_LABEL.test(line);
   const taxExempt = (() => {
-    const lines = t.split('\n');
+    const lines = tc.split('\n');
     for (let i = 0; i < lines.length; i++) {
       if (!_taxExemptRe.test(lines[i])) continue;
       // _evgChargeAmounts is the one amount reader: a rate on the next line ("14,397.6017 kWh at $0.07852
@@ -4131,19 +4166,19 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // so the fallback scan does not misidentify this credit as a Bill Offset.
   const parallelGenCredit = (() => {
     // Label and negative amount may be on the same line or split across two lines
-    const m1 = t.match(/Parallel\s+Generation\s+Credit[^\n]*?-\$?([\d,]+\.\d{2})/i);
+    const m1 = tc.match(/Parallel\s+Generation\s+Credit[^\n]*?-\$?([\d,]+\.\d{2})/i);
     if (m1) return '-' + m1[1].replace(/,/g, '');
-    const m2 = t.match(/Parallel\s+Generation\s+Credit[^\n]*\n\s*-?\$?([\d,]+\.\d{2})/i);
+    const m2 = tc.match(/Parallel\s+Generation\s+Credit[^\n]*\n\s*-?\$?([\d,]+\.\d{2})/i);
     if (m2) return '-' + m2[1].replace(/,/g, '');
     return null;
   })();
   // Bill offset / credit: match "Bill offset" or any line with a negative dollar amount before Subtotal
   const billOffset = (() => {
-    const m1 = t.match(/Bill\s+[0O]ff\w*[^\n]*?(-?\$[\d,]+\.\d{2}|-[\d,]+\.\d{2}|\$[\d,]+\.\d{2})/im);
+    const m1 = tc.match(/Bill\s+[0O]ff\w*[^\n]*?(-?\$[\d,]+\.\d{2}|-[\d,]+\.\d{2}|\$[\d,]+\.\d{2})/im);
     if (m1) return m1[1].replace(/\$/g, '');
     // OCR fallback: find negative dollar amount on a standalone line near Subtotal
     // Guard: skip lines that contain "Parallel" — those are captured as parallelGenCredit above
-    const lines = t.split('\n');
+    const lines = tc.split('\n');
     for (let i = 0; i < lines.length; i++) {
       if (_EVG_SUBTOTAL_LABEL.test(lines[i])) {
         // Check up to 3 lines before Subtotal for a negative amount
@@ -4161,7 +4196,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // bills that have two prorated Franchise Fee lines.
   const _franchiseParts = [];
   const franchise = (() => {
-    const lines = t.split('\n');
+    const lines = tc.split('\n');
     let inAdjustments = false;
     for (let i = 0; i < lines.length; i++) {
       if (/^\s*Adjustments\s*$/i.test(lines[i])) inAdjustments = true;
@@ -4198,7 +4233,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   // sum-all shape as _franchiseParts above.
   const _salesTaxParts = [];
   let salesTax = (() => {
-    const lines = t.split('\n');
+    const lines = tc.split('\n');
     for (let i = 0; i < lines.length; i++) {
       const taxM = lines[i].match(_salesTaxRe);
       if (!taxM) continue;
@@ -4249,7 +4284,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       const re = /Billing\s+Details/gi;
       let last = -1,
         _m;
-      while ((_m = re.exec(t)) !== null) last = _m.index;
+      while ((_m = re.exec(tc)) !== null) last = _m.index;
       return last;
     })();
     // The amount is on the Subtotal line itself (the dot leader can OCR as up to 80 letters: "SUBLOLA
@@ -4257,7 +4292,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     const _stRe = new RegExp(_EVG_SUBTOTAL_LABEL_SRC + '(?:[^\\n$]{0,80}|[\\s\\S]{0,30}?)\\$\\s*([\\d,]+\\.\\d{2})', 'gi');
     let _stLastM = null,
       _stM;
-    while ((_stM = _stRe.exec(t)) !== null) {
+    while ((_stM = _stRe.exec(tc)) !== null) {
       if (_bdLast >= 0 && _stM.index < _bdLast) continue;
       _stLastM = _stM;
     }
@@ -4296,11 +4331,14 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   let _miscUnreconciled = null;
   // (b) A total that is only the sum of the read charges is never stored; it is proposed and the bill is held.
   let _proposedTotal = null;
+  // Position mode: the reason the printed Current Charges box gave no total (the engine's held line, or
+  // the box was not read at all). The total is then null; never the Subtotal, never a sum.
+  let _heldTotalReason = null;
   const totalDue = (() => {
     // Prefer "Current Charges" in the billing detail section (page 2/3, near Subtotal)
     // Page 1 "Current Charges" may be a summary total that differs from the utility detail total.
     // Strategy: find ALL "Current Charges" lines, prefer the one after "Billing Details" or "Subtotal".
-    const lines = t.split('\n');
+    const lines = tc.split('\n');
     let bestVal = null,
       bestDist = Infinity;
     let subtotalIdx = -1,
@@ -4374,6 +4412,13 @@ function _extractEvergy(t, acctOverride, addrOverride) {
         }
       }
       return chosenTotal.toFixed(2);
+    }
+    if (_posRows != null) {
+      // Position mode: the printed Current Charges box was not read (its label was lost, or its amount
+      // could not be proved). The total stays null and the bill is held with the engine's reason.
+      _heldTotalReason =
+        _posHeld['Current Charges'] || 'the printed Current Charges box was not read on the page; the total is never the Subtotal or a sum';
+      return null;
     }
     // Try Subtotal — but only the LAST one in the section, and only if it appears
     // after the last "Billing Details" header (same section-bleed guard as above).
@@ -4579,7 +4624,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   const _custPartial = (() => {
     if (custChg !== null) return null;
     const re = new RegExp(_EVG_KW.CustomerCharge, 'i');
-    for (const line of t.split('\n')) {
+    for (const line of tc.split('\n')) {
       if (!re.test(line)) continue;
       if (_evgChargeAmounts(line).length) return null;
       const m = line.match(/\$\s*(\d{1,3})(?:[.,](\d)?)?(?![\d,])/);
@@ -4616,6 +4661,29 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     }
   } else if (_custPartial) {
     result._customerChargePartial = { read: _custPartial.read, prefix: _custPartial.prefix, subtotal: null, othersSum: null };
+  }
+  // How the charge lines were read (position block or page text) and why no block was there. A field the
+  // engine held (its line carries no amount and a %%POSITION_HELD%% reason) is null and never derived; the
+  // bill is held with the engine's reason through the one hold path (_gateReasons / _manualReview), as a
+  // City bill is. A total the printed Current Charges box did not give is held the same way.
+  result._readMode = _readMode;
+  result._readFallbackReason = _readFallbackReason;
+  if (_posRows != null) {
+    const _heldReasons = [];
+    for (const _k of Object.keys(_posHeld)) {
+      if (Object.prototype.hasOwnProperty.call(result, _k) && !/^_/.test(_k)) result[_k] = null;
+      _heldReasons.push(_k + ': ' + _posHeld[_k]);
+    }
+    if (_heldTotalReason && !_posHeld['Current Charges']) _heldReasons.push('TotalCurrentCharges: ' + _heldTotalReason);
+    if (_heldReasons.length) {
+      result._positionHeld = _heldReasons.slice();
+      result._gateTripped = true;
+      result._gateReasons = (result._gateReasons || []).concat(_heldReasons);
+      if (!result._manualReview) {
+        result._manualReview = true;
+        result._manualReviewLabel = _heldReasons[0];
+      }
+    }
   }
 
   // Flag multi-meter bills for transparency in debug output
@@ -4902,7 +4970,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     }
   }
   // (c) Detached amount column: labels with qty x rate on one side, the dollar amounts as a block elsewhere.
-  _evgReadDetachedAmounts(t, result, _rates, _xChgParts, _EVG_KW, {
+  _evgReadDetachedAmounts(tc, result, _rates, _xChgParts, _EVG_KW, {
     getAmt,
     taxExemptRe: _taxExemptRe,
     customerLabel: custChg === null,
