@@ -6669,8 +6669,9 @@ function _lbg_usageDigitRepairs(usage) {
   out.delete(s);
   return [...out].filter((x) => /^[1-9]\d*(\.\d+)?$/.test(x)).map(Number);
 }
-// The therm factor of one meter, from its other gas bills (therms / read difference). Returns null
-// unless at least one bill gives it and all agree to 0.1%.
+// The therm factor of one meter, from its other gas bills (therms / read difference). The factor is
+// the value most bills share (within 0.1%); one odd bill (for example therms typed equal to the read
+// difference) is ignored. Returns null unless more than half of the bills share it.
 function _lbg_meterFactor(peers) {
   const fs = [];
   for (const b of peers) {
@@ -6678,10 +6679,12 @@ function _lbg_meterFactor(peers) {
     const th = Number(b.NaturalGasTherms);
     if (d > 0 && th > 0) fs.push(th / d);
   }
-  if (!fs.length) return null;
-  const lo = Math.min(...fs);
-  const hi = Math.max(...fs);
-  return (hi - lo) / lo <= 0.001 ? fs[0] : null;
+  let best = [];
+  for (const f of fs) {
+    const group = fs.filter((g) => Math.abs(g - f) / f <= 0.001);
+    if (group.length > best.length) best = group;
+  }
+  return best.length && best.length * 2 > fs.length ? best[0] : null;
 }
 // THE autofix for a Gas therms figure that failed the rate check while the printed Gas charge is
 // proven. Sources: (a) meter reads x the meter's therm factor, (b) the charge / rate, (c) one-digit

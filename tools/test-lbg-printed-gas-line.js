@@ -112,6 +112,13 @@ g7 = mk7(7.7, 2000, 2050);
 post([g7, peer('OTHER-ACCT', 100, 200, 105)]);
 check('7 no source pair agrees: stays held', g7._manualReview === true && g7.NaturalGasTherms === null, JSON.stringify(g7.NaturalGasTherms));
 
+g7 = mk7(2.5, 2000, 2050);
+post([g7, peer('SAMPLE-ACCT', 100, 200, 105), peer('SAMPLE-ACCT', 200, 300, 105), peer('SAMPLE-ACCT', 300, 400, 100)]);
+check('7 one odd peer bill is ignored: factor 1.05 from the majority', g7.NaturalGasTherms === 52.5, JSON.stringify(g7.NaturalGasTherms));
+g7 = mk7(7.7, 2000, 2050);
+post([g7, peer('SAMPLE-ACCT', 100, 200, 105), peer('SAMPLE-ACCT', 200, 300, 100)]);
+check('7 two peers disagree: no factor, stays held', g7._manualReview === true && g7.NaturalGasTherms === null, JSON.stringify(g7.NaturalGasTherms));
+
 // 4. Source shape: overwrite function gone, no therms x rate substitution left.
 check('4 _lbg_correctGasCharge removed', !/_lbg_correctGasCharge\s*\(/.test(src), '');
 check('4 one resolver, three call sites', (src.match(/_lbg_resolveGasLine\(/g) || []).length === 4, String((src.match(/_lbg_resolveGasLine\(/g) || []).length)); // 1 def + 3 calls
