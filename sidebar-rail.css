@@ -1,79 +1,12 @@
-/* Sidebar icon rail (shared by every page with a left sidebar).
-   900-1599 px wide: the sidebar is a thin rail of icons. Hover, tap or keyboard focus
-   adds .rail-open (sidebar-rail.js), which draws the full sidebar above the page.
-   The rail keeps its width, so the page never moves. 1600 px and wider: unchanged.
-   Under 900 px the existing slide-in drawer is used. */
-/* Short text label for a button that has no icon: shown only in the closed rail. */
-.rail-short {
-  display: none;
-}
+/* Narrow labeled sidebar (shared by every page with a left sidebar).
+   900 px and wider: the sidebar always shows icons and text labels.
+   900-1599 px: it is 184 px wide (not the 220 px default) so the page content still fits.
+   Under 900 px: the existing slide-in drawer is used; the "Menu" button opens it. */
 @media (min-width: 900px) and (max-width: 1599px) {
-  .app-wrap > .sidebar:not(.rail-open) .rail-short {
-    display: inline;
-  }
   .app-wrap > .sidebar {
-    width: 56px;
-    position: relative;
-    z-index: 100;
-    overflow: visible;
+    width: 184px;
   }
   .app-wrap > .sidebar > .resize-handle {
     display: none;
-  }
-  .app-wrap > .sidebar::before {
-    content: '';
-    display: none;
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    width: 220px;
-    z-index: -1;
-    background: var(--s1);
-    border-right: 1px solid var(--border);
-    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
-  }
-  .app-wrap > .sidebar.rail-open::before {
-    display: block;
-  }
-  .app-wrap > .sidebar.rail-open > :not(.resize-handle) {
-    width: 220px;
-  }
-
-  /* Closed rail: icons only */
-  .app-wrap > .sidebar:not(.rail-open) .rail-txt,
-  .app-wrap > .sidebar:not(.rail-open) .s-lbl,
-  .app-wrap > .sidebar:not(.rail-open) .s-badge,
-  .app-wrap > .sidebar:not(.rail-open) .s-proj-collapse,
-  .app-wrap > .sidebar:not(.rail-open) .s-proj-section,
-  .app-wrap > .sidebar:not(.rail-open) .sb-clock,
-  .app-wrap > .sidebar:not(.rail-open) .sb-date,
-  .app-wrap > .sidebar:not(.rail-open) .sb-version {
-    display: none;
-  }
-  .app-wrap > .sidebar:not(.rail-open) .s-item,
-  .app-wrap > .sidebar:not(.rail-open) .sb-settings-btn,
-  .app-wrap > .sidebar:not(.rail-open) .rn-whats-new-btn {
-    justify-content: center;
-    gap: 0;
-    padding-left: 0;
-    padding-right: 0;
-  }
-  .app-wrap > .sidebar:not(.rail-open) .sidebar-bottom {
-    padding-left: 6px;
-    padding-right: 6px;
-  }
-  .app-wrap > .sidebar:not(.rail-open) .sb-settings-btn,
-  .app-wrap > .sidebar:not(.rail-open) .rn-whats-new-btn {
-    padding-left: 0;
-    padding-right: 0;
-  }
-  .app-wrap > .sidebar:not(.rail-open) .s-sect {
-    margin-bottom: 10px;
-  }
-  .app-wrap > .sidebar:not(.rail-open) .s-proj-header.active > .s-proj-toggle {
-    color: var(--accent);
-    background: var(--accent-dim);
-    border-left-color: var(--accent);
   }
 }

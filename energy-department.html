@@ -1725,13 +1725,16 @@
         display: none;
         align-items: center;
         justify-content: center;
-        width: 36px;
+        width: auto;
+  padding: 0 10px;
+  gap: 6px;
         height: 36px;
         border-radius: 7px;
         border: 1px solid var(--border);
         background: var(--s3);
         color: var(--text2);
-        font-size: 16px;
+        font-size: 14px;
+  white-space: nowrap;
         cursor: pointer;
         transition: all 0.15s;
         font-family: var(--font);
@@ -9164,7 +9167,7 @@
             <div class="sb-divider"></div>
             <div class="sb-clock" id="sb-clock">--:-- --</div>
             <div class="sb-date" id="sb-date">Loading...</div>
-            <button class="sb-settings-btn" id="siteDataBtn" onclick="siteDataMenuToggle(this)" title="Backup &amp; Data"><span class="rail-short">Data</span><span class="rail-txt">Backup &amp; Data</span></button>
+            <button class="sb-settings-btn" id="siteDataBtn" onclick="siteDataMenuToggle(this)" title="Backup &amp; Data">Backup &amp; Data</button>
             <div
               class="sb-version"
               id="en-sb-version"
@@ -16396,7 +16399,6 @@
 
     <script src="app/tooltips-help.js?v=151"></script>
     <script src="feedback-widget.js?v=151"></script>
-    <script src="sidebar-rail.js?v=151"></script>
     <script
       src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.min.js"
       integrity="sha384-reiVBUvj2HgLgCZalqLFSMBVD9LdtiwGyybRGCq2AfP8Rgebz5DxEnwKp4FpagKV"
