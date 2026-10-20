@@ -696,7 +696,7 @@ function importBillCsvRows() {
     return;
   }
   const { m } = ctx;
-  const { added, updated, keptCorrected } = applyBillRowsToMeter(m, _csvImportRows);
+  const { added, updated, keptCorrected, addedBills } = applyBillRowsToMeter(m, _csvImportRows);
   saveUtilityData();
   closeBillCsvModal();
   udActiveTab = 'bills';
@@ -706,16 +706,12 @@ function importBillCsvRows() {
       (keptCorrected ? ', ' + keptCorrected + ' hand-corrected value' + (keptCorrected !== 1 ? 's' : '') + ' kept' : '') +
       ' ✓',
   );
-  addNotif(
-    'Bills Imported',
-    'Added ' + added + ' new billing period' + (added !== 1 ? 's' : '') + ' to ' + m.commodity + ' meter',
-    '📥',
-  );
+  notifyBillsImported(udSelProjId, ctx.b.id, m.id, addedBills);
 }
 
 // THE bill CSV commit (one rule for the one-meter dialog and the many-file import): merges parsed rows
 // into meter m. A row whose start date is already stored updates that bill (so the same file twice adds
-// nothing). Does not save or draw. Returns {added, updated, keptCorrected}.
+// nothing). Does not save or draw. Returns {added, updated, keptCorrected, addedBills}.
 function applyBillRowsToMeter(m, rows) {
   m.bills = m.bills || [];
 
@@ -724,6 +720,7 @@ function applyBillRowsToMeter(m, rows) {
   let added = 0,
     updated = 0,
     keptCorrected = 0;
+  const addedBills = [];
   rows.forEach((r) => {
     const key = r.start;
     if (existing.has(key)) {
@@ -734,7 +731,9 @@ function applyBillRowsToMeter(m, rows) {
       }
     } else {
       const { _erase, ...newBill } = r;
-      m.bills.push({ id: 'r' + Date.now() + Math.random(), ...newBill });
+      const bill = { id: 'r' + Date.now() + Math.random(), ...newBill };
+      m.bills.push(bill);
+      addedBills.push(bill);
       existing.add(key);
       added++;
     }
@@ -752,7 +751,7 @@ function applyBillRowsToMeter(m, rows) {
   // the missing quantity, computed from this meter's own billed/demand kW history — never a
   // fabricated constant — and never overwrites a real facKW value already on the row.
   _backfillCsvFacilitiesKW(m);
-  return { added, updated, keptCorrected };
+  return { added, updated, keptCorrected, addedBills };
 }
 
 // backfillFacilitiesKW(billsForMeter) — shared Facilities kW derivation core for ONE meter's
@@ -959,7 +958,7 @@ function renderBillRow(row, m, incl, allBills, cols, rowNum) {
     ? ` <span class="ud-bill-est-badge" title="${(row.estimatedNote || 'Estimated kWh — no real bill on file for this period').replace(/"/g, '&quot;')}" style="font-size:9px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;background:var(--amber-dim,rgba(245,158,11,.15));color:var(--amber,#f59e0b);border:1px solid rgba(245,158,11,.35);border-radius:4px;padding:1px 6px;cursor:help">Estimated</span>`
     : '';
   let html =
-    `<tr ${row.estimated ? 'class="ud-bill-estimated-row"' : `style="cursor:pointer" onclick="showBillSplitPanel('${m.id}','${row.id}',event)"${_missingDates ? ' class="ud-bill-missing-dates"' : ''}`}>` +
+    `<tr data-bill-start="${row.start}" ${row.estimated ? 'class="ud-bill-estimated-row"' : `style="cursor:pointer" onclick="showBillSplitPanel('${m.id}','${row.id}',event)"${_missingDates ? ' class="ud-bill-missing-dates"' : ''}`}>` +
     `<td class="sticky-col" data-sticky="0" style="text-align:center;color:var(--text3);font-size:11px;padding:0 4px">${rowNum != null ? rowNum : ''}</td>` +
     `<td class="norm-mon-cell sticky-col" data-sticky="1">${billMonthLabel(row, allBills || m.bills || [])}${_estBadge}${_hasRowWarning || _missingDates ? ` <span title="${_warnTip}" style="color:var(--amber);cursor:help">⚠</span>` : ''}</td>` +
     `<td class="lbl sticky-col" data-sticky="2">${fmtD(row.start)}</td>` +
@@ -5723,11 +5722,9 @@ function importBillsMulti() {
       (nBad ? ' · ' + nBad + ' file(s) NOT imported' : '') +
       ' ✓',
   );
-  addNotif(
-    'Bills Imported',
-    'Added ' + added + ' new billing period' + (added !== 1 ? 's' : '') + ' to ' + nMeters + ' meter(s)',
-    '📥',
-  );
+  todo.forEach((i) => {
+    if (i.imported) notifyBillsImported(plan.projId, i.meter.b.id, i.meter.m.id, i.res.addedBills);
+  });
   _renderBillsMultiPreview();
 }
 window.importBillsMulti = importBillsMulti;

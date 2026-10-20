@@ -12556,7 +12556,7 @@ function _loadedVersion() {
 }
 
 function _paintLoadedVersion() {
-  const el = document.getElementById('en-sb-version');
+  const el = document.getElementById('en-sb-version-text');
   if (!el) return;
   // Bug f5b133dc: detect CDP/Playwright-opened tab and show indicator
   const _isCDP = !!(navigator.webdriver || window.__playwright || window.__pwInitScripts || window._playwrightChannel);
@@ -12934,10 +12934,52 @@ function saveNotifs() {
     localStorage.setItem('ch_notifs', JSON.stringify(notifications));
   } catch (e) {}
 }
-function addNotif(title, detail, icon) {
-  notifications.unshift({ id: Date.now(), title, detail, icon: icon || '🔔', time: new Date().toISOString() });
+// A notification is { id, title, place, detail, time, target }. target = { projId, bldgId, meterId, start }
+// is the place a click opens (the meter's Bills tab, at the row that starts on `start`). Stored notifications
+// from before this had only title + detail: they show with no link and are never deleted.
+function addNotif(n) {
+  notifications.unshift({ id: Date.now(), time: new Date().toISOString(), ...n });
   saveNotifs();
   refreshNotifUI();
+}
+// THE function that finds a notification's link target. null = there is no place to go, so no notification.
+function notifTargetForMeter(projId, bldgId, meterId, start) {
+  if (projId == null || !getUDMeter(projId, bldgId, meterId)) return null;
+  return { projId, bldgId, meterId, start: start || null };
+}
+// THE function that builds the notification text: where (project, building, meter type + utility) and
+// what (the periods added, as a date range).
+function billsImportedNotifText(target, addedBills) {
+  const proj = (sget('en_projects', []) || []).find((p) => String(p.id) === String(target.projId));
+  const b = getUDBldg(target.projId, target.bldgId);
+  const m = getUDMeter(target.projId, target.bldgId, target.meterId);
+  const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : '');
+  const mon = (iso) => _parseISO(iso).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+  const starts = addedBills.map((r) => r.start).sort();
+  const ends = addedBills.map((r) => r.end || r.start).sort();
+  const from = mon(starts[0]);
+  const to = mon(ends[ends.length - 1]);
+  const n = addedBills.length;
+  return {
+    place: [proj && proj.name, b && b.name, cap(m.commodity) + (m.provider ? ' (' + m.provider + ')' : '')]
+      .filter(Boolean)
+      .join(' · '),
+    detail: n + ' period' + (n !== 1 ? 's' : '') + ', ' + (from === to ? from : from + ' – ' + to),
+  };
+}
+// Bills were added to a meter. Nothing added = no notification.
+function notifyBillsImported(projId, bldgId, meterId, addedBills) {
+  if (!addedBills || !addedBills.length) return;
+  const target = notifTargetForMeter(projId, bldgId, meterId, addedBills.map((r) => r.start).sort()[0]);
+  if (!target) return;
+  addNotif({ title: 'Bills Imported', ...billsImportedNotifText(target, addedBills), target });
+}
+function notifOpen(id) {
+  const n = notifications.find((x) => x.id === id);
+  if (!n || !n.target) return;
+  const p = document.getElementById('notifPanel');
+  if (p) p.style.display = 'none';
+  udGoToMeterBills(n.target.projId, n.target.bldgId, n.target.meterId, n.target.start);
 }
 function clearNotif(id) {
   notifications = notifications.filter((n) => n.id !== id);
@@ -12974,25 +13016,23 @@ function renderNotifList() {
   }
   el.innerHTML = notifications
     .map((n) => {
-      const ago = getTimeAgo(new Date(n.time));
+      const when = notifWhen(new Date(n.time));
+      const link = n.target ? ` onclick="notifOpen(${n.id})" style="flex:1;min-width:0;cursor:pointer" title="Open this meter's Bills tab"` : ` style="flex:1;min-width:0"`;
       return `<div style="display:flex;gap:10px;padding:11px 16px;border-bottom:1px solid var(--border);align-items:flex-start">
-            <span style="font-size:16px;flex-shrink:0;margin-top:1px">${n.icon || '🔔'}</span>
-            <div style="flex:1;min-width:0">
-              <div style="font-size:13px;font-weight:600;margin-bottom:2px">${n.title}</div>
-              <div style="font-size:12px;color:var(--text2);line-height:1.5">${n.detail}</div>
-              <div style="font-size:10px;color:var(--text3);margin-top:3px;font-family:var(--mono)">${ago}</div>
+            <div${link}>
+              <div style="font-size:13px;font-weight:600;margin-bottom:2px">${_escHtml(n.title)}</div>
+              ${n.place ? `<div style="font-size:12px;color:var(--text);line-height:1.5">${_escHtml(n.place)}</div>` : ''}
+              <div style="font-size:12px;color:var(--text2);line-height:1.5">${_escHtml(n.detail)}</div>
+              <div style="font-size:10px;color:var(--text3);margin-top:3px;font-family:var(--mono)">${_escHtml(when)}</div>
             </div>
             <button onclick="clearNotif(${n.id})" style="width:22px;height:22px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text3);cursor:pointer;font-size:11px;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .13s" onmouseover="this.style.borderColor='var(--red)';this.style.color='var(--red)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text3)'">✕</button>
           </div>`;
     })
     .join('');
 }
-function getTimeAgo(d) {
-  const s = Math.floor((Date.now() - d.getTime()) / 1000);
-  if (s < 60) return 'Just now';
-  if (s < 3600) return Math.floor(s / 60) + 'm ago';
-  if (s < 86400) return Math.floor(s / 3600) + 'h ago';
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+// Date and time of a notification, e.g. "Sep 22, 2026, 11:31 AM".
+function notifWhen(d) {
+  return d.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 function toggleNotifPanel() {
   const p = document.getElementById('notifPanel');

@@ -107,11 +107,15 @@
       // resting position was tried first and rejected: it sat on top of the
       // existing sidebar's Settings/Data controls (found
       // during this implementer's own visual verification screenshot).
-      '#ch-sync-status-btn{position:fixed;bottom:88px;right:16px;z-index:9998;' +
+      '#ch-sync-status-btn{position:fixed;bottom:6px;left:16px;z-index:9998;' +
       'background:var(--s3,#333);color:var(--text,#fff);border:1px solid var(--border,#555);' +
-      'border-radius:999px;padding:6px 14px;font-size:12px;font-family:inherit;cursor:pointer;' +
-      'box-shadow:0 2px 8px rgba(0,0,0,.25);display:none;}' +
+      'border-radius:999px;padding:4px 10px;font-size:11px;font-family:inherit;cursor:pointer;' +
+      'box-shadow:0 2px 8px rgba(0,0,0,.25);}' +
       '#ch-sync-status-btn:hover{background:var(--s4,#3a4258);}' +
+      '#ch-sync-status-btn.ch-sync-status-inline{position:static;background:none;border:0;border-radius:0;' +
+      'box-shadow:none;padding:0;font-size:inherit;font-family:inherit;letter-spacing:inherit;color:var(--text2,#9aa3b8);' +
+      'text-decoration:underline;}' +
+      '#ch-sync-status-btn.ch-sync-status-inline:hover{background:none;color:var(--text,#fff);}' +
       '#ch-sync-status-panel{position:fixed;top:0;left:0;bottom:0;width:360px;max-width:90vw;' +
       'z-index:var(--z-modal,800);background:var(--s2,#181d2e);border-right:1px solid var(--border,#333);' +
       'display:none;flex-direction:column;box-shadow:4px 0 20px rgba(0,0,0,.4);font-family:inherit;}' +
@@ -133,11 +137,10 @@
       // All widths: the three corner controls sit in ONE row on the bottom edge (status
       // left, archive next, unsynced pill right) and .content reserves that row, so nothing
       // covers page content. At 900px and wider the row starts right of the 220px sidebar.
-      '#ch-sync-status-btn,#ch-archive-link,#ch-sync-pill{bottom:6px;font-size:11px;padding:4px 10px;}' +
-      '#ch-sync-status-btn{left:236px;right:auto;}' +
-      '#ch-archive-link{left:336px;right:auto;}' +
+      '#ch-archive-link,#ch-sync-pill{bottom:6px;font-size:11px;padding:4px 10px;}' +
+      '#ch-archive-link{left:236px;right:auto;}' +
       '.content{margin-bottom:38px;}' +
-      '@media (max-width:899px){#ch-sync-status-btn{left:16px;}#ch-archive-link{left:116px;}}';
+      '@media (max-width:899px){#ch-archive-link{left:16px;}}';
     document.head.appendChild(style);
   }
 
@@ -875,11 +878,28 @@
     return 'pending';
   }
 
+  // The Sync status button sits in the sidebar, on the version line ("v... · Sync status").
+  // A page with no sidebar version line (the login page) keeps it as a floating button.
   function renderSyncStatusButton() {
     ensureStyles();
-    var el = ensureEl('ch-sync-status-btn');
+    var el = document.getElementById('ch-sync-status-btn');
+    if (!el) {
+      el = document.createElement('button');
+      el.id = 'ch-sync-status-btn';
+      el.type = 'button';
+      var host = document.querySelector('.sb-version');
+      if (host) {
+        el.className = 'ch-sync-status-inline';
+        var sep = document.createElement('span');
+        sep.textContent = ' · ';
+        host.appendChild(sep);
+        host.appendChild(el);
+      } else {
+        document.body.appendChild(el);
+      }
+    }
     el.textContent = 'Sync status';
-    el.style.display = 'block';
+    el.style.display = '';
     el.onclick = openSyncStatusPanel;
   }
 

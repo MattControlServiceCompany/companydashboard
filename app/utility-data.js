@@ -1637,6 +1637,12 @@ function udGoToGap(evt, pid, bldgId, meterId, embed, later) {
   udGoToFlagged(evt, pid, bldgId, meterId, embed);
   udScrollToGapRow(later);
 }
+// Open a meter on its Bills tab (project, Utility Data tab, building, meter) and scroll to the bill row that starts on `start`.
+function udGoToMeterBills(pid, bldgId, meterId, start) {
+  udGoToFlagged(null, pid, bldgId, meterId, true);
+  const row = start && document.querySelector('tr[data-bill-start="' + start + '"]');
+  if (row && row.scrollIntoView) row.scrollIntoView({ block: 'center' });
+}
 function udGoToGapFromPill(evt, meterId, later, el) {
   if (evt) evt.stopPropagation();
   udSelectMeter(meterId, el);

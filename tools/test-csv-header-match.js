@@ -54,7 +54,7 @@ const R = (s) => vm.runInContext(s, sb);
 R(
   'var __t = { m: null, toasts: [] }; resolveUDMeter = function () { return { b: { id: "b1", meters: [] }, m: __t.m }; };' +
     '_syncEmbedUDContext = function () {}; saveUtilityData = function () {}; closeBillCsvModal = function () {};' +
-    'renderMeterWorkspace = function () {}; addNotif = function () {};',
+    'renderMeterWorkspace = function () {}; notifyBillsImported = function () {};',
 );
 function freshMeter() {
   return {
