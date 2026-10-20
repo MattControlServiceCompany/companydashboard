@@ -2575,6 +2575,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.20.150', date: '2026-10-20', title: 'PDF / OCR: values beside the PDF, status as small buttons',
+    items: [
+      { type: 'change', text: 'PDF / OCR: the bill values now sit beside the PDF with no scrolling; reviews, saved copies, warnings and fixes are small buttons at the top that open a list.' },
+      { type: 'fix', text: 'PDF / OCR: duplicate bills name the field that differs, and a blank never replaces a saved value.' }
+    ]
+  },
   { v: 'v2026.10.20.149', date: '2026-10-20', title: 'PDF / OCR: electric bill corrections match their math',
     items: [
       { type: 'fix', text: 'PDF / OCR: a charge is only corrected when its quantity × rate matches to the cent, and the shown math always equals the result.' },
