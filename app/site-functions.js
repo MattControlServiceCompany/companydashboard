@@ -2575,6 +2575,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.20.145', date: '2026-10-20', title: 'Utility Data: electric bill total matches the printed charges',
+    items: [
+      { type: 'fix', text: 'Utility Data, electric bills: Total Current Charges is now exactly the printed Current Charges; a miscellaneous charge is kept as its own value and no longer added on top.' }
+    ]
+  },
   { v: 'v2026.10.20.144', date: '2026-10-20', title: 'Utility Data: missing bill days shown as a gap chip',
     items: [
       { type: 'feature', text: "Utility Data: a dashed 'gap' chip with a calendar icon now shows on the building row, the meter button and the Projects list when a meter has missing bill days. Hover shows the missing dates; click opens the Bills tab at the gap. It is not a warning and is not in any warning count." }
