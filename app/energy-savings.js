@@ -6651,6 +6651,114 @@ function _lbg_peerStormCharge(bills) {
   const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
   return top && top[1] >= 3 && top[1] * 2 > total ? parseFloat(top[0]) : null;
 }
+// The rate check: a printed Gas charge and usage x rate must agree within this many dollars.
+const _LBG_GAS_RATE_CHECK_TOL = 1.0;
+// Candidate therms from one lost, extra or misread digit of the OCR string of the therms figure.
+function _lbg_usageDigitRepairs(usage) {
+  const s = String(usage);
+  const out = new Set();
+  const digits = '0123456789';
+  for (let i = 0; i <= s.length; i++) {
+    for (const d of digits) out.add(s.slice(0, i) + d + s.slice(i)); // one lost digit
+  }
+  for (let i = 0; i < s.length; i++) {
+    if (!/\d/.test(s[i])) continue;
+    out.add(s.slice(0, i) + s.slice(i + 1)); // one extra digit
+    for (const d of digits) out.add(s.slice(0, i) + d + s.slice(i + 1)); // one misread digit
+  }
+  out.delete(s);
+  return [...out].filter((x) => /^[1-9]\d*(\.\d+)?$/.test(x)).map(Number);
+}
+// The therm factor of one meter, from its other gas bills (therms / read difference). Returns null
+// unless at least one bill gives it and all agree to 0.1%.
+function _lbg_meterFactor(peers) {
+  const fs = [];
+  for (const b of peers) {
+    const d = Number(b.EndRead) - Number(b.StartRead);
+    const th = Number(b.NaturalGasTherms);
+    if (d > 0 && th > 0) fs.push(th / d);
+  }
+  if (!fs.length) return null;
+  const lo = Math.min(...fs);
+  const hi = Math.max(...fs);
+  return (hi - lo) / lo <= 0.001 ? fs[0] : null;
+}
+// THE autofix for a Gas therms figure that failed the rate check while the printed Gas charge is
+// proven. Sources: (a) meter reads x the meter's therm factor, (b) the charge / rate, (c) one-digit
+// repairs of the OCR string. Fills only when two independent sources agree; otherwise null (the
+// caller keeps the hold). Returns { usage, reason } or null.
+// in: { ocrUsage, prevRead, currRead, factor, variable (printed gas line - customer charge), rate }
+function _lbg_autofixGasUsage(a) {
+  if (!(a.variable > 0) || !(a.rate > 0)) return null;
+  const fitsCharge = (t) => Math.abs(a.variable - t * a.rate) < _LBG_GAS_RATE_CHECK_TOL;
+  const diff = a.currRead != null && a.prevRead != null ? a.currRead - a.prevRead : 0;
+  const reads = diff > 0 && a.factor > 0 ? Math.round(diff * a.factor * 1000) / 1000 : null;
+  const repairs = _lbg_usageDigitRepairs(a.ocrUsage);
+  if (reads != null) {
+    if (!fitsCharge(reads)) return null; // reads and charge disagree: stays held
+    const ocrAgrees = repairs.some((c) => Math.abs(c - reads) < 0.0005);
+    return {
+      usage: reads,
+      reason:
+        'Filled from meter reads ' + diff + ' x ' + Math.round(a.factor * 10000) / 10000 + ' = ' + reads +
+        ', which fits the printed Gas charge' + (ocrAgrees ? ' and the scan (' + a.ocrUsage + ' with one digit lost)' : '') +
+        '; the scan read ' + a.ocrUsage + '.',
+    };
+  }
+  const near = repairs.filter((c) => Math.abs(c * a.rate - a.variable) <= 0.005);
+  if (near.length === 1) {
+    return {
+      usage: near[0],
+      reason: 'Filled from the printed Gas charge / rate, confirmed by one digit repair of the scan (' + a.ocrUsage + ' to ' + near[0] + ').',
+    };
+  }
+  return null;
+}
+// The therm factor of one account from the gas bills already saved (utilityData meters), or null.
+function _lbg_storedGasFactor(acct) {
+  if (!acct || typeof utilityData === 'undefined') return null;
+  const peers = [];
+  for (const cust of Object.values(utilityData || {})) {
+    for (const bl of (cust && cust.buildings) || []) {
+      for (const m of bl.meters || []) {
+        for (const sb of m.bills || []) {
+          if (sb.accountNumber !== acct || (sb.commodity && sb.commodity !== 'Gas')) continue;
+          peers.push({ StartRead: parseFloat(String(sb.startRead).replace(/,/g, '')), EndRead: parseFloat(String(sb.endRead).replace(/,/g, '')), NaturalGasTherms: parseFloat(String(sb.kwh).replace(/,/g, '')) });
+        }
+      }
+    }
+  }
+  return _lbg_meterFactor(peers);
+}
+// Reader post-pass over a file's bills: autofix every gas bill held only for unproven therms,
+// using the therm factor of the same account's other bills in the file (or opts.priorFactor(acct)).
+function _lbg_applyGasUsageAutofix(bills, priorFactor) {
+  for (const b of bills) {
+    const pend = b._correction_pending_NaturalGasTherms;
+    if (b.Commodity !== 'Gas' || !pend || b.PrintedGasLine == null) continue;
+    const peers = bills.filter((o) => o !== b && o.Commodity === 'Gas' && o.AccountNumber === b.AccountNumber && !o._correction_pending_NaturalGasTherms);
+    const factor = _lbg_meterFactor(peers) || (priorFactor ? priorFactor(b.AccountNumber) : null);
+    const r = _lbg_gasRate(b.BillDate);
+    const fix = _lbg_autofixGasUsage({
+      ocrUsage: pend.original,
+      prevRead: b.StartRead,
+      currRead: b.EndRead,
+      factor,
+      variable: Math.max(0, b.PrintedGasLine - r.baseCharge),
+      rate: r.rate,
+    });
+    if (!fix) continue;
+    b.NaturalGasTherms = billValueOrNull(fix.usage);
+    b._auto_corrected_NaturalGasTherms = { original: pend.original, corrected: fix.usage, reason: fix.reason };
+    delete b._correction_pending_NaturalGasTherms;
+    b._gateReasons = (b._gateReasons || []).filter((x) => x !== pend.reason);
+    if (!b._gateReasons.length) {
+      b._gateTripped = false;
+      b._manualReview = false;
+      delete b._manualReviewLabel;
+    }
+  }
+}
 const _LBG_GAS_RATES = [{ effectiveDate: '2000-01-01', rate: 0.798062, baseCharge: 23.33 }];
 function _lbg_gasRate(billDate) {
   let rate = _LBG_GAS_RATES[0];
@@ -6702,7 +6810,7 @@ function _lbg_resolveGasLine(
     };
   }
   const expected = Math.round(usage * r.rate * 100) / 100;
-  if (Math.abs(variable - expected) < 1.0) {
+  if (Math.abs(variable - expected) < _LBG_GAS_RATE_CHECK_TOL) {
     return {
       usage,
       printedGasLine,
@@ -14299,6 +14407,11 @@ function _pageRule(page) {
 // array-attached extras of `rule` (_unmatchedPages, _wreSiteBlockCount) and `_mixedProvider` when
 // the split happened.
 function _extractFileBills(text, rule) {
+  const bills = _extractFileBillsRaw(text, rule);
+  _lbg_applyGasUsageAutofix(bills, _lbg_storedGasFactor);
+  return bills;
+}
+function _extractFileBillsRaw(text, rule) {
   const readAll = (r, t) => {
     const out = r.extractAll ? r.extractAll(t) : [r.extract(t)];
     return Array.isArray(out) ? out : [out];

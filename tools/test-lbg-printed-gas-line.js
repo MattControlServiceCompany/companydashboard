@@ -90,6 +90,28 @@ check('6 page off by a cent: held, charge null', b && b._manualReview === true &
 b = runUsage(100.0, 9999, 180.0, 90.0, null);
 check('6 fuel adjustment unread: not proven, held', b && b._manualReview === true && b.GasCharge === null, JSON.stringify(b && b.GasCharge));
 
+// 7. (2026-10-20) Autofix of the therms: the scan lost the first digit (52.5 read 2.5). Fill only when
+// two independent sources agree: meter reads x the meter's therm factor and the proven charge.
+const post = vm.runInContext('_lbg_applyGasUsageAutofix', sandbox);
+const sh7 = { ...shared, AccountNumber: 'SAMPLE-ACCT', BillDate: DATE };
+const mk7 = (usage, s0, s1) => build(sh7, { charge: 65.23, usage, prevRead: s0, currRead: s1 }, true, 90.0, 145.23, -10.0, DATE, META);
+const peer = (acct, s0, s1, th) => ({ Commodity: 'Gas', AccountNumber: acct, StartRead: s0, EndRead: s1, NaturalGasTherms: th });
+let g7 = mk7(2.5, 2000, 2050);
+check('7 starts held for therms', g7 && !!g7._correction_pending_NaturalGasTherms && g7.NaturalGasTherms === null, JSON.stringify(g7 && g7.NaturalGasTherms));
+post([g7, peer('SAMPLE-ACCT', 100, 200, 105)]);
+check('7 therms filled 52.5 from reads x factor', g7.NaturalGasTherms === 52.5, JSON.stringify(g7.NaturalGasTherms));
+check('7 hold dropped', !g7._gateTripped && !g7._manualReview && !g7._correction_pending_NaturalGasTherms, JSON.stringify([g7._gateTripped, g7._manualReview]));
+check('7 hover reason names the method and the scan value', g7._auto_corrected_NaturalGasTherms && /meter reads 50 x 1\.05 = 52\.5/.test(g7._auto_corrected_NaturalGasTherms.reason) && /2\.5/.test(g7._auto_corrected_NaturalGasTherms.reason), JSON.stringify(g7._auto_corrected_NaturalGasTherms));
+g7 = mk7(2.5, 2000, 2050);
+post([g7, peer('SAMPLE-ACCT', 100, 200, 150)]);
+check('7 reads and charge disagree: stays held, therms null', g7._manualReview === true && g7.NaturalGasTherms === null, JSON.stringify(g7.NaturalGasTherms));
+g7 = mk7(2.5, 2000, 2050);
+post([g7, peer('OTHER-ACCT', 100, 200, 105)]);
+check('7 factor of another meter is not used; digit repair + charge agree', g7.NaturalGasTherms === 52.5, JSON.stringify(g7.NaturalGasTherms));
+g7 = mk7(7.7, 2000, 2050);
+post([g7, peer('OTHER-ACCT', 100, 200, 105)]);
+check('7 no source pair agrees: stays held', g7._manualReview === true && g7.NaturalGasTherms === null, JSON.stringify(g7.NaturalGasTherms));
+
 // 4. Source shape: overwrite function gone, no therms x rate substitution left.
 check('4 _lbg_correctGasCharge removed', !/_lbg_correctGasCharge\s*\(/.test(src), '');
 check('4 one resolver, three call sites', (src.match(/_lbg_resolveGasLine\(/g) || []).length === 4, String((src.match(/_lbg_resolveGasLine\(/g) || []).length)); // 1 def + 3 calls

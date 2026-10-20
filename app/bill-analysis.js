@@ -667,8 +667,12 @@ function _historyForBill(bill, historicalCache) {
 // printed Current Bill to the cent, energy-savings.js, sets _pageTotalProved), the bill is not held, the
 // total was not edited by hand, and no charge field was auto-corrected. The ONE page-proof rule.
 function _pageProvesTotal(b) {
-  if (!b || b._pageTotalProved !== true || b._gateTripped || b._manualReview || b._userCorrected_TotalCurrentCharges) return false;
-  return !Object.keys(b).some((k) => k.startsWith('_auto_corrected_'));
+  if (!b || b._pageTotalProved !== true || b._userCorrected_TotalCurrentCharges) return false;
+  // Gas therms do not enter the total: a hold for the therms alone, or a therms autofix, leaves the page proof standing.
+  const pend = b._correction_pending_NaturalGasTherms;
+  const thermsOnlyHold = !!pend && (b._gateReasons || []).every((r) => r === pend.reason);
+  if ((b._gateTripped || b._manualReview) && !thermsOnlyHold) return false;
+  return !Object.keys(b).some((k) => k.startsWith('_auto_corrected_') && k !== '_auto_corrected_NaturalGasTherms');
 }
 function detectStatisticalOutliers(extracted, historicalCache, pdfBillsIndex) {
   const warnings = [];
@@ -19344,6 +19348,7 @@ function renderPDFFields(parsed, warnings) {
     'ReadDifference', // in _LAYOUT_GAS; not in KGS layout (computed from prev/curr reads)
     'WNAPerMcf', // printed rate — used by per-Mcf validation, shown via printedRateField
     'CostOfGasPerMcf', // same
+    'PrintedGasLine', // proof value (printed GAS line before the customer charge): stored, never a user field
   ]);
   // Also exclude null/undefined/'' values so empty diagnostic fields (NaturalGasCCF,
   // kWhConsumed on gas bills) don't render as blank cells below Total Current Charges.
