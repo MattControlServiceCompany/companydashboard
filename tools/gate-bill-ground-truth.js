@@ -27,6 +27,8 @@
  *                          set, a re-read missing from the cache is OCR'd from the page PNG and cached
  *                          (one worker, one process). Without it a missing re-read reads as "".
  *     BILL_GT_LANG_PATH    optional: folder with eng.traineddata for that worker
+ *     BILL_GT_HISTORY_FILE optional: a CompanyHub backup; its saved bills are the account history of the reader's
+ *                          plausibility check (rejects only; absent: the check is a no-op)
  *     BILL_GT_OUT          optional: write the per-page results (one JSON per provider: <out> and
  *                          <out>.utility-e.json)
  *   Absent real inputs: the real part is skipped with a clear message (CI).
@@ -63,12 +65,23 @@ for (const lib of ['date-helpers.js', 'formatting.js', 'unit-conversion.js'])
   const code = fn('_fixISO') + fn('_parseISO') + fn('calcDays');
   if (/function calcDays/.test(code)) vm.runInContext(code, sandbox, { filename: 'utility-data.js(calcDays)' });
 })();
+// the one month function (billMonth): the history check counts the calendar months a bill list covers
+vm.runInContext(fs.readFileSync(path.join(ROOT, 'computations', 'normalization.js'), 'utf8'), sandbox, { filename: 'normalization.js' });
 vm.runInContext(fs.readFileSync(path.join(ROOT, 'computations', 'rates.js'), 'utf8'), sandbox, {
   filename: 'rates.js',
 });
 vm.runInContext(fs.readFileSync(path.join(ROOT, 'app', 'energy-savings.js'), 'utf8'), sandbox, {
   filename: 'energy-savings.js',
 });
+// Optional: the account history (BILL_GT_HISTORY_FILE = a CompanyHub backup). Gives the reader the saved
+// bills of every account, so the history check (reject only) runs on the real pages as in production.
+if (process.env.BILL_GT_HISTORY_FILE && fs.existsSync(process.env.BILL_GT_HISTORY_FILE)) {
+  const hd = JSON.parse(fs.readFileSync(process.env.BILL_GT_HISTORY_FILE, 'utf8'));
+  const ud = {};
+  for (const k of Object.keys(hd)) if (/^en_utility_\d/.test(k)) ud[k] = typeof hd[k] === 'string' ? JSON.parse(hd[k]) : hd[k];
+  sandbox.utilityData = ud;
+}
+const historyReject = vm.runInContext('_lbg_pageHistoryReject', sandbox);
 const cityRule = vm.runInContext("UTILITY_RULES.find((r) => typeof r._extractNew === 'function')", sandbox);
 // the Utility E rule: the first rule of UTILITY_RULES (the electric utility), never the City rule
 const utilityERule = vm.runInContext("UTILITY_RULES[0]", sandbox);
@@ -354,8 +367,8 @@ async function runPage(prov, pg, words, ocrBox) {
   const exp = prov.expected(pg);
   const textBills = prov.read(A);
   const text = prov.values(textBills, words.text);
-  const pass = { label: '2.5x', score: 1, words: words.words, w: words.w, h: words.h };
-  const res = typeof BL.readPage === 'function' ? await BL.readPage([pass], ocrBox) : BL.readBestPass([pass]);
+  const pass = { label: '2.5x', score: 1, text: words.text, words: words.words, w: words.w, h: words.h };
+  const res = typeof BL.readPage === 'function' ? await BL.readPage([pass], ocrBox, { reject: historyReject }) : BL.readBestPass([pass]);
   const B = A + (res.ok ? BL.linesBlock(res.read, pass.label) : BL.fallbackMarker(res.reason));
   const posBills = prov.read(B);
   const pos = prov.values(posBills, res.ok ? res.read.lines.join('\n') : words.text);

@@ -129,8 +129,8 @@ check('4 two held cells: held', b.BilledKWCharge === null && b._manualReview ===
 
 // 5. The shared function: gas and electric both call it; no second copy of the rule.
 check('5 gas-only autofix function removed', !/_lbg_autofixGasUsage/.test(src) && !/_lbg_usageDigitRepairs/.test(src) && !/_lbg_storedGasFactor/.test(src), '');
-check('5 one rule function, five call sites', (src.match(/_lbg_autofix\(\{/g) || []).length === 5, String((src.match(/_lbg_autofix\(\{/g) || []).length));
-check('5 shared function ties = hold', autofix({ sources: [{ label: 'a', values: [1] }, { label: 'b', values: [2] }] }) === null, '');
+check('5 one rule function, six call sites (5 + Total Amount Due)', (src.match(/_lbg_autofix\(\{/g) || []).length === 6, String((src.match(/_lbg_autofix\(\{/g) || []).length));
+check('5 shared function ties = hold with a reason, no value', (autofix({ sources: [{ label: 'a', values: [1] }, { label: 'b', values: [2] }] }) || {}).value === null, '');
 check('5 shared function two agree = fill', (autofix({ sources: [{ label: 'a', values: [2] }, { label: 'b', test: (v) => v === 2 }] }) || {}).value === 2, '');
 
 console.log(fails ? '\n' + fails + ' FAILED' : '\nALL PASSED');

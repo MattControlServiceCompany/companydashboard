@@ -163,12 +163,24 @@ add(
   null,
   ALL_CORRECT,
 );
-// S6 Total Amount Due contradicts Current Bill + carried balance (digit error): held
+// S6 Total Amount Due contradicts Current Bill + carried balance by one digit: two sources (the identity, the
+// one-digit repair of the scan) agree on 976.39 and the page lines prove the Current Bill: filled
 add(
   'S6-total-due-contradicted',
-  'Total Amount Due OCR\'d 986.39 for a printed 976.39; Current Bill 976.39 and the balance lines prove it wrong',
+  'Total Amount Due read as 986.39 for a printed 976.39; Current Bill 976.39 (the lines add up to it) + the balance lines and the one-digit repair both give 976.39',
   ROWS,
   { cb: '$976.39', tad: '$986.39' },
+  { rows: TRUTH_ROWS, cb: '976.39', tad: '976.39' },
+  null,
+  ALL_CORRECT,
+  { prev: '$100.00', pay: '($100.00)', adj: '$0.00', pen: '$0.00', acct: '$0.00' },
+);
+// S6b the same, but the read is two digits off the identity: one source only, held with the missing source named
+add(
+  'S6b-total-due-two-digits',
+  'Total Amount Due read as 918.39 for a printed 976.39: the identity gives 976.39, no one-digit repair of the scan does: held',
+  ROWS,
+  { cb: '$976.39', tad: '$918.39' },
   { rows: TRUTH_ROWS, cb: '976.39', tad: '976.39' },
   null,
   { Water: 'correct', Gas: 'correct', FuelAdjustment: 'correct', CurrentBill: 'correct', TotalAmountDue: 'held' },
@@ -194,6 +206,50 @@ add(
   (label) => (label === 'FUEL ADJUSTMENT' ? '-30.00' : label === 'Current Bill' ? '$976.39' : ''),
   ALL_CORRECT,
 );
+
+// S9 a handwritten gas bill (fake school, fake figures): handwriting on the Fuel Adjustment cell, an empty
+// Stormwater cell (re-read "4.0", one cents digit lost), the Current Bill "$" read as "(8" with a stray "7)",
+// and a Gas usage cell that fails the usage format. Nothing is held: every value has two agreeing sources.
+//   Gas 1,001.51 = 23.33 + 1,225.700 therms x 0.798062; reads 20,100 / 20,821 = 721 x 1.7 = 1,225.7
+//   lines 904.50 + 1,001.51 - 41.27 + 3.21 + 1,011.75 + 4.00 = 2,883.70; carried 1,800.00 - 1,750.00 + 1.20 = 51.20
+const S9_ROWS = [
+  { label: 'WATER', value: '904.50', prev: '4,000,000', curr: '4,010,000', usage: '10,000' },
+  { label: 'GAS', value: '1,001.51', prev: '20,100', curr: '20,821', usage: '[1257700' },
+  { label: 'FUEL ADJUSTMENT', value: '9389' },
+  { label: 'WATER PROTECTION', value: '3.21' },
+  { label: 'SEWER', value: '1,011.75' },
+  { label: 'STORMWATER', value: null },
+];
+const S9_TEXT_ROWS = [
+  { label: 'WATER', value: '904.50', prev: '4,000,000', curr: '4,010,000', usage: '10,000' },
+  { label: 'GAS', value: '1,001.51', prev: '20,100', curr: '20,821', usage: '1.225.700' },
+  { label: 'FUEL ADR', value: '¢ 41.27' },
+  { label: 'WATER PROTECTION', value: '3.21' },
+  { label: 'SEWER', value: '1,011.75' },
+  { label: 'STORMWATER', value: '4.0' },
+];
+const S9_TRUTH = [
+  { label: 'WATER', amount: '904.50' },
+  { label: 'GAS', amount: '1,001.51' },
+  { label: 'FUEL ADJUSTMENT', amount: '-41.27' },
+  { label: 'WATER PROTECTION', amount: '3.21' },
+  { label: 'SEWER', amount: '1,011.75' },
+  { label: 'STORMWATER', amount: '4.00' },
+];
+const S9_BAL = { prev: '$1,800.00', pay: '($1,750.00)', adj: '$0.00', pen: '$1.20', acct: '$51.20' };
+add(
+  'S9-handwritten-gas',
+  'handwriting on FUEL ADJUSTMENT (9389), STORMWATER cell empty (re-read 4.0), Current Bill "(82,883.70 7)", Gas usage cell [1257700 (text layer 1.225.700): no hold',
+  S9_ROWS,
+  { cb: '(82,883.70 7)', tad: '$2,934.90' },
+  { rows: S9_TRUTH, cb: '2,883.70', tad: '2,934.90' },
+  (label) => (label === 'FUEL ADJUSTMENT' ? '41391' : label === 'STORMWATER' ? '4.0' : label === 'Current Bill' ? '($2,883.70' : ''),
+  ALL_CORRECT,
+  S9_BAL,
+);
+pages[pages.length - 1].text = pageText(S9_TEXT_ROWS, { cb: '$2,883.70', tad: '$2,934.90' }, S9_BAL);
+pages[pages.length - 1].account = 'SAMPLE-ACCT-9';
+pages[pages.length - 1].expectTherms = 1225.7;
 
 // ── Utility E synthetic pages (template UTILITY_E_BD; fake school, fake address, synthetic account id) ──
 // Word boxes built from the template's own reference coordinates: the fixed anchors at their boxes, the

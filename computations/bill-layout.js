@@ -76,9 +76,22 @@
     chargeRows: { yTop: 1086, topAnchor: 'usage', yBottom: 1254, bottomAnchor: 'currentBill' },
     slots: ['WATER', 'GAS', 'FUEL ADJUSTMENT', 'WATER PROTECTION', 'SEWER', 'STORMWATER'],
     rowPitch: 27.5,
+    // dollar: true = the cell always prints a leading "$" ("dollarCells" lists every such cell of the
+    // layout; Payments prints "($x)"). A leading 8, S, 5 or section sign in front of a valid amount is the
+    // "$" glyph and text after the cents is noise (dollarCellValue). One rule, read from the template.
     totals: [
-      { label: 'Current Bill', anchor: 'currentBill' },
-      { label: 'Total Amount Due', anchor: 'totalDue' },
+      { label: 'Current Bill', anchor: 'currentBill', dollar: true },
+      { label: 'Total Amount Due', anchor: 'totalDue', dollar: true },
+    ],
+    dollarCells: [
+      'Previous Balance',
+      'Payments',
+      'Adjustments',
+      'Penalty',
+      'Past Due Amount',
+      'Current Bill',
+      'Total Amount Due',
+      'Amount Due After',
     ],
     sumRule: { total: 'Current Bill', creditRows: ['FUEL ADJUSTMENT'] },
     reread: { rows: true, totals: ['Current Bill'] },
@@ -473,12 +486,41 @@
   // { raw, text, ok }: text is the tight money string when the format holds, else null (never a raw
   // value: a box that fails the format gets no value; raw is kept for the debug record and the re-read).
   // fmt: the template's own money format (tpl.moneyFormat), else MONEY_STRICT.
-  function moneyCell(ws, fmt) {
+  // A cell the layout says always prints a leading "$" (template field flag `dollar`). The first glyph is
+  // the "$" when it is "$", "8", "S", "5", a section sign or "s" AND the rest is an amount (digits with
+  // thousands commas, 2 cents); text after the cents is noise. A "(" or "|" in front is noise; "(...)" with
+  // the bracket right after the cents (Payments) and a "¢" or "-" in front or behind are negative. Returns
+  // the number or null. "(83,572.97 7)" -> 3572.97; "(82,541.03)" -> -2541.03; "8,572.97" -> 8572.97
+  // (the rest ",572.97" is no amount, so no glyph is dropped).
+  var DOLLAR_BODY = /^(\d{1,3}(?:,\d{3})+|\d+)\.\d{2}/;
+  function dollarCellValue(text) {
+    var s = String(text == null ? '' : text).replace(/^[\s(|]+/, '');
+    var neg = false;
+    var lead = s.match(/^[-¢]\s*/);
+    if (lead) {
+      neg = true;
+      s = s.slice(lead[0].length);
+    }
+    var body = s;
+    if (/^[$8S5§s]/.test(s) && DOLLAR_BODY.test(s.slice(1))) body = s.slice(1);
+    var m = body.match(DOLLAR_BODY);
+    if (!m) return null;
+    var after = body.slice(m[0].length);
+    if (/^\s*[)-]/.test(after)) neg = true;
+    var v = parseFloat(m[0].replace(/,/g, ''));
+    return neg ? -v : v;
+  }
+  function moneyCell(ws, fmt, dollar) {
     fmt = fmt || MONEY_STRICT;
     ws = valueWords(ws);
     var raw = cellText(ws);
     if (!raw) return { raw: '', text: null, ok: false };
     var tight = raw.replace(/\s+/g, '');
+    // A dollar cell that fails the page format: the glyph and the noise are known (dollarCellValue).
+    if (dollar && !fmt.test(tight)) {
+      var dv = dollarCellValue(raw);
+      if (dv != null) return { raw: raw, text: moneyText(dv), ok: true, dollarRepair: true };
+    }
     // Two or more digit words in one cell whose rightmost word is money on its own ("3237 3.90",
     // "[4.0] 754.33"): the printed amount is right-aligned and the words left of it are pen marks or
     // noise, so the cell is ambiguous; the re-read and the page sum decide (never the joined digits).
@@ -596,7 +638,7 @@
       if (!box) return { label: t.label, value: { raw: '', text: null, ok: false }, found: false, box: null };
       var ws = words.filter(sameBand(box)).filter(reachesAmount);
       markUsed(ws);
-      return { label: t.label, value: moneyCell(ws, tpl.moneyFormat), found: true, box: cellBox(cy(box)), y: Math.round(cy(box)) };
+      return { label: t.label, value: moneyCell(ws, tpl.moneyFormat, t.dollar), found: true, box: cellBox(cy(box)), y: Math.round(cy(box)), dollar: !!t.dollar };
     });
     // Bands: label-column words grouped by print line. A band taller than 1.5 row pitches holds two
     // rows' labels (a pen line through GAS and FUEL ADJUSTMENT makes OCR draw one tall box across both):
@@ -1063,8 +1105,10 @@
       }
       if (!r.value.text && !r.slot) return;
       var parts = [];
+      // A usage cell that fails the usage format (a mark glued to the digits) is no figure: it is dropped,
+      // never promoted to a meter read by the reader that parses this line (R6). The reads stay.
       ['prev', 'curr', 'usage'].forEach(function (k) {
-        if (r.reads[k].text) parts.push(r.reads[k].text);
+        if (r.reads[k].text && (k !== 'usage' || r.reads[k].ok)) parts.push(r.reads[k].text);
       });
       parts.push(r.slot || r.labelRaw);
       if (r.value.text) parts.push(r.value.text);
@@ -1179,7 +1223,14 @@
   // read; the money format places a lost point before the last two digits, and both signs are tried
   // because the minus is the glyph OCR loses most. The page sum then picks the one printed value; a
   // candidate that does not make the page add up is never used.
-  function candidatesFromText(txt) {
+  // opts.dollar: the cell always prints a leading "$" (template flag): the one candidate is
+  // dollarCellValue. A cell with only one cents digit lost ("4.0") offers its ten completions (x.d0 .. x.d9);
+  // the page sum keeps one or none.
+  function candidatesFromText(txt, opts) {
+    if (opts && opts.dollar) {
+      var dv = dollarCellValue(txt);
+      if (dv != null) return [Math.round(dv * 100) / 100];
+    }
     var out = [];
     var push = function (v) {
       if (v == null || isNaN(v)) return;
@@ -1201,6 +1252,9 @@
             push(moneyValue(f));
             return;
           }
+          var m1 = f.match(/^(-?)(\d[\d,]*)\.(\d)$/);
+          if (m1)
+            for (var d = 0; d < 10; d++) push(moneyValue(m1[1] + m1[2] + '.' + m1[3] + d));
           var digits = f.replace(/[^\d]/g, '');
           if (digits.length >= 3) {
             // the point was lost: cents are the last two digits
@@ -1252,7 +1306,8 @@
       if (!t.box || (allow.totals || []).indexOf(t.label) === -1 || !totalInGroup(tpl, t.label, group)) return;
       // in the 'below' group the Subtotal is the proved base, not a box to re-read
       if (list && group === 'below' && t.label === tpl.sumRule.subtotal) return;
-      if (!t.value.ok || sumFails || all) plan.push({ kind: 'total', index: i, label: t.label, box: t.box, was: t.value.ok ? t.value.text : t.value.raw, ok: t.value.ok });
+      if (!t.value.ok || sumFails || all)
+        plan.push({ kind: 'total', index: i, label: t.label, box: t.box, was: t.value.ok ? t.value.text : t.value.raw, ok: t.value.ok, dollar: !!t.dollar });
     });
     return plan;
   }
@@ -1265,6 +1320,44 @@
   // Mutates and returns read (a Promise). A template with two identities (sumGroups) is proved one group
   // after the other: the charge rows against the Subtotal first, then the rows below it and the total
   // against the proved Subtotal.
+  // R3: the amounts of the page-text line that carries a row's label. The label is matched on its leading
+  // letters (a label cut short is still that label); a label that prints on more than one line (WATER, one
+  // line per meter) or on none gives nothing. The amounts come from the same candidate maker as the box
+  // re-read, so the page sum still decides.
+  function textLineCandidates(read, tpl, label) {
+    if (!read.pageText || !label) return [];
+    var want = normLabel(label);
+    if (!want) return [];
+    var hits = [];
+    String(read.pageText)
+      .split(/\r?\n/)
+      .forEach(function (line) {
+        if (/^\s*%%/.test(line)) return;
+        var toks = line.split(/\s+/).filter(Boolean);
+        for (var i = 0; i < toks.length; i++) {
+          for (var n = 1; n <= 3 && i + n <= toks.length; n++) {
+            var part = toks.slice(i, i + n);
+            if (
+              part.some(function (t) {
+                return /\d/.test(t);
+              })
+            )
+              break;
+            var found = normLabel(part.join(' '));
+            if (!found) continue;
+            var ok = labelDistance(part.join(' '), label) >= 0;
+            if (!ok && found.length >= 6 && found.length < want.length)
+              ok = editDistance(found, want.slice(0, found.length)) <= allowedEdits(found.length);
+            if (ok) {
+              hits.push(toks.slice(i + n).join(' '));
+              return;
+            }
+          }
+        }
+      });
+    if (hits.length !== 1) return [];
+    return candidatesFromText(hits[0], { dollar: false });
+  }
   function rereadBoxes(read, tpl, ocrBox) {
     var chain = Promise.resolve(read);
     sumGroups(tpl).forEach(function (group) {
@@ -1318,17 +1411,29 @@
     // The candidates of a planned box: its page value when format-valid, the page's own reading of the
     // cell ("2333" is 23.33 by the format), every re-read, and ABSENT for a row the order rule placed
     // from a noise label with no value on the page.
+    var opts = read.opts || {};
     var candidatesOf = function (p) {
       var list = [];
+      var add = function (v) {
+        if (list.indexOf(v) !== -1) return;
+        // R7: a candidate the account's saved bills rule out is removed (never added by history)
+        var why = opts.reject && opts.reject(p.label, v, read.pageText);
+        if (why) {
+          read.rejected = read.rejected || [];
+          read.rejected.push({ label: p.label, value: v, reason: why });
+          return;
+        }
+        list.push(v);
+      };
       if (p.ok) list.push(moneyValue(p.was));
-      candidatesFromText(p.ok ? '' : p.was).forEach(function (v) {
-        if (list.indexOf(v) === -1) list.push(v);
-      });
+      candidatesFromText(p.ok ? '' : p.was, { dollar: p.dollar }).forEach(add);
       readings[keyOf(p)].forEach(function (r) {
-        candidatesFromText(r.text).forEach(function (v) {
-          if (list.indexOf(v) === -1) list.push(v);
-        });
+        candidatesFromText(r.text, { dollar: p.dollar }).forEach(add);
       });
+      // R3: a cell the pen covers (the box reads the handwriting): the page text carries the printed line
+      // (the label cut short and a minus glyph, then the amount). Its amount is a second reading of the
+      // cell, still proved by the page sum.
+      if (!p.ok) textLineCandidates(read, tpl, p.label).forEach(add);
       // ABSENT: a City row the order rule placed from a noise label with no value, or a list row with no
       // kind (a stray mark in the column is no printed line; a real line whose label and amount both
       // OCR lost cannot be proved either way and is dropped only when the page adds up without it).
@@ -1341,15 +1446,28 @@
     // { ok:false, why }.
     var solve = function (plan) {
       var cands = plan.map(candidatesOf);
-      if (
-        cands.some(function (c) {
-          return !c.length;
-        })
-      )
-        return { ok: false, why: 'no reading of a box is valid money, so the page sum cannot be proved' };
+      // R4: a box with no reading at all is the residual of the page identity. Exactly ONE such box is
+      // solved from the sum (every other box proved the usual way); two or more are one identity with
+      // two unknowns.
+      var empties = [];
+      cands.forEach(function (c, i) {
+        if (!c.length) empties.push(i);
+      });
+      if (empties.length > 1)
+        return {
+          ok: false,
+          why:
+            empties
+              .map(function (i) {
+                return plan[i].label;
+              })
+              .join(' and ') + ' have no reading: one identity, two unknowns',
+        };
+      var res = empties.length ? empties[0] : -1;
       var failing = [],
         valid = [];
       plan.forEach(function (p, i) {
+        if (i === res) return;
         (p.ok ? valid : failing).push(i);
       });
       var product = function (idxs) {
@@ -1376,11 +1494,23 @@
           free.forEach(function (bi, k) {
             assign[bi] = cands[bi][idx[k]];
           });
-          plan.forEach(function (p, i) {
-            if (p.kind === 'row') values.rows[p.index] = assign[i];
-            else values.totals[p.index] = assign[i];
-          });
-          if (sumHolds(pageSum(read, tpl, values, group))) sets.push(assign);
+          var fill = function () {
+            plan.forEach(function (p, i) {
+              if (p.kind === 'row') values.rows[p.index] = assign[i];
+              else values.totals[p.index] = assign[i];
+            });
+          };
+          var residualOk = true;
+          if (res >= 0) {
+            // the residual is what makes the sum close: row = total - others, total = sum of the rows
+            assign[res] = 0;
+            fill();
+            var s0 = pageSum(read, tpl, values, group);
+            if (!s0.known) residualOk = false;
+            else assign[res] = (plan[res].kind === 'total' ? s0.diffCents : -s0.diffCents) / 100;
+          }
+          fill();
+          if (residualOk && sumHolds(pageSum(read, tpl, values, group))) sets.push(assign);
           var c = free.length - 1;
           while (c >= 0) {
             idx[c]++;
@@ -1423,16 +1553,46 @@
             ' to the cent with no negative charge',
         };
       for (var b = 0; b < plan.length; b++) {
+        if (b === res) continue;
         var first = sets[0][b];
         var agree = sets.every(function (set) {
           return set[b] === first;
         });
         if (!agree) return { ok: false, why: 'more than one reading makes the page lines add up (ambiguous)' };
       }
+      if (res >= 0) {
+        // the others agree in every set, so the residual is the same in all of them
+        var rv = sets[0][res];
+        var sameRes = sets.every(function (set) {
+          return set[res] === rv;
+        });
+        if (!sameRes) return { ok: false, why: 'more than one reading makes the page lines add up (ambiguous)' };
+        return { ok: true, values: sets[0], residual: res };
+      }
       return { ok: true, values: sets[0] };
     };
-    var apply = function (plan, values) {
+    // The residual box (R4): its value is the page identity alone, one source. It is held with the exact
+    // missing second source named; the other boxes of the group are filled.
+    var holdResidual = function (plan, r) {
+      var p = plan[r.residual];
+      var v = r.values[r.residual];
+      setHeld(
+        read,
+        p,
+        describe(p) +
+          '; ' +
+          p.label +
+          ' = ' +
+          (p.kind === 'total' ? 'the lines added up' : 'the printed ' + (group === 'rows' ? tpl.sumRule.subtotal : tpl.sumRule.total) + ' minus the other lines') +
+          ' = ' +
+          moneyText(v) +
+          ' (one source: the page identity); second source missing: the cell is covered or unreadable and the page text has no line for ' +
+          p.label,
+      );
+    };
+    var apply = function (plan, values, skip) {
       plan.forEach(function (p, i) {
+        if (i === skip) return;
         var v = values[i];
         var target = p.kind === 'row' ? read.rows[p.index] : read.totals[p.index];
         if (target.value.ok && moneyValue(target.value.text) === v) return; // unchanged
@@ -1459,7 +1619,9 @@
     return collect(stage1).then(function () {
       var r1 = solve(stage1);
       if (r1.ok) {
-        apply(stage1, r1.values);
+        apply(stage1, r1.values, r1.residual);
+        if (r1.residual != null) holdResidual(stage1, r1);
+        read.lines = buildLines(read);
         return read;
       }
       var stage2 = rereadPlan(read, tpl, true, group);
@@ -1469,8 +1631,11 @@
       }
       return collect(stage2).then(function () {
         var r2 = solve(stage2);
-        if (r2.ok) apply(stage2, r2.values);
-        else holdFailing(r2.why);
+        if (r2.ok) {
+          apply(stage2, r2.values, r2.residual);
+          if (r2.residual != null) holdResidual(stage2, r2);
+          read.lines = buildLines(read);
+        } else holdFailing(r2.why);
         return read;
       });
     });
@@ -1506,7 +1671,10 @@
           best = { read: r, pass: p, n: n, tpl: tpl };
       });
     });
-    if (best) return { ok: true, read: best.read, pass: best.pass, template: best.tpl };
+    if (best) {
+      best.read.pageText = best.pass.text || '';
+      return { ok: true, read: best.read, pass: best.pass, template: best.tpl };
+    }
     if (!reasons.length) return { ok: false, reason: 'no OCR pass with word boxes' };
     var seen = {};
     return {
@@ -1540,9 +1708,12 @@
   // ocrBox(box, cfg) -> Promise<string> for the winning pass (box in that pass's pixels). Without ocrBox
   // the failing cells stay empty (the reader's page check holds the page). Returns a Promise of the
   // readBestPass shape.
-  function readPage(passes, ocrBox) {
+  // opts.reject(label, value, pageText) -> reason | null: the history check of the caller (R7). It only
+  // removes a candidate; it never adds one.
+  function readPage(passes, ocrBox, opts) {
     var res = readBestPass(passes);
     if (!res.ok || typeof ocrBox !== 'function') return Promise.resolve(res);
+    res.read.opts = opts || {};
     return rereadBoxes(res.read, res.template, function (box, cfg) {
       return ocrBox(box, cfg, res.pass);
     }).then(function () {
@@ -1624,6 +1795,7 @@
     matchTemplate: matchTemplate,
     readPageByTemplate: readPageByTemplate,
     candidatesFromText: candidatesFromText,
+    dollarCellValue: dollarCellValue,
     rereadPlan: rereadPlan,
     rereadBoxes: rereadBoxes,
     pageSum: pageSum,

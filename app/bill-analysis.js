@@ -15862,7 +15862,9 @@ async function extractPDFText(ab, statusCb, opts) {
             };
             let _posRes;
             try {
-              _posRes = await BILL_LAYOUT.readPage(allPassTexts[pgNum], _rereadBox);
+              _posRes = await BILL_LAYOUT.readPage(allPassTexts[pgNum], _rereadBox, {
+                reject: typeof _lbg_pageHistoryReject === 'function' ? _lbg_pageHistoryReject : null,
+              });
             } finally {
               _releaseOriented();
             }

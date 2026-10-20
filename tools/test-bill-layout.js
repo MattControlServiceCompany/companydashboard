@@ -576,7 +576,7 @@ check(
 );
 check(
   'I bill-analysis appends the block, energy-savings reads it',
-  /BILL_LAYOUT\.readPage\(allPassTexts\[pgNum\], _rereadBox\)/.test(ba) &&
+  /BILL_LAYOUT\.readPage\(allPassTexts\[pgNum\], _rereadBox, \{[^}]*_lbg_pageHistoryReject[^}]*\}\)/.test(ba) &&
     es.includes(BL.MARK.start) &&
     es.includes(BL.MARK.fallback),
   '',
@@ -790,7 +790,7 @@ const CB_Y = 1265;
   );
   // K5 the browser crop site: one oriented render per page, the geometry from rereadCrop, a timeout's
   // replacement worker adopted (as every other recognize site does)
-  const rb = ba.slice(ba.indexOf('const _rereadBox = async'), ba.indexOf('BILL_LAYOUT.readPage(allPassTexts[pgNum], _rereadBox)'));
+  const rb = ba.slice(ba.indexOf('const _rereadBox = async'), ba.indexOf('BILL_LAYOUT.readPage(allPassTexts[pgNum], _rereadBox'));
   check(
     'K _rereadBox adopts err._replacementWorker, uses rereadCrop, never the render height',
     /_replacementWorker\) workerBox\.current = rereadErr\._replacementWorker/.test(rb) && /BILL_LAYOUT\.rereadCrop\(box, pass, _oriented, cfg\.zoom\)/.test(rb) && !/_hi\.height \/ pass\.w/.test(ba),
@@ -798,7 +798,7 @@ const CB_Y = 1265;
   );
   check(
     'K the oriented 12x render is built once per page and released after the read',
-    /if \(_orientedRender\) return _orientedRender\.canvas;/.test(ba) && !/rotateCanvas90\(_hi\)/.test(rb) && /_posRes = await BILL_LAYOUT\.readPage\(allPassTexts\[pgNum\], _rereadBox\);\s*\} finally \{\s*_releaseOriented\(\);/.test(ba),
+    /if \(_orientedRender\) return _orientedRender\.canvas;/.test(ba) && !/rotateCanvas90\(_hi\)/.test(rb) && /_posRes = await BILL_LAYOUT\.readPage\(allPassTexts\[pgNum\], _rereadBox, \{[^}]*\}\);\s*\} finally \{\s*_releaseOriented\(\);/.test(ba),
     '',
   );
 

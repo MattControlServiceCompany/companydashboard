@@ -6658,6 +6658,7 @@ function _lbg_digitRepairs(scan) {
 }
 // THE autofix rule for a value whose read failed its check (Matt, 2026-10-20). Every field of every utility
 // calls this one function; it is the only place that decides "fill or hold".
+//   field    the name of the value (for the hover and the missing-source text)
 //   sources  the independent ways to get the value. A source is one of:
 //              { label, values: [n...], eps, says }   it proposes values (reads x multiplier, totals - lines, date counts)
 //              { label, test: (v) => bool, says }     it only checks a value (charge fits quantity x rate to the cent)
@@ -6665,10 +6666,13 @@ function _lbg_digitRepairs(scan) {
 //                                                     propose values only when no other source does
 //            eps is the tolerance of that source (the rounding of the bill itself).
 //   veto     (v) => bool, a value that must not be filled whatever the sources say
+//   history  (v) => reason | null, the account's saved bills (_lbg_historyCheck). It only rejects a candidate; it
+//            never proposes one and never counts as a source.
 //   scanRead optional text for the hover: what the scan gave
 // A value is filled only when 2 or more sources agree on it and no other value has as much support. The
 // scan's one-digit repairs are used only when the scan itself is not already a proposed value. Returns
-// { value, labels, reason } or null (the caller keeps the hold).
+// { value, labels, reason } when it fills, else { value: null, labels: [], reason } where reason names the
+// exact missing second source (or the sources that disagree). The caller keeps the hold and shows that reason.
 function _lbg_autofix(a) {
   const near = (x, y, e) => Math.abs(x - y) <= e;
   const srcs = [];
@@ -6705,16 +6709,39 @@ function _lbg_autofix(a) {
   };
   let best = [];
   let bestN = 0;
+  const rejected = [];
+  let alone = null; // the best candidate with one source only
   for (const c of cands) {
     if (a.veto && a.veto(c)) continue;
     const sup = srcs.filter((s) => supports(s, c));
-    if (sup.length < 2) continue;
+    if (sup.length < 2) {
+      if (sup.length === 1 && (!alone || alone.c === c)) alone = { c, sup };
+      continue;
+    }
+    const why = a.history ? a.history(c) : null;
+    if (why) {
+      rejected.push(why);
+      continue;
+    }
     if (sup.length > bestN) {
       best = [{ c, sup }];
       bestN = sup.length;
     } else if (sup.length === bestN) best.push({ c, sup });
   }
-  if (best.length !== 1) return null;
+  if (best.length !== 1) {
+    const f = a.field || 'value';
+    const named = srcs.map((s) => s.says || s.label || 'scan');
+    let why;
+    if (best.length > 1)
+      why = 'the sources disagree: ' + best.map((h) => h.c + ' (' + h.sup.map((s) => s.label).join(' + ') + ')').join(' and ');
+    else if (rejected.length) why = rejected[0];
+    else if (alone)
+      why =
+        'second source missing for ' + f + ' ' + alone.c + ': only ' + (alone.sup[0].says || alone.sup[0].label) +
+        ' gives it; ' + (srcs.length < 2 ? 'no other source is available' : 'the other sources give no matching value');
+    else why = 'no source gives a value for ' + f + (named.length ? ' (tried ' + named.length + ')' : '');
+    return { value: null, labels: [], reason: why };
+  }
   const hit = best[0];
   return {
     value: hit.c,
@@ -6758,6 +6785,154 @@ function _lbg_storedMeterFactor(acct, commodity) {
   }
   return _lbg_meterFactor(peers);
 }
+// ── R7: the account's saved bills as a plausibility check (rejects only) ──
+// One value, one reader of the saved bills: _lbg_accountHistory. One rule: _lbg_historyRejectReason. Every
+// utility and account with saved bills uses them: usage, demand, charges and totals. History never proposes a
+// value and never counts as a source of _lbg_autofix; it only removes a candidate that is 10 or more times the
+// account's largest saved value or a tenth of its smallest. A true value moves with the season by less than
+// that on the totals; a charge line can swing more (a gas line in summer against winter), so a line is checked
+// only when the saved bills cover all 12 calendar months. Fewer than 3 saved values: no check.
+const _LBG_HISTORY_FACTOR = 10;
+const _LBG_HISTORY_MIN_VALUES = 3;
+const _LBG_HISTORY_LINE_MONTHS = 12;
+// reader label -> how the same value is saved. total: always checked; a line only with 12 months of history.
+// 'statement' = the sum of the commodity totals of one printed statement (billDate), the City Current Bill.
+// when(sb): which saved bills the label belongs to (one account number can carry several commodities).
+// The companies are the names of their reading rules (UTILITY_RULES), read when a bill is checked.
+const _lbg_ruleCompany = (test) => (sb) => {
+  const r = UTILITY_RULES.find(test);
+  const key = (x) => String(x || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  return !!r && key(sb.utilityCompany) === key(r.name);
+};
+const _lbg_isUtilityE = (sb) => _lbg_ruleCompany((r) => r === UTILITY_RULES[0])(sb);
+const _lbg_isCity = (sb) => _lbg_ruleCompany((r) => r.fileFirst)(sb) && /^(Gas|Water|Sewer|Stormwater)$/.test(sb.commodity || '');
+const _LBG_HISTORY_FIELDS = {
+  'Current Bill': { statement: true, total: true, when: _lbg_isCity },
+  'Total Amount Due': { statement: true, total: true, when: _lbg_isCity },
+  WATER: { key: 'waterCharge', when: _lbg_isCity },
+  'WATER PROTECTION': { key: 'waterProtectionFee', when: _lbg_isCity },
+  SEWER: { key: 'sewerCharge', when: _lbg_isCity },
+  STORMWATER: { key: 'stormWaterCharge', when: _lbg_isCity },
+  'FUEL ADJUSTMENT': { key: 'fuelAdjustment', when: _lbg_isCity },
+  GAS: { gasLine: true, when: _lbg_isCity },
+  CustomerCharge: { key: 'customerCharge', when: _lbg_isUtilityE },
+  FacilitiesCharge: { key: 'facilitiesCharge', when: _lbg_isUtilityE },
+  BilledKWCharge: { key: 'demandCharge', when: _lbg_isUtilityE },
+  EnergyOnPeakCharge: { key: 'onPeakCost', when: _lbg_isUtilityE },
+  EnergyOffPeakCharge: { key: 'offPeakCost', when: _lbg_isUtilityE },
+  RkVACharge: { key: 'rkvaCharge', when: _lbg_isUtilityE },
+  TaxExemptDelivery: { key: 'taxExemptDelivery', when: _lbg_isUtilityE },
+  ECACharge: { key: 'ecaCharge', when: _lbg_isUtilityE },
+  EERCharge: { key: 'eerCharge', when: _lbg_isUtilityE },
+  PTSCharge: { key: 'ptsCharge', when: _lbg_isUtilityE },
+  TDCCharge: { key: 'tdcCharge', when: _lbg_isUtilityE },
+  FranchiseFee: { key: 'franchiseFee', when: _lbg_isUtilityE },
+  'Current Charges': { key: 'totalCost', total: true, when: _lbg_isUtilityE },
+  kWhConsumed: { key: 'kwh', when: _lbg_isUtilityE },
+  BilledKW: { key: 'billedKW', when: _lbg_isUtilityE },
+  // every other utility (gas, propane, water suppliers): the bill total and the usage
+  Total: { key: 'totalCost', total: true, when: (sb) => !_lbg_isUtilityE(sb) && !_lbg_isCity(sb) },
+  NaturalGasTherms: { key: 'naturalGasTherms', when: (sb) => sb.commodity === 'Gas' },
+};
+// { values: [|n| > 0 ...], months: distinct calendar months covered } of one reader label for one account.
+// except(sb) -> true leaves a saved bill out (the leave-one-out check of tools/detect-history-rejects.js).
+function _lbg_accountHistory(acct, label, except) {
+  const spec = _LBG_HISTORY_FIELDS[label];
+  const out = { values: [], months: 0, total: !!(spec && spec.total) };
+  if (!spec || !acct || typeof utilityData === 'undefined') return out;
+  const months = new Set();
+  const groups = {};
+  const num = (x) => {
+    const n = parseBillNumber(x);
+    return n != null && isFinite(n) ? n : null;
+  };
+  for (const cust of Object.values(utilityData || {})) {
+    for (const bl of (cust && cust.buildings) || []) {
+      for (const m of bl.meters || []) {
+        for (const sb of m.bills || []) {
+          if ((except && except(sb)) || sb.accountNumber !== acct || !spec.when(sb)) continue;
+          const mo = billMonth(sb, m.bills) || '';
+          if (spec.statement) {
+            const t = num(sb.totalCost);
+            if (t == null || !sb.billDate) continue;
+            const g = (groups[sb.billDate] = groups[sb.billDate] || { sum: 0, n: 0 });
+            g.sum += t;
+            g.n++;
+            if (mo) months.add(mo);
+            continue;
+          }
+          const v = spec.gasLine ? (num(sb.gasCharge) != null ? num(sb.gasCharge) + (num(sb.customerCharge) || 0) : null) : num(sb[spec.key]);
+          if (v == null || v === 0) continue;
+          out.values.push(Math.abs(v));
+          if (mo) months.add(mo);
+        }
+      }
+    }
+  }
+  if (spec.statement) {
+    // only COMPLETE statements: a statement with fewer commodities than the account usually prints is a
+    // partial save, not a Current Bill
+    const counts = {};
+    for (const g of Object.values(groups)) counts[g.n] = (counts[g.n] || 0) + 1;
+    const usual = Math.max(...Object.keys(counts).map(Number), 0);
+    for (const g of Object.values(groups)) if (g.n === usual && g.sum !== 0) out.values.push(Math.abs(g.sum));
+  }
+  out.months = new Set([...months].map((x) => x.slice(5, 7))).size;
+  return out;
+}
+// The rule: null (keep the candidate) or the reason it is rejected.
+function _lbg_historyRejectReason(hist, label, v) {
+  if (!hist || hist.values.length < _LBG_HISTORY_MIN_VALUES) return null;
+  if (!hist.total && hist.months < _LBG_HISTORY_LINE_MONTHS) return null;
+  const x = Math.abs(v);
+  if (!(x > 0)) return null;
+  const hi = Math.max(...hist.values);
+  const lo = Math.min(...hist.values);
+  const f = (n) => n.toLocaleString('en-US', { maximumFractionDigits: 2 });
+  if (x > _LBG_HISTORY_FACTOR * hi)
+    return f(v) + ' rejected: ' + Math.round(x / hi) + 'x the largest ' + label + ' saved for this account (' + f(hi) + ').';
+  if (x < lo / _LBG_HISTORY_FACTOR)
+    return f(v) + ' rejected: under a tenth of the smallest ' + label + ' saved for this account (' + f(lo) + ').';
+  return null;
+}
+// (value) => reason | null for one account and label; null when the account has no saved bills here.
+function _lbg_historyCheck(acct, label) {
+  if (!_LBG_HISTORY_FIELDS[label] || !acct) return null;
+  const hist = _lbg_accountHistory(acct, label);
+  return (v) => _lbg_historyRejectReason(hist, label, v);
+}
+// The page's account number from its text (City "NN-NNNNNN-NN", else "Account Number : ...").
+function _lbg_pageAccount(text) {
+  const t = String(text || '');
+  let m = t.match(/\b\d{2}-\d{6}-\d{2}\b/);
+  if (m) return m[0];
+  m = t.match(/Account\s*Number\s*:?\s*([0-9][0-9-]{3,})/i);
+  return m ? m[1] : null;
+}
+// What the position engine (computations/bill-layout.js readPage) calls for every candidate amount.
+function _lbg_pageHistoryReject(label, v, pageText) {
+  const chk = _lbg_historyCheck(_lbg_pageAccount(pageText), label);
+  return chk ? chk(v) : null;
+}
+// The usage cell of the Gas row as the page's TEXT LAYER prints it, read as a decimal ("1.214.164" = 1,214.164:
+// the separators are points or commas, the last group is the decimals, 2 or 3 digits). A second reading of the
+// same cell, independent of the position read. Returns { value, text } or null. The position block is not text layer.
+function _lbg_textLayerGasUsage(page) {
+  const t = String(page || '');
+  const end = t.indexOf('%%POSITION_READ%%');
+  for (const ln of (end >= 0 ? t.slice(0, end) : t).split(/\r?\n/)) {
+    if (/^\s*\d{3}\s*-/.test(ln) || /FUEL|ADJUSTMENT|Previous\s*Balance/i.test(ln)) continue;
+    const m = ln.match(/\bG[A4]S\b/i);
+    if (!m) continue;
+    const toks = [...ln.slice(0, m.index).matchAll(/\d[\d.,]*\d|\d/g)].map((x) => x[0]);
+    if (toks.length < 3) continue;
+    const tok = toks[toks.length - 1];
+    const g = tok.match(/^(\d{1,3}(?:[.,]\d{3})*)[.,](\d{2,3})$/);
+    if (!g) continue;
+    return { value: Number(g[1].replace(/[.,]/g, '') + g[2]) / Math.pow(10, g[2].length), text: tok };
+  }
+  return null;
+}
 // Reader post-pass over a file's bills: autofix every gas bill held only for unproven therms,
 // using the therm factor of the same account's other bills in the file (or priorFactor(acct)).
 function _lbg_applyGasUsageAutofix(bills, priorFactor) {
@@ -6774,18 +6949,22 @@ function _lbg_applyGasUsageAutofix(bills, priorFactor) {
     const diff = b.EndRead != null && b.StartRead != null ? b.EndRead - b.StartRead : 0;
     const reads = diff > 0 && factor > 0 ? Math.round(diff * factor * 1000) / 1000 : null;
     // with meter reads the printed charge may differ by the rate-check dollars; without them, to the cent
-    const tol = reads != null ? _LBG_GAS_RATE_CHECK_TOL : 0.005;
+    const tl = pend.textLayerUsage || null;
+    const tol = reads != null || tl ? _LBG_GAS_RATE_CHECK_TOL : 0.005;
     const fits = (t) => Math.abs(variable - t * r.rate) <= tol;
     const fix = _lbg_autofix({
       sources: [
         reads != null && { label: 'reads', values: [reads], says: 'meter reads ' + diff + ' x ' + Math.round(factor * 10000) / 10000 + ' = ' + reads },
-        { label: 'charge', test: fits, says: 'the printed Gas charge fits' },
-        { scan: pend.original },
+        { label: 'charge', test: fits, says: 'the printed Gas charge fits (' + variable.toFixed(2) + ' / ' + r.rate + ' per therm)' },
+        tl && { label: 'text layer', values: [tl.value], says: 'the printed usage cell reads ' + tl.text + ' = ' + tl.value },
+        // the raw read difference is not a scan of the usage cell: it is no source
+        pend.original !== diff && { scan: pend.original },
       ],
+      history: _lbg_historyCheck(b.AccountNumber, 'NaturalGasTherms'),
       veto: (v) => !fits(v),
-      scanRead: pend.original,
+      scanRead: pend.original !== diff ? pend.original : null,
     });
-    if (!fix) continue;
+    if (!fix || fix.value == null) continue;
     b.NaturalGasTherms = billValueOrNull(fix.value);
     b._auto_corrected_NaturalGasTherms = { original: pend.original, corrected: fix.value, reason: fix.reason };
     delete b._correction_pending_NaturalGasTherms;
@@ -6824,7 +7003,7 @@ function _evgAutofixKwh(b, getFactor) {
     ],
     scanRead: chk.extracted,
   });
-  if (!fix) return;
+  if (!fix || fix.value == null) return;
   b.kWhConsumed = fix.value.toFixed(4);
   b._auto_corrected_kWhConsumed = { original: String(chk.extracted), corrected: b.kWhConsumed, reason: fix.reason };
   delete b._kwhCrossCheck;
@@ -6849,7 +7028,7 @@ function _evgAutofixKw(b) {
     ],
     scanRead: qty,
   });
-  if (!fix) return;
+  if (!fix || fix.value == null) return;
   b.BilledKW = fix.value.toFixed(4);
   b._rates.BilledKWCharge = Object.assign({}, ri, {
     qty: fix.value,
@@ -6882,7 +7061,7 @@ function _evgAutofixDays(b) {
     ],
     scanRead: n.printedDays,
   });
-  if (!fix || String(fix.value) === String(b.NumberOfDays)) return;
+  if (!fix || fix.value == null || String(fix.value) === String(b.NumberOfDays)) return;
   const original = b.NumberOfDays;
   b.NumberOfDays = String(fix.value);
   b._numberOfDaysCheck = Object.assign({}, n, { days: String(fix.value), source: 'autofix', printedDaysAgree: n.printedDays ? String(fix.value) === String(n.printedDays) : null });
@@ -6926,7 +7105,7 @@ function _evgAutofixChargeCell(b) {
     veto: () => !totalsAgree,
     scanRead: quoted[1],
   });
-  if (!fix) return;
+  if (!fix || fix.value == null) return;
   b[cell] = fix.value.toFixed(2);
   b['_auto_corrected_' + cell] = { original: null, corrected: b[cell], reason: fix.reason };
   _evgDropHolds(b, held.filter((r) => r.split(':')[0].trim() === cell));
@@ -12431,6 +12610,7 @@ const UTILITY_RULES = [
       // reason, never stored.
       let _totalDueHeld = null;
       const _tdc = _lbg_totalDueCheck(TotalAmountDue != null ? parseBillNumber(TotalAmountDue) : null, CurrentBillTotal, _currentBillDerived, page);
+      let _totalDueReason = null;
       if (_tdc && !_tdc.ok) {
         _totalDueHeld =
           'Total Amount Due read as $' +
@@ -12579,6 +12759,7 @@ const UTILITY_RULES = [
           currentBillDerived: _currentBillDerived,
           totalAmountDue: TotalAmountDue != null ? parseBillNumber(TotalAmountDue) : null,
           totalAmountDueHeld: _totalDueHeld,
+          totalAmountDueReason: _totalDueReason,
         },
         CustomerName,
         AccountNumber,
@@ -12639,6 +12820,10 @@ const UTILITY_RULES = [
           '(high-zoom charges-column crop, backlog 37d5fb0e-fueladj follow-up).',
       });
       if (gasBill) {
+        if (gasBill._correction_pending_NaturalGasTherms) {
+          // the usage cell as the text layer prints it: the second reading the therms autofix needs
+          gasBill._correction_pending_NaturalGasTherms.textLayerUsage = _lbg_textLayerGasUsage(page);
+        }
         if (_faSignCorrected)
           gasBill._auto_corrected_FuelAdjustment = {
             reason:
@@ -12795,6 +12980,39 @@ const UTILITY_RULES = [
       // the page with the reason (the Gas and Fuel Adjustment holds above already name theirs).
       for (const _slot of Object.keys(_posHeld))
         _lbg_flagHeld(bills, _slot + ' could not be read: ' + _posHeld[_slot], _slot + ' unreadable - held for manual confirmation');
+      // R5: the Current Bill the box printed, shown with the sources that agree with it (hover text).
+      if (!_currentBillDerived && CurrentBillTotal != null && _pageCheck && _pageCheck.ok) {
+        const _cbCarry = _lbg_balanceCarry(page);
+        const _cbTad = TotalAmountDue != null ? parseBillNumber(TotalAmountDue) : null;
+        shared._pageTotals.currentBillReason =
+          'Current Bill ' + CurrentBillTotal.toFixed(2) + ' read from its box; the page lines add up to it' +
+          (_cbCarry != null && _cbTad != null && Math.abs(_cbTad - _cbCarry - CurrentBillTotal) < 0.005
+            ? '; Total Amount Due ' + _cbTad.toFixed(2) + ' - balance carried ' + _cbCarry.toFixed(2) + ' = ' + CurrentBillTotal.toFixed(2)
+            : '') +
+          '.';
+      }
+      // A contradicted Total Amount Due is filled when two independent sources agree AND the Current Bill is
+      // itself proved by the page (its lines add up to it): the identity (Current Bill + carried balance) and
+      // the one-digit repair of the scanned figure ("1,620.88" for a printed 1,629.88). Else it stays held.
+      if (_totalDueHeld && _tdc && _pageCheck && _pageCheck.ok && !_currentBillDerived && !(gasBill && gasBill._auto_derived_FuelAdjustment)) {
+        const _tdcFix = _lbg_autofix({
+          field: 'Total Amount Due',
+          sources: [
+            { label: 'identity', values: [_tdc.expected], eps: 0.005, says: 'Current Bill ' + CurrentBillTotal.toFixed(2) + ' (the page lines add up to it) + balance carried ' + _tdc.carry.toFixed(2) + ' = ' + _tdc.expected.toFixed(2) },
+            { scan: _tdc.read.toFixed(2), eps: 0.005 },
+          ],
+          history: _lbg_historyCheck(AccountNumber, 'Total Amount Due'),
+          scanRead: _tdc.read.toFixed(2),
+        });
+        if (_tdcFix.value != null) {
+          TotalAmountDue = _tdcFix.value.toFixed(2);
+          _totalDueReason = _tdcFix.reason;
+          _totalDueHeld = null;
+          shared._pageTotals.totalAmountDue = _tdcFix.value;
+          shared._pageTotals.totalAmountDueHeld = null;
+          shared._pageTotals.totalAmountDueReason = _totalDueReason;
+        } else _totalDueHeld += ' ' + _tdcFix.reason;
+      }
       if (_totalDueHeld) _lbg_flagHeld(bills, _totalDueHeld, 'Total Amount Due does not match the page - held for manual confirmation');
       // If nothing parsed cleanly but the bill has a Total Amount Due,
       // emit a single "Other" bill so the user sees SOMETHING rather than
@@ -14577,7 +14795,7 @@ const UTILITY_RULES = [
 // The version of the PDF reader's rules. The stored-bill repair pass (app/auto-repair.js) reads each bill's PDF page once per
 // version and marks the bill (_pdfRepair.v). Add 1 whenever a rule in UTILITY_RULES (or the post-extraction checks) changes
 // what it reads, so every bill is read again with the new rules.
-const EXTRACTOR_RULES_VERSION = 3;
+const EXTRACTOR_RULES_VERSION = 4;
 function _pickFileRule(text) {
   return (
     UTILITY_RULES.find((r) => r.fileFirst && r.detect(text)) ||
