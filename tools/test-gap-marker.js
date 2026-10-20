@@ -28,7 +28,7 @@ vm.runInContext(
   ['_fixISO', '_parseISO', 'calcDays', 'fmtDate'].map((n) => fn(ud, n)).join('\n') +
     '\n' + fn(rd('lib/formatting.js'), '_escHtml') +
     '\n' + ['detectGap', 'computeMeterGaps', 'computeBuildingGaps', 'computeProjectGaps'].map((n) => fn(norm, n)).join('\n') +
-    '\n' + fn(ud, 'udGapChipHtml'),
+    '\n' + fn(ud, 'udGapTextHtml'),
   ctx,
 );
 const run = (code) => vm.runInContext(code, ctx);
@@ -54,18 +54,19 @@ const bg = run('computeBuildingGaps(bl[0])');
 ok(bg.length === 1 && bg[0].meterId === 'meter-a', 'building gaps wrong');
 const pg = run('computeProjectGaps(bl)');
 ok(pg.length === 1 && pg[0].bldgId === 'bldg-1', 'project gaps wrong');
-// chip
+// gap text
 ctx.gaps = g;
-const html = run('udGapChipHtml(gaps, { pid: "p1", bldgId: "bldg-1", meterId: "meter-a", later: gaps[0].later })');
-ok(/border:\s*1px dashed/.test(rd('energy-department.html').replace(/\s+/g, ' ').match(/\.ud-gap-chip \{[^}]*\}/)[0]), 'chip CSS must be a dashed outline');
-const css = rd('energy-department.html').match(/\.ud-gap-chip \{[^}]*\}/)[0];
-ok(!/amber|orange|red|#f|rgba\(245|rgba\(239/i.test(css), 'chip CSS must not use warning colors');
-ok(/📅/.test(html) && /> ?gap<\/span>$/.test(html.replace(/<span class="ud-gap-chip-ico"[^>]*>[^<]*<\/span>/, '')) || />gap</.test(html), 'chip text must be "gap"');
-ok(!/⚠/.test(html) && !/ud-flag-badge/.test(html), 'chip must not look like a warning badge');
+const html = run('udGapTextHtml(gaps, { pid: "p1", bldgId: "bldg-1", meterId: "meter-a", later: gaps[0].later }, "bldg")');
+const css = rd('energy-department.html').match(/\.ud-gap-txt \{[^}]*\}/)[0];
+ok(!/border|background|amber|orange|red|#f|rgba\(245|rgba\(239/i.test(css), 'gap text CSS must be plain text: no border, fill or warning color');
+ok(/📅/.test(html) && />1 bill gap</.test(html), 'building text must be "1 bill gap" with the calendar icon: ' + html);
+ok(!/⚠/.test(html) && !/ud-flag-badge/.test(html), 'gap text must not look like a warning badge');
 ok(/title="30 days missing 08\/04\/2026 – 09\/02\/2026\. Click/.test(html), 'hover text wrong: ' + html);
-ok(run('udGapChipHtml(gaps)').indexOf('Click') < 0 && run('udGapChipHtml([])') === '', 'no click text without goto; empty list draws nothing');
+ok(run('udGapTextHtml(gaps, null, "proj")').indexOf('Click') < 0 && run('udGapTextHtml([], null, "proj")') === '', 'no click text without goto; empty list draws nothing');
 ctx.two = g.concat(g);
-ok(/>2 gaps</.test(run('udGapChipHtml(two)')), 'two gaps text');
+ok(/>2 bill gaps</.test(run('udGapTextHtml(two, null, "proj")')), 'project text: N bill gaps');
+ok(/>1 gap</.test(run('udGapTextHtml(gaps, {meterId:"meter-a", later:"x"}, "pill")')), 'pill text: 1 gap');
+ok(!/📅/.test(run('udGapTextHtml(gaps, null, "pill")')), 'pill text has no icon');
 // click decodes to the ids
 const m = /onclick="([^"]*)"/.exec(html);
 const dec = m[1].replace(/&(quot|amp|lt|gt|#39);/g, (x, n) => ({ quot: '"', amp: '&', lt: '<', gt: '>', '#39': "'" })[n]);
@@ -73,29 +74,14 @@ const got = [];
 vm.runInNewContext(dec, { udGoToGap: function () { got.push([].slice.call(arguments).slice(1)); }, event: {} });
 ok(JSON.stringify(got[0]) === JSON.stringify(['p1', 'bldg-1', 'meter-a', false, '2026-09-02']), 'click args wrong: ' + JSON.stringify(got[0]));
 // gap is not a warning
-ok(!/computeMeterGaps|computeBuildingGaps|computeProjectGaps|udGapChipHtml/.test(rd('computations/bill-flags.js')), 'bill-flags.js must not use gaps');
+ok(!/computeMeterGaps|computeBuildingGaps|computeProjectGaps|udGapTextHtml/.test(rd('computations/bill-flags.js')), 'bill-flags.js must not use gaps');
 ok(!/ud-gap-chip/.test(fn(ud, 'udFlagBadgeHtml')), 'the warning badge must not draw the gap chip');
-// the three screens
-ok(/udGapChipHtml\(_bGaps/.test(ud) && /udGapChipHtml\(_mGaps/.test(ud) && /udGapChipHtml\(_pGaps/.test(ud), 'building row, meter pill and project row in utility-data.js');
-ok(/udGapChipHtml\(pGaps/.test(rd('app/energy-savings.js')), 'sidebar Projects nav');
-ok(/udGapChipHtml\(bGaps/.test(rd('app/core.js')), 'project tab building list');
-ok(/data-gap-later=/.test(ud), 'Bills gap row must carry data-gap-later');
-// Bills-tab gap rows come from the same computeMeterGaps result as the chip (one gap finder)
-const billsTab = ud.slice(ud.indexOf('bills.forEach((row, idx) => {'), ud.indexOf('const flags = billFlags[row.id]'));
-ok(/computeMeterGaps\(m\)/.test(ud.slice(ud.indexOf('const _meterGaps'), ud.indexOf('const _meterGaps') + 60)), 'Bills tab must call computeMeterGaps');
-ok(!/detectGap\(/.test(billsTab), 'Bills-tab row loop must not call detectGap itself');
-const gapRowFn = ud.split(String.fromCharCode(10)).find((l) => l.indexOf("const _gapForRow = ") >= 0).trim();
-ctx.m = elec;
-[true, false].forEach((asc) => {
-  const rows = elec.bills.filter((b) => b.start && b.end).sort((a, b) => (asc ? 1 : -1) * (new Date(a.start) - new Date(b.start)));
-  const sandbox = { sortAsc: asc, _meterGaps: run('computeMeterGaps(m)') };
-  const hits = rows.filter((r, i) => i > 0 && vm.runInNewContext(gapRowFn + '; _gapForRow(r)', Object.assign({ r }, sandbox)));
-  ok(hits.length === sandbox._meterGaps.length && hits.length === 1, 'Bills-tab gap rows (' + (asc ? 'asc' : 'desc') + ') must equal chip gap count: ' + hits.length);
-});
-// XSS: a date or id with markup must reach attributes escaped
-ok(/data-gap-later="\$\{_escHtml\(gapLater\)\}"/.test(ud), 'data-gap-later must be escaped with _escHtml');
-const evil = '<img src=x onerror=1>"';
-const evilHtml = run('_escHtml(' + JSON.stringify(evil) + ')');
-ok(evilHtml.indexOf('<') < 0 && evilHtml.indexOf('"') < 0, 'escape helper must neutralise markup and quotes');
+// the screens: building row (both lists), meter pill, Projects table; none in the left Projects nav
+ok(/udGapTextHtml\(_bGaps/.test(ud) && /udGapTextHtml\(_mGaps/.test(ud), 'building row and meter pill in utility-data.js');
+ok(/udGapTextHtml\(bGaps/.test(rd('app/core.js')) && /udGapTextHtml\(_pGaps, null, 'proj'\)/.test(rd('app/core.js')), 'embedded building row and Projects table in core.js');
+ok(!/udGap|computeProjectGaps/.test(rd('app/energy-savings.js')), 'left Projects nav must show no gap marker');
+ok(!/udGapTextHtml\(_pGaps, _pGaps\.length/.test(ud), 'Utility Data project nav must show no gap marker');
+ok(!/udGapChipHtml|ud-gap-chip/.test(ud + rd('app/core.js') + rd('energy-department.html')), 'the old chip is gone');
+
 if (problems.length) { console.error('FAIL test-gap-marker:\n  ' + problems.join('\n  ')); process.exit(1); }
 console.log('PASS test-gap-marker');

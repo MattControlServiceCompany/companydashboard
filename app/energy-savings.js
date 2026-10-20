@@ -2137,14 +2137,11 @@ function renderSidebarFolders() {
         fl,
         fl.firstFlagged && { pid: p.id, bldgId: fl.firstFlagged.bldgId, meterId: fl.firstFlagged.meterId, embed: true },
       );
-      const pGaps = computeProjectGaps(getUDBldgs(p.id));
-      const gapChip = udGapChipHtml(pGaps, pGaps.length && { pid: p.id, bldgId: pGaps[0].bldgId, meterId: pGaps[0].meterId, embed: true, later: pGaps[0].later });
       const act = String(window._activeProjId) === String(p.id) && document.getElementById('projDetailView')?.style.display === 'flex' ? ' active' : '';
       return `<button class="spfi${act}" data-pid="${p.id}" onclick="openDetail(${p.id})">
             <span class="spfi-icon">${icon}</span>
             <span class="spfi-name" title="${_escHtml(p.name)}">${_escHtml(nm)}</span>
             ${flagBadge}
-            ${gapChip}
             ${pt > 0 ? `<span class="spfi-badge" title="${pt} open task${pt === 1 ? '' : 's'}">${pt}</span>` : ''}
           </button>`;
     })

@@ -1219,8 +1219,10 @@ function renderProjTable() {
             year: '2-digit',
           })
         : '—';
+      const _pGaps = computeProjectGaps(getUDBldgs(p.id));
+      const _projSub = [p.phase || '', udGapTextHtml(_pGaps, null, 'proj')].filter(Boolean).join(' · ');
       return `<tr class="clickable" onclick="openDetail(${p.id})">
-            <td><div style="font-weight:600;margin-bottom:2px">${p.name}</div>${p.phase ? `<div style="font-size:10px;color:var(--text2)">${p.phase}</div>` : ''}</td>
+            <td><div style="font-weight:600;margin-bottom:2px">${p.name}</div>${_projSub ? `<div style="font-size:10px;color:var(--text2)">${_projSub}</div>` : ''}</td>
             <td style="font-size:12px">${p.client || '—'}</td>
             <td style="font-size:11px;color:var(--text2)">${p.type || '—'}</td>
             <td><span class="p-status ${SC[p.status] || 'ps-planning'}">● ${SL[p.status] || p.status}</span></td>
@@ -3243,14 +3245,14 @@ function renderProjUDBldgNav(projId) {
         bFlags.firstFlaggedMeterId !== null && { pid: projId, bldgId: b.id, meterId: bFlags.firstFlaggedMeterId, embed: true },
       );
       const bGaps = computeBuildingGaps(b);
-      const gapChip = udGapChipHtml(bGaps, bGaps.length && { pid: projId, bldgId: b.id, meterId: bGaps[0].meterId, embed: true, later: bGaps[0].later });
+      const gapChip = udGapTextHtml(bGaps, bGaps.length && { pid: projId, bldgId: b.id, meterId: bGaps[0].meterId, embed: true, later: bGaps[0].later }, 'bldg');
       const bCount = (b.bills || []).length + allMeters.reduce((s, m) => s + (m.bills || []).length, 0);
       const isActive = projUDSelBldg[projId] === b.id;
       return `<div class="ud-nav-bldg-item${isActive ? ' active' : ''}" onclick="projUDSelectBldg('${projId}','${b.id}')">
             <span style="font-size:14px">${getFacilityIcon?.(b.type) || '🏢'}</span>
             <div style="flex:1;min-width:0">
               <div class="ud-nav-bldg-name">${_escHtml(b.name || 'Building')}</div>
-              <div class="ud-nav-bldg-meta">${totalMCount} meter${totalMCount !== 1 ? 's' : ''} ${blBadge}${flagBadge ? ' ' + flagBadge : ''}${gapChip ? ' ' + gapChip : ''}</div>
+              <div class="ud-nav-bldg-meta">${totalMCount} meter${totalMCount !== 1 ? 's' : ''} ${blBadge}${flagBadge ? ' ' + flagBadge : ''}${gapChip ? ' · ' + gapChip : ''}</div>
             </div>
             <div class="ud-nav-bldg-actions">
               <button class="btn btn-ghost btn-sm" style="padding:1px 5px;font-size:11px" onclick="event.stopPropagation();openBldgModalForProj('${projId}','${b.id}')" title="Edit">✏️</button>

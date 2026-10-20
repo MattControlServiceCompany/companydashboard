@@ -1589,39 +1589,29 @@ function udGoToFlagged(evt, pid, bldgId, meterId, embed) {
   udSelectBldg(bldgId);
   udSelectMeter(meterId);
 }
-// The gap chip (building row, meter pill, project row). gaps = computeMeterGaps / computeBuildingGaps / computeProjectGaps
-// result. A gap is NOT a warning: dashed neutral outline, calendar icon, never counted in any warning count.
+// The gap text (building row, meter pill, Projects table). gaps = computeMeterGaps / computeBuildingGaps /
+// computeProjectGaps result. A gap is NOT a warning: plain muted text, never a badge, never counted in any warning count.
+// opts.kind: 'bldg' ("1 bill gap" with a small calendar icon) | 'pill' ("1 gap") | 'proj' ("38 bill gaps", no click).
 // goto = { pid, bldgId, meterId, embed, later }: a click opens that meter on the Bills tab, scrolled to the gap row.
-// pill = true: the chip sits inside a meter pill button, so the click selects the meter through the pill.
-function udGapChipHtml(gaps, goto, pill) {
+function udGapTextHtml(gaps, goto, kind) {
   if (!gaps || !gaps.length) return '';
   const range = (g) => g.days + ' day' + (g.days !== 1 ? 's' : '') + ' missing ' + fmtDate(g.earlier) + ' – ' + fmtDate(g.later);
   const shown = gaps.slice(0, 3).map(range);
   if (gaps.length > 3) shown.push('and ' + (gaps.length - 3) + ' more');
   const hover = shown.join('; ') + (goto ? '. Click to open the Bills tab at the gap.' : '');
+  const n = gaps.length;
+  const word = kind === 'pill' ? 'gap' : 'bill gap';
+  const label = n + ' ' + word + (n !== 1 ? 's' : '');
   let click = '';
-  if (goto && pill) {
+  if (goto && kind === 'pill') {
     click = ' onclick="udGoToGapFromPill(event,' + _escHtml(JSON.stringify(goto.meterId)) + ',' + _escHtml(JSON.stringify(goto.later)) + ',this)"';
   } else if (goto) {
     click =
-      ' onclick="udGoToGap(event,' +
-      _escHtml(JSON.stringify(goto.pid)) +
-      ',' +
-      _escHtml(JSON.stringify(goto.bldgId)) +
-      ',' +
-      _escHtml(JSON.stringify(goto.meterId)) +
-      ',' +
-      (goto.embed ? 'true' : 'false') +
-      ',' +
-      _escHtml(JSON.stringify(goto.later)) +
-      ')"';
+      ' onclick="udGoToGap(event,' + _escHtml(JSON.stringify(goto.pid)) + ',' + _escHtml(JSON.stringify(goto.bldgId)) + ',' +
+      _escHtml(JSON.stringify(goto.meterId)) + ',' + (goto.embed ? 'true' : 'false') + ',' + _escHtml(JSON.stringify(goto.later)) + ')"';
   }
-  return (
-    '<span class="ud-gap-chip' + (goto ? ' ud-gap-chip-click' : '') + '" title="' + _escHtml(hover) + '"' + click + '>' +
-    '<span class="ud-gap-chip-ico" aria-hidden="true">📅</span>' +
-    (gaps.length > 1 ? gaps.length + ' gaps' : 'gap') +
-    '</span>'
-  );
+  const ico = kind === 'bldg' ? '<span class="ud-gap-ico" aria-hidden="true">📅</span>' : '';
+  return '<span class="ud-gap-txt' + (goto ? ' ud-gap-txt-click' : '') + '" title="' + _escHtml(hover) + '"' + click + '>' + ico + label + '</span>';
 }
 // Scroll the open Bills table to the gap row that ends at the given date (the first gap row when not found).
 function udScrollToGapRow(later) {
@@ -1702,13 +1692,10 @@ function renderUDProjList() {
       _pFlags,
       _pFlags.firstFlagged && { pid: p.id, bldgId: _pFlags.firstFlagged.bldgId, meterId: _pFlags.firstFlagged.meterId },
     );
-    const _pGaps = computeProjectGaps(bldgs);
-    const _pGapChip = udGapChipHtml(_pGaps, _pGaps.length && { pid: p.id, bldgId: _pGaps[0].bldgId, meterId: _pGaps[0].meterId, later: _pGaps[0].later });
     html += `<div class="ud-nav-proj-item${projActive}" onclick="udSelectProj(${p.id})">
             <span style="font-size:14px;flex-shrink:0">${getFacilityIcon(p.type)}</span>
             <span class="ud-nav-proj-name" title="${_escHtml(p.name)}">${_escHtml(p.name)}</span>
             ${_pBadge}
-            ${_pGapChip}
             ${bldgs.length ? `<span class="ud-nav-proj-count" title="${bldgs.length} building${bldgs.length === 1 ? '' : 's'}">${bldgs.length}</span>` : ''}
           </div>`;
     // If this project is selected, show its buildings inline underneath
@@ -1726,12 +1713,12 @@ function renderUDProjList() {
             _bFlags.firstFlaggedMeterId !== null && { pid: p.id, bldgId: b.id, meterId: _bFlags.firstFlaggedMeterId },
           );
           const _bGaps = computeBuildingGaps(b);
-          const gapChip = udGapChipHtml(_bGaps, _bGaps.length && { pid: p.id, bldgId: b.id, meterId: _bGaps[0].meterId, later: _bGaps[0].later });
+          const gapChip = udGapTextHtml(_bGaps, _bGaps.length && { pid: p.id, bldgId: b.id, meterId: _bGaps[0].meterId, later: _bGaps[0].later }, 'bldg');
           const bldgActive = b.id === udSelBldgId ? ' active' : '';
           html += `<div class="ud-nav-bldg-item${bldgActive}" onclick="udSelectBldg('${b.id}')">
                   <div style="flex:1;min-width:0">
                     <div class="ud-nav-bldg-name" title="${_escHtml(b.name)}">${_escHtml(b.name)}</div>
-                    <div class="ud-nav-bldg-meta">${b.sqft ? Number(b.sqft).toLocaleString() + ' sf · ' : ''}${_totalMCount} meter${_totalMCount !== 1 ? 's' : ''} ${blBadge}${flagBadge ? ' ' + flagBadge : ''}${gapChip ? ' ' + gapChip : ''}</div>
+                    <div class="ud-nav-bldg-meta">${b.sqft ? Number(b.sqft).toLocaleString() + ' sf · ' : ''}${_totalMCount} meter${_totalMCount !== 1 ? 's' : ''} ${blBadge}${flagBadge ? ' ' + flagBadge : ''}${gapChip ? ' · ' + gapChip : ''}</div>
                   </div>
                   <div class="ud-nav-bldg-actions">
                     <button class="btn btn-ghost btn-sm" style="padding:1px 5px;font-size:11px" onclick="event.stopPropagation();openBldgModal('${b.id}')" title="Edit">✏️</button>
@@ -3213,7 +3200,7 @@ function udMeterPillsHtml(meters, b, _curMid) {
         const _blTag = udMeterBaselineChipHtml(udSelProjId, m);
         const _flagTag = udFlagBadgeHtml(_mFlags);
         const _mGaps = computeMeterGaps(m);
-        const _gapTag = udGapChipHtml(_mGaps, _mGaps.length && { meterId: m.id, later: _mGaps[0].later }, true);
+        const _gapTag = udGapTextHtml(_mGaps, _mGaps.length && { meterId: m.id, later: _mGaps[0].later }, 'pill');
         return (
           '<button class="ma-meter-pill' +
           _pCls +
@@ -3231,10 +3218,10 @@ function udMeterPillsHtml(meters, b, _curMid) {
           bcount +
           ' bill' +
           (bcount !== 1 ? 's' : '') +
+          (_gapTag ? ' · ' + _gapTag : '') +
           '</span>' +
           _blTag +
           _flagTag +
-          _gapTag +
           '</button>'
         );
       })
