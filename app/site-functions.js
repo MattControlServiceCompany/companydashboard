@@ -2575,6 +2575,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.20.152', date: '2026-10-20', title: 'Sidebar shows page names at half-screen width',
+    items: [
+      { type: 'change', text: 'Sidebar: page names now show next to their icons at half-screen width; on narrow windows a Menu button opens the full sidebar.' }
+    ]
+  },
   { v: 'v2026.10.20.151', date: '2026-10-20', title: 'PDF / OCR: City bills read through handwriting',
     items: [
       { type: 'fix', text: 'PDF / OCR: City bills with handwriting or marks on the scan now fill each value from two printed sources that agree, and a value far outside the account\'s own saved history is never accepted as read. Saved bills that fail their own checks are re-read once; your own edits never change.' }
