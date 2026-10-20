@@ -6039,42 +6039,8 @@ function _extractEvergy(t, acctOverride, addrOverride) {
   for (const k of Object.keys(result)) {
     if (k.startsWith('_proposed_') && parseBillNumber(result[k.slice('_proposed_'.length)]) > 0) delete result[k];
   }
-  // FINAL RE-CHECK of the position engine's holds against the FINAL values (2026-10-20). A hold is the engine's
-  // statement about a value at the time it read it; a later step (the sum-gap fill of a Customer Chg whose
-  // dollars were read) can fill the field. When the final charge lines add up to the printed Subtotal to the cent
-  // (the Subtotal read on the page, else the printed Current Charges minus the printed lines below the Subtotal)
-  // and Subtotal + those lines = the printed Current Charges to the cent, with no negative charge other than the
-  // credits, the holds that these values resolve are dropped: the Subtotal "not read" hold and every held field
-  // that now has a value. A field still empty keeps its hold. TotalCurrentCharges is never set here.
-  if (result._positionHeld && result._positionHeld.length) {
-    const _fin = checkElectricPrintedTotals(result);
-    const _finSub = parseBillNumber(subtotalAmount) > 0 ? parseBillNumber(subtotalAmount) : _fin.total != null ? Math.round((_fin.total - _fin.belowSubtotal) * 100) / 100 : null;
-    const _finProbe = _finSub > 0 ? checkElectricPrintedTotals(Object.assign({}, result, { _subtotal: _finSub })) : null;
-    const _noNegative = UTILITY_E_COMPONENT_CHARGE_FIELDS.every((f) => f === 'BillOffset' || f === 'SolarCredit' || !(parseBillNumber(result[f]) < 0));
-    if (_finProbe && _finProbe.linesMatchSubtotal === true && _finProbe.subtotalPlusFeesMatchTotal === true && _noNegative) {
-      const _keep = result._positionHeld.filter((r) => {
-        const k = r.split(':')[0].trim();
-        if (k === 'Subtotal') return false;
-        return !(Object.prototype.hasOwnProperty.call(result, k) && !/^_/.test(k) && parseBillNumber(result[k]) > 0);
-      });
-      const _dropped = result._positionHeld.filter((r) => _keep.indexOf(r) < 0);
-      if (_dropped.length) {
-        result._gateReasons = (result._gateReasons || []).filter((r) => _dropped.indexOf(r) < 0);
-        if (_keep.length) result._positionHeld = _keep;
-        else delete result._positionHeld;
-        if (!result._gateReasons.length) {
-          delete result._gateReasons;
-          delete result._gateTripped;
-          if (result._manualReview && _dropped.indexOf(result._manualReviewLabel) >= 0) {
-            delete result._manualReview;
-            delete result._manualReviewLabel;
-          }
-        } else if (_dropped.indexOf(result._manualReviewLabel) >= 0) {
-          result._manualReviewLabel = result._gateReasons[0];
-        }
-      }
-    }
-  }
+  // Position holds that the final values resolve are dropped (one function, also used by the autofix).
+  _evgRecheckPositionHolds(result);
   // The printed totals, checked to the cent: lines above the Subtotal = Subtotal; Subtotal + the lines below it =
   // Current Charges (one rule: checkElectricPrintedTotals). TotalCurrentCharges stays the printed amount.
   result._printedTotalCheck = checkElectricPrintedTotals(result);
@@ -6200,6 +6166,48 @@ function _evgSetNumberOfDays(result, printedDays, billDate) {
   if (n) result._numberOfDaysCheck = n;
   else delete result._numberOfDaysCheck;
   return n;
+}
+// Drops position holds from a Utility E bill (result._positionHeld / _gateReasons / _manualReview): the one place.
+function _evgDropHolds(result, dropped) {
+  if (!dropped.length) return;
+  const keep = (result._positionHeld || []).filter((r) => dropped.indexOf(r) < 0);
+  if (keep.length) result._positionHeld = keep;
+  else delete result._positionHeld;
+  result._gateReasons = (result._gateReasons || []).filter((r) => dropped.indexOf(r) < 0);
+  if (!result._gateReasons.length) {
+    delete result._gateReasons;
+    delete result._gateTripped;
+    if (result._manualReview && dropped.indexOf(result._manualReviewLabel) >= 0) {
+      delete result._manualReview;
+      delete result._manualReviewLabel;
+    }
+  } else if (dropped.indexOf(result._manualReviewLabel) >= 0) {
+    result._manualReviewLabel = result._gateReasons[0];
+  }
+}
+// FINAL RE-CHECK of the position engine's holds against the FINAL values (2026-10-20). A hold is the engine's
+// statement about a value at the time it read it; a later step (the sum-gap fill of a Customer Chg whose
+// dollars were read, the autofix of a cell) can fill the field. When the final charge lines add up to the printed
+// Subtotal to the cent (the Subtotal read on the page, else the printed Current Charges minus the printed lines
+// below the Subtotal) and Subtotal + those lines = the printed Current Charges to the cent, with no negative
+// charge other than the credits, the holds that these values resolve are dropped: the Subtotal "not read" hold
+// and every held field that now has a value. A field still empty keeps its hold. TotalCurrentCharges is never
+// set here.
+function _evgRecheckPositionHolds(result) {
+  if (!(result._positionHeld && result._positionHeld.length)) return;
+  const _fin = checkElectricPrintedTotals(result);
+  const _finSub = _fin.subtotal != null ? _fin.subtotal : _fin.total != null ? Math.round((_fin.total - _fin.belowSubtotal) * 100) / 100 : null;
+  const _finProbe = _finSub > 0 ? checkElectricPrintedTotals(Object.assign({}, result, { _subtotal: _finSub })) : null;
+  const _noNegative = UTILITY_E_COMPONENT_CHARGE_FIELDS.every((f) => f === 'BillOffset' || f === 'SolarCredit' || !(parseBillNumber(result[f]) < 0));
+  if (!(_finProbe && _finProbe.linesMatchSubtotal === true && _finProbe.subtotalPlusFeesMatchTotal === true && _noNegative)) return;
+  _evgDropHolds(
+    result,
+    result._positionHeld.filter((r) => {
+      const k = r.split(':')[0].trim();
+      if (k === 'Subtotal') return true;
+      return Object.prototype.hasOwnProperty.call(result, k) && !/^_/.test(k) && parseBillNumber(result[k]) > 0;
+    }),
+  );
 }
 const _EVG_CHG = /Ch[gaq9][.:]?/i; // matches Chg, Cha, Chq, Ch9, Chg.
 // FIX (2026-08-24, Client A visual audit bug #6): `\s+` -> `\s*` between
@@ -6653,31 +6661,100 @@ function _lbg_peerStormCharge(bills) {
 }
 // The rate check: a printed Gas charge and usage x rate must agree within this many dollars.
 const _LBG_GAS_RATE_CHECK_TOL = 1.0;
-// Candidate therms from one lost, extra or misread digit of the OCR string of the therms figure.
-function _lbg_usageDigitRepairs(usage) {
-  const s = String(usage);
+// Candidate numbers from one lost, extra or misread character of a scanned figure ("2.5" -> 52.5, "11Z7.90" ->
+// 1107.90 ... 1197.90). Used only by _lbg_autofix.
+function _lbg_digitRepairs(scan) {
+  const s = String(scan);
   const out = new Set();
   const digits = '0123456789';
   for (let i = 0; i <= s.length; i++) {
     for (const d of digits) out.add(s.slice(0, i) + d + s.slice(i)); // one lost digit
   }
   for (let i = 0; i < s.length; i++) {
-    if (!/\d/.test(s[i])) continue;
-    out.add(s.slice(0, i) + s.slice(i + 1)); // one extra digit
-    for (const d of digits) out.add(s.slice(0, i) + d + s.slice(i + 1)); // one misread digit
+    if (s[i] === '.') continue;
+    out.add(s.slice(0, i) + s.slice(i + 1)); // one extra character
+    for (const d of digits) out.add(s.slice(0, i) + d + s.slice(i + 1)); // one misread character
   }
   out.delete(s);
-  return [...out].filter((x) => /^[1-9]\d*(\.\d+)?$/.test(x)).map(Number);
+  return [...out].filter((x) => /^\d+(\.\d+)?$/.test(x)).map(Number).filter((n) => n > 0 && n !== Number(s));
 }
-// The therm factor of one meter, from its other gas bills (therms / read difference). The factor is
-// the value most bills share (within 0.1%); one odd bill (for example therms typed equal to the read
-// difference) is ignored. Returns null unless more than half of the bills share it.
+// THE autofix rule for a value whose read failed its check (Matt, 2026-10-20). Every field of every utility
+// calls this one function; it is the only place that decides "fill or hold".
+//   sources  the independent ways to get the value. A source is one of:
+//              { label, values: [n...], eps, says }   it proposes values (reads x multiplier, totals - lines, date counts)
+//              { label, test: (v) => bool, says }     it only checks a value (charge fits quantity x rate to the cent)
+//              { scan: 'text', eps, says }            the scanned text; its one-digit repairs confirm a value, and
+//                                                     propose values only when no other source does
+//            eps is the tolerance of that source (the rounding of the bill itself).
+//   veto     (v) => bool, a value that must not be filled whatever the sources say
+//   scanRead optional text for the hover: what the scan gave
+// A value is filled only when 2 or more sources agree on it and no other value has as much support. The
+// scan's one-digit repairs are used only when the scan itself is not already a proposed value. Returns
+// { value, labels, reason } or null (the caller keeps the hold).
+function _lbg_autofix(a) {
+  const near = (x, y, e) => Math.abs(x - y) <= e;
+  const srcs = [];
+  for (const s of a.sources || []) {
+    if (!s) continue;
+    if (s.scan != null) {
+      const clean = String(s.scan).replace(/[$,\s]/g, '');
+      if (!clean) continue;
+      srcs.push({
+        label: s.label || 'scan',
+        weak: true,
+        eps: s.eps,
+        says: s.says || 'one digit repair of the scan (' + clean + ')',
+        exact: /^\d+(\.\d+)?$/.test(clean) ? Number(clean) : null,
+        values: _lbg_digitRepairs(clean),
+        scan: clean,
+      });
+    } else srcs.push(s);
+  }
+  const E = (s) => (s.eps != null ? s.eps : 0.0005);
+  const cands = [];
+  const propose = (list) => {
+    for (const s of list) for (const v of s.values || []) if (!cands.some((c) => near(c, v, E(s)))) cands.push(v);
+  };
+  propose(srcs.filter((s) => !s.weak));
+  if (!cands.length) propose(srcs.filter((s) => s.weak));
+  const supports = (s, c) => {
+    if (s.scan != null) {
+      if (s.exact != null && near(s.exact, c, E(s))) return true;
+      if (s.exact != null && cands.some((p) => near(p, s.exact, 1e-9))) return false; // the scan is itself a proposed value
+      return s.values.some((v) => near(v, c, E(s)));
+    }
+    return (!!s.values && s.values.some((v) => near(v, c, E(s)))) || (!!s.test && !!s.test(c));
+  };
+  let best = [];
+  let bestN = 0;
+  for (const c of cands) {
+    if (a.veto && a.veto(c)) continue;
+    const sup = srcs.filter((s) => supports(s, c));
+    if (sup.length < 2) continue;
+    if (sup.length > bestN) {
+      best = [{ c, sup }];
+      bestN = sup.length;
+    } else if (sup.length === bestN) best.push({ c, sup });
+  }
+  if (best.length !== 1) return null;
+  const hit = best[0];
+  return {
+    value: hit.c,
+    labels: hit.sup.map((s) => s.label),
+    reason:
+      'Filled with ' + hit.c + ' because ' + hit.sup.map((s) => s.says || s.label).join(' and ') +
+      (a.scanRead != null ? '; the scan read ' + a.scanRead : '') + '.',
+  };
+}
+// The multiplier (usage per read difference) of one meter, from its other bills. It is the value most bills
+// share (within 0.1%); one odd bill is ignored. Returns null unless more than half of the bills share it.
+// peers: [{ StartRead, EndRead, Usage }]
 function _lbg_meterFactor(peers) {
   const fs = [];
   for (const b of peers) {
     const d = Number(b.EndRead) - Number(b.StartRead);
-    const th = Number(b.NaturalGasTherms);
-    if (d > 0 && th > 0) fs.push(th / d);
+    const u = Number(b.Usage);
+    if (d > 0 && u > 0) fs.push(u / d);
   }
   let best = [];
   for (const f of fs) {
@@ -6686,47 +6763,17 @@ function _lbg_meterFactor(peers) {
   }
   return best.length && best.length * 2 > fs.length ? best[0] : null;
 }
-// THE autofix for a Gas therms figure that failed the rate check while the printed Gas charge is
-// proven. Sources: (a) meter reads x the meter's therm factor, (b) the charge / rate, (c) one-digit
-// repairs of the OCR string. Fills only when two independent sources agree; otherwise null (the
-// caller keeps the hold). Returns { usage, reason } or null.
-// in: { ocrUsage, prevRead, currRead, factor, variable (printed gas line - customer charge), rate }
-function _lbg_autofixGasUsage(a) {
-  if (!(a.variable > 0) || !(a.rate > 0)) return null;
-  const fitsCharge = (t) => Math.abs(a.variable - t * a.rate) < _LBG_GAS_RATE_CHECK_TOL;
-  const diff = a.currRead != null && a.prevRead != null ? a.currRead - a.prevRead : 0;
-  const reads = diff > 0 && a.factor > 0 ? Math.round(diff * a.factor * 1000) / 1000 : null;
-  const repairs = _lbg_usageDigitRepairs(a.ocrUsage);
-  if (reads != null) {
-    if (!fitsCharge(reads)) return null; // reads and charge disagree: stays held
-    const ocrAgrees = repairs.some((c) => Math.abs(c - reads) < 0.0005);
-    return {
-      usage: reads,
-      reason:
-        'Filled from meter reads ' + diff + ' x ' + Math.round(a.factor * 10000) / 10000 + ' = ' + reads +
-        ', which fits the printed Gas charge' + (ocrAgrees ? ' and the scan (' + a.ocrUsage + ' with one digit lost)' : '') +
-        '; the scan read ' + a.ocrUsage + '.',
-    };
-  }
-  const near = repairs.filter((c) => Math.abs(c * a.rate - a.variable) <= 0.005);
-  if (near.length === 1) {
-    return {
-      usage: near[0],
-      reason: 'Filled from the printed Gas charge / rate, confirmed by one digit repair of the scan (' + a.ocrUsage + ' to ' + near[0] + ').',
-    };
-  }
-  return null;
-}
-// The therm factor of one account from the gas bills already saved (utilityData meters), or null.
-function _lbg_storedGasFactor(acct) {
+// The factor of one account from the bills of one commodity already saved (utilityData meters), or null.
+// Saved row fields: accountNumber, commodity, startRead, endRead, kwh (gas therms or electric kWh).
+function _lbg_storedMeterFactor(acct, commodity) {
   if (!acct || typeof utilityData === 'undefined') return null;
   const peers = [];
   for (const cust of Object.values(utilityData || {})) {
     for (const bl of (cust && cust.buildings) || []) {
       for (const m of bl.meters || []) {
         for (const sb of m.bills || []) {
-          if (sb.accountNumber !== acct || (sb.commodity && sb.commodity !== 'Gas')) continue;
-          peers.push({ StartRead: parseFloat(String(sb.startRead).replace(/,/g, '')), EndRead: parseFloat(String(sb.endRead).replace(/,/g, '')), NaturalGasTherms: parseFloat(String(sb.kwh).replace(/,/g, '')) });
+          if (sb.accountNumber !== acct || (sb.commodity && sb.commodity !== commodity)) continue;
+          peers.push({ StartRead: parseBillNumber(sb.startRead), EndRead: parseBillNumber(sb.endRead), Usage: parseBillNumber(sb.kwh) });
         }
       }
     }
@@ -6734,25 +6781,35 @@ function _lbg_storedGasFactor(acct) {
   return _lbg_meterFactor(peers);
 }
 // Reader post-pass over a file's bills: autofix every gas bill held only for unproven therms,
-// using the therm factor of the same account's other bills in the file (or opts.priorFactor(acct)).
+// using the therm factor of the same account's other bills in the file (or priorFactor(acct)).
 function _lbg_applyGasUsageAutofix(bills, priorFactor) {
   for (const b of bills) {
     const pend = b._correction_pending_NaturalGasTherms;
     if (b.Commodity !== 'Gas' || !pend || b.PrintedGasLine == null) continue;
-    const peers = bills.filter((o) => o !== b && o.Commodity === 'Gas' && o.AccountNumber === b.AccountNumber && !o._correction_pending_NaturalGasTherms);
+    const peers = bills
+      .filter((o) => o !== b && o.Commodity === 'Gas' && o.AccountNumber === b.AccountNumber && !o._correction_pending_NaturalGasTherms)
+      .map((o) => ({ StartRead: o.StartRead, EndRead: o.EndRead, Usage: o.NaturalGasTherms }));
     const factor = _lbg_meterFactor(peers) || (priorFactor ? priorFactor(b.AccountNumber) : null);
     const r = _lbg_gasRate(b.BillDate);
-    const fix = _lbg_autofixGasUsage({
-      ocrUsage: pend.original,
-      prevRead: b.StartRead,
-      currRead: b.EndRead,
-      factor,
-      variable: Math.max(0, b.PrintedGasLine - r.baseCharge),
-      rate: r.rate,
+    const variable = Math.max(0, b.PrintedGasLine - r.baseCharge);
+    if (!(variable > 0) || !(r.rate > 0)) continue;
+    const diff = b.EndRead != null && b.StartRead != null ? b.EndRead - b.StartRead : 0;
+    const reads = diff > 0 && factor > 0 ? Math.round(diff * factor * 1000) / 1000 : null;
+    // with meter reads the printed charge may differ by the rate-check dollars; without them, to the cent
+    const tol = reads != null ? _LBG_GAS_RATE_CHECK_TOL : 0.005;
+    const fits = (t) => Math.abs(variable - t * r.rate) <= tol;
+    const fix = _lbg_autofix({
+      sources: [
+        reads != null && { label: 'reads', values: [reads], says: 'meter reads ' + diff + ' x ' + Math.round(factor * 10000) / 10000 + ' = ' + reads },
+        { label: 'charge', test: fits, says: 'the printed Gas charge fits' },
+        { scan: pend.original },
+      ],
+      veto: (v) => !fits(v),
+      scanRead: pend.original,
     });
     if (!fix) continue;
-    b.NaturalGasTherms = billValueOrNull(fix.usage);
-    b._auto_corrected_NaturalGasTherms = { original: pend.original, corrected: fix.usage, reason: fix.reason };
+    b.NaturalGasTherms = billValueOrNull(fix.value);
+    b._auto_corrected_NaturalGasTherms = { original: pend.original, corrected: fix.value, reason: fix.reason };
     delete b._correction_pending_NaturalGasTherms;
     b._gateReasons = (b._gateReasons || []).filter((x) => x !== pend.reason);
     if (!b._gateReasons.length) {
@@ -6761,6 +6818,160 @@ function _lbg_applyGasUsageAutofix(bills, priorFactor) {
       delete b._manualReviewLabel;
     }
   }
+}
+// ── Utility E (electric) autofix: the same rule (_lbg_autofix), electric sources ──
+const _EVG_NO_AUTOFIX_CELLS = ['BillOffset', 'SolarCredit']; // credits: the scan loses the sign
+const _evgRound = (v, d) => Math.round(v * Math.pow(10, d)) / Math.pow(10, d);
+// Total kWh. Runs when the read-times-multiplier check failed (_kwhCrossCheck). Sources: (End - Start read) x
+// multiplier (printed, else the one the meter's other bills share), the one-digit repairs of the scanned kWh,
+// and the energy charge / printed rate where the bill prints one energy rate (cent-exact).
+function _evgAutofixKwh(b, getFactor) {
+  const chk = b._kwhCrossCheck;
+  if (!chk || b._meterRollover || b._meterInfo) return;
+  const er = parseBillNumber(b.EndRead);
+  const sr = parseBillNumber(b.StartRead);
+  if (!(sr > 0) || !(er > sr)) return;
+  const diff = _evgRound(er - sr, 4);
+  const printed = parseBillNumber(b.MeterMultiplier);
+  const mult = printed > 0 ? printed : getFactor();
+  const ri = b._rates && b._rates.EnergyOnPeakCharge;
+  const charge = parseBillNumber(b.EnergyOnPeakCharge);
+  const oneRate = ri && ri.rate > 0 && ri.parts && ri.parts.length === 1 && charge > 0 && !(parseBillNumber(b.EnergyOffPeakCharge) > 0);
+  const reads = mult > 0 ? _evgRound(diff * mult, 4) : null;
+  const fix = _lbg_autofix({
+    sources: [
+      reads != null && { label: 'reads', values: [reads], says: 'meter reads ' + diff + ' x ' + mult + ' = ' + reads },
+      oneRate && { label: 'charge', test: (v) => Math.abs(_evgRound(v * ri.rate, 2) - charge) < 0.005, says: 'the energy charge $' + charge.toFixed(2) + ' / $' + ri.rate + ' per kWh' },
+      { scan: String(chk.extracted) },
+    ],
+    scanRead: chk.extracted,
+  });
+  if (!fix) return;
+  b.kWhConsumed = fix.value.toFixed(4);
+  b._auto_corrected_kWhConsumed = { original: String(chk.extracted), corrected: b.kWhConsumed, reason: fix.reason };
+  delete b._kwhCrossCheck;
+}
+// Billed kW demand. Runs when the demand quantity did not fit its charge (rate mismatch, or the rate was changed
+// to charge / quantity). Sources: the one-digit repairs of the scanned kW and the printed demand charge / printed
+// demand rate (cent-exact). The printed rate is kept; the prior bill is not a source.
+function _evgAutofixKw(b) {
+  const ri = b._rates && b._rates.BilledKWCharge;
+  const ac = b._auto_corrected_rate_BilledKWCharge;
+  const mm = b._rate_mismatch_BilledKWCharge;
+  const charge = parseBillNumber(b.BilledKWCharge);
+  if (!ri || !ri.parts || ri.parts.length !== 1 || !(charge > 0) || !(ac || mm)) return;
+  if (ac && ac.reason !== 'charge_div_qty') return;
+  const rate = ac ? ac.ocrRate : ri.rate;
+  const qty = ri.parts[0].qty;
+  if (!(rate > 0) || !(qty > 0)) return;
+  const fix = _lbg_autofix({
+    sources: [
+      { label: 'charge', test: (v) => Math.abs(_evgRound(v * rate, 2) - charge) < 0.005, says: 'the demand charge $' + charge.toFixed(2) + ' / $' + rate + ' per kW' },
+      { scan: String(qty) },
+    ],
+    scanRead: qty,
+  });
+  if (!fix) return;
+  b.BilledKW = fix.value.toFixed(4);
+  b._rates.BilledKWCharge = Object.assign({}, ri, {
+    qty: fix.value,
+    rate,
+    computed: charge,
+    parts: [Object.assign({}, ri.parts[0], { qty: fix.value, rate, computed: charge })],
+  });
+  if (b.DemandRate != null) b.DemandRate = rate;
+  delete b._auto_corrected_rate_BilledKWCharge;
+  delete b._rate_mismatch_BilledKWCharge;
+  delete b._part_mismatches_BilledKWCharge;
+  b._auto_corrected_BilledKW = { original: String(qty), corrected: b.BilledKW, reason: fix.reason };
+}
+// Number of days. Runs when the read dates, the billing period and the printed Days column do not all agree
+// (_numberOfDaysCheck). Sources: the day count of the meter read dates, the day count of the billing period, and
+// the days from the first read date to the printed Billing Date (the bill is printed on the last read date), and
+// the scanned Days digits. Where the sources tie, the day count stays as the reader gave it.
+function _evgAutofixDays(b) {
+  const n = b._numberOfDaysCheck;
+  if (!n || n.readDays == null || n.periodDays == null) return;
+  if (n.readDays === n.periodDays && n.printedDaysAgree !== false) return;
+  // the bill is printed on the last meter read date: read start to the printed Billing Date
+  const _bd = b._billDate && n.readStart ? calcDays(n.readStart, b._billDate, false) : null;
+  const fix = _lbg_autofix({
+    sources: [
+      { label: 'reads', values: [n.readDays], says: 'the meter read dates ' + n.readStart + ' to ' + n.readEnd + ' give ' + n.readDays + ' days' },
+      { label: 'period', values: [n.periodDays], says: 'the billing period ' + b.BillingPeriodStart + ' to ' + b.BillingPeriodEnd + ' gives ' + n.periodDays + ' days' },
+      _bd > 0 && _bd < 120 && { label: 'billdate', values: [_bd], says: 'the Billing Date ' + b._billDate + ' gives ' + _bd + ' days from the first read date' },
+      n.printedDays ? { scan: n.printedDays, says: 'the printed Days ' + n.printedDays + ' (one digit repair)' } : null,
+    ],
+    scanRead: n.printedDays,
+  });
+  if (!fix || String(fix.value) === String(b.NumberOfDays)) return;
+  const original = b.NumberOfDays;
+  b.NumberOfDays = String(fix.value);
+  b._numberOfDaysCheck = Object.assign({}, n, { days: String(fix.value), source: 'autofix', printedDaysAgree: n.printedDays ? String(fix.value) === String(n.printedDays) : null });
+  b._auto_corrected_NumberOfDays = { original, corrected: b.NumberOfDays, reason: fix.reason };
+}
+// One charge cell the position engine held (no value). Sources: the printed Subtotal (else the printed Current
+// Charges minus the lines below the Subtotal) minus the other lines, and the one-digit repairs of the scanned cell
+// (the text the engine quotes in its reason). Cent-exact; the printed totals must agree with each other. Fills
+// only when exactly one charge cell is empty.
+function _evgAutofixChargeCell(b) {
+  const held = b._positionHeld;
+  if (!held || !held.length) return;
+  const heldCells = held.map((r) => r.split(':')[0].trim()).filter((k) => UTILITY_E_COMPONENT_CHARGE_FIELDS.indexOf(k) >= 0);
+  if (heldCells.length !== 1) return;
+  const cell = heldCells[0];
+  if (_EVG_NO_AUTOFIX_CELLS.indexOf(cell) >= 0 || b[cell] != null && String(b[cell]).trim() !== '') return;
+  if (held.some((r) => { const k = r.split(':')[0].trim(); return k !== cell && k !== 'Subtotal' && !(b[k] != null && String(b[k]).trim() !== ''); })) return;
+  const quoted = held.filter((r) => r.split(':')[0].trim() === cell).map((r) => /box read "([^"]*)"/.exec(r)).find((m) => m);
+  if (!quoted) return;
+  const chk = checkElectricPrintedTotals(b);
+  const total = chk.total;
+  const printedSub = chk.subtotal;
+  const below = UTILITY_E_BELOW_SUBTOTAL_FIELDS.indexOf(cell) >= 0;
+  let want = null;
+  if (below) {
+    if (printedSub == null || total == null) return;
+    want = _evgRound(total - printedSub - chk.belowSubtotal, 2);
+  } else {
+    const sub = printedSub != null ? printedSub : total != null ? _evgRound(total - chk.belowSubtotal, 2) : null;
+    if (sub == null) return;
+    want = _evgRound(sub - chk.linesSum, 2);
+  }
+  if (!(want > 0)) return;
+  // both printed totals, when the page has both, must agree with each other (cells below the Subtotal need both anyway)
+  const totalsAgree = printedSub == null || total == null || Math.abs(_evgRound(printedSub + chk.belowSubtotal, 2) - total) <= 0.01 || below;
+  const fix = _lbg_autofix({
+    sources: [
+      { label: 'totals', values: [want], eps: 0.005, says: 'the printed ' + (printedSub != null ? 'Subtotal' : 'Current Charges') + ' minus the other lines is ' + want.toFixed(2) },
+      { scan: quoted[1], eps: 0.005 },
+    ],
+    veto: () => !totalsAgree,
+    scanRead: quoted[1],
+  });
+  if (!fix) return;
+  b[cell] = fix.value.toFixed(2);
+  b['_auto_corrected_' + cell] = { original: null, corrected: b[cell], reason: fix.reason };
+  _evgDropHolds(b, held.filter((r) => r.split(':')[0].trim() === cell));
+  _evgRecheckPositionHolds(b);
+}
+// The post-pass of the Utility E reader (extractAll and extract): every autofix above, bill by bill.
+// Multiplier sources: the printed one, else the one the same account's other bills in the file share, else the
+// one its saved bills share (utilityData rows: accountNumber, startRead, endRead, kwh).
+function _evgApplyAutofix(bills) {
+  for (const b of bills) {
+    if (!b || (b.Commodity && b.Commodity !== 'Electric') || !Object.prototype.hasOwnProperty.call(b, 'MeterMultiplier')) continue;
+    const getFactor = () => {
+      const peers = bills
+        .filter((o) => o !== b && o && o.AccountNumber === b.AccountNumber && !o._kwhCrossCheck && !o._meterRollover && !o._meterInfo)
+        .map((o) => ({ StartRead: parseBillNumber(o.StartRead), EndRead: parseBillNumber(o.EndRead), Usage: parseBillNumber(o.kWhConsumed) }));
+      return _lbg_meterFactor(peers) || _lbg_storedMeterFactor(b.AccountNumber, 'Electric');
+    };
+    _evgAutofixKwh(b, getFactor);
+    _evgAutofixKw(b);
+    _evgAutofixDays(b);
+    _evgAutofixChargeCell(b);
+  }
+  return bills;
 }
 const _LBG_GAS_RATES = [{ effectiveDate: '2000-01-01', rate: 0.798062, baseCharge: 23.33 }];
 function _lbg_gasRate(billDate) {
@@ -7916,7 +8127,7 @@ const UTILITY_RULES = [
         }
         validSections = sections.filter((s) => _EVG_SERVICE_FROM.test(s));
       }
-      if (!validSections.length) return [_extractEvergy(t, acct, addrM?.[1]?.trim() || null)];
+      if (!validSections.length) return _evgApplyAutofix([_extractEvergy(t, acct, addrM?.[1]?.trim() || null)]);
       // Extract CustomerName and RateSchedule from full text — per-section extraction
       // often misses these because the header block (Customer Name, Account, Address, Rate)
       // appears BEFORE "Billing Details" and gets split into the previous section.
@@ -8289,12 +8500,12 @@ const UTILITY_RULES = [
           }
         }
       }
-      return results;
+      return _evgApplyAutofix(results);
     },
     extract: (t) => {
       const acct = _evgPickAccount(_evgAccountsIn(t));
       const addrM = t.match(_EVG_ADDR);
-      return _extractEvergy(t, acct, addrM?.[1]?.trim() || null);
+      return _evgApplyAutofix([_extractEvergy(t, acct, addrM?.[1]?.trim() || null)])[0];
     },
   },
   // ── Constellation NewEnergy (Gas Supplier) ─────────────────────────────
@@ -14411,7 +14622,7 @@ function _pageRule(page) {
 // the split happened.
 function _extractFileBills(text, rule) {
   const bills = _extractFileBillsRaw(text, rule);
-  _lbg_applyGasUsageAutofix(bills, _lbg_storedGasFactor);
+  _lbg_applyGasUsageAutofix(bills, (acct) => _lbg_storedMeterFactor(acct, 'Gas'));
   return bills;
 }
 function _extractFileBillsRaw(text, rule) {
