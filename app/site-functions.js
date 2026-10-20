@@ -2575,6 +2575,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.20.148', date: '2026-10-20', title: 'PDF / OCR: electric bills fill misread values',
+    items: [
+      { type: 'fix', text: 'PDF / OCR: electric bills fill a misread kWh, kW, number of days or one charge when two separate checks on the bill agree. Hover the value to see how it was filled.' },
+      { type: 'change', text: 'PDF / OCR: gas and electric bills now use the same fill rule, so both follow one set of checks.' }
+    ]
+  },
   { v: 'v2026.10.20.147', date: '2026-10-20', title: 'Utility Data: city gas therms filled from meter reads',
     items: [
       { type: 'fix', text: 'Utility Data, city gas bills: when the therms cannot be read, the site now fills them from the meter reads times the usual therm factor, only when that agrees with the printed gas charge and the scanned digits. Hover the value to see the method. Otherwise the bill stays held.' },
