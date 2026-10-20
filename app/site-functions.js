@@ -2575,6 +2575,15 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.20.146', date: '2026-10-20', title: 'Utility Data: clearer gap text, notices and held electric bills',
+    items: [
+      { type: 'change', text: 'Utility Data: missing-day gaps now show as plain muted text. Baseline-period gaps come first and are bold; other gaps are muted. The Projects list shows baseline gaps only, and building names wrap instead of being cut off.' },
+      { type: 'change', text: 'The sidebar entry is now called Backup & Data (no icon), and Sync status moved onto the version line at the bottom of the sidebar.' },
+      { type: 'change', text: 'Notifications now name the project, building, meter and period range, show the date and time, and open the Bills tab of that meter. No notice appears when 0 periods were added.' },
+      { type: 'fix', text: 'Utility Data, electric bills: a held bill is released when the final values add up to the printed charges to the cent. Commodity now shows in Account Info, and Previously Billed moved to Account Info.' },
+      { type: 'fix', text: 'Utility Data, held bills now use the plain Save button. Clear now removes all old extraction information, including the save bar and the OCR tab.' }
+    ]
+  },
   { v: 'v2026.10.20.145', date: '2026-10-20', title: 'Utility Data: electric bill total matches the printed charges',
     items: [
       { type: 'fix', text: 'Utility Data, electric bills: Total Current Charges is now exactly the printed Current Charges; a miscellaneous charge is kept as its own value and no longer added on top.' }
