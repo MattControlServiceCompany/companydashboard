@@ -6976,7 +6976,7 @@ function showMultiBuildingReviewPanel() {
     // see there for what each action does to an existing period match.
     '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;align-items:center">',
     '<button class="btn btn-primary btn-sm" id="mbSaveAllBtn" onclick="confirmMultiBuildingSave(\'save\')" disabled>Save All</button>',
-    '<button class="btn btn-ghost btn-sm" id="mbOverwriteAllBtn" onclick="confirmMultiBuildingSave(\'overwrite\')" disabled title="Replace existing records with newly extracted values, including blanks">Overwrite All</button>',
+    '<button class="btn btn-ghost btn-sm" id="mbOverwriteAllBtn" onclick="confirmMultiBuildingSave(\'overwrite\')" disabled title="Replace existing values with newly extracted values; a blank new value keeps the saved value">Overwrite All</button>',
     '<button class="btn btn-ghost btn-sm" id="mbMergeAllBtn" onclick="confirmMultiBuildingSave(\'merge\')" disabled title="Fill only empty fields — keeps existing non-empty values intact">Merge All</button>',
     '<button class="btn btn-ghost btn-sm" id="mbAttachOnlyBtn" onclick="confirmMultiBuildingSave(\'attach-pdf-only\')" disabled title="Attach the PDF only to already-matching billing periods — never changes any other field, never creates a new bill">Attach PDFs Only</button>',
     '<button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'pdfMultiBldgPanel\').style.display=\'none\'">Cancel</button>',
@@ -7343,7 +7343,7 @@ function _mbUpdateSaveAllBtn() {
     { id: 'mbSaveAllBtn', baseTitle: '' },
     {
       id: 'mbOverwriteAllBtn',
-      baseTitle: 'Replace existing records with newly extracted values, including blanks',
+      baseTitle: 'Replace existing values with newly extracted values; a blank new value keeps the saved value',
     },
     { id: 'mbMergeAllBtn', baseTitle: 'Fill only empty fields — keeps existing non-empty values intact' },
     {
@@ -7890,7 +7890,7 @@ async function confirmAutoAssign() {
     targetMeter.bills = targetMeter.bills || [];
     const dup = targetMeter.bills.find((r) => r.start === billRow.start && r.end === billRow.end);
     if (dup) {
-      Object.assign(dup, billRow);
+      _dupApplyRow(dup, billRow, 'overwrite');
     } else {
       targetMeter.bills.push(billRow);
       targetMeter.bills.sort((a, b) => _parseISO(a.start) - _parseISO(b.start));
@@ -8419,20 +8419,10 @@ async function _mbSaveOneBill(bi, action) {
         }
         bill._mbAttachStatus = 'attached';
       }
-    } else if (action === 'overwrite') {
-      // Explicit "Overwrite All" (or a per-row Save forced to overwrite) —
-      // replace every field, including blanks, exactly like the tooltip says.
-      Object.assign(dup, billRow);
     } else {
-      // 'save' (default) and 'merge' both fill only currently-blank fields —
-      // never clobber a value already on the record (matches "Merge All"
-      // tooltip: "keeps existing non-empty values intact"; 0/'0' counts as a
-      // real value, only null/undefined/'' count as blank).
-      for (const k of Object.keys(billRow)) {
-        const v = billRow[k];
-        if (v == null || v === '') continue;
-        if (dup[k] == null || dup[k] === '') dup[k] = v;
-      }
+      // 'overwrite' copies every non-blank new value; 'save' (default) and 'merge' fill only blank
+      // saved fields. A blank new value never changes a saved value (_dupApplyRow, 0 counts as a value).
+      _dupApplyRow(dup, billRow, action === 'overwrite' ? 'overwrite' : 'merge');
     }
   } else if (action === 'attach-pdf-only') {
     // No existing period on this meter to attach to — never create a new
@@ -11942,6 +11932,81 @@ function _clearExtractionState() {
   _removeSavedWorkKeys();
 }
 
+// The ONE blank test for duplicate handling: a blank new value is never a difference and never
+// replaces a saved value (Matt 2026-10-20). 0 is a real value. Used by _buildDiffFields,
+// _applyDupUpdate and _dupApplyRow.
+function _dupHasValue(v) {
+  return v !== undefined && v !== null && String(v).trim() !== '';
+}
+
+// The ONE write rule for a duplicate bill row: 'overwrite' copies every non-blank new value, 'merge'
+// copies a non-blank new value only where the saved value is blank. A blank new value never
+// changes a saved value in either mode.
+function _dupApplyRow(target, src, mode) {
+  for (const k of Object.keys(src)) {
+    const v = src[k];
+    if (!_dupHasValue(v)) continue;
+    if (mode === 'overwrite' || !_dupHasValue(target[k])) target[k] = v;
+  }
+}
+
+// Labels for the duplicate compare modal and the main-page strip (one list).
+const _DUP_FIELD_LABELS = {
+  AccountNumber: 'Account Number',
+  MeterNumber: 'Meter Number',
+  CustomerName: 'Customer Name',
+  ServiceAddress: 'Service Address',
+  RateSchedule: 'Rate Schedule',
+  BillingPeriodStart: 'Billing Period Start',
+  BillingPeriodEnd: 'Billing Period End',
+  NumberOfDays: 'Number of Days',
+  MeterReadStart: 'Meter Read Start',
+  MeterReadEnd: 'Meter Read End',
+  StartRead: 'Start Read',
+  EndRead: 'End Read',
+  kWhConsumed: 'kWh Consumed',
+  NaturalGasTherms: 'Therms',
+  ActualKW: 'Actual kW',
+  BilledKW: 'Billed kW',
+  FacilitiesKW: 'Facilities kW',
+  CustomerCharge: 'Customer Charge',
+  FacilitiesCharge: 'Facilities Charge',
+  BilledKWCharge: 'Billed kW Charge',
+  EnergyOnPeakCharge: 'On-Peak Charge',
+  EnergyOffPeakCharge: 'Off-Peak Charge',
+  ECACharge: 'ECA Charge',
+  EERCharge: 'EER Charge',
+  PTSCharge: 'PTS Charge',
+  TDCCharge: 'TDC Charge',
+  TaxExemptDelivery: 'Tax Exempt Delivery',
+  BillOffset: 'Bill Offset',
+  FranchiseFee: 'Franchise Fee',
+  TotalCurrentCharges: 'Total Current Charges',
+  // Propane (backlog 9a686660) — mirrors renderPDFFields LABELS (~13178-13184)
+  InvoiceNumber: 'Invoice Number',
+  SaleNumber: 'Sale Number',
+  DeliveryDate: 'Delivery Date',
+  FuelType: 'Fuel Type',
+  GallonsDelivered: 'Gallons Delivered',
+  UnitPrice: '$/gal',
+  Subtotal: 'Subtotal',
+  Tax: 'Tax',
+};
+
+// Short text for the main-page duplicate strip: names the first 2 differing fields with both values.
+function _dupDiffSummaryText(diffs) {
+  const list = Array.isArray(diffs) ? diffs : [];
+  if (!list.length) return 'identical';
+  const label = (d) => _DUP_FIELD_LABELS[d.key] || d.key;
+  const vals = (d) => 'saved ' + (d.existVal === '' ? '(empty)' : d.existVal) + ', new ' + d.newVal;
+  const more = list.length > 2 ? ' +' + (list.length - 2) + ' more' : '';
+  if (list.length === 1) return label(list[0]) + ' differ: ' + vals(list[0]);
+  return list
+    .slice(0, 2)
+    .map((d) => label(d) + ' (' + vals(d) + ')')
+    .join(', ') + more + ' differ';
+}
+
 function _buildDiffFields(extracted, existing) {
   // Compare extracted fields to existing bill record
   // extracted uses raw field names (AccountNumber, BillingPeriodStart, etc.)
@@ -12005,6 +12070,7 @@ function _buildDiffFields(extracted, existing) {
   // Detection mirrors the existing isPropaneBill check at ~line 266.
   const isPropaneBill =
     (extracted.Commodity || '').toLowerCase() === 'propane' || !!extracted.FuelType || !!extracted.GallonsDelivered;
+  const isGasBill = !isPropaneBill && /gas/i.test(extracted.Commodity || '');
   // For saved (unassigned) bills, fields map 1:1 (same raw keys)
   const isSaved = !existing.start && existing.BillingPeriodStart !== undefined;
   const toISO = (d) => {
@@ -12081,7 +12147,22 @@ function _buildDiffFields(extracted, existing) {
     // dialog would show the same gallons number twice: once correctly labeled
     // "Gallons Delivered" and once mislabeled "kWh Consumed" (backlog 9a686660).
     if (key === 'kWhConsumed' && isPropaneBill) continue;
+    // Gas bills carry usage as therms (gasBillSaveTherms / resolveGasUsageThermsOrNull), never kWh:
+    // compare the therms, label it "Therms", and skip the empty kWh row.
+    if (key === 'kWhConsumed' && isGasBill) {
+      const gNew = gasBillSaveTherms(extracted);
+      // Old gas bills keep their therms in `kwh` (see _extractedToBillRowCosts); read that when no therms field exists.
+      let gOld = resolveGasUsageThermsOrNull(existing);
+      if (gOld === null && !isSaved) gOld = parseBillNumber(existing.kwh);
+      if (!_dupHasValue(gNew)) continue;
+      const gOldTxt = gOld === null ? '' : gOld;
+      if (parseBillNumber(gNew) === parseBillNumber(gOldTxt)) continue;
+      diffs.push({ key: 'NaturalGasTherms', newVal: String(gNew), existVal: String(gOldTxt) });
+      continue;
+    }
     const newVal = extracted[key] ?? '';
+    // A blank new value is not a difference: it never replaces a saved value.
+    if (!_dupHasValue(newVal)) continue;
     let existVal = '';
     if (isSaved) {
       existVal = existing[key] ?? '';
@@ -12803,46 +12884,7 @@ function _renderDupModal(billIdx) {
     '</div>';
 
   // Comparison table
-  const LABELS = {
-    AccountNumber: 'Account Number',
-    MeterNumber: 'Meter Number',
-    CustomerName: 'Customer Name',
-    ServiceAddress: 'Service Address',
-    RateSchedule: 'Rate Schedule',
-    BillingPeriodStart: 'Billing Period Start',
-    BillingPeriodEnd: 'Billing Period End',
-    NumberOfDays: 'Number of Days',
-    MeterReadStart: 'Meter Read Start',
-    MeterReadEnd: 'Meter Read End',
-    StartRead: 'Start Read',
-    EndRead: 'End Read',
-    kWhConsumed: 'kWh Consumed',
-    ActualKW: 'Actual kW',
-    BilledKW: 'Billed kW',
-    FacilitiesKW: 'Facilities kW',
-    CustomerCharge: 'Customer Charge',
-    FacilitiesCharge: 'Facilities Charge',
-    BilledKWCharge: 'Billed kW Charge',
-    EnergyOnPeakCharge: 'On-Peak Charge',
-    EnergyOffPeakCharge: 'Off-Peak Charge',
-    ECACharge: 'ECA Charge',
-    EERCharge: 'EER Charge',
-    PTSCharge: 'PTS Charge',
-    TDCCharge: 'TDC Charge',
-    TaxExemptDelivery: 'Tax Exempt Delivery',
-    BillOffset: 'Bill Offset',
-    FranchiseFee: 'Franchise Fee',
-    TotalCurrentCharges: 'Total Current Charges',
-    // Propane (backlog 9a686660) — mirrors renderPDFFields LABELS (~13178-13184)
-    InvoiceNumber: 'Invoice Number',
-    SaleNumber: 'Sale Number',
-    DeliveryDate: 'Delivery Date',
-    FuelType: 'Fuel Type',
-    GallonsDelivered: 'Gallons Delivered',
-    UnitPrice: '$/gal',
-    Subtotal: 'Subtotal',
-    Tax: 'Tax',
-  };
+  const LABELS = _DUP_FIELD_LABELS;
 
   // Build rows: differing fields first, then matching
   const diffs = dup.diffFields || [];
@@ -17961,7 +18003,7 @@ function renderMultiBillUI(bills) {
     });
     const commKeys = Object.keys(commodities);
     let btns = `<button onclick="savePDFAllBills()" class="btn btn-em btn-sm" style="font-size:10px;padding:3px 12px">Save All ${bills.length} Periods</button>`;
-    btns += `<button onclick="_dupBulkAction('overwrite')" class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 10px" title="Replace existing records with newly extracted values, including blanks">Overwrite All</button>`;
+    btns += `<button onclick="_dupBulkAction('overwrite')" class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 10px" title="Replace existing values with newly extracted values; a blank new value keeps the saved value">Overwrite All</button>`;
     btns += `<button onclick="_dupBulkAction('merge')" class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 10px" title="Fill only empty fields — keeps existing non-empty values intact">Merge All</button>`;
     btns += `<button onclick="_dupBulkAction('attach-pdf-only')" class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 10px" title="Attach the PDF only to already-matching billing periods — never changes any other field, never creates a new bill">Attach PDFs Only</button>`;
     if (commKeys.length > 1) {
@@ -18384,6 +18426,13 @@ async function savePDFAllBills(commodityFilter, onlyIndex) {
   renderMultiBillUI(bills);
 }
 
+// A gas bill's stored `therms` outranks naturalGasTherms (resolveGasUsageThermsOrNull), so a new
+// non-blank therms value is written to both. Blank new therms changes nothing.
+function _syncDupGasTherms(row, extracted) {
+  const t = gasBillSaveTherms(extracted);
+  if (_dupHasValue(t)) row.therms = t;
+}
+
 async function _applyDupUpdate(billIdx, extracted, dup) {
   const toISO = (d) => {
     if (!d) return '';
@@ -18536,26 +18585,22 @@ async function _applyDupUpdate(billIdx, extracted, dup) {
     // getBillOtherCost / getBillTaxCost (computations/rates.js) over the component fields the
     // FIELD_MAP writes above, so there is nothing to recalculate here.
     if (dup.action === 'overwrite') {
-      // Replace all mapped fields with extracted value when non-empty
+      // Replace all mapped fields with extracted value when non-blank (a blank never replaces a saved value)
       for (const [extKey, billKey] of Object.entries(FIELD_MAP)) {
-        if (extracted[extKey] !== undefined && extracted[extKey] !== null && extracted[extKey] !== '') {
-          existing[billKey] = extracted[extKey];
-        }
+        if (_dupHasValue(extracted[extKey])) existing[billKey] = extracted[extKey];
       }
+      _syncDupGasTherms(existing, extracted);
       // Apply ISO conversion to date fields written via FIELD_MAP
       if (existing.statementDate) existing.statementDate = toISO(existing.statementDate) || existing.statementDate;
       _copyPageRange();
     } else if (dup.action === 'merge') {
       // Fill only empty fields
       for (const [extKey, billKey] of Object.entries(FIELD_MAP)) {
-        if (
-          (existing[billKey] == null || existing[billKey] === '') &&
-          extracted[extKey] != null &&
-          extracted[extKey] !== ''
-        ) {
+        if (!_dupHasValue(existing[billKey]) && _dupHasValue(extracted[extKey])) {
           existing[billKey] = extracted[extKey];
         }
       }
+      if (!_dupHasValue(existing.therms)) _syncDupGasTherms(existing, extracted);
       // Apply ISO conversion to date fields written via FIELD_MAP
       if (existing.statementDate) existing.statementDate = toISO(existing.statementDate) || existing.statementDate;
       // Page range: only fill if missing, never overwrite a valid existing range
@@ -18574,8 +18619,9 @@ async function _applyDupUpdate(billIdx, extracted, dup) {
         const useNew = dup.fieldSelections[d.key] !== false;
         if (useNew && FIELD_MAP[d.key]) {
           const newVal = extracted[d.key];
-          if (newVal != null && newVal !== '') {
+          if (_dupHasValue(newVal)) {
             existing[FIELD_MAP[d.key]] = newVal;
+            if (d.key === 'NaturalGasTherms') _syncDupGasTherms(existing, extracted);
           }
           // If extracted is null/undefined, preserve the existing value unchanged
         }
@@ -18610,9 +18656,7 @@ async function _applyDupUpdate(billIdx, extracted, dup) {
     if (dup.action === 'overwrite') {
       const COMPARE_KEYS = Object.keys(extracted).filter((k) => !k.startsWith('_'));
       for (const key of COMPARE_KEYS) {
-        if (extracted[key] !== undefined && extracted[key] !== null && extracted[key] !== '') {
-          sb[key] = extracted[key];
-        }
+        if (_dupHasValue(extracted[key])) sb[key] = extracted[key];
       }
       // Copy fresh page range on overwrite so the PDF viewer slices correctly
       if (extracted._pageStart) sb.pdfPageStart = extracted._pageStart;
@@ -18624,7 +18668,7 @@ async function _applyDupUpdate(billIdx, extracted, dup) {
     } else if (dup.action === 'merge') {
       const COMPARE_KEYS = Object.keys(extracted).filter((k) => !k.startsWith('_'));
       for (const key of COMPARE_KEYS) {
-        if ((sb[key] == null || sb[key] === '') && extracted[key] != null && extracted[key] !== '') {
+        if (!_dupHasValue(sb[key]) && _dupHasValue(extracted[key])) {
           sb[key] = extracted[key];
         }
       }
@@ -18639,7 +18683,7 @@ async function _applyDupUpdate(billIdx, extracted, dup) {
       // #118: never write null/undefined over an existing value
       for (const d of dup.diffFields) {
         const useNew = dup.fieldSelections[d.key] !== false;
-        if (useNew && extracted[d.key] != null && extracted[d.key] !== '') {
+        if (useNew && _dupHasValue(extracted[d.key])) {
           sb[d.key] = extracted[d.key];
         }
       }
@@ -20205,7 +20249,7 @@ function renderPDFFields(parsed, warnings) {
         ? 'Found in: <strong>Saved Bills</strong>'
         : 'Found in: <strong>' + (_liveDup.location || 'meter bill data') + '</strong>';
     dupFieldBannerHtml = `<div style="padding:5px 10px;margin:4px 0;border-radius:6px;background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);font-size:11px;color:var(--text);display:flex;align-items:center;gap:8px;flex-wrap:nowrap">
-        <span style="color:var(--amber);font-weight:700;white-space:nowrap;font-size:11px;text-transform:uppercase;letter-spacing:.3px">DUPLICATE BILL &middot; ${diffCount} field${diffCount === 1 ? '' : 's'} differ${actLabel}</span>
+        <span style="color:var(--amber);font-weight:700;white-space:nowrap;font-size:11px;text-transform:uppercase;letter-spacing:.3px">DUPLICATE BILL &middot; ${_escHtml(_dupDiffSummaryText(diffs))}${actLabel}</span>
         <span style="font-size:10px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:300px" title="${_liveDup.locationType === 'saved' ? 'Found in: Saved Bills' : 'Found in: ' + (_liveDup.location || 'meter bill data')}">${_dupLocLabel}</span>
         <div style="display:flex;gap:4px;flex-shrink:0;margin-left:auto">
           <button onclick="_dupBannerAction(${bi},'overwrite')" style="font-size:10px;padding:3px 8px;border-radius:4px;border:1px solid rgba(239,68,68,.5);background:rgba(239,68,68,.12);color:var(--red);cursor:pointer;font-weight:700">Overwrite</button>
@@ -21402,7 +21446,7 @@ function _autoCreateMeterAndSaveBill(extracted, projId, billRow, preferBldgId) {
     m.bills = m.bills || [];
     const dup = m.bills.find((r) => r.start === billRow.start && r.end === billRow.end);
     if (dup) {
-      Object.assign(dup, billRow);
+      _dupApplyRow(dup, billRow, 'overwrite');
     } else {
       m.bills.push(billRow);
       m.bills.sort((a, b) => _parseISO(a.start) - _parseISO(b.start));
@@ -21515,7 +21559,7 @@ function _autoCreateMeterAndSaveBill(extracted, projId, billRow, preferBldgId) {
     m.bills = m.bills || [];
     const dup = m.bills.find((r) => r.start === billRow.start && r.end === billRow.end);
     if (dup) {
-      Object.assign(dup, billRow);
+      _dupApplyRow(dup, billRow, 'overwrite');
     } else {
       m.bills.push(billRow);
       m.bills.sort((a, b) => _parseISO(a.start) - _parseISO(b.start));
@@ -21829,7 +21873,7 @@ async function _saveSinglePDFBill(extracted, projId) {
         targetMeter.bills = targetMeter.bills || [];
         const dup = targetMeter.bills.find((r) => r.start === billRow.start && r.end === billRow.end);
         if (dup) {
-          Object.assign(dup, billRow);
+          _dupApplyRow(dup, billRow, 'overwrite');
         } else {
           targetMeter.bills.push(billRow);
           targetMeter.bills.sort((a, b) => _parseISO(a.start) - _parseISO(b.start));
@@ -21864,7 +21908,7 @@ async function _saveSinglePDFBill(extracted, projId) {
           m.bills = m.bills || [];
           const dup = m.bills.find((r) => r.start === billRow.start && r.end === billRow.end);
           if (dup) {
-            Object.assign(dup, billRow);
+            _dupApplyRow(dup, billRow, 'overwrite');
           } else {
             m.bills.push(billRow);
             m.bills.sort((a, b) => _parseISO(a.start) - _parseISO(b.start));
