@@ -2575,6 +2575,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.20.149', date: '2026-10-20', title: 'PDF / OCR: electric bill corrections match their math',
+    items: [
+      { type: 'fix', text: 'PDF / OCR: a charge is only corrected when its quantity × rate matches to the cent, and the shown math always equals the result.' },
+      { type: 'fix', text: 'PDF / OCR: part-period date ranges are no longer treated as a fraction of the charge.' }
+    ]
+  },
   { v: 'v2026.10.20.148', date: '2026-10-20', title: 'PDF / OCR: electric bills fill misread values',
     items: [
       { type: 'fix', text: 'PDF / OCR: electric bills fill a misread kWh, kW, number of days or one charge when two separate checks on the bill agree. Hover the value to see how it was filled.' },
