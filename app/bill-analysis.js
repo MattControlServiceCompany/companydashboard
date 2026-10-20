@@ -18122,6 +18122,8 @@ function _pdfGoToField(key) {
   _pdfClosePop();
   const inp = document.querySelector('.ef-input[data-key="' + key + '"]');
   if (!inp) return;
+  const grp = inp.closest('details');
+  if (grp) grp.open = true;
   const item = inp.closest('.ef-item');
   if (item) item.scrollIntoView({ behavior: 'smooth', block: 'center' });
   inp.focus();
@@ -18864,6 +18866,11 @@ async function _applyDupUpdate(billIdx, extracted, dup) {
   }
   return false;
 }
+// A key the reader keeps for its own use (version and format flags, rates it worked out, debug values): never a value
+// on the screen. The data keeps it.
+function _isInternalKey(k) {
+  return /^_/.test(k) || /^rate_/i.test(k) || /^BillFormat$/i.test(k) || /(Format|Version|Debug)$/i.test(k);
+}
 function renderPDFFields(parsed, warnings) {
   warnings = warnings || [];
   // Duplicate field comparison data (dup map re-keyed to the active bills list —
@@ -19174,7 +19181,7 @@ function renderPDFFields(parsed, warnings) {
     { section: 'Billing Period' },
     { type: 'pair', fields: ['BillingPeriodStart', 'BillingPeriodEnd'] },
     { type: 'pair', fields: ['BillDate', 'NumberOfDays'] },
-    { type: 'pair', fields: ['RateSchedule', 'BillFormat'] },
+    { type: 'pair', fields: ['RateSchedule'] },
     { section: 'Meter Readings' },
     { type: 'pair', fields: ['MeterNumber', 'ReadDifference'] },
     { type: 'pair', fields: ['StartRead', 'EndRead'] },
@@ -19520,7 +19527,11 @@ function renderPDFFields(parsed, warnings) {
   // kWhConsumed on gas bills) don't render as blank cells below Total Current Charges.
   const extraKeys = Object.keys(parsed).filter(
     (k) =>
-      !layoutKeys.has(k) && !IMPLICITLY_RENDERED.has(k) && !k.startsWith('_') && parsed[k] != null && parsed[k] !== '',
+      !layoutKeys.has(k) &&
+      !IMPLICITLY_RENDERED.has(k) &&
+      !_isInternalKey(k) &&
+      parsed[k] != null &&
+      parsed[k] !== '',
   );
   // Build warning lookup by field name
   const warnMap = {};
@@ -19614,10 +19625,35 @@ function renderPDFFields(parsed, warnings) {
     };
   };
 
+  // Fields that show once, in Usage; fields every bill needs (shown even when empty); internal keys (never shown).
+  const _USAGE_FIELDS = new Set([
+    'kWhConsumed',
+    'ActualKW',
+    'ActualRKVA',
+    'FacilitiesKW',
+    'BilledKW',
+    'OnPeakKWh',
+    'OffPeakKWh',
+    'TDCkW',
+    'NaturalGasTherms',
+    'NaturalGasCCF',
+    'NaturalGasMMbtu',
+    'McfBilled',
+    'WaterUsage',
+    'SewerUsage',
+    'GallonsDelivered',
+    '_wreTriggerMMbtu',
+    '_wreIndexMMbtu',
+    '_wreSWEMMbtu',
+    '_wreTriggerFuelMMbtu',
+    '_wreIndexFuelMMbtu',
+  ]);
+  const _REQUIRED_FIELDS = new Set(['AccountNumber', 'BillingPeriodStart', 'BillingPeriodEnd', 'TotalCurrentCharges']);
+  const _shownKeys = new Set();
   // Helper: build a single field cell HTML
   // Escape double quotes and newlines so a message can live inside a title="..." attribute.
   const _titleEscape = (s) => _escHtml(s).replace(/\n/g, ' ');
-  function buildCell(k) {
+  function buildCell(k, sub) {
     const v = parsed[k] ?? '';
     const fw = warnMap[k] || [];
     const magFlag = parsed['_magnitude_flag_' + k];
@@ -19627,6 +19663,11 @@ function renderPDFFields(parsed, warnings) {
     const isEmpty = v === null || v === undefined || v === '';
     const isDupDiff = _dupDiffSet.has(k);
     const dupDiff = _dupDiffMap[k];
+    // One field shows once. An empty optional value stays hidden unless it is flagged, differs from the saved
+    // bill, is probably missed by the reader, or is a value every bill needs.
+    if (_shownKeys.has(k)) return '';
+    if (isEmpty && !flag && !isDupDiff && !likelyMissing && !_REQUIRED_FIELDS.has(k)) return '';
+    _shownKeys.add(k);
     let borderStyle = '';
     if (isDupDiff)
       borderStyle = 'border-left:3px solid var(--amber);padding-left:8px;background:var(--amber-dim);border-radius:4px';
@@ -19686,7 +19727,7 @@ function renderPDFFields(parsed, warnings) {
     const fixInputColor = fixInfo ? ';color:var(--green)' : '';
     const dupInputStyle = isDupDiff ? inputStyle + ';color:var(--amber)' : inputStyle + fixInputColor;
     const dupIcon = isDupDiff
-      ? `<span title="Saved value: ${(dupDiff.existVal || '(empty)').replace(/"/g, '&quot;')}" style="cursor:help;color:var(--amber);font-size:9px;font-weight:700;margin-left:4px;background:var(--amber-dim);padding:1px 4px;border-radius:3px;letter-spacing:.3px">saved: ${((dupDiff.existVal || '(empty)').length > 18 ? (dupDiff.existVal || '').slice(0, 15) + '...' : dupDiff.existVal || '(empty)').replace(/</g, '&lt;')}</span>`
+      ? `<span class="ef-dup-mark" title="Saved value: ${(dupDiff.existVal || '(empty)').replace(/"/g, '&quot;')}" style="cursor:help;color:var(--amber);font-size:9px;font-weight:700;margin-left:4px;background:var(--amber-dim);padding:1px 4px;border-radius:3px;letter-spacing:.3px">saved: ${((dupDiff.existVal || '(empty)').length > 18 ? (dupDiff.existVal || '').slice(0, 15) + '...' : dupDiff.existVal || '(empty)').replace(/</g, '&lt;')}</span>`
       : '';
     // A fixed value shrinks its box to the text so the "fixed" mark sits right next to the value.
     const _fitSize = fixInfo ? Math.max(String(displayVal).length + 1, 5) : null;
@@ -19706,24 +19747,52 @@ function renderPDFFields(parsed, warnings) {
         }</div>`
       : '';
     const flagCls = flag ? ' flag-' + flag.level : '';
-    return `<div class="ef-item${flagCls}" style="${borderStyle}">${keyHtml}${bodyHtml}${whyHtml}${acTooltipHtml}</div>`;
+    // The muted "quantity x rate" text sits on the same line, between the label and the value (hover shows it whole).
+    const subHtml = sub ? `<div class="ef-sub" title="${_titleEscape(sub.full)}">${sub.short}</div>` : '';
+    return `<div class="ef-item${flagCls}${sub ? ' has-sub' : ''}" style="${borderStyle}">${keyHtml}${subHtml}${bodyHtml}${whyHtml}${acTooltipHtml}</div>`;
   }
 
-  // Build layout HTML with running total on charge rows
+  // ── The value list: one line per field in four collapsible groups (Account, Billing period and meter,
+  // Usage, Charges; an Other group only when the reader found extra values). A field shows ONCE, in its group
+  // (_shownKeys, kept by buildCell). Charges show quantity x rate = charge as one muted line under the charge.
   let runningTotal = 0;
+  const _GROUPS = [
+    ['account', 'Account'],
+    ['period', 'Billing period and meter'],
+    ['usage', 'Usage'],
+    ['other', 'Other values'],
+    ['charges', 'Charges'],
+  ];
+  const _SECTION_GROUP = {
+    'Account Info': 'account',
+    'Billing Period': 'period',
+    'Billing Period & Meter': 'period',
+    'Meter Readings': 'period',
+    'Meter 1': 'period',
+    'Meter 2': 'period',
+    Delivery: 'period',
+    Charges: 'charges',
+    'Amount Due': 'charges',
+  };
+  const _groupHtml = { account: [], period: [], usage: [], other: [], charges: [] };
+  let _curGroup = 'account';
+  const _put = (g, html) => {
+    if (html) _groupHtml[g].push(html);
+  };
+  const _putCell = (k, g) => _put(_USAGE_FIELDS.has(k) ? 'usage' : g, buildCell(k));
+  const _detail = (txt, cls) => (txt ? `<div class="ef-detail${cls ? ' ' + cls : ''}">${txt}</div>` : '');
+  const _fmt4 = (n) => n.toLocaleString('en-US', { maximumFractionDigits: 4 });
 
-  // Helper: build a read-only rate text box (not editable, just for display)
-  function buildRateBox(label, value) {
-    const empty = !value;
-    const style = empty ? 'opacity:.5' : '';
-    return `<div class="ef-item" style="${style}"><div class="ef-key">${label}</div><input class="ef-input" value="${value || '—'}" readonly style="color:var(--text2);font-size:11px" tabindex="-1"></div>`;
-  }
-
-  // Helper: build a charge cell with center-aligned value
-  function buildChargeCell(k) {
-    const html = buildCell(k);
-    return html.replace('class="ef-item', 'class="ef-item center');
-  }
+  // One charge part that has its own editable amount (a charge printed on the bill in more than one part).
+  const _partCell = (label, key, value, sub) =>
+    `<div class="ef-item${sub ? ' has-sub' : ''}"><div class="ef-key">${label}</div>${
+      sub ? `<div class="ef-sub" title="${_titleEscape(sub.full)}">${sub.short}</div>` : ''
+    }<input class="ef-input" value="${value}" data-key="${key}"></div>`;
+  // "quantity x rate" for one charge: short text on the line, the whole sum (= charge) on hover.
+  const _qr = (qtyTxt, rateTxt, chargeTxt) =>
+    qtyTxt && rateTxt
+      ? { short: qtyTxt + ' &times; ' + rateTxt, full: qtyTxt + ' × ' + rateTxt + ' = ' + chargeTxt }
+      : null;
 
   // Format numbers for display
   const fmtDollar = (v) =>
@@ -19740,50 +19809,32 @@ function renderPDFFields(parsed, warnings) {
   };
 
   const totalVal = parseBillNumber(parsed.TotalCurrentCharges);
-  // Fix 4 (d6f8f3a8): splice extra fields BEFORE the total row instead of appending after.
-  // Build a mutable copy of the layout, find the last {type:'total'} entry, and insert
-  // any extra-field pair rows immediately before it. This guarantees Total Current Charges
-  // is always the last row regardless of provider.
-  const _mutableLayout = [...FIELD_LAYOUT];
-  if (extraKeys.length) {
-    const _totalIdx = _mutableLayout.reduce((last, r, i) => (r.type === 'total' ? i : last), -1);
-    const _extraPairRows = [];
-    for (let _ei = 0; _ei < extraKeys.length; _ei += 2) {
-      if (_ei + 1 < extraKeys.length)
-        _extraPairRows.push({ type: 'pair', fields: [extraKeys[_ei], extraKeys[_ei + 1]] });
-      else _extraPairRows.push({ type: 'pair', fields: [extraKeys[_ei]] });
+  FIELD_LAYOUT.forEach((row) => {
+    if (row.condition && !parsed[row.condition]) return;
+    if (row.section) {
+      _curGroup = _SECTION_GROUP[row.section] || 'charges';
+      return;
     }
-    if (_totalIdx >= 0) _mutableLayout.splice(_totalIdx, 0, ..._extraPairRows);
-    else _mutableLayout.push(..._extraPairRows);
-  }
-  const rows = _mutableLayout.map((row) => {
-    if (row.condition && !parsed[row.condition]) return '';
-    if (row.section) return `<div class="ef-section">${row.section}</div>`;
 
-    // ── charge-line-with-kw: charge row with a kW field in the first column ──
+    // ── charge-line-with-kw: a charge with a kW value (the kW goes to Usage) ──
     if (row.type === 'charge-line-with-kw') {
-      const chargeVal = parseBillNumber(parsed[row.chargeField]);
-      runningTotal += chargeVal;
-      const rtFmt = runningTotal.toLocaleString('en-US', {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      });
-      const kwCell = row.kwField ? buildCell(row.kwField) : '<div></div>';
-      const emptyCell = '<div></div>';
-      return `<div class="ef-charge-row">${kwCell}${emptyCell}${buildChargeCell(row.chargeField)}<div class="ef-running">$${rtFmt}</div></div>`;
+      runningTotal += parseBillNumber(parsed[row.chargeField]);
+      if (row.kwField) _putCell(row.kwField, 'usage');
+      _put('charges', buildCell(row.chargeField));
+      return;
     }
 
-    // ── charge-line: uniform qty | rate | charge | running total ──
+    // ── charge-line: the charge on one line; its quantity (if any) goes to Usage; quantity x rate = charge as a muted line ──
     if (row.type === 'charge-line') {
       const ri = parsed._rates?.[row.rateKey];
       const parts = ri?.parts || [];
       const chargeVal = parseBillNumber(parsed[row.chargeField]);
       // For tiered energy, hide Off-Peak row and relabel On-Peak parts as Tier 1/2/3
       const isTiered = parsed._energyFormat === 'tiered';
-      if (isTiered && row.chargeField === 'EnergyOffPeakCharge') return '';
+      if (isTiered && row.chargeField === 'EnergyOffPeakCharge') return;
       // hideIfNull: hide this row entirely when the field is absent/null on this bill
       // (used for Franchise Fee (2) on KGS bills that have only one FF line)
-      if (row.hideIfNull && !parsed[row.chargeField]) return '';
+      if (row.hideIfNull && !parsed[row.chargeField]) return;
       const base = isTiered && row.chargeField === 'EnergyOnPeakCharge' ? 'Energy' : row.label;
 
       // Determine the unit label for this charge (kW or kWh)
@@ -19797,238 +19848,189 @@ function renderPDFFields(parsed, warnings) {
       ]);
       const unitLabel = ENERGY_CHARGES.has(row.chargeField) ? 'kWh' : parts[0]?.unit || ri?.unit || 'kW';
 
-      // Item f776f47b / cd999d9f: per-line mismatch and corroborated-fix notes,
-      // rendered at the ROW itself — independent of the aggregate SUM MISMATCH
-      // banner above (which only appears when the WHOLE bill's charges don't add
-      // up). A single bad line can hide inside a total that reconciles by
-      // coincidence, so this must be visible here every time the underlying
-      // qty×rate math disagrees with the extracted charge, not just when the
-      // aggregate banner happens to be showing. _corroborated_corrected_<field>
-      // (green, already fixed) takes precedence over _part_mismatches_<field>
-      // (amber, warn-only — two independent checks did not agree, so the value
-      // was left untouched for the user to verify against the source PDF).
+      // Item f776f47b / cd999d9f: per-line mismatch and corroborated-fix notes, shown at the charge itself,
+      // independent of the whole-bill sum check. _corroborated_corrected_<field> (green, already fixed) takes
+      // precedence over _part_mismatches_<field> (amber, warn-only: two independent checks did not agree, so the
+      // value was left untouched for the user to verify against the source PDF).
       const _rowMismatches = parsed['_part_mismatches_' + row.chargeField] || [];
       const _rowCorrected = parsed['_corroborated_corrected_' + row.chargeField] || [];
       const _partNote = (idx) => {
         const fixed = _rowCorrected.find((c) => c.idx === idx);
         if (fixed) {
-          return `<div style="grid-column:1/-1;font-size:10px;font-weight:700;color:var(--green);padding:2px 4px 4px;line-height:1.4">Fixed: computed from quantity &times; rate, confirmed by the bill total (was $${fixed.original.toFixed(2)})</div>`;
+          return `<div class="ef-detail" style="font-weight:700;color:var(--green)">Fixed: computed from quantity &times; rate, confirmed by the bill total (was $${fixed.original.toFixed(2)})</div>`;
         }
         const bad = _rowMismatches.find((m) => m.idx === idx);
         if (bad) {
-          return `<div style="grid-column:1/-1;font-size:10px;font-weight:700;color:var(--amber);padding:2px 4px 4px;line-height:1.4">Check: expected $${bad.computed.toFixed(2)} (quantity &times; rate) but read $${bad.ocrCharge.toFixed(2)} (off $${bad.diff.toFixed(2)}). Not changed. Check it against the PDF.</div>`;
+          return `<div class="ef-detail" style="font-weight:700;color:var(--amber)">Check: expected $${bad.computed.toFixed(2)} (quantity &times; rate) but read $${bad.ocrCharge.toFixed(2)} (off $${bad.diff.toFixed(2)}). Not changed. Check it against the PDF.</div>`;
         }
         return '';
       };
 
-      // No rate data — still show editable qty & rate boxes so user can fill them in.
-      // rateKey:null means this is a flat-dollar line (Tax Exempt / Bill Offset /
-      // Franchise Fee / Gas / Water / etc.) — don't append a kW/kWh unit suffix
-      // since there's no per-unit rate to speak of. Rate-bearing charges (RkVA,
-      // EER, etc.) that happen to lack _rates data still keep their unit label.
+      // The quantity is a value of its own: it shows once, in Usage.
+      if (row.qtyField) _put('usage', buildCell(row.qtyField));
+      const _chargeTxt = fmtDollar(chargeVal || 0);
+
+      // No rate data: the rate is computed from the quantity and the charge.
+      // rateKey:null means a flat-dollar line (Tax Exempt / Bill Offset / Franchise Fee / Gas / Water / etc.).
       if (!row.rateKey || !ri) {
         runningTotal += chargeVal;
-        const rtFmt = runningTotal.toLocaleString('en-US', {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        });
-        const noRateLabel = row.rateKey ? base + ' ' + unitLabel : base;
-        const qtyHtml = row.qtyField
-          ? buildCell(row.qtyField)
-          : `<div class="ef-item" style="opacity:.5"><div class="ef-key">${noRateLabel}</div><input class="ef-input" value="" data-key="_qty_${row.chargeField}" placeholder="—"></div>`;
         const qtyVal = row.qtyField ? parseFloat(parsed[row.qtyField]) || 0 : 0;
-        // Fix (2026-09-24, WRE Fuel-column display): when the row declares a
-        // fuelField (WRE Trigger/Index rows only), fold it into the rate-check
-        // basis — WRE's own printed formula is charge = (Mmbtu + Fuel) x Rate,
-        // not Mmbtu x Rate alone. Usage itself (qtyVal, shown in the qty cell)
-        // is untouched; only the basis used to derive/cross-check the RATE
-        // changes. fuelField is undefined for every other provider (KGS, etc.),
-        // so fuelVal is always 0 there and this is a no-op for them.
+        // WRE Trigger/Index rows: the printed formula is charge = (Mmbtu + Fuel) x Rate, so Fuel joins the
+        // basis used to derive/cross-check the RATE. fuelField is undefined for every other provider.
         const fuelVal = row.fuelField ? parseFloat(parsed[row.fuelField]) || 0 : 0;
         const rateBasis = qtyVal + fuelVal;
         const computedRate = rateBasis > 0 && chargeVal > 0 ? chargeVal / rateBasis : 0;
         const rateUnit = row.unit || '';
         let rateStr = computedRate > 0 ? '$' + computedRate.toFixed(5) + (rateUnit ? '/' + rateUnit : '') : '';
-        // printedRateField cross-check: when the row declares a printed rate field
-        // (e.g. WNAPerMcf / CostOfGasPerMcf on KGS rows) and the extractor captured
-        // a valid value, show it alongside the computed rate and flag >5% mismatch.
-        // Guard: skip entirely when printedRateField is absent, null, or NaN.
+        let rateWarn = '';
+        // printedRateField cross-check: when the row declares a printed rate field and the reader found a valid
+        // value, show it beside the computed rate and say so when they differ by more than 5%.
         if (row.printedRateField) {
-          const _printedRaw = parsed[row.printedRateField];
-          const _printedRate = parseBillNumber(_printedRaw);
+          const _printedRate = parseBillNumber(parsed[row.printedRateField]);
           if (_printedRate > 0 && computedRate > 0) {
             const _relDiff = Math.abs(computedRate - _printedRate) / _printedRate;
-            const _mismatch = _relDiff > 0.05;
             const _printedFmt = '$' + _printedRate.toFixed(5) + (rateUnit ? '/' + rateUnit : '');
-            const _warnGlyph = _mismatch
-              ? ` <span title="Computed rate ($${computedRate.toFixed(5)}) from (${row.fuelField ? 'MMBtu + Fuel MMBtu' : 'qty'}) &times; rate differs from the printed rate ($${_printedRate.toFixed(5)}) by ${(_relDiff * 100).toFixed(1)}%" style="color:#ef4444;font-weight:700;cursor:help">&#9888;</span>`
-              : '';
-            // Fix (2026-09-24, WRE Fuel-column display): when the row marks the
-            // printed rate as authoritative (WRE Trigger/Index — printedIsAuthoritative),
-            // show the PRINTED rate as the value once the (MMBtu+Fuel) x Rate check
-            // passes — a computed rate is only ever a fallback for these rows, never
-            // primary alongside a valid printed rate. Every other printedRateField
-            // row (KGS, etc.) keeps the prior computed-first / "(printed)" display.
-            rateStr = row.printedIsAuthoritative
-              ? _printedFmt + _warnGlyph
-              : (rateStr || _printedFmt) + ` (${_printedFmt} printed)${_warnGlyph}`;
+            if (_relDiff > 0.05)
+              rateWarn = `The rate from the charge ($${computedRate.toFixed(5)}) differs from the printed rate by ${(_relDiff * 100).toFixed(1)}%.`;
+            // WRE Trigger/Index: the PRINTED rate is the value once the check passes.
+            rateStr = row.printedIsAuthoritative ? _printedFmt : (rateStr || _printedFmt) + ` (${_printedFmt} printed)`;
           } else if (row.printedIsAuthoritative && _printedRate > 0) {
-            // Printed rate present but the charge/basis can't be cross-checked
-            // (e.g. charge or usage is 0) — still show the printed rate, no warning.
             rateStr = '$' + _printedRate.toFixed(5) + (rateUnit ? '/' + rateUnit : '');
           } else if (row.printedIsAuthoritative && computedRate > 0) {
-            // No usable printed rate on this row — fall back to the computed rate,
-            // clearly labeled so it's never mistaken for a printed, verified figure.
             rateStr = '$' + computedRate.toFixed(5) + (rateUnit ? '/' + rateUnit : '') + ' (computed)';
           }
         }
-        const rateHtml = buildRateBox(noRateLabel + ' Rate', rateStr);
-        return `<div class="ef-charge-row">${qtyHtml}${rateHtml}${buildChargeCell(row.chargeField)}<div class="ef-running">$${rtFmt}</div></div>`;
+        _put(
+          'charges',
+          buildCell(
+            row.chargeField,
+            qtyVal > 0 ? _qr(_fmt4(qtyVal) + (rateUnit ? ' ' + rateUnit : ''), rateStr, _chargeTxt) : null,
+          ) + (rateWarn ? _detail(rateWarn, 'ef-warn') : ''),
+        );
+        return;
       }
 
       // Full label with unit: "Energy On-Peak kWh", "Facilities kW"
-      const qtyLabel = base + ' ' + unitLabel;
-
-      // Single part — one row: qty | rate | charge | running total
+      // Single part: the charge, then quantity x rate = charge
       if (parts.length <= 1) {
         runningTotal += chargeVal;
-        const rtFmt = runningTotal.toLocaleString('en-US', {
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
-        });
         const p = parts[0] || ri;
-        const qtyHtml = row.qtyField
-          ? buildCell(row.qtyField)
-          : `<div class="ef-item"><div class="ef-key">${qtyLabel}</div><input class="ef-input" value="${fmtQty(p.qty, unitLabel)}" data-key="_qty_${row.chargeField}"></div>`;
-        return `<div class="ef-charge-row">${qtyHtml}${buildRateBox(qtyLabel + ' Rate', fmtRate(p.rate, unitLabel))}${buildChargeCell(row.chargeField)}<div class="ef-running">$${rtFmt}</div></div>${_partNote(0)}`;
+        _put(
+          'charges',
+          buildCell(row.chargeField, p.qty != null && p.rate != null ? _qr(_fmt4(p.qty) + ' ' + unitLabel, fmtRate(p.rate, unitLabel), _chargeTxt) : null) +
+            _partNote(0),
+        );
+        return;
       }
 
-      // Multiple parts — each part gets its own running total
-      const partRows = parts
-        .map((p, idx) => {
-          const suffix =
-            isTiered && row.chargeField === 'EnergyOnPeakCharge' ? ' Tier ' + (idx + 1) : ' (' + (idx + 1) + ')';
-          // 2026-07-08 (client-a-b14af0e3): Strategy B (_postExtractionVerify, ~line
-          // 1810-1846) may already have corrected the FIELD-level charge
-          // (parsed[row.chargeField]) from its rate-derived _rates[...].computed sum —
-          // but it only ever rewrites the top-level field, never the stale per-part
-          // p.ocrCharge this renderer has unconditionally preferred since before Strategy
-          // B existed (commit 284e1c5). When a correction fired, trust the SAME computed
-          // value Strategy B trusted for this part; otherwise keep the existing
-          // OCR-dollar-first default (still correct for the common, uncorrected case).
-          const _fieldWasCorrected = parsed['_auto_corrected_' + row.chargeField] != null;
-          const partCharge =
-            _fieldWasCorrected && p.computed != null ? p.computed : p.ocrCharge != null ? p.ocrCharge : p.computed;
-          runningTotal += partCharge;
-          const rtFmt = runningTotal.toLocaleString('en-US', {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2,
-          });
-          const qtyHtml =
-            idx === 0 && row.qtyField
-              ? buildCell(row.qtyField)
-              : `<div class="ef-item"><div class="ef-key">${qtyLabel}${suffix}</div><input class="ef-input" value="${fmtQty(p.qty, unitLabel)}" data-key="_qty_${row.chargeField}_${idx}"></div>`;
-          const chargeHtml = `<div class="ef-item center"><div class="ef-key">${base} Charge${suffix}</div><input class="ef-input" value="${fmtDollar(partCharge)}" data-key="_chg_${row.chargeField}_${idx}" style="text-align:center"></div>`;
-          return `<div class="ef-charge-row">${qtyHtml}${buildRateBox(qtyLabel + ' Rate' + suffix, fmtRate(p.rate, unitLabel))}${chargeHtml}<div class="ef-running">$${rtFmt}</div></div>${_partNote(idx)}`;
-        })
-        .join('');
-      return partRows;
+      // Several parts: each part is a charge line of its own (its amount is editable)
+      parts.forEach((p, idx) => {
+        const suffix =
+          isTiered && row.chargeField === 'EnergyOnPeakCharge' ? ' Tier ' + (idx + 1) : ' (' + (idx + 1) + ')';
+        // 2026-07-08 (client-a-b14af0e3): Strategy B may already have corrected the FIELD-level charge from its
+        // rate-derived _rates[...].computed sum but never rewrites the stale per-part p.ocrCharge. When a
+        // correction fired, trust the SAME computed value Strategy B trusted for this part; otherwise keep the
+        // OCR-dollar-first default (correct for the common, uncorrected case).
+        const _fieldWasCorrected = parsed['_auto_corrected_' + row.chargeField] != null;
+        const partCharge =
+          _fieldWasCorrected && p.computed != null ? p.computed : p.ocrCharge != null ? p.ocrCharge : p.computed;
+        runningTotal += partCharge;
+        _put(
+          'charges',
+          _partCell(
+            base + ' Charge' + suffix,
+            '_chg_' + row.chargeField + '_' + idx,
+            fmtDollar(partCharge),
+            p.qty != null && p.rate != null
+              ? _qr(_fmt4(p.qty) + ' ' + unitLabel, fmtRate(p.rate, unitLabel), fmtDollar(partCharge))
+              : null,
+          ) + _partNote(idx),
+        );
+      });
+      return;
     }
 
     const fields = (row.fields || []).filter((k) => k in parsed || warnings.some((w) => w.field === k));
-    if (!fields.length && row.type !== 'total') return '';
-    if (row.type === 'wide') {
-      // Issue b2f5ee0b: add 'wide' class so the cell spans both grid columns
-      return buildCell(fields[0]).replace('class="ef-item', 'class="ef-item wide');
-    }
-    if (row.type === 'pair') {
-      if (fields.length === 1) return `<div class="ef-pair">${buildCell(fields[0])}</div>`;
-      return `<div class="ef-pair">${fields.map((k) => buildCell(k)).join('')}</div>`;
+    if (!fields.length && row.type !== 'total') return;
+    if (row.type === 'wide' || row.type === 'pair') {
+      fields.forEach((k) => _putCell(k, _curGroup));
+      return;
     }
     if (row.type === 'total') {
-      const rtFmt = runningTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       const match = totalVal > 0 && Math.abs(runningTotal - totalVal) < 0.02;
       const mismatch = totalVal > 0 && !match;
-      const cls = match ? 'match' : mismatch ? 'mismatch' : '';
-      const icon = '';
-      const itemStyle = match
-        ? 'border:1px solid rgba(34,197,94,.3);background:rgba(34,197,94,.06)'
-        : mismatch
-          ? 'border:1px solid rgba(239,68,68,.3);background:rgba(239,68,68,.06)'
-          : '';
       const diff = totalVal > 0 ? totalVal - runningTotal : 0;
-      const diffFmt = Math.abs(diff).toLocaleString('en-US', {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      });
-      const diffLine = mismatch
-        ? `<div style="font-size:10px;color:${diff >= 0 ? 'var(--amber)' : 'var(--red)'};margin-top:2px">Difference: ${diff >= 0 ? '+' : '-'}$${diffFmt}</div>`
-        : '';
-      // Compute total rates inline with Total Current Charges row
-      let _kwhRateCell = '<div></div>',
-        _kwRateCell = '<div></div>';
+      const _money = (n) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const sumLine =
+        totalVal > 0
+          ? `<span style="color:${match ? 'var(--green)' : diff >= 0 ? 'var(--amber)' : 'var(--red)'}">Charges add to $${_money(runningTotal)}${
+              mismatch ? ' (difference ' + (diff >= 0 ? '+' : '-') + '$' + _money(Math.abs(diff)) + ')' : ''
+            }</span>`
+          : '';
+      // Total rate for the whole bill, as one muted text (the same getExtractedRate the rest of the site uses)
+      const _rateTxt = [];
+      const _detectedComm = _detectCommodity(parsed);
       if (parsed._rates || parsed.kWhConsumed) {
         const kwhRate = getExtractedRate(parsed, 'kwh');
         const kwRate = getExtractedRate(parsed, 'kw');
-        if (kwhRate > 0)
-          _kwhRateCell = `<div class="ef-item"><div class="ef-key" style="color:var(--em);font-size:10px">Total $/kWh</div><input class="ef-input" value="$${kwhRate.toFixed(5)}/kWh" readonly style="color:var(--em);font-weight:600;text-align:center;background:transparent;border-color:transparent;font-size:11px"></div>`;
-        if (kwRate > 0)
-          _kwRateCell = `<div class="ef-item"><div class="ef-key" style="color:var(--em);font-size:10px">Total $/kW</div><input class="ef-input" value="$${kwRate.toFixed(3)}/kW" readonly style="color:var(--em);font-weight:600;text-align:center;background:transparent;border-color:transparent;font-size:11px"></div>`;
+        if (kwhRate > 0) _rateTxt.push('$' + kwhRate.toFixed(5) + '/kWh');
+        if (kwRate > 0) _rateTxt.push('$' + kwRate.toFixed(3) + '/kW');
       }
-      const _detectedComm = _detectCommodity(parsed);
       if (parsed.Commodity === 'Gas' || _detectedComm === 'gas' || _detectedComm === 'kgs') {
         const gasRate = getExtractedRate(parsed, 'gas');
         if (gasRate > 0) {
-          // MMBtu-only bills (WRE) have no Therms/CCF — label the row $/MMBtu instead of
-          // $/Therm so the unit matches what getExtractedRate actually divided by (mirrors
-          // the save-time totalGasRate pattern at bill-analysis.js ~7738).
+          // MMBtu-only bills (WRE) have no Therms/CCF: label $/MMBtu so the unit matches what getExtractedRate divided by.
           const _gasUnit =
             !(parseFloat(parsed.NaturalGasTherms) > 0) &&
             !(parseFloat(parsed.NaturalGasCCF) > 0) &&
             parseFloat(parsed.NaturalGasMMbtu || parsed.naturalGasMMbtu) > 0
               ? 'MMBtu'
               : 'Therm';
-          _kwhRateCell = `<div class="ef-item"><div class="ef-key" style="color:var(--em);font-size:10px">Total $/${_gasUnit}</div><input class="ef-input" value="$${gasRate.toFixed(5)}/${_gasUnit}" readonly style="color:var(--em);font-weight:600;text-align:center;background:transparent;border-color:transparent;font-size:11px"></div>`;
+          _rateTxt.push('$' + gasRate.toFixed(5) + '/' + _gasUnit);
         }
       }
-      if (parsed.Commodity === 'Water' || _detectCommodity(parsed) === 'water') {
-        const waterRate = getExtractedRate(parsed, 'water');
-        if (waterRate > 0) {
-          _kwhRateCell = `<div class="ef-item"><div class="ef-key" style="color:var(--em);font-size:10px">Total $/Gal</div><input class="ef-input" value="$${waterRate.toFixed(5)}/Gal" readonly style="color:var(--em);font-weight:600;text-align:center;background:transparent;border-color:transparent;font-size:11px"></div>`;
+      [
+        ['Water', 'water'],
+        ['Propane', 'propane'],
+        ['Sewer', 'sewer'],
+      ].forEach(([commName, rateKey]) => {
+        if (parsed.Commodity === commName || _detectedComm === rateKey) {
+          const r = getExtractedRate(parsed, rateKey);
+          if (r > 0) _rateTxt.push('$' + r.toFixed(5) + '/Gal');
         }
-      }
-      if (parsed.Commodity === 'Propane' || _detectCommodity(parsed) === 'propane') {
-        const propaneRate = getExtractedRate(parsed, 'propane');
-        if (propaneRate > 0) {
-          _kwhRateCell = `<div class="ef-item"><div class="ef-key" style="color:var(--em);font-size:10px">Total $/Gal</div><input class="ef-input" value="$${propaneRate.toFixed(5)}/Gal" readonly style="color:var(--em);font-weight:600;text-align:center;background:transparent;border-color:transparent;font-size:11px"></div>`;
-        }
-      }
-      if (parsed.Commodity === 'Sewer' || _detectCommodity(parsed) === 'sewer') {
-        const sewerRate = getExtractedRate(parsed, 'sewer');
-        const sewerCharge = parseFloat(parsed.SewerCharge) || 0;
-        if (sewerRate > 0) {
-          _kwhRateCell = `<div class="ef-item"><div class="ef-key" style="color:var(--em);font-size:10px">Total $/Gal</div><input class="ef-input" value="$${sewerRate.toFixed(5)}/Gal" readonly style="color:var(--em);font-weight:600;text-align:center;background:transparent;border-color:transparent;font-size:11px"></div>`;
-        } else if (sewerCharge > 0) {
-          _kwhRateCell = `<div class="ef-item"><div class="ef-key" style="color:var(--em);font-size:10px">Sewer Charge</div><input class="ef-input" value="$${sewerCharge.toFixed(2)}" readonly style="color:var(--em);font-weight:600;text-align:center;background:transparent;border-color:transparent;font-size:11px"></div>`;
-        }
-      }
-      if (parsed.Commodity === 'Stormwater' || _detectCommodity(parsed) === 'stormwater') {
-        const swCharge = parseFloat(parsed.StormWaterCharge) || parseFloat(parsed.TotalCurrentCharges) || 0;
-        if (swCharge > 0) {
-          _kwhRateCell = `<div class="ef-item"><div class="ef-key" style="color:var(--em);font-size:10px">Stormwater Charge</div><input class="ef-input" value="$${swCharge.toFixed(2)}" readonly style="color:var(--em);font-weight:600;text-align:center;background:transparent;border-color:transparent;font-size:11px"></div>`;
-        }
-      }
-      return `<div style="border-top:2px solid var(--border);margin-top:4px;padding-top:4px"><div class="ef-charge-row">${_kwhRateCell}${_kwRateCell}<div class="ef-item center" style="${itemStyle}"><div class="ef-key" style="color:${match ? 'var(--green)' : mismatch ? 'var(--red)' : 'var(--text2)'}">Total Current Charges</div><input class="ef-input" value="${(parsed.TotalCurrentCharges ?? '') !== '' ? '$' + totalVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''}" data-key="TotalCurrentCharges" style="font-weight:700;font-size:14px;text-align:center"></div><div class="ef-running ${cls}" style="font-weight:700;font-size:11px;flex-direction:column;align-items:flex-end"><span>$${rtFmt}${icon}</span>${diffLine}</div></div></div>`;
+      });
+      const totalCell = buildCell('TotalCurrentCharges').replace('class="ef-item', 'class="ef-item ef-total');
+      _put(
+        'charges',
+        `<div class="ef-total-wrap">${totalCell}${_detail(
+          [sumLine, _rateTxt.length ? 'Total rate ' + _rateTxt.join(' · ') : ''].filter(Boolean).join(' &nbsp;·&nbsp; '),
+        )}</div>`,
+      );
     }
-    return '';
   });
-  // Fix 4 (d6f8f3a8): extra fields are now spliced BEFORE the total row in _mutableLayout above.
-  // Phase 2 tail-append removed — Total Current Charges is always the last layout row.
-  // Add Field + Export buttons
-  rows.push(
-    `<div style="margin-top:8px;text-align:center;display:flex;gap:8px;justify-content:center"><button class="btn btn-ghost btn-sm" onclick="addExtractedField()" style="font-size:11px">+ Add Field</button><button class="btn btn-ghost btn-sm" onclick="exportCurrentBillJSON()" style="font-size:11px">Export JSON</button></div>`,
-  );
-  const fieldHtml = rows.filter(Boolean).join('');
+  // Values the reader found that no layout names: one group, one line each (internal keys never show).
+  extraKeys.forEach((k) => _put('other', buildCell(k)));
+  const _closedGroups = window._pdfGroupClosed || (window._pdfGroupClosed = {});
+  // Wide enough: the groups sit in two lists side by side (the split that makes the taller list shortest), so a
+  // normal bill needs no scrolling. Group order never changes.
+  const _groupBlock = ([g, label]) =>
+    `<details class="ef-group" data-grp="${g}"${_closedGroups[g] ? '' : ' open'}><summary>${label}</summary>${_groupHtml[g].join('')}</details>`;
+  const _shownGroups = _GROUPS.filter(([g]) => _groupHtml[g].length);
+  const _est = (g) =>
+    26 + _groupHtml[g].reduce((n, h) => n + 20 * (h.match(/class="ef-item/g) || []).length + 16 * (h.match(/class="ef-detail/g) || []).length, 0);
+  let _split = 0;
+  let _best = Infinity;
+  for (let i = 0; i <= _shownGroups.length; i++) {
+    const l = _shownGroups.slice(0, i).reduce((n, [g]) => n + _est(g), 0);
+    const r = _shownGroups.slice(i).reduce((n, [g]) => n + _est(g), 0);
+    if (Math.max(l, r) < _best) {
+      _best = Math.max(l, r);
+      _split = i;
+    }
+  }
+  const fieldHtml =
+    `<div class="ef-cols"><div class="ef-col">${_shownGroups.slice(0, _split).map(_groupBlock).join('')}</div><div class="ef-col">${_shownGroups.slice(_split).map(_groupBlock).join('')}</div></div>` +
+    `<div class="ef-tools"><button class="btn btn-ghost btn-sm" onclick="addExtractedField()">+ Add Field</button><button class="btn btn-ghost btn-sm" onclick="exportCurrentBillJSON()">Export JSON</button></div>`;
   const missingHtml = '';
 
   // Compute sum mismatch from CURRENT data (not a stale stored flag). This is the
@@ -20122,16 +20124,42 @@ function renderPDFFields(parsed, warnings) {
     const fx = _fixValueOf(f);
     return fx ? _pdfPopBtn('Use ' + _fixLabel(f, fx), "_pdfApplyFieldEdit('" + f + "','" + fx + "')", true) : '';
   };
-  const _chipReview = [];
-  const _chipWarn = [];
   const _chipFixed = [];
+  // One problem = one line. Every issue says which value or problem it is about (its keys); two issues with a key
+  // in common are one line (the longer, more specific text is kept, and both explanations and buttons stay inside).
+  const _issueList = [];
+  const _popData = (summary, body, actions) => ({ summary, body, actions });
+  const _pushIssue = (level, keys, d) => {
+    const hit = _issueList.find((e) => keys.some((k) => e.keys.has(k)));
+    if (!hit) {
+      _issueList.push({ level, keys: new Set(keys), summary: d.summary, bodies: [d.body], actions: [d.actions] });
+      return;
+    }
+    keys.forEach((k) => hit.keys.add(k));
+    if (level === 'review') hit.level = 'review';
+    if (d.summary.length > hit.summary.length) {
+      hit.summary = d.summary;
+      hit.bodies.unshift(d.body);
+    } else hit.bodies.push(d.body);
+    hit.actions.push(d.actions);
+  };
+  const _issueKeys = (field, text) =>
+    field === 'TotalCurrentCharges' && /sum|add|total/i.test(text || '')
+      ? ['total-sum']
+      : /^(BillingPeriodStart|BillingPeriodEnd|NumberOfDays)$/.test(field || '') || (!field && /^Billing period/i.test(text || ''))
+        ? ['period']
+        : field && field !== '_all'
+          ? ['f:' + field]
+          : ['t:' + text];
   // Held by the reader: one line for each reason.
   const _moreThanOne = (window._pdfMultiBills || []).length > 1;
   _gateList.forEach((g) => {
     if (_pendingCorrection && /^Total needs correction/.test(g.text)) return; // its own line follows
     const fields = g.fields || [];
-    _chipReview.push(
-      _pdfPopItem(
+    _pushIssue(
+      'review',
+      fields.length ? fields.flatMap((f) => _issueKeys(f, g.text)) : _issueKeys('', g.text),
+      _popData(
         _pdfShort(g.text, 150),
         (g.text.length > 150 ? _escHtml(g.text) + '<br>' : '') +
           'Held for review. ' +
@@ -20143,8 +20171,10 @@ function renderPDFFields(parsed, warnings) {
   });
   if (_pendingCorrection) {
     const pc = _pendingCorrection;
-    _chipReview.push(
-      _pdfPopItem(
+    _pushIssue(
+      'review',
+      ['total-sum'],
+      _popData(
         'Total Current Charges: read $' +
           Number(pc.original).toFixed(2) +
           ', the charges add to $' +
@@ -20181,8 +20211,10 @@ function renderPDFFields(parsed, warnings) {
           ')',
       ),
     );
-    _chipReview.push(
-      _pdfPopItem(
+    _pushIssue(
+      'review',
+      ['total-sum'],
+      _popData(
         'The charges add to $' +
           _fmt2(_currentChargeSum) +
           ' but the bill total is $' +
@@ -20201,8 +20233,10 @@ function renderPDFFields(parsed, warnings) {
     );
   }
   if (_sumMismatchKgs) {
-    _chipReview.push(
-      _pdfPopItem(
+    _pushIssue(
+      'review',
+      ['total-sum'],
+      _popData(
         'The charges add to $' +
           _fmt2(_sumMismatchKgs.kgsSum || 0) +
           ' but the bill total is $' +
@@ -20217,17 +20251,21 @@ function renderPDFFields(parsed, warnings) {
     );
   }
   if (_cet) {
-    _chipReview.push(
-      _pdfPopItem(
+    _pushIssue(
+      'review',
+      ['cet'],
+      _popData(
         'A charge is larger than the bill total',
         _escHtml(_cet.reason || '') + '. These charges cannot be right. Check the bill against the PDF.',
         _goBtn('TotalCurrentCharges'),
       ),
     );
   }
-  if (parsed._manualReview) {
-    _chipReview.push(
-      _pdfPopItem(
+  if (parsed._manualReview && !_gateList.length) {
+    _pushIssue(
+      'review',
+      ['held'],
+      _popData(
         parsed._manualReviewLabel || 'The reader could not read this page',
         'The reader could not read this page. Use Manual Assign to enter its values.',
         '',
@@ -20237,24 +20275,34 @@ function renderPDFFields(parsed, warnings) {
   warnings.forEach((w) => {
     if (w.level !== 'error' && w.level !== 'warn') return;
     const hasField = w.field && w.field !== '_all';
-    const item = _pdfPopItem(
+    const item = _popData(
       _pdfShort(w.message, 150),
       (w.message.length > 150 ? _escHtml(w.message) : '') +
         (hasField ? (w.message.length > 150 ? '<br>' : '') + 'Value: ' + _escHtml(LABELS[w.field] || w.field) : ''),
       hasField ? _goBtn(w.field) : '',
     );
-    (w.level === 'error' ? _chipReview : _chipWarn).push(item);
+    _pushIssue(w.level === 'error' ? 'review' : 'warn', _issueKeys(hasField ? w.field : '', w.message), item);
   });
   const gapInfo = parsed._billing_gap;
   if (gapInfo) {
-    _chipWarn.push(
-      _pdfPopItem(
+    _pushIssue(
+      'warn',
+      ['t:gap'],
+      _popData(
         gapInfo.days + '-day gap in ' + gapInfo.commodity + ' billing before this period',
         'The bill before this one ended ' + _escHtml(String(gapInfo.afterPeriod || '')) + '.',
         '',
       ),
     );
   }
+  const _issueHtml = (e) =>
+    _pdfPopItem(
+      e.summary,
+      e.bodies.filter(Boolean).join('<br>'),
+      [...new Set(e.actions.filter(Boolean))].join(''),
+    );
+  const _chipReview = _issueList.filter((e) => e.level === 'review').map(_issueHtml);
+  const _chipWarn = _issueList.filter((e) => e.level === 'warn').map(_issueHtml);
   Object.keys(parsed)
     .filter((k) => k.startsWith('_auto_corrected_') || k.startsWith('_ocr_consensus_') || k.startsWith('_auto_recovered_B2_'))
     .forEach((k) => {
@@ -20279,7 +20327,12 @@ function renderPDFFields(parsed, warnings) {
     manualIdx: _showManualAssign ? _dupIdx : null,
   };
   elHdr.innerHTML = '';
-  el.innerHTML = `<div class="ef-grid">${fieldHtml}${missingHtml}</div>`;
+  el.innerHTML = `<div class="ef-list">${fieldHtml}${missingHtml}</div>`;
+  el.querySelectorAll('details.ef-group').forEach((d) => {
+    d.addEventListener('toggle', () => {
+      _closedGroups[d.dataset.grp] = !d.open;
+    });
+  });
   _pdfRenderTopBar();
   _pdfRefreshSavesTo();
 
