@@ -2575,6 +2575,13 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.20.147', date: '2026-10-20', title: 'Utility Data: city gas therms filled from meter reads',
+    items: [
+      { type: 'fix', text: 'Utility Data, city gas bills: when the therms cannot be read, the site now fills them from the meter reads times the usual therm factor, only when that agrees with the printed gas charge and the scanned digits. Hover the value to see the method. Otherwise the bill stays held.' },
+      { type: 'change', text: 'Utility Data: the internal proof value no longer shows as a field in the extraction panel.' },
+      { type: 'fix', text: 'Utility Data: a held bill whose only hold is therms keeps its page total, so a false Total Current Charges warning no longer appears.' }
+    ]
+  },
   { v: 'v2026.10.20.146', date: '2026-10-20', title: 'Utility Data: clearer gap text, notices and held electric bills',
     items: [
       { type: 'change', text: 'Utility Data: missing-day gaps now show as plain muted text. Baseline-period gaps come first and are bold; other gaps are muted. The Projects list shows baseline gaps only, and building names wrap instead of being cut off.' },
