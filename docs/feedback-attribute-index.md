@@ -270,9 +270,10 @@ Reference for all `data-fb` attributes used by the feedback widget. When a feedb
 | `energy.pdf.type-selector` | `<div id="pdfTypeSection">` | Utility type selector |
 | `energy.pdf.extracted-fields-hdr` | `<div id="extractedFieldsHdr">` | Extracted fields header |
 | `energy.pdf.extracted-fields` | `<div id="extractedFieldsGrid">` | Extracted fields grid |
-| `energy.pdf.save-row` | `<div id="pdfSaveRow">` | Save row (project select + save) |
+| `energy.pdf.top-bar` | `<div id="pdfTopBar">` | Top row: building, utility and period choices, status chips, Save |
+| `energy.pdf.save-row` | `<div id="pdfSaveRow">` | "Saves to" line (project, building and meter choices open on Change) |
 | `energy.pdf.project-select` | `<select id="pdfProjSel">` | Project dropdown |
-| `energy.pdf.save-btn` | `<button class="btn btn-em">` | Save extracted data button |
+| `energy.pdf.save-btn` | `<button class="pdf-top-btn primary">` | The one Save control in the top row |
 | `energy.pdf.status-box` | `<div id="pdfStatusBox">` | Progress, error and non-bill text messages |
 
 ### Savings Calc View

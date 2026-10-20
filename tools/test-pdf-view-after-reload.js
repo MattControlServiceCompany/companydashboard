@@ -96,7 +96,7 @@ const probe = (page) =>
     }
     return {
       view, dock, b64: _pdfCurrentB64(),
-      tabs: document.querySelectorAll('.ef-pill-btn').length,
+      tabs: (document.querySelector('#pdfTopSel select[aria-label="Billing period"]') || { options: [] }).options.length,
       queueHasB64: /JVBER/.test(sessionStorage.getItem('ch_queue_state') || ''),
       queueLen: (sessionStorage.getItem('ch_queue_state') || '').length,
     };

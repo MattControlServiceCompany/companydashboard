@@ -3,7 +3,7 @@
  * 1. A blank new value is not a difference (_buildDiffFields); only blanks differing -> 0 fields differ.
  * 2. Overwrite, Merge and Apply Selected (_applyDupUpdate), and the save-row copy (_dupApplyRow), never replace a
  *    saved value with a blank.
- * 3. The duplicate strip text (_dupDiffSummaryText) names the differing fields with both values; 2 named + "+N more".
+ * 3. The duplicate row text (_dupDiffSummaryText) names the differing fields with both values; 2 named + "+N more".
  * 4. A gas bill compares and labels usage as Therms, not kWh Consumed.
  * Synthetic data only. Usage: node tools/gate-dup-compare.js [repo-root]
  */
@@ -93,10 +93,10 @@ check(!JSON.stringify(gd).includes('kWhConsumed'), '4: gas bill shows a kWh row'
 check(diffs(Object.assign({}, gasNew, { NaturalGasTherms: '68.139' }), gasSaved).length === 0, '4: equal therms counted');
 check(diffs(Object.assign({}, gasNew, { NaturalGasTherms: '' }), gasSaved).length === 0, '4: blank therms counted');
 
-// 3. strip text
+// 3. duplicate row text
 ctx._d1 = [{ key: 'NaturalGasTherms', existVal: '68.139', newVal: '70.2' }];
 check(
-  run('_dupDiffSummaryText(_d1)') === 'Therms differ: saved 68.139, new 70.2',
+  run('_dupDiffSummaryText(_d1)') === 'Therms saved 68.139, new 70.2',
   '3: one-field text: ' + run('_dupDiffSummaryText(_d1)'),
 );
 ctx._d3 = [

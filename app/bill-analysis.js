@@ -6848,41 +6848,7 @@ function showAutoAssignBanner(match, extracted) {
   // this branch was previously unreachable.
   if (match.matchType === 'ambiguous' || !match.meter) return;
   _autoAssignTarget = match;
-  const banner = document.getElementById('pdfAutoAssignBanner');
-  const msg = document.getElementById('pdfAutoAssignMsg');
-  // Finding 1 (code review of fix/ocr-matching-rearchitecture): a non-identity
-  // ('address') match is a fuzzy guess with no confirmed account/meter-number
-  // hit — mirrors _buildDestCell's "Address match (unconfirmed)" convention
-  // (amber, ~line 8252) so this single-file banner never presents a fuzzy
-  // guess with the same confident "✓ Meter Match Found" label real identity
-  // hits get.
-  const hdr = document.getElementById('pdfAutoAssignHdr');
-  if (hdr) {
-    if (match.matchType === 'address') {
-      hdr.textContent = 'Address match (unconfirmed)';
-      hdr.style.color = 'var(--amber)';
-    } else {
-      hdr.textContent = '✓ Meter Match Found';
-      hdr.style.color = 'var(--em)';
-    }
-  }
-  const bills = Array.isArray(window._pdfMultiBills) ? window._pdfMultiBills : [];
-  const periods = bills.length || 1;
-  const commodities = [...new Set(bills.map((b) => b.Commodity).filter(Boolean))];
-  const commText = commodities.length > 1 ? ' (' + commodities.join(', ') + ')' : '';
-  msg.textContent =
-    'Account ' +
-    (match.meter.account || match.meter.meter || '#') +
-    ' found in ' +
-    match.proj.name +
-    ' → ' +
-    match.bldg.name +
-    '. Save ' +
-    (periods > 1 ? 'all ' + periods + ' billing periods' : 'this bill') +
-    commText +
-    ' to matched meters?';
-  banner.style.display = 'block';
-  // Sync the manual override dropdowns with the auto-detected match
+  // Sync the destination selects with the auto-detected match; the "Saves to" line shows it.
   const bldgSel = document.getElementById('pdfBldgSel');
   const meterSel = document.getElementById('pdfMeterSel');
   if (bldgSel && match.bldgId) {
@@ -6891,6 +6857,7 @@ function showAutoAssignBanner(match, extracted) {
     pdfUpdateMeterOpts();
     if (meterSel && match.meterId) meterSel.value = match.meterId;
   }
+  _pdfRefreshSavesTo();
 }
 
 // ── Multi-building review panel (Option A) ────────────────────────────────────
@@ -6949,7 +6916,7 @@ function showMultiBuildingReviewPanel() {
   const html = [
     '<div style="border:1px solid var(--s2);border-radius:6px;background:var(--s4);padding:12px;">',
     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">',
-    '<strong style="font-size:13px;color:var(--em);">Review</strong>',
+    '<strong style="font-size:13px;color:var(--em);">Review and save</strong>',
     '</div>',
     '<div style="overflow-x:auto;">',
     '<table style="width:100%;border-collapse:collapse;font-size:12px;">',
@@ -6971,7 +6938,7 @@ function showMultiBuildingReviewPanel() {
     '</div>',
     // 2026-09-02 consolidation: this is the ONE bottom save location for a
     // multi-account file — Save All / Overwrite All / Merge All, same trio the
-    // single-account bottom bar (#pdfBottomSaveBar) shows. All three route
+    // single-account Save list in the top row shows. All three route
     // through confirmMultiBuildingSave(action) -> _mbSaveOneBill(bi, action);
     // see there for what each action does to an existing period match.
     '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;align-items:center">',
@@ -6979,7 +6946,7 @@ function showMultiBuildingReviewPanel() {
     '<button class="btn btn-ghost btn-sm" id="mbOverwriteAllBtn" onclick="confirmMultiBuildingSave(\'overwrite\')" disabled title="Replace existing values with newly extracted values; a blank new value keeps the saved value">Overwrite All</button>',
     '<button class="btn btn-ghost btn-sm" id="mbMergeAllBtn" onclick="confirmMultiBuildingSave(\'merge\')" disabled title="Fill only empty fields — keeps existing non-empty values intact">Merge All</button>',
     '<button class="btn btn-ghost btn-sm" id="mbAttachOnlyBtn" onclick="confirmMultiBuildingSave(\'attach-pdf-only\')" disabled title="Attach the PDF only to already-matching billing periods — never changes any other field, never creates a new bill">Attach PDFs Only</button>',
-    '<button class="btn btn-ghost btn-sm" onclick="document.getElementById(\'pdfMultiBldgPanel\').style.display=\'none\'">Cancel</button>',
+    '<button class="btn btn-ghost btn-sm" onclick="_pdfClosePop()">Close</button>',
     '</div>',
     // FIX (fix/bill-review-gate-lifecycle, item 817dd434): gate-tripped rows'
     // "Save Anyway" notice — populated by _mbUpdateSaveAllBtn, mirrors the
@@ -6991,12 +6958,7 @@ function showMultiBuildingReviewPanel() {
   panel.innerHTML = html;
   panel.style.display = 'block';
 
-  // Hide single-account banner and save row while panel is open
-  const banner = document.getElementById('pdfAutoAssignBanner');
-  if (banner) banner.style.display = 'none';
-  const saveRow = document.getElementById('pdfSaveRow');
-  if (saveRow) saveRow.style.display = 'none';
-
+  _pdfRefreshSavesTo();
   _mbUpdateSaveAllBtn();
 }
 window.showMultiBuildingReviewPanel = showMultiBuildingReviewPanel;
@@ -7407,7 +7369,7 @@ function _mbUpdateSaveAllBtn() {
         .join(', ');
       noticeEl.innerHTML =
         `<div style="width:100%;margin-top:6px;padding:8px 12px;border-radius:6px;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.35);font-size:11px;color:var(--red)">` +
-        `&#9888; Bills flagged for review are held out of "Save All" (${_escHtml(periods)}) — verify against the source PDF. ` +
+        `Bills flagged for review are held out of "Save All" (${_escHtml(periods)}). Check them against the PDF. ` +
         `<button onclick="_saveHeldBills('mb')" class="btn btn-em btn-sm" style="margin-left:4px">Save</button>` +
         `</div>`;
     } else {
@@ -7507,36 +7469,6 @@ async function confirmAutoAssign() {
     return;
   }
   if (!_autoAssignTarget || !window._pdfMultiBills) return;
-  // If the override panel is open and fully filled in, apply the manual selection.
-  const overrideRow = document.getElementById('pdfBannerOverrideRow');
-  if (overrideRow && overrideRow.style.display !== 'none') {
-    const overrideProjId = parseInt(document.getElementById('pdfBannerProjSel')?.value) || null;
-    const overrideBldgId = document.getElementById('pdfBannerBldgSel')?.value || null;
-    const overrideMeterId = document.getElementById('pdfBannerMeterSel')?.value || null;
-    if (overrideProjId && overrideBldgId && overrideMeterId) {
-      const overrideBldg = getUDBldg(overrideProjId, overrideBldgId);
-      const overrideMeter = overrideBldg ? (overrideBldg.meters || []).find((m) => m.id === overrideMeterId) : null;
-      const overrideProj = (projects || []).find((p) => p.id === overrideProjId);
-      if (overrideBldg && overrideMeter && overrideProj) {
-        // Tag this explicit Project -> Building -> Meter override as manual,
-        // mirroring setMbRowDestMeter's _mbRowTargets[i] (~5603-5611) — the
-        // account veto below (~6088) must let an explicit user pick through
-        // regardless of account mismatch, same as _mbSaveOneBill's gate.
-        _autoAssignTarget = {
-          proj: overrideProj,
-          bldg: overrideBldg,
-          meter: overrideMeter,
-          projId: overrideProjId,
-          bldgId: overrideBldgId,
-          meterId: overrideMeterId,
-          matchType: 'manual',
-        };
-      }
-    } else {
-      showToast('Select a project, building, and meter to override the destination');
-      return;
-    }
-  }
   const { proj, bldg, meter, projId } = _autoAssignTarget;
   const bills = window._pdfMultiBills;
   // FIX (live bug, v831 gate-lifecycle follow-up): this used to hard-block the
@@ -7900,7 +7832,6 @@ async function confirmAutoAssign() {
   saveUtilityData(projId); // confirmAutoAssign targets exactly one project (_autoAssignTarget)
   window._pdfBillsSaved = true;
   const _blInherited = _inheritBaselinesForProject(udSelProjId);
-  document.getElementById('pdfAutoAssignBanner').style.display = 'none';
   _autoAssignTarget = null;
   showToast(
     saved +
@@ -8597,6 +8528,7 @@ async function confirmMultiBuildingSave(action) {
     window._pdfBillsSaved = true;
     _inheritBaselinesForProject(udSelProjId);
     document.getElementById('pdfMultiBldgPanel').style.display = 'none';
+    _pdfClosePop();
     _mbRowTargets = {};
     _mbRowState = {};
     _mbSaveState = { pdfStored: false, pdfKey: null, sharedId: null };
@@ -9622,14 +9554,8 @@ function clearPDFOCR() {
   // F7: reset batch-review tab state so a new extraction doesn't inherit stale building/commodity tabs
   window._pdfBuildingTab = null;
   window._pdfCommTab = null;
-  const _bb = document.getElementById('pdfBldgTabsBar');
-  if (_bb) _bb.remove();
+  window._pdfBillChips = null;
   _clearExtractionState();
-  const _bsb = document.getElementById('pdfBottomSaveBar');
-  if (_bsb) {
-    _bsb.style.display = 'none';
-    _bsb.innerHTML = '';
-  }
   _pdfDock.tab = 'pdf';
   _pdfDock.status = '';
   const _dockOcr = document.getElementById('pdfDockOcr');
@@ -9638,15 +9564,10 @@ function clearPDFOCR() {
   document.getElementById('pdfInput').value = '';
   document.getElementById('extractedFieldsHdr').innerHTML = '';
   document.getElementById('extractedFieldsGrid').innerHTML = '';
-  document.getElementById('pdfStripPills').innerHTML = '';
   document.getElementById('pdfSaveRow').style.display = 'none';
   document.getElementById('pdfClearBtn').style.display = 'none';
   document.getElementById('dropZone').classList.remove('collapsed');
   document.getElementById('pdfTypeSection').style.display = '';
-  const _badge = document.getElementById('extractMethodBadge');
-  _badge.style.display = 'none';
-  _badge.innerHTML = '';
-  document.getElementById('pdfAutoAssignBanner').style.display = 'none';
   _pdfStatus('');
   const viewBtn = document.getElementById('pdfViewBtn');
   if (viewBtn) viewBtn.style.display = 'none';
@@ -9661,6 +9582,8 @@ function clearPDFOCR() {
     mbPanel.style.display = 'none';
     mbPanel.innerHTML = '';
   }
+  _pdfClosePop();
+  _pdfRenderTopBar();
   _mbRowTargets = {};
   _mbRowState = {};
   _mbSaveState = { pdfStored: false, pdfKey: null, sharedId: null };
@@ -9738,9 +9661,7 @@ function clearQueue() {
   const dz = document.getElementById('dropZone');
   dz.removeAttribute('data-queue');
   dz.style.cursor = '';
-  const dzIco = dz.querySelector('.dz-ico');
   const dzSub = dz.querySelector('.dz-sub');
-  if (dzIco) dzIco.style.display = '';
   if (dzSub) dzSub.style.display = '';
   document.getElementById('dz-title').style.cssText = '';
   document.getElementById('extractedFieldsHdr').innerHTML = '';
@@ -9867,10 +9788,8 @@ function renderQueueProgress() {
   html += '<style>@keyframes qspin{to{transform:rotate(360deg)}}</style>';
 
   // Render into drop zone (hide default content)
-  const dzIco = dz.querySelector('.dz-ico');
   const dzTitle = document.getElementById('dz-title');
   const dzSub = dz.querySelector('.dz-sub');
-  if (dzIco) dzIco.style.display = 'none';
   if (dzSub) dzSub.style.display = 'none';
   dzTitle.innerHTML = html;
   dzTitle.style.cssText = 'margin:0;font-size:inherit;white-space:normal;overflow:visible;text-overflow:clip';
@@ -10470,7 +10389,6 @@ function renderQueueResults() {
 
   // Show normal two-column layout
   dz.classList.add('collapsed');
-  dz.querySelector('.dz-ico').style.display = 'none';
   dz.querySelector('.dz-sub').style.display = 'none';
   dzTitle.style.cssText = '';
   _pdfSetQueueBusy(false);
@@ -10517,7 +10435,7 @@ function renderQueueResults() {
   });
 
   if (rows.length === 0) {
-    dzTitle.innerHTML = '📄 Batch extraction — no bills found';
+    dzTitle.innerHTML = 'Batch extraction: no bills found';
     _pdfSetQueueBusy(false);
     document.getElementById('extractedFieldsGrid').innerHTML =
       '<div style="text-align:center;padding:40px 20px;color:var(--text)">' +
@@ -10537,22 +10455,17 @@ function renderQueueResults() {
   const useGrouped = _queueGroupState;
 
   // Stats
-  const okCount = rows.filter((r) => r.bill && !_getQueueDupInfo(r)).length;
-  const dupCount = rows.filter((r) => r.bill && _getQueueDupInfo(r)).length;
-  const failCount = rows.filter((r) => !r.bill).length;
-  const totalBills = rows.filter((r) => r.bill).length;
-  const savedCount = rows.filter((r) => r._saved).length;
-  const saveable = rows.filter((r) => r.bill && !r._saved).length;
+  const { totalBills } = _pdfQueueStats();
 
   // Banner
   dzTitle.innerHTML =
-    '📄 Batch results — ' +
+    'Batch results: ' +
     q.files.length +
     ' files → ' +
     totalBills +
     ' bills' +
     ' <button class="btn btn-ghost btn-sm" style="margin-left:8px;font-size:10px" onclick="event.stopPropagation();document.getElementById(\'pdfInput\').click()">+ Add Files</button>' +
-    ' <button class="btn btn-ghost btn-sm" style="margin-left:4px;font-size:10px" onclick="event.stopPropagation();clearQueue()">✕ Clear All</button>';
+    ' <button class="btn btn-ghost btn-sm" style="margin-left:4px;font-size:10px" onclick="event.stopPropagation();clearQueue()">Clear All</button>';
 
   // Create or get tabs container (above extractedFieldsHdr)
   let tabsBar = document.getElementById('queueTabsBar');
@@ -10624,7 +10537,7 @@ function renderQueueResults() {
           color +
           ';cursor:pointer;font-size:12px;font-family:var(--font)">' +
           _escHtml(r ? r.fileName : 'Unknown') +
-          ' ✕</button>';
+          ' (failed)</button>';
       });
     }
   } else {
@@ -10635,7 +10548,7 @@ function renderQueueResults() {
       const color = isActive ? '#fff' : 'var(--text)';
       const border = isActive ? 'var(--em)' : 'var(--border2)';
       const ct = r.status === 'ok' ? r.bills.length : 0;
-      const lbl = _escHtml(r.fileName) + (r.status === 'failed' ? ' ✕' : ' (' + ct + ')');
+      const lbl = _escHtml(r.fileName) + (r.status === 'failed' ? ' (failed)' : ' (' + ct + ')');
       html +=
         '<button onclick="selectQueueFile(' +
         i +
@@ -10652,46 +10565,19 @@ function renderQueueResults() {
   }
   html += '</div>';
 
-  // Action bar
-  html +=
-    '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0 4px;border-bottom:1px solid var(--border);margin-bottom:4px;flex-wrap:wrap;gap:6px">';
-  html += '<div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text)">';
-  if (okCount > 0) html += '<span style="color:#4a4">' + okCount + ' ready</span>';
-  if (dupCount > 0) html += (okCount > 0 ? ' \xb7 ' : '') + '<span style="color:var(--em)">' + dupCount + ' dup</span>';
-  if (failCount > 0)
-    html += (okCount + dupCount > 0 ? ' \xb7 ' : '') + '<span style="color:#c44">' + failCount + ' failed</span>';
-  if (savedCount > 0) html += ' \xb7 <span style="color:var(--text3)">' + savedCount + ' saved</span>';
-  // Toggle button (Plan 7e0b9d15 §3) — shown only when shared accounts detected
+  // The counts, Save all and the duplicate actions are in the top row (_pdfSaveControl). Only the view switch stays here.
   if (hasSharedAccount) {
     html +=
-      '<button class="btn btn-ghost btn-sm" style="font-size:10px;margin-left:4px" ' +
+      '<div style="padding:2px 0 6px"><button class="btn btn-ghost btn-sm" style="font-size:10px" ' +
       'onclick="_queueGroupState=!' +
       useGrouped +
       ';if(!_queueGroupState&&window._pdfQueue)window._pdfQueue._activeGroupKey=null;renderQueueResults()" ' +
       'title="' +
-      (useGrouped ? 'Switch to flat per-file view' : 'Switch to consolidated grouped view') +
+      (useGrouped ? 'Switch to one tab for each file' : 'Switch to one tab for each account') +
       '">' +
-      (useGrouped ? '▦ Flat' : '▦ Grouped') +
-      '</button>';
+      (useGrouped ? 'Show one tab for each file' : 'Group by account') +
+      '</button></div>';
   }
-  html += '</div>';
-  html += '<div style="display:flex;gap:6px;flex-wrap:wrap">';
-  if (dupCount > 0) {
-    // #119: Two clearly-labelled save options for duplicates
-    html +=
-      '<button class="btn btn-ghost btn-sm" onclick="resolveAllQueueDups(\'overwrite\')" style="font-size:10px" title="Save All (Overwrite): Replaces everything on the existing record including blank fields">Save All (Overwrite)</button>';
-    html +=
-      '<button class="btn btn-ghost btn-sm" onclick="resolveAllQueueDups(\'merge\')" style="font-size:10px" title="Save Only Non-Empty Fields (Merge): Fills empty fields only — keeps existing non-empty values intact. $0.00 counts as a real value.">Save Non-Empty (Merge)</button>';
-    html +=
-      '<button class="btn btn-ghost btn-sm" onclick="resolveAllQueueDups(\'skip\')" style="font-size:10px">Skip All Dups</button>';
-  }
-  html +=
-    '<button class="btn btn-em btn-sm" onclick="saveQueuedBills()" style="font-size:11px"' +
-    (saveable === 0 ? ' disabled' : '') +
-    '>Save All (' +
-    saveable +
-    ')</button>';
-  html += '</div></div>';
 
   // ── Per-bill queue rows table (Update 122/#35 + #36) ──
   // Compact table below the action bar: one row per bill across all files.
@@ -10737,7 +10623,7 @@ function renderQueueResults() {
       return (
         '<span style="color:var(--red);font-weight:700;font-size:10px" title="' +
         _escHtml((row.bill._gateReasons || []).join(' \xb7 ')) +
-        '">&#9888; VERIFY</span>'
+        '">VERIFY</span>'
       );
     } else if (row.bill._manualReview) {
       return '<span style="color:#c88;font-weight:600;font-size:10px" title="Could not parse billing period — assign manually">REVIEW</span>';
@@ -10748,7 +10634,7 @@ function renderQueueResults() {
       return (
         '<span style="color:var(--amber);font-weight:700;font-size:10px" title="' +
         _escHtml(_UNASSIGNED_DEST) +
-        '">&#9888; NEEDS METER</span>'
+        '">NEEDS METER</span>'
       );
     } else if (dup) {
       const dupAct = dup.action;
@@ -10774,7 +10660,7 @@ function renderQueueResults() {
       return (
         '<span style="color:var(--amber);font-weight:700;font-size:10px" title="' +
         _escHtml(row.bill._warnings.map((w) => w.message || w.field || '').join(' \xb7 ')) +
-        '">&#9888; WARN</span>'
+        '">WARN</span>'
       );
     }
     return '<span style="color:#4a4;font-size:10px">READY</span>';
@@ -11090,6 +10976,7 @@ function renderQueueResults() {
 
   html += billRowsHtml;
   tabsBar.innerHTML = html;
+  _pdfRenderTopBar();
 
   // Active file — use existing multi-bill pipeline
   const activeResult = q.results[q._activeFileIdx];
@@ -11103,6 +10990,8 @@ function renderQueueResults() {
       q._activeFileIdx +
       ')">Retry</button></div></div>';
     document.getElementById('extractedFieldsGrid').innerHTML = '';
+    window._pdfBillChips = null;
+    _pdfRenderTopBar({ noBill: true });
     return;
   }
 
@@ -12000,7 +11889,7 @@ function _dupDiffSummaryText(diffs) {
   const label = (d) => _DUP_FIELD_LABELS[d.key] || d.key;
   const vals = (d) => 'saved ' + (d.existVal === '' ? '(empty)' : d.existVal) + ', new ' + d.newVal;
   const more = list.length > 2 ? ' +' + (list.length - 2) + ' more' : '';
-  if (list.length === 1) return label(list[0]) + ' differ: ' + vals(list[0]);
+  if (list.length === 1) return label(list[0]) + ' ' + vals(list[0]);
   return list
     .slice(0, 2)
     .map((d) => label(d) + ' (' + vals(d) + ')')
@@ -13365,9 +13254,8 @@ function _pdfStatus(html) {
 function _syncPdfDockVisibility() {
   const pb = document.getElementById('pdfBody');
   const busy = !!pb && pb.hasAttribute('data-queue-busy');
-  const strip = document.getElementById('pdfPeriodStrip');
   const vb = document.getElementById('pdfViewBtn');
-  if (strip) strip.style.display = vb && vb.style.display !== 'none' && !busy ? '' : 'none';
+  _pdfSyncMoreBtn();
   const dock = document.getElementById('pdfDockCol');
   if (!dock) return;
   const show = _pdfDock.open && !busy;
@@ -13384,7 +13272,7 @@ function _clampPdfDockWidth() {
   const body = document.getElementById('pdfBody');
   if (!dock || !body) return;
   const saved = parseInt(_pdfDockLsGet(PDF_DOCK_LS_W), 10);
-  const max = Math.max(320, body.clientWidth - 16 - 480);
+  const max = Math.max(280, body.clientWidth - 16 - 400);
   const w = Math.min(max, Math.max(320, saved > 0 ? saved : Math.round(body.clientWidth * 0.4)));
   body.style.setProperty('--pdf-dock-w', w + 'px');
 }
@@ -16172,29 +16060,6 @@ async function extractPDFText(ab, statusCb, opts) {
     pdf = null;
   }
 }
-function showExtractionBadge(method, detail) {
-  const b = document.getElementById('extractMethodBadge');
-  b.style.display = 'inline-flex';
-  b.style.alignItems = 'center';
-  b.style.gap = '6px';
-  let lbl = b.querySelector('.eb-label');
-  if (!lbl) {
-    lbl = document.createElement('span');
-    lbl.className = 'eb-label';
-    b.prepend(lbl);
-  }
-  if (method === 'rules') {
-    b.style.background = 'rgba(var(--em-rgb),.12)';
-    b.style.color = 'var(--em)';
-    b.style.border = '1px solid rgba(var(--em-rgb),.25)';
-    lbl.textContent = '⚡ Rule-Based' + (detail ? ' · ' + detail : '');
-  } else {
-    b.style.background = 'rgba(139,92,246,.12)';
-    b.style.color = '#a78bfa';
-    b.style.border = '1px solid rgba(139,92,246,.25)';
-    lbl.textContent = '📄 Text Extraction';
-  }
-}
 let pdfType = 'utility',
   pdfB64 = null;
 function setPDFType(t, el) {
@@ -16360,11 +16225,10 @@ function _unmatchedToSyntheticBills(unmatchedPages) {
 
 async function processPDF(file) {
   // F7: single-file entry point never went through clearPDFOCR() before, so a
-  // prior batch's tab state (_pdfBuildingTab/_pdfCommTab/#pdfBldgTabsBar) leaked
+  // prior batch's tab state (_pdfBuildingTab/_pdfCommTab) leaked
   // into the new extraction. Reset first, before reading the file.
   clearPDFOCR();
   const dz = document.getElementById('dz-title');
-  document.getElementById('extractMethodBadge').style.display = 'none';
   window._pdfSourceFileName = file.name;
   window._pdfAbort = false;
   // NOTE (18b33d9f round 3): the gate override is now per-bill
@@ -17462,7 +17326,6 @@ async function processPDF(file) {
             document.getElementById('dropZone').classList.add('collapsed');
             document.getElementById('pdfTypeSection').style.display = 'none';
             refreshProjDropdowns();
-            showExtractionBadge('rules', rule.name);
             dz.textContent = file.name + ' ✓';
             showToast('Billing periods extracted');
             var _multiBillMatch = findMeterMatch(finalBills[0]);
@@ -17490,7 +17353,6 @@ async function processPDF(file) {
             document.getElementById('dropZone').classList.add('collapsed');
             document.getElementById('pdfTypeSection').style.display = 'none';
             refreshProjDropdowns();
-            showExtractionBadge('rules', rule.name);
             dz.textContent = file.name + ' ✓';
             showToast('Extracted locally — ' + rule.name + ' ✓');
             var _singleBillMatch = findMeterMatch(extracted);
@@ -17671,12 +17533,12 @@ function _pdfGroupBills(bills, warnings, multi) {
 function _pdfCountWord(n, word) {
   return n + ' ' + word + (n === 1 ? '' : 's');
 }
-function renderMultiBillUI(bills) {
-  _refreshPdfDock(); // docked PDF follows the selected period / active file
+// The ONE model of the open file: its buildings, utility types and billing periods (newest first), and the
+// month each bill belongs to. The top row (_pdfRenderTopBar) reads it; nothing else counts or labels periods.
+function _pdfNavModel(bills) {
   const idx = window._pdfMultiIdx || 0;
-  const b = bills[idx];
   const warnings = window._pdfBillWarnings || [];
-  // Short MM/DD/YY date format for the pill labels
+  // Short MM/DD/YY date format for the period labels
   const _shortDt = (s) => {
     if (!s) return s;
     const m = String(s).match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);
@@ -17748,11 +17610,10 @@ function renderMultiBillUI(bills) {
       _monthLabelMap[item.i] = ym ? _ymLabel(ym) : '';
     }
   }
-  // Build period labels with sort indices for descending order.
-  // Pill label is MM/DD/YY-MM/DD/YY for billing periods, MM/DD/YY for
-  // single-date delivery events (propane). Month column shows "Mon YYYY".
-  const _uniqueAccts = new Set(bills.map((b) => b.AccountNumber).filter(Boolean));
-  const _multiAcct = _uniqueAccts.size > 1;
+  // Period labels with sort dates for newest-first order. The label is MM/DD/YY-MM/DD/YY for billing periods,
+  // MM/DD/YY for single-date delivery events (propane).
+  const _multiAcct = new Set(bills.map((b) => b.AccountNumber).filter(Boolean)).size > 1;
+  const monthOf = {};
   const periods = bills.map((bill, i) => {
     let lbl;
     let sortSource;
@@ -17769,297 +17630,558 @@ function renderMultiBillUI(bills) {
       lbl = 'Period ' + (i + 1);
       sortSource = bill.BillingPeriodStart || bill.BillDate || 0;
     }
-    // Append a commodity suffix when multiple splits share the same date
-    // (Client A combined bills → "01/20/26 · Water", "01/20/26 · Gas", etc.)
-    if (bill.Commodity && bill.Commodity !== 'Propane') {
-      const _commAbbr = { Stormwater: 'Storm', Electric: 'Elec' };
-      lbl = lbl + ' · ' + (_commAbbr[bill.Commodity] || bill.Commodity);
-    }
-    let acctLbl = '';
-    if (_multiAcct && bill.AccountNumber) {
-      const addr = bill.ServiceAddress || '';
-      const shortAddr = addr.replace(/,?\s*(LOUISBURG|KS)\s*/gi, '').trim();
-      acctLbl = '  Acct ' + bill.AccountNumber + (shortAddr ? ' — ' + shortAddr : '');
-    }
     const monthLbl = _monthLabelMap[i] || _monthLabel(bill);
-    const sortDate = new Date(sortSource);
-    return { i, lbl, monthLbl, sortDate, acctLbl };
+    monthOf[i] = monthLbl;
+    return { i, lbl, monthLbl, sortDate: new Date(sortSource) };
   });
-  // Sort descending by date (newest first)
   periods.sort((a, b) => b.sortDate - a.sortDate);
-  // F6 (multi-account building scoping): resolve which building tab is active
-  // BEFORE computing the commodity list, so the commodity pills for a
-  // multi-account batch only ever show commodities that exist under the
-  // CURRENT building, not the whole batch. Building is now the primary
-  // selector and commodity is a filter within it — the previous order was
-  // reversed (commodity picked the building), which is what let clicking a
-  // commodity pill silently jump to a different building (see selectCommTab).
+  // The building is the primary choice and the utility type is a filter inside it: the type list only ever shows
+  // the types of the CURRENT building, and picking a type never silently jumps to another building.
   const _acctKeys = [...new Set(bills.map((b) => b.AccountNumber || '_unknown'))];
   if (_multiAcct && (!window._pdfBuildingTab || !_acctKeys.includes(window._pdfBuildingTab))) {
     window._pdfBuildingTab = bills[idx]?.AccountNumber || _acctKeys[0];
   }
-  // One grouping answers every count below: building buttons, utility type buttons, period pills.
-  const _groups = _pdfGroupBills(bills, warnings, _multiAcct);
-  const _selGroup = _groups.find((g) => g.acct === (_multiAcct ? window._pdfBuildingTab : '_all')) || _groups[0];
-  // The utility type buttons show only the selected building's types (a Water-only building never shows Gas).
-  const _uniqueComms = _selGroup ? _selGroup.types.map((t) => t.comm) : [];
-  const _hasMultiComm = _uniqueComms.length > 1;
-  // F6: also reset when the persisted comm tab no longer belongs to the (now
-  // building-scoped) list — e.g. after switching to a building that lacks it.
-  if (_hasMultiComm && (!window._pdfCommTab || !_uniqueComms.includes(window._pdfCommTab))) {
-    window._pdfCommTab = _uniqueComms[0];
+  // One grouping answers every count: buildings, utility types, periods.
+  const groups = _pdfGroupBills(bills, warnings, _multiAcct);
+  const selGroup = groups.find((g) => g.acct === (_multiAcct ? window._pdfBuildingTab : '_all')) || groups[0];
+  const uniqueComms = selGroup ? selGroup.types.map((t) => t.comm) : [];
+  const hasMultiComm = uniqueComms.length > 1;
+  if (hasMultiComm && (!window._pdfCommTab || !uniqueComms.includes(window._pdfCommTab))) {
+    window._pdfCommTab = uniqueComms[0];
   }
-  if (window._pdfCommTab === 'All') window._pdfCommTab = _uniqueComms[0];
-  const activeCommTab = _hasMultiComm ? window._pdfCommTab || _uniqueComms[0] : 'All';
+  if (window._pdfCommTab === 'All') window._pdfCommTab = uniqueComms[0];
+  const activeCommTab = hasMultiComm ? window._pdfCommTab || uniqueComms[0] : 'All';
   const filteredPeriods =
     activeCommTab === 'All' ? periods : periods.filter((p) => (bills[p.i].Commodity || 'Other') === activeCommTab);
-  // Duplicate map must be declared before the nav closure below reads it (TDZ).
-  // Re-keyed to THIS bills list (fix/save-all-persist-bills) — see _pdfDupView.
-  const dupMap = _pdfDupView(bills).map;
-  const _buildPill = (p) => {
-    const active = p.i === idx;
-    const bw = warnings[p.i]?.warnings || [];
-    const bill = bills[p.i];
-    const _pillIssues = _pdfBillIssues(bill, bw);
-    const hasSumMismatch = _pillIssues.sumMismatch;
-    const hasAnyIssue = _pillIssues.any;
-    const issueColor = hasSumMismatch ? '--red' : '--amber';
-    const pillColor = hasAnyIssue ? 'var(' + issueColor + ')' : active ? 'var(--accent)' : 'var(--text2)';
-    const pillBorder = hasAnyIssue ? 'var(' + issueColor + ')' : active ? 'var(--accent)' : 'var(--border2)';
-    const pillBg = active ? 'var(--accent-dim)' : hasAnyIssue ? 'var(' + issueColor + '-dim)' : 'transparent';
-    const isDup = !!dupMap[p.i];
-    const diffCount = isDup ? (dupMap[p.i].diffFields || []).length : 0;
-    const dupDot = isDup
-      ? `<span style="display:inline-block;margin-left:6px;vertical-align:middle;color:var(--amber);font-weight:700;font-size:11px;font-family:var(--mono)" title="Duplicate bill — ${diffCount} differing field${diffCount === 1 ? '' : 's'} — found in ${dupMap[p.i].locationType === 'saved' ? 'Saved Bills' : dupMap[p.i].location}">${diffCount}</span>`
-      : '';
-    const pillBtn = `<button class="ef-pill-btn" onclick="selectMultiBill(${p.i})" style="font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:11px;padding:5px 12px;border-radius:5px;border:1px solid ${pillBorder};background:${pillBg};color:${pillColor};cursor:pointer;font-weight:${active ? '700' : hasAnyIssue ? '700' : '400'};text-align:left;white-space:nowrap">${p.lbl}${dupDot}</button>`;
-    // fix ede70be1 (3d) — per-pill "Save this period" quick action. Suppressed
-    // for a multi-account file (3e): the showMultiBuildingReviewPanel table is
-    // the single save source there — these pills stay browsing-only so there
-    // is never more than one save control for the same extraction.
-    const _pillIsMultiAcct = typeof _isMultiAcctFile === 'function' && _isMultiAcctFile();
-    const savePillBtn =
-      !_pillIsMultiAcct && !bill._batchSaved
-        ? `<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();savePDFAllBills(undefined,${p.i})" title="Save this billing period" style="font-size:9px;padding:2px 6px;margin-left:4px">Save</button>`
-        : '';
-    const gapInfo = bill._billing_gap;
-    const gapRow = gapInfo
-      ? `<div class="pdf-strip-gap" style="padding:2px 8px;margin:2px 0;font-size:10px;color:var(--amber);text-align:center;font-weight:600">&#9888; ${gapInfo.days}-day gap (after ${gapInfo.afterPeriod || ''})</div>`
-      : '';
-    return (
-      `<div class="ef-pill-row"><div class="ef-pill-month">${p.monthLbl || ''}</div>${pillBtn}${savePillBtn}</div>` +
-      gapRow
-    );
+  const navPeriods = _multiAcct
+    ? filteredPeriods.filter((p) => (bills[p.i].AccountNumber || '_unknown') === window._pdfBuildingTab)
+    : filteredPeriods;
+  return {
+    bills,
+    idx,
+    warnings,
+    multiAcct: _multiAcct,
+    periods,
+    filteredPeriods,
+    navPeriods,
+    groups,
+    selGroup,
+    uniqueComms,
+    hasMultiComm,
+    activeCommTab,
+    monthOf,
   };
-  let nav;
-  if (_multiAcct) {
-    let _bldgTabsHtml = '<div style="display:flex;gap:4px;margin:10px 0 8px;flex-wrap:wrap">';
-    for (const g of _groups) {
-      const acct = g.acct;
-      const isActive = acct === window._pdfBuildingTab;
-      const bg = isActive ? 'var(--em)' : 'var(--s2)';
-      const color = isActive ? '#fff' : 'var(--text)';
-      const border = isActive ? 'var(--em)' : 'var(--border2)';
-      const acctPeriods = filteredPeriods.filter((p) => (bills[p.i].AccountNumber || '_unknown') === acct);
-      const acctAllPeriods = periods.filter((p) => (bills[p.i].AccountNumber || '_unknown') === acct);
-      const firstIdx = acctPeriods.length ? acctPeriods[0].i : acctAllPeriods.length ? acctAllPeriods[0].i : 0;
-      // Clicking a building also moves the utility type to one that building has, so the period list is never empty.
-      const _acctComm = bills[firstIdx]?.Commodity || _uniqueComms[0] || 'Electric';
-      const reviewHtml = g.review
-        ? '<span style="margin-left:8px;font-weight:700;color:' +
-          (isActive ? 'inherit' : 'var(--amber)') +
-          '">' +
-          g.review +
-          ' need review</span>'
-        : '';
-      _bldgTabsHtml +=
-        '<button onclick="window._pdfCommTab=\'' +
-        _acctComm +
-        "';window._pdfBuildingTab='" +
-        acct +
-        "';selectMultiBill(" +
-        firstIdx +
-        ')" style="padding:6px 14px;border-radius:6px;border:1px solid ' +
-        border +
-        ';background:' +
-        bg +
-        ';color:' +
-        color +
-        ';cursor:pointer;font-size:12px;font-family:var(--font)">' +
-        _escHtml(g.name) +
-        ' &middot; ' +
-        _pdfCountWord(g.total, 'bill') +
-        reviewHtml +
-        '</button>';
-    }
-    _bldgTabsHtml += '</div>';
-    let bldgBar = document.getElementById('pdfBldgTabsBar');
-    if (!bldgBar) {
-      bldgBar = document.createElement('div');
-      bldgBar.id = 'pdfBldgTabsBar';
-      bldgBar.style.cssText = 'position:sticky;top:0;z-index:12;background:var(--bg);padding-bottom:4px';
-      const hdr = document.getElementById('pdfPeriodStrip') || document.getElementById('extractedFieldsHdr');
-      if (hdr) hdr.parentNode.insertBefore(bldgBar, hdr);
-    }
-    if (bldgBar) bldgBar.innerHTML = _bldgTabsHtml;
-    const bldgPeriods = filteredPeriods.filter(
-      (p) => (bills[p.i].AccountNumber || '_unknown') === window._pdfBuildingTab,
-    );
-    nav = bldgPeriods.map(_buildPill).join('');
-  } else {
-    const bldgBar = document.getElementById('pdfBldgTabsBar');
-    if (bldgBar) bldgBar.innerHTML = '';
-    nav = filteredPeriods.map(_buildPill).join('');
-  }
-  // Duplicate summary banner
-  const dupIndices = Object.keys(dupMap).map(Number);
-  let dupBannerHtml = '';
-  if (dupIndices.length > 0) {
-    // Count by location type
-    const assignedCount = dupIndices.filter((i) => dupMap[i].locationType === 'assigned').length;
-    const savedCount = dupIndices.filter((i) => dupMap[i].locationType === 'saved').length;
-    const parts = [];
-    if (assignedCount) {
-      // Group by location
-      const locs = {};
-      dupIndices
-        .filter((i) => dupMap[i].locationType === 'assigned')
-        .forEach((i) => {
-          const loc = dupMap[i].location;
-          locs[loc] = (locs[loc] || 0) + 1;
-        });
-      Object.entries(locs).forEach(([loc, cnt]) => parts.push(cnt + ' assigned to ' + loc));
-    }
-    if (savedCount) parts.push(savedCount + ' in Saved Bills');
-    // #117: Count by diff status for the legend
-    const identicalCount = dupIndices.filter((i) => (dupMap[i].diffFields || []).length === 0).length;
-    const diffCount117 = dupIndices.filter(
-      (i) => (dupMap[i].diffFields || []).length > 0 && (dupMap[i].diffFields || []).length < 5,
-    ).length;
-    const conflictCount = dupIndices.filter((i) => (dupMap[i].diffFields || []).length >= 5).length;
-    const legendParts = [];
-    if (identicalCount)
-      legendParts.push(
-        `<span style="display:inline-flex;align-items:center;gap:3px"><span style="width:8px;height:8px;border-radius:2px;background:#22c55e;display:inline-block"></span><span style="color:var(--text2)">Identical (safe to skip): ${identicalCount}</span></span>`,
-      );
-    if (diffCount117)
-      legendParts.push(
-        `<span style="display:inline-flex;align-items:center;gap:3px"><span style="width:8px;height:8px;border-radius:2px;background:#f59e0b;display:inline-block"></span><span style="color:var(--text2)">Fields differ (review): ${diffCount117}</span></span>`,
-      );
-    if (conflictCount)
-      legendParts.push(
-        `<span style="display:inline-flex;align-items:center;gap:3px"><span style="width:8px;height:8px;border-radius:2px;background:#f43f5e;display:inline-block"></span><span style="color:var(--text2)">Conflict (manual resolution): ${conflictCount}</span></span>`,
-      );
-    // 2026-09-02 consolidation: the banner now shows the informational summary +
-    // legend only. The Skip All / Overwrite All / Merge All ACTIONS that used to
-    // live here moved to the single bottom save bar (#pdfBottomSaveBar, built
-    // below) — see dashboardlogic.md for why (Matt's directive: exactly ONE save
-    // location, at the bottom, with Save All / Overwrite All / Merge All).
-    dupBannerHtml = `<div style="padding:8px 12px;margin:0 0 8px;border-radius:6px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.25);font-size:12px;color:var(--amber)">
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:${legendParts.length ? '6px' : '0'}">
-          <span style="flex:1;min-width:0"><strong>&#9888; Duplicate Bills Found &mdash; ${dupIndices.length} of ${bills.length} already exist</strong> &mdash; ${parts.join(', ')}</span>
-        </div>
-        ${legendParts.length ? `<div style="display:flex;gap:12px;flex-wrap:wrap;font-size:10px;padding-top:4px;border-top:1px solid rgba(245,158,11,.2)">${legendParts.join('')}</div>` : ''}
-      </div>`;
-  }
-  // extractMethodBadge (the period strip) is used by OTHER render
-  // paths (single-bill display, "loaded from saved records") for a small method
-  // label — but for this multi-bill review it must stay empty/hidden so there is
-  // never a second save control up top. All save actions for THIS view live in
-  // the single bottom bar (#pdfBottomSaveBar) below instead.
-  const badgeEl = document.getElementById('extractMethodBadge');
-  if (badgeEl) {
-    badgeEl.style.display = 'none';
-    badgeEl.innerHTML = '';
-  }
-  // ── Single bottom save bar (2026-09-02 consolidation) ──────────────────────
-  // fix ede70be1 (3e) — suppressed for a multi-account file: showMultiBuildingReviewPanel
-  // is the SINGLE save source there (it has its own per-row + bulk Save All/Overwrite
-  // All/Merge All, see showMultiBuildingReviewPanel), so this bar would be a duplicate/
-  // confusing second save control for the same extraction. The per-pill "Save" quick
-  // action above is suppressed the same way.
-  const bottomBarEl = document.getElementById('pdfBottomSaveBar');
-  if (bottomBarEl && _isMultiAcctFile()) {
-    bottomBarEl.style.display = 'none';
-    bottomBarEl.innerHTML = '';
-    // FIX (fix/save-all-persist-bills, 2026-09-21): hiding this bar assumes the
-    // multi-building review panel is showing its own Save All. If that panel
-    // is not open (never opened on this render path, or the user closed it
-    // with Cancel), the review had NO save control at all. Outside the batch
-    // queue (which has its own "Save All (N)" in the file bar), open the panel
-    // so a working Save control is always present while bills are pending.
-    const _inQueue = !!(window._pdfQueue && window._pdfQueue.results && window._pdfQueue.results.length);
-    const _mbPanel = document.getElementById('pdfMultiBldgPanel');
-    const _pending = bills.some((b) => !b._mbSaved && !b._batchSaved);
-    if (!_inQueue && _mbPanel && _mbPanel.style.display === 'none' && _pending) {
-      showMultiBuildingReviewPanel();
-    }
-  } else if (bottomBarEl) {
-    bottomBarEl.style.display = 'block';
-    const commodities = {};
-    bills.forEach((b, i) => {
-      const c = b.Commodity || 'Other';
-      commodities[c] = (commodities[c] || 0) + 1;
-    });
-    const commKeys = Object.keys(commodities);
-    let btns = `<button onclick="savePDFAllBills()" class="btn btn-em btn-sm" style="font-size:10px;padding:3px 12px">Save All ${bills.length} Periods</button>`;
-    btns += `<button onclick="_dupBulkAction('overwrite')" class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 10px" title="Replace existing values with newly extracted values; a blank new value keeps the saved value">Overwrite All</button>`;
-    btns += `<button onclick="_dupBulkAction('merge')" class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 10px" title="Fill only empty fields — keeps existing non-empty values intact">Merge All</button>`;
-    btns += `<button onclick="_dupBulkAction('attach-pdf-only')" class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 10px" title="Attach the PDF only to already-matching billing periods — never changes any other field, never creates a new bill">Attach PDFs Only</button>`;
-    if (commKeys.length > 1) {
-      btns += commKeys
-        .map(
-          (c) =>
-            `<button onclick="savePDFAllBills('${c.replace(/'/g, "\\'")}')" class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 10px">Save ${c} (${commodities[c]})</button>`,
-        )
-        .join('');
-    }
-    // GATE WIRING (18b33d9f): "Save All" is blocked (see savePDFAllBills) while any
-    // bill in this file is gate-tripped and not yet individually confirmed.
-    // Surface that state here, non-collapsed, with an explicit override action.
-    // REVIEW FIX (18b33d9f round 3, BLOCKING 2): count only STILL-unconfirmed
-    // gated bills (per-bill _gateOverrideConfirmed, not a global flag) — see
-    // _confirmGatedBillsForSave() for what "Save Anyway" actually does.
-    const _unconfirmedGated = bills.filter((b) => b._gateTripped && !b._gateOverrideConfirmed);
-    let gateNotice = '';
-    if (_unconfirmedGated.length > 0) {
-      // FIX (fix/bill-review-gate-lifecycle, item 817dd434): name which billing
-      // period(s) are held, not just a count.
-      const _gatedPeriods = _unconfirmedGated.map((b) => _billPeriodLabel(b)).join(', ');
-      gateNotice =
-        `<div style="width:100%;margin-top:6px;padding:8px 12px;border-radius:6px;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.35);font-size:11px;color:var(--red)">` +
-        `&#9888; Bills flagged for review are held out of "Save All" (${_escHtml(_gatedPeriods)}) — verify against the source PDF. ` +
-        `<button onclick="_saveHeldBills('bar')" class="btn btn-em btn-sm" style="margin-left:4px">Save</button>` +
-        `</div>`;
-    }
-    bottomBarEl.innerHTML = `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${btns}${gateNotice}</div>`;
-  }
-  let commTabsHtml = '';
-  if (_hasMultiComm) {
-    commTabsHtml =
-      '<div style="display:flex;gap:4px;margin-bottom:8px;flex-wrap:wrap">' +
-      _selGroup.types
-        .map((t) => {
-          const sel = t.comm === activeCommTab;
-          const warnTag =
-            t.warn > 0
-              ? ` <span style="margin-left:6px;color:var(--amber);font-weight:700">${_pdfCountWord(t.warn, 'warning')}</span>`
-              : '';
-          return `<button onclick="selectCommTab('${t.comm}')" style="font-size:10px;padding:3px 10px;border-radius:4px;border:1px solid ${sel ? 'var(--accent)' : 'var(--border2)'};background:${sel ? 'var(--accent-dim)' : 'transparent'};color:${sel ? 'var(--accent)' : 'var(--text2)'};cursor:pointer;font-weight:${sel ? '700' : '400'}">${t.comm === 'Stormwater' ? 'Storm' : t.comm} &middot; ${_pdfCountWord(t.total, 'bill')}${warnTag}</button>`;
-        })
-        .join('') +
-      '</div>';
-  }
-  // The duplicate banner, commodity tabs and billing-period pills live in the strip at the top of the left column.
-  const stripPillsEl = document.getElementById('pdfStripPills');
-  if (stripPillsEl) {
-    stripPillsEl.innerHTML =
-      (dupBannerHtml ? `<div class="pdf-strip-banner">${dupBannerHtml}</div>` : '') +
-      (commTabsHtml ? `<div class="pdf-strip-comm">${commTabsHtml}</div>` : '') +
-      nav;
-  }
+}
+// Redraws the top row. The values and the PDF dock are drawn by their own functions.
+function renderMultiBillUI(bills) {
+  _refreshPdfDock(); // docked PDF follows the selected period / active file
+  _pdfRenderTopBar();
   _pdfStatus('');
 }
+
+// ── PDF / OCR top row ─────────────────────────────────────────────────────────
+// ONE row above the values, in the same place for every file kind (single bill, many periods, many buildings,
+// batch): building, utility type and period selectors, small status chips, the one Save control.
+// A chip, or the More list, opens a list that overlays the page. Nothing here pushes the values down.
+let _pdfTopOpen = null; // 'review' | 'dup' | 'warn' | 'fixed' | 'save' | 'more' | null
+let _pdfPopHtml = {};
+let _pdfMoreHasSave = false;
+// The More button shows when it has something in it: other ways to save, or the PDF page options.
+function _pdfSyncMoreBtn() {
+  const vb = document.getElementById('pdfViewBtn');
+  const more = document.getElementById('pdfMoreBtn');
+  if (more) more.style.display = _pdfMoreHasSave || (vb && vb.style.display !== 'none') ? '' : 'none';
+}
+window._pdfBillChips = null; // set by renderPDFFields: { bill, review: [html], warn: [html], fixed: [html], manualIdx }
+function _pdfPopItem(summary, bodyHtml, actionsHtml) {
+  return (
+    '<details><summary>' +
+    _escHtml(summary) +
+    '</summary>' +
+    (bodyHtml ? '<div class="pdf-pop-body">' + bodyHtml + '</div>' : '') +
+    (actionsHtml ? '<div class="pdf-pop-actions">' + actionsHtml + '</div>' : '') +
+    '</details>'
+  );
+}
+function _pdfPopBtn(label, onclick, primary, title) {
+  return (
+    '<button class="pdf-pop-btn' +
+    (primary ? ' primary' : '') +
+    '"' +
+    (title ? ' title="' + _escHtml(title) + '"' : '') +
+    ' onclick="' +
+    onclick +
+    '">' +
+    _escHtml(label) +
+    '</button>'
+  );
+}
+function _pdfShort(text, n) {
+  const t = String(text || '');
+  return t.length > n ? t.slice(0, n - 1).trimEnd() + '…' : t;
+}
+function _pdfSaveKind() {
+  const q = window._pdfQueue;
+  if (q && q.results && q.results.length && window._pdfQueueRows) return 'batch';
+  const bills = window._pdfMultiBills || [];
+  if (!bills.length) return null;
+  if (_isMultiAcctFile()) return 'multiacct';
+  return bills.length > 1 ? 'multi' : 'single';
+}
+// Batch counts: the ONE place that counts the rows of the batch table.
+function _pdfQueueStats() {
+  const rows = window._pdfQueueRows || [];
+  return {
+    okCount: rows.filter((r) => r.bill && !_getQueueDupInfo(r)).length,
+    dupCount: rows.filter((r) => r.bill && _getQueueDupInfo(r)).length,
+    failCount: rows.filter((r) => !r.bill).length,
+    totalBills: rows.filter((r) => r.bill).length,
+    savedCount: rows.filter((r) => r._saved).length,
+    saveable: rows.filter((r) => r.bill && !r._saved).length,
+  };
+}
+function _pdfMenuRow(label, onclick, desc, disabled) {
+  return (
+    '<div class="pdf-menu-row"><button class="pdf-pop-btn"' +
+    (disabled ? ' disabled' : '') +
+    ' onclick="_pdfClosePop();' +
+    onclick +
+    '">' +
+    _escHtml(label) +
+    '</button><span class="pdf-menu-desc">' +
+    _escHtml(desc || '') +
+    '</span></div>'
+  );
+}
+// The Save control: { html (in the top row), menuHtml (the other ways to save, in the More list, or "") }.
+function _pdfSaveControl(kind) {
+  const bills = window._pdfMultiBills || [];
+  if (kind === 'single') {
+    return {
+      html: '<button class="pdf-top-btn primary" data-fb="energy.pdf.save-btn" title="Save this bill" onclick="_pdfClosePop();savePDFData()">Save</button>',
+      menuHtml: '',
+    };
+  }
+  if (kind === 'multiacct') {
+    return {
+      html: '<button class="pdf-top-btn primary" data-fb="energy.pdf.save-btn" data-pop="save" title="Open the list of buildings in this file and save them" onclick="_pdfToggleSavePanel()">Review and save</button>',
+      menuHtml: '',
+    };
+  }
+  if (kind === 'batch') {
+    const st = _pdfQueueStats();
+    const counts =
+      '<div class="pdf-pop-title">' +
+      [
+        st.okCount + ' ready to save',
+        st.dupCount + ' already saved',
+        st.failCount + ' failed',
+        st.savedCount + ' saved now',
+      ]
+        .filter((t) => !/^0 /.test(t))
+        .join(' · ') +
+      '</div>';
+    const dupRows = st.dupCount
+      ? _pdfMenuRow(
+          'Overwrite all',
+          "resolveAllQueueDups('overwrite')",
+          'For bills already saved, replace everything on the saved copy, including blank fields.',
+        ) +
+        _pdfMenuRow(
+          'Merge all',
+          "resolveAllQueueDups('merge')",
+          'For bills already saved, fill only the empty fields. Saved values stay. $0.00 counts as a value.',
+        ) +
+        _pdfMenuRow('Skip all', "resolveAllQueueDups('skip')", 'Do not save the bills that are already saved.')
+      : '';
+    return {
+      html:
+        '<button class="pdf-top-btn primary" data-fb="energy.pdf.save-btn"' +
+        (st.saveable === 0 ? ' disabled' : '') +
+        ' title="Save every ticked bill in the table below" onclick="_pdfClosePop();saveQueuedBills()">Save all (' +
+        st.saveable +
+        ')</button>',
+      menuHtml: counts + dupRows,
+    };
+  }
+  // 'multi': many billing periods of one building
+  const commodities = {};
+  bills.forEach((b) => {
+    const c = b.Commodity || 'Other';
+    commodities[c] = (commodities[c] || 0) + 1;
+  });
+  const commKeys = Object.keys(commodities);
+  let menu =
+    _pdfMenuRow(
+      'Overwrite all',
+      "_dupBulkAction('overwrite')",
+      'Save all. A bill already saved gets the new values. A blank new value keeps the saved value.',
+    ) +
+    _pdfMenuRow(
+      'Merge all',
+      "_dupBulkAction('merge')",
+      'Save all. A bill already saved only gets values for its empty fields.',
+    ) +
+    _pdfMenuRow(
+      'Attach PDF only',
+      "_dupBulkAction('attach-pdf-only')",
+      'Add this PDF to bills that are already saved. No other value changes. No new bill is made.',
+    );
+  if (commKeys.length > 1) {
+    commKeys.forEach((c) => {
+      menu += _pdfMenuRow(
+        'Save ' + c + ' only (' + commodities[c] + ')',
+        "savePDFAllBills('" + c.replace(/'/g, "\\'") + "')",
+        '',
+      );
+    });
+  }
+  if (_autoAssignTarget && _autoAssignTarget.meter) {
+    menu += _pdfMenuRow(
+      'Save all to the matched meter',
+      'confirmAutoAssign()',
+      _pdfMeterPathText(_autoAssignTarget) + '.',
+    );
+  }
+  // A held bill is not in Save all. Its period is named here; one click confirms it and saves.
+  const held = bills.filter((b) => b._gateTripped && !b._gateOverrideConfirmed);
+  if (held.length) {
+    menu +=
+      _pdfMenuRow(
+        'Save including held bills',
+        "_saveHeldBills('bar')",
+        held.length +
+          (held.length === 1 ? ' bill is' : ' bills are') +
+          ' held out of Save all until checked: ' +
+          held.map((b) => _billPeriodLabel(b)).join(', ') +
+          '.',
+      );
+  }
+  return {
+    html:
+      '<button class="pdf-top-btn primary" data-fb="energy.pdf.save-btn" title="Save every billing period in this file" onclick="_pdfClosePop();savePDFAllBills()">Save all ' +
+      bills.length +
+      ' periods</button>',
+    menuHtml: '<div class="pdf-pop-title">Other ways to save</div>' + menu,
+  };
+}
+function _pdfMeterPathText(m) {
+  const meter = m.meter ? (m.meter.commodity || 'Meter') + (m.meter.account ? ' (' + m.meter.account + ')' : '') : '';
+  return [m.proj && m.proj.name, m.bldg && m.bldg.name, meter].filter(Boolean).join(' › ');
+}
+// Building, utility type and period selectors. A file with one choice shows plain text, not a menu.
+function _pdfSelectorsHtml(nav) {
+  const bills = nav.bills;
+  const cur = bills[nav.idx];
+  const opt = (v, label, selected) =>
+    '<option value="' + _escHtml(String(v)) + '"' + (selected ? ' selected' : '') + '>' + _escHtml(label) + '</option>';
+  const toReview = (n) => (n ? ' (' + n + ' to review)' : '');
+  let h = '';
+  if (nav.multiAcct) {
+    h +=
+      '<select class="fs" aria-label="Building" title="Building" onchange="_pdfPickBuilding(this.value)">' +
+      nav.groups.map((g) => opt(g.acct, g.name + toReview(g.review), g.acct === window._pdfBuildingTab)).join('') +
+      '</select>';
+  } else {
+    h +=
+      '<span class="pdf-top-static" title="Building">' +
+      _escHtml(_pdfBuildingName(bills, (cur && cur.AccountNumber) || '_unknown')) +
+      '</span>';
+  }
+  if (nav.hasMultiComm) {
+    h +=
+      '<select class="fs" aria-label="Utility" title="Utility" onchange="selectCommTab(this.value)">' +
+      nav.selGroup.types.map((t) => opt(t.comm, t.comm + toReview(t.warn), t.comm === nav.activeCommTab)).join('') +
+      '</select>';
+  } else if (cur && cur.Commodity) {
+    h += '<span class="pdf-top-static" title="Utility">' + _escHtml(cur.Commodity) + '</span>';
+  }
+  const ps = nav.navPeriods;
+  const months = ps.map((p) => p.monthLbl);
+  const monthsUnique = new Set(months).size === months.length && months.every(Boolean);
+  const label = (p, tag) => {
+    const bad = _pdfBillIssues(bills[p.i], (nav.warnings[p.i] && nav.warnings[p.i].warnings) || []).any;
+    return (
+      (monthsUnique ? p.monthLbl : (p.monthLbl ? p.monthLbl + ' · ' : '') + p.lbl) + (tag && bad ? ' (to review)' : '')
+    );
+  };
+  if (ps.length > 1) {
+    h +=
+      '<select class="fs" aria-label="Billing period" title="Billing period" onchange="selectMultiBill(parseInt(this.value, 10))">' +
+      ps.map((p) => opt(p.i, label(p, true), p.i === nav.idx)).join('') +
+      '</select>';
+  } else if (ps.length === 1) {
+    h += '<span class="pdf-top-static" title="Billing period">' + _escHtml(label(ps[0], false)) + '</span>';
+  }
+  return h;
+}
+// The chip for bills of this file that match a bill already saved: one row per bill that differs (name, then the
+// field with both values), which opens to the compare table and the Overwrite / Merge / Skip actions;
+// one row for all that match the saved copy.
+function _pdfDupChip(nav) {
+  const bills = nav.bills;
+  const map = _pdfDupView(bills).map;
+  // Newest period first, the same order as the period list.
+  const rank = {};
+  nav.periods.forEach((p, k) => (rank[p.i] = k));
+  const idxs = Object.keys(map)
+    .map(Number)
+    .sort((a, b) => rank[a] - rank[b]);
+  if (!idxs.length) return null;
+  const differ = idxs.filter((i) => (map[i].diffFields || []).length > 0);
+  const same = idxs.filter((i) => (map[i].diffFields || []).length === 0);
+  const nameOf = (i) => {
+    const b = bills[i];
+    return (
+      _pdfBuildingName(bills, b.AccountNumber || '_unknown') +
+      ' · ' +
+      (b.Commodity || 'Bill') +
+      ' · ' +
+      (nav.monthOf[i] || _billPeriodLabel(b))
+    );
+  };
+  const actLabels = {
+    overwrite: 'Overwrite',
+    merge: 'Merge',
+    skip: 'Skip',
+    'attach-pdf-only': 'Attach PDF only',
+    'field-select': 'Chosen fields',
+  };
+  let html =
+    '<div class="pdf-pop-title">Bills in this file that match a bill already saved. Open a line to compare and choose.</div>';
+  differ.forEach((i) => {
+    const d = map[i];
+    const diffs = d.diffFields;
+    const where = d.locationType === 'saved' ? 'Saved Bills' : d.location || 'meter bill data';
+    const rowsHtml = diffs
+      .map((x) => {
+        const lbl = (typeof _DUP_FIELD_LABELS !== 'undefined' && _DUP_FIELD_LABELS[x.key]) || x.key;
+        return (
+          '<tr><td>' +
+          _escHtml(lbl) +
+          '</td><td>' +
+          _escHtml(x.existVal === '' || x.existVal == null ? '(empty)' : x.existVal) +
+          '</td><td>' +
+          _escHtml(x.newVal == null ? '' : x.newVal) +
+          '</td></tr>'
+        );
+      })
+      .join('');
+    const body =
+      'Saved in: ' +
+      _escHtml(where) +
+      '<table class="pdf-cmp"><thead><tr><th>Field</th><th>Saved</th><th>New</th></tr></thead><tbody>' +
+      rowsHtml +
+      '</tbody></table>';
+    const chosen = !d.action ? '' : d.action === 'processed' ? ' (done)' : ' (' + (actLabels[d.action] || d.action) + ' chosen)';
+    const actions =
+      _pdfPopBtn('Overwrite', "_dupBannerAction(" + i + ",'overwrite')", false, 'Replace the saved values with the new values. A blank new value keeps the saved value.') +
+      _pdfPopBtn('Merge', "_dupBannerAction(" + i + ",'merge')", false, 'Fill only the empty saved fields. Saved values stay.') +
+      _pdfPopBtn('Attach PDF only', "_dupBannerAction(" + i + ",'attach')", false, 'Add the PDF to the saved bill. No value changes.') +
+      _pdfPopBtn('Skip', "_dupBannerAction(" + i + ",'skip')", false, 'Do not save this bill.');
+    html += _pdfPopItem(nameOf(i) + ': ' + _dupDiffSummaryText(diffs) + chosen, body, actions);
+  });
+  if (same.length) {
+    html += _pdfPopItem(
+      same.length + (same.length === 1 ? ' matches' : ' match') + ' the saved copy: skipped',
+      same.map((i) => _escHtml(nameOf(i))).join('<br>'),
+      '',
+    );
+  }
+  return {
+    count: idxs.length,
+    differ: differ.length,
+    html,
+  };
+}
+function _pdfRenderTopBar(opts) {
+  const bar = document.getElementById('pdfTopBar');
+  if (!bar) return;
+  const bills = window._pdfMultiBills || [];
+  const idx = window._pdfMultiIdx || 0;
+  const kind = _pdfSaveKind();
+  const chips = window._pdfBillChips || null;
+  const noBill = !!(opts && opts.noBill);
+  const live = !noBill && !!(bills.length && bills[idx]);
+  // Chips belong to the bill on screen. A saved record opened from Saved Bills is not in the file's list.
+  const chipsOk = !!chips && (chips.bill === bills[idx] || !bills.includes(chips.bill)) && !noBill;
+  if (!live && !chipsOk && kind !== 'batch') {
+    // Nothing to show: hide the row and empty every box in it (a cleared page keeps no old text).
+    bar.style.display = 'none';
+    ['pdfTopSel', 'pdfTopChips', 'pdfTopSave', 'pdfMoreSave', 'pdfTopPop'].forEach((id) => {
+      const box = document.getElementById(id);
+      if (box) box.innerHTML = '';
+    });
+    _pdfMoreHasSave = false;
+    _pdfPopHtml = {};
+    _pdfTopOpen = null;
+    _pdfApplyPop();
+    return;
+  }
+  bar.style.display = '';
+  const popHtml = {};
+  const nav = live ? _pdfNavModel(bills) : null;
+  const chipHtml = [];
+  const chip = (cls, name, text) =>
+    chipHtml.push(
+      '<button class="pdf-chip ' + cls + '" data-pop="' + name + '" onclick="_pdfTogglePop(\'' + name + '\')">' + _escHtml(text) + '</button>',
+    );
+  if (chipsOk && chips.review.length) {
+    chip('red', 'review', chips.review.length + ' to review');
+    popHtml.review =
+      '<div class="pdf-pop-title">Check these on this bill. Open a line for details.</div>' +
+      chips.review.join('') +
+      (chips.manualIdx != null
+        ? '<div class="pdf-pop-actions">' +
+          _pdfPopBtn('Manual Assign', 'openManualAssignModal(' + chips.manualIdx + ')', false, 'Choose by hand which values belong to this bill') +
+          '</div>'
+        : '');
+  }
+  const dup = nav ? _pdfDupChip(nav) : null;
+  if (dup) {
+    chip('amber', 'dup', dup.count + ' already saved' + (dup.differ ? ' · ' + dup.differ + ' differ' : ''));
+    popHtml.dup = dup.html;
+  }
+  if (chipsOk && chips.warn.length) {
+    chip('amber', 'warn', chips.warn.length + (chips.warn.length === 1 ? ' warning' : ' warnings'));
+    popHtml.warn =
+      '<div class="pdf-pop-title">The reader noticed these. They do not stop you from saving.</div>' + chips.warn.join('');
+  }
+  if (chipsOk && chips.fixed.length) {
+    chip('green', 'fixed', chips.fixed.length + ' fixed');
+    popHtml.fixed =
+      '<div class="pdf-pop-title">The reader changed these values. Open a line to see how, or to revert it.</div>' +
+      chips.fixed.join('');
+  }
+  const save = kind && !noBill ? _pdfSaveControl(kind) : { html: '', menuHtml: '' };
+  _pdfMoreHasSave = !!save.menuHtml;
+  const moreSave = document.getElementById('pdfMoreSave');
+  if (moreSave) moreSave.innerHTML = save.menuHtml;
+  document.getElementById('pdfTopSel').innerHTML = nav ? _pdfSelectorsHtml(nav) : '';
+  document.getElementById('pdfTopChips').innerHTML = chipHtml.join('');
+  document.getElementById('pdfTopSave').innerHTML = save.html;
+  _pdfSyncMoreBtn();
+  _pdfPopHtml = popHtml;
+  _pdfApplyPop();
+}
+function _pdfApplyPop() {
+  const top = document.getElementById('pdfTopPop');
+  const more = document.getElementById('pdfMorePop');
+  const savePop = document.getElementById('pdfSavePop');
+  if (!top || !more || !savePop) return;
+  if (_pdfTopOpen === 'save') {
+    const mb = document.getElementById('pdfMultiBldgPanel');
+    if (!mb || mb.style.display === 'none') _pdfTopOpen = null;
+  }
+  if (_pdfTopOpen && _pdfTopOpen !== 'more' && _pdfTopOpen !== 'save' && !_pdfPopHtml[_pdfTopOpen]) _pdfTopOpen = null;
+  const isList = !!(_pdfTopOpen && _pdfPopHtml[_pdfTopOpen]);
+  top.style.display = isList ? '' : 'none';
+  if (isList) top.innerHTML = _pdfPopHtml[_pdfTopOpen];
+  more.style.display = _pdfTopOpen === 'more' ? '' : 'none';
+  savePop.style.display = _pdfTopOpen === 'save' ? '' : 'none';
+  document.querySelectorAll('#pdfTopBar [data-pop]').forEach((el) => {
+    el.classList.toggle('open', el.getAttribute('data-pop') === _pdfTopOpen);
+  });
+  const moreBtn = document.getElementById('pdfMoreBtn');
+  if (moreBtn) moreBtn.classList.toggle('open', _pdfTopOpen === 'more');
+}
+function _pdfTogglePop(name) {
+  _pdfTopOpen = _pdfTopOpen === name ? null : name;
+  _pdfApplyPop();
+}
+function _pdfClosePop() {
+  _pdfTopOpen = null;
+  _pdfApplyPop();
+}
+// Multi-building file: Save opens the review table (it keeps its own Save all, Overwrite, Merge and Skip buttons).
+function _pdfToggleSavePanel() {
+  if (_pdfTopOpen === 'save') {
+    _pdfClosePop();
+    return;
+  }
+  const mb = document.getElementById('pdfMultiBldgPanel');
+  if (!mb || mb.style.display === 'none' || !mb.innerHTML) showMultiBuildingReviewPanel();
+  _pdfTopOpen = 'save';
+  _pdfApplyPop();
+}
+// Building choice: the first period of the current utility type in that building, else its first period.
+function _pdfPickBuilding(acct) {
+  const bills = window._pdfMultiBills;
+  if (!bills) return;
+  const nav = _pdfNavModel(bills);
+  const inAcct = (p) => (bills[p.i].AccountNumber || '_unknown') === acct;
+  const mine = nav.filteredPeriods.filter(inAcct);
+  const all = nav.periods.filter(inAcct);
+  const firstIdx = mine.length ? mine[0].i : all.length ? all[0].i : 0;
+  window._pdfCommTab = bills[firstIdx]?.Commodity || nav.uniqueComms[0] || 'Electric';
+  window._pdfBuildingTab = acct;
+  _pdfTopOpen = null;
+  selectMultiBill(firstIdx);
+}
+function _pdfGoToField(key) {
+  _pdfClosePop();
+  const inp = document.querySelector('.ef-input[data-key="' + key + '"]');
+  if (!inp) return;
+  const item = inp.closest('.ef-item');
+  if (item) item.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  inp.focus();
+}
+// "Saves to" line inside the values: where the bill on screen will be saved, with a Change button.
+function _pdfSavesToText() {
+  const pick = (id) => {
+    const e = document.getElementById(id);
+    return e && e.value && e.selectedIndex >= 0 ? e.options[e.selectedIndex].text : '';
+  };
+  const proj = pick('pdfProjSel');
+  const bld = pick('pdfBldgSel');
+  const mtr = pick('pdfMeterSel');
+  if (bld || mtr) return [proj, bld, mtr].filter(Boolean).join(' › ');
+  const bills = window._pdfMultiBills || [];
+  const cur = bills[window._pdfMultiIdx || 0];
+  const m = _autoAssignTarget && _autoAssignTarget.meter ? _autoAssignTarget : cur ? findMeterMatch(cur) : null;
+  if (m && m.meter && m.matchType !== 'ambiguous') {
+    return (
+      _pdfMeterPathText(m) +
+      (m.matchType === 'address' ? ' (matched by address, not confirmed)' : ' (matched by account number)')
+    );
+  }
+  if (proj) return proj + ' (the building and meter are found from the bill)';
+  return 'Saved Bills only. No building matched this bill.';
+}
+function _pdfRefreshSavesTo() {
+  const el = document.getElementById('pdfSavesToText');
+  const row = document.getElementById('pdfSaveRow');
+  if (!el || !row) return;
+  const multi = _pdfSaveKind() === 'multiacct';
+  el.textContent = multi
+    ? 'Each bill goes to the building it belongs to. Choose Review and save to check them.'
+    : _pdfSavesToText();
+  const ch = document.getElementById('pdfSavesToChange');
+  if (ch) ch.style.display = multi ? 'none' : '';
+  const pickRow = document.getElementById('pdfSavesToPick');
+  if (pickRow && multi) pickRow.style.display = 'none';
+}
+function _pdfToggleSavesTo() {
+  const pickRow = document.getElementById('pdfSavesToPick');
+  const btn = document.getElementById('pdfSavesToChange');
+  if (!pickRow) return;
+  const open = pickRow.style.display === 'none';
+  pickRow.style.display = open ? 'flex' : 'none';
+  if (btn) btn.textContent = open ? 'Done' : 'Change';
+  if (open) refreshProjDropdowns();
+}
+// Close the open list on a click outside the top row, or on Escape.
+function _pdfInitTopBar() {
+  if (!document.getElementById('pdfTopBar')) return;
+  document.addEventListener('click', (ev) => {
+    if (_pdfTopOpen && !ev.target.closest('#pdfTopBar')) _pdfClosePop();
+  });
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape' && _pdfTopOpen) _pdfClosePop();
+  });
+}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _pdfInitTopBar);
+else _pdfInitTopBar();
 function selectCommTab(tab) {
   window._pdfCommTab = tab;
   const bills = window._pdfMultiBills;
@@ -18144,6 +18266,8 @@ function _confirmGatedBillsForSave() {
     }
   });
   renderMultiBillUI(bills);
+  const _ci = window._pdfMultiIdx || 0;
+  if (bills[_ci]) renderPDFFields(bills[_ci], (window._pdfBillWarnings || [])[_ci]?.warnings || []);
   // FIX (fix/bill-review-gate-lifecycle, item 817dd434): the multi-building/
   // multi-account panel (_mbRowHtml/_mbUpdateSaveAllBtn) is a SEPARATE table
   // from the single-account pill view re-rendered above — refresh its rows and
@@ -19404,11 +19528,91 @@ function renderPDFFields(parsed, warnings) {
     if (!warnMap[w.field]) warnMap[w.field] = [];
     warnMap[w.field].push(w);
   }
-  // Warning color map
-  const wColor = { error: '#ef4444', warn: '#f59e0b', info: '#60a5fa' };
-  const wBg = { error: 'rgba(239,68,68,.08)', warn: 'rgba(245,158,11,.08)', info: 'rgba(96,165,250,.06)' };
-  const wBorder = { error: 'rgba(239,68,68,.3)', warn: 'rgba(245,158,11,.3)', info: 'rgba(96,165,250,.2)' };
-  const wIcon = { error: '⛔', warn: '⚠️', info: 'ℹ️' };
+  // Warning color map (info notes only: errors and warnings are drawn as an outline, see _flagMap below)
+  const wColor = { info: 'var(--accent)' };
+
+  // Problems shown on the value itself: an outline in the severity color, the reason under the value, and a fix
+  // button when a fix value exists (a held proposal). The same facts fill the status lists in the top row.
+  const _gateOverridden = !!parsed['_gateOverrideConfirmed'];
+  const _pendingCorrection = parsed['_correction_pending_TotalCurrentCharges'];
+  const _gateList =
+    _gateOverridden || !Array.isArray(parsed['_gateReasons'])
+      ? []
+      : parsed['_gateReasons'].map((text, gi) => ({ text, fields: (parsed['_gateReasonFields'] || [])[gi] || null }));
+  // A fix value exists only for a value the reader computed but did not apply (a held proposal).
+  const _fixValueOf = (f) => {
+    const pr = parsed['_proposed_' + f];
+    let v = null;
+    if (pr && typeof pr === 'object' && pr.value != null && pr.value !== '') v = pr.value;
+    else if (f === 'TotalCurrentCharges' && _pendingCorrection && _pendingCorrection.proposedCorrection != null)
+      v = _pendingCorrection.proposedCorrection;
+    const s = v == null ? '' : String(v).replace(/[^0-9.\-]/g, '');
+    return s === '' ? null : s;
+  };
+  const _flagMap = {};
+  const _flagField = (key, level, reason) => {
+    const f = _flagMap[key] || (_flagMap[key] = { level: 'warn', reasons: [], fix: _fixValueOf(key) });
+    if (level === 'error') f.level = 'error';
+    if (reason && !f.reasons.includes(reason)) f.reasons.push(reason);
+  };
+  warnings.forEach((w) => {
+    if ((w.level === 'error' || w.level === 'warn') && w.field && w.field !== '_all') _flagField(w.field, w.level, w.message);
+  });
+  _gateList.forEach((g) => (g.fields || []).forEach((f) => _flagField(f, 'error', g.text)));
+  if (_pendingCorrection && !_flagMap['TotalCurrentCharges'])
+    _flagField(
+      'TotalCurrentCharges',
+      'error',
+      'Held: the charges add to $' + _pendingCorrection.proposedCorrection + '. The total was not changed.',
+    );
+  const _fmtFixVal = (field, val) => {
+    const isChg = CHARGE_FIELDS.has(field);
+    // A derived value has no read original (shown as "not read"); a date correction is shown as printed.
+    return val === null || val === undefined || val === ''
+      ? 'not read'
+      : /^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(String(val))
+        ? String(val)
+        : (isChg ? '$' : '') + parseFloat(val).toFixed(isChg ? 2 : 4);
+  };
+  const _fixLabel = (f, fx) => (CHARGE_FIELDS.has(f) ? '$' : '') + fx;
+  // What the reader changed on one value: from, to, how, and the undo call (none when the reader keeps no original).
+  const _fixInfo = (field, type) => {
+    if (type === 'rate') {
+      const ac = parsed['_auto_corrected_' + field];
+      // a record without a numeric corrected value is not a correction (old saved rate records): never shown
+      if (!ac || !isFinite(parseFloat(ac.corrected))) return null;
+      // A decimal-shift correction needs no long reason: the value change speaks for itself.
+      const _digits = (v) => String(v).replace(/[^\d]/g, '');
+      const isShift = _digits(ac.original) === _digits(ac.corrected);
+      return {
+        from: _fmtFixVal(field, ac.original),
+        to: _fmtFixVal(field, ac.corrected),
+        method: isShift ? 'The decimal point was moved.' : ac.reason || '',
+        revert: "revertAutoCorrect('" + field + "')",
+      };
+    }
+    if (type === 'consensus') {
+      const oc = parsed['_ocr_consensus_' + field];
+      if (!oc) return null;
+      return {
+        from: _fmtFixVal(field, oc.original),
+        to: _fmtFixVal(field, oc.consensus),
+        method: 'A second read of the page agreed on the new value, and the charges then add up to the total.',
+        revert: "revertOCRConsensus('" + field + "')",
+      };
+    }
+    const b2 = parsed['_auto_recovered_B2_' + field];
+    if (!b2) return null;
+    return {
+      from: _fmtFixVal(field, b2.passB_value),
+      to: _fmtFixVal(field, b2.corrected_to),
+      method:
+        'Recovered from the difference between the bill total and the other charges' +
+        (b2.original_ocr ? ' (first read: ' + b2.original_ocr + ')' : '') +
+        '.',
+      revert: null,
+    };
+  };
 
   // Helper: build a single field cell HTML
   // Escape double quotes and newlines so a message can live inside a title="..." attribute.
@@ -19418,102 +19622,45 @@ function renderPDFFields(parsed, warnings) {
     const fw = warnMap[k] || [];
     const magFlag = parsed['_magnitude_flag_' + k];
     const likelyMissing = parsed['_likely_missing_' + k];
-    const autoCorrect = parsed['_auto_corrected_' + k];
-    const ocrConsensus = parsed['_ocr_consensus_' + k];
+    const fixInfo = _fixInfo(k, 'rate') || _fixInfo(k, 'consensus') || _fixInfo(k, 'b2');
+    const flag = _flagMap[k] || null;
     const isEmpty = v === null || v === undefined || v === '';
     const isDupDiff = _dupDiffSet.has(k);
     const dupDiff = _dupDiffMap[k];
     let borderStyle = '';
     if (isDupDiff)
-      borderStyle = 'border-left:3px solid #f59e0b;padding-left:8px;background:rgba(245,158,11,.08);border-radius:4px';
-    else if (autoCorrect || ocrConsensus) borderStyle = 'border-left:3px solid #22c55e;padding-left:8px';
+      borderStyle = 'border-left:3px solid var(--amber);padding-left:8px;background:var(--amber-dim);border-radius:4px';
+    else if (flag) borderStyle = '';
+    else if (magFlag) borderStyle = 'border-left:3px solid var(--orange);padding-left:8px';
     else if (fw.length) borderStyle = 'border-left:3px solid ' + wColor[fw[0].level] + ';padding-left:8px';
-    else if (magFlag) borderStyle = 'border-left:3px solid #fb923c;padding-left:8px';
     else if (isEmpty) borderStyle = 'border-left:3px solid var(--border2);padding-left:8px;opacity:.7';
-    // Build a compact icon strip — each icon carries the full explanation in its title
-    // attribute (hover to see). This keeps cell heights uniform regardless of how much
-    // warning/correction text there is.
-    const _acIsCharge = CHARGE_FIELDS.has(k);
-    const _acPfx = _acIsCharge ? '$' : '';
-    const _acDp = _acIsCharge ? 2 : 4;
-    // Unified inline-icon + hover-popup treatment for EVERY cell signal:
-    //   auto-correct, OCR consensus, field warnings (error/warn/info), magnitude
-    //   flag, and likely-missing. One icon shows inline next to the value; the
-    //   popup aggregates every message and opens on hover of the whole cell.
-    // Priority for inline icon color / popup level: ac > error > warn > info.
+    // Notes that are not problems (info notes, a size flag, a likely-missing hint) show in a hover box.
+    // Errors and warnings are drawn on the value itself (outline + reason); a fix is a small "fixed" mark.
     const _pop = [];
-    const _reverts = [];
-    let _popLevel = null; // 'ac' | 'error' | 'warn' | 'info'
-    const _bumpLevel = (lv) => {
-      const order = { ac: 1, info: 2, warn: 3, error: 4 };
-      if (!_popLevel || (order[lv] || 0) > (order[_popLevel] || 0)) _popLevel = lv;
-    };
-    if (autoCorrect) {
-      // A derived value has no read original (shown as "not read"); a date correction is shown as printed.
-      const _acFmt = (val) =>
-        val === null || val === undefined || val === ''
-          ? 'not read'
-          : /^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(String(val))
-            ? String(val)
-            : _acPfx + parseFloat(val).toFixed(_acDp);
-      const origFmt = _acFmt(autoCorrect.original);
-      const corrFmt = _acFmt(autoCorrect.corrected);
-      // Detect decimal-shift corrections: original and corrected share the
-      // same digit sequence once $/commas/decimals are stripped (e.g.
-      // "24708945" → "2470.8945", "5787840" → "578.7840"). Those don't
-      // need a long descriptive reason — the value change speaks for itself.
-      const _digits = (v) => String(v).replace(/[^\d]/g, '');
-      const isDecimalShift = _digits(autoCorrect.original) === _digits(autoCorrect.corrected);
-      const reasonSuffix = isDecimalShift ? '' : '. ' + _titleEscape(autoCorrect.reason || '');
-      _pop.push(
-        `<div style="margin-bottom:4px">&#10003; Corrected from <b>${origFmt}</b> &rarr; <b>${corrFmt}</b>${reasonSuffix}</div>`,
-      );
-      _reverts.push(`<button class="ef-ac-revert" onclick="revertAutoCorrect('${k}')">&#8634; Revert</button>`);
-      _bumpLevel('ac');
-    }
-    if (ocrConsensus) {
-      const origFmt = '$' + parseFloat(ocrConsensus.original).toFixed(2);
-      const corrFmt = '$' + parseFloat(ocrConsensus.consensus).toFixed(2);
-      _pop.push(
-        `<div style="margin-bottom:4px">&#10003; Corrected from <b>${origFmt}</b> &rarr; <b>${corrFmt}</b>. Alternate OCR pass resolved sum mismatch</div>`,
-      );
-      _reverts.push(`<button class="ef-ac-revert" onclick="revertOCRConsensus('${k}')">&#8634; Revert</button>`);
-      _bumpLevel('ac');
-    }
+    let _popLevel = null; // 'warn' | 'info'
     for (const w of fw) {
-      _pop.push(`<div style="margin-bottom:4px">${wIcon[w.level]} ${_titleEscape(w.message)}</div>`);
-      _bumpLevel(w.level);
+      if (w.level !== 'info') continue;
+      _pop.push(`<div style="margin-bottom:4px">${_titleEscape(w.message)}</div>`);
+      _popLevel = _popLevel || 'info';
     }
     if (magFlag) {
       const msg =
-        'Possible OCR error: value is ' +
+        'Possible reading error: this value is ' +
         magFlag.ratio.toFixed(1) +
-        'x the historical average (' +
+        ' times the past average (' +
         magFlag.mean.toLocaleString(undefined, { maximumFractionDigits: 2 }) +
-        '). Verify against source bill.';
-      _pop.push(`<div style="margin-bottom:4px">&#9888; ${_titleEscape(msg)}</div>`);
-      _bumpLevel('warn');
+        '). Check it against the bill.';
+      _pop.push(`<div style="margin-bottom:4px">${_titleEscape(msg)}</div>`);
+      _popLevel = 'warn';
     }
     if (likelyMissing && isEmpty) {
-      const msg = 'Historical data shows this field is present on 80%+ of prior bills — likely an OCR miss';
-      _pop.push(`<div style="margin-bottom:4px">&#128269; ${_titleEscape(msg)}</div>`);
-      _bumpLevel('info');
+      const msg = 'Past bills show this value on 80% or more of bills, so the reader probably missed it.';
+      _pop.push(`<div style="margin-bottom:4px">${_titleEscape(msg)}</div>`);
+      _popLevel = _popLevel || 'info';
     }
-    // Inline icon uses a single character + level color. Auto-correct keeps the
-    // green checkmark even if other warnings are present (user wants the check next
-    // to auto-corrected values).
-    const _levelColor = { ac: '#22c55e', error: '#ef4444', warn: '#f59e0b', info: '#60a5fa' };
-    const _levelIcon = { ac: '&#10003;', error: '⛔', warn: '⚠️', info: 'ℹ️' };
-    const _inlineLevel = autoCorrect || ocrConsensus ? 'ac' : _popLevel;
-    const acInlineIcon = _inlineLevel
-      ? `<span class="ef-ico" style="color:${_levelColor[_inlineLevel]}">${_levelIcon[_inlineLevel]}</span>`
-      : '';
-    const _popClass = _popLevel && _popLevel !== 'ac' && !(autoCorrect || ocrConsensus) ? ` level-${_popLevel}` : '';
     const acTooltipHtml = _pop.length
-      ? `<div class="ef-ac-tooltip${_popClass}">${_pop.join('')}${_reverts.join('')}</div>`
+      ? `<div class="ef-ac-tooltip level-${_popLevel}">${_pop.join('')}</div>`
       : '';
-    // Right-side icon strip is retired — all icons show inline next to the value.
-    const iconsHtml = '';
     let displayVal = Array.isArray(v) ? v.join(', ') : String(v ?? '');
     if (ID_FIELDS.has(k)) {
       displayVal = String(displayVal);
@@ -19533,26 +19680,33 @@ function renderPDFFields(parsed, warnings) {
         displayVal = (num < 0 ? '-' : '') + (isCharge ? '$' : '') + formatted;
       }
     }
-    const keyStyle = isEmpty && !fw.length ? 'color:var(--text3)' : '';
+    const keyStyle = isEmpty && !flag ? 'color:var(--text3)' : '';
     const inputStyle = isEmpty ? 'border-color:var(--border2);color:var(--text3)' : '';
     const dupKeyStyle = isDupDiff ? 'color:var(--amber)' : keyStyle;
-    const acInputColor = autoCorrect || ocrConsensus ? ';color:#eab308' : '';
-    const dupInputStyle = isDupDiff ? inputStyle + ';color:var(--amber)' : inputStyle + acInputColor;
+    const fixInputColor = fixInfo ? ';color:var(--green)' : '';
+    const dupInputStyle = isDupDiff ? inputStyle + ';color:var(--amber)' : inputStyle + fixInputColor;
     const dupIcon = isDupDiff
-      ? `<span title="Existing value: ${(dupDiff.existVal || '(empty)').replace(/"/g, '&quot;')}" style="cursor:help;color:var(--amber);font-size:9px;font-weight:700;margin-left:4px;background:rgba(245,158,11,.18);padding:1px 4px;border-radius:3px;letter-spacing:.3px">&#9432; was: ${((dupDiff.existVal || '(empty)').length > 18 ? (dupDiff.existVal || '').slice(0, 15) + '...' : dupDiff.existVal || '(empty)').replace(/</g, '&lt;')}</span>`
+      ? `<span title="Saved value: ${(dupDiff.existVal || '(empty)').replace(/"/g, '&quot;')}" style="cursor:help;color:var(--amber);font-size:9px;font-weight:700;margin-left:4px;background:var(--amber-dim);padding:1px 4px;border-radius:3px;letter-spacing:.3px">saved: ${((dupDiff.existVal || '(empty)').length > 18 ? (dupDiff.existVal || '').slice(0, 15) + '...' : dupDiff.existVal || '(empty)').replace(/</g, '&lt;')}</span>`
       : '';
-    // If there's any signal to show (correction, warning, mag flag, likely missing),
-    // size the input to its value so the icon sits right next to the value instead
-    // of at the far right of the cell.
-    const _hasPopup = _pop.length > 0;
-    const _fitSize = _hasPopup ? Math.max(String(displayVal).length + 1, 5) : null;
+    // A fixed value shrinks its box to the text so the "fixed" mark sits right next to the value.
+    const _fitSize = fixInfo ? Math.max(String(displayVal).length + 1, 5) : null;
     const sizeAttr = _fitSize ? ` size="${_fitSize}"` : '';
     const inputHtml = `<input class="ef-input" value="${displayVal}" data-key="${k}" placeholder="${isEmpty ? '—' : ''}" style="${dupInputStyle}"${sizeAttr}>`;
     const keyHtml = `<div class="ef-key" style="${dupKeyStyle}">${LABELS[k] || k}${dupIcon}</div>`;
-    // Every cell with a popup uses the fit-layout so the inline icon sits immediately
-    // next to the value. Cells with no signals keep the full-width input.
-    const bodyHtml = _hasPopup ? `<div class="ef-row-fit">${inputHtml}${acInlineIcon}</div>` : inputHtml;
-    return `<div class="ef-item" style="${borderStyle}">${keyHtml}${bodyHtml}${acTooltipHtml}</div>`;
+    const fixedMark = fixInfo
+      ? `<span class="ef-fixed-mark" title="${_titleEscape('Fixed by the reader: read ' + fixInfo.from + ', now ' + fixInfo.to + '. ' + fixInfo.method)}">fixed</span>`
+      : '';
+    const bodyHtml = fixInfo ? `<div class="ef-row-fit">${inputHtml}${fixedMark}</div>` : inputHtml;
+    // The reason under the value, and a fix button when a held proposal exists.
+    const whyHtml = flag
+      ? `<div class="ef-why">${_escHtml(flag.reasons.slice(0, 2).join(' · '))}${
+          flag.fix
+            ? `<button class="ef-fix-btn" onclick="_pdfApplyFieldEdit('${k}','${flag.fix}')">Use ${_fixLabel(k, flag.fix)}</button>`
+            : ''
+        }</div>`
+      : '';
+    const flagCls = flag ? ' flag-' + flag.level : '';
+    return `<div class="ef-item${flagCls}" style="${borderStyle}">${keyHtml}${bodyHtml}${whyHtml}${acTooltipHtml}</div>`;
   }
 
   // Build layout HTML with running total on charge rows
@@ -19568,7 +19722,7 @@ function renderPDFFields(parsed, warnings) {
   // Helper: build a charge cell with center-aligned value
   function buildChargeCell(k) {
     const html = buildCell(k);
-    return html.replace('class="ef-item"', 'class="ef-item center"');
+    return html.replace('class="ef-item', 'class="ef-item center');
   }
 
   // Format numbers for display
@@ -19658,11 +19812,11 @@ function renderPDFFields(parsed, warnings) {
       const _partNote = (idx) => {
         const fixed = _rowCorrected.find((c) => c.idx === idx);
         if (fixed) {
-          return `<div style="grid-column:1/-1;font-size:10px;font-weight:700;color:var(--green);padding:2px 4px 4px;line-height:1.4">&#10003; Corrected: computed from qty &times; rate, confirmed by bill total (was $${fixed.original.toFixed(2)})</div>`;
+          return `<div style="grid-column:1/-1;font-size:10px;font-weight:700;color:var(--green);padding:2px 4px 4px;line-height:1.4">Fixed: computed from quantity &times; rate, confirmed by the bill total (was $${fixed.original.toFixed(2)})</div>`;
         }
         const bad = _rowMismatches.find((m) => m.idx === idx);
         if (bad) {
-          return `<div style="grid-column:1/-1;font-size:10px;font-weight:700;color:#f59e0b;padding:2px 4px 4px;line-height:1.4">&#9888; Expected $${bad.computed.toFixed(2)} (qty &times; rate) vs extracted $${bad.ocrCharge.toFixed(2)} (off $${bad.diff.toFixed(2)}) — not auto-corrected, verify against the source PDF</div>`;
+          return `<div style="grid-column:1/-1;font-size:10px;font-weight:700;color:var(--amber);padding:2px 4px 4px;line-height:1.4">Check: expected $${bad.computed.toFixed(2)} (quantity &times; rate) but read $${bad.ocrCharge.toFixed(2)} (off $${bad.diff.toFixed(2)}). Not changed. Check it against the PDF.</div>`;
         }
         return '';
       };
@@ -19785,7 +19939,7 @@ function renderPDFFields(parsed, warnings) {
     if (!fields.length && row.type !== 'total') return '';
     if (row.type === 'wide') {
       // Issue b2f5ee0b: add 'wide' class so the cell spans both grid columns
-      return buildCell(fields[0]).replace('class="ef-item"', 'class="ef-item wide"');
+      return buildCell(fields[0]).replace('class="ef-item', 'class="ef-item wide');
     }
     if (row.type === 'pair') {
       if (fields.length === 1) return `<div class="ef-pair">${buildCell(fields[0])}</div>`;
@@ -19796,7 +19950,7 @@ function renderPDFFields(parsed, warnings) {
       const match = totalVal > 0 && Math.abs(runningTotal - totalVal) < 0.02;
       const mismatch = totalVal > 0 && !match;
       const cls = match ? 'match' : mismatch ? 'mismatch' : '';
-      const icon = match ? ' ✓' : mismatch ? ' ✗' : '';
+      const icon = '';
       const itemStyle = match
         ? 'border:1px solid rgba(34,197,94,.3);background:rgba(34,197,94,.06)'
         : mismatch
@@ -19808,7 +19962,7 @@ function renderPDFFields(parsed, warnings) {
         maximumFractionDigits: 2,
       });
       const diffLine = mismatch
-        ? `<div style="font-size:10px;color:${diff >= 0 ? '#f59e0b' : '#ef4444'};margin-top:2px">Diff: ${diff >= 0 ? '+' : '-'}$${diffFmt}</div>`
+        ? `<div style="font-size:10px;color:${diff >= 0 ? 'var(--amber)' : 'var(--red)'};margin-top:2px">Difference: ${diff >= 0 ? '+' : '-'}$${diffFmt}</div>`
         : '';
       // Compute total rates inline with Total Current Charges row
       let _kwhRateCell = '<div></div>',
@@ -19864,7 +20018,7 @@ function renderPDFFields(parsed, warnings) {
           _kwhRateCell = `<div class="ef-item"><div class="ef-key" style="color:var(--em);font-size:10px">Stormwater Charge</div><input class="ef-input" value="$${swCharge.toFixed(2)}" readonly style="color:var(--em);font-weight:600;text-align:center;background:transparent;border-color:transparent;font-size:11px"></div>`;
         }
       }
-      return `<div style="border-top:2px solid var(--border);margin-top:4px;padding-top:4px"><div class="ef-charge-row">${_kwhRateCell}${_kwRateCell}<div class="ef-item center" style="${itemStyle}"><div class="ef-key" style="color:${match ? '#22c55e' : mismatch ? '#ef4444' : 'var(--text2)'}">Total Current Charges</div><input class="ef-input" value="${(parsed.TotalCurrentCharges ?? '') !== '' ? '$' + totalVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''}" data-key="TotalCurrentCharges" style="font-weight:700;font-size:14px;text-align:center"></div><div class="ef-running ${cls}" style="font-weight:700;font-size:11px;flex-direction:column;align-items:flex-end"><span>$${rtFmt}${icon}</span>${diffLine}</div></div></div>`;
+      return `<div style="border-top:2px solid var(--border);margin-top:4px;padding-top:4px"><div class="ef-charge-row">${_kwhRateCell}${_kwRateCell}<div class="ef-item center" style="${itemStyle}"><div class="ef-key" style="color:${match ? 'var(--green)' : mismatch ? 'var(--red)' : 'var(--text2)'}">Total Current Charges</div><input class="ef-input" value="${(parsed.TotalCurrentCharges ?? '') !== '' ? '$' + totalVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''}" data-key="TotalCurrentCharges" style="font-weight:700;font-size:14px;text-align:center"></div><div class="ef-running ${cls}" style="font-weight:700;font-size:11px;flex-direction:column;align-items:flex-end"><span>$${rtFmt}${icon}</span>${diffLine}</div></div></div>`;
     }
     return '';
   });
@@ -19951,414 +20105,250 @@ function renderPDFFields(parsed, warnings) {
   const _detailTol = Math.max(0.02, 0.01 * _CHARGE_SUM_KEYS_RPF.length);
   const hasCurrentSumMismatch = Math.abs(_currentSumDiff) >= _detailTol;
   const sumMismatch = parsed['_sum_mismatch'];
-  // KGS-specific sum mismatch banner — mirrors the Utility E sumMismatchHtml handler below.
-  // Fires when Pass B2 could not safely reconcile the KGS component sum against
-  // TotalCurrentCharges (out-of-band residual, ambiguous candidates, or missed charge line).
+  // ── Status lists for the top row: what to review, what to note, what the reader fixed ──
+  // Nothing here is drawn above the values. renderPDFFields hands the lists to _pdfRenderTopBar (chips).
+  const _fmt2 = (n) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const _sumMismatchKgs = parsed['_sum_mismatch_kgs'];
-  const sumMismatchKgsHtml = _sumMismatchKgs
-    ? `<div style="padding:14px 18px;margin:10px 0;border-radius:10px;background:rgba(239,68,68,.22);border:2px solid #ef4444;color:#fecaca;font-size:14px;line-height:1.5;display:flex;align-items:flex-start;gap:12px;box-shadow:0 0 0 3px rgba(239,68,68,.08)">
-        <span style="font-size:26px;line-height:1">&#9940;</span>
-        <div style="flex:1">
-          <div style="font-size:16px;font-weight:800;color:var(--red);letter-spacing:.2px">KGS SUM MISMATCH &mdash; $${Math.abs(_sumMismatchKgs.residual).toFixed(2)} ${_sumMismatchKgs.residual > 0 ? 'UNDER' : 'OVER'} Total Current Charges</div>
-          <div style="font-size:12px;font-weight:500;color:#fca5a5;margin-top:4px">KGS component sum is $${(_sumMismatchKgs.kgsSum || 0).toFixed(2)} but the bill total is $${(_sumMismatchKgs.totalCurrentCharges || 0).toFixed(2)}. Pass B2 could not safely auto-correct. Check the highlighted fields against the source PDF.</div>
-          <div style="font-size:11px;font-family:var(--mono);margin-top:6px;line-height:1.6;color:#fca5a5">${_sumMismatchKgs.reason || ''}</div>
-        </div>
-      </div>`
-    : '';
-  // Big, loud banner for sum mismatch — this is a high-severity issue that must never be
-  // lost in a sea of other notifications. Renders at the very top of the extracted fields.
   const _labelsMissing = _missingChargeFields
     .slice(0, 6)
     .map((f) => LABELS[f] || f)
     .join(', ');
-  // Build per-field math breakdown for the sum mismatch banner so the user
-  // can see exactly which values were added and where the gap comes from.
-  const _sumMathParts = _CHARGE_SUM_KEYS_RPF
-    .filter((f) => parseBillNumberOrZero(parsed[f]) !== 0 || !_missingChargeFields.includes(f))
-    .map((f) => {
-      const v = parseBillNumberOrZero(parsed[f]);
-      const label = LABELS[f] || f;
-      const style = v === 0 ? 'color:#f87171;font-style:italic' : 'color:#fecaca';
-      return `<span style="${style}">${label}: $${v.toFixed(2)}</span>`;
-    });
-  const _sumMathLine = _sumMathParts.length
-    ? `<div style="font-size:11px;font-family:var(--mono);margin-top:6px;line-height:1.8;color:#fca5a5">` +
-      _sumMathParts.join(`<span style="color:#f87171;padding:0 4px">+</span>`) +
-      `<span style="color:#f87171;padding:0 6px">=</span><strong style="color:#ef4444">$${_currentChargeSum.toFixed(2)}</strong>` +
-      `<span style="color:#f87171;padding:0 6px">vs expected</span><strong style="color:#fecaca">${totalVal == null ? '&mdash;' : '$' + totalVal.toFixed(2)}</strong>` +
-      `<span style="color:#f87171;padding:0 6px">(off by $${Math.abs(_currentSumDiff).toFixed(2)})</span>` +
-      `</div>`
-    : '';
-  // Item f776f47b: name the SPECIFIC offending line(s) instead of leaving the
-  // user to guess which of the summed fields is wrong. _part_mismatches_<field>
-  // is written by _postExtractionVerify's provider-agnostic per-part validator
-  // (app/bill-analysis.js, "PER-PART CHARGE VALIDATION") for any field whose
-  // qty × rate doesn't reconcile to the OCR'd charge on that line — read it
-  // here for every field in this bill's charge-sum list and render one line
-  // per bad part, e.g. "ECA Charge: expected $2,393.25 (116,233.536 kWh ×
-  // $0.02059) — OCR read $2,363.25 (off $30.00)". Detection-only — never
-  // auto-corrects; which of qty/rate/charge is wrong is ambiguous.
-  const _partMismatchLines = _CHARGE_SUM_KEYS_RPF.flatMap((f) => {
-    const badParts = parsed['_part_mismatches_' + f];
-    if (!badParts || !badParts.length) return [];
-    const label = LABELS[f] || f;
-    return badParts.map((p) => {
-      const qtyStr = p.qty.toLocaleString('en-US', { maximumFractionDigits: 3 });
-      const unitStr = p.unit || '';
-      return (
-        `<div style="margin-top:4px">` +
-        `<strong style="color:#fecaca">${label}:</strong> expected $${p.computed.toFixed(2)} ` +
-        `(${qtyStr} ${unitStr} &times; $${p.rate.toFixed(5)}) &mdash; OCR read $${p.ocrCharge.toFixed(2)} ` +
-        `(off $${p.diff.toFixed(2)})` +
-        `</div>`
-      );
-    });
-  });
-  const _partMismatchHtml = _partMismatchLines.length
-    ? `<div style="font-size:12px;font-family:var(--mono);margin-top:8px;line-height:1.6;color:#fca5a5;border-top:1px solid rgba(239,68,68,.35);padding-top:6px">${_partMismatchLines.join('')}</div>`
-    : '';
-  const sumMismatchHtml = hasCurrentSumMismatch
-    ? `<div style="padding:14px 18px;margin:10px 0;border-radius:10px;background:rgba(239,68,68,.22);border:2px solid #ef4444;color:#fecaca;font-size:14px;line-height:1.5;display:flex;align-items:flex-start;gap:12px;box-shadow:0 0 0 3px rgba(239,68,68,.08)">
-        <span style="font-size:26px;line-height:1">&#9940;</span>
-        <div style="flex:1">
-          <div style="font-size:16px;font-weight:800;color:var(--red);letter-spacing:.2px">SUM MISMATCH &mdash; $${Math.abs(_currentSumDiff).toFixed(2)} ${_currentSumDiff > 0 ? 'OVER' : 'UNDER'} Total Current Charges</div>
-          <div style="font-size:12px;font-weight:500;color:#fca5a5;margin-top:4px">Charge sum is $${_currentChargeSum.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} but the bill total is $${totalVal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.${_labelsMissing ? ' Blank charges: <strong>' + _labelsMissing + '</strong>.' : ''} Check every field below against the source PDF.</div>
-          ${_sumMathLine}
-          ${_partMismatchHtml}
-        </div>
-      </div>`
-    : '';
-
-  // Banner for charge-exceeds-total validation
   const _cet = parsed['_charge_exceeds_total'];
-  const chargeExceedsTotalHtml = _cet
-    ? `<div style="padding:14px 18px;margin:10px 0;border-radius:10px;background:rgba(239,68,68,.22);border:2px solid #ef4444;color:#fecaca;font-size:14px;line-height:1.5;display:flex;align-items:flex-start;gap:12px;box-shadow:0 0 0 3px rgba(239,68,68,.08)">
-        <span style="font-size:26px;line-height:1">&#9940;</span>
-        <div style="flex:1">
-          <div style="font-size:16px;font-weight:800;color:var(--red);letter-spacing:.2px">LINE ITEM EXCEEDS TOTAL</div>
-          <div style="font-size:12px;font-weight:500;color:#fca5a5;margin-top:4px">${_cet.reason}. This bill has impossible charges — verify against the source PDF.</div>
-        </div>
-      </div>`
-    : '';
 
-  // GATE C — correction held pending (18b33d9f). A large/unprovenanced auto-correct
-  // must render RED/alarm, not the collapsed green checkmark — the severity signal
-  // was inverted before this fix (guessing wrong looked calmer than admitting doubt).
-  const _pendingCorrection = parsed['_correction_pending_TotalCurrentCharges'];
-  const correctionPendingHtml = _pendingCorrection
-    ? `<div style="padding:14px 18px;margin:10px 0;border-radius:10px;background:rgba(239,68,68,.22);border:2px solid #ef4444;color:#fecaca;font-size:14px;line-height:1.5;display:flex;align-items:flex-start;gap:12px;box-shadow:0 0 0 3px rgba(239,68,68,.08)">
-        <span style="font-size:26px;line-height:1">&#9940;</span>
-        <div style="flex:1">
-          <div style="font-size:16px;font-weight:800;color:var(--red);letter-spacing:.2px">TOTAL CORRECTION HELD — ${_pendingCorrection.pctChange}% ($${_pendingCorrection.dollarChange}) — not applied</div>
-          <div style="font-size:12px;font-weight:500;color:#fca5a5;margin-top:4px">Total needs correction: $${Number(_pendingCorrection.original).toFixed(2)} → $${_pendingCorrection.proposedCorrection} (${_pendingCorrection.pctChange}%) — NOT applied, verify against the source PDF and confirm. ${_pendingCorrection.reason}</div>
-        </div>
-      </div>`
-    : '';
-
-  // GATE A/B/C — extraction flagged for review (18b33d9f). Non-collapsed, always
-  // visible — the user must ACT (check the box) to save a flagged bill, instead of
-  // acting to prevent one from saving.
-  // FIX (fix/bill-review-gate-lifecycle, item f359edaa): the banner used to render
-  // off _gateReasons.length alone, so it kept shouting "not auto-saved" even after
-  // the user had clicked Save Anyway (_gateOverrideConfirmed) or corrected every
-  // flagged field down to zero remaining reasons (see the .ef-input change handler
-  // below, which now drops a reason once its field is corrected). Once either is
-  // true there is nothing left for the user to act on — show a quiet accepted note
-  // instead of the red alarm.
-  const _gateReasonsForBanner = Array.isArray(parsed['_gateReasons']) ? parsed['_gateReasons'] : [];
-  const _gateOverriddenForBanner = !!parsed['_gateOverrideConfirmed'];
-  const gateBannerHtml = _gateReasonsForBanner.length
-    ? _gateOverriddenForBanner
-      ? `<div style="padding:8px 12px;margin:8px 0;border-radius:6px;background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.3);font-size:11px;color:var(--green);display:flex;align-items:center;gap:8px">
-          <span style="font-weight:700">&#10003;</span>
-          <span>Flagged bill accepted for save — original review reasons: ${_gateReasonsForBanner.join(' · ')}</span>
-        </div>`
-      : `<div style="padding:14px 18px;margin:10px 0;border-radius:10px;background:rgba(239,68,68,.22);border:2px solid #ef4444;color:#fecaca;font-size:14px;line-height:1.5;display:flex;align-items:flex-start;gap:12px;box-shadow:0 0 0 3px rgba(239,68,68,.08)">
-        <span style="font-size:26px;line-height:1">&#9940;</span>
-        <div style="flex:1">
-          <div style="font-size:16px;font-weight:800;color:var(--red);letter-spacing:.2px">EXTRACTION FLAGGED FOR REVIEW — not auto-saved</div>
-          <div style="font-size:12px;font-weight:500;color:#fca5a5;margin-top:4px">${_gateReasonsForBanner.join('<br>')}</div>
-        </div>
-      </div>`
-    : '';
-
-  // Show auto-correction banner if any fields were corrected (rate×qty or OCR consensus)
-  const correctedFields = Object.keys(parsed)
-    .filter((k) => k.startsWith('_auto_corrected_'))
-    // one record shape: a record without a numeric corrected value is not a correction (an old saved
-    // _auto_corrected_rate_<field> record, ocrRate/derivedRate): never shown, never counted. A filled cell has
-    // original null (nothing was read) and shows "not read".
-    .filter((k) => parsed[k] && isFinite(parseFloat(parsed[k].corrected)))
-    .map((k) => ({ field: k.replace('_auto_corrected_', ''), info: parsed[k], type: 'rate' }));
-  const consensusFields = Object.keys(parsed)
-    .filter((k) => k.startsWith('_ocr_consensus_'))
-    .map((k) => ({ field: k.replace('_ocr_consensus_', ''), info: parsed[k], type: 'consensus' }));
-  // KGS Pass B2 residual corrections — _auto_recovered_B2_<field> flags set when Pass B2
-  // successfully recovered a period-as-digit OCR error via TotalCurrentCharges residual.
-  // These use passB_value/corrected_to rather than original/corrected (different flag shape).
-  const b2Fields = Object.keys(parsed)
-    .filter((k) => k.startsWith('_auto_recovered_B2_'))
-    .map((k) => ({ field: k.replace('_auto_recovered_B2_', ''), info: parsed[k], type: 'b2' }));
-  const allCorrected = [...correctedFields, ...consensusFields, ...b2Fields];
-  let correctionHtml = '';
-  if (allCorrected.length) {
-    const parts = allCorrected.map((c) => {
-      const label = LABELS[c.field] || c.field;
-      const _isChg = CHARGE_FIELDS.has(c.field);
-      const _pfx = _isChg ? '$' : '';
-      const _dp = _isChg ? 2 : 4;
-      // b2 flags carry passB_value/corrected_to; rate flags carry original/corrected; consensus carries consensus
-      const _origNum = parseFloat(c.type === 'b2' ? c.info.passB_value : c.info.original);
-      const origVal = isFinite(_origNum) ? _pfx + _origNum.toFixed(_dp) : 'not read';
-      const newVal =
-        _pfx +
-        parseFloat(
-          c.type === 'rate' ? c.info.corrected : c.type === 'b2' ? c.info.corrected_to : c.info.consensus,
-        ).toFixed(_dp);
-      const method =
-        c.type === 'rate'
-          ? c.info.reason
-          : c.type === 'b2'
-            ? 'KGS Pass B2 residual recovery' + (c.info.original_ocr ? ' (OCR read: ' + c.info.original_ocr + ')' : '')
-            : 'alternate OCR pass';
-      return (
-        '<div style="margin:2px 0"><strong>' +
-        label +
-        '</strong> ' +
-        origVal +
-        ' → ' +
-        newVal +
-        ' <span style="color:var(--text3);font-weight:400">(' +
-        method +
-        ')</span></div>'
+  const errorCount = warnings.filter((w) => w.level === 'error').length;
+  const _showManualAssign = !!parsed._manualReview || hasCurrentSumMismatch || errorCount > 0;
+  const _goBtn = (k) => (k in parsed ? _pdfPopBtn('Go to the value', "_pdfGoToField('" + k + "')") : '');
+  const _useBtn = (f) => {
+    const fx = _fixValueOf(f);
+    return fx ? _pdfPopBtn('Use ' + _fixLabel(f, fx), "_pdfApplyFieldEdit('" + f + "','" + fx + "')", true) : '';
+  };
+  const _chipReview = [];
+  const _chipWarn = [];
+  const _chipFixed = [];
+  // Held by the reader: one line for each reason.
+  const _moreThanOne = (window._pdfMultiBills || []).length > 1;
+  _gateList.forEach((g) => {
+    if (_pendingCorrection && /^Total needs correction/.test(g.text)) return; // its own line follows
+    const fields = g.fields || [];
+    _chipReview.push(
+      _pdfPopItem(
+        _pdfShort(g.text, 150),
+        (g.text.length > 150 ? _escHtml(g.text) + '<br>' : '') +
+          'Held for review. ' +
+          (_moreThanOne ? 'Save all skips this bill until it is checked. ' : '') +
+          'Saving this bill by itself confirms it.',
+        fields.map(_useBtn).join('') + fields.map(_goBtn).join(''),
+      ),
+    );
+  });
+  if (_pendingCorrection) {
+    const pc = _pendingCorrection;
+    _chipReview.push(
+      _pdfPopItem(
+        'Total Current Charges: read $' +
+          Number(pc.original).toFixed(2) +
+          ', the charges add to $' +
+          pc.proposedCorrection +
+          ' (' +
+          pc.pctChange +
+          '% change). The total was not changed.',
+        _escHtml(pc.reason || ''),
+        _useBtn('TotalCurrentCharges') + _goBtn('TotalCurrentCharges'),
+      ),
+    );
+  }
+  if (hasCurrentSumMismatch) {
+    const mathParts = _CHARGE_SUM_KEYS_RPF
+      .filter((f) => parseBillNumberOrZero(parsed[f]) !== 0 || !_missingChargeFields.includes(f))
+      .map((f) => _escHtml(LABELS[f] || f) + ': $' + parseBillNumberOrZero(parsed[f]).toFixed(2));
+    const partLines = _CHARGE_SUM_KEYS_RPF.flatMap((f) =>
+      (parsed['_part_mismatches_' + f] || []).map(
+        (p) =>
+          '<br>' +
+          _escHtml(LABELS[f] || f) +
+          ': expected $' +
+          p.computed.toFixed(2) +
+          ' (' +
+          p.qty.toLocaleString('en-US', { maximumFractionDigits: 3 }) +
+          ' ' +
+          _escHtml(p.unit || '') +
+          ' &times; $' +
+          p.rate.toFixed(5) +
+          '), read $' +
+          p.ocrCharge.toFixed(2) +
+          ' (off $' +
+          p.diff.toFixed(2) +
+          ')',
+      ),
+    );
+    _chipReview.push(
+      _pdfPopItem(
+        'The charges add to $' +
+          _fmt2(_currentChargeSum) +
+          ' but the bill total is $' +
+          _fmt2(totalVal) +
+          ': $' +
+          _fmt2(Math.abs(_currentSumDiff)) +
+          (_currentSumDiff > 0 ? ' over' : ' under'),
+        (mathParts.length
+          ? mathParts.join(' + ') + ' = $' + _fmt2(_currentChargeSum) + ', the bill says $' + _fmt2(totalVal) + '.'
+          : '') +
+          (_labelsMissing ? '<br>Blank charges: ' + _escHtml(_labelsMissing) + '.' : '') +
+          '<br>Check every value against the PDF.' +
+          partLines.join(''),
+        _goBtn('TotalCurrentCharges'),
+      ),
+    );
+  }
+  if (_sumMismatchKgs) {
+    _chipReview.push(
+      _pdfPopItem(
+        'The charges add to $' +
+          _fmt2(_sumMismatchKgs.kgsSum || 0) +
+          ' but the bill total is $' +
+          _fmt2(_sumMismatchKgs.totalCurrentCharges || 0) +
+          ': $' +
+          _fmt2(Math.abs(_sumMismatchKgs.residual)) +
+          (_sumMismatchKgs.residual > 0 ? ' under' : ' over'),
+        'The reader could not fix this safely. Check the charge values against the PDF.' +
+          (_sumMismatchKgs.reason ? '<br>' + _escHtml(_sumMismatchKgs.reason) : ''),
+        _goBtn('TotalCurrentCharges'),
+      ),
+    );
+  }
+  if (_cet) {
+    _chipReview.push(
+      _pdfPopItem(
+        'A charge is larger than the bill total',
+        _escHtml(_cet.reason || '') + '. These charges cannot be right. Check the bill against the PDF.',
+        _goBtn('TotalCurrentCharges'),
+      ),
+    );
+  }
+  if (parsed._manualReview) {
+    _chipReview.push(
+      _pdfPopItem(
+        parsed._manualReviewLabel || 'The reader could not read this page',
+        'The reader could not read this page. Use Manual Assign to enter its values.',
+        '',
+      ),
+    );
+  }
+  warnings.forEach((w) => {
+    if (w.level !== 'error' && w.level !== 'warn') return;
+    const hasField = w.field && w.field !== '_all';
+    const item = _pdfPopItem(
+      _pdfShort(w.message, 150),
+      (w.message.length > 150 ? _escHtml(w.message) : '') +
+        (hasField ? (w.message.length > 150 ? '<br>' : '') + 'Value: ' + _escHtml(LABELS[w.field] || w.field) : ''),
+      hasField ? _goBtn(w.field) : '',
+    );
+    (w.level === 'error' ? _chipReview : _chipWarn).push(item);
+  });
+  const gapInfo = parsed._billing_gap;
+  if (gapInfo) {
+    _chipWarn.push(
+      _pdfPopItem(
+        gapInfo.days + '-day gap in ' + gapInfo.commodity + ' billing before this period',
+        'The bill before this one ended ' + _escHtml(String(gapInfo.afterPeriod || '')) + '.',
+        '',
+      ),
+    );
+  }
+  Object.keys(parsed)
+    .filter((k) => k.startsWith('_auto_corrected_') || k.startsWith('_ocr_consensus_') || k.startsWith('_auto_recovered_B2_'))
+    .forEach((k) => {
+      const type = k.startsWith('_auto_corrected_') ? 'rate' : k.startsWith('_ocr_consensus_') ? 'consensus' : 'b2';
+      const field = k.replace(/^_(auto_corrected|ocr_consensus|auto_recovered_B2)_/, '');
+      const fi = _fixInfo(field, type);
+      if (!fi) return;
+      _chipFixed.push(
+        _pdfPopItem(
+          (LABELS[field] || field) + ': read ' + fi.from + ', fixed to ' + fi.to,
+          fi.method ? _escHtml(fi.method) : '',
+          (fi.revert ? _pdfPopBtn('Revert', fi.revert, false, 'Put the value the reader first read back') : '') +
+            _goBtn(field),
+        ),
       );
     });
-    // One-line summary that expands on click. No field names or reasons shown inline —
-    // the user can click to drill in. Keeps this banner from dominating the panel.
-    const _acLabels = allCorrected
-      .slice(0, 3)
-      .map((c) => LABELS[c.field] || c.field)
-      .join(', ');
-    const _acMoreCount = allCorrected.length > 3 ? ' +' + (allCorrected.length - 3) + ' more' : '';
-    correctionHtml =
-      '<details style="padding:6px 12px;margin:6px 0;border-radius:6px;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.25);font-size:12px;color:var(--green);line-height:1.4">' +
-      '<summary style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:6px">' +
-      '<span>✓ Auto-corrected <strong>' +
-      allCorrected.length +
-      ' field' +
-      (allCorrected.length > 1 ? 's' : '') +
-      '</strong> (' +
-      _acLabels +
-      _acMoreCount +
-      ') — <span style="text-decoration:underline">click to see details</span>' +
-      '</span></summary>' +
-      '<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(34,197,94,.2);color:var(--text2);font-weight:500">' +
-      parts.join('') +
-      '</div>' +
-      '</details>';
-  }
-
-  // Summary banner
-  const errorCount = warnings.filter((w) => w.level === 'error').length;
-  const warnCount = warnings.filter((w) => w.level === 'warn').length;
-  const infoCount = warnings.filter((w) => w.level === 'info').length;
-  // Sum mismatch is detected from current data (same source as the big banner above) so the
-  // Data Analysis line and the big banner are always consistent.
-  const hasSumIssue = hasCurrentSumMismatch;
-  let summaryHtml = '';
-  if (errorCount || warnCount) {
-    const parts = [];
-    if (errorCount) parts.push('<span style="color:var(--red);font-weight:700">' + errorCount + ' missing</span>');
-    if (warnCount)
-      parts.push(
-        '<span style="color:var(--amber);font-weight:700">' +
-          warnCount +
-          ' warning' +
-          (warnCount > 1 ? 's' : '') +
-          '</span>',
-      );
-    if (infoCount)
-      parts.push('<span style="color:var(--accent)">' + infoCount + ' note' + (infoCount > 1 ? 's' : '') + '</span>');
-    // Build clickable field links for each warning
-    const flaggedFields = warnings
-      .filter((w) => w.level === 'error' || w.level === 'warn')
-      .map((w) => {
-        const label = LABELS[w.field] || w.field;
-        const color = w.level === 'error' ? '#ef4444' : '#f59e0b';
-        return `<a href="#" onclick="event.preventDefault();document.querySelector('.ef-input[data-key=\\'${w.field}\\']')?.closest('.ef-item')?.scrollIntoView({behavior:'smooth',block:'center'});document.querySelector('.ef-input[data-key=\\'${w.field}\\']')?.focus()" style="color:${color};text-decoration:underline;cursor:pointer;font-size:11px">${label}</a>`;
-      });
-    const flagLinks = flaggedFields.length
-      ? '<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;max-width:100%;min-width:0">' +
-        flaggedFields.join('') +
-        '</div>'
-      : '';
-    // Use red background if sum mismatch or errors, amber if only warnings.
-    // Intentionally stronger than the green auto-corrected notice so new users don't
-    // misread the green as "all resolved".
-    const bannerBg = hasSumIssue || errorCount ? 'rgba(239,68,68,.16)' : 'rgba(245,158,11,.18)';
-    const bannerBorder = hasSumIssue || errorCount ? '#ef4444' : '#f59e0b';
-    const bannerTitleColor = hasSumIssue || errorCount ? '#ef4444' : '#f59e0b';
-    const bannerIcon = hasSumIssue || errorCount ? '⛔' : '⚠️';
-    summaryHtml =
-      '<div style="padding:10px 14px;margin:8px 0;border-radius:8px;background:' +
-      bannerBg +
-      ';border:2px solid ' +
-      bannerBorder +
-      ';font-size:13px;color:var(--text);display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-weight:600" title="Click a field to jump to it">' +
-      '<span style="font-size:16px;line-height:1">' +
-      bannerIcon +
-      '</span>' +
-      '<span style="flex:1;min-width:0;color:' +
-      bannerTitleColor +
-      ';font-weight:800;text-transform:uppercase;letter-spacing:.4px;font-size:12px">Data Analysis — ' +
-      parts.join(' · ') +
-      '</span>' +
-      flagLinks +
-      '</div>';
-  } else if (correctedFields.length && !errorCount && !warnCount) {
-    summaryHtml =
-      '<div style="padding:8px 12px;margin:8px 0;border-radius:6px;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.2);font-size:12px;color:var(--green)">✓ All expected fields present — ' +
-      correctedFields.length +
-      ' value' +
-      (correctedFields.length > 1 ? 's' : '') +
-      ' auto-corrected via rate × quantity</div>';
-  } else if (warnings.length === 0 && Object.keys(parsed).filter((k) => !k.startsWith('_')).length > 5) {
-    summaryHtml =
-      '<div style="padding:8px 12px;margin:8px 0;border-radius:6px;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.2);font-size:12px;color:var(--green)">✓ All expected fields present — values within normal ranges</div>';
-  }
-
-  // Duplicate info banner at top of extracted fields.
-  // Re-lookup the dup entry by index at render time (do NOT rely on the _dupInfo
-  // constant built at the top of this function — it can go stale if the dup map
-  // mutates between the function start and this point, or if _pdfMultiIdx was
-  // changed by a bulk action mid-flight). Fall through to a diagnostic banner if
-  // the bill IS a duplicate but something stripped diffFields off the entry.
-  let dupFieldBannerHtml = '';
-  const _liveDupView = _pdfDupView(window._pdfMultiBills || []);
-  const _liveDup = _liveDupView.map[_dupIdx] || null;
-  const _anyDups = Object.keys(_liveDupView.map).length;
-  if (_liveDup) {
-    const diffs = Array.isArray(_liveDup.diffFields) ? _liveDup.diffFields : [];
-    const diffCount = diffs.length;
-    const actLabel = _liveDup.action ? ` &middot; <strong style="color:var(--em)">${_liveDup.action}</strong>` : '';
-    // Freeze the current index into the onclick strings so the handlers target
-    // this specific bill even if _pdfMultiIdx changes before the click fires.
-    const bi = _dupIdx;
-    const _dupLocLabel =
-      _liveDup.locationType === 'saved'
-        ? 'Found in: <strong>Saved Bills</strong>'
-        : 'Found in: <strong>' + (_liveDup.location || 'meter bill data') + '</strong>';
-    dupFieldBannerHtml = `<div style="padding:5px 10px;margin:4px 0;border-radius:6px;background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);font-size:11px;color:var(--text);display:flex;align-items:center;gap:8px;flex-wrap:nowrap">
-        <span style="color:var(--amber);font-weight:700;white-space:nowrap;font-size:11px;text-transform:uppercase;letter-spacing:.3px">DUPLICATE BILL &middot; ${_escHtml(_dupDiffSummaryText(diffs))}${actLabel}</span>
-        <span style="font-size:10px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:300px" title="${_liveDup.locationType === 'saved' ? 'Found in: Saved Bills' : 'Found in: ' + (_liveDup.location || 'meter bill data')}">${_dupLocLabel}</span>
-        <div style="display:flex;gap:4px;flex-shrink:0;margin-left:auto">
-          <button onclick="_dupBannerAction(${bi},'overwrite')" style="font-size:10px;padding:3px 8px;border-radius:4px;border:1px solid rgba(239,68,68,.5);background:rgba(239,68,68,.12);color:var(--red);cursor:pointer;font-weight:700">Overwrite</button>
-          <button onclick="_dupBannerAction(${bi},'merge')" style="font-size:10px;padding:3px 8px;border-radius:4px;border:1px solid rgba(34,197,94,.5);background:rgba(34,197,94,.12);color:var(--green);cursor:pointer;font-weight:700">Merge</button>
-          <button onclick="_dupBannerAction(${bi},'attach')" title="Attach the PDF only — never changes any other field" style="font-size:10px;padding:3px 8px;border-radius:4px;border:1px solid rgba(96,165,250,.5);background:rgba(96,165,250,.12);color:var(--accent);cursor:pointer;font-weight:700">Attach Only</button>
-          <button onclick="_dupBannerAction(${bi},'skip')" style="font-size:10px;padding:3px 8px;border-radius:4px;border:1px solid var(--border2);background:transparent;color:var(--text2);cursor:pointer;font-weight:600">Skip</button>
-          <button onclick="_dupBannerAction(${bi},'compare')" style="font-size:10px;padding:3px 8px;border-radius:4px;border:1px solid rgba(245,158,11,.5);background:transparent;color:var(--amber);cursor:pointer;font-weight:600" title="Compare fields side-by-side">Compare</button>
-        </div>
-      </div>`;
-  } else if (_anyDups > 0) {
-    // Current bill index isn't in dupMap but the extraction DID find duplicates
-    // elsewhere. Show a diagnostic stub so the user at least knows why the buttons
-    // aren't here — and can jump to a known-dup bill. Without this, a user whose
-    // selected pill happens to be non-dup sees nothing and assumes the feature is
-    // broken.
-    const firstDupKey = Object.keys(_liveDupView.map)[0];
-    dupFieldBannerHtml = `<div style="padding:8px 12px;margin:8px 0;border-radius:6px;background:rgba(96,165,250,.08);border:1px solid rgba(96,165,250,.3);font-size:11px;color:var(--text2);display:flex;align-items:center;gap:8px">
-        <span style="color:var(--accent);font-weight:700">&#9432;</span>
-        <span style="flex:1">This bill is not a duplicate. ${_anyDups} other bill${_anyDups === 1 ? '' : 's'} in this extraction are duplicates.</span>
-        <button onclick="selectMultiBill(${firstDupKey})" style="font-size:10px;padding:3px 10px;border-radius:4px;border:1px solid rgba(96,165,250,.4);background:transparent;color:var(--accent);cursor:pointer;font-weight:600">Jump to first duplicate</button>
-      </div>`;
-  }
-  // Split output between the frozen header (title + banners) and the scrollable grid
-  // body (the actual field cells). The header lives in #pdfFrozenHdr which is
-  // flex-shrink:0, and the grid is in #pdfScrollBody which is the flex:1 overflow-y
-  // scroll container — so everything above Account Info stays frozen exactly like
-  // the Utility Data page, no position:sticky tricks required.
-  const gapInfo = parsed._billing_gap;
-  const gapHtml = gapInfo
-    ? `<div style="padding:10px 14px;margin:8px 0;border-radius:8px;background:rgba(245,158,11,.15);border:1px solid rgba(245,158,11,.4);color:var(--amber);font-size:13px;display:flex;align-items:center;gap:8px">
-            <span style="font-size:18px">&#9888;</span>
-            <span><strong>${gapInfo.days}-day gap</strong> in ${gapInfo.commodity} billing before this period (previous ended ${gapInfo.afterPeriod})</span>
-          </div>`
-    : '';
-  // Manual Assign button — shown when the bill has errors, a sum mismatch,
-  // or is a _manualReview synthetic (unmatched page from extraction).
-  // Bug 58119612: give users a recovery path when auto-parsing fails.
-  const _showManualAssign = parsed._manualReview || hasCurrentSumMismatch || errorCount > 0;
-  const _maBtnIdx = _dupIdx; // freeze current index
-  const manualAssignHtml = _showManualAssign
-    ? `<div style="margin:6px 0 4px;text-align:right">
-              <button onclick="openManualAssignModal(${_maBtnIdx})" style="font-size:11px;padding:4px 12px;border-radius:5px;border:1px solid rgba(99,102,241,.5);background:rgba(99,102,241,.12);color:var(--accent);cursor:pointer;font-weight:700">
-                &#128196; Manual Assign
-              </button>
-            </div>`
-    : '';
-  elHdr.innerHTML = `<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--em);margin:12px 0 8px">Extracted — click values to edit</div>${gateBannerHtml}${sumMismatchHtml}${sumMismatchKgsHtml}${chargeExceedsTotalHtml}${correctionPendingHtml}${gapHtml}${dupFieldBannerHtml}${summaryHtml}${correctionHtml}${manualAssignHtml}`;
+  window._pdfBillChips = {
+    bill: parsed,
+    review: _chipReview,
+    warn: _chipWarn,
+    fixed: _chipFixed,
+    manualIdx: _showManualAssign ? _dupIdx : null,
+  };
+  elHdr.innerHTML = '';
   el.innerHTML = `<div class="ef-grid">${fieldHtml}${missingHtml}</div>`;
+  _pdfRenderTopBar();
+  _pdfRefreshSavesTo();
 
   // ── Wire up change handlers: update data + recalculate total when user edits ──
   el.querySelectorAll('.ef-input[data-key]').forEach((inp) => {
     inp.addEventListener('change', () => {
-      const key = inp.dataset.key;
-      if (!key) return;
-      let val = inp.value.replace(/^\$/, '').replace(/,/g, '').trim();
-      if (val === '' || val === '—') val = null;
-      // Update the underlying bill data
-      const bills = window._pdfMultiBills;
-      const idx = window._pdfMultiIdx || 0;
-      if (!bills || !bills[idx]) return;
-      const b = bills[idx];
-      const _prevVal = b[key];
-      b[key] = val;
-      // FIX (fix/bill-review-gate-lifecycle, item f359edaa): a corrected field must
-      // drop its OWN gate reason instead of leaving "not auto-saved" up forever, and
-      // must be stamped so a later re-verify pass never silently reverts the user's
-      // manual value (mirrors the existing _auto_corrected_/_ocr_consensus_ stamps).
-      if (_prevVal !== val) {
-        b['_userCorrected_' + key] = { original: _prevVal, corrected: val, ts: Date.now() };
-        _clearGateReasonForField(b, key);
-      }
-      // Recalculate TotalCurrentCharges from charge sum when a charge field changes
-      const CHARGE_SUM_FIELDS = [
-        'CustomerCharge',
-        'FacilitiesCharge',
-        'BilledKWCharge',
-        'EnergyOnPeakCharge',
-        'EnergyOffPeakCharge',
-        'ECACharge',
-        'EERCharge',
-        'PTSCharge',
-        'TDCCharge',
-        'RkVACharge',
-        'TaxExemptDelivery',
-        'BillOffset',
-        'FranchiseFee',
-        'MiscellaneousCharge',
-      ];
-      if (CHARGE_SUM_FIELDS.includes(key)) {
-        const compSum = CHARGE_SUM_FIELDS.reduce((s, f) => s + parseBillNumber(b[f]), 0);
-        if (compSum > 0) {
-          b.TotalCurrentCharges = compSum.toFixed(2);
-          // A corrected component recomputes the total live, so the "Total needs
-          // correction" hold (which compared the OLD total against this same
-          // component sum) is moot — stamp the same _userCorrected_ flag a direct
-          // edit to TotalCurrentCharges itself would, so the generic
-          // all-dependencies-corrected check in _clearGateReasonForField (round 2
-          // review fix) sees it as resolved, then re-evaluate.
-          b['_userCorrected_TotalCurrentCharges'] = { derivedFrom: key, value: b.TotalCurrentCharges, ts: Date.now() };
-          _clearGateReasonForField(b, 'TotalCurrentCharges');
-        }
-        // Clear stale sum mismatch since user manually corrected a value
-        delete b._sum_mismatch;
-      }
-      // Re-render to update running total and validation display
-      const billWarnings = (window._pdfBillWarnings || [])[idx]?.warnings || [];
-      renderPDFFields(b, billWarnings);
+      if (inp.dataset.key) _pdfApplyFieldEdit(inp.dataset.key, inp.value);
     });
   });
+}
+// The ONE edit path for a value on the extraction screen: a typed edit and the "Use $X" fix button both end here.
+function _pdfApplyFieldEdit(key, rawValue) {
+  if (!key) return;
+  let val = String(rawValue == null ? '' : rawValue)
+    .replace(/^\$/, '')
+    .replace(/,/g, '')
+    .trim();
+  if (val === '' || val === '—') val = null;
+  // Update the underlying bill data
+  const bills = window._pdfMultiBills;
+  const idx = window._pdfMultiIdx || 0;
+  if (!bills || !bills[idx]) return;
+  const b = bills[idx];
+  const _prevVal = b[key];
+  b[key] = val;
+  // FIX (fix/bill-review-gate-lifecycle, item f359edaa): a corrected field must
+  // drop its OWN gate reason instead of leaving "not auto-saved" up forever, and
+  // must be stamped so a later re-verify pass never silently reverts the user's
+  // manual value (mirrors the existing _auto_corrected_/_ocr_consensus_ stamps).
+  if (_prevVal !== val) {
+    b['_userCorrected_' + key] = { original: _prevVal, corrected: val, ts: Date.now() };
+    _clearGateReasonForField(b, key);
+  }
+  // Recalculate TotalCurrentCharges from charge sum when a charge field changes
+  const CHARGE_SUM_FIELDS = [
+    'CustomerCharge',
+    'FacilitiesCharge',
+    'BilledKWCharge',
+    'EnergyOnPeakCharge',
+    'EnergyOffPeakCharge',
+    'ECACharge',
+    'EERCharge',
+    'PTSCharge',
+    'TDCCharge',
+    'RkVACharge',
+    'TaxExemptDelivery',
+    'BillOffset',
+    'FranchiseFee',
+    'MiscellaneousCharge',
+  ];
+  if (CHARGE_SUM_FIELDS.includes(key)) {
+    const compSum = CHARGE_SUM_FIELDS.reduce((s, f) => s + parseBillNumber(b[f]), 0);
+    if (compSum > 0) {
+      b.TotalCurrentCharges = compSum.toFixed(2);
+      // A corrected component recomputes the total live, so the "Total needs
+      // correction" hold (which compared the OLD total against this same
+      // component sum) is moot — stamp the same _userCorrected_ flag a direct
+      // edit to TotalCurrentCharges itself would, so the generic
+      // all-dependencies-corrected check in _clearGateReasonForField (round 2
+      // review fix) sees it as resolved, then re-evaluate.
+      b['_userCorrected_TotalCurrentCharges'] = { derivedFrom: key, value: b.TotalCurrentCharges, ts: Date.now() };
+      _clearGateReasonForField(b, 'TotalCurrentCharges');
+    }
+    // Clear stale sum mismatch since user manually corrected a value
+    delete b._sum_mismatch;
+  }
+  // Re-render to update running total and validation display
+  const billWarnings = (window._pdfBillWarnings || [])[idx]?.warnings || [];
+  renderPDFFields(b, billWarnings);
 }
 /* ── SAVED BILLS DATABASE ── */
 function updateBillCountBadge() {
@@ -20502,12 +20492,8 @@ function viewSavedBill(id) {
       ([k]) => !['id', 'savedAt', 'projId', 'projName', 'fromPDF', 'pdfBillId', 'hasPDF'].includes(k),
     ),
   );
-  document.getElementById('extractMethodBadge').style.display = 'inline-block';
-  document.getElementById('extractMethodBadge').textContent = '📂 Loaded from saved records';
-  document.getElementById('extractMethodBadge').style.background = 'rgba(14,165,233,.12)';
-  document.getElementById('extractMethodBadge').style.color = 'var(--em2)';
-  document.getElementById('extractMethodBadge').style.border = '1px solid rgba(14,165,233,.25)';
   renderPDFFields(display);
+  _pdfStatus('Loaded from saved records.');
   document.getElementById('pdfSaveRow').style.display = 'block';
   refreshProjDropdowns();
   showToast('Bill loaded ✓');
@@ -22046,70 +22032,6 @@ function pdfUpdateMeterOpts() {
     const lbl = (m.commodity || 'Meter') + (m.account ? ' (' + m.account + ')' : '');
     meterSel.innerHTML += '<option value="' + m.id + '">' + lbl + '</option>';
   });
-}
-
-// Banner override helpers — populate project/building/meter selectors inside
-// the auto-assign banner so the user can redirect the save to a different meter.
-function pdfBannerToggleOverride() {
-  const row = document.getElementById('pdfBannerOverrideRow');
-  const btn = document.getElementById('pdfBannerOverrideBtn');
-  if (!row) return;
-  const open = row.style.display !== 'none';
-  row.style.display = open ? 'none' : 'block';
-  if (btn) btn.textContent = open ? 'Change Destination' : 'Cancel Override';
-  if (!open) {
-    // Populate project list and pre-select auto-matched values
-    const projSel = document.getElementById('pdfBannerProjSel');
-    if (projSel) {
-      projSel.innerHTML = (projects || [])
-        .map((p) => '<option value="' + p.id + '">' + (p.name || p.id) + '</option>')
-        .join('');
-      if (_autoAssignTarget && _autoAssignTarget.projId) {
-        projSel.value = String(_autoAssignTarget.projId);
-      }
-      pdfBannerUpdateBldgOpts();
-    }
-  }
-}
-
-function pdfBannerUpdateBldgOpts() {
-  const projId = parseInt(document.getElementById('pdfBannerProjSel')?.value) || null;
-  const bldgSel = document.getElementById('pdfBannerBldgSel');
-  const meterSel = document.getElementById('pdfBannerMeterSel');
-  if (!bldgSel || !meterSel) return;
-  bldgSel.innerHTML = '<option value="">— Building —</option>';
-  meterSel.innerHTML = '<option value="">— Meter —</option>';
-  if (!projId) return;
-  (getUDBldgs(projId) || []).forEach((b) => {
-    bldgSel.innerHTML += '<option value="' + b.id + '">' + (b.name || b.id) + '</option>';
-  });
-  if (_autoAssignTarget && _autoAssignTarget.projId === projId && _autoAssignTarget.bldgId) {
-    bldgSel.value = String(_autoAssignTarget.bldgId);
-    pdfBannerUpdateMeterOpts();
-  }
-}
-
-function pdfBannerUpdateMeterOpts() {
-  const projId = parseInt(document.getElementById('pdfBannerProjSel')?.value) || null;
-  const bldgId = document.getElementById('pdfBannerBldgSel')?.value || null;
-  const meterSel = document.getElementById('pdfBannerMeterSel');
-  if (!meterSel) return;
-  meterSel.innerHTML = '<option value="">— Meter —</option>';
-  if (!projId || !bldgId) return;
-  const bldg = getUDBldg(projId, bldgId);
-  if (!bldg) return;
-  (bldg.meters || []).forEach((m) => {
-    const lbl = (m.commodity || 'Meter') + (m.account ? ' (' + m.account + ')' : '');
-    meterSel.innerHTML += '<option value="' + m.id + '">' + lbl + '</option>';
-  });
-  if (
-    _autoAssignTarget &&
-    _autoAssignTarget.projId === projId &&
-    _autoAssignTarget.bldgId === bldgId &&
-    _autoAssignTarget.meterId
-  ) {
-    meterSel.value = String(_autoAssignTarget.meterId);
-  }
 }
 
 function savePDFData() {

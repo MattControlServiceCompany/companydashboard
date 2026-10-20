@@ -4,7 +4,7 @@
  * Loads a synthetic extraction with one held bill into the PDF/OCR page (headless bundled Chromium,
  * SYNTHETIC data only), checks the held bill shows a plain Save (no Save Anyway), then calls the one
  * Clear function and requires that nothing from the extraction stays in the DOM: values, warnings,
- * the save bar, the held-bill line, the period pills, the OCR text tab.
+ * the top row (selectors, chips, Save), the held-bill line, the OCR text tab.
  *
  * Usage: node tools/test-clear-pdf-resets-all.js [repo-root] [screenshot-dir]
  */
@@ -76,18 +76,18 @@ function bill(start, end, held) {
         return {
           fieldsGrid: txt('extractedFieldsGrid').length,
           fieldsHdr: txt('extractedFieldsHdr').length,
-          pills: txt('pdfStripPills').length,
+          topBarVisible: vis('pdfTopBar'),
+          topBarText: txt('pdfTopSel') + txt('pdfTopChips') + txt('pdfTopSave'),
+          topSaveText: txt('pdfTopSave'),
+          moreSaveText: txt('pdfMoreSave'),
           saveRowVisible: vis('pdfSaveRow'),
-          bottomBarVisible: vis('pdfBottomSaveBar'),
-          bottomBarText: txt('pdfBottomSaveBar'),
           mbPanelVisible: vis('pdfMultiBldgPanel'),
           mbPanelText: txt('pdfMultiBldgPanel'),
-          heldLine: document.body.innerText.includes('flagged for review'),
+          heldLine: txt('pdfMoreSave').includes('held out of Save all'),
           saveAnyway: document.body.innerText.includes('Save Anyway') || !!document.getElementById('pdfSaveAnywayBtn'),
-          saveBtn: !!document.querySelector('#pdfSaveRow [data-fb="energy.pdf.save-btn"]'),
+          saveBtn: !!document.querySelector('#pdfTopBar [data-fb="energy.pdf.save-btn"]'),
           ocrText: txt('pdfDockOcr'),
           dockVisible: vis('pdfDockCol'),
-          bldgTabs: !!document.getElementById('pdfBldgTabsBar'),
           dropZoneCollapsed: document.getElementById('dropZone').classList.contains('collapsed'),
           raw: window._pdfRawText || null,
           bills: window._pdfMultiBills || null,
@@ -107,7 +107,7 @@ function bill(start, end, held) {
     await page.waitForTimeout(500);
     const before = await state();
     if (before.fieldsGrid === 0) problems.push('setup: no extracted values rendered');
-    if (!before.bottomBarText) problems.push('setup: no save bar rendered');
+    if (!before.topSaveText) problems.push('setup: no Save control rendered in the top row');
     if (!before.heldLine) problems.push('setup: no held-bill line rendered');
     if (before.saveAnyway) problems.push('held bill still shows Save Anyway');
     if (!before.saveBtn) problems.push('plain Save button missing');
@@ -118,15 +118,14 @@ function bill(start, end, held) {
     const bad = [];
     if (after.fieldsGrid) bad.push('values');
     if (after.fieldsHdr) bad.push('warnings/held banner');
-    if (after.pills) bad.push('period pills');
+    if (after.topBarVisible || after.topBarText) bad.push('top row (selectors, chips, Save)');
     if (after.saveRowVisible) bad.push('save row');
-    if (after.bottomBarVisible || after.bottomBarText) bad.push('save bar (Save All / Overwrite All / Merge All / Attach)');
+    if (after.moreSaveText) bad.push('other ways to save (Overwrite all / Merge all / Attach)');
     if (after.mbPanelVisible || after.mbPanelText) bad.push('multi-account panel');
     if (after.heldLine) bad.push('held-bill line');
     if (after.saveAnyway) bad.push('Save Anyway');
     if (after.ocrText) bad.push('OCR text');
     if (after.dockVisible) bad.push('PDF dock');
-    if (after.bldgTabs) bad.push('building tabs');
     if (after.dropZoneCollapsed) bad.push('drop zone still collapsed');
     if (after.raw || after.bills) bad.push('extraction memory');
     if (bad.length) problems.push('after Clear still present: ' + bad.join(', '));

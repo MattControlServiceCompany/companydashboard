@@ -130,12 +130,12 @@
             "If text < 100 chars on a page → Tesseract.js OCR that page",
             "Combined text passed through UTILITY_RULES detect() functions",
             "First matching rule's extract() or extractAll() runs",
-            "Extracted fields shown for review",
-            "Duplicate detection: compare against existing bills",
-            "User can overwrite, merge, or skip duplicates per field",
-            "Assign extracted data to project > building > meter"
+            "Extracted fields shown beside the PDF page; one top row holds the building, utility and period choices, the status chips (to review, already saved, warnings, fixed) and the one Save control",
+            "Duplicate detection: compare against existing bills; each bill that differs is a line in the already-saved chip",
+            "User can overwrite, merge, or skip duplicates per bill from that line",
+            "Assign extracted data to project > building > meter (the Saves to line, Change)"
           ],
-          "functions": ["handlePDFUpload(e)", "processPDFUpload()", "extractPDFPages(file)", "tessOCRPage(imgData)", "detectBillsSections(text)", "openDupCompareModal()", "openManualAssignModal()", "confirmManualAssign()"],
+          "functions": ["handlePDFUpload(e)", "processPDFUpload()", "extractPDFPages(file)", "tessOCRPage(imgData)", "detectBillsSections(text)", "openDupCompareModal()", "openManualAssignModal()", "confirmManualAssign()", "renderPDFFields(parsed, warnings)", "_pdfRenderTopBar()", "_pdfNavModel(bills)", "_pdfSaveControl(kind)", "_pdfApplyFieldEdit(key, value)"],
           "modalIds": ["#dupCompareModal", "#manualAssignModal", "#assignBillModal"],
           "utilityRules": [
             {

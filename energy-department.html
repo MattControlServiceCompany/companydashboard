@@ -4814,6 +4814,341 @@
         color: var(--accent);
         font-weight: 700;
       }
+      /* PDF / OCR top row (one row for every file): selectors, status chips, the one Save control.
+         A chip or Save opens a list that overlays the values; it never pushes them down. */
+      .pdf-topbar {
+        position: sticky;
+        top: 48px;
+        z-index: var(--z-chrome, 10);
+        background: var(--s2);
+        border-bottom: 1px solid var(--border);
+        margin: 6px 0 0;
+        padding: 6px 0;
+      }
+      .pdf-topbar-row {
+        display: flex;
+        align-items: center;
+        gap: 6px 10px;
+        flex-wrap: wrap;
+      }
+      .pdf-top-sel,
+      .pdf-top-chips,
+      .pdf-top-save {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+        min-width: 0;
+      }
+      .pdf-top-chips {
+        flex: 1 1 auto;
+      }
+      .pdf-top-sel select {
+        width: auto;
+        max-width: 210px;
+        font-size: 12px;
+        padding: 4px 8px;
+      }
+      .pdf-top-static {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--text);
+        white-space: nowrap;
+        max-width: 210px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .pdf-chip {
+        font-family: var(--font);
+        font-size: 12px;
+        font-weight: 600;
+        padding: 3px 10px;
+        border-radius: 12px;
+        border: 1px solid var(--border2);
+        background: var(--s3);
+        color: var(--text);
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .pdf-chip.red {
+        border-color: var(--red);
+        background: var(--red-dim);
+        color: var(--red);
+      }
+      .pdf-chip.amber {
+        border-color: var(--amber);
+        background: var(--amber-dim);
+        color: var(--amber);
+      }
+      .pdf-chip.green {
+        border-color: var(--green);
+        color: var(--green);
+      }
+      .pdf-chip.open {
+        background: var(--s4);
+      }
+      .pdf-top-btn {
+        font-family: var(--font);
+        font-size: 12px;
+        font-weight: 600;
+        padding: 4px 12px;
+        border-radius: 6px;
+        border: 1px solid var(--border2);
+        background: transparent;
+        color: var(--text2);
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .pdf-top-btn.open {
+        background: var(--s4);
+      }
+      .pdf-top-btn:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      .pdf-top-btn.primary {
+        background: var(--em);
+        border-color: var(--em);
+        color: var(--bg);
+      }
+      .pdf-top-btn.primary:disabled {
+        background: transparent;
+        border-color: var(--border2);
+        color: var(--text3);
+      }
+      .pdf-pop {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: calc(100% + 4px);
+        z-index: var(--z-chrome, 10);
+        max-height: 60vh;
+        overflow-y: auto;
+        background: var(--s2);
+        border: 1px solid var(--border2);
+        border-radius: 8px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+        padding: 4px 8px;
+        font-size: 12px;
+        color: var(--text);
+      }
+      .pdf-pop.pdf-pop-narrow {
+        left: auto;
+        min-width: 340px;
+        max-width: 100%;
+      }
+      .pdf-pop-title {
+        font-size: 11px;
+        color: var(--text2);
+        padding: 4px 2px 6px;
+        border-bottom: 1px solid var(--border);
+      }
+      .pdf-pop details {
+        border-bottom: 1px solid var(--border);
+        padding: 5px 2px;
+      }
+      .pdf-pop details:last-child {
+        border-bottom: none;
+      }
+      .pdf-pop summary {
+        cursor: pointer;
+        font-weight: 600;
+        line-height: 1.4;
+      }
+      .pdf-pop-body {
+        margin: 6px 0 4px;
+        color: var(--text2);
+        line-height: 1.5;
+      }
+      .pdf-pop-actions {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin-top: 8px;
+      }
+      .pdf-pop-btn {
+        font-family: var(--font);
+        font-size: 11px;
+        font-weight: 600;
+        padding: 3px 10px;
+        border-radius: 5px;
+        border: 1px solid var(--border2);
+        background: transparent;
+        color: var(--text);
+        cursor: pointer;
+      }
+      .pdf-pop-btn:hover {
+        background: var(--s4);
+      }
+      .pdf-pop-btn.primary {
+        border-color: var(--em);
+        color: var(--em);
+      }
+      .pdf-pop-btn:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      .pdf-menu-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 5px 2px;
+        border-bottom: 1px solid var(--border);
+      }
+      .pdf-menu-row:last-child {
+        border-bottom: none;
+      }
+      .pdf-menu-desc {
+        color: var(--text2);
+        font-size: 11px;
+        line-height: 1.4;
+      }
+      .pdf-more-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        width: 100%;
+        padding: 6px 2px;
+        font-family: var(--font);
+        font-size: 12px;
+        color: var(--text);
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        text-align: left;
+      }
+      .pdf-cmp {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        overflow: hidden;
+        margin-top: 4px;
+      }
+      .pdf-cmp th,
+      .pdf-cmp td {
+        padding: 4px 8px;
+        text-align: left;
+        border-right: 1px solid var(--border);
+        border-bottom: 1px solid var(--border);
+        font-size: 12px;
+        color: var(--text);
+      }
+      .pdf-cmp th:last-child,
+      .pdf-cmp td:last-child {
+        border-right: none;
+      }
+      .pdf-cmp tbody tr:last-child td {
+        border-bottom: none;
+      }
+      .pdf-cmp th {
+        background: var(--s1);
+        color: var(--text2);
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        border-bottom: 1px solid var(--border2);
+      }
+      .pdf-cmp td {
+        font-variant-numeric: tabular-nums;
+        word-break: break-word;
+      }
+      /* Where the bill is saved: one line inside the values, the three selects open on Change. */
+      .pdf-saves-to {
+        margin: 6px 0 2px;
+      }
+      .pdf-saves-line {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        flex-wrap: wrap;
+      }
+      .pdf-saves-lbl {
+        font-size: 9px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+        color: var(--text2);
+      }
+      .pdf-saves-text {
+        color: var(--text);
+        min-width: 0;
+      }
+      .pdf-saves-hint {
+        margin-left: auto;
+        font-size: 11px;
+        color: var(--text2);
+      }
+      .pdf-link-btn {
+        font-family: var(--font);
+        font-size: 12px;
+        color: var(--accent);
+        background: transparent;
+        border: none;
+        padding: 0;
+        cursor: pointer;
+        text-decoration: underline;
+      }
+      .pdf-saves-pick {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin-top: 6px;
+      }
+      .pdf-saves-pick select {
+        flex: 1 1 140px;
+        min-width: 0;
+        font-size: 12px;
+        padding: 4px 8px;
+      }
+      /* A flagged value: outline in the severity color, the reason under the value, a fix button when a fix value exists. */
+      .ef-item.flag-error {
+        border-color: var(--red);
+        box-shadow: inset 0 0 0 1px var(--red);
+      }
+      .ef-item.flag-warn {
+        border-color: var(--amber);
+        box-shadow: inset 0 0 0 1px var(--amber);
+      }
+      .ef-why {
+        font-size: 11px;
+        line-height: 1.4;
+        margin-top: 2px;
+        color: var(--text);
+      }
+      .ef-item.flag-error .ef-why {
+        color: var(--red);
+      }
+      .ef-item.flag-warn .ef-why {
+        color: var(--amber);
+      }
+      .ef-fix-btn {
+        margin-left: 6px;
+        font-family: var(--font);
+        font-size: 10px;
+        font-weight: 600;
+        padding: 1px 8px;
+        border-radius: 4px;
+        border: 1px solid currentColor;
+        background: transparent;
+        color: inherit;
+        cursor: pointer;
+      }
+      .ef-fixed-mark {
+        font-size: 10px;
+        font-weight: 700;
+        color: var(--green);
+        cursor: help;
+        white-space: nowrap;
+        margin-left: 6px;
+      }
+      #pdfBody[data-queue-busy] #pdfTopBar,
+      #pdfBody[data-queue-busy] #pdfSaveRow {
+        display: none !important;
+      }
       /* PDF / OCR page header: View PDF and Saved Bills stay top-right at every width; the subtitle wraps instead. */
       #pdfPageHdr .pg-hdr {
         flex-wrap: nowrap;
@@ -4824,37 +5159,6 @@
       #pdfPageHdr .hdr-actions {
         flex-wrap: nowrap;
         flex-shrink: 0;
-      }
-      /* Billing-period strip (top of the left column): toolbar row + wrapping period pills. */
-      #pdfPeriodStrip {
-        margin: 8px 0 6px;
-        padding: 6px 8px;
-        background: var(--s1);
-        border: 1px solid var(--border);
-        border-radius: 6px;
-      }
-      #pdfStripPills {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        gap: 4px 12px;
-        margin-top: 6px;
-      }
-      #pdfStripPills:empty {
-        display: none;
-      }
-      #pdfStripPills > .pdf-strip-banner,
-      #pdfStripPills > .pdf-strip-comm {
-        flex: 1 0 100%;
-      }
-      #pdfStripPills .ef-pill-row {
-        gap: 5px;
-      }
-      #pdfStripPills .ef-pill-month {
-        flex: 0 0 auto;
-      }
-      #pdfStripPills .pdf-strip-gap {
-        flex: 1 0 100%;
       }
       /* Progress, error and non-bill text messages: shown only while there is a message. */
       #pdfStatusBox:empty {
@@ -4870,7 +5174,7 @@
       #pdfBody .ef-grid {
         grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
       }
-      @media (max-width: 900px) {
+      @media (max-width: 799px) {
         #pdfBody {
           flex-direction: column !important;
           overflow: auto !important;
@@ -4883,7 +5187,7 @@
         }
       }
       /* PDF dock open on a narrow window: the PDF sits above the values, pinned at the top; values scroll beneath it. */
-      @media (max-width: 1099px) {
+      @media (max-width: 799px) {
         #pdfBody.pdf-docked {
           display: flex !important;
           flex-direction: column;
@@ -5220,9 +5524,9 @@
         z-index: 30;
         padding: 8px 10px;
         background: var(--s1);
-        border: 1px solid #22c55e;
+        border: 1px solid var(--border2);
         border-radius: 6px;
-        color: #22c55e;
+        color: var(--text);
         font-size: 11px;
         line-height: 1.45;
         box-shadow: 0 4px 14px rgba(0, 0, 0, 0.55);
@@ -5231,97 +5535,12 @@
         display: block;
       }
       .ef-ac-tooltip.level-info {
-        border-color: #60a5fa;
-        color: #60a5fa;
-      }
-      .ef-ac-tooltip.level-info .ef-ac-revert {
-        border-color: #60a5fa;
-        color: #60a5fa;
-      }
-      .ef-ac-tooltip.level-info .ef-ac-revert:hover {
-        background: rgba(96, 165, 250, 0.2);
+        border-color: var(--accent);
+        color: var(--accent);
       }
       .ef-ac-tooltip.level-warn {
-        border-color: #f59e0b;
-        color: #f59e0b;
-      }
-      .ef-ac-tooltip.level-warn .ef-ac-revert {
-        border-color: #f59e0b;
-        color: #f59e0b;
-      }
-      .ef-ac-tooltip.level-warn .ef-ac-revert:hover {
-        background: rgba(245, 158, 11, 0.2);
-      }
-      .ef-ac-tooltip.level-error {
-        border-color: #ef4444;
-        color: #ef4444;
-      }
-      .ef-ac-tooltip.level-error .ef-ac-revert {
-        border-color: #ef4444;
-        color: #ef4444;
-      }
-      .ef-ac-tooltip.level-error .ef-ac-revert:hover {
-        background: rgba(239, 68, 68, 0.2);
-      }
-      .ef-ac-revert {
-        margin-top: 6px;
-        padding: 3px 10px;
-        font-size: 10px;
-        background: transparent;
-        border: 1px solid #22c55e;
-        border-radius: 4px;
-        color: #22c55e;
-        cursor: pointer;
-        font-family: var(--font);
-        font-weight: 600;
-      }
-      .ef-ac-revert:hover {
-        background: rgba(34, 197, 94, 0.2);
-      }
-      /* Pill column container — flex layout for pill rows. The "frozen header" behavior
-         is handled by the parent view-flex layout (pdfFrozenHdr outside the scroll area),
-         so no position:sticky hacks are needed inside the column. */
-      .ef-pill-col {
-        display: flex;
-        flex-direction: column;
-        gap: 3px;
-      }
-      .ef-pill-sticky-month {
-        flex: 0 0 62px;
-        font-size: 10px;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        color: var(--text2);
-        text-align: right;
-      }
-      .ef-pill-sticky-label {
-        flex: 1 1 auto;
-        font-size: 10px;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        color: var(--text2);
-      }
-      .ef-pill-row {
-        display: flex;
-        gap: 8px;
-        align-items: center;
-      }
-      .ef-pill-month {
-        flex: 0 0 62px;
-        font-family: var(--mono);
-        font-variant-numeric: tabular-nums;
-        font-size: 11px;
-        color: var(--text2);
-        text-align: right;
-        white-space: nowrap;
-      }
-      .ef-pill-btn {
-        flex: 1 1 auto;
-        min-width: 0;
-        overflow: hidden;
-        text-overflow: ellipsis;
+        border-color: var(--amber);
+        color: var(--amber);
       }
       .ef-pair {
         display: grid;
@@ -9276,7 +9495,7 @@
                     title="Show or hide the source PDF. It opens at the page of the selected billing period"
                     data-fb="energy.pdf.view-pdf-btn"
                   >
-                    📄 View PDF
+                    View PDF
                   </button>
                   <button
                     class="btn btn-ghost"
@@ -9284,7 +9503,7 @@
                     id="savedBillsBtn"
                     data-fb="energy.pdf.saved-bills-btn"
                   >
-                    🗄️ Saved Bills
+                    Saved Bills
                     <span
                       id="pdfBillCount"
                       style="
@@ -9327,7 +9546,6 @@
                   ondragleave="this.classList.remove('drag')"
                   ondrop="handleDrop(event)"
                 >
-                  <span class="dz-ico">📄</span>
                   <div class="dz-title" id="dz-title">Drop PDF here or click to browse</div>
                   <div class="dz-sub">Utility bills · Drawings · Equipment submittals · Contracts</div>
                   <input
@@ -9346,191 +9564,68 @@
                         clearPDFOCR();
                       "
                     >
-                      ✕ Clear
+                      Clear
                     </button>
                   </div>
                 </div>
                 <div id="pdfTypeSection" style="margin-top: 12px" data-fb="energy.pdf.type-selector">
                   <div class="fl" style="margin-bottom: 6px">Document Type</div>
                   <div class="pdf-type-pills">
-                    <button class="ptpill sel" onclick="setPDFType('utility', this)">🔌 Utility Bill</button>
-                    <button class="ptpill" onclick="setPDFType('drawing', this)">📐 Drawing</button>
-                    <button class="ptpill" onclick="setPDFType('submittal', this)">⚙️ Submittal</button>
-                    <button class="ptpill" onclick="setPDFType('contract', this)">📋 Contract</button>
+                    <button class="ptpill sel" onclick="setPDFType('utility', this)">Utility Bill</button>
+                    <button class="ptpill" onclick="setPDFType('drawing', this)">Drawing</button>
+                    <button class="ptpill" onclick="setPDFType('submittal', this)">Submittal</button>
+                    <button class="ptpill" onclick="setPDFType('contract', this)">Contract</button>
                   </div>
                 </div>
-                <div id="pdfPeriodStrip" data-fb="energy.pdf.period-strip" style="display: none">
-                  <div id="pdfStripTools" style="display: flex; align-items: center; gap: 7px; flex-wrap: wrap">
+                <!-- ONE top row for every file kind: building, utility and period selectors, status chips, the one Save control.
+                     Filled by _pdfRenderTopBar() (app/bill-analysis.js). A chip or Save opens a list that overlays the page. -->
+                <div id="pdfTopBar" class="pdf-topbar" data-fb="energy.pdf.top-bar" style="display: none">
+                  <div class="pdf-topbar-row">
+                    <div id="pdfTopSel" class="pdf-top-sel"></div>
+                    <div id="pdfTopChips" class="pdf-top-chips"></div>
+                    <div id="pdfTopSave" class="pdf-top-save"></div>
+                    <button id="pdfMoreBtn" class="pdf-top-btn" style="display: none" onclick="_pdfTogglePop('more')">More</button>
+                  </div>
+                  <div id="pdfTopPop" class="pdf-pop" style="display: none"></div>
+                  <div id="pdfMorePop" class="pdf-pop pdf-pop-narrow" style="display: none">
+                    <div id="pdfMoreSave"></div>
                     <label
                       id="pdfSbsWrap"
-                      style="
-                        display: none;
-                        align-items: center;
-                        gap: 4px;
-                        font-size: 11px;
-                        color: var(--text);
-                        cursor: pointer;
-                      "
-                      title="Show the PDF next to the values"
+                      class="pdf-more-item"
+                      title="Open the PDF page next to the values when a file is loaded"
                     >
-                      <input
-                        type="checkbox"
-                        id="pdfSbsToggle"
-                        onchange="setPdfSideBySide(this.checked)"
-                        style="margin: 0; cursor: pointer"
-                      />
-                      Side by side
+                      <input type="checkbox" id="pdfSbsToggle" onchange="setPdfSideBySide(this.checked)" />
+                      Show the PDF beside the values
                     </label>
-                    <button
-                      id="pdfSaveDebugBtn"
-                      style="
-                        display: none;
-                        font-size: 11px;
-                        padding: 3px 9px;
-                        border-radius: 6px;
-                        border: 1px solid var(--border2);
-                        background: transparent;
-                        color: var(--text2);
-                        cursor: pointer;
-                        font-family: var(--font);
-                      "
-                      onclick="savePDFDebug(true)"
-                    >
-                      💾 Save Debug
+                    <button id="pdfSaveDebugBtn" class="pdf-more-item" style="display: none" onclick="savePDFDebug(true)">
+                      Save a debug file of this extraction
                     </button>
-                    <div
-                      id="extractMethodBadge"
-                      style="
-                        display: none;
-                        font-size: 10px;
-                        font-weight: 700;
-                        padding: 3px 9px;
-                        border-radius: 10px;
-                        letter-spacing: 0.5px;
-                      "
-                    ></div>
                   </div>
-                  <div id="pdfStripPills"></div>
+                  <div id="pdfSavePop" class="pdf-pop" style="display: none">
+                    <div id="pdfMultiBldgPanel" style="display: none"></div>
+                  </div>
                 </div>
                 <div id="pdfStatusBox" class="ai-box" data-fb="energy.pdf.status-box"></div>
                 <div id="extractedFieldsHdr" data-fb="energy.pdf.extracted-fields-hdr"></div>
-                <div id="extractedFieldsGrid" data-fb="energy.pdf.extracted-fields"></div>
-                <!-- Auto-assign banner: shown when extracted AccountNumber matches a known meter -->
-                <div
-                  id="pdfAutoAssignBanner"
-                  style="
-                    display: none;
-                    margin-top: 10px;
-                    padding: 11px 14px;
-                    background: rgba(var(--em-rgb), 0.08);
-                    border: 1px solid rgba(var(--em-rgb), 0.3);
-                    border-radius: 8px;
-                    font-size: 12px;
-                    line-height: 1.5;
-                  "
-                >
-                  <div id="pdfAutoAssignHdr" style="font-weight: 600; color: var(--em); margin-bottom: 4px">
-                    ✓ Meter Match Found
+                <!-- Where the bill will be saved. The three selects stay here: the save code reads them. -->
+                <div id="pdfSaveRow" class="pdf-saves-to" style="display: none" data-fb="energy.pdf.save-row">
+                  <div class="pdf-saves-line">
+                    <span class="pdf-saves-lbl">Saves to</span>
+                    <span id="pdfSavesToText" class="pdf-saves-text"></span>
+                    <button id="pdfSavesToChange" class="pdf-link-btn" onclick="_pdfToggleSavesTo()">Change</button>
+                    <span class="pdf-saves-hint">Click any value to edit it.</span>
                   </div>
-                  <div id="pdfAutoAssignMsg" style="color: var(--text2); margin-bottom: 8px"></div>
-                  <!-- Override row: collapsible, lets user pick a different destination -->
-                  <div
-                    id="pdfBannerOverrideRow"
-                    style="
-                      display: none;
-                      margin-bottom: 8px;
-                      padding: 8px 10px;
-                      background: rgba(255, 255, 255, 0.04);
-                      border-radius: 6px;
-                      border: 1px solid var(--border);
-                    "
-                  >
-                    <div class="fl" style="font-size: 11px; margin-bottom: 6px; color: var(--text2)">
-                      Override destination
-                    </div>
-                    <div style="display: flex; gap: 6px; flex-wrap: wrap">
-                      <select
-                        class="fs"
-                        id="pdfBannerProjSel"
-                        style="flex: 1; min-width: 120px; font-size: 11px"
-                        onchange="pdfBannerUpdateBldgOpts()"
-                      ></select>
-                      <select
-                        class="fs"
-                        id="pdfBannerBldgSel"
-                        style="flex: 1; min-width: 120px; font-size: 11px"
-                        onchange="pdfBannerUpdateMeterOpts()"
-                      >
-                        <option value="">— Building —</option>
-                      </select>
-                      <select class="fs" id="pdfBannerMeterSel" style="flex: 1; min-width: 120px; font-size: 11px">
-                        <option value="">— Meter —</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div style="display: flex; gap: 7px; flex-wrap: wrap; align-items: center">
-                    <button class="btn btn-em btn-sm" onclick="confirmAutoAssign()">
-                      ✓ Confirm & Save to This Meter
-                    </button>
-                    <button class="btn btn-ghost btn-sm" id="pdfBannerOverrideBtn" onclick="pdfBannerToggleOverride()">
-                      Change Destination
-                    </button>
-                    <button
-                      class="btn btn-ghost btn-sm"
-                      onclick="document.getElementById('pdfAutoAssignBanner').style.display = 'none'"
-                    >
-                      Dismiss
-                    </button>
-                  </div>
-                </div>
-                <div id="pdfMultiBldgPanel" style="display: none; margin-top: 10px"></div>
-                <div id="pdfSaveRow" style="display: none; margin-top: 12px" data-fb="energy.pdf.save-row">
-                  <div class="fl" style="margin-bottom: 5px">Save to project</div>
-                  <div style="display: flex; gap: 8px; flex-wrap: wrap">
-                    <select
-                      class="fs"
-                      id="pdfProjSel"
-                      style="flex: 1; min-width: 140px"
-                      onchange="pdfUpdateBldgMeterOpts()"
-                      data-fb="energy.pdf.project-select"
-                    ></select>
-                    <select
-                      class="fs"
-                      id="pdfBldgSel"
-                      style="flex: 1; min-width: 140px"
-                      onchange="pdfUpdateMeterOpts()"
-                    >
+                  <div id="pdfSavesToPick" class="pdf-saves-pick" style="display: none">
+                    <select class="fs" id="pdfProjSel" onchange="pdfUpdateBldgMeterOpts(); _pdfRefreshSavesTo()" data-fb="energy.pdf.project-select"></select>
+                    <select class="fs" id="pdfBldgSel" onchange="pdfUpdateMeterOpts(); _pdfRefreshSavesTo()">
                       <option value="">Auto-detect building</option>
                     </select>
-                    <select class="fs" id="pdfMeterSel" style="flex: 1; min-width: 140px">
+                    <select class="fs" id="pdfMeterSel" onchange="_pdfRefreshSavesTo()">
                       <option value="">Auto-detect meter</option>
                     </select>
-                    <button class="btn btn-em" onclick="savePDFData()" data-fb="energy.pdf.save-btn">Save</button>
-                    <button class="btn btn-ghost" onclick="clearPDFOCR()" title="Clear extracted data and reset">
-                      ✕ Clear
-                    </button>
                   </div>
                 </div>
-                <!-- Single save location (2026-09-02 consolidation): for a single-account
-                     multi-bill extraction, this is the ONE place Save All / Overwrite All /
-                     Merge All live — pinned at the bottom of the review area, never at the
-                     top-right of the page. Populated by renderMultiBillUI(); stays
-                     hidden for a multi-account file, where showMultiBuildingReviewPanel's own
-                     bottom bar (in pdfMultiBldgPanel) is the single save location instead. -->
-                <div
-                  id="pdfBottomSaveBar"
-                  style="
-                    display: none;
-                    flex-shrink: 0;
-                    position: sticky;
-                    bottom: 0;
-                    z-index: var(--z-sticky, 2);
-                    background: var(--s2);
-                    padding-top: 8px;
-                    margin-top: 8px;
-                    border-top: 1px solid var(--s3);
-                  "
-                ></div>
+                <div id="extractedFieldsGrid" data-fb="energy.pdf.extracted-fields"></div>
               </div>
               <!-- DOCKED PDF VIEWER: sits beside the values and billing periods (no backdrop), with PDF and OCR text tabs.
                    Hidden while a batch is running (data-queue-busy on #pdfBody). -->
@@ -9559,8 +9654,9 @@
                   style="
                     flex-shrink: 0;
                     display: flex;
+                    flex-wrap: wrap;
                     align-items: center;
-                    gap: 8px;
+                    gap: 6px 8px;
                     padding: 6px 10px;
                     background: var(--s1);
                     border-bottom: 1px solid var(--border2);
@@ -9568,7 +9664,7 @@
                 >
                   <button id="pdfDockTabPdf" class="pdf-dock-tab" onclick="setPdfDockTab('pdf')">PDF</button>
                   <button id="pdfDockTabOcr" class="pdf-dock-tab" onclick="setPdfDockTab('ocr')">OCR text</button>
-                  <span id="pdfDockStatus" style="flex: 1; min-width: 0; font-size: 12px; font-weight: 600; color: var(--text)">PDF</span>
+                  <span id="pdfDockStatus" style="flex: 1 1 170px; min-width: 0; font-size: 12px; font-weight: 600; color: var(--text)">PDF</span>
                   <button
                     id="pdfDockOpenTab"
                     class="btn btn-ghost btn-sm"

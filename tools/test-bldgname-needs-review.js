@@ -1,8 +1,8 @@
 /**
  * test-bldgname-needs-review.js
  *
- * Regression test for the building buttons of the PDF / OCR page (app/bill-analysis.js _pdfGroupBills,
- * _pdfBuildingName): name, bill count, "N need review", counts by building and type.
+ * Regression test for the building list in the top row of the PDF / OCR page (app/bill-analysis.js _pdfGroupBills,
+ * _pdfBuildingName, _pdfSelectorsHtml): name, "(N to review)", counts by building and type.
  *
  * FIX(2026-09-25, wre-needs-review-all-branches): before this fix, the
  * `_fieldsClean` (missing-field) warning check ran ONLY inside the
@@ -16,7 +16,7 @@
  * Loads the REAL renderMultiBillUI() (app/bill-analysis.js) plus its real
  * dependency _looksLikeAddress/_stripAddressTrailingJunk (app/energy-savings.js)
  * via Node's vm module — not a reimplementation of the label logic — and reads
- * the rendered building-tab HTML back out of a captured DOM stub element.
+ * the rendered building list (a select in the top row) back out of a captured DOM stub element.
  *
  * Covers all 3 label-source branches _bldgName() can take:
  *   1. Plausible address branch (final return in the function)
@@ -32,11 +32,13 @@ const vm = require('vm');
 const path = require('path');
 
 function buildSandbox() {
+  // The top row of the page: only the selector box is read back; the other boxes just need to exist.
   const bldgBarStub = { style: {}, innerHTML: '' };
+  const stubs = { pdfTopBar: { style: {} }, pdfTopSel: bldgBarStub, pdfTopChips: { style: {}, innerHTML: '' }, pdfTopSave: { style: {}, innerHTML: '' }, pdfTopPop: { style: {}, innerHTML: '' }, pdfMorePop: { style: {} }, pdfSavePop: { style: {} }, pdfMoreSave: { style: {}, innerHTML: '' } };
   const sandbox = {
     window: {},
     document: {
-      getElementById: (id) => (id === 'pdfBldgTabsBar' ? bldgBarStub : null),
+      getElementById: (id) => stubs[id] || null,
       createElement: () => ({ style: {}, classList: { add() {}, remove() {}, toggle() {} } }),
       querySelectorAll: () => [],
       addEventListener: () => {},
@@ -96,12 +98,14 @@ function setup() {
   return { sandbox, bldgBarStub };
 }
 
-// Extracts { acct: label text } from the rendered building button HTML. The label is the button text with tags removed.
+// Extracts { acct: label text } from the building select in the top row (one option for each building).
 function extractLabels(html) {
   const out = {};
-  const re = /window\._pdfBuildingTab='([^']*)';selectMultiBill\(\d+\)"[^>]*>([\s\S]*?)<\/button>/g;
+  const sel = /<select[^>]*aria-label="Building"[^>]*>([\s\S]*?)<\/select>/.exec(html);
+  if (!sel) return out;
+  const re = /<option value="([^"]*)"[^>]*>([\s\S]*?)<\/option>/g;
   let m;
-  while ((m = re.exec(html))) out[m[1]] = m[2].replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  while ((m = re.exec(sel[1]))) out[m[1]] = m[2].replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
   return out;
 }
 
@@ -113,12 +117,14 @@ function runCase(sandbox, bldgBarStub, name, bills, billWarnings) {
     window._pdfCommTab = undefined;
     window._pdfDupMap = {};
     window._pdfQueue = null;
+    window._pdfBillChips = null;
   `,
     sandbox,
   );
   const renderMultiBillUI = vm.runInContext('renderMultiBillUI', sandbox);
   const setBills = vm.runInContext('(function(b, w) { bills = b; window._pdfBillWarnings = w; })', sandbox);
   setBills(bills, billWarnings);
+  vm.runInContext('(function(b) { window._pdfMultiBills = b; })', sandbox)(bills);
   bldgBarStub.innerHTML = '';
   const box = { innerHTML: '' };
   renderMultiBillUI(bills, box);
@@ -159,14 +165,14 @@ function expect(name, cond, detail) {
 function main() {
   const { sandbox, bldgBarStub } = setup();
 
-  const review = (l) => /(\d+) need review/.exec(l || '');
+  const review = (l) => /\((\d+) to review\)/.exec(l || '');
   const noOld = (l) => !/\(needs review\)/.test(l || '');
   // 1. plausible address + error -> name, "1 bill", "1 need review", no old tag
   {
     const bills = [makeBill('ACCT001', '307 E Sample St', {}), makeBill('ACCT002', '999 Other St', {})];
     const labels = runCase(sandbox, bldgBarStub, 'plausible+missing', bills, [warn('error', 'TotalCurrentCharges'), clean()]);
     const l = labels['ACCT001'];
-    expect('1. warning -> "1 need review" and "1 bill"', review(l) && review(l)[1] === '1' && /1 bill/.test(l) && noOld(l), JSON.stringify(l));
+    expect('1. warning -> "(1 to review)" after the building name', review(l) && review(l)[1] === '1' && /^307 E Sample St/.test(l) && noOld(l), JSON.stringify(l));
     expect('1b. no utility type in the label', !/Gas|Electric|Water/.test(l), JSON.stringify(l));
   }
   // 2. clean -> no review text
@@ -198,8 +204,8 @@ function main() {
     ];
     const warns = [warn('error', 'TotalCurrentCharges'), clean(), clean()];
     const labels = runCase(sandbox, bldgBarStub, 'counts', bills, warns);
-    expect('5. counts: 2 bills + 1 bill', /2 bills/.test(labels['ACCT001']) && /1 bill/.test(labels['ACCT002']), JSON.stringify(labels));
     const grp = vm.runInContext('_pdfGroupBills', sandbox)(bills, warns, true);
+    expect('5. counts: 2 bills + 1 bill, one review line on the building with the warning', grp[0].total === 2 && grp[1].total === 1 && /\(1 to review\)/.test(labels['ACCT001']) && !review(labels['ACCT002']), JSON.stringify(labels));
     const t = (g, c) => g.types.find((x) => x.comm === c);
     expect('5b. warning counted only inside its own building and type', t(grp[0], 'Gas').warn === 1 && t(grp[0], 'Water').warn === 0 && t(grp[1], 'Gas').warn === 0, JSON.stringify(grp));
     expect('5c. sum of building bills = bills in file', grp.reduce((n, g) => n + g.total, 0) === bills.length);
@@ -224,12 +230,12 @@ function main() {
     const labels = runCase(sandbox, bldgBarStub, 'held', bills, warns);
     const grp = vm.runInContext('_pdfGroupBills', sandbox)(bills, warns, true);
     const t = (g, c) => g.types.find((x) => x.comm === c);
-    expect('7a. held bills counted: building 2 need review', review(labels['ACCT001']) && review(labels['ACCT001'])[1] === '2', JSON.stringify(labels));
+    expect('7a. held bills counted: building shows (2 to review)', review(labels['ACCT001']) && review(labels['ACCT001'])[1] === '2', JSON.stringify(labels));
     expect('7b. held bills counted per type; confirmed one is not', t(grp[0], 'Gas').warn === 1 && t(grp[0], 'Water').warn === 1 && grp[1].review === 0, JSON.stringify(grp));
     const issues = vm.runInContext('_pdfBillIssues', sandbox);
     expect('7c. one issue rule: held bill -> any', issues(bills[0], []).any === true && issues(bills[3], []).any === false);
     const src = fs.readFileSync(path.join(__dirname, '..', 'app', 'bill-analysis.js'), 'utf8');
-    expect('7d. period pill calls _pdfBillIssues only', /const hasAnyIssue = _pillIssues\.any;/.test(src));
+    expect('7d. the period list calls _pdfBillIssues only', /const bad = _pdfBillIssues\(bills\[p\.i\]/.test(src));
     expect('7e. no whole-PDF count text in the review panel or gate notice', !/ across ' \+|bill\(s\) flagged for review and held/.test(src));
     const vb = src.slice(src.indexOf('async function viewCurrentExtractionPDF'), src.indexOf('function _pdfDockRevoke'));
     expect('7f. View PDF always uses the dock (no modal path)', !/_showPdfModal|_pdfSideBySideOn/.test(vb));
