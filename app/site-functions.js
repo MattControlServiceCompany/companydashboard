@@ -2575,6 +2575,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.20.144', date: '2026-10-20', title: 'Utility Data: missing bill days shown as a gap chip',
+    items: [
+      { type: 'feature', text: "Utility Data: a dashed 'gap' chip with a calendar icon now shows on the building row, the meter button and the Projects list when a meter has missing bill days. Hover shows the missing dates; click opens the Bills tab at the gap. It is not a warning and is not in any warning count." }
+    ]
+  },
   { v: 'v2026.10.20.143', date: '2026-10-20', title: 'Electric bills read by position and checked to the cent',
     items: [
       { type: 'change', text: 'PDF / OCR page: electric bill charges are now read by their place on the page. They must add up to the printed Subtotal and Current Charges to the cent.' },
