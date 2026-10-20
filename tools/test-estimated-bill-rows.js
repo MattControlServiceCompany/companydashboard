@@ -163,8 +163,8 @@ console.log('=== 2. One day-count method — Spring Hill High June-2025 gap (202
   // function) — not a private raw ms-diff — so they can never independently drift again.
   const udSrc = fs.readFileSync(path.join(REPO, 'app/utility-data.js'), 'utf8');
   assert(
-    /const gapDays = calcDays\(gapEarlier, gapLater, incl\)/.test(udSrc),
-    'app/utility-data.js gap line computes gapDays via calcDays(gapEarlier, gapLater, incl)',
+    /const gapDays = _g.days/.test(udSrc),
+    "app/utility-data.js gap line takes gapDays from computeMeterGaps (which uses calcDays)",
   );
   assert(
     !/const gapDays = Math\.round\(Math\.abs\(_parseISO\(gapLater\)/.test(udSrc),

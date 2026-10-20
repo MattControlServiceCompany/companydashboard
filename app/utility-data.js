@@ -1589,6 +1589,55 @@ function udGoToFlagged(evt, pid, bldgId, meterId, embed) {
   udSelectBldg(bldgId);
   udSelectMeter(meterId);
 }
+// The gap chip (building row, meter pill, project row). gaps = computeMeterGaps / computeBuildingGaps / computeProjectGaps
+// result. A gap is NOT a warning: dashed neutral outline, calendar icon, never counted in any warning count.
+// goto = { pid, bldgId, meterId, embed, later }: a click opens that meter on the Bills tab, scrolled to the gap row.
+// pill = true: the chip sits inside a meter pill button, so the click selects the meter through the pill.
+function udGapChipHtml(gaps, goto, pill) {
+  if (!gaps || !gaps.length) return '';
+  const range = (g) => g.days + ' day' + (g.days !== 1 ? 's' : '') + ' missing ' + fmtDate(g.earlier) + ' – ' + fmtDate(g.later);
+  const shown = gaps.slice(0, 3).map(range);
+  if (gaps.length > 3) shown.push('and ' + (gaps.length - 3) + ' more');
+  const hover = shown.join('; ') + (goto ? '. Click to open the Bills tab at the gap.' : '');
+  let click = '';
+  if (goto && pill) {
+    click = ' onclick="udGoToGapFromPill(event,' + _escHtml(JSON.stringify(goto.meterId)) + ',' + _escHtml(JSON.stringify(goto.later)) + ',this)"';
+  } else if (goto) {
+    click =
+      ' onclick="udGoToGap(event,' +
+      _escHtml(JSON.stringify(goto.pid)) +
+      ',' +
+      _escHtml(JSON.stringify(goto.bldgId)) +
+      ',' +
+      _escHtml(JSON.stringify(goto.meterId)) +
+      ',' +
+      (goto.embed ? 'true' : 'false') +
+      ',' +
+      _escHtml(JSON.stringify(goto.later)) +
+      ')"';
+  }
+  return (
+    '<span class="ud-gap-chip' + (goto ? ' ud-gap-chip-click' : '') + '" title="' + _escHtml(hover) + '"' + click + '>' +
+    '<span class="ud-gap-chip-ico" aria-hidden="true">📅</span>' +
+    (gaps.length > 1 ? gaps.length + ' gaps' : 'gap') +
+    '</span>'
+  );
+}
+// Scroll the open Bills table to the gap row that ends at the given date (the first gap row when not found).
+function udScrollToGapRow(later) {
+  const rows = Array.from(document.querySelectorAll('.ud-bill-gap-row'));
+  const row = rows.find((r) => r.getAttribute('data-gap-later') === later) || rows[0];
+  if (row && row.scrollIntoView) row.scrollIntoView({ block: 'center' });
+}
+function udGoToGap(evt, pid, bldgId, meterId, embed, later) {
+  udGoToFlagged(evt, pid, bldgId, meterId, embed);
+  udScrollToGapRow(later);
+}
+function udGoToGapFromPill(evt, meterId, later, el) {
+  if (evt) evt.stopPropagation();
+  udSelectMeter(meterId, el);
+  udScrollToGapRow(later);
+}
 // Bills change (edit, import, delete) -> saveUtilityData -> the badges in the left list are drawn again.
 let _udBadgeRefreshTimer = null;
 function udScheduleBadgeRefresh() {
@@ -1653,10 +1702,13 @@ function renderUDProjList() {
       _pFlags,
       _pFlags.firstFlagged && { pid: p.id, bldgId: _pFlags.firstFlagged.bldgId, meterId: _pFlags.firstFlagged.meterId },
     );
+    const _pGaps = computeProjectGaps(bldgs);
+    const _pGapChip = udGapChipHtml(_pGaps, _pGaps.length && { pid: p.id, bldgId: _pGaps[0].bldgId, meterId: _pGaps[0].meterId, later: _pGaps[0].later });
     html += `<div class="ud-nav-proj-item${projActive}" onclick="udSelectProj(${p.id})">
             <span style="font-size:14px;flex-shrink:0">${getFacilityIcon(p.type)}</span>
             <span class="ud-nav-proj-name" title="${_escHtml(p.name)}">${_escHtml(p.name)}</span>
             ${_pBadge}
+            ${_pGapChip}
             ${bldgs.length ? `<span class="ud-nav-proj-count" title="${bldgs.length} building${bldgs.length === 1 ? '' : 's'}">${bldgs.length}</span>` : ''}
           </div>`;
     // If this project is selected, show its buildings inline underneath
@@ -1673,11 +1725,13 @@ function renderUDProjList() {
             _bFlags,
             _bFlags.firstFlaggedMeterId !== null && { pid: p.id, bldgId: b.id, meterId: _bFlags.firstFlaggedMeterId },
           );
+          const _bGaps = computeBuildingGaps(b);
+          const gapChip = udGapChipHtml(_bGaps, _bGaps.length && { pid: p.id, bldgId: b.id, meterId: _bGaps[0].meterId, later: _bGaps[0].later });
           const bldgActive = b.id === udSelBldgId ? ' active' : '';
           html += `<div class="ud-nav-bldg-item${bldgActive}" onclick="udSelectBldg('${b.id}')">
                   <div style="flex:1;min-width:0">
                     <div class="ud-nav-bldg-name" title="${_escHtml(b.name)}">${_escHtml(b.name)}</div>
-                    <div class="ud-nav-bldg-meta">${b.sqft ? Number(b.sqft).toLocaleString() + ' sf · ' : ''}${_totalMCount} meter${_totalMCount !== 1 ? 's' : ''} ${blBadge}${flagBadge ? ' ' + flagBadge : ''}</div>
+                    <div class="ud-nav-bldg-meta">${b.sqft ? Number(b.sqft).toLocaleString() + ' sf · ' : ''}${_totalMCount} meter${_totalMCount !== 1 ? 's' : ''} ${blBadge}${flagBadge ? ' ' + flagBadge : ''}${gapChip ? ' ' + gapChip : ''}</div>
                   </div>
                   <div class="ud-nav-bldg-actions">
                     <button class="btn btn-ghost btn-sm" style="padding:1px 5px;font-size:11px" onclick="event.stopPropagation();openBldgModal('${b.id}')" title="Edit">✏️</button>
@@ -3158,6 +3212,8 @@ function udMeterPillsHtml(meters, b, _curMid) {
         const _pTxt = _pTxtMap[m.commodity] || 'var(--text2)';
         const _blTag = udMeterBaselineChipHtml(udSelProjId, m);
         const _flagTag = udFlagBadgeHtml(_mFlags);
+        const _mGaps = computeMeterGaps(m);
+        const _gapTag = udGapChipHtml(_mGaps, _mGaps.length && { meterId: m.id, later: _mGaps[0].later }, true);
         return (
           '<button class="ma-meter-pill' +
           _pCls +
@@ -3178,6 +3234,7 @@ function udMeterPillsHtml(meters, b, _curMid) {
           '</span>' +
           _blTag +
           _flagTag +
+          _gapTag +
           '</button>'
         );
       })
@@ -4187,6 +4244,10 @@ function renderBillsPane(pane, m, bills, incl) {
     if (c.k) fieldColMap[c.k] = i;
   });
   const isPropaneMeter = (m.commodity || '').toLowerCase() === 'propane';
+  // Gaps from the shared finder. Ascending view: the gap row sits above the bill that starts at g.later.
+  // Descending view: above the bill that ends at g.earlier (the displayed-previous row is the later bill).
+  const _meterGaps = computeMeterGaps(m);
+  const _gapForRow = (r) => _meterGaps.find((g) => (sortAsc ? r.start === g.later : r.end === g.earlier));
   bills.forEach((row, idx) => {
     if (idx > 0 && !isPropaneMeter) {
       // When sorted descending, the "previous" row in the display is chronologically later.
@@ -4214,19 +4275,19 @@ function renderBillsPane(pane, m, bills, incl) {
       if (prevEnd && curStart && calcDays(curStart, prevEnd, false) > 3) {
         const overlapDays = calcDays(curStart, prevEnd, false);
         tblBody += `<tr class="ud-bill-overlap-row"><td colspan="${cols.length}"><div class="ud-bill-overlap-msg">⚠ Overlapping billing periods — ${overlapDays} day${overlapDays !== 1 ? 's' : ''} of overlap between ${fmtDate(curStart)} and ${fmtDate(prevEnd)} (check for duplicate or incorrect dates)</div></td></tr>`;
-      } else if (detectGap(prevEnd, curStart)) {
-        // Bug #14: Always report the gap in chronological order (earlier date → later date)
-        // regardless of whether the bills array is ascending or descending. The label
-        // direction must match whichever date is actually earlier.
-        const gapEarlier = _parseISO(prevEnd) <= _parseISO(curStart) ? prevEnd : curStart;
-        const gapLater = _parseISO(prevEnd) <= _parseISO(curStart) ? curStart : prevEnd;
+      } else if (_gapForRow(row)) {
+        // ONE gap finder: the pair and the day count come from computeMeterGaps (same result the
+        // gap chips use). Earlier/later are already in chronological order.
+        const _g = _gapForRow(row);
+        const gapEarlier = _g.earlier;
+        const gapLater = _g.later;
         // 2026-09-25 (estimate-row day-count fix, d5b815dc): use the site's one shared
         // day-count function (calcDays, respects the Inclusive/Exclusive "Day calc" toggle)
         // instead of a raw ms-diff, so this line always matches the "Estimate missing period"
         // row's day count below (estimateMissingPeriod / csv-import.js already uses calcDays).
         // The raw diff undercounts by 1 in Inclusive mode (the site's default) since it never
         // added the +1 for the shared boundary day — calcDays's number is the correct one.
-        const gapDays = calcDays(gapEarlier, gapLater, incl);
+        const gapDays = _g.days;
         const gapMonths = Math.round(gapDays / 30);
         // Bug #17: If we skipped over empty-date rows to find the valid end date, add a note
         // so the user knows there's a row with missing dates adjacent to this gap.
@@ -4247,7 +4308,7 @@ function renderBillsPane(pane, m, bills, incl) {
         // real text content; flex-shrink:0 + white-space:nowrap keep it from being compressed in
         // the wide (horizontally-scrolled) .ud-bill-gap-msg flex row.
         const estimateBtn = `<button style="margin-left:10px;padding:2px 10px;flex-shrink:0;white-space:nowrap;width:auto;height:auto;border:1px solid var(--em);border-radius:5px;background:transparent;color:var(--em);font-size:11px;font-weight:600;cursor:pointer;font-family:var(--font)" onclick="estimateMissingPeriod('${m.id}','${gapEarlier}','${gapLater}')" title="Estimate this period's usage from the day-weighted average of the surrounding bills">➕ Estimate missing period</button>`;
-        tblBody += `<tr class="ud-bill-gap-row"><td colspan="${cols.length}"><div class="ud-bill-gap-msg"><span style="flex-shrink:0;white-space:nowrap">⚠️ Gap in data — ${gapMonths > 1 ? '~' + gapMonths + ' months (' : ''}${gapDays} day${gapDays !== 1 ? 's' : ''}${gapMonths > 1 ? ')' : ''} missing between ${fmtDate(gapEarlier)} and ${fmtDate(gapLater)}${_emptyRowNote}</span>${estimateBtn}</div></td></tr>`;
+        tblBody += `<tr class="ud-bill-gap-row" data-gap-later="${_escHtml(gapLater)}"><td colspan="${cols.length}"><div class="ud-bill-gap-msg"><span style="flex-shrink:0;white-space:nowrap">⚠️ Gap in data — ${gapMonths > 1 ? '~' + gapMonths + ' months (' : ''}${gapDays} day${gapDays !== 1 ? 's' : ''}${gapMonths > 1 ? ')' : ''} missing between ${fmtDate(gapEarlier)} and ${fmtDate(gapLater)}${_emptyRowNote}</span>${estimateBtn}</div></td></tr>`;
       }
     }
     // Flags for this row come from the shared summary (dismissed flags are already removed).

@@ -3242,13 +3242,15 @@ function renderProjUDBldgNav(projId) {
         bFlags,
         bFlags.firstFlaggedMeterId !== null && { pid: projId, bldgId: b.id, meterId: bFlags.firstFlaggedMeterId, embed: true },
       );
+      const bGaps = computeBuildingGaps(b);
+      const gapChip = udGapChipHtml(bGaps, bGaps.length && { pid: projId, bldgId: b.id, meterId: bGaps[0].meterId, embed: true, later: bGaps[0].later });
       const bCount = (b.bills || []).length + allMeters.reduce((s, m) => s + (m.bills || []).length, 0);
       const isActive = projUDSelBldg[projId] === b.id;
       return `<div class="ud-nav-bldg-item${isActive ? ' active' : ''}" onclick="projUDSelectBldg('${projId}','${b.id}')">
             <span style="font-size:14px">${getFacilityIcon?.(b.type) || '🏢'}</span>
             <div style="flex:1;min-width:0">
               <div class="ud-nav-bldg-name">${_escHtml(b.name || 'Building')}</div>
-              <div class="ud-nav-bldg-meta">${totalMCount} meter${totalMCount !== 1 ? 's' : ''} ${blBadge}${flagBadge ? ' ' + flagBadge : ''}</div>
+              <div class="ud-nav-bldg-meta">${totalMCount} meter${totalMCount !== 1 ? 's' : ''} ${blBadge}${flagBadge ? ' ' + flagBadge : ''}${gapChip ? ' ' + gapChip : ''}</div>
             </div>
             <div class="ud-nav-bldg-actions">
               <button class="btn btn-ghost btn-sm" style="padding:1px 5px;font-size:11px" onclick="event.stopPropagation();openBldgModalForProj('${projId}','${b.id}')" title="Edit">✏️</button>
