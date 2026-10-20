@@ -3,7 +3,14 @@
    adds .rail-open (sidebar-rail.js), which draws the full sidebar above the page.
    The rail keeps its width, so the page never moves. 1600 px and wider: unchanged.
    Under 900 px the existing slide-in drawer is used. */
+/* Short text label for a button that has no icon: shown only in the closed rail. */
+.rail-short {
+  display: none;
+}
 @media (min-width: 900px) and (max-width: 1599px) {
+  .app-wrap > .sidebar:not(.rail-open) .rail-short {
+    display: inline;
+  }
   .app-wrap > .sidebar {
     width: 56px;
     position: relative;

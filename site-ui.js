@@ -170,7 +170,7 @@
       '<div class="sb-divider"></div>' +
       '<div class="sb-clock" id="sb-clock">--:-- --</div>' +
       '<div class="sb-date" id="sb-date">Loading...</div>' +
-      '<button class="sb-settings-btn" id="siteDataBtn" onclick="siteDataMenuToggle(this)">&#128450; Data</button>' +
+      '<button class="sb-settings-btn" id="siteDataBtn" onclick="siteDataMenuToggle(this)" title="Backup &amp; Data"><span class="rail-short">Data</span><span class="rail-txt">Backup &amp; Data</span></button>' +
       '<div class="sb-version" style="text-align:center;font-size:10px;color:var(--text3);margin-top:8px;font-family:var(--mono);letter-spacing:0.5px">' +
       CH_VERSION +
       '</div>';

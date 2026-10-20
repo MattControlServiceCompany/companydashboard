@@ -1590,28 +1590,42 @@ function udGoToFlagged(evt, pid, bldgId, meterId, embed) {
   udSelectMeter(meterId);
 }
 // The gap text (building row, meter pill, Projects table). gaps = computeMeterGaps / computeBuildingGaps /
-// computeProjectGaps result. A gap is NOT a warning: plain muted text, never a badge, never counted in any warning count.
-// opts.kind: 'bldg' ("1 bill gap" with a small calendar icon) | 'pill' ("1 gap") | 'proj' ("38 bill gaps", no click).
-// goto = { pid, bldgId, meterId, embed, later }: a click opens that meter on the Bills tab, scrolled to the gap row.
+// computeProjectGaps result; each gap carries .baseline (set once in computeMeterGaps). A gap is NOT a warning: plain text,
+// never a badge, never orange or red, never counted in any warning count. A baseline gap is near-black and semibold,
+// any other gap is muted grey. Baseline gaps are listed first: "2 baseline gaps · 3 other gaps".
+// kind: 'bldg' | 'pill' | 'proj'. 'proj' (Projects list) shows ONLY baseline gaps and nothing when there are none.
+// A pill is one meter, so its words are "1 baseline gap" or "1 gap". goto = { pid, bldgId, meterId, embed, later }:
+// a click opens that meter on the Bills tab at the gap.
 function udGapTextHtml(gaps, goto, kind) {
   if (!gaps || !gaps.length) return '';
-  const range = (g) => g.days + ' day' + (g.days !== 1 ? 's' : '') + ' missing ' + fmtDate(g.earlier) + ' – ' + fmtDate(g.later);
-  const shown = gaps.slice(0, 3).map(range);
-  if (gaps.length > 3) shown.push('and ' + (gaps.length - 3) + ' more');
-  const hover = shown.join('; ') + (goto ? '. Click to open the Bills tab at the gap.' : '');
-  const n = gaps.length;
-  const word = kind === 'pill' ? 'gap' : 'bill gap';
-  const label = n + ' ' + word + (n !== 1 ? 's' : '');
-  let click = '';
-  if (goto && kind === 'pill') {
-    click = ' onclick="udGoToGapFromPill(event,' + _escHtml(JSON.stringify(goto.meterId)) + ',' + _escHtml(JSON.stringify(goto.later)) + ',this)"';
-  } else if (goto) {
-    click =
-      ' onclick="udGoToGap(event,' + _escHtml(JSON.stringify(goto.pid)) + ',' + _escHtml(JSON.stringify(goto.bldgId)) + ',' +
-      _escHtml(JSON.stringify(goto.meterId)) + ',' + (goto.embed ? 'true' : 'false') + ',' + _escHtml(JSON.stringify(goto.later)) + ')"';
-  }
-  const ico = kind === 'bldg' ? '<span class="ud-gap-ico" aria-hidden="true">📅</span>' : '';
-  return '<span class="ud-gap-txt' + (goto ? ' ud-gap-txt-click' : '') + '" title="' + _escHtml(hover) + '"' + click + '>' + ico + label + '</span>';
+  const base = gaps.filter((g) => g.baseline);
+  const other = gaps.filter((g) => !g.baseline);
+  const range = (g) =>
+    g.days + ' day' + (g.days !== 1 ? 's' : '') + ' missing ' + fmtDate(g.earlier) + ' – ' + fmtDate(g.later) +
+    (g.baseline ? ', in baseline' : ', not in baseline');
+  const part = (list, isBase) => {
+    if (!list.length) return '';
+    const shown = list.slice(0, 3).map(range);
+    if (list.length > 3) shown.push('and ' + (list.length - 3) + ' more');
+    const g0 = list[0];
+    const gt = goto && (kind === 'pill' ? { meterId: g0.meterId || goto.meterId, later: g0.later } : Object.assign({}, goto, { meterId: g0.meterId || goto.meterId, later: g0.later }));
+    const hover = shown.join('; ') + (gt ? '. Click to open the Bills tab at the gap.' : '');
+    const n = list.length;
+    const label = n + ' ' + (isBase ? 'baseline ' : kind === 'bldg' || kind === 'proj' ? 'other ' : '') + 'gap' + (n !== 1 ? 's' : '');
+    let click = '';
+    if (gt && kind === 'pill') {
+      click = ' onclick="udGoToGapFromPill(event,' + _escHtml(JSON.stringify(gt.meterId)) + ',' + _escHtml(JSON.stringify(gt.later)) + ',this)"';
+    } else if (gt) {
+      click =
+        ' onclick="udGoToGap(event,' + _escHtml(JSON.stringify(gt.pid)) + ',' + _escHtml(JSON.stringify(gt.bldgId)) + ',' +
+        _escHtml(JSON.stringify(gt.meterId)) + ',' + (gt.embed ? 'true' : 'false') + ',' + _escHtml(JSON.stringify(gt.later)) + ')"';
+    }
+    return '<span class="ud-gap-txt' + (isBase ? ' ud-gap-base' : '') + (gt ? ' ud-gap-txt-click' : '') + '" title="' + _escHtml(hover) + '"' + click + '>' + _escHtml(label) + '</span>';
+  };
+  // Pill (one meter): all gaps share one flag, so the words are "baseline gap(s)" or "gap(s)".
+  if (kind === 'pill') return part(base, true) || part(other, false);
+  if (kind === 'proj') return part(base, true);
+  return [part(base, true), part(other, false)].filter(Boolean).join(' · ');
 }
 // Scroll the open Bills table to the gap row that ends at the given date (the first gap row when not found).
 function udScrollToGapRow(later) {
@@ -1712,7 +1726,7 @@ function renderUDProjList() {
             _bFlags,
             _bFlags.firstFlaggedMeterId !== null && { pid: p.id, bldgId: b.id, meterId: _bFlags.firstFlaggedMeterId },
           );
-          const _bGaps = computeBuildingGaps(b);
+          const _bGaps = computeBuildingGaps(b, (m) => isBaselineExcluded(p.id, m.id));
           const gapChip = udGapTextHtml(_bGaps, _bGaps.length && { pid: p.id, bldgId: b.id, meterId: _bGaps[0].meterId, later: _bGaps[0].later }, 'bldg');
           const bldgActive = b.id === udSelBldgId ? ' active' : '';
           html += `<div class="ud-nav-bldg-item${bldgActive}" onclick="udSelectBldg('${b.id}')">
@@ -3199,7 +3213,7 @@ function udMeterPillsHtml(meters, b, _curMid) {
         const _pTxt = _pTxtMap[m.commodity] || 'var(--text2)';
         const _blTag = udMeterBaselineChipHtml(udSelProjId, m);
         const _flagTag = udFlagBadgeHtml(_mFlags);
-        const _mGaps = computeMeterGaps(m);
+        const _mGaps = computeMeterGaps(m, !isBaselineExcluded(udSelProjId, m.id));
         const _gapTag = udGapTextHtml(_mGaps, _mGaps.length && { meterId: m.id, later: _mGaps[0].later }, 'pill');
         return (
           '<button class="ma-meter-pill' +
@@ -4233,7 +4247,7 @@ function renderBillsPane(pane, m, bills, incl) {
   const isPropaneMeter = (m.commodity || '').toLowerCase() === 'propane';
   // Gaps from the shared finder. Ascending view: the gap row sits above the bill that starts at g.later.
   // Descending view: above the bill that ends at g.earlier (the displayed-previous row is the later bill).
-  const _meterGaps = computeMeterGaps(m);
+  const _meterGaps = computeMeterGaps(m, !isBaselineExcluded(udSelProjId, m.id));
   const _gapForRow = (r) => _meterGaps.find((g) => (sortAsc ? r.start === g.later : r.end === g.earlier));
   bills.forEach((row, idx) => {
     if (idx > 0 && !isPropaneMeter) {

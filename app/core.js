@@ -1219,7 +1219,7 @@ function renderProjTable() {
             year: '2-digit',
           })
         : '—';
-      const _pGaps = computeProjectGaps(getUDBldgs(p.id));
+      const _pGaps = computeProjectGaps(getUDBldgs(p.id), (m) => isBaselineExcluded(p.id, m.id));
       const _projSub = [p.phase || '', udGapTextHtml(_pGaps, null, 'proj')].filter(Boolean).join(' · ');
       return `<tr class="clickable" onclick="openDetail(${p.id})">
             <td><div style="font-weight:600;margin-bottom:2px">${p.name}</div>${_projSub ? `<div style="font-size:10px;color:var(--text2)">${_projSub}</div>` : ''}</td>
@@ -3244,7 +3244,7 @@ function renderProjUDBldgNav(projId) {
         bFlags,
         bFlags.firstFlaggedMeterId !== null && { pid: projId, bldgId: b.id, meterId: bFlags.firstFlaggedMeterId, embed: true },
       );
-      const bGaps = computeBuildingGaps(b);
+      const bGaps = computeBuildingGaps(b, (m) => isBaselineExcluded(projId, m.id));
       const gapChip = udGapTextHtml(bGaps, bGaps.length && { pid: projId, bldgId: b.id, meterId: bGaps[0].meterId, embed: true, later: bGaps[0].later }, 'bldg');
       const bCount = (b.bills || []).length + allMeters.reduce((s, m) => s + (m.bills || []).length, 0);
       const isActive = projUDSelBldg[projId] === b.id;

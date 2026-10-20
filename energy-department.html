@@ -6355,9 +6355,9 @@
       }
       .ud-nav-bldg-name {
         flex: 1;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
+        min-width: 0;
+        white-space: normal;
+        overflow-wrap: anywhere;
       }
       .ud-nav-bldg-meta {
         font-size: 10px;
@@ -6375,9 +6375,9 @@
         color: var(--accent);
         text-decoration: underline;
       }
-      .ud-gap-ico {
-        font-size: 9px;
-        margin-right: 2px;
+      .ud-gap-txt.ud-gap-base {
+        color: var(--text);
+        font-weight: 600;
       }
       .ud-nav-bldg-actions {
         display: flex;
@@ -8876,7 +8876,7 @@
             <div class="sb-divider"></div>
             <div class="sb-clock" id="sb-clock">--:-- --</div>
             <div class="sb-date" id="sb-date">Loading...</div>
-            <button class="sb-settings-btn" id="siteDataBtn" onclick="siteDataMenuToggle(this)">&#128450; Data</button>
+            <button class="sb-settings-btn" id="siteDataBtn" onclick="siteDataMenuToggle(this)" title="Backup &amp; Data"><span class="rail-short">Data</span><span class="rail-txt">Backup &amp; Data</span></button>
             <div
               class="sb-version"
               id="en-sb-version"

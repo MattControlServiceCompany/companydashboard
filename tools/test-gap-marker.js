@@ -59,13 +59,31 @@ ctx.gaps = g;
 const html = run('udGapTextHtml(gaps, { pid: "p1", bldgId: "bldg-1", meterId: "meter-a", later: gaps[0].later }, "bldg")');
 const css = rd('energy-department.html').match(/\.ud-gap-txt \{[^}]*\}/)[0];
 ok(!/border|background|amber|orange|red|#f|rgba\(245|rgba\(239/i.test(css), 'gap text CSS must be plain text: no border, fill or warning color');
-ok(/📅/.test(html) && />1 bill gap</.test(html), 'building text must be "1 bill gap" with the calendar icon: ' + html);
+ok(/>1 baseline gap</.test(html) && /ud-gap-base/.test(html) && !/📅|ud-gap-ico/.test(html), 'building text must be "1 baseline gap", no icon: ' + html);
 ok(!/⚠/.test(html) && !/ud-flag-badge/.test(html), 'gap text must not look like a warning badge');
-ok(/title="30 days missing 08\/04\/2026 – 09\/02\/2026\. Click/.test(html), 'hover text wrong: ' + html);
+ok(/title="30 days missing 08\/04\/2026 – 09\/02\/2026, in baseline\. Click/.test(html), 'hover text wrong: ' + html);
 ok(run('udGapTextHtml(gaps, null, "proj")').indexOf('Click') < 0 && run('udGapTextHtml([], null, "proj")') === '', 'no click text without goto; empty list draws nothing');
 ctx.two = g.concat(g);
-ok(/>2 bill gaps</.test(run('udGapTextHtml(two, null, "proj")')), 'project text: N bill gaps');
-ok(/>1 gap</.test(run('udGapTextHtml(gaps, {meterId:"meter-a", later:"x"}, "pill")')), 'pill text: 1 gap');
+ok(/>2 baseline gaps</.test(run('udGapTextHtml(two, null, "proj")')), 'project text: N baseline gaps');
+// baseline flag: ONE rule in computeMeterGaps; excluded meters give baseline:false
+ok(g[0].baseline === true, 'default gap is a baseline gap');
+ctx.ex = { id: 'meter-a', commodity: 'Electric', bills: elec.bills };
+ok(run('computeMeterGaps(ex, false)')[0].baseline === false, 'excluded meter gap must be baseline:false');
+ok(run('computeBuildingGaps({meters:[ex]}, (m) => m.id === "meter-a")')[0].baseline === false, 'building gaps read the exclusion predicate');
+ok(run('computeProjectGaps([{id:"bldg-1",meters:[ex]}], () => true)')[0].baseline === false, 'project gaps read the exclusion predicate');
+ctx.mix = [{ baseline: false, days: 5, earlier: '2026-01-01', later: '2026-01-06' }, g[0], g[0], { baseline: false, days: 5, earlier: '2026-02-01', later: '2026-02-06' }, { baseline: false, days: 5, earlier: '2026-03-01', later: '2026-03-06' }];
+const mixHtml = run('udGapTextHtml(mix, null, "bldg")');
+ok(/>2 baseline gaps<\/span> · <span[^>]*>3 other gaps</.test(mixHtml), 'rollup: baseline first, then other: ' + mixHtml);
+ok(/not in baseline/.test(mixHtml) && /in baseline/.test(mixHtml), 'hover says in baseline / not in baseline');
+ok(run('udGapTextHtml([mix[0]], null, "proj")') === '', 'Projects list shows nothing when there are no baseline gaps');
+ok(!/baseline/.test(run('udGapTextHtml([mix[0]], null, "pill")').replace(/title="[^"]*"/, '')) && />1 gap</.test(run('udGapTextHtml([mix[0]], null, "pill")')), 'non-baseline pill: "1 gap"');
+const css2 = rd('energy-department.html').match(/\.ud-gap-txt\.ud-gap-base \{[^}]*\}/)[0];
+ok(/var\(--text\)/.test(css2) && /font-weight: 600/.test(css2) && !/#|orange|red|amber/.test(css2), 'baseline gap CSS: near-black semibold, token only');
+// names wrap, are not cut; sidebar label
+const edh = rd('energy-department.html');
+ok(!/\.ud-nav-bldg-name \{[^}]*(ellipsis|nowrap)/.test(edh), 'building names must wrap');
+ok(/id="siteDataBtn"[^>]*>.*?>Backup &amp; Data</.test(edh) && /id="siteDataBtn"[^>]*>.*?>Backup &amp; Data</.test(rd('site-ui.js')), 'sidebar button label');
+ok(/>1 baseline gap</.test(run('udGapTextHtml(gaps, {meterId:"meter-a", later:"x"}, "pill")')), 'pill text: 1 baseline gap');
 ok(!/📅/.test(run('udGapTextHtml(gaps, null, "pill")')), 'pill text has no icon');
 // click decodes to the ids
 const m = /onclick="([^"]*)"/.exec(html);
