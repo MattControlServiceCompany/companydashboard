@@ -582,13 +582,13 @@
     btn.setAttribute('aria-label', 'Toggle navigation menu');
     btn.setAttribute('aria-expanded', 'false');
     btn.setAttribute('aria-controls', 'appSidebar');
-    btn.innerHTML = '☰ Menu';
+    btn.innerHTML = 'Menu';
     btn.onclick = function () {
       var sidebar = document.getElementById('appSidebar') || document.querySelector('.sidebar');
       if (!sidebar) return;
       var open = sidebar.classList.toggle('drawer-open');
       btn.setAttribute('aria-expanded', open ? 'true' : 'false');
-      btn.innerHTML = open ? '✕ Close' : '☰ Menu';
+      btn.innerHTML = open ? 'Close' : 'Menu';
       // Backdrop
       var bd = document.getElementById('sidebarBackdrop');
       if (bd) bd.style.display = open ? 'block' : 'none';
@@ -603,7 +603,7 @@
       var sidebar = document.getElementById('appSidebar') || document.querySelector('.sidebar');
       if (sidebar) sidebar.classList.remove('drawer-open');
       btn.setAttribute('aria-expanded', 'false');
-      btn.innerHTML = '☰ Menu';
+      btn.innerHTML = 'Menu';
       backdrop.style.display = 'none';
     };
     document.body.appendChild(backdrop);
