@@ -4317,21 +4317,6 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     if (!m) return null;
     return (m[1] ? '-' : '') + m[2].replace(/,/g, '');
   })();
-  // Front page's own "Current Charges (details on back)" total. Used ONLY below as a
-  // self-check for the Miscellaneous reconciliation (Front - Misc == Back) — never
-  // extracted as the total directly. Do not remove the SECTION-BLEED GUARD's rejection
-  // of this same line in totalDue; that guard protects against real cross-bill
-  // contamination and is orthogonal to this reconciliation.
-  const frontCurrentCharges = (() => {
-    const m = t.match(/Current\s+Charges\s*\(details\s+on\s+back\)[^\n]*?\$\s*([\d,]+\.\d{2})/i);
-    return m ? m[1].replace(/,/g, '') : null;
-  })();
-  // Diagnostic: set when miscCharge is present but the Front - Misc == Back identity
-  // does not hold (or Front total is missing so the identity can't be checked). In
-  // that case totalDue below deliberately does NOT add miscCharge — flagged instead
-  // of silently fabricating a total. Attached to result._miscUnreconciled after result
-  // is built.
-  let _miscUnreconciled = null;
   // (b) A total that is only the sum of the read charges is never stored; it is proposed and the bill is held.
   let _proposedTotal = null;
   // Position mode: the reason the printed Current Charges box gave no total (the engine's held line, or
@@ -4390,31 +4375,8 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     if (bestVal !== null) {
       // The printed Current Charges is the total. It is never replaced by the sum of the read charges: a sum
       // that falls short means a charge was not read, and checkElectricPrintedTotals holds the bill for that.
-      let chosenTotal = bestVal;
-      // MiscellaneousCharge reconciliation (item f71c0013): the SECTION-BLEED GUARD
-      // above correctly rejects the front-summary page's own "Current Charges (details
-      // on back)" line as a candidate for bestVal (protecting against real cross-bill
-      // contamination) — but bestVal (the back-page total) never includes the front
-      // page's Miscellaneous line item. Only add it when the reconciling identity
-      // (Front Current Charges - Miscellaneous == back-page bestVal) holds to the cent
-      // (tolerance $0.02 for OCR rounding); otherwise leave chosenTotal as-is and flag
-      // rather than fabricate.
-      if (miscCharge !== null) {
-        const miscNum = parseFloat(miscCharge);
-        if (frontCurrentCharges !== null) {
-          const frontNum = parseFloat(frontCurrentCharges);
-          if (Math.abs(frontNum - miscNum - bestVal) < 0.02) {
-            chosenTotal = chosenTotal + miscNum;
-          } else {
-            _miscUnreconciled = { front: frontNum, misc: miscNum, back: bestVal, expected: frontNum - miscNum };
-          }
-        } else {
-          // Miscellaneous line found but no front-page Current Charges total to check
-          // the identity against — can't verify, so don't add it.
-          _miscUnreconciled = { front: null, misc: miscNum, back: bestVal, expected: null };
-        }
-      }
-      return chosenTotal.toFixed(2);
+      // MiscellaneousCharge stays its own field; it is never added to the total.
+      return bestVal.toFixed(2);
     }
     if (_posRows != null) {
       // Position mode: the printed Current Charges box was not read (its label was lost, or its amount
@@ -4606,9 +4568,6 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     MeterNumber: null,
     _subtotal: subtotalAmount,
   };
-  // Diagnostic only (item f71c0013) — set when a Miscellaneous line was found but the
-  // Front - Misc == Back identity didn't hold, so it was NOT added to TotalCurrentCharges.
-  if (_miscUnreconciled) result._miscUnreconciled = _miscUnreconciled;
   if (_proposedTotal) result._proposed_TotalCurrentCharges = _proposedTotal;
   if (_offSumFix) result._label_repaired_EnergyOffPeakCharge = _offSumFix.info;
   // A cut end year ("to 09/02/20.") was completed from the start year: recorded in the one change history.

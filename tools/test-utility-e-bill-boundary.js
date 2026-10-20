@@ -92,7 +92,8 @@ check(
   b && String(b.MiscellaneousCharge) === '10.00',
   'B misc=' + (b && b.MiscellaneousCharge),
 );
-check('B total = 150.00', b && String(b.TotalCurrentCharges) === '150.00', 'B total=' + (b && b.TotalCurrentCharges));
+// One rule: the total is the printed Current Charges on the details page (140.00); Miscellaneous (10.00) is never added.
+check('B total = 140.00 (printed Current Charges, no Miscellaneous added)', b && String(b.TotalCurrentCharges) === '140.00', 'B total=' + (b && b.TotalCurrentCharges));
 check(
   'B PreviouslyBilled = 100.00',
   b && String(b.PreviouslyBilled) === '100.00',
@@ -114,9 +115,9 @@ bills = rule.extractAll(makeText(false));
 check('three bills', bills.length === 3, 'got ' + bills.length);
 check('A has no Miscellaneous charge', bills[0] && bills[0].MiscellaneousCharge == null);
 check('B Miscellaneous = 10.00', bills[1] && String(bills[1].MiscellaneousCharge) === '10.00');
-check('B total = 150.00', bills[1] && String(bills[1].TotalCurrentCharges) === '150.00');
+check('B total = 140.00 (printed, no Miscellaneous added)', bills[1] && String(bills[1].TotalCurrentCharges) === '140.00');
 
 if (process.env.DBG)
-  console.log(JSON.stringify(bills[1], (k, v) => (k[0] === '_' && k !== '_miscUnreconciled' ? undefined : v)));
+  console.log(JSON.stringify(bills[1], (k, v) => (k[0] === '_' ? undefined : v)));
 console.log(fail ? '\n' + fail + ' FAILED' : '\nALL PASSED');
 process.exit(fail ? 1 : 0);
