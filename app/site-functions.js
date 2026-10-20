@@ -2575,6 +2575,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.20.143', date: '2026-10-20', title: 'Electric bills read by position and checked to the cent',
+    items: [
+      { type: 'change', text: 'PDF / OCR page: electric bill charges are now read by their place on the page. They must add up to the printed Subtotal and Current Charges to the cent.' },
+      { type: 'fix', text: 'PDF / OCR page: a value that does not add up is held for review, with the reason shown, instead of being guessed.' }
+    ]
+  },
   { v: 'v2026.10.19.142', date: '2026-10-19', title: 'PDF / OCR page: fewer false total warnings',
     items: [
       { type: 'fix', text: 'PDF / OCR page: a bill whose page proves its total no longer shows the "unusual total" warning.' },
