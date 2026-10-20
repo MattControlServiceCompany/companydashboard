@@ -70,14 +70,14 @@ check('1d reads x multiplier + energy charge / rate (cent-exact): filled', parse
 b = base({
   BilledKW: '42.0640', BilledKWCharge: '2377.07', DemandRate: 56.6,
   _rates: { BilledKWCharge: { qty: 42.064, rate: 56.5, unit: 'kW', computed: 2377.07, parts: [{ qty: 42.064, rate: 56.5, unit: 'kW', computed: 2377.07, ocrCharge: 2377.07 }] } },
-  _auto_corrected_rate_BilledKWCharge: { ocrRate: 9.82, derivedRate: 56.5, charge: 2377.07, qty: 42.064, reason: 'charge_div_qty' },
+  _rate_repair_BilledKWCharge: { ocrRate: 9.82, derivedRate: 56.5, charge: 2377.07, qty: 42.064, reason: 'charge_div_qty' },
 });
 apply([b]);
-check('2 kW filled from printed charge / printed rate + digit repair', parseFloat(b.BilledKW) === 242.064 && b._rates.BilledKWCharge.rate === 9.82 && !b._auto_corrected_rate_BilledKWCharge, JSON.stringify([b.BilledKW, b._rates.BilledKWCharge.rate]));
+check('2 kW filled from printed charge / printed rate + digit repair', parseFloat(b.BilledKW) === 242.064 && b._rates.BilledKWCharge.rate === 9.82 && !b._rate_repair_BilledKWCharge, JSON.stringify([b.BilledKW, b._rates.BilledKWCharge.rate]));
 b = base({
   BilledKW: '42.0640', BilledKWCharge: '2377.07',
   _rates: { BilledKWCharge: { qty: 42.064, rate: 56.5, parts: [{ qty: 42.064, rate: 56.5, computed: 2377.07, ocrCharge: 2377.07 }] } },
-  _auto_corrected_rate_BilledKWCharge: { ocrRate: 9.5, derivedRate: 56.5, charge: 2377.07, qty: 42.064, reason: 'charge_div_qty' },
+  _rate_repair_BilledKWCharge: { ocrRate: 9.5, derivedRate: 56.5, charge: 2377.07, qty: 42.064, reason: 'charge_div_qty' },
 });
 apply([b]);
 check('2 kW: charge / rate not near any repair of the scan: unchanged', parseFloat(b.BilledKW) === 42.064, b.BilledKW);

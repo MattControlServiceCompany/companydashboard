@@ -100,7 +100,7 @@ function runCase(name, extractFn, rkvaQty, rkvaRate, rkvaCharge, expect) {
     RkVACharge: result.RkVACharge,
     RkVARate: result.RkVARate,
     partMismatch: !!result._part_mismatches_RkVACharge,
-    autoCorrected: result._auto_corrected_rate_RkVACharge || null,
+    autoCorrected: result._rate_repair_RkVACharge || null,
   };
   let pass = true;
   const problems = [];
@@ -154,10 +154,10 @@ function main() {
   {
     const text = makeSyntheticBill(17.784, 0.883, 11.79);
     const result = extractFn(text, null, null);
-    const tag = result._auto_corrected_rate_RkVACharge;
+    const tag = result._rate_repair_RkVACharge;
     const ok = tag && Math.abs(tag.ocrRate - 0.883) < 0.001 && Math.abs(tag.derivedRate - 0.663) < 0.001;
     console.log(
-      `[${ok ? 'PASS' : 'FAIL'}] ade32899 signature: _auto_corrected_rate_RkVACharge populated with ocrRate/derivedRate`,
+      `[${ok ? 'PASS' : 'FAIL'}] ade32899 signature: _rate_repair_RkVACharge populated with ocrRate/derivedRate`,
     );
     if (!ok) console.log('       raw:', JSON.stringify(tag));
     allPass = ok && allPass;

@@ -1310,7 +1310,7 @@ async function _bcrScanEvergyRkva(pid, proj, bldgs, ctl) {
       continue;
     }
     const m = matches[0];
-    if (!m._auto_corrected_rate_RkVACharge) {
+    if (!m._rate_repair_RkVACharge) {
       await _bcrUpsertResult(bill.id, scanId, fieldKey, {
         status: 'ok',
         reason: 'no change needed — already correct',

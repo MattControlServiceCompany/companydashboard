@@ -2994,38 +2994,8 @@ function _extractEvergy(t, acctOverride, addrOverride) {
               prorationDen = y;
             }
           }
-          // ── DATE-RANGE PRORATION (kW-charges only) ──
-          // Utility E kW-based charge lines (TDC, Facilities, Demand, RkVA) can be split
-          // across two date ranges when the rate changes mid-period. Both parts carry
-          // the SAME qty (the period's peak kW) but different rates, and the billed
-          // amount is the full rate × qty prorated by (range days / total bill days).
-          // Example from Bill 23 (LHS.pdf pages 50-51):
-          //   "TDC Chg 04-30-2025-04-30-2025 for 529.4400 kW at $2.46781 per kW" → 1/30
-          //   "TDC Chg 05-01-2025-05-29-2025 for 529.4400 kW at $2.68729 per kW" → 29/30
-          // kWh-based charges (ECA, EER, PTS, Energy On/Off Peak) also use date ranges,
-          // but those describe WHICH kWh fall in each rate tier — each part already has
-          // its own per-tier qty (NOT the whole-period qty), so prorating would double-
-          // deflate the computed values. Strictly gate this to unit='kW' so kWh charges
-          // pass through unprorated and their computed values equal qty × rate directly.
-          const _isKwUnit = !unit.toLowerCase().includes('h');
-          if (prorationNum === null && _isKwUnit) {
-            const drM = block.match(/\b(\d{2})-(\d{2})-(\d{4})-(\d{2})-(\d{2})-(\d{4})\b/);
-            if (drM) {
-              try {
-                const totalDays = parseInt(numDays, 10);
-                if (totalDays > 0) {
-                  const startD = new Date(parseInt(drM[3]), parseInt(drM[1]) - 1, parseInt(drM[2]));
-                  const endD = new Date(parseInt(drM[6]), parseInt(drM[4]) - 1, parseInt(drM[5]));
-                  const rangeDays = calcDays(startD, endD, true); // both ends count
-                  if (rangeDays > 0 && rangeDays <= totalDays + 1) {
-                    prorationRatio = rangeDays / totalDays;
-                    prorationNum = rangeDays;
-                    prorationDen = totalDays;
-                  }
-                }
-              } catch (e) {}
-            }
-          }
+          // A date range on a line only names the part-period; it is never a day fraction (Matt, 2026-10-20):
+          // every line is its own printed qty x its own printed rate. Only the printed "(for N of Y days)" above is read.
           // OCR'd dollar charge from this line — same value already looked up
           // above for the ratio-sanity check; reuse it instead of re-deriving.
           const ocrCharge = _lineOcrCharge;
@@ -5280,11 +5250,14 @@ function _extractEvergy(t, acctOverride, addrOverride) {
         if (_pctDiff > 0.05 || _repairedRate !== null) {
           const _newRate = _repairedRate !== null ? _repairedRate : _derived_rate;
           // Replace the stale rate in _rates so downstream consumers use the correct value
+          // computed is the part's charge too: the old value (qty x the misread rate) stayed on the record, so
+          // the record's qty x rate no longer gave its computed (1999.9006 x 0.05734 shown with 115.67).
           result._rates[chargeField] = Object.assign({}, ri, {
             rate: _newRate,
+            computed: chargeVal,
             parts: [Object.assign({}, parts[0], { rate: _newRate, computed: chargeVal })],
           });
-          result['_auto_corrected_rate_' + chargeField] = {
+          result['_rate_repair_' + chargeField] = {
             ocrRate: _ocr_rate,
             derivedRate: _newRate,
             charge: chargeVal,
@@ -5317,8 +5290,13 @@ function _extractEvergy(t, acctOverride, addrOverride) {
         if (_qtyDiffers && _fixedParts.every((p) => p)) {
           const _totQty = _fixedParts.reduce((s, p) => s + p.qty, 0);
           const _newRate = _fixedParts.reduce((s, p) => s + p.qty * p.rate, 0) / _totQty;
-          result._rates[chargeField] = Object.assign({}, ri, { rate: _newRate, parts: _fixedParts });
-          result['_auto_corrected_rate_' + chargeField] = {
+          result._rates[chargeField] = Object.assign({}, ri, {
+            rate: _newRate,
+            qty: _totQty,
+            computed: _fixedParts.reduce((s, p) => s + p.computed, 0),
+            parts: _fixedParts,
+          });
+          result['_rate_repair_' + chargeField] = {
             ocrRate: ri.rate,
             derivedRate: _newRate,
             charge: chargeVal,
@@ -6856,7 +6834,7 @@ function _evgAutofixKwh(b, getFactor) {
 // demand rate (cent-exact). The printed rate is kept; the prior bill is not a source.
 function _evgAutofixKw(b) {
   const ri = b._rates && b._rates.BilledKWCharge;
-  const ac = b._auto_corrected_rate_BilledKWCharge;
+  const ac = b._rate_repair_BilledKWCharge;
   const mm = b._rate_mismatch_BilledKWCharge;
   const charge = parseBillNumber(b.BilledKWCharge);
   if (!ri || !ri.parts || ri.parts.length !== 1 || !(charge > 0) || !(ac || mm)) return;
@@ -6880,7 +6858,7 @@ function _evgAutofixKw(b) {
     parts: [Object.assign({}, ri.parts[0], { qty: fix.value, rate, computed: charge })],
   });
   if (b.DemandRate != null) b.DemandRate = rate;
-  delete b._auto_corrected_rate_BilledKWCharge;
+  delete b._rate_repair_BilledKWCharge;
   delete b._rate_mismatch_BilledKWCharge;
   delete b._part_mismatches_BilledKWCharge;
   b._auto_corrected_BilledKW = { original: String(qty), corrected: b.BilledKW, reason: fix.reason };

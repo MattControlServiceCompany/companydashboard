@@ -2129,6 +2129,25 @@ function _kgsRecoverSuspectLine(b) {
 
 // ── POST-EXTRACTION VERIFICATION ──
 // Uses historical meter data + logical rules to fix extraction errors
+// The formula a rate-based correction shows: every part's own qty x its own rate = its charge, to the cent, and the
+// parts add up to the total. Returns { text, total } or null when any part has no qty or rate, or its own qty x rate
+// is not its charge (then the correction is not applied: a displayed formula must be true). The ONE writer of the
+// reason text of a Strategy B correction; tools/gate-correction-formulas.js reads it back.
+function _rateFormulaOf(ri) {
+  const parts = ri && (ri.parts && ri.parts.length ? ri.parts : [ri]);
+  if (!parts || !parts.length) return null;
+  let sum = 0;
+  const terms = [];
+  for (const p of parts) {
+    if (!(p.qty > 0) || !(p.rate > 0) || !(p.computed >= 0)) return null;
+    if (Math.abs(Math.round(p.qty * p.rate * 100) / 100 - p.computed) > 0.005) return null;
+    sum += p.computed;
+    terms.push(p.qty.toFixed(4) + ' ' + p.unit + ' × $' + p.rate.toFixed(5) + ' = $' + p.computed.toFixed(2));
+  }
+  const total = Math.round(sum * 100) / 100;
+  if (Math.abs(total - ri.computed) > 0.005) return null;
+  return { text: terms.join(' + ') + (parts.length > 1 ? ' = $' + total.toFixed(2) : ''), total };
+}
 async function _postExtractionVerify(bills, utilityName, rawText) {
   try {
     if (!bills.length) return { bills, historicalCache: {} };
@@ -2872,41 +2891,20 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
                   Math.abs(_sumCharges() - parseBillNumber(b[field]) + ri.computed - ocrTotal) <= 0.02;
                 if (!_xRateCloses) continue;
               }
-              if (sameDirection) {
+              // A correction is written only with a formula that is true: each part's own printed qty x its own
+              // printed rate is its charge, to the cent (_rateFormulaOf). Otherwise the read value stays.
+              const _formula = sameDirection ? _rateFormulaOf(ri) : null;
+              if (_formula) {
                 b['_auto_corrected_' + field] = {
                   original: b[field],
-                  corrected: ri.computed.toFixed(2),
+                  corrected: _formula.total.toFixed(2),
                   rate: ri.rate,
                   qty: ri.qty,
                   unit: ri.unit,
-                  // Per-part breakdown (mirrors _chargeSelfVerifies's use of .computed above)
-                  // so a single synthetic qty×rate line can never misrepresent a multi-segment
-                  // (rate-changeover) charge — each part's own qty/rate/computed is shown.
-                  reason:
-                    xRateParts.length > 1
-                      ? xRateParts
-                          .map(
-                            (p) =>
-                              p.qty.toFixed(4) +
-                              ' ' +
-                              p.unit +
-                              ' × $' +
-                              p.rate.toFixed(5) +
-                              ' = $' +
-                              p.computed.toFixed(2),
-                          )
-                          .join(' + ') +
-                        ' = $' +
-                        ri.computed.toFixed(2)
-                      : ri.qty.toFixed(4) +
-                        ' ' +
-                        ri.unit +
-                        ' × $' +
-                        ri.rate.toFixed(5) +
-                        ' = $' +
-                        ri.computed.toFixed(2),
+                  // Per-part breakdown so a multi-segment (rate-changeover) charge shows each part's own qty/rate.
+                  reason: _formula.text,
                 };
-                b[field] = ri.computed.toFixed(2);
+                b[field] = _formula.total.toFixed(2);
               }
             }
             compSum = _sumCharges();
@@ -20043,6 +20041,10 @@ function renderPDFFields(parsed, warnings) {
   // Show auto-correction banner if any fields were corrected (rate×qty or OCR consensus)
   const correctedFields = Object.keys(parsed)
     .filter((k) => k.startsWith('_auto_corrected_'))
+    // one record shape: a record without a numeric corrected value is not a correction (an old saved
+    // _auto_corrected_rate_<field> record, ocrRate/derivedRate): never shown, never counted. A filled cell has
+    // original null (nothing was read) and shows "not read".
+    .filter((k) => parsed[k] && isFinite(parseFloat(parsed[k].corrected)))
     .map((k) => ({ field: k.replace('_auto_corrected_', ''), info: parsed[k], type: 'rate' }));
   const consensusFields = Object.keys(parsed)
     .filter((k) => k.startsWith('_ocr_consensus_'))
@@ -20062,7 +20064,8 @@ function renderPDFFields(parsed, warnings) {
       const _pfx = _isChg ? '$' : '';
       const _dp = _isChg ? 2 : 4;
       // b2 flags carry passB_value/corrected_to; rate flags carry original/corrected; consensus carries consensus
-      const origVal = _pfx + parseFloat(c.type === 'b2' ? c.info.passB_value : c.info.original).toFixed(_dp);
+      const _origNum = parseFloat(c.type === 'b2' ? c.info.passB_value : c.info.original);
+      const origVal = isFinite(_origNum) ? _pfx + _origNum.toFixed(_dp) : 'not read';
       const newVal =
         _pfx +
         parseFloat(
