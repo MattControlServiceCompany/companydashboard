@@ -5017,6 +5017,9 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     // Always enforce mirror rule — TaxExemptDelivery and BillOffset must
     // cancel out. OCR often misreads one digit (e.g. 1556 vs 1566).
     // Use whichever value is closer to matching other bill arithmetic.
+    // The page prints TaxExemptDelivery = -BillOffset (125 of 125 real pages and bills). Two reads that differ
+    // are recorded (hover); the shown pair keeps the Tax Exempt read, as before.
+    if (Math.abs(teAbs - boAbs) > 0.005) result._mirror_conflict = { taxExempt: teAbs, billOffset: boAbs };
     const avg = (teAbs + boAbs) / 2;
     result.TaxExemptDelivery = teAbs.toFixed(2);
     result.BillOffset = '-' + teAbs.toFixed(2);
@@ -6640,8 +6643,30 @@ function _lbg_peerStormCharge(bills) {
 // The rate check: a printed Gas charge and usage x rate must agree within this many dollars.
 const _LBG_GAS_RATE_CHECK_TOL = 1.0;
 // Candidate numbers from one lost, extra or misread character of a scanned figure ("2.5" -> 52.5, "11Z7.90" ->
-// 1107.90 ... 1197.90). Used only by _lbg_autofix.
-function _lbg_digitRepairs(scan) {
+// 1107.90 ... 1197.90). Used only by _lbg_autofix. With a field format (computations/bill-layout.js
+// fieldFormat: decimals, digits) a repair that breaks the format is dropped ("2.5" -> 52.5 is not a
+// 2-decimal amount).
+function _lbg_fitsFormat(text, fmt) {
+  if (!fmt) return true;
+  const m = String(text).match(/^(\d+)(?:\.(\d+))?$/);
+  if (!m) return false;
+  const span = (v) => (Array.isArray(v) ? v : [v, v]);
+  if (fmt.decimals != null) {
+    const [lo, hi] = span(fmt.decimals);
+    const n = m[2] ? m[2].length : 0;
+    if (n < lo || n > hi) return false;
+  }
+  if (fmt.digits != null) {
+    const [lo, hi] = span(fmt.digits);
+    if (m[1].length < lo || m[1].length > hi) return false;
+  }
+  return true;
+}
+// The format of one reader field in one layout (computations/bill-layout.js LAYOUT_FACTS), or null.
+function _lbg_fieldFormat(layoutId, field) {
+  return typeof BILL_LAYOUT !== 'undefined' && BILL_LAYOUT.fieldFormat ? BILL_LAYOUT.fieldFormat(layoutId, field) : null;
+}
+function _lbg_digitRepairs(scan, fmt) {
   const s = String(scan);
   const out = new Set();
   const digits = '0123456789';
@@ -6654,7 +6679,10 @@ function _lbg_digitRepairs(scan) {
     for (const d of digits) out.add(s.slice(0, i) + d + s.slice(i + 1)); // one misread character
   }
   out.delete(s);
-  return [...out].filter((x) => /^\d+(\.\d+)?$/.test(x)).map(Number).filter((n) => n > 0 && n !== Number(s));
+  return [...out]
+    .filter((x) => /^\d+(\.\d+)?$/.test(x) && _lbg_fitsFormat(x, fmt))
+    .map(Number)
+    .filter((n) => n > 0 && n !== Number(s));
 }
 // THE autofix rule for a value whose read failed its check (Matt, 2026-10-20). Every field of every utility
 // calls this one function; it is the only place that decides "fill or hold".
@@ -6669,6 +6697,8 @@ function _lbg_digitRepairs(scan) {
 //   history  (v) => reason | null, the account's saved bills (_lbg_historyCheck). It only rejects a candidate; it
 //            never proposes one and never counts as a source.
 //   scanRead optional text for the hover: what the scan gave
+//   format   optional { decimals, digits, credit } of the field (_lbg_fieldFormat): the scan's one-digit repairs
+//            that break it are dropped, and a field that never prints negative takes no negative candidate
 // A value is filled only when 2 or more sources agree on it and no other value has as much support. The
 // scan's one-digit repairs are used only when the scan itself is not already a proposed value. Returns
 // { value, labels, reason } when it fills, else { value: null, labels: [], reason } where reason names the
@@ -6687,7 +6717,7 @@ function _lbg_autofix(a) {
         eps: s.eps,
         says: s.says || 'one digit repair of the scan (' + clean + ')',
         exact: /^\d+(\.\d+)?$/.test(clean) ? Number(clean) : null,
-        values: _lbg_digitRepairs(clean),
+        values: _lbg_digitRepairs(clean, a.format),
         scan: clean,
       });
     } else srcs.push(s);
@@ -6713,6 +6743,7 @@ function _lbg_autofix(a) {
   let alone = null; // the best candidate with one source only
   for (const c of cands) {
     if (a.veto && a.veto(c)) continue;
+    if (a.format && a.format.credit === 'never' && c < 0) continue;
     const sup = srcs.filter((s) => supports(s, c));
     if (sup.length < 2) {
       if (sup.length === 1 && (!alone || alone.c === c)) alone = { c, sup };
@@ -6901,6 +6932,37 @@ function _lbg_historyCheck(acct, label) {
   const hist = _lbg_accountHistory(acct, label);
   return (v) => _lbg_historyRejectReason(hist, label, v);
 }
+// ── Account number: a value fills only when 2 sources agree ──
+// Sources of an account number: each place the bill prints it (stub, header) and the account numbers already
+// saved for that utility. One printed read alone never fills (an OCR digit error would become the key of the
+// bill). History never fills alone: it only confirms a printed read (the read is a saved number) . Returns
+// { value, held, missing }: value when 2 sources agree, else value null and held names the missing source.
+function _lbg_savedAccounts(isCompany) {
+  const out = new Set();
+  if (typeof utilityData === 'undefined') return out;
+  for (const cust of Object.values(utilityData || {})) {
+    for (const bl of (cust && cust.buildings) || []) {
+      for (const m of bl.meters || []) {
+        for (const sb of m.bills || []) if (sb.accountNumber && isCompany(sb)) out.add(String(sb.accountNumber));
+      }
+    }
+  }
+  return out;
+}
+function _lbg_decideAccount(printedReads, saved) {
+  const reads = (printedReads || []).filter(Boolean);
+  const uniq = [...new Set(reads)];
+  if (reads.length >= 2 && uniq.length < reads.length) return { value: uniq.find((u) => reads.filter((r) => r === u).length >= 2), held: null };
+  const hit = uniq.filter((u) => saved && saved.has(u));
+  if (hit.length === 1) return { value: hit[0], held: null };
+  if (!uniq.length) return { value: null, held: 'no printed read of the account number' };
+  return {
+    value: null,
+    held: uniq.length > 1
+      ? 'the printed reads disagree and no saved account number matches one of them'
+      : 'second source missing: the bill prints the account number once and it is not a saved account number of this utility',
+  };
+}
 // The page's account number from its text (City "NN-NNNNNN-NN", else "Account Number : ...").
 function _lbg_pageAccount(text) {
   const t = String(text || '');
@@ -6961,6 +7023,7 @@ function _lbg_applyGasUsageAutofix(bills, priorFactor) {
         pend.original !== diff && { scan: pend.original },
       ],
       history: _lbg_historyCheck(b.AccountNumber, 'NaturalGasTherms'),
+      format: _lbg_fieldFormat('city-new', 'NaturalGasTherms'),
       veto: (v) => !fits(v),
       scanRead: pend.original !== diff ? pend.original : null,
     });
@@ -7001,6 +7064,7 @@ function _evgAutofixKwh(b, getFactor) {
       oneRate && { label: 'charge', test: (v) => Math.abs(_evgRound(v * ri.rate, 2) - charge) < 0.005, says: 'the energy charge $' + charge.toFixed(2) + ' / $' + ri.rate + ' per kWh' },
       { scan: String(chk.extracted) },
     ],
+    format: _lbg_fieldFormat('utility-e-bd', 'kWhConsumed'),
     scanRead: chk.extracted,
   });
   if (!fix || fix.value == null) return;
@@ -7026,6 +7090,7 @@ function _evgAutofixKw(b) {
       { label: 'charge', test: (v) => Math.abs(_evgRound(v * rate, 2) - charge) < 0.005, says: 'the demand charge $' + charge.toFixed(2) + ' / $' + rate + ' per kW' },
       { scan: String(qty) },
     ],
+    format: _lbg_fieldFormat('utility-e-bd', 'BilledKW'),
     scanRead: qty,
   });
   if (!fix || fix.value == null) return;
@@ -7059,6 +7124,7 @@ function _evgAutofixDays(b) {
       _bd > 0 && _bd < 120 && { label: 'billdate', values: [_bd], says: 'the Billing Date ' + b._billDate + ' gives ' + _bd + ' days from the first read date' },
       n.printedDays ? { scan: n.printedDays, says: 'the printed Days ' + n.printedDays + ' (one digit repair)' } : null,
     ],
+    format: _lbg_fieldFormat('utility-e-bd', 'NumberOfDays'),
     scanRead: n.printedDays,
   });
   if (!fix || fix.value == null || String(fix.value) === String(b.NumberOfDays)) return;
@@ -7103,6 +7169,7 @@ function _evgAutofixChargeCell(b) {
       { scan: quoted[1], eps: 0.005 },
     ],
     veto: () => !totalsAgree,
+    format: _lbg_fieldFormat('utility-e-bd', cell),
     scanRead: quoted[1],
   });
   if (!fix || fix.value == null) return;
@@ -7129,6 +7196,209 @@ function _evgApplyAutofix(bills) {
     _evgAutofixChargeCell(b);
   }
   return bills;
+}
+// ── Page identities as autofix sources (the gas utility rule's gas-layout path, the second city rule, the gas supplier rule) ──
+// Each identity below was checked to the cent on 3 or more real pages (2026-10-20 ground-truth check). Each
+// feeds the one fill-or-hold rule _lbg_autofix; the field formats come from the layout facts
+// (computations/bill-layout.js). A value is filled only when 2 or more sources agree.
+// Therms of a KGS bill: Mcf x meter constant x 10 (1 Mcf = 1 Dth). The one place this is computed.
+function _kgsThermsOf(mcfText, constantText) {
+  const mcf = parseBillNumber(mcfText);
+  const mult = parseBillNumber(constantText) || 1.0;
+  return mcf > 0 ? String(Math.round(convertUnit(mcf * mult, 'DTh', 'Therms') * 100) / 100) : null;
+}
+// KGS Mcf billed. Runs when a source contradicts the printed Mcf. Sources: (present - previous read) / 10 x meter
+// constant; WNA = Mcf x WNA per Mcf and Cost of Gas = Mcf x Cost of Gas per Mcf, each to the cent (they only test).
+function _kgsAutofixMcf(b) {
+  const mcf = parseBillNumber(b.McfBilled);
+  const prev = parseBillNumber(b.MeterReadPrevious);
+  const cur = parseBillNumber(b.MeterReadCurrent);
+  const constant = parseBillNumber(b.MeterMultiplier) || 1;
+  const rolled = prev != null && cur != null && cur < prev;
+  const reads = prev != null && cur != null && cur >= prev ? _evgRound(((cur - prev) / 10) * constant, 3) : null;
+  const rated = [
+    ['WeatherNormalization', 'WNAPerMcf', 'Weather Normalization'],
+    ['GasCharge', 'CostOfGasPerMcf', 'Cost of Gas'],
+  ]
+    .map(([cf, rf, name]) => {
+      const charge = parseBillNumber(b[cf]);
+      const rate = parseBillNumber(b[rf]);
+      return charge != null && rate > 0 ? { charge, rate, name } : null;
+    })
+    .filter(Boolean);
+  const fits = (v, r) => Math.abs(_evgRound(v * r.rate, 2) - r.charge) < 0.005;
+  const readsAgree = reads == null || (mcf != null && Math.abs(mcf - reads) <= 0.0005);
+  const ratesAgree = mcf != null && rated.every((r) => fits(mcf, r));
+  if (readsAgree && ratesAgree && !(rolled && !rated.length)) return;
+  if (mcf == null && reads == null) return; // no meter row was read: nothing to check against
+  const fix = _lbg_autofix({
+    field: 'Mcf billed',
+    sources: [
+      reads != null && { label: 'reads', values: [reads], eps: 0.0005, says: 'meter reads ' + cur + ' - ' + prev + ' = ' + (cur - prev) + ', / 10 x ' + constant + ' = ' + reads },
+      ...rated.map((r) => ({ label: r.name, test: (v) => fits(v, r), says: r.name + ' $' + r.charge.toFixed(2) + ' = Mcf x $' + r.rate + ' per Mcf' })),
+      b.McfBilled != null && { scan: String(b.McfBilled), eps: 0.0005 },
+    ],
+    format: _lbg_fieldFormat('kgs', 'McfBilled'),
+    scanRead: b.McfBilled,
+  });
+  if (fix.value != null && (mcf == null || Math.abs(fix.value - mcf) > 0.0005)) {
+    const original = b.McfBilled;
+    b.McfBilled = fix.value.toFixed(3);
+    b.NaturalGasTherms = _kgsThermsOf(b.McfBilled, b.MeterMultiplier);
+    b._auto_corrected_McfBilled = { original, corrected: b.McfBilled, reason: fix.reason };
+  } else if (fix.value == null) {
+    const why = (rolled ? 'The meter dial rolled over (' + prev + ' to ' + cur + '), so the printed Mcf cannot be proved from the reads. ' : '') + fix.reason;
+    _lbg_flagHeld([b], 'Mcf billed ' + (b.McfBilled != null ? b.McfBilled : '(missing)') + ': ' + why, 'Mcf billed does not match the page - held for manual confirmation');
+  }
+}
+// KGS balance chain: Previous Balance - Payments Received + Total Current Charges = Total Amount Due. Sources: that
+// chain, and the one-digit repairs of the scanned Total Amount Due. Runs when a printed Total Amount Due breaks it.
+function _kgsAutofixTotalDue(b) {
+  const prev = parseBillNumber(b.PreviousBalance);
+  const pay = b.PaymentsReceived != null ? parseBillNumber(b.PaymentsReceived) : prev === 0 ? 0 : null;
+  const tcc = parseBillNumber(b.TotalCurrentCharges);
+  const tad = parseBillNumber(b.TotalAmountDue);
+  if (prev == null || pay == null || tcc == null || tad == null) return;
+  const expected = _evgRound(prev - pay + tcc, 2);
+  if (Math.abs(tad - expected) < 0.005) return;
+  const fix = _lbg_autofix({
+    field: 'Total Amount Due',
+    sources: [
+      { label: 'balance', values: [expected], eps: 0.005, says: 'Previous Balance ' + prev.toFixed(2) + ' - Payments ' + pay.toFixed(2) + ' + Total Current Charges ' + tcc.toFixed(2) + ' = ' + expected.toFixed(2) },
+      { scan: String(b.TotalAmountDue), eps: 0.005 },
+    ],
+    history: _lbg_historyCheck(b.AccountNumber, 'Total'),
+    format: _lbg_fieldFormat('kgs', 'TotalAmountDue'),
+    scanRead: b.TotalAmountDue,
+  });
+  if (fix.value != null) {
+    const original = b.TotalAmountDue;
+    b.TotalAmountDue = fix.value.toFixed(2);
+    b._auto_corrected_TotalAmountDue = { original, corrected: b.TotalAmountDue, reason: fix.reason };
+  } else {
+    _lbg_flagHeld([b], 'Total Amount Due ' + tad.toFixed(2) + ' does not match the balance chain (' + expected.toFixed(2) + '): ' + fix.reason, 'Total Amount Due does not match the page - held for manual confirmation');
+  }
+}
+// KGS Franchise Fee line. The page prints every charge line (Service ... Franchise Fee, Winter Event Securitized Cost,
+// the second Franchise Fee) and their sum is Total Current Charges, to the cent. Runs only when that sum breaks.
+// For one franchise line, sources: Total Current Charges minus every other line, and the one-digit repairs of the
+// scanned line. Fills only when the two agree (a lost "1" read as "4" on 0.31 -> 0.34). When more than one line
+// would fill, or the page has another unread line, nothing is changed here.
+function _kgsAutofixFranchise(b) {
+  const items = b.FranchiseFeeItems;
+  const tcc = parseBillNumber(b.TotalCurrentCharges);
+  if (!items || !items.length || tcc == null) return;
+  if ((b._kgsSuspectLines || []).some((x) => x.field !== 'FranchiseFee')) return;
+  const nums = items.map(parseBillNumber);
+  if (nums.some((n) => n == null)) return;
+  const others = ['CustomerCharge', 'DeliveryCharge', 'GasSystemReliability', 'WeatherNormalization', 'GasCharge', 'WinterEventCost', 'DelayedPaymentCharge']
+    .map((f) => (b[f] == null ? 0 : parseBillNumber(b[f])));
+  if (others.some((n) => n == null)) return;
+  const sum = _evgRound(others.reduce((s, n) => s + n, 0) + nums.reduce((s, n) => s + n, 0), 2);
+  if (Math.abs(sum - tcc) < 0.005) return;
+  const fills = [];
+  items.forEach((raw, i) => {
+    const rest = _evgRound(sum - nums[i], 2);
+    const want = _evgRound(tcc - rest, 2);
+    if (want <= 0) return;
+    const fix = _lbg_autofix({
+      field: 'Franchise Fee line ' + (i + 1),
+      sources: [
+        { label: 'charges', values: [want], eps: 0.005, says: 'Total Current Charges ' + tcc.toFixed(2) + ' minus the other lines ' + rest.toFixed(2) + ' = ' + want.toFixed(2) },
+        { scan: String(raw), eps: 0.005 },
+      ],
+      format: _lbg_fieldFormat('kgs', 'FranchiseFee'),
+      scanRead: raw,
+    });
+    if (fix.value != null && Math.abs(fix.value - nums[i]) > 0.005) fills.push({ i, fix });
+  });
+  if (fills.length !== 1) return;
+  const { i, fix } = fills[0];
+  const original = items[i];
+  b.FranchiseFeeItems = items.map((x, k) => (k === i ? fix.value.toFixed(2) : x));
+  Object.assign(b, _kgsFranchiseTotals(b.FranchiseFeeItems));
+  b._auto_corrected_FranchiseFee = { original, corrected: fix.value.toFixed(2), reason: fix.reason };
+}
+function _kgsApplyIdentities(bills) {
+  for (const b of bills) {
+    if (!b || b._skipRecord || b.UtilityCompany !== 'Kansas Gas Service') continue;
+    _kgsAutofixFranchise(b);
+    _kgsAutofixMcf(b);
+    _kgsAutofixTotalDue(b);
+  }
+  return bills;
+}
+// Second city rule: one Water or Sewer row printed its reads and usage, but its charge column was lost. Sources: the
+// page lines add up to Amount Due Now; the franchise fee of that service is 6% of the line (Water: plus the Meter
+// Debt line) within a cent. Returns the autofix result, or null when the page cannot be checked.
+function _baldwinAutofixCharge(mc, p) {
+  const isWater = mc.commodity === 'Water';
+  const ff = isWater ? p.waFranchiseFee : p.swFranchiseFee;
+  const debt = isWater ? p.waDebtPmt || 0 : 0;
+  const total = p.totalAmountDue != null ? parseBillNumber(p.totalAmountDue) : null;
+  if (total == null) return null;
+  const want = _evgRound(total - p.othersSum, 2);
+  return _lbg_autofix({
+    field: mc.commodity + ' charge',
+    sources: [
+      { label: 'amount due', values: [want], eps: 0.005, says: 'Amount Due Now ' + total.toFixed(2) + ' minus the other lines ' + p.othersSum.toFixed(2) + ' = ' + want.toFixed(2) },
+      ff != null && { label: 'franchise fee', test: (v) => Math.abs(_evgRound((v + debt) * 0.06, 2) - ff) < 0.005, says: 'the franchise fee ' + ff.toFixed(2) + ' is 6% of the line' },
+    ],
+    format: _lbg_fieldFormat('baldwin', isWater ? 'WaterCharge' : 'SewerCharge'),
+  });
+}
+// Baldwin franchise fee of Water or Sewer: 6% of the service line (Water: plus the Meter Debt lines), to the cent
+// (7 of 7 real lines). When the printed fee breaks it, the fee fills only when the one-digit repair of the scanned fee
+// is the 6% figure (a lost "1" read as "2": 30.21 read 30.22). Returns the autofix result, or null when it holds.
+function _baldwinAutofixFranchise(commodity, charge, debt, ff) {
+  if (ff == null || charge == null || charge <= 0) return null;
+  const want = _evgRound((charge + (debt || 0)) * 0.06, 2);
+  if (Math.abs(ff - want) < 0.005) return null;
+  return _lbg_autofix({
+    field: commodity + ' franchise fee',
+    sources: [
+      { label: '6% of the lines', values: [want], eps: 0.005, says: '6% of the ' + commodity + ' lines ' + _evgRound(charge + (debt || 0), 2).toFixed(2) + ' = ' + want.toFixed(2) },
+      { scan: ff.toFixed(2), eps: 0.005 },
+    ],
+    format: _lbg_fieldFormat('baldwin', commodity === 'Water' ? 'WaterFranchiseFee' : 'SewerFranchiseFee'),
+    scanRead: ff.toFixed(2),
+  });
+}
+// Gas supplier site lines. A charge line is (Mmbtu + Fuel) x rate, to the cent; the site Sub-Total is Trigger +
+// Index (+ Special Weather) to the cent. For each of the Trigger and Index lines, sources: the printed line, its own
+// (Mmbtu + Fuel) x rate, and the printed Sub-Total minus the other lines. Fills a missing or contradicted line only
+// when 2 sources agree; the printed line is kept when it agrees with the Sub-Total.
+function _wreAutofixLines(r) {
+  const sub = r.GasCharge != null ? parseBillNumber(r.GasCharge) : null;
+  const swe = r._wreSWECharge != null ? parseBillNumber(r._wreSWECharge) : null;
+  const comps = ['Trigger', 'Index'].map((k) => {
+    const m = parseBillNumber(r['_wre' + k + 'MMbtu']);
+    const f = parseBillNumber(r['_wre' + k + 'FuelMMbtu']);
+    const rate = parseBillNumber(r['_wre' + k + 'Rate']);
+    const read = parseBillNumber(r['_wre' + k + 'Charge']);
+    const qr = m != null && f != null && rate > 0 ? _evgRound((m + f) * rate, 2) : null;
+    return { k, m, f, rate, read, qr };
+  });
+  for (const c of comps) {
+    const other = comps.find((o) => o !== c);
+    const otherAbsent = other.read == null && other.m == null;
+    const sweKnown = swe != null || (r._wreSWEMMbtu == null && r._wreSWECharge == null);
+    const resid = sub != null && sweKnown && (other.read != null || otherAbsent) ? _evgRound(sub - (other.read || 0) - (swe || 0), 2) : null;
+    const agrees = c.read != null && (c.qr == null || Math.abs(c.read - c.qr) <= 0.005) && (resid == null || Math.abs(c.read - resid) <= 0.005);
+    if (agrees || (c.read == null && c.qr == null && resid == null)) continue;
+    const fix = _lbg_autofix({
+      field: c.k + ' line',
+      sources: [
+        c.read != null && { label: 'printed', values: [c.read], eps: 0.005, says: 'the printed ' + c.k + ' amount ' + c.read.toFixed(2) },
+        c.qr != null && { label: 'quantity x rate', values: [c.qr], eps: 0.005, says: '(' + c.m + ' + ' + c.f + ') x $' + c.rate + ' = ' + c.qr.toFixed(2) },
+        resid != null && { label: 'sub-total', values: [resid], eps: 0.005, says: 'the Sub-Total ' + sub.toFixed(2) + ' minus the other lines = ' + resid.toFixed(2) },
+      ],
+      format: _lbg_fieldFormat('wre', '_wre' + c.k + 'Charge'),
+    });
+    if (fix.value == null || (c.read != null && Math.abs(fix.value - c.read) <= 0.005)) continue;
+    r['_wre' + c.k + 'Charge'] = fix.value.toFixed(2);
+    r['_auto_corrected__wre' + c.k + 'Charge'] = { original: c.read, corrected: r['_wre' + c.k + 'Charge'], reason: fix.reason };
+  }
 }
 const _LBG_GAS_RATES = [{ effectiveDate: '2000-01-01', rate: 0.798062, baseCharge: 23.33 }];
 function _lbg_gasRate(billDate) {
@@ -9432,6 +9702,10 @@ const UTILITY_RULES = [
 
           // Stop at invoice summary line
           if (/Total\s+Natural\s+Gas/i.test(ln)) break;
+          // A charge row whose label printed marks its site: if its charge is never read, the Sub-Total is not
+          // rebuilt from the other rows (the sum would leave a printed row out).
+          if (_inSites && _cur && /^\s*Index\b/i.test(ln)) _cur._indexLineSeen = true;
+          if (_inSites && _cur && /^\s*Trigger\b/i.test(ln)) _cur._trigLineSeen = true;
 
           // Detect "Service Address:" line — opens a new site block.
           // The building name and Acct/Meter appear on the SAME line in all formats.
@@ -9921,7 +10195,9 @@ const UTILITY_RULES = [
         for (const b of blocks) {
           if (b.dollar == null) {
             const parts = [b.triggerCharge, b.indexCharge, b.sweCharge].filter((v) => v != null);
-            if (parts.length > 0) {
+            const rowLost = (b._indexLineSeen && b.indexCharge == null) || (b._trigLineSeen && b.triggerCharge == null);
+            if (rowLost) b._chargeRowLost = true;
+            if (parts.length > 0 && !rowLost) {
               b.dollar = parts.reduce((s, v) => s + v, 0).toFixed(2);
               b._dollarFromComponents = true;
             }
@@ -10528,8 +10804,14 @@ const UTILITY_RULES = [
           // — see comment above _mmbtuMissingWithCharge for why this is needed in
           // addition to _mmbtuRateMismatch.
           _mmbtuMissingWithCharge: _mmbtuMissingWithCharge || undefined,
-          _manualReview: _needsManualReview ? true : undefined,
-          _manualReviewLabel: _mmbtuRateMismatch
+          _manualReview: _needsManualReview || blk._chargeRowLost ? true : undefined,
+          _wreChargeRowLost: blk._chargeRowLost || undefined,
+          _manualReviewLabel: blk._chargeRowLost
+            ? 'Site charge held: a charge row printed but its amount was not read, and the Sub-Total amount was not read (site #' +
+              (i + 1) +
+              (blk.ServiceAddress ? ': ' + blk.ServiceAddress : '') +
+              ') - second source missing; verify against the source PDF'
+            : _mmbtuRateMismatch
             ? 'Usage flagged — MMbtu × printed rate does not match the printed charge (site #' +
               (i + 1) +
               (blk.ServiceAddress ? ': ' + blk.ServiceAddress : '') +
@@ -10594,6 +10876,7 @@ const UTILITY_RULES = [
       // (same attach-to-array pattern already used for `_unmatchedPages`) and
       // compares it to the known Client C baseline of 10 sites/invoice.
       results._wreSiteBlockCount = siteBlocks.length;
+      for (const r of results) _wreAutofixLines(r);
 
       return results;
     },
@@ -10721,7 +11004,7 @@ const UTILITY_RULES = [
           _unmatchedSections.push({ pageNums, preview: s.trim().slice(0, 200) });
         }
       }
-      if (sections.length <= 1) return [this.extract(t)];
+      if (sections.length <= 1) return _kgsApplyIdentities([this.extract(t)]);
       const result = [];
       for (const s of sections) {
         const pageMarkers = [...s.matchAll(/%%PAGE_(\d+)%%/g)].map((m) => parseInt(m[1]));
@@ -10794,6 +11077,7 @@ const UTILITY_RULES = [
         }
       }
       if (_unmatchedSections.length) result._unmatchedPages = _unmatchedSections;
+      _kgsApplyIdentities(result);
       return result;
     },
     extract: function (t) {
@@ -10947,10 +11231,7 @@ const UTILITY_RULES = [
 
         // Therms = Mcf × Multiplier × 10. KGS states 1 Mcf = 1 Dth = 10 therms, so this uses UNIT_TO_BASE.DTh,
         // not UNIT_TO_BASE.MCF (10.37). DECISION FOR MATT: which Mcf factor is right (2026-09-30 review).
-        const _multiplier = parseBillNumber(MeterMultiplier) || 1.0;
-        const _mcf = parseBillNumber(McfBilled);
-        const NaturalGasTherms =
-          _mcf > 0 ? String(Math.round(convertUnit(_mcf * _multiplier, 'DTh', 'Therms') * 100) / 100) : null;
+        const NaturalGasTherms = _kgsThermsOf(McfBilled, MeterMultiplier);
 
         // === BALANCE SECTION ===
         // All dollar-amount patterns use [\\d,.:] to capture values whether OCR renders decimal as
@@ -11019,11 +11300,16 @@ const UTILITY_RULES = [
         const currentChargesM = activeT.match(/Total\s+Current\s+Charges[^\n]*?([\d,.:]+)\s*$/im);
         const TotalCurrentCharges = fixNum(currentChargesM ? currentChargesM[1] : null);
 
-        // "Amount Due" can be followed by formatting colons and spaces before the dollar amount
-        // (e.g. "Amount Due   :   $107.95"). Skip non-digit chars after the label, then require
-        // the value to START with a digit to avoid capturing a bare colon.
+        // The page prints "Total Amount Due" in the charges block only (layout fact, computations/bill-layout.js KGS
+        // TotalAmountDue). The top block and the stub print "Amount Due" without "Total" (same figure); the top
+        // block also prints "Current Charges Due" (a date, 03-10-26) and "Amount Due After Due Date" (a larger
+        // figure). So: take "Total Amount Due"; only when that line is lost, take a bare "Amount Due" that is not
+        // "... After Due Date". Skip non-digit chars after the label (colons, "$"), start on a digit, and never
+        // take a date (a figure followed by "-").
         // Uses activeT to avoid another account's amount-due line.
-        const amtDueM = activeT.match(/Amount\s+Due[^0-9\n]*(\d[\d,.:]*)/i);
+        const amtDueM =
+          activeT.match(/Total\s+Amount\s+Due[^0-9\n]*(\d[\d,.:]*)(?![\d-])/i) ||
+          activeT.match(/(?<!Total\s)Amount\s+Due(?!\s+After)[^0-9\n]*(\d[\d,.:]*)(?![\d-])/i);
         const TotalAmountDue = fixNum(amtDueM ? amtDueM[1] : null);
 
         // Lines that printed but were not read cleanly (see _kgsSuspectLines). The post-extraction
@@ -13002,6 +13288,7 @@ const UTILITY_RULES = [
             { scan: _tdc.read.toFixed(2), eps: 0.005 },
           ],
           history: _lbg_historyCheck(AccountNumber, 'Total Amount Due'),
+          format: _lbg_fieldFormat('city-new', 'TotalAmountDue'),
           scanRead: _tdc.read.toFixed(2),
         });
         if (_tdcFix.value != null) {
@@ -13544,33 +13831,16 @@ const UTILITY_RULES = [
       //   of the right-hand column stub.
       let AccountNumber = null;
       let _p5RawAcct = null; // set by P5 when OCR-garbled digits are normalized; read at flag-detection below
-      // P1 — bottom stub (most reliable across all pages)
-      AccountNumber = page.match(/ACCOUNT\s*#[:\s]+(\d{7,10})/i)?.[1] || null;
-      // P2 — top label + number on same line
-      if (!AccountNumber) AccountNumber = page.match(/ACCOUNT\s+NUMBER\.?\s+(\d{7,10})/i)?.[1] || null;
-      // P3 — top label + number within 3 lines (up to ~60 chars of OCR noise)
-      if (!AccountNumber) {
-        const p3 = page.match(/ACCOUNT\s+NUMBER\.?[\s\S]{0,60}?(?:^|\s|\|)(\d{7,10})(?:\s|$)/im);
-        if (p3) AccountNumber = p3[1];
-      }
-      // P4 — 9-digit number after garbled "ALDWIN"/"DWIN"/"RALD" OCR fragment
-      if (!AccountNumber) {
-        const p4 = page.match(
-          /(?:ALDWIN|DWIN|RALD|RWIN|FRALD|ERALD|ER\s*ALDWIN|FR\s*DWI)[\s\S]{0,40}?(?:^|\s)(\d{9})(?:\s|$)/im,
-        );
-        if (p4) AccountNumber = p4[1];
-      }
-
-      // P5 — OCR-garbled bottom stub: account number contains letters (OCR substitutes
-      // look-alike chars for digits). Match ACCOUNT #/H#/# with period/colon/space
-      // separator followed by 7-11 alphanumeric chars; normalize common OCR digit
-      // confusions. Auto-accepts result if all chars normalize to digits (7-10 long).
-      // Stamps _accountOCRNormalized:true on the bill so the user knows to verify.
-      if (!AccountNumber) {
+      // Printed reads: bottom stub (P1, P5) and top box (P2, P3, P4). A value fills only when 2 sources agree
+      // (_lbg_decideAccount): the stub and the top box print the same number, or one printed read is a saved
+      // account number of this utility. One printed read alone is held.
+      const _printed = [];
+      let _stubRead = page.match(/ACCOUNT\s*#[:\s]+(\d{7,10})/i)?.[1] || null; // P1
+      if (!_stubRead) {
+        // P5 — OCR-garbled stub: look-alike letters for digits, normalized
         const _p5m = page.match(/ACCOUNT\s*H?#[.:\s]+([A-Za-z0-9]{7,11})/i);
         if (_p5m) {
-          const _rawAcct = _p5m[1];
-          const _normAcct = _rawAcct
+          const _normAcct = _p5m[1]
             .replace(/[aA]/g, '4')
             .replace(/[oO]/g, '0')
             .replace(/[iIlL]/g, '1')
@@ -13580,11 +13850,23 @@ const UTILITY_RULES = [
             .replace(/[cC]/g, '0')
             .replace(/[vV]/g, '0');
           if (/^\d{7,10}$/.test(_normAcct)) {
-            AccountNumber = _normAcct;
-            _p5RawAcct = _rawAcct; // persist raw garbled string for flag-detection below (can't attach to primitive string)
+            _stubRead = _normAcct;
+            _p5RawAcct = _p5m[1];
           }
         }
       }
+      let _topRead = page.match(/ACCOUNT\s+NUMBER\.?\s+(\d{7,10})/i)?.[1] || null; // P2
+      if (!_topRead) _topRead = page.match(/ACCOUNT\s+NUMBER\.?[\s\S]{0,60}?(?:^|\s|\|)(\d{7,10})(?:\s|$)/im)?.[1] || null; // P3
+      if (!_topRead) {
+        // P4 — 9-digit number after garbled "ALDWIN"/"DWIN"/"RALD" OCR fragment
+        _topRead = page.match(/(?:ALDWIN|DWIN|RALD|RWIN|FRALD|ERALD|ER\s*ALDWIN|FR\s*DWI)[\s\S]{0,40}?(?:^|\s)(\d{9})(?:\s|$)/im)?.[1] || null;
+      }
+      if (_stubRead) _printed.push(_stubRead);
+      if (_topRead) _printed.push(_topRead);
+      const _acctDecision = _lbg_decideAccount(_printed, _lbg_savedAccounts(_lbg_ruleCompany((r) => r.name === 'City of Baldwin City')));
+      AccountNumber = _acctDecision.value;
+      if (!AccountNumber) _p5RawAcct = null;
+      const _accountHeld = !AccountNumber && _printed.length ? _acctDecision.held : null;
 
       // ── Service address (from bottom stub) — extracted here so it can serve
       // as an identity fallback when the account number is unresolvable.
@@ -13613,7 +13895,7 @@ const UTILITY_RULES = [
       // → "<REDACTED-ACCT>"), P5 fails the 7-10 digit check and AccountNumber stays null.
       // Such pages still have a readable service address; continue with AccountNumber=null
       // and key by address instead of returning null and losing the page's charges.
-      if (!AccountNumber && !ServiceAddress) return null;
+      if (!AccountNumber && !ServiceAddress && !_printed.length) return null;
       // Flag when we're falling back to address-based identity (no valid account #)
       const _accountFromAddress = !AccountNumber && !!ServiceAddress;
 
@@ -13994,6 +14276,9 @@ const UTILITY_RULES = [
         waUsage = null,
         waCharge = null;
       let waDebtPmt = null;
+      let _waMeterLines = 0; // WATER lines with a charge, and the Meter Debt lines read: each water meter prints its own
+      let _waDebtLines = 0;
+      let _waDebtLabels = 0; // Meter Debt lines whose label printed (amount read or not)
       let waFranchiseFee = null;
 
       // OCR frequently garbles the separator between charge code and label.
@@ -14025,7 +14310,7 @@ const UTILITY_RULES = [
             .trim()
             .replace(/[–—−]/g, '-'); // normalize unicode dashes to ASCII minus
           // Find the last decimal-looking token (handles trailing minus)
-          const m = raw.match(/(-?[\d,]+\.\d{2}-?|-\.[\d]+|\.\d{2})\s*$/);
+          const m = raw.match(/(-?[\d,]*\.\d{2}-?|-\.[\d]+)\s*$/);
           if (m) {
             let v = m[1];
             const trailingMinus = v.endsWith('-');
@@ -14042,7 +14327,7 @@ const UTILITY_RULES = [
             .replace(/^FA[\s\xa0\xE2—–~=|\-]{1,6}FUEL\s+ADJ(?:USTMENT)?\s*/i, '')
             .trim()
             .replace(/[–—−]/g, '-'); // normalize unicode dashes to ASCII minus
-          const m = raw.match(/(-?[\d,]+\.\d{2}-?|-\.[\d]+|\.\d{2})\s*$/);
+          const m = raw.match(/(-?[\d,]*\.\d{2}-?|-\.[\d]+)\s*$/);
           if (m) {
             let v = m[1];
             const trailingMinus = v.endsWith('-');
@@ -14115,6 +14400,7 @@ const UTILITY_RULES = [
             }
             waUsage = (waUsage || 0) + (parsed.usage || 0);
             waCharge = (waCharge || 0) + parsed.charge;
+            _waMeterLines++;
           } else _noteMissing('Water', parsed);
           continue;
         }
@@ -14128,7 +14414,11 @@ const UTILITY_RULES = [
             .trim();
           // Drop trailing anchor so OCR noise chars (H, ;, etc.) after the amount still match.
           const m = raw.match(/([\d,]+\.\d{2})/);
-          if (m && waDebtPmt === null) waDebtPmt = parseFloat(m[1].replace(/,/g, ''));
+          _waDebtLabels++;
+          if (m) {
+            waDebtPmt = _evgRound((waDebtPmt || 0) + parseFloat(m[1].replace(/,/g, '')), 2);
+            _waDebtLines++;
+          }
           continue;
         }
 
@@ -14137,7 +14427,11 @@ const UTILITY_RULES = [
           const raw = ln.replace(/^[Ww]{1,2}[Aa][\s\xa0\xE2—–~=|\-]{1,6}WATER\s+DEBT\s+PMT\s*/i, '').trim();
           // Drop trailing anchor so OCR noise chars after the amount still match.
           const m = raw.match(/([\d,]+\.\d{2})/);
-          if (m && waDebtPmt === null) waDebtPmt = parseFloat(m[1].replace(/,/g, ''));
+          _waDebtLabels++;
+          if (m) {
+            waDebtPmt = _evgRound((waDebtPmt || 0) + parseFloat(m[1].replace(/,/g, '')), 2);
+            _waDebtLines++;
+          }
           continue;
         }
 
@@ -14231,10 +14525,10 @@ const UTILITY_RULES = [
                 // If we can't determine commodity, default to most recently seen type
                 else if (elMeters.length > 0) elFranchiseFee = (elFranchiseFee || 0) + fv;
               }
-            } else if (/^(?:METER\s+)?DEBT\s+PMT/i.test(rest) && waDebtPmt === null) {
+            } else if (/^(?:METER\s+)?DEBT\s+PMT/i.test(rest)) {
               const body = rest.replace(/^(?:METER\s+)?DEBT\s+PMT\s*/i, '').trim();
               const mv = body.match(/([\d,]+\.\d{2})/);
-              if (mv) waDebtPmt = parseFloat(mv[1].replace(/,/g, ''));
+              if (mv) waDebtPmt = _evgRound((waDebtPmt || 0) + parseFloat(mv[1].replace(/,/g, '')), 2);
             } else if (/^SEWER/i.test(rest) && !/FRANCHISE/i.test(rest)) {
               const body = rest.replace(/^SEWER\s*/i, '');
               const m = _parseMeteredLine(body);
@@ -14399,7 +14693,7 @@ const UTILITY_RULES = [
               if (label === 'EL_FRAN') elFranchiseFee = (elFranchiseFee || 0) + v;
               else if (label === 'FA' && fuelAdjCharge === null) fuelAdjCharge = v;
               else if (label === 'SW_FRAN' && swFranchiseFee === null) swFranchiseFee = v;
-              else if (label === 'WA_DEBT' && waDebtPmt === null) waDebtPmt = v;
+              else if (label === 'WA_DEBT') waDebtPmt = _evgRound((waDebtPmt || 0) + v, 2);
               else if (label === 'WA_FRAN' && waFranchiseFee === null) waFranchiseFee = v;
             }
           }
@@ -14462,6 +14756,7 @@ const UTILITY_RULES = [
         MeterNumber: null,
         ...(_acctOCRNormalized ? { _accountOCRNormalized: true, _accountOCRRaw: _p5RawAcct } : {}),
         ...(_accountFromAddress ? { _accountFromAddress: true } : {}),
+        ...(_accountHeld ? { _accountHeld } : {}),
         ...(_dateReconstructed.length > 0 ? { _date_reconstructed: _dateReconstructed } : {}),
         // FIX(2026-07-02, item 219e6828): plausibility flag consumed by
         // bill-analysis.js _bldgName to decide whether ServiceAddress is
@@ -14517,6 +14812,48 @@ const UTILITY_RULES = [
         return false;
       };
 
+      // One Water or Sewer row lost its charge column: page identities fill it only when 2 sources agree
+      // (_baldwinAutofixCharge); else the row stays flagged with the reason.
+      let _baldwinFill = null;
+      let _baldwinWhy = null;
+      if (_missingCharge.length === 1 && _missingCharge[0].commodity !== 'Electric') {
+        const mc = _missingCharge[0];
+        const isWater = mc.commodity === 'Water';
+        const othersSum =
+          (totalElCharge || 0) + (elFranchiseFee || 0) + (fuelAdjCharge || 0) + (waCharge || 0) + (waDebtPmt || 0) +
+          (waFranchiseFee || 0) + (swCharge || 0) + (swFranchiseFee || 0);
+        const fix = _baldwinAutofixCharge(mc, { waFranchiseFee, swFranchiseFee, waDebtPmt, totalAmountDue: TotalAmountDue, othersSum });
+        if (fix && fix.value != null) {
+          _baldwinFill = { commodity: mc.commodity, field: isWater ? 'WaterCharge' : 'SewerCharge', value: fix.value, reason: fix.reason };
+          if (isWater) {
+            waCharge = fix.value;
+            if (waPrevRead == null) waPrevRead = mc.prevRead;
+            if (waCurrRead == null) waCurrRead = mc.currRead;
+            if (waUsage == null) waUsage = mc.usage;
+          } else {
+            swCharge = fix.value;
+            if (swPrevRead == null) swPrevRead = mc.prevRead;
+            if (swCurrRead == null) swCurrRead = mc.currRead;
+            if (swUsage == null) swUsage = mc.usage;
+          }
+          _missingCharge.length = 0;
+        } else if (fix) _baldwinWhy = fix.reason;
+      }
+
+      // Each water meter prints its own Meter Debt line (every real page with debt lines: 4 of 4). Fewer debt lines
+      // read than water lines, or a Meter Debt label whose amount was not read, means a line was lost.
+      const _debtIncomplete = (_waDebtLines > 0 && _waDebtLines < _waMeterLines) || _waDebtLabels > _waDebtLines;
+      // Franchise fee that breaks the 6% line: fill only when 2 sources agree (_baldwinAutofixFranchise). The Water base
+      // includes the debt lines, so Water is checked only when every debt line was read.
+      const _ffFills = [];
+      for (const [cm, chg, dbt, ff] of [['Water', _waDebtLines >= 1 && !_debtIncomplete ? waCharge : null, waDebtPmt, waFranchiseFee], ['Sewer', swCharge, 0, swFranchiseFee]]) {
+        const fx = _baldwinAutofixFranchise(cm, chg, dbt, ff);
+        if (fx && fx.value != null && Math.abs(fx.value - ff) > 0.005) {
+          if (cm === 'Water') waFranchiseFee = fx.value;
+          else swFranchiseFee = fx.value;
+          _ffFills.push({ commodity: cm, field: cm + 'FranchiseFee', original: ff, value: fx.value, reason: fx.reason });
+        }
+      }
       const _waUsageSuspect = _checkWaterUsageSuspect(waPrevRead, waCurrRead, waUsage);
       const _swUsageSuspect = _checkWaterUsageSuspect(swPrevRead, swCurrRead, swUsage);
       if (_waUsageSuspect) waUsage = null;
@@ -14549,7 +14886,15 @@ const UTILITY_RULES = [
 
       // ── Water bill ──
       if (waCharge != null && waCharge !== 0) {
+        // A lost Meter Debt line (_debtIncomplete): the debt total and the bill total are held, not guessed. The 6% franchise
+        // fee names the figure the lost line would give, but that is one source, so it only informs the reason.
+        const _debtLost = _debtIncomplete;
         const waTotal = waCharge + (waDebtPmt || 0) + (waFranchiseFee || 0);
+        const _debtLostReason = _debtLost
+          ? 'Water: ' + _waMeterLines + ' water meter line(s), ' + _waDebtLabels + ' Meter Debt line(s) printed, ' + _waDebtLines + ' Meter Debt amount(s) read' +
+            (waFranchiseFee ? ' (the franchise fee ' + waFranchiseFee.toFixed(2) + ' is 6% of ' + _evgRound(waFranchiseFee / 0.06, 2).toFixed(2) + ' in lines)' : '') +
+            '; second source missing, debt total held'
+          : null;
         bills.push({
           ...shared,
           Commodity: 'Water',
@@ -14558,10 +14903,11 @@ const UTILITY_RULES = [
           WaterUsage: billValueOrNull(waUsage), // 92e2f54d: a real 0 stays 0
           ...(_waUsageSuspect ? { _usageSuspect: true } : {}),
           WaterCharge: waCharge,
-          WaterDebtPayment: waDebtPmt || null,
+          WaterDebtPayment: _debtLost ? null : waDebtPmt || null,
           WaterFranchiseFee: waFranchiseFee || null,
-          TotalCurrentCharges: Math.round(waTotal * 100) / 100,
+          TotalCurrentCharges: _debtLost ? null : Math.round(waTotal * 100) / 100,
           TotalAmountDue: TotalAmountDue || null,
+          ...(_debtLost ? { _manualReview: true, _manualReviewLabel: _debtLostReason, _gateTripped: true, _gateReasons: [_debtLostReason] } : {}),
         });
       }
 
@@ -14589,8 +14935,16 @@ const UTILITY_RULES = [
       // FIX(2026-10-08): a metered row whose charge could not be read is never dropped
       // silently. If the commodity has a bill, flag it; otherwise emit a flagged row with
       // the reads/usage and a null charge so the user sees it and confirms it from the PDF.
+      if (_baldwinFill) {
+        const _fb = bills.find((b) => b.Commodity === _baldwinFill.commodity);
+        if (_fb) _fb['_auto_corrected_' + _baldwinFill.field] = { original: null, corrected: _baldwinFill.value.toFixed(2), reason: _baldwinFill.reason };
+      }
+      for (const f of _ffFills) {
+        const _fb = bills.find((b) => b.Commodity === f.commodity);
+        if (_fb) _fb['_auto_corrected_' + f.field] = { original: f.original.toFixed(2), corrected: f.value.toFixed(2), reason: f.reason };
+      }
       for (const mc of _missingCharge) {
-        const _label = mc.commodity + ' charge not readable on this page - verify against the bill';
+        const _label = mc.commodity + ' charge not readable on this page - verify against the bill' + (_baldwinWhy ? ' (' + _baldwinWhy + ')' : '');
         const _have = bills.find((b) => b.Commodity === mc.commodity);
         if (_have) {
           _have._manualReview = true;

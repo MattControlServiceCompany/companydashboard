@@ -2575,6 +2575,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.21.153', date: '2026-10-21', title: 'PDF / OCR: bills read with their printed layout rules',
+    items: [
+      { type: 'fix', text: 'PDF / OCR: KGS, City of Baldwin and gas supplier bills are now read with the layout rules printed on each bill, so credits, the total due, rates and minus signs are read correctly.' },
+      { type: 'fix', text: 'PDF / OCR: a City of Baldwin account number fills only when two prints of the bill agree or it matches a saved account.' }
+    ]
+  },
   { v: 'v2026.10.20.152', date: '2026-10-20', title: 'Sidebar shows page names at half-screen width',
     items: [
       { type: 'change', text: 'Sidebar: page names now show next to their icons at half-screen width; on narrow windows a Menu button opens the full sidebar.' }

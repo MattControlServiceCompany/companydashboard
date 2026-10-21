@@ -75,7 +75,7 @@ function billText(over) {
     L.ff2,
     L.total,
     'Meter Number        From        To       of Days Previous Present   Constant   Billed     Mcf    Gas/Mcf',
-    'A1B2C3D4E5    12-19-25   01-19-26    31    100    110   1.0000   10.000   0.2500   4.0000',
+    'A1B2C3D4E5    12-19-25   01-19-26    31    100    200   1.0000   10.000   0.2500   4.0000',
   ].join('\n');
 }
 // 30 + 20 + 1.50 + 2.50 + 40 + 4 + 8 + 0.50 = 106.50

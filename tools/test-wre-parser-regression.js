@@ -19,7 +19,8 @@
  *   - wre-synth-dropout.txt  Index line reads "6557" (decimal dropped) while
  *                            the Sub-Total line reads "65.57". The sum/100
  *                            reconciliation must suppress the false mismatch
- *                            flag. GasCharge stays null (no cents captured).
+ *                            flag. GasCharge stays null (no cents captured) and the
+ *                            site is flagged: a charge row printed but its amount was not read.
  *   - wre-synth-corrupt.txt  Index line is corrupted, digits scrambled. The
  *                            site MUST stay null and flagged. No digit
  *                            reconstruction.
@@ -74,7 +75,7 @@ const EXPECTED = {
   ],
   'wre-synth-dropout.txt': [
     { addr: 'Site One - 1 Alpha St', mmbtu: '13', charge: '54.59' },
-    { addr: 'Site Two - 2 Beta St', mmbtu: '65.57', charge: null },
+    { addr: 'Site Two - 2 Beta St', mmbtu: '65.57', charge: null, manualReview: true },
   ],
   'wre-synth-corrupt.txt': [
     { addr: 'Site One - 1 Alpha St', mmbtu: '13', charge: '54.59' },

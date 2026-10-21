@@ -50,6 +50,7 @@ const BL = require(path.join(ROOT, 'computations', 'bill-layout.js'));
 
 // ── the real readers in a vm (same loads as tools/test-bill-layout.js) ──
 const sandbox = { window: {}, calcDays: () => 30, console: { log() {}, warn() {}, error() {} } };
+sandbox.BILL_LAYOUT = BL; // the field formats the readers' autofix reads (computations/bill-layout.js)
 vm.createContext(sandbox);
 for (const lib of ['date-helpers.js', 'formatting.js', 'unit-conversion.js'])
   vm.runInContext(fs.readFileSync(path.join(ROOT, 'lib', lib), 'utf8'), sandbox, { filename: lib });

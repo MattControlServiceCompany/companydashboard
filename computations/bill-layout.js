@@ -177,6 +177,121 @@
     // after the figure, is not a printed amount and is re-read and proved (never taken as valid).
     moneyFormat: /^-?\$(?:\d{1,3}(?:,\d{3})+|\d+)\.\d{2}$/,
   };
+  // ── Field format facts (data; one vocabulary for every layout) ──
+  // Each fact below was checked on 3 or more real pages (2026-10-20 ground-truth check). A layout names
+  // its facts per reader field in `fieldFormats`:
+  //   decimals  digits after the point: n, or [lo, hi] (an exact count prints the same on every page)
+  //   digits    count of integer digits [lo, hi]
+  //   credit    how a negative amount prints: 'never' (the cell never prints negative), 'lead' (leading minus),
+  //             'trail' (trailing minus, "2.04-"), 'CR' (suffix "CR", "0.48CR"); the reader stores the sign
+  //   suffix    text that always follows the figure (a gas-utility payment prints "569.28CR"; the reader stores
+  //             the figure positive)
+  //   glyph     '$' every printed figure of the field has the "$" prefix, 'none' no figure has it, 'first' only
+  //             the first line of its block has it
+  // app/energy-savings.js _lbg_autofix drops every one-digit repair of a scanned figure that breaks the
+  // field's format (a repair of "2.5" to 52.5 is not a 2-decimal amount). Layouts that have no position
+  // template yet (gas utility, second city, gas supplier) carry only `fieldFormats`: no anchors until a real page proves them.
+  var MONEY = { decimals: 2, credit: 'never' };
+  var MONEY_CREDIT = { decimals: 2, credit: 'lead' };
+  CITY_NEW.fieldFormats = {
+    WaterCharge: MONEY,
+    WaterProtectionFee: MONEY,
+    SewerCharge: MONEY,
+    StormWaterCharge: MONEY,
+    FuelAdjustment: MONEY_CREDIT, // 25 of 25 pages print it negative
+    CurrentBill: MONEY,
+    TotalAmountDue: MONEY,
+    NaturalGasTherms: { decimals: [0, 3], credit: 'never' }, // 29 pages: 0 to 3 decimals by account
+  };
+  UTILITY_E_BD.fieldFormats = {
+    CustomerCharge: MONEY,
+    FacilitiesCharge: MONEY,
+    BilledKWCharge: MONEY,
+    EnergyOnPeakCharge: MONEY,
+    EnergyOffPeakCharge: MONEY,
+    RkVACharge: MONEY,
+    TaxExemptDelivery: MONEY,
+    ECACharge: MONEY,
+    EERCharge: MONEY,
+    PTSCharge: MONEY,
+    TDCCharge: MONEY,
+    FranchiseFee: MONEY,
+    SalesTax: MONEY,
+    BillOffset: MONEY_CREDIT, // 35 of 35 pages print it negative
+    SolarCredit: MONEY_CREDIT,
+    TotalCurrentCharges: MONEY,
+    kWhConsumed: { decimals: 4, credit: 'never' }, // 337 of 337 quantity labels print 4 decimals
+    BilledKW: { decimals: 4, credit: 'never' },
+    NumberOfDays: { decimals: 0, digits: [2, 2], credit: 'never' }, // 30 pages: 2 digits
+  };
+  // Money cells by the "$" they print (2026-10-21 check of the real pages: the "$" is not the same in every layout).
+  var MONEY_NO_GLYPH = { decimals: 2, credit: 'never', glyph: 'none' };
+  var MONEY_GLYPH = { decimals: 2, credit: 'never', glyph: '$' };
+  var KGS_FACTS = {
+    id: 'kgs',
+    fieldFormats: {
+      CustomerCharge: { decimals: 2, credit: 'never', glyph: 'first' }, // "$32.20" on the first charge line only
+      DeliveryCharge: MONEY_NO_GLYPH,
+      GasSystemReliability: { decimals: 2, credit: 'CR', glyph: 'none' }, // a credit month prints "0.48CR", never a minus
+      WeatherNormalization: { decimals: 2, credit: 'CR', glyph: 'none' },
+      GasCharge: MONEY_NO_GLYPH,
+      WinterEventCost: MONEY_NO_GLYPH,
+      FranchiseFee: MONEY_NO_GLYPH,
+      DelayedPaymentCharge: MONEY_NO_GLYPH,
+      PreviousBalance: MONEY_GLYPH,
+      PaymentsReceived: { decimals: 2, credit: 'never', suffix: 'CR', glyph: 'none' }, // "569.28CR"
+      TotalCurrentCharges: MONEY_GLYPH,
+      // Prints "Total Amount Due" in the charges block only. The top block and the stub print "Amount Due"
+      // (same figure). "Current Charges Due" is a date, "Amount Due After Due Date" is a larger figure.
+      TotalAmountDue: MONEY_GLYPH,
+      McfBilled: { decimals: 3, credit: 'never' },
+      WNAPerMcf: { decimals: 4, credit: 'never', glyph: '$' },
+      CostOfGasPerMcf: { decimals: 4, credit: 'never', glyph: 'none' },
+      NumberOfDays: { decimals: 0, digits: [2, 2], credit: 'never' },
+      // A 4-dial meter prints without leading zeros ("590" for 0590): 1 to 4 digits.
+      MeterReadPrevious: { decimals: 0, digits: [1, 4], credit: 'never' },
+      MeterReadCurrent: { decimals: 0, digits: [1, 4], credit: 'never' },
+    },
+  };
+  var BALDWIN_FACTS = {
+    id: 'baldwin',
+    fieldFormats: {
+      WaterCharge: MONEY_NO_GLYPH, // no "$" anywhere on the page
+      SewerCharge: MONEY_NO_GLYPH,
+      WaterDebtPayment: MONEY_NO_GLYPH,
+      WaterFranchiseFee: MONEY_NO_GLYPH,
+      SewerFranchiseFee: MONEY_NO_GLYPH,
+      FuelAdjustment: { decimals: 2, credit: 'trail', glyph: 'none' }, // "2.04-" and ".57-"
+      TotalAmountDue: MONEY_NO_GLYPH,
+    },
+  };
+  var WRE_FACTS = {
+    id: 'wre',
+    fieldFormats: {
+      _wreTriggerCharge: MONEY_GLYPH,
+      _wreIndexCharge: MONEY_GLYPH,
+      _wreSWECharge: { decimals: 2, glyph: '$' }, // credit sign not yet seen on a real page
+      GasCharge: MONEY_GLYPH,
+      _wreTriggerMMbtu: MONEY_NO_GLYPH,
+      _wreIndexMMbtu: MONEY_NO_GLYPH,
+      _wreTriggerFuelMMbtu: MONEY_NO_GLYPH,
+      _wreIndexFuelMMbtu: MONEY_NO_GLYPH,
+      _wreTriggerRate: { decimals: 4, credit: 'never', glyph: '$' }, // "$5.2650"
+      _wreIndexRate: { decimals: 4, credit: 'never', glyph: '$' },
+    },
+  };
+  var LAYOUT_FACTS = {
+    'city-new': CITY_NEW,
+    'utility-e-bd': UTILITY_E_BD,
+    kgs: KGS_FACTS,
+    baldwin: BALDWIN_FACTS,
+    wre: WRE_FACTS,
+  };
+  // The format of one reader field in one layout, or null. The one reader of the facts above.
+  function fieldFormat(layoutId, field) {
+    var l = LAYOUT_FACTS[layoutId];
+    return (l && l.fieldFormats && l.fieldFormats[field]) || null;
+  }
   var TEMPLATES = [CITY_NEW, UTILITY_E_BD];
 
   // ── OCR words ──────────────────────────────────────────────────────────────────────────────────────
@@ -1786,6 +1901,8 @@
     TEMPLATES: TEMPLATES,
     CITY_NEW: CITY_NEW,
     UTILITY_E_BD: UTILITY_E_BD,
+    LAYOUT_FACTS: LAYOUT_FACTS,
+    fieldFormat: fieldFormat,
     MONEY_STRICT: MONEY_STRICT,
     REREAD_CONFIGS: REREAD_CONFIGS,
     REREAD_WHITELIST: REREAD_WHITELIST,
