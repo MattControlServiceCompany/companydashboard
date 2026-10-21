@@ -513,22 +513,24 @@ const DB = (() => {
   // entry. Another user's per-user entry goes to that user's row and must not
   // block this user's hydration or upload.
   function _hasQueuedWrite(key) {
-    if (!_isPerUserKey(key)) return _syncQueue.some((e) => e.key === key);
-    const me = _myUserId();
-    return _syncQueue.some((e) => e.key === key && _entryBelongsTo(e, me));
+    return !!_queuedEntryFor(key);
   }
+  // Identity rule (2026-10-21): only the signed-in user's OWN waiting write counts, for shared keys too.
+  // Another user's write never blocks this user's pull and never opens a conflict for this user (it
+  // stays queued under its author and is decided when the author signs in). A held draft is not a
+  // waiting write: it is kept apart and never blocks the pull.
   function _queuedEntryFor(key) {
     const me = _myUserId();
-    return _syncQueue.find((e) => e.key === key && (!_isPerUserKey(key) || _entryBelongsTo(e, me))) || null;
+    return _syncQueue.find((e) => e.key === key && !e.held && _entryBelongsTo(e, me)) || null;
   }
   // The ONE rule for "does this queued write stop the pull from taking the server copy of its key".
   // It blocks only while the server has nothing newer than the version the write was based on
-  // (entry.baseVersion; none recorded = the write never saw a server row). A held draft always blocks:
-  // the user chose to keep it. A write that is stale against the server copy does NOT block: the server
+  // (entry.baseVersion; none recorded = the write never saw a server row). A held draft never blocks
+  // (_queuedEntryFor ignores it): the page shows the server copy and the draft stays saved apart.
+  // A write that is stale against the server copy does NOT block: the server
   // copy wins and the write goes to the conflict path (_resolveStaleQueuedWrites).
   function _queuedWriteBlocksPull(entry, serverVersion) {
     if (!entry) return false;
-    if (entry.held) return true;
     if (typeof serverVersion !== 'number') return true;
     return typeof entry.baseVersion === 'number' && serverVersion <= entry.baseVersion;
   }
@@ -544,13 +546,19 @@ const DB = (() => {
     });
     if (changed) _persistSyncQueue();
   }
-  // Put this user's queued per-user values back into the local cache (the
-  // identity change removed them so another user never sees or writes them).
+  // Put this user's queued values back into the local cache (the identity change removed
+  // them so another user never sees or writes them; per-user keys and shared keys alike).
   function _reapplyQueuedPerUserValues(me) {
     if (!me) return;
     _claimSignedOutEntries(me);
     _syncQueue.forEach((e) => {
-      if (!_isPerUserKey(e.key) || !_entryBelongsTo(e, me)) return;
+      if (e.held || !_entryBelongsTo(e, me)) return; // a held draft is never put on the page
+      // A shared key lost its version stamp when another user was cleared in. The edit was made on
+      // entry.baseVersion: that is the stamp to send against (a newer server row then goes to the conflict path).
+      if (!_isPerUserKey(e.key) && !_replicaVersions[e.key] && typeof e.baseVersion === 'number') {
+        _replicaVersions[e.key] = { version: e.baseVersion, hash: null };
+        _persistStamp(e.key);
+      }
       if (e.deleted) {
         delete _cache[e.key];
         _rawDelete(e.key);
@@ -628,14 +636,18 @@ const DB = (() => {
     // (payload.owner). Never re-read after an await: the user may have changed.
     const owner = payload.owner || _queueOwner();
     // Coalesce per key AND owner: one user's edit never replaces another user's pending edit.
-    _syncQueue = _syncQueue.filter((e) => !(e.key === key && _entryOwnerKey(e.owner) === _entryOwnerKey(owner)));
+    // A held draft is kept apart from the live edit: a normal write never replaces it, a newer held draft does.
+    const isHeld = !!(opts && opts.held);
+    _syncQueue = _syncQueue.filter(
+      (e) => !(e.key === key && _entryOwnerKey(e.owner) === _entryOwnerKey(owner) && !!e.held === isHeld),
+    );
     _syncQueue.push({
       id: _genId(),
       key,
       owner,
       value: payload.deleted ? undefined : payload.value,
       deleted: !!payload.deleted,
-      held: !!(opts && opts.held), // a held local draft: kept, never sent by the drain (_holdLocalDraft)
+      held: isHeld, // a held local draft: kept, never sent by the drain (_holdLocalDraft)
       baseVersion:
         _replicaVersions[key] && typeof _replicaVersions[key].version === 'number'
           ? _replicaVersions[key].version
@@ -1698,17 +1710,46 @@ const DB = (() => {
       showToast('Your version is kept on this computer as a draft. It is not sent to the server until you choose.', 'info');
     }
   }
+  // The held drafts of the signed-in user (never another user's). Plain facts for the sync status panel.
   function getHeldDrafts() {
     const me = _myUserId();
-    return _syncQueue.filter((e) => e.held && _entryBelongsTo(e, me)).map((e) => ({ key: e.key, ts: e.ts }));
+    return _syncQueue
+      .filter((e) => e.held && _entryBelongsTo(e, me))
+      .map((e) => ({ key: e.key, ts: e.ts, deleted: !!e.deleted, userEmail: (e.owner && e.owner.email) || null }));
   }
-  function releaseHeldDraft(key) {
+  function _findHeld(key) {
     const me = _myUserId();
-    const e = _syncQueue.find((x) => x.key === key && x.held && _entryBelongsTo(x, me));
-    if (!e) return false;
-    e.held = false;
+    return _syncQueue.find((x) => x.key === key && x.held && _entryBelongsTo(x, me)) || null;
+  }
+  function _dropEntry(e) {
+    _syncQueue = _syncQueue.filter((x) => x.id !== e.id);
     _persistSyncQueue();
-    _scheduleDrain();
+  }
+  // "Use my draft": the draft leaves the held list and goes through the normal write path (set/remove ->
+  // _replicateWrite -> the full-pull gate, _valueChanged, _sendKvPut) as a NEW edit made now by the signed-in
+  // user, on the server version this device holds now. A newer server change opens the conflict choice again.
+  async function releaseHeldDraft(key) {
+    const e = _findHeld(key);
+    if (!e) return false;
+    _dropEntry(e);
+    if (e.deleted) remove(key);
+    else await set(key, e.value);
+    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('dataUpdated', { detail: { key } }));
+    return true;
+  }
+  // "Discard": the draft's value is copied to the conflict history first (never lost), then it leaves the list.
+  function discardHeldDraft(key) {
+    const e = _findHeld(key);
+    if (!e) return false;
+    _appendConflictArchive({
+      key: e.key,
+      reason: 'held-draft-discarded',
+      losingSide: 'local',
+      losingValue: e.deleted ? null : e.value,
+      losingDeleted: !!e.deleted,
+      losingVersion: typeof e.baseVersion === 'number' ? e.baseVersion : null,
+    });
+    _dropEntry(e);
     return true;
   }
 
@@ -1789,7 +1830,7 @@ const DB = (() => {
       // must never be replayed over it by the drain.
       const ok = _entryOwnerKey(payload.owner);
       const before = _syncQueue.length;
-      _syncQueue = _syncQueue.filter((e) => !(e.key === key && _entryOwnerKey(e.owner) === ok));
+      _syncQueue = _syncQueue.filter((e) => !(e.key === key && _entryOwnerKey(e.owner) === ok && !e.held));
       if (_syncQueue.length !== before) _persistSyncQueue();
       return;
     }
@@ -2242,6 +2283,7 @@ const DB = (() => {
     const epoch = _identityEpoch;
     const stale = () => epoch !== _identityEpoch; // identity changed: discard this run
     const pullUid = _myUserId();
+    _claimSignedOutEntries(pullUid); // edits made while signed out by this same user count as theirs for this pull
     _pullReadsFailed = true;
     let pullComplete = true; // false when any read failed: the cache is then not a full copy
     await _authReady();
@@ -2407,7 +2449,9 @@ const DB = (() => {
         // user decides in the conflict modal. Never a silent server-wins. Same
         // content is adopted silently by _handleConflict. Collection keys keep
         // the per-record merge in _reconcileIncoming.
-        if (_driftNeedsAsk(localKey, before, rows[0])) {
+        // A held draft means the user already chose "Decide later" for this key: the pull does not ask
+        // again, the page takes the server copy (the old local value goes to the conflict history).
+        if (!_findHeld(localKey) && _driftNeedsAsk(localKey, before, rows[0])) {
           const row = rows[0];
           const current = {
             value: row.value,
@@ -2739,6 +2783,15 @@ const DB = (() => {
       }
     }
 
+    // A shared key holding someone's UNSENT write is cleared too (2026-10-21, identity safety):
+    // the page value is that user's edit, not the server copy. The next user pulls the server copy,
+    // and the edit stays in the queue under its author (reapplied when that author signs in again).
+    // Held drafts are never on the page, so they are skipped.
+    _syncQueue.forEach((e) => {
+      if (e.held || _isPerUserKey(e.key) || _entryBelongsTo(e, nextUid)) return;
+      if (cleared.indexOf(e.key) === -1) cleared.push(e.key);
+    });
+
     // Per-user keys are ALWAYS removed from the local cache, even with a queued
     // edit: the queue entry keeps the value, and _reapplyQueuedPerUserValues puts
     // it back when its owner signs in again. The next user never sees it or saves it.
@@ -2790,6 +2843,7 @@ const DB = (() => {
     _recordLastUser();
     _persistSyncQueue(); // refresh the bars for the new identity
     _identityEpoch++; // in-flight work for the previous user now discards itself
+    _pulledUid = null; // the identity changed: a pull done for an earlier sign-in does not open the send gate again
     _uploadProgress = { running: false, total: 0, done: 0, uploaded: 0, failed: 0, failures: [] };
     const cleared = _clearPerUserLocalState(prevUid, uid);
     _reapplyQueuedPerUserValues(uid); // this user's own queued values, before hydrate and drain
@@ -3455,6 +3509,7 @@ const DB = (() => {
     hasFullPull: _hasFullPull,
     getHeldDrafts,
     releaseHeldDraft,
+    discardHeldDraft,
   };
 })();
 
