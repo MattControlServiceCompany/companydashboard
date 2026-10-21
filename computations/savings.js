@@ -713,6 +713,39 @@ function presentedMonthRange(a, z) {
   return out;
 }
 
+// The quarter the project headline shows: the first quarter after the newest presented record. With no
+// presented record it is the latest quarter that has any bill. Never a quarter after the newest bill month.
+// Meters counted = the ones in the baseline (isBaselineExcluded) and in a calculated commodity (isCalcCommodity).
+// Returns { year, q (0-3), yms: [3 x 'YYYY-MM'], label: 'Qn YYYY', complete, billsThrough: 'YYYY-MM-DD' or null }
+// or null when the project has no bills. billsThrough = the earliest latest-bill end date among the meters.
+function nextQuarterToPresent(projId) {
+  const lastByMeter = [];
+  getUDBldgs(projId).forEach((b) =>
+    (b.meters || []).forEach((m) => {
+      if (isBaselineExcluded(projId, m.id) || !isCalcCommodity(projId, m.commodity)) return;
+      const bills = (m.bills || []).filter((x) => x && x.end);
+      if (!bills.length) return;
+      const last = bills.reduce((a, x) => (x.end > a.end ? x : a));
+      lastByMeter.push({ end: last.end, ym: billMonth(last, m.bills) });
+    }),
+  );
+  if (!lastByMeter.length) return null;
+  const qIdx = (ym) => Number(ym.slice(0, 4)) * 4 + Math.floor((Number(ym.slice(5, 7)) - 1) / 3);
+  const newestQ = qIdx(lastByMeter.reduce((a, x) => (x.ym > a ? x.ym : a), ''));
+  const recs = getPresentedRecords(projId);
+  let idx = newestQ;
+  if (recs.length) {
+    const lastEnd = recs.reduce((a, r) => (r.periodEnd > a ? r.periodEnd : a), '');
+    idx = Math.min(qIdx(lastEnd) + 1, newestQ);
+  }
+  const year = Math.floor(idx / 4);
+  const q = idx % 4;
+  const yms = [1, 2, 3].map((k) => year + '-' + String(q * 3 + k).padStart(2, '0'));
+  const complete = lastByMeter.every((x) => x.ym >= yms[2]);
+  const billsThrough = complete ? null : lastByMeter.reduce((a, x) => (x.end < a ? x.end : a), lastByMeter[0].end);
+  return { year, q, yms, label: 'Q' + (q + 1) + ' ' + year, complete, billsThrough };
+}
+
 function getPresentedRecordFor(projId, yms) {
   if (!yms || !yms.length) return null;
   const sorted = yms.slice().sort();
