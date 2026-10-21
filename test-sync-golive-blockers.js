@@ -227,14 +227,18 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
   });
   await t('B2 ch-auth: needsSignIn only on the sync host while signed out', () => {
     const src = fs.readFileSync(path.join(__dirname, 'app', 'ch-auth.js'), 'utf8');
-    for (const [host, expectNeeds] of [
+    for (const [hostPort, expectNeeds] of [
       ['cscdashboard.netlify.app', true],
       ['example.github.io', false],
+      ['localhost:8888', true],
+      ['127.0.0.1:8888', true],
+      ['localhost:5000', false],
     ]) {
-      const win = { addEventListener() {}, dispatchEvent() {}, location: { hostname: host } };
+      const [host, port = ''] = hostPort.split(':');
+      const win = { addEventListener() {}, dispatchEvent() {}, location: { hostname: host, port } };
       const sb = {
         window: win,
-        location: { hostname: host },
+        location: { hostname: host, port },
         localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
         CustomEvent: function () {},
         fetch: async () => ({ ok: true, json: async () => ({}) }),

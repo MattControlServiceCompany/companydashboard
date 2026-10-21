@@ -73,12 +73,17 @@
   //    ch_backend_mode / ch_backend_enabled value from an older version is
   //    ignored and removed. Signed out = 'off' (nothing is pushed; the
   //    sign-in prompt shows).
-  //  - EVERY other host (github.io testing host, localhost, file://, previews,
+  //  - Also localhost / 127.0.0.1 port 8888: `netlify dev` on this PC, same functions.
+  //  - EVERY other host (github.io testing host, file://, previews,
   //    custom domains): always 'off'. /.netlify/functions does not exist
   //    there, so there must be zero sync calls.
   function _isNetlifyHost() {
     var h = typeof location !== 'undefined' ? location.hostname || '' : '';
-    return h.toLowerCase() === 'cscdashboard.netlify.app';
+    h = h.toLowerCase();
+    // localhost / 127.0.0.1 on port 8888 = `netlify dev` on this PC; it serves the same functions.
+    // Other localhost ports (test servers, the regression gate) stay 'off'.
+    var port = typeof location !== 'undefined' ? String(location.port || '') : '';
+    return h === 'cscdashboard.netlify.app' || ((h === 'localhost' || h === '127.0.0.1') && port === '8888');
   }
   function _dropLegacyModeFlags() {
     try {
