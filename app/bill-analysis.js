@@ -19597,7 +19597,7 @@ function renderPDFFields(parsed, warnings) {
         from: _fmtFixVal(field, ac.original),
         to: _fmtFixVal(field, ac.corrected),
         method: isShift ? 'The decimal point was moved.' : ac.reason || '',
-        revert: "revertAutoCorrect('" + field + "')",
+        revert: 'revertAutoCorrect(' + _jsArg(field) + ')',
       };
     }
     if (type === 'consensus') {
@@ -19607,7 +19607,7 @@ function renderPDFFields(parsed, warnings) {
         from: _fmtFixVal(field, oc.original),
         to: _fmtFixVal(field, oc.consensus),
         method: 'A second read of the page agreed on the new value, and the charges then add up to the total.',
-        revert: "revertOCRConsensus('" + field + "')",
+        revert: 'revertOCRConsensus(' + _jsArg(field) + ')',
       };
     }
     const b2 = parsed['_auto_recovered_B2_' + field];
@@ -19629,6 +19629,8 @@ function renderPDFFields(parsed, warnings) {
   // Helper: build a single field cell HTML
   // Escape double quotes and newlines so a message can live inside a title="..." attribute.
   const _titleEscape = (s) => _escHtml(s).replace(/\n/g, ' ');
+  // A value inside an inline handler: a quoted JS string, then HTML-escaped for the attribute (OCR text never breaks out).
+  const _jsArg = (s) => _escHtml(JSON.stringify(String(s ?? '')));
   function buildCell(k) {
     const v = parsed[k] ?? '';
     const fw = warnMap[k] || [];
@@ -19732,17 +19734,17 @@ function renderPDFFields(parsed, warnings) {
     const fixInputColor = fixInfo ? ';color:var(--green)' : '';
     const dupInputStyle = isDupDiff ? inputStyle + ';color:var(--amber)' : inputStyle + fixInputColor;
     const dupIcon = isDupDiff
-      ? `<span class="ef-dup-mark" title="Saved value: ${(dupDiff.existVal || '(empty)').replace(/"/g, '&quot;')}" style="cursor:help;color:var(--amber);font-size:9px;font-weight:700;margin-left:4px;background:var(--amber-dim);padding:1px 4px;border-radius:3px;letter-spacing:.3px">saved: ${((dupDiff.existVal || '(empty)').length > 18 ? (dupDiff.existVal || '').slice(0, 15) + '...' : dupDiff.existVal || '(empty)').replace(/</g, '&lt;')}</span>`
+      ? `<span class="ef-dup-mark" title="Saved value: ${_titleEscape(dupDiff.existVal || '(empty)')}" style="cursor:help;color:var(--amber);font-size:9px;font-weight:700;margin-left:4px;background:var(--amber-dim);padding:1px 4px;border-radius:3px;letter-spacing:.3px">saved: ${_escHtml((dupDiff.existVal || '(empty)').length > 18 ? (dupDiff.existVal || '').slice(0, 15) + '...' : dupDiff.existVal || '(empty)')}</span>`
       : '';
     // With an icon or a fix button the box shrinks to the value so they sit right next to it.
     const fixBtn =
       flag && flag.fix
-        ? `<button class="ef-fix-btn" onclick="_pdfApplyFieldEdit('${k}','${flag.fix}')">Use ${_fixLabel(k, flag.fix)}</button>`
+        ? `<button class="ef-fix-btn" onclick="_pdfApplyFieldEdit(${_jsArg(k)},${_jsArg(flag.fix)})">Use ${_escHtml(_fixLabel(k, flag.fix))}</button>`
         : '';
     const _fitSize = iconHtml || fixBtn ? Math.max(String(displayVal).length + 1, 5) : null;
     const sizeAttr = _fitSize ? ` size="${_fitSize}"` : '';
-    const inputHtml = `<input class="ef-input" value="${displayVal}" data-key="${k}" placeholder="${isEmpty ? '—' : ''}" style="${dupInputStyle}"${sizeAttr}>`;
-    const keyHtml = `<div class="ef-key" style="${dupKeyStyle}">${LABELS[k] || k}${dupIcon}</div>`;
+    const inputHtml = `<input class="ef-input" value="${_escHtml(displayVal)}" data-key="${_escHtml(k)}" placeholder="${isEmpty ? '—' : ''}" style="${dupInputStyle}"${sizeAttr}>`;
+    const keyHtml = `<div class="ef-key" style="${dupKeyStyle}">${_escHtml(LABELS[k] || k)}${dupIcon}</div>`;
     const bodyHtml = iconHtml || fixBtn ? `<div class="ef-row-fit">${inputHtml}${iconHtml}${fixBtn}</div>` : inputHtml;
     return `<div class="ef-item${edgeCls}">${keyHtml}${bodyHtml}${acTooltipHtml}</div>`;
   }
@@ -19768,11 +19770,11 @@ function renderPDFFields(parsed, warnings) {
   // A read-only box (a rate, or a quantity another cell already shows).
   const _roBox = (label, value, extraCls) =>
     value
-      ? `<div class="ef-item${extraCls ? ' ' + extraCls : ''}"><div class="ef-key">${label}</div><input class="ef-input" value="${value}" readonly tabindex="-1" style="color:var(--text2)"></div>`
+      ? `<div class="ef-item${extraCls ? ' ' + extraCls : ''}"><div class="ef-key">${_escHtml(label)}</div><input class="ef-input" value="${_escHtml(value)}" readonly tabindex="-1" style="color:var(--text2)"></div>`
       : '';
   // One charge part that has its own editable amount (a charge printed on the bill in more than one part).
   const _partCell = (label, key, value) =>
-    `<div class="ef-item center"><div class="ef-key">${label}</div><input class="ef-input" value="${value}" data-key="${key}"></div>`;
+    `<div class="ef-item center"><div class="ef-key">${_escHtml(label)}</div><input class="ef-input" value="${_escHtml(value)}" data-key="${_escHtml(key)}"></div>`;
 
   // Format numbers for display
   const fmtDollar = (v) =>
@@ -20316,7 +20318,7 @@ function renderPDFFields(parsed, warnings) {
       if (_barSeen.has(f)) return;
       _barSeen.add(f);
       _barLinks.push(
-        `<a class="${e.level === 'review' ? 'is-red' : ''}" onclick="_pdfGoToField('${f}')">${_escHtml(LABELS[f] || f)}</a>`,
+        `<a class="${e.level === 'review' ? 'is-red' : ''}" onclick="_pdfGoToField(${_jsArg(f)})">${_escHtml(LABELS[f] || f)}</a>`,
       );
     }),
   );
