@@ -18124,8 +18124,6 @@ function _pdfGoToField(key) {
   _pdfClosePop();
   const inp = document.querySelector('.ef-input[data-key="' + key + '"]');
   if (!inp) return;
-  const grp = inp.closest('details');
-  if (grp) grp.open = true;
   const item = inp.closest('.ef-item');
   if (item) item.scrollIntoView({ behavior: 'smooth', block: 'center' });
   inp.focus();
@@ -19541,8 +19539,6 @@ function renderPDFFields(parsed, warnings) {
     if (!warnMap[w.field]) warnMap[w.field] = [];
     warnMap[w.field].push(w);
   }
-  // Warning color map (info notes only: errors and warnings are drawn as an outline, see _flagMap below)
-  const wColor = { info: 'var(--accent)' };
 
   // Problems shown on the value itself: an outline in the severity color, the reason under the value, and a fix
   // button when a fix value exists (a held proposal). The same facts fill the status lists in the top row.
@@ -19627,35 +19623,13 @@ function renderPDFFields(parsed, warnings) {
     };
   };
 
-  // Fields that show once, in Usage; fields every bill needs (shown even when empty); internal keys (never shown).
-  const _USAGE_FIELDS = new Set([
-    'kWhConsumed',
-    'ActualKW',
-    'ActualRKVA',
-    'FacilitiesKW',
-    'BilledKW',
-    'OnPeakKWh',
-    'OffPeakKWh',
-    'TDCkW',
-    'NaturalGasTherms',
-    'NaturalGasCCF',
-    'NaturalGasMMbtu',
-    'McfBilled',
-    'WaterUsage',
-    'SewerUsage',
-    'GallonsDelivered',
-    '_wreTriggerMMbtu',
-    '_wreIndexMMbtu',
-    '_wreSWEMMbtu',
-    '_wreTriggerFuelMMbtu',
-    '_wreIndexFuelMMbtu',
-  ]);
+  // Fields every bill needs: shown even when empty.
   const _REQUIRED_FIELDS = new Set(['AccountNumber', 'BillingPeriodStart', 'BillingPeriodEnd', 'TotalCurrentCharges']);
   const _shownKeys = new Set();
   // Helper: build a single field cell HTML
   // Escape double quotes and newlines so a message can live inside a title="..." attribute.
   const _titleEscape = (s) => _escHtml(s).replace(/\n/g, ' ');
-  function buildCell(k, sub) {
+  function buildCell(k) {
     const v = parsed[k] ?? '';
     const fw = warnMap[k] || [];
     const magFlag = parsed['_magnitude_flag_' + k];
@@ -19670,40 +19644,69 @@ function renderPDFFields(parsed, warnings) {
     if (_shownKeys.has(k)) return '';
     if (isEmpty && !flag && !isDupDiff && !likelyMissing && !_REQUIRED_FIELDS.has(k)) return '';
     _shownKeys.add(k);
-    let borderStyle = '';
-    if (isDupDiff)
-      borderStyle = 'border-left:3px solid var(--amber);padding-left:8px;background:var(--amber-dim);border-radius:4px';
-    else if (flag) borderStyle = '';
-    else if (magFlag) borderStyle = 'border-left:3px solid var(--orange);padding-left:8px';
-    else if (fw.length) borderStyle = 'border-left:3px solid ' + wColor[fw[0].level] + ';padding-left:8px';
-    else if (isEmpty) borderStyle = 'border-left:3px solid var(--border2);padding-left:8px;opacity:.7';
-    // Notes that are not problems (info notes, a size flag, a likely-missing hint) show in a hover box.
-    // Errors and warnings are drawn on the value itself (outline + reason); a fix is a small "fixed" mark.
+    // The edge says what kind of problem the value has. A problem that is still open wins over a fix.
+    const edgeCls = isDupDiff
+      ? ' is-dup'
+      : flag
+        ? ' is-' + flag.level
+        : fixInfo
+          ? ' is-fixed'
+          : magFlag
+            ? ' is-size'
+            : isEmpty
+              ? ' is-empty'
+              : '';
+    // The icon and the hover box carry the same facts: what is wrong, what the reader fixed, and notes.
     const _pop = [];
-    let _popLevel = null; // 'warn' | 'info'
+    const _order = { info: 1, fixed: 2, warn: 3, error: 4 };
+    let _popLevel = null;
+    const _bump = (lv) => {
+      if (!_popLevel || _order[lv] > _order[_popLevel]) _popLevel = lv;
+    };
+    const _line = (t) => `<div style="margin-bottom:4px">${t}</div>`;
+    if (flag) {
+      flag.reasons.forEach((r) => _pop.push(_line(_titleEscape(r))));
+      _bump(flag.level);
+    }
+    if (fixInfo) {
+      _pop.push(
+        _line(
+          '&#10003; Corrected from <b>' +
+            _titleEscape(fixInfo.from) +
+            '</b> &rarr; <b>' +
+            _titleEscape(fixInfo.to) +
+            '</b>. ' +
+            _titleEscape(fixInfo.method),
+        ),
+      );
+      if (fixInfo.revert)
+        _pop.push(`<button class="ef-ac-revert" onclick="${fixInfo.revert}">&#8634; Revert</button>`);
+      _bump('fixed');
+    }
     for (const w of fw) {
       if (w.level !== 'info') continue;
-      _pop.push(`<div style="margin-bottom:4px">${_titleEscape(w.message)}</div>`);
-      _popLevel = _popLevel || 'info';
+      _pop.push(_line(_titleEscape(w.message)));
+      _bump('info');
     }
     if (magFlag) {
-      const msg =
-        'Possible reading error: this value is ' +
-        magFlag.ratio.toFixed(1) +
-        ' times the past average (' +
-        magFlag.mean.toLocaleString(undefined, { maximumFractionDigits: 2 }) +
-        '). Check it against the bill.';
-      _pop.push(`<div style="margin-bottom:4px">${_titleEscape(msg)}</div>`);
-      _popLevel = 'warn';
+      _pop.push(
+        _line(
+          'Possible reading error: this value is ' +
+            magFlag.ratio.toFixed(1) +
+            ' times the past average (' +
+            magFlag.mean.toLocaleString(undefined, { maximumFractionDigits: 2 }) +
+            '). Check it against the bill.',
+        ),
+      );
+      _bump('warn');
     }
     if (likelyMissing && isEmpty) {
-      const msg = 'Past bills show this value on 80% or more of bills, so the reader probably missed it.';
-      _pop.push(`<div style="margin-bottom:4px">${_titleEscape(msg)}</div>`);
-      _popLevel = _popLevel || 'info';
+      _pop.push(_line('Past bills show this value on 80% or more of bills, so the reader probably missed it.'));
+      _bump('info');
     }
-    const acTooltipHtml = _pop.length
-      ? `<div class="ef-ac-tooltip level-${_popLevel}">${_pop.join('')}</div>`
-      : '';
+    const _icons = { error: '&#9940;', warn: '&#9888;', fixed: '&#10003;', info: '&#9432;' };
+    const iconHtml = _popLevel ? `<span class="ef-ico lv-${_popLevel}">${_icons[_popLevel]}</span>` : '';
+    const acTooltipHtml = _pop.length ? `<div class="ef-ac-tooltip level-${_popLevel}">${_pop.join('')}</div>` : '';
     let displayVal = Array.isArray(v) ? v.join(', ') : String(v ?? '');
     if (ID_FIELDS.has(k)) {
       displayVal = String(displayVal);
@@ -19731,70 +19734,45 @@ function renderPDFFields(parsed, warnings) {
     const dupIcon = isDupDiff
       ? `<span class="ef-dup-mark" title="Saved value: ${(dupDiff.existVal || '(empty)').replace(/"/g, '&quot;')}" style="cursor:help;color:var(--amber);font-size:9px;font-weight:700;margin-left:4px;background:var(--amber-dim);padding:1px 4px;border-radius:3px;letter-spacing:.3px">saved: ${((dupDiff.existVal || '(empty)').length > 18 ? (dupDiff.existVal || '').slice(0, 15) + '...' : dupDiff.existVal || '(empty)').replace(/</g, '&lt;')}</span>`
       : '';
-    // A fixed value shrinks its box to the text so the "fixed" mark sits right next to the value.
-    const _fitSize = fixInfo ? Math.max(String(displayVal).length + 1, 5) : null;
+    // With an icon or a fix button the box shrinks to the value so they sit right next to it.
+    const fixBtn =
+      flag && flag.fix
+        ? `<button class="ef-fix-btn" onclick="_pdfApplyFieldEdit('${k}','${flag.fix}')">Use ${_fixLabel(k, flag.fix)}</button>`
+        : '';
+    const _fitSize = iconHtml || fixBtn ? Math.max(String(displayVal).length + 1, 5) : null;
     const sizeAttr = _fitSize ? ` size="${_fitSize}"` : '';
     const inputHtml = `<input class="ef-input" value="${displayVal}" data-key="${k}" placeholder="${isEmpty ? '—' : ''}" style="${dupInputStyle}"${sizeAttr}>`;
     const keyHtml = `<div class="ef-key" style="${dupKeyStyle}">${LABELS[k] || k}${dupIcon}</div>`;
-    const fixedMark = fixInfo
-      ? `<span class="ef-fixed-mark" title="${_titleEscape('Fixed by the reader: read ' + fixInfo.from + ', now ' + fixInfo.to + '. ' + fixInfo.method)}">fixed</span>`
-      : '';
-    const bodyHtml = fixInfo ? `<div class="ef-row-fit">${inputHtml}${fixedMark}</div>` : inputHtml;
-    // The reason under the value, and a fix button when a held proposal exists.
-    const whyHtml = flag
-      ? `<div class="ef-why">${_escHtml(flag.reasons.slice(0, 2).join(' · '))}${
-          flag.fix
-            ? `<button class="ef-fix-btn" onclick="_pdfApplyFieldEdit('${k}','${flag.fix}')">Use ${_fixLabel(k, flag.fix)}</button>`
-            : ''
-        }</div>`
-      : '';
-    const flagCls = flag ? ' flag-' + flag.level : '';
-    // The muted "quantity x rate" text sits on the same line, between the label and the value (hover shows it whole).
-    const subHtml = sub ? `<div class="ef-sub" title="${_titleEscape(sub.full)}">${sub.short}</div>` : '';
-    return `<div class="ef-item${flagCls}${sub ? ' has-sub' : ''}" style="${borderStyle}">${keyHtml}${subHtml}${bodyHtml}${whyHtml}${acTooltipHtml}</div>`;
+    const bodyHtml = iconHtml || fixBtn ? `<div class="ef-row-fit">${inputHtml}${iconHtml}${fixBtn}</div>` : inputHtml;
+    return `<div class="ef-item${edgeCls}">${keyHtml}${bodyHtml}${acTooltipHtml}</div>`;
   }
 
-  // ── The value list: one line per field in four collapsible groups (Account, Billing period and meter,
-  // Usage, Charges; an Other group only when the reader found extra values). A field shows ONCE, in its group
-  // (_shownKeys, kept by buildCell). Charges show quantity x rate = charge as one muted line under the charge.
+  // ── The values: boxed cells in sections, in the order of FIELD_LAYOUT. A charge row reads quantity | rate | charge |
+  // running total. A field shows ONCE as an editable cell (_shownKeys, kept by buildCell); a second place that needs the
+  // number shows a read-only copy.
   let runningTotal = 0;
-  const _GROUPS = [
-    ['account', 'Account'],
-    ['period', 'Billing period and meter'],
-    ['usage', 'Usage'],
-    ['other', 'Other values'],
-    ['charges', 'Charges'],
-  ];
-  const _SECTION_GROUP = {
-    'Account Info': 'account',
-    'Billing Period': 'period',
-    'Billing Period & Meter': 'period',
-    'Meter Readings': 'period',
-    'Meter 1': 'period',
-    'Meter 2': 'period',
-    Delivery: 'period',
-    Charges: 'charges',
-    'Amount Due': 'charges',
+  const rows = [];
+  let _pendingSection = '';
+  const _row = (html) => {
+    if (!html) return;
+    if (_pendingSection) {
+      rows.push(`<div class="ef-section">${_pendingSection}</div>`);
+      _pendingSection = '';
+    }
+    rows.push(html);
   };
-  const _groupHtml = { account: [], period: [], usage: [], other: [], charges: [] };
-  let _curGroup = 'account';
-  const _put = (g, html) => {
-    if (html) _groupHtml[g].push(html);
-  };
-  const _putCell = (k, g) => _put(_USAGE_FIELDS.has(k) ? 'usage' : g, buildCell(k));
+  const _blank = '<div></div>';
+  const _center = (html) => html.replace('class="ef-item', 'class="ef-item center');
   const _detail = (txt, cls) => (txt ? `<div class="ef-detail${cls ? ' ' + cls : ''}">${txt}</div>` : '');
   const _fmt4 = (n) => n.toLocaleString('en-US', { maximumFractionDigits: 4 });
-
+  // A read-only box (a rate, or a quantity another cell already shows).
+  const _roBox = (label, value, extraCls) =>
+    value
+      ? `<div class="ef-item${extraCls ? ' ' + extraCls : ''}"><div class="ef-key">${label}</div><input class="ef-input" value="${value}" readonly tabindex="-1" style="color:var(--text2)"></div>`
+      : '';
   // One charge part that has its own editable amount (a charge printed on the bill in more than one part).
-  const _partCell = (label, key, value, sub) =>
-    `<div class="ef-item${sub ? ' has-sub' : ''}"><div class="ef-key">${label}</div>${
-      sub ? `<div class="ef-sub" title="${_titleEscape(sub.full)}">${sub.short}</div>` : ''
-    }<input class="ef-input" value="${value}" data-key="${key}"></div>`;
-  // "quantity x rate" for one charge: short text on the line, the whole sum (= charge) on hover.
-  const _qr = (qtyTxt, rateTxt, chargeTxt) =>
-    qtyTxt && rateTxt
-      ? { short: qtyTxt + ' &times; ' + rateTxt, full: qtyTxt + ' × ' + rateTxt + ' = ' + chargeTxt }
-      : null;
+  const _partCell = (label, key, value) =>
+    `<div class="ef-item center"><div class="ef-key">${label}</div><input class="ef-input" value="${value}" data-key="${key}"></div>`;
 
   // Format numbers for display
   const fmtDollar = (v) =>
@@ -19809,24 +19787,37 @@ function renderPDFFields(parsed, warnings) {
     const isKwh = (unit || '').toLowerCase().includes('h');
     return '$' + r.toFixed(isKwh ? 5 : 3) + '/' + (unit || '');
   };
+  const _chargeRow = (qty, rate, charge) =>
+    qty || rate || charge
+      ? `<div class="ef-charge-row">${qty || _blank}${rate || _blank}${charge || _blank}<div class="ef-running">${fmtDollar(runningTotal)}</div></div>`
+      : '';
 
   const totalVal = parseBillNumber(parsed.TotalCurrentCharges);
-  FIELD_LAYOUT.forEach((row) => {
+  // Values the reader found that no layout names: pair rows just before the total row, so the total stays last.
+  const _layoutRows = [...FIELD_LAYOUT];
+  if (extraKeys.length) {
+    const _totalIdx = _layoutRows.reduce((last, r, i) => (r.type === 'total' ? i : last), -1);
+    const _extraPairRows = [];
+    for (let _ei = 0; _ei < extraKeys.length; _ei += 2)
+      _extraPairRows.push({ type: 'pair', fields: extraKeys.slice(_ei, _ei + 2) });
+    if (_totalIdx >= 0) _layoutRows.splice(_totalIdx, 0, ..._extraPairRows);
+    else _layoutRows.push(..._extraPairRows);
+  }
+  _layoutRows.forEach((row) => {
     if (row.condition && !parsed[row.condition]) return;
     if (row.section) {
-      _curGroup = _SECTION_GROUP[row.section] || 'charges';
+      _pendingSection = row.section;
       return;
     }
 
-    // ── charge-line-with-kw: a charge with a kW value (the kW goes to Usage) ──
+    // ── charge-line-with-kw: a charge with a kW value in the first column ──
     if (row.type === 'charge-line-with-kw') {
       runningTotal += parseBillNumber(parsed[row.chargeField]);
-      if (row.kwField) _putCell(row.kwField, 'usage');
-      _put('charges', buildCell(row.chargeField));
+      _row(_chargeRow(row.kwField ? buildCell(row.kwField) : '', '', _center(buildCell(row.chargeField))));
       return;
     }
 
-    // ── charge-line: the charge on one line; its quantity (if any) goes to Usage; quantity x rate = charge as a muted line ──
+    // ── charge-line: quantity | rate | charge | running total ──
     if (row.type === 'charge-line') {
       const ri = parsed._rates?.[row.rateKey];
       const parts = ri?.parts || [];
@@ -19859,18 +19850,17 @@ function renderPDFFields(parsed, warnings) {
       const _partNote = (idx) => {
         const fixed = _rowCorrected.find((c) => c.idx === idx);
         if (fixed) {
-          return `<div class="ef-detail" style="font-weight:700;color:var(--green)">Fixed: computed from quantity &times; rate, confirmed by the bill total (was $${fixed.original.toFixed(2)})</div>`;
+          return `<div class="ef-detail ef-ok">Fixed: computed from quantity &times; rate, confirmed by the bill total (was $${fixed.original.toFixed(2)})</div>`;
         }
         const bad = _rowMismatches.find((m) => m.idx === idx);
         if (bad) {
-          return `<div class="ef-detail" style="font-weight:700;color:var(--amber)">Check: expected $${bad.computed.toFixed(2)} (quantity &times; rate) but read $${bad.ocrCharge.toFixed(2)} (off $${bad.diff.toFixed(2)}). Not changed. Check it against the PDF.</div>`;
+          return `<div class="ef-detail ef-warn">Check: expected $${bad.computed.toFixed(2)} (quantity &times; rate) but read $${bad.ocrCharge.toFixed(2)} (off $${bad.diff.toFixed(2)}). Not changed. Check it against the PDF.</div>`;
         }
         return '';
       };
 
-      // The quantity is a value of its own: it shows once, in Usage.
-      if (row.qtyField) _put('usage', buildCell(row.qtyField));
-      const _chargeTxt = fmtDollar(chargeVal || 0);
+      // The quantity cell comes first: it is the editable value when this row is its first place.
+      const qtyCell = row.qtyField ? buildCell(row.qtyField) : '';
 
       // No rate data: the rate is computed from the quantity and the charge.
       // rateKey:null means a flat-dollar line (Tax Exempt / Bill Offset / Franchise Fee / Gas / Water / etc.).
@@ -19902,30 +19892,31 @@ function renderPDFFields(parsed, warnings) {
             rateStr = '$' + computedRate.toFixed(5) + (rateUnit ? '/' + rateUnit : '') + ' (computed)';
           }
         }
-        _put(
-          'charges',
-          buildCell(
-            row.chargeField,
-            qtyVal > 0 ? _qr(_fmt4(qtyVal) + (rateUnit ? ' ' + rateUnit : ''), rateStr, _chargeTxt) : null,
-          ) + (rateWarn ? _detail(rateWarn, 'ef-warn') : ''),
+        const qtyShown =
+          qtyCell || (qtyVal > 0 ? _roBox(row.label + ' Qty', _fmt4(qtyVal) + (rateUnit ? ' ' + rateUnit : '')) : '');
+        _row(
+          _chargeRow(qtyShown, _roBox(row.label + ' Rate', rateStr), _center(buildCell(row.chargeField))) +
+            _detail(rateWarn, 'ef-warn'),
         );
         return;
       }
 
-      // Full label with unit: "Energy On-Peak kWh", "Facilities kW"
-      // Single part: the charge, then quantity x rate = charge
+      // Single part: quantity | rate | charge
       if (parts.length <= 1) {
         runningTotal += chargeVal;
         const p = parts[0] || ri;
-        _put(
-          'charges',
-          buildCell(row.chargeField, p.qty != null && p.rate != null ? _qr(_fmt4(p.qty) + ' ' + unitLabel, fmtRate(p.rate, unitLabel), _chargeTxt) : null) +
-            _partNote(0),
+        const qtyShown = qtyCell || (p.qty != null ? _roBox(base + ' Qty', fmtQty(p.qty, unitLabel)) : '');
+        _row(
+          _chargeRow(
+            qtyShown,
+            _roBox(base + ' Rate', p.rate != null ? fmtRate(p.rate, unitLabel) : ''),
+            _center(buildCell(row.chargeField)),
+          ) + _partNote(0),
         );
         return;
       }
 
-      // Several parts: each part is a charge line of its own (its amount is editable)
+      // Several parts: each part is a charge row of its own (its amount is editable)
       parts.forEach((p, idx) => {
         const suffix =
           isTiered && row.chargeField === 'EnergyOnPeakCharge' ? ' Tier ' + (idx + 1) : ' (' + (idx + 1) + ')';
@@ -19937,15 +19928,11 @@ function renderPDFFields(parsed, warnings) {
         const partCharge =
           _fieldWasCorrected && p.computed != null ? p.computed : p.ocrCharge != null ? p.ocrCharge : p.computed;
         runningTotal += partCharge;
-        _put(
-          'charges',
-          _partCell(
-            base + ' Charge' + suffix,
-            '_chg_' + row.chargeField + '_' + idx,
-            fmtDollar(partCharge),
-            p.qty != null && p.rate != null
-              ? _qr(_fmt4(p.qty) + ' ' + unitLabel, fmtRate(p.rate, unitLabel), fmtDollar(partCharge))
-              : null,
+        _row(
+          _chargeRow(
+            p.qty != null ? _roBox(base + ' Qty' + suffix, fmtQty(p.qty, unitLabel)) : '',
+            _roBox(base + ' Rate' + suffix, p.rate != null ? fmtRate(p.rate, unitLabel) : ''),
+            _partCell(base + ' Charge' + suffix, '_chg_' + row.chargeField + '_' + idx, fmtDollar(partCharge)),
           ) + _partNote(idx),
         );
       });
@@ -19954,8 +19941,14 @@ function renderPDFFields(parsed, warnings) {
 
     const fields = (row.fields || []).filter((k) => k in parsed || warnings.some((w) => w.field === k));
     if (!fields.length && row.type !== 'total') return;
-    if (row.type === 'wide' || row.type === 'pair') {
-      fields.forEach((k) => _putCell(k, _curGroup));
+    if (row.type === 'wide') {
+      const cell = buildCell(fields[0]);
+      _row(cell && cell.replace('class="ef-item', 'class="ef-item wide'));
+      return;
+    }
+    if (row.type === 'pair') {
+      const cells = fields.map((k) => buildCell(k)).filter(Boolean);
+      _row(cells.length ? `<div class="ef-pair">${cells.join('')}</div>` : '');
       return;
     }
     if (row.type === 'total') {
@@ -19963,13 +19956,7 @@ function renderPDFFields(parsed, warnings) {
       const mismatch = totalVal > 0 && !match;
       const diff = totalVal > 0 ? totalVal - runningTotal : 0;
       const _money = (n) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-      const sumLine =
-        totalVal > 0
-          ? `<span style="color:${match ? 'var(--green)' : diff >= 0 ? 'var(--amber)' : 'var(--red)'}">Charges add to $${_money(runningTotal)}${
-              mismatch ? ' (difference ' + (diff >= 0 ? '+' : '-') + '$' + _money(Math.abs(diff)) + ')' : ''
-            }</span>`
-          : '';
-      // Total rate for the whole bill, as one muted text (the same getExtractedRate the rest of the site uses)
+      // Total rate for the whole bill (the same getExtractedRate the rest of the site uses)
       const _rateTxt = [];
       const _detectedComm = _detectCommodity(parsed);
       if (parsed._rates || parsed.kWhConsumed) {
@@ -20001,39 +19988,18 @@ function renderPDFFields(parsed, warnings) {
           if (r > 0) _rateTxt.push('$' + r.toFixed(5) + '/Gal');
         }
       });
-      const totalCell = buildCell('TotalCurrentCharges').replace('class="ef-item', 'class="ef-item ef-total');
-      _put(
-        'charges',
-        `<div class="ef-total-wrap">${totalCell}${_detail(
-          [sumLine, _rateTxt.length ? 'Total rate ' + _rateTxt.join(' · ') : ''].filter(Boolean).join(' &nbsp;·&nbsp; '),
-        )}</div>`,
+      const totalCell = _center(buildCell('TotalCurrentCharges')).replace('class="ef-item', 'class="ef-item ef-total');
+      const diffLine = mismatch
+        ? `<span>${diff >= 0 ? '+' : '-'}$${_money(Math.abs(diff))}</span>`
+        : '';
+      _row(
+        `<div class="ef-charge-row ef-total-row">${_roBox('Total Rate', _rateTxt.join(' · '), 'ef-span2') || '<div class="ef-span2"></div>'}${totalCell || _blank}<div class="ef-running ${match ? 'match' : mismatch ? 'mismatch' : ''}"><span>${fmtDollar(runningTotal)}</span>${diffLine}</div></div>`,
       );
     }
   });
-  // Values the reader found that no layout names: one group, one line each (internal keys never show).
-  extraKeys.forEach((k) => _put('other', buildCell(k)));
-  const _closedGroups = window._pdfGroupClosed || (window._pdfGroupClosed = {});
-  // Wide enough: the groups sit in two lists side by side (the split that makes the taller list shortest), so a
-  // normal bill needs no scrolling. Group order never changes.
-  const _groupBlock = ([g, label]) =>
-    `<details class="ef-group" data-grp="${g}"${_closedGroups[g] ? '' : ' open'}><summary>${label}</summary>${_groupHtml[g].join('')}</details>`;
-  const _shownGroups = _GROUPS.filter(([g]) => _groupHtml[g].length);
-  const _est = (g) =>
-    26 + _groupHtml[g].reduce((n, h) => n + 20 * (h.match(/class="ef-item/g) || []).length + 16 * (h.match(/class="ef-detail/g) || []).length, 0);
-  let _split = 0;
-  let _best = Infinity;
-  for (let i = 0; i <= _shownGroups.length; i++) {
-    const l = _shownGroups.slice(0, i).reduce((n, [g]) => n + _est(g), 0);
-    const r = _shownGroups.slice(i).reduce((n, [g]) => n + _est(g), 0);
-    if (Math.max(l, r) < _best) {
-      _best = Math.max(l, r);
-      _split = i;
-    }
-  }
   const fieldHtml =
-    `<div class="ef-cols"><div class="ef-col">${_shownGroups.slice(0, _split).map(_groupBlock).join('')}</div><div class="ef-col">${_shownGroups.slice(_split).map(_groupBlock).join('')}</div></div>` +
+    rows.join('') +
     `<div class="ef-tools"><button class="btn btn-ghost btn-sm" onclick="addExtractedField()">+ Add Field</button><button class="btn btn-ghost btn-sm" onclick="exportCurrentBillJSON()">Export JSON</button></div>`;
-  const missingHtml = '';
 
   // Compute sum mismatch from CURRENT data (not a stale stored flag). This is the
   // source of truth — the stored `_sum_mismatch` flag gets cleared by auto-correction
@@ -20328,13 +20294,43 @@ function renderPDFFields(parsed, warnings) {
     fixed: _chipFixed,
     manualIdx: _showManualAssign ? _dupIdx : null,
   };
-  elHdr.innerHTML = '';
-  el.innerHTML = `<div class="ef-list">${fieldHtml}${missingHtml}</div>`;
-  el.querySelectorAll('details.ef-group').forEach((d) => {
-    d.addEventListener('toggle', () => {
-      _closedGroups[d.dataset.grp] = !d.open;
+  // Header: the title, the Data analysis bar and Manual Assign. The bar counts and links come from the same _issueList
+  // as the status chips in the top row (one list, two displays), so the counts always match the chips.
+  const _issueFieldsOf = (e) => {
+    const out = [];
+    e.keys.forEach((key) => {
+      if (key.startsWith('f:')) out.push(key.slice(2));
+      else if (key === 'total-sum' || key === 'cet') out.push('TotalCurrentCharges');
+      else if (key === 'period') {
+        const per = ['BillingPeriodStart', 'BillingPeriodEnd', 'NumberOfDays'];
+        const flagged = per.filter((f) => _flagMap[f]);
+        out.push(...(flagged.length ? flagged : per.filter((f) => f in parsed)));
+      }
     });
-  });
+    return out;
+  };
+  const _barLinks = [];
+  const _barSeen = new Set();
+  _issueList.forEach((e) =>
+    _issueFieldsOf(e).forEach((f) => {
+      if (_barSeen.has(f)) return;
+      _barSeen.add(f);
+      _barLinks.push(
+        `<a class="${e.level === 'review' ? 'is-red' : ''}" onclick="_pdfGoToField('${f}')">${_escHtml(LABELS[f] || f)}</a>`,
+      );
+    }),
+  );
+  const _barParts = [];
+  if (_chipReview.length) _barParts.push(_chipReview.length + ' missing');
+  if (_chipWarn.length) _barParts.push(_chipWarn.length + (_chipWarn.length === 1 ? ' warning' : ' warnings'));
+  const _barHtml = _barParts.length
+    ? `<div class="ef-bar${_chipReview.length ? ' is-red' : ''}"><span class="ef-bar-title">Data analysis &mdash; ${_barParts.join(' &middot; ')}</span><div class="ef-bar-links">${_barLinks.join('')}</div></div>`
+    : '';
+  const _maHtml = _showManualAssign
+    ? `<div class="ef-bar-ma"><button class="btn btn-ghost btn-sm ef-ma-btn" onclick="openManualAssignModal(${_dupIdx})">&#128196; Manual Assign</button></div>`
+    : '';
+  elHdr.innerHTML = `<div class="ef-hdr-title">Extracted &mdash; click values to edit</div>${_barHtml}${_maHtml}`;
+  el.innerHTML = `<div class="ef-grid">${fieldHtml}</div>`;
   _pdfRenderTopBar();
   _pdfRefreshSavesTo();
 
