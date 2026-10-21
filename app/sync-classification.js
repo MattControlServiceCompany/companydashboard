@@ -94,6 +94,11 @@ const SyncClassification = (() => {
       prefix: false,
       note: 'audit-estimate.js: company-wide Audit Estimate assumptions (hoursPerEquip, hoursPerBuilding, hoursReport, matrixReviewHours, fullFacility.*, history) — no rate, no per-user data; both users need the same company defaults',
     },
+    {
+      pattern: 'bcr_result_',
+      prefix: true,
+      note: 'app/bill-corrections-review.js _bcrResultKey: bcr_result_<billId>_<scanId>__<field> — the saved result of each bill review check (the review work the user did, with the bill fingerprint). Shared by both users.',
+    },
     { pattern: 'en_budget_', prefix: true, note: 'budget.js: en_budget_<pid>' },
     { pattern: 'en_meetingTemplates', prefix: false, note: 'csv-import.js: single global key' },
     { pattern: 'sv_saData', prefix: false, note: 'service-department.html service-agreement data' },
@@ -166,6 +171,11 @@ const SyncClassification = (() => {
       pattern: '_debug_propane_bills',
       prefix: false,
       note: 'debug/dev-tooling scratch key, not user data — made explicit so it no longer hits the default-unclassified warn path.',
+    },
+    {
+      pattern: 'bcr_pdftext_',
+      prefix: true,
+      note: 'app/bill-corrections-review.js _bcrPdfTextKey — page-text cache read from the bill PDFs; rebuilt from the PDFs on demand, large. Local-only.',
     },
     {
       pattern: 'en_soo_settings',
@@ -250,24 +260,6 @@ const SyncClassification = (() => {
   // DB.remove() call site directly (bypassing sset()) in addition to every sset()/
   // sget() literal — see the audit table in the implementer report for file:line.
   const LOCAL_ONLY_OVERRIDES = [
-    {
-      pattern: 'en_utility_dates_migrated_v1',
-      prefix: false,
-      note: 'utility-data.js:67 — one-time per-machine migration-completion flag (value "1"). Incidentally matches en_utility_ prefix; must NOT sync — each machine tracks its own migration state independently.',
-    },
-    { pattern: 'en_utility_rates_backfilled_v2', prefix: false, note: 'utility-data.js:98 — same as above.' },
-    { pattern: 'en_utility_sewer_usage_backfilled_v1', prefix: false, note: 'utility-data.js:126 — same as above.' },
-    { pattern: 'en_utility_therms_mmbtu_fix_v1', prefix: false, note: 'utility-data.js:221/352 — same as above.' },
-    {
-      pattern: 'en_utility_facKW_backfilled_v1',
-      prefix: false,
-      note: 'Obsolete one-shot facKW backfill flag (the gate was removed 2026-09-25). Older browsers still hold it. Same as above: per-machine, must NOT sync.',
-    },
-    {
-      pattern: 'en_sewer_backfill_report_v1',
-      prefix: false,
-      note: 'utility-data.js:204 — one-time diagnostic report (console.table companion), not user-facing data.',
-    },
     {
       pattern: 'en_utilityData',
       prefix: false,
