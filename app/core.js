@@ -1950,6 +1950,7 @@ function initDashboardTab(projId) {
   // portfolio total is honoured when the whole record is in scope.
   const finishQuarters = () => {
     // Only the headline quarter's year (nextQuarterToPresent), so a quarter never adds up across years.
+    if (!headQtr) return;
     const yr = String(headQtr.year);
     if (!qtrByYr[yr]) return;
     for (let qi = 0; qi < 4; qi++) {
@@ -1959,8 +1960,8 @@ function initDashboardTab(projId) {
   };
   let latestBillEnd = null;
   let latestSavYM = null; // full 'YYYY-MM' string of last month with savings data
-  const headQtr = nextQuarterToPresent(projId) || { year: new Date().getFullYear(), q: Math.floor(new Date().getMonth() / 3), label: '', billsThrough: null };
-  const curQtr = headQtr.q;
+  const headQtr = nextQuarterToPresent(projId); // null = no bills, so no headline quarter
+  const curQtr = headQtr ? headQtr.q : -1;
   const bldgRows = bldgs.map((b) => {
     const meters = b.meters || [];
     const sqft = parseInt(b.sqft || 0);
@@ -2265,9 +2266,9 @@ function initDashboardTab(projId) {
       maximumFractionDigits: 2,
     });
   finishQuarters();
-  const curQtrLabel = 'Q' + (curQtr + 1);
-  const curQtrTitle = headQtr.label || curQtrLabel;
-  const curQtrThrough = headQtr.billsThrough
+  const curQtrLabel = headQtr ? 'Q' + (curQtr + 1) : '';
+  const curQtrTitle = headQtr ? headQtr.label : '';
+  const curQtrThrough = headQtr && headQtr.billsThrough
     ? 'Bills through ' +
       new Date(headQtr.billsThrough + 'T12:00:00').toLocaleDateString('en-US', {
         month: 'short',
@@ -2275,8 +2276,8 @@ function initDashboardTab(projId) {
         year: 'numeric',
       })
     : '';
-  const curQtrActual = actualByQtr[curQtr];
-  const curQtrProjected = projectedByQtr[curQtr];
+  const curQtrActual = headQtr ? actualByQtr[curQtr] : 0;
+  const curQtrProjected = headQtr ? projectedByQtr[curQtr] : 0;
   const curQtrPct = curQtrProjected > 0 ? ((curQtrActual / curQtrProjected) * 100).toFixed(1) : null;
   const throughDate =
     latestSavYM !== null
@@ -2334,12 +2335,12 @@ function initDashboardTab(projId) {
                 </div>
               </div>
               <div style="flex:1;min-width:200px;display:flex;flex-direction:column;justify-content:center;gap:16px">
-                <div>
+                ${headQtr ? `                <div>
                   <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">${curQtrTitle} Total Savings</div>
                   ${curQtrThrough ? '<div style="font-size:11px;color:var(--text3)">' + curQtrThrough + '</div>' : ''}
                   <div style="font-size:28px;font-weight:800;font-family:var(--mono);color:${curQtrActual >= 0 ? 'var(--green)' : 'var(--danger)'};margin:4px 0">${curQtrActual >= 0 ? '' : '-'}${$c(curQtrActual)}</div>
                   <div style="font-size:12px;color:var(--text2)">${curQtrPct !== null ? '<span style="color:' + (curQtrActual >= 0 ? 'var(--green)' : 'var(--danger)') + ';font-weight:600">' + curQtrPct + '%</span> of ' + curQtrLabel + ' projected (' + $c2(curQtrProjected) + ')' : bldgs.length + ' building' + (bldgs.length !== 1 ? 's' : '') + ' · <span style="color:var(--text3)">' + (useNormalized ? 'Normalized' : 'Actual') + '</span>'}</div>
-                </div>
+                </div>` : ''}
                 <div style="border-top:1px solid var(--border);padding-top:12px">
                   <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Total Cumulative Savings</div>
                   <div style="font-size:28px;font-weight:800;font-family:var(--mono);color:${totalSav >= 0 ? 'var(--green)' : 'var(--danger)'};margin:4px 0">${totalSav >= 0 ? '' : '-'}${$c(totalSav)}</div>
