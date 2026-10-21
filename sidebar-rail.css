@@ -1,12 +1,130 @@
-/* Narrow labeled sidebar (shared by every page with a left sidebar).
-   900 px and wider: the sidebar always shows icons and text labels.
-   900-1599 px: it is 184 px wide (not the 220 px default) so the page content still fits.
-   Under 900 px: the existing slide-in drawer is used; the "Menu" button opens it. */
-@media (min-width: 900px) and (max-width: 1599px) {
+/* Left sidebar modes (shared by every page with a left sidebar). The mode is set by sidebar-mode.js
+   as html[data-sb-mode]: expanded | collapsed | slim.
+   expanded : full sidebar, 220 px (184 px under 1600 px so the page content still fits).
+   collapsed: sidebar hidden, the page uses the full width.
+   slim     : a rail 56 px wide, icons only, the name shows on hover (title). */
+
+/* Icons and the label wrapper (set up by sidebar-mode.js) */
+.sidebar .s-ico {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.sidebar .s-ico svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* The mode selector, first item of the page's top tab row (same place on every page, in every mode) */
+.sb-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  align-self: center;
+  flex-shrink: 0;
+  margin-right: 14px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--s2);
+}
+.sb-mode-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--text2);
+  cursor: pointer;
+}
+.sb-mode-btn:hover {
+  background: var(--s4);
+  color: var(--text);
+}
+.sb-mode-btn.active {
+  background: var(--s4);
+  color: var(--accent, var(--em));
+}
+
+/* Expanded width */
+@media (max-width: 1599px) {
   .app-wrap > .sidebar {
     width: 184px;
   }
   .app-wrap > .sidebar > .resize-handle {
     display: none;
   }
+}
+
+/* Collapsed */
+html[data-sb-mode='collapsed'] .app-wrap > .sidebar {
+  display: none;
+}
+
+/* Slim */
+html[data-sb-mode='slim'] .app-wrap > .sidebar {
+  width: 56px;
+  min-width: 56px;
+  max-width: 56px;
+  overflow-x: hidden;
+}
+html[data-sb-mode='slim'] .sidebar .s-lbl,
+html[data-sb-mode='slim'] .sidebar .s-txt,
+html[data-sb-mode='slim'] .sidebar .s-badge,
+html[data-sb-mode='slim'] .sidebar .s-proj-collapse,
+html[data-sb-mode='slim'] .sidebar .s-proj-section,
+html[data-sb-mode='slim'] .sidebar .resize-handle,
+html[data-sb-mode='slim'] .sidebar .sb-clock,
+html[data-sb-mode='slim'] .sidebar .sb-date,
+html[data-sb-mode='slim'] .sidebar .sb-divider {
+  display: none;
+}
+html[data-sb-mode='slim'] .sidebar .s-sect {
+  margin-bottom: 8px;
+}
+html[data-sb-mode='slim'] .sidebar .s-sect + .s-sect {
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+html[data-sb-mode='slim'] .sidebar .s-item {
+  justify-content: center;
+  gap: 0;
+  padding-left: 0;
+  padding-right: 0;
+  width: 100%;
+}
+html[data-sb-mode='slim'] .sidebar .s-proj-header {
+  display: block;
+}
+html[data-sb-mode='slim'] .sidebar .sidebar-bottom {
+  padding-left: 6px;
+  padding-right: 6px;
+}
+html[data-sb-mode='slim'] .sidebar .sb-settings-btn,
+html[data-sb-mode='slim'] .sidebar .rn-whats-new-btn {
+  justify-content: center;
+  gap: 0;
+  padding-left: 0;
+  padding-right: 0;
+}
+/* Version line: hide the version number, keep the Sync status button (small, two lines) */
+html[data-sb-mode='slim'] .sidebar .sb-version {
+  font-size: 0;
+  margin-top: 6px;
+  line-height: 1.2;
+}
+html[data-sb-mode='slim'] .sidebar .sb-version > span {
+  display: none;
+}
+html[data-sb-mode='slim'] .sidebar .sb-version #ch-sync-status-btn {
+  font-size: 10px;
+  display: block;
+  margin: 0 auto;
+  white-space: normal;
+  text-align: center;
 }

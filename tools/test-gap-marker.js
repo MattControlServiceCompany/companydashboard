@@ -82,7 +82,7 @@ ok(/var\(--text\)/.test(css2) && /font-weight: 600/.test(css2) && !/#|orange|red
 // names wrap, are not cut; sidebar label
 const edh = rd('energy-department.html');
 ok(!/\.ud-nav-bldg-name \{[^}]*(ellipsis|nowrap)/.test(edh), 'building names must wrap');
-ok(/id="siteDataBtn"[^>]*>Backup &amp; Data</.test(edh) && /id="siteDataBtn"[^>]*>Backup &amp; Data</.test(rd('site-ui.js')), 'sidebar button label');
+ok(/id="siteDataBtn"[^>]*>(<span class="s-ico"><\/span><span class="s-txt">)?Backup &amp; Data</.test(edh) && /id="siteDataBtn"[^>]*>Backup &amp; Data</.test(rd('site-ui.js')), 'sidebar button label');
 ok(/>1 baseline gap</.test(run('udGapTextHtml(gaps, {meterId:"meter-a", later:"x"}, "pill")')), 'pill text: 1 baseline gap');
 ok(!/📅/.test(run('udGapTextHtml(gaps, null, "pill")')), 'pill text has no icon');
 // click decodes to the ids

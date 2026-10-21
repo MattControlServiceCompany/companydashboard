@@ -334,7 +334,9 @@ function uiEditToggle() {
   _uiEditMode = !_uiEditMode;
   document.documentElement.classList.toggle('ui-edit-mode', _uiEditMode);
   const btn = document.getElementById('uiCustomizeBtn');
-  if (btn) btn.textContent = _uiEditMode ? '✕ Exit Customize' : '✎ Customize';
+  const btnTxt = btn && btn.querySelector('.s-txt');
+  if (btnTxt) btnTxt.textContent = _uiEditMode ? 'Exit Customize' : 'Customize';
+  if (window.SidebarMode) window.SidebarMode.refresh();
   if (!_uiEditMode) {
     _uiEditCleanup();
     _teardownSidebarDrag();
@@ -1260,6 +1262,7 @@ var _RESTORE_LS_ONLY = [
   'ch_activeView',
   'ch_projTabOrder',
   'ch_sidebarOrder',
+  'ch_sidebar_mode',
   'ch_dismissed_tips',
   'ch_qs_seen',
   'ch_seen_version',
@@ -2088,47 +2091,6 @@ function siteDataMenuToggle(btn) {
   m.querySelector('[role=menuitem]').focus();
 }
 
-/* Mobile sidebar hamburger toggle */
-function buildMobileSidebarToggle() {
-  if (document.getElementById('sidebarToggleBtn')) return;
-  var deptNav = document.querySelector('.dept-nav');
-  if (!deptNav) return;
-
-  var btn = document.createElement('button');
-  btn.id = 'sidebarToggleBtn';
-  btn.className = 'sidebar-toggle-btn';
-  btn.setAttribute('aria-label', 'Toggle navigation menu');
-  btn.setAttribute('aria-expanded', 'false');
-  btn.setAttribute('aria-controls', 'appSidebar');
-  btn.innerHTML = 'Menu';
-  btn.onclick = function () {
-    var sidebar = document.getElementById('appSidebar') || document.querySelector('.sidebar');
-    if (!sidebar) return;
-    var open = sidebar.classList.toggle('drawer-open');
-    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
-    btn.innerHTML = open ? 'Close' : 'Menu';
-    var bd = document.getElementById('sidebarBackdrop');
-    if (bd) bd.style.display = open ? 'block' : 'none';
-  };
-
-  var backdrop = document.createElement('div');
-  backdrop.id = 'sidebarBackdrop';
-  backdrop.className = 'sidebar-backdrop';
-  backdrop.style.display = 'none';
-  backdrop.onclick = function () {
-    var sidebar = document.getElementById('appSidebar') || document.querySelector('.sidebar');
-    if (sidebar) sidebar.classList.remove('drawer-open');
-    btn.setAttribute('aria-expanded', 'false');
-    btn.innerHTML = 'Menu';
-    backdrop.style.display = 'none';
-  };
-  document.body.appendChild(backdrop);
-  deptNav.insertBefore(btn, deptNav.firstChild);
-
-  var sidebar = document.querySelector('.sidebar');
-  if (sidebar && !sidebar.id) sidebar.id = 'appSidebar';
-}
-
 /* Init saved settings on load */
 document.addEventListener('DOMContentLoaded', function () {
   uiCustomApply();
@@ -2144,7 +2106,6 @@ document.addEventListener('DOMContentLoaded', function () {
   setTimeout(function () {
     openReleaseNotesIfNeeded();
   }, 800);
-  buildMobileSidebarToggle();
 });
 
 /* Build settings modal */

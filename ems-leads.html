@@ -17,6 +17,7 @@
       rel="stylesheet"
     />
     <script src="app/ch-auth.js"></script>
+    <script src="sidebar-mode.js?v=154"></script>
     <style>
       /* â•â•â• TOKENS â•â•â• */
       :root {
@@ -184,7 +185,7 @@
         border-bottom: 1px solid var(--border);
         display: flex;
         overflow-x: auto;
-        padding: 0 18px;
+        padding: 0 24px;
         gap: 1px;
         scrollbar-width: none;
       }
@@ -229,6 +230,18 @@
         background: var(--s1);
         border-right: 1px solid var(--border);
         padding: 18px 0;
+        display: flex;
+        flex-direction: column;
+        overflow-y: auto;
+      }
+      .sb-version {
+        margin-top: auto;
+        flex-shrink: 0;
+        padding: 8px 0 0;
+        text-align: center;
+        font-size: 10px;
+        color: var(--text2);
+        font-family: var(--mono);
       }
       .s-sect {
         margin-bottom: 22px;
@@ -1336,9 +1349,6 @@
           min-width: 0;
         }
 
-        .sidebar {
-          display: none;
-        }
         .detail-grid {
           grid-template-columns: 1fr;
         }
@@ -1389,74 +1399,74 @@
       <div class="sidebar" data-fb="ems.sidebar">
         <div class="s-sect">
           <div class="s-lbl">Pipeline</div>
-          <div class="s-item active" id="sb-all" data-fb="ems.sidebar.all-leads" onclick="filterByStage('', this)">
-            <span class="s-ico">🌐</span>All Leads<span class="s-badge" id="sb-count-all">0</span>
+          <div data-sb-icon="globe" class="s-item active" id="sb-all" data-fb="ems.sidebar.all-leads" onclick="filterByStage('', this)">
+            <span class="s-ico"></span>All Leads<span class="s-badge" id="sb-count-all">0</span>
           </div>
-          <div class="s-item" id="sb-prospect" data-fb="ems.sidebar.prospect" onclick="filterByStage('Prospect', this)">
-            <span class="s-ico">👁</span>Prospect<span
+          <div data-sb-icon="eye" class="s-item" id="sb-prospect" data-fb="ems.sidebar.prospect" onclick="filterByStage('Prospect', this)">
+            <span class="s-ico"></span>Prospect<span
               class="s-badge"
               id="sb-count-prospect"
               style="background: var(--s4); color: var(--text2)"
               >0</span
             >
           </div>
-          <div
+          <div data-sb-icon="phone"
             class="s-item"
             id="sb-contacted"
             data-fb="ems.sidebar.contacted"
             onclick="filterByStage('Contacted', this)"
           >
-            <span class="s-ico">📞</span>Contacted<span
+            <span class="s-ico"></span>Contacted<span
               class="s-badge"
               id="sb-count-contacted"
               style="background: var(--em2-dim); color: var(--em2)"
               >0</span
             >
           </div>
-          <div
+          <div data-sb-icon="search"
             class="s-item"
             id="sb-qualifying"
             data-fb="ems.sidebar.qualifying"
             onclick="filterByStage('Qualifying', this)"
           >
-            <span class="s-ico">🔍</span>Qualifying<span
+            <span class="s-ico"></span>Qualifying<span
               class="s-badge"
               id="sb-count-qualifying"
               style="background: var(--warn-dim); color: var(--warn)"
               >0</span
             >
           </div>
-          <div class="s-item" id="sb-proposal" data-fb="ems.sidebar.proposal" onclick="filterByStage('Proposal', this)">
-            <span class="s-ico">📄</span>Proposal<span
+          <div data-sb-icon="file" class="s-item" id="sb-proposal" data-fb="ems.sidebar.proposal" onclick="filterByStage('Proposal', this)">
+            <span class="s-ico"></span>Proposal<span
               class="s-badge"
               id="sb-count-proposal"
               style="background: var(--violet-dim); color: var(--violet)"
               >0</span
             >
           </div>
-          <div
+          <div data-sb-icon="chat"
             class="s-item"
             id="sb-negotiating"
             data-fb="ems.sidebar.negotiating"
             onclick="filterByStage('Negotiating', this)"
           >
-            <span class="s-ico">🤝</span>Negotiating<span
+            <span class="s-ico"></span>Negotiating<span
               class="s-badge"
               id="sb-count-negotiating"
               style="background: var(--lime-dim); color: var(--lime)"
               >0</span
             >
           </div>
-          <div class="s-item" id="sb-won" data-fb="ems.sidebar.won" onclick="filterByStage('Won', this)">
-            <span class="s-ico">✅</span>Won<span
+          <div data-sb-icon="check" class="s-item" id="sb-won" data-fb="ems.sidebar.won" onclick="filterByStage('Won', this)">
+            <span class="s-ico"></span>Won<span
               class="s-badge"
               id="sb-count-won"
               style="background: var(--em-dim); color: var(--em)"
               >0</span
             >
           </div>
-          <div class="s-item" id="sb-lost" data-fb="ems.sidebar.lost" onclick="filterByStage('Lost', this)">
-            <span class="s-ico">âŒ</span>Lost<span
+          <div data-sb-icon="x" class="s-item" id="sb-lost" data-fb="ems.sidebar.lost" onclick="filterByStage('Lost', this)">
+            <span class="s-ico"></span>Lost<span
               class="s-badge"
               id="sb-count-lost"
               style="background: var(--danger-dim); color: var(--danger)"
@@ -1466,28 +1476,27 @@
         </div>
         <div class="s-sect">
           <div class="s-lbl">Priority</div>
-          <div class="s-item" data-fb="ems.sidebar.priority-high" onclick="filterByPriority('High', this)">
-            <span class="s-ico" style="color: var(--danger)">â—</span>High
+          <div data-sb-icon="dot" class="s-item" data-fb="ems.sidebar.priority-high" onclick="filterByPriority('High', this)">
+            <span class="s-ico" style="color: var(--danger)"></span>High
           </div>
-          <div class="s-item" data-fb="ems.sidebar.priority-medium" onclick="filterByPriority('Medium', this)">
-            <span class="s-ico" style="color: var(--warn)">â—</span>Medium
+          <div data-sb-icon="dot" class="s-item" data-fb="ems.sidebar.priority-medium" onclick="filterByPriority('Medium', this)">
+            <span class="s-ico" style="color: var(--warn)"></span>Medium
           </div>
-          <div class="s-item" data-fb="ems.sidebar.priority-low" onclick="filterByPriority('Low', this)">
-            <span class="s-ico" style="color: var(--text2)">â—</span>Low
+          <div data-sb-icon="dot" class="s-item" data-fb="ems.sidebar.priority-low" onclick="filterByPriority('Low', this)">
+            <span class="s-ico" style="color: var(--text2)"></span>Low
           </div>
         </div>
         <div class="s-sect">
           <div class="s-lbl">Actions</div>
-          <div class="s-item" data-fb="ems.sidebar.import" onclick="openImportModal()">
-            <span class="s-ico">&#11014;</span>Import CSV
+          <div data-sb-icon="up" class="s-item" data-fb="ems.sidebar.import" onclick="openImportModal()">
+            <span class="s-ico"></span>Import CSV
           </div>
-          <div class="s-item" data-fb="ems.sidebar.export" onclick="exportCSV()">
-            <span class="s-ico">&#11015;</span>Export CSV
+          <div data-sb-icon="down" class="s-item" data-fb="ems.sidebar.export" onclick="exportCSV()">
+            <span class="s-ico"></span>Export CSV
           </div>
         </div>
-      </div>
-
-      <!-- MAIN -->
+        <div class="sb-version"></div>
+      </div><!-- MAIN -->
       <div class="main">
         <!-- PIPELINE VIEW -->
         <div class="view active" id="view-pipeline" data-fb="ems.pipeline">

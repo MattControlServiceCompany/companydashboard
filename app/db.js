@@ -81,7 +81,7 @@ const DB = (() => {
     'ch_activeView',
     'ch_settings',
     'ch_theme',
-    'ch_sidebar_collapsed',
+    'ch_sidebar_mode',
     'ch_seen_version',
     'ch_user',
     'ch_projTabOrder',

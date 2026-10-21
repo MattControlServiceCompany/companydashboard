@@ -185,6 +185,7 @@ var COMPONENTS = [
   { id: 'energy',      col: 1, name: 'energy-department',   detail: '13k lines, projects, bills, OCR', cat: 'page' },
   { id: 'ems',         col: 1, name: 'ems-leads',           detail: 'Kanban pipeline, CSV import',   cat: 'page' },
   { id: 'siteui',      col: 2, name: 'site-ui.js',          detail: 'Store, DashboardController, theme', cat: 'shared' },
+  { id: 'sbmode',      col: 2, name: 'sidebar-mode.js',     detail: 'Left sidebar: full / icons only / hidden', cat: 'shared' },
   { id: 'sitecss',     col: 2, name: 'site-ui.css',         detail: 'Topbar, sidebar, tokens, modals', cat: 'shared' },
   { id: 'msal',        col: 2, name: 'MSAL.js',             detail: 'Microsoft 365 auth library',    cat: 'shared' },
   { id: 'feedback',    col: 2, name: 'feedback-widget',     detail: 'In-page feedback capture',      cat: 'shared' },
@@ -327,6 +328,15 @@ var FLOWS = [
       { from:'idb', to:'energy', label:'_pdfExportGetOne(id) fetches ONE PDF at a time', detail:'sitePdfExport() awaits each ~8MB batch\'s full download (Blob revoked) before fetching the next id -- real backpressure, peak live memory ~1 batch, not the whole store.' },
       { from:'energy', to:'user', label:'Downloads CompanyHub-PDFs-YYYYMMDD-partNNN.json (one or more files)', detail:'One outlier PDF whose own base64 exceeds the batch cap becomes its own solo file.' },
       { from:'user', to:'energy', label:'Import: user selects all part files at once', detail:'processPdfImportFiles() reads/writes one file at a time; writes go through pdfStore() (energy page, real prod path).' },
+    ]
+  },
+  {
+    id: 'sbmode-flow', name: 'Sidebar mode', desc: 'Pin the left sidebar full, icons only, or hidden',
+    path: ['user','energy','sbmode','ls'],
+    steps: [
+      { from:'user', to:'energy', label:'User picks a mode in the selector at the left of the top tab row', detail:'Same place on energy-department.html and ems-leads.html, in every mode.' },
+      { from:'energy', to:'sbmode', label:'SidebarMode.set(mode)', detail:'expanded | slim | collapsed. sidebar-mode.js loads in the page head and sets html[data-sb-mode] before the first paint; sidebar-rail.css does the layout.' },
+      { from:'sbmode', to:'ls', label:'Saved to ch_sidebar_mode', detail:'localStorage copy for the first paint, DB.set copy (per user) so it follows the user to other browsers. No saved choice: expanded at 900 px and wider, collapsed below.' },
     ]
   },
   {
