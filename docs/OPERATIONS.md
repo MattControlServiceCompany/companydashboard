@@ -760,7 +760,7 @@ This includes a new or changed function, schedule, env var name, timer, host, or
 - Needs: env vars SUPABASE_URL, SUPABASE_SECRET_KEY (unchanged).
 
 ## Project card headline quarter (2026-10-21, branch 2026-10-21-q-headline)
-`nextQuarterToPresent(projId)` (computations/savings.js) picks the quarter the project card shows: the first quarter after the newest presented record (`getPresentedRecords`), else the latest billed quarter, never after the newest bill month. Runs on each project dashboard render (app/core.js `initDashboardTab`). Needs no env var. Check: with Q1 and Q2 presented and bills to September, the card reads "Q3 2026 Total Savings"; run `node tools/test-next-quarter-to-present.js`.
+`nextQuarterToPresent(projId)` (computations/savings.js) picks the quarter the project card shows: the first quarter after the newest presented record (`getPresentedRecords`), else the latest billed quarter, never after the newest bill month. The "Bills through" date and the complete test skip delivery commodities (`DELIVERY_COMMODITIES`, app/core.js, currently Propane) because a propane delivery date is not a monthly bill date. Runs on each project dashboard render (app/core.js `initDashboardTab`). Needs no env var. Check: with Q1 and Q2 presented and bills to September, the card reads "Q3 2026 Total Savings"; run `node tools/test-next-quarter-to-present.js`.
 
 ## Left sidebar mode (2026-10-21)
 

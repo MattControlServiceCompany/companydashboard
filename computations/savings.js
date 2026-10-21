@@ -717,7 +717,7 @@ function presentedMonthRange(a, z) {
 // presented record it is the latest quarter that has any bill. Never a quarter after the newest bill month.
 // Meters counted = the ones in the baseline (isBaselineExcluded) and in a calculated commodity (isCalcCommodity).
 // Returns { year, q (0-3), yms: [3 x 'YYYY-MM'], label: 'Qn YYYY', complete, billsThrough: 'YYYY-MM-DD' or null }
-// or null when the project has no bills. billsThrough = the earliest latest-bill end date among the meters.
+// or null when the project has no bills. billsThrough = the earliest latest-bill end date among the non-delivery meters (propane is skipped).
 function nextQuarterToPresent(projId) {
   const lastByMeter = [];
   getUDBldgs(projId).forEach((b) =>
@@ -726,7 +726,7 @@ function nextQuarterToPresent(projId) {
       const bills = (m.bills || []).filter((x) => x && x.end);
       if (!bills.length) return;
       const last = bills.reduce((a, x) => (x.end > a.end ? x : a));
-      lastByMeter.push({ end: last.end, ym: billMonth(last, m.bills) });
+      lastByMeter.push({ end: last.end, ym: billMonth(last, m.bills), delivery: DELIVERY_COMMODITIES.has(m.commodity) });
     }),
   );
   if (!lastByMeter.length) return null;
@@ -741,8 +741,10 @@ function nextQuarterToPresent(projId) {
   const year = Math.floor(idx / 4);
   const q = idx % 4;
   const yms = [1, 2, 3].map((k) => year + '-' + String(q * 3 + k).padStart(2, '0'));
-  const complete = lastByMeter.every((x) => x.ym >= yms[2]);
-  const billsThrough = complete ? null : lastByMeter.reduce((a, x) => (x.end < a ? x.end : a), lastByMeter[0].end);
+  // Delivery commodities (DELIVERY_COMMODITIES, app/core.js) are left out of both: a delivery date is not a monthly bill date.
+  const monthly = lastByMeter.filter((x) => !x.delivery);
+  const complete = monthly.every((x) => x.ym >= yms[2]);
+  const billsThrough = complete || !monthly.length ? null : monthly.reduce((a, x) => (x.end < a ? x.end : a), monthly[0].end);
   return { year, q, yms, label: 'Q' + (q + 1) + ' ' + year, complete, billsThrough };
 }
 

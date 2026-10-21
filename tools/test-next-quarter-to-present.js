@@ -26,6 +26,9 @@ for (const rel of ['lib/date-helpers.js', 'lib/formatting.js', 'computations/sav
 const _ud = fs.readFileSync(path.join(REPO, 'app/utility-data.js'), 'utf8');
 vm.runInContext(_ud.slice(_ud.indexOf('function _fixISO('), _ud.indexOf('// The ONE day-count function')), S);
 
+// The real delivery-commodity set, cut from app/core.js (the page file needs a browser to load).
+vm.runInContext(fs.readFileSync(path.join(REPO, 'app/core.js'), 'utf8').match(/^const DELIVERY_COMMODITIES = .*$/m)[0].replace('const ', 'var '), S);
+
 const bill = (y, m, lastDay) => {
   const p = (n) => String(n).padStart(2, '0');
   return { start: y + '-' + p(m) + '-01', end: y + '-' + p(m) + '-' + p(lastDay || 28) };
@@ -99,6 +102,20 @@ console.log('6. no bills -> null');
 {
   setup([{ id: 'm1', commodity: 'Electric', bills: [] }], []);
   assert(S.nextQuarterToPresent('p-fake') === null, 'null');
+}
+
+console.log('7. propane delivery date is skipped for billsThrough and complete');
+{
+  setup(
+    [
+      { id: 'm1', commodity: 'Electric', bills: [...months(2025, 1, 2026, 6), { start: '2026-07-01', end: '2026-07-29' }] },
+      { id: 'm-prop', commodity: 'Propane', bills: [{ start: '2026-02-01', end: '2026-02-01' }] },
+    ],
+    [rec('2026-01', '2026-06')],
+  );
+  const r = S.nextQuarterToPresent('p-fake');
+  assert(r.label === 'Q3 2026' && r.complete === false, 'Q3 2026 incomplete, got ' + r.label);
+  assert(r.billsThrough === '2026-07-29', 'billsThrough 2026-07-29, got ' + r.billsThrough);
 }
 
 console.log(passed + ' passed, ' + failed + ' failed');

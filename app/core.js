@@ -2887,6 +2887,8 @@ function updateProg(id, val) {
 }
 /* ── COMMODITY TYPES ── */
 const ALL_COMMODITIES = ['Electric', 'Gas', 'Water', 'Steam', 'Sewer', 'Stormwater', 'Propane'];
+// Commodities bought by delivery, not billed every month. Their last bill date says nothing about missing monthly bills.
+const DELIVERY_COMMODITIES = new Set(['Propane']);
 
 function isShownCommodity(projectId, commodity) {
   // Fix 35571527-p0: unrecognized commodities ('Unknown', '', null) are never
