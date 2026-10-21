@@ -4110,6 +4110,7 @@ await t(
     await L.DB.set('en_budget_a', { n: 2 });
     await tick(60);
     assert.strictEqual(L.DB.getQueueDepth(), 1);
+    await tick(80);
     S.o.failPut = false;
     await L.DB.__t._hydrate(); // server still at version 5
     await tick(60);
@@ -4237,6 +4238,47 @@ await t(
     await L.DB.set('en_budget_a', { n: 'newer' });
     await tick(60);
     assert.strictEqual(L.DB.getHeldDrafts().length, 1, 'draft kept next to the new edit');
+  });
+  async function heldScenarioWithFailingStore() {
+    const failKeys = new Set();
+    const store = new Proxy({}, {
+      set(o, k, v) {
+        if (failKeys.has(k)) throw new Error('QuotaExceededError');
+        o[k] = v;
+        return true;
+      },
+    });
+    const S = casServer([kvRow('en_budget_a', { n: 1 }, 5)]);
+    const L = load({ mode: 'on', syncHost: true, classify: true, fetchImpl: S.fetchImpl, store, modal: async () => ({ action: 'dismiss' }) });
+    await L.DB.warmCache();
+    S.rows[0] = kvRow('en_budget_a', { n: 'other' }, 6);
+    await L.DB.set('en_budget_a', { n: 'mine' });
+    await tick(60);
+    await L.DB.__t._hydrate();
+    await tick(60);
+    return { L, S, failKeys };
+  }
+  await t('HELD 6: "Use my draft" whose save fails keeps the draft held and reports failure', async () => {
+    const { L, failKeys } = await heldScenarioWithFailingStore();
+    assert.strictEqual(L.DB.getHeldDrafts().length, 1);
+    failKeys.add('en_budget_a');
+    const ok = await L.DB.releaseHeldDraft('en_budget_a');
+    assert.strictEqual(ok, false, 'the failure is reported');
+    const held = L.DB.getHeldDrafts();
+    assert.strictEqual(held.length, 1, 'the draft is still held');
+    assert.deepStrictEqual(clone(L.DB.__t._queue().find((e) => e.held).value), { n: 'mine' }, 'the draft value is kept');
+  });
+  await t('HELD 7: "Use my draft" over a newer live queued edit copies that edit to Conflict history first', async () => {
+    const { L, S } = await heldScenarioWithFailingStore();
+    S.o.failPut = true;
+    await L.DB.set('en_budget_a', { n: 'newer-offline' }); // live queued edit next to the held draft
+    await tick(80);
+    S.o.failPut = false;
+    assert.ok(L.DB.__t._queue().some((e) => !e.held && e.key === 'en_budget_a'), 'a live queued edit exists');
+    assert.strictEqual(await L.DB.releaseHeldDraft('en_budget_a'), true);
+    const arc = L.DB.getConflictArchive().filter((e) => e.reason === 'held-draft-replaced-queued-edit');
+    assert.strictEqual(arc.length, 1, 'one history copy');
+    assert.deepStrictEqual(clone(arc[0].losingValue), { n: 'newer-offline' });
   });
   await t('HELD 5: sync-ui lists held drafts in the Sync status panel with Use my draft and Discard, plain words, hover text', () => {
     const src = fs.readFileSync(path.join(__dirname, 'app', 'sync-ui.js'), 'utf8').split('\r').join('');
@@ -4377,6 +4419,7 @@ await t(
     S.o.failPut = true;
     await L.DB.set('en_budget_a', { n: 'A-unsent' });
     await tick(40);
+    await tick(80);
     S.o.failPut = false;
     assert.strictEqual(L.DB.getQueueDepth(), 1);
     await signOut(L);
@@ -4402,6 +4445,7 @@ await t(
     S.o.failPut = true;
     await L.DB.set('ch_pref_x', 'A-pref');
     await tick(40);
+    await tick(80);
     S.o.failPut = false;
     await signOut(L);
     await signIn(L, 'u2');

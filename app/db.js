@@ -1731,9 +1731,32 @@ const DB = (() => {
   async function releaseHeldDraft(key) {
     const e = _findHeld(key);
     if (!e) return false;
+    // A newer live queued edit of the same item (made offline) is replaced by the draft: copy it to
+    // Conflict history first, so no value is lost.
+    const me = _myUserId();
+    const live = _syncQueue.find((x) => x.key === key && !x.held && _entryBelongsTo(x, me));
+    if (live) {
+      _appendConflictArchive({
+        key: live.key,
+        reason: 'held-draft-replaced-queued-edit',
+        losingSide: 'local',
+        losingValue: live.deleted ? null : live.value,
+        losingDeleted: !!live.deleted,
+        losingVersion: typeof live.baseVersion === 'number' ? live.baseVersion : null,
+      });
+    }
+    // The draft stays held until the write is saved. If the save fails, it stays held and the error shows.
+    try {
+      if (e.deleted) remove(key);
+      else await set(key, e.value);
+    } catch (err) {
+      console.warn('[DB] Use my draft failed; the draft stays held:', key, err);
+      if (typeof showToast === 'function') {
+        showToast('Could not save your draft. It is still kept as a draft.', 'error');
+      }
+      return false;
+    }
     _dropEntry(e);
-    if (e.deleted) remove(key);
-    else await set(key, e.value);
     if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('dataUpdated', { detail: { key } }));
     return true;
   }
