@@ -2575,6 +2575,13 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.21.154', date: '2026-10-21', title: 'Utility Data: safer saving and sync',
+    items: [
+      { type: 'fix', text: 'Utility Data: saved changes are no longer lost when the page loads before the server answers. Nothing is saved until the first full load finishes, and a load problem shows a banner.' },
+      { type: 'feature', text: 'Sync status: a draft that cannot be saved now stays in a short held-drafts list. Use my draft keeps the draft until the save works, and a replaced queued edit is copied to Conflict history.' },
+      { type: 'change', text: 'Sync status: the signed-in name and shared utility data are checked when you sign in again, so one person data is not written over another person data.' }
+    ]
+  },
   { v: 'v2026.10.21.153', date: '2026-10-21', title: 'PDF / OCR: bills read with their printed layout rules',
     items: [
       { type: 'fix', text: 'PDF / OCR: KGS, City of Baldwin and gas supplier bills are now read with the layout rules printed on each bill, so credits, the total due, rates and minus signs are read correctly.' },
