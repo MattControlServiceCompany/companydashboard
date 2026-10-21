@@ -2536,6 +2536,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.21.156', date: '2026-10-21', title: 'Projects page: Bills through date',
+    items: [
+      { type: 'fix', text: "Projects page: the Louisburg card's 'Bills through' date no longer uses propane delivery dates." }
+    ]
+  },
   { v: 'v2026.10.21.155', date: '2026-10-21', title: 'Project card quarter, sidebar modes, PDF / OCR values grid',
     items: [
       { type: 'feature', text: 'Projects: the project card now shows the next quarter to present, with its year (for example Q3 2026 Total Savings), and a Bills through line when the newest bills do not cover the whole quarter.' },
