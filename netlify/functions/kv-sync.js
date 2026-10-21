@@ -33,13 +33,12 @@
 // across reads/writes and would silently break manifest hash comparisons on
 // the client (finding F8).
 //
-// kv_history: on an EXPLICIT overwrite only (client sets `explicitOverwrite:
-// true` in the PUT body — i.e. the user chose "Overwrite with mine" in the
-// conflict modal), the row about to be replaced is snapshotted into
+// kv_history: on EVERY write that changes a row (normal PUT, tombstone,
+// explicit overwrite) the row about to be replaced is snapshotted into
 // `kv_history` (key, value, version, updated_by, replaced_at) BEFORE the
-// overwrite lands. This does not run on every write — only on a flagged
-// conflict-resolution overwrite — and a retention cap (last N per key AND
-// max age) keeps the free-tier DB bounded (finding F10).
+// PATCH lands. No snapshot when the new value equals the old one. If the
+// snapshot fails the PUT is refused. Retention (per key, size-aware, and max
+// age) keeps the free-tier DB bounded - see the constants below (finding F10).
 //
 // gzip: PUT bodies may arrive gzip-compressed (`Content-Encoding: gzip`).
 // The largest real kv value (an equipment-matrix key) is ~9MB raw, over
@@ -327,6 +326,19 @@ async function handlePut(event, updatedBy) {
     };
   }
 
+  // Safety net (Matt 2026-10-21): EVERY write that changes a row keeps the
+  // previous copy in kv_history BEFORE the PATCH lands, so a crash between the
+  // two steps cannot lose it. Skipped when the new value equals the old one.
+  // If the snapshot cannot be written the PUT is refused (502): no write
+  // without a restorable previous copy. Only done when the pre-image is the
+  // version this PUT replaces; a stale baseVersion fails the CAS below anyway.
+  let snapshotInserted = false;
+  if (beforeRow && Number(beforeRow.version) === Number(baseVersion) && shouldSnapshot(beforeRow, { isTombstone, newHash })) {
+    const saved = await snapshotHistory(beforeRow);
+    if (!saved.ok) return respond(502, { error: 'Backend history snapshot failed - write refused' });
+    snapshotInserted = saved.inserted;
+  }
+
   const patchRes = await fetch(
     `${SUPABASE_URL}/rest/v1/kv?key=eq.${encodeURIComponent(key)}&version=eq.${baseVersion}`,
     {
@@ -343,9 +355,8 @@ async function handlePut(event, updatedBy) {
 
   const patched = await patchRes.json();
   if (Array.isArray(patched) && patched.length === 1) {
-    if (body.explicitOverwrite === true && beforeRow) {
-      await snapshotHistory(beforeRow);
-    }
+    // Trim only when this request inserted a history row (each call costs compute).
+    if (snapshotInserted) await enforceHistoryRetention(beforeRow.key, beforeRow);
     return respond(200, { version: baseVersion + 1, hash: newHash, deleted: !!isTombstone });
   }
   // 0 rows matched -> version mismatch (or key missing/already-tombstoned
@@ -356,13 +367,38 @@ async function handlePut(event, updatedBy) {
   return respond(409, { conflict: true, current: rowToConflict(current) });
 }
 
-// --- kv_history snapshot-on-explicit-overwrite (§5, F10) -----------------------
+// --- kv_history snapshot on every changing write (Matt 2026-10-21) --------------
+// Retention (free tier = 500 MB DB, supabase-backend-kb.md; some values are
+// 1-9 MB): at most HISTORY_MAX_PER_KEY (20) rows per key, at most
+// HISTORY_MAX_PER_KEY_LARGE (5) for a key whose value is over
+// HISTORY_LARGE_BYTES (1 MB, worst case 5 x 9 MB = 45 MB for the largest key),
+// and nothing older than HISTORY_MAX_AGE_DAYS (30). Enforced after each write.
 
 const HISTORY_MAX_PER_KEY = 20;
+const HISTORY_MAX_PER_KEY_LARGE = 5;
+const HISTORY_LARGE_BYTES = 1024 * 1024;
 const HISTORY_MAX_AGE_DAYS = 30;
 
+// True when the write changes the stored value (or tombstones a live row).
+function shouldSnapshot(beforeRow, { isTombstone, newHash }) {
+  if (isTombstone) return !beforeRow.deleted;
+  const oldHash = beforeRow.hash || sha256Hex(canonicalJSON(beforeRow.value));
+  return oldHash !== newHash;
+}
+
+// Returns { ok, inserted }: ok = a row for this key+version exists after the call;
+// inserted = this call added it (false when it already existed).
 async function snapshotHistory(beforeRow) {
   try {
+    // Idempotent per key+version: a retry or a lost CAS leaves one row only.
+    const existsRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/kv_history?key=eq.${encodeURIComponent(beforeRow.key)}&version=eq.${beforeRow.version}&select=id&limit=1`,
+      { headers: pgHeaders() },
+    );
+    if (existsRes.ok) {
+      const found = await existsRes.json();
+      if (Array.isArray(found) && found.length) return { ok: true, inserted: false };
+    }
     const insertRes = await fetch(`${SUPABASE_URL}/rest/v1/kv_history`, {
       method: 'POST',
       headers: pgHeaders({ Prefer: 'return=minimal' }),
@@ -378,19 +414,30 @@ async function snapshotHistory(beforeRow) {
     });
     if (!insertRes.ok) {
       console.error('[kv-sync] history snapshot insert failed:', insertRes.status);
-      return;
+      return { ok: false, inserted: false };
     }
-    await enforceHistoryRetention(beforeRow.key);
+    return { ok: true, inserted: true };
   } catch (err) {
-    // History bookkeeping must never fail the parent PUT.
     console.error('[kv-sync] history snapshot error:', err && err.message);
+    return { ok: false, inserted: false };
   }
 }
 
-async function enforceHistoryRetention(key) {
-  // Cap 1: keep only the most recent HISTORY_MAX_PER_KEY rows for this key.
+async function enforceHistoryRetention(key, row) {
+  try {
+    await enforceHistoryRetentionUnsafe(key, row);
+  } catch (err) {
+    // Trimming must never fail a write that already landed.
+    console.error('[kv-sync] history retention error:', err && err.message);
+  }
+}
+
+async function enforceHistoryRetentionUnsafe(key, row) {
+  const large = row && row.value !== undefined && Buffer.byteLength(JSON.stringify(row.value), 'utf8') > HISTORY_LARGE_BYTES;
+  const keep = large ? HISTORY_MAX_PER_KEY_LARGE : HISTORY_MAX_PER_KEY;
+  // Cap 1: keep only the most recent `keep` rows for this key.
   const overflowRes = await fetch(
-    `${SUPABASE_URL}/rest/v1/kv_history?key=eq.${encodeURIComponent(key)}&select=id&order=replaced_at.desc&offset=${HISTORY_MAX_PER_KEY}`,
+    `${SUPABASE_URL}/rest/v1/kv_history?key=eq.${encodeURIComponent(key)}&select=id&order=replaced_at.desc&offset=${keep}`,
     { headers: pgHeaders() },
   );
   if (overflowRes.ok) {
