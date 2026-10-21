@@ -109,5 +109,31 @@ const hist = (k) => db.kv_history.filter((r) => r.key === k);
     await put({ key: L, value: Object.assign({ n: i }, big), baseVersion: v });
   }
   assert.strictEqual(hist(L).length, 5, 'large value keeps 5: ' + hist(L).length);
+  // Trim requests: none when no snapshot row was inserted, some when one was.
+  const trimCalls = [];
+  const f0 = global.fetch;
+  global.fetch = async (u, o = {}) => {
+    const m = (o.method || 'GET').toUpperCase();
+    if (String(u).includes('/kv_history') && (m === 'DELETE' || String(u).includes('offset='))) trimCalls.push(m + ' ' + u);
+    return f0(u, o);
+  };
+  const T = 'en_fake_trim';
+  await put({ key: T, value: { a: 1 }, baseVersion: null });
+  assert.strictEqual(trimCalls.length, 0, 'new key: zero trim requests');
+  await put({ key: T, value: { a: 1 }, baseVersion: 1 });
+  assert.strictEqual(trimCalls.length, 0, 'equal value: zero trim requests');
+  await put({ key: T, value: { a: 2 }, baseVersion: 2 });
+  assert.ok(trimCalls.length >= 2, 'snapshot inserted: trim runs, got ' + trimCalls.length);
+  global.fetch = f0;
+
+  // Size cap counts UTF-8 bytes: 400000 x 3-byte chars = 1.2 MB bytes, 400000 chars.
+  const M = 'en_fake_multibyte';
+  const wide = { t: '€'.repeat(400000) };
+  await put({ key: M, value: wide, baseVersion: null });
+  for (let i = 0; i < 8; i++) {
+    const v = db.kv.find((x) => x.key === M).version;
+    await put({ key: M, value: Object.assign({ n: i }, wide), baseVersion: v });
+  }
+  assert.strictEqual(hist(M).length, 5, 'multibyte value counted in bytes, keeps 5: ' + hist(M).length);
   console.log('kv-sync history: all tests passed');
 })().catch((e) => { console.error(e); process.exit(1); });

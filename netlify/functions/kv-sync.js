@@ -332,9 +332,11 @@ async function handlePut(event, updatedBy) {
   // If the snapshot cannot be written the PUT is refused (502): no write
   // without a restorable previous copy. Only done when the pre-image is the
   // version this PUT replaces; a stale baseVersion fails the CAS below anyway.
+  let snapshotInserted = false;
   if (beforeRow && Number(beforeRow.version) === Number(baseVersion) && shouldSnapshot(beforeRow, { isTombstone, newHash })) {
     const saved = await snapshotHistory(beforeRow);
-    if (!saved) return respond(502, { error: 'Backend history snapshot failed - write refused' });
+    if (!saved.ok) return respond(502, { error: 'Backend history snapshot failed - write refused' });
+    snapshotInserted = saved.inserted;
   }
 
   const patchRes = await fetch(
@@ -353,7 +355,8 @@ async function handlePut(event, updatedBy) {
 
   const patched = await patchRes.json();
   if (Array.isArray(patched) && patched.length === 1) {
-    if (beforeRow) await enforceHistoryRetention(beforeRow.key, beforeRow);
+    // Trim only when this request inserted a history row (each call costs compute).
+    if (snapshotInserted) await enforceHistoryRetention(beforeRow.key, beforeRow);
     return respond(200, { version: baseVersion + 1, hash: newHash, deleted: !!isTombstone });
   }
   // 0 rows matched -> version mismatch (or key missing/already-tombstoned
@@ -383,7 +386,8 @@ function shouldSnapshot(beforeRow, { isTombstone, newHash }) {
   return oldHash !== newHash;
 }
 
-// Returns true when a row for this key+version exists after the call.
+// Returns { ok, inserted }: ok = a row for this key+version exists after the call;
+// inserted = this call added it (false when it already existed).
 async function snapshotHistory(beforeRow) {
   try {
     // Idempotent per key+version: a retry or a lost CAS leaves one row only.
@@ -393,7 +397,7 @@ async function snapshotHistory(beforeRow) {
     );
     if (existsRes.ok) {
       const found = await existsRes.json();
-      if (Array.isArray(found) && found.length) return true;
+      if (Array.isArray(found) && found.length) return { ok: true, inserted: false };
     }
     const insertRes = await fetch(`${SUPABASE_URL}/rest/v1/kv_history`, {
       method: 'POST',
@@ -410,12 +414,12 @@ async function snapshotHistory(beforeRow) {
     });
     if (!insertRes.ok) {
       console.error('[kv-sync] history snapshot insert failed:', insertRes.status);
-      return false;
+      return { ok: false, inserted: false };
     }
-    return true;
+    return { ok: true, inserted: true };
   } catch (err) {
     console.error('[kv-sync] history snapshot error:', err && err.message);
-    return false;
+    return { ok: false, inserted: false };
   }
 }
 
@@ -429,7 +433,7 @@ async function enforceHistoryRetention(key, row) {
 }
 
 async function enforceHistoryRetentionUnsafe(key, row) {
-  const large = row && row.value !== undefined && JSON.stringify(row.value).length > HISTORY_LARGE_BYTES;
+  const large = row && row.value !== undefined && Buffer.byteLength(JSON.stringify(row.value), 'utf8') > HISTORY_LARGE_BYTES;
   const keep = large ? HISTORY_MAX_PER_KEY_LARGE : HISTORY_MAX_PER_KEY;
   // Cap 1: keep only the most recent `keep` rows for this key.
   const overflowRes = await fetch(
