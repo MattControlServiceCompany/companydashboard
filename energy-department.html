@@ -35,6 +35,7 @@
     />
     <link href="lib/quill.snow.css?v=154" rel="stylesheet" />
     <script src="app/ch-auth.js"></script>
+    <script src="sidebar-mode.js?v=154"></script>
 
     <style id="site-ui-styles">
       /* ---------------------------------------------------
@@ -1720,40 +1721,6 @@
         border-color: var(--accent);
         color: var(--accent);
       }
-      /* -- MOBILE SIDEBAR DRAWER TOGGLE -- */
-      .sidebar-toggle-btn {
-        display: none;
-        align-items: center;
-        justify-content: center;
-        width: auto;
-  padding: 0 10px;
-  gap: 6px;
-        height: 36px;
-        border-radius: 7px;
-        border: 1px solid var(--border);
-        background: var(--s3);
-        color: var(--text2);
-        font-size: 14px;
-  white-space: nowrap;
-        cursor: pointer;
-        transition: all 0.15s;
-        font-family: var(--font);
-        flex-shrink: 0;
-        margin-right: 8px;
-      }
-      .sidebar-toggle-btn:hover {
-        border-color: var(--accent);
-        color: var(--accent);
-      }
-      .sidebar-backdrop {
-        display: none;
-        position: fixed;
-        inset: 0;
-        z-index: 149;
-        background: rgba(6, 8, 16, 0.6);
-        backdrop-filter: blur(4px);
-      }
-
       /* [COMMENTED OUT] Intermediate breakpoint for sync button — no longer needed
          was: @media (max-width: 1024px) { .sync-btn { display: none; } }
       */
@@ -1762,29 +1729,6 @@
       @media (max-width: 899px) {
         body {
           min-width: 0;
-        }
-
-        .sidebar-toggle-btn {
-          display: flex;
-        }
-
-        .sidebar {
-          position: fixed;
-          top: 0;
-          left: 0;
-          bottom: 0;
-          z-index: 150;
-          width: 260px;
-          transform: translateX(-100%);
-          transition: transform 0.24s cubic-bezier(0.4, 0, 0.2, 1);
-          padding-top: 60px;
-        }
-        .sidebar.drawer-open {
-          transform: translateX(0);
-        }
-
-        .sidebar-top {
-          overflow-y: auto;
         }
 
         /* .app-wrap stays display:flex at all widths — see site-ui.css comment
@@ -9095,12 +9039,12 @@
           <div class="sidebar-top">
             <div class="s-sect">
               <div class="s-lbl">Energy</div>
-              <button class="s-item active" data-fb="energy.sidebar.home" onclick="sv('home', this)">
-                <span class="s-ico">🏠</span>Home
+              <button data-sb-icon="home" class="s-item active" data-fb="energy.sidebar.home" onclick="sv('home', this)">
+                <span class="s-ico"></span>Home
               </button>
               <div class="s-proj-header" id="sb-proj-btn">
-                <button class="s-item s-proj-toggle" onclick="sv('projects', document.getElementById('sb-proj-btn'))">
-                  <span class="s-ico">📁</span>Projects
+                <button data-sb-icon="folder" class="s-item s-proj-toggle" onclick="sv('projects', document.getElementById('sb-proj-btn'))">
+                  <span class="s-ico"></span>Projects
                 </button>
                 <button
                   class="s-proj-collapse"
@@ -9113,61 +9057,61 @@
               </div>
               <div class="s-proj-section" id="sidebarProjFolders"></div>
               <div id="sidebarSortable">
-                <button class="s-item" data-sidebar-id="pdf" data-fb="energy.sidebar.pdf" onclick="sv('pdf', this)">
-                  <span class="s-ico">📄</span>PDF / OCR
+                <button data-sb-icon="file" class="s-item" data-sidebar-id="pdf" data-fb="energy.sidebar.pdf" onclick="sv('pdf', this)">
+                  <span class="s-ico"></span>PDF / OCR
                 </button>
-                <button
+                <button data-sb-icon="bolt"
                   class="s-item"
                   data-sidebar-id="utility"
                   data-fb="energy.sidebar.utility"
                   onclick="sv('utility', this)"
                 >
-                  <span class="s-ico">⚡</span>Utility Data
+                  <span class="s-ico"></span>Utility Data
                 </button>
-                <button
+                <button data-sb-icon="ruler"
                   class="s-item"
                   data-sidebar-id="drawings"
                   data-fb="energy.sidebar.drawings"
                   onclick="sv('drawings', this)"
                 >
-                  <span class="s-ico">📐</span>Drawings
+                  <span class="s-ico"></span>Drawings
                 </button>
-                <button
+                <button data-sb-icon="pen"
                   class="s-item"
                   data-sidebar-id="specs"
                   data-fb="energy.sidebar.specs"
                   onclick="sv('specs', this)"
                 >
-                  <span class="s-ico">✍️</span>Spec Writer
+                  <span class="s-ico"></span>Spec Writer
                 </button>
-                <button
+                <button data-sb-icon="plug"
                   class="s-item"
                   data-sidebar-id="webctrl"
                   data-fb="energy.sidebar.webctrl"
                   onclick="sv('webctrl', this)"
                 >
-                  <span class="s-ico">🔌</span>WebCTRL
+                  <span class="s-ico"></span>WebCTRL
                 </button>
-                <button
+                <button data-sb-icon="chart"
                   class="s-item"
                   data-sidebar-id="ems"
                   data-fb="energy.sidebar.ems"
                   onclick="sv('ems', this)"
                   title="Energy Management System Leads"
                 >
-                  <span class="s-ico">📊</span>EMS Leads
+                  <span class="s-ico"></span>EMS Leads
                 </button>
               </div>
             </div>
           </div>
           <div class="sidebar-bottom">
-            <button class="rn-whats-new-btn" onclick="window.__siteUI.openReleaseNotes()">&#128196; What's New</button>
-            <button class="sb-settings-btn" id="uiCustomizeBtn" onclick="uiEditToggle()">&#9998; Customize</button>
-            <button class="sb-settings-btn" onclick="siteOpenSettings()">&#9881; Settings</button>
+            <button class="rn-whats-new-btn" data-sb-icon="star" onclick="window.__siteUI.openReleaseNotes()"><span class="s-ico"></span><span class="s-txt">What's New</span></button>
+            <button class="sb-settings-btn" id="uiCustomizeBtn" data-sb-icon="sliders" onclick="uiEditToggle()"><span class="s-ico"></span><span class="s-txt">Customize</span></button>
+            <button class="sb-settings-btn" data-sb-icon="gear" onclick="siteOpenSettings()"><span class="s-ico"></span><span class="s-txt">Settings</span></button>
             <div class="sb-divider"></div>
             <div class="sb-clock" id="sb-clock">--:-- --</div>
             <div class="sb-date" id="sb-date">Loading...</div>
-            <button class="sb-settings-btn" id="siteDataBtn" onclick="siteDataMenuToggle(this)" title="Backup &amp; Data">Backup &amp; Data</button>
+            <button class="sb-settings-btn" id="siteDataBtn" data-sb-icon="database" onclick="siteDataMenuToggle(this)" title="Backup &amp; Data"><span class="s-ico"></span><span class="s-txt">Backup &amp; Data</span></button>
             <div
               class="sb-version"
               id="en-sb-version"

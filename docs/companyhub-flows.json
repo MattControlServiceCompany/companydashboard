@@ -372,12 +372,13 @@
       "sget(key, fallback)": "Wrapper for Store.get() with fallback value"
     },
     "accessibility": {
-      "features": ["ESC key closes modals", "Focus trap in modals", "ARIA roles on navigation", "44px minimum touch targets", "Focus-visible outlines", "Mobile sidebar drawer with hamburger toggle"]
+      "features": ["ESC key closes modals", "Focus trap in modals", "ARIA roles on navigation", "44px minimum touch targets", "Focus-visible outlines", "Left sidebar mode selector (full, icons only, hidden) saved per user"]
     }
   },
   "storageKeys": {
     "global": [
       {"key": "ch_theme", "type": "string", "description": "Dark/light mode preference"},
+      {"key": "ch_sidebar_mode", "type": "string", "description": "Left sidebar mode: expanded, slim or collapsed (per user; set by sidebar-mode.js)"},
       {"key": "ch_settings", "type": "object", "description": "Theme, accent color, default login, feedback mode, UI customization"},
       {"key": "ch_notifs", "type": "array", "description": "Notification history"},
       {"key": "ch_user", "type": "object", "storage": "sessionStorage", "description": "Logged-in user data"},
