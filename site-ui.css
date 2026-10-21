@@ -1071,40 +1071,6 @@ a:focus-visible,
   height: 44px;
 }
 
-/* ── MOBILE SIDEBAR DRAWER TOGGLE ── */
-.sidebar-toggle-btn {
-  display: none;
-  align-items: center;
-  justify-content: center;
-  width: auto;
-  padding: 0 10px;
-  gap: 6px;
-  height: 36px;
-  border-radius: 7px;
-  border: 1px solid var(--border);
-  background: var(--s3);
-  color: var(--text2);
-  font-size: 14px;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: all 0.15s;
-  font-family: var(--font);
-  flex-shrink: 0;
-  margin-right: 8px;
-}
-.sidebar-toggle-btn:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-.sidebar-backdrop {
-  display: none;
-  position: fixed;
-  inset: 0;
-  z-index: 149;
-  background: rgba(6, 8, 16, 0.6);
-  backdrop-filter: blur(4px);
-}
-
 /* [COMMENTED OUT] Media query for sync button — no longer needed
 @media (max-width: 1024px) {
   .sync-btn {
@@ -1118,25 +1084,6 @@ a:focus-visible,
     min-width: 0;
   }
 
-  .sidebar-toggle-btn {
-    display: flex;
-  }
-
-  .sidebar {
-    position: fixed;
-    top: 0;
-    left: 0;
-    bottom: 0;
-    z-index: 150;
-    width: 260px;
-    transform: translateX(-100%);
-    transition: transform 0.24s cubic-bezier(0.4, 0, 0.2, 1);
-    padding-top: 60px;
-  }
-  .sidebar.drawer-open {
-    transform: translateX(0);
-  }
-
   .sidebar-top {
     overflow-y: auto;
   }
@@ -1145,8 +1092,7 @@ a:focus-visible,
      A display:block override used to live here and broke the height-bounding
      flex chain (.app-wrap -> .content -> .tab-panel.active/.view.active) at
      <=899px, making every page unscrollable below the fold (P0, 2026-06-30).
-     The mobile drawer only needs .sidebar{position:fixed} (above) — it does
-     NOT need .app-wrap to leave flex. Do not re-add display:block here. */
+     Do not re-add display:block here. */
 
   .tab-panel.active {
     padding: 16px;

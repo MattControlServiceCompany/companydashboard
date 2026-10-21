@@ -16,6 +16,14 @@
   height: 18px;
 }
 
+/* The page tab row (energy-department .dept-nav, ems-leads .nav-bar) has one height at every width, so the mode selector sits at the same place on both pages */
+html body .dept-nav,
+html body .nav-bar {
+  box-sizing: border-box;
+  min-height: 44px;
+  align-items: center;
+}
+
 /* The mode selector, first item of the page's top tab row (same place on every page, in every mode) */
 .sb-mode {
   display: inline-flex;
