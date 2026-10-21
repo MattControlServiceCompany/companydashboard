@@ -136,20 +136,39 @@ credits a call, from that figure). It is removed.
 
 - No write before the first full pull (2026-10-21, branch 2026-10-21-sync-safety-client). In backend mode 'on', nothing
   goes to the server until `_hydrateInner` finished every read for the signed-in user (`_pulledUid`, rule
-  `_hasFullPull`, app/db.js). Before that, `_writeOne` queues the edit (`_enqueueWrite`), `_drainQueueLocked` sends
-  nothing and `_queueHasSendable` arms no timer; first-connect upload is skipped too. A failed manifest, a failed batch
-  read, a failed drift read, a missing deletion-record read or an identity change during the pull leaves the gate shut.
-  A successful pull releases the queue (`_hydrate` end). `warmCache` waits for a pull when a READ failed
-  (`_pullReadsFailed`): `_holdForFirstPull` retries after 1, 2, 4, 8 s, then every 15 s, so the page does not start on an
-  empty cache. A browser that already holds data (version stamps or replicated keys, `_cacheHasContent`) starts after 3
-  tries and retries in the background every 30 s (`_scheduleBackgroundPull`) and on `online`. A 401/403 answer
-  (`_pullRefused`) ends the wait: the existing "server refused" banner shows. No new timer when sync is off.
-  Check: node test-sync-golive-blockers.js (SYNC-SAFETY 1a-1d).
-- Legacy utility blob (2026-10-21, app/utility-data.js). `_legacyBlobToMigrate(customerId)` is the ONE rule for "copy
-  the old `en_utility_<projectId>` blob into `en_utility_<customerId>`": the customer blob is missing or holds no
-  buildings, and a project of that customer has a legacy blob with buildings. `_selfHealCustomersAndScope` applies it to
-  healed projects too (before, it skipped them). `saveUtilityData` never writes an empty auto-created blob (no load
-  snapshot) while that rule finds a legacy copy. Check: SYNC-SAFETY 2 tests.
+  `_hasFullPull`, app/db.js; public `DB.hasFullPull`). ONE gated send: `_sendKvPut` returns `held-no-pull` for every
+  caller (live write, drain, merge-push inside the pull, first-connect upload, conflict resend) and each caller queues
+  the value (`_enqueueWrite`). A merge-push made during a pull therefore waits until the whole pull is complete. The
+  only bypass is the named flag `allowBeforeFullPull: true` in the payload, set by `restorePush` alone (an explicit
+  user restore of one key at a known server version); it is never sent on the wire. A failed manifest, batch read,
+  drift read, deletion-record read or an identity change leaves the gate shut. A successful pull releases the queue
+  and fires the window event `dbFullPull` once per sign-in. `warmCache` waits for a pull when a READ failed
+  (`_pullReadsFailed`): `_holdForFirstPull` retries after 1, 2, 4, 8 s, then every 15 s, so the page does not start on
+  an empty cache; a browser that already holds data (`_cacheHasContent`) starts after 3 tries and retries in the
+  background every 30 s (`_scheduleBackgroundPull`) and on `online`. A 401/403 answer (`_pullRefused`) ends the wait
+  (the "server refused" banner shows). While it waits, each retry fires `dbOfflineBanner` with `waiting:true`; the
+  existing small offline banner in app/sync-ui.js (`offlineBannerText`) then reads "Could not load <what failed> from
+  the server. Nothing is saved until it loads. Retrying automatically." with the technical detail on hover. No new
+  timer when sync is off. Check: node test-sync-golive-blockers.js (SYNC-SAFETY 1, 2, 5 tests).
+- Queued write versus the pull (app/db.js `_queuedWriteBlocksPull`, `_resolveStaleQueuedWrites`). A queued write
+  stops the pull from taking the server copy of its key only while the server version is not newer than the version
+  the write was based on (`entry.baseVersion`; none recorded counts as older). A newer server copy wins: the write
+  leaves the queue and goes to the normal conflict path (`_handleConflict`: list merge or the modal; local side
+  archived). A held draft always blocks. Check: SYNC-SAFETY 3 tests.
+- Held local draft (app/db.js `_holdLocalDraft`, app/sync-ui.js). "Decide later" (action `dismiss`), a closed modal,
+  an unknown action or a missing modal keep the local value as a queue entry with `held:true`. The drain
+  (`_drainQueueLocked`, `_queueHasSendable`) never sends it, the pull never replaces it, it counts as an unsynced
+  change. A new edit of the key replaces it; `DB.releaseHeldDraft(key)` sends it again; `DB.getHeldDrafts()` lists
+  them. Before, the write was re-queued, the server answered 409 and the modal came back forever. The modal text says
+  so. Check: SYNC-SAFETY 6 tests.
+- Legacy utility blob (2026-10-21, app/utility-data.js), backend mode 'on' only (`_backendOn`); the GitHub site runs
+  as before. `_legacyBlobToMigrate(customerId)` is the ONE rule for "copy the old `en_utility_<projectId>` blob into
+  `en_utility_<customerId>`": the customer key does not exist at all (an existing blob, empty or not, is never
+  replaced) and a project of that customer has a legacy blob with buildings. `_selfHealCustomersAndScope` applies it to
+  already-healed projects; `saveUtilityData` never writes an empty auto-created blob (no load snapshot) while that rule
+  finds a legacy copy. `loadUtilityData` writes nothing (no heal, no migration, no backfill) before the full pull
+  (`_loadWritesAllowed`); it runs again, complete, on `dbFullPull` (`_loadWritesDeferred`). Check: SYNC-SAFETY 2 and 3
+  utility tests.
 - Signed-in name (2026-10-21, app/core.js, app/ch-auth.js). On the Netlify site, a page with a live session and no saved
   `ch_user` shows the session email (`CH_AUTH.sessionUser`); the GitHub site is unchanged. Check: SYNC-SAFETY 3 tests.
 - A `DB.set` sends a PUT only when the canonical hash of the value differs from the hash stamped at the last sync

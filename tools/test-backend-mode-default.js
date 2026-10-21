@@ -544,12 +544,13 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
       arch.some((e) => e.key === 'en_budget_a' && same(e.losingValue, { n: 'SIGNED-OUT-EDIT' })),
       'archive=' + JSON.stringify(arch.map((e) => e.key)),
     );
-    // B1b (commit 87f476f6): the signed-out edit is sent at its old version on sign-in. The server refuses it
-    // (409), so the other device's row is never overwritten. The user then decides in the conflict dialog.
+    // 2026-10-21 (sync safety): the signed-out edit was based on version 1 and the server holds version 9.
+    // The pull sees that the write is older than the server copy: it is NOT sent (not even to be refused),
+    // the server copy wins and the write goes to the conflict path (archived; the user decides in the dialog).
     const sent = srv.puts.slice(putsBefore).map((x) => JSON.parse(x));
     check(
-      '8 ...signed-out edit sent as ONE version-checked PUT (base version 1), refused by the server',
-      sent.length === 1 && sent[0].key === 'en_budget_a' && sent[0].baseVersion === 1,
+      '8 ...signed-out edit older than the server copy is not sent; it goes to the conflict path',
+      sent.length === 0,
       JSON.stringify(sent),
     );
     check(

@@ -96,14 +96,27 @@ if (!window._billsResizeListenerAdded) {
 // customer blob (not the old, untouched per-project key) since it is fully replaced
 // by project.scope.meterExcludeIds + isBaselineExcluded(). Old per-project keys are
 // left inert, never deleted (rollback safety net) — see design section 3 "Cleanup".
-// The ONE rule for "which old per-project blob must be copied into this customer's blob"
-// (2026-10-21, sync safety). Returns the legacy en_utility_<projectId> blob of a project under
-// `customerId` when the customer blob is missing or holds no buildings; otherwise null. Used by
-// the heal (copy it over) and by saveUtilityData (never save an empty auto-created blob while
-// such a legacy copy exists). An existing customer blob with buildings is never replaced.
+// Backend mode on the sync host (signed in, server on). The GitHub site and a signed-out page are
+// never in it: they run the code exactly as before 2026-10-21 (no legacy copy for healed projects, no
+// save guard, no waiting for a pull). The ONE test for "the new sync-safety behavior applies".
+function _backendOn() {
+  return typeof window !== 'undefined' && !!window.CH_AUTH && window.CH_AUTH.backendMode() === 'on';
+}
+// May this page generate migration, heal and backfill writes now? In backend mode only after a full pull
+// of the server data for this sign-in (DB.hasFullPull, app/db.js): before that the cache can be empty or
+// partial and any value built from it must not reach the server. Everywhere else: always.
+function _loadWritesAllowed() {
+  return !_backendOn() || (typeof DB !== 'undefined' && typeof DB.hasFullPull === 'function' && DB.hasFullPull());
+}
+// The ONE rule for "which old per-project blob must be copied into this customer's blob" (backend mode
+// only, 2026-10-21 sync safety). "Missing" means the customer key does not exist at all: a blob that
+// exists is never replaced, empty or not (a user who deleted every building keeps it that way).
+// Returns the legacy en_utility_<projectId> blob (with buildings) of a project under `customerId`, or null.
+// Used by the heal of already-healed projects and by saveUtilityData (never save an empty auto-created
+// blob while such a legacy copy exists).
 function _legacyBlobToMigrate(customerId) {
-  const cur = sget('en_utility_' + customerId, null);
-  if (cur && Array.isArray(cur.buildings) && cur.buildings.length) return null;
+  if (!_backendOn()) return null;
+  if (sget('en_utility_' + customerId, null) != null) return null;
   const projects = sget('en_projects', []) || [];
   for (const P of projects) {
     if ((P.customerId || 'cust_' + P.id) !== customerId) continue;
@@ -112,18 +125,15 @@ function _legacyBlobToMigrate(customerId) {
   }
   return null;
 }
-// Copies the legacy blob into the customer key (deep copy, legacy key stays untouched).
-function _migrateLegacyBlobToCustomer(customerId) {
-  const old = _legacyBlobToMigrate(customerId);
-  if (!old) return false;
-  const healedBlob = JSON.parse(JSON.stringify(old));
+// Writes a deep copy of a legacy blob to the customer key (the legacy key stays untouched, rollback copy).
+function _copyLegacyBlobToCustomer(customerId, oldBlob) {
+  const healedBlob = JSON.parse(JSON.stringify(oldBlob));
   (healedBlob.buildings || []).forEach((b) =>
     (b.meters || []).forEach((m) => {
       delete m.baselineInclude;
     }),
   );
   sset('en_utility_' + customerId, healedBlob);
-  return true;
 }
 function _selfHealCustomersAndScope() {
   const projects = sget('en_projects', []) || [];
@@ -136,8 +146,9 @@ function _selfHealCustomersAndScope() {
   projects.forEach(function (P) {
     if (P.customerId && P.scope && Array.isArray(P.scope.buildingIds)) {
       // Already healed: the project record is done, but its customer blob may be missing on this
-      // origin (a fresh browser, or a server that never held it). Bring the legacy blob over.
-      _migrateLegacyBlobToCustomer(P.customerId);
+      // origin (a fresh browser, or a server that never held it). Backend mode only: bring the legacy blob over.
+      const legacy = _legacyBlobToMigrate(P.customerId);
+      if (legacy) _copyLegacyBlobToCustomer(P.customerId, legacy);
       return;
     }
 
@@ -168,8 +179,11 @@ function _selfHealCustomersAndScope() {
 
     // Only write the customer blob if it doesn't already exist — never clobber real
     // shared data another project/user may have already added under this customer.
-    // (One rule: _legacyBlobToMigrate; the old blob stays untouched as a rollback snapshot.)
-    if (oldBlob && !existingCustBlob) _migrateLegacyBlobToCustomer(customerId);
+    if (oldBlob && !existingCustBlob) {
+      // Deep-copy so deleting baselineInclude never mutates the old, untouched en_utility_<projId> key
+      // that stays inert as a rollback snapshot.
+      _copyLegacyBlobToCustomer(customerId, oldBlob);
+    }
 
     P.customerId = customerId;
     P.scope = P.scope || {};
@@ -265,9 +279,32 @@ function _collectDuplicateCandidates(cdata) {
 }
 // ── duplicate check end ────────────────────────────────────────────────
 
+// True after a load that skipped its write-producing steps (no full pull yet in backend mode).
+let _loadWritesDeferred = false;
+if (typeof window !== 'undefined' && window.addEventListener) {
+  // The full pull finished: run the whole load again, this time with its migrations, heals and backfills.
+  window.addEventListener('dbFullPull', function () {
+    if (!_loadWritesDeferred) return;
+    _loadWritesDeferred = false;
+    loadUtilityData();
+  });
+}
 function loadUtilityData() {
   utilityData = {};
   _meterBillCounts = null;
+  if (!_loadWritesAllowed()) {
+    // Backend mode, no full pull yet (offline start from a cache): read the blobs as they are and write
+    // nothing. The dbFullPull listener above repeats the load with all its write steps.
+    _loadWritesDeferred = true;
+    sget('en_customers', []).forEach(function (c) {
+      const d = sget('en_utility_' + c.id, null);
+      if (d) {
+        utilityData[c.id] = d;
+        _lastSavedSnapshot[c.id] = JSON.stringify(d);
+      }
+    });
+    return;
+  }
   // One-time migration: if old combined key exists, split into per-project keys then remove it
   const combined = sget('en_utilityData', null);
   if (combined && typeof combined === 'object' && Object.keys(combined).length) {

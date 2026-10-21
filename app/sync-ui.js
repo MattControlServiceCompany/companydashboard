@@ -193,10 +193,22 @@
     el.style.display = 'block';
   }
 
-  function renderOfflineBanner(show) {
+  // The ONE text of the offline banner. `waiting` = the first read of the saved data keeps failing
+  // (db.js _holdForFirstPull): say what failed, that nothing is saved until it loads, that it retries.
+  // The technical detail is on hover (title).
+  function offlineBannerText(waiting, what) {
+    if (!waiting) return 'Offline — showing local copy. Edits will sync when reconnected.';
+    return (
+      'Could not load ' +
+      (what || 'your saved data') +
+      ' from the server. Nothing is saved until it loads. Retrying automatically.'
+    );
+  }
+  function renderOfflineBanner(show, waiting, what, detail) {
     ensureStyles();
     var el = ensureEl('ch-sync-offline-banner');
-    el.textContent = 'Offline — showing local copy. Edits will sync when reconnected.';
+    el.textContent = offlineBannerText(!!waiting, what);
+    el.title = waiting && detail ? 'Detail: ' + detail : '';
     el.style.display = show ? 'block' : 'none';
   }
 
@@ -365,8 +377,9 @@
     }
   });
 
-  window.addEventListener('dbOfflineBanner', function () {
-    renderOfflineBanner(true);
+  window.addEventListener('dbOfflineBanner', function (e) {
+    var d = (e && e.detail) || {};
+    renderOfflineBanner(true, d.waiting === true, d.what, d.detail);
   });
 
   // M6: the server answered 401/403. This is not "offline": the sign-in was refused.
@@ -520,6 +533,7 @@
       return [
         { action: 'restore-mine', label: 'Restore my version', primary: true, gated: descriptor.typedConfirmRequired },
         { action: 'discard-mine', label: 'Discard my change', primary: false, gated: false },
+        DECIDE_LATER,
       ];
     }
     if (descriptor.conflictClass === 'records') {
@@ -535,8 +549,14 @@
         gated: descriptor.typedConfirmRequired,
       },
       { action: 'save-copy', label: 'Save mine as a copy / download', primary: false, gated: false },
+      DECIDE_LATER,
     ];
   }
+  // 'dismiss': db.js keeps the local value as a held draft and does not send it until the user chooses.
+  var DECIDE_LATER = { action: 'dismiss', label: 'Decide later', primary: false, gated: false };
+  var DRAFT_NOTE =
+    '<p class="ch-conflict-meta">If you choose Decide later, your version stays on this computer as a draft. ' +
+    'It is not sent to the server until you choose.</p>';
 
   function _bodyHtml(descriptor) {
     var name = friendlyKeyName(descriptor.key);
@@ -554,6 +574,7 @@
         _escHtml(when) +
         ' while you were editing it.</p>';
       html += '<p>Your changes were not lost — they are saved and available below.</p>';
+      html += DRAFT_NOTE;
     } else if (descriptor.conflictClass === 'records') {
       var recs = descriptor.records || [];
       html +=
@@ -607,6 +628,7 @@
         '. Yours was based on version: ' +
         _escHtml(descriptor.localBaseVersion != null ? descriptor.localBaseVersion : 'unknown') +
         '.</p>';
+      html += DRAFT_NOTE;
       if (descriptor.conflictClass === 'union-candidate') {
         html +=
           '<p>It looks like you each only ADDED new items, with nothing else changed. ' +

@@ -3829,21 +3829,41 @@ await t(
     assert.strictEqual(L.DB.getQueueDepth(), 1);
   });
 
-  // ---- SYNC SAFETY 2026-10-21 fix 2: an auto-created empty customer blob never hides the legacy blob
-  function utilityHarness(initial) {
+  // ---- SYNC SAFETY 2026-10-21 fix 2: legacy utility blob. The real functions of app/utility-data.js, run as they are.
+  // Functions that only exist after the fix are optional here, so the same tests run on older code and fail by behavior.
+  function utilityHarness(initial, o) {
+    o = o || {};
     const kv = JSON.parse(JSON.stringify(initial));
     const writes = [];
+    const listeners = {};
+    const st = { fullPull: o.fullPull !== false };
+    const win = {
+      CH_AUTH: { backendMode: () => (o.mode === 'on' ? 'on' : 'off') },
+      addEventListener: (n, f) => (listeners[n] = (listeners[n] || []).concat(f)),
+    };
+    const srcFile = fs.readFileSync(path.join(__dirname, 'app', 'utility-data.js'), 'utf8').split('\r').join('');
+    const has = (n) => srcFile.indexOf('function ' + n + '(') >= 0;
     const names = [
+      '_backendOn',
+      '_loadWritesAllowed',
       '_legacyBlobToMigrate',
-      '_migrateLegacyBlobToCustomer',
+      '_copyLegacyBlobToCustomer',
+      '_migrateLegacyBlobToCustomer', // the name this rule had on the first version of the fix
       '_selfHealCustomersAndScope',
       '_resolveCustomerId',
       'getCustomerBuildings',
       'saveUtilityData',
-    ];
+      'loadUtilityData',
+    ].filter(has);
+    const a = srcFile.indexOf('let _loadWritesDeferred');
+    const b = srcFile.indexOf('function loadUtilityData(');
+    const topLevel = a >= 0 && b > a ? srcFile.slice(a, b) : '';
     const code =
+      topLevel +
+      '\n' +
       names.map((n) => fnFrom('utility-data.js', n)).join('\n') +
-      '\nreturn { heal: _selfHealCustomersAndScope, getCustomerBuildings, save: saveUtilityData, utilityData };';
+      '\nreturn { heal: _selfHealCustomersAndScope, getCustomerBuildings, save: saveUtilityData, load: typeof loadUtilityData === "function" ? loadUtilityData : null, utilityData };';
+    const utilityData = {};
     const api = new Function(
       'sget',
       'sset',
@@ -3855,57 +3875,331 @@ await t(
       'DB',
       '_refreshBldgPerfIfVisible',
       'udScheduleBadgeRefresh',
+      'window',
+      'correctMeterReadChain',
+      'console',
+      '_meterBillCounts',
+      '_seedMeterBillCounts',
+      '_inheritBaselinesForProject',
       code,
     )(
-      (k, fb) => (kv[k] === undefined ? fb : kv[k]),
+      (k, fb) => (kv[k] === undefined ? fb : JSON.parse(JSON.stringify(kv[k]))),
       (k, v) => {
         kv[k] = JSON.parse(JSON.stringify(v));
         writes.push(k);
       },
-      {},
+      utilityData,
       {},
       '__all__',
       null,
       () => [],
-      { DERIVED_METER_FIELDS: [] },
+      { DERIVED_METER_FIELDS: [], hasFullPull: () => st.fullPull, get: () => '1', set() {} },
       () => {},
       () => {},
+      win,
+      () => 0,
+      { log() {}, warn() {}, info() {}, error() {} },
+      null,
+      () => {},
+      () => 0,
     );
-    return { kv, writes, api };
+    return {
+      kv,
+      writes,
+      api,
+      st,
+      fire: (n) => (listeners[n] || []).forEach((f) => f({ type: n })),
+    };
   }
   const legacyBlob = () => ({
     buildings: [1, 2, 3].map((n) => ({ id: 'bld_fake' + n, name: 'Fake ' + n, meters: [{ id: 'm_fake' + n, bills: [] }] })),
   });
-  await t('SYNC-SAFETY 2: a healed project whose customer blob is missing gets the legacy blob copied in', () => {
-    const H = utilityHarness({
-      en_projects: [{ id: 111, customerId: 'cust_111', client: 'Fake', scope: { buildingIds: ['bld_fake1'] } }],
-      en_customers: [{ id: 'cust_111', name: 'Fake' }],
-      en_utility_111: legacyBlob(),
-    });
+  const healedProject = () => ({ id: 111, customerId: 'cust_111', client: 'Fake', scope: { buildingIds: ['bld_fake1'] } });
+  await t('SYNC-SAFETY 2: backend mode, healed project, customer blob missing: the legacy blob is copied in', () => {
+    const H = utilityHarness(
+      { en_projects: [healedProject()], en_customers: [{ id: 'cust_111', name: 'Fake' }], en_utility_111: legacyBlob() },
+      { mode: 'on' },
+    );
     H.api.heal();
-    assert.strictEqual((H.kv.en_utility_cust_111 || {}).buildings.length, 3, 'customer blob holds the 3 legacy buildings');
+    assert.ok(H.kv.en_utility_cust_111, 'a customer blob was written');
+    assert.strictEqual(H.kv.en_utility_cust_111.buildings.length, 3, 'customer blob holds the 3 legacy buildings');
     assert.strictEqual(H.kv.en_utility_111.buildings.length, 3, 'legacy blob stays untouched');
   });
-  await t('SYNC-SAFETY 2: an existing customer blob with buildings is never replaced by the legacy blob', () => {
-    const H = utilityHarness({
-      en_projects: [{ id: 111, customerId: 'cust_111', client: 'Fake', scope: { buildingIds: [] } }],
-      en_customers: [{ id: 'cust_111', name: 'Fake' }],
-      en_utility_111: legacyBlob(),
-      en_utility_cust_111: { buildings: [{ id: 'bld_keep', meters: [] }] },
+  await t('SYNC-SAFETY 2: backend mode, a customer blob that exists is never replaced (with buildings, or EMPTY after the user deleted them all)', () => {
+    [{ buildings: [{ id: 'bld_keep', meters: [] }] }, { buildings: [] }].forEach((existing) => {
+      const H = utilityHarness(
+        {
+          en_projects: [{ id: 111, customerId: 'cust_111', client: 'Fake', scope: { buildingIds: [] } }],
+          en_customers: [{ id: 'cust_111', name: 'Fake' }],
+          en_utility_111: legacyBlob(),
+          en_utility_cust_111: existing,
+        },
+        { mode: 'on' },
+      );
+      H.api.heal();
+      assert.deepStrictEqual(H.kv.en_utility_cust_111, existing, 'the existing customer blob is unchanged');
+      assert.ok(!H.writes.includes('en_utility_cust_111'), 'no write to the customer blob');
     });
-    H.api.heal();
-    assert.strictEqual(H.kv.en_utility_cust_111.buildings[0].id, 'bld_keep');
-    assert.ok(!H.writes.includes('en_utility_cust_111'), 'no write to the customer blob');
   });
-  await t('SYNC-SAFETY 2: an empty auto-created blob is not saved while a legacy blob holds the data', () => {
-    const H = utilityHarness({
-      en_projects: [{ id: 111, customerId: 'cust_111', client: 'Fake', scope: { buildingIds: ['bld_fake1'] } }],
-      en_customers: [{ id: 'cust_111', name: 'Fake' }],
-      en_utility_111: legacyBlob(),
-    });
+  await t('SYNC-SAFETY 2: backend mode, an empty auto-created blob is not saved while a legacy blob holds the data; an existing empty blob is saved', () => {
+    const H = utilityHarness(
+      { en_projects: [healedProject()], en_customers: [{ id: 'cust_111', name: 'Fake' }], en_utility_111: legacyBlob() },
+      { mode: 'on' },
+    );
     H.api.getCustomerBuildings('cust_111'); // auto-creates the empty blob in memory
     H.api.save('cust_111');
     assert.ok(!H.writes.includes('en_utility_cust_111'), 'the empty blob must not be written');
+  });
+  await t('SYNC-SAFETY 2: GitHub site (backend off) runs exactly as before: no legacy copy for a healed project, an empty blob is saved', () => {
+    const H = utilityHarness(
+      { en_projects: [healedProject()], en_customers: [{ id: 'cust_111', name: 'Fake' }], en_utility_111: legacyBlob() },
+      { mode: 'off' },
+    );
+    H.api.heal();
+    assert.ok(!H.writes.includes('en_utility_cust_111'), 'heal of a healed project writes no customer blob');
+    H.api.getCustomerBuildings('cust_111');
+    H.api.save('cust_111');
+    assert.ok(H.writes.includes('en_utility_cust_111'), 'the auto-created blob is saved as before');
+  });
+  await t('SYNC-SAFETY 2: an UNHEALED project still gets its blob copied (both modes, as before)', () => {
+    ['on', 'off'].forEach((mode) => {
+      const H = utilityHarness(
+        { en_projects: [{ id: 111, client: 'Fake' }], en_customers: [], en_utility_111: legacyBlob() },
+        { mode },
+      );
+      H.api.heal();
+      assert.strictEqual(H.kv.en_utility_cust_111.buildings.length, 3, mode + ': copied');
+    });
+  });
+
+  // ---- SYNC SAFETY 2026-10-21 fix 3: no migration, heal or backfill write is generated before the full pull
+  await t('SYNC-SAFETY 3: backend mode, no full pull yet: the load writes nothing; after the pull the load heals', () => {
+    const H = utilityHarness(
+      { en_projects: [healedProject()], en_customers: [{ id: 'cust_111', name: 'Fake' }], en_utility_111: legacyBlob() },
+      { mode: 'on', fullPull: false },
+    );
+    assert.ok(H.api.load, 'loadUtilityData exists');
+    H.api.load();
+    assert.deepStrictEqual(H.writes, [], 'no write at all before the full pull');
+    H.st.fullPull = true;
+    H.fire('dbFullPull');
+    assert.ok(H.writes.includes('en_utility_cust_111'), 'the heal ran after the pull');
+    assert.strictEqual(H.kv.en_utility_cust_111.buildings.length, 3);
+  });
+  await t('SYNC-SAFETY 3: GitHub site: the load heals at once (no waiting)', () => {
+    const H = utilityHarness(
+      { en_projects: [{ id: 111, client: 'Fake' }], en_customers: [], en_utility_111: legacyBlob() },
+      { mode: 'off', fullPull: false },
+    );
+    H.api.load();
+    assert.ok(H.writes.includes('en_utility_cust_111'), 'unhealed project healed during the load');
+  });
+
+  // ---- SYNC SAFETY 2026-10-21: DB pull rules (fixes 2, 3, 5, 6 of the client branch)
+  function casServer(rows, o) {
+    o = o || {};
+    const puts = [];
+    const res = (status, body) => ({ ok: status >= 200 && status < 300, status, json: async () => body });
+    const fetchImpl = async (u, opts) => {
+      if (opts && opts.method === 'PUT') {
+        if (o.failPut) throw new Error('offline');
+        const body = JSON.parse(opts.body);
+        puts.push(body);
+        const row = rows.find((r) => r.key === body.key);
+        if ((row ? row.version : null) !== body.baseVersion) return res(409, { conflict: true, current: row || null });
+        return res(200, { version: (body.baseVersion || 0) + 1, hash: sha(body.value), deleted: false });
+      }
+      if (/manifest=1/.test(u)) {
+        if (o.failManifest) throw new Error('manifest timeout');
+        return res(200, rows.map((r) => ({ key: r.key, version: r.version, hash: r.hash, deleted: false })));
+      }
+      const keys = decodeURIComponent(String(u).split('keys=')[1] || '').split(',');
+      if (o.failKeys && keys.some((k) => o.failKeys.indexOf(k) !== -1)) return res(500, { error: 'x' });
+      return res(200, rows.filter((r) => keys.indexOf(r.key) !== -1));
+    };
+    return { puts, fetchImpl, rows, o };
+  }
+  await t('SYNC-SAFETY 2: a merge-push inside the pull waits until the whole pull is complete', async () => {
+    const store = { en_tasks: JSON.stringify([{ id: 'a', text: 'local' }]) };
+    const S = casServer([kvRow('en_tasks', [{ id: 'b', text: 'server' }], 7), kvRow('en_budget_z', { z: 1 }, 3)], {
+      failKeys: ['en_budget_z'],
+    });
+    const L = load({ mode: 'on', syncHost: true, classify: true, fetchImpl: S.fetchImpl, store });
+    const warm = L.DB.warmCache(); // the pull merges en_tasks but cannot read en_budget_z
+    await tick(400);
+    assert.strictEqual(
+      S.puts.filter((p) => p.key === 'en_tasks').length,
+      0,
+      'the merged list is not sent while the pull is incomplete',
+    );
+    assert.strictEqual(L.DB.getQueueDepth(), 1, 'the merged list waits in the queue');
+    S.o.failKeys = null; // the read works now: the retry completes the pull
+    await warm;
+    await tick(100); // the start-up drain sends it now that the pull is complete
+    const sent = S.puts.filter((p) => p.key === 'en_tasks');
+    assert.strictEqual(sent.length, 1, 'sent once, after the pull ' + JSON.stringify(sent));
+    assert.deepStrictEqual(sent[0].value.map((r) => r.id).sort(), ['a', 'b']);
+  });
+  await t('SYNC-SAFETY 2: restorePush (explicit user restore) is the one send that may pass the pull gate, by a named flag that never goes on the wire', async () => {
+    const S = casServer([]);
+    const L = load({ mode: 'on', syncHost: true, classify: true, fetchImpl: S.fetchImpl });
+    await L.DB.warmCache();
+    S.o.failManifest = true;
+    L.state.uid = 'u2'; // a new sign-in whose pull has not worked: the gate is shut
+    await L.DB.__t._handleAuthIdentityChange();
+    await L.DB.set('en_budget_a', { n: 1 });
+    assert.strictEqual(S.puts.length, 0, 'an ordinary write is held');
+    const r = await L.DB.restorePush('en_budget_r', { n: 9 }, null);
+    assert.strictEqual(r.ok, true, 'the explicit restore is sent');
+    assert.strictEqual(S.puts.length, 1);
+    assert.strictEqual(S.puts[0].key, 'en_budget_r');
+    assert.ok(!('allowBeforeFullPull' in S.puts[0]), 'the flag is not sent to the server');
+  });
+  async function staleScenario(serverVersion, answer) {
+    const asked = [];
+    const S = casServer([], { failManifest: false });
+    const L = load({
+      mode: 'on',
+      syncHost: true,
+      classify: true,
+      fetchImpl: S.fetchImpl,
+      modal: async (d) => (asked.push(d), { action: answer || 'load-theirs' }),
+    });
+    await L.DB.warmCache();
+    S.o.failManifest = true;
+    L.state.uid = 'u2';
+    await L.DB.__t._handleAuthIdentityChange();
+    await L.DB.set('en_budget_a', { n: 'stale-local' }); // made before any full pull: queued, based on no server version
+    assert.strictEqual(L.DB.getQueueDepth(), 1);
+    S.rows.push(kvRow('en_budget_a', { n: 'server' }, serverVersion));
+    S.o.failManifest = false;
+    await L.DB.__t._hydrate();
+    await tick(80);
+    return { L, S, asked };
+  }
+  await t('SYNC-SAFETY 3: a queued write older than the server copy never makes the pull skip the key: server wins, the write goes to the conflict path', async () => {
+    const { L, S, asked } = await staleScenario(5, 'load-theirs');
+    assert.strictEqual(asked.length, 1, 'the conflict path asked once');
+    assert.deepStrictEqual(clone(asked[0].local.value), { n: 'stale-local' });
+    assert.deepStrictEqual(clone(L.DB.get('en_budget_a')), { n: 'server' }, 'the server copy is the local value now');
+    assert.strictEqual(S.puts.length, 0, 'the stale write was never sent');
+    assert.strictEqual(L.DB.getQueueDepth(), 0, 'nothing left to send');
+    assert.ok(
+      L.DB.getConflictArchive().some((e) => e.key === 'en_budget_a'),
+      'the stale local value is in the conflict history',
+    );
+  });
+  await t('SYNC-SAFETY 3: a queued write whose base is still the server version keeps blocking the pull (no overwrite of an unsent edit)', async () => {
+    const S = casServer([kvRow('en_budget_a', { n: 1 }, 5)]);
+    const L = load({ mode: 'on', syncHost: true, classify: true, fetchImpl: S.fetchImpl, modal: async () => ({ action: 'load-theirs' }) });
+    await L.DB.warmCache(); // key stamped at version 5
+    S.o.failPut = true; // the send fails (network): the edit is queued with base version 5
+    await L.DB.set('en_budget_a', { n: 2 });
+    await tick(60);
+    assert.strictEqual(L.DB.getQueueDepth(), 1);
+    S.o.failPut = false;
+    await L.DB.__t._hydrate(); // server still at version 5
+    await tick(60);
+    assert.deepStrictEqual(clone(L.DB.get('en_budget_a')), { n: 2 }, 'the unsent edit is kept');
+    assert.strictEqual(L.DB.getQueueDepth(), 1);
+  });
+
+  // ---- SYNC SAFETY 2026-10-21 fix 5: a first read that keeps failing says so in the small banner
+  await t('SYNC-SAFETY 5: first read keeps failing: the offline banner event says what failed; the banner text says nothing is saved and that it retries', async () => {
+    const S = casServer([], { failManifest: true });
+    const L = load({ mode: 'on', syncHost: true, classify: true, fetchImpl: S.fetchImpl });
+    L.DB.warmCache();
+    await tick(200);
+    const ev = L.events.filter((e) => e.type === 'dbOfflineBanner' && e.detail && e.detail.waiting === true);
+    assert.ok(ev.length >= 1, 'a waiting banner event was sent');
+    assert.strictEqual(ev[0].detail.what, 'the list of saved items');
+    assert.ok(/manifest/.test(ev[0].detail.detail), 'technical detail is carried for the hover text');
+    const els = {};
+    const render = new Function(
+      'ensureStyles',
+      'ensureEl',
+      fnFrom('sync-ui.js', 'offlineBannerText') + '\n' + fnFrom('sync-ui.js', 'renderOfflineBanner') + '\nreturn renderOfflineBanner;',
+    )(
+      () => {},
+      (id) => (els[id] = els[id] || { style: {} }),
+    );
+    render(true, true, ev[0].detail.what, ev[0].detail.detail);
+    const el = els['ch-sync-offline-banner'];
+    assert.ok(/Could not load the list of saved items/.test(el.textContent), el.textContent);
+    assert.ok(/Nothing is saved until it loads/.test(el.textContent));
+    assert.ok(/Retrying automatically/.test(el.textContent));
+    assert.ok(/manifest/.test(el.title), 'detail on hover');
+    assert.strictEqual(el.style.display, 'block');
+    render(true, false);
+    assert.ok(/^Offline/.test(els['ch-sync-offline-banner'].textContent), 'the normal offline text is unchanged');
+  });
+
+  // ---- SYNC SAFETY 2026-10-21 fix 6: a dismissed conflict keeps a held local draft that is never re-sent by itself
+  async function dismissScenario() {
+    const asked = [];
+    const S = casServer([kvRow('en_budget_a', { n: 1 }, 5)]);
+    const L = load({
+      mode: 'on',
+      syncHost: true,
+      classify: true,
+      fetchImpl: S.fetchImpl,
+      modal: async (d) => (asked.push(d), { action: 'dismiss' }),
+    });
+    await L.DB.warmCache(); // stamped at version 5
+    S.rows[0] = kvRow('en_budget_a', { n: 'other' }, 6); // another user saved version 6
+    await L.DB.set('en_budget_a', { n: 'mine' }); // PUT at base 5 -> 409 -> modal -> dismiss
+    await tick(60);
+    return { L, S, asked };
+  }
+  await t('SYNC-SAFETY 6: dismiss keeps the local value as a held draft; repeated drains send nothing and the modal does not come back', async () => {
+    const { L, S, asked } = await dismissScenario();
+    assert.strictEqual(asked.length, 1);
+    const putsAfterDismiss = S.puts.length;
+    await L.DB.__t._drainQueueOnce();
+    await L.DB.__t._drainQueueOnce();
+    await tick(60);
+    assert.strictEqual(S.puts.length, putsAfterDismiss, 'the held draft is not re-sent');
+    assert.strictEqual(asked.length, 1, 'the modal is not shown again');
+    assert.deepStrictEqual(clone(L.DB.get('en_budget_a')), { n: 'mine' }, 'local value kept');
+    assert.strictEqual(L.DB.getQueueDepth(), 1, 'the draft still counts as an unsynced change');
+    assert.strictEqual(JSON.stringify(L.DB.getHeldDrafts().map((d) => d.key)), JSON.stringify(['en_budget_a']));
+  });
+  await t('SYNC-SAFETY 6: a pull does not replace a held draft; releasing it sends it again (a new conflict, asked once)', async () => {
+    const { L, S, asked } = await dismissScenario();
+    await L.DB.__t._hydrate();
+    await tick(60);
+    assert.deepStrictEqual(clone(L.DB.get('en_budget_a')), { n: 'mine' }, 'the pull keeps the draft');
+    assert.strictEqual(L.DB.releaseHeldDraft('en_budget_a'), true);
+    await L.DB.__t._drainQueueOnce();
+    await tick(60);
+    assert.strictEqual(asked.length, 2, 'released: sent again, the same conflict is asked once more');
+    assert.ok(S.puts.length >= 2);
+  });
+  await t('SYNC-SAFETY 6: the conflict modal text says a dismissed version stays a draft and is not sent; a Decide later button exists', () => {
+    const src = fs.readFileSync(path.join(__dirname, 'app', 'sync-ui.js'), 'utf8').split('\r').join('');
+    const note = /var DRAFT_NOTE =\s*([\s\S]*?);\n/.exec(src);
+    assert.ok(note, 'DRAFT_NOTE exists');
+    const DRAFT_NOTE = new Function('return ' + note[1])();
+    assert.ok(/stays on this computer as a draft/.test(DRAFT_NOTE) && /not sent to the server until you choose/.test(DRAFT_NOTE));
+    const plan = new Function(
+      'DECIDE_LATER',
+      fnFrom('sync-ui.js', '_buttonPlan') + '\nreturn _buttonPlan;',
+    )({ action: 'dismiss', label: 'Decide later' });
+    ['standard', 'tombstone'].forEach((c) =>
+      assert.ok(plan({ conflictClass: c }).some((b) => b.action === 'dismiss'), c + ' has Decide later'),
+    );
+    const body = new Function(
+      'DRAFT_NOTE',
+      'friendlyKeyName',
+      '_escHtml',
+      'fmtDate',
+      '_shortValue',
+      fnFrom('sync-ui.js', '_bodyHtml') + '\nreturn _bodyHtml;',
+    )(DRAFT_NOTE, (k) => k, (x) => String(x), () => 'now', () => '');
+    ['standard', 'tombstone'].forEach((c) => {
+      const html = body({ key: 'k', conflictClass: c, server: { version: 2 }, localBaseVersion: 1 });
+      assert.ok(/stays on this computer as a draft/.test(html), c + ' text carries the draft note');
+    });
   });
 
   // ---- SYNC SAFETY 2026-10-21 fix 3: a fresh signed-in origin shows the session user, not "Loading..."
