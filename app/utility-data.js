@@ -96,6 +96,35 @@ if (!window._billsResizeListenerAdded) {
 // customer blob (not the old, untouched per-project key) since it is fully replaced
 // by project.scope.meterExcludeIds + isBaselineExcluded(). Old per-project keys are
 // left inert, never deleted (rollback safety net) — see design section 3 "Cleanup".
+// The ONE rule for "which old per-project blob must be copied into this customer's blob"
+// (2026-10-21, sync safety). Returns the legacy en_utility_<projectId> blob of a project under
+// `customerId` when the customer blob is missing or holds no buildings; otherwise null. Used by
+// the heal (copy it over) and by saveUtilityData (never save an empty auto-created blob while
+// such a legacy copy exists). An existing customer blob with buildings is never replaced.
+function _legacyBlobToMigrate(customerId) {
+  const cur = sget('en_utility_' + customerId, null);
+  if (cur && Array.isArray(cur.buildings) && cur.buildings.length) return null;
+  const projects = sget('en_projects', []) || [];
+  for (const P of projects) {
+    if ((P.customerId || 'cust_' + P.id) !== customerId) continue;
+    const old = sget('en_utility_' + P.id, null);
+    if (old && Array.isArray(old.buildings) && old.buildings.length) return old;
+  }
+  return null;
+}
+// Copies the legacy blob into the customer key (deep copy, legacy key stays untouched).
+function _migrateLegacyBlobToCustomer(customerId) {
+  const old = _legacyBlobToMigrate(customerId);
+  if (!old) return false;
+  const healedBlob = JSON.parse(JSON.stringify(old));
+  (healedBlob.buildings || []).forEach((b) =>
+    (b.meters || []).forEach((m) => {
+      delete m.baselineInclude;
+    }),
+  );
+  sset('en_utility_' + customerId, healedBlob);
+  return true;
+}
 function _selfHealCustomersAndScope() {
   const projects = sget('en_projects', []) || [];
   const customers = sget('en_customers', []) || [];
@@ -105,7 +134,12 @@ function _selfHealCustomersAndScope() {
   let projectsChanged = false;
 
   projects.forEach(function (P) {
-    if (P.customerId && P.scope && Array.isArray(P.scope.buildingIds)) return; // already healed
+    if (P.customerId && P.scope && Array.isArray(P.scope.buildingIds)) {
+      // Already healed: the project record is done, but its customer blob may be missing on this
+      // origin (a fresh browser, or a server that never held it). Bring the legacy blob over.
+      _migrateLegacyBlobToCustomer(P.customerId);
+      return;
+    }
 
     const customerId = P.customerId || 'cust_' + P.id;
     if (!custById[customerId]) {
@@ -134,17 +168,8 @@ function _selfHealCustomersAndScope() {
 
     // Only write the customer blob if it doesn't already exist — never clobber real
     // shared data another project/user may have already added under this customer.
-    if (oldBlob && !existingCustBlob) {
-      // Deep-copy so deleting baselineInclude below never mutates the old, untouched
-      // en_utility_<projId> key that stays inert as a rollback snapshot.
-      const healedBlob = JSON.parse(JSON.stringify(oldBlob));
-      (healedBlob.buildings || []).forEach((b) =>
-        (b.meters || []).forEach((m) => {
-          delete m.baselineInclude;
-        }),
-      );
-      sset(custBlobKey, healedBlob);
-    }
+    // (One rule: _legacyBlobToMigrate; the old blob stays untouched as a rollback snapshot.)
+    if (oldBlob && !existingCustBlob) _migrateLegacyBlobToCustomer(customerId);
 
     P.customerId = customerId;
     P.scope = P.scope || {};
@@ -712,6 +737,16 @@ function saveUtilityData(pid) {
         });
       });
     });
+    // An empty blob that getUDProj auto-created (never read from disk, no snapshot) must not be
+    // saved while the project's old per-project blob still holds the data: it would hide that data.
+    if (
+      _lastSavedSnapshot[pid] === undefined &&
+      !(utilityData[pid].buildings || []).length &&
+      _legacyBlobToMigrate(pid)
+    ) {
+      console.warn('[utility save] Skipped an empty auto-created blob for ' + pid + ': a legacy copy exists');
+      return;
+    }
     const _serialized = JSON.stringify(utilityData[pid]);
     // No snapshot entry (new project) OR content changed — write it. Otherwise skip.
     if (_lastSavedSnapshot[pid] === _serialized) return;

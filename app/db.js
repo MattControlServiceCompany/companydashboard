@@ -570,6 +570,28 @@ const DB = (() => {
     _queueIdCounter += 1;
     return Date.now() + '-' + _queueIdCounter + '-' + Math.random().toString(36).slice(2, 8);
   }
+  // The ONE rule for "may anything be sent to the server now" (2026-10-21, sync safety).
+  // In backend mode 'on' nothing is sent until a full pull (_hydrateInner) finished for the
+  // identity that is signed in now. Before that the cache can be empty or partial, and any
+  // value derived from it (a heal, a backfill, an auto-created blob) must not reach the server.
+  // Writes made before then stay in the durable queue (_enqueueWrite) and go out after the pull.
+  let _pulledUid = null; // identity whose full pull completed in this page
+  let _pullRefused = false; // the last pull was refused with 401/403: waiting does not help (M6 banner shows it)
+  function _hasFullPull() {
+    if (_backendMode() !== 'on') return true; // off: nothing is ever sent, the gate does not apply
+    const me = _myUserId();
+    return !!me && _pulledUid === me;
+  }
+  // A browser that finished a pull before holds version stamps, and one that worked in the old
+  // local-only mode holds replicated data: either cache can open offline. A fresh origin has
+  // neither (only ch_* bookkeeping keys): the app must not start on it.
+  function _cacheHasContent() {
+    if (Object.keys(_replicaVersions).length > 0) return true;
+    return Object.keys(_cache).some((k) => _shouldReplicate(k) && _cache[k] !== undefined && _cache[k] !== null);
+  }
+  // True when a read of the pull failed (manifest, a batch of keys, a drift fetch): the cache may be
+  // missing server rows. Set at the start of every pull run, cleared when every read worked.
+  let _pullReadsFailed = false;
   function _enqueueWrite(key, payload) {
     // Coalesce to the latest pending write per key. DESIGN DECISION (flagged,
     // not silently guessed — see implementer report): the app's write pattern
@@ -1694,6 +1716,11 @@ const DB = (() => {
     // (via _wireKey returning null) as defense-in-depth for the queue-drain/
     // hydration-drift-repush/conflict-retry paths that call it directly.
     if (_isPerUserKey(key) && !_myUserId()) return;
+    // No full pull yet for this sign-in: keep the edit in the queue, send nothing.
+    if (!_hasFullPull()) {
+      _enqueueWrite(key, payload);
+      return;
+    }
     // A value the server already holds is not sent (opening a pane, a render
     // that re-saves, a migration that changes nothing).
     if (!payload.deleted && !(await _valueChanged(key, payload.value))) return;
@@ -1738,6 +1765,7 @@ const DB = (() => {
     return Array.from(_queueFailures.values()).filter((f) => _syncQueue.some((e) => e.key === f.key));
   }
   async function _drainQueueLocked() {
+    if (!_hasFullPull()) return; // no full pull yet: hold every entry
     // Send only the signed-in user's own entries; others stay queued untouched.
     const me = _myUserId();
     _claimSignedOutEntries(me);
@@ -1809,6 +1837,7 @@ const DB = (() => {
   let _drainDelay = DRAIN_BACKOFF_MIN_MS;
   function _queueHasSendable() {
     if (_backendMode() === 'off') return false;
+    if (!_hasFullPull()) return false; // the pull's success re-arms the drain (_hydrate)
     const me = _myUserId();
     return _syncQueue.some((e) => {
       if (!(e.owner && e.owner.id && e.owner.id === me)) return false;
@@ -1967,6 +1996,7 @@ const DB = (() => {
         } while (_hydrateRerun);
       } finally {
         _hydrateInFlight = null;
+        if (_hasFullPull() && _syncQueue.length) _scheduleDrain(); // held entries may go now
         if (_archivedLocalThisRun > 0) {
           _showLater(
             _archivedLocalThisRun +
@@ -2154,6 +2184,9 @@ const DB = (() => {
     if (mode !== 'on') return; // off: no hydration
     const epoch = _identityEpoch;
     const stale = () => epoch !== _identityEpoch; // identity changed: discard this run
+    const pullUid = _myUserId();
+    _pullReadsFailed = true;
+    let pullComplete = true; // false when any read failed: the cache is then not a full copy
     await _authReady();
     if (stale() || _backendMode() !== 'on') return;
 
@@ -2162,10 +2195,12 @@ const DB = (() => {
       manifest = await _fetchManifestWithTimeout(MANIFEST_TIMEOUT_MS);
     } catch (e) {
       console.warn('[DB] Hydration: manifest fetch failed/timed out, proceeding on local mirror:', e);
+      _pullRefused = _isAuthRefusal(e && e.httpStatus);
       _reportServerFailure(e, 'hydration-manifest-failed');
       return;
     }
     if (stale()) return;
+    _pullReadsFailed = false; // manifest read worked; the batch reads below set it again on failure
 
     const routineFetchKeys = []; // WIRE keys (manifest form) to batch-GET
     const routineFetchLocalKey = new Map(); // wireKey -> localKey, for applying results
@@ -2185,6 +2220,7 @@ const DB = (() => {
       if (serverNewer || _tombstonesBlocked()) tombOk = await _refreshTombstones();
     }
     if (stale()) return;
+    if (!tombOk) pullComplete = false;
     if (tombOk) await _seedMissingBases();
     if (stale()) return;
 
@@ -2240,6 +2276,10 @@ const DB = (() => {
     if (routineFetchKeys.length) {
       const pulled = await _batchGetChunked(routineFetchKeys); // wire keys — the real backend primary keys
       const rows = pulled.rows;
+      if (pulled.failedKeys.length) {
+        pullComplete = false;
+        _pullReadsFailed = true;
+      }
       if (pulled.failedKeys.length && !stale() && typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('dbHydrateFailed', { detail: { keys: pulled.failedKeys } }));
       }
@@ -2278,7 +2318,11 @@ const DB = (() => {
         const rows = fetched[j];
         // No version map entry and a local value exists: server wins (or a pure
         // union merge); the local value is archived first. Never a wholesale push.
-        if (!rows || !rows[0]) continue;
+        if (!rows || !rows[0]) {
+          pullComplete = false;
+          _pullReadsFailed = true;
+          continue;
+        }
         if (_hasQueuedWrite(localKey)) continue; // race guard
         const before = _cache[localKey];
         // A plain (non-collection) key with a real local value and no stamp: the
@@ -2314,6 +2358,11 @@ const DB = (() => {
     // manifest, so it is never resurrected. Runs once per key: after the PUT
     // the key has a version entry.
     if (stale()) return;
+    // The full pull for this identity is done only when every read above worked.
+    if (pullComplete && pullUid && _myUserId() === pullUid) {
+      _pulledUid = pullUid;
+      _pullRefused = false;
+    }
     const onServer = new Set(manifest.map((m) => m.key));
     const uploadKeys = [];
     for (const localKey of Object.keys(_cache)) {
@@ -2327,6 +2376,8 @@ const DB = (() => {
       if (wire === null || onServer.has(wire)) continue;
       uploadKeys.push(localKey);
     }
+
+    if (!pullComplete) uploadKeys.length = 0; // a partial cache is never uploaded
 
     if (typeof window !== 'undefined') {
       window.dispatchEvent(
@@ -2686,7 +2737,11 @@ const DB = (() => {
     if (_backgroundTasksStarted) return;
     _backgroundTasksStarted = true;
     if (typeof window === 'undefined') return;
-    window.addEventListener('online', _drainQueueOnce);
+    window.addEventListener('online', () => {
+      // Back online with no full pull yet: pull first (its success releases the held queue).
+      if (_backendMode() === 'on' && !_hasFullPull()) _hydrate().catch((e) => console.warn('[DB] Pull on reconnect failed:', e));
+      _drainQueueOnce();
+    });
     if (typeof document !== 'undefined' && document.addEventListener) {
       document.addEventListener('visibilitychange', () => {
         if (!document.hidden) _remoteCheckIfDue();
@@ -2810,6 +2865,47 @@ const DB = (() => {
     _startBackgroundSync();
   }
 
+  // The app must not start on a cache that never had a full pull (a fresh origin signed in
+  // while the server is slow or down): init would read it as empty and heal or auto-create data.
+  // Retries the pull with back-off; the offline banner (_reportServerFailure) shows the state.
+  // A browser that finished a pull before opens offline after 3 tries and keeps retrying in the
+  // background. Nothing is sent to the server until a pull succeeds (_hasFullPull).
+  let _pullRetryTimer = null;
+  function _scheduleBackgroundPull() {
+    if (_pullRetryTimer || typeof window === 'undefined') return;
+    _pullRetryTimer = setTimeout(async () => {
+      _pullRetryTimer = null;
+      try {
+        await _hydrate();
+      } catch (e) {
+        console.warn('[DB] Background pull retry failed:', e);
+      }
+      if (_backendMode() === 'on' && !_hasFullPull()) _scheduleBackgroundPull();
+    }, 30000);
+    if (_pullRetryTimer && _pullRetryTimer.unref) _pullRetryTimer.unref();
+  }
+  async function _holdForFirstPull() {
+    let delay = 1000;
+    let tries = 0;
+    // Only a failed READ holds the app (a missing deletion-record read stays fail-closed inside the pull).
+    while (_backendMode() === 'on' && !_hasFullPull() && _pullReadsFailed) {
+      if (_pullRefused) return; // refused sign-in: the banner tells the user, retrying cannot fix it
+      if (_cacheHasContent() && tries >= 3) {
+        _scheduleBackgroundPull();
+        return;
+      }
+      console.warn('[DB] No full pull yet; retrying in', delay, 'ms');
+      await new Promise((r) => setTimeout(r, delay));
+      delay = Math.min(delay * 2, 15000);
+      tries++;
+      try {
+        await _hydrate();
+      } catch (e) {
+        console.warn('[DB] Pull retry threw:', e);
+      }
+    }
+  }
+
   async function warmCache() {
     try {
       await migrateFromLocalStorage();
@@ -2857,6 +2953,7 @@ const DB = (() => {
       } catch (e) {
         console.warn('[DB] Hydration step threw unexpectedly (proceeding on local mirror):', e);
       }
+      if (_pullReadsFailed) await _holdForFirstPull();
 
       _finishWarmCache();
     } catch (e) {
@@ -2879,6 +2976,7 @@ const DB = (() => {
       } catch (e2) {
         console.warn('[DB] Hydration step threw unexpectedly (fallback mode):', e2);
       }
+      if (_pullReadsFailed) await _holdForFirstPull();
       _ready = true;
       // Surface a VISIBLE warning — silent fallback looks identical to "no data" to the user.
       // Defer by one tick so showToast is defined (all scripts have loaded) before we call it.

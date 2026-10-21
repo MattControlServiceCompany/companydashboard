@@ -904,6 +904,13 @@ function enterApp() {
         if (s && !(window.CH_AUTH && window.CH_AUTH.needsSignIn())) {
           currentUser = JSON.parse(s);
           enterApp();
+        } else if (!s && window.CH_AUTH && window.CH_AUTH.isSyncHost() && window.CH_AUTH.sessionUser) {
+          // No saved name (a fresh origin that holds only the session): show the signed-in user.
+          const u = window.CH_AUTH.sessionUser();
+          if (u) {
+            currentUser = u;
+            enterApp();
+          }
         }
       } catch (e) {}
     });

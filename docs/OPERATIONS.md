@@ -134,6 +134,24 @@ credits a call, from that figure). It is removed.
 
 ## 6. Sync write rules (app/db.js)
 
+- No write before the first full pull (2026-10-21, branch 2026-10-21-sync-safety-client). In backend mode 'on', nothing
+  goes to the server until `_hydrateInner` finished every read for the signed-in user (`_pulledUid`, rule
+  `_hasFullPull`, app/db.js). Before that, `_writeOne` queues the edit (`_enqueueWrite`), `_drainQueueLocked` sends
+  nothing and `_queueHasSendable` arms no timer; first-connect upload is skipped too. A failed manifest, a failed batch
+  read, a failed drift read, a missing deletion-record read or an identity change during the pull leaves the gate shut.
+  A successful pull releases the queue (`_hydrate` end). `warmCache` waits for a pull when a READ failed
+  (`_pullReadsFailed`): `_holdForFirstPull` retries after 1, 2, 4, 8 s, then every 15 s, so the page does not start on an
+  empty cache. A browser that already holds data (version stamps or replicated keys, `_cacheHasContent`) starts after 3
+  tries and retries in the background every 30 s (`_scheduleBackgroundPull`) and on `online`. A 401/403 answer
+  (`_pullRefused`) ends the wait: the existing "server refused" banner shows. No new timer when sync is off.
+  Check: node test-sync-golive-blockers.js (SYNC-SAFETY 1a-1d).
+- Legacy utility blob (2026-10-21, app/utility-data.js). `_legacyBlobToMigrate(customerId)` is the ONE rule for "copy
+  the old `en_utility_<projectId>` blob into `en_utility_<customerId>`": the customer blob is missing or holds no
+  buildings, and a project of that customer has a legacy blob with buildings. `_selfHealCustomersAndScope` applies it to
+  healed projects too (before, it skipped them). `saveUtilityData` never writes an empty auto-created blob (no load
+  snapshot) while that rule finds a legacy copy. Check: SYNC-SAFETY 2 tests.
+- Signed-in name (2026-10-21, app/core.js, app/ch-auth.js). On the Netlify site, a page with a live session and no saved
+  `ch_user` shows the session email (`CH_AUTH.sessionUser`); the GitHub site is unchanged. Check: SYNC-SAFETY 3 tests.
 - A `DB.set` sends a PUT only when the canonical hash of the value differs from the hash stamped at the last sync
   (`_valueChanged`, one rule). Opening a pane or loading a page with no edit sends nothing.
 - One PUT in flight per key (`_replicateWrite`). A write that arrives while one is in flight waits and is sent after

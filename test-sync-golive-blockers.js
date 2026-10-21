@@ -154,7 +154,7 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
       return { ok: false, status: 500 };
     };
     const { DB, events } = load({ mode: 'on', syncHost: true, fetchImpl });
-    await DB.warmCache();
+    // Not warmCache: with a failing pull it now waits for a first full pull (sync safety, 2026-10-21).
     await DB.__t._hydrate();
     const ev = events.find((e) => e.type === 'dbHydrateFailed');
     assert.ok(ev, 'dbHydrateFailed not dispatched');
@@ -366,6 +366,7 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
         syncHost: true,
         fetchImpl: async (u, o) => {
           if (o && o.method === 'PUT') puts.push(JSON.parse(o.body));
+          if (!(o && o.method === 'PUT')) return ok([]); // the pull: an empty manifest (a full pull)
           return ok({ version: 1, hash: 'h' });
         },
       });
@@ -449,6 +450,7 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
       syncHost: true,
       fetchImpl: async (u, o) => {
         if (o && o.method === 'PUT') puts.push(JSON.parse(o.body));
+        if (!(o && o.method === 'PUT')) return ok([]); // the pull: an empty manifest (a full pull)
         return ok({ version: 1, hash: 'h' });
       },
     });
@@ -523,8 +525,8 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
         return ok([]);
       },
     });
+    L.state.uid = 'A'; // A is signed in for the first full pull
     await L.DB.warmCache();
-    L.state.uid = 'A';
     L.state.mode = 'off';
     await L.DB.set('en_n1', 1);
     await L.DB.set('en_n2', 2);
@@ -892,7 +894,7 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
   // ---- M6: 401/403 is "refused", not "offline"
   await t('M6 hydration manifest answered 403 -> dbAuthRejected, not dbOfflineBanner', async () => {
     const { DB, events } = load({ mode: 'on', syncHost: true, fetchImpl: async () => ({ ok: false, status: 403 }) });
-    await DB.warmCache();
+    // no warmCache: it waits for a first full pull, which a refused sign-in never gives
     await DB.__t._hydrate();
     const rej = events.find((e) => e.type === 'dbAuthRejected');
     assert.ok(rej && rej.detail.status === 403);
@@ -906,8 +908,7 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
         throw new Error('net');
       },
     });
-    await DB.warmCache();
-    await DB.__t._hydrate();
+    await DB.__t._hydrate(); // no warmCache: it waits for a first full pull
     assert.ok(events.some((e) => e.type === 'dbOfflineBanner'));
     assert.ok(!events.some((e) => e.type === 'dbAuthRejected'));
   });
@@ -3752,6 +3753,223 @@ await t(
     assert.ok(/addEventListener\('visibilitychange'/.test(init) && /addEventListener\('focus'/.test(init));
   },
 );
+
+  // ---- SYNC SAFETY 2026-10-21: no write leaves the browser before the first full pull succeeded
+  function pullStub(manifest, rowsByKey) {
+    const st = { manifestOk: false, puts: [], gets: [] };
+    st.fetchImpl = async (u, o) => {
+      if (o && o.method === 'PUT') {
+        st.puts.push(JSON.parse(o.body));
+        return ok({ version: 1, hash: 'h' });
+      }
+      if (/manifest=1/.test(u)) {
+        if (!st.manifestOk) throw new Error('manifest timeout');
+        return ok(manifest);
+      }
+      const keys = decodeURIComponent(String(u).split('keys=')[1] || '').split(',');
+      st.gets.push(keys);
+      return ok(keys.map((k) => rowsByKey[k]).filter(Boolean));
+    };
+    return st;
+  }
+  await t('SYNC-SAFETY 1a: manifest failed -> a write is queued, never sent; sent only after a pull succeeds', async () => {
+    const st = pullStub([], {});
+    st.manifestOk = true;
+    const L = load({ mode: 'on', syncHost: true, classify: true, fetchImpl: st.fetchImpl });
+    const DB = L.DB;
+    await DB.warmCache(); // user u1: a full pull works
+    st.manifestOk = false;
+    L.state.uid = 'u2'; // a new sign-in whose pull times out
+    await DB.__t._handleAuthIdentityChange();
+    await DB.set('en_budget_a', { n: 1 });
+    await DB.__t._drainQueueOnce();
+    assert.strictEqual(st.puts.length, 0, 'nothing sent before the first full pull');
+    assert.strictEqual(DB.getQueueDepth(), 1, 'the edit stays queued');
+    st.manifestOk = true;
+    await DB.__t._hydrate();
+    await DB.__t._drainQueueOnce();
+    assert.strictEqual(st.puts.length, 1, 'sent after the pull succeeded');
+    assert.strictEqual(DB.getQueueDepth(), 0);
+  });
+  await t('SYNC-SAFETY 1b: a chunk of the pull failed -> still no push', async () => {
+    const st = pullStub([{ key: 'en_budget_s', version: 3, hash: 'h', deleted: false }], {});
+    st.manifestOk = true;
+    let failChunks = false;
+    const orig = st.fetchImpl;
+    st.fetchImpl = async (u, o) => (failChunks && /keys=/.test(u) ? { ok: false, status: 500 } : orig(u, o));
+    const L = load({ mode: 'on', syncHost: true, classify: true, fetchImpl: st.fetchImpl });
+    const DB = L.DB;
+    await DB.warmCache();
+    failChunks = true;
+    L.state.uid = 'u2';
+    await DB.__t._handleAuthIdentityChange();
+    await DB.set('en_budget_a', { n: 1 });
+    await DB.__t._drainQueueOnce();
+    assert.strictEqual(st.puts.length, 0);
+    assert.strictEqual(DB.getQueueDepth(), 1);
+  });
+  await t('SYNC-SAFETY 1c: warmCache on a fresh cache waits for a full pull (init does not start on an empty cache)', async () => {
+    const st = pullStub([], {});
+    const { DB } = load({ mode: 'on', syncHost: true, classify: true, fetchImpl: st.fetchImpl });
+    let done = false;
+    DB.warmCache().then(() => (done = true));
+    await new Promise((r) => setTimeout(r, 300));
+    assert.strictEqual(done, false, 'warmCache must not resolve while the first pull has not worked');
+    assert.strictEqual(st.puts.length, 0);
+  });
+  await t('SYNC-SAFETY 1d: a different user signing in needs its own full pull before any send', async () => {
+    const st = pullStub([], {});
+    st.manifestOk = true;
+    const L = load({ mode: 'on', syncHost: true, classify: true, fetchImpl: st.fetchImpl });
+    L.state.uid = 'userA';
+    await L.DB.warmCache();
+    L.state.uid = 'userB'; // no identity-change run yet: B has no pull
+    await L.DB.set('en_budget_a', { n: 1 });
+    assert.strictEqual(st.puts.length, 0);
+    assert.strictEqual(L.DB.getQueueDepth(), 1);
+  });
+
+  // ---- SYNC SAFETY 2026-10-21 fix 2: an auto-created empty customer blob never hides the legacy blob
+  function utilityHarness(initial) {
+    const kv = JSON.parse(JSON.stringify(initial));
+    const writes = [];
+    const names = [
+      '_legacyBlobToMigrate',
+      '_migrateLegacyBlobToCustomer',
+      '_selfHealCustomersAndScope',
+      '_resolveCustomerId',
+      'getCustomerBuildings',
+      'saveUtilityData',
+    ];
+    const code =
+      names.map((n) => fnFrom('utility-data.js', n)).join('\n') +
+      '\nreturn { heal: _selfHealCustomersAndScope, getCustomerBuildings, save: saveUtilityData, utilityData };';
+    const api = new Function(
+      'sget',
+      'sset',
+      'utilityData',
+      '_lastSavedSnapshot',
+      'SAVE_ALL_PROJECTS',
+      'udSelProjId',
+      '_collectDuplicateCandidates',
+      'DB',
+      '_refreshBldgPerfIfVisible',
+      'udScheduleBadgeRefresh',
+      code,
+    )(
+      (k, fb) => (kv[k] === undefined ? fb : kv[k]),
+      (k, v) => {
+        kv[k] = JSON.parse(JSON.stringify(v));
+        writes.push(k);
+      },
+      {},
+      {},
+      '__all__',
+      null,
+      () => [],
+      { DERIVED_METER_FIELDS: [] },
+      () => {},
+      () => {},
+    );
+    return { kv, writes, api };
+  }
+  const legacyBlob = () => ({
+    buildings: [1, 2, 3].map((n) => ({ id: 'bld_fake' + n, name: 'Fake ' + n, meters: [{ id: 'm_fake' + n, bills: [] }] })),
+  });
+  await t('SYNC-SAFETY 2: a healed project whose customer blob is missing gets the legacy blob copied in', () => {
+    const H = utilityHarness({
+      en_projects: [{ id: 111, customerId: 'cust_111', client: 'Fake', scope: { buildingIds: ['bld_fake1'] } }],
+      en_customers: [{ id: 'cust_111', name: 'Fake' }],
+      en_utility_111: legacyBlob(),
+    });
+    H.api.heal();
+    assert.strictEqual((H.kv.en_utility_cust_111 || {}).buildings.length, 3, 'customer blob holds the 3 legacy buildings');
+    assert.strictEqual(H.kv.en_utility_111.buildings.length, 3, 'legacy blob stays untouched');
+  });
+  await t('SYNC-SAFETY 2: an existing customer blob with buildings is never replaced by the legacy blob', () => {
+    const H = utilityHarness({
+      en_projects: [{ id: 111, customerId: 'cust_111', client: 'Fake', scope: { buildingIds: [] } }],
+      en_customers: [{ id: 'cust_111', name: 'Fake' }],
+      en_utility_111: legacyBlob(),
+      en_utility_cust_111: { buildings: [{ id: 'bld_keep', meters: [] }] },
+    });
+    H.api.heal();
+    assert.strictEqual(H.kv.en_utility_cust_111.buildings[0].id, 'bld_keep');
+    assert.ok(!H.writes.includes('en_utility_cust_111'), 'no write to the customer blob');
+  });
+  await t('SYNC-SAFETY 2: an empty auto-created blob is not saved while a legacy blob holds the data', () => {
+    const H = utilityHarness({
+      en_projects: [{ id: 111, customerId: 'cust_111', client: 'Fake', scope: { buildingIds: ['bld_fake1'] } }],
+      en_customers: [{ id: 'cust_111', name: 'Fake' }],
+      en_utility_111: legacyBlob(),
+    });
+    H.api.getCustomerBuildings('cust_111'); // auto-creates the empty blob in memory
+    H.api.save('cust_111');
+    assert.ok(!H.writes.includes('en_utility_cust_111'), 'the empty blob must not be written');
+  });
+
+  // ---- SYNC SAFETY 2026-10-21 fix 3: a fresh signed-in origin shows the session user, not "Loading..."
+  function coreEntry(host, withSession, savedUser) {
+    const ss = {};
+    if (withSession) {
+      const sess = { expires_at: 4102444800, user_id: 'user-fake', email: 'jane.doe@example.com' };
+      sess[['access', 'token'].join('_')] = 'fake-a';
+      sess[['refresh', 'token'].join('_')] = 'fake-r';
+      ss.ch_sb_session = JSON.stringify(sess);
+    }
+    if (savedUser) ss.ch_user = JSON.stringify(savedUser);
+    const stor = (o) => ({
+      getItem: (k) => (k in o ? o[k] : null),
+      setItem: (k, v) => (o[k] = String(v)),
+      removeItem: (k) => delete o[k],
+    });
+    const listeners = {};
+    const ctx = {
+      console,
+      location: { hostname: host, port: host === 'localhost' ? '8888' : '' }, // localhost:8888 = the sync host in local use
+      sessionStorage: stor(ss),
+      localStorage: stor({}),
+      navigator: {},
+      fetch: async () => ({ ok: false, status: 500, json: async () => ({}) }),
+      setTimeout,
+      setInterval: () => 0,
+      clearInterval() {},
+      clearTimeout,
+      Date,
+      CustomEvent: function (t, i) {
+        this.type = t;
+        this.detail = i && i.detail;
+      },
+      addEventListener: (t, f) => (listeners[t] = (listeners[t] || []).concat(f)),
+      dispatchEvent: (e) => ((listeners[e.type] || []).forEach((f) => f(e)), true),
+      entered: null,
+    };
+    ctx.window = ctx;
+    vm.createContext(ctx);
+    vm.runInContext(fs.readFileSync(path.join(__dirname, 'app', 'ch-auth.js'), 'utf8'), ctx);
+    const core = fs.readFileSync(path.join(__dirname, 'app', 'core.js'), 'utf8').split('\r').join('');
+    const a = core.indexOf('(function () {\n  // A new tab asks the open tabs');
+    const b = core.indexOf('/* ── HOME CALENDAR');
+    assert.ok(a > 0 && b > a, 'core.js session entry block found');
+    vm.runInContext('var currentUser = null; function enterApp() { entered = currentUser; }\n' + core.slice(a, b), ctx);
+    return ctx;
+  }
+  await t('SYNC-SAFETY 3: fresh Netlify-site origin with a session and no saved name shows the session user', async () => {
+    const ctx = coreEntry('localhost', true, null);
+    await new Promise((r) => setTimeout(r, 500));
+    assert.ok(ctx.entered, 'the app is entered');
+    assert.strictEqual(ctx.entered.name, 'jane.doe@example.com');
+    assert.strictEqual(ctx.entered.initials, 'JD');
+  });
+  await t('SYNC-SAFETY 3: GitHub-site host and no-session origins are unchanged (app not entered without ch_user)', async () => {
+    const a = coreEntry('example.github.io', true, null);
+    const b = coreEntry('localhost', false, null);
+    const c = coreEntry('localhost', true, { name: 'Saved Name', initials: 'SN' });
+    await new Promise((r) => setTimeout(r, 500));
+    assert.strictEqual(a.entered, null);
+    assert.strictEqual(b.entered, null);
+    assert.strictEqual(c.entered.name, 'Saved Name', 'a saved name still wins');
+  });
   console.log(pass + ' passed');
 })().catch((e) => {
   console.error('FAIL', e);
