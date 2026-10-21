@@ -759,10 +759,9 @@ This includes a new or changed function, schedule, env var name, timer, host, or
 - Check: `node test-kv-sync-history.js` (in-memory fake, no network). Runs in the regression gate. Restore: read the row in `kv_history` in the Supabase dashboard (newest `replaced_at` first).
 - Needs: env vars SUPABASE_URL, SUPABASE_SECRET_KEY (unchanged).
 
-<<<<<<< HEAD
 ## Project card headline quarter (2026-10-21, branch 2026-10-21-q-headline)
 `nextQuarterToPresent(projId)` (computations/savings.js) picks the quarter the project card shows: the first quarter after the newest presented record (`getPresentedRecords`), else the latest billed quarter, never after the newest bill month. Runs on each project dashboard render (app/core.js `initDashboardTab`). Needs no env var. Check: with Q1 and Q2 presented and bills to September, the card reads "Q3 2026 Total Savings"; run `node tools/test-next-quarter-to-present.js`.
-=======
+
 ## Left sidebar mode (2026-10-21)
 
 - One shared control, `sidebar-mode.js` (repo root, `window.SidebarMode`), loaded in the `<head>` of energy-department.html and ems-leads.html (index.html is the sign-in page and has no sidebar). CSS is in `sidebar-rail.css`. It runs in the browser only: no timer, no schedule, no server call of its own, no env var.
@@ -770,4 +769,3 @@ This includes a new or changed function, schedule, env var name, timer, host, or
 - State: html attribute `data-sb-mode`, set before the first paint (the script is a blocking script in `<head>`). Saved in `ch_sidebar_mode` (RAW_PER_USER_LOCAL_KEYS, app/db.js, so a user switch clears it): a localStorage copy for the first paint and a `DB.set` copy (per-user sync key, `ch_` rule in app/sync-classification.js) so it follows the user to another browser. When the DB is ready (`dbReady`), the DB copy wins. No saved choice: expanded at 900 px and wider, collapsed below 900 px (this replaces the old "Menu" button drawer, removed from energy-department.html and `buildMobileSidebarToggle` in app/site-functions.js; ems-leads no longer hides the sidebar under 900 px). The old unused key `ch_sidebar_collapsed` is gone.
 - A sidebar item opts in with `data-sb-icon="<name>"` (names: `ICONS` in sidebar-mode.js, inline SVG, no emoji). The script puts the icon in `.s-ico` and wraps the label in `.s-txt`. A new sidebar item needs `data-sb-icon` or it has no icon in the slim rail.
 - Check: open energy-department.html, click each of the three selector buttons, reload, open ems-leads.html: the mode stays. In DevTools: `localStorage.getItem('ch_sidebar_mode')` and `document.documentElement.dataset.sbMode`. Test: `node tools/test-gap-marker.js` (sidebar button label markup).
->>>>>>> 2026-10-21-sidebar-modes
