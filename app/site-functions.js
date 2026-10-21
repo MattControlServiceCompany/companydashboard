@@ -2536,6 +2536,14 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.21.155', date: '2026-10-21', title: 'Project card quarter, sidebar modes, PDF / OCR values grid',
+    items: [
+      { type: 'feature', text: 'Projects: the project card now shows the next quarter to present, with its year (for example Q3 2026 Total Savings), and a Bills through line when the newest bills do not cover the whole quarter.' },
+      { type: 'feature', text: 'Sidebar: choose full, icons only, or hidden with the control at the top left of the tab row. The choice is kept when you reload and on both pages that have a sidebar.' },
+      { type: 'change', text: 'PDF / OCR: the Extracted Values are back in a boxed two-column grid with a Data analysis bar that links to each value that needs a check.' },
+      { type: 'change', text: 'Utility Data: bill review results are now shared between devices.' }
+    ]
+  },
   { v: 'v2026.10.21.154', date: '2026-10-21', title: 'Utility Data: safer saving and sync',
     items: [
       { type: 'fix', text: 'Utility Data: saved changes are no longer lost when the page loads before the server answers. Nothing is saved until the first full load finishes, and a load problem shows a banner.' },
