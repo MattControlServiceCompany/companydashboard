@@ -292,8 +292,12 @@ credits a call, from that figure). It is removed.
   (`DB.describeFailure`, the one text function). A queued write that keeps failing is listed by `DB.getQueueFailures()` with
   its HTTP status (400, 413 and 422 are marked permanent); the Sync status panel shows them under the queue count.
   How to check: node test-sync-golive-blockers.js, "migration U1/U2" and "migration D1".
-- `en_utility_facKW_backfilled_v1` (obsolete one-shot flag) is local-only (app/sync-classification.js
-  `LOCAL_ONLY_OVERRIDES`), so a first connect never uploads it.
+- One-time utility fix code (dates, sewer usage, therms/MMBtu, facKW, rates) is removed from app/utility-data.js
+  (2026-10-21); the shared data already holds the fixes, so a new browser never re-runs them. Their old marker keys are no
+  longer listed in app/sync-classification.js. The one on-load pass left there is the facKW fill, which has no marker.
+- Settings (`ch_settings`, `ch_projTabOrder*`, `ch_defaultProjTab`, `ch_tbl_*`) are per-user keys (the `ch_` rule in
+  `PER_USER`, app/sync-classification.js). `bcr_result_*` (saved bill review results) is shared; `bcr_pdftext_*` (PDF text
+  cache) is local-only. How to check: node test-sync-classification-settings.js.
 
 ## 6c. Go-live cutover (one time): make the Netlify site hold the GitHub-site data
 

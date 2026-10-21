@@ -897,7 +897,7 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
       seen++;
       assert.ok(/^\s*if \(.*> 0.*\) \{\s*$/.test(lines[i - 1]), 'unguarded load-time write at line ' + (i + 1));
     });
-    assert.ok(seen >= 5, 'expected the 5 migration writes (3 retired with the stored bill fields, 2026-10-06), saw ' + seen);
+    assert.ok(seen >= 3, 'expected the 3 repair writes (commodity heal, read-chain, facKW; one-time migrations removed 2026-10-21), saw ' + seen);
     // The dirty check (unchanged project is never written) must stay in saveUtilityData.
     assert.ok(/if \(_lastSavedSnapshot\[pid\] === _serialized\) return;/.test(src));
   });
