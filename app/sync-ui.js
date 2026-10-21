@@ -139,8 +139,16 @@
       // covers page content. At 900px and wider the row starts right of the 220px sidebar.
       '#ch-archive-link,#ch-sync-pill{bottom:6px;font-size:11px;padding:4px 10px;}' +
       '#ch-archive-link{left:236px;right:auto;}' +
+      '#ch-held-link{position:fixed;bottom:6px;left:400px;z-index:9998;background:var(--s3,#333);' +
+      'color:var(--text,#fff);border:1px solid var(--border,#555);border-radius:999px;padding:4px 10px;' +
+      'font-size:11px;font-family:inherit;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.25);display:none;}' +
+      '#ch-held-link:hover{background:var(--s4,#3a4258);}' +
+      '.ch-held-details{border:1px solid var(--border,#333);border-radius:6px;background:var(--s3,#1e2438);padding:6px 10px;}' +
+      '.ch-held-details summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--text,#fff);}' +
+      '.ch-held-row{margin-top:8px;padding-top:8px;border-top:1px solid var(--border,#333);font-size:12px;color:var(--text,#fff);}' +
+      '.ch-held-btns{display:flex;gap:8px;margin-top:6px;}' +
       '.content{margin-bottom:38px;}' +
-      '@media (max-width:899px){#ch-archive-link{left:16px;}}';
+      '@media (max-width:899px){#ch-archive-link{left:16px;}#ch-held-link{left:16px;bottom:40px;}}';
     document.head.appendChild(style);
   }
 
@@ -193,10 +201,22 @@
     el.style.display = 'block';
   }
 
-  function renderOfflineBanner(show) {
+  // The ONE text of the offline banner. `waiting` = the first read of the saved data keeps failing
+  // (db.js _holdForFirstPull): say what failed, that nothing is saved until it loads, that it retries.
+  // The technical detail is on hover (title).
+  function offlineBannerText(waiting, what) {
+    if (!waiting) return 'Offline — showing local copy. Edits will sync when reconnected.';
+    return (
+      'Could not load ' +
+      (what || 'your saved data') +
+      ' from the server. Nothing is saved until it loads. Retrying automatically.'
+    );
+  }
+  function renderOfflineBanner(show, waiting, what, detail) {
     ensureStyles();
     var el = ensureEl('ch-sync-offline-banner');
-    el.textContent = 'Offline — showing local copy. Edits will sync when reconnected.';
+    el.textContent = offlineBannerText(!!waiting, what);
+    el.title = waiting && detail ? 'Detail: ' + detail : '';
     el.style.display = show ? 'block' : 'none';
   }
 
@@ -365,8 +385,9 @@
     }
   });
 
-  window.addEventListener('dbOfflineBanner', function () {
-    renderOfflineBanner(true);
+  window.addEventListener('dbOfflineBanner', function (e) {
+    var d = (e && e.detail) || {};
+    renderOfflineBanner(true, d.waiting === true, d.what, d.detail);
   });
 
   // M6: the server answered 401/403. This is not "offline": the sign-in was refused.
@@ -520,6 +541,7 @@
       return [
         { action: 'restore-mine', label: 'Restore my version', primary: true, gated: descriptor.typedConfirmRequired },
         { action: 'discard-mine', label: 'Discard my change', primary: false, gated: false },
+        DECIDE_LATER,
       ];
     }
     if (descriptor.conflictClass === 'records') {
@@ -535,8 +557,14 @@
         gated: descriptor.typedConfirmRequired,
       },
       { action: 'save-copy', label: 'Save mine as a copy / download', primary: false, gated: false },
+      DECIDE_LATER,
     ];
   }
+  // 'dismiss': db.js keeps the local value as a held draft and does not send it until the user chooses.
+  var DECIDE_LATER = { action: 'dismiss', label: 'Decide later', primary: false, gated: false };
+  var DRAFT_NOTE =
+    '<p class="ch-conflict-meta">If you choose Decide later, your version stays on this computer as a draft. ' +
+    'It is not sent to the server until you choose.</p>';
 
   function _bodyHtml(descriptor) {
     var name = friendlyKeyName(descriptor.key);
@@ -554,6 +582,7 @@
         _escHtml(when) +
         ' while you were editing it.</p>';
       html += '<p>Your changes were not lost — they are saved and available below.</p>';
+      html += DRAFT_NOTE;
     } else if (descriptor.conflictClass === 'records') {
       var recs = descriptor.records || [];
       html +=
@@ -607,6 +636,7 @@
         '. Yours was based on version: ' +
         _escHtml(descriptor.localBaseVersion != null ? descriptor.localBaseVersion : 'unknown') +
         '.</p>';
+      html += DRAFT_NOTE;
       if (descriptor.conflictClass === 'union-candidate') {
         html +=
           '<p>It looks like you each only ADDED new items, with nothing else changed. ' +
@@ -1107,6 +1137,7 @@
     _renderModeControl(body, currentMode);
     _renderQueueDepth(body, window.DB && typeof window.DB.getQueueDepth === 'function' ? window.DB.getQueueDepth() : 0);
     _renderUploadProgress(body);
+    _renderHeldDrafts(body);
 
     var loading = document.createElement('div');
     loading.id = 'ch-sync-status-loading';
@@ -1134,6 +1165,81 @@
       loading.textContent = 'Sync status is unavailable on this page.';
     }
   }
+
+  // Held drafts: versions the user kept with "Decide later". They are saved apart from the page (the page shows
+  // the server copy). One small collapsible entry in this panel, plus a small pill while any exist.
+  // "Use my draft" = DB.releaseHeldDraft (a new edit through the normal send path); "Discard" = DB.discardHeldDraft
+  // (the value goes to Conflict history first).
+  function _renderHeldDrafts(container) {
+    var list = window.DB && typeof window.DB.getHeldDrafts === 'function' ? window.DB.getHeldDrafts() : [];
+    if (!list.length) return;
+    var refresh = function () {
+      if (typeof renderHeldLink === 'function') renderHeldLink();
+      if (typeof _statusPanelOpen !== 'undefined' && _statusPanelOpen && typeof openSyncStatusPanel === 'function') {
+        openSyncStatusPanel();
+      }
+    };
+    var det = document.createElement('details');
+    det.className = 'ch-held-details';
+    var sum = document.createElement('summary');
+    sum.textContent = 'Held drafts (' + list.length + ')';
+    sum.title =
+      'Versions you chose to decide on later. The page shows the saved server copy. These drafts stay on this computer and are not sent until you choose.';
+    det.appendChild(sum);
+    list.forEach(function (d) {
+      var row = document.createElement('div');
+      row.className = 'ch-held-row';
+      var what = document.createElement('div');
+      what.textContent =
+        (d.deleted ? 'Your delete of ' : 'Your version of ') +
+        friendlyKeyName(d.key) +
+        ', kept ' +
+        fmtDate(d.ts ? new Date(d.ts).toISOString() : null) +
+        (d.userEmail ? ' by ' + d.userEmail : '');
+      var btns = document.createElement('div');
+      btns.className = 'ch-held-btns';
+      var use = document.createElement('button');
+      use.className = 'ch-conflict-btn';
+      use.textContent = 'Use my draft';
+      use.title =
+        'Send your draft to the server now as a new change. If someone saved a newer version first, you will be asked again.';
+      use.addEventListener('click', function () {
+        Promise.resolve(window.DB.releaseHeldDraft(d.key)).then(refresh);
+      });
+      var del = document.createElement('button');
+      del.className = 'ch-conflict-btn';
+      del.textContent = 'Discard';
+      del.title = 'Remove this draft. A copy goes to Conflict history first, so it can still be downloaded.';
+      del.addEventListener('click', function () {
+        window.DB.discardHeldDraft(d.key);
+        refresh();
+      });
+      btns.appendChild(use);
+      btns.appendChild(del);
+      row.appendChild(what);
+      row.appendChild(btns);
+      det.appendChild(row);
+    });
+    container.appendChild(det);
+  }
+
+  function renderHeldLink() {
+    ensureStyles();
+    var list = window.DB && typeof window.DB.getHeldDrafts === 'function' ? window.DB.getHeldDrafts() : [];
+    var el = document.getElementById('ch-held-link');
+    if (!list.length) {
+      if (el) el.style.display = 'none';
+      return;
+    }
+    el = ensureEl('ch-held-link');
+    el.textContent = 'Held drafts (' + list.length + ')';
+    el.title = 'Versions kept on this computer with Decide later. Click to see them and choose what to do.';
+    el.style.display = 'block';
+    el.onclick = openSyncStatusPanel;
+  }
+  ['syncQueueChanged', 'dbReady', 'chAuthStateChanged'].forEach(function (n) {
+    window.addEventListener(n, renderHeldLink);
+  });
 
   // Live queue-depth updates (task 2a.7 point 3) — only touches the DOM when
   // the panel is actually open, so this listener is a no-op the rest of the time.

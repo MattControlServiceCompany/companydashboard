@@ -587,6 +587,24 @@
     return _signedOut;
   }
 
+  // THE one rule for the two-letter avatar text of an email (index.html sign-in and the
+  // session user below both use it).
+  function initialsFromEmail(email) {
+    const local = (email || '?').split('@')[0];
+    const parts = local.split(/[._-]+/).filter(Boolean);
+    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+    return local.slice(0, 2).toUpperCase();
+  }
+
+  // The signed-in user as the page header shows it, built from the live session. A browser that
+  // never ran the sign-in form (a fresh origin that picked up the session) has no saved ch_user.
+  // Returns null when nobody is signed in.
+  function sessionUser() {
+    const email = _cachedEmail;
+    if (!email || _signedOut) return null;
+    return { name: email, email: email, initials: initialsFromEmail(email), isReal: true };
+  }
+
   // SYNCHRONOUS by design — mirrors getToken() above. Returns the durable
   // per-user identifier (the Supabase auth user UUID, `sub` claim) for the
   // currently signed-in account, or null if nobody is signed in. Consumed by
@@ -609,6 +627,8 @@
     ready: ready,
     settled: settled,
     isSignedOut: isSignedOut,
+    initialsFromEmail: initialsFromEmail,
+    sessionUser: sessionUser,
     backendMode: backendMode,
     getUserId: getUserId,
     getEmail: getEmail,

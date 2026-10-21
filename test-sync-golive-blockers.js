@@ -98,10 +98,17 @@ function load({ mode, syncHost, fetchImpl, classify }) {
   return { DB: sandbox.__DB, state, events, store };
 }
 let pass = 0;
+const failed = [];
+// A failing test is reported and the run goes on, so one run shows every failure (exit code 1 at the end).
 async function t(name, fn) {
-  await fn();
-  pass++;
-  console.log('PASS ' + name);
+  try {
+    await fn();
+    pass++;
+    console.log('PASS ' + name);
+  } catch (e) {
+    failed.push(name);
+    console.log('FAIL ' + name + '\n     ' + String((e && e.stack) || e).split('\n').slice(0, 4).join('\n     '));
+  }
 }
 const ok = (body) => ({ ok: true, status: 200, json: async () => body });
 
@@ -154,7 +161,7 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
       return { ok: false, status: 500 };
     };
     const { DB, events } = load({ mode: 'on', syncHost: true, fetchImpl });
-    await DB.warmCache();
+    // Not warmCache: with a failing pull it now waits for a first full pull (sync safety, 2026-10-21).
     await DB.__t._hydrate();
     const ev = events.find((e) => e.type === 'dbHydrateFailed');
     assert.ok(ev, 'dbHydrateFailed not dispatched');
@@ -366,6 +373,7 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
         syncHost: true,
         fetchImpl: async (u, o) => {
           if (o && o.method === 'PUT') puts.push(JSON.parse(o.body));
+          if (!(o && o.method === 'PUT')) return ok([]); // the pull: an empty manifest (a full pull)
           return ok({ version: 1, hash: 'h' });
         },
       });
@@ -449,6 +457,7 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
       syncHost: true,
       fetchImpl: async (u, o) => {
         if (o && o.method === 'PUT') puts.push(JSON.parse(o.body));
+        if (!(o && o.method === 'PUT')) return ok([]); // the pull: an empty manifest (a full pull)
         return ok({ version: 1, hash: 'h' });
       },
     });
@@ -523,8 +532,8 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
         return ok([]);
       },
     });
+    L.state.uid = 'A'; // A is signed in for the first full pull
     await L.DB.warmCache();
-    L.state.uid = 'A';
     L.state.mode = 'off';
     await L.DB.set('en_n1', 1);
     await L.DB.set('en_n2', 2);
@@ -559,8 +568,10 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     const rows = {};
     Object.keys(initial || {}).forEach((k) => (rows[k] = { value: initial[k], version: 1, hash: 'h' + k + '1' }));
     const puts = [];
+    const api = { rows, puts, fetchImpl: null, failPut: false };
     const fetchImpl = async (u, o) => {
       if (o && o.method === 'PUT') {
+        if (api.failPut) throw new Error('offline');
         const b = JSON.parse(o.body);
         puts.push(b);
         const cur = rows[b.key];
@@ -580,7 +591,8 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
         .filter(Boolean);
       return ok(keys.filter((k) => rows[k]).map((k) => Object.assign({ key: k, deleted: false }, rows[k])));
     };
-    return { rows, puts, fetchImpl };
+    api.fetchImpl = fetchImpl;
+    return api;
   }
   const clone = (v) => JSON.parse(JSON.stringify(v));
   const bill = (id, kwh) => ({ id, start: '2025-0' + id.slice(-1) + '-01', end: '2025-0' + id.slice(-1) + '-28', kwh });
@@ -814,7 +826,8 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
       const srv = makeServer({ en_note: 'v1' });
       const L = await syncedBrowser(srv);
       srv.rows.en_note = { value: 'v2', version: 2, hash: 'h2' };
-      const edit = L.DB.set('en_note', 'mine'); // 409 against v2 -> merge cannot apply to a plain string -> stays queued
+      srv.failPut = true; // offline: the edit waits in the queue (a normal pending edit, not a held draft)
+      const edit = L.DB.set('en_note', 'mine');
       await edit;
       await settle();
       assert.ok(L.DB.getQueueDepth() >= 1, 'edit is waiting in the queue');
@@ -892,7 +905,7 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
   // ---- M6: 401/403 is "refused", not "offline"
   await t('M6 hydration manifest answered 403 -> dbAuthRejected, not dbOfflineBanner', async () => {
     const { DB, events } = load({ mode: 'on', syncHost: true, fetchImpl: async () => ({ ok: false, status: 403 }) });
-    await DB.warmCache();
+    // no warmCache: it waits for a first full pull, which a refused sign-in never gives
     await DB.__t._hydrate();
     const rej = events.find((e) => e.type === 'dbAuthRejected');
     assert.ok(rej && rej.detail.status === 403);
@@ -906,8 +919,7 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
         throw new Error('net');
       },
     });
-    await DB.warmCache();
-    await DB.__t._hydrate();
+    await DB.__t._hydrate(); // no warmCache: it waits for a first full pull
     assert.ok(events.some((e) => e.type === 'dbOfflineBanner'));
     assert.ok(!events.some((e) => e.type === 'dbAuthRejected'));
   });
@@ -2568,7 +2580,7 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     },
   );
   await t(
-    '7d: a queued edit for a SHARED key (any owner) still holds hydration of that key (unchanged rule)',
+    '7d: a SHARED key with an unsent edit of another user: this user pulls the server copy; the edit stays queued under its author and is never sent',
     async () => {
       const puts = [];
       const L = loadReal({
@@ -2601,8 +2613,9 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
       ]);
       await L.DB.warmCache();
       await tick(60);
-      assert.strictEqual(L.DB.get('en_budget_x'), 'A-unsent', "held until A's entry is sent (same server row)");
-      assert.strictEqual(L.DB.getQueueDepth(), 1);
+      assert.strictEqual(L.DB.get('en_budget_x'), 'server', "B sees the server copy, never A's unsent value");
+      assert.strictEqual(L.DB.getQueueDepth(), 1, "A's edit is still queued");
+      assert.strictEqual(L.DB.__t._queue()[0].owner.id, 'u1');
       assert.ok(!puts.some((k) => /en_budget_x$/.test(k)), "A's unsent value never uploaded by B");
     },
   );
@@ -3378,14 +3391,15 @@ await t("8l: a load with no edit sends 0 PUT (reload and reopen)", async () => {
     await tick(80);
     return { L, S, asked, key };
   }
-  await t('migration H1: unstamped + differing plain key: modal opens, local value kept, 0 PUT, archive entry, still unstamped', async () => {
+  await t('migration H1: unstamped + differing plain key: modal opens once; Decide later keeps a draft; the next pull shows the server copy, 0 PUT, archive entry', async () => {
     const { L, S, asked, key } = await hydrateScenario({ n: 'LOCAL' }, { n: 'SERVER' });
-    assert.strictEqual(asked.length, 1, 'modal opened once');
+    assert.strictEqual(asked.length, 1, 'modal opened once (the second pull does not ask again)');
     assert.strictEqual(asked[0].key, key);
-    assert.strictEqual(JSON.stringify(L.DB.get(key)), JSON.stringify({ n: 'LOCAL' }), 'local value unchanged');
+    assert.strictEqual(JSON.stringify(L.DB.get(key)), JSON.stringify({ n: 'SERVER' }), 'the page shows the server copy');
     assert.strictEqual(S.puts.filter((p) => p.key === key).length, 0, 'no server write');
     assert.ok(L.DB.getConflictArchive().some((e) => e.key === key), 'local copy archived');
-    assert.ok(!L.DB.__t._stampOf(key), 'key stays unstamped: asked again next load');
+    assert.strictEqual(L.DB.__t._stampOf(key).version, 7, 'the key is stamped at the server version');
+    assert.strictEqual(L.DB.getHeldDrafts().length, 1, 'the local value stays as a draft');
   });
   await t('migration H2: unstamped + equal content: adopts the version silently (no modal)', async () => {
     const { L, asked, key } = await hydrateScenario({ a: 1, b: 2 }, { b: 2, a: 1 });
@@ -3752,7 +3766,804 @@ await t(
     assert.ok(/addEventListener\('visibilitychange'/.test(init) && /addEventListener\('focus'/.test(init));
   },
 );
-  console.log(pass + ' passed');
+
+  // ---- SYNC SAFETY 2026-10-21: no write leaves the browser before the first full pull succeeded
+  function pullStub(manifest, rowsByKey) {
+    const st = { manifestOk: false, puts: [], gets: [] };
+    st.fetchImpl = async (u, o) => {
+      if (o && o.method === 'PUT') {
+        st.puts.push(JSON.parse(o.body));
+        return ok({ version: 1, hash: 'h' });
+      }
+      if (/manifest=1/.test(u)) {
+        if (!st.manifestOk) throw new Error('manifest timeout');
+        return ok(manifest);
+      }
+      const keys = decodeURIComponent(String(u).split('keys=')[1] || '').split(',');
+      st.gets.push(keys);
+      return ok(keys.map((k) => rowsByKey[k]).filter(Boolean));
+    };
+    return st;
+  }
+  await t('SYNC-SAFETY 1a: manifest failed -> a write is queued, never sent; sent only after a pull succeeds', async () => {
+    const st = pullStub([], {});
+    st.manifestOk = true;
+    const L = load({ mode: 'on', syncHost: true, classify: true, fetchImpl: st.fetchImpl });
+    const DB = L.DB;
+    await DB.warmCache(); // user u1: a full pull works
+    st.manifestOk = false;
+    L.state.uid = 'u2'; // a new sign-in whose pull times out
+    await DB.__t._handleAuthIdentityChange();
+    await DB.set('en_budget_a', { n: 1 });
+    await DB.__t._drainQueueOnce();
+    assert.strictEqual(st.puts.length, 0, 'nothing sent before the first full pull');
+    assert.strictEqual(DB.getQueueDepth(), 1, 'the edit stays queued');
+    st.manifestOk = true;
+    await DB.__t._hydrate();
+    await DB.__t._drainQueueOnce();
+    assert.strictEqual(st.puts.length, 1, 'sent after the pull succeeded');
+    assert.strictEqual(DB.getQueueDepth(), 0);
+  });
+  await t('SYNC-SAFETY 1b: a chunk of the pull failed -> still no push', async () => {
+    const st = pullStub([{ key: 'en_budget_s', version: 3, hash: 'h', deleted: false }], {});
+    st.manifestOk = true;
+    let failChunks = false;
+    const orig = st.fetchImpl;
+    st.fetchImpl = async (u, o) => (failChunks && /keys=/.test(u) ? { ok: false, status: 500 } : orig(u, o));
+    const L = load({ mode: 'on', syncHost: true, classify: true, fetchImpl: st.fetchImpl });
+    const DB = L.DB;
+    await DB.warmCache();
+    failChunks = true;
+    L.state.uid = 'u2';
+    await DB.__t._handleAuthIdentityChange();
+    await DB.set('en_budget_a', { n: 1 });
+    await DB.__t._drainQueueOnce();
+    assert.strictEqual(st.puts.length, 0);
+    assert.strictEqual(DB.getQueueDepth(), 1);
+  });
+  await t('SYNC-SAFETY 1c: warmCache on a fresh cache waits for a full pull (init does not start on an empty cache)', async () => {
+    const st = pullStub([], {});
+    const { DB } = load({ mode: 'on', syncHost: true, classify: true, fetchImpl: st.fetchImpl });
+    let done = false;
+    DB.warmCache().then(() => (done = true));
+    await new Promise((r) => setTimeout(r, 300));
+    assert.strictEqual(done, false, 'warmCache must not resolve while the first pull has not worked');
+    assert.strictEqual(st.puts.length, 0);
+  });
+  await t('SYNC-SAFETY 1d: a different user signing in needs its own full pull before any send', async () => {
+    const st = pullStub([], {});
+    st.manifestOk = true;
+    const L = load({ mode: 'on', syncHost: true, classify: true, fetchImpl: st.fetchImpl });
+    L.state.uid = 'userA';
+    await L.DB.warmCache();
+    L.state.uid = 'userB'; // no identity-change run yet: B has no pull
+    await L.DB.set('en_budget_a', { n: 1 });
+    assert.strictEqual(st.puts.length, 0);
+    assert.strictEqual(L.DB.getQueueDepth(), 1);
+  });
+
+  // ---- SYNC SAFETY 2026-10-21 fix 2: legacy utility blob. The real functions of app/utility-data.js, run as they are.
+  // Functions that only exist after the fix are optional here, so the same tests run on older code and fail by behavior.
+  function utilityHarness(initial, o) {
+    o = o || {};
+    const kv = JSON.parse(JSON.stringify(initial));
+    const writes = [];
+    const listeners = {};
+    const st = { fullPull: o.fullPull !== false };
+    const win = {
+      CH_AUTH: { backendMode: () => (o.mode === 'on' ? 'on' : 'off') },
+      addEventListener: (n, f) => (listeners[n] = (listeners[n] || []).concat(f)),
+    };
+    const srcFile = fs.readFileSync(path.join(__dirname, 'app', 'utility-data.js'), 'utf8').split('\r').join('');
+    const has = (n) => srcFile.indexOf('function ' + n + '(') >= 0;
+    const names = [
+      '_backendOn',
+      '_loadWritesAllowed',
+      '_legacyBlobToMigrate',
+      '_copyLegacyBlobToCustomer',
+      '_migrateLegacyBlobToCustomer', // the name this rule had on the first version of the fix
+      '_selfHealCustomersAndScope',
+      '_resolveCustomerId',
+      'getCustomerBuildings',
+      'saveUtilityData',
+      'loadUtilityData',
+    ].filter(has);
+    const a = srcFile.indexOf('let _loadWritesDeferred');
+    const b = srcFile.indexOf('function loadUtilityData(');
+    const topLevel = a >= 0 && b > a ? srcFile.slice(a, b) : '';
+    const code =
+      topLevel +
+      '\n' +
+      names.map((n) => fnFrom('utility-data.js', n)).join('\n') +
+      '\nreturn { heal: _selfHealCustomersAndScope, getCustomerBuildings, save: saveUtilityData, load: typeof loadUtilityData === "function" ? loadUtilityData : null, utilityData };';
+    const utilityData = {};
+    const api = new Function(
+      'sget',
+      'sset',
+      'utilityData',
+      '_lastSavedSnapshot',
+      'SAVE_ALL_PROJECTS',
+      'udSelProjId',
+      '_collectDuplicateCandidates',
+      'DB',
+      '_refreshBldgPerfIfVisible',
+      'udScheduleBadgeRefresh',
+      'window',
+      'correctMeterReadChain',
+      'console',
+      '_meterBillCounts',
+      '_seedMeterBillCounts',
+      '_inheritBaselinesForProject',
+      code,
+    )(
+      (k, fb) => (kv[k] === undefined ? fb : JSON.parse(JSON.stringify(kv[k]))),
+      (k, v) => {
+        kv[k] = JSON.parse(JSON.stringify(v));
+        writes.push(k);
+      },
+      utilityData,
+      {},
+      '__all__',
+      null,
+      () => [],
+      { DERIVED_METER_FIELDS: [], hasFullPull: () => st.fullPull, get: () => '1', set() {} },
+      () => {},
+      () => {},
+      win,
+      () => 0,
+      { log() {}, warn() {}, info() {}, error() {} },
+      null,
+      () => {},
+      () => 0,
+    );
+    return {
+      kv,
+      writes,
+      api,
+      st,
+      fire: (n) => (listeners[n] || []).forEach((f) => f({ type: n })),
+    };
+  }
+  const legacyBlob = () => ({
+    buildings: [1, 2, 3].map((n) => ({ id: 'bld_fake' + n, name: 'Fake ' + n, meters: [{ id: 'm_fake' + n, bills: [] }] })),
+  });
+  const healedProject = () => ({ id: 111, customerId: 'cust_111', client: 'Fake', scope: { buildingIds: ['bld_fake1'] } });
+  await t('SYNC-SAFETY 2: backend mode, healed project, customer blob missing: the legacy blob is copied in', () => {
+    const H = utilityHarness(
+      { en_projects: [healedProject()], en_customers: [{ id: 'cust_111', name: 'Fake' }], en_utility_111: legacyBlob() },
+      { mode: 'on' },
+    );
+    H.api.heal();
+    assert.ok(H.kv.en_utility_cust_111, 'a customer blob was written');
+    assert.strictEqual(H.kv.en_utility_cust_111.buildings.length, 3, 'customer blob holds the 3 legacy buildings');
+    assert.strictEqual(H.kv.en_utility_111.buildings.length, 3, 'legacy blob stays untouched');
+  });
+  await t('SYNC-SAFETY 2: backend mode, a customer blob that exists is never replaced (with buildings, or EMPTY after the user deleted them all)', () => {
+    [{ buildings: [{ id: 'bld_keep', meters: [] }] }, { buildings: [] }].forEach((existing) => {
+      const H = utilityHarness(
+        {
+          en_projects: [{ id: 111, customerId: 'cust_111', client: 'Fake', scope: { buildingIds: [] } }],
+          en_customers: [{ id: 'cust_111', name: 'Fake' }],
+          en_utility_111: legacyBlob(),
+          en_utility_cust_111: existing,
+        },
+        { mode: 'on' },
+      );
+      H.api.heal();
+      assert.deepStrictEqual(H.kv.en_utility_cust_111, existing, 'the existing customer blob is unchanged');
+      assert.ok(!H.writes.includes('en_utility_cust_111'), 'no write to the customer blob');
+    });
+  });
+  await t('SYNC-SAFETY 2: backend mode, an empty auto-created blob is not saved while a legacy blob holds the data; an existing empty blob is saved', () => {
+    const H = utilityHarness(
+      { en_projects: [healedProject()], en_customers: [{ id: 'cust_111', name: 'Fake' }], en_utility_111: legacyBlob() },
+      { mode: 'on' },
+    );
+    H.api.getCustomerBuildings('cust_111'); // auto-creates the empty blob in memory
+    H.api.save('cust_111');
+    assert.ok(!H.writes.includes('en_utility_cust_111'), 'the empty blob must not be written');
+  });
+  await t('SYNC-SAFETY 2: GitHub site (backend off) runs exactly as before: no legacy copy for a healed project, an empty blob is saved', () => {
+    const H = utilityHarness(
+      { en_projects: [healedProject()], en_customers: [{ id: 'cust_111', name: 'Fake' }], en_utility_111: legacyBlob() },
+      { mode: 'off' },
+    );
+    H.api.heal();
+    assert.ok(!H.writes.includes('en_utility_cust_111'), 'heal of a healed project writes no customer blob');
+    H.api.getCustomerBuildings('cust_111');
+    H.api.save('cust_111');
+    assert.ok(H.writes.includes('en_utility_cust_111'), 'the auto-created blob is saved as before');
+  });
+  await t('SYNC-SAFETY 2: an UNHEALED project still gets its blob copied (both modes, as before)', () => {
+    ['on', 'off'].forEach((mode) => {
+      const H = utilityHarness(
+        { en_projects: [{ id: 111, client: 'Fake' }], en_customers: [], en_utility_111: legacyBlob() },
+        { mode },
+      );
+      H.api.heal();
+      assert.strictEqual(H.kv.en_utility_cust_111.buildings.length, 3, mode + ': copied');
+    });
+  });
+
+  // ---- SYNC SAFETY 2026-10-21 fix 3: no migration, heal or backfill write is generated before the full pull
+  await t('SYNC-SAFETY 3: backend mode, no full pull yet: the load writes nothing; after the pull the load heals', () => {
+    const H = utilityHarness(
+      { en_projects: [healedProject()], en_customers: [{ id: 'cust_111', name: 'Fake' }], en_utility_111: legacyBlob() },
+      { mode: 'on', fullPull: false },
+    );
+    assert.ok(H.api.load, 'loadUtilityData exists');
+    H.api.load();
+    assert.deepStrictEqual(H.writes, [], 'no write at all before the full pull');
+    H.st.fullPull = true;
+    H.fire('dbFullPull');
+    assert.ok(H.writes.includes('en_utility_cust_111'), 'the heal ran after the pull');
+    assert.strictEqual(H.kv.en_utility_cust_111.buildings.length, 3);
+  });
+  await t('SYNC-SAFETY 3: GitHub site: the load heals at once (no waiting)', () => {
+    const H = utilityHarness(
+      { en_projects: [{ id: 111, client: 'Fake' }], en_customers: [], en_utility_111: legacyBlob() },
+      { mode: 'off', fullPull: false },
+    );
+    H.api.load();
+    assert.ok(H.writes.includes('en_utility_cust_111'), 'unhealed project healed during the load');
+  });
+
+  // ---- SYNC SAFETY 2026-10-21: DB pull rules (fixes 2, 3, 5, 6 of the client branch)
+  function casServer(rows, o) {
+    o = o || {};
+    const puts = [];
+    const res = (status, body) => ({ ok: status >= 200 && status < 300, status, json: async () => body });
+    const fetchImpl = async (u, opts) => {
+      if (opts && opts.method === 'PUT') {
+        if (o.failPut) throw new Error('offline');
+        const body = JSON.parse(opts.body);
+        puts.push(body);
+        const row = rows.find((r) => r.key === body.key);
+        if ((row ? row.version : null) !== body.baseVersion) return res(409, { conflict: true, current: row || null });
+        return res(200, { version: (body.baseVersion || 0) + 1, hash: sha(body.value), deleted: false });
+      }
+      if (/manifest=1/.test(u)) {
+        if (o.failManifest) throw new Error('manifest timeout');
+        return res(200, rows.map((r) => ({ key: r.key, version: r.version, hash: r.hash, deleted: false })));
+      }
+      const keys = decodeURIComponent(String(u).split('keys=')[1] || '').split(',');
+      if (o.failKeys && keys.some((k) => o.failKeys.indexOf(k) !== -1)) return res(500, { error: 'x' });
+      return res(200, rows.filter((r) => keys.indexOf(r.key) !== -1));
+    };
+    return { puts, fetchImpl, rows, o };
+  }
+  await t('SYNC-SAFETY 2: a merge-push inside the pull waits until the whole pull is complete', async () => {
+    const store = { en_tasks: JSON.stringify([{ id: 'a', text: 'local' }]) };
+    const S = casServer([kvRow('en_tasks', [{ id: 'b', text: 'server' }], 7), kvRow('en_budget_z', { z: 1 }, 3)], {
+      failKeys: ['en_budget_z'],
+    });
+    const L = load({ mode: 'on', syncHost: true, classify: true, fetchImpl: S.fetchImpl, store });
+    const warm = L.DB.warmCache(); // the pull merges en_tasks but cannot read en_budget_z
+    await tick(400);
+    assert.strictEqual(
+      S.puts.filter((p) => p.key === 'en_tasks').length,
+      0,
+      'the merged list is not sent while the pull is incomplete',
+    );
+    assert.strictEqual(L.DB.getQueueDepth(), 1, 'the merged list waits in the queue');
+    S.o.failKeys = null; // the read works now: the retry completes the pull
+    await warm;
+    await tick(100); // the start-up drain sends it now that the pull is complete
+    const sent = S.puts.filter((p) => p.key === 'en_tasks');
+    assert.strictEqual(sent.length, 1, 'sent once, after the pull ' + JSON.stringify(sent));
+    assert.deepStrictEqual(sent[0].value.map((r) => r.id).sort(), ['a', 'b']);
+  });
+  await t('SYNC-SAFETY 2: restorePush (explicit user restore) is the one send that may pass the pull gate, by a named flag that never goes on the wire', async () => {
+    const S = casServer([]);
+    const L = load({ mode: 'on', syncHost: true, classify: true, fetchImpl: S.fetchImpl });
+    await L.DB.warmCache();
+    S.o.failManifest = true;
+    L.state.uid = 'u2'; // a new sign-in whose pull has not worked: the gate is shut
+    await L.DB.__t._handleAuthIdentityChange();
+    await L.DB.set('en_budget_a', { n: 1 });
+    assert.strictEqual(S.puts.length, 0, 'an ordinary write is held');
+    const r = await L.DB.restorePush('en_budget_r', { n: 9 }, null);
+    assert.strictEqual(r.ok, true, 'the explicit restore is sent');
+    assert.strictEqual(S.puts.length, 1);
+    assert.strictEqual(S.puts[0].key, 'en_budget_r');
+    assert.ok(!('allowBeforeFullPull' in S.puts[0]), 'the flag is not sent to the server');
+  });
+  async function staleScenario(serverVersion, answer) {
+    const asked = [];
+    const S = casServer([], { failManifest: false });
+    const L = load({
+      mode: 'on',
+      syncHost: true,
+      classify: true,
+      fetchImpl: S.fetchImpl,
+      modal: async (d) => (asked.push(d), { action: answer || 'load-theirs' }),
+    });
+    await L.DB.warmCache();
+    S.o.failManifest = true;
+    L.state.uid = 'u2';
+    await L.DB.__t._handleAuthIdentityChange();
+    await L.DB.set('en_budget_a', { n: 'stale-local' }); // made before any full pull: queued, based on no server version
+    assert.strictEqual(L.DB.getQueueDepth(), 1);
+    S.rows.push(kvRow('en_budget_a', { n: 'server' }, serverVersion));
+    S.o.failManifest = false;
+    await L.DB.__t._hydrate();
+    await tick(80);
+    return { L, S, asked };
+  }
+  await t('SYNC-SAFETY 3: a queued write older than the server copy never makes the pull skip the key: server wins, the write goes to the conflict path', async () => {
+    const { L, S, asked } = await staleScenario(5, 'load-theirs');
+    assert.strictEqual(asked.length, 1, 'the conflict path asked once');
+    assert.deepStrictEqual(clone(asked[0].local.value), { n: 'stale-local' });
+    assert.deepStrictEqual(clone(L.DB.get('en_budget_a')), { n: 'server' }, 'the server copy is the local value now');
+    assert.strictEqual(S.puts.length, 0, 'the stale write was never sent');
+    assert.strictEqual(L.DB.getQueueDepth(), 0, 'nothing left to send');
+    assert.ok(
+      L.DB.getConflictArchive().some((e) => e.key === 'en_budget_a'),
+      'the stale local value is in the conflict history',
+    );
+  });
+  await t('SYNC-SAFETY 3: a queued write whose base is still the server version keeps blocking the pull (no overwrite of an unsent edit)', async () => {
+    const S = casServer([kvRow('en_budget_a', { n: 1 }, 5)]);
+    const L = load({ mode: 'on', syncHost: true, classify: true, fetchImpl: S.fetchImpl, modal: async () => ({ action: 'load-theirs' }) });
+    await L.DB.warmCache(); // key stamped at version 5
+    S.o.failPut = true; // the send fails (network): the edit is queued with base version 5
+    await L.DB.set('en_budget_a', { n: 2 });
+    await tick(60);
+    assert.strictEqual(L.DB.getQueueDepth(), 1);
+    await tick(80);
+    S.o.failPut = false;
+    await L.DB.__t._hydrate(); // server still at version 5
+    await tick(60);
+    assert.deepStrictEqual(clone(L.DB.get('en_budget_a')), { n: 2 }, 'the unsent edit is kept');
+    assert.strictEqual(L.DB.getQueueDepth(), 1);
+  });
+
+  // ---- SYNC SAFETY 2026-10-21 fix 5: a first read that keeps failing says so in the small banner
+  await t('SYNC-SAFETY 5: first read keeps failing: the offline banner event says what failed; the banner text says nothing is saved and that it retries', async () => {
+    const S = casServer([], { failManifest: true });
+    const L = load({ mode: 'on', syncHost: true, classify: true, fetchImpl: S.fetchImpl });
+    L.DB.warmCache();
+    await tick(200);
+    const ev = L.events.filter((e) => e.type === 'dbOfflineBanner' && e.detail && e.detail.waiting === true);
+    assert.ok(ev.length >= 1, 'a waiting banner event was sent');
+    assert.strictEqual(ev[0].detail.what, 'the list of saved items');
+    assert.ok(/manifest/.test(ev[0].detail.detail), 'technical detail is carried for the hover text');
+    const els = {};
+    const render = new Function(
+      'ensureStyles',
+      'ensureEl',
+      fnFrom('sync-ui.js', 'offlineBannerText') + '\n' + fnFrom('sync-ui.js', 'renderOfflineBanner') + '\nreturn renderOfflineBanner;',
+    )(
+      () => {},
+      (id) => (els[id] = els[id] || { style: {} }),
+    );
+    render(true, true, ev[0].detail.what, ev[0].detail.detail);
+    const el = els['ch-sync-offline-banner'];
+    assert.ok(/Could not load the list of saved items/.test(el.textContent), el.textContent);
+    assert.ok(/Nothing is saved until it loads/.test(el.textContent));
+    assert.ok(/Retrying automatically/.test(el.textContent));
+    assert.ok(/manifest/.test(el.title), 'detail on hover');
+    assert.strictEqual(el.style.display, 'block');
+    render(true, false);
+    assert.ok(/^Offline/.test(els['ch-sync-offline-banner'].textContent), 'the normal offline text is unchanged');
+  });
+
+  // ---- SYNC SAFETY 2026-10-21 fix 6: a dismissed conflict keeps a held local draft that is never re-sent by itself
+  async function dismissScenario() {
+    const asked = [];
+    const S = casServer([kvRow('en_budget_a', { n: 1 }, 5)]);
+    const L = load({
+      mode: 'on',
+      syncHost: true,
+      classify: true,
+      fetchImpl: S.fetchImpl,
+      modal: async (d) => (asked.push(d), { action: 'dismiss' }),
+    });
+    await L.DB.warmCache(); // stamped at version 5
+    S.rows[0] = kvRow('en_budget_a', { n: 'other' }, 6); // another user saved version 6
+    await L.DB.set('en_budget_a', { n: 'mine' }); // PUT at base 5 -> 409 -> modal -> dismiss
+    await tick(60);
+    return { L, S, asked };
+  }
+  await t('SYNC-SAFETY 6: dismiss keeps the local value as a held draft; repeated drains send nothing and the modal does not come back', async () => {
+    const { L, S, asked } = await dismissScenario();
+    assert.strictEqual(asked.length, 1);
+    const putsAfterDismiss = S.puts.length;
+    await L.DB.__t._drainQueueOnce();
+    await L.DB.__t._drainQueueOnce();
+    await tick(60);
+    assert.strictEqual(S.puts.length, putsAfterDismiss, 'the held draft is not re-sent');
+    assert.strictEqual(asked.length, 1, 'the modal is not shown again');
+    assert.deepStrictEqual(clone(L.DB.get('en_budget_a')), { n: 'mine' }, 'local value kept');
+    assert.strictEqual(L.DB.getQueueDepth(), 1, 'the draft still counts as an unsynced change');
+    assert.strictEqual(JSON.stringify(L.DB.getHeldDrafts().map((d) => d.key)), JSON.stringify(['en_budget_a']));
+  });
+  await t('HELD 1: a held draft does not block the pull: the page shows the server copy, the draft stays saved apart', async () => {
+    const { L, S, asked } = await dismissScenario();
+    await L.DB.__t._hydrate();
+    await tick(60);
+    assert.deepStrictEqual(clone(L.DB.get('en_budget_a')), { n: 'other' }, 'the page shows the server value');
+    const held = L.DB.getHeldDrafts();
+    assert.strictEqual(held.length, 1, 'the draft is still listed');
+    assert.strictEqual(held[0].key, 'en_budget_a');
+    assert.strictEqual(held[0].userEmail, 'u1@example.com', 'the list says which user');
+    assert.ok(typeof held[0].ts === 'number', 'the list says when');
+    assert.deepStrictEqual(clone(L.DB.__t._queue()[0].value), { n: 'mine' }, 'the draft value is kept');
+    assert.strictEqual(S.puts.length, 1, 'nothing was sent by the pull (only the first write that conflicted)');
+    assert.strictEqual(asked.length, 1, 'no second modal');
+  });
+  await t('HELD 2: "Use my draft" sends it as a new edit on the current server version, through the normal gate', async () => {
+    const { L, S } = await dismissScenario();
+    await L.DB.__t._hydrate(); // device now holds server version 6
+    await tick(60);
+    const before = S.puts.length;
+    assert.strictEqual(await L.DB.releaseHeldDraft('en_budget_a'), true);
+    await tick(80);
+    assert.strictEqual(S.puts.length, before + 1, 'one send');
+    const p = S.puts[S.puts.length - 1];
+    assert.strictEqual(p.baseVersion, 6, 'based on the current server version');
+    assert.deepStrictEqual(clone(p.value), { n: 'mine' });
+    assert.strictEqual(L.DB.getHeldDrafts().length, 0, 'the draft left the list');
+    assert.deepStrictEqual(clone(L.DB.get('en_budget_a')), { n: 'mine' });
+    assert.strictEqual(L.DB.getQueueDepth(), 0, 'nothing left waiting');
+  });
+  await t('HELD 2b: "Use my draft" with no full pull for this sign-in is held by the gate (nothing sent)', async () => {
+    const { L, S } = await dismissScenario();
+    S.o.failManifest = true;
+    L.state.uid = 'u2';
+    await L.DB.__t._handleAuthIdentityChange(); // u2: the pull fails
+    L.state.uid = 'u1';
+    await L.DB.__t._handleAuthIdentityChange(); // u1 again: the pull fails, no full pull
+    const before = S.puts.length;
+    await L.DB.releaseHeldDraft('en_budget_a');
+    await tick(60);
+    assert.strictEqual(S.puts.length, before, 'no send without a full pull');
+    assert.strictEqual(L.DB.getQueueDepth(), 1, 'the edit waits in the queue');
+  });
+  await t('HELD 3: "Discard" removes the draft; its value goes to the conflict history first', async () => {
+    const { L, S } = await dismissScenario();
+    assert.strictEqual(L.DB.discardHeldDraft('en_budget_a'), true);
+    await tick(30);
+    assert.strictEqual(L.DB.getHeldDrafts().length, 0);
+    assert.strictEqual(L.DB.getQueueDepth(), 0);
+    const arc = L.DB.getConflictArchive().filter((e) => e.reason === 'held-draft-discarded');
+    assert.strictEqual(arc.length, 1);
+    assert.deepStrictEqual(clone(arc[0].losingValue), { n: 'mine' });
+    assert.strictEqual(S.puts.length, 1, 'nothing sent');
+  });
+  await t('HELD 4: a new normal edit of the same item does not delete the held draft', async () => {
+    const { L } = await dismissScenario();
+    await L.DB.__t._hydrate();
+    await tick(40);
+    await L.DB.set('en_budget_a', { n: 'newer' });
+    await tick(60);
+    assert.strictEqual(L.DB.getHeldDrafts().length, 1, 'draft kept next to the new edit');
+  });
+  async function heldScenarioWithFailingStore() {
+    const failKeys = new Set();
+    const store = new Proxy({}, {
+      set(o, k, v) {
+        if (failKeys.has(k)) throw new Error('QuotaExceededError');
+        o[k] = v;
+        return true;
+      },
+    });
+    const S = casServer([kvRow('en_budget_a', { n: 1 }, 5)]);
+    const L = load({ mode: 'on', syncHost: true, classify: true, fetchImpl: S.fetchImpl, store, modal: async () => ({ action: 'dismiss' }) });
+    await L.DB.warmCache();
+    S.rows[0] = kvRow('en_budget_a', { n: 'other' }, 6);
+    await L.DB.set('en_budget_a', { n: 'mine' });
+    await tick(60);
+    await L.DB.__t._hydrate();
+    await tick(60);
+    return { L, S, failKeys };
+  }
+  await t('HELD 6: "Use my draft" whose save fails keeps the draft held and reports failure', async () => {
+    const { L, failKeys } = await heldScenarioWithFailingStore();
+    assert.strictEqual(L.DB.getHeldDrafts().length, 1);
+    failKeys.add('en_budget_a');
+    const ok = await L.DB.releaseHeldDraft('en_budget_a');
+    assert.strictEqual(ok, false, 'the failure is reported');
+    const held = L.DB.getHeldDrafts();
+    assert.strictEqual(held.length, 1, 'the draft is still held');
+    assert.deepStrictEqual(clone(L.DB.__t._queue().find((e) => e.held).value), { n: 'mine' }, 'the draft value is kept');
+  });
+  await t('HELD 7: "Use my draft" over a newer live queued edit copies that edit to Conflict history first', async () => {
+    const { L, S } = await heldScenarioWithFailingStore();
+    S.o.failPut = true;
+    await L.DB.set('en_budget_a', { n: 'newer-offline' }); // live queued edit next to the held draft
+    await tick(80);
+    S.o.failPut = false;
+    assert.ok(L.DB.__t._queue().some((e) => !e.held && e.key === 'en_budget_a'), 'a live queued edit exists');
+    assert.strictEqual(await L.DB.releaseHeldDraft('en_budget_a'), true);
+    const arc = L.DB.getConflictArchive().filter((e) => e.reason === 'held-draft-replaced-queued-edit');
+    assert.strictEqual(arc.length, 1, 'one history copy');
+    assert.deepStrictEqual(clone(arc[0].losingValue), { n: 'newer-offline' });
+  });
+  await t('HELD 5: sync-ui lists held drafts in the Sync status panel with Use my draft and Discard, plain words, hover text', () => {
+    const src = fs.readFileSync(path.join(__dirname, 'app', 'sync-ui.js'), 'utf8').split('\r').join('');
+    assert.ok(/function _renderHeldDrafts\(/.test(src), 'renderer exists');
+    assert.ok(/Held drafts \(/.test(src), 'entry text');
+    assert.ok(/Use my draft/.test(src) && /Discard/.test(src));
+    assert.ok(/ch-held-link/.test(src), 'small pill');
+    const els = [];
+    const mk = (tag) => {
+      const el = {
+        tag,
+        children: [],
+        style: {},
+        className: '',
+        textContent: '',
+        title: '',
+        appendChild(c) {
+          this.children.push(c);
+          return c;
+        },
+        addEventListener(n, f) {
+          this['on' + n] = f;
+        },
+      };
+      els.push(el);
+      return el;
+    };
+    const calls = [];
+    const DB = {
+      getHeldDrafts: () => [{ key: 'en_budget_a', ts: 1760000000000, deleted: false, userEmail: 'jane.doe@example.com' }],
+      releaseHeldDraft: (k) => (calls.push('use:' + k), Promise.resolve(true)),
+      discardHeldDraft: (k) => (calls.push('discard:' + k), true),
+    };
+    const f = new Function(
+      'document',
+      'window',
+      'friendlyKeyName',
+      'fmtDate',
+      fnFrom('sync-ui.js', '_renderHeldDrafts') + '\nreturn _renderHeldDrafts;',
+    );
+    const render = f({ createElement: mk }, { DB }, () => 'this budget data', () => 'some time');
+    const holder = mk('div');
+    render(holder);
+    const txt = els
+      .filter((e) => e.textContent)
+      .map((e) => e.textContent)
+      .join(' | ');
+    assert.ok(/Held drafts \(1\)/.test(txt), txt);
+    assert.ok(/this budget data/.test(txt) && /jane\.doe@example\.com/.test(txt) && /some time/.test(txt), txt);
+    const btns = els.filter((e) => e.tag === 'button');
+    assert.deepStrictEqual(
+      btns.map((b) => b.textContent),
+      ['Use my draft', 'Discard'],
+    );
+    btns.forEach((b) => assert.ok(b.title && b.title.length > 20, 'hover text on ' + b.textContent));
+    btns[0].onclick();
+    btns[1].onclick();
+    assert.deepStrictEqual(calls, ['use:en_budget_a', 'discard:en_budget_a']);
+    assert.ok(!/[\u{1F300}-\u{1FAFF}☀-➿]/u.test(txt), 'no emoji');
+  });
+
+  // ---- SYNC SAFETY 2026-10-21 identity safety: a write made as user A is never sent as, or shown to, user B
+  async function signOut(L) {
+    L.state.uid = null;
+    L.state.mode = 'off';
+    await L.DB.__t._handleAuthIdentityChange();
+  }
+  async function signIn(L, uid) {
+    L.state.uid = uid;
+    L.state.email = uid + '@example.com';
+    L.state.mode = 'on';
+    await L.DB.__t._handleAuthIdentityChange();
+    await tick(80);
+  }
+  await t('IDENTITY 1: a held draft made as A is not listed, released, discarded or sent while B is signed in; A gets it back', async () => {
+    const { L, S, asked } = await dismissScenario(); // u1 holds a draft of en_budget_a
+    const sent = S.puts.length;
+    await signOut(L);
+    await signIn(L, 'u2');
+    assert.strictEqual(L.DB.getHeldDrafts().length, 0, 'B sees no draft');
+    assert.strictEqual(await L.DB.releaseHeldDraft('en_budget_a'), false, 'B cannot release it');
+    assert.strictEqual(L.DB.discardHeldDraft('en_budget_a'), false, 'B cannot discard it');
+    await L.DB.__t._drainQueueOnce();
+    await tick(40);
+    assert.strictEqual(S.puts.slice(sent).length, 0, 'nothing sent as B');
+    assert.strictEqual(asked.length, 1, 'B was never asked about the draft');
+    assert.deepStrictEqual(clone(L.DB.get('en_budget_a')), { n: 'other' }, 'B sees the server copy');
+    assert.strictEqual(L.DB.getForeignQueueInfo().length, 1, 'the draft is reported as belonging to another user');
+    await signOut(L);
+    await signIn(L, 'u1');
+    assert.strictEqual(L.DB.getHeldDrafts().length, 1, 'A has the draft again');
+  });
+  await t('IDENTITY 2: a stale queued write made as A (shared item) never opens a conflict for B and is never sent as B', async () => {
+    const asked = [];
+    const S = casServer([]);
+    const L = load({
+      mode: 'on',
+      syncHost: true,
+      classify: true,
+      fetchImpl: S.fetchImpl,
+      modal: async (d) => (asked.push(d), { action: 'overwrite-mine' }),
+    });
+    await L.DB.warmCache();
+    S.o.failManifest = true;
+    await signOut(L);
+    await signIn(L, 'u3'); // A (u3) signs in; the pull fails, so no full pull for this sign-in
+    await L.DB.set('en_budget_a', { n: 'A-edit' }); // queued as u3 before any full pull
+    assert.strictEqual(L.DB.getQueueDepth(), 1);
+    S.rows.push(kvRow('en_budget_a', { n: 'server' }, 7));
+    S.o.failManifest = false;
+    await signOut(L);
+    await signIn(L, 'u2'); // B pulls
+    await tick(80);
+    assert.strictEqual(asked.length, 0, 'B is not asked about the edit of A');
+    assert.strictEqual(S.puts.length, 0, 'nothing is sent as B');
+    assert.deepStrictEqual(clone(L.DB.get('en_budget_a')), { n: 'server' }, 'B sees the server copy');
+    assert.strictEqual(L.DB.getQueueDepth(), 1, 'the edit of A is still queued');
+    assert.strictEqual(L.DB.__t._queue()[0].owner.id, 'u3');
+  });
+  await t('IDENTITY 6: a sign-in that returns after another user needs a NEW full pull before any send (the old pull is void)', async () => {
+    const S = casServer([kvRow('en_budget_a', { n: 1 }, 5)]);
+    const L = load({ mode: 'on', syncHost: true, classify: true, fetchImpl: S.fetchImpl });
+    await L.DB.warmCache(); // u1: full pull done
+    S.o.failManifest = true;
+    await signOut(L);
+    await signIn(L, 'u2');
+    await signOut(L);
+    await signIn(L, 'u1'); // back, but this sign-in has no full pull (the server read fails)
+    await L.DB.set('en_budget_a', { n: 'edit-before-pull' });
+    await tick(60);
+    assert.strictEqual(S.puts.length, 0, 'nothing is sent before the new full pull');
+    assert.strictEqual(L.DB.getQueueDepth(), 1, 'the edit waits in the queue');
+  });
+  await t('IDENTITY 3: an unsent edit made as A on a shared item is not on the page for B, not sent as B, back for A', async () => {
+    const S = casServer([kvRow('en_budget_a', { n: 1 }, 5)]);
+    const L = load({ mode: 'on', syncHost: true, classify: true, fetchImpl: S.fetchImpl });
+    await L.DB.warmCache();
+    S.o.failPut = true;
+    await L.DB.set('en_budget_a', { n: 'A-unsent' });
+    await tick(40);
+    await tick(80);
+    S.o.failPut = false;
+    assert.strictEqual(L.DB.getQueueDepth(), 1);
+    await signOut(L);
+    await signIn(L, 'u2');
+    assert.deepStrictEqual(clone(L.DB.get('en_budget_a')), { n: 1 }, 'B does not see the unsent edit of A');
+    await L.DB.__t._drainQueueOnce();
+    await L.DB.set('en_budget_other', { x: 1 }); // B works; nothing of A rides along
+    await tick(60);
+    assert.ok(S.puts.every((p) => p.key !== 'en_budget_a'), 'the value of A is not sent as B');
+    assert.strictEqual(L.DB.getQueueDepth(), 1, 'the edit of A is kept');
+    await signOut(L);
+    await signIn(L, 'u1');
+    await tick(60);
+    const sentA = S.puts.filter((p) => p.key === 'en_budget_a');
+    assert.strictEqual(sentA.length, 1, 'A signs back in: the edit goes out once');
+    assert.deepStrictEqual(clone(sentA[0].value), { n: 'A-unsent' });
+    assert.strictEqual(L.DB.getQueueDepth(), 0);
+  });
+  await t('IDENTITY 4: a per-user setting queued as A is not on the page for B, not sent as B, back for A', async () => {
+    const S = casServer([]);
+    const L = load({ mode: 'on', syncHost: true, classify: true, fetchImpl: S.fetchImpl });
+    await L.DB.warmCache();
+    S.o.failPut = true;
+    await L.DB.set('ch_pref_x', 'A-pref');
+    await tick(40);
+    await tick(80);
+    S.o.failPut = false;
+    await signOut(L);
+    await signIn(L, 'u2');
+    assert.ok(L.DB.get('ch_pref_x') == null, 'B does not see it');
+    await L.DB.__t._drainQueueOnce();
+    assert.strictEqual(S.puts.filter((p) => p.value === 'A-pref').length, 0, 'the value of A is not sent as B');
+    assert.strictEqual(L.DB.getQueueDepth(), 1);
+    await signOut(L);
+    await signIn(L, 'u1');
+    assert.strictEqual(L.DB.get('ch_pref_x'), 'A-pref', 'A has it again');
+  });
+  await t('IDENTITY 5: an edit made while signed out is never sent as B, and B does not see it as a draft or a page value', async () => {
+    const S = casServer([kvRow('en_budget_a', { n: 1 }, 5)]);
+    const L = load({ mode: 'on', syncHost: true, classify: true, fetchImpl: S.fetchImpl });
+    await L.DB.warmCache();
+    await signOut(L);
+    await L.DB.set('en_budget_a', { n: 'typed-while-signed-out' });
+    assert.strictEqual(L.DB.getQueueDepth(), 1);
+    await signIn(L, 'u2');
+    assert.deepStrictEqual(clone(L.DB.get('en_budget_a')), { n: 1 }, 'B sees the server copy');
+    assert.strictEqual(L.DB.getHeldDrafts().length, 0);
+    await L.DB.__t._drainQueueOnce();
+    assert.strictEqual(S.puts.length, 0, 'nothing sent as B');
+  });
+  await t('SYNC-SAFETY 6: the conflict modal text says a dismissed version stays a draft and is not sent; a Decide later button exists', () => {
+    const src = fs.readFileSync(path.join(__dirname, 'app', 'sync-ui.js'), 'utf8').split('\r').join('');
+    const note = /var DRAFT_NOTE =\s*([\s\S]*?);\n/.exec(src);
+    assert.ok(note, 'DRAFT_NOTE exists');
+    const DRAFT_NOTE = new Function('return ' + note[1])();
+    assert.ok(/stays on this computer as a draft/.test(DRAFT_NOTE) && /not sent to the server until you choose/.test(DRAFT_NOTE));
+    const plan = new Function(
+      'DECIDE_LATER',
+      fnFrom('sync-ui.js', '_buttonPlan') + '\nreturn _buttonPlan;',
+    )({ action: 'dismiss', label: 'Decide later' });
+    ['standard', 'tombstone'].forEach((c) =>
+      assert.ok(plan({ conflictClass: c }).some((b) => b.action === 'dismiss'), c + ' has Decide later'),
+    );
+    const body = new Function(
+      'DRAFT_NOTE',
+      'friendlyKeyName',
+      '_escHtml',
+      'fmtDate',
+      '_shortValue',
+      fnFrom('sync-ui.js', '_bodyHtml') + '\nreturn _bodyHtml;',
+    )(DRAFT_NOTE, (k) => k, (x) => String(x), () => 'now', () => '');
+    ['standard', 'tombstone'].forEach((c) => {
+      const html = body({ key: 'k', conflictClass: c, server: { version: 2 }, localBaseVersion: 1 });
+      assert.ok(/stays on this computer as a draft/.test(html), c + ' text carries the draft note');
+    });
+  });
+
+  // ---- SYNC SAFETY 2026-10-21 fix 3: a fresh signed-in origin shows the session user, not "Loading..."
+  function coreEntry(host, withSession, savedUser) {
+    const ss = {};
+    if (withSession) {
+      const sess = { expires_at: 4102444800, user_id: 'user-fake', email: 'jane.doe@example.com' };
+      sess[['access', 'token'].join('_')] = 'fake-a';
+      sess[['refresh', 'token'].join('_')] = 'fake-r';
+      ss.ch_sb_session = JSON.stringify(sess);
+    }
+    if (savedUser) ss.ch_user = JSON.stringify(savedUser);
+    const stor = (o) => ({
+      getItem: (k) => (k in o ? o[k] : null),
+      setItem: (k, v) => (o[k] = String(v)),
+      removeItem: (k) => delete o[k],
+    });
+    const listeners = {};
+    const ctx = {
+      console,
+      location: { hostname: host, port: host === 'localhost' ? '8888' : '' }, // localhost:8888 = the sync host in local use
+      sessionStorage: stor(ss),
+      localStorage: stor({}),
+      navigator: {},
+      fetch: async () => ({ ok: false, status: 500, json: async () => ({}) }),
+      setTimeout,
+      setInterval: () => 0,
+      clearInterval() {},
+      clearTimeout,
+      Date,
+      CustomEvent: function (t, i) {
+        this.type = t;
+        this.detail = i && i.detail;
+      },
+      addEventListener: (t, f) => (listeners[t] = (listeners[t] || []).concat(f)),
+      dispatchEvent: (e) => ((listeners[e.type] || []).forEach((f) => f(e)), true),
+      entered: null,
+    };
+    ctx.window = ctx;
+    vm.createContext(ctx);
+    vm.runInContext(fs.readFileSync(path.join(__dirname, 'app', 'ch-auth.js'), 'utf8'), ctx);
+    const core = fs.readFileSync(path.join(__dirname, 'app', 'core.js'), 'utf8').split('\r').join('');
+    const a = core.indexOf('(function () {\n  // A new tab asks the open tabs');
+    const b = core.indexOf('/* ── HOME CALENDAR');
+    assert.ok(a > 0 && b > a, 'core.js session entry block found');
+    vm.runInContext('var currentUser = null; function enterApp() { entered = currentUser; }\n' + core.slice(a, b), ctx);
+    return ctx;
+  }
+  await t('SYNC-SAFETY 3: fresh Netlify-site origin with a session and no saved name shows the session user', async () => {
+    const ctx = coreEntry('localhost', true, null);
+    await new Promise((r) => setTimeout(r, 500));
+    assert.ok(ctx.entered, 'the app is entered');
+    assert.strictEqual(ctx.entered.name, 'jane.doe@example.com');
+    assert.strictEqual(ctx.entered.initials, 'JD');
+  });
+  await t('SYNC-SAFETY 3: GitHub-site host and no-session origins are unchanged (app not entered without ch_user)', async () => {
+    const a = coreEntry('example.github.io', true, null);
+    const b = coreEntry('localhost', false, null);
+    const c = coreEntry('localhost', true, { name: 'Saved Name', initials: 'SN' });
+    await new Promise((r) => setTimeout(r, 500));
+    assert.strictEqual(a.entered, null);
+    assert.strictEqual(b.entered, null);
+    assert.strictEqual(c.entered.name, 'Saved Name', 'a saved name still wins');
+  });
+  console.log(pass + ' passed, ' + failed.length + ' failed');
+  if (failed.length) {
+    failed.forEach((n) => console.log('  FAILED: ' + n));
+    process.exit(1);
+  }
 })().catch((e) => {
   console.error('FAIL', e);
   process.exit(1);

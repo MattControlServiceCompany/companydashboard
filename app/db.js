@@ -513,9 +513,26 @@ const DB = (() => {
   // entry. Another user's per-user entry goes to that user's row and must not
   // block this user's hydration or upload.
   function _hasQueuedWrite(key) {
-    if (!_isPerUserKey(key)) return _syncQueue.some((e) => e.key === key);
+    return !!_queuedEntryFor(key);
+  }
+  // Identity rule (2026-10-21): only the signed-in user's OWN waiting write counts, for shared keys too.
+  // Another user's write never blocks this user's pull and never opens a conflict for this user (it
+  // stays queued under its author and is decided when the author signs in). A held draft is not a
+  // waiting write: it is kept apart and never blocks the pull.
+  function _queuedEntryFor(key) {
     const me = _myUserId();
-    return _syncQueue.some((e) => e.key === key && _entryBelongsTo(e, me));
+    return _syncQueue.find((e) => e.key === key && !e.held && _entryBelongsTo(e, me)) || null;
+  }
+  // The ONE rule for "does this queued write stop the pull from taking the server copy of its key".
+  // It blocks only while the server has nothing newer than the version the write was based on
+  // (entry.baseVersion; none recorded = the write never saw a server row). A held draft never blocks
+  // (_queuedEntryFor ignores it): the page shows the server copy and the draft stays saved apart.
+  // A write that is stale against the server copy does NOT block: the server
+  // copy wins and the write goes to the conflict path (_resolveStaleQueuedWrites).
+  function _queuedWriteBlocksPull(entry, serverVersion) {
+    if (!entry) return false;
+    if (typeof serverVersion !== 'number') return true;
+    return typeof entry.baseVersion === 'number' && serverVersion <= entry.baseVersion;
   }
   // Signed-out entries become the verified user's own when that same user signs in.
   function _claimSignedOutEntries(me) {
@@ -529,13 +546,19 @@ const DB = (() => {
     });
     if (changed) _persistSyncQueue();
   }
-  // Put this user's queued per-user values back into the local cache (the
-  // identity change removed them so another user never sees or writes them).
+  // Put this user's queued values back into the local cache (the identity change removed
+  // them so another user never sees or writes them; per-user keys and shared keys alike).
   function _reapplyQueuedPerUserValues(me) {
     if (!me) return;
     _claimSignedOutEntries(me);
     _syncQueue.forEach((e) => {
-      if (!_isPerUserKey(e.key) || !_entryBelongsTo(e, me)) return;
+      if (e.held || !_entryBelongsTo(e, me)) return; // a held draft is never put on the page
+      // A shared key lost its version stamp when another user was cleared in. The edit was made on
+      // entry.baseVersion: that is the stamp to send against (a newer server row then goes to the conflict path).
+      if (!_isPerUserKey(e.key) && !_replicaVersions[e.key] && typeof e.baseVersion === 'number') {
+        _replicaVersions[e.key] = { version: e.baseVersion, hash: null };
+        _persistStamp(e.key);
+      }
       if (e.deleted) {
         delete _cache[e.key];
         _rawDelete(e.key);
@@ -570,7 +593,36 @@ const DB = (() => {
     _queueIdCounter += 1;
     return Date.now() + '-' + _queueIdCounter + '-' + Math.random().toString(36).slice(2, 8);
   }
-  function _enqueueWrite(key, payload) {
+  // The ONE rule for "may anything be sent to the server now" (2026-10-21, sync safety).
+  // In backend mode 'on' nothing is sent until a full pull (_hydrateInner) finished for the
+  // identity that is signed in now. Before that the cache can be empty or partial, and any
+  // value derived from it (a heal, a backfill, an auto-created blob) must not reach the server.
+  // Writes made before then stay in the durable queue (_enqueueWrite) and go out after the pull.
+  let _pulledUid = null; // identity whose full pull completed in this page
+  let _pullRefused = false; // the last pull was refused with 401/403: waiting does not help (M6 banner shows it)
+  function _hasFullPull() {
+    if (_backendMode() !== 'on') return true; // off: nothing is ever sent, the gate does not apply
+    const me = _myUserId();
+    return !!me && _pulledUid === me;
+  }
+  // A browser that finished a pull before holds version stamps, and one that worked in the old
+  // local-only mode holds replicated data: either cache can open offline. A fresh origin has
+  // neither (only ch_* bookkeeping keys): the app must not start on it.
+  function _cacheHasContent() {
+    if (Object.keys(_replicaVersions).length > 0) return true;
+    return Object.keys(_cache).some((k) => _shouldReplicate(k) && _cache[k] !== undefined && _cache[k] !== null);
+  }
+  // True when a read of the pull failed (manifest, a batch of keys, a drift fetch): the cache may be
+  // missing server rows. Set at the start of every pull run, cleared when every read worked.
+  let _pullReadsFailed = false;
+  // What the last failed pull could not read, in plain words (banner text), and the technical detail (hover).
+  let _pullFailWhat = '';
+  let _pullFailDetail = '';
+  function _notePullFail(what, detail) {
+    _pullFailWhat = what;
+    _pullFailDetail = detail ? String(detail) : '';
+  }
+  function _enqueueWrite(key, payload, opts) {
     // Coalesce to the latest pending write per key. DESIGN DECISION (flagged,
     // not silently guessed — see implementer report): the app's write pattern
     // is whole-value replace via module-global read-modify-write (plan §3),
@@ -584,13 +636,18 @@ const DB = (() => {
     // (payload.owner). Never re-read after an await: the user may have changed.
     const owner = payload.owner || _queueOwner();
     // Coalesce per key AND owner: one user's edit never replaces another user's pending edit.
-    _syncQueue = _syncQueue.filter((e) => !(e.key === key && _entryOwnerKey(e.owner) === _entryOwnerKey(owner)));
+    // A held draft is kept apart from the live edit: a normal write never replaces it, a newer held draft does.
+    const isHeld = !!(opts && opts.held);
+    _syncQueue = _syncQueue.filter(
+      (e) => !(e.key === key && _entryOwnerKey(e.owner) === _entryOwnerKey(owner) && !!e.held === isHeld),
+    );
     _syncQueue.push({
       id: _genId(),
       key,
       owner,
       value: payload.deleted ? undefined : payload.value,
       deleted: !!payload.deleted,
+      held: isHeld, // a held local draft: kept, never sent by the drain (_holdLocalDraft)
       baseVersion:
         _replicaVersions[key] && typeof _replicaVersions[key].version === 'number'
           ? _replicaVersions[key].version
@@ -738,7 +795,13 @@ const DB = (() => {
     return out;
   }
 
+  // The ONE send. Every PUT to the server goes through here, so the full-pull gate (_hasFullPull) is
+  // checked in ONE place: before the first full pull of this sign-in nothing is sent ('held-no-pull').
+  // The only way past the gate is the named flag payload.allowBeforeFullPull, set by restorePush alone
+  // (an explicit user restore of one key at a known server version). Callers treat 'held-no-pull' like a
+  // network error: the value goes to the durable queue and leaves after the pull.
   async function _sendKvPut(key, payload) {
+    if (payload.allowBeforeFullPull !== true && !_hasFullPull()) return { status: 'held-no-pull' };
     // The edit's author is not the signed-in user now (the identity changed while
     // the write waited): never send it with the new user's token or key.
     if (payload.owner && payload.owner.id && payload.owner.id !== _myUserId()) return { status: 'stale-identity' };
@@ -1555,8 +1618,8 @@ const DB = (() => {
       !window.SyncConflictUI ||
       typeof window.SyncConflictUI.showConflictModal !== 'function'
     ) {
-      console.warn('[DB] SyncConflictUI unavailable — cannot present conflict modal, write left queued:', key);
-      _enqueueWrite(key, payload);
+      console.warn('[DB] SyncConflictUI unavailable — cannot present conflict modal, write held as a draft:', key);
+      _holdLocalDraft(key, payload);
       return;
     }
 
@@ -1564,8 +1627,8 @@ const DB = (() => {
     try {
       resolution = await window.SyncConflictUI.showConflictModal(descriptor);
     } catch (e) {
-      console.warn('[DB] Conflict modal threw, leaving write queued:', key, e);
-      _enqueueWrite(key, payload);
+      console.warn('[DB] Conflict modal threw, write held as a draft:', key, e);
+      _holdLocalDraft(key, payload);
       return;
     }
     if (epoch !== _identityEpoch) return; // user switched while the modal was open: write nothing
@@ -1634,8 +1697,83 @@ const DB = (() => {
       return;
     }
 
-    console.warn('[DB] Unknown conflict resolution action, leaving write queued:', key, action);
-    _enqueueWrite(key, payload);
+    // 'dismiss' (closed without a choice) or an action this build does not know: keep the local value.
+    _holdLocalDraft(key, payload);
+  }
+  // A dismissed conflict keeps the local value as a held local draft: it stays in the durable queue
+  // (so it counts as an unsynced change and the pull never replaces it) but the drain never sends it.
+  // Sending it again would only get the same 409 and open the same modal forever. The user chooses
+  // later: a new edit of the key replaces the draft (normal write), releaseHeldDraft sends it again.
+  function _holdLocalDraft(key, payload) {
+    _enqueueWrite(key, payload, { held: true });
+    if (typeof showToast === 'function') {
+      showToast('Your version is kept on this computer as a draft. It is not sent to the server until you choose.', 'info');
+    }
+  }
+  // The held drafts of the signed-in user (never another user's). Plain facts for the sync status panel.
+  function getHeldDrafts() {
+    const me = _myUserId();
+    return _syncQueue
+      .filter((e) => e.held && _entryBelongsTo(e, me))
+      .map((e) => ({ key: e.key, ts: e.ts, deleted: !!e.deleted, userEmail: (e.owner && e.owner.email) || null }));
+  }
+  function _findHeld(key) {
+    const me = _myUserId();
+    return _syncQueue.find((x) => x.key === key && x.held && _entryBelongsTo(x, me)) || null;
+  }
+  function _dropEntry(e) {
+    _syncQueue = _syncQueue.filter((x) => x.id !== e.id);
+    _persistSyncQueue();
+  }
+  // "Use my draft": the draft leaves the held list and goes through the normal write path (set/remove ->
+  // _replicateWrite -> the full-pull gate, _valueChanged, _sendKvPut) as a NEW edit made now by the signed-in
+  // user, on the server version this device holds now. A newer server change opens the conflict choice again.
+  async function releaseHeldDraft(key) {
+    const e = _findHeld(key);
+    if (!e) return false;
+    // A newer live queued edit of the same item (made offline) is replaced by the draft: copy it to
+    // Conflict history first, so no value is lost.
+    const me = _myUserId();
+    const live = _syncQueue.find((x) => x.key === key && !x.held && _entryBelongsTo(x, me));
+    if (live) {
+      _appendConflictArchive({
+        key: live.key,
+        reason: 'held-draft-replaced-queued-edit',
+        losingSide: 'local',
+        losingValue: live.deleted ? null : live.value,
+        losingDeleted: !!live.deleted,
+        losingVersion: typeof live.baseVersion === 'number' ? live.baseVersion : null,
+      });
+    }
+    // The draft stays held until the write is saved. If the save fails, it stays held and the error shows.
+    try {
+      if (e.deleted) remove(key);
+      else await set(key, e.value);
+    } catch (err) {
+      console.warn('[DB] Use my draft failed; the draft stays held:', key, err);
+      if (typeof showToast === 'function') {
+        showToast('Could not save your draft. It is still kept as a draft.', 'error');
+      }
+      return false;
+    }
+    _dropEntry(e);
+    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('dataUpdated', { detail: { key } }));
+    return true;
+  }
+  // "Discard": the draft's value is copied to the conflict history first (never lost), then it leaves the list.
+  function discardHeldDraft(key) {
+    const e = _findHeld(key);
+    if (!e) return false;
+    _appendConflictArchive({
+      key: e.key,
+      reason: 'held-draft-discarded',
+      losingSide: 'local',
+      losingValue: e.deleted ? null : e.value,
+      losingDeleted: !!e.deleted,
+      losingVersion: typeof e.baseVersion === 'number' ? e.baseVersion : null,
+    });
+    _dropEntry(e);
+    return true;
   }
 
   // --- Live write replication tail (set()/remove() call this) --------------
@@ -1694,6 +1832,11 @@ const DB = (() => {
     // (via _wireKey returning null) as defense-in-depth for the queue-drain/
     // hydration-drift-repush/conflict-retry paths that call it directly.
     if (_isPerUserKey(key) && !_myUserId()) return;
+    // No full pull yet for this sign-in: keep the edit in the queue, send nothing.
+    if (!_hasFullPull()) {
+      _enqueueWrite(key, payload);
+      return;
+    }
     // A value the server already holds is not sent (opening a pane, a render
     // that re-saves, a migration that changes nothing).
     if (!payload.deleted && !(await _valueChanged(key, payload.value))) return;
@@ -1710,7 +1853,7 @@ const DB = (() => {
       // must never be replayed over it by the drain.
       const ok = _entryOwnerKey(payload.owner);
       const before = _syncQueue.length;
-      _syncQueue = _syncQueue.filter((e) => !(e.key === key && _entryOwnerKey(e.owner) === ok));
+      _syncQueue = _syncQueue.filter((e) => !(e.key === key && _entryOwnerKey(e.owner) === ok && !e.held));
       if (_syncQueue.length !== before) _persistSyncQueue();
       return;
     }
@@ -1738,10 +1881,11 @@ const DB = (() => {
     return Array.from(_queueFailures.values()).filter((f) => _syncQueue.some((e) => e.key === f.key));
   }
   async function _drainQueueLocked() {
+    if (!_hasFullPull()) return; // no full pull yet: hold every entry
     // Send only the signed-in user's own entries; others stay queued untouched.
     const me = _myUserId();
     _claimSignedOutEntries(me);
-    const snapshot = _syncQueue.filter((e) => e.owner && e.owner.id && e.owner.id === me);
+    const snapshot = _syncQueue.filter((e) => e.owner && e.owner.id && e.owner.id === me && !e.held);
     const epoch = _identityEpoch;
     for (const entry of snapshot) {
       // Identity changed during the drain: stop. The token now belongs to someone else.
@@ -1809,8 +1953,10 @@ const DB = (() => {
   let _drainDelay = DRAIN_BACKOFF_MIN_MS;
   function _queueHasSendable() {
     if (_backendMode() === 'off') return false;
+    if (!_hasFullPull()) return false; // the pull's success re-arms the drain (_hydrate)
     const me = _myUserId();
     return _syncQueue.some((e) => {
+      if (e.held) return false; // a held draft is never sent by itself
       if (!(e.owner && e.owner.id && e.owner.id === me)) return false;
       const f = _queueFailures.get(e.key);
       return !(f && f.permanent);
@@ -1967,6 +2113,7 @@ const DB = (() => {
         } while (_hydrateRerun);
       } finally {
         _hydrateInFlight = null;
+        if (_hasFullPull() && _syncQueue.length) _scheduleDrain(); // held entries may go now
         if (_archivedLocalThisRun > 0) {
           _showLater(
             _archivedLocalThisRun +
@@ -2077,7 +2224,11 @@ const DB = (() => {
       if (epoch !== _identityEpoch) return;
       if (putResult.status === 'conflict') {
         await _handleConflict(localKey, { value: merged }, putResult.body, _backendMode());
-      } else if (putResult.status === 'network-error' || putResult.status === 'error') {
+      } else if (
+        putResult.status === 'network-error' ||
+        putResult.status === 'error' ||
+        putResult.status === 'held-no-pull' // pull not finished: the merged value waits in the queue
+      ) {
         _enqueueWrite(localKey, { value: merged });
       }
       return;
@@ -2154,6 +2305,10 @@ const DB = (() => {
     if (mode !== 'on') return; // off: no hydration
     const epoch = _identityEpoch;
     const stale = () => epoch !== _identityEpoch; // identity changed: discard this run
+    const pullUid = _myUserId();
+    _claimSignedOutEntries(pullUid); // edits made while signed out by this same user count as theirs for this pull
+    _pullReadsFailed = true;
+    let pullComplete = true; // false when any read failed: the cache is then not a full copy
     await _authReady();
     if (stale() || _backendMode() !== 'on') return;
 
@@ -2162,15 +2317,19 @@ const DB = (() => {
       manifest = await _fetchManifestWithTimeout(MANIFEST_TIMEOUT_MS);
     } catch (e) {
       console.warn('[DB] Hydration: manifest fetch failed/timed out, proceeding on local mirror:', e);
+      _pullRefused = _isAuthRefusal(e && e.httpStatus);
+      _notePullFail('the list of saved items', e && e.message);
       _reportServerFailure(e, 'hydration-manifest-failed');
       return;
     }
     if (stale()) return;
+    _pullReadsFailed = false; // manifest read worked; the batch reads below set it again on failure
 
     const routineFetchKeys = []; // WIRE keys (manifest form) to batch-GET
     const routineFetchLocalKey = new Map(); // wireKey -> localKey, for applying results
     const conflictCheckKeys = []; // { m, localKey } needing a hash-compare
     const tombstoneKeys = []; // { m, localKey } to delete locally
+    const staleQueued = []; // { m, localKey, entry }: a queued write older than the server copy
 
     // F1: the deletion records are applied FIRST, so every list merge below
     // already knows what the other side deleted. FAIL CLOSED: if they cannot
@@ -2185,6 +2344,10 @@ const DB = (() => {
       if (serverNewer || _tombstonesBlocked()) tombOk = await _refreshTombstones();
     }
     if (stale()) return;
+    if (!tombOk) {
+      pullComplete = false;
+      _notePullFail('the deletion records', 'deletion records not readable');
+    }
     if (tombOk) await _seedMissingBases();
     if (stale()) return;
 
@@ -2199,9 +2362,16 @@ const DB = (() => {
       if (!resolved) continue;
       const localKey = resolved.localKey;
 
-      // A pending local write for this LOCAL key must not be clobbered by hydration.
-      if (_hasQueuedWrite(localKey)) continue;
+      // A pending local write for this LOCAL key must not be clobbered by hydration, unless the server
+      // holds a version newer than the write's base: then the server copy wins and the write goes to
+      // the conflict path (_resolveStaleQueuedWrites, one rule: _queuedWriteBlocksPull).
+      const queuedEntry = _queuedEntryFor(localKey);
+      if (queuedEntry && _queuedWriteBlocksPull(queuedEntry, m.version)) continue;
       if (!tombOk && UNION_KEY_CONFIG[localKey]) continue; // deletion records unknown: no merge
+      if (queuedEntry) {
+        staleQueued.push({ m, localKey, entry: queuedEntry });
+        continue;
+      }
 
       const local = _replicaVersions[localKey];
       const localHasValidEntry = !!(local && typeof local.version === 'number');
@@ -2234,12 +2404,24 @@ const DB = (() => {
       await _reconcileIncoming(localKey, { deleted: true, version: m.version }, m.hash);
     }
 
+    if (staleQueued.length && !(await _resolveStaleQueuedWrites(staleQueued, epoch))) {
+      pullComplete = false;
+      _pullReadsFailed = true;
+      _notePullFail('some saved items', 'a saved item could not be read');
+    }
+    if (stale()) return;
+
     // Routine fetch + apply (hash-compare-before-overwrite rule: this branch
     // is only reached when the local version map already proves the server
     // is strictly newer, or the key never existed locally at all).
     if (routineFetchKeys.length) {
       const pulled = await _batchGetChunked(routineFetchKeys); // wire keys — the real backend primary keys
       const rows = pulled.rows;
+      if (pulled.failedKeys.length) {
+        pullComplete = false;
+        _pullReadsFailed = true;
+        _notePullFail(pulled.failedKeys.length + ' saved items', pulled.failedKeys.slice(0, 5).join(', '));
+      }
       if (pulled.failedKeys.length && !stale() && typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('dbHydrateFailed', { detail: { keys: pulled.failedKeys } }));
       }
@@ -2278,14 +2460,21 @@ const DB = (() => {
         const rows = fetched[j];
         // No version map entry and a local value exists: server wins (or a pure
         // union merge); the local value is archived first. Never a wholesale push.
-        if (!rows || !rows[0]) continue;
+        if (!rows || !rows[0]) {
+          pullComplete = false;
+          _pullReadsFailed = true;
+          _notePullFail('some saved items', localKey);
+          continue;
+        }
         if (_hasQueuedWrite(localKey)) continue; // race guard
         const before = _cache[localKey];
         // A plain (non-collection) key with a real local value and no stamp: the
         // user decides in the conflict modal. Never a silent server-wins. Same
         // content is adopted silently by _handleConflict. Collection keys keep
         // the per-record merge in _reconcileIncoming.
-        if (_driftNeedsAsk(localKey, before, rows[0])) {
+        // A held draft means the user already chose "Decide later" for this key: the pull does not ask
+        // again, the page takes the server copy (the old local value goes to the conflict history).
+        if (!_findHeld(localKey) && _driftNeedsAsk(localKey, before, rows[0])) {
           const row = rows[0];
           const current = {
             value: row.value,
@@ -2314,6 +2503,14 @@ const DB = (() => {
     // manifest, so it is never resurrected. Runs once per key: after the PUT
     // the key has a version entry.
     if (stale()) return;
+    // The full pull for this identity is done only when every read above worked.
+    if (pullComplete && pullUid && _myUserId() === pullUid) {
+      const first = _pulledUid !== pullUid;
+      _pulledUid = pullUid;
+      _pullRefused = false;
+      // Work that waited for the full pull (the load-time heals and backfills) starts now.
+      if (first && typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('dbFullPull'));
+    }
     const onServer = new Set(manifest.map((m) => m.key));
     const uploadKeys = [];
     for (const localKey of Object.keys(_cache)) {
@@ -2327,6 +2524,8 @@ const DB = (() => {
       if (wire === null || onServer.has(wire)) continue;
       uploadKeys.push(localKey);
     }
+
+    if (!pullComplete) uploadKeys.length = 0; // a partial cache is never uploaded
 
     if (typeof window !== 'undefined') {
       window.dispatchEvent(
@@ -2349,6 +2548,52 @@ const DB = (() => {
         }),
       );
     }
+  }
+
+  // Queued writes the server has already passed (server version newer than the write's base): the
+  // write leaves the queue and goes to the normal conflict path with the server row as `current` (merge
+  // for lists, the modal otherwise; the local side is archived first). Never a silent overwrite either way.
+  // Returns false when a server row could not be read (that write stays queued, the pull is not complete).
+  async function _resolveStaleQueuedWrites(list, epoch) {
+    let allRead = true;
+    for (const { m, localKey, entry } of list) {
+      if (epoch !== _identityEpoch) return allRead;
+      let current;
+      if (m.deleted) {
+        current = { value: undefined, version: m.version, hash: m.hash || null, deleted: true };
+      } else {
+        let rows = null;
+        try {
+          rows = await _batchGet([m.key]);
+        } catch (e) {
+          rows = null;
+        }
+        if (epoch !== _identityEpoch) return allRead;
+        const row = rows && rows[0];
+        if (!row) {
+          allRead = false;
+          continue;
+        }
+        current = {
+          value: row.value,
+          version: row.version,
+          hash: row.hash || m.hash || null,
+          deleted: false,
+          updatedBy: row.updatedBy || row.updated_by,
+          updatedAt: row.updatedAt || row.updated_at,
+        };
+      }
+      if (!_syncQueue.some((e) => e.id === entry.id)) continue; // sent or replaced meanwhile
+      _syncQueue = _syncQueue.filter((e) => e.id !== entry.id);
+      _persistSyncQueue();
+      const payload = entry.deleted ? { deleted: true, owner: entry.owner } : { value: entry.value, owner: entry.owner };
+      // Not awaited: a modal waits for the user and must not hold the load.
+      _handleConflict(localKey, payload, { current }, 'on').catch((e) => {
+        console.warn('[DB] Stale queued write: conflict handling failed, write re-queued:', localKey, e);
+        _enqueueWrite(localKey, payload);
+      });
+    }
+    return allRead;
   }
 
   // First connect upload (F2, 2026-10-05). Insert only (baseVersion null), so
@@ -2561,6 +2806,15 @@ const DB = (() => {
       }
     }
 
+    // A shared key holding someone's UNSENT write is cleared too (2026-10-21, identity safety):
+    // the page value is that user's edit, not the server copy. The next user pulls the server copy,
+    // and the edit stays in the queue under its author (reapplied when that author signs in again).
+    // Held drafts are never on the page, so they are skipped.
+    _syncQueue.forEach((e) => {
+      if (e.held || _isPerUserKey(e.key) || _entryBelongsTo(e, nextUid)) return;
+      if (cleared.indexOf(e.key) === -1) cleared.push(e.key);
+    });
+
     // Per-user keys are ALWAYS removed from the local cache, even with a queued
     // edit: the queue entry keeps the value, and _reapplyQueuedPerUserValues puts
     // it back when its owner signs in again. The next user never sees it or saves it.
@@ -2612,6 +2866,7 @@ const DB = (() => {
     _recordLastUser();
     _persistSyncQueue(); // refresh the bars for the new identity
     _identityEpoch++; // in-flight work for the previous user now discards itself
+    _pulledUid = null; // the identity changed: a pull done for an earlier sign-in does not open the send gate again
     _uploadProgress = { running: false, total: 0, done: 0, uploaded: 0, failed: 0, failures: [] };
     const cleared = _clearPerUserLocalState(prevUid, uid);
     _reapplyQueuedPerUserValues(uid); // this user's own queued values, before hydrate and drain
@@ -2686,7 +2941,11 @@ const DB = (() => {
     if (_backgroundTasksStarted) return;
     _backgroundTasksStarted = true;
     if (typeof window === 'undefined') return;
-    window.addEventListener('online', _drainQueueOnce);
+    window.addEventListener('online', () => {
+      // Back online with no full pull yet: pull first (its success releases the held queue).
+      if (_backendMode() === 'on' && !_hasFullPull()) _hydrate().catch((e) => console.warn('[DB] Pull on reconnect failed:', e));
+      _drainQueueOnce();
+    });
     if (typeof document !== 'undefined' && document.addEventListener) {
       document.addEventListener('visibilitychange', () => {
         if (!document.hidden) _remoteCheckIfDue();
@@ -2810,6 +3069,55 @@ const DB = (() => {
     _startBackgroundSync();
   }
 
+  // The app must not start on a cache that never had a full pull (a fresh origin signed in
+  // while the server is slow or down): init would read it as empty and heal or auto-create data.
+  // Retries the pull with back-off; the offline banner (_reportServerFailure) shows the state.
+  // A browser that finished a pull before opens offline after 3 tries and keeps retrying in the
+  // background. Nothing is sent to the server until a pull succeeds (_hasFullPull).
+  let _pullRetryTimer = null;
+  function _scheduleBackgroundPull() {
+    if (_pullRetryTimer || typeof window === 'undefined') return;
+    _pullRetryTimer = setTimeout(async () => {
+      _pullRetryTimer = null;
+      try {
+        await _hydrate();
+      } catch (e) {
+        console.warn('[DB] Background pull retry failed:', e);
+      }
+      if (_backendMode() === 'on' && !_hasFullPull()) _scheduleBackgroundPull();
+    }, 30000);
+    if (_pullRetryTimer && _pullRetryTimer.unref) _pullRetryTimer.unref();
+  }
+  async function _holdForFirstPull() {
+    let delay = 1000;
+    let tries = 0;
+    // Only a failed READ holds the app (a missing deletion-record read stays fail-closed inside the pull).
+    while (_backendMode() === 'on' && !_hasFullPull() && _pullReadsFailed) {
+      if (_pullRefused) return; // refused sign-in: the banner tells the user, retrying cannot fix it
+      if (_cacheHasContent() && tries >= 3) {
+        _scheduleBackgroundPull();
+        return;
+      }
+      console.warn('[DB] No full pull yet; retrying in', delay, 'ms');
+      // The small offline banner (sync-ui.js) says what failed, that nothing is saved yet, that it retries.
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('dbOfflineBanner', {
+            detail: { reason: 'pull-waiting', waiting: true, what: _pullFailWhat, detail: _pullFailDetail, retryMs: delay },
+          }),
+        );
+      }
+      await new Promise((r) => setTimeout(r, delay));
+      delay = Math.min(delay * 2, 15000);
+      tries++;
+      try {
+        await _hydrate();
+      } catch (e) {
+        console.warn('[DB] Pull retry threw:', e);
+      }
+    }
+  }
+
   async function warmCache() {
     try {
       await migrateFromLocalStorage();
@@ -2857,6 +3165,7 @@ const DB = (() => {
       } catch (e) {
         console.warn('[DB] Hydration step threw unexpectedly (proceeding on local mirror):', e);
       }
+      if (_pullReadsFailed) await _holdForFirstPull();
 
       _finishWarmCache();
     } catch (e) {
@@ -2879,6 +3188,7 @@ const DB = (() => {
       } catch (e2) {
         console.warn('[DB] Hydration step threw unexpectedly (fallback mode):', e2);
       }
+      if (_pullReadsFailed) await _holdForFirstPull();
       _ready = true;
       // Surface a VISIBLE warning — silent fallback looks identical to "no data" to the user.
       // Defer by one tick so showToast is defined (all scripts have loaded) before we call it.
@@ -3070,7 +3380,13 @@ const DB = (() => {
     else delete _replicaVersions[key];
     let r;
     try {
-      r = await _sendKvPut(key, serverRow ? { value, explicitOverwrite: true } : { value });
+      // allowBeforeFullPull: an explicit user restore may send before the pull gate opens (named flag, OPERATIONS.md section 6).
+      r = await _sendKvPut(
+        key,
+        serverRow
+          ? { value, explicitOverwrite: true, allowBeforeFullPull: true }
+          : { value, allowBeforeFullPull: true },
+      );
     } catch (e) {
       r = { status: 'network-error' };
     }
@@ -3213,6 +3529,10 @@ const DB = (() => {
     restoreScope,
     restoreFetchServer,
     restorePush,
+    hasFullPull: _hasFullPull,
+    getHeldDrafts,
+    releaseHeldDraft,
+    discardHeldDraft,
   };
 })();
 
