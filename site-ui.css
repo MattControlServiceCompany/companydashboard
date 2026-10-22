@@ -1049,6 +1049,13 @@ a:focus-visible,
   border-radius: 4px;
 }
 
+/* Disabled buttons: one shared cue, no opacity and no grey (Matt, 2026-10-22): dashed border plus not-allowed cursor. */
+button:disabled,
+button.disabled {
+  border: 1px dashed var(--text) !important;
+  cursor: not-allowed !important;
+}
+
 /* ── ACCESSIBILITY — Min Touch Targets (44px) ── */
 .s-item {
   min-height: 44px;

@@ -12797,8 +12797,8 @@ function _renderDupModal(billIdx) {
     const selNew = useNew ? 'border-left:3px solid #22c55e;opacity:1' : 'font-style:italic';
     tableHtml += `<tr style="background:rgba(245,158,11,.06)">
         <td style="padding:6px 12px;font-weight:600;color:var(--amber)">${LABELS[d.key] || d.key}</td>
-        <td style="padding:6px 12px;cursor:pointer;${selExist}" onclick="_toggleDupField(${billIdx},'${d.key}',false)">${d.existVal || '<em>(empty)</em>'}</td>
-        <td style="padding:6px 12px;cursor:pointer;${selNew}" onclick="_toggleDupField(${billIdx},'${d.key}',true)">${d.newVal || '<em>(empty)</em>'}</td>
+        <td style="padding:6px 12px;cursor:pointer;${selExist}" onclick="_toggleDupField(${billIdx},'${d.key}',false)">${d.existVal || '(empty)'}</td>
+        <td style="padding:6px 12px;cursor:pointer;${selNew}" onclick="_toggleDupField(${billIdx},'${d.key}',true)">${d.newVal || '(empty)'}</td>
       </tr>`;
   }
 
