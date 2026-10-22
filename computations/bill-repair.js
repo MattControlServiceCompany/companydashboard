@@ -255,6 +255,23 @@ function repairFailedChecks(row, meter, building) {
   return out;
 }
 
+// A stored service address that an older reader joined across a line break: a street number alone on a line, then the next
+// line's text ("11 then a new line then SOME SCHOOL DISTRICT"). The ONE test; eligibility and the candidate both call it.
+function billServiceAddressJoined(addr) {
+  return typeof addr === 'string' && /^\s*\d+[^\S\n]*\n/.test(addr);
+}
+// The fresh service address as a candidate to replace a joined stored one: the reader's address must itself be clean and
+// stand on the bill's own page (same letters and digits, case, spaces and punctuation ignored). Returns { to } or { held }.
+function repairServiceAddressCandidate(ext, row, pageText) {
+  if (!billServiceAddressJoined(row.serviceAddress)) return null;
+  const to = ext && typeof ext.ServiceAddress === 'string' ? ext.ServiceAddress.trim() : '';
+  if (!to || billServiceAddressJoined(to)) return null;
+  if (billFieldUserOwned(row, 'serviceAddress')) return { held: 'the user owns this field', to };
+  const key = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (!key(pageText).includes(key(to))) return { held: 'the value is not printed on the bill page', to };
+  return { to };
+}
+
 // The ONE decision whether a fresh value may be written over field k of a stored bill (Matt 2026-10-15: never fill a
 // value that is not printed; held is better than guessed). Returns { ok: true } or { ok: false, code, reason }:
 //   - 'value'  never blank, never 0 over a value (repairValueAllowed); never a field the user owns (billFieldUserOwned)
@@ -353,6 +370,11 @@ function repairFieldsFromExtracted(ext, row, commodity, meter, building, pageTex
   const cand = _repairCandidates(ext, row, commodity);
   const changes = {};
   const held = {};
+  // The service address is not judged by a bill check (no check reads it); a joined stored one is replaced by a clean
+  // address that stands on the bill's own page.
+  const addr = repairServiceAddressCandidate(ext, row, pageText);
+  if (addr && addr.held) held.serviceAddress = { from: row.serviceAddress, to: addr.to, reason: addr.held };
+  else if (addr) changes.serviceAddress = { from: row.serviceAddress, to: addr.to };
   const keys = REPAIR_FIELD_ORDER.filter((k) => cand[k]);
   if (!keys.length) return { changes, held };
   const clone = (m) => JSON.parse(JSON.stringify(m));
@@ -431,6 +453,10 @@ function repairEligibleBills(meter, building, version) {
           .length
       )
         reason = 'reads do not add up';
+    }
+    if (!reason && billServiceAddressJoined(b.serviceAddress)) {
+      why[b.id] = why[b.id] || 'service address joined';
+      return;
     }
     if (!reason) return;
     why[b.id] = why[b.id] || reason;

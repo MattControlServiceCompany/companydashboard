@@ -6298,8 +6298,10 @@ function _evgAccountsIn(text) {
 function _evgPickAccount(accts) {
   return accts.length ? accts[0] : null;
 }
+// An address is ONE printed line: spaces inside it are never a line break (a street number alone on a
+// line must not join the next line's text).
 const _EVG_ADDR =
-  /^(\d+\s+\w[\w\s,.]{3,50}(?:KS|MO|KY|OK|NE|IA|AR|TX|CO|IL|IN|OH|MI|PA|NY|NJ|CT|MA|VA|NC|SC|GA|FL|TN|MS|AL|LA|NM|AZ|UT|ID|OR|WA|MT|WY|ND|SD|MN|WI|NV|CA))[^\w\n]*$/m;
+  /^(\d+[^\S\n]+\w(?:[\w,.]|[^\S\n]){3,50}(?:KS|MO|KY|OK|NE|IA|AR|TX|CO|IL|IN|OH|MI|PA|NY|NJ|CT|MA|VA|NC|SC|GA|FL|TN|MS|AL|LA|NM|AZ|UT|ID|OR|WA|MT|WY|ND|SD|MN|WI|NV|CA))[^\w\n]*$/m;
 
 // ONE address normalizer. _evgAddrNorm is the readable form (shown, stored). _evgAddrKey is the compare form:
 // OCR splits or joins words and swaps "," "." and space, so equal addresses must ignore spaces, commas and periods.
@@ -6388,6 +6390,17 @@ function _lbg_splitPages(t) {
 function _lbg_commaCents(text) {
   const m = String(text).trim().match(/^(-?\d{1,3}(?:,\d{3})*),(\d{2})$/);
   return m ? m[1] + '.' + m[2] : null;
+}
+// ONE rule for adding a second metered line of the same commodity into the running total. Both the
+// old-format and new-format City readers use it: a multi-meter page prints one line per meter.
+function _lbg_mergeMetered(acc, p) {
+  if (acc === null) return p;
+  return {
+    usage: (acc.usage || 0) + (p.usage || 0),
+    charge: acc.charge != null ? acc.charge + (p.charge || 0) : p.charge,
+    prevRead: acc.prevRead != null ? acc.prevRead : p.prevRead,
+    currRead: acc.currRead != null ? acc.currRead : p.currRead,
+  };
 }
 function _lbg_cleanCents(raw) {
   if (raw == null) return null;
@@ -11997,7 +12010,7 @@ const UTILITY_RULES = [
         stormLine = null,
         sewerLine = null,
         waterLines = [],
-        wpfLine = null,
+        wpfLines = [],
         fuelAdjLine = null;
       for (const ln of lines) {
         const trim = ln.trim();
@@ -12008,7 +12021,7 @@ const UTILITY_RULES = [
         else if (/\bG[A4]S\b/i.test(trim) && !/[FE][UO][EL]|ADJ/i.test(trim) && !gasLine) gasLine = trim;
         else if (/\bSTORM\s*W[A4]TER\b/i.test(trim) && !stormLine) stormLine = trim;
         else if (/\bS[E3]W[E3]R\b/i.test(trim) && !sewerLine) sewerLine = trim;
-        else if (/\bW[A4]TER\s*PROT[E3]CTION\s*F[E3][E3]\b/i.test(trim) && !wpfLine) wpfLine = trim;
+        else if (/\bW[A4]TER\s*PROT[E3]CTION\s*F[E3][E3]\b/i.test(trim)) wpfLines.push(trim);
         else if (/\bW[A4]TER\b/i.test(trim) && !/PROTECTION|STORM/i.test(trim)) waterLines.push(trim);
       }
 
@@ -12055,19 +12068,10 @@ const UTILITY_RULES = [
       const gas = parseLine(gasLine);
       const storm = parseLine(stormLine);
       const sewer = parseLine(sewerLine);
-      const water = waterLines.reduce(
-        (acc, wl) => {
-          const p = parseLine(wl);
-          return {
-            usage: (acc.usage || 0) + (p.usage || 0),
-            charge: acc.charge != null ? acc.charge + (p.charge || 0) : p.charge,
-            prevRead: acc.prevRead != null ? acc.prevRead : p.prevRead,
-            currRead: acc.currRead != null ? acc.currRead : p.currRead,
-          };
-        },
-        { usage: null, charge: null, prevRead: null, currRead: null },
-      );
-      const wpf = parseLine(wpfLine);
+      const _sumLines = (lns) =>
+        lns.reduce((acc, ln) => _lbg_mergeMetered(acc, parseLine(ln)), null) || parseLine(null);
+      const water = _sumLines(waterLines);
+      const wpf = _sumLines(wpfLines);
       const fuelAdj = parseLine(fuelAdjLine);
       let signedFuelAdj = fuelAdj.charge;
       if (signedFuelAdj == null) {
@@ -12746,16 +12750,7 @@ const UTILITY_RULES = [
           wpfLineSeen = true;
           const wp2 = parseMetered(ln, /W[A4]TER\s*PROT[E3]CTION/i);
           wpfParts.push(wp2.charge);
-          if (wpf === null) {
-            wpf = wp2;
-          } else {
-            wpf = {
-              usage: (wpf.usage || 0) + (wp2.usage || 0),
-              charge: wpf.charge != null ? wpf.charge + (wp2.charge || 0) : wp2.charge,
-              prevRead: wpf.prevRead != null ? wpf.prevRead : wp2.prevRead,
-              currRead: wpf.currRead != null ? wpf.currRead : wp2.currRead,
-            };
-          }
+          wpf = _lbg_mergeMetered(wpf, wp2);
         }
         if (/\bS[E3]W[E3]R\b/i.test(ln)) {
           sewerLineSeen = true;
@@ -15233,7 +15228,7 @@ const UTILITY_RULES = [
 // The version of the PDF reader's rules. The stored-bill repair pass (app/auto-repair.js) reads each bill's PDF page once per
 // version and marks the bill (_pdfRepair.v). Add 1 whenever a rule in UTILITY_RULES (or the post-extraction checks) changes
 // what it reads, so every bill is read again with the new rules.
-const EXTRACTOR_RULES_VERSION = 4;
+const EXTRACTOR_RULES_VERSION = 5;
 function _pickFileRule(text) {
   return (
     UTILITY_RULES.find((r) => r.fileFirst && r.detect(text)) ||
