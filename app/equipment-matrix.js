@@ -4283,7 +4283,7 @@ function initEquipMatrix(projId) {
   if (window.DB && !window.DB.isReady()) {
     wrap.innerHTML =
       '<div style="display:flex;flex:1;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:var(--text2);min-height:0">' +
-      '<div style="font-size:28px;opacity:.4">&#x23F3;</div>' +
+      '<div style="font-size:28px">&#x23F3;</div>' +
       '<div style="font-size:14px;font-weight:600">Loading equipment data…</div>' +
       '</div>';
     // Re-render once DB signals completion — dbReady (success) or dbLoadFailed (failure).
@@ -4460,7 +4460,7 @@ function emUpdateStickyOffsets() {
 function emRenderMatrix(container, data, pid) {
   window._emActivePid = pid;
   if (!data) {
-    container.innerHTML = '<div style="padding:24px;text-align:center;color:#888">⏳ Loading equipment data…</div>';
+    container.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text)">⏳ Loading equipment data…</div>';
     return;
   }
   if (!data.edits) data.edits = {};
@@ -4475,7 +4475,7 @@ function emRenderMatrix(container, data, pid) {
     container.innerHTML =
       '<div style="display:flex;flex:1;flex-direction:column;align-items:center;' +
       'justify-content:center;gap:12px;color:var(--text2);min-height:0">' +
-      '<div style="font-size:28px;opacity:.4">&#x23F3;</div>' +
+      '<div style="font-size:28px">&#x23F3;</div>' +
       '<div style="font-size:14px;font-weight:600">Loading equipment data…</div>' +
       '</div>';
     return;
@@ -4484,7 +4484,7 @@ function emRenderMatrix(container, data, pid) {
   if (!data.rows || data.rows.length === 0) {
     container.innerHTML =
       '<div style="display:flex;flex:1;flex-direction:column;align-items:center;justify-content:center;gap:14px;color:var(--text2);min-height:0">' +
-      '<div style="font-size:32px;opacity:.3">📋</div>' +
+      '<div style="font-size:32px">📋</div>' +
       '<div style="font-size:14px;font-weight:600">No equipment data for this project yet</div>' +
       '<div style="font-size:12px;color:var(--text3)">Import a WebCTRL CSV export to build the Equipment Matrix.</div>' +
       '<button class="btn btn-em btn-sm" style="margin-top:6px" onclick="emShowUploadPanel(this,\'merge\',\'' +
@@ -21684,7 +21684,7 @@ function emRenderCreateBldgsTable(rows) {
 
   for (var i = 0; i < rows.length; i++) {
     var row = rows[i];
-    var dimStyle = row.alreadyExists ? 'opacity:0.5;' : '';
+    var dimStyle = row.alreadyExists ? 'font-style:italic;' : '';
     var statusHtml = row.alreadyExists
       ? '<span style="font-size:11px;color:var(--text3);font-style:italic">(already exists)</span>'
       : '<span style="font-size:11px;color:var(--em)">New</span>';
@@ -23038,7 +23038,7 @@ function emOpenManageMappings(pid) {
     '<button id="em-mm-save-btn" onclick="emSaveManageMappings(\'' +
     pid +
     '\')" disabled ' +
-    'style="font-size:11px;padding:6px 16px;background:var(--accent);border:none;color:#fff;border-radius:4px;cursor:pointer;height:30px;font-weight:600;opacity:0.6">Save Mappings</button>' +
+    'style="font-size:11px;padding:6px 16px;background:var(--accent);border:none;color:#fff;border-radius:4px;cursor:pointer;height:30px;font-weight:600">Save Mappings</button>' +
     '</div>' +
     '</div>' +
     '</div>';
@@ -23372,7 +23372,7 @@ function emOpenManageMappings(pid) {
         );
         for (var mpi = 0; mpi < matchedPoints.length; mpi++) {
           var mp = matchedPoints[mpi];
-          var confColor = mp.confidence === 'high' ? '#27ae60' : mp.confidence === 'medium' ? '#e67e22' : '#888';
+          var confColor = mp.confidence === 'high' ? '#27ae60' : mp.confidence === 'medium' ? '#e67e22' : 'var(--text)';
           var confLabel = mp.confidence === 'high' ? 'High' : mp.confidence === 'medium' ? 'Medium' : 'Low';
           var confTitle =
             'Auto-match confidence: ' +

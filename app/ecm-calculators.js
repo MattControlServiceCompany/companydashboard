@@ -2517,7 +2517,7 @@ function renderEcmCalculator(
 
       return `
       <div class="ecm-field-row" style="display:flex;align-items:flex-start;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-        <label for="${id}"${helpTitle} style="flex:0 0 280px;font-size:12px;font-weight:600;color:var(--text2);padding-top:6px${helpCursor}">${_escHtml(inp.label)}${inp.unit ? ' <span style="opacity:.6;font-weight:400">(' + _escHtml(inp.unit) + ")</span>" : ""}</label>
+        <label for="${id}"${helpTitle} style="flex:0 0 280px;font-size:12px;font-weight:600;color:var(--text2);padding-top:6px${helpCursor}">${_escHtml(inp.label)}${inp.unit ? ' <span style="font-weight:400">(' + _escHtml(inp.unit) + ")</span>" : ""}</label>
         <div style="flex:1;min-width:160px">
           <input id="${id}" class="fi ecm-input" type="number" data-inp="${_escHtml(inp.id)}"
             value="${_escHtml(val)}"${inp.min != null ? ` min="${inp.min}"` : ""}${inp.max != null ? ` max="${inp.max}"` : ""}
@@ -2779,7 +2779,7 @@ function renderEcmResults(templateId, results, container, projectContext, inputs
         </td>
         <td class="ecm-result-cell" style="text-align:right;width:32px">
           <button class="btn btn-ghost btn-sm"
-            style="font-size:10px;padding:2px 6px;opacity:.6"
+            style="font-size:10px;padding:2px 6px"
             title="Show formula"
             onclick="_ecmToggleFormula(this,'${_escHtml(out.id)}')">
             ƒ

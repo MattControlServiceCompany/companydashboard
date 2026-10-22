@@ -56,13 +56,20 @@
         --orange: #fb923c;
         --em: #00d4aa;
         --em-dim: rgba(0, 212, 170, 0.1);
-        --text: #e2e8f8;
-        --text2: #9fb3d4;
-        --text3: #6b7a9e;
+        --text: #ffffff;
+        --text2: #ffffff;
+        --text3: #ffffff;
         --font: 'Outfit', sans-serif;
         --mono: 'JetBrains Mono', monospace;
         --r: 10px;
       }
+      /* Placeholder text follows the text token like every other text (Matt, 2026-10-22: no grey text; de-emphasis by style, never color) */
+      ::placeholder {
+        color: var(--text);
+        opacity: 1;
+        font-style: italic;
+      }
+
 
       /* ── RESET ── */
       *,
@@ -738,7 +745,6 @@
         font-size: 14px;
         cursor: pointer;
         margin-left: 4px;
-        opacity: 0.7;
         padding: 0;
         line-height: 1;
         flex-shrink: 0;
@@ -1039,9 +1045,9 @@
         --s4: #eaedf6;
         --border: #d3d9e8;
         --border2: #bcc5da;
-        --text: #1a2340;
-        --text2: #4a5672;
-        --text3: #526080;
+        --text: #000000;
+        --text2: #000000;
+        --text3: #000000;
         --em: #007a8c;
         --em-dim: rgba(0, 122, 140, 0.1);
         --em-glow: rgba(0, 122, 140, 0.2);

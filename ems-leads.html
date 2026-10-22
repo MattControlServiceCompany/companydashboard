@@ -41,14 +41,21 @@
         --violet-dim: rgba(167, 139, 250, 0.1);
         --lime: #84cc16;
         --lime-dim: rgba(132, 204, 22, 0.1);
-        --text: #dde6f5;
-        --text2: #6b7b9e;
-        --text3: #2a3450;
+        --text: #ffffff;
+        --text2: #ffffff;
+        --text3: #ffffff;
         --font: 'DM Sans', sans-serif;
         --head: 'Syne', sans-serif;
         --mono: 'DM Mono', monospace;
         --r: 10px;
       }
+      /* Placeholder text follows the text token like every other text (Matt, 2026-10-22: no grey text; de-emphasis by style, never color) */
+      ::placeholder {
+        color: var(--text);
+        opacity: 1;
+        font-style: italic;
+      }
+
       *,
       *::before,
       *::after {
@@ -157,7 +164,7 @@
         justify-content: center;
         font-size: 12px;
         font-weight: 700;
-        color: #05080f;
+        color: #000000;
         font-family: var(--head);
       }
       .tbname {
@@ -286,14 +293,14 @@
         font-size: 10px;
         font-family: var(--mono);
         background: var(--em);
-        color: #05080f;
+        color: #000000;
         border-radius: 9px;
         padding: 1px 6px;
         font-weight: 700;
       }
       .s-badge-warn {
         background: var(--warn);
-        color: #05080f;
+        color: #000000;
       }
 
       .main {
@@ -362,7 +369,7 @@
       }
       .btn-em {
         background: var(--em);
-        color: #05080f;
+        color: #000000;
       }
       .btn-em:hover {
         filter: brightness(1.12);
@@ -1304,7 +1311,6 @@
       }
       .empty-state .ico {
         font-size: 40px;
-        opacity: 0.3;
       }
       .empty-state h3 {
         font-family: var(--head);

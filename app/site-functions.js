@@ -1308,7 +1308,7 @@ function _restoreStyle() {
     '.rst-tbl td.rst-rm{background:var(--amber-dim);color:var(--text);font-weight:700}' +
     '.rst-rm-note{border-left:3px solid var(--amber);padding-left:8px}' +
     '.rst-list{margin:6px 0 0;padding-left:18px;color:var(--text2);word-break:break-word}' +
-    '.rst-list small{opacity:.8}' +
+    '.rst-list small{font-size:11px}' +
     '.rst-det{margin:0 0 12px;color:var(--text)}' +
     '.rst-det summary{cursor:pointer;color:var(--text2);font-weight:600}' +
     '.rst-det b{display:block;margin-top:6px}' +

@@ -2276,7 +2276,7 @@ function egfxRefresh(projId) {
             legend: {
               display: true,
               position: 'top',
-              labels: { color: 'rgba(200,220,240,.9)', font: { size: 10 }, boxWidth: 12, padding: 10 },
+              labels: { color: SharedCharts.textColor(), font: { size: 10 }, boxWidth: 12, padding: 10 },
             },
             tooltip: {
               callbacks: {
@@ -2295,10 +2295,10 @@ function egfxRefresh(projId) {
             },
           },
           scales: {
-            x: { ticks: { color: 'rgba(180,200,220,.8)', font: { size: 10 } }, grid: { display: false } },
+            x: { ticks: { color: SharedCharts.textColor(), font: { size: 10 } }, grid: { display: false } },
             y: {
               ticks: {
-                color: 'rgba(180,200,220,.8)',
+                color: SharedCharts.textColor(),
                 font: { size: 10 },
                 callback: (v) => '$' + v.toLocaleString(),
               },
@@ -2688,7 +2688,7 @@ function _spBuildSnapshotPills(projId, activeSnapId, snapshots) {
       projId +
       "','" +
       s.id +
-      '\')" style="font-size:10px;opacity:.6;cursor:pointer;margin-left:2px" title="Delete snapshot">✕</span>' +
+      '\')" style="font-size:10px;cursor:pointer;margin-left:2px" title="Delete snapshot">✕</span>' +
       '</button>';
   });
   return pills;

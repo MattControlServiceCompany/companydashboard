@@ -309,7 +309,7 @@ function baOpenImportModal() {
     '</div>',
     '<div class="modal-ftr">',
     '<button onclick="baCloseImportModal()" style="background:var(--s3);border:1px solid var(--border);color:var(--text2);padding:8px 18px;border-radius:6px;cursor:pointer;font-size:13px;">Cancel</button>',
-    '<button id="ba-import-btn" onclick="baRunImport()" disabled style="background:var(--accent);color:#fff;border:none;padding:8px 18px;border-radius:6px;cursor:pointer;font-size:13px;opacity:0.5;">Import</button>',
+    '<button id="ba-import-btn" onclick="baRunImport()" disabled style="background:var(--accent);color:#fff;border:none;padding:8px 18px;border-radius:6px;cursor:pointer;font-size:13px;">Import</button>',
     '</div>',
 
     '</div></div>',

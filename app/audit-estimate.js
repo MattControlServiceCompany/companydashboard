@@ -1995,7 +1995,7 @@ function auditEstRenderHTML(projId, auditType) {
         ' title="' +
         (b.method === 'workbook' ? 'Download this estimate as an Excel file' : 'Switch to the Workbook method to export') +
         '" style="font-size:12px;padding:6px 12px;border-radius:4px;border:1px solid var(--border);background:var(--s3);color:var(--text);cursor:' +
-        (b.method === 'workbook' ? 'pointer' : 'not-allowed;opacity:.5') +
+        (b.method === 'workbook' ? 'pointer' : 'not-allowed') +
         '">Export to Excel</button>' +
         '</div>'
       : '') +

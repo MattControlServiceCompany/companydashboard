@@ -396,7 +396,7 @@ function _renderVarianceSection(projId, line, bd, bldgs) {
           : `<td class="bgt-cell-sm" style="text-align:right;font-family:var(--mono);color:${varColor(r.ytdVariance, r.ytdBudget > 0 ? (r.ytdVariance / r.ytdBudget) * 100 : 0)}">
           ${r.ytdVariance > 0 ? '+' : ''}${_fmtUSD(r.ytdVariance, '$0')}
          </td>`;
-      return `<tr style="${!r.isPast ? 'opacity:.45' : ''}">
+      return `<tr style="${!r.isPast ? 'font-style:italic' : ''}">
       <td style="font-weight:600;white-space:nowrap">${mo}</td>
       <td style="text-align:right;font-family:var(--mono)">${_fmtUSD(r.budget, '$0')}</td>
       ${actCell}

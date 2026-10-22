@@ -2172,7 +2172,7 @@ function renderUDProjAggPanel(content) {
             legend: {
               display: true,
               position: 'top',
-              labels: { color: 'rgba(200,220,240,.9)', font: { size: 11 }, boxWidth: 14, padding: 14 },
+              labels: { color: SharedCharts.textColor(), font: { size: 11 }, boxWidth: 14, padding: 14 },
             },
             tooltip: {
               callbacks: {
@@ -2192,18 +2192,18 @@ function renderUDProjAggPanel(content) {
           scales: {
             x: {
               stacked: true,
-              ticks: { color: 'rgba(180,200,220,.8)', font: { size: 11 } },
+              ticks: { color: SharedCharts.textColor(), font: { size: 11 } },
               grid: { color: 'rgba(255,255,255,.08)' },
             },
             y: {
               stacked: true,
               ticks: {
-                color: 'rgba(180,200,220,.8)',
+                color: SharedCharts.textColor(),
                 font: { size: 10 },
                 callback: (v) => '$' + v.toLocaleString('en-US', { maximumFractionDigits: 0 }),
               },
               grid: { color: 'rgba(255,255,255,.10)' },
-              title: { display: true, text: 'Cost ($)', color: 'rgba(160,185,210,.8)', font: { size: 11 } },
+              title: { display: true, text: 'Cost ($)', color: SharedCharts.textColor(), font: { size: 11 } },
             },
           },
         },
@@ -2290,7 +2290,7 @@ function renderUDProjAggPanel(content) {
             legend: {
               display: true,
               position: 'top',
-              labels: { color: 'rgba(200,220,240,.9)', font: { size: 11 }, boxWidth: 14, padding: 14 },
+              labels: { color: SharedCharts.textColor(), font: { size: 11 }, boxWidth: 14, padding: 14 },
             },
             tooltip: {
               callbacks: {
@@ -2305,18 +2305,18 @@ function renderUDProjAggPanel(content) {
           scales: {
             x: {
               stacked: true,
-              ticks: { color: 'rgba(180,200,220,.8)', font: { size: 11 } },
+              ticks: { color: SharedCharts.textColor(), font: { size: 11 } },
               grid: { color: 'rgba(255,255,255,.08)' },
             },
             y: {
               stacked: true,
               ticks: {
-                color: 'rgba(180,200,220,.8)',
+                color: SharedCharts.textColor(),
                 font: { size: 10 },
                 callback: (v) => '$' + v.toLocaleString('en-US', { maximumFractionDigits: 0 }),
               },
               grid: { color: 'rgba(255,255,255,.10)' },
-              title: { display: true, text: 'Cost ($)', color: 'rgba(160,185,210,.8)', font: { size: 11 } },
+              title: { display: true, text: 'Cost ($)', color: SharedCharts.textColor(), font: { size: 11 } },
             },
           },
         },
@@ -2466,7 +2466,7 @@ function renderUDProjAggPanel(content) {
             legend: {
               display: true,
               position: 'top',
-              labels: { color: 'rgba(200,220,240,.9)', font: { size: 11 }, boxWidth: 14, padding: 14 },
+              labels: { color: SharedCharts.textColor(), font: { size: 11 }, boxWidth: 14, padding: 14 },
             },
             tooltip: {
               callbacks: {
@@ -2487,17 +2487,17 @@ function renderUDProjAggPanel(content) {
           },
           scales: {
             x: {
-              ticks: { color: 'rgba(180,200,220,.8)', font: { size: 11 } },
+              ticks: { color: SharedCharts.textColor(), font: { size: 11 } },
               grid: { color: 'rgba(255,255,255,.08)' },
             },
             y: {
               ticks: {
-                color: 'rgba(180,200,220,.8)',
+                color: SharedCharts.textColor(),
                 font: { size: 10 },
                 callback: (v) => '$' + v.toLocaleString('en-US', { maximumFractionDigits: 0 }),
               },
               grid: { color: 'rgba(255,255,255,.10)' },
-              title: { display: true, text: 'Savings ($)', color: 'rgba(160,185,210,.8)', font: { size: 11 } },
+              title: { display: true, text: 'Savings ($)', color: SharedCharts.textColor(), font: { size: 11 } },
             },
           },
         },
@@ -2795,13 +2795,13 @@ function renderBldgComparisonPanel(content, bldgs, projName, projId) {
             max: 100,
             ticks: {
               stepSize: 25,
-              color: 'rgba(180,200,220,.6)',
+              color: SharedCharts.textColor(),
               font: { size: 9 },
               backdropColor: 'transparent',
             },
             grid: { color: 'rgba(255,255,255,.1)' },
             angleLines: { color: 'rgba(255,255,255,.15)' },
-            pointLabels: { color: 'rgba(200,220,240,.9)', font: { size: 12, weight: '600' } },
+            pointLabels: { color: SharedCharts.textColor(), font: { size: 12, weight: '600' } },
           },
         },
         plugins: {
@@ -2809,7 +2809,7 @@ function renderBldgComparisonPanel(content, bldgs, projName, projId) {
             display: true,
             position: 'bottom',
             labels: {
-              color: 'rgba(200,220,240,.9)',
+              color: SharedCharts.textColor(),
               font: { size: 11 },
               boxWidth: 14,
               padding: 14,
@@ -4140,7 +4140,7 @@ function renderBillsPane(pane, m, bills, incl) {
     if (row.Meter1_ReadStart) {
       rowHtml = rowHtml.replace(
         /(<td class="norm-mon-cell[^"]*"[^>]*>)/,
-        '$1<span title="Meter change" style="font-size:10px;margin-right:3px;opacity:0.7">⚡</span>',
+        '$1<span title="Meter change" style="font-size:10px;margin-right:3px">⚡</span>',
       );
     }
     // Fix 8dade129: removed 💲 emoji injection from the Normalized Month cell —
@@ -4172,7 +4172,7 @@ function renderBillsPane(pane, m, bills, incl) {
         rowHtml = rowHtml.replace(/<td([^>]*)>/g, (match, attrs) => {
           tdCount++;
           if (tdCount === colIdx + 1) {
-            return `<td${attrs}><span title="${(_warnTip + _dismissTip).replace(/"/g, '&quot;')}" style="cursor:pointer;color:${_dotColor};font-size:10px;margin-right:3px;opacity:0.9;user-select:none"${_dismissAttr}>●</span>`;
+            return `<td${attrs}><span title="${(_warnTip + _dismissTip).replace(/"/g, '&quot;')}" style="cursor:pointer;color:${_dotColor};font-size:10px;margin-right:3px;user-select:none"${_dismissAttr}>●</span>`;
           }
           return match;
         });
@@ -5957,7 +5957,7 @@ function renderNormPane(pane, m, bills, incl) {
 
       const debugTableRows = allDebugRows
         .map((r) => {
-          const rowStyle = r.included ? '' : ' style="opacity:0.45"';
+          const rowStyle = r.included ? '' : ' style="font-style:italic"';
           return (
             '<tr' +
             rowStyle +
@@ -6109,7 +6109,7 @@ function renderNormPane(pane, m, bills, incl) {
 
     // ── Control bar ──
     const chartBtnLabel = udNormChartVis ? '📉 Hide Chart' : '📊 Show Chart';
-    const warnDisabled = !hasWeather ? ' style="opacity:.45;cursor:not-allowed" disabled' : '';
+    const warnDisabled = !hasWeather ? ' style="cursor:not-allowed" disabled' : '';
     const warnTip = !hasWeather
       ? '<span style="font-size:11px;color:var(--text3);margin-left:4px">Upload weather CSV to enable</span>'
       : '';
@@ -6467,7 +6467,7 @@ function drawNormChart(canvasId, rows, unit, metric, weatherDDLabel, bills, incl
       plugins: {
         legend: {
           display: showLegend,
-          labels: { color: 'rgba(200,210,230,0.85)', font: { size: 10 }, boxWidth: 12, padding: 10 },
+          labels: { color: SharedCharts.textColor(), font: { size: 10 }, boxWidth: 12, padding: 10 },
         },
         tooltip: {
           callbacks: {
@@ -6995,7 +6995,7 @@ function renderBaselinePane(pane, m, bills, incl) {
       const dispUsage = r.regrBaseline != null ? r.regrBaseline : r.usage;
       const dispPerDay = r.regrBaseline != null && r.normDays > 0 ? r.regrBaseline / r.normDays : r.usagePerDay;
       const normTag =
-        r.regrBaseline != null ? ' <span style="font-size:9px;color:var(--violet);opacity:.8">(norm)</span>' : '';
+        r.regrBaseline != null ? ' <span style="font-size:9px;color:var(--violet)">(norm)</span>' : '';
       return (
         '<label class="bl-period-row" style="cursor:pointer">' +
         '<input type="checkbox" value="' +
@@ -7279,7 +7279,7 @@ function renderBaselinePane(pane, m, bills, incl) {
             legend: {
               display: hasBilKW || _hasBlNormKw,
               position: 'top',
-              labels: { color: 'rgba(200,220,240,0.9)', font: { size: 11 }, boxWidth: 12, padding: 12 },
+              labels: { color: SharedCharts.textColor(), font: { size: 11 }, boxWidth: 12, padding: 12 },
             },
             tooltip: {
               callbacks: {
@@ -7294,14 +7294,14 @@ function renderBaselinePane(pane, m, bills, incl) {
           },
           scales: {
             x: {
-              ticks: { color: 'rgba(180,200,220,0.8)', font: { size: 11 } },
+              ticks: { color: SharedCharts.textColor(), font: { size: 11 } },
               grid: { color: 'rgba(255,255,255,0.10)' },
             },
             y: {
               beginAtZero: true,
-              ticks: { color: 'rgba(180,200,220,0.8)', font: { size: 10 } },
+              ticks: { color: SharedCharts.textColor(), font: { size: 10 } },
               grid: { color: 'rgba(255,255,255,0.12)' },
-              title: { display: true, text: 'kW', color: 'rgba(160,185,210,0.8)', font: { size: 11 } },
+              title: { display: true, text: 'kW', color: SharedCharts.textColor(), font: { size: 11 } },
             },
           },
         },
@@ -7762,7 +7762,7 @@ function drawBlChart(canvasId, rows, unit, bills, incl, showOverlay, metric) {
       plugins: {
         legend: {
           display: true,
-          labels: { color: 'rgba(200,210,230,0.85)', font: { size: 10 }, boxWidth: 12, padding: 10 },
+          labels: { color: SharedCharts.textColor(), font: { size: 10 }, boxWidth: 12, padding: 10 },
         },
         tooltip: {
           callbacks: {
@@ -7976,15 +7976,15 @@ function renderBuildingStatsPane(pane, b) {
           .bbd-wrap{font-family:var(--font);font-size:11px;color:var(--text);padding:4px 0 20px}
           .bbd-title{text-align:center;font-size:15px;font-weight:800;color:#f0c040;letter-spacing:.06em;padding:8px 0 12px;text-transform:uppercase}
           .bbd-bl-tbl{border-collapse:collapse;font-size:10.5px}
-          .bbd-bl-tbl td,.bbd-bl-tbl th{border:1px solid rgba(255,255,255,0.20);padding:3px 10px;white-space:nowrap;color:#e0eaff}
-          .bbd-bl-tbl th{background:rgba(255,255,255,0.08);color:#c8d8f0;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.4px}
+          .bbd-bl-tbl td,.bbd-bl-tbl th{border:1px solid rgba(255,255,255,0.20);padding:3px 10px;white-space:nowrap;color:#ffffff}
+          .bbd-bl-tbl th{background:rgba(255,255,255,0.08);color:#ffffff;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.4px}
           .bbd-bl-tbl .bl-green{background:#0d3320;color:#4fffaa;font-weight:700;border-color:#1a5535}
 
           .bbd-summary{background:#0d1525;border:1px solid rgba(255,255,255,0.12);border-radius:9px;padding:12px 16px;margin-bottom:14px;display:flex;flex-wrap:wrap;gap:0;row-gap:10px}
           .bbd-sum-cell{display:flex;flex-direction:column;gap:3px;padding:8px 14px;border-right:1px solid rgba(255,255,255,0.07);flex:1;min-width:90px}
           .bbd-sum-cell:last-child{border-right:none}
-          .bbd-sum-lbl{font-size:9.5px;color:#8ab0d0;text-transform:uppercase;letter-spacing:.5px;font-weight:700;white-space:nowrap}
-          .bbd-sum-val{font-size:15px;font-weight:800;color:#e8eef8;font-family:var(--mono);line-height:1.1}
+          .bbd-sum-lbl{font-size:9.5px;color:#ffffff;text-transform:uppercase;letter-spacing:.5px;font-weight:700;white-space:nowrap}
+          .bbd-sum-val{font-size:15px;font-weight:800;color:#ffffff;font-family:var(--mono);line-height:1.1}
           .bbd-sum-val.c-blue{color:#60b8ff}
           .bbd-sum-val.c-orange{color:#ffb040}
           .bbd-sum-val.c-green{color:#40e8a0}
@@ -7993,19 +7993,19 @@ function renderBuildingStatsPane(pane, b) {
 
           .bbd-rate-block{display:flex;flex-direction:column;gap:3px;margin-top:1px}
           .bbd-rate-row{display:flex;gap:5px;align-items:baseline}
-          .bbd-rate-season{font-size:9px;color:#7090a8;font-weight:700;text-transform:uppercase;width:38px;flex-shrink:0;letter-spacing:.3px}
-          .bbd-rate-val{font-size:12px;font-weight:700;font-family:var(--mono);color:#e8eef8}
+          .bbd-rate-season{font-size:9px;color:#ffffff;font-weight:700;text-transform:uppercase;width:38px;flex-shrink:0;letter-spacing:.3px}
+          .bbd-rate-val{font-size:12px;font-weight:700;font-family:var(--mono);color:#ffffff}
 
           .bbd-tbl-wrap{overflow-x:auto;margin-bottom:16px;border:1px solid rgba(255,255,255,0.1);border-radius:9px;background:#080e1c}
           .bbd-tbl{border-collapse:collapse;width:100%;font-size:11px;table-layout:auto}
           .bbd-tbl th{font-weight:700;padding:6px 9px;text-align:center;border:1px solid rgba(255,255,255,0.12);white-space:nowrap;font-size:10px;letter-spacing:.2px}
-          .bbd-tbl th.mo-hdr{background:#0d1830;color:#c8d8f0;text-align:left;padding-left:12px;font-size:11px}
+          .bbd-tbl th.mo-hdr{background:#0d1830;color:#ffffff;text-align:left;padding-left:12px;font-size:11px}
           .bbd-tbl th.e-hdr{background:#0a1e38;color:#7dd8ff;border-color:rgba(100,180,255,0.15)}
           .bbd-tbl th.g-hdr{background:#221508;color:#ffb040;border-color:rgba(255,160,50,0.2)}
           .bbd-tbl th.w-hdr{background:#081e18;color:#40e8a0;border-color:rgba(50,220,140,0.2)}
           .bbd-tbl th.u-hdr{background:#150d2a;color:#c090ff;border-color:rgba(180,120,255,0.2);vertical-align:middle}
-          .bbd-tbl td{padding:5px 9px;text-align:center;border:1px solid rgba(255,255,255,0.10);font-family:var(--mono);font-size:11px;white-space:nowrap;color:#e8f0ff}
-          .bbd-tbl td.mo{text-align:left;font-family:var(--font);font-weight:700;color:#c8d8f0;background:#0d1830;padding-left:12px}
+          .bbd-tbl td{padding:5px 9px;text-align:center;border:1px solid rgba(255,255,255,0.10);font-family:var(--mono);font-size:11px;white-space:nowrap;color:#ffffff}
+          .bbd-tbl td.mo{text-align:left;font-family:var(--font);font-weight:700;color:#ffffff;background:#0d1830;padding-left:12px}
           .bbd-tbl tbody tr:hover td{background:rgba(100,160,255,0.07)}
           .bbd-tbl tbody tr:hover td.mo{background:#0d1830}
           .bbd-tbl tr.total-row td{border-top:2px solid rgba(255,255,255,0.18);font-weight:800;background:#0d1830;color:#ffffff;font-size:11.5px}
@@ -8376,7 +8376,7 @@ function renderBuildingStatsPane(pane, b) {
           legend: {
             display: true,
             position: 'top',
-            labels: { color: 'rgba(200,220,240,0.9)', font: { size: 11 }, boxWidth: 14, padding: 14 },
+            labels: { color: SharedCharts.textColor(), font: { size: 11 }, boxWidth: 14, padding: 14 },
           },
           tooltip: {
             callbacks: {
@@ -8391,18 +8391,18 @@ function renderBuildingStatsPane(pane, b) {
         scales: {
           x: {
             stacked: true,
-            ticks: { color: 'rgba(180,200,220,0.8)', font: { size: 11 } },
+            ticks: { color: SharedCharts.textColor(), font: { size: 11 } },
             grid: { color: 'rgba(255,255,255,0.10)' },
           },
           y: {
             stacked: true,
             ticks: {
-              color: 'rgba(180,200,220,0.8)',
+              color: SharedCharts.textColor(),
               font: { size: 10 },
               callback: (v) => '$' + v.toLocaleString('en-US', { maximumFractionDigits: 0 }),
             },
             grid: { color: 'rgba(255,255,255,0.12)' },
-            title: { display: true, text: 'Dollars Spent', color: 'rgba(160,185,210,0.8)', font: { size: 11 } },
+            title: { display: true, text: 'Dollars Spent', color: SharedCharts.textColor(), font: { size: 11 } },
           },
         },
       },
@@ -8661,29 +8661,29 @@ function renderMeterDataPane(pane, m, bills, incl) {
             .bbd-wrap{font-family:var(--font);font-size:11px;color:var(--text);padding:4px 0 20px}
             .bbd-title{text-align:center;font-size:15px;font-weight:800;color:#f0c040;letter-spacing:.06em;padding:8px 0 12px;text-transform:uppercase}
             .bbd-bl-tbl{border-collapse:collapse;font-size:10.5px}
-            .bbd-bl-tbl td,.bbd-bl-tbl th{border:1px solid rgba(255,255,255,0.20);padding:3px 10px;white-space:nowrap;color:#e0eaff}
-            .bbd-bl-tbl th{background:rgba(255,255,255,0.08);color:#c8d8f0;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.4px}
+            .bbd-bl-tbl td,.bbd-bl-tbl th{border:1px solid rgba(255,255,255,0.20);padding:3px 10px;white-space:nowrap;color:#ffffff}
+            .bbd-bl-tbl th{background:rgba(255,255,255,0.08);color:#ffffff;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.4px}
             .bbd-bl-tbl .bl-green{background:#0d3320;color:#4fffaa;font-weight:700;border-color:#1a5535}
             .bbd-summary{background:#0d1525;border:1px solid rgba(255,255,255,0.12);border-radius:9px;padding:12px 16px;margin-bottom:14px;display:flex;flex-wrap:wrap;gap:0;row-gap:10px}
             .bbd-sum-cell{display:flex;flex-direction:column;gap:3px;padding:8px 14px;border-right:1px solid rgba(255,255,255,0.07);flex:1;min-width:90px}
             .bbd-sum-cell:last-child{border-right:none}
             .bbd-sum-lbl{font-size:9.5px;color:var(--mdd-lbl-color,#8ab0d0);text-transform:uppercase;letter-spacing:.5px;font-weight:700;white-space:nowrap}
-            .bbd-sum-val{font-size:15px;font-weight:800;color:#e8eef8;font-family:var(--mono);line-height:1.1}
+            .bbd-sum-val{font-size:15px;font-weight:800;color:#ffffff;font-family:var(--mono);line-height:1.1}
             .bbd-sum-val.c-blue{color:#60b8ff} .bbd-sum-val.c-orange{color:#ffb040}
             .bbd-sum-val.c-green{color:#40e8a0} .bbd-sum-val.c-violet{color:#b090ff}
             .bbd-rate-block{display:flex;flex-direction:column;gap:3px;margin-top:1px}
             .bbd-rate-row{display:flex;gap:5px;align-items:baseline}
-            .bbd-rate-season{font-size:9px;color:#7090a8;font-weight:700;text-transform:uppercase;width:38px;flex-shrink:0;letter-spacing:.3px}
-            .bbd-rate-val{font-size:12px;font-weight:700;font-family:var(--mono);color:#e8eef8}
+            .bbd-rate-season{font-size:9px;color:#ffffff;font-weight:700;text-transform:uppercase;width:38px;flex-shrink:0;letter-spacing:.3px}
+            .bbd-rate-val{font-size:12px;font-weight:700;font-family:var(--mono);color:#ffffff}
             .bbd-tbl-wrap{overflow-x:auto;margin-bottom:16px;border:1px solid rgba(255,255,255,0.1);border-radius:9px;background:#080e1c}
             .bbd-tbl{border-collapse:collapse;width:100%;font-size:11px;table-layout:auto}
             .bbd-tbl th{font-weight:700;padding:6px 9px;text-align:center;border:1px solid rgba(255,255,255,0.12);white-space:nowrap;font-size:10px;letter-spacing:.2px}
-            .bbd-tbl th.mo-hdr{background:#0d1830;color:#c8d8f0;text-align:left;padding-left:12px;font-size:11px}
+            .bbd-tbl th.mo-hdr{background:#0d1830;color:#ffffff;text-align:left;padding-left:12px;font-size:11px}
             .bbd-tbl th.e-hdr{background:#0a1e38;color:#7dd8ff;border-color:rgba(100,180,255,0.15)}
             .bbd-tbl th.g-hdr{background:#221508;color:#ffb040;border-color:rgba(255,160,50,0.2)}
             .bbd-tbl th.w-hdr{background:#081e18;color:#40e8a0;border-color:rgba(50,220,140,0.2)}
-            .bbd-tbl td{padding:5px 9px;text-align:center;border:1px solid rgba(255,255,255,0.10);font-family:var(--mono);font-size:11px;white-space:nowrap;color:#e8f0ff}
-            .bbd-tbl td.mo{text-align:left;font-family:var(--font);font-weight:700;color:#c8d8f0;background:#0d1830;padding-left:12px}
+            .bbd-tbl td{padding:5px 9px;text-align:center;border:1px solid rgba(255,255,255,0.10);font-family:var(--mono);font-size:11px;white-space:nowrap;color:#ffffff}
+            .bbd-tbl td.mo{text-align:left;font-family:var(--font);font-weight:700;color:#ffffff;background:#0d1830;padding-left:12px}
             .bbd-tbl tbody tr:hover td{background:rgba(100,160,255,0.07)}
             .bbd-tbl tbody tr:hover td.mo{background:#0d1830}
             .bbd-tbl tr.total-row td{border-top:2px solid rgba(255,255,255,0.18);font-weight:800;background:#0d1830;color:#ffffff;font-size:11.5px}
@@ -9025,7 +9025,7 @@ function renderMeterDataPane(pane, m, bills, incl) {
           legend: {
             display: true,
             position: 'top',
-            labels: { color: 'rgba(200,220,240,0.9)', font: { size: 11 }, boxWidth: 14, padding: 14 },
+            labels: { color: SharedCharts.textColor(), font: { size: 11 }, boxWidth: 14, padding: 14 },
           },
           tooltip: {
             callbacks: {
@@ -9040,18 +9040,18 @@ function renderMeterDataPane(pane, m, bills, incl) {
         scales: {
           x: {
             stacked: true,
-            ticks: { color: 'rgba(180,200,220,0.8)', font: { size: 11 } },
+            ticks: { color: SharedCharts.textColor(), font: { size: 11 } },
             grid: { color: 'rgba(255,255,255,0.10)' },
           },
           y: {
             stacked: true,
             ticks: {
-              color: 'rgba(180,200,220,0.8)',
+              color: SharedCharts.textColor(),
               font: { size: 10 },
               callback: (v) => '$' + v.toLocaleString('en-US', { maximumFractionDigits: 0 }),
             },
             grid: { color: 'rgba(255,255,255,0.12)' },
-            title: { display: true, text: 'Dollars Spent', color: 'rgba(160,185,210,0.8)', font: { size: 11 } },
+            title: { display: true, text: 'Dollars Spent', color: SharedCharts.textColor(), font: { size: 11 } },
           },
         },
       },
@@ -9105,14 +9105,14 @@ function renderMeterDataPane(pane, m, bills, incl) {
           },
           scales: {
             x: {
-              ticks: { color: 'rgba(180,200,220,0.8)', font: { size: 10 } },
+              ticks: { color: SharedCharts.textColor(), font: { size: 10 } },
               grid: { color: 'rgba(255,255,255,0.10)' },
             },
             y: {
               beginAtZero: true,
               max: 100,
               ticks: {
-                color: 'rgba(180,200,220,0.8)',
+                color: SharedCharts.textColor(),
                 font: { size: 10 },
                 callback: (v) => v + '%',
               },
@@ -9120,7 +9120,7 @@ function renderMeterDataPane(pane, m, bills, incl) {
               title: {
                 display: true,
                 text: 'Load Factor %',
-                color: 'rgba(160,185,210,0.8)',
+                color: SharedCharts.textColor(),
                 font: { size: 11 },
               },
             },
@@ -9177,13 +9177,13 @@ function renderMeterDataPane(pane, m, bills, incl) {
           },
           scales: {
             x: {
-              ticks: { color: 'rgba(180,200,220,0.8)', font: { size: 10 } },
+              ticks: { color: SharedCharts.textColor(), font: { size: 10 } },
               grid: { color: 'rgba(255,255,255,0.10)' },
             },
             y: {
               beginAtZero: true,
               ticks: {
-                color: 'rgba(180,200,220,0.8)',
+                color: SharedCharts.textColor(),
                 font: { size: 10 },
                 callback: (v) => v + ' hrs',
               },
@@ -9191,7 +9191,7 @@ function renderMeterDataPane(pane, m, bills, incl) {
               title: {
                 display: true,
                 text: 'Hours',
-                color: 'rgba(160,185,210,0.8)',
+                color: SharedCharts.textColor(),
                 font: { size: 11 },
               },
             },
@@ -9888,11 +9888,11 @@ function bpRecalc() {
       data: { labels: JSON.parse(chartLabels), datasets },
       options: {
         responsive: true,
-        plugins: { legend: { labels: { color: '#6b7a9e', font: { size: 11 } } } },
+        plugins: { legend: { labels: { color: SharedCharts.textColor(), font: { size: 11 } } } },
         scales: {
-          x: { ticks: { color: '#6b7a9e', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,.04)' } },
+          x: { ticks: { color: SharedCharts.textColor(), font: { size: 10 } }, grid: { color: 'rgba(255,255,255,.04)' } },
           y: {
-            ticks: { color: '#6b7a9e', font: { size: 10 }, callback: (v) => '$' + v.toLocaleString() },
+            ticks: { color: SharedCharts.textColor(), font: { size: 10 }, callback: (v) => '$' + v.toLocaleString() },
             grid: { color: 'rgba(255,255,255,.06)' },
             stacked: true,
           },
@@ -10010,7 +10010,7 @@ function renderBldgSavProjPane(pane, b) {
                   style="font-family:var(--font);font-size:11px;font-weight:600;padding:5px 10px;border-radius:5px;border:1px solid var(--border);cursor:pointer;background:${defView === 'quarterly' ? 'var(--em)' : 'transparent'};color:${defView === 'quarterly' ? '#05080f' : 'var(--text2)'}">Quarterly</button>
               </div>
             </div>
-            <button onclick="bspChanged()" style="font-family:var(--font);font-size:12px;font-weight:700;padding:7px 16px;border-radius:7px;border:none;cursor:pointer;background:var(--em);color:#05080f;align-self:flex-end">⚡ Recalculate</button>
+            <button onclick="bspChanged()" style="font-family:var(--font);font-size:12px;font-weight:700;padding:7px 16px;border-radius:7px;border:none;cursor:pointer;background:var(--em);color: #000000;align-self:flex-end">⚡ Recalculate</button>
           </div>
 
 
@@ -10344,11 +10344,11 @@ function bspRecalc() {
       data: { labels: JSON.parse(chartLabels), datasets },
       options: {
         responsive: true,
-        plugins: { legend: { labels: { color: '#6b7a9e', font: { size: 11 } } } },
+        plugins: { legend: { labels: { color: SharedCharts.textColor(), font: { size: 11 } } } },
         scales: {
-          x: { ticks: { color: '#6b7a9e', font: { size: 10 } }, grid: { color: 'rgba(255,255,255,.04)' } },
+          x: { ticks: { color: SharedCharts.textColor(), font: { size: 10 } }, grid: { color: 'rgba(255,255,255,.04)' } },
           y: {
-            ticks: { color: '#6b7a9e', font: { size: 10 }, callback: (v) => '$' + v.toLocaleString() },
+            ticks: { color: SharedCharts.textColor(), font: { size: 10 }, callback: (v) => '$' + v.toLocaleString() },
             grid: { color: 'rgba(255,255,255,.06)' },
             stacked: true,
           },
@@ -10640,7 +10640,7 @@ function renderPerfPane(pane, m, bills, incl) {
       '" onclick="' +
       (_ltNormals ? "setPerfWeatherMode('normal')" : '') +
       '" title="Use long-term average HDD/CDD for expected usage (weather-normalized savings)"' +
-      (!_ltNormals ? ' style="opacity:0.45;cursor:not-allowed"' : '') +
+      (!_ltNormals ? ' style="cursor:not-allowed"' : '') +
       '>Normal Weather</button>' +
       disabledNote +
       '</div>'
@@ -11364,7 +11364,7 @@ function renderPerfPane(pane, m, bills, incl) {
               legend: {
                 display: hasBilKW2 || _hasExpKw,
                 position: 'top',
-                labels: { color: 'rgba(200,220,240,0.9)', font: { size: 11 }, boxWidth: 12, padding: 12 },
+                labels: { color: SharedCharts.textColor(), font: { size: 11 }, boxWidth: 12, padding: 12 },
               },
               tooltip: {
                 callbacks: {
@@ -11384,14 +11384,14 @@ function renderPerfPane(pane, m, bills, incl) {
             },
             scales: {
               x: {
-                ticks: { color: 'rgba(180,200,220,0.8)', font: { size: 10 }, maxRotation: 45 },
+                ticks: { color: SharedCharts.textColor(), font: { size: 10 }, maxRotation: 45 },
                 grid: { color: 'rgba(255,255,255,0.10)' },
               },
               y: {
                 beginAtZero: true,
-                ticks: { color: 'rgba(180,200,220,0.8)', font: { size: 10 } },
+                ticks: { color: SharedCharts.textColor(), font: { size: 10 } },
                 grid: { color: 'rgba(255,255,255,0.12)' },
-                title: { display: true, text: 'kW', color: 'rgba(160,185,210,0.8)', font: { size: 11 } },
+                title: { display: true, text: 'kW', color: SharedCharts.textColor(), font: { size: 11 } },
               },
             },
           },
@@ -11519,7 +11519,7 @@ function drawPerfChart(canvasId, rows, blAvgDay, blAvgMo, colors, unit, bills, i
       plugins: {
         legend: {
           display: true,
-          labels: { color: 'rgba(200,210,230,0.85)', font: { size: 10 }, boxWidth: 12, padding: 10 },
+          labels: { color: SharedCharts.textColor(), font: { size: 10 }, boxWidth: 12, padding: 10 },
         },
         tooltip: {
           callbacks: {
@@ -11628,7 +11628,7 @@ function drawDemandCostChart(canvasId, bills) {
         legend: {
           display: true,
           position: 'top',
-          labels: { color: 'rgba(200,210,230,0.85)', font: { size: 10 }, boxWidth: 12, padding: 10 },
+          labels: { color: SharedCharts.textColor(), font: { size: 10 }, boxWidth: 12, padding: 10 },
         },
         tooltip: {
           callbacks: {
@@ -11648,19 +11648,19 @@ function drawDemandCostChart(canvasId, bills) {
       scales: {
         x: {
           stacked: true,
-          ticks: { color: 'rgba(180,200,220,0.8)', font: { size: 10 }, maxRotation: 45 },
+          ticks: { color: SharedCharts.textColor(), font: { size: 10 }, maxRotation: 45 },
           grid: { color: 'rgba(255,255,255,0.10)' },
         },
         y: {
           stacked: true,
           beginAtZero: true,
           ticks: {
-            color: 'rgba(180,200,220,0.8)',
+            color: SharedCharts.textColor(),
             font: { size: 10 },
             callback: (v) => '$' + v.toLocaleString('en-US', { maximumFractionDigits: 0 }),
           },
           grid: { color: 'rgba(255,255,255,0.06)' },
-          title: { display: true, text: 'Cost ($)', color: 'rgba(160,185,210,0.8)', font: { size: 10 } },
+          title: { display: true, text: 'Cost ($)', color: SharedCharts.textColor(), font: { size: 10 } },
         },
       },
     },
@@ -11736,7 +11736,7 @@ function drawDemandTrendChart(canvasId, bills) {
         legend: {
           display: datasets.length > 1,
           position: 'top',
-          labels: { color: 'rgba(200,210,230,0.85)', font: { size: 10 }, boxWidth: 12, padding: 10 },
+          labels: { color: SharedCharts.textColor(), font: { size: 10 }, boxWidth: 12, padding: 10 },
         },
         tooltip: {
           callbacks: {
@@ -11750,14 +11750,14 @@ function drawDemandTrendChart(canvasId, bills) {
       },
       scales: {
         x: {
-          ticks: { color: 'rgba(180,200,220,0.8)', font: { size: 10 }, maxRotation: 45 },
+          ticks: { color: SharedCharts.textColor(), font: { size: 10 }, maxRotation: 45 },
           grid: { color: 'rgba(255,255,255,0.10)' },
         },
         y: {
           beginAtZero: false,
-          ticks: { color: 'rgba(180,200,220,0.8)', font: { size: 10 } },
+          ticks: { color: SharedCharts.textColor(), font: { size: 10 } },
           grid: { color: 'rgba(255,255,255,0.06)' },
-          title: { display: true, text: 'kW', color: 'rgba(160,185,210,0.8)', font: { size: 10 } },
+          title: { display: true, text: 'kW', color: SharedCharts.textColor(), font: { size: 10 } },
         },
       },
     },
@@ -11818,19 +11818,19 @@ function drawLoadFactorChart(canvasId, bills) {
       },
       scales: {
         x: {
-          ticks: { color: 'rgba(180,200,220,0.8)', font: { size: 10 }, maxRotation: 45 },
+          ticks: { color: SharedCharts.textColor(), font: { size: 10 }, maxRotation: 45 },
           grid: { color: 'rgba(255,255,255,0.10)' },
         },
         y: {
           beginAtZero: true,
           min: 0,
           ticks: {
-            color: 'rgba(180,200,220,0.8)',
+            color: SharedCharts.textColor(),
             font: { size: 10 },
             callback: (v) => (v * 100).toFixed(0) + '%',
           },
           grid: { color: 'rgba(255,255,255,0.06)' },
-          title: { display: true, text: 'Load Factor %', color: 'rgba(160,185,210,0.8)', font: { size: 10 } },
+          title: { display: true, text: 'Load Factor %', color: SharedCharts.textColor(), font: { size: 10 } },
         },
       },
     },
@@ -11881,18 +11881,18 @@ function drawMinimumHoursChart(canvasId, bills) {
       },
       scales: {
         x: {
-          ticks: { color: 'rgba(180,200,220,0.8)', font: { size: 10 }, maxRotation: 45 },
+          ticks: { color: SharedCharts.textColor(), font: { size: 10 }, maxRotation: 45 },
           grid: { color: 'rgba(255,255,255,0.10)' },
         },
         y: {
           beginAtZero: true,
           ticks: {
-            color: 'rgba(180,200,220,0.8)',
+            color: SharedCharts.textColor(),
             font: { size: 10 },
             callback: (v) => v + ' hrs',
           },
           grid: { color: 'rgba(255,255,255,0.06)' },
-          title: { display: true, text: 'Hours', color: 'rgba(160,185,210,0.8)', font: { size: 10 } },
+          title: { display: true, text: 'Hours', color: SharedCharts.textColor(), font: { size: 10 } },
         },
       },
     },
