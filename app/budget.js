@@ -563,12 +563,12 @@ function _renderBudgetCharts(projId, bd) {
         },
         scales: {
           x: {
-            ticks: { color: 'var(--text3)', font: { size: 10 } },
+            ticks: { color: SharedCharts.textColor(), font: { size: 10 } },
             grid: { color: 'rgba(255,255,255,0.04)' },
           },
           y: {
             ticks: {
-              color: 'var(--text3)',
+              color: SharedCharts.textColor(),
               font: { size: 10 },
               callback: (v) => '$' + (v >= 1000 ? Math.round(v / 1000) + 'k' : v),
             },

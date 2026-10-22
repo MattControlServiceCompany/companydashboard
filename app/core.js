@@ -2574,11 +2574,6 @@ function renderSavingsWaterfall(projId, baseline, actual, savings, isNormalized,
               return ctx[0].label;
             },
           },
-          backgroundColor: 'rgba(15,15,20,0.92)',
-          titleColor: '#ffffff',
-          bodyColor: '#ffffff',
-          borderColor: 'rgba(255,255,255,0.1)',
-          borderWidth: 1,
           padding: 10,
           cornerRadius: 6,
         },
@@ -2636,7 +2631,7 @@ function renderSavingsWaterfall(projId, baseline, actual, savings, isNormalized,
             }
             // Color: green for ECM savings bars, same logic as before for standard bars
             if (i === 0 || i === lastIdx) {
-              c.fillStyle = '#e2e8f0';
+              c.fillStyle = SharedCharts.textColor();
             } else if (useEcmBars) {
               c.fillStyle = '#c084fc';
             } else {

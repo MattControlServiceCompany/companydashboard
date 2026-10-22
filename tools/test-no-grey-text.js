@@ -2,6 +2,7 @@
 // No grey / navy / slate text of any shade; de-emphasis is size or weight, never color. Colored status text
 // (green/red/amber), links and accent headings are allowed: a color passes only if it is #000, #fff, or SATURATED
 // (HSL saturation >= 0.45 and lightness 0.2..0.78). Anything else visible = FAIL. Text faded by opacity between 0.05 and 0.9 = FAIL (fully hidden and mid-fade-in are not).
+// Chart.js text (defaults, every live chart's ticks/legend/titles/tooltip, plus a probe chart) must resolve to exactly #fff / #000.
 // There is NO allow-list of elements. Fix the token or the rule that sets the color.
 // Loads index.html, ems-leads.html and energy-department.html (home, projects list, one synthetic project on every tab)
 // headless, in light and dark. SYNTHETIC data only. Run: node tools/test-no-grey-text.js [--verbose]
@@ -91,6 +92,61 @@ function scanInPage() {
   return out;
 }
 
+// Runs in the page. Chart.js text colors (defaults + every live chart + one probe chart with no explicit colors) must be exactly #fff (dark) / #000 (light).
+function scanChartsInPage() {
+  const bad = [];
+  if (typeof Chart === 'undefined') return bad; // page does not load Chart.js (index.html, ems-leads.html)
+  function norm(c) {
+    if (c === undefined || c === null) return 'unset';
+    const d = document.createElement('canvas').getContext('2d');
+    d.fillStyle = '#123456';
+    d.fillStyle = String(c);
+    return d.fillStyle; // '#rrggbb' or 'rgba(...)'
+  }
+  const theme = getComputedStyle(document.documentElement).getPropertyValue('--text').trim().toLowerCase();
+  const expect = theme === '#000000' || theme === '#000' ? '#000000' : '#ffffff';
+  function chk(where, key, val) {
+    const n = norm(val);
+    if (n !== expect) bad.push({ where, key, val: String(val) + ' => ' + n });
+  }
+  chk('Chart.defaults', 'color', Chart.defaults.color);
+  const probe = document.createElement('canvas');
+  probe.width = 300;
+  probe.height = 150;
+  probe.style.display = 'none';
+  document.body.appendChild(probe);
+  const pc = new Chart(probe, {
+    type: 'bar',
+    data: { labels: ['a'], datasets: [{ label: 'd', data: [1] }] },
+    options: {
+      animation: false,
+      scales: { x: { title: { display: true, text: 'x' } }, y: { title: { display: true, text: 'y' } } },
+      plugins: { title: { display: true, text: 't' }, legend: { title: { display: true, text: 'lt' } } },
+    },
+  });
+  const charts = Object.values(Chart.instances || {});
+  for (const c of charts) {
+    const id = c === pc ? 'probe' : 'chart#' + (c.canvas && c.canvas.id);
+    const o = c.options || {};
+    chk(id, 'options.color', o.color);
+    const pl = o.plugins || {};
+    if (pl.legend && pl.legend.display !== false && pl.legend.labels) chk(id, 'legend.labels.color', pl.legend.labels.color);
+    if (pl.legend && pl.legend.title && pl.legend.title.display) chk(id, 'legend.title.color', pl.legend.title.color);
+    if (pl.title && pl.title.display) chk(id, 'title.color', pl.title.color);
+    if (pl.tooltip) ['titleColor', 'bodyColor', 'footerColor'].forEach((k) => chk(id, 'tooltip.' + k, pl.tooltip[k]));
+    for (const [sid, sc] of Object.entries(c.scales || {})) {
+      const so = sc.options || {};
+      if (so.display === false) continue;
+      if (so.ticks && so.ticks.display !== false) chk(id, 'scale ' + sid + ' ticks.color', so.ticks.color);
+      if (so.title && so.title.display) chk(id, 'scale ' + sid + ' title.color', so.title.color);
+      if (so.pointLabels && so.pointLabels.display) chk(id, 'scale ' + sid + ' pointLabels.color', so.pointLabels.color);
+    }
+  }
+  pc.destroy();
+  probe.remove();
+  return bad;
+}
+
 (async () => {
   let total = 0;
   const bySig = {};
@@ -138,6 +194,8 @@ function scanInPage() {
           }),
         ); // a tip fading in is not a faded label
         const found = await page.evaluate(scanInPage);
+        const chartBad = await page.evaluate(scanChartsInPage);
+        chartBad.forEach((b) => found.push({ sel: 'chart ' + b.where + ' ' + b.key, color: b.val, why: 'chart-text', text: '' }));
         found.forEach((f) => {
           const k = theme + ' | ' + f.sel + ' | ' + f.color + ' | ' + f.why;
           if (!bySig[k]) total++; // the count is DISTINCT (theme, element rule, color): the same sidebar on 20 tabs counts once
