@@ -2536,6 +2536,14 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.22.159', date: '2026-10-22', title: 'Bill reading fixes',
+    items: [
+      { type: 'fix', text: 'Utility Data, PDF / OCR: a bill with no page markers now reads instead of stopping with an error.' },
+      { type: 'fix', text: 'Utility Data, PDF / OCR: the message about the 200-page limit now shows above the top bar, so you can see it.' },
+      { type: 'fix', text: 'Utility Data, PDF / OCR: the service address is no longer joined with the next line of the bill. Addresses saved the old way are fixed when you open the bill.' },
+      { type: 'fix', text: 'Utility Data, PDF / OCR: older City bills now add every Water Protection Fee line, so the water charge matches the bill.' }
+    ]
+  },
   { v: 'v2026.10.21.158', date: '2026-10-21', title: 'Bill review: delivery-charge warning',
     items: [
       { type: 'fix', text: 'Bill review: no more false delivery-charge warnings on bills that charge part of the billing period.' }
