@@ -2534,6 +2534,13 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.22.160', date: '2026-10-22', title: 'Sidebar pin, one sync status, first sign-in tips',
+    items: [
+      { type: 'feature', text: 'Sidebar: a pin button opens a menu to set the sidebar to Open, Slim or Collapsed.' },
+      { type: 'change', text: 'Sidebar: sync status now shows in one place, the sidebar. The pill at the bottom right is gone. In Slim mode the sidebar shows a short sync label, and the full text shows when you hover over it.' },
+      { type: 'fix', text: 'Getting-started tips now show only the first time you sign in. Your own settings stay saved when you sign out and back in.' }
+    ]
+  },
   { v: 'v2026.10.22.159', date: '2026-10-22', title: 'Bill reading fixes',
     items: [
       { type: 'fix', text: 'Utility Data, PDF / OCR: a bill with no page markers now reads instead of stopping with an error.' },
