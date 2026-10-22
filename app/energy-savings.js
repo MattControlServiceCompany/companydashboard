@@ -2516,6 +2516,60 @@ function _evgReadDetachedAmounts(t, result, rates, xChgParts, kw, h) {
   }
 }
 // Utility E per-section extractor
+// The printed day fraction on a Utility E kW charge line, "(for N of Y days)". The ONE reader. OCR may drop the space
+// before "days" ("9 of 33days") or cut the whole word and the Y ("for2 of 3M AAYS"): then den is null and
+// _evgResolveProrationDen sets it. Returns null when the line has no fraction or N is not a day count.
+function _evgReadProration(block) {
+  const m = String(block).match(/for\s*(\d{1,3})\s*of\s*(?:(\d{1,3})\s*d)?/i);
+  if (!m) return null;
+  const num = parseInt(m[1], 10);
+  const den = m[2] ? parseInt(m[2], 10) : null;
+  if (!(num > 0) || (den !== null && !(den >= num && den <= 366))) return null;
+  return { num, den };
+}
+// The ONE rule for a part's day fraction when the printed Y was misread or cut. The parts of one charge share one
+// period, so Y is the sum of their N (23 + 6 = 29) or the Y a sibling line shows. A candidate is used only when the
+// part's PRINTED charge equals qty x rate x N / Y to the cent and the Y read does not; a wrong charge matches no
+// candidate and stays a mismatch. Sets prorationDen (or a misread prorationNum) and computed on the part.
+function _evgResolveProrationDen(parts) {
+  const pr = parts.filter((p) => p.prorationNum);
+  if (!pr.length) return;
+  const cands = [];
+  const sumN = pr.reduce((a, p) => a + p.prorationNum, 0);
+  if (pr.length > 1) cands.push(sumN);
+  pr.forEach((p) => p.prorationDen && cands.push(p.prorationDen));
+  const frac = (p, y) => Math.round(p.qty * p.rate * (p.prorationNum / y) * 100) / 100;
+  for (const p of pr) {
+    if (p.ocrCharge == null) continue;
+    if (p.prorationDen && Math.abs(frac(p, p.prorationDen) - p.ocrCharge) <= 0.05) continue;
+    const y = cands.find((c) => c >= p.prorationNum && c <= 366 && Math.abs(frac(p, c) - p.ocrCharge) <= 0.05);
+    if (y) {
+      p.prorationDen = y;
+      p.computed = frac(p, y);
+    }
+  }
+  // A misread N: the N of all parts add up to Y (29 + 2 = 31). When the other parts agree on Y, this part's N is
+  // Y minus theirs, used only when its printed charge equals qty x rate x N / Y to the cent.
+  for (const p of pr) {
+    if (p.ocrCharge == null || !p.prorationDen) continue;
+    if (Math.abs(frac(p, p.prorationDen) - p.ocrCharge) <= 0.05) continue;
+    const others = pr.filter((q) => q !== p);
+    if (!others.length || !others.every((q) => q.prorationDen === p.prorationDen)) continue;
+    const n = p.prorationDen - others.reduce((a, q) => a + q.prorationNum, 0);
+    if (n > 0 && n <= p.prorationDen && Math.abs(Math.round(p.qty * p.rate * (n / p.prorationDen) * 100) / 100 - p.ocrCharge) <= 0.05) {
+      p.prorationNum = n;
+      p.computed = frac(p, p.prorationDen);
+    }
+  }
+  // A part whose Y is still unknown is not prorated (same as a line with no fraction).
+  for (const p of pr) {
+    if (!p.prorationDen) {
+      delete p.prorationNum;
+      delete p.prorationDen;
+    }
+  }
+}
+
 function _extractEvergy(t, acctOverride, addrOverride) {
   // ── OCR digit cleanup: replace 'o'/'O' with '0' in numeric contexts ──
   t = t.replace(/(\d)o/gi, '$10').replace(/o(\d)/gi, '0$1');
@@ -2984,15 +3038,12 @@ function _extractEvergy(t, acctOverride, addrOverride) {
           let prorationRatio = 1;
           let prorationNum = null;
           let prorationDen = null;
-          const prM = block.match(/for\s+(\d{1,3})\s+of\s+(\d{1,3})\s+d/i);
-          if (prM && !isKwh) {
-            const n = parseInt(prM[1], 10);
-            const y = parseInt(prM[2], 10);
-            if (n > 0 && y > 0 && n <= y && y <= 366) {
-              prorationRatio = n / y;
-              prorationNum = n;
-              prorationDen = y;
-            }
+          // _evgReadProration is the ONE reader of the printed "(for N of Y days)" (OCR gaps and a cut Y tolerated).
+          const prRead = isKwh ? null : _evgReadProration(block);
+          if (prRead) {
+            prorationNum = prRead.num;
+            prorationDen = prRead.den; // null when OCR cut the Y: _evgResolveProrationDen sets it from the printed charge
+            if (prRead.den) prorationRatio = prRead.num / prRead.den;
           }
           // A date range on a line only names the part-period; it is never a day fraction (Matt, 2026-10-20):
           // every line is its own printed qty x its own printed rate. Only the printed "(for N of Y days)" above is read.
@@ -3022,6 +3073,7 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       }
     }
     if (!results.length) return null;
+    _evgResolveProrationDen(results);
     // Aggregate the parts array into a single rate info object.
     // kWh charges: parts represent portions of the same total period (seasonal split,
     // prorated days) and SUM to the full-month kWh.
