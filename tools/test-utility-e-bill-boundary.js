@@ -117,6 +117,20 @@ check('A has no Miscellaneous charge', bills[0] && bills[0].MiscellaneousCharge 
 check('B Miscellaneous = 10.00', bills[1] && String(bills[1].MiscellaneousCharge) === '10.00');
 check('B total = 140.00 (printed, no Miscellaneous added)', bills[1] && String(bills[1].TotalCurrentCharges) === '140.00');
 
+console.log('Case 3: text with NO page markers (must not throw ReferenceError on the page-range fallback)');
+let noMarkerBills = null;
+let thrown = null;
+try {
+  // Same billing-details block printed twice, no page markers, no cover page: no bill gets a page range
+  // from the earlier steps, so the final chain-fallback runs and reads the last page number.
+  const block = `${ACCT}\n1 TEST ST, TESTVILLE, KS\nBilling Details - service from 06/07/2023 to 07/09/2023\nCustomer Chg $25.00\nCurrent Charges $100.00\n`;
+  noMarkerBills = rule.extractAll(block + block);
+} catch (e) {
+  thrown = e;
+}
+check('extractAll does not throw', !thrown, thrown && thrown.message);
+check('bills are still read', noMarkerBills && noMarkerBills.length >= 1, 'got ' + (noMarkerBills && noMarkerBills.length));
+
 if (process.env.DBG)
   console.log(JSON.stringify(bills[1], (k, v) => (k[0] === '_' ? undefined : v)));
 console.log(fail ? '\n' + fail + ' FAILED' : '\nALL PASSED');

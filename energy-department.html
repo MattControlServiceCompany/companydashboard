@@ -4766,7 +4766,9 @@
       .pdf-topbar {
         position: sticky;
         top: 48px;
-        z-index: var(--z-chrome, 10);
+        /* One step above #extractedFieldsHdr (z-index:10, later in the page) so the chip lists,
+           which open downward from this row, are not painted under the Data Analysis bar. */
+        z-index: calc(var(--z-chrome, 10) + 1);
         background: var(--s2);
         border-bottom: 1px solid var(--border);
         margin: 6px 0 0;

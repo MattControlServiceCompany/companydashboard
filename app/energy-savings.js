@@ -8764,21 +8764,8 @@ const UTILITY_RULES = [
         // were produced by splitting on exactly this regex. For each bill:
         //   _pageStart = (billing-details page) - 1   // cover page sits right before
         //   _pageEnd   = (next bill's billing-details page) - 2  // one before next cover
-        // Last bill gets _pageEnd = _maxPage. Every result gets a range, no chain
+        // Last bill gets _pageEnd = _pfMaxPage (page markers and last page are read once, above). Every result gets a range, no chain
         // fallback required, no duplicate-neighbor bug.
-        const _pageMarkers = [...t.matchAll(/%%PAGE_(\d+)%%/g)].map((m) => ({
-          page: parseInt(m[1]),
-          idx: m.index,
-        }));
-        const _pageForIdx = (idx) => {
-          let pg = 1;
-          for (const pm of _pageMarkers) {
-            if (pm.idx <= idx) pg = pm.page;
-            else break;
-          }
-          return pg;
-        };
-        const _maxPage = _pageMarkers.length ? _pageMarkers[_pageMarkers.length - 1].page : 1;
 
         // ── STRATEGY 1: Billing Date + Account Number per-page grouping ──
         // Each Utility E page has a "Billing Date: MM/DD/YYYY" and "Account Number :
@@ -8788,10 +8775,10 @@ const UTILITY_RULES = [
         // because the header text is in a consistent layout that OCR handles well
         // and the digits of the date are OCR-stable.
         const _pageTextMap = {};
-        for (let _pi = 0; _pi < _pageMarkers.length; _pi++) {
-          const _pg = _pageMarkers[_pi].page;
-          const _pStart = _pageMarkers[_pi].idx;
-          const _pEnd = _pi + 1 < _pageMarkers.length ? _pageMarkers[_pi + 1].idx : t.length;
+        for (let _pi = 0; _pi < _pfPageMarkers.length; _pi++) {
+          const _pg = _pfPageMarkers[_pi].page;
+          const _pStart = _pfPageMarkers[_pi].idx;
+          const _pEnd = _pi + 1 < _pfPageMarkers.length ? _pfPageMarkers[_pi + 1].idx : t.length;
           _pageTextMap[_pg] = t.slice(_pStart, _pEnd);
         }
         const _bdKeyRe = /Billing\s*Date\s*[:\s]+(\d{2}\/\d{2}\/\d{4})/i;
@@ -8810,7 +8797,7 @@ const UTILITY_RULES = [
         // Order unique keys by their FIRST page so they match results[] order.
         const _orderedKeys = [];
         const _seenKeys = new Set();
-        for (let _pg = 1; _pg <= _maxPage; _pg++) {
+        for (let _pg = 1; _pg <= _pfMaxPage; _pg++) {
           const _pgText = _pageTextMap[_pg];
           if (!_pgText) continue;
           const _bdM = _pgText.match(_bdKeyRe);
@@ -8860,18 +8847,18 @@ const UTILITY_RULES = [
           // Clean 1:1 mapping — most common case.
           for (let i = 0; i < results.length; i++) {
             const r = results[i];
-            const bdPage = _pageForIdx(bdPositions[i]);
+            const bdPage = _pfPageForIdx(bdPositions[i]);
             // Cover is the page right before Billing Details. Clamp to 1 minimum.
             r._pageStart = Math.max(1, bdPage - 1);
             if (i + 1 < results.length) {
-              const nextBdPage = _pageForIdx(bdPositions[i + 1]);
+              const nextBdPage = _pfPageForIdx(bdPositions[i + 1]);
               // Next cover is (nextBdPage - 1), so this bill ends one page before
               // the next cover: nextBdPage - 2. Guard against negative deltas on
               // same-page bills (nextBdPage === bdPage is a split issue, treat it
               // as a same-page range).
               r._pageEnd = Math.max(r._pageStart, nextBdPage - 2);
             } else {
-              r._pageEnd = _maxPage;
+              r._pageEnd = _pfMaxPage;
             }
             r._pageRangeSource = 'bd-header';
           }
@@ -8900,7 +8887,7 @@ const UTILITY_RULES = [
               coverIdx = mm.index;
               break;
             }
-            coverStarts.push(coverIdx >= 0 ? _pageForIdx(coverIdx) : null);
+            coverStarts.push(coverIdx >= 0 ? _pfPageForIdx(coverIdx) : null);
           }
           for (let i = 0; i < results.length; i++) {
             const r = results[i];
@@ -8914,7 +8901,7 @@ const UTILITY_RULES = [
                   break;
                 }
               }
-              r._pageEnd = nextStart ? nextStart - 1 : _maxPage;
+              r._pageEnd = nextStart ? nextStart - 1 : _pfMaxPage;
               r._pageRangeSource = 'cover-anchor';
             } else {
               const s = validSections[i] || '';
@@ -8929,7 +8916,7 @@ const UTILITY_RULES = [
         }
       } // end if (!_pageFirstOk) — fallback cascade
       // Final safety net: any result still missing a range gets the chain
-      // fallback (previous bill's end + 1 → next bill's start - 1 or _maxPage).
+      // fallback (previous bill's end + 1 → next bill's start - 1 or _pfMaxPage).
       // Runs in both modes: no-op when every result already has a page
       // range (the common case under page-first), populates missing
       // ranges when the cascade above left some bills unresolved.
@@ -8951,8 +8938,8 @@ const UTILITY_RULES = [
           }
         }
         const fallbackStart = prevEnd + 1;
-        const fallbackEnd = nextStart ? nextStart - 1 : _maxPage;
-        if (fallbackStart <= fallbackEnd && fallbackStart >= 1 && fallbackEnd <= _maxPage) {
+        const fallbackEnd = nextStart ? nextStart - 1 : _pfMaxPage;
+        if (fallbackStart <= fallbackEnd && fallbackStart >= 1 && fallbackEnd <= _pfMaxPage) {
           if (!r._pageStart) r._pageStart = fallbackStart;
           if (!r._pageEnd) r._pageEnd = fallbackEnd;
           r._pageRangeSource = (r._pageRangeSource || '') + ' chain-fallback';
