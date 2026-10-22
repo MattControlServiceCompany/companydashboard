@@ -17,6 +17,7 @@
       href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&family=DM+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
+    <script src="lib/theme.js?v=160"></script>
     <script src="app/ch-auth.js"></script>
     <script src="sidebar-mode.js?v=160"></script>
     <style>
@@ -50,6 +51,47 @@
         --mono: 'DM Mono', monospace;
         --r: 10px;
       }
+      /* LIGHT / SYSTEM THEME: lib/theme.js sets data-theme to the effective value ('dark' or 'light'). Same tokens as index.html. */
+      [data-theme='light'] {
+        --bg: #f0f2f7;
+        --s1: #e4e8f2;
+        --s2: #ffffff;
+        --s3: #f5f7fc;
+        --s4: #eaedf6;
+        --border: #d3d9e8;
+        --border2: #bcc5da;
+        --text: #000000;
+        --text2: #000000;
+        --text3: #000000;
+        --em: #007a8c;
+        --em-dim: rgba(0, 122, 140, 0.1);
+        --em-glow: rgba(0, 122, 140, 0.2);
+        --em2: #0369a1;
+        --em2-dim: rgba(3, 105, 161, 0.1);
+        --warn: #b45309;
+        --warn-dim: rgba(180, 83, 9, 0.1);
+        --danger: #be123c;
+        --danger-dim: rgba(190, 18, 60, 0.1);
+        --violet: #6d28d9;
+        --violet-dim: rgba(109, 40, 217, 0.1);
+        --lime: #3f6212;
+        --lime-dim: rgba(63, 98, 18, 0.1);
+      }
+      [data-theme='light'] .topbar {
+        background: rgba(240, 242, 247, 0.97);
+      }
+      /* Dark accent fills in light mode carry white text */
+      [data-theme='light'] .tbmark,
+      [data-theme='light'] .s-badge,
+      [data-theme='light'] .s-badge-warn,
+      [data-theme='light'] .btn-em {
+        color: #ffffff;
+      }
+      [data-theme='light'] .modal-bg,
+      [data-theme='light'] .drawer-overlay {
+        background: rgba(0, 0, 0, 0.45);
+      }
+
       /* Placeholder text follows the text token like every other text (Matt, 2026-10-22: no grey text; de-emphasis by style, never color) */
       ::placeholder {
         color: var(--text);
