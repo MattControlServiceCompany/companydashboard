@@ -126,8 +126,7 @@ async function extractOnly(page, url, files, syncOn) {
     const page = await ctx.newPage();
     page.on('pageerror', (e) => console.log('PAGEERR ' + e.message));
     await ctx.addInitScript(() => {
-      localStorage.setItem('ch_qs_seen', '1');
-      localStorage.setItem('ch_settings', JSON.stringify({ rnShowMode: 'never' })); // no release-notes pop-up over the buttons
+      localStorage.setItem('ch_settings', JSON.stringify({ rnShowMode: 'never', showQuickStart: false }));
       const u = JSON.stringify({ name: 'Demo User', email: 'demo@example.com', initials: 'DU', isReal: false });
       localStorage.setItem('ch_user', u);
       sessionStorage.setItem('ch_user', u);

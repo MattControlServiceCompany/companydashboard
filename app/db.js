@@ -86,8 +86,6 @@ const DB = (() => {
     'ch_user',
     'ch_projTabOrder',
     'ch_sidebarOrder',
-    'ch_dismissed_tips',
-    'ch_qs_seen',
     'ch_toast_duration',
     'ch_last_seen_version',
     'ch_notifs',
@@ -2755,23 +2753,30 @@ const DB = (() => {
   // closes the gap on). ch-auth.js dispatches `chAuthStateChanged` on every
   // sign-in/out; the listener registered near the bottom of this file wires
   // it to _handleAuthIdentityChange below.
-  // Theme is not private data and is never sent to the server. It stays a raw
-  // localStorage key (the pre-paint script reads it before any user is known),
-  // but on an identity switch it is parked under a per-user LOCAL key so the
-  // user who set it gets it back and the next user does not inherit it.
-  function _themeStashKey(uid) {
-    return 'ch_theme_user::' + uid;
+  // The raw per-user keys (RAW_PER_USER_LOCAL_KEYS: settings, theme, view, order, ...) are never sent to
+  // the server. On an identity change the leaving user's values are parked under the local key
+  // ch_user_local::<userId>::<key>, and the arriving user's own parked values are put back. So the same
+  // user signing out and in keeps them (A->A, A->B->A), and a different user never inherits them.
+  // Parked keys are never in a backup (isNeverBackupKey lists the prefix). ch_theme is also applied to the page.
+  function _rawStashKey(uid, k) {
+    return 'ch_user_local::' + uid + '::' + k;
   }
   function _clearPerUserLocalState(prevUid, nextUid) {
     const cleared = [];
-    let nextTheme = null;
+    const restore = {};
     if (typeof localStorage !== 'undefined') {
       try {
-        const cur = localStorage.getItem('ch_theme');
-        if (prevUid && cur) localStorage.setItem(_themeStashKey(prevUid), cur);
-        if (nextUid) nextTheme = localStorage.getItem(_themeStashKey(nextUid));
+        RAW_PER_USER_LOCAL_KEYS.forEach((k) => {
+          if (k === RAW_PER_USER_CH_USER_KEY) return;
+          const cur = localStorage.getItem(k);
+          if (prevUid && cur !== null) localStorage.setItem(_rawStashKey(prevUid, k), cur);
+          if (nextUid) {
+            const parked = localStorage.getItem(_rawStashKey(nextUid, k));
+            if (parked !== null) restore[k] = parked;
+          }
+        });
       } catch (e) {
-        console.warn('[DB] theme stash failed:', e);
+        console.warn('[DB] raw per-user state stash failed:', e);
       }
     }
     Object.keys(_cache).forEach((k) => {
@@ -2841,14 +2846,15 @@ const DB = (() => {
       }
     });
 
-    if (nextTheme && typeof localStorage !== 'undefined') {
+    if (typeof localStorage !== 'undefined') {
       try {
-        localStorage.setItem('ch_theme', nextTheme);
-        if (typeof document !== 'undefined' && document.documentElement && document.documentElement.setAttribute) {
-          document.documentElement.setAttribute('data-theme', nextTheme === 'light' ? 'light' : 'dark');
+        Object.keys(restore).forEach((k) => localStorage.setItem(k, restore[k]));
+        const th = restore.ch_theme;
+        if (th && typeof document !== 'undefined' && document.documentElement && document.documentElement.setAttribute) {
+          document.documentElement.setAttribute('data-theme', th === 'light' ? 'light' : 'dark');
         }
       } catch (e) {
-        console.warn('[DB] theme restore failed:', e);
+        console.warn('[DB] raw per-user state restore failed:', e);
       }
     }
 

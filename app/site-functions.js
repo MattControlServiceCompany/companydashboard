@@ -1263,8 +1263,6 @@ var _RESTORE_LS_ONLY = [
   'ch_projTabOrder',
   'ch_sidebarOrder',
   'ch_sidebar_mode',
-  'ch_dismissed_tips',
-  'ch_qs_seen',
   'ch_seen_version',
   'ch_toast_duration',
   'ch_last_seen_version',

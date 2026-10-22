@@ -2886,12 +2886,12 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
   });
 
   // ---- Review fixes (2026-10-06)
-  await t('REV1 the theme stash ch_theme_user::<uid> is never in a backup file (the one never-backup rule)', async () => {
+  await t('REV1 the raw-state stash ch_user_local::<uid>::<key> is never in a backup file (the one never-backup rule)', async () => {
     const SC = require('./app/sync-classification.js');
-    assert.strictEqual(SC.isNeverBackupKey('ch_theme_user::u1'), true);
-    assert.strictEqual(SC.classifyKey('ch_theme_user::u1'), 'local-only');
+    assert.strictEqual(SC.isNeverBackupKey('ch_user_local::u1::ch_theme'), true);
+    assert.strictEqual(SC.classifyKey('ch_user_local::u1::ch_theme'), 'local-only');
     assert.strictEqual(SC.isNeverBackupKey('ch_theme'), false);
-    const ls = { ch_theme: 'dark', 'ch_theme_user::u-other': 'light' };
+    const ls = { ch_theme: 'dark', 'ch_user_local::u-other::ch_theme': 'light' };
     let written = null;
     const ctx = {
       window: { SyncClassification: SC },
@@ -2916,7 +2916,7 @@ const ok = (body) => ({ ok: true, status: 200, json: async () => body });
     vm.runInContext(siteFnSrc('siteBackup'), ctx);
     await vm.runInContext('siteBackup()', ctx);
     assert.ok(written, 'backup written');
-    assert.ok(!Object.keys(written).some((k) => k.indexOf('ch_theme_user::') === 0), 'no theme stash key in the backup');
+    assert.ok(!Object.keys(written).some((k) => k.indexOf('ch_user_local::') === 0), 'no theme stash key in the backup');
     assert.strictEqual(written.ch_theme, 'dark', 'the theme itself is still exported');
   });
   await t('REV2 a pending reload timer is cleared on a user switch or sign-out', () => {

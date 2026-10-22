@@ -26,26 +26,19 @@
 
       /* ── Dismissed tips helpers ── */
       function chGetDismissed() {
-        try {
-          return JSON.parse(localStorage.getItem('ch_dismissed_tips') || '[]');
-        } catch (e) {
-          return [];
-        }
+        var d = DB.get('ch_dismissed_tips', []);
+        return Array.isArray(d) ? d.slice() : [];
       }
       function chDismissTip(tipId) {
         var d = chGetDismissed();
         if (d.indexOf(tipId) === -1) d.push(tipId);
-        try {
-          localStorage.setItem('ch_dismissed_tips', JSON.stringify(d));
-        } catch (e) {}
+        DB.set('ch_dismissed_tips', d);
       }
       function chIsDismissed(tipId) {
         return chGetDismissed().indexOf(tipId) !== -1;
       }
       function chResetDismissedTips() {
-        try {
-          localStorage.removeItem('ch_dismissed_tips');
-        } catch (e) {}
+        DB.set('ch_dismissed_tips', []);
         showToast('All tips reset — they will show again next time ✓');
       }
 
@@ -284,10 +277,16 @@
       function autoQuickStart() {
         var app = document.getElementById('app');
         if (!app || !app.classList.contains('visible')) return;
-        if (localStorage.getItem('ch_qs_seen') || !chGetSetting('showQuickStart', true)) return;
+        // The seen flag is a per-user synced key: decide only after the first server pull, so a returning
+        // user on a new browser never sees the guide before the saved flag arrives.
+        if (!DB.hasFullPull()) return;
+        if (DB.get('ch_qs_seen', false) || !chGetSetting('showQuickStart', true)) return;
         openQuickStart();
-        localStorage.setItem('ch_qs_seen', '1');
+        DB.set('ch_qs_seen', true);
       }
+      window.addEventListener('dbHydrated', function () {
+        autoQuickStart();
+      });
       window.autoQuickStart = autoQuickStart;
       document.addEventListener('DOMContentLoaded', function () {
         setTimeout(autoQuickStart, 1200);
