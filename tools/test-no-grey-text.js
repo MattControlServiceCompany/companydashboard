@@ -4,8 +4,13 @@
 // (HSL saturation >= 0.45 and lightness 0.2..0.78). Anything else visible = FAIL. Text faded by opacity between 0.05 and 0.9 = FAIL (fully hidden and mid-fade-in are not).
 // Chart.js text (defaults, every live chart's ticks/legend/titles/tooltip, plus a probe chart) must resolve to exactly #fff / #000.
 // There is NO allow-list of elements. Fix the token or the rule that sets the color.
+// Text is judged against the background it actually sits on (nearest non-transparent fill, not the page theme):
+// dark fill (luma < 150) -> #fff, light fill -> #000. Saturated accent colors are allowed on any fill.
+// Every page walk puts a disabled button and a select on screen: a disabled button must be dashed + not-allowed + pole text;
+// a select's text must be the pole for its own fill.
 // Loads index.html, ems-leads.html and energy-department.html (home, projects list, one synthetic project on every tab)
-// headless, in light and dark. SYNTHETIC data only. Run: node tools/test-no-grey-text.js [--verbose]
+// headless, in Dark, Light, System-dark and System-light (stored choice 'system' + emulated OS scheme), then flips the OS
+// scheme live (no reload) and checks data-theme and chart text follow. SYNTHETIC data only. Run: node tools/test-no-grey-text.js [--verbose]
 const { launchBrowser } = require('./launch-browser.js');
 const path = require('path');
 const ROOT = 'file:///' + path.resolve(__dirname, '..').split(path.sep).join('/') + '/';
@@ -23,10 +28,22 @@ function scanInPage() {
       .map(Number);
     return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 };
   }
-  function ok(c) {
+  // Nearest non-transparent fill behind el (walks ancestors; falls back to the canvas, which is white).
+  function bgOf(el) {
+    for (let e = el; e && e.nodeType === 1; e = e.parentElement) {
+      const b = parse(getComputedStyle(e).backgroundColor);
+      if (b && b.a >= 0.5) return b;
+    }
+    return { r: 255, g: 255, b: 255, a: 1 };
+  }
+  function poleFor(bg) {
+    return 0.299 * bg.r + 0.587 * bg.g + 0.114 * bg.b < 150 ? 255 : 0;
+  }
+  function ok(c, el) {
     if (!c) return true;
     if (c.a < 0.95) return c.a === 0;
-    if (c.r === c.g && c.g === c.b && (c.r === 0 || c.r === 255)) return true;
+    const pole = poleFor(bgOf(el));
+    if (c.r === c.g && c.g === c.b) return c.r === pole; // pure white on a dark fill, pure black on a light fill; any other grey, or the wrong pole, fails
     const r = c.r / 255,
       g = c.g / 255,
       b = c.b / 255;
@@ -69,7 +86,7 @@ function scanInPage() {
     const cs = getComputedStyle(el);
     const col = el.closest('svg') ? parse(cs.fill) || parse(cs.color) : parse(cs.color);
     const op = effOpacity(el);
-    if (!ok(col)) out.push({ sel: sig(el), color: cs.color, why: 'color', text: n.nodeValue.trim().slice(0, 30) });
+    if (!ok(col, el)) out.push({ sel: sig(el), color: cs.color, why: 'color', text: n.nodeValue.trim().slice(0, 30) });
     else if (op > 0.05 && op < 0.9)
       out.push({
         sel: sig(el),
@@ -81,12 +98,42 @@ function scanInPage() {
   document.querySelectorAll('input[placeholder], textarea[placeholder]').forEach((el) => {
     if (!visible(el)) return;
     const col = parse(getComputedStyle(el, '::placeholder').color);
-    if (!ok(col))
+    if (!ok(col, el))
       out.push({
         sel: sig(el) + '::placeholder',
         color: getComputedStyle(el, '::placeholder').color,
         why: 'placeholder',
         text: el.placeholder.slice(0, 30),
+      });
+  });
+  // Selects: option text is skipped above, so judge the select's own text against its own fill.
+  document.querySelectorAll('select').forEach((el) => {
+    if (!visible(el)) return;
+    const cs = getComputedStyle(el);
+    const col = parse(cs.color);
+    const bg = parse(cs.backgroundColor);
+    const fill = bg && bg.a >= 0.5 ? bg : bgOf(el.parentElement);
+    const pole = poleFor(fill);
+    const isPole = col && col.r === col.g && col.g === col.b && col.r === pole;
+    const optBad = [...el.options].some((o) => {
+      const oc = parse(getComputedStyle(o).color);
+      const ob = parse(getComputedStyle(o).backgroundColor);
+      const ofill = ob && ob.a >= 0.5 ? ob : fill;
+      return !(oc && oc.r === oc.g && oc.g === oc.b && oc.r === poleFor(ofill));
+    });
+    if (!isPole || optBad)
+      out.push({ sel: sig(el) + ' (select)', color: cs.color + ' on ' + cs.backgroundColor, why: 'select', text: '' });
+  });
+  // Disabled buttons: shared cue (dashed border, not-allowed cursor) and pole text on their own fill. Opacity and grey fail.
+  document.querySelectorAll('button:disabled').forEach((el) => {
+    if (!visible(el)) return;
+    const cs = getComputedStyle(el);
+    if (cs.borderTopStyle !== 'dashed' || cs.cursor !== 'not-allowed')
+      out.push({
+        sel: sig(el) + ' (disabled)',
+        color: 'border ' + cs.borderTopStyle + ' cursor ' + cs.cursor,
+        why: 'disabled-cue',
+        text: (el.textContent || '').trim().slice(0, 30),
       });
   });
   return out;
@@ -103,8 +150,8 @@ function scanChartsInPage() {
     d.fillStyle = String(c);
     return d.fillStyle; // '#rrggbb' or 'rgba(...)'
   }
-  const theme = getComputedStyle(document.documentElement).getPropertyValue('--text').trim().toLowerCase();
-  const expect = theme === '#000000' || theme === '#000' ? '#000000' : '#ffffff';
+  const eff = document.documentElement.getAttribute('data-theme');
+  const expect = eff === 'light' ? '#000000' : '#ffffff'; // data-theme is the effective theme, set by chTheme.effective
   function chk(where, key, val) {
     const n = norm(val);
     if (n !== expect) bad.push({ where, key, val: String(val) + ' => ' + n });
@@ -150,8 +197,15 @@ function scanChartsInPage() {
 (async () => {
   let total = 0;
   const bySig = {};
-  for (const theme of ['dark', 'light']) {
-    const ctx = await launchBrowser('greytext', { viewport: { width: 1280, height: 900 } });
+  const MODES = [
+    { name: 'dark', stored: 'dark', os: 'dark' },
+    { name: 'light', stored: 'light', os: 'light' },
+    { name: 'system-dark', stored: 'system', os: 'dark' },
+    { name: 'system-light', stored: 'system', os: 'light' },
+  ];
+  for (const mode of MODES) {
+    const theme = mode.name;
+    const ctx = await launchBrowser('greytext', { viewport: { width: 1280, height: 900 }, colorScheme: mode.os });
     try {
       const page = await ctx.newPage();
       const errs = [];
@@ -176,16 +230,28 @@ function scanChartsInPage() {
               },
             ]),
           );
-          window.localStorage.setItem('ch_settings', JSON.stringify({ showQuickStart: false, theme: a.theme }));
-          window.localStorage.setItem('ch_theme', a.theme);
+          window.localStorage.setItem('ch_settings', JSON.stringify({ showQuickStart: false, theme: a.stored }));
+          window.localStorage.setItem('ch_theme', a.stored);
           window.localStorage.setItem(
             'ch_user',
             JSON.stringify({ name: 'Demo User', email: 'demo@example.com', initials: 'DU', isReal: false }),
           );
         },
-        { pid: PID, theme },
+        { pid: PID, stored: mode.stored },
       );
+      // A disabled button and a select on every screen (the walk never had one on screen, which hid the missing rules).
+      const injectProbes = () =>
+        page.evaluate(() => {
+          const d = document.createElement('div');
+          d.id = 'greyProbes';
+          d.style.cssText = 'position:fixed;left:8px;bottom:8px;z-index:99999;display:flex;gap:8px;';
+          d.innerHTML =
+            '<button class="btn btn-em" disabled>Probe disabled</button><button class="btn" disabled>Probe disabled plain</button>' +
+            '<select><option>Probe select</option><option>Second</option></select>';
+          document.body.appendChild(d);
+        });
       const record = async (label) => {
+        await injectProbes();
         await page.evaluate(() =>
           document.getAnimations().forEach((a) => {
             try {
@@ -195,6 +261,10 @@ function scanChartsInPage() {
         ); // a tip fading in is not a faded label
         const found = await page.evaluate(scanInPage);
         const chartBad = await page.evaluate(scanChartsInPage);
+        await page.evaluate(() => {
+          const d = document.getElementById('greyProbes');
+          if (d) d.remove();
+        });
         chartBad.forEach((b) => found.push({ sel: 'chart ' + b.where + ' ' + b.key, color: b.val, why: 'chart-text', text: '' }));
         found.forEach((f) => {
           const k = theme + ' | ' + f.sel + ' | ' + f.color + ' | ' + f.why;
@@ -223,6 +293,32 @@ function scanChartsInPage() {
         await page.evaluate((tab) => sPTab(tab, document.querySelector('#pdTabBar button[data-tab="' + tab + '"]')), t);
         await page.waitForTimeout(350);
         await record('tab ' + t);
+      }
+      // data-theme must be the effective theme for this mode.
+      const eff = await page.evaluate(() => document.documentElement.getAttribute('data-theme'));
+      const want = mode.stored === 'system' ? mode.os : mode.stored;
+      if (eff !== want) {
+        total++;
+        bySig[theme + ' | html[data-theme] | ' + eff + ' want ' + want + ' | theme-mode'] = { n: 1, where: 'mode', text: '' };
+      }
+      // System follows the OS live: flip the scheme with no reload; data-theme and chart text must follow.
+      if (mode.stored === 'system') {
+        const flipTo = mode.os === 'dark' ? 'light' : 'dark';
+        await page.emulateMedia({ colorScheme: flipTo });
+        await page.waitForTimeout(300);
+        const after = await page.evaluate(() => ({
+          t: document.documentElement.getAttribute('data-theme'),
+          c: typeof SharedCharts !== 'undefined' ? SharedCharts.textColor().toLowerCase() : null,
+        }));
+        const wantC = flipTo === 'light' ? '#000000' : '#ffffff';
+        if (after.t !== flipTo || (after.c !== null && after.c !== wantC)) {
+          total++;
+          bySig[theme + ' | live OS flip | ' + JSON.stringify(after) + ' want ' + flipTo + ' | system-live'] = {
+            n: 1,
+            where: 'flip',
+            text: '',
+          };
+        }
       }
       if (errs.length) console.log('page errors (' + theme + '): ' + errs.slice(0, 3).join(' | '));
       await page.close();

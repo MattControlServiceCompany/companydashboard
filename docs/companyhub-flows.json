@@ -16,8 +16,8 @@
       "emsLeads": "Syne / DM Sans / DM Mono"
     },
     "sharedInfrastructure": {
-      "css": "site-ui.css (also copy-pasted inline into each HTML <style id='site-ui-styles'>)",
-      "js": "site-ui.js (Store, DashboardController, theme, backup, settings, clock)",
+      "css": "lib/theme.css (shared theme, select and disabled-button rules, linked by every page) plus inline <style id='site-ui-styles'> per page",
+      "js": "lib/theme.js (chTheme: Dark/Light/System), site-ui.js (Store, DashboardController, backup, settings, clock)",
       "feedbackWidget": "feedback-widget.css + inline JS in HTML files"
     }
   },

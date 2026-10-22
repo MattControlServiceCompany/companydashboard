@@ -2849,10 +2849,7 @@ const DB = (() => {
     if (typeof localStorage !== 'undefined') {
       try {
         Object.keys(restore).forEach((k) => localStorage.setItem(k, restore[k]));
-        const th = restore.ch_theme;
-        if (th && typeof document !== 'undefined' && document.documentElement && document.documentElement.setAttribute) {
-          document.documentElement.setAttribute('data-theme', th === 'light' ? 'light' : 'dark');
-        }
+        if (restore.ch_theme && typeof window !== 'undefined' && window.chTheme) window.chTheme.render();
       } catch (e) {
         console.warn('[DB] raw per-user state restore failed:', e);
       }
