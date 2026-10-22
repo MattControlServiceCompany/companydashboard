@@ -30,10 +30,6 @@
     var style = document.createElement('style');
     style.id = 'ch-sync-ui-styles';
     style.textContent =
-      '#ch-sync-pill{position:fixed;bottom:16px;right:16px;z-index:9999;' +
-      'background:var(--s3,#333);color:var(--text,#fff);border:1px solid var(--border,#555);' +
-      'border-radius:999px;padding:6px 14px;font-size:12px;font-family:inherit;' +
-      'box-shadow:0 2px 8px rgba(0,0,0,.25);display:none;}' +
       // Both top banners live inside ONE fixed flex-column stack so that a
       // remote-change banner and an offline banner can be visible at the
       // same time without occluding each other (both are position:fixed
@@ -116,6 +112,8 @@
       'box-shadow:none;padding:0;font-size:inherit;font-family:inherit;letter-spacing:inherit;color:var(--text2,#9aa3b8);' +
       'text-decoration:underline;}' +
       '#ch-sync-status-btn.ch-sync-status-inline:hover{background:none;color:var(--text,#fff);}' +
+      '#ch-sync-status-btn[data-sync-level=warn]{color:var(--warn,#b45309);font-weight:600;}' +
+      '#ch-sync-status-btn[data-sync-level=bad]{color:var(--danger,#dc2626);font-weight:600;}' +
       '#ch-sync-status-panel{position:fixed;top:0;left:0;bottom:0;width:360px;max-width:90vw;' +
       'z-index:var(--z-modal,800);background:var(--s2,#181d2e);border-right:1px solid var(--border,#333);' +
       'display:none;flex-direction:column;box-shadow:4px 0 20px rgba(0,0,0,.4);font-family:inherit;}' +
@@ -134,10 +132,9 @@
       '.ch-sync-status-key-in-sync .ch-sync-status-key-name{color:var(--accent,#2563eb);}' +
       '.ch-sync-status-key-diverged .ch-sync-status-key-name{color:var(--warn,#b45309);}' +
       '.ch-sync-status-key-pending .ch-sync-status-key-name{color:var(--text2,#9aa3b8);}' +
-      // All widths: the three corner controls sit in ONE row on the bottom edge (status
-      // left, archive next, unsynced pill right) and .content reserves that row, so nothing
+      // All widths: the corner controls sit in ONE row on the bottom edge (archive, held drafts) and .content reserves that row, so nothing
       // covers page content. At 900px and wider the row starts right of the 220px sidebar.
-      '#ch-archive-link,#ch-sync-pill{bottom:6px;font-size:11px;padding:4px 10px;}' +
+      '#ch-archive-link{bottom:6px;font-size:11px;padding:4px 10px;}' +
       '#ch-archive-link{left:236px;right:auto;}' +
       '#ch-held-link{position:fixed;bottom:6px;left:400px;z-index:9998;background:var(--s3,#333);' +
       'color:var(--text,#fff);border:1px solid var(--border,#555);border-radius:999px;padding:4px 10px;' +
@@ -180,15 +177,24 @@
     return el;
   }
 
-  function renderPill(depth) {
-    ensureStyles();
-    var el = ensureEl('ch-sync-pill');
-    if (depth > 0) {
-      el.textContent = depth + ' unsynced change' + (depth === 1 ? '' : 's');
-      el.style.display = 'block';
-    } else {
-      el.style.display = 'none';
+  // The ONE place that decides what the sync status says. Inputs: unsynced count, offline, sign-in refused.
+  // The ONE element that shows it: the "Sync status" link in the sidebar (renderSyncStatusButton).
+  var _syncState = { depth: 0, offline: false, refused: false };
+  function syncStatusView() {
+    var s = _syncState;
+    if (s.refused) return { text: 'Sync status (sign-in refused)', level: 'bad', title: 'The server refused this sign-in. Changes stay in this browser.' };
+    if (s.offline) return { text: 'Sync status (offline)', level: 'warn', title: 'Offline. Showing the local copy. Edits sync when reconnected.' };
+    if (s.depth > 0) {
+      var n = s.depth + ' unsynced';
+      return { text: 'Sync status (' + n + ')', level: 'warn', title: s.depth + ' change' + (s.depth === 1 ? '' : 's') + ' not yet sent to the server.' };
     }
+    return { text: 'Sync status', level: 'ok', title: 'Open the sync status panel' };
+  }
+  function setSyncState(patch) {
+    Object.keys(patch).forEach(function (k) {
+      _syncState[k] = patch[k];
+    });
+    renderSyncStatusButton();
   }
 
   function renderRemoteChangeBanner(keys) {
@@ -329,7 +335,7 @@
         : window.DB && window.DB.getQueueDepth
           ? window.DB.getQueueDepth()
           : 0;
-    renderPill(depth);
+    setSyncState({ depth: depth });
   });
 
   window.addEventListener('remoteChange', function (e) {
@@ -388,6 +394,7 @@
   window.addEventListener('dbOfflineBanner', function (e) {
     var d = (e && e.detail) || {};
     renderOfflineBanner(true, d.waiting === true, d.what, d.detail);
+    setSyncState({ offline: true });
   });
 
   // M6: the server answered 401/403. This is not "offline": the sign-in was refused.
@@ -400,6 +407,7 @@
       code +
       '). Your changes stay in this browser and are not syncing. Sign out and sign in again, or ask your administrator for access.';
     el.style.display = 'block';
+    setSyncState({ refused: true });
   });
 
   // First connect of a browser that had local-only data: one-line result.
@@ -415,13 +423,14 @@
     renderOfflineBanner(false);
     var rej = document.getElementById('ch-sync-auth-rejected-banner');
     if (rej) rej.style.display = 'none';
+    setSyncState({ offline: false, refused: false });
   });
 
   // Initial paint once DB is ready, in case a queue already had entries left
   // over from a prior offline session.
   window.addEventListener('dbReady', function () {
     if (window.DB && typeof window.DB.getQueueDepth === 'function') {
-      renderPill(window.DB.getQueueDepth());
+      setSyncState({ depth: window.DB.getQueueDepth() });
     }
     renderArchiveLink();
     renderArchiveFullBanner();
@@ -928,7 +937,10 @@
         document.body.appendChild(el);
       }
     }
-    el.textContent = 'Sync status';
+    var v = syncStatusView();
+    el.textContent = v.text;
+    el.title = v.title;
+    el.setAttribute('data-sync-level', v.level);
     el.style.display = '';
     el.onclick = openSyncStatusPanel;
   }

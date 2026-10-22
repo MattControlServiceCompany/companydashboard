@@ -1,7 +1,7 @@
 /* Left sidebar mode: the ONE control for every page that has a left sidebar.
-   Three modes, pinned by the user:
+   Three modes, chosen with the pin button at the top of the sidebar:
      expanded  full sidebar with names (stays open)
-     collapsed sidebar hidden, the page uses the full width
+     collapsed sidebar hidden, the page uses the full width; it opens over the page while the pointer is on the left edge
      slim      a rail one icon wide, the name shows on hover
    The choice is stored in the per-user key ch_sidebar_mode (localStorage copy for the first paint, DB copy so
    it follows the user to any browser). With no saved choice the sidebar is expanded at 900 px and wider and
@@ -43,24 +43,15 @@
     down: '<path d="M12 5v14M6 13l6 6 6-6"/>',
   };
 
-  // The three-way selector: picture of the page with the sidebar drawn the way the mode shows it.
-  var MODE_UI = [
-    {
-      mode: 'expanded',
-      title: 'Full sidebar: icons and names, stays open',
-      paths: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M11 4v16"/><path d="M3 4h8v16H3z" fill="currentColor" fill-opacity="0.35"/>',
-    },
-    {
-      mode: 'slim',
-      title: 'Narrow sidebar: icons only (point at an icon to see its name)',
-      paths: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16"/><path d="M3 4h4v16H3z" fill="currentColor" fill-opacity="0.35"/>',
-    },
-    {
-      mode: 'collapsed',
-      title: 'Hide the sidebar: the page uses the full width',
-      paths: '<rect x="3" y="4" width="18" height="16" rx="2"/>',
-    },
+  // The pin menu: one line per mode. The pin button is in the sidebar's top edge.
+  var MENU = [
+    { mode: 'expanded', label: 'Open' },
+    { mode: 'slim', label: 'Slim (1 icon wide)' },
+    { mode: 'collapsed', label: 'Collapsed (opens on hover)' },
   ];
+  var PIN_ICON =
+    '<path d="M9 3h6l-1 6 3 3v2H7v-2l3-3z"/><path d="M12 14v7"/>';
+  var CHECK_ICON = '<path d="M5 12l5 5 9-10"/>';
 
   function svg(inner, size) {
     return (
@@ -100,11 +91,18 @@
   }
 
   function syncControl(mode) {
-    document.querySelectorAll('#sbModeCtl .sb-mode-btn').forEach(function (b) {
+    var pin = document.getElementById('sbPinBtn');
+    if (pin) pin.title = 'Sidebar view (now: ' + labelOf(mode) + ')';
+    document.querySelectorAll('#sbPinMenu .sb-pin-item').forEach(function (b) {
       var on = b.getAttribute('data-mode') === mode;
       b.classList.toggle('active', on);
-      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      b.setAttribute('aria-checked', on ? 'true' : 'false');
     });
+  }
+  function labelOf(mode) {
+    return MENU.filter(function (m) {
+      return m.mode === mode;
+    })[0].label;
   }
 
   function apply() {
@@ -161,29 +159,73 @@
     });
   }
 
+  function closeMenu() {
+    var m = document.getElementById('sbPinMenu');
+    if (m) m.hidden = true;
+    var pin = document.getElementById('sbPinBtn');
+    if (pin) pin.setAttribute('aria-expanded', 'false');
+  }
+  function openMenu() {
+    var m = document.getElementById('sbPinMenu');
+    var pin = document.getElementById('sbPinBtn');
+    m.hidden = false;
+    var r = pin.getBoundingClientRect();
+    m.style.top = Math.round(r.bottom + 4) + 'px';
+    m.style.left = Math.round(Math.min(r.left, window.innerWidth - m.offsetWidth - 8)) + 'px';
+    pin.setAttribute('aria-expanded', 'true');
+  }
+
+  // One pin button in the sidebar's top edge, with a 3-line menu. The menu is a child of body so the
+  // slim rail (overflow hidden) does not clip it.
   function buildControl() {
-    if (document.getElementById('sbModeCtl')) return;
-    var host = document.querySelector('.dept-nav') || document.querySelector('.nav-bar');
-    if (!host) return;
-    var ctl = document.createElement('div');
-    ctl.id = 'sbModeCtl';
-    ctl.className = 'sb-mode';
-    ctl.setAttribute('role', 'group');
-    ctl.setAttribute('aria-label', 'Sidebar view');
-    MODE_UI.forEach(function (m) {
+    var sb = document.querySelector('.sidebar');
+    if (!sb || document.getElementById('sbPinBtn')) return;
+    var pin = document.createElement('button');
+    pin.type = 'button';
+    pin.id = 'sbPinBtn';
+    pin.className = 'sb-pin-btn';
+    pin.setAttribute('aria-haspopup', 'menu');
+    pin.setAttribute('aria-expanded', 'false');
+    pin.setAttribute('aria-label', 'Sidebar view');
+    pin.innerHTML = svg(PIN_ICON, 16);
+    pin.onclick = function (e) {
+      e.stopPropagation();
+      if (document.getElementById('sbPinMenu').hidden) openMenu();
+      else closeMenu();
+    };
+    sb.insertBefore(pin, sb.firstChild);
+
+    var menu = document.createElement('div');
+    menu.id = 'sbPinMenu';
+    menu.className = 'sb-pin-menu';
+    menu.setAttribute('role', 'menu');
+    menu.hidden = true;
+    MENU.forEach(function (m) {
       var b = document.createElement('button');
       b.type = 'button';
-      b.className = 'sb-mode-btn';
+      b.className = 'sb-pin-item';
+      b.setAttribute('role', 'menuitemradio');
       b.setAttribute('data-mode', m.mode);
-      b.title = m.title;
-      b.setAttribute('aria-label', m.title);
-      b.innerHTML = svg(m.paths, 18);
+      b.innerHTML = '<span class="sb-pin-check">' + svg(CHECK_ICON, 14) + '</span><span>' + m.label + '</span>';
       b.onclick = function () {
         set(m.mode);
+        closeMenu();
       };
-      ctl.appendChild(b);
+      menu.appendChild(b);
     });
-    host.insertBefore(ctl, host.firstChild);
+    document.body.appendChild(menu);
+    document.addEventListener('click', function (e) {
+      if (!menu.contains(e.target)) closeMenu();
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') closeMenu();
+    });
+    window.addEventListener('resize', closeMenu);
+
+    // Collapsed mode: a thin strip at the left edge opens the sidebar while the pointer is on it.
+    var edge = document.createElement('div');
+    edge.className = 'sb-edge';
+    sb.parentNode.insertBefore(edge, sb);
   }
 
   // The saved copy in the DB (follows the user to other browsers) wins once the DB is ready.

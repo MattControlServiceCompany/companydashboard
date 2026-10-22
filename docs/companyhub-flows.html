@@ -334,7 +334,7 @@ var FLOWS = [
     id: 'sbmode-flow', name: 'Sidebar mode', desc: 'Pin the left sidebar full, icons only, or hidden',
     path: ['user','energy','sbmode','ls'],
     steps: [
-      { from:'user', to:'energy', label:'User picks a mode in the selector at the left of the top tab row', detail:'Same place on energy-department.html and ems-leads.html, in every mode.' },
+      { from:'user', to:'energy', label:'User clicks the pin at the top of the sidebar and picks a mode in its 3-line menu', detail:'Open, Slim (1 icon wide), Collapsed (opens on hover). Same on energy-department.html and ems-leads.html.' },
       { from:'energy', to:'sbmode', label:'SidebarMode.set(mode)', detail:'expanded | slim | collapsed. sidebar-mode.js loads in the page head and sets html[data-sb-mode] before the first paint; sidebar-rail.css does the layout.' },
       { from:'sbmode', to:'ls', label:'Saved to ch_sidebar_mode', detail:'localStorage copy for the first paint, DB.set copy (per user) so it follows the user to other browsers. No saved choice: expanded at 900 px and wider, collapsed below.' },
     ]

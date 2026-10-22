@@ -372,7 +372,7 @@
       "sget(key, fallback)": "Wrapper for Store.get() with fallback value"
     },
     "accessibility": {
-      "features": ["ESC key closes modals", "Focus trap in modals", "ARIA roles on navigation", "44px minimum touch targets", "Focus-visible outlines", "Left sidebar mode selector (full, icons only, hidden) saved per user"]
+      "features": ["ESC key closes modals", "Focus trap in modals", "ARIA roles on navigation", "44px minimum touch targets", "Focus-visible outlines", "Left sidebar pin menu (open, slim, collapsed) saved per user"]
     }
   },
   "storageKeys": {
