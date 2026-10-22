@@ -2536,6 +2536,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.21.157', date: '2026-10-21', title: 'Bill review: demand-charge warning',
+    items: [
+      { type: 'fix', text: 'Bill review: no more false demand-charge warning on bills that charge demand for part of the billing period.' }
+    ]
+  },
   { v: 'v2026.10.21.156', date: '2026-10-21', title: 'Projects page: Bills through date',
     items: [
       { type: 'fix', text: "Projects page: the Louisburg card's 'Bills through' date no longer uses propane delivery dates." }
