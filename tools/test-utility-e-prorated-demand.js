@@ -151,6 +151,34 @@ async function main() {
     const w = warns(b);
     check(name + (clean ? ': no warning' : ': warns'), clean ? w.length === 0 : w.length > 0, JSON.stringify(w) + ' ' + JSON.stringify(b._rates && b._rates.BilledKWCharge && b._rates.BilledKWCharge.parts));
   }
+  // TDC split at a rate change: each line holds a date range and no printed fraction. The printed charge is
+  // qty x rate x (range days / bill days). A match to the cent gives no warning; a wrong charge still warns; no
+  // corrected value is built from the fraction.
+  const tdcPage = (a1, a2) =>
+    HEAD('MGS Secondary Voltage Commercial - 2MGSE   Billing Details - service from 09/07/2026 to 10/05/2026') +
+    '\n' +
+    [
+      'Customer Chg ..........   $48.90',
+      'TDC Chg 09-07-2026-09-08-2026 for 40.0000 kW at $2.51004 per kW .....   ' + a1,
+      'TDC Chg 09-09-2026-10-05-2026 for 40.0000 kW at $2.46781 per kW .....   ' + a2,
+      'kWh Used 2,000.0000',
+    ].join('\n') +
+    '\n' +
+    FORM +
+    '\n';
+  // 40 x 2.51004 x 2/29 = 6.92; 40 x 2.46781 x 27/29 = 91.90
+  const tdcWarns = (b) => Object.keys(b).filter((f) => /^_part_mismatches_TDCCharge$|^_rate_mismatch_TDCCharge$/.test(f) && b[f] && (!Array.isArray(b[f]) || b[f].length));
+  for (const [name, a1, a2, clean] of [
+    ['TDC range fraction matching to the cent', '$6.92', '$91.90', true],
+    ['TDC wrong printed charge', '$6.92', '$95.00', false],
+  ]) {
+    const b = (await pipeline(tdcPage(a1, a2)))[0] || {};
+    const w = tdcWarns(b);
+    check(name + (clean ? ': no warning' : ': warns'), clean ? w.length === 0 : w.length > 0, 'days=' + b.NumberOfDays + ' ' + JSON.stringify(w) + ' ' + JSON.stringify(b._rates && b._rates.TDCCharge && b._rates.TDCCharge.parts));
+    check(name + ': no correction from a fraction', !Object.keys(b).some((f) => /^_auto_corrected_(rate_)?TDCCharge$|^_rate_repair_TDCCharge$/.test(f)), Object.keys(b).filter((f) => /TDC/.test(f)).join());
+    const parts = (b._rates && b._rates.TDCCharge && b._rates.TDCCharge.parts) || [];
+    check(name + ': record keeps the printed qty and rate', parts.length === 2 && parts[0].qty === 40 && parts[0].rate === 2.51004 && parts[1].rate === 2.46781, JSON.stringify(parts));
+  }
   // The day fraction is the printed one, read by one function.
   check('reader: glued days', JSON.stringify(sb._evgReadProration('(for 9 of 33days)')) === '{"num":9,"den":33}');
   check('reader: no fraction -> null', sb._evgReadProration('Demand Chg 40.0000 kW at $9.82 per kW ... $392.80') === null);

@@ -2532,6 +2532,28 @@ function _evgReadProration(block) {
 // part's PRINTED charge equals qty x rate x N / Y to the cent and the Y read does not; a wrong charge matches no
 // candidate and stays a mismatch. Sets prorationDen (or a misread prorationNum) and computed on the part.
 function _evgResolveProrationDen(parts) {
+  // A date range on a kW line with no printed fraction (TDC split at a rate change): range days / bill days. A CHECK
+  // candidate only. Used when the printed charge equals qty x rate x N / Y to the cent and plain qty x rate does not;
+  // the part then holds the fraction like a printed one, so the check passes. A charge matching neither stays a
+  // mismatch, and no corrected value is ever built from the fraction (_rateFormulaOf needs qty x rate = charge).
+  const rg = parts.filter((p) => p.rangeNum);
+  const sumRange = rg.reduce((a, p) => a + p.rangeNum, 0);
+  for (const p of rg) {
+    if (p.ocrCharge != null && Math.abs(Math.round(p.qty * p.rate * 100) / 100 - p.ocrCharge) > 0.05) {
+      for (const y of [p.rangeDen, rg.length > 1 ? sumRange : null]) {
+        if (!y || y < p.rangeNum) continue;
+        const c = Math.round(p.qty * p.rate * (p.rangeNum / y) * 100) / 100;
+        if (Math.abs(c - p.ocrCharge) <= 0.05) {
+          p.prorationNum = p.rangeNum;
+          p.prorationDen = y;
+          p.computed = c;
+          break;
+        }
+      }
+    }
+    delete p.rangeNum;
+    delete p.rangeDen;
+  }
   const pr = parts.filter((p) => p.prorationNum);
   if (!pr.length) return;
   const cands = [];
@@ -3067,6 +3089,16 @@ function _extractEvergy(t, acctOverride, addrOverride) {
           if (lineRangeM) {
             entry.from = lineRangeM[3] + '-' + lineRangeM[1] + '-' + lineRangeM[2];
             entry.to = lineRangeM[6] + '-' + lineRangeM[4] + '-' + lineRangeM[5];
+          }
+          // A kW line with a date range and no printed fraction: range days / bill days is a CHECK candidate only.
+          // _evgResolveProrationDen uses it when the printed charge equals qty x rate x N / Y to the cent and plain
+          // qty x rate does not. It is never a source of a corrected value (Matt, 2026-10-21).
+          if (lineRangeM && !isKwh && !prRead && numDays > 0) {
+            const _rd = calcDays(new Date(entry.from + 'T12:00:00'), new Date(entry.to + 'T12:00:00'), true);
+            if (_rd > 0 && _rd <= numDays + 1) {
+              entry.rangeNum = _rd;
+              entry.rangeDen = numDays;
+            }
           }
           results.push(entry);
         }
