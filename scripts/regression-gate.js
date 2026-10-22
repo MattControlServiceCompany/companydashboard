@@ -345,6 +345,24 @@ function r6(v) {
 
 async function main() {
   const t0 = Date.now();
+  // ---- syntax gate (2026-10-22): every tracked .js file must pass `node --check`. Runs FIRST: a file with a syntax error
+  // kills its page before any browser step can report, so the later steps would only time out with no useful message. ----
+  {
+    const jsFiles = execSync('git ls-files "*.js"', { cwd: REPO_ROOT, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
+      .split(/\r?\n/)
+      .filter(Boolean);
+    const bad = [];
+    jsFiles.forEach((f) => {
+      const r = spawnSync(process.execPath, ['--check', path.join(REPO_ROOT, f)], { encoding: 'utf8' });
+      if (r.status !== 0) bad.push(f + ': ' + ((r.stderr || '').split(/\r?\n/).find((l) => /Error/.test(l)) || 'syntax error'));
+    });
+    if (bad.length) {
+      console.log('FAIL syntax-check: ' + bad.length + ' of ' + jsFiles.length + ' tracked .js files fail node --check');
+      bad.forEach((b) => console.log('  ' + b));
+      process.exit(1);
+    }
+    add('syntax', 'node --check on every tracked .js file (' + jsFiles.length + ')', 'PASS', '');
+  }
   const dataSrc = args.data && args.data !== true ? args.data : newestBackup();
   const oraclePath = args.oracle && args.oracle !== true ? args.oracle : DEFAULT_ORACLE;
   if (!fs.existsSync(dataSrc)) throw new Error('backup not found: ' + dataSrc);

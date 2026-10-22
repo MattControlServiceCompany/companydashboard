@@ -2143,7 +2143,7 @@ function siteBuildSettingsModal() {
     '" data-theme="light" onclick="siteApplyTheme(\'light\')">&#9728;&#65039; Light</button>' +
     '<button class="theme-pill' +
     (theme === 'system' ? ' active' : '') +
-    '" data-theme="system" onclick="siteApplyTheme('system')">&#128187; System</button>' +
+    '" data-theme="system" onclick="siteApplyTheme(\'system\')">&#128187; System</button>' +
     '</div>' +
     '</div>' +
     '</div>' +

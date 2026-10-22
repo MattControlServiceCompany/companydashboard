@@ -80,13 +80,6 @@
       [data-theme='light'] .topbar {
         background: rgba(240, 242, 247, 0.97);
       }
-      /* Dark accent fills in light mode carry white text */
-      [data-theme='light'] .tbmark,
-      [data-theme='light'] .s-badge,
-      [data-theme='light'] .s-badge-warn,
-      [data-theme='light'] .btn-em {
-        color: #ffffff;
-      }
       [data-theme='light'] .modal-bg,
       [data-theme='light'] .drawer-overlay {
         background: rgba(0, 0, 0, 0.45);
@@ -207,7 +200,7 @@
         justify-content: center;
         font-size: 12px;
         font-weight: 700;
-        color: #000000;
+        color: var(--on-em-grad);
         font-family: var(--head);
       }
       .tbname {
@@ -336,7 +329,7 @@
         font-size: 10px;
         font-family: var(--mono);
         background: var(--em);
-        color: #000000;
+        color: var(--on-em);
         border-radius: 9px;
         padding: 1px 6px;
         font-weight: 700;
@@ -412,7 +405,7 @@
       }
       .btn-em {
         background: var(--em);
-        color: #000000;
+        color: var(--on-em);
       }
       .btn-em:hover {
         filter: brightness(1.12);

@@ -4,6 +4,9 @@
 :root {
   color-scheme: dark;
   --on-accent: #ffffff;
+  --on-brand: #ffffff;
+  --on-em: #ffffff;
+  --on-em-grad: #ffffff;
 }
 [data-theme='light'] {
   color-scheme: light;

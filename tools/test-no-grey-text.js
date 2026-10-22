@@ -5,7 +5,8 @@
 // Chart.js text (defaults, every live chart's ticks/legend/titles/tooltip, plus a probe chart) must resolve to exactly #fff / #000.
 // There is NO allow-list of elements. Fix the token or the rule that sets the color.
 // Text is judged against the background it actually sits on (nearest non-transparent fill, not the page theme):
-// dark fill (luma < 150) -> #fff, light fill -> #000. Saturated accent colors are allowed on any fill.
+// dark fill -> #fff, light fill -> #000, decided by chTheme.textOnFills (lib/theme.js, the one threshold). A gradient fill uses every color stop
+// (all stops agree -> that pole; stops disagree -> the average luminance of the stops decides). Saturated accent colors are allowed on any fill.
 // Every page walk puts a disabled button and a select on screen: a disabled button must be dashed + not-allowed + pole text;
 // a select's text must be the pole for its own fill.
 // Loads index.html, ems-leads.html and energy-department.html (home, projects list, one synthetic project on every tab)
@@ -28,21 +29,28 @@ function scanInPage() {
       .map(Number);
     return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 };
   }
-  // Nearest non-transparent fill behind el (walks ancestors; falls back to the canvas, which is white).
-  function bgOf(el) {
+  // Nearest fill behind el: the colors it shows (one for a solid fill, every color stop of a gradient). Walks ancestors;
+  // falls back to the canvas, which is white. A gradient wins over the element's own background-color.
+  function fillsOf(el) {
     for (let e = el; e && e.nodeType === 1; e = e.parentElement) {
-      const b = parse(getComputedStyle(e).backgroundColor);
-      if (b && b.a >= 0.5) return b;
+      const cs = getComputedStyle(e);
+      if (/gradient\(/.test(cs.backgroundImage)) {
+        const stops = (cs.backgroundImage.match(/rgba?\([^)]*\)/g) || []).map(parse).filter((c) => c && c.a >= 0.5);
+        if (stops.length) return stops;
+      }
+      const b = parse(cs.backgroundColor);
+      if (b && b.a >= 0.5) return [b];
     }
-    return { r: 255, g: 255, b: 255, a: 1 };
+    return [{ r: 255, g: 255, b: 255, a: 1 }];
   }
-  function poleFor(bg) {
-    return 0.299 * bg.r + 0.587 * bg.g + 0.114 * bg.b < 150 ? 255 : 0;
+  // The text color for a fill comes from the app's ONE rule, chTheme.textOnFills (lib/theme.js). No second threshold here.
+  function poleFor(fills) {
+    return window.chTheme.textOnFills(fills) === '#ffffff' ? 255 : 0;
   }
   function ok(c, el) {
     if (!c) return true;
     if (c.a < 0.95) return c.a === 0;
-    const pole = poleFor(bgOf(el));
+    const pole = poleFor(fillsOf(el));
     if (c.r === c.g && c.g === c.b) return c.r === pole; // pure white on a dark fill, pure black on a light fill; any other grey, or the wrong pole, fails
     const r = c.r / 255,
       g = c.g / 255,
@@ -112,13 +120,13 @@ function scanInPage() {
     const cs = getComputedStyle(el);
     const col = parse(cs.color);
     const bg = parse(cs.backgroundColor);
-    const fill = bg && bg.a >= 0.5 ? bg : bgOf(el.parentElement);
+    const fill = bg && bg.a >= 0.5 ? [bg] : fillsOf(el.parentElement);
     const pole = poleFor(fill);
     const isPole = col && col.r === col.g && col.g === col.b && col.r === pole;
     const optBad = [...el.options].some((o) => {
       const oc = parse(getComputedStyle(o).color);
       const ob = parse(getComputedStyle(o).backgroundColor);
-      const ofill = ob && ob.a >= 0.5 ? ob : fill;
+      const ofill = ob && ob.a >= 0.5 ? [ob] : fill;
       return !(oc && oc.r === oc.g && oc.g === oc.b && oc.r === poleFor(ofill));
     });
     if (!isPole || optBad)
