@@ -48,7 +48,7 @@ const sess = () => JSON.parse(sessionStorage.getItem('ch_proj') || '{}').view;
             savingsData: { measures: [] },
           },
         ],
-        ch_qs_seen: 1,
+        ch_settings: { showQuickStart: false },
         ch_theme: 'dark',
         ch_user: { name: 'Demo User', email: 'demo@example.com', initials: 'DU', isReal: false },
       },

@@ -182,13 +182,13 @@
   var _syncState = { depth: 0, offline: false, refused: false };
   function syncStatusView() {
     var s = _syncState;
-    if (s.refused) return { text: 'Sync status (sign-in refused)', level: 'bad', title: 'The server refused this sign-in. Changes stay in this browser.' };
-    if (s.offline) return { text: 'Sync status (offline)', level: 'warn', title: 'Offline. Showing the local copy. Edits sync when reconnected.' };
+    if (s.refused) return { text: 'Sync status (sign-in refused)', level: 'bad', short: 'Refused', title: 'The server refused this sign-in. Changes stay in this browser.' };
+    if (s.offline) return { text: 'Sync status (offline)', level: 'warn', short: 'Offline', title: 'Offline. Showing the local copy. Edits sync when reconnected.' };
     if (s.depth > 0) {
       var n = s.depth + ' unsynced';
-      return { text: 'Sync status (' + n + ')', level: 'warn', title: s.depth + ' change' + (s.depth === 1 ? '' : 's') + ' not yet sent to the server.' };
+      return { text: 'Sync status (' + n + ')', level: 'warn', short: 'Sync ' + s.depth, title: s.depth + ' change' + (s.depth === 1 ? '' : 's') + ' not yet sent to the server.' };
     }
-    return { text: 'Sync status', level: 'ok', title: 'Open the sync status panel' };
+    return { text: 'Sync status', level: 'ok', short: 'Sync', title: 'Open the sync status panel' };
   }
   function setSyncState(patch) {
     Object.keys(patch).forEach(function (k) {
@@ -939,7 +939,8 @@
     }
     var v = syncStatusView();
     el.textContent = v.text;
-    el.title = v.title;
+    el.title = v.text + '. ' + v.title;
+    el.setAttribute('data-sync-short', v.short);
     el.setAttribute('data-sync-level', v.level);
     el.style.display = '';
     el.onclick = openSyncStatusPanel;

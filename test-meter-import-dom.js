@@ -90,7 +90,7 @@ const PIPE = 'G-77 | G-78';
         },
       ],
       en_customers: [{ id: CID, name: 'Synth Customer' }],
-      ch_qs_seen: 1,
+      ch_settings: { showQuickStart: false },
       ch_theme: 'dark',
       ch_activeView: 'projects',
       ch_user: { name: 'Demo User', email: 'demo@example.com', initials: 'DU', isReal: false },

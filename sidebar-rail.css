@@ -189,9 +189,22 @@ html[data-sb-mode='slim'] .sidebar .sb-version > span {
   display: none;
 }
 html[data-sb-mode='slim'] .sidebar .sb-version #ch-sync-status-btn {
-  font-size: 10px;
+  font-size: 0;
   display: block;
   margin: 0 auto;
-  white-space: normal;
+  white-space: nowrap;
   text-align: center;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 0;
+  letter-spacing: 0;
+  text-decoration: none;
+}
+html[data-sb-mode='slim'] .sidebar .sb-version #ch-sync-status-btn[data-sync-level='ok'] {
+  color: var(--text);
+}
+/* Slim shows the short state from data-sync-short (one line); the full text is in the hover title */
+html[data-sb-mode='slim'] .sidebar .sb-version #ch-sync-status-btn::before {
+  content: attr(data-sync-short);
+  font-size: 10px;
 }

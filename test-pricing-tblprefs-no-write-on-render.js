@@ -26,7 +26,7 @@ function eq(a, b, l) {
       for (var k in data) window.localStorage.setItem(k, JSON.stringify(data[k]));
     }, {
       en_projects: [{ id: PID, name: 'SYNTHETIC', client: 'S', addr: '', type: 'Test', status: 'active', phase: '', contacts: [], savingsData: { measures: [] } }],
-      ch_qs_seen: 1, ch_theme: 'dark', ch_activeView: 'projects',
+      ch_settings: { showQuickStart: false }, ch_theme: 'dark', ch_activeView: 'projects',
       ch_user: { name: 'Demo User', email: 'demo@example.com', initials: 'DU', isReal: false },
     });
     await page.goto(SITE);

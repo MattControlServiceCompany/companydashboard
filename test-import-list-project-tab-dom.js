@@ -34,7 +34,7 @@ const eq = (a, e, l) => ok(a === e, l + ': expected ' + JSON.stringify(e) + ', g
     const seed = {
       en_projects: [mk(PID, 'SYNTH TAB ONE'), mk(PID2, 'SYNTH TAB TWO')],
       en_customers: [{ id: CID, name: 'Synth Customer' }, { id: 'cust_' + PID2, name: 'Synth Customer 2' }],
-      ch_qs_seen: 1,
+      ch_settings: { showQuickStart: false },
       ch_theme: 'dark',
       ch_activeView: 'projects',
       ch_user: { name: 'Demo User', email: 'demo@example.com', initials: 'DU', isReal: false },
