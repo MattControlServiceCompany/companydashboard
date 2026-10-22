@@ -201,9 +201,9 @@ credits a call, from that figure). It is removed.
   Dashboard tab and both panes with the Network tab filtered on `kv-sync`: zero PUT.
   Same rule for zoom: opening the Equipment Matrix only reads `en_em_zoom` and paints it (`emApplyZoom`, app/equipment-matrix.js);
   only the zoom buttons save (`emSetZoom`). `setTableZoom` (app/site-functions.js) saves to local storage only on a click, not on a re-apply.
-  Theme: `ch_theme` stays a raw local key, never sent to the server. On a user switch app/db.js `_clearPerUserLocalState(prevUid, nextUid)`
-  parks it under the local key `ch_theme_user::<userId>` (never in a backup: `isNeverBackupKey` lists the prefix) and puts back the next user's own value, so A keeps Light after A->B->A and B
-  does not get A's theme. How to check: node test-sync-golive-blockers.js (theme test), node test-em-zoom-no-write-on-open.js.
+  Raw per-user keys (`RAW_PER_USER_LOCAL_KEYS`: `ch_theme`, `ch_settings`, view and order prefs) stay raw local keys, never sent to the server. On an identity change app/db.js `_clearPerUserLocalState(prevUid, nextUid)`
+  parks the leaving user's values under the local key `ch_user_local::<userId>::<key>` (never in a backup: `isNeverBackupKey` lists the prefix) and puts back the next user's own values, so A keeps Light and the tip settings after sign-out/sign-in or A->B->A and B
+  does not get A's. Quick Start seen flag `ch_qs_seen` and dismissed tips `ch_dismissed_tips` are not raw: app/tooltips-help.js reads and writes them with DB.get/DB.set (per-user, synced), and `autoQuickStart` waits for the first server pull (`dbHydrated`). How to check: node test-sync-golive-blockers.js (theme test), node test-em-zoom-no-write-on-open.js.
   Table prefs: the Cost Estimate table keeps column widths, hidden columns and a schema marker in `ch_tbl_*_pricing_tbl_<projectId>` (app/pricing-estimator.js).
   Render never writes them: `_pricingMigrateColSchema` returns when nothing is stored; `_pricingSetColWidths`/`_pricingSetHiddenCols` (user resize/hide/show only) also stamp the schema marker.
   How to check: node test-pricing-tblprefs-no-write-on-render.js (6 pass); Network tab, filter `kv-sync`, open JOCO Cost Estimate: zero PUT.

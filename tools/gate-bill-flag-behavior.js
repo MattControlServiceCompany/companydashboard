@@ -138,7 +138,7 @@ async function main() {
     const errs = [];
     page.on('pageerror', (e) => errs.push(e.message));
     await page.addInitScript(() => {
-      localStorage.setItem('ch_qs_seen', '1');
+      localStorage.setItem('ch_settings', JSON.stringify({ showQuickStart: false }));
       localStorage.setItem('ch_backend_mode', 'off');
       localStorage.setItem('ch_user', JSON.stringify({ name: 'Demo', email: 'demo@example.com', demo: true }));
     });

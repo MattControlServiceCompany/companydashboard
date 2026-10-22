@@ -50,7 +50,7 @@ const WARNINGS = [
     const page = await ctx.newPage();
     await page.route('**/*', (route) => (route.request().url().startsWith(origin) ? route.continue() : route.abort()));
     await page.addInitScript(() => {
-      localStorage.setItem('ch_qs_seen', '1');
+      localStorage.setItem('ch_settings', JSON.stringify({ showQuickStart: false }));
       localStorage.setItem('ch_backend_mode', 'off');
       localStorage.setItem('ch_user', JSON.stringify({ name: 'Demo', email: 'demo@example.com', demo: true }));
     });
