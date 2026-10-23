@@ -17871,6 +17871,45 @@ function _pdfMeterPathText(m) {
   const meter = m.meter ? (m.meter.commodity || 'Meter') + (m.meter.account ? ' (' + m.meter.account + ')' : '') : '';
   return [m.proj && m.proj.name, m.bldg && m.bldg.name, meter].filter(Boolean).join(' › ');
 }
+// The buildings of a multi-building file as a visible list: name, utilities, bill months, status. A click picks it.
+// Counts come from nav.groups (_pdfGroupBills); months from nav.monthOf (the one month rule); saved from _pdfDupView.
+function _pdfBuildingListHtml(nav) {
+  if (!nav.multiAcct) return '';
+  const bills = nav.bills;
+  const dup = _pdfDupView(bills).map;
+  const order = {};
+  nav.periods.forEach((p, k) => (order[p.i] = k));
+  return nav.groups
+    .map((g) => {
+      const idxs = [].concat(...g.types.map((t) => t.idxs)).sort((a, b) => order[a] - order[b]);
+      const months = [...new Set(idxs.map((i) => nav.monthOf[i]).filter(Boolean))];
+      const monthTxt = months.length > 2 ? months[0] + ' and ' + (months.length - 1) + ' more' : months.join(', ');
+      const comms = g.types.map((t) => t.comm).join(', ');
+      const saved = idxs.filter((i) => dup[i]).length;
+      const status = [];
+      if (g.review) status.push(g.review + ' to review');
+      if (saved) status.push(saved + ' saved');
+      if (!status.length) status.push('ready');
+      const full = g.name + '. ' + comms + '. ' + (months.join(', ') || 'no month') + '. ' + status.join(', ') + '.';
+      return (
+        '<button type="button" role="listitem" class="pdf-bldg' +
+        (g.review ? ' review' : '') +
+        (g.acct === window._pdfBuildingTab ? ' sel' : '') +
+        '" data-acct="' +
+        _escHtml(g.acct) +
+        '" title="' +
+        _escHtml(full) +
+        '" onclick="_pdfPickBuilding(this.dataset.acct)"><span class="pdf-bldg-name">' +
+        _escHtml(g.name) +
+        '</span><span class="pdf-bldg-line"><span>' +
+        _escHtml(comms) +
+        '</span><span>' +
+        _escHtml(monthTxt + ' · ' + status.join(' · ')) +
+        '</span></span></button>'
+      );
+    })
+    .join('');
+}
 // Building, utility type and period selectors. A file with one choice shows plain text, not a menu.
 function _pdfSelectorsHtml(nav) {
   const bills = nav.bills;
@@ -17879,12 +17918,8 @@ function _pdfSelectorsHtml(nav) {
     '<option value="' + _escHtml(String(v)) + '"' + (selected ? ' selected' : '') + '>' + _escHtml(label) + '</option>';
   const toReview = (n) => (n ? ' (' + n + ' to review)' : '');
   let h = '';
-  if (nav.multiAcct) {
-    h +=
-      '<select class="fs" aria-label="Building" title="Building" onchange="_pdfPickBuilding(this.value)">' +
-      nav.groups.map((g) => opt(g.acct, g.name + toReview(g.review), g.acct === window._pdfBuildingTab)).join('') +
-      '</select>';
-  } else {
+  // Several buildings: they are listed by _pdfBuildingListHtml (a visible list), not here.
+  if (!nav.multiAcct) {
     h +=
       '<span class="pdf-top-static" title="Building">' +
       _escHtml(_pdfBuildingName(bills, (cur && cur.AccountNumber) || '_unknown')) +
@@ -18010,7 +18045,7 @@ function _pdfRenderTopBar(opts) {
   if (!live && !chipsOk && kind !== 'batch') {
     // Nothing to show: hide the row and empty every box in it (a cleared page keeps no old text).
     bar.style.display = 'none';
-    ['pdfTopSel', 'pdfTopChips', 'pdfTopSave', 'pdfMoreSave', 'pdfTopPop'].forEach((id) => {
+    ['pdfTopSel', 'pdfTopBldgs', 'pdfTopChips', 'pdfTopSave', 'pdfMoreSave', 'pdfTopPop'].forEach((id) => {
       const box = document.getElementById(id);
       if (box) box.innerHTML = '';
     });
@@ -18060,6 +18095,8 @@ function _pdfRenderTopBar(opts) {
   const moreSave = document.getElementById('pdfMoreSave');
   if (moreSave) moreSave.innerHTML = save.menuHtml;
   document.getElementById('pdfTopSel').innerHTML = nav ? _pdfSelectorsHtml(nav) : '';
+  const bldgBox = document.getElementById('pdfTopBldgs');
+  if (bldgBox) bldgBox.innerHTML = nav ? _pdfBuildingListHtml(nav) : '';
   document.getElementById('pdfTopChips').innerHTML = chipHtml.join('');
   document.getElementById('pdfTopSave').innerHTML = save.html;
   _pdfSyncMoreBtn();
@@ -19753,12 +19790,16 @@ function renderPDFFields(parsed, warnings) {
   // running total. A field shows ONCE as an editable cell (_shownKeys, kept by buildCell); a second place that needs the
   // number shows a read-only copy.
   let runningTotal = 0;
+  const _RUN_TITLE = 'Running total: all the charges from the top of this list down to this line, added together.';
   const rows = [];
   let _pendingSection = '';
   const _row = (html) => {
     if (!html) return;
     if (_pendingSection) {
-      rows.push(`<div class="ef-section">${_pendingSection}</div>`);
+      const _runHdr = /^charges$/i.test(_pendingSection)
+        ? `<span class="ef-section-run" title="${_RUN_TITLE}">Running total</span>`
+        : '';
+      rows.push(`<div class="ef-section">${_pendingSection}${_runHdr}</div>`);
       _pendingSection = '';
     }
     rows.push(html);
@@ -19791,7 +19832,7 @@ function renderPDFFields(parsed, warnings) {
   };
   const _chargeRow = (qty, rate, charge) =>
     qty || rate || charge
-      ? `<div class="ef-charge-row">${qty || _blank}${rate || _blank}${charge || _blank}<div class="ef-running">${fmtDollar(runningTotal)}</div></div>`
+      ? `<div class="ef-charge-row">${qty || _blank}${rate || _blank}${charge || _blank}<div class="ef-running" title="${_RUN_TITLE}">${fmtDollar(runningTotal)}</div></div>`
       : '';
 
   const totalVal = parseBillNumber(parsed.TotalCurrentCharges);
@@ -19995,7 +20036,7 @@ function renderPDFFields(parsed, warnings) {
         ? `<span>${diff >= 0 ? '+' : '-'}$${_money(Math.abs(diff))}</span>`
         : '';
       _row(
-        `<div class="ef-charge-row ef-total-row">${_roBox('Total Rate', _rateTxt.join(' · '), 'ef-span2') || '<div class="ef-span2"></div>'}${totalCell || _blank}<div class="ef-running ${match ? 'match' : mismatch ? 'mismatch' : ''}"><span>${fmtDollar(runningTotal)}</span>${diffLine}</div></div>`,
+        `<div class="ef-charge-row ef-total-row">${_roBox('Total Rate', _rateTxt.join(' · '), 'ef-span2') || '<div class="ef-span2"></div>'}${totalCell || _blank}<div class="ef-running ${match ? 'match' : mismatch ? 'mismatch' : ''}" title="${_RUN_TITLE}"><span>${fmtDollar(runningTotal)}</span>${diffLine}</div></div>`,
       );
     }
   });

@@ -12510,38 +12510,27 @@ function initUtilityTool() {
 // (visibilitychange/interval) don't keep re-nagging about the same release.
 let _chVersionDismissed = null;
 let _chVerLastCheck = 0;
-let _chVerBaseline = null; // ETag or Last-Modified of site-ui.js from the first check of this tab
-const _CH_VER_MIN_GAP_MS = 60 * 60 * 1000;
+const _CH_VER_MIN_GAP_MS = 60 * 1000;
 
-/* Netlify credit cost (2026-10-07): the check sends a HEAD request for site-ui.js (a few hundred bytes,
-   not the 1 MB body) and compares the ETag (or Last-Modified) with the value from this tab's first check.
-   Only when the header changed does it GET the file once, to read the new version for the banner.
-   The badge text comes from the loaded code (RELEASE_NOTES), not from the server. */
+/* Version check: ONE small GET of the first 4 KB of site-ui.js (Range request, no-store). CH_VERSION is on line 9 of
+   that file, so it is the one source of truth for the live version. The version is compared with the version this tab
+   loaded (RELEASE_NOTES[0].v). A HEAD ETag is not used: a local server gives the same ETag every time, so a stale tab
+   never saw an update. Runs on page load and on tab focus or visible (at least 60 s apart), never while hidden. */
 function _checkForVersionUpdate() {
   _chVerLastCheck = Date.now();
-  fetch('site-ui.js', { method: 'HEAD', cache: 'no-store' })
-    .then((r) => {
-      const tag = r.headers.get('ETag') || r.headers.get('Last-Modified');
-      if (!tag) return;
-      if (_chVerBaseline === null) {
-        _chVerBaseline = tag;
-        _paintLoadedVersion();
-        return;
+  fetch('site-ui.js', { cache: 'no-store', headers: { Range: 'bytes=0-4095' } })
+    .then((r) => r.text())
+    .then((t) => {
+      const m = t.match(/CH_VERSION\s*=\s*'([^']+)'/);
+      if (!m) return;
+      const fetchedVer = m[1];
+      const loadedVer = _loadedVersion();
+      _paintLoadedVersion();
+      if (loadedVer && loadedVer !== fetchedVer && fetchedVer !== _chVersionDismissed) {
+        // Do NOT auto-reload: a silent reload would destroy in-progress work.
+        _showVersionUpdateBanner(fetchedVer);
       }
-      if (tag === _chVerBaseline) return;
-      return fetch('site-ui.js?nocache=' + Date.now(), { cache: 'no-store' })
-        .then((g) => g.text())
-        .then((t) => {
-          const m = t.match(/CH_VERSION\s*=\s*'([^']+)'/);
-          if (!m) return;
-          const fetchedVer = m[1];
-          const loadedVer = _loadedVersion();
-          if (loadedVer && loadedVer !== fetchedVer && fetchedVer !== _chVersionDismissed) {
-            // Do NOT auto-reload: a silent reload would destroy in-progress work.
-            _showVersionUpdateBanner(fetchedVer);
-          }
-          localStorage.setItem('ch_last_seen_version', fetchedVer);
-        });
+      localStorage.setItem('ch_last_seen_version', fetchedVer);
     })
     .catch(() => {});
 }
