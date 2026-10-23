@@ -90,7 +90,7 @@ const WARNINGS = [
         return {
           hasGrid: !!grid,
           oldList: !!g.querySelector('.ef-list, details.ef-group'),
-          sections: [...g.querySelectorAll('.ef-section')].map((s) => s.textContent),
+          sections: [...g.querySelectorAll('.ef-section')].map((s) => s.firstChild.textContent),
           hdr: document.getElementById('extractedFieldsHdr').textContent,
           barMissing: num(/(\d+) missing/),
           barWarn: num(/(\d+) warning/),

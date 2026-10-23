@@ -81,6 +81,7 @@
         --text: #ffffff;
         --text2: #ffffff;
         --text3: #ffffff;
+        --ink: #ffffff;
         --font: 'Outfit', sans-serif;
         --mono: 'Outfit', sans-serif;
         --r: 10px;
@@ -1150,6 +1151,7 @@
         --text: #000000;
         --text2: #000000;
         --text3: #000000;
+        --ink: #000000;
         --em: #007a8c;
         --em-dim: rgba(0, 122, 140, 0.1);
         --em-glow: rgba(0, 122, 140, 0.2);
@@ -4766,7 +4768,7 @@
         font-weight: 700;
       }
       /* PDF / OCR top row (one row for every file): selectors, status chips, the one Save control.
-         A chip or Save opens a list that overlays the values; it never pushes them down. */
+         A chip or Save opens a list inside the row. It takes space and pushes the values down; it never covers them. */
       .pdf-topbar {
         position: sticky;
         top: 48px;
@@ -4869,29 +4871,79 @@
         color: var(--text3);
       }
       .pdf-pop {
-        position: absolute;
-        left: 0;
-        right: 0;
-        top: calc(100% + 4px);
-        z-index: var(--z-chrome, 10);
-        max-height: 60vh;
+        position: static;
+        margin-top: 6px;
+        max-height: 36vh;
         overflow-y: auto;
         background: var(--s2);
         border: 1px solid var(--border2);
         border-radius: 8px;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
         padding: 4px 8px;
         font-size: 12px;
-        color: var(--text);
+        color: var(--ink);
       }
       .pdf-pop.pdf-pop-narrow {
-        left: auto;
-        min-width: 340px;
+        margin-left: auto;
+        width: fit-content;
+        min-width: min(340px, 100%);
         max-width: 100%;
+      }
+      /* Buildings found in the PDF: every one is visible. A click picks it. */
+      .pdf-bldgs {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+        gap: 6px;
+        max-height: 30vh;
+        overflow-y: auto;
+        margin-bottom: 6px;
+      }
+      .pdf-bldgs:empty {
+        display: none;
+      }
+      .pdf-bldg {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        min-width: 0;
+        text-align: left;
+        font-family: var(--font);
+        font-size: 12px;
+        color: var(--ink);
+        background: var(--s3);
+        border: 1px solid var(--border2);
+        border-left: 4px solid var(--green);
+        border-radius: 6px;
+        padding: 5px 9px;
+        cursor: pointer;
+      }
+      .pdf-bldg.review {
+        border-left-color: var(--red);
+      }
+      .pdf-bldg.sel {
+        background: var(--s4);
+        border-color: var(--accent);
+        border-left-width: 4px;
+      }
+      .pdf-bldg-name {
+        font-weight: 700;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .pdf-bldg-line {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        min-width: 0;
+      }
+      .pdf-bldg-line > span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
       .pdf-pop-title {
         font-size: 11px;
-        color: var(--text2);
+        color: var(--ink);
         padding: 4px 2px 6px;
         border-bottom: 1px solid var(--border);
       }
@@ -5105,19 +5157,30 @@
         align-items: flex-end;
         justify-content: center;
         font-family: var(--mono);
-        font-size: 10px;
-        color: var(--text3);
+        font-size: 11px;
+        color: var(--ink);
         white-space: nowrap;
         min-width: 72px;
         padding: 0 2px;
       }
-      .ef-running.match {
-        color: var(--green);
+      .ef-running.match,
+      .ef-running.mismatch {
         font-weight: 700;
       }
+      .ef-running.match {
+        border-bottom: 2px solid var(--green);
+      }
       .ef-running.mismatch {
-        color: var(--red);
-        font-weight: 700;
+        border-bottom: 2px solid var(--red);
+      }
+      .ef-section-run {
+        float: right;
+        color: var(--ink);
+        text-transform: none;
+        letter-spacing: 0;
+        min-width: 72px;
+        text-align: right;
+        padding: 0 2px;
       }
       .ef-section {
         font-size: 10px;
@@ -9554,11 +9617,11 @@
           <!-- PDF OCR -->
           <div id="view-pdf" class="view view-flex" data-ui-id="en-pdf" data-fb="energy.pdf">
             <!-- Page title bar — stays frozen at top, spans full width -->
-            <div id="pdfPageHdr" style="flex-shrink: 0; padding: 16px 18px 10px; background: var(--bg)">
+            <div id="pdfPageHdr" style="flex-shrink: 0; padding: 8px 18px 6px; background: var(--bg)">
               <div class="pg-hdr">
-                <div>
+                <div style="display: flex; align-items: baseline; gap: 6px 14px; flex-wrap: wrap">
                   <h1 class="pg-title">PDF <em>/ OCR</em></h1>
-                  <p style="font-size: 13px; color: var(--text2); margin-top: 4px">
+                  <p style="font-size: 13px; color: var(--text2); margin: 0">
                     Extract data from utility bills, drawings, submittals, and contracts
                   </p>
                 </div>
@@ -9604,7 +9667,7 @@
             <!-- The values column scrolls on its own; the PDF dock (PDF / OCR text tabs) sits beside it. -->
             <div
               id="pdfBody"
-              style="flex: 1; display: flex; gap: 16px; padding: 0 18px 16px; min-height: 0; overflow: hidden"
+              style="flex: 1; display: flex; gap: 16px; padding: 0 18px 8px; min-height: 0; overflow: hidden"
             >
               <!-- LEFT COLUMN: scrolls independently -->
               <div
@@ -9660,6 +9723,7 @@
                 <!-- ONE top row for every file kind: building, utility and period selectors, status chips, the one Save control.
                      Filled by _pdfRenderTopBar() (app/bill-analysis.js). A chip or Save opens a list that overlays the page. -->
                 <div id="pdfTopBar" class="pdf-topbar" data-fb="energy.pdf.top-bar" style="display: none">
+                  <div id="pdfTopBldgs" class="pdf-bldgs" role="list" aria-label="Buildings found in this PDF"></div>
                   <div class="pdf-topbar-row">
                     <div id="pdfTopSel" class="pdf-top-sel"></div>
                     <div id="pdfTopChips" class="pdf-top-chips"></div>

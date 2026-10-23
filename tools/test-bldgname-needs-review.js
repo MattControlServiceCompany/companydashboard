@@ -34,7 +34,7 @@ const path = require('path');
 function buildSandbox() {
   // The top row of the page: only the selector box is read back; the other boxes just need to exist.
   const bldgBarStub = { style: {}, innerHTML: '' };
-  const stubs = { pdfTopBar: { style: {} }, pdfTopSel: bldgBarStub, pdfTopChips: { style: {}, innerHTML: '' }, pdfTopSave: { style: {}, innerHTML: '' }, pdfTopPop: { style: {}, innerHTML: '' }, pdfMorePop: { style: {} }, pdfSavePop: { style: {} }, pdfMoreSave: { style: {}, innerHTML: '' } };
+  const stubs = { pdfTopBar: { style: {} }, pdfTopSel: { style: {}, innerHTML: '' }, pdfTopBldgs: bldgBarStub, pdfTopChips: { style: {}, innerHTML: '' }, pdfTopSave: { style: {}, innerHTML: '' }, pdfTopPop: { style: {}, innerHTML: '' }, pdfMorePop: { style: {} }, pdfSavePop: { style: {} }, pdfMoreSave: { style: {}, innerHTML: '' } };
   const sandbox = {
     window: {},
     document: {
@@ -98,14 +98,17 @@ function setup() {
   return { sandbox, bldgBarStub };
 }
 
-// Extracts { acct: label text } from the building select in the top row (one option for each building).
+// Extracts { acct: label text } from the building list in the top row (one button for each building).
+// Label = the building name, then the status text of the button (for example "1 to review").
 function extractLabels(html) {
   const out = {};
-  const sel = /<select[^>]*aria-label="Building"[^>]*>([\s\S]*?)<\/select>/.exec(html);
-  if (!sel) return out;
-  const re = /<option value="([^"]*)"[^>]*>([\s\S]*?)<\/option>/g;
+  const re = /<button[^>]*data-acct="([^"]*)"[^>]*>([\s\S]*?)<\/button>/g;
   let m;
-  while ((m = re.exec(sel[1]))) out[m[1]] = m[2].replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  while ((m = re.exec(html))) {
+    const name = /<span class="pdf-bldg-name">([\s\S]*?)<\/span>/.exec(m[2]);
+    const spans = [...m[2].matchAll(/<span>([\s\S]*?)<\/span>/g)].map((x) => x[1]);
+    out[m[1]] = ((name ? name[1] : '') + ' ' + (spans[spans.length - 1] || '')).replace(/\s+/g, ' ').trim();
+  }
   return out;
 }
 
@@ -165,15 +168,16 @@ function expect(name, cond, detail) {
 function main() {
   const { sandbox, bldgBarStub } = setup();
 
-  const review = (l) => /\((\d+) to review\)/.exec(l || '');
+  const review = (l) => /(\d+) to review/.exec(l || '');
   const noOld = (l) => !/\(needs review\)/.test(l || '');
   // 1. plausible address + error -> name, "1 bill", "1 need review", no old tag
   {
     const bills = [makeBill('ACCT001', '307 E Sample St', {}), makeBill('ACCT002', '999 Other St', {})];
     const labels = runCase(sandbox, bldgBarStub, 'plausible+missing', bills, [warn('error', 'TotalCurrentCharges'), clean()]);
     const l = labels['ACCT001'];
-    expect('1. warning -> "(1 to review)" after the building name', review(l) && review(l)[1] === '1' && /^307 E Sample St/.test(l) && noOld(l), JSON.stringify(l));
+    expect('1. warning -> "1 to review" after the building name', review(l) && review(l)[1] === '1' && /^307 E Sample St/.test(l) && noOld(l), JSON.stringify(l));
     expect('1b. no utility type in the label', !/Gas|Electric|Water/.test(l), JSON.stringify(l));
+    expect('1c. every building is listed', Object.keys(labels).length === 2, JSON.stringify(labels));
   }
   // 2. clean -> no review text
   {
@@ -205,7 +209,7 @@ function main() {
     const warns = [warn('error', 'TotalCurrentCharges'), clean(), clean()];
     const labels = runCase(sandbox, bldgBarStub, 'counts', bills, warns);
     const grp = vm.runInContext('_pdfGroupBills', sandbox)(bills, warns, true);
-    expect('5. counts: 2 bills + 1 bill, one review line on the building with the warning', grp[0].total === 2 && grp[1].total === 1 && /\(1 to review\)/.test(labels['ACCT001']) && !review(labels['ACCT002']), JSON.stringify(labels));
+    expect('5. counts: 2 bills + 1 bill, one review line on the building with the warning', grp[0].total === 2 && grp[1].total === 1 && /1 to review/.test(labels['ACCT001']) && !review(labels['ACCT002']), JSON.stringify(labels));
     const t = (g, c) => g.types.find((x) => x.comm === c);
     expect('5b. warning counted only inside its own building and type', t(grp[0], 'Gas').warn === 1 && t(grp[0], 'Water').warn === 0 && t(grp[1], 'Gas').warn === 0, JSON.stringify(grp));
     expect('5c. sum of building bills = bills in file', grp.reduce((n, g) => n + g.total, 0) === bills.length);
@@ -230,7 +234,7 @@ function main() {
     const labels = runCase(sandbox, bldgBarStub, 'held', bills, warns);
     const grp = vm.runInContext('_pdfGroupBills', sandbox)(bills, warns, true);
     const t = (g, c) => g.types.find((x) => x.comm === c);
-    expect('7a. held bills counted: building shows (2 to review)', review(labels['ACCT001']) && review(labels['ACCT001'])[1] === '2', JSON.stringify(labels));
+    expect('7a. held bills counted: building shows 2 to review', review(labels['ACCT001']) && review(labels['ACCT001'])[1] === '2', JSON.stringify(labels));
     expect('7b. held bills counted per type; confirmed one is not', t(grp[0], 'Gas').warn === 1 && t(grp[0], 'Water').warn === 1 && grp[1].review === 0, JSON.stringify(grp));
     const issues = vm.runInContext('_pdfBillIssues', sandbox);
     expect('7c. one issue rule: held bill -> any', issues(bills[0], []).any === true && issues(bills[3], []).any === false);
