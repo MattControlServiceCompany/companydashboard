@@ -1246,6 +1246,9 @@ function _applyExtractionGates(bills, gateA, gateB, gateWRE) {
         [f],
       );
     }
+    // The seasonal on-peak / off-peak lines must add up to kWh used (one function: touHoldOf).
+    const touHold = touHoldOf(b, _chargeBasisTotal(b));
+    if (touHold) _pushGateReason(b, touHold, ['OnPeakKWh', 'OffPeakKWh']);
     const gc = b._correction_pending_TotalCurrentCharges;
     if (gc) {
       // REVIEW FIX (18b33d9f round 3, BLOCKING 1): gc is set ONLY when the
@@ -1317,6 +1320,7 @@ function billChargePartsOf(rates) {
           o.from = p.from;
           o.to = p.to;
         }
+        if (p.season) o.season = p.season; // 'Sum' | 'Win': the printed season of the line (touRatesEntry)
         return o;
       });
     }
@@ -1603,7 +1607,9 @@ function _gatherKwhWitnesses(b) {
   // self-verify individually (a single garbled leg must not promote the sum).
   const onR = b._rates && b._rates.EnergyOnPeakCharge;
   const offR = b._rates && b._rates.EnergyOffPeakCharge;
-  if (onR && offR) {
+  // Not a witness when the seasonal lines were read: they are compared with kWh used in one place (touHoldOf), which
+  // gives the one warning when they do not add up.
+  if (onR && offR && !b._touLines) {
     const onQty = (onR.parts || []).reduce((a, p) => a + (p.qty || 0), 0);
     const offQty = (offR.parts || []).reduce((a, p) => a + (p.qty || 0), 0);
     if (onQty > 0 && offQty > 0) {
@@ -1684,6 +1690,8 @@ function _decideOnOffPeakKWh(b, kwhConsumed, kwhHeld) {
     offR && _chargeSelfVerifies(_chargeComputedTotal(offR), parseBillNumber(b.EnergyOffPeakCharge))
   );
   const result = { onCorrection: null, offCorrection: null, gate: null };
+  // The seasonal lines were read, recovered and reconciled once (touResolveLines); the hold, if any, is touHoldOf's.
+  if (b._touLines) return result;
 
   // ── STRUCTURAL GUARD: a synthetic qty:null placeholder means the dollar side
   // (xChg) found more On/Off-Peak charge lines than the qty side (xRate) could
@@ -2864,6 +2872,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
               if (ri.computed > 1e6 || ri.rate > 10000) continue;
               const chargeDelta = ocrVal - ri.computed;
               if (Math.abs(chargeDelta) < 0.02) continue;
+              if (touKeepsPrintedCharge(b, field)) continue; // printed charge of a read-unverified seasonal line wins
               const sameDirection = (targetDelta < 0 && chargeDelta < 0) || (targetDelta > 0 && chargeDelta > 0);
               // Don't replace a charge value when xChg found more parts
               // than xRate. xChg correctly summed all OCR'd dollar amounts
@@ -5465,6 +5474,9 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         };
       }
     }
+
+    // The seasonal energy lines follow any line amount the checks above corrected (one function: touSyncFromRates).
+    for (const b of bills) touSyncFromRates(b);
 
     // ── RECALCULATE RATES after all corrections ──
     // TotalKWhRate and TotalKWRate are computed during extraction but charge
@@ -19534,6 +19546,7 @@ function renderPDFFields(parsed, warnings) {
   // pair row) — exclude them from the "extras" tail so they don't render
   // as stray fields below the Total Current Charges row.
   const IMPLICITLY_RENDERED = new Set([
+    ...TOU_FIELD_NAMES, // the per-line seasonal energy fields show inside the On-Pk / Off-Pk charge rows
     'EnergyOnPeakKWh',
     'EnergyOffPeakKWh',
     'TotalAmountDue',
@@ -19811,11 +19824,11 @@ function renderPDFFields(parsed, warnings) {
   // A read-only box (a rate, or a quantity another cell already shows).
   const _roBox = (label, value, extraCls) =>
     value
-      ? `<div class="ef-item${extraCls ? ' ' + extraCls : ''}"><div class="ef-key">${_escHtml(label)}</div><input class="ef-input" value="${_escHtml(value)}" readonly tabindex="-1" style="color:var(--text2)"></div>`
+      ? `<div class="ef-item${extraCls ? ' ' + extraCls : ''}"><div class="ef-key">${_escHtml(label)}</div><input class="ef-input" value="${_escHtml(value)}" readonly tabindex="-1"${(extraCls || '').includes('ef-tou') ? '' : ' style="color:var(--text2)"'}></div>`
       : '';
   // One charge part that has its own editable amount (a charge printed on the bill in more than one part).
-  const _partCell = (label, key, value) =>
-    `<div class="ef-item center"><div class="ef-key">${_escHtml(label)}</div><input class="ef-input" value="${_escHtml(value)}" data-key="${_escHtml(key)}"></div>`;
+  const _partCell = (label, key, value, extraCls) =>
+    `<div class="ef-item center${extraCls ? ' ' + extraCls : ''}"><div class="ef-key">${_escHtml(label)}</div><input class="ef-input" value="${_escHtml(value)}" data-key="${_escHtml(key)}"></div>`;
 
   // Format numbers for display
   const fmtDollar = (v) =>
@@ -19862,6 +19875,38 @@ function renderPDFFields(parsed, warnings) {
 
     // ── charge-line: quantity | rate | charge | running total ──
     if (row.type === 'charge-line') {
+      // The seasonal energy lines: one row per line the bill has, named by side and season, kWh x rate = charge
+      // (one function for the lines: touLinesOfBill). A bill with the tiered energy format keeps the old rows.
+      if (
+        (row.chargeField === 'EnergyOnPeakCharge' || row.chargeField === 'EnergyOffPeakCharge') &&
+        parsed._energyFormat !== 'tiered'
+      ) {
+        const touLines = touLinesOfBill(parsed, row.chargeField === 'EnergyOnPeakCharge' ? 'on' : 'off');
+        if (touLines.length) {
+          touLines.forEach((l, idx) => {
+            runningTotal += l.charge;
+            const qtyShown =
+              touLines.length === 1 && row.qtyField
+                ? buildCell(row.qtyField)
+                : l.kwh != null
+                  ? _roBox(l.label + ' kWh', fmtQty(l.kwh, 'kWh'), 'ef-tou')
+                  : '';
+            const chargeShown = l.prefix && l.stored
+              ? _partCell(l.label + ' Charge', l.prefix + 'Charge', fmtDollar(l.charge), 'ef-tou')
+              : touLines.length === 1
+                ? _center(buildCell(row.chargeField))
+                : _partCell(l.label + ' Charge', '_chg_' + row.chargeField + '_' + idx, fmtDollar(l.charge), 'ef-tou');
+            _row(
+              _chargeRow(
+                qtyShown,
+                _roBox(l.label + ' Rate', l.rate != null ? fmtRate(l.rate, 'kWh') : '', 'ef-tou'),
+                chargeShown,
+              ),
+            );
+          });
+          return;
+        }
+      }
       const ri = parsed._rates?.[row.rateKey];
       const parts = ri?.parts || [];
       const chargeVal = parseBillNumber(parsed[row.chargeField]);
@@ -20399,6 +20444,9 @@ function _pdfApplyFieldEdit(key, rawValue) {
   const b = bills[idx];
   const _prevVal = b[key];
   b[key] = val;
+  // A seasonal energy line (kWh, rate or charge): the On / Off totals are written again from the lines.
+  const _isTouKey = TOU_FIELD_NAMES.includes(key);
+  if (_isTouKey) touApplyToBill(b, [...touLinesOfBill(b, 'on'), ...touLinesOfBill(b, 'off')]);
   // FIX (fix/bill-review-gate-lifecycle, item f359edaa): a corrected field must
   // drop its OWN gate reason instead of leaving "not auto-saved" up forever, and
   // must be stamped so a later re-verify pass never silently reverts the user's
@@ -20424,7 +20472,7 @@ function _pdfApplyFieldEdit(key, rawValue) {
     'FranchiseFee',
     'MiscellaneousCharge',
   ];
-  if (CHARGE_SUM_FIELDS.includes(key)) {
+  if (CHARGE_SUM_FIELDS.includes(key) || _isTouKey) {
     const compSum = CHARGE_SUM_FIELDS.reduce((s, f) => s + parseBillNumber(b[f]), 0);
     if (compSum > 0) {
       b.TotalCurrentCharges = compSum.toFixed(2);
