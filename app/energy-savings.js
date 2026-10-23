@@ -7825,6 +7825,7 @@ function _lbg_buildGasBill(
   signedFuelAdj,
   billDate,
   fuelAdjMeta,
+  textLayerUsage,
 ) {
   fuelAdjMeta = fuelAdjMeta || { lineSeen: false, otherCommoditiesConfident: true, unresolvedCommodities: [] };
   const r = _lbg_gasRate(billDate);
@@ -7956,10 +7957,38 @@ function _lbg_buildGasBill(
   }
   if (gas.charge === 0) return null; // no charge printed for this commodity
 
+  // The usage cell as the text layer prints it is read before the usage x rate check: when the position
+  // read of the cell is lost or wrong (the position row can drop it) and the text-layer cell fits the
+  // printed charge, it is the usage. The position read is kept when it fits.
+  let gasUsage = gas.usage;
+  let tlUsageNote = null;
+  if (textLayerUsage && gas.charge > 0) {
+    const variableTl = Math.max(0, gas.charge - r.baseCharge);
+    const fitsRate = (u) => u > 0 && Math.abs(variableTl - u * r.rate) < _LBG_GAS_RATE_CHECK_TOL;
+    if (!fitsRate(gas.usage) && fitsRate(textLayerUsage.value)) {
+      gasUsage = textLayerUsage.value;
+      tlUsageNote = {
+        original: gas.usage,
+        corrected: textLayerUsage.value,
+        reason:
+          'Gas therms taken from the printed usage cell ' +
+          textLayerUsage.text +
+          ' = ' +
+          textLayerUsage.value +
+          '; the printed Gas charge fits (' +
+          variableTl.toFixed(2) +
+          ' / ' +
+          r.rate +
+          ' per therm). The position read ' +
+          (gas.usage == null ? 'had no usage cell' : 'was ' + gas.usage) +
+          '.',
+      };
+    }
+  }
   // Printed GAS line wins; usage x rate is only a check (_lbg_resolveGasLine).
   const gasLine = _lbg_resolveGasLine(
     gas.charge,
-    gas.usage,
+    gasUsage,
     billDate,
     currentBillTotal,
     otherCommoditySum,
@@ -7978,6 +8007,7 @@ function _lbg_buildGasBill(
   }
   if (gasLine.held) return heldBill(gasLine.reason, gas.charge);
   base.NaturalGasTherms = billValueOrNull(gasLine.usage);
+  if (tlUsageNote && gasLine.usage === gasUsage) base._auto_corrected_NaturalGasTherms = tlUsageNote;
   let gasTotal = gasLine.gasTotal;
   const gasVariable = gasLine.gasVariable;
   // False when the value came from the Current Bill reconciliation, which
@@ -13196,6 +13226,7 @@ const UTILITY_RULES = [
         signedFuelAdj,
         _gasBillDate,
         _fuelAdjMeta,
+        _lbg_textLayerGasUsage(page),
       );
       // Provenance note (backlog 37d5fb0e-fueladj follow-up, 2026-09-14):
       // reused on every bill built from a field the targeted-crop OCR
