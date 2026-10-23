@@ -788,3 +788,11 @@ This includes a new or changed function, schedule, env var name, timer, host, or
 ## Sync status: one place (2026-10-22)
 - The bottom-right "N unsynced changes" pill is gone. The sidebar "Sync status" link (`#ch-sync-status-btn`, app/sync-ui.js `renderSyncStatusButton`) is the only place. `syncStatusView()` is the one function that computes its text and color from `_syncState` (unsynced count from `syncQueueChanged`/`dbReady`, offline from `dbOfflineBanner`, sign-in refused from `dbAuthRejected`; `dbHydrated` clears offline and refused). States: "Sync status", "Sync status (N unsynced)", "Sync status (offline)", "Sync status (sign-in refused)". Browser only, no env var.
 - Check: open energy-department.html with a queued change: the sidebar link reads "Sync status (1 unsynced)"; nothing is fixed in the bottom-right corner.
+
+## Equipment Matrix Raw view: BAS review columns (2026-10-23, branch 2026-10-23-bas-review)
+- What: four columns in the Raw view, defined in `app/equipment-matrix.js` (`emGetColDefs`): Heating Type, Points, Screenshot, Review.
+- Heating Type = `emRowHeatingType` (calls `_emDeriveHeatingType`; the Setpoint & Schedule export calls the same function). Points = `emRowPointCount`; the hover list comes from `emRowPointNames` (also used by the All Points drawer). Review = `emReviewReasons`, with the sample set from `_emSampleMap`. All three are read through `emRowCalc`, set up by `emPrepareRowCalc` before each draw or export.
+- Column dropdown filter: `emFilterByCols` and `emColFilterOptions`; the list starts with "(non-blank)".
+- Screenshot tick: `emSetScreenshot` writes `data.edits[rowId::screenshot]` through `emSetAssetEdit`, the same path as row Notes.
+- Runs: on every table draw in the browser. No timer, no env var, no host change.
+- Check: `node test-em-bas-review-checklist.js` (synthetic rows) prints "fail 0".

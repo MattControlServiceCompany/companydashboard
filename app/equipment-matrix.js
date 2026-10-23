@@ -4022,6 +4022,8 @@ function emSaveMatrix(projId, data) {
   // the row object is never served stale from the WeakMap.
   _emPointNameCache = new Map();
   _emPointsComputedCache = new WeakMap();
+  _emCalcCache = new WeakMap(); // BAS review columns
+  _emSampleCache = new WeakMap();
   // Invalidate the dynPoint frequency cache — data rows have changed.
   _emDynPointFreqCache = null;
   _emDynPointFreqCacheKey = null;
@@ -4359,7 +4361,8 @@ function emInjectMatrixCSS() {
     // classList.add()'d + inline-styled thousands of individual row cells was measured as the
     // single largest cost in the Equipment Matrix's render time at Client D's 2,721-row scale.
     // Non-frozen headers stay at z-index 11 (above body, horizontally scrollable)
-    '.em-table-wrap thead th { position: sticky; top: 0; background: var(--s2); z-index: 11; }',
+    '.em-table-wrap thead th { position: sticky; top: 0; background: var(--s1); z-index: 11; }',
+    '.em-colfilter { display: block; width: 100%; margin-top: 4px; font-size: 10px; padding: 2px 4px; background: var(--s2); border: 1px solid var(--border); color: var(--text); border-radius: 4px; }',
     // Handle-div resize pattern — th must be relative so the handle can position absolutely
     '.em-table-wrap th { position: relative; }',
     '.em-col-resize-handle { position:absolute; right:0; top:0; width:6px; height:100%; cursor:col-resize; z-index:1; }',
@@ -4441,7 +4444,7 @@ function emUpdateStickyOffsets() {
       n +
       ') { position:sticky; left:' +
       left +
-      'px; background:var(--s2); z-index:12; }' +
+      'px; background:var(--s1); z-index:12; }' +
       '#em-table-wrap table tbody tr > *:nth-child(' +
       n +
       ') { position:sticky; left:' +
@@ -5229,6 +5232,46 @@ function emGetColDefs(projId) {
     { key: 'equipName', label: 'Equipment Name', group: 'id', width: 240 },
     // Milestone 2: renamed from "Control Program" — shows classified equipment type
     { key: 'category', label: 'Equipment Type', group: 'id', width: 130, isCategory: true },
+    // BAS review checklist (2026-10-23). Heating Type, Points and Review are computed per row by
+    // emRowCalc (one function each, shared with the CSV export); Screenshot is saved per row in
+    // data.edits like Notes. colFilter = gets a dropdown under its header (emFilterByCols).
+    {
+      key: 'heatingType',
+      label: 'Heating Type',
+      group: 'id',
+      width: 120,
+      isComputed: true,
+      colFilter: true,
+      hideIfEmpty: true,
+      hint: 'Heating source, from _emDeriveHeatingType. An underline means it is a default for this equipment type, not confirmed from points.',
+    },
+    {
+      key: 'pointCount',
+      label: 'Points',
+      group: 'id',
+      width: 70,
+      isComputed: true,
+      hint: 'Number of Building Automation System points. Hover for the point names. Click to open the full list.',
+    },
+    {
+      key: 'screenshot',
+      label: 'Screenshot',
+      group: 'id',
+      width: 100,
+      isScreenshot: true,
+      colFilter: true,
+      hint: 'Tick when you took the screenshot of this piece. Saved with the project.',
+    },
+    {
+      key: 'review',
+      label: 'Review',
+      group: 'id',
+      width: 280,
+      isComputed: true,
+      colFilter: true,
+      hideIfEmpty: true,
+      hint: 'Why this piece is suggested for a look in WebCTRL. Blank = no reason found.',
+    },
     // 2026-09-23 (item 5ar): the imported Effective Schedules CSV's occupied period for this
     // row, when one was attached — see emAttachEffectiveSchedules / existingScheduleText.
     {
@@ -5782,6 +5825,28 @@ function emRowPointCountExact(row) {
   return row.pointPaths.length >= names;
 }
 
+/* ── emRowPointNames ────────────────────────────────────────────────────────
+   THE one sorted list of a row's point names. The "All Points" drawer (emBuildAllPointsTableHtml)
+   and the Points column hover (emFormatCell) both read it, so the two lists cannot drift apart. */
+function emRowPointNames(row) {
+  if (!row) return [];
+  if (row.schema >= 2 && row.pointsRaw && Object.keys(row.pointsRaw).length > 0) {
+    return Object.keys(row.pointsRaw)
+      .slice()
+      .sort(function (a, b) {
+        return a.toLowerCase() < b.toLowerCase() ? -1 : a.toLowerCase() > b.toLowerCase() ? 1 : 0;
+      });
+  }
+  if (row.points) {
+    return Object.keys(row.points)
+      .filter(function (k) {
+        return row.points[k] != null;
+      })
+      .sort();
+  }
+  return [];
+}
+
 // Total distinct points over rows, plus the hover text for the stat pill. Every BAS point total on
 // screen comes from here. Pass ALL rows to count (phantom sub-component rows hold real points).
 function emPointTotal(rows) {
@@ -6040,11 +6105,7 @@ function emColLabel(colKey) {
 function emBuildAllPointsTableHtml(row) {
   var html = '';
   if (row.schema >= 2 && row.pointsRaw && Object.keys(row.pointsRaw).length > 0) {
-    var _apKeys = Object.keys(row.pointsRaw)
-      .slice()
-      .sort(function (a, b) {
-        return a.toLowerCase() < b.toLowerCase() ? -1 : a.toLowerCase() > b.toLowerCase() ? 1 : 0;
-      });
+    var _apKeys = emRowPointNames(row);
     html +=
       '<div style="font-weight:600;color:var(--text2);margin-bottom:4px">All Building Automation System Points (' +
       _apKeys.length +
@@ -6736,7 +6797,274 @@ function emGetNormalizedPoints(row) {
   return result;
 }
 
+/* ── BAS review checklist (2026-10-23) ──────────────────────────────────────
+   Matt does a BAS-only audit: he sits in WebCTRL, looks at each piece of equipment and takes a
+   screenshot. These functions are THE one home for the three computed columns (Heating Type,
+   Points, Review) and for the column dropdown filter. The table, the sort, the footer and the CSV
+   export all read them through emRowCalc / emGetCellValByDef. */
+var EM_HEATING_TYPE_LABELS = {
+  hydronic: 'Hydronic',
+  electricReheat: 'Electric reheat',
+  electric: 'Electric',
+  heatpump: 'Heat pump',
+};
+var EM_FILTER_NONBLANK = '(non-blank)';
+var EM_FILTER_BLANK = '(blank)';
+var EM_REVIEW_AIRFLOW_RES = {
+  maxCool: /^\s*max(imum)?\s+cool(ing)?\s+air\s*flow\b/i,
+  maxHeat: /^\s*max(imum)?\s+heat(ing)?\s+air\s*flow\b/i,
+  minOcc: /^\s*min(imum)?\s+occ(upied)?\s+air\s*flow\b/i,
+};
+var _emCalcCache = new WeakMap(); // row -> computed column values, reset on every render and save
+var _emCalcCtx = null; // { rows, hasGas } for the table being drawn
+var _emSampleCache = new WeakMap(); // rows array -> { n, map: row -> type label }
+
+// Building -> "has a Gas meter" lookup, from the project's Utility Data. Undefined = unknown (no meter
+// records). The Setpoint & Schedule export and the Heating Type column both use it.
+function emHasGasLookup(projId, bldgs) {
+  var byName = {};
+  var list = bldgs || (typeof getUDBldgs === 'function' ? getUDBldgs(projId) : []) || [];
+  list.forEach(function (b) {
+    byName[_emNormBldgNameForJoin(b.name)] =
+      b.meters && b.meters.length
+        ? b.meters.some(function (m) {
+            return m.commodity === 'Gas';
+          })
+        : undefined;
+  });
+  return function (buildingName) {
+    return byName[_emNormBldgNameForJoin(buildingName || '')];
+  };
+}
+
+// THE heating-type read for one row. The Heating Type column and the Setpoint & Schedule export both call it.
+function emRowHeatingType(row, hasGasLookup) {
+  var pts = emGetNormalizedPoints(row) || {};
+  return _emDeriveHeatingType(row, pts, hasGasLookup ? hasGasLookup(row.building) : undefined);
+}
+
+function _emClockMinutes(t) {
+  var m = /(\d+):(\d+)\s*([AP]M)/i.exec(t);
+  if (!m) return null;
+  return (parseInt(m[1], 10) % 12 + (m[3].toUpperCase() === 'PM' ? 12 : 0)) * 60 + parseInt(m[2], 10);
+}
+
+// Total occupied minutes in an Effective Schedule text ("Occupied from 7:00 AM to 5:00 PM", one per line).
+function _emOccupiedMinutes(txt) {
+  var re = /^Occupied from (\S+\s*[AP]M) to (\S+\s*[AP]M)/gim;
+  var m;
+  var total = 0;
+  while ((m = re.exec(String(txt || '')))) {
+    var a = _emClockMinutes(m[1]);
+    var b = _emClockMinutes(m[2]);
+    if (a === null || b === null) continue;
+    total += b > a ? b - a : b + 1440 - a;
+  }
+  return total;
+}
+
+function _emAirflowValue(row, re) {
+  var raw = row && row.pointsRaw;
+  if (!raw || typeof raw !== 'object') return null;
+  var adj = null;
+  for (var k in raw) {
+    if (!re.test(k)) continue;
+    var n = parseFloat(raw[k]);
+    if (isNaN(n)) continue;
+    if (/\(adj/i.test(k)) {
+      if (adj === null) adj = n;
+    } else return n;
+  }
+  return adj;
+}
+
+// A row with no control program name or no points: not found in WebCTRL, so there is nothing to look at.
+function _emHasNoControlProgram(row) {
+  return !String(row.equipName || '').trim() || emRowPointCount(row) === 0;
+}
+
+// First row of each (building, equipment type) in WebCTRL tree order (location, then control program).
+// Sub-component rows (VFD Integration, Supply/Return Duct) and rows with no control program are never the sample.
+function _emSampleMap(rowsInProject) {
+  var hit = _emSampleCache.get(rowsInProject);
+  if (hit && hit.n === rowsInProject.length) return hit.map;
+  var best = {};
+  var order = function (r) {
+    return (r.bacnetLocation || '') + '\u0001' + (r.equipName || '');
+  };
+  rowsInProject.forEach(function (r) {
+    if (!r || emIsPhantomRow(r) || _emHasNoControlProgram(r)) return;
+    var key = (r.building || '') + '\u0001' + emFormatEquipTypeLabel(r);
+    var cur = best[key];
+    if (!cur || order(r).localeCompare(order(cur), undefined, { numeric: true, sensitivity: 'base' }) < 0) best[key] = r;
+  });
+  var map = new Map();
+  Object.keys(best).forEach(function (k) {
+    map.set(best[k], emFormatEquipTypeLabel(best[k]));
+  });
+  _emSampleCache.set(rowsInProject, { n: rowsInProject.length, map: map });
+  return map;
+}
+
+/* ── emReviewReasons ────────────────────────────────────────────────────────
+   Why this piece is worth a look in WebCTRL: short reasons joined with "; ", blank when none.
+   Ported from the Excel checklist rules. Uses only the matrix's own live data. */
+function emReviewReasons(row, rowsInProject) {
+  if (!row) return '';
+  var why = [];
+  var label = _emSampleMap(rowsInProject || [row]).get(row);
+  if (label) why.push('Sample of ' + label);
+  if (_emOccupiedMinutes(row.existingScheduleText) >= 1439) why.push('Occupied 24 h');
+  var mc = _emAirflowValue(row, EM_REVIEW_AIRFLOW_RES.maxCool);
+  var mh = _emAirflowValue(row, EM_REVIEW_AIRFLOW_RES.maxHeat);
+  var mo = _emAirflowValue(row, EM_REVIEW_AIRFLOW_RES.minOcc);
+  if (mc !== null && mo !== null && mc > 0 && mo > 0.5 * mc) why.push('Min airflow > 50% of max');
+  if (mc !== null && mh !== null && mh > mc) why.push('Heat airflow > cool airflow');
+  if (_emHasNoControlProgram(row)) why.push('No control program');
+  emGetSensorDeficiencies(row).forEach(function (d) {
+    var nm = EM_SENSOR_DEFICIENCY_CATEGORY_LABELS[d.col] || d.col;
+    why.push((d.status === 'failed' ? 'Dead ' : 'Suspect ') + nm + ' reading');
+  });
+  // A setpoint point whose value is the WebCTRL "no data" marker ("?" or "offline"). Read from the raw
+  // points: the zone setpoint guard in emGetNormalizedPoints drops such values before they reach the table.
+  var rawPts = row.pointsRaw && typeof row.pointsRaw === 'object' ? row.pointsRaw : {};
+  var offline = Object.keys(rawPts).some(function (k) {
+    var v = String(rawPts[k] == null ? '' : rawPts[k]).trim().toLowerCase();
+    return /set\s*point/i.test(k) && (v === '?' || v === 'offline');
+  });
+  if (offline) why.push('Offline points');
+  return why.join('; ');
+}
+
+// Call once before drawing or exporting a table: sets the project context the computed columns need.
+function emPrepareRowCalc(projId, rows) {
+  _emCalcCtx = { rows: rows || [], hasGas: emHasGasLookup(projId) };
+  _emCalcCache = new WeakMap();
+}
+
+function emRowCalc(row) {
+  var hit = _emCalcCache.get(row);
+  if (hit) return hit;
+  var ctx = _emCalcCtx;
+  var ht = emRowHeatingType(row, ctx ? ctx.hasGas : null);
+  var out = {
+    heatingType: EM_HEATING_TYPE_LABELS[ht.key] || ht.key,
+    heatKnown: !!ht.known,
+    pointCount: emRowPointCount(row),
+    review: emReviewReasons(row, ctx ? ctx.rows : [row]),
+  };
+  _emCalcCache.set(row, out);
+  return out;
+}
+
+/* ── Column dropdown filter (shared by every column with def.colFilter) ─────────────────────────── */
+function emColFilterMatch(row, def, sel, edits) {
+  var v = emGetCellValByDef(row, def, edits);
+  var blank = v === null || v === undefined || v === '';
+  if (def.isScreenshot) return sel === 'Done' ? v === 'Y' : v !== 'Y';
+  if (sel === EM_FILTER_NONBLANK) return !blank;
+  if (sel === EM_FILTER_BLANK) return blank;
+  if (def.key === 'review') return String(v).split('; ').indexOf(sel) !== -1;
+  return String(v) === sel;
+}
+
+function emFilterByCols(rows, defs, cols, edits) {
+  var active = defs.filter(function (d) {
+    return d.colFilter && cols && cols[d.key];
+  });
+  if (!active.length) return rows;
+  return rows.filter(function (r) {
+    return active.every(function (d) {
+      return emColFilterMatch(r, d, cols[d.key], edits);
+    });
+  });
+}
+
+function emColFilterOptions(def, rows, edits) {
+  if (def.isScreenshot)
+    return [
+      { value: 'Done', label: 'Done' },
+      { value: 'Not done', label: 'Not done' },
+    ];
+  var seen = {};
+  var vals = [];
+  rows.forEach(function (r) {
+    var v = emGetCellValByDef(r, def, edits);
+    (def.key === 'review' ? String(v).split('; ') : [String(v)]).forEach(function (p) {
+      if (p !== '' && !seen[p]) {
+        seen[p] = true;
+        vals.push(p);
+      }
+    });
+  });
+  vals.sort(function (a, b) {
+    return a.localeCompare(b);
+  });
+  return [
+    { value: EM_FILTER_NONBLANK, label: EM_FILTER_NONBLANK },
+    { value: EM_FILTER_BLANK, label: EM_FILTER_BLANK },
+  ].concat(
+    vals.map(function (p) {
+      return { value: p, label: p };
+    })
+  );
+}
+
+function emColFilterSelectHtml(def, rows, edits, current) {
+  var opts = emColFilterOptions(def, rows, edits);
+  if (
+    current &&
+    !opts.some(function (o) {
+      return o.value === current;
+    })
+  )
+    opts.push({ value: current, label: current });
+  var html =
+    '<select data-em-colfilter="' +
+    _escHtml(def.key) +
+    '" aria-label="Filter ' +
+    _escHtml(def.label) +
+    '" class="em-colfilter"><option value="">All</option>';
+  opts.forEach(function (o) {
+    html +=
+      '<option value="' +
+      _escHtml(o.value) +
+      '"' +
+      (o.value === current ? ' selected' : '') +
+      '>' +
+      _escHtml(o.label) +
+      '</option>';
+  });
+  return html + '</select>';
+}
+
+function emSetColFilter(key, value) {
+  var cols = {};
+  var prev = _emFilters.cols || {};
+  Object.keys(prev).forEach(function (k) {
+    cols[k] = prev[k];
+  });
+  if (value) cols[key] = value;
+  else delete cols[key];
+  _emFilters.cols = cols;
+  var data = emLoadMatrix(window._emActivePid);
+  if (data) emRenderTable(data, _emFilters);
+}
+
+// Saves the Screenshot tick per row, the same way Notes are saved (data.edits through emSetAssetEdit).
+function emSetScreenshot(rowId, done) {
+  var p = emSetAssetEdit(window._emActivePid, rowId, 'screenshot', done ? 'Y' : '');
+  if (_emFilters.cols && _emFilters.cols.screenshot) {
+    p.then(function () {
+      var data = emLoadMatrix(window._emActivePid);
+      if (data) emRenderTable(data, _emFilters);
+    });
+  }
+  return p;
+}
+
 function emGetCellValByDef(row, def, edits) {
+  if (def.isComputed) return emRowCalc(row)[def.key];
   var editKey = row.id + '::' + def.key;
   if (edits && edits[editKey] !== undefined) return edits[editKey];
   if (def.key.indexOf('check_') === 0) {
@@ -7054,10 +7382,25 @@ function _emAttachNavDelegatedListeners() {
   if (typeof document === 'undefined' || !document.addEventListener) return;
   _emNavListenersAttached = true;
 
+  document.addEventListener('change', function (e) {
+    var t = e.target;
+    if (!t || !t.hasAttribute) return;
+    if (t.hasAttribute('data-em-shot')) {
+      emSetScreenshot(t.getAttribute('data-em-shot'), t.checked);
+    } else if (t.hasAttribute('data-em-colfilter')) {
+      emSetColFilter(t.getAttribute('data-em-colfilter'), t.value);
+    }
+  });
+
   document.addEventListener('click', function (e) {
     var exitEl = e.target && e.target.closest ? e.target.closest('[data-em-exit-drill]') : null;
     if (exitEl) {
       emExitDrillBuilding(exitEl.dataset.pid);
+      return;
+    }
+    var ptsEl = e.target && e.target.closest ? e.target.closest('[data-em-pts-toggle]') : null;
+    if (ptsEl) {
+      emTogglePointDrawer(ptsEl.getAttribute('data-em-pts-toggle'));
       return;
     }
     var drillEl = e.target && e.target.closest ? e.target.closest('[data-em-drill-building]') : null;
@@ -7098,10 +7441,22 @@ function emRenderTable(data, filters) {
   if (!wrap) return;
   var rows = data.rows || [];
   var edits = data.edits || {};
-  var filtered = emFilterRows(rows, filters);
-
-  var defs = emGetColDefs(window._emActivePid).filter(function (d) {
+  emPrepareRowCalc(window._emActivePid, rows);
+  var toolbarFiltered = emFilterRows(rows, filters);
+  var allDefs = emGetColDefs(window._emActivePid).filter(function (d) {
     return !_emHiddenGroups[d.group];
+  });
+  var filtered = emFilterByCols(toolbarFiltered, allDefs, filters.cols, edits);
+
+  // Computed columns with nothing to show for the current filter stay hidden (ui-standards, auto-hide
+  // empty columns) unless the column has an active dropdown filter, which must stay reachable.
+  var defs = allDefs.filter(function (d) {
+    if (!d.hideIfEmpty) return true;
+    if (filters.cols && filters.cols[d.key]) return true;
+    return filtered.some(function (r) {
+      var v = emGetCellValByDef(r, d, edits);
+      return v !== '' && v !== null && v !== undefined;
+    });
   });
 
   // ── Dynamic point columns ──
@@ -7126,7 +7481,15 @@ function emRenderTable(data, filters) {
   // Cache key encodes pid + building filter + type filter + row count so it auto-invalidates
   // when any of those change. emSaveMatrix() also explicitly clears it on data write.
   var _dynCacheKey =
-    (window._emActivePid || '') + '|' + (filters.building || '') + '|' + (filters.type || '') + '|' + filtered.length;
+    (window._emActivePid || '') +
+    '|' +
+    (filters.building || '') +
+    '|' +
+    (filters.type || '') +
+    '|' +
+    filtered.length +
+    '|' +
+    JSON.stringify(filters.cols || {});
   var dynPointFreq;
   var allDynKeys;
   if (_emDynPointFreqCacheKey === _dynCacheKey && _emDynPointFreqCache) {
@@ -7240,12 +7603,12 @@ function emRenderTable(data, filters) {
   var theadCells = '';
   // M4 Part 2: expand-toggle column (leftmost, always visible in raw view)
   theadCells +=
-    '<th style="position:sticky;top:0;background:var(--s2);border-top:3px solid transparent;' +
+    '<th style="position:sticky;top:0;background:var(--s1);border-top:3px solid transparent;' +
     'font-weight:600;color:var(--text2);white-space:nowrap;' +
     'width:28px;text-align:center;border-bottom:1px solid var(--border);border-right:1px solid var(--border)"></th>';
   if (_emEditMode) {
     theadCells +=
-      '<th style="position:sticky;top:0;background:var(--s2);border-top:3px solid transparent;' +
+      '<th style="position:sticky;top:0;background:var(--s1);border-top:3px solid transparent;' +
       'font-weight:600;color:var(--text2);white-space:nowrap;' +
       'width:36px;text-align:center;border-bottom:1px solid var(--border);border-right:1px solid var(--border)"></th>';
   }
@@ -7261,9 +7624,10 @@ function emRenderTable(data, filters) {
       '<th data-ci="' +
       ci +
       '" ' +
-      'style="position:sticky;top:0;background:var(--s2);' +
+      (d.hint ? 'title="' + _escHtml(d.hint) + '" ' : '') +
+      'style="position:sticky;top:0;background:var(--s1);' +
       borderTop +
-      'font-weight:600;color:var(--text2);white-space:nowrap;' +
+      'font-weight:600;color:var(--text);white-space:nowrap;' +
       'min-width:' +
       colW +
       'px;width:' +
@@ -7276,6 +7640,9 @@ function emRenderTable(data, filters) {
       d.label +
       sortInd +
       '</span>' +
+      (d.colFilter
+        ? emColFilterSelectHtml(d, toolbarFiltered, edits, filters.cols && filters.cols[d.key])
+        : '') +
       '<div class="em-col-resize-handle" data-ci="' +
       ci +
       '"></div>' +
@@ -7351,9 +7718,9 @@ function emRenderTable(data, filters) {
       var cellClass =
         (def.isLive || def.isDynPoint ? ' em-mono' : '') +
         (isEmpty ? ' em-cell-empty' : '') +
-        (isEdited ? ' em-cell-edited' : '');
+        (isEdited && !def.isScreenshot ? ' em-cell-edited' : '');
       var cellClassAttr = cellClass ? ' class="' + cellClass.slice(1) + '"' : '';
-      if (_emEditMode) {
+      if (_emEditMode && !def.isComputed && !def.isScreenshot) {
         cells +=
           '<td contenteditable="true"' +
           cellClassAttr +
@@ -8961,9 +9328,10 @@ function emRenderAuditTable(data, filters) {
       ci +
       '" ' +
       (d.title ? 'title="' + _escHtml(d.title) + '" ' : '') +
-      'style="position:sticky;top:0;background:var(--s2);' +
+      (d.hint ? 'title="' + _escHtml(d.hint) + '" ' : '') +
+      'style="position:sticky;top:0;background:var(--s1);' +
       borderTop +
-      'font-weight:600;color:var(--text2);white-space:nowrap;' +
+      'font-weight:600;color:var(--text);white-space:nowrap;' +
       'min-width:' +
       colW +
       'px;width:' +
@@ -10406,30 +10774,9 @@ function emClearAllData(pid) {
 }
 
 function emGetCellVal(row, colIdx, edits) {
-  var defs = emGetColDefs();
-  var def = defs[colIdx];
+  var def = emGetColDefs()[colIdx];
   if (!def) return '';
-  var editKey = row.id + '::' + def.key;
-  if (edits && edits[editKey] !== undefined) return edits[editKey];
-  if (def.key.indexOf('check_') === 0) {
-    var idx = def.checkIdx;
-    var checkCols = EM_CHECK_COLS_14;
-    // FIX: Use explicit null/undefined check so 0 and '0' pass through (was falsy || '')
-    var cv = row.checks && row.checks[checkCols[idx]];
-    return cv != null ? cv : '';
-  }
-  // 2026-09-23: mirrors emGetCellValByDef's isSpAdjustRange branch (see that function).
-  if (def.isSpAdjustRange) {
-    return _emAdjustDisplay(emGetNormalizedPoints(row));
-  }
-  if (def.isLive || def.isDynPoint) {
-    // Milestone 1: read through normalized-points engine (mirrors emGetCellValByDef)
-    // FIX: Use explicit null/undefined check so 0 and '0' pass through (was falsy || '')
-    var pv = emGetNormalizedPoints(row)[def.key];
-    return pv != null ? pv : '';
-  }
-  // FIX: Use explicit null/undefined check so 0 passes through (was falsy || '')
-  return row[def.key] != null ? row[def.key] : '';
+  return emGetCellValByDef(row, def, edits); // the one cell reader (BAS review columns included)
 }
 
 /* M4 Part 2: Toggle the "All Points" inline drawer for a single equipment row.
@@ -10446,6 +10793,47 @@ function emTogglePointDrawer(rowId) {
 }
 
 function emFormatCell(val, def, row) {
+  // BAS review checklist columns (2026-10-23).
+  if (def.isScreenshot)
+    return (
+      '<input type="checkbox" data-em-shot="' +
+      _escHtml(row ? row.id : '') +
+      '"' +
+      (val === 'Y' ? ' checked' : '') +
+      ' aria-label="Screenshot taken" style="cursor:pointer">'
+    );
+  if (def.key === 'review') {
+    if (!val) return '';
+    return (
+      '<span title="' +
+      _escHtml(val) +
+      '" style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
+      _escHtml(val) +
+      '</span>'
+    );
+  }
+  if (def.key === 'heatingType') {
+    if (!val) return '';
+    var known = row ? emRowCalc(row).heatKnown : true;
+    return known
+      ? _escHtml(val)
+      : '<span title="Not confirmed from points: default for this type" style="text-decoration:underline dotted">' +
+          _escHtml(val) +
+          '</span>';
+  }
+  if (def.key === 'pointCount') {
+    var names = row ? emRowPointNames(row) : [];
+    var shown = names.slice(0, 40).join('\n') + (names.length > 40 ? '\n... and ' + (names.length - 40) + ' more' : '');
+    return (
+      '<span data-em-pts-toggle="' +
+      _escHtml(row ? row.id : '') +
+      '" title="' +
+      _escHtml(shown) +
+      '" style="cursor:pointer;display:block;text-align:right">' +
+      _escHtml(String(val)) +
+      '</span>'
+    );
+  }
   // 2026-09-23: the Unoccupied/Effective setpoint columns and the computed Setpoint
   // Adjustment (range) column show a literal "?" for missing data (task spec: "Unknown
   // = '?' (not blank, not a guessed value)") — bypass the generic '--' / offline-sentinel
@@ -10548,6 +10936,7 @@ function emApplyFilters() {
     building: bldg ? bldg.value : '',
     type: type ? type.value : '',
     search: search ? search.value : '',
+    cols: _emFilters.cols || {},
   };
   var data = emLoadMatrix(window._emActivePid);
   emRenderTable(data, _emFilters);
@@ -10615,6 +11004,7 @@ function emHandleExportCSV() {
   if (!pid) return;
   var data = emLoadMatrix(pid);
   var rows = data.rows || [];
+  emPrepareRowCalc(pid, rows);
   var defs = emGetColDefs();
   var headers = defs
     .map(function (d) {
@@ -11087,18 +11477,11 @@ function emBuildSetpointExportRows(pid, bldgIdFilter, optionLetter) {
   var rows = (data && data.rows) || [];
   var bldgs = typeof getUDBldgs === 'function' ? getUDBldgs(pid) : [];
   var nameToId = {};
-  var hasGasById = {}; // 2026-09-23: building-level Gas-meter presence, for _emDeriveHeatingType's fallback
+  // Building-level Gas-meter presence for _emDeriveHeatingType's fallback: emHasGasLookup (undefined,
+  // not false, when a building has no meter records at all).
+  var hasGasLookup = emHasGasLookup(pid, bldgs);
   bldgs.forEach(function (b) {
     nameToId[_emNormBldgNameForJoin(b.name)] = b.id;
-    // undefined (not false) when the building has no meter records at all — absence of meter
-    // data is not evidence of an all-electric building, so it must not flip the fallback away
-    // from the pre-existing hydronic default (only an actual non-Gas meter list does that).
-    hasGasById[b.id] =
-      b.meters && b.meters.length
-        ? b.meters.some(function (m) {
-            return m.commodity === 'Gas';
-          })
-        : undefined;
   });
   var sd = typeof getProjSavingsData === 'function' ? getProjSavingsData(pid) : null;
   var spStore = (sd && sd.basSetpoint) || {};
@@ -11120,7 +11503,7 @@ function emBuildSetpointExportRows(pid, bldgIdFilter, optionLetter) {
         })[0] || null;
     }
 
-    var heatType = _emDeriveHeatingType(row, pts, bId ? hasGasById[bId] : undefined);
+    var heatType = emRowHeatingType(row, hasGasLookup);
     if (!heatType.known) out.unknownHeatingCount++;
     var unocc = EM_SP_DEFAULTS.unocc[heatType.key];
     var sched = _emComputeProposedSchedule(row.building || '');
