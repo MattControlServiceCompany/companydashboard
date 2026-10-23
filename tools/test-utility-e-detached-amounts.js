@@ -391,8 +391,8 @@ async function main() {
     const [b] = await pipeline(labeledPage({ offSumLine: 'oy rg Sum 1,200.0000 kWh at   $68.81' }));
     check(
       'label repair: Off Pk Sum label restored',
-      !!b._label_repaired_EnergyOffPeakCharge,
-      JSON.stringify(b._label_repaired_EnergyOffPeakCharge),
+      !!(b._touLines && b._touLines.labelRecovered),
+      JSON.stringify(b._touLines),
     );
     check(
       'label repair: Off peak charge = Sum + Win amounts',
@@ -404,7 +404,7 @@ async function main() {
     check('label repair: not held', !b._gateTripped, JSON.stringify(b._gateReasons));
     // The candidate qty reads 1,100 (one digit off): 400 + 100 + 1,100 + 300 = 1,900, not the 2,000 kWh of the bill.
     const [h] = await pipeline(labeledPage({ offSumLine: 'oy rg Sum 1,100.0000 kWh at   $68.81' }));
-    check('label repair: identity open (1,900 of 2,000 kWh), no repair', !h._label_repaired_EnergyOffPeakCharge);
+    check('label repair: identity open (1,900 of 2,000 kWh), no repair', !(h._touLines && h._touLines.labelRecovered && h._touLines.reconciled));
     check(
       'label repair: identity open, OffPeakKWh is not the sum',
       !near(n(h.OffPeakKWh), 1400, 0.001),

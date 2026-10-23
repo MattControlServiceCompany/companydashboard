@@ -844,7 +844,7 @@ function _touSeasonOf(raw, provider, periodStartIso) {
 //   'repaired'    the thousands digits are garbled; the last 3 digits and the 4 decimals are read, the thousands are
 //                 the whole number that makes quantity x rate = the charge
 //   'read-unverified' a clean printed quantity and rate whose product is not the charge: the charge is the doubtful
-//                 value (a misread digit); the quantity stays as printed and the older line checks decide the charge
+//                 value (a misread digit); the quantity stays as printed and the printed charge stays (touSyncFromRates)
 //   'from-charge' no usable quantity: charge / rate, accepted only when round(kWh x rate, 2) = the charge
 function _touLineKwh(raw) {
   var charge = raw.charge;
@@ -1073,6 +1073,24 @@ function touHoldOf(bill, basisTotal) {
   if (basisTotal > 0 && Math.abs(sum - basisTotal) <= (bill._touTol || 0.0051)) return null;
   return TOU_HOLD_TEXT;
 }
+// One rule: a line whose printed quantity and rate do not give its printed charge ('read-unverified') keeps the
+// printed charge. Quantity x rate is the doubtful number there, so no older check may replace the charge.
+// prefix = a TOU_SLOTS prefix, or a bill field name of the On / Off charge (both sides of every season).
+function touKeepsPrintedCharge(bill, prefixOrField) {
+  var rec = (bill && bill._touLines && bill._touLines.recovered) || [];
+  return rec.some(function (x) {
+    if (!/:read-unverified$/.test(x)) return false;
+    var pre = x.split(':')[0];
+    var slot = TOU_SLOTS.filter(function (s) {
+      return s.prefix === pre;
+    })[0];
+    if (!slot) return false;
+    return (
+      pre === prefixOrField ||
+      (slot.kind === 'on' ? 'EnergyOnPeakCharge' : 'EnergyOffPeakCharge') === prefixOrField
+    );
+  });
+}
 // After the older charge checks ran (a misread digit fixed by quantity x rate, a total corrected from the printed
 // subtotal), write what they decided onto the line fields and derive the totals again from the lines.
 //   1. a part amount in bill._rates that changed -> that line
@@ -1097,7 +1115,11 @@ function touSyncFromRates(bill) {
         return p.season === l.season;
       })[0];
     };
+    var isKept = function (l) {
+      return touKeepsPrintedCharge(bill, l.prefix);
+    };
     side.forEach(function (l) {
+      if (isKept(l)) return;
       var p = partOf(l);
       var amt = p ? (p.ocrCharge != null ? p.ocrCharge : p.computed) : null;
       if (amt > 0 && Math.abs(amt - l.charge) > 0.005) l.charge = amt;
@@ -1106,7 +1128,7 @@ function touSyncFromRates(bill) {
       return s + l.charge;
     }, 0);
     var total = parseBillNumber(bill[d[1]]);
-    if (total > 0 && Math.abs(sum - total) > 0.005) {
+    if (total > 0 && Math.abs(sum - total) > 0.005 && !side.some(isKept)) {
       if (side.length === 1) side[0].charge = total;
       else {
         var comp = side.map(function (l) {

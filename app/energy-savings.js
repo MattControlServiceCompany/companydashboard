@@ -2318,13 +2318,18 @@ function _evgChargesReconcile(result) {
   const total = parseBillNumberOrZero(result.TotalCurrentCharges);
   return total > 0 && Math.abs(sumElectricComponentCharges(result) - total) <= 0.01;
 }
-// Utility E tier qty on an energy line: "Sum 1,041.7021 kWh at" / "Win 207.8670 kWh at" (":" read for "."). Null when
-// the line has no such qty.
-function _evgTierQty(line) {
-  const m = String(line).match(/(?:^|[^A-Za-z])(Sum|Win)\s+([0-9,]+[.:][0-9]{2,})\s*k[Ww]h?\s+at/i);
-  if (!m) return null;
-  const v = parseFloat(m[2].replace(':', '.').replace(/,/g, ''));
-  return v > 0 ? { season: m[1], qty: v } : null;
+// The ONE reader of a charge line's printed amount: the amount on line i, else the first amount on the next 5 lines
+// that do not start another charge (nextChgLine) and are not stopped by stopLine(line). Used by xChg and by
+// _evgTouRawLines. Returns { charge, last } (charge null when none; last = the line it was read from, else i).
+function _evgChargeScan(lines, i, nextChgLine, getAmt, stopLine) {
+  const a = getAmt(lines[i]);
+  if (a !== null) return { charge: a, last: i };
+  for (let j = i + 1; j < Math.min(i + 6, lines.length); j++) {
+    if (nextChgLine.test(lines[j]) || (stopLine && stopLine(lines[j]))) break;
+    const ja = getAmt(lines[j]);
+    if (ja !== null) return { charge: ja, last: j };
+  }
+  return { charge: null, last: i };
 }
 // Seasonal energy lines of the page text, as raw lines for touResolveLines (computations/rates.js). A labeled line
 // ("Energy Chg On Pk Sum 8,713.7520 kWh at $0.07852 per kWh $684.20") gives the side, the printed Sum / Win word or
@@ -2341,18 +2346,13 @@ function _evgTouRawLines(tc, kw, nextChgLine, getAmt) {
   const used = new Set();
   const raws = [];
   const read = (i, after, kind) => {
+    const scan = _evgChargeScan(lines, i, nextChgLine, getAmt, (l) => WORD.test(l) && DEC.test(l) && getAmt(l) !== null);
+    const charge = scan.charge;
     let block = after;
-    let charge = getAmt(lines[i]);
     used.add(i);
-    for (let j = i + 1; j < Math.min(i + 6, lines.length); j++) {
-      if (nextChgLine.test(lines[j]) || (WORD.test(lines[j]) && DEC.test(lines[j]) && getAmt(lines[j]) !== null)) break;
+    for (let j = i + 1; j <= scan.last; j++) {
       block += '\n' + lines[j];
       used.add(j);
-      if (charge === null) {
-        const ja = getAmt(lines[j]);
-        if (ja !== null) charge = ja;
-      }
-      if (charge !== null) break;
     }
     const wm = after.match(WORD);
     const dm = after.match(DATES);
@@ -2402,7 +2402,7 @@ function _evgTouFromText(tc, kwhConsumed, svc, kw, nextChgLine, getAmt) {
   const dp = (String(kwhConsumed || '').split('.')[1] || '').length;
   const sm = svc && svc.start ? String(svc.start).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/) : null;
   const res = touResolveLines(raws, used > 0 ? used : null, {
-    provider: 'Evergy',
+    provider: SEASON_DEFAULT_PROVIDER,
     periodStartIso: sm ? sm[3] + '-' + sm[1].padStart(2, '0') + '-' + sm[2].padStart(2, '0') : null,
     kwhTol: dp >= 1 ? 0.0051 : 1,
   });
@@ -2446,56 +2446,6 @@ function _evgApplyTou(result, tou) {
     delete result['_auto_derived_' + f];
   }
   delete result._kwh_identity_mismatch;
-}
-// (d) Positional label repair for one unlabeled Off Pk Sum line. OCR can lose the "Energy Chg Off Pk" label of
-// the summer off-peak tier ("oy rg Sum 1,041.7021 kWh at $59.73") on a season-change bill. The line between the
-// On Pk Win line and the Off Pk Win line that carries "Sum <qty> kWh at" and no charge label IS the Off Pk Sum
-// line, accepted only when On Sum + On Win + that qty + Off Win = kWhConsumed to 0.005 kWh. Any other shape
-// (two candidates, a labeled Off Pk Sum, a tier missing, the identity open) returns null and nothing changes.
-// `kw` is the extractor's charge-label pattern map. Returns { text, info } with the repaired text.
-function _evgRepairOffPkSumLine(t, kwhConsumed, kw) {
-  const total = parseBillNumber(kwhConsumed);
-  if (!(total > 0)) return null;
-  const lines = String(t).split('\n');
-  const onRe = new RegExp(kw.EnergyOnPeakCharge, 'i');
-  const offRe = new RegExp(kw.EnergyOffPeakCharge, 'i');
-  const anyRe = new RegExp(Object.values(kw).join('|'), 'i');
-  const on = { Sum: [], Win: [] };
-  const off = { Sum: [], Win: [] };
-  for (let i = 0; i < lines.length; i++) {
-    const tq = _evgTierQty(lines[i]);
-    if (!tq) continue;
-    const season = tq.season[0].toUpperCase() + tq.season.slice(1).toLowerCase();
-    if (onRe.test(lines[i])) on[season].push({ i, qty: tq.qty });
-    else if (offRe.test(lines[i])) off[season].push({ i, qty: tq.qty });
-  }
-  if (on.Sum.length !== 1 || on.Win.length !== 1 || off.Win.length !== 1 || off.Sum.length !== 0) return null;
-  const iOnWin = on.Win[0].i;
-  const iOffWin = off.Win[0].i;
-  if (!(iOnWin < iOffWin)) return null;
-  const cands = [];
-  for (let i = iOnWin + 1; i < iOffWin; i++) {
-    if (anyRe.test(lines[i])) continue;
-    const tq = _evgTierQty(lines[i]);
-    if (tq && /^sum$/i.test(tq.season)) cands.push({ i, qty: tq.qty });
-  }
-  if (cands.length !== 1) return null;
-  const c = cands[0];
-  const sum = on.Sum[0].qty + on.Win[0].qty + c.qty + off.Win[0].qty;
-  if (Math.abs(sum - total) > 0.005) return null;
-  const original = lines[c.i];
-  const repaired = original.replace(/^[\s\S]*?(?=Sum\s+[0-9,]+[.:][0-9]{2,}\s*k[Ww]h?\s+at)/i, 'Energy Chg Off Pk ');
-  if (repaired === original) return null;
-  lines[c.i] = repaired;
-  return {
-    text: lines.join('\n'),
-    info: {
-      line: repaired,
-      original,
-      qty: c.qty,
-      identity: on.Sum[0].qty + ' + ' + on.Win[0].qty + ' + ' + c.qty + ' + ' + off.Win[0].qty + ' = ' + total,
-    },
-  };
 }
 // (c) Detached amount column reader. On a scanned page OCR can split the two columns: every charge label with its
 // "qty kW/kWh at $rate" on one side and the dollar amounts as a block of lines elsewhere. xChg finds no amount
@@ -2880,23 +2830,11 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     for (let i = 0; i < lines.length; i++) {
       if (!new RegExp(keyword, 'i').test(lines[i])) continue;
       if (excludeRe && excludeRe.test(lines[i])) continue;
-      const a = getAmt(lines[i]);
+      const a = _evgChargeScan(lines, i, NEXT_CHG_LINE, getAmt).charge;
       if (a !== null) {
         total += a;
         parts.push(a);
         found = true;
-      } else {
-        for (let j = i + 1; j < Math.min(i + 6, lines.length); j++) {
-          const l = lines[j];
-          if (NEXT_CHG_LINE.test(l)) break;
-          const ja = getAmt(l);
-          if (ja !== null) {
-            total += ja;
-            parts.push(ja);
-            found = true;
-            break;
-          }
-        }
       }
     }
     if (_partsKey && parts.length > 1) _xChgParts[_partsKey] = parts;
@@ -4241,14 +4179,6 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     })();
 
   // ── Charges ── (the label patterns C, SEP and _EVG_KW are defined above NEXT_CHG_LINE)
-  // (d) An Off Pk Sum line whose label OCR lost ("oy rg Sum 1,041.7021 kWh at $59.73") gets its label back
-  // only when the four tier quantities then add up to kWhConsumed exactly. The readers below read the
-  // repaired text; the bill keeps a note of the repair.
-  const _offSumFix = _evgRepairOffPkSumLine(tc, adjKwh, _EVG_KW);
-  if (_offSumFix) {
-    tc = _offSumFix.text;
-    if (_posRows == null) t = tc;
-  }
   const custChg = xChg(_EVG_KW.CustomerCharge, null, 'CustomerCharge');
   const facKW =
     tc
@@ -4746,7 +4676,6 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     _subtotal: subtotalAmount,
   };
   if (_proposedTotal) result._proposed_TotalCurrentCharges = _proposedTotal;
-  if (_offSumFix) result._label_repaired_EnergyOffPeakCharge = _offSumFix.info;
   // A cut end year ("to 09/02/20.") was completed from the start year: recorded in the one change history.
   if (_svc && _svc.endYearFilled) {
     result._auto_corrected_BillingPeriodEnd = {
@@ -5009,27 +4938,6 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     };
   }
   if (_rOffPkOk) _rates.EnergyOffPeakCharge = _rOffPkOk;
-  // (d) The repaired Off Pk Sum line printed its qty and its charge but OCR lost its rate text, so xRate made
-  // no part for it. The part is added from the two printed values (rate = charge / qty, marked derived) so
-  // the leg's qty is the sum of its printed tier quantities.
-  if (_offSumFix && _rOffPkOk && _rOffPkOk.parts) {
-    const ro = _rOffPkOk;
-    const has = ro.parts.some((p) => p.qty != null && Math.abs(p.qty - _offSumFix.info.qty) < 0.0001);
-    const amt = getAmt(_offSumFix.info.line);
-    if (!has && amt > 0) {
-      ro.parts.unshift({
-        qty: _offSumFix.info.qty,
-        rate: amt / _offSumFix.info.qty,
-        unit: 'kWh',
-        computed: amt,
-        ocrCharge: amt,
-        rateDerived: true,
-      });
-      ro.qty = ro.parts.reduce((s, p) => s + p.qty, 0);
-      ro.computed = ro.parts.reduce((s, p) => s + p.computed, 0);
-      ro.rate = _blendRate(ro.parts, true, ro.qty, ro.computed);
-    }
-  }
   // Flag energy format: 'on_off_peak' if On-Peak found, 'tiered' if only tiered, 'changeover' if both
   if (_rOnPkOk && _rTieredOk) result._energyFormat = 'changeover';
   else if (_rOnPkOk || _rOffPkOk) result._energyFormat = 'on_off_peak';

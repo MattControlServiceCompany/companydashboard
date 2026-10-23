@@ -74,11 +74,11 @@ for (const r of ORDER) {
   }
 }
 vm.runInContext(
-  'this.__R = UTILITY_RULES; this.__P = _postExtractionVerify; this.__G = _applyExtractionGates; this.__L = touLinesOfBill; this.__S = _billSeasonRates; this.__A = touApplyToBill;',
+  'this.__R = UTILITY_RULES; this.__P = _postExtractionVerify; this.__G = _applyExtractionGates; this.__L = touLinesOfBill; this.__S = _billSeasonRates; this.__A = touApplyToBill; this.__D = SEASON_DEFAULT_PROVIDER;',
   ctx,
 );
 async function run(text) {
-  const rule = ctx.__R.find((r) => r.name === 'Evergy' && r.detect(text)) || ctx.__R.find((r) => r.detect(text));
+  const rule = ctx.__R.find((r) => r.name === ctx.__D && r.detect(text)) || ctx.__R.find((r) => r.detect(text));
   let bills = typeof rule.extractAll === 'function' ? rule.extractAll.call(rule, text) : [rule.extract.call(rule, text)];
   if (!Array.isArray(bills)) bills = [bills];
   const out = await ctx.__P(bills, rule.name, text);
@@ -116,7 +116,7 @@ function touBill(opts) {
   const dates = opts.dates || ['09/07/2026', '10/06/2026'];
   const fixed = 48.9 + 165.17;
   const energy = keys.reduce((s, k) => s + L[k].c, 0);
-  const sub = cents(fixed + energy);
+  const sub = cents(fixed + energy + (opts.subAdd || 0));
   const text = `%%PAGE_1%%
 Customer Name : TEST CUSTOMER THREE
 Account Number : 900123                                                                                                      Page 2 of 2
@@ -193,6 +193,26 @@ async function check(name, fn) {
     near(f(b, 'OnPkSumKWh'), L.onSum.q, 'OnPkSumKWh');
     assert.notStrictEqual(Number(b.OnPeakKWh), 500.5, 'On kWh is a partial quantity');
     near(f(b, 'OnPeakKWh'), L.onSum.q + L.onWin.q, 'On kWh total');
+  });
+
+  await check('printed charge wins: a misread rate (qty x rate differs from the printed charge) never replaces the charge', async () => {
+    // One On and one Off line, no Sum / Win word. The Off rate is misread (0.04282 for 0.04182); the printed charge
+    // is right. A line of the bill (ECA) lost its amount, so the printed total is above the charges read: the
+    // older gap check must not "correct" the Off charge to qty x rate.
+    const b = await run(
+      touBill({
+        drop: ['onWin', 'offWin'],
+        used: L.onSum.q + L.offSum.q,
+        lines: {
+          onSum: 'Energy Chg On Pk ' + kwh(L.onSum.q) + ' kWh at $' + L.onSum.r + ' per kWh ............  ' + money(L.onSum.c),
+          offSum: 'Energy Chg Off Pk ' + kwh(L.offSum.q) + ' kWh at $0.04282 per kWh ............  ' + money(L.offSum.c),
+        },
+        extra: 'ECA Chg 09-07-2026-10-06-2026 for ' + kwh(L.onSum.q + L.offSum.q) + ' kWh at $0.01971 per kWh .....',
+        subAdd: 41.72,
+      }).text,
+    );
+    near(f(b, 'EnergyOffPeakCharge'), L.offSum.c, 'Off charge keeps the printed value');
+    assert.ok(!b._auto_corrected_EnergyOffPeakCharge, 'a correction record was written for the printed charge');
   });
 
   await check('lines that do not add up to kWh used: held with ONE plain warning', async () => {
@@ -272,7 +292,7 @@ async function check(name, fn) {
       },
     };
     const days = { summer: 24, winter: 6, total: 30 };
-    const r = ctx.__S(bill, 'kwh', days, 'Evergy');
+    const r = ctx.__S(bill, 'kwh', days, ctx.__D);
     assert.ok(r, 'no split');
     assert.strictEqual(r.how, 'label');
     assert.ok(r.summer > r.winter, 'summer rate ' + r.summer + ' winter ' + r.winter);
