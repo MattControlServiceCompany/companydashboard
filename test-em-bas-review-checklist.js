@@ -11,6 +11,7 @@ const vm = require('vm');
 
 const SRC_PATH = path.join(__dirname, 'app', 'equipment-matrix.js');
 
+const store = {};
 function loadSandbox() {
   const src = fs.readFileSync(SRC_PATH, 'utf8');
   const sandbox = {
@@ -29,6 +30,14 @@ function loadSandbox() {
     },
     localStorage: { getItem: () => null, setItem: function () {} },
     navigator: {},
+    // In-memory stand-in for the IndexedDB store; values are JSON round-tripped so a read is a true reload.
+    sget: function (k, d) {
+      return store[k] === undefined ? d : JSON.parse(store[k]);
+    },
+    sset: function (k, v) {
+      store[k] = JSON.stringify(v);
+      return Promise.resolve();
+    },
     window: {},
     _escHtml: function (s) {
       return String(s == null ? '' : s)
@@ -39,6 +48,7 @@ function loadSandbox() {
     },
   };
   sandbox.window = sandbox;
+  sandbox.DB = { isReady: () => true };
   vm.createContext(sandbox);
   vm.runInContext(src, sandbox, { filename: SRC_PATH });
   return sandbox;
@@ -83,22 +93,20 @@ const rows = [
     equipName: 'Zone | VAV-1-2',
     pointsRaw: {
       'Air Flow': '800',
-      'Maximum Cooling Airflow': '1000',
-      'Minimum Occupied Airflow': '600',
-      'Maximum Heating Airflow': '1200',
+      'Air Flow Set Point': '800',
+      'Air Source Minimum': '0.0',
+      Schedule: 'On',
     },
   }),
   row({ id: 'B1', building: 'Fake Library B', bacnetLocation: '/Fake/Library B', equipName: 'Zone | VAV-9-1' }),
   row({
     equipName: 'AHU-1',
     category: 'ahu',
-    existingScheduleText: 'Occupied from 12:00 AM to 11:59 PM',
     pointsRaw: { 'Supply Fan Status': 'On' },
   }),
   row({
     equipName: 'AHU-2',
     category: 'ahu',
-    existingScheduleText: 'Occupied from 7:00 AM to 5:00 PM',
     pointsRaw: { 'Supply Fan Status': 'On' },
   }),
   row({ equipName: '', pointsRaw: {} }),
@@ -116,14 +124,9 @@ assertTrue(/^Sample of /.test(rev(3)), 'AHU gets a sample');
 assertEqual(rev(4).indexOf('Sample of'), -1, 'second AHU is not a sample');
 assertEqual(rev(8), '', 'sub-component row is never a sample and has no reason');
 
-// 2. Schedule occupied 24 hours.
-assertTrue(rev(3).indexOf('Occupied 24 h') !== -1, 'full day schedule flagged');
-assertEqual(rev(4), '', 'normal schedule not flagged');
-
-// 3. Airflow rules (row 1: min 600 of max 1000 = 60%, heat 1200 > cool 1000).
-assertTrue(rev(1).indexOf('Min airflow > 50% of max') !== -1, 'min airflow above half of max');
-assertTrue(rev(1).indexOf('Heat airflow > cool airflow') !== -1, 'heat airflow above cool airflow');
-assertEqual(rev(1), 'Sample of ' + sb.emFormatEquipTypeLabel(rows[1]) + '; Min airflow > 50% of max; Heat airflow > cool airflow', 'reasons joined with "; " in rule order');
+// 2. Rules removed because no project has their inputs (no schedule times, no max/min airflow setpoints).
+assertEqual(rev(1), 'Sample of ' + sb.emFormatEquipTypeLabel(rows[1]), 'only the sample reason on a row with airflow and schedule points');
+assertEqual(rev(4), '', 'plain AHU row has no reason');
 
 // 4. No control program.
 assertTrue(rev(5).indexOf('No control program') !== -1, 'blank control program flagged');
@@ -152,7 +155,7 @@ assertEqual(sb.emFormatCell('Heat pump', { key: 'heatingType' }, hp), 'Heat pump
 assertEqual(sb.emRowCalc(rows[1]).pointCount, sb.emRowPointCount(rows[1]), 'point count');
 assertEqual(sb.emRowPointNames(rows[1]).length, 4, 'point names');
 const cell = sb.emFormatCell(4, { key: 'pointCount' }, rows[1]);
-assertTrue(cell.indexOf('Air Flow') !== -1 && cell.indexOf('Maximum Cooling Airflow') !== -1, 'Points hover lists names');
+assertTrue(cell.indexOf('Air Flow') !== -1 && cell.indexOf('Air Source Minimum') !== -1, 'Points hover lists names');
 assertTrue(sb.emBuildAllPointsTableHtml(rows[1]).indexOf('All Building Automation System Points (4 captured)') !== -1, 'drawer uses the same list');
 
 // 9. Columns exist and Screenshot saves as an edit like Notes.
@@ -173,9 +176,9 @@ const nonBlank = sb.emFilterByCols(rows, defs, { review: '(non-blank)' }, {});
 assertEqual(nonBlank.length, rows.filter((r, i) => rev(i) !== '').length, '(non-blank) keeps only rows with a reason');
 const blank = sb.emFilterByCols(rows, defs, { review: '(blank)' }, {});
 assertEqual(blank.length + nonBlank.length, rows.length, '(blank) is the complement');
-assertEqual(sb.emFilterByCols(rows, defs, { review: 'Occupied 24 h' }, {}).length, 1, 'one reason');
+assertEqual(sb.emFilterByCols(rows, defs, { review: 'No control program' }, {}).length, 1, 'one reason');
 const opts = sb.emColFilterOptions(revDef, rows, {}).map((o) => o.value);
-assertTrue(opts.indexOf('(non-blank)') !== -1 && opts.indexOf('Occupied 24 h') !== -1, 'review options');
+assertTrue(opts.indexOf('(non-blank)') !== -1 && opts.indexOf('No control program') !== -1, 'review options');
 assertEqual(sb.emColFilterOptions(shotDef, rows, {}).map((o) => o.value), ['Done', 'Not done'], 'screenshot options');
 const edits = { [rows[2].id + '::screenshot']: 'Y' };
 assertEqual(sb.emFilterByCols(rows, defs, { screenshot: 'Done' }, edits).length, 1, 'Done');
@@ -189,8 +192,44 @@ const ci = defs.findIndex((d) => d.key === 'review');
 assertEqual(sb.emGetCellVal(rows[1], ci, {}), sb.emGetCellValByDef(rows[1], revDef, {}), 'export cell equals table cell');
 void htDef;
 
-console.log('em bas review checklist: pass ' + pass + ', fail ' + fail);
-if (fail) {
-  failures.forEach((f) => console.log('FAIL ' + f));
-  process.exit(1);
+// 12. Screenshot tick survives a reload: saved in data.edits, rebuilt from the store, read back.
+const PID = 'fake-proj-1';
+sb._emActivePid = PID;
+store['en_eqmatrix_' + PID] = JSON.stringify({ rows: rows, importedAt: null, buildings: [] });
+const shotRowId = rows[2].id;
+const shotKey = shotRowId + '::screenshot';
+const reloaded0 = sb.emLoadMatrix(PID);
+assertEqual(sb.emGetCellValByDef(reloaded0.rows.filter((r) => r.id === shotRowId)[0], shotDef, reloaded0.edits || {}), '', 'before tick: blank');
+let tickDone = false;
+sb.emSetScreenshot(shotRowId, true).then(() => {
+  tickDone = true;
+  const saved = JSON.parse(store['en_eqmatrix_' + PID]);
+  assertEqual(saved.edits[shotKey], 'Y', 'tick stored in data.edits');
+  const back = sb.emLoadMatrix(PID);
+  const backRow = back.rows.filter((r) => r.id === shotRowId)[0];
+  assertEqual(sb.emGetCellValByDef(backRow, shotDef, back.edits), 'Y', 'tick read back after reload');
+  assertEqual(sb.emFilterByCols(back.rows, defs, { screenshot: 'Done' }, back.edits).length, 1, 'Done filter finds the ticked row after reload');
+  return sb.emSetScreenshot(shotRowId, false).then(() => {
+    const cleared = sb.emLoadMatrix(PID);
+    assertEqual(sb.emGetCellValByDef(backRow, shotDef, cleared.edits), '', 'untick persists');
+    finish();
+  });
+}).catch((e) => {
+  fail++;
+  failures.push('screenshot reload test threw: ' + e);
+  finish();
+});
+
+function finish() {
+  console.log('em bas review checklist: pass ' + pass + ', fail ' + fail);
+  if (fail) {
+    failures.forEach((f) => console.log('FAIL ' + f));
+    process.exit(1);
+  }
 }
+process.on('exit', () => {
+  if (!tickDone) {
+    console.log('FAIL screenshot reload test did not complete');
+    process.exitCode = 1;
+  }
+});

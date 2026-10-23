@@ -6810,11 +6810,6 @@ var EM_HEATING_TYPE_LABELS = {
 };
 var EM_FILTER_NONBLANK = '(non-blank)';
 var EM_FILTER_BLANK = '(blank)';
-var EM_REVIEW_AIRFLOW_RES = {
-  maxCool: /^\s*max(imum)?\s+cool(ing)?\s+air\s*flow\b/i,
-  maxHeat: /^\s*max(imum)?\s+heat(ing)?\s+air\s*flow\b/i,
-  minOcc: /^\s*min(imum)?\s+occ(upied)?\s+air\s*flow\b/i,
-};
 var _emCalcCache = new WeakMap(); // row -> computed column values, reset on every render and save
 var _emCalcCtx = null; // { rows, hasGas } for the table being drawn
 var _emSampleCache = new WeakMap(); // rows array -> { n, map: row -> type label }
@@ -6841,41 +6836,6 @@ function emHasGasLookup(projId, bldgs) {
 function emRowHeatingType(row, hasGasLookup) {
   var pts = emGetNormalizedPoints(row) || {};
   return _emDeriveHeatingType(row, pts, hasGasLookup ? hasGasLookup(row.building) : undefined);
-}
-
-function _emClockMinutes(t) {
-  var m = /(\d+):(\d+)\s*([AP]M)/i.exec(t);
-  if (!m) return null;
-  return (parseInt(m[1], 10) % 12 + (m[3].toUpperCase() === 'PM' ? 12 : 0)) * 60 + parseInt(m[2], 10);
-}
-
-// Total occupied minutes in an Effective Schedule text ("Occupied from 7:00 AM to 5:00 PM", one per line).
-function _emOccupiedMinutes(txt) {
-  var re = /^Occupied from (\S+\s*[AP]M) to (\S+\s*[AP]M)/gim;
-  var m;
-  var total = 0;
-  while ((m = re.exec(String(txt || '')))) {
-    var a = _emClockMinutes(m[1]);
-    var b = _emClockMinutes(m[2]);
-    if (a === null || b === null) continue;
-    total += b > a ? b - a : b + 1440 - a;
-  }
-  return total;
-}
-
-function _emAirflowValue(row, re) {
-  var raw = row && row.pointsRaw;
-  if (!raw || typeof raw !== 'object') return null;
-  var adj = null;
-  for (var k in raw) {
-    if (!re.test(k)) continue;
-    var n = parseFloat(raw[k]);
-    if (isNaN(n)) continue;
-    if (/\(adj/i.test(k)) {
-      if (adj === null) adj = n;
-    } else return n;
-  }
-  return adj;
 }
 
 // A row with no control program name or no points: not found in WebCTRL, so there is nothing to look at.
@@ -6914,12 +6874,6 @@ function emReviewReasons(row, rowsInProject) {
   var why = [];
   var label = _emSampleMap(rowsInProject || [row]).get(row);
   if (label) why.push('Sample of ' + label);
-  if (_emOccupiedMinutes(row.existingScheduleText) >= 1439) why.push('Occupied 24 h');
-  var mc = _emAirflowValue(row, EM_REVIEW_AIRFLOW_RES.maxCool);
-  var mh = _emAirflowValue(row, EM_REVIEW_AIRFLOW_RES.maxHeat);
-  var mo = _emAirflowValue(row, EM_REVIEW_AIRFLOW_RES.minOcc);
-  if (mc !== null && mo !== null && mc > 0 && mo > 0.5 * mc) why.push('Min airflow > 50% of max');
-  if (mc !== null && mh !== null && mh > mc) why.push('Heat airflow > cool airflow');
   if (_emHasNoControlProgram(row)) why.push('No control program');
   emGetSensorDeficiencies(row).forEach(function (d) {
     var nm = EM_SENSOR_DEFICIENCY_CATEGORY_LABELS[d.col] || d.col;
