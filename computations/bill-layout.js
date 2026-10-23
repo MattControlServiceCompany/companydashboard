@@ -1439,39 +1439,53 @@
   // letters (a label cut short is still that label); a label that prints on more than one line (WATER, one
   // line per meter) or on none gives nothing. The amounts come from the same candidate maker as the box
   // re-read, so the page sum still decides.
+  // Every OCR pass text of the page is a source (read.pageTexts); the winning pass text alone can lose the
+  // printed line to noise. Per text, a label that prints on more than one line gives nothing; the union
+  // of the candidates goes to the page sum, which still decides.
   function textLineCandidates(read, tpl, label) {
-    if (!read.pageText || !label) return [];
+    var texts = (read.pageTexts && read.pageTexts.length ? read.pageTexts : [read.pageText]).filter(Boolean);
+    if (!texts.length || !label) return [];
     var want = normLabel(label);
     if (!want) return [];
-    var hits = [];
-    String(read.pageText)
-      .split(/\r?\n/)
-      .forEach(function (line) {
-        if (/^\s*%%/.test(line)) return;
-        var toks = line.split(/\s+/).filter(Boolean);
-        for (var i = 0; i < toks.length; i++) {
-          for (var n = 1; n <= 3 && i + n <= toks.length; n++) {
-            var part = toks.slice(i, i + n);
-            if (
-              part.some(function (t) {
-                return /\d/.test(t);
-              })
-            )
-              break;
-            var found = normLabel(part.join(' '));
-            if (!found) continue;
-            var ok = labelDistance(part.join(' '), label) >= 0;
-            if (!ok && found.length >= 6 && found.length < want.length)
-              ok = editDistance(found, want.slice(0, found.length)) <= allowedEdits(found.length);
-            if (ok) {
-              hits.push(toks.slice(i + n).join(' '));
-              return;
+    var out = [],
+      seen = {};
+    texts.forEach(function (pageText) {
+      var hits = [];
+      String(pageText)
+        .split(/\r?\n/)
+        .forEach(function (line) {
+          if (/^\s*%%/.test(line)) return;
+          var toks = line.split(/\s+/).filter(Boolean);
+          for (var i = 0; i < toks.length; i++) {
+            for (var n = 1; n <= 3 && i + n <= toks.length; n++) {
+              var part = toks.slice(i, i + n);
+              if (
+                part.some(function (t) {
+                  return /\d/.test(t);
+                })
+              )
+                break;
+              var found = normLabel(part.join(' '));
+              if (!found) continue;
+              var ok = labelDistance(part.join(' '), label) >= 0;
+              if (!ok && found.length >= 6 && found.length < want.length)
+                ok = editDistance(found, want.slice(0, found.length)) <= allowedEdits(found.length);
+              if (ok) {
+                hits.push(toks.slice(i + n).join(' '));
+                return;
+              }
             }
           }
-        }
+        });
+      if (hits.length !== 1) return;
+      candidatesFromText(hits[0], { dollar: false }).forEach(function (c) {
+        var k = JSON.stringify(c);
+        if (seen[k]) return;
+        seen[k] = true;
+        out.push(c);
       });
-    if (hits.length !== 1) return [];
-    return candidatesFromText(hits[0], { dollar: false });
+    });
+    return out;
   }
   function rereadBoxes(read, tpl, ocrBox) {
     var chain = Promise.resolve(read);
@@ -1788,6 +1802,11 @@
     });
     if (best) {
       best.read.pageText = best.pass.text || '';
+      best.read.pageTexts = (passes || [])
+        .map(function (p) {
+          return p && p.text;
+        })
+        .filter(Boolean);
       return { ok: true, read: best.read, pass: best.pass, template: best.tpl };
     }
     if (!reasons.length) return { ok: false, reason: 'no OCR pass with word boxes' };
