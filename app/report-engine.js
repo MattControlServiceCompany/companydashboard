@@ -12872,7 +12872,7 @@ function showFormula(html, evt) {
   const pop = document.createElement('div');
   pop.id = '_formulaPop';
   pop.style.cssText =
-    'position:fixed;z-index:9999;background:#0d1525;border:2px solid var(--em);border-radius:10px;padding:14px 18px;max-width:420px;min-width:240px;font-size:12px;color:#e0e8ff;box-shadow:0 8px 32px rgba(0,0,0,.6);line-height:1.6;';
+    'position:fixed;z-index:9999;background:#0d1525;border:2px solid var(--em);border-radius:10px;padding:14px 18px;max-width:420px;min-width:240px;font-size:12px;color:#ffffff;box-shadow:0 8px 32px rgba(0,0,0,.6);line-height:1.6;';
   pop.innerHTML =
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--em)">Formula Breakdown</span><button onclick="closeFormula()" style="background:none;border:none;color:var(--text3);font-size:16px;cursor:pointer;padding:0 4px">✕</button></div>' +
     html;
@@ -12896,7 +12896,7 @@ function closeFormula() {
   }
 }
 function _fml(label, formula, result, sources) {
-  let h = '<div style="font-weight:600;color:#c8d8f0;margin-bottom:4px">' + label + '</div>';
+  let h = '<div style="font-weight:600;color:#ffffff;margin-bottom:4px">' + label + '</div>';
   h +=
     '<div style="font-family:var(--mono);color:var(--violet);font-size:13px;margin-bottom:4px">' + formula + '</div>';
   if (result != null)

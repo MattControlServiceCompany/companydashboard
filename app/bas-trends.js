@@ -2136,7 +2136,7 @@ function btOpenImportModal() {
     '</div>',
     '<div class="modal-ftr">',
     '<button onclick="btCloseImportModal()" style="background:var(--s3);border:1px solid var(--border);color:var(--text2);padding:8px 18px;border-radius:6px;cursor:pointer;font-size:13px;">Cancel</button>',
-    '<button id="bt-import-btn" onclick="btRunImport()" disabled style="background:var(--accent);color:#fff;border:none;padding:8px 18px;border-radius:6px;cursor:pointer;font-size:13px;opacity:0.5;">Import</button>',
+    '<button id="bt-import-btn" onclick="btRunImport()" disabled style="background:var(--accent);color:#fff;border:none;padding:8px 18px;border-radius:6px;cursor:pointer;font-size:13px;">Import</button>',
     '</div>',
 
     '</div></div>',
@@ -5603,7 +5603,7 @@ function btBuildBillListHTML(projId, bldgId, bills) {
 
       var bg = isSel ? 'background:var(--accent);' : '';
       var textColor = isSel ? 'color:#fff;' : 'color:var(--text);';
-      var subColor = isSel ? 'color:rgba(255,255,255,0.75);' : 'color:var(--text3);';
+      var subColor = isSel ? 'color:#ffffff;' : 'color:var(--text3);';
       var hoverAttr = isSel
         ? ''
         : ' onmouseover="this.style.background=\'var(--s2)\'" onmouseout="this.style.background=\'transparent\'"';

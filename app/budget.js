@@ -396,7 +396,7 @@ function _renderVarianceSection(projId, line, bd, bldgs) {
           : `<td class="bgt-cell-sm" style="text-align:right;font-family:var(--mono);color:${varColor(r.ytdVariance, r.ytdBudget > 0 ? (r.ytdVariance / r.ytdBudget) * 100 : 0)}">
           ${r.ytdVariance > 0 ? '+' : ''}${_fmtUSD(r.ytdVariance, '$0')}
          </td>`;
-      return `<tr style="${!r.isPast ? 'opacity:.45' : ''}">
+      return `<tr>
       <td style="font-weight:600;white-space:nowrap">${mo}</td>
       <td style="text-align:right;font-family:var(--mono)">${_fmtUSD(r.budget, '$0')}</td>
       ${actCell}
@@ -563,12 +563,12 @@ function _renderBudgetCharts(projId, bd) {
         },
         scales: {
           x: {
-            ticks: { color: 'var(--text3)', font: { size: 10 } },
+            ticks: { color: SharedCharts.textColor(), font: { size: 10 } },
             grid: { color: 'rgba(255,255,255,0.04)' },
           },
           y: {
             ticks: {
-              color: 'var(--text3)',
+              color: SharedCharts.textColor(),
               font: { size: 10 },
               callback: (v) => '$' + (v >= 1000 ? Math.round(v / 1000) + 'k' : v),
             },

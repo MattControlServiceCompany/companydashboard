@@ -1484,7 +1484,7 @@ function _a36ImpactChip(row) {
       tooltipSuffix +
       '" ' +
       'style="display:inline-block;font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;' +
-      'background:#1e3a5f;color:#93c5fd;white-space:nowrap">MED-HIGH</span>'
+      'background:#1e3a5f;color:#ffffff;white-space:nowrap">MED-HIGH</span>'
     );
   }
   if (tier === 'med') {
@@ -3698,7 +3698,7 @@ function initCostEstimateTab(projId) {
           : '<span style="color:var(--text3)">—</span>';
     }
 
-    var rowStyle = !toggleOn ? 'opacity:0.45;' : '';
+    var rowStyle = !toggleOn ? 'font-style:italic;' : '';
     if (row.ioOnly) rowStyle += 'background:var(--s1);';
 
     return [
@@ -6951,7 +6951,7 @@ function _pricingBuildToolbarHTML(projId, tier, opts) {
   // Recommended-only GATING moved to the sortActive/slot() wrapper below (see plan.md step 2).
   var _curSortMode = _pricingGetRowSortMode(projId);
   var rowSortHTML =
-    '<span style="color:var(--border2)">|</span>' +
+    '<span style="color:var(--text)">|</span>' +
     '<label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px" ' +
     'title="Choose how buildings and equipment are ordered in this table">' +
     'Sort:' +
@@ -7001,7 +7001,7 @@ function _pricingBuildToolbarHTML(projId, tier, opts) {
     // identical on every tier) unchanged, per ui-standards.md's Stable control placement rule.
     slot(bldgFilterHTML, rowFilterActive),
     slot(rowSortHTML, sortActive),
-    '<span style="color:var(--border2)">|</span>',
+    '<span style="color:var(--text)">|</span>',
     '<span style="flex:1">' + middleHTML + '</span>',
     '</div>',
   ].join('');
@@ -9308,7 +9308,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     cells.push(_noteInputHTML);
 
     // Build TR
-    var rowStyle = !toggleOn ? 'opacity:0.45;' : '';
+    var rowStyle = !toggleOn ? 'font-style:italic;' : '';
     if (row.ioOnly) rowStyle += 'background:var(--s1);';
 
     var tds = '';
@@ -9692,7 +9692,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
     cells.push(_noteInputHTML);
 
     // Build TR — same column layout/CSS as renderRow
-    var rowStyle = !combinedOn ? 'opacity:0.45;' : '';
+    var rowStyle = !combinedOn ? 'font-style:italic;' : '';
     var tds = '';
     cells.forEach(function (cellContent, ci) {
       if (hiddenCols.indexOf(ci) !== -1) return;
@@ -9892,7 +9892,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
   var footerParts = [
     '<div class="ch-panel-footer" style="display:flex;flex-wrap:wrap;gap:10px 20px;align-items:center;padding:10px 14px;background:var(--s1);border-top:2px solid var(--border2);flex-shrink:0">',
     _tierLabelHTML,
-    '<span style="color:var(--border2)">|</span>',
+    '<span style="color:var(--text)">|</span>',
   ];
 
   if (isBothMode && recTotals) {
@@ -9906,7 +9906,7 @@ initCostEstimateTab = function initCostEstimateTab(projId) {
       '<span style="font-size:12px;font-weight:700;font-variant-numeric:tabular-nums">' +
         (totals.grand !== null ? _pricingFmt(totals.phase2) : '—') +
         '</span>',
-      '<span style="color:var(--border2)">|</span>',
+      '<span style="color:var(--text)">|</span>',
       '<span style="font-size:11px;font-weight:700;color:var(--text2)">Recommended — Hardware: </span>',
       '<span style="font-size:12px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--accent)">' +
         (recTotals.noCatalog ? _hwPending : recTotals.grand !== null ? _pricingFmt(recTotals.phase1) : '—') +
@@ -10320,7 +10320,7 @@ function _pricingEstimateTypeBarHTML(projId, type) {
           ? 'Download this estimate as an Excel file, one sheet set per tier'
           : 'Switch to the Workbook method to export') +
         '" style="cursor:' +
-        (wbSet ? 'pointer' : 'not-allowed;opacity:.5') +
+        (wbSet ? 'pointer' : 'not-allowed') +
         '">Export to Excel</button>' +
         (wbSet && _pricingBldgFilter[projId]
           ? '<span id="estExportNote-' +
@@ -10596,7 +10596,7 @@ function _pricingComputeSummaryData(projId, estimate) {
     footerEl.innerHTML = [
       '<div class="ch-panel-footer" style="display:flex;flex-wrap:wrap;gap:10px 20px;align-items:center;padding:10px 14px;background:var(--s1);border-top:2px solid var(--border2);flex-shrink:0">',
       _pricingTierLabelHTML(tier), // 45ceb14f: was missing entirely from this path
-      '<span style="color:var(--border2)">|</span>', // 45ceb14f: separator to match full-render field order
+      '<span style="color:var(--text)">|</span>', // 45ceb14f: separator to match full-render field order
       '<span style="font-size:12px;font-weight:700;color:var(--text2)">Phase 1 Hardware:</span>',
       '<span style="font-size:13px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums">' +
         (totals.noCatalog

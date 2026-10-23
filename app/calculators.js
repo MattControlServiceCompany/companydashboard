@@ -70,7 +70,7 @@ function initHvacLoadTab(projId) {
     .map((b) => {
       const active = b.id === selBid;
       return `<button class="ptpill${active ? ' sel' : ''}" onclick="_hvlSelectBldg(${projId},'${b.id}')" style="${active ? 'background:var(--accent-dim);border-color:var(--accent);color:var(--accent)' : ''}">
-            ${_escHtml(b.name || 'Building')} ${b.sqft ? '<span style=\"font-size:10px;opacity:.7\">(' + Number(b.sqft).toLocaleString() + ' sf)</span>' : ''}
+            ${_escHtml(b.name || 'Building')} ${b.sqft ? '<span style=\"font-size:10px\">(' + Number(b.sqft).toLocaleString() + ' sf)</span>' : ''}
           </button>`;
     })
     .join('');
@@ -2809,11 +2809,11 @@ function _hvlExportBodyHtml(data) {
   return h;
 }
 const _HVL_EXPORT_CSS = `
-  body{font-family:Arial, sans-serif; color:#111; margin:0; padding:24px;}
+  body{font-family:Arial, sans-serif; color:#000000; margin:0; padding:24px;}
   h1{font-size:20px;margin:0 0 12px 0;}
   h2{font-size:14px;margin:20px 0 8px 0;}
   table.hvl-x-meta td{padding:2px 8px 2px 0;font-size:12px;}
-  table.hvl-x-meta td:first-child{font-weight:700;color:#444;}
+  table.hvl-x-meta td:first-child{font-weight:700;color:#000000;}
   table.hvl-x-tbl{border-collapse:collapse;width:100%;font-size:11px;margin-bottom:8px;}
   table.hvl-x-tbl th, table.hvl-x-tbl td{border:1px solid #999;padding:4px 6px;text-align:right;}
   table.hvl-x-tbl th:first-child, table.hvl-x-tbl td:first-child{text-align:left;}

@@ -10626,7 +10626,7 @@ function renderQueueResults() {
         '">VERIFY</span>'
       );
     } else if (row.bill._manualReview) {
-      return '<span style="color:#c88;font-weight:600;font-size:10px" title="Could not parse billing period — assign manually">REVIEW</span>';
+      return '<span style="color:var(--red);font-weight:600;font-size:10px" title="Could not parse billing period — assign manually">REVIEW</span>';
     } else if (row._saved) {
       return '<span style="color:var(--text3);font-size:10px">SAVED</span>';
     } else if (row._held) {
@@ -10894,7 +10894,7 @@ function renderQueueResults() {
         const b = row.bill;
         if (b._manualReview) {
           periodHtml =
-            '<span style="color:#c88;font-style:italic">' +
+            '<span style="color:var(--red);font-style:italic">' +
             _escHtml(b._manualReviewLabel || 'Manual Review') +
             '</span>';
         } else if (b.DeliveryDate) {
@@ -12748,11 +12748,11 @@ function _renderDupModal(billIdx) {
   document.getElementById('dupModalNav').innerHTML =
     (prevIdx !== null
       ? `<a href="#" onclick="event.preventDefault();openDupModal(${prevIdx})" style="color:var(--accent)">&larr; Prev</a>`
-      : '<span style="opacity:.3">&larr; Prev</span>') +
+      : '<span style="font-style:italic">&larr; Prev</span>') +
     ` &nbsp;|&nbsp; Duplicate ${pos + 1} of ${dupIndices.length} &nbsp;|&nbsp; ` +
     (nextIdx !== null
       ? `<a href="#" onclick="event.preventDefault();openDupModal(${nextIdx})" style="color:var(--accent)">Next &rarr;</a>`
-      : '<span style="opacity:.3">Next &rarr;</span>');
+      : '<span style="font-style:italic">Next &rarr;</span>');
 
   // Info
   const matchParts = [];
@@ -12793,12 +12793,12 @@ function _renderDupModal(billIdx) {
   // Differing fields first
   for (const d of diffs) {
     const useNew = dup.fieldSelections[d.key] !== false;
-    const selExist = !useNew ? 'border-left:3px solid #22c55e;opacity:1' : 'opacity:.5';
-    const selNew = useNew ? 'border-left:3px solid #22c55e;opacity:1' : 'opacity:.5';
+    const selExist = !useNew ? 'border-left:3px solid #22c55e;opacity:1' : 'font-style:italic';
+    const selNew = useNew ? 'border-left:3px solid #22c55e;opacity:1' : 'font-style:italic';
     tableHtml += `<tr style="background:rgba(245,158,11,.06)">
         <td style="padding:6px 12px;font-weight:600;color:var(--amber)">${LABELS[d.key] || d.key}</td>
-        <td style="padding:6px 12px;cursor:pointer;${selExist}" onclick="_toggleDupField(${billIdx},'${d.key}',false)">${d.existVal || '<em style="opacity:.4">(empty)</em>'}</td>
-        <td style="padding:6px 12px;cursor:pointer;${selNew}" onclick="_toggleDupField(${billIdx},'${d.key}',true)">${d.newVal || '<em style="opacity:.4">(empty)</em>'}</td>
+        <td style="padding:6px 12px;cursor:pointer;${selExist}" onclick="_toggleDupField(${billIdx},'${d.key}',false)">${d.existVal || '(empty)'}</td>
+        <td style="padding:6px 12px;cursor:pointer;${selNew}" onclick="_toggleDupField(${billIdx},'${d.key}',true)">${d.newVal || '(empty)'}</td>
       </tr>`;
   }
 

@@ -1033,7 +1033,7 @@ function renderUpcomingTasks(highlightDate) {
     const isHl = highlightDate && t.due === highlightDate;
     return `<div class="task-item${isHl ? ' task-hl' : ''}${isDone ? ' task-done-row' : ''}" id="ti-${t.id}" style="flex-direction:column;padding:0;overflow:hidden;">
             <div style="display:flex;align-items:flex-start;gap:9px;padding:9px 11px;cursor:pointer" onclick="toggleTaskExpand(${t.id})">
-              <div class="tcb${isDone ? ' done' : ''}" onclick="event.stopPropagation();toggleTask(${t.id})" style="margin-top:2px;flex-shrink:0">${isDone ? '<span style="color:#05080f;font-size:9px">✓</span>' : ''}</div>
+              <div class="tcb${isDone ? ' done' : ''}" onclick="event.stopPropagation();toggleTask(${t.id})" style="margin-top:2px;flex-shrink:0">${isDone ? '<span style="color: #000000;font-size:9px">✓</span>' : ''}</div>
               <div class="t-body">
                 <div class="t-text${isDone ? ' struck' : ''}">${t.text}${t.pri === 'high' && !isDone ? ' <span style="color:var(--danger);font-size:10px">● HIGH</span>' : ''}</div>
                 ${proj ? `<div class="t-proj">${proj.name}</div>` : `<div class="t-proj" style="color:var(--text3)">General</div>`}
@@ -1305,7 +1305,7 @@ function renderDetail(p) {
     ? pt
         .map(
           (t) => `<div class="task-item">
-            <div class="tcb${t.done ? ' done' : ''}" onclick="toggleTask(${t.id});renderDetail(projects.find(x=>x.id===${p.id}))">${t.done ? '<span style="color:#05080f;font-size:9px">✓</span>' : ''}</div>
+            <div class="tcb${t.done ? ' done' : ''}" onclick="toggleTask(${t.id});renderDetail(projects.find(x=>x.id===${p.id}))">${t.done ? '<span style="color: #000000;font-size:9px">✓</span>' : ''}</div>
             <div class="t-body"><div class="t-text${t.done ? ' struck' : ''}">${t.text}${t.pri === 'high' ? ' <span style="color:var(--danger);font-size:10px">● HIGH</span>' : ''}</div></div>
             <div class="t-due">${t.due}</div>
             <button class="btn btn-ghost btn-sm" style="padding:2px 7px;font-size:10px;flex-shrink:0" onclick="openTaskEdit(${t.id},${p.id})" title="Edit task">✏️</button>
@@ -2574,11 +2574,6 @@ function renderSavingsWaterfall(projId, baseline, actual, savings, isNormalized,
               return ctx[0].label;
             },
           },
-          backgroundColor: 'rgba(15,15,20,0.92)',
-          titleColor: '#e2e8f0',
-          bodyColor: '#94a3b8',
-          borderColor: 'rgba(255,255,255,0.1)',
-          borderWidth: 1,
           padding: 10,
           cornerRadius: 6,
         },
@@ -2636,7 +2631,7 @@ function renderSavingsWaterfall(projId, baseline, actual, savings, isNormalized,
             }
             // Color: green for ECM savings bars, same logic as before for standard bars
             if (i === 0 || i === lastIdx) {
-              c.fillStyle = '#e2e8f0';
+              c.fillStyle = SharedCharts.textColor();
             } else if (useEcmBars) {
               c.fillStyle = '#c084fc';
             } else {
@@ -3701,7 +3696,7 @@ function renderProjSavedBills(projId) {
     const sortSt = _sbSortState[projId] || { col: 'period', dir: 'desc' };
     const sortedBills = _sbSortBills(bills, sortSt.col, sortSt.dir);
     const arrow = (col) => {
-      if (sortSt.col !== col) return '<span style="opacity:.3;font-size:9px">⇅</span>';
+      if (sortSt.col !== col) return '<span style="font-size:9px">⇅</span>';
       return sortSt.dir === 'asc' ? '<span style="font-size:9px">▲</span>' : '<span style="font-size:9px">▼</span>';
     };
     const thStyle = 'cursor:pointer;user-select:none;white-space:nowrap';

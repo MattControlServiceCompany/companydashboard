@@ -178,7 +178,7 @@ function _bpaRender() {
                 const has = bill && bill.pdfKey;
                 return (
                   '<label style="display:inline-block;margin:2px 10px 2px 0;font-size:12px;' +
-                  (dis ? 'opacity:.5' : '') +
+                  (dis ? 'font-style:italic' : '') +
                   '">' +
                   '<input type="checkbox" ' +
                   (row.sel[mt.mid] && !dis ? 'checked ' : '') +

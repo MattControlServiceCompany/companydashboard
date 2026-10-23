@@ -1,0 +1,31 @@
+/* Shared by every page (linked in each page head). Theme-level rules that must hold in every engine. */
+
+/* Native controls (select popups, scrollbars) follow the effective theme. data-theme is always 'dark' or 'light'. */
+:root {
+  color-scheme: dark;
+  --on-accent: #ffffff;
+  --on-brand: #ffffff;
+  --on-em: #ffffff;
+  --on-em-grad: #ffffff;
+}
+[data-theme='light'] {
+  color-scheme: light;
+}
+
+/* Native selects: explicit fill and text from the tokens (WebKit paints white on white otherwise). */
+select,
+select option,
+select optgroup {
+  background-color: var(--s2);
+  color: var(--text);
+}
+
+/* Disabled buttons: one shared cue. Dashed border, not-allowed cursor, no fill, text is the theme pole (#fff dark, #000 light).
+   Color is set explicitly because each browser engine paints its own grey for disabled buttons. */
+button:disabled,
+button.disabled {
+  background: transparent !important;
+  border: 1px dashed var(--text) !important;
+  color: var(--text) !important;
+  cursor: not-allowed !important;
+}

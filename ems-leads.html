@@ -8,6 +8,7 @@
       content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net; img-src 'self' data: blob:; connect-src 'self' https://cdn.jsdelivr.net https://rrdugvwxtddjywqykphf.supabase.co; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self';"
     />
     <title>CompanyHub — EMS Leads</title>
+    <link rel="stylesheet" href="lib/theme.css?v=160" />
     <link
       rel="icon"
       href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='15' fill='%23238636'/><text x='50' y='72' font-size='60' font-weight='bold' text-anchor='middle' fill='white'>C</text></svg>"
@@ -16,6 +17,7 @@
       href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&family=DM+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
+    <script src="lib/theme.js?v=160"></script>
     <script src="app/ch-auth.js"></script>
     <script src="sidebar-mode.js?v=160"></script>
     <style>
@@ -41,14 +43,55 @@
         --violet-dim: rgba(167, 139, 250, 0.1);
         --lime: #84cc16;
         --lime-dim: rgba(132, 204, 22, 0.1);
-        --text: #dde6f5;
-        --text2: #6b7b9e;
-        --text3: #2a3450;
+        --text: #ffffff;
+        --text2: #ffffff;
+        --text3: #ffffff;
         --font: 'DM Sans', sans-serif;
         --head: 'Syne', sans-serif;
         --mono: 'DM Mono', monospace;
         --r: 10px;
       }
+      /* LIGHT / SYSTEM THEME: lib/theme.js sets data-theme to the effective value ('dark' or 'light'). Same tokens as index.html. */
+      [data-theme='light'] {
+        --bg: #f0f2f7;
+        --s1: #e4e8f2;
+        --s2: #ffffff;
+        --s3: #f5f7fc;
+        --s4: #eaedf6;
+        --border: #d3d9e8;
+        --border2: #bcc5da;
+        --text: #000000;
+        --text2: #000000;
+        --text3: #000000;
+        --em: #007a8c;
+        --em-dim: rgba(0, 122, 140, 0.1);
+        --em-glow: rgba(0, 122, 140, 0.2);
+        --em2: #0369a1;
+        --em2-dim: rgba(3, 105, 161, 0.1);
+        --warn: #b45309;
+        --warn-dim: rgba(180, 83, 9, 0.1);
+        --danger: #be123c;
+        --danger-dim: rgba(190, 18, 60, 0.1);
+        --violet: #6d28d9;
+        --violet-dim: rgba(109, 40, 217, 0.1);
+        --lime: #3f6212;
+        --lime-dim: rgba(63, 98, 18, 0.1);
+      }
+      [data-theme='light'] .topbar {
+        background: rgba(240, 242, 247, 0.97);
+      }
+      [data-theme='light'] .modal-bg,
+      [data-theme='light'] .drawer-overlay {
+        background: rgba(0, 0, 0, 0.45);
+      }
+
+      /* Placeholder text follows the text token like every other text (Matt, 2026-10-22: no grey text; de-emphasis by style, never color) */
+      ::placeholder {
+        color: var(--text);
+        opacity: 1;
+        font-style: italic;
+      }
+
       *,
       *::before,
       *::after {
@@ -157,7 +200,7 @@
         justify-content: center;
         font-size: 12px;
         font-weight: 700;
-        color: #05080f;
+        color: var(--on-em-grad);
         font-family: var(--head);
       }
       .tbname {
@@ -286,14 +329,14 @@
         font-size: 10px;
         font-family: var(--mono);
         background: var(--em);
-        color: #05080f;
+        color: var(--on-em);
         border-radius: 9px;
         padding: 1px 6px;
         font-weight: 700;
       }
       .s-badge-warn {
         background: var(--warn);
-        color: #05080f;
+        color: #000000;
       }
 
       .main {
@@ -362,7 +405,7 @@
       }
       .btn-em {
         background: var(--em);
-        color: #05080f;
+        color: var(--on-em);
       }
       .btn-em:hover {
         filter: brightness(1.12);
@@ -1304,7 +1347,6 @@
       }
       .empty-state .ico {
         font-size: 40px;
-        opacity: 0.3;
       }
       .empty-state h3 {
         font-family: var(--head);

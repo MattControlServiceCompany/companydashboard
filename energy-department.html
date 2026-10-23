@@ -1,11 +1,10 @@
 <!doctype html>
 <html lang="en">
+  <script src="lib/theme.js?v=160"></script>
   <script>
     (function () {
       try {
         var s = JSON.parse(localStorage.getItem('ch_settings') || '{}');
-        var t = s.theme || localStorage.getItem('ch_theme');
-        if (t === 'light') document.documentElement.setAttribute('data-theme', 'light');
         var uc = s.uiCustom;
         if (uc && uc.fonts) {
           var r = document.documentElement.style;
@@ -25,6 +24,7 @@
       content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net; img-src 'self' data: blob:; connect-src 'self' data: blob: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://rrdugvwxtddjywqykphf.supabase.co; worker-src 'self' blob:; frame-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self';"
     />
     <title>CompanyHub — Energy Department</title>
+    <link rel="stylesheet" href="lib/theme.css?v=160" />
     <link
       rel="icon"
       href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='15' fill='%23238636'/><text x='50' y='72' font-size='60' font-weight='bold' text-anchor='middle' fill='white'>C</text></svg>"
@@ -78,9 +78,9 @@
         --em2-dim: rgba(56, 189, 248, 0.1);
         --em2-rgb: 56, 189, 248;
         --em-rgb: 0, 212, 170;
-        --text: #f4f7ff;
-        --text2: #b4cceb;
-        --text3: #8ba2c8;
+        --text: #ffffff;
+        --text2: #ffffff;
+        --text3: #ffffff;
         --font: 'Outfit', sans-serif;
         --mono: 'Outfit', sans-serif;
         --r: 10px;
@@ -88,6 +88,13 @@
         --base-sz: 14px;
         --sidebar-font-sz: 14px;
       }
+      /* Placeholder text follows the text token like every other text (Matt, 2026-10-22: no grey text; de-emphasis by style, never color) */
+      ::placeholder {
+        color: var(--text);
+        opacity: 1;
+        font-style: italic;
+      }
+
 
       /* -- RESET -- */
       *,
@@ -388,7 +395,7 @@
         justify-content: center;
         font-size: 13px;
         font-weight: 800;
-        color: #fff;
+        color: var(--on-brand);
       }
       .brand-name {
         font-size: 16px;
@@ -439,7 +446,7 @@
         justify-content: center;
         font-size: 9px;
         font-weight: 700;
-        color: #fff;
+        color: var(--on-brand);
       }
       .u-name {
         font-size: 12px;
@@ -836,7 +843,6 @@
         font-size: 14px;
         cursor: pointer;
         margin-left: 12px;
-        opacity: 0.7;
         padding: 0;
         line-height: 1;
       }
@@ -1141,9 +1147,9 @@
         --amber-dim-opaque: #e6dfd6;
         --border: #d3d9e8;
         --border2: #bcc5da;
-        --text: #1a2340;
-        --text2: #4a5672;
-        --text3: #526080;
+        --text: #000000;
+        --text2: #000000;
+        --text3: #000000;
         --em: #007a8c;
         --em-dim: rgba(0, 122, 140, 0.1);
         --em-glow: rgba(0, 122, 140, 0.2);
@@ -1689,7 +1695,7 @@
       }
       .rn-dismiss-btn {
         background: var(--em);
-        color: #fff;
+        color: var(--on-em);
         border: none;
         border-radius: 6px;
         padding: 7px 18px;
@@ -1698,7 +1704,6 @@
         cursor: pointer;
       }
       .rn-dismiss-btn:hover {
-        opacity: 0.88;
       }
       .rn-whats-new-btn {
         display: flex;
@@ -1804,7 +1809,7 @@
         --rpt-overlay-bg: #1e1e2e;
         --rpt-toolbar-bg: #12121e;
         --rpt-toolbar-border: #2a2a3e;
-        --rpt-toolbar-text: #ccc;
+        --rpt-toolbar-text: #ffffff;
         --rpt-toolbar-hover: #fff;
 
         /* -- Page surface (white print page) -- */
@@ -1844,14 +1849,14 @@
 
         /* -- Dark table variant -- */
         --rpt-dtbl-bg: #0a1628;
-        --rpt-dtbl-text: #c8ddf0;
+        --rpt-dtbl-text: #ffffff;
         --rpt-dtbl-th-bg: #122a45;
-        --rpt-dtbl-th-text: #8ab0d0;
+        --rpt-dtbl-th-text: #ffffff;
         --rpt-dtbl-th-border: #1a3a5c;
         --rpt-dtbl-stripe: #0d1a30;
         --rpt-dtbl-tot-bg: #122a45;
         --rpt-dtbl-tot-bdr: #2980b9;
-        --rpt-dtbl-tot-text: #e8f4ff;
+        --rpt-dtbl-tot-text: #ffffff;
 
         /* -- Baseline table (electric/gas/propane column headers) -- */
         --rpt-bl-blue: #0070c0;
@@ -1872,13 +1877,13 @@
         --rpt-bl-stripe: #f2f2f2;
         --rpt-bl-tot-bg: #eef4f8;
         --rpt-bl-stat-border: #d9d9d9;
-        --rpt-bl-stat-label: #3c4042;
+        --rpt-bl-stat-label: #000000;
 
         /* -- Dividers & surfaces -- */
         --rpt-divider: #ddd;
         --rpt-chart-bg: #f8fafb;
         --rpt-progress-bg: #e8e8e8;
-        --rpt-page-label: #555;
+        --rpt-page-label: #000000;
 
         /* -- Semantic chart palette -- */
         --rpt-chart-green: #27ae60; /* actual savings line/bars */
@@ -3346,7 +3351,7 @@
       }
       .btn-em {
         background: var(--accent, var(--em));
-        color: #05080f;
+        color: var(--on-accent);
       }
       .btn-em:hover {
         filter: brightness(1.1);
@@ -3368,7 +3373,7 @@
       }
       .btn-del {
         background: transparent;
-        color: rgba(240, 80, 80, 0.7);
+        color: var(--red);
         border: 1px solid rgba(240, 80, 80, 0.3);
         padding: 3px 8px;
         font-size: 11px;
@@ -3535,7 +3540,6 @@
         cursor: help;
         margin-left: 5px;
         vertical-align: middle;
-        opacity: 0.7;
         transition: opacity 0.15s;
         text-transform: none;
         letter-spacing: 0;
@@ -4148,7 +4152,7 @@
         border-color: var(--em);
       }
       .cday.cother {
-        opacity: 0.28;
+        font-style: italic;
       }
       .cday-n {
         font-size: 11px;
@@ -4189,7 +4193,7 @@
         background: var(--em-dim);
       }
       .task-item.task-done-row {
-        opacity: 0.6;
+        text-decoration: line-through;
       }
       .tasks-done-hdr {
         font-size: 10px;
@@ -4462,7 +4466,7 @@
         text-overflow: ellipsis;
       }
       .pd-hero-compact .phc-sep {
-        color: var(--border2);
+        color: var(--text);
         margin: 0 2px;
       }
       .pd-hero-compact .phc-val {
@@ -4852,13 +4856,12 @@
         background: var(--s4);
       }
       .pdf-top-btn:disabled {
-        opacity: 0.5;
         cursor: default;
       }
       .pdf-top-btn.primary {
         background: var(--em);
         border-color: var(--em);
-        color: var(--bg);
+        color: #000000;
       }
       .pdf-top-btn.primary:disabled {
         background: transparent;
@@ -4934,7 +4937,6 @@
         color: var(--em);
       }
       .pdf-pop-btn:disabled {
-        opacity: 0.5;
         cursor: default;
       }
       .pdf-menu-row {
@@ -5152,7 +5154,6 @@
       .ef-item.is-empty {
         border-left: 3px solid var(--border2);
         padding-left: 8px;
-        opacity: 0.7;
       }
       .ef-item.is-error.is-empty,
       .ef-item.is-warn.is-empty {
@@ -6293,7 +6294,7 @@
         border-color: var(--em);
       }
       .dc-day.dc-other {
-        opacity: 0.18;
+        font-style: italic;
         pointer-events: none;
       }
       .dc-day-n {
@@ -6489,7 +6490,6 @@
         font-size: 14px;
         cursor: pointer;
         margin-left: 12px;
-        opacity: 0.7;
         padding: 0;
         line-height: 1;
       }
@@ -6890,7 +6890,7 @@
       }
       .ud-meter-storm {
         background: rgba(156, 163, 175, 0.12);
-        color: #9ca3af;
+        color: var(--text);
         border: 1px solid rgba(156, 163, 175, 0.2);
       }
       .ud-meter-propane {
@@ -7082,7 +7082,7 @@
       }
       .vcm-pop-current {
         font-size: 12px;
-        color: var(--dim);
+        color: var(--text);
         margin-bottom: 8px;
       }
       #vcm-input,
@@ -8268,7 +8268,6 @@
         color: var(--text);
       }
       .cc-order-btn:disabled {
-        opacity: 0.25;
         cursor: default;
       }
       .cc-field {
@@ -8462,7 +8461,7 @@
       }
       .ui-edit-toolbar .uet-tab.active {
         background: var(--amber);
-        color: var(--bg);
+        color: #000000;
         border-color: var(--amber);
       }
       .ui-edit-toolbar .uet-actions {
@@ -8576,7 +8575,6 @@
       }
       .bas-tbl td.bas-blank {
         color: var(--text3);
-        opacity: 0.4;
       }
       .bas-summary-grid {
         display: grid;
@@ -8750,7 +8748,6 @@
         font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 0.8px;
-        opacity: 0.7;
         margin-top: 2px;
       }
       /* -- Section label -- */
@@ -8863,7 +8860,7 @@
       @media print {
         body {
           background: #fff !important;
-          color: #111 !important;
+          color: #000000 !important;
         }
         .sc-root {
           background: #fff !important;
@@ -8884,7 +8881,7 @@
           border-bottom-color: #ccc !important;
         }
         .sc-building-name {
-          color: #111 !important;
+          color: #000000 !important;
           font-size: 20px !important;
         }
         .sc-building-addr,
@@ -8936,13 +8933,13 @@
         border-color: var(--s3);
       }
       .ql-toolbar .ql-stroke {
-        stroke: var(--dim);
+        stroke: var(--text);
       }
       .ql-toolbar .ql-fill {
-        fill: var(--dim);
+        fill: var(--text);
       }
       .ql-toolbar .ql-picker-label {
-        color: var(--dim);
+        color: var(--text);
       }
       .ql-toolbar button:hover .ql-stroke,
       .ql-toolbar button.ql-active .ql-stroke {
@@ -8963,7 +8960,7 @@
         font-size: 13px;
       }
       .ql-editor.ql-blank::before {
-        color: var(--dim);
+        color: var(--text);
       }
     </style>
   </head>
@@ -9591,7 +9588,7 @@
                       id="pdfBillCount"
                       style="
                         background: var(--em);
-                        color: var(--bg);
+                        color: #000000;
                         font-size: 10px;
                         font-weight: 700;
                         padding: 1px 6px;
@@ -10114,7 +10111,7 @@
                 font-size: 10px;
                 font-family: var(--mono);
                 background: var(--em);
-                color: #05080f;
+                color: var(--on-em);
                 border-radius: 9px;
                 padding: 1px 6px;
                 font-weight: 700;
@@ -11034,7 +11031,6 @@
               }
               #view-ems .empty-state .ico {
                 font-size: 40px;
-                opacity: 0.3;
               }
               #view-ems .empty-state h3 {
                 font-family: var(--head);
@@ -12559,7 +12555,7 @@
                   <div style="padding:14px 20px;border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end;align-items:center;flex-shrink:0">
                     <span style="font-size:11px;color:var(--text2);flex:1">Your data is untouched until you confirm. You can dismiss and check individual leads first.</span>
                     <button onclick="document.getElementById('emsMigrateModal').remove()" style="font-family:var(--font);font-size:12px;font-weight:600;padding:8px 16px;border-radius:7px;border:1px solid var(--border2);background:transparent;color:var(--text2);cursor:pointer">Dismiss for Now</button>
-                    <button onclick="emsApplyMigration()" style="font-family:var(--font);font-size:12px;font-weight:600;padding:8px 18px;border-radius:7px;border:none;background:var(--em);color:#05080f;cursor:pointer">✓ Apply Migration</button>
+                    <button onclick="emsApplyMigration()" style="font-family:var(--font);font-size:12px;font-weight:600;padding:8px 18px;border-radius:7px;border:none;background:var(--em);color: #000000;cursor:pointer">✓ Apply Migration</button>
                   </div>
                 </div>`;
                 document.body.appendChild(modal);
@@ -15456,7 +15452,7 @@
               >
                 Skip
               </button>
-              <span style="color: var(--border2); font-size: 11px; margin: 0 4px">|</span>
+              <span style="color: var(--text); font-size: 11px; margin: 0 4px">|</span>
               <span style="font-size: 10px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.4px"
                 >All duplicates</span
               >
@@ -16069,7 +16065,7 @@
           position: fixed;
           z-index: 9100;
           background: #1a1a2e;
-          color: #e8e8f0;
+          color: #ffffff;
           font-family: monospace;
           font-size: 11px;
           padding: 6px 10px;

@@ -47,20 +47,7 @@ function siteCloseSettings() {
 
 /* Theme */
 function siteApplyTheme(mode) {
-  var isLight = mode === 'light';
-  document.documentElement.setAttribute('data-theme', isLight ? 'light' : 'dark');
-  try {
-    localStorage.setItem('ch_theme', isLight ? 'light' : 'dark');
-  } catch (e) {}
-  document.querySelectorAll('.theme-pill').forEach(function (p) {
-    p.classList.toggle('active', p.getAttribute('data-theme') === (isLight ? 'light' : 'dark'));
-  });
-  // save to settings
-  try {
-    var s = JSON.parse(localStorage.getItem('ch_settings') || '{}');
-    s.theme = isLight ? 'light' : 'dark';
-    localStorage.setItem('ch_settings', JSON.stringify(s));
-  } catch (e) {}
+  chTheme.apply(mode);
 }
 
 /* UI Customization persistence */
@@ -535,21 +522,7 @@ async function uiEditResetPage() {
 
 /* Accent color */
 function siteApplyAccent(hex) {
-  var r = parseInt(hex.slice(1, 3), 16),
-    g = parseInt(hex.slice(3, 5), 16),
-    b = parseInt(hex.slice(5, 7), 16);
-  var root = document.documentElement;
-  root.style.setProperty('--accent', hex);
-  root.style.setProperty('--accent-dim', 'rgba(' + r + ',' + g + ',' + b + ',0.12)');
-  root.style.setProperty('--accent-glow', 'rgba(' + r + ',' + g + ',' + b + ',0.25)');
-  root.style.setProperty('--em', hex);
-  root.style.setProperty('--em-dim', 'rgba(' + r + ',' + g + ',' + b + ',0.1)');
-  root.style.setProperty('--em-glow', 'rgba(' + r + ',' + g + ',' + b + ',0.22)');
-  try {
-    var s = JSON.parse(localStorage.getItem('ch_settings') || '{}');
-    s.accentColor = hex;
-    localStorage.setItem('ch_settings', JSON.stringify(s));
-  } catch (e) {}
+  chTheme.applyAccent(hex);
 }
 
 /* Backup / Restore / Reset */
@@ -1308,7 +1281,7 @@ function _restoreStyle() {
     '.rst-tbl td.rst-rm{background:var(--amber-dim);color:var(--text);font-weight:700}' +
     '.rst-rm-note{border-left:3px solid var(--amber);padding-left:8px}' +
     '.rst-list{margin:6px 0 0;padding-left:18px;color:var(--text2);word-break:break-word}' +
-    '.rst-list small{opacity:.8}' +
+    '.rst-list small{font-size:11px}' +
     '.rst-det{margin:0 0 12px;color:var(--text)}' +
     '.rst-det summary{cursor:pointer;color:var(--text2);font-weight:600}' +
     '.rst-det b{display:block;margin-top:6px}' +
@@ -2094,9 +2067,6 @@ document.addEventListener('DOMContentLoaded', function () {
   uiCustomApply();
   try {
     var s = JSON.parse(localStorage.getItem('ch_settings') || '{}');
-    if (s.accentColor) siteApplyAccent(s.accentColor);
-    var theme = s.theme || localStorage.getItem('ch_theme') || 'dark';
-    siteApplyTheme(theme);
   } catch (e) {}
   if (!document.getElementById('siteSettingsOverlay')) siteBuildSettingsModal();
   // Auto-show release notes based on user preference.
@@ -2123,7 +2093,7 @@ function siteBuildSettingsModal() {
     s = JSON.parse(localStorage.getItem('ch_settings') || '{}');
   } catch (e) {}
   var accent = s.accentColor || '#3b82f6';
-  var theme = s.theme || localStorage.getItem('ch_theme') || 'dark';
+  var theme = chTheme.stored();
   var uc = s.uiCustom || { fonts: {} };
   var ucf = uc.fonts || {};
   var fontOpts = UI_CUSTOM_SAFE_FONTS.map(function (f) {
@@ -2163,7 +2133,7 @@ function siteBuildSettingsModal() {
     '<div class="settings-section">' +
     '<div class="settings-section-title">Display Mode</div>' +
     '<div class="settings-row">' +
-    '<div><div class="settings-row-label">Light / Dark Mode</div><div class="settings-row-sub">Choose your preferred color scheme</div></div>' +
+    '<div><div class="settings-row-label">Light / Dark Mode</div><div class="settings-row-sub">Choose your preferred color scheme, or follow your device with System</div></div>' +
     '<div class="theme-pills">' +
     '<button class="theme-pill' +
     (theme === 'dark' ? ' active' : '') +
@@ -2171,6 +2141,9 @@ function siteBuildSettingsModal() {
     '<button class="theme-pill' +
     (theme === 'light' ? ' active' : '') +
     '" data-theme="light" onclick="siteApplyTheme(\'light\')">&#9728;&#65039; Light</button>' +
+    '<button class="theme-pill' +
+    (theme === 'system' ? ' active' : '') +
+    '" data-theme="system" onclick="siteApplyTheme(\'system\')">&#128187; System</button>' +
     '</div>' +
     '</div>' +
     '</div>' +
@@ -2534,6 +2507,14 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.22.161', date: '2026-10-22', title: 'System display mode, clearer text and buttons',
+    items: [
+      { type: 'feature', text: 'Settings, Display Mode: a new System choice. CompanyHub then matches your computer or phone, and switches between light and dark by itself when your device changes. Dark and Light work as before.' },
+      { type: 'fix', text: 'Disabled buttons now show a dashed border with a not-allowed cursor and clear text in every browser.' },
+      { type: 'fix', text: 'Budget tab: the text on the + Add Budget Line button is now white on its dark blue fill.' },
+      { type: 'fix', text: 'Drop-down lists such as Fiscal Year and FY Start Month are now readable in dark mode in every browser.' }
+    ]
+  },
   { v: 'v2026.10.22.160', date: '2026-10-22', title: 'Sidebar pin, one sync status, first sign-in tips',
     items: [
       { type: 'feature', text: 'Sidebar: a pin button opens a menu to set the sidebar to Open, Slim or Collapsed.' },

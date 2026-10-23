@@ -287,7 +287,7 @@ function _rebuildSidebar() {
       // Not included — show grayed label, no checkbox, no page number
       html +=
         '<div style="display:flex;align-items:center;gap:6px;padding:5px 12px;' +
-        'border-bottom:1px solid var(--s2);font-size:11px;color:var(--text3);opacity:0.55">';
+        'border-bottom:1px solid var(--s2);font-size:11px;color:var(--text3)">';
       html += '<span style="width:13px;height:13px;flex-shrink:0"></span>';
       html +=
         '<span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-style:italic">' +
@@ -441,13 +441,13 @@ function _rptInitInspector() {
     var color = _rgbToHex(cs.color || '');
 
     tip.innerHTML =
-      '<span style="color:#a0c4ff">font</span> ' +
+      '<span style="color:#ffffff">font</span> ' +
       fontFamily +
       '<br>' +
-      '<span style="color:#a0c4ff">size</span> ' +
+      '<span style="color:#ffffff">size</span> ' +
       fontSize +
       '<br>' +
-      '<span style="color:#a0c4ff">color</span> <span style="display:inline-block;width:10px;height:10px;background:' +
+      '<span style="color:#ffffff">color</span> <span style="display:inline-block;width:10px;height:10px;background:' +
       color +
       ';border:1px solid #666;vertical-align:middle;margin-right:3px;border-radius:2px"></span>' +
       color;

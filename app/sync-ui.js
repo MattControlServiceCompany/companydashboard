@@ -73,7 +73,7 @@
       '.ch-conflict-btn.ch-conflict-primary{background:var(--accent,#2563eb);' +
       'border-color:var(--accent,#2563eb);color:#fff;}' +
       '.ch-conflict-btn.ch-conflict-primary:hover{filter:brightness(1.1);}' +
-      '.ch-conflict-btn:disabled{opacity:.5;cursor:not-allowed;}' +
+      '.ch-conflict-btn:disabled{cursor:not-allowed;}' +
       '.ch-conflict-rec{background:var(--s3,#1e2438);border:1px solid var(--border,#333);' +
       'border-radius:6px;padding:8px 10px;margin:0 0 8px;display:flex;flex-wrap:wrap;gap:4px 16px;align-items:center;}' +
       '.ch-conflict-rec-name{flex-basis:100%;font-weight:600;color:var(--text,#fff);}' +

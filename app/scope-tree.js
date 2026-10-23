@@ -32,7 +32,7 @@ function scopeTreeHTML(nodes, opts) {
     var h =
       '<div class="st-node">' +
       '<label class="st-row" style="display:flex;align-items:center;gap:6px;padding:3px 8px;border-radius:4px;background:var(--s2);cursor:' +
-      (disabled ? 'default;opacity:.55' : 'pointer') +
+      (disabled ? 'default' : 'pointer') +
       '">' +
       '<input type="checkbox" class="st-cb" data-kind="' +
       _escHtml(node.kind) +

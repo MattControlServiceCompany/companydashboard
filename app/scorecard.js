@@ -182,7 +182,7 @@ function _scStarBadge(score) {
     '" y="' +
     (cy + 18) +
     '" text-anchor="middle" dominant-baseline="middle"' +
-    ' style="font-family:var(--font);font-size:7px;font-weight:700;fill:rgba(255,255,255,0.5);letter-spacing:.8px;text-transform:uppercase">ES Score</text>' +
+    ' style="font-family:var(--font);font-size:7px;font-weight:700;fill:#ffffff;letter-spacing:.8px;text-transform:uppercase">ES Score</text>' +
     '</svg>' +
     '</div>'
   );
@@ -518,7 +518,7 @@ function renderBuildingScorecardPane(pane, b, projId) {
     '<div class="sc-header-left">' +
     '<div class="sc-photo-placeholder">' +
     '<span style="font-size:28px">🏫</span>' +
-    '<div style="font-size:10px;color:rgba(255,255,255,0.3);margin-top:4px">Photo</div>' +
+    '<div style="font-size:10px;color:#ffffff;margin-top:4px">Photo</div>' +
     '</div>' +
     '<div class="sc-header-info">' +
     '<div class="sc-building-name">' +

@@ -309,7 +309,7 @@ function baOpenImportModal() {
     '</div>',
     '<div class="modal-ftr">',
     '<button onclick="baCloseImportModal()" style="background:var(--s3);border:1px solid var(--border);color:var(--text2);padding:8px 18px;border-radius:6px;cursor:pointer;font-size:13px;">Cancel</button>',
-    '<button id="ba-import-btn" onclick="baRunImport()" disabled style="background:var(--accent);color:#fff;border:none;padding:8px 18px;border-radius:6px;cursor:pointer;font-size:13px;opacity:0.5;">Import</button>',
+    '<button id="ba-import-btn" onclick="baRunImport()" disabled style="background:var(--accent);color:#fff;border:none;padding:8px 18px;border-radius:6px;cursor:pointer;font-size:13px;">Import</button>',
     '</div>',
 
     '</div></div>',
@@ -1183,10 +1183,7 @@ function baRenderByType(body, rows) {
 
   var ctx = document.getElementById('ba-chart-bytype');
   if (!ctx || typeof Chart === 'undefined') return;
-  var cs = getComputedStyle(document.documentElement);
-  var c_text = cs.getPropertyValue('--text').trim() || '#e2e8f0';
-  var c_text2 = cs.getPropertyValue('--text2').trim() || '#94a3b8';
-  var c_text3 = cs.getPropertyValue('--text3').trim() || '#64748b';
+  var c_text = SharedCharts.textColor();
   _baCharts.bytype = new Chart(ctx, {
     type: 'bar',
     data: {
@@ -1228,9 +1225,9 @@ function baRenderByType(body, rows) {
       },
       scales: {
         x: {
-          title: { display: true, text: 'Count', color: c_text3, font: { size: 11 } },
+          title: { display: true, text: 'Count', color: c_text, font: { size: 11 } },
           grid: { color: 'rgba(255,255,255,0.10)' },
-          ticks: { color: c_text2, font: { size: 11 } },
+          ticks: { color: c_text, font: { size: 11 } },
         },
         y: {
           grid: { color: 'rgba(255,255,255,0.05)' },
@@ -1284,10 +1281,7 @@ function baRenderByBuilding(body, rows) {
 
   var ctx = document.getElementById('ba-chart-bybuilding');
   if (!ctx || typeof Chart === 'undefined') return;
-  var cs = getComputedStyle(document.documentElement);
-  var c_text = cs.getPropertyValue('--text').trim() || '#e2e8f0';
-  var c_text2 = cs.getPropertyValue('--text2').trim() || '#94a3b8';
-  var c_text3 = cs.getPropertyValue('--text3').trim() || '#64748b';
+  var c_text = SharedCharts.textColor();
   _baCharts.bybuilding = new Chart(ctx, {
     type: 'bar',
     data: {
@@ -1333,9 +1327,9 @@ function baRenderByBuilding(body, rows) {
           grid: { color: 'rgba(255,255,255,0.05)' },
         },
         y: {
-          title: { display: true, text: 'Count', color: c_text3, font: { size: 11 } },
+          title: { display: true, text: 'Count', color: c_text, font: { size: 11 } },
           grid: { color: 'rgba(255,255,255,0.10)' },
-          ticks: { color: c_text2, font: { size: 11 } },
+          ticks: { color: c_text, font: { size: 11 } },
         },
       },
     },
@@ -1482,10 +1476,7 @@ function baRenderTimeline(body, rows) {
 
   var ctx = document.getElementById('ba-chart-timeline');
   if (!ctx || typeof Chart === 'undefined') return;
-  var cs = getComputedStyle(document.documentElement);
-  var c_text = cs.getPropertyValue('--text').trim() || '#e2e8f0';
-  var c_text2 = cs.getPropertyValue('--text2').trim() || '#94a3b8';
-  var c_text3 = cs.getPropertyValue('--text3').trim() || '#64748b';
+  var c_text = SharedCharts.textColor();
   _baCharts.timeline = new Chart(ctx, {
     type: 'bar',
     data: {
@@ -1526,9 +1517,9 @@ function baRenderTimeline(body, rows) {
       },
       scales: {
         x: {
-          title: { display: true, text: xTitle, color: c_text3, font: { size: 11 } },
+          title: { display: true, text: xTitle, color: c_text, font: { size: 11 } },
           ticks: {
-            color: c_text2,
+            color: c_text,
             font: { size: _baTimelineMode === 'date' ? 9 : 11 },
             maxRotation: _baTimelineMode === 'date' ? 45 : 0,
             maxTicksLimit: _baTimelineMode === 'date' ? 30 : 24,
@@ -1536,9 +1527,9 @@ function baRenderTimeline(body, rows) {
           grid: { color: 'rgba(255,255,255,0.05)' },
         },
         y: {
-          title: { display: true, text: 'Count', color: c_text3, font: { size: 11 } },
+          title: { display: true, text: 'Count', color: c_text, font: { size: 11 } },
           grid: { color: 'rgba(255,255,255,0.10)' },
-          ticks: { color: c_text2, font: { size: 11 } },
+          ticks: { color: c_text, font: { size: 11 } },
         },
       },
     },

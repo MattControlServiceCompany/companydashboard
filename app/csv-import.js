@@ -2414,7 +2414,7 @@ function openBillModal(mid, editRowId) {
       qtyHtml = `<div class="ef-item"><div class="ef-key">${qtyLabel}</div><input class="ef-input bl-qty-input" id="${qtyId}" type="text" inputmode="decimal" placeholder="0" value="${qtyVal}" ${recalc} onfocus="_billModalFocus(this)" onblur="_billModalBlur(this,false)" autocomplete="off"></div>`;
     } else {
       qtyHtml =
-        '<div class="ef-item" style="opacity:.5"><div class="ef-key">—</div><input class="ef-input" disabled placeholder="—" autocomplete="off"></div>';
+        '<div class="ef-item" style="font-style:italic"><div class="ef-key">—</div><input class="ef-input" disabled placeholder="—" autocomplete="off"></div>';
     }
     const rateLabel = r.label + (unit ? ' ' + unit : '') + ' Rate';
     const rateHtml = `<div class="ef-item"><div class="ef-key">${rateLabel}</div><input class="ef-input bl-rate-input" readonly tabindex="-1" style="color:var(--text2);font-size:11px" value="" autocomplete="off"></div>`;
