@@ -4315,9 +4315,9 @@ function renderBillsPane(pane, m, bills, incl) {
               ? '$' + parseFloat(p.rate).toLocaleString('en-US', { minimumFractionDigits: 6, maximumFractionDigits: 6 })
               : '—';
           cpRows +=
-            '<tr><td style="padding:2px 10px;color:var(--text3)">(' +
-            (i + 1) +
-            ')</td><td style="padding:2px 10px;font-family:var(--mono)">' +
+            '<tr><td style="padding:2px 10px;color:var(--text3)">' +
+            (p.season === 'Sum' ? 'Summer' : p.season === 'Win' ? 'Winter' : '(' + (i + 1) + ')') +
+            '</td><td style="padding:2px 10px;font-family:var(--mono)">' +
             fmtQty +
             '</td><td style="padding:2px 10px;font-family:var(--mono)">' +
             fmtRate +

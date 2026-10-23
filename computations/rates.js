@@ -799,6 +799,425 @@ function resolveMeterRate(projId, meter, ym, opts) {
   return null;
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   SEASONAL ON-PEAK / OFF-PEAK ENERGY LINES (Matt, 2026-10-23)
+   A bill that crosses the Jun 1 / Oct 1 season edge prints up to four energy lines: On-Pk Sum, On-Pk Win,
+   Off-Pk Sum, Off-Pk Win, each with kWh, rate and charge. These functions are the ONE place that decides:
+     touResolveLines  - raw parsed lines -> season, kWh recovery, slot, reconcile with kWh used
+     touApplyToBill   - lines -> the per-line fields and the On / Off totals on a bill (the only writer)
+     touRatesEntry    - lines -> the _rates entry of one side (each part carries its season)
+     touHoldOf        - the one plain hold sentence when the lines do not add up to kWh used
+     touLinesOfBill   - bill -> lines to show (the fields; an older bill derives its labels, display only)
+   Raw line: { kind: 'on'|'off'|null, word: 'Sum'|'Win'|null, from, to (ISO or null), qty, qtyRaw (text), rate, charge }.
+   ══════════════════════════════════════════════════════════════════════════ */
+var TOU_SLOTS = [
+  { kind: 'on', season: 'Sum', prefix: 'OnPkSum', label: 'Energy On-Pk Summer' },
+  { kind: 'on', season: 'Win', prefix: 'OnPkWin', label: 'Energy On-Pk Winter' },
+  { kind: 'off', season: 'Sum', prefix: 'OffPkSum', label: 'Energy Off-Pk Summer' },
+  { kind: 'off', season: 'Win', prefix: 'OffPkWin', label: 'Energy Off-Pk Winter' },
+];
+var TOU_FIELD_NAMES = [].concat.apply(
+  [],
+  TOU_SLOTS.map(function (s) {
+    return [s.prefix + 'KWh', s.prefix + 'Rate', s.prefix + 'Charge'];
+  }),
+);
+var TOU_HOLD_TEXT = 'On-peak and off-peak kWh do not add up to kWh used. Check the PDF.';
+function touSlotOf(kind, season) {
+  for (var i = 0; i < TOU_SLOTS.length; i++) {
+    if (TOU_SLOTS[i].kind === kind && TOU_SLOTS[i].season === season) return TOU_SLOTS[i];
+  }
+  return null;
+}
+function _touVerifies(q, r, charge) {
+  return q > 0 && r > 0 && charge > 0 && Math.abs(Math.round(q * r * 100) / 100 - charge) < 0.005;
+}
+// 'Sum' | 'Win' for a raw line: the printed word, else the printed date range (SEASON_TABLE), else the period start.
+function _touSeasonOf(raw, provider, periodStartIso) {
+  if (raw.word) return raw.word;
+  var iso = raw.from || periodStartIso;
+  var s = iso ? seasonOfDate(provider || SEASON_DEFAULT_PROVIDER, iso) : 'none';
+  return s === 'summer' ? 'Sum' : s === 'winter' ? 'Win' : null;
+}
+// The kWh of one line. Returns { kwh, rate, how } or null.
+//   'read'        the printed quantity x rate = the charge (to the cent); a missing rate is charge / quantity
+//   'repaired'    the thousands digits are garbled; the last 3 digits and the 4 decimals are read, the thousands are
+//                 the whole number that makes quantity x rate = the charge
+//   'read-unverified' a clean printed quantity and rate whose product is not the charge: the charge is the doubtful
+//                 value (a misread digit); the quantity stays as printed and the older line checks decide the charge
+//   'from-charge' no usable quantity: charge / rate, accepted only when round(kWh x rate, 2) = the charge
+function _touLineKwh(raw) {
+  var charge = raw.charge;
+  if (!(charge > 0)) return null;
+  var rate = raw.rate > 0 ? raw.rate : null;
+  var qty = raw.qty > 0 ? raw.qty : null;
+  if (!rate) {
+    // A rate worked out from charge / quantity proves something only for a large quantity (below 1,000 kWh a 5-decimal
+    // rate cannot miss the cent), so a small quantity with no rate stays open.
+    if (!qty || qty < 1000) return null;
+    var r5 = Math.round((charge / qty) * 100000) / 100000;
+    return _touVerifies(qty, r5, charge) ? { kwh: qty, rate: r5, how: 'read' } : null;
+  }
+  if (qty && _touVerifies(qty, rate, charge)) return { kwh: qty, rate: rate, how: 'read' };
+  var qr = String(raw.qtyRaw || '');
+  var dec = qr.match(/[.,:]\s*(\d{4})(?!\d)/g);
+  if (dec) {
+    var last = dec[dec.length - 1];
+    var head = qr.slice(0, qr.lastIndexOf(last)).replace(/\D/g, '');
+    var tailVal = parseFloat((head.slice(-3) || '0') + '.' + last.match(/(\d{4})/)[1]);
+    var k = Math.round((charge / rate - tailVal) / 1000);
+    if (k >= 0) {
+      var q = k * 1000 + tailVal;
+      if (_touVerifies(q, rate, charge)) return { kwh: q, rate: rate, how: 'repaired' };
+    }
+  }
+  if (qty && /^\d{1,3}(,\d{3})*\.\d{4}$/.test(qr.trim())) return { kwh: qty, rate: rate, how: 'read-unverified' };
+  var qc = Math.round((charge / rate) * 10000) / 10000;
+  return _touVerifies(qc, rate, charge) ? { kwh: qc, rate: rate, how: 'from-charge' } : null;
+}
+// raws -> { lines, complete, reconciled, sum, labelRecovered, unplaced } or null when the lines cannot be placed
+// (fewer than two lines, a line with no charge, two lines for one slot, a line whose side or season cannot be told).
+// lines are ordered as TOU_SLOTS. kwhUsed: the bill's kWh used (number or null).
+// opts.provider, opts.periodStartIso (ISO date), opts.kwhTol (kWh of slack for a rounded kWh used).
+function touResolveLines(raws, kwhUsed, opts) {
+  opts = opts || {};
+  if (!raws || raws.length < 2) return null;
+  var items = [];
+  for (var i = 0; i < raws.length; i++) {
+    var raw = raws[i];
+    if (!(raw.charge > 0)) return null;
+    var res = _touLineKwh(raw);
+    items.push({
+      kind: raw.kind,
+      season: _touSeasonOf(raw, opts.provider, opts.periodStartIso),
+      kwh: res ? res.kwh : null,
+      rate: res ? res.rate : raw.rate > 0 ? raw.rate : null,
+      how: res ? res.how : null,
+      charge: raw.charge,
+      from: raw.from || null,
+      to: raw.to || null,
+    });
+  }
+  // One line left without a printed quantity (none, or only charge / rate): kWh used minus the other lines, kept only
+  // when it fits its own charge to the cent.
+  var open = items.filter(function (it) {
+    return it.kwh == null || it.how === 'from-charge';
+  });
+  if (open.length === 1 && kwhUsed > 0) {
+    var others = items.reduce(function (s, it) {
+      return it === open[0] ? s : s + (it.kwh || 0);
+    }, 0);
+    var qI = Math.round((kwhUsed - others) * 10000) / 10000;
+    var rI = open[0].rate;
+    if (rI && qI > 0 && _touVerifies(qI, rI, open[0].charge)) {
+      open[0].kwh = qI;
+      open[0].rate = rI;
+      open[0].how = 'identity';
+    }
+  }
+  // A line with no side label (OCR lost it) takes the one free slot of its season, else the one free slot.
+  var taken = {};
+  var clash = false;
+  items.forEach(function (it) {
+    if (it.kind && it.season) {
+      if (taken[it.kind + it.season]) clash = true;
+      taken[it.kind + it.season] = true;
+    }
+  });
+  if (clash) return null;
+  var labelRecovered = false;
+  for (var u = 0; u < items.length; u++) {
+    var it2 = items[u];
+    if (it2.kind && it2.season) continue;
+    var free = TOU_SLOTS.filter(function (s) {
+      return !taken[s.kind + s.season] && (!it2.kind || s.kind === it2.kind) && (!it2.season || s.season === it2.season);
+    });
+    if (free.length !== 1) return null;
+    it2.kind = free[0].kind;
+    it2.season = free[0].season;
+    taken[it2.kind + it2.season] = true;
+    labelRecovered = true;
+  }
+  var lines = [];
+  TOU_SLOTS.forEach(function (s) {
+    items.forEach(function (it) {
+      if (it.kind === s.kind && it.season === s.season) {
+        lines.push({
+          kind: s.kind,
+          season: s.season,
+          prefix: s.prefix,
+          label: s.label,
+          kwh: it.kwh,
+          rate: it.rate,
+          charge: it.charge,
+          from: it.from,
+          to: it.to,
+          how: it.how,
+        });
+      }
+    });
+  });
+  if (lines.length !== items.length) return null;
+  var complete = lines.every(function (l) {
+    return l.kwh > 0;
+  });
+  var sum = lines.reduce(function (s, l) {
+    return s + (l.kwh || 0);
+  }, 0);
+  var tol = lines.reduce(function (s, l) {
+    return s + (l.how === 'from-charge' && l.rate > 0 ? 0.005 / l.rate : 0);
+  }, opts.kwhTol || 0.0051);
+  var reconciled = complete && kwhUsed > 0 && Math.abs(sum - kwhUsed) <= tol;
+  return { lines: lines, complete: complete, reconciled: reconciled, sum: sum, tol: tol, labelRecovered: labelRecovered, unplaced: labelRecovered && !reconciled };
+}
+function _touSideSum(lines, kind, f) {
+  var s = 0;
+  var n = 0;
+  lines.forEach(function (l) {
+    if (l.kind === kind) {
+      s += l[f] || 0;
+      n++;
+    }
+  });
+  return n ? s : null;
+}
+// The only writer of the per-line fields and the On / Off totals on a bill. A total is the sum of its lines; the
+// kWh total is written only when every line of that side has a kWh (never a partial quantity).
+function touApplyToBill(bill, lines) {
+  TOU_FIELD_NAMES.forEach(function (f) {
+    delete bill[f];
+  });
+  lines.forEach(function (l) {
+    if (l.kwh > 0) bill[l.prefix + 'KWh'] = l.kwh.toFixed(4);
+    if (l.rate > 0) bill[l.prefix + 'Rate'] = String(l.rate);
+    bill[l.prefix + 'Charge'] = l.charge.toFixed(2);
+  });
+  [
+    ['on', 'EnergyOnPeakCharge', 'OnPeakKWh', 'OnPeakRate'],
+    ['off', 'EnergyOffPeakCharge', 'OffPeakKWh', 'OffPeakRate'],
+  ].forEach(function (d) {
+    var side = lines.filter(function (l) {
+      return l.kind === d[0];
+    });
+    if (!side.length) return;
+    var chg = Math.round(_touSideSum(side, d[0], 'charge') * 100) / 100;
+    bill[d[1]] = chg.toFixed(2);
+    var whole = side.every(function (l) {
+      return l.kwh > 0;
+    });
+    var kwh = whole ? _touSideSum(side, d[0], 'kwh') : null;
+    bill[d[2]] = kwh > 0 ? kwh.toFixed(4) : null;
+    bill[d[3]] = kwh > 0 ? chg / kwh : null;
+  });
+}
+// The _rates entry of one side from its lines (each part carries its season). Null when a line has no kWh or rate.
+function touRatesEntry(lines, kind) {
+  var side = lines.filter(function (l) {
+    return l.kind === kind;
+  });
+  if (!side.length) return null;
+  // A line with no kWh or rate keeps a part with qty / rate null: its amount is still a charge of the bill.
+  var whole = side.every(function (l) {
+    return l.kwh > 0 && l.rate > 0;
+  });
+  var amt = function (l) {
+    return l.kwh > 0 && l.rate > 0 ? Math.round(l.kwh * l.rate * 100) / 100 : l.charge;
+  };
+  var qty = whole
+    ? side.reduce(function (s, l) {
+        return s + l.kwh;
+      }, 0)
+    : null;
+  var computed = side.reduce(function (s, l) {
+    return s + amt(l);
+  }, 0);
+  return {
+    qty: qty,
+    rate: whole ? computed / qty : null,
+    unit: 'kWh',
+    computed: computed,
+    parts: side.map(function (l) {
+      var p = {
+        qty: l.kwh > 0 ? l.kwh : null,
+        rate: l.rate > 0 ? l.rate : null,
+        unit: 'kWh',
+        computed: amt(l),
+        ocrCharge: l.charge,
+        season: l.season,
+      };
+      if (l.from && l.to) {
+        p.from = l.from;
+        p.to = l.to;
+      }
+      return p;
+    }),
+  };
+}
+// The hold sentence for a bill whose lines do not add up to kWh used, or null. Reads the per-line fields and the
+// bill's kWh used as they stand now (so a later correction of kWh used is honoured).
+// basisTotal: the kWh the bill's ECA / EER / PTS lines are billed on (the caller's _chargeBasisTotal), or null. The
+// utility sometimes prints it a little apart from the meter-table kWh used; the lines may add up to either.
+function touHoldOf(bill, basisTotal) {
+  var present = TOU_SLOTS.filter(function (s) {
+    return parseBillNumber(bill[s.prefix + 'Charge']) > 0;
+  });
+  if (!present.length) return null;
+  var sum = 0;
+  for (var i = 0; i < present.length; i++) {
+    var q = parseBillNumber(bill[present[i].prefix + 'KWh']);
+    if (!(q > 0)) return TOU_HOLD_TEXT;
+    sum += q;
+  }
+  var used = parseBillNumber(bill.kWhConsumed);
+  if (used > 0 && Math.abs(sum - used) <= (bill._touTol || 0.0051)) return null;
+  if (basisTotal > 0 && Math.abs(sum - basisTotal) <= (bill._touTol || 0.0051)) return null;
+  return TOU_HOLD_TEXT;
+}
+// After the older charge checks ran (a misread digit fixed by quantity x rate, a total corrected from the printed
+// subtotal), write what they decided onto the line fields and derive the totals again from the lines.
+//   1. a part amount in bill._rates that changed -> that line
+//   2. a side total that changed with no part change: a side with one line -> that line; a side whose quantity x rate
+//      amounts add up to the new total -> each line takes its quantity x rate amount
+//   3. otherwise the lines win and the total follows them
+function touSyncFromRates(bill) {
+  if (!bill._touLines) return;
+  var all = [];
+  [
+    ['on', 'EnergyOnPeakCharge'],
+    ['off', 'EnergyOffPeakCharge'],
+  ].forEach(function (d) {
+    var side = touLinesOfBill(bill, d[0]).filter(function (l) {
+      return l.stored;
+    });
+    if (!side.length) return;
+    var r = bill._rates && bill._rates[d[1]];
+    var parts = (r && r.parts) || [];
+    var partOf = function (l) {
+      return parts.filter(function (p) {
+        return p.season === l.season;
+      })[0];
+    };
+    side.forEach(function (l) {
+      var p = partOf(l);
+      var amt = p ? (p.ocrCharge != null ? p.ocrCharge : p.computed) : null;
+      if (amt > 0 && Math.abs(amt - l.charge) > 0.005) l.charge = amt;
+    });
+    var sum = side.reduce(function (s, l) {
+      return s + l.charge;
+    }, 0);
+    var total = parseBillNumber(bill[d[1]]);
+    if (total > 0 && Math.abs(sum - total) > 0.005) {
+      if (side.length === 1) side[0].charge = total;
+      else {
+        var comp = side.map(function (l) {
+          var p = partOf(l);
+          return p && p.computed != null ? p.computed : null;
+        });
+        var compSum = comp.reduce(function (s, c) {
+          return s + (c || 0);
+        }, 0);
+        if (comp.every(function (c) { return c > 0; }) && Math.abs(compSum - total) <= 0.005) {
+          side.forEach(function (l, i) {
+            l.charge = comp[i];
+          });
+        }
+      }
+    }
+    all = all.concat(side);
+  });
+  if (all.length) touApplyToBill(bill, all);
+}
+// Which of two lines is the summer line, from evidence on the lines: their printed dates (season of the dates), else
+// their quantities against the share of summer days. froms = ['YYYY-MM-DD'|null, ...], q = the 2 quantities that must
+// match the day split. Returns { idx, how } (idx 0 or 1, or -1 when the evidence does not decide).
+function seasonIdxOfPair(provider, froms, q, dayShare, tol) {
+  var tot = q[0] + q[1];
+  if (!(tot > 0)) return { idx: -1 };
+  var share0 = q[0] / tot;
+  var errA = Math.abs(share0 - dayShare); // line 1 is summer
+  var errB = Math.abs(share0 - (1 - dayShare)); // line 1 is winter
+  var s0 = froms[0] ? seasonOfDate(provider, froms[0]) : '';
+  var s1 = froms[1] ? seasonOfDate(provider, froms[1]) : '';
+  if ((s0 === 'summer' && s1 === 'winter') || (s0 === 'winter' && s1 === 'summer')) {
+    var i = s0 === 'summer' ? 0 : 1;
+    return (i === 0 ? errA : errB) <= tol ? { idx: i, how: 'label' } : { idx: -1 };
+  }
+  if (Math.min(errA, errB) > tol || Math.abs(errA - errB) <= tol) return { idx: -1 };
+  return { idx: errA < errB ? 0 : 1, how: 'qty' };
+}
+// Season labels for the two parts of one side of an older bill, or null.
+function _touPairSeasons(norm, provider, bill) {
+  var iso = function (s) {
+    var m = String(s || '').match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    return m ? m[3] + '-' + m[1].padStart(2, '0') + '-' + m[2].padStart(2, '0') : /^\d{4}-\d{2}-\d{2}/.test(s || '') ? String(s).slice(0, 10) : null;
+  };
+  var days = seasonDaysOfPeriod(provider, iso(bill.BillingPeriodStart), iso(bill.BillingPeriodEnd), true);
+  if (!days) return null;
+  var pick = seasonIdxOfPair(provider, [norm[0].from || null, norm[1].from || null], [norm[0].kwh || 0, norm[1].kwh || 0], days.summer / days.total, 0.1);
+  if (pick.idx < 0) return null;
+  return pick.idx === 0 ? ['Sum', 'Win'] : ['Win', 'Sum'];
+}
+// Lines to show for a bill, one side ('on' | 'off'). The per-line fields when the bill has them. An older bill has
+// only the totals and _chargeParts: the season comes from the part's own label, else its printed dates, else the
+// quantity against the day split of the period; with no evidence a line shows no season. Display only; no stored
+// value changes.
+function touLinesOfBill(bill, kind, provider) {
+  provider = provider || SEASON_DEFAULT_PROVIDER;
+  var out = [];
+  TOU_SLOTS.forEach(function (s) {
+    if (s.kind !== kind) return;
+    var ch = parseBillNumber(bill[s.prefix + 'Charge']);
+    if (ch > 0) {
+      out.push({
+        kind: kind,
+        season: s.season,
+        prefix: s.prefix,
+        label: s.label,
+        kwh: parseBillNumber(bill[s.prefix + 'KWh']) || null,
+        rate: parseBillNumber(bill[s.prefix + 'Rate']) || null,
+        charge: ch,
+        stored: true,
+      });
+    }
+  });
+  if (out.length) return out;
+  var key = kind === 'on' ? 'EnergyOnPeakCharge' : 'EnergyOffPeakCharge';
+  var parts =
+    (bill._chargeParts && bill._chargeParts[key]) || (bill._rates && bill._rates[key] && bill._rates[key].parts) || null;
+  if (!parts || !parts.length) return out;
+  var norm = parts.map(function (p) {
+    return {
+      kwh: parseBillNumber(p.qty) || null,
+      rate: parseBillNumber(p.rate) || null,
+      charge: p.charge != null ? parseBillNumber(p.charge) : p.ocrCharge != null ? parseBillNumber(p.ocrCharge) : parseBillNumber(p.computed),
+      from: p.from || null,
+      season: p.season || null,
+    };
+  });
+  if (norm.length === 2 && !(norm[0].season && norm[1].season)) {
+    var pair = _touPairSeasons(norm, provider, bill);
+    if (pair) {
+      norm[0].season = pair[0];
+      norm[1].season = pair[1];
+    }
+  }
+  norm.forEach(function (p, i) {
+    var slot = p.season ? touSlotOf(kind, p.season) : null;
+    out.push({
+      kind: kind,
+      season: p.season,
+      prefix: slot ? slot.prefix : null,
+      label: slot ? slot.label : kind === 'on' ? 'Energy On-Pk' : 'Energy Off-Pk',
+      kwh: p.kwh,
+      rate: p.rate,
+      charge: p.charge,
+      stored: false,
+      idx: i,
+    });
+  });
+  return out;
+}
+
 // _billSeasonRates(bill, kind, days, provider) -> { summer, winter, summerQty, winterQty, how } rates from the bill's OWN split
 // charge lines (bill._chargeParts), or null when the bill has no usable split (the caller then prorates the
 // bill's blended rate by days). A seasonal charge on a bill that crosses a season edge has two printed lines.
@@ -821,7 +1240,7 @@ function _billSeasonRates(bill, kind, days, provider) {
     var l = parts[key];
     if (!l || l.length !== 2) return null;
     var out = l.map(function (x) {
-      return { rate: parseFloat(x.rate), qty: parseFloat(x.qty), charge: parseFloat(x.charge), from: x.from, to: x.to };
+      return { rate: parseFloat(x.rate), qty: parseFloat(x.qty), charge: parseFloat(x.charge), from: x.from, to: x.to, season: x.season };
     });
     var ok = out.every(function (x) {
       return isFinite(x.rate) && isFinite(x.qty) && isFinite(x.charge) && x.rate > 0;
@@ -830,19 +1249,16 @@ function _billSeasonRates(bill, kind, days, provider) {
   }
   // Index (0 or 1) of the summer line of a pair, or -1. q = the two quantities that must match the day split.
   function summerIdx(l, q) {
-    var tot = q[0] + q[1];
-    if (!(tot > 0)) return { idx: -1 };
-    var share0 = q[0] / tot;
-    var errA = Math.abs(share0 - dayShare); // line 1 is summer
-    var errB = Math.abs(share0 - (1 - dayShare)); // line 1 is winter
-    var s0 = l[0].from ? seasonOfDate(provider, l[0].from) : '';
-    var s1 = l[1].from ? seasonOfDate(provider, l[1].from) : '';
-    if ((s0 === 'summer' && s1 === 'winter') || (s0 === 'winter' && s1 === 'summer')) {
-      var i = s0 === 'summer' ? 0 : 1;
-      return (i === 0 ? errA : errB) <= TOL ? { idx: i, how: 'label' } : { idx: -1 };
+    // 1. the season the extractor printed on the line (bill._chargeParts season: Sum / Win)
+    if ((l[0].season === 'Sum' && l[1].season === 'Win') || (l[0].season === 'Win' && l[1].season === 'Sum')) {
+      var tot = q[0] + q[1];
+      if (!(tot > 0)) return { idx: -1 };
+      var i0 = l[0].season === 'Sum' ? 0 : 1;
+      var sh = q[0] / tot;
+      return Math.abs(i0 === 0 ? sh - dayShare : sh - (1 - dayShare)) <= TOL ? { idx: i0, how: 'label' } : { idx: -1 };
     }
-    if (Math.min(errA, errB) > TOL || Math.abs(errA - errB) <= TOL) return { idx: -1 };
-    return { idx: errA < errB ? 0 : 1, how: 'qty' };
+    // 2. the printed dates, 3. the quantities against the day split (one function: seasonIdxOfPair)
+    return seasonIdxOfPair(provider, [l[0].from, l[1].from], q, dayShare, TOL);
   }
   function kwEq(x) {
     return x.charge / x.rate;
