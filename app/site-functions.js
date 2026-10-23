@@ -2507,9 +2507,15 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
-  { v: 'v2026.10.22.161', date: '2026-10-22', title: 'System display mode, clearer text and buttons',
+  { v: 'v2026.10.23.161', date: '2026-10-23', title: 'PDF / OCR layout, seasonal energy lines, Equipment Matrix BAS review, clearer text',
     items: [
+      { type: 'feature', text: 'PDF / OCR page: the values now sit on the left and the PDF on the right, side by side. A building list and the check panel now sit in the page flow, and the running total has a clear label.' },
+      { type: 'feature', text: 'PDF / OCR page: a Utility E bill that crosses the summer and winter change now shows one row each for Summer On-Peak, Summer Off-Peak, Winter On-Peak and Winter Off-Peak energy. A bill whose kWh do not add up shows one plain warning.' },
+      { type: 'fix', text: 'PDF / OCR page: City gas bills lost the Fuel Adjustment, Stormwater, Gas and total amounts when the first scan missed a line. The reader now checks every scan of the page and uses the printed Gas usage.' },
+      { type: 'feature', text: 'Equipment Matrix, Raw view: new Heating Type, Points, Review and Screenshot columns for the BAS review. Review lists what to check on each row, and the Screenshot tick marks a row once you have its screenshot. Each column has a filter, and the header stays in view as you scroll.' },
+      { type: 'fix', text: 'The update bar now appears only after the site answers correctly, so an error page never shows a false new version.' },
       { type: 'feature', text: 'Settings, Display Mode: a new System choice. CompanyHub then matches your computer or phone, and switches between light and dark by itself when your device changes. Dark and Light work as before.' },
+      { type: 'fix', text: 'All text is now pure white on dark and pure black on light, in every browser.' },
       { type: 'fix', text: 'Disabled buttons now show a dashed border with a not-allowed cursor and clear text in every browser.' },
       { type: 'fix', text: 'Budget tab: the text on the + Add Budget Line button is now white on its dark blue fill.' },
       { type: 'fix', text: 'Drop-down lists such as Fiscal Year and FY Start Month are now readable in dark mode in every browser.' }
