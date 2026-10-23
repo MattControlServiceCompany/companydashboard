@@ -12519,7 +12519,7 @@ const _CH_VER_MIN_GAP_MS = 60 * 1000;
 function _checkForVersionUpdate() {
   _chVerLastCheck = Date.now();
   fetch('site-ui.js', { cache: 'no-store', headers: { Range: 'bytes=0-4095' } })
-    .then((r) => r.text())
+    .then((r) => (r.status === 200 || r.status === 206 ? r.text() : ''))
     .then((t) => {
       const m = t.match(/CH_VERSION\s*=\s*'([^']+)'/);
       if (!m) return;
