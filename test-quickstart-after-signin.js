@@ -109,12 +109,24 @@ const USER = { name: 'Test User', email: 'test@example.com', initials: 'TU', isR
         await new Promise((r) => setTimeout(r, 1800));
       };
       document.getElementById('qsOverlay').classList.remove('open');
+      // Count tip bubbles asked for: they follow the same first-sign-in rule as the overlay.
+      window.__tipCalls = 0;
+      window.showTooltip = function () { window.__tipCalls++; };
+      ['ud-proj-perf-btn', 'ud-proj-baseline-btn', 'ud-proj-savproj-btn'].forEach(function (id) {
+        var b = document.createElement('button');
+        b.id = id;
+        document.body.appendChild(b);
+      });
       await window.__ev(null);
     });
     const sign = async (u) => {
       await page.evaluate(() => document.getElementById('qsOverlay').classList.remove('open'));
+      await page.evaluate(() => { window.__tipCalls = 0; });
       await page.evaluate((id) => window.__ev(id), u);
-      return page.evaluate(() => document.getElementById('qsOverlay').classList.contains('open'));
+      const open = await page.evaluate(() => document.getElementById('qsOverlay').classList.contains('open'));
+      const tips = await page.evaluate(() => window.__tipCalls);
+      eq(tips, open ? 3 : 0, 'tip bubbles follow the overlay for ' + u + ' (' + (open ? 'first' : 'later') + ' sign-in)');
+      return open;
     };
     eq(await sign('fake-user-a'), true, 'user A first sign-in: tips open');
     await page.evaluate(() => { chDismissTip('tip_perf_tab'); return new Promise((r) => setTimeout(r, 1500)); });

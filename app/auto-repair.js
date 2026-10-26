@@ -159,7 +159,7 @@ async function _autoRepairOnePdf(pdfKey, refs, version, stats) {
         periodOf(h.row),
         'pdf_reread_held',
         fields.map((k) => ({ field: k, stored: h.fields[k].from, read: h.fields[k].to, reason: h.fields[k].reason })),
-        'The PDF re-read gave another value; the stored value was kept. ' + fields.map((k) => k + ': ' + h.fields[k].reason).join('; '),
+        'The PDF re-read gave another value; the stored value was kept. ' + fields.map((k) => (REPAIR_FIELD_WORDS[k] || k) + ': ' + reasonLabel(h.fields[k].reason)).join('; '),
       );
       fields.forEach((k) => {
         const reason = 'held: ' + h.fields[k].reason;
@@ -227,21 +227,15 @@ async function runAutoRepair() {
   }
   window._autoRepairStats = stats;
   if (stats.read > 0 || stats.waiting > 0 || stats.errors > 0) {
-    const reasons = Object.keys(stats.reasons)
-      .map((k) => stats.reasons[k] + ' ' + k)
-      .join('; ');
+    // Full detail (raw reasons, counts) stays in the console and the audit history. The toast is one plain line.
+    const detail =
+      'Re-read ' + stats.read + ' bills from PDF: ' + stats.repaired + ' repaired, ' + stats.declined + ' cannot be repaired, ' +
+      stats.held + ' values held ' + JSON.stringify(stats.reasons);
+    console.log('[auto repair] ' + detail);
+    const review = stats.declined + stats.held;
     const msg =
-      'Re-read ' +
-      stats.read +
-      ' bills from PDF: ' +
-      stats.repaired +
-      ' repaired, ' +
-      stats.declined +
-      ' cannot be repaired, ' +
-      stats.held +
-      ' values held' +
-      (reasons ? ' (' + reasons + ')' : '');
-    console.log('[auto repair] ' + msg);
+      stats.read + (stats.read === 1 ? ' bill' : ' bills') + ' re-read: ' + stats.repaired + ' fixed' +
+      (review ? ', ' + review + ' need review' : '');
     if (stats.repaired > 0 && typeof showToast === 'function') showToast(msg);
   }
 }

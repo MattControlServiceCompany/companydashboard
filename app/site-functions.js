@@ -12953,14 +12953,19 @@ document.addEventListener('keydown', function (e) {
  * Signature and behavior are identical to site-ui.js:987–1002.
  * ─────────────────────────────────────────────────────────────────────── */
 if (typeof window.showToast !== 'function') {
-  window.showToast = function showToast(msg, type) {
+  window.showToast = function showToast(msg, type, ms) {
     var el = document.getElementById('toast');
     if (!el) return;
-    el.textContent = msg;
+    // Set only the text node: replacing the whole toast would remove the X button.
+    var msgEl = document.getElementById('toastMsg');
+    if (msgEl) msgEl.textContent = msg;
     el.className = 'toast toast-show' + (type ? ' toast-' + type : '');
     clearTimeout(window._toastTimer);
-    var duration = parseInt(localStorage.getItem('ch_toast_duration') || '3500', 10);
-    if (duration > 0) {
+    // ms === 0 keeps the toast until the X is used. A stored duration of 0 or less never makes a toast stick.
+    var sticky = ms === 0;
+    var stored = parseInt(localStorage.getItem('ch_toast_duration') || '3500', 10);
+    var duration = ms > 0 ? ms : stored > 0 ? stored : 3500;
+    if (!sticky) {
       window._toastTimer = setTimeout(window.hideToast, duration);
     }
   };

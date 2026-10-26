@@ -125,6 +125,36 @@ function findRepairMatch(exts, row, meter) {
   return { ext: cands[0] };
 }
 
+// ── plain words for a reason ─────────────────────────────────────────────────────────────────
+// The ONE place a repair reason (kept raw in the stored marker and the console) becomes words a person reads. Any
+// text shown on the page or written as an audit note goes through this. No field name or rule id passes through.
+const REPAIR_FIELD_WORDS = {
+  startRead: 'start read', endRead: 'end read', readDifference: 'read difference', kwh: 'kWh', start: 'start date',
+  end: 'end date', totalCost: 'total cost', therms: 'therms', naturalGasTherms: 'therms', serviceAddress: 'service address',
+};
+const REPAIR_CHECK_WORDS = { reads_identity: 'the printed reads', kwh_identity: 'the printed kWh' };
+function reasonLabel(reason) {
+  let r = String(reason == null ? '' : reason).replace(/^held: /, '');
+  let m = /^the reader filled or changed (\w+) \(not printed on the page\)$/.exec(r);
+  if (m) return 'the reader had to fill in the ' + (REPAIR_FIELD_WORDS[m[1]] || 'value') + ', it is not printed on the page';
+  m = /^the fresh value does not pass (.+)$/.exec(r);
+  if (m) {
+    const words = [...new Set(m[1].split(', ').map((c) => REPAIR_CHECK_WORDS[c] || 'the other bill checks'))];
+    return 'the new value does not match ' + words.join(' and ');
+  }
+  m = /^would add the flag (\w+)$/.exec(r);
+  if (m) {
+    const def = typeof BILL_FLAG_RULES !== 'undefined' ? BILL_FLAG_RULES[m[1]] : null;
+    return 'the new value would add a bill warning' + (def && def.label ? ' on ' + def.label : '');
+  }
+  m = /^next to (.+)$/.exec(r);
+  if (m) return 'next to a bill that needs a check';
+  // A field name before a colon ("startRead: ...") reads as words.
+  r = r.replace(/\b(\w+): /g, (all, k) => (REPAIR_FIELD_WORDS[k] ? REPAIR_FIELD_WORDS[k] + ': ' : all));
+  // Whatever is left that looks like a rule id or a field name is never shown raw.
+  return r.replace(/\b[a-z]+(?:_[a-z0-9]+)+\b/g, 'a bill check').replace(/\b[a-z]+[A-Z]\w*\b/g, 'a bill value');
+}
+
 // ── field mapping and the one write decision ─────────────────────────────────────────────────
 
 const _brHas = (v) => v !== undefined && v !== null && String(v).trim() !== '';
@@ -677,7 +707,7 @@ function repairMeterFromPdf(meter, building, pdfKey, exts, meta, text) {
     if (Object.keys(r.changes).length) items.push({ row, changes: r.changes });
     else {
       const why = Object.keys(r.held)
-        .map((k) => k + ': ' + r.held[k].reason)
+        .map((k) => (REPAIR_FIELD_WORDS[k] || k) + ': ' + reasonLabel(r.held[k].reason))
         .join('; ');
       mark(row, 'nochange', why);
       res.nochange.push(row);

@@ -271,18 +271,75 @@
         }
       }
 
-      /* ── Initial contextual tooltips + auto Quick Start ── */
-      // One rule: open the first-visit guide only when the app is shown (signed in).
-      // Called from the timer below and from enterApp() in core.js. ch_qs_seen is set only when the modal opens.
-      function autoQuickStart() {
+      /* ── First sign-in guide: the Quick Start overlay AND the tip bubbles ──
+         ONE rule (chFirstVisit): the app is shown (signed in), the first server pull is done, and the per-user
+         synced flag ch_qs_seen is not set yet. The flag is set at once, so no later load shows either again, on any
+         browser or origin. In this page session the answer stays true, so the overlay and the tips both show. */
+      function chFirstVisit() {
+        if (window._chFirstVisit) return true;
         var app = document.getElementById('app');
-        if (!app || !app.classList.contains('visible')) return;
-        // The seen flag is a per-user synced key: decide only after the first server pull, so a returning
-        // user on a new browser never sees the guide before the saved flag arrives.
-        if (!DB.hasFullPull()) return;
-        if (DB.get('ch_qs_seen', false) || !chGetSetting('showQuickStart', true)) return;
-        openQuickStart();
+        if (!app || !app.classList.contains('visible')) return false;
+        // Decide only after the first server pull: a returning user on a new browser must get the saved flag first.
+        if (!DB.hasFullPull()) return false;
+        if (DB.get('ch_qs_seen', false)) return false;
+        window._chFirstVisit = true;
         DB.set('ch_qs_seen', true);
+        return true;
+      }
+      window.chFirstVisit = chFirstVisit;
+      // Another sign-in or sign-out ends this first-visit session: the next identity is judged from its own flag.
+      window.addEventListener('chAuthStateChanged', function () {
+        window._chFirstVisit = false;
+        window._chFirstVisitTipsStarted = false;
+      });
+
+      function _chShowFirstVisitTips() {
+        if (!chGetSetting('showTooltips', true)) return;
+
+        // 2. Performance tab button (project level)
+        var perfBtn = document.getElementById('ud-proj-perf-btn');
+        if (perfBtn) {
+          showTooltip(
+            perfBtn,
+            'Click to see usage and cost vs. your baseline period. Requires a saved baseline first.',
+            {
+              id: 'tip_perf_tab',
+              icon: '📊',
+              position: 'above',
+              delay: 3000,
+            },
+          );
+        }
+
+        // 3. Baseline tab button (project level)
+        var blBtn = document.getElementById('ud-proj-baseline-btn');
+        if (blBtn) {
+          showTooltip(
+            blBtn,
+            'Select your pre-project billing months and save a baseline — the reference point for all savings calculations.',
+            { id: 'tip_baseline_btn', icon: '📈', position: 'above', delay: 5500 },
+          );
+        }
+
+        // 4. Projected Savings button
+        var savProjBtn = document.getElementById('ud-proj-savproj-btn');
+        if (savProjBtn) {
+          showTooltip(savProjBtn, 'Model future savings based on a proposed % reduction in usage or cost.', {
+            id: 'tip_savproj_btn',
+            icon: '💰',
+            position: 'above',
+            delay: 8000,
+          });
+        }
+      }
+
+      function autoQuickStart() {
+        if (!chFirstVisit()) return;
+        if (!window._chFirstVisitTipsStarted) {
+          window._chFirstVisitTipsStarted = true;
+          setTimeout(_chShowFirstVisitTips, 700);
+        }
+        if (chGetSetting('showQuickStart', true)) openQuickStart();
       }
       window.addEventListener('dbHydrated', function () {
         autoQuickStart();
@@ -290,52 +347,12 @@
       window.autoQuickStart = autoQuickStart;
       document.addEventListener('DOMContentLoaded', function () {
         setTimeout(autoQuickStart, 1200);
-
-        // Attach contextual tooltips after DOM is settled
-        setTimeout(function () {
-          if (!chGetSetting('showTooltips', true)) return;
-
-          // 2. Performance tab button (project level)
-          var perfBtn = document.getElementById('ud-proj-perf-btn');
-          if (perfBtn) {
-            showTooltip(
-              perfBtn,
-              'Click to see usage and cost vs. your baseline period. Requires a saved baseline first.',
-              {
-                id: 'tip_perf_tab',
-                icon: '📊',
-                position: 'above',
-                delay: 3000,
-              },
-            );
-          }
-
-          // 3. Baseline tab button (project level)
-          var blBtn = document.getElementById('ud-proj-baseline-btn');
-          if (blBtn) {
-            showTooltip(
-              blBtn,
-              'Select your pre-project billing months and save a baseline — the reference point for all savings calculations.',
-              { id: 'tip_baseline_btn', icon: '📈', position: 'above', delay: 5500 },
-            );
-          }
-
-          // 4. Projected Savings button
-          var savProjBtn = document.getElementById('ud-proj-savproj-btn');
-          if (savProjBtn) {
-            showTooltip(savProjBtn, 'Model future savings based on a proposed % reduction in usage or cost.', {
-              id: 'tip_savproj_btn',
-              icon: '💰',
-              position: 'above',
-              delay: 8000,
-            });
-          }
-        }, 700);
       });
 
       /* ── Baseline save button tip — call this after blSaveBtn is rendered ──
          The baseline tab renders dynamically, so attach the tip after render. */
       function attachBaselineSaveTip() {
+        if (!window._chFirstVisit) return; // first sign-in only (chFirstVisit)
         var btn = document.getElementById('blSaveBtn');
         if (!btn) return;
         if (btn._chTipAttached) return;
