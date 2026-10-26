@@ -116,6 +116,7 @@
 
 const crypto = require('crypto');
 const { jwtVerify, createRemoteJWKSet } = require('jose');
+const { isStorageNotFound } = require('../lib/storage-not-found');
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY;
@@ -269,6 +270,7 @@ async function storageDownload(path, range) {
   if (res.status === 404) return null;
   if (res.status !== 200 && res.status !== 206) {
     const text = await safeText(res);
+    if (isStorageNotFound(res.status, text)) return null;
     throw new Error(`Storage download failed (${res.status}): ${text.slice(0, 300)}`);
   }
   const arrayBuf = await res.arrayBuffer();

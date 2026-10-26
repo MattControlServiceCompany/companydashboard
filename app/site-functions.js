@@ -2507,6 +2507,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.26.165', date: '2026-10-26', title: 'Bill PDFs save to the server',
+    items: [
+      { type: 'fix', text: 'Bill PDFs now save to the server again, so they open in any browser.' }
+    ]
+  },
   { v: 'v2026.10.26.164', date: '2026-10-26', title: 'Gas invoices keep review flags',
     items: [
       { type: 'fix', text: 'Utility Data: on gas invoices, usage figures that could not be checked stay marked for review when a bill is read again, so a wrong figure cannot be saved without the flag.' }

@@ -736,17 +736,7 @@ function pdfObjectUrl(creds, key) {
   return creds.url + '/storage/v1/object/' + PDF_BUCKET + '/' + String(key).replace(/^\/+/, '');
 }
 
-// Supabase Storage answers a missing object with HTTP 400 and a JSON body
-// {"statusCode":"404","error":"not_found","message":"Object not found"}. Only that body means missing.
-function isStorageNotFoundBody(text) {
-  let b;
-  try {
-    b = JSON.parse(text);
-  } catch (e) {
-    return false;
-  }
-  return !!b && String(b.statusCode) === '404' && (b.error === 'not_found' || /NoSuchKey/.test(String(b.code || '') + String(b.message || '')));
-}
+const { isStorageNotFoundBody } = require(path.join(REPO_ROOT, 'netlify', 'lib', 'storage-not-found.js'));
 
 async function pdfStorageStat(key, creds) {
   const r = await getWithRetry(pdfObjectUrl(creds, key), storageHeaders(creds, { Range: 'bytes=0-0' }));
