@@ -2507,6 +2507,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.26.162', date: '2026-10-26', title: 'Sync: large data items now save to the server',
+    items: [
+      { type: 'fix', text: 'Sync: large data items (over 1 MB) now save to the server instead of being refused.' },
+      { type: 'change', text: 'Sync status panel: a change the server refuses now shows the reason the server gave in the failed row.' }
+    ]
+  },
   { v: 'v2026.10.23.161', date: '2026-10-23', title: 'PDF / OCR layout, seasonal energy lines, Equipment Matrix BAS review, clearer text',
     items: [
       { type: 'feature', text: 'PDF / OCR page: the values now sit on the left and the PDF on the right, side by side. A building list and the check panel now sit in the page flow, and the running total has a clear label.' },
