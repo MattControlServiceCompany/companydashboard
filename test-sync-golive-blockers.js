@@ -3471,7 +3471,7 @@ await t("8l: a load with no edit sends 0 PUT (reload and reopen)", async () => {
     await L.DB.__t._drainQueueOnce();
     const f = L.DB.getQueueFailures();
     assert.strictEqual(JSON.stringify(f.map((x) => [x.key, x.httpStatus, x.permanent])), JSON.stringify([['en_budget_big', 413, true]]));
-    assert.strictEqual(L.DB.describeFailure(f[0]), 'en_budget_big (HTTP 413)');
+    assert.strictEqual(L.DB.describeFailure(f[0]), 'en_budget_big (HTTP 413: server said "x")'); // the server's error text is shown
   });
 // ---- Netlify credit cost (2026-10-07): no timer polls; the server is asked only when the user is looking
 function makeEnv() {
