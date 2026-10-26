@@ -828,7 +828,6 @@ function sv(id, btn) {
         var ridx = window._pdfMultiIdx || 0;
         renderMultiBillUI(window._pdfMultiBills);
         renderPDFFields(window._pdfMultiBills[ridx], (window._pdfBillWarnings || [])[ridx]?.warnings || []);
-        document.getElementById('pdfSaveRow').style.display = 'block';
         document.getElementById('pdfClearBtn').style.display = 'block';
         document.getElementById('dropZone').classList.add('collapsed');
         document.getElementById('pdfTypeSection').style.display = 'none';

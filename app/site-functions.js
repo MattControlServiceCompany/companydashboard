@@ -2507,6 +2507,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.26.166', date: '2026-10-26', title: 'PDF bill review is easier to read',
+    items: [
+      { type: 'change', text: 'PDF bill review: shows the building name by the utility type, shows one bill\'s pages only, removes the extra helper text, and fits the file bar on less lines.' }
+    ]
+  },
   { v: 'v2026.10.26.165', date: '2026-10-26', title: 'Bill PDFs save to the server',
     items: [
       { type: 'fix', text: 'Bill PDFs now save to the server again, so they open in any browser.' }

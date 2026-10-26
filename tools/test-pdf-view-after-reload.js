@@ -149,7 +149,7 @@ const reloadPage = async (page) => {
   await page.reload({ waitUntil: 'domcontentloaded' });
   await settle(page);
 };
-const clickClear = (page, fn) => page.click('button[onclick*="' + fn + '()"]').then(() => page.waitForTimeout(700));
+const clickClear = (page, fn) => page.locator('button[onclick*="' + fn + '()"]:visible').first().click().then(() => page.waitForTimeout(700));
 
 (async () => {
   await new Promise((r) => srv.listen(0, r));

@@ -1,12 +1,14 @@
 /**
  * test-extracted-values-grid.js
  *
- * PDF / OCR extracted values: boxed cells (.ef-item) in a 2-column .ef-grid, grouped by the layout sections, with the
+ * PDF / OCR extracted values: boxed cells (.ef-item) in an auto-fit .ef-grid (columns of at least 190 px), grouped by the layout sections, with the
  * "Data analysis" bar above them. SYNTHETIC bill only (fake ids). Checks:
  *  - the grid, the section titles and the title line draw; no .ef-list is left;
  *  - the bar counts and the chip counts come from one list (they are equal);
  *  - a missing value has a red edge and an icon, a warning value has an amber edge and an icon;
- *  - a pane under 560 px wide drops the grid to one column; no horizontal scroll;
+ *  - the grid fills the pane with as many 190 px columns as fit, and drops to one column in a narrow pane; no horizontal scroll;
+ *  - a value has the plain text color unless it is flagged; a flagged value is colored; every value has hover text;
+ *  - the title says "Extracted values" and no edit hint or "Saves to" paragraph is drawn;
  *  - typing in a cell saves through _pdfApplyFieldEdit and the cell re-draws with the new value.
  *
  * Usage: node tools/test-extracted-values-grid.js [repo-root]
@@ -102,6 +104,11 @@ const WARNINGS = [
           kwCls: item('ActualKW')?.className || '',
           kwIcon: !!item('ActualKW')?.querySelector('.ef-ico'),
           cols: grid ? getComputedStyle(grid).gridTemplateColumns.split(' ').length : 0,
+          colMin: grid ? Math.min(...getComputedStyle(grid).gridTemplateColumns.split(' ').map(parseFloat)) : 0,
+          textColor: getComputedStyle(item('CustomerName').querySelector('.ef-input')).color,
+          flagColor: getComputedStyle(item('ActualKW').querySelector('.ef-input')).color,
+          titleOf: item('CustomerName').querySelector('.ef-input').title,
+          hint: /click any value|each bill goes to/i.test(document.getElementById('pdfLeftCol').textContent),
           paneW: g.clientWidth,
           hscroll: g.scrollWidth > g.clientWidth + 1,
         };
@@ -113,7 +120,11 @@ const WARNINGS = [
     if (wide.oldList) problems.push('old .ef-list / details group still drawn');
     if (!wide.sections.includes('Account Info') || !wide.sections.includes('Billing Period & Meter') || !wide.sections.includes('Charges'))
       problems.push('section titles missing: ' + JSON.stringify(wide.sections));
-    if (!/Extracted/.test(wide.hdr) || !/click values to edit/i.test(wide.hdr)) problems.push('title line missing: ' + wide.hdr);
+    if (!/Extracted values/.test(wide.hdr) || /click/i.test(wide.hdr)) problems.push('title line wrong: ' + wide.hdr);
+    if (wide.hint) problems.push('the edit hint or the multi-bill Saves to paragraph is still in the page');
+    if (wide.textColor !== 'rgb(255, 255, 255)') problems.push('plain value is not white on dark: ' + wide.textColor);
+    if (wide.flagColor === wide.textColor) problems.push('a flagged value has the plain color: ' + wide.flagColor);
+    if (!/edit/i.test(wide.titleOf)) problems.push('value has no edit hover text: "' + wide.titleOf + '"');
     if (!wide.barMissing) problems.push('bar shows no missing count');
     if (!wide.barWarn) problems.push('bar shows no warning count');
     if (wide.barMissing !== wide.chipReview || wide.barWarn !== wide.chipWarn)
@@ -121,13 +132,15 @@ const WARNINGS = [
     if (!wide.manual) problems.push('Manual Assign button missing');
     if (!/is-error/.test(wide.startCls) || !wide.startIcon) problems.push('missing value has no red edge and icon: ' + wide.startCls);
     if (!/is-warn/.test(wide.kwCls) || !wide.kwIcon) problems.push('warning value has no amber edge and icon: ' + wide.kwCls);
-    if (wide.cols !== 2) problems.push('wide pane: expected 2 columns, got ' + wide.cols + ' (pane ' + wide.paneW + ')');
+    const expectCols = Math.min(8, Math.max(1, Math.floor((wide.paneW + 2) / 192)));
+    if (wide.cols !== expectCols) problems.push('wide pane: expected ' + expectCols + ' columns, got ' + wide.cols + ' (pane ' + wide.paneW + ')');
+    if (wide.colMin < 189) problems.push('a column is narrower than 190 px: ' + wide.colMin);
     if (wide.hscroll) problems.push('wide pane scrolls sideways');
-    // the values pane beside the PDF is narrower than the window: force a 400 px pane
-    await page.evaluate(() => (document.getElementById('extractedFieldsGrid').style.width = '400px'));
+    // a narrow values pane (under two 190 px columns): force a 340 px pane
+    await page.evaluate(() => (document.getElementById('extractedFieldsGrid').style.width = '340px'));
     await page.waitForTimeout(500);
     const narrow = await read();
-    if (narrow.paneW >= 560) problems.push('setup: narrow pane is ' + narrow.paneW + ' px, expected under 560');
+    if (narrow.paneW >= 382) problems.push('setup: narrow pane is ' + narrow.paneW + ' px, expected under 382');
     if (narrow.cols !== 1) problems.push('narrow pane (' + narrow.paneW + ' px): expected 1 column, got ' + narrow.cols);
     if (narrow.hscroll) problems.push('narrow pane scrolls sideways');
     // typing in a cell: the one edit path saves it and the cell re-draws

@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en">
-  <script src="lib/theme.js?v=165"></script>
+  <script src="lib/theme.js?v=166"></script>
   <script>
     (function () {
       try {
@@ -24,7 +24,7 @@
       content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net; img-src 'self' data: blob:; connect-src 'self' data: blob: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://rrdugvwxtddjywqykphf.supabase.co; worker-src 'self' blob:; frame-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self';"
     />
     <title>CompanyHub — Energy Department</title>
-    <link rel="stylesheet" href="lib/theme.css?v=165" />
+    <link rel="stylesheet" href="lib/theme.css?v=166" />
     <link
       rel="icon"
       href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='15' fill='%23238636'/><text x='50' y='72' font-size='60' font-weight='bold' text-anchor='middle' fill='white'>C</text></svg>"
@@ -33,9 +33,9 @@
       href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
-    <link href="lib/quill.snow.css?v=165" rel="stylesheet" />
+    <link href="lib/quill.snow.css?v=166" rel="stylesheet" />
     <script src="app/ch-auth.js"></script>
-    <script src="sidebar-mode.js?v=165"></script>
+    <script src="sidebar-mode.js?v=166"></script>
 
     <style id="site-ui-styles">
       /* ---------------------------------------------------
@@ -4769,13 +4769,13 @@
         color: var(--accent);
         font-weight: 700;
       }
-      /* PDF / OCR top row (one row for every file): selectors, status chips, the one Save control.
-         A chip or Save opens a list inside the row. It takes space and pushes the values down; it never covers them. */
+      /* PDF / OCR file bar (one row for every file): file name, file status, the one Save control, More, Clear.
+         It stays at the top of the values column. A chip or Save opens a list inside the bar; it takes space and
+         pushes the values down; it never covers them. */
       .pdf-topbar {
+        container-type: inline-size;
         position: sticky;
-        top: 48px;
-        /* One step above #extractedFieldsHdr (z-index:10, later in the page) so the chip lists,
-           which open downward from this row, are not painted under the Data Analysis bar. */
+        top: 0;
         z-index: calc(var(--z-chrome, 10) + 1);
         background: var(--s2);
         border-bottom: 1px solid var(--border);
@@ -4788,6 +4788,79 @@
         gap: 6px 10px;
         flex-wrap: wrap;
       }
+      .pdf-top-file {
+        display: flex;
+        align-items: baseline;
+        gap: 4px 10px;
+        flex: 0 1 auto;
+        min-width: 0;
+        max-width: 100%;
+      }
+      /* A narrow values pane: the file name and counts take the first line, the controls the next. */
+      @container (max-width: 560px) {
+        .pdf-top-file {
+          flex: 1 1 100%;
+        }
+      }
+      /* A narrow values pane: the file chip and the Save, More and Clear group share line 2 (2 lines in all). */
+      @container (max-width: 460px) {
+        .pdf-topbar-row,
+        .pdf-top-actions {
+          gap: 4px 6px;
+        }
+        .pdf-top-actions .pdf-top-btn {
+          padding: 4px 6px;
+        }
+        .pdf-topbar .pdf-chip {
+          padding: 3px 7px;
+        }
+        .pdf-topbar .pdf-top-chips {
+          flex: 0 1 auto;
+        }
+      }
+      .pdf-top-file:empty {
+        display: none;
+      }
+      .pdf-file-name {
+        display: block;
+        flex: 0 1 auto;
+        min-width: 0;
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--text);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 100%;
+      }
+      .pdf-file-sum {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--text);
+        white-space: nowrap;
+      }
+      /* The bill rows of the file and the bill on screen: plain page flow, no inner scroll. */
+      .pdf-billsec {
+        margin: 6px 0 0;
+      }
+      .pdf-billrow {
+        display: flex;
+        align-items: center;
+        gap: 6px 10px;
+        flex-wrap: wrap;
+      }
+      .pdf-top-lbl {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--text);
+      }
+      /* A file with the drop zone's name pill replaced by the file bar. */
+      #pdfLeftCol.pdf-bar-live #dropZone.collapsed {
+        display: none;
+      }
       .pdf-top-sel,
       .pdf-top-chips,
       .pdf-top-save {
@@ -4799,6 +4872,14 @@
       }
       .pdf-top-chips {
         flex: 1 1 auto;
+      }
+      /* Save, More and Clear stay together: they wrap to the next line as one group, never one button alone. */
+      .pdf-top-actions {
+        display: flex;
+        align-items: center;
+        gap: 6px 10px;
+        flex-wrap: wrap;
+        margin-left: auto;
       }
       .pdf-top-sel select {
         width: auto;
@@ -4814,6 +4895,56 @@
         max-width: 210px;
         overflow: hidden;
         text-overflow: ellipsis;
+      }
+      /* Utility chips: one fixed color per utility (the dot and the outline); the text stays the plain text color.
+         Green, red and amber are kept for status. */
+      .pdf-comm {
+        --c: var(--text);
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-family: var(--font);
+        font-size: 12px;
+        font-weight: 600;
+        line-height: 1.3;
+        padding: 2px 9px;
+        border-radius: 12px;
+        border: 1px solid var(--c);
+        background: color-mix(in srgb, var(--c) 12%, transparent);
+        color: var(--text);
+        white-space: nowrap;
+      }
+      .pdf-comm::before {
+        content: '';
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--c);
+      }
+      button.pdf-comm {
+        cursor: pointer;
+      }
+      .pdf-comm.sel {
+        background: color-mix(in srgb, var(--c) 34%, transparent);
+        box-shadow: 0 0 0 1px var(--c);
+      }
+      .pdf-comm.c-gas {
+        --c: var(--orange);
+      }
+      .pdf-comm.c-water {
+        --c: var(--em2);
+      }
+      .pdf-comm.c-sewer {
+        --c: var(--violet);
+      }
+      .pdf-comm.c-stormwater {
+        --c: var(--teal);
+      }
+      .pdf-comm.c-electric {
+        --c: var(--lime);
+      }
+      .pdf-comm.c-propane {
+        --c: var(--accent);
       }
       .pdf-chip {
         font-family: var(--font);
@@ -4893,13 +5024,13 @@
         min-width: min(340px, 100%);
         max-width: 100%;
       }
-      /* Buildings found in the PDF: every one is visible. A click picks it. */
+      /* Buildings found in the PDF: every one is visible (no inner scroll). A click picks it.
+         The bar on the left edge is the status (green = saved or ready, amber = differs from the saved bill,
+         red = to review) and never changes with the selection. The selected row has a fill and an outline. */
       .pdf-bldgs {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+        grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr));
         gap: 6px;
-        max-height: 30vh;
-        overflow-y: auto;
         margin-bottom: 6px;
       }
       .pdf-bldgs:empty {
@@ -4913,7 +5044,7 @@
         text-align: left;
         font-family: var(--font);
         font-size: 12px;
-        color: var(--ink);
+        color: var(--text);
         background: var(--s3);
         border: 1px solid var(--border2);
         border-left: 4px solid var(--green);
@@ -4921,13 +5052,16 @@
         padding: 5px 9px;
         cursor: pointer;
       }
-      .pdf-bldg.review {
+      .pdf-bldg.st-differs {
+        border-left-color: var(--amber);
+      }
+      .pdf-bldg.st-review {
         border-left-color: var(--red);
       }
       .pdf-bldg.sel {
         background: var(--s4);
-        border-color: var(--accent);
-        border-left-width: 4px;
+        outline: 2px solid var(--accent);
+        outline-offset: 1px;
       }
       .pdf-bldg-name {
         font-weight: 700;
@@ -4938,13 +5072,20 @@
       .pdf-bldg-line {
         display: flex;
         justify-content: space-between;
-        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 2px 8px;
         min-width: 0;
       }
-      .pdf-bldg-line > span {
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
+      .pdf-bldg-comms {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        min-width: 0;
+      }
+      .pdf-bldg-comms .pdf-comm {
+        font-size: 11px;
+        padding: 0 7px;
       }
       .pdf-pop-title {
         font-size: 11px;
@@ -5063,55 +5204,6 @@
         font-variant-numeric: tabular-nums;
         word-break: break-word;
       }
-      /* Where the bill is saved: one line inside the values, the three selects open on Change. */
-      .pdf-saves-to {
-        margin: 6px 0 2px;
-      }
-      .pdf-saves-line {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        font-size: 12px;
-        flex-wrap: wrap;
-      }
-      .pdf-saves-lbl {
-        font-size: 9px;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.6px;
-        color: var(--text2);
-      }
-      .pdf-saves-text {
-        color: var(--text);
-        min-width: 0;
-      }
-      .pdf-saves-hint {
-        margin-left: auto;
-        font-size: 11px;
-        color: var(--text2);
-      }
-      .pdf-link-btn {
-        font-family: var(--font);
-        font-size: 12px;
-        color: var(--accent);
-        background: transparent;
-        border: none;
-        padding: 0;
-        cursor: pointer;
-        text-decoration: underline;
-      }
-      .pdf-saves-pick {
-        display: flex;
-        gap: 6px;
-        flex-wrap: wrap;
-        margin-top: 6px;
-      }
-      .pdf-saves-pick select {
-        flex: 1 1 140px;
-        min-width: 0;
-        font-size: 12px;
-        padding: 4px 8px;
-      }
       /* A held fix: the "Use $X" button beside the value. */
       .ef-fix-btn {
         margin-left: 6px;
@@ -5125,27 +5217,62 @@
         color: inherit;
         cursor: pointer;
       }
-      /* Extracted values: boxed cells in a 2-column grid (label on top, value below). The values pane sits beside the
-         PDF, so the grid follows the pane width, not the window: under 560 px it is one column. */
+      /* Extracted values: boxed cells (label on top, value below) in a grid that follows the width of the values pane
+         (not the window): as many columns as fit, each at least 190 px, one column when the pane is narrow. */
       #extractedFieldsGrid {
         container-type: inline-size;
       }
       .ef-grid {
         display: grid;
-        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        grid-template-columns: repeat(var(--ef-cols, 1), minmax(0, 1fr));
         gap: 2px;
         margin-top: 4px;
       }
+      /* The number of columns: as many 190 px columns as the pane holds (N columns need 192 x N - 2 px).
+         A plain auto-fit would count the full-width rows (sections, charge rows) as filling every column. */
+      @container (min-width: 382px) {
+        .ef-grid {
+          --ef-cols: 2;
+        }
+      }
+      @container (min-width: 574px) {
+        .ef-grid {
+          --ef-cols: 3;
+        }
+      }
+      @container (min-width: 766px) {
+        .ef-grid {
+          --ef-cols: 4;
+        }
+      }
+      @container (min-width: 958px) {
+        .ef-grid {
+          --ef-cols: 5;
+        }
+      }
+      @container (min-width: 1150px) {
+        .ef-grid {
+          --ef-cols: 6;
+        }
+      }
+      @container (min-width: 1342px) {
+        .ef-grid {
+          --ef-cols: 7;
+        }
+      }
+      @container (min-width: 1534px) {
+        .ef-grid {
+          --ef-cols: 8;
+        }
+      }
       .ef-grid .ef-section,
-      .ef-grid .ef-pair,
       .ef-grid .ef-charge-row,
       .ef-grid .ef-tools {
         grid-column: 1 / -1;
       }
+      /* A pair of values is not a row of its own: its cells join the grid. */
       .ef-pair {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-        gap: 2px;
+        display: contents;
       }
       .ef-charge-row {
         display: grid;
@@ -5264,10 +5391,6 @@
         font-size: 11px;
       }
       @container (max-width: 559px) {
-        .ef-grid,
-        .ef-pair {
-          grid-template-columns: minmax(0, 1fr);
-        }
         .ef-charge-row {
           grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
         }
@@ -5342,7 +5465,7 @@
         font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 0.7px;
-        color: var(--em);
+        color: var(--text);
         margin: 12px 0 4px;
       }
       .ef-item.ef-total .ef-key,
@@ -5353,7 +5476,7 @@
         font-size: 14px;
       }
       #pdfBody[data-queue-busy] #pdfTopBar,
-      #pdfBody[data-queue-busy] #pdfSaveRow {
+      #pdfBody[data-queue-busy] #pdfBillSection {
         display: none !important;
       }
       /* PDF / OCR page header: View PDF and Saved Bills stay top-right at every width; the subtitle wraps instead. */
@@ -5417,7 +5540,7 @@
         }
         /* The column headers stop pinning here: the PDF is the pinned item. */
         #pdfBody.pdf-docked .drop-zone.collapsed,
-        #pdfBody.pdf-docked #extractedFieldsHdr {
+        #pdfBody.pdf-docked .pdf-topbar {
           position: static !important;
         }
       }
@@ -5587,16 +5710,10 @@
          container so everything ABOVE the Account Info section stays pinned
          as the user scrolls through the data fields. */
       #extractedFieldsHdr {
-        position: sticky;
-        /* Stacks below the sticky collapsed drop-zone pill (min-height:48px
-           with border-box). If the collapsed pill height changes, update here. */
-        top: 48px;
-        z-index: 10;
         background: var(--s2);
         margin: 0 -4px 0 0;
         padding-right: 4px;
         border-bottom: 1px solid var(--border);
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
       }
       #extractedFieldsHdr:empty {
         display: none;
@@ -5763,6 +5880,11 @@
       .ef-item.wide {
         grid-column: 1/-1;
       }
+      @container (min-width: 382px) {
+        .ef-item.wide {
+          grid-column: span 2;
+        }
+      }
       .ef-item.center .ef-input {
         text-align: center;
       }
@@ -5786,7 +5908,7 @@
       .ef-input {
         font-family: var(--mono);
         font-size: 10.5px;
-        color: var(--em);
+        color: var(--text);
         background: transparent;
         border: none;
         outline: none;
@@ -9001,8 +9123,8 @@
         }
       }
     </style>
-    <link rel="stylesheet" href="feedback-widget.css?v=165" />
-    <link rel="stylesheet" href="sidebar-rail.css?v=165" />
+    <link rel="stylesheet" href="feedback-widget.css?v=166" />
+    <link rel="stylesheet" href="sidebar-rail.css?v=166" />
     <style>
       /* -- Quill rich text editor — dark theme overrides -- */
       .ql-toolbar.ql-snow {
@@ -9734,15 +9856,17 @@
                     <button class="ptpill" onclick="setPDFType('contract', this)">Contract</button>
                   </div>
                 </div>
-                <!-- ONE top row for every file kind: building, utility and period selectors, status chips, the one Save control.
-                     Filled by _pdfRenderTopBar() (app/bill-analysis.js). A chip or Save opens a list that overlays the page. -->
+                <!-- File bar for every file kind: file name, file status, the one Save control, More, Clear.
+                     Filled by _pdfRenderTopBar() (app/bill-analysis.js). A chip or Save opens a list under the bar. -->
                 <div id="pdfTopBar" class="pdf-topbar" data-fb="energy.pdf.top-bar" style="display: none">
-                  <div id="pdfTopBldgs" class="pdf-bldgs" role="list" aria-label="Buildings found in this PDF"></div>
                   <div class="pdf-topbar-row">
-                    <div id="pdfTopSel" class="pdf-top-sel"></div>
-                    <div id="pdfTopChips" class="pdf-top-chips"></div>
-                    <div id="pdfTopSave" class="pdf-top-save"></div>
-                    <button id="pdfMoreBtn" class="pdf-top-btn" style="display: none" onclick="_pdfTogglePop('more')">More</button>
+                    <div id="pdfTopFile" class="pdf-top-file"></div>
+                    <div id="pdfTopFileChips" class="pdf-top-chips"></div>
+                    <div class="pdf-top-actions">
+                      <div id="pdfTopSave" class="pdf-top-save"></div>
+                      <button id="pdfMoreBtn" class="pdf-top-btn" style="display: none" title="Other ways to save, and the PDF page options" onclick="_pdfTogglePop('more')">More</button>
+                      <button id="pdfClearFileBtn" class="pdf-top-btn" style="display: none" title="Remove this file and its values from the page" onclick="clearPDFOCR()">Clear</button>
+                    </div>
                   </div>
                   <div id="pdfTopPop" class="pdf-pop" style="display: none"></div>
                   <div id="pdfMorePop" class="pdf-pop pdf-pop-narrow" style="display: none">
@@ -9763,25 +9887,27 @@
                     <div id="pdfMultiBldgPanel" style="display: none"></div>
                   </div>
                 </div>
+                <!-- The bills of the file: one row per building (every row shows), then the bill on screen:
+                     its utility chips, billing period and status chips. -->
+                <div id="pdfBillSection" class="pdf-billsec" style="display: none">
+                  <div id="pdfTopBldgs" class="pdf-bldgs" role="list" aria-label="Buildings found in this PDF"></div>
+                  <div class="pdf-billrow">
+                    <div id="pdfTopSel" class="pdf-top-sel"></div>
+                    <div id="pdfTopChips" class="pdf-top-chips"></div>
+                  </div>
+                  <div id="pdfBillPop" class="pdf-pop" style="display: none"></div>
+                </div>
                 <div id="pdfStatusBox" class="ai-box" data-fb="energy.pdf.status-box"></div>
                 <div id="extractedFieldsHdr" data-fb="energy.pdf.extracted-fields-hdr"></div>
-                <!-- Where the bill will be saved. The three selects stay here: the save code reads them. -->
-                <div id="pdfSaveRow" class="pdf-saves-to" style="display: none" data-fb="energy.pdf.save-row">
-                  <div class="pdf-saves-line">
-                    <span class="pdf-saves-lbl">Saves to</span>
-                    <span id="pdfSavesToText" class="pdf-saves-text"></span>
-                    <button id="pdfSavesToChange" class="pdf-link-btn" onclick="_pdfToggleSavesTo()">Change</button>
-                    <span class="pdf-saves-hint">Click any value to edit it.</span>
-                  </div>
-                  <div id="pdfSavesToPick" class="pdf-saves-pick" style="display: none">
-                    <select class="fs" id="pdfProjSel" onchange="pdfUpdateBldgMeterOpts(); _pdfRefreshSavesTo()" data-fb="energy.pdf.project-select"></select>
-                    <select class="fs" id="pdfBldgSel" onchange="pdfUpdateMeterOpts(); _pdfRefreshSavesTo()">
-                      <option value="">Auto-detect building</option>
-                    </select>
-                    <select class="fs" id="pdfMeterSel" onchange="_pdfRefreshSavesTo()">
-                      <option value="">Auto-detect meter</option>
-                    </select>
-                  </div>
+                <!-- Destination selects: the save code reads them; the auto-detected match fills them. Never shown. -->
+                <div id="pdfSaveSelects" hidden>
+                  <select class="fs" id="pdfProjSel" onchange="pdfUpdateBldgMeterOpts()" data-fb="energy.pdf.project-select"></select>
+                  <select class="fs" id="pdfBldgSel" onchange="pdfUpdateMeterOpts()">
+                    <option value="">Auto-detect building</option>
+                  </select>
+                  <select class="fs" id="pdfMeterSel">
+                    <option value="">Auto-detect meter</option>
+                  </select>
                 </div>
                 <div id="extractedFieldsGrid" data-fb="energy.pdf.extracted-fields"></div>
               </div>
@@ -9823,6 +9949,14 @@
                   <button id="pdfDockTabPdf" class="pdf-dock-tab" onclick="setPdfDockTab('pdf')">PDF</button>
                   <button id="pdfDockTabOcr" class="pdf-dock-tab" onclick="setPdfDockTab('ocr')">OCR text</button>
                   <span id="pdfDockStatus" style="flex: 1 1 170px; min-width: 0; font-size: 12px; font-weight: 600; color: var(--text)">PDF</span>
+                  <button
+                    id="pdfDockPagesBtn"
+                    class="btn btn-ghost btn-sm"
+                    style="font-size: 11px; padding: 3px 10px; flex-shrink: 0; display: none"
+                    onclick="togglePdfDockAllPages()"
+                  >
+                    Show all pages
+                  </button>
                   <button
                     id="pdfDockOpenTab"
                     class="btn btn-ghost btn-sm"
@@ -16227,48 +16361,48 @@
       crossorigin="anonymous"
     ></script>
     <!-- CompanyHub computation modules -->
-    <script src="lib/date-helpers.js?v=165"></script>
-    <script src="lib/formatting.js?v=165"></script>
-    <script src="lib/unit-conversion.js?v=165"></script>
-    <script src="lib/csv-parser.js?v=165"></script>
-    <script src="computations/physics.js?v=165"></script>
-    <script src="computations/fan-savings.js?v=165"></script>
-    <script src="computations/cost-lines.js?v=165"></script>
-    <script src="computations/rates.js?v=165"></script>
-    <script src="computations/regression.js?v=165"></script>
-    <script src="computations/normalization.js?v=165"></script>
-    <script src="computations/eui.js?v=165"></script>
-    <script src="computations/hvac-enduse.js?v=165"></script>
-    <script src="computations/end-use.js?v=165"></script>
-    <script src="computations/pollution.js?v=165"></script>
-    <script src="computations/csc.js?v=165"></script>
-    <script src="computations/savings.js?v=165"></script>
-    <script src="computations/bill-flags.js?v=165"></script>
-    <script src="computations/bill-layout.js?v=165"></script>
-    <script src="computations/bill-repair.js?v=165"></script>
-    <script src="computations/anomaly-detection.js?v=165"></script>
-    <script src="lib/perf-table.js?v=165"></script>
-    <script src="lib/shared-charts.js?v=165"></script>
-    <script src="computations/report-data.js?v=165"></script>
-    <script src="computations/data-quality.js?v=165"></script>
-    <script src="extraction/pdf-engine.js?v=165"></script>
-    <script src="app/sync-classification.js?v=165"></script>
-    <script src="app/db.js?v=165"></script>
-    <script src="app/sync-ui.js?v=165"></script>
-    <script src="app/ems-leads-store.js?v=165"></script>
-    <script src="app/core.js?v=165"></script>
-    <script src="app/energy-savings.js?v=165"></script>
-    <script src="app/bill-analysis.js?v=165"></script>
-    <script src="extraction/bill-validation.js?v=165"></script>
-    <script src="app/district-calendar.js?v=165"></script>
-    <script src="app/scope-tree.js?v=165"></script>
-    <script src="app/utility-data.js?v=165"></script>
-    <script src="app/pipeline-diagram.js?v=165"></script>
-    <script src="app/csv-import.js?v=165"></script>
-    <script src="app/bill-pdf-attach.js?v=165"></script>
-    <script src="app/meter-autocreate.js?v=165"></script>
-    <script src="app/bill-corrections-review.js?v=165"></script>
-    <script src="app/auto-repair.js?v=165"></script>
+    <script src="lib/date-helpers.js?v=166"></script>
+    <script src="lib/formatting.js?v=166"></script>
+    <script src="lib/unit-conversion.js?v=166"></script>
+    <script src="lib/csv-parser.js?v=166"></script>
+    <script src="computations/physics.js?v=166"></script>
+    <script src="computations/fan-savings.js?v=166"></script>
+    <script src="computations/cost-lines.js?v=166"></script>
+    <script src="computations/rates.js?v=166"></script>
+    <script src="computations/regression.js?v=166"></script>
+    <script src="computations/normalization.js?v=166"></script>
+    <script src="computations/eui.js?v=166"></script>
+    <script src="computations/hvac-enduse.js?v=166"></script>
+    <script src="computations/end-use.js?v=166"></script>
+    <script src="computations/pollution.js?v=166"></script>
+    <script src="computations/csc.js?v=166"></script>
+    <script src="computations/savings.js?v=166"></script>
+    <script src="computations/bill-flags.js?v=166"></script>
+    <script src="computations/bill-layout.js?v=166"></script>
+    <script src="computations/bill-repair.js?v=166"></script>
+    <script src="computations/anomaly-detection.js?v=166"></script>
+    <script src="lib/perf-table.js?v=166"></script>
+    <script src="lib/shared-charts.js?v=166"></script>
+    <script src="computations/report-data.js?v=166"></script>
+    <script src="computations/data-quality.js?v=166"></script>
+    <script src="extraction/pdf-engine.js?v=166"></script>
+    <script src="app/sync-classification.js?v=166"></script>
+    <script src="app/db.js?v=166"></script>
+    <script src="app/sync-ui.js?v=166"></script>
+    <script src="app/ems-leads-store.js?v=166"></script>
+    <script src="app/core.js?v=166"></script>
+    <script src="app/energy-savings.js?v=166"></script>
+    <script src="app/bill-analysis.js?v=166"></script>
+    <script src="extraction/bill-validation.js?v=166"></script>
+    <script src="app/district-calendar.js?v=166"></script>
+    <script src="app/scope-tree.js?v=166"></script>
+    <script src="app/utility-data.js?v=166"></script>
+    <script src="app/pipeline-diagram.js?v=166"></script>
+    <script src="app/csv-import.js?v=166"></script>
+    <script src="app/bill-pdf-attach.js?v=166"></script>
+    <script src="app/meter-autocreate.js?v=166"></script>
+    <script src="app/bill-corrections-review.js?v=166"></script>
+    <script src="app/auto-repair.js?v=166"></script>
     <!-- Word Export Rebuild plan Steps 1/3 (app/docx-skeleton.js, app/docx-writer.js) were never
          wired into this page's script list -- exportReportToDocx() (report-engine.js) calls
          _docxTranslatePages()/_docxAssemble() (docx-writer.js) and CSC_DOCX_SKELETON_B64
@@ -16278,40 +16412,40 @@
          the gap was never exercised end-to-end). Formal button wiring is plan Step 11; these two
          tags are the load-order prerequisite that step (and every step since 6) actually needs
          to function through the live app at all, not new report content. -->
-    <script src="app/docx-skeleton.js?v=165"></script>
-    <script src="app/docx-writer.js?v=165"></script>
-    <script src="app/report-engine.js?v=165"></script>
-    <script src="app/report-printed.js?v=165"></script>
-    <script src="app/report-engine-woodland.js?v=165"></script>
-    <script src="app/report-preview.js?v=165"></script>
-    <script src="app/presented-savings.js?v=165"></script>
-    <script src="app/data/bas-weather-bins.js?v=165"></script>
-    <script src="app/calc-autofill.js?v=165"></script>
-    <script src="app/calculators.js?v=165"></script>
-    <script src="app/ecm-calculators.js?v=165"></script>
-    <script src="app/equipment-matrix.js?v=165"></script>
+    <script src="app/docx-skeleton.js?v=166"></script>
+    <script src="app/docx-writer.js?v=166"></script>
+    <script src="app/report-engine.js?v=166"></script>
+    <script src="app/report-printed.js?v=166"></script>
+    <script src="app/report-engine-woodland.js?v=166"></script>
+    <script src="app/report-preview.js?v=166"></script>
+    <script src="app/presented-savings.js?v=166"></script>
+    <script src="app/data/bas-weather-bins.js?v=166"></script>
+    <script src="app/calc-autofill.js?v=166"></script>
+    <script src="app/calculators.js?v=166"></script>
+    <script src="app/ecm-calculators.js?v=166"></script>
+    <script src="app/equipment-matrix.js?v=166"></script>
     <!-- soo-generator.js (SOO Phase 1, item 3f1415af): reads points/config flags via the
          EXISTING emGetNormalizedPoints/emComputeCompliance/emLoadEquipConfigFlags (equipment-
          matrix.js, loaded above). Format-correction pass (2026-09-13): renders the MASTER
          SEQUENCES OF OPERATION document's own Word format directly (Heading 1/Normal/bold-label
          runs), NOT the report-engine .rpt-page shell — soo-docx-skeleton.js supplies the
          master-doc-derived skeleton its own Word export splices into. -->
-    <script src="app/soo-docx-skeleton.js?v=165"></script>
-    <script src="app/soo-generator.js?v=165"></script>
-    <script src="app/graphics-setpoints.js?v=165"></script>
-    <script src="app/budget.js?v=165"></script>
-    <script src="app/hours.js?v=165"></script>
-    <script src="app/scorecard.js?v=165"></script>
-    <script src="app/bas-trends.js?v=165"></script>
-    <script src="app/bas-alarms.js?v=165"></script>
-    <script src="app/pricing-estimator.js?v=165"></script>
-    <script src="app/estimate-workbook.js?v=165"></script>
-    <script src="app/estimate-workbook-export.js?v=165"></script>
-    <script src="app/audit-estimate.js?v=165"></script>
-    <script src="app/agreement-engine.js?v=165"></script>
+    <script src="app/soo-docx-skeleton.js?v=166"></script>
+    <script src="app/soo-generator.js?v=166"></script>
+    <script src="app/graphics-setpoints.js?v=166"></script>
+    <script src="app/budget.js?v=166"></script>
+    <script src="app/hours.js?v=166"></script>
+    <script src="app/scorecard.js?v=166"></script>
+    <script src="app/bas-trends.js?v=166"></script>
+    <script src="app/bas-alarms.js?v=166"></script>
+    <script src="app/pricing-estimator.js?v=166"></script>
+    <script src="app/estimate-workbook.js?v=166"></script>
+    <script src="app/estimate-workbook-export.js?v=166"></script>
+    <script src="app/audit-estimate.js?v=166"></script>
+    <script src="app/agreement-engine.js?v=166"></script>
 
-    <script src="app/restore-merge.js?v=165"></script>
-    <script src="app/site-functions.js?v=165"></script>
+    <script src="app/restore-merge.js?v=166"></script>
+    <script src="app/site-functions.js?v=166"></script>
     <script>
       /* -- DRAG-TO-RESIZE PANELS -- */
       (function () {
@@ -16482,14 +16616,14 @@
       </div>
     </div>
 
-    <script src="app/tooltips-help.js?v=165"></script>
-    <script src="feedback-widget.js?v=165"></script>
+    <script src="app/tooltips-help.js?v=166"></script>
+    <script src="feedback-widget.js?v=166"></script>
     <script
       src="https://cdn.jsdelivr.net/npm/quill@2.0.3/dist/quill.min.js"
       integrity="sha384-reiVBUvj2HgLgCZalqLFSMBVD9LdtiwGyybRGCq2AfP8Rgebz5DxEnwKp4FpagKV"
       crossorigin="anonymous"
     ></script>
-    <script src="lib/rich-text.js?v=165"></script>
+    <script src="lib/rich-text.js?v=166"></script>
     <script>
       /* Handle ?openProject=... URL params — opened by _rptV2GoEdit() popup window */
       (function _handleEditRedirect() {

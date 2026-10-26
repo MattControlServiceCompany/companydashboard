@@ -6860,7 +6860,7 @@ function showAutoAssignBanner(match, extracted) {
   // this branch was previously unreachable.
   if (match.matchType === 'ambiguous' || !match.meter) return;
   _autoAssignTarget = match;
-  // Sync the destination selects with the auto-detected match; the "Saves to" line shows it.
+  // Sync the destination selects with the auto-detected match.
   const bldgSel = document.getElementById('pdfBldgSel');
   const meterSel = document.getElementById('pdfMeterSel');
   if (bldgSel && match.bldgId) {
@@ -6869,7 +6869,6 @@ function showAutoAssignBanner(match, extracted) {
     pdfUpdateMeterOpts();
     if (meterSel && match.meterId) meterSel.value = match.meterId;
   }
-  _pdfRefreshSavesTo();
 }
 
 // ── Multi-building review panel (Option A) ────────────────────────────────────
@@ -6970,7 +6969,6 @@ function showMultiBuildingReviewPanel() {
   panel.innerHTML = html;
   panel.style.display = 'block';
 
-  _pdfRefreshSavesTo();
   _mbUpdateSaveAllBtn();
 }
 window.showMultiBuildingReviewPanel = showMultiBuildingReviewPanel;
@@ -9579,7 +9577,6 @@ function clearPDFOCR() {
   document.getElementById('pdfInput').value = '';
   document.getElementById('extractedFieldsHdr').innerHTML = '';
   document.getElementById('extractedFieldsGrid').innerHTML = '';
-  document.getElementById('pdfSaveRow').style.display = 'none';
   document.getElementById('pdfClearBtn').style.display = 'none';
   document.getElementById('dropZone').classList.remove('collapsed');
   document.getElementById('pdfTypeSection').style.display = '';
@@ -9625,7 +9622,6 @@ function startQueueExtraction(files) {
     _previewMode: false,
   };
   refreshProjDropdowns();
-  document.getElementById('pdfSaveRow').style.display = 'none';
   document.getElementById('pdfClearBtn').style.display = 'none';
   document.getElementById('pdfTypeSection').style.display = 'none';
   _pdfSetQueueBusy(true);
@@ -10408,7 +10404,6 @@ function renderQueueResults() {
   dzTitle.style.cssText = '';
   _pdfSetQueueBusy(false);
   document.getElementById('pdfTypeSection').style.display = 'none';
-  document.getElementById('pdfSaveRow').style.display = 'none';
   // Show debug buttons and View PDF only when a PDF is kept for this batch
   if (q.results.some((r) => r.pdfB64 || r.pdfKey)) _showExtractionToolbar();
 
@@ -13162,7 +13157,21 @@ function savePDFDebug(isManualSave) {
 // not changed.
 const PDF_DOCK_LS_ON = 'ch_pdf_side_by_side';
 const PDF_DOCK_LS_W = 'ch_pdf_dock_width';
-let _pdfDock = { open: false, b64: null, url: null, total: null, page: null, token: 0, shownKey: null, tab: 'pdf', status: '' };
+let _pdfDock = {
+  open: false,
+  b64: null,
+  bytes: null,
+  url: null,
+  total: null,
+  page: null,
+  token: 0,
+  shownKey: null,
+  shownUrl: null,
+  sliceUrl: null,
+  allPages: false,
+  tab: 'pdf',
+  status: '',
+};
 
 function _pdfDockLsGet(key) {
   try {
@@ -13190,13 +13199,71 @@ function _pdfCurrentB64() {
   }
   return b64 || null;
 }
-// 1-based first page of the selected billing period, or null when unknown.
-function _pdfSelectedBillPage() {
+// The ONE reader of the pages of the selected billing period: { first, last } (1-based), or null when unknown.
+function _pdfSelectedBillPages() {
   const bill = (window._pdfMultiBills || [])[window._pdfMultiIdx || 0] || null;
   if (!bill) return null;
-  const raw = bill._pageStart != null && bill._pageEnd != null ? bill._pageStart : bill._pageIndex;
-  const n = parseInt(raw, 10);
-  return n >= 1 ? n : null;
+  const range = bill._pageStart != null && bill._pageEnd != null;
+  const first = parseInt(range ? bill._pageStart : bill._pageIndex, 10);
+  if (!(first >= 1)) return null;
+  const last = range ? parseInt(bill._pageEnd, 10) : first;
+  return { first, last: last >= first ? last : first };
+}
+// 1-based first page of the selected billing period, or null when unknown.
+function _pdfSelectedBillPage() {
+  const pages = _pdfSelectedBillPages();
+  return pages ? pages.first : null;
+}
+// The ONE page cutter: a copy of the PDF with only pages start..end (1-based). Used by the Saved Bills viewer and
+// the review screen viewer. Never throws: on any problem it returns the whole PDF and says so in msg.
+// Returns { bytes, msg, sliced, start, end, total }.
+async function _pdfPageSlice(bytes, pageStart, pageEnd) {
+  const whole = { bytes, msg: 'Opening full PDF (no stored page range)', sliced: false, start: null, end: null, total: null };
+  if (!(pageStart && pageEnd && window.PDFLib)) return whole;
+  // pdf-lib's copyPages can throw internal errors ("can't access property 'node', h is undefined") on PDFs with
+  // cross-reference issues or damaged page nodes. A failed cut falls back to the whole PDF, never a dead end.
+  try {
+    const srcDoc = await window.PDFLib.PDFDocument.load(bytes, { ignoreEncryption: true });
+    const total = srcDoc.getPageCount();
+    let start = Math.max(1, parseInt(pageStart, 10) || 1);
+    let end = Math.min(total, parseInt(pageEnd, 10) || total);
+    if (start > end) {
+      console.warn('[_pdfPageSlice] page range inverted, swapping', { start, end });
+      const t = start;
+      start = end;
+      end = t;
+    }
+    if (start > total) {
+      console.warn('[_pdfPageSlice] start page is past the end, whole PDF', { pageStart, total });
+      return Object.assign(whole, {
+        msg: 'Stored range ' + pageStart + '–' + pageEnd + ' is outside the PDF (' + total + ' pages). Full PDF.',
+        total,
+      });
+    }
+    const idxs = [];
+    for (let p = start; p <= end; p++) {
+      const idx = p - 1;
+      if (idx >= 0 && idx < total) idxs.push(idx);
+    }
+    if (!idxs.length) {
+      console.warn('[_pdfPageSlice] slice produced 0 valid indices, whole PDF', { start, end, total });
+      return Object.assign(whole, { msg: 'Slice range was empty — showing full PDF (' + total + ' pages)', total });
+    }
+    const outDoc = await window.PDFLib.PDFDocument.create();
+    const copied = await outDoc.copyPages(srcDoc, idxs);
+    copied.forEach((pg) => outDoc.addPage(pg));
+    return {
+      bytes: await outDoc.save(),
+      msg: 'Showing pages ' + start + '–' + end + ' of ' + total + ' (' + idxs.length + ' pages)',
+      sliced: true,
+      start,
+      end,
+      total,
+    };
+  } catch (sliceErr) {
+    console.error('[_pdfPageSlice] pdf-lib slice failed, whole PDF:', sliceErr);
+    return Object.assign(whole, { msg: 'Slice failed (' + (sliceErr.message || 'pdf-lib error') + ') — showing full PDF' });
+  }
 }
 function _pdfBlobFromB64(b64) {
   const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
@@ -13211,10 +13278,19 @@ async function _pdfPageCount(bytes) {
     return null;
   }
 }
-function _pdfViewerStatus(page, total) {
-  if (!page) return 'Whole PDF' + (total ? ' (' + total + ' pages)' : '') + '. No page is stored for this bill.';
-  if (total && page > total) return 'Whole PDF (' + total + ' pages). The stored page ' + page + ' is not in the file.';
-  return 'Page ' + page + (total ? ' of ' + total : '') + '. The whole PDF is open. Scroll to see other pages.';
+// The status line of the PDF tab. sliced: only the bill's pages are open; otherwise the whole file is.
+function _pdfViewerStatus(pages, total, sliced) {
+  if (!pages) return 'All pages' + (total ? ' (' + total + ')' : '') + '. No page is stored for this bill.';
+  if (total && pages.first > total) return 'All ' + total + ' pages. The stored page ' + pages.first + ' is not in the file.';
+  const label = pages.last > pages.first ? 'Pages ' + pages.first + ' to ' + pages.last : 'Page ' + pages.first;
+  if (sliced) return label + (total ? ' of ' + total : '') + ' (this bill)';
+  return 'All ' + (total ? total + ' ' : '') + 'pages. This bill is on ' + label.toLowerCase() + '.';
+}
+// "Show all pages" / "Show only this bill": the one switch of the PDF tab.
+function togglePdfDockAllPages() {
+  _pdfDock.allPages = !_pdfDock.allPages;
+  _pdfDock.shownKey = null;
+  _refreshPdfDock();
 }
 
 async function viewCurrentExtractionPDF(event) {
@@ -13237,12 +13313,17 @@ async function viewCurrentExtractionPDF(event) {
 }
 
 function _pdfDockRevoke() {
-  if (_pdfDock.url) {
+  [_pdfDock.url, _pdfDock.sliceUrl].forEach((u) => {
+    if (!u) return;
     try {
-      URL.revokeObjectURL(_pdfDock.url);
+      URL.revokeObjectURL(u);
     } catch (e) {}
-  }
+  });
   _pdfDock.url = null;
+  _pdfDock.sliceUrl = null;
+  _pdfDock.shownUrl = null;
+  _pdfDock.bytes = null;
+  _pdfDock.allPages = false;
   _pdfDock.b64 = null;
   _pdfDock.total = null;
   _pdfDock.page = null;
@@ -13306,23 +13387,44 @@ async function _refreshPdfDock() {
     const built = _pdfBlobFromB64(b64);
     _pdfDock.b64 = b64;
     _pdfDock.url = built.url;
+    _pdfDock.bytes = built.bytes;
     _pdfDock.total = await _pdfPageCount(built.bytes);
     if (token !== _pdfDock.token) return; // a newer refresh or a close took over
   }
-  const page = _pdfSelectedBillPage();
-  const key = _pdfDock.url + '|' + page;
-  _pdfDock.status = _pdfViewerStatus(page, _pdfDock.total);
-  _renderPdfDockTab();
-  if (key === _pdfDock.shownKey) return;
+  // Only the pages of the selected bill are shown. "Show all pages" opens the whole file at the bill's page.
+  const pages = _pdfSelectedBillPages();
+  const page = pages ? pages.first : null;
+  const wantSlice = !!pages && !_pdfDock.allPages && !!_pdfDock.total && pages.first <= _pdfDock.total;
+  const key = _pdfDock.url + '|' + (pages ? pages.first + '-' + pages.last : '') + '|' + (wantSlice ? 'bill' : 'all');
+  if (key === _pdfDock.shownKey) {
+    _renderPdfDockTab();
+    return;
+  }
+  let shownUrl = _pdfDock.url;
+  let sliced = false;
+  if (wantSlice) {
+    const cut = await _pdfPageSlice(_pdfDock.bytes, pages.first, pages.last);
+    if (token !== _pdfDock.token) return;
+    if (cut.sliced) {
+      const old = _pdfDock.sliceUrl;
+      _pdfDock.sliceUrl = URL.createObjectURL(new Blob([cut.bytes], { type: 'application/pdf' }));
+      if (old) URL.revokeObjectURL(old);
+      shownUrl = _pdfDock.sliceUrl;
+      sliced = true;
+    }
+  }
+  _pdfDock.status = _pdfViewerStatus(pages, _pdfDock.total, sliced);
   _pdfDock.shownKey = key;
-  _pdfDock.page = page;
+  _pdfDock.shownUrl = shownUrl;
+  _pdfDock.page = sliced ? null : page;
+  _renderPdfDockTab();
   const body = document.getElementById('pdfDockBody');
   if (!body) return;
-  // A new iframe per page move: it always jumps to the page, whichever PDF viewer the browser uses.
+  // A new iframe per move: it always opens at the right place, whichever PDF viewer the browser uses.
   const fr = document.createElement('iframe');
   fr.title = 'PDF viewer';
   fr.style.cssText = 'width:100%;height:100%;border:0;display:block';
-  fr.src = page ? _pdfDock.url + '#page=' + page : _pdfDock.url;
+  fr.src = !sliced && page ? shownUrl + '#page=' + page : shownUrl;
   body.innerHTML = '';
   body.appendChild(fr);
 }
@@ -13338,6 +13440,12 @@ function _renderPdfDockTab() {
   set('pdfDockTabOcr', (el) => el.classList.toggle('sel', ocr));
   set('pdfDockBody', (el) => (el.style.display = ocr ? 'none' : ''));
   set('pdfDockOpenTab', (el) => (el.style.display = ocr ? 'none' : ''));
+  // The page switch shows only when the bill has a page to cut to.
+  set('pdfDockPagesBtn', (el) => {
+    el.style.display = ocr || !_pdfSelectedBillPages() || !_pdfDock.total ? 'none' : '';
+    el.textContent = _pdfDock.allPages ? 'Show only this bill' : 'Show all pages';
+    el.title = _pdfDock.allPages ? 'Show only the page of the selected bill' : 'Show every page of the PDF';
+  });
   set('pdfDockOcr', (el) => {
     el.style.display = ocr ? 'block' : 'none';
     if (ocr) el.textContent = read.text;
@@ -13350,7 +13458,8 @@ function setPdfDockTab(tab) {
 }
 function openPdfDockInTab() {
   if (!_pdfDock.url) return;
-  window.open(_pdfDock.page ? _pdfDock.url + '#page=' + _pdfDock.page : _pdfDock.url, '_blank');
+  const u = _pdfDock.shownUrl || _pdfDock.url;
+  window.open(_pdfDock.page && u === _pdfDock.url ? u + '#page=' + _pdfDock.page : u, '_blank');
 }
 function setPdfSideBySide(on) {
   _pdfDockLsSet(PDF_DOCK_LS_ON, on ? '1' : '0');
@@ -13398,16 +13507,16 @@ function _pdfOcrTextForSelectedBill() {
   const text = window._pdfRawText;
   if (!text) return { label: 'No OCR text', text: 'No OCR text is kept for this file. Run the file again to read it.' };
   const idx = window._pdfMultiIdx || 0;
-  const bill = (window._pdfMultiBills || [])[idx] || null;
   if (/%%PAGE_\d+%%/.test(text)) {
     const marks = [...text.matchAll(/%%PAGE_(\d+)%%/g)];
     const pages = marks.map((m, i) => ({
       n: parseInt(m[1], 10),
       text: text.slice(m.index, i + 1 < marks.length ? marks[i + 1].index : text.length),
     }));
-    // Same page rule as the PDF tab (_pdfSelectedBillPage); a range shows every page of the bill.
-    const first = _pdfSelectedBillPage();
-    const last = bill && bill._pageEnd != null && bill._pageStart != null ? parseInt(bill._pageEnd, 10) : first;
+    // Same page rule as the PDF tab (_pdfSelectedBillPages); a range shows every page of the bill.
+    const range = _pdfSelectedBillPages();
+    const first = range ? range.first : null;
+    const last = range ? range.last : first;
     let shown = first ? pages.filter((pg) => pg.n >= first && pg.n <= last) : [];
     if (!shown.length) shown = [pages[Math.min(idx, pages.length - 1)]];
     const a = shown[0].n;
@@ -17341,7 +17450,6 @@ async function processPDF(file) {
             window._pdfMultiIdx = newestIdx;
             renderMultiBillUI(finalBills);
             renderPDFFields(finalBills[newestIdx], analysisResults[newestIdx]?.warnings || []);
-            document.getElementById('pdfSaveRow').style.display = 'block';
             document.getElementById('pdfClearBtn').style.display = 'block';
             document.getElementById('dropZone').classList.add('collapsed');
             document.getElementById('pdfTypeSection').style.display = 'none';
@@ -17368,7 +17476,6 @@ async function processPDF(file) {
             const billWarnings = analysisResults[0]?.warnings || [];
             renderPDFFields(extracted, billWarnings);
             _pdfStatus('');
-            document.getElementById('pdfSaveRow').style.display = 'block';
             document.getElementById('pdfClearBtn').style.display = 'block';
             document.getElementById('dropZone').classList.add('collapsed');
             document.getElementById('pdfTypeSection').style.display = 'none';
@@ -17531,7 +17638,7 @@ function _pdfGroupBills(bills, warnings, multi) {
       };
       groups.push(g);
     }
-    const comm = bill.Commodity || 'Other';
+    const comm = _pdfCommOf(bill);
     let t = g.types.find((x) => x.comm === comm);
     if (!t) {
       t = { comm, total: 0, warn: 0, idxs: [] };
@@ -17889,8 +17996,47 @@ function _pdfMeterPathText(m) {
   const meter = m.meter ? (m.meter.commodity || 'Meter') + (m.meter.account ? ' (' + m.meter.account + ')' : '') : '';
   return [m.proj && m.proj.name, m.bldg && m.bldg.name, meter].filter(Boolean).join(' › ');
 }
+// The utility of a bill: the same rule the file list uses (_pdfGroupBills).
+function _pdfCommOf(bill) {
+  return (bill && bill.Commodity) || 'Other';
+}
+// The ONE place that turns a utility name into its chip: a colored dot and the name. The colors are fixed per
+// utility in CSS (.pdf-comm.c-gas, c-water, ...); green, red and amber are left to the status colors.
+// asButton: a chip that picks the bill of that utility. selected: the one on screen.
+function _pdfCommChipHtml(comm, opts) {
+  const o = opts || {};
+  const name = comm || 'Other';
+  const cls = 'pdf-comm c-' + String(name).toLowerCase().replace(/[^a-z]/g, '') + (o.selected ? ' sel' : '');
+  if (o.asButton) {
+    return (
+      '<button type="button" class="' +
+      cls +
+      '" data-comm="' +
+      _escHtml(name) +
+      '" aria-pressed="' +
+      (o.selected ? 'true' : 'false') +
+      '" title="' +
+      _escHtml(o.title || 'Show the ' + name + ' bill') +
+      '" onclick="selectCommTab(this.dataset.comm)">' +
+      _escHtml(name + (o.suffix || '')) +
+      '</button>'
+    );
+  }
+  return '<span class="' + cls + '">' + _escHtml(name + (o.suffix || '')) + '</span>';
+}
+// The ONE status of a building row: the bar color and the words. Red = a bill to review, amber = a saved bill
+// that differs from this file, green = nothing to check (saved or ready).
+function _pdfBldgStatus(review, saved, differ) {
+  const words = [];
+  if (review) words.push(review + ' to review');
+  if (differ) words.push(differ + (differ === 1 ? ' differs' : ' differ') + ' from saved');
+  if (saved) words.push(saved + ' saved');
+  if (!words.length) words.push('ready');
+  return { cls: review ? 'st-review' : differ ? 'st-differs' : 'st-saved', words };
+}
 // The buildings of a multi-building file as a visible list: name, utilities, bill months, status. A click picks it.
 // Counts come from nav.groups (_pdfGroupBills); months from nav.monthOf (the one month rule); saved from _pdfDupView.
+// The bar on the left edge always shows the status. The selected row shows with a fill and an outline.
 function _pdfBuildingListHtml(nav) {
   if (!nav.multiAcct) return '';
   const bills = nav.bills;
@@ -17904,52 +18050,57 @@ function _pdfBuildingListHtml(nav) {
       const monthTxt = months.length > 2 ? months[0] + ' and ' + (months.length - 1) + ' more' : months.join(', ');
       const comms = g.types.map((t) => t.comm).join(', ');
       const saved = idxs.filter((i) => dup[i]).length;
-      const status = [];
-      if (g.review) status.push(g.review + ' to review');
-      if (saved) status.push(saved + ' saved');
-      if (!status.length) status.push('ready');
-      const full = g.name + '. ' + comms + '. ' + (months.join(', ') || 'no month') + '. ' + status.join(', ') + '.';
+      const differ = idxs.filter((i) => dup[i] && (dup[i].diffFields || []).length > 0).length;
+      const st = _pdfBldgStatus(g.review, saved, differ);
+      const full = g.name + '. ' + comms + '. ' + (months.join(', ') || 'no month') + '. ' + st.words.join(', ') + '.';
+      const isSel = g.acct === window._pdfBuildingTab;
       return (
-        '<button type="button" role="listitem" class="pdf-bldg' +
-        (g.review ? ' review' : '') +
-        (g.acct === window._pdfBuildingTab ? ' sel' : '') +
+        '<button type="button" role="listitem" class="pdf-bldg ' +
+        st.cls +
+        (isSel ? ' sel' : '') +
         '" data-acct="' +
         _escHtml(g.acct) +
-        '" title="' +
+        '"' +
+        (isSel ? ' aria-current="true"' : '') +
+        ' title="' +
         _escHtml(full) +
         '" onclick="_pdfPickBuilding(this.dataset.acct)"><span class="pdf-bldg-name">' +
         _escHtml(g.name) +
-        '</span><span class="pdf-bldg-line"><span>' +
-        _escHtml(comms) +
+        '</span><span class="pdf-bldg-line"><span class="pdf-bldg-comms">' +
+        g.types.map((t) => _pdfCommChipHtml(t.comm)).join('') +
         '</span><span>' +
-        _escHtml(monthTxt + ' · ' + status.join(' · ')) +
+        _escHtml((monthTxt ? monthTxt + ' · ' : '') + st.words.join(' · ')) +
         '</span></span></button>'
       );
     })
     .join('');
 }
-// Building, utility type and period selectors. A file with one choice shows plain text, not a menu.
+// The bill on screen: its building (always named), its utility (one chip per utility of the
+// building, the one on screen is filled), and its billing period. A file with one choice shows plain text, not a menu.
 function _pdfSelectorsHtml(nav) {
   const bills = nav.bills;
   const cur = bills[nav.idx];
   const opt = (v, label, selected) =>
     '<option value="' + _escHtml(String(v)) + '"' + (selected ? ' selected' : '') + '>' + _escHtml(label) + '</option>';
-  const toReview = (n) => (n ? ' (' + n + ' to review)' : '');
   let h = '';
-  // Several buildings: they are listed by _pdfBuildingListHtml (a visible list), not here.
-  if (!nav.multiAcct) {
-    h +=
-      '<span class="pdf-top-static" title="Building">' +
-      _escHtml(_pdfBuildingName(bills, (cur && cur.AccountNumber) || '_unknown')) +
-      '</span>';
-  }
+  // The building of the bill on screen is always named, so the utility chips beside it say whose bill they switch.
+  h +=
+    '<span class="pdf-top-static" title="Building">' +
+    _escHtml(_pdfBuildingName(bills, (cur && cur.AccountNumber) || '_unknown')) +
+    '</span>';
   if (nav.hasMultiComm) {
-    h +=
-      '<select class="fs" aria-label="Utility" title="Utility" onchange="selectCommTab(this.value)">' +
-      nav.selGroup.types.map((t) => opt(t.comm, t.comm + toReview(t.warn), t.comm === nav.activeCommTab)).join('') +
-      '</select>';
+    h += nav.selGroup.types
+      .map((t) =>
+        _pdfCommChipHtml(t.comm, {
+          asButton: true,
+          selected: t.comm === nav.activeCommTab,
+          suffix: t.warn ? ' (' + t.warn + ' to review)' : '',
+          title: 'Show the ' + t.comm + ' bill of this building',
+        }),
+      )
+      .join('');
   } else if (cur && cur.Commodity) {
-    h += '<span class="pdf-top-static" title="Utility">' + _escHtml(cur.Commodity) + '</span>';
+    h += _pdfCommChipHtml(cur.Commodity, { selected: true });
   }
   const ps = nav.navPeriods;
   const months = ps.map((p) => p.monthLbl);
@@ -17962,9 +18113,9 @@ function _pdfSelectorsHtml(nav) {
   };
   if (ps.length > 1) {
     h +=
-      '<select class="fs" aria-label="Billing period" title="Billing period" onchange="selectMultiBill(parseInt(this.value, 10))">' +
+      '<label class="pdf-top-lbl">Billing period <select class="fs" aria-label="Billing period" title="Billing period" onchange="selectMultiBill(parseInt(this.value, 10))">' +
       ps.map((p) => opt(p.i, label(p, true), p.i === nav.idx)).join('') +
-      '</select>';
+      '</select></label>';
   } else if (ps.length === 1) {
     h += '<span class="pdf-top-static" title="Billing period">' + _escHtml(label(ps[0], false)) + '</span>';
   }
@@ -18049,9 +18200,23 @@ function _pdfDupChip(nav) {
     html,
   };
 }
+// File-level counts for the top bar: bills, bills to review, bills that match a saved bill, bills that differ from it.
+// One function; the top bar and the building list both read the dup map through _pdfDupView.
+function _pdfFileStatus(nav) {
+  const map = _pdfDupView(nav.bills).map;
+  const keys = Object.keys(map);
+  return {
+    total: nav.bills.length,
+    review: nav.groups.reduce((n, g) => n + g.review, 0),
+    saved: keys.length,
+    differ: keys.filter((k) => (map[k].diffFields || []).length > 0).length,
+  };
+}
 function _pdfRenderTopBar(opts) {
   const bar = document.getElementById('pdfTopBar');
   if (!bar) return;
+  const sec = document.getElementById('pdfBillSection');
+  const left = document.getElementById('pdfLeftCol');
   const bills = window._pdfMultiBills || [];
   const idx = window._pdfMultiIdx || 0;
   const kind = _pdfSaveKind();
@@ -18063,7 +18228,9 @@ function _pdfRenderTopBar(opts) {
   if (!live && !chipsOk && kind !== 'batch') {
     // Nothing to show: hide the row and empty every box in it (a cleared page keeps no old text).
     bar.style.display = 'none';
-    ['pdfTopSel', 'pdfTopBldgs', 'pdfTopChips', 'pdfTopSave', 'pdfMoreSave', 'pdfTopPop'].forEach((id) => {
+    if (sec) sec.style.display = 'none';
+    if (left) left.classList.remove('pdf-bar-live');
+    ['pdfTopSel', 'pdfTopBldgs', 'pdfTopChips', 'pdfTopFileChips', 'pdfTopFile', 'pdfTopSave', 'pdfMoreSave', 'pdfTopPop', 'pdfBillPop'].forEach((id) => {
       const box = document.getElementById(id);
       if (box) box.innerHTML = '';
     });
@@ -18074,15 +18241,47 @@ function _pdfRenderTopBar(opts) {
     return;
   }
   bar.style.display = '';
-  const popHtml = {};
+  if (sec) sec.style.display = '';
+  // The file name sits in this bar, so the drop zone (a second, larger name pill) is hidden while the bar shows it.
+  const fileName = live && kind !== 'batch' ? window._pdfSourceFileName || '' : '';
+  if (left) left.classList.toggle('pdf-bar-live', !!fileName);
   const nav = live ? _pdfNavModel(bills) : null;
+  const fileBox = document.getElementById('pdfTopFile');
+  if (fileBox) {
+    let sum = '';
+    if (fileName && nav && nav.multiAcct) {
+      const st = _pdfFileStatus(nav);
+      sum =
+        '<span class="pdf-file-sum" title="Bills read from this file">' +
+        _escHtml(_pdfCountWord(st.total, 'bill') + (st.review ? ' · ' + st.review + ' to review' : '')) +
+        '</span>';
+    }
+    fileBox.innerHTML = fileName
+      ? '<span class="pdf-file-name" title="' + _escHtml(fileName) + '">' + _escHtml(fileName) + '</span>' + sum
+      : '';
+  }
+  const clearBtn = document.getElementById('pdfClearFileBtn');
+  if (clearBtn) clearBtn.style.display = fileName ? '' : 'none';
+  const popHtml = {};
+  const fileChipHtml = [];
   const chipHtml = [];
-  const chip = (cls, name, text) =>
-    chipHtml.push(
-      '<button class="pdf-chip ' + cls + '" data-pop="' + name + '" onclick="_pdfTogglePop(\'' + name + '\')">' + _escHtml(text) + '</button>',
+  const chipTo = (list, cls, name, text, title) =>
+    list.push(
+      '<button class="pdf-chip ' +
+        cls +
+        '" data-pop="' +
+        name +
+        '"' +
+        (title ? ' title="' + _escHtml(title) + '"' : '') +
+        ' onclick="_pdfTogglePop(\'' +
+        name +
+        '\')">' +
+        _escHtml(text) +
+        '</button>',
     );
+  const chip = (cls, name, text, title) => chipTo(chipHtml, cls, name, text, title);
   if (chipsOk && chips.review.length) {
-    chip('red', 'review', chips.review.length + ' to review');
+    chip('red', 'review', chips.review.length + ' to review', 'Values on this bill to check');
     popHtml.review =
       '<div class="pdf-pop-title">Check these on this bill. Open a line for details.</div>' +
       chips.review.join('') +
@@ -18094,16 +18293,22 @@ function _pdfRenderTopBar(opts) {
   }
   const dup = nav ? _pdfDupChip(nav) : null;
   if (dup) {
-    chip('amber', 'dup', dup.count + ' already saved' + (dup.differ ? ' · ' + dup.differ + ' differ' : ''));
+    chipTo(
+      fileChipHtml,
+      dup.differ ? 'amber' : 'green',
+      'dup',
+      dup.count + ' already saved' + (dup.differ ? ' · ' + dup.differ + ' differ' : ''),
+      'Bills in this file that match a saved bill. Open to compare them.',
+    );
     popHtml.dup = dup.html;
   }
   if (chipsOk && chips.warn.length) {
-    chip('amber', 'warn', chips.warn.length + (chips.warn.length === 1 ? ' warning' : ' warnings'));
+    chip('amber', 'warn', chips.warn.length + (chips.warn.length === 1 ? ' warning' : ' warnings'), 'The reader noticed these on this bill');
     popHtml.warn =
       '<div class="pdf-pop-title">The reader noticed these. They do not stop you from saving.</div>' + chips.warn.join('');
   }
   if (chipsOk && chips.fixed.length) {
-    chip('green', 'fixed', chips.fixed.length + ' fixed');
+    chip('green', 'fixed', chips.fixed.length + ' fixed', 'Values the reader changed on this bill');
     popHtml.fixed =
       '<div class="pdf-pop-title">The reader changed these values. Open a line to see how, or to revert it.</div>' +
       chips.fixed.join('');
@@ -18115,14 +18320,20 @@ function _pdfRenderTopBar(opts) {
   document.getElementById('pdfTopSel').innerHTML = nav ? _pdfSelectorsHtml(nav) : '';
   const bldgBox = document.getElementById('pdfTopBldgs');
   if (bldgBox) bldgBox.innerHTML = nav ? _pdfBuildingListHtml(nav) : '';
+  const fileChips = document.getElementById('pdfTopFileChips');
+  if (fileChips) fileChips.innerHTML = fileChipHtml.join('');
   document.getElementById('pdfTopChips').innerHTML = chipHtml.join('');
   document.getElementById('pdfTopSave').innerHTML = save.html;
   _pdfSyncMoreBtn();
   _pdfPopHtml = popHtml;
   _pdfApplyPop();
 }
+// Lists that belong to the file (shown under the file bar). Every other list belongs to the bill on screen
+// (shown under the bill row).
+const _PDF_FILE_POPS = ['dup'];
 function _pdfApplyPop() {
   const top = document.getElementById('pdfTopPop');
+  const billPop = document.getElementById('pdfBillPop');
   const more = document.getElementById('pdfMorePop');
   const savePop = document.getElementById('pdfSavePop');
   if (!top || !more || !savePop) return;
@@ -18132,11 +18343,16 @@ function _pdfApplyPop() {
   }
   if (_pdfTopOpen && _pdfTopOpen !== 'more' && _pdfTopOpen !== 'save' && !_pdfPopHtml[_pdfTopOpen]) _pdfTopOpen = null;
   const isList = !!(_pdfTopOpen && _pdfPopHtml[_pdfTopOpen]);
-  top.style.display = isList ? '' : 'none';
-  if (isList) top.innerHTML = _pdfPopHtml[_pdfTopOpen];
+  const isFile = isList && _PDF_FILE_POPS.includes(_pdfTopOpen);
+  top.style.display = isFile ? '' : 'none';
+  if (isFile) top.innerHTML = _pdfPopHtml[_pdfTopOpen];
+  if (billPop) {
+    billPop.style.display = isList && !isFile ? '' : 'none';
+    if (isList && !isFile) billPop.innerHTML = _pdfPopHtml[_pdfTopOpen];
+  }
   more.style.display = _pdfTopOpen === 'more' ? '' : 'none';
   savePop.style.display = _pdfTopOpen === 'save' ? '' : 'none';
-  document.querySelectorAll('#pdfTopBar [data-pop]').forEach((el) => {
+  document.querySelectorAll('#pdfTopBar [data-pop], #pdfBillSection [data-pop]').forEach((el) => {
     el.classList.toggle('open', el.getAttribute('data-pop') === _pdfTopOpen);
   });
   const moreBtn = document.getElementById('pdfMoreBtn');
@@ -18183,55 +18399,11 @@ function _pdfGoToField(key) {
   if (item) item.scrollIntoView({ behavior: 'smooth', block: 'center' });
   inp.focus();
 }
-// "Saves to" line inside the values: where the bill on screen will be saved, with a Change button.
-function _pdfSavesToText() {
-  const pick = (id) => {
-    const e = document.getElementById(id);
-    return e && e.value && e.selectedIndex >= 0 ? e.options[e.selectedIndex].text : '';
-  };
-  const proj = pick('pdfProjSel');
-  const bld = pick('pdfBldgSel');
-  const mtr = pick('pdfMeterSel');
-  if (bld || mtr) return [proj, bld, mtr].filter(Boolean).join(' › ');
-  const bills = window._pdfMultiBills || [];
-  const cur = bills[window._pdfMultiIdx || 0];
-  const m = _autoAssignTarget && _autoAssignTarget.meter ? _autoAssignTarget : cur ? findMeterMatch(cur) : null;
-  if (m && m.meter && m.matchType !== 'ambiguous') {
-    return (
-      _pdfMeterPathText(m) +
-      (m.matchType === 'address' ? ' (matched by address, not confirmed)' : ' (matched by account number)')
-    );
-  }
-  if (proj) return proj + ' (the building and meter are found from the bill)';
-  return 'Saved Bills only. No building matched this bill.';
-}
-function _pdfRefreshSavesTo() {
-  const el = document.getElementById('pdfSavesToText');
-  const row = document.getElementById('pdfSaveRow');
-  if (!el || !row) return;
-  const multi = _pdfSaveKind() === 'multiacct';
-  el.textContent = multi
-    ? 'Each bill goes to the building it belongs to. Choose Review and save to check them.'
-    : _pdfSavesToText();
-  const ch = document.getElementById('pdfSavesToChange');
-  if (ch) ch.style.display = multi ? 'none' : '';
-  const pickRow = document.getElementById('pdfSavesToPick');
-  if (pickRow && multi) pickRow.style.display = 'none';
-}
-function _pdfToggleSavesTo() {
-  const pickRow = document.getElementById('pdfSavesToPick');
-  const btn = document.getElementById('pdfSavesToChange');
-  if (!pickRow) return;
-  const open = pickRow.style.display === 'none';
-  pickRow.style.display = open ? 'flex' : 'none';
-  if (btn) btn.textContent = open ? 'Done' : 'Change';
-  if (open) refreshProjDropdowns();
-}
 // Close the open list on a click outside the top row, or on Escape.
 function _pdfInitTopBar() {
   if (!document.getElementById('pdfTopBar')) return;
   document.addEventListener('click', (ev) => {
-    if (_pdfTopOpen && !ev.target.closest('#pdfTopBar')) _pdfClosePop();
+    if (_pdfTopOpen && !ev.target.closest('#pdfTopBar, #pdfBillSection')) _pdfClosePop();
   });
   document.addEventListener('keydown', (ev) => {
     if (ev.key === 'Escape' && _pdfTopOpen) _pdfClosePop();
@@ -19784,11 +19956,13 @@ function renderPDFFields(parsed, warnings) {
         displayVal = (num < 0 ? '-' : '') + (isCharge ? '$' : '') + formatted;
       }
     }
+    // Values use the plain text color. Only a value that needs a look has a color: red = held or missing,
+    // amber = a warning, or a value that differs from the saved bill.
+    const _attn = isDupDiff ? 'var(--warn)' : flag ? (flag.level === 'error' ? 'var(--danger)' : 'var(--warn)') : '';
     const keyStyle = isEmpty && !flag ? 'color:var(--text3)' : '';
     const inputStyle = isEmpty ? 'border-color:var(--border2);color:var(--text3)' : '';
-    const dupKeyStyle = isDupDiff ? 'color:var(--amber)' : keyStyle;
-    const fixInputColor = fixInfo ? ';color:var(--green)' : '';
-    const dupInputStyle = isDupDiff ? inputStyle + ';color:var(--amber)' : inputStyle + fixInputColor;
+    const dupKeyStyle = _attn ? 'color:' + _attn : keyStyle;
+    const dupInputStyle = _attn ? inputStyle + ';color:' + _attn : inputStyle;
     const dupIcon = isDupDiff
       ? `<span class="ef-dup-mark" title="Saved value: ${_titleEscape(dupDiff.existVal || '(empty)')}" style="cursor:help;color:var(--amber);font-size:9px;font-weight:700;margin-left:4px;background:var(--amber-dim);padding:1px 4px;border-radius:3px;letter-spacing:.3px">saved: ${_escHtml((dupDiff.existVal || '(empty)').length > 18 ? (dupDiff.existVal || '').slice(0, 15) + '...' : dupDiff.existVal || '(empty)')}</span>`
       : '';
@@ -19799,7 +19973,14 @@ function renderPDFFields(parsed, warnings) {
         : '';
     const _fitSize = iconHtml || fixBtn ? Math.max(String(displayVal).length + 1, 5) : null;
     const sizeAttr = _fitSize ? ` size="${_fitSize}"` : '';
-    const inputHtml = `<input class="ef-input" value="${_escHtml(displayVal)}" data-key="${_escHtml(k)}" placeholder="${isEmpty ? '—' : ''}" style="${dupInputStyle}"${sizeAttr}>`;
+    // Hover text: a value with a problem gets the reason box; a value that differs from the saved bill names the
+    // saved value; every other value says how to edit it.
+    const _inputTitle = _pop.length
+      ? ''
+      : isDupDiff
+        ? 'Differs from the saved bill. Saved: ' + (dupDiff.existVal || '(empty)')
+        : 'Click to edit';
+    const inputHtml = `<input class="ef-input" value="${_escHtml(displayVal)}" data-key="${_escHtml(k)}" placeholder="${isEmpty ? '—' : ''}" style="${dupInputStyle}"${_inputTitle ? ` title="${_titleEscape(_inputTitle)}"` : ''}${sizeAttr}>`;
     const keyHtml = `<div class="ef-key" style="${dupKeyStyle}">${_escHtml(LABELS[k] || k)}${dupIcon}</div>`;
     const bodyHtml = iconHtml || fixBtn ? `<div class="ef-row-fit">${inputHtml}${iconHtml}${fixBtn}</div>` : inputHtml;
     return `<div class="ef-item${edgeCls}">${keyHtml}${bodyHtml}${acTooltipHtml}</div>`;
@@ -20423,10 +20604,9 @@ function renderPDFFields(parsed, warnings) {
   const _maHtml = _showManualAssign
     ? `<div class="ef-bar-ma"><button class="btn btn-ghost btn-sm ef-ma-btn" onclick="openManualAssignModal(${_dupIdx})">&#128196; Manual Assign</button></div>`
     : '';
-  elHdr.innerHTML = `<div class="ef-hdr-title">Extracted &mdash; click values to edit</div>${_barHtml}${_maHtml}`;
+  elHdr.innerHTML = `<div class="ef-hdr-title">Extracted values</div>${_barHtml}${_maHtml}`;
   el.innerHTML = `<div class="ef-grid">${fieldHtml}</div>`;
   _pdfRenderTopBar();
-  _pdfRefreshSavesTo();
 
   // ── Wire up change handlers: update data + recalculate total when user edits ──
   el.querySelectorAll('.ef-input[data-key]').forEach((inp) => {
@@ -20642,7 +20822,6 @@ function viewSavedBill(id) {
   );
   renderPDFFields(display);
   _pdfStatus('Loaded from saved records.');
-  document.getElementById('pdfSaveRow').style.display = 'block';
   refreshProjDropdowns();
   showToast('Bill loaded ✓');
 }
@@ -20841,58 +21020,9 @@ async function viewSavedPDF(id, pageStart, pageEnd, pdfKey) {
   console.log('[viewSavedPDF] final page range', { pageStart, pageEnd });
   try {
     const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-    let outBytes = bytes;
-    let sliceMsg = 'Opening full PDF (no stored page range)';
-    if (pageStart && pageEnd && window.PDFLib) {
-      // pdf-lib's copyPages can throw internal errors ("can't access property
-      // 'node', h is undefined") on PDFs with cross-reference issues or damaged
-      // page nodes. Isolate the slice in its own try/catch so a slice failure
-      // falls back to showing the full PDF instead of dead-ending the viewer.
-      try {
-        const srcDoc = await window.PDFLib.PDFDocument.load(bytes, { ignoreEncryption: true });
-        const total = srcDoc.getPageCount();
-        let start = Math.max(1, parseInt(pageStart, 10) || 1);
-        let end = Math.min(total, parseInt(pageEnd, 10) || total);
-        if (start > end) {
-          console.warn('[viewSavedPDF] page range inverted, swapping', { start, end });
-          const t = start;
-          start = end;
-          end = t;
-        }
-        if (start > total) {
-          console.warn('[viewSavedPDF] pageStart exceeds total pages, falling back to full PDF', {
-            pageStart,
-            total,
-          });
-          sliceMsg =
-            'Stored range ' + pageStart + '–' + pageEnd + ' is outside the PDF (' + total + ' pages). Full PDF.';
-        } else {
-          const idxs = [];
-          for (let p = start; p <= end; p++) {
-            const idx = p - 1;
-            if (idx >= 0 && idx < total) idxs.push(idx);
-          }
-          if (idxs.length === 0) {
-            console.warn('[viewSavedPDF] slice produced 0 valid indices, falling back to full PDF', {
-              start,
-              end,
-              total,
-            });
-            sliceMsg = 'Slice range was empty — showing full PDF (' + total + ' pages)';
-          } else {
-            const outDoc = await window.PDFLib.PDFDocument.create();
-            const copied = await outDoc.copyPages(srcDoc, idxs);
-            copied.forEach((pg) => outDoc.addPage(pg));
-            outBytes = await outDoc.save();
-            sliceMsg = 'Showing pages ' + start + '–' + end + ' of ' + total + ' (' + idxs.length + ' pages)';
-          }
-        }
-      } catch (sliceErr) {
-        console.error('[viewSavedPDF] pdf-lib slice failed, falling back to full PDF:', sliceErr);
-        sliceMsg = 'Slice failed (' + (sliceErr.message || 'pdf-lib error') + ') — showing full PDF';
-        // outBytes is already `bytes` (the full PDF) — nothing else to do.
-      }
-    }
+    const cut = await _pdfPageSlice(bytes, pageStart, pageEnd);
+    const outBytes = cut.bytes;
+    const sliceMsg = cut.msg;
     console.log('[viewSavedPDF]', sliceMsg);
     const blob = new Blob([outBytes], { type: 'application/pdf' });
     const url = URL.createObjectURL(blob);

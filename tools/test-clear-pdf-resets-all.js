@@ -80,7 +80,6 @@ function bill(start, end, held) {
           topBarText: txt('pdfTopSel') + txt('pdfTopChips') + txt('pdfTopSave'),
           topSaveText: txt('pdfTopSave'),
           moreSaveText: txt('pdfMoreSave'),
-          saveRowVisible: vis('pdfSaveRow'),
           mbPanelVisible: vis('pdfMultiBldgPanel'),
           mbPanelText: txt('pdfMultiBldgPanel'),
           heldLine: txt('pdfMoreSave').includes('held out of Save all'),
@@ -101,7 +100,6 @@ function bill(start, end, held) {
       window._pdfBillWarnings = [];
       renderPDFFields(window._pdfMultiBills[1], []);
       renderMultiBillUI(window._pdfMultiBills);
-      document.getElementById('pdfSaveRow').style.display = 'block';
       document.getElementById('pdfDockOcr').textContent = 'SAMPLE RAW OCR TEXT';
     }, [bill('01/01/2026', '01/31/2026', false), bill('08/04/2026', '09/02/2026', true)]);
     await page.waitForTimeout(500);
@@ -119,7 +117,6 @@ function bill(start, end, held) {
     if (after.fieldsGrid) bad.push('values');
     if (after.fieldsHdr) bad.push('warnings/held banner');
     if (after.topBarVisible || after.topBarText) bad.push('top row (selectors, chips, Save)');
-    if (after.saveRowVisible) bad.push('save row');
     if (after.moreSaveText) bad.push('other ways to save (Overwrite all / Merge all / Attach)');
     if (after.mbPanelVisible || after.mbPanelText) bad.push('multi-account panel');
     if (after.heldLine) bad.push('held-bill line');
