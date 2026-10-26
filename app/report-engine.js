@@ -3447,7 +3447,9 @@ function rptPageSavingsPerformance(n, d) {
     '<th class="rpt-n" style="width:12%">' +
     _rptUnit('kWh') +
     '</th>' +
-    '<th class="rpt-n" style="width:10%">Peak kW</th>' +
+    '<th class="rpt-n" style="width:10%">' +
+    _rptUnit('kW') +
+    '</th>' +
     '<th class="rpt-n" style="width:11%">Therms</th>' +
     '<th class="rpt-n" style="width:12%">Propane<br>Gallons</th>' +
     '<th class="rpt-n" style="width:12%">Cost</th>' +
@@ -7433,7 +7435,11 @@ function rptPageElectric(n, d) {
     _rptUnit('kWh') +
     '</th>' +
     '<th class="rpt-n">Saved</th><th class="rpt-n">Percent<br>Saved</th>' +
-    '<th class="rpt-n">Baseline Peak kW</th><th class="rpt-n">Actual kW</th>' +
+    '<th class="rpt-n">Baseline ' +
+    _rptUnit('kW') +
+    '</th><th class="rpt-n">Actual ' +
+    _rptUnit('kW') +
+    '</th>' +
     '<th class="rpt-n">Baseline Cost</th><th class="rpt-n">Actual Cost</th><th class="rpt-n">$ Saved</th>' +
     '</tr></thead>' +
     '<tbody>' +

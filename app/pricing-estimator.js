@@ -568,7 +568,7 @@ function _hwRowKeyMatchesBlocking(hwPointKey, blockingKeys) {
    ─────────────────────────────────────────────────────────────────────────── */
 function _pricingTierLabelHTML(tier) {
   return (
-    '<span style="font-size:11px;color:var(--text2);font-weight:600;text-transform:capitalize">Tier: ' +
+    '<span style="font-size:11px;color:var(--text2);font-weight:600;text-transform:capitalize">' +
     (tier === 'both'
       ? 'Compare'
       : tier === 'recommended'

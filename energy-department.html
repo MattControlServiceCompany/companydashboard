@@ -7091,7 +7091,7 @@
       }
       .bills-thead-wrap {
         flex-shrink: 0;
-        overflow-x: auto;
+        overflow-x: hidden; /* ad15ae76: only the body scrolls sideways; the header follows it (see renderBillsPane) */
         background: var(--s2);
         /* Fix 2026-09-13 (scrollbar-bounded-flex): position:sticky is no longer
            needed here. #maPane (this element's flex-column parent) is now the

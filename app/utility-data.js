@@ -4564,13 +4564,27 @@ function renderBillsPane(pane, m, bills, incl) {
 
     const storageKey = `bills_col_widths_${m.id}`;
 
-    // Sync horizontal scroll
+    // Sync horizontal scroll. The body is the ONE scroller; the header only follows it (ad15ae76).
+    // The header wrap is overflow-x:hidden (energy-department.html), so a wheel or trackpad swipe over
+    // the header can no longer scroll it alone and slide the headers away from the cells. The swipe is
+    // forwarded to the body instead, and the body's scroll event moves the header.
     scrollBody.addEventListener(
       'scroll',
       () => {
         theadWrap.scrollLeft = scrollBody.scrollLeft;
       },
       { passive: true },
+    );
+    theadWrap.addEventListener(
+      'wheel',
+      (e) => {
+        const dx = e.deltaX || (e.shiftKey ? e.deltaY : 0);
+        if (dx) {
+          scrollBody.scrollLeft += dx;
+          e.preventDefault();
+        }
+      },
+      { passive: false },
     );
 
     // ── Column resize drag — each column resizes independently, saves to DB ──
@@ -4716,6 +4730,10 @@ function _recomputeBillsColLayout(pane, m, cols) {
   }
 
   applyWidths(widths);
+  // ad15ae76: a body that shows a classic vertical scrollbar (WebKit, Firefox on some systems) is narrower than the
+  // header, so the right-pinned columns (Total, Table Settings) sat that many pixels off. Give the header the
+  // same gutter so both scrollports have the same width.
+  theadWrap.style.marginRight = scrollBody.offsetWidth - scrollBody.clientWidth + 'px';
 }
 
 function toggleUdNav(layoutId) {
