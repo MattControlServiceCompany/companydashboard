@@ -1,6 +1,5 @@
 'use strict';
-// Synthetic test: kv-sync.js PUT accepts a gzipped body > 1 MB in every shape the
-// Functions runtime can deliver it. No network: fetch is an in-memory fake; jose is stubbed.
+// Synthetic test: kv-sync.js PUT accepts a gzip envelope {"gz": base64} > 1 MB. No network: fetch is an in-memory fake; jose is stubbed.
 const assert = require('assert');
 const zlib = require('zlib');
 const Module = require('module');
@@ -34,24 +33,8 @@ assert.ok(raw.length > 1024 * 1024, 'synthetic body is over 1 MB: ' + raw.length
 const gz = zlib.gzipSync(raw);
 assert.ok(gz.slice(0, 2).equals(Buffer.from([0x1f, 0x8b])));
 
-// Same rule as netlify-cli (@netlify/dev-utils shouldBase64Encode): application/json is delivered as
-// UTF-8 text (isBase64Encoded false); other binary types are delivered as base64.
-const TEXT_TYPES = new Set(['application/json', 'application/javascript', 'application/xml', 'application/x-www-form-urlencoded']);
-const deliver = (contentType, buf) => {
-  const b64 = !(contentType.startsWith('text/') || contentType.endsWith('+json') || TEXT_TYPES.has(contentType));
-  return {
-    httpMethod: 'PUT',
-    headers: { authorization: 'Bearer fake', 'content-encoding': 'gzip', 'content-type': contentType },
-    body: buf.toString(b64 ? 'base64' : 'utf8'),
-    isBase64Encoded: b64,
-  };
-};
-// The content type the client really sends for a gzipped body (app/db.js _maybeGzipBody).
-const dbSrc = require('fs').readFileSync(require('path').join(__dirname, 'app', 'db.js'), 'utf8');
-const m = /headers:\s*\{\s*'content-encoding':\s*'gzip',\s*'content-type':\s*'([^']+)'/.exec(dbSrc);
-const clientType = m ? m[1] : 'application/json';
-console.log('client gzip content-type: ' + clientType);
-
+const env = JSON.stringify({ gz: gz.toString('base64') });
+const mk = (body, b64) => ({ httpMethod: 'PUT', headers: { authorization: 'Bearer fake', 'content-type': 'application/json' }, body, isBase64Encoded: !!b64 });
 const check = async (name, ev, want) => {
   written.length = 0;
   const r = await handler(ev);
@@ -62,11 +45,10 @@ const check = async (name, ev, want) => {
 };
 (async () => {
   const res = [];
-  res.push(await check('gzip body as the client really sends it', deliver(clientType, gz), 200));
-  res.push(await check('gzip body as application/octet-stream (base64)', deliver('application/octet-stream', gz), 200));
-  res.push(await check('gzip body as non-base64 binary (latin1) string', { ...deliver('application/octet-stream', gz), body: gz.toString('latin1'), isBase64Encoded: false }, 200));
-  res.push(await check('plain JSON body, not gzip', { httpMethod: 'PUT', headers: { authorization: 'Bearer fake', 'content-type': 'application/json' }, body: raw.toString('utf8'), isBase64Encoded: false }, 200));
-  res.push(await check('gzip bytes mangled as UTF-8 text answers 400', { ...deliver('application/json', gz) }, 400));
+  res.push(await check('gz envelope as text', mk(env, false), 200));
+  res.push(await check('gz envelope delivered base64', mk(Buffer.from(env).toString('base64'), true), 200));
+  res.push(await check('plain JSON body, not gzip', mk(raw.toString('utf8'), false), 200));
+  res.push(await check('bad gz data answers 400', mk('{"gz":"AAAA"}', false), 400));
   if (res.includes(false)) { console.log(res.filter((x) => !x).length + ' FAIL'); process.exit(1); }
   console.log('all pass');
 })();

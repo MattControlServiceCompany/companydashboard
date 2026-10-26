@@ -40,7 +40,7 @@
 // snapshot fails the PUT is refused. Retention (per key, size-aware, and max
 // age) keeps the free-tier DB bounded - see the constants below (finding F10).
 //
-// gzip: PUT bodies may arrive gzip-compressed (`Content-Encoding: gzip`).
+// gzip: large PUT bodies arrive as {"gz": base64(gzip(JSON))} (see getRawBody).
 // The largest real kv value (an equipment-matrix key) is ~9MB raw, over
 // Netlify's ~6MB synchronous-Function body cap; gzip brings that value to
 // ~0.35MB (measured 2026-07-19, see phase2a-build-plan.md §6), so gzip alone
@@ -174,23 +174,17 @@ function getHeader(event, name) {
 
 // --- gzip-aware body reading (R5) -------------------------------------------
 // The largest real kv value (an equipment-matrix key) is ~9MB raw, over
-// Netlify's ~6MB synchronous-Function body cap. Measured 2026-07-19: gzip
-// compresses that same 9.03MB value to ~0.35MB (26x — highly repetitive
-// structure), well under the cap, so gzip alone closes R5 for kv — no
-// chunking protocol is needed here (see phase2a-build-plan.md §6).
+// Netlify's ~6MB synchronous-Function body cap. gzip brings it to ~0.35MB.
+// The client sends gzip as TEXT: a JSON envelope {"gz":"<base64 of gzip(JSON)>"} with
+// content-type application/json. The runtime never sees a binary body, so no
+// runtime-specific binary handling is involved. Plain JSON bodies pass unchanged.
 function getRawBody(event) {
-  const contentEncoding = getHeader(event, 'content-encoding') || '';
-  const gzipped = /gzip/i.test(contentEncoding);
-  // A gzip body is binary. The runtime delivers it as base64 for binary content types
-  // (the client sends application/octet-stream). A binary body that arrives as a
-  // non-base64 string is read byte for byte (latin1), never as UTF-8, which would
-  // corrupt the bytes. Text bodies stay UTF-8.
-  const enc = event.isBase64Encoded ? 'base64' : gzipped ? 'latin1' : 'utf8';
-  const buf = Buffer.from(event.body || '', enc);
-  if (gzipped) {
-    return zlib.gunzipSync(buf).toString('utf8');
+  const text = Buffer.from(event.body || '', event.isBase64Encoded ? 'base64' : 'utf8').toString('utf8');
+  const parsed = JSON.parse(text || '{}');
+  if (parsed && typeof parsed.gz === 'string') {
+    return zlib.gunzipSync(Buffer.from(parsed.gz, 'base64')).toString('utf8');
   }
-  return buf.toString('utf8');
+  return text;
 }
 
 // --- canonical JSON + hash (F8) ---------------------------------------------

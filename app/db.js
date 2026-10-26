@@ -277,7 +277,7 @@ const DB = (() => {
 
   // --- Client gzip (2a item 6 / R5 close) -----------------------------------
   // Large PUT bodies (>1MB) are gzipped with the browser CompressionStream —
-  // the Function (Pass A) gunzips on Content-Encoding: gzip. Falls back to
+  // the Function gunzips the {gz} envelope. Falls back to
   // sending uncompressed if CompressionStream is unavailable (never blocks
   // the write, just risks the ~6MB Netlify body cap on very large values).
   async function _maybeGzipBody(jsonStr) {
@@ -300,9 +300,12 @@ const DB = (() => {
       writer.write(bytes);
       writer.close();
       const compressed = await new Response(cs.readable).arrayBuffer();
-      // application/octet-stream: the Functions runtime hands a binary type to the Function as
-      // base64. As application/json it arrives as UTF-8 text and the gzip bytes are corrupted.
-      return { body: compressed, headers: { 'content-encoding': 'gzip', 'content-type': 'application/octet-stream' } };
+      // Send the gzip bytes as base64 text inside a JSON envelope. The runtime then
+      // never handles a binary body (it corrupted or rejected binary bodies).
+      const u8 = new Uint8Array(compressed);
+      let bin = '';
+      for (let i = 0; i < u8.length; i += 0x8000) bin += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
+      return { body: JSON.stringify({ gz: btoa(bin) }), headers: {} };
     } catch (e) {
       console.warn('[DB] gzip compression failed, sending uncompressed:', e);
       return { body: jsonStr, headers: {} };

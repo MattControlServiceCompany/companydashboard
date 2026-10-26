@@ -31,7 +31,7 @@ How to check that a function works:
   (supabase-keepalive.js:11,21,25,28).
 - kv-sync and pdf-sync: a 401 means a bad token. A 403 means the email is not in AUTHORIZED_USERS. A 502 means a Supabase failure.
   (kv-sync.js:152,160; pdf-sync.js header)
-- Sync PUT bodies over 1 MB are gzip. app/db.js sends them as `application/octet-stream` (raw bytes). kv-sync.js `getRawBody` decodes base64 gzip, raw gzip and plain text. A failed queue entry keeps the server's error text. Check: test-kv-sync-gzip-body.js.
+- Sync PUT bodies over 1 MB are gzip. app/db.js (_maybeGzipBody) sends JSON `{"gz":"<base64 of gzip(value JSON)>"}` with content-type application/json. The runtime never sees a binary body (netlify dev and the Functions runtime broke binary bodies). kv-sync.js `getRawBody` is the one decode path: it gunzips `gz` when present, else reads plain JSON. Netlify synchronous Functions accept a request body up to 6 MB (Netlify Functions limits), so 1.8 MB of gzip (about 2.4 MB as base64) fits. A failed queue entry keeps the server's error text. Check: test-kv-sync-gzip-body.js.
 - Netlify scheduled functions only run on the published (production) deploy.
 
 ## 3. Client timers and polls
