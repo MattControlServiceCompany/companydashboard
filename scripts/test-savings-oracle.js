@@ -1,7 +1,7 @@
-// Node-only check of the Louisburg savings entries in the regression oracle (no browser).
+// Node-only check of the presented-client savings entries in the regression oracle (no browser).
 // Runs the gate's own probeInPage (single source) over the app files in a vm, from a backup file, and compares the
-// louisburg savings / presented entries with the gate's own compareNumbers.
-// USAGE: node scripts/test-louisburg-savings-oracle.js --data <backup.json> [--oracle <oracle.json>]
+// savings / presented entries with the gate's own compareNumbers.
+// USAGE: node scripts/test-savings-oracle.js --data <backup.json> [--oracle <oracle.json>]
 // EXIT: 0 = every checked entry passes and the input has the keys the oracle needs; 1 = otherwise.
 'use strict';
 const fs = require('fs');
@@ -74,7 +74,7 @@ if (missing.length) {
   console.log('FAIL input: ' + gate.inputKeyMessage(oracle, missing));
 } else console.log('PASS input: backup has ' + ((oracle._input && oracle._input.requiresKeys) || []).join(', '));
 
-const subset = { values: oracle.values.filter((e) => /^louisburg-usd-416\.(savings|presented)/.test(e.key)) };
+const subset = { values: oracle.values.filter((e) => /^[^.]+\.(savings|presented)/.test(e.key)) };
 gate.compareNumbers(probe, subset);
 gate.results.forEach((r) => {
   if (r.status === 'FAIL') fail++;
