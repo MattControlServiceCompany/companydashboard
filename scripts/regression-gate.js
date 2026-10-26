@@ -60,7 +60,7 @@ function resolvePlaywright() {
   }
   throw new Error('playwright not found; set CH_PLAYWRIGHT_NODE_MODULES to a node_modules dir that has it (tried ' + dirs.join(', ') + ')');
 }
-const { chromium } = resolvePlaywright();
+// chromium is resolved inside main() so node tests can require this file (for probeInPage) without a browser install.
 
 function parseArgs(argv) {
   const out = {};
@@ -194,6 +194,18 @@ function probeInPage() {
           bl.forEach((b) => {
             const v = t.byBldg[b.id];
             if (v) put(ps + '.savings.' + q + '.bldg.' + slug(b.name), v);
+          });
+        }
+      });
+      // Recalculated savings = the same rollup with NO presented record applied (an id that has no records).
+      // They stay protected because presented records replace the live values in the figures above.
+      Object.keys(Q).forEach((q) => {
+        const t = totalSavingsWithPresented('__no-presented-records__', Q[q], perB);
+        put(ps + '.savings-recalculated.' + q + '.total', t.total);
+        if (p.sa) {
+          bl.forEach((b) => {
+            const v = t.byBldg[b.id];
+            if (v) put(ps + '.savings-recalculated.' + q + '.bldg.' + slug(b.name), v);
           });
         }
       });
@@ -339,6 +351,21 @@ function compareNumbers(probe, oracle) {
   const uncovered = Object.keys(probe).filter((k) => !k.startsWith('__') && !seen.has(k));
   return uncovered;
 }
+// The oracle may name backup keys that must exist in the input (oracle._input.requiresKeys). A backup without them
+// cannot be judged against the oracle, so it fails with one clear message instead of a run of confusing value diffs.
+function missingInputKeys(oracle, seed) {
+  const need = (oracle._input && oracle._input.requiresKeys) || [];
+  return need.filter((k) => seed[k] === undefined || seed[k] === null);
+}
+function inputKeyMessage(oracle, missing) {
+  return (
+    'backup is missing ' +
+    missing.join(', ') +
+    ' (missing presented records): the oracle was captured on ' +
+    ((oracle._input && oracle._input.capturedOn) || 'an unnamed backup') +
+    '; run the gate on a backup that has these keys'
+  );
+}
 function r6(v) {
   return Math.round(v * 1e6) / 1e6;
 }
@@ -391,6 +418,13 @@ async function main() {
       : '';
   } catch (e) {}
   console.log('REGRESSION GATE  tree=' + REPO_ROOT + '  commit=' + sha + dirty);
+  const missingKeys = missingInputKeys(oracle, seed);
+  add(
+    'input',
+    'backup has the keys the oracle needs',
+    missingKeys.length ? 'FAIL' : 'PASS',
+    missingKeys.length ? inputKeyMessage(oracle, missingKeys) : ((oracle._input && oracle._input.requiresKeys) || []).join(', '),
+  );
   console.log('backup copy of : ' + dataSrc);
   console.log('oracle         : ' + oraclePath + '  (' + oracle.values.length + ' protected values)');
 
@@ -400,7 +434,7 @@ async function main() {
   let ctx;
   let probe = {};
   try {
-    ctx = await chromium.launchPersistentContext(profile, { headless: true, viewport: { width: 1600, height: 1100 } });
+    ctx = await resolvePlaywright().chromium.launchPersistentContext(profile, { headless: true, viewport: { width: 1600, height: 1100 } });
     const page = await ctx.newPage();
     // Never reach live Supabase/Netlify. (The app is already hard-wired to 'off' on non-netlify hosts.)
     await page.route(/\/\.netlify\/|supabase\.|netlify\.app/i, (r) => r.abort());
@@ -807,7 +841,11 @@ async function main() {
   process.exit(nFail ? 1 : 0);
 }
 
-main().catch((e) => {
-  console.error('REGRESSION GATE FAIL: harness crash:', (e && e.stack) || e);
-  process.exit(1);
-});
+module.exports = { probeInPage, compareNumbers, missingInputKeys, inputKeyMessage, results };
+
+if (require.main === module) {
+  main().catch((e) => {
+    console.error('REGRESSION GATE FAIL: harness crash:', (e && e.stack) || e);
+    process.exit(1);
+  });
+}
