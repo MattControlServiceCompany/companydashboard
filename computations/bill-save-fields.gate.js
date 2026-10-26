@@ -88,6 +88,7 @@ const META_KEYS = new Set([
   '_manualReview', // extractor review markers
   '_manualReviewLabel',
   '_mmbtuRateMismatch',
+  '_mmbtuUnverified',
   '_mmbtuMissingWithCharge',
 ]);
 const META_PREFIX = [/^_wre/, /^Meter[12]_/]; // WoodRiver per-site components; per-meter split of a two-meter bill

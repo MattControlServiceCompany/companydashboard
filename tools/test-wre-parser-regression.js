@@ -79,7 +79,7 @@ const EXPECTED = {
   ],
   'wre-synth-corrupt.txt': [
     { addr: 'Site One - 1 Alpha St', mmbtu: '13', charge: '54.59' },
-    { addr: 'Site Two - 2 Beta St', mmbtu: null, charge: null, manualReview: true, mmbtuRateMismatch: true },
+    { addr: 'Site Two - 2 Beta St', mmbtu: '112.96', charge: null, manualReview: true },
   ],
 };
 

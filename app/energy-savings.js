@@ -10192,17 +10192,25 @@ const UTILITY_RULES = [
           const _wreUnlabeledSub =
             _inSites && _cur && _cur.mmbtu == null && _cur.dollar == null && !/^\s*Sub[\s.\-]{0,2}Total/i.test(ln)
               ? ln.match(
-                  /^\s*(?:\d\s+)?[^\d$£]{0,60}?\s*(\d[\d,]*\.\d{2})\s+(\d+\.\d{2}|\d{3})(?:\s+(?:[$£S]\s?(\d[\d,]*\.\d{2})|\S{1,8}))?\s*$/,
+                  /^\s*(?:\d\s+)?[^\d]{0,60}?\s*(\d[\d,]*\.\d{2})\s+(\d+\.\d{2}|\d{3})(?:\s+[^\s$£]{1,8})?(?:\s+(?:[$£S]\s?(\d[\d,]*\.\d{2})\S?|\S{1,8}))?\s*$/,
                 )
               : null;
-          if (_wreUnlabeledSub) {
-            _cur.mmbtu = parseFloat(_wreUnlabeledSub[1].replace(/,/g, ''));
+          // Same row with the decimal point of the MMbtu lost: a bare 5-digit run, a 3-digit Fuel
+          // run and up to two stray tokens ("20332  138  S002 30"). Kept as its own pattern so the
+          // looser tail cannot match a Trigger/Index component line.
+          const _wreUnlabeledBare =
+            !_wreUnlabeledSub && _inSites && _cur && _cur.mmbtu == null && _cur.dollar == null
+              ? ln.match(/^\s*(?:\d\s+)?[^\d]{0,60}?\s*(\d{5})\s+(\d{3})(?:\s+\S{1,8}){0,2}\s*$/)
+              : null;
+          if (_wreUnlabeledSub || _wreUnlabeledBare) {
+            const _wreU = _wreUnlabeledSub || _wreUnlabeledBare;
+            _cur.mmbtu = parseFloat(_wreU[1].replace(/,/g, ''));
+            // A bare 5-digit run lost its decimal point: same unverified state as a labelled one.
+            if (_wreU[1].indexOf('.') < 0) _cur._mmbtuNoDecimalUnverified = true;
             _cur.subFuel = parseFloat(
-              _wreUnlabeledSub[2].indexOf('.') < 0
-                ? _wreUnlabeledSub[2][0] + '.' + _wreUnlabeledSub[2].slice(1)
-                : _wreUnlabeledSub[2],
+              _wreU[2].indexOf('.') < 0 ? _wreU[2][0] + '.' + _wreU[2].slice(1) : _wreU[2],
             );
-            if (_wreUnlabeledSub[3]) _cur.dollar = _wreFixOcrDollar(_wreUnlabeledSub[3]);
+            if (_wreU[3]) _cur.dollar = _wreFixOcrDollar(_wreU[3]);
             continue;
           }
           if (_cur && /^\s*Sub[\s.\-]{0,2}Total\s*[:;,.]?/i.test(ln)) {
@@ -10587,9 +10595,10 @@ const UTILITY_RULES = [
       // Sub-Total that reads cleanly. Not used for a site with a Special Weather Event line
       // (its charge is not rate x quantity), for a Sub-Total rebuilt from the components
       // (circular), or for one whose decimal point was repaired without math.
-      const _wreSubTotalConfirmed = (blk, invoiceRates) => {
+      // The band test itself (charge / (MMbtu + Fuel) inside the printed rates, 5% each side)
+      // is the one definition; the confirm check below and the no-decimal repair both use it.
+      const _wreBlendedInBand = (blk, invoiceRates) => {
         if (blk.mmbtu == null || blk.dollar == null) return false;
-        if (blk._mmbtuFromComponentFallback || blk._mmbtuNoDecimalUnverified || blk._tolUnverifiedMMbtu) return false;
         if (blk.sweCharge != null || blk.sweMMbtu != null) return false;
         const charge = parseBillNumber(blk.dollar);
         // A site whose own rate column was not readable uses the rate(s) the other sites
@@ -10602,6 +10611,10 @@ const UTILITY_RULES = [
         if (!charge || !rates.length || qty <= 0) return false;
         const blended = charge / qty;
         return blended >= Math.min(...rates) * 0.95 && blended <= Math.max(...rates) * 1.05;
+      };
+      const _wreSubTotalConfirmed = (blk, invoiceRates) => {
+        if (blk._mmbtuFromComponentFallback || blk._mmbtuNoDecimalUnverified || blk._tolUnverifiedMMbtu) return false;
+        return _wreBlendedInBand(blk, invoiceRates);
       };
       // Item 899011fd: when the Sub-Total MMbtu cannot be confirmed, the usage can still
       // be rebuilt from the component lines IF every component present has its own rate
@@ -10632,6 +10645,7 @@ const UTILITY_RULES = [
         })
         .filter((r) => r != null);
       const results = [];
+      const _wreNetRows = [];
       for (let i = 0; i < siteBlocks.length; i++) {
         const blk = siteBlocks[i];
         // Fix (2026-07-28, gas-bill-ocr-extraction): a site block that has NEITHER an
@@ -10688,6 +10702,25 @@ const UTILITY_RULES = [
         // charge = (Mmbtu+Fuel) x Rate, not Mmbtu x Rate alone. Falls back to +0
         // when Fuel wasn't captured (small, ~1-2% column; OCR sometimes drops it),
         // so this never makes the check MORE likely to flag a site than before.
+        // Item 899011fd: a Sub-Total read as a bare digit run (no decimal point) whose repair could
+        // not be confirmed while parsing gets the printed 2-decimal shape here (474 -> 4.74), so
+        // every check below sees the repaired figure. The invoice-level rate may then confirm it.
+        // It stays marked unverified (and for review) when no rate check confirms it.
+        if (
+          blk.mmbtu != null &&
+          Number.isInteger(blk.mmbtu) &&
+          blk.mmbtu >= 100 &&
+          (blk._mmbtuNoDecimalUnverified || blk._mmbtuFromComponentFallback)
+        ) {
+          const _bare = blk.mmbtu;
+          blk.mmbtu = _bare / 100;
+          blk._mmbtuBareRepaired = true;
+          for (const key of ['triggerMMbtu', 'indexMMbtu']) if (blk[key] === _bare) blk[key] = _bare / 100;
+          if (blk._mmbtuNoDecimalUnverified && !blk._mmbtuFromComponentFallback && _wreBlendedInBand(blk, _wreInvoiceRates)) {
+            blk._mmbtuNoDecimalUnverified = false;
+            blk._mmbtuDecimalRepaired = true;
+          }
+        }
         _wreRepairComponentDecimals(blk);
         const _trigMismatch = _wreRateMismatch(
           blk.triggerMMbtu != null ? blk.triggerMMbtu + (blk.triggerFuelMMbtu || 0) : blk.triggerMMbtu,
@@ -10838,6 +10871,11 @@ const UTILITY_RULES = [
         // confidence read, circular rebuild) is never recovered here.
         let _mmbtuRateMismatch = _mmbtuRateMismatchRaw;
         let _shipMmbtu = blk.mmbtu;
+        // Item 899011fd: when the only failing reasons are "cannot verify" (no readable rate or
+        // charge to check against), the figure that was read is kept and marked for review.
+        // A reason where the math CONTRADICTS the figure still removes it.
+        const _mmbtuContradicted = _trigMismatch || _idxMismatch || _sumMismatch || _subTotalMismatch;
+        const _mmbtuUnverified = _mmbtuRateMismatchRaw && !_mmbtuContradicted;
         if (
           _mmbtuRateMismatchRaw &&
           !blk._tolUnverifiedMMbtu &&
@@ -10856,6 +10894,7 @@ const UTILITY_RULES = [
             }
           }
         }
+        if (_mmbtuUnverified && _mmbtuRateMismatch) _mmbtuRateMismatch = false;
         if (_mmbtuRateMismatch) {
           console.log(
             '[WRE] Rate/sum cross-check FAILED for site #' +
@@ -10890,8 +10929,9 @@ const UTILITY_RULES = [
         // independent reasons caused it. Charge is left untouched either way — it
         // is a real, correctly-read billed amount; only the review FLAG is unified.
         const _mmbtuMissingWithCharge = !_mmbtuRateMismatch && blk.mmbtu == null && blk.dollar != null;
-        const _needsManualReview = _mmbtuRateMismatch || _mmbtuMissingWithCharge;
+        const _needsManualReview = _mmbtuRateMismatch || _mmbtuMissingWithCharge || _mmbtuUnverified;
 
+        _wreNetRows.push({ blk, index: results.length });
         results.push({
           UtilityCompany: 'Wood River Energy',
           Commodity: 'Gas',
@@ -10955,6 +10995,7 @@ const UTILITY_RULES = [
           // — see comment above _mmbtuMissingWithCharge for why this is needed in
           // addition to _mmbtuRateMismatch.
           _mmbtuMissingWithCharge: _mmbtuMissingWithCharge || undefined,
+          _mmbtuUnverified: _mmbtuUnverified || undefined,
           _manualReview: _needsManualReview || blk._chargeRowLost ? true : undefined,
           _wreChargeRowLost: blk._chargeRowLost || undefined,
           _manualReviewLabel: blk._chargeRowLost
@@ -10962,6 +11003,11 @@ const UTILITY_RULES = [
               (i + 1) +
               (blk.ServiceAddress ? ': ' + blk.ServiceAddress : '') +
               ') - second source missing; verify against the source PDF'
+            : _mmbtuUnverified
+            ? 'Usage read but not confirmed — no readable rate or charge to check it against (site #' +
+              (i + 1) +
+              (blk.ServiceAddress ? ': ' + blk.ServiceAddress : '') +
+              '; verify against the source PDF)'
             : _mmbtuRateMismatch
             ? 'Usage flagged — MMbtu × printed rate does not match the printed charge (site #' +
               (i + 1) +
@@ -10974,6 +11020,30 @@ const UTILITY_RULES = [
                 ' — the charge is billed and correctly extracted; verify usage manually against the source PDF'
               : undefined,
         });
+      }
+
+      // Item 899011fd safety net: a usage that shipped without a review mark must be confirmed
+      // by one of two independent printed numbers. (a) The site's own charge divided by its
+      // usage lies inside the printed rate band. (b) The shipped site usages add up to the
+      // invoice total. A usage that has neither stays in place but is marked for review.
+      {
+        const _shipped = _wreNetRows.filter((r) => results[r.index].NaturalGasMMbtu != null);
+        const _sumShipped = _shipped.reduce((a, r) => a + parseFloat(results[r.index].NaturalGasMMbtu), 0);
+        const _reconciled =
+          summaryMMbtu != null &&
+          _shipped.length === _wreNetRows.length &&
+          Math.abs(_sumShipped - summaryMMbtu) <= Math.max(0.1, summaryMMbtu * 0.01);
+        if (!_reconciled) {
+          for (const r of _shipped) {
+            const res = results[r.index];
+            if (res._manualReview || _wreBlendedInBand(r.blk, _wreInvoiceRates)) continue;
+            if (r.blk.sweCharge != null || r.blk.sweMMbtu != null || res._wreUsageFromComponents) continue;
+            res._manualReview = true;
+            res._mmbtuUnverified = true;
+            res._manualReviewLabel =
+              'Usage not confirmed — no charge and rate check passed and the site usages do not add up to the invoice total (verify against the source PDF)';
+          }
+        }
       }
 
       // Aggregate fallback: if block extraction yielded nothing, fall back to

@@ -168,14 +168,15 @@ console.log('29ecdb43 value from another OCR pass');
   delete sandbox.window._pdfOcrPasses;
   check('charge recovered from the other pass', r[1].GasCharge === 214.55, 'got ' + r[1].GasCharge);
   check(
-    'bare-digit usage from the other pass is not shipped unchecked',
-    r[1].NaturalGasMMbtu === null,
+    'bare-digit usage from the other pass gets 2 decimals and ships',
+    r[1].NaturalGasMMbtu === '65.57',
     'got ' + r[1].NaturalGasMMbtu,
   );
   check('and is held for review', r[1]._manualReview === true);
+  check('and marked unverified', r[1]._mmbtuUnverified === true);
   // Same site read directly on the primary pass gives the same answer.
   const direct = wre.extractAll(alt);
-  check('same result as a primary read', direct[1].NaturalGasMMbtu === null && direct[1]._manualReview === true);
+  check('same result as a primary read', direct[1].NaturalGasMMbtu === '65.57' && direct[1]._manualReview === true);
 }
 
 // --- 5a5973d4 ---

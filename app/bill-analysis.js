@@ -7636,6 +7636,7 @@ async function confirmAutoAssign() {
       _manualReview: bill._manualReview || undefined,
       _manualReviewLabel: bill._manualReviewLabel || '',
       _mmbtuRateMismatch: bill._mmbtuRateMismatch || undefined,
+      _mmbtuUnverified: bill._mmbtuUnverified || undefined,
       _mmbtuMissingWithCharge: bill._mmbtuMissingWithCharge || undefined,
       // Fix [therms-unit-2026-06-22]: canonicalize therms to Therms at save time.
       therms: gasBillSaveTherms(bill),
@@ -8042,6 +8043,7 @@ async function _mbSaveOneBill(bi, action) {
     _manualReview: bill._manualReview || undefined,
     _manualReviewLabel: bill._manualReviewLabel || '',
     _mmbtuRateMismatch: bill._mmbtuRateMismatch || undefined,
+    _mmbtuUnverified: bill._mmbtuUnverified || undefined,
     _mmbtuMissingWithCharge: bill._mmbtuMissingWithCharge || undefined,
     therms: gasBillSaveTherms(bill),
     gasCharge: billValueOrBlank(bill.GasCharge),
@@ -9227,6 +9229,7 @@ function _saveBillToMatchedMeter(extracted, match) {
     _manualReview: extracted._manualReview || undefined,
     _manualReviewLabel: extracted._manualReviewLabel || '',
     _mmbtuRateMismatch: extracted._mmbtuRateMismatch || undefined,
+    _mmbtuUnverified: extracted._mmbtuUnverified || undefined,
     _mmbtuMissingWithCharge: extracted._mmbtuMissingWithCharge || undefined,
     // Fix [therms-unit-2026-06-22]: canonicalize therms to Therms at save time.
     // WRE (and any future MMBtu extractor) sets NaturalGasMMbtu; Constellation/KGS
@@ -16530,6 +16533,8 @@ async function processPDF(file) {
                       // candidate validates, the site stays flagged/null.
                       const _retryMmbtuValidated =
                         retry._mmbtuRateMismatch !== true &&
+                        retry._mmbtuUnverified !== true &&
+                        !retry._manualReview &&
                         retry.NaturalGasMMbtu !== null &&
                         retry.NaturalGasMMbtu !== undefined &&
                         retry.NaturalGasMMbtu !== '';
@@ -16583,6 +16588,7 @@ async function processPDF(file) {
                       if (
                         (orig.parseError || orig._manualReview) &&
                         !orig._mmbtuRateMismatch &&
+                        !orig._mmbtuUnverified &&
                         !orig._mmbtuMissingWithCharge &&
                         _mergedHasSiteData
                       ) {
