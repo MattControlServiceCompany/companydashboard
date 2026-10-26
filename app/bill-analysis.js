@@ -13341,6 +13341,7 @@ function closePdfDock() {
 function _pdfSetQueueBusy(on) {
   const pb = document.getElementById('pdfBody');
   if (pb) pb.toggleAttribute('data-queue-busy', !!on);
+  _syncPdfDockVisibility();
 }
 // Progress, error and non-bill text messages (the removed Extraction Output box held these too).
 function _pdfStatus(html) {
@@ -13350,7 +13351,6 @@ function _pdfStatus(html) {
 function _syncPdfDockVisibility() {
   const pb = document.getElementById('pdfBody');
   const busy = !!pb && pb.hasAttribute('data-queue-busy');
-  const vb = document.getElementById('pdfViewBtn');
   _pdfSyncMoreBtn();
   const dock = document.getElementById('pdfDockCol');
   if (!dock) return;
@@ -13478,9 +13478,6 @@ function _initPdfDock() {
   const handle = document.getElementById('pdfDockResize');
   if (!tog || !btn || !handle) return;
   tog.checked = _pdfSideBySideOn();
-  const mo = new MutationObserver(_syncPdfDockVisibility);
-  mo.observe(document.getElementById('pdfBody'), { attributes: true, attributeFilter: ['data-queue-busy'] });
-  mo.observe(btn, { attributes: true, attributeFilter: ['style'] });
   window.addEventListener('resize', _syncPdfDockVisibility);
   handle.addEventListener('pointerdown', (ev) => {
     handle.setPointerCapture(ev.pointerId);

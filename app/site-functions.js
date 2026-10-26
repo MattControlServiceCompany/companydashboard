@@ -2507,6 +2507,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.26.167', date: '2026-10-26', title: 'PDF bill review scrolls as one page',
+    items: [
+      { type: 'change', text: 'PDF bill review: the whole page now scrolls as one, with the PDF staying in view beside the values.' },
+      { type: 'fix', text: 'PDF bill review: fixed a freeze in Safari when the PDF panel is open.' }
+    ]
+  },
   { v: 'v2026.10.26.166', date: '2026-10-26', title: 'PDF bill review is easier to read',
     items: [
       { type: 'change', text: 'PDF bill review: shows the building name by the utility type, shows one bill\'s pages only, removes the extra helper text, and fits the file bar on less lines.' }
