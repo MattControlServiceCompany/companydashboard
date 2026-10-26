@@ -179,9 +179,15 @@ function getHeader(event, name) {
 // structure), well under the cap, so gzip alone closes R5 for kv — no
 // chunking protocol is needed here (see phase2a-build-plan.md §6).
 function getRawBody(event) {
-  const buf = event.isBase64Encoded ? Buffer.from(event.body || '', 'base64') : Buffer.from(event.body || '', 'utf8');
   const contentEncoding = getHeader(event, 'content-encoding') || '';
-  if (/gzip/i.test(contentEncoding)) {
+  const gzipped = /gzip/i.test(contentEncoding);
+  // A gzip body is binary. The runtime delivers it as base64 for binary content types
+  // (the client sends application/octet-stream). A binary body that arrives as a
+  // non-base64 string is read byte for byte (latin1), never as UTF-8, which would
+  // corrupt the bytes. Text bodies stay UTF-8.
+  const enc = event.isBase64Encoded ? 'base64' : gzipped ? 'latin1' : 'utf8';
+  const buf = Buffer.from(event.body || '', enc);
+  if (gzipped) {
     return zlib.gunzipSync(buf).toString('utf8');
   }
   return buf.toString('utf8');

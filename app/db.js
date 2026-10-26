@@ -300,7 +300,9 @@ const DB = (() => {
       writer.write(bytes);
       writer.close();
       const compressed = await new Response(cs.readable).arrayBuffer();
-      return { body: compressed, headers: { 'content-encoding': 'gzip' } };
+      // application/octet-stream: the Functions runtime hands a binary type to the Function as
+      // base64. As application/json it arrives as UTF-8 text and the gzip bytes are corrupted.
+      return { body: compressed, headers: { 'content-encoding': 'gzip', 'content-type': 'application/octet-stream' } };
     } catch (e) {
       console.warn('[DB] gzip compression failed, sending uncompressed:', e);
       return { body: jsonStr, headers: {} };
@@ -1922,6 +1924,7 @@ const DB = (() => {
         status: result.status,
         httpStatus: result.httpStatus || null,
         permanent: PERMANENT_HTTP.indexOf(result.httpStatus) !== -1,
+        reason: result.body && typeof result.body.error === 'string' ? result.body.error : '',
       });
     }
   }
@@ -2607,7 +2610,7 @@ const DB = (() => {
   }
   // "key (HTTP 502)" text for a failure row. ONE function: toast and Sync status use it.
   function describeFailure(f) {
-    return f.key + ' (' + (f.httpStatus ? 'HTTP ' + f.httpStatus : f.status) + ')';
+    return f.key + ' (' + (f.httpStatus ? 'HTTP ' + f.httpStatus : f.status) + (f.reason ? ': server said "' + f.reason + '"' : '') + ')';
   }
   function _emitUploadProgress() {
     if (typeof window !== 'undefined') {
