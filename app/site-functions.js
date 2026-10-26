@@ -2507,6 +2507,15 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.26.163', date: '2026-10-26', title: 'Sync saves big data, Utility Data and Quick Start polish',
+    items: [
+      { type: 'fix', text: 'Sync: data items over 1 MB now save to the server. Before this fix some large saves never arrived.' },
+      { type: 'fix', text: 'Utility Data: the Bills header now stays in view as you scroll the table.' },
+      { type: 'change', text: 'Utility Data and reports: the Tier label is removed from the footer, and the demand column headers now read kW.' },
+      { type: 'change', text: 'Quick Start tips now show only the first time you sign in, not on every load.' },
+      { type: 'change', text: 'The load notice is now one plain line with an X to close it.' }
+    ]
+  },
   { v: 'v2026.10.26.162', date: '2026-10-26', title: 'Sync: large data items now save to the server',
     items: [
       { type: 'fix', text: 'Sync: large data items (over 1 MB) now save to the server instead of being refused.' },
