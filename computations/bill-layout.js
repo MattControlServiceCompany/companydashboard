@@ -238,6 +238,7 @@
       WinterEventCost: MONEY_NO_GLYPH,
       FranchiseFee: MONEY_NO_GLYPH,
       DelayedPaymentCharge: MONEY_NO_GLYPH,
+      SalesTax: { decimals: 2, credit: 'CR', glyph: 'none' }, // sum of the State, City and County Tax lines
       PreviousBalance: MONEY_GLYPH,
       PaymentsReceived: { decimals: 2, credit: 'never', suffix: 'CR', glyph: 'none' }, // "569.28CR"
       TotalCurrentCharges: MONEY_GLYPH,

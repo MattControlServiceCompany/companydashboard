@@ -2507,6 +2507,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.27.175', date: '2026-10-27', title: 'Gas bills show Sales Tax',
+    items: [
+      { type: 'feature', text: 'Utility Data / bill review: Kansas Gas Service bills now show a Sales Tax line (State, City and County Tax added together), so taxed bills add up to their printed total. The gas rate does not include tax.' }
+    ]
+  },
   { v: 'v2026.10.27.174', date: '2026-10-27', title: 'Project page: District Calendar feed',
     items: [
       { type: 'feature', text: 'Project page, District Calendar tab: a new Calendar feed panel shows what the district calendar feed currently holds and what changed since the last sync. Before, the tab showed only the dates you had entered by hand.' },

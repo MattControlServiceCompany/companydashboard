@@ -7591,10 +7591,10 @@ function _kgsAutofixFranchise(b) {
   if ((b._kgsSuspectLines || []).some((x) => x.field !== 'FranchiseFee')) return;
   const nums = items.map(parseBillNumber);
   if (nums.some((n) => n == null)) return;
-  const others = ['CustomerCharge', 'DeliveryCharge', 'GasSystemReliability', 'WeatherNormalization', 'GasCharge', 'WinterEventCost', 'DelayedPaymentCharge']
-    .map((f) => (b[f] == null ? 0 : parseBillNumber(b[f])));
-  if (others.some((n) => n == null)) return;
-  const sum = _evgRound(others.reduce((s, n) => s + n, 0) + nums.reduce((s, n) => s + n, 0), 2);
+  // The other lines come from the one KGS line-sum (sumKgsComponentCharges, computations/rates.js), Franchise Fee left out.
+  if (KGS_COMPONENT_CHARGE_FIELDS.some((f) => f !== 'FranchiseFee' && b[f] != null && parseBillNumber(b[f]) == null)) return;
+  const others = sumKgsComponentCharges(Object.assign({}, b, { FranchiseFee: null }));
+  const sum = _evgRound(others + nums.reduce((s, n) => s + n, 0), 2);
   if (Math.abs(sum - tcc) < 0.005) return;
   const fills = [];
   items.forEach((raw, i) => {
@@ -11674,6 +11674,20 @@ const UTILITY_RULES = [
         const FranchiseFeeItems = _ffRaw.length > 0 ? _ffRaw.map(fixNum) : null;
         const { FranchiseFee, FranchiseFee1, FranchiseFee2 } = _kgsFranchiseTotals(FranchiseFeeItems);
 
+        // Sales Tax — every State, City and County Tax line on the page (gas group and Winter Event group),
+        // summed to one value. A CR suffix or minus sign makes a line negative. Null when no tax line prints.
+        // A tax label with an unreadable amount leaves the sum unknown (null), not a smaller wrong sum.
+        const taxRe = /\b(State|City|County)\s+Tax\b/gi;
+        const taxMs = [...activeT.matchAll(/\b(?:State|City|County)\s+Tax\s+(-)?\$?(-)?([\d,.:]+)(CR)?/gi)];
+        const taxNums = taxMs.map((m) => {
+          const n = parseBillNumber(fixNum(m[3]));
+          return n === null ? null : n * (m[1] || m[2] || m[4] ? -1 : 1);
+        });
+        const SalesTax =
+          taxNums.length === 0 || taxNums.some((n) => n === null) || _kgsUnreadableLabelCount(activeT, taxRe) > 0
+            ? null
+            : taxNums.reduce((sum, n) => sum + n, 0).toFixed(2);
+
         // Delayed Payment Charge — late-fee line that appears on some KGS bills.
         // Positive when printed plain (it adds to the total); a minus sign or CR suffix stores it negative.
         const delayedPayM = activeT.match(/Delayed\s+Payment\s+Charge\s+(-)?\$?(-)?([\d,.]+)(CR)?/i);
@@ -11755,6 +11769,7 @@ const UTILITY_RULES = [
           WNAPerMcf,
           CostOfGasPerMcf,
           DelayedPaymentCharge,
+          SalesTax,
           FuelAdjustment: null,
           TotalCurrentCharges,
           TotalAmountDue,

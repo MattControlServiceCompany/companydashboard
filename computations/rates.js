@@ -335,6 +335,35 @@ function sumElectricComponentCharges(parsed) {
   return Math.round(total * 100) / 100;
 }
 
+// The charge lines of a Kansas Gas Service (and other gas) bill that add up to Total Current Charges. EXCLUDES
+// PreviousBalance, PaymentsReceived, BalanceForward. ONE list and ONE sum for the gas line rule: the sum
+// pills and banner (CHARGE_FIELDS_GAS in app/bill-analysis.js is this list), the gas sum warning, the
+// GasCharge recovery by subtraction, the total check, Pass B2, the suspect-line recovery and the
+// Franchise Fee autofix (app/energy-savings.js) all call sumKgsComponentCharges. SalesTax is the sum of
+// the State, City and County Tax lines. Add a new gas charge line here only.
+var KGS_COMPONENT_CHARGE_FIELDS = [
+  'CustomerCharge',
+  'GasCharge',
+  'FuelAdjustment',
+  'DeliveryCharge',
+  'GasSystemReliability',
+  'WeatherNormalization',
+  'WinterEventCost',
+  'FranchiseFee',
+  'DelayedPaymentCharge',
+  'SalesTax',
+];
+
+// Sum of the gas component charges of one extracted bill, rounded to cents. A missing or unreadable line adds 0.
+function sumKgsComponentCharges(parsed) {
+  parsed = parsed || {};
+  var total = 0;
+  for (var i = 0; i < KGS_COMPONENT_CHARGE_FIELDS.length; i++) {
+    total += parseBillNumberOrZero(parsed[KGS_COMPONENT_CHARGE_FIELDS[i]]);
+  }
+  return Math.round(total * 100) / 100;
+}
+
 // The component charges a Utility E bill prints BELOW its Subtotal line (the rest are above it, so they add up
 // to the Subtotal). Printed Current Charges = Subtotal + these. One list; the extractor's customer-charge
 // derivation, its printed-total check and the Stage 3 corroboration all read it.

@@ -14,17 +14,8 @@
 // FuelAdjustment (null on Utility E bills, so they add 0). The sum banner and both
 // sum pills use this one list, so they agree on every bill.
 const CHARGE_FIELDS_ELECTRIC_SUM = [...UTILITY_E_COMPONENT_CHARGE_FIELDS, 'ElectricCharge', 'FuelAdjustment'];
-const CHARGE_FIELDS_GAS = [
-  'CustomerCharge',
-  'GasCharge',
-  'FuelAdjustment',
-  'DeliveryCharge',
-  'GasSystemReliability',
-  'WeatherNormalization',
-  'WinterEventCost',
-  'FranchiseFee',
-  'DelayedPaymentCharge',
-];
+// Gas: the list lives in computations/rates.js (KGS_COMPONENT_CHARGE_FIELDS) with its one sum, sumKgsComponentCharges.
+const CHARGE_FIELDS_GAS = KGS_COMPONENT_CHARGE_FIELDS;
 // The one table of KGS / Constellation gas fields a saved bill row carries next to the
 // Bills-table columns. Every save path and the duplicate-merge map build from it, and the
 // save-field gate (computations/bill-save-fields.gate.js) reads its saved keys from it.
@@ -37,6 +28,7 @@ const KGS_GAS_SAVED_FIELDS = [
   { extractedKey: 'WeatherNormalization', savedKey: 'weatherNormalization' },
   { extractedKey: 'DelayedPaymentCharge', savedKey: 'delayedPaymentCharge' },
   { extractedKey: 'WinterEventCost', savedKey: 'winterEventCost' },
+  { extractedKey: 'SalesTax', savedKey: 'salesTax' },
   { extractedKey: 'PreviouslyBilled', savedKey: 'previouslyBilled' },
 ];
 const KGS_GAS_STATEMENT_FIELDS = [
@@ -325,19 +317,7 @@ function validateBillData(extracted, utilityName) {
   if (_extComm === 'gas') {
     const gasTotal = parseBillNumberOrZero(extracted.TotalCurrentCharges);
     if (gasTotal !== 0) {
-      const gasCompSum =
-        Math.round(
-          (parseBillNumber(extracted.CustomerCharge) +
-            parseBillNumber(extracted.GasCharge) +
-            parseBillNumber(extracted.FuelAdjustment) +
-            (parseBillNumber(extracted.DeliveryCharge) || 0) +
-            (parseBillNumber(extracted.GasSystemReliability) || 0) +
-            (parseBillNumber(extracted.WeatherNormalization) || 0) +
-            (parseBillNumber(extracted.WinterEventCost) || 0) +
-            (parseBillNumber(extracted.FranchiseFee) || 0) +
-            (parseBillNumber(extracted.DelayedPaymentCharge) || 0)) *
-            100,
-        ) / 100;
+      const gasCompSum = sumKgsComponentCharges(extracted);
       if (gasCompSum > 0) {
         const gasDiff = Math.abs(gasCompSum - gasTotal);
         if (gasDiff > gasTotal * 0.15 && gasDiff > 5) {
@@ -523,16 +503,9 @@ function validateBillData(extracted, utilityName) {
       // Example: Total=105.34, CustChg=54.00, Delivery=2.58, GSRS=-1.24 (credit)
       //   Signed: 105.34 - 54.00 - 2.58 - (-1.24) = 50.00  ← correct
       //   Abs:    105.34 - 54.00 - 2.58 - 1.24    = 48.52  ← wrong (off by 2 × credit)
-      recovered =
-        total -
-        custCharge -
-        fuelAdj -
-        parseBillNumber(extracted.DeliveryCharge) -
-        parseBillNumber(extracted.GasSystemReliability) -
-        parseBillNumber(extracted.WeatherNormalization) -
-        parseBillNumber(extracted.WinterEventCost) -
-        parseBillNumber(extracted.FranchiseFee) -
-        parseBillNumber(extracted.DelayedPaymentCharge);
+      // The one KGS line-sum (sumKgsComponentCharges, computations/rates.js) with GasCharge left out: every other
+      // printed line, Sales Tax included, is subtracted, so none of them is absorbed into GasCharge.
+      recovered = total - sumKgsComponentCharges(Object.assign({}, extracted, { GasCharge: null }));
     } else {
       recovered = total - custCharge - fuelAdj;
     }
@@ -2110,26 +2083,7 @@ function _decideOnOffPeakKWh(b, kwhConsumed, kwhHeld) {
   return result;
 }
 
-// ── KGS charge-line sum and single-line recovery ──
-// Charge components that add up to Total Current Charges on a Kansas Gas Service bill. EXCLUDES
-// PreviousBalance, PaymentsReceived, BalanceForward. One function for the sum: the Pass B2 check
-// and the suspect-line recovery below both call it.
-function _kgsComponentSum(b) {
-  return (
-    Math.round(
-      (parseBillNumber(b.CustomerCharge) +
-        parseBillNumber(b.DeliveryCharge) +
-        parseBillNumber(b.GasSystemReliability) +
-        parseBillNumber(b.WeatherNormalization) +
-        parseBillNumber(b.GasCharge) +
-        parseBillNumber(b.FranchiseFee) +
-        parseBillNumber(b.WinterEventCost) +
-        parseBillNumber(b.DelayedPaymentCharge)) *
-        100,
-    ) / 100
-  );
-}
-
+// ── KGS single-line recovery (the line sum is sumKgsComponentCharges, computations/rates.js) ──
 // The extractor lists charge lines whose label printed but whose value was unreadable or lost its
 // decimal point (b._kgsSuspectLines). When EXACTLY ONE line is suspect and the sum of the other lines
 // plus that line does not reach the printed Total Current Charges, the line is the difference
@@ -2152,7 +2106,7 @@ function _kgsRecoverSuspectLine(b) {
   } else {
     probe[s.field] = null;
   }
-  const value = Math.round((total - _kgsComponentSum(probe)) * 100) / 100;
+  const value = Math.round((total - sumKgsComponentCharges(probe)) * 100) / 100;
   if (Math.abs(value - current) < 0.02) return; // the read already reconciles
   const mayBeCredit = s.field === 'GasSystemReliability' || s.field === 'WeatherNormalization';
   if (!(mayBeCredit ? value !== 0 : value > 0) || Math.abs(value) >= total) return;
@@ -5013,7 +4967,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
 
           // Component sum — EXCLUDES PreviousBalance, PaymentsReceived, BalanceForward.
           // TotalCurrentCharges is the correct reconciliation target (not TotalAmountDue).
-          const kgsSum = _kgsComponentSum(b);
+          const kgsSum = sumKgsComponentCharges(b);
 
           const residual = Math.round((total - kgsSum) * 100) / 100;
 
@@ -5047,7 +5001,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
                   total.toFixed(2) +
                   ' is ~100x the reconciled KGS component sum $' +
                   kgsSum.toFixed(2) +
-                  ' (CustomerCharge+DeliveryCharge+GSRS+WNA+GasCharge+FranchiseFee+WinterEventCost+DelayedPaymentCharge). Corrected to $' +
+                  ' (CustomerCharge+DeliveryCharge+GSRS+WNA+GasCharge+FranchiseFee+WinterEventCost+DelayedPaymentCharge+SalesTax). Corrected to $' +
                   corrected +
                   '.',
               };
@@ -5324,15 +5278,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
         total = fixedTotal;
       }
       if (total > 0 && gasChg > 0 && custChg > 0) {
-        const expectedTotal =
-          gasChg +
-          custChg +
-          (parseBillNumber(b.FuelAdjustment) || 0) +
-          (parseBillNumber(b.DeliveryCharge) || 0) +
-          (parseBillNumber(b.GasSystemReliability) || 0) +
-          (parseBillNumber(b.WeatherNormalization) || 0) +
-          (parseBillNumber(b.WinterEventCost) || 0) +
-          (parseBillNumber(b.FranchiseFee) || 0);
+        const expectedTotal = sumKgsComponentCharges(b);
         if (Math.abs(expectedTotal - total) > total * 0.15 && Math.abs(expectedTotal - total) > 5) {
           b._warnings = b._warnings || [];
           b._warnings.push({
@@ -19258,6 +19204,7 @@ function renderPDFFields(parsed, warnings) {
     FranchiseFee: 'Franchise Fee',
     FranchiseFee1: 'Franchise Fee (1)',
     FranchiseFee2: 'Franchise Fee (2)',
+    SalesTax: 'Sales Tax',
     TotalCurrentCharges: 'Total Current Charges',
     TotalKWhRate: 'Total $/kWh Rate',
     TotalKWRate: 'Total $/kW Rate',
@@ -19370,6 +19317,7 @@ function renderPDFFields(parsed, warnings) {
     'GasSystemReliability',
     'WeatherNormalization',
     'WinterEventCost',
+    'SalesTax',
     'PreviousBalance',
     'PreviouslyBilled',
     'PaymentsReceived',
@@ -19773,6 +19721,8 @@ function renderPDFFields(parsed, warnings) {
     // Row (2) uses hideIfNull so it is invisible on single-FF bills.
     { type: 'charge-line', label: 'Franchise Fee (1)', chargeField: 'FranchiseFee1', rateKey: null },
     { type: 'charge-line', label: 'Franchise Fee (2)', chargeField: 'FranchiseFee2', rateKey: null, hideIfNull: true },
+    // Sales Tax: the sum of the printed State, City and County Tax lines. Invisible on bills without one.
+    { type: 'charge-line', label: 'Sales Tax', chargeField: 'SalesTax', rateKey: null, hideIfNull: true },
     // Total Current Charges closes the runningTotal accumulation
     { type: 'total', fields: ['TotalCurrentCharges'], chargeKey: 'TotalCurrentCharges' },
     // Amount Due section — balance-forward items below the total, NOT fed into runningTotal
