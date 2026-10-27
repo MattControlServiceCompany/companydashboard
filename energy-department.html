@@ -374,10 +374,11 @@
         z-index: 200;
         display: flex;
         align-items: center;
-        justify-content: space-between;
-        gap: 4px 12px;
+        justify-content: flex-start;
+        gap: 0 4px;
         min-height: 40px;
-        padding: 0 12px;
+        padding: 0 8px;
+        flex-wrap: wrap;
         background: rgba(12, 15, 26, 0.95);
         backdrop-filter: blur(16px);
         border-bottom: 1px solid var(--border);
@@ -390,6 +391,20 @@
         min-width: 0;
         align-items: center;
       }
+      /* Tabs and the right-hand group (user, bell, Sign Out) flow as one wrapping row: the least height. */
+      .topbar > .hdr-tabs,
+      .topbar > .hdr-tabs > .pd-tabs:not([style*='none']) {
+        display: contents !important;
+      }
+      .topbar > .t-right {
+        margin-left: auto;
+      }
+      /* Narrow windows: the signed-in email gives way so the tabs fit in two rows; Sign Out stays. */
+      @media (max-width: 1199px) {
+        .topbar .user-chip {
+          display: none;
+        }
+      }
       .tab-lbl {
         display: inline-block;
         padding: 2px 0;
@@ -399,7 +414,7 @@
       .t-right {
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: 4px;
         flex: 0 0 auto;
       }
       .help-btn {
@@ -553,12 +568,20 @@
         min-height: 0;
         overflow: hidden;
       }
+      /* The sidebar runs the full window height from the top; the header row and the page sit in the column to its right. */
+      .app-col {
+        flex: 1 1 0;
+        min-width: 0;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+      }
       .sidebar {
         width: var(--sidebar-w, 220px);
         flex-shrink: 0;
         background: var(--s1);
         border-right: 1px solid var(--border);
-        padding: 0;
+        padding: 12px 0; /* the same 12px buffer at the top and at the bottom */
         display: flex;
         flex-direction: column;
       }
@@ -566,10 +589,10 @@
         flex: 1;
         overflow-y: auto;
         min-height: 0;
-        padding: 14px 0;
+        padding: 0;
       }
       .sidebar-bottom {
-        padding: 10px 12px 14px;
+        padding: 10px 12px 0;
         flex-shrink: 0;
       }
       .s-sect {
@@ -4399,7 +4422,7 @@
       .pd-hero-compact {
         display: none;
         align-items: center;
-        gap: 12px;
+        gap: 4px 12px;
         padding: 8px 18px;
         background: var(--s2);
         border: 1px solid var(--border);
@@ -4407,10 +4430,12 @@
         margin-bottom: 8px;
         font-size: 12px;
         color: var(--text2);
-        overflow-x: auto;
-        white-space: nowrap;
-        flex-wrap: nowrap;
+        white-space: normal; /* wraps to a second line instead of clipping its right side */
+        flex-wrap: wrap;
         flex-shrink: 0;
+      }
+      .pd-hero-compact > * {
+        min-width: 0;
       }
       .pd-hero-compact .phc-name {
         font-weight: 700;
@@ -4444,7 +4469,7 @@
         font-family: var(--font);
         font-size: 12px;
         font-weight: 500;
-        padding: 6px 10px;
+        padding: 5px 5px;
         border: none;
         cursor: pointer;
         color: var(--text);
@@ -9029,86 +9054,6 @@
     </div>
 
     <div id="app">
-      <header class="topbar" data-fb="energy.topbar">
-        <nav class="hdr-tabs" id="hdrTabs" data-fb="energy.dept-nav">
-          <button class="dept-tab active" id="hdrDeptTab" data-fb="energy.dept-nav.energy"><span class="tab-lbl">Energy Department</span></button>
-          <div class="pd-tabs" id="pdTabBar" style="display: none"></div>
-        </nav>
-        <div class="t-right">
-          <div class="user-chip">
-            <div class="u-name" id="topName">Loading...</div>
-          </div>
-          <!-- [COMMENTED OUT] Sync to Outlook topbar button
-          <button class="sync-btn" data-fb="energy.topbar.sync-btn" onclick="showToast('Syncing to Outlook...')">
-            <div class="ms-sq"><span></span><span></span><span></span><span></span></div>
-            Sync to Outlook
-          </button>
-          -->
-          <button
-            class="icon-btn"
-            id="notifBtn"
-            data-fb="energy.topbar.notif-btn"
-            onclick="toggleNotifPanel()"
-            title="Notifications"
-          >
-            🔔<span class="npip" id="notifPip" style="display: none"></span>
-            <span
-              id="notifBadge"
-              style="
-                display: none;
-                position: absolute;
-                top: -4px;
-                right: -4px;
-                background: var(--red);
-                color: #fff;
-                font-size: 9px;
-                font-weight: 700;
-                border-radius: 8px;
-                min-width: 16px;
-                height: 16px;
-                line-height: 16px;
-                text-align: center;
-                padding: 0 3px;
-                border: 1px solid var(--bg);
-              "
-              >0</span
-            >
-          </button>
-          <div
-            id="globalTaskStatus"
-            style="
-              display: none;
-              align-items: center;
-              gap: 6px;
-              font-size: 11px;
-              color: var(--accent);
-              background: var(--accent-dim);
-              border: 1px solid rgba(59, 130, 246, 0.2);
-              border-radius: 7px;
-              padding: 4px 10px;
-              cursor: pointer;
-              white-space: nowrap;
-              animation: fadeUp 0.3s ease;
-            "
-            onclick="globalTaskGoTo()"
-          >
-            <div class="tdots" style="display: inline-flex; gap: 2px">
-              <span
-                style="
-                  width: 4px;
-                  height: 4px;
-                  border-radius: 50%;
-                  background: var(--accent);
-                  animation: spin 1s infinite;
-                "
-              ></span>
-            </div>
-            <span id="globalTaskLabel">Processing...</span>
-          </div>
-          <button class="signout" data-fb="energy.topbar.signout-btn" onclick="signOut()">Sign Out</button>
-        </div>
-      </header>
-
       <div class="app-wrap">
         <aside class="sidebar" data-ui-id="en-sidebar" data-fb="energy.sidebar">
           <div class="resize-handle" id="sidebarResizeHandle"></div>
@@ -9202,6 +9147,87 @@
             ><span id="en-sb-version-text"></span></div>
           </div>
         </aside>
+
+        <div class="app-col">
+        <header class="topbar" data-fb="energy.topbar">
+          <nav class="hdr-tabs" id="hdrTabs" data-fb="energy.dept-nav">
+            <button class="dept-tab active" id="hdrDeptTab" data-fb="energy.dept-nav.energy"><span class="tab-lbl">Energy Department</span></button>
+            <div class="pd-tabs" id="pdTabBar" style="display: none"></div>
+          </nav>
+          <div class="t-right">
+            <div class="user-chip">
+              <div class="u-name" id="topName">Loading...</div>
+            </div>
+            <!-- [COMMENTED OUT] Sync to Outlook topbar button
+            <button class="sync-btn" data-fb="energy.topbar.sync-btn" onclick="showToast('Syncing to Outlook...')">
+              <div class="ms-sq"><span></span><span></span><span></span><span></span></div>
+              Sync to Outlook
+            </button>
+            -->
+            <button
+              class="icon-btn"
+              id="notifBtn"
+              data-fb="energy.topbar.notif-btn"
+              onclick="toggleNotifPanel()"
+              title="Notifications"
+            >
+              🔔<span class="npip" id="notifPip" style="display: none"></span>
+              <span
+                id="notifBadge"
+                style="
+                  display: none;
+                  position: absolute;
+                  top: -4px;
+                  right: -4px;
+                  background: var(--red);
+                  color: #fff;
+                  font-size: 9px;
+                  font-weight: 700;
+                  border-radius: 8px;
+                  min-width: 16px;
+                  height: 16px;
+                  line-height: 16px;
+                  text-align: center;
+                  padding: 0 3px;
+                  border: 1px solid var(--bg);
+                "
+                >0</span
+              >
+            </button>
+            <div
+              id="globalTaskStatus"
+              style="
+                display: none;
+                align-items: center;
+                gap: 6px;
+                font-size: 11px;
+                color: var(--accent);
+                background: var(--accent-dim);
+                border: 1px solid rgba(59, 130, 246, 0.2);
+                border-radius: 7px;
+                padding: 4px 10px;
+                cursor: pointer;
+                white-space: nowrap;
+                animation: fadeUp 0.3s ease;
+              "
+              onclick="globalTaskGoTo()"
+            >
+              <div class="tdots" style="display: inline-flex; gap: 2px">
+                <span
+                  style="
+                    width: 4px;
+                    height: 4px;
+                    border-radius: 50%;
+                    background: var(--accent);
+                    animation: spin 1s infinite;
+                  "
+                ></span>
+              </div>
+              <span id="globalTaskLabel">Processing...</span>
+            </div>
+            <button class="signout" data-fb="energy.topbar.signout-btn" onclick="signOut()">Sign Out</button>
+          </div>
+        </header>
 
         <main class="content">
           <!-- HOME -->
@@ -14281,6 +14307,7 @@
             })();
           </script>
         </main>
+        </div>
       </div>
 
       <!-- PROJECT MODAL -->
