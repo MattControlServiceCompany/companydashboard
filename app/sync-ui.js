@@ -461,6 +461,7 @@
     ['en_bas_', 'this building automation trend data'],
     ['en_alarms_', 'this alarm log'],
     ['en_hours_', 'this hours log'],
+    ['en_cal_', 'this calendar feed copy'],
     ['en_budget_', 'this budget data'],
     ['en_customers', 'the customer list'],
     ['en_deleted_records', 'the deletion records'],

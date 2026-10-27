@@ -310,6 +310,15 @@ var FLOWS = [
     ]
   },
   {
+    id: 'project-calendar-feed', name: 'Project page, District Calendar tab: calendar feed and what changed', desc: 'The Calendar feed panel shows the saved copy of the district calendar feed and what changed since the last sync. Opening the page or tab makes no call. Only the Sync button calls the calendar-fetch function. A change is a different title, start, end, all-day flag or location; only events inside the overlap of the old and new sync windows count as added or removed.',
+    path: ['user','energy','ls'],
+    steps: [
+      { from:'user', to:'energy', label:'User chooses Sync feed (or Save and sync after entering the feed address)', detail:'app/project-calendar.js pcalSync. The feed address is stored in en_cal_cfg_<pid>. Nothing is fetched on page open.' },
+      { from:'energy', to:'energy', label:'calendar-fetch downloads and reads the feed', detail:'netlify/functions/calendar-fetch.mjs, sign-in check in netlify/lib/auth.js (shared with kv-sync and pdf-sync). Address must be https, the calendar host, and end in .ics. Reader code: netlify/functions/lib/calendar/.' },
+      { from:'energy', to:'ls', label:'diffSnapshots compares with the stored copy; history and copy are saved', detail:'app/calendar-diff.js (the only comparison). Writes en_cal_hist_<pid> (merged by id) then en_cal_snap_<pid>.' },
+    ]
+  },
+  {
     id: 'backup', name: 'Backup / Restore', desc: 'Export all data as JSON (data-only, no bill PDFs). Restore compares the file with the current data per key family (app/restore-merge.js), previews Add missing only / Merge (fills blanks) / Replace, downloads a safety copy, then writes (server CAS with explicitOverwrite when sync is on)',
     path: ['user','energy','siteui','ls'],
     steps: [

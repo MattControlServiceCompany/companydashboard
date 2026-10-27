@@ -2507,6 +2507,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.27.174', date: '2026-10-27', title: 'Project page: District Calendar feed',
+    items: [
+      { type: 'feature', text: 'Project page, District Calendar tab: a new Calendar feed panel shows what the district calendar feed currently holds and what changed since the last sync. Before, the tab showed only the dates you had entered by hand.' },
+      { type: 'change', text: 'Project page, District Calendar tab: syncing the feed now stops cleanly on a redirect to an unsafe address, and one very long repeating event is left out instead of failing the whole sync.' }
+    ]
+  },
   { v: 'v2026.10.27.173', date: '2026-10-27', title: 'Gas bills keep all charge lines',
     items: [
       { type: 'fix', text: 'Bill upload and review: gas bills now keep the Weather Normalization and Delayed Payment charge lines, so the charge lines add up to the bill total.' }

@@ -90,6 +90,11 @@ const SyncClassification = (() => {
     { pattern: 'en_alarms_', prefix: true, note: 'bas-alarms.js: en_alarms_<pid>' },
     { pattern: 'en_hours_', prefix: true, note: 'hours.js: en_hours_<pid>' },
     {
+      pattern: 'en_cal_',
+      prefix: true,
+      note: 'project-calendar.js: en_cal_cfg_<pid> (feed address), en_cal_snap_<pid> (last copy of the feed), en_cal_hist_<pid> (sync history, merged by id). Shared by both users.',
+    },
+    {
       pattern: 'audit_estimate_config',
       prefix: false,
       note: 'audit-estimate.js: company-wide Audit Estimate assumptions (hoursPerEquip, hoursPerBuilding, hoursReport, matrixReviewHours, fullFacility.*, history) — no rate, no per-user data; both users need the same company defaults',

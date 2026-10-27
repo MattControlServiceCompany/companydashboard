@@ -186,6 +186,20 @@
           "keyFiles": ["app/auto-repair.js", "computations/bill-repair.js", "app/bill-analysis.js (extractBillsFromText)", "tools/gate-auto-repair.js"]
         },
         {
+          "id": "project-calendar-feed",
+          "name": "Project page, District Calendar tab: calendar feed and what changed",
+          "description": "The Calendar feed panel (app/project-calendar.js, container pcal-panel-<pid> in the District Calendar tab) shows the feed copy and the changes since the last sync. Opening the page or the tab makes no call. Only the Sync button calls the Netlify function calendar-fetch (netlify/functions/calendar-fetch.mjs, same sign-in check as kv-sync via netlify/lib/auth.js), which downloads and reads the feed (netlify/functions/lib/calendar/). The browser compares the new copy with the stored copy with CalendarDiff.diffSnapshots (app/calendar-diff.js, the only comparison). A change is a different title, start, end, all-day flag or location. Only events inside the overlap of the old and new sync windows count as added or removed. Stored in three shared keys per project: en_cal_cfg_<pid> (feed address), en_cal_snap_<pid> (last copy), en_cal_hist_<pid> (sync history, merged by id).",
+          "steps": [
+            "User enters the feed address (stored in en_cal_cfg_<pid>) and chooses Save and sync, or chooses Sync feed",
+            "pcalSync POSTs the address to calendar-fetch with the sign-in token",
+            "calendar-fetch checks the address (https, calendar host, .ics), downloads, reads, returns a snapshot",
+            "diffSnapshots(old snapshot, new snapshot) gives added, removed, changed, unchanged",
+            "historyRecord is saved to en_cal_hist_<pid>, then the new snapshot to en_cal_snap_<pid>; the panel redraws"
+          ],
+          "storageKeys": ["en_cal_cfg_<pid>", "en_cal_snap_<pid>", "en_cal_hist_<pid>"],
+          "keyFiles": ["app/project-calendar.js", "app/calendar-diff.js", "netlify/functions/calendar-fetch.mjs", "netlify/functions/lib/calendar/snapshot.mjs", "netlify/lib/auth.js", "tools/test-calendar-feed.js"]
+        },
+        {
           "id": "weather-normalization",
           "name": "Weather Normalization",
           "description": "Upload weather data CSV by ZIP code. Used in ASHRAE Guideline 14 baseline calculations to adjust consumption for weather variations.",

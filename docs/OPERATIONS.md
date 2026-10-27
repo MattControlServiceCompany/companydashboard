@@ -23,6 +23,7 @@ No secrets are in this file. Only env var NAMES are listed.
 |---|---|---|---|
 | kv-sync | Shared data store. GET manifest/keys/key. PUT with version check. Keeps change history. (kv-sync.js:210-245) | HTTP `/.netlify/functions/kv-sync` (app/db.js:10). No schedule. | SUPABASE_URL, SUPABASE_SECRET_KEY, AUTHORIZED_USERS, CH_TEST_JWKS_URL (test only) (kv-sync.js:78-79,91,125) |
 | pdf-sync | Stores and returns PDF files. Single or chunked PUT. (pdf-sync.js:323-342) | HTTP. No schedule. | SUPABASE_URL, SUPABASE_SECRET_KEY, AUTHORIZED_USERS, ALLOWED_ORIGIN (optional), CH_TEST_JWKS_URL (test only) (pdf-sync.js:120-121,135,155,226) |
+| calendar-fetch | Downloads one calendar feed (.ics) and returns a snapshot of its events. Stateless: it never reads or writes the database. Address must be https, host calendar.google.com, path ending .ics (lib/calendar/snapshot.mjs `checkFeedUrl`). Reader code: netlify/functions/lib/calendar/normalize.mjs (recurring events: 365 days back, 730 forward). Sign-in check: netlify/lib/auth.js `verifyAuth` (one copy, also used by kv-sync and pdf-sync). | HTTP POST `/.netlify/functions/calendar-fetch`, sent only when the user clicks Sync feed on the Project page, District Calendar tab (app/project-calendar.js `sync`). No schedule, no timer, no call on page open. About 2 MB download per call (the feed has no ETag). | SUPABASE_URL, AUTHORIZED_USERS, CH_TEST_JWKS_URL (test only) |
 | supabase-keepalive | One read of one row in table `kv`. Stops Supabase from pausing. Returns 200 on success, 502 on failure. (supabase-keepalive.js:1-37) | Schedule `@daily` (netlify.toml:26-27). `@daily` = 00:00 UTC = 19:00 Central (CDT, summer) or 18:00 Central (CST, winter). | SUPABASE_URL, SUPABASE_SECRET_KEY |
 
 How to check that a function works:
@@ -448,6 +449,15 @@ The app Restore path (6c) is on main only, not in stable (v87), until the Nov 2 
 - City old-format reader: every `WATER PROTECTION FEE` line is summed (one per meter) through `_lbg_mergeMetered` (app/energy-savings.js, above `_lbg_cleanCents`), the same function the new-format reader and the water lines use.
 - Heal of stored bills: `EXTRACTOR_RULES_VERSION` is 5. `repairEligibleBills` (computations/bill-repair.js) also lists a bill whose stored `serviceAddress` is joined (`billServiceAddressJoined`). `repairServiceAddressCandidate` writes the fresh clean address only when it stands on the bill's own page and the user does not own the field; else it is held and logged. It needs the stored PDF page text in this browser (the repair pass runs after load, in the browser, no server). A bill whose PDF is not in the browser keeps the old address until the PDF is there.
 - Check: `node tools/test-bill-read-address-and-multi-fee.js` (synthetic text).
+
+## Calendar feed on the Project page (2026-10-27, branch feat/2026-10-27-project-calendar)
+
+- What: the Calendar feed panel at the top of the District Calendar tab (app/project-calendar.js). It shows the saved copy of the feed and what changed since the last sync.
+- Data: three shared keys per project, `en_cal_cfg_<pid>` (feed address and time zone), `en_cal_snap_<pid>` (last copy, about 1 MB), `en_cal_hist_<pid>` (sync history, newest first, 50 records, merged by id in app/db.js `MERGE_ONLY_CONFIG.calHist`). Class SYNCED in app/sync-classification.js. The feed address lives only in server data. It is not in code, tests or commits.
+- When it runs: only when the user clicks Sync feed (or Save and sync the first time). One calendar-fetch call plus two kv-sync PUTs (history first, then copy). Opening the page or the tab makes no call. No timers.
+- One comparison: `CalendarDiff.diffSnapshots` in app/calendar-diff.js. A change is a different title, start, end, all-day flag or location. Description, sequence and last-modified alone are ignored. Added and removed count only events whose start is inside the overlap of the old and new sync windows (each snapshot stores its window), so events at the 365-back/730-forward edge never show as false added or removed.
+- Limit to know: the reader stops with an error when one repeating event has more than 1,000 occurrences in the window (for example a daily event). The panel then shows its fixed error line and keeps the last saved copy.
+- Check it works: `node tools/test-calendar-feed.js` (all must pass). In the browser, sync twice with no feed edit: the second sync must show 0 added, 0 removed, 0 changed. On localhost:8888 the Network list must show one calendar-fetch call per click and none on page open.
 
 ## 7. How to keep this file current
 

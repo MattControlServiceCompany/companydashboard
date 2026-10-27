@@ -1607,6 +1607,7 @@ function renderDetail(p) {
             </div>
             <div id="ptab-district" class="ptab" style="padding:16px">
               <div id="ptab-district-inner-${p.id}" style="padding:16px">
+                <div id="pcal-panel-${p.id}"></div>
                 <div class="card" style="margin-bottom:16px">
                   <div class="card-hdr" style="justify-content:space-between">
                     <span class="card-title">🗓️ District Calendar</span>
@@ -3138,7 +3139,10 @@ function sPTab(tab, el) {
   if (tab === 'hvacload') requestAnimationFrame(() => initHvacLoadTab(p.id));
   if (tab === 'energygfx') egfxRefresh(p.id);
   if (tab === 'docs') renderDocsSubTab(window._docsSubTab || 'meetings', p.id);
-  if (tab === 'district') renderDistCalTable(p.id);
+  if (tab === 'district') {
+    renderDistCalTable(p.id);
+    if (typeof pcalRender === 'function') pcalRender(p.id);
+  }
   if (tab === 'setpoints') renderSetpointsTab(p.id);
   if (tab === 'eq-matrix' && typeof initEquipMatrix === 'function') initEquipMatrix(p.id);
   if (tab === 'bas-trends' && typeof btInitView === 'function') btInitView(p.id);

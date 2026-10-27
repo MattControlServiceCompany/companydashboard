@@ -937,6 +937,7 @@ const DB = (() => {
   // dropped. `children` names nested id lists merged the same way.
   //   en_utility_audit_log  append-only: an entry never changes after it is written
   //   en_pdf_bills          list of held bill records, id 'pb...'
+  //   en_cal_hist_<id>      calendar feed sync history, id 'calh_...' (project-calendar.js)
   //   en_utility_<id>       { buildings:[{id, meters:[{id, bills:[{id}]}]}] }
   const _byIdProp = (it) => it && it.id;
   const AUDIT_ENTRY_ID = (it) => window.SyncClassification.auditEntryId(it);
@@ -952,6 +953,15 @@ const DB = (() => {
       getId: AUDIT_ENTRY_ID,
       getLabel: (it) => it && it.action,
     },
+    // en_cal_hist_<pid>: one record per calendar feed sync, id 'calh_...', newest first.
+    calHist: Object.assign({ noDeletionRecords: true, requireIds: true }, _bareList, {
+      setItems: (_v, items) =>
+        items
+          .slice()
+          .sort((a, b) => (a && b && a.at < b.at ? 1 : a && b && a.at > b.at ? -1 : 0))
+          .slice(0, 50),
+      getLabel: (it) => it && it.at,
+    }),
     pdfBills: Object.assign({ noDeletionRecords: true, requireIds: true }, _bareList, {
       getLabel: (it) => it && (it.id || it.fileName),
     }),
@@ -973,6 +983,7 @@ const DB = (() => {
     if (UNION_KEY_CONFIG[key]) return UNION_KEY_CONFIG[key];
     if (key === 'en_utility_audit_log') return MERGE_ONLY_CONFIG.audit;
     if (key === 'en_pdf_bills') return MERGE_ONLY_CONFIG.pdfBills;
+    if (key.indexOf('en_cal_hist_') === 0) return MERGE_ONLY_CONFIG.calHist;
     if (_isUtilityKey(key)) return MERGE_ONLY_CONFIG.utility;
     return null;
   }
