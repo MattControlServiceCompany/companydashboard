@@ -2507,6 +2507,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.27.169', date: '2026-10-27', title: 'Scanned bills read the same in every browser',
+    items: [
+      { type: 'fix', text: 'Bill reading: scanned bills now read the same in Firefox as in Chrome and Edge (slower in Firefox).' }
+    ]
+  },
   { v: 'v2026.10.27.168', date: '2026-10-27', title: 'Scanned bills read more correctly',
     items: [
       { type: 'fix', text: 'Bill reading: scanned bills now read the meter multiplier, summer and winter lines, and gas meter reads correctly.' }

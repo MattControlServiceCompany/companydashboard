@@ -14361,8 +14361,15 @@ const OCR_TIMEOUT_MS = 90000;
 //      of scaling the wait to hours. See the assignment inside
 //      extractPDFText (search "OCR_TOTAL_BUDGET_MS =") for where the two are
 //      combined once the OCR-needed page count is known.
-const OCR_PER_PAGE_ALLOWANCE_MS = 120 * 1000; // ~2-3 full passes at this project's measured ~43-110s/pass
-const OCR_ABSOLUTE_CEILING_MS = 20 * 60 * 1000; // hard cap regardless of page count — bounds the 67-page worst case
+// PARITY (item efc38a78, 2026-10-27): the budget is a HANG GUARD only. It must never change what a
+// page reads. Firefox runs the same Tesseract wasm about 5.7x slower than Chromium (one 2.5x pass:
+// 36 s against 6.3 s, same machine), so a 120 s allowance made Firefox leave the page before the
+// position read (BILL_LAYOUT.readPage) and read different values than Chromium. The allowance is
+// now far above any honest run (slowest measured: about 3 minutes a page); only a stuck engine
+// reaches it. Per-call limits (OCR_TIMEOUT_MS, PDFJS_AWAIT_TIMEOUT_MS, LANCZOS_RESIZE_TIMEOUT_MS)
+// still stop a single hung call.
+const OCR_PER_PAGE_ALLOWANCE_MS = 1200 * 1000; // 20 min a page: hang guard, not a pass limit
+const OCR_ABSOLUTE_CEILING_MS = 120 * 60 * 1000; // hard cap regardless of page count — bounds a stuck 67-page scan
 let OCR_TOTAL_BUDGET_MS = OCR_PER_PAGE_ALLOWANCE_MS; // reassigned per-file below once ocrNeeded.length is known
 // Helper to create a fresh worker with correct params.
 // Dictionary params are init-only — must go in createWorker's 4th arg, not setParameters.
