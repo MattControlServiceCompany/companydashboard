@@ -2507,6 +2507,15 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.27.176', date: '2026-10-27', title: 'Savings never negative, report waits for bills, tighter header',
+    items: [
+      { type: 'fix', text: 'Dashboard, Savings tab, Energy Graphics and the report: savings for a quarter never shows below $0 now, and every page shows the same quarter and annual projection.' },
+      { type: 'change', text: 'Report window: the report now waits for missing bills and says which bills it is waiting for before you can present it. You can still make a preview.' },
+      { type: 'change', text: 'Project page: the header bar is more compact, so the tabs below it have more room.' },
+      { type: 'fix', text: 'Energy Graphics tab: the page scrolls again after you visit Project Performance and come back.' },
+      { type: 'change', text: 'Savings tab: contract rate fields are locked and show a hover note explaining why.' }
+    ]
+  },
   { v: 'v2026.10.27.175', date: '2026-10-27', title: 'Gas bills show Sales Tax',
     items: [
       { type: 'feature', text: 'Utility Data / bill review: Kansas Gas Service bills now show a Sales Tax line (State, City and County Tax added together), so taxed bills add up to their printed total. The gas rate does not include tax.' }
