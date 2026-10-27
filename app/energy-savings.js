@@ -6197,7 +6197,10 @@ function _extractEvergy(t, acctOverride, addrOverride) {
 
   // The seasonal lines are the last word on the On / Off charges and kWh: written again from the lines, after every
   // older step that may have touched those fields.
-  if (_tou) _evgApplyTou(result, _tou);
+  if (_tou) {
+    touConfirmDerivedRates(_tou.res.lines, _priorTouRatesOf(result));
+    _evgApplyTou(result, _tou);
+  }
   // A proposal is for a field that stayed empty. A field a later printed-value rule filled (gap closed to the
   // cent against the printed total, detached amount) drops its proposal.
   for (const k of Object.keys(result)) {
@@ -7013,6 +7016,29 @@ function _lbg_storedMeterFactor(acct, commodity) {
   }
   return _lbg_meterFactor(peers);
 }
+// The saved bills of the extracted bill's meter: same account number, same commodity, same meter number when both bills
+// carry one, not estimated. ONE reader of the saved bills for _priorSavedBillOf and _priorTouRatesOf.
+function _savedBillsOfMeter(extracted) {
+  if (!extracted || typeof utilityData === 'undefined') return [];
+  const acct = String(extracted.AccountNumber || '').replace(/[\s\-]/g, '');
+  const commodity = extracted.Commodity;
+  if (!acct || !commodity || !extracted.BillingPeriodStart) return [];
+  const meterNo = String(extracted.MeterNumber || '');
+  const out = [];
+  for (const cust of Object.values(utilityData || {})) {
+    for (const bl of (cust && cust.buildings) || []) {
+      for (const m of bl.meters || []) {
+        for (const sb of m.bills || []) {
+          if (String(sb.accountNumber || '').replace(/[\s\-]/g, '') !== acct) continue;
+          if ((sb.commodity || commodity) !== commodity || !sb.end || sb.estimated) continue;
+          if (meterNo && sb.meterNumber && String(sb.meterNumber) !== meterNo) continue;
+          out.push(sb);
+        }
+      }
+    }
+  }
+  return out;
+}
 // The saved bill that comes just before an extracted bill, in the shape of an extracted bill (so the read-chain
 // rules treat it as the previous bill). ONE reader of the saved bills for "the meter's last saved reads": the
 // electric read chain and the gas read repair both call it. Match: same account number, same commodity, same meter
@@ -7021,28 +7047,16 @@ function _lbg_storedMeterFactor(acct, commodity) {
 // (two meters on one account: no way to tell which one this bill follows).
 function _priorSavedBillOf(extracted) {
   if (!extracted || typeof utilityData === 'undefined') return null;
-  const acct = String(extracted.AccountNumber || '').replace(/[\s\-]/g, '');
   const commodity = extracted.Commodity;
-  if (!acct || !commodity || !extracted.BillingPeriodStart) return null;
-  const meterNo = String(extracted.MeterNumber || '');
   let best = null;
   let tie = false;
-  for (const cust of Object.values(utilityData || {})) {
-    for (const bl of (cust && cust.buildings) || []) {
-      for (const m of bl.meters || []) {
-        for (const sb of m.bills || []) {
-          if (String(sb.accountNumber || '').replace(/[\s\-]/g, '') !== acct) continue;
-          if ((sb.commodity || commodity) !== commodity || !sb.end || sb.estimated) continue;
-          if (meterNo && sb.meterNumber && String(sb.meterNumber) !== meterNo) continue;
-          const gap = calcDays(sb.end, extracted.BillingPeriodStart, false);
-          if (gap === '' || isNaN(gap) || gap < 0) continue;
-          if (!best || gap < best.gap) {
-            best = { gap, sb };
-            tie = false;
-          } else if (gap === best.gap && String(sb.endRead) !== String(best.sb.endRead)) tie = true;
-        }
-      }
-    }
+  for (const sb of _savedBillsOfMeter(extracted)) {
+    const gap = calcDays(sb.end, extracted.BillingPeriodStart, false);
+    if (gap === '' || isNaN(gap) || gap < 0) continue;
+    if (!best || gap < best.gap) {
+      best = { gap, sb };
+      tie = false;
+    } else if (gap === best.gap && String(sb.endRead) !== String(best.sb.endRead)) tie = true;
   }
   if (!best || tie || parseBillNumber(best.sb.endRead) === null) return null;
   const sb = best.sb;
@@ -7060,6 +7074,31 @@ function _priorSavedBillOf(extracted) {
     NaturalGasTherms: commodity === 'Gas' ? sb.kwh : undefined,
     _fromSavedBill: true,
   };
+}
+// The rate of each seasonal slot on the meter's earlier saved bills, { <TOU_SLOTS prefix>: rate }: the independent
+// source touConfirmDerivedRates compares a rate worked out from a charge with. Uses the latest saved bill (ending on or
+// before the extracted bill's start) whose whole period lies in the slot's season, so its one On or Off rate is that
+// season's rate. Same saved-bill match as _priorSavedBillOf (_savedBillsOfMeter).
+function _priorTouRatesOf(extracted) {
+  const out = {};
+  const saved = _savedBillsOfMeter(extracted)
+    .filter((sb) => {
+      const gap = calcDays(sb.end, extracted.BillingPeriodStart, false);
+      return sb.start && gap !== '' && !isNaN(gap) && gap >= 0;
+    })
+    .sort((a, b) => (a.end < b.end ? 1 : -1));
+  for (const slot of TOU_SLOTS) {
+    const want = slot.season === 'Sum' ? 'summer' : 'winter';
+    for (const sb of saved) {
+      if (seasonOfDate(SEASON_DEFAULT_PROVIDER, sb.start) !== want || seasonOfDate(SEASON_DEFAULT_PROVIDER, sb.end) !== want) continue;
+      const r = parseBillNumber(slot.kind === 'on' ? sb.onPeakRate : sb.offPeakRate);
+      if (r > 0) {
+        out[slot.prefix] = r;
+        break;
+      }
+    }
+  }
+  return out;
 }
 // ── R7: the account's saved bills as a plausibility check (rejects only) ──
 // One value, one reader of the saved bills: _lbg_accountHistory. One rule: _lbg_historyRejectReason. Every

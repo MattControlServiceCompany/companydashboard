@@ -806,6 +806,7 @@ function resolveMeterRate(projId, meter, ym, opts) {
      touResolveLines  - raw parsed lines -> season, kWh recovery, slot, reconcile with kWh used
      touApplyToBill   - lines -> the per-line fields and the On / Off totals on a bill (the only writer)
      touRatesEntry    - lines -> the _rates entry of one side (each part carries its season)
+     touConfirmDerivedRates - a rate worked out from its charge counts only when the meter's earlier saved bill shows it
      touHoldOf        - the one plain hold sentence when the lines do not add up to kWh used
      touLinesOfBill   - bill -> lines to show (the fields; an older bill derives its labels, display only)
    Raw line: { kind: 'on'|'off'|null, word: 'Sum'|'Win'|null, from, to (ISO or null), qty, qtyRaw (text), rate, charge }.
@@ -823,6 +824,7 @@ var TOU_FIELD_NAMES = [].concat.apply(
   }),
 );
 var TOU_HOLD_TEXT = 'On-peak and off-peak kWh do not add up to kWh used. Check the PDF.';
+var TOU_RATE_HOLD_TEXT = 'An on-peak or off-peak rate was worked out from the charge, and no earlier bill of this meter shows the same rate. Check the PDF.';
 function touSlotOf(kind, season) {
   for (var i = 0; i < TOU_SLOTS.length; i++) {
     if (TOU_SLOTS[i].kind === kind && TOU_SLOTS[i].season === season) return TOU_SLOTS[i];
@@ -910,18 +912,23 @@ function touResolveLines(raws, kwhUsed, opts) {
     }, 0);
     var qI = Math.round((kwhUsed - others) * 10000) / 10000;
     var rI = open[0].rate;
-    // A line with no printed rate AND no readable printed quantity: the rate is charge / quantity (5 decimals), kept only
-    // when it gives the charge back to the cent. The printed kWh used is the witness for the quantity, so no value is
-    // assumed. A readable printed quantity is never replaced this way: the rate would come from the very quantity it is
-    // meant to check, and a printed quantity that disagrees with the identity is a bill to hold.
+    // A line with no printed rate AND no readable printed quantity: the rate is charge / quantity (5 decimals) and the
+    // quantity is kWh used minus the other lines. charge / quantity x quantity always gives the charge back, so that
+    // check proves nothing. The line is kept as 'identity-unverified' (touHoldOf holds the bill) until
+    // touConfirmDerivedRates finds the same rate on the meter's earlier saved bill. A readable printed quantity is never
+    // replaced this way.
+    var derived = false;
     if (!rI && !open[0].printedQty && qI > 0) {
       var r5I = Math.round((open[0].charge / qI) * 100000) / 100000;
-      if (_touVerifies(qI, r5I, open[0].charge)) rI = r5I;
+      if (_touVerifies(qI, r5I, open[0].charge)) {
+        rI = r5I;
+        derived = true;
+      }
     }
     if (rI && qI > 0 && _touVerifies(qI, rI, open[0].charge)) {
       open[0].kwh = qI;
       open[0].rate = rI;
-      open[0].how = 'identity';
+      open[0].how = derived ? 'identity-unverified' : 'identity';
     }
   }
   // A line with no side label (OCR lost it) takes the one free slot of its season, else the one free slot.
@@ -1062,6 +1069,17 @@ function touRatesEntry(lines, kind) {
     }),
   };
 }
+// A line rate worked out from its charge ('identity-unverified') is confirmed only by an independent source: the same
+// slot's rate on the meter's earlier saved bill of the same season. priorRates: { <slot prefix>: rate } (the caller reads
+// the saved bills). Within a 5-decimal rate plus half a cent over the quantity. Mutates lines; returns them.
+function touConfirmDerivedRates(lines, priorRates) {
+  (lines || []).forEach(function (l) {
+    if (l.how !== 'identity-unverified') return;
+    var pr = priorRates ? Number(priorRates[l.prefix]) : NaN;
+    if (pr > 0 && l.kwh > 0 && Math.abs(pr - l.rate) <= 0.000005 + 0.005 / l.kwh) l.how = 'identity';
+  });
+  return lines;
+}
 // The hold sentence for a bill whose lines do not add up to kWh used, or null. Reads the per-line fields and the
 // bill's kWh used as they stand now (so a later correction of kWh used is honoured).
 // basisTotal: the kWh the bill's ECA / EER / PTS lines are billed on (the caller's _chargeBasisTotal), or null. The
@@ -1078,9 +1096,16 @@ function touHoldOf(bill, basisTotal) {
     sum += q;
   }
   var used = parseBillNumber(bill.kWhConsumed);
-  if (used > 0 && Math.abs(sum - used) <= (bill._touTol || 0.0051)) return null;
-  if (basisTotal > 0 && Math.abs(sum - basisTotal) <= (bill._touTol || 0.0051)) return null;
-  return TOU_HOLD_TEXT;
+  var adds =
+    (used > 0 && Math.abs(sum - used) <= (bill._touTol || 0.0051)) ||
+    (basisTotal > 0 && Math.abs(sum - basisTotal) <= (bill._touTol || 0.0051));
+  if (!adds) return TOU_HOLD_TEXT;
+  var rec = (bill._touLines && bill._touLines.recovered) || [];
+  return rec.some(function (x) {
+    return /:identity-unverified$/.test(x);
+  })
+    ? TOU_RATE_HOLD_TEXT
+    : null;
 }
 // One rule: a line whose printed quantity and rate do not give its printed charge ('read-unverified') keeps the
 // printed charge. Quantity x rate is the doubtful number there, so no older check may replace the charge.

@@ -187,12 +187,56 @@ async function check(name, fn) {
     assert.strictEqual(holds(b).length, 0, 'bill held: ' + (b._gateReasons || []).join(' | '));
   });
 
-  await check('quantity and rate both lost: the rate is charge / (kWh used - other lines), kept because it gives the charge', async () => {
-    const b = await run(
-      touBill({ lines: { offSum: 'Energy Chg Off Pk Sum   kWh at p  ' + money(L.offSum.c) } }).text,
+  const lostOffSum = () => touBill({ lines: { offSum: 'Energy Chg Off Pk Sum   kWh at p  ' + money(L.offSum.c) } });
+  const rateHolds = (b) => (b._gateReasons || []).filter((r) => /worked out from the charge/.test(r));
+  const setSaved = (rate) =>
+    vm.runInContext(
+      'utilityData = ' +
+        JSON.stringify({
+          c1: {
+            buildings: [
+              {
+                meters: [
+                  {
+                    bills: [
+                      { accountNumber: '900123', commodity: 'Electric', start: '2026-06-05', end: '2026-07-07', offPeakRate: rate, onPeakRate: '0.07852' },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        }),
+      ctx,
     );
+  const clearSaved = () => vm.runInContext('utilityData = {}', ctx);
+
+  await check('quantity and rate both lost, no earlier bill: quantity kept, rate held as derived (unverified)', async () => {
+    clearSaved();
+    const b = await run(lostOffSum().text);
+    near(f(b, 'OffPkSumKWh'), L.offSum.q, 'OffPkSumKWh');
+    assert.strictEqual(rateHolds(b).length, 1, 'not held: ' + (b._gateReasons || []).join(' | '));
+    assert.ok(b._touLines.recovered.includes('OffPkSum:identity-unverified'), b._touLines.recovered.join());
+  });
+
+  await check('quantity and rate both lost, earlier saved bill has the same rate: accepted, not held', async () => {
+    setSaved('0.04182');
+    const b = await run(lostOffSum().text);
+    clearSaved();
     near(f(b, 'OffPkSumKWh'), L.offSum.q, 'OffPkSumKWh');
     near(f(b, 'OffPkSumRate'), parseFloat(L.offSum.r), 'OffPkSumRate');
+    assert.strictEqual(rateHolds(b).length, 0, 'held: ' + (b._gateReasons || []).join(' | '));
+    assert.ok(b._touLines.recovered.includes('OffPkSum:identity'), b._touLines.recovered.join());
+  });
+
+  await check('misread kWh used: the derived rate differs from the earlier saved rate, so it is held', async () => {
+    setSaved('0.04182');
+    const b = await run(touBill({ lines: lostOffSum().lines, used: KWH_USED + 1000 }).text);
+    clearSaved();
+    const rec = (b._touLines && b._touLines.recovered) || [];
+    assert.ok(!rec.includes('OffPkSum:identity'), 'accepted silently');
+    near(f(b, 'OffPkSumRate') || 0.04182, 0.04182, 'a wrong rate was stored');
+    assert.ok((b._gateReasons || []).length >= 1, 'not held');
   });
 
   await check('missing quantity: kWh = charge / rate, accepted because round(kWh x rate, 2) = charge', async () => {
