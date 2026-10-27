@@ -844,6 +844,7 @@ function sv(id, btn) {
   (target || document.querySelector(`.sidebar .s-item[onclick*="'${id}'"]`))?.classList.add('active');
   sessionStorage.setItem('ch_activeView', id);
   localStorage.setItem('ch_activeView', id);
+  _syncHeaderTabs();
   if (id === 'pdf') {
     setTimeout(updateBillCountBadge, 50);
   }
@@ -888,7 +889,6 @@ function enterApp() {
   document.getElementById('loginScreen').style.display = 'none';
   document.getElementById('app').classList.add('visible');
   document.getElementById('topName').textContent = currentUser.name;
-  document.getElementById('topAv').textContent = currentUser.initials;
   if (typeof autoQuickStart === 'function') setTimeout(autoQuickStart, 1200);
 }
 (function () {
@@ -1186,6 +1186,7 @@ function showList() {
   const _dl = sget('ch_defaultProjTab', 'dashboard');
   if (_dl !== 'last') window._activeProjTab = _dl;
   saveProjSession();
+  _syncHeaderTabs();
 }
 function backToList() {
   showList();
@@ -1392,15 +1393,6 @@ function renderDetail(p) {
           <!-- Project-level panel content (shown when project-level buttons clicked) -->
           <div id="pd-proj-panel-content-${p.id}" style="display:none;border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px;overflow-y:auto"></div>
           <div class="card" id="pd-tabs-card-${p.id}" style="display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden">
-            <div class="pd-tabs-wrap" id="pdTabBarWrap">
-              <button class="pd-tabs-arrow left" onclick="_scrollProjTabs(-1)" aria-label="Scroll tabs left" title="Scroll left">&#8249;</button>
-              <div class="pd-tabs-fade left"></div>
-              <div class="pd-tabs" id="pdTabBar" style="overflow-x:auto;flex-wrap:nowrap;white-space:nowrap;flex:1 1 auto;min-width:0">
-                ${_getProjTabHTML()}
-              </div>
-              <div class="pd-tabs-fade right"></div>
-              <button class="pd-tabs-arrow right" onclick="_scrollProjTabs(1)" aria-label="Scroll tabs right" title="Scroll right">&#8250;</button>
-            </div>
             <div id="ptab-dashboard" class="ptab${window._activeProjTab === 'dashboard' || !window._activeProjTab ? ' active' : ''}" style="padding:0;overflow-y:auto;overflow-x:hidden">
               <div id="dash-hdr-${p.id}"></div>
               <div style="padding:16px">
@@ -1786,10 +1778,12 @@ function renderDetail(p) {
               </div>
             </div>
           </div>`;
+  // Project tabs live in the header row, not in the detail pane.
+  document.getElementById('pdTabBar').innerHTML = _getProjTabHTML();
+  _syncHeaderTabs();
+  _initTabDrag();
   // Populate tabs after DOM is ready
   requestAnimationFrame(() => {
-    _initTabDrag();
-    _equalizeProjTabWidths();
     initProjUDTab(p.id);
     initDashboardTab(p.id);
     _updateCompactHdrBaseline(p.id);
@@ -1917,11 +1911,13 @@ function initDashboardTab(projId) {
   }
 
   let totalBl = 0,
-    totalCur = 0,
-    totalDirectSav = 0;
+    totalCur = 0;
   const projectedByQtr = [0, 0, 0, 0];
   let projectedAnnual = 0;
   const actualByQtr = [0, 0, 0, 0];
+  const actualQtrHasData = [false, false, false, false]; // a quarter with savings months shows $0.00, not a dash, when floored
+  const qtrMissing = {};
+  const cumSavByBldg = {}; // { bldgId: { ym: dollars } } for the cumulative total
   const qtrByYr = {}; // { year: { bldgId: { ym: dollars } } } collected by addBldgQuarters
   // Add one building's savings by quarter. As before, each METER contributes the quarters of its own
   // newest savings year (per meter, not per building). Meters are grouped by that year and each group
@@ -1955,7 +1951,11 @@ function initDashboardTab(projId) {
     if (!qtrByYr[yr]) return;
     for (let qi = 0; qi < 4; qi++) {
       const qYMs = [1, 2, 3].map((k) => yr + '-' + String(qi * 3 + k).padStart(2, '0'));
-      actualByQtr[qi] += totalSavingsWithPresented(projId, qYMs, qtrByYr[yr]).total;
+      const qr = billableSavingsWithPresented(projId, qYMs, qtrByYr[yr]);
+      if (!Object.values(qtrByYr[yr]).some((o) => qYMs.some((y) => y in o))) continue;
+      actualQtrHasData[qi] = true;
+      actualByQtr[qi] = qr.total;
+      Object.assign(qtrMissing, qr.missing); // { 'YYYY-Qn': [missing bill lines] } for the Waiting for bills chip
     }
   };
   let latestBillEnd = null;
@@ -1980,7 +1980,7 @@ function initDashboardTab(projId) {
       allPropane = 0;
     let hasBaseline = false;
     let bldgSav = 0;
-    const bldgSavByYM = {}; // current savings by month; totals go through totalSavingsWithPresented()
+    const bldgSavByYM = {}; // current savings by month; totals go through billableSavingsWithPresented()
     const meterSavByYMs = []; // one byYM per meter, for the per-meter newest-year quarters
     let meterIncl = 0,
       meterExcl = 0,
@@ -2079,7 +2079,8 @@ function initDashboardTab(projId) {
       // Building total and the newest year's quarters: a period presented to the client uses the
       // presented figures (one keeper, computations/savings.js).
       const _savYMs = Object.keys(bldgSavByYM).sort();
-      bldgSav = totalSavingsWithPresented(projId, _savYMs, { [b.id]: bldgSavByYM }).byBldg[b.id];
+      bldgSav = billableSavingsWithPresented(projId, _savYMs, { [b.id]: bldgSavByYM }).byBldg[b.id];
+      cumSavByBldg[b.id] = bldgSavByYM;
       addBldgQuarters(projId, b.id, meterSavByYMs);
       blCost = Object.values(bldgMoBase).reduce((s, v) => s + v, 0);
       curCost = blCost - bldgSav;
@@ -2182,7 +2183,6 @@ function initDashboardTab(projId) {
     totalCur += curCost;
     // Always use bldgSav from getMeterSavings — single source of truth
     const sav = bldgSav;
-    totalDirectSav += sav;
     const savPct = useCost > 0 ? (sav / useCost) * 100 : 0;
     // EUI: kBtu/sf/yr — annualized (see computations/eui.js for KBTU_FACTORS)
     const blKBtu = computeKBtu(useKwh, useTherms, usePropane);
@@ -2256,7 +2256,15 @@ function initDashboardTab(projId) {
   });
 
   // Use the directly-accumulated per-building savings (same source as Project Performance page).
-  const totalSav = totalDirectSav;
+  // Cumulative savings to date: the sum of the floored quarters, never the net of the building rows (billableSavingsWithPresented).
+  const totalSavCum = Object.keys(cumSavByBldg).length
+    ? billableSavingsWithPresented(
+        projId,
+        Array.from(new Set(Object.values(cumSavByBldg).flatMap((o) => Object.keys(o)))).sort(),
+        cumSavByBldg,
+      ).total
+    : 0;
+  const totalSav = totalSavCum; // the one billable function; no second accumulator
   const totalPct = totalBl > 0 ? (totalSav / totalBl) * 100 : 0;
   const $c = (n) => '$' + Math.round(Math.abs(n)).toLocaleString();
   const $c2 = (n) =>
@@ -2277,6 +2285,7 @@ function initDashboardTab(projId) {
       })
     : '';
   const curQtrActual = headQtr ? actualByQtr[curQtr] : 0;
+  const curQtrWaiting = headQtr ? qtrMissing[headQtr.year + '-Q' + (curQtr + 1)] || [] : [];
   const curQtrProjected = headQtr ? projectedByQtr[curQtr] : 0;
   const curQtrPct = curQtrProjected > 0 ? ((curQtrActual / curQtrProjected) * 100).toFixed(1) : null;
   const throughDate =
@@ -2322,7 +2331,7 @@ function initDashboardTab(projId) {
                             i,
                           ) => `<div style="flex:1;text-align:center;background:rgba(34,197,94,0.10);border-radius:6px;padding:6px 4px">
                         <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">Q${i + 1}</div>
-                        <div style="font-size:13px;font-weight:700;font-family:var(--mono);color:${v >= 0 ? 'var(--green)' : 'var(--danger)'}">${v !== 0 ? (v >= 0 ? '' : '-') + $c2(v) : '—'}</div>
+                        <div style="font-size:13px;font-weight:700;font-family:var(--mono);color:var(--green)">${v !== 0 || actualQtrHasData[i] ? $c2(v) : '—'}</div>
                       </div>`,
                         )
                         .join('')}
@@ -2338,8 +2347,9 @@ function initDashboardTab(projId) {
                 ${headQtr ? `                <div>
                   <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">${curQtrTitle} Total Savings</div>
                   ${curQtrThrough ? '<div style="font-size:11px;color:var(--text3)">' + curQtrThrough + '</div>' : ''}
-                  <div style="font-size:28px;font-weight:800;font-family:var(--mono);color:${curQtrActual >= 0 ? 'var(--green)' : 'var(--danger)'};margin:4px 0">${curQtrActual >= 0 ? '' : '-'}${$c(curQtrActual)}</div>
-                  <div style="font-size:12px;color:var(--text2)">${curQtrPct !== null ? '<span style="color:' + (curQtrActual >= 0 ? 'var(--green)' : 'var(--danger)') + ';font-weight:600">' + curQtrPct + '%</span> of ' + curQtrLabel + ' projected (' + $c2(curQtrProjected) + ')' : bldgs.length + ' building' + (bldgs.length !== 1 ? 's' : '') + ' · <span style="color:var(--text3)">' + (useNormalized ? 'Normalized' : 'Actual') + '</span>'}</div>
+                  <div style="font-size:28px;font-weight:800;font-family:var(--mono);color:var(--green);margin:4px 0">${$c(curQtrActual)}</div>
+                  ${curQtrWaiting.length ? '<div style="display:inline-block;font-size:11px;color:var(--text2);background:var(--s2);border:1px solid var(--border);border-radius:10px;padding:2px 8px;margin-bottom:4px">Waiting for bills: ' + _escHtml(curQtrWaiting.join(', ')) + '</div>' : ''}
+                  <div style="font-size:12px;color:var(--text2)">${curQtrPct !== null ? '<span style="color:var(--green);font-weight:600">' + curQtrPct + '%</span> of ' + curQtrLabel + ' projected (' + $c2(curQtrProjected) + ')' : bldgs.length + ' building' + (bldgs.length !== 1 ? 's' : '') + ' · <span style="color:var(--text3)">' + (useNormalized ? 'Normalized' : 'Actual') + '</span>'}</div>
                 </div>` : ''}
                 <div style="border-top:1px solid var(--border);padding-top:12px">
                   <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Total Cumulative Savings</div>
@@ -2907,30 +2917,30 @@ function isCalcCommodity(projectId, commodity) {
 // but hidden from the visible bar — their content now appears in the merged tabs.
 const PROJ_TABS_HIDDEN = new Set(['notes', 'tasks', 'savedbills']);
 const PROJ_TABS_DEFAULT = [
-  { id: 'dashboard', label: 'Dashboard', icon: '📊' },
-  { id: 'contacts', label: 'Contacts', icon: '👥' },
-  { id: 'utility', label: 'Utility Data', icon: '⚡' },
-  { id: 'savedbills', label: 'Saved Bills', icon: '🗄️' },
-  { id: 'eq-matrix', label: 'Equipment Matrix', icon: '⚙️' },
-  { id: 'bas-trends', label: 'BAS Trends', icon: '📉' },
-  { id: 'bas-alarms', label: 'BAS Alarms', icon: '🚨' },
-  { id: 'hvacload', label: 'HVAC Load Estimate', icon: '🌡️' },
-  { id: 'savings', label: 'Energy Savings', icon: '💡' },
-  { id: 'energygfx', label: 'Energy Graphics', icon: '📈' },
-  { id: 'budget', label: 'Budget', icon: '💰' },
-  { id: 'hours', label: 'Hours', icon: '⏱️' },
-  { id: 'district', label: 'District Calendar', icon: '🗓️' },
-  { id: 'docs', label: 'Documents', icon: '📁' },
-  { id: 'setpoints', label: 'Set Points', icon: '🌡️' },
-  { id: 'cost-estimate', label: 'Cost Estimate', icon: '💲' },
+  { id: 'dashboard', label: 'Dashboard' },
+  { id: 'contacts', label: 'Contacts' },
+  { id: 'utility', label: 'Utility Data' },
+  { id: 'savedbills', label: 'Saved Bills' },
+  { id: 'eq-matrix', label: 'Equipment Matrix' },
+  { id: 'bas-trends', label: 'BAS Trends' },
+  { id: 'bas-alarms', label: 'BAS Alarms' },
+  { id: 'hvacload', label: 'HVAC Load Estimate' },
+  { id: 'savings', label: 'Energy Savings' },
+  { id: 'energygfx', label: 'Energy Graphics' },
+  { id: 'budget', label: 'Budget' },
+  { id: 'hours', label: 'Hours' },
+  { id: 'district', label: 'District Calendar' },
+  { id: 'docs', label: 'Documents' },
+  { id: 'setpoints', label: 'Set Points' },
+  { id: 'cost-estimate', label: 'Cost Estimate' },
   // Fix 128f49b2: Project Settings moved to the END of the bar (settings tabs
   // conventionally sit last). It used to sit mid-bar (before Cost Estimate) purely
   // because it was appended here before Cost Estimate was added later — no design
   // intent. See the ch_projTabOrder_settingsLast migration below for existing users.
-  { id: 'settings', label: 'Project Settings', icon: '⚙️' },
+  { id: 'settings', label: 'Project Settings' },
   // Backward-compat: merged tabs — retained so stored orders stay valid
-  { id: 'notes', label: 'Notes', icon: '📝' },
-  { id: 'tasks', label: 'Tasks', icon: '✅' },
+  { id: 'notes', label: 'Notes' },
+  { id: 'tasks', label: 'Tasks' },
 ];
 function _getProjTabOrder() {
   try {
@@ -2962,71 +2972,29 @@ function _getProjTabHTML() {
       if (PROJ_TABS_HIDDEN.has(id)) return '';
       const t = PROJ_TABS_DEFAULT.find((x) => x.id === id);
       if (!t) return '';
-      return `<button class="pdt${id === activeTab ? ' active' : ''}" draggable="true" data-tab="${id}" onclick="sPTab('${id}',this)"><span class="pdt-ico">${t.icon || ''}</span>${t.label}</button>`;
+      return `<button class="pdt${id === activeTab ? ' active' : ''}" draggable="true" data-tab="${id}" onclick="sPTab('${id}',this)"><span class="tab-lbl">${t.label}</span></button>`;
     })
     .join('');
 }
-// 128f49b2 (reopened): uniform tab width = widest tab's own natural content need,
-// measured at render time (icon+label width varies by font/theme, so this can't be a
-// hardcoded constant). Written as a CSS custom property read by .pdt's flex-basis.
-// Re-run after any (re)render of #pdTabBar — the tab SET/labels are fixed at 16 items
-// and never change with viewport size, so (unlike the bills table) this needs no
-// resize listener: natural widths are viewport-independent.
-function _equalizeProjTabWidths() {
+// Project tabs render in the page header row (#pdTabBar inside #hdrTabs). They are text-only and
+// wrap to a second line when the row is full, so there is no width equalizing, scrolling or arrows.
+// Show the open project's tabs in the header in place of the department tab; show the
+// department tab again when no project is open. Called after every change to what is visible.
+function _syncHeaderTabs() {
   const bar = document.getElementById('pdTabBar');
-  if (!bar) return;
-  const btns = bar.querySelectorAll('.pdt');
-  if (!btns.length) return;
-  btns.forEach((b) => b.style.removeProperty('--pdt-w')); // reset so max isn't measured against a stale value
-  let max = 0;
-  btns.forEach((b) => {
-    max = Math.max(max, b.getBoundingClientRect().width);
-  });
-  const w = Math.ceil(max) + 'px';
-  btns.forEach((b) => b.style.setProperty('--pdt-w', w));
-  _updateProjTabScrollAffordance();
-}
-
-// ── Tab bar overflow affordance ──────────────────────────────────────────────
-// Fixes "tabs cut off / unreachable": the equalize-width scheme above can
-// still overflow at narrower-than-full-ultrawide window widths (confirmed at
-// ~1720px — a width Matt is documented to resize to on his 3440px monitor).
-// The existing overflow-x:auto + thin scrollbar was never a discoverable
-// affordance. This toggles CSS classes that reveal an edge fade + a
-// click-to-scroll chevron only when there's actually more to reach in that
-// direction, computed from real scrollWidth/clientWidth — never guessed.
-function _updateProjTabScrollAffordance() {
-  const bar = document.getElementById('pdTabBar');
-  const wrap = bar ? bar.closest('.pd-tabs-wrap') : null;
-  if (!bar || !wrap) return;
-  const canLeft = bar.scrollLeft > 2;
-  const canRight = bar.scrollLeft < bar.scrollWidth - bar.clientWidth - 2;
-  wrap.classList.toggle('can-scroll-left', canLeft);
-  wrap.classList.toggle('can-scroll-right', canRight);
-}
-function _scrollProjTabs(dir) {
-  const bar = document.getElementById('pdTabBar');
-  if (!bar) return;
-  bar.scrollBy({ left: dir * 220, behavior: 'smooth' });
-}
-// Registered once for the lifetime of the page — recomputes affordance on a
-// live window resize without requiring a reload (same debounced-listener
-// pattern as _recomputeBillsColLayout's resize guard in utility-data.js).
-if (!window._pdTabsResizeListenerAdded) {
-  window._pdTabsResizeListenerAdded = true;
-  let _pdTabsResizeTimer = null;
-  window.addEventListener('resize', () => {
-    clearTimeout(_pdTabsResizeTimer);
-    _pdTabsResizeTimer = setTimeout(() => {
-      if (document.getElementById('pdTabBar')) _updateProjTabScrollAffordance();
-    }, 200);
-  });
+  const dept = document.getElementById('hdrDeptTab');
+  if (!bar || !dept) return;
+  const detail = document.getElementById('projDetailView');
+  const view = document.getElementById('view-projects');
+  const open = !!(window._activeProjId && detail && detail.style.display !== 'none' && view && view.classList.contains('active'));
+  bar.style.display = open ? 'flex' : 'none';
+  dept.style.display = open ? 'none' : '';
 }
 
 function _initTabDrag() {
   const bar = document.getElementById('pdTabBar');
-  if (!bar) return;
-  bar.addEventListener('scroll', () => _updateProjTabScrollAffordance());
+  if (!bar || bar._dragWired) return; // #pdTabBar persists across renders: wire once
+  bar._dragWired = true;
   let dragId = null;
   bar.addEventListener('dragstart', (e) => {
     const btn = e.target.closest('.pdt');
@@ -3062,7 +3030,6 @@ function _initTabDrag() {
     order.splice(toIdx, 0, dragId);
     _saveProjTabOrder(order);
     bar.innerHTML = _getProjTabHTML();
-    _equalizeProjTabWidths();
   });
 }
 
@@ -3086,7 +3053,9 @@ function toggleProjDetailPanel(projId, panelKey) {
     content.style.display = 'none';
     content.innerHTML = '';
     // Restore tab content visibility when panel closes
-    if (tabsCard) tabsCard.style.display = '';
+    // 'flex', not '': the card's own inline style is display:flex (a column the tab panes scroll inside).
+    // Clearing it left a block box, the pane grew to its content and the page could no longer scroll.
+    if (tabsCard) tabsCard.style.display = 'flex';
     return;
   }
   // Hide tab content when project panel is open

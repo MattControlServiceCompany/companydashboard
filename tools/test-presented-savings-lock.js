@@ -74,6 +74,7 @@ vm.runInContext(
     "var DB={get:function(k,d){return sget(k,d===undefined?null:d);}};",
     "function isBaselineExcluded(){return false;}",
     "function getWeatherForBuilding(){return {byYm:{}};}",
+    "var DELIVERY_COMMODITIES=new Set(['Propane']);",
     "function isCalcCommodity(){return true;}",
     "function projHasContract(pid){return true;}",
     "var udSelProjId=9001, udSelBldgId=null;",
@@ -102,6 +103,7 @@ vm.runInContext(
     .join("\n"),
   sb,
 );
+vm.runInContext(loadFn("app/report-engine.js", "_rptMeterEligible"), sb); // getReportCoverage (computations/report-data.js) uses it
 const html = readSrc("energy-department.html");
 const libs = [];
 const re = /<script\s+src="((?:lib|computations)\/[^"?]+\.js)/g;
@@ -341,10 +343,10 @@ assert(shown['h-sav'] !== '$' + Math.round(rawAll).toLocaleString(), 'header tot
 // No page keeps its own month-summing for a savings total: each consumer routes through the keeper.
 const CONSUMERS = {
   'app/core.js': [/getProjectSavingsTotal\(/, /Object\.values\(savResult\.byCalMo\)/],
-  'app/scorecard.js': [/totalSavingsWithPresented\(/, /Object\.values\(savByYM\)\.reduce/],
-  'app/utility-data.js': [/totalSavingsWithPresented\(/, /Object\.values\(actSavByMo\)\.reduce/, /savVals\.reduce/, /Object\.values\(actByMo\)\.reduce/],
-  'app/graphics-setpoints.js': [/totalSavingsWithPresented\(/, /\.reduce\(\(s, \[, v\]\) => s \+ v, 0\)\s*:\s*0;/],
-  'app/report-engine.js': [/totalSavingsWithPresented\(/, /periodSavings \+= totalCostSav/],
+  'app/scorecard.js': [/billableSavingsWithPresented\(/, /Object\.values\(savByYM\)\.reduce/],
+  'app/utility-data.js': [/billableSavingsWithPresented\(/, /Object\.values\(actSavByMo\)\.reduce/, /savVals\.reduce/, /Object\.values\(actByMo\)\.reduce/],
+  'app/graphics-setpoints.js': [/billableSavingsWithPresented\(/, /\.reduce\(\(s, \[, v\]\) => s \+ v, 0\)\s*:\s*0;/],
+  'app/report-engine.js': [/billableSavingsWithPresented\(/, /periodSavings \+= totalCostSav/],
 };
 Object.keys(CONSUMERS).forEach((f) => {
   const src = readSrc(f);

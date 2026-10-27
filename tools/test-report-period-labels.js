@@ -17,7 +17,7 @@ function grab(name) {
 const ctx = { console, Math, Number, String, Object, Array, Date, isFinite, parseFloat, JSON, parseInt,
   rptPage: (n, t, body) => body };
 vm.createContext(ctx);
-['computations/csc.js', 'lib/formatting.js', 'app/report-printed.js'].forEach((f) => vm.runInContext(fs.readFileSync(path.join(root, f), 'utf8'), ctx));
+['computations/savings.js', 'computations/csc.js', 'lib/formatting.js', 'app/report-printed.js'].forEach((f) => vm.runInContext(fs.readFileSync(path.join(root, f), 'utf8'), ctx));
 ['_rptUnit', '_rptPeriodWords', 'rptPageFinancial'].forEach((n) => vm.runInContext(grab(n), ctx));
 
 function data(type) {

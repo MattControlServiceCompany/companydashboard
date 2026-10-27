@@ -190,6 +190,7 @@ function buildCtx() {
     'computations/physics.js', 'computations/rates.js',
     'computations/normalization.js',
     'computations/savings.js',
+    'computations/report-data.js',
     'computations/eui.js',
     'computations/csc.js',
     'computations/hvac-enduse.js',

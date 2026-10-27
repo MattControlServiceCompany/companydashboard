@@ -144,7 +144,7 @@
       '.ch-held-details summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--text,#fff);}' +
       '.ch-held-row{margin-top:8px;padding-top:8px;border-top:1px solid var(--border,#333);font-size:12px;color:var(--text,#fff);}' +
       '.ch-held-btns{display:flex;gap:8px;margin-top:6px;}' +
-      '.content{margin-bottom:38px;}' +
+      'body.ch-corner-row .content{margin-bottom:38px;}' +
       '@media (max-width:899px){#ch-archive-link{left:16px;}#ch-held-link{left:16px;bottom:40px;}}';
     document.head.appendChild(style);
   }
@@ -813,6 +813,17 @@
     } else {
       el.style.display = 'none';
     }
+    updateCornerRow();
+  }
+
+  // The bottom row of corner pills (conflict history, held drafts) only takes space from the page
+  // while at least one of them is showing. Otherwise the page fills to the bottom of the window.
+  function updateCornerRow() {
+    var shown = ['ch-archive-link', 'ch-held-link'].some(function (id) {
+      var e = document.getElementById(id);
+      return !!e && e.style.display !== 'none' && e.style.display !== '';
+    });
+    document.body.classList.toggle('ch-corner-row', shown);
   }
 
   function openArchivePanel() {
@@ -1243,6 +1254,7 @@
     var el = document.getElementById('ch-held-link');
     if (!list.length) {
       if (el) el.style.display = 'none';
+      updateCornerRow();
       return;
     }
     el = ensureEl('ch-held-link');
@@ -1250,6 +1262,7 @@
     el.title = 'Versions kept on this computer with Decide later. Click to see them and choose what to do.';
     el.style.display = 'block';
     el.onclick = openSyncStatusPanel;
+    updateCornerRow();
   }
   ['syncQueueChanged', 'dbReady', 'chAuthStateChanged'].forEach(function (n) {
     window.addEventListener(n, renderHeldLink);

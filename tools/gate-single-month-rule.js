@@ -51,6 +51,16 @@ const ALLOWED = [
     'trend sample timestamps, not a bill',
   ],
   ['app/report-engine.js', "parseInt(d.period.end.split('-')[1], 10) - 1", 'report period end, not a bill date'],
+  [
+    'app/report-preview.js',
+    "startYm: config.startDate ? String(config.startDate).slice(0, 7) : '',",
+    'first month the user typed in the custom-period box, not a bill date',
+  ],
+  [
+    'app/report-preview.js',
+    "endYm: config.endDate ? String(config.endDate).slice(0, 7) : '',",
+    'last month the user typed in the custom-period box, not a bill date',
+  ],
 ];
 
 const problems = [];

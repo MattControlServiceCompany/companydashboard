@@ -167,6 +167,46 @@ function checkRateIncomplete(opts) {
   return { incomplete: incomplete, reason: reason };
 }
 
+/* freezeContractBaseline(m, bills, incl, weatherByYm) - the contract baseline is written ONCE per meter (when none is
+   stored for the current baseline months), from the values of that moment, and only read after that
+   (getContractFrozenBaseline + buildMoMap, computations/normalization.js). Same pattern as the presented
+   quarters: the stored record wins over any later bill edit. Callers: getMeterSavings (contracted project)
+   and freezeContractBaselines. Returns true when it wrote. */
+function freezeContractBaseline(m, bills, incl, weatherByYm) {
+  if (getContractFrozenBaseline(m)) return false;
+  const months = m.baseline.months;
+  const rowsOf = (wx) => getNormRows(m, bills, incl, wx).filter((r) => months.includes(r.ym));
+  const plain = rowsOf(null);
+  if (!plain.length) return false;
+  const wxRows = weatherByYm ? rowsOf(weatherByYm) : plain;
+  m.baseline.contractFrozen = {
+    months: months.slice(),
+    blAvg: wxRows.reduce((s, r) => s + r.usage, 0) / wxRows.length,
+    moMap: JSON.parse(JSON.stringify(buildMoMap(m, plain, bills, incl, true))),
+    moMapWx: JSON.parse(JSON.stringify(buildMoMap(m, wxRows, bills, incl, true))),
+    frozenAt: new Date().toISOString(),
+  };
+  return true;
+}
+
+// freezeContractBaselines() - store the baseline of every meter of every contracted project that has none.
+// Runs at load (loadUtilityData, which then saves). Returns the number of meters it froze.
+function freezeContractBaselines() {
+  let n = 0;
+  (typeof projects !== 'undefined' ? projects : []).forEach((p) => {
+    if (!projHasContract(p.id)) return;
+    getUDBldgs(p.id).forEach((b) =>
+      (b.meters || []).forEach((m) => {
+        if (!m.baseline || !m.baseline.months || m.baseline.months.length < 3 || getContractFrozenBaseline(m)) return;
+        const bills = (m.bills || []).slice().sort((x, y) => String(x.start).localeCompare(String(y.start)));
+        getMeterSavings(m, bills, m.inclusive !== false, p.id, b.id);
+        if (getContractFrozenBaseline(m)) n++;
+      }),
+    );
+  });
+  return n;
+}
+
 /* ─────────────────────────────────────────────────────────────
    getMeterSavings(m, bills, incl, projId, bldgId, opts)
    THE savings function. Every dollar of "savings" on every page and report comes from this
@@ -221,6 +261,7 @@ function getMeterSavings(m, bills, incl, projId, bldgId, opts) {
   // SAVINGS_CALC_VERSION and the 'v3|' prefix purge any older cache (see saveUtilityData()
   // strip-on-save + bcbc84e0).
   const _blFp = JSON.stringify({
+    fz: getContractFrozenBaseline(m) ? 1 : 0,
     ver: SAVINGS_CALC_VERSION,
     reg: bl.reg || null,
     months: bl.months || null,
@@ -271,6 +312,9 @@ function getMeterSavings(m, bills, incl, projId, bldgId, opts) {
   const blRowsActual = opts.effectiveRows
     ? _actualRows.filter((r) => bl.months.includes(r.ym))
     : blRows;
+  // Contracted project: store the baseline once (freezeContractBaseline), then buildMoMap and blAvg read it.
+  if (hasContract && bills.length) freezeContractBaseline(m, bills, incl, weatherByYm);
+  const _fzBl = opts.effectiveRows ? null : getContractFrozenBaseline(m);
   const blEnd = bl.months.slice().sort().pop();
   // 2026-09-15 (phantom-savings fix): exclude incompleteCycle rows - a genuinely short/stub
   // bill that hasn't completed a real billing cycle yet must not book savings (Client C:
@@ -292,7 +336,7 @@ function getMeterSavings(m, bills, incl, projId, bldgId, opts) {
     gasByMo: gMo,
     propaneByMo: pMo,
     waterByMo: wMo,
-  } = buildMoMap(m, blRows, bills, incl);
+  } = buildMoMap(m, blRows, bills, incl, !!opts.effectiveRows);
   const _moMap = isElec ? eMo : isGas ? gMo : isPropane ? pMo : wMo;
   const blByCalMo = {};
   const blDemKWByCalMo = {};
@@ -308,9 +352,11 @@ function getMeterSavings(m, bills, incl, projId, bldgId, opts) {
   });
   const hasBlCalMap = Object.keys(blByCalMo).length > 0;
   const hasRegrP = allRows.some((r) => r.regrBaseline != null);
-  const blAvg = blRows.length
-    ? blRows.reduce((s, r) => s + r.usage, 0) / blRows.length
-    : 0;
+  const blAvg = _fzBl
+    ? _fzBl.blAvg
+    : blRows.length
+      ? blRows.reduce((s, r) => s + r.usage, 0) / blRows.length
+      : 0;
 
   // kW weather normalization: the one kW CDD regression (computations/regression.js).
   const _kwNormByYm =
@@ -856,6 +902,57 @@ function totalSavingsWithPresented(projId, yms, perBldg) {
   return { total, byBldg, applied: applied.map((a) => a.rec) };
 }
 
+// Savings never go negative for billing: the contract pays nothing for a quarter below baseline and
+// bills per calendar quarter (Agreement 3.1). The ONE floor.
+function floorQuarterSavings(dollars) {
+  return Math.max(0, dollars || 0);
+}
+
+// The 'YYYY-Qn' calendar quarter of a 'YYYY-MM'.
+function quarterKeyOfYM(ym) {
+  return ym.slice(0, 4) + "-Q" + (Math.floor((parseInt(ym.slice(5, 7), 10) - 1) / 3) + 1);
+}
+
+// quarterMissingBills(projId, qKey) - the bills a calendar quarter ('YYYY-Qn') still lacks, one line per
+// missing meter-month, e.g. "Building A Gas Sep". The rule is NOT here: it is getReportCoverage
+// (computations/report-data.js), the one rule for "which bills are missing for a period"; this only asks it
+// for the quarter's three months and words each gap. A presented quarter lacks none. [] = complete.
+// The app shows the list as a "Waiting for bills" chip; it never goes into a client document.
+function quarterMissingBills(projId, qKey) {
+  const y = qKey.slice(0, 4);
+  const q = Number(qKey.slice(6)) - 1;
+  const yms = [1, 2, 3].map((k) => y + "-" + String(q * 3 + k).padStart(2, "0"));
+  if (_presentedApplied(projId, yms).some((a) => a.months.length === 3)) return [];
+  const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return getReportCoverage(projId, null, yms[0], yms[2]).missing.map(
+    (x) => x.building + " " + x.commodity + " " + MON[Number(x.ym.slice(5, 7)) - 1],
+  );
+}
+
+// billableSavingsWithPresented(projId, yms, perBldg) - the savings value to SHOW OR BILL for the months
+// `yms`: the project total of each calendar quarter (totalSavingsWithPresented, so a presented quarter keeps
+// its printed figure) floored at $0 by floorQuarterSavings, then added up. A quarter still missing bills
+// (quarterMissingBills) is counted from the bills we have, and named in `missing` ({ 'YYYY-Qn': [lines] }) so
+// the app can show "Waiting for bills". For one quarter it is that quarter's billable savings; for a longer
+// period, or all months to date, it is the CUMULATIVE savings to date = the sum of the floored quarters
+// (Matt, 2026-10-27; the 60% cap in Agreement 3.1 is for rebates and incentives and does not net a shortfall
+// quarter). To change the cumulative rule, change it here only.
+// Returns { total, byBldg, applied, missing }. byBldg stays the NET per-building sum over all yms (building
+// rows are not floored). Monthly and per-meter values are never floored.
+function billableSavingsWithPresented(projId, yms, perBldg) {
+  const net = totalSavingsWithPresented(projId, yms, perBldg);
+  const byQtr = {};
+  yms.forEach((y) => (byQtr[quarterKeyOfYM(y)] = byQtr[quarterKeyOfYM(y)] || []).push(y));
+  let total = 0;
+  const missing = {};
+  Object.keys(byQtr).forEach((q) => {
+    const gaps = quarterMissingBills(projId, q);
+    if (gaps.length) missing[q] = gaps;
+    total += floorQuarterSavings(totalSavingsWithPresented(projId, byQtr[q], perBldg).total);
+  });
+  return { total, byBldg: net.byBldg, applied: net.applied, missing };
+}
+
 // Shared engine of the two functions below. perBldgVals = { <bldgId>: { <ym>: { <key>: number } } };
 // fieldOf maps each key to its printed field name on the presented building record.
 function _sumWithPresented(projId, yms, perBldgVals, fieldOf) {
@@ -941,7 +1038,7 @@ function getProjectSavingsTotal(projId, yms) {
     Object.keys(perBldg[b.id]).forEach((y) => all.add(y));
   });
   const months = yms || Array.from(all).sort();
-  return totalSavingsWithPresented(projId, months, perBldg);
+  return billableSavingsWithPresented(projId, months, perBldg);
 }
 
 // Validate and store one presented record. Only the confirm button of the Mark-as-presented

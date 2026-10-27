@@ -208,7 +208,7 @@ function updateMsrField(projId, msrId, field, val) {
     const bldg = getUDBldg(projId, val);
     if (bldg) {
       m.sqft = parseFloat(bldg.sqft) || 0;
-      writeRateSet(m, 'rates', computeSeasonalBldgRates(projId, val), projId, val, 'measure building change');
+      if (!projHasContract(projId)) writeRateSet(m, 'rates', computeSeasonalBldgRates(projId, val), projId, val, 'measure building change'); // contract rates stay
       const sqftInp = document.querySelector(
         `#sv-msr-row-${projId}-${msrId} .sv-sqft-inp, #sv-pg-msr-row-${msrId} .sv-sqft-inp`,
       );
@@ -352,6 +352,8 @@ function writeRateSet(holder, prop, rates, projId, bldgId, source, accepted) {
   return true;
 }
 
+// Attributes of a locked (contract) rate input. Hover text names the reason.
+const RATE_LOCK_ATTRS = 'readonly title="Contract rate - fixed by the agreement"';
 // writeRateField(holder, prop, field, val) - one rate the user typed AND accepted (rateGuardAccept).
 function writeRateField(holder, prop, field, val) {
   if (!holder[prop]) holder[prop] = {};
@@ -398,9 +400,13 @@ function ensureMeasureRates(m, projId, source) {
 
 // ownerMeasureRates(projId, m) - the rates a measure that follows the owner should hold now: the owner's current
 // baseline rates (computeSeasonalBldgRates). null for a typed (manual) measure, a measure with no building,
-// or a building with no baseline rate yet (bills not loaded). A pure read: nothing is written.
+// a building with no baseline rate yet (bills not loaded), or ANY measure of a contracted project. A pure read: nothing is written.
+// Matt, 2026-10-27: baseline rates are never changed; only ACTUAL savings use current rates. A contracted project's
+// projected savings use the rates and quantities saved with the contract. The owner-follow rule (2026-10-13: the
+// old CSV import saved $/kW per bill, so imported estimates take the owner's rates) now applies only to a
+// project with no contract (projHasContract, computations/savings.js).
 function ownerMeasureRates(projId, m) {
-  if (!m.bldgId || !m.rates || m.rateSource === 'manual') return null;
+  if (!m.bldgId || !m.rates || m.rateSource === 'manual' || projHasContract(projId)) return null;
   const base = computeSeasonalBldgRates(projId, m.bldgId);
   if (!RATE_WRITE_FIELDS.some((k) => base[k] > 0)) return null;
   const next = {};
@@ -898,8 +904,11 @@ function _renderSavingsContent(wrap, projId) {
   };
 
   // ── Rate cell helper ──
+  // Contract rates are fixed by the agreement: a contracted project's measure rate inputs are read-only
+  // (RATE_LOCK_ATTRS, text colour var(--text2) = #fff dark / #000 light). svUpdateMsrRate and svResetMsrRates refuse too.
+  const _rateLock = projHasContract(projId) ? RATE_LOCK_ATTRS : '';
   const rateCell = (mid, field, step, r) =>
-    `<td><input class="sv-num-inp sv-rate-inp" type="number" step="${step}" value="${r[field] || ''}" placeholder="0" style="width:52px;font-size:10px" onchange="svUpdateMsrRate('${mid}','${field}',parseFloat(this.value)||0,this)" onfocusout="svAutoSave()"></td>`;
+    `<td><input class="sv-num-inp sv-rate-inp" type="number" step="${step}" value="${r[field] || ''}" placeholder="0" ${_rateLock} style="width:52px;font-size:10px" onchange="svUpdateMsrRate('${mid}','${field}',parseFloat(this.value)||0,this)" onfocusout="svAutoSave()"></td>`;
 
   // ── Measure rows ──
   const bldgOpts = bldgs.map((b) => `<option value="${b.id}">${_escHtml(b.name)}</option>`).join('');
@@ -958,16 +967,16 @@ function _renderSavingsContent(wrap, projId) {
                   <div>
                     <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Utility Rates</div>
                     <div class="sv-rate-group">
-                      <div class="sv-rate-field"><label>kWh $/Summer</label><input class="fi" type="number" step="0.0001" value="${r.kwhSummer || ''}" onchange="svUpdateMsrRate('${mid}','kwhSummer',parseFloat(this.value)||0,this)"></div>
-                      <div class="sv-rate-field"><label>kWh $/Winter</label><input class="fi" type="number" step="0.0001" value="${r.kwhWinter || ''}" onchange="svUpdateMsrRate('${mid}','kwhWinter',parseFloat(this.value)||0,this)"></div>
-                      <div class="sv-rate-field"><label>kW $/Summer</label><input class="fi" type="number" step="0.01" value="${r.kwSummer || ''}" onchange="svUpdateMsrRate('${mid}','kwSummer',parseFloat(this.value)||0,this)"></div>
-                      <div class="sv-rate-field"><label>kW $/Winter</label><input class="fi" type="number" step="0.01" value="${r.kwWinter || ''}" onchange="svUpdateMsrRate('${mid}','kwWinter',parseFloat(this.value)||0,this)"></div>
-                      <div class="sv-rate-field"><label>Gas $/Therm</label><input class="fi" type="number" step="0.001" value="${r.thermRate || ''}" onchange="svUpdateMsrRate('${mid}','thermRate',parseFloat(this.value)||0,this)"></div>
-                      <div class="sv-rate-field"><label>Gas $/Therm — Summer (Jun–Sep)</label><input class="fi" type="number" step="0.001" value="${r.gasSummer || ''}" placeholder="uses Gas $/Therm" onchange="svUpdateMsrRate('${mid}','gasSummer',parseFloat(this.value)||0,this)"></div>
-                      <div class="sv-rate-field"><label>Gas $/Therm — Winter (Oct–May)</label><input class="fi" type="number" step="0.001" value="${r.gasWinter || ''}" placeholder="uses Gas $/Therm" onchange="svUpdateMsrRate('${mid}','gasWinter',parseFloat(this.value)||0,this)"></div>
-                      <div class="sv-rate-field"><label>Propane $/Gallon</label><input class="fi" type="number" step="0.001" value="${r.gallonRate || ''}" onchange="svUpdateMsrRate('${mid}','gallonRate',parseFloat(this.value)||0,this)"></div>
+                      <div class="sv-rate-field"><label>kWh $/Summer</label><input class="fi" type="number" step="0.0001" value="${r.kwhSummer || ''}" ${_rateLock} onchange="svUpdateMsrRate('${mid}','kwhSummer',parseFloat(this.value)||0,this)"></div>
+                      <div class="sv-rate-field"><label>kWh $/Winter</label><input class="fi" type="number" step="0.0001" value="${r.kwhWinter || ''}" ${_rateLock} onchange="svUpdateMsrRate('${mid}','kwhWinter',parseFloat(this.value)||0,this)"></div>
+                      <div class="sv-rate-field"><label>kW $/Summer</label><input class="fi" type="number" step="0.01" value="${r.kwSummer || ''}" ${_rateLock} onchange="svUpdateMsrRate('${mid}','kwSummer',parseFloat(this.value)||0,this)"></div>
+                      <div class="sv-rate-field"><label>kW $/Winter</label><input class="fi" type="number" step="0.01" value="${r.kwWinter || ''}" ${_rateLock} onchange="svUpdateMsrRate('${mid}','kwWinter',parseFloat(this.value)||0,this)"></div>
+                      <div class="sv-rate-field"><label>Gas $/Therm</label><input class="fi" type="number" step="0.001" value="${r.thermRate || ''}" ${_rateLock} onchange="svUpdateMsrRate('${mid}','thermRate',parseFloat(this.value)||0,this)"></div>
+                      <div class="sv-rate-field"><label>Gas $/Therm — Summer (Jun–Sep)</label><input class="fi" type="number" step="0.001" value="${r.gasSummer || ''}" ${_rateLock} placeholder="uses Gas $/Therm" onchange="svUpdateMsrRate('${mid}','gasSummer',parseFloat(this.value)||0,this)"></div>
+                      <div class="sv-rate-field"><label>Gas $/Therm — Winter (Oct–May)</label><input class="fi" type="number" step="0.001" value="${r.gasWinter || ''}" ${_rateLock} placeholder="uses Gas $/Therm" onchange="svUpdateMsrRate('${mid}','gasWinter',parseFloat(this.value)||0,this)"></div>
+                      <div class="sv-rate-field"><label>Propane $/Gallon</label><input class="fi" type="number" step="0.001" value="${r.gallonRate || ''}" ${_rateLock} onchange="svUpdateMsrRate('${mid}','gallonRate',parseFloat(this.value)||0,this)"></div>
                     </div>
-                    <button class="btn btn-ghost btn-sm" style="margin-top:8px;font-size:11px" onclick="svResetMsrRates('${mid}')">Reset to Building Defaults</button>
+                    <button class="btn btn-ghost btn-sm" style="margin-top:8px;font-size:11px" ${_rateLock ? 'disabled title="Contract rate - fixed by the agreement"' : ''} onclick="svResetMsrRates('${mid}')">Reset to Building Defaults</button>
                   </div>
                   <div>
                     <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Intensity Metrics</div>
@@ -1260,6 +1269,10 @@ async function svUpdateMsrRate(msrId, field, val, el) {
   const sd = getProjSavingsData(pid);
   const m = sd.measures.find((x) => x.id === msrId);
   if (!m) return;
+  if (projHasContract(pid)) {
+    if (el) el.value = (m.rates && m.rates[field]) || ''; // rates-ok: shows the saved contract value
+    return; // contract rates are fixed by the agreement
+  }
   if (!(await rateGuardAccept(field, val, pid, m.bldgId))) {
     if (el) el.value = (m.rates && m.rates[field]) || ''; // rates-ok: shows the typed field value
     return;
@@ -1274,6 +1287,7 @@ function svResetMsrRates(msrId) {
   const sd = getProjSavingsData(pid);
   const m = sd.measures.find((x) => x.id === msrId);
   if (!m) return;
+  if (projHasContract(pid)) return; // contract rates are fixed by the agreement
   if (!writeRateSet(m, 'rates', computeSeasonalBldgRates(pid, m.bldgId), pid, m.bldgId, 'reset rates')) return;
   sset('en_projects', projects);
   if (document.getElementById('ptab-savings')?.offsetParent !== null) initSavingsTab(pid);

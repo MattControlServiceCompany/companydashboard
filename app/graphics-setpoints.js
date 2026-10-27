@@ -241,7 +241,7 @@ function _pvRenderBldgPerf(b, projId) {
   if (hasActual) {
     var _bMap = {};
     _bMap[b.id] = actualSavByYM;
-    annAct = totalSavingsWithPresented(projId, Object.keys(actualSavByYM).sort(), _bMap).byBldg[b.id];
+    annAct = billableSavingsWithPresented(projId, Object.keys(actualSavByYM).sort(), _bMap).byBldg[b.id];
   }
   var annPct = annBase > 0 && hasActual ? (annAct / annBase) * 100 : null;
   return (
@@ -381,7 +381,7 @@ function _pvRenderProjPerf(bldgs, projId) {
         _allYMs[ym] = true;
       });
     });
-    annAct = totalSavingsWithPresented(projId, Object.keys(_allYMs).sort(), actSavByBldgYM).total;
+    annAct = billableSavingsWithPresented(projId, Object.keys(_allYMs).sort(), actSavByBldgYM).total;
   }
   var annPct = annBase > 0 && hasActual ? (annAct / annBase) * 100 : null;
   var projMeta = projects.find(function (p) {
@@ -922,7 +922,7 @@ function egfxRefresh(projId) {
   const curYear = String(new Date().getFullYear());
   const egfxSavByMo = {};
   const egfxSavByYm = {};
-  const egfxSavByBldgYm = {}; // current savings by building and month, for totalSavingsWithPresented()
+  const egfxSavByBldgYm = {}; // current savings by building and month, for billableSavingsWithPresented()
   const egfxSavByCommodity = { Electric: 0, Gas: 0, Propane: 0 };
   const egfxUnitsSaved = { kwh: 0, kw: 0, therms: 0, gallons: 0 };
   const egfxCommByBldgYm = {}; // current-year cost saved by building, month, commodity
@@ -989,7 +989,7 @@ function egfxRefresh(projId) {
   const hasEgfxSav = Object.keys(egfxSavByYm).some((ym) => ym.startsWith(curYear));
   // A period presented to the client uses the presented figure (computations/savings.js).
   const totalEgfxSav = hasEgfxSav
-    ? totalSavingsWithPresented(
+    ? billableSavingsWithPresented(
         projId,
         Object.keys(egfxSavByYm)
           .filter((ym) => ym.startsWith(curYear))
@@ -2144,11 +2144,14 @@ function egfxRefresh(projId) {
           }
           if (!hasActualData) continue;
           if (moWithData < 3) continue;
-          let costSav = 0;
-          for (const mi of qMonths[qi]) {
-            const ym = y + '-' + String(mi + 1).padStart(2, '0');
-            costSav += egfxSavByYm[ym] || 0;
-          }
+          // The quarter's billable savings: a presented quarter shows its printed figure, a negative quarter shows $0
+          // (billableSavingsWithPresented, computations/savings.js), not a re-sum of live months.
+          const _qr = billableSavingsWithPresented(
+            projId,
+            qMonths[qi].map((mi) => y + '-' + String(mi + 1).padStart(2, '0')),
+            egfxSavByBldgYm,
+          );
+          const costSav = _qr.total;
           const costPct = qBlCost > 0 ? (costSav / qBlCost) * 100 : 0;
           const savColor = costSav >= 0 ? 'var(--green)' : 'var(--red)';
           const $f = (n) => '$' + Math.abs(Math.round(n)).toLocaleString();
@@ -2180,7 +2183,6 @@ function egfxRefresh(projId) {
             '<td style="text-align:right;font-family:var(--mono);color:' +
             savColor +
             '">' +
-            (costSav >= 0 ? '' : '-') +
             $f(costSav) +
             '</td>';
           qHtml +=

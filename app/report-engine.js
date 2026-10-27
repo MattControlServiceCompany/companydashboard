@@ -83,11 +83,13 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
     'November',
     'December',
   ];
-  const periodMonths = reportType === 'quarterly' ? 3 : 12;
-
   // --- Gather all post-baseline year-months and meter data ---
   let allPostYMs = [];
   const allBldgMeters = [];
+  // The ONE coverage rule (computations/report-data.js getReportCoverage): the period ends at the
+  // last month with a real bill. Zero-filled delivery months and the report-date month never count.
+  const _reqRange = reportRequestRange(selectedPeriod) || {};
+  const _coverage = getReportCoverage(projId, meterIds, _reqRange.startYm, _reqRange.endYm, buildingIds);
   bldgs.forEach((b) => {
     const bZip = b.zip || '';
     let bWeatherByYm = null;
@@ -115,6 +117,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
       const blEnd = bl.months.slice().sort().pop();
       const postRows = allRows.filter((r) => r.ym > blEnd);
       postRows.forEach((r) => {
+        if (r.zeroFill || !_coverage.hasData || r.ym < _coverage.startYm || r.ym > _coverage.endYm) return;
         if (!allPostYMs.includes(r.ym)) allPostYMs.push(r.ym);
       });
       allBldgMeters.push({ b, m, bills, incl, allRows, bl, blEnd, postRows });
@@ -143,8 +146,8 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
       ];
       // Include only months that have post-baseline data (bills may be partial for current quarter)
       reportYMs = qYMs.filter((ym) => allPostYMs.includes(ym));
-      // If no data at all for the chosen quarter, fall back to full quarter YMs so period label is correct
-      if (!reportYMs.length) reportYMs = qYMs.slice();
+      // No bill in the chosen quarter: no months. The label below still names the quarter, and no
+      // actual bar is drawn for a month without a bill (never a future month).
       reportYMs._qLabel = 'Q' + explicitQ + ' ' + explicitYr;
       reportYMs._qStartMo = startMo;
       reportYMs._qYear = explicitYr;
@@ -177,7 +180,8 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
         }
       }
     }
-    if (!reportYMs.length) reportYMs = allPostYMs.slice(-3);
+    // (an explicitly chosen quarter with no bills keeps its label and has no months)
+    if (!reportYMs.length && !reportYMs._qStartMo) reportYMs = allPostYMs.slice(-3);
   } else {
     // Annual report: filter to the target year from reportDateStr (YYYY-MM-DD).
     // Fall back to the most recent 12 months if no date or no data for that year.
@@ -186,11 +190,13 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
       var _yearFiltered = allPostYMs.filter(function (ym) {
         return parseInt(ym.split('-')[0]) === _annualYear;
       });
-      reportYMs = _yearFiltered.length ? _yearFiltered : allPostYMs.slice(-12);
+      reportYMs = _yearFiltered.length ? _yearFiltered : allPostYMs.slice();
     } else {
-      reportYMs = allPostYMs.slice(-12);
+      reportYMs = allPostYMs.slice();
     }
   }
+  // Month count = the months getReportCoverage gives the period (allPostYMs is clamped to coverage.yms).
+  const periodMonths = reportYMs.length;
   const reportStart = reportYMs[0] || '';
   const reportEnd = reportYMs[reportYMs.length - 1] || '';
 
@@ -258,7 +264,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
     const bType = b.type || p.type || 'Other';
     let periodSavings = 0;
     // Current savings by month for this building (all post-baseline months). The period / cumulative
-    // totals are decided by totalSavingsWithPresented() (computations/savings.js): a period already
+    // totals are decided by billableSavingsWithPresented() (computations/savings.js): a period already
     // presented to the client uses the presented figures, every other month is the current value.
     const bldgSavByYM = {};
     perBldgSavByYM[b.id] = bldgSavByYM;
@@ -584,7 +590,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
       if (_presUnits.gasDollars != null) gas.costSaved = _presUnits.gasDollars;
       if (_presUnits.propaneDollars != null) propane.costSaved = _presUnits.propaneDollars;
     }
-    periodSavings = totalSavingsWithPresented(projId, _reportYMsSorted, { [b.id]: bldgSavByYM }).byBldg[b.id];
+    periodSavings = billableSavingsWithPresented(projId, _reportYMsSorted, { [b.id]: bldgSavByYM }).byBldg[b.id];
 
     // Building savings percentage and status
     const bldgSavings = periodSavings;
@@ -662,8 +668,8 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
   // --- Project totals ---
   // Period and cumulative savings totals: current values, except a period already presented to the
   // client uses the printed figures (computations/savings.js totalSavingsWithPresented).
-  totSavings = totalSavingsWithPresented(projId, _reportYMsSorted, perBldgSavByYM).total;
-  totCumSavings = totalSavingsWithPresented(
+  totSavings = billableSavingsWithPresented(projId, _reportYMsSorted, perBldgSavByYM).total;
+  totCumSavings = billableSavingsWithPresented(
     projId,
     Array.from(new Set(Object.values(perBldgSavByYM).flatMap((m2) => Object.keys(m2)))).sort(),
     perBldgSavByYM,
@@ -1004,6 +1010,7 @@ function collectReportData(projId, buildingIds, reportDateStr, reportType, selec
     },
     period: {
       type: reportType,
+      coverage: _coverage,
       start: reportStart,
       end: reportEnd,
       months: periodMonths,
@@ -1655,9 +1662,9 @@ function rptPage(pageNum, title, bodyHTML, options = {}) {
         ';left:0;right:0">' +
         (data.period.type === 'quarterly'
           ? 'Q' + (data.period.quarter || 1) + ' ' + (data.period.year || '') + ' Quarterly Report'
-          : data.period.year
+          : data.period.type === 'annual' && data.period.year
             ? data.period.year + ' Annual Report'
-            : '') +
+            : data.period.label || '') +
         '</div>'
       : '';
 
@@ -1828,6 +1835,13 @@ function _scopeMonthlyToPeriod(monthlyArr, yearMonths) {
  * if the period isn't known, so every export filename names the period it actually reports on.
  * @param {object} data - collectReportData() output (reads data.period)
  */
+// Draft status lives in the file name, not in the document: " - waiting for bills" when a monthly
+// meter has no bill for a month of the period (getReportCoverage().complete is false).
+function _rptFilenameWaitingTag(data) {
+  var c = data && data.period && data.period.coverage;
+  return c && c.hasData && !c.complete ? ' - waiting for bills' : '';
+}
+
 function _rptFilenamePeriodTag(data) {
   var per = data && data.period;
   if (!per) return '';
@@ -3347,7 +3361,7 @@ function rptPageSavingsPerformance(n, d) {
   // computeKBtu()/computePeriodEUI() (computations/eui.js) — same annualization formula,
   // applied to the period's own kBtu instead of a trailing-12 kBtu, so blRow and curRow are
   // both dimensionally comparable to their own consumption columns AND to each other.
-  const _periodMonths = (d.period && d.period.months) || (d.period && d.period.type === 'quarterly' ? 3 : 12);
+  const _periodMonths = (d.period && d.period.months) || 0; // from getReportCoverage via collectReportData
   const _periodSqft = d.project.sqft || 0;
   const _blKBtuPeriod = computeKBtu(d.totals.kwhBl, d.totals.thermsBl, d.totals.propaneBl);
   const _curKBtuPeriod = computeKBtu(d.totals.kwhCur, d.totals.thermsCur, d.totals.propaneCur);
@@ -5271,7 +5285,7 @@ function rptPageYearToDate(n, d) {
   var periodYear = (d.period && d.period.year) || new Date().getFullYear();
   var _moNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var _moData = {};
-  var _savPerBldg = {}; // current savings by building and month, for totalSavingsWithPresented()
+  var _savPerBldg = {}; // current savings by building and month, for billableSavingsWithPresented()
   (d.buildings || []).forEach(function (b) {
     _savPerBldg[b.id] = {};
     ['electric', 'gas', 'propane'].forEach(function (com) {
@@ -5320,7 +5334,7 @@ function rptPageYearToDate(n, d) {
   var trendTable;
   if (_sorted.length) {
     // Total: a period already presented to the client uses the presented figures (WP-04a).
-    _tSav = totalSavingsWithPresented(d.project.id, _sorted, _savPerBldg).total;
+    _tSav = billableSavingsWithPresented(d.project.id, _sorted, _savPerBldg).total;
     _rows +=
       '<tr class="rpt-tot"><td>Total</td><td class="rpt-n">' +
       _fmtUSD(_tBl, '$0') +
@@ -6411,6 +6425,8 @@ function rptPageBuildingSummary(n, d, b) {
         curVal = curByCalMo[i].cur || 0;
         if (curByCalMo[i].bl) blVal = curByCalMo[i].bl;
       }
+      // A month after the report's last month with bills has no actual: null = draw no bar (not 0).
+      if (d && d.period && d.period.end && ym > d.period.end) curVal = null;
       result.push({ month: ym, bl: blVal, cur: curVal });
     }
     return result;
@@ -6436,7 +6452,8 @@ function rptPageBuildingSummary(n, d, b) {
     var bars = '';
     monthly.forEach(function (mo) {
       var blH = Math.max(2, Math.round((mo.bl / maxVal) * maxH));
-      var curH = Math.max(2, Math.round((mo.cur / maxVal) * maxH));
+      var hasCur = mo.cur !== null && mo.cur !== undefined; // null = month after the last bill: no actual bar
+      var curH = hasCur ? Math.max(2, Math.round((mo.cur / maxVal) * maxH)) : 0;
       blTot += mo.bl || 0;
       curTot += mo.cur || 0;
       bars +=
@@ -6453,15 +6470,17 @@ function rptPageBuildingSummary(n, d, b) {
         ' ' +
         unit +
         '"></div>' +
-        '<div style="width:10px;height:' +
-        curH +
-        'px;background:' +
-        curColor +
-        ';border-radius:1px 1px 0 0" title="Current ' +
-        $n(mo.cur) +
-        ' ' +
-        unit +
-        '"></div>' +
+        (hasCur
+          ? '<div style="width:10px;height:' +
+            curH +
+            'px;background:' +
+            curColor +
+            ';border-radius:1px 1px 0 0" title="Current ' +
+            $n(mo.cur) +
+            ' ' +
+            unit +
+            '"></div>'
+          : '<div style="width:10px"></div>') +
         '</div>' +
         '<div style="font-size:9px;color:var(--rpt-page-text);margin-top:1px">' +
         moLabel(mo.month) +
@@ -6934,7 +6953,7 @@ function rptPageBuildingSummary(n, d, b) {
     return fullYear
       .map(function (mo) {
         var moIdx = parseInt(mo.month.split('-')[1], 10) - 1;
-        return moIdx <= _periodEndMoIdx ? mo : { month: mo.month, bl: mo.bl, cur: 0 };
+        return moIdx <= _periodEndMoIdx ? mo : { month: mo.month, bl: mo.bl, cur: null };
       })
       .filter(function (mo) {
         return (mo.bl || 0) > 0 || (mo.cur || 0) > 0;
@@ -8435,7 +8454,7 @@ function _apbWeatherHddCddChartSVG(rows) {
 
   var maxVal = 1;
   rows.forEach(function (r) {
-    maxVal = Math.max(maxVal, r.hdd || 0, r.cdd || 0);
+    maxVal = Math.max(maxVal, r.hdd || 0, r.cdd || 0); // a month with no weather (hdd/cdd null) gets no bar
   });
 
   var header =
@@ -8475,6 +8494,16 @@ function _apbWeatherHddCddChartSVG(rows) {
       r.year +
       (r.isBaseline ? ' BL' : '') +
       '</text>';
+    if (r.hdd == null && r.cdd == null) {
+      // No weather row for this month: no bars, a plain label (never 0 / 0).
+      body +=
+        '<text x="' +
+        padL +
+        '" y="' +
+        (rowY + rowH / 2 + 3) +
+        '" font-size="7.5" font-style="italic" fill="var(--rpt-page-text)">No weather data</text>';
+      return;
+    }
     var hddW = Math.max(0, (r.hdd / maxVal) * chartW);
     var cddW = Math.max(0, (r.cdd / maxVal) * chartW);
     var hddY = rowY + (rowH - 2 * barH - barGap) / 2;
@@ -8825,6 +8854,9 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
           hdd = wx.hddCur || 0;
           cdd = wx.cddCur || 0;
         }
+        // collectWeatherData gives null for a month with no weather row: print "No weather data",
+        // never 0 (same rule as the Weather appendix and the weather chart).
+        var _noWx = (entry.isBaseline ? wx.hddBl : wx.hddCur) == null && (entry.isBaseline ? wx.cddBl : wx.cddCur) == null;
 
         // Compute predicted baseline from regression
         var predicted = rc.intercept * days;
@@ -8856,7 +8888,22 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
         }
 
         var rowHTML;
-        if (entry.isBaseline) {
+        var _wxCells = '<td class="rpt-n" colspan="2" style="color:var(--rpt-page-text);font-style:italic">No weather data</td>';
+        if (_noWx) {
+          // No weather for this month: no regression prediction is possible, so no predicted/saved value.
+          var _noWxActual = entry.isBaseline ? '—' : $n((entry.moData && entry.moData.cur) || 0);
+          if (!entry.isBaseline) totCur += (entry.moData && entry.moData.cur) || 0;
+          rowHTML =
+            '<tr' + (entry.isBaseline ? ' style="background:var(--rpt-chart-bg);color:var(--rpt-page-text)"' : '') + '>' +
+            '<td>' + moName + '</td>' +
+            '<td class="rpt-n">' + days + '</td>' +
+            _wxCells +
+            '<td style="color:var(--rpt-page-text)">—</td>' +
+            '<td class="rpt-n">—</td>' +
+            '<td class="rpt-n">' + _noWxActual + '</td>' +
+            '<td class="rpt-n">—</td>' +
+            '</tr>';
+        } else if (entry.isBaseline) {
           // Baseline reference row — show predicted only, mark Actual/Saved as BL reference
           totBl += predicted;
           rowHTML =
@@ -8996,8 +9043,8 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
       weatherChartRows.push({
         label: MO_FULL[moIdx] || ym,
         year: ym.split('-')[0],
-        hdd: wx.hddBl || 0,
-        cdd: wx.cddBl || 0,
+        hdd: wx.hddBl,
+        cdd: wx.cddBl,
         isBaseline: true,
       });
     });
@@ -9007,8 +9054,8 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
       weatherChartRows.push({
         label: MO_FULL[moIdx] || ym,
         year: ym.split('-')[0],
-        hdd: wx.hddCur || 0,
-        cdd: wx.cddCur || 0,
+        hdd: wx.hddCur,
+        cdd: wx.cddCur,
         isBaseline: false,
       });
     });
@@ -9016,8 +9063,8 @@ function rptPageAppendixBaseline(n, d, appLetter, appMap) {
       var _wcTotBlHdd = 0,
         _wcTotCurHdd = 0;
       weatherChartRows.forEach(function (r) {
-        if (r.isBaseline) _wcTotBlHdd += r.hdd;
-        else _wcTotCurHdd += r.hdd;
+        if (r.isBaseline) _wcTotBlHdd += r.hdd || 0;
+        else _wcTotCurHdd += r.hdd || 0;
       });
       var _wcHddVarPct = _wcTotBlHdd > 0 ? Math.round(((_wcTotCurHdd - _wcTotBlHdd) / _wcTotBlHdd) * 100) : 0;
       var weatherChartTitle =
@@ -9153,6 +9200,8 @@ function rptPageAppendixWeather(n, d, appLetter) {
     var cddBl = mo.cddBl || 0;
     var cddCur = mo.cddCur || 0;
     var ip = mo.inPeriod;
+    // collectWeatherData gives null for a month with no weather row: print "No weather data", never 0
+    var _noWx = (ip ? mo.hddCur : mo.hddBl) == null && (ip ? mo.cddCur : mo.cddBl) == null;
     var rowStyle = ip ? '' : 'color:var(--rpt-page-text);background:var(--rpt-chart-bg)';
     var hddVal = _wt(mo.month, 'hdd', ip ? hddCur : hddBl);
     var cddVal = _wt(mo.month, 'cdd', ip ? cddCur : cddBl);
@@ -9167,12 +9216,14 @@ function rptPageAppendixWeather(n, d, appLetter) {
       _wFmtDate(mo.month) +
       badge +
       '</td>' +
-      '<td class="rpt-n" contenteditable="true">' +
-      $n(hddVal) +
-      '</td>' +
-      '<td class="rpt-n" contenteditable="true">' +
-      $n(cddVal) +
-      '</td>' +
+      (_noWx
+        ? '<td class="rpt-n" colspan="2" style="font-style:italic">No weather data</td>'
+        : '<td class="rpt-n" contenteditable="true">' +
+          $n(hddVal) +
+          '</td>' +
+          '<td class="rpt-n" contenteditable="true">' +
+          $n(cddVal) +
+          '</td>') +
       '</tr>';
   });
 
@@ -9848,7 +9899,8 @@ async function exportReportToPDF() {
       dateStr;
   } else {
     const typeLabel = data.period && data.period.type === 'quarterly' ? 'Quarterly' : 'Annual';
-    filename = client + ' - ' + typeLabel + _rptFilenamePeriodTag(data) + ' Savings Report ' + dateStr;
+    filename =
+      client + ' - ' + typeLabel + _rptFilenamePeriodTag(data) + ' Savings Report ' + dateStr + _rptFilenameWaitingTag(data);
   }
   const originalTitle = document.title;
   document.title = filename;
@@ -10658,7 +10710,7 @@ async function exportReportToWord() {
           : client + ' - ASHRAE 36 Audit Report ' + dateStr + '.doc';
     } else {
       const typeLabel = data.period && data.period.type === 'quarterly' ? 'Quarterly' : 'Annual';
-      filename = client + ' - ' + typeLabel + _rptFilenamePeriodTag(data) + ' Savings Report ' + dateStr + '.doc';
+      filename = client + ' - ' + typeLabel + _rptFilenamePeriodTag(data) + ' Savings Report ' + dateStr + _rptFilenameWaitingTag(data) + '.doc';
     }
 
     // Word-only page setup + chrome overrides (2026-07-22 fix, Matt: "the word files footer
@@ -11435,7 +11487,7 @@ async function exportReportToDocx() {
           : client + ' - ASHRAE 36 Audit Report ' + dateStr + '.docx';
     } else {
       const typeLabel = data.period && data.period.type === 'quarterly' ? 'Quarterly' : 'Annual';
-      filename = client + ' - ' + typeLabel + _rptFilenamePeriodTag(data) + ' Savings Report ' + dateStr + '.docx';
+      filename = client + ' - ' + typeLabel + _rptFilenamePeriodTag(data) + ' Savings Report ' + dateStr + _rptFilenameWaitingTag(data) + '.docx';
     }
 
     await _docxAssemble(translated.xml, {
@@ -11859,112 +11911,38 @@ function _rptV2LatestCompleteQuarter(projId, curYear, curQ) {
   return { year: curYear, quarter: curQ };
 }
 
-// _rptV2QuarterCoverage — the buildings (within bldgIds) that are missing bills for one or more
-// months of the given quarter, across their report-eligible energy meters. Used to warn before
-// generating (problem 3): a building with no bills for the period must not silently render as
-// "On Track" with every figure at $0.
-function _rptV2QuarterCoverage(projId, bldgs, bldgIds, year, quarter) {
-  var yms = _rptV2QuarterYMs(year, quarter);
-  var MONTH_NAMES = [
-    'January',
-    'February',
-    'March',
-    'April',
-    'May',
-    'June',
-    'July',
-    'August',
-    'September',
-    'October',
-    'November',
-    'December',
-  ];
-  var out = [];
-  (bldgs || []).forEach(function (b) {
-    if (bldgIds && bldgIds.indexOf(b.id) < 0) return;
-    var meters = (b.meters || []).filter(function (m) {
-      return !_rptMeterEligible(projId, m) && m.baseline && m.baseline.months && m.baseline.months.length >= 3;
-    });
-    if (!meters.length) return;
-    var have = {};
-    meters.forEach(function (m) {
-      // Only a POST-baseline bill month counts as "covered" for this period — a bill inside
-      // the meter's own baseline window is baseline data, not a reportable actual, and must not
-      // hide the warning collectReportData's real bldgHasBillsInPeriod would otherwise show
-      // (same rule, same blEnd cutoff as that function, this file, ~line 380).
-      var blEnd = m.baseline.months.slice().sort().pop();
-      var bills = (m.bills || []).slice().sort(function (a, c) {
-        return _parseISO(a.start) - _parseISO(c.start);
-      });
-      var incl = m.inclusive !== false;
-      bills.forEach(function (bl) {
-        var ym = billMonth(bl, bills);
-        if (ym && ym > blEnd) have[ym] = true;
-      });
-    });
-    var missing = yms.filter(function (ym) {
-      return !have[ym];
-    });
-    if (missing.length) {
-      out.push({
-        name: b.name || 'Unnamed',
-        allMissing: missing.length === yms.length,
-        missingMonths: missing.map(function (ym) {
-          var parts = ym.split('-');
-          return MONTH_NAMES[parseInt(parts[1], 10) - 1] + ' ' + parts[0];
-        }),
-      });
-    }
-  });
-  return out;
-}
-
-// Live-updates the "no bills for part of this period" warning banner in the Generate Report
-// modal — called on open and whenever Report Type/Year/Quarter changes. Quarterly-only (problem
-// 3 is specifically about the Quarterly Report default and its no-data behavior); Annual/
-// Cumulative/Current/Custom periods are unaffected.
+// Live-updates the "Not ready to present" line in the Generate Report modal - called on open and
+// whenever Report Type, Year, Quarter, the custom dates or the meter selection change. The rule is
+// getReportCoverage().complete (computations/report-data.js): every included monthly meter has a bill
+// for every month of the period. The line changes no number; it tells Matt before he generates.
 function _rptV2RefreshCoverageWarning() {
   var warnEl = document.getElementById('rptV2CoverageWarning');
   if (!warnEl) return;
-  var typeEl = document.getElementById('rptV2Type');
-  var type = typeEl ? typeEl.value : '';
-  if (type !== 'quarterly' || !_rptV2ProjId) {
-    warnEl.style.display = 'none';
-    warnEl.innerHTML = '';
-    return;
-  }
-  var yearEl = document.getElementById('rptV2Year');
-  var quarterEl = document.getElementById('rptV2Quarter');
-  var year = yearEl ? parseInt(yearEl.value) : null;
-  var quarter = quarterEl ? parseInt(quarterEl.value) : null;
-  if (!year || !quarter) {
-    warnEl.style.display = 'none';
-    return;
-  }
-  var bldgs = getUDBldgs(_rptV2ProjId);
-  var bldgIds = bldgs.map(function (b) {
-    return b.id;
-  });
-  var rows = _rptV2QuarterCoverage(_rptV2ProjId, bldgs, bldgIds, year, quarter);
-  if (!rows.length) {
-    warnEl.style.display = 'none';
-    warnEl.innerHTML = '';
-    return;
-  }
-  var lines = rows
-    .map(function (r) {
-      var detail = r.allMissing
-        ? 'no bills for Q' + quarter + ' ' + year
-        : 'missing ' + r.missingMonths.map(_escHtml).join(', ');
-      return '<div style="margin-top:2px">' + _escHtml(r.name) + ' — ' + detail + '</div>';
-    })
-    .join('');
+  warnEl.style.display = 'none';
+  warnEl.innerHTML = '';
+  if (!_rptV2ProjId || !document.getElementById('rptV2Type')) return;
+  var cfg = _rptV2ReadConfig();
+  var req = reportRequestRange(_rptSelectedPeriod(cfg)) || {};
+  var cov = getReportCoverage(_rptV2ProjId, cfg.meterIds, req.startYm, req.endYm, cfg.buildingIds);
+  // App-side only (never printed): latest bill date per commodity, inside the period.
+  var MO = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  var fd = function (iso) {
+    var p = String(iso).split('-');
+    return MO[parseInt(p[1], 10) - 1] + ' ' + parseInt(p[2], 10) + ', ' + p[0];
+  };
+  var through =
+    cov.electricThrough && cov.gasThrough && cov.electricThrough !== cov.gasThrough
+      ? 'Bills through ' + fd(cov.electricThrough) + ' (electric); ' + fd(cov.gasThrough) + ' (gas)'
+      : cov.lastBillDate
+        ? 'Bills through ' + fd(cov.lastBillDate)
+        : '';
+  if (!through && (cov.complete || !cov.waitingText)) return;
   warnEl.style.display = '';
   warnEl.innerHTML =
-    '<div style="font-size:12px;font-weight:600;color:var(--warn)">Some buildings have no bills for this period</div>' +
-    '<div style="font-size:11px;color:var(--text2);line-height:1.5;margin-top:2px">' +
-    lines +
-    '</div>';
+    (through ? '<div style="font-size:12px;color:var(--text)">' + _escHtml(through) + '</div>' : '') +
+    (!cov.complete && cov.waitingText
+      ? '<div style="font-size:12px;font-weight:600;color:var(--warn)">Not ready to present: ' + _escHtml(cov.waitingText) + '</div>'
+      : '');
 }
 
 function openReportModalV2(projId) {
@@ -12056,10 +12034,10 @@ function openReportModalV2(projId) {
   html += '<div style="display:flex;gap:12px">';
   html += '<div><div style="font-size:12px;color:var(--text2);margin-bottom:4px">Start Date</div>';
   html +=
-    '<input type="date" id="rptV2StartDate" style="padding:6px 10px;border:1px solid var(--s3);border-radius:6px;background:var(--s1);color:var(--text);font-size:13px"></div>';
+    '<input type="date" id="rptV2StartDate" onchange="_rptV2RefreshCoverageWarning()" style="padding:6px 10px;border:1px solid var(--s3);border-radius:6px;background:var(--s1);color:var(--text);font-size:13px"></div>';
   html += '<div><div style="font-size:12px;color:var(--text2);margin-bottom:4px">End Date</div>';
   html +=
-    '<input type="date" id="rptV2EndDate" style="padding:6px 10px;border:1px solid var(--s3);border-radius:6px;background:var(--s1);color:var(--text);font-size:13px"></div>';
+    '<input type="date" id="rptV2EndDate" onchange="_rptV2RefreshCoverageWarning()" style="padding:6px 10px;border:1px solid var(--s3);border-radius:6px;background:var(--s1);color:var(--text);font-size:13px"></div>';
   html += '</div></div>';
   html += '</div>';
 
@@ -12147,6 +12125,7 @@ function openReportModalV2(projId) {
 
   document.getElementById('reportGenModalBody').innerHTML = html;
   scopeTreeSync(document.getElementById('rptV2Scope'));
+  document.getElementById('rptV2Scope').addEventListener('change', _rptV2RefreshCoverageWarning);
   var previewBtn = document.querySelector('#reportGenModal .modal-ftr .btn-em');
   if (previewBtn) previewBtn.disabled = false;
   document.getElementById('reportGenModal').classList.add('open');

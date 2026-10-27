@@ -34,10 +34,7 @@ function generateReportPreview(opts) {
 
   // For quarterly reports, pass the user's explicit quarter/year selection so
   // collectReportData honours it instead of auto-picking the last completed quarter.
-  var selectedPeriod = null;
-  if (reportType === 'quarterly' && config.quarter && config.year) {
-    selectedPeriod = { quarter: config.quarter, year: config.year };
-  }
+  var selectedPeriod = _rptSelectedPeriod(config);
 
   // Collect report data using existing engine
   var data = collectReportData(
@@ -63,12 +60,6 @@ function generateReportPreview(opts) {
       water: typeof isCalcCommodity === 'function' ? isCalcCommodity(config.projId, 'Water') : false,
     },
   };
-
-  // Override period info for custom/cumulative types
-  if (reportType === 'cumulative' || reportType === 'current' || reportType === 'custom') {
-    data.period = data.period || {};
-    data.period.label = config.periodLabel;
-  }
 
   // A period already presented to the client opens the presented report by default (Matt 2026-09-29);
   // "Generate updated report" comes back here with { updated: true }.
@@ -118,9 +109,14 @@ function _showPreview(config, pagesHTML) {
   var titleEl = document.getElementById('rptPreviewTitle');
 
   // Set title
+  // The period the report states is the one collectReportData worked out (first to last month with bills).
+  var _titleLabel =
+    window._currentReportData && window._currentReportData.period && window._currentReportData.period.label
+      ? window._currentReportData.period.label
+      : config.periodLabel;
   var typeLabel = config.reportType.charAt(0).toUpperCase() + config.reportType.slice(1);
   titleEl.textContent =
-    config.clientName + ' — ' + typeLabel + ' Report' + (config.periodLabel ? ' (' + config.periodLabel + ')' : '');
+    config.clientName + ' — ' + typeLabel + ' Report' + (_titleLabel ? ' (' + _titleLabel + ')' : '');
 
   // Parse the HTML into individual pages
   // The report engine wraps each page in a div with class "rpt-page"
@@ -521,6 +517,19 @@ function saveReportTemplate() {
 // Re-generates the report preview using the same config but fresh localStorage data.
 // Called manually via the "Refresh Report" toolbar button, or automatically when
 // the storage event fires because the popup window saved changes to en_projects.
+// The period arguments collectReportData takes, from a report config. Quarterly: the quarter picked.
+// Custom: the first and last month the user chose (the engine clamps them to the months with bills).
+function _rptSelectedPeriod(config) {
+  if (config.reportType === 'quarterly' && config.quarter && config.year)
+    return { quarter: config.quarter, year: config.year };
+  if (config.reportType === 'custom')
+    return {
+      startYm: config.startDate ? String(config.startDate).slice(0, 7) : '',
+      endYm: config.endDate ? String(config.endDate).slice(0, 7) : '',
+    };
+  return null;
+}
+
 function refreshReportPreview() {
   if (!_reportConfig) return;
   // Same period arguments generateReportPreview() used, so a refresh keeps the quarter / year on screen
@@ -531,9 +540,7 @@ function refreshReportPreview() {
     _reportConfig.buildingIds,
     _rType === 'quarterly' || _rType === 'annual' ? new Date().toISOString().slice(0, 10) : null,
     _rType,
-    _rType === 'quarterly' && _reportConfig.quarter && _reportConfig.year
-      ? { quarter: _reportConfig.quarter, year: _reportConfig.year }
-      : null,
+    _rptSelectedPeriod(_reportConfig),
     _reportConfig.meterIds,
   );
   if (!data) {
@@ -542,15 +549,6 @@ function refreshReportPreview() {
   }
   // Preserve report options (annualize pollution, commodity toggles)
   data.reportOptions = _reportData ? _reportData.reportOptions : {};
-  // Preserve period label for cumulative/current/custom types
-  if (
-    _reportConfig.reportType === 'cumulative' ||
-    _reportConfig.reportType === 'current' ||
-    _reportConfig.reportType === 'custom'
-  ) {
-    data.period = data.period || {};
-    data.period.label = _reportConfig.periodLabel;
-  }
   _reportData = data;
   window._currentReportData = data;
   var selectedSections = {};

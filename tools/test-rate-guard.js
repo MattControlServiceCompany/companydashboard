@@ -79,6 +79,7 @@ const sb = {
   sset: () => {},
   getUDBldg: (p, b) => (b === 'b1' ? { id: 'b1', name: 'Synthetic School' } : null),
   computeSeasonalBldgRates: () => ({ ...BASE, months: {} }),
+  projHasContract: () => false, // no contract: the owner-follow rule of 2026-10-13 applies
   confirmAsync: async (msg) => {
     confirmAsked.push(msg);
     return confirmAnswer;

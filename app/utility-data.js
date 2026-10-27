@@ -455,6 +455,9 @@ function loadUtilityData() {
       );
     }
   }
+  // Contract baseline freeze (computations/savings.js freezeContractBaselines): every meter of a contracted project
+  // gets its baseline stored once; bill edits never move it. Saved only when something was written.
+  if (typeof freezeContractBaselines === 'function' && freezeContractBaselines() > 0) saveUtilityData(SAVE_ALL_PROJECTS);
   // Self-heal (app/bill-analysis.js _pdfBillsSelfHealMissingKeys): repair any
   // en_pdf_bills record left with hasPDF:true but no pdfKey by the
   // confirmMultiBuildingSave review-diversion bug — utilityData is fully
@@ -1599,9 +1602,8 @@ function udSelectBldg(bid) {
   udSelBldgId = bid;
   udActiveMid = null;
   saveUDSession();
-  // Fire-and-forget: populate weather cache from GitHub Pages if DB has no data for ZIP
-  const _wddBldg = getUDBldg(udSelProjId, bid);
-  if (_wddBldg && _wddBldg.zip) wddPrefetchFromServer(_wddBldg.zip);
+  // Fire-and-forget: append missing weather months for every ZIP of this project (computations/weather-refresh.js)
+  wddRefreshProjectWeather(udSelProjId);
   // Close any open project panel
   if (_udProjPanel) {
     _udProjPanel = null;
@@ -2382,7 +2384,7 @@ function renderUDProjAggPanel(content) {
     const hasActual = Object.keys(actSavByMo).length > 0;
     // A period presented to the client uses the presented figure (computations/savings.js).
     const annActSav = hasActual
-      ? totalSavingsWithPresented(
+      ? billableSavingsWithPresented(
           udSelProjId,
           Array.from(new Set(Object.values(_ppSavByBldgYM).flatMap((o) => Object.keys(o)))).sort(),
           _ppSavByBldgYM,
@@ -2629,7 +2631,7 @@ function renderBldgComparisonPanel(content, bldgs, projName, projId) {
         totalBlCost += (eM[mo]?.totalCost || 0) + (gM[mo]?.cost || 0) + (pM[mo]?.cost || 0) + (wM[mo]?.cost || 0);
     });
     // A period presented to the client uses the presented figure (computations/savings.js).
-    const totalActSav = totalSavingsWithPresented(projId, Object.keys(_radarSavByYM).sort(), {
+    const totalActSav = billableSavingsWithPresented(projId, Object.keys(_radarSavByYM).sort(), {
       [b.id]: _radarSavByYM,
     }).byBldg[b.id];
     const savingsPct = totalBlCost > 0 ? (totalActSav / totalBlCost) * 100 : null;
@@ -6551,27 +6553,31 @@ function wddSaveCache(zip, rows) {
     DB.set(wddCacheKey(zip), rows);
   } catch (e) {}
 }
-// Async fallback: if DB has no weather data for this ZIP, try to load
-// the static JSON file that scripts/fetch-weather.js writes to weather-data/.
-// DB acts as the manual override layer — if data is already there
-// (from a CSV upload or a previous fetch), we leave it alone.
-// Called fire-and-forget from udSelectBldg; never blocks the sync call path.
-async function wddPrefetchFromServer(zip) {
-  if (!zip) return;
-  try {
-    // Only fetch if DB has no weather data for this ZIP
-    const existing = wddLoadCache(zip);
-    if (existing.length) return;
-    const res = await fetch('weather-data/' + encodeURIComponent(zip) + '.json');
-    if (!res.ok) return; // file not published yet — silently skip
-    const rows = await res.json();
-    if (!Array.isArray(rows) || !rows.length) return;
-    wddSaveCache(zip, rows);
-    // Re-render the current view so weather data appears without a manual refresh
-    if (typeof renderMeterWorkspace === 'function') renderMeterWorkspace();
-  } catch (e) {
-    // Network error or JSON parse failure — silently skip, user can still upload CSV
+// Automatic weather refresh (Matt, 2026-10-27). Called from ONE place: udSelectBldg (a building opens).
+// For each distinct ZIP of the project's buildings (and the project's own ZIP) whose newest stored month is
+// older than last calendar month, computations/weather-refresh.js fetches the missing months straight from
+// the weather source (browser, CORS open: no Netlify function) and they are appended to en_wdd_<zip>.
+// Stored months are never changed; a month the source has not published stays absent. Once per ZIP per page load.
+const _wddRefreshTried = new Set();
+async function wddRefreshProjectWeather(pid) {
+  const proj = (typeof projects !== 'undefined' ? projects : []).find((p) => String(p.id) === String(pid));
+  const zips = wxProjectZips(proj, getUDBldgs(pid)).filter((z) => !_wddRefreshTried.has(z));
+  let changed = false;
+  for (const zip of zips) {
+    _wddRefreshTried.add(zip);
+    try {
+      const res = await wxRefreshZip(zip, {
+        loadFn: wddLoadCache,
+        saveFn: wddSaveCache,
+        fetchFn: (url) => fetch(url),
+        now: new Date(),
+      });
+      if (res && res.added.length) changed = true;
+    } catch (e) {
+      // Source down or ZIP unknown: leave the stored months as they are. CSV upload still works.
+    }
   }
+  if (changed && typeof renderMeterWorkspace === 'function') renderMeterWorkspace();
 }
 function wddSetStatus(msg, color) {
   const el = document.getElementById('wddStatus');
@@ -9233,7 +9239,7 @@ let _bpBldgId = null;
 // (totalSavingsWithPresented, computations/savings.js); every other month is the current value.
 function _bpActSavFor(yms) {
   const byYM = _bpActualSavingsByYM || {};
-  return totalSavingsWithPresented(udSelProjId, yms, { [_bpBldgId]: byYM }).byBldg[_bpBldgId];
+  return billableSavingsWithPresented(udSelProjId, yms, { [_bpBldgId]: byYM }).byBldg[_bpBldgId];
 }
 let _bpPostBaselineStartYM = null; // earliest post-baseline YYYY-MM across all meters
 let _bpMsrSavByMo = null; // measure-based monthly savings for Building Performance (null = use savPct fallback)

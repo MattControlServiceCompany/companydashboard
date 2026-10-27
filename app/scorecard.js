@@ -340,7 +340,7 @@ function renderBuildingScorecardPane(pane, b, projId) {
   // A period presented to the client uses the presented figure (computations/savings.js).
   // (last 12 months when there are 12 or more). A period presented to the client uses the presented
   // figure (one keeper, computations/savings.js).
-  var annualSavings = totalSavingsWithPresented(projId, last12YM.length === 12 ? last12YM : ymKeys, (function () {
+  var annualSavings = billableSavingsWithPresented(projId, last12YM.length === 12 ? last12YM : ymKeys, (function () {
     var o = {};
     o[b.id] = savByYM;
     return o;

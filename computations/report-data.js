@@ -136,3 +136,145 @@ function collectUtilityAuditData(projId, buildingIds) {
     },
   };
 }
+
+/**
+ * getReportCoverage — the ONE rule for which months a report covers (Matt 2026-10-27).
+ *
+ * The period ends at the last month that has a REAL bill for an included meter. A month filled
+ * with zero by getNormRows (a delivery meter such as propane with no bill after the last
+ * delivery, flag zeroFill) is not a bill and never extends the period. The report-date month
+ * does not extend it either. Every report page, chart and table reads its month list and the
+ * "bills through" dates from this one result (collectReportData -> data.period).
+ *
+ * Eligible meters: the rule _rptMeterEligible (app/report-engine.js), energy commodities with a
+ * baseline of 3 months or more, and meterIds when the caller passes a selection.
+ * A bill counts when billMonth(bill) is after the meter's last baseline month.
+ *
+ * @param {string|number} projId
+ * @param {Array<string>|null} meterIds   user selection; null/empty = every eligible meter
+ * @param {Array<string>|null} buildingIds user building selection; null/empty = every building (the same
+ *   building/meter set collectReportData reports on)
+ * @param {string} [reqStartYm]           optional YYYY-MM: the user's first month (clamps start)
+ * @param {string} [reqEndYm]             optional YYYY-MM: the user's last month (clamps end)
+ * electricThrough/gasThrough/deliveryThrough/lastBillDate are the latest bill dates INSIDE startYm..endYm
+ * (a date after the last day of endYm shows that last day). They are for the Generate Report dialog only; no printed page uses them.
+ * @returns {{startYm:string, endYm:string, yms:string[], lastBillDate:string,
+ *   gasThrough:string, electricThrough:string, deliveryThrough:string, hasData:boolean,
+ *   complete:boolean, missing:Array, waitingText:string}}
+ *   yms = every month from startYm to endYm, startYm/endYm '' when no meter has a bill after its baseline.
+ *
+ * Completeness (Matt 2026-10-27): the period is complete only when EVERY included monthly meter
+ * (electric, gas) has a bill for EVERY month of the requested range (reqStartYm..reqEndYm, else
+ * startYm..endYm). `missing` lists {commodity, building, meter, ym} for each gap and `waitingText`
+ * is the plain line "waiting for Gas High School Sep 2026, ... bills". A delivery meter (propane)
+ * has no monthly bill, so it never makes a period incomplete. Completeness does NOT change any
+ * printed number and the report never prints it; the Generate Report dialog and the file name use it.
+ */
+function getReportCoverage(projId, meterIds, reqStartYm, reqEndYm, buildingIds) {
+  const idSet = meterIds && meterIds.length ? new Set(meterIds.map(String)) : null;
+  const bldgSet = buildingIds && buildingIds.length ? new Set(buildingIds.map(String)) : null;
+  const energy = ['Electric', 'Gas', 'Propane'];
+  let first = '',
+    last = '';
+  const billDates = []; // {commodity, ym, d}: clamped to the period below
+  const monthly = []; // monthly-billed meters: {m, building, blEnd, have}
+  getUDBldgs(projId).forEach((b) =>
+    (b.meters || []).forEach((m) => {
+      if (bldgSet && !bldgSet.has(String(b.id))) return;
+      if (_rptMeterEligible(projId, m)) return;
+      if (idSet && !idSet.has(String(m.id))) return;
+      if (energy.indexOf(m.commodity) < 0) return;
+      const bl = m.baseline;
+      if (!bl || !bl.months || bl.months.length < 3) return;
+      const blEnd = bl.months.slice().sort().pop();
+      const bills = (m.bills || []).filter((x) => x && (x.end || x.start));
+      const have = {};
+      if (!DELIVERY_COMMODITIES.has(m.commodity))
+        monthly.push({ m: m, building: b.name || 'Unnamed', blEnd: blEnd, have: have });
+      bills.forEach((x) => {
+        const ym = billMonth(x, m.bills);
+        if (!ym || ym <= blEnd) return;
+        have[ym] = true;
+        if (!first || ym < first) first = ym;
+        if (!last || ym > last) last = ym;
+        billDates.push({ commodity: m.commodity, ym: ym, d: String(x.end || x.start).slice(0, 10) });
+      });
+    }),
+  );
+  let startYm = first,
+    endYm = last;
+  if (reqStartYm && startYm && reqStartYm > startYm) startYm = reqStartYm;
+  if (reqEndYm && endYm && reqEndYm < endYm) endYm = reqEndYm;
+  const span = (a, z) => {
+    const out = [];
+    if (!a || !z) return out;
+    let y = Number(a.slice(0, 4)),
+      mo = Number(a.slice(5, 7));
+    while (y + '-' + String(mo).padStart(2, '0') <= z) {
+      out.push(y + '-' + String(mo).padStart(2, '0'));
+      if (++mo > 12) {
+        mo = 1;
+        y++;
+      }
+    }
+    return out;
+  };
+  const yms = span(startYm, endYm);
+  const through = { Electric: '', Gas: '', Propane: '' };
+  const periodEndDate = endYm ? endYm + '-' + String(new Date(Number(endYm.slice(0, 4)), Number(endYm.slice(5, 7)), 0).getDate()).padStart(2, '0') : '';
+  billDates.forEach((x) => {
+    if (x.ym < startYm || x.ym > endYm) return;
+    const d = x.d > periodEndDate ? periodEndDate : x.d; // a bill that runs past the period end shows the period end
+    if (d > through[x.commodity]) through[x.commodity] = d;
+  });
+  if (!yms.length) {
+    startYm = '';
+    endYm = '';
+  }
+  // Completeness over the range the user asked for (not clamped to the months with bills).
+  const wantYms = span(reqStartYm || first, reqEndYm || last);
+  const missing = [];
+  monthly.forEach((x) =>
+    wantYms.forEach((ym) => {
+      if (ym > x.blEnd && !x.have[ym])
+        missing.push({ commodity: x.m.commodity, building: x.building, meter: x.m.id, ym: ym });
+    }),
+  );
+  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const names = missing.map(
+    (x) => x.commodity + ' ' + x.building + ' ' + MON[Number(x.ym.slice(5, 7)) - 1] + ' ' + x.ym.slice(0, 4),
+  );
+  const waitingText = names.length
+    ? 'waiting for ' + names.slice(0, 6).join(', ') + (names.length > 6 ? ' and ' + (names.length - 6) + ' more' : '') + ' bills'
+    : '';
+  const lastBillDate = [through.Electric, through.Gas].reduce((a, x) => (x > a ? x : a), '');
+  return {
+    startYm: startYm,
+    endYm: endYm,
+    yms: yms,
+    lastBillDate: lastBillDate,
+    electricThrough: through.Electric,
+    gasThrough: through.Gas,
+    deliveryThrough: through.Propane,
+    hasData: yms.length > 0,
+    complete: yms.length > 0 && missing.length === 0,
+    missing: missing,
+    waitingText: waitingText,
+  };
+}
+
+// The first and last month a report request asks for: a quarter picked -> its 3 months; a custom
+// range -> the two months typed; anything else -> null (the months with bills decide). Used with
+// getReportCoverage by collectReportData and by the Generate Report dialog.
+function reportRequestRange(selectedPeriod) {
+  const sp = selectedPeriod;
+  if (!sp) return null;
+  if (sp.quarter && sp.year) {
+    const a = (Number(sp.quarter) - 1) * 3 + 1;
+    return {
+      startYm: sp.year + '-' + String(a).padStart(2, '0'),
+      endYm: sp.year + '-' + String(a + 2).padStart(2, '0'),
+    };
+  }
+  return sp.startYm || sp.endYm ? { startYm: sp.startYm || '', endYm: sp.endYm || '' } : null;
+}

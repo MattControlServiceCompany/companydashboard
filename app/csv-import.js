@@ -4762,6 +4762,7 @@ function collectWeatherData(allBldgMeters, reportYMs) {
     }
     // Accumulate baseline weather per calendar month (averaged later)
     blRows.forEach((r) => {
+      if (r.hdd == null && r.cdd == null) return; // no weather row for this month: not counted, shown as no data
       const mo = parseInt(r.ym.split('-')[1]) - 1;
       if (!byYm['bl_' + mo]) byYm['bl_' + mo] = { hdd: 0, cdd: 0, count: 0 };
       byYm['bl_' + mo].hdd += r.hdd || 0;
@@ -4770,7 +4771,7 @@ function collectWeatherData(allBldgMeters, reportYMs) {
     });
     // ALL post-baseline weather by YYYY-MM (not just reporting period)
     allRows.forEach((r) => {
-      if (r.ym > (blEnd || '')) {
+      if (r.ym > (blEnd || '') && (r.hdd != null || r.cdd != null)) {
         if (!byYm[r.ym]) byYm[r.ym] = { hdd: 0, cdd: 0, count: 0 };
         byYm[r.ym].hdd += r.hdd || 0;
         byYm[r.ym].cdd += r.cdd || 0;
@@ -4798,17 +4799,18 @@ function collectWeatherData(allBldgMeters, reportYMs) {
     var calMo = curMo - 1;
     var blData = byYm['bl_' + calMo];
     var curData = byYm[_ym];
-    var hddBl = blData ? blData.hdd / blData.count : 0;
-    var cddBl = blData ? blData.cdd / blData.count : 0;
-    var hddCur = curData ? curData.hdd / curData.count : 0;
-    var cddCur = curData ? curData.cdd / curData.count : 0;
+    // null = no weather row for the month ("no weather data"); never 0/0. Totals add only months that have data.
+    var hddBl = blData ? blData.hdd / blData.count : null;
+    var cddBl = blData ? blData.cdd / blData.count : null;
+    var hddCur = curData ? curData.hdd / curData.count : null;
+    var cddCur = curData ? curData.cdd / curData.count : null;
     var inPeriod = rpSet.has(_ym);
     monthly.push({ month: _ym, hddBl: hddBl, hddCur: hddCur, cddBl: cddBl, cddCur: cddCur, inPeriod: inPeriod });
     if (inPeriod) {
-      totHddBl += hddBl;
-      totHddCur += hddCur;
-      totCddBl += cddBl;
-      totCddCur += cddCur;
+      totHddBl += hddBl || 0;
+      totHddCur += hddCur || 0;
+      totCddBl += cddBl || 0;
+      totCddCur += cddCur || 0;
     }
     curMo++;
     if (curMo > 12) {

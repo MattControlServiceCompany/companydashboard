@@ -194,8 +194,6 @@ function buildCtx(extraKeys) {
             if (Array.isArray(v) && v.length) return v;
           } catch (e) {}
         }
-        const p = path.join(REPO, 'weather-data', k.slice(7) + '.json');
-        if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf8'));
       }
       return d;
     },

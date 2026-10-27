@@ -44,6 +44,7 @@ vm.runInContext(fs.readFileSync(path.join(root, 'computations/fan-savings.js'), 
 vm.runInContext(fs.readFileSync(path.join(root, 'computations/cost-lines.js'), 'utf8'), sb);
 vm.runInContext(fs.readFileSync(path.join(root, 'computations/rates.js'), 'utf8'), sb);
 vm.runInContext(fs.readFileSync(path.join(root, 'computations/normalization.js'), 'utf8'), sb);
+vm.runInContext(fs.readFileSync(path.join(root, 'computations/csc.js'), 'utf8'), sb); // projHasContract (savings.js) reads getProjectContract
 vm.runInContext(fs.readFileSync(path.join(root, 'computations/savings.js'), 'utf8'), sb);
 require('./bill-flags-sandbox.js').addBillFlagEngine(sb); // computeSeasonalBldgRates asks the flag engine which bills to leave out
 // Real functions, cut out of their files: the baseline-bill filter, the project baseline fallback, the matrix pricing.

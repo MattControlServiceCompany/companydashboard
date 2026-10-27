@@ -21,7 +21,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net; img-src 'self' data: blob:; connect-src 'self' data: blob: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://rrdugvwxtddjywqykphf.supabase.co; worker-src 'self' blob:; frame-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self';"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; font-src 'self' data: https://fonts.gstatic.com https://cdn.jsdelivr.net; img-src 'self' data: blob:; connect-src 'self' data: blob: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://rrdugvwxtddjywqykphf.supabase.co https://api.weatherdatadepot.com; worker-src 'self' blob:; frame-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self';"
     />
     <title>CompanyHub — Energy Department</title>
     <link rel="stylesheet" href="lib/theme.css?v=175" />
@@ -375,37 +375,32 @@
         display: flex;
         align-items: center;
         justify-content: space-between;
-        height: 54px;
-        padding: 0 24px;
+        gap: 4px 12px;
+        min-height: 40px;
+        padding: 0 12px;
         background: rgba(12, 15, 26, 0.95);
         backdrop-filter: blur(16px);
         border-bottom: 1px solid var(--border);
       }
-      .t-brand {
+      /* One header row: tabs on the left (department tab, or the open project's tabs), bell/user/Sign Out on the right.
+         Tabs wrap to a second line when they do not fit — never scroll, never hidden. */
+      .hdr-tabs {
         display: flex;
+        flex: 1 1 0;
+        min-width: 0;
         align-items: center;
-        gap: 10px;
       }
-      .brand-mark {
-        width: 28px;
-        height: 28px;
-        border-radius: 7px;
-        background: linear-gradient(135deg, var(--accent), var(--teal));
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 13px;
-        font-weight: 800;
-        color: var(--on-brand);
-      }
-      .brand-name {
-        font-size: 16px;
-        font-weight: 800;
+      .tab-lbl {
+        display: inline-block;
+        padding: 2px 0;
+        border-bottom: 2px solid transparent;
+        line-height: 1.2;
       }
       .t-right {
         display: flex;
         align-items: center;
-        gap: 9px;
+        gap: 8px;
+        flex: 0 0 auto;
       }
       .help-btn {
         position: relative;
@@ -431,31 +426,17 @@
       .user-chip {
         display: flex;
         align-items: center;
-        gap: 8px;
         background: var(--s1);
         border: 1px solid var(--border);
-        border-radius: 8px;
-        padding: 5px 10px;
-      }
-      .u-av {
-        width: 22px;
-        height: 22px;
-        border-radius: 5px;
-        background: linear-gradient(135deg, var(--accent), var(--teal));
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 9px;
-        font-weight: 700;
-        color: var(--on-brand);
+        border-radius: 7px;
+        padding: 3px 10px;
+        height: 28px;
       }
       .u-name {
         font-size: 12px;
         font-weight: 500;
-      }
-      .u-dept {
-        font-size: 10px;
-        color: var(--text2);
+        color: var(--text);
+        white-space: nowrap;
       }
       .sync-btn {
         display: flex;
@@ -502,8 +483,8 @@
       }
       .icon-btn {
         position: relative;
-        width: 32px;
-        height: 32px;
+        width: 28px;
+        height: 28px;
         border-radius: 7px;
         border: 1px solid var(--border);
         background: var(--s1);
@@ -536,7 +517,8 @@
         background: transparent;
         border: 1px solid var(--border);
         border-radius: 7px;
-        padding: 6px 12px;
+        padding: 0 12px;
+        height: 28px;
         cursor: pointer;
         transition: all 0.18s;
       }
@@ -545,40 +527,23 @@
         color: var(--red);
       }
 
-      /* -- DEPT TABS -- */
-      .dept-nav {
-        flex-shrink: 0;
-        background: var(--s1);
-        border-bottom: 1px solid var(--border);
-        padding: 0 24px;
-        display: flex;
-        overflow-x: auto;
-      }
+      /* -- DEPT TAB (in the header row) -- */
       .dept-tab {
         display: flex;
         align-items: center;
-        gap: 7px;
-        padding: 12px 16px;
+        padding: 6px 12px;
         font-size: 13px;
         font-weight: 500;
-        color: var(--text2);
+        color: var(--text);
         cursor: pointer;
         border: none;
         background: none;
-        border-bottom: 2px solid transparent;
-        transition: all 0.16s;
         white-space: nowrap;
         font-family: var(--font);
         text-decoration: none;
       }
-      .dept-tab:hover {
-        color: var(--text);
-        text-decoration: none;
-      }
-      .dept-tab.active {
-        color: var(--accent);
-        border-bottom-color: var(--accent);
-        text-decoration: none;
+      .dept-tab.active .tab-lbl {
+        border-bottom-color: var(--em);
       }
 
       /* -- SIDEBAR LAYOUT -- */
@@ -816,7 +781,8 @@
       /* -- TOAST -- */
       .toast {
         position: fixed;
-        top: 62px; /* below the 54px .topbar: a toast never covers the header */
+        top: 48px; /* below the 40px header row: a toast never covers the header */
+        pointer-events: none; /* a hidden toast must not catch clicks meant for the header tabs */
         left: 50%;
         transform: translateX(-50%) translateY(-80px);
         z-index: 999;
@@ -834,6 +800,7 @@
         transition: all 0.32s cubic-bezier(0.34, 1.56, 0.64, 1);
       }
       .toast-show {
+        pointer-events: auto;
         transform: translateX(-50%) translateY(0);
         opacity: 1;
       }
@@ -1173,10 +1140,6 @@
       }
       [data-theme='light'] .topbar {
         background: rgba(240, 242, 247, 0.97);
-        border-bottom-color: var(--border);
-      }
-      [data-theme='light'] .dept-nav {
-        background: var(--s1);
         border-bottom-color: var(--border);
       }
       [data-theme='light'] .theme-pill.active {
@@ -1767,29 +1730,8 @@
           grid-template-columns: repeat(2, 1fr);
         }
 
-        /* Topbar overflow — hide verbose text at narrow widths */
-        .u-name,
-        .u-dept {
-          display: none;
-        }
         .sync-btn {
           display: none;
-        }
-        .topbar {
-          padding: 0 12px;
-        }
-        .brand-name {
-          font-size: 14px;
-        }
-
-        /* Dept tabs — touch scrolling */
-        .dept-nav {
-          -webkit-overflow-scrolling: touch;
-          scroll-snap-type: x mandatory;
-        }
-        .dept-tab {
-          scroll-snap-align: start;
-          padding: 10px 12px;
         }
       }
     </style>
@@ -3123,6 +3065,7 @@
           display: block !important;
           height: auto !important;
           overflow: visible !important;
+          background: #fff !important;
         }
         /* Dark-UI toolbar (Close/Save/Export buttons) and the on-screen "PAGE X OF Y" labels
            above each page are preview-only chrome — never part of the printed report design.
@@ -3141,6 +3084,8 @@
           overflow: visible !important;
           padding: 0 !important;
           gap: 0 !important;
+          /* The screen style is var(--s3) (dark navy) inline; print paper is white (plan 3.1). */
+          background: #fff !important;
         }
         /* .rpt-preview-page is the v2 preview's per-page wrapper (report-preview.js
            _showPreview()) around each .rpt-page — a section the user toggled off in the
@@ -3924,6 +3869,12 @@
         font-family: var(--mono);
         font-size: 12px;
       }
+      /* contract rates are fixed by the agreement: read-only inputs (energy-savings.js RATE_LOCK_ATTRS) */
+      .sv-rate-inp[readonly],
+      .sv-rate-field input[readonly] {
+        color: var(--text2);
+        cursor: not-allowed;
+      }
       .sv-fin-host {
         position: sticky;
         left: 12px;
@@ -4477,175 +4428,46 @@
         font-family: var(--mono);
         color: var(--text);
       }
-      /* ── Project tab bar — evenly-padded tabs, always show icons ── */
-      /* Strategy (128f49b2): forcing all 16 tabs to the SAME box width (old flex:1 1 0)
-         made short labels ("Hours") sit in the same box as long labels ("Equipment
-         Matrix"), and with left-aligned text that produced very different visual
-         gaps between labels — the "not equally spaced" complaint. It also forced a
-         65px box at 1280px container width, which truncated almost every label
-         ("Dashboc", "Equipme", "BAS Trer" — measured, all 16 tabs affected).
-         Fix: each tab sizes to its OWN content + identical padding (flex: 1 0 auto,
-         flex-basis:auto, flex-shrink:0 so no label can ever be squeezed below its
-         natural width) and centers its label. Equal flex-grow lets tabs share any
-         leftover bar width equally at wide viewports. Content-measured natural
-         widths (icon+label, current font/padding) range 57px (Hours) – 113px
-         (Equipment Matrix); their sum (~1.4k px content + padding) exceeds the
-         available bar width at both 1280px and 2560px with 16 tabs, so .pd-tabs
-         keeps overflow-x:auto (thin scrollbar) as the no-truncation fallback —
-         matching the horizontal-scroll pattern already used by other subtab bars
-         in this app (.ma-tabs). Icons (.pdt-ico) are NEVER hidden. */
+      /* ── Project tab bar — lives in the header row (#pdTabBar inside #hdrTabs) ──
+         Text-only tabs. Tabs size to their own label plus identical padding and wrap
+         to a second line when the row is full: no scrolling, no arrows, nothing hidden.
+         The active underline is the border under the label itself, so it touches the text. */
       .pd-tabs {
         display: flex;
-        gap: 0;
-        padding: 8px 8px 0;
-        border-bottom: 1px solid var(--border);
-        flex-shrink: 0;
-        overflow-x: auto;
-        flex-wrap: nowrap;
-        scrollbar-width: thin;
-        scrollbar-color: var(--border2) transparent;
-        flex: 1 1 auto;
-        min-width: 0;
-      }
-      .pd-tabs::-webkit-scrollbar {
-        height: 3px;
-      }
-      .pd-tabs::-webkit-scrollbar-thumb {
-        background: var(--border2);
-        border-radius: 2px;
-      }
-      /* ── Tab bar overflow affordance (fixes item: tabs cut off / unreachable) ──
-         Root cause: the 128f49b2 equalize-width fix makes EVERY tab pay the widest
-         tab's own natural width (measured ~133px), so total bar width = tabCount x
-         133px regardless of viewport. That fits at a full 3440px ultrawide window
-         (measured: no overflow, ~1000px to spare) but Matt documented that he
-         actively resizes browser windows narrower on the same ultrawide monitor
-         (reference_screen_resolution.md: "reproduce across a live resize 3440 ->
-         ~1720"); at those in-between widths .pd-tabs DOES overflow (confirmed
-         empirically at 1720px: last tab only ~75% visible). The existing fallback
-         was overflow-x:auto with a 3px scrollbar — present but practically
-         invisible against the dark theme, with zero other cue that more tabs
-         exist. That is the actual defect: not that it overflows (scrolling here
-         is an accepted, intentional fallback per the 128f49b2 comment above), but
-         that when it does, there was no discoverable way to know more tabs exist.
-         Fix: wrap .pd-tabs in .pd-tabs-wrap and add (a) edge gradient fades and
-         (b) click-to-scroll chevron buttons, both shown/hidden via JS
-         (_updateProjTabScrollAffordance in core.js) based on actual scrollWidth vs
-         clientWidth — so they only appear when there really is more to reach. */
-      .pd-tabs-wrap {
-        position: relative;
-        display: flex;
-        align-items: stretch;
-        min-width: 0;
-        flex-shrink: 0;
-      }
-      .pd-tabs-fade {
-        position: absolute;
-        top: 0;
-        bottom: 0;
-        width: 28px;
-        pointer-events: none;
-        z-index: var(--z-chrome, 10);
-        opacity: 0;
-        transition: opacity 0.15s;
-      }
-      .pd-tabs-fade.left {
-        left: 0;
-        background: linear-gradient(to right, var(--s2), transparent);
-      }
-      .pd-tabs-fade.right {
-        right: 0;
-        background: linear-gradient(to left, var(--s2), transparent);
-      }
-      .pd-tabs-wrap.can-scroll-left .pd-tabs-fade.left,
-      .pd-tabs-wrap.can-scroll-right .pd-tabs-fade.right {
-        opacity: 1;
-      }
-      .pd-tabs-arrow {
-        position: absolute;
-        top: 0;
-        bottom: 0;
-        width: 20px;
-        display: none;
+        flex-wrap: wrap;
         align-items: center;
-        justify-content: center;
-        background: var(--s2);
-        border: none;
-        cursor: pointer;
-        color: var(--text2);
-        font-size: 14px;
-        line-height: 1;
-        z-index: 11;
-      }
-      .pd-tabs-arrow:hover {
-        color: var(--em);
-        background: var(--s3);
-      }
-      .pd-tabs-arrow.left {
-        left: 0;
-      }
-      .pd-tabs-arrow.right {
-        right: 0;
-      }
-      .pd-tabs-wrap.can-scroll-left .pd-tabs-arrow.left,
-      .pd-tabs-wrap.can-scroll-right .pd-tabs-arrow.right {
-        display: flex;
+        gap: 0;
+        min-width: 0;
+        flex: 1 1 auto;
       }
       .pdt {
         font-family: var(--font);
-        font-size: 10.5px;
+        font-size: 12px;
         font-weight: 500;
-        padding: 6px 14px;
-        border-radius: 6px 6px 0 0;
+        padding: 6px 10px;
         border: none;
         cursor: pointer;
-        color: var(--text2);
+        color: var(--text);
         background: transparent;
-        border-bottom: 2px solid transparent;
-        transition: all 0.13s;
         user-select: none;
         display: inline-flex;
         align-items: center;
-        justify-content: center;
-        gap: 3px;
         white-space: nowrap;
-        /* 128f49b2 (reopened): uniform width, not equal growth on unequal bases — see
-           _equalizeProjTabWidths() in core.js, which measures the widest tab's natural
-           content width and writes it into --pdt-w. The `auto` fallback keeps tabs usable
-           (content-sized, no collapse) for the one frame before JS runs or if JS errors. */
-        flex: 0 0 var(--pdt-w, auto);
       }
-      .pdt-ico {
-        font-style: normal;
-        font-size: 13px;
-        line-height: 1;
-        flex-shrink: 0;
-        /* Icons always visible — never hidden by container query */
+      .pdt:hover .tab-lbl {
+        border-bottom-color: var(--border2);
       }
       .pdt.active {
-        color: var(--em);
-        border-bottom-color: var(--em);
         font-weight: 600;
+      }
+      .pdt.active .tab-lbl {
+        border-bottom-color: var(--em);
       }
       .pdt.drag-over {
         border-left: 2px solid var(--accent);
       }
       .pdt.dragging {
         opacity: 0.4;
-      }
-      /* ── Fallback for very narrow windows (<900px container): tighten padding only ── */
-      /* Icons stay visible even here — only padding is reduced.                         */
-      @container proj-detail (max-width: 900px) {
-        .pd-tabs {
-          padding: 6px 4px 0;
-        }
-        .pdt {
-          padding: 5px 8px;
-          font-size: 10px;
-        }
-        .pdt-ico {
-          font-size: 11px;
-        }
       }
       .ptab {
         display: none;
@@ -6658,7 +6480,8 @@
       }
       .toast {
         position: fixed;
-        top: 62px; /* below the 54px .topbar: a toast never covers the header */
+        top: 48px; /* below the 40px header row: a toast never covers the header */
+        pointer-events: none; /* a hidden toast must not catch clicks meant for the header tabs */
         left: 50%;
         transform: translateX(-50%) translateY(-80px);
         z-index: 999;
@@ -6676,6 +6499,7 @@
         transition: all 0.32s cubic-bezier(0.34, 1.56, 0.64, 1);
       }
       .toast-show {
+        pointer-events: auto;
         transform: translateX(-50%) translateY(0);
         opacity: 1;
       }
@@ -9206,17 +9030,13 @@
 
     <div id="app">
       <header class="topbar" data-fb="energy.topbar">
-        <div class="t-brand">
-          <div class="brand-mark">C</div>
-          <span class="brand-name">CompanyHub</span>
-        </div>
+        <nav class="hdr-tabs" id="hdrTabs" data-fb="energy.dept-nav">
+          <button class="dept-tab active" id="hdrDeptTab" data-fb="energy.dept-nav.energy"><span class="tab-lbl">Energy Department</span></button>
+          <div class="pd-tabs" id="pdTabBar" style="display: none"></div>
+        </nav>
         <div class="t-right">
           <div class="user-chip">
-            <div class="u-av" id="topAv">JS</div>
-            <div>
-              <div class="u-name" id="topName">Loading...</div>
-              <div class="u-dept">Energy Department</div>
-            </div>
+            <div class="u-name" id="topName">Loading...</div>
           </div>
           <!-- [COMMENTED OUT] Sync to Outlook topbar button
           <button class="sync-btn" data-fb="energy.topbar.sync-btn" onclick="showToast('Syncing to Outlook...')">
@@ -9288,10 +9108,6 @@
           <button class="signout" data-fb="energy.topbar.signout-btn" onclick="signOut()">Sign Out</button>
         </div>
       </header>
-
-      <nav class="dept-nav" data-fb="energy.dept-nav">
-        <button class="dept-tab active" data-fb="energy.dept-nav.energy">⚡ Energy Department</button>
-      </nav>
 
       <div class="app-wrap">
         <aside class="sidebar" data-ui-id="en-sidebar" data-fb="energy.sidebar">
@@ -16367,6 +16183,7 @@
     <script src="computations/rates.js?v=175"></script>
     <script src="computations/regression.js?v=175"></script>
     <script src="computations/normalization.js?v=175"></script>
+    <script src="computations/weather-refresh.js?v=175"></script>
     <script src="computations/eui.js?v=175"></script>
     <script src="computations/hvac-enduse.js?v=175"></script>
     <script src="computations/end-use.js?v=175"></script>

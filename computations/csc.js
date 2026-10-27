@@ -32,9 +32,10 @@ function computeCscSplit(savings, cscCompensation, mode, fixedAmount, nMonths) {
   mode = mode || 'pct';
   var cscPct = (parseFloat(cscCompensation) || 0) / 100;
   var csc, client;
-  if (!savings || savings <= 0) {
+  savings = floorQuarterSavings(savings); // computations/savings.js: no share of a negative quarter, to either side
+  if (savings <= 0) {
     csc = 0;
-    client = savings || 0;
+    client = 0;
   } else if (mode === 'pct') {
     csc = savings * cscPct;
     client = savings - csc;

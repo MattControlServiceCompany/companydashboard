@@ -50,6 +50,8 @@ const MONTHS = ['2025-01', '2025-02', '2025-03', '2025-04'];
 
 const src = [
   monthRuleSource(),
+  fnSource(read('computations/normalization.js'), 'getContractFrozenBaseline'),
+  fnSource(read('computations/normalization.js'), 'contractFrozenMoMap'),
   fnSource(read('computations/normalization.js'), 'buildMoMap'),
   fnSource(read('app/budget.js'), 'getActualForMonth'),
   fnSource(
