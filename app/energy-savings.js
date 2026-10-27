@@ -54,6 +54,11 @@ function _looksLikeAddress(s) {
 // first later token that looks numeric/decimal-ish (a bled-in date or dollar
 // amount) or is purely symbolic ("|", "=="), instead of requiring a
 // perfectly formed date pattern.
+// A printed field label is never an address ("Statement Date", "Account Number"). One rule for every provider.
+const _ADDR_LABEL_RE = /^\s*(statement\s+date|account\s+number|active\s+deposit|billing\s+date|due\s+date|service\s+address|customer\s+name|previous\s+balance|total\s+amount\s+due|rate)\b[^A-Za-z]*$/i;
+function _addrIsLabel(s) {
+  return typeof s === 'string' && _ADDR_LABEL_RE.test(s);
+}
 function _stripAddressTrailingJunk(raw) {
   if (!raw) return null;
   // Fix (2026-09-25, bill-panel-followup, case 6): WRE's
@@ -7458,11 +7463,10 @@ function _evgApplyAutofix(bills) {
 // Each identity below was checked to the cent on 3 or more real pages (2026-10-20 ground-truth check). Each
 // feeds the one fill-or-hold rule _lbg_autofix; the field formats come from the layout facts
 // (computations/bill-layout.js). A value is filled only when 2 or more sources agree.
-// Therms of a KGS bill: Mcf x meter constant x 10 (1 Mcf = 1 Dth). The one place this is computed.
-function _kgsThermsOf(mcfText, constantText) {
+// Therms of a KGS bill: Billed Mcf x 10 (1 Mcf = 1 Dth). Billed Mcf already includes the meter constant. The one place this is computed.
+function _kgsThermsOf(mcfText) {
   const mcf = parseBillNumber(mcfText);
-  const mult = parseBillNumber(constantText) || 1.0;
-  return mcf > 0 ? String(Math.round(convertUnit(mcf * mult, 'DTh', 'Therms') * 100) / 100) : null;
+  return mcf > 0 ? String(Math.round(convertUnit(mcf, 'DTh', 'Therms') * 100) / 100) : null;
 }
 // KGS Mcf billed. Runs when a source contradicts the printed Mcf. Sources: (present - previous read) / 10 x meter
 // constant; WNA = Mcf x WNA per Mcf and Cost of Gas = Mcf x Cost of Gas per Mcf, each to the cent (they only test).
@@ -7501,7 +7505,7 @@ function _kgsAutofixMcf(b) {
   if (fix.value != null && (mcf == null || Math.abs(fix.value - mcf) > 0.0005)) {
     const original = b.McfBilled;
     b.McfBilled = fix.value.toFixed(3);
-    b.NaturalGasTherms = _kgsThermsOf(b.McfBilled, b.MeterMultiplier);
+    b.NaturalGasTherms = _kgsThermsOf(b.McfBilled);
     b._auto_corrected_McfBilled = { original, corrected: b.McfBilled, reason: fix.reason };
   } else if (fix.value == null) {
     const why = (rolled ? 'The meter dial rolled over (' + prev + ' to ' + cur + '), so the printed Mcf cannot be proved from the reads. ' : '') + fix.reason;
@@ -11573,9 +11577,9 @@ const UTILITY_RULES = [
         const WNAPerMcf = meterRowM ? fixNum(meterRowM[9]) : null;
         const CostOfGasPerMcf = meterRowM ? fixNum(meterRowM[10]) : null;
 
-        // Therms = Mcf × Multiplier × 10. KGS states 1 Mcf = 1 Dth = 10 therms, so this uses UNIT_TO_BASE.DTh,
+        // Therms = Billed Mcf × 10 (Billed Mcf already includes the meter constant). KGS states 1 Mcf = 1 Dth = 10 therms, so this uses UNIT_TO_BASE.DTh,
         // not UNIT_TO_BASE.MCF (10.37). DECISION FOR MATT: which Mcf factor is right (2026-09-30 review).
-        const NaturalGasTherms = _kgsThermsOf(McfBilled, MeterMultiplier);
+        const NaturalGasTherms = _kgsThermsOf(McfBilled);
 
         // === BALANCE SECTION ===
         // All dollar-amount patterns use [\\d,.:] to capture values whether OCR renders decimal as
@@ -15512,6 +15516,7 @@ function _pageRule(page) {
 // the split happened.
 function _extractFileBills(text, rule) {
   const bills = _extractFileBillsRaw(text, rule);
+  for (const b of bills) if (b && _addrIsLabel(b.ServiceAddress)) b.ServiceAddress = null;
   // A gas start read that lost its leading digit is restored from the meter's last saved end read before the therms
   // are read from the meter reads (the autofix below uses the read difference).
   // (computations/bill-flags.js; a test sandbox that loads only the readers has no read-chain functions.)

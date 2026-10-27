@@ -2507,6 +2507,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.27.170', date: '2026-10-27', title: 'Gas bill reading and bill matching',
+    items: [
+      { type: 'fix', text: 'Bill reading: gas bills that print Billed Mcf no longer apply the meter constant twice.' },
+      { type: 'fix', text: 'Bill matching: a bill whose account number is not on file is proposed for the meter with the same service address and held for review; label text is never used as an address.' }
+    ]
+  },
   { v: 'v2026.10.27.169', date: '2026-10-27', title: 'Scanned bills read the same in every browser',
     items: [
       { type: 'fix', text: 'Bill reading: scanned bills now read the same in Firefox as in Chrome and Edge (slower in Firefox).' }

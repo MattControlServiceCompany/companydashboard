@@ -6440,6 +6440,31 @@ function _wreBuildingTagMatch(extracted) {
     _wreTagMatch: true,
   };
 }
+// Unit designator of an address ("# 306", "Apt 4B", "Unit 12"): lowercase letters+digits, or ''.
+function _addrUnit(a) {
+  const m = String(a || '').match(/(?:#|\b(?:apt|unit|ste|suite)\.?)\s*([a-z0-9]+)/i);
+  return m ? m[1].toLowerCase() : '';
+}
+// Same-commodity meters whose OWN recorded address (maddr) is the bill's address: an exact
+// street-normalized match, or the same street number + street name AND the same unit designator.
+// Meter-level, so it works when the building has no address of its own (apartment buildings).
+function _meterOwnAddressIs(m, serviceAddress) {
+  const billNorm = _normalizeAddr(serviceAddress);
+  if (!billNorm || _addrIsLabel(serviceAddress) || !m || !_normalizeAddr(m.maddr) || _addrIsLabel(m.maddr)) return false;
+  const billUnit = _addrUnit(serviceAddress);
+  return _normalizeAddr(m.maddr) === billNorm || (!!billUnit && billUnit === _addrUnit(m.maddr) && _streetIdentityMatch(serviceAddress, m.maddr));
+}
+function _meterAddressHits(serviceAddress, billComm) {
+  const hits = [];
+  if (!billComm) return hits;
+  forEachCustomerBuilding(projects, (bldg, proj) => {
+    for (const m of bldg.meters || []) {
+      if ((m.commodity || '').toLowerCase() !== billComm || !_meterOwnAddressIs(m, serviceAddress)) continue;
+      hits.push({ proj, bldg, meter: m, projId: proj.id, bldgId: bldg.id, meterId: m.id, customerId: _projCustomerId(proj) });
+    }
+  });
+  return hits;
+}
 function findMeterMatch(extracted) {
   if (!extracted) return null;
   // Fix (63a151a2): an implausible/garbled OCR AccountNumber (see
@@ -6621,9 +6646,14 @@ function findMeterMatch(extracted) {
             // own. With no same-commodity meter to disambiguate to, this
             // building yields no candidate and the bill falls through to
             // surface/create instead of a wrong-commodity attach.
-            candidateMeter = billComm
-              ? (bldg.meters || []).find((m) => (m.commodity || '').toLowerCase() === billComm)
-              : null;
+            // S5a (2026-10-27): with 2+ same-commodity meters, never take the first one (wrong unit).
+            // Pick the one whose own address names the bill, else the pick stays ambiguous.
+            if (billComm && sameCommMeters.length === 1) candidateMeter = sameCommMeters[0];
+            else if (billComm && sameCommMeters.length > 1) {
+              const own = sameCommMeters.filter((m) => _meterOwnAddressIs(m, extracted.ServiceAddress));
+              if (own.length === 1) candidateMeter = own[0];
+              else isAmbiguous = true;
+            }
           } else if (billComm) {
             if (sameCommMeters.length === 1) candidateMeter = sameCommMeters[0];
             else if (sameCommMeters.length > 1) isAmbiguous = true;
@@ -6809,7 +6839,18 @@ function findMeterMatch(extracted) {
   // Fix (fix/wre-building-name-match, 2026-09-15): tag+building-name fallback,
   // tried only when every match above found nothing. See _wreBuildingTagMatch
   // above for the full design/gating rationale.
-  const _result = bestMatch || addrMatch || commodityMatch || _wreBuildingTagMatch(extracted);
+  // Last resort (after identity, building address and commodity fallbacks found nothing): the bill's account
+  // is unknown to every meter, but one meter's OWN recorded address (street + unit) names this bill. The
+  // stored account is the likely error, so the bill is proposed to that meter and flagged (accountMismatch).
+  // matchType 'address' is never auto-saved (_isAutoRoutableMatch); the user confirms.
+  let meterAddrMatch = null;
+  if (!bestMatch && !addrMatch && !commodityMatch && billAcctRaw && billComm) {
+    const mHits = _meterAddressHits(extracted.ServiceAddress, billComm);
+    if (mHits.length === 1) meterAddrMatch = Object.assign(mHits[0], { matchType: 'address', fuzzyScore: 1, isAlias: false, accountMismatch: true });
+    else if (mHits.length > 1)
+      meterAddrMatch = Object.assign({}, mHits[0], { meter: undefined, meterId: null, matchType: 'ambiguous', accountMismatch: true, candidates: mHits.map((h) => ({ proj: h.proj, bldg: h.bldg, projId: h.projId, bldgId: h.bldgId, meterId: h.meterId, meter: h.meter })) });
+  }
+  const _result = bestMatch || addrMatch || commodityMatch || meterAddrMatch || _wreBuildingTagMatch(extracted);
   // BLOCKER C fix: a match resolves the real (customer-shared) building/meter, not one
   // specific project — `projId` above is only a representative project (whichever of the
   // customer's projects happens to already have the building scoped, or the first one
