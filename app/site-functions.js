@@ -2507,6 +2507,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.27.173', date: '2026-10-27', title: 'Gas bills keep all charge lines',
+    items: [
+      { type: 'fix', text: 'Bill upload and review: gas bills now keep the Weather Normalization and Delayed Payment charge lines, so the charge lines add up to the bill total.' }
+    ]
+  },
   { v: 'v2026.10.27.172', date: '2026-10-27', title: 'Bill upload: worked-out rates held for review',
     items: [
       { type: 'fix', text: 'Bill upload and review: a bill whose time-of-use rate had to be worked out is now held for review unless the earlier bill of the same meter for the same season shows the same rate.' }

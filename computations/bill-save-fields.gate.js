@@ -77,20 +77,25 @@ const META_KEYS = new Set([
   'eerRate',
   'ptsRate',
   'rkvaRate',
-  'mcfBilled', // KGS / Constellation detail lines
-  'deliveryCharge',
-  'gasSystemReliability',
-  'winterEventCost',
-  'previouslyBilled',
-  'previousBalance', // statement facts printed on the bill (no column yet)
-  'paymentsReceived',
-  'statementDate',
   '_manualReview', // extractor review markers
   '_manualReviewLabel',
   '_mmbtuRateMismatch',
   '_mmbtuUnverified',
   '_mmbtuMissingWithCharge',
 ]);
+// KGS / Constellation detail lines and statement facts printed on the bill (no column yet): read
+// from the one table in app/bill-analysis.js, so the gate has no copy of those keys.
+const BA_SRC = read('app/bill-analysis.js');
+const kgsStart = BA_SRC.indexOf('const KGS_GAS_SAVED_FIELDS = [');
+const kgsEnd = BA_SRC.indexOf('function kgsGasSavedEntries', kgsStart);
+assert.ok(kgsStart > 0 && kgsEnd > kgsStart, 'KGS_GAS_SAVED_FIELDS table not found in app/bill-analysis.js');
+const kgsSb = {};
+vm.createContext(kgsSb);
+vm.runInContext(
+  BA_SRC.slice(kgsStart, kgsEnd) + ';\nthis.ALL = [...KGS_GAS_SAVED_FIELDS, ...KGS_GAS_STATEMENT_FIELDS];',
+  kgsSb
+);
+kgsSb.ALL.forEach((f) => META_KEYS.add(f.savedKey));
 const META_PREFIX = [/^_wre/, /^Meter[12]_/]; // WoodRiver per-site components; per-meter split of a two-meter bill
 
 // ── The copies that steps 1-7 retired. These must never come back under any name. ──

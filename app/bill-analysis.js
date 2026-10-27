@@ -25,6 +25,39 @@ const CHARGE_FIELDS_GAS = [
   'FranchiseFee',
   'DelayedPaymentCharge',
 ];
+// The one table of KGS / Constellation gas fields a saved bill row carries next to the
+// Bills-table columns. Every save path and the duplicate-merge map build from it, and the
+// save-field gate (computations/bill-save-fields.gate.js) reads its saved keys from it.
+// KGS_GAS_SAVED_FIELDS: saved by all three paths. KGS_GAS_STATEMENT_FIELDS: also saved and
+// merged by _saveBillToMatchedMeter and _applyDupUpdate (statementDate is converted to ISO).
+const KGS_GAS_SAVED_FIELDS = [
+  { extractedKey: 'McfBilled', savedKey: 'mcfBilled' },
+  { extractedKey: 'DeliveryCharge', savedKey: 'deliveryCharge' },
+  { extractedKey: 'GasSystemReliability', savedKey: 'gasSystemReliability' },
+  { extractedKey: 'WeatherNormalization', savedKey: 'weatherNormalization' },
+  { extractedKey: 'DelayedPaymentCharge', savedKey: 'delayedPaymentCharge' },
+  { extractedKey: 'WinterEventCost', savedKey: 'winterEventCost' },
+  { extractedKey: 'PreviouslyBilled', savedKey: 'previouslyBilled' },
+];
+const KGS_GAS_STATEMENT_FIELDS = [
+  { extractedKey: 'PreviousBalance', savedKey: 'previousBalance' },
+  { extractedKey: 'PaymentsReceived', savedKey: 'paymentsReceived' },
+  { extractedKey: 'StatementDate', savedKey: 'statementDate' },
+];
+// Saved row entries for a bill object. Pass the caller's toISO to add the statement fields.
+function kgsGasSavedEntries(bill, toISOFn) {
+  const out = {};
+  KGS_GAS_SAVED_FIELDS.forEach((f) => {
+    out[f.savedKey] = bill[f.extractedKey] || null;
+  });
+  if (toISOFn) {
+    KGS_GAS_STATEMENT_FIELDS.forEach((f) => {
+      out[f.savedKey] =
+        f.extractedKey === 'StatementDate' ? toISOFn(bill.StatementDate) || null : bill[f.extractedKey] || null;
+    });
+  }
+  return out;
+}
 const CHARGE_FIELDS_WATER = ['WaterCharge', 'WaterProtectionFee', 'WaterDebtPayment', 'WaterFranchiseFee'];
 const CHARGE_FIELDS_SEWER = ['SewerCharge', 'SewerFranchiseFee'];
 const CHARGE_FIELDS_STORMWATER = ['StormWaterCharge'];
@@ -9346,14 +9379,7 @@ function _saveBillToMatchedMeter(extracted, match) {
     Meter2_KW: billValueOrBlank(extracted.Meter2_KW),
     Meter2_RKVA: billValueOrBlank(extracted.Meter2_RKVA),
     // Fix 3: KGS-specific fields
-    mcfBilled: extracted.McfBilled || null,
-    deliveryCharge: extracted.DeliveryCharge || null,
-    gasSystemReliability: extracted.GasSystemReliability || null,
-    winterEventCost: extracted.WinterEventCost || null,
-    previousBalance: extracted.PreviousBalance || null,
-    previouslyBilled: extracted.PreviouslyBilled || null,
-    paymentsReceived: extracted.PaymentsReceived || null,
-    statementDate: toISO(extracted.StatementDate) || null,
+    ...kgsGasSavedEntries(extracted, toISO),
   };
   const cp = billChargePartsOf(extracted._rates);
   if (cp) billRow._chargeParts = cp;
@@ -18963,14 +18989,7 @@ async function _applyDupUpdate(billIdx, extracted, dup) {
       Subtotal: 'subtotal',
       Tax: 'tax',
       // KGS-specific fields (Fix 3)
-      McfBilled: 'mcfBilled',
-      DeliveryCharge: 'deliveryCharge',
-      GasSystemReliability: 'gasSystemReliability',
-      WinterEventCost: 'winterEventCost',
-      PreviousBalance: 'previousBalance',
-      PreviouslyBilled: 'previouslyBilled',
-      PaymentsReceived: 'paymentsReceived',
-      StatementDate: 'statementDate',
+      ...Object.fromEntries([...KGS_GAS_SAVED_FIELDS, ...KGS_GAS_STATEMENT_FIELDS].map((f) => [f.extractedKey, f.savedKey])),
     };
     // Facilities is also stored in the newer `facilitiesCharge` key; keep both
     // synced when extraction provides a value, so the modal's Demand Charges
@@ -21345,11 +21364,7 @@ function confirmAssignBill() {
     unitPrice: billValueOrBlank(bill.UnitPrice),
     subtotal: billValueOrBlank(bill.Subtotal),
     tax: billValueOrBlank(bill.Tax),
-    mcfBilled: bill.McfBilled || null,
-    deliveryCharge: bill.DeliveryCharge || null,
-    gasSystemReliability: bill.GasSystemReliability || null,
-    winterEventCost: bill.WinterEventCost || null,
-    previouslyBilled: bill.PreviouslyBilled || null,
+    ...kgsGasSavedEntries(bill),
   };
   const cp = billChargePartsOf(bill._rates);
   if (cp) billRow._chargeParts = cp;

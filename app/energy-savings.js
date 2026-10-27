@@ -11651,9 +11651,9 @@ const UTILITY_RULES = [
         const GasSystemReliability = _gsrsN === null ? null : String((_gsrsN * (gsrsM[2] ? -1 : 1)).toFixed(2));
 
         // WeatherNormalization can also appear as a credit — capture optional CR and negate.
-        const wnaM = activeT.match(/Weather\s+Normalization\s+(?:Adj(?:ustment)?)?\s+\$?([\d,.:]+)(CR)?/i);
-        const _wnaN = wnaM ? parseBillNumber(fixNum(wnaM[1])) : null;
-        const WeatherNormalization = _wnaN === null ? null : String((_wnaN * (wnaM[2] ? -1 : 1)).toFixed(2));
+        const wnaM = activeT.match(/Weather\s+Normalization\s+(?:Adj(?:ustment)?)?\s+(-)?\$?(-)?([\d,.:]+)(CR)?/i);
+        const _wnaN = wnaM ? parseBillNumber(fixNum(wnaM[3])) : null;
+        const WeatherNormalization = _wnaN === null ? null : String((_wnaN * (wnaM[1] || wnaM[2] || wnaM[4] ? -1 : 1)).toFixed(2));
 
         const costGasM = activeT.match(/Cost\s+of\s+Gas\s+\$?([\d,.:]+)/i);
         const GasCharge = fixNum(costGasM ? costGasM[1] : null);
@@ -11675,9 +11675,10 @@ const UTILITY_RULES = [
         const { FranchiseFee, FranchiseFee1, FranchiseFee2 } = _kgsFranchiseTotals(FranchiseFeeItems);
 
         // Delayed Payment Charge — late-fee line that appears on some KGS bills.
-        // Stored as a positive value (it adds to the total, like all other charges).
-        const delayedPayM = activeT.match(/Delayed\s+Payment\s+Charge\s+\$?([\d,.]+)/i);
-        const DelayedPaymentCharge = delayedPayM ? fixNum(delayedPayM[1]) : null;
+        // Positive when printed plain (it adds to the total); a minus sign or CR suffix stores it negative.
+        const delayedPayM = activeT.match(/Delayed\s+Payment\s+Charge\s+(-)?\$?(-)?([\d,.]+)(CR)?/i);
+        const _delN = delayedPayM ? parseBillNumber(fixNum(delayedPayM[3])) : null;
+        const DelayedPaymentCharge = _delN === null ? null : String((_delN * (delayedPayM[1] || delayedPayM[2] || delayedPayM[4] ? -1 : 1)).toFixed(2));
 
         // "Total Current Charges" — OCR sometimes inserts "___ $" before the dollar amount.
         // Old pattern: "Total\s+Current\s+Charges\s+\$?(\d+)" — fails when "___" appears.
@@ -11709,7 +11710,7 @@ const UTILITY_RULES = [
             label: /Gas\s+System\s+Reliability\s+Surcharge/gi,
             raw: gsrsM ? gsrsM[1] : null,
           },
-          { field: 'WeatherNormalization', label: /Weather\s+Normalization/gi, raw: wnaM ? wnaM[1] : null },
+          { field: 'WeatherNormalization', label: /Weather\s+Normalization/gi, raw: wnaM ? wnaM[3] : null },
           { field: 'GasCharge', label: /Cost\s+of\s+Gas(?!\s*\/)/gi, raw: costGasM ? costGasM[1] : null },
           {
             field: 'WinterEventCost',

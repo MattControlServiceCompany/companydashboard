@@ -16,7 +16,7 @@ async function launchBrowser(task, opts) {
     try {
       await close();
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 });
     }
   };
   return ctx;

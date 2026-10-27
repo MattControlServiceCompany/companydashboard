@@ -43,6 +43,8 @@ const ctx = vm.createContext({
 });
 vm.runInContext(read('lib/formatting.js'), ctx);
 vm.runInContext(read('computations/savings.js'), ctx);
+// The one KGS saved-field table (the merge map in _applyDupUpdate reads it).
+vm.runInContext(src.slice(src.indexOf('const KGS_GAS_SAVED_FIELDS = ['), src.indexOf('function kgsGasSavedEntries')), ctx);
 [
   'function _dupHasValue',
   'function _dupApplyRow',
