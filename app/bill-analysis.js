@@ -2135,6 +2135,20 @@ function _kgsRecoverSuspectLine(b) {
   delete b._kgsSuspectLines;
 }
 
+// For each account (and commodity) in one extraction, the meter's last SAVED bill before the file's first bill of that
+// account, in the shape of an extracted bill (the one reader of saved bills: _priorSavedBillOf). The read-chain step
+// walks it as the previous bill.
+function _priorSavedBillsOfFile(bills) {
+  const first = new Map();
+  for (const b of bills) {
+    if (!b || !b.BillingPeriodStart || _isMultiMeterBill(b)) continue;
+    const key = String(b.AccountNumber || '').replace(/[\s\-]/g, '') + '|' + (b.Commodity || '');
+    const cur = first.get(key);
+    if (!cur || calcDays(cur.BillingPeriodStart, b.BillingPeriodStart, false) < 0) first.set(key, b);
+  }
+  return [...first.values()].map((b) => _priorSavedBillOf(b)).filter(Boolean);
+}
+
 // ── POST-EXTRACTION VERIFICATION ──
 // Uses historical meter data + logical rules to fix extraction errors
 // The formula a rate-based correction shows: every part's own qty x its own rate = its charge, to the cent, and the
@@ -3981,34 +3995,39 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
     //      kWhConsumed}, compute the 4th via the two relations:
     //         EndRead − StartRead = ReadDifference
     //         ReadDifference × MeterMultiplier = kWhConsumed
-    if (bills.length > 1) {
-      const sameAcct = (a, b) => {
-        const x = (a.AccountNumber || '').replace(/[\s\-]/g, '');
-        const y = (b.AccountNumber || '').replace(/[\s\-]/g, '');
-        if (x && y && x !== y) return false;
-        const ca = (a.Commodity || '').toLowerCase();
-        const cb = (b.Commodity || '').toLowerCase();
-        if (ca && cb && ca !== cb) return false;
-        return true;
-      };
-      // Day count comes from calcDays, the one date-difference function. The former local copy
-      // parsed "MM/DD/YYYY" as an invalid date, so every slash-dated bill read as infinitely far
-      // apart and the neighbor-read fills below never ran (backlog 446b569b).
-      const dayDiff = (d1, d2) => {
-        const n = calcDays(d1, d2, false);
-        return n === '' || isNaN(n) ? Infinity : Math.abs(n);
-      };
-      // 0. Misread repair (2026-10-14): the one rule correctExtractedReadChain (computations/bill-flags.js) fixes a
-      //    start or end read the reader misread, from the neighbor bill's read and the bill's own proven numbers.
-      //    It writes _auto_corrected_StartRead / _auto_corrected_EndRead, the record the extraction screen shows.
-      //    The mismatch flags in step 1 then see the repaired reads.
+    const sameAcct = (a, b) => {
+      const x = (a.AccountNumber || '').replace(/[\s\-]/g, '');
+      const y = (b.AccountNumber || '').replace(/[\s\-]/g, '');
+      if (x && y && x !== y) return false;
+      const ca = (a.Commodity || '').toLowerCase();
+      const cb = (b.Commodity || '').toLowerCase();
+      if (ca && cb && ca !== cb) return false;
+      return true;
+    };
+    // Day count comes from calcDays, the one date-difference function. The former local copy
+    // parsed "MM/DD/YYYY" as an invalid date, so every slash-dated bill read as infinitely far
+    // apart and the neighbor-read fills below never ran (backlog 446b569b).
+    const dayDiff = (d1, d2) => {
+      const n = calcDays(d1, d2, false);
+      return n === '' || isNaN(n) ? Infinity : Math.abs(n);
+    };
+    // 0. Misread repair (2026-10-14): the one rule correctExtractedReadChain (computations/bill-flags.js) fixes a
+    //    start or end read the reader misread, from the neighbor bill's read and the bill's own proven numbers.
+    //    The reads of the meter's last SAVED bill come in as the previous bill, so a file of one bill is checked too.
+    //    It writes _auto_corrected_StartRead / _auto_corrected_EndRead, the record the extraction screen shows.
+    //    The mismatch flags in step 1 then see the repaired reads.
+    // A file of one bill with no saved bill of the meter has no chain to check.
+    const _priorBills = _priorSavedBillsOfFile(bills);
+    if (bills.length > 1 || _priorBills.length)
       correctExtractedReadChain(
         bills,
         sameAcct,
         (a, b) => dayDiff(a.BillingPeriodEnd, b.BillingPeriodStart),
         (b) => (/gas/i.test(b.Commodity || '') ? b.NaturalGasTherms : b.kWhConsumed), // raw text: the rule parses it and reads its printed precision
         (b) => _isMultiMeterBill(b),
+        _priorBills,
       );
+    if (bills.length > 1) {
       // 1. Sequential-read mismatch flags — with meter-change / rollover
       //    auto-detection. When next.StartRead is near-zero while
       //    curr.EndRead is large, that's a new meter install or a

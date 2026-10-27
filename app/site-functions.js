@@ -2507,6 +2507,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.27.168', date: '2026-10-27', title: 'Scanned bills read more correctly',
+    items: [
+      { type: 'fix', text: 'Bill reading: scanned bills now read the meter multiplier, summer and winter lines, and gas meter reads correctly.' }
+    ]
+  },
   { v: 'v2026.10.26.167', date: '2026-10-26', title: 'PDF bill review scrolls as one page',
     items: [
       { type: 'change', text: 'PDF bill review: the whole page now scrolls as one, with the PDF staying in view beside the values.' },

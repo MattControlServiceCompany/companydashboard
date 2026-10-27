@@ -177,6 +177,24 @@ async function check(name, fn) {
     assert.strictEqual(holds(b).length, 0, 'bill held: ' + (b._gateReasons || []).join(' | '));
   });
 
+  await check('chart noise in front of the quantity is not part of it (the rate is charge / quantity)', async () => {
+    // label lost, "40 xy Chart" noise before the quantity, "kWh" garbled, no rate on the line
+    const b = await run(
+      touBill({ lines: { offSum: '40 xy Chart Sum ' + kwh(L.offSum.q) + ' kivh at p  ' + money(L.offSum.c) } }).text,
+    );
+    near(f(b, 'OffPkSumKWh'), L.offSum.q, 'OffPkSumKWh');
+    near(f(b, 'OffPkSumRate'), parseFloat(L.offSum.r), 'OffPkSumRate');
+    assert.strictEqual(holds(b).length, 0, 'bill held: ' + (b._gateReasons || []).join(' | '));
+  });
+
+  await check('quantity and rate both lost: the rate is charge / (kWh used - other lines), kept because it gives the charge', async () => {
+    const b = await run(
+      touBill({ lines: { offSum: 'Energy Chg Off Pk Sum   kWh at p  ' + money(L.offSum.c) } }).text,
+    );
+    near(f(b, 'OffPkSumKWh'), L.offSum.q, 'OffPkSumKWh');
+    near(f(b, 'OffPkSumRate'), parseFloat(L.offSum.r), 'OffPkSumRate');
+  });
+
   await check('missing quantity: kWh = charge / rate, accepted because round(kWh x rate, 2) = charge', async () => {
     const b = await run(
       touBill({ lines: { onSum: 'Energy Chg On Pk Sum  kWh at $' + L.onSum.r + ' per kWh ............  ' + money(L.onSum.c) } }).text,

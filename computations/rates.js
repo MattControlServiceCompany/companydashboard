@@ -891,6 +891,7 @@ function touResolveLines(raws, kwhUsed, opts) {
       kind: raw.kind,
       season: _touSeasonOf(raw, opts.provider, opts.periodStartIso),
       kwh: res ? res.kwh : null,
+      printedQty: raw.qty > 0 ? raw.qty : null,
       rate: res ? res.rate : raw.rate > 0 ? raw.rate : null,
       how: res ? res.how : null,
       charge: raw.charge,
@@ -909,6 +910,14 @@ function touResolveLines(raws, kwhUsed, opts) {
     }, 0);
     var qI = Math.round((kwhUsed - others) * 10000) / 10000;
     var rI = open[0].rate;
+    // A line with no printed rate AND no readable printed quantity: the rate is charge / quantity (5 decimals), kept only
+    // when it gives the charge back to the cent. The printed kWh used is the witness for the quantity, so no value is
+    // assumed. A readable printed quantity is never replaced this way: the rate would come from the very quantity it is
+    // meant to check, and a printed quantity that disagrees with the identity is a bill to hold.
+    if (!rI && !open[0].printedQty && qI > 0) {
+      var r5I = Math.round((open[0].charge / qI) * 100000) / 100000;
+      if (_touVerifies(qI, r5I, open[0].charge)) rI = r5I;
+    }
     if (rI && qI > 0 && _touVerifies(qI, rI, open[0].charge)) {
       open[0].kwh = qI;
       open[0].rate = rI;

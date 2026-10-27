@@ -2359,13 +2359,18 @@ function _evgTouRawLines(tc, kw, nextChgLine, getAmt) {
     const cut = after.search(/k[Ww]h|\bat\b|\$|\bper\b/i);
     let seg = (cut >= 0 ? after.slice(0, cut) : after).replace(WORD, ' ');
     if (dm) seg = seg.replace(DATES, ' ');
-    const qtyRaw = seg.trim();
+    let qtyRaw = seg.trim();
     const decs = qtyRaw.match(new RegExp(DEC.source, 'g'));
     let qty = null;
     if (decs) {
       const last = decs[decs.length - 1];
-      const head = qtyRaw.slice(0, qtyRaw.lastIndexOf(last)).replace(/\D/g, '');
+      // The quantity is the number that ends at the 4 decimals: groups of 3 digits behind a 1-3 digit head ("49,451",
+      // "1 769"). Digits further left, behind letters or behind a group that is not 3 digits wide, are chart noise
+      // ("50 pi Maddog 49,451.4720") and are not part of it.
+      const tm = qtyRaw.slice(0, qtyRaw.lastIndexOf(last)).match(/(\d{1,3}(?:\s*[,.:]?\s*\d{3})*)\s*$/);
+      const head = tm ? tm[1].replace(/\D/g, '') : '';
       qty = head ? parseFloat(head + '.' + last.match(/(\d{4})/)[1]) : null;
+      if (tm) qtyRaw = tm[1] + last;
     }
     const rm = block.match(/\$?\s*(\d*\.\d{4,5})\s*(?:per|p\s*er)\b/i);
     const rate = rm ? parseFloat(rm[1]) : null;
@@ -3856,6 +3861,35 @@ function _extractEvergy(t, acctOverride, addrOverride) {
       }
     }
   }
+  // MULTIPLIER REPAIR. A meter multiplier is a whole number (1, 40, 160 ...) and the table prints it with the
+  // kWh Used column: Difference x Multiplier = kWh Used. When the printed multiplier does not give the printed kWh
+  // Used, but kWh Used / Difference is a whole number, that whole number is the multiplier the bill used. It repairs
+  // the multiplier only when it differs from the scanned one by ONE confusable digit (6 and 8, 3 and 8 ...) and
+  // the kWh Used column then differs from Difference x that multiplier by at most one confusable digit (or not at
+  // all). The kWh Used column is then the product. Reads are NOT touched here: the read-chain step decides them.
+  for (const row of _meterRows) {
+    if (row._fixedMultiplier) continue;
+    const diff = parseBillNumber(row._fixedDifference || row[6]);
+    const mult = parseBillNumber(row[7]);
+    const kwh = parseBillNumber(row[8]);
+    if (!(diff > 0 && mult > 0 && kwh > 0) || !row[7] || !row[8]) continue;
+    if (Math.abs(parseFloat((diff * mult).toFixed(4)) - kwh) < 0.01) continue; // the printed multiplier already works
+    const whole = Math.round(kwh / diff);
+    if (!(whole >= 1) || whole === mult || Math.abs(kwh / diff - whole) > 0.001) continue; // not a whole number
+    const product = parseFloat((diff * whole).toFixed(4));
+    const multTxt = whole.toFixed(4);
+    const multFix = _reconcileNumber(row[7], whole, 1);
+    if (!multFix || parseFloat(multFix) !== whole) continue;
+    const kwhExact = Math.abs(product - kwh) < 0.01;
+    if (!kwhExact && !_reconcileNumber(row[8], product, 1)) continue;
+    row._multiplierOriginal = row[7].replace(/,/g, '');
+    row._fixedMultiplier = multTxt;
+    row[7] = multTxt;
+    if (!kwhExact) {
+      row._kwhUsedOriginal = row[8];
+      row[8] = product.toFixed(4);
+    }
+  }
   // kWh Used for one meter row, for the multi-meter sum and the per-meter fields. The kWh Used
   // column is used as printed unless Difference x Multiplier differs from it by a plausible digit
   // misread. Then the column is replaced by the product only when the row proves it:
@@ -4090,9 +4124,14 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     }
     if (!candidates.length) return null;
     if (candidates.length === 1) return candidates[0].val;
-    // Multiple candidates: find consensus — if 2+ agree within 1%, use that value
+    // Multiple candidates: find consensus — if 2+ agree within 1%, use that value.
+    // Difference x Multiplier and (End - Start) x Multiplier share the multiplier, so a misread multiplier
+    // moves both the same way. They are ONE vote, not two: a pair made of those two never forms a consensus.
+    const _sharesMultiplier = (x, y) =>
+      (x.src === 'diff×mult' && y.src === 'read×mult') || (x.src === 'read×mult' && y.src === 'diff×mult');
     for (let a = 0; a < candidates.length; a++) {
       for (let b = a + 1; b < candidates.length; b++) {
+        if (_sharesMultiplier(candidates[a], candidates[b])) continue;
         const ratio = candidates[a].val / candidates[b].val;
         if (ratio > 0.99 && ratio < 1.01) return candidates[a].val;
       }
@@ -4819,9 +4858,27 @@ function _extractEvergy(t, acctOverride, addrOverride) {
     if (row._fixedDifference)
       _digitFixes.push({ field: 'Difference', original: row._differenceOriginal, corrected: row._fixedDifference });
     if (row._kwhUsedOriginal) _digitFixes.push({ field: 'KwhUsed', original: row._kwhUsedOriginal, corrected: row[8] });
+    if (row._fixedMultiplier)
+      _digitFixes.push({ field: 'Multiplier', original: row._multiplierOriginal, corrected: row._fixedMultiplier });
   }
   if (_digitFixes.length) {
     result._digitCorrections = _digitFixes;
+  }
+  if (meterRow && meterRow._fixedMultiplier && !_isMultiMeterChange) {
+    result._auto_corrected_MeterMultiplier = {
+      original: meterRow._multiplierOriginal,
+      corrected: meterRow._fixedMultiplier,
+      reason:
+        'kWh Used / Read Difference is the whole number ' +
+        parseFloat(meterRow._fixedMultiplier) +
+        ', one confusable digit from the scanned multiplier.',
+    };
+    if (meterRow._kwhUsedOriginal)
+      result._auto_corrected_kWhConsumed = {
+        original: meterRow._kwhUsedOriginal.replace(/,/g, ''),
+        corrected: meterRow[8],
+        reason: 'Read Difference x the repaired multiplier (' + meterRow._fixedMultiplier + ').',
+      };
   }
 
   // ── Rate info for cross-validation (rate × qty vs OCR'd charge) ──
@@ -6336,9 +6393,10 @@ function _evgPickAccount(accts) {
   return accts.length ? accts[0] : null;
 }
 // An address is ONE printed line: spaces inside it are never a line break (a street number alone on a
-// line must not join the next line's text).
+// line must not join the next line's text). OCR can join the house number and the street word ("105E5S ST"): no space
+// is needed when a LETTER follows the number (a digit run alone is not an address).
 const _EVG_ADDR =
-  /^(\d+[^\S\n]+\w(?:[\w,.]|[^\S\n]){3,50}(?:KS|MO|KY|OK|NE|IA|AR|TX|CO|IL|IN|OH|MI|PA|NY|NJ|CT|MA|VA|NC|SC|GA|FL|TN|MS|AL|LA|NM|AZ|UT|ID|OR|WA|MT|WY|ND|SD|MN|WI|NV|CA))[^\w\n]*$/m;
+  /^(\d+(?:[^\S\n]+\w|[A-Za-z])(?:[\w,.]|[^\S\n]){3,50}(?:KS|MO|KY|OK|NE|IA|AR|TX|CO|IL|IN|OH|MI|PA|NY|NJ|CT|MA|VA|NC|SC|GA|FL|TN|MS|AL|LA|NM|AZ|UT|ID|OR|WA|MT|WY|ND|SD|MN|WI|NV|CA))[^\w\n]*$/m;
 
 // ONE address normalizer. _evgAddrNorm is the readable form (shown, stored). _evgAddrKey is the compare form:
 // OCR splits or joins words and swaps "," "." and space, so equal addresses must ignore spaces, commas and periods.
@@ -6950,6 +7008,54 @@ function _lbg_storedMeterFactor(acct, commodity) {
   }
   return _lbg_meterFactor(peers);
 }
+// The saved bill that comes just before an extracted bill, in the shape of an extracted bill (so the read-chain
+// rules treat it as the previous bill). ONE reader of the saved bills for "the meter's last saved reads": the
+// electric read chain and the gas read repair both call it. Match: same account number, same commodity, same meter
+// number when both bills carry one. The saved bill is the one with the latest end date on or before the extracted
+// bill's start date. Null when nothing is saved, or when two saved bills end the same day with different end reads
+// (two meters on one account: no way to tell which one this bill follows).
+function _priorSavedBillOf(extracted) {
+  if (!extracted || typeof utilityData === 'undefined') return null;
+  const acct = String(extracted.AccountNumber || '').replace(/[\s\-]/g, '');
+  const commodity = extracted.Commodity;
+  if (!acct || !commodity || !extracted.BillingPeriodStart) return null;
+  const meterNo = String(extracted.MeterNumber || '');
+  let best = null;
+  let tie = false;
+  for (const cust of Object.values(utilityData || {})) {
+    for (const bl of (cust && cust.buildings) || []) {
+      for (const m of bl.meters || []) {
+        for (const sb of m.bills || []) {
+          if (String(sb.accountNumber || '').replace(/[\s\-]/g, '') !== acct) continue;
+          if ((sb.commodity || commodity) !== commodity || !sb.end || sb.estimated) continue;
+          if (meterNo && sb.meterNumber && String(sb.meterNumber) !== meterNo) continue;
+          const gap = calcDays(sb.end, extracted.BillingPeriodStart, false);
+          if (gap === '' || isNaN(gap) || gap < 0) continue;
+          if (!best || gap < best.gap) {
+            best = { gap, sb };
+            tie = false;
+          } else if (gap === best.gap && String(sb.endRead) !== String(best.sb.endRead)) tie = true;
+        }
+      }
+    }
+  }
+  if (!best || tie || parseBillNumber(best.sb.endRead) === null) return null;
+  const sb = best.sb;
+  return {
+    AccountNumber: extracted.AccountNumber,
+    Commodity: commodity,
+    MeterNumber: sb.meterNumber || extracted.MeterNumber,
+    BillingPeriodStart: sb.start,
+    BillingPeriodEnd: sb.end,
+    StartRead: sb.startRead,
+    EndRead: sb.endRead,
+    ReadDifference: sb.readDifference,
+    MeterMultiplier: sb.meterMultiplier,
+    kWhConsumed: commodity === 'Electric' ? sb.kwh : undefined,
+    NaturalGasTherms: commodity === 'Gas' ? sb.kwh : undefined,
+    _fromSavedBill: true,
+  };
+}
 // ── R7: the account's saved bills as a plausibility check (rejects only) ──
 // One value, one reader of the saved bills: _lbg_accountHistory. One rule: _lbg_historyRejectReason. Every
 // utility and account with saved bills uses them: usage, demand, charges and totals. History never proposes a
@@ -7113,11 +7219,28 @@ function _lbg_pageHistoryReject(label, v, pageText) {
 // The usage cell of the Gas row as the page's TEXT LAYER prints it, read as a decimal ("1.214.164" = 1,214.164:
 // the separators are points or commas, the last group is the decimals, 2 or 3 digits). A second reading of the
 // same cell, independent of the position read. Returns { value, text } or null. The position block is not text layer.
-function _lbg_textLayerGasUsage(page) {
+// A lone I or l glued in front of a thousands group is a 1 ("I,214.164" is 1,214.164). ONE rule for the text layer
+// readers of the Gas row (the usage cell and the meter reads).
+function _lbg_leadingOne(s) {
+  return String(s).replace(/(^|[^A-Za-z0-9.,])[Il](?=[.,]\d{3}(?!\d))/g, (m, pre) => pre + '1');
+}
+// The Gas row as the page's TEXT LAYER prints it (the first line with a GAS label that is not a chart header, the
+// Fuel Adjustment or the Previous Balance), or null. The position block is not text layer.
+function _lbg_textLayerGasLine(page) {
   const t = String(page || '');
   const end = t.indexOf('%%POSITION_READ%%');
   for (const ln of (end >= 0 ? t.slice(0, end) : t).split(/\r?\n/)) {
     if (/^\s*\d{3}\s*-/.test(ln) || /FUEL|ADJUSTMENT|Previous\s*Balance/i.test(ln)) continue;
+    if (/\bG[A4]S\b/i.test(ln)) return ln;
+  }
+  return null;
+}
+function _lbg_textLayerGasUsage(page) {
+  const t = String(page || '');
+  const end = t.indexOf('%%POSITION_READ%%');
+  for (const ln0 of (end >= 0 ? t.slice(0, end) : t).split(/\r?\n/)) {
+    if (/^\s*\d{3}\s*-/.test(ln0) || /FUEL|ADJUSTMENT|Previous\s*Balance/i.test(ln0)) continue;
+    const ln = _lbg_leadingOne(ln0);
     const m = ln.match(/\bG[A4]S\b/i);
     if (!m) continue;
     const toks = [...ln.slice(0, m.index).matchAll(/\d[\d.,]*\d|\d/g)].map((x) => x[0]);
@@ -12584,7 +12707,7 @@ const UTILITY_RULES = [
         // 2+ dot-groups (a single dot-group is ambiguous between "comma
         // misread" and "genuine decimal", already handled by the existing
         // single-dot logic below).
-        let beforeNorm = before;
+        let beforeNorm = allowDecimalUsage ? _lbg_leadingOne(before) : before;
         if (!allowDecimalUsage) {
           beforeNorm = beforeNorm.replace(
             /(^|[^\d.,])(\d{1,3}(?:\.\d{3}){2,})(?!\d)/g,
@@ -12901,6 +13024,19 @@ const UTILITY_RULES = [
         _rowsText != null ? _LBG_FUEL_ADJ_LABEL.test(_rowsText) || _posHeld['FUEL ADJUSTMENT'] != null : gasLineSeen;
       gas = gas || { usage: null, charge: null };
       if (_posHeld.GAS) gas.held = _posHeld.GAS;
+      // The position rows lost the meter reads of the Gas row (a pen mark over the row: "045/28" for "68,204 68,925"):
+      // fewer than two reads of 100 or more. The same row in the TEXT LAYER is read by the same parseMetered; its reads and
+      // usage are taken only when it gives two reads of 100 or more. The charge stays the position read's (page sum).
+      if (_rowsText != null && !(gas.prevRead >= 100 && gas.currRead >= 100)) {
+        const _tlLine = _lbg_textLayerGasLine(page);
+        const _tlGas = _tlLine ? parseMetered(_tlLine, /\bG[A4]S\b/i, true) : null;
+        if (_tlGas && _tlGas.prevRead >= 100 && _tlGas.currRead >= 100) {
+          gas.prevRead = _tlGas.prevRead;
+          gas.currRead = _tlGas.currRead;
+          gas.usage = _tlGas.usage;
+          gas.usageLeadGarble = _tlGas.usageLeadGarble;
+        }
+      }
       water = water || { usage: null, charge: null };
       sewer = sewer || { usage: null, charge: null };
       storm = storm || { usage: null, charge: null };
@@ -15376,6 +15512,11 @@ function _pageRule(page) {
 // the split happened.
 function _extractFileBills(text, rule) {
   const bills = _extractFileBillsRaw(text, rule);
+  // A gas start read that lost its leading digit is restored from the meter's last saved end read before the therms
+  // are read from the meter reads (the autofix below uses the read difference).
+  // (computations/bill-flags.js; a test sandbox that loads only the readers has no read-chain functions.)
+  if (typeof correctShortStartRead === 'function')
+    for (const b of bills) if (b.Commodity === 'Gas') correctShortStartRead(b, _priorSavedBillOf(b));
   _lbg_applyGasUsageAutofix(bills, (acct) => _lbg_storedMeterFactor(acct, 'Gas'));
   return bills;
 }

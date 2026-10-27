@@ -1171,6 +1171,31 @@ function computeReadCorrection(x) {
       if (Nx !== null && !eq(Nx, E)) return null;
       rule = 'b';
       newStart = _rcText(x.prevEnd);
+    } else if (
+      !startMatches &&
+      !spanOk &&
+      D > 0 &&
+      S >= 10 * D &&
+      _rcIsMisread(x.start, x.prevEnd) &&
+      _rcIsMisread(x.end, (Ep + D).toFixed(eDec))
+    ) {
+      // e: each read is a 1- or 2-digit misread of its chain value (start of the previous end read, end of the previous
+      // end read + D) and D is proven by the usage. One bill with two independent misreads. The next bill, when present,
+      // must start at the chain end read; without it the correction is provisional (e0) and the self-check decides.
+      // S >= 10 x D: a replaced meter starts near zero, so a start read that small is never changed.
+      if (Nx !== null && !eq(Nx, Ep + D)) return null;
+      if (Nx === null) {
+        // no next bill: the previous bill's end read could be the misread instead, so the previous bill must itself be clean
+        // (its reads agree with its read difference and its usage proves that difference), as in a0
+        const Sp = n(x.prevStart),
+          Dp = n(x.prevDiff);
+        if (Sp === null || Dp === null) return null;
+        if (!eq(Ep - Sp, Dp) || !_rcUsageProves(x.prevDiff, x.prevMult, x.prevUsage)) return null;
+      }
+      rule = Nx !== null ? 'e' : 'e0';
+      newStart = _rcText(x.prevEnd);
+      endNum = Ep + D;
+      newEnd = endNum.toFixed(eDec);
     } else if (startMatches && !spanOk) {
       // c: only the end is wrong. D x M = U alone cannot decide E against D (D and U can be jointly wrong), so the
       // next bill must start at S + D
@@ -1207,9 +1232,17 @@ const READ_CHAIN_REASON = {
   a0: "The PDF reader's start read and end read were both off by the same amount (a 1- or 2-digit misread in each), the usage proves the read difference, and the previous bill's reads cannot be the error (its meter would have run backwards). No later bill exists yet. Start read set to the previous bill's end read; end read set to start read + read difference. If the next bill does not start at this end read, the reader values come back.",
   b: "The PDF reader's start read did not match the previous bill's end read. End read minus the previous end read equals the read difference, so start read was set to the previous bill's end read.",
   c: "The PDF reader's end read minus start read did not equal the read difference, while the usage agrees with the read difference and the next bill starts at start read + read difference. End read set to start read + read difference.",
+  e: "The PDF reader's start read and end read each differed from the chain by a 1- or 2-digit misread: the start read from the previous bill's end read, the end read from the previous end read + the read difference (the usage proves the read difference), and the next bill starts at the corrected end read. Start read set to the previous bill's end read; end read set to start read + read difference.",
+  e0: "The PDF reader's start read and end read each differed from the chain by a 1- or 2-digit misread: the start read from the previous bill's end read, the end read from the previous end read + the read difference (the usage proves the read difference). No later bill exists yet. Start read set to the previous bill's end read; end read set to start read + read difference. If the next bill does not start at this end read, the reader values come back.",
+  f: "The PDF reader's start read had fewer digits than the end read and the previous bill's end read ends in the same digits. The reader lost the leading digit. Start read set to the previous bill's end read.",
   d: "The PDF reader's read difference did not equal end read minus start read, while the start read matches the previous bill's end read and the next bill starts at this end read. Read difference set to end read minus start read.",
 };
-const READ_CHAIN_PROVISIONAL = [READ_CHAIN_REASON.a0];
+const READ_CHAIN_PROVISIONAL = [READ_CHAIN_REASON.a0, READ_CHAIN_REASON.e0];
+// A provisional reason, once the next bill confirms it, becomes the reason of the same correction with a next bill.
+const READ_CHAIN_CONFIRMED = new Map([
+  [READ_CHAIN_REASON.a0, READ_CHAIN_REASON.a],
+  [READ_CHAIN_REASON.e0, READ_CHAIN_REASON.e],
+]);
 function _rcIsReadChainRecord(rec) {
   return !!rec && Object.values(READ_CHAIN_REASON).includes(rec.reason);
 }
@@ -1332,13 +1365,44 @@ function _rcRevertProvisional(bill, keys, nextStart) {
   const E = parseBillNumber(bill[keys.end]);
   const tol = Math.pow(10, -Math.min(_rcDecimals(bill[keys.end]), _rcDecimals(nextStart))) + 1e-6;
   if (E !== null && Math.abs(Nx - E) <= tol) {
-    recs.forEach((r) => (r.rec.reason = READ_CHAIN_REASON.a)); // confirmed: same correction as rule a
+    recs.forEach((r) => (r.rec.reason = READ_CHAIN_CONFIRMED.get(r.rec.reason))); // confirmed: same correction with a next bill
     return true;
   }
   recs.forEach((r) => {
     bill[r.k] = r.rec.original;
     delete bill['_auto_corrected_' + r.k];
   });
+  return true;
+}
+// Rule f: a start read with FEWER integer digits than the end read, the previous bill's end read has as many integer
+// digits as the end read and ends in the start read's digits, and the end read is not below it. The reader lost the
+// leading digit of the start read ("6029" for "16029"). The usage is not needed: the lost digit is restored from the chain,
+// not guessed. x = { prevEnd, start, end } (text or numbers). Returns null or { start: text, diff: text }.
+function computeShortStartRepair(x) {
+  const Ep = parseBillNumber(x.prevEnd),
+    S = parseBillNumber(x.start),
+    E = parseBillNumber(x.end);
+  if (Ep === null || S === null || E === null) return null;
+  const p = _rcText(x.prevEnd),
+    s = _rcText(x.start),
+    e = _rcText(x.end);
+  const dec = _rcDecimals(x.start);
+  if (_rcDecimals(x.prevEnd) !== dec || _rcDecimals(x.end) !== dec) return null;
+  const ints = (t) => t.replace(/^-/, '').split('.')[0].length;
+  if (!(ints(s) < ints(e)) || ints(p) !== ints(e) || !p.endsWith(s) || p === s) return null;
+  if (E < Ep) return null; // the meter does not run backwards: a smaller end read is a rollover or another meter
+  return { start: p, diff: (E - Ep).toFixed(dec) };
+}
+// Applies rule f to one PDF-shaped bill (StartRead / EndRead / ReadDifference) with the meter's last saved bill as the
+// previous bill. The user's own value is never overwritten. Returns true when the bill changed.
+function correctShortStartRead(bill, prior) {
+  const keys = READ_CHAIN_FIELDS.pdf;
+  if (!bill || !prior || _rcUserEdited(bill, keys)) return false;
+  const fix = computeShortStartRepair({ prevEnd: prior.EndRead, start: bill.StartRead, end: bill.EndRead });
+  if (!fix) return false;
+  const out = { rule: 'f', start: typeof bill.StartRead === 'number' ? Number(fix.start) : fix.start };
+  if (bill.ReadDifference !== null && bill.ReadDifference !== undefined && bill.ReadDifference !== '') out.diff = fix.diff;
+  _rcApply(bill, keys, out);
   return true;
 }
 // Walk bills in chain order. getUsage(bill) -> usage; link(prev, cur) -> true when cur follows prev in the chain.
@@ -1432,7 +1496,10 @@ function correctMeterReadChain(meter) {
 // PDF extraction output, keys StartRead / EndRead / ReadDifference / MeterMultiplier. The bills are walked in date
 // order (BillingPeriodStart), whatever order the PDF printed them in. sameMeter(a, b), dayGap(a, b), getUsage(b) and
 // skip(b) come from the caller (account match, days between bills).
-function correctExtractedReadChain(bills, sameMeter, dayGap, getUsage, skip) {
+// priors (optional): the meter's last SAVED bill in the shape of an extracted bill (_priorSavedBillOf), one per account in
+// this file. Each is walked as the bill just before the first extracted bill it links to, so a file with a single bill
+// still has its previous end read.
+function correctExtractedReadChain(bills, sameMeter, dayGap, getUsage, skip, priors) {
   const T = BILL_FLAG_THRESHOLDS;
   const dayKey = (b) => {
     const d = b && b.BillingPeriodStart ? calcDays('2000-01-01', b.BillingPeriodStart, false) : '';
@@ -1442,14 +1509,19 @@ function correctExtractedReadChain(bills, sameMeter, dayGap, getUsage, skip) {
     .map((b, i) => ({ b, i, k: dayKey(b) }))
     .sort((p, q) => p.k - q.k || p.i - q.i)
     .map((p) => p.b);
+  const linksTo = (a, b) => {
+    const g = sameMeter(a, b) ? dayGap(a, b) : '';
+    return g !== '' && !isNaN(g) && g >= 0 && g <= T.GAP_DAYS + 2;
+  };
+  (priors || []).forEach((pr) => {
+    const at = ordered.findIndex((b) => linksTo(pr, b));
+    if (at >= 0) ordered.splice(at, 0, pr);
+  });
   return _rcWalk(
     ordered,
     READ_CHAIN_FIELDS.pdf,
     getUsage,
-    (a, b) => {
-      const g = sameMeter(a, b) ? dayGap(a, b) : '';
-      return g !== '' && !isNaN(g) && g >= 0 && g <= T.GAP_DAYS + 2;
-    },
+    linksTo,
     skip,
   );
 }

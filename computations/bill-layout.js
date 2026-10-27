@@ -1471,7 +1471,31 @@
               if (!ok && found.length >= 6 && found.length < want.length)
                 ok = editDistance(found, want.slice(0, found.length)) <= allowedEdits(found.length);
               if (ok) {
-                hits.push(toks.slice(i + n).join(' '));
+                // The amounts of this label are the ones before the next label of the layout on the same line (a chart
+                // header "Gas" shares its line with the SEWER row: "Gas a Oo SEWER 1,370.82"). A hit with no amount
+                // left is a header or a label without a value, not a printed row of this label.
+                var rest = toks.slice(i + n);
+                var cutAt = rest.length;
+                for (var r = 0; r < rest.length && cutAt === rest.length; r++) {
+                  for (var rn = 1; rn <= 3 && r + rn <= rest.length; rn++) {
+                    var rp = rest.slice(r, r + rn);
+                    if (
+                      rp.some(function (t) {
+                        return /\d/.test(t);
+                      })
+                    )
+                      break;
+                    var other = (tpl.slots || []).some(function (sl) {
+                      return normLabel(sl) !== want && labelDistance(rp.join(' '), sl) >= 0;
+                    });
+                    if (other) {
+                      cutAt = r;
+                      break;
+                    }
+                  }
+                }
+                var own = rest.slice(0, cutAt).join(' ');
+                if (/\d/.test(own)) hits.push(own);
                 return;
               }
             }
