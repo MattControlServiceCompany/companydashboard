@@ -199,9 +199,28 @@ async function main() {
     assertTrue(d.apply === true, 'decideQuantity: Louisburg bill 2 shape — outlier corrected');
     assertEqual(
       d.corrected,
-      2282.5018,
-      'decideQuantity: Louisburg bill 2 shape — corrected value uses the strong witnesses, not the weak anchor',
+      2282.496,
+      'decideQuantity: Louisburg bill 2 shape — corrected to the printed kWh Used (difference x multiplier); the page prints 2,282.4960',
     );
+  }
+  // Case (item 594fbbac, fake values): kWh Used one digit off the printed product, inside the 0.5% bucket,
+  // two self-verified charge lines agree with the product within 0.01% -> restore the product.
+  {
+    const witnesses = [
+      { source: 'printed kWh Used', value: 50380.13, strong: true },
+      { source: 'ReadDifference×Multiplier', value: 50390.13, strong: true },
+      { source: 'EERCharge', value: 50389.905, strong: true },
+      { source: 'PTSCharge', value: 50389.905, strong: true },
+    ];
+    const d = X.decideQuantityCorrection('kWhConsumed', 50380.13, witnesses);
+    assertTrue(d.apply === true, 'decideQuantity: one-digit misread inside bucket, 2 charge witnesses -> corrected');
+    assertEqual(d.corrected, 50390.13, 'decideQuantity: corrected value is the printed difference x multiplier');
+    // One charge witness only -> existing path (keep printed).
+    const d1 = X.decideQuantityCorrection('kWhConsumed', 50380.13, witnesses.slice(0, 3));
+    assertTrue(!d1.apply && !d1.hold, 'decideQuantity: one charge witness only -> no correction');
+    // Two digits off -> existing path.
+    const d2 = X.decideQuantityCorrection('kWhConsumed', 50280.13, witnesses);
+    assertTrue(!d2.apply, 'decideQuantity: two digits off -> rule does not fire');
   }
   // Case: only WEAK witnesses disagree with current — refuse (hold), never guess off unverified evidence.
   {
@@ -494,7 +513,8 @@ async function main() {
     assertEqual(pf(bill1.kWhConsumed), 958.4676, 'ACCEPTANCE bill1: kWhConsumed unchanged');
     assertEqual(pf(bill1.TotalCurrentCharges), 318.97, 'ACCEPTANCE bill1: dollar total unchanged');
     // Bill 2 — the cross-corrupted On/Off-Peak bill.
-    assertEqual(pf(bill2.kWhConsumed), 2282.5018, 'ACCEPTANCE bill2: kWhConsumed corroborated');
+    // The PDF page prints kWh Used 2,282.4960 (= 28.5312 x 80); 2,282.5018 appears only on the EER/PTS charge lines.
+    assertEqual(pf(bill2.kWhConsumed), 2282.496, 'ACCEPTANCE bill2: kWhConsumed = printed kWh Used');
     assertEqual(pf(bill2.OnPeakKWh), 349.6962, 'ACCEPTANCE bill2: OnPeakKWh correct');
     assertEqual(pf(bill2.OffPeakKWh), 1932.8056, 'ACCEPTANCE bill2: OffPeakKWh correct (was 1912.7998)');
     assertEqual(pf(bill2.TotalCurrentCharges), 561.57, 'ACCEPTANCE bill2: dollar total unchanged');

@@ -1425,6 +1425,24 @@ function _decideQuantityCorrection(fieldName, currentValue, witnesses) {
       ? { hold: false, apply: true, corrected: winner.representative, buckets, pctChange: null, reason: null }
       : { hold: false, apply: false, corrected: null, reason: null, buckets };
   }
+  // DIGIT MISREAD (item 594fbbac): a kWh Used with one digit misread (92,380.13 for 92,390.13, or 2,262.496 for
+  // 2,282.496). The page prints difference x multiplier as kWh Used, so
+  // that product is the value to restore. Repair only when (1) the current value is exactly one digit from the
+  // printed difference x multiplier (a misread, not a billing difference) and (2) two or more CHARGE-LINE
+  // witnesses, each self-verified against its own printed dollars, agree with the product within 0.01%.
+  const prod = winner.items.find((w) => w.source === 'ReadDifference×Multiplier');
+  if (prod) {
+    const prodStr = prod.value.toFixed(4);
+    const curStr = currentValue.toFixed(4);
+    const oneDigit = curStr.length === prodStr.length && curStr.split('').filter((c, i) => c !== prodStr[i]).length === 1;
+    const chargeAgree = winner.items.filter(
+      (w) => w.strong && /Charge$|sum$/.test(w.source) && Math.abs(w.value - prod.value) / prod.value < 1e-4
+    );
+    if (oneDigit && chargeAgree.length >= 2) {
+      const corrected = Math.round(prod.value * 10000) / 10000;
+      return { hold: false, apply: true, corrected, buckets, pctChange: (Math.abs(corrected - currentValue) / currentValue) * 100, reason: null };
+    }
+  }
   const curInWinner = currentValue > 0 && Math.abs(winner.value - currentValue) / winner.value < _Q_BUCKET_TOL;
   if (curInWinner) {
     // Current value already belongs to the strongest cluster — nothing to do.

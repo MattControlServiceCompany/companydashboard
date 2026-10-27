@@ -2507,6 +2507,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.27.171', date: '2026-10-27', title: 'Bill reading: one misread digit',
+    items: [
+      { type: 'fix', text: 'Bill reading: when one digit of a scanned kWh total is misread, the site now uses the meter reads times the multiplier, which the bill prints.' }
+    ]
+  },
   { v: 'v2026.10.27.170', date: '2026-10-27', title: 'Gas bill reading and bill matching',
     items: [
       { type: 'fix', text: 'Bill reading: gas bills that print Billed Mcf no longer apply the meter constant twice.' },
