@@ -106,10 +106,18 @@ const BANNED_RES = BANNED_WORDS.map((w) => ({
 // ("Ventilation Airflow", "Return Fan Airflow", ...) like every other file's CFM labels. No file
 // exceptions remain; the whole-word ban applies everywhere.
 // 2026-10-28 standing rule (Matt): on INTERNAL screens, standard energy terms may be short with a hover
-// tooltip giving the full words. EUI is allowed in the internal files below only; reports and the
-// shared chart labels stay spelled out (client-facing).
+// tooltip giving the full words. EUI is allowed only for these exact labels (file -> exact label text),
+// never for a whole file; reports and the shared chart labels stay spelled out (client-facing).
 const BANNED_WORD_FILE_EXCEPTIONS = new Map([
-  ['EUI', new Set([path.join('app', 'core.js'), path.join('app', 'graphics-setpoints.js')])],
+  [
+    'EUI',
+    new Map([
+      [
+        path.join('app', 'graphics-setpoints.js'),
+        new Set(['Site EUI (kBtu/ft²/Year)', 'Baseline Site EUI', 'Current Site EUI']),
+      ],
+    ]),
+  ],
 ]);
 
 // ─── All-caps token safety net (2026-09-24 follow-up) ───────────────────────────────────────
@@ -479,7 +487,8 @@ function scanSource(src, filePath) {
     const text = stripInterpolation(rawText);
     for (const { word, re } of BANNED_RES) {
       const exceptFiles = BANNED_WORD_FILE_EXCEPTIONS.get(word);
-      if (exceptFiles && exceptFiles.has(filePath)) continue;
+      const okTexts = exceptFiles && exceptFiles.get(filePath);
+      if (okTexts && okTexts.has(rawText)) continue;
       re.lastIndex = 0;
       if (re.test(text)) {
         hits.push({ file: filePath, line: lineOf(src, index), word, text: text.slice(0, 140) });

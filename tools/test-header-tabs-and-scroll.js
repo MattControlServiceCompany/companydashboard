@@ -114,11 +114,11 @@ function check(name, ok, extra) {
       const m = document.getElementById('userMenu'); const r = m.getBoundingClientRect();
       return { open: !m.hidden, exp: document.getElementById('topUser').getAttribute('aria-expanded'), items: [...m.querySelectorAll('[role=menuitem]')].map((b) => b.textContent.trim()), email: document.getElementById('userMenuEmail').textContent, left: r.left, right: r.right, vw: document.documentElement.clientWidth, focus: document.activeElement && document.activeElement.textContent.trim() };
     });
-    check('menu opens with the full email and Switch account, Add account, Log out', mn.open && mn.exp === 'true' && mn.email === 'sample@example.com' && mn.items.join('|') === 'Switch account|Add account|Log out', JSON.stringify(mn));
+    check('menu opens with the full email and Switch or add account, Log out', mn.open && mn.exp === 'true' && mn.email === 'sample@example.com' && mn.items.join('|') === 'Switch or add account|Log out', JSON.stringify(mn));
     check('menu stays on screen at 640 px', mn.left >= 0 && mn.right <= mn.vw, JSON.stringify(mn));
-    check('keyboard: first item focused on open', mn.focus === 'Switch account', JSON.stringify(mn));
+    check('keyboard: first item focused on open', mn.focus === 'Switch or add account', JSON.stringify(mn));
     await page.keyboard.press('ArrowDown');
-    check('keyboard: ArrowDown moves to the next item', (await page.evaluate(() => document.activeElement.textContent.trim())) === 'Add account');
+    check('keyboard: ArrowDown moves to the next item', (await page.evaluate(() => document.activeElement.textContent.trim())) === 'Log out');
     await page.keyboard.press('Escape');
     const esc = await page.evaluate(() => ({ hidden: document.getElementById('userMenu').hidden, onBtn: document.activeElement.id }));
     check('Esc closes the menu and returns focus to the badge', esc.hidden && esc.onBtn === 'topUser', JSON.stringify(esc));

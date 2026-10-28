@@ -2514,7 +2514,7 @@ var RELEASE_NOTES = [
   },
   { v: 'v2026.10.28.178', date: '2026-10-28', title: 'Project page header redesign',
     items: [
-      { type: 'change', text: 'Project page header: project details now sit in the top bar, the project tabs sit below it and look like tabs, and your account shows as an initials badge. Hover the badge to see your email.' }
+      { type: 'change', text: 'Project page: new header with browser-style tabs and an account menu. Project details now sit in the top bar, the project tabs sit below it and look like tabs, and your account shows as a button. Open it to switch or add an account, or to log out.' }
     ]
   },
   { v: 'v2026.10.27.177', date: '2026-10-27', title: 'Contract savings rates are locked',

@@ -1766,8 +1766,8 @@ function renderDetail(p) {
           <div class="pd-hero-compact" id="pd-hero-compact" style="display:flex">
             <button class="pd-back" onclick="backToList()" style="margin-bottom:0;margin-right:6px;flex-shrink:0">← Back</button>
             <span class="phc-info" id="phc-info-${p.id}">
-            <span class="phc-name phc-first">${p.name}</span>
-            <span class="phc-item" title="Service Agreement Number"><span class="phc-val">${p.sa || 'SA —'}</span></span>
+            <span class="phc-name phc-first">${_escHtml(p.name)}</span>
+            <span class="phc-item" title="Service Agreement Number"><span class="phc-val">${_saLabel(p.sa)}</span></span>
             <span class="phc-item">Savings <span class="phc-val">${p.savings && projHasContract(p.id) ? '$' + Number(p.savings).toLocaleString() + '/yr' : '—'}</span></span>
             <span class="phc-item"><span class="phc-val">${p.start ? _parseISO(p.start).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</span> → <span class="phc-val">${p.end ? _parseISO(p.end).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</span></span>
             <span class="phc-item" id="phc-baseline-${p.id}">Baseline <span class="phc-val">—</span></span>
@@ -1799,6 +1799,12 @@ function renderDetail(p) {
     const _tabBtn = document.querySelector(`.pdt[data-tab="${window._activeProjTab}"]`);
     if (_tabBtn) sPTab(window._activeProjTab, _tabBtn);
   }
+}
+
+// Service agreement number as shown in the header: always "SA<number>", never "SASA".
+function _saLabel(sa) {
+  const n = String(sa == null ? '' : sa).trim().replace(/^SA[\s#-]*/i, '');
+  return n ? 'SA' + n : 'SA —';
 }
 
 function _updateCompactHdrBaseline(projId) {
@@ -3006,7 +3012,7 @@ function _syncHeaderTabs() {
   if (top) top.classList.toggle('has-tabs', open);
 }
 
-// Account menu on the initials badge. Switch account, Add account and Log out all run the one sign-out flow
+// Account menu on the initials badge. "Switch or add account" and "Log out" both run the one sign-out flow
 // (signOut -> CH_AUTH.signOut -> index.html sign-in form); there is no multi-session support.
 function _userMenuEls() {
   return { btn: document.getElementById('topUser'), menu: document.getElementById('userMenu') };
