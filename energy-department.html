@@ -391,16 +391,6 @@
         align-items: center;
         padding-left: 8px;
       }
-      .hdr-projbar .pd-hero-compact {
-        flex: 1 1 auto;
-        margin: 0;
-        padding: 4px 0;
-        gap: 4px 0;
-        overflow: hidden; /* clips the 1px border of an item that starts a wrapped line */
-        background: transparent;
-        border: none;
-        border-radius: 0;
-      }
       .topbar > .t-right {
         margin-left: auto;
       }
@@ -413,27 +403,6 @@
         padding: 0 8px;
         border-top: 1px solid var(--border);
         background: var(--s1);
-      }
-      /* Below 2000px the signed-in email is cut with an ellipsis so the project bar stays on one line at 1920. */
-      @media (min-width: 900px) and (max-width: 1999px) {
-        .topbar .u-name {
-          display: block;
-          max-width: 70px;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-      }
-      /* Narrow windows: the signed-in email gives way so the project bar keeps its room; Sign Out stays. */
-      @media (max-width: 899px) {
-        .topbar .user-chip {
-          display: none;
-        }
-      }
-      .tab-lbl {
-        display: inline-block;
-        padding: 2px 0;
-        border-bottom: 2px solid transparent;
-        line-height: 1.2;
       }
       .t-right {
         display: flex;
@@ -465,17 +434,20 @@
       .user-chip {
         display: flex;
         align-items: center;
+        justify-content: center;
         background: var(--s1);
         border: 1px solid var(--border);
-        border-radius: 7px;
-        padding: 3px 10px;
+        border-radius: 50%;
+        width: 28px;
         height: 28px;
+        flex: 0 0 auto;
       }
       .u-name {
-        font-size: 12px;
-        font-weight: 500;
+        font-size: 11px;
+        font-weight: 700;
         color: var(--text);
         white-space: nowrap;
+        cursor: default;
       }
       .sync-btn {
         display: flex;
@@ -580,6 +552,12 @@
         white-space: nowrap;
         font-family: var(--font);
         text-decoration: none;
+      }
+      .dept-tab .tab-lbl {
+        display: inline-block;
+        padding: 2px 0;
+        border-bottom: 2px solid transparent;
+        line-height: 1.2;
       }
       .dept-tab.active .tab-lbl {
         border-bottom-color: var(--em);
@@ -4446,17 +4424,18 @@
       .pd-hero-compact {
         display: none;
         align-items: center;
-        gap: 4px 12px;
-        padding: 8px 18px;
-        background: var(--s2);
-        border: 1px solid var(--border);
-        border-radius: var(--r);
-        margin-bottom: 8px;
+        flex: 1 1 auto;
+        gap: 4px 0;
+        margin: 0;
+        padding: 4px 0;
+        overflow: hidden; /* clips the 1px border of an item that starts a wrapped line */
+        background: transparent;
+        border: none;
+        border-radius: 0;
         font-size: 12px;
         color: var(--text2);
         white-space: normal; /* wraps to a second line instead of clipping its right side */
         flex-wrap: wrap;
-        flex-shrink: 0;
       }
       .pd-hero-compact > * {
         min-width: 0;
@@ -4466,6 +4445,7 @@
         font-size: 13px;
         color: var(--text);
         max-width: 240px;
+        padding-right: 5px;
         overflow: hidden;
         text-overflow: ellipsis;
       }
@@ -4474,7 +4454,7 @@
       .pd-hero-compact .phc-item {
         margin-left: -1px;
         padding: 0 5px;
-        border-left: 1px solid var(--text3, var(--border));
+        border-left: 1px solid var(--text3);
       }
       .pd-hero-compact .phc-first {
         margin-left: 0;
@@ -4493,7 +4473,7 @@
       /* ── Project tab bar — lives in the header row (#pdTabBar inside #hdrTabs) ──
          Text-only tabs. Tabs size to their own label plus identical padding and wrap
          to a second line when the row is full: no scrolling, no arrows, nothing hidden.
-         The active underline is the border under the label itself, so it touches the text. */
+         The active underline is the bottom border of the tab button itself. */
       .pd-tabs {
         display: flex;
         flex-wrap: wrap;
@@ -4516,10 +4496,6 @@
         display: inline-flex;
         align-items: center;
         white-space: nowrap;
-      }
-      .pdt .tab-lbl {
-        padding: 0;
-        border-bottom: none;
       }
       .pdt:hover {
         background: var(--s4);
@@ -9194,8 +9170,8 @@
           <button class="dept-tab active" id="hdrDeptTab" data-fb="energy.dept-nav.energy"><span class="tab-lbl">Energy Department</span></button>
           <div class="hdr-projbar" id="hdrProjBar" style="display: none"></div>
           <div class="t-right">
-            <div class="user-chip">
-              <div class="u-name" id="topName">Loading...</div>
+            <div class="user-chip" id="topUser">
+              <div class="u-name" id="topName"></div>
             </div>
             <!-- [COMMENTED OUT] Sync to Outlook topbar button
             <button class="sync-btn" data-fb="energy.topbar.sync-btn" onclick="showToast('Syncing to Outlook...')">

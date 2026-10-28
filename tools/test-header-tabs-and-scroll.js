@@ -78,6 +78,9 @@ function check(name, ok, extra) {
     });
     check('project info bar is on row 1, tab strip under it', rows.infoH > 0 && rows.tabsTop >= rows.infoBottom - 1 && rows.name, JSON.stringify(rows));
 
+    const u = await page.evaluate(() => ({ t: document.getElementById('topName').textContent, title: document.getElementById('topUser').title, shown: getComputedStyle(document.getElementById('topUser')).display !== 'none' }));
+    check('top bar shows an initials badge with the full email on hover', u.t === 'SA' && u.title === 'sample@example.com' && u.shown, JSON.stringify(u));
+
     // Energy Graphics -> Project Performance -> Energy Graphics
     await page.click('#pdTabBar .pdt[data-tab="energygfx"]');
     await page.waitForTimeout(500);

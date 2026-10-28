@@ -885,10 +885,18 @@ async function signOut() {
   if (window.CH_AUTH && window.CH_AUTH.clearSavedUser) window.CH_AUTH.clearSavedUser();
   window.location.href = 'index.html';
 }
+// Initials for the top-bar badge: first letters of the first two name parts, or the first two letters of a single part (an email uses the part before @).
+function userInitials(name) {
+  const parts = String(name || '').split('@')[0].split(/[^A-Za-z0-9]+/).filter(Boolean);
+  if (!parts.length) return '?';
+  return (parts.length > 1 ? parts[0][0] + parts[1][0] : parts[0].slice(0, 2)).toUpperCase();
+}
 function enterApp() {
   document.getElementById('loginScreen').style.display = 'none';
   document.getElementById('app').classList.add('visible');
-  document.getElementById('topName').textContent = currentUser.name;
+  const badge = userInitials(currentUser.name);
+  document.getElementById('topName').textContent = badge;
+  document.getElementById('topUser').title = currentUser.name;
   if (typeof autoQuickStart === 'function') setTimeout(autoQuickStart, 1200);
 }
 (function () {
@@ -3091,7 +3099,6 @@ function sPTab(tab, el) {
   const hero = document.querySelector('.pd-hero');
   const compact = document.getElementById('pd-hero-compact');
   if (hero) hero.style.display = 'none';
-  if (compact) compact.style.display = 'flex';
   const p = projects.find((x) => x.id === window._activeProjId);
   if (!p) return;
   if (tab === 'dashboard') initDashboardTab(p.id);
