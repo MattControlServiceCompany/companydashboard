@@ -116,31 +116,50 @@ function faSetView(pid, v) {
   faRender(pid);
 }
 
+function _faImportDone(pid, sheets) {
+  var m = emLoadMatrix(pid);
+  var d = faLoad(pid);
+  var res = auditImportSheets(sheets, (m && m.rows) || [], d.findings);
+  d.findings = d.findings.concat(res.findings);
+  d.importedAt = new Date().toISOString();
+  faSave(pid, d);
+  faRender(pid, res);
+}
+
 function faImportFile(pid, input) {
   var file = input && input.files && input.files[0];
   if (!file) return;
-  if (typeof XLSX === 'undefined') {
-    if (typeof showToast === 'function') showToast('Spreadsheet reader not loaded', 'error');
+  var isCsv = /\.csv$/i.test(file.name || '');
+  var isXlsx = /\.xlsx$/i.test(file.name || '');
+  input.value = '';
+  if (!isCsv && !isXlsx) {
+    showToast(AUDIT_CSV_MESSAGE, 'error');
     return;
   }
   var reader = new FileReader();
+  if (isCsv) {
+    reader.onload = function () {
+      var parsed = auditCsvToSheets(reader.result);
+      if (parsed.error) return showToast(parsed.error, 'error');
+      _faImportDone(pid, parsed.sheets);
+    };
+    reader.readAsText(file);
+    return;
+  }
+  if (typeof XLSX === 'undefined') {
+    showToast('Spreadsheet reader not loaded', 'error');
+    return;
+  }
   reader.onload = function () {
     var wb = XLSX.read(reader.result, { type: 'array' });
     var sheets = {};
     [AUDIT_IMPORT_SHEETS.audit, AUDIT_IMPORT_SHEETS.csc].forEach(function (n) {
       if (wb.Sheets[n]) sheets[n] = XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, defval: '' });
     });
-    var m = emLoadMatrix(pid);
-    var d = faLoad(pid);
-    var res = auditImportSheets(sheets, (m && m.rows) || [], d.findings);
-    d.findings = d.findings.concat(res.findings);
-    d.importedAt = new Date().toISOString();
-    window._faLastImport = res;
-    faSave(pid, d);
-    faRender(pid);
+    if (!Object.keys(sheets).length) return showToast(AUDIT_CSV_MESSAGE, 'error');
+    _faImportDone(pid, sheets);
   };
   reader.readAsArrayBuffer(file);
-  input.value = '';
 }
 
 function _faStatusChip(pid, f) {
@@ -287,8 +306,8 @@ function _faSetPointsTable(pid) {
   );
 }
 
-function _faImportReview() {
-  var r = window._faLastImport;
+// Shown only on the render right after an import (res passed in); never stored.
+function _faImportReview(r) {
   if (!r) return '';
   var h =
     '<details class="fa-review" open><summary>Import: ' +
@@ -338,7 +357,7 @@ var _faCss =
   '.fa-review{border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:12px;font-size:12px}' +
   '.fa-tbl summary{cursor:pointer}';
 
-function faRender(pid) {
+function faRender(pid, importResult) {
   pid = pid || window._activeProjId;
   var body = document.getElementById('ptab-facility-audit-body-' + pid);
   if (!body) return;
@@ -377,10 +396,10 @@ function faRender(pid) {
     ' deficiencies</span></div>' +
     '<div class="fa-bar"><button class="fa-btn" data-action="add" data-pid="' +
     _escHtml(pid) +
-    '">Add finding</button><label class="fa-btn">Import audit workbook<input type="file" accept=".xlsx" style="display:none" data-action="import" data-pid="' +
+    '">Add finding</button><label class="fa-btn">Import audit workbook or CSV<input type="file" accept=".xlsx,.csv" style="display:none" data-action="import" data-pid="' +
     _escHtml(pid) +
     '"></label></div>' +
-    _faImportReview() +
+    _faImportReview(importResult) +
     (_faView === 'setpoints' ? _faSetPointsTable(pid) : _faFindingsTable(pid, shown)) +
     '</div>';
 }

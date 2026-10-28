@@ -157,3 +157,40 @@ function auditImportSheets(sheets, matrixRows, existing) {
   });
   return { findings: findings, matched: matched, unmatched: unmatched, duplicates: duplicates };
 }
+
+var AUDIT_CSV_MESSAGE =
+  'Could not import. Use a .csv file with these columns: Building, location/equipment, Type of Equipment, Issue Type, Issue, Type of Optimization or Change, How do we accomplish?, Notes. Or use the .xlsx workbook with the sheets "Facility Audit List" and "CSC Deficiency List".';
+
+// CSV column name (lower case) -> the Facility Audit List column the matcher reads.
+var AUDIT_CSV_COLUMNS = [
+  ['Building Name', ['building', 'building name']],
+  ['Building location or equipment affected', ['location/equipment', 'location / equipment', 'location or equipment', 'building location or equipment affected']],
+  ['Type of Equipment', ['type of equipment']],
+  ['Issue Type', ['issue type']],
+  ['Issue', ['issue']],
+  ['Type of Optimization or Change', ['type of optimization or change']],
+  ['How do we accomplish?', ['how do we accomplish?', 'how do we accomplish']],
+  ['Notes/Comments', ['notes', 'notes/comments']],
+];
+
+// Turns CSV text into the same { sheetName: rows } shape the workbook path gives auditImportSheets.
+// Returns { sheets } or { error } (error names the expected columns).
+function auditCsvToSheets(text) {
+  var rows = emParseCSVText(String(text || ''));
+  if (!rows.length) return { error: AUDIT_CSV_MESSAGE };
+  var head = rows[0].map(_auditNormName);
+  var pos = [];
+  for (var i = 0; i < AUDIT_CSV_COLUMNS.length; i++) {
+    var at = -1;
+    for (var a = 0; a < AUDIT_CSV_COLUMNS[i][1].length && at < 0; a++) at = head.indexOf(AUDIT_CSV_COLUMNS[i][1][a]);
+    if (at < 0) return { error: AUDIT_CSV_MESSAGE };
+    pos.push(at);
+  }
+  var out = [AUDIT_CSV_COLUMNS.map(function (c) { return c[0]; })];
+  for (var r = 1; r < rows.length; r++) {
+    out.push(pos.map(function (p) { return rows[r][p] == null ? '' : rows[r][p]; }));
+  }
+  var sheets = {};
+  sheets[AUDIT_IMPORT_SHEETS.audit] = out;
+  return { sheets: sheets };
+}

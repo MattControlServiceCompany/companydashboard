@@ -64,6 +64,27 @@ d.findings = res.findings;
 sb.faSave(901, d);
 t.eq(Object.keys(sb.__store).filter((k) => k.indexOf('en_audit_') === 0), ['en_audit_901'], 'one synced key per project');
 
+
+// CSV import: same matcher as the workbook path
+const csv = ['Building,location/equipment,Type of Equipment,Issue Type,Issue,Type of Optimization or Change,How do we accomplish?,Notes',
+  'Fake Library A,Meeting Room | VAV-1-1,VAV,Optimization,"Set point, high",Adjust set points.,Edit in BAS,n1',
+  'Fake Library A,Nowhere,VAV,Optimization,Unmatched thing,,,'].join('\n') + '\n';
+const pc = sb.auditCsvToSheets(csv);
+t.ok(!pc.error, 'CSV with the columns parses');
+const cres = sb.auditImportSheets(pc.sheets, matrix, []);
+t.eq([cres.matched, cres.unmatched.length, cres.findings.length], [1, 1, 2], 'CSV rows go through the same matcher');
+t.eq(cres.findings.filter((f) => f.issue === 'Set point, high')[0].rowId, 'r1', 'CSV quoted comma kept, row matched');
+const bad = sb.auditCsvToSheets('Name,Value\nA,1\n');
+t.ok(bad.error && bad.error.indexOf('Type of Optimization or Change') !== -1 && bad.error.indexOf('How do we accomplish?') !== -1, 'wrong CSV columns give a message naming the expected columns');
+t.ok(sb.auditCsvToSheets('').error, 'empty CSV gives the message');
+const miss = sb.auditCsvToSheets('Building,Issue\nA,b\n');
+t.ok(miss.error, 'CSV with missing columns gives the message');
+
+// Banner: only on the render right after an import; never stored
+t.ok(sb._faImportReview(cres).indexOf('Import: 1 matched') !== -1, 'banner shows for a fresh import result');
+t.eq(sb._faImportReview(undefined), '', 'no banner when no import just ran');
+t.eq(sb.window._faLastImport, undefined, 'import result is not kept on window');
+
 // Real workbook rows (optional)
 if (process.argv[2]) {
   const real = JSON.parse(require('fs').readFileSync(process.argv[2], 'utf8'));
