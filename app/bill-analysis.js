@@ -2106,12 +2106,13 @@ function _kgsRecoverSuspectLine(b) {
   } else {
     probe[s.field] = null;
   }
-  const value = Math.round((total - sumKgsComponentCharges(probe)) * 100) / 100;
+  let value = Math.round((total - sumKgsComponentCharges(probe)) * 100) / 100;
   if (Math.abs(value - current) < 0.02) return; // the read already reconciles
   const mayBeCredit = s.field === 'GasSystemReliability' || s.field === 'WeatherNormalization';
-  if (!(mayBeCredit ? value !== 0 : value > 0) || Math.abs(value) >= total) return;
-  if (s.raw !== null) {
-    const want = String(Math.round(Math.abs(value) * 100));
+  const valueFits = (v) => {
+    if (!(mayBeCredit ? v !== 0 : v > 0) || Math.abs(v) >= total) return false;
+    if (s.raw === null) return true;
+    const want = String(Math.round(Math.abs(v) * 100));
     const got = String(parseInt(String(s.raw).replace(/\D/g, ''), 10));
     let diff = 0;
     for (let i = 0; i < want.length; i++) if (want[i] !== got[i]) diff++;
@@ -2119,7 +2120,47 @@ function _kgsRecoverSuspectLine(b) {
     // one digit out gives the rebuilt value exactly; no other difference is allowed on top of it.
     const pointReadAsDigit =
       got.length === want.length + 1 && [...got].some((_, i) => got.slice(0, i) + got.slice(i + 1) === want);
-    if (!pointReadAsDigit && (want.length !== got.length || diff > 1)) return;
+    return pointReadAsDigit || (want.length === got.length && diff <= 1);
+  };
+  // The rebuilt value does not fit the suspect line's digits. A misread Cost of Gas digit can be the cause: the bill
+  // prints Mcf billed and the Cost of Gas per Mcf, and their product (to the cent) is an independent value for the line.
+  // It is used only when it differs from the read AND the suspect line then fits its own digits exactly.
+  let gasFix = null;
+  if (!valueFits(value) && s.field !== 'GasCharge') {
+    const mcf = parseBillNumber(b.McfBilled);
+    const rate = parseBillNumber(b.CostOfGasPerMcf);
+    const gasRead = parseBillNumberOrZero(b.GasCharge);
+    const gasExpected = mcf > 0 && rate > 0 ? Math.round(mcf * rate * 100) / 100 : 0;
+    if (gasExpected > 0 && Math.abs(gasExpected - gasRead) >= 0.005) {
+      const probe2 = Object.assign({}, probe, { GasCharge: gasExpected.toFixed(2) });
+      const value2 = Math.round((total - sumKgsComponentCharges(probe2)) * 100) / 100;
+      if (valueFits(value2)) {
+        gasFix = { read: b.GasCharge, corrected: gasExpected, mcf, rate };
+        value = value2;
+      }
+    }
+  }
+  if (!gasFix && !valueFits(value)) return;
+  if (gasFix) {
+    b.GasCharge = gasFix.corrected.toFixed(2);
+    b._auto_recovered_GasCharge = {
+      original: gasFix.read,
+      corrected: b.GasCharge,
+      reason:
+        'Cost of Gas printed rate check: ' +
+        gasFix.mcf +
+        ' Mcf x $' +
+        gasFix.rate +
+        ' per Mcf = $' +
+        b.GasCharge +
+        '; the read $' +
+        gasFix.read +
+        ' differs, and with $' +
+        b.GasCharge +
+        ' the ' +
+        s.field +
+        ' line fits its own digits and the bill reconciles.',
+    };
   }
   if (isFF) {
     items[s.item] = value.toFixed(2);

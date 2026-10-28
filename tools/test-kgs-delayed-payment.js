@@ -102,6 +102,22 @@ async function run(delayed) {
     check('two suspect lines: nothing rebuilt', !r._auto_recovered_B2_DelayedPaymentCharge && !r._auto_recovered_B2_GasCharge, JSON.stringify(Object.keys(r).filter((k) => /recovered/.test(k))));
   }
 
+  // Cost of Gas misread by one digit (40.80 for 40.00; the bill prints 10.000 Mcf x 4.0000 per Mcf): the printed-rate
+  // product corrects it, and then the Delayed line (1527) fits its rebuilt value 1.27.
+  {
+    const text = billText('Delayed Payment Charge               1527').replace('Cost of Gas                           40.00', 'Cost of Gas                           40.80');
+    const r = (await env.verify(rule.extractAll.call(rule, text), rule.name, '')).bills[0];
+    check('Cost of Gas misread: corrected to 40.00', r.GasCharge === '40.00' && !!r._auto_recovered_GasCharge, String(r.GasCharge));
+    check('Cost of Gas misread: Delayed rebuilt to 1.27', r.DelayedPaymentCharge === '1.27', String(r.DelayedPaymentCharge));
+    check('Cost of Gas misread: no sum mismatch', !r._sum_mismatch_kgs && !r._gateTripped, JSON.stringify(r._gateReasons));
+  }
+  // Negative: Cost of Gas is off but the Delayed digits (9981) do not fit under the printed-rate value: nothing changes.
+  {
+    const text = billText('Delayed Payment Charge               9981').replace('Cost of Gas                           40.00', 'Cost of Gas                           40.80');
+    const r = (await env.verify(rule.extractAll.call(rule, text), rule.name, '')).bills[0];
+    check('Cost of Gas off, Delayed digits do not fit: Delayed not rebuilt', r.DelayedPaymentCharge !== '1.27' && !r._auto_recovered_B2_DelayedPaymentCharge, String(r.DelayedPaymentCharge));
+  }
+
   const ba = fs.readFileSync(path.join(ROOT, 'app/bill-analysis.js'), 'utf8');
   const start = ba.indexOf('const _LAYOUT_KGS');
   const end = ba.indexOf("type: 'total'", start);
