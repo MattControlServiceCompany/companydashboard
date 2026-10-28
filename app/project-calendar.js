@@ -64,17 +64,21 @@
     return (_fmtCache[id] = _fmtCache[id] || new Intl.DateTimeFormat('en-US', Object.assign({ timeZone: tz }, opts)));
   }
   function dayKey(iso, tz) {
-    var p = fmt(tz, 'day', { year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(iso));
-    var o = {};
-    p.forEach(function (x) {
-      o[x.type] = x.value;
-    });
-    return o.year + '-' + o.month + '-' + o.day;
+    return CalendarDiff.calendarDay(iso, tz);
   }
-  function when(iso, allDay, tz) {
+  // 'Oct 20, 2026' from a YYYY-MM-DD day. No Date-in-UTC shift: built from year, month, day.
+  function dayText(ymd) {
+    var a = ymd.split('-');
+    return new Date(Number(a[0]), Number(a[1]) - 1, Number(a[2])).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  }
+  function when(iso, allDay, tz, endIso) {
     if (!iso) return '';
+    if (allDay) {
+      var first = dayKey(iso, tz);
+      var last = CalendarDiff.allDayLastDay(iso, endIso, tz);
+      return dayText(first) + (last > first ? ' to ' + dayText(last) : '') + ' (all day)';
+    }
     var d = new Date(iso);
-    if (allDay) return fmt(tz, 'd', { year: 'numeric', month: 'short', day: 'numeric' }).format(d) + ' (all day)';
     return fmt(tz, 'dt', {
       year: 'numeric',
       month: 'short',
@@ -293,7 +297,7 @@
       var place = pl.fromTitle
         ? '<i title="Taken from the event title">' + _escHtml(pl.text) + '</i>'
         : _escHtml(pl.text);
-      return [_escHtml(when(e.row[1], e.row[3], tz)), _escHtml(e.row[0]) + (tag ? ' ' + tag : ''), place];
+      return [_escHtml(when(e.row[1], e.row[3], tz, e.row[2])), _escHtml(e.row[0]) + (tag ? ' ' + tag : ''), place];
     });
     host.innerHTML =
       '<h4>' +

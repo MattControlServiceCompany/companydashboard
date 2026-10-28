@@ -101,7 +101,31 @@
     return { text: t, fromTitle: !!t };
   }
 
+  // The calendar day (YYYY-MM-DD) of a stored time in the calendar time zone.
+  // A date-only value ("2026-10-20") is already a calendar day. It must NOT go through Date, which reads it as UTC midnight.
+  var DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+  var _fmt = {};
+  function calendarDay(iso, tz) {
+    if (DATE_ONLY.test(iso)) return iso;
+    var f = (_fmt[tz] = _fmt[tz] || new Intl.DateTimeFormat('en-US', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }));
+    var o = {};
+    f.formatToParts(new Date(iso)).forEach(function (x) {
+      o[x.type] = x.value;
+    });
+    return o.year + '-' + o.month + '-' + o.day;
+  }
+  // Last day of an all-day event. The stored end is exclusive (a 1-day event on 10-20 ends 10-21), so it is one day back.
+  function allDayLastDay(start, end, tz) {
+    var first = calendarDay(start, tz);
+    if (!end) return first;
+    var e = calendarDay(end, tz).split('-');
+    var last = new Date(Date.UTC(Number(e[0]), Number(e[1]) - 1, Number(e[2]) - 1)).toISOString().slice(0, 10);
+    return last > first ? last : first;
+  }
+
   var api = {
+    calendarDay: calendarDay,
+    allDayLastDay: allDayLastDay,
     FIELDS: FIELDS,
     DETAIL_CAP: DETAIL_CAP,
     diffSnapshots: diffSnapshots,
