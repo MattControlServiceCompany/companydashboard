@@ -2507,6 +2507,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.27.177', date: '2026-10-27', title: 'Contract savings rates are locked',
+    items: [
+      { type: 'fix', text: 'Energy Savings page: contract savings rates and projected dollars can no longer change.' }
+    ]
+  },
   { v: 'v2026.10.27.176', date: '2026-10-27', title: 'Savings never negative, report waits for bills, tighter header',
     items: [
       { type: 'fix', text: 'Dashboard, Savings tab, Energy Graphics and the report: savings for a quarter never shows below $0 now, and every page shows the same quarter and annual projection.' },

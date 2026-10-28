@@ -185,7 +185,7 @@ assert(cum9.total === 3000, 'cumulative = 1000 + 2000 + floored open Q3 (0), got
 
 console.log('=== 7. contract rates cannot be typed or reset ===');
 vm.runInContext(
-  [constSrc(ES, 'RATE_LOCK_ATTRS'), ...['writeRateField', 'svUpdateMsrRate', 'svResetMsrRates'].map((n) => fnSrc(ES, n))]
+  [constSrc(ES, 'RATE_LOCK_ATTRS'), ...['measureRatesFrozen', 'writeRateField', 'svUpdateMsrRate', 'svResetMsrRates'].map((n) => fnSrc(ES, n))]
     .join(String.fromCharCode(10))
     .replace(/const\s+/g, 'var '),
   sb,

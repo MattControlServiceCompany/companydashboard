@@ -134,6 +134,10 @@ sb.initMeasureRates = (m) => {
 };
 sb.ensureMeasureRates = sb.initMeasureRates;
 sb.measureRatesNow = (projId, m) => m.rates;
+sb.writeMeasureTotal = (projId, m, total) => {
+  m.totalDollar = total;
+  return true;
+};
 sb.showToast = () => {};
 sb.sset = () => {};
 sb.closeCalcTemplate = () => {};

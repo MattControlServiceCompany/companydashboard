@@ -102,6 +102,8 @@ const code = [
     '_rateGuardToastText',
     'rateGuardAccept',
     'rateGuardAcceptAll',
+    'measureRatesFrozen',
+    'writeMeasureTotal',
     'writeRateSet',
     'writeRateField',
     'initMeasureRates',

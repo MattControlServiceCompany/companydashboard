@@ -819,6 +819,10 @@ function wdApplySetpointOptions(projId, bldgId, cfg) {
       var meta = _wdOptionMeta(x);
       return x.bldgId === bldgId && meta && meta.letter === o.letter;
     });
+    if (m && measureRatesFrozen(projId, m)) {
+      keep[m.id] = true; // signed contract: this measure is fixed
+      return;
+    }
     if (!m) {
       m = {
         id: 'm' + Date.now() + '_' + o.letter,
@@ -846,7 +850,7 @@ function wdApplySetpointOptions(projId, bldgId, cfg) {
     if (!(parseFloat(optRates.thermRate) > 0)) optRates.thermRate = cfg.rates.gasWinter;
     // rate-guard accepted upstream: cfg.rates only holds rates the rate guard passed or the user accepted in the inputs form.
     writeRateSet(m, 'rates', optRates, projId, bldgId, 'setpoint options apply', true);
-    m.totalDollar = calcMeasureDollars(o, measureRatesNow(projId, m)).total;
+    writeMeasureTotal(projId, m, calcMeasureDollars(o, measureRatesNow(projId, m)).total);
     keep[m.id] = true;
   });
   sd.measures = sd.measures.filter(function (x) {
@@ -1110,7 +1114,7 @@ async function wdInputsSetRate(key, val, el) {
     if (el) el.value = ctx.cfg.rates[key] === null || ctx.cfg.rates[key] === undefined ? '' : ctx.cfg.rates[key];
     return;
   }
-  writeRateField(ctx.cfg, 'rates', key, n);
+  writeRateField(ctx.cfg, 'rates', key, n, ctx.projId);
 }
 function wdInputsSetOpt(i, key, val) {
   if (!_wdInputsCtx || !_wdInputsCtx.cfg.options[i]) return;

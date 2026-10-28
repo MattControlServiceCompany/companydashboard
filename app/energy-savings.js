@@ -319,12 +319,29 @@ async function rateGuardAcceptAll(rates, projId, bldgId) {
   return true;
 }
 
+// measureRatesFrozen(projId, m) - THE contract freeze rule for a measure. Under a signed contract (projHasContract,
+// computations/savings.js) a measure that already carries projected dollars (totalDollar not 0) never changes its
+// rates, rateSource, rateFlag or totalDollar by any path. A measure with totalDollar 0 is a NEW measure (every add
+// path creates it with totalDollar 0): it may take its own rates and its first dollars, then it is frozen too.
+// Every writer below (writeRateSet, writeRateField, writeMeasureTotal, initMeasureRates, ensureMeasureRates) calls this.
+function measureRatesFrozen(projId, m) {
+  return !!m && projHasContract(projId) && (parseFloat(m.totalDollar) || 0) !== 0;
+}
+
+// writeMeasureTotal(projId, m, total) - the ONE write of a measure's saved dollars from a program path. Returns true when written.
+function writeMeasureTotal(projId, m, total) {
+  if (measureRatesFrozen(projId, m)) return false;
+  m.totalDollar = total;
+  return true;
+}
+
 // writeRateSet(holder, prop, rates, projId, bldgId, source, accepted) - holder[prop] = the rate fields of
 // `rates`. accepted = true only after rateGuardAccept / rateGuardAcceptAll said yes. Otherwise the rates are
 // owner rates (the program took them from the bills): only the fixed bounds apply. A rate outside them is
 // not saved; holder[prop] stays as it was and (for a measure) holder.rateFlag names the rate. The flag is
 // logged and toasted ONCE: the same blocked rate on a later call is silent. Returns true when written.
 function writeRateSet(holder, prop, rates, projId, bldgId, source, accepted) {
+  if (prop === 'rates' && measureRatesFrozen(projId, holder)) return false; // signed contract: the saved rates are fixed
   if (!accepted) {
     const fails = rateGuardCheckSet(rates, projId, bldgId, true);
     if (fails.length) {
@@ -355,7 +372,8 @@ function writeRateSet(holder, prop, rates, projId, bldgId, source, accepted) {
 // Attributes of a locked (contract) rate input. Hover text names the reason.
 const RATE_LOCK_ATTRS = 'readonly title="Contract rate - fixed by the agreement"';
 // writeRateField(holder, prop, field, val) - one rate the user typed AND accepted (rateGuardAccept).
-function writeRateField(holder, prop, field, val) {
+function writeRateField(holder, prop, field, val, projId) {
+  if (prop === 'rates' && measureRatesFrozen(projId, holder)) return false; // signed contract: the saved rates are fixed
   if (!holder[prop]) holder[prop] = {};
   holder[prop][field] = val;
   if (prop === 'rates') holder.rateSource = 'manual';
@@ -369,6 +387,7 @@ function writeRateField(holder, prop, field, val) {
   else if (/^kw/.test(field)) delete holder[prop].kwMonthly;
   else if (field === 'thermRate' || /^gas/.test(field)) delete holder[prop].gasMonthly;
   else if (field === 'gallonRate') delete holder[prop].gallonMonthly;
+  return true;
 }
 
 // initMeasureRates(m, projId, bldgId, source) - a new measure gets the building's baseline rates
@@ -376,7 +395,7 @@ function writeRateField(holder, prop, field, val) {
 function initMeasureRates(m, projId, bldgId, source) {
   writeRateSet(m, 'rates', {}, projId, bldgId, source, true);
   const ok = writeRateSet(m, 'rates', bldgId ? computeSeasonalBldgRates(projId, bldgId) : {}, projId, bldgId, source);
-  m.rateSource = 'owner'; // even when the guard blocked the write: the measure still takes the owner's rate later
+  if (!measureRatesFrozen(projId, m)) m.rateSource = 'owner'; // even when the guard blocked the write: the measure still takes the owner's rate later
   return ok;
 }
 
@@ -384,6 +403,10 @@ function initMeasureRates(m, projId, bldgId, source) {
 // rates when it has any and they pass the guard; a measure with none gets the baseline rates. Returns
 // false (blocked and logged) when the rates are out of range, so a bad rate never prices a calculator result.
 function ensureMeasureRates(m, projId, source) {
+  if (measureRatesFrozen(projId, m)) {
+    if (typeof showToast === 'function') showToast('Not applied: this measure is part of the signed contract and is fixed.', 'error');
+    return false;
+  }
   const has = m.rates && RATE_WRITE_FIELDS.some((k) => parseFloat(m.rates[k]) > 0);
   if (!has) return initMeasureRates(m, projId, m.bldgId, source);
   const fails = rateGuardCheckSet(m.rates, projId, m.bldgId);
@@ -437,7 +460,7 @@ function followOwnerMeasureRates(projId, sd) {
     if (!next || JSON.stringify(next) === JSON.stringify(m.rates)) return;
     const flagBefore = JSON.stringify(m.rateFlag || null);
     if (writeRateSet(m, 'rates', next, projId, m.bldgId, 'owner rate follow')) {
-      m.totalDollar = calcMeasureDollars(m, measureRatesNow(projId, m)).total;
+      writeMeasureTotal(projId, m, calcMeasureDollars(m, measureRatesNow(projId, m)).total);
       changed = true;
     } else if (JSON.stringify(m.rateFlag || null) !== flagBefore) changed = true;
   });
@@ -691,9 +714,10 @@ function calcProjSavingsMatrix(projId) {
     });
   });
   // Recalculate $ per measure using seasonal rates
+  const frozen = projHasContract(projId); // contract projected dollars are frozen: shown as saved, never re-derived
   sd.measures.forEach((m) => {
-    const total = calcMeasureDollars(m, measureRatesNow(projId, m, (sd.blRates || {})[m.bldgId])).total;
-    m.totalDollar = total;
+    const total = frozen ? Number(m.totalDollar) || 0 : calcMeasureDollars(m, measureRatesNow(projId, m, (sd.blRates || {})[m.bldgId])).total;
+    if (!frozen) m.totalDollar = total;
     const cell =
       document.getElementById('sv-msr-total-' + projId + '-' + m.id) || document.getElementById('sv-pg-total-' + m.id);
     // 2026-09-21 (SA-gate scope fix): estimated $ always displayed, no contract required.
@@ -1277,7 +1301,7 @@ async function svUpdateMsrRate(msrId, field, val, el) {
     if (el) el.value = (m.rates && m.rates[field]) || ''; // rates-ok: shows the typed field value
     return;
   }
-  writeRateField(m, 'rates', field, val);
+  writeRateField(m, 'rates', field, val, pid);
   sset('en_projects', projects);
 }
 
@@ -1311,9 +1335,10 @@ function svRecalc() {
     });
   });
   // Recalculate dollar totals using baseline rates
-  sd.measures.forEach((m) => {
-    m.totalDollar = calcMeasureDollars(m, measureRatesNow(svSelProjId, m, (sd.blRates || {})[m.bldgId])).total;
-  });
+  if (!projHasContract(svSelProjId)) // contract projected dollars are frozen
+    sd.measures.forEach((m) => {
+      m.totalDollar = calcMeasureDollars(m, measureRatesNow(svSelProjId, m, (sd.blRates || {})[m.bldgId])).total;
+    });
   sset('en_projects', projects);
   renderSvDetail();
   showToast('Savings recalculated ✓');
