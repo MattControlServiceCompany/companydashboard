@@ -1522,12 +1522,12 @@ function renderDetail(p) {
                 <div style="padding:16px">
                   <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:16px">
                     <div class="card" style="background:var(--s1);padding:14px;text-align:center">
-                      <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Baseline Site Energy Use Intensity</div>
+                      <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px" title="Baseline Site Energy Use Intensity: yearly energy use per square foot, in kBtu">Baseline Site EUI</div>
                       <div id="egfx-blEui-${p.id}" style="font-size:28px;font-weight:800;font-family:var(--mono);color:var(--accent);margin:6px 0">—</div>
                       <div style="font-size:11px;color:var(--text2)">kBtu/ft²</div>
                     </div>
                     <div class="card" style="background:var(--s1);padding:14px;text-align:center">
-                      <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Rolling 12-Month Site Energy Use Intensity</div>
+                      <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px" title="Rolling 12-Month Site Energy Use Intensity: yearly energy use per square foot, in kBtu">Rolling 12-Month Site EUI</div>
                       <div id="egfx-curEui-${p.id}" style="font-size:28px;font-weight:800;font-family:var(--mono);color:var(--em);margin:6px 0">—</div>
                       <div id="egfx-curEuiSub-${p.id}" style="font-size:11px;color:var(--text2)">kBtu/ft²</div>
                     </div>
@@ -1765,14 +1765,16 @@ function renderDetail(p) {
   document.getElementById('hdrProjBar').innerHTML = `
           <div class="pd-hero-compact" id="pd-hero-compact" style="display:flex">
             <button class="pd-back" onclick="backToList()" style="margin-bottom:0;margin-right:6px;flex-shrink:0">← Back</button>
+            <span class="phc-info" id="phc-info-${p.id}">
             <span class="phc-name phc-first">${p.name}</span>
-            <span class="phc-item">Service Agreement Number <span class="phc-val">${p.sa || '—'}</span></span>
+            <span class="phc-item" title="Service Agreement Number"><span class="phc-val">${p.sa || 'SA —'}</span></span>
             <span class="phc-item">Savings <span class="phc-val">${p.savings && projHasContract(p.id) ? '$' + Number(p.savings).toLocaleString() + '/yr' : '—'}</span></span>
             <span class="phc-item"><span class="phc-val">${p.start ? _parseISO(p.start).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</span> → <span class="phc-val">${p.end ? _parseISO(p.end).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</span></span>
             <span class="phc-item" id="phc-baseline-${p.id}">Baseline <span class="phc-val">—</span></span>
-            <span class="phc-item" id="phc-eui-${p.id}">Site Energy Use Intensity <span class="phc-val">—</span></span>
+            <span class="phc-item" id="phc-eui-${p.id}" title="Site Energy Use Intensity: yearly energy use per square foot, in kBtu">Site EUI <span class="phc-val">—</span></span>
             <span class="phc-item">Tasks <span class="phc-val" style="${openTasks > 0 ? 'color:var(--warn)' : ''}">${openTasks}</span></span>
             <span class="phc-item"><span class="phc-val">${getBaselineEligibleBldgs(p.id).length}</span> building${getBaselineEligibleBldgs(p.id).length !== 1 ? 's' : ''} · <span class="phc-val">${getBaselineEligibleBldgs(p.id).reduce((s, b) => s + parseInt(b.sqft || 0), 0) ? Number(getBaselineEligibleBldgs(p.id).reduce((s, b) => s + parseInt(b.sqft || 0), 0)).toLocaleString() + ' total sf' : ''}</span></span>
+            </span>
             <span class="phc-btns">
             <button class="btn btn-ghost btn-sm" style="padding:3px 5px;font-size:10px;flex-shrink:0" id="pd-proj-baseline-btn-${p.id}" onclick="toggleProjDetailPanel(${p.id},'baseline')">Project Baseline</button>
             <button class="btn btn-ghost btn-sm" style="padding:3px 5px;font-size:10px;flex-shrink:0" id="pd-proj-savproj-btn-${p.id}" onclick="toggleProjDetailPanel(${p.id},'savproj')">Projected Savings</button>
@@ -1780,6 +1782,7 @@ function renderDetail(p) {
             <button class="btn btn-ghost btn-sm" style="padding:3px 5px;font-size:10px" onclick="openProjModal();editProj(${p.id})">Edit Project</button>
           </span>
           </div>`;
+  _phcFullTitle(p.id);
   // Project tabs live in the header strip, not in the detail pane.
   document.getElementById('pdTabBar').innerHTML = _getProjTabHTML();
   _syncHeaderTabs();
@@ -1856,7 +1859,8 @@ function _updateCompactHdrBaseline(projId) {
   if (blEl)
     blEl.innerHTML =
       label + ' <span class="phc-val">' + (useCost > 0 ? '$' + Math.round(useCost).toLocaleString() : '—') + '</span>';
-  if (euiEl) euiEl.innerHTML = 'Site Energy Use Intensity <span class="phc-val">' + eui + '</span>';
+  if (euiEl) euiEl.innerHTML = 'Site EUI <span class="phc-val">' + eui + '</span>';
+  _phcFullTitle(projId);
   // Progress is computed at render time (projectProgress), never saved on load.
 }
 
@@ -2982,6 +2986,11 @@ function _getProjTabHTML() {
 // wrap to a second line when the row is full, so there is no width equalizing, scrolling or arrows.
 // Show the open project's info bar and tabs in the header in place of the department tab; show the
 // department tab again when no project is open. Called after every change to what is visible.
+// Info bar full-text tooltip: when the bar is cut short with an ellipsis (1280 px and wider), hovering the empty cut area shows all of it.
+function _phcFullTitle(projId) {
+  const el = document.getElementById('phc-info-' + projId);
+  if (el) el.title = el.textContent.replace(/\s+/g, ' ').trim();
+}
 function _syncHeaderTabs() {
   const bar = document.getElementById('hdrTabs');
   const info = document.getElementById('hdrProjBar');

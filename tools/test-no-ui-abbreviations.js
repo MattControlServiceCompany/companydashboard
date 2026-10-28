@@ -105,7 +105,12 @@ const BANNED_RES = BANNED_WORDS.map((w) => ({
 // was removed — that file's "Ventilation CFM"/"Return Fan CFM"/etc. column labels are spelled out
 // ("Ventilation Airflow", "Return Fan Airflow", ...) like every other file's CFM labels. No file
 // exceptions remain; the whole-word ban applies everywhere.
-const BANNED_WORD_FILE_EXCEPTIONS = new Map();
+// 2026-10-28 standing rule (Matt): on INTERNAL screens, standard energy terms may be short with a hover
+// tooltip giving the full words. EUI is allowed in the internal files below only; reports and the
+// shared chart labels stay spelled out (client-facing).
+const BANNED_WORD_FILE_EXCEPTIONS = new Map([
+  ['EUI', new Set([path.join('app', 'core.js'), path.join('app', 'graphics-setpoints.js')])],
+]);
 
 // ─── All-caps token safety net (2026-09-24 follow-up) ───────────────────────────────────────
 // Beyond the curated whole-word list above, any all-caps run of 2-5 letters in a scanned label
@@ -178,6 +183,7 @@ const ALLOWED_ALL_CAPS = new Set([
   'RA',
   // Example ID/tag-format placeholders (illustrate a real value's format, not label prose):
   'SA',
+  'EUI', // 2026-10-28 rule: internal screens may say EUI with a tooltip (banned word list still blocks it in reports)
   'MTR',
   // Whole English words rendered in ALL CAPS for header/button styling — not abbreviations:
   'ALL',

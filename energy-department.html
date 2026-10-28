@@ -4538,6 +4538,33 @@
         font-family: var(--mono);
         color: var(--text);
       }
+      /* Narrow windows: the info items wrap with the row. 1280 px and wider: info bar and buttons stay on ONE row;
+         the info text is cut with an ellipsis (full text in its tooltip) and the buttons never wrap. */
+      .pd-hero-compact .phc-info {
+        display: contents;
+      }
+      @media (min-width: 1280px) {
+        .pd-hero-compact {
+          flex-wrap: nowrap;
+        }
+        .pd-hero-compact .phc-info {
+          display: block;
+          flex: 1 1 0;
+          min-width: 0;
+          overflow: hidden;
+          white-space: nowrap;
+          text-overflow: ellipsis;
+        }
+        .pd-hero-compact .phc-info > .phc-name,
+        .pd-hero-compact .phc-info > .phc-item {
+          display: inline-block;
+          vertical-align: middle;
+        }
+        .pd-hero-compact .phc-btns {
+          flex-wrap: nowrap;
+          flex-shrink: 0;
+        }
+      }
       /* ── Project tab bar — lives in the header row (#pdTabBar inside #hdrTabs) ──
          Text-only tabs. Tabs size to their own label plus identical padding and wrap
          to a second line when the row is full: no scrolling, no arrows, nothing hidden.
