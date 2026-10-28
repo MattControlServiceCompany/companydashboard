@@ -196,42 +196,59 @@ function _faBindChange(body) {
 
 function _faRow(pid, f) {
   var detail =
-    '<div class="fa-detail">' +
-    '<div class="fa-line"><b>Change:</b> ' +
-    _escHtml(f.change || 'none') +
-    '</div>' +
-    _faField(pid, f, 'how', 'How', true) +
+    '<details><summary>More</summary><div class="fa-detail">' +
     _faField(pid, f, 'picture', 'Picture file name', true) +
     _faField(pid, f, 'pictureLink', 'Picture link (optional)', true) +
-    _faField(pid, f, 'notes', 'Notes', true) +
     _faField(pid, f, 'hours', 'Hours to fix') +
     _faField(pid, f, 'cost', 'Cost ($)') +
     _faField(pid, f, 'measureId', 'Savings measure id') +
-    '</div>';
+    '</div></details>';
   return (
     '<tr><td>' +
     _escHtml(f.building) +
     '</td><td>' +
     _escHtml(f.equipment) +
-    '<div class="fa-sub">' +
+    '</td><td>' +
     _escHtml(f.type) +
-    '</div></td><td><details><summary>' +
-    _escHtml(f.issue) +
-    '</summary>' +
-    detail +
-    '</details></td><td>' +
+    '</td><td>' +
     _escHtml(f.issueType) +
     (f.auto ? '<div class="fa-sub">Automatic</div>' : '') +
+    '</td><td>' +
+    _escHtml(f.issue) +
+    '</td><td>' +
+    _faCellInput(pid, f, 'change', 'Type of Optimization') +
+    '</td><td>' +
+    _faCellInput(pid, f, 'how', 'How do we accomplish') +
+    '</td><td>' +
+    _faCellInput(pid, f, 'notes', 'Notes') +
+    detail +
     '</td><td>' +
     _faStatusChip(pid, f) +
     '</td></tr>'
   );
 }
 
+function _faCellInput(pid, f, field, label) {
+  var v = f[field] == null ? '' : f[field];
+  return (
+    '<textarea class="fa-cell" rows="2" aria-label="' +
+    label +
+    '" data-pid="' +
+    _escHtml(pid) +
+    '" data-id="' +
+    _escHtml(f.id) +
+    '" data-field="' +
+    _escHtml(field) +
+    '">' +
+    _escHtml(v) +
+    '</textarea>'
+  );
+}
+
 function _faFindingsTable(pid, list) {
   if (!list.length) return '<div class="fa-empty">No findings yet.</div>';
   return (
-    '<div class="ch-tbl-outer fa-outer"><table class="fa-tbl"><thead><tr><th>Building</th><th>Equipment</th><th>Issue</th><th>Kind</th><th>Status</th></tr></thead><tbody>' +
+    '<div class="ch-tbl-outer fa-outer fa-scroll"><table class="fa-tbl"><thead><tr><th>Building</th><th>Equipment</th><th>Type</th><th>Issue Type</th><th>Issue</th><th>Type of Optimization</th><th>How do we accomplish</th><th>Notes</th><th>Status</th></tr></thead><tbody>' +
     list
       .map(function (f) {
         return _faRow(pid, f);
@@ -304,10 +321,11 @@ var _faCss =
   '.fa-outer{border:1px solid var(--border);border-radius:6px;overflow:hidden}' +
   '.fa-scroll{overflow-x:auto}' +
   '.fa-tbl{width:100%;border-collapse:separate;border-spacing:0;table-layout:auto;font-size:12px}' +
-  '.fa-tbl th{background:var(--s1);color:var(--text);text-align:left;padding:6px;font-size:11px}' +
+  '.fa-tbl th{background:var(--s1);color:var(--text);text-align:left;padding:6px;font-size:11px;white-space:nowrap}' +
   '.fa-tbl th,.fa-tbl td{border-right:1px solid var(--border);border-bottom:1px solid var(--border);padding:6px;vertical-align:top;overflow-wrap:anywhere;color:var(--text)}' +
   '.fa-tbl th:last-child,.fa-tbl td:last-child{border-right:none}' +
   '.fa-tbl tbody tr:last-child td{border-bottom:none}' +
+  '.fa-tbl td{min-width:90px}' +
   '.fa-sub{font-size:11px;color:var(--text)}' +
   '.fa-chip{background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:10px;padding:2px 6px;font-size:11px}' +
   '.fa-detail{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}' +
@@ -315,6 +333,7 @@ var _faCss =
   '.fa-fld.fa-wide{flex-basis:100%}' +
   '.fa-fld input{background:var(--s2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 6px;font-size:12px}' +
   '.fa-line{flex-basis:100%;font-size:12px}' +
+  '.fa-cell{width:100%;min-width:140px;box-sizing:border-box;background:var(--s2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:4px 6px;font-size:12px;font-family:inherit;resize:vertical}' +
   '.fa-empty{padding:24px;text-align:center}' +
   '.fa-review{border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:12px;font-size:12px}' +
   '.fa-tbl summary{cursor:pointer}';

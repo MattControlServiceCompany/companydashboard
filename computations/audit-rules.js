@@ -11,12 +11,11 @@ var AUDIT_SCHEDULE_TOLERANCE_HOURS = 0.5;
 
 // Units that feed boxes or zones. An air source unit serving other units has no schedule of its own:
 // it turns on from their requests (Matt, 2026-10-28). Plants (hot water, chilled water) work the same way.
-// AHU, ERV, DOAS and the plants are ALWAYS serving units. An RTU is serving only when a row names it as
-// its parent or served-by unit, or its building has box or zone rows; otherwise it is a single-zone RTU.
+// AHU, ERV, DOAS and the plants are ALWAYS serving units. An RTU is serving only when its building has
+// box or zone rows (VAV, FPB, DDVAV, zone); otherwise it is a single-zone RTU with its own schedule.
 // Domestic hot water is NOT a serving unit.
 var AUDIT_ALWAYS_SERVING_CATEGORIES = { ahu: true, erv: true, doas: true, hwp: true, chwp: true };
 var AUDIT_TERMINAL_CATEGORIES = { vav: true, fpb: true, ddvav: true, zone: true };
-var AUDIT_PARENT_FIELDS = ['parentId', 'parentUnit', 'parent', 'servedBy', 'servedByUnit'];
 
 function _auditNum(v) {
   if (v === null || v === undefined || v === '') return null;
@@ -30,17 +29,8 @@ function auditIsServingUnit(row, rows) {
   if (AUDIT_ALWAYS_SERVING_CATEGORIES[cat]) return true;
   if (cat !== 'rtu') return false;
   var bn = _emNormBldgNameForJoin(row.building || '');
-  var mine = [row.id, row.equipName]
-    .filter(Boolean)
-    .map(function (x) {
-      return String(x).trim().toLowerCase();
-    });
   return (rows || []).some(function (r) {
-    if (!r || r === row) return false;
-    if (AUDIT_TERMINAL_CATEGORIES[r.category] && _emNormBldgNameForJoin(r.building || '') === bn) return true;
-    return AUDIT_PARENT_FIELDS.some(function (k) {
-      return r[k] && mine.indexOf(String(r[k]).trim().toLowerCase()) !== -1;
-    });
+    return r && r !== row && AUDIT_TERMINAL_CATEGORIES[r.category] && _emNormBldgNameForJoin(r.building || '') === bn;
   });
 }
 

@@ -82,9 +82,6 @@ t.ok(idsNb.indexOf(ahuNb.id) === -1, 'AHU with no box rows: no schedule finding'
 t.ok(idsNb.indexOf(ervNb.id) === -1, 'ERV with no box rows: no schedule finding');
 t.ok(idsNb.indexOf(rtuNb.id) !== -1, 'single-zone RTU with no boxes: schedule finding');
 t.ok(idsNb.indexOf(dhwNb.id) !== -1, 'DHW with no boxes: schedule finding');
-const rtuKid = row({ building: 'Fake Hall D', equipName: 'RTU-8', category: 'rtu', existingSchedule: { rawText: longText } });
-const kid = row({ building: 'Fake Hall D', equipName: 'FCU-8', category: 'fcu', servedBy: 'rtu-8' });
-t.eq(sb.auditIsServingUnit(rtuKid, [rtuKid, kid]), true, 'RTU named as served-by unit is a serving unit');
 
 // 5. Recomputed on read, never stored
 const before = Object.keys(sb.__store).length;
