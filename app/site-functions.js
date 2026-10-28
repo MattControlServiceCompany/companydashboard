@@ -2507,6 +2507,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.28.178', date: '2026-10-28', title: 'Project page header redesign',
+    items: [
+      { type: 'change', text: 'Project page header: project details now sit in the top bar, the project tabs sit below it and look like tabs, and your account shows as an initials badge. Hover the badge to see your email.' }
+    ]
+  },
   { v: 'v2026.10.27.177', date: '2026-10-27', title: 'Contract savings rates are locked',
     items: [
       { type: 'fix', text: 'Energy Savings page: contract savings rates and projected dollars can no longer change.' }
