@@ -29,7 +29,21 @@ function faAllFindings(pid) {
   var d = faLoad(pid);
   var m = emLoadMatrix(pid);
   var rows = (m && m.rows) || [];
-  var auto = auditComputeAutoFindings(rows, { hasGas: emHasGasLookup(pid) }).map(function (f) {
+  var autoRaw = auditComputeAutoFindings(rows, { hasGas: emHasGasLookup(pid) });
+  var live = {};
+  autoRaw.forEach(function (f) {
+    live[f.id] = true;
+  });
+  var stale = Object.keys(d.edits).filter(function (k) {
+    return k.indexOf('auto:') === 0 && !live[k];
+  });
+  if (m && stale.length) {
+    stale.forEach(function (k) {
+      delete d.edits[k];
+    });
+    faSave(pid, d);
+  }
+  var auto = autoRaw.map(function (f) {
     var e = d.edits[f.id] || {};
     var o = Object.assign({ status: '', notes: '', cost: null, hours: null, picture: '', pictureLink: '', how: '', measureId: null }, f);
     FA_EDIT_FIELDS.forEach(function (k) {
@@ -50,6 +64,7 @@ function faSetPointRows(pid) {
 }
 
 function faEdit(pid, id, field, value) {
+  if (FA_EDIT_FIELDS.indexOf(field) === -1) return;
   var d = faLoad(pid);
   if (field === 'cost' || field === 'hours') {
     var n = parseFloat(String(value).replace(/[$,]/g, ''));
@@ -167,7 +182,15 @@ function _faBindChange(body) {
   body._faBound = true;
   body.addEventListener('change', function (ev) {
     var t = ev.target;
-    if (t && t.dataset && t.dataset.field && t.dataset.id) faEdit(t.dataset.pid, t.dataset.id, t.dataset.field, t.value);
+    if (!t || !t.dataset) return;
+    if (t.dataset.action === 'import') faImportFile(t.dataset.pid, t);
+    else if (t.dataset.field && t.dataset.id) faEdit(t.dataset.pid, t.dataset.id, t.dataset.field, t.value);
+  });
+  body.addEventListener('click', function (ev) {
+    var t = ev.target && ev.target.closest ? ev.target.closest('[data-action]') : null;
+    if (!t || !t.dataset) return;
+    if (t.dataset.action === 'view') faSetView(t.dataset.pid, t.dataset.view);
+    else if (t.dataset.action === 'add') faAdd(t.dataset.pid);
   });
 }
 
@@ -318,7 +341,7 @@ function faRender(pid) {
     ['setpoints', 'Set points'],
   ]
     .map(function (v) {
-      return '<button class="fa-pill' + (_faView === v[0] ? ' on' : '') + '" onclick="faSetView(' + pid + ',\'' + v[0] + '\')">' + v[1] + '</button>';
+      return '<button class="fa-pill' + (_faView === v[0] ? ' on' : '') + '" data-action="view" data-pid="' + _escHtml(pid) + '" data-view="' + _escHtml(v[0]) + '">' + v[1] + '</button>';
     })
     .join('');
   body.innerHTML =
@@ -333,11 +356,11 @@ function faRender(pid) {
     ' not done, ' +
     defs.length +
     ' deficiencies</span></div>' +
-    '<div class="fa-bar"><button class="fa-btn" onclick="faAdd(' +
-    pid +
-    ')">Add finding</button><label class="fa-btn">Import audit workbook<input type="file" accept=".xlsx" style="display:none" onchange="faImportFile(' +
-    pid +
-    ',this)"></label></div>' +
+    '<div class="fa-bar"><button class="fa-btn" data-action="add" data-pid="' +
+    _escHtml(pid) +
+    '">Add finding</button><label class="fa-btn">Import audit workbook<input type="file" accept=".xlsx" style="display:none" data-action="import" data-pid="' +
+    _escHtml(pid) +
+    '"></label></div>' +
     _faImportReview() +
     (_faView === 'setpoints' ? _faSetPointsTable(pid) : _faFindingsTable(pid, shown)) +
     '</div>';

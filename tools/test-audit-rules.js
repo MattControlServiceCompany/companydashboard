@@ -72,6 +72,20 @@ t.ok(schIds.indexOf(dhw.id) !== -1, 'domestic hot water is not a serving unit: s
 t.eq(sb.auditIsServingUnit(ahu, [ahu, box]), true, 'auditIsServingUnit: AHU with a box');
 t.eq(sb.auditIsServingUnit(dhw, [dhw, box]), false, 'auditIsServingUnit: domestic hot water');
 
+// 4b. Serving rule without box rows
+const ahuNb = row({ building: 'Fake Hall C', equipName: 'AHU-9', category: 'ahu', existingSchedule: { rawText: longText } });
+const ervNb = row({ building: 'Fake Hall C', equipName: 'ERV-9', category: 'erv', existingSchedule: { rawText: longText } });
+const rtuNb = row({ building: 'Fake Hall C', equipName: 'RTU-9', category: 'rtu', existingSchedule: { rawText: longText } });
+const dhwNb = row({ building: 'Fake Hall C', equipName: 'Domestic Hot Water 9', category: 'plumbing', existingSchedule: { rawText: longText } });
+const idsNb = ruleOf(run([ahuNb, ervNb, rtuNb, dhwNb]), 'schedule-extra-hours').map((x) => x.rowId);
+t.ok(idsNb.indexOf(ahuNb.id) === -1, 'AHU with no box rows: no schedule finding');
+t.ok(idsNb.indexOf(ervNb.id) === -1, 'ERV with no box rows: no schedule finding');
+t.ok(idsNb.indexOf(rtuNb.id) !== -1, 'single-zone RTU with no boxes: schedule finding');
+t.ok(idsNb.indexOf(dhwNb.id) !== -1, 'DHW with no boxes: schedule finding');
+const rtuKid = row({ building: 'Fake Hall D', equipName: 'RTU-8', category: 'rtu', existingSchedule: { rawText: longText } });
+const kid = row({ building: 'Fake Hall D', equipName: 'FCU-8', category: 'fcu', servedBy: 'rtu-8' });
+t.eq(sb.auditIsServingUnit(rtuKid, [rtuKid, kid]), true, 'RTU named as served-by unit is a serving unit');
+
 // 5. Recomputed on read, never stored
 const before = Object.keys(sb.__store).length;
 run([spOff, schedLong]);
@@ -96,7 +110,8 @@ const d8 = sb.faLoad(900);
 d8.findings.push({ id: evil, rowId: null, building: 'Fake Hall A', equipment: 'Fake Unit', type: '', issueType: 'Optimization', issue: 'Hostile id', change: '', how: '', picture: '', pictureLink: '', notes: '', measureId: null, hours: null, cost: null, status: 'Open', deficiency: false, cscList: false });
 sb.faSave(900, d8);
 let handler = null;
-const fakeBody = { innerHTML: '', addEventListener: (type, fn) => { if (type === 'change') handler = fn; } };
+let clickHandler = null;
+const fakeBody = { innerHTML: '', addEventListener: (type, fn) => { if (type === 'change') handler = fn; if (type === 'click') clickHandler = fn; } };
 sb.document.getElementById = () => fakeBody;
 sb.faRender(900);
 const html = fakeBody.innerHTML;
@@ -104,9 +119,30 @@ t.ok(html.indexOf('Hostile id') !== -1, 'hostile record is rendered');
 t.ok(!/\son(change|click|input)="[^"]*alert/i.test(html), 'no handler attribute carries the id');
 t.ok(!/onchange="faEdit/.test(html), 'no inline edit handler is built from data');
 t.ok(html.indexOf("data-id=\"x&#39; &quot; ); alert(1)//\"") !== -1, 'id sits in an escaped data attribute');
-t.ok(typeof handler === 'function', 'one delegated change listener is bound');
+t.ok(!/\son(change|click|input)=/i.test(html), 'no inline handler attribute anywhere (buttons, file input)');
+t.ok(/data-action="add"/.test(html) && /data-action="import"/.test(html) && /data-action="view"/.test(html), 'buttons and file input use data-action');
+t.ok(typeof handler === 'function' && typeof clickHandler === 'function', 'delegated change and click listeners are bound');
+clickHandler({ target: { closest: () => ({ dataset: { action: 'view', pid: '900', view: 'deficiency' } }) } });
+t.ok(sb._faView === 'deficiency', 'view click dispatches');
+const nBefore = sb.faLoad(900).findings.length;
+clickHandler({ target: { closest: () => ({ dataset: { action: 'add', pid: '900' } }) } });
+t.eq(sb.faLoad(900).findings.length, nBefore + 1, 'delegated add click adds a finding');
+sb.faSetView(900, 'findings');
 handler({ target: { dataset: { pid: '900', id: evil, field: 'notes' }, value: 'checked' } });
 t.eq(sb.faLoad(900).findings.filter((x) => x.id === evil)[0].notes, 'checked', 'delegated edit reaches the right record');
+
+// 9. faEdit refuses unknown fields; stale auto edits are pruned
+sb.faEdit(900, evil, 'issue', 'tampered');
+sb.faEdit(900, 'auto:' + spOff.id + '::setpoint-off-standard', 'ruleId', 'tampered');
+t.eq(sb.faLoad(900).findings.filter((x) => x.id === evil)[0].issue, 'Hostile id', 'faEdit refuses a field outside FA_EDIT_FIELDS (finding)');
+t.ok(sb.faLoad(900).edits['auto:' + spOff.id + '::setpoint-off-standard'].ruleId === undefined, 'faEdit refuses a field outside FA_EDIT_FIELDS (auto edit)');
+const gone = 'auto:fake-gone-row::setpoint-off-standard';
+const d9 = sb.faLoad(900);
+d9.edits[gone] = { status: 'Done' };
+sb.faSave(900, d9);
+sb.faAllFindings(900);
+t.ok(sb.faLoad(900).edits[gone] === undefined, 'stale auto edit pruned when its source row is gone');
+t.ok(sb.faLoad(900).edits['auto:' + spOff.id + '::setpoint-off-standard'] !== undefined, 'live auto edit kept');
 
 // 7. One function per rule (grep)
 const src = fs.readFileSync(path.join(ROOT, 'computations/audit-rules.js'), 'utf8');
