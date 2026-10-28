@@ -1364,32 +1364,6 @@ function renderDetail(p) {
               <div class="pd-cell"><div class="pd-cell-lbl">Baseline Comparison</div><div class="pd-cell-val">${p.baselineComparison === 'normalized' ? 'Normalized' : 'Actual'}</div></div>
             </div>
           </div>
-          <div class="pd-hero-compact" id="pd-hero-compact" style="display:flex">
-            <button class="pd-back" onclick="backToList()" style="margin-bottom:0;margin-right:8px;flex-shrink:0">← Back</button>
-            <span class="phc-name">${p.name}</span>
-            <span class="phc-sep">|</span>
-            <span>Service Agreement Number <span class="phc-val">${p.sa || '—'}</span></span>
-            <span class="phc-sep">|</span>
-            <span>Savings <span class="phc-val">${p.savings && projHasContract(p.id) ? '$' + Number(p.savings).toLocaleString() + '/yr' : '—'}</span></span>
-            <span class="phc-sep">|</span>
-            <span><span class="phc-val">${p.start ? _parseISO(p.start).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</span> → <span class="phc-val">${p.end ? _parseISO(p.end).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</span></span>
-            <span class="phc-sep">|</span>
-            <span id="phc-baseline-${p.id}">Baseline <span class="phc-val">—</span></span>
-            <span class="phc-sep">|</span>
-            <span id="phc-eui-${p.id}">Site Energy Use Intensity <span class="phc-val">—</span></span>
-            <span class="phc-sep">|</span>
-            <span>Tasks <span class="phc-val" style="${openTasks > 0 ? 'color:var(--warn)' : ''}">${openTasks}</span></span>
-            <span class="phc-sep">|</span>
-            <span><span class="phc-val">${getBaselineEligibleBldgs(p.id).length}</span> building${getBaselineEligibleBldgs(p.id).length !== 1 ? 's' : ''} · <span class="phc-val">${getBaselineEligibleBldgs(p.id).reduce((s, b) => s + parseInt(b.sqft || 0), 0) ? Number(getBaselineEligibleBldgs(p.id).reduce((s, b) => s + parseInt(b.sqft || 0), 0)).toLocaleString() + ' total sf' : ''}</span></span>
-            <span class="phc-sep">|</span>
-            <button class="btn btn-ghost btn-sm" style="padding:3px 8px;font-size:10px;flex-shrink:0" id="pd-proj-baseline-btn-${p.id}" onclick="toggleProjDetailPanel(${p.id},'baseline')">📊 Project Baseline</button>
-            <button class="btn btn-ghost btn-sm" style="padding:3px 8px;font-size:10px;flex-shrink:0" id="pd-proj-savproj-btn-${p.id}" onclick="toggleProjDetailPanel(${p.id},'savproj')">📈 Projected Savings</button>
-            <button class="btn btn-ghost btn-sm" style="padding:3px 8px;font-size:10px;flex-shrink:0" id="pd-proj-perf-btn-${p.id}" onclick="toggleProjDetailPanel(${p.id},'perf')">💡 Project Performance</button>
-            <span class="phc-sep">|</span>
-            <span style="display:flex;gap:4px;flex-shrink:0">
-              <button class="btn btn-ghost btn-sm" style="padding:3px 8px;font-size:10px" onclick="openProjModal();editProj(${p.id})">✏️ Edit Project</button>
-            </span>
-          </div>
           <!-- Project-level panel content (shown when project-level buttons clicked) -->
           <div id="pd-proj-panel-content-${p.id}" style="display:none;border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px;overflow-y:auto"></div>
           <div class="card" id="pd-tabs-card-${p.id}" style="display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden">
@@ -1778,7 +1752,35 @@ function renderDetail(p) {
               </div>
             </div>
           </div>`;
-  // Project tabs live in the header row, not in the detail pane.
+  // Project info bar lives in header row 1 (#hdrProjBar), tabs in row 2 (#pdTabBar).
+  document.getElementById('hdrProjBar').innerHTML = `
+          <div class="pd-hero-compact" id="pd-hero-compact" style="display:flex">
+            <button class="pd-back" onclick="backToList()" style="margin-bottom:0;margin-right:8px;flex-shrink:0">← Back</button>
+            <span class="phc-name">${p.name}</span>
+            <span class="phc-sep">|</span>
+            <span>Service Agreement Number <span class="phc-val">${p.sa || '—'}</span></span>
+            <span class="phc-sep">|</span>
+            <span>Savings <span class="phc-val">${p.savings && projHasContract(p.id) ? '$' + Number(p.savings).toLocaleString() + '/yr' : '—'}</span></span>
+            <span class="phc-sep">|</span>
+            <span><span class="phc-val">${p.start ? _parseISO(p.start).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</span> → <span class="phc-val">${p.end ? _parseISO(p.end).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</span></span>
+            <span class="phc-sep">|</span>
+            <span id="phc-baseline-${p.id}">Baseline <span class="phc-val">—</span></span>
+            <span class="phc-sep">|</span>
+            <span id="phc-eui-${p.id}">Site Energy Use Intensity <span class="phc-val">—</span></span>
+            <span class="phc-sep">|</span>
+            <span>Tasks <span class="phc-val" style="${openTasks > 0 ? 'color:var(--warn)' : ''}">${openTasks}</span></span>
+            <span class="phc-sep">|</span>
+            <span><span class="phc-val">${getBaselineEligibleBldgs(p.id).length}</span> building${getBaselineEligibleBldgs(p.id).length !== 1 ? 's' : ''} · <span class="phc-val">${getBaselineEligibleBldgs(p.id).reduce((s, b) => s + parseInt(b.sqft || 0), 0) ? Number(getBaselineEligibleBldgs(p.id).reduce((s, b) => s + parseInt(b.sqft || 0), 0)).toLocaleString() + ' total sf' : ''}</span></span>
+            <span class="phc-sep">|</span>
+            <button class="btn btn-ghost btn-sm" style="padding:3px 8px;font-size:10px;flex-shrink:0" id="pd-proj-baseline-btn-${p.id}" onclick="toggleProjDetailPanel(${p.id},'baseline')">📊 Project Baseline</button>
+            <button class="btn btn-ghost btn-sm" style="padding:3px 8px;font-size:10px;flex-shrink:0" id="pd-proj-savproj-btn-${p.id}" onclick="toggleProjDetailPanel(${p.id},'savproj')">📈 Projected Savings</button>
+            <button class="btn btn-ghost btn-sm" style="padding:3px 8px;font-size:10px;flex-shrink:0" id="pd-proj-perf-btn-${p.id}" onclick="toggleProjDetailPanel(${p.id},'perf')">💡 Project Performance</button>
+            <span class="phc-sep">|</span>
+            <span style="display:flex;gap:4px;flex-shrink:0">
+              <button class="btn btn-ghost btn-sm" style="padding:3px 8px;font-size:10px" onclick="openProjModal();editProj(${p.id})">✏️ Edit Project</button>
+            </span>
+          </div>`;
+  // Project tabs live in the header strip, not in the detail pane.
   document.getElementById('pdTabBar').innerHTML = _getProjTabHTML();
   _syncHeaderTabs();
   _initTabDrag();
@@ -2976,18 +2978,20 @@ function _getProjTabHTML() {
     })
     .join('');
 }
-// Project tabs render in the page header row (#pdTabBar inside #hdrTabs). They are text-only and
+// Project tabs render in the header's second row (#pdTabBar inside #hdrTabs), the project info bar in row 1 (#hdrProjBar). Tabs are text-only and
 // wrap to a second line when the row is full, so there is no width equalizing, scrolling or arrows.
-// Show the open project's tabs in the header in place of the department tab; show the
+// Show the open project's info bar and tabs in the header in place of the department tab; show the
 // department tab again when no project is open. Called after every change to what is visible.
 function _syncHeaderTabs() {
-  const bar = document.getElementById('pdTabBar');
+  const bar = document.getElementById('hdrTabs');
+  const info = document.getElementById('hdrProjBar');
   const dept = document.getElementById('hdrDeptTab');
-  if (!bar || !dept) return;
+  if (!bar || !info || !dept) return;
   const detail = document.getElementById('projDetailView');
   const view = document.getElementById('view-projects');
   const open = !!(window._activeProjId && detail && detail.style.display !== 'none' && view && view.classList.contains('active'));
   bar.style.display = open ? 'flex' : 'none';
+  info.style.display = open ? 'flex' : 'none';
   dept.style.display = open ? 'none' : '';
 }
 

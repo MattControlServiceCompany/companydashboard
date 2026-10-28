@@ -383,24 +383,36 @@
         backdrop-filter: blur(16px);
         border-bottom: 1px solid var(--border);
       }
-      /* One header row: tabs on the left (department tab, or the open project's tabs), bell/user/Sign Out on the right.
-         Tabs wrap to a second line when they do not fit — never scroll, never hidden. */
-      .hdr-tabs {
-        display: flex;
+      /* Header: row 1 = the open project's info bar (or the department tab) on the left, bell/user/Sign Out on the right.
+         Row 2 = the project tab strip, full width, under row 1. Both rows wrap instead of clipping. */
+      .hdr-projbar {
         flex: 1 1 0;
         min-width: 0;
         align-items: center;
       }
-      /* Tabs and the right-hand group (user, bell, Sign Out) flow as one wrapping row: the least height. */
-      .topbar > .hdr-tabs,
-      .topbar > .hdr-tabs > .pd-tabs:not([style*='none']) {
-        display: contents !important;
+      .hdr-projbar .pd-hero-compact {
+        flex: 1 1 auto;
+        margin: 0;
+        padding: 4px 8px;
+        background: transparent;
+        border: none;
+        border-radius: 0;
       }
       .topbar > .t-right {
         margin-left: auto;
       }
-      /* Narrow windows: the signed-in email gives way so the tabs fit in two rows; Sign Out stays. */
-      @media (max-width: 1199px) {
+      /* Tab strip: one bordered strip under row 1; each tab is a padded button with a bottom bar. */
+      .hdr-tabs {
+        order: 3;
+        flex: 1 1 100%;
+        min-width: 0;
+        display: flex;
+        padding: 0 8px;
+        border-top: 1px solid var(--border);
+        background: var(--s1);
+      }
+      /* Narrow windows: the signed-in email gives way so the project bar keeps its room; Sign Out stays. */
+      @media (max-width: 899px) {
         .topbar .user-chip {
           display: none;
         }
@@ -4460,7 +4472,7 @@
       .pd-tabs {
         display: flex;
         flex-wrap: wrap;
-        align-items: center;
+        align-items: stretch;
         gap: 0;
         min-width: 0;
         flex: 1 1 auto;
@@ -4469,8 +4481,9 @@
         font-family: var(--font);
         font-size: 12px;
         font-weight: 500;
-        padding: 5px 5px;
+        padding: 9px 14px 6px;
         border: none;
+        border-bottom: 3px solid transparent;
         cursor: pointer;
         color: var(--text);
         background: transparent;
@@ -4479,14 +4492,17 @@
         align-items: center;
         white-space: nowrap;
       }
-      .pdt:hover .tab-lbl {
-        border-bottom-color: var(--border2);
+      .pdt .tab-lbl {
+        padding: 0;
+        border-bottom: none;
+      }
+      .pdt:hover {
+        background: var(--s4);
       }
       .pdt.active {
-        font-weight: 600;
-      }
-      .pdt.active .tab-lbl {
+        font-weight: 700;
         border-bottom-color: var(--em);
+        background: var(--s2);
       }
       .pdt.drag-over {
         border-left: 2px solid var(--accent);
@@ -9150,10 +9166,8 @@
 
         <div class="app-col">
         <header class="topbar" data-fb="energy.topbar">
-          <nav class="hdr-tabs" id="hdrTabs" data-fb="energy.dept-nav">
-            <button class="dept-tab active" id="hdrDeptTab" data-fb="energy.dept-nav.energy"><span class="tab-lbl">Energy Department</span></button>
-            <div class="pd-tabs" id="pdTabBar" style="display: none"></div>
-          </nav>
+          <button class="dept-tab active" id="hdrDeptTab" data-fb="energy.dept-nav.energy"><span class="tab-lbl">Energy Department</span></button>
+          <div class="hdr-projbar" id="hdrProjBar" style="display: none"></div>
           <div class="t-right">
             <div class="user-chip">
               <div class="u-name" id="topName">Loading...</div>
@@ -9227,6 +9241,9 @@
             </div>
             <button class="signout" data-fb="energy.topbar.signout-btn" onclick="signOut()">Sign Out</button>
           </div>
+          <nav class="hdr-tabs" id="hdrTabs" data-fb="energy.dept-nav" style="display: none">
+            <div class="pd-tabs" id="pdTabBar"></div>
+          </nav>
         </header>
 
         <main class="content">

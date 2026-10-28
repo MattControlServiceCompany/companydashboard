@@ -1,7 +1,7 @@
 /**
  * test-header-tabs-and-scroll.js
  *
- * SYNTHETIC data only, headless bundled Chromium. Checks the one-row page header and the tab scroll rule:
+ * SYNTHETIC data only, headless bundled Chromium. Checks the two-row page header (row 1 project info, row 2 tab strip) and the tab scroll rule:
  *  1. With a project open, the project tabs are in the header (#pdTabBar inside .topbar), text only, no scroll arrows,
  *     every tab inside the window, and the department tab is hidden.
  *  2. After Back, the department tab shows again and the tab bar is hidden.
@@ -71,6 +71,12 @@ function check(name, ok, extra) {
     check('text only, no scroll arrows or old tab row', h.icons === 0 && h.arrows === 0);
     check('tab bar does not scroll sideways', !h.scrolls);
     check('department tab hidden while a project is open', h.deptHidden);
+    const rows = await page.evaluate(() => {
+      const info = document.getElementById('hdrProjBar').getBoundingClientRect();
+      const tabs = document.getElementById('hdrTabs').getBoundingClientRect();
+      return { infoBottom: info.bottom, tabsTop: tabs.top, infoH: info.height, name: /\S/.test(document.querySelector('#hdrProjBar .phc-name')?.textContent || '') };
+    });
+    check('project info bar is on row 1, tab strip under it', rows.infoH > 0 && rows.tabsTop >= rows.infoBottom - 1 && rows.name, JSON.stringify(rows));
 
     // Energy Graphics -> Project Performance -> Energy Graphics
     await page.click('#pdTabBar .pdt[data-tab="energygfx"]');
@@ -99,7 +105,7 @@ function check(name, ok, extra) {
     await page.waitForTimeout(200);
     const b = await page.evaluate(() => ({
       dept: getComputedStyle(document.getElementById('hdrDeptTab')).display !== 'none',
-      bar: getComputedStyle(document.getElementById('pdTabBar')).display !== 'none',
+      bar: getComputedStyle(document.getElementById('hdrTabs')).display !== 'none',
     }));
     check('Back shows the department tab and hides the project tabs', b.dept && !b.bar, JSON.stringify(b));
   } finally {
