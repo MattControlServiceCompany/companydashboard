@@ -118,6 +118,25 @@ async function run(delayed) {
     check('Cost of Gas off, Delayed digits do not fit: Delayed not rebuilt', r.DelayedPaymentCharge !== '1.27' && !r._auto_recovered_B2_DelayedPaymentCharge, String(r.DelayedPaymentCharge));
   }
 
+  // Cost of Gas off and the Delayed line unreadable (raw null): no digit evidence, so Cost of Gas is not rewritten.
+  {
+    const text = billText('Delayed Payment Charge').replace('Cost of Gas                           40.00', 'Cost of Gas                           40.80');
+    const r = (await env.verify(rule.extractAll.call(rule, text), rule.name, '')).bills[0];
+    check('raw null: Cost of Gas not rewritten', r.GasCharge === '40.80' && !r._auto_recovered_GasCharge, String(r.GasCharge));
+  }
+  // Cost of Gas off and the Delayed read has the same length as 127 but one digit differs (137): no change.
+  {
+    const text = billText('Delayed Payment Charge               137').replace('Cost of Gas                           40.00', 'Cost of Gas                           40.80');
+    const r = (await env.verify(rule.extractAll.call(rule, text), rule.name, '')).bills[0];
+    check('1-digit difference at equal length: Cost of Gas not rewritten', r.GasCharge === '40.80' && !r._auto_recovered_GasCharge, String(r.GasCharge));
+  }
+  // Pass A unchanged: a Cost of Gas off by more than 5% (30.00 for 10.000 Mcf x 4.0000) is set to 40.00 with no suspect line.
+  {
+    const text = billText('Delayed Payment Charge               1.27').replace('Cost of Gas                           40.00', 'Cost of Gas                           30.00');
+    const r = (await env.verify(rule.extractAll.call(rule, text), rule.name, '')).bills[0];
+    check('Pass A: Cost of Gas 30.00 corrected to 40.00', r.GasCharge === '40.00' && !!r._auto_recovered_GasCharge, String(r.GasCharge));
+  }
+
   const ba = fs.readFileSync(path.join(ROOT, 'app/bill-analysis.js'), 'utf8');
   const start = ba.indexOf('const _LAYOUT_KGS');
   const end = ba.indexOf("type: 'total'", start);

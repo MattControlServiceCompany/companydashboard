@@ -2090,6 +2090,13 @@ function _decideOnOffPeakKWh(b, kwhConsumed, kwhHeld) {
 // between the total and the other lines. Never guesses: more than one suspect line, an
 // unreconcilable value, or a bare-digit read that differs from the difference by more than one
 // digit (a point read as a digit is one extra digit that must match exactly) changes nothing. Sets _auto_recovered_B2_<field> so the review screen shows the change.
+// ONE rule for the Cost of Gas the bill prints: Mcf billed x Cost of Gas per Mcf (unrounded product; 0 when either is missing).
+// Used by Pass A (_postExtractionVerify) and by _kgsRecoverSuspectLine.
+function _printedRateProduct(mcfRaw, rateRaw) {
+  const mcf = parseBillNumber(mcfRaw);
+  const rate = parseBillNumber(rateRaw);
+  return mcf > 0 && rate > 0 ? mcf * rate : 0;
+}
 function _kgsRecoverSuspectLine(b) {
   const sus = b._kgsSuspectLines;
   if (!Array.isArray(sus) || sus.length !== 1) return;
@@ -2122,6 +2129,17 @@ function _kgsRecoverSuspectLine(b) {
       got.length === want.length + 1 && [...got].some((_, i) => got.slice(0, i) + got.slice(i + 1) === want);
     return pointReadAsDigit || (want.length === got.length && diff <= 1);
   };
+  // The Cost of Gas rewrite needs digit evidence: an unreadable line (raw null) never proves it, and only an exact
+  // match or one decimal point read as a digit (removing that one digit gives the rebuilt value exactly) is accepted.
+  const valueFitsExactly = (v) => {
+    if (s.raw === null || !(mayBeCredit ? v !== 0 : v > 0) || Math.abs(v) >= total) return false;
+    const want = String(Math.round(Math.abs(v) * 100));
+    const got = String(parseInt(String(s.raw).replace(/\D/g, ''), 10));
+    return (
+      got === want ||
+      (got.length === want.length + 1 && [...got].some((_, i) => got.slice(0, i) + got.slice(i + 1) === want))
+    );
+  };
   // The rebuilt value does not fit the suspect line's digits. A misread Cost of Gas digit can be the cause: the bill
   // prints Mcf billed and the Cost of Gas per Mcf, and their product (to the cent) is an independent value for the line.
   // It is used only when it differs from the read AND the suspect line then fits its own digits exactly.
@@ -2130,11 +2148,11 @@ function _kgsRecoverSuspectLine(b) {
     const mcf = parseBillNumber(b.McfBilled);
     const rate = parseBillNumber(b.CostOfGasPerMcf);
     const gasRead = parseBillNumberOrZero(b.GasCharge);
-    const gasExpected = mcf > 0 && rate > 0 ? Math.round(mcf * rate * 100) / 100 : 0;
+    const gasExpected = Math.round(_printedRateProduct(b.McfBilled, b.CostOfGasPerMcf) * 100) / 100;
     if (gasExpected > 0 && Math.abs(gasExpected - gasRead) >= 0.005) {
       const probe2 = Object.assign({}, probe, { GasCharge: gasExpected.toFixed(2) });
       const value2 = Math.round((total - sumKgsComponentCharges(probe2)) * 100) / 100;
-      if (valueFits(value2)) {
+      if (valueFitsExactly(value2)) {
         gasFix = { read: b.GasCharge, corrected: gasExpected, mcf, rate };
         value = value2;
       }
@@ -4836,7 +4854,7 @@ async function _postExtractionVerify(bills, utilityName, rawText) {
           const v = b[field];
           if (v == null) continue;
           const vNum = parseBillNumberOrZero(v);
-          const expected = printedRate * mcf;
+          const expected = field === 'GasCharge' ? _printedRateProduct(b.McfBilled, b[rateField]) : printedRate * mcf;
           if (!(expected > 0)) continue;
           const relErr = Math.abs(vNum - expected) / expected;
           if (relErr > PRINTED_RATE_TOL) {
