@@ -1755,30 +1755,21 @@ function renderDetail(p) {
   // Project info bar lives in header row 1 (#hdrProjBar), tabs in row 2 (#pdTabBar).
   document.getElementById('hdrProjBar').innerHTML = `
           <div class="pd-hero-compact" id="pd-hero-compact" style="display:flex">
-            <button class="pd-back" onclick="backToList()" style="margin-bottom:0;margin-right:8px;flex-shrink:0">← Back</button>
-            <span class="phc-name">${p.name}</span>
-            <span class="phc-sep">|</span>
-            <span>Service Agreement Number <span class="phc-val">${p.sa || '—'}</span></span>
-            <span class="phc-sep">|</span>
-            <span>Savings <span class="phc-val">${p.savings && projHasContract(p.id) ? '$' + Number(p.savings).toLocaleString() + '/yr' : '—'}</span></span>
-            <span class="phc-sep">|</span>
-            <span><span class="phc-val">${p.start ? _parseISO(p.start).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</span> → <span class="phc-val">${p.end ? _parseISO(p.end).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</span></span>
-            <span class="phc-sep">|</span>
-            <span id="phc-baseline-${p.id}">Baseline <span class="phc-val">—</span></span>
-            <span class="phc-sep">|</span>
-            <span id="phc-eui-${p.id}">Site Energy Use Intensity <span class="phc-val">—</span></span>
-            <span class="phc-sep">|</span>
-            <span>Tasks <span class="phc-val" style="${openTasks > 0 ? 'color:var(--warn)' : ''}">${openTasks}</span></span>
-            <span class="phc-sep">|</span>
-            <span><span class="phc-val">${getBaselineEligibleBldgs(p.id).length}</span> building${getBaselineEligibleBldgs(p.id).length !== 1 ? 's' : ''} · <span class="phc-val">${getBaselineEligibleBldgs(p.id).reduce((s, b) => s + parseInt(b.sqft || 0), 0) ? Number(getBaselineEligibleBldgs(p.id).reduce((s, b) => s + parseInt(b.sqft || 0), 0)).toLocaleString() + ' total sf' : ''}</span></span>
-            <span class="phc-sep">|</span>
-            <button class="btn btn-ghost btn-sm" style="padding:3px 8px;font-size:10px;flex-shrink:0" id="pd-proj-baseline-btn-${p.id}" onclick="toggleProjDetailPanel(${p.id},'baseline')">📊 Project Baseline</button>
-            <button class="btn btn-ghost btn-sm" style="padding:3px 8px;font-size:10px;flex-shrink:0" id="pd-proj-savproj-btn-${p.id}" onclick="toggleProjDetailPanel(${p.id},'savproj')">📈 Projected Savings</button>
-            <button class="btn btn-ghost btn-sm" style="padding:3px 8px;font-size:10px;flex-shrink:0" id="pd-proj-perf-btn-${p.id}" onclick="toggleProjDetailPanel(${p.id},'perf')">💡 Project Performance</button>
-            <span class="phc-sep">|</span>
-            <span style="display:flex;gap:4px;flex-shrink:0">
-              <button class="btn btn-ghost btn-sm" style="padding:3px 8px;font-size:10px" onclick="openProjModal();editProj(${p.id})">✏️ Edit Project</button>
-            </span>
+            <button class="pd-back" onclick="backToList()" style="margin-bottom:0;margin-right:6px;flex-shrink:0">← Back</button>
+            <span class="phc-name phc-first">${p.name}</span>
+            <span class="phc-item">Service Agreement Number <span class="phc-val">${p.sa || '—'}</span></span>
+            <span class="phc-item">Savings <span class="phc-val">${p.savings && projHasContract(p.id) ? '$' + Number(p.savings).toLocaleString() + '/yr' : '—'}</span></span>
+            <span class="phc-item"><span class="phc-val">${p.start ? _parseISO(p.start).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</span> → <span class="phc-val">${p.end ? _parseISO(p.end).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</span></span>
+            <span class="phc-item" id="phc-baseline-${p.id}">Baseline <span class="phc-val">—</span></span>
+            <span class="phc-item" id="phc-eui-${p.id}">Site Energy Use Intensity <span class="phc-val">—</span></span>
+            <span class="phc-item">Tasks <span class="phc-val" style="${openTasks > 0 ? 'color:var(--warn)' : ''}">${openTasks}</span></span>
+            <span class="phc-item"><span class="phc-val">${getBaselineEligibleBldgs(p.id).length}</span> building${getBaselineEligibleBldgs(p.id).length !== 1 ? 's' : ''} · <span class="phc-val">${getBaselineEligibleBldgs(p.id).reduce((s, b) => s + parseInt(b.sqft || 0), 0) ? Number(getBaselineEligibleBldgs(p.id).reduce((s, b) => s + parseInt(b.sqft || 0), 0)).toLocaleString() + ' total sf' : ''}</span></span>
+            <span class="phc-btns">
+            <button class="btn btn-ghost btn-sm" style="padding:3px 5px;font-size:10px;flex-shrink:0" id="pd-proj-baseline-btn-${p.id}" onclick="toggleProjDetailPanel(${p.id},'baseline')">Project Baseline</button>
+            <button class="btn btn-ghost btn-sm" style="padding:3px 5px;font-size:10px;flex-shrink:0" id="pd-proj-savproj-btn-${p.id}" onclick="toggleProjDetailPanel(${p.id},'savproj')">Projected Savings</button>
+            <button class="btn btn-ghost btn-sm" style="padding:3px 5px;font-size:10px;flex-shrink:0" id="pd-proj-perf-btn-${p.id}" onclick="toggleProjDetailPanel(${p.id},'perf')">Project Performance</button>
+            <button class="btn btn-ghost btn-sm" style="padding:3px 5px;font-size:10px" onclick="openProjModal();editProj(${p.id})">Edit Project</button>
+          </span>
           </div>`;
   // Project tabs live in the header strip, not in the detail pane.
   document.getElementById('pdTabBar').innerHTML = _getProjTabHTML();

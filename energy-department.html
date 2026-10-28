@@ -389,11 +389,14 @@
         flex: 1 1 0;
         min-width: 0;
         align-items: center;
+        padding-left: 8px;
       }
       .hdr-projbar .pd-hero-compact {
         flex: 1 1 auto;
         margin: 0;
-        padding: 4px 8px;
+        padding: 4px 0;
+        gap: 4px 0;
+        overflow: hidden; /* clips the 1px border of an item that starts a wrapped line */
         background: transparent;
         border: none;
         border-radius: 0;
@@ -410,6 +413,15 @@
         padding: 0 8px;
         border-top: 1px solid var(--border);
         background: var(--s1);
+      }
+      /* Below 2000px the signed-in email is cut with an ellipsis so the project bar stays on one line at 1920. */
+      @media (min-width: 900px) and (max-width: 1999px) {
+        .topbar .u-name {
+          display: block;
+          max-width: 70px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
       }
       /* Narrow windows: the signed-in email gives way so the project bar keeps its room; Sign Out stays. */
       @media (max-width: 899px) {
@@ -4457,9 +4469,22 @@
         overflow: hidden;
         text-overflow: ellipsis;
       }
-      .pd-hero-compact .phc-sep {
-        color: var(--text);
-        margin: 0 2px;
+      /* One separator method: each fact is a .phc-item with a left border. The row clips by 1px so the
+         border of an item that starts a line falls outside the box; a border never trails a line. */
+      .pd-hero-compact .phc-item {
+        margin-left: -1px;
+        padding: 0 5px;
+        border-left: 1px solid var(--text3, var(--border));
+      }
+      .pd-hero-compact .phc-first {
+        margin-left: 0;
+      }
+      .pd-hero-compact .phc-btns {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 3px;
+        margin-left: auto;
+        padding-left: 5px;
       }
       .pd-hero-compact .phc-val {
         font-family: var(--mono);
