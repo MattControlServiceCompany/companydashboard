@@ -2507,6 +2507,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.28.182', date: '2026-10-28', title: 'District Calendar columns',
+    items: [
+      { type: 'fix', text: 'Project page: District Calendar table drops the empty Last Sync column, shows the location of each event, and shows the correct last day for all-day events.' }
+    ]
+  },
   { v: 'v2026.10.28.181', date: '2026-10-28', title: 'Facility Audit tab',
     items: [
       { type: 'feature', text: 'Project page: new Facility Audit tab lists audit findings, set points and deficiencies, with import from the audit workbook or CSV.' }
