@@ -1804,7 +1804,7 @@ function renderDetail(p) {
 // Service agreement number as shown in the header: always "SA<number>", never "SASA".
 function _saLabel(sa) {
   const n = String(sa == null ? '' : sa).trim().replace(/^SA[\s#-]*/i, '');
-  return n ? 'SA' + n : 'SA —';
+  return n ? 'SA' + _escHtml(n) : 'SA —';
 }
 
 function _updateCompactHdrBaseline(projId) {
