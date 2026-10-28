@@ -357,7 +357,7 @@
       summary =
         '<div class="pcal-chips">' +
         chip('Last sync ' + stamp(snap.fetchedAt)) +
-        chip(num(snap.count) + ' events') +
+        chip(num(snap.count) + (snap.count === 1 ? ' event in feed' : ' events in feed')) +
         (c
           ? chip(num(c.added) + ' added') +
             chip(num(c.removed) + ' removed') +

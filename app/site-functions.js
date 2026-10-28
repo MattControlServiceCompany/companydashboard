@@ -2507,6 +2507,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.28.183', date: '2026-10-28', title: 'District Calendar tab labels',
+    items: [
+      { type: 'change', text: 'Project page: the District Calendar tab now labels the manual events card "Manual calendar events" and says the synced feed is shown above when there are none. The feed card shows how many events the feed holds.' }
+    ]
+  },
   { v: 'v2026.10.28.182', date: '2026-10-28', title: 'District Calendar columns',
     items: [
       { type: 'fix', text: 'Project page: District Calendar table drops the empty Last Sync column, shows the location of each event, and shows the correct last day for all-day events.' }

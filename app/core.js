@@ -1588,7 +1588,7 @@ function renderDetail(p) {
                 <div id="pcal-panel-${p.id}"></div>
                 <div class="card" style="margin-bottom:16px">
                   <div class="card-hdr" style="justify-content:space-between">
-                    <span class="card-title">🗓️ District Calendar</span>
+                    <span class="card-title">🗓️ Manual calendar events</span>
                     <div style="display:flex;gap:8px">
                       <button class="btn btn-ghost btn-sm" onclick="distCalAddRow(${p.id})">+ Add Event</button>
                       <button class="btn btn-ghost btn-sm" style="color:var(--red);border-color:rgba(244,63,94,.35)" onclick="distCalDeleteAll(${p.id})">🗑 Delete All</button>

@@ -719,7 +719,7 @@ function renderDistCalTable(projId) {
   if (!wrap) return;
   if (!p.districtCalendar.length) {
     wrap.innerHTML =
-      '<div style="text-align:center;color:var(--text3);padding:30px;font-size:13px">No calendar events yet. Click "+ Add Event" or "Parse from Text" to add district calendar dates.</div>';
+      '<div style="text-align:center;color:var(--text3);padding:30px;font-size:13px">No manual events. The synced feed is shown above.</div>';
     return;
   }
   const rows = p.districtCalendar.sort((a, b) => new Date(a.date) - new Date(b.date));
