@@ -2507,6 +2507,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.28.181', date: '2026-10-28', title: 'Facility Audit tab',
+    items: [
+      { type: 'feature', text: 'Project page: new Facility Audit tab lists audit findings, set points and deficiencies, with import from the audit workbook or CSV.' }
+    ]
+  },
   { v: 'v2026.10.28.180', date: '2026-10-28', title: 'Project page header with browser-style tabs',
     items: [
       { type: 'change', text: 'Project page: new header with browser-style tabs and an account menu. Project details now sit in the top bar, the project tabs sit below it and look like tabs, and your account shows as a button. Open it to switch or add an account, or to log out.' },
