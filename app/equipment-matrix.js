@@ -11079,16 +11079,20 @@ function _emFormatClockFromMinutes(mins) {
 // (from _emGetSchoolHours) minus/plus the staff buffer on each side. Example:
 // Client B's real school hours (7:30 AM-3:30 PM) and the general default
 // (7:30 AM-3:30 PM) both produce 6:00 start / 17:00 stop.
-function _emComputeProposedSchedule(bldgName) {
+function _emProposedScheduleMinutes(bldgName) {
   var h = _emGetSchoolHours(bldgName);
   var startParts = String(h.start).split(':');
   var endParts = String(h.end).split(':');
   var startMins = parseInt(startParts[0], 10) * 60 + parseInt(startParts[1], 10);
   var endMins = parseInt(endParts[0], 10) * 60 + parseInt(endParts[1], 10);
   var bufferMins = EM_SP_STAFF_BUFFER_HOURS * 60;
+  return { startMin: startMins - bufferMins, stopMin: endMins + bufferMins };
+}
+function _emComputeProposedSchedule(bldgName) {
+  var m = _emProposedScheduleMinutes(bldgName);
   return {
-    start: _emFormatClockFromMinutes(startMins - bufferMins),
-    stop: _emFormatClockFromMinutes(endMins + bufferMins),
+    start: _emFormatClockFromMinutes(m.startMin),
+    stop: _emFormatClockFromMinutes(m.stopMin),
   };
 }
 

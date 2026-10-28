@@ -473,6 +473,12 @@ The app Restore path (6c) is on main only, not in stable (v87), until the Nov 2 
 - When it runs: on report build and on each dialog change (browser, local time). Needs: nothing outside the page (no env var).
 - Check: `node tools/test-report-coverage.js` (synthetic fixture); open Generate Report for a project with a missing month and read the line.
 
+## Facility Audit tab (2026-10-28, branch feat/2026-10-28-facility-audit)
+- New sync key `en_audit_<pid>` (prefix rule `en_audit_` in app/sync-classification.js). Value: `{findings, edits, importedAt}`. `findings` holds records the user added or imported. `edits` holds the user's changes to automatic findings, keyed `auto:<rowId>::<ruleId>`. Set points are never stored in it. No new Function, no schema change, no timer, no env var.
+- Automatic findings are recomputed on every read by computations/audit-rules.js (`auditComputeAutoFindings`; rules `setpoint-off-standard`, `sensor-deficiency`, `schedule-extra-hours`). They read the Equipment Matrix functions, they do not copy them. A serving unit (AHU, RTU, ERV or DOAS in a building with boxes or zones, and hot water and chilled water plants) never gets a schedule finding.
+- Import of the audit workbook: computations/audit-import.js `auditImportSheets`, called from app/facility-audit.js `faImportFile` when the user picks a file. Rows that match no equipment stay as free text and show in the import review list.
+- Check: `node tools/test-audit-rules.js` and `node tools/test-audit-import.js`.
+
 ## 7. How to keep this file current
 
 Any commit that changes these facts must update this file in the same commit.

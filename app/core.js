@@ -1493,6 +1493,9 @@ function renderDetail(p) {
             <div id="ptab-eq-matrix" class="ptab" style="padding:0">
               <div id="em-proj-wrap"></div>
             </div>
+            <div id="ptab-facility-audit" class="ptab" style="padding:0;overflow-y:auto">
+              <div id="ptab-facility-audit-body-${p.id}"></div>
+            </div>
             <div id="ptab-bas-trends" class="ptab" style="padding:0;overflow-y:auto">
               <div id="ptab-bas-trends-body-${p.id}"></div>
             </div>
@@ -2934,6 +2937,7 @@ const PROJ_TABS_DEFAULT = [
   { id: 'utility', label: 'Utility Data' },
   { id: 'savedbills', label: 'Saved Bills' },
   { id: 'eq-matrix', label: 'Equipment Matrix' },
+  { id: 'facility-audit', label: 'Facility Audit' },
   { id: 'bas-trends', label: 'BAS Trends' },
   { id: 'bas-alarms', label: 'BAS Alarms' },
   { id: 'hvacload', label: 'HVAC Load Estimate' },
@@ -3169,6 +3173,7 @@ function sPTab(tab, el) {
   }
   if (tab === 'setpoints') renderSetpointsTab(p.id);
   if (tab === 'eq-matrix' && typeof initEquipMatrix === 'function') initEquipMatrix(p.id);
+  if (tab === 'facility-audit' && typeof initFacilityAuditTab === 'function') initFacilityAuditTab(p.id);
   if (tab === 'bas-trends' && typeof btInitView === 'function') btInitView(p.id);
   if (tab === 'bas-alarms' && typeof baInitView === 'function') baInitView(p.id);
   if (tab === 'cost-estimate' && typeof initCostEstimateTab === 'function') initCostEstimateTab(p.id);

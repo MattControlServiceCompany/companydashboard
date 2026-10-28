@@ -88,6 +88,11 @@ const SyncClassification = (() => {
       note: 'bas-trends.js: en_bas_<pid>, en_bas_raw_<bldgKey>_<equipTag>, en_bas_faultstatus_<pid> — all 3 sub-families share this one prefix',
     },
     { pattern: 'en_alarms_', prefix: true, note: 'bas-alarms.js: en_alarms_<pid>' },
+    {
+      pattern: 'en_audit_',
+      prefix: true,
+      note: 'facility-audit.js: en_audit_<pid> = findings the user added or imported plus the user edits to automatic findings. Set points are never stored here. Shared by both users.',
+    },
     { pattern: 'en_hours_', prefix: true, note: 'hours.js: en_hours_<pid>' },
     {
       pattern: 'en_cal_',
