@@ -537,6 +537,7 @@ This includes a new or changed function, schedule, env var name, timer, host, or
 - Pass B2 scope: before this change Pass B2 ran only when the file-level rule name equalled the provider name. The rule name is the shared gas rule name, so Pass B2 never ran. It now runs for each bill whose own provider is Kansas Gas Service.
 - When: whenever a Kansas Gas Service PDF is read (browser, no schedule). Needs: no env var.
 - Check: `node tools/test-kgs-suspect-line.js` (synthetic, 14 checks) and `node tools/test-kgs-total-decimal-drop.js`.
+- Delayed Payment Charge (2026-10-28): it is in `_kgsSuspectLines` (app/energy-savings.js, Gas Utility rule), so a value read as bare digits ("127" for 1.27) or unreadable is rebuilt from the total by `_kgsRecoverSuspectLine`. The KGS review layout (`_LAYOUT_KGS`, app/bill-analysis.js) has a Delayed Payment Charge row so the running total equals the line-sum. Check: `node tools/test-kgs-delayed-payment.js` (synthetic; also checks that every `KGS_COMPONENT_CHARGE_FIELDS` entry has a layout row).
 
 ## Bill matching and save path (2026-10-09, branch 2026-10-09-match-save)
 - Where: app/bill-analysis.js, app/core.js, app/csv-import.js. All run in the browser when a bill is read, saved, checked for duplicates or imported. No schedule. No env var.

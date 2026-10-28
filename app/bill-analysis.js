@@ -19228,6 +19228,7 @@ function renderPDFFields(parsed, warnings) {
     GasSystemReliability: 'Gas System Reliability Surcharge',
     WeatherNormalization: 'Weather Normalization',
     WinterEventCost: 'Winter Event Securitized Cost',
+    DelayedPaymentCharge: 'Delayed Payment Charge',
     PreviousBalance: 'Previous Balance',
     PreviouslyBilled: 'Previously Billed (last bill total)',
     PaymentsReceived: 'Payments Received',
@@ -19317,6 +19318,7 @@ function renderPDFFields(parsed, warnings) {
     'GasSystemReliability',
     'WeatherNormalization',
     'WinterEventCost',
+    'DelayedPaymentCharge',
     'SalesTax',
     'PreviousBalance',
     'PreviouslyBilled',
@@ -19721,6 +19723,9 @@ function renderPDFFields(parsed, warnings) {
     // Row (2) uses hideIfNull so it is invisible on single-FF bills.
     { type: 'charge-line', label: 'Franchise Fee (1)', chargeField: 'FranchiseFee1', rateKey: null },
     { type: 'charge-line', label: 'Franchise Fee (2)', chargeField: 'FranchiseFee2', rateKey: null, hideIfNull: true },
+    // Delayed Payment Charge: a late fee printed on some bills. It is in the gas line-sum, so it is a charge row here
+    // and feeds the running total. Invisible on bills without one.
+    { type: 'charge-line', label: 'Delayed Payment Charge', chargeField: 'DelayedPaymentCharge', rateKey: null, hideIfNull: true },
     // Sales Tax: the sum of the printed State, City and County Tax lines. Invisible on bills without one.
     { type: 'charge-line', label: 'Sales Tax', chargeField: 'SalesTax', rateKey: null, hideIfNull: true },
     // Total Current Charges closes the runningTotal accumulation

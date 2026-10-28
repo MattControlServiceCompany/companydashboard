@@ -11770,6 +11770,7 @@ const UTILITY_RULES = [
             label: /Winter\s+Event\s+Securitized\s+Cost/gi,
             raw: winterM ? winterM[1] : null,
           },
+          { field: 'DelayedPaymentCharge', label: /Delayed\s+Payment\s+Charge/gi, raw: delayedPayM ? delayedPayM[3] : null },
         ]);
         _ffRaw.forEach((raw, item) => {
           if (raw === null || !/[.:]/.test(raw)) _kgsSuspects.push({ field: 'FranchiseFee', item, raw });
