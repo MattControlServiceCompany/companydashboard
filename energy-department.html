@@ -376,14 +376,14 @@
         align-items: center;
         justify-content: flex-start;
         gap: 0 4px;
-        min-height: 40px;
+        min-height: 52px;
         padding: 0 8px;
         flex-wrap: wrap;
         background: rgba(12, 15, 26, 0.95);
         backdrop-filter: blur(16px);
         border-bottom: 1px solid var(--border);
       }
-      /* Header: row 1 = the open project's info bar (or the department tab) on the left, bell/user/Sign Out on the right.
+      /* Header: row 1 = the open project's info bar (or the department tab) on the left, bell and the account badge (menu) on the right.
          Row 2 = the project tab strip, full width, under row 1. Both rows wrap instead of clipping. */
       .hdr-projbar {
         flex: 1 1 0;
@@ -394,15 +394,40 @@
       .topbar > .t-right {
         margin-left: auto;
       }
-      /* Tab strip: one bordered strip under row 1; each tab is a padded button with a bottom bar. */
+      .hdr-projbar {
+        padding-top: 6px;
+        padding-bottom: 6px;
+      }
+      /* More room between the project buttons (Edit Project) and the account badge. */
+      .hdr-projbar + .t-right {
+        margin-left: 24px;
+      }
+      /* With the tab strip open, the strip's own bottom line replaces the header line so the active tab can join the page. */
+      .topbar.has-tabs {
+        border-bottom: none;
+      }
+      /* Tab strip: its own darker band under row 1. It scrolls sideways inside itself (never the page), with
+         fade hints at the edges that have more tabs. The tabs themselves are styled at .pdt below. */
       .hdr-tabs {
+        --strip-bg: var(--bg);
         order: 3;
         flex: 1 1 100%;
         min-width: 0;
         display: flex;
-        padding: 0 8px;
+        padding: 6px 8px 0;
         border-top: 1px solid var(--border);
-        background: var(--s1);
+        background:
+          linear-gradient(to right, var(--strip-bg) 30%, transparent) left center / 24px 100% no-repeat local,
+          linear-gradient(to left, var(--strip-bg) 30%, transparent) right center / 24px 100% no-repeat local,
+          linear-gradient(to right, var(--border2), transparent) left center / 10px 100% no-repeat scroll,
+          linear-gradient(to left, var(--border2), transparent) right center / 10px 100% no-repeat scroll,
+          var(--strip-bg);
+        overflow-x: auto;
+        overflow-y: hidden;
+        scrollbar-width: thin;
+      }
+      [data-theme='light'] .hdr-tabs {
+        --strip-bg: var(--s1);
       }
       .t-right {
         display: flex;
@@ -438,9 +463,69 @@
         background: var(--s1);
         border: 1px solid var(--border);
         border-radius: 50%;
-        width: 28px;
-        height: 28px;
+        width: 32px;
+        height: 32px;
         flex: 0 0 auto;
+        cursor: pointer;
+        padding: 0;
+        font-family: var(--font);
+        color: var(--text);
+      }
+      .user-chip:hover,
+      .user-chip[aria-expanded='true'] {
+        border-color: var(--accent);
+      }
+      .user-chip:focus-visible,
+      .user-menu button:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 1px;
+      }
+      .user-wrap {
+        position: relative;
+        display: flex;
+        margin-right: 4px;
+      }
+      .user-menu {
+        position: absolute;
+        top: calc(100% + 6px);
+        right: 0;
+        z-index: 400;
+        width: 260px;
+        max-width: calc(100vw - 24px);
+        background: var(--s2);
+        border: 1px solid var(--border2);
+        border-radius: 8px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+        padding: 4px;
+        color: var(--text);
+      }
+      .user-menu[hidden] {
+        display: none;
+      }
+      .user-menu .um-email {
+        padding: 8px 10px;
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--text);
+        overflow-wrap: anywhere;
+        border-bottom: 1px solid var(--border);
+        margin-bottom: 4px;
+      }
+      .user-menu button {
+        display: block;
+        width: 100%;
+        text-align: left;
+        font-family: var(--font);
+        font-size: 12px;
+        color: var(--text);
+        background: transparent;
+        border: none;
+        border-radius: 5px;
+        padding: 8px 10px;
+        cursor: pointer;
+      }
+      .user-menu button:hover {
+        background: var(--s4);
       }
       .u-name {
         font-size: 11px;
@@ -521,23 +606,6 @@
         background: var(--red);
         border: 1px solid var(--bg);
       }
-      .signout {
-        font-family: var(--font);
-        font-size: 12px;
-        color: var(--text2);
-        background: transparent;
-        border: 1px solid var(--border);
-        border-radius: 7px;
-        padding: 0 12px;
-        height: 28px;
-        cursor: pointer;
-        transition: all 0.18s;
-      }
-      .signout:hover {
-        border-color: var(--red);
-        color: var(--red);
-      }
-
       /* -- DEPT TAB (in the header row) -- */
       .dept-tab {
         display: flex;
@@ -4476,34 +4544,47 @@
          The active underline is the bottom border of the tab button itself. */
       .pd-tabs {
         display: flex;
-        flex-wrap: wrap;
-        align-items: stretch;
-        gap: 0;
-        min-width: 0;
-        flex: 1 1 auto;
+        flex-wrap: nowrap;
+        align-items: flex-end;
+        gap: 2px;
+        min-width: max-content;
+        flex: 1 0 auto;
+        border-bottom: 1px solid var(--border);
       }
+      /* Browser-style tab: rounded top corners, border on top and sides, no bottom border. The active tab has the same
+         background as the content panel (--s2) and covers the strip's bottom line, so it joins the page. */
       .pdt {
         font-family: var(--font);
         font-size: 12px;
         font-weight: 500;
-        padding: 9px 14px 6px;
-        border: none;
-        border-bottom: 3px solid transparent;
+        padding: 8px 14px;
+        border: 1px solid var(--border);
+        border-bottom: none;
+        border-radius: 8px 8px 0 0;
         cursor: pointer;
         color: var(--text);
-        background: transparent;
+        background: var(--s1);
         user-select: none;
         display: inline-flex;
         align-items: center;
         white-space: nowrap;
+        flex: 0 0 auto;
+        position: relative;
+      }
+      [data-theme='light'] .pdt {
+        background: var(--s4);
       }
       .pdt:hover {
-        background: var(--s4);
+        background: var(--s3);
       }
       .pdt.active {
         font-weight: 700;
-        border-bottom-color: var(--em);
         background: var(--s2);
+        border-color: var(--border2);
+        border-top: 3px solid var(--em);
+        padding-top: 6px;
+        margin-bottom: -1px;
+        padding-bottom: 9px;
       }
       .pdt.drag-over {
         border-left: 2px solid var(--accent);
@@ -9170,8 +9251,16 @@
           <button class="dept-tab active" id="hdrDeptTab" data-fb="energy.dept-nav.energy"><span class="tab-lbl">Energy Department</span></button>
           <div class="hdr-projbar" id="hdrProjBar" style="display: none"></div>
           <div class="t-right">
-            <div class="user-chip" id="topUser">
-              <div class="u-name" id="topName"></div>
+            <div class="user-wrap">
+              <button type="button" class="user-chip" id="topUser" aria-haspopup="menu" aria-expanded="false" aria-controls="userMenu" onclick="toggleUserMenu()">
+                <span class="u-name" id="topName"></span>
+              </button>
+              <div class="user-menu" id="userMenu" role="menu" hidden>
+                <div class="um-email" id="userMenuEmail"></div>
+                <button type="button" role="menuitem" onclick="signOut()">Switch account</button>
+                <button type="button" role="menuitem" onclick="signOut()">Add account</button>
+                <button type="button" role="menuitem" onclick="signOut()">Log out</button>
+              </div>
             </div>
             <!-- [COMMENTED OUT] Sync to Outlook topbar button
             <button class="sync-btn" data-fb="energy.topbar.sync-btn" onclick="showToast('Syncing to Outlook...')">
@@ -9240,7 +9329,6 @@
               </div>
               <span id="globalTaskLabel">Processing...</span>
             </div>
-            <button class="signout" data-fb="energy.topbar.signout-btn" onclick="signOut()">Sign Out</button>
           </div>
           <nav class="hdr-tabs" id="hdrTabs" data-fb="energy.dept-nav" style="display: none">
             <div class="pd-tabs" id="pdTabBar"></div>

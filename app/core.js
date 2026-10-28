@@ -897,6 +897,7 @@ function enterApp() {
   const badge = userInitials(currentUser.name);
   document.getElementById('topName').textContent = badge;
   document.getElementById('topUser').title = currentUser.name;
+  document.getElementById('userMenuEmail').textContent = currentUser.email || currentUser.name;
   if (typeof autoQuickStart === 'function') setTimeout(autoQuickStart, 1200);
 }
 (function () {
@@ -2992,7 +2993,44 @@ function _syncHeaderTabs() {
   bar.style.display = open ? 'flex' : 'none';
   info.style.display = open ? 'flex' : 'none';
   dept.style.display = open ? 'none' : '';
+  const top = bar.closest('.topbar');
+  if (top) top.classList.toggle('has-tabs', open);
 }
+
+// Account menu on the initials badge. Switch account, Add account and Log out all run the one sign-out flow
+// (signOut -> CH_AUTH.signOut -> index.html sign-in form); there is no multi-session support.
+function _userMenuEls() {
+  return { btn: document.getElementById('topUser'), menu: document.getElementById('userMenu') };
+}
+function closeUserMenu(refocus) {
+  const { btn, menu } = _userMenuEls();
+  if (!menu || menu.hidden) return;
+  menu.hidden = true;
+  btn.setAttribute('aria-expanded', 'false');
+  if (refocus) btn.focus();
+}
+function toggleUserMenu() {
+  const { btn, menu } = _userMenuEls();
+  if (!menu.hidden) return closeUserMenu(false);
+  menu.hidden = false;
+  btn.setAttribute('aria-expanded', 'true');
+  const first = menu.querySelector('button');
+  if (first) first.focus();
+}
+document.addEventListener('click', (e) => {
+  const { menu } = _userMenuEls();
+  if (menu && !menu.hidden && !e.target.closest('.user-wrap')) closeUserMenu(false);
+});
+document.addEventListener('keydown', (e) => {
+  const { menu } = _userMenuEls();
+  if (!menu || menu.hidden) return;
+  const items = [...menu.querySelectorAll('button')];
+  const i = items.indexOf(document.activeElement);
+  if (e.key === 'Escape') { e.preventDefault(); closeUserMenu(true); }
+  else if (e.key === 'ArrowDown') { e.preventDefault(); items[(i + 1) % items.length].focus(); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); items[(i - 1 + items.length) % items.length].focus(); }
+  else if (e.key === 'Tab') closeUserMenu(false);
+});
 
 function _initTabDrag() {
   const bar = document.getElementById('pdTabBar');

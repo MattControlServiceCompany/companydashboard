@@ -67,9 +67,33 @@ function check(name, ok, extra) {
       };
     });
     check('tabs are in the header row', h.inHeader && h.n > 10);
-    check('every tab is inside the window', h.outside === 0, JSON.stringify(h));
-    check('text only, no scroll arrows or old tab row', h.icons === 0 && h.arrows === 0);
-    check('tab bar does not scroll sideways', !h.scrolls);
+    check('text only tabs, no old arrow/fade elements or old tab row', h.icons === 0 && h.arrows === 0);
+    // Page never scrolls sideways at 1280 or 640; at 640 the tab strip scrolls inside itself.
+    for (const w of [1280, 640]) {
+      await page.setViewportSize({ width: w, height: 800 });
+      await page.waitForTimeout(300);
+      const m = await page.evaluate(() => ({
+        pageOver: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        bodyOver: document.body.scrollWidth - document.documentElement.clientWidth,
+        stripScrolls: document.getElementById('hdrTabs').scrollWidth > document.getElementById('hdrTabs').clientWidth + 1,
+        stripOverflowX: getComputedStyle(document.getElementById('hdrTabs')).overflowX,
+      }));
+      check('page has no sideways scroll at ' + w + ' px', m.pageOver <= 0 && m.bodyOver <= 0, JSON.stringify(m));
+      if (w === 640) check('tab strip scrolls inside itself at 640 px', m.stripScrolls && m.stripOverflowX === 'auto', JSON.stringify(m));
+    }
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.waitForTimeout(200);
+    // Tab look: active tab background equals the content panel background; no bottom border; rounded top; inactive differs.
+    const tl = await page.evaluate((p) => {
+      const act = document.querySelector('#pdTabBar .pdt.active');
+      const idle = document.querySelector('#pdTabBar .pdt:not(.active)');
+      const panel = document.getElementById('pd-tabs-card-' + p);
+      const a = getComputedStyle(act), i = getComputedStyle(idle);
+      return { actBg: a.backgroundColor, panelBg: getComputedStyle(panel).backgroundColor, idleBg: i.backgroundColor, actBB: a.borderBottomWidth, idleBB: i.borderBottomWidth, radius: a.borderTopLeftRadius, topW: a.borderTopWidth, text: a.color };
+    }, PID);
+    check('active tab background equals the content panel background', tl.actBg === tl.panelBg, JSON.stringify(tl));
+    check('inactive tab is a different background than the active tab', tl.idleBg !== tl.actBg, JSON.stringify(tl));
+    check('tab has rounded top corners, a top border and no bottom border', parseFloat(tl.radius) >= 6 && parseFloat(tl.topW) >= 1 && tl.actBB === '0px' && tl.idleBB === '0px', JSON.stringify(tl));
     check('department tab hidden while a project is open', h.deptHidden);
     const rows = await page.evaluate(() => {
       const info = document.getElementById('hdrProjBar').getBoundingClientRect();
@@ -80,6 +104,30 @@ function check(name, ok, extra) {
 
     const u = await page.evaluate(() => ({ t: document.getElementById('topName').textContent, title: document.getElementById('topUser').title, shown: getComputedStyle(document.getElementById('topUser')).display !== 'none' }));
     check('top bar shows an initials badge with the full email on hover', u.t === 'SA' && u.title === 'sample@example.com' && u.shown, JSON.stringify(u));
+
+    // Account menu on the initials badge.
+    const closedAtStart = await page.evaluate(() => document.getElementById('userMenu').hidden);
+    check('account menu is closed at start and the old Sign Out button is gone', closedAtStart && (await page.evaluate(() => !document.querySelector('.signout') && !/Sign Out/.test(document.querySelector('.topbar').textContent))));
+    await page.setViewportSize({ width: 640, height: 800 });
+    await page.click('#topUser');
+    const mn = await page.evaluate(() => {
+      const m = document.getElementById('userMenu'); const r = m.getBoundingClientRect();
+      return { open: !m.hidden, exp: document.getElementById('topUser').getAttribute('aria-expanded'), items: [...m.querySelectorAll('[role=menuitem]')].map((b) => b.textContent.trim()), email: document.getElementById('userMenuEmail').textContent, left: r.left, right: r.right, vw: document.documentElement.clientWidth, focus: document.activeElement && document.activeElement.textContent.trim() };
+    });
+    check('menu opens with the full email and Switch account, Add account, Log out', mn.open && mn.exp === 'true' && mn.email === 'sample@example.com' && mn.items.join('|') === 'Switch account|Add account|Log out', JSON.stringify(mn));
+    check('menu stays on screen at 640 px', mn.left >= 0 && mn.right <= mn.vw, JSON.stringify(mn));
+    check('keyboard: first item focused on open', mn.focus === 'Switch account', JSON.stringify(mn));
+    await page.keyboard.press('ArrowDown');
+    check('keyboard: ArrowDown moves to the next item', (await page.evaluate(() => document.activeElement.textContent.trim())) === 'Add account');
+    await page.keyboard.press('Escape');
+    const esc = await page.evaluate(() => ({ hidden: document.getElementById('userMenu').hidden, onBtn: document.activeElement.id }));
+    check('Esc closes the menu and returns focus to the badge', esc.hidden && esc.onBtn === 'topUser', JSON.stringify(esc));
+    await page.click('#topUser');
+    await page.mouse.click(300, 600);
+    check('outside click closes the menu', await page.evaluate(() => document.getElementById('userMenu').hidden));
+    await page.keyboard.press('Tab');
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.waitForTimeout(200);
 
     // Energy Graphics -> Project Performance -> Energy Graphics
     await page.click('#pdTabBar .pdt[data-tab="energygfx"]');
