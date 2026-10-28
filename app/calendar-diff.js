@@ -89,7 +89,25 @@
     };
   }
 
-  var api = { FIELDS: FIELDS, DETAIL_CAP: DETAIL_CAP, diffSnapshots: diffSnapshots, historyRecord: historyRecord };
+  // The place of an event. Its own location when it has one. Otherwise the text after the LAST hyphen of the title.
+  // Returns { text, fromTitle }. text is '' when there is no place. Stored data is not changed.
+  function eventPlace(ev) {
+    var own = ev && ev.location != null ? String(ev.location).trim() : '';
+    if (own) return { text: own, fromTitle: false };
+    var title = ev && ev.title != null ? String(ev.title) : '';
+    var i = title.lastIndexOf('-');
+    if (i < 0) return { text: '', fromTitle: false };
+    var t = title.slice(i + 1).trim();
+    return { text: t, fromTitle: !!t };
+  }
+
+  var api = {
+    FIELDS: FIELDS,
+    DETAIL_CAP: DETAIL_CAP,
+    diffSnapshots: diffSnapshots,
+    historyRecord: historyRecord,
+    eventPlace: eventPlace,
+  };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.CalendarDiff = api;
 })(typeof window !== 'undefined' ? window : this);

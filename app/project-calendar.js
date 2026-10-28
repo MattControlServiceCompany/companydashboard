@@ -289,7 +289,11 @@
       : monthLabel(s.month) + ' (' + num(list.length) + ' events)';
     var rows = shown.map(function (e) {
       var tag = newKeys[e.key] ? chip('New', 'em') : chgKeys[e.key] ? chip('Changed', 'em') : '';
-      return [_escHtml(when(e.row[1], e.row[3], tz)), _escHtml(e.row[0]), _escHtml(e.row[4]), tag];
+      var pl = CalendarDiff.eventPlace({ title: e.row[0], location: e.row[4] });
+      var place = pl.fromTitle
+        ? '<i title="Taken from the event title">' + _escHtml(pl.text) + '</i>'
+        : _escHtml(pl.text);
+      return [_escHtml(when(e.row[1], e.row[3], tz)), _escHtml(e.row[0]) + (tag ? ' ' + tag : ''), place];
     });
     host.innerHTML =
       '<h4>' +
@@ -298,10 +302,9 @@
       (rows.length
         ? table(
             [
-              ['Date', '25%'],
-              ['Event', '36%'],
-              ['Location', '21%'],
-              ['Last sync', '18%'],
+              ['Date', '28%'],
+              ['Event', '44%'],
+              ['Location', '28%'],
             ],
             rows,
           )
