@@ -83,6 +83,24 @@ async function run(delayed) {
   check('decimal dropped: no sum mismatch', !b._sum_mismatch_kgs && !b._gateTripped, JSON.stringify(b._gateReasons));
   b = await run('Delayed Payment Charge');
   check('delayed unreadable: rebuilt to 1.27', b.DelayedPaymentCharge === '1.27', String(b.DelayedPaymentCharge));
+  // The decimal point read as a digit ("1527" for 1.27): taking out one digit gives the rebuilt value, so it is rebuilt.
+  b = await run('Delayed Payment Charge               1527');
+  check('point read as 5 (bare 1527): rebuilt to 1.27', b.DelayedPaymentCharge === '1.27', String(b.DelayedPaymentCharge));
+  check('point read as 5: recovery flag set', !!b._auto_recovered_B2_DelayedPaymentCharge);
+  check('point read as 5: no sum mismatch', !b._sum_mismatch_kgs && !b._gateTripped, JSON.stringify(b._gateReasons));
+  // Negative: one extra digit but the other digits differ from the rebuilt value (1517 vs 1.27): not rebuilt.
+  b = await run('Delayed Payment Charge               1517');
+  check('extra digit, other digit differs: not rebuilt', b.DelayedPaymentCharge !== '1.27' && !b._auto_recovered_B2_DelayedPaymentCharge, String(b.DelayedPaymentCharge));
+  // Negative: digits that do not support the rebuilt value are left alone.
+  b = await run('Delayed Payment Charge               9981');
+  check('digits do not match: not rebuilt', b.DelayedPaymentCharge !== '1.27' && !b._auto_recovered_B2_DelayedPaymentCharge, String(b.DelayedPaymentCharge));
+  // Negative: two suspect lines (Cost of Gas also lost its point): nothing rebuilt.
+  {
+    const text = billText('Delayed Payment Charge               1527').replace('Cost of Gas                           40.00', 'Cost of Gas                           4000');
+    const bills = rule.extractAll.call(rule, text);
+    const r = (await env.verify(bills, rule.name, '')).bills[0];
+    check('two suspect lines: nothing rebuilt', !r._auto_recovered_B2_DelayedPaymentCharge && !r._auto_recovered_B2_GasCharge, JSON.stringify(Object.keys(r).filter((k) => /recovered/.test(k))));
+  }
 
   const ba = fs.readFileSync(path.join(ROOT, 'app/bill-analysis.js'), 'utf8');
   const start = ba.indexOf('const _LAYOUT_KGS');

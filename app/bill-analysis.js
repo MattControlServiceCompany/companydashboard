@@ -2089,7 +2089,7 @@ function _decideOnOffPeakKWh(b, kwhConsumed, kwhHeld) {
 // plus that line does not reach the printed Total Current Charges, the line is the difference
 // between the total and the other lines. Never guesses: more than one suspect line, an
 // unreconcilable value, or a bare-digit read that differs from the difference by more than one
-// digit changes nothing. Sets _auto_recovered_B2_<field> so the review screen shows the change.
+// digit (a point read as a digit is one extra digit that must match exactly) changes nothing. Sets _auto_recovered_B2_<field> so the review screen shows the change.
 function _kgsRecoverSuspectLine(b) {
   const sus = b._kgsSuspectLines;
   if (!Array.isArray(sus) || sus.length !== 1) return;
@@ -2115,7 +2115,11 @@ function _kgsRecoverSuspectLine(b) {
     const got = String(parseInt(String(s.raw).replace(/\D/g, ''), 10));
     let diff = 0;
     for (let i = 0; i < want.length; i++) if (want[i] !== got[i]) diff++;
-    if (want.length !== got.length || diff > 1) return;
+    // A decimal point read as a digit ("1527" for 1.27) leaves ONE extra digit. It matches only when taking that
+    // one digit out gives the rebuilt value exactly; no other difference is allowed on top of it.
+    const pointReadAsDigit =
+      got.length === want.length + 1 && [...got].some((_, i) => got.slice(0, i) + got.slice(i + 1) === want);
+    if (!pointReadAsDigit && (want.length !== got.length || diff > 1)) return;
   }
   if (isFF) {
     items[s.item] = value.toFixed(2);
