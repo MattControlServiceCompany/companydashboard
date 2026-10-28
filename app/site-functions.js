@@ -2507,6 +2507,12 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.28.180', date: '2026-10-28', title: 'Project page header with browser-style tabs',
+    items: [
+      { type: 'change', text: 'Project page: new header with browser-style tabs and an account menu. Project details now sit in the top bar, the project tabs sit below it and look like tabs, and your account shows as a button. Open it to switch or add an account, or to log out.' },
+      { type: 'change', text: 'Project page: the project bar and Energy Graphics use the short labels SA277 and Site EUI. Hover a label to see its full name.' }
+    ]
+  },
   { v: 'v2026.10.28.179', date: '2026-10-28', title: 'Gas bills read the Delayed Payment charge correctly',
     items: [
       { type: 'fix', text: 'Bills: the Delayed Payment charge and the gas cost now read correctly on KGS bills. A charge that lost its decimal point is rebuilt from the bill total, and the Delayed Payment row now shows in the running total.' }
@@ -2514,7 +2520,7 @@ var RELEASE_NOTES = [
   },
   { v: 'v2026.10.28.178', date: '2026-10-28', title: 'Project page header redesign',
     items: [
-      { type: 'change', text: 'Project page: new header with browser-style tabs and an account menu. Project details now sit in the top bar, the project tabs sit below it and look like tabs, and your account shows as a button. Open it to switch or add an account, or to log out.' }
+      { type: 'change', text: 'Project page header: project details now sit in the top bar, the project tabs sit below it and look like tabs, and your account shows as an initials badge. Hover the badge to see your email.' }
     ]
   },
   { v: 'v2026.10.27.177', date: '2026-10-27', title: 'Contract savings rates are locked',
