@@ -1875,7 +1875,7 @@ function initDashboardTab(projId) {
   const perfWrap = document.getElementById('dash-perf-' + projId);
   if (!perfWrap) return;
   const bldgs = getUDBldgs(projId);
-  const _eligBldgs = getBaselineEligibleBldgs(projId); // the one building list the Dashboard counts and sizes
+  const _eligBldgs = getIncludedBldgs(projId); // the one building list the Dashboard counts and sizes (no sqft test)
     // 2026-09-15 (SA-gate fix): the project-form "Est. Savings $/yr" target and the ECM
   // projected $ are savings dollars — hidden for a project with no Service Agreement.
   const _hasSA = projHasContract(projId);

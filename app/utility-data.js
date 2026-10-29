@@ -972,19 +972,20 @@ function getUDBldgByCustomer(customerId, bldgId) {
   return getCustomerBuildings(customerId).find((b) => b.id === bldgId);
 }
 
-// Baseline/header-eligible buildings only (9ca94e0c): excludes buildings with no sqft (EUI-chart
-// parity, graphics-setpoints.js:1606) or where every calc-commodity meter is excluded via
-// isBaselineExcluded(). Do NOT repoint getUDBldgs() itself -- management/data-entry screens must
-// keep showing ALL in-scope buildings including these. Only the project header (core.js:984)
-// consumes this variant. Inherits the scope.buildingIds filter for free (filters getUDBldgs()'s
-// own output).
-function getBaselineEligibleBldgs(pid) {
+// Buildings the project counts: in scope and not excluded (every calc-commodity meter excluded via
+// isBaselineExcluded() drops the building, like a maintenance-only building). Square footage is NOT a test here, so a
+// first building with no sqft still counts. The Dashboard building count and sf total use this list.
+// Do NOT repoint getUDBldgs() itself -- management/data-entry screens must keep showing ALL in-scope buildings.
+function getIncludedBldgs(pid) {
   return getUDBldgs(pid).filter((b) => {
-    if (!(parseInt(b.sqft || 0) > 0)) return false;
     const calc = (b.meters || []).filter((m) => isCalcCommodity(pid, m.commodity));
-    if (calc.length && calc.every((m) => isBaselineExcluded(pid, m.id))) return false;
-    return true;
+    return !(calc.length && calc.every((m) => isBaselineExcluded(pid, m.id)));
   });
+}
+// Baseline/EUI-eligible buildings: the included buildings that also have sqft (EUI-chart parity,
+// graphics-setpoints.js:1606). Used by getProjectBaselineTotals and the baseline cost sums, not the count.
+function getBaselineEligibleBldgs(pid) {
+  return getIncludedBldgs(pid).filter((b) => parseInt(b.sqft || 0) > 0);
 }
 // Project baseline totals and Baseline Site EUI: ONE function (2026-10-29). The project header and the
 // Energy Graphics "Baseline Site EUI" card both call it. Included buildings only (getBaselineEligibleBldgs),
