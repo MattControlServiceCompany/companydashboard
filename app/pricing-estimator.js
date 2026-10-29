@@ -3792,16 +3792,13 @@ function initCostEstimateTab(projId) {
 
   var cfg = _pricingGetConfig();
   var catalog = sget('en_pricing_catalog', null);
-  var meta = sget('en_pricing_meta', null);
   var estimate = _pricingGetEstimate(projId);
   var rows = buildComplianceRows(projId);
   _pricingRowCache[projId] = rows;
   var totals = _pricingComputeTotals(rows, estimate, projId);
   var hasCatalog = !!(catalog && Object.keys(catalog).length > 0);
 
-  // ── Toolbar HTML
-  var importStatus = _pricingImportStatusHTML(projId);
-
+  // ── Toolbar HTML (price-list label, button and panel live in the Estimate type bar)
   var toolbarHTML = [
     '<div class="ch-panel-header" style="padding:10px 14px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--s1);border-bottom:1px solid var(--border2)">',
     '<label class="btn btn-ghost btn-sm" style="cursor:pointer;position:relative">',
@@ -3812,7 +3809,6 @@ function initCostEstimateTab(projId) {
       ')">',
     (hasCatalog ? '' : '<span style="color:var(--warn)">⚠ </span>') + 'Import Pricing CSV',
     '</label>',
-    importStatus,
     '<span style="flex:1"></span>',
     '<label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px">',
     'Price Basis:',
@@ -3843,7 +3839,6 @@ function initCostEstimateTab(projId) {
     ' onchange="updatePricingConfig(' + projId + ",'hourlyRate',parseFloat(this.value))\">",
     '</label>',
     '</div>',
-    _pricingPriceListPanelHTML(projId),
   ].join('');
 
   // ── Table rows HTML, grouped by building → Phase 1 / Phase 2
@@ -7030,8 +7025,6 @@ function _pricingBuildToolbarHTML(projId, tier, opts) {
   var isRecommended = tier === 'recommended';
   var catalog = sget('en_pricing_catalog', null);
   var hasCatalog = !!(catalog && Object.keys(catalog).length > 0);
-  var meta = sget('en_pricing_meta', null);
-  var importStatus = _pricingImportStatusHTML(projId);
   var allBuildings = opts.allBuildings || [];
   var filterBldg = _pricingBldgFilter[projId] || '';
 
@@ -7062,8 +7055,7 @@ function _pricingBuildToolbarHTML(projId, tier, opts) {
     ')">' +
     (hasCatalog ? '' : '<span style="color:var(--warn)">⚠ </span>') +
     'Import Pricing CSV' +
-    '</label>' +
-    importStatus;
+    '</label>';
 
   var tableSettingsBtnHTML =
     '<button class="btn btn-ghost btn-sm" onclick="_pricingOpenSettingsPopover(\'' +
@@ -7218,7 +7210,6 @@ function _pricingBuildToolbarHTML(projId, tier, opts) {
     '<span style="color:var(--text)">|</span>',
     '<span style="flex:1">' + middleHTML + '</span>',
     '</div>',
-    _pricingPriceListPanelHTML(projId),
   ].join('');
 }
 
@@ -10523,6 +10514,7 @@ function _pricingEstimateTypeBarHTML(projId, type) {
     '</select></label>' +
     switchHTML +
     rateBtn +
+    _pricingImportStatusHTML(projId) +
     (type === 'retrofit'
       ? '<button type="button" class="btn btn-ghost btn-sm" id="estExportExcel-' +
         projId +
@@ -10544,6 +10536,7 @@ function _pricingEstimateTypeBarHTML(projId, type) {
           : '')
       : '') +
     '</div>' +
+    _pricingPriceListPanelHTML(projId) +
     (type === 'retrofit' && wbSet ? _pricingWorkbookPanelHTML(projId, wbSet) : '')
   );
 }

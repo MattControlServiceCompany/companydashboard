@@ -881,7 +881,7 @@ This includes a new or changed function, schedule, env var name, timer, host, or
 
 
 ## CSC Price List view in the Cost Estimate tab (2026-10-29, branch feat/2026-10-29-csc-price-list)
-- What: a read-only table of the imported price list (`en_pricing_catalog`). Open it with the "Price list" button next to the "Price list: N items, imported <date>" label (Retrofit estimate type toolbar). Code: `_pricingImportStatusHTML`, `_pricingPriceListPanelHTML`, `_pricingPriceListRows`, `_pricingPriceListFilter` in app/pricing-estimator.js (after `_pricingFmt`).
+- What: a read-only table of the imported price list (`en_pricing_catalog`). Open it with the "Price list" button next to the "Price list: N items, imported <date>" label (Estimate type bar, shown for every estimate type: BAS Audit, Full Facility Audit, Retrofit, unset; rendered once by `_pricingEstimateTypeBarHTML`). Code: `_pricingImportStatusHTML`, `_pricingPriceListPanelHTML`, `_pricingPriceListRows`, `_pricingPriceListFilter` in app/pricing-estimator.js (after `_pricingFmt`).
 - One price rule: CSC price = `_pricingUnitPriceFor(entry, {priceBasis:'contract'})` (40% of list, `COST_CONTRACT_PCT`), the same function the estimate rows call. The header line reads `COST_CONTRACT_PCT` and `_pricingGetConfig().hourlyRate` live. Net = the ALC net column (what CSC pays).
 - Open state, search, category and sort are in memory only. Nothing is stored. No network call, no timer.
-- How to check: `node test-pricing-price-list.js` (16 pass); open Louisburg > Cost Estimate > Retrofit > Price list.
+- How to check: `node test-pricing-price-list.js` (21 pass, includes every estimate type); open any project > Cost Estimate > Price list.

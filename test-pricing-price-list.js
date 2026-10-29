@@ -67,6 +67,23 @@ const CAT = {
     eq(await page.$$eval('#pricing-pl-head-' + PID + ' th', (t) => t[5].textContent.indexOf('\u25B2') >= 0), true, 'sort arrow');
     await page.click('#pricing-pl-btn-' + PID);
     eq(await page.isVisible('#pricing-pl-' + PID), false, 'closes');
+    // every estimate type (including unset) shows ONE label, ONE button, ONE panel, and the button opens the list
+    for (const t of ['bas', 'full', 'retrofit', null, 'other']) {
+      const res = await page.evaluate(async ([pid, type]) => {
+        await sset('en_pricing_est_type_' + pid, type);
+        Object.assign(_pricingPLGetState(pid), { open: false, q: '', cat: '' });
+        initCostEstimateTab(pid);
+        const body = document.getElementById('ptab-cost-estimate-body-' + pid);
+        const btns = body.querySelectorAll('[id="pricing-pl-btn-' + pid + '"]').length;
+        const pans = body.querySelectorAll('[id="pricing-pl-' + pid + '"]').length;
+        const lab = /Price list: 4 items, imported Jun 2[12], 2026/.test(body.innerText);
+        _pricingTogglePriceList(pid);
+        const cnt = (document.getElementById('pricing-pl-count-' + pid) || {}).textContent;
+        _pricingTogglePriceList(pid);
+        return { btns, pans, lab, cnt };
+      }, [PID, t]);
+      eq(res, { btns: 1, pans: 1, lab: true, cnt: 'Showing 4 of 4' }, 'price list present, type=' + t);
+    }
     // empty catalog
     await page.evaluate(async (pid) => { await sset('en_pricing_catalog', null); await sset('en_pricing_meta', null); _pricingPLGetState(pid).open = true; document.getElementById('pricing-pl-' + pid) && (document.getElementById('pricing-pl-' + pid).innerHTML = _pricingPriceListInnerHTML(pid)); }, PID);
     eq(await page.textContent('#pricing-pl-' + PID), 'No price list loaded. Use Import Pricing CSV.', 'empty message');
