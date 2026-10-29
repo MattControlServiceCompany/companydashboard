@@ -2507,6 +2507,15 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.29.186', date: '2026-10-29', title: 'PDF / OCR review bar, tab scrollbar, Dashboard building count, readability',
+    items: [
+      { type: 'fix', text: 'PDF / OCR page: the review bar stays at the bottom of the screen and never covers a bill row. It shows 3 issue links and a button for the rest.' },
+      { type: 'fix', text: 'Project page: the sideways scrollbar under the tabs no longer covers the tab names.' },
+      { type: 'fix', text: 'Dashboard page: the building count now matches the project header. Energy Graphics, Baseline: Site EUI now matches the header too.' },
+      { type: 'fix', text: 'Readability: Energy Graphics cards use the normal card color, Projected Savings and Equipment Matrix colors read well in the light theme, and Dashboard table headers wrap.' },
+      { type: 'fix', text: 'Readability: Cost Estimate shows a plain sentence when no measure is costed, District Calendar shows one heading with the dates, and the Bills table Total column has a left shadow.' }
+    ]
+  },
   { v: 'v2026.10.29.185', date: '2026-10-29', title: 'District Calendar: BAS schedules and auto sync; PDF / OCR review bar',
     items: [
       { type: 'change', text: 'Project page, District Calendar tab: the calendar syncs when you open the tab if the copy is more than 1 hour old. New, changed and canceled events stay marked for 7 days or until the date passes. The button is now Sync now.' },
