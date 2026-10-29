@@ -2110,7 +2110,7 @@ function btOpenImportModal() {
       ' — Column Mapping Preview</label>',
     '<div id="bt-col-table-wrap" style="max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;">',
     '<table style="width:100%;border-collapse:collapse;font-size:12px;">',
-    '<thead style="background:var(--s1);position:sticky;top:0;">',
+    '<thead style="background:var(--s1);position:sticky;top:0;z-index:var(--z-sticky-head);">',
     '<tr>',
     '<th style="padding:8px 10px;text-align:left;color:var(--text3);font-weight:500;">Column Header</th>',
     '<th style="padding:8px 10px;text-align:left;color:var(--text3);font-weight:500;">Auto-Detected Type</th>',
@@ -3479,7 +3479,7 @@ function btBuildFaultTableHTML(rows, projId) {
 
   return [
     '<table style="width:100%;border-collapse:collapse;font-size:12px;">',
-    '<thead style="background:var(--s1);position:sticky;top:0;">',
+    '<thead style="background:var(--s1);position:sticky;top:0;z-index:var(--z-sticky-head);">',
     '<tr>' + thHtml + '</tr>',
     '</thead>',
     '<tbody>' + trHtml + '</tbody>',

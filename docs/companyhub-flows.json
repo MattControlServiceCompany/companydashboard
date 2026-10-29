@@ -133,9 +133,10 @@
             "Extracted fields shown beside the PDF page; one top row holds the building, utility and period choices, the status chips (to review, already saved, warnings, fixed) and the one Save control",
             "Duplicate detection: compare against existing bills; each bill that differs is a line in the already-saved chip",
             "User can overwrite, merge, or skip duplicates per bill from that line",
-            "Assign extracted data to project > building > meter (the Saves to line, Change)"
+            "Assign extracted data to project > building > meter (the Saves to line, Change)",
+            "Multi-building file: a box above each bill's values shows its issues (no matching meter or building, values to check) with Create meter / Create building + meter; a bar at the bottom shows the counts, one link per issue and Save All (no separate review window)"
           ],
-          "functions": ["handlePDFUpload(e)", "processPDFUpload()", "extractPDFPages(file)", "tessOCRPage(imgData)", "detectBillsSections(text)", "openDupCompareModal()", "openManualAssignModal()", "confirmManualAssign()", "renderPDFFields(parsed, warnings)", "_pdfRenderTopBar()", "_pdfNavModel(bills)", "_pdfSaveControl(kind)", "_pdfApplyFieldEdit(key, value)"],
+          "functions": ["handlePDFUpload(e)", "processPDFUpload()", "extractPDFPages(file)", "tessOCRPage(imgData)", "detectBillsSections(text)", "openDupCompareModal()", "openManualAssignModal()", "confirmManualAssign()", "renderPDFFields(parsed, warnings)", "_pdfRenderTopBar()", "_pdfNavModel(bills)", "_pdfSaveControl(kind)", "_pdfApplyFieldEdit(key, value)", "_mbRenderReview(live)", "_mbBillBoxHtml(i)", "_mbReviewBarHtml()", "_pdfBillIssueItems(bill, bw)", "_mbLinkSameMeter(i)", "_billIdentityHitsMeter(extracted, m)"],
           "modalIds": ["#dupCompareModal", "#manualAssignModal", "#assignBillModal"],
           "utilityRules": [
             {
@@ -190,7 +191,7 @@
           "name": "Project page, District Calendar tab: calendar feed and what changed",
           "description": "The Calendar feed panel (app/project-calendar.js, container pcal-panel-<pid> in the District Calendar tab) shows the feed copy and the changes since the last sync. Opening the page or the tab makes no call. Only the Sync button calls the Netlify function calendar-fetch (netlify/functions/calendar-fetch.mjs, same sign-in check as kv-sync via netlify/lib/auth.js), which downloads and reads the feed (netlify/functions/lib/calendar/). The browser compares the new copy with the stored copy with CalendarDiff.diffSnapshots (app/calendar-diff.js, the only comparison). A change is a different title, start, end, all-day flag or location. Only events inside the overlap of the old and new sync windows count as added or removed. Stored in three shared keys per project: en_cal_cfg_<pid> (feed address), en_cal_snap_<pid> (last copy), en_cal_hist_<pid> (sync history, merged by id).",
           "steps": [
-            "User enters the feed address (stored in en_cal_cfg_<pid>) and chooses Save and sync, or chooses Sync feed",
+            "User enters the feed address (stored in en_cal_cfg_<pid>) and chooses Save and sync, or chooses Sync now; the tab also syncs once on open when the copy is older than 1 hour",
             "pcalSync POSTs the address to calendar-fetch with the sign-in token",
             "calendar-fetch checks the address (https, calendar host, .ics), downloads, reads, returns a snapshot",
             "diffSnapshots(old snapshot, new snapshot) gives added, removed, changed, unchanged",
@@ -198,6 +199,19 @@
           ],
           "storageKeys": ["en_cal_cfg_<pid>", "en_cal_snap_<pid>", "en_cal_hist_<pid>"],
           "keyFiles": ["app/project-calendar.js", "app/calendar-diff.js", "netlify/functions/calendar-fetch.mjs", "netlify/functions/lib/calendar/snapshot.mjs", "netlify/lib/auth.js", "tools/test-calendar-feed.js"]
+        },
+        {
+          "id": "project-bas-schedules",
+          "name": "Project page, District Calendar tab: BAS schedules and what changed",
+          "description": "The BAS schedules card (app/bas-schedules.js, container bas-panel-<pid>) keeps one copy of the WebCTRL Effective Schedules per covered date and lists what changed between copies and who imported them. It also keeps the scheduling groups. No network call; files are read in the browser.",
+          "steps": [
+            "User chooses Import schedules and picks one or more Effective Schedules CSV files; emParseEffectiveSchedulesCSV reads them and _emScheduleBlocks reads the times",
+            "The dialog shows the building found in each file and the program counts; the user must enter the date the export covers",
+            "BasDiff.applyScheduleImport compares with the earlier copy (same date, else latest earlier day of the same type), merges buildings into the copy for that date",
+            "Record saved to en_bas_hist_<pid>, then the copy to en_bas_snap_<pid>; Import scheduling groups does the same for en_bas_groups_<pid>"
+          ],
+          "storageKeys": ["en_bas_snap_<pid>", "en_bas_hist_<pid>", "en_bas_groups_<pid>"],
+          "keyFiles": ["app/bas-schedules.js", "app/bas-diff.js", "app/equipment-matrix.js (emParseEffectiveSchedulesCSV, _emScheduleBlocks)", "tools/test-bas-diff.js"]
         },
         {
           "id": "weather-normalization",

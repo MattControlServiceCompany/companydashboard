@@ -1,7 +1,19 @@
 /* Shared by every page (linked in each page head). Theme-level rules that must hold in every engine. */
 
 /* Native controls (select popups, scrollbars) follow the effective theme. data-theme is always 'dark' or 'light'. */
+/* STICKY NO-BLEED STANDARD (Matt, 2026-10-29). Text must never scroll behind other text. This is the rule the Utility Data
+   Bills table already follows (energy-department.html ".ud-bill-tbl th.sticky-col", commit deadbe5b 2026-04-16 for the opaque
+   frozen cells, a8c5f2e5 2026-09-13 for the header that sits outside the scroller). Every position:sticky or fixed box that sits
+   over scrolled content must have:
+     1. an OPAQUE background (a --s1/--s2/--s3 token, never transparent, rgba or none; a tint goes in background-image over an
+        opaque background-color);
+     2. a z-index from the two tokens below, never a bare number, so it paints above every scrolled cell;
+     3. an offset flush with the top (or left/right) edge of its scroll container: if the container has padding, offset by it
+        (top: var(--sticky-top-view) for a box inside .view), so no strip above the bar shows scrolled text.
+   The gate tools/test-sticky-no-bleed.js scrolls every container on every page and fails on a break of any of the three. */
 :root {
+  --z-sticky-col: 20; /* frozen body cells, bars inside a scroller */
+  --z-sticky-head: 25; /* frozen header cells and header rows: above every frozen body cell */
   color-scheme: dark;
   --on-accent: #ffffff;
   --on-brand: #ffffff;

@@ -1586,6 +1586,7 @@ function renderDetail(p) {
             <div id="ptab-district" class="ptab" style="padding:16px">
               <div id="ptab-district-inner-${p.id}" style="padding:16px">
                 <div id="pcal-panel-${p.id}"></div>
+                <div id="bas-panel-${p.id}"></div>
                 <div class="card" style="margin-bottom:16px">
                   <div class="card-hdr" style="justify-content:space-between">
                     <span class="card-title">🗓️ Manual calendar events</span>
@@ -3178,6 +3179,8 @@ function sPTab(tab, el) {
   if (tab === 'district') {
     renderDistCalTable(p.id);
     if (typeof pcalRender === 'function') pcalRender(p.id);
+    if (typeof pcalAutoSync === 'function') pcalAutoSync(p.id);
+    if (typeof basRender === 'function') basRender(p.id);
   }
   if (tab === 'setpoints') renderSetpointsTab(p.id);
   if (tab === 'eq-matrix' && typeof initEquipMatrix === 'function') initEquipMatrix(p.id);

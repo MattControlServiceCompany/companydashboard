@@ -8636,7 +8636,7 @@ function emRenderSummaryView(data, filters) {
   var thStyle =
     'padding:12px 16px;font-weight:600;background:var(--s1);' +
     'border-bottom:2px solid var(--border);color:var(--text2);white-space:nowrap;' +
-    'position:sticky;top:0;z-index:2;';
+    'position:sticky;top:0;z-index:var(--z-sticky-head);';
   var thStyleCenter = thStyle + 'text-align:center;';
   var thStyleLeft = thStyle + 'text-align:left;';
 
@@ -11255,17 +11255,13 @@ function _emParseClock12h(str) {
 // latest stop across all of them is used. Returns { hasOccupied: false } when
 // no Occupied block is found (the program is unoccupied all day).
 function _emParseScheduleBlock(text) {
-  var re = /\bOccupied from\s+(\d{1,2}:\d{2}\s*[AP]M)\s+to\s+(\d{1,2}:\d{2}\s*[AP]M)/gi;
-  var m,
-    minStart = null,
+  var minStart = null,
     maxStop = null;
-  while ((m = re.exec(text || ''))) {
-    var s = _emParseClock12h(m[1]);
-    var e = _emParseClock12h(m[2]);
-    if (s === null || e === null) continue;
-    if (minStart === null || s < minStart) minStart = s;
-    if (maxStop === null || e > maxStop) maxStop = e;
-  }
+  _emScheduleBlocks(text).forEach(function (b) {
+    if (b[2] !== 'occ') return;
+    if (minStart === null || b[0] < minStart) minStart = b[0];
+    if (maxStop === null || b[1] > maxStop) maxStop = b[1];
+  });
   if (minStart === null || maxStop === null) return { hasOccupied: false };
   return {
     hasOccupied: true,
@@ -11274,6 +11270,22 @@ function _emParseScheduleBlock(text) {
     startStr: _emFormatClockFromMinutes(minStart),
     stopStr: _emFormatClockFromMinutes(maxStop),
   };
+}
+
+// Every "Occupied from X to Y" and "Unoccupied from X to Y" block of one Effective Schedule cell, in text
+// order, as [startMin, endMin, 'occ' | 'unocc']. The ONE block reader: the matrix columns
+// (_emParseScheduleBlock) and the BAS schedule snapshots (app/bas-schedules.js) both use it.
+function _emScheduleBlocks(text) {
+  var re = /\b(Unoccupied|Occupied) from\s+(\d{1,2}:\d{2}\s*[AP]M)\s+to\s+(\d{1,2}:\d{2}\s*[AP]M)/gi;
+  var m,
+    out = [];
+  while ((m = re.exec(text || ''))) {
+    var st = _emParseClock12h(m[2]);
+    var e = _emParseClock12h(m[3]);
+    if (st === null || e === null) continue;
+    out.push([st, e, m[1].toLowerCase() === 'occupied' ? 'occ' : 'unocc']);
+  }
+  return out;
 }
 
 // Parses + matches an Effective Schedules CSV against the project's saved
@@ -23322,7 +23334,7 @@ function emOpenManageMappings(pid) {
   var thStyle =
     'padding:8px 12px;font-size:10px;font-weight:600;color:var(--text3);text-transform:uppercase;' +
     'letter-spacing:0.05em;text-align:left;border-bottom:1px solid var(--border);' +
-    'position:sticky;top:0;background:var(--s1)';
+    'position:sticky;top:0;z-index:var(--z-sticky-head);background:var(--s1)';
 
   var sectionHeadStyle =
     'padding:8px 12px;font-size:10px;font-weight:700;color:var(--text2);text-transform:uppercase;' +

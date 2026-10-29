@@ -1873,7 +1873,7 @@ function _udRenderAllBuildingsBaselineSection(rows, allTotals, includedTotals) {
   const $n = (v, d = 0) =>
     v != null ? v.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }) : '—';
   const th =
-    'position:sticky;top:0;z-index:2;padding:6px 10px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);background:var(--s1);border:1px solid var(--border2);white-space:nowrap';
+    'position:sticky;top:0;z-index:var(--z-sticky-head);padding:6px 10px;text-align:right;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text2);background:var(--s1);border:1px solid var(--border2);white-space:nowrap';
   const thL = th.replace('text-align:right', 'text-align:left');
   const td = (color = 'var(--text)') =>
     `padding:6px 10px;text-align:right;font-family:var(--mono);font-size:12px;color:${color};border:1px solid var(--border);white-space:nowrap`;

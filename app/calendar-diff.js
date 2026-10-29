@@ -239,7 +239,48 @@
     return { items: items, counts: counts, compared: compared };
   }
 
+  var MARK_DAYS = 7;
+  var AUTO_SYNC_MS = 60 * 60 * 1000;
+
+  // Should the tab sync by itself on open? Needs a saved feed, a signed-in user, and a copy older than 1 hour (or none).
+  function needsAutoSync(o) {
+    if (!o.cfg || !o.token) return false;
+    var t = o.snap && o.snap.fetchedAt ? Date.parse(o.snap.fetchedAt) : NaN;
+    return isNaN(t) || o.nowMs - t > AUTO_SYNC_MS;
+  }
+
+  // The marks to show: every New / Changed / Canceled from the kept history records (newest first) that were first seen
+  // in the last 7 days, and whose event date has not passed. The newest record wins for each event.
+  // Returns a record shaped like a history record ({added, removed, changed}) for listView, or the newest record when
+  // there is nothing to carry (no history, or only the first copy).
+  function carriedMarks(hist, o) {
+    if (!hist || !hist.length || hist[0].first) return hist && hist[0] ? hist[0] : null;
+    var cd = new Date(o.nowMs);
+    cd.setUTCDate(cd.getUTCDate() - MARK_DAYS);
+    var cutoff = cd.getTime();
+    var by = {};
+    for (var i = hist.length - 1; i >= 0; i--) {
+      var r = hist[i];
+      if (r.first || Date.parse(r.at) < cutoff) continue;
+      ['added', 'changed', 'removed'].forEach(function (kind) {
+        (r[kind] || []).forEach(function (x) { by[x.key] = { kind: kind, x: x }; });
+      });
+    }
+    var out = { at: hist[0].at, added: [], changed: [], removed: [] };
+    Object.keys(by).forEach(function (key) {
+      var m = by[key];
+      var row = m.kind === 'removed' ? m.x.row : o.events[key];
+      if (!row || !row[1]) return;
+      if (eventDays(row, o.tz)[1] < o.today) return;
+      out[m.kind].push(m.x);
+    });
+    return out;
+  }
+
   var api = {
+    MARK_DAYS: MARK_DAYS,
+    needsAutoSync: needsAutoSync,
+    carriedMarks: carriedMarks,
     calendarDay: calendarDay,
     allDayLastDay: allDayLastDay,
     FIELDS: FIELDS,

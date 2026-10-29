@@ -938,6 +938,7 @@ const DB = (() => {
   //   en_utility_audit_log  append-only: an entry never changes after it is written
   //   en_pdf_bills          list of held bill records, id 'pb...'
   //   en_cal_hist_<id>      calendar feed sync history, id 'calh_...' (project-calendar.js)
+  //   en_bas_hist_<id>      BAS schedule import history, id 'bash_...' (bas-schedules.js); same config as en_cal_hist_
   //   en_utility_<id>       { buildings:[{id, meters:[{id, bills:[{id}]}]}] }
   const _byIdProp = (it) => it && it.id;
   const AUDIT_ENTRY_ID = (it) => window.SyncClassification.auditEntryId(it);
@@ -983,7 +984,7 @@ const DB = (() => {
     if (UNION_KEY_CONFIG[key]) return UNION_KEY_CONFIG[key];
     if (key === 'en_utility_audit_log') return MERGE_ONLY_CONFIG.audit;
     if (key === 'en_pdf_bills') return MERGE_ONLY_CONFIG.pdfBills;
-    if (key.indexOf('en_cal_hist_') === 0) return MERGE_ONLY_CONFIG.calHist;
+    if (key.indexOf('en_cal_hist_') === 0 || key.indexOf('en_bas_hist_') === 0) return MERGE_ONLY_CONFIG.calHist;
     if (_isUtilityKey(key)) return MERGE_ONLY_CONFIG.utility;
     return null;
   }

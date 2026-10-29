@@ -2507,6 +2507,18 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.29.185', date: '2026-10-29', title: 'District Calendar: BAS schedules and auto sync; PDF / OCR review bar',
+    items: [
+      { type: 'change', text: 'Project page, District Calendar tab: the calendar syncs when you open the tab if the copy is more than 1 hour old. New, changed and canceled events stay marked for 7 days or until the date passes. The button is now Sync now.' },
+      { type: 'change', text: 'PDF / OCR page: for a file with many bills, a box above each bill shows its issues (no matching meter or building, values to check) with a Create meter button. A bar at the bottom shows the counts, a link to each issue and Save All. It replaces the Review and save window.' },
+      { type: 'change', text: 'PDF / OCR page: Save All looks only at the bills you selected. Create meter on one bill sends every bill with the same account to that one new meter. A bill with an issue never shows as green.' },
+      { type: 'change', text: 'PDF / OCR page: plain utility buttons with a status for each utility, more space between sections, and one line for each charge row.' },
+      { type: 'fix', text: 'All pages: pinned bars and table headers no longer let text scroll behind them and show through.' },
+      { type: 'fix', text: 'All pages: the initials menu and the bell stay at the top right.' },
+      { type: 'feature', text: 'Project page, District Calendar tab: a new BAS schedules card. Import one or more WebCTRL Effective Schedules files, say which date they cover, and the site saves a copy for that date. The BAS changes list shows who imported, when, and which programs changed (old and new times) compared with the earlier day. You can view any saved date by building and search it.' },
+      { type: 'feature', text: 'Project page, District Calendar tab: Import scheduling groups reads the WebCTRL groups file and the group members file, keeps a change history, and lists the groups by building.' }
+    ]
+  },
   { v: 'v2026.10.29.184', date: '2026-10-29', title: 'District Calendar upcoming events, folder tabs, CSC price list',
     items: [
       { type: 'change', text: 'Project page, District Calendar tab: the list now opens on the next 14 days, grouped by day, with Next 14 days, This month and Show past buttons. Events that are new, changed (with what changed, like the old and new time or place) or canceled since the last sync are marked, and a line at the top counts them. Changes only shows just those events.' },

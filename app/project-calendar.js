@@ -8,8 +8,8 @@
 //   en_cal_snap_<pid>  { fetchedAt, count, window, events:{key:[title,start,end,allDay,location]} }
 //   en_cal_hist_<pid>  [ { id, at, counts, added, removed, changed } ]   newest first
 //
-// Network: ONE call to /.netlify/functions/calendar-fetch, only when the user clicks Sync.
-// Opening the page or the tab makes no call. There are no timers.
+// Network: ONE call to /.netlify/functions/calendar-fetch, when the user clicks Sync now, or once when the tab opens
+// and the saved copy is older than 1 hour (pcalAutoSync). There are no timers.
 // Text is escaped with _escHtml (lib/formatting.js). The comparison is done by CalendarDiff.diffSnapshots (app/calendar-diff.js), the only copy.
 (function () {
   'use strict';
@@ -272,7 +272,7 @@
     var hist = histOf(pid);
     var v = CalendarDiff.listView({
       events: snap.events,
-      last: hist[0] || null,
+      last: CalendarDiff.carriedMarks(hist, { events: snap.events, tz: tz, today: todayOf(tz), nowMs: Date.now() }),
       tz: tz,
       today: todayOf(tz),
       mode: s.view,
@@ -291,8 +291,7 @@
       if (c['new']) parts.push(num(c['new']) + ' new');
       if (c.changed) parts.push(num(c.changed) + ' changed');
       if (c.canceled) parts.push(num(c.canceled) + ' canceled');
-      var prev = hist[1] ? ' (' + stampShort(hist[1].at) + ')' : '';
-      line = 'Since last sync' + prev + ': ' + (parts.length ? parts.join(', ') : 'no changes') + ' ' + scope;
+      line = 'Recent changes (kept ' + CalendarDiff.MARK_DAYS + ' days or until the date passes): ' + (parts.length ? parts.join(', ') : 'no changes') + ' ' + scope;
     }
     var last = hist[0];
     var lc = last && !last.first ? last.counts : null;
@@ -382,7 +381,7 @@
         ')"' +
         (s.busy ? ' disabled' : '') +
         '>' +
-        (s.busy ? 'Syncing...' : 'Sync feed') +
+        (s.busy ? 'Syncing...' : 'Sync now') +
         '</button>'
       : '';
     var summary;
@@ -390,7 +389,7 @@
       summary =
         '<div style="font-size:13px">Enter the calendar feed address for this project, then choose Save and sync.</div>';
     } else if (!snap) {
-      summary = '<div style="font-size:13px">No copy of the feed is saved yet. Choose Sync feed.</div>';
+      summary = '<div style="font-size:13px">No copy of the feed is saved yet. Choose Sync now.</div>';
     } else {
       summary = '';
     }
@@ -569,8 +568,20 @@
     }
   }
 
+  // The calendar's own table and text helpers, shared with the BAS schedules card (app/bas-schedules.js).
+  window.pcalUi = { table: table, num: num, stamp: stamp, ensureStyle: ensureStyle };
   window.pcalRender = render;
   window.pcalSync = sync;
+  // Called when the District Calendar tab opens. Syncs once if the saved copy is older than 1 hour. No timers.
+  // A second render within 60 seconds does not call again (a failed sync leaves the copy old).
+  window.pcalAutoSync = function (pid) {
+    var s = state(pid);
+    if (s.busy || (s.autoAt && Date.now() - s.autoAt < 60000)) return;
+    var token = window.CH_AUTH && window.CH_AUTH.getToken && window.CH_AUTH.getToken();
+    if (!CalendarDiff.needsAutoSync({ cfg: cfgOf(pid), token: token, snap: snapOf(pid), nowMs: Date.now() })) return;
+    s.autoAt = Date.now();
+    return sync(pid);
+  };
   window.pcalSave = save;
   window.pcalMonth = function (pid, d) {
     var s = state(pid);

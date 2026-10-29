@@ -85,7 +85,7 @@ const SyncClassification = (() => {
     {
       pattern: 'en_bas_',
       prefix: true,
-      note: 'bas-trends.js: en_bas_<pid>, en_bas_raw_<bldgKey>_<equipTag>, en_bas_faultstatus_<pid> — all 3 sub-families share this one prefix',
+      note: 'bas-trends.js: en_bas_<pid>, en_bas_raw_<bldgKey>_<equipTag>, en_bas_faultstatus_<pid> — bas-schedules.js: en_bas_snap_<pid> (schedule copies by date), en_bas_hist_<pid> (import history, merged by id), en_bas_groups_<pid> (scheduling groups) — all sub-families share this one prefix',
     },
     { pattern: 'en_alarms_', prefix: true, note: 'bas-alarms.js: en_alarms_<pid>' },
     {

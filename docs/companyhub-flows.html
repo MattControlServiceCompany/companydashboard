@@ -226,6 +226,7 @@ var FLOWS = [
       { from:'pdfjs', to:'tesseract', label:'Fallback: Tesseract OCR if text < 100 chars', detail:'Scanned PDFs get page images OCR\'d via worker.' },
       { from:'tesseract', to:'rules', label:'Combined text passed to UTILITY_RULES', detail:'Each rule\'s detect() tested: Utility E, Spire, Client A, Generic.' },
       { from:'rules', to:'energy', label:'Extracted fields returned for review', detail:'Duplicate compare modal if existing bill found.' },
+      { from:'energy', to:'user', label:'Multi-building file: issue box above each bill + review bar at the bottom', detail:'_mbRenderReview draws #pdfBillDest (issues from _pdfBillIssueItems, Create meter / Create building + meter) and #pdfReviewBar (counts, one link per issue, Save All). Create meter on one bill sends every same-account bill to the same new meter (_mbLinkSameMeter).' },
       { from:'energy', to:'idb', label:'PDF blob saved to IndexedDB', detail:'Stored under en_pdf_store with unique key.' },
       { from:'energy', to:'store', label:'Bill data saved via Store.set()', detail:'Assigned to project > building > meter.' },
       { from:'store', to:'ls', label:'localStorage updated, dataUpdated fired', detail:'Bill appears in meter data table.' },
@@ -313,9 +314,17 @@ var FLOWS = [
     id: 'project-calendar-feed', name: 'Project page, District Calendar tab: calendar feed and what changed', desc: 'The Calendar feed panel shows the saved copy of the district calendar feed and what changed since the last sync. Opening the page or tab makes no call. Only the Sync button calls the calendar-fetch function. A change is a different title, start, end, all-day flag or location; only events inside the overlap of the old and new sync windows count as added or removed.',
     path: ['user','energy','ls'],
     steps: [
-      { from:'user', to:'energy', label:'User chooses Sync feed (or Save and sync after entering the feed address)', detail:'app/project-calendar.js pcalSync. The feed address is stored in en_cal_cfg_<pid>. Nothing is fetched on page open.' },
+      { from:'user', to:'energy', label:'User chooses Sync now (or the tab opens with a copy older than 1 hour) (or Save and sync after entering the feed address)', detail:'app/project-calendar.js pcalSync. The feed address is stored in en_cal_cfg_<pid>. Nothing is fetched on page open.' },
       { from:'energy', to:'energy', label:'calendar-fetch downloads and reads the feed', detail:'netlify/functions/calendar-fetch.mjs, sign-in check in netlify/lib/auth.js (shared with kv-sync and pdf-sync). Address must be https, the calendar host, and end in .ics. Reader code: netlify/functions/lib/calendar/.' },
       { from:'energy', to:'ls', label:'diffSnapshots compares with the stored copy; history and copy are saved', detail:'app/calendar-diff.js (the only comparison). Writes en_cal_hist_<pid> (merged by id) then en_cal_snap_<pid>.' },
+    ]
+  },
+  {
+    id: 'project-bas-schedules', name: 'Project page, District Calendar tab: BAS schedules and what changed', desc: 'The BAS schedules card keeps one copy of the WebCTRL Effective Schedules for each date the user says an export covers, lists who imported and what changed since the earlier day, and keeps the scheduling groups. No network call.',
+    path: ['user','energy','ls'],
+    steps: [
+      { from:'user', to:'energy', label:'User imports Effective Schedules files and enters the date they cover', detail:'app/bas-schedules.js. emParseEffectiveSchedulesCSV and _emScheduleBlocks (app/equipment-matrix.js) read the files. The date is required.' },
+      { from:'energy', to:'ls', label:'BasDiff compares with the earlier copy; history and copy are saved', detail:'app/bas-diff.js (the only comparison). Writes en_bas_hist_<pid> (merged by id) then en_bas_snap_<pid>. Scheduling groups: en_bas_groups_<pid>.' },
     ]
   },
   {

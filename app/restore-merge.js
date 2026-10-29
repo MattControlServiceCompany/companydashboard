@@ -81,6 +81,7 @@ const RestoreMerge = (() => {
     [(k) => k.indexOf('en_pdf_bills') === 0, 'Bill PDF list'],
     [(k) => k.indexOf('en_eqmatrix_') === 0, 'Equipment matrix'],
     [(k) => k.indexOf('en_alarms_') === 0, 'BAS alarms'],
+    [(k) => /^en_bas_(snap|hist|groups)_/.test(k), 'District calendar'],
     [(k) => k.indexOf('en_bas_') === 0, 'BAS trends'],
     [(k) => k.indexOf('en_pricing_') === 0, 'Pricing'],
     [(k) => k.indexOf('en_report_') === 0, 'Reports'],

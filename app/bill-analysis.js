@@ -5667,9 +5667,10 @@ function countCriticalMissing(extracted, utilityName) {
 let _autoAssignTarget = null; // {projId, bldgId, meterId}
 let _mbRowTargets = {}; // keyed by _pdfMultiBills index -> match obj or null
 // Per-row checked/skipped state for the single-PDF multi-bill review panel
-// (showMultiBuildingReviewPanel) — mirrors renderQueueResults' row.checked
+// (_mbInitReview) — mirrors renderQueueResults' row.checked
 // gate-wiring pattern. keyed by _pdfMultiBills index -> {checked, skipped}.
 let _mbRowState = {};
+let _mbRowOrder = {}; // bill index -> its row number in the review table (sorted by building, utility, period)
 // Shared PDF-store bookkeeping across per-row Save clicks AND the bulk Save
 // All loop, so the underlying PDF blob is stored at most once per panel
 // (mirrors the pdfStored/sharedId locals confirmMultiBuildingSave used to
@@ -6966,7 +6967,7 @@ function showAutoAssignBanner(match, extracted) {
   // multi-account check depends only on window._pdfMultiBills, not on
   // `match`, so it is safe to evaluate first regardless of match's value.
   if (_isMultiAcctFile()) {
-    showMultiBuildingReviewPanel();
+    _mbRefresh(); // the bill's box and the review bar (made on first draw, see _mbEnsureReview)
     return;
   }
   if (!match) return;
@@ -6991,17 +6992,15 @@ function showAutoAssignBanner(match, extracted) {
   }
 }
 
-// ── Multi-building review panel (Option A) ────────────────────────────────────
-function showMultiBuildingReviewPanel() {
+// ── Multi-building file: review state, the bill's "Saves to" box, the review bar ──
+// A file with bills of more than one account has no separate review window. Each bill shows its own
+// destination and issues at the top of its values (#pdfBillDest, _mbBillBoxHtml), and the bar at the bottom of
+// the values (#pdfReviewBar, _mbReviewBarHtml) is always visible: counts, one link per issue, Save All.
+// The state is made ONCE per file (_mbInitReview), the first time the page draws a multi-building file.
+let _mbInitFor = null; // the _pdfMultiBills array the review state below belongs to
+function _mbInitReview() {
   const bills = window._pdfMultiBills || [];
-  const panel = document.getElementById('pdfMultiBldgPanel');
-  if (!panel) return;
-
-  // Reset row targets/state and pre-fill from findMeterMatch. Only runs when
-  // the panel is (re)opened for a fresh set of bills — per-row interactions
-  // (Save/Skip/dest picks) below re-render just their own row via
-  // _mbRerenderRow(), never this whole-panel rebuild, so they never lose
-  // sibling rows' in-progress state.
+  _mbInitFor = bills;
   _mbRowTargets = {};
   _mbRowState = {};
   _mbSaveState = { pdfStored: false, pdfKey: null, sharedId: null };
@@ -7018,241 +7017,313 @@ function showMultiBuildingReviewPanel() {
       _mbRowTargets[i] &&
       (_mbRowTargets[i].matchType === 'identity' || _mbRowTargets[i].matchType === 'commodity')
     );
-    // FIX (fix/bill-review-gate-lifecycle, item 817dd434, SAFETY hole): this
-    // panel's own "GATE WIRING" comment below only ever mirrored MATCH
-    // confidence — it never actually looked at b._gateTripped/_gateReasons, so a
-    // gate-tripped bill on a multi-building file was silently checked and
-    // "Overwrite All"-able with no warning. Stamp _mbHeld/_mbHeldReason (the
-    // same fields the identity-mismatch hold below already uses, so
-    // _mbRowHtml's "Held — <reason>" status needs no new code path) and force
-    // the row unchecked. _mbSaveOneBill also independently refuses to save a
-    // gate-tripped-and-unconfirmed bill even if re-checked — defense in depth.
+    // FIX (item 817dd434, SAFETY hole): a gate-tripped bill is stamped held and starts unchecked.
+    // _mbSaveOneBill also refuses to save a gate-tripped-and-unconfirmed bill even if re-checked.
     const isGatedUnconfirmed = !!(bill._gateTripped && !bill._gateOverrideConfirmed);
     if (isGatedUnconfirmed) {
       bill._mbHeld = true;
       bill._mbHeldReason = (bill._gateReasons || []).join(' · ');
     }
-    // GATE WIRING (mirrors renderQueueResults' `checked: !b._gateTripped`): any
-    // other match type (address/ambiguous/no-match) defaults UNCHECKED — the
-    // user must ACT (check the box, or make an explicit destination pick,
-    // which auto-checks it — see setMbRowDestMeter) to include it in Save
-    // All, instead of acting to prevent a wrong silent save.
+    // GATE WIRING: any other match type (address/ambiguous/no-match) starts UNCHECKED — the user must act
+    // (Create, a destination pick, or the Include box) to put it in Save All.
     _mbRowState[i] = { checked: isAutoAttach && !isGatedUnconfirmed, skipped: false };
   });
-
-  const rows = bills.map(function (bill, i) {
-    return _mbRowHtml(i);
-  });
-
-  const html = [
-    '<div style="border:1px solid var(--s2);border-radius:6px;background:var(--s4);padding:12px;">',
-    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">',
-    '<strong style="font-size:13px;color:var(--em);">Review and save</strong>',
-    '</div>',
-    '<div style="overflow-x:auto;">',
-    '<table style="width:100%;border-collapse:collapse;font-size:12px;">',
-    '<thead>',
-    '<tr style="background:var(--s1);border-bottom:2px solid var(--s2);">',
-    '<th style="padding:6px 8px;text-align:left;font-weight:600;">#</th>',
-    '<th style="padding:6px 8px;text-align:left;font-weight:600;">Period</th>',
-    '<th style="padding:6px 8px;text-align:left;font-weight:600;">Service Address</th>',
-    '<th style="padding:6px 8px;text-align:left;font-weight:600;">Account</th>',
-    '<th style="padding:6px 8px;text-align:left;font-weight:600;">Destination</th>',
-    '<th style="padding:6px 8px;text-align:left;font-weight:600;">Status</th>',
-    '<th style="padding:6px 8px;text-align:left;font-weight:600;">Save</th>',
-    '</tr>',
-    '</thead>',
-    '<tbody id="mbRowsBody">',
-    rows.join(''),
-    '</tbody>',
-    '</table>',
-    '</div>',
-    // 2026-09-02 consolidation: this is the ONE bottom save location for a
-    // multi-account file — Save All / Overwrite All / Merge All, same trio the
-    // single-account Save list in the top row shows. All three route
-    // through confirmMultiBuildingSave(action) -> _mbSaveOneBill(bi, action);
-    // see there for what each action does to an existing period match.
-    '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;align-items:center">',
-    '<button class="btn btn-primary btn-sm" id="mbSaveAllBtn" onclick="confirmMultiBuildingSave(\'save\')" disabled>Save All</button>',
-    '<button class="btn btn-ghost btn-sm" id="mbOverwriteAllBtn" onclick="confirmMultiBuildingSave(\'overwrite\')" disabled title="Replace existing values with newly extracted values; a blank new value keeps the saved value">Overwrite All</button>',
-    '<button class="btn btn-ghost btn-sm" id="mbMergeAllBtn" onclick="confirmMultiBuildingSave(\'merge\')" disabled title="Fill only empty fields — keeps existing non-empty values intact">Merge All</button>',
-    '<button class="btn btn-ghost btn-sm" id="mbAttachOnlyBtn" onclick="confirmMultiBuildingSave(\'attach-pdf-only\')" disabled title="Attach the PDF only to already-matching billing periods — never changes any other field, never creates a new bill">Attach PDFs Only</button>',
-    '<button class="btn btn-ghost btn-sm" onclick="_pdfClosePop()">Close</button>',
-    '</div>',
-    // FIX (fix/bill-review-gate-lifecycle, item 817dd434): gate-tripped rows'
-    // "Save Anyway" notice — populated by _mbUpdateSaveAllBtn, mirrors the
-    // single-account bottom bar's gateNotice.
-    '<div id="mbGateNotice"></div>',
-    '</div>',
-  ].join('');
-
-  panel.innerHTML = html;
-  panel.style.display = 'block';
-
-  _mbUpdateSaveAllBtn();
+  // Bill numbers ("Bill 3"): sorted by building, then utility, then period.
+  const _startOf = (b) => {
+    const m = String((b && b.BillingPeriodStart) || '').match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+    return m ? (m[3].length === 2 ? 2000 + +m[3] : +m[3]) * 10000 + +m[1] * 100 + +m[2] : 0;
+  };
+  const _nameOf = (b) => _pdfBuildingName(bills, (b && b.AccountNumber) || '_unknown');
+  const order = bills
+    .map((b, i) => i)
+    .sort(
+      (x, y) =>
+        _nameOf(bills[x]).localeCompare(_nameOf(bills[y])) ||
+        _pdfCommRank(_pdfCommOf(bills[x])) - _pdfCommRank(_pdfCommOf(bills[y])) ||
+        _startOf(bills[x]) - _startOf(bills[y]) ||
+        x - y,
+    );
+  _mbRowOrder = {};
+  order.forEach((bi, n) => (_mbRowOrder[bi] = n + 1));
 }
-window.showMultiBuildingReviewPanel = showMultiBuildingReviewPanel;
+// The review state exists for the file on screen (made on first draw; a new file makes it again).
+function _mbEnsureReview() {
+  if (!_isMultiAcctFile()) return false;
+  if (_mbInitFor !== window._pdfMultiBills) _mbInitReview();
+  return true;
+}
+function _mbReviewLive() {
+  return !!window._pdfMultiBills && _mbInitFor === window._pdfMultiBills && _isMultiAcctFile();
+}
+// Redraw everything that shows the review state: statuses, the bill's box, the bar.
+function _mbRefresh() {
+  _pdfRenderTopBar();
+}
+window._mbRefresh = _mbRefresh;
+function _mbBillNo(i) {
+  return _mbRowOrder[i] || i + 1;
+}
 
-// ── Per-row builder (fix ede70be1 — honest match display + per-bill save) ──
-// Builds ONE <tr> for the single-PDF multi-bill review panel. Destination
-// cell reuses the module-scope _buildDestCell (same honest identity-vs-
-// unconfirmed rendering the batch queue table uses) instead of the old
-// unguarded "Matched" badge that showed address/ambiguous guesses as
-// confidently as a real account-number hit.
-function _mbRowHtml(i) {
+// The destination issue of one bill of a multi-building file, or null: no matching building or meter, a
+// meter matched by address only, more than one possible meter. A bill that is saved, skipped, or has a meter
+// (or a "create" target) has none. Read by _pdfBillIssues: the ONE issue list behind every status on the page.
+function _pdfDestIssue(bill) {
+  if (!_mbReviewLive()) return null;
+  const bills = window._pdfMultiBills;
+  const i = bills.indexOf(bill);
+  if (i < 0 || bill._mbSaved) return null;
+  const d = (window._pdfDupMap || {})[i];
+  if (d && d.action === 'skip') return null;
+  if (_mbRowState[i] && _mbRowState[i].skipped) return null;
+  const t = _mbRowTargets[i];
+  if (t && t.matchType === 'create') return null;
+  if (t && t.meter && t.matchType !== 'address') return null;
+  if (t && t.matchType === 'address' && t.meter) return { kind: 'unconfirmed', text: 'Meter found by address only' };
+  if (t && t.matchType === 'ambiguous') return { kind: 'ambiguous', text: 'More than one meter could match' };
+  if (t && t.bldgId) return { kind: 'no-meter', text: 'No matching meter' };
+  return { kind: 'no-building', text: 'No matching building or meter' };
+}
+
+// The box at the top of the bill's values: bill number, status, the destination (with Change), the issue with its
+// Create buttons, Include in Save All, Save this bill, Skip. Its status words come from _pdfBillIssueItems, the same
+// list the bar uses. Returns { cls: the status class of the box, html }.
+function _mbBillBoxHtml(i) {
   const bills = window._pdfMultiBills || [];
   const bill = bills[i];
   if (!bill) return '';
+  const bw = ((window._pdfBillWarnings || [])[i] || {}).warnings || [];
+  const items = _pdfBillIssueItems(bill, bw);
   const match = _mbRowTargets[i];
-  const period = (bill.BillingPeriodStart || '') + (bill.BillingPeriodEnd ? ' – ' + bill.BillingPeriodEnd : '');
-  const addr = bill.ServiceAddress || '—';
-  const acct = bill.AccountNumber || '—';
-  const dupInfo = (window._pdfDupMap || {})[i];
-  const isDupSkip = dupInfo && dupInfo.action === 'skip';
   const st = _mbRowState[i] || { checked: false, skipped: false };
-
-  let destCell, statusCell, actionCell;
-
-  if (isDupSkip) {
-    destCell = '<span style="color:var(--text3);font-size:12px;">Duplicate — skipped</span>';
-    statusCell =
-      '<span id="mbStatus_' +
-      i +
-      '" style="color:var(--text3);font-size:11px;padding:2px 6px;border-radius:3px;background:var(--s3);">Skip</span>';
-    actionCell = '<span style="color:var(--text3);font-size:11px;">—</span>';
-  } else if (bill._mbSaved) {
-    destCell = '<span style="font-size:12px;color:var(--text3)">' + _escHtml(bill._mbSavedDest || 'Saved') + '</span>';
-    statusCell =
-      '<span id="mbStatus_' +
-      i +
-      '" style="color:var(--text3);font-size:11px;padding:2px 6px;border-radius:3px;background:var(--s3);">Saved</span>';
-    actionCell = '<span style="color:var(--text3);font-size:11px;">&#10003; Saved</span>';
-  } else {
-    destCell = _buildDestCell(
-      bill,
-      match,
-      String(i),
-      'setMbRowDestProj',
-      'setMbRowDestBldg',
-      'setMbRowDestMeter',
-      'setMbRowDestExpand',
-      true,
-    );
-    const isIdentity = !!(match && match.matchType === 'identity');
-    const isCommodity = !!(match && match.matchType === 'commodity');
-    const isManual = !!(match && match.matchType === 'manual');
-    const isAmbiguous = !!(match && match.matchType === 'ambiguous');
-    const isCreate = !!(match && match.matchType === 'create');
-    let statusLbl, statusColor, statusBg;
-    if (bill._mbHeld) {
-      statusLbl = 'Held — ' + (bill._mbHeldReason || 'needs review');
-      statusColor = 'var(--red)';
-      statusBg = 'rgba(239,68,68,.1)';
-    } else if (isIdentity) {
-      statusLbl = 'Matched';
-      statusColor = 'var(--em)';
-      statusBg = 'rgba(var(--em-rgb),.1)';
-    } else if (isCommodity) {
-      // PASS 2 (b-46a984a0): building+commodity fallback — unambiguous
-      // single-meter match, account number was renumbered upstream. Auto-
-      // attaches like identity; account update happens at save.
-      statusLbl = 'Matched — account renumbered (will update)';
-      statusColor = 'var(--em)';
-      statusBg = 'rgba(var(--em-rgb),.1)';
-    } else if (isManual) {
-      statusLbl = 'Assigned';
-      statusColor = 'var(--em)';
-      statusBg = 'rgba(var(--em-rgb),.1)';
-    } else if (isAmbiguous) {
-      statusLbl = 'Needs selection';
-      statusColor = 'var(--amber)';
-      statusBg = 'rgba(245,158,11,.1)';
-    } else if (isCreate) {
-      statusLbl = 'Will create new meter/building';
-      statusColor = 'var(--em)';
-      statusBg = 'rgba(var(--em-rgb),.1)';
-    } else if (match) {
-      // 'address' matchType — fuzzy, unconfirmed
-      statusLbl = 'Address match (unconfirmed)';
-      statusColor = 'var(--amber)';
-      statusBg = 'rgba(245,158,11,.1)';
-    } else {
-      statusLbl = 'No match — pick below';
-      statusColor = 'var(--accent)';
-      statusBg = 'rgba(128,128,128,.12)';
-    }
-    statusCell =
-      '<span id="mbStatus_' +
-      i +
-      '" style="color:' +
-      statusColor +
-      ';font-size:11px;padding:2px 6px;border-radius:3px;background:' +
-      statusBg +
-      ';">' +
-      _escHtml(statusLbl) +
-      '</span>';
-
-    if (st.skipped) {
-      actionCell =
-        '<span style="color:var(--text3);font-size:11px;display:block;margin-bottom:4px;">Skipped</span>' +
-        '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 8px" onclick="_mbUnskipRow(' +
-        i +
-        ')">Undo skip</button>';
-    } else {
-      // FIX (fix/bill-review-gate-lifecycle, item 817dd434): a gate-tripped,
-      // unconfirmed bill's per-row Save must be disabled too — the bulk "Save
-      // Anyway" button is the one sanctioned override path (see
-      // _confirmGatedBillsForSave), otherwise the per-row button would be a
-      // second, unguarded route around the same gate.
-      const isGatedUnconfirmed = !!(bill._gateTripped && !bill._gateOverrideConfirmed);
-      const canSave = !!(match && (match.meter || match.matchType === 'create')) && !isGatedUnconfirmed;
-      actionCell =
-        '<label style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--text2);margin-bottom:4px;white-space:nowrap">' +
-        '<input type="checkbox" onchange="_mbToggleRowChecked(' +
-        i +
-        ',this.checked)"' +
-        (st.checked ? ' checked' : '') +
-        '> Include in Save All</label>' +
-        '<div style="display:flex;gap:4px">' +
-        '<button class="btn btn-em btn-sm" style="font-size:10px;padding:2px 8px" onclick="_mbSaveRowClick(' +
-        i +
-        ')"' +
-        (canSave ? '' : ' disabled') +
-        (isGatedUnconfirmed ? ' title="Flagged for review — use Save below to confirm"' : '') +
-        '>Save</button>' +
-        '<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 8px" onclick="_mbSkipRow(' +
-        i +
-        ')">Skip</button>' +
-        '</div>';
-    }
+  const dupInfo = (window._pdfDupMap || {})[i];
+  const head = (cls, words) =>
+    '<div class="pdf-dest-head"><span class="pdf-dest-no">Bill ' +
+    _mbBillNo(i) +
+    ' of ' +
+    bills.length +
+    '</span><span class="pdf-dest-st ' +
+    cls +
+    '">' +
+    _escHtml(words) +
+    '</span></div>';
+  if (dupInfo && dupInfo.action === 'skip') return { cls: '', html: head('', 'Already saved: skipped') };
+  if (bill._mbSaved) {
+    return {
+      cls: 'st-ok',
+      html: head('ok', 'Saved') + '<div class="pdf-dest-line"><span class="pdf-dest-v">' + _escHtml(bill._mbSavedDest || '') + '</span></div>',
+    };
   }
-
-  return [
-    '<tr id="mbRow_' + i + '" style="border-bottom:1px solid var(--s3);">',
-    '<td style="padding:6px 8px;color:var(--text3);font-size:12px;">' + (i + 1) + '</td>',
-    '<td style="padding:6px 8px;font-size:12px;">' + _escHtml(period) + '</td>',
-    '<td style="padding:6px 8px;font-size:12px;">' + _escHtml(addr) + '</td>',
-    '<td style="padding:6px 8px;font-size:12px;">' + _escHtml(acct) + '</td>',
-    '<td style="padding:6px 8px;">' + destCell + '</td>',
-    '<td style="padding:6px 8px;">' + statusCell + '</td>',
-    '<td style="padding:6px 8px;">' + actionCell + '</td>',
-    '</tr>',
-  ].join('');
+  if (st.skipped) {
+    return {
+      cls: '',
+      html:
+        head('', 'Skipped: not in Save All') +
+        '<div class="pdf-dest-acts"><button class="pdf-top-btn" onclick="_mbUnskipRow(' + i + ')">Undo skip</button></div>',
+    };
+  }
+  const n = items.length;
+  const lv = n ? (_pdfBillStatus(bill, bw).level === 'err' ? 'err' : 'warn') : 'ok';
+  let h = head(lv, n ? _pdfCountWord(n, 'issue') : 'Ready to save');
+  const dest = items.find((x) => x.kind === 'dest');
+  const isCreate = !!(match && match.matchType === 'create');
+  const picker = () =>
+    _buildDestCell(bill, match, String(i), 'setMbRowDestProj', 'setMbRowDestBldg', 'setMbRowDestMeter', 'setMbRowDestExpand', true, true);
+  if (isCreate) {
+    const from = match.fromRow != null ? ' (from bill ' + _mbBillNo(match.fromRow) + ')' : '';
+    h +=
+      '<div class="pdf-dest-line"><span class="pdf-dest-k">Saves to</span><span class="pdf-dest-v">' +
+      _escHtml((match.createOnBldgId || match.fromRow != null ? 'Goes to new meter' : 'Goes to new building and meter') + from) +
+      '</span><a href="javascript:void(0)" onclick="setMbRowDestExpand(' +
+      i +
+      ',false)">Undo</a></div>';
+  } else if (dest) {
+    const who = [
+      bill.AccountNumber && 'account ' + bill.AccountNumber,
+      bill.MeterNumber && 'meter ' + bill.MeterNumber,
+      bill.ServiceAddress,
+    ]
+      .filter(Boolean)
+      .join(', ');
+    h +=
+      '<div class="pdf-dest-issue" id="pdfDestIssue"><strong>' +
+      _escHtml(dest.text) +
+      '</strong>' +
+      (who ? '<span> for ' + _escHtml(who) + '</span>' : '') +
+      '</div><div class="pdf-dest-acts"><button class="pdf-top-btn primary" onclick="_mbCreateForRow(' +
+      i +
+      ')">' +
+      (match && match.bldgId ? 'Create meter' : 'Create building + meter') +
+      '</button><span class="pdf-dest-or">or pick a meter</span><span class="pdf-dest-pick">' +
+      picker() +
+      '</span></div>';
+  } else {
+    h += '<div class="pdf-dest-line"><span class="pdf-dest-k">Saves to</span><span class="pdf-dest-pick">' + picker() + '</span></div>';
+  }
+  const isGatedUnconfirmed = !!(bill._gateTripped && !bill._gateOverrideConfirmed);
+  const canSave = !!(match && (match.meter || match.matchType === 'create')) && !isGatedUnconfirmed;
+  h +=
+    '<div class="pdf-dest-acts"><label class="pdf-dest-inc"><input type="checkbox" onchange="_mbToggleRowChecked(' +
+    i +
+    ',this.checked)"' +
+    (st.checked ? ' checked' : '') +
+    '> Include in Save All</label><button class="pdf-top-btn" onclick="_mbSaveRowClick(' +
+    i +
+    ')"' +
+    (canSave ? '' : ' disabled') +
+    (isGatedUnconfirmed ? ' title="Held for review: use Save including held bills in More to confirm"' : '') +
+    '>Save this bill</button><button class="pdf-top-btn" onclick="_mbSkipRow(' +
+    i +
+    ')">Skip</button></div>';
+  return { cls: 'st-' + lv, html: h };
 }
 
-// Replaces just row i's <tr> in-place — never tears down or rebuilds the
-// panel, so every OTHER row's live Save/Skip controls and in-progress
-// picker state survive (ede70be1 3b).
-function _mbRerenderRow(i) {
+// Counts and the Save All state of a multi-building file. The ONE place the bar reads.
+function _mbReviewSummary() {
+  const bills = window._pdfMultiBills || [];
+  const warnings = window._pdfBillWarnings || [];
+  const dupMap = window._pdfDupMap || {};
+  const out = { total: bills.length, ready: 0, issues: 0, saved: 0, skipped: 0, links: [] };
+  bills.forEach((b, i) => {
+    if (b._mbSaved) return out.saved++;
+    const d = dupMap[i];
+    if ((d && d.action === 'skip') || (_mbRowState[i] && _mbRowState[i].skipped)) return out.skipped++;
+    const items = _pdfBillIssueItems(b, (warnings[i] && warnings[i].warnings) || []);
+    if (!items.length) return out.ready++;
+    out.issues++;
+    items.forEach((it, k) => out.links.push({ i, k, it }));
+  });
+  out.links.sort((a, b) => _mbBillNo(a.i) - _mbBillNo(b.i) || a.k - b.k);
+  const c = _mbClassifyRows();
+  out.toSave = c.toSave.length;
+  out.disabled = !(c.toSave.length > 0 && !c.unaccounted.length && !c.gated.length);
+  const faulty = c.gated
+    .map((i) => 'Bill ' + _mbBillNo(i) + ': ' + ((bills[i]._gateReasons && bills[i]._gateReasons[0]) || 'held for review'))
+    .concat(c.unaccounted.map((i) => 'Bill ' + _mbBillNo(i) + ': no destination'));
+  out.title = faulty.length
+    ? faulty.join('; ') + '. Uncheck it or fix it.'
+    : out.disabled
+      ? 'Select at least one bill to save'
+      : 'Save the ' + _pdfCountWord(c.toSave.length, 'selected bill');
+  return out;
+}
+// The bar at the bottom of the values: counts, one link per issue (a click opens the bill at the issue), Save All.
+function _mbReviewBarHtml() {
+  const bills = window._pdfMultiBills || [];
+  const s = _mbReviewSummary();
+  const parts = [
+    _pdfCountWord(s.total, 'bill'),
+    s.ready + ' ready',
+    s.issues + ' with issues',
+    s.saved ? s.saved + ' saved' : '',
+    s.skipped ? s.skipped + ' skipped' : '',
+  ].filter(Boolean);
+  const links = s.links
+    .map(({ i, k, it }) => {
+      const b = bills[i];
+      const where = [_pdfBuildingName(bills, b.AccountNumber || '_unknown'), _pdfCommOf(b), _billPeriodLabel(b)].join(' · ');
+      const label = 'Bill ' + _mbBillNo(i) + ' · ' + where + ': ' + it.text;
+      return (
+        '<a href="javascript:void(0)" class="pdf-rb-link' +
+        (it.level === 'err' ? ' err' : '') +
+        '" title="' +
+        _escHtml(label) +
+        '" onclick="_mbGoToIssue(' +
+        i +
+        ',' +
+        k +
+        ')">' +
+        _escHtml(label) +
+        '</a>'
+      );
+    })
+    .join('');
+  return (
+    '<div class="pdf-rb-row"><span class="pdf-rb-counts">' +
+    _escHtml(parts.join(' · ')) +
+    '</span><button class="pdf-top-btn primary" id="mbSaveAllBtn" data-fb="energy.pdf.save-btn" onclick="confirmMultiBuildingSave(\'save\')"' +
+    (s.disabled ? ' disabled' : '') +
+    ' title="' +
+    _escHtml(s.title) +
+    '">Save All' +
+    (s.toSave ? ' (' + s.toSave + ')' : '') +
+    '</button></div>' +
+    (links ? '<div class="pdf-rb-links">' + links + '</div>' : '')
+  );
+}
+// A link in the bar: open that bill (its building and utility too), then go to the issue.
+function _mbGoToIssue(i, k) {
   const bills = window._pdfMultiBills;
   if (!bills || !bills[i]) return;
-  const oldRow = document.getElementById('mbRow_' + i);
-  if (!oldRow || !oldRow.parentNode) return;
-  const tmp = document.createElement('table');
-  tmp.innerHTML = '<tbody>' + _mbRowHtml(i) + '</tbody>';
-  const newRow = tmp.querySelector('tr');
-  if (newRow) oldRow.parentNode.replaceChild(newRow, oldRow);
-  _mbUpdateSaveAllBtn();
+  const bw = ((window._pdfBillWarnings || [])[i] || {}).warnings || [];
+  const it = _pdfBillIssueItems(bills[i], bw)[k];
+  window._pdfBuildingTab = bills[i].AccountNumber || '_unknown';
+  window._pdfCommTab = _pdfCommOf(bills[i]);
+  _pdfTopOpen = null;
+  selectMultiBill(i);
+  if (it && it.field && document.querySelector('.ef-input[data-key="' + it.field + '"]')) {
+    _pdfGoToField(it.field);
+    return;
+  }
+  const el =
+    (it && it.kind === 'dest' && document.getElementById('pdfBillDest')) ||
+    document.querySelector('#extractedFieldsHdr .ef-bar') ||
+    document.getElementById('pdfBillDest');
+  if (el) {
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.classList.remove('pdf-flash');
+    void el.offsetWidth;
+    el.classList.add('pdf-flash');
+  }
+}
+window._mbGoToIssue = _mbGoToIssue;
+// Draws the bill's box and the bar for a multi-building file; hides both for any other file.
+function _mbRenderReview(live) {
+  const box = document.getElementById('pdfBillDest');
+  const bar = document.getElementById('pdfReviewBar');
+  const on = !!live && _mbEnsureReview();
+  const idx = window._pdfMultiIdx || 0;
+  if (box) {
+    const b = on ? _mbBillBoxHtml(idx) : null;
+    box.className = 'pdf-dest' + (b && b.cls ? ' ' + b.cls : '');
+    box.innerHTML = b ? b.html : '';
+    box.style.display = b && b.html ? '' : 'none';
+  }
+  if (bar) {
+    bar.innerHTML = on ? _mbReviewBarHtml() : '';
+    bar.style.display = on ? '' : 'none';
+  }
+}
+
+// "Same meter" between two bills of a file: the rule _autoCreateMeterAndSaveBill's duplicate guard uses
+// (_billIdentityHitsMeter), with the other bill read as a meter.
+function _mbSameMeterBills(a, b) {
+  return _billIdentityHitsMeter(a, { account: b.AccountNumber || '', meter: b.MeterNumber || '', commodity: b.Commodity || '' });
+}
+// Create on bill i: every other bill of the file with the same account or meter number (same utility) that has
+// no meter goes to the same new meter at once, checked. Save makes the meter once (the first save creates it,
+// the next saves find it through the duplicate guard in _autoCreateMeterAndSaveBill).
+function _mbLinkSameMeter(i) {
+  const bills = window._pdfMultiBills || [];
+  const src = _mbRowTargets[i];
+  if (!src || src.matchType !== 'create') return;
+  bills.forEach((b, j) => {
+    if (j === i || b._mbSaved || !_mbSameMeterBills(b, bills[i])) return;
+    const t = _mbRowTargets[j];
+    if (t && (t.matchType === 'identity' || t.matchType === 'commodity' || t.matchType === 'manual')) return;
+    if (t && t.matchType === 'create' && t.fromRow == null) return;
+    _mbRowTargets[j] = Object.assign({}, src, { fromRow: i });
+    _mbRowState[j] = { checked: !(b._gateTripped && !b._gateOverrideConfirmed), skipped: false };
+  });
+}
+// Bill i no longer creates a meter: the bills that followed it go back to their own match, unchecked.
+function _mbUnlinkSameMeter(i) {
+  const bills = window._pdfMultiBills || [];
+  bills.forEach((b, j) => {
+    const t = _mbRowTargets[j];
+    if (!t || t.fromRow !== i || b._mbSaved) return;
+    _mbRowTargets[j] = findMeterMatch(b) || null;
+    if (_mbRowState[j]) _mbRowState[j].checked = false;
+  });
 }
 
 // ── Destination pickers for the single-PDF multi-bill panel (fix ede70be1) ──
@@ -7265,19 +7336,49 @@ function setMbRowDestExpand(i, expand) {
   bills[i]._destExpanded = !!expand;
   if (!expand) {
     delete bills[i]._meterOverride;
-    // Cancel: restore the original auto-match (identity match "Change" → "Cancel").
-    _mbRowTargets[i] = findMeterMatch(bills[i]) || null;
+    // Cancel / Undo: restore the original auto-match (identity match "Change" → "Cancel"). Bills that followed
+    // this bill to a new meter go back too. A bill that is not a sure match leaves Save All.
+    _mbUnlinkSameMeter(i);
+    const t = (_mbRowTargets[i] = findMeterMatch(bills[i]) || null);
+    const sure = !!(t && (t.matchType === 'identity' || t.matchType === 'commodity'));
+    if (_mbRowState[i] && !sure) _mbRowState[i].checked = false;
   }
-  _mbRerenderRow(i);
+  _mbRefresh();
 }
 window.setMbRowDestExpand = setMbRowDestExpand;
+
+// One-click "Create meter" / "Create building + meter" for a row with no
+// meter match. Reuses _mbSetCreateTarget (marks the row checked + savable);
+// the meter/building is built from the bill (account, meter number, address,
+// utility) at save time by _autoCreateMeterAndSaveBill. No second create path.
+function _mbCreateForRow(i) {
+  const bills = window._pdfMultiBills;
+  if (!bills || !bills[i]) return;
+  const ov = bills[i]._meterOverride;
+  const m = _mbRowTargets[i];
+  const projId =
+    (ov && ov.projId) ||
+    (m && m.projId) ||
+    (window._pdfQueue && window._pdfQueue.batchProjId) ||
+    // The project another bill of this file already matched (one file is one customer).
+    (Object.values(_mbRowTargets).find((t) => t && t.projId && t.matchType !== 'create') || {}).projId ||
+    (typeof udSelProjId !== 'undefined' ? udSelProjId : null);
+  if (!projId) {
+    showToast('Pick a project for this bill first, then create the meter');
+    return;
+  }
+  _mbSetCreateTarget(i, projId, (m && m.bldgId) || null);
+  _mbRefresh();
+}
+window._mbCreateForRow = _mbCreateForRow;
 
 function setMbRowDestProj(i, val) {
   const bills = window._pdfMultiBills;
   if (!bills || !bills[i]) return;
+  _mbUnlinkSameMeter(i);
   bills[i]._meterOverride = { projId: parseInt(val) || null, bldgId: null, meterId: null };
   _mbRowTargets[i] = null; // incomplete pick — not save-ready until building+meter chosen
-  _mbRerenderRow(i);
+  _mbRefresh();
 }
 window.setMbRowDestProj = setMbRowDestProj;
 
@@ -7301,38 +7402,42 @@ function _mbSetCreateTarget(i, projId, bldgId) {
   };
   if (_mbRowState[i]) _mbRowState[i].checked = true;
   else _mbRowState[i] = { checked: true, skipped: false };
+  // Item a3271d04: the other bills of this meter (same account or meter number) go to the same new meter now.
+  _mbLinkSameMeter(i);
 }
 
 function setMbRowDestBldg(i, val) {
   const bills = window._pdfMultiBills;
   if (!bills || !bills[i]) return;
+  _mbUnlinkSameMeter(i);
   const ov = bills[i]._meterOverride || { projId: null, bldgId: null, meterId: null };
   if (val === '__CREATE_NEW__') {
     ov.bldgId = '__CREATE_NEW__';
     ov.meterId = '__CREATE_NEW__';
     bills[i]._meterOverride = ov;
     _mbSetCreateTarget(i, ov.projId, null); // new building + new meter at save time
-    _mbRerenderRow(i);
+    _mbRefresh();
     return;
   }
   ov.bldgId = val || null;
   ov.meterId = null;
   bills[i]._meterOverride = ov;
   _mbRowTargets[i] = null;
-  _mbRerenderRow(i);
+  _mbRefresh();
 }
 window.setMbRowDestBldg = setMbRowDestBldg;
 
 function setMbRowDestMeter(i, val) {
   const bills = window._pdfMultiBills;
   if (!bills || !bills[i]) return;
+  _mbUnlinkSameMeter(i);
   const ov = bills[i]._meterOverride || { projId: null, bldgId: null, meterId: null };
   if (val === '__CREATE_NEW__') {
     ov.meterId = '__CREATE_NEW__';
     bills[i]._meterOverride = ov;
     const bldgIdForCreate = ov.bldgId && ov.bldgId !== '__CREATE_NEW__' ? ov.bldgId : null;
     _mbSetCreateTarget(i, ov.projId, bldgIdForCreate);
-    _mbRerenderRow(i);
+    _mbRefresh();
     return;
   }
   ov.meterId = val || null;
@@ -7373,14 +7478,14 @@ function setMbRowDestMeter(i, val) {
   } else {
     _mbRowTargets[i] = null;
   }
-  _mbRerenderRow(i);
+  _mbRefresh();
 }
 window.setMbRowDestMeter = setMbRowDestMeter;
 
 function _mbToggleRowChecked(i, checked) {
   if (!_mbRowState[i]) _mbRowState[i] = { checked: false, skipped: false };
   _mbRowState[i].checked = !!checked;
-  _mbUpdateSaveAllBtn();
+  _mbRefresh();
 }
 window._mbToggleRowChecked = _mbToggleRowChecked;
 
@@ -7388,14 +7493,14 @@ function _mbSkipRow(i) {
   if (!_mbRowState[i]) _mbRowState[i] = { checked: false, skipped: false };
   _mbRowState[i].skipped = true;
   _mbRowState[i].checked = false;
-  _mbRerenderRow(i);
+  _mbRefresh();
 }
 window._mbSkipRow = _mbSkipRow;
 
 function _mbUnskipRow(i) {
   if (!_mbRowState[i]) _mbRowState[i] = { checked: false, skipped: false };
   _mbRowState[i].skipped = false;
-  _mbRerenderRow(i);
+  _mbRefresh();
 }
 window._mbUnskipRow = _mbUnskipRow;
 
@@ -7420,94 +7525,40 @@ async function _mbSaveRowClick(i) {
   } else {
     showToast('Could not save — ' + (result.reason || 'no destination assigned'));
   }
-  _mbRerenderRow(i);
-  _mbUpdateSaveAllBtn();
+  _mbRefresh();
 }
 window._mbSaveRowClick = _mbSaveRowClick;
 
-function _mbUpdateSaveAllBtn() {
-  // 2026-09-02 consolidation: Save All, Overwrite All, and Merge All are the
-  // SAME bulk loop (confirmMultiBuildingSave) with a different upsert action —
-  // all three share exactly one readiness gate, so all three get disabled/
-  // enabled together. Each keeps its own explanatory tooltip when enabled;
-  // when blocked, all three show the same "what's unaccounted for" reason.
-  const BTN_DEFS = [
-    { id: 'mbSaveAllBtn', baseTitle: '' },
-    {
-      id: 'mbOverwriteAllBtn',
-      baseTitle: 'Replace existing values with newly extracted values; a blank new value keeps the saved value',
-    },
-    { id: 'mbMergeAllBtn', baseTitle: 'Fill only empty fields — keeps existing non-empty values intact' },
-    {
-      id: 'mbAttachOnlyBtn',
-      baseTitle:
-        'Attach the PDF only to already-matching billing periods — never changes any other field, never creates a new bill',
-    },
-  ];
-  const btns = BTN_DEFS.map((d) => ({ el: document.getElementById(d.id), baseTitle: d.baseTitle })).filter((b) => b.el);
-  if (!btns.length) return;
+// ONE decision for "which rows does Save All save, and which block it".
+// Only SELECTED rows (checked, not skipped, not saved, not a dup-skip) can
+// block: an unselected row is left out on purpose and never blocks. A selected
+// row blocks when it is held for review (gate) or has no destination.
+// Used by _mbReviewSummary (the bar's Save All state + reason) and confirmMultiBuildingSave.
+function _mbClassifyRows() {
   const bills = window._pdfMultiBills || [];
   const dupMap = window._pdfDupMap || {};
-  // b-46a984a0: full-accounting readiness. Save All enables ONLY when every
-  // row is accounted for — saved, duplicate-skip, explicit user Skip, or
-  // checked+resolved — AND at least one row will actually save. A row left
-  // merely unchecked (the old silent-drop state) is UNACCOUNTED and now hard-
-  // blocks Save All until the user assigns a destination or explicitly Skips.
-  let willSave = 0;
-  let unaccounted = 0;
-  // FIX (fix/bill-review-gate-lifecycle, item 817dd434, SAFETY hole): a
-  // gate-tripped-and-unconfirmed row is tracked SEPARATELY from "unaccounted"
-  // (wrong destination/no Skip) — it has a destination, it needs explicit
-  // gate confirmation, and it must ALSO hard-block Save/Overwrite/Merge All
-  // exactly like the single-account bottom bar's gateNotice does.
-  let unconfirmedGated = 0;
-  bills.forEach(function (b, i) {
-    if (b._mbSaved) return;
+  const out = { toSave: [], userSkipped: 0, unaccounted: [], gated: [] };
+  for (let i = 0; i < bills.length; i++) {
+    if (bills[i]._mbSaved) continue;
     const d = dupMap[i];
-    if (d && d.action === 'skip') return;
+    if (d && d.action === 'skip') continue;
     const st = _mbRowState[i] || { checked: false, skipped: false };
-    if (st.skipped) return;
-    if (b._gateTripped && !b._gateOverrideConfirmed) {
-      unconfirmedGated++;
-      return;
+    if (st.skipped) {
+      out.userSkipped++;
+      continue;
+    }
+    if (!st.checked) continue;
+    if (bills[i]._gateTripped && !bills[i]._gateOverrideConfirmed) {
+      out.gated.push(i);
+      continue;
     }
     const t = _mbRowTargets[i];
-    const resolved = !!(t && (t.meter || t.matchType === 'create'));
-    if (st.checked && resolved) {
-      willSave++;
-      return;
-    }
-    unaccounted++;
-  });
-  const disabled = !(willSave > 0 && unaccounted === 0 && unconfirmedGated === 0);
-  const blockedTitle =
-    unconfirmedGated > 0
-      ? 'Billing periods are flagged for review — click Save below to confirm'
-      : unaccounted > 0
-        ? 'Billing periods still need a destination or an explicit Skip'
-        : '';
-  btns.forEach(({ el, baseTitle }) => {
-    el.disabled = disabled;
-    el.title = disabled ? blockedTitle : baseTitle;
-  });
-  const noticeEl = document.getElementById('mbGateNotice');
-  if (noticeEl) {
-    if (unconfirmedGated > 0) {
-      const periods = bills
-        .filter((b) => b._gateTripped && !b._gateOverrideConfirmed)
-        .map((b) => _billPeriodLabel(b))
-        .join(', ');
-      noticeEl.innerHTML =
-        `<div style="width:100%;margin-top:6px;padding:8px 12px;border-radius:6px;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.35);font-size:11px;color:var(--red)">` +
-        `Bills flagged for review are held out of "Save All" (${_escHtml(periods)}). Check them against the PDF. ` +
-        `<button onclick="_saveHeldBills('mb')" class="btn btn-em btn-sm" style="margin-left:4px">Save</button>` +
-        `</div>`;
-    } else {
-      noticeEl.innerHTML = '';
-    }
+    if (t && (t.meter || t.matchType === 'create')) out.toSave.push(i);
+    else out.unaccounted.push(i);
   }
+  return out;
 }
-window._mbUpdateSaveAllBtn = _mbUpdateSaveAllBtn;
+
 
 // Shared meter-existence guard (item 0bc25b67): a saved Client A bill was
 // found filed under a meter no bill of its own identity actually matches —
@@ -7595,7 +7646,7 @@ function _extractedToBillRowCosts(bill) {
 
 async function confirmAutoAssign() {
   if (_isMultiAcctFile()) {
-    showToast('Use the Save All button in the building review table');
+    showToast('Use Save All in the bar under the values');
     return;
   }
   if (!_autoAssignTarget || !window._pdfMultiBills) return;
@@ -8016,8 +8067,8 @@ async function _mbSaveOneBill(bi, action) {
   // contract: hold here, let the user click the panel's "Save Anyway" button
   // (_confirmGatedBillsForSave, wired to re-render this panel's rows too), then
   // re-click Save/Overwrite/Merge All. Reuses the existing bill._mbHeld/
-  // _mbHeldReason fields so _mbRowHtml's "Held — <reason>" status rendering
-  // and _mbUpdateSaveAllBtn's readiness gate need no separate code path.
+  // _mbHeldReason fields so the bill box (_mbBillBoxHtml)
+  // and the review bar (_mbReviewSummary) need no separate code path.
   if (bill._gateTripped && !bill._gateOverrideConfirmed) {
     bill._mbHeld = true;
     bill._mbHeldReason = (bill._gateReasons || []).join(' · ');
@@ -8292,7 +8343,7 @@ async function _mbSaveOneBill(bi, action) {
   //       reasonably agrees with the target meter's stored account, or
   //   (b) billMatch.matchType === 'manual' — the user explicitly picked this
   //       Project -> Building -> Meter via the destination picker in
-  //       showMultiBuildingReviewPanel (setMbRowDestMeter). An explicit user
+  //       _mbInitReview (setMbRowDestMeter). An explicit user
   //       pick is authoritative and always wins, exactly like the
   //       _meterOverride exemption in saveQueuedBills — it must not be
   //       diverted to review just because it lacks an 'identity' tag.
@@ -8535,7 +8586,7 @@ window._mbSaveOneBill = _mbSaveOneBill;
 // Loops over checked, non-skipped, not-yet-saved rows and calls the SAME
 // _mbSaveOneBill primitive the per-row Save button uses (one primitive, two
 // callers). Rows default unchecked unless they were an 'identity' match
-// (see showMultiBuildingReviewPanel) or the user made an explicit manual
+// (see _mbInitReview) or the user made an explicit manual
 // pick (see setMbRowDestMeter) — so Save All only ever acts on rows the user
 // has confirmed one way or another, honest-display gate wiring from 3a/3b.
 async function confirmMultiBuildingSave(action) {
@@ -8552,7 +8603,7 @@ async function confirmMultiBuildingSave(action) {
   // FIX (live bug, v831 gate-lifecycle follow-up): removed the old "Dup-unresolved
   // gate" that hard-blocked Save/Overwrite/Merge All whenever ANY dup entry had
   // action===null, directing the user to "click yellow-dot pills to resolve" —
-  // pills that don't exist in this multi-building review panel (_mbRowHtml has
+  // pills that don't exist in this multi-building review panel (_mbBillBoxHtml has
   // no dot/pill UI at all) and, even in the one view that does have them (the
   // single-account nav pills), clicking one only navigates to that bill, it
   // never resolves anything. Clicking "Overwrite All" (or Save All / Merge All)
@@ -8567,37 +8618,11 @@ async function confirmMultiBuildingSave(action) {
   // already saved, or UNACCOUNTED. Any unaccounted row hard-blocks the whole
   // save — no bill may leave this panel silently dropped. This replaces both
   // the old silent `continue` and the separate downstream unmatched gate.
-  const toSave = [];
-  let userSkipped = 0;
-  const unaccountedIdx = [];
-  // FIX (fix/bill-review-gate-lifecycle, item 817dd434, SAFETY hole): a
-  // gate-tripped-and-unconfirmed row must NOT fall into the generic
-  // "unaccounted, needs a destination" bucket below — that toast is wrong
-  // (the row already has a destination) and its early return used to block
-  // the ENTIRE batch, including clean rows, on a gate hold. Held separately
-  // so the rest of the batch still saves, mirroring _dupBulkAction's pattern.
-  const unconfirmedGatedIdx = [];
-  for (let _bi = 0; _bi < bills.length; _bi++) {
-    if (bills[_bi]._mbSaved) continue;
-    const billDup = dupMap[_bi];
-    if (billDup && billDup.action === 'skip') continue;
-    const st = _mbRowState[_bi] || { checked: false, skipped: false };
-    if (st.skipped) {
-      userSkipped++;
-      continue;
-    }
-    if (bills[_bi]._gateTripped && !bills[_bi]._gateOverrideConfirmed) {
-      unconfirmedGatedIdx.push(_bi);
-      continue;
-    }
-    const t = _mbRowTargets[_bi];
-    const resolved = !!(t && (t.meter || t.matchType === 'create'));
-    if (st.checked && resolved) {
-      toSave.push(_bi);
-      continue;
-    }
-    unaccountedIdx.push(_bi);
-  }
+  const _cls = _mbClassifyRows();
+  const toSave = _cls.toSave;
+  const userSkipped = _cls.userSkipped;
+  const unaccountedIdx = _cls.unaccounted;
+  const unconfirmedGatedIdx = _cls.gated;
   if (unaccountedIdx.length) {
     showToast(
       unaccountedIdx.length +
@@ -8620,7 +8645,7 @@ async function confirmMultiBuildingSave(action) {
     );
   }
   if (!toSave.length) {
-    if (!unconfirmedGatedIdx.length) showToast('Nothing to save — every remaining row is skipped');
+    if (!unconfirmedGatedIdx.length) showToast('Nothing selected to save — check at least one bill');
     return;
   }
 
@@ -8659,12 +8684,10 @@ async function confirmMultiBuildingSave(action) {
     saveUtilityData(Array.from(touchedPids));
     window._pdfBillsSaved = true;
     _inheritBaselinesForProject(udSelProjId);
-    document.getElementById('pdfMultiBldgPanel').style.display = 'none';
+    // The bar stays: saved bills show as saved, the rest keep their state.
     _pdfClosePop();
-    _mbRowTargets = {};
-    _mbRowState = {};
-    _mbSaveState = { pdfStored: false, pdfKey: null, sharedId: null };
     _autoAssignTarget = null;
+    _mbRefresh();
     if (action === 'attach-pdf-only') {
       _showAttachOnlySummary(attachResults);
     } else {
@@ -9484,7 +9507,7 @@ function _resolveBillDestination(bill, dup, projId) {
   //
   // Requirement 5 (2026-09-02): also accept a 'commodity' match — the same
   // building+commodity fallback the multi-building review panel already
-  // trusts as auto-attach (see showMultiBuildingReviewPanel's isAutoAttach).
+  // trusts as auto-attach (see _mbInitReview's isAutoAttach).
   // It is unambiguous by construction (findMeterMatch only returns it when
   // exactly one building address-matched and exactly one same-commodity meter
   // exists there) — the account merely differs because it was renumbered.
@@ -9598,7 +9621,7 @@ function _showSaveSummary(entries) {
     '</div>' +
     '<div class="modal-body" style="padding:0;overflow-y:auto;flex:1">' +
     '<table style="width:100%;border-collapse:collapse;font-size:12px">' +
-    '<thead style="background:var(--s2);position:sticky;top:0">' +
+    '<thead style="background:var(--s2);position:sticky;top:0;z-index:var(--z-sticky-head)">' +
     '<tr>' +
     '<th style="padding:8px 12px;text-align:left;color:var(--text2);font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:.4px">#</th>' +
     '<th style="padding:8px 12px;text-align:left;color:var(--text2);font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:.4px">Period</th>' +
@@ -9697,16 +9720,8 @@ function clearPDFOCR() {
   const viewBtn = document.getElementById('pdfViewBtn');
   if (viewBtn) viewBtn.style.display = 'none';
   closePdfDock();
-  // Fix (2026-09-15, extraction-review-sweep): Clear reset everything EXCEPT
-  // the multi-building review panel (showMultiBuildingReviewPanel), which
-  // stayed display:block with the PREVIOUS extraction's rows/content still
-  // in the DOM after Clear. Hide it and wipe its content + row state, same
-  // as every other panel reset above.
-  const mbPanel = document.getElementById('pdfMultiBldgPanel');
-  if (mbPanel) {
-    mbPanel.style.display = 'none';
-    mbPanel.innerHTML = '';
-  }
+  // Clear also empties the multi-building review state; _pdfRenderTopBar below hides the bill's box and the bar.
+  _mbInitFor = null;
   _pdfClosePop();
   _pdfRenderTopBar();
   _mbRowTargets = {};
@@ -10339,11 +10354,11 @@ function exitPreviewMode() {
 // JS literal for the onclick/onchange call (numeric rowIdx unquoted, group key quoted).
 //
 // Hoisted to module scope (from a local const inside renderQueueResults) so
-// showMultiBuildingReviewPanel (single-PDF multi-bill review) can reuse the exact
+// _mbInitReview (single-PDF multi-bill review) can reuse the exact
 // same honest-match rendering instead of a parallel "Matched" badge that hid
 // non-identity (address/ambiguous) matches behind a false-confident green label.
 // Behavior-preserving hoist — same signature, same branches, same output.
-function _buildDestCell(bill, autoMatch, handlerArg, setProjFn, setBldgFn, setMeterFn, setExpandFn, allowCreate) {
+function _buildDestCell(bill, autoMatch, handlerArg, setProjFn, setBldgFn, setMeterFn, setExpandFn, allowCreate, noHint) {
   const ov = bill._meterOverride || null;
   const isIdentity = !!(autoMatch && autoMatch.matchType === 'identity');
   // PASS 2 (b-46a984a0): a 'commodity' match (findMeterMatch building+
@@ -10364,15 +10379,17 @@ function _buildDestCell(bill, autoMatch, handlerArg, setProjFn, setBldgFn, setMe
       ? 'Identity match — account/meter number found'
       : 'Building + commodity match — account number will update on save (old kept as alias)';
     return (
-      '<div style="font-size:10px;color:var(--text)" title="' +
-      title +
+      '<div class="dest-line" style="font-size:11px;color:var(--text)">' +
+      '<span class="dest-text" title="' +
+      _escHtml(destText + ' — ' + title) +
       '">' +
       _escHtml(destText) +
-      ' <a href="javascript:void(0)" onclick="' +
+      '</span>' +
+      '<a href="javascript:void(0)" onclick="' +
       setExpandFn +
       '(' +
       handlerArg +
-      ',true)" style="font-size:9px;color:var(--em);text-decoration:underline">Change</a></div>'
+      ',true)" style="font-size:10px;color:var(--em);text-decoration:underline;flex:none">Change</a></div>'
     );
   }
   // Cascading picker. For an identity match under "Change", pre-fill with the
@@ -10452,8 +10469,9 @@ function _buildDestCell(bill, autoMatch, handlerArg, setProjFn, setBldgFn, setMe
         '>+ New meter (create from this bill)</option>'
       : '';
   const meterOpts = meterOptsBase + createMeterOpt;
-  const hint =
-    autoMatch && autoMatch.matchType === 'commodity'
+  const hint = noHint
+    ? ''
+    : autoMatch && autoMatch.matchType === 'commodity'
       ? '<div style="font-size:9px;color:var(--em);margin-bottom:2px" title="Building + commodity match — account number will update on save (old kept as alias)">Building + commodity match: ' +
         _escHtml(autoMatch.proj.name + ' → ' + autoMatch.bldg.name) +
         '</div>'
@@ -10548,7 +10566,7 @@ function renderQueueResults() {
   });
 
   // Fix b-46a984a0 (batch-to-meter Destination review): precompute the meter match for
-  // every row up front, mirroring _mbRowTargets in showMultiBuildingReviewPanel (the
+  // every row up front, mirroring _mbRowTargets in _mbInitReview (the
   // multi-account-in-one-file case). Lets the Destination column show/require a
   // confirm-or-pick step BEFORE save instead of only reporting the result afterward.
   // Recomputed on every render (cheap) rather than cached on the bill so it always
@@ -17676,9 +17694,10 @@ function _pdfCommRank(c) {
   const i = _PDF_COMM_ORDER.indexOf(c);
   return i === -1 ? 999 : i;
 }
-// The ONE answer to "does this bill need a look": a field warning or error, a charge sum that
-// does not match Total Current Charges, a gap before the period, or a held bill (extraction
-// flagged for review and not yet confirmed with Save Anyway, or a Manual Review bill).
+// The ONE answer to "does this bill need a look": no destination (a bill of a multi-building file with no
+// matching building or meter, _pdfDestIssue), a field warning or error, a charge sum that does not match Total
+// Current Charges, a gap before the period, or a held bill (extraction flagged for review and not yet confirmed,
+// or a Manual Review bill).
 function _pdfBillIssues(bill, bw) {
   const hasWarn = bw.some((w) => w.level === 'error' || w.level === 'warn');
   const comm =
@@ -17709,7 +17728,47 @@ function _pdfBillIssues(bill, bw) {
     (totalVal > 0 && chargeSum > 0 && Math.abs(chargeSum - totalVal) >= tol);
   const hasGap = !!bill._billing_gap;
   const held = !!((bill._gateTripped && !bill._gateOverrideConfirmed) || bill._manualReview);
-  return { hasWarn, sumMismatch, hasGap, held, any: hasWarn || sumMismatch || hasGap || held };
+  const dest = _pdfDestIssue(bill);
+  return { dest, hasWarn, sumMismatch, hasGap, held, any: !!dest || hasWarn || sumMismatch || hasGap || held };
+}
+// The issues of one bill as a list, each { kind: 'dest' | 'values', level: 'err' | 'warn', text, field? }. Built
+// only from _pdfBillIssues. The review bar shows one link per item; the bill's box counts them; _pdfBillStatus
+// takes its level and reason from them. Nothing else lists a bill's issues for these places.
+function _pdfBillIssueItems(bill, bw) {
+  const is = _pdfBillIssues(bill, bw);
+  if (!is.any) return [];
+  const out = [];
+  const seen = new Set();
+  const add = (it) => {
+    if (!it.text || seen.has(it.text)) return;
+    seen.add(it.text);
+    out.push(it);
+  };
+  const firstLine = (t) => String(t || '').split(/[.\n]/)[0].trim();
+  const fieldOf = (w) => (w.field && w.field !== '_all' ? w.field : null);
+  if (is.dest) add({ kind: 'dest', level: 'err', text: is.dest.text });
+  if (is.held) {
+    const reasons =
+      bill._manualReview && !(bill._gateReasons || []).length
+        ? [bill._manualReviewLabel || 'The reader could not read this page']
+        : bill._gateReasons || [];
+    if (reasons.length) reasons.forEach((r) => add({ kind: 'values', level: 'err', text: 'Held: ' + firstLine(r) }));
+    else add({ kind: 'values', level: 'err', text: 'Held for review' });
+  }
+  bw.filter((w) => w.level === 'error').forEach((w) => add({ kind: 'values', level: 'err', text: firstLine(w.message), field: fieldOf(w) }));
+  if (is.sumMismatch) add({ kind: 'values', level: 'warn', text: 'The charges do not add up to the total', field: 'TotalCurrentCharges' });
+  bw.filter((w) => w.level === 'warn').forEach((w) => add({ kind: 'values', level: 'warn', text: firstLine(w.message), field: fieldOf(w) }));
+  if (is.hasGap) add({ kind: 'values', level: 'warn', text: 'Billing period gap before this bill' });
+  if (!out.length) add({ kind: 'values', level: 'warn', text: 'Check this bill' });
+  return out;
+}
+// The ONE status of one bill for the utility buttons, cards and the bill's box: level '' (ok), 'warn' (check) or
+// 'err' (error), and a one-line reason for the hover text. Built on _pdfBillIssueItems; nothing else decides it.
+function _pdfBillStatus(bill, bw) {
+  const items = _pdfBillIssueItems(bill, bw);
+  if (!items.length) return { level: '', reason: '' };
+  const err = items.find((x) => x.level === 'err');
+  return { level: err ? 'err' : 'warn', reason: (err || items[0]).text };
 }
 // Plain building name for one account key. No review tag: the review count is shown beside it.
 function _pdfBuildingName(bills, acct) {
@@ -17758,16 +17817,19 @@ function _pdfGroupBills(bills, warnings, multi) {
     const comm = _pdfCommOf(bill);
     let t = g.types.find((x) => x.comm === comm);
     if (!t) {
-      t = { comm, total: 0, warn: 0, idxs: [] };
+      t = { comm, total: 0, warn: 0, level: '', reason: '', idxs: [] };
       g.types.push(t);
     }
-    const bad = _pdfBillIssues(bill, (warnings[i] && warnings[i].warnings) || []).any;
+    const st = _pdfBillStatus(bill, (warnings[i] && warnings[i].warnings) || []);
+    const bad = !!st.level;
     g.total++;
     t.total++;
     t.idxs.push(i);
     if (bad) {
       g.review++;
       t.warn++;
+      if (!t.reason) t.reason = st.reason;
+      if (st.level === 'err' || !t.level) t.level = st.level;
     }
   });
   groups.forEach((g) => g.types.sort((a, b) => _pdfCommRank(a.comm) - _pdfCommRank(b.comm)));
@@ -17927,7 +17989,7 @@ function renderMultiBillUI(bills) {
 // ONE row above the values, in the same place for every file kind (single bill, many periods, many buildings,
 // batch): building, utility type and period selectors, small status chips, the one Save control.
 // A chip, or the More list, opens a list that overlays the page. Nothing here pushes the values down.
-let _pdfTopOpen = null; // 'review' | 'dup' | 'warn' | 'fixed' | 'save' | 'more' | null
+let _pdfTopOpen = null; // 'review' | 'dup' | 'warn' | 'fixed' | 'more' | null
 let _pdfPopHtml = {};
 let _pdfMoreHasSave = false;
 // The More button shows when it has something in it: other ways to save, or the PDF page options.
@@ -18007,9 +18069,19 @@ function _pdfSaveControl(kind) {
     };
   }
   if (kind === 'multiacct') {
+    // Save All is in the review bar under the values (_mbReviewBarHtml). The other ways to save share its state.
+    const off = _mbReviewSummary().disabled;
+    const heldN = bills.filter((b) => b._gateTripped && !b._gateOverrideConfirmed).length;
     return {
-      html: '<button class="pdf-top-btn primary" data-fb="energy.pdf.save-btn" data-pop="save" title="Open the list of buildings in this file and save them" onclick="_pdfToggleSavePanel()">Review and save</button>',
-      menuHtml: '',
+      html: '',
+      menuHtml:
+        '<div class="pdf-pop-title">Other ways to save (the bills checked in Save All)</div>' +
+        _pdfMenuRow('Overwrite all', "confirmMultiBuildingSave('overwrite')", 'A bill already saved gets the new values. A blank new value keeps the saved value.', off) +
+        _pdfMenuRow('Merge all', "confirmMultiBuildingSave('merge')", 'A bill already saved only gets values for its empty fields.', off) +
+        _pdfMenuRow('Attach PDFs only', "confirmMultiBuildingSave('attach-pdf-only')", 'Add this PDF to bills that are already saved. No other value changes. No new bill is made.', off) +
+        (heldN
+          ? _pdfMenuRow('Save including held bills', "_saveHeldBills('mb')", _pdfCountWord(heldN, 'bill') + ' held for review: confirm and save with the rest.')
+          : ''),
     };
   }
   if (kind === 'batch') {
@@ -18117,30 +18189,6 @@ function _pdfMeterPathText(m) {
 function _pdfCommOf(bill) {
   return (bill && bill.Commodity) || 'Other';
 }
-// The ONE place that turns a utility name into its chip: a colored dot and the name. The colors are fixed per
-// utility in CSS (.pdf-comm.c-gas, c-water, ...); green, red and amber are left to the status colors.
-// asButton: a chip that picks the bill of that utility. selected: the one on screen.
-function _pdfCommChipHtml(comm, opts) {
-  const o = opts || {};
-  const name = comm || 'Other';
-  const cls = 'pdf-comm c-' + String(name).toLowerCase().replace(/[^a-z]/g, '') + (o.selected ? ' sel' : '');
-  if (o.asButton) {
-    return (
-      '<button type="button" class="' +
-      cls +
-      '" data-comm="' +
-      _escHtml(name) +
-      '" aria-pressed="' +
-      (o.selected ? 'true' : 'false') +
-      '" title="' +
-      _escHtml(o.title || 'Show the ' + name + ' bill') +
-      '" onclick="selectCommTab(this.dataset.comm)">' +
-      _escHtml(name + (o.suffix || '')) +
-      '</button>'
-    );
-  }
-  return '<span class="' + cls + '">' + _escHtml(name + (o.suffix || '')) + '</span>';
-}
 // The ONE status of a building row: the bar color and the words. Red = a bill to review, amber = a saved bill
 // that differs from this file, green = nothing to check (saved or ready).
 function _pdfBldgStatus(review, saved, differ) {
@@ -18165,7 +18213,7 @@ function _pdfBuildingListHtml(nav) {
       const idxs = [].concat(...g.types.map((t) => t.idxs)).sort((a, b) => order[a] - order[b]);
       const months = [...new Set(idxs.map((i) => nav.monthOf[i]).filter(Boolean))];
       const monthTxt = months.length > 2 ? months[0] + ' and ' + (months.length - 1) + ' more' : months.join(', ');
-      const comms = g.types.map((t) => t.comm).join(', ');
+      const comms = g.types.map((t) => t.comm + (t.level === 'err' ? ' (error)' : t.level ? ' (check)' : '')).join(', ');
       const saved = idxs.filter((i) => dup[i]).length;
       const differ = idxs.filter((i) => dup[i] && (dup[i].diffFields || []).length > 0).length;
       const st = _pdfBldgStatus(g.review, saved, differ);
@@ -18183,8 +18231,8 @@ function _pdfBuildingListHtml(nav) {
         _escHtml(full) +
         '" onclick="_pdfPickBuilding(this.dataset.acct)"><span class="pdf-bldg-name">' +
         _escHtml(g.name) +
-        '</span><span class="pdf-bldg-line"><span class="pdf-bldg-comms">' +
-        g.types.map((t) => _pdfCommChipHtml(t.comm)).join('') +
+        '</span><span class="pdf-bldg-line"><span>' +
+        _escHtml(comms) +
         '</span><span>' +
         _escHtml((monthTxt ? monthTxt + ' · ' : '') + st.words.join(' · ')) +
         '</span></span></button>'
@@ -18192,8 +18240,7 @@ function _pdfBuildingListHtml(nav) {
     })
     .join('');
 }
-// The bill on screen: its building (always named), its utility (one chip per utility of the
-// building, the one on screen is filled), and its billing period. A file with one choice shows plain text, not a menu.
+// The bill on screen: its building (always named), its utility (one button per utility, the one on screen filled), and its billing period. A file with one choice shows plain text, not a menu.
 function _pdfSelectorsHtml(nav) {
   const bills = nav.bills;
   const cur = bills[nav.idx];
@@ -18206,18 +18253,24 @@ function _pdfSelectorsHtml(nav) {
     _escHtml(_pdfBuildingName(bills, (cur && cur.AccountNumber) || '_unknown')) +
     '</span>';
   if (nav.hasMultiComm) {
-    h += nav.selGroup.types
-      .map((t) =>
-        _pdfCommChipHtml(t.comm, {
-          asButton: true,
-          selected: t.comm === nav.activeCommTab,
-          suffix: t.warn ? ' (' + t.warn + ' to review)' : '',
-          title: 'Show the ' + t.comm + ' bill of this building',
-        }),
-      )
-      .join('');
+    // One button per utility of this building. The one on screen is filled with the accent color and bold.
+    h +=
+      '<span class="pdf-comm-tabs" role="group" aria-label="Utility">' +
+      nav.selGroup.types
+        .map((t) => {
+          const on = t.comm === nav.activeCommTab;
+          return (
+            '<button type="button" class="pdf-comm-btn' + (on ? ' sel' : '') + (t.level ? ' ' + t.level : '') + '" data-comm="' + _escHtml(t.comm) +
+            '" aria-pressed="' + (on ? 'true' : 'false') + '" title="' +
+            _escHtml(t.level ? t.comm + ': ' + t.reason + (t.warn > 1 ? ' (' + t.warn + ' bills to review)' : '') : 'Show the ' + t.comm + ' bill of this building') +
+            '" onclick="selectCommTab(this.dataset.comm)">' +
+            _escHtml(t.comm + (t.level === 'err' ? ' · error' : t.level ? ' · check' : '')) + '</button>'
+          );
+        })
+        .join('') +
+      '</span>';
   } else if (cur && cur.Commodity) {
-    h += _pdfCommChipHtml(cur.Commodity, { selected: true });
+    h += '<span class="pdf-top-static" title="Utility">' + _escHtml(cur.Commodity) + '</span>';
   }
   const ps = nav.navPeriods;
   const months = ps.map((p) => p.monthLbl);
@@ -18355,8 +18408,11 @@ function _pdfRenderTopBar(opts) {
     _pdfPopHtml = {};
     _pdfTopOpen = null;
     _pdfApplyPop();
+    _mbRenderReview(false);
     return;
   }
+  // Multi-building file: make its review state first, so every status below counts the destination issues.
+  if (live) _mbEnsureReview();
   bar.style.display = '';
   if (sec) sec.style.display = '';
   // The file name sits in this bar, so the drop zone (a second, larger name pill) is hidden while the bar shows it.
@@ -18444,6 +18500,7 @@ function _pdfRenderTopBar(opts) {
   _pdfSyncMoreBtn();
   _pdfPopHtml = popHtml;
   _pdfApplyPop();
+  _mbRenderReview(live);
 }
 // Lists that belong to the file (shown under the file bar). Every other list belongs to the bill on screen
 // (shown under the bill row).
@@ -18452,13 +18509,8 @@ function _pdfApplyPop() {
   const top = document.getElementById('pdfTopPop');
   const billPop = document.getElementById('pdfBillPop');
   const more = document.getElementById('pdfMorePop');
-  const savePop = document.getElementById('pdfSavePop');
-  if (!top || !more || !savePop) return;
-  if (_pdfTopOpen === 'save') {
-    const mb = document.getElementById('pdfMultiBldgPanel');
-    if (!mb || mb.style.display === 'none') _pdfTopOpen = null;
-  }
-  if (_pdfTopOpen && _pdfTopOpen !== 'more' && _pdfTopOpen !== 'save' && !_pdfPopHtml[_pdfTopOpen]) _pdfTopOpen = null;
+  if (!top || !more) return;
+  if (_pdfTopOpen && _pdfTopOpen !== 'more' && !_pdfPopHtml[_pdfTopOpen]) _pdfTopOpen = null;
   const isList = !!(_pdfTopOpen && _pdfPopHtml[_pdfTopOpen]);
   const isFile = isList && _PDF_FILE_POPS.includes(_pdfTopOpen);
   top.style.display = isFile ? '' : 'none';
@@ -18468,7 +18520,6 @@ function _pdfApplyPop() {
     if (isList && !isFile) billPop.innerHTML = _pdfPopHtml[_pdfTopOpen];
   }
   more.style.display = _pdfTopOpen === 'more' ? '' : 'none';
-  savePop.style.display = _pdfTopOpen === 'save' ? '' : 'none';
   document.querySelectorAll('#pdfTopBar [data-pop], #pdfBillSection [data-pop]').forEach((el) => {
     el.classList.toggle('open', el.getAttribute('data-pop') === _pdfTopOpen);
   });
@@ -18481,17 +18532,6 @@ function _pdfTogglePop(name) {
 }
 function _pdfClosePop() {
   _pdfTopOpen = null;
-  _pdfApplyPop();
-}
-// Multi-building file: Save opens the review table (it keeps its own Save all, Overwrite, Merge and Skip buttons).
-function _pdfToggleSavePanel() {
-  if (_pdfTopOpen === 'save') {
-    _pdfClosePop();
-    return;
-  }
-  const mb = document.getElementById('pdfMultiBldgPanel');
-  if (!mb || mb.style.display === 'none' || !mb.innerHTML) showMultiBuildingReviewPanel();
-  _pdfTopOpen = 'save';
   _pdfApplyPop();
 }
 // Building choice: the first period of the current utility type in that building, else its first period.
@@ -18614,15 +18654,17 @@ function _confirmGatedBillsForSave() {
   renderMultiBillUI(bills);
   const _ci = window._pdfMultiIdx || 0;
   if (bills[_ci]) renderPDFFields(bills[_ci], (window._pdfBillWarnings || [])[_ci]?.warnings || []);
-  // FIX (fix/bill-review-gate-lifecycle, item 817dd434): the multi-building/
-  // multi-account panel (_mbRowHtml/_mbUpdateSaveAllBtn) is a SEPARATE table
-  // from the single-account pill view re-rendered above — refresh its rows and
-  // readiness gate too whenever that panel is the one actually open, so its
-  // per-row "Held" status and Save/Overwrite/Merge All buttons unblock.
-  const mbPanel = document.getElementById('pdfMultiBldgPanel');
-  if (mbPanel && mbPanel.style.display !== 'none') {
-    confirmedIdx.forEach((i) => _mbRerenderRow(i));
-    _mbUpdateSaveAllBtn();
+  // Multi-building file: a confirmed bill that has a destination goes into Save All (the user just confirmed it),
+  // then the bill's box and the review bar are drawn again.
+  if (_mbReviewLive()) {
+    confirmedIdx.forEach((i) => {
+      delete bills[i]._mbHeld;
+      delete bills[i]._mbHeldReason;
+      const t = _mbRowTargets[i];
+      const st = _mbRowState[i];
+      if (t && (t.meter || t.matchType === 'create') && st && !st.skipped) st.checked = true;
+    });
+    _mbRefresh();
   }
 }
 
@@ -20149,9 +20191,10 @@ function renderPDFFields(parsed, warnings) {
     const isKwh = (unit || '').toLowerCase().includes('h');
     return '$' + r.toFixed(isKwh ? 5 : 3) + '/' + (unit || '');
   };
+  // A flat charge (no quantity, no rate, such as Customer Charge) starts at the left edge, not in the third column.
   const _chargeRow = (qty, rate, charge) =>
     qty || rate || charge
-      ? `<div class="ef-charge-row">${qty || _blank}${rate || _blank}${charge || _blank}<div class="ef-running" title="${_RUN_TITLE}">${fmtDollar(runningTotal)}</div></div>`
+      ? `<div class="ef-charge-row">${qty || rate ? (qty || _blank) + (rate || _blank) + (charge || _blank) : charge + '<div class="ef-span2"></div>'}<div class="ef-running" title="${_RUN_TITLE}">${fmtDollar(runningTotal)}</div></div>`
       : '';
 
   const totalVal = parseBillNumber(parsed.TotalCurrentCharges);
@@ -21771,6 +21814,23 @@ function confirmManualAssign() {
   showToast('Assigned to ' + proj.name + ' → ' + mLbl + ' ✓');
 }
 
+// Does this bill name this meter: same account (fuzzy) or same meter number, and the same utility. The ONE rule
+// for "this bill belongs to that meter" in the auto-create duplicate guard (_autoCreateMeterAndSaveBill step 1) and
+// in "these bills of one file go to the same new meter" (_mbSameMeterBills).
+function _billIdentityHitsMeter(extracted, m) {
+  const acctClean = (extracted.AccountNumber || '').replace(/[\s\-]/g, '').toLowerCase();
+  const meterClean = (extracted.MeterNumber || '').replace(/[\s\-]/g, '').toLowerCase();
+  const billComm = (extracted.Commodity || '').toLowerCase();
+  const ma = (m.account || '').replace(/[\s\-]/g, '').toLowerCase();
+  const mm = (m.meter || '').replace(/[\s\-]/g, '').toLowerCase();
+  const mComm = (m.commodity || '').toLowerCase();
+  // Fix (item 1c98be9c): a blank meter commodity is a WILDCARD on an
+  // account/meter-number identity hit — same rule as findMeterMatch.
+  // Without it the duplicate guard missed blank-commodity meters and
+  // spawned a duplicate instead of landing on the existing meter.
+  const commOK = mComm === billComm || (!mComm && !!billComm);
+  return !!((_acctFuzzyMatch(acctClean, ma) || (meterClean && mm && meterClean === mm)) && commOK);
+}
 // Auto-create a new meter (and building if needed) from extracted bill data.
 // Called when _saveSinglePDFBill cannot find a meter match but the bill has
 // enough identity information (AccountNumber or MeterNumber) to create one.
@@ -21791,8 +21851,6 @@ function _autoCreateMeterAndSaveBill(extracted, projId, billRow, preferBldgId) {
   // on any building in the project (handles re-uploads where findMeterMatch missed
   // due to commodity mismatch or minor format variation).
   const billComm = (extracted.Commodity || '').toLowerCase();
-  const acctClean = acctNum.replace(/[\s\-]/g, '').toLowerCase();
-  const meterClean = meterNum.replace(/[\s\-]/g, '').toLowerCase();
   // Items 63e43cab / a3271d04: every same-account meter in the project is a hit, not
   // just the first one found. Two or more hits (a main meter and a site-tagged
   // sibling on one account) are told apart by the bill's service address through
@@ -21801,17 +21859,7 @@ function _autoCreateMeterAndSaveBill(extracted, projId, billRow, preferBldgId) {
   const _step1Hits = [];
   for (const b of projBldgs) {
     for (const m of b.meters || []) {
-      const ma = (m.account || '').replace(/[\s\-]/g, '').toLowerCase();
-      const mm = (m.meter || '').replace(/[\s\-]/g, '').toLowerCase();
-      const mComm = (m.commodity || '').toLowerCase();
-      // Fix (item 1c98be9c): a blank meter commodity is a WILDCARD on an
-      // account/meter-number identity hit — same rule as findMeterMatch
-      // above. Without it this guard missed blank-commodity meters and
-      // spawned a duplicate via Step 4 below instead of landing here.
-      const _commOK = mComm === billComm || (!mComm && billComm);
-      if ((_acctFuzzyMatch(acctClean, ma) || (meterClean && mm && meterClean === mm)) && _commOK) {
-        _step1Hits.push({ bldg: b, meter: m });
-      }
+      if (_billIdentityHitsMeter(extracted, m)) _step1Hits.push({ bldg: b, meter: m });
     }
   }
   if (_step1Hits.length) {
@@ -21920,14 +21968,7 @@ function _autoCreateMeterAndSaveBill(extracted, projId, billRow, preferBldgId) {
   targetBldg.meters = targetBldg.meters || [];
   const _step3Hits = [];
   for (const m of targetBldg.meters) {
-    const ma = (m.account || '').replace(/[\s\-]/g, '').toLowerCase();
-    const mm = (m.meter || '').replace(/[\s\-]/g, '').toLowerCase();
-    const mComm = (m.commodity || '').toLowerCase();
-    // Fix (item 1c98be9c): same blank-commodity wildcard rule as Step 1 above.
-    const _commOK2 = mComm === billComm || (!mComm && billComm);
-    if ((_acctFuzzyMatch(acctClean, ma) || (meterClean && mm && meterClean === mm)) && _commOK2) {
-      _step3Hits.push({ bldg: targetBldg, meter: m });
-    }
+    if (_billIdentityHitsMeter(extracted, m)) _step3Hits.push({ bldg: targetBldg, meter: m });
   }
   if (_step3Hits.length) {
     const _hit3 = _chooseAmongIdentityHits(_step3Hits, extracted.ServiceAddress);

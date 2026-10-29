@@ -3477,7 +3477,7 @@ function _pricingPriceListRefresh(projId) {
   var all = _pricingPriceListRows(sget('en_pricing_catalog', null));
   var rows = _pricingPriceListFilter(all, st.q, st.cat, st.sort, st.asc);
   var th =
-    'background:var(--s1);color:var(--text);font-size:11px;font-weight:700;padding:7px 10px;white-space:nowrap;position:sticky;top:0;z-index:2;border-bottom:2px solid var(--border2);border-right:1px solid var(--border);cursor:pointer;user-select:none;';
+    'background:var(--s1);color:var(--text);font-size:11px;font-weight:700;padding:7px 10px;white-space:nowrap;position:sticky;top:0;z-index:var(--z-sticky-head);border-bottom:2px solid var(--border2);border-right:1px solid var(--border);cursor:pointer;user-select:none;';
   head.innerHTML =
     '<tr>' +
     _PL_COLS.map(function (c) {

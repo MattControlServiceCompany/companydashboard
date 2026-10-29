@@ -34,7 +34,7 @@ const path = require('path');
 function buildSandbox() {
   // The top row of the page: only the selector box is read back; the other boxes just need to exist.
   const bldgBarStub = { style: {}, innerHTML: '' };
-  const stubs = { pdfTopBar: { style: {} }, pdfTopSel: { style: {}, innerHTML: '' }, pdfTopBldgs: bldgBarStub, pdfTopChips: { style: {}, innerHTML: '' }, pdfTopSave: { style: {}, innerHTML: '' }, pdfTopPop: { style: {}, innerHTML: '' }, pdfMorePop: { style: {} }, pdfSavePop: { style: {} }, pdfMoreSave: { style: {}, innerHTML: '' } };
+  const stubs = { pdfTopBar: { style: {} }, pdfTopSel: { style: {}, innerHTML: '' }, pdfTopBldgs: bldgBarStub, pdfTopChips: { style: {}, innerHTML: '' }, pdfTopSave: { style: {}, innerHTML: '' }, pdfTopPop: { style: {}, innerHTML: '' }, pdfMorePop: { style: {} }, pdfMoreSave: { style: {}, innerHTML: '' } };
   const sandbox = {
     window: {},
     document: {
@@ -128,6 +128,18 @@ function runCase(sandbox, bldgBarStub, name, bills, billWarnings) {
   const setBills = vm.runInContext('(function(b, w) { bills = b; window._pdfBillWarnings = w; })', sandbox);
   setBills(bills, billWarnings);
   vm.runInContext('(function(b) { window._pdfMultiBills = b; })', sandbox)(bills);
+  // The review state of the file: every bill has a meter (this test counts value and held issues), except a bill
+  // marked _noMeter, which has no destination (case 8).
+  vm.runInContext(
+    `_mbInitFor = window._pdfMultiBills;
+    _mbRowTargets = {};
+    _mbRowState = {};
+    window._pdfMultiBills.forEach((b, i) => {
+      _mbRowTargets[i] = b._noMeter ? null : { meter: { id: 'm' + i }, proj: { name: 'P' }, bldg: { name: 'B' }, matchType: 'identity' };
+      _mbRowState[i] = { checked: !b._noMeter, skipped: false };
+    });`,
+    sandbox,
+  );
   bldgBarStub.innerHTML = '';
   const box = { innerHTML: '' };
   renderMultiBillUI(bills, box);
@@ -243,6 +255,16 @@ function main() {
     expect('7e. no whole-PDF count text in the review panel or gate notice', !/ across ' \+|bill\(s\) flagged for review and held/.test(src));
     const vb = src.slice(src.indexOf('async function viewCurrentExtractionPDF'), src.indexOf('function _pdfDockRevoke'));
     expect('7f. View PDF always uses the dock (no modal path)', !/_showPdfModal|_pdfSideBySideOn/.test(vb));
+  }
+
+  {
+    // 8. A bill with no matching meter (multi-building file) is a bill to review: one issue rule, _pdfBillIssues.
+    const bills = [makeBill('ACCT001', '825 Testcat Dr', { Commodity: 'Electric', _noMeter: true }), makeBill('ACCT002', '999 Other St', { Commodity: 'Gas' })];
+    const warns = [clean(), clean()];
+    const labels = runCase(sandbox, bldgBarStub, 'no-meter', bills, warns);
+    const issues = vm.runInContext('_pdfBillIssues', sandbox);
+    expect('8a. no matching meter -> 1 to review', review(labels['ACCT001']) && review(labels['ACCT001'])[1] === '1' && !review(labels['ACCT002']), JSON.stringify(labels));
+    expect('8b. no matching meter -> dest issue', (issues(bills[0], []).dest || {}).kind === 'no-building' && issues(bills[1], []).dest === null);
   }
 
   console.log('');
