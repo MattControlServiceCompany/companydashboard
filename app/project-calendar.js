@@ -120,10 +120,6 @@
       '.pcal{color:var(--text)}',
       '.pcal details{margin-top:12px}',
       '.pcal summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--text)}',
-      '.pcal-chips{display:flex;flex-wrap:wrap;gap:8px;align-items:center}',
-      '.pcal-chip{font-size:12px;padding:3px 10px;border-radius:20px;border:1px solid var(--border2);color:var(--text);background:var(--s3)}',
-      '.pcal-chip.em{border-color:var(--em)}',
-      '.pcal-tbl .pcal-chip{padding:2px 6px;white-space:nowrap}',
       '.pcal-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}',
       '.pcal-row .fi{flex:1 1 220px;min-width:0}',
       '.pcal-msg{font-size:12px;margin-top:8px;color:var(--text)}',
@@ -134,11 +130,15 @@
       '.pcal-tbl th:last-child,.pcal-tbl td:last-child{border-right:none}',
       '.pcal-tbl tbody tr:last-child td{border-bottom:none}',
       '.pcal-tbl tbody tr:nth-child(even) td{background:var(--s3)}',
-      '.pcal-sum{font-size:13px;font-weight:600;margin-top:12px;color:var(--text)}',
+      '.pcal-sum{font-size:15px;font-weight:700;margin-top:12px;color:var(--text)}',
+      '.pcal-feed{font-size:12px;margin-top:4px;color:var(--text)}',
+      '.pcal-range{font-size:13px;font-weight:600;color:var(--text);min-width:130px;text-align:center}',
       '.pcal-ev-tbl tbody tr:nth-child(even) td{background:transparent}',
       '.pcal-ev-tbl tr.pcal-day th{background:var(--s2);color:var(--text);text-transform:none;font-size:12px;letter-spacing:0;border-right:none;border-top:1px solid var(--border2)}',
       '.pcal-badge{display:inline-block;font-size:11px;font-weight:700;padding:1px 6px;border:1px solid var(--text);border-radius:3px;color:var(--text);vertical-align:1px}',
-      '.pcal-new{border-color:var(--em);border-width:2px}',
+      '.pcal-new{background:color-mix(in srgb,var(--green) 40%,var(--s1));border-color:var(--green)}',
+      '.pcal-changed{background:color-mix(in srgb,var(--amber) 40%,var(--s1));border-color:var(--amber)}',
+      '.pcal-canceled{background:color-mix(in srgb,var(--red) 40%,var(--s1));border-color:var(--red)}',
       '.pcal-gone .pcal-ev{text-decoration:line-through}',
       '.pcal-chg{margin-top:2px;font-size:12px;color:var(--text)}',
       '.pcal-nav{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:12px}',
@@ -178,9 +178,6 @@
       '</tbody></table></div>'
     );
   }
-  function chip(text, cls) {
-    return '<span class="pcal-chip' + (cls ? ' ' + cls : '') + '">' + _escHtml(text) + '</span>';
-  }
   function num(n) {
     return Number(n).toLocaleString('en-US');
   }
@@ -197,10 +194,10 @@
       ['Event', '66%'],
     ];
     if (rec.added && rec.added.length) {
-      out += '<h4>Added (' + num(rec.counts.added) + ')</h4>' + table(two, listRows(rec.added, tz));
+      out += '<h4>New (' + num(rec.counts.added) + ')</h4>' + table(two, listRows(rec.added, tz));
     }
     if (rec.removed && rec.removed.length) {
-      out += '<h4>Removed (' + num(rec.counts.removed) + ')</h4>' + table(two, listRows(rec.removed, tz));
+      out += '<h4>Canceled (' + num(rec.counts.removed) + ')</h4>' + table(two, listRows(rec.removed, tz));
     }
     if (rec.changed && rec.changed.length) {
       out +=
@@ -293,13 +290,31 @@
       var prev = hist[1] ? ' (' + stamp(hist[1].at).replace(', ' + new Date().getFullYear(), '') + ')' : '';
       line = 'Since last sync' + prev + ': ' + (parts.length ? parts.join(', ') : 'no changes') + ' ' + scope;
     }
+    var last = hist[0];
+    var lc = last && !last.first ? last.counts : null;
+    var feedLine =
+      'Whole feed: ' + num(snap.count) + (snap.count === 1 ? ' event' : ' events') +
+      '; last sync ' + stamp(snap.fetchedAt).replace(', ' + new Date().getFullYear(), '') +
+      (lc ? ': ' + num(lc.added) + ' new, ' + num(lc.changed) + ' changed, ' + num(lc.removed) + ' canceled' : '');
+    var stepper = '';
+    if (!q && s.view === 'month') {
+      stepper =
+        '<div class="pcal-nav"><button class="btn btn-ghost btn-sm" aria-label="Previous month" onclick="pcalMonth(' + pid + ',-1)">&#9664;</button>' +
+        '<span class="pcal-range">' + _escHtml(monthLabel(s.month)) + '</span>' +
+        '<button class="btn btn-ghost btn-sm" aria-label="Next month" onclick="pcalMonth(' + pid + ',1)">&#9654;</button></div>';
+    } else if (!q && s.view === 'next14') {
+      var d0 = todayOf(tz);
+      var d1 = CalendarDiff.addDays(d0, 13);
+      var md = function (d) { return dayText(d).replace(/,\s*\d{4}$/, ''); };
+      stepper = '<div class="pcal-nav"><span class="pcal-range" style="text-align:left">' + _escHtml(md(d0) + ' – ' + md(d1)) + '</span></div>';
+    }
     var controls =
       '<div class="pcal-nav">' +
       btn('Next 14 days', s.view === 'next14' && !q, 'pcalView(' + pid + ",'next14')") +
       btn('This month', s.view === 'month' && !q, 'pcalView(' + pid + ",'month')") +
       btn('Show past', s.view === 'past' && !q, 'pcalView(' + pid + ",'past')") +
       (v.compared ? btn('Changes only', s.changesOnly, 'pcalChangesOnly(' + pid + ')') : '') +
-      '</div>';
+      '</div>' + stepper;
     var shown = v.items.slice(0, s.limit);
     var today = todayOf(tz);
     var yr = today.slice(0, 4);
@@ -338,7 +353,7 @@
       ? 'Events matching "' + q + '" (' + num(v.items.length) + ')'
       : (s.view === 'month' ? monthLabel(s.month) : s.view === 'past' ? 'Past events, newest first' : 'Next 14 days') + ' (' + num(v.items.length) + ' events)';
     host.innerHTML =
-      '<div class="pcal-sum">' + _escHtml(line) + '</div>' + controls + '<h4>' + _escHtml(heading) + '</h4>' + tbl +
+      '<div class="pcal-sum">' + _escHtml(line) + '</div><div class="pcal-feed">' + _escHtml(feedLine) + '</div>' + controls + '<h4>' + _escHtml(heading) + '</h4>' + tbl +
       (v.items.length > shown.length
         ? '<div class="pcal-nav"><span style="font-size:12px">Showing ' + num(shown.length) + ' of ' + num(v.items.length) +
           '.</span><button class="btn btn-ghost btn-sm" onclick="pcalMore(' + pid + ')">Show more</button></div>'
@@ -373,19 +388,7 @@
     } else if (!snap) {
       summary = '<div style="font-size:13px">No copy of the feed is saved yet. Choose Sync feed.</div>';
     } else {
-      var last = hist[0];
-      var c = last && !last.first ? last.counts : null;
-      summary =
-        '<div class="pcal-chips">' +
-        chip('Last sync ' + stamp(snap.fetchedAt)) +
-        chip(num(snap.count) + (snap.count === 1 ? ' event in feed' : ' events in feed')) +
-        (c
-          ? chip(num(c.added) + ' added') +
-            chip(num(c.removed) + ' removed') +
-            chip(num(c.changed) + ' changed') +
-            chip(num(c.unchanged) + ' unchanged')
-          : '') +
-        '</div>';
+      summary = '';
     }
     var leftOut = snap && snap.leftOut && snap.leftOut.length ? snap.leftOut : null;
     if (leftOut) {
@@ -420,10 +423,6 @@
       ')">' +
       (cfg ? 'Save address' : 'Save and sync') +
       '</button></div>';
-    var changes = '';
-    if (hist[0] && !hist[0].first) {
-      changes = '<details><summary>Changes in last sync</summary>' + changeTables(hist[0], tz) + '</details>';
-    }
     var history = '';
     if (hist.length) {
       history =
@@ -435,9 +434,9 @@
             var line = r.first
               ? 'First copy saved, ' + num(r.counts.total) + ' events'
               : num(r.counts.added) +
-                ' added, ' +
+                ' new, ' +
                 num(r.counts.removed) +
-                ' removed, ' +
+                ' canceled, ' +
                 num(r.counts.changed) +
                 ' changed';
             return (
@@ -455,12 +454,6 @@
     }
     var nav = snap
       ? '<div class="pcal-nav">' +
-        '<button class="btn btn-ghost btn-sm" onclick="pcalMonth(' +
-        pid +
-        ',-1)">Previous month</button>' +
-        '<button class="btn btn-ghost btn-sm" onclick="pcalMonth(' +
-        pid +
-        ',1)">Next month</button>' +
         '<input class="fi" id="pcal-q-' +
         pid +
         '" placeholder="Search all events" value="' +
@@ -479,7 +472,6 @@
       '">' +
       _escHtml(s.msg) +
       '</div>' +
-      changes +
       history +
       '<details' +
       (cfg ? '' : ' open') +

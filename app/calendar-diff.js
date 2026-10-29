@@ -89,15 +89,29 @@
     };
   }
 
-  // The place of an event. Its own location when it has one. Otherwise the text after the LAST hyphen of the title.
+  // The place of an event. Its own location when it has one. Otherwise the text after the LAST place marker in the title.
+  // A place marker is: "@", a hyphen with a space on either side ("Gym- Main", "A - B"), or a hyphen glued between a
+  // lowercase letter and a capitalized word ("Practice-LHS Cheer Area"). A hyphen inside a word (in-service, K-12, Pre-K,
+  // Mid-Winter) is never a marker.
   // Returns { text, fromTitle }. text is '' when there is no place. Stored data is not changed.
+  var PLACE_MARK = /\s-|-\s|@|[a-z]-(?=[A-Z][A-Za-z]{1,})/g;
+  var WORD_PREFIX = /(^|[^A-Za-z])(pre|mid|non|co|ex|self|post|anti|semi|multi|re|all|k)$/i;
   function eventPlace(ev) {
     var own = ev && ev.location != null ? String(ev.location).trim() : '';
     if (own) return { text: own, fromTitle: false };
     var title = ev && ev.title != null ? String(ev.title) : '';
-    var i = title.lastIndexOf('-');
-    if (i < 0) return { text: '', fromTitle: false };
-    var t = title.slice(i + 1).trim();
+    var cut = -1;
+    var m;
+    PLACE_MARK.lastIndex = 0;
+    while ((m = PLACE_MARK.exec(title))) {
+      var mark = m[0];
+      var at = m.index + mark.length;
+      if (/^[a-z]-$/.test(mark) && WORD_PREFIX.test(title.slice(0, m.index + 1))) continue;
+      cut = at;
+      PLACE_MARK.lastIndex = m.index + 1;
+    }
+    if (cut < 0) return { text: '', fromTitle: false };
+    var t = title.slice(cut).trim();
     return { text: t, fromTitle: !!t };
   }
 

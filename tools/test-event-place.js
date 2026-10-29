@@ -10,6 +10,16 @@ const cases = [
   ['last hyphen wins', { title: 'A - B - Room 12' }, { text: 'Room 12', fromTitle: true }],
   ['no hyphen', { title: 'Open House', location: null }, { text: '', fromTitle: false }],
   ['hyphen at end', { title: 'Open House -  ' }, { text: '', fromTitle: false }],
+  ['hyphen in word', { title: 'Teacher in-service' }, { text: '', fromTitle: false }],
+  ['K-12 night', { title: 'K-12 Parent Night' }, { text: '', fromTitle: false }],
+  ['Pre-K screening', { title: 'Pre-K Screening' }, { text: '', fromTitle: false }],
+  ['Mid-Winter concert', { title: 'Mid-Winter Concert' }, { text: '', fromTitle: false }],
+  ['JV/Varsity', { title: 'JV/Varsity Game' }, { text: '', fromTitle: false }],
+  ['in-service at place', { title: 'Teacher in-service @ Library' }, { text: 'Library', fromTitle: true }],
+  ['glued capital place', { title: 'Cheer Practice-Cheer Area' }, { text: 'Cheer Area', fromTitle: true }],
+  ['hyphen then space', { title: 'Open Gym- Main Gym' }, { text: 'Main Gym', fromTitle: true }],
+  ['word hyphen then place', { title: 'Pre-K Night- Room 4' }, { text: 'Room 4', fromTitle: true }],
+  ['at sign', { title: 'Concert @ Auditorium' }, { text: 'Auditorium', fromTitle: true }],
 ];
 let fail = 0;
 for (const [n, ev, want] of cases) {
