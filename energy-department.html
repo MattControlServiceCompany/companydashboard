@@ -5261,9 +5261,25 @@
         flex-wrap: wrap;
         gap: 4px 6px;
         margin-top: 6px;
-        /* Three lines of links; more lines scroll inside the bar so it never grows over the values. */
-        max-height: 80px;
+        align-items: center;
+      }
+      /* Expanded list: JS (_mbFitReviewLinks) sets max-height to a whole number of rows, at most half the screen. */
+      .pdf-rb-links.expanded {
         overflow-y: auto;
+        overflow-x: hidden;
+        scroll-snap-type: y proximity;
+      }
+      .pdf-rb-links.expanded .pdf-rb-link {
+        scroll-snap-align: start;
+      }
+      .pdf-rb-more {
+        padding: 2px 9px;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: var(--s3);
+        color: var(--text);
+        font-size: 12px;
+        cursor: pointer;
       }
       .pdf-rb-link {
         max-width: 100%;

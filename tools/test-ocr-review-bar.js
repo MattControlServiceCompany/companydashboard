@@ -228,6 +228,68 @@ async function open(context, theme, width) {
         await v.page.close();
       }
     }
+
+    // Issue list in the bar: at most 3 links, then "+N more issues"; expand shows all; no link is ever cut.
+    for (const theme of ['dark', 'light']) {
+      for (const n of [18, 2]) {
+        const v = await open(context, theme, 1536);
+        await v.page.setViewportSize({ width: 1536, height: 800 });
+        await v.page.evaluate((n) => {
+          const bills = [];
+          for (let i = 0; i < n; i++)
+            bills.push(Object.assign({}, window._pdfMultiBills[1], { AccountNumber: 'TST-' + String(100 + i).padStart(4, '0'), ServiceAddress: i + ' Testcat Dr' }));
+          window._pdfMultiBills = bills;
+          window._pdfBillWarnings = bills.map(() => ({ warnings: [] }));
+          window._pdfRbExpanded = false;
+          window._pdfMultiIdx = 0;
+          window._pdfBuildingTab = bills[0].AccountNumber;
+          renderMultiBillUI(bills);
+          renderPDFFields(bills[0], []);
+        }, n);
+        await v.page.waitForTimeout(300);
+        const cut = () =>
+          v.page.evaluate(() => {
+            const bar = document.getElementById('pdfReviewBar').getBoundingClientRect();
+            const list = document.querySelector('#pdfReviewBar .pdf-rb-links');
+            const lr = list ? list.getBoundingClientRect() : null;
+            const links = [...document.querySelectorAll('#pdfReviewBar .pdf-rb-link')];
+            const inside = (r, c) => r.top >= c.top - 1 && r.bottom <= c.bottom + 1;
+            const vis = links.filter((a) => {
+              const r = a.getBoundingClientRect();
+              return !lr || (r.bottom > lr.top && r.top < lr.bottom);
+            });
+            return {
+              total: links.length,
+              cutLinks: vis.filter((a) => !inside(a.getBoundingClientRect(), bar) || (lr && !inside(a.getBoundingClientRect(), lr))).length,
+              more: (document.querySelector('#pdfReviewBar .pdf-rb-more') || {}).textContent || '',
+              barBottom: bar.bottom,
+              barH: bar.height,
+              vh: window.innerHeight,
+              scrollerH: document.getElementById('pdfValuesScroll').getBoundingClientRect().height,
+            };
+          });
+        const c1 = await cut();
+        const tag = theme + ' ' + n + ' issues: ';
+        if (n === 18) {
+          ok(c1.total === 3 && c1.more === '+15 more issues', tag + '3 links and "+15 more issues": ' + JSON.stringify(c1));
+          ok(c1.cutLinks === 0, tag + 'no link cut ' + JSON.stringify(c1));
+          if (SHOTS) await v.page.screenshot({ path: path.join(SHOTS, '2026-10-29-ocrbar-list-after-' + theme + '-18.png') });
+          await v.page.click('#pdfReviewBar .pdf-rb-more');
+          const c2 = await cut();
+          ok(c2.total === 18 && c2.more === 'Show less', tag + 'expanded shows all 18: ' + JSON.stringify(c2));
+          ok(c2.cutLinks === 0 && c2.barBottom <= c2.vh + 1 && c2.barH <= c2.vh * 0.5 + 60, tag + 'expanded: none cut, bar on screen, list capped ' + JSON.stringify(c2));
+          if (SHOTS) await v.page.screenshot({ path: path.join(SHOTS, '2026-10-29-ocrbar-list-after-' + theme + '-18-expanded.png') });
+          await v.page.click('#pdfReviewBar .pdf-rb-more');
+          const c3 = await cut();
+          ok(c3.total === 3 && /^\+15/.test(c3.more), tag + 'Show less collapses again');
+        } else {
+          ok(c1.total === 2 && c1.more === '' && c1.cutLinks === 0, tag + 'both links, no button, none cut: ' + JSON.stringify(c1));
+          if (SHOTS) await v.page.screenshot({ path: path.join(SHOTS, '2026-10-29-ocrbar-list-after-' + theme + '-2.png') });
+        }
+        ok(!v.errs.length, tag + 'no page errors ' + v.errs.slice(0, 2).join(' | '));
+        await v.page.close();
+      }
+    }
   } catch (e) {
     failures.push('SCRIPT ERROR ' + e.message);
   } finally {

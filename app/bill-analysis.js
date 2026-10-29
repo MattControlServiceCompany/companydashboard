@@ -7217,7 +7217,10 @@ function _mbReviewBarHtml() {
     s.saved ? s.saved + ' saved' : '',
     s.skipped ? s.skipped + ' skipped' : '',
   ].filter(Boolean);
-  const links = s.links
+  const RB_MAX = 3; // links shown before the "+N more issues" button
+  const expanded = !!window._pdfRbExpanded && s.links.length > RB_MAX;
+  const shown = expanded ? s.links : s.links.slice(0, RB_MAX);
+  const links = shown
     .map(({ i, k, it }) => {
       const b = bills[i];
       const where = [_pdfBuildingName(bills, b.AccountNumber || '_unknown'), _pdfCommOf(b), _billPeriodLabel(b)].join(' · ');
@@ -7237,6 +7240,12 @@ function _mbReviewBarHtml() {
       );
     })
     .join('');
+  const more =
+    s.links.length > RB_MAX
+      ? '<button type="button" class="pdf-rb-more" onclick="_mbToggleReviewList()">' +
+        (expanded ? 'Show less' : '+' + (s.links.length - RB_MAX) + ' more issues') +
+        '</button>'
+      : '';
   return (
     '<div class="pdf-rb-row"><span class="pdf-rb-counts">' +
     _escHtml(parts.join(' · ')) +
@@ -7247,9 +7256,26 @@ function _mbReviewBarHtml() {
     '">Save All' +
     (s.toSave ? ' (' + s.toSave + ')' : '') +
     '</button></div>' +
-    (links ? '<div class="pdf-rb-links">' + links + '</div>' : '')
+    (links ? '<div class="pdf-rb-links' + (expanded ? ' expanded' : '') + '">' + links + more + '</div>' : '')
   );
 }
+// Expanded list: a whole number of rows, at most half the screen, so no row shows half at rest. Longer lists scroll inside.
+function _mbFitReviewLinks() {
+  const box = document.querySelector('#pdfReviewBar .pdf-rb-links.expanded');
+  if (!box) return;
+  const kids = [...box.children];
+  if (!kids.length) return;
+  const rowH = kids[0].offsetHeight + 4;
+  const rows = Math.max(1, Math.floor((window.innerHeight * 0.5) / rowH));
+  box.style.maxHeight = rows * rowH - 4 + 'px';
+}
+function _mbToggleReviewList() {
+  window._pdfRbExpanded = !window._pdfRbExpanded;
+  const bar = document.getElementById('pdfReviewBar');
+  if (bar) bar.innerHTML = _mbReviewBarHtml();
+  _mbFitReviewLinks();
+}
+window._mbToggleReviewList = _mbToggleReviewList;
 // A link in the bar: open that bill (its building and utility too), then go to the issue.
 function _mbGoToIssue(i, k) {
   const bills = window._pdfMultiBills;
@@ -7291,6 +7317,7 @@ function _mbRenderReview(live) {
   if (bar) {
     bar.innerHTML = on ? _mbReviewBarHtml() : '';
     bar.style.display = on ? '' : 'none';
+    _mbFitReviewLinks();
   }
 }
 
