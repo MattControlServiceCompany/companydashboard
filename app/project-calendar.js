@@ -26,20 +26,20 @@
     ['America/Los_Angeles', 'Pacific'],
   ];
   var FIELD_LABEL = { title: 'Title', start: 'Start', end: 'End', allDay: 'All-day', location: 'Location' };
-  var _st = {}; // per project: { month, q, limit, busy, msg, index, indexFor }
+  var _st = {}; // per project: { view, month, q, changesOnly, limit, busy, msg }
 
   function k(kind, pid) {
     return 'en_cal_' + kind + '_' + pid;
   }
   function state(pid) {
     return (_st[pid] = _st[pid] || {
+      view: 'next14',
       month: null,
       q: '',
+      changesOnly: false,
       limit: PAGE_ROWS,
       busy: false,
       msg: '',
-      index: null,
-      indexFor: null,
     });
   }
   function cfgOf(pid) {
@@ -134,6 +134,13 @@
       '.pcal-tbl th:last-child,.pcal-tbl td:last-child{border-right:none}',
       '.pcal-tbl tbody tr:last-child td{border-bottom:none}',
       '.pcal-tbl tbody tr:nth-child(even) td{background:var(--s3)}',
+      '.pcal-sum{font-size:13px;font-weight:600;margin-top:12px;color:var(--text)}',
+      '.pcal-ev-tbl tbody tr:nth-child(even) td{background:transparent}',
+      '.pcal-ev-tbl tr.pcal-day th{background:var(--s2);color:var(--text);text-transform:none;font-size:12px;letter-spacing:0;border-right:none;border-top:1px solid var(--border2)}',
+      '.pcal-badge{display:inline-block;font-size:11px;font-weight:700;padding:1px 6px;border:1px solid var(--text);border-radius:3px;color:var(--text);vertical-align:1px}',
+      '.pcal-new{border-color:var(--em);border-width:2px}',
+      '.pcal-gone .pcal-ev{text-decoration:line-through}',
+      '.pcal-chg{margin-top:2px;font-size:12px;color:var(--text)}',
       '.pcal-nav{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:12px}',
       '.pcal-hist-item{margin-top:8px;border:1px solid var(--border);border-radius:6px;padding:8px 10px}',
       '.pcal h4{margin:12px 0 0;font-size:12px;font-weight:700;color:var(--text)}',
@@ -236,28 +243,19 @@
   }
 
   // --- events list (what exists now) -------------------------------------------
-  function buildIndex(pid) {
-    var s = state(pid);
-    var snap = snapOf(pid);
-    if (!snap) return [];
-    var tz = tzOf(pid);
-    var sig = snap.fetchedAt + '|' + tz;
-    if (s.index && s.indexFor === sig) return s.index;
-    var idx = Object.keys(snap.events).map(function (key) {
-      var r = snap.events[key];
-      return { key: key, row: r, day: r[1] ? dayKey(r[1], tz) : '' };
-    });
-    idx.sort(function (a, b) {
-      var x = a.row[1] || '';
-      var y = b.row[1] || '';
-      return x < y ? -1 : x > y ? 1 : 0;
-    });
-    s.index = idx;
-    s.indexFor = sig;
-    return idx;
+  // Which events show, and their New / Changed / Canceled marks, come from CalendarDiff.listView (the only copy).
+  function todayOf(tz) {
+    return dayKey(new Date().toISOString(), tz);
   }
   function currentMonth(tz) {
-    return dayKey(new Date().toISOString(), tz).slice(0, 7);
+    return todayOf(tz).slice(0, 7);
+  }
+  var VIEW_NAME = { next14: 'in the next 14 days', month: '', past: 'before today' };
+  function btn(label, on, call) {
+    return '<button class="btn btn-sm ' + (on ? 'btn-em' : 'btn-ghost') + '" onclick="' + call + '"' + (on ? ' aria-pressed="true"' : '') + '>' + label + '</button>';
+  }
+  function badge(status) {
+    return status ? '<span class="pcal-badge pcal-' + status + '">' + (status === 'new' ? 'New' : status === 'changed' ? 'Changed' : 'Canceled') + '</span>' : '';
   }
   function renderList(pid) {
     var host = document.getElementById('pcal-list-' + pid);
@@ -270,57 +268,80 @@
     var s = state(pid);
     var tz = tzOf(pid);
     if (!s.month) s.month = currentMonth(tz);
-    var q = s.q.trim().toLowerCase();
-    var idx = buildIndex(pid);
-    var last = histOf(pid)[0] || null;
-    var newKeys = {};
-    var chgKeys = {};
-    if (last && !last.first) {
-      (last.added || []).forEach(function (x) {
-        newKeys[x.key] = 1;
-      });
-      (last.changed || []).forEach(function (x) {
-        chgKeys[x.key] = 1;
-      });
+    var hist = histOf(pid);
+    var v = CalendarDiff.listView({
+      events: snap.events,
+      last: hist[0] || null,
+      tz: tz,
+      today: todayOf(tz),
+      mode: s.view,
+      month: s.month,
+      q: s.q,
+      changesOnly: s.changesOnly,
+    });
+    var q = s.q.trim();
+    var scope = s.view === 'month' ? 'in ' + monthLabel(s.month) : VIEW_NAME[s.view];
+    var line;
+    if (!v.compared) {
+      line = 'No earlier sync to compare yet.';
+    } else {
+      var c = v.counts;
+      var parts = [];
+      if (c['new']) parts.push(num(c['new']) + ' new');
+      if (c.changed) parts.push(num(c.changed) + ' changed');
+      if (c.canceled) parts.push(num(c.canceled) + ' canceled');
+      var prev = hist[1] ? ' (' + stamp(hist[1].at).replace(', ' + new Date().getFullYear(), '') + ')' : '';
+      line = 'Since last sync' + prev + ': ' + (parts.length ? parts.join(', ') : 'no changes') + ' ' + scope;
     }
-    var list = idx.filter(function (e) {
-      if (q) return (e.row[0] + ' ' + e.row[4]).toLowerCase().indexOf(q) !== -1;
-      return e.day.slice(0, 7) === s.month;
-    });
-    var shown = list.slice(0, s.limit);
-    var heading = q
-      ? 'Events matching "' + s.q.trim() + '" (' + num(list.length) + ')'
-      : monthLabel(s.month) + ' (' + num(list.length) + ' events)';
-    var rows = shown.map(function (e) {
-      var tag = newKeys[e.key] ? chip('New', 'em') : chgKeys[e.key] ? chip('Changed', 'em') : '';
+    var controls =
+      '<div class="pcal-nav">' +
+      btn('Next 14 days', s.view === 'next14' && !q, 'pcalView(' + pid + ",'next14')") +
+      btn('This month', s.view === 'month' && !q, 'pcalView(' + pid + ",'month')") +
+      btn('Show past', s.view === 'past' && !q, 'pcalView(' + pid + ",'past')") +
+      (v.compared ? btn('Changes only', s.changesOnly, 'pcalChangesOnly(' + pid + ')') : '') +
+      '</div>';
+    var shown = v.items.slice(0, s.limit);
+    var today = todayOf(tz);
+    var yr = today.slice(0, 4);
+    var body = '';
+    var lastDay = null;
+    shown.forEach(function (e) {
+      if (e.day !== lastDay) {
+        lastDay = e.day;
+        body +=
+          '<tr class="pcal-day"><th colspan="3" scope="colgroup">' +
+          _escHtml(CalendarDiff.dayLabel(e.day) + (e.day.slice(0, 4) !== yr ? ', ' + e.day.slice(0, 4) : '') + (e.day === today ? ' (today)' : '')) +
+          '</th></tr>';
+      }
       var pl = CalendarDiff.eventPlace({ title: e.row[0], location: e.row[4] });
-      var place = pl.fromTitle
-        ? '<i title="Taken from the event title">' + _escHtml(pl.text) + '</i>'
-        : _escHtml(pl.text);
-      return [_escHtml(when(e.row[1], e.row[3], tz, e.row[2])), _escHtml(e.row[0]) + (tag ? ' ' + tag : ''), place];
+      var place = pl.fromTitle ? '<i title="Taken from the event title">' + _escHtml(pl.text) + '</i>' : _escHtml(pl.text);
+      var multi = '';
+      if (e.row[3] || /^\d{4}-\d{2}-\d{2}$/.test(e.row[1])) {
+        var lastD = CalendarDiff.allDayLastDay(e.row[1], e.row[2], tz);
+        if (lastD > dayKey(e.row[1], tz)) multi = ' (through ' + dayText(lastD) + ')';
+      }
+      var what =
+        '<span class="pcal-ev">' + _escHtml(e.row[0]) + '</span> ' + badge(e.status) +
+        (e.lines.length ? '<div class="pcal-chg">' + e.lines.map(_escHtml).join('<br>') + '</div>' : '');
+      var tip = e.lines.length ? ' title="' + _escHtml(e.lines.join('; ')) + '"' : '';
+      body +=
+        '<tr class="pcal-r' + (e.status === 'canceled' ? ' pcal-gone' : '') + '"' + tip + '><td>' +
+        _escHtml(CalendarDiff.timeText(e.row, tz) + multi) +
+        '</td><td>' + what + '</td><td>' + place + '</td></tr>';
     });
+    var tbl = shown.length
+      ? '<div class="pcal-outer"><table class="pcal-tbl pcal-ev-tbl"><colgroup><col style="width:24%"><col style="width:48%"><col style="width:28%"></colgroup>' +
+        '<thead><tr><th>Time</th><th>Event</th><th>Location</th></tr></thead><tbody>' + body + '</tbody></table></div>'
+      : '<div style="font-size:12px;margin-top:8px">' +
+        (s.changesOnly ? 'No changes ' + _escHtml(scope) + '.' : 'No events found.') + '</div>';
+    var heading = q
+      ? 'Events matching "' + q + '" (' + num(v.items.length) + ')'
+      : (s.view === 'month' ? monthLabel(s.month) : s.view === 'past' ? 'Past events, newest first' : 'Next 14 days') + ' (' + num(v.items.length) + ' events)';
     host.innerHTML =
-      '<h4>' +
-      _escHtml(heading) +
-      '</h4>' +
-      (rows.length
-        ? table(
-            [
-              ['Date', '28%'],
-              ['Event', '44%'],
-              ['Location', '28%'],
-            ],
-            rows,
-          )
-        : '<div style="font-size:12px;margin-top:8px">No events found.</div>') +
-      (list.length > shown.length
-        ? '<div class="pcal-nav"><span style="font-size:12px">Showing ' +
-          num(shown.length) +
-          ' of ' +
-          num(list.length) +
-          '.</span><button class="btn btn-ghost btn-sm" onclick="pcalMore(' +
-          pid +
-          ')">Show more</button></div>'
+      '<div class="pcal-sum">' + _escHtml(line) + '</div>' + controls + '<h4>' + _escHtml(heading) + '</h4>' + tbl +
+      (v.items.length > shown.length
+        ? '<div class="pcal-nav"><span style="font-size:12px">Showing ' + num(shown.length) + ' of ' + num(v.items.length) +
+          '.</span><button class="btn btn-ghost btn-sm" onclick="pcalMore(' + pid + ')">Show more</button></div>'
         : '');
   }
 
@@ -363,7 +384,7 @@
             chip(num(c.removed) + ' removed') +
             chip(num(c.changed) + ' changed') +
             chip(num(c.unchanged) + ' unchanged')
-          : chip('First copy saved. Changes show after the next sync.')) +
+          : '') +
         '</div>';
     }
     var leftOut = snap && snap.leftOut && snap.leftOut.length ? snap.leftOut : null;
@@ -485,7 +506,6 @@
     if (!url) return say(pid, 'Enter the feed address first.');
     var had = !!cfgOf(pid);
     await DB.set(k('cfg', pid), { icsUrl: url, timezone: tz });
-    state(pid).index = null;
     state(pid).month = null;
     if (had) {
       say(pid, 'Feed address saved.');
@@ -544,7 +564,6 @@
       }
       await DB.set(k('hist', pid), [rec].concat(hist).slice(0, HIST_MAX));
       await DB.set(k('snap', pid), snap);
-      s.index = null;
       s.month = null;
     } catch (e) {
       s.msg = 'The calendar feed could not be read. The last saved copy is kept.';
@@ -559,11 +578,26 @@
   window.pcalSave = save;
   window.pcalMonth = function (pid, d) {
     var s = state(pid);
+    s.view = 'month';
     s.month = shiftMonth(s.month || currentMonth(tzOf(pid)), d);
     s.q = '';
     s.limit = PAGE_ROWS;
     var q = document.getElementById('pcal-q-' + pid);
     if (q) q.value = '';
+    renderList(pid);
+  };
+  window.pcalView = function (pid, view) {
+    var s = state(pid);
+    s.view = view;
+    s.month = null;
+    s.q = '';
+    s.limit = PAGE_ROWS;
+    render(pid);
+  };
+  window.pcalChangesOnly = function (pid) {
+    var s = state(pid);
+    s.changesOnly = !s.changesOnly;
+    s.limit = PAGE_ROWS;
     renderList(pid);
   };
   window.pcalSearch = function (pid, v) {

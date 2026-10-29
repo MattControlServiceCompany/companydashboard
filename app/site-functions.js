@@ -2507,6 +2507,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
+  { v: 'v2026.10.29.184', date: '2026-10-29', title: 'District Calendar: what is coming up and what changed',
+    items: [
+      { type: 'change', text: 'Project page, District Calendar tab: the list now opens on the next 14 days, grouped by day, with Next 14 days, This month and Show past buttons. Events that are new, changed (with what changed, like the old and new time or place) or canceled since the last sync are marked, and a line at the top counts them. Changes only shows just those events.' }
+    ]
+  },
   { v: 'v2026.10.28.183', date: '2026-10-28', title: 'District Calendar tab labels',
     items: [
       { type: 'change', text: 'Project page: the District Calendar tab now labels the manual events card "Manual calendar events" and says the synced feed is shown above when there are none. The feed card shows how many events the feed holds.' }

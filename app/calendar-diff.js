@@ -81,7 +81,7 @@
         return { key: x.key, title: x.row[0], start: x.row[1] };
       }),
       removed: diff.removed.slice(0, DETAIL_CAP).map(function (x) {
-        return { key: x.key, title: x.row[0], start: x.row[1] };
+        return { key: x.key, title: x.row[0], start: x.row[1], row: x.row };
       }),
       changed: diff.changed.slice(0, DETAIL_CAP).map(function (x) {
         return { key: x.key, title: x.row[0], fields: x.fields };
@@ -123,6 +123,108 @@
     return last > first ? last : first;
   }
 
+  // --- what to show on the District Calendar tab ------------------------------
+  // The ONE place that decides which events a view shows and which badge each carries.
+  // Badges come only from the last history record (made by diffSnapshots + historyRecord).
+  var SPAN = '\u2013';
+  var ARROW = '\u2192';
+  function addDays(ymd, n) {
+    var a = ymd.split('-');
+    return new Date(Date.UTC(Number(a[0]), Number(a[1]) - 1, Number(a[2]) + n)).toISOString().slice(0, 10);
+  }
+  function isAllDay(row) {
+    return !!row[3] || DATE_ONLY.test(row[1] || '');
+  }
+  function clock(iso, tz) {
+    return new Date(iso).toLocaleTimeString('en-US', { timeZone: tz, hour: 'numeric', minute: '2-digit' });
+  }
+  // '3:15 PM - 4:00 PM', '3:15 PM' (no end) or 'All day'.
+  function timeText(row, tz) {
+    if (!row[1]) return '';
+    if (isAllDay(row)) return 'All day';
+    return clock(row[1], tz) + (row[2] ? ' ' + SPAN + ' ' + clock(row[2], tz) : '');
+  }
+  function dayLabel(ymd) {
+    var a = ymd.split('-');
+    return new Date(Number(a[0]), Number(a[1]) - 1, Number(a[2])).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  }
+  // Plain-words lines for a changed event, e.g. 'Time 3:15 PM -> 4:00 PM', 'Location BES Gym -> LHS Main Gym'.
+  // newRow is the event as it is now; the old row is the new row with each changed field put back.
+  function changeLines(fields, newRow, tz) {
+    var out = [];
+    var oldRow = newRow.slice();
+    FIELDS.forEach(function (f, i) {
+      if (fields[f]) oldRow[i] = fields[f][0];
+    });
+    if (fields.start && oldRow[1] && newRow[1] && calendarDay(oldRow[1], tz) !== calendarDay(newRow[1], tz)) {
+      out.push('Date ' + dayLabel(calendarDay(oldRow[1], tz)) + ' ' + ARROW + ' ' + dayLabel(calendarDay(newRow[1], tz)));
+    }
+    if (fields.start || fields.end || fields.allDay) {
+      var o = timeText(oldRow, tz);
+      var n = timeText(newRow, tz);
+      if (o !== n) out.push('Time ' + (o || 'none') + ' ' + ARROW + ' ' + (n || 'none'));
+    }
+    if (fields.location) out.push('Location ' + (fields.location[0] || 'none') + ' ' + ARROW + ' ' + (fields.location[1] || 'none'));
+    if (fields.title) out.push('Title ' + fields.title[0] + ' ' + ARROW + ' ' + fields.title[1]);
+    return out;
+  }
+
+  // The first and last calendar day an event covers (all-day events can run several days).
+  function eventDays(row, tz) {
+    var first = calendarDay(row[1], tz);
+    var last = isAllDay(row) ? allDayLastDay(row[1], row[2], tz) : first;
+    return [first, last];
+  }
+  // Does a day span touch the view? mode: 'next14' (today and 13 more days), 'month' (opts.month YYYY-MM), 'past' (before today).
+  function inView(days, o) {
+    if (o.mode === 'month') return days[1].slice(0, 7) >= o.month && days[0].slice(0, 7) <= o.month;
+    if (o.mode === 'past') return days[0] < o.today;
+    return days[1] >= o.today && days[0] <= addDays(o.today, 13);
+  }
+
+  // opts: { events (snapshot events), last (newest history record or null), tz, today (YYYY-MM-DD), mode, month, q, changesOnly }
+  // Returns { items:[{key,row,day,status:'new'|'changed'|'canceled'|'',lines:[]}], counts:{new,changed,canceled}, compared }.
+  // counts cover the whole view (not the search or the Changes-only filter). items are sorted by day, then start; 'past' is newest first.
+  function listView(o) {
+    var compared = !!(o.last && !o.last.first);
+    var tag = {};
+    var gone = [];
+    if (compared) {
+      (o.last.added || []).forEach(function (x) { tag[x.key] = { status: 'new', lines: [] }; });
+      (o.last.changed || []).forEach(function (x) { tag[x.key] = { status: 'changed', lines: o.events[x.key] ? changeLines(x.fields || {}, o.events[x.key], o.tz) : [] }; });
+      (o.last.removed || []).forEach(function (x) {
+        if (Object.prototype.hasOwnProperty.call(o.events, x.key)) return;
+        gone.push({ key: x.key, row: x.row || [x.title, x.start, '', 0, ''], tag: { status: 'canceled', lines: [] } });
+      });
+    }
+    var all = Object.keys(o.events).map(function (key) {
+      return { key: key, row: o.events[key], tag: tag[key] || null };
+    }).concat(gone);
+    var counts = { 'new': 0, changed: 0, canceled: 0 };
+    var q = (o.q || '').trim().toLowerCase();
+    var items = [];
+    all.forEach(function (e) {
+      if (!e.row[1]) return;
+      var days = eventDays(e.row, o.tz);
+      var inV = inView(days, o);
+      if (inV && e.tag) counts[e.tag.status]++;
+      var keep = q ? (e.row[0] + ' ' + e.row[4]).toLowerCase().indexOf(q) !== -1 : inV;
+      if (!keep || (o.changesOnly && !e.tag)) return;
+      // An event that began before today is listed under the first day of the view that it covers.
+      var day = days[0];
+      if (!q && o.mode === 'next14' && day < o.today) day = o.today;
+      items.push({ key: e.key, row: e.row, day: day, status: e.tag ? e.tag.status : '', lines: e.tag ? e.tag.lines : [] });
+    });
+    var dir = o.mode === 'past' && !q ? -1 : 1;
+    items.sort(function (a, b) {
+      if (a.day !== b.day) return a.day < b.day ? -dir : dir;
+      var x = a.row[1];
+      var y = b.row[1];
+      return x < y ? -dir : x > y ? dir : 0;
+    });
+    return { items: items, counts: counts, compared: compared };
+  }
+
   var api = {
     calendarDay: calendarDay,
     allDayLastDay: allDayLastDay,
@@ -131,6 +233,11 @@
     diffSnapshots: diffSnapshots,
     historyRecord: historyRecord,
     eventPlace: eventPlace,
+    listView: listView,
+    timeText: timeText,
+    dayLabel: dayLabel,
+    changeLines: changeLines,
+    addDays: addDays,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.CalendarDiff = api;
