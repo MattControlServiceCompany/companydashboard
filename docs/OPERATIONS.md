@@ -365,6 +365,7 @@ Nov 2 runbook, data step (after the Netlify deploy and the live acceptance run):
 5. In the Netlify app: Restore the same file in "Make this backup the server copy" mode. The button must say "Nothing to change" (6c step 8).
 Rehearse the same steps on a staging project first (a second free Supabase project with netlify/db/schema.sql applied and a private
 `pdf_blobs` bucket). Undo one key: read its row in `kv_history`, or copy it from the snapshot file.
+Schema grants: netlify/db/schema.sql gives `service_role` (only) explicit grants on `public.kv`, `public.kv_history` and the sequence `public.kv_history_id_seq`, because Supabase stopped automatic Data API grants on new public tables on 2026-10-30 (existing tables are unaffected). Run the file in the SQL editor of any new project (staging included). `node tools/gate-schema-grants.js` (in the regression gate) fails if a `create table` in netlify/db/*.sql has no RLS or no `service_role` grant, or if any grant targets anon.
 The app Restore path (6c) is on main only, not in stable (v87), until the Nov 2 deploy.
 
 ## 6b. Bill fields (merged 2026-10-06, fix/2026-10-05-hidden-fields)

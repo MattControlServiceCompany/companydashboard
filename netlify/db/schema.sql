@@ -77,6 +77,11 @@ alter table public.kv_history enable row level security;
 -- (Deliberately no `create policy` statements — service_role only, same
 -- reasoning as the kv table above.)
 
+-- Explicit grants: service_role only (Supabase stopped auto-granting Data API access on new public tables 2026-10-30). No grant to anon or authenticated.
+grant select, insert, update, delete on public.kv, public.kv_history to service_role;
+-- kv_history.id is an identity column; its sequence is public.kv_history_id_seq.
+grant usage, select on sequence public.kv_history_id_seq to service_role;
+
 -- Private bucket for bill PDF blobs, mirroring the existing separate
 -- `en_pdf_store` IndexedDB store (kept out of the small-value kv table
 -- exactly like it's kept out of the small-value IDB cache today).
