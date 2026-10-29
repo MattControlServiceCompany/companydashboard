@@ -64,6 +64,7 @@ const eq = (a, e, l) => ok(a === e, l + ': expected ' + JSON.stringify(e) + ', g
     // save the first building from the embedded tab
     await addBtn().click();
     await page.fill('#bm-name', 'Synth First');
+    await page.fill('#bm-sqft', '10000'); // the Dashboard counts baseline-eligible buildings (sqft > 0), same as the project header
     await page.evaluate(() => saveBuilding());
     await page.waitForTimeout(800);
     eq(await page.evaluate(() => getComputedStyle(document.getElementById('ptab-utility')).display !== 'none'), true, 'Utility Data tab still visible after first building saved');
