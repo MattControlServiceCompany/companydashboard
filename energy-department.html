@@ -409,7 +409,7 @@
       /* Tab strip: its own darker band under row 1. It scrolls sideways inside itself (never the page), with
          fade hints at the edges that have more tabs. The tabs themselves are styled at .pdt below. */
       .hdr-tabs {
-        --strip-bg: var(--bg);
+        --strip-bg: var(--s1);
         order: 3;
         flex: 1 1 100%;
         min-width: 0;
@@ -426,10 +426,7 @@
         overflow-y: hidden;
         scrollbar-width: thin;
       }
-      [data-theme='light'] .hdr-tabs {
-        --strip-bg: var(--s1);
-      }
-      .t-right {
+            .t-right {
         display: flex;
         align-items: center;
         gap: 4px;
@@ -4573,24 +4570,25 @@
         display: flex;
         flex-wrap: nowrap;
         align-items: flex-end;
-        gap: 2px;
+        gap: 1px;
         min-width: max-content;
         flex: 1 0 auto;
-        border-bottom: 1px solid var(--border);
+        border-bottom: 1px solid var(--border2);
       }
-      /* Browser-style tab: rounded top corners, border on top and sides, no bottom border. The active tab has the same
-         background as the content panel (--s2) and covers the strip's bottom line, so it joins the page. */
+      /* Folder tab (role="tab" in role="tablist"). All tabs sit on one strip with a rule along the bottom. Inactive tabs are
+         recessed: darker band, border, normal weight. The active tab has the same background as the page panel below
+         (--bg), a 3px accent bar on top, bold text, and no bottom border, so the strip rule breaks under it. */
       .pdt {
         font-family: var(--font);
         font-size: 12px;
         font-weight: 500;
-        padding: 8px 14px;
-        border: 1px solid var(--border);
+        padding: 8px 11px;
+        border: 1px solid var(--border2);
         border-bottom: none;
-        border-radius: 8px 8px 0 0;
+        border-radius: 9px 9px 0 0;
         cursor: pointer;
         color: var(--text);
-        background: var(--s1);
+        background: var(--s3);
         user-select: none;
         display: inline-flex;
         align-items: center;
@@ -4599,14 +4597,23 @@
         position: relative;
       }
       [data-theme='light'] .pdt {
-        background: var(--s4);
+        background: var(--border);
       }
       .pdt:hover {
+        background: var(--s4);
+        border-top-color: var(--accent);
+      }
+      [data-theme='light'] .pdt:hover {
         background: var(--s3);
       }
-      .pdt.active {
+      .pdt:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: -3px;
+      }
+      .pdt.active,
+      [data-theme='light'] .pdt.active {
         font-weight: 700;
-        background: var(--s2);
+        background: var(--bg);
         border-color: var(--border2);
         border-top: 3px solid var(--em);
         padding-top: 6px;
@@ -9357,7 +9364,7 @@
             </div>
           </div>
           <nav class="hdr-tabs" id="hdrTabs" data-fb="energy.dept-nav" style="display: none">
-            <div class="pd-tabs" id="pdTabBar"></div>
+            <div class="pd-tabs" id="pdTabBar" role="tablist" aria-label="Project sections"></div>
           </nav>
         </header>
 
