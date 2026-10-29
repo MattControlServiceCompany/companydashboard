@@ -5181,17 +5181,69 @@
           outline-offset: 2px;
         }
       }
-      /* Multi-building file: the review bar is a normal block after the last value row. It takes its own space, so no
-         row or value is ever under it at any scroll position. Do not make it sticky or fixed: that puts it over the values. */
+      /* Multi-building file: the review bar is a normal row UNDER the values scroll region (#pdfValuesScroll), outside the
+         scroller. So it is always on screen at the bottom of the extraction area and no value scrolls behind it. This is the
+         bounded-scroller pattern of the Utility Data Bills table (.bills-scroll-body / #maPane). Do not make the bar sticky or
+         fixed, and do not move it inside the scroller. */
       .pdf-review-bar {
         position: static;
-        margin-top: 14px;
+        flex: 0 0 auto;
+        margin-top: 8px;
         padding: 8px 10px;
         background: var(--s2);
-        border: 1px solid var(--border2);
+        border: 1px solid var(--border);
         border-radius: 8px;
         font-size: 12px;
         color: var(--text);
+      }
+      /* PDF / OCR page: the page does not scroll. The values column is bounded to the screen, its scroll region holds the
+         values and the file bar, and the dock fills the same height. */
+      #view-pdf.view.active {
+        overflow: hidden;
+      }
+      #view-pdf.view.active #pdfBody {
+        flex: 1 1 0;
+        min-height: 0;
+      }
+      #pdfBody #pdfLeftCol {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+      }
+      #pdfValuesScroll {
+        flex: 1 1 0;
+        min-height: 0;
+        overflow-y: auto;
+        overflow-x: hidden;
+      }
+      /* Inside this scroller the pinned boxes sit flush with its top edge (no page padding above them). */
+      #pdfValuesScroll .pdf-topbar {
+        top: 0;
+      }
+      #pdfValuesScroll .pdf-topbar::before {
+        display: none;
+      }
+      #pdfBody.pdf-docked {
+        grid-template-rows: minmax(0, 1fr);
+        align-items: stretch;
+      }
+      #pdfBody.pdf-docked #pdfDockCol {
+        position: relative;
+        top: auto;
+        height: auto;
+        align-self: stretch;
+      }
+      @media (max-width: 799px) {
+        #pdfBody #pdfLeftCol,
+        #pdfBody.pdf-docked #pdfLeftCol {
+          flex: 1 1 0 !important;
+        }
+        #pdfBody.pdf-docked #pdfDockCol {
+          position: relative;
+          top: auto;
+          height: 40vh;
+          flex: none !important;
+        }
       }
       .pdf-rb-row {
         display: flex;
@@ -9996,6 +10048,9 @@
                 id="pdfLeftCol"
                 style="flex: 3 1 0; min-width: 0"
               >
+                <!-- The values area: its own bounded scroll region. The review bar below it is a normal row, so it is always
+                     on screen and no value scrolls behind it. -->
+                <div id="pdfValuesScroll">
                 <div
                   class="drop-zone"
                   id="dropZone"
@@ -10095,7 +10150,8 @@
                   </select>
                 </div>
                 <div id="extractedFieldsGrid" data-fb="energy.pdf.extracted-fields"></div>
-                <!-- Multi-building file: the review bar, after the last value row: counts, one link per issue, Save All. -->
+                </div>
+                <!-- Multi-building file: the review bar, a row under the values scroll region (always on screen): counts, one link per issue, Save All. -->
                 <div id="pdfReviewBar" class="pdf-review-bar" data-fb="energy.pdf.review-bar" style="display: none"></div>
               </div>
               <!-- DOCKED PDF VIEWER: sits beside the values and billing periods (no backdrop), with PDF and OCR text tabs.

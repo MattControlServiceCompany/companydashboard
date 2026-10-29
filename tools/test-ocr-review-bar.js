@@ -207,9 +207,7 @@ async function open(context, theme, width) {
         ok(top.bottom <= top.vh + 1 && top.top < top.vh, theme + ' ' + width + ': bar in view at the top of the page ' + JSON.stringify(top));
         if (SHOTS) await v.page.screenshot({ path: path.join(SHOTS, '2026-10-29-review-bar-' + theme + '-' + width + '.png') });
         const end = await v.page.evaluate(() => {
-          const sc = [document.scrollingElement, ...document.querySelectorAll('*')].find(
-            (e) => e && e.scrollHeight > e.clientHeight + 4 && /auto|scroll/.test(getComputedStyle(e).overflowY) && e.contains(document.getElementById('pdfReviewBar')),
-          ) || document.scrollingElement;
+          const sc = document.getElementById('pdfValuesScroll'); // the values scroll region; the bar is a row under it
           sc.scrollTop = sc.scrollHeight;
           const rows = [...document.querySelectorAll('#extractedFieldsGrid .ef-item, #extractedFieldsGrid .ef-tools')];
           const last = rows[rows.length - 1].getBoundingClientRect();
@@ -220,9 +218,10 @@ async function open(context, theme, width) {
             if (el.scrollWidth > el.clientWidth + 1 && el.clientWidth > 0 && getComputedStyle(el).overflowX !== 'visible')
               over.push(el.className + ':' + el.textContent.slice(0, 30));
           });
-          return { lastBottom: last.bottom, barTop: bar.top, over };
+          return { lastBottom: last.bottom, barTop: bar.top, barBottom: bar.bottom, vh: window.innerHeight, over };
         });
         ok(end.lastBottom <= end.barTop + 1, theme + ' ' + width + ': bar does not cover the last row ' + JSON.stringify(end));
+        ok(end.barBottom <= end.vh + 1, theme + ' ' + width + ': bar still on screen after the values scroll to the end ' + JSON.stringify(end));
         ok(!end.over.length, theme + ' ' + width + ': no overflow in box/bar ' + end.over.join(' | '));
         if (SHOTS) await v.page.screenshot({ path: path.join(SHOTS, '2026-10-29-review-bar-' + theme + '-' + width + '-end.png') });
         ok(!v.errs.length, theme + ' ' + width + ': no page errors ' + v.errs.slice(0, 2).join(' | '));
