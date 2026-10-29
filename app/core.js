@@ -2988,7 +2988,7 @@ function _getProjTabHTML() {
       if (PROJ_TABS_HIDDEN.has(id)) return '';
       const t = PROJ_TABS_DEFAULT.find((x) => x.id === id);
       if (!t) return '';
-      return `<button class="pdt${id === activeTab ? ' active' : ''}" draggable="true" data-tab="${id}" onclick="sPTab('${id}',this)"><span class="tab-lbl">${t.label}</span></button>`;
+      return `<button class="pdt${id === activeTab ? ' active' : ''}" role="tab" aria-selected="${id === activeTab}" draggable="true" data-tab="${id}" onclick="sPTab('${id}',this)"><span class="tab-lbl">${t.label}</span></button>`;
     })
     .join('');
 }
@@ -3139,9 +3139,17 @@ function sPTab(tab, el) {
   // emCloseStrayScheduleResultModal (app/equipment-matrix.js) for why this is needed here.
   if (typeof emCloseStrayScheduleResultModal === 'function') emCloseStrayScheduleResultModal();
   document.querySelectorAll('.ptab').forEach((b) => b.classList.remove('active'));
-  document.querySelectorAll('.pdt').forEach((b) => b.classList.remove('active'));
+  document.querySelectorAll('.pdt').forEach((b) => {
+    b.classList.remove('active');
+    b.setAttribute('aria-selected', 'false');
+  });
   document.getElementById('ptab-' + tab).classList.add('active');
   el?.classList.add('active');
+  if (el) {
+    el.setAttribute('aria-selected', 'true');
+    // The strip scrolls sideways when the tabs do not fit: keep the active tab reachable.
+    if (el.scrollIntoView) el.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+  }
   // Close any open project-level or building-level panels when switching tabs
   if (window._activeProjId) {
     if (_pdProjPanel[window._activeProjId])
