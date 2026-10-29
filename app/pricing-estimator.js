@@ -3307,6 +3307,236 @@ function _pricingFmt(val) {
   return '$' + Number(val).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+/* ── CSC Price List (read-only browse view, 2026-10-29) ────────────────────────────────────────
+   Shows the imported catalog (en_pricing_catalog) as a table: SKU, Description, Category, List,
+   Net, CSC price. CSC price = _pricingUnitPriceFor(entry, {priceBasis:'contract'}) - the SAME
+   resolver the estimate rows use, so there is no second price formula. Net = what CSC pays ALC
+   for the item (the "net" column of the ALC list). Header values read _pricingGetConfig() live.
+   Open/closed, search, category and sort live in memory only (never stored). */
+var _pricingPLState = {};
+function _pricingPLEsc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+function _pricingPLGetState(projId) {
+  if (!_pricingPLState[projId]) _pricingPLState[projId] = { open: false, q: '', cat: '', sort: 'sku', asc: true };
+  return _pricingPLState[projId];
+}
+/* Catalog object -> flat rows. Pure. */
+function _pricingPriceListRows(catalog) {
+  var out = [];
+  Object.keys(catalog || {}).forEach(function (sku) {
+    var e = catalog[sku];
+    out.push({
+      sku: sku,
+      desc: (e && e.desc) || '',
+      cat: (e && e.category) || '',
+      list: e && e.list != null ? e.list : null,
+      net: _pricingUnitPriceFor(e, { priceBasis: 'net' }),
+      csc: _pricingUnitPriceFor(e, { priceBasis: 'contract' }),
+    });
+  });
+  return out;
+}
+/* Search (SKU or description, case-insensitive), category filter, sort. Pure. */
+function _pricingPriceListFilter(rows, q, cat, sortKey, asc) {
+  var needle = String(q || '').trim().toLowerCase();
+  var res = rows.filter(function (r) {
+    if (cat && r.cat !== cat) return false;
+    if (!needle) return true;
+    return r.sku.toLowerCase().indexOf(needle) >= 0 || r.desc.toLowerCase().indexOf(needle) >= 0;
+  });
+  var numeric = sortKey === 'list' || sortKey === 'net' || sortKey === 'csc';
+  res.sort(function (a, b) {
+    var x = a[sortKey],
+      y = b[sortKey],
+      c;
+    if (numeric) {
+      if (x == null && y == null) c = 0;
+      else if (x == null) return 1; // missing prices always last
+      else if (y == null) return -1;
+      else c = x - y;
+    } else {
+      c = String(x).localeCompare(String(y), 'en', { numeric: true, sensitivity: 'base' });
+    }
+    return asc ? c : -c;
+  });
+  return res;
+}
+/* Label next to the Import button: "Price list: 1,135 items, imported Jun 22, 2026" + toggle button. */
+function _pricingImportStatusHTML(projId) {
+  var catalog = sget('en_pricing_catalog', null);
+  var meta = sget('en_pricing_meta', null);
+  var n = catalog ? Object.keys(catalog).length : 0;
+  if (!meta || !n) {
+    return '<span style="font-size:11px;color:var(--warn);margin-left:8px">No pricing imported — unit prices will show as "—"</span>';
+  }
+  var st = _pricingPLGetState(projId);
+  return (
+    '<span style="font-size:11px;color:var(--text);margin-left:8px">Price list: ' +
+    n.toLocaleString('en-US') +
+    ' items, imported ' +
+    new Date(meta.importedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) +
+    '</span><button class="btn btn-ghost btn-sm" id="pricing-pl-btn-' +
+    projId +
+    '" onclick="_pricingTogglePriceList(\'' +
+    projId +
+    '\')" title="Browse the CSC price list" style="cursor:pointer;margin-left:6px">' +
+    (st.open ? 'Hide price list' : 'Price list') +
+    '</button>'
+  );
+}
+/* Panel shell, placed right under the toolbar. */
+function _pricingPriceListPanelHTML(projId) {
+  var st = _pricingPLGetState(projId);
+  if (st.open)
+    setTimeout(function () {
+      _pricingPriceListRefresh(projId);
+    }, 0);
+  return (
+    '<div id="pricing-pl-' +
+    projId +
+    '" style="' +
+    (st.open ? '' : 'display:none;') +
+    'flex:0 0 auto;border-bottom:1px solid var(--border2);background:var(--s2);color:var(--text)">' +
+    (st.open ? _pricingPriceListInnerHTML(projId) : '') +
+    '</div>'
+  );
+}
+function _pricingPriceListInnerHTML(projId) {
+  var catalog = sget('en_pricing_catalog', null);
+  var st = _pricingPLGetState(projId);
+  if (!catalog || !Object.keys(catalog).length) {
+    return '<div style="padding:10px 14px;font-size:12px;color:var(--text)">No price list loaded. Use Import Pricing CSV.</div>';
+  }
+  var cfg = _pricingGetConfig();
+  var rows = _pricingPriceListRows(catalog);
+  var cats = {};
+  rows.forEach(function (r) {
+    if (r.cat) cats[r.cat] = true;
+  });
+  var catOpts =
+    '<option value="">All categories</option>' +
+    Object.keys(cats)
+      .sort()
+      .map(function (c) {
+        return '<option value="' + _pricingPLEsc(c) + '"' + (c === st.cat ? ' selected' : '') + '>' + _pricingPLEsc(c) + '</option>';
+      })
+      .join('');
+  var ctl = 'font-size:12px;padding:3px 6px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px';
+  return (
+    '<div style="padding:8px 14px;font-size:12px;font-weight:600;color:var(--text)">CSC price = ' +
+    Math.round(COST_CONTRACT_PCT * 100) +
+    '% of list. Labor ' +
+    _pricingFmt(cfg.hourlyRate).replace(/\.00$/, '') +
+    '/hr.</div>' +
+    '<div style="padding:0 14px 8px;display:flex;flex-wrap:wrap;gap:8px;align-items:center">' +
+    '<input type="search" id="pricing-pl-q-' +
+    projId +
+    '" placeholder="Search SKU or description" value="' +
+    _pricingPLEsc(st.q) +
+    '" oninput="_pricingPriceListSet(\'' +
+    projId +
+    '\',\'q\',this.value)" style="' +
+    ctl +
+    ';min-width:200px;flex:1 1 200px;max-width:360px">' +
+    '<select id="pricing-pl-cat-' +
+    projId +
+    '" onchange="_pricingPriceListSet(\'' +
+    projId +
+    '\',\'cat\',this.value)" style="' +
+    ctl +
+    ';max-width:240px">' +
+    catOpts +
+    '</select>' +
+    '<span id="pricing-pl-count-' +
+    projId +
+    '" style="font-size:12px;color:var(--text)"></span></div>' +
+    '<div class="ch-tbl-outer" style="margin:0 14px 10px;border:1px solid var(--border);border-radius:6px;overflow:hidden">' +
+    '<div class="ch-tbl-scroll" id="pricing-pl-scroll-' +
+    projId +
+    '" style="overflow:auto;max-height:min(50vh,420px)">' +
+    '<table class="ch-tbl" style="border-collapse:separate;border-spacing:0;width:100%;min-width:0;font-size:12px;color:var(--text)">' +
+    '<thead id="pricing-pl-head-' +
+    projId +
+    '"></thead><tbody id="pricing-pl-body-' +
+    projId +
+    '"></tbody></table></div></div>'
+  );
+}
+var _PL_COLS = [
+  { k: 'sku', label: 'SKU', num: false },
+  { k: 'desc', label: 'Description', num: false },
+  { k: 'cat', label: 'Category', num: false },
+  { k: 'list', label: 'List price', num: true },
+  { k: 'csc', label: 'CSC price', num: true },
+  { k: 'net', label: 'Net (CSC cost)', num: true },
+];
+/* Fill head, body and count. Keeps the search box untouched so typing never loses focus. */
+function _pricingPriceListRefresh(projId) {
+  var body = document.getElementById('pricing-pl-body-' + projId);
+  var head = document.getElementById('pricing-pl-head-' + projId);
+  if (!body || !head) return;
+  var st = _pricingPLGetState(projId);
+  var all = _pricingPriceListRows(sget('en_pricing_catalog', null));
+  var rows = _pricingPriceListFilter(all, st.q, st.cat, st.sort, st.asc);
+  var th =
+    'background:var(--s1);color:var(--text);font-size:11px;font-weight:700;padding:7px 10px;white-space:nowrap;position:sticky;top:0;z-index:2;border-bottom:2px solid var(--border2);border-right:1px solid var(--border);cursor:pointer;user-select:none;';
+  head.innerHTML =
+    '<tr>' +
+    _PL_COLS.map(function (c) {
+      var arrow = st.sort === c.k ? (st.asc ? ' &#9650;' : ' &#9660;') : '';
+      return (
+        '<th onclick="_pricingPriceListSort(\'' + projId + "','" + c.k + '\')" style="' + th + (c.num ? 'text-align:right;' : 'text-align:left;') + '">' +
+        c.label + arrow + '</th>'
+      );
+    }).join('') +
+    '</tr>';
+  var td = 'padding:5px 10px;border-bottom:1px solid var(--border);border-right:1px solid var(--border);color:var(--text);';
+  body.innerHTML = rows
+    .map(function (r) {
+      return (
+        '<tr><td style="' + td + 'overflow-wrap:anywhere;min-width:70px">' + _pricingPLEsc(r.sku) + '</td>' +
+        '<td style="' + td + 'min-width:200px">' + _pricingPLEsc(r.desc) + '</td>' +
+        '<td style="' + td + '">' + _pricingPLEsc(r.cat) + '</td>' +
+        '<td style="' + td + 'text-align:right;white-space:nowrap">' + _pricingFmt(r.list) + '</td>' +
+        '<td style="' + td + 'text-align:right;white-space:nowrap;font-weight:700">' + _pricingFmt(r.csc) + '</td>' +
+        '<td style="' + td + 'text-align:right;white-space:nowrap">' + _pricingFmt(r.net) + '</td></tr>'
+      );
+    })
+    .join('');
+  var cnt = document.getElementById('pricing-pl-count-' + projId);
+  if (cnt) cnt.textContent = 'Showing ' + rows.length.toLocaleString('en-US') + ' of ' + all.length.toLocaleString('en-US');
+}
+function _pricingPriceListSet(projId, key, val) {
+  _pricingPLGetState(projId)[key] = val;
+  _pricingPriceListRefresh(projId);
+}
+function _pricingPriceListSort(projId, key) {
+  var st = _pricingPLGetState(projId);
+  if (st.sort === key) st.asc = !st.asc;
+  else {
+    st.sort = key;
+    st.asc = true;
+  }
+  _pricingPriceListRefresh(projId);
+}
+function _pricingTogglePriceList(projId) {
+  var st = _pricingPLGetState(projId);
+  st.open = !st.open;
+  var el = document.getElementById('pricing-pl-' + projId);
+  if (el) {
+    el.style.display = st.open ? '' : 'none';
+    el.innerHTML = st.open ? _pricingPriceListInnerHTML(projId) : '';
+    if (st.open) _pricingPriceListRefresh(projId);
+  }
+  var btn = document.getElementById('pricing-pl-btn-' + projId);
+  if (btn) btn.textContent = st.open ? 'Hide price list' : 'Price list';
+}
+
 /* ── Workbook pricing for tiers (WP4, 2026-10-01) ─────────────────────────────────────────────
    Method switch and settings live in app/audit-estimate.js (key en_pricing_workbook_<projId>;
    method absent = workbook). In workbook mode _pricingComputeTotals prices the included rows with
@@ -3562,27 +3792,13 @@ function initCostEstimateTab(projId) {
 
   var cfg = _pricingGetConfig();
   var catalog = sget('en_pricing_catalog', null);
-  var meta = sget('en_pricing_meta', null);
   var estimate = _pricingGetEstimate(projId);
   var rows = buildComplianceRows(projId);
   _pricingRowCache[projId] = rows;
   var totals = _pricingComputeTotals(rows, estimate, projId);
   var hasCatalog = !!(catalog && Object.keys(catalog).length > 0);
 
-  // ── Toolbar HTML
-  var importStatus = '';
-  if (meta) {
-    importStatus =
-      '<span style="font-size:11px;color:var(--text2);margin-left:8px">' +
-      meta.skuCount +
-      ' SKUs imported ' +
-      new Date(meta.importedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) +
-      '</span>';
-  } else {
-    importStatus =
-      '<span style="font-size:11px;color:var(--warn);margin-left:8px">No pricing imported — unit prices will show as "—"</span>';
-  }
-
+  // ── Toolbar HTML (price-list label, button and panel live in the Estimate type bar)
   var toolbarHTML = [
     '<div class="ch-panel-header" style="padding:10px 14px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:var(--s1);border-bottom:1px solid var(--border2)">',
     '<label class="btn btn-ghost btn-sm" style="cursor:pointer;position:relative">',
@@ -3593,7 +3809,6 @@ function initCostEstimateTab(projId) {
       ')">',
     (hasCatalog ? '' : '<span style="color:var(--warn)">⚠ </span>') + 'Import Pricing CSV',
     '</label>',
-    importStatus,
     '<span style="flex:1"></span>',
     '<label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:4px">',
     'Price Basis:',
@@ -6810,14 +7025,6 @@ function _pricingBuildToolbarHTML(projId, tier, opts) {
   var isRecommended = tier === 'recommended';
   var catalog = sget('en_pricing_catalog', null);
   var hasCatalog = !!(catalog && Object.keys(catalog).length > 0);
-  var meta = sget('en_pricing_meta', null);
-  var importStatus = meta
-    ? '<span style="font-size:11px;color:var(--text2);margin-left:8px">' +
-      meta.skuCount +
-      ' SKUs imported ' +
-      new Date(meta.importedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) +
-      '</span>'
-    : '<span style="font-size:11px;color:var(--warn);margin-left:8px">No pricing imported — unit prices will show as "—"</span>';
   var allBuildings = opts.allBuildings || [];
   var filterBldg = _pricingBldgFilter[projId] || '';
 
@@ -6848,8 +7055,7 @@ function _pricingBuildToolbarHTML(projId, tier, opts) {
     ')">' +
     (hasCatalog ? '' : '<span style="color:var(--warn)">⚠ </span>') +
     'Import Pricing CSV' +
-    '</label>' +
-    importStatus;
+    '</label>';
 
   var tableSettingsBtnHTML =
     '<button class="btn btn-ghost btn-sm" onclick="_pricingOpenSettingsPopover(\'' +
@@ -10308,6 +10514,7 @@ function _pricingEstimateTypeBarHTML(projId, type) {
     '</select></label>' +
     switchHTML +
     rateBtn +
+    _pricingImportStatusHTML(projId) +
     (type === 'retrofit'
       ? '<button type="button" class="btn btn-ghost btn-sm" id="estExportExcel-' +
         projId +
@@ -10329,6 +10536,7 @@ function _pricingEstimateTypeBarHTML(projId, type) {
           : '')
       : '') +
     '</div>' +
+    _pricingPriceListPanelHTML(projId) +
     (type === 'retrofit' && wbSet ? _pricingWorkbookPanelHTML(projId, wbSet) : '')
   );
 }
