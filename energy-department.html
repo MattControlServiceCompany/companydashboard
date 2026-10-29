@@ -64,6 +64,8 @@
         --red-dim: rgba(244, 63, 94, 0.1);
         --violet: #8b5cf6;
         --violet-dim: rgba(139, 92, 246, 0.1);
+        --violet-text: #c084fc;
+        --violet-label: #a78bfa;
         --green: #22c55e;
         --orange: #fb923c;
         --lime: #84cc16;
@@ -126,6 +128,13 @@
         overflow: hidden;
         -webkit-font-smoothing: antialiased;
         font-variant-numeric: tabular-nums;
+      }
+      /* Form controls use the site font, not the browser default. */
+      button,
+      input,
+      select,
+      textarea {
+        font-family: inherit;
       }
       ::-webkit-scrollbar {
         width: 5px;
@@ -1216,12 +1225,16 @@
         --em-glow: rgba(0, 122, 140, 0.2);
         --em2: #0369a1;
         --em2-dim: rgba(3, 105, 161, 0.1);
+        --green: #166534;
+        --amber: #92400e;
         --warn: #b45309;
         --warn-dim: rgba(180, 83, 9, 0.1);
         --danger: #be123c;
         --danger-dim: rgba(190, 18, 60, 0.1);
         --violet: #6d28d9;
         --violet-dim: rgba(109, 40, 217, 0.1);
+        --violet-text: #6d28d9;
+        --violet-label: #6d28d9;
         --lime: #65a30d;
         --lime-dim: rgba(101, 163, 13, 0.12);
         --accent: var(--em);
@@ -3897,7 +3910,8 @@
         background: var(--s3);
         border: 1px solid var(--border);
         border-radius: 4px;
-        padding: 3px 5px;
+        padding: 3px 20px 3px 5px;
+        text-overflow: ellipsis;
         width: 100%;
       }
       .sv-msr-txt {
@@ -4671,6 +4685,13 @@
         min-height: 0;
         overflow-y: auto;
         padding: 0;
+      }
+      /* Long column headers wrap so the right columns fit; building names stay on one line. */
+      #ptab-dashboard thead th {
+        white-space: normal !important;
+      }
+      #ptab-dashboard tbody td:nth-child(2) {
+        white-space: nowrap;
       }
       /* BAS Alarms tab needs flex column layout when active so its internal
          table container can flex:1 and scroll 6,000+ rows. The flex styles
@@ -7708,6 +7729,17 @@
       }
       .ud-bill-tbl tr.ud-bill-empty-row td.sticky-col-right {
         background-color: var(--s1) !important;
+      }
+      /* Shadow on the left edge of the pinned Total column: more columns continue under it. */
+      .ud-bill-tbl th.sticky-col-right:not(.td-actions),
+      .ud-bill-tbl td.sticky-col-right:not(.td-actions) {
+        box-shadow:
+          -6px 0 8px 0 rgba(0, 0, 0, 1),
+          -26px 0 24px -4px rgba(0, 0, 0, 1);
+      }
+      [data-theme='light'] .ud-bill-tbl th.sticky-col-right:not(.td-actions),
+      [data-theme='light'] .ud-bill-tbl td.sticky-col-right:not(.td-actions) {
+        box-shadow: -14px 0 14px -4px rgba(0, 0, 0, 0.3);
       }
       /* Table Settings header — full cell is clickable, gear icon above a
          "Table Settings" label. Lives as a child <div> inside the <th> so

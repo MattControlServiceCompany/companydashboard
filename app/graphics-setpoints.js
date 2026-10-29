@@ -1053,7 +1053,7 @@ function egfxRefresh(projId) {
     let cards = '';
     if (totalBlKwh > 0) {
       cards +=
-        '<div class="card" style="background:var(--s1);padding:12px;text-align:center">' +
+        '<div class="card" style="padding:12px;text-align:center">' +
         '<div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">kWh Saved</div>' +
         '<div style="font-size:22px;font-weight:800;font-family:var(--mono);color:' +
         _clr(egfxUnitsSaved.kwh) +
@@ -1066,7 +1066,7 @@ function egfxRefresh(projId) {
     }
     if (_blKwFromMap.some((v) => v > 0)) {
       cards +=
-        '<div class="card" style="background:var(--s1);padding:12px;text-align:center">' +
+        '<div class="card" style="padding:12px;text-align:center">' +
         '<div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">Peak kW Reduced</div>' +
         '<div style="font-size:22px;font-weight:800;font-family:var(--mono);color:' +
         _clr(egfxUnitsSaved.kw) +
@@ -1077,7 +1077,7 @@ function egfxRefresh(projId) {
     }
     if (totalBlGas > 0) {
       cards +=
-        '<div class="card" style="background:var(--s1);padding:12px;text-align:center">' +
+        '<div class="card" style="padding:12px;text-align:center">' +
         '<div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">Therms Saved</div>' +
         '<div style="font-size:22px;font-weight:800;font-family:var(--mono);color:' +
         _clr(egfxUnitsSaved.therms) +
@@ -1090,7 +1090,7 @@ function egfxRefresh(projId) {
     }
     if (totalBlPropane > 0) {
       cards +=
-        '<div class="card" style="background:var(--s1);padding:12px;text-align:center">' +
+        '<div class="card" style="padding:12px;text-align:center">' +
         '<div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">Gallons Saved</div>' +
         '<div style="font-size:22px;font-weight:800;font-family:var(--mono);color:' +
         _clr(egfxUnitsSaved.gallons) +
@@ -1378,7 +1378,7 @@ function egfxRefresh(projId) {
   function _yoyHtml(title, icon, unit, field, blAvgArr) {
     const cid = `egfx-yoy-${projId}-${_yoyChartCount++}`;
     _yoyChartsToDraw.push({ cid, field, unit, blAvgArr });
-    return `<div class="card" style="background:var(--s1);padding:14px;margin-bottom:12px">
+    return `<div class="card" style="padding:14px;margin-bottom:12px">
             <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px">${icon} Monthly ${title} — Year over Year</div>
             <div style="position:relative;height:160px"><canvas id="${cid}"></canvas></div>
           </div>`;
@@ -1431,7 +1431,7 @@ function egfxRefresh(projId) {
         if (r.elecValid) baseNote.push(`electric baseload ${r.baseloadElec.toFixed(2)} kWh/mo`);
         if (r.gasValid) baseNote.push(`gas baseload ${r.baseloadGas.toFixed(2)} Therms/mo`);
         if (r.demandValid) baseNote.push(`winter demand base ${r.winterDemandBase.toFixed(2)} kW`);
-        return `<div class="card" style="background:var(--s1);padding:14px;margin-bottom:12px">
+        return `<div class="card" style="padding:14px;margin-bottom:12px">
             <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:8px">🌡️ HVAC End-Use Estimate — ${_escHtml(bh.name)}</div>
             <div style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--text)">
               ${rows.join('')}
@@ -1496,7 +1496,7 @@ function egfxRefresh(projId) {
           ${hasGas ? _yoyHtml('Gas Therms', '🔥', 'therms', 'gas', blGasAvg) : ''}
           ${hasPropane ? _yoyHtml('Propane Gallons', '🛢️', 'gal', 'propane', blPropaneBl) : ''}
           ${_hvacEnduseCardsHtml()}
-          <div class="card" style="background:var(--s1);padding:14px">
+          <div class="card" style="padding:14px">
             <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px">📊 Annual Summary by Year</div>
             <div style="overflow-x:auto">
               <table class="dtbl" style="min-width:500px">
@@ -1547,7 +1547,7 @@ function egfxRefresh(projId) {
           ${
             bldgs.length > 1
               ? `
-          <div class="card" style="background:var(--s1);padding:14px;margin-top:12px">
+          <div class="card" style="padding:14px;margin-top:12px">
             <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px">🏢 Annual Summary by Building</div>
             <div style="overflow-x:auto">
               <table class="dtbl" style="min-width:600px;border-collapse:collapse">
@@ -1694,7 +1694,7 @@ function egfxRefresh(projId) {
                 : blYearList[0] + '–' + blYearList[blYearList.length - 1];
             const hasPropaneBL = totalBlPropane > 0;
             const blCostAvg2 = blCost.map((v, mi) => v / (blYmPerMo[mi].size || 1));
-            let tbl = '<div class="card" style="background:var(--s1);padding:14px;margin-top:12px">';
+            let tbl = '<div class="card" style="padding:14px;margin-top:12px">';
             tbl +=
               '<div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:4px">📋 Baseline Monthly Data — Project Level</div>';
             tbl +=
@@ -1820,7 +1820,7 @@ function egfxRefresh(projId) {
       const benchCanvasId = 'egfx-euiBench-' + projId;
       _yoyChartsToDraw.push({ cid: benchCanvasId, _benchRows: benchRows });
       const chartH = Math.max(120, benchRows.length * 40 + 40);
-      return `<div class="card" style="background:var(--s1);padding:14px;margin-top:12px">
+      return `<div class="card" style="padding:14px;margin-top:12px">
               <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:4px">📊 <span title="Site Energy Use Intensity: yearly energy use per square foot, in kBtu">Site EUI</span> Benchmark — Your Buildings vs <span title="Commercial Buildings Energy Consumption Survey">CBECS</span> National Median</div>
               <div style="font-size:10px;color:var(--text3);margin-bottom:8px">kBtu/ft²/yr · rolling 12-month data · buildings without sqft are excluded</div>
               <div style="position:relative;height:${chartH}px"><canvas id="${benchCanvasId}"></canvas></div>
@@ -1840,7 +1840,7 @@ function egfxRefresh(projId) {
         }),
       );
       const trendCanvasId = 'egfx-trend-' + projId;
-      return `<div class="card" style="background:var(--s1);padding:14px;margin-top:12px">
+      return `<div class="card" style="padding:14px;margin-top:12px">
               <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:4px">
                 <div style="font-size:12px;font-weight:700;color:var(--text2)">📈 Multi-Year Usage Trend — ${minYr}–${maxYr}</div>
                 <div style="display:flex;gap:6px;align-items:center">
@@ -1877,7 +1877,7 @@ function egfxRefresh(projId) {
         const age = b.yearBuilt ? curYr - b.yearBuilt : null;
         return { name: b.name, yearBuilt: b.yearBuilt, age, latest };
       });
-      return `<div class="card" style="background:var(--s1);padding:14px;margin-top:12px;border-left:3px solid var(--teal)">
+      return `<div class="card" style="padding:14px;margin-top:12px;border-left:3px solid var(--teal)">
               <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:4px">🏛️ Property &amp; Age</div>
               <div style="font-size:10px;color:var(--teal);font-weight:700;margin-bottom:8px">Source: Talisen FAC workbook — separate from the site's live CBECS Energy Use Intensity Benchmark above</div>
               <div style="overflow-x:auto">
@@ -1922,7 +1922,7 @@ function egfxRefresh(projId) {
       );
       const plan = _egProj ? _egProj.energyPlan : null;
       if (!plan || !plan.text) return '';
-      return `<div class="card" style="background:var(--s1);padding:14px;margin-top:12px;border-left:3px solid var(--teal)">
+      return `<div class="card" style="padding:14px;margin-top:12px;border-left:3px solid var(--teal)">
               <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:4px">📋 Energy Management Plan</div>
               <div style="font-size:10px;color:var(--teal);font-weight:700;margin-bottom:8px">Source: ${_escHtml(plan.source || 'Talisen FAC workbook')}</div>
               <div style="font-size:11px;color:var(--text2);white-space:pre-wrap;line-height:1.5;font-family:var(--mono)">${_escHtml(plan.text)}</div>
@@ -2014,7 +2014,7 @@ function egfxRefresh(projId) {
       if (bRows.length === 0) return '';
       // Sort by EUI descending (worst performers first)
       bRows.sort((a, b) => b.eui - a.eui);
-      return `<div class="card" style="background:var(--s1);padding:14px;margin-top:12px">
+      return `<div class="card" style="padding:14px;margin-top:12px">
               <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:4px">🏆 Building Performance Benchmarking</div>
               <div style="font-size:10px;color:var(--text3);margin-bottom:12px">Ranked by <span title="Site Energy Use Intensity: yearly energy use per square foot, in kBtu">Site EUI</span> (highest = most opportunity) · rolling 12-month data · CBECS percentiles + EnergyStar score-75 threshold</div>
               <div style="overflow-x:auto">
@@ -2091,13 +2091,13 @@ function egfxRefresh(projId) {
       const hasGasQ = totalBlGas > 0 || sortedYears.some((y) => yearData[y].gas.some((v) => v > 0));
       const hasPropaneQ = totalBlPropane > 0 || sortedYears.some((y) => yearData[y].propane.some((v) => v > 0));
       let qHtml =
-        '<div class="card" style="background:var(--s1);padding:14px;margin-top:12px">' +
+        '<div class="card" style="padding:14px;margin-top:12px">' +
         '<div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px">💰 Monthly Savings: Projected vs Current</div>' +
         '<div style="height:173px;position:relative;margin-bottom:14px"><canvas id="egfx-savChart-' +
         projId +
         '"></canvas></div>' +
         '</div>';
-      qHtml += '<div class="card" style="background:var(--s1);padding:14px;margin-top:12px">';
+      qHtml += '<div class="card" style="padding:14px;margin-top:12px">';
       qHtml +=
         '<div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px">📅 Quarterly Savings vs Baseline</div>';
       qHtml += '<div style="overflow-x:auto"><table class="dtbl" style="min-width:500px">';

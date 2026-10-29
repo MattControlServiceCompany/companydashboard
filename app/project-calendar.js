@@ -300,6 +300,7 @@
       '; last sync ' + stampShort(snap.fetchedAt) +
       (lc ? ': ' + num(lc.added) + ' new, ' + num(lc.changed) + ' changed, ' + num(lc.removed) + ' canceled' : '');
     var stepper = '';
+    var range14 = '';
     if (!q && s.view === 'month') {
       stepper =
         '<div class="pcal-nav"><button class="btn btn-ghost btn-sm" aria-label="Previous month" onclick="pcalMonth(' + pid + ',-1)">&#9664;</button>' +
@@ -309,7 +310,7 @@
       var d0 = todayOf(tz);
       var d1 = CalendarDiff.addDays(d0, 13);
       var md = function (d) { return dayText(d).replace(/,\s*\d{4}$/, ''); };
-      stepper = '<div class="pcal-nav"><span class="pcal-range" style="text-align:left">' + _escHtml(md(d0) + ' – ' + md(d1)) + '</span></div>';
+      range14 = md(d0) + ' – ' + md(d1);
     }
     var controls =
       '<div class="pcal-nav">' +
@@ -332,7 +333,7 @@
           '</th></tr>';
       }
       var pl = CalendarDiff.eventPlace({ title: e.row[0], location: e.row[4] });
-      var place = pl.fromTitle ? '<i title="Taken from the event title">' + _escHtml(pl.text) + '</i>' : _escHtml(pl.text);
+      var place = pl.fromTitle ? '<span title="Taken from the event title">' + _escHtml(pl.text) + '</span>' : _escHtml(pl.text);
       var multi = '';
       if (e.row[3] || /^\d{4}-\d{2}-\d{2}$/.test(e.row[1])) {
         var lastD = CalendarDiff.allDayLastDay(e.row[1], e.row[2], tz);
@@ -354,7 +355,7 @@
         (s.changesOnly ? 'No changes ' + _escHtml(scope) + '.' : 'No events found.') + '</div>';
     var heading = q
       ? 'Events matching "' + q + '" (' + num(v.items.length) + ')'
-      : (s.view === 'month' ? monthLabel(s.month) : s.view === 'past' ? 'Past events, newest first' : 'Next 14 days') + ' (' + num(v.items.length) + ' events)';
+      : (s.view === 'month' ? monthLabel(s.month) : s.view === 'past' ? 'Past events, newest first' : 'Next 14 days' + (range14 ? ', ' + range14 : '')) + ' (' + num(v.items.length) + ' events)';
     host.innerHTML =
       '<div class="pcal-sum">' + _escHtml(line) + '</div><div class="pcal-feed">' + _escHtml(feedLine) + '</div>' + controls + '<h4>' + _escHtml(heading) + '</h4>' + tbl +
       (v.items.length > shown.length

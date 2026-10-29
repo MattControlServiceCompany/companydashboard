@@ -663,7 +663,7 @@ function _pricingMeasureCostRollupHTML(projId) {
     '<td style="' + tf + '">' + money(t.annualAll) + '</td>' +
     '<td style="' + tf + 'border-right:none">' + (t.years === null ? '—' : t.years.toFixed(1) + ' yrs') + '</td>' +
     '</tr></tfoot></table></div></div>' +
-    '<div style="font-size:10px;color:var(--text3);margin-top:4px">The project payback counts only the ' + t.costedCount + ' measure' + (t.costedCount === 1 ? '' : 's') + ' that ' + (t.costedCount === 1 ? 'has' : 'have') + ' cost lines.</div></div>'
+    '<div style="font-size:10px;color:var(--text3);margin-top:4px">' + (t.costedCount === 0 ? 'No measure has cost lines yet, so there is no project payback.' : 'The project payback counts only the ' + t.costedCount + ' measure' + (t.costedCount === 1 ? '' : 's') + ' that ' + (t.costedCount === 1 ? 'has' : 'have') + ' cost lines.') + '</div></div>'
   );
 }
 
@@ -3465,8 +3465,8 @@ var _PL_COLS = [
   { k: 'desc', label: 'Description', num: false },
   { k: 'cat', label: 'Category', num: false },
   { k: 'list', label: 'List price', num: true },
-  { k: 'csc', label: 'CSC price', num: true },
-  { k: 'net', label: 'Net (CSC cost)', num: true },
+  { k: 'csc', label: 'CSC price', num: true, tip: function () { return 'What CSC charges: ' + Math.round(_pricingUnitPriceFor({ list: 100 }, { priceBasis: 'contract' })) + '% of list'; } },
+  { k: 'net', label: 'Net (CSC cost)', num: true, tip: function () { return 'What CSC pays ALC'; } },
 ];
 /* Fill head, body and count. Keeps the search box untouched so typing never loses focus. */
 function _pricingPriceListRefresh(projId) {
@@ -3483,7 +3483,7 @@ function _pricingPriceListRefresh(projId) {
     _PL_COLS.map(function (c) {
       var arrow = st.sort === c.k ? (st.asc ? ' &#9650;' : ' &#9660;') : '';
       return (
-        '<th onclick="_pricingPriceListSort(\'' + projId + "','" + c.k + '\')" style="' + th + (c.num ? 'text-align:right;' : 'text-align:left;') + '">' +
+        '<th onclick="_pricingPriceListSort(\'' + projId + "','" + c.k + '\')"' + (c.tip ? ' title="' + _escHtml(c.tip()) + '"' : '') + ' style="' + th + (c.num ? 'text-align:right;' : 'text-align:left;') + '">' +
         c.label + arrow + '</th>'
       );
     }).join('') +

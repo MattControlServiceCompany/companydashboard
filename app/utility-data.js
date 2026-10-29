@@ -4433,12 +4433,12 @@ function renderBillsPane(pane, m, bills, incl) {
     '<span style="font-size:11px;color:var(--text2)">Day calc:</span>' +
     '<button class="ud-incl-btn' +
     (incl ? ' sel' : '') +
-    '" onclick="setMeterIncl(\'' +
+    '" title="Inclusive: count the start and end day (Aug 27 to Sep 28 = 33 days)" onclick="setMeterIncl(\'' +
     m.id +
     '\',true)">Inclusive</button>' +
     '<button class="ud-incl-btn' +
     (!incl ? ' sel' : '') +
-    '" onclick="setMeterIncl(\'' +
+    '" title="Exclusive: count the start day only (Aug 27 to Sep 28 = 32 days)" onclick="setMeterIncl(\'' +
     m.id +
     '\',false)">Exclusive</button>' +
     '</div>' +

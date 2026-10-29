@@ -1524,27 +1524,27 @@ function renderDetail(p) {
                 </div>
                 <div style="padding:16px">
                   <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:16px">
-                    <div class="card" style="background:var(--s1);padding:14px;text-align:center">
+                    <div class="card" style="padding:14px;text-align:center">
                       <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px" title="Baseline Site Energy Use Intensity: yearly energy use per square foot, in kBtu">Baseline Site EUI</div>
                       <div id="egfx-blEui-${p.id}" style="font-size:28px;font-weight:800;font-family:var(--mono);color:var(--accent);margin:6px 0">—</div>
                       <div style="font-size:11px;color:var(--text2)">kBtu/ft²</div>
                     </div>
-                    <div class="card" style="background:var(--s1);padding:14px;text-align:center">
+                    <div class="card" style="padding:14px;text-align:center">
                       <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px" title="Rolling 12-Month Site Energy Use Intensity: yearly energy use per square foot, in kBtu">Rolling 12-Month Site EUI</div>
                       <div id="egfx-curEui-${p.id}" style="font-size:28px;font-weight:800;font-family:var(--mono);color:var(--em);margin:6px 0">—</div>
                       <div id="egfx-curEuiSub-${p.id}" style="font-size:11px;color:var(--text2)">kBtu/ft²</div>
                     </div>
-                    <div class="card" style="background:var(--s1);padding:14px;text-align:center">
+                    <div class="card" style="padding:14px;text-align:center">
                       <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Est. ENERGY STAR Score</div>
                       <div id="egfx-estarScore-${p.id}" style="font-size:28px;font-weight:800;font-family:var(--mono);color:var(--text3);margin:6px 0">—</div>
                       <div id="egfx-estarScoreSub-${p.id}" style="font-size:11px;color:var(--text3)">source Energy Use Intensity estimate</div>
                     </div>
-                    <div class="card" style="background:var(--s1);padding:14px;text-align:center">
+                    <div class="card" style="padding:14px;text-align:center">
                       <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Projected Savings</div>
                       <div id="egfx-projSav-${p.id}" style="font-size:28px;font-weight:800;font-family:var(--mono);color:var(--accent);margin:6px 0">—</div>
                       <div id="egfx-projSavSub-${p.id}" style="font-size:11px;color:var(--text2)">annual target</div>
                     </div>
-                    <div class="card" style="background:var(--s1);padding:14px;text-align:center">
+                    <div class="card" style="padding:14px;text-align:center">
                       <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.6px">Current Savings</div>
                       <div id="egfx-curSav-${p.id}" style="font-size:28px;font-weight:800;font-family:var(--mono);color:var(--green);margin:6px 0">—</div>
                       <div id="egfx-curSavSub-${p.id}" style="font-size:11px;color:var(--text2)">actual to date</div>
@@ -1772,18 +1772,17 @@ function renderDetail(p) {
             <span class="phc-info" id="phc-info-${p.id}">
             <span class="phc-name phc-first">${_escHtml(p.name)}</span>
             <span class="phc-item" title="Service Agreement Number"><span class="phc-val">${_saLabel(p.sa)}</span></span>
-            <span class="phc-item">Savings <span class="phc-val">${p.savings && projHasContract(p.id) ? '$' + Number(p.savings).toLocaleString() + '/yr' : '—'}</span></span>
+            ${p.savings && projHasContract(p.id) ? `<span class="phc-item">Savings <span class="phc-val">$${Number(p.savings).toLocaleString()}/yr</span></span>` : ''}
             <span class="phc-item"><span class="phc-val">${p.start ? _parseISO(p.start).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</span> → <span class="phc-val">${p.end ? _parseISO(p.end).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</span></span>
             <span class="phc-item" id="phc-baseline-${p.id}">Baseline <span class="phc-val">—</span></span>
             <span class="phc-item" id="phc-eui-${p.id}" title="Site Energy Use Intensity: yearly energy use per square foot, in kBtu">Site EUI <span class="phc-val">—</span></span>
             <span class="phc-item">Tasks <span class="phc-val" style="${openTasks > 0 ? 'color:var(--warn)' : ''}">${openTasks}</span></span>
-            <span class="phc-item"><span class="phc-val">${getBaselineEligibleBldgs(p.id).length}</span> building${getBaselineEligibleBldgs(p.id).length !== 1 ? 's' : ''} · <span class="phc-val">${getBaselineEligibleBldgs(p.id).reduce((s, b) => s + parseInt(b.sqft || 0), 0) ? Number(getBaselineEligibleBldgs(p.id).reduce((s, b) => s + parseInt(b.sqft || 0), 0)).toLocaleString() + ' total sf' : ''}</span></span>
             </span>
             <span class="phc-btns">
-            <button class="btn btn-ghost btn-sm" style="padding:3px 5px;font-size:10px;flex-shrink:0" id="pd-proj-baseline-btn-${p.id}" onclick="toggleProjDetailPanel(${p.id},'baseline')">Project Baseline</button>
-            <button class="btn btn-ghost btn-sm" style="padding:3px 5px;font-size:10px;flex-shrink:0" id="pd-proj-savproj-btn-${p.id}" onclick="toggleProjDetailPanel(${p.id},'savproj')">Projected Savings</button>
-            <button class="btn btn-ghost btn-sm" style="padding:3px 5px;font-size:10px;flex-shrink:0" id="pd-proj-perf-btn-${p.id}" onclick="toggleProjDetailPanel(${p.id},'perf')">Project Performance</button>
-            <button class="btn btn-ghost btn-sm" style="padding:3px 5px;font-size:10px" onclick="openProjModal();editProj(${p.id})">Edit Project</button>
+            <button class="btn btn-ghost btn-sm" style="padding:3px 5px;font-size:12px;flex-shrink:0" id="pd-proj-baseline-btn-${p.id}" onclick="toggleProjDetailPanel(${p.id},'baseline')">Project Baseline</button>
+            <button class="btn btn-ghost btn-sm" style="padding:3px 5px;font-size:12px;flex-shrink:0" id="pd-proj-savproj-btn-${p.id}" onclick="toggleProjDetailPanel(${p.id},'savproj')">Projected Savings</button>
+            <button class="btn btn-ghost btn-sm" style="padding:3px 5px;font-size:12px;flex-shrink:0" id="pd-proj-perf-btn-${p.id}" onclick="toggleProjDetailPanel(${p.id},'perf')">Project Performance</button>
+            <button class="btn btn-ghost btn-sm" style="padding:3px 5px;font-size:12px" onclick="openProjModal();editProj(${p.id})">Edit Project</button>
           </span>
           </div>`;
   _phcFullTitle(p.id);
@@ -2324,7 +2323,7 @@ function initDashboardTab(projId) {
               <div style="flex:1;min-width:320px;background:rgba(147,51,234,0.15);border:1px solid rgba(147,51,234,0.3);border-radius:8px;padding:16px">
                 <div style="display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap">
                   <div style="flex:1">
-                    <div style="font-size:10px;color:#a78bfa;text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;font-weight:600">Projected Savings</div>
+                    <div style="font-size:10px;color:var(--violet-label);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px;font-weight:600">Projected Savings</div>
                     <div style="display:flex;gap:8px;margin-bottom:10px">
                       ${projectedByQtr
                         .map(
@@ -2333,7 +2332,7 @@ function initDashboardTab(projId) {
                             i,
                           ) => `<div style="flex:1;text-align:center;background:rgba(147,51,234,0.12);border-radius:6px;padding:6px 4px">
                         <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px">Q${i + 1}</div>
-                        <div style="font-size:13px;font-weight:700;font-family:var(--mono);color:#c084fc">${v !== 0 ? $c2(v) : '—'}</div>
+                        <div style="font-size:13px;font-weight:700;font-family:var(--mono);color:var(--violet-text)">${v !== 0 ? $c2(v) : '—'}</div>
                       </div>`,
                         )
                         .join('')}
@@ -2355,7 +2354,7 @@ function initDashboardTab(projId) {
                   </div>
                   <div style="border-left:1px solid rgba(147,51,234,0.25);padding-left:16px;display:flex;flex-direction:column;justify-content:center;min-width:160px;flex-shrink:0">
                     <div style="font-size:10px;color:var(--text3);text-transform:uppercase;margin-bottom:4px">Annual Projected</div>
-                    <div style="font-size:20px;font-weight:800;font-family:var(--mono);color:#c084fc">${$c(projectedAnnual)}<span style="font-size:12px;color:#a78bfa">/yr</span></div>
+                    <div style="font-size:20px;font-weight:800;font-family:var(--mono);color:var(--violet-text)">${$c(projectedAnnual)}<span style="font-size:12px;color:var(--violet-label)">/yr</span></div>
                   </div>
                 </div>
               </div>
@@ -2377,7 +2376,7 @@ function initDashboardTab(projId) {
                 <div style="text-align:center"><div style="font-size:10px;color:var(--text3);text-transform:uppercase">Baseline</div><div style="font-size:16px;font-weight:700;font-family:var(--mono)">${$c(totalBl)}</div></div>
                 <div style="text-align:center"><div style="font-size:10px;color:var(--text3);text-transform:uppercase">Current</div><div style="font-size:16px;font-weight:700;font-family:var(--mono)">${$c(totalCur)}</div></div>
                 ${estSavings > 0 ? '<div style="text-align:center"><div style="font-size:10px;color:var(--text3);text-transform:uppercase">Target</div><div style="font-size:16px;font-weight:700;font-family:var(--mono)">$' + Number(estSavings).toLocaleString() + '</div></div>' : ''}
-                ${ecmTotal > 0 ? '<div style="text-align:center;border-top:1px solid rgba(167,139,250,0.25);padding-top:8px;margin-top:4px"><div style="font-size:10px;color:#a78bfa;text-transform:uppercase">ECM Projected</div><div style="font-size:16px;font-weight:700;font-family:var(--mono);color:#c084fc">$' + ecmTotal.toLocaleString() + '/yr</div><div style="font-size:10px;color:var(--text3)">' + ecmCount + ' ECM' + (ecmCount !== 1 ? 's' : '') + ' saved — <button onclick="sv(\'calculators\')" style="font-size:10px;color:#a78bfa;background:none;border:none;cursor:pointer;padding:0;text-decoration:underline">view</button></div></div>' : ''}
+                ${ecmTotal > 0 ? '<div style="text-align:center;border-top:1px solid rgba(167,139,250,0.25);padding-top:8px;margin-top:4px"><div style="font-size:10px;color:var(--violet-label);text-transform:uppercase">ECM Projected</div><div style="font-size:16px;font-weight:700;font-family:var(--mono);color:var(--violet-text)">$' + ecmTotal.toLocaleString() + '/yr</div><div style="font-size:10px;color:var(--text3)">' + ecmCount + ' ECM' + (ecmCount !== 1 ? 's' : '') + ' saved — <button onclick="sv(\'calculators\')" style="font-size:10px;color:var(--violet-label);background:none;border:none;cursor:pointer;padding:0;text-decoration:underline">view</button></div></div>' : ''}
               </div>
             </div>
           </div>

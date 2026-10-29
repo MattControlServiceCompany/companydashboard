@@ -5093,11 +5093,13 @@ function emRenderToolbar(data, pid, projBadge) {
     '<span id="em-row-count" style="font-size:11px;color:var(--text3);margin-left:4px"></span>' +
     '<div style="flex:1"></div>' +
     (projBadge || '') +
+    '<span style="display:inline-flex;align-items:center;gap:8px;white-space:nowrap">' +
     '<span style="font-size:11px;color:var(--text3)">View:</span>' +
     '<button id="em-audit-btn" class="btn btn-sm" onclick="emSetAuditView()" style="height:28px;font-size:11px;background:var(--accent);color:#fff;border-color:transparent">Audit View</button>' +
     '<button id="em-raw-btn" class="btn btn-ghost btn-sm" onclick="emSetRawView()" style="height:28px;font-size:11px">Raw View</button>' +
     '<button id="em-summary-btn" class="btn btn-ghost btn-sm" onclick="emSetSummaryView()" title="Aggregated stats grouped by building and equipment type" style="height:28px;font-size:11px;background:var(--s2);color:var(--text2);border-color:var(--border)">Summary</button>' +
     '<button id="em-sequence-btn" class="btn btn-ghost btn-sm" onclick="emSetSequenceView()" title="Generate a Sequence of Operations document for selected equipment" style="height:28px;font-size:11px;background:var(--s2);color:var(--text2);border-color:var(--border)">Sequence</button>' +
+    '</span>' +
     '<button id="em-edit-mode-btn" class="btn btn-ghost btn-sm" onclick="emToggleEditMode(this)" style="height:28px;font-size:11px">Edit</button>' +
     '<button class="btn btn-ghost btn-sm" onclick="emHandleSaveEdits()" style="height:28px;font-size:11px">Save Edits</button>' +
     '<button id="em-delete-all-btn" class="btn btn-ghost btn-sm" onclick="emDeleteAllRows(\'' +
@@ -5926,27 +5928,27 @@ function emUpdateStatsPillsForAudit(rows, pointRows) {
   var audit = emComputeAuditStats(rows);
   var _pt = emPointTotal(pointRows || rows);
   var avgCov = audit.avgCoverage;
-  var covColor = avgCov >= 75 ? '#27ae60' : avgCov >= 50 ? '#e67e22' : '#c0392b';
+  var covColor = avgCov >= 75 ? 'var(--green)' : avgCov >= 50 ? 'var(--warn)' : '#c0392b';
   var covPill =
-    '<div style="display:flex;flex-direction:column;align-items:center;min-width:64px">' +
+    '<div title="Sensor Coverage %: average share of the expected BAS points that each piece of equipment has" style="display:flex;flex-direction:column;align-items:center;min-width:64px">' +
     '<div style="font-size:18px;font-weight:700;color:' +
     covColor +
     ';line-height:1">' +
     avgCov +
     '%</div>' +
-    '<div style="font-size:10px;color:var(--text3);margin-top:2px;text-transform:uppercase;letter-spacing:0.04em">Point Coverage</div>' +
+    '<div style="font-size:10px;color:var(--text3);margin-top:2px;text-transform:uppercase;letter-spacing:0.04em">Sensor Coverage %</div>' +
     '</div>';
   var seqPct = audit.seqReadinessPct;
-  var seqColor = seqPct >= 75 ? '#27ae60' : seqPct >= 50 ? '#e67e22' : '#c0392b';
+  var seqColor = seqPct >= 75 ? 'var(--green)' : seqPct >= 50 ? 'var(--warn)' : '#c0392b';
   var seqPill =
     audit.seqApplicable > 0
-      ? '<div style="display:flex;flex-direction:column;align-items:center;min-width:64px">' +
+      ? '<div title="Sequence Readiness %: share of the ASHRAE 36 sequences that apply to the equipment and have all the points they need" style="display:flex;flex-direction:column;align-items:center;min-width:64px">' +
         '<div style="font-size:18px;font-weight:700;color:' +
         seqColor +
         ';line-height:1">' +
         seqPct +
         '%</div>' +
-        '<div style="font-size:10px;color:var(--text3);margin-top:2px;text-transform:uppercase;letter-spacing:0.04em">Sequence Ready</div>' +
+        '<div style="font-size:10px;color:var(--text3);margin-top:2px;text-transform:uppercase;letter-spacing:0.04em">Sequence Readiness %</div>' +
         '</div>'
       : '';
   bar.innerHTML =
@@ -6038,27 +6040,27 @@ function emUpdateStatsPillsForSummary(rows, pointRows) {
   var audit = emComputeAuditStats(rows);
   var _pt = emPointTotal(pointRows || rows);
   var avgCov = audit.avgCoverage;
-  var covColor = avgCov >= 75 ? '#27ae60' : avgCov >= 50 ? '#e67e22' : '#c0392b';
+  var covColor = avgCov >= 75 ? 'var(--green)' : avgCov >= 50 ? 'var(--warn)' : '#c0392b';
   var covPill =
-    '<div style="display:flex;flex-direction:column;align-items:center;min-width:64px">' +
+    '<div title="Sensor Coverage %: average share of the expected BAS points that each piece of equipment has" style="display:flex;flex-direction:column;align-items:center;min-width:64px">' +
     '<div style="font-size:18px;font-weight:700;color:' +
     covColor +
     ';line-height:1">' +
     avgCov +
     '%</div>' +
-    '<div style="font-size:10px;color:var(--text3);margin-top:2px;text-transform:uppercase;letter-spacing:0.04em">Point Coverage</div>' +
+    '<div style="font-size:10px;color:var(--text3);margin-top:2px;text-transform:uppercase;letter-spacing:0.04em">Sensor Coverage %</div>' +
     '</div>';
   var seqPct = audit.seqReadinessPct;
-  var seqColor = seqPct >= 75 ? '#27ae60' : seqPct >= 50 ? '#e67e22' : '#c0392b';
+  var seqColor = seqPct >= 75 ? 'var(--green)' : seqPct >= 50 ? 'var(--warn)' : '#c0392b';
   var seqPill =
     audit.seqApplicable > 0
-      ? '<div style="display:flex;flex-direction:column;align-items:center;min-width:64px">' +
+      ? '<div title="Sequence Readiness %: share of the ASHRAE 36 sequences that apply to the equipment and have all the points they need" style="display:flex;flex-direction:column;align-items:center;min-width:64px">' +
         '<div style="font-size:18px;font-weight:700;color:' +
         seqColor +
         ';line-height:1">' +
         seqPct +
         '%</div>' +
-        '<div style="font-size:10px;color:var(--text3);margin-top:2px;text-transform:uppercase;letter-spacing:0.04em">Sequence Ready</div>' +
+        '<div style="font-size:10px;color:var(--text3);margin-top:2px;text-transform:uppercase;letter-spacing:0.04em">Sequence Readiness %</div>' +
         '</div>'
       : '';
   bar.innerHTML =
@@ -7218,7 +7220,7 @@ function buildAuditFooterRow(totalsMap, defs, label, isBold) {
         '</td>';
     } else if (def.isAuditCoverage && totalsMap['_coverage']) {
       var cov = totalsMap['_coverage'].avg;
-      var covColor = cov >= 75 ? '#27ae60' : cov >= 50 ? '#e67e22' : '#c0392b';
+      var covColor = cov >= 75 ? 'var(--green)' : cov >= 50 ? 'var(--warn)' : '#c0392b';
       html +=
         '<td style="' +
         tdBase +
@@ -9489,7 +9491,7 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
   // ── Coverage % ──
   if (def.isAuditCoverage) {
     var pct = compliance.coveragePct;
-    var pctColor = pct >= 75 ? '#27ae60' : pct >= 50 ? '#e67e22' : '#c0392b';
+    var pctColor = pct >= 75 ? 'var(--green)' : pct >= 50 ? 'var(--amber)' : '#c0392b';
     var pctBg = pct >= 75 ? 'rgba(39,174,96,0.1)' : pct >= 50 ? 'rgba(230,126,34,0.1)' : 'rgba(192,57,43,0.1)';
     var hasPoints = row.category && EM_POINT_CATEGORIES[row.category];
     if (!hasPoints) {
@@ -9537,7 +9539,7 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
       );
     }
     var _seqPctVal = Math.round((_seqReady / _seqApplicable) * 100);
-    var _seqPctColor = _seqPctVal >= 75 ? '#27ae60' : _seqPctVal >= 50 ? '#e67e22' : '#c0392b';
+    var _seqPctColor = _seqPctVal >= 75 ? 'var(--green)' : _seqPctVal >= 50 ? 'var(--amber)' : '#c0392b';
     var _seqPctBg =
       _seqPctVal >= 75 ? 'rgba(39,174,96,0.1)' : _seqPctVal >= 50 ? 'rgba(230,126,34,0.1)' : 'rgba(192,57,43,0.1)';
     return (
@@ -9695,7 +9697,7 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
         return (
           '<td style="' +
           baseStyle +
-          'background:rgba(39,174,96,0.15);color:#27ae60;font-weight:700" title="' +
+          'background:rgba(39,174,96,0.15);color:var(--green);font-weight:700" title="' +
           greenTitle +
           '">' +
           (displayVal !== null ? _escHtml(displayVal) : '') +
@@ -9707,7 +9709,7 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
         return (
           '<td style="' +
           baseStyle +
-          'background:rgba(230,126,34,0.15);color:#e67e22;font-weight:700" title="' +
+          'background:rgba(230,126,34,0.15);color:var(--amber);font-weight:700" title="' +
           amberTitle +
           '">' +
           (displayVal !== null ? _escHtml(displayVal) : '') +
@@ -9796,7 +9798,7 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
       return (
         '<td style="' +
         baseStyle +
-        'background:rgba(39,174,96,0.15);color:#27ae60;font-weight:700" ' +
+        'background:rgba(39,174,96,0.15);color:var(--green);font-weight:700" ' +
         'title="' +
         _escHtml(bTooltip) +
         '">PASS</td>'
@@ -9806,7 +9808,7 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
       return (
         '<td style="' +
         baseStyle +
-        'background:rgba(230,126,34,0.15);color:#e67e22;font-weight:700" ' +
+        'background:rgba(230,126,34,0.15);color:var(--amber);font-weight:700" ' +
         'title="' +
         _escHtml(bTooltip) +
         '">WARN</td>'
@@ -9875,7 +9877,7 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
       return (
         '<td style="' +
         baseStyle +
-        'background:rgba(39,174,96,0.15);color:#27ae60;font-weight:700;font-size:11px" ' +
+        'background:rgba(39,174,96,0.15);color:var(--green);font-weight:700;font-size:11px" ' +
         'title="All setpoint checks match ASHRAE 36 defaults (±1°F / ±50 ppm)">All Match</td>'
       );
     }
@@ -9884,7 +9886,7 @@ function emRenderAuditCell(row, def, compliance, coveredMap, naMap, missingMap, 
     return (
       '<td style="' +
       baseStyle +
-      'background:rgba(230,126,34,0.15);color:#e67e22;font-weight:700;font-size:11px;cursor:pointer" ' +
+      'background:rgba(230,126,34,0.15);color:var(--amber);font-weight:700;font-size:11px;cursor:pointer" ' +
       'title="' +
       _escHtml(_spTooltip) +
       '" onclick="emShowComplianceDetail(\'' +
@@ -22760,7 +22762,7 @@ function emRenderSequenceCell(seqName, readiness) {
     return (
       '<td style="' +
       baseStyle +
-      'background:rgba(39,174,96,0.15);color:#27ae60;font-weight:700" ' +
+      'background:rgba(39,174,96,0.15);color:var(--green);font-weight:700" ' +
       'title="' +
       _escHtml(tooltip) +
       '">Yes</td>'
@@ -22770,7 +22772,7 @@ function emRenderSequenceCell(seqName, readiness) {
     return (
       '<td style="' +
       baseStyle +
-      'background:rgba(230,126,34,0.15);color:#e67e22;font-weight:700" ' +
+      'background:rgba(230,126,34,0.15);color:var(--amber);font-weight:700" ' +
       'title="' +
       _escHtml(tooltip) +
       '">Partial</td>'
