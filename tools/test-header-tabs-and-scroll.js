@@ -20,6 +20,7 @@ const mime = { '.html': 'text/html', '.js': 'application/javascript', '.css': 't
 const PID = 990000111;
 
 let failed = 0;
+function hexRgb(h) { var m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(h); return m ? "rgb(" + parseInt(m[1], 16) + ", " + parseInt(m[2], 16) + ", " + parseInt(m[3], 16) + ")" : h; }
 function check(name, ok, extra) {
   console.log((ok ? 'PASS ' : 'FAIL ') + name + (ok ? '' : ' ' + (extra || '')));
   if (!ok) failed++;
@@ -83,15 +84,15 @@ function check(name, ok, extra) {
     }
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.waitForTimeout(200);
-    // Tab look: active tab background equals the content panel background; no bottom border; rounded top; inactive differs.
+    // Tab look: active tab background equals the page background (--bg) it joins; no bottom border; rounded top; inactive differs.
     const tl = await page.evaluate((p) => {
       const act = document.querySelector('#pdTabBar .pdt.active');
       const idle = document.querySelector('#pdTabBar .pdt:not(.active)');
       const panel = document.getElementById('pd-tabs-card-' + p);
       const a = getComputedStyle(act), i = getComputedStyle(idle);
-      return { actBg: a.backgroundColor, panelBg: getComputedStyle(panel).backgroundColor, idleBg: i.backgroundColor, actBB: a.borderBottomWidth, idleBB: i.borderBottomWidth, radius: a.borderTopLeftRadius, topW: a.borderTopWidth, text: a.color };
+      return { actBg: a.backgroundColor, panelBg: getComputedStyle(document.documentElement).getPropertyValue('--bg').trim(), idleBg: i.backgroundColor, actBB: a.borderBottomWidth, idleBB: i.borderBottomWidth, radius: a.borderTopLeftRadius, topW: a.borderTopWidth, text: a.color };
     }, PID);
-    check('active tab background equals the content panel background', tl.actBg === tl.panelBg, JSON.stringify(tl));
+    check('active tab background equals the page background it joins', hexRgb(tl.panelBg) === tl.actBg, JSON.stringify(tl));
     check('inactive tab is a different background than the active tab', tl.idleBg !== tl.actBg, JSON.stringify(tl));
     check('tab has rounded top corners, a top border and no bottom border', parseFloat(tl.radius) >= 6 && parseFloat(tl.topW) >= 1 && tl.actBB === '0px' && tl.idleBB === '0px', JSON.stringify(tl));
     check('department tab hidden while a project is open', h.deptHidden);

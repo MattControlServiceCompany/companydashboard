@@ -87,6 +87,10 @@
       minute: '2-digit',
     }).format(d);
   }
+  // Sync time without the current year. Single formatter for the sync lines.
+  function stampShort(iso) {
+    return stamp(iso).replace(', ' + new Date().getFullYear(), '');
+  }
   function stamp(iso) {
     return new Date(iso).toLocaleString('en-US', {
       year: 'numeric',
@@ -287,14 +291,14 @@
       if (c['new']) parts.push(num(c['new']) + ' new');
       if (c.changed) parts.push(num(c.changed) + ' changed');
       if (c.canceled) parts.push(num(c.canceled) + ' canceled');
-      var prev = hist[1] ? ' (' + stamp(hist[1].at).replace(', ' + new Date().getFullYear(), '') + ')' : '';
+      var prev = hist[1] ? ' (' + stampShort(hist[1].at) + ')' : '';
       line = 'Since last sync' + prev + ': ' + (parts.length ? parts.join(', ') : 'no changes') + ' ' + scope;
     }
     var last = hist[0];
     var lc = last && !last.first ? last.counts : null;
     var feedLine =
       'Whole feed: ' + num(snap.count) + (snap.count === 1 ? ' event' : ' events') +
-      '; last sync ' + stamp(snap.fetchedAt).replace(', ' + new Date().getFullYear(), '') +
+      '; last sync ' + stampShort(snap.fetchedAt) +
       (lc ? ': ' + num(lc.added) + ' new, ' + num(lc.changed) + ' changed, ' + num(lc.removed) + ' canceled' : '');
     var stepper = '';
     if (!q && s.view === 'month') {

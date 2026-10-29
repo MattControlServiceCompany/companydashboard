@@ -2507,9 +2507,11 @@ async function siteResetAllMeterTableSettings() {
    site-ui.js delegates to this array and should NOT maintain its own copy.
 */
 var RELEASE_NOTES = [
-  { v: 'v2026.10.29.184', date: '2026-10-29', title: 'District Calendar: what is coming up and what changed',
+  { v: 'v2026.10.29.184', date: '2026-10-29', title: 'District Calendar upcoming events, folder tabs, CSC price list',
     items: [
-      { type: 'change', text: 'Project page, District Calendar tab: the list now opens on the next 14 days, grouped by day, with Next 14 days, This month and Show past buttons. Events that are new, changed (with what changed, like the old and new time or place) or canceled since the last sync are marked, and a line at the top counts them. Changes only shows just those events.' }
+      { type: 'change', text: 'Project page, District Calendar tab: the list now opens on the next 14 days, grouped by day, with Next 14 days, This month and Show past buttons. Events that are new, changed (with what changed, like the old and new time or place) or canceled since the last sync are marked, and a line at the top counts them. Changes only shows just those events.' },
+      { type: 'change', text: 'Project page: the tabs now look like folder tabs, and all of them fit at full window width.' },
+      { type: 'change', text: 'Project page, Cost Estimate tab: new Price list button shows every item with its list price and CSC price. You can search it and filter it by category.' }
     ]
   },
   { v: 'v2026.10.28.183', date: '2026-10-28', title: 'District Calendar tab labels',

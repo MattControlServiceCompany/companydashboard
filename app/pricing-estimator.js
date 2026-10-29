@@ -3314,13 +3314,6 @@ function _pricingFmt(val) {
    for the item (the "net" column of the ALC list). Header values read _pricingGetConfig() live.
    Open/closed, search, category and sort live in memory only (never stored). */
 var _pricingPLState = {};
-function _pricingPLEsc(s) {
-  return String(s == null ? '' : s)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
 function _pricingPLGetState(projId) {
   if (!_pricingPLState[projId]) _pricingPLState[projId] = { open: false, q: '', cat: '', sort: 'sku', asc: true };
   return _pricingPLState[projId];
@@ -3423,13 +3416,13 @@ function _pricingPriceListInnerHTML(projId) {
     Object.keys(cats)
       .sort()
       .map(function (c) {
-        return '<option value="' + _pricingPLEsc(c) + '"' + (c === st.cat ? ' selected' : '') + '>' + _pricingPLEsc(c) + '</option>';
+        return '<option value="' + _escHtml(c) + '"' + (c === st.cat ? ' selected' : '') + '>' + _escHtml(c) + '</option>';
       })
       .join('');
   var ctl = 'font-size:12px;padding:3px 6px;background:var(--s3);color:var(--text);border:1px solid var(--border);border-radius:4px';
   return (
     '<div style="padding:8px 14px;font-size:12px;font-weight:600;color:var(--text)">CSC price = ' +
-    Math.round(COST_CONTRACT_PCT * 100) +
+    Math.round(_pricingUnitPriceFor({ list: 100 }, { priceBasis: 'contract' })) +
     '% of list. Labor ' +
     _pricingFmt(cfg.hourlyRate).replace(/\.00$/, '') +
     '/hr.</div>' +
@@ -3437,7 +3430,7 @@ function _pricingPriceListInnerHTML(projId) {
     '<input type="search" id="pricing-pl-q-' +
     projId +
     '" placeholder="Search SKU or description" value="' +
-    _pricingPLEsc(st.q) +
+    _escHtml(st.q) +
     '" oninput="_pricingPriceListSet(\'' +
     projId +
     '\',\'q\',this.value)" style="' +
@@ -3499,9 +3492,9 @@ function _pricingPriceListRefresh(projId) {
   body.innerHTML = rows
     .map(function (r) {
       return (
-        '<tr><td style="' + td + 'overflow-wrap:anywhere;min-width:70px">' + _pricingPLEsc(r.sku) + '</td>' +
-        '<td style="' + td + 'min-width:200px">' + _pricingPLEsc(r.desc) + '</td>' +
-        '<td style="' + td + '">' + _pricingPLEsc(r.cat) + '</td>' +
+        '<tr><td style="' + td + 'overflow-wrap:anywhere;min-width:70px">' + _escHtml(r.sku) + '</td>' +
+        '<td style="' + td + 'min-width:200px">' + _escHtml(r.desc) + '</td>' +
+        '<td style="' + td + '">' + _escHtml(r.cat) + '</td>' +
         '<td style="' + td + 'text-align:right;white-space:nowrap">' + _pricingFmt(r.list) + '</td>' +
         '<td style="' + td + 'text-align:right;white-space:nowrap;font-weight:700">' + _pricingFmt(r.csc) + '</td>' +
         '<td style="' + td + 'text-align:right;white-space:nowrap">' + _pricingFmt(r.net) + '</td></tr>'
